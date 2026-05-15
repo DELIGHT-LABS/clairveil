@@ -1,0 +1,149 @@
+syntax = "proto3";
+package clairveil.privacy.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "github.com/DELIGHT-LABS/clairveil/x/privacy/types";
+
+// Query defines the gRPC querier service.
+service Query {
+  // CheckNullifier: Nullifier 사용 여부 확인
+  rpc CheckNullifier(QueryCheckNullifierRequest)
+      returns (QueryCheckNullifierResponse) {
+    option (google.api.http).get = "/clairveil/privacy/v1/nullifier/{nullifier}";
+  }
+  // Current Merkle tree state 조회
+  rpc TreeState(QueryTreeStateRequest) returns (QueryTreeStateResponse) {
+    option (google.api.http).get = "/clairveil/privacy/v1/tree_state";
+  }
+  // Commitment 존재 여부 / leaf index 조회
+  rpc CommitmentInfo(QueryCommitmentInfoRequest)
+      returns (QueryCommitmentInfoResponse) {
+    option (google.api.http).get =
+        "/clairveil/privacy/v1/commitment/{commitment_hex}";
+  }
+  // Privacy event feed 조회
+  rpc PrivacyEvents(QueryPrivacyEventsRequest)
+      returns (QueryPrivacyEventsResponse) {
+    option (google.api.http).get = "/clairveil/privacy/v1/events";
+  }
+  // Merkle Path 조회
+  rpc MerklePath(QueryMerklePathRequest) returns (QueryMerklePathResponse) {
+    option (google.api.http).get =
+        "/clairveil/privacy/v1/merkle_path/{commitment_hex}";
+  }
+
+  // Audit master disclosure 설정 조회
+  rpc AuditConfig(QueryAuditConfigRequest) returns (QueryAuditConfigResponse) {
+    option (google.api.http).get = "/clairveil/privacy/v1/audit_config";
+  }
+  // Disclosure payload / policy 계약 조회
+  rpc DisclosureConfig(QueryDisclosureConfigRequest)
+      returns (QueryDisclosureConfigResponse) {
+    option (google.api.http).get = "/clairveil/privacy/v1/disclosure_config";
+  }
+  // Active zk circuit / artifact contract 조회
+  rpc CircuitConfig(QueryCircuitConfigRequest)
+      returns (QueryCircuitConfigResponse) {
+    option (google.api.http).get = "/clairveil/privacy/v1/circuit_config";
+  }
+}
+
+// QueryCheckNullifierRequest
+message QueryCheckNullifierRequest {
+  string nullifier = 1; // Hex string
+}
+
+// QueryCheckNullifierResponse
+message QueryCheckNullifierResponse { bool used = 1; }
+
+message QueryTreeStateRequest {}
+
+message QueryTreeStateResponse {
+  string root = 1;             // canonical 32-byte hex
+  uint64 leaf_count = 2;       // current leaf count
+  uint32 depth = 3;            // merkle depth
+  bool initialized = 4;        // true when at least one commitment exists
+  uint64 max_leaves = 5;       // maximum leaves for the active tree
+  uint64 remaining_leaves = 6; // leaves that can still be appended
+}
+
+message QueryCommitmentInfoRequest { string commitment_hex = 1; }
+
+message QueryCommitmentInfoResponse {
+  bool found = 1;
+  uint64 leaf_index = 2;
+}
+
+message QueryPrivacyEventsRequest {
+  int64 after_height = 1;
+  uint64 page = 2;
+  uint64 limit = 3;
+  repeated string event_types = 4;
+}
+
+message QueryPrivacyEventAttribute {
+  string key = 1;
+  string value = 2;
+}
+
+message QueryPrivacyEvent {
+  uint64 sequence = 1;
+  int64 height = 2;
+  string tx_hash_hex = 3;
+  string event_type = 4;
+  repeated QueryPrivacyEventAttribute attributes = 5;
+}
+
+message QueryPrivacyEventsResponse {
+  repeated QueryPrivacyEvent events = 1;
+  uint64 page = 2;
+  uint64 limit = 3;
+  bool has_more = 4;
+}
+
+// QueryMerklePathRequest
+message QueryMerklePathRequest { string commitment_hex = 1; }
+
+// QueryMerklePathResponse
+message QueryMerklePathResponse {
+  repeated string path = 1;        // Hex strings
+  repeated uint32 path_helper = 2; // 0 or 1 (Index bits)
+  string root = 3;                 // Hex string
+}
+
+message QueryAuditConfigRequest {}
+
+message QueryAuditConfigResponse {
+  string audit_master_pubkey_hex = 1;
+}
+
+message QueryDisclosureConfigRequest {}
+
+message QueryDisclosureConfigResponse {
+  string payload_version = 1;
+  bool audit_disclosure_required = 2;
+  repeated string supported_user_policies = 3;
+  repeated string supported_user_modes = 4;
+}
+
+message QueryCircuitConfigRequest {}
+
+message QueryCircuitArtifact {
+  string circuit_id = 1;
+  string artifact_type = 2;
+  string filename = 3;
+  string checksum_env = 4;
+  string sha256 = 5;
+}
+
+message QueryCircuitConfigResponse {
+  string schema_version = 1;
+  string active_set_id = 2;
+  string curve = 3;
+  string manifest_file = 4;
+  bool manifest_available = 5;
+  string checksum_source = 6;
+  string generated_at = 7;
+  repeated QueryCircuitArtifact artifacts = 8;
+}

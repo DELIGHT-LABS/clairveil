@@ -1,0 +1,168 @@
+{
+  "schema_version": "v1",
+  "root_signer": {
+    "get_account_response": {
+      "transparent_address": "clair1lm4z6g0p7n0jq3m2t0y8m7s8u6x5w4v3c2r9q8",
+      "transparent_pubkey_hex": "0123456789abcdef"
+    },
+    "sign_request": {
+      "method": "sign_privacy_root",
+      "message_hex": "636c6169727665696c2d726f6f742d76310a616464726573733a636c616972316c6d347a36673070376e306a71336d32743079386d37733875367835773476336332723971380a7075626b65793a30313233343536373839616263646566"
+    },
+    "sign_response": {
+      "signature_hex": "73656e6465722d726f6f742d7369676e61747572652d7631"
+    },
+    "expected_derived": {
+      "root_seed_hex": "0b6c625559e0a67f6b3527c0fe826e29d113c7e20065a5ed8ccf1acf08a5234c",
+      "shielded_address": "clairs19x5u4mf4l4zqcpvr7d809fh4tjy5j50p2mwgky0nj38jpqpj7svndu3hqshu5e3s8w6pea5p30xek5p9flxjf7f44xh7cnfrlsd84pc7upgh3",
+      "disclosure_pubkey_hex": "59f491e8eee937c486cd81f599b8756ebcfa9b5af99e24b7629bf91c2dab691f"
+    }
+  },
+  "wallet_info_provider": {
+    "tree_state_response": {
+      "root_hex": "0000000000000000000000000000000000000000000000000000000000000005",
+      "leaf_count": 7,
+      "depth": 32,
+      "initialized": true,
+      "max_leaves": 4294967296,
+      "remaining_leaves": 4294967289
+    },
+    "commitment_info_request": {
+      "commitment_hex": "040ca9769b47ec70882162daa846e82dcae14d5d3a5ad2a0ae9e6453c431b204"
+    },
+    "commitment_info_response": {
+      "found": true,
+      "leaf_index": 9
+    },
+    "disclosure_config_response": {
+      "payload_version": "v4",
+      "audit_disclosure_required": true,
+      "supported_user_policies": [
+        "all-private",
+        "amount",
+        "to",
+        "amount-to",
+        "from",
+        "amount-from",
+        "from-to",
+        "amount-from-to"
+      ],
+      "supported_user_modes": [
+        "none",
+        "public",
+        "recipient-encrypted"
+      ]
+    },
+    "circuit_config_response": {
+      "schema_version": "v1",
+      "active_set_id": "latest-single-transfer",
+      "curve": "BN254",
+      "manifest_file": "privacy_zk_manifest.json",
+      "manifest_available": false,
+      "checksum_source": "none",
+      "generated_at": "",
+      "artifacts": [
+        {
+          "circuit_id": "spend",
+          "artifact_type": "r1cs",
+          "filename": "privacy_spend_r1cs.bin",
+          "checksum_env": "CLAIRVEIL_PRIVACY_SPEND_R1CS_SHA256",
+          "sha256": ""
+        },
+        {
+          "circuit_id": "spend",
+          "artifact_type": "proving_key",
+          "filename": "privacy_spend_pk.bin",
+          "checksum_env": "CLAIRVEIL_PRIVACY_SPEND_PK_SHA256",
+          "sha256": ""
+        },
+        {
+          "circuit_id": "spend",
+          "artifact_type": "verifying_key",
+          "filename": "privacy_spend_vk.bin",
+          "checksum_env": "CLAIRVEIL_PRIVACY_SPEND_VK_SHA256",
+          "sha256": ""
+        },
+        {
+          "circuit_id": "joinsplit",
+          "artifact_type": "r1cs",
+          "filename": "privacy_joinsplit_r1cs.bin",
+          "checksum_env": "CLAIRVEIL_PRIVACY_JOINSPLIT_R1CS_SHA256",
+          "sha256": ""
+        },
+        {
+          "circuit_id": "joinsplit",
+          "artifact_type": "proving_key",
+          "filename": "privacy_joinsplit_pk.bin",
+          "checksum_env": "CLAIRVEIL_PRIVACY_JOINSPLIT_PK_SHA256",
+          "sha256": ""
+        },
+        {
+          "circuit_id": "joinsplit",
+          "artifact_type": "verifying_key",
+          "filename": "privacy_joinsplit_vk.bin",
+          "checksum_env": "CLAIRVEIL_PRIVACY_JOINSPLIT_VK_SHA256",
+          "sha256": ""
+        }
+      ]
+    }
+  },
+  "scan_provider": {
+    "latest_block_height_response": {
+      "height": 42
+    },
+    "search_privacy_events_request": {
+      "after_height": 0,
+      "page": 1,
+      "limit": 50,
+      "event_types": [
+        "deposit",
+        "shielded_transfer"
+      ]
+    },
+    "search_privacy_events_response": {
+      "events": [
+        {
+          "sequence": 1,
+          "height": 42,
+          "tx_hash_hex": "AABBCC",
+          "event_type": "deposit",
+          "attributes": [
+            {
+              "key": "encrypted_note",
+              "value": "558c25312d133b45f35d16e45405c9b363e466bcddd2c31fbd9eb67d0f15de079ebd4b81c354473e5a4a183ca536d3afd15e4d064bc9676dbe898133a25790cc9952de0065ebe4aace32261044cc58ab0eb1118ab500c276207e33ef4120d2d7a5e0215790ebac1ebd9606175766883ac78115953e399ec18c0e9e9a98b4fc6b460bdeb5a6023789b6f5490f1b73953920e50156668206ce989d8ee730c41445b9a72d16b075a3d67c45a124ffcc1b9c8a7d26a97475467f7b2b5605cbd76d5ff45360ebe28a65d7c1fed0ea74737f399555c38c4f9cf4573affb435ac14b2caedd8ba204fb32438a2caccf3e59d4e18748d731dffc3a6514127ffa2d5e007c0790778536086894762f3c3c79e3b6781d407d6cef80d9e677a35668b1ff161c2d1b08196fd8677e4385978e03d21430cbbc1367a210d36593460422e30d51378ae2794a7a1d9f360b74486d776f5ef36d84c500d8278599dc6508e884ba8a4196653ca43f9b8eb197f996ec3b8e19b6039c5971d6900577d3392770f320d64b67b6488a1ac04b37bafd64b6bf5ea99f51a676176987b2328317fa7049f31c13f0cfd30e4345a3fe0f185e01e30bbbe27f17507711c377e74f45ff746f1692bdfe27739b991d4ade212348a3d82565caffc927dc1dc06c51abc1bcdd38e4281dd4bc9406cf306"
+            }
+          ]
+        }
+      ],
+      "page": 1,
+      "limit": 50,
+      "has_more": false
+    },
+    "check_nullifier_request": {
+      "nullifier_hex": "17de68060ab4e6225193aa9f6d7c563f1846518000b3f335a9f77fb658198628"
+    },
+    "check_nullifier_response": {
+      "used": false
+    }
+  },
+  "send_provider": {
+    "audit_config_response": {
+      "audit_master_pubkey_hex": "8cb0ef883bce364e0d946867ebd7a7f84ec153eeb28e5973ffe9381ec8d7940a"
+    },
+    "merkle_path_request": {
+      "commitment_hex": "040ca9769b47ec70882162daa846e82dcae14d5d3a5ad2a0ae9e6453c431b204"
+    },
+    "merkle_path_response": {
+      "root_hex": "0000000000000000000000000000000000000000000000000000000000000005",
+      "path": [
+        "01",
+        "02"
+      ],
+      "path_helper": [
+        0,
+        1
+      ]
+    }
+  }
+}

@@ -1,0 +1,12 @@
+syntax = "proto3";
+package clairveil.privacy.v1;
+
+option go_package = "github.com/DELIGHT-LABS/clairveil/x/privacy/types";
+
+// GenesisState defines the bank module's genesis state.
+message GenesisState {
+  repeated bytes commitments = 1;
+  repeated bytes historical_roots = 2;
+  repeated bytes nullifiers = 3;
+  bytes audit_master_pubkey = 4;
+}

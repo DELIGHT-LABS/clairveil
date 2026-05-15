@@ -1,0 +1,27 @@
+{
+  "schema_version": "v1",
+  "content_type": "application/json",
+  "transfer_route": {
+    "method": "POST",
+    "path": "/v1/prover/transfer",
+    "request_version": "v1",
+    "response_version": "v1"
+  },
+  "withdraw_route": {
+    "method": "POST",
+    "path": "/v1/prover/withdraw",
+    "request_version": "v1",
+    "response_version": "v1"
+  },
+  "error_response": {
+    "version": "v1",
+    "codes": [
+      "invalid_request",
+      "method_not_allowed",
+      "not_found",
+      "unauthorized",
+      "unavailable",
+      "proof_failed"
+    ]
+  }
+}

@@ -1,0 +1,39 @@
+# OS/editor noise
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Build outputs
+/clairveild
+/clairveil-setup
+/clairveil-verify
+/clairveil-proverd
+/dist/
+/tmp/
+
+# Go
+*.test
+*.cover
+coverage.out
+
+# Node examples
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local chain and generated runtime data
+/.clairveil/
+/clairveil-home/
+/artifacts/
+*.log
+
+# Local commit notes
+docs/commit-notes/
+
+# Environment files
+.env
+.env.*
+!.env.example
+*.local

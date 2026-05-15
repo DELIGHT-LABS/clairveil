@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability report
+    url: https://github.com/DELIGHT-LABS/clairveil/security
+    about: Please do not report suspected vulnerabilities in public issues. See SECURITY.md first.

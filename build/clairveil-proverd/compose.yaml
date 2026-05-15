@@ -1,0 +1,34 @@
+services:
+  clairveil-proverd:
+    build:
+      context: ../..
+      dockerfile: build/clairveil-proverd/Dockerfile
+    image: delightlabs/clairveil-proverd:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR: /artifacts
+      CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE: ${CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE:-warn}
+      CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN: ${CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN:-}
+    volumes:
+      - ${CLAIRVEIL_PRIVACY_ZK_ARTIFACT_HOST_DIR:-./artifacts}:/artifacts:ro
+    command:
+      - -listen
+      - 0.0.0.0:8080
+      - -read-header-timeout
+      - 5s
+      - -read-timeout
+      - 30s
+      - -write-timeout
+      - 0s
+      - -idle-timeout
+      - 2m
+      - -max-request-bytes
+      - "8388608"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

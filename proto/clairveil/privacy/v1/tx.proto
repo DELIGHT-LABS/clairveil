@@ -1,0 +1,96 @@
+syntax = "proto3";
+package clairveil.privacy.v1;
+
+import "cosmos/msg/v1/msg.proto";
+
+option go_package = "github.com/DELIGHT-LABS/clairveil/x/privacy/types";
+
+// Msg 서비스 정의
+service Msg {
+  option (cosmos.msg.v1.service) = true;
+
+  // Deposit: 투명 자산 -> 익명 자산 (Note)
+  rpc Deposit(MsgDeposit) returns (MsgDepositResponse);
+
+  // Withdraw: 익명 자산 -> 투명 자산
+  rpc Withdraw(MsgWithdraw) returns (MsgWithdrawResponse);
+
+  // Transfer: shielded pool 내부 전송
+  rpc Transfer(MsgTransfer) returns (MsgTransferResponse);
+}
+
+enum UserDisclosureMode {
+  USER_DISCLOSURE_MODE_NONE = 0;
+  USER_DISCLOSURE_MODE_PUBLIC = 1;
+  USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED = 2;
+}
+
+// MsgDeposit: 투명 자산 -> 익명 자산 변환
+message MsgDeposit {
+  option (cosmos.msg.v1.signer) = "creator";
+
+  string creator = 1;        // 입금자
+  string amount = 2;         // 금액 (예: 100uclair)
+  bytes note_commitment = 3; // 머클 트리에 들어갈 해시
+  bytes encrypted_note = 4;  // 복구용 암호화 데이터
+}
+
+// MsgWithdraw: 익명 자산 -> 투명 자산 변환 (Input Note -> Output Note)
+message MsgWithdraw {
+  option (cosmos.msg.v1.signer) = "creator";
+
+  string creator = 1;
+  bytes proof = 2;               // ZK Proof
+  bytes root = 3;                // 참조한 머클 루트
+  bytes nullifier = 4;           // 이중 지불 방지 태그
+  bytes new_note_commitment = 5; // 새로 생성된 Note 해시
+  bytes encrypted_note = 6;      // 수신자용 암호화 데이터
+  string amount = 7;             // 출금 금액 (예: 100uclair)
+  string recipient = 8;          // 출금 주소
+  string chain_id = 9;
+  int64 expires_at_unix = 10;
+}
+
+// MsgTransfer: 내부 전송
+message MsgTransfer {
+  option (cosmos.msg.v1.signer) = "creator";
+
+  string creator = 1;
+
+  // ZK Proof Data
+  bytes proof = 2;
+  bytes root = 3;                // Merkle Root
+  repeated bytes nullifiers = 4; // Spent Note's Nullifier
+
+  // Output Commitments (Recipient, Change)
+  repeated bytes new_commitments = 5;
+
+  // On-chain Encryption (ECDH Encrypted Data)
+  // 수신자가 복호화해서 Note 정보를 알 수 있게 함
+  repeated bytes cipher_texts = 6;
+
+  // Optional user selective disclosure.
+  // 0x00: all-private
+  // 0x01: disclose amount (+ asset id)
+  // 0x02: disclose recipient full shielded address
+  // 0x04: disclose sender full shielded address
+  uint32 user_privacy_policy = 7;
+  bytes user_disclosure_digest = 8;
+  UserDisclosureMode user_disclosure_mode = 9;
+  bytes user_disclosure_target_pubkey = 10;
+  bytes user_disclosure_payload = 11;
+
+  // Mandatory master-auditor disclosure.
+  bytes audit_disclosure_digest = 12;
+  bytes audit_disclosure_target_pubkey = 13;
+  bytes audit_disclosure_payload = 14;
+}
+
+// MsgDepositResponse
+message MsgDepositResponse {}
+
+// MsgWithdrawResponse
+message MsgWithdrawResponse {}
+
+// MsgTransferResponse
+message MsgTransferResponse {}

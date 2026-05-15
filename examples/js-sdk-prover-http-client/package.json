@@ -1,0 +1,12 @@
+{
+  "name": "@clairveil/example-js-sdk-prover-http-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "demo": "node --disable-warning=ExperimentalWarning --experimental-strip-types src/index.ts"
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "schema_version": "v1",
+  "phase": "phase-a-send-capable",
+  "topology": "remote-sidecar-first",
+  "service": {
+    "service_name": "clairveil-proverd",
+    "default_listen_address": "127.0.0.1:8080",
+    "health_path": "/healthz",
+    "readiness_path": "/readyz",
+    "transfer_path": "/v1/prover/transfer",
+    "withdraw_path": "/v1/prover/withdraw",
+    "max_request_bytes": 8388608
+  },
+  "transfer": {
+    "request_version": "v1",
+    "response_version": "v1",
+    "creator": "clair1qyqszqgpqyqszqgpqyqszqgpqyqszqgpq6pe73",
+    "payload_hash": "05095f347afdaff203ba8d481a4aa546c08f9b1ee8fd838798debd8d7261de21",
+    "proof_payload_hash": "05095f347afdaff203ba8d481a4aa546c08f9b1ee8fd838798debd8d7261de21",
+    "msg_creator": "clair1qyqszqgpqyqszqgpqyqszqgpqyqszqgpq6pe73",
+    "user_disclosure_mode": "recipient-encrypted",
+    "user_privacy_policy": "amount-from-to",
+    "user_disclosure": {
+      "plane": "user",
+      "policy": "amount-from-to",
+      "output_index": 0,
+      "commitment_hex": "0c69c8319fab0fe601a8c6677e9a9b540596c7bac9e75fbec07558d84202c06c",
+      "digest_hex": "11e7aef135b9e0f5198ae9036229b800129b0107502c7693321f8ab0505533a8",
+      "verified": true,
+      "disclosed_fields": [
+        "amount",
+        "from_shielded_address",
+        "to_shielded_address"
+      ],
+      "amount": "7",
+      "asset_denom": "uclair",
+      "from_shielded_address": "clairs1gpcgt6y20tmtywltcz7cqsfcn6y26dy6ky97za29ac7perad2chwek4r6nv80ufdkyavxwzc8xda7q2ge5y773hp9xnhf9c0arenutc2vvkkw",
+      "to_shielded_address": "clairs1ywk03azf5gd9q3f2l2j544eyzdmay59djqzc830sd0xsep57hq9vap4aw38tmn5kzq2mp24gpdvxecngufg68s4rt0gdzx4uqs6jdfqluyuty"
+    },
+    "audit_disclosure": {
+      "plane": "audit",
+      "policy": "amount-from-to",
+      "output_index": 0,
+      "commitment_hex": "0c69c8319fab0fe601a8c6677e9a9b540596c7bac9e75fbec07558d84202c06c",
+      "digest_hex": "1d643b84712aa02efef3e06f8cb7990e1affe78059b2bd43014998c0c952d9b4",
+      "verified": true,
+      "disclosed_fields": [
+        "amount",
+        "from_shielded_address",
+        "to_shielded_address"
+      ],
+      "amount": "7",
+      "asset_denom": "uclair",
+      "from_shielded_address": "clairs1gpcgt6y20tmtywltcz7cqsfcn6y26dy6ky97za29ac7perad2chwek4r6nv80ufdkyavxwzc8xda7q2ge5y773hp9xnhf9c0arenutc2vvkkw",
+      "to_shielded_address": "clairs1ywk03azf5gd9q3f2l2j544eyzdmay59djqzc830sd0xsep57hq9vap4aw38tmn5kzq2mp24gpdvxecngufg68s4rt0gdzx4uqs6jdfqluyuty"
+    }
+  },
+  "withdraw": {
+    "validation_now_unix": 4102444800,
+    "request_version": "v1",
+    "response_version": "v1",
+    "payload_hash": "a3faf327376d9d33dd045e53384dcc8466e9c42e2a8698df53e3e3c9699af530",
+    "proof_payload_hash": "a3faf327376d9d33dd045e53384dcc8466e9c42e2a8698df53e3e3c9699af530",
+    "final_payload_hash": "5ee0606c1b9fe7f4d17cdcfbcb29f88966fcbee71bd66e0909e540725bb7f9f9",
+    "amount": "10uclair",
+    "asset_denom": "uclair",
+    "recipient": "clair1qgpqyqszqgpqyqszqgpqyqszqgpqyqsz378u48",
+    "chain_id": "clairveil-local-1",
+    "expires_at_unix": 4102448400
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "schema_version": "v1",
+  "phase": "phase-a-read-only",
+  "source_fixture": "privacy_wallet_golden_vectors.json",
+  "sender": {
+    "transparent_address": "clair1lm4z6g0p7n0jq3m2t0y8m7s8u6x5w4v3c2r9q8",
+    "show_address": {
+      "from_address": "clair1lm4z6g0p7n0jq3m2t0y8m7s8u6x5w4v3c2r9q8",
+      "address": "clairs19x5u4mf4l4zqcpvr7d809fh4tjy5j50p2mwgky0nj38jpqpj7svndu3hqshu5e3s8w6pea5p30xek5p9flxjf7f44xh7cnfrlsd84pc7upgh3",
+      "derived_from": "transparent-keyring-root",
+      "usage": "share this full shielded address when someone needs to send you private funds"
+    },
+    "show_view_key": {
+      "from_address": "clair1lm4z6g0p7n0jq3m2t0y8m7s8u6x5w4v3c2r9q8",
+      "incoming_viewing_key_hex": "05471770d1a4159436537c36f7a6755c15a4f1b8ab7f243a2b5f6b5557733fac",
+      "view_public_key_hex": "36f237042fca66303bb41cf6818bcd9b50254fcd24f935a9afec4d23fc1a7a87",
+      "derived_from": "transparent-keyring-root"
+    },
+    "show_disclosure_pubkey": {
+      "from_address": "clair1lm4z6g0p7n0jq3m2t0y8m7s8u6x5w4v3c2r9q8",
+      "public_key_hex": "59f491e8eee937c486cd81f599b8756ebcfa9b5af99e24b7629bf91c2dab691f",
+      "derived_from": "transparent-keyring-root"
+    }
+  },
+  "recipient": {
+    "transparent_address": "clair1z8v9c0x2l4m6n8p0q2r4s6t8u0w2y4z6a8s0d2",
+    "show_address": {
+      "from_address": "clair1z8v9c0x2l4m6n8p0q2r4s6t8u0w2y4z6a8s0d2",
+      "address": "clairs1uwnerzqjukcmg56pqwe509jmfvsvdnd8j4k657d8c839f5rthu0q6d9yk3vda5wyhmvggjgkj94axzegkchypz0h3nx577vw3th7lpq7mwjed",
+      "derived_from": "transparent-keyring-root",
+      "usage": "share this full shielded address when someone needs to send you private funds"
+    },
+    "show_view_key": {
+      "from_address": "clair1z8v9c0x2l4m6n8p0q2r4s6t8u0w2y4z6a8s0d2",
+      "incoming_viewing_key_hex": "03ff61e546a7ed40512a37c87f99799f12a6aff09dc813591adaa1e23e27a7c0",
+      "view_public_key_hex": "0d34a4b458ded1c4bed8844916916bd30b28b62e4089f78ccd4f798e8aefef84",
+      "derived_from": "transparent-keyring-root"
+    },
+    "show_disclosure_pubkey": {
+      "from_address": "clair1z8v9c0x2l4m6n8p0q2r4s6t8u0w2y4z6a8s0d2",
+      "public_key_hex": "8cb0ef883bce364e0d946867ebd7a7f84ec153eeb28e5973ffe9381ec8d7940a",
+      "derived_from": "transparent-keyring-root"
+    }
+  },
+  "disclosure": {
+    "plane": "user",
+    "delivery": "recipient-encrypted",
+    "policy": "amount-from-to",
+    "amount": "7",
+    "asset_denom": "uclair",
+    "from_shielded_address": "clairs19x5u4mf4l4zqcpvr7d809fh4tjy5j50p2mwgky0nj38jpqpj7svndu3hqshu5e3s8w6pea5p30xek5p9flxjf7f44xh7cnfrlsd84pc7upgh3",
+    "to_shielded_address": "clairs1uwnerzqjukcmg56pqwe509jmfvsvdnd8j4k657d8c839f5rthu0q6d9yk3vda5wyhmvggjgkj94axzegkchypz0h3nx577vw3th7lpq7mwjed",
+    "verified": true,
+    "digest_hex": "04023497a04017a2d06d2d9845df05f26404c5faff6fc0bad97d098233b89715"
+  },
+  "scan": {
+    "deposit_found": [
+      {
+        "tx_hash": "AABBCC",
+        "height": 42,
+        "nullifier": "17de68060ab4e6225193aa9f6d7c563f1846518000b3f335a9f77fb658198628",
+        "amount": "7",
+        "asset_denom": "uclair",
+        "receiver_shielded_address": "clairs19x5u4mf4l4zqcpvr7d809fh4tjy5j50p2mwgky0nj38jpqpj7svndu3hqshu5e3s8w6pea5p30xek5p9flxjf7f44xh7cnfrlsd84pc7upgh3"
+      }
+    ],
+    "transfer_found": [
+      {
+        "tx_hash": "AABBCC",
+        "height": 42,
+        "nullifier": "17de68060ab4e6225193aa9f6d7c563f1846518000b3f335a9f77fb658198628",
+        "amount": "7",
+        "asset_denom": "uclair",
+        "receiver_shielded_address": "clairs19x5u4mf4l4zqcpvr7d809fh4tjy5j50p2mwgky0nj38jpqpj7svndu3hqshu5e3s8w6pea5p30xek5p9flxjf7f44xh7cnfrlsd84pc7upgh3"
+      }
+    ]
+  }
+}
