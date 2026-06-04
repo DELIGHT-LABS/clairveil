@@ -76,6 +76,7 @@ The commitment is stored as an on-chain leaf. Amount, asset, randomness, spend p
 - The circuit does not understand the transparent recipient string itself.
 - Recipient address decoding, denom string handling, and tx signer checks are keeper/SDK/CLI responsibilities outside the circuit.
 - Withdraw does not create a direct change note. It uses an exact-match note, or an exact-match note created by the planner.
+- Withdraw has no output commitment public input. The keeper marks the input nullifier as spent and releases transparent funds, but it does not append a new note leaf.
 
 ## 4. JoinSplitCircuit
 

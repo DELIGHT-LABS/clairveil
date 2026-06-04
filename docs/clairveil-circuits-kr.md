@@ -74,6 +74,7 @@ commitment = MiMC(
 - transparent recipient 문자열 자체를 회로가 직접 이해하지 않습니다.
 - recipient address decoding, denom string handling, tx signer 검사는 회로 밖 keeper/SDK/CLI 책임입니다.
 - withdraw는 direct change note를 만들지 않습니다. exact-match note 또는 planner가 만든 exact-match note를 사용합니다.
+- withdraw에는 output commitment public input이 없습니다. keeper는 input nullifier를 spent로 표시하고 transparent fund를 release하지만, 새 note leaf를 append하지 않습니다.
 
 ## 4. JoinSplitCircuit
 

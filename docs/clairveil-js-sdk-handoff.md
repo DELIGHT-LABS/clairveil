@@ -63,6 +63,8 @@ MsgWithdraw
 
 `MsgTransfer` contains both user disclosure and audit disclosure fields. In the latest model, audit disclosure is not optional. It must be included in every shielded transfer.
 
+`MsgWithdraw` is an exact-match withdraw message and does not contain output note fields. JS/TS clients must not model the legacy `new_note_commitment` or `encrypted_note` withdraw fields, and they must not send dummy output-note values.
+
 ## 4. Query/API Contract
 
 The JS SDK provider should implement these gRPC/HTTP queries first.
@@ -334,6 +336,7 @@ x/privacy/client/sdk/withdraw/build.go
 The JS SDK must clearly show these constraints to users.
 
 - Withdraw does not create a change note.
+- `MsgWithdraw` does not contain output note fields. Do not create a dummy output commitment or encrypted note for withdraw.
 - If there is no exact-match note, the user must first create the desired note size with a shielded self-transfer.
 - Relayed withdraw payload must validate `chain_id`, `recipient`, `expires_at_unix`, and `payload_hash`.
 - The relayer does not need to know the user's shielded secret.

@@ -252,7 +252,7 @@ clairveild tx privacy withdraw 11uclair \
   --output json
 ```
 
-withdraw는 exact-match note를 사용합니다. 요청 amount와 같은 spendable note가 없으면 기본적으로 planner가 self-transfer로 exact-match note를 만들려고 시도합니다.
+withdraw는 exact-match note를 사용합니다. output note나 change note를 만들지 않습니다. 요청 amount와 같은 spendable note가 없으면 기본적으로 planner가 self-transfer로 exact-match note를 만들려고 시도합니다.
 
 주요 flag:
 

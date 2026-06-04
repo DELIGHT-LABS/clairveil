@@ -77,6 +77,8 @@ GET /clairveil/privacy/v1/circuit_config
 
 If the downstream repo has its own proto generation pipeline, include `proto/clairveil/privacy/v1/*.proto` and update generated output in the same commit so stale generated files do not remain.
 
+`MsgWithdraw` does not contain output note fields. Downstream clients upgrading from older generated bindings must drop legacy `new_note_commitment` and `encrypted_note` withdraw values instead of sending dummy output-note bytes.
+
 ## 4. App Wiring Checklist
 
 Add these imports to the downstream app.

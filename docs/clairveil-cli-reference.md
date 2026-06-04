@@ -254,7 +254,7 @@ clairveild tx privacy withdraw 11uclair \
   --output json
 ```
 
-Withdraw currently uses exact-match notes. If no spendable note exactly matches the requested amount, the planner tries to create one with a shielded self-transfer by default.
+Withdraw currently uses exact-match notes. It does not create an output note or change note. If no spendable note exactly matches the requested amount, the planner tries to create one with a shielded self-transfer by default.
 
 Main flags:
 

@@ -61,6 +61,8 @@ MsgWithdraw
 
 `MsgTransfer`에는 user disclosure와 audit disclosure 필드가 모두 있습니다. 최신 모델에서 audit disclosure는 선택 기능이 아니라 모든 shielded transfer에 포함되어야 하는 필수 기능입니다.
 
+`MsgWithdraw`는 exact-match withdraw 메시지이며 output note 필드를 갖지 않습니다. JS/TS client는 legacy withdraw 필드인 `new_note_commitment`, `encrypted_note`를 모델링하지 말아야 하며, dummy output note 값을 보내지 않아야 합니다.
+
 ## 4. Query/API 계약
 
 JS SDK provider가 우선 구현해야 하는 gRPC/HTTP query는 아래입니다.
@@ -332,6 +334,7 @@ x/privacy/client/sdk/withdraw/build.go
 JS SDK가 사용자에게 분명히 보여줘야 하는 제약은 아래입니다.
 
 - withdraw는 change note를 만들지 않습니다.
+- `MsgWithdraw`에는 output note 필드가 없습니다. withdraw를 위해 dummy output commitment나 encrypted note를 만들지 마십시오.
 - exact-match note가 없으면 먼저 shielded self-transfer로 원하는 크기의 note를 만들어야 합니다.
 - relayed withdraw payload는 `chain_id`, `recipient`, `expires_at_unix`, `payload_hash`를 검증해야 합니다.
 - relayer는 사용자의 shielded secret을 알 필요가 없습니다.

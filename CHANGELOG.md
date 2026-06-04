@@ -18,3 +18,4 @@ This project follows the release policy documented in:
 - Added `make install` and `make init` helpers for installing Clairveil binaries and preparing a default local `~/.clairveil` chain home.
 - Clarified quick-start and testing docs to avoid redundant Make target sequences and document the manual walkthrough versus `make init` shortcut.
 - Added a dependency-free Node audit disclosure key example under `examples/audit-disclosure-keys`.
+- Removed legacy output-note fields from `MsgWithdraw`; withdraw remains exact-match and clients should regenerate proto bindings without dummy output-note values.

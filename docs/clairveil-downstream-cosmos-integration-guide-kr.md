@@ -75,6 +75,8 @@ GET /clairveil/privacy/v1/circuit_config
 
 Downstream repo가 별도 proto generation pipeline을 갖고 있다면 `proto/clairveil/privacy/v1/*.proto`를 포함시키고, stale generated file이 남지 않도록 한 commit에서 generation 결과까지 같이 갱신해야 합니다.
 
+`MsgWithdraw`에는 output note 필드가 없습니다. 이전 generated binding에서 업그레이드하는 downstream client는 legacy withdraw 값인 `new_note_commitment`, `encrypted_note`를 dummy output note bytes로 보내지 말고 제거해야 합니다.
+
 ## 4. App wiring 체크리스트
 
 아래 import를 downstream app에 추가합니다.

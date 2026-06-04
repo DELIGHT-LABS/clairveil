@@ -181,7 +181,6 @@ func (k msgServer) Withdraw(goCtx context.Context, msg *types.MsgWithdraw) (*typ
 
 	eventAttrs := []sdk.Attribute{
 		sdk.NewAttribute(types.AttributeKeyNullifier, fmt.Sprintf("%x", canonicalNullifier)),
-		sdk.NewAttribute(types.AttributeKeyCommitment, fmt.Sprintf("%x", msg.NewNoteCommitment)),
 		sdk.NewAttribute(types.AttributeKeyRelayer, msg.Creator),
 		sdk.NewAttribute("recipient", msg.Recipient),
 	}

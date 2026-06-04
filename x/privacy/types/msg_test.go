@@ -43,7 +43,7 @@ func validDisclosurePubKeyBytes(t *testing.T) []byte {
 
 func TestValidateBasicInvalidCreator(t *testing.T) {
 	deposit := NewMsgDeposit("invalid", "1uclair", []byte{1}, []byte{2})
-	withdraw := NewMsgWithdraw("invalid", []byte{1}, []byte{2}, []byte{3}, []byte{4}, []byte{5}, "1uclair", "clair1test", testChainID, testExpiresAtUnix)
+	withdraw := NewMsgWithdraw("invalid", []byte{1}, []byte{2}, []byte{3}, "1uclair", "clair1test", testChainID, testExpiresAtUnix)
 	transfer := NewMsgTransfer("invalid", []byte{1}, []byte{2}, [][]byte{{1}, {2}}, [][]byte{{3}, {4}}, [][]byte{{5}, {6}})
 
 	require.Error(t, deposit.ValidateBasic())
@@ -73,8 +73,6 @@ func TestMsgWithdrawValidateBasicReplayGuardFields(t *testing.T) {
 		[]byte{1},
 		validFieldBytes(),
 		validFieldBytes(),
-		validFieldBytes(),
-		[]byte{5},
 		"1uclair",
 		recipient,
 		testChainID,
@@ -87,8 +85,6 @@ func TestMsgWithdrawValidateBasicReplayGuardFields(t *testing.T) {
 		[]byte{1},
 		validFieldBytes(),
 		validFieldBytes(),
-		validFieldBytes(),
-		[]byte{5},
 		"1uclair",
 		recipient,
 		"",
@@ -101,8 +97,6 @@ func TestMsgWithdrawValidateBasicReplayGuardFields(t *testing.T) {
 		[]byte{1},
 		validFieldBytes(),
 		validFieldBytes(),
-		validFieldBytes(),
-		[]byte{5},
 		"1uclair",
 		recipient,
 		testChainID,

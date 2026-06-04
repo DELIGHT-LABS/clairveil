@@ -171,14 +171,11 @@ func (p PreparedWithdrawPayload) ToMsg(creator string) (*privacytypes.MsgWithdra
 		return nil, fmt.Errorf("invalid recipient: %w", err)
 	}
 
-	dummy := make([]byte, privacyfield.ByteSize)
 	return privacytypes.NewMsgWithdraw(
 		creator,
 		proofBz,
 		rootBz,
 		nullifierBz,
-		dummy,
-		dummy,
 		p.Amount,
 		p.Recipient,
 		p.ChainID,

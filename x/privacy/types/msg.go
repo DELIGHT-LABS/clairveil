@@ -204,18 +204,16 @@ func (msg *MsgDeposit) ValidateBasic() error {
 	return nil
 }
 
-func NewMsgWithdraw(creator string, proof, root, nullifier, newCommitment, encNote []byte, amount, recipient, chainID string, expiresAtUnix int64) *MsgWithdraw {
+func NewMsgWithdraw(creator string, proof, root, nullifier []byte, amount, recipient, chainID string, expiresAtUnix int64) *MsgWithdraw {
 	return &MsgWithdraw{
-		Creator:           creator,
-		Proof:             proof,
-		Root:              root,
-		Nullifier:         nullifier,
-		NewNoteCommitment: newCommitment,
-		EncryptedNote:     encNote,
-		Amount:            amount,
-		Recipient:         recipient,
-		ChainId:           chainID,
-		ExpiresAtUnix:     expiresAtUnix,
+		Creator:       creator,
+		Proof:         proof,
+		Root:          root,
+		Nullifier:     nullifier,
+		Amount:        amount,
+		Recipient:     recipient,
+		ChainId:       chainID,
+		ExpiresAtUnix: expiresAtUnix,
 	}
 }
 
@@ -237,10 +235,6 @@ func (msg *MsgWithdraw) ValidateBasic() error {
 	}
 
 	if err := validateFieldElementBytesStrict("nullifier", msg.Nullifier); err != nil {
-		return err
-	}
-
-	if err := validateFieldElementBytesStrict("new note commitment", msg.NewNoteCommitment); err != nil {
 		return err
 	}
 

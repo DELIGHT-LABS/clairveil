@@ -35,18 +35,18 @@ message MsgDeposit {
   bytes encrypted_note = 4;  // 복구용 암호화 데이터
 }
 
-// MsgWithdraw: 익명 자산 -> 투명 자산 변환 (Input Note -> Output Note)
+// MsgWithdraw: 익명 자산 -> 투명 자산 변환
 message MsgWithdraw {
   option (cosmos.msg.v1.signer) = "creator";
 
   string creator = 1;
-  bytes proof = 2;               // ZK Proof
-  bytes root = 3;                // 참조한 머클 루트
-  bytes nullifier = 4;           // 이중 지불 방지 태그
-  bytes new_note_commitment = 5; // 새로 생성된 Note 해시
-  bytes encrypted_note = 6;      // 수신자용 암호화 데이터
-  string amount = 7;             // 출금 금액 (예: 100uclair)
-  string recipient = 8;          // 출금 주소
+  bytes proof = 2;      // ZK Proof
+  bytes root = 3;       // 참조한 머클 루트
+  bytes nullifier = 4;  // 이중 지불 방지 태그
+  reserved 5, 6;        // legacy output-note fields; withdraw creates no note
+  reserved "new_note_commitment", "encrypted_note";
+  string amount = 7;    // 출금 금액 (예: 100uclair)
+  string recipient = 8; // 출금 주소
   string chain_id = 9;
   int64 expires_at_unix = 10;
 }
