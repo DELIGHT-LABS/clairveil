@@ -202,6 +202,10 @@ Command purposes, major flags, and output shapes are documented in the [CLI refe
 | [Operations guide](docs/clairveil-operations-guide.md) | Node, prover, artifact, Merkle, and audit operations baseline |
 | [Maintainer instructions](docs/clairveil-maintainer-instructions.md) | Maintenance rules for docs, circuits, proto, fixtures, and releases |
 | [Downstream integration](docs/clairveil-downstream-cosmos-integration-guide.md) | How to attach `x/privacy` to a Cosmos SDK app |
+| [Client product brief](docs/clairveil-client-product-brief.md) | Product capability scope for wallet/app clients |
+| [Client UX flows](docs/clairveil-client-ux-flows.md) | Setup, scan, transfer, withdraw, disclosure, and recovery flows |
+| [Client risk decisions](docs/clairveil-client-risk-decisions.md) | Storage, prover, audit, disclosure, and telemetry decisions |
+| [Client API checklist](docs/clairveil-client-api-checklist.md) | Chain/prover APIs, fixtures, release gates, and compatibility checks |
 | [JS SDK handoff](docs/clairveil-js-sdk-handoff.md) | Contract for JS/TS SDK and web wallet implementation |
 | [Prover profile](docs/clairveil-proverd-remote-production-profile.md) | Remote operation profile for `clairveil-proverd` |
 | [Merkle restore SOP](docs/clairveil-merkle-restore-sop.md) | Tree verification after snapshot, restore, or migration |

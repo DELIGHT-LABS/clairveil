@@ -46,7 +46,7 @@ Required work:
 1. Modify proto.
 2. Run `make proto`.
 3. Update keeper/client/schema/tests.
-4. Update downstream integration and JS SDK handoff docs.
+4. Update downstream integration, client handoff, and JS SDK handoff docs when affected.
 5. Record breaking or migration impact in release notes.
 
 Validation:
@@ -141,6 +141,7 @@ make release-pack-verify
 Include these documents in the handoff pack:
 
 - downstream integration documents
+- client product/UX/risk/API handoff documents
 - JS/web wallet implementation contract
 - prover operations contract
 - circuit/proof/artifact explanation

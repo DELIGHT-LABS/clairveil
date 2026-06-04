@@ -200,6 +200,10 @@ clairveild tx privacy withdraw 7uclair --from alice --keyring-backend test
 | [Operations guide](docs/clairveil-operations-guide-kr.md)                          | node/prover/artifact/Merkle/audit 운영 기준                       |
 | [Maintainer instructions](docs/clairveil-maintainer-instructions-kr.md)            | 문서, 회로, proto, fixture, release 변경 시 유지보수 규칙         |
 | [Downstream integration](docs/clairveil-downstream-cosmos-integration-guide-kr.md) | Cosmos SDK app에 `x/privacy`를 붙이는 방법                        |
+| [Client product brief](docs/clairveil-client-product-brief-kr.md)                  | wallet/app client의 제품 기능 범위                                |
+| [Client UX flows](docs/clairveil-client-ux-flows-kr.md)                            | setup, scan, transfer, withdraw, disclosure, recovery 흐름         |
+| [Client risk decisions](docs/clairveil-client-risk-decisions-kr.md)                | storage, prover, audit, disclosure, telemetry 결정                 |
+| [Client API checklist](docs/clairveil-client-api-checklist-kr.md)                  | chain/prover API, fixture, release gate, compatibility check       |
 | [JS SDK handoff](docs/clairveil-js-sdk-handoff-kr.md)                              | JS/TS SDK와 웹월렛 구현 계약                                      |
 | [Prover profile](docs/clairveil-proverd-remote-production-profile-kr.md)           | `clairveil-proverd` remote 운영 profile                           |
 | [Merkle restore SOP](docs/clairveil-merkle-restore-sop-kr.md)                      | snapshot/restore/migration 후 tree 검증 절차                      |

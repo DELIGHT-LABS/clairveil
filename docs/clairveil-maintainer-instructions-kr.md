@@ -44,7 +44,7 @@ make privacy-e2e-smoke
 1. proto를 수정합니다.
 2. `make proto`를 실행합니다.
 3. keeper/client/schema/test를 갱신합니다.
-4. `docs/clairveil-downstream-cosmos-integration-guide-kr.md`와 `docs/clairveil-js-sdk-handoff-kr.md`를 갱신합니다.
+4. 영향이 있으면 downstream integration, client handoff, JS SDK handoff 문서를 갱신합니다.
 5. release note에 breaking 또는 migration impact를 기록합니다.
 
 검증:
@@ -139,6 +139,7 @@ make release-pack-verify
 아래 문서는 handoff pack에 포함해야 합니다.
 
 - downstream integration에 필요한 문서
+- client product/UX/risk/API handoff 문서
 - JS/web wallet 구현 계약
 - prover 운영 계약
 - circuit/proof/artifact 설명

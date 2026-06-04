@@ -21,7 +21,9 @@ fail() {
 	exit 1
 }
 
-if [[ ! -f "$archive_path" || ! -f "$checksum_path" ]]; then
+if [[ -z "${RELEASE_PACK_ARCHIVE:-}" ]]; then
+	"$repo_root/scripts/release-pack.sh" >/dev/null
+elif [[ ! -f "$archive_path" || ! -f "$checksum_path" ]]; then
 	"$repo_root/scripts/release-pack.sh" >/dev/null
 fi
 
@@ -76,6 +78,14 @@ required_files=(
 	"docs/clairveil-maintainer-instructions-kr.md"
 	"docs/clairveil-downstream-cosmos-integration-guide.md"
 	"docs/clairveil-downstream-cosmos-integration-guide-kr.md"
+	"docs/clairveil-client-product-brief.md"
+	"docs/clairveil-client-product-brief-kr.md"
+	"docs/clairveil-client-ux-flows.md"
+	"docs/clairveil-client-ux-flows-kr.md"
+	"docs/clairveil-client-risk-decisions.md"
+	"docs/clairveil-client-risk-decisions-kr.md"
+	"docs/clairveil-client-api-checklist.md"
+	"docs/clairveil-client-api-checklist-kr.md"
 	"docs/clairveil-js-sdk-handoff.md"
 	"docs/clairveil-js-sdk-handoff-kr.md"
 	"docs/clairveil-proverd-remote-production-profile.md"
@@ -101,6 +111,9 @@ required_files=(
 	"x/privacy/client/sdk/conformance/testdata/privacy_wallet_golden_vectors.json"
 	"examples/README.md"
 	"examples/README-kr.md"
+	"examples/audit-disclosure-keys/README.md"
+	"examples/audit-disclosure-keys/README-kr.md"
+	"examples/audit-disclosure-keys/package.json"
 	"examples/js-sdk-fixture-validator/README.md"
 	"examples/js-sdk-fixture-validator/README-kr.md"
 	"examples/js-sdk-fixture-validator/package.json"

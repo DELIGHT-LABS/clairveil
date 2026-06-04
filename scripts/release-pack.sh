@@ -59,6 +59,14 @@ copy_path "docs/clairveil-maintainer-instructions.md"
 copy_path "docs/clairveil-maintainer-instructions-kr.md"
 copy_path "docs/clairveil-downstream-cosmos-integration-guide.md"
 copy_path "docs/clairveil-downstream-cosmos-integration-guide-kr.md"
+copy_path "docs/clairveil-client-product-brief.md"
+copy_path "docs/clairveil-client-product-brief-kr.md"
+copy_path "docs/clairveil-client-ux-flows.md"
+copy_path "docs/clairveil-client-ux-flows-kr.md"
+copy_path "docs/clairveil-client-risk-decisions.md"
+copy_path "docs/clairveil-client-risk-decisions-kr.md"
+copy_path "docs/clairveil-client-api-checklist.md"
+copy_path "docs/clairveil-client-api-checklist-kr.md"
 copy_path "docs/clairveil-js-sdk-handoff.md"
 copy_path "docs/clairveil-js-sdk-handoff-kr.md"
 copy_path "docs/clairveil-proverd-remote-production-profile.md"
@@ -81,6 +89,7 @@ copy_path "docs/schemas"
 copy_path "x/privacy/client/sdk/conformance/testdata"
 copy_path "examples/README.md"
 copy_path "examples/README-kr.md"
+copy_path "examples/audit-disclosure-keys"
 copy_path "examples/js-sdk-fixture-validator"
 copy_path "examples/js-sdk-prover-http-client"
 copy_path "build/clairveil-proverd"
@@ -100,12 +109,13 @@ Contents:
 - root license, notice, changelog, contribution, and security files
 - English and Korean public documentation pairs
 - proto/clairveil/privacy/v1
+- client and JS/web wallet handoff documents
 - JS/web wallet JSON schemas
 - wallet/prover conformance fixtures
-- JS SDK fixture validator and prover HTTP client examples
+- JS audit disclosure key, fixture validator, and prover HTTP client examples
 - prover Dockerfile and compose sample
 - release pack generation and verification scripts
-- release, circuit, CLI, testing, operations, downstream integration, JS SDK, prover, Merkle restore, threat model, security, and reference app documents
+- release, circuit, CLI, testing, operations, downstream integration, client, JS SDK, prover, Merkle restore, threat model, security, and reference app documents
 - release versioning policy and release note templates
 
 Validation before handoff:

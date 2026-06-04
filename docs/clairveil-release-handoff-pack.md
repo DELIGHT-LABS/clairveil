@@ -23,6 +23,10 @@ Korean version: [clairveil-release-handoff-pack-kr.md](clairveil-release-handoff
 | Operations guide | `docs/clairveil-operations-guide.md` | Operators, security reviewers | node/prover/artifact/Merkle/audit operations baseline |
 | Maintainer instructions | `docs/clairveil-maintainer-instructions.md` | Maintainers | documentation and validation rules by change type |
 | Integration guide | `docs/clairveil-downstream-cosmos-integration-guide.md` | Core chain team | app wiring and responsibility checklist |
+| Client product brief | `docs/clairveil-client-product-brief.md` | Wallet/app product and client teams | product capability scope and client profiles |
+| Client UX flows | `docs/clairveil-client-ux-flows.md` | Wallet/app product and client teams | setup, scan, transfer, withdraw, disclosure, and recovery flows |
+| Client risk decisions | `docs/clairveil-client-risk-decisions.md` | Product, security, operations | storage, prover, audit, disclosure, and telemetry decisions |
+| Client API checklist | `docs/clairveil-client-api-checklist.md` | Client SDK and app teams | chain/prover API, fixture, release gate, and compatibility checks |
 | JS SDK handoff | `docs/clairveil-js-sdk-handoff.md` | JS SDK team, web wallet team | SDK implementation checklist |
 | Release policy | `docs/clairveil-release-versioning-policy.md`, `docs/clairveil-release-note-template.md` | Maintainers, release recipients | tag, changelog, release note, compatibility impact rules |
 | Prover profile | `docs/clairveil-proverd-remote-production-profile.md` | Prover operations | remote prover production controls |
@@ -67,9 +71,9 @@ make docker-proverd-build
 
 This command validates compose config, Dockerfile build, and image inspect. It requires a Docker daemon, so it is not included in the default `release-check`.
 
-`make release-pack` creates `dist/clairveil-handoff-<version>.tar.gz` and its `.sha256` file. This pack is a downstream handoff contract bundle, not a full source distribution. It includes license/notice, major handoff/security/operations docs, circuit/CLI/testing/maintainer docs, Merkle restore SOP, proto, JSON Schema, conformance fixtures, JS examples, prover Docker sample, release pack scripts, `RELEASE-MANIFEST.txt`, and `SHA256SUMS.txt`.
+`make release-pack` creates `dist/clairveil-handoff-<version>.tar.gz` and its `.sha256` file. This pack is a downstream handoff contract bundle, not a full source distribution. It includes license/notice, major handoff/security/operations docs, circuit/CLI/testing/maintainer docs, Merkle restore SOP, proto, JSON Schema, conformance fixtures, client/JS examples, prover Docker sample, release pack scripts, `RELEASE-MANIFEST.txt`, and `SHA256SUMS.txt`.
 
-`make release-pack-verify` verifies the handoff pack's external `.sha256`, internal `SHA256SUMS.txt`, required handoff files, and that the default archive manifest commit matches current `HEAD`. This step checks that the tarball is not just created, but suitable to hand off as a release contract bundle.
+`make release-pack-verify` verifies the handoff pack's external `.sha256`, internal `SHA256SUMS.txt`, required handoff files, and that the default archive manifest commit matches current `HEAD`. When `RELEASE_PACK_ARCHIVE` is not set, it regenerates the default pack before validation so stale local archives do not mask missing files. This step checks that the tarball is not just created, but suitable to hand off as a release contract bundle.
 
 ## 3. Pre-Release Maintainer Checklist
 
