@@ -32,7 +32,7 @@ make release-pack-verify
 | `make install` | run `make build`, then copy Clairveil binaries to `GOBIN` or `GOPATH/bin` |
 | `make init` | run `make install`, then initialize the default local chain home for `clairveild start` |
 | `make proto` | regenerate privacy protobuf/gateway Go files |
-| `make examples` | run JS fixture validator and prover HTTP client examples |
+| `make examples` | run JS audit key, fixture validator, and prover HTTP client examples |
 | `make ci` | `test`, `build`, and `examples` |
 | `make vulncheck` | run govulncheck policy gate |
 | `make localnet-smoke` | briefly verify that the reference daemon can start from genesis |
@@ -77,12 +77,14 @@ make examples
 Internally runs:
 
 ```bash
+npm --prefix examples/audit-disclosure-keys test
 npm --prefix examples/js-sdk-fixture-validator run validate
 npm --prefix examples/js-sdk-prover-http-client run demo
 ```
 
 Validation scope:
 
+- audit disclosure key derivation vectors and genesis public key encoding
 - fixture address prefixes
 - prepared transfer payload hash
 - prepared withdraw payload hash

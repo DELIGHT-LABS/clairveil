@@ -85,13 +85,13 @@ Likely files:
 
 - `x/privacy/client/sdk/conformance/testdata`
 - `docs/schemas/clairveil-js-wallet-contract.schema.json`
-- `examples/js-sdk-*`
+- `examples/*`
 
 Required work:
 
 1. Update fixture generation/validation tests.
 2. Update JSON Schema.
-3. Check JS fixture validator and prover HTTP client examples.
+3. Check relevant JS examples, including fixture validator and prover HTTP client examples.
 4. Update JS SDK handoff docs.
 
 Validation:

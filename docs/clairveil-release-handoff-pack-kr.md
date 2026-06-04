@@ -50,7 +50,7 @@ make privacy-e2e-smoke
 
 | 단계 | 의미 |
 | --- | --- |
-| `make ci` | Go test, Go binary build, JS/TS fixture/prover examples를 검증합니다. |
+| `make ci` | Go test, Go binary build, JS/TS examples를 검증합니다. |
 | `make vulncheck` | govulncheck policy gate를 실행합니다. 새 actionable vulnerability가 있으면 실패합니다. |
 | `make localnet-smoke` | reference daemon이 genesis부터 init/start 가능한지 확인합니다. |
 | `make privacy-e2e-smoke` | deposit, transfer, public disclosure, recipient disclosure, audit disclosure, direct withdraw, relayed withdraw를 로컬 노드에서 검증합니다. |

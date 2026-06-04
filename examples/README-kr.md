@@ -4,6 +4,7 @@
 
 ## 예제 목록
 
+- `audit-disclosure-keys`: audit disclosure keypair를 파생하고 genesis에 넣을 수 있는 public key encoding을 출력하는 dependency-free Node 예제입니다.
 - `js-sdk-fixture-validator`: Clairveil conformance fixture를 읽고 address prefix, payload hash, prover contract 기대값을 검증하는 dependency-free Node/TypeScript 예제입니다.
 - `js-sdk-prover-http-client`: fixture-backed mock prover에 timeout-bound bearer-auth client로 prover HTTP contract를 호출하는 dependency-free Node/TypeScript 예제입니다.
 

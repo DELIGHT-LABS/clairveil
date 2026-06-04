@@ -83,13 +83,13 @@ make privacy-e2e-smoke
 
 - `x/privacy/client/sdk/conformance/testdata`
 - `docs/schemas/clairveil-js-wallet-contract.schema.json`
-- `examples/js-sdk-*`
+- `examples/*`
 
 해야 할 일:
 
 1. fixture 생성/검증 test를 갱신합니다.
 2. JSON Schema를 갱신합니다.
-3. `examples/js-sdk-fixture-validator`와 `examples/js-sdk-prover-http-client`를 확인합니다.
+3. fixture validator와 prover HTTP client를 포함해 관련 JS 예제를 확인합니다.
 4. `docs/clairveil-js-sdk-handoff-kr.md`를 갱신합니다.
 
 검증:

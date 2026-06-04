@@ -472,6 +472,20 @@ make privacy-e2e-smoke
 
 ## 16. Reference Consumer Examples
 
+For audit disclosure key generation in JS, see:
+
+```text
+examples/audit-disclosure-keys
+```
+
+Run it from the repository root:
+
+```bash
+npm --prefix examples/audit-disclosure-keys test
+```
+
+This example derives deterministic, random, and privacy-root-signer-based audit disclosure keypairs, then checks the compressed public key encoding used in genesis.
+
 Clairveil includes a small example showing how JS/TS SDK developers can start consuming fixtures.
 
 ```text

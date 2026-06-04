@@ -30,7 +30,7 @@ make release-pack-verify
 | `make install` | `make build` 후 Clairveil binary를 `GOBIN` 또는 `GOPATH/bin`으로 복사 |
 | `make init` | `make install` 후 기본 local chain home을 초기화해 `clairveild start` 준비 |
 | `make proto` | privacy protobuf/gateway Go file 재생성 |
-| `make examples` | JS fixture validator와 prover HTTP client 예제 실행 |
+| `make examples` | JS audit key, fixture validator, prover HTTP client 예제 실행 |
 | `make ci` | `test`, `build`, `examples` 묶음 |
 | `make vulncheck` | govulncheck policy gate 실행 |
 | `make localnet-smoke` | reference daemon이 genesis부터 start 가능한지 짧게 검증 |
@@ -75,12 +75,14 @@ make examples
 내부적으로 아래가 실행됩니다.
 
 ```bash
+npm --prefix examples/audit-disclosure-keys test
 npm --prefix examples/js-sdk-fixture-validator run validate
 npm --prefix examples/js-sdk-prover-http-client run demo
 ```
 
 검증 범위:
 
+- audit disclosure key derivation vector와 genesis public key encoding
 - fixture address prefix
 - prepared transfer payload hash
 - prepared withdraw payload hash

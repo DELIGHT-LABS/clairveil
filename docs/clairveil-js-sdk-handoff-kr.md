@@ -470,6 +470,20 @@ make privacy-e2e-smoke
 
 ## 16. Reference Consumer 예제
 
+JS에서 audit disclosure key를 만들 때는 아래 예제를 봅니다.
+
+```text
+examples/audit-disclosure-keys
+```
+
+실행은 repo root에서 아래처럼 합니다.
+
+```bash
+npm --prefix examples/audit-disclosure-keys test
+```
+
+이 예제는 deterministic, random, privacy-root-signer 기반 audit disclosure keypair를 만들고 genesis에서 사용하는 compressed public key encoding을 검증합니다.
+
 Clairveil repo에는 JS/TS SDK 개발자가 fixture consumer를 어떻게 시작하면 되는지 보여주는 작은 예제가 있습니다.
 
 ```text

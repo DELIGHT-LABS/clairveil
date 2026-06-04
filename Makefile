@@ -33,6 +33,7 @@ privacy-e2e-smoke:
 
 .PHONY: examples
 examples:
+	npm --prefix examples/audit-disclosure-keys test
 	npm --prefix examples/js-sdk-fixture-validator run validate
 	npm --prefix examples/js-sdk-prover-http-client run demo
 

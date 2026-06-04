@@ -52,7 +52,7 @@ Each step means:
 
 | Step | Meaning |
 | --- | --- |
-| `make ci` | Verifies Go tests, Go binary builds, and JS/TS fixture/prover examples. |
+| `make ci` | Verifies Go tests, Go binary builds, and JS/TS examples. |
 | `make vulncheck` | Runs the govulncheck policy gate. New actionable vulnerabilities fail the check. |
 | `make localnet-smoke` | Confirms the reference daemon can init and start from genesis. |
 | `make privacy-e2e-smoke` | Verifies deposit, transfer, public disclosure, recipient disclosure, audit disclosure, direct withdraw, and relayed withdraw on a local node. |

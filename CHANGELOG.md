@@ -17,3 +17,4 @@ This project follows the release policy documented in:
 - Expanded Korean public documentation for circuits, CLI, testing, operations, maintainer instructions, release notes, community templates, and the project README.
 - Added `make install` and `make init` helpers for installing Clairveil binaries and preparing a default local `~/.clairveil` chain home.
 - Clarified quick-start and testing docs to avoid redundant Make target sequences and document the manual walkthrough versus `make init` shortcut.
+- Added a dependency-free Node audit disclosure key example under `examples/audit-disclosure-keys`.

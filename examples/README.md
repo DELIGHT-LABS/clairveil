@@ -6,6 +6,7 @@ Korean version: [README-kr.md](README-kr.md)
 
 ## Available Examples
 
+- `audit-disclosure-keys`: a dependency-free Node example that derives audit disclosure keypairs and prints the genesis-compatible public key encoding.
 - `js-sdk-fixture-validator`: a dependency-free Node/TypeScript example that reads Clairveil conformance fixtures and validates address prefixes, payload hashes, and prover-contract expectations.
 - `js-sdk-prover-http-client`: a dependency-free Node/TypeScript example that calls the prover HTTP contract through a timeout-bound bearer-auth client against a fixture-backed mock prover.
 

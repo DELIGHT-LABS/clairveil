@@ -1,0 +1,13 @@
+{
+  "name": "@clairveil/example-audit-disclosure-keys",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "demo": "node audit-disclosure-keys.mjs",
+    "test": "node --test audit-disclosure-keys.test.mjs"
+  }
+}
