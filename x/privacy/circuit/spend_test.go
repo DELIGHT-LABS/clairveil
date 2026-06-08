@@ -81,11 +81,39 @@ func TestSpendCircuitRejectsAmountOutsideRange(t *testing.T) {
 	assert.ProverFailed(&SpendCircuit{}, assignment, test.WithCurves(ecc.BN254))
 }
 
-func buildValidSpendAssignment(t *testing.T, recipient *big.Int) *SpendCircuit {
+func TestSpendCircuitRejectsMalformedSpendPubKey(t *testing.T) {
+	assignment := buildValidSpendAssignment(t, big.NewInt(424242))
+	x, y := invalidEdwardsPointForTest(t)
+	assignment.ReceiverSpendPubKey.A.X = x
+	assignment.ReceiverSpendPubKey.A.Y = y
+
+	assert := test.NewAssert(t)
+	assert.ProverFailed(&SpendCircuit{}, assignment, test.WithCurves(ecc.BN254))
+}
+
+func TestSpendCircuitRejectsMalformedSignaturePoint(t *testing.T) {
+	assignment := buildValidSpendAssignment(t, big.NewInt(424242))
+	x, y := invalidEdwardsPointForTest(t)
+	assignment.Signature.R.X = x
+	assignment.Signature.R.Y = y
+
+	assert := test.NewAssert(t)
+	assert.ProverFailed(&SpendCircuit{}, assignment, test.WithCurves(ecc.BN254))
+}
+
+func TestSpendCircuitRejectsSignatureScalarAboveOrder(t *testing.T) {
+	assignment := buildValidSpendAssignment(t, big.NewInt(424242))
+	assignment.Signature.S = signatureScalarAboveOrderForTest()
+
+	assert := test.NewAssert(t)
+	assert.ProverFailed(&SpendCircuit{}, assignment, test.WithCurves(ecc.BN254))
+}
+
+func buildValidSpendAssignment(t testing.TB, recipient *big.Int) *SpendCircuit {
 	return buildValidSpendAssignmentWithAmount(t, recipient, big.NewInt(7))
 }
 
-func buildValidSpendAssignmentWithAmount(t *testing.T, recipient, amount *big.Int) *SpendCircuit {
+func buildValidSpendAssignmentWithAmount(t testing.TB, recipient, amount *big.Int) *SpendCircuit {
 	t.Helper()
 
 	assetID := big.NewInt(11)
@@ -167,7 +195,7 @@ func pointBigInts(point crypto_tedwards.PointAffine) (*big.Int, *big.Int) {
 	return x, y
 }
 
-func signSpendMessage(t *testing.T, msg, scalar *big.Int, pubKey crypto_tedwards.PointAffine) eddsa.Signature {
+func signSpendMessage(t testing.TB, msg, scalar *big.Int, pubKey crypto_tedwards.PointAffine) eddsa.Signature {
 	t.Helper()
 
 	curve := crypto_tedwards.GetEdwardsCurve()
@@ -202,6 +230,29 @@ func signSpendMessage(t *testing.T, msg, scalar *big.Int, pubKey crypto_tedwards
 	sig.S = s
 
 	return sig
+}
+
+func invalidEdwardsPointForTest(t testing.TB) (*big.Int, *big.Int) {
+	t.Helper()
+
+	for x := int64(0); x < 16; x++ {
+		for y := int64(0); y < 16; y++ {
+			var point crypto_tedwards.PointAffine
+			point.X.SetBigInt(big.NewInt(x))
+			point.Y.SetBigInt(big.NewInt(y))
+			if !point.IsOnCurve() {
+				return big.NewInt(x), big.NewInt(y)
+			}
+		}
+	}
+
+	t.Fatal("failed to find a small off-curve Edwards point")
+	return nil, nil
+}
+
+func signatureScalarAboveOrderForTest() *big.Int {
+	curve := crypto_tedwards.GetEdwardsCurve()
+	return new(big.Int).Add(&curve.Order, big.NewInt(1))
 }
 
 func writePaddedTest(h interface{ Write([]byte) (int, error) }, v *big.Int) {
