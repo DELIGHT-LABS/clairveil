@@ -163,6 +163,7 @@ if err := app.ModuleManager.RegisterServices(app.configurator); err != nil {
 privacy module은 transparent 자산을 shielded pool module account로 이동시키고, withdraw 때 다시 recipient에게 보냅니다. 따라서 downstream `BankKeeper`는 최소 아래 메서드가 동작해야 합니다.
 
 ```go
+GetBalance(ctx context.Context, addr sdk.AccAddress, denom string) sdk.Coin
 SendCoinsFromAccountToModule(ctx context.Context, sender sdk.AccAddress, recipientModule string, amt sdk.Coins) error
 SendCoinsFromModuleToAccount(ctx context.Context, senderModule string, recipient sdk.AccAddress, amt sdk.Coins) error
 ```
@@ -324,7 +325,7 @@ query privacy check-nullifier
 - audit master private key를 개발용 keyring/test mnemonic 기준으로 운영하면 disclosure custody boundary가 무너집니다.
 - web wallet이 note cache나 prepared payload를 plaintext browser storage와 telemetry에 남기면 shielded UX의 실질 privacy가 크게 약해집니다.
 - module account 권한 또는 blocked address 정책이 잘못되면 deposit/withdraw bank transfer가 실패합니다.
-- direct bank send 또는 manual top-up이 approved reserve accounting을 우회하면 `reserve/{denom}`이 `invariant_holds=false`를 반환합니다.
+- direct bank send 또는 manual top-up이 기록된 deposit/withdraw accounting과 맞지 않으면 `reserve/{denom}`이 `invariant_holds=false`를 반환합니다.
 - downstream denom을 바꾸면 tutorial, smoke script, JS SDK fixture, conformance vector의 denom도 같이 바꿔야 합니다.
 
 ## 11. 완료 기준

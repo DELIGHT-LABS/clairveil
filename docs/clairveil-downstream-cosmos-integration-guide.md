@@ -165,6 +165,7 @@ if err := app.ModuleManager.RegisterServices(app.configurator); err != nil {
 The privacy module moves transparent assets into the shielded pool module account, then sends them back to a recipient during withdraw. Therefore the downstream `BankKeeper` must support at least these methods.
 
 ```go
+GetBalance(ctx context.Context, addr sdk.AccAddress, denom string) sdk.Coin
 SendCoinsFromAccountToModule(ctx context.Context, sender sdk.AccAddress, recipientModule string, amt sdk.Coins) error
 SendCoinsFromModuleToAccount(ctx context.Context, senderModule string, recipient sdk.AccAddress, amt sdk.Coins) error
 ```
@@ -326,7 +327,7 @@ Do not mix everything with target-chain-specific features from the start. Bring 
 - If the audit master private key is operated as a development keyring/test mnemonic, the disclosure custody boundary collapses.
 - If a web wallet leaves note cache or prepared payload in plaintext browser storage and telemetry, the practical privacy of the shielded UX becomes much weaker.
 - If module account permissions or blocked-address policy are wrong, deposit/withdraw bank transfers fail.
-- If direct bank sends or manual top-ups bypass approved reserve accounting, `reserve/{denom}` returns `invariant_holds=false`.
+- If direct bank sends or manual top-ups do not match recorded deposit/withdraw accounting, `reserve/{denom}` returns `invariant_holds=false`.
 - If the downstream denom changes, tutorial, smoke script, JS SDK fixtures, and conformance vectors must change together.
 
 ## 11. Completion Criteria

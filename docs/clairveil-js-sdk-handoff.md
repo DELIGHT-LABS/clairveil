@@ -203,6 +203,7 @@ The JS SDK must:
 - create a note from the recipient wallet's shielded identity;
 - compute the note commitment;
 - create the encrypted note;
+- generate a `DepositCircuit` proof locally, through WASM, or through a trusted prover adapter;
 - build `MsgDeposit` and sign/broadcast it as a normal Cosmos tx;
 - confirm the commitment and encrypted note event in the tx result.
 
