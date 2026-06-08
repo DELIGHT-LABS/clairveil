@@ -277,6 +277,11 @@ func ValidatePreparedTransferPayloadMetadata(payload PreparedTransferPayload) er
 	if len(payload.CipherTextHexes) != circuit.NumOutputs {
 		return fmt.Errorf("transfer payload requires exactly %d ciphertexts; got %d", circuit.NumOutputs, len(payload.CipherTextHexes))
 	}
+	for i, input := range payload.Inputs {
+		if err := validateMerklePathHelperBits(input.MerklePathHelper); err != nil {
+			return fmt.Errorf("invalid merkle path helper for input %d: %w", i, err)
+		}
+	}
 
 	rootBytes, err := decodePayloadField(payload.RootHex, "root")
 	if err != nil {
@@ -686,6 +691,9 @@ func parseDecimalField(value string, fieldName string) (*big.Int, error) {
 	parsed, ok := new(big.Int).SetString(strings.TrimSpace(value), 10)
 	if !ok {
 		return nil, fmt.Errorf("invalid %s %q", fieldName, value)
+	}
+	if err := privacytypes.ValidateShieldedAmount(fieldName, parsed); err != nil {
+		return nil, err
 	}
 	return parsed, nil
 }

@@ -74,9 +74,20 @@ func PrepareJoinSplitTransfer(
 	if input.TransferAmount == nil {
 		return nil, fmt.Errorf("a transfer amount is required to prepare a joinsplit transfer")
 	}
+	if err := privacytypes.ValidateShieldedAmount("transfer amount", input.TransferAmount); err != nil {
+		return nil, err
+	}
+	for i, foundNote := range input.Inputs {
+		if err := privacytypes.ValidateShieldedAmount(fmt.Sprintf("input note %d amount", i), foundNote.Note.Amount); err != nil {
+			return nil, err
+		}
+	}
 
 	totalInput := new(big.Int).Add(input.Inputs[0].Note.Amount, input.Inputs[1].Note.Amount)
 	changeAmount := new(big.Int).Sub(totalInput, input.TransferAmount)
+	if changeAmount.Sign() < 0 {
+		return nil, fmt.Errorf("transfer amount exceeds selected input total")
+	}
 
 	recipientSpendX, recipientSpendY := pointBigInts(*input.RecipientSpendPubKey)
 	recipientViewX, recipientViewY := pointBigInts(*input.RecipientViewPubKey)
@@ -147,6 +158,9 @@ func PrepareJoinSplitTransfer(
 		}
 		inputMerklePaths[i] = append([]string(nil), merklePath.Path...)
 		inputPathHelpers[i] = append([]uint32(nil), merklePath.PathHelper...)
+		if err := validateMerklePathHelperBits(merklePath.PathHelper); err != nil {
+			return nil, fmt.Errorf("invalid merkle path helper for input note %d: %w", i, err)
+		}
 
 		pathNodes, pathHelpers := decodeMerkleProof(merklePath.Path, merklePath.PathHelper)
 		for depth := 0; depth < circuit.MerkleDepth; depth++ {
@@ -241,6 +255,15 @@ func decodeMerkleProof(path []string, pathHelper []uint32) ([circuit.MerkleDepth
 	}
 
 	return nodes, helpers
+}
+
+func validateMerklePathHelperBits(pathHelper []uint32) error {
+	for i, helper := range pathHelper {
+		if helper != 0 && helper != 1 {
+			return fmt.Errorf("path helper %d must be 0 or 1; got %d", i, helper)
+		}
+	}
+	return nil
 }
 
 func pointBigInts(point crypto_tedwards.PointAffine) (*big.Int, *big.Int) {

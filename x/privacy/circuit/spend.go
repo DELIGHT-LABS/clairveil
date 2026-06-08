@@ -6,6 +6,7 @@ import (
 	"github.com/consensys/gnark/std/hash/mimc"
 	"github.com/consensys/gnark/std/signature/eddsa"
 
+	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	ecc_twistededwards "github.com/consensys/gnark-crypto/ecc/twistededwards"
 )
 
@@ -32,6 +33,11 @@ func (c *SpendCircuit) Define(api frontend.API) error {
 	h, _ := mimc.NewMiMC(api)
 	curve, _ := twistededwards.NewEdCurve(api, ecc_twistededwards.BN254)
 
+	assertAmountRange(api, c.Amount)
+	curve.AssertIsOnCurve(c.ReceiverSpendPubKey.A)
+	curve.AssertIsOnCurve(c.ReceiverViewPubKey.A)
+	curve.AssertIsOnCurve(c.Signature.R)
+
 	h.Write(
 		c.ReceiverSpendPubKey.A.X,
 		c.ReceiverSpendPubKey.A.Y,
@@ -57,23 +63,17 @@ func (c *SpendCircuit) Define(api frontend.API) error {
 	msg := h.Sum()
 
 	h.Reset()
-	h.Write(c.Signature.R.X, c.Signature.R.Y)
-	h.Write(c.ReceiverSpendPubKey.A.X, c.ReceiverSpendPubKey.A.Y)
-	h.Write(msg)
-	hRAM := h.Sum()
-
-	base := twistededwards.Point{X: curve.Params().Base[0], Y: curve.Params().Base[1]}
-	lhs := curve.ScalarMul(base, c.Signature.S)
-
-	hA := curve.ScalarMul(c.ReceiverSpendPubKey.A, hRAM)
-	rhs := curve.Add(c.Signature.R, hA)
-
-	api.AssertIsEqual(lhs.X, rhs.X)
-	api.AssertIsEqual(lhs.Y, rhs.Y)
+	if err := eddsa.Verify(curve, c.Signature, msg, c.ReceiverSpendPubKey, &h); err != nil {
+		return err
+	}
 
 	h.Reset()
 	h.Write(c.Randomness, c.ReceiverSpendPubKey.A.X, c.ReceiverSpendPubKey.A.Y)
 	api.AssertIsEqual(h.Sum(), c.Nullifier)
 
 	return nil
+}
+
+func assertAmountRange(api frontend.API, amount frontend.Variable) {
+	api.ToBinary(amount, privacytypes.ShieldedAmountBitLength)
 }

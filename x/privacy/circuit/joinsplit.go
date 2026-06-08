@@ -43,12 +43,16 @@ type JoinSplitCircuit struct {
 func (c *JoinSplitCircuit) Define(api frontend.API) error {
 	h, _ := mimc.NewMiMC(api)
 	curve, _ := twistededwards.NewEdCurve(api, ecc_twistededwards.BN254)
-	base := twistededwards.Point{X: curve.Params().Base[0], Y: curve.Params().Base[1]}
 
 	var totalInputAmount frontend.Variable = 0
 	var totalOutputAmount frontend.Variable = 0
 
 	for i := 0; i < NumInputs; i++ {
+		assertAmountRange(api, c.InputAmounts[i])
+		curve.AssertIsOnCurve(c.InputSpendPubKeys[i].A)
+		curve.AssertIsOnCurve(c.InputViewPubKeys[i].A)
+		curve.AssertIsOnCurve(c.InputSignatures[i].R)
+
 		h.Reset()
 		h.Write(
 			c.InputSpendPubKeys[i].A.X,
@@ -77,17 +81,9 @@ func (c *JoinSplitCircuit) Define(api frontend.API) error {
 		msg := h.Sum()
 
 		h.Reset()
-		h.Write(c.InputSignatures[i].R.X, c.InputSignatures[i].R.Y)
-		h.Write(c.InputSpendPubKeys[i].A.X, c.InputSpendPubKeys[i].A.Y)
-		h.Write(msg)
-		hRAM := h.Sum()
-
-		lhs := curve.ScalarMul(base, c.InputSignatures[i].S)
-		hA := curve.ScalarMul(c.InputSpendPubKeys[i].A, hRAM)
-		rhs := curve.Add(c.InputSignatures[i].R, hA)
-
-		api.AssertIsEqual(lhs.X, rhs.X)
-		api.AssertIsEqual(lhs.Y, rhs.Y)
+		if err := eddsa.Verify(curve, c.InputSignatures[i], msg, c.InputSpendPubKeys[i], &h); err != nil {
+			return err
+		}
 
 		h.Reset()
 		h.Write(c.InputRandomness[i], c.InputSpendPubKeys[i].A.X, c.InputSpendPubKeys[i].A.Y)
@@ -104,6 +100,10 @@ func (c *JoinSplitCircuit) Define(api frontend.API) error {
 	api.AssertIsEqual(c.InputViewPubKeys[0].A.Y, c.InputViewPubKeys[1].A.Y)
 
 	for i := 0; i < NumOutputs; i++ {
+		assertAmountRange(api, c.OutputAmounts[i])
+		curve.AssertIsOnCurve(c.OutputSpendPubKeys[i].A)
+		curve.AssertIsOnCurve(c.OutputViewPubKeys[i].A)
+
 		h.Reset()
 		h.Write(
 			c.OutputSpendPubKeys[i].A.X,

@@ -71,6 +71,9 @@ func (k msgServer) Deposit(goCtx context.Context, msg *types.MsgDeposit) (*types
 	if err != nil {
 		return nil, err
 	}
+	if err := types.ValidateShieldedAmount("deposit amount", coin.Amount.BigInt()); err != nil {
+		return nil, errorsmod.Wrap(sdkerrors.ErrInvalidRequest, err.Error())
+	}
 
 	canonicalCommitment, err := validateFieldElementBytesStrict(msg.NoteCommitment)
 	if err != nil {
@@ -148,6 +151,12 @@ func (k msgServer) Withdraw(goCtx context.Context, msg *types.MsgWithdraw) (*typ
 	coin, err := sdk.ParseCoinNormalized(msg.Amount)
 	if err != nil {
 		return nil, errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "withdraw amount string is invalid")
+	}
+	if !coin.Amount.IsPositive() {
+		return nil, errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "withdraw amount must be positive")
+	}
+	if err := types.ValidateShieldedAmount("withdraw amount", coin.Amount.BigInt()); err != nil {
+		return nil, errorsmod.Wrap(sdkerrors.ErrInvalidRequest, err.Error())
 	}
 	amountVal := new(big.Int).Set(coin.Amount.BigInt())
 	assignment.Amount = amountVal

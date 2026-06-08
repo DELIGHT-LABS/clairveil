@@ -196,6 +196,13 @@ func (msg *MsgDeposit) ValidateBasic() error {
 	if err := validateCreatorAddress(msg.Creator); err != nil {
 		return err
 	}
+	coin, err := sdk.ParseCoinNormalized(msg.Amount)
+	if err != nil {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "deposit amount string is invalid")
+	}
+	if err := ValidateShieldedAmount("deposit amount", coin.Amount.BigInt()); err != nil {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, err.Error())
+	}
 
 	if err := validateFieldElementBytesStrict("note commitment", msg.NoteCommitment); err != nil {
 		return err
@@ -228,6 +235,16 @@ func (msg *MsgWithdraw) Type() string {
 func (msg *MsgWithdraw) ValidateBasic() error {
 	if err := validateCreatorAddress(msg.Creator); err != nil {
 		return err
+	}
+	coin, err := sdk.ParseCoinNormalized(msg.Amount)
+	if err != nil {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "withdraw amount string is invalid")
+	}
+	if !coin.Amount.IsPositive() {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "withdraw amount must be positive")
+	}
+	if err := ValidateShieldedAmount("withdraw amount", coin.Amount.BigInt()); err != nil {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, err.Error())
 	}
 
 	if err := validateFieldElementBytesStrict("root", msg.Root); err != nil {
