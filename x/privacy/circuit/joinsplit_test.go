@@ -57,7 +57,45 @@ func TestJoinSplitCircuitRejectsOutputAmountOutsideRange(t *testing.T) {
 	assert.ProverFailed(&JoinSplitCircuit{}, assignment, test.WithCurves(ecc.BN254))
 }
 
-func buildValidJoinSplitAssignment(t *testing.T) *JoinSplitCircuit {
+func TestJoinSplitCircuitRejectsMalformedInputSpendPubKey(t *testing.T) {
+	assignment := buildValidJoinSplitAssignment(t)
+	x, y := invalidEdwardsPointForTest(t)
+	assignment.InputSpendPubKeys[0].A.X = x
+	assignment.InputSpendPubKeys[0].A.Y = y
+
+	assert := test.NewAssert(t)
+	assert.ProverFailed(&JoinSplitCircuit{}, assignment, test.WithCurves(ecc.BN254))
+}
+
+func TestJoinSplitCircuitRejectsMalformedInputSignaturePoint(t *testing.T) {
+	assignment := buildValidJoinSplitAssignment(t)
+	x, y := invalidEdwardsPointForTest(t)
+	assignment.InputSignatures[0].R.X = x
+	assignment.InputSignatures[0].R.Y = y
+
+	assert := test.NewAssert(t)
+	assert.ProverFailed(&JoinSplitCircuit{}, assignment, test.WithCurves(ecc.BN254))
+}
+
+func TestJoinSplitCircuitRejectsInputSignatureScalarAboveOrder(t *testing.T) {
+	assignment := buildValidJoinSplitAssignment(t)
+	assignment.InputSignatures[0].S = signatureScalarAboveOrderForTest()
+
+	assert := test.NewAssert(t)
+	assert.ProverFailed(&JoinSplitCircuit{}, assignment, test.WithCurves(ecc.BN254))
+}
+
+func TestJoinSplitCircuitRejectsMalformedOutputViewPubKey(t *testing.T) {
+	assignment := buildValidJoinSplitAssignment(t)
+	x, y := invalidEdwardsPointForTest(t)
+	assignment.OutputViewPubKeys[0].A.X = x
+	assignment.OutputViewPubKeys[0].A.Y = y
+
+	assert := test.NewAssert(t)
+	assert.ProverFailed(&JoinSplitCircuit{}, assignment, test.WithCurves(ecc.BN254))
+}
+
+func buildValidJoinSplitAssignment(t testing.TB) *JoinSplitCircuit {
 	return buildJoinSplitAssignmentWithAmounts(
 		t,
 		[NumInputs]*big.Int{big.NewInt(5), big.NewInt(8)},
@@ -66,7 +104,7 @@ func buildValidJoinSplitAssignment(t *testing.T) *JoinSplitCircuit {
 }
 
 func buildJoinSplitAssignmentWithAmounts(
-	t *testing.T,
+	t testing.TB,
 	inputAmounts [NumInputs]*big.Int,
 	outputAmounts [NumOutputs]*big.Int,
 ) *JoinSplitCircuit {
@@ -208,7 +246,7 @@ func assignPubKey(target *eddsa.PublicKey, source crypto_tedwards.PointAffine) {
 	target.A.Y = ay
 }
 
-func mustCanonicalFieldBytesFromBigIntForTest(t *testing.T, value *big.Int) []byte {
+func mustCanonicalFieldBytesFromBigIntForTest(t testing.TB, value *big.Int) []byte {
 	t.Helper()
 
 	bz, err := canonicalFieldBytesFromBigIntForTest(value)
