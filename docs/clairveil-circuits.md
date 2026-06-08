@@ -222,7 +222,7 @@ export CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict
 
 ## 7. Reserve Accounting Query
 
-Circuit soundness is paired with keeper-level reserve accounting. The keeper records denom-level `total_deposited`, `total_withdrawn`, and approved adjustment buckets, then compares the expected reserve to the actual privacy module-account balance.
+Circuit soundness is paired with keeper-level reserve accounting. The keeper records denom-level `total_deposited` and `total_withdrawn`, then compares the expected reserve (`total_deposited - total_withdrawn`) to the actual privacy module-account balance.
 
 ```text
 GET /clairveil/privacy/v1/reserve/{denom}

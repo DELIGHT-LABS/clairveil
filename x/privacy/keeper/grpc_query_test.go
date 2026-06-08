@@ -281,7 +281,6 @@ func TestReserveQueryReturnsAccountingSnapshot(t *testing.T) {
 	require.Equal(t, "10", resp.ModuleBalance)
 	require.Equal(t, "10", resp.TotalDeposited)
 	require.Equal(t, "0", resp.TotalWithdrawn)
-	require.Equal(t, "0", resp.ApprovedAdjustment)
 	require.Equal(t, "10", resp.ExpectedModuleBalance)
 	require.True(t, resp.InvariantHolds)
 }
