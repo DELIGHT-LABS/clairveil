@@ -460,6 +460,9 @@ func validateBuildWithdrawPayloadInput(input BuildWithdrawPayloadInput) error {
 	if !input.TargetCoin.IsValid() || !input.TargetCoin.Amount.IsPositive() {
 		return fmt.Errorf("target coin must be a valid positive coin")
 	}
+	if err := privacytypes.ValidateShieldedAmount("target coin amount", input.TargetCoin.Amount.BigInt()); err != nil {
+		return err
+	}
 	if input.Recipient.Empty() {
 		return fmt.Errorf("recipient address is required to build a withdraw payload")
 	}
@@ -483,6 +486,9 @@ func parseWithdrawAmount(value string) (*big.Int, error) {
 	parsed, ok := new(big.Int).SetString(strings.TrimSpace(value), 10)
 	if !ok || parsed.Sign() <= 0 {
 		return nil, fmt.Errorf("withdraw prover payload amount must be a positive decimal string")
+	}
+	if err := privacytypes.ValidateShieldedAmount("withdraw prover payload amount", parsed); err != nil {
+		return nil, err
 	}
 	return parsed, nil
 }

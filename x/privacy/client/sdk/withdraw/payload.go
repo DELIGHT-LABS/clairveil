@@ -115,6 +115,16 @@ func ValidatePreparedWithdrawPayloadMetadata(payload PreparedWithdrawPayload, no
 	if now.Unix() > payload.ExpiresAtUnix {
 		return fmt.Errorf("withdraw payload expired; generate a fresh payload with prepare-withdraw")
 	}
+	coin, err := sdk.ParseCoinNormalized(payload.Amount)
+	if err != nil {
+		return fmt.Errorf("withdraw payload amount is invalid: %w", err)
+	}
+	if !coin.Amount.IsPositive() {
+		return fmt.Errorf("withdraw payload amount must be positive")
+	}
+	if err := privacytypes.ValidateShieldedAmount("withdraw payload amount", coin.Amount.BigInt()); err != nil {
+		return err
+	}
 
 	return nil
 }

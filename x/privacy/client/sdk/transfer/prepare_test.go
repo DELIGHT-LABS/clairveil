@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"testing"
 
+	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	"github.com/stretchr/testify/require"
 
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
@@ -174,6 +175,110 @@ func TestPrepareJoinSplitTransferRejectsMerkleRootMismatch(t *testing.T) {
 	require.NotNil(t, senderViewScalar)
 	require.NotNil(t, recipientSpendScalar)
 	require.NotNil(t, recipientViewScalar)
+}
+
+func TestPrepareJoinSplitTransferRejectsOverTransfer(t *testing.T) {
+	fixture := newPrepareJoinSplitFixture(t, []uint32{0, 1})
+
+	_, err := PrepareJoinSplitTransfer(
+		context.Background(),
+		fixture.merkleProvider,
+		&stubNoteHashSigner{signature: testSignatureBytes(t)},
+		PrepareJoinSplitInput{
+			Inputs:               fixture.inputs,
+			RecipientSpendPubKey: fixture.recipientSpendPubKey,
+			RecipientViewPubKey:  fixture.recipientViewPubKey,
+			TransferAmount:       big.NewInt(13),
+			SenderSpendPubKey:    fixture.senderSpendPubKey,
+			SenderViewPubKey:     fixture.senderViewPubKey,
+		},
+	)
+	require.ErrorContains(t, err, "transfer amount exceeds selected input total")
+}
+
+func TestPrepareJoinSplitTransferRejectsInvalidPathHelper(t *testing.T) {
+	fixture := newPrepareJoinSplitFixture(t, []uint32{0, 2})
+
+	_, err := PrepareJoinSplitTransfer(
+		context.Background(),
+		fixture.merkleProvider,
+		&stubNoteHashSigner{signature: testSignatureBytes(t)},
+		PrepareJoinSplitInput{
+			Inputs:               fixture.inputs,
+			RecipientSpendPubKey: fixture.recipientSpendPubKey,
+			RecipientViewPubKey:  fixture.recipientViewPubKey,
+			TransferAmount:       big.NewInt(7),
+			SenderSpendPubKey:    fixture.senderSpendPubKey,
+			SenderViewPubKey:     fixture.senderViewPubKey,
+		},
+	)
+	require.ErrorContains(t, err, "path helper 1 must be 0 or 1")
+}
+
+type prepareJoinSplitFixture struct {
+	inputs               [2]privacyscan.FoundNote
+	merkleProvider       *stubMerklePathProvider
+	senderSpendPubKey    *crypto_tedwards.PointAffine
+	senderViewPubKey     *crypto_tedwards.PointAffine
+	recipientSpendPubKey *crypto_tedwards.PointAffine
+	recipientViewPubKey  *crypto_tedwards.PointAffine
+}
+
+func newPrepareJoinSplitFixture(t *testing.T, pathHelper []uint32) prepareJoinSplitFixture {
+	t.Helper()
+
+	_, senderSpendPubKey := testScalarAndPubKey(61)
+	_, senderViewPubKey := testScalarAndPubKey(67)
+	_, recipientSpendPubKey := testScalarAndPubKey(71)
+	_, recipientViewPubKey := testScalarAndPubKey(73)
+
+	inputs := [2]privacyscan.FoundNote{
+		{
+			Note: privacytypes.Note{
+				ReceiverSpendPubKeyX: pointCoordinate(senderSpendPubKey, true),
+				ReceiverSpendPubKeyY: pointCoordinate(senderSpendPubKey, false),
+				ReceiverViewPubKeyX:  pointCoordinate(senderViewPubKey, true),
+				ReceiverViewPubKeyY:  pointCoordinate(senderViewPubKey, false),
+				Amount:               big.NewInt(7),
+				AssetID:              privacycrypto.HashString("uclair"),
+				Randomness:           big.NewInt(701),
+			},
+		},
+		{
+			Note: privacytypes.Note{
+				ReceiverSpendPubKeyX: pointCoordinate(senderSpendPubKey, true),
+				ReceiverSpendPubKeyY: pointCoordinate(senderSpendPubKey, false),
+				ReceiverViewPubKeyX:  pointCoordinate(senderViewPubKey, true),
+				ReceiverViewPubKeyY:  pointCoordinate(senderViewPubKey, false),
+				Amount:               big.NewInt(5),
+				AssetID:              privacycrypto.HashString("uclair"),
+				Randomness:           big.NewInt(702),
+			},
+		},
+	}
+
+	rootBytes, err := privacyfield.CanonicalBytesFromBigInt(big.NewInt(909))
+	require.NoError(t, err)
+
+	merkleProvider := &stubMerklePathProvider{paths: map[string]*MerklePathResult{}}
+	for _, input := range inputs {
+		commitmentHex, err := privacyfield.CanonicalHexFromBigInt(input.Note.ComputeCommitment())
+		require.NoError(t, err)
+		merkleProvider.paths[commitmentHex] = &MerklePathResult{
+			Root:       rootBytes,
+			Path:       []string{"01", "02"},
+			PathHelper: append([]uint32(nil), pathHelper...),
+		}
+	}
+
+	return prepareJoinSplitFixture{
+		inputs:               inputs,
+		merkleProvider:       merkleProvider,
+		senderSpendPubKey:    senderSpendPubKey,
+		senderViewPubKey:     senderViewPubKey,
+		recipientSpendPubKey: recipientSpendPubKey,
+		recipientViewPubKey:  recipientViewPubKey,
+	}
 }
 
 type stubMerklePathProvider struct {

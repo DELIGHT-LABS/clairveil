@@ -11,6 +11,7 @@ import (
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
 	"github.com/consensys/gnark/std/signature/eddsa"
+	"github.com/consensys/gnark/test"
 	"github.com/stretchr/testify/require"
 
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
@@ -44,13 +45,35 @@ func TestJoinSplitCircuitValidProof(t *testing.T) {
 	require.Error(t, groth16.Verify(proof, vk, tamperedPublicWitness))
 }
 
+func TestJoinSplitCircuitRejectsOutputAmountOutsideRange(t *testing.T) {
+	maxAmount := privacytypes.MaxShieldedAmount()
+	assignment := buildJoinSplitAssignmentWithAmounts(
+		t,
+		[NumInputs]*big.Int{maxAmount, big.NewInt(1)},
+		[NumOutputs]*big.Int{new(big.Int).Add(maxAmount, big.NewInt(1)), big.NewInt(0)},
+	)
+
+	assert := test.NewAssert(t)
+	assert.ProverFailed(&JoinSplitCircuit{}, assignment, test.WithCurves(ecc.BN254))
+}
+
 func buildValidJoinSplitAssignment(t *testing.T) *JoinSplitCircuit {
+	return buildJoinSplitAssignmentWithAmounts(
+		t,
+		[NumInputs]*big.Int{big.NewInt(5), big.NewInt(8)},
+		[NumOutputs]*big.Int{big.NewInt(6), big.NewInt(7)},
+	)
+}
+
+func buildJoinSplitAssignmentWithAmounts(
+	t *testing.T,
+	inputAmounts [NumInputs]*big.Int,
+	outputAmounts [NumOutputs]*big.Int,
+) *JoinSplitCircuit {
 	t.Helper()
 
 	assetID := big.NewInt(21)
-	inputAmounts := [NumInputs]*big.Int{big.NewInt(5), big.NewInt(8)}
 	inputRandomness := [NumInputs]*big.Int{big.NewInt(31), big.NewInt(37)}
-	outputAmounts := [NumOutputs]*big.Int{big.NewInt(6), big.NewInt(7)}
 	outputRandomness := [NumOutputs]*big.Int{big.NewInt(41), big.NewInt(43)}
 
 	inputSpendScalar := big.NewInt(17)

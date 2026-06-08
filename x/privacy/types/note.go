@@ -29,6 +29,10 @@ func NewNote(
 	amount *big.Int,
 	assetDenom, memo string,
 ) (*Note, error) {
+	if err := ValidateShieldedAmount("note amount", amount); err != nil {
+		return nil, err
+	}
+
 	max := new(big.Int).Set(fr.Modulus())
 	randomness, err := rand.Int(rand.Reader, max)
 	if err != nil {

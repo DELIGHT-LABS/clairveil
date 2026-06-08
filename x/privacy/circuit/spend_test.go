@@ -12,9 +12,11 @@ import (
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
 	"github.com/consensys/gnark/std/signature/eddsa"
+	"github.com/consensys/gnark/test"
 	"github.com/stretchr/testify/require"
 
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
+	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
 func TestSpendCircuitBindsRecipient(t *testing.T) {
@@ -71,10 +73,21 @@ func TestSpendCircuitBindsAssetID(t *testing.T) {
 	require.Error(t, groth16.Verify(proof, vk, tamperedPublicWitness))
 }
 
+func TestSpendCircuitRejectsAmountOutsideRange(t *testing.T) {
+	tooLarge := new(big.Int).Add(privacytypes.MaxShieldedAmount(), big.NewInt(1))
+	assignment := buildValidSpendAssignmentWithAmount(t, big.NewInt(424242), tooLarge)
+
+	assert := test.NewAssert(t)
+	assert.ProverFailed(&SpendCircuit{}, assignment, test.WithCurves(ecc.BN254))
+}
+
 func buildValidSpendAssignment(t *testing.T, recipient *big.Int) *SpendCircuit {
+	return buildValidSpendAssignmentWithAmount(t, recipient, big.NewInt(7))
+}
+
+func buildValidSpendAssignmentWithAmount(t *testing.T, recipient, amount *big.Int) *SpendCircuit {
 	t.Helper()
 
-	amount := big.NewInt(7)
 	assetID := big.NewInt(11)
 	randomness := big.NewInt(13)
 	spendScalar := big.NewInt(17)
