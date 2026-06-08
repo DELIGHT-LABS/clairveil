@@ -5,9 +5,21 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"io"
+	"math/big"
+	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/consensys/gnark-crypto/ecc"
+	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
+	"github.com/consensys/gnark/backend/groth16"
+	"github.com/consensys/gnark/backend/witness"
+	"github.com/consensys/gnark/constraint"
+	"github.com/consensys/gnark/frontend"
+	"github.com/consensys/gnark/frontend/cs/r1cs"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 	"github.com/cosmos/cosmos-sdk/testutil"
@@ -15,7 +27,10 @@ import (
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DELIGHT-LABS/clairveil/x/privacy/circuit"
+	privacydeposit "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/deposit"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
+	privacyzk "github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
 )
 
 const msgServerTestChainID = "clairveil-local-1"
@@ -27,6 +42,13 @@ type mockPrivacyBankKeeper struct {
 	errFromAccountToModule   error
 	errFromModuleToAccount   error
 }
+
+var (
+	depositArtifactOnce sync.Once
+	depositArtifactErr  error
+	depositTestR1CS     constraint.ConstraintSystem
+	depositTestPK       groth16.ProvingKey
+)
 
 func (m *mockPrivacyBankKeeper) SendCoinsFromAccountToModule(_ context.Context, _ sdk.AccAddress, _ string, _ sdk.Coins) error {
 	m.fromAccountToModuleCalls++
@@ -60,11 +82,158 @@ func testAddress(b byte) string {
 	return sdk.AccAddress(bytes.Repeat([]byte{b}, 20)).String()
 }
 
+func ensureDepositTestArtifacts(t *testing.T) {
+	t.Helper()
+
+	depositArtifactOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "clairveil-keeper-zk-*")
+		if err != nil {
+			depositArtifactErr = err
+			return
+		}
+		if err := os.Setenv(privacyzk.ZKArtifactDirEnv, dir); err != nil {
+			depositArtifactErr = err
+			return
+		}
+
+		depositCS, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit.DepositCircuit{})
+		if err != nil {
+			depositArtifactErr = err
+			return
+		}
+		depositPK, depositVK, err := groth16.Setup(depositCS)
+		if err != nil {
+			depositArtifactErr = err
+			return
+		}
+		spendCS, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit.SpendCircuit{})
+		if err != nil {
+			depositArtifactErr = err
+			return
+		}
+		spendPK, spendVK, err := groth16.Setup(spendCS)
+		if err != nil {
+			depositArtifactErr = err
+			return
+		}
+		joinSplitCS, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit.JoinSplitCircuit{})
+		if err != nil {
+			depositArtifactErr = err
+			return
+		}
+		joinSplitPK, joinSplitVK, err := groth16.Setup(joinSplitCS)
+		if err != nil {
+			depositArtifactErr = err
+			return
+		}
+
+		depositTestR1CS = depositCS
+		depositTestPK = depositPK
+		depositArtifactErr = writeKeeperTestArtifacts(dir, []keeperTestArtifact{
+			{privacyzk.DepositR1CSFile, depositCS},
+			{privacyzk.DepositPKFile, depositPK},
+			{privacyzk.DepositVKFile, depositVK},
+			{privacyzk.SpendR1CSFile, spendCS},
+			{privacyzk.SpendPKFile, spendPK},
+			{privacyzk.SpendVKFile, spendVK},
+			{privacyzk.JoinSplitR1CSFile, joinSplitCS},
+			{privacyzk.JoinSplitPKFile, joinSplitPK},
+			{privacyzk.JoinSplitVKFile, joinSplitVK},
+		})
+	})
+	require.NoError(t, depositArtifactErr)
+}
+
+type keeperTestArtifact struct {
+	filename string
+	object   interface {
+		WriteTo(io.Writer) (int64, error)
+	}
+}
+
+func writeKeeperTestArtifacts(dir string, artifacts []keeperTestArtifact) error {
+	for _, artifact := range artifacts {
+		file, err := os.Create(filepath.Join(dir, artifact.filename))
+		if err != nil {
+			return err
+		}
+		if _, err := artifact.object.WriteTo(file); err != nil {
+			file.Close()
+			return err
+		}
+		if err := file.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type keeperDepositArtifactProvider struct{}
+
+func (keeperDepositArtifactProvider) DepositR1CS() (constraint.ConstraintSystem, error) {
+	return depositTestR1CS, nil
+}
+
+func (keeperDepositArtifactProvider) DepositProvingKey() (groth16.ProvingKey, error) {
+	return depositTestPK, nil
+}
+
+type keeperDepositProofRunner struct{}
+
+func (keeperDepositProofRunner) ProveDeposit(r1cs constraint.ConstraintSystem, provingKey groth16.ProvingKey, depositWitness witness.Witness) (groth16.Proof, error) {
+	return groth16.Prove(r1cs, provingKey, depositWitness)
+}
+
+func testDepositMsg(t *testing.T, creator, amountStr string, amount *big.Int, denom string, encryptedNote []byte) *privacytypes.MsgDeposit {
+	t.Helper()
+	ensureDepositTestArtifacts(t)
+
+	spendPubKey := testKeeperScalarMulBase(big.NewInt(17))
+	viewPubKey := testKeeperScalarMulBase(big.NewInt(19))
+	spendX, spendY := testKeeperPointBigInts(spendPubKey)
+	viewX, viewY := testKeeperPointBigInts(viewPubKey)
+	note, err := privacytypes.NewNote(spendX, spendY, viewX, viewY, amount, denom, "test")
+	require.NoError(t, err)
+
+	proof, err := privacydeposit.BuildDepositProof(*note, keeperDepositArtifactProvider{}, keeperDepositProofRunner{})
+	require.NoError(t, err)
+
+	commitmentBytes := fixedFieldBytesFromBigInt(t, note.ComputeCommitment())
+	return privacytypes.NewMsgDeposit(creator, amountStr, commitmentBytes, encryptedNote, proof)
+}
+
+func testKeeperScalarMulBase(scalar *big.Int) crypto_tedwards.PointAffine {
+	curve := crypto_tedwards.GetEdwardsCurve()
+	var base crypto_tedwards.PointAffine
+	base.X.Set(&curve.Base.X)
+	base.Y.Set(&curve.Base.Y)
+	var pubKey crypto_tedwards.PointAffine
+	pubKey.ScalarMultiplication(&base, scalar)
+	return pubKey
+}
+
+func testKeeperPointBigInts(point crypto_tedwards.PointAffine) (*big.Int, *big.Int) {
+	x := new(big.Int)
+	y := new(big.Int)
+	point.X.BigInt(x)
+	point.Y.BigInt(y)
+	return x, y
+}
+
+func fixedFieldBytesFromBigInt(t *testing.T, value *big.Int) []byte {
+	t.Helper()
+	bz := value.Bytes()
+	require.LessOrEqual(t, len(bz), fieldElementByteSize)
+	out := make([]byte, fieldElementByteSize)
+	copy(out[fieldElementByteSize-len(bz):], bz)
+	return out
+}
+
 func TestMsgServerDepositSuccess(t *testing.T) {
 	k, ctx, bankKeeper := setupMsgServerKeeper()
 	server := NewMsgServerImpl(*k)
 
-	msg := privacytypes.NewMsgDeposit(testAddress(0x11), "1uclair", fixedFieldBytes(1), []byte{0x01})
+	msg := testDepositMsg(t, testAddress(0x11), "1uclair", big.NewInt(1), "uclair", []byte{0x01})
 
 	_, err := server.Deposit(sdk.WrapSDKContext(ctx), msg)
 	require.NoError(t, err)
@@ -80,7 +249,7 @@ func TestMsgServerDepositEmitsExpectedEvent(t *testing.T) {
 	k, ctx, _ := setupMsgServerKeeper()
 	server := NewMsgServerImpl(*k)
 
-	msg := privacytypes.NewMsgDeposit(testAddress(0x13), "1uclair", fixedFieldBytes(2), []byte{0xaa, 0xbb})
+	msg := testDepositMsg(t, testAddress(0x13), "1uclair", big.NewInt(1), "uclair", []byte{0xaa, 0xbb})
 
 	_, err := server.Deposit(sdk.WrapSDKContext(ctx), msg)
 	require.NoError(t, err)
@@ -113,7 +282,7 @@ func TestMsgServerDepositRejectsInvalidCommitmentBeforeBank(t *testing.T) {
 	k, ctx, bankKeeper := setupMsgServerKeeper()
 	server := NewMsgServerImpl(*k)
 
-	msg := privacytypes.NewMsgDeposit(testAddress(0x22), "1uclair", []byte{0x01}, []byte{0x01})
+	msg := privacytypes.NewMsgDeposit(testAddress(0x22), "1uclair", []byte{0x01}, []byte{0x01}, []byte{0x01})
 
 	_, err := server.Deposit(sdk.WrapSDKContext(ctx), msg)
 	require.Error(t, err)
@@ -127,7 +296,7 @@ func TestMsgServerDepositRejectsFullTreeBeforeBank(t *testing.T) {
 	server := NewMsgServerImpl(*k)
 	k.SetLeafCount(ctx, MaxMerkleLeaves)
 
-	msg := privacytypes.NewMsgDeposit(testAddress(0x24), "1uclair", fixedFieldBytes(3), []byte{0x01})
+	msg := privacytypes.NewMsgDeposit(testAddress(0x24), "1uclair", fixedFieldBytes(3), []byte{0x01}, []byte{0x01})
 
 	_, err := server.Deposit(sdk.WrapSDKContext(ctx), msg)
 	require.Error(t, err)
@@ -141,7 +310,7 @@ func TestMsgServerDepositRejectsUnsafeMissingRootBeforeBank(t *testing.T) {
 	server := NewMsgServerImpl(*k)
 	k.SetLeafCount(ctx, MaxMerkleRebuildLeaves+1)
 
-	msg := privacytypes.NewMsgDeposit(testAddress(0x25), "1uclair", fixedFieldBytes(4), []byte{0x01})
+	msg := privacytypes.NewMsgDeposit(testAddress(0x25), "1uclair", fixedFieldBytes(4), []byte{0x01}, []byte{0x01})
 
 	_, err := server.Deposit(sdk.WrapSDKContext(ctx), msg)
 	require.Error(t, err)

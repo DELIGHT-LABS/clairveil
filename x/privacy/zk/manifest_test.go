@@ -22,9 +22,10 @@ func TestManifestFromChecksumsBuildsDescriptors(t *testing.T) {
 	require.Equal(t, CircuitConfigSchemaVersion, manifest.SchemaVersion)
 	require.Equal(t, ActiveCircuitSetID, manifest.ActiveSetID)
 	require.Equal(t, CircuitCurve, manifest.Curve)
-	require.Len(t, manifest.Artifacts, 6)
-	require.Equal(t, "spend-r1cs", manifest.Artifacts[0].SHA256)
-	require.Equal(t, "joinsplit-vk", manifest.Artifacts[5].SHA256)
+	require.Len(t, manifest.Artifacts, 9)
+	require.Equal(t, "deposit", manifest.Artifacts[0].CircuitID)
+	require.Equal(t, "spend-r1cs", manifest.Artifacts[3].SHA256)
+	require.Equal(t, "joinsplit-vk", manifest.Artifacts[8].SHA256)
 }
 
 func TestLoadArtifactManifestSupportsStructuredManifest(t *testing.T) {
@@ -77,8 +78,8 @@ func TestLoadArtifactManifestSupportsLegacyChecksumsJSON(t *testing.T) {
 	loaded, err := LoadArtifactManifest(path)
 	require.NoError(t, err)
 	require.Equal(t, CircuitConfigSchemaVersion, loaded.SchemaVersion)
-	require.Len(t, loaded.Artifacts, 6)
-	require.Equal(t, "spend-r1cs", loaded.Artifacts[0].SHA256)
+	require.Len(t, loaded.Artifacts, 9)
+	require.Equal(t, "spend-r1cs", loaded.Artifacts[3].SHA256)
 }
 
 func TestResolveRuntimeArtifactManifestFallsBackToEnvChecksums(t *testing.T) {
@@ -90,6 +91,6 @@ func TestResolveRuntimeArtifactManifestFallsBackToEnvChecksums(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ChecksumSourceEnv, source)
 	require.Equal(t, dir, manifest.ArtifactDir)
-	require.Len(t, manifest.Artifacts, 6)
-	require.Equal(t, "spend-r1cs", manifest.Artifacts[0].SHA256)
+	require.Len(t, manifest.Artifacts, 9)
+	require.Equal(t, "spend-r1cs", manifest.Artifacts[3].SHA256)
 }

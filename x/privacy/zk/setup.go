@@ -17,6 +17,10 @@ import (
 )
 
 type loadedArtifacts struct {
+	depositProvingKey   groth16.ProvingKey
+	depositVerifyingKey groth16.VerifyingKey
+	depositR1CS         constraint.ConstraintSystem
+
 	spendProvingKey   groth16.ProvingKey
 	spendVerifyingKey groth16.VerifyingKey
 	spendR1CS         constraint.ConstraintSystem
@@ -27,6 +31,10 @@ type loadedArtifacts struct {
 }
 
 var (
+	depositProvingKey   groth16.ProvingKey
+	depositVerifyingKey groth16.VerifyingKey
+	depositR1CS         constraint.ConstraintSystem
+
 	spendProvingKey   groth16.ProvingKey
 	spendVerifyingKey groth16.VerifyingKey
 	spendR1CS         constraint.ConstraintSystem
@@ -40,6 +48,10 @@ var (
 )
 
 const (
+	DepositR1CSFile = "privacy_deposit_r1cs.bin"
+	DepositPKFile   = "privacy_deposit_pk.bin"
+	DepositVKFile   = "privacy_deposit_vk.bin"
+
 	SpendR1CSFile = "privacy_spend_r1cs.bin"
 	SpendPKFile   = "privacy_spend_pk.bin"
 	SpendVKFile   = "privacy_spend_vk.bin"
@@ -50,6 +62,9 @@ const (
 
 	ZKArtifactDirEnv = "CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR"
 
+	DepositR1CSSHA256Env   = "CLAIRVEIL_PRIVACY_DEPOSIT_R1CS_SHA256"
+	DepositPKSHA256Env     = "CLAIRVEIL_PRIVACY_DEPOSIT_PK_SHA256"
+	DepositVKSHA256Env     = "CLAIRVEIL_PRIVACY_DEPOSIT_VK_SHA256"
 	SpendR1CSSHA256Env     = "CLAIRVEIL_PRIVACY_SPEND_R1CS_SHA256"
 	SpendPKSHA256Env       = "CLAIRVEIL_PRIVACY_SPEND_PK_SHA256"
 	SpendVKSHA256Env       = "CLAIRVEIL_PRIVACY_SPEND_VK_SHA256"
@@ -82,6 +97,9 @@ func loadFromDisk() error {
 		return err
 	}
 
+	depositProvingKey = artifacts.depositProvingKey
+	depositVerifyingKey = artifacts.depositVerifyingKey
+	depositR1CS = artifacts.depositR1CS
 	spendProvingKey = artifacts.spendProvingKey
 	spendVerifyingKey = artifacts.spendVerifyingKey
 	spendR1CS = artifacts.spendR1CS
@@ -95,6 +113,21 @@ func loadArtifacts(readFn func(string, interface {
 	ReadFrom(r io.Reader) (int64, error)
 }) error) (*loadedArtifacts, error) {
 	artifacts := &loadedArtifacts{}
+
+	artifacts.depositR1CS = groth16.NewCS(ecc.BN254)
+	if err := readFn(DepositR1CSFile, artifacts.depositR1CS); err != nil {
+		return nil, fmt.Errorf("load %s: %w", artifactPath(DepositR1CSFile), err)
+	}
+
+	artifacts.depositProvingKey = groth16.NewProvingKey(ecc.BN254)
+	if err := readFn(DepositPKFile, artifacts.depositProvingKey); err != nil {
+		return nil, fmt.Errorf("load %s: %w", artifactPath(DepositPKFile), err)
+	}
+
+	artifacts.depositVerifyingKey = groth16.NewVerifyingKey(ecc.BN254)
+	if err := readFn(DepositVKFile, artifacts.depositVerifyingKey); err != nil {
+		return nil, fmt.Errorf("load %s: %w", artifactPath(DepositVKFile), err)
+	}
 
 	artifacts.spendR1CS = groth16.NewCS(ecc.BN254)
 	if err := readFn(SpendR1CSFile, artifacts.spendR1CS); err != nil {
@@ -160,6 +193,12 @@ func ValidateZKArtifacts() error {
 
 func expectedChecksumFromEnv(filename string) string {
 	switch filename {
+	case DepositR1CSFile:
+		return os.Getenv(DepositR1CSSHA256Env)
+	case DepositPKFile:
+		return os.Getenv(DepositPKSHA256Env)
+	case DepositVKFile:
+		return os.Getenv(DepositVKSHA256Env)
 	case SpendR1CSFile:
 		return os.Getenv(SpendR1CSSHA256Env)
 	case SpendPKFile:
@@ -175,6 +214,27 @@ func expectedChecksumFromEnv(filename string) string {
 	default:
 		return ""
 	}
+}
+
+func GetDepositProvingKey() (groth16.ProvingKey, error) {
+	if err := loadZKSetup(); err != nil {
+		return nil, err
+	}
+	return depositProvingKey, nil
+}
+
+func GetDepositVerifyingKey() (groth16.VerifyingKey, error) {
+	if err := loadZKSetup(); err != nil {
+		return nil, err
+	}
+	return depositVerifyingKey, nil
+}
+
+func GetDepositR1CS() (constraint.ConstraintSystem, error) {
+	if err := loadZKSetup(); err != nil {
+		return nil, err
+	}
+	return depositR1CS, nil
 }
 
 func GetSpendProvingKey() (groth16.ProvingKey, error) {

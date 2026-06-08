@@ -11,7 +11,7 @@ const (
 	ArtifactManifestFile       = "privacy_zk_manifest.json"
 	LegacyChecksumsJSONFile    = "privacy_zk_checksums.json"
 	CircuitConfigSchemaVersion = "v1"
-	ActiveCircuitSetID         = "latest-single-transfer"
+	ActiveCircuitSetID         = "privacy-accounting-v2"
 	CircuitCurve               = "BN254"
 
 	ChecksumSourceManifest = "manifest"
@@ -45,6 +45,24 @@ type legacyChecksumsManifest struct {
 
 func DefaultArtifactDescriptors() []ArtifactDescriptor {
 	return []ArtifactDescriptor{
+		{
+			CircuitID:    "deposit",
+			ArtifactType: "r1cs",
+			Filename:     DepositR1CSFile,
+			ChecksumEnv:  DepositR1CSSHA256Env,
+		},
+		{
+			CircuitID:    "deposit",
+			ArtifactType: "proving_key",
+			Filename:     DepositPKFile,
+			ChecksumEnv:  DepositPKSHA256Env,
+		},
+		{
+			CircuitID:    "deposit",
+			ArtifactType: "verifying_key",
+			Filename:     DepositVKFile,
+			ChecksumEnv:  DepositVKSHA256Env,
+		},
 		{
 			CircuitID:    "spend",
 			ArtifactType: "r1cs",

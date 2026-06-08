@@ -55,13 +55,34 @@
     },
     "circuit_config_response": {
       "schema_version": "v1",
-      "active_set_id": "latest-single-transfer",
+      "active_set_id": "privacy-accounting-v2",
       "curve": "BN254",
       "manifest_file": "privacy_zk_manifest.json",
       "manifest_available": false,
       "checksum_source": "none",
       "generated_at": "",
       "artifacts": [
+        {
+          "circuit_id": "deposit",
+          "artifact_type": "r1cs",
+          "filename": "privacy_deposit_r1cs.bin",
+          "checksum_env": "CLAIRVEIL_PRIVACY_DEPOSIT_R1CS_SHA256",
+          "sha256": ""
+        },
+        {
+          "circuit_id": "deposit",
+          "artifact_type": "proving_key",
+          "filename": "privacy_deposit_pk.bin",
+          "checksum_env": "CLAIRVEIL_PRIVACY_DEPOSIT_PK_SHA256",
+          "sha256": ""
+        },
+        {
+          "circuit_id": "deposit",
+          "artifact_type": "verifying_key",
+          "filename": "privacy_deposit_vk.bin",
+          "checksum_env": "CLAIRVEIL_PRIVACY_DEPOSIT_VK_SHA256",
+          "sha256": ""
+        },
         {
           "circuit_id": "spend",
           "artifact_type": "r1cs",

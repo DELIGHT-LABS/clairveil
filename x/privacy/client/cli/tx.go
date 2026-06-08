@@ -28,6 +28,7 @@ import (
 	"github.com/consensys/gnark/constraint"
 	gnarklogger "github.com/consensys/gnark/logger"
 
+	privacydeposit "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/deposit"
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacyidentity "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/identity"
 	privacyprovider "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/provider"
@@ -463,6 +464,7 @@ func buildDepositNoteAndMsg(
 	memo string,
 	amountStr string,
 	seed []byte,
+	logWriter io.Writer,
 ) (*types.Note, *types.MsgDeposit, error) {
 	viewScalar, viewPubKey, _ := deriveViewKeys(seed)
 	_ = viewScalar
@@ -488,15 +490,44 @@ func buildDepositNoteAndMsg(
 	if err != nil {
 		return nil, nil, err
 	}
+	proof, err := privacydeposit.BuildDepositProof(
+		*note,
+		depositArtifactProvider{},
+		depositProofRunner{logWriter: logWriter},
+	)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	msg := types.NewMsgDeposit(
 		fromAddr,
 		amountStr,
 		canonicalCommitment,
 		encryptedNote,
+		proof,
 	)
 
 	return note, msg, nil
+}
+
+type depositArtifactProvider struct{}
+
+func (depositArtifactProvider) DepositR1CS() (constraint.ConstraintSystem, error) {
+	return zk.GetDepositR1CS()
+}
+
+func (depositArtifactProvider) DepositProvingKey() (groth16.ProvingKey, error) {
+	return zk.GetDepositProvingKey()
+}
+
+type depositProofRunner struct {
+	logWriter io.Writer
+}
+
+func (r depositProofRunner) ProveDeposit(r1cs constraint.ConstraintSystem, provingKey groth16.ProvingKey, depositWitness witness.Witness) (groth16.Proof, error) {
+	return withGnarkLoggerOutput(r.logWriter, func() (groth16.Proof, error) {
+		return groth16.Prove(r1cs, provingKey, depositWitness)
+	})
 }
 
 func autoPrepareDummyNote(cmd *cobra.Command, clientCtx client.Context, denom string) error {
@@ -515,6 +546,7 @@ func autoPrepareDummyNote(cmd *cobra.Command, clientCtx client.Context, denom st
 		"AutoDummy",
 		amountStr,
 		seed,
+		privacyCommandLogWriter(cmd),
 	)
 	if err != nil {
 		return err
@@ -756,6 +788,7 @@ func CmdDeposit() *cobra.Command {
 				memo,
 				coin.String(),
 				seed,
+				privacyCommandLogWriter(cmd),
 			)
 			if err != nil {
 				return err

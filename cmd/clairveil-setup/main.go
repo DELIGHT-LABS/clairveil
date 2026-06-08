@@ -90,6 +90,9 @@ func main() {
 	fmt.Println("privacy zk artifacts generated successfully")
 	fmt.Printf("artifact_dir=%s\n", outDir)
 	for _, key := range []string{
+		zk.DepositR1CSSHA256Env,
+		zk.DepositPKSHA256Env,
+		zk.DepositVKSHA256Env,
 		zk.SpendR1CSSHA256Env,
 		zk.SpendPKSHA256Env,
 		zk.SpendVKSHA256Env,
@@ -102,6 +105,15 @@ func main() {
 }
 
 func buildArtifactDefinitions() ([]artifactDefinition, error) {
+	depositCS, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit.DepositCircuit{})
+	if err != nil {
+		return nil, err
+	}
+	depositPK, depositVK, err := groth16.Setup(depositCS)
+	if err != nil {
+		return nil, err
+	}
+
 	spendCS, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit.SpendCircuit{})
 	if err != nil {
 		return nil, err
@@ -121,6 +133,27 @@ func buildArtifactDefinitions() ([]artifactDefinition, error) {
 	}
 
 	return []artifactDefinition{
+		{
+			filename:    zk.DepositR1CSFile,
+			checksumEnv: zk.DepositR1CSSHA256Env,
+			write: func(outDir string) error {
+				return writeArtifact(filepath.Join(outDir, zk.DepositR1CSFile), depositCS)
+			},
+		},
+		{
+			filename:    zk.DepositPKFile,
+			checksumEnv: zk.DepositPKSHA256Env,
+			write: func(outDir string) error {
+				return writeArtifact(filepath.Join(outDir, zk.DepositPKFile), depositPK)
+			},
+		},
+		{
+			filename:    zk.DepositVKFile,
+			checksumEnv: zk.DepositVKSHA256Env,
+			write: func(outDir string) error {
+				return writeArtifact(filepath.Join(outDir, zk.DepositVKFile), depositVK)
+			},
+		},
 		{
 			filename:    zk.SpendR1CSFile,
 			checksumEnv: zk.SpendR1CSSHA256Env,
@@ -191,8 +224,11 @@ func checksumFile(path string) (string, error) {
 
 func writeEnvManifest(path, outDir string, checksums map[string]string) error {
 	content := fmt.Sprintf(
-		"CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR=%s\n%s=%s\n%s=%s\n%s=%s\n%s=%s\n%s=%s\n%s=%s\n",
+		"CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR=%s\n%s=%s\n%s=%s\n%s=%s\n%s=%s\n%s=%s\n%s=%s\n%s=%s\n%s=%s\n%s=%s\n",
 		outDir,
+		zk.DepositR1CSSHA256Env, checksums[zk.DepositR1CSSHA256Env],
+		zk.DepositPKSHA256Env, checksums[zk.DepositPKSHA256Env],
+		zk.DepositVKSHA256Env, checksums[zk.DepositVKSHA256Env],
 		zk.SpendR1CSSHA256Env, checksums[zk.SpendR1CSSHA256Env],
 		zk.SpendPKSHA256Env, checksums[zk.SpendPKSHA256Env],
 		zk.SpendVKSHA256Env, checksums[zk.SpendVKSHA256Env],
