@@ -201,6 +201,7 @@ JS SDK는 아래를 수행해야 합니다.
 - recipient wallet의 shielded identity에서 note를 만듭니다.
 - note commitment를 계산합니다.
 - encrypted note를 생성합니다.
+- `DepositCircuit` proof를 local/WASM prover로 생성하거나 trusted prover adapter에서 받아옵니다.
 - `MsgDeposit`을 만들어 일반 Cosmos tx로 sign/broadcast합니다.
 - tx result에서 commitment와 encrypted note event를 확인합니다.
 
