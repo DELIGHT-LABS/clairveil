@@ -47,6 +47,10 @@ service Query {
       returns (QueryCircuitConfigResponse) {
     option (google.api.http).get = "/clairveil/privacy/v1/circuit_config";
   }
+  // Denom별 module-account reserve/accounting invariant 조회
+  rpc Reserve(QueryReserveRequest) returns (QueryReserveResponse) {
+    option (google.api.http).get = "/clairveil/privacy/v1/reserve/{denom}";
+  }
 }
 
 // QueryCheckNullifierRequest
@@ -146,4 +150,16 @@ message QueryCircuitConfigResponse {
   string checksum_source = 6;
   string generated_at = 7;
   repeated QueryCircuitArtifact artifacts = 8;
+}
+
+message QueryReserveRequest { string denom = 1; }
+
+message QueryReserveResponse {
+  string denom = 1;
+  string module_balance = 2;
+  string total_deposited = 3;
+  string total_withdrawn = 4;
+  string approved_adjustment = 5;
+  string expected_module_balance = 6;
+  bool invariant_holds = 7;
 }

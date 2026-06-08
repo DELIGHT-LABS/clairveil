@@ -266,6 +266,70 @@ func TestCircuitConfigQueryReturnsRuntimeManifest(t *testing.T) {
 	require.Equal(t, "abcd", resp.Artifacts[0].Sha256)
 }
 
+func TestReserveQueryReturnsAccountingSnapshot(t *testing.T) {
+	k, ctx, bankKeeper := setupMsgServerKeeper()
+	coin := sdk.NewInt64Coin("uclair", 10)
+
+	require.NoError(t, k.RecordReserveDeposit(ctx, coin))
+	bankKeeper.moduleBalances = bankKeeper.moduleBalances.Add(coin)
+
+	resp, err := k.Reserve(sdk.WrapSDKContext(ctx), &privacytypes.QueryReserveRequest{
+		Denom: " uclair ",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "uclair", resp.Denom)
+	require.Equal(t, "10", resp.ModuleBalance)
+	require.Equal(t, "10", resp.TotalDeposited)
+	require.Equal(t, "0", resp.TotalWithdrawn)
+	require.Equal(t, "0", resp.ApprovedAdjustment)
+	require.Equal(t, "10", resp.ExpectedModuleBalance)
+	require.True(t, resp.InvariantHolds)
+}
+
+func TestReserveAccountingAllowsZeroValueDummyDeposit(t *testing.T) {
+	k, ctx, _ := setupMsgServerKeeper()
+	coin := sdk.NewInt64Coin("uclair", 0)
+
+	require.NoError(t, k.RecordReserveDeposit(ctx, coin))
+
+	resp, err := k.Reserve(sdk.WrapSDKContext(ctx), &privacytypes.QueryReserveRequest{
+		Denom: "uclair",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "0", resp.ModuleBalance)
+	require.Equal(t, "0", resp.TotalDeposited)
+	require.Equal(t, "0", resp.ExpectedModuleBalance)
+	require.True(t, resp.InvariantHolds)
+}
+
+func TestReserveQueryDetectsDirectTopUp(t *testing.T) {
+	k, ctx, bankKeeper := setupMsgServerKeeper()
+	expectedCoin := sdk.NewInt64Coin("uclair", 10)
+	extraCoin := sdk.NewInt64Coin("uclair", 1)
+
+	require.NoError(t, k.RecordReserveDeposit(ctx, expectedCoin))
+	bankKeeper.moduleBalances = bankKeeper.moduleBalances.Add(expectedCoin, extraCoin)
+
+	resp, err := k.Reserve(sdk.WrapSDKContext(ctx), &privacytypes.QueryReserveRequest{
+		Denom: "uclair",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "11", resp.ModuleBalance)
+	require.Equal(t, "10", resp.ExpectedModuleBalance)
+	require.False(t, resp.InvariantHolds)
+}
+
+func TestReserveQueryRejectsInvalidDenom(t *testing.T) {
+	k, ctx, _ := setupMsgServerKeeper()
+
+	resp, err := k.Reserve(sdk.WrapSDKContext(ctx), &privacytypes.QueryReserveRequest{
+		Denom: "bad denom",
+	})
+	require.Nil(t, resp)
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
 func TestQueryMethodsRejectNilRequests(t *testing.T) {
 	k, _, _ := setupMsgServerKeeper()
 
@@ -288,4 +352,8 @@ func TestQueryMethodsRejectNilRequests(t *testing.T) {
 	circuitResp, circuitErr := k.CircuitConfig(context.Background(), nil)
 	require.Nil(t, circuitResp)
 	require.Error(t, circuitErr)
+
+	reserveResp, reserveErr := k.Reserve(context.Background(), nil)
+	require.Nil(t, reserveResp)
+	require.Error(t, reserveErr)
 }

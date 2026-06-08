@@ -41,6 +41,7 @@ type mockPrivacyBankKeeper struct {
 	fromModuleToAccountCalls int
 	errFromAccountToModule   error
 	errFromModuleToAccount   error
+	moduleBalances           sdk.Coins
 }
 
 var (
@@ -50,14 +51,26 @@ var (
 	depositTestPK       groth16.ProvingKey
 )
 
-func (m *mockPrivacyBankKeeper) SendCoinsFromAccountToModule(_ context.Context, _ sdk.AccAddress, _ string, _ sdk.Coins) error {
-	m.fromAccountToModuleCalls++
-	return m.errFromAccountToModule
+func (m *mockPrivacyBankKeeper) GetBalance(_ context.Context, _ sdk.AccAddress, denom string) sdk.Coin {
+	return sdk.NewCoin(denom, m.moduleBalances.AmountOf(denom))
 }
 
-func (m *mockPrivacyBankKeeper) SendCoinsFromModuleToAccount(_ context.Context, _ string, _ sdk.AccAddress, _ sdk.Coins) error {
+func (m *mockPrivacyBankKeeper) SendCoinsFromAccountToModule(_ context.Context, _ sdk.AccAddress, _ string, amt sdk.Coins) error {
+	m.fromAccountToModuleCalls++
+	if m.errFromAccountToModule != nil {
+		return m.errFromAccountToModule
+	}
+	m.moduleBalances = m.moduleBalances.Add(amt...)
+	return nil
+}
+
+func (m *mockPrivacyBankKeeper) SendCoinsFromModuleToAccount(_ context.Context, _ string, _ sdk.AccAddress, amt sdk.Coins) error {
 	m.fromModuleToAccountCalls++
-	return m.errFromModuleToAccount
+	if m.errFromModuleToAccount != nil {
+		return m.errFromModuleToAccount
+	}
+	m.moduleBalances = m.moduleBalances.Sub(amt...)
+	return nil
 }
 
 func setupMsgServerKeeper() (*Keeper, sdk.Context, *mockPrivacyBankKeeper) {
@@ -239,6 +252,16 @@ func TestMsgServerDepositSuccess(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, bankKeeper.fromAccountToModuleCalls)
 	require.Equal(t, uint64(1), k.GetLeafCount(ctx))
+
+	snapshot, err := k.GetReserveSnapshot(ctx, "uclair")
+	require.NoError(t, err)
+	require.Equal(t, "uclair", snapshot.Denom)
+	require.Equal(t, "1", snapshot.ModuleBalance.String())
+	require.Equal(t, "1", snapshot.TotalDeposited.String())
+	require.Equal(t, "0", snapshot.TotalWithdrawn.String())
+	require.Equal(t, "0", snapshot.ApprovedAdjustment.String())
+	require.Equal(t, "1", snapshot.ExpectedModuleBalance.String())
+	require.True(t, snapshot.InvariantHolds)
 
 	root := k.GetMerkleNode(ctx, uint8(MerkleDepth), 0)
 	require.NotEmpty(t, root)

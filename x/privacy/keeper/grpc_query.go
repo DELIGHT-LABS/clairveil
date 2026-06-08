@@ -226,6 +226,33 @@ func (k Keeper) CircuitConfig(goCtx context.Context, req *types.QueryCircuitConf
 	return response, nil
 }
 
+func (k Keeper) Reserve(goCtx context.Context, req *types.QueryReserveRequest) (*types.QueryReserveResponse, error) {
+	if req == nil {
+		return nil, invalidQueryRequestErr()
+	}
+
+	denom := strings.TrimSpace(req.Denom)
+	if err := sdk.ValidateDenom(denom); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "reserve denom is invalid: %v", err)
+	}
+
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	snapshot, err := k.GetReserveSnapshot(ctx, denom)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &types.QueryReserveResponse{
+		Denom:                 snapshot.Denom,
+		ModuleBalance:         snapshot.ModuleBalance.String(),
+		TotalDeposited:        snapshot.TotalDeposited.String(),
+		TotalWithdrawn:        snapshot.TotalWithdrawn.String(),
+		ApprovedAdjustment:    snapshot.ApprovedAdjustment.String(),
+		ExpectedModuleBalance: snapshot.ExpectedModuleBalance.String(),
+		InvariantHolds:        snapshot.InvariantHolds,
+	}, nil
+}
+
 func canonicalZeroFieldHex() string {
 	return strings.Repeat("0", fieldElementByteSize*2)
 }

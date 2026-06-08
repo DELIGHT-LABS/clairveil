@@ -111,6 +111,9 @@ func (k msgServer) Deposit(goCtx context.Context, msg *types.MsgDeposit) (*types
 	if err := k.bankKeeper.SendCoinsFromAccountToModule(ctx, depositor, types.ModuleName, sdk.NewCoins(coin)); err != nil {
 		return nil, errorsmod.Wrap(err, "failed to lock tokens")
 	}
+	if err := k.RecordReserveDeposit(ctx, coin); err != nil {
+		return nil, errorsmod.Wrap(err, "failed to record privacy reserve deposit")
+	}
 
 	if err := k.AppendCommitment(ctx, canonicalCommitment); err != nil {
 		return nil, errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "failed to append the note commitment")
@@ -210,6 +213,9 @@ func (k msgServer) Withdraw(goCtx context.Context, msg *types.MsgWithdraw) (*typ
 
 	if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, recipientAddr, sdk.NewCoins(coin)); err != nil {
 		return nil, err
+	}
+	if err := k.RecordReserveWithdraw(ctx, coin); err != nil {
+		return nil, errorsmod.Wrap(err, "failed to record privacy reserve withdraw")
 	}
 
 	eventAttrs := []sdk.Attribute{
