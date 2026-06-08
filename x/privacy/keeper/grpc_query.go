@@ -247,7 +247,6 @@ func (k Keeper) Reserve(goCtx context.Context, req *types.QueryReserveRequest) (
 		ModuleBalance:         snapshot.ModuleBalance.String(),
 		TotalDeposited:        snapshot.TotalDeposited.String(),
 		TotalWithdrawn:        snapshot.TotalWithdrawn.String(),
-		ApprovedAdjustment:    snapshot.ApprovedAdjustment.String(),
 		ExpectedModuleBalance: snapshot.ExpectedModuleBalance.String(),
 		InvariantHolds:        snapshot.InvariantHolds,
 	}, nil

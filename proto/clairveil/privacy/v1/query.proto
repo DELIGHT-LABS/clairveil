@@ -159,7 +159,6 @@ message QueryReserveResponse {
   string module_balance = 2;
   string total_deposited = 3;
   string total_withdrawn = 4;
-  string approved_adjustment = 5;
-  string expected_module_balance = 6;
-  bool invariant_holds = 7;
+  string expected_module_balance = 5;
+  bool invariant_holds = 6;
 }

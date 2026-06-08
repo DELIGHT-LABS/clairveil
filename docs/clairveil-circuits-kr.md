@@ -220,7 +220,7 @@ export CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict
 
 ## 7. Reserve accounting query
 
-Circuit soundness는 keeper-level reserve accounting과 함께 검증해야 합니다. Keeper는 denom별 `total_deposited`, `total_withdrawn`, approved adjustment bucket을 기록하고, 기대 reserve와 실제 privacy module-account balance를 비교합니다.
+Circuit soundness는 keeper-level reserve accounting과 함께 검증해야 합니다. Keeper는 denom별 `total_deposited`, `total_withdrawn`을 기록하고, 기대 reserve(`total_deposited - total_withdrawn`)와 실제 privacy module-account balance를 비교합니다.
 
 ```text
 GET /clairveil/privacy/v1/reserve/{denom}

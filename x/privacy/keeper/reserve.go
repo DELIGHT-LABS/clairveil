@@ -16,7 +16,6 @@ type ReserveSnapshot struct {
 	ModuleBalance         sdkmath.Int
 	TotalDeposited        sdkmath.Int
 	TotalWithdrawn        sdkmath.Int
-	ApprovedAdjustment    sdkmath.Int
 	ExpectedModuleBalance sdkmath.Int
 	InvariantHolds        bool
 }
@@ -50,12 +49,8 @@ func (k Keeper) GetReserveSnapshot(ctx sdk.Context, denom string) (ReserveSnapsh
 	if err != nil {
 		return ReserveSnapshot{}, fmt.Errorf("failed to load reserve withdrawals for %s: %w", denom, err)
 	}
-	adjustment, err := k.getReserveAmount(ctx, types.GetReserveAdjustmentKey(denom))
-	if err != nil {
-		return ReserveSnapshot{}, fmt.Errorf("failed to load reserve adjustments for %s: %w", denom, err)
-	}
 
-	expected := deposited.Add(adjustment).Sub(withdrawn)
+	expected := deposited.Sub(withdrawn)
 	moduleAddress := authtypes.NewModuleAddress(types.ModuleName)
 	moduleBalance := k.bankKeeper.GetBalance(ctx, moduleAddress, denom).Amount
 	invariantHolds := !expected.IsNegative() && moduleBalance.Equal(expected)
@@ -65,7 +60,6 @@ func (k Keeper) GetReserveSnapshot(ctx sdk.Context, denom string) (ReserveSnapsh
 		ModuleBalance:         moduleBalance,
 		TotalDeposited:        deposited,
 		TotalWithdrawn:        withdrawn,
-		ApprovedAdjustment:    adjustment,
 		ExpectedModuleBalance: expected,
 		InvariantHolds:        invariantHolds,
 	}, nil

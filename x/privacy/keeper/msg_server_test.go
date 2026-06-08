@@ -259,7 +259,6 @@ func TestMsgServerDepositSuccess(t *testing.T) {
 	require.Equal(t, "1", snapshot.ModuleBalance.String())
 	require.Equal(t, "1", snapshot.TotalDeposited.String())
 	require.Equal(t, "0", snapshot.TotalWithdrawn.String())
-	require.Equal(t, "0", snapshot.ApprovedAdjustment.String())
 	require.Equal(t, "1", snapshot.ExpectedModuleBalance.String())
 	require.True(t, snapshot.InvariantHolds)
 
