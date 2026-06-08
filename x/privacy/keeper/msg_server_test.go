@@ -300,6 +300,60 @@ func TestMsgServerDepositEmitsExpectedEvent(t *testing.T) {
 	require.Equal(t, fmt.Sprintf("%x", msg.EncryptedNote), encryptedAttr.Value)
 }
 
+func TestMsgServerDepositRejectsProofTamperingBeforeBank(t *testing.T) {
+	tests := []struct {
+		name      string
+		mutateMsg func(t *testing.T, msg *privacytypes.MsgDeposit)
+	}{
+		{
+			name: "amount",
+			mutateMsg: func(_ *testing.T, msg *privacytypes.MsgDeposit) {
+				msg.Amount = "2uclair"
+			},
+		},
+		{
+			name: "denom",
+			mutateMsg: func(_ *testing.T, msg *privacytypes.MsgDeposit) {
+				msg.Amount = "1uatom"
+			},
+		},
+		{
+			name: "commitment",
+			mutateMsg: func(_ *testing.T, msg *privacytypes.MsgDeposit) {
+				msg.NoteCommitment = fixedFieldBytes(99)
+			},
+		},
+		{
+			name: "proof",
+			mutateMsg: func(t *testing.T, msg *privacytypes.MsgDeposit) {
+				other := testDepositMsg(t, msg.Creator, "2uclair", big.NewInt(2), "uclair", []byte{0x02})
+				msg.Proof = other.Proof
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			k, ctx, bankKeeper := setupMsgServerKeeper()
+			server := NewMsgServerImpl(*k)
+			msg := testDepositMsg(t, testAddress(0x21), "1uclair", big.NewInt(1), "uclair", []byte{0x01})
+			tc.mutateMsg(t, msg)
+
+			_, err := server.Deposit(sdk.WrapSDKContext(ctx), msg)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "deposit proof verification failed")
+			require.Equal(t, 0, bankKeeper.fromAccountToModuleCalls)
+			require.Equal(t, uint64(0), k.GetLeafCount(ctx))
+
+			snapshot, snapshotErr := k.GetReserveSnapshot(ctx, "uclair")
+			require.NoError(t, snapshotErr)
+			require.Equal(t, "0", snapshot.ModuleBalance.String())
+			require.Equal(t, "0", snapshot.TotalDeposited.String())
+			require.Equal(t, "0", snapshot.TotalWithdrawn.String())
+		})
+	}
+}
+
 func TestMsgServerDepositRejectsInvalidCommitmentBeforeBank(t *testing.T) {
 	k, ctx, bankKeeper := setupMsgServerKeeper()
 	server := NewMsgServerImpl(*k)
