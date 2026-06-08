@@ -20,4 +20,4 @@ This project follows the release policy documented in:
 - Added a dependency-free Node audit disclosure key example under `examples/audit-disclosure-keys`.
 - Removed legacy output-note fields from `MsgWithdraw`; withdraw remains exact-match and clients should regenerate proto bindings without dummy output-note values.
 - Added general client handoff documents for wallet/app product planning, UX flows, security decisions, and API integration.
-- Added privacy accounting remediation updates: bounded shielded amounts, deposit binding proofs, reserve accounting queries, and updated ZK artifact contracts.
+- Added privacy accounting hardening updates: bounded shielded amounts, deposit binding proofs, reserve accounting queries, and updated ZK artifact contracts.
