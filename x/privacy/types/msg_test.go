@@ -42,7 +42,7 @@ func validDisclosurePubKeyBytes(t *testing.T) []byte {
 }
 
 func TestValidateBasicInvalidCreator(t *testing.T) {
-	deposit := NewMsgDeposit("invalid", "1uclair", []byte{1}, []byte{2})
+	deposit := NewMsgDeposit("invalid", "1uclair", []byte{1}, []byte{2}, []byte{3})
 	withdraw := NewMsgWithdraw("invalid", []byte{1}, []byte{2}, []byte{3}, "1uclair", "clair1test", testChainID, testExpiresAtUnix)
 	transfer := NewMsgTransfer("invalid", []byte{1}, []byte{2}, [][]byte{{1}, {2}}, [][]byte{{3}, {4}}, [][]byte{{5}, {6}})
 
@@ -54,14 +54,17 @@ func TestValidateBasicInvalidCreator(t *testing.T) {
 func TestMsgDepositValidateBasicFieldBytes(t *testing.T) {
 	creator := testCreatorAddress()
 
-	valid := NewMsgDeposit(creator, "1uclair", validFieldBytes(), []byte{2})
+	valid := NewMsgDeposit(creator, "1uclair", validFieldBytes(), []byte{2}, []byte{3})
 	require.NoError(t, valid.ValidateBasic())
 
-	invalidLen := NewMsgDeposit(creator, "1uclair", []byte{0x01}, []byte{2})
+	invalidLen := NewMsgDeposit(creator, "1uclair", []byte{0x01}, []byte{2}, []byte{3})
 	require.Error(t, invalidLen.ValidateBasic())
 
-	nonCanonical := NewMsgDeposit(creator, "1uclair", nonCanonicalFieldBytes(), []byte{2})
+	nonCanonical := NewMsgDeposit(creator, "1uclair", nonCanonicalFieldBytes(), []byte{2}, []byte{3})
 	require.Error(t, nonCanonical.ValidateBasic())
+
+	missingProof := NewMsgDeposit(creator, "1uclair", validFieldBytes(), []byte{2}, nil)
+	require.Error(t, missingProof.ValidateBasic())
 }
 
 func TestMsgWithdrawValidateBasicReplayGuardFields(t *testing.T) {

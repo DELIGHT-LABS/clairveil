@@ -175,12 +175,13 @@ func validateAuditDisclosure(digest, targetPubKey, payload []byte) error {
 	return nil
 }
 
-func NewMsgDeposit(creator string, amount string, commitment []byte, encryptedNote []byte) *MsgDeposit {
+func NewMsgDeposit(creator string, amount string, commitment []byte, encryptedNote []byte, proof []byte) *MsgDeposit {
 	return &MsgDeposit{
 		Creator:        creator,
 		Amount:         amount,
 		NoteCommitment: commitment,
 		EncryptedNote:  encryptedNote,
+		Proof:          proof,
 	}
 }
 
@@ -206,6 +207,9 @@ func (msg *MsgDeposit) ValidateBasic() error {
 
 	if err := validateFieldElementBytesStrict("note commitment", msg.NoteCommitment); err != nil {
 		return err
+	}
+	if len(msg.Proof) == 0 {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "deposit proof is required")
 	}
 
 	return nil

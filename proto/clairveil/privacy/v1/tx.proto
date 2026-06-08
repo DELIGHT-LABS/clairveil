@@ -33,6 +33,7 @@ message MsgDeposit {
   string amount = 2;         // 금액 (예: 100uclair)
   bytes note_commitment = 3; // 머클 트리에 들어갈 해시
   bytes encrypted_note = 4;  // 복구용 암호화 데이터
+  bytes proof = 5;           // commitment가 amount/asset에 묶였다는 ZK proof
 }
 
 // MsgWithdraw: 익명 자산 -> 투명 자산 변환

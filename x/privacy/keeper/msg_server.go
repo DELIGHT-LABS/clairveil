@@ -84,6 +84,30 @@ func (k msgServer) Deposit(goCtx context.Context, msg *types.MsgDeposit) (*types
 		return nil, wrapMerkleAppendPreconditionErr(err, "not enough merkle tree capacity for deposit output")
 	}
 
+	var assignment circuit.DepositCircuit
+	assignment.Commitment = new(big.Int).SetBytes(canonicalCommitment)
+	assignment.Amount = new(big.Int).Set(coin.Amount.BigInt())
+	assignment.AssetID = privacycrypto.HashString(coin.Denom)
+
+	publicWitness, err := newPublicWitnessBN254(&assignment)
+	if err != nil {
+		return nil, errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "failed to create the deposit public witness: %v", err)
+	}
+
+	proof, err := readProofBN254(msg.Proof)
+	if err != nil {
+		return nil, errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "failed to decode the deposit proof")
+	}
+
+	depositVK, err := zk.GetDepositVerifyingKey()
+	if err != nil {
+		return nil, errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "failed to load the deposit verifying key: %v", err)
+	}
+
+	if err := groth16.Verify(proof, depositVK, publicWitness); err != nil {
+		return nil, errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "deposit proof verification failed; the proof, amount, asset, or commitment may not match: %v", err)
+	}
+
 	if err := k.bankKeeper.SendCoinsFromAccountToModule(ctx, depositor, types.ModuleName, sdk.NewCoins(coin)); err != nil {
 		return nil, errorsmod.Wrap(err, "failed to lock tokens")
 	}

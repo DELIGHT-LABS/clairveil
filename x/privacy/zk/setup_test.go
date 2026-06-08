@@ -21,6 +21,9 @@ import (
 func resetZKSetupStateForTest() {
 	once = sync.Once{}
 	setupErr = nil
+	depositProvingKey = nil
+	depositVerifyingKey = nil
+	depositR1CS = nil
 	spendProvingKey = nil
 	spendVerifyingKey = nil
 	spendR1CS = nil
@@ -33,6 +36,7 @@ func TestArtifactPathUsesEnv(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv(ZKArtifactDirEnv, dir)
 
+	require.Equal(t, filepath.Join(dir, DepositR1CSFile), artifactPath(DepositR1CSFile))
 	require.Equal(t, filepath.Join(dir, SpendR1CSFile), artifactPath(SpendR1CSFile))
 	require.Equal(t, filepath.Join(dir, JoinSplitVKFile), artifactPath(JoinSplitVKFile))
 }
@@ -44,11 +48,11 @@ func TestValidateZKSetupFailsOnMissingArtifacts(t *testing.T) {
 
 	err := ValidateZKSetup()
 	require.Error(t, err)
-	require.Contains(t, err.Error(), SpendR1CSFile)
+	require.Contains(t, err.Error(), DepositR1CSFile)
 
 	_, err = GetSpendR1CS()
 	require.Error(t, err)
-	require.Contains(t, err.Error(), SpendR1CSFile)
+	require.Contains(t, err.Error(), DepositR1CSFile)
 
 	entries, readErr := os.ReadDir(dir)
 	require.NoError(t, readErr)
@@ -61,11 +65,11 @@ func TestValidateZKSetupFailsOnChecksumMismatch(t *testing.T) {
 	resetZKSetupStateForTest()
 
 	data := []byte("not-a-valid-artifact")
-	require.NoError(t, os.WriteFile(filepath.Join(dir, SpendR1CSFile), data, 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, DepositR1CSFile), data, 0600))
 
 	bad := make([]byte, 32)
 	bad[0] = 0x01
-	t.Setenv(SpendR1CSSHA256Env, hex.EncodeToString(bad))
+	t.Setenv(DepositR1CSSHA256Env, hex.EncodeToString(bad))
 
 	err := ValidateZKSetup()
 	require.Error(t, err)
@@ -121,6 +125,15 @@ func TestRunPreflightStrictRejectsMissingArtifacts(t *testing.T) {
 }
 
 func writeTestArtifacts(dir string) error {
+	depositCS, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit.DepositCircuit{})
+	if err != nil {
+		return err
+	}
+	depositPK, depositVK, err := groth16.Setup(depositCS)
+	if err != nil {
+		return err
+	}
+
 	spendCS, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit.SpendCircuit{})
 	if err != nil {
 		return err
@@ -145,6 +158,9 @@ func writeTestArtifacts(dir string) error {
 			WriteTo(io.Writer) (int64, error)
 		}
 	}{
+		{DepositR1CSFile, depositCS},
+		{DepositPKFile, depositPK},
+		{DepositVKFile, depositVK},
 		{SpendR1CSFile, spendCS},
 		{SpendPKFile, spendPK},
 		{SpendVKFile, spendVK},
