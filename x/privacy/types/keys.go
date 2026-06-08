@@ -28,6 +28,9 @@ const (
 	KeyPrefixAuditConfig     = 0x05
 	KeyPrefixPrivacyEvent    = 0x06
 	KeyPrefixPrivacyEventSeq = 0x07
+	KeyPrefixReserveDeposit  = 0x08
+	KeyPrefixReserveWithdraw = 0x09
+	KeyPrefixReserveAdjust   = 0x0a
 )
 
 // Event types and attribute keys emitted by the module.
@@ -131,4 +134,16 @@ func GetPrivacyEventPrefix() []byte {
 
 func GetPrivacyEventSequenceKey() []byte {
 	return append([]byte(nil), privacyEventSequenceStoreKey...)
+}
+
+func GetReserveDepositKey(denom string) []byte {
+	return append([]byte{KeyPrefixReserveDeposit}, []byte(denom)...)
+}
+
+func GetReserveWithdrawKey(denom string) []byte {
+	return append([]byte{KeyPrefixReserveWithdraw}, []byte(denom)...)
+}
+
+func GetReserveAdjustmentKey(denom string) []byte {
+	return append([]byte{KeyPrefixReserveAdjust}, []byte(denom)...)
 }
