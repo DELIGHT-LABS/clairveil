@@ -298,7 +298,7 @@ tx privacy relay-withdraw
 query privacy check-nullifier
 ```
 
-`tree_state`, `commitment_info`, `events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`는 gRPC/HTTP gateway query로 제공됩니다. Downstream chain에서 운영자 CLI가 필요하면 이 query들을 별도 CLI wrapper로 추가하면 됩니다.
+`tree_state`, `commitment_info`, `events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`은 gRPC/HTTP gateway query로 제공됩니다. Downstream chain에서 운영자 CLI가 필요하면 이 query들을 별도 CLI wrapper로 추가하면 됩니다.
 
 ## 9. Downstream 테스트 순서
 
@@ -309,7 +309,7 @@ query privacy check-nullifier
 3. Downstream node에서 `init`, genesis account, gentx, collect-gentxs, `start`가 되는지 확인합니다.
 4. Genesis에 audit master pubkey를 넣고 첫 블록 이후 gRPC/HTTP gateway의 `audit_config`가 값을 반환하는지 확인합니다.
 5. Downstream CLI로 `show-address`, `deposit`, `list-notes`를 먼저 검증합니다.
-6. gRPC/HTTP gateway로 `tree_state`, `events`, `merkle_path`, `disclosure_config`, `circuit_config`가 정상 응답하는지 확인합니다.
+6. gRPC/HTTP gateway로 `tree_state`, `events`, `merkle_path`, `disclosure_config`, `circuit_config`, `reserve/{denom}`이 정상 응답하는지 확인합니다.
 7. `transfer`와 `decode-transfer-disclosure`로 user disclosure와 audit disclosure를 검증합니다.
 8. `withdraw`, `prepare-withdraw`, `relay-withdraw`로 direct/relayed withdraw를 검증합니다.
 9. 마지막에 EVM/policy/precompile 연동 e2e를 추가합니다.
@@ -324,6 +324,7 @@ query privacy check-nullifier
 - audit master private key를 개발용 keyring/test mnemonic 기준으로 운영하면 disclosure custody boundary가 무너집니다.
 - web wallet이 note cache나 prepared payload를 plaintext browser storage와 telemetry에 남기면 shielded UX의 실질 privacy가 크게 약해집니다.
 - module account 권한 또는 blocked address 정책이 잘못되면 deposit/withdraw bank transfer가 실패합니다.
+- direct bank send 또는 manual top-up이 approved reserve accounting을 우회하면 `reserve/{denom}`이 `invariant_holds=false`를 반환합니다.
 - downstream denom을 바꾸면 tutorial, smoke script, JS SDK fixture, conformance vector의 denom도 같이 바꿔야 합니다.
 
 ## 11. 완료 기준
@@ -333,7 +334,7 @@ Downstream 통합은 아래가 모두 통과하면 1차 완료로 봅니다.
 - downstream daemon이 privacy store, keeper, module, query gateway, tx command를 포함해서 build됩니다.
 - genesis에 privacy state와 audit master pubkey가 들어갑니다.
 - local single-node에서 deposit, transfer, disclosure decode, withdraw가 모두 통과합니다.
-- `tree_state`, `events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config` query가 정상 응답합니다.
+- `tree_state`, `events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}` query가 정상 응답합니다.
 - audit master private key custody policy가 production 운영 문서에 반영되어 있습니다.
 - wallet storage encryption과 remote prover privacy policy가 JS/TS SDK 또는 web wallet 설계 문서에 반영되어 있습니다.
 - downstream 전용 EVM/policy/precompile 연동은 별도 테스트로 분리되어 있습니다.

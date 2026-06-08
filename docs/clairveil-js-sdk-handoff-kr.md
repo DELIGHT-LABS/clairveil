@@ -59,6 +59,8 @@ MsgTransfer
 MsgWithdraw
 ```
 
+`MsgDeposit`에는 `proof` 필드가 있습니다. Client는 `amount`, `asset_id`, `note_commitment`를 binding하는 `DepositCircuit` Groth16 proof를 만들거나 받아와야 하며, proof 없는 deposit은 현재 계약에 포함되지 않습니다.
+
 `MsgTransfer`에는 user disclosure와 audit disclosure 필드가 모두 있습니다. 최신 모델에서 audit disclosure는 선택 기능이 아니라 모든 shielded transfer에 포함되어야 하는 필수 기능입니다.
 
 `MsgWithdraw`는 exact-match withdraw 메시지이며 output note 필드를 갖지 않습니다. JS/TS client는 legacy withdraw 필드인 `new_note_commitment`, `encrypted_note`를 모델링하지 말아야 하며, dummy output note 값을 보내지 않아야 합니다.
@@ -75,6 +77,7 @@ GET /clairveil/privacy/v1/merkle_path/{commitment_hex}
 GET /clairveil/privacy/v1/audit_config
 GET /clairveil/privacy/v1/disclosure_config
 GET /clairveil/privacy/v1/circuit_config
+GET /clairveil/privacy/v1/reserve/{denom}
 GET /clairveil/privacy/v1/nullifier/{nullifier}
 ```
 
@@ -96,6 +99,7 @@ x/privacy/client/sdk/provider/tx.go
 - `AuditConfig`: chain에 설정된 master auditor pubkey를 가져옵니다.
 - `DisclosureConfig`: user disclosure policy/mode와 payload version을 표시합니다.
 - `CircuitConfig`: active circuit set과 artifact checksum 정보를 확인합니다.
+- `Reserve`: denom별 privacy module-account balance와 기록된 deposit/withdraw 총량을 비교합니다.
 - `CheckNullifier`: note spent 여부를 판단합니다.
 
 ## 5. Identity 파생
@@ -399,7 +403,7 @@ docs/clairveil-proverd-remote-production-profile-kr.md
 3. identity derivation과 `clairs1...` address encode/decode를 구현합니다.
 4. query provider를 구현합니다.
 5. event scanner와 wallet note store를 구현합니다.
-6. deposit tx builder를 구현합니다.
+6. deposit proof와 tx builder를 구현합니다.
 7. disclosure encode/decode/verify helper를 구현합니다.
 8. transfer prepared payload builder를 구현합니다.
 9. prover adapter와 HTTP prover client를 구현합니다.
@@ -433,6 +437,7 @@ JS SDK handoff가 완료되었다고 보려면 아래가 가능해야 합니다.
 - full shielded address 기반 transfer UX
 - mandatory audit disclosure
 - user disclosure policy/mode label
+- `MsgDeposit` deposit proof requirement
 - transfer proof request/response version `v1`
 - withdraw proof request/response version `v1`
 - prover HTTP path `/v1/prover/transfer`, `/v1/prover/withdraw`

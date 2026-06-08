@@ -34,6 +34,7 @@ GET /clairveil/privacy/v1/merkle_path/{commitment_hex}
 GET /clairveil/privacy/v1/audit_config
 GET /clairveil/privacy/v1/disclosure_config
 GET /clairveil/privacy/v1/circuit_config
+GET /clairveil/privacy/v1/reserve/{denom}
 GET /clairveil/privacy/v1/nullifier/{nullifier}
 ```
 
@@ -52,6 +53,7 @@ Client가 생성하거나 broadcast해야 하는 message:
 중요:
 
 - `MsgTransfer`는 user disclosure와 mandatory audit disclosure field를 포함합니다.
+- `MsgDeposit`은 transparent amount/asset과 note commitment를 binding하는 deposit proof를 요구합니다.
 - `MsgWithdraw`는 output note field를 갖지 않습니다.
 - Client는 legacy `new_note_commitment`, `encrypted_note` withdraw 값을 만들면 안 됩니다.
 
@@ -104,6 +106,7 @@ Client release 전 최소 검증:
 - public disclosure decode/verify
 - recipient-encrypted disclosure decode/verify
 - audit disclosure decode/verify, auditor UX가 있는 경우
+- deposit/withdraw flow 이후 target denom의 reserve query가 `invariant_holds=true`를 반환
 - direct withdraw
 - relayed withdraw
 - exact-match withdraw 실패와 self-transfer/planner 안내 UX
@@ -122,6 +125,8 @@ Breaking 또는 migration impact가 있는 변경:
 - prover request/response version 변경
 - disclosure payload version 변경
 - circuit public input shape 변경
+- deposit proof requirement 변경
+- reserve/accounting query shape 변경
 - fixture schema 변경
 - withdraw exact-match 정책 변경
 - audit disclosure 필수 여부 변경

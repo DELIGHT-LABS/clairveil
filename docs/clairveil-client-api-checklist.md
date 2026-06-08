@@ -34,6 +34,7 @@ GET /clairveil/privacy/v1/merkle_path/{commitment_hex}
 GET /clairveil/privacy/v1/audit_config
 GET /clairveil/privacy/v1/disclosure_config
 GET /clairveil/privacy/v1/circuit_config
+GET /clairveil/privacy/v1/reserve/{denom}
 GET /clairveil/privacy/v1/nullifier/{nullifier}
 ```
 
@@ -52,6 +53,7 @@ Messages the client must build or broadcast:
 Important:
 
 - `MsgTransfer` includes user disclosure and mandatory audit disclosure fields.
+- `MsgDeposit` requires a deposit proof binding the transparent amount/asset to the note commitment.
 - `MsgWithdraw` has no output note fields.
 - Clients must not create legacy `new_note_commitment` or `encrypted_note` withdraw values.
 
@@ -104,6 +106,7 @@ Minimum validation before client release:
 - public disclosure decode/verify
 - recipient-encrypted disclosure decode/verify
 - audit disclosure decode/verify, if auditor UX exists
+- reserve query returns `invariant_holds=true` for the target denom after deposit/withdraw flows
 - direct withdraw
 - relayed withdraw
 - no-exact-match withdraw failure and self-transfer/planner guidance
@@ -122,6 +125,8 @@ Changes with breaking or migration impact:
 - prover request/response version changes
 - disclosure payload version changes
 - circuit public input shape changes
+- deposit proof requirement changes
+- reserve/accounting query shape changes
 - fixture schema changes
 - withdraw exact-match policy changes
 - audit disclosure requiredness changes

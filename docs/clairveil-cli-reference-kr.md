@@ -324,6 +324,7 @@ clairveild query privacy check-nullifier <hex_nullifier> \
 | audit config      | `/clairveil/privacy/v1/audit_config`                 |
 | disclosure config | `/clairveil/privacy/v1/disclosure_config`            |
 | circuit config    | `/clairveil/privacy/v1/circuit_config`               |
+| reserve           | `/clairveil/privacy/v1/reserve/{denom}`              |
 
 ## 10. Companion binary
 

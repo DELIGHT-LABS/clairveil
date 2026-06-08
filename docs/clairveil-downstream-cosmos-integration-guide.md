@@ -300,7 +300,7 @@ The query CLI currently exposed directly is:
 query privacy check-nullifier
 ```
 
-`tree_state`, `commitment_info`, `events`, `merkle_path`, `audit_config`, `disclosure_config`, and `circuit_config` are available through gRPC/HTTP gateway queries. If the downstream chain needs an operator CLI, add separate CLI wrappers for those queries.
+`tree_state`, `commitment_info`, `events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, and `reserve/{denom}` are available through gRPC/HTTP gateway queries. If the downstream chain needs an operator CLI, add separate CLI wrappers for those queries.
 
 ## 9. Downstream Test Order
 
@@ -311,7 +311,7 @@ Do not mix everything with target-chain-specific features from the start. Bring 
 3. Confirm the downstream node can `init`, add genesis accounts, gentx, collect-gentxs, and `start`.
 4. Add the audit master pubkey to genesis, then check that gRPC/HTTP gateway `audit_config` returns it after the first block.
 5. Verify `show-address`, `deposit`, and `list-notes` first through the downstream CLI.
-6. Verify `tree_state`, `events`, `merkle_path`, `disclosure_config`, and `circuit_config` through gRPC/HTTP gateway.
+6. Verify `tree_state`, `events`, `merkle_path`, `disclosure_config`, `circuit_config`, and `reserve/{denom}` through gRPC/HTTP gateway.
 7. Verify user disclosure and audit disclosure through `transfer` and `decode-transfer-disclosure`.
 8. Verify direct and relayed withdraw with `withdraw`, `prepare-withdraw`, and `relay-withdraw`.
 9. Add EVM/policy/precompile integration e2e last.
@@ -326,6 +326,7 @@ Do not mix everything with target-chain-specific features from the start. Bring 
 - If the audit master private key is operated as a development keyring/test mnemonic, the disclosure custody boundary collapses.
 - If a web wallet leaves note cache or prepared payload in plaintext browser storage and telemetry, the practical privacy of the shielded UX becomes much weaker.
 - If module account permissions or blocked-address policy are wrong, deposit/withdraw bank transfers fail.
+- If direct bank sends or manual top-ups bypass approved reserve accounting, `reserve/{denom}` returns `invariant_holds=false`.
 - If the downstream denom changes, tutorial, smoke script, JS SDK fixtures, and conformance vectors must change together.
 
 ## 11. Completion Criteria
@@ -335,7 +336,7 @@ Downstream integration is first-pass complete when all of the following pass.
 - The downstream daemon builds with privacy store, keeper, module, query gateway, and tx command included.
 - Privacy state and audit master pubkey are present in genesis.
 - A local single-node chain passes deposit, transfer, disclosure decode, and withdraw.
-- `tree_state`, `events`, `merkle_path`, `audit_config`, `disclosure_config`, and `circuit_config` queries respond correctly.
+- `tree_state`, `events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, and `reserve/{denom}` queries respond correctly.
 - Audit master private key custody policy is reflected in production operations docs.
 - Wallet storage encryption and remote prover privacy policy are reflected in JS/TS SDK or web wallet design docs.
 - Downstream-specific EVM/policy/precompile integration is separated into separate tests.

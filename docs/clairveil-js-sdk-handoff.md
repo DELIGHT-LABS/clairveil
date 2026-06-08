@@ -61,6 +61,8 @@ MsgTransfer
 MsgWithdraw
 ```
 
+`MsgDeposit` includes a `proof` field. Clients must build or obtain a `DepositCircuit` Groth16 proof binding `amount`, `asset_id`, and `note_commitment`; proof-less deposits are not part of the current contract.
+
 `MsgTransfer` contains both user disclosure and audit disclosure fields. In the latest model, audit disclosure is not optional. It must be included in every shielded transfer.
 
 `MsgWithdraw` is an exact-match withdraw message and does not contain output note fields. JS/TS clients must not model the legacy `new_note_commitment` or `encrypted_note` withdraw fields, and they must not send dummy output-note values.
@@ -77,6 +79,7 @@ GET /clairveil/privacy/v1/merkle_path/{commitment_hex}
 GET /clairveil/privacy/v1/audit_config
 GET /clairveil/privacy/v1/disclosure_config
 GET /clairveil/privacy/v1/circuit_config
+GET /clairveil/privacy/v1/reserve/{denom}
 GET /clairveil/privacy/v1/nullifier/{nullifier}
 ```
 
@@ -98,6 +101,7 @@ A web wallet needs at least these provider roles.
 - `AuditConfig`: fetch the master auditor pubkey configured on-chain.
 - `DisclosureConfig`: display user disclosure policy/mode and payload version.
 - `CircuitConfig`: check the active circuit set and artifact checksum information.
+- `Reserve`: compare privacy module-account balance to recorded deposit/withdraw totals for a denom.
 - `CheckNullifier`: determine whether a note is spent.
 
 ## 5. Identity Derivation
@@ -401,7 +405,7 @@ Recommended implementation order:
 3. Implement identity derivation and `clairs1...` address encode/decode.
 4. Implement the query provider.
 5. Implement event scanner and wallet note store.
-6. Implement deposit tx builder.
+6. Implement deposit proof and tx builder.
 7. Implement disclosure encode/decode/verify helpers.
 8. Implement transfer prepared payload builder.
 9. Implement prover adapter and HTTP prover client.
@@ -435,6 +439,7 @@ The JS SDK can currently treat these as stable contracts.
 - full shielded address-based transfer UX
 - mandatory audit disclosure
 - user disclosure policy/mode labels
+- deposit proof requirement for `MsgDeposit`
 - transfer proof request/response version `v1`
 - withdraw proof request/response version `v1`
 - prover HTTP paths `/v1/prover/transfer`, `/v1/prover/withdraw`
