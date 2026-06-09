@@ -21,6 +21,7 @@ Korean version: [clairveil-release-handoff-pack-kr.md](clairveil-release-handoff
 | CLI reference | `docs/clairveil-cli-reference.md` | Integrators, wallet/SDK teams | user-facing commands and flags |
 | Testing guide | `docs/clairveil-testing-guide.md` | Maintainers, integrators | test matrix and release validation commands |
 | Operations guide | `docs/clairveil-operations-guide.md` | Operators, security reviewers | node/prover/artifact/Merkle/audit operations baseline |
+| Privacy accounting design note | `docs/clairveil-privacy-accounting-design-note.md` | Core chain team, security reviewers | deposit binding, amount bounds, reserve invariant, and artifact contract rationale |
 | Maintainer instructions | `docs/clairveil-maintainer-instructions.md` | Maintainers | documentation and validation rules by change type |
 | Integration guide | `docs/clairveil-downstream-cosmos-integration-guide.md` | Core chain team | app wiring and responsibility checklist |
 | Client product brief | `docs/clairveil-client-product-brief.md` | Wallet/app product and client teams | product capability scope and client profiles |

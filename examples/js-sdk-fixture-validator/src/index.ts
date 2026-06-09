@@ -145,6 +145,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "../../..");
 const testdataDir = join(repoRoot, "x/privacy/client/sdk/conformance/testdata");
 const schemaDir = join(repoRoot, "docs/schemas");
+const maxShieldedAmount = (1n << 64n) - 1n;
 
 type JsonSchema = {
   $ref?: string;
@@ -194,6 +195,15 @@ function assertStartsWith(value: string, prefix: string, label: string): void {
 function assertHexLength(value: string, bytes: number, label: string): void {
   if (!/^[0-9a-f]*$/i.test(value) || value.length !== bytes * 2) {
     throw new Error(`${label}: expected ${bytes}-byte hex, got ${value}`);
+  }
+}
+
+function assertShieldedAmountString(value: string, label: string): void {
+  if (!/^(0|[1-9][0-9]*)$/.test(value)) {
+    throw new Error(`${label}: expected a canonical non-negative decimal string, got ${value}`);
+  }
+  if (BigInt(value) > maxShieldedAmount) {
+    throw new Error(`${label}: expected <= ${maxShieldedAmount.toString()}, got ${value}`);
   }
 }
 
@@ -460,11 +470,18 @@ function validateProverExampleBundle(bundle: ProverExampleBundle): void {
   const transferPayload = bundle.transfer.request.payload;
   const transferHash = computePreparedTransferPayloadHash(transferPayload);
   assertStartsWith(transferPayload.creator, "clair1", "transfer creator");
+  transferPayload.inputs.forEach((input, index) => {
+    assertShieldedAmountString(input.amount, `transfer input ${index} amount`);
+  });
+  transferPayload.outputs.forEach((output, index) => {
+    assertShieldedAmountString(output.amount, `transfer output ${index} amount`);
+  });
   assertEqual(transferPayload.payload_hash, transferHash, "transfer payload_hash");
   assertEqual(bundle.transfer.response.proof.payload_hash, transferHash, "transfer proof payload_hash");
 
   const withdrawPayload = bundle.withdraw.request.payload;
   const withdrawHash = computePreparedWithdrawProverPayloadHash(withdrawPayload);
+  assertShieldedAmountString(withdrawPayload.amount, "withdraw amount");
   assertStartsWith(withdrawPayload.recipient, "clair1", "withdraw recipient");
   assertHexLength(withdrawPayload.recipient_bytes_hex, 20, "withdraw recipient_bytes_hex");
   assertEqual(withdrawPayload.payload_hash, withdrawHash, "withdraw prover payload_hash");
@@ -543,12 +560,20 @@ function validateWalletFixtures(): void {
   assertStartsWith(golden.sender.shielded_address, "clairs1", "golden sender shielded address");
   assertStartsWith(golden.recipient.shielded_address, "clairs1", "golden recipient shielded address");
   assertEqual(golden.note.denom, "uclair", "golden note denom");
+  assertShieldedAmountString(golden.note.amount, "golden note amount");
 
   assertStartsWith(readonly.sender.transparent_address, "clair1", "readonly sender transparent address");
   assertStartsWith(readonly.recipient.transparent_address, "clair1", "readonly recipient transparent address");
   assertStartsWith(readonly.sender.show_address.address, "clairs1", "readonly sender shielded address");
   assertStartsWith(readonly.recipient.show_address.address, "clairs1", "readonly recipient shielded address");
   assertEqual(readonly.disclosure.asset_denom, "uclair", "readonly disclosure denom");
+  assertShieldedAmountString(readonly.disclosure.amount, "readonly disclosure amount");
+  for (const [index, note] of readonly.scan.deposit_found.entries()) {
+    assertShieldedAmountString(note.amount, `readonly deposit note ${index} amount`);
+  }
+  for (const [index, note] of readonly.scan.transfer_found.entries()) {
+    assertShieldedAmountString(note.amount, `readonly transfer note ${index} amount`);
+  }
 
   assertStartsWith(browser.root_signer.get_account_response.transparent_address, "clair1", "browser transparent address");
   assertStartsWith(browser.root_signer.expected_derived.shielded_address, "clairs1", "browser shielded address");

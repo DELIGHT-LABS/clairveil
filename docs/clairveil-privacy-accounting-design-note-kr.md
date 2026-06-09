@@ -1,5 +1,7 @@
 # Clairveil Privacy Accounting 설계 및 Hardening Note
 
+English version: [clairveil-privacy-accounting-design-note.md](clairveil-privacy-accounting-design-note.md)
+
 이 문서는 `clairveil`을 최초 공개 또는 downstream 통합 전에 점검한 privacy accounting 설계 노트입니다. 2026-06 Zcash Orchard soundness 이슈는 검토 계기였지만, `clairveil`은 Orchard/halo2 코드를 사용하지 않습니다. 여기서 다루는 내용은 Clairveil 자체의 shielded note accounting, ZK circuit soundness, keeper reserve invariant를 공개 전 기준으로 정리한 것입니다.
 
 이 문서는 live/public state가 없다는 전제를 둡니다. 이미 외부 사용자가 deposit, transfer, withdraw를 만들 수 있었던 deployment라면 이 문서만으로 충분하지 않고, deployment owner가 별도 운영 절차와 state review를 수행해야 합니다.

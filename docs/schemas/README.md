@@ -27,6 +27,6 @@ The repository validator uses a dependency-free subset validator to keep the sam
 - prover HTTP route, request, response, and error contract shape
 - send-capable reference flow fixture shape
 
-This schema checks field presence, basic types, version constants, address prefixes, fixed-size hashes, and current transfer payload array sizes.
+This schema checks field presence, basic types, version constants, address prefixes, fixed-size hashes, current transfer payload array sizes, Merkle path helper bits, and canonical non-negative uint64 amount strings.
 
 It does not replace semantic verification. Payload hash recomputation, disclosure digest verification, Merkle path recomputation, and proof verification must be implemented separately by SDK/tests.
