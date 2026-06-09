@@ -1,10 +1,13 @@
 package zk
 
 import (
+	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -122,6 +125,117 @@ func TestRunPreflightStrictRejectsMissingArtifacts(t *testing.T) {
 	err := RunPreflight(log.NewNopLogger())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "privacy zk preflight failed")
+}
+
+func TestRunPreflightStrictRejectsManifestChecksumMismatch(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(ZKArtifactDirEnv, dir)
+	t.Setenv(ZKPreflightModeEnv, string(ZKPreflightStrict))
+	resetZKSetupStateForTest()
+
+	require.NoError(t, writeTestArtifacts(dir))
+
+	descriptors := DefaultArtifactDescriptors()
+	badChecksum := make([]byte, 32)
+	badChecksum[0] = 0x01
+	descriptors[0].SHA256 = hex.EncodeToString(badChecksum)
+	manifest := RuntimeArtifactManifest{
+		SchemaVersion: CircuitConfigSchemaVersion,
+		Curve:         CircuitCurve,
+		ActiveSetID:   ActiveCircuitSetID,
+		ArtifactDir:   dir,
+		Artifacts:     descriptors,
+	}
+	bz, err := json.Marshal(manifest)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ArtifactManifestFile), bz, 0o600))
+
+	err = RunPreflight(log.NewNopLogger())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "privacy zk preflight failed")
+	require.Contains(t, err.Error(), "checksum mismatch")
+}
+
+func TestRunPreflightStrictRejectsIncompleteManifestChecksums(t *testing.T) {
+	testCases := []struct {
+		name              string
+		updateDescriptors func([]ArtifactDescriptor) []ArtifactDescriptor
+		want              string
+	}{
+		{
+			name: "missing descriptor",
+			updateDescriptors: func(descriptors []ArtifactDescriptor) []ArtifactDescriptor {
+				return descriptors[1:]
+			},
+			want: "artifact manifest does not describe privacy_deposit_r1cs.bin",
+		},
+		{
+			name: "empty sha256",
+			updateDescriptors: func(descriptors []ArtifactDescriptor) []ArtifactDescriptor {
+				descriptors[0].SHA256 = ""
+				return descriptors
+			},
+			want: "artifact manifest is missing sha256 for privacy_deposit_r1cs.bin",
+		},
+		{
+			name: "malformed sha256",
+			updateDescriptors: func(descriptors []ArtifactDescriptor) []ArtifactDescriptor {
+				descriptors[0].SHA256 = "not-a-sha256"
+				return descriptors
+			},
+			want: "artifact manifest sha256 for privacy_deposit_r1cs.bin must be a 64-character hex string",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv(ZKArtifactDirEnv, dir)
+			t.Setenv(ZKPreflightModeEnv, string(ZKPreflightStrict))
+			resetZKSetupStateForTest()
+
+			require.NoError(t, os.WriteFile(filepath.Join(dir, DepositR1CSFile), []byte("present"), 0o600))
+
+			manifest := RuntimeArtifactManifest{
+				SchemaVersion: CircuitConfigSchemaVersion,
+				Curve:         CircuitCurve,
+				ActiveSetID:   ActiveCircuitSetID,
+				ArtifactDir:   dir,
+				Artifacts:     testCase.updateDescriptors(DefaultArtifactDescriptors()),
+			}
+			bz, err := json.Marshal(manifest)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(dir, ArtifactManifestFile), bz, 0o600))
+
+			err = RunPreflight(log.NewNopLogger())
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "privacy zk preflight failed")
+			require.Contains(t, err.Error(), testCase.want)
+		})
+	}
+}
+
+func TestExpectedChecksumPrefersEnvOverIncompleteManifest(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(ZKArtifactDirEnv, dir)
+
+	envChecksum := strings.Repeat("a", sha256.Size*2)
+	t.Setenv(DepositR1CSSHA256Env, envChecksum)
+
+	manifest := RuntimeArtifactManifest{
+		SchemaVersion: CircuitConfigSchemaVersion,
+		Curve:         CircuitCurve,
+		ActiveSetID:   ActiveCircuitSetID,
+		ArtifactDir:   dir,
+		Artifacts:     DefaultArtifactDescriptors()[1:],
+	}
+	bz, err := json.Marshal(manifest)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ArtifactManifestFile), bz, 0o600))
+
+	expected, err := expectedChecksum(DepositR1CSFile)
+	require.NoError(t, err)
+	require.Equal(t, envChecksum, expected)
 }
 
 func writeTestArtifacts(dir string) error {
