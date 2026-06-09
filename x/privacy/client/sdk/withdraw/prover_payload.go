@@ -483,12 +483,12 @@ func canonicalHexFromBytes(bz []byte, fieldName string) (string, error) {
 }
 
 func parseWithdrawAmount(value string) (*big.Int, error) {
-	parsed, ok := new(big.Int).SetString(strings.TrimSpace(value), 10)
-	if !ok || parsed.Sign() <= 0 {
-		return nil, fmt.Errorf("withdraw prover payload amount must be a positive decimal string")
-	}
-	if err := privacytypes.ValidateShieldedAmount("withdraw prover payload amount", parsed); err != nil {
+	parsed, err := privacytypes.ParseCanonicalShieldedAmount("withdraw prover payload amount", value)
+	if err != nil {
 		return nil, err
+	}
+	if parsed.Sign() <= 0 {
+		return nil, fmt.Errorf("withdraw prover payload amount must be a positive canonical decimal string")
 	}
 	return parsed, nil
 }

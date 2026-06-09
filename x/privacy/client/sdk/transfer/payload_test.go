@@ -2,9 +2,12 @@ package transfer
 
 import (
 	"context"
+	"math/big"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
 func TestBuildPreparedTransferPayloadAndProofRoundTrip(t *testing.T) {
@@ -54,6 +57,22 @@ func TestProvePreparedTransferPayloadRejectsMismatchedCommitment(t *testing.T) {
 
 	_, err = ProvePreparedTransferPayload(*payload, artifacts, runner)
 	require.ErrorContains(t, err, "output commitment 0 does not match payload witness")
+}
+
+func TestParseDecimalFieldRequiresCanonicalShieldedAmount(t *testing.T) {
+	maxAmount := privacytypes.MaxShieldedAmount()
+	maxPlusOne := new(big.Int).Add(maxAmount, big.NewInt(1))
+
+	for _, value := range []string{"0", "1", maxAmount.String()} {
+		parsed, err := parseDecimalField(value, "input amount")
+		require.NoError(t, err)
+		require.Equal(t, value, parsed.String())
+	}
+
+	for _, value := range []string{"", "01", "+1", " 1", "1 ", "-1", maxPlusOne.String()} {
+		_, err := parseDecimalField(value, "input amount")
+		require.Error(t, err, value)
+	}
 }
 
 func TestPreparedTransferPayloadAndProofJSONRoundTrip(t *testing.T) {

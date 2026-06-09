@@ -688,14 +688,7 @@ func hexFromCanonicalBytes(bz []byte, fieldName string) (string, error) {
 }
 
 func parseDecimalField(value string, fieldName string) (*big.Int, error) {
-	parsed, ok := new(big.Int).SetString(strings.TrimSpace(value), 10)
-	if !ok {
-		return nil, fmt.Errorf("invalid %s %q", fieldName, value)
-	}
-	if err := privacytypes.ValidateShieldedAmount(fieldName, parsed); err != nil {
-		return nil, err
-	}
-	return parsed, nil
+	return privacytypes.ParseCanonicalShieldedAmount(fieldName, value)
 }
 
 func decodeCanonicalHexBigInt(value, fieldName string) (*big.Int, error) {
