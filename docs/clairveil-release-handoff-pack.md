@@ -17,7 +17,7 @@ Korean version: [clairveil-release-handoff-pack-kr.md](clairveil-release-handoff
 | Prover service | `cmd/clairveil-proverd`, `x/privacy/client/sdk/proverservice`, `x/privacy/client/sdk/provertransport` | Prover operations, JS SDK team | local/remote companion prover contract |
 | ZK artifact tooling | `cmd/clairveil-setup`, `cmd/clairveil-verify`, `x/privacy/zk` | Core chain team, prover operations | artifact generation, checksum, preflight |
 | Walkthrough | `docs/clairveil-local-privacy-walkthrough.md` | Integrators | local end-to-end manual verification |
-| Circuit guide | `docs/clairveil-circuits.md` | Core chain team, prover operations, security reviewers | Spend/JoinSplit circuit and artifact impact explanation |
+| Circuit guide | `docs/clairveil-circuits.md` | Core chain team, prover operations, security reviewers | Deposit/Spend/JoinSplit circuit and artifact impact explanation |
 | CLI reference | `docs/clairveil-cli-reference.md` | Integrators, wallet/SDK teams | user-facing commands and flags |
 | Testing guide | `docs/clairveil-testing-guide.md` | Maintainers, integrators | test matrix and release validation commands |
 | Operations guide | `docs/clairveil-operations-guide.md` | Operators, security reviewers | node/prover/artifact/Merkle/audit operations baseline |

@@ -50,11 +50,11 @@ make test
 
 | Package | 검증 내용 |
 | --- | --- |
-| `x/privacy/circuit` | Spend/JoinSplit circuit constraint |
+| `x/privacy/circuit` | Deposit/Spend/JoinSplit circuit constraint |
 | `x/privacy/keeper` | deposit/transfer/withdraw state transition, Merkle capacity, query error handling |
 | `x/privacy/types` | Msg validation, address, gateway path |
 | `x/privacy/client/cli` | CLI parsing, output, disclosure decode helper |
-| `x/privacy/client/sdk/*` | identity, scan, transfer, withdraw, disclosure, prover transport |
+| `x/privacy/client/sdk/*` | identity, deposit, scan, transfer, withdraw, disclosure, prover transport |
 | `x/privacy/client/sdk/conformance` | JS/web wallet fixture contract |
 | `x/privacy/zk` | artifact manifest/checksum loading |
 

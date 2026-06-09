@@ -56,8 +56,13 @@ At minimum, these files should be present.
 
 - `privacy_zk_checksums.env`
 - `privacy_zk_manifest.json`
+- `privacy_deposit_r1cs.bin`
+- `privacy_deposit_pk.bin`
+- `privacy_deposit_vk.bin`
+- `privacy_spend_r1cs.bin`
 - `privacy_spend_pk.bin`
 - `privacy_spend_vk.bin`
+- `privacy_joinsplit_r1cs.bin`
 - `privacy_joinsplit_pk.bin`
 - `privacy_joinsplit_vk.bin`
 

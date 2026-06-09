@@ -22,7 +22,7 @@ Production-like node는 최소 아래를 만족해야 합니다.
 1. genesis에 audit master pubkey가 설정되어야 합니다.
 2. ZK artifact preflight는 `strict`로 운영해야 합니다.
 3. privacy module account가 bank module account로 올바르게 등록되어야 합니다.
-4. `tree_state`, `events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config` query가 노출되어야 합니다.
+4. `tree_state`, `events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}` query가 노출되어야 합니다.
 5. snapshot/restore rehearsal을 release 전 수행해야 합니다.
 
 Reference local start 예:
@@ -146,6 +146,7 @@ Production wallet은 아래를 결정해야 합니다.
 - nullifier rejection count
 - Merkle `leaf_count`와 usage ratio
 - failed `merkle_path` query
+- reserve `invariant_holds=false`
 - artifact preflight failure
 - remote prover auth failure
 - remote prover body limit rejection
@@ -190,6 +191,7 @@ Release note에는 최소 아래를 포함합니다.
 | audit key compromise       | disclosure access 중단, key rotation/migration plan 실행, affected disclosure scope 산정 |
 | prover token leak          | token rotate, access log review, proof endpoint abuse 확인                               |
 | artifact checksum mismatch | node/prover start 중지, artifact source 재검증, release blocker 처리                     |
+| reserve invariant mismatch | release/rollout 중지, module account balance와 deposit/withdraw totals 비교, direct send, top-up, migration write 조사 |
 | Merkle restore mismatch    | node resume 금지, offline rebuild 또는 restore 재시도                                    |
 | wallet cache corruption    | cache backup 후 rescan, 사용자의 seed/key 보존 여부 확인                                 |
 
@@ -203,4 +205,5 @@ Clairveil core를 downstream mainnet에 붙이기 전 최소 gate:
 4. audit key custody가 문서화되어 있고 rehearsal이 끝났습니다.
 5. artifact signing/provenance 정책이 있습니다.
 6. snapshot/restore rehearsal과 Merkle path sample 검증이 끝났습니다.
-7. chain-specific threat model이 작성되어 있습니다.
+7. 지원 denom별 deposit/withdraw e2e 이후 `reserve/{denom}`이 `invariant_holds=true`를 반환합니다.
+8. chain-specific threat model이 작성되어 있습니다.
