@@ -1,4 +1,4 @@
-FROM golang:1.25.10-alpine AS build
+FROM golang:1.25.11-alpine AS build
 ARG TARGETARCH=amd64
 
 RUN apk add --no-cache git build-base linux-headers
