@@ -302,29 +302,34 @@ func TestMsgServerDepositEmitsExpectedEvent(t *testing.T) {
 
 func TestMsgServerDepositRejectsProofTamperingBeforeBank(t *testing.T) {
 	tests := []struct {
-		name      string
-		mutateMsg func(t *testing.T, msg *privacytypes.MsgDeposit)
+		name          string
+		mutateMsg     func(t *testing.T, msg *privacytypes.MsgDeposit)
+		emptyReserves []string
 	}{
 		{
-			name: "amount",
+			name:          "amount",
+			emptyReserves: []string{"uclair"},
 			mutateMsg: func(_ *testing.T, msg *privacytypes.MsgDeposit) {
 				msg.Amount = "2uclair"
 			},
 		},
 		{
-			name: "denom",
+			name:          "denom",
+			emptyReserves: []string{"uclair", "uatom"},
 			mutateMsg: func(_ *testing.T, msg *privacytypes.MsgDeposit) {
 				msg.Amount = "1uatom"
 			},
 		},
 		{
-			name: "commitment",
+			name:          "commitment",
+			emptyReserves: []string{"uclair"},
 			mutateMsg: func(_ *testing.T, msg *privacytypes.MsgDeposit) {
 				msg.NoteCommitment = fixedFieldBytes(99)
 			},
 		},
 		{
-			name: "proof",
+			name:          "proof",
+			emptyReserves: []string{"uclair"},
 			mutateMsg: func(t *testing.T, msg *privacytypes.MsgDeposit) {
 				other := testDepositMsg(t, msg.Creator, "2uclair", big.NewInt(2), "uclair", []byte{0x02})
 				msg.Proof = other.Proof
@@ -345,11 +350,13 @@ func TestMsgServerDepositRejectsProofTamperingBeforeBank(t *testing.T) {
 			require.Equal(t, 0, bankKeeper.fromAccountToModuleCalls)
 			require.Equal(t, uint64(0), k.GetLeafCount(ctx))
 
-			snapshot, snapshotErr := k.GetReserveSnapshot(ctx, "uclair")
-			require.NoError(t, snapshotErr)
-			require.Equal(t, "0", snapshot.ModuleBalance.String())
-			require.Equal(t, "0", snapshot.TotalDeposited.String())
-			require.Equal(t, "0", snapshot.TotalWithdrawn.String())
+			for _, denom := range tc.emptyReserves {
+				snapshot, snapshotErr := k.GetReserveSnapshot(ctx, denom)
+				require.NoError(t, snapshotErr)
+				require.Equal(t, "0", snapshot.ModuleBalance.String(), denom)
+				require.Equal(t, "0", snapshot.TotalDeposited.String(), denom)
+				require.Equal(t, "0", snapshot.TotalWithdrawn.String(), denom)
+			}
 		})
 	}
 }
