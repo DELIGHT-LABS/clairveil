@@ -2,6 +2,7 @@ package withdraw
 
 import (
 	"context"
+	"math/big"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
+	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
 func TestBuildPreparedWithdrawProverPayloadAndProofRoundTrip(t *testing.T) {
@@ -59,6 +61,22 @@ func TestProvePreparedWithdrawPayloadRejectsMismatchedNullifier(t *testing.T) {
 
 	_, err = ProvePreparedWithdrawPayload(*result.Payload, artifacts, runner)
 	require.ErrorContains(t, err, "nullifier does not match payload witness")
+}
+
+func TestParseWithdrawAmountRequiresPositiveCanonicalShieldedAmount(t *testing.T) {
+	maxAmount := privacytypes.MaxShieldedAmount()
+	maxPlusOne := new(big.Int).Add(maxAmount, big.NewInt(1))
+
+	for _, value := range []string{"1", maxAmount.String()} {
+		parsed, err := parseWithdrawAmount(value)
+		require.NoError(t, err)
+		require.Equal(t, value, parsed.String())
+	}
+
+	for _, value := range []string{"", "0", "01", "+1", " 1", "1 ", "-1", maxPlusOne.String()} {
+		_, err := parseWithdrawAmount(value)
+		require.Error(t, err, value)
+	}
 }
 
 func TestPreparedWithdrawProverPayloadAndProofJSONRoundTrip(t *testing.T) {
