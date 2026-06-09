@@ -19,6 +19,7 @@ Clairveil repo는 reusable privacy core와 reference host를 제공합니다. �
 | CLI reference | `docs/clairveil-cli-reference-kr.md` | Integrators, wallet/SDK teams | 사용자-facing command와 flag 설명 |
 | Testing guide | `docs/clairveil-testing-guide-kr.md` | Maintainers, integrators | test matrix와 release 검증 명령 |
 | Operations guide | `docs/clairveil-operations-guide-kr.md` | Operators, security reviewers | node/prover/artifact/Merkle/audit 운영 기준 |
+| Privacy accounting design note | `docs/clairveil-privacy-accounting-design-note-kr.md` | Core chain team, security reviewers | deposit binding, amount bound, reserve invariant, artifact contract 설계 근거 |
 | Maintainer instructions | `docs/clairveil-maintainer-instructions-kr.md` | Maintainers | 변경 유형별 문서/검증 규칙 |
 | Integration guide | `docs/clairveil-downstream-cosmos-integration-guide-kr.md` | Core chain team | app wiring and responsibility checklist |
 | Client product brief | `docs/clairveil-client-product-brief-kr.md` | Wallet/app product, client 팀 | product capability 범위와 client profile |
