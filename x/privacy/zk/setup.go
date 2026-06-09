@@ -170,7 +170,11 @@ func readFile(filename string, obj interface {
 		return err
 	}
 
-	if expected := expectedChecksumFromEnv(filename); expected != "" {
+	expected, err := expectedChecksum(filename)
+	if err != nil {
+		return err
+	}
+	if expected != "" {
 		hash := sha256.Sum256(bz)
 		got := hex.EncodeToString(hash[:])
 		if !strings.EqualFold(got, expected) {
@@ -180,6 +184,42 @@ func readFile(filename string, obj interface {
 
 	_, err = obj.ReadFrom(bytes.NewReader(bz))
 	return err
+}
+
+func expectedChecksum(filename string) (string, error) {
+	if expected := strings.TrimSpace(expectedChecksumFromEnv(filename)); expected != "" {
+		return expected, nil
+	}
+
+	manifest, checksumSource, err := ResolveRuntimeArtifactManifest()
+	if err != nil {
+		return "", fmt.Errorf("load artifact manifest checksum for %s: %w", filename, err)
+	}
+	if checksumSource != ChecksumSourceManifest {
+		return "", nil
+	}
+
+	for _, descriptor := range manifest.Artifacts {
+		if descriptor.Filename == filename {
+			expected := strings.TrimSpace(descriptor.SHA256)
+			if expected == "" {
+				return "", fmt.Errorf("artifact manifest is missing sha256 for %s", filename)
+			}
+			if err := validateExpectedSHA256(filename, expected); err != nil {
+				return "", err
+			}
+			return expected, nil
+		}
+	}
+	return "", fmt.Errorf("artifact manifest does not describe %s", filename)
+}
+
+func validateExpectedSHA256(filename string, expected string) error {
+	decoded, err := hex.DecodeString(expected)
+	if err != nil || len(decoded) != sha256.Size {
+		return fmt.Errorf("artifact manifest sha256 for %s must be a 64-character hex string", filename)
+	}
+	return nil
 }
 
 func ValidateZKSetup() error {
