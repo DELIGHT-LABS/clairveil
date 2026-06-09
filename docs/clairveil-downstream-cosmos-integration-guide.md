@@ -73,6 +73,7 @@ GET /clairveil/privacy/v1/merkle_path/{commitment_hex}
 GET /clairveil/privacy/v1/audit_config
 GET /clairveil/privacy/v1/disclosure_config
 GET /clairveil/privacy/v1/circuit_config
+GET /clairveil/privacy/v1/reserve/{denom}
 ```
 
 If the downstream repo has its own proto generation pipeline, include `proto/clairveil/privacy/v1/*.proto` and update generated output in the same commit so stale generated files do not remain.

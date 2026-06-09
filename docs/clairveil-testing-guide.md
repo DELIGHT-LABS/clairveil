@@ -53,11 +53,11 @@ Main coverage:
 
 | Package | Coverage |
 | --- | --- |
-| `x/privacy/circuit` | Spend/JoinSplit circuit constraints |
+| `x/privacy/circuit` | Deposit/Spend/JoinSplit circuit constraints |
 | `x/privacy/keeper` | deposit/transfer/withdraw state transitions, Merkle capacity, query error handling |
 | `x/privacy/types` | message validation, address, gateway paths |
 | `x/privacy/client/cli` | CLI parsing, output, disclosure decode helpers |
-| `x/privacy/client/sdk/*` | identity, scan, transfer, withdraw, disclosure, prover transport |
+| `x/privacy/client/sdk/*` | identity, deposit, scan, transfer, withdraw, disclosure, prover transport |
 | `x/privacy/client/sdk/conformance` | JS/web wallet fixture contract |
 | `x/privacy/zk` | artifact manifest/checksum loading |
 

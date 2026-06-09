@@ -71,6 +71,7 @@ GET /clairveil/privacy/v1/merkle_path/{commitment_hex}
 GET /clairveil/privacy/v1/audit_config
 GET /clairveil/privacy/v1/disclosure_config
 GET /clairveil/privacy/v1/circuit_config
+GET /clairveil/privacy/v1/reserve/{denom}
 ```
 
 Downstream repo가 별도 proto generation pipeline을 갖고 있다면 `proto/clairveil/privacy/v1/*.proto`를 포함시키고, stale generated file이 남지 않도록 한 commit에서 generation 결과까지 같이 갱신해야 합니다.

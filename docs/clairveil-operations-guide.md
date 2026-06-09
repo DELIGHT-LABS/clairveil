@@ -24,7 +24,7 @@ A production-like node should satisfy at least:
 1. genesis has an audit master pubkey.
 2. ZK artifact preflight runs in `strict` mode.
 3. privacy module account is registered correctly as a bank module account.
-4. `tree_state`, `events`, `merkle_path`, `audit_config`, `disclosure_config`, and `circuit_config` queries are exposed.
+4. `tree_state`, `events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, and `reserve/{denom}` queries are exposed.
 5. snapshot/restore rehearsal is completed before release.
 
 Reference local start example:
@@ -148,6 +148,7 @@ Recommended metrics:
 - nullifier rejection count
 - Merkle `leaf_count` and usage ratio
 - failed `merkle_path` query
+- reserve `invariant_holds=false`
 - artifact preflight failure
 - remote prover auth failure
 - remote prover body limit rejection
@@ -192,6 +193,7 @@ Release notes should include at least:
 | audit key compromise | stop disclosure access, execute key rotation/migration plan, estimate affected disclosure scope |
 | prover token leak | rotate token, review access logs, check proof endpoint abuse |
 | artifact checksum mismatch | stop node/prover start, revalidate artifact source, treat as release blocker |
+| reserve invariant mismatch | pause release or rollout, compare module account balance with deposit/withdraw totals, investigate direct sends, top-ups, or migration writes |
 | Merkle restore mismatch | do not resume node, rebuild offline or retry restore |
 | wallet cache corruption | back up cache, rescan, verify user seed/key preservation |
 
@@ -205,4 +207,5 @@ Before attaching Clairveil core to downstream mainnet:
 4. audit key custody is documented and rehearsed.
 5. artifact signing/provenance policy exists.
 6. snapshot/restore rehearsal and Merkle path sample validation are complete.
-7. chain-specific threat model is written.
+7. `reserve/{denom}` returns `invariant_holds=true` after deposit/withdraw e2e for each supported denom.
+8. chain-specific threat model is written.
