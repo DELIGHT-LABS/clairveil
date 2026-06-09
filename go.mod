@@ -1,6 +1,6 @@
 module github.com/DELIGHT-LABS/clairveil
 
-go 1.25.10
+go 1.25.11
 
 require (
 	cosmossdk.io/core v1.1.0
