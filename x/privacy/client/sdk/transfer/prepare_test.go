@@ -196,6 +196,29 @@ func TestPrepareJoinSplitTransferRejectsOverTransfer(t *testing.T) {
 	require.ErrorContains(t, err, "transfer amount exceeds selected input total")
 }
 
+func TestPrepareJoinSplitTransferRejectsChangeAmountAboveShieldedLimit(t *testing.T) {
+	fixture := newPrepareJoinSplitFixture(t, []uint32{0, 1})
+	maxAmount := privacytypes.MaxShieldedAmount()
+	fixture.inputs[0].Note.Amount = new(big.Int).Set(maxAmount)
+	fixture.inputs[1].Note.Amount = new(big.Int).Set(maxAmount)
+
+	_, err := PrepareJoinSplitTransfer(
+		context.Background(),
+		fixture.merkleProvider,
+		&stubNoteHashSigner{signature: testSignatureBytes(t)},
+		PrepareJoinSplitInput{
+			Inputs:               fixture.inputs,
+			RecipientSpendPubKey: fixture.recipientSpendPubKey,
+			RecipientViewPubKey:  fixture.recipientViewPubKey,
+			TransferAmount:       big.NewInt(1),
+			SenderSpendPubKey:    fixture.senderSpendPubKey,
+			SenderViewPubKey:     fixture.senderViewPubKey,
+		},
+	)
+	require.ErrorContains(t, err, "change amount exceeds 64-bit shielded amount limit")
+	require.Empty(t, fixture.merkleProvider.requests)
+}
+
 func TestPrepareJoinSplitTransferRejectsInvalidPathHelper(t *testing.T) {
 	fixture := newPrepareJoinSplitFixture(t, []uint32{0, 2})
 
