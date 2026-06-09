@@ -37,6 +37,7 @@ func ResolveRecipient(targetAddr string) (*crypto_tedwards.PointAffine, *crypto_
 
 func SelectInputs(notes []privacyscan.FoundNote, targetDenom string, target *big.Int) InputSelection {
 	target = normalizedAmount(target)
+	maxOutputAmount := privacytypes.MaxShieldedAmount()
 
 	var inputs [2]privacyscan.FoundNote
 	sameDenomNotes := plannerSortedSameDenomSpendableNotes(notes, targetDenom)
@@ -71,7 +72,7 @@ func SelectInputs(notes []privacyscan.FoundNote, targetDenom string, target *big
 				continue
 			}
 			sum := new(big.Int).Add(sameDenomNotes[i].Note.Amount, sameDenomNotes[j].Note.Amount)
-			if sum.Cmp(target) >= 0 {
+			if finalTransferOutputsWithinBound(sum, target, maxOutputAmount) {
 				if !bestPairFound || betterSufficientPairCandidate(sameDenomNotes[i], sameDenomNotes[j], sum, bestPair[0], bestPair[1], bestPairTotal) {
 					bestPairFound = true
 					bestPair[0] = sameDenomNotes[i]
@@ -102,6 +103,9 @@ func SelectInputs(notes []privacyscan.FoundNote, targetDenom string, target *big
 				continue
 			}
 			sum := new(big.Int).Add(sameDenomNotes[i].Note.Amount, sameDenomNotes[j].Note.Amount)
+			if sum.Cmp(maxOutputAmount) > 0 {
+				continue
+			}
 			if !bestMergeFound || betterMergePairCandidate(sameDenomNotes[i], sameDenomNotes[j], sum, bestMerge[0], bestMerge[1], bestMergeTotal) {
 				bestMergeFound = true
 				bestMerge[0] = sameDenomNotes[i]
@@ -128,6 +132,18 @@ func SelectInputs(notes []privacyscan.FoundNote, targetDenom string, target *big
 	return InputSelection{
 		Total: big.NewInt(0),
 	}
+}
+
+func finalTransferOutputsWithinBound(total *big.Int, target *big.Int, maxOutputAmount *big.Int) bool {
+	if target.Sign() < 0 || target.Cmp(maxOutputAmount) > 0 {
+		return false
+	}
+	if total.Cmp(target) < 0 {
+		return false
+	}
+
+	change := new(big.Int).Sub(total, target)
+	return change.Cmp(maxOutputAmount) <= 0
 }
 
 func SummarizeSpendableNotesByDenom(notes []privacyscan.FoundNote, denom string) ([]privacyscan.FoundNote, *big.Int) {

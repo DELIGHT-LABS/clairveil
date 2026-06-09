@@ -88,6 +88,9 @@ func PrepareJoinSplitTransfer(
 	if changeAmount.Sign() < 0 {
 		return nil, fmt.Errorf("transfer amount exceeds selected input total")
 	}
+	if err := privacytypes.ValidateShieldedAmount("change amount", changeAmount); err != nil {
+		return nil, err
+	}
 
 	recipientSpendX, recipientSpendY := pointBigInts(*input.RecipientSpendPubKey)
 	recipientViewX, recipientViewY := pointBigInts(*input.RecipientViewPubKey)

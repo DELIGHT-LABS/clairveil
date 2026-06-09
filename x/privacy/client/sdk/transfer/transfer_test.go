@@ -156,6 +156,19 @@ func TestSelectInputsChoosesSmallestSufficientPairDeterministically(t *testing.T
 	require.Equal(t, int64(7), selection.Inputs[1].Note.Amount.Int64())
 }
 
+func TestSelectInputsRequiresDummyWhenPairWouldOverflowOutputAmounts(t *testing.T) {
+	maxAmount := privacytypes.MaxShieldedAmount()
+	notes := []privacyscan.FoundNote{
+		{Note: privacytypes.Note{Amount: new(big.Int).Set(maxAmount), AssetID: privacycrypto.HashString("uclair")}, Nullifier: "a", Height: 1, IsSpent: false},
+		{Note: privacytypes.Note{Amount: new(big.Int).Set(maxAmount), AssetID: privacycrypto.HashString("uclair")}, Nullifier: "b", Height: 2, IsSpent: false},
+	}
+
+	selection := SelectInputs(notes, "uclair", big.NewInt(1))
+	require.True(t, selection.NeedsZeroDummy)
+	require.False(t, selection.IsFinal)
+	require.Equal(t, 0, selection.Total.Sign())
+}
+
 func TestSelectInputsChoosesLargestMergePairWhenNoFinalPairExists(t *testing.T) {
 	notes := []privacyscan.FoundNote{
 		{Note: privacytypes.Note{Amount: big.NewInt(2), AssetID: privacycrypto.HashString("uclair")}, Nullifier: "a", Height: 1, IsSpent: false},
