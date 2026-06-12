@@ -455,7 +455,7 @@ Markdown 결과는 공개 설명용으로 사용하고, JSON은 CI trend와 down
 - failed tx와 retried tx가 결과에서 분리됨
 - chain TPS는 localnet 결과에서만 계산됨
 
-현재 상태: 부분 완료. `make privacy-bench-localnet`가 e2e smoke tx query에서 gas/success metric을 추출하고 fee report와 reserve invariant snapshot을 생성합니다. Batch runner, block inclusion latency aggregation, chain TPS 계산은 후속 작업입니다.
+현재 상태: 부분 완료. `make privacy-bench-localnet`가 e2e smoke tx query에서 gas/success/height/timestamp metric을 추출하고 fee report, reserve invariant snapshot, localnet structured summary를 생성합니다. `cmd/clairveil-localnetload`와 `make privacy-localnet-tps-bench`는 tx metrics를 `chain_tps` row로 변환해 `submitted_tx/sec`, `accepted_tx/sec`, `included_tx/sec`, `successful_tx/sec`, `failed_tx_rate`, `inclusion_latency_ms`, `gas_used`를 `benchmarks/privacy-localnet-tps` report에 포함합니다. 대규모 open-loop account pool과 sequence contention 없는 batch submission은 downstream/staging 환경에서 같은 bucketed tx metrics schema로 feed해야 합니다.
 
 ### Phase B5: 예상 fee report 추가
 

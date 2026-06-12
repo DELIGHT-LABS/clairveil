@@ -12,6 +12,7 @@ build:
 	go build ./cmd/clairveil-proverd
 	go build ./cmd/clairveil-benchreport
 	go build ./cmd/clairveil-proverload
+	go build ./cmd/clairveil-localnetload
 
 .PHONY: install
 install: build
@@ -44,6 +45,10 @@ privacy-bench:
 .PHONY: privacy-bench-localnet
 privacy-bench-localnet:
 	./scripts/privacy-bench-localnet.sh
+
+.PHONY: privacy-localnet-tps-bench
+privacy-localnet-tps-bench:
+	./scripts/privacy-localnet-tps-bench.sh
 
 .PHONY: privacy-proverd-bench
 privacy-proverd-bench:
@@ -99,4 +104,4 @@ docker-proverd-build:
 
 .PHONY: clean
 clean:
-	rm -f clairveild clairveil-setup clairveil-verify clairveil-proverd clairveil-benchreport clairveil-proverload
+	rm -f clairveild clairveil-setup clairveil-verify clairveil-proverd clairveil-benchreport clairveil-proverload clairveil-localnetload

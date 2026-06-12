@@ -261,10 +261,18 @@ Public claim gate:
 
 현재 `make privacy-bench-localnet`는 e2e smoke 기반 gas/fee/invariant check입니다. Chain TPS를 말하려면 batch runner가 필요합니다.
 
+현재 구현 상태:
+
+- `cmd/clairveil-localnetload`가 localnet tx metrics를 `chain_tps` structured benchmark summary로 변환합니다.
+- `make privacy-localnet-tps-bench` 또는 `scripts/privacy-localnet-tps-bench.sh`가 `benchmarks/privacy-localnet-tps` report를 생성합니다.
+- 기존 `privacy-bench-localnet.sh`는 tx query JSON에서 gas, success, height, included timestamp를 추출하고, smoke script가 기록한 submitted timestamp와 함께 tx metrics를 생성합니다.
+- structured row는 `claim_type=chain_tps`, `load_profile`, `duration_seconds`, `target_tx_per_sec`와 `submitted_tx/sec`, `accepted_tx/sec`, `included_tx/sec`, `successful_tx/sec`, `tx/sec`, `failed_tx_rate`, `inclusion_latency_ms`, `gas_used` metric을 포함합니다.
+- 현재 wrapper는 e2e smoke flow를 계측 가능한 TPS report로 승격하는 경로입니다. 대규모 open-loop account pool/sequence contention 없는 batch submission은 downstream/staging 환경에서 같은 tx metrics bucket schema로 feed해야 합니다.
+
 구현 항목:
 
 - `scripts/privacy-localnet-tps-bench.sh` 추가
-- batch runner 추가:
+- batch summary runner 추가:
   - option A: Go command `cmd/clairveil-localnetload`
   - option B: shell + CLI wrapper, 단 account sequence 처리 안정성이 낮으므로 Go command 권장
 - tx mix profiles:

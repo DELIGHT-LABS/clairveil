@@ -69,6 +69,7 @@ trap cleanup EXIT
 mkdir -p "$bench_out_dir"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 metrics_file="$bench_out_dir/tx-metrics-$stamp.json"
+summary_file="$bench_out_dir/localnet-summary-$stamp.json"
 run_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 echo "running privacy localnet benchmark smoke"
@@ -112,13 +113,19 @@ for path in sorted(out.glob("*-query.json")):
     gas_used = int(response.get("gas_used") or 0)
     gas_wanted = int(response.get("gas_wanted") or 0)
     code = int(response.get("code") or 0)
+    tx_name = path.name.removesuffix("-query.json")
+    submitted_path = out / f"{tx_name}.submitted-at"
+    submitted_at = submitted_path.read_text().strip() if submitted_path.exists() else ""
     transactions.append({
         "tx_type": classify(path),
         "txhash": response.get("txhash", ""),
         "source_file": str(path),
+        "height": int(response.get("height") or 0),
         "gas_used": gas_used,
         "gas_wanted": gas_wanted,
         "success": code == 0,
+        "submitted_at": submitted_at,
+        "included_at": response.get("timestamp", ""),
     })
 
 if not transactions:
@@ -135,8 +142,18 @@ cp "$metrics_file" "$bench_out_dir/latest-tx-metrics.json"
 cp "$work_dir/out/reserve-uclair.json" "$bench_out_dir/reserve-uclair-$stamp.json"
 cp "$work_dir/out/reserve-uclair.json" "$bench_out_dir/latest-reserve-uclair.json"
 
+go run ./cmd/clairveil-localnetload \
+  -tx-metrics "$metrics_file" \
+  -out "$summary_file" \
+  -load-profile "${LOCALNET_LOAD_PROFILE:-mixed_deposit_transfer_withdraw}" \
+  -target-tx-sec "${LOCALNET_TARGET_TX_SEC:-1}" \
+  -started-at "$run_started_at" \
+  -ended-at "$run_ended_at"
+cp "$summary_file" "$bench_out_dir/latest-localnet-summary.json"
+
 report_args=(
   run ./cmd/clairveil-benchreport
+  -benchmark-summaries "$summary_file"
   -tx-metrics "$metrics_file"
   -out "$bench_out_dir"
   -fee-denom "$fee_denom"

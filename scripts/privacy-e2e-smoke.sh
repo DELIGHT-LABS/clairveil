@@ -80,6 +80,11 @@ Path(sys.argv[2]).write_text(data["txhash"] + "\n")
 PY
 }
 
+write_submitted_at() {
+	local marker_file="$1"
+	date -u +%Y-%m-%dT%H:%M:%SZ >"$marker_file"
+}
+
 patch_ports() {
 	python3 - "$home" "$rpc_port" "$p2p_port" "$abci_port" "$grpc_port" "$api_port" "$pprof_port" <<'PY'
 import sys
@@ -207,11 +212,13 @@ PY
 
 for amount in 11 10 7; do
 	run tx privacy deposit "${amount}uclair" --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas 2500000 --gas-prices 8500000000uclair --yes --output json >"$out/deposit-${amount}.json"
+	write_submitted_at "$out/deposit-${amount}.submitted-at"
 	write_txhash "$out/deposit-${amount}.json" "$out/deposit-${amount}.txhash"
 	wait_tx "$(cat "$out/deposit-${amount}.txhash")" "$out/deposit-${amount}-query.json"
 done
 
 run tx privacy deposit 0uclair --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas 2500000 --gas-prices 8500000000uclair --yes --output json >"$out/deposit-dummy.json"
+write_submitted_at "$out/deposit-dummy.submitted-at"
 write_txhash "$out/deposit-dummy.json" "$out/deposit-dummy.txhash"
 wait_tx "$(cat "$out/deposit-dummy.txhash")" "$out/deposit-dummy-query.json"
 
@@ -229,16 +236,19 @@ if not required.issubset(amounts):
 PY
 
 run tx privacy transfer "$(cat "$out/bob-shielded-address.txt")" 11uclair --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas 9000000 --gas-prices 8500000000uclair --yes --output json >"$out/transfer-private.json"
+write_submitted_at "$out/transfer-private.submitted-at"
 write_txhash "$out/transfer-private.json" "$out/transfer-private.txhash"
 wait_tx "$(cat "$out/transfer-private.txhash")" "$out/transfer-private-query.json"
 
 run tx privacy transfer "$(cat "$out/bob-shielded-address.txt")" 7uclair --privacy-policy amount --disclosure-mode public --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas 9000000 --gas-prices 8500000000uclair --yes --output json >"$out/transfer-public.json"
+write_submitted_at "$out/transfer-public.submitted-at"
 write_txhash "$out/transfer-public.json" "$out/transfer-public.txhash"
 wait_tx "$(cat "$out/transfer-public.txhash")" "$out/transfer-public-query.json"
 
 run tx privacy decode-transfer-disclosure --tx-hash "$(cat "$out/transfer-public.txhash")" --disclosure-plane public --node "$node" --report >"$out/transfer-public-report.json"
 
 run tx privacy transfer "$(cat "$out/bob-shielded-address.txt")" 10uclair --privacy-policy amount-from-to --disclosure-mode recipient-encrypted --disclosure-pubkey "$(cat "$out/bob-disclosure.hex")" --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas 10000000 --gas-prices 8500000000uclair --yes --output json >"$out/transfer-recipient.json"
+write_submitted_at "$out/transfer-recipient.submitted-at"
 write_txhash "$out/transfer-recipient.json" "$out/transfer-recipient.txhash"
 wait_tx "$(cat "$out/transfer-recipient.txhash")" "$out/transfer-recipient-query.json"
 
@@ -284,6 +294,7 @@ if not required.issubset(amounts):
 PY
 
 run tx privacy withdraw 11uclair --recipient "$(cat "$out/alice-address.txt")" --from bob --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas 3500000 --gas-prices 8500000000uclair --yes --output json >"$out/withdraw-direct.json"
+write_submitted_at "$out/withdraw-direct.submitted-at"
 write_txhash "$out/withdraw-direct.json" "$out/withdraw-direct.txhash"
 wait_tx "$(cat "$out/withdraw-direct.txhash")" "$out/withdraw-direct-query.json"
 
@@ -300,6 +311,7 @@ if stdout_payload != file_payload:
 PY
 
 run tx privacy relay-withdraw "$out/withdraw-payload.json" --from relayer --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas 3500000 --gas-prices 8500000000uclair --yes --output json >"$out/withdraw-relayed.json"
+write_submitted_at "$out/withdraw-relayed.submitted-at"
 write_txhash "$out/withdraw-relayed.json" "$out/withdraw-relayed.txhash"
 wait_tx "$(cat "$out/withdraw-relayed.txhash")" "$out/withdraw-relayed-query.json"
 
