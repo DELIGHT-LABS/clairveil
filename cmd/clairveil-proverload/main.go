@@ -236,6 +236,17 @@ func runLoadBucket(ctx context.Context, client *http.Client, baseURL, bearerToke
 
 	started := time.Now()
 	results := make(chan loadResult, concurrency*4)
+	collected := make([]loadResult, 0, concurrency*4)
+	var collectWG sync.WaitGroup
+	if !quiet {
+		collectWG.Add(1)
+		go func() {
+			defer collectWG.Done()
+			for result := range results {
+				collected = append(collected, result)
+			}
+		}()
+	}
 	var telemetryWG sync.WaitGroup
 	if telemetryInterval > 0 {
 		telemetryWG.Add(1)
@@ -269,7 +280,11 @@ func runLoadBucket(ctx context.Context, client *http.Client, baseURL, bearerToke
 				payload := requests[int(index)%len(requests)]
 				result := doRequest(ctx, client, baseURL, bearerToken, payload)
 				if !quiet {
-					results <- result
+					select {
+					case results <- result:
+					case <-ctx.Done():
+						return
+					}
 				}
 			}
 		}()
@@ -282,11 +297,7 @@ func runLoadBucket(ctx context.Context, client *http.Client, baseURL, bearerToke
 	cancel()
 	telemetryWG.Wait()
 	close(results)
-
-	collected := make([]loadResult, 0, len(results))
-	for result := range results {
-		collected = append(collected, result)
-	}
+	collectWG.Wait()
 	return collected, elapsed, telemetry
 }
 

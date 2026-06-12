@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -108,6 +112,41 @@ func TestSummarizeLoadBucket(t *testing.T) {
 	}
 	if got := summary.Metrics["telemetry_error_rate"].Mean; got != 0 {
 		t.Fatalf("unexpected telemetry error rate %.3f", got)
+	}
+}
+
+func TestRunLoadBucketDrainsMoreResultsThanChannelBuffer(t *testing.T) {
+	var requests atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	done := make(chan []loadResult, 1)
+	go func() {
+		results, _, _ := runLoadBucket(
+			context.Background(),
+			server.Client(),
+			server.URL,
+			"",
+			[]requestPayload{{Route: "transfer", Path: "/prove/transfer", Body: []byte(`{}`)}},
+			1,
+			50*time.Millisecond,
+			false,
+			0,
+		)
+		done <- results
+	}()
+
+	select {
+	case results := <-done:
+		if len(results) <= 4 {
+			t.Fatalf("expected more results than the old channel buffer, got %d after %d requests", len(results), requests.Load())
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("runLoadBucket blocked while publishing benchmark results")
 	}
 }
 

@@ -1440,6 +1440,34 @@ func TestEvaluateClaimProfileValidatesPublicCapacityComponentReports(t *testing.
 	}
 }
 
+func TestEvaluateClaimProfileRequiresComponentReportsAsSourceEvidence(t *testing.T) {
+	rep := completePublicProverReport()
+	rep.ResultFamily = "public-capacity"
+	rep.ClaimEvidenceByType = map[string]claimEvidence{
+		"prover_rps": rep.ClaimEvidence,
+	}
+	rep.ComponentReports = []componentReport{
+		{
+			Path:           "benchmarks/privacy-proverd-load/component.json",
+			SHA256:         strings.Repeat("a", 64),
+			ResultFamily:   "privacy-proverd-load",
+			RunProfile:     "public_claim",
+			ClaimTypes:     []string{"prover_rps"},
+			Eligible:       true,
+			ActiveSetID:    rep.ActiveSetID,
+			ManifestSHA256: rep.ArtifactSet.ManifestSHA256,
+		},
+	}
+
+	profile := evaluateClaimProfile(rep)
+	if profile.Eligible {
+		t.Fatalf("expected public-capacity report to be blocked")
+	}
+	if !containsString(profile.BlockingReasons, "component reports invalid: benchmarks/privacy-proverd-load/component.json is not in source_files, benchmarks/privacy-proverd-load/component.json is not in source_file_sha256") {
+		t.Fatalf("expected component report source evidence blocker, got %+v", profile.BlockingReasons)
+	}
+}
+
 func TestEvaluateClaimProfileBlocksAnyMatchingMetricSLO(t *testing.T) {
 	rep := report{
 		Dirty:        false,

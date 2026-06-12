@@ -2129,8 +2129,9 @@ func componentReportIssues(rep report) []string {
 	}
 	var issues []string
 	for _, component := range rep.ComponentReports {
-		name := strings.TrimSpace(component.Path)
-		if name == "" {
+		path := strings.TrimSpace(component.Path)
+		name := path
+		if path == "" {
 			name = "<missing path>"
 			issues = append(issues, "component report path is required")
 		}
@@ -2139,7 +2140,14 @@ func componentReportIssues(rep report) []string {
 		} else if !isSHA256Hex(component.SHA256) {
 			issues = append(issues, fmt.Sprintf("%s sha256 must be 64hex", name))
 		}
-		if hash, ok := rep.SourceFileSHA256[component.Path]; ok && component.SHA256 != "" && isSHA256Hex(component.SHA256) && !strings.EqualFold(hash, component.SHA256) {
+		if path != "" && !hasString(rep.SourceFiles, path) {
+			issues = append(issues, fmt.Sprintf("%s is not in source_files", name))
+		}
+		hash, ok := rep.SourceFileSHA256[path]
+		if path != "" && !ok {
+			issues = append(issues, fmt.Sprintf("%s is not in source_file_sha256", name))
+		}
+		if ok && component.SHA256 != "" && isSHA256Hex(component.SHA256) && !strings.EqualFold(hash, component.SHA256) {
 			issues = append(issues, fmt.Sprintf("%s sha256 does not match source_file_sha256", name))
 		}
 		if component.RunProfile != "public_claim" {

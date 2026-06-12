@@ -2,7 +2,9 @@ package provertransport
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -26,13 +28,18 @@ func BenchmarkHTTPProverClientTransferParallelRoundTrip(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
+	var firstErr atomic.Value
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			if _, err := client.ProveTransfer(context.Background(), *request); err != nil {
-				b.Fatal(err)
+				firstErr.Store(err.Error())
+				return
 			}
 		}
 	})
+	if err, ok := firstErr.Load().(string); ok {
+		b.Fatal(err)
+	}
 }
 
 func BenchmarkHTTPProverClientWithdrawRoundTrip(b *testing.B) {
@@ -54,13 +61,18 @@ func BenchmarkHTTPProverClientWithdrawParallelRoundTrip(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
+	var firstErr atomic.Value
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			if _, err := client.ProveWithdraw(context.Background(), *request); err != nil {
-				b.Fatal(err)
+				firstErr.Store(err.Error())
+				return
 			}
 		}
 	})
+	if err, ok := firstErr.Load().(string); ok {
+		b.Fatal(err)
+	}
 }
 
 func benchmarkTransferClient(b testing.TB) (*TransferProofRequest, HTTPProverClient, func()) {
@@ -78,12 +90,16 @@ func benchmarkTransferClient(b testing.TB) (*TransferProofRequest, HTTPProverCli
 		nil,
 	))
 
+	httpClient, cleanupClient := benchmarkHTTPClient()
 	client := HTTPProverClient{
 		BaseURL: server.URL,
-		Client:  server.Client(),
+		Client:  httpClient,
 	}
 
-	return request, client, server.Close
+	return request, client, func() {
+		cleanupClient()
+		server.Close()
+	}
 }
 
 func benchmarkWithdrawClient(b testing.TB) (*WithdrawProofRequest, HTTPProverClient, func()) {
@@ -102,11 +118,28 @@ func benchmarkWithdrawClient(b testing.TB) (*WithdrawProofRequest, HTTPProverCli
 		func() time.Time { return now },
 	))
 
+	httpClient, cleanupClient := benchmarkHTTPClient()
 	client := HTTPProverClient{
 		BaseURL: server.URL,
-		Client:  server.Client(),
+		Client:  httpClient,
 		Now:     func() time.Time { return now },
 	}
 
-	return request, client, server.Close
+	return request, client, func() {
+		cleanupClient()
+		server.Close()
+	}
+}
+
+func benchmarkHTTPClient() (*http.Client, func()) {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConns = 1024
+	transport.MaxIdleConnsPerHost = 1024
+
+	return &http.Client{
+			Transport: transport,
+			Timeout:   30 * time.Second,
+		}, func() {
+			transport.CloseIdleConnections()
+		}
 }
