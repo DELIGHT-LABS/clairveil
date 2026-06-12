@@ -2,6 +2,8 @@
 
 이 문서는 `clairveil` privacy accounting remediation 이후의 circuit/prover 성능을 공개 가능한 형태로 측정하기 위한 계획입니다. 현재 `x/privacy/circuit/bench_test.go`의 proving benchmark는 smoke baseline으로 유용하지만, 그 결과만으로 chain TPS나 production prover capacity를 주장해서는 안 됩니다. 공개 벤치마크는 proving, verification, artifact setup, prover HTTP, localnet end-to-end throughput을 분리해 측정해야 합니다.
 
+Public capacity claim, 즉 TPS/운영 prover 처리량/사용자 체감 지연을 말하기 위한 후속 계획은 [Clairveil Public Capacity Benchmark 후속 계획](clairveil-public-capacity-benchmark-followup-plan-kr.md)을 기준으로 합니다.
+
 ## 1. 목표
 
 1. remediation 이후 `DepositCircuit`, `SpendCircuit`, `JoinSplitCircuit`의 비용을 재현 가능하게 공개합니다.
