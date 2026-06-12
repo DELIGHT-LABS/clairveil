@@ -574,13 +574,15 @@ func TestSourceMetadataRejectsInvalidDirtyOverride(t *testing.T) {
 	}
 }
 
-func TestSourceStatusDirtyIgnoresGeneratedBenchmarkFamiliesOnly(t *testing.T) {
+func TestSourceStatusDirtyIgnoresGeneratedArtifactsOnly(t *testing.T) {
 	status := strings.Join([]string{
 		"?? benchmarks/privacy-circuits/latest.json",
 		"?? benchmarks/privacy-proverd/raw.txt",
+		"?? clairveil-benchreport",
+		"?? clairveil-localnetload",
 	}, "\n")
 	if sourceStatusDirty(status) {
-		t.Fatalf("expected generated benchmark files to be ignored")
+		t.Fatalf("expected generated benchmark files and build artifacts to be ignored")
 	}
 
 	status = strings.Join([]string{
@@ -596,6 +598,20 @@ func TestSourceStatusDirtyIgnoresGeneratedBenchmarkFamiliesOnly(t *testing.T) {
 	}, "\n")
 	if !sourceStatusDirty(status) {
 		t.Fatalf("expected tracked generated benchmark edit to mark source dirty")
+	}
+
+	status = strings.Join([]string{
+		" M clairveil-benchreport",
+	}, "\n")
+	if !sourceStatusDirty(status) {
+		t.Fatalf("expected tracked build artifact edit to mark source dirty")
+	}
+
+	status = strings.Join([]string{
+		"?? clairveil-benchreport.tmp",
+	}, "\n")
+	if !sourceStatusDirty(status) {
+		t.Fatalf("expected build-artifact-like untracked file to mark source dirty")
 	}
 }
 

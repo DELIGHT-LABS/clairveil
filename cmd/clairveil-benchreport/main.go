@@ -1471,6 +1471,11 @@ func generatedBenchmarkStatusLine(line string) bool {
 			return true
 		}
 	}
+	for _, name := range generatedRootBuildArtifacts() {
+		if path == name {
+			return true
+		}
+	}
 	return false
 }
 
@@ -1483,6 +1488,19 @@ func generatedBenchmarkPrefixes() []string {
 		"benchmarks/privacy-localnet-tps/",
 		"benchmarks/privacy-user-latency/",
 		"benchmarks/public-capacity/",
+	}
+}
+
+func generatedRootBuildArtifacts() []string {
+	return []string{
+		"clairveild",
+		"clairveil-setup",
+		"clairveil-verify",
+		"clairveil-proverd",
+		"clairveil-benchreport",
+		"clairveil-proverload",
+		"clairveil-localnetload",
+		"clairveil-userlatency",
 	}
 }
 
