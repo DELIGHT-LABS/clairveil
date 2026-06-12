@@ -90,4 +90,4 @@ docker-proverd-build:
 
 .PHONY: clean
 clean:
-	rm -f clairveild clairveil-setup clairveil-verify clairveil-proverd
+	rm -f clairveild clairveil-setup clairveil-verify clairveil-proverd clairveil-benchreport
