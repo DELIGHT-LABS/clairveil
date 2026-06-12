@@ -2,7 +2,7 @@
 set -euo pipefail
 
 govulncheck_version="${GOVULNCHECK_VERSION:-v1.3.0}"
-go_toolchain="${GOVULNCHECK_GOTOOLCHAIN:-go1.25.10}"
+go_toolchain="${GOVULNCHECK_GOTOOLCHAIN:-go1.25.11}"
 tmp_dir="$(mktemp -d)"
 report_path="$tmp_dir/govulncheck.jsonl"
 trap 'rm -rf "$tmp_dir"' EXIT
