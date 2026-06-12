@@ -1283,6 +1283,9 @@ func evaluateClaimProfile(rep report) claimProfile {
 				if issues := claimRowMetadataIssues(rep, claimType); len(issues) > 0 {
 					reasons = append(reasons, fmt.Sprintf("%s benchmark rows invalid: %s", claimType, strings.Join(issues, ", ")))
 				}
+				if issues := claimSweepIssues(rep, claimType); len(issues) > 0 {
+					reasons = append(reasons, fmt.Sprintf("%s sweep invalid: %s", claimType, strings.Join(issues, ", ")))
+				}
 				if missing := missingClaimMetrics(rep, claimType); len(missing) > 0 {
 					reasons = append(reasons, fmt.Sprintf("%s metrics missing: %s", claimType, strings.Join(missing, ", ")))
 				}
@@ -1363,6 +1366,46 @@ func claimRowMetadataIssues(rep report, claimType string) []string {
 		}
 	}
 	return uniqueStrings(issues)
+}
+
+func claimSweepIssues(rep report, claimType string) []string {
+	rows, tagged := claimBenchmarkRows(rep, claimType)
+	if !tagged {
+		return nil
+	}
+	switch claimType {
+	case "prover_rps":
+		if countUniquePositiveConcurrency(rows) < 2 {
+			return []string{"at least two concurrency buckets are required"}
+		}
+	case "chain_tps":
+		if countUniquePositiveTargetTPS(rows) < 2 {
+			return []string{"at least two target_tx_per_sec buckets are required"}
+		}
+	}
+	return nil
+}
+
+func countUniquePositiveConcurrency(rows []benchmarkSummary) int {
+	seen := make(map[int]struct{})
+	for _, row := range rows {
+		if row.Concurrency <= 0 {
+			continue
+		}
+		seen[row.Concurrency] = struct{}{}
+	}
+	return len(seen)
+}
+
+func countUniquePositiveTargetTPS(rows []benchmarkSummary) int {
+	seen := make(map[string]struct{})
+	for _, row := range rows {
+		if row.TargetTxPerSec <= 0 {
+			continue
+		}
+		seen[strconv.FormatFloat(row.TargetTxPerSec, 'g', -1, 64)] = struct{}{}
+	}
+	return len(seen)
 }
 
 func claimBenchmarkRows(rep report, claimType string) ([]benchmarkSummary, bool) {

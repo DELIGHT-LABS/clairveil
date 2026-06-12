@@ -644,7 +644,7 @@ func TestEvaluateClaimProfileAllowsCompletePublicMetadata(t *testing.T) {
 		},
 		Benchmarks: []benchmarkSummary{
 			{
-				Name:            "BenchmarkProverLoadTransfer",
+				Name:            "BenchmarkProverLoadTransferC8",
 				Samples:         600,
 				ClaimType:       "prover_rps",
 				LoadProfile:     "transfer_only",
@@ -658,6 +658,23 @@ func TestEvaluateClaimProfileAllowsCompletePublicMetadata(t *testing.T) {
 					"errors/op":     {Mean: 0, P50: 0, P95: 0, P99: 0, Max: 0},
 					"cpu_percent":   {Mean: 80, P50: 80, P95: 85, P99: 90, Min: 70, Max: 92},
 					"max_rss_bytes": {Mean: 1024, P50: 1024, P95: 2048, P99: 4096, Min: 1024, Max: 4096},
+				},
+			},
+			{
+				Name:            "BenchmarkProverLoadTransferC16",
+				Samples:         600,
+				ClaimType:       "prover_rps",
+				LoadProfile:     "transfer_only",
+				Route:           "transfer",
+				Concurrency:     16,
+				WarmupSeconds:   60,
+				DurationSeconds: 600,
+				Metrics: map[string]metricSummary{
+					"proofs/sec":    {Mean: 18, P50: 18, P95: 17, P99: 16, Min: 15, Max: 19},
+					"latency_ms":    {Mean: 120, P50: 110, P95: 150, P99: 180, Min: 90, Max: 190},
+					"errors/op":     {Mean: 0, P50: 0, P95: 0, P99: 0, Min: 0, Max: 0},
+					"cpu_percent":   {Mean: 88, P50: 88, P95: 92, P99: 95, Min: 80, Max: 96},
+					"max_rss_bytes": {Mean: 2048, P50: 2048, P95: 4096, P99: 4096, Min: 2048, Max: 4096},
 				},
 			},
 		},
@@ -717,7 +734,9 @@ func TestEvaluateClaimProfileRequiresPositiveSamples(t *testing.T) {
 
 func TestEvaluateClaimProfileRequiresClaimTypedBenchmarkRows(t *testing.T) {
 	rep := completePublicProverReport()
-	rep.Benchmarks[0].ClaimType = ""
+	for i := range rep.Benchmarks {
+		rep.Benchmarks[i].ClaimType = ""
+	}
 
 	profile := evaluateClaimProfile(rep)
 	if profile.Eligible {
@@ -744,7 +763,9 @@ func TestEvaluateClaimProfileRequiresUserLatencyBucketMetadata(t *testing.T) {
 
 func TestEvaluateClaimProfileScopesMetricsToClaimRows(t *testing.T) {
 	rep := completePublicProverReport()
-	rep.Benchmarks[0].ClaimType = "user_latency"
+	for i := range rep.Benchmarks {
+		rep.Benchmarks[i].ClaimType = "user_latency"
+	}
 	rep.Benchmarks = append(rep.Benchmarks, benchmarkSummary{
 		Name:            "ProverMetadataOnly",
 		Samples:         600,
@@ -765,6 +786,19 @@ func TestEvaluateClaimProfileScopesMetricsToClaimRows(t *testing.T) {
 	}
 	if !containsString(profile.BlockingReasons, "prover_rps metrics missing: latency_ms|proof_latency_ms|roundtrip_latency_ms, errors/op|error_rate, cpu_percent, rss_bytes|max_rss_bytes") {
 		t.Fatalf("expected prover metrics to be scoped to prover rows, got %+v", profile.BlockingReasons)
+	}
+}
+
+func TestEvaluateClaimProfileRequiresProverConcurrencySweep(t *testing.T) {
+	rep := completePublicProverReport()
+	rep.Benchmarks = rep.Benchmarks[:1]
+
+	profile := evaluateClaimProfile(rep)
+	if profile.Eligible {
+		t.Fatalf("expected public claim to be blocked")
+	}
+	if !containsString(profile.BlockingReasons, "prover_rps sweep invalid: at least two concurrency buckets are required") {
+		t.Fatalf("expected prover sweep blocker, got %+v", profile.BlockingReasons)
 	}
 }
 
@@ -873,8 +907,10 @@ func TestEvaluateClaimProfileBlocksNegativePositiveMetricExtrema(t *testing.T) {
 
 func TestEvaluateClaimProfileRequiresFailedTxRateForChainTPS(t *testing.T) {
 	rep := completePublicChainReport()
-	rep.Benchmarks[0].Metrics["failed_tx_count"] = metricSummary{Mean: 0, P50: 0, P95: 0, P99: 0, Min: 0, Max: 0}
-	delete(rep.Benchmarks[0].Metrics, "failed_tx_rate")
+	for i := range rep.Benchmarks {
+		rep.Benchmarks[i].Metrics["failed_tx_count"] = metricSummary{Mean: 0, P50: 0, P95: 0, P99: 0, Min: 0, Max: 0}
+		delete(rep.Benchmarks[i].Metrics, "failed_tx_rate")
+	}
 
 	profile := evaluateClaimProfile(rep)
 	if profile.Eligible {
@@ -882,6 +918,19 @@ func TestEvaluateClaimProfileRequiresFailedTxRateForChainTPS(t *testing.T) {
 	}
 	if !containsString(profile.BlockingReasons, "chain_tps metrics missing: failed_tx_rate") {
 		t.Fatalf("expected missing failed_tx_rate blocker, got %+v", profile.BlockingReasons)
+	}
+}
+
+func TestEvaluateClaimProfileRequiresChainTargetTPSSweep(t *testing.T) {
+	rep := completePublicChainReport()
+	rep.Benchmarks = rep.Benchmarks[:1]
+
+	profile := evaluateClaimProfile(rep)
+	if profile.Eligible {
+		t.Fatalf("expected public claim to be blocked")
+	}
+	if !containsString(profile.BlockingReasons, "chain_tps sweep invalid: at least two target_tx_per_sec buckets are required") {
+		t.Fatalf("expected chain target sweep blocker, got %+v", profile.BlockingReasons)
 	}
 }
 
@@ -1407,6 +1456,23 @@ func completePublicProverReport() report {
 					"max_rss_bytes": {Mean: 1024, P50: 1024, P95: 2048, P99: 4096, Min: 1024, Max: 4096},
 				},
 			},
+			{
+				Name:            "BenchmarkProverLoadTransferC16",
+				Samples:         600,
+				ClaimType:       "prover_rps",
+				LoadProfile:     "transfer_only",
+				Route:           "transfer",
+				Concurrency:     16,
+				WarmupSeconds:   60,
+				DurationSeconds: 600,
+				Metrics: map[string]metricSummary{
+					"proofs/sec":    {Mean: 18, P50: 18, P95: 17, P99: 16, Min: 15, Max: 19},
+					"latency_ms":    {Mean: 120, P50: 110, P95: 150, P99: 180, Min: 90, Max: 190},
+					"errors/op":     {Mean: 0, P50: 0, P95: 0, P99: 0, Min: 0, Max: 0},
+					"cpu_percent":   {Mean: 88, P50: 88, P95: 92, P99: 95, Min: 80, Max: 96},
+					"max_rss_bytes": {Mean: 2048, P50: 2048, P95: 4096, P99: 4096, Min: 2048, Max: 4096},
+				},
+			},
 		},
 	}
 }
@@ -1467,7 +1533,20 @@ func completePublicChainReport() report {
 		},
 		Benchmarks: []benchmarkSummary{
 			{
-				Name:            "ChainTPSMixed",
+				Name:            "ChainTPSMixedTarget8",
+				Samples:         600,
+				ClaimType:       "chain_tps",
+				LoadProfile:     "mixed-shielded",
+				DurationSeconds: 600,
+				TargetTxPerSec:  8,
+				Metrics: map[string]metricSummary{
+					"tx/sec":               {Mean: 8, P50: 8, P95: 8, P99: 8, Min: 7, Max: 9},
+					"inclusion_latency_ms": {Mean: 100, P50: 100, P95: 120, P99: 150, Min: 80, Max: 200},
+					"failed_tx_rate":       {Mean: 0, P50: 0, P95: 0, P99: 0, Min: 0, Max: 0},
+				},
+			},
+			{
+				Name:            "ChainTPSMixedTarget12",
 				Samples:         600,
 				ClaimType:       "chain_tps",
 				LoadProfile:     "mixed-shielded",
@@ -1475,7 +1554,7 @@ func completePublicChainReport() report {
 				TargetTxPerSec:  12,
 				Metrics: map[string]metricSummary{
 					"tx/sec":               {Mean: 10, P50: 10, P95: 10, P99: 10, Min: 9, Max: 11},
-					"inclusion_latency_ms": {Mean: 100, P50: 100, P95: 120, P99: 150, Min: 80, Max: 200},
+					"inclusion_latency_ms": {Mean: 120, P50: 110, P95: 150, P99: 180, Min: 90, Max: 220},
 					"failed_tx_rate":       {Mean: 0, P50: 0, P95: 0, P99: 0, Min: 0, Max: 0},
 				},
 			},
