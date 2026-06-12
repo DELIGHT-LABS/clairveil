@@ -35,6 +35,13 @@ claim_latency_p99_slo_ms="${CLAIM_LATENCY_P99_SLO_MS:-}"
 claim_inclusion_p95_slo_ms="${CLAIM_INCLUSION_P95_SLO_MS:-}"
 claim_rss_stable="${CLAIM_RSS_STABLE:-}"
 claim_saturation_profile="${CLAIM_SATURATION_PROFILE:-}"
+claim_saturation_profile_file="${CLAIM_SATURATION_PROFILE_FILE:-}"
+claim_saturation_profile_sha256="${CLAIM_SATURATION_PROFILE_SHA256:-}"
+claim_throughput_window_seconds="${CLAIM_THROUGHPUT_WINDOW_SECONDS:-}"
+claim_reserve_snapshot_before_file="${CLAIM_RESERVE_SNAPSHOT_BEFORE_FILE:-}"
+claim_reserve_snapshot_before_sha256="${CLAIM_RESERVE_SNAPSHOT_BEFORE_SHA256:-}"
+claim_reserve_snapshot_after_file="${CLAIM_RESERVE_SNAPSHOT_AFTER_FILE:-}"
+claim_reserve_snapshot_after_sha256="${CLAIM_RESERVE_SNAPSHOT_AFTER_SHA256:-}"
 claim_latency_mode="${CLAIM_LATENCY_MODE:-}"
 claim_cold_warm_separated="${CLAIM_COLD_WARM_SEPARATED:-}"
 claim_browser_matrix="${CLAIM_BROWSER_MATRIX:-}"
@@ -197,6 +204,27 @@ if [[ -n "$claim_rss_stable" ]]; then
 fi
 if [[ -n "$claim_saturation_profile" ]]; then
   report_args+=(-claim-saturation-profile "$claim_saturation_profile")
+fi
+if [[ -n "$claim_saturation_profile_file" ]]; then
+  report_args+=(-claim-saturation-profile-file "$claim_saturation_profile_file")
+fi
+if [[ -n "$claim_saturation_profile_sha256" ]]; then
+  report_args+=(-claim-saturation-profile-sha256 "$claim_saturation_profile_sha256")
+fi
+if [[ -n "$claim_throughput_window_seconds" ]]; then
+  report_args+=(-claim-throughput-window-seconds "$claim_throughput_window_seconds")
+fi
+if [[ -n "$claim_reserve_snapshot_before_file" ]]; then
+  report_args+=(-claim-reserve-snapshot-before-file "$claim_reserve_snapshot_before_file")
+fi
+if [[ -n "$claim_reserve_snapshot_before_sha256" ]]; then
+  report_args+=(-claim-reserve-snapshot-before-sha256 "$claim_reserve_snapshot_before_sha256")
+fi
+if [[ -n "$claim_reserve_snapshot_after_file" ]]; then
+  report_args+=(-claim-reserve-snapshot-after-file "$claim_reserve_snapshot_after_file")
+fi
+if [[ -n "$claim_reserve_snapshot_after_sha256" ]]; then
+  report_args+=(-claim-reserve-snapshot-after-sha256 "$claim_reserve_snapshot_after_sha256")
 fi
 if [[ -n "$claim_latency_mode" ]]; then
   report_args+=(-claim-latency-mode "$claim_latency_mode")

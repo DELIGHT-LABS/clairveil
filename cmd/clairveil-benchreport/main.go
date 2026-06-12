@@ -63,31 +63,38 @@ type claimProfile struct {
 }
 
 type claimEvidence struct {
-	SteadyStateSeconds       int     `json:"steady_state_seconds,omitempty"`
-	LoadProfile              string  `json:"load_profile,omitempty"`
-	PreflightMode            string  `json:"preflight_mode,omitempty"`
-	AuthEnabled              string  `json:"auth_enabled,omitempty"`
-	InstanceProfile          string  `json:"instance_profile,omitempty"`
-	ProverConfigFile         string  `json:"prover_config_file,omitempty"`
-	ProverConfigSHA256       string  `json:"prover_config_sha256,omitempty"`
-	ChainConfig              string  `json:"chain_config,omitempty"`
-	ChainConfigFile          string  `json:"chain_config_file,omitempty"`
-	ChainConfigSHA256        string  `json:"chain_config_sha256,omitempty"`
-	ReserveInvariant         string  `json:"reserve_invariant,omitempty"`
-	LatencyP99SLOMS          float64 `json:"latency_p99_slo_ms,omitempty"`
-	InclusionP95SLOMS        float64 `json:"inclusion_p95_slo_ms,omitempty"`
-	RSSStable                string  `json:"rss_stable,omitempty"`
-	SaturationProfile        string  `json:"saturation_profile,omitempty"`
-	LatencyMode              string  `json:"latency_mode,omitempty"`
-	ColdWarmSeparated        string  `json:"cold_warm_separated,omitempty"`
-	BrowserMatrix            string  `json:"browser_matrix,omitempty"`
-	BrowserAdapterReady      string  `json:"browser_adapter_ready,omitempty"`
-	BrowserAdapterVersion    string  `json:"browser_adapter_version,omitempty"`
-	BrowserAdapterFile       string  `json:"browser_adapter_file,omitempty"`
-	BrowserAdapterSHA256     string  `json:"browser_adapter_sha256,omitempty"`
-	RemoteTopology           string  `json:"remote_topology,omitempty"`
-	LinkedProverReportFile   string  `json:"linked_prover_report_file,omitempty"`
-	LinkedProverReportSHA256 string  `json:"linked_prover_report_sha256,omitempty"`
+	SteadyStateSeconds          int     `json:"steady_state_seconds,omitempty"`
+	LoadProfile                 string  `json:"load_profile,omitempty"`
+	PreflightMode               string  `json:"preflight_mode,omitempty"`
+	AuthEnabled                 string  `json:"auth_enabled,omitempty"`
+	InstanceProfile             string  `json:"instance_profile,omitempty"`
+	ProverConfigFile            string  `json:"prover_config_file,omitempty"`
+	ProverConfigSHA256          string  `json:"prover_config_sha256,omitempty"`
+	ChainConfig                 string  `json:"chain_config,omitempty"`
+	ChainConfigFile             string  `json:"chain_config_file,omitempty"`
+	ChainConfigSHA256           string  `json:"chain_config_sha256,omitempty"`
+	ReserveInvariant            string  `json:"reserve_invariant,omitempty"`
+	LatencyP99SLOMS             float64 `json:"latency_p99_slo_ms,omitempty"`
+	InclusionP95SLOMS           float64 `json:"inclusion_p95_slo_ms,omitempty"`
+	RSSStable                   string  `json:"rss_stable,omitempty"`
+	SaturationProfile           string  `json:"saturation_profile,omitempty"`
+	SaturationProfileFile       string  `json:"saturation_profile_file,omitempty"`
+	SaturationProfileSHA256     string  `json:"saturation_profile_sha256,omitempty"`
+	ThroughputWindowSeconds     int     `json:"throughput_window_seconds,omitempty"`
+	ReserveSnapshotBeforeFile   string  `json:"reserve_snapshot_before_file,omitempty"`
+	ReserveSnapshotBeforeSHA256 string  `json:"reserve_snapshot_before_sha256,omitempty"`
+	ReserveSnapshotAfterFile    string  `json:"reserve_snapshot_after_file,omitempty"`
+	ReserveSnapshotAfterSHA256  string  `json:"reserve_snapshot_after_sha256,omitempty"`
+	LatencyMode                 string  `json:"latency_mode,omitempty"`
+	ColdWarmSeparated           string  `json:"cold_warm_separated,omitempty"`
+	BrowserMatrix               string  `json:"browser_matrix,omitempty"`
+	BrowserAdapterReady         string  `json:"browser_adapter_ready,omitempty"`
+	BrowserAdapterVersion       string  `json:"browser_adapter_version,omitempty"`
+	BrowserAdapterFile          string  `json:"browser_adapter_file,omitempty"`
+	BrowserAdapterSHA256        string  `json:"browser_adapter_sha256,omitempty"`
+	RemoteTopology              string  `json:"remote_topology,omitempty"`
+	LinkedProverReportFile      string  `json:"linked_prover_report_file,omitempty"`
+	LinkedProverReportSHA256    string  `json:"linked_prover_report_sha256,omitempty"`
 }
 
 type environment struct {
@@ -240,6 +247,13 @@ func main() {
 	var inclusionP95SLOMS float64
 	var rssStable string
 	var saturationProfile string
+	var saturationProfileFile string
+	var saturationProfileSHA256 string
+	var throughputWindowSeconds int
+	var reserveSnapshotBeforeFile string
+	var reserveSnapshotBeforeSHA256 string
+	var reserveSnapshotAfterFile string
+	var reserveSnapshotAfterSHA256 string
 	var latencyMode string
 	var coldWarmSeparated string
 	var browserMatrix string
@@ -285,6 +299,13 @@ func main() {
 	flag.Float64Var(&inclusionP95SLOMS, "claim-inclusion-p95-slo-ms", 0, "p95 inclusion latency SLO in milliseconds for public chain TPS claims")
 	flag.StringVar(&rssStable, "claim-rss-stable", "", "whether RSS was stable during steady-state public prover claim")
 	flag.StringVar(&saturationProfile, "claim-saturation-profile", "", "saturation profile identifier for public prover claim")
+	flag.StringVar(&saturationProfileFile, "claim-saturation-profile-file", "", "saturation profile evidence file for public prover or chain capacity claims")
+	flag.StringVar(&saturationProfileSHA256, "claim-saturation-profile-sha256", "", "SHA-256 of the saturation profile evidence file")
+	flag.IntVar(&throughputWindowSeconds, "claim-throughput-window-seconds", 0, "window size in seconds used for sustained throughput metrics")
+	flag.StringVar(&reserveSnapshotBeforeFile, "claim-reserve-snapshot-before-file", "", "reserve snapshot captured before a public chain TPS run")
+	flag.StringVar(&reserveSnapshotBeforeSHA256, "claim-reserve-snapshot-before-sha256", "", "SHA-256 of the before-run reserve snapshot")
+	flag.StringVar(&reserveSnapshotAfterFile, "claim-reserve-snapshot-after-file", "", "reserve snapshot captured after a public chain TPS run")
+	flag.StringVar(&reserveSnapshotAfterSHA256, "claim-reserve-snapshot-after-sha256", "", "SHA-256 of the after-run reserve snapshot")
 	flag.StringVar(&latencyMode, "claim-latency-mode", "", "user latency mode: native, remote, or browser")
 	flag.StringVar(&coldWarmSeparated, "claim-cold-warm-separated", "", "whether cold and warm user latency samples were separated")
 	flag.StringVar(&browserMatrix, "claim-browser-matrix", "", "browser/device matrix identifier for browser user latency evidence")
@@ -337,6 +358,18 @@ func main() {
 	if err != nil {
 		fatalf("linked prover report evidence: %v", err)
 	}
+	resolvedSaturationProfileSHA256, err := resolveConfigSHA256("saturation profile", saturationProfileSHA256, saturationProfileFile)
+	if err != nil {
+		fatalf("saturation profile evidence: %v", err)
+	}
+	resolvedReserveSnapshotBeforeSHA256, err := resolveConfigSHA256("reserve snapshot before", reserveSnapshotBeforeSHA256, reserveSnapshotBeforeFile)
+	if err != nil {
+		fatalf("reserve snapshot before evidence: %v", err)
+	}
+	resolvedReserveSnapshotAfterSHA256, err := resolveConfigSHA256("reserve snapshot after", reserveSnapshotAfterSHA256, reserveSnapshotAfterFile)
+	if err != nil {
+		fatalf("reserve snapshot after evidence: %v", err)
+	}
 
 	rep := report{
 		SchemaVersion: reportSchemaVersion,
@@ -349,6 +382,9 @@ func main() {
 			txMetricsPath,
 			proverConfigFile,
 			chainConfigFile,
+			saturationProfileFile,
+			reserveSnapshotBeforeFile,
+			reserveSnapshotAfterFile,
 			browserAdapterFile,
 			linkedProverReportFile,
 		),
@@ -362,31 +398,38 @@ func main() {
 			ClaimTypes: parseCSV(claimTypes),
 		},
 		ClaimEvidence: claimEvidence{
-			SteadyStateSeconds:       steadyStateSeconds,
-			LoadProfile:              strings.TrimSpace(loadProfile),
-			PreflightMode:            strings.TrimSpace(preflightMode),
-			AuthEnabled:              strings.TrimSpace(authEnabled),
-			InstanceProfile:          strings.TrimSpace(instanceProfile),
-			ProverConfigFile:         strings.TrimSpace(proverConfigFile),
-			ProverConfigSHA256:       resolvedProverConfigSHA256,
-			ChainConfig:              strings.TrimSpace(chainConfig),
-			ChainConfigFile:          strings.TrimSpace(chainConfigFile),
-			ChainConfigSHA256:        resolvedChainConfigSHA256,
-			ReserveInvariant:         strings.TrimSpace(reserveInvariant),
-			LatencyP99SLOMS:          latencyP99SLOMS,
-			InclusionP95SLOMS:        inclusionP95SLOMS,
-			RSSStable:                strings.TrimSpace(rssStable),
-			SaturationProfile:        strings.TrimSpace(saturationProfile),
-			LatencyMode:              strings.TrimSpace(latencyMode),
-			ColdWarmSeparated:        strings.TrimSpace(coldWarmSeparated),
-			BrowserMatrix:            strings.TrimSpace(browserMatrix),
-			BrowserAdapterReady:      strings.TrimSpace(browserAdapterReady),
-			BrowserAdapterVersion:    strings.TrimSpace(browserAdapterVersion),
-			BrowserAdapterFile:       strings.TrimSpace(browserAdapterFile),
-			BrowserAdapterSHA256:     resolvedBrowserAdapterSHA256,
-			RemoteTopology:           strings.TrimSpace(remoteTopology),
-			LinkedProverReportFile:   strings.TrimSpace(linkedProverReportFile),
-			LinkedProverReportSHA256: resolvedLinkedProverReportSHA256,
+			SteadyStateSeconds:          steadyStateSeconds,
+			LoadProfile:                 strings.TrimSpace(loadProfile),
+			PreflightMode:               strings.TrimSpace(preflightMode),
+			AuthEnabled:                 strings.TrimSpace(authEnabled),
+			InstanceProfile:             strings.TrimSpace(instanceProfile),
+			ProverConfigFile:            strings.TrimSpace(proverConfigFile),
+			ProverConfigSHA256:          resolvedProverConfigSHA256,
+			ChainConfig:                 strings.TrimSpace(chainConfig),
+			ChainConfigFile:             strings.TrimSpace(chainConfigFile),
+			ChainConfigSHA256:           resolvedChainConfigSHA256,
+			ReserveInvariant:            strings.TrimSpace(reserveInvariant),
+			LatencyP99SLOMS:             latencyP99SLOMS,
+			InclusionP95SLOMS:           inclusionP95SLOMS,
+			RSSStable:                   strings.TrimSpace(rssStable),
+			SaturationProfile:           strings.TrimSpace(saturationProfile),
+			SaturationProfileFile:       strings.TrimSpace(saturationProfileFile),
+			SaturationProfileSHA256:     resolvedSaturationProfileSHA256,
+			ThroughputWindowSeconds:     throughputWindowSeconds,
+			ReserveSnapshotBeforeFile:   strings.TrimSpace(reserveSnapshotBeforeFile),
+			ReserveSnapshotBeforeSHA256: resolvedReserveSnapshotBeforeSHA256,
+			ReserveSnapshotAfterFile:    strings.TrimSpace(reserveSnapshotAfterFile),
+			ReserveSnapshotAfterSHA256:  resolvedReserveSnapshotAfterSHA256,
+			LatencyMode:                 strings.TrimSpace(latencyMode),
+			ColdWarmSeparated:           strings.TrimSpace(coldWarmSeparated),
+			BrowserMatrix:               strings.TrimSpace(browserMatrix),
+			BrowserAdapterReady:         strings.TrimSpace(browserAdapterReady),
+			BrowserAdapterVersion:       strings.TrimSpace(browserAdapterVersion),
+			BrowserAdapterFile:          strings.TrimSpace(browserAdapterFile),
+			BrowserAdapterSHA256:        resolvedBrowserAdapterSHA256,
+			RemoteTopology:              strings.TrimSpace(remoteTopology),
+			LinkedProverReportFile:      strings.TrimSpace(linkedProverReportFile),
+			LinkedProverReportSHA256:    resolvedLinkedProverReportSHA256,
 		},
 		Environment: environment{
 			MachineProfile: strings.TrimSpace(machineProfile),
@@ -741,6 +784,13 @@ func renderMarkdown(rep report) string {
 		fmt.Fprintf(&b, "| inclusion p95 SLO ms | `%.3f` |\n", rep.ClaimEvidence.InclusionP95SLOMS)
 		fmt.Fprintf(&b, "| RSS stable | `%s` |\n", rep.ClaimEvidence.RSSStable)
 		fmt.Fprintf(&b, "| saturation profile | `%s` |\n", rep.ClaimEvidence.SaturationProfile)
+		fmt.Fprintf(&b, "| saturation profile file | `%s` |\n", rep.ClaimEvidence.SaturationProfileFile)
+		fmt.Fprintf(&b, "| saturation profile SHA-256 | `%s` |\n", rep.ClaimEvidence.SaturationProfileSHA256)
+		fmt.Fprintf(&b, "| throughput window seconds | `%d` |\n", rep.ClaimEvidence.ThroughputWindowSeconds)
+		fmt.Fprintf(&b, "| reserve snapshot before file | `%s` |\n", rep.ClaimEvidence.ReserveSnapshotBeforeFile)
+		fmt.Fprintf(&b, "| reserve snapshot before SHA-256 | `%s` |\n", rep.ClaimEvidence.ReserveSnapshotBeforeSHA256)
+		fmt.Fprintf(&b, "| reserve snapshot after file | `%s` |\n", rep.ClaimEvidence.ReserveSnapshotAfterFile)
+		fmt.Fprintf(&b, "| reserve snapshot after SHA-256 | `%s` |\n", rep.ClaimEvidence.ReserveSnapshotAfterSHA256)
 		fmt.Fprintf(&b, "| latency mode | `%s` |\n", rep.ClaimEvidence.LatencyMode)
 		fmt.Fprintf(&b, "| cold/warm separated | `%s` |\n", rep.ClaimEvidence.ColdWarmSeparated)
 		fmt.Fprintf(&b, "| browser matrix | `%s` |\n", rep.ClaimEvidence.BrowserMatrix)
@@ -1466,6 +1516,7 @@ func missingClaimEvidence(rep report, claimType string) []string {
 		if evidence.SaturationProfile == "" {
 			missing = append(missing, "saturation_profile")
 		}
+		missing = appendSaturationProfileEvidence(missing, evidence)
 	case "chain_tps":
 		if evidence.SteadyStateSeconds < 600 {
 			missing = append(missing, "steady_state_seconds>=600")
@@ -1483,6 +1534,14 @@ func missingClaimEvidence(rep report, claimType string) []string {
 		if !isPositiveFinite(evidence.InclusionP95SLOMS) {
 			missing = append(missing, "inclusion_p95_slo_ms")
 		}
+		if evidence.ThroughputWindowSeconds <= 0 {
+			missing = append(missing, "throughput_window_seconds")
+		}
+		if evidence.SaturationProfile == "" {
+			missing = append(missing, "saturation_profile")
+		}
+		missing = appendSaturationProfileEvidence(missing, evidence)
+		missing = appendReserveSnapshotEvidence(missing, evidence)
 	case "user_latency":
 		if evidence.LoadProfile == "" {
 			missing = append(missing, "load_profile")
@@ -1524,6 +1583,38 @@ func missingClaimEvidence(rep report, claimType string) []string {
 				missing = append(missing, "inclusion_p95_slo_ms")
 			}
 		}
+	}
+	return missing
+}
+
+func appendSaturationProfileEvidence(missing []string, evidence claimEvidence) []string {
+	if evidence.SaturationProfileFile == "" {
+		missing = append(missing, "saturation_profile_file")
+	}
+	if evidence.SaturationProfileSHA256 == "" {
+		missing = append(missing, "saturation_profile_sha256")
+	} else if !isSHA256Hex(evidence.SaturationProfileSHA256) {
+		missing = append(missing, "saturation_profile_sha256=64hex")
+	}
+	return missing
+}
+
+func appendReserveSnapshotEvidence(missing []string, evidence claimEvidence) []string {
+	if evidence.ReserveSnapshotBeforeFile == "" {
+		missing = append(missing, "reserve_snapshot_before_file")
+	}
+	if evidence.ReserveSnapshotBeforeSHA256 == "" {
+		missing = append(missing, "reserve_snapshot_before_sha256")
+	} else if !isSHA256Hex(evidence.ReserveSnapshotBeforeSHA256) {
+		missing = append(missing, "reserve_snapshot_before_sha256=64hex")
+	}
+	if evidence.ReserveSnapshotAfterFile == "" {
+		missing = append(missing, "reserve_snapshot_after_file")
+	}
+	if evidence.ReserveSnapshotAfterSHA256 == "" {
+		missing = append(missing, "reserve_snapshot_after_sha256")
+	} else if !isSHA256Hex(evidence.ReserveSnapshotAfterSHA256) {
+		missing = append(missing, "reserve_snapshot_after_sha256=64hex")
 	}
 	return missing
 }
@@ -1623,8 +1714,12 @@ func evidenceSourceIssues(rep report, claimType string) []string {
 	switch claimType {
 	case "prover_rps":
 		issues = appendEvidenceSourceIssue(issues, rep, "prover_config_file", evidence.ProverConfigFile, evidence.ProverConfigSHA256)
+		issues = appendEvidenceSourceIssue(issues, rep, "saturation_profile_file", evidence.SaturationProfileFile, evidence.SaturationProfileSHA256)
 	case "chain_tps":
 		issues = appendEvidenceSourceIssue(issues, rep, "chain_config_file", evidence.ChainConfigFile, evidence.ChainConfigSHA256)
+		issues = appendEvidenceSourceIssue(issues, rep, "saturation_profile_file", evidence.SaturationProfileFile, evidence.SaturationProfileSHA256)
+		issues = appendEvidenceSourceIssue(issues, rep, "reserve_snapshot_before_file", evidence.ReserveSnapshotBeforeFile, evidence.ReserveSnapshotBeforeSHA256)
+		issues = appendEvidenceSourceIssue(issues, rep, "reserve_snapshot_after_file", evidence.ReserveSnapshotAfterFile, evidence.ReserveSnapshotAfterSHA256)
 	case "user_latency":
 		switch evidence.LatencyMode {
 		case "browser":
@@ -2072,6 +2167,13 @@ func hasClaimEvidence(evidence claimEvidence) bool {
 		evidence.InclusionP95SLOMS != 0 ||
 		evidence.RSSStable != "" ||
 		evidence.SaturationProfile != "" ||
+		evidence.SaturationProfileFile != "" ||
+		evidence.SaturationProfileSHA256 != "" ||
+		evidence.ThroughputWindowSeconds != 0 ||
+		evidence.ReserveSnapshotBeforeFile != "" ||
+		evidence.ReserveSnapshotBeforeSHA256 != "" ||
+		evidence.ReserveSnapshotAfterFile != "" ||
+		evidence.ReserveSnapshotAfterSHA256 != "" ||
 		evidence.LatencyMode != "" ||
 		evidence.ColdWarmSeparated != "" ||
 		evidence.BrowserMatrix != "" ||

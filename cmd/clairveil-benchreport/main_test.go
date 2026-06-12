@@ -602,10 +602,12 @@ func TestEvaluateClaimProfileAllowsCompletePublicMetadata(t *testing.T) {
 		SourceFiles: []string{
 			"benchmarks/privacy-proverd-load/latest.json",
 			"benchmarks/privacy-proverd-load/prover-config.json",
+			"benchmarks/privacy-proverd-load/saturation-profile.json",
 		},
 		SourceFileSHA256: map[string]string{
-			"benchmarks/privacy-proverd-load/latest.json":        strings.Repeat("a", 64),
-			"benchmarks/privacy-proverd-load/prover-config.json": strings.Repeat("b", 64),
+			"benchmarks/privacy-proverd-load/latest.json":             strings.Repeat("a", 64),
+			"benchmarks/privacy-proverd-load/prover-config.json":      strings.Repeat("b", 64),
+			"benchmarks/privacy-proverd-load/saturation-profile.json": strings.Repeat("c", 64),
 		},
 		RunStartedAt: "2026-06-12T00:00:00Z",
 		RunEndedAt:   "2026-06-12T00:10:01Z",
@@ -627,16 +629,18 @@ func TestEvaluateClaimProfileAllowsCompletePublicMetadata(t *testing.T) {
 			ArtifactFilesVerified: true,
 		},
 		ClaimEvidence: claimEvidence{
-			SteadyStateSeconds: 600,
-			LoadProfile:        "transfer_only",
-			PreflightMode:      "strict",
-			AuthEnabled:        "true",
-			InstanceProfile:    "m5-pro-reference",
-			ProverConfigFile:   "benchmarks/privacy-proverd-load/prover-config.json",
-			ProverConfigSHA256: strings.Repeat("b", 64),
-			LatencyP99SLOMS:    200,
-			RSSStable:          "true",
-			SaturationProfile:  "transfer-sweep-1-32",
+			SteadyStateSeconds:      600,
+			LoadProfile:             "transfer_only",
+			PreflightMode:           "strict",
+			AuthEnabled:             "true",
+			InstanceProfile:         "m5-pro-reference",
+			ProverConfigFile:        "benchmarks/privacy-proverd-load/prover-config.json",
+			ProverConfigSHA256:      strings.Repeat("b", 64),
+			LatencyP99SLOMS:         200,
+			RSSStable:               "true",
+			SaturationProfile:       "transfer-sweep-1-32",
+			SaturationProfileFile:   "benchmarks/privacy-proverd-load/saturation-profile.json",
+			SaturationProfileSHA256: strings.Repeat("c", 64),
 		},
 		Benchmarks: []benchmarkSummary{
 			{
@@ -923,6 +927,37 @@ func TestEvaluateClaimProfileRequiresConfigHashes(t *testing.T) {
 	}
 }
 
+func TestEvaluateClaimProfileRequiresProverSaturationEvidenceFile(t *testing.T) {
+	rep := completePublicProverReport()
+	rep.ClaimEvidence.SaturationProfileFile = ""
+	rep.ClaimEvidence.SaturationProfileSHA256 = ""
+
+	profile := evaluateClaimProfile(rep)
+	if profile.Eligible {
+		t.Fatalf("expected public claim to be blocked")
+	}
+	if !containsString(profile.BlockingReasons, "prover_rps evidence missing: saturation_profile_file, saturation_profile_sha256") {
+		t.Fatalf("expected prover saturation evidence blocker, got %+v", profile.BlockingReasons)
+	}
+}
+
+func TestEvaluateClaimProfileRequiresChainReserveAndWindowEvidence(t *testing.T) {
+	rep := completePublicChainReport()
+	rep.ClaimEvidence.ThroughputWindowSeconds = 0
+	rep.ClaimEvidence.ReserveSnapshotBeforeFile = ""
+	rep.ClaimEvidence.ReserveSnapshotBeforeSHA256 = ""
+	rep.ClaimEvidence.ReserveSnapshotAfterFile = ""
+	rep.ClaimEvidence.ReserveSnapshotAfterSHA256 = ""
+
+	profile := evaluateClaimProfile(rep)
+	if profile.Eligible {
+		t.Fatalf("expected public claim to be blocked")
+	}
+	if !containsString(profile.BlockingReasons, "chain_tps evidence missing: throughput_window_seconds, reserve_snapshot_before_file, reserve_snapshot_before_sha256, reserve_snapshot_after_file, reserve_snapshot_after_sha256") {
+		t.Fatalf("expected chain reserve/window evidence blockers, got %+v", profile.BlockingReasons)
+	}
+}
+
 func TestEvaluateClaimProfileRequiresRemoteUserLatencyProverConfig(t *testing.T) {
 	rep := completePublicUserLatencyReport()
 	rep.ClaimEvidence.LatencyMode = "remote"
@@ -1011,7 +1046,7 @@ func TestEvaluateClaimProfileRequiresEvidenceFilesInSourceFiles(t *testing.T) {
 	if profile.Eligible {
 		t.Fatalf("expected public claim to be blocked")
 	}
-	if !containsString(profile.BlockingReasons, `prover_rps source evidence invalid: prover_config_file "benchmarks/privacy-proverd-load/prover-config.json" is not in source_files, prover_config_file "benchmarks/privacy-proverd-load/prover-config.json" is not in source_file_sha256`) {
+	if !strings.Contains(strings.Join(profile.BlockingReasons, "\n"), `prover_config_file "benchmarks/privacy-proverd-load/prover-config.json" is not in source_files, prover_config_file "benchmarks/privacy-proverd-load/prover-config.json" is not in source_file_sha256`) {
 		t.Fatalf("expected source evidence blocker, got %+v", profile.BlockingReasons)
 	}
 }
@@ -1026,6 +1061,16 @@ func TestEvaluateClaimProfileRequiresEvidenceSHA256ToMatchSourceFileHash(t *test
 	}
 	if !containsString(profile.BlockingReasons, `prover_rps source evidence invalid: prover_config_file "benchmarks/privacy-proverd-load/prover-config.json" source_file_sha256 does not match evidence SHA-256`) {
 		t.Fatalf("expected source evidence SHA mismatch blocker, got %+v", profile.BlockingReasons)
+	}
+
+	chain := completePublicChainReport()
+	chain.SourceFileSHA256[chain.ClaimEvidence.ReserveSnapshotAfterFile] = strings.Repeat("0", 64)
+	chainProfile := evaluateClaimProfile(chain)
+	if chainProfile.Eligible {
+		t.Fatalf("expected chain public claim to be blocked")
+	}
+	if !containsString(chainProfile.BlockingReasons, `chain_tps source evidence invalid: reserve_snapshot_after_file "benchmarks/privacy-localnet-tps/reserve-after.json" source_file_sha256 does not match evidence SHA-256`) {
+		t.Fatalf("expected reserve snapshot SHA mismatch blocker, got %+v", chainProfile.BlockingReasons)
 	}
 }
 
@@ -1210,10 +1255,12 @@ func TestEvaluateClaimProfileBlocksAnyMatchingMetricSLO(t *testing.T) {
 		SourceFiles: []string{
 			"benchmarks/privacy-proverd-load/latest.json",
 			"benchmarks/privacy-proverd-load/prover-config.json",
+			"benchmarks/privacy-proverd-load/saturation-profile.json",
 		},
 		SourceFileSHA256: map[string]string{
-			"benchmarks/privacy-proverd-load/latest.json":        strings.Repeat("a", 64),
-			"benchmarks/privacy-proverd-load/prover-config.json": strings.Repeat("b", 64),
+			"benchmarks/privacy-proverd-load/latest.json":             strings.Repeat("a", 64),
+			"benchmarks/privacy-proverd-load/prover-config.json":      strings.Repeat("b", 64),
+			"benchmarks/privacy-proverd-load/saturation-profile.json": strings.Repeat("c", 64),
 		},
 		RunStartedAt: "2026-06-12T00:00:00Z",
 		RunEndedAt:   "2026-06-12T00:10:01Z",
@@ -1235,16 +1282,18 @@ func TestEvaluateClaimProfileBlocksAnyMatchingMetricSLO(t *testing.T) {
 			ArtifactFilesVerified: true,
 		},
 		ClaimEvidence: claimEvidence{
-			SteadyStateSeconds: 600,
-			LoadProfile:        "mixed",
-			PreflightMode:      "strict",
-			AuthEnabled:        "true",
-			InstanceProfile:    "m5-pro-reference",
-			ProverConfigFile:   "benchmarks/privacy-proverd-load/prover-config.json",
-			ProverConfigSHA256: strings.Repeat("b", 64),
-			LatencyP99SLOMS:    200,
-			RSSStable:          "true",
-			SaturationProfile:  "transfer-sweep-1-32",
+			SteadyStateSeconds:      600,
+			LoadProfile:             "mixed",
+			PreflightMode:           "strict",
+			AuthEnabled:             "true",
+			InstanceProfile:         "m5-pro-reference",
+			ProverConfigFile:        "benchmarks/privacy-proverd-load/prover-config.json",
+			ProverConfigSHA256:      strings.Repeat("b", 64),
+			LatencyP99SLOMS:         200,
+			RSSStable:               "true",
+			SaturationProfile:       "transfer-sweep-1-32",
+			SaturationProfileFile:   "benchmarks/privacy-proverd-load/saturation-profile.json",
+			SaturationProfileSHA256: strings.Repeat("c", 64),
 		},
 		Benchmarks: []benchmarkSummary{
 			{
@@ -1300,10 +1349,12 @@ func completePublicProverReport() report {
 		SourceFiles: []string{
 			"benchmarks/privacy-proverd-load/latest.json",
 			"benchmarks/privacy-proverd-load/prover-config.json",
+			"benchmarks/privacy-proverd-load/saturation-profile.json",
 		},
 		SourceFileSHA256: map[string]string{
-			"benchmarks/privacy-proverd-load/latest.json":        strings.Repeat("a", 64),
-			"benchmarks/privacy-proverd-load/prover-config.json": strings.Repeat("b", 64),
+			"benchmarks/privacy-proverd-load/latest.json":             strings.Repeat("a", 64),
+			"benchmarks/privacy-proverd-load/prover-config.json":      strings.Repeat("b", 64),
+			"benchmarks/privacy-proverd-load/saturation-profile.json": strings.Repeat("c", 64),
 		},
 		RunStartedAt: "2026-06-12T00:00:00Z",
 		RunEndedAt:   "2026-06-12T00:10:01Z",
@@ -1325,16 +1376,18 @@ func completePublicProverReport() report {
 			ArtifactFilesVerified: true,
 		},
 		ClaimEvidence: claimEvidence{
-			SteadyStateSeconds: 600,
-			LoadProfile:        "transfer_only",
-			PreflightMode:      "strict",
-			AuthEnabled:        "true",
-			InstanceProfile:    "m5-pro-reference",
-			ProverConfigFile:   "benchmarks/privacy-proverd-load/prover-config.json",
-			ProverConfigSHA256: strings.Repeat("b", 64),
-			LatencyP99SLOMS:    200,
-			RSSStable:          "true",
-			SaturationProfile:  "transfer-sweep-1-32",
+			SteadyStateSeconds:      600,
+			LoadProfile:             "transfer_only",
+			PreflightMode:           "strict",
+			AuthEnabled:             "true",
+			InstanceProfile:         "m5-pro-reference",
+			ProverConfigFile:        "benchmarks/privacy-proverd-load/prover-config.json",
+			ProverConfigSHA256:      strings.Repeat("b", 64),
+			LatencyP99SLOMS:         200,
+			RSSStable:               "true",
+			SaturationProfile:       "transfer-sweep-1-32",
+			SaturationProfileFile:   "benchmarks/privacy-proverd-load/saturation-profile.json",
+			SaturationProfileSHA256: strings.Repeat("c", 64),
 		},
 		Benchmarks: []benchmarkSummary{
 			{
@@ -1365,10 +1418,16 @@ func completePublicChainReport() report {
 		SourceFiles: []string{
 			"benchmarks/privacy-localnet-tps/latest.json",
 			"benchmarks/privacy-localnet-tps/chain-config.json",
+			"benchmarks/privacy-localnet-tps/saturation-profile.json",
+			"benchmarks/privacy-localnet-tps/reserve-before.json",
+			"benchmarks/privacy-localnet-tps/reserve-after.json",
 		},
 		SourceFileSHA256: map[string]string{
-			"benchmarks/privacy-localnet-tps/latest.json":       strings.Repeat("a", 64),
-			"benchmarks/privacy-localnet-tps/chain-config.json": strings.Repeat("c", 64),
+			"benchmarks/privacy-localnet-tps/latest.json":             strings.Repeat("a", 64),
+			"benchmarks/privacy-localnet-tps/chain-config.json":       strings.Repeat("c", 64),
+			"benchmarks/privacy-localnet-tps/saturation-profile.json": strings.Repeat("d", 64),
+			"benchmarks/privacy-localnet-tps/reserve-before.json":     strings.Repeat("e", 64),
+			"benchmarks/privacy-localnet-tps/reserve-after.json":      strings.Repeat("f", 64),
 		},
 		RunStartedAt: "2026-06-12T00:00:00Z",
 		RunEndedAt:   "2026-06-12T00:10:01Z",
@@ -1390,13 +1449,21 @@ func completePublicChainReport() report {
 			ArtifactFilesVerified: true,
 		},
 		ClaimEvidence: claimEvidence{
-			SteadyStateSeconds: 600,
-			LoadProfile:        "mixed-shielded",
-			ChainConfig:        "single-validator-localnet-a",
-			ChainConfigFile:    "benchmarks/privacy-localnet-tps/chain-config.json",
-			ChainConfigSHA256:  strings.Repeat("c", 64),
-			ReserveInvariant:   "true",
-			InclusionP95SLOMS:  500,
+			SteadyStateSeconds:          600,
+			LoadProfile:                 "mixed-shielded",
+			ChainConfig:                 "single-validator-localnet-a",
+			ChainConfigFile:             "benchmarks/privacy-localnet-tps/chain-config.json",
+			ChainConfigSHA256:           strings.Repeat("c", 64),
+			ReserveInvariant:            "true",
+			InclusionP95SLOMS:           500,
+			SaturationProfile:           "mixed-sweep-4-16",
+			SaturationProfileFile:       "benchmarks/privacy-localnet-tps/saturation-profile.json",
+			SaturationProfileSHA256:     strings.Repeat("d", 64),
+			ThroughputWindowSeconds:     10,
+			ReserveSnapshotBeforeFile:   "benchmarks/privacy-localnet-tps/reserve-before.json",
+			ReserveSnapshotBeforeSHA256: strings.Repeat("e", 64),
+			ReserveSnapshotAfterFile:    "benchmarks/privacy-localnet-tps/reserve-after.json",
+			ReserveSnapshotAfterSHA256:  strings.Repeat("f", 64),
 		},
 		Benchmarks: []benchmarkSummary{
 			{

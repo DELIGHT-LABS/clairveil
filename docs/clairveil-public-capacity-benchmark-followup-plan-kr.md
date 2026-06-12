@@ -51,6 +51,13 @@ Public claim 결과에는 반드시 "reference environment" 또는 "production-l
   - `inclusion_p95_slo_ms`
   - `rss_stable`
   - `saturation_profile`
+  - `saturation_profile_file`
+  - `saturation_profile_sha256`
+  - `throughput_window_seconds`
+  - `reserve_snapshot_before_file`
+  - `reserve_snapshot_before_sha256`
+  - `reserve_snapshot_after_file`
+  - `reserve_snapshot_after_sha256`
   - `prover_config_file`
   - `prover_config_sha256`
   - `chain_config_file`
@@ -108,6 +115,13 @@ Public claim 결과에는 반드시 "reference environment" 또는 "production-l
     "inclusion_p95_slo_ms": 0,
     "rss_stable": "",
     "saturation_profile": "",
+    "saturation_profile_file": "",
+    "saturation_profile_sha256": "",
+    "throughput_window_seconds": 0,
+    "reserve_snapshot_before_file": "",
+    "reserve_snapshot_before_sha256": "",
+    "reserve_snapshot_after_file": "",
+    "reserve_snapshot_after_sha256": "",
     "latency_mode": "",
     "cold_warm_separated": "",
     "browser_matrix": "",
@@ -165,7 +179,7 @@ Public claim 결과에는 반드시 "reference environment" 또는 "production-l
 - smoke 결과는 자동으로 `claim_profile.eligible=false`가 됩니다.
 - public claim 결과는 필수 metadata, result family/source hash provenance/run window, claim evidence, 64-hex artifact manifest checksum, artifact descriptor completeness, artifact file checksum verification, claim type별 metric 누락 또는 SLO 위반 시 report generation이 실패하거나 blocking reason을 기록합니다. `run_ended_at - run_started_at`은 `steady_state_seconds` 이상이어야 합니다.
 - raw Go benchmark text parser는 `ns/op`, `B/op`, `allocs/op` 외의 custom metric을 `metric_summaries`에 보존합니다. C1/C2/C3 load generator는 가능하면 raw text 대신 structured JSON을 직접 출력하고, `clairveil-benchreport -benchmark-summaries` 또는 C4 aggregator가 그 JSON을 source of truth로 병합합니다. Structured summary JSON은 `samples > 0`이어야 하고 각 metric마다 `mean`, `p50`, `p95`, `p99`, `min`, `max`를 모두 포함해야 하며, 각 stat은 `null`이 아닌 numeric JSON value여야 합니다. Public claim용 structured row는 `claim_type`을 반드시 명시해야 하며, claim type별 필수 metric은 같은 benchmark summary row/bucket 안에 함께 있어야 합니다. Prover RPS row는 `load_profile`, `route`, `concurrency`, `duration_seconds`를 포함해야 합니다. Chain TPS row는 `load_profile`, `duration_seconds`, `target_tx_per_sec`를 포함해야 합니다. User latency row는 `flow_profile`, `latency_mode`, `cold_warm`을 포함해야 하며, flow/mode/cold-warm bucket별 user latency benchmark summary가 최소 100 samples 이상이어야 합니다. Prover-only `proof_latency_ms` row는 user latency sample floor 대상으로 보지 않습니다.
-- public claim gate는 실제 입력 파일의 hash provenance 누락, evidence file의 `source_files`/`source_file_sha256` 누락 또는 SHA 불일치, malformed manifest checksum, remote latency linked prover report 의미 불일치, `samples <= 0`, user latency sample 부족, positive metric의 non-positive `mean/p50/p95/p99/min/max`, rate/error metric 음수, rate/error metric SLO 초과를 regression test로 고정합니다.
+- public claim gate는 실제 입력 파일의 hash provenance 누락, evidence file의 `source_files`/`source_file_sha256` 누락 또는 SHA 불일치, prover/chain saturation evidence file 누락, chain reserve snapshot before/after file 누락, throughput window 누락, malformed manifest checksum, remote latency linked prover report 의미 불일치, `samples <= 0`, user latency sample 부족, positive metric의 non-positive `mean/p50/p95/p99/min/max`, rate/error metric 음수, rate/error metric SLO 초과를 regression test로 고정합니다.
 
 ## 4. Phase C1: 운영형 `clairveil-proverd` External Load Benchmark
 
@@ -261,6 +275,8 @@ Public claim gate:
 - tx type별 TPS와 mixed workload TPS가 분리됨
 - failed/retried tx가 성공 처리량에 섞이지 않음
 - benchmark 전후 `query privacy reserve {denom}` snapshot이 포함됨
+- before/after reserve snapshot file과 SHA-256이 `claim_evidence` 및 `source_file_sha256`에 포함됨
+- throughput window size와 saturation profile evidence file이 포함됨
 - public report에 chain config가 포함됨:
   - block time
   - minimum gas price
