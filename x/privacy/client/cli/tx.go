@@ -465,6 +465,7 @@ func buildDepositNoteAndMsg(
 	amountStr string,
 	seed []byte,
 	logWriter io.Writer,
+	latencyFlow *privacyLatencyFlow,
 ) (*types.Note, *types.MsgDeposit, error) {
 	viewScalar, viewPubKey, _ := deriveViewKeys(seed)
 	_ = viewScalar
@@ -493,7 +494,7 @@ func buildDepositNoteAndMsg(
 	proof, err := privacydeposit.BuildDepositProof(
 		*note,
 		depositArtifactProvider{},
-		depositProofRunner{logWriter: logWriter},
+		depositProofRunner{logWriter: logWriter, latencyFlow: latencyFlow},
 	)
 	if err != nil {
 		return nil, nil, err
@@ -521,12 +522,18 @@ func (depositArtifactProvider) DepositProvingKey() (groth16.ProvingKey, error) {
 }
 
 type depositProofRunner struct {
-	logWriter io.Writer
+	logWriter   io.Writer
+	latencyFlow *privacyLatencyFlow
 }
 
 func (r depositProofRunner) ProveDeposit(r1cs constraint.ConstraintSystem, provingKey groth16.ProvingKey, depositWitness witness.Witness) (groth16.Proof, error) {
-	return withGnarkLoggerOutput(r.logWriter, func() (groth16.Proof, error) {
-		return groth16.Prove(r1cs, provingKey, depositWitness)
+	if r.latencyFlow != nil {
+		r.latencyFlow.recordPrepareUntil(time.Now())
+	}
+	return observePrivacyLatencyPhase(r.latencyFlow, "proof", func() (groth16.Proof, error) {
+		return withGnarkLoggerOutput(r.logWriter, func() (groth16.Proof, error) {
+			return groth16.Prove(r1cs, provingKey, depositWitness)
+		})
 	})
 }
 
@@ -547,6 +554,7 @@ func autoPrepareDummyNote(cmd *cobra.Command, clientCtx client.Context, denom st
 		amountStr,
 		seed,
 		privacyCommandLogWriter(cmd),
+		nil,
 	)
 	if err != nil {
 		return err
@@ -573,7 +581,7 @@ func autoPrepareDummyNote(cmd *cobra.Command, clientCtx client.Context, denom st
 	return nil
 }
 
-func buildWithdrawPayload(cmd *cobra.Command, clientCtx client.Context, targetCoin sdk.Coin, recipientAddr sdk.AccAddress, expiresAt time.Time, autoPlan bool) (*PreparedWithdrawPayload, error) {
+func buildWithdrawPayload(cmd *cobra.Command, clientCtx client.Context, targetCoin sdk.Coin, recipientAddr sdk.AccAddress, expiresAt time.Time, autoPlan bool, latencyFlow *privacyLatencyFlow) (*PreparedWithdrawPayload, error) {
 	scalar, pubKey, seed, err := getExplicitKeys(clientCtx)
 	if err != nil {
 		return nil, err
@@ -598,7 +606,7 @@ func buildWithdrawPayload(cmd *cobra.Command, clientCtx client.Context, targetCo
 		privacyprovider.NewWithdrawQueryProvider(types.NewQueryClient(clientCtx)),
 		manualSpendNoteHashSigner{scalar: scalar, pubKey: pubKey},
 		withdrawSpendArtifactProvider{},
-		withdrawSpendProofRunner{logWriter: privacyCommandLogWriter(cmd)},
+		withdrawSpendProofRunner{logWriter: privacyCommandLogWriter(cmd), latencyFlow: latencyFlow},
 		privacywithdraw.BuildWithdrawPayloadInput{
 			TargetCoin: targetCoin,
 			Recipient:  recipientAddr,
@@ -634,12 +642,18 @@ func (withdrawSpendArtifactProvider) SpendProvingKey() (groth16.ProvingKey, erro
 }
 
 type withdrawSpendProofRunner struct {
-	logWriter io.Writer
+	logWriter   io.Writer
+	latencyFlow *privacyLatencyFlow
 }
 
 func (r withdrawSpendProofRunner) ProveSpend(r1cs constraint.ConstraintSystem, provingKey groth16.ProvingKey, spendWitness witness.Witness) (groth16.Proof, error) {
-	return withGnarkLoggerOutput(r.logWriter, func() (groth16.Proof, error) {
-		return groth16.Prove(r1cs, provingKey, spendWitness)
+	if r.latencyFlow != nil {
+		r.latencyFlow.recordPrepareUntil(time.Now())
+	}
+	return observePrivacyLatencyPhase(r.latencyFlow, "proof", func() (groth16.Proof, error) {
+		return withGnarkLoggerOutput(r.logWriter, func() (groth16.Proof, error) {
+			return groth16.Prove(r1cs, provingKey, spendWitness)
+		})
 	})
 }
 
@@ -708,6 +722,7 @@ func autoPlanWithdrawExactMatchNote(cmd *cobra.Command, clientCtx client.Context
 			AuditDisclosureTargetPubKey:   auditPubKey,
 			AuditDisclosureTargetPubKeyBz: auditPubKeyBz,
 		},
+		nil,
 	)
 	if err != nil {
 		return err
@@ -780,6 +795,12 @@ func CmdDeposit() *cobra.Command {
 			amountBig := coin.Amount.BigInt()
 			memo, _ := cmd.Flags().GetString("memo")
 
+			latencyFlow := newPrivacyLatencyFlow("deposit")
+			var runErr error
+			defer func() {
+				latencyFlow.finish(runErr)
+			}()
+
 			note, msg, err := buildDepositNoteAndMsg(
 				clientCtx.GetFromAddress().String(),
 				pubKey,
@@ -789,17 +810,22 @@ func CmdDeposit() *cobra.Command {
 				coin.String(),
 				seed,
 				privacyCommandLogWriter(cmd),
+				latencyFlow,
 			)
 			if err != nil {
+				runErr = err
 				return err
 			}
 
 			privacyCommandPrintf(cmd, "Deposit note (JSON):\n%s\n", string(note.Bytes()))
 
-			return privacyprovider.CosmosTxBroadcaster{
+			submitStartedAt := time.Now()
+			runErr = privacyprovider.CosmosTxBroadcaster{
 				ClientContext: clientCtx,
 				Flags:         cmd.Flags(),
 			}.GenerateOrBroadcast(msg)
+			latencyFlow.recordSubmit(submitStartedAt, "", runErr)
+			return runErr
 		},
 	}
 	flags.AddTxFlagsToCmd(cmd)
@@ -856,23 +882,33 @@ If you want exact-match-only behavior without the planner, run with --auto-plan=
 			if err != nil {
 				return err
 			}
+			latencyFlow := newPrivacyLatencyFlow("withdraw_direct")
+			var runErr error
+			defer func() {
+				latencyFlow.finish(runErr)
+			}()
 			printWithdrawCommandSummary(cmd, "Shielded withdraw", recipientAddr.String(), targetCoin.String(), autoPlan, autoDummy)
 
 			expiresAt := time.Now().Add(defaultPreparedWithdrawExpiry)
-			payload, err := buildWithdrawPayload(cmd, clientCtx, targetCoin, recipientAddr, expiresAt, autoPlan)
+			payload, err := buildWithdrawPayload(cmd, clientCtx, targetCoin, recipientAddr, expiresAt, autoPlan, latencyFlow)
 			if err != nil {
+				runErr = err
 				return err
 			}
 
 			msg, err := payload.ToMsg(clientCtx.GetFromAddress().String())
 			if err != nil {
+				runErr = err
 				return err
 			}
 
-			return privacyprovider.CosmosTxBroadcaster{
+			submitStartedAt := time.Now()
+			runErr = privacyprovider.CosmosTxBroadcaster{
 				ClientContext: clientCtx,
 				Flags:         cmd.Flags(),
 			}.GenerateOrBroadcast(msg)
+			latencyFlow.recordSubmit(submitStartedAt, "", runErr)
+			return runErr
 		},
 	}
 	cmd.Flags().String("recipient", "", "recipient public address (default: sender address)")
@@ -941,10 +977,17 @@ If you want exact-match-only behavior without the planner, run with --auto-plan=
 				return fmt.Errorf("expires-in must be positive")
 			}
 
+			latencyFlow := newPrivacyLatencyFlow("relayed_withdraw_prepare")
+			var runErr error
+			defer func() {
+				latencyFlow.finish(runErr)
+			}()
+
 			expiresAt := time.Now().Add(time.Duration(expiresInSec) * time.Second)
 
-			payload, err := buildWithdrawPayload(cmd, clientCtx, targetCoin, recipientAddr, expiresAt, autoPlan)
+			payload, err := buildWithdrawPayload(cmd, clientCtx, targetCoin, recipientAddr, expiresAt, autoPlan, latencyFlow)
 			if err != nil {
+				runErr = err
 				return err
 			}
 
@@ -955,12 +998,14 @@ If you want exact-match-only behavior without the planner, run with --auto-plan=
 
 			if outPath != "" {
 				if err := payload.WriteJSONFile(outPath); err != nil {
+					runErr = err
 					return err
 				}
 				printPreparedWithdrawPayloadSaved(cmd, outPath)
 			}
 
-			return printCommandJSON(cmd, payload)
+			runErr = printCommandJSON(cmd, payload)
+			return runErr
 		},
 	}
 
@@ -980,20 +1025,33 @@ func CmdRelayWithdraw() *cobra.Command {
 		Short: "Relay prepared withdraw payload (supports standard tx fee-granter flags)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			latencyFlow := newPrivacyLatencyFlow("relayed_withdraw_relay")
+			var runErr error
+			defer func() {
+				latencyFlow.finish(runErr)
+			}()
+
 			clientCtx, err := client.GetClientTxContext(cmd)
 			if err != nil {
+				runErr = err
 				return err
 			}
 
+			prepareStartedAt := time.Now()
 			msg, err := privacywithdraw.BuildRelayWithdrawMsgFromFile(args[0], clientCtx.GetFromAddress().String())
+			latencyFlow.recordPhase("prepare", prepareStartedAt, err)
 			if err != nil {
+				runErr = err
 				return err
 			}
 
-			return privacyprovider.CosmosTxBroadcaster{
+			submitStartedAt := time.Now()
+			runErr = privacyprovider.CosmosTxBroadcaster{
 				ClientContext: clientCtx,
 				Flags:         cmd.Flags(),
 			}.GenerateOrBroadcast(msg)
+			latencyFlow.recordSubmit(submitStartedAt, "", runErr)
+			return runErr
 		},
 	}
 
