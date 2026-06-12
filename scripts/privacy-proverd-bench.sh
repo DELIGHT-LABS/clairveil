@@ -5,7 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 bench_count="${BENCH_COUNT:-10}"
-bench_pattern="${BENCH_PATTERN:-BenchmarkHTTPProverClient(Transfer|Withdraw)RoundTrip$}"
+bench_pattern="${BENCH_PATTERN:-BenchmarkHTTPProverClient(Transfer|Withdraw)(Parallel)?RoundTrip$}"
 bench_out_dir="${BENCH_OUT_DIR:-benchmarks/privacy-proverd}"
 bench_time="${BENCH_TIME:-}"
 source_commit="$(git rev-parse HEAD 2>/dev/null || true)"

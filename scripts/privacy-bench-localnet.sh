@@ -92,6 +92,8 @@ metrics_path.write_text(json.dumps({
 PY
 
 cp "$metrics_file" "$bench_out_dir/latest-tx-metrics.json"
+cp "$work_dir/out/reserve-uclair.json" "$bench_out_dir/reserve-uclair-$stamp.json"
+cp "$work_dir/out/reserve-uclair.json" "$bench_out_dir/latest-reserve-uclair.json"
 
 go run ./cmd/clairveil-benchreport \
   -tx-metrics "$metrics_file" \

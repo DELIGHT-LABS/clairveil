@@ -297,9 +297,10 @@ write_txhash "$out/withdraw-relayed.json" "$out/withdraw-relayed.txhash"
 wait_tx "$(cat "$out/withdraw-relayed.txhash")" "$out/withdraw-relayed-query.json"
 
 run query bank balances "$(cat "$out/alice-address.txt")" --node "$node" --output json >"$out/alice-balances.json"
+run query privacy reserve uclair --node "$node" --output json >"$out/reserve-uclair.json"
 run tx privacy list-notes --from bob --keyring-backend test --home "$home" --node "$node" --json >"$out/bob-notes-final.json"
 
-python3 - "$out/bob-notes-final.json" <<'PY'
+python3 - "$out/bob-notes-final.json" "$out/reserve-uclair.json" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -308,6 +309,10 @@ doc = json.loads(Path(sys.argv[1]).read_text())
 amounts = {note["amount"] for note in doc["notes"] if note["status"] == "spendable"}
 if "10" not in amounts:
     raise SystemExit(f"expected Bob to retain a 10uclair note, got {sorted(amounts)}")
+
+reserve = json.loads(Path(sys.argv[2]).read_text())
+if reserve.get("invariant_holds") is not True:
+    raise SystemExit(f"reserve invariant failed: {reserve}")
 PY
 
 echo "privacy e2e smoke passed"
