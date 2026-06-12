@@ -211,7 +211,8 @@ Public claim 결과에는 반드시 "reference environment" 또는 "production-l
 - `make privacy-proverd-load-bench` 또는 `scripts/privacy-proverd-load-bench.sh`가 `PROVERD_URL`을 받아 `benchmarks/privacy-proverd-load` report를 생성합니다.
 - load generator는 fixture bundle 또는 별도 request JSON file을 사용하고, `transfer_only`, `withdraw_only`, `mixed_80_20` profile, concurrency list, warmup, steady-state duration, bearer token을 지원합니다.
 - 생성 row는 `claim_type=prover_rps`, `load_profile`, `route`, `concurrency`, `warmup_seconds`, `duration_seconds` metadata와 `requests/sec`, `latency_ms`, `error_rate`, `timeout_rate`, request/response byte metric을 포함합니다.
-- server-side CPU/RSS는 load generator가 직접 관측하지 않습니다. Public claim으로 승격하려면 별도 telemetry 또는 saturation profile evidence file에 CPU/RSS/max RSS를 기록하고 `claim_evidence`로 연결해야 합니다.
+- `clairveil-proverd`는 `/debug/vars` JSON endpoint로 goroutine, heap/sys memory, RSS, max RSS, process CPU seconds를 노출합니다.
+- `cmd/clairveil-proverload`는 measured bucket 동안 `-telemetry-interval` 주기로 `/debug/vars`를 샘플링하고, `cpu_percent`, `rss_bytes`, `max_rss_bytes`, heap/goroutine metric을 같은 `prover_rps` structured row에 포함합니다. Public claim에서는 이 row metric과 saturation profile evidence file을 함께 제출합니다.
 
 구현 항목:
 

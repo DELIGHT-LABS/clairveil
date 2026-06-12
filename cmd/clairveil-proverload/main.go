@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	privacyproverservice "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/proverservice"
 	privacyprovertransport "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/provertransport"
 )
 
@@ -61,6 +62,12 @@ type loadResult struct {
 	Timeout       bool
 }
 
+type telemetrySample struct {
+	CapturedAt time.Time
+	Metrics    privacyproverservice.MetricsResponse
+	Err        error
+}
+
 type exampleBundle struct {
 	Transfer struct {
 		Request json.RawMessage `json:"request"`
@@ -81,6 +88,7 @@ func main() {
 	var durationValue string
 	var warmupValue string
 	var timeoutValue string
+	var telemetryIntervalValue string
 	var outPath string
 
 	flag.StringVar(&baseURL, "base-url", "", "clairveil-proverd base URL")
@@ -93,6 +101,7 @@ func main() {
 	flag.StringVar(&durationValue, "duration", "30s", "steady-state duration per concurrency bucket")
 	flag.StringVar(&warmupValue, "warmup", "5s", "warmup duration per concurrency bucket")
 	flag.StringVar(&timeoutValue, "timeout", "2m", "per-request timeout")
+	flag.StringVar(&telemetryIntervalValue, "telemetry-interval", "1s", "proverd metrics sampling interval during the measured bucket; set 0s to disable")
 	flag.StringVar(&outPath, "out", "benchmarks/privacy-proverd-load/load-summary.json", "structured benchmark summary output path")
 	flag.Parse()
 
@@ -111,6 +120,10 @@ func main() {
 	if err != nil || requestTimeout <= 0 {
 		fatalf("-timeout must be a positive duration")
 	}
+	telemetryInterval, err := time.ParseDuration(telemetryIntervalValue)
+	if err != nil || telemetryInterval < 0 {
+		fatalf("-telemetry-interval must be a non-negative duration")
+	}
 	concurrency, err := parsePositiveInts(concurrencyList)
 	if err != nil {
 		fatalf("parse concurrency: %v", err)
@@ -124,10 +137,10 @@ func main() {
 	var summaries []benchmarkSummary
 	for _, level := range concurrency {
 		if warmup > 0 {
-			_, _ = runLoadBucket(context.Background(), client, baseURL, bearerToken, requests, level, warmup, true)
+			_, _, _ = runLoadBucket(context.Background(), client, baseURL, bearerToken, requests, level, warmup, true, 0)
 		}
-		results, elapsed := runLoadBucket(context.Background(), client, baseURL, bearerToken, requests, level, duration, false)
-		summaries = append(summaries, summarizeLoadBucket(profile, requests, level, warmup, elapsed, results))
+		results, elapsed, telemetry := runLoadBucket(context.Background(), client, baseURL, bearerToken, requests, level, duration, false, telemetryInterval)
+		summaries = append(summaries, summarizeLoadBucket(profile, requests, level, warmup, elapsed, results, telemetry))
 	}
 
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
@@ -206,12 +219,40 @@ func requestBody(path string, fallback json.RawMessage) ([]byte, error) {
 	return append([]byte(nil), fallback...), nil
 }
 
-func runLoadBucket(ctx context.Context, client *http.Client, baseURL, bearerToken string, requests []requestPayload, concurrency int, duration time.Duration, quiet bool) ([]loadResult, time.Duration) {
+func runLoadBucket(ctx context.Context, client *http.Client, baseURL, bearerToken string, requests []requestPayload, concurrency int, duration time.Duration, quiet bool, telemetryInterval time.Duration) ([]loadResult, time.Duration, []telemetrySample) {
+	var telemetry []telemetrySample
+	var telemetryMu sync.Mutex
+	recordTelemetry := func(sample telemetrySample) {
+		telemetryMu.Lock()
+		telemetry = append(telemetry, sample)
+		telemetryMu.Unlock()
+	}
+	if telemetryInterval > 0 {
+		recordTelemetry(fetchTelemetry(context.Background(), client, baseURL, bearerToken))
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
 
 	started := time.Now()
 	results := make(chan loadResult, concurrency*4)
+	var telemetryWG sync.WaitGroup
+	if telemetryInterval > 0 {
+		telemetryWG.Add(1)
+		go func() {
+			defer telemetryWG.Done()
+			ticker := time.NewTicker(telemetryInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					recordTelemetry(fetchTelemetry(ctx, client, baseURL, bearerToken))
+				}
+			}
+		}()
+	}
 	var wg sync.WaitGroup
 	var counter atomic.Uint64
 	for worker := 0; worker < concurrency; worker++ {
@@ -234,13 +275,19 @@ func runLoadBucket(ctx context.Context, client *http.Client, baseURL, bearerToke
 		}()
 	}
 	wg.Wait()
+	elapsed := time.Since(started)
+	if telemetryInterval > 0 {
+		recordTelemetry(fetchTelemetry(context.Background(), client, baseURL, bearerToken))
+	}
+	cancel()
+	telemetryWG.Wait()
 	close(results)
 
 	collected := make([]loadResult, 0, len(results))
 	for result := range results {
 		collected = append(collected, result)
 	}
-	return collected, time.Since(started)
+	return collected, elapsed, telemetry
 }
 
 func doRequest(ctx context.Context, client *http.Client, baseURL, bearerToken string, payload requestPayload) loadResult {
@@ -273,7 +320,7 @@ func doRequest(ctx context.Context, client *http.Client, baseURL, bearerToken st
 	return result
 }
 
-func summarizeLoadBucket(profile string, requests []requestPayload, concurrency int, warmup time.Duration, elapsed time.Duration, results []loadResult) benchmarkSummary {
+func summarizeLoadBucket(profile string, requests []requestPayload, concurrency int, warmup time.Duration, elapsed time.Duration, results []loadResult, telemetry []telemetrySample) benchmarkSummary {
 	latencies := make([]float64, 0, len(results))
 	requestBytes := make([]float64, 0, len(results))
 	responseBytes := make([]float64, 0, len(results))
@@ -301,6 +348,15 @@ func summarizeLoadBucket(profile string, requests []requestPayload, concurrency 
 	if len(requests) > 1 {
 		route = "mixed"
 	}
+	metrics := map[string]metricSummary{
+		"requests/sec":   scalarMetric(float64(successes) / elapsedSeconds),
+		"latency_ms":     summarizeValues(latencies),
+		"error_rate":     scalarMetric(rate(errors, total)),
+		"timeout_rate":   scalarMetric(rate(timeouts, total)),
+		"request_bytes":  summarizeValues(requestBytes),
+		"response_bytes": summarizeValues(responseBytes),
+	}
+	addTelemetryMetrics(metrics, telemetry)
 	return benchmarkSummary{
 		Name:            fmt.Sprintf("ProverLoad%sC%d", profileName(profile), concurrency),
 		Samples:         total,
@@ -311,15 +367,124 @@ func summarizeLoadBucket(profile string, requests []requestPayload, concurrency 
 		Concurrency:     concurrency,
 		WarmupSeconds:   int(warmup.Round(time.Second).Seconds()),
 		DurationSeconds: int(elapsed.Round(time.Second).Seconds()),
-		Metrics: map[string]metricSummary{
-			"requests/sec":   scalarMetric(float64(successes) / elapsedSeconds),
-			"latency_ms":     summarizeValues(latencies),
-			"error_rate":     scalarMetric(rate(errors, total)),
-			"timeout_rate":   scalarMetric(rate(timeouts, total)),
-			"request_bytes":  summarizeValues(requestBytes),
-			"response_bytes": summarizeValues(responseBytes),
-		},
+		Metrics:         metrics,
 	}
+}
+
+func fetchTelemetry(ctx context.Context, client *http.Client, baseURL, bearerToken string) telemetrySample {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	sample := telemetrySample{CapturedAt: time.Now()}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(baseURL, "/")+privacyproverservice.MetricsPath, nil)
+	if err != nil {
+		sample.Err = err
+		return sample
+	}
+	if strings.TrimSpace(bearerToken) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(bearerToken))
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		sample.Err = err
+		return sample
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		sample.Err = fmt.Errorf("metrics status %d", resp.StatusCode)
+		return sample
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&sample.Metrics); err != nil {
+		sample.Err = err
+		return sample
+	}
+	return sample
+}
+
+func addTelemetryMetrics(metrics map[string]metricSummary, telemetry []telemetrySample) {
+	if len(telemetry) == 0 {
+		return
+	}
+
+	rssBytes := make([]float64, 0, len(telemetry))
+	maxRSSBytes := make([]float64, 0, len(telemetry))
+	heapAllocBytes := make([]float64, 0, len(telemetry))
+	heapSysBytes := make([]float64, 0, len(telemetry))
+	sysBytes := make([]float64, 0, len(telemetry))
+	goroutines := make([]float64, 0, len(telemetry))
+	telemetryErrors := 0
+	valid := make([]telemetrySample, 0, len(telemetry))
+	for _, sample := range telemetry {
+		if sample.Err != nil {
+			telemetryErrors++
+			continue
+		}
+		valid = append(valid, sample)
+		if sample.Metrics.RSSBytes > 0 {
+			rssBytes = append(rssBytes, float64(sample.Metrics.RSSBytes))
+		}
+		if sample.Metrics.MaxRSSBytes > 0 {
+			maxRSSBytes = append(maxRSSBytes, float64(sample.Metrics.MaxRSSBytes))
+		}
+		if sample.Metrics.HeapAllocBytes > 0 {
+			heapAllocBytes = append(heapAllocBytes, float64(sample.Metrics.HeapAllocBytes))
+		}
+		if sample.Metrics.HeapSysBytes > 0 {
+			heapSysBytes = append(heapSysBytes, float64(sample.Metrics.HeapSysBytes))
+		}
+		if sample.Metrics.SysBytes > 0 {
+			sysBytes = append(sysBytes, float64(sample.Metrics.SysBytes))
+		}
+		if sample.Metrics.Goroutines > 0 {
+			goroutines = append(goroutines, float64(sample.Metrics.Goroutines))
+		}
+	}
+	if len(rssBytes) > 0 {
+		metrics["rss_bytes"] = summarizeValues(rssBytes)
+	}
+	if len(maxRSSBytes) > 0 {
+		metrics["max_rss_bytes"] = scalarMetric(max(maxRSSBytes))
+	}
+	if len(heapAllocBytes) > 0 {
+		metrics["heap_alloc_bytes"] = summarizeValues(heapAllocBytes)
+	}
+	if len(heapSysBytes) > 0 {
+		metrics["heap_sys_bytes"] = summarizeValues(heapSysBytes)
+	}
+	if len(sysBytes) > 0 {
+		metrics["sys_bytes"] = summarizeValues(sysBytes)
+	}
+	if len(goroutines) > 0 {
+		metrics["goroutines"] = summarizeValues(goroutines)
+	}
+	if cpuPercent, ok := telemetryCPUPercent(valid); ok {
+		metrics["cpu_percent"] = scalarMetric(cpuPercent)
+	}
+	metrics["telemetry_error_rate"] = scalarMetric(rate(telemetryErrors, len(telemetry)))
+}
+
+func telemetryCPUPercent(samples []telemetrySample) (float64, bool) {
+	var first telemetrySample
+	var last telemetrySample
+	foundFirst := false
+	for _, sample := range samples {
+		if sample.Metrics.ProcessCPUSeconds <= 0 {
+			continue
+		}
+		if !foundFirst {
+			first = sample
+			foundFirst = true
+		}
+		last = sample
+	}
+	if !foundFirst || !last.CapturedAt.After(first.CapturedAt) {
+		return 0, false
+	}
+	cpuSeconds := last.Metrics.ProcessCPUSeconds - first.Metrics.ProcessCPUSeconds
+	if cpuSeconds <= 0 {
+		return 0, false
+	}
+	return (cpuSeconds / last.CapturedAt.Sub(first.CapturedAt).Seconds()) * 100, true
 }
 
 func profileName(profile string) string {

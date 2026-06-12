@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	privacyproverservice "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/proverservice"
 )
 
 func TestParsePositiveInts(t *testing.T) {
@@ -43,6 +45,7 @@ func TestLoadRequestsFromFixtureBundle(t *testing.T) {
 }
 
 func TestSummarizeLoadBucket(t *testing.T) {
+	started := time.Unix(1_700_000_000, 0)
 	summary := summarizeLoadBucket(
 		"transfer_only",
 		[]requestPayload{{Route: "transfer", Body: []byte("request")}},
@@ -53,6 +56,32 @@ func TestSummarizeLoadBucket(t *testing.T) {
 			{LatencyMS: 100, RequestBytes: 10, ResponseBytes: 20},
 			{LatencyMS: 200, RequestBytes: 10, ResponseBytes: 30},
 			{Err: errBoom{}},
+		},
+		[]telemetrySample{
+			{
+				CapturedAt: started,
+				Metrics: privacyproverservice.MetricsResponse{
+					Goroutines:        8,
+					HeapAllocBytes:    1024,
+					HeapSysBytes:      4096,
+					SysBytes:          8192,
+					RSSBytes:          16_384,
+					MaxRSSBytes:       16_384,
+					ProcessCPUSeconds: 10,
+				},
+			},
+			{
+				CapturedAt: started.Add(10 * time.Second),
+				Metrics: privacyproverservice.MetricsResponse{
+					Goroutines:        10,
+					HeapAllocBytes:    2048,
+					HeapSysBytes:      4096,
+					SysBytes:          8192,
+					RSSBytes:          20_480,
+					MaxRSSBytes:       20_480,
+					ProcessCPUSeconds: 12,
+				},
+			},
 		},
 	)
 
@@ -70,6 +99,15 @@ func TestSummarizeLoadBucket(t *testing.T) {
 	}
 	if got := summary.Metrics["error_rate"].Mean; got != 1.0/3.0 {
 		t.Fatalf("unexpected error rate %.6f", got)
+	}
+	if got := summary.Metrics["cpu_percent"].Mean; got != 20 {
+		t.Fatalf("unexpected cpu percent %.3f", got)
+	}
+	if got := summary.Metrics["max_rss_bytes"].Mean; got != 20_480 {
+		t.Fatalf("unexpected max rss %.3f", got)
+	}
+	if got := summary.Metrics["telemetry_error_rate"].Mean; got != 0 {
+		t.Fatalf("unexpected telemetry error rate %.3f", got)
 	}
 }
 
