@@ -11,10 +11,13 @@ import (
 
 	"cosmossdk.io/log/v2"
 
+	clairveiltypes "github.com/DELIGHT-LABS/clairveil/types"
 	privacyproverservice "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/proverservice"
 )
 
 func main() {
+	clairveiltypes.SetConfig()
+
 	config := privacyproverservice.DefaultServerConfig()
 
 	flag.StringVar(&config.ListenAddress, "listen", config.ListenAddress, "listen address for the privacy prover service")
