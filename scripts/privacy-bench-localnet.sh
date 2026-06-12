@@ -5,6 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 bench_out_dir="${BENCH_OUT_DIR:-benchmarks/privacy-localnet}"
+result_family="${RESULT_FAMILY:-privacy-localnet}"
 created_work_dir="0"
 if [[ -n "${CLAIRVEIL_BENCH_WORK_DIR:-}" ]]; then
   work_dir="$CLAIRVEIL_BENCH_WORK_DIR"
@@ -161,7 +162,7 @@ report_args=(
   -gas-adjustment "$gas_adjustment"
   -commit "$source_commit"
   -dirty "$source_dirty"
-  -result-family "privacy-localnet"
+  -result-family "$result_family"
   -source-files "$metrics_file,$bench_out_dir/reserve-uclair-$stamp.json"
   -run-started-at "$run_started_at"
   -run-ended-at "$run_ended_at"
