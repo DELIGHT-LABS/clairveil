@@ -60,6 +60,12 @@ func TestSummarizeBenchmarks(t *testing.T) {
 	}
 }
 
+func TestBenchmarkMetricKindClassifiesHTTPProverRoundTrip(t *testing.T) {
+	if got := benchmarkMetricKind("BenchmarkHTTPProverClientTransferRoundTrip"); got != "prover_http_client_roundtrip" {
+		t.Fatalf("unexpected metric kind %q", got)
+	}
+}
+
 func TestRenderMarkdownIncludesBenchmarkTable(t *testing.T) {
 	out := renderMarkdown(report{
 		SchemaVersion: reportSchemaVersion,

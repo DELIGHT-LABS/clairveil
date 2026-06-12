@@ -40,6 +40,14 @@ dapp-local:
 privacy-bench:
 	./scripts/privacy-bench.sh
 
+.PHONY: privacy-bench-localnet
+privacy-bench-localnet:
+	./scripts/privacy-bench-localnet.sh
+
+.PHONY: privacy-proverd-bench
+privacy-proverd-bench:
+	./scripts/privacy-proverd-bench.sh
+
 .PHONY: examples
 examples:
 	npm --prefix examples/audit-disclosure-keys test

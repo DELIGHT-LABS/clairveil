@@ -280,6 +280,8 @@ func summarizeBenchmarks(samples []benchmarkSample) []benchmarkSummary {
 
 func benchmarkMetricKind(name string) string {
 	switch {
+	case strings.Contains(name, "HTTPProverClient"):
+		return "prover_http_client_roundtrip"
 	case strings.HasSuffix(name, "Prove"):
 		return "native_proving"
 	case strings.HasSuffix(name, "Verify"):
