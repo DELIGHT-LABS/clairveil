@@ -409,14 +409,15 @@ Public claim gate:
 - component benchmark rows와 fee rows는 aggregate report에 병합됩니다.
 - 지정된 component report를 aggregate로 묶은 뒤, 모든 component가 eligible이고 aggregate의 환경/provenance/run window가 public gate를 통과하면 aggregate report도 `public-capacity` claim으로 eligible이 될 수 있습니다. ineligible component가 있거나 per-claim evidence가 없는 수동 multi-claim report는 계속 차단됩니다.
 
-입력:
+기본 입력:
 
-- `privacy-circuits/latest.json`
 - `privacy-proverd-load/latest.json`
 - `privacy-localnet-tps/latest.json`
 - `privacy-user-latency/latest.json`
 - artifact manifest
 - reserve snapshots
+
+`privacy-circuits/latest.json`은 native circuit baseline으로 별도 링크하거나, non-claim component를 public eligibility gate와 분리하는 semantics가 추가된 뒤 aggregate에 포함합니다. 현재 aggregate public claim gate는 component report eligibility를 모두 검사하므로 smoke/reference circuit baseline을 기본 claim component로 섞지 않습니다.
 
 출력:
 
