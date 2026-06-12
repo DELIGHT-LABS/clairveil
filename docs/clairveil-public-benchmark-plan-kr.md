@@ -266,10 +266,19 @@ benchmarks/privacy-circuits/<date>-<commit>.json
 benchmarks/privacy-circuits/<date>-<commit>.md
 benchmarks/privacy-proverd/latest.json
 benchmarks/privacy-proverd/latest.md
+benchmarks/privacy-proverd-load/latest.json
+benchmarks/privacy-proverd-load/latest.md
 benchmarks/privacy-localnet/latest.json
 benchmarks/privacy-localnet/latest.md
 benchmarks/privacy-localnet/latest-tx-metrics.json
 benchmarks/privacy-localnet/latest-reserve-uclair.json
+benchmarks/privacy-localnet-tps/latest.json
+benchmarks/privacy-localnet-tps/latest.md
+benchmarks/privacy-user-latency/latest.json
+benchmarks/privacy-user-latency/latest.md
+benchmarks/privacy-user-latency/latest-user-latency-trace.jsonl
+benchmarks/public-capacity/latest.json
+benchmarks/public-capacity/latest.md
 ```
 
 JSON에는 최소한 아래 필드를 포함합니다.
@@ -309,6 +318,13 @@ JSON에는 최소한 아래 필드를 포함합니다.
     "inclusion_p95_slo_ms": 0,
     "rss_stable": "",
     "saturation_profile": "",
+    "saturation_profile_file": "",
+    "saturation_profile_sha256": "",
+    "throughput_window_seconds": 0,
+    "reserve_snapshot_before_file": "",
+    "reserve_snapshot_before_sha256": "",
+    "reserve_snapshot_after_file": "",
+    "reserve_snapshot_after_sha256": "",
     "latency_mode": "",
     "cold_warm_separated": "",
     "browser_matrix": "",

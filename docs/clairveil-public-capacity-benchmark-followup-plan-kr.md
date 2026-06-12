@@ -358,7 +358,7 @@ Public claim gate:
   - transfer all-private
   - transfer with disclosure
   - withdraw direct
-- relayed withdraw
+  - relayed withdraw
 
 metrics:
 

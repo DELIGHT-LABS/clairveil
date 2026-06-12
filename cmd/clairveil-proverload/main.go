@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -313,7 +315,7 @@ func doRequest(ctx context.Context, client *http.Client, baseURL, bearerToken st
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return loadResult{Err: err, Timeout: ctx.Err() != nil}
+		return loadResult{Err: err, Timeout: isTimeoutError(ctx, err)}
 	}
 	defer resp.Body.Close()
 	responseBytes, readErr := io.ReadAll(resp.Body)
@@ -329,6 +331,20 @@ func doRequest(ctx context.Context, client *http.Client, baseURL, bearerToken st
 		result.Err = fmt.Errorf("status %d", resp.StatusCode)
 	}
 	return result
+}
+
+func isTimeoutError(ctx context.Context, err error) bool {
+	if ctx.Err() != nil {
+		return true
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "timeout")
 }
 
 func summarizeLoadBucket(profile string, requests []requestPayload, concurrency int, warmup time.Duration, elapsed time.Duration, results []loadResult, telemetry []telemetrySample) benchmarkSummary {

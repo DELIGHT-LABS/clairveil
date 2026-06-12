@@ -150,6 +150,30 @@ func TestRunLoadBucketDrainsMoreResultsThanChannelBuffer(t *testing.T) {
 	}
 }
 
+func TestDoRequestClassifiesClientTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := server.Client()
+	client.Timeout = 10 * time.Millisecond
+	result := doRequest(
+		context.Background(),
+		client,
+		server.URL,
+		"",
+		requestPayload{Route: "transfer", Path: "/prove/transfer", Body: []byte(`{}`)},
+	)
+	if result.Err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !result.Timeout {
+		t.Fatalf("expected client timeout to be classified for timeout_rate, got %+v", result)
+	}
+}
+
 type errBoom struct{}
 
 func (errBoom) Error() string { return "boom" }
