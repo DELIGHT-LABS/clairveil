@@ -133,19 +133,29 @@ type benchmarkSample struct {
 }
 
 type benchmarkSummary struct {
-	Name       string                   `json:"name"`
-	Samples    int                      `json:"samples"`
-	NSOpMean   float64                  `json:"ns_per_op_mean"`
-	NSOpP50    float64                  `json:"ns_per_op_p50"`
-	NSOpP95    float64                  `json:"ns_per_op_p95"`
-	NSOpP99    float64                  `json:"ns_per_op_p99"`
-	NSOpMin    float64                  `json:"ns_per_op_min"`
-	NSOpMax    float64                  `json:"ns_per_op_max"`
-	OpsPerSec  float64                  `json:"ops_per_sec_mean"`
-	BytesOp    float64                  `json:"bytes_per_op_mean,omitempty"`
-	AllocsOp   float64                  `json:"allocs_per_op_mean,omitempty"`
-	MetricKind string                   `json:"metric_kind"`
-	Metrics    map[string]metricSummary `json:"metric_summaries,omitempty"`
+	Name            string                   `json:"name"`
+	Samples         int                      `json:"samples"`
+	NSOpMean        float64                  `json:"ns_per_op_mean"`
+	NSOpP50         float64                  `json:"ns_per_op_p50"`
+	NSOpP95         float64                  `json:"ns_per_op_p95"`
+	NSOpP99         float64                  `json:"ns_per_op_p99"`
+	NSOpMin         float64                  `json:"ns_per_op_min"`
+	NSOpMax         float64                  `json:"ns_per_op_max"`
+	OpsPerSec       float64                  `json:"ops_per_sec_mean"`
+	BytesOp         float64                  `json:"bytes_per_op_mean,omitempty"`
+	AllocsOp        float64                  `json:"allocs_per_op_mean,omitempty"`
+	MetricKind      string                   `json:"metric_kind"`
+	ClaimType       string                   `json:"claim_type,omitempty"`
+	LoadProfile     string                   `json:"load_profile,omitempty"`
+	FlowProfile     string                   `json:"flow_profile,omitempty"`
+	LatencyMode     string                   `json:"latency_mode,omitempty"`
+	ColdWarm        string                   `json:"cold_warm,omitempty"`
+	Route           string                   `json:"route,omitempty"`
+	Concurrency     int                      `json:"concurrency,omitempty"`
+	WarmupSeconds   int                      `json:"warmup_seconds,omitempty"`
+	DurationSeconds int                      `json:"duration_seconds,omitempty"`
+	TargetTxPerSec  float64                  `json:"target_tx_per_sec,omitempty"`
+	Metrics         map[string]metricSummary `json:"metric_summaries,omitempty"`
 }
 
 type metricSummary struct {
@@ -765,6 +775,33 @@ func renderMarkdown(rep report) string {
 		fmt.Fprintf(&b, "\n")
 	}
 
+	if hasBenchmarkBucketMetadata(rep.Benchmarks) {
+		fmt.Fprintf(&b, "## Benchmark Buckets\n\n")
+		fmt.Fprintf(&b, "| Benchmark | Claim | Load profile | Flow profile | Latency mode | Cold/warm | Route | Concurrency | Warmup seconds | Duration seconds | Target tx/sec |\n")
+		fmt.Fprintf(&b, "| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: |\n")
+		for _, bench := range rep.Benchmarks {
+			if !benchmarkHasBucketMetadata(bench) {
+				continue
+			}
+			fmt.Fprintf(
+				&b,
+				"| `%s` | `%s` | `%s` | `%s` | `%s` | `%s` | `%s` | %d | %d | %d | %.6g |\n",
+				bench.Name,
+				bench.ClaimType,
+				bench.LoadProfile,
+				bench.FlowProfile,
+				bench.LatencyMode,
+				bench.ColdWarm,
+				bench.Route,
+				bench.Concurrency,
+				bench.WarmupSeconds,
+				bench.DurationSeconds,
+				bench.TargetTxPerSec,
+			)
+		}
+		fmt.Fprintf(&b, "\n")
+	}
+
 	goRows := goBenchmarkRows(rep.Benchmarks)
 	if len(goRows) > 0 {
 		fmt.Fprintf(&b, "| Benchmark | Kind | Samples | Mean | p50 | p95 | p99 | ops/sec | B/op | allocs/op |\n")
@@ -833,6 +870,28 @@ func renderMarkdown(rep report) string {
 		}
 	}
 	return b.String()
+}
+
+func hasBenchmarkBucketMetadata(benchmarks []benchmarkSummary) bool {
+	for _, bench := range benchmarks {
+		if benchmarkHasBucketMetadata(bench) {
+			return true
+		}
+	}
+	return false
+}
+
+func benchmarkHasBucketMetadata(bench benchmarkSummary) bool {
+	return bench.ClaimType != "" ||
+		bench.LoadProfile != "" ||
+		bench.FlowProfile != "" ||
+		bench.LatencyMode != "" ||
+		bench.ColdWarm != "" ||
+		bench.Route != "" ||
+		bench.Concurrency != 0 ||
+		bench.WarmupSeconds != 0 ||
+		bench.DurationSeconds != 0 ||
+		bench.TargetTxPerSec != 0
 }
 
 func readTxMetrics(path string) ([]txMetric, error) {
@@ -1171,6 +1230,9 @@ func evaluateClaimProfile(rep report) claimProfile {
 				if !publicClaimFamilyAllowed(rep.ResultFamily, claimType) {
 					reasons = append(reasons, fmt.Sprintf("%s claim requires result_family %s", claimType, strings.Join(allowedResultFamilies(claimType), "|")))
 				}
+				if issues := claimRowMetadataIssues(rep, claimType); len(issues) > 0 {
+					reasons = append(reasons, fmt.Sprintf("%s benchmark rows invalid: %s", claimType, strings.Join(issues, ", ")))
+				}
 				if missing := missingClaimMetrics(rep, claimType); len(missing) > 0 {
 					reasons = append(reasons, fmt.Sprintf("%s metrics missing: %s", claimType, strings.Join(missing, ", ")))
 				}
@@ -1196,11 +1258,99 @@ func evaluateClaimProfile(rep report) claimProfile {
 	return profile
 }
 
+func claimRowMetadataIssues(rep report, claimType string) []string {
+	rows, tagged := claimBenchmarkRows(rep, claimType)
+	if !tagged {
+		return []string{fmt.Sprintf("at least one benchmark summary must set claim_type=%s", claimType)}
+	}
+	var issues []string
+	for _, bench := range rows {
+		name := benchmarkDisplayName(bench)
+		if bench.DurationSeconds > 0 && rep.ClaimEvidence.SteadyStateSeconds > 0 && bench.DurationSeconds < rep.ClaimEvidence.SteadyStateSeconds {
+			issues = append(issues, fmt.Sprintf("%s duration_seconds must be >= steady_state_seconds", name))
+		}
+		switch claimType {
+		case "prover_rps":
+			if strings.TrimSpace(bench.LoadProfile) == "" {
+				issues = append(issues, fmt.Sprintf("%s load_profile is required", name))
+			}
+			if strings.TrimSpace(bench.Route) == "" {
+				issues = append(issues, fmt.Sprintf("%s route is required", name))
+			}
+			if bench.Concurrency <= 0 {
+				issues = append(issues, fmt.Sprintf("%s concurrency must be positive", name))
+			}
+			if bench.DurationSeconds <= 0 {
+				issues = append(issues, fmt.Sprintf("%s duration_seconds must be positive", name))
+			}
+		case "chain_tps":
+			if strings.TrimSpace(bench.LoadProfile) == "" {
+				issues = append(issues, fmt.Sprintf("%s load_profile is required", name))
+			}
+			if bench.DurationSeconds <= 0 {
+				issues = append(issues, fmt.Sprintf("%s duration_seconds must be positive", name))
+			}
+			if bench.TargetTxPerSec <= 0 {
+				issues = append(issues, fmt.Sprintf("%s target_tx_per_sec must be positive", name))
+			}
+		case "user_latency":
+			if strings.TrimSpace(bench.FlowProfile) == "" {
+				issues = append(issues, fmt.Sprintf("%s flow_profile is required", name))
+			}
+			if strings.TrimSpace(bench.LatencyMode) == "" {
+				issues = append(issues, fmt.Sprintf("%s latency_mode is required", name))
+			} else if !validLatencyMode(bench.LatencyMode) {
+				issues = append(issues, fmt.Sprintf("%s latency_mode must be native|remote|browser", name))
+			}
+			if rep.ClaimEvidence.LatencyMode != "" && bench.LatencyMode != "" && bench.LatencyMode != rep.ClaimEvidence.LatencyMode {
+				issues = append(issues, fmt.Sprintf("%s latency_mode %q does not match claim_evidence latency_mode %q", name, bench.LatencyMode, rep.ClaimEvidence.LatencyMode))
+			}
+			if strings.TrimSpace(bench.ColdWarm) == "" {
+				issues = append(issues, fmt.Sprintf("%s cold_warm is required", name))
+			} else if bench.ColdWarm != "cold" && bench.ColdWarm != "warm" {
+				issues = append(issues, fmt.Sprintf("%s cold_warm must be cold|warm", name))
+			}
+		}
+	}
+	return uniqueStrings(issues)
+}
+
+func claimBenchmarkRows(rep report, claimType string) ([]benchmarkSummary, bool) {
+	var tagged []benchmarkSummary
+	for _, bench := range rep.Benchmarks {
+		if strings.TrimSpace(bench.ClaimType) == claimType {
+			tagged = append(tagged, bench)
+		}
+	}
+	if len(tagged) > 0 {
+		return tagged, true
+	}
+	return rep.Benchmarks, false
+}
+
+func benchmarkDisplayName(bench benchmarkSummary) string {
+	name := strings.TrimSpace(bench.Name)
+	if name == "" {
+		return "<unnamed>"
+	}
+	return name
+}
+
+func validLatencyMode(value string) bool {
+	switch strings.TrimSpace(value) {
+	case "native", "remote", "browser":
+		return true
+	default:
+		return false
+	}
+}
+
 func missingClaimMetrics(rep report, claimType string) []string {
+	rows, _ := claimBenchmarkRows(rep, claimType)
 	switch claimType {
 	case "prover_rps":
 		return missingMetricGroups(
-			rep,
+			rows,
 			[]string{"proofs/sec", "requests/sec"},
 			[]string{"latency_ms", "proof_latency_ms", "roundtrip_latency_ms"},
 			[]string{"errors/op", "error_rate"},
@@ -1209,14 +1359,14 @@ func missingClaimMetrics(rep report, claimType string) []string {
 		)
 	case "chain_tps":
 		return missingMetricGroups(
-			rep,
+			rows,
 			[]string{"tx/sec", "tps", "successful_tx/sec"},
 			[]string{"inclusion_latency_ms"},
 			[]string{"failed_tx_rate"},
 		)
 	case "user_latency":
 		return missingMetricGroups(
-			rep,
+			rows,
 			[]string{"prepare_latency_ms"},
 			[]string{"proof_latency_ms"},
 			[]string{"time_to_submit_ms", "submit_latency_ms"},
@@ -1230,11 +1380,9 @@ func missingClaimMetrics(rep report, claimType string) []string {
 
 func incompleteClaimMetricRows(rep report, claimType string) []string {
 	var incomplete []string
-	for _, bench := range rep.Benchmarks {
-		name := strings.TrimSpace(bench.Name)
-		if name == "" {
-			name = "<unnamed>"
-		}
+	rows, _ := claimBenchmarkRows(rep, claimType)
+	for _, bench := range rows {
+		name := benchmarkDisplayName(bench)
 		switch claimType {
 		case "prover_rps":
 			if benchmarkHasMetric(bench, "proofs/sec", "requests/sec", "latency_ms", "proof_latency_ms", "roundtrip_latency_ms", "errors/op", "error_rate", "cpu_percent", "rss_bytes", "max_rss_bytes") {
@@ -1619,15 +1767,12 @@ func benchmarkSampleIssues(rep report) []string {
 	var issues []string
 	checkUserLatencySamples := hasString(rep.ClaimProfile.ClaimTypes, "user_latency")
 	for _, bench := range rep.Benchmarks {
-		name := strings.TrimSpace(bench.Name)
-		if name == "" {
-			name = "<unnamed>"
-		}
+		name := benchmarkDisplayName(bench)
 		if bench.Samples <= 0 {
 			issues = append(issues, fmt.Sprintf("%s samples must be positive", name))
 			continue
 		}
-		if checkUserLatencySamples && benchmarkLooksLikeUserLatency(bench) && bench.Samples < minPublicUserLatencySamples {
+		if checkUserLatencySamples && strings.TrimSpace(bench.ClaimType) == "user_latency" && benchmarkLooksLikeUserLatency(bench) && bench.Samples < minPublicUserLatencySamples {
 			issues = append(issues, fmt.Sprintf("%s samples must be >= %d for user_latency", name, minPublicUserLatencySamples))
 		}
 	}
@@ -1661,36 +1806,36 @@ func invalidClaimMetrics(rep report, claimType string) []string {
 	var invalid []string
 	switch claimType {
 	case "prover_rps":
-		invalid = append(invalid, requireMetricPositive(rep, "proofs/sec", "requests/sec")...)
-		invalid = append(invalid, requireMetricPositive(rep, "latency_ms", "proof_latency_ms", "roundtrip_latency_ms")...)
-		invalid = append(invalid, requireMetricP99AtMost(rep, rep.ClaimEvidence.LatencyP99SLOMS, "latency_ms", "proof_latency_ms", "roundtrip_latency_ms")...)
-		invalid = append(invalid, requireMetricRange(rep, 0, 0.001, "errors/op", "error_rate")...)
-		invalid = append(invalid, requireMetricPositive(rep, "cpu_percent")...)
-		invalid = append(invalid, requireMetricPositive(rep, "rss_bytes", "max_rss_bytes")...)
+		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "proofs/sec", "requests/sec")...)
+		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "latency_ms", "proof_latency_ms", "roundtrip_latency_ms")...)
+		invalid = append(invalid, requireClaimMetricP99AtMost(rep, claimType, rep.ClaimEvidence.LatencyP99SLOMS, "latency_ms", "proof_latency_ms", "roundtrip_latency_ms")...)
+		invalid = append(invalid, requireClaimMetricRange(rep, claimType, 0, 0.001, "errors/op", "error_rate")...)
+		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "cpu_percent")...)
+		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "rss_bytes", "max_rss_bytes")...)
 	case "chain_tps":
-		invalid = append(invalid, requireMetricPositive(rep, "tx/sec", "tps", "successful_tx/sec")...)
-		invalid = append(invalid, requireMetricPositive(rep, "inclusion_latency_ms")...)
-		invalid = append(invalid, requireMetricP95AtMost(rep, rep.ClaimEvidence.InclusionP95SLOMS, "inclusion_latency_ms")...)
-		if _, ok := findMetric(rep, "failed_tx_rate"); ok {
-			invalid = append(invalid, requireMetricRange(rep, 0, 0.001, "failed_tx_rate")...)
+		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "tx/sec", "tps", "successful_tx/sec")...)
+		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "inclusion_latency_ms")...)
+		invalid = append(invalid, requireClaimMetricP95AtMost(rep, claimType, rep.ClaimEvidence.InclusionP95SLOMS, "inclusion_latency_ms")...)
+		if _, ok := findClaimMetric(rep, claimType, "failed_tx_rate"); ok {
+			invalid = append(invalid, requireClaimMetricRange(rep, claimType, 0, 0.001, "failed_tx_rate")...)
 		}
 	case "user_latency":
-		invalid = append(invalid, requireMetricPositive(rep, "prepare_latency_ms")...)
-		invalid = append(invalid, requireMetricPositive(rep, "time_to_submit_ms", "submit_latency_ms")...)
-		invalid = append(invalid, requireMetricPositive(rep, "total_latency_ms", "submit_ready_ms")...)
-		invalid = append(invalid, requireMetricP99AtMost(rep, rep.ClaimEvidence.LatencyP99SLOMS, "total_latency_ms", "submit_ready_ms")...)
-		invalid = append(invalid, requireMetricPositive(rep, "proof_latency_ms")...)
+		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "prepare_latency_ms")...)
+		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "time_to_submit_ms", "submit_latency_ms")...)
+		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "total_latency_ms", "submit_ready_ms")...)
+		invalid = append(invalid, requireClaimMetricP99AtMost(rep, claimType, rep.ClaimEvidence.LatencyP99SLOMS, "total_latency_ms", "submit_ready_ms")...)
+		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "proof_latency_ms")...)
 		if userLatencyIncludesInclusion(rep) {
-			invalid = append(invalid, requireMetricPositive(rep, userLatencyInclusionMetricNames()...)...)
-			invalid = append(invalid, requireMetricP95AtMost(rep, rep.ClaimEvidence.InclusionP95SLOMS, userLatencyInclusionMetricNames()...)...)
+			invalid = append(invalid, requireClaimMetricPositive(rep, claimType, userLatencyInclusionMetricNames()...)...)
+			invalid = append(invalid, requireClaimMetricP95AtMost(rep, claimType, rep.ClaimEvidence.InclusionP95SLOMS, userLatencyInclusionMetricNames()...)...)
 		}
-		invalid = append(invalid, requireMetricRange(rep, 0, 0.001, "timeout_rate", "cancel_rate")...)
+		invalid = append(invalid, requireClaimMetricRange(rep, claimType, 0, 0.001, "timeout_rate", "cancel_rate")...)
 	}
 	return invalid
 }
 
 func userLatencyIncludesInclusion(rep report) bool {
-	_, ok := findMetric(rep, userLatencyInclusionMetricNames()...)
+	_, ok := findClaimMetric(rep, "user_latency", userLatencyInclusionMetricNames()...)
 	return ok
 }
 
@@ -1719,6 +1864,72 @@ func benchmarkHasMetric(bench benchmarkSummary, names ...string) bool {
 		}
 	}
 	return false
+}
+
+func requireClaimMetricPositive(rep report, claimType string, names ...string) []string {
+	var invalid []string
+	for _, found := range findClaimMetrics(rep, claimType, names...) {
+		metric := found.Metric
+		if metric.Mean <= 0 || metric.P50 <= 0 || metric.P95 <= 0 || metric.P99 <= 0 || metric.Min <= 0 || metric.Max <= 0 {
+			invalid = append(invalid, fmt.Sprintf("%s/%s must have positive mean/p50/p95/p99/min/max", found.BenchmarkName, found.MetricName))
+		}
+	}
+	return invalid
+}
+
+func requireClaimMetricRange(rep report, claimType string, minValue float64, maxValue float64, names ...string) []string {
+	var invalid []string
+	for _, found := range findClaimMetrics(rep, claimType, names...) {
+		observedMin := metricObservedMin(found.Metric)
+		if observedMin < minValue {
+			invalid = append(invalid, fmt.Sprintf("%s/%s min %.6f below %.6f", found.BenchmarkName, found.MetricName, observedMin, minValue))
+			continue
+		}
+		observedMax := metricObservedMax(found.Metric)
+		if observedMax > maxValue {
+			invalid = append(invalid, fmt.Sprintf("%s/%s max %.6f exceeds %.6f", found.BenchmarkName, found.MetricName, observedMax, maxValue))
+		}
+	}
+	return invalid
+}
+
+func requireClaimMetricP99AtMost(rep report, claimType string, maxValue float64, names ...string) []string {
+	if maxValue <= 0 {
+		return nil
+	}
+	var invalid []string
+	for _, found := range findClaimMetrics(rep, claimType, names...) {
+		if found.Metric.P99 > maxValue {
+			invalid = append(invalid, fmt.Sprintf("%s/%s p99 %.6f exceeds %.6f", found.BenchmarkName, found.MetricName, found.Metric.P99, maxValue))
+		}
+	}
+	return invalid
+}
+
+func requireClaimMetricP95AtMost(rep report, claimType string, maxValue float64, names ...string) []string {
+	if maxValue <= 0 {
+		return nil
+	}
+	var invalid []string
+	for _, found := range findClaimMetrics(rep, claimType, names...) {
+		if found.Metric.P95 > maxValue {
+			invalid = append(invalid, fmt.Sprintf("%s/%s p95 %.6f exceeds %.6f", found.BenchmarkName, found.MetricName, found.Metric.P95, maxValue))
+		}
+	}
+	return invalid
+}
+
+func findClaimMetric(rep report, claimType string, names ...string) (metricSummary, bool) {
+	found := findClaimMetrics(rep, claimType, names...)
+	if len(found) == 0 {
+		return metricSummary{}, false
+	}
+	return found[0].Metric, true
+}
+
+func findClaimMetrics(rep report, claimType string, names ...string) []namedMetricSummary {
+	rows, _ := claimBenchmarkRows(rep, claimType)
+	return findMetricsInBenchmarks(rows, names...)
 }
 
 func requireMetricPositive(rep report, names ...string) []string {
@@ -1794,12 +2005,16 @@ func findMetric(rep report, names ...string) (metricSummary, bool) {
 }
 
 func findMetrics(rep report, names ...string) []namedMetricSummary {
+	return findMetricsInBenchmarks(rep.Benchmarks, names...)
+}
+
+func findMetricsInBenchmarks(benchmarks []benchmarkSummary, names ...string) []namedMetricSummary {
 	nameSet := make(map[string]struct{}, len(names))
 	for _, name := range names {
 		nameSet[name] = struct{}{}
 	}
 	var found []namedMetricSummary
-	for _, bench := range rep.Benchmarks {
+	for _, bench := range benchmarks {
 		for metricName, metric := range bench.Metrics {
 			if _, ok := nameSet[metricName]; !ok {
 				continue
@@ -1869,18 +2084,18 @@ func hasClaimEvidence(evidence claimEvidence) bool {
 		evidence.LinkedProverReportSHA256 != ""
 }
 
-func missingMetricGroups(rep report, requiredAlternatives ...[]string) []string {
+func missingMetricGroups(benchmarks []benchmarkSummary, requiredAlternatives ...[]string) []string {
 	missing := make([]string, 0)
 	for _, alternatives := range requiredAlternatives {
-		if !hasAnyMetric(rep, alternatives...) {
+		if !hasAnyMetric(benchmarks, alternatives...) {
 			missing = append(missing, strings.Join(alternatives, "|"))
 		}
 	}
 	return missing
 }
 
-func hasAnyMetric(rep report, names ...string) bool {
-	for _, bench := range rep.Benchmarks {
+func hasAnyMetric(benchmarks []benchmarkSummary, names ...string) bool {
+	for _, bench := range benchmarks {
 		for _, name := range names {
 			if _, ok := bench.Metrics[name]; ok {
 				return true

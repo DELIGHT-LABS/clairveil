@@ -640,8 +640,14 @@ func TestEvaluateClaimProfileAllowsCompletePublicMetadata(t *testing.T) {
 		},
 		Benchmarks: []benchmarkSummary{
 			{
-				Name:    "BenchmarkProverLoadTransfer",
-				Samples: 600,
+				Name:            "BenchmarkProverLoadTransfer",
+				Samples:         600,
+				ClaimType:       "prover_rps",
+				LoadProfile:     "transfer_only",
+				Route:           "transfer",
+				Concurrency:     8,
+				WarmupSeconds:   60,
+				DurationSeconds: 600,
 				Metrics: map[string]metricSummary{
 					"proofs/sec":    {Mean: 10, P50: 10, P95: 10, P99: 10, Min: 9, Max: 11},
 					"latency_ms":    {Mean: 100, P50: 90, P95: 120, P99: 150, Min: 80, Max: 180},
@@ -705,6 +711,59 @@ func TestEvaluateClaimProfileRequiresPositiveSamples(t *testing.T) {
 	}
 }
 
+func TestEvaluateClaimProfileRequiresClaimTypedBenchmarkRows(t *testing.T) {
+	rep := completePublicProverReport()
+	rep.Benchmarks[0].ClaimType = ""
+
+	profile := evaluateClaimProfile(rep)
+	if profile.Eligible {
+		t.Fatalf("expected public claim to be blocked")
+	}
+	if !containsString(profile.BlockingReasons, "prover_rps benchmark rows invalid: at least one benchmark summary must set claim_type=prover_rps") {
+		t.Fatalf("expected missing claim_type blocker, got %+v", profile.BlockingReasons)
+	}
+}
+
+func TestEvaluateClaimProfileRequiresUserLatencyBucketMetadata(t *testing.T) {
+	rep := completePublicUserLatencyReport()
+	rep.Benchmarks[0].FlowProfile = ""
+	rep.Benchmarks[0].ColdWarm = ""
+
+	profile := evaluateClaimProfile(rep)
+	if profile.Eligible {
+		t.Fatalf("expected public claim to be blocked")
+	}
+	if !containsString(profile.BlockingReasons, "user_latency benchmark rows invalid: UserLatencyTransferWarm flow_profile is required, UserLatencyTransferWarm cold_warm is required") {
+		t.Fatalf("expected user latency bucket metadata blockers, got %+v", profile.BlockingReasons)
+	}
+}
+
+func TestEvaluateClaimProfileScopesMetricsToClaimRows(t *testing.T) {
+	rep := completePublicProverReport()
+	rep.Benchmarks[0].ClaimType = "user_latency"
+	rep.Benchmarks = append(rep.Benchmarks, benchmarkSummary{
+		Name:            "ProverMetadataOnly",
+		Samples:         600,
+		ClaimType:       "prover_rps",
+		LoadProfile:     "transfer_only",
+		Route:           "transfer",
+		Concurrency:     8,
+		WarmupSeconds:   60,
+		DurationSeconds: 600,
+		Metrics: map[string]metricSummary{
+			"proofs/sec": {Mean: 10, P50: 10, P95: 10, P99: 10, Min: 9, Max: 11},
+		},
+	})
+
+	profile := evaluateClaimProfile(rep)
+	if profile.Eligible {
+		t.Fatalf("expected public claim to be blocked")
+	}
+	if !containsString(profile.BlockingReasons, "prover_rps metrics missing: latency_ms|proof_latency_ms|roundtrip_latency_ms, errors/op|error_rate, cpu_percent, rss_bytes|max_rss_bytes") {
+		t.Fatalf("expected prover metrics to be scoped to prover rows, got %+v", profile.BlockingReasons)
+	}
+}
+
 func TestEvaluateClaimProfileRequiresUserLatencyMinimumSamples(t *testing.T) {
 	rep := completePublicUserLatencyReport()
 	rep.Benchmarks[0].Samples = minPublicUserLatencySamples - 1
@@ -736,16 +795,24 @@ func TestEvaluateClaimProfileRequiresUserLatencyMetricsOnSameRow(t *testing.T) {
 	rep := completePublicUserLatencyReport()
 	rep.Benchmarks = []benchmarkSummary{
 		{
-			Name:    "UserLatencyPrepareAndProofOnly",
-			Samples: minPublicUserLatencySamples,
+			Name:        "UserLatencyPrepareAndProofOnly",
+			Samples:     minPublicUserLatencySamples,
+			ClaimType:   "user_latency",
+			FlowProfile: "transfer_all_private",
+			LatencyMode: "native",
+			ColdWarm:    "warm",
 			Metrics: map[string]metricSummary{
 				"prepare_latency_ms": {Mean: 20, P50: 18, P95: 28, P99: 32, Min: 10, Max: 40},
 				"proof_latency_ms":   {Mean: 150, P50: 140, P95: 210, P99: 260, Min: 120, Max: 280},
 			},
 		},
 		{
-			Name:    "UserLatencySubmitOnly",
-			Samples: minPublicUserLatencySamples,
+			Name:        "UserLatencySubmitOnly",
+			Samples:     minPublicUserLatencySamples,
+			ClaimType:   "user_latency",
+			FlowProfile: "transfer_all_private",
+			LatencyMode: "native",
+			ColdWarm:    "warm",
 			Metrics: map[string]metricSummary{
 				"time_to_submit_ms": {Mean: 30, P50: 25, P95: 45, P99: 55, Min: 15, Max: 60},
 				"submit_ready_ms":   {Mean: 200, P50: 180, P95: 260, P99: 320, Min: 150, Max: 350},
@@ -766,8 +833,9 @@ func TestEvaluateClaimProfileRequiresUserLatencyMetricsOnSameRow(t *testing.T) {
 func TestEvaluateClaimProfileDoesNotApplyUserLatencySampleFloorToProverOnlyRows(t *testing.T) {
 	rep := completePublicUserLatencyReport()
 	rep.Benchmarks = append(rep.Benchmarks, benchmarkSummary{
-		Name:    "ProverOnlyLatencyProbe",
-		Samples: 1,
+		Name:      "ProverOnlyLatencyProbe",
+		Samples:   1,
+		ClaimType: "prover_rps",
 		Metrics: map[string]metricSummary{
 			"proof_latency_ms": {Mean: 150, P50: 140, P95: 210, P99: 260, Min: 120, Max: 280},
 		},
@@ -1090,8 +1158,14 @@ func TestEvaluateClaimProfileBlocksWrongFamilyAndSLO(t *testing.T) {
 		},
 		Benchmarks: []benchmarkSummary{
 			{
-				Name:    "BenchmarkProverLoadTransfer",
-				Samples: 600,
+				Name:            "BenchmarkProverLoadTransfer",
+				Samples:         600,
+				ClaimType:       "prover_rps",
+				LoadProfile:     "transfer_only",
+				Route:           "transfer",
+				Concurrency:     8,
+				WarmupSeconds:   60,
+				DurationSeconds: 600,
 				Metrics: map[string]metricSummary{
 					"proofs/sec":    {Mean: 10, P50: 10, P95: 10, P99: 10, Min: 9, Max: 11},
 					"latency_ms":    {Mean: 100, P50: 90, P95: 120, P99: 150, Min: 80, Max: 180},
@@ -1174,8 +1248,14 @@ func TestEvaluateClaimProfileBlocksAnyMatchingMetricSLO(t *testing.T) {
 		},
 		Benchmarks: []benchmarkSummary{
 			{
-				Name:    "ProverLoadTransferC1",
-				Samples: 600,
+				Name:            "ProverLoadTransferC1",
+				Samples:         600,
+				ClaimType:       "prover_rps",
+				LoadProfile:     "transfer_only",
+				Route:           "transfer",
+				Concurrency:     1,
+				WarmupSeconds:   60,
+				DurationSeconds: 600,
 				Metrics: map[string]metricSummary{
 					"proofs/sec":    {Mean: 10, P50: 10, P95: 10, P99: 10, Min: 9, Max: 11},
 					"latency_ms":    {Mean: 100, P50: 90, P95: 120, P99: 150, Min: 80, Max: 180},
@@ -1185,8 +1265,14 @@ func TestEvaluateClaimProfileBlocksAnyMatchingMetricSLO(t *testing.T) {
 				},
 			},
 			{
-				Name:    "ProverLoadTransferC32",
-				Samples: 600,
+				Name:            "ProverLoadTransferC32",
+				Samples:         600,
+				ClaimType:       "prover_rps",
+				LoadProfile:     "transfer_only",
+				Route:           "transfer",
+				Concurrency:     32,
+				WarmupSeconds:   60,
+				DurationSeconds: 600,
 				Metrics: map[string]metricSummary{
 					"proofs/sec":    {Mean: 8, P50: 8, P95: 8, P99: 8, Min: 7, Max: 9},
 					"latency_ms":    {Mean: 100, P50: 90, P95: 120, P99: 150, Min: 80, Max: 180},
@@ -1252,8 +1338,14 @@ func completePublicProverReport() report {
 		},
 		Benchmarks: []benchmarkSummary{
 			{
-				Name:    "BenchmarkProverLoadTransfer",
-				Samples: 600,
+				Name:            "BenchmarkProverLoadTransfer",
+				Samples:         600,
+				ClaimType:       "prover_rps",
+				LoadProfile:     "transfer_only",
+				Route:           "transfer",
+				Concurrency:     8,
+				WarmupSeconds:   60,
+				DurationSeconds: 600,
 				Metrics: map[string]metricSummary{
 					"proofs/sec":    {Mean: 10, P50: 10, P95: 10, P99: 10, Min: 9, Max: 11},
 					"latency_ms":    {Mean: 100, P50: 90, P95: 120, P99: 150, Min: 80, Max: 180},
@@ -1308,8 +1400,12 @@ func completePublicChainReport() report {
 		},
 		Benchmarks: []benchmarkSummary{
 			{
-				Name:    "ChainTPSMixed",
-				Samples: 600,
+				Name:            "ChainTPSMixed",
+				Samples:         600,
+				ClaimType:       "chain_tps",
+				LoadProfile:     "mixed-shielded",
+				DurationSeconds: 600,
+				TargetTxPerSec:  12,
 				Metrics: map[string]metricSummary{
 					"tx/sec":               {Mean: 10, P50: 10, P95: 10, P99: 10, Min: 9, Max: 11},
 					"inclusion_latency_ms": {Mean: 100, P50: 100, P95: 120, P99: 150, Min: 80, Max: 200},
@@ -1357,8 +1453,12 @@ func completePublicUserLatencyReport() report {
 		},
 		Benchmarks: []benchmarkSummary{
 			{
-				Name:    "UserLatencyTransferWarm",
-				Samples: 100,
+				Name:        "UserLatencyTransferWarm",
+				Samples:     100,
+				ClaimType:   "user_latency",
+				FlowProfile: "transfer_all_private",
+				LatencyMode: "native",
+				ColdWarm:    "warm",
 				Metrics: map[string]metricSummary{
 					"prepare_latency_ms": {Mean: 20, P50: 18, P95: 28, P99: 32, Min: 10, Max: 40},
 					"proof_latency_ms":   {Mean: 150, P50: 140, P95: 210, P99: 260, Min: 120, Max: 280},
@@ -1396,6 +1496,11 @@ func attachRemoteUserLatencyEvidence(rep *report, linkedPath, linkedSHA string, 
 	rep.ClaimEvidence.ProverConfigSHA256 = linked.ClaimEvidence.ProverConfigSHA256
 	rep.ClaimEvidence.LinkedProverReportFile = linkedPath
 	rep.ClaimEvidence.LinkedProverReportSHA256 = linkedSHA
+	for i := range rep.Benchmarks {
+		if rep.Benchmarks[i].ClaimType == "user_latency" {
+			rep.Benchmarks[i].LatencyMode = "remote"
+		}
+	}
 	rep.SourceFiles = append(rep.SourceFiles, linked.ClaimEvidence.ProverConfigFile, linkedPath)
 	rep.SourceFileSHA256[linked.ClaimEvidence.ProverConfigFile] = linked.ClaimEvidence.ProverConfigSHA256
 	rep.SourceFileSHA256[linkedPath] = linkedSHA
