@@ -108,6 +108,45 @@ func TestRenderMarkdownIncludesBenchmarkTable(t *testing.T) {
 	}
 }
 
+func TestRenderMarkdownIncludesFeeFailures(t *testing.T) {
+	out := renderMarkdown(report{
+		SchemaVersion: reportSchemaVersion,
+		GeneratedAt:   "2026-06-12T00:00:00Z",
+		Commit:        "abc123",
+		ActiveSetID:   "privacy-v1",
+		GoVersion:     "go1.24.0",
+		OS:            "darwin",
+		Arch:          "arm64",
+		FeeModel: feeModel{
+			FeeDenom:      "uclair",
+			MinGasPrice:   "0.025",
+			GasAdjustment: "1.2",
+		},
+		Fees: []feeSummary{
+			{
+				TxType:          "deposit",
+				Samples:         2,
+				FailedSamples:   1,
+				GasUsedMean:     150,
+				GasUsedP50:      150,
+				GasUsedP95:      195,
+				GasUsedMax:      200,
+				EstimatedFeeP50: "5uclair",
+				EstimatedFeeP95: "6uclair",
+			},
+		},
+	})
+
+	for _, want := range []string{
+		"| Tx type | Samples | Failed | Gas mean |",
+		"| `deposit` | 2 | 1 | 150 | 150 | 195 | 200 | `5uclair` | `6uclair` |",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("rendered markdown missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestSummarizeFees(t *testing.T) {
 	success := true
 	failed := false

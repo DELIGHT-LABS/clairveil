@@ -260,12 +260,8 @@ func summarizeBenchmarks(samples []benchmarkSample) []benchmarkSummary {
 		allocValues := make([]float64, 0, len(group))
 		for _, sample := range group {
 			nsValues = append(nsValues, sample.NSOp)
-			if sample.BytesOp > 0 {
-				bytesValues = append(bytesValues, sample.BytesOp)
-			}
-			if sample.AllocsOp > 0 {
-				allocValues = append(allocValues, sample.AllocsOp)
-			}
+			bytesValues = append(bytesValues, sample.BytesOp)
+			allocValues = append(allocValues, sample.AllocsOp)
 		}
 		meanNS := mean(nsValues)
 		summary := benchmarkSummary{
@@ -358,14 +354,15 @@ func renderMarkdown(rep report) string {
 	if len(rep.Fees) > 0 {
 		fmt.Fprintf(&b, "## Expected Fees\n\n")
 		fmt.Fprintf(&b, "Fee estimates are derived from observed `gas_used` only. They do not include prover infrastructure cost.\n\n")
-		fmt.Fprintf(&b, "| Tx type | Samples | Gas mean | Gas p50 | Gas p95 | Gas max | Estimated fee p50 | Estimated fee p95 |\n")
-		fmt.Fprintf(&b, "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+		fmt.Fprintf(&b, "| Tx type | Samples | Failed | Gas mean | Gas p50 | Gas p95 | Gas max | Estimated fee p50 | Estimated fee p95 |\n")
+		fmt.Fprintf(&b, "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
 		for _, fee := range rep.Fees {
 			fmt.Fprintf(
 				&b,
-				"| `%s` | %d | %d | %d | %d | %d | `%s` | `%s` |\n",
+				"| `%s` | %d | %d | %d | %d | %d | %d | `%s` | `%s` |\n",
 				fee.TxType,
 				fee.Samples,
+				fee.FailedSamples,
 				fee.GasUsedMean,
 				fee.GasUsedP50,
 				fee.GasUsedP95,

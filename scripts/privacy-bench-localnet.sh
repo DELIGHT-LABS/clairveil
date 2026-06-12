@@ -5,7 +5,13 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 bench_out_dir="${BENCH_OUT_DIR:-benchmarks/privacy-localnet}"
-work_dir="${CLAIRVEIL_BENCH_WORK_DIR:-"$(mktemp -d)"}"
+created_work_dir="0"
+if [[ -n "${CLAIRVEIL_BENCH_WORK_DIR:-}" ]]; then
+  work_dir="$CLAIRVEIL_BENCH_WORK_DIR"
+else
+  work_dir="$(mktemp -d)"
+  created_work_dir="1"
+fi
 fee_denom="${FEE_DENOM:-uclair}"
 min_gas_price="${MIN_GAS_PRICE:-0.025}"
 gas_adjustment="${GAS_ADJUSTMENT:-1.2}"
@@ -14,6 +20,13 @@ source_dirty="false"
 if [[ -n "$(git status --short -- . ':(exclude)benchmarks' 2>/dev/null || true)" ]]; then
   source_dirty="true"
 fi
+
+cleanup() {
+  if [[ "$created_work_dir" == "1" && "${KEEP_BENCH_WORK_DIR:-0}" != "1" ]]; then
+    rm -rf "$work_dir"
+  fi
+}
+trap cleanup EXIT
 
 mkdir -p "$bench_out_dir"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -24,6 +37,9 @@ echo "  work_dir=$work_dir"
 echo "  FEE_DENOM=$fee_denom"
 echo "  MIN_GAS_PRICE=$min_gas_price"
 echo "  GAS_ADJUSTMENT=$gas_adjustment"
+if [[ "$created_work_dir" == "1" && "${KEEP_BENCH_WORK_DIR:-0}" == "1" ]]; then
+  echo "  KEEP_BENCH_WORK_DIR=1"
+fi
 
 KEEP_WORK_DIR=1 CLAIRVEIL_E2E_WORK_DIR="$work_dir" ./scripts/privacy-e2e-smoke.sh
 
