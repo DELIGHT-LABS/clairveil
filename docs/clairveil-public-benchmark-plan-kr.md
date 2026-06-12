@@ -441,7 +441,7 @@ Markdown 결과는 공개 설명용으로 사용하고, JSON은 CI trend와 down
 - transfer/withdraw endpoint별 p50/p95/p99, RPS, error rate 기록
 - request timeout/auth/malformed response failure가 benchmark와 별도 smoke test에서 검증됨
 
-현재 상태: 부분 완료. `make privacy-proverd-bench`가 in-process HTTP transport sequential/parallel round trip benchmark를 생성합니다. 별도 `clairveil-proverd` 프로세스 external load sweep, p99/error-rate 집계, memory high-water mark는 후속 작업입니다.
+현재 상태: 부분 완료. `make privacy-proverd-bench`가 in-process HTTP transport sequential/parallel round trip benchmark를 생성합니다. `cmd/clairveil-proverload`와 `make privacy-proverd-load-bench`는 이미 실행 중인 external `clairveil-proverd`를 대상으로 fixture-backed HTTP load를 걸고, concurrency별 `requests/sec`, `latency_ms`, `error_rate`, `timeout_rate`, request/response byte summary를 `benchmarks/privacy-proverd-load` structured report로 생성합니다. Server-side CPU/RSS와 max RSS는 load generator가 직접 관측하지 않으므로, public RPS claim에는 별도 telemetry 또는 saturation profile evidence file을 함께 제출해야 합니다.
 
 ### Phase B4: localnet e2e benchmark 추가
 

@@ -205,6 +205,14 @@ Public claim 결과에는 반드시 "reference environment" 또는 "production-l
 
 현재 `make privacy-proverd-bench`는 `httptest` 기반 in-process transport benchmark입니다. 후속 작업은 실제 `clairveil-proverd` 바이너리를 별도 프로세스로 띄우고 external HTTP client로 부하를 걸어야 합니다.
 
+현재 구현 상태:
+
+- `cmd/clairveil-proverload`가 이미 실행 중인 external `clairveil-proverd`에 HTTP POST load를 걸고 structured benchmark summary JSON을 생성합니다.
+- `make privacy-proverd-load-bench` 또는 `scripts/privacy-proverd-load-bench.sh`가 `PROVERD_URL`을 받아 `benchmarks/privacy-proverd-load` report를 생성합니다.
+- load generator는 fixture bundle 또는 별도 request JSON file을 사용하고, `transfer_only`, `withdraw_only`, `mixed_80_20` profile, concurrency list, warmup, steady-state duration, bearer token을 지원합니다.
+- 생성 row는 `claim_type=prover_rps`, `load_profile`, `route`, `concurrency`, `warmup_seconds`, `duration_seconds` metadata와 `requests/sec`, `latency_ms`, `error_rate`, `timeout_rate`, request/response byte metric을 포함합니다.
+- server-side CPU/RSS는 load generator가 직접 관측하지 않습니다. Public claim으로 승격하려면 별도 telemetry 또는 saturation profile evidence file에 CPU/RSS/max RSS를 기록하고 `claim_evidence`로 연결해야 합니다.
+
 구현 항목:
 
 - `scripts/privacy-proverd-load-bench.sh` 추가
