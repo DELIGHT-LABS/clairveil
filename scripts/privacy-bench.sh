@@ -11,6 +11,7 @@ bench_time="${BENCH_TIME:-}"
 fee_denom="${FEE_DENOM:-}"
 min_gas_price="${MIN_GAS_PRICE:-}"
 gas_adjustment="${GAS_ADJUSTMENT:-}"
+tx_metrics="${TX_METRICS:-}"
 
 mkdir -p "$bench_out_dir"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -58,6 +59,9 @@ if [[ -n "$min_gas_price" ]]; then
 fi
 if [[ -n "$gas_adjustment" ]]; then
   report_args+=(-gas-adjustment "$gas_adjustment")
+fi
+if [[ -n "$tx_metrics" ]]; then
+  report_args+=(-tx-metrics "$tx_metrics")
 fi
 
 go "${report_args[@]}"

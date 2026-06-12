@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,7 +41,8 @@ type report struct {
 	ManifestPath     string             `json:"manifest_path,omitempty"`
 	ManifestChecksum string             `json:"manifest_sha256,omitempty"`
 	FeeModel         feeModel           `json:"fee_model"`
-	Benchmarks       []benchmarkSummary `json:"benchmarks"`
+	Benchmarks       []benchmarkSummary `json:"benchmarks,omitempty"`
+	Fees             []feeSummary       `json:"fees,omitempty"`
 }
 
 type feeModel struct {
@@ -70,6 +72,33 @@ type benchmarkSummary struct {
 	MetricKind string  `json:"metric_kind"`
 }
 
+type txMetric struct {
+	TxType    string `json:"tx_type"`
+	GasUsed   uint64 `json:"gas_used"`
+	GasWanted uint64 `json:"gas_wanted,omitempty"`
+	Success   *bool  `json:"success,omitempty"`
+}
+
+type txMetricEnvelope struct {
+	Transactions []txMetric `json:"transactions"`
+}
+
+type feeSummary struct {
+	TxType          string `json:"tx_type"`
+	Samples         int    `json:"samples"`
+	FailedSamples   int    `json:"failed_samples,omitempty"`
+	GasUsedMean     uint64 `json:"gas_used_mean"`
+	GasUsedP50      uint64 `json:"gas_used_p50"`
+	GasUsedP95      uint64 `json:"gas_used_p95"`
+	GasUsedMax      uint64 `json:"gas_used_max"`
+	GasWantedMax    uint64 `json:"gas_wanted_max,omitempty"`
+	GasAdjustment   string `json:"gas_adjustment"`
+	MinGasPrice     string `json:"min_gas_price"`
+	FeeDenom        string `json:"fee_denom"`
+	EstimatedFeeP50 string `json:"estimated_fee_p50"`
+	EstimatedFeeP95 string `json:"estimated_fee_p95"`
+}
+
 func main() {
 	var inputPath string
 	var outDir string
@@ -78,6 +107,7 @@ func main() {
 	var feeDenom string
 	var minGasPrice string
 	var gasAdjustment string
+	var txMetricsPath string
 	flag.StringVar(&inputPath, "input", "", "raw go test -bench output")
 	flag.StringVar(&outDir, "out", "benchmarks/privacy-circuits", "output directory for benchmark reports")
 	flag.StringVar(&activeSetID, "active-set-id", privacyzk.ActiveCircuitSetID, "active circuit set id")
@@ -85,19 +115,23 @@ func main() {
 	flag.StringVar(&feeDenom, "fee-denom", "", "fee denom used for expected fee calculations")
 	flag.StringVar(&minGasPrice, "min-gas-price", "", "minimum gas price used for expected fee calculations")
 	flag.StringVar(&gasAdjustment, "gas-adjustment", "", "gas adjustment used for expected fee calculations")
+	flag.StringVar(&txMetricsPath, "tx-metrics", "", "optional JSON file with observed tx gas metrics")
 	flag.Parse()
 
-	if strings.TrimSpace(inputPath) == "" {
-		fatalf("-input is required")
+	var samples []benchmarkSample
+	var cpu string
+	if strings.TrimSpace(inputPath) != "" {
+		raw, err := os.ReadFile(inputPath)
+		if err != nil {
+			fatalf("read benchmark input: %v", err)
+		}
+		samples, cpu = parseBenchmarkOutput(string(raw))
+		if len(samples) == 0 {
+			fatalf("no benchmark samples found in %s", inputPath)
+		}
 	}
-
-	raw, err := os.ReadFile(inputPath)
-	if err != nil {
-		fatalf("read benchmark input: %v", err)
-	}
-	samples, cpu := parseBenchmarkOutput(string(raw))
-	if len(samples) == 0 {
-		fatalf("no benchmark samples found in %s", inputPath)
+	if strings.TrimSpace(inputPath) == "" && strings.TrimSpace(txMetricsPath) == "" {
+		fatalf("-input or -tx-metrics is required")
 	}
 
 	rep := report{
@@ -118,6 +152,18 @@ func main() {
 			GasAdjustment: strings.TrimSpace(gasAdjustment),
 		},
 		Benchmarks: summarizeBenchmarks(samples),
+	}
+
+	if strings.TrimSpace(txMetricsPath) != "" {
+		metrics, err := readTxMetrics(txMetricsPath)
+		if err != nil {
+			fatalf("read tx metrics: %v", err)
+		}
+		feeSummaries, err := summarizeFees(metrics, rep.FeeModel)
+		if err != nil {
+			fatalf("summarize fees: %v", err)
+		}
+		rep.Fees = feeSummaries
 	}
 
 	resolvedManifest := resolveManifestPath(manifestPath)
@@ -253,7 +299,7 @@ func benchmarkMetricKind(name string) string {
 
 func renderMarkdown(rep report) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# Clairveil Privacy Circuit Benchmark\n\n")
+	fmt.Fprintf(&b, "# Clairveil Privacy Benchmark Report\n\n")
 	fmt.Fprintf(&b, "- generated_at: `%s`\n", rep.GeneratedAt)
 	fmt.Fprintf(&b, "- commit: `%s`\n", rep.Commit)
 	fmt.Fprintf(&b, "- dirty: `%t`\n", rep.Dirty)
@@ -278,24 +324,184 @@ func renderMarkdown(rep report) string {
 	}
 	fmt.Fprintf(&b, "These numbers describe the measured benchmark scope only. Do not infer chain TPS from native proving or verification rows.\n\n")
 
-	fmt.Fprintf(&b, "| Benchmark | Kind | Samples | Mean | p50 | p95 | ops/sec | B/op | allocs/op |\n")
-	fmt.Fprintf(&b, "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
-	for _, bench := range rep.Benchmarks {
-		fmt.Fprintf(
-			&b,
-			"| `%s` | `%s` | %d | %s | %s | %s | %.2f | %.0f | %.0f |\n",
-			bench.Name,
-			bench.MetricKind,
-			bench.Samples,
-			formatDurationNS(bench.NSOpMean),
-			formatDurationNS(bench.NSOpP50),
-			formatDurationNS(bench.NSOpP95),
-			bench.OpsPerSec,
-			bench.BytesOp,
-			bench.AllocsOp,
-		)
+	if len(rep.Benchmarks) > 0 {
+		fmt.Fprintf(&b, "| Benchmark | Kind | Samples | Mean | p50 | p95 | ops/sec | B/op | allocs/op |\n")
+		fmt.Fprintf(&b, "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+		for _, bench := range rep.Benchmarks {
+			fmt.Fprintf(
+				&b,
+				"| `%s` | `%s` | %d | %s | %s | %s | %.2f | %.0f | %.0f |\n",
+				bench.Name,
+				bench.MetricKind,
+				bench.Samples,
+				formatDurationNS(bench.NSOpMean),
+				formatDurationNS(bench.NSOpP50),
+				formatDurationNS(bench.NSOpP95),
+				bench.OpsPerSec,
+				bench.BytesOp,
+				bench.AllocsOp,
+			)
+		}
+		fmt.Fprintf(&b, "\n")
+	}
+
+	if len(rep.Fees) > 0 {
+		fmt.Fprintf(&b, "## Expected Fees\n\n")
+		fmt.Fprintf(&b, "Fee estimates are derived from observed `gas_used` only. They do not include prover infrastructure cost.\n\n")
+		fmt.Fprintf(&b, "| Tx type | Samples | Gas mean | Gas p50 | Gas p95 | Gas max | Estimated fee p50 | Estimated fee p95 |\n")
+		fmt.Fprintf(&b, "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+		for _, fee := range rep.Fees {
+			fmt.Fprintf(
+				&b,
+				"| `%s` | %d | %d | %d | %d | %d | `%s` | `%s` |\n",
+				fee.TxType,
+				fee.Samples,
+				fee.GasUsedMean,
+				fee.GasUsedP50,
+				fee.GasUsedP95,
+				fee.GasUsedMax,
+				fee.EstimatedFeeP50,
+				fee.EstimatedFeeP95,
+			)
+		}
 	}
 	return b.String()
+}
+
+func readTxMetrics(path string) ([]txMetric, error) {
+	bz, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var direct []txMetric
+	if err := json.Unmarshal(bz, &direct); err == nil {
+		return direct, nil
+	}
+
+	var envelope txMetricEnvelope
+	if err := json.Unmarshal(bz, &envelope); err != nil {
+		return nil, err
+	}
+	return envelope.Transactions, nil
+}
+
+func summarizeFees(metrics []txMetric, model feeModel) ([]feeSummary, error) {
+	if len(metrics) == 0 {
+		return nil, nil
+	}
+	if strings.TrimSpace(model.FeeDenom) == "" {
+		return nil, fmt.Errorf("fee denom is required when tx metrics are provided")
+	}
+	if strings.TrimSpace(model.MinGasPrice) == "" {
+		return nil, fmt.Errorf("min gas price is required when tx metrics are provided")
+	}
+	if strings.TrimSpace(model.GasAdjustment) == "" {
+		model.GasAdjustment = "1"
+	}
+
+	minGasPrice, err := parsePositiveRat("min gas price", model.MinGasPrice)
+	if err != nil {
+		return nil, err
+	}
+	gasAdjustment, err := parsePositiveRat("gas adjustment", model.GasAdjustment)
+	if err != nil {
+		return nil, err
+	}
+
+	type groupedFeeMetrics struct {
+		gasUsed       []float64
+		gasWantedMax  uint64
+		failedSamples int
+	}
+	grouped := make(map[string]*groupedFeeMetrics)
+	for _, metric := range metrics {
+		txType := strings.TrimSpace(metric.TxType)
+		if txType == "" {
+			return nil, fmt.Errorf("tx metric is missing tx_type")
+		}
+		group := grouped[txType]
+		if group == nil {
+			group = &groupedFeeMetrics{}
+			grouped[txType] = group
+		}
+		if metric.Success != nil && !*metric.Success {
+			group.failedSamples++
+			continue
+		}
+		if metric.GasUsed == 0 {
+			return nil, fmt.Errorf("tx metric %q has zero gas_used", txType)
+		}
+		group.gasUsed = append(group.gasUsed, float64(metric.GasUsed))
+		if metric.GasWanted > group.gasWantedMax {
+			group.gasWantedMax = metric.GasWanted
+		}
+	}
+
+	names := make([]string, 0, len(grouped))
+	for name := range grouped {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	summaries := make([]feeSummary, 0, len(names))
+	for _, name := range names {
+		group := grouped[name]
+		if len(group.gasUsed) == 0 {
+			continue
+		}
+		p50 := roundFloat(percentile(group.gasUsed, 50))
+		p95 := roundFloat(percentile(group.gasUsed, 95))
+		summaries = append(summaries, feeSummary{
+			TxType:          name,
+			Samples:         len(group.gasUsed),
+			FailedSamples:   group.failedSamples,
+			GasUsedMean:     roundFloat(mean(group.gasUsed)),
+			GasUsedP50:      p50,
+			GasUsedP95:      p95,
+			GasUsedMax:      roundFloat(max(group.gasUsed)),
+			GasWantedMax:    group.gasWantedMax,
+			GasAdjustment:   model.GasAdjustment,
+			MinGasPrice:     model.MinGasPrice,
+			FeeDenom:        model.FeeDenom,
+			EstimatedFeeP50: estimateFee(p50, gasAdjustment, minGasPrice, model.FeeDenom),
+			EstimatedFeeP95: estimateFee(p95, gasAdjustment, minGasPrice, model.FeeDenom),
+		})
+	}
+	return summaries, nil
+}
+
+func parsePositiveRat(name, value string) (*big.Rat, error) {
+	parsed, ok := new(big.Rat).SetString(strings.TrimSpace(value))
+	if !ok || parsed.Sign() < 0 {
+		return nil, fmt.Errorf("%s must be a non-negative decimal", name)
+	}
+	return parsed, nil
+}
+
+func estimateFee(gas uint64, gasAdjustment, minGasPrice *big.Rat, denom string) string {
+	fee := new(big.Rat).SetUint64(gas)
+	fee.Mul(fee, gasAdjustment)
+	fee.Mul(fee, minGasPrice)
+	return ceilRat(fee).String() + denom
+}
+
+func ceilRat(value *big.Rat) *big.Int {
+	numerator := new(big.Int).Set(value.Num())
+	denominator := new(big.Int).Set(value.Denom())
+	quotient, remainder := new(big.Int), new(big.Int)
+	quotient.QuoRem(numerator, denominator, remainder)
+	if value.Sign() > 0 && remainder.Sign() != 0 {
+		quotient.Add(quotient, big.NewInt(1))
+	}
+	return quotient
+}
+
+func roundFloat(value float64) uint64 {
+	if value <= 0 {
+		return 0
+	}
+	return uint64(math.Round(value))
 }
 
 func writeJSON(path string, rep report) error {

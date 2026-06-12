@@ -89,7 +89,7 @@ func TestRenderMarkdownIncludesBenchmarkTable(t *testing.T) {
 	})
 
 	for _, want := range []string{
-		"# Clairveil Privacy Circuit Benchmark",
+		"# Clairveil Privacy Benchmark Report",
 		"dirty worktree",
 		"| `BenchmarkDepositCircuitVerify` | `native_verification` | 2 | 50.000ms |",
 		"Do not infer chain TPS",
@@ -97,5 +97,42 @@ func TestRenderMarkdownIncludesBenchmarkTable(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("rendered markdown missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestSummarizeFees(t *testing.T) {
+	success := true
+	failed := false
+	summaries, err := summarizeFees([]txMetric{
+		{TxType: "deposit", GasUsed: 100, GasWanted: 200, Success: &success},
+		{TxType: "deposit", GasUsed: 200, GasWanted: 300, Success: &success},
+		{TxType: "deposit", GasUsed: 999, GasWanted: 999, Success: &failed},
+	}, feeModel{
+		FeeDenom:      "uclair",
+		MinGasPrice:   "0.025",
+		GasAdjustment: "1.2",
+	})
+	if err != nil {
+		t.Fatalf("summarize fees: %v", err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 summary, got %d", len(summaries))
+	}
+	got := summaries[0]
+	if got.Samples != 2 || got.FailedSamples != 1 {
+		t.Fatalf("unexpected sample counts: %+v", got)
+	}
+	if got.GasUsedMean != 150 || got.GasUsedP50 != 150 || got.GasUsedP95 != 195 || got.GasUsedMax != 200 {
+		t.Fatalf("unexpected gas summary: %+v", got)
+	}
+	if got.EstimatedFeeP50 != "5uclair" || got.EstimatedFeeP95 != "6uclair" {
+		t.Fatalf("unexpected fee estimates: %+v", got)
+	}
+}
+
+func TestSummarizeFeesRequiresFeePolicy(t *testing.T) {
+	_, err := summarizeFees([]txMetric{{TxType: "deposit", GasUsed: 100}}, feeModel{})
+	if err == nil {
+		t.Fatal("expected missing fee policy error")
 	}
 }
