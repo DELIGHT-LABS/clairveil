@@ -16,7 +16,7 @@ Korean version: [README-kr.md](README-kr.md)
 - `privacy-bench-localnet.sh`: runs localnet privacy smoke and writes fee, gas, reserve, and localnet summaries.
 - `privacy-localnet-tps-bench.sh`: wraps localnet smoke output as a `chain_tps` benchmark family.
 - `privacy-user-latency-bench.sh`: runs localnet privacy smoke with wallet-flow latency tracing enabled and writes `privacy-user-latency` reports.
-- `privacy-public-capacity-report.sh`: merges eligible single-claim component reports into an informational public capacity aggregate.
+- `privacy-public-capacity-report.sh`: merges eligible single-claim component reports into a public capacity aggregate with per-claim evidence.
 - `release-pack.sh`: creates the downstream handoff tarball and external sha256 file under `dist/`.
 - `release-pack-verify.sh`: verifies the handoff tarball checksum, internal `SHA256SUMS.txt`, required files, and manifest commit.
 - `docker-proverd-build.sh`: validates the prover compose file, builds the reference prover Docker image, and inspects the image.

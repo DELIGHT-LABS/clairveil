@@ -341,14 +341,20 @@ func TestBuildAggregateReportCombinesEligibleComponents(t *testing.T) {
 	if rep.ResultFamily != "public-capacity" {
 		t.Fatalf("unexpected result family %q", rep.ResultFamily)
 	}
-	if rep.ClaimProfile.Eligible {
-		t.Fatalf("aggregate report should stay informational until per-claim evidence schema is implemented")
+	if !rep.ClaimProfile.Eligible {
+		t.Fatalf("aggregate report should be eligible when all component claims are eligible: %+v", rep.ClaimProfile.BlockingReasons)
 	}
 	if !containsString(rep.ClaimProfile.ClaimTypes, "prover_rps") || !containsString(rep.ClaimProfile.ClaimTypes, "chain_tps") {
 		t.Fatalf("aggregate claim types missing: %+v", rep.ClaimProfile.ClaimTypes)
 	}
-	if !containsString(rep.ClaimProfile.BlockingReasons, "public-capacity aggregate report is informational until per-claim evidence schema is implemented") {
-		t.Fatalf("expected aggregate informational blocker, got %+v", rep.ClaimProfile.BlockingReasons)
+	if len(rep.ClaimProfile.BlockingReasons) != 0 {
+		t.Fatalf("unexpected aggregate blockers: %+v", rep.ClaimProfile.BlockingReasons)
+	}
+	if rep.ClaimEvidenceByType["prover_rps"].ProverConfigSHA256 != prover.ClaimEvidence.ProverConfigSHA256 {
+		t.Fatalf("prover evidence not retained: %+v", rep.ClaimEvidenceByType)
+	}
+	if rep.ClaimEvidenceByType["chain_tps"].ChainConfigSHA256 != chain.ClaimEvidence.ChainConfigSHA256 {
+		t.Fatalf("chain evidence not retained: %+v", rep.ClaimEvidenceByType)
 	}
 	if len(rep.ComponentReports) != 2 {
 		t.Fatalf("expected two component reports, got %+v", rep.ComponentReports)
@@ -364,6 +370,9 @@ func TestBuildAggregateReportCombinesEligibleComponents(t *testing.T) {
 	}
 
 	md := renderMarkdown(rep)
+	if !strings.Contains(md, "## Claim Evidence By Type") || !strings.Contains(md, "| `chain_tps` | `mixed-shielded` |") {
+		t.Fatalf("claim evidence by type markdown missing:\n%s", md)
+	}
 	if !strings.Contains(md, "## Component Reports") || !strings.Contains(md, "| `"+proverPath+"` | `privacy-proverd-load` | `prover_rps` | `true` |") {
 		t.Fatalf("component report markdown missing:\n%s", md)
 	}
@@ -900,6 +909,39 @@ func TestEvaluateClaimProfileRequiresUserLatencySegmentMetrics(t *testing.T) {
 	}
 }
 
+func TestEvaluateClaimProfileRequiresUserLatencyErrorRateMetric(t *testing.T) {
+	rep := completePublicUserLatencyReport()
+	delete(rep.Benchmarks[0].Metrics, "error_rate")
+
+	profile := evaluateClaimProfile(rep)
+	if profile.Eligible {
+		t.Fatalf("expected public claim to be blocked")
+	}
+	if !containsString(profile.BlockingReasons, "user_latency metrics missing: error_rate") {
+		t.Fatalf("expected user latency error rate blocker, got %+v", profile.BlockingReasons)
+	}
+}
+
+func TestEvaluateClaimProfileRejectsUserLatencyErrorRate(t *testing.T) {
+	rep := completePublicUserLatencyReport()
+	rep.Benchmarks[0].Metrics["error_rate"] = metricSummary{
+		Mean: 0.01,
+		P50:  0.01,
+		P95:  0.01,
+		P99:  0.01,
+		Min:  0.01,
+		Max:  0.01,
+	}
+
+	profile := evaluateClaimProfile(rep)
+	if profile.Eligible {
+		t.Fatalf("expected public claim to be blocked")
+	}
+	if !containsString(profile.BlockingReasons, "user_latency metrics invalid: UserLatencyTransferWarm/error_rate max 0.010000 exceeds 0.001000") {
+		t.Fatalf("expected user latency error rate blocker, got %+v", profile.BlockingReasons)
+	}
+}
+
 func TestEvaluateClaimProfileRequiresUserLatencyMetricsOnSameRow(t *testing.T) {
 	rep := completePublicUserLatencyReport()
 	rep.Benchmarks = []benchmarkSummary{
@@ -913,6 +955,7 @@ func TestEvaluateClaimProfileRequiresUserLatencyMetricsOnSameRow(t *testing.T) {
 			Metrics: map[string]metricSummary{
 				"prepare_latency_ms": {Mean: 20, P50: 18, P95: 28, P99: 32, Min: 10, Max: 40},
 				"proof_latency_ms":   {Mean: 150, P50: 140, P95: 210, P99: 260, Min: 120, Max: 280},
+				"error_rate":         {Mean: 0, P50: 0, P95: 0, P99: 0, Min: 0, Max: 0},
 			},
 		},
 		{
@@ -925,6 +968,7 @@ func TestEvaluateClaimProfileRequiresUserLatencyMetricsOnSameRow(t *testing.T) {
 			Metrics: map[string]metricSummary{
 				"time_to_submit_ms": {Mean: 30, P50: 25, P95: 45, P99: 55, Min: 15, Max: 60},
 				"submit_ready_ms":   {Mean: 200, P50: 180, P95: 260, P99: 320, Min: 150, Max: 350},
+				"error_rate":        {Mean: 0, P50: 0, P95: 0, P99: 0, Min: 0, Max: 0},
 				"timeout_rate":      {Mean: 0, P50: 0, P95: 0, P99: 0, Min: 0, Max: 0},
 			},
 		},
@@ -1354,7 +1398,7 @@ func TestEvaluateClaimProfileBlocksWrongFamilyAndSLO(t *testing.T) {
 	}
 }
 
-func TestEvaluateClaimProfileBlocksPublicCapacityMultiClaimUntilPerClaimEvidence(t *testing.T) {
+func TestEvaluateClaimProfileBlocksPublicCapacityMultiClaimWithoutPerClaimEvidence(t *testing.T) {
 	rep := completePublicProverReport()
 	rep.ResultFamily = "public-capacity"
 	rep.ClaimProfile.ClaimTypes = []string{"prover_rps", "user_latency"}
@@ -1363,8 +1407,36 @@ func TestEvaluateClaimProfileBlocksPublicCapacityMultiClaimUntilPerClaimEvidence
 	if profile.Eligible {
 		t.Fatalf("expected public-capacity multi-claim report to be blocked")
 	}
-	if !containsString(profile.BlockingReasons, "public-capacity multi-claim reports require per-claim evidence schema") {
+	if !containsString(profile.BlockingReasons, "public-capacity multi-claim reports require per-claim evidence for prover_rps,user_latency") {
 		t.Fatalf("expected per-claim evidence schema blocker, got %+v", profile.BlockingReasons)
+	}
+}
+
+func TestEvaluateClaimProfileValidatesPublicCapacityComponentReports(t *testing.T) {
+	rep := completePublicProverReport()
+	rep.ResultFamily = "public-capacity"
+	rep.ClaimEvidenceByType = map[string]claimEvidence{
+		"prover_rps": rep.ClaimEvidence,
+	}
+	rep.ComponentReports = []componentReport{
+		{
+			Path:           "benchmarks/privacy-proverd-load/latest.json",
+			SHA256:         strings.Repeat("f", 64),
+			ResultFamily:   "privacy-proverd-load",
+			RunProfile:     "public_claim",
+			ClaimTypes:     []string{"prover_rps"},
+			Eligible:       true,
+			ActiveSetID:    rep.ActiveSetID,
+			ManifestSHA256: rep.ArtifactSet.ManifestSHA256,
+		},
+	}
+
+	profile := evaluateClaimProfile(rep)
+	if profile.Eligible {
+		t.Fatalf("expected public-capacity report to be blocked")
+	}
+	if !containsString(profile.BlockingReasons, "component reports invalid: benchmarks/privacy-proverd-load/latest.json sha256 does not match source_file_sha256") {
+		t.Fatalf("expected component report hash blocker, got %+v", profile.BlockingReasons)
 	}
 }
 
@@ -1681,6 +1753,7 @@ func completePublicUserLatencyReport() report {
 					"proof_latency_ms":   {Mean: 150, P50: 140, P95: 210, P99: 260, Min: 120, Max: 280},
 					"time_to_submit_ms":  {Mean: 30, P50: 25, P95: 45, P99: 55, Min: 15, Max: 60},
 					"submit_ready_ms":    {Mean: 200, P50: 180, P95: 260, P99: 320, Min: 150, Max: 350},
+					"error_rate":         {Mean: 0, P50: 0, P95: 0, P99: 0, Min: 0, Max: 0},
 					"timeout_rate":       {Mean: 0, P50: 0, P95: 0, P99: 0, Min: 0, Max: 0},
 				},
 			},

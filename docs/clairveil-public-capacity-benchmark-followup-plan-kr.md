@@ -43,7 +43,7 @@ Public claim 결과에는 반드시 "reference environment" 또는 "production-l
   - `prover_rps`: `privacy-proverd-load` 또는 `public-capacity`
   - `chain_tps`: `privacy-localnet-tps` 또는 `public-capacity`
   - `user_latency`: `privacy-user-latency` 또는 `public-capacity`
-- 현재 `clairveil-benchreport`의 `claim_evidence`는 report-level schema입니다. 따라서 `public-capacity`에서 claim type을 둘 이상 결합하는 리포트는 C4의 per-claim/per-row evidence schema가 구현되기 전까지 `claim_profile.eligible=false`로 차단합니다.
+- `public-capacity`에서 claim type을 둘 이상 결합하는 리포트는 `claim_evidence_by_type`으로 claim별 evidence를 보존해야 합니다. per-claim evidence가 없는 수동 multi-claim report는 `claim_profile.eligible=false`로 차단합니다.
 - source files, source file SHA-256, run window(`run_started_at`, `run_ended_at`)를 report에 포함합니다.
 - report generator는 사용자가 넘긴 `-source-files`뿐 아니라 실제 metric 입력인 `-input`, `-benchmark-summaries`, `-tx-metrics` 경로를 `source_files`에 자동 포함하고 SHA-256을 계산합니다. 따라서 public claim은 사람이 적은 별도 provenance 파일만으로 실제 측정 입력을 대체할 수 없습니다.
 - SLO 판정에 필요한 threshold/evidence를 report에 포함합니다:
@@ -203,7 +203,7 @@ Public claim 결과에는 반드시 "reference environment" 또는 "production-l
 
 목적: 실제 daemon/process 형태의 remote prover capacity를 측정합니다.
 
-현재 `make privacy-proverd-bench`는 `httptest` 기반 in-process transport benchmark입니다. 후속 작업은 실제 `clairveil-proverd` 바이너리를 별도 프로세스로 띄우고 external HTTP client로 부하를 걸어야 합니다.
+`make privacy-proverd-bench`는 `httptest` 기반 in-process transport benchmark이고, 운영형 처리량 측정은 별도 프로세스로 실행 중인 실제 `clairveil-proverd`에 external HTTP client 부하를 거는 `make privacy-proverd-load-bench` 경로를 사용합니다.
 
 현재 구현 상태:
 
@@ -367,7 +367,7 @@ metrics:
 - time-to-submit p50/p95/p99
 - time-to-inclusion p50/p95/p99
 - total user-visible latency p50/p95/p99
-- timeout/cancel rate
+- error/timeout/cancel rate
 - browser heap peak if browser/WASM
 
 현재 구현 상태:
@@ -375,7 +375,7 @@ metrics:
 - CLI privacy tx command는 `CLAIRVEIL_PRIVACY_LATENCY_TRACE_FILE`이 설정된 경우 JSONL trace를 append합니다. 기본 사용자 실행에서는 trace를 쓰지 않으므로 CLI 출력과 command interface는 유지됩니다.
 - trace event는 `flow_id`, `flow_profile`, `latency_mode`, `cold_warm`, `phase`, `duration_ms`, `success`, optional `txhash`를 포함합니다.
 - 현재 native CLI trace는 deposit/transfer/withdraw/prepare-withdraw/relay-withdraw에서 `prepare`, `proof`, `submit`, `total` phase를 기록합니다. Transfer는 `BroadcastSDKMessage` 경로에서 tx hash를 기록하므로 localnet tx metrics와 inclusion latency를 매칭할 수 있습니다. `GenerateOrBroadcast`를 유지하는 deposit/withdraw/relay-withdraw는 submit-ready latency를 기록하지만 tx hash가 trace event에 없을 수 있어 inclusion latency 매칭은 tx command output 기반 추가 계측이 없는 한 transfer 중심으로 해석합니다.
-- `cmd/clairveil-userlatency`는 trace JSONL 또는 JSON array를 flow 단위로 집계해 `claim_type=user_latency`, `metric_kind=user_latency`, `flow_profile`, `latency_mode`, `cold_warm` metadata를 가진 structured summary JSON을 생성합니다. Optional `-tx-metrics` 입력이 있으면 tx hash 기반 `inclusion_latency_ms`/`time_to_inclusion_ms`도 추가합니다.
+- `cmd/clairveil-userlatency`는 trace JSONL 또는 JSON array를 flow 단위로 집계해 `claim_type=user_latency`, `metric_kind=user_latency`, `flow_profile`, `latency_mode`, `cold_warm` metadata와 `prepare_latency_ms`, `proof_latency_ms`, `time_to_submit_ms`, `submit_ready_ms`, `total_latency_ms`, `error_rate`, `timeout_rate`, `cancel_rate` metric을 가진 structured summary JSON을 생성합니다. Optional `-tx-metrics` 입력이 있으면 tx hash 기반 `inclusion_latency_ms`/`time_to_inclusion_ms`도 추가합니다.
 - `make privacy-user-latency-bench` 또는 `scripts/privacy-user-latency-bench.sh`는 localnet e2e smoke를 trace enabled로 실행하고, `benchmarks/privacy-user-latency` report를 생성합니다. Public run에서는 `USER_LATENCY_FLOW_FILTER`, `CLAIM_LATENCY_MODE`, `CLAIM_COLD_WARM`, SLO/evidence env로 flow/mode/cold-warm bucket을 분리합니다.
 - Remote prover와 browser/WASM latency는 같은 trace schema와 public claim gate로 수용할 수 있지만, 현재 repo의 CLI smoke runner는 native/local proof 경로만 직접 계측합니다. Remote claim은 실제 remote prover client trace와 eligible linked prover RPS report가 함께 있어야 하고, browser claim은 JS/WASM adapter evidence가 있어야 합니다.
 
@@ -391,7 +391,7 @@ Public claim gate:
 - cold/warm 결과를 섞지 않음
 - browser/device matrix를 명시
 - flow/mode/cold-warm bucket별 sample 수가 최소 100개 이상
-- prepare latency, proof latency, time-to-submit latency, submit-ready 또는 total latency, timeout/cancel rate를 모두 포함
+- prepare latency, proof latency, time-to-submit latency, submit-ready 또는 total latency, error rate, timeout/cancel rate를 모두 포함
 - browser/WASM latency는 browser/device matrix, `browser_adapter_ready=true`, adapter version, adapter file/SHA-256을 함께 명시
 - remote prover latency는 remote prover topology, instance profile, prover config file/SHA-256, linked prover RPS report file/SHA-256을 함께 명시하고, linked report가 eligible `prover_rps` public claim이며 instance profile/prover config/artifact active set과 일치해야 함
 - inclusion latency는 chain config file/SHA-256, chain config label, inclusion p95 SLO와 함께만 공개
@@ -405,8 +405,9 @@ Public claim gate:
 - `clairveil-benchreport -merge-reports`가 component benchmark report JSON을 `benchmarks/public-capacity` aggregate report로 묶습니다.
 - `make privacy-public-capacity-report` 또는 `scripts/privacy-public-capacity-report.sh`로 aggregate report를 생성합니다.
 - aggregate report는 component report file SHA-256, component claim type, eligibility, commit, active set, artifact manifest checksum을 `component_reports`에 보존합니다.
+- aggregate report는 component별 `claim_evidence`를 `claim_evidence_by_type`에 보존하고, multi-claim public gate에서 claim별 evidence를 서로 섞지 않고 평가합니다.
 - component benchmark rows와 fee rows는 aggregate report에 병합됩니다.
-- per-claim/per-row evidence schema가 완전히 도입되기 전까지 aggregate report 자체는 informational artifact이며 `claim_profile.eligible=false`를 유지합니다.
+- eligible single-claim component report만 묶이고 aggregate의 환경/provenance/run window가 public gate를 통과하면 aggregate report도 `public-capacity` claim으로 eligible이 될 수 있습니다. per-claim evidence가 없는 수동 multi-claim report는 계속 차단됩니다.
 
 입력:
 
@@ -443,8 +444,8 @@ Markdown report 구성:
 - report가 public claim 문구와 non-claim 문구를 자동 생성
 - missing gate가 있으면 public claim section이 "not eligible"로 표시됨
 - smoke/reference/public claim 결과가 파일명과 report header에서 구분됨
-- per-claim/per-row evidence schema가 도입되어 `prover_rps`, `chain_tps`, `user_latency`의 load profile, config hash, topology, sample bucket이 서로 섞이지 않음
-- per-claim evidence schema가 구현되기 전에는 multi-claim `public-capacity` report가 public eligible로 승격되지 않음
+- claim별 evidence와 row bucket metadata가 도입되어 `prover_rps`, `chain_tps`, `user_latency`의 load profile, config hash, topology, sample bucket이 서로 섞이지 않음
+- per-claim evidence가 없는 multi-claim `public-capacity` report가 public eligible로 승격되지 않음
 
 ## 8. Phase C5: Benchmark 운영 절차
 

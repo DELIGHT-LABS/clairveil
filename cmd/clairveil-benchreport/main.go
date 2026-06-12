@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"sort"
@@ -27,33 +28,34 @@ const reportSchemaVersion = "v1"
 var benchmarkNamePattern = regexp.MustCompile(`^(Benchmark\S+)-\d+$`)
 
 type report struct {
-	SchemaVersion    string             `json:"schema_version"`
-	GeneratedAt      string             `json:"generated_at"`
-	ResultFamily     string             `json:"result_family,omitempty"`
-	SourceFiles      []string           `json:"source_files,omitempty"`
-	SourceFileSHA256 map[string]string  `json:"source_file_sha256,omitempty"`
-	SourceFileIssues []string           `json:"source_file_issues,omitempty"`
-	RunStartedAt     string             `json:"run_started_at,omitempty"`
-	RunEndedAt       string             `json:"run_ended_at,omitempty"`
-	Commit           string             `json:"commit"`
-	Dirty            bool               `json:"dirty"`
-	ActiveSetID      string             `json:"active_set_id"`
-	ClaimProfile     claimProfile       `json:"claim_profile"`
-	ClaimEvidence    claimEvidence      `json:"claim_evidence"`
-	Environment      environment        `json:"environment"`
-	ArtifactSet      artifactSet        `json:"artifact_set"`
-	GoVersion        string             `json:"go_version"`
-	GnarkVersion     string             `json:"gnark_version"`
-	GnarkCrypto      string             `json:"gnark_crypto_version"`
-	OS               string             `json:"os"`
-	Arch             string             `json:"arch"`
-	CPU              string             `json:"cpu"`
-	ManifestPath     string             `json:"manifest_path,omitempty"`
-	ManifestChecksum string             `json:"manifest_sha256,omitempty"`
-	FeeModel         feeModel           `json:"fee_model"`
-	ComponentReports []componentReport  `json:"component_reports,omitempty"`
-	Benchmarks       []benchmarkSummary `json:"benchmarks,omitempty"`
-	Fees             []feeSummary       `json:"fees,omitempty"`
+	SchemaVersion       string                   `json:"schema_version"`
+	GeneratedAt         string                   `json:"generated_at"`
+	ResultFamily        string                   `json:"result_family,omitempty"`
+	SourceFiles         []string                 `json:"source_files,omitempty"`
+	SourceFileSHA256    map[string]string        `json:"source_file_sha256,omitempty"`
+	SourceFileIssues    []string                 `json:"source_file_issues,omitempty"`
+	RunStartedAt        string                   `json:"run_started_at,omitempty"`
+	RunEndedAt          string                   `json:"run_ended_at,omitempty"`
+	Commit              string                   `json:"commit"`
+	Dirty               bool                     `json:"dirty"`
+	ActiveSetID         string                   `json:"active_set_id"`
+	ClaimProfile        claimProfile             `json:"claim_profile"`
+	ClaimEvidence       claimEvidence            `json:"claim_evidence"`
+	ClaimEvidenceByType map[string]claimEvidence `json:"claim_evidence_by_type,omitempty"`
+	Environment         environment              `json:"environment"`
+	ArtifactSet         artifactSet              `json:"artifact_set"`
+	GoVersion           string                   `json:"go_version"`
+	GnarkVersion        string                   `json:"gnark_version"`
+	GnarkCrypto         string                   `json:"gnark_crypto_version"`
+	OS                  string                   `json:"os"`
+	Arch                string                   `json:"arch"`
+	CPU                 string                   `json:"cpu"`
+	ManifestPath        string                   `json:"manifest_path,omitempty"`
+	ManifestChecksum    string                   `json:"manifest_sha256,omitempty"`
+	FeeModel            feeModel                 `json:"fee_model"`
+	ComponentReports    []componentReport        `json:"component_reports,omitempty"`
+	Benchmarks          []benchmarkSummary       `json:"benchmarks,omitempty"`
+	Fees                []feeSummary             `json:"fees,omitempty"`
 }
 
 type claimProfile struct {
@@ -804,9 +806,9 @@ func buildAggregateReport(paths []string, generatedAt, sourceCommit string, sour
 	if !commitOK {
 		reasons = append(reasons, "component reports use different source commits")
 	}
-	if runProfile == "public_claim" {
-		reasons = append(reasons, "public-capacity aggregate report is informational until per-claim evidence schema is implemented")
-	}
+	claimEvidenceByType, evidenceIssues := aggregateClaimEvidenceByType(componentReports)
+	reasons = append(reasons, evidenceIssues...)
+	artifactSet := aggregateArtifactSet(activeSetID, manifestSHA256, componentReports)
 
 	sourceHashes, sourceIssues := hashSourceFiles(paths)
 	rep := report{
@@ -827,22 +829,85 @@ func buildAggregateReport(paths []string, generatedAt, sourceCommit string, sour
 			Eligible:        false,
 			BlockingReasons: uniqueStrings(reasons),
 		},
-		Environment: env,
-		ArtifactSet: artifactSet{
-			ActiveSetID:         activeSetID,
-			ManifestActiveSetID: activeSetID,
-			ManifestSHA256:      manifestSHA256,
-		},
-		GoVersion:        runtime.Version(),
-		GnarkVersion:     moduleVersion("github.com/consensys/gnark"),
-		GnarkCrypto:      moduleVersion("github.com/consensys/gnark-crypto"),
-		OS:               runtime.GOOS,
-		Arch:             runtime.GOARCH,
-		ComponentReports: components,
-		Benchmarks:       benchmarks,
-		Fees:             fees,
+		ClaimEvidenceByType: claimEvidenceByType,
+		Environment:         env,
+		ArtifactSet:         artifactSet,
+		GoVersion:           runtime.Version(),
+		GnarkVersion:        moduleVersion("github.com/consensys/gnark"),
+		GnarkCrypto:         moduleVersion("github.com/consensys/gnark-crypto"),
+		OS:                  runtime.GOOS,
+		Arch:                runtime.GOARCH,
+		ComponentReports:    components,
+		Benchmarks:          benchmarks,
+		Fees:                fees,
 	}
+	rep.ClaimProfile = evaluateClaimProfile(rep)
 	return rep, nil
+}
+
+func aggregateClaimEvidenceByType(reports []report) (map[string]claimEvidence, []string) {
+	evidenceByType := make(map[string]claimEvidence)
+	var issues []string
+	for _, rep := range reports {
+		for _, claimType := range rep.ClaimProfile.ClaimTypes {
+			claimType = strings.TrimSpace(claimType)
+			if claimType == "" {
+				continue
+			}
+			evidence := evidenceForClaim(rep, claimType)
+			if !hasClaimEvidence(evidence) {
+				issues = append(issues, fmt.Sprintf("component report for %s has no claim evidence", claimType))
+				continue
+			}
+			if existing, ok := evidenceByType[claimType]; ok && !reflect.DeepEqual(existing, evidence) {
+				issues = append(issues, fmt.Sprintf("component reports have conflicting %s claim evidence", claimType))
+				continue
+			}
+			evidenceByType[claimType] = evidence
+		}
+	}
+	if len(evidenceByType) == 0 {
+		return nil, uniqueStrings(issues)
+	}
+	return evidenceByType, uniqueStrings(issues)
+}
+
+func aggregateArtifactSet(activeSetID, manifestSHA256 string, reports []report) artifactSet {
+	set := artifactSet{
+		ActiveSetID:           activeSetID,
+		ManifestActiveSetID:   activeSetID,
+		ManifestSHA256:        manifestSHA256,
+		DescriptorComplete:    len(reports) > 0,
+		ArtifactFilesVerified: len(reports) > 0,
+		ArtifactSHA256ByFile:  make(map[string]string),
+	}
+	var descriptorIssues []string
+	var artifactFileIssues []string
+	for _, rep := range reports {
+		if !rep.ArtifactSet.DescriptorComplete {
+			set.DescriptorComplete = false
+		}
+		if !rep.ArtifactSet.ArtifactFilesVerified {
+			set.ArtifactFilesVerified = false
+		}
+		descriptorIssues = append(descriptorIssues, rep.ArtifactSet.DescriptorIssues...)
+		artifactFileIssues = append(artifactFileIssues, rep.ArtifactSet.ArtifactFileIssues...)
+		set.ArtifactDescriptors = append(set.ArtifactDescriptors, rep.ArtifactSet.ArtifactDescriptors...)
+		for path, checksum := range rep.ArtifactSet.ArtifactSHA256ByFile {
+			if existing, ok := set.ArtifactSHA256ByFile[path]; ok && !strings.EqualFold(existing, checksum) {
+				set.ArtifactFilesVerified = false
+				artifactFileIssues = append(artifactFileIssues, fmt.Sprintf("artifact file %s has conflicting checksums across component reports", path))
+				continue
+			}
+			set.ArtifactSHA256ByFile[path] = checksum
+		}
+	}
+	set.DescriptorIssues = uniqueStrings(descriptorIssues)
+	set.ArtifactFileIssues = uniqueStrings(artifactFileIssues)
+	if len(set.ArtifactSHA256ByFile) == 0 {
+		set.ArtifactSHA256ByFile = nil
+	}
+	return set
 }
 
 func readReportFile(path string) (report, string, error) {
@@ -946,6 +1011,15 @@ func sortedMapKeys(values map[string]string) []string {
 	return keys
 }
 
+func sortedMapKeysClaimEvidence(values map[string]claimEvidence) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func renderMarkdown(rep report) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Clairveil Privacy Benchmark Report\n\n")
@@ -992,7 +1066,7 @@ func renderMarkdown(rep report) string {
 	}
 	fmt.Fprintf(&b, "These numbers describe the measured benchmark scope only. Do not infer chain TPS from native proving or verification rows.\n\n")
 
-	if rep.ClaimProfile.RunProfile == "public_claim" || len(rep.ClaimProfile.ClaimTypes) > 0 || hasClaimEvidence(rep.ClaimEvidence) {
+	if hasClaimEvidence(rep.ClaimEvidence) || (len(rep.ClaimEvidenceByType) == 0 && (rep.ClaimProfile.RunProfile == "public_claim" || len(rep.ClaimProfile.ClaimTypes) > 0)) {
 		fmt.Fprintf(&b, "## Claim Evidence\n\n")
 		fmt.Fprintf(&b, "| Field | Value |\n")
 		fmt.Fprintf(&b, "| --- | --- |\n")
@@ -1032,6 +1106,29 @@ func renderMarkdown(rep report) string {
 		fmt.Fprintf(&b, "| machine profile | `%s` |\n", rep.Environment.MachineProfile)
 		fmt.Fprintf(&b, "| cpu governor | `%s` |\n", rep.Environment.CPUGovernor)
 		fmt.Fprintf(&b, "| memory GiB | `%s` |\n", rep.Environment.MemoryGiB)
+		fmt.Fprintf(&b, "\n")
+	}
+
+	if len(rep.ClaimEvidenceByType) > 0 {
+		fmt.Fprintf(&b, "## Claim Evidence By Type\n\n")
+		fmt.Fprintf(&b, "| Claim | Load profile | Mode | Instance | Prover config SHA-256 | Chain config SHA-256 | Saturation SHA-256 | Linked prover report SHA-256 |\n")
+		fmt.Fprintf(&b, "| --- | --- | --- | --- | --- | --- | --- | --- |\n")
+		claimTypes := sortedMapKeysClaimEvidence(rep.ClaimEvidenceByType)
+		for _, claimType := range claimTypes {
+			evidence := rep.ClaimEvidenceByType[claimType]
+			fmt.Fprintf(
+				&b,
+				"| `%s` | `%s` | `%s` | `%s` | `%s` | `%s` | `%s` | `%s` |\n",
+				claimType,
+				evidence.LoadProfile,
+				evidence.LatencyMode,
+				evidence.InstanceProfile,
+				evidence.ProverConfigSHA256,
+				evidence.ChainConfigSHA256,
+				evidence.SaturationProfileSHA256,
+				evidence.LinkedProverReportSHA256,
+			)
+		}
 		fmt.Fprintf(&b, "\n")
 	}
 
@@ -1487,6 +1584,9 @@ func evaluateClaimProfile(rep report) claimProfile {
 		if issues := sourceFileHashIssues(rep); len(issues) > 0 {
 			reasons = append(reasons, "source file hashes invalid: "+strings.Join(issues, ", "))
 		}
+		if issues := componentReportIssues(rep); len(issues) > 0 {
+			reasons = append(reasons, "component reports invalid: "+strings.Join(issues, ", "))
+		}
 		if missing := runWindowIssues(rep); len(missing) > 0 {
 			reasons = append(reasons, missing...)
 		}
@@ -1508,7 +1608,17 @@ func evaluateClaimProfile(rep report) claimProfile {
 			reasons = append(reasons, "claim_types is required for public_claim")
 		}
 		if rep.ResultFamily == "public-capacity" && len(profile.ClaimTypes) > 1 {
-			reasons = append(reasons, "public-capacity multi-claim reports require per-claim evidence schema")
+			var missingPerClaimEvidence []string
+			for _, claimType := range profile.ClaimTypes {
+				claimType = strings.TrimSpace(claimType)
+				evidence, ok := rep.ClaimEvidenceByType[claimType]
+				if !ok || !hasClaimEvidence(evidence) {
+					missingPerClaimEvidence = append(missingPerClaimEvidence, claimType)
+				}
+			}
+			if len(missingPerClaimEvidence) > 0 {
+				reasons = append(reasons, "public-capacity multi-claim reports require per-claim evidence for "+strings.Join(missingPerClaimEvidence, ","))
+			}
 		}
 		if rep.Environment.MachineProfile == "" {
 			reasons = append(reasons, "machine_profile is required for public_claim")
@@ -1560,6 +1670,7 @@ func evaluateClaimProfile(rep report) claimProfile {
 }
 
 func claimRowMetadataIssues(rep report, claimType string) []string {
+	evidence := evidenceForClaim(rep, claimType)
 	rows, tagged := claimBenchmarkRows(rep, claimType)
 	if !tagged {
 		return []string{fmt.Sprintf("at least one benchmark summary must set claim_type=%s", claimType)}
@@ -1567,7 +1678,7 @@ func claimRowMetadataIssues(rep report, claimType string) []string {
 	var issues []string
 	for _, bench := range rows {
 		name := benchmarkDisplayName(bench)
-		if bench.DurationSeconds > 0 && rep.ClaimEvidence.SteadyStateSeconds > 0 && bench.DurationSeconds < rep.ClaimEvidence.SteadyStateSeconds {
+		if bench.DurationSeconds > 0 && evidence.SteadyStateSeconds > 0 && bench.DurationSeconds < evidence.SteadyStateSeconds {
 			issues = append(issues, fmt.Sprintf("%s duration_seconds must be >= steady_state_seconds", name))
 		}
 		switch claimType {
@@ -1603,8 +1714,8 @@ func claimRowMetadataIssues(rep report, claimType string) []string {
 			} else if !validLatencyMode(bench.LatencyMode) {
 				issues = append(issues, fmt.Sprintf("%s latency_mode must be native|remote|browser", name))
 			}
-			if rep.ClaimEvidence.LatencyMode != "" && bench.LatencyMode != "" && bench.LatencyMode != rep.ClaimEvidence.LatencyMode {
-				issues = append(issues, fmt.Sprintf("%s latency_mode %q does not match claim_evidence latency_mode %q", name, bench.LatencyMode, rep.ClaimEvidence.LatencyMode))
+			if evidence.LatencyMode != "" && bench.LatencyMode != "" && bench.LatencyMode != evidence.LatencyMode {
+				issues = append(issues, fmt.Sprintf("%s latency_mode %q does not match claim_evidence latency_mode %q", name, bench.LatencyMode, evidence.LatencyMode))
 			}
 			if strings.TrimSpace(bench.ColdWarm) == "" {
 				issues = append(issues, fmt.Sprintf("%s cold_warm is required", name))
@@ -1686,6 +1797,14 @@ func validLatencyMode(value string) bool {
 	}
 }
 
+func evidenceForClaim(rep report, claimType string) claimEvidence {
+	claimType = strings.TrimSpace(claimType)
+	if evidence, ok := rep.ClaimEvidenceByType[claimType]; ok && hasClaimEvidence(evidence) {
+		return evidence
+	}
+	return rep.ClaimEvidence
+}
+
 func missingClaimMetrics(rep report, claimType string) []string {
 	rows, _ := claimBenchmarkRows(rep, claimType)
 	switch claimType {
@@ -1712,6 +1831,7 @@ func missingClaimMetrics(rep report, claimType string) []string {
 			[]string{"proof_latency_ms"},
 			[]string{"time_to_submit_ms", "submit_latency_ms"},
 			[]string{"total_latency_ms", "submit_ready_ms"},
+			[]string{"error_rate"},
 			[]string{"timeout_rate", "cancel_rate"},
 		)
 	default:
@@ -1757,6 +1877,7 @@ func incompleteClaimMetricRows(rep report, claimType string) []string {
 					[]string{"proof_latency_ms"},
 					[]string{"time_to_submit_ms", "submit_latency_ms"},
 					[]string{"total_latency_ms", "submit_ready_ms"},
+					[]string{"error_rate"},
 					[]string{"timeout_rate", "cancel_rate"},
 				); len(missing) > 0 {
 					incomplete = append(incomplete, fmt.Sprintf("%s missing %s", name, strings.Join(missing, ", ")))
@@ -1778,7 +1899,7 @@ func missingMetricGroupsInBenchmark(bench benchmarkSummary, requiredAlternatives
 }
 
 func missingClaimEvidence(rep report, claimType string) []string {
-	evidence := rep.ClaimEvidence
+	evidence := evidenceForClaim(rep, claimType)
 	var missing []string
 	switch claimType {
 	case "prover_rps":
@@ -1999,8 +2120,57 @@ func sourceFileHashIssues(rep report) []string {
 	return uniqueStrings(issues)
 }
 
+func componentReportIssues(rep report) []string {
+	if rep.ResultFamily != "public-capacity" {
+		return nil
+	}
+	if len(rep.ComponentReports) == 0 {
+		return []string{"component_reports is required for public-capacity"}
+	}
+	var issues []string
+	for _, component := range rep.ComponentReports {
+		name := strings.TrimSpace(component.Path)
+		if name == "" {
+			name = "<missing path>"
+			issues = append(issues, "component report path is required")
+		}
+		if component.SHA256 == "" {
+			issues = append(issues, fmt.Sprintf("%s sha256 is required", name))
+		} else if !isSHA256Hex(component.SHA256) {
+			issues = append(issues, fmt.Sprintf("%s sha256 must be 64hex", name))
+		}
+		if hash, ok := rep.SourceFileSHA256[component.Path]; ok && component.SHA256 != "" && isSHA256Hex(component.SHA256) && !strings.EqualFold(hash, component.SHA256) {
+			issues = append(issues, fmt.Sprintf("%s sha256 does not match source_file_sha256", name))
+		}
+		if component.RunProfile != "public_claim" {
+			issues = append(issues, fmt.Sprintf("%s run_profile is not public_claim", name))
+		}
+		if !component.Eligible {
+			issues = append(issues, fmt.Sprintf("%s is not eligible", name))
+		}
+		if len(component.ClaimTypes) == 0 {
+			issues = append(issues, fmt.Sprintf("%s claim_types is empty", name))
+		}
+		for _, claimType := range component.ClaimTypes {
+			if !hasString(rep.ClaimProfile.ClaimTypes, claimType) {
+				issues = append(issues, fmt.Sprintf("%s claim_type %q is not in aggregate claim_types", name, claimType))
+			}
+		}
+		if component.ActiveSetID != "" && rep.ActiveSetID != "" && component.ActiveSetID != rep.ActiveSetID {
+			issues = append(issues, fmt.Sprintf("%s active_set_id %q does not match aggregate active_set_id %q", name, component.ActiveSetID, rep.ActiveSetID))
+		}
+		if component.ManifestSHA256 != "" && rep.ArtifactSet.ManifestSHA256 != "" && !strings.EqualFold(component.ManifestSHA256, rep.ArtifactSet.ManifestSHA256) {
+			issues = append(issues, fmt.Sprintf("%s manifest_sha256 does not match aggregate manifest_sha256", name))
+		}
+	}
+	return uniqueStrings(issues)
+}
+
 func evidenceSourceIssues(rep report, claimType string) []string {
-	evidence := rep.ClaimEvidence
+	if rep.ResultFamily == "public-capacity" && len(rep.ComponentReports) > 0 {
+		return nil
+	}
+	evidence := evidenceForClaim(rep, claimType)
 	var issues []string
 	switch claimType {
 	case "prover_rps":
@@ -2018,7 +2188,7 @@ func evidenceSourceIssues(rep report, claimType string) []string {
 		case "remote":
 			issues = appendEvidenceSourceIssue(issues, rep, "prover_config_file", evidence.ProverConfigFile, evidence.ProverConfigSHA256)
 			issues = appendEvidenceSourceIssue(issues, rep, "linked_prover_report_file", evidence.LinkedProverReportFile, evidence.LinkedProverReportSHA256)
-			issues = append(issues, linkedProverReportSemanticIssues(rep)...)
+			issues = append(issues, linkedProverReportSemanticIssues(rep, evidence)...)
 		}
 		if userLatencyIncludesInclusion(rep) {
 			issues = appendEvidenceSourceIssue(issues, rep, "chain_config_file", evidence.ChainConfigFile, evidence.ChainConfigSHA256)
@@ -2051,8 +2221,7 @@ func appendEvidenceSourceIssue(issues []string, rep report, fieldName string, pa
 	return issues
 }
 
-func linkedProverReportSemanticIssues(rep report) []string {
-	evidence := rep.ClaimEvidence
+func linkedProverReportSemanticIssues(rep report, evidence claimEvidence) []string {
 	path := strings.TrimSpace(evidence.LinkedProverReportFile)
 	if path == "" {
 		return nil
@@ -2141,10 +2310,20 @@ func runWindowIssues(rep report) []string {
 	if !end.After(start) {
 		issues = append(issues, "run_ended_at must be after run_started_at")
 	}
-	if rep.ClaimEvidence.SteadyStateSeconds > 0 && end.Sub(start) < time.Duration(rep.ClaimEvidence.SteadyStateSeconds)*time.Second {
+	if steadyStateSeconds := maxSteadyStateSeconds(rep); steadyStateSeconds > 0 && end.Sub(start) < time.Duration(steadyStateSeconds)*time.Second {
 		issues = append(issues, "run window is shorter than steady_state_seconds")
 	}
 	return issues
+}
+
+func maxSteadyStateSeconds(rep report) int {
+	maxSeconds := rep.ClaimEvidence.SteadyStateSeconds
+	for _, evidence := range rep.ClaimEvidenceByType {
+		if evidence.SteadyStateSeconds > maxSeconds {
+			maxSeconds = evidence.SteadyStateSeconds
+		}
+	}
+	return maxSeconds
 }
 
 const minPublicUserLatencySamples = 100
@@ -2189,19 +2368,20 @@ func allowedResultFamilies(claimType string) []string {
 }
 
 func invalidClaimMetrics(rep report, claimType string) []string {
+	evidence := evidenceForClaim(rep, claimType)
 	var invalid []string
 	switch claimType {
 	case "prover_rps":
 		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "proofs/sec", "requests/sec")...)
 		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "latency_ms", "proof_latency_ms", "roundtrip_latency_ms")...)
-		invalid = append(invalid, requireClaimMetricP99AtMost(rep, claimType, rep.ClaimEvidence.LatencyP99SLOMS, "latency_ms", "proof_latency_ms", "roundtrip_latency_ms")...)
+		invalid = append(invalid, requireClaimMetricP99AtMost(rep, claimType, evidence.LatencyP99SLOMS, "latency_ms", "proof_latency_ms", "roundtrip_latency_ms")...)
 		invalid = append(invalid, requireClaimMetricRange(rep, claimType, 0, 0.001, "errors/op", "error_rate")...)
 		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "cpu_percent")...)
 		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "rss_bytes", "max_rss_bytes")...)
 	case "chain_tps":
 		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "tx/sec", "tps", "successful_tx/sec")...)
 		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "inclusion_latency_ms")...)
-		invalid = append(invalid, requireClaimMetricP95AtMost(rep, claimType, rep.ClaimEvidence.InclusionP95SLOMS, "inclusion_latency_ms")...)
+		invalid = append(invalid, requireClaimMetricP95AtMost(rep, claimType, evidence.InclusionP95SLOMS, "inclusion_latency_ms")...)
 		if _, ok := findClaimMetric(rep, claimType, "failed_tx_rate"); ok {
 			invalid = append(invalid, requireClaimMetricRange(rep, claimType, 0, 0.001, "failed_tx_rate")...)
 		}
@@ -2209,13 +2389,13 @@ func invalidClaimMetrics(rep report, claimType string) []string {
 		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "prepare_latency_ms")...)
 		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "time_to_submit_ms", "submit_latency_ms")...)
 		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "total_latency_ms", "submit_ready_ms")...)
-		invalid = append(invalid, requireClaimMetricP99AtMost(rep, claimType, rep.ClaimEvidence.LatencyP99SLOMS, "total_latency_ms", "submit_ready_ms")...)
+		invalid = append(invalid, requireClaimMetricP99AtMost(rep, claimType, evidence.LatencyP99SLOMS, "total_latency_ms", "submit_ready_ms")...)
 		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "proof_latency_ms")...)
 		if userLatencyIncludesInclusion(rep) {
 			invalid = append(invalid, requireClaimMetricPositive(rep, claimType, userLatencyInclusionMetricNames()...)...)
-			invalid = append(invalid, requireClaimMetricP95AtMost(rep, claimType, rep.ClaimEvidence.InclusionP95SLOMS, userLatencyInclusionMetricNames()...)...)
+			invalid = append(invalid, requireClaimMetricP95AtMost(rep, claimType, evidence.InclusionP95SLOMS, userLatencyInclusionMetricNames()...)...)
 		}
-		invalid = append(invalid, requireClaimMetricRange(rep, claimType, 0, 0.001, "timeout_rate", "cancel_rate")...)
+		invalid = append(invalid, requireClaimMetricRange(rep, claimType, 0, 0.001, "error_rate", "timeout_rate", "cancel_rate")...)
 	}
 	return invalid
 }

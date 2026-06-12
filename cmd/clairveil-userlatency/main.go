@@ -88,6 +88,7 @@ type latencyBucket struct {
 	SubmitMS  []float64
 	ReadyMS   []float64
 	TotalMS   []float64
+	Errors    []float64
 	Timeouts  []float64
 	Cancels   []float64
 	Inclusion []float64
@@ -314,6 +315,7 @@ func summarizeLatencyTrace(events []latencyTraceEvent, inclusions map[string]inc
 		bucket.SubmitMS = append(bucket.SubmitMS, submit)
 		bucket.ReadyMS = append(bucket.ReadyMS, ready)
 		bucket.TotalMS = append(bucket.TotalMS, total)
+		bucket.Errors = append(bucket.Errors, boolFloat(flow.Failed))
 		bucket.Timeouts = append(bucket.Timeouts, boolFloat(flow.TimedOut))
 		bucket.Cancels = append(bucket.Cancels, boolFloat(flow.Cancelled))
 		for _, txHash := range flow.TxHashes {
@@ -339,6 +341,7 @@ func summarizeLatencyTrace(events []latencyTraceEvent, inclusions map[string]inc
 			"time_to_submit_ms":  summarizeValues(bucket.SubmitMS),
 			"submit_ready_ms":    summarizeValues(bucket.ReadyMS),
 			"total_latency_ms":   summarizeValues(bucket.TotalMS),
+			"error_rate":         summarizeValues(bucket.Errors),
 			"timeout_rate":       summarizeValues(bucket.Timeouts),
 			"cancel_rate":        summarizeValues(bucket.Cancels),
 		}

@@ -43,6 +43,9 @@ func TestSummarizeLatencyTraceGroupsFlowsAndInclusion(t *testing.T) {
 	if got := summary.Metrics["inclusion_latency_ms"].Mean; got != 1500 {
 		t.Fatalf("unexpected inclusion mean %.3f", got)
 	}
+	if got := summary.Metrics["error_rate"].Mean; got != 0 {
+		t.Fatalf("unexpected error rate %.3f", got)
+	}
 }
 
 func TestSummarizeLatencyTraceRejectsMissingFlowID(t *testing.T) {
