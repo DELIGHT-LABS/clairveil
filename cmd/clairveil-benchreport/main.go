@@ -402,7 +402,7 @@ func sourceMetadata(commitOverride string, dirtyOverride string) (string, bool, 
 		commit = commandOutput("git", "rev-parse", "HEAD")
 	}
 
-	dirty := commandOutput("git", "status", "--short") != ""
+	dirty := sourceWorktreeDirty()
 	if strings.TrimSpace(dirtyOverride) != "" {
 		parsed, err := strconv.ParseBool(strings.TrimSpace(dirtyOverride))
 		if err != nil {
@@ -412,6 +412,10 @@ func sourceMetadata(commitOverride string, dirtyOverride string) (string, bool, 
 	}
 
 	return commit, dirty, nil
+}
+
+func sourceWorktreeDirty() bool {
+	return commandOutput("git", "status", "--short", "--", ".", ":(exclude)benchmarks") != ""
 }
 
 func summarizeFees(metrics []txMetric, model feeModel) ([]feeSummary, error) {

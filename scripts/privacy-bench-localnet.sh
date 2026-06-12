@@ -11,7 +11,7 @@ min_gas_price="${MIN_GAS_PRICE:-0.025}"
 gas_adjustment="${GAS_ADJUSTMENT:-1.2}"
 source_commit="$(git rev-parse HEAD 2>/dev/null || true)"
 source_dirty="false"
-if [[ -n "$(git status --short 2>/dev/null || true)" ]]; then
+if [[ -n "$(git status --short -- . ':(exclude)benchmarks' 2>/dev/null || true)" ]]; then
   source_dirty="true"
 fi
 
