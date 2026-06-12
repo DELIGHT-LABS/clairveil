@@ -9,6 +9,11 @@ work_dir="${CLAIRVEIL_BENCH_WORK_DIR:-"$(mktemp -d)"}"
 fee_denom="${FEE_DENOM:-uclair}"
 min_gas_price="${MIN_GAS_PRICE:-0.025}"
 gas_adjustment="${GAS_ADJUSTMENT:-1.2}"
+source_commit="$(git rev-parse HEAD 2>/dev/null || true)"
+source_dirty="false"
+if [[ -n "$(git status --short 2>/dev/null || true)" ]]; then
+  source_dirty="true"
+fi
 
 mkdir -p "$bench_out_dir"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -77,6 +82,8 @@ go run ./cmd/clairveil-benchreport \
   -out "$bench_out_dir" \
   -fee-denom "$fee_denom" \
   -min-gas-price "$min_gas_price" \
-  -gas-adjustment "$gas_adjustment"
+  -gas-adjustment "$gas_adjustment" \
+  -commit "$source_commit" \
+  -dirty "$source_dirty"
 
 echo "localnet fee report written to $bench_out_dir"

@@ -108,6 +108,8 @@ func main() {
 	var minGasPrice string
 	var gasAdjustment string
 	var txMetricsPath string
+	var commitOverride string
+	var dirtyOverride string
 	flag.StringVar(&inputPath, "input", "", "raw go test -bench output")
 	flag.StringVar(&outDir, "out", "benchmarks/privacy-circuits", "output directory for benchmark reports")
 	flag.StringVar(&activeSetID, "active-set-id", privacyzk.ActiveCircuitSetID, "active circuit set id")
@@ -116,6 +118,8 @@ func main() {
 	flag.StringVar(&minGasPrice, "min-gas-price", "", "minimum gas price used for expected fee calculations")
 	flag.StringVar(&gasAdjustment, "gas-adjustment", "", "gas adjustment used for expected fee calculations")
 	flag.StringVar(&txMetricsPath, "tx-metrics", "", "optional JSON file with observed tx gas metrics")
+	flag.StringVar(&commitOverride, "commit", "", "source commit hash override captured before benchmark output files are written")
+	flag.StringVar(&dirtyOverride, "dirty", "", "source dirty state override captured before benchmark output files are written")
 	flag.Parse()
 
 	var samples []benchmarkSample
@@ -133,12 +137,16 @@ func main() {
 	if strings.TrimSpace(inputPath) == "" && strings.TrimSpace(txMetricsPath) == "" {
 		fatalf("-input or -tx-metrics is required")
 	}
+	sourceCommit, sourceDirty, err := sourceMetadata(commitOverride, dirtyOverride)
+	if err != nil {
+		fatalf("source metadata: %v", err)
+	}
 
 	rep := report{
 		SchemaVersion: reportSchemaVersion,
 		GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
-		Commit:        commandOutput("git", "rev-parse", "HEAD"),
-		Dirty:         commandOutput("git", "status", "--short") != "",
+		Commit:        sourceCommit,
+		Dirty:         sourceDirty,
 		ActiveSetID:   activeSetID,
 		GoVersion:     runtime.Version(),
 		GnarkVersion:  moduleVersion("github.com/consensys/gnark"),
@@ -386,6 +394,24 @@ func readTxMetrics(path string) ([]txMetric, error) {
 		return nil, err
 	}
 	return envelope.Transactions, nil
+}
+
+func sourceMetadata(commitOverride string, dirtyOverride string) (string, bool, error) {
+	commit := strings.TrimSpace(commitOverride)
+	if commit == "" {
+		commit = commandOutput("git", "rev-parse", "HEAD")
+	}
+
+	dirty := commandOutput("git", "status", "--short") != ""
+	if strings.TrimSpace(dirtyOverride) != "" {
+		parsed, err := strconv.ParseBool(strings.TrimSpace(dirtyOverride))
+		if err != nil {
+			return "", false, fmt.Errorf("dirty override must be true or false: %w", err)
+		}
+		dirty = parsed
+	}
+
+	return commit, dirty, nil
 }
 
 func summarizeFees(metrics []txMetric, model feeModel) ([]feeSummary, error) {

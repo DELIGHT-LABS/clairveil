@@ -12,6 +12,11 @@ fee_denom="${FEE_DENOM:-}"
 min_gas_price="${MIN_GAS_PRICE:-}"
 gas_adjustment="${GAS_ADJUSTMENT:-}"
 tx_metrics="${TX_METRICS:-}"
+source_commit="$(git rev-parse HEAD 2>/dev/null || true)"
+source_dirty="false"
+if [[ -n "$(git status --short 2>/dev/null || true)" ]]; then
+  source_dirty="true"
+fi
 
 mkdir -p "$bench_out_dir"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -50,6 +55,8 @@ report_args=(
   run ./cmd/clairveil-benchreport
   -input "$raw_file"
   -out "$bench_out_dir"
+  -commit "$source_commit"
+  -dirty "$source_dirty"
 )
 if [[ -n "$fee_denom" ]]; then
   report_args+=(-fee-denom "$fee_denom")

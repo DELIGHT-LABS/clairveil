@@ -8,6 +8,11 @@ bench_count="${BENCH_COUNT:-10}"
 bench_pattern="${BENCH_PATTERN:-BenchmarkHTTPProverClient(Transfer|Withdraw)RoundTrip$}"
 bench_out_dir="${BENCH_OUT_DIR:-benchmarks/privacy-proverd}"
 bench_time="${BENCH_TIME:-}"
+source_commit="$(git rev-parse HEAD 2>/dev/null || true)"
+source_dirty="false"
+if [[ -n "$(git status --short 2>/dev/null || true)" ]]; then
+  source_dirty="true"
+fi
 
 mkdir -p "$bench_out_dir"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -44,4 +49,6 @@ fi
 
 go run ./cmd/clairveil-benchreport \
   -input "$raw_file" \
-  -out "$bench_out_dir"
+  -out "$bench_out_dir" \
+  -commit "$source_commit" \
+  -dirty "$source_dirty"

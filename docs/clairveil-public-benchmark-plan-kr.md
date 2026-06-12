@@ -341,7 +341,7 @@ Markdown 결과는 공개 설명용으로 사용하고, JSON은 CI trend와 down
 - benchmark JSON에 환경 메타데이터가 자동 기록됨
 - dirty worktree일 경우 결과에 `dirty: true`가 표시됨
 
-현재 상태: 완료. `cmd/clairveil-benchreport`가 commit, dirty state, Go/gnark/gnark-crypto version, OS/arch, CPU, active set id, optional manifest checksum을 기록합니다.
+현재 상태: 완료. `cmd/clairveil-benchreport`가 commit, dirty state, Go/gnark/gnark-crypto version, OS/arch, CPU, active set id, optional manifest checksum을 기록합니다. `make privacy-bench`, `make privacy-proverd-bench`, `make privacy-bench-localnet`는 output 파일을 만들기 전에 source commit과 dirty state를 캡처해 report artifact 생성 자체가 `dirty: true`로 오인되지 않게 합니다.
 
 ### Phase B2: report generator 추가
 

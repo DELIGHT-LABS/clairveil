@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -140,5 +142,43 @@ func TestSummarizeFeesRequiresFeePolicy(t *testing.T) {
 	_, err := summarizeFees([]txMetric{{TxType: "deposit", GasUsed: 100}}, feeModel{})
 	if err == nil {
 		t.Fatal("expected missing fee policy error")
+	}
+}
+
+func TestReadTxMetricsAcceptsEnvelope(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tx-metrics.json")
+	err := os.WriteFile(path, []byte(`{
+  "schema_version": "clairveil.tx_metrics.v1",
+  "transactions": [
+    {"tx_type": "deposit", "gas_used": 100, "gas_wanted": 200, "success": true}
+  ]
+}`), 0o644)
+	if err != nil {
+		t.Fatalf("write tx metrics: %v", err)
+	}
+
+	metrics, err := readTxMetrics(path)
+	if err != nil {
+		t.Fatalf("read tx metrics: %v", err)
+	}
+	if len(metrics) != 1 || metrics[0].TxType != "deposit" || metrics[0].GasUsed != 100 {
+		t.Fatalf("unexpected tx metrics: %+v", metrics)
+	}
+}
+
+func TestSourceMetadataUsesOverrides(t *testing.T) {
+	commit, dirty, err := sourceMetadata("abc123", "false")
+	if err != nil {
+		t.Fatalf("source metadata: %v", err)
+	}
+	if commit != "abc123" || dirty {
+		t.Fatalf("unexpected source metadata: commit=%q dirty=%t", commit, dirty)
+	}
+}
+
+func TestSourceMetadataRejectsInvalidDirtyOverride(t *testing.T) {
+	_, _, err := sourceMetadata("abc123", "sometimes")
+	if err == nil {
+		t.Fatal("expected invalid dirty override error")
 	}
 }
