@@ -30,11 +30,12 @@ make release-pack-verify
 | `make install` | `make build` 후 Clairveil binary를 `GOBIN` 또는 `GOPATH/bin`으로 복사 |
 | `make init` | `make install` 후 기본 local chain home을 초기화해 `clairveild start` 준비 |
 | `make proto` | privacy protobuf/gateway Go file 재생성 |
-| `make examples` | JS audit key, fixture validator, prover HTTP client 예제 실행 |
+| `make examples` | JS audit key, fixture validator, prover HTTP client, browser DApp 예제 실행 |
 | `make ci` | `test`, `build`, `examples` 묶음 |
 | `make vulncheck` | govulncheck policy gate 실행 |
 | `make localnet-smoke` | reference daemon이 genesis부터 start 가능한지 짧게 검증 |
 | `make privacy-e2e-smoke` | deposit, transfer, disclosure, withdraw 전체 flow 검증 |
+| `make dapp-local` | 수동 테스트용 local Clairveil node, prover, browser DApp stack 실행 |
 | `make release-check` | `ci`, `vulncheck`, `localnet-smoke`, `privacy-e2e-smoke` 묶음 |
 | `make release-pack` | downstream handoff archive와 sha256 생성 |
 | `make release-pack-verify` | handoff archive checksum, 내부 checksum, 필수 파일, manifest commit 검증 |
@@ -78,6 +79,11 @@ make examples
 npm --prefix examples/audit-disclosure-keys test
 npm --prefix examples/js-sdk-fixture-validator run validate
 npm --prefix examples/js-sdk-prover-http-client run demo
+npm --prefix examples/clairveil-dapp ci
+npm --prefix examples/clairveil-dapp run check:dapp
+npm --prefix examples/clairveil-dapp run test:dapp
+npm --prefix examples/clairveil-dapp run check:clairveiljs
+npm --prefix examples/clairveil-dapp run test:clairveiljs
 ```
 
 검증 범위:
@@ -89,6 +95,7 @@ npm --prefix examples/js-sdk-prover-http-client run demo
 - relayed withdraw final payload hash
 - prover HTTP request/response version
 - timeout/auth client shape
+- browser DApp boundary check, static bundle 최신성, local helper route policy, ClairveilJS package surface smoke test
 
 ## 5. Localnet smoke
 
