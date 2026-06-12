@@ -1442,7 +1442,7 @@ func sourceMetadata(commitOverride string, dirtyOverride string) (string, bool, 
 }
 
 func sourceWorktreeDirty() bool {
-	return sourceStatusDirty(commandOutput("git", "status", "--short", "--", "."))
+	return sourceStatusDirty(commandOutput("git", "status", "--short", "--untracked-files=all", "--", "."))
 }
 
 func sourceStatusDirty(status string) bool {

@@ -55,7 +55,7 @@ claim_linked_prover_report_file="${CLAIM_LINKED_PROVER_REPORT_FILE:-}"
 claim_linked_prover_report_sha256="${CLAIM_LINKED_PROVER_REPORT_SHA256:-}"
 source_commit="$(git rev-parse HEAD 2>/dev/null || true)"
 source_dirty="false"
-source_status="$(git status --short -- . 2>/dev/null || true)"
+source_status="$(git status --short --untracked-files=all -- . 2>/dev/null || true)"
 if [[ -n "$(printf '%s\n' "$source_status" | awk 'NF { status=substr($0,1,2); path=substr($0,4); if (status=="??" && path ~ /^benchmarks\/(privacy-circuits|privacy-proverd|privacy-localnet|privacy-proverd-load|privacy-localnet-tps|privacy-user-latency|public-capacity)\//) next; if (status=="??" && path ~ /^(clairveild|clairveil-setup|clairveil-verify|clairveil-proverd|clairveil-benchreport|clairveil-proverload|clairveil-localnetload|clairveil-userlatency)$/) next; print }')" ]]; then
   source_dirty="true"
 fi

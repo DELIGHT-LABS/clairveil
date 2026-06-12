@@ -600,6 +600,11 @@ func TestSourceStatusDirtyIgnoresGeneratedArtifactsOnly(t *testing.T) {
 		t.Fatalf("expected tracked generated benchmark edit to mark source dirty")
 	}
 
+	status = "?? benchmarks/"
+	if !sourceStatusDirty(status) {
+		t.Fatalf("expected collapsed untracked benchmarks directory to mark source dirty")
+	}
+
 	status = strings.Join([]string{
 		" M clairveil-benchreport",
 	}, "\n")
