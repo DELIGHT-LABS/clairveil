@@ -16,7 +16,7 @@
 - `privacy-bench-localnet.sh`: localnet privacy smoke를 실행하고 fee, gas, reserve, localnet summary를 생성합니다.
 - `privacy-localnet-tps-bench.sh`: localnet smoke output을 `chain_tps` benchmark family로 변환합니다.
 - `privacy-user-latency-bench.sh`: localnet privacy smoke를 wallet-flow latency tracing enabled 상태로 실행하고 `privacy-user-latency` report를 생성합니다.
-- `privacy-public-capacity-report.sh`: eligible single-claim component report를 claim별 evidence가 있는 public capacity aggregate로 병합합니다.
+- `privacy-public-capacity-report.sh`: component report를 public capacity aggregate로 병합하고, component 또는 claim별 evidence가 public gate를 통과하지 못하면 aggregate도 ineligible 상태로 남깁니다.
 - `release-pack.sh`: downstream handoff tarball과 외부 sha256 파일을 `dist/` 아래 생성합니다.
 - `release-pack-verify.sh`: handoff tarball checksum, 내부 `SHA256SUMS.txt`, 필수 파일, manifest commit을 검증합니다.
 - `docker-proverd-build.sh`: prover compose file을 검증하고 reference prover Docker image를 build/inspect합니다.

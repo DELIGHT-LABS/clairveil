@@ -266,7 +266,7 @@ Public claim gate:
 
 - `cmd/clairveil-localnetload`가 localnet tx metrics를 `chain_tps` structured benchmark summary로 변환합니다.
 - `make privacy-localnet-tps-bench` 또는 `scripts/privacy-localnet-tps-bench.sh`가 `benchmarks/privacy-localnet-tps` report를 생성합니다.
-- 기존 `privacy-bench-localnet.sh`는 tx query JSON에서 gas, success, height, included timestamp를 추출하고, smoke script가 기록한 submitted timestamp와 함께 tx metrics를 생성합니다.
+- 기존 `privacy-bench-localnet.sh`는 tx query JSON에서 gas, success, height, included timestamp를 추출하고, smoke script가 기록한 submitted timestamp와 함께 tx metrics를 생성합니다. Downstream/staging bucket 입력에서도 tx별 `success`는 명시되어야 하며, 누락된 값은 성공으로 추정하지 않고 실패로 계산합니다.
 - structured row는 `claim_type=chain_tps`, `load_profile`, `duration_seconds`, `target_tx_per_sec`와 `submitted_tx/sec`, `accepted_tx/sec`, `included_tx/sec`, `successful_tx/sec`, `tx/sec`, `failed_tx_rate`, `inclusion_latency_ms`, `gas_used` metric을 포함합니다.
 - 현재 wrapper는 e2e smoke flow를 계측 가능한 TPS report로 승격하는 경로입니다. 대규모 open-loop account pool/sequence contention 없는 batch submission은 downstream/staging 환경에서 같은 tx metrics bucket schema로 feed해야 합니다.
 
@@ -407,7 +407,7 @@ Public claim gate:
 - aggregate report는 component report file SHA-256, component claim type, eligibility, commit, active set, artifact manifest checksum을 `component_reports`에 보존합니다.
 - aggregate report는 component별 `claim_evidence`를 `claim_evidence_by_type`에 보존하고, multi-claim public gate에서 claim별 evidence를 서로 섞지 않고 평가합니다.
 - component benchmark rows와 fee rows는 aggregate report에 병합됩니다.
-- eligible single-claim component report만 묶이고 aggregate의 환경/provenance/run window가 public gate를 통과하면 aggregate report도 `public-capacity` claim으로 eligible이 될 수 있습니다. per-claim evidence가 없는 수동 multi-claim report는 계속 차단됩니다.
+- 지정된 component report를 aggregate로 묶은 뒤, 모든 component가 eligible이고 aggregate의 환경/provenance/run window가 public gate를 통과하면 aggregate report도 `public-capacity` claim으로 eligible이 될 수 있습니다. ineligible component가 있거나 per-claim evidence가 없는 수동 multi-claim report는 계속 차단됩니다.
 
 입력:
 

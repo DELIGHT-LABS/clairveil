@@ -1297,14 +1297,21 @@ func readTxMetrics(path string) ([]txMetric, error) {
 
 	var direct []txMetric
 	if err := json.Unmarshal(bz, &direct); err == nil {
-		return direct, nil
+		return validateTxMetrics(direct)
 	}
 
 	var envelope txMetricEnvelope
 	if err := json.Unmarshal(bz, &envelope); err != nil {
 		return nil, err
 	}
-	return envelope.Transactions, nil
+	return validateTxMetrics(envelope.Transactions)
+}
+
+func validateTxMetrics(metrics []txMetric) ([]txMetric, error) {
+	if len(metrics) == 0 {
+		return nil, fmt.Errorf("tx metrics are empty")
+	}
+	return metrics, nil
 }
 
 func readBenchmarkSummaries(path string) ([]benchmarkSummary, error) {
@@ -1841,47 +1848,44 @@ func missingClaimMetrics(rep report, claimType string) []string {
 
 func incompleteClaimMetricRows(rep report, claimType string) []string {
 	var incomplete []string
-	rows, _ := claimBenchmarkRows(rep, claimType)
+	rows, tagged := claimBenchmarkRows(rep, claimType)
+	if !tagged {
+		return nil
+	}
 	for _, bench := range rows {
 		name := benchmarkDisplayName(bench)
 		switch claimType {
 		case "prover_rps":
-			if benchmarkHasMetric(bench, "proofs/sec", "requests/sec", "latency_ms", "proof_latency_ms", "roundtrip_latency_ms", "errors/op", "error_rate", "cpu_percent", "rss_bytes", "max_rss_bytes") {
-				if missing := missingMetricGroupsInBenchmark(
-					bench,
-					[]string{"proofs/sec", "requests/sec"},
-					[]string{"latency_ms", "proof_latency_ms", "roundtrip_latency_ms"},
-					[]string{"errors/op", "error_rate"},
-					[]string{"cpu_percent"},
-					[]string{"rss_bytes", "max_rss_bytes"},
-				); len(missing) > 0 {
-					incomplete = append(incomplete, fmt.Sprintf("%s missing %s", name, strings.Join(missing, ", ")))
-				}
+			if missing := missingMetricGroupsInBenchmark(
+				bench,
+				[]string{"proofs/sec", "requests/sec"},
+				[]string{"latency_ms", "proof_latency_ms", "roundtrip_latency_ms"},
+				[]string{"errors/op", "error_rate"},
+				[]string{"cpu_percent"},
+				[]string{"rss_bytes", "max_rss_bytes"},
+			); len(missing) > 0 {
+				incomplete = append(incomplete, fmt.Sprintf("%s missing %s", name, strings.Join(missing, ", ")))
 			}
 		case "chain_tps":
-			if benchmarkHasMetric(bench, "tx/sec", "tps", "successful_tx/sec", "inclusion_latency_ms", "failed_tx_rate") {
-				if missing := missingMetricGroupsInBenchmark(
-					bench,
-					[]string{"tx/sec", "tps", "successful_tx/sec"},
-					[]string{"inclusion_latency_ms"},
-					[]string{"failed_tx_rate"},
-				); len(missing) > 0 {
-					incomplete = append(incomplete, fmt.Sprintf("%s missing %s", name, strings.Join(missing, ", ")))
-				}
+			if missing := missingMetricGroupsInBenchmark(
+				bench,
+				[]string{"tx/sec", "tps", "successful_tx/sec"},
+				[]string{"inclusion_latency_ms"},
+				[]string{"failed_tx_rate"},
+			); len(missing) > 0 {
+				incomplete = append(incomplete, fmt.Sprintf("%s missing %s", name, strings.Join(missing, ", ")))
 			}
 		case "user_latency":
-			if benchmarkLooksLikeUserLatency(bench) {
-				if missing := missingMetricGroupsInBenchmark(
-					bench,
-					[]string{"prepare_latency_ms"},
-					[]string{"proof_latency_ms"},
-					[]string{"time_to_submit_ms", "submit_latency_ms"},
-					[]string{"total_latency_ms", "submit_ready_ms"},
-					[]string{"error_rate"},
-					[]string{"timeout_rate", "cancel_rate"},
-				); len(missing) > 0 {
-					incomplete = append(incomplete, fmt.Sprintf("%s missing %s", name, strings.Join(missing, ", ")))
-				}
+			if missing := missingMetricGroupsInBenchmark(
+				bench,
+				[]string{"prepare_latency_ms"},
+				[]string{"proof_latency_ms"},
+				[]string{"time_to_submit_ms", "submit_latency_ms"},
+				[]string{"total_latency_ms", "submit_ready_ms"},
+				[]string{"error_rate"},
+				[]string{"timeout_rate", "cancel_rate"},
+			); len(missing) > 0 {
+				incomplete = append(incomplete, fmt.Sprintf("%s missing %s", name, strings.Join(missing, ", ")))
 			}
 		}
 	}
@@ -2751,7 +2755,7 @@ func summarizeFees(metrics []txMetric, model feeModel) ([]feeSummary, error) {
 			group = &groupedFeeMetrics{}
 			grouped[txType] = group
 		}
-		if metric.Success != nil && !*metric.Success {
+		if metric.Success == nil || !*metric.Success {
 			group.failedSamples++
 			continue
 		}

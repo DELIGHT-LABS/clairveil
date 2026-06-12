@@ -180,7 +180,7 @@ func summarizeBucket(bucket txMetricBucket) (benchmarkSummary, error) {
 			included++
 			heights[tx.Height] = struct{}{}
 		}
-		if tx.Success == nil || *tx.Success {
+		if tx.Success != nil && *tx.Success {
 			successful++
 		} else {
 			failed++

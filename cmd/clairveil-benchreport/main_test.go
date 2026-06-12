@@ -385,6 +385,7 @@ func TestSummarizeFees(t *testing.T) {
 		{TxType: "deposit", GasUsed: 100, GasWanted: 200, Success: &success},
 		{TxType: "deposit", GasUsed: 200, GasWanted: 300, Success: &success},
 		{TxType: "deposit", GasUsed: 999, GasWanted: 999, Success: &failed},
+		{TxType: "deposit", GasUsed: 888, GasWanted: 888},
 	}, feeModel{
 		FeeDenom:      "uclair",
 		MinGasPrice:   "0.025",
@@ -397,7 +398,7 @@ func TestSummarizeFees(t *testing.T) {
 		t.Fatalf("expected 1 summary, got %d", len(summaries))
 	}
 	got := summaries[0]
-	if got.Samples != 2 || got.FailedSamples != 1 {
+	if got.Samples != 2 || got.FailedSamples != 2 {
 		t.Fatalf("unexpected sample counts: %+v", got)
 	}
 	if got.GasUsedMean != 150 || got.GasUsedP50 != 150 || got.GasUsedP95 != 195 || got.GasUsedMax != 200 {
@@ -418,7 +419,7 @@ func TestSummarizeFeesRequiresFeePolicy(t *testing.T) {
 func TestReadTxMetricsAcceptsEnvelope(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "tx-metrics.json")
 	err := os.WriteFile(path, []byte(`{
-  "schema_version": "clairveil.tx_metrics.v1",
+	  "schema_version": "clairveil.tx_metrics.v1",
   "transactions": [
     {"tx_type": "deposit", "gas_used": 100, "gas_wanted": 200, "success": true}
   ]
@@ -433,6 +434,18 @@ func TestReadTxMetricsAcceptsEnvelope(t *testing.T) {
 	}
 	if len(metrics) != 1 || metrics[0].TxType != "deposit" || metrics[0].GasUsed != 100 {
 		t.Fatalf("unexpected tx metrics: %+v", metrics)
+	}
+}
+
+func TestReadTxMetricsRejectsEmptyInput(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tx-metrics.json")
+	if err := os.WriteFile(path, []byte(`{"transactions":[]}`), 0o644); err != nil {
+		t.Fatalf("write tx metrics: %v", err)
+	}
+
+	_, err := readTxMetrics(path)
+	if err == nil || !strings.Contains(err.Error(), "tx metrics are empty") {
+		t.Fatalf("expected empty tx metrics error, got %v", err)
 	}
 }
 
@@ -980,6 +993,26 @@ func TestEvaluateClaimProfileRequiresUserLatencyMetricsOnSameRow(t *testing.T) {
 	}
 	if !containsString(profile.BlockingReasons, "user_latency metric rows incomplete: UserLatencyPrepareAndProofOnly missing time_to_submit_ms|submit_latency_ms, total_latency_ms|submit_ready_ms, timeout_rate|cancel_rate, UserLatencySubmitOnly missing prepare_latency_ms, proof_latency_ms") {
 		t.Fatalf("expected row completeness blocker, got %+v", profile.BlockingReasons)
+	}
+}
+
+func TestEvaluateClaimProfileRejectsTaggedClaimRowWithoutMetrics(t *testing.T) {
+	rep := completePublicChainReport()
+	rep.Benchmarks = append(rep.Benchmarks, benchmarkSummary{
+		Name:            "ChainTPSEmptyManualRow",
+		Samples:         600,
+		ClaimType:       "chain_tps",
+		LoadProfile:     "mixed-shielded",
+		DurationSeconds: 600,
+		TargetTxPerSec:  16,
+	})
+
+	profile := evaluateClaimProfile(rep)
+	if profile.Eligible {
+		t.Fatalf("expected public claim to be blocked")
+	}
+	if !containsString(profile.BlockingReasons, "chain_tps metric rows incomplete: ChainTPSEmptyManualRow missing tx/sec|tps|successful_tx/sec, inclusion_latency_ms, failed_tx_rate") {
+		t.Fatalf("expected empty tagged row blocker, got %+v", profile.BlockingReasons)
 	}
 }
 

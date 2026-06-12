@@ -66,3 +66,31 @@ func TestSummarizeBucketRequiresDuration(t *testing.T) {
 		t.Fatalf("expected missing duration error")
 	}
 }
+
+func TestSummarizeBucketTreatsMissingSuccessAsFailed(t *testing.T) {
+	summary, err := summarizeBucket(txMetricBucket{
+		Name:           "mixed-target-1",
+		LoadProfile:    "mixed_deposit_transfer_withdraw",
+		TargetTxPerSec: 1,
+		StartedAt:      "2026-06-12T00:00:00Z",
+		EndedAt:        "2026-06-12T00:00:10Z",
+		Transactions: []txMetric{
+			{
+				TxType:      "deposit",
+				Height:      2,
+				GasUsed:     100,
+				SubmittedAt: "2026-06-12T00:00:01Z",
+				IncludedAt:  "2026-06-12T00:00:03Z",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("summarize bucket: %v", err)
+	}
+	if got := summary.Metrics["tx/sec"].Mean; got != 0 {
+		t.Fatalf("unexpected successful tx/sec %.3f", got)
+	}
+	if got := summary.Metrics["failed_tx_rate"].Mean; got != 1 {
+		t.Fatalf("unexpected failed tx rate %.3f", got)
+	}
+}
