@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Clairveil DApp</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>Clairveil DApp</h1>
+          <p id="modeBadge" class="mode-badge">Local Note Test Web</p>
+          <label class="chain-picker">
+            <span>DApp chain info</span>
+            <select id="dappChainSelect"></select>
+            <small id="dappChainHint">-</small>
+          </label>
+        </div>
+        <div class="wallet-box">
+          <span id="walletStatus" class="status-dot">Wallet Offline</span>
+          <button id="connectWallet" type="button">Connect MetaMask</button>
+          <button id="connectKeplr" type="button">Connect Keplr</button>
+          <button id="disconnectWallet" type="button" hidden>Disconnect</button>
+        </div>
+      </header>
+
+      <section class="summary-strip" aria-label="Localnet summary">
+        <article>
+          <span>Block</span>
+          <strong id="blockHeight">-</strong>
+        </article>
+        <article>
+          <span>Leaves</span>
+          <strong id="leafCount">-</strong>
+        </article>
+        <article>
+          <span>Chain</span>
+          <strong id="chainId">-</strong>
+        </article>
+        <article>
+          <span>REST</span>
+          <strong id="restState">-</strong>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <div class="panel wallet-session-panel">
+          <div class="panel-heading">
+            <h2>Wallet Session</h2>
+            <div class="session-actions">
+              <button id="signSession" type="button" disabled>Sign Session</button>
+            </div>
+          </div>
+          <dl class="facts wallet-session-facts">
+            <div>
+              <dt>Wallet</dt>
+              <dd id="sessionWallet">Not connected</dd>
+            </div>
+            <div>
+              <dt>Account</dt>
+              <dd class="account-copy">
+                <span id="walletAccount">Not connected</span>
+                <button id="copyWalletAccount" type="button" disabled>Copy</button>
+              </dd>
+            </div>
+            <div>
+              <dt>Chain</dt>
+              <dd id="walletChain">-</dd>
+            </div>
+            <div>
+              <dt>Signature</dt>
+              <dd id="walletSignatureHash">-</dd>
+            </div>
+            <div>
+              <dt>Local home</dt>
+              <dd id="localHome">-</dd>
+            </div>
+            <div>
+              <dt>Wallet name</dt>
+              <dd id="keplrName">-</dd>
+            </div>
+            <div>
+              <dt>Public key</dt>
+              <dd id="keplrPubkey">-</dd>
+            </div>
+            <div>
+              <dt>Signer check</dt>
+              <dd id="keplrSignerCheck">-</dd>
+            </div>
+            <div>
+              <dt>Balance</dt>
+              <dd id="keplrBalance">-</dd>
+            </div>
+            <div>
+              <dt>Faucet tx</dt>
+              <dd id="keplrFaucetHash">-</dd>
+            </div>
+            <div>
+              <dt>Faucet sent</dt>
+              <dd id="keplrFaucetSent">-</dd>
+            </div>
+            <div>
+              <dt>Faucet recipient</dt>
+              <dd id="keplrFaucetRecipient">-</dd>
+            </div>
+            <div>
+              <dt>Clairveil shielded</dt>
+              <dd id="keplrShieldedAddress">Not set up</dd>
+            </div>
+          </dl>
+          <div class="split-actions">
+            <button id="setupKeplrPrivacy" type="button" disabled>Setup Clairveil</button>
+            <button id="refreshKeplrBalance" type="button" disabled>Refresh Balance</button>
+          </div>
+          <div class="copy-row">
+            <div>
+              <span>My disclosure pubkey</span>
+              <code id="keplrDisclosurePubKey">Setup Clairveil first</code>
+            </div>
+            <button id="copyKeplrDisclosurePubKey" type="button" disabled>Copy</button>
+          </div>
+          <div class="faucet-row">
+            <label class="field amount-field">
+              <span>
+                Faucet amount
+                <small id="faucetHelpText">(CLAIR get from Alice's wallet)</small>
+              </span>
+              <div class="amount-control">
+                <input id="keplrFaucetAmount" inputmode="decimal" value="10" />
+                <span class="denom">CLAIR</span>
+              </div>
+            </label>
+            <button id="fundKeplr" type="button" disabled>Faucet</button>
+          </div>
+        </div>
+
+        <div class="panel keplr-tx-panel">
+          <div class="panel-heading">
+            <h2>Clair</h2>
+            <span id="keplrTxState" class="quiet">Ready</span>
+          </div>
+          <section class="balance-section" aria-labelledby="clairBalanceTitle">
+            <h3 id="clairBalanceTitle">Balance</h3>
+            <div class="note-summary">
+              <span>Balance</span>
+              <strong id="myClairBalance">-</strong>
+            </div>
+          </section>
+          <section class="balance-section action-section" aria-labelledby="clairSendTitle">
+            <h3 id="clairSendTitle">Send</h3>
+            <div class="amount-row">
+              <label class="field amount-field">
+                <span>Send amount</span>
+                <div class="amount-control">
+                  <input id="keplrSendAmount" inputmode="numeric" value="1" />
+                  <span class="denom">uclair</span>
+                </div>
+              </label>
+              <button id="sendFromKeplr" type="button" disabled>Send</button>
+            </div>
+            <div class="field address-field">
+              <label for="keplrSendRecipient"><span>Send recipient</span></label>
+              <div class="address-input-wrap">
+                <input id="keplrSendRecipient" placeholder="clair1..." autocomplete="off" aria-haspopup="listbox" aria-controls="keplrSendRecipientSuggestions" aria-expanded="false" />
+                <div id="keplrSendRecipientSuggestions" class="address-suggestions" role="listbox" hidden></div>
+              </div>
+            </div>
+          </section>
+          <dl class="facts">
+            <div>
+              <dt>Send tx</dt>
+              <dd id="keplrSendHash">-</dd>
+            </div>
+          </dl>
+          <section class="balance-section action-section" aria-labelledby="depositVeiledTitle">
+            <h3 id="depositVeiledTitle">Deposit (Move to Veiled)</h3>
+            <div class="amount-row">
+              <label class="field amount-field">
+                <span>Deposit amount</span>
+                <div class="amount-control">
+                  <input id="keplrDepositAmount" inputmode="numeric" value="1" />
+                  <span class="denom">uclair</span>
+                </div>
+              </label>
+              <button id="depositFromKeplr" type="button" disabled>Deposit</button>
+            </div>
+            <dl class="facts">
+              <div>
+                <dt>Deposit tx</dt>
+                <dd id="keplrDepositHash">-</dd>
+              </div>
+              <div>
+                <dt>Deposit height</dt>
+                <dd id="keplrDepositHeight">-</dd>
+              </div>
+            </dl>
+          </section>
+        </div>
+
+        <div class="panel my-notes-panel">
+          <div class="panel-heading">
+            <h2>Veiled</h2>
+          </div>
+          <section class="balance-section" aria-labelledby="veiledBalanceTitle">
+            <div class="balance-heading">
+              <h3 id="veiledBalanceTitle">Veiled balance (Notes)</h3>
+              <div class="notes-actions">
+                <label class="toggle-control">
+                  <input id="myKeplrSpendableOnly" type="checkbox" checked />
+                  <span>Spendable only</span>
+                </label>
+                <button id="scanKeplrNotes" type="button" disabled>Scan</button>
+              </div>
+            </div>
+            <div class="note-summary">
+              <span>Spendable</span>
+              <strong id="myKeplrSpendable">-</strong>
+            </div>
+            <div id="myKeplrNotesList" class="notes-list"></div>
+          </section>
+          <section class="balance-section action-section" aria-labelledby="veiledTransferTitle">
+            <div class="section-title-row">
+              <h3 id="veiledTransferTitle">Transfer (Veiled Send)</h3>
+              <label class="toggle-control">
+                <input id="veiledDisclosureAdvanced" type="checkbox" />
+                <span>Advanced</span>
+              </label>
+            </div>
+            <div class="amount-row">
+              <label class="field amount-field">
+                <span>Transfer amount</span>
+                <div class="amount-control">
+                  <input id="veiledTransferAmount" inputmode="numeric" value="1" />
+                  <span class="denom">uclair</span>
+                </div>
+              </label>
+              <button id="transferFromVeiled" type="button" disabled>Transfer</button>
+            </div>
+            <div class="field address-field">
+              <label for="veiledTransferRecipient"><span>Transfer recipient</span></label>
+              <div class="address-input-wrap">
+                <input id="veiledTransferRecipient" placeholder="clairs1..." autocomplete="off" aria-haspopup="listbox" aria-controls="veiledTransferRecipientSuggestions" aria-expanded="false" />
+                <div id="veiledTransferRecipientSuggestions" class="address-suggestions" role="listbox" hidden></div>
+              </div>
+            </div>
+            <div id="veiledDisclosureOptions" class="transfer-advanced" hidden>
+              <label class="field">
+                <span>Disclosure mode</span>
+                <select id="veiledDisclosureMode">
+                  <option value="none">None</option>
+                  <option value="recipient-encrypted">Recipient encrypted</option>
+                  <option value="public">Public</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Disclosure target</span>
+                <input id="veiledDisclosurePubKey" placeholder="disclosure pubkey hex" />
+              </label>
+              <div class="disclosure-checks" aria-label="Disclosure fields">
+                <label class="checkbox-control">
+                  <input id="veiledDisclosureAmount" type="checkbox" checked />
+                  <span>Amount + asset</span>
+                </label>
+                <label class="checkbox-control">
+                  <input id="veiledDisclosureFrom" type="checkbox" />
+                  <span>From shielded address</span>
+                </label>
+                <label class="checkbox-control">
+                  <input id="veiledDisclosureTo" type="checkbox" />
+                  <span>To shielded address</span>
+                </label>
+              </div>
+            </div>
+            <dl class="facts">
+              <div>
+                <dt>Transfer tx</dt>
+                <dd id="keplrTransferHash">-</dd>
+              </div>
+            </dl>
+          </section>
+          <section class="balance-section action-section" aria-labelledby="veiledWithdrawTitle">
+            <h3 id="veiledWithdrawTitle">Withdraw (Move to Clair)</h3>
+            <div class="amount-row">
+              <label class="field amount-field">
+                <span>Withdraw amount</span>
+                <div class="amount-control">
+                  <input id="veiledWithdrawAmount" inputmode="numeric" value="1" />
+                  <span class="denom">uclair</span>
+                </div>
+              </label>
+              <button id="withdrawFromVeiled" type="button" disabled>Withdraw</button>
+            </div>
+            <div class="field address-field">
+              <label for="veiledWithdrawRecipient"><span>Withdraw recipient</span></label>
+              <div class="address-input-wrap">
+                <input id="veiledWithdrawRecipient" placeholder="clair1..." autocomplete="off" aria-haspopup="listbox" aria-controls="veiledWithdrawRecipientSuggestions" aria-expanded="false" />
+                <div id="veiledWithdrawRecipientSuggestions" class="address-suggestions" role="listbox" hidden></div>
+              </div>
+            </div>
+            <dl class="facts">
+              <div>
+                <dt>Withdraw tx</dt>
+                <dd id="keplrWithdrawHash">-</dd>
+              </div>
+              <div>
+                <dt>Withdraw height</dt>
+                <dd id="keplrWithdrawHeight">-</dd>
+              </div>
+            </dl>
+          </section>
+        </div>
+
+        <section class="events-section">
+          <div class="section-heading">
+            <h2>Privacy Events</h2>
+            <button id="refreshEvents" type="button">Refresh Events</button>
+          </div>
+          <div class="events-layout">
+            <div id="eventsList" class="events-list"></div>
+            <div class="event-detail">
+              <h3>Event Detail</h3>
+              <dl class="facts event-facts">
+                <div>
+                  <dt>Event</dt>
+                  <dd id="eventDetailType">-</dd>
+                </div>
+                <div>
+                  <dt>Height</dt>
+                  <dd id="eventDetailHeight">-</dd>
+                </div>
+                <div>
+                  <dt>Tx</dt>
+                  <dd id="eventDetailTx">-</dd>
+                </div>
+                <div>
+                  <dt>User mode</dt>
+                  <dd id="eventDetailUserMode">-</dd>
+                </div>
+                <div>
+                  <dt>Disclosure target</dt>
+                  <dd id="eventDetailTarget">-</dd>
+                </div>
+                <div>
+                  <dt>Fields</dt>
+                  <dd id="eventDisclosureFields">-</dd>
+                </div>
+                <div>
+                  <dt>Amount</dt>
+                  <dd id="eventDisclosureAmount">-</dd>
+                </div>
+                <div>
+                  <dt>From</dt>
+                  <dd id="eventDisclosureFrom">-</dd>
+                </div>
+                <div>
+                  <dt>To</dt>
+                  <dd id="eventDisclosureTo">-</dd>
+                </div>
+              </dl>
+              <button id="decodeEventDisclosure" type="button" disabled>조회</button>
+              <p id="eventDisclosureState" class="quiet">Select an event.</p>
+            </div>
+          </div>
+        </section>
+
+        <div class="panel account-panel local-signer-panel">
+          <div class="panel-heading">
+            <h2>Local Signer</h2>
+            <button id="refreshAll" type="button">Refresh</button>
+          </div>
+          <div class="local-signer-layout">
+            <div class="local-signer-details">
+              <label class="field">
+                <span>Test key</span>
+                <select id="accountSelect"></select>
+              </label>
+              <dl class="facts">
+                <div>
+                  <dt>Transparent</dt>
+                  <dd id="transparentAddress">-</dd>
+                </div>
+                <div>
+                  <dt>Shielded</dt>
+                  <dd id="shieldedAddress">-</dd>
+                </div>
+                <div>
+                  <dt>Balance</dt>
+                  <dd id="balanceValue">-</dd>
+                </div>
+              </dl>
+            </div>
+            <section class="local-signer-notes" aria-labelledby="localSignerNotesTitle">
+              <div class="panel-heading">
+                <h3 id="localSignerNotesTitle">Notes</h3>
+                <button id="refreshNotes" type="button">Scan</button>
+              </div>
+              <div class="note-summary">
+                <span>Spendable</span>
+                <strong id="spendableTotal">-</strong>
+              </div>
+              <div id="notesList" class="notes-list"></div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="auditor-section">
+        <div class="section-heading">
+          <h2>Auditor</h2>
+          <button id="refreshAuditorTransfers" type="button">Refresh</button>
+        </div>
+        <div class="auditor-layout">
+          <div class="audit-pane">
+            <h3>Audit Transfers</h3>
+            <div id="auditorEventsList" class="audit-list"></div>
+          </div>
+          <div class="audit-pane audit-detail">
+            <h3>Transfer Detail</h3>
+            <div class="test-scalar-box">
+              <span>Test Private disclosure scalar</span>
+              <code id="auditorTestScalar">-</code>
+              <button id="decodeAuditorTransfer" type="button" disabled>Decode</button>
+            </div>
+            <div class="admin-warning" role="note">
+              <strong>DEV / ADMIN TEST ONLY</strong>
+              <span>Decode with the local admin test scalar only in a trusted local or admin environment.</span>
+              <span>Do not use this field in a public user-facing DApp.</span>
+            </div>
+            <dl class="facts audit-facts">
+              <div>
+                <dt>Tx</dt>
+                <dd id="auditorTxHash">-</dd>
+              </div>
+              <div>
+                <dt>Verified / height</dt>
+                <dd id="auditorVerification">-</dd>
+              </div>
+              <div>
+                <dt>Amount / target</dt>
+                <dd id="auditorAmount">-</dd>
+              </div>
+              <div>
+                <dt>Audit digest</dt>
+                <dd id="auditorDigest">-</dd>
+              </div>
+              <div>
+                <dt>From / payload</dt>
+                <dd id="auditorFrom">-</dd>
+              </div>
+              <div>
+                <dt>Visible data</dt>
+                <dd id="auditorFields">-</dd>
+              </div>
+              <div>
+                <dt>To / status</dt>
+                <dd id="auditorTo">-</dd>
+              </div>
+            </dl>
+            <p id="auditorDecodeState" class="quiet">Select a transfer.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="event-block-section">
+        <div class="event-block-heading">
+          <h2>Event Block</h2>
+          <span id="blockEventsState" class="quiet">Recent chain txs</span>
+        </div>
+        <div id="blockEventsList" class="block-events-list"></div>
+      </section>
+    </main>
+
+    <div id="noticeModal" class="modal-backdrop" hidden>
+      <section class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="noticeTitle">
+        <div class="modal-heading">
+          <h2 id="noticeTitle">Clairveil</h2>
+          <button id="closeNoticeModal" class="icon-button" type="button" aria-label="Close">X</button>
+        </div>
+        <p id="noticeMessage"></p>
+      </section>
+    </div>
+
+    <div id="transferFlowModal" class="modal-backdrop" hidden>
+      <section class="modal-dialog transfer-dialog" role="dialog" aria-modal="true" aria-labelledby="transferFlowTitle">
+        <div class="modal-heading">
+          <h2 id="transferFlowTitle">Privacy Transfer 확인</h2>
+          <span id="transferModalState" class="modal-state">확인 필요</span>
+        </div>
+        <p id="transferModalLead" class="modal-copy">
+          입력하신 금액을 보낼 수 있도록 note 구성을 먼저 확인합니다. 필요한 경우 self transaction 서명이 먼저 요청됩니다.
+        </p>
+        <ol id="transferSteps" class="transfer-steps" aria-label="Privacy transfer signing steps">
+          <li id="transferStepZero" data-transfer-step="zero">
+            <span class="step-index">1</span>
+            <div>
+              <strong id="transferStepZeroTitle">노트 준비</strong>
+              <span id="transferStepZeroCopy">입력하신 금액의 노트를 만들기 위해 self transaction이 필요한지 확인합니다.</span>
+              <dl id="transferPlannerFacts" class="transfer-planner-facts" hidden>
+                <div>
+                  <dt>요청 금액</dt>
+                  <dd id="transferPlannerRequested">-</dd>
+                </div>
+                <div>
+                  <dt>현재 바로 보낼 수 있는 가장 큰 금액</dt>
+                  <dd id="transferPlannerCurrentMax">-</dd>
+                </div>
+                <div>
+                  <dt>이번 self transaction</dt>
+                  <dd id="transferPlannerAction">-</dd>
+                </div>
+              </dl>
+            </div>
+          </li>
+          <li id="transferStepTransfer" data-transfer-step="transfer">
+            <span class="step-index">2</span>
+            <div>
+              <strong id="transferStepTransferTitle">트랜스퍼 서명</strong>
+              <span id="transferStepTransferCopy">준비된 note로 실제 privacy transfer를 요청합니다. Keplr에서 내용을 확인하고 서명합니다.</span>
+            </div>
+          </li>
+        </ol>
+        <div id="transferSuccessPanel" class="transfer-result" hidden>
+          <strong id="transferSuccessTitle">트랜스퍼 요청이 성공하였습니다</strong>
+          <span id="transferSuccessCopy">최신 notes를 다시 스캔한 상태입니다.</span>
+        </div>
+        <div id="transferFailurePanel" class="transfer-result transfer-result-error" hidden>
+          <strong id="transferFailureTitle">트랜스퍼 요청이 실패했습니다</strong>
+          <span id="transferFailureReason">-</span>
+        </div>
+        <div class="modal-actions">
+          <button id="cancelTransferFlow" class="secondary-button" type="button">취소</button>
+          <button id="confirmTransferFlow" type="button">시작</button>
+        </div>
+      </section>
+    </div>
+    <script src="/app.bundle.js" type="module"></script>
+  </body>
+</html>
