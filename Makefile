@@ -48,6 +48,10 @@ privacy-bench-localnet:
 privacy-proverd-bench:
 	./scripts/privacy-proverd-bench.sh
 
+.PHONY: privacy-public-capacity-report
+privacy-public-capacity-report:
+	./scripts/privacy-public-capacity-report.sh
+
 .PHONY: examples
 examples:
 	npm --prefix examples/audit-disclosure-keys test

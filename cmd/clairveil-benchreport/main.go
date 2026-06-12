@@ -51,6 +51,7 @@ type report struct {
 	ManifestPath     string             `json:"manifest_path,omitempty"`
 	ManifestChecksum string             `json:"manifest_sha256,omitempty"`
 	FeeModel         feeModel           `json:"fee_model"`
+	ComponentReports []componentReport  `json:"component_reports,omitempty"`
 	Benchmarks       []benchmarkSummary `json:"benchmarks,omitempty"`
 	Fees             []feeSummary       `json:"fees,omitempty"`
 }
@@ -129,6 +130,23 @@ type feeModel struct {
 	FeeDenom      string `json:"fee_denom,omitempty"`
 	MinGasPrice   string `json:"min_gas_price,omitempty"`
 	GasAdjustment string `json:"gas_adjustment,omitempty"`
+}
+
+type componentReport struct {
+	Path            string   `json:"path"`
+	SHA256          string   `json:"sha256"`
+	ResultFamily    string   `json:"result_family,omitempty"`
+	RunProfile      string   `json:"run_profile,omitempty"`
+	ClaimTypes      []string `json:"claim_types,omitempty"`
+	Eligible        bool     `json:"eligible"`
+	BlockingReasons []string `json:"blocking_reasons,omitempty"`
+	Commit          string   `json:"commit,omitempty"`
+	Dirty           bool     `json:"dirty,omitempty"`
+	ActiveSetID     string   `json:"active_set_id,omitempty"`
+	ManifestSHA256  string   `json:"manifest_sha256,omitempty"`
+	RunStartedAt    string   `json:"run_started_at,omitempty"`
+	RunEndedAt      string   `json:"run_ended_at,omitempty"`
+	MachineProfile  string   `json:"machine_profile,omitempty"`
 }
 
 type benchmarkSample struct {
@@ -213,6 +231,7 @@ type feeSummary struct {
 
 func main() {
 	var inputPath string
+	var mergeReports string
 	var outDir string
 	var activeSetID string
 	var manifestPath string
@@ -265,6 +284,7 @@ func main() {
 	var linkedProverReportFile string
 	var linkedProverReportSHA256 string
 	flag.StringVar(&inputPath, "input", "", "raw go test -bench output")
+	flag.StringVar(&mergeReports, "merge-reports", "", "comma-separated benchmark report JSON files to aggregate into a public-capacity report")
 	flag.StringVar(&outDir, "out", "benchmarks/privacy-circuits", "output directory for benchmark reports")
 	flag.StringVar(&activeSetID, "active-set-id", privacyzk.ActiveCircuitSetID, "active circuit set id")
 	flag.StringVar(&manifestPath, "manifest", "", "optional privacy_zk_manifest.json path")
@@ -317,6 +337,37 @@ func main() {
 	flag.StringVar(&linkedProverReportFile, "claim-linked-prover-report-file", "", "public prover RPS report file linked to remote user latency evidence")
 	flag.StringVar(&linkedProverReportSHA256, "claim-linked-prover-report-sha256", "", "SHA-256 of the linked public prover RPS report")
 	flag.Parse()
+
+	if strings.TrimSpace(mergeReports) != "" {
+		sourceCommit, sourceDirty, err := sourceMetadata(commitOverride, dirtyOverride)
+		if err != nil {
+			fatalf("source metadata: %v", err)
+		}
+		parsedRunProfile, err := parseRunProfile(runProfile)
+		if err != nil {
+			fatalf("run profile: %v", err)
+		}
+		rep, err := buildAggregateReport(
+			parseCSV(mergeReports),
+			time.Now().UTC().Format(time.RFC3339),
+			sourceCommit,
+			sourceDirty,
+			parsedRunProfile,
+			environment{
+				MachineProfile: strings.TrimSpace(machineProfile),
+				CPUGovernor:    strings.TrimSpace(cpuGovernor),
+				MemoryGiB:      strings.TrimSpace(memoryGiB),
+				OS:             runtime.GOOS,
+				Arch:           runtime.GOARCH,
+			},
+		)
+		if err != nil {
+			fatalf("build aggregate report: %v", err)
+		}
+		writeReportFiles(outDir, rep)
+		fmt.Printf("benchmark report written to %s\n", outDir)
+		return
+	}
 
 	var samples []benchmarkSample
 	var cpu string
@@ -493,6 +544,12 @@ func main() {
 	}
 	rep.ClaimProfile = evaluateClaimProfile(rep)
 
+	writeReportFiles(outDir, rep)
+
+	fmt.Printf("benchmark report written to %s\n", outDir)
+}
+
+func writeReportFiles(outDir string, rep report) {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		fatalf("create output directory: %v", err)
 	}
@@ -501,6 +558,9 @@ func main() {
 	shortCommit := rep.Commit
 	if len(shortCommit) > 12 {
 		shortCommit = shortCommit[:12]
+	}
+	if shortCommit == "" {
+		shortCommit = "unknown"
 	}
 	base := fmt.Sprintf("%s-%s", stamp, shortCommit)
 	if err := writeJSON(filepath.Join(outDir, base+".json"), rep); err != nil {
@@ -516,8 +576,6 @@ func main() {
 	if err := os.WriteFile(filepath.Join(outDir, "latest.md"), []byte(markdown), 0o644); err != nil {
 		fatalf("write latest Markdown report: %v", err)
 	}
-
-	fmt.Printf("benchmark report written to %s\n", outDir)
 }
 
 func parseBenchmarkOutput(raw string) ([]benchmarkSample, string) {
@@ -689,6 +747,176 @@ func customMetricRows(benchmarks []benchmarkSummary) []namedMetricSummary {
 	return rows
 }
 
+func buildAggregateReport(paths []string, generatedAt, sourceCommit string, sourceDirty bool, runProfile string, env environment) (report, error) {
+	paths = uniqueStrings(paths)
+	if len(paths) == 0 {
+		return report{}, fmt.Errorf("at least one report path is required")
+	}
+
+	var components []componentReport
+	var benchmarks []benchmarkSummary
+	var fees []feeSummary
+	var componentReports []report
+	var reasons []string
+	for _, path := range paths {
+		component, sha, err := readReportFile(path)
+		if err != nil {
+			return report{}, fmt.Errorf("read component report %s: %w", path, err)
+		}
+		componentReports = append(componentReports, component)
+		components = append(components, componentReport{
+			Path:            path,
+			SHA256:          sha,
+			ResultFamily:    component.ResultFamily,
+			RunProfile:      component.ClaimProfile.RunProfile,
+			ClaimTypes:      append([]string(nil), component.ClaimProfile.ClaimTypes...),
+			Eligible:        component.ClaimProfile.Eligible,
+			BlockingReasons: append([]string(nil), component.ClaimProfile.BlockingReasons...),
+			Commit:          component.Commit,
+			Dirty:           component.Dirty,
+			ActiveSetID:     component.ActiveSetID,
+			ManifestSHA256:  component.ArtifactSet.ManifestSHA256,
+			RunStartedAt:    component.RunStartedAt,
+			RunEndedAt:      component.RunEndedAt,
+			MachineProfile:  component.Environment.MachineProfile,
+		})
+		if !component.ClaimProfile.Eligible {
+			reasons = append(reasons, fmt.Sprintf("component report %s is not eligible", path))
+		}
+		benchmarks = append(benchmarks, component.Benchmarks...)
+		fees = append(fees, component.Fees...)
+	}
+
+	claimTypes := aggregateClaimTypes(componentReports)
+	runStartedAt, runEndedAt := aggregateRunWindow(componentReports)
+	activeSetID, activeSetOK := commonStringValue(componentReports, func(rep report) string { return rep.ActiveSetID })
+	manifestSHA256, manifestOK := commonStringValue(componentReports, func(rep report) string { return rep.ArtifactSet.ManifestSHA256 })
+	commit, commitOK := commonStringValue(componentReports, func(rep report) string { return rep.Commit })
+	if sourceCommit != "" {
+		commit = sourceCommit
+	}
+	if !activeSetOK {
+		reasons = append(reasons, "component reports use different active_set_id values")
+	}
+	if !manifestOK {
+		reasons = append(reasons, "component reports use different artifact manifest checksums")
+	}
+	if !commitOK {
+		reasons = append(reasons, "component reports use different source commits")
+	}
+	if runProfile == "public_claim" {
+		reasons = append(reasons, "public-capacity aggregate report is informational until per-claim evidence schema is implemented")
+	}
+
+	sourceHashes, sourceIssues := hashSourceFiles(paths)
+	rep := report{
+		SchemaVersion:    reportSchemaVersion,
+		GeneratedAt:      generatedAt,
+		ResultFamily:     "public-capacity",
+		SourceFiles:      paths,
+		SourceFileSHA256: sourceHashes,
+		SourceFileIssues: sourceIssues,
+		RunStartedAt:     runStartedAt,
+		RunEndedAt:       runEndedAt,
+		Commit:           commit,
+		Dirty:            sourceDirty || anyComponentDirty(componentReports),
+		ActiveSetID:      activeSetID,
+		ClaimProfile: claimProfile{
+			RunProfile:      runProfile,
+			ClaimTypes:      claimTypes,
+			Eligible:        false,
+			BlockingReasons: uniqueStrings(reasons),
+		},
+		Environment: env,
+		ArtifactSet: artifactSet{
+			ActiveSetID:         activeSetID,
+			ManifestActiveSetID: activeSetID,
+			ManifestSHA256:      manifestSHA256,
+		},
+		GoVersion:        runtime.Version(),
+		GnarkVersion:     moduleVersion("github.com/consensys/gnark"),
+		GnarkCrypto:      moduleVersion("github.com/consensys/gnark-crypto"),
+		OS:               runtime.GOOS,
+		Arch:             runtime.GOARCH,
+		ComponentReports: components,
+		Benchmarks:       benchmarks,
+		Fees:             fees,
+	}
+	return rep, nil
+}
+
+func readReportFile(path string) (report, string, error) {
+	bz, err := os.ReadFile(path)
+	if err != nil {
+		return report{}, "", err
+	}
+	sum := sha256.Sum256(bz)
+	var rep report
+	if err := json.Unmarshal(bz, &rep); err != nil {
+		return report{}, "", err
+	}
+	return rep, hex.EncodeToString(sum[:]), nil
+}
+
+func aggregateClaimTypes(reports []report) []string {
+	var values []string
+	for _, rep := range reports {
+		values = append(values, rep.ClaimProfile.ClaimTypes...)
+	}
+	return uniqueStrings(values)
+}
+
+func aggregateRunWindow(reports []report) (string, string) {
+	var starts []time.Time
+	var ends []time.Time
+	for _, rep := range reports {
+		if start, err := time.Parse(time.RFC3339, strings.TrimSpace(rep.RunStartedAt)); err == nil {
+			starts = append(starts, start)
+		}
+		if end, err := time.Parse(time.RFC3339, strings.TrimSpace(rep.RunEndedAt)); err == nil {
+			ends = append(ends, end)
+		}
+	}
+	start := ""
+	if len(starts) > 0 {
+		sort.Slice(starts, func(i, j int) bool { return starts[i].Before(starts[j]) })
+		start = starts[0].UTC().Format(time.RFC3339)
+	}
+	end := ""
+	if len(ends) > 0 {
+		sort.Slice(ends, func(i, j int) bool { return ends[i].After(ends[j]) })
+		end = ends[0].UTC().Format(time.RFC3339)
+	}
+	return start, end
+}
+
+func commonStringValue(reports []report, pick func(report) string) (string, bool) {
+	value := ""
+	for _, rep := range reports {
+		next := strings.TrimSpace(pick(rep))
+		if next == "" {
+			continue
+		}
+		if value == "" {
+			value = next
+			continue
+		}
+		if !strings.EqualFold(value, next) {
+			return value, false
+		}
+	}
+	return value, true
+}
+
+func anyComponentDirty(reports []report) bool {
+	for _, rep := range reports {
+		if rep.Dirty {
+			return true
+		}
+	}
+	return false
+}
+
 func goBenchmarkRows(benchmarks []benchmarkSummary) []benchmarkSummary {
 	rows := make([]benchmarkSummary, 0, len(benchmarks))
 	for _, bench := range benchmarks {
@@ -813,6 +1041,26 @@ func renderMarkdown(rep report) string {
 		fmt.Fprintf(&b, "| --- | --- |\n")
 		for _, path := range sortedMapKeys(rep.SourceFileSHA256) {
 			fmt.Fprintf(&b, "| `%s` | `%s` |\n", path, rep.SourceFileSHA256[path])
+		}
+		fmt.Fprintf(&b, "\n")
+	}
+
+	if len(rep.ComponentReports) > 0 {
+		fmt.Fprintf(&b, "## Component Reports\n\n")
+		fmt.Fprintf(&b, "| Report | Family | Claims | Eligible | Commit | Active set | Manifest SHA-256 |\n")
+		fmt.Fprintf(&b, "| --- | --- | --- | ---: | --- | --- | --- |\n")
+		for _, component := range rep.ComponentReports {
+			fmt.Fprintf(
+				&b,
+				"| `%s` | `%s` | `%s` | `%t` | `%s` | `%s` | `%s` |\n",
+				component.Path,
+				component.ResultFamily,
+				strings.Join(component.ClaimTypes, ","),
+				component.Eligible,
+				component.Commit,
+				component.ActiveSetID,
+				component.ManifestSHA256,
+			)
 		}
 		fmt.Fprintf(&b, "\n")
 	}

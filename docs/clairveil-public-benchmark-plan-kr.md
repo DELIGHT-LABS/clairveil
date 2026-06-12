@@ -428,7 +428,7 @@ Markdown 결과는 공개 설명용으로 사용하고, JSON은 CI trend와 down
 - `make privacy-bench` 또는 동등한 명령으로 `latest.json`, `latest.md` 생성
 - Markdown 결과가 공개 문서에 그대로 붙일 수 있는 형태임
 
-현재 상태: 완료. `scripts/privacy-bench.sh`가 raw output, optional benchstat output, JSON/Markdown report를 생성합니다. Markdown report는 Go `ns/op` row와 custom metric summary를 별도 표로 출력합니다.
+현재 상태: 완료. `scripts/privacy-bench.sh`가 raw output, optional benchstat output, JSON/Markdown report를 생성합니다. Markdown report는 Go `ns/op` row와 custom metric summary를 별도 표로 출력합니다. `clairveil-benchreport -merge-reports`와 `make privacy-public-capacity-report`는 eligible single-claim component report들을 `benchmarks/public-capacity` aggregate artifact로 묶고, component report SHA-256/claim type/eligibility/commit/active set/artifact manifest checksum을 보존합니다. 다만 per-claim evidence schema가 완성되기 전까지 aggregate artifact 자체는 informational result이며 `claim_profile.eligible=false`를 유지합니다.
 
 ### Phase B3: prover HTTP benchmark 추가
 

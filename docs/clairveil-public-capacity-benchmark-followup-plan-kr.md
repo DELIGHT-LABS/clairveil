@@ -374,6 +374,14 @@ Public claim gate:
 
 목적: 여러 benchmark family를 하나의 public report로 결합합니다.
 
+현재 구현 상태:
+
+- `clairveil-benchreport -merge-reports`가 component benchmark report JSON을 `benchmarks/public-capacity` aggregate report로 묶습니다.
+- `make privacy-public-capacity-report` 또는 `scripts/privacy-public-capacity-report.sh`로 aggregate report를 생성합니다.
+- aggregate report는 component report file SHA-256, component claim type, eligibility, commit, active set, artifact manifest checksum을 `component_reports`에 보존합니다.
+- component benchmark rows와 fee rows는 aggregate report에 병합됩니다.
+- per-claim/per-row evidence schema가 완전히 도입되기 전까지 aggregate report 자체는 informational artifact이며 `claim_profile.eligible=false`를 유지합니다.
+
 입력:
 
 - `privacy-circuits/latest.json`

@@ -298,6 +298,77 @@ func TestRenderMarkdownIncludesFeeFailures(t *testing.T) {
 	}
 }
 
+func TestBuildAggregateReportCombinesEligibleComponents(t *testing.T) {
+	dir := t.TempDir()
+	prover := completePublicProverReport()
+	prover.ClaimProfile = evaluateClaimProfile(prover)
+	if !prover.ClaimProfile.Eligible {
+		t.Fatalf("prover fixture is not eligible: %+v", prover.ClaimProfile)
+	}
+	chain := completePublicChainReport()
+	chain.ClaimProfile = evaluateClaimProfile(chain)
+	if !chain.ClaimProfile.Eligible {
+		t.Fatalf("chain fixture is not eligible: %+v", chain.ClaimProfile)
+	}
+	proverPath := filepath.Join(dir, "prover.json")
+	chainPath := filepath.Join(dir, "chain.json")
+	if err := writeJSON(proverPath, prover); err != nil {
+		t.Fatalf("write prover report: %v", err)
+	}
+	if err := writeJSON(chainPath, chain); err != nil {
+		t.Fatalf("write chain report: %v", err)
+	}
+	proverSHA, err := fileSHA256(proverPath)
+	if err != nil {
+		t.Fatalf("hash prover report: %v", err)
+	}
+	chainSHA, err := fileSHA256(chainPath)
+	if err != nil {
+		t.Fatalf("hash chain report: %v", err)
+	}
+
+	rep, err := buildAggregateReport(
+		[]string{proverPath, chainPath},
+		"2026-06-12T00:20:00Z",
+		"abc123",
+		false,
+		"public_claim",
+		environment{MachineProfile: "m5-pro-reference", CPUGovernor: "high-power", MemoryGiB: "48"},
+	)
+	if err != nil {
+		t.Fatalf("build aggregate report: %v", err)
+	}
+	if rep.ResultFamily != "public-capacity" {
+		t.Fatalf("unexpected result family %q", rep.ResultFamily)
+	}
+	if rep.ClaimProfile.Eligible {
+		t.Fatalf("aggregate report should stay informational until per-claim evidence schema is implemented")
+	}
+	if !containsString(rep.ClaimProfile.ClaimTypes, "prover_rps") || !containsString(rep.ClaimProfile.ClaimTypes, "chain_tps") {
+		t.Fatalf("aggregate claim types missing: %+v", rep.ClaimProfile.ClaimTypes)
+	}
+	if !containsString(rep.ClaimProfile.BlockingReasons, "public-capacity aggregate report is informational until per-claim evidence schema is implemented") {
+		t.Fatalf("expected aggregate informational blocker, got %+v", rep.ClaimProfile.BlockingReasons)
+	}
+	if len(rep.ComponentReports) != 2 {
+		t.Fatalf("expected two component reports, got %+v", rep.ComponentReports)
+	}
+	if rep.ComponentReports[0].SHA256 != proverSHA || rep.ComponentReports[1].SHA256 != chainSHA {
+		t.Fatalf("component hashes not retained: %+v", rep.ComponentReports)
+	}
+	if rep.SourceFileSHA256[proverPath] != proverSHA || rep.SourceFileSHA256[chainPath] != chainSHA {
+		t.Fatalf("aggregate source hashes not retained: %+v", rep.SourceFileSHA256)
+	}
+	if len(rep.Benchmarks) != len(prover.Benchmarks)+len(chain.Benchmarks) {
+		t.Fatalf("aggregate benchmark rows missing: got %d", len(rep.Benchmarks))
+	}
+
+	md := renderMarkdown(rep)
+	if !strings.Contains(md, "## Component Reports") || !strings.Contains(md, "| `"+proverPath+"` | `privacy-proverd-load` | `prover_rps` | `true` |") {
+		t.Fatalf("component report markdown missing:\n%s", md)
+	}
+}
+
 func TestSummarizeFees(t *testing.T) {
 	success := true
 	failed := false
