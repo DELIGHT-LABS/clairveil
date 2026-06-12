@@ -10,6 +10,7 @@ build:
 	go build ./cmd/clairveil-setup
 	go build ./cmd/clairveil-verify
 	go build ./cmd/clairveil-proverd
+	go build ./cmd/clairveil-benchreport
 
 .PHONY: install
 install: build
@@ -34,6 +35,10 @@ privacy-e2e-smoke:
 .PHONY: dapp-local
 dapp-local:
 	./scripts/dapp-local.sh
+
+.PHONY: privacy-bench
+privacy-bench:
+	./scripts/privacy-bench.sh
 
 .PHONY: examples
 examples:
