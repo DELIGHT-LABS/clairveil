@@ -103,7 +103,7 @@ Operations baseline:
 - timeout and concurrency limit
 - redacted logging
 - artifact directory mounted read-only
-- `/healthz` and `/readyz` internal-only
+- `/healthz`, `/readyz`, and `/debug/vars` internal-only
 
 Use [clairveil-proverd-remote-production-profile.md](clairveil-proverd-remote-production-profile.md) as the detailed baseline.
 

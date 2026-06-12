@@ -101,7 +101,7 @@ Remote prover는 privacy-sensitive trusted component입니다.
 - timeout과 concurrency limit
 - redacted logging
 - artifact directory read-only mount
-- `/healthz`, `/readyz` internal-only
+- `/healthz`, `/readyz`, `/debug/vars` internal-only
 
 자세한 내용은 [clairveil-proverd-remote-production-profile-kr.md](clairveil-proverd-remote-production-profile-kr.md)를 기준으로 합니다.
 
