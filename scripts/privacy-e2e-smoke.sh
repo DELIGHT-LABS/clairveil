@@ -13,6 +13,8 @@ abci_port="${ABCI_PORT:-26658}"
 grpc_port="${GRPC_PORT:-9090}"
 api_port="${API_PORT:-1317}"
 pprof_port="${PPROF_PORT:-6060}"
+tx_wait_attempts="${TX_WAIT_ATTEMPTS:-60}"
+tx_wait_sleep_seconds="${TX_WAIT_SLEEP_SECONDS:-2}"
 node="tcp://127.0.0.1:${rpc_port}"
 
 if [[ -n "${CLAIRVEILD_BIN:-}" ]]; then
@@ -52,12 +54,17 @@ wait_tx() {
 	local tx_hash="$1"
 	local query_file="${2:-}"
 	local tx_json
-	until tx_json="$(run query tx "$tx_hash" --node "$node" --output json 2>/dev/null)"; do
-		sleep 2
+	for _ in $(seq 1 "$tx_wait_attempts"); do
+		if tx_json="$(run query tx "$tx_hash" --node "$node" --output json 2>/dev/null)"; then
+			if [[ -n "$query_file" ]]; then
+				printf '%s\n' "$tx_json" >"$query_file"
+			fi
+			return 0
+		fi
+		sleep "$tx_wait_sleep_seconds"
 	done
-	if [[ -n "$query_file" ]]; then
-		printf '%s\n' "$tx_json" >"$query_file"
-	fi
+	echo "timed out waiting for tx inclusion: $tx_hash" >&2
+	return 1
 }
 
 write_txhash() {

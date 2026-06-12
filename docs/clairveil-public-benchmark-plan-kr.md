@@ -272,13 +272,76 @@ JSON에는 최소한 아래 필드를 포함합니다.
 ```json
 {
   "schema_version": "v1",
+  "generated_at": "",
+  "result_family": "privacy-circuits",
+  "source_files": [],
+  "source_file_sha256": {},
+  "source_file_issues": [],
+  "run_started_at": "",
+  "run_ended_at": "",
   "commit": "",
+  "dirty": false,
   "active_set_id": "privacy-accounting-v2",
+  "claim_profile": {
+    "run_profile": "smoke",
+    "claim_types": [],
+    "eligible": false,
+    "blocking_reasons": ["run_profile is smoke"]
+  },
+  "claim_evidence": {
+    "steady_state_seconds": 0,
+    "load_profile": "",
+    "preflight_mode": "",
+    "auth_enabled": "",
+    "instance_profile": "",
+    "prover_config_file": "",
+    "prover_config_sha256": "",
+    "chain_config": "",
+    "chain_config_file": "",
+    "chain_config_sha256": "",
+    "reserve_invariant": "",
+    "latency_p99_slo_ms": 0,
+    "inclusion_p95_slo_ms": 0,
+    "rss_stable": "",
+    "saturation_profile": "",
+    "latency_mode": "",
+    "cold_warm_separated": "",
+    "browser_matrix": "",
+    "browser_adapter_ready": "",
+    "browser_adapter_version": "",
+    "browser_adapter_file": "",
+    "browser_adapter_sha256": "",
+    "remote_topology": "",
+    "linked_prover_report_file": "",
+    "linked_prover_report_sha256": ""
+  },
+  "environment": {
+    "machine_profile": "",
+    "cpu_governor": "",
+    "memory_gib": "",
+    "os": "",
+    "arch": "",
+    "cpu": ""
+  },
+  "artifact_set": {
+    "active_set_id": "privacy-accounting-v2",
+    "manifest_active_set_id": "privacy-accounting-v2",
+    "manifest_sha256": "",
+    "descriptor_complete": false,
+    "descriptor_issues": [],
+    "artifact_files_verified": false,
+    "artifact_file_issues": [],
+    "artifact_descriptors": [],
+    "artifact_sha256_by_file": {}
+  },
   "go_version": "",
   "gnark_version": "",
+  "gnark_crypto_version": "",
   "os": "",
   "arch": "",
   "cpu": "",
+  "manifest_path": "",
+  "manifest_sha256": "",
   "fee_model": {
     "fee_denom": "",
     "min_gas_price": "",
@@ -291,16 +354,20 @@ JSON에는 최소한 아래 필드를 포함합니다.
 
 Markdown 결과는 공개 설명용으로 사용하고, JSON은 CI trend와 downstream 재현용으로 사용합니다.
 
-## 5. 현재 smoke baseline
+`benchmarks/*/latest.json`의 `metric_summaries`는 Go benchmark 기본 metric(`ns/op`, `B/op`, `allocs/op`)뿐 아니라 future load generator 또는 `b.ReportMetric`이 내는 `proofs/sec`, `errors/op`, `tx/sec`, `inclusion_latency_ms` 같은 custom metric도 보존해야 합니다. Public capacity claim용 TPS/RPS/latency 결과는 raw Go benchmark text를 ad-hoc parsing한 값이 아니라 `clairveil-benchreport -benchmark-summaries`로 받는 structured JSON input 또는 `metric_summaries`를 통해 생성합니다. Public claim gate는 claim type별 필수 metric, `claim_evidence`, public-claim용 `result_family`, source file hash provenance, run window, artifact descriptor completeness, 실제 artifact file checksum verification이 없으면 `claim_profile.eligible=false`로 남겨야 합니다. Prover RPS claim은 `prover_config_file`과 `prover_config_sha256`, Chain TPS claim은 `chain_config_file`과 `chain_config_sha256`을 evidence로 포함해야 합니다. User latency의 browser/WASM 결과는 `browser_adapter_ready=true`, adapter version, adapter file/SHA-256을 포함해야 합니다. User latency의 remote prover 결과는 remote topology, instance profile, prover config file/SHA-256, linked prover RPS report file/SHA-256을 포함해야 하며, inclusion latency 결과는 chain config file/SHA-256과 inclusion p95 SLO를 함께 포함해야 합니다. Config/evidence SHA-256은 64-hex 값이어야 하며, config/evidence file을 넘기면 report generator가 hash를 계산하고 `source_files`에도 자동 포함합니다. Evidence field의 SHA-256 값은 `source_file_sha256`의 해당 file hash와 일치해야 합니다. `run_ended_at - run_started_at`은 `steady_state_seconds` 이상이어야 합니다. `clairveil-benchreport`는 실제 metric 입력인 `-input`, `-benchmark-summaries`, `-tx-metrics`와 evidence file을 `source_files`에 자동 포함하고 SHA-256을 계산합니다. Structured summary JSON은 `samples > 0`이어야 하고 각 metric마다 `mean`, `p50`, `p95`, `p99`, `min`, `max`를 모두 포함해야 하며, 각 stat은 `null`이 아닌 numeric JSON value여야 합니다. User latency public claim은 flow/mode/cold-warm bucket별 benchmark summary가 최소 100 samples 이상이어야 합니다. Public claim에서 positive metric은 `mean/p50/p95/p99/min/max`가 모두 양수여야 하고, `errors/op`, `error_rate`, `failed_tx_rate`, `timeout_rate`, `cancel_rate`는 0 이상이고 SLO threshold 이하이어야 합니다. Chain TPS public claim은 failure SLO 판정을 위해 `failed_tx_rate`를 반드시 포함해야 합니다. Markdown report는 Go benchmark 기본 table과 structured custom metric table을 분리해, structured-only metric이 `0ns/op` row처럼 보이지 않게 해야 합니다.
 
-아래 숫자는 공개 throughput 주장이 아니라 remediation 후 benchmark가 동작하는지 확인한 smoke baseline입니다.
+추가로 public claim gate는 artifact manifest checksum도 64-hex SHA-256으로 검증합니다. Claim type별 필수 metric은 같은 benchmark summary row/bucket 안에 함께 있어야 합니다. User latency claim은 prepare latency, proof latency, time-to-submit latency, submit-ready 또는 total latency, timeout/cancel rate를 모두 요구하며, sample floor는 user latency row에만 적용하고 prover-only `proof_latency_ms` row에는 적용하지 않습니다. Remote prover user latency claim의 linked prover report는 단순 hash 첨부가 아니라 eligible `prover_rps` public claim이어야 하며, instance profile, prover config SHA-256, active set, artifact manifest SHA-256이 현재 report와 일치해야 합니다. `public-capacity` multi-claim report는 C4의 per-claim/per-row evidence schema가 구현되기 전까지 public eligible로 승격하지 않습니다.
+
+## 5. 초기 smoke baseline 기록
+
+아래 숫자는 공개 throughput 주장이 아니라 remediation 직후 benchmark harness가 동작하는지 확인했던 historical smoke sample입니다. 최신 smoke/reference 결과의 source of truth는 `make privacy-bench`, `make privacy-proverd-bench`, `make privacy-bench-localnet`가 생성하는 `benchmarks/*/latest.json`과 `latest.md`입니다.
 
 환경:
 
 - machine: Apple M5 Pro
 - arch: arm64
 - benchmark mode: `-benchtime=1x`
-- source commit: `4c162c6`
+- source commit: `4c162c6` (historical sample)
 - active set id: `privacy-accounting-v2`
 
 | Benchmark | Smoke latency | 단순 역수 |
@@ -348,7 +415,7 @@ Markdown 결과는 공개 설명용으로 사용하고, JSON은 CI trend와 down
 - benchmark JSON에 환경 메타데이터가 자동 기록됨
 - dirty worktree일 경우 결과에 `dirty: true`가 표시됨
 
-현재 상태: 완료. `cmd/clairveil-benchreport`가 commit, dirty state, Go/gnark/gnark-crypto version, OS/arch, CPU, active set id, optional manifest checksum을 기록합니다. `make privacy-bench`, `make privacy-proverd-bench`, `make privacy-bench-localnet`는 output 파일을 만들기 전에 source commit과 dirty state를 캡처하고, `benchmarks/` 결과물을 source dirty 계산에서 제외해 report artifact 생성 자체가 `dirty: true`로 오인되지 않게 합니다.
+현재 상태: 완료. `cmd/clairveil-benchreport`가 commit, dirty state, Go/gnark/gnark-crypto version, OS/arch, CPU, active set id, optional manifest checksum, artifact descriptor completeness, 실제 artifact file checksum verification, result family/source files/run window를 기록합니다. 실제 metric 입력인 `-input`, `-benchmark-summaries`, `-tx-metrics`는 source provenance에 자동 포함됩니다. `make privacy-bench`, `make privacy-proverd-bench`, `make privacy-bench-localnet`는 output 파일을 만들기 전에 source commit과 dirty state를 캡처하고, generated benchmark result family(`benchmarks/privacy-circuits`, `benchmarks/privacy-proverd`, `benchmarks/privacy-localnet` 등)의 untracked 생성물만 source dirty 계산에서 제외해 report artifact 생성 자체가 `dirty: true`로 오인되지 않게 합니다. `benchmarks/` 아래의 tracked baseline 또는 문서 변경은 dirty로 잡혀야 합니다.
 
 ### Phase B2: report generator 추가
 
@@ -361,7 +428,7 @@ Markdown 결과는 공개 설명용으로 사용하고, JSON은 CI trend와 down
 - `make privacy-bench` 또는 동등한 명령으로 `latest.json`, `latest.md` 생성
 - Markdown 결과가 공개 문서에 그대로 붙일 수 있는 형태임
 
-현재 상태: 완료. `scripts/privacy-bench.sh`가 raw output, optional benchstat output, JSON/Markdown report를 생성합니다.
+현재 상태: 완료. `scripts/privacy-bench.sh`가 raw output, optional benchstat output, JSON/Markdown report를 생성합니다. Markdown report는 Go `ns/op` row와 custom metric summary를 별도 표로 출력합니다.
 
 ### Phase B3: prover HTTP benchmark 추가
 
