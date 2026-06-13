@@ -1,519 +1,184 @@
-# Clairveil Public Capacity Benchmark 후속 계획
+# Clairveil Public Capacity Benchmark 완료 계획
 
-이 문서는 현재 `make privacy-bench`, `make privacy-proverd-bench`, `make privacy-bench-localnet`가 제공하는 smoke/reference benchmark를 public capacity claim에 사용할 수 있는 수준으로 확장하기 위한 후속 계획입니다.
+이 문서는 `private/benchmark` 브랜치에서 완료한 public capacity benchmark 하네스와 public claim gate 보강 범위를 기록합니다.
 
-목표는 아래 세 가지 claim을 분리해서 말할 수 있게 하는 것입니다.
+남은 운영형 public capacity claim 실행 계획은 별도 문서인 `docs/clairveil-public-capacity-claim-execution-plan-kr.md`에서 관리합니다. 이 문서는 "이번에 완료한 구현 범위"만 다룹니다.
 
-1. Chain TPS: 특정 localnet 또는 staging chain config에서 shielded tx가 end-to-end로 처리되는 지속 처리량.
-2. Prover throughput: 운영형 `clairveil-proverd` 배포가 성공적으로 생성할 수 있는 proofs/sec 또는 requests/sec.
-3. User perceived latency: wallet 사용자가 proof 생성, remote proving, broadcast, inclusion까지 경험하는 지연 시간.
+## 1. 목표
 
-## 1. Claim 원칙
+이번 작업의 목표는 smoke/reference benchmark 결과가 곧바로 공개 TPS/RPS/latency 주장으로 오해되지 않도록, benchmark 결과 생성과 public claim 승격 사이에 명확한 gate를 두는 것이었습니다.
 
-- Circuit proving benchmark의 단순 역수를 chain TPS로 말하지 않습니다.
+완료 범위는 아래 세 가지입니다.
+
+1. Prover RPS, Chain TPS, User latency claim을 machine-readable하게 분리합니다.
+2. smoke/reference 결과는 기본적으로 public claim eligible이 되지 않게 합니다.
+3. public claim에 필요한 evidence, source hash, artifact checksum, metric completeness가 빠지면 report에 blocking reason을 남깁니다.
+
+## 2. 완료된 Claim 원칙
+
+- Circuit proving benchmark의 단순 역수를 Chain TPS로 말하지 않습니다.
 - In-process `httptest` transport benchmark를 운영형 prover RPS로 말하지 않습니다.
 - Localnet smoke flow의 gas/fee 결과를 sustained TPS로 말하지 않습니다.
-- User latency는 native Go proof latency, browser/WASM proof latency, remote prover latency, broadcast/inclusion latency를 분리해서 기록합니다.
-- 공개 숫자는 source commit, artifact manifest checksum, dirty state, machine profile, chain config, prover config, load profile을 함께 공개할 때만 사용합니다.
-
-## 2. Public Claim Gate
-
-아래 gate를 모두 통과한 결과만 public capacity claim으로 사용할 수 있습니다.
-
-| Claim | 필수 gate | 공개 가능한 표현 |
-| --- | --- | --- |
-| Chain TPS | batch localnet/staging runner, fixed chain config, 10분 이상 steady-state, reserve invariant true, failed/retried tx 분리, windowed throughput 분포 기록 | "Config A에서 shielded transfer sustained TPS는 window avg X, p5 Y, min Z입니다. p95 inclusion latency는 L입니다." |
-| Prover RPS | 실제 `clairveil-proverd` 프로세스, external client load, concurrency sweep, p50/p95/p99, error rate, CPU/RSS 기록 | "Instance profile B에서 transfer proof RPS는 X이고 p95 latency는 Y입니다." |
-| User latency | wallet flow별 cold/warm run, local/remote/browser mode 분리, broadcast/inclusion 포함 여부 명시 | "Desktop Chrome warm proof 기준 transfer submit-ready p95는 X ms입니다." |
-
-Public claim 결과에는 반드시 "reference environment" 또는 "production-like environment"를 붙입니다. production capacity라고 말하려면 production과 같은 instance class, artifact set, auth/rate-limit 설정, chain block config에서 측정해야 합니다.
+- User latency는 native, remote, browser/WASM, broadcast/inclusion 구간을 분리해서 기록할 수 있게 했습니다.
+- 공개 숫자는 source commit, artifact manifest checksum, dirty state, machine profile, chain config, prover config, load profile이 함께 있을 때만 eligible이 될 수 있습니다.
 
 ## 3. Phase C0: Claim Schema와 Report Gate
 
-목적: benchmark 결과가 public claim으로 승격 가능한지 machine-readable하게 판단합니다.
+### 완료한 내용
 
-구현 항목:
-
-- `claim_profile` section을 benchmark JSON에 추가합니다.
-- `claim_evidence` section을 benchmark JSON에 추가합니다.
-- claim type을 명시합니다: `chain_tps`, `prover_rps`, `user_latency`.
-- run profile을 명시합니다: `smoke`, `reference`, `production_like`, `public_claim`.
-- report generator가 public claim에 필요한 metric, artifact descriptor, evidence 필드가 없으면 `claim_profile.eligible=false`로 표시합니다.
-- public claim용 result family를 제한합니다:
+- Benchmark report에 `claim_profile`과 `claim_evidence`를 추가했습니다.
+- Claim type을 `chain_tps`, `prover_rps`, `user_latency`로 분리했습니다.
+- Run profile을 `smoke`, `reference`, `production_like`, `public_claim`으로 분리했습니다.
+- Public claim용 result family를 제한했습니다.
   - `prover_rps`: `privacy-proverd-load` 또는 `public-capacity`
   - `chain_tps`: `privacy-localnet-tps` 또는 `public-capacity`
   - `user_latency`: `privacy-user-latency` 또는 `public-capacity`
-- `public-capacity`에서 claim type을 둘 이상 결합하는 리포트는 `claim_evidence_by_type`으로 claim별 evidence를 보존해야 합니다. per-claim evidence가 없는 수동 multi-claim report는 `claim_profile.eligible=false`로 차단합니다.
-- source files, source file SHA-256, run window(`run_started_at`, `run_ended_at`)를 report에 포함합니다.
-- report generator는 사용자가 넘긴 `-source-files`뿐 아니라 실제 metric 입력인 `-input`, `-benchmark-summaries`, `-tx-metrics` 경로를 `source_files`에 자동 포함하고 SHA-256을 계산합니다. 따라서 public claim은 사람이 적은 별도 provenance 파일만으로 실제 측정 입력을 대체할 수 없습니다.
-- SLO 판정에 필요한 threshold/evidence를 report에 포함합니다:
-  - `latency_p99_slo_ms`
-  - `inclusion_p95_slo_ms`
-  - `rss_stable`
-  - `saturation_profile`
-  - `saturation_profile_file`
-  - `saturation_profile_sha256`
-  - `throughput_window_seconds`
-  - `reserve_snapshot_before_file`
-  - `reserve_snapshot_before_sha256`
-  - `reserve_snapshot_after_file`
-  - `reserve_snapshot_after_sha256`
-  - `prover_config_file`
-  - `prover_config_sha256`
-  - `chain_config_file`
-  - `chain_config_sha256`
-  - `browser_adapter_ready`
-  - `browser_adapter_version`
-  - `browser_adapter_file`
-  - `browser_adapter_sha256`
-  - `linked_prover_report_file`
-  - `linked_prover_report_sha256`
-- Public `prover_rps`와 `chain_tps` claim은 반드시 `-claim-prover-config-file`/`-claim-chain-config-file`로 실제 config file을 넘겨 report generator가 hash를 계산하게 합니다. `prover_config_sha256`와 `chain_config_sha256`는 64-hex SHA-256이어야 하며, file과 explicit hash를 함께 넘기면 두 값이 일치해야 합니다.
-- Browser user latency claim은 `browser_adapter_ready=true`, browser adapter version, browser adapter file, browser adapter SHA-256을 함께 공개해야 합니다. Remote prover user latency claim은 remote topology, instance profile, prover config file/SHA-256, linked prover RPS report file/SHA-256을 함께 공개해야 합니다. Linked prover report는 단순 파일 첨부가 아니라 `public_claim`/`prover_rps` eligible report여야 하고, user latency report와 instance profile, prover config SHA-256, active set, artifact manifest SHA-256이 일치해야 합니다.
-- Evidence file로 참조된 prover config, chain config, browser adapter, linked prover report는 `source_files`와 `source_file_sha256`에도 포함되어야 하며, evidence field의 SHA-256 값과 `source_file_sha256` 값이 일치해야 합니다.
-- artifact descriptor completeness뿐 아니라 실제 artifact file checksum verification을 public claim gate에 포함합니다.
-- `errors/op`, `error_rate`, `failed_tx_rate`, `timeout_rate`, `cancel_rate`는 0 이상이어야 하며 public claim SLO threshold 이하이어야 합니다. 음수 rate는 "좋은 값"으로 해석하지 않고 invalid metric으로 차단합니다.
-- Chain TPS public claim에서 failed tx count/reason은 보조 진단값이고, failure SLO 판정에는 반드시 `failed_tx_rate`를 포함해야 합니다.
-- Markdown report에 `claim_eligible`, blocking reason, claim evidence, artifact verification status, custom capacity metrics를 출력합니다.
-- Markdown report의 기본 Go benchmark table은 `ns/op`, `B/op`, `allocs/op` 기반 row에만 사용하고, structured capacity metric은 `Custom Metrics` table에 분리해 출력합니다.
+- `public-capacity` aggregate report에서 claim type이 둘 이상이면 `claim_evidence_by_type`을 요구합니다.
+- `-input`, `-benchmark-summaries`, `-tx-metrics`, evidence file을 `source_files`에 자동 포함하고 SHA-256을 계산합니다.
+- Evidence file의 SHA-256과 `source_file_sha256` 값이 다르면 public claim을 차단합니다.
+- Artifact descriptor completeness와 실제 artifact file checksum verification을 public claim gate에 포함했습니다.
+- `errors/op`, `error_rate`, `failed_tx_rate`, `timeout_rate`, `cancel_rate`는 0 이상이고 SLO 이하이어야 합니다.
+- Positive metric은 `mean`, `p50`, `p95`, `p99`, `min`, `max`가 모두 양수여야 합니다.
+- Chain TPS public claim은 `failed_tx_rate`를 반드시 포함해야 합니다.
+- Markdown report에서 Go benchmark 기본 table과 structured custom metric table을 분리했습니다.
+- Ineligible component는 aggregate report의 `Blocked Components` 섹션에 표시합니다.
 
-필수 JSON 필드:
-
-```json
-{
-  "claim_profile": {
-    "run_profile": "public_claim",
-    "claim_types": ["prover_rps"],
-    "eligible": false,
-    "blocking_reasons": []
-  },
-  "result_family": "privacy-proverd-load",
-  "source_files": [
-    "benchmarks/privacy-proverd-load/load-summary.json",
-    "benchmarks/privacy-proverd-load/prover-config.json"
-  ],
-  "source_file_sha256": {
-    "benchmarks/privacy-proverd-load/load-summary.json": "",
-    "benchmarks/privacy-proverd-load/prover-config.json": ""
-  },
-  "source_file_issues": [],
-  "run_started_at": "2026-06-12T00:00:00Z",
-  "run_ended_at": "2026-06-12T00:10:30Z",
-  "claim_evidence": {
-    "steady_state_seconds": 600,
-    "load_profile": "",
-    "preflight_mode": "strict",
-    "auth_enabled": "true",
-    "instance_profile": "",
-    "prover_config_file": "",
-    "prover_config_sha256": "",
-    "chain_config": "",
-    "chain_config_file": "",
-    "chain_config_sha256": "",
-    "reserve_invariant": "true",
-    "latency_p99_slo_ms": 0,
-    "inclusion_p95_slo_ms": 0,
-    "rss_stable": "",
-    "saturation_profile": "",
-    "saturation_profile_file": "",
-    "saturation_profile_sha256": "",
-    "throughput_window_seconds": 0,
-    "reserve_snapshot_before_file": "",
-    "reserve_snapshot_before_sha256": "",
-    "reserve_snapshot_after_file": "",
-    "reserve_snapshot_after_sha256": "",
-    "latency_mode": "",
-    "cold_warm_separated": "",
-    "browser_matrix": "",
-    "browser_adapter_ready": "",
-    "browser_adapter_version": "",
-    "browser_adapter_file": "",
-    "browser_adapter_sha256": "",
-    "remote_topology": "",
-    "linked_prover_report_file": "",
-    "linked_prover_report_sha256": ""
-  },
-  "environment": {
-    "machine_profile": "",
-    "cpu_governor": "",
-    "memory_gib": "",
-    "os": "",
-    "arch": ""
-  },
-  "artifact_set": {
-    "active_set_id": "",
-    "manifest_active_set_id": "",
-    "manifest_sha256": "",
-    "descriptor_complete": false,
-    "descriptor_issues": [],
-    "artifact_files_verified": false,
-    "artifact_file_issues": [],
-    "artifact_descriptors": [],
-    "artifact_sha256_by_file": {}
-  },
-  "benchmarks": [
-    {
-      "name": "ProverLoadTransferC8",
-      "samples": 600,
-      "metric_kind": "prover_load",
-      "claim_type": "prover_rps",
-      "load_profile": "transfer_only",
-      "route": "transfer",
-      "concurrency": 8,
-      "warmup_seconds": 60,
-      "duration_seconds": 600,
-      "metric_summaries": {
-        "proofs/sec": {"mean": 0, "p50": 0, "p95": 0, "p99": 0, "min": 0, "max": 0},
-        "latency_ms": {"mean": 0, "p50": 0, "p95": 0, "p99": 0, "min": 0, "max": 0},
-        "error_rate": {"mean": 0, "p50": 0, "p95": 0, "p99": 0, "min": 0, "max": 0},
-        "cpu_percent": {"mean": 0, "p50": 0, "p95": 0, "p99": 0, "min": 0, "max": 0},
-        "max_rss_bytes": {"mean": 0, "p50": 0, "p95": 0, "p99": 0, "min": 0, "max": 0}
-      }
-    },
-    {
-      "name": "ProverLoadTransferC16",
-      "samples": 600,
-      "metric_kind": "prover_load",
-      "claim_type": "prover_rps",
-      "load_profile": "transfer_only",
-      "route": "transfer",
-      "concurrency": 16,
-      "warmup_seconds": 60,
-      "duration_seconds": 600,
-      "metric_summaries": {
-        "proofs/sec": {"mean": 0, "p50": 0, "p95": 0, "p99": 0, "min": 0, "max": 0},
-        "latency_ms": {"mean": 0, "p50": 0, "p95": 0, "p99": 0, "min": 0, "max": 0},
-        "error_rate": {"mean": 0, "p50": 0, "p95": 0, "p99": 0, "min": 0, "max": 0},
-        "cpu_percent": {"mean": 0, "p50": 0, "p95": 0, "p99": 0, "min": 0, "max": 0},
-        "max_rss_bytes": {"mean": 0, "p50": 0, "p95": 0, "p99": 0, "min": 0, "max": 0}
-      }
-    }
-  ]
-}
-```
-
-완료 기준:
+### 완료 기준
 
 - smoke 결과는 자동으로 `claim_profile.eligible=false`가 됩니다.
-- public claim 결과는 필수 metadata, result family/source hash provenance/run window, claim evidence, 64-hex artifact manifest checksum, artifact descriptor completeness, artifact file checksum verification, claim type별 metric 누락 또는 SLO 위반 시 report generation이 실패하거나 blocking reason을 기록합니다. `run_ended_at - run_started_at`은 `steady_state_seconds` 이상이어야 합니다.
-- raw Go benchmark text parser는 `ns/op`, `B/op`, `allocs/op` 외의 custom metric을 `metric_summaries`에 보존합니다. C1/C2/C3 load generator는 가능하면 raw text 대신 structured JSON을 직접 출력하고, `clairveil-benchreport -benchmark-summaries` 또는 C4 aggregator가 그 JSON을 source of truth로 병합합니다. Structured summary JSON은 `samples > 0`이어야 하고 각 metric마다 `mean`, `p50`, `p95`, `p99`, `min`, `max`를 모두 포함해야 하며, 각 stat은 `null`이 아닌 numeric JSON value여야 합니다. Public claim용 structured row는 `claim_type`을 반드시 명시해야 하며, claim type별 필수 metric은 같은 benchmark summary row/bucket 안에 함께 있어야 합니다. Prover RPS row는 `load_profile`, `route`, `concurrency`, `duration_seconds`를 포함해야 하며 public claim에는 최소 2개 이상의 concurrency bucket이 필요합니다. Chain TPS row는 `load_profile`, `duration_seconds`, `target_tx_per_sec`를 포함해야 하며 public claim에는 최소 2개 이상의 target tx/sec bucket이 필요합니다. User latency row는 `flow_profile`, `latency_mode`, `cold_warm`을 포함해야 하며, flow/mode/cold-warm bucket별 user latency benchmark summary가 최소 100 samples 이상이어야 합니다. Prover-only `proof_latency_ms` row는 user latency sample floor 대상으로 보지 않습니다.
-- public claim gate는 실제 입력 파일의 hash provenance 누락, evidence file의 `source_files`/`source_file_sha256` 누락 또는 SHA 불일치, prover/chain saturation evidence file 누락, chain reserve snapshot before/after file 누락, throughput window 누락, malformed manifest checksum, remote latency linked prover report 의미 불일치, `samples <= 0`, user latency sample 부족, positive metric의 non-positive `mean/p50/p95/p99/min/max`, rate/error metric 음수, rate/error metric SLO 초과를 regression test로 고정합니다.
+- public claim 결과는 필수 metadata, result family, source hash provenance, run window, claim evidence, 64-hex artifact manifest checksum, artifact descriptor completeness, artifact file checksum verification을 요구합니다.
+- Structured summary JSON은 `samples > 0`이어야 하고, 각 metric은 `mean`, `p50`, `p95`, `p99`, `min`, `max`를 모두 포함해야 합니다.
+- Prover RPS row는 `load_profile`, `route`, `concurrency`, `duration_seconds`를 포함해야 합니다.
+- Chain TPS row는 `load_profile`, `duration_seconds`, `target_tx_per_sec`를 포함해야 합니다.
+- User latency row는 `flow_profile`, `latency_mode`, `cold_warm`을 포함해야 합니다.
+- User latency public claim은 flow/mode/cold-warm bucket별 최소 100 samples 이상이어야 합니다.
 
-## 4. Phase C1: 운영형 `clairveil-proverd` External Load Benchmark
+## 4. Phase C1: External `clairveil-proverd` Load Harness
 
-목적: 실제 daemon/process 형태의 remote prover capacity를 측정합니다.
+### 완료한 내용
 
-`make privacy-proverd-bench`는 `httptest` 기반 in-process transport benchmark이고, 운영형 처리량 측정은 별도 프로세스로 실행 중인 실제 `clairveil-proverd`에 external HTTP client 부하를 거는 `make privacy-proverd-load-bench` 경로를 사용합니다.
+- `cmd/clairveil-proverload`를 추가해 이미 실행 중인 external `clairveil-proverd`에 HTTP POST load를 걸 수 있게 했습니다.
+- `scripts/privacy-proverd-load-bench.sh`와 `make privacy-proverd-load-bench` 경로를 추가했습니다.
+- 기본 load input은 실제 circuit witness를 만족하는 generated transfer/withdraw prover request입니다.
+- `PROVERLOAD_FIXTURE_BUNDLE`, `PROVERLOAD_TRANSFER_REQUEST`, `PROVERLOAD_WITHDRAW_REQUEST`를 지정하면 명시 입력이 generated request를 override합니다.
+- `transfer_only`, `withdraw_only`, `mixed_80_20` profile을 지원합니다.
+- Concurrency list, warmup, steady-state duration, request timeout, bearer token을 지원합니다.
+- 각 route를 measured bucket 전에 preflight합니다.
+- Preflight 실패 시 measured bucket을 실행하지 않고 non-zero exit로 종료합니다.
+- Preflight 실패 메시지에는 route, status code, response body preview가 포함됩니다.
+- `clairveil-proverd`의 `/debug/vars`를 샘플링해 CPU/RSS/heap/goroutine metric을 수집합니다.
+- Bucket duration은 새 request scheduling 중단 기준으로만 사용합니다. 이미 시작된 request는 client timeout 안에서 완료시켜 결과에 포함합니다.
 
-현재 구현 상태:
+### 수정한 문제
 
-- `cmd/clairveil-proverload`가 이미 실행 중인 external `clairveil-proverd`에 HTTP POST load를 걸고 structured benchmark summary JSON을 생성합니다.
-- `make privacy-proverd-load-bench` 또는 `scripts/privacy-proverd-load-bench.sh`가 `PROVERD_URL`을 받아 `benchmarks/privacy-proverd-load` report를 생성합니다.
-- load generator는 기본적으로 실제 circuit witness를 만족하는 generated transfer/withdraw prover request를 생성합니다. `PROVERLOAD_FIXTURE_BUNDLE`, `PROVERLOAD_TRANSFER_REQUEST`, `PROVERLOAD_WITHDRAW_REQUEST`를 지정하면 명시 입력이 기본 generated request를 override합니다.
-- load generator는 fixture bundle 또는 별도 request JSON file을 사용하고, `transfer_only`, `withdraw_only`, `mixed_80_20` profile, concurrency list, warmup, steady-state duration, bearer token을 지원합니다.
-- 생성 row는 `claim_type=prover_rps`, `load_profile`, `route`, `concurrency`, `warmup_seconds`, `duration_seconds` metadata와 `requests/sec`, `latency_ms`, `error_rate`, `timeout_rate`, request/response byte metric을 포함합니다.
-- `clairveil-proverd`는 `/debug/vars` JSON endpoint로 goroutine, heap/sys memory, RSS, max RSS, process CPU seconds를 노출합니다.
-- `cmd/clairveil-proverload`는 measured bucket 동안 `-telemetry-interval` 주기로 `/debug/vars`를 샘플링하고, `cpu_percent`, `rss_bytes`, `max_rss_bytes`, heap/goroutine metric을 같은 `prover_rps` structured row에 포함합니다. Public claim에서는 이 row metric과 saturation profile evidence file을 함께 제출합니다.
-- `cmd/clairveil-proverload`는 steady-state duration을 새 요청 스케줄 중단 기준으로만 사용하고, 이미 시작된 request는 client timeout 안에서 완료시켜 결과에 포함합니다. 따라서 bucket 종료 시점의 정상 in-flight proof가 context deadline error로 집계되지 않습니다.
-- 2026-06-13 이전 smoke run에서 기본 `privacy_prover_example_bundle.json`은 HTTP contract fixture로는 유효했지만 실제 JoinSplit witness로는 유효하지 않아 external `clairveil-proverd`가 `constraint #32267 is not satisfied`로 모든 transfer request를 거절했습니다. 이 결과는 운영 prover 처리량이 아니라 invalid load fixture를 의미합니다.
-- 2026-06-13 보강 후 기본 generated request 경로는 JoinSplit/Spend Groth16 proof 생성 통합 테스트와 external `clairveil-proverd` smoke에서 error_rate 0으로 검증됐습니다.
+이전 smoke run에서 `privacy_prover_example_bundle.json`은 HTTP schema fixture로는 유효했지만 실제 JoinSplit witness로는 유효하지 않아 `constraint #32267 is not satisfied`로 실패했습니다.
 
-구현 항목:
+이번 작업 후 기본 generated request 경로는 아래 두 레벨에서 검증됩니다.
 
-- `scripts/privacy-proverd-load-bench.sh` 추가
-- `cmd/clairveil-proverload` 또는 동등한 Go load generator 추가
-- `clairveil-proverd`를 strict preflight, fixed artifact dir, optional bearer token으로 실행
-- real prover-valid prepared transfer/withdraw request pool을 N개 생성합니다. HTTP schema conformance fixture는 `mocked` 또는 `contract` mode에서만 사용하고, external proverd load의 기본값은 실제 circuit witness를 만족하는 fixture여야 합니다.
-- load 시작 전 각 route별 단일 request preflight를 수행합니다. preflight에서 proof generation이 실패하면 measured bucket을 실행하지 않고 non-zero exit로 중단하며, `requests/sec=0`인 성능 report를 만들지 않습니다.
-- preflight 실패 원인은 route, status code, response body preview, fixture path와 함께 출력합니다. 이 실패는 benchmark setup failure로 취급하고 throughput 결과로 해석하지 않습니다.
-- conformance fixture 반복 사용은 schema/transport smoke에서만 허용하고, public claim run에서는 varied notes, roots, disclosure policies, payload expiry를 포함한 fixture pool을 사용합니다.
-- route별 load profile:
-  - `transfer_only`
-  - `withdraw_only`
-  - `mixed_80_20`
-- concurrency sweep:
-  - `1, 2, 4, 8, 16, 32`
-- measurement mode:
-  - warmup: 30-60초
-  - steady-state: 최소 5분, public claim은 10분 이상
-  - cooldown: 30초
-- metrics:
-  - successful proofs/sec
-  - p50/p95/p99 latency
-  - error rate
-  - timeout rate
-  - request/response bytes
-  - CPU percent
-  - RSS/max RSS
-  - goroutine count if exposed
+- In-memory Groth16 integration test가 transfer와 withdraw proof 생성을 확인합니다.
+- External `clairveil-proverd` smoke가 generated artifact와 generated valid request로 `error_rate=0`을 확인했습니다.
 
-완료 기준:
+### 완료 기준
 
-- `benchmarks/privacy-proverd-load/latest.json` 생성
-- concurrency별 latency/RPS/error table 생성
-- p99와 error rate가 public report에 포함
-- artifact preflight mode와 checksum이 report에 포함
-- auth enabled/disabled 여부가 report에 포함
-- invalid fixture 또는 route preflight 실패 시 `latest.json`을 성공 결과처럼 생성하지 않음
-- integration test가 generated request fixture로 transfer와 withdraw proof 생성을 모두 확인함. 별도 external smoke는 generated artifact + `clairveil-proverd` + generated valid request로 error_rate 0을 확인함
+- `benchmarks/privacy-proverd-load/latest.json` 생성 경로가 있습니다.
+- concurrency별 latency/RPS/error table을 만들 수 있습니다.
+- p99와 error rate가 public report에 포함됩니다.
+- artifact preflight mode와 checksum이 report에 포함됩니다.
+- auth enabled/disabled 여부가 report에 포함됩니다.
+- invalid fixture 또는 route preflight 실패 시 `latest.json`을 성공 결과처럼 생성하지 않습니다.
+- Bucket 종료 시점의 정상 in-flight proof가 context deadline error로 집계되지 않습니다.
 
-Public claim gate:
+## 5. Phase C2: Chain TPS Summary Harness
 
-- error rate <= 0.1% 또는 명시된 SLO 이하
-- p99 latency가 SLO 이하
-- RSS가 steady-state 동안 계속 증가하지 않음
-- saturation point를 "max sustainable RPS"와 "overload region"으로 분리
-
-## 5. Phase C2: Chain TPS Batch Runner
-
-목적: chain tx path에서 sustained TPS를 측정합니다.
-
-현재 `make privacy-bench-localnet`는 e2e smoke 기반 gas/fee/invariant check입니다. Chain TPS를 말하려면 batch runner가 필요합니다.
-
-현재 구현 상태:
+### 완료한 내용
 
 - `cmd/clairveil-localnetload`가 localnet tx metrics를 `chain_tps` structured benchmark summary로 변환합니다.
-- `make privacy-localnet-tps-bench` 또는 `scripts/privacy-localnet-tps-bench.sh`가 `benchmarks/privacy-localnet-tps` report를 생성합니다.
-- 기존 `privacy-bench-localnet.sh`는 tx query JSON에서 gas, success, height, included timestamp를 추출하고, smoke script가 기록한 submitted timestamp와 함께 tx metrics를 생성합니다. Downstream/staging bucket 입력에서도 tx별 `success`는 명시되어야 하며, 누락된 값은 성공으로 추정하지 않고 실패로 계산합니다.
-- structured row는 `claim_type=chain_tps`, `load_profile`, `duration_seconds`, `target_tx_per_sec`와 `submitted_tx/sec`, `accepted_tx/sec`, `included_tx/sec`, `successful_tx/sec`, `tx/sec`, `failed_tx_rate`, `inclusion_latency_ms`, `gas_used` metric을 포함합니다.
-- 현재 wrapper는 e2e smoke flow를 계측 가능한 TPS report로 승격하는 경로입니다. 대규모 open-loop account pool/sequence contention 없는 batch submission은 downstream/staging 환경에서 같은 tx metrics bucket schema로 feed해야 합니다.
-- 2026-06-13 smoke run에서 `inclusion_latency_ms=0`으로 기록된 값은 submitted/included timestamp 해상도와 CLI query 기반 계측의 한계 때문에 public latency evidence로 사용할 수 없습니다.
-- 2026-06-13 보강 후 `cmd/clairveil-localnetload`는 positive inclusion latency sample이 하나도 없으면 `inclusion_latency_ms` metric을 생성하지 않습니다. 따라서 public claim gate는 이를 `chain_tps metrics missing: inclusion_latency_ms`로 차단하고, smoke report도 0ms inclusion latency처럼 보이지 않습니다.
+- `scripts/privacy-localnet-tps-bench.sh`와 `make privacy-localnet-tps-bench` 경로를 추가했습니다.
+- 기존 `privacy-bench-localnet.sh`는 tx query JSON에서 gas, success, height, included timestamp를 추출하고 submitted timestamp와 함께 tx metrics를 생성합니다.
+- Tx별 `success`가 누락되면 성공으로 추정하지 않고 실패로 계산합니다.
+- Structured row는 `claim_type=chain_tps`, `load_profile`, `duration_seconds`, `target_tx_per_sec`와 아래 metric을 포함합니다.
+  - `submitted_tx/sec`
+  - `accepted_tx/sec`
+  - `included_tx/sec`
+  - `successful_tx/sec`
+  - `tx/sec`
+  - `failed_tx_rate`
+  - `inclusion_latency_ms`
+  - `gas_used`
+- Positive inclusion latency sample이 하나도 없으면 `inclusion_latency_ms` metric을 생성하지 않습니다.
 
-구현 항목:
+### 완료 기준
 
-- `scripts/privacy-localnet-tps-bench.sh` 추가
-- batch summary runner 추가:
-  - option A: Go command `cmd/clairveil-localnetload`
-  - option B: shell + CLI wrapper, 단 account sequence 처리 안정성이 낮으므로 Go command 권장
-- tx mix profiles:
-  - `deposit_only`
-  - `transfer_only`
-  - `withdraw_only`
-  - `mixed_deposit_transfer_withdraw`
-- sender account pool:
-  - account sequence contention 방지를 위해 tx producer별 account 분리
-  - funding and key generation 자동화
-- shielded state preparation:
-  - transfer batch 전에 spendable notes pool 생성
-  - withdraw batch 전에 exact-match notes pool 생성
-  - dummy note pool 관리
-- load modes:
-  - closed-loop: 각 worker가 tx inclusion까지 기다린 뒤 다음 tx 제출
-  - open-loop: target tx/s rate로 제출하고 inclusion lag를 별도 측정
-- metrics:
-  - submitted tx/sec
-  - accepted tx/sec
-  - included tx/sec
-  - successful shielded tx/sec
-  - failed tx count and reason
-  - retried tx count
-  - block inclusion latency p50/p95/p99
-  - gas used p50/p95
-  - block height/time distribution
-  - mempool rejected tx count
-  - reserve invariant before/after
-- smoke/localnet wrapper는 included timestamp가 submitted timestamp보다 빠르거나 같은 경우 해당 latency sample을 public evidence에서 제외하거나 `latency_source=coarse_cli_timestamp`로 표시합니다. Public claim mode에서는 positive inclusion latency source가 없으면 fail-fast 또는 ineligible blocker를 유지합니다.
-- target tx/sec sweep은 최소 두 bucket을 기본 profile로 지원합니다. 단일 target smoke는 schema smoke로만 사용합니다.
+- `benchmarks/privacy-localnet-tps/latest.json` 생성 경로가 있습니다.
+- failed tx가 성공 처리량에 섞이지 않습니다.
+- smoke report가 0ms inclusion latency를 public evidence처럼 보이게 만들지 않습니다.
+- Public claim gate는 positive inclusion latency evidence가 없으면 `chain_tps metrics missing: inclusion_latency_ms`로 차단합니다.
 
-완료 기준:
+## 6. Phase C3: User Perceived Latency Harness
 
-- `benchmarks/privacy-localnet-tps/latest.json` 생성
-- tx type별 TPS와 mixed workload TPS가 분리됨
-- failed/retried tx가 성공 처리량에 섞이지 않음
-- benchmark 전후 `query privacy reserve {denom}` snapshot이 포함됨
-- before/after reserve snapshot file과 SHA-256이 `claim_evidence` 및 `source_file_sha256`에 포함됨
-- throughput window size와 saturation profile evidence file이 포함됨
-- public report에 chain config가 포함됨:
-  - block time
-  - minimum gas price
-  - mempool config
-  - validator count
-  - app commit
-  - artifact manifest checksum
-- public claim mode에서 `inclusion_latency_ms`가 0으로만 구성되면 eligible로 승격하지 않음
+### 완료한 내용
 
-Public claim gate:
+- CLI privacy tx command는 `CLAIRVEIL_PRIVACY_LATENCY_TRACE_FILE`이 설정된 경우 JSONL trace를 append합니다.
+- 기본 사용자 실행에서는 trace를 쓰지 않아 CLI 출력과 command interface가 유지됩니다.
+- Trace event는 `flow_id`, `flow_profile`, `latency_mode`, `cold_warm`, `phase`, `duration_ms`, `success`, optional `txhash`를 포함합니다.
+- Native CLI trace는 deposit/transfer/withdraw/prepare-withdraw/relay-withdraw에서 `prepare`, `proof`, `submit`, `total` phase를 기록합니다.
+- Transfer는 tx hash를 trace에 기록하므로 localnet tx metrics와 inclusion latency를 매칭할 수 있습니다.
+- `cmd/clairveil-userlatency`가 trace JSONL 또는 JSON array를 flow 단위로 집계합니다.
+- `scripts/privacy-user-latency-bench.sh`와 `make privacy-user-latency-bench` 경로를 추가했습니다.
+- `USER_LATENCY_REPEAT`를 지원합니다.
+- `RUN_PROFILE=public_claim`에서는 기본적으로 `USER_LATENCY_REPEAT>=100`을 요구합니다.
 
-- 10분 이상 steady-state run
-- reserve invariant true
-- failed tx가 SLO 이하
-- p95 inclusion latency가 명시된 SLO 이하
-- target tx/s를 올렸을 때 saturation point가 관측되어야 함
+### 완료 기준
 
-## 6. Phase C3: User Perceived Latency Benchmark
+- Native CLI latency report를 별도 result family로 생성할 수 있습니다.
+- "submit-ready latency"와 optional inclusion latency가 분리됩니다.
+- Public claim mode에서 sample count 부족을 실행 전 guard 또는 report gate로 차단합니다.
 
-목적: 사용자가 실제로 체감하는 wallet flow latency를 측정합니다.
+## 7. Phase C4: Capacity Report Generator
 
-사용자 latency는 아래 네 구간을 분리해서 기록해야 합니다.
-
-1. prepare latency: note scan, path lookup, payload build
-2. prove latency: local native, browser/WASM, 또는 remote prover
-3. submit latency: tx signing and broadcast
-4. inclusion latency: tx가 block에 포함되기까지의 시간
-
-구현 항목:
-
-- `benchmarks/privacy-user-latency` result family 추가
-- C3a CLI/native mode:
-  - local proof
-  - remote prover proof
-- C3b browser/WASM mode:
-  - Chrome desktop
-  - Safari desktop
-  - Firefox desktop
-  - mobile device class는 별도 phase로 분리 가능
-- cold/warm 구분:
-  - cold: process/browser start, artifact/WASM first load 포함
-  - warm: artifact/WASM loaded, wallet state prepared
-- flow profiles:
-  - deposit
-  - transfer all-private
-  - transfer with disclosure
-  - withdraw direct
-  - relayed withdraw
-
-metrics:
-
-- prepare p50/p95/p99
-- proof p50/p95/p99
-- time-to-submit p50/p95/p99
-- time-to-inclusion p50/p95/p99
-- total user-visible latency p50/p95/p99
-- error/timeout/cancel rate
-- browser heap peak if browser/WASM
-
-현재 구현 상태:
-
-- CLI privacy tx command는 `CLAIRVEIL_PRIVACY_LATENCY_TRACE_FILE`이 설정된 경우 JSONL trace를 append합니다. 기본 사용자 실행에서는 trace를 쓰지 않으므로 CLI 출력과 command interface는 유지됩니다.
-- trace event는 `flow_id`, `flow_profile`, `latency_mode`, `cold_warm`, `phase`, `duration_ms`, `success`, optional `txhash`를 포함합니다.
-- 현재 native CLI trace는 deposit/transfer/withdraw/prepare-withdraw/relay-withdraw에서 `prepare`, `proof`, `submit`, `total` phase를 기록합니다. Transfer는 `BroadcastSDKMessage` 경로에서 tx hash를 기록하므로 localnet tx metrics와 inclusion latency를 매칭할 수 있습니다. `GenerateOrBroadcast`를 유지하는 deposit/withdraw/relay-withdraw는 submit-ready latency를 기록하지만 tx hash가 trace event에 없을 수 있어 inclusion latency 매칭은 tx command output 기반 추가 계측이 없는 한 transfer 중심으로 해석합니다.
-- `cmd/clairveil-userlatency`는 trace JSONL 또는 JSON array를 flow 단위로 집계해 `claim_type=user_latency`, `metric_kind=user_latency`, `flow_profile`, `latency_mode`, `cold_warm` metadata와 `prepare_latency_ms`, `proof_latency_ms`, `time_to_submit_ms`, `submit_ready_ms`, `total_latency_ms`, `error_rate`, `timeout_rate`, `cancel_rate` metric을 가진 structured summary JSON을 생성합니다. Optional `-tx-metrics` 입력이 있으면 tx hash 기반 `inclusion_latency_ms`/`time_to_inclusion_ms`도 추가합니다.
-- `make privacy-user-latency-bench` 또는 `scripts/privacy-user-latency-bench.sh`는 localnet e2e smoke를 trace enabled로 실행하고, `benchmarks/privacy-user-latency` report를 생성합니다. Public run에서는 `USER_LATENCY_FLOW_FILTER`, `CLAIM_LATENCY_MODE`, `CLAIM_COLD_WARM`, SLO/evidence env로 flow/mode/cold-warm bucket을 분리합니다.
-- `scripts/privacy-user-latency-bench.sh`는 `USER_LATENCY_REPEAT`를 지원합니다. 기본값은 1이라 기존 smoke 동작을 유지하고, `RUN_PROFILE=public_claim`에서는 기본적으로 `USER_LATENCY_REPEAT>=100`을 요구해 sample floor 미달 run을 실행 전 차단합니다.
-- Remote prover와 browser/WASM latency는 같은 trace schema와 public claim gate로 수용할 수 있지만, 현재 repo의 CLI smoke runner는 native/local proof 경로만 직접 계측합니다. Remote claim은 실제 remote prover client trace와 eligible linked prover RPS report가 함께 있어야 하고, browser claim은 JS/WASM adapter evidence가 있어야 합니다.
-- 2026-06-13 smoke run은 flow별 sample 수가 1-4개라서 harness smoke로만 의미가 있습니다. Public user latency claim은 flow/mode/cold-warm bucket별 sample 수를 100 이상으로 늘리고, zero-duration phase가 의미 있는 no-op인지 계측 누락인지 구분해야 합니다.
-
-완료 기준:
-
-- native CLI latency report와 browser latency report가 분리됨
-- remote prover latency report가 prover RPS benchmark의 instance profile과 연결됨
-- "submit-ready latency"와 "included latency"가 별도 표로 출력됨
-- browser/WASM report는 JS/WASM prover adapter가 준비된 뒤에만 public claim gate 대상으로 승격됨. adapter가 없는 동안 C3b는 blocked future phase로 표시합니다.
-- smoke runner는 반복 횟수 옵션을 제공해 flow별 sample count를 의도적으로 늘릴 수 있어야 합니다. Public claim mode에서는 sample count 부족을 실행 전 config validation 또는 report gate로 명확히 차단합니다.
-
-Public claim gate:
-
-- cold/warm 결과를 섞지 않음
-- browser/device matrix를 명시
-- flow/mode/cold-warm bucket별 sample 수가 최소 100개 이상
-- prepare latency, proof latency, time-to-submit latency, submit-ready 또는 total latency, error rate, timeout/cancel rate를 모두 포함
-- browser/WASM latency는 browser/device matrix, `browser_adapter_ready=true`, adapter version, adapter file/SHA-256을 함께 명시
-- remote prover latency는 remote prover topology, instance profile, prover config file/SHA-256, linked prover RPS report file/SHA-256을 함께 명시하고, linked report가 eligible `prover_rps` public claim이며 instance profile/prover config/artifact active set과 일치해야 함
-- inclusion latency는 chain config file/SHA-256, chain config label, inclusion p95 SLO와 함께만 공개
-
-## 7. Phase C4: Capacity Report Generator 확장
-
-목적: 여러 benchmark family를 하나의 public report로 결합합니다.
-
-현재 구현 상태:
+### 완료한 내용
 
 - `clairveil-benchreport -merge-reports`가 component benchmark report JSON을 `benchmarks/public-capacity` aggregate report로 묶습니다.
-- `make privacy-public-capacity-report` 또는 `scripts/privacy-public-capacity-report.sh`로 aggregate report를 생성합니다.
-- aggregate report는 component report file SHA-256, component claim type, eligibility, commit, active set, artifact manifest checksum을 `component_reports`에 보존합니다.
-- aggregate report는 component별 `claim_evidence`를 `claim_evidence_by_type`에 보존하고, multi-claim public gate에서 claim별 evidence를 서로 섞지 않고 평가합니다.
-- component benchmark rows와 fee rows는 aggregate report에 병합됩니다.
-- 지정된 component report를 aggregate로 묶은 뒤, 모든 component가 eligible이고 aggregate의 환경/provenance/run window가 public gate를 통과하면 aggregate report도 `public-capacity` claim으로 eligible이 될 수 있습니다. ineligible component가 있거나 per-claim evidence가 없는 수동 multi-claim report는 계속 차단됩니다.
-- aggregate Markdown report는 ineligible component를 `Blocked Components` 섹션에 별도로 표시합니다. 이 섹션은 해당 metric row를 진단 출력으로만 해석하고 zero-capacity claim으로 보지 말라고 명시합니다.
-- 2026-06-13 aggregate run은 모든 component가 같은 commit으로 생성됐지만 `privacy-proverd-load` invalid fixture, smoke profile, missing evidence, chain TPS 단일 bucket, user latency sample 부족 때문에 `claim_eligible=false`가 맞습니다.
+- `scripts/privacy-public-capacity-report.sh`와 `make privacy-public-capacity-report` 경로를 추가했습니다.
+- Aggregate report는 component report file SHA-256, component claim type, eligibility, commit, active set, artifact manifest checksum을 `component_reports`에 보존합니다.
+- Component별 `claim_evidence`를 `claim_evidence_by_type`에 보존합니다.
+- Multi-claim public gate에서 claim별 evidence를 서로 섞지 않고 평가합니다.
+- Component benchmark rows와 fee rows는 aggregate report에 병합됩니다.
+- Ineligible component는 `Blocked Components` 섹션에 별도로 표시됩니다.
+- `error_rate=1`, `requests/sec=0`인 invalid measured bucket은 zero capacity가 아니라 invalid/blocked result로 표시됩니다.
 
-기본 입력:
+### 완료 기준
 
-- `privacy-proverd-load/latest.json`
-- `privacy-localnet-tps/latest.json`
-- `privacy-user-latency/latest.json`
-- artifact manifest
-- reserve snapshots
+- report가 public claim 문구와 non-claim 문구를 구분합니다.
+- missing gate가 있으면 public claim section이 "not eligible"로 표시됩니다.
+- smoke/reference/public claim 결과가 파일명과 report header에서 구분됩니다.
+- per-claim evidence가 없는 multi-claim `public-capacity` report는 eligible로 승격되지 않습니다.
 
-`privacy-circuits/latest.json`은 native circuit baseline으로 별도 링크하거나, non-claim component를 public eligibility gate와 분리하는 semantics가 추가된 뒤 aggregate에 포함합니다. 현재 aggregate public claim gate는 component report eligibility를 모두 검사하므로 smoke/reference circuit baseline을 기본 claim component로 섞지 않습니다.
+## 8. Phase C5: Benchmark 운영 연결
 
-출력:
+### 완료한 내용
 
-```text
-benchmarks/public-capacity/latest.json
-benchmarks/public-capacity/latest.md
-benchmarks/public-capacity/<date>-<commit>.json
-benchmarks/public-capacity/<date>-<commit>.md
-```
+- Release/versioning 문서와 scripts README에 public capacity benchmark 경로와 guard를 반영했습니다.
+- Benchmark result를 PR/release review에서 비교할 수 있도록 result family, run profile, source provenance, artifact checksum, dirty state를 report에 포함했습니다.
+- Dirty worktree 판단에서 generated benchmark result family와 로컬 build binary만 제한적으로 제외합니다.
 
-Markdown report 구성:
+### 완료 기준
 
-1. Claim eligibility summary
-2. Environment and artifact set
-3. Native circuit baseline
-4. Prover production-like capacity
-5. Chain TPS
-6. User perceived latency
-7. Fee/gas
-8. Reserve/accounting invariant
-9. Known limits and non-claims
+- smoke/reference/public claim 결과가 같은 report schema로 기록됩니다.
+- public claim run은 dirty worktree, missing evidence, missing source hash, malformed checksum을 차단합니다.
+- Regression 비교는 blessed baseline report와 같은 machine profile, artifact set, Go version family, run profile에서만 의미가 있습니다.
 
-완료 기준:
+## 9. 검증
 
-- report가 public claim 문구와 non-claim 문구를 자동 생성
-- missing gate가 있으면 public claim section이 "not eligible"로 표시됨
-- smoke/reference/public claim 결과가 파일명과 report header에서 구분됨
-- claim별 evidence와 row bucket metadata가 도입되어 `prover_rps`, `chain_tps`, `user_latency`의 load profile, config hash, topology, sample bucket이 서로 섞이지 않음
-- per-claim evidence가 없는 multi-claim `public-capacity` report가 public eligible로 승격되지 않음
-- invalid component report는 aggregate에서 성능 섹션이 아니라 blocker 섹션에 명확히 표시됨. 특히 `error_rate=1`, `requests/sec=0`인 proverd-load bucket은 "zero capacity"가 아니라 "invalid measured bucket"으로 표시해야 함
+완료 시점에 아래 검증을 수행했습니다.
 
-## 8. Phase C5: Benchmark 운영 절차
+- `go test ./...`
+- `go test ./cmd/clairveil-proverload`
+- `go test ./cmd/clairveil-benchreport ./cmd/clairveil-localnetload ./cmd/clairveil-userlatency`
+- `bash -n scripts/privacy-user-latency-bench.sh scripts/privacy-localnet-tps-bench.sh scripts/privacy-proverd-load-bench.sh scripts/privacy-public-capacity-report.sh scripts/privacy-bench.sh scripts/privacy-bench-localnet.sh scripts/privacy-proverd-bench.sh`
+- External `clairveil-proverd` smoke with generated valid requests
+- `RUN_PROFILE=public_claim USER_LATENCY_REPEAT=1` guard smoke
 
-목적: benchmark가 한 번의 수동 실험이 아니라 release/review 프로세스가 되게 합니다.
+## 10. 비범위
 
-운영 규칙:
-
-- release candidate마다 같은 machine profile에서 benchmark 실행
-- `benchstat` 설치를 benchmark runner prereq로 고정
-- public claim run은 dirty worktree 금지
-- benchmark artifact는 source commit, artifact manifest checksum, Docker image digest와 함께 보존
-- regression 비교는 blessed baseline report와 같은 machine profile, artifact set, Go version family, run profile에서만 수행
-- blessed baseline의 소유자, 생성 일시, 승인 PR 또는 release tag를 기록
-- 결과 regression threshold:
-  - proving latency +10% 이상 악화 시 review
-  - prover p95 latency +15% 이상 악화 시 review
-  - chain TPS -10% 이상 하락 시 review
-  - user latency p95 +15% 이상 악화 시 review
-
-완료 기준:
-
-- `docs/clairveil-release-versioning-policy-kr.md`에 public capacity benchmark checklist 추가
-- release handoff pack에 latest public capacity report 링크 추가
-- benchmark result를 PR/release review에서 비교할 수 있음
-
-## 9. 권장 작업 순서
-
-1. Phase C1 완료: external `clairveil-proverd` load용 real prover-valid generated request와 route preflight fail-fast
-2. Phase C4 완료: invalid measured bucket을 public aggregate에서 capacity metric으로 오해하지 않게 blocker 섹션으로 표시
-3. Phase C2 부분 완료: inclusion latency source/positive latency gate 보강. 남은 작업은 open-loop/batch target tx/sec sweep runner입니다.
-4. Phase C3 부분 완료: user latency 반복 sample runner와 public sample floor 실행 전 guard. 남은 작업은 browser/WASM adapter 기반 latency runner입니다.
-5. Phase C5 연결: public run evidence 자동화와 release checklist 반영
-6. Phase C3 확장: browser/WASM benchmark
-
-이 순서를 권장하는 이유는 현재 public claim의 가장 큰 blocker가 external proverd-load의 invalid fixture이기 때문입니다. 운영 prover RPS를 잴 수 있는 유효 입력과 fail-fast가 먼저 확보되어야 chain TPS/user latency/public aggregate 결과도 안전하게 해석할 수 있습니다.
-
-## 10. 최종 공개 문구 예시
-
-사용 가능:
-
-- "Reference workstation native benchmark에서 JoinSplit proof generation p50은 X ms입니다."
-- "Production-like prover instance profile P에서 transfer proof endpoint는 RPS X, p95 Y ms, error rate Z%를 10분 동안 유지했습니다."
-- "Single-validator localnet config L에서 mixed shielded workload sustained TPS는 X이고 p95 inclusion latency는 Y ms입니다."
-- "Desktop Chrome warm remote-prover flow에서 transfer submit-ready p95는 X ms입니다."
-
-사용 금지:
-
-- "Native proving 역수 기준으로 chain TPS는 X입니다."
-- "`httptest` transport benchmark 기준으로 운영 prover RPS는 X입니다."
-- "Localnet smoke gas/fee 결과 기준으로 production capacity는 X입니다."
-- "Warm desktop result를 mobile cold-start user latency로 표현합니다."
+이번 완료 계획은 구현된 benchmark 하네스와 gate를 기록하는 문서입니다. Public capacity claim 산출을 위해 남은 운영/확장 작업은 `docs/clairveil-public-capacity-claim-execution-plan-kr.md`에서 관리합니다.
