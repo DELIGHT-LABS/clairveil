@@ -378,6 +378,24 @@ func TestBuildAggregateReportCombinesEligibleComponents(t *testing.T) {
 	}
 }
 
+func TestRenderMarkdownCallsOutBlockedComponents(t *testing.T) {
+	rep := report{
+		ComponentReports: []componentReport{
+			{
+				Path:            "benchmarks/privacy-proverd-load/latest.json",
+				ClaimTypes:      []string{"prover_rps"},
+				Eligible:        false,
+				BlockingReasons: []string{"component report is not eligible"},
+			},
+		},
+	}
+
+	md := renderMarkdown(rep)
+	if !strings.Contains(md, "## Blocked Components") || !strings.Contains(md, "not as zero-capacity claims") {
+		t.Fatalf("blocked component section missing:\n%s", md)
+	}
+}
+
 func TestSummarizeFees(t *testing.T) {
 	success := true
 	failed := false
@@ -1100,6 +1118,38 @@ func TestEvaluateClaimProfileRequiresChainTargetTPSSweep(t *testing.T) {
 	}
 	if !containsString(profile.BlockingReasons, "chain_tps sweep invalid: at least two target_tx_per_sec buckets are required") {
 		t.Fatalf("expected chain target sweep blocker, got %+v", profile.BlockingReasons)
+	}
+}
+
+func TestEvaluateClaimProfileRequiresChainInclusionLatencyEvidence(t *testing.T) {
+	rep := completePublicChainReport()
+	for i := range rep.Benchmarks {
+		delete(rep.Benchmarks[i].Metrics, "inclusion_latency_ms")
+	}
+
+	profile := evaluateClaimProfile(rep)
+	if profile.Eligible {
+		t.Fatalf("expected public claim to be blocked")
+	}
+	if !containsString(profile.BlockingReasons, "chain_tps metrics missing: inclusion_latency_ms") {
+		t.Fatalf("expected missing inclusion latency blocker, got %+v", profile.BlockingReasons)
+	}
+
+	rep = completePublicChainReport()
+	rep.Benchmarks[0].Metrics["inclusion_latency_ms"] = metricSummary{
+		Mean: 0,
+		P50:  0,
+		P95:  0,
+		P99:  0,
+		Min:  0,
+		Max:  0,
+	}
+	profile = evaluateClaimProfile(rep)
+	if profile.Eligible {
+		t.Fatalf("expected public claim to be blocked")
+	}
+	if !containsString(profile.BlockingReasons, "chain_tps metrics invalid: ChainTPSMixedTarget8/inclusion_latency_ms must have positive mean/p50/p95/p99/min/max") {
+		t.Fatalf("expected zero inclusion latency blocker, got %+v", profile.BlockingReasons)
 	}
 }
 

@@ -200,16 +200,18 @@ func summarizeBucket(bucket txMetricBucket) (benchmarkSummary, error) {
 		name = fmt.Sprintf("%sTarget%s", profileName(loadProfile), formatTarget(bucket.TargetTxPerSec))
 	}
 	metrics := map[string]metricSummary{
-		"submitted_tx/sec":     scalarMetric(float64(total) / durationSeconds),
-		"accepted_tx/sec":      scalarMetric(float64(accepted) / durationSeconds),
-		"included_tx/sec":      scalarMetric(float64(included) / durationSeconds),
-		"successful_tx/sec":    scalarMetric(float64(successful) / durationSeconds),
-		"tx/sec":               scalarMetric(float64(successful) / durationSeconds),
-		"failed_tx_rate":       scalarMetric(rate(failed, total)),
-		"retried_tx_count":     scalarMetric(0),
-		"block_count":          scalarMetric(float64(len(heights))),
-		"inclusion_latency_ms": summarizeValues(inclusionLatencies),
-		"gas_used":             summarizeValues(gasUsed),
+		"submitted_tx/sec":  scalarMetric(float64(total) / durationSeconds),
+		"accepted_tx/sec":   scalarMetric(float64(accepted) / durationSeconds),
+		"included_tx/sec":   scalarMetric(float64(included) / durationSeconds),
+		"successful_tx/sec": scalarMetric(float64(successful) / durationSeconds),
+		"tx/sec":            scalarMetric(float64(successful) / durationSeconds),
+		"failed_tx_rate":    scalarMetric(rate(failed, total)),
+		"retried_tx_count":  scalarMetric(0),
+		"block_count":       scalarMetric(float64(len(heights))),
+		"gas_used":          summarizeValues(gasUsed),
+	}
+	if len(inclusionLatencies) > 0 {
+		metrics["inclusion_latency_ms"] = summarizeValues(inclusionLatencies)
 	}
 	return benchmarkSummary{
 		Name:            "LocalnetTPS" + profileName(name),
@@ -255,7 +257,7 @@ func bucketDuration(bucket txMetricBucket) time.Duration {
 func txInclusionLatencyMS(tx txMetric) (float64, bool) {
 	submittedAt, submittedOK := parseTime(tx.SubmittedAt)
 	includedAt, includedOK := parseTime(tx.IncludedAt)
-	if !submittedOK || !includedOK || includedAt.Before(submittedAt) {
+	if !submittedOK || !includedOK || !includedAt.After(submittedAt) {
 		return 0, false
 	}
 	return float64(includedAt.Sub(submittedAt)) / float64(time.Millisecond), true

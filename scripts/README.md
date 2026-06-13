@@ -15,7 +15,7 @@ Korean version: [README-kr.md](README-kr.md)
 - `privacy-proverd-load-bench.sh`: summarizes external `clairveil-proverd` load against an already running prover.
 - `privacy-bench-localnet.sh`: runs localnet privacy smoke and writes fee, gas, reserve, and localnet summaries.
 - `privacy-localnet-tps-bench.sh`: wraps localnet smoke output as a `chain_tps` benchmark family.
-- `privacy-user-latency-bench.sh`: runs localnet privacy smoke with wallet-flow latency tracing enabled and writes `privacy-user-latency` reports.
+- `privacy-user-latency-bench.sh`: runs localnet privacy smoke with wallet-flow latency tracing enabled and writes `privacy-user-latency` reports. Set `USER_LATENCY_REPEAT=N` to collect repeated samples; `RUN_PROFILE=public_claim` requires at least 100 repeats unless explicitly overridden for a blocked dry run.
 - `privacy-public-capacity-report.sh`: merges component reports into a public capacity aggregate and keeps the aggregate ineligible when any component or per-claim evidence fails the public gate.
 - `release-pack.sh`: creates the downstream handoff tarball and external sha256 file under `dist/`.
 - `release-pack-verify.sh`: verifies the handoff tarball checksum, internal `SHA256SUMS.txt`, required files, and manifest commit.

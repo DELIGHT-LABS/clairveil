@@ -25,6 +25,7 @@ claim_load_profile="${CLAIM_LOAD_PROFILE:-wallet_flow_smoke}"
 claim_latency_mode="${CLAIM_LATENCY_MODE:-native}"
 claim_cold_warm="${CLAIM_COLD_WARM:-warm}"
 user_latency_flow_filter="${USER_LATENCY_FLOW_FILTER:-}"
+user_latency_repeat="${USER_LATENCY_REPEAT:-1}"
 claim_cold_warm_separated="${CLAIM_COLD_WARM_SEPARATED:-true}"
 claim_latency_p99_slo_ms="${CLAIM_LATENCY_P99_SLO_MS:-}"
 claim_inclusion_p95_slo_ms="${CLAIM_INCLUSION_P95_SLO_MS:-}"
@@ -57,6 +58,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
+if ! [[ "$user_latency_repeat" =~ ^[0-9]+$ ]] || [[ "$user_latency_repeat" -le 0 ]]; then
+  echo "USER_LATENCY_REPEAT must be a positive integer" >&2
+  exit 1
+fi
+if [[ "$run_profile" == "public_claim" && "$user_latency_repeat" -lt 100 && "${ALLOW_PUBLIC_USER_LATENCY_LOW_REPEAT:-0}" != "1" ]]; then
+  echo "public_claim user latency runs require USER_LATENCY_REPEAT>=100 (or ALLOW_PUBLIC_USER_LATENCY_LOW_REPEAT=1 for a blocked dry run)" >&2
+  exit 1
+fi
+
 mkdir -p "$bench_out_dir"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 latency_trace_file="$bench_out_dir/user-latency-trace-$stamp.jsonl"
@@ -69,25 +79,42 @@ echo "  work_dir=$work_dir"
 echo "  BENCH_OUT_DIR=$bench_out_dir"
 echo "  CLAIRVEIL_PRIVACY_LATENCY_MODE=$claim_latency_mode"
 echo "  CLAIRVEIL_PRIVACY_LATENCY_COLD_WARM=$claim_cold_warm"
+echo "  USER_LATENCY_REPEAT=$user_latency_repeat"
 if [[ -n "$user_latency_flow_filter" ]]; then
   echo "  USER_LATENCY_FLOW_FILTER=$user_latency_flow_filter"
 fi
 
 unset CLAIRVEIL_PRIVACY_LATENCY_FLOW_ID
 unset CLAIRVEIL_PRIVACY_LATENCY_FLOW_PROFILE
-CLAIRVEIL_PRIVACY_LATENCY_TRACE_FILE="$latency_trace_file" \
-  CLAIRVEIL_PRIVACY_LATENCY_MODE="$claim_latency_mode" \
-  CLAIRVEIL_PRIVACY_LATENCY_COLD_WARM="$claim_cold_warm" \
-  KEEP_WORK_DIR=1 CLAIRVEIL_E2E_WORK_DIR="$work_dir" ./scripts/privacy-e2e-smoke.sh
+
+run_work_dirs=()
+for ((run_index = 1; run_index <= user_latency_repeat; run_index++)); do
+  if [[ "$user_latency_repeat" -eq 1 ]]; then
+    run_work_dir="$work_dir"
+  else
+    run_work_dir="$work_dir/run-$run_index"
+  fi
+  run_work_dirs+=("$run_work_dir")
+  echo "  run $run_index/$user_latency_repeat work_dir=$run_work_dir"
+  CLAIRVEIL_PRIVACY_LATENCY_TRACE_FILE="$latency_trace_file" \
+    CLAIRVEIL_PRIVACY_LATENCY_MODE="$claim_latency_mode" \
+    CLAIRVEIL_PRIVACY_LATENCY_COLD_WARM="$claim_cold_warm" \
+    KEEP_WORK_DIR=1 CLAIRVEIL_E2E_WORK_DIR="$run_work_dir" ./scripts/privacy-e2e-smoke.sh
+done
 run_ended_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-python3 - "$work_dir/out" "$metrics_file" <<'PY'
+out_dirs=()
+for run_work_dir in "${run_work_dirs[@]}"; do
+  out_dirs+=("$run_work_dir/out")
+done
+
+python3 - "$metrics_file" "${out_dirs[@]}" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-out = Path(sys.argv[1])
-metrics_path = Path(sys.argv[2])
+metrics_path = Path(sys.argv[1])
+out_dirs = [Path(arg) for arg in sys.argv[2:]]
 
 def classify(path: Path) -> str:
     name = path.name.removesuffix("-query.json")
@@ -104,30 +131,32 @@ def classify(path: Path) -> str:
     return name
 
 transactions = []
-for path in sorted(out.glob("*-query.json")):
-    doc = json.loads(path.read_text())
-    response = doc.get("tx_response", doc)
-    tx_name = path.name.removesuffix("-query.json")
-    submitted_path = out / f"{tx_name}.submitted-at"
-    submitted_at = submitted_path.read_text().strip() if submitted_path.exists() else ""
-    transactions.append({
-        "tx_type": classify(path),
-        "txhash": response.get("txhash", ""),
-        "source_file": str(path),
-        "height": int(response.get("height") or 0),
-        "gas_used": int(response.get("gas_used") or 0),
-        "gas_wanted": int(response.get("gas_wanted") or 0),
-        "success": int(response.get("code") or 0) == 0,
-        "submitted_at": submitted_at,
-        "included_at": response.get("timestamp", ""),
-    })
+for run_index, out in enumerate(out_dirs, start=1):
+    for path in sorted(out.glob("*-query.json")):
+        doc = json.loads(path.read_text())
+        response = doc.get("tx_response", doc)
+        tx_name = path.name.removesuffix("-query.json")
+        submitted_path = out / f"{tx_name}.submitted-at"
+        submitted_at = submitted_path.read_text().strip() if submitted_path.exists() else ""
+        transactions.append({
+            "tx_type": classify(path),
+            "txhash": response.get("txhash", ""),
+            "source_file": str(path),
+            "run_index": run_index,
+            "height": int(response.get("height") or 0),
+            "gas_used": int(response.get("gas_used") or 0),
+            "gas_wanted": int(response.get("gas_wanted") or 0),
+            "success": int(response.get("code") or 0) == 0,
+            "submitted_at": submitted_at,
+            "included_at": response.get("timestamp", ""),
+        })
 
 if not transactions:
-    raise SystemExit(f"no tx query JSON files found under {out}")
+    raise SystemExit(f"no tx query JSON files found under {', '.join(str(p) for p in out_dirs)}")
 
 metrics_path.write_text(json.dumps({
     "schema_version": "clairveil.tx_metrics.v1",
-    "source": "privacy-e2e-smoke",
+    "source": "privacy-e2e-smoke-repeat",
     "transactions": transactions,
 }, indent=2) + "\n")
 PY

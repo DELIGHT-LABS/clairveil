@@ -1162,6 +1162,23 @@ func renderMarkdown(rep report) string {
 		fmt.Fprintf(&b, "\n")
 	}
 
+	if blocked := blockedComponentReports(rep.ComponentReports); len(blocked) > 0 {
+		fmt.Fprintf(&b, "## Blocked Components\n\n")
+		fmt.Fprintf(&b, "The component reports below are not public capacity evidence. Treat their metric rows as diagnostic output, not as zero-capacity claims.\n\n")
+		fmt.Fprintf(&b, "| Report | Claims | Blocking reasons |\n")
+		fmt.Fprintf(&b, "| --- | --- | --- |\n")
+		for _, component := range blocked {
+			fmt.Fprintf(
+				&b,
+				"| `%s` | `%s` | `%s` |\n",
+				component.Path,
+				strings.Join(component.ClaimTypes, ","),
+				strings.Join(component.BlockingReasons, "; "),
+			)
+		}
+		fmt.Fprintf(&b, "\n")
+	}
+
 	if len(rep.ArtifactSet.DescriptorIssues) > 0 || len(rep.ArtifactSet.ArtifactFileIssues) > 0 {
 		fmt.Fprintf(&b, "## Artifact Issues\n\n")
 		for _, issue := range append(rep.ArtifactSet.DescriptorIssues, rep.ArtifactSet.ArtifactFileIssues...) {
@@ -1287,6 +1304,17 @@ func benchmarkHasBucketMetadata(bench benchmarkSummary) bool {
 		bench.WarmupSeconds != 0 ||
 		bench.DurationSeconds != 0 ||
 		bench.TargetTxPerSec != 0
+}
+
+func blockedComponentReports(components []componentReport) []componentReport {
+	var blocked []componentReport
+	for _, component := range components {
+		if component.Eligible {
+			continue
+		}
+		blocked = append(blocked, component)
+	}
+	return blocked
 }
 
 func readTxMetrics(path string) ([]txMetric, error) {

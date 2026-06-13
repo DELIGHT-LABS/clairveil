@@ -94,3 +94,30 @@ func TestSummarizeBucketTreatsMissingSuccessAsFailed(t *testing.T) {
 		t.Fatalf("unexpected failed tx rate %.3f", got)
 	}
 }
+
+func TestSummarizeBucketOmitsMissingInclusionLatency(t *testing.T) {
+	success := true
+	summary, err := summarizeBucket(txMetricBucket{
+		Name:           "mixed-target-1",
+		LoadProfile:    "mixed_deposit_transfer_withdraw",
+		TargetTxPerSec: 1,
+		StartedAt:      "2026-06-12T00:00:00Z",
+		EndedAt:        "2026-06-12T00:00:10Z",
+		Transactions: []txMetric{
+			{
+				TxType:      "deposit",
+				Height:      2,
+				GasUsed:     100,
+				Success:     &success,
+				SubmittedAt: "2026-06-12T00:00:01Z",
+				IncludedAt:  "2026-06-12T00:00:01Z",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("summarize bucket: %v", err)
+	}
+	if _, ok := summary.Metrics["inclusion_latency_ms"]; ok {
+		t.Fatalf("expected non-positive inclusion latency samples to be omitted: %+v", summary.Metrics["inclusion_latency_ms"])
+	}
+}

@@ -99,6 +99,7 @@ GitHub release 또는 downstream handoff message는 `docs/clairveil-release-note
 - [ ] `make release-pack`
 - [ ] `make release-pack-verify`
 - [ ] prover image를 함께 배포한다면 `make docker-proverd-build`
+- [ ] 성능 수치를 공개한다면 `make privacy-proverd-load-bench`, `make privacy-localnet-tps-bench`, `make privacy-user-latency-bench`, `make privacy-public-capacity-report` 결과의 `claim_eligible=true`와 evidence hash를 확인
 
 ## 3. Handoff 산출물
 
