@@ -214,6 +214,7 @@ Public claim 결과에는 반드시 "reference environment" 또는 "production-l
 - 생성 row는 `claim_type=prover_rps`, `load_profile`, `route`, `concurrency`, `warmup_seconds`, `duration_seconds` metadata와 `requests/sec`, `latency_ms`, `error_rate`, `timeout_rate`, request/response byte metric을 포함합니다.
 - `clairveil-proverd`는 `/debug/vars` JSON endpoint로 goroutine, heap/sys memory, RSS, max RSS, process CPU seconds를 노출합니다.
 - `cmd/clairveil-proverload`는 measured bucket 동안 `-telemetry-interval` 주기로 `/debug/vars`를 샘플링하고, `cpu_percent`, `rss_bytes`, `max_rss_bytes`, heap/goroutine metric을 같은 `prover_rps` structured row에 포함합니다. Public claim에서는 이 row metric과 saturation profile evidence file을 함께 제출합니다.
+- `cmd/clairveil-proverload`는 steady-state duration을 새 요청 스케줄 중단 기준으로만 사용하고, 이미 시작된 request는 client timeout 안에서 완료시켜 결과에 포함합니다. 따라서 bucket 종료 시점의 정상 in-flight proof가 context deadline error로 집계되지 않습니다.
 - 2026-06-13 이전 smoke run에서 기본 `privacy_prover_example_bundle.json`은 HTTP contract fixture로는 유효했지만 실제 JoinSplit witness로는 유효하지 않아 external `clairveil-proverd`가 `constraint #32267 is not satisfied`로 모든 transfer request를 거절했습니다. 이 결과는 운영 prover 처리량이 아니라 invalid load fixture를 의미합니다.
 - 2026-06-13 보강 후 기본 generated request 경로는 JoinSplit/Spend Groth16 proof 생성 통합 테스트와 external `clairveil-proverd` smoke에서 error_rate 0으로 검증됐습니다.
 

@@ -199,6 +199,37 @@ func TestRunLoadBucketDrainsMoreResultsThanChannelBuffer(t *testing.T) {
 	}
 }
 
+func TestRunLoadBucketLetsInFlightRequestFinishAtDurationDeadline(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(30 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	client := server.Client()
+	client.Timeout = time.Second
+	results, _, _ := runLoadBucket(
+		context.Background(),
+		client,
+		server.URL,
+		"",
+		[]requestPayload{{Route: "transfer", Path: "/prove/transfer", Body: []byte(`{}`)}},
+		1,
+		5*time.Millisecond,
+		false,
+		0,
+	)
+	if len(results) == 0 {
+		t.Fatal("expected the in-flight request result to be recorded")
+	}
+	for _, result := range results {
+		if result.Err != nil {
+			t.Fatalf("duration cutoff should not be counted as a request error: %+v", result)
+		}
+	}
+}
+
 func TestDoRequestClassifiesClientTimeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(100 * time.Millisecond)

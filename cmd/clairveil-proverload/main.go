@@ -343,13 +343,9 @@ func runLoadBucket(ctx context.Context, client *http.Client, baseURL, bearerToke
 				}
 				index := counter.Add(1) - 1
 				payload := requests[int(index)%len(requests)]
-				result := doRequest(ctx, client, baseURL, bearerToken, payload)
+				result := doRequest(context.Background(), client, baseURL, bearerToken, payload)
 				if !quiet {
-					select {
-					case results <- result:
-					case <-ctx.Done():
-						return
-					}
+					results <- result
 				}
 			}
 		}()
