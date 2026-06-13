@@ -259,6 +259,178 @@ func TestRenderMarkdownSkipsGoTableForStructuredOnlyMetrics(t *testing.T) {
 	}
 }
 
+func TestRenderHumanSummaryMarkdownKRIncludesAllInOneSections(t *testing.T) {
+	dir := t.TempDir()
+	reservePath := filepath.Join(dir, "reserve-uclair.json")
+	if err := os.WriteFile(reservePath, []byte(`{
+  "denom": "uclair",
+  "module_balance": "10",
+  "total_deposited": "28",
+  "total_withdrawn": "18",
+  "expected_module_balance": "10",
+  "invariant_holds": true
+}`), 0o644); err != nil {
+		t.Fatalf("write reserve: %v", err)
+	}
+
+	out := renderHumanSummaryMarkdownKR([]humanSummaryComponent{
+		{
+			Path: "benchmarks/privacy-circuits/latest.json",
+			Report: report{
+				ResultFamily: "privacy-circuits",
+				GeneratedAt:  "2026-06-13T16:00:00Z",
+				Commit:       "abc123",
+				ActiveSetID:  "privacy-accounting-v2",
+				GoVersion:    "go1.25.11",
+				GnarkVersion: "v0.14.0",
+				GnarkCrypto:  "v0.19.2",
+				OS:           "darwin",
+				Arch:         "arm64",
+				CPU:          "Apple M5 Pro",
+				Benchmarks: []benchmarkSummary{
+					{
+						Name:       "BenchmarkJoinSplitCircuitProve",
+						Samples:    10,
+						NSOpMean:   150_000_000,
+						NSOpP95:    160_000_000,
+						OpsPerSec:  6.6,
+						MetricKind: "native_proving",
+					},
+				},
+			},
+		},
+		{
+			Path: "benchmarks/privacy-proverd-load/latest.json",
+			Report: report{
+				ResultFamily: "privacy-proverd-load",
+				GeneratedAt:  "2026-06-13T16:01:00Z",
+				Commit:       "abc123",
+				ActiveSetID:  "privacy-accounting-v2",
+				Benchmarks: []benchmarkSummary{
+					{
+						Name:          "ProverLoadTransferOnlyC1",
+						Samples:       208,
+						MetricKind:    "prover_load",
+						Concurrency:   1,
+						LoadProfile:   "transfer_only",
+						WarmupSeconds: 5,
+						Metrics: map[string]metricSummary{
+							"requests/sec": {Mean: 6.9},
+							"latency_ms":   {Mean: 144, P95: 153, P99: 159},
+							"error_rate":   {Mean: 0},
+							"timeout_rate": {Mean: 0},
+							"rss_bytes":    {P95: 366451032},
+						},
+					},
+				},
+			},
+		},
+		{
+			Path: "benchmarks/privacy-localnet-tps/latest.json",
+			Report: report{
+				ResultFamily: "privacy-localnet-tps",
+				GeneratedAt:  "2026-06-13T16:02:00Z",
+				Commit:       "abc123",
+				ActiveSetID:  "privacy-accounting-v2",
+				SourceFiles:  []string{reservePath},
+				FeeModel: feeModel{
+					FeeDenom:      "uclair",
+					MinGasPrice:   "0.025",
+					GasAdjustment: "1.2",
+				},
+				Benchmarks: []benchmarkSummary{
+					{
+						Name:            "LocalnetTPSMixedDepositTransferWithdraw",
+						Samples:         9,
+						MetricKind:      "chain_tps",
+						DurationSeconds: 67,
+						TargetTxPerSec:  1,
+						Metrics: map[string]metricSummary{
+							"tx/sec":         {Mean: 0.134},
+							"failed_tx_rate": {Mean: 0},
+							"gas_used":       {P95: 517665},
+						},
+					},
+				},
+				Fees: []feeSummary{
+					{
+						TxType:          "transfer",
+						Samples:         3,
+						GasUsedP50:      505974,
+						GasUsedP95:      523511,
+						EstimatedFeeP50: "15180uclair",
+						EstimatedFeeP95: "15706uclair",
+					},
+				},
+			},
+		},
+		{
+			Path: "benchmarks/privacy-user-latency/latest.json",
+			Report: report{
+				ResultFamily: "privacy-user-latency",
+				GeneratedAt:  "2026-06-13T16:03:00Z",
+				Commit:       "abc123",
+				ActiveSetID:  "privacy-accounting-v2",
+				Benchmarks: []benchmarkSummary{
+					{
+						Name:        "UserLatencyDepositNativeWarm",
+						Samples:     4,
+						MetricKind:  "user_latency",
+						FlowProfile: "deposit",
+						Metrics: map[string]metricSummary{
+							"total_latency_ms":   {Mean: 593, P95: 629},
+							"prepare_latency_ms": {Mean: 581},
+							"proof_latency_ms":   {Mean: 8.6},
+							"time_to_submit_ms":  {Mean: 3.6},
+							"error_rate":         {Mean: 0},
+						},
+					},
+					{
+						Name:        "UserLatencyTransferAllPrivateNativeWarm",
+						Samples:     1,
+						MetricKind:  "user_latency",
+						FlowProfile: "transfer_all_private",
+						Metrics: map[string]metricSummary{
+							"total_latency_ms": {Mean: 756, P95: 756},
+						},
+					},
+				},
+			},
+		},
+		{
+			Path: "benchmarks/public-capacity/latest.json",
+			Report: report{
+				ResultFamily: "public-capacity",
+				GeneratedAt:  "2026-06-13T16:04:00Z",
+				Commit:       "abc123",
+				ActiveSetID:  "privacy-accounting-v2",
+				ClaimProfile: claimProfile{
+					RunProfile:      "public_claim",
+					Eligible:        false,
+					BlockingReasons: []string{"run_profile is smoke"},
+				},
+			},
+		},
+	}, "2026-06-13T16:05:00Z")
+
+	for _, want := range []string{
+		"자동 생성된다",
+		"## Native Circuit",
+		"## External Proverd Load",
+		"## Localnet Fee 및 Reserve",
+		"| module balance | 10 |",
+		"## Localnet TPS Smoke",
+		"## User Latency Smoke",
+		"## Public Capacity 판정",
+		"claim_eligible=false",
+		"## 산출물",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("human summary missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestRenderMarkdownIncludesFeeFailures(t *testing.T) {
 	out := renderMarkdown(report{
 		SchemaVersion: reportSchemaVersion,

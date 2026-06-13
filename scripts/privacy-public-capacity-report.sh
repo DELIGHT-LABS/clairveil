@@ -58,3 +58,7 @@ fi
 echo "building public capacity aggregate report"
 echo "  REPORTS=$reports"
 go "${report_args[@]}"
+
+if [[ "${GENERATE_HUMAN_BENCHMARK_REPORT:-1}" != "0" ]]; then
+  ./scripts/privacy-benchmark-report.sh
+fi

@@ -279,6 +279,7 @@ benchmarks/privacy-user-latency/latest.md
 benchmarks/privacy-user-latency/latest-user-latency-trace.jsonl
 benchmarks/public-capacity/latest.json
 benchmarks/public-capacity/latest.md
+benchmarks/clairveil-benchmark-results-report-kr.md
 ```
 
 JSON에는 최소한 아래 필드를 포함합니다.
@@ -449,7 +450,7 @@ Markdown 결과는 공개 설명용으로 사용하고, JSON은 CI trend와 down
 - `make privacy-bench` 또는 동등한 명령으로 `latest.json`, `latest.md` 생성
 - Markdown 결과가 공개 문서에 그대로 붙일 수 있는 형태임
 
-현재 상태: 완료. `scripts/privacy-bench.sh`가 raw output, optional benchstat output, JSON/Markdown report를 생성합니다. Markdown report는 Go `ns/op` row와 custom metric summary를 별도 표로 출력합니다. `clairveil-benchreport -merge-reports`와 `make privacy-public-capacity-report`는 지정된 component report들을 `benchmarks/public-capacity` aggregate artifact로 묶고, component report SHA-256/claim type/eligibility/commit/active set/artifact manifest checksum과 `claim_evidence_by_type`을 보존합니다. Aggregate public claim gate는 component report provenance와 claim별 evidence를 다시 평가하며, ineligible component가 있거나 per-claim evidence가 없는 수동 multi-claim report는 `claim_profile.eligible=false`로 차단합니다.
+현재 상태: 완료. `scripts/privacy-bench.sh`가 raw output, optional benchstat output, JSON/Markdown report를 생성합니다. Markdown report는 Go `ns/op` row와 custom metric summary를 별도 표로 출력합니다. `clairveil-benchreport -merge-reports`와 `make privacy-public-capacity-report`는 지정된 component report들을 `benchmarks/public-capacity` aggregate artifact로 묶고, component report SHA-256/claim type/eligibility/commit/active set/artifact manifest checksum과 `claim_evidence_by_type`을 보존합니다. Aggregate public claim gate는 component report provenance와 claim별 evidence를 다시 평가하며, ineligible component가 있거나 per-claim evidence가 없는 수동 multi-claim report는 `claim_profile.eligible=false`로 차단합니다. `clairveil-benchreport -human-summary-out`와 `make privacy-benchmark-report`는 family별 `latest.json`을 합쳐 사람이 한 문서로 읽을 수 있는 `benchmarks/clairveil-benchmark-results-report-kr.md`를 생성합니다. `scripts/privacy-public-capacity-report.sh`는 기본적으로 aggregate report 생성 후 human summary도 자동 갱신하며, `GENERATE_HUMAN_BENCHMARK_REPORT=0`으로 이 동작을 끌 수 있습니다.
 
 ### Phase B3: prover HTTP benchmark 추가
 

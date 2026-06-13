@@ -67,6 +67,10 @@ privacy-user-latency-bench:
 privacy-public-capacity-report:
 	./scripts/privacy-public-capacity-report.sh
 
+.PHONY: privacy-benchmark-report
+privacy-benchmark-report:
+	./scripts/privacy-benchmark-report.sh
+
 .PHONY: examples
 examples:
 	npm --prefix examples/audit-disclosure-keys test

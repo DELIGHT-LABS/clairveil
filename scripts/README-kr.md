@@ -17,6 +17,7 @@
 - `privacy-localnet-tps-bench.sh`: localnet smoke output을 `chain_tps` benchmark family로 변환합니다.
 - `privacy-user-latency-bench.sh`: localnet privacy smoke를 wallet-flow latency tracing enabled 상태로 실행하고 `privacy-user-latency` report를 생성합니다. `USER_LATENCY_REPEAT=N`으로 반복 sample을 모을 수 있으며, `RUN_PROFILE=public_claim`은 blocked dry run override가 없으면 최소 100회 반복을 요구합니다.
 - `privacy-public-capacity-report.sh`: component report를 public capacity aggregate로 병합하고, component 또는 claim별 evidence가 public gate를 통과하지 못하면 aggregate도 ineligible 상태로 남깁니다.
+- `privacy-benchmark-report.sh`: family별 `latest.json`을 합쳐 사람이 한 문서로 읽을 수 있는 `benchmarks/clairveil-benchmark-results-report-kr.md`를 생성합니다. `privacy-public-capacity-report.sh`는 기본적으로 이 script를 마지막에 호출하며, `GENERATE_HUMAN_BENCHMARK_REPORT=0`으로 끌 수 있습니다.
 - `release-pack.sh`: downstream handoff tarball과 외부 sha256 파일을 `dist/` 아래 생성합니다.
 - `release-pack-verify.sh`: handoff tarball checksum, 내부 `SHA256SUMS.txt`, 필수 파일, manifest commit을 검증합니다.
 - `docker-proverd-build.sh`: prover compose file을 검증하고 reference prover Docker image를 build/inspect합니다.

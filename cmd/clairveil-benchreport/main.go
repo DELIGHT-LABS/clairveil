@@ -231,9 +231,25 @@ type feeSummary struct {
 	EstimatedFeeP95 string `json:"estimated_fee_p95"`
 }
 
+type reserveSnapshot struct {
+	Denom                 string `json:"denom"`
+	ModuleBalance         string `json:"module_balance"`
+	TotalDeposited        string `json:"total_deposited"`
+	TotalWithdrawn        string `json:"total_withdrawn"`
+	ExpectedModuleBalance string `json:"expected_module_balance"`
+	InvariantHolds        bool   `json:"invariant_holds"`
+}
+
+type humanSummaryComponent struct {
+	Path   string
+	Report report
+}
+
 func main() {
 	var inputPath string
 	var mergeReports string
+	var humanSummaryOut string
+	var humanSummaryReports string
 	var outDir string
 	var activeSetID string
 	var manifestPath string
@@ -287,6 +303,8 @@ func main() {
 	var linkedProverReportSHA256 string
 	flag.StringVar(&inputPath, "input", "", "raw go test -bench output")
 	flag.StringVar(&mergeReports, "merge-reports", "", "comma-separated benchmark report JSON files to aggregate into a public-capacity report")
+	flag.StringVar(&humanSummaryOut, "human-summary-out", "", "write a Korean all-in-one human benchmark summary Markdown report to this path")
+	flag.StringVar(&humanSummaryReports, "human-summary-reports", "", "comma-separated benchmark report JSON files for -human-summary-out; defaults to existing standard latest.json files")
 	flag.StringVar(&outDir, "out", "benchmarks/privacy-circuits", "output directory for benchmark reports")
 	flag.StringVar(&activeSetID, "active-set-id", privacyzk.ActiveCircuitSetID, "active circuit set id")
 	flag.StringVar(&manifestPath, "manifest", "", "optional privacy_zk_manifest.json path")
@@ -339,6 +357,26 @@ func main() {
 	flag.StringVar(&linkedProverReportFile, "claim-linked-prover-report-file", "", "public prover RPS report file linked to remote user latency evidence")
 	flag.StringVar(&linkedProverReportSHA256, "claim-linked-prover-report-sha256", "", "SHA-256 of the linked public prover RPS report")
 	flag.Parse()
+
+	if strings.TrimSpace(humanSummaryOut) != "" {
+		paths := parseCSV(humanSummaryReports)
+		if len(paths) == 0 {
+			paths = existingStandardReportPaths()
+		}
+		components, err := readHumanSummaryComponents(paths)
+		if err != nil {
+			fatalf("read human summary reports: %v", err)
+		}
+		markdown := renderHumanSummaryMarkdownKR(components, time.Now().UTC().Format(time.RFC3339))
+		if err := os.MkdirAll(filepath.Dir(humanSummaryOut), 0o755); err != nil {
+			fatalf("create human summary output directory: %v", err)
+		}
+		if err := os.WriteFile(humanSummaryOut, []byte(markdown), 0o644); err != nil {
+			fatalf("write human summary report: %v", err)
+		}
+		fmt.Printf("human benchmark summary written to %s\n", humanSummaryOut)
+		return
+	}
 
 	if strings.TrimSpace(mergeReports) != "" {
 		sourceCommit, sourceDirty, err := sourceMetadata(commitOverride, dirtyOverride)
@@ -923,6 +961,71 @@ func readReportFile(path string) (report, string, error) {
 	return rep, hex.EncodeToString(sum[:]), nil
 }
 
+func standardReportPaths() []string {
+	return []string{
+		"benchmarks/privacy-circuits/latest.json",
+		"benchmarks/privacy-proverd/latest.json",
+		"benchmarks/privacy-proverd-load/latest.json",
+		"benchmarks/privacy-localnet/latest.json",
+		"benchmarks/privacy-localnet-tps/latest.json",
+		"benchmarks/privacy-user-latency/latest.json",
+		"benchmarks/public-capacity/latest.json",
+	}
+}
+
+func existingStandardReportPaths() []string {
+	var paths []string
+	for _, path := range standardReportPaths() {
+		if _, err := os.Stat(path); err == nil {
+			paths = append(paths, path)
+		}
+	}
+	return paths
+}
+
+func readHumanSummaryComponents(paths []string) ([]humanSummaryComponent, error) {
+	paths = uniqueStrings(paths)
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("at least one benchmark report path is required")
+	}
+	components := make([]humanSummaryComponent, 0, len(paths))
+	for _, path := range paths {
+		rep, _, err := readReportFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", path, err)
+		}
+		components = append(components, humanSummaryComponent{
+			Path:   path,
+			Report: rep,
+		})
+	}
+	sort.SliceStable(components, func(i, j int) bool {
+		return humanSummaryFamilyOrder(components[i].Report.ResultFamily) < humanSummaryFamilyOrder(components[j].Report.ResultFamily)
+	})
+	return components, nil
+}
+
+func humanSummaryFamilyOrder(family string) int {
+	switch family {
+	case "privacy-circuits":
+		return 10
+	case "privacy-proverd":
+		return 20
+	case "privacy-proverd-load":
+		return 30
+	case "privacy-localnet":
+		return 40
+	case "privacy-localnet-tps":
+		return 50
+	case "privacy-user-latency":
+		return 60
+	case "public-capacity":
+		return 70
+	default:
+		return 100
+	}
+}
+
 func aggregateClaimTypes(reports []report) []string {
 	var values []string
 	for _, rep := range reports {
@@ -1018,6 +1121,643 @@ func sortedMapKeysClaimEvidence(values map[string]claimEvidence) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func reportsFromComponents(components []humanSummaryComponent) []report {
+	reports := make([]report, 0, len(components))
+	for _, component := range components {
+		reports = append(reports, component.Report)
+	}
+	return reports
+}
+
+func firstNonEmptyReportValue(reports []report, pick func(report) string) string {
+	for _, rep := range reports {
+		value := strings.TrimSpace(pick(rep))
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func findComponentByFamily(components []humanSummaryComponent, family string) (humanSummaryComponent, bool) {
+	for _, component := range components {
+		if component.Report.ResultFamily == family {
+			return component, true
+		}
+	}
+	return humanSummaryComponent{}, false
+}
+
+func findPreferredFeeComponent(components []humanSummaryComponent) (humanSummaryComponent, bool) {
+	for _, family := range []string{"privacy-localnet-tps", "privacy-localnet"} {
+		if component, ok := findComponentByFamily(components, family); ok && len(component.Report.Fees) > 0 {
+			return component, true
+		}
+	}
+	return humanSummaryComponent{}, false
+}
+
+func findBenchmark(benchmarks []benchmarkSummary, name string) (benchmarkSummary, bool) {
+	for _, bench := range benchmarks {
+		if bench.Name == name {
+			return bench, true
+		}
+	}
+	return benchmarkSummary{}, false
+}
+
+func firstBenchmarkByKind(benchmarks []benchmarkSummary, kind string) (benchmarkSummary, bool) {
+	for _, bench := range benchmarks {
+		if bench.MetricKind == kind {
+			return bench, true
+		}
+	}
+	return benchmarkSummary{}, false
+}
+
+func firstBenchmarkByFlow(benchmarks []benchmarkSummary, flow string) *benchmarkSummary {
+	for _, bench := range benchmarks {
+		if bench.FlowProfile == flow {
+			found := bench
+			return &found
+		}
+	}
+	return nil
+}
+
+func bestMetricBenchmark(benchmarks []benchmarkSummary, metricName string) *benchmarkSummary {
+	var best *benchmarkSummary
+	bestValue := math.Inf(-1)
+	for _, bench := range benchmarks {
+		metric, ok := bench.Metrics[metricName]
+		if !ok {
+			continue
+		}
+		if metric.Mean > bestValue {
+			bestValue = metric.Mean
+			found := bench
+			best = &found
+		}
+	}
+	return best
+}
+
+func sortedBenchmarksByName(benchmarks []benchmarkSummary) []benchmarkSummary {
+	rows := append([]benchmarkSummary(nil), benchmarks...)
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i].Name < rows[j].Name
+	})
+	return rows
+}
+
+func sortedBenchmarksByFlow(benchmarks []benchmarkSummary) []benchmarkSummary {
+	rows := append([]benchmarkSummary(nil), benchmarks...)
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].FlowProfile == rows[j].FlowProfile {
+			return rows[i].Name < rows[j].Name
+		}
+		return rows[i].FlowProfile < rows[j].FlowProfile
+	})
+	return rows
+}
+
+func sortedFees(fees []feeSummary) []feeSummary {
+	order := map[string]int{
+		"deposit":        10,
+		"dummy_deposit":  20,
+		"transfer":       30,
+		"withdraw":       40,
+		"relay_withdraw": 50,
+	}
+	rows := append([]feeSummary(nil), fees...)
+	sort.Slice(rows, func(i, j int) bool {
+		left := order[rows[i].TxType]
+		right := order[rows[j].TxType]
+		if left == right {
+			return rows[i].TxType < rows[j].TxType
+		}
+		return left < right
+	})
+	return rows
+}
+
+func metricMean(bench *benchmarkSummary, name string) float64 {
+	if bench == nil {
+		return 0
+	}
+	metric, ok := bench.Metrics[name]
+	if !ok {
+		return 0
+	}
+	return metric.Mean
+}
+
+func metricP95(bench *benchmarkSummary, name string) float64 {
+	if bench == nil {
+		return 0
+	}
+	metric, ok := bench.Metrics[name]
+	if !ok {
+		return 0
+	}
+	return metric.P95
+}
+
+func metricP99(bench *benchmarkSummary, name string) float64 {
+	if bench == nil {
+		return 0
+	}
+	metric, ok := bench.Metrics[name]
+	if !ok {
+		return 0
+	}
+	return metric.P99
+}
+
+func readReserveSnapshotFromReport(rep report) (reserveSnapshot, bool) {
+	for _, path := range rep.SourceFiles {
+		base := filepath.Base(path)
+		if !strings.HasPrefix(base, "reserve-") || !strings.HasSuffix(base, ".json") {
+			continue
+		}
+		bz, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var snapshot reserveSnapshot
+		if err := json.Unmarshal(bz, &snapshot); err != nil {
+			continue
+		}
+		return snapshot, true
+	}
+	return reserveSnapshot{}, false
+}
+
+func humanSummaryTargetForFamily(family string) string {
+	switch family {
+	case "privacy-circuits":
+		return "make privacy-bench"
+	case "privacy-proverd":
+		return "make privacy-proverd-bench"
+	case "privacy-proverd-load":
+		return "make privacy-proverd-load-bench"
+	case "privacy-localnet":
+		return "make privacy-bench-localnet"
+	case "privacy-localnet-tps":
+		return "make privacy-localnet-tps-bench"
+	case "privacy-user-latency":
+		return "make privacy-user-latency-bench"
+	case "public-capacity":
+		return "make privacy-public-capacity-report"
+	default:
+		return family
+	}
+}
+
+func humanSummaryFamilyNote(family string) string {
+	switch family {
+	case "privacy-circuits":
+		return "Native circuit prove/verify/setup/compile/artifact write"
+	case "privacy-proverd":
+		return "In-process HTTP prover transport overhead"
+	case "privacy-proverd-load":
+		return "External clairveil-proverd load"
+	case "privacy-localnet":
+		return "CLI e2e, fee/gas, reserve snapshot"
+	case "privacy-localnet-tps":
+		return "Localnet smoke를 chain TPS schema로 변환"
+	case "privacy-user-latency":
+		return "Wallet flow latency trace"
+	case "public-capacity":
+		return "Public claim gate aggregate"
+	default:
+		return ""
+	}
+}
+
+func humanSummaryResultLabel(rep report) string {
+	if rep.ResultFamily == "public-capacity" && !rep.ClaimProfile.Eligible {
+		return "성공, ineligible"
+	}
+	return "성공"
+}
+
+func humanSummaryWindow(start, end string) string {
+	start = strings.TrimSpace(start)
+	end = strings.TrimSpace(end)
+	if start == "" && end == "" {
+		return "-"
+	}
+	return valueOrDash(start) + " to " + valueOrDash(end)
+}
+
+func humanSummaryCircuitOperation(name string) string {
+	switch name {
+	case "BenchmarkDepositCircuitProve":
+		return "Deposit prove"
+	case "BenchmarkDepositCircuitVerify":
+		return "Deposit verify"
+	case "BenchmarkSpendCircuitProve":
+		return "Spend prove"
+	case "BenchmarkSpendCircuitVerify":
+		return "Spend verify"
+	case "BenchmarkJoinSplitCircuitProve":
+		return "JoinSplit prove"
+	case "BenchmarkJoinSplitCircuitVerify":
+		return "JoinSplit verify"
+	default:
+		return "`" + name + "`"
+	}
+}
+
+func valueOrDash(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "-"
+	}
+	return value
+}
+
+func renderHumanSummaryMarkdownKR(components []humanSummaryComponent, generatedAt string) string {
+	reports := reportsFromComponents(components)
+	commit, commitOK := commonStringValue(reports, func(rep report) string { return rep.Commit })
+	if !commitOK && commit != "" {
+		commit += " (mixed)"
+	}
+	activeSetID, _ := commonStringValue(reports, func(rep report) string { return rep.ActiveSetID })
+	goVersion, _ := commonStringValue(reports, func(rep report) string { return rep.GoVersion })
+	gnarkVersion, _ := commonStringValue(reports, func(rep report) string { return rep.GnarkVersion })
+	gnarkCryptoVersion, _ := commonStringValue(reports, func(rep report) string { return rep.GnarkCrypto })
+	osName, _ := commonStringValue(reports, func(rep report) string { return rep.OS })
+	arch, _ := commonStringValue(reports, func(rep report) string { return rep.Arch })
+	cpu := firstNonEmptyReportValue(reports, func(rep report) string { return rep.CPU })
+	runStartedAt, runEndedAt := aggregateRunWindow(reports)
+	dirty := anyComponentDirty(reports)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Clairveil Privacy Benchmark 결과 리포트\n\n")
+	fmt.Fprintf(&b, "> 이 파일은 `clairveil-benchreport -human-summary-out`로 자동 생성된다. 수동으로 편집하지 말고 benchmark 산출물을 다시 생성한 뒤 이 리포트를 재생성한다.\n\n")
+	fmt.Fprintf(&b, "- report_generated_at: `%s`\n", generatedAt)
+	if runStartedAt != "" || runEndedAt != "" {
+		fmt.Fprintf(&b, "- benchmark_run_window: `%s` to `%s`\n", runStartedAt, runEndedAt)
+	}
+	fmt.Fprintf(&b, "- 기준 commit: `%s`\n", valueOrDash(commit))
+	fmt.Fprintf(&b, "- working_tree_dirty: `%t`\n", dirty)
+	fmt.Fprintf(&b, "- active_set_id: `%s`\n", valueOrDash(activeSetID))
+	fmt.Fprintf(&b, "- 플랫폼: `%s/%s`\n", valueOrDash(osName), valueOrDash(arch))
+	if cpu != "" {
+		fmt.Fprintf(&b, "- CPU: `%s`\n", cpu)
+	}
+	fmt.Fprintf(&b, "- Go: `%s`\n", valueOrDash(goVersion))
+	fmt.Fprintf(&b, "- gnark: `%s`\n", valueOrDash(gnarkVersion))
+	fmt.Fprintf(&b, "- gnark-crypto: `%s`\n\n", valueOrDash(gnarkCryptoVersion))
+
+	fmt.Fprintf(&b, "현재 결과는 개발용 benchmark report이다. Public capacity claim, 특히 \"TPS\", \"운영 prover 처리량\", \"사용자가 체감할 실제 지연\"의 공개 수치로 바로 쓰려면 `public-capacity` gate가 통과해야 한다.\n\n")
+
+	renderHumanSummaryConclusionKR(&b, components)
+	renderHumanSummaryExecutionKR(&b, components)
+	renderHumanSummaryReportStatusKR(&b, components)
+	component, ok := findComponentByFamily(components, "privacy-circuits")
+	renderHumanSummaryNativeCircuitsKR(&b, component, ok)
+	component, ok = findComponentByFamily(components, "privacy-proverd")
+	renderHumanSummaryHTTPTransportKR(&b, component, ok)
+	component, ok = findComponentByFamily(components, "privacy-proverd-load")
+	renderHumanSummaryExternalProverdKR(&b, component, ok)
+	component, ok = findPreferredFeeComponent(components)
+	renderHumanSummaryLocalnetKR(&b, component, ok)
+	component, ok = findComponentByFamily(components, "privacy-localnet-tps")
+	renderHumanSummaryTPSKR(&b, component, ok)
+	component, ok = findComponentByFamily(components, "privacy-user-latency")
+	renderHumanSummaryUserLatencyKR(&b, component, ok)
+	component, ok = findComponentByFamily(components, "public-capacity")
+	renderHumanSummaryPublicCapacityKR(&b, component, ok)
+	renderHumanSummaryArtifactsKR(&b, components)
+	renderHumanSummaryLimitationsKR(&b)
+
+	return b.String()
+}
+
+func renderHumanSummaryConclusionKR(b *strings.Builder, components []humanSummaryComponent) {
+	fmt.Fprintf(b, "## 결론\n\n")
+	for _, line := range humanSummaryHeadlineLines(components) {
+		fmt.Fprintf(b, "- %s\n", line)
+	}
+	fmt.Fprintf(b, "\n")
+}
+
+func humanSummaryHeadlineLines(components []humanSummaryComponent) []string {
+	var lines []string
+	if component, ok := findComponentByFamily(components, "privacy-circuits"); ok {
+		if bench, ok := findBenchmark(component.Report.Benchmarks, "BenchmarkJoinSplitCircuitProve"); ok {
+			lines = append(lines, fmt.Sprintf("Native JoinSplit/transfer proof는 평균 %s, p95 %s였다.", formatDurationNS(bench.NSOpMean), formatDurationNS(bench.NSOpP95)))
+		}
+	}
+	if component, ok := findComponentByFamily(components, "privacy-proverd-load"); ok {
+		best := bestMetricBenchmark(component.Report.Benchmarks, "requests/sec")
+		if best != nil {
+			if latency, ok := best.Metrics["latency_ms"]; ok {
+				lines = append(lines, fmt.Sprintf("External `clairveil-proverd` %s는 %.3f req/s, latency p95 %.3f ms로 측정됐다.", best.Name, best.Metrics["requests/sec"].Mean, latency.P95))
+			}
+		}
+	}
+	if component, ok := findComponentByFamily(components, "privacy-localnet-tps"); ok {
+		if bench, ok := firstBenchmarkByKind(component.Report.Benchmarks, "chain_tps"); ok {
+			if metric, ok := bench.Metrics["tx/sec"]; ok {
+				lines = append(lines, fmt.Sprintf("Localnet smoke의 observed throughput은 %.6g tx/s지만, scripted e2e smoke이므로 capacity TPS로 해석하면 안 된다.", metric.Mean))
+			}
+		}
+	}
+	if component, ok := findComponentByFamily(components, "privacy-user-latency"); ok {
+		transfer := firstBenchmarkByFlow(component.Report.Benchmarks, "transfer_all_private")
+		deposit := firstBenchmarkByFlow(component.Report.Benchmarks, "deposit")
+		if transfer != nil && deposit != nil {
+			lines = append(lines, fmt.Sprintf("User latency smoke는 deposit 평균 %.3f ms, all-private transfer 평균 %.3f ms 수준으로 관측됐다.", metricMean(deposit, "total_latency_ms"), metricMean(transfer, "total_latency_ms")))
+		}
+	}
+	if component, ok := findComponentByFamily(components, "public-capacity"); ok {
+		lines = append(lines, fmt.Sprintf("Public capacity aggregate는 `eligible=%t`이다.", component.Report.ClaimProfile.Eligible))
+	}
+	if len(lines) == 0 {
+		lines = append(lines, "입력 benchmark report가 비어 있어 요약할 수 있는 핵심 수치가 없다.")
+	}
+	return lines
+}
+
+func renderHumanSummaryExecutionKR(b *strings.Builder, components []humanSummaryComponent) {
+	fmt.Fprintf(b, "## 실행 대상\n\n")
+	fmt.Fprintf(b, "| Target | 결과 | 생성 family | 비고 |\n")
+	fmt.Fprintf(b, "| --- | --- | --- | --- |\n")
+	for _, family := range []string{
+		"privacy-circuits",
+		"privacy-proverd",
+		"privacy-proverd-load",
+		"privacy-localnet",
+		"privacy-localnet-tps",
+		"privacy-user-latency",
+		"public-capacity",
+	} {
+		component, ok := findComponentByFamily(components, family)
+		if !ok {
+			continue
+		}
+		fmt.Fprintf(b, "| `%s` | %s | `%s` | %s |\n", humanSummaryTargetForFamily(family), humanSummaryResultLabel(component.Report), family, humanSummaryFamilyNote(family))
+	}
+	fmt.Fprintf(b, "\n")
+}
+
+func renderHumanSummaryReportStatusKR(b *strings.Builder, components []humanSummaryComponent) {
+	fmt.Fprintf(b, "## Report 상태\n\n")
+	fmt.Fprintf(b, "| Family | generated_at UTC | run window UTC | eligible | rows |\n")
+	fmt.Fprintf(b, "| --- | --- | --- | ---: | ---: |\n")
+	for _, component := range components {
+		rep := component.Report
+		fmt.Fprintf(
+			b,
+			"| `%s` | `%s` | `%s` | %t | %d |\n",
+			valueOrDash(rep.ResultFamily),
+			valueOrDash(rep.GeneratedAt),
+			humanSummaryWindow(rep.RunStartedAt, rep.RunEndedAt),
+			rep.ClaimProfile.Eligible,
+			len(rep.Benchmarks),
+		)
+	}
+	fmt.Fprintf(b, "\n")
+}
+
+func renderHumanSummaryNativeCircuitsKR(b *strings.Builder, component humanSummaryComponent, ok bool) {
+	if !ok {
+		return
+	}
+	fmt.Fprintf(b, "## Native Circuit\n\n")
+	fmt.Fprintf(b, "| Operation | Samples | Mean | p95 | Mean ops/sec |\n")
+	fmt.Fprintf(b, "| --- | ---: | ---: | ---: | ---: |\n")
+	for _, name := range []string{
+		"BenchmarkDepositCircuitProve",
+		"BenchmarkDepositCircuitVerify",
+		"BenchmarkSpendCircuitProve",
+		"BenchmarkSpendCircuitVerify",
+		"BenchmarkJoinSplitCircuitProve",
+		"BenchmarkJoinSplitCircuitVerify",
+	} {
+		bench, found := findBenchmark(component.Report.Benchmarks, name)
+		if !found {
+			continue
+		}
+		fmt.Fprintf(
+			b,
+			"| %s | %d | %s | %s | %.2f |\n",
+			humanSummaryCircuitOperation(name),
+			bench.Samples,
+			formatDurationNS(bench.NSOpMean),
+			formatDurationNS(bench.NSOpP95),
+			bench.OpsPerSec,
+		)
+	}
+	fmt.Fprintf(b, "\n해석:\n\n")
+	fmt.Fprintf(b, "- JoinSplit proving이 가장 큰 단일 CPU 비용이다.\n")
+	fmt.Fprintf(b, "- Verification은 세 회로 모두 매우 작게 측정된다.\n")
+	fmt.Fprintf(b, "- 이 표는 native microbenchmark이며, chain TPS나 운영 prover throughput으로 직접 환산하면 안 된다.\n\n")
+}
+
+func renderHumanSummaryHTTPTransportKR(b *strings.Builder, component humanSummaryComponent, ok bool) {
+	if !ok {
+		return
+	}
+	fmt.Fprintf(b, "## In-Process Prover HTTP Transport\n\n")
+	fmt.Fprintf(b, "| Operation | Samples | Mean | p95 | Mean ops/sec |\n")
+	fmt.Fprintf(b, "| --- | ---: | ---: | ---: | ---: |\n")
+	for _, bench := range sortedBenchmarksByName(component.Report.Benchmarks) {
+		if bench.MetricKind != "prover_http_client_roundtrip" {
+			continue
+		}
+		fmt.Fprintf(
+			b,
+			"| `%s` | %d | %s | %s | %.2f |\n",
+			bench.Name,
+			bench.Samples,
+			formatDurationNS(bench.NSOpMean),
+			formatDurationNS(bench.NSOpP95),
+			bench.OpsPerSec,
+		)
+	}
+	fmt.Fprintf(b, "\n해석:\n\n")
+	fmt.Fprintf(b, "- 이 결과는 HTTP client/server adapter와 JSON payload 처리 오버헤드다.\n")
+	fmt.Fprintf(b, "- 실제 Groth16 proving은 포함하지 않는다.\n\n")
+}
+
+func renderHumanSummaryExternalProverdKR(b *strings.Builder, component humanSummaryComponent, ok bool) {
+	if !ok {
+		return
+	}
+	fmt.Fprintf(b, "## External Proverd Load\n\n")
+	fmt.Fprintf(b, "| Bucket | Concurrency | Samples | Requests/sec | Latency mean | Latency p95 | Latency p99 | Error rate | Timeout rate | RSS p95 |\n")
+	fmt.Fprintf(b, "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+	for _, bench := range sortedBenchmarksByName(component.Report.Benchmarks) {
+		if bench.MetricKind != "prover_load" {
+			continue
+		}
+		fmt.Fprintf(
+			b,
+			"| `%s` | %d | %d | %.3f | %.3f ms | %.3f ms | %.3f ms | %.6g | %.6g | %.0f B |\n",
+			bench.Name,
+			bench.Concurrency,
+			bench.Samples,
+			metricMean(&bench, "requests/sec"),
+			metricMean(&bench, "latency_ms"),
+			metricP95(&bench, "latency_ms"),
+			metricP99(&bench, "latency_ms"),
+			metricMean(&bench, "error_rate"),
+			metricMean(&bench, "timeout_rate"),
+			metricP95(&bench, "rss_bytes"),
+		)
+	}
+	fmt.Fprintf(b, "\n해석:\n\n")
+	fmt.Fprintf(b, "- 실제 `clairveil-proverd` 프로세스에 HTTP 요청을 넣은 결과다.\n")
+	fmt.Fprintf(b, "- Smoke duration이 짧으므로 운영 capacity claim으로 쓰려면 더 긴 steady-state, saturation sweep, machine/config evidence가 필요하다.\n\n")
+}
+
+func renderHumanSummaryLocalnetKR(b *strings.Builder, component humanSummaryComponent, ok bool) {
+	if !ok {
+		return
+	}
+	rep := component.Report
+	if len(rep.Fees) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "## Localnet Fee 및 Reserve\n\n")
+	if rep.FeeModel.FeeDenom != "" || rep.FeeModel.MinGasPrice != "" || rep.FeeModel.GasAdjustment != "" {
+		fmt.Fprintf(b, "Fee model: denom `%s`, min gas price `%s`, gas adjustment `%s`\n\n", rep.FeeModel.FeeDenom, rep.FeeModel.MinGasPrice, rep.FeeModel.GasAdjustment)
+	}
+	fmt.Fprintf(b, "| Tx type | Samples | Gas p50 | Gas p95 | Fee p50 | Fee p95 |\n")
+	fmt.Fprintf(b, "| --- | ---: | ---: | ---: | ---: | ---: |\n")
+	for _, fee := range sortedFees(rep.Fees) {
+		fmt.Fprintf(
+			b,
+			"| `%s` | %d | %d | %d | `%s` | `%s` |\n",
+			fee.TxType,
+			fee.Samples,
+			fee.GasUsedP50,
+			fee.GasUsedP95,
+			fee.EstimatedFeeP50,
+			fee.EstimatedFeeP95,
+		)
+	}
+	if reserve, ok := readReserveSnapshotFromReport(rep); ok {
+		fmt.Fprintf(b, "\nReserve snapshot:\n\n")
+		fmt.Fprintf(b, "| Field | Value |\n")
+		fmt.Fprintf(b, "| --- | ---: |\n")
+		fmt.Fprintf(b, "| denom | `%s` |\n", reserve.Denom)
+		fmt.Fprintf(b, "| total deposited | %s |\n", reserve.TotalDeposited)
+		fmt.Fprintf(b, "| total withdrawn | %s |\n", reserve.TotalWithdrawn)
+		fmt.Fprintf(b, "| expected module balance | %s |\n", reserve.ExpectedModuleBalance)
+		fmt.Fprintf(b, "| module balance | %s |\n", reserve.ModuleBalance)
+		fmt.Fprintf(b, "| invariant holds | %t |\n", reserve.InvariantHolds)
+	}
+	fmt.Fprintf(b, "\n해석:\n\n")
+	fmt.Fprintf(b, "- Fee는 observed `gas_used` 기반 추정치이며, prover infrastructure cost는 포함하지 않는다.\n")
+	fmt.Fprintf(b, "- Reserve snapshot은 localnet smoke flow 기준 accounting invariant 확인용이다.\n\n")
+}
+
+func renderHumanSummaryTPSKR(b *strings.Builder, component humanSummaryComponent, ok bool) {
+	if !ok {
+		return
+	}
+	bench, found := firstBenchmarkByKind(component.Report.Benchmarks, "chain_tps")
+	if !found {
+		return
+	}
+	fmt.Fprintf(b, "## Localnet TPS Smoke\n\n")
+	fmt.Fprintf(b, "| Metric | Value |\n")
+	fmt.Fprintf(b, "| --- | ---: |\n")
+	fmt.Fprintf(b, "| benchmark | `%s` |\n", bench.Name)
+	fmt.Fprintf(b, "| samples | %d |\n", bench.Samples)
+	fmt.Fprintf(b, "| duration | %d s |\n", bench.DurationSeconds)
+	fmt.Fprintf(b, "| target tx/sec | %.6g |\n", bench.TargetTxPerSec)
+	fmt.Fprintf(b, "| measured tx/sec | %.6g |\n", metricMean(&bench, "tx/sec"))
+	fmt.Fprintf(b, "| failed tx rate | %.6g |\n", metricMean(&bench, "failed_tx_rate"))
+	fmt.Fprintf(b, "| gas used p95 | %.6g |\n", metricP95(&bench, "gas_used"))
+	if metric, ok := bench.Metrics["inclusion_latency_ms"]; ok {
+		fmt.Fprintf(b, "| inclusion latency p95 | %.6g ms |\n", metric.P95)
+	}
+	fmt.Fprintf(b, "\n해석:\n\n")
+	fmt.Fprintf(b, "- 이 값은 capacity TPS가 아니라 localnet scripted e2e smoke를 TPS schema로 변환한 결과다.\n")
+	fmt.Fprintf(b, "- Public TPS claim에는 target tx/sec sweep과 positive inclusion latency 계측이 필요하다.\n\n")
+}
+
+func renderHumanSummaryUserLatencyKR(b *strings.Builder, component humanSummaryComponent, ok bool) {
+	if !ok {
+		return
+	}
+	fmt.Fprintf(b, "## User Latency Smoke\n\n")
+	fmt.Fprintf(b, "| Flow | Samples | Total mean | Total p95 | Prepare mean | Proof mean | Submit mean | Error rate |\n")
+	fmt.Fprintf(b, "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+	for _, bench := range sortedBenchmarksByFlow(component.Report.Benchmarks) {
+		if bench.MetricKind != "user_latency" {
+			continue
+		}
+		fmt.Fprintf(
+			b,
+			"| `%s` | %d | %.3f ms | %.3f ms | %.3f ms | %.3f ms | %.3f ms | %.6g |\n",
+			bench.FlowProfile,
+			bench.Samples,
+			metricMean(&bench, "total_latency_ms"),
+			metricP95(&bench, "total_latency_ms"),
+			metricMean(&bench, "prepare_latency_ms"),
+			metricMean(&bench, "proof_latency_ms"),
+			metricMean(&bench, "time_to_submit_ms"),
+			metricMean(&bench, "error_rate"),
+		)
+	}
+	fmt.Fprintf(b, "\n해석:\n\n")
+	fmt.Fprintf(b, "- Warm native smoke 기준 사용자 체감 latency를 flow별로 분해한 값이다.\n")
+	fmt.Fprintf(b, "- Sample 수가 작으면 p95/p99 public claim에는 사용할 수 없다.\n\n")
+}
+
+func renderHumanSummaryPublicCapacityKR(b *strings.Builder, component humanSummaryComponent, ok bool) {
+	if !ok {
+		return
+	}
+	rep := component.Report
+	fmt.Fprintf(b, "## Public Capacity 판정\n\n")
+	fmt.Fprintf(b, "`public-capacity/latest.json`의 최종 판정은 `claim_eligible=%t`이다.\n\n", rep.ClaimProfile.Eligible)
+	if len(rep.ClaimProfile.BlockingReasons) > 0 {
+		fmt.Fprintf(b, "주요 blocker:\n\n")
+		for _, reason := range rep.ClaimProfile.BlockingReasons {
+			fmt.Fprintf(b, "- %s\n", reason)
+		}
+		fmt.Fprintf(b, "\n")
+	}
+	fmt.Fprintf(b, "해석:\n\n")
+	fmt.Fprintf(b, "- Aggregate가 실패한 것은 benchmark 실행 실패가 아니다.\n")
+	fmt.Fprintf(b, "- 현재 산출물이 공개 수치로 승격되기에는 evidence와 sample이 부족하다는 뜻이다.\n\n")
+}
+
+func renderHumanSummaryArtifactsKR(b *strings.Builder, components []humanSummaryComponent) {
+	fmt.Fprintf(b, "## 산출물\n\n")
+	fmt.Fprintf(b, "| Family | Markdown | JSON |\n")
+	fmt.Fprintf(b, "| --- | --- | --- |\n")
+	for _, component := range components {
+		family := component.Report.ResultFamily
+		if family == "" {
+			family = "unknown"
+		}
+		mdPath := strings.TrimSuffix(component.Path, ".json") + ".md"
+		if strings.HasSuffix(component.Path, "latest.json") {
+			mdPath = filepath.Join(filepath.Dir(component.Path), "latest.md")
+		}
+		fmt.Fprintf(b, "| `%s` | `%s` | `%s` |\n", family, mdPath, component.Path)
+	}
+	fmt.Fprintf(b, "\n")
+}
+
+func renderHumanSummaryLimitationsKR(b *strings.Builder) {
+	fmt.Fprintf(b, "## 현재 한계\n\n")
+	fmt.Fprintf(b, "1. 이 문서는 자동 생성되지만, 입력이 되는 family별 `latest.json`들이 fresh하다는 전제에 의존한다.\n")
+	fmt.Fprintf(b, "2. Public claim을 만들려면 smoke가 아니라 `public_claim` profile로 긴 시간 실행해야 한다.\n")
+	fmt.Fprintf(b, "3. User latency와 chain TPS는 sample/evidence가 부족하면 공개 p95/p99 claim으로 사용할 수 없다.\n")
+	fmt.Fprintf(b, "4. External proverd load가 특정 profile만 측정했다면 다른 profile의 capacity는 별도로 측정해야 한다.\n")
 }
 
 func renderMarkdown(rep report) string {
