@@ -213,14 +213,17 @@ Public claim 결과에는 반드시 "reference environment" 또는 "production-l
 - 생성 row는 `claim_type=prover_rps`, `load_profile`, `route`, `concurrency`, `warmup_seconds`, `duration_seconds` metadata와 `requests/sec`, `latency_ms`, `error_rate`, `timeout_rate`, request/response byte metric을 포함합니다.
 - `clairveil-proverd`는 `/debug/vars` JSON endpoint로 goroutine, heap/sys memory, RSS, max RSS, process CPU seconds를 노출합니다.
 - `cmd/clairveil-proverload`는 measured bucket 동안 `-telemetry-interval` 주기로 `/debug/vars`를 샘플링하고, `cpu_percent`, `rss_bytes`, `max_rss_bytes`, heap/goroutine metric을 같은 `prover_rps` structured row에 포함합니다. Public claim에서는 이 row metric과 saturation profile evidence file을 함께 제출합니다.
+- 2026-06-13 smoke run에서 기본 `privacy_prover_example_bundle.json`은 HTTP contract fixture로는 유효했지만 실제 JoinSplit witness로는 유효하지 않아 external `clairveil-proverd`가 `constraint #32267 is not satisfied`로 모든 transfer request를 거절했습니다. 이 결과는 운영 prover 처리량이 아니라 invalid load fixture를 의미합니다.
 
 구현 항목:
 
 - `scripts/privacy-proverd-load-bench.sh` 추가
 - `cmd/clairveil-proverload` 또는 동등한 Go load generator 추가
 - `clairveil-proverd`를 strict preflight, fixed artifact dir, optional bearer token으로 실행
-- fixture-backed prepared transfer/withdraw payload pool을 N개 생성
-- conformance fixture 반복 사용은 smoke/dev mode에서만 허용하고, public claim run에서는 varied notes, roots, disclosure policies, payload expiry를 포함한 fixture pool을 사용
+- real prover-valid prepared transfer/withdraw request pool을 N개 생성합니다. HTTP schema conformance fixture는 `mocked` 또는 `contract` mode에서만 사용하고, external proverd load의 기본값은 실제 circuit witness를 만족하는 fixture여야 합니다.
+- load 시작 전 각 route별 단일 request preflight를 수행합니다. preflight에서 proof generation이 실패하면 measured bucket을 실행하지 않고 non-zero exit로 중단하며, `requests/sec=0`인 성능 report를 만들지 않습니다.
+- preflight 실패 원인은 route, status code, response body preview, fixture path와 함께 출력합니다. 이 실패는 benchmark setup failure로 취급하고 throughput 결과로 해석하지 않습니다.
+- conformance fixture 반복 사용은 schema/transport smoke에서만 허용하고, public claim run에서는 varied notes, roots, disclosure policies, payload expiry를 포함한 fixture pool을 사용합니다.
 - route별 load profile:
   - `transfer_only`
   - `withdraw_only`
@@ -248,6 +251,8 @@ Public claim 결과에는 반드시 "reference environment" 또는 "production-l
 - p99와 error rate가 public report에 포함
 - artifact preflight mode와 checksum이 report에 포함
 - auth enabled/disabled 여부가 report에 포함
+- invalid fixture 또는 route preflight 실패 시 `latest.json`을 성공 결과처럼 생성하지 않음
+- integration test가 generated artifact + `clairveil-proverd` + generated valid request fixture로 transfer 또는 withdraw 단일 proof 성공을 확인함
 
 Public claim gate:
 
@@ -269,6 +274,7 @@ Public claim gate:
 - 기존 `privacy-bench-localnet.sh`는 tx query JSON에서 gas, success, height, included timestamp를 추출하고, smoke script가 기록한 submitted timestamp와 함께 tx metrics를 생성합니다. Downstream/staging bucket 입력에서도 tx별 `success`는 명시되어야 하며, 누락된 값은 성공으로 추정하지 않고 실패로 계산합니다.
 - structured row는 `claim_type=chain_tps`, `load_profile`, `duration_seconds`, `target_tx_per_sec`와 `submitted_tx/sec`, `accepted_tx/sec`, `included_tx/sec`, `successful_tx/sec`, `tx/sec`, `failed_tx_rate`, `inclusion_latency_ms`, `gas_used` metric을 포함합니다.
 - 현재 wrapper는 e2e smoke flow를 계측 가능한 TPS report로 승격하는 경로입니다. 대규모 open-loop account pool/sequence contention 없는 batch submission은 downstream/staging 환경에서 같은 tx metrics bucket schema로 feed해야 합니다.
+- 2026-06-13 smoke run에서 `inclusion_latency_ms=0`으로 기록된 값은 submitted/included timestamp 해상도와 CLI query 기반 계측의 한계 때문에 public latency evidence로 사용할 수 없습니다.
 
 구현 항목:
 
@@ -303,6 +309,8 @@ Public claim gate:
   - block height/time distribution
   - mempool rejected tx count
   - reserve invariant before/after
+- smoke/localnet wrapper는 included timestamp가 submitted timestamp보다 빠르거나 같은 경우 해당 latency sample을 public evidence에서 제외하거나 `latency_source=coarse_cli_timestamp`로 표시합니다. Public claim mode에서는 positive inclusion latency source가 없으면 fail-fast 또는 ineligible blocker를 유지합니다.
+- target tx/sec sweep은 최소 두 bucket을 기본 profile로 지원합니다. 단일 target smoke는 schema smoke로만 사용합니다.
 
 완료 기준:
 
@@ -319,6 +327,7 @@ Public claim gate:
   - validator count
   - app commit
   - artifact manifest checksum
+- public claim mode에서 `inclusion_latency_ms`가 0으로만 구성되면 eligible로 승격하지 않음
 
 Public claim gate:
 
@@ -378,6 +387,7 @@ metrics:
 - `cmd/clairveil-userlatency`는 trace JSONL 또는 JSON array를 flow 단위로 집계해 `claim_type=user_latency`, `metric_kind=user_latency`, `flow_profile`, `latency_mode`, `cold_warm` metadata와 `prepare_latency_ms`, `proof_latency_ms`, `time_to_submit_ms`, `submit_ready_ms`, `total_latency_ms`, `error_rate`, `timeout_rate`, `cancel_rate` metric을 가진 structured summary JSON을 생성합니다. Optional `-tx-metrics` 입력이 있으면 tx hash 기반 `inclusion_latency_ms`/`time_to_inclusion_ms`도 추가합니다.
 - `make privacy-user-latency-bench` 또는 `scripts/privacy-user-latency-bench.sh`는 localnet e2e smoke를 trace enabled로 실행하고, `benchmarks/privacy-user-latency` report를 생성합니다. Public run에서는 `USER_LATENCY_FLOW_FILTER`, `CLAIM_LATENCY_MODE`, `CLAIM_COLD_WARM`, SLO/evidence env로 flow/mode/cold-warm bucket을 분리합니다.
 - Remote prover와 browser/WASM latency는 같은 trace schema와 public claim gate로 수용할 수 있지만, 현재 repo의 CLI smoke runner는 native/local proof 경로만 직접 계측합니다. Remote claim은 실제 remote prover client trace와 eligible linked prover RPS report가 함께 있어야 하고, browser claim은 JS/WASM adapter evidence가 있어야 합니다.
+- 2026-06-13 smoke run은 flow별 sample 수가 1-4개라서 harness smoke로만 의미가 있습니다. Public user latency claim은 flow/mode/cold-warm bucket별 sample 수를 100 이상으로 늘리고, zero-duration phase가 의미 있는 no-op인지 계측 누락인지 구분해야 합니다.
 
 완료 기준:
 
@@ -385,6 +395,7 @@ metrics:
 - remote prover latency report가 prover RPS benchmark의 instance profile과 연결됨
 - "submit-ready latency"와 "included latency"가 별도 표로 출력됨
 - browser/WASM report는 JS/WASM prover adapter가 준비된 뒤에만 public claim gate 대상으로 승격됨. adapter가 없는 동안 C3b는 blocked future phase로 표시합니다.
+- smoke runner는 반복 횟수 옵션을 제공해 flow별 sample count를 의도적으로 늘릴 수 있어야 합니다. Public claim mode에서는 sample count 부족을 실행 전 config validation 또는 report gate로 명확히 차단합니다.
 
 Public claim gate:
 
@@ -408,6 +419,7 @@ Public claim gate:
 - aggregate report는 component별 `claim_evidence`를 `claim_evidence_by_type`에 보존하고, multi-claim public gate에서 claim별 evidence를 서로 섞지 않고 평가합니다.
 - component benchmark rows와 fee rows는 aggregate report에 병합됩니다.
 - 지정된 component report를 aggregate로 묶은 뒤, 모든 component가 eligible이고 aggregate의 환경/provenance/run window가 public gate를 통과하면 aggregate report도 `public-capacity` claim으로 eligible이 될 수 있습니다. ineligible component가 있거나 per-claim evidence가 없는 수동 multi-claim report는 계속 차단됩니다.
+- 2026-06-13 aggregate run은 모든 component가 같은 commit으로 생성됐지만 `privacy-proverd-load` invalid fixture, smoke profile, missing evidence, chain TPS 단일 bucket, user latency sample 부족 때문에 `claim_eligible=false`가 맞습니다.
 
 기본 입력:
 
@@ -447,6 +459,7 @@ Markdown report 구성:
 - smoke/reference/public claim 결과가 파일명과 report header에서 구분됨
 - claim별 evidence와 row bucket metadata가 도입되어 `prover_rps`, `chain_tps`, `user_latency`의 load profile, config hash, topology, sample bucket이 서로 섞이지 않음
 - per-claim evidence가 없는 multi-claim `public-capacity` report가 public eligible로 승격되지 않음
+- invalid component report는 aggregate에서 성능 섹션이 아니라 blocker 섹션에 명확히 표시됨. 특히 `error_rate=1`, `requests/sec=0`인 proverd-load bucket은 "zero capacity"가 아니라 "invalid measured bucket"으로 표시해야 함
 
 ## 8. Phase C5: Benchmark 운영 절차
 
@@ -474,15 +487,14 @@ Markdown report 구성:
 
 ## 9. 권장 작업 순서
 
-1. Phase C0: claim schema와 gate 추가
-2. Phase C1: external `clairveil-proverd` load benchmark
-3. Phase C2: localnet TPS batch runner
-4. Phase C4: public report generator 통합
-5. Phase C3: user latency native CLI benchmark
+1. Phase C1 보강: external `clairveil-proverd` load용 real prover-valid fixture 생성과 route preflight fail-fast
+2. Phase C4 보강: invalid measured bucket을 public aggregate에서 capacity metric으로 오해하지 않게 blocker로 표시
+3. Phase C2 보강: inclusion latency source/positive latency gate와 target tx/sec sweep
+4. Phase C3 보강: user latency 반복 sample runner와 zero-duration phase 의미 구분
+5. Phase C5 연결: public run evidence 자동화와 release checklist 반영
 6. Phase C3 확장: browser/WASM benchmark
-7. Phase C5: release process에 연결
 
-이 순서를 권장하는 이유는 prover capacity와 chain TPS가 public claim의 핵심이고, user latency는 chain/prover topology가 고정되어야 해석이 가능하기 때문입니다.
+이 순서를 권장하는 이유는 현재 public claim의 가장 큰 blocker가 external proverd-load의 invalid fixture이기 때문입니다. 운영 prover RPS를 잴 수 있는 유효 입력과 fail-fast가 먼저 확보되어야 chain TPS/user latency/public aggregate 결과도 안전하게 해석할 수 있습니다.
 
 ## 10. 최종 공개 문구 예시
 
