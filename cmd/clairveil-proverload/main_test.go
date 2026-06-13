@@ -6,11 +6,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	privacyproverservice "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/proverservice"
+	privacyprovertransport "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/provertransport"
 )
 
 func TestParsePositiveInts(t *testing.T) {
@@ -45,6 +47,53 @@ func TestLoadRequestsFromFixtureBundle(t *testing.T) {
 	}
 	if requests[0].Route != "transfer" || requests[4].Route != "withdraw" {
 		t.Fatalf("unexpected request routes: %+v", requests)
+	}
+}
+
+func TestLoadRequestsGeneratesTransportValidDefaults(t *testing.T) {
+	requests, err := loadRequests("mixed_80_20", "", "", "")
+	if err != nil {
+		t.Fatalf("load requests: %v", err)
+	}
+	if len(requests) != 5 {
+		t.Fatalf("expected mixed profile request schedule, got %d", len(requests))
+	}
+
+	transferRequest, err := privacyprovertransport.DecodeTransferProofRequestJSON(requests[0].Body)
+	if err != nil {
+		t.Fatalf("decode generated transfer request: %v", err)
+	}
+	if err := privacyprovertransport.ValidateTransferProofRequest(*transferRequest); err != nil {
+		t.Fatalf("validate generated transfer request: %v", err)
+	}
+	withdrawRequest, err := privacyprovertransport.DecodeWithdrawProofRequestJSON(requests[4].Body)
+	if err != nil {
+		t.Fatalf("decode generated withdraw request: %v", err)
+	}
+	if err := privacyprovertransport.ValidateWithdrawProofRequest(*withdrawRequest, time.Now()); err != nil {
+		t.Fatalf("validate generated withdraw request: %v", err)
+	}
+}
+
+func TestPreflightRequestsFailsBeforeMeasuredLoad(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"constraint #32267 is not satisfied"}`))
+	}))
+	defer server.Close()
+
+	err := preflightRequests(
+		context.Background(),
+		server.Client(),
+		server.URL,
+		"",
+		[]requestPayload{{Route: "transfer", Path: "/prove/transfer", Body: []byte(`{}`)}},
+	)
+	if err == nil {
+		t.Fatal("expected preflight failure")
+	}
+	if !strings.Contains(err.Error(), "status=400") || !strings.Contains(err.Error(), "constraint #32267") {
+		t.Fatalf("expected status and prover response in preflight error, got %v", err)
 	}
 }
 

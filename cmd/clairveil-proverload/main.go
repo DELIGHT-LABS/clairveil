@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	clairveiltypes "github.com/DELIGHT-LABS/clairveil/types"
 	privacyproverservice "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/proverservice"
 	privacyprovertransport "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/provertransport"
 )
@@ -60,6 +61,8 @@ type loadResult struct {
 	LatencyMS     float64
 	RequestBytes  int
 	ResponseBytes int
+	StatusCode    int
+	ResponseBody  string
 	Err           error
 	Timeout       bool
 }
@@ -79,7 +82,15 @@ type exampleBundle struct {
 	} `json:"withdraw"`
 }
 
+var sdkConfigOnce sync.Once
+
+func configureSDK() {
+	sdkConfigOnce.Do(clairveiltypes.SetConfig)
+}
+
 func main() {
+	configureSDK()
+
 	var baseURL string
 	var bearerToken string
 	var fixtureBundle string
@@ -95,7 +106,7 @@ func main() {
 
 	flag.StringVar(&baseURL, "base-url", "", "clairveil-proverd base URL")
 	flag.StringVar(&bearerToken, "bearer-token", strings.TrimSpace(os.Getenv("CLAIRVEIL_PROVERD_BEARER_TOKEN")), "optional bearer token for clairveil-proverd")
-	flag.StringVar(&fixtureBundle, "fixture-bundle", "x/privacy/client/sdk/conformance/testdata/privacy_prover_example_bundle.json", "optional prover example bundle containing transfer and withdraw requests")
+	flag.StringVar(&fixtureBundle, "fixture-bundle", "", "optional prover example bundle containing transfer and withdraw requests; defaults to generated prover-valid requests")
 	flag.StringVar(&transferRequestFile, "transfer-request", "", "transfer proof request JSON file")
 	flag.StringVar(&withdrawRequestFile, "withdraw-request", "", "withdraw proof request JSON file")
 	flag.StringVar(&profile, "profile", "transfer_only", "load profile: transfer_only, withdraw_only, mixed_80_20")
@@ -136,6 +147,10 @@ func main() {
 	}
 
 	client := &http.Client{Timeout: requestTimeout}
+	if err := preflightRequests(context.Background(), client, baseURL, bearerToken, requests); err != nil {
+		fatalf("preflight requests: %v", err)
+	}
+
 	var summaries []benchmarkSummary
 	for _, level := range concurrency {
 		if warmup > 0 {
@@ -178,6 +193,12 @@ func parsePositiveInts(value string) ([]int, error) {
 }
 
 func loadRequests(profile, fixtureBundle, transferRequestFile, withdrawRequestFile string) ([]requestPayload, error) {
+	configureSDK()
+
+	requestsByRoute, err := generatedProverLoadRequests(time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
 	var bundle exampleBundle
 	if strings.TrimSpace(fixtureBundle) != "" {
 		bz, err := os.ReadFile(fixtureBundle)
@@ -187,17 +208,49 @@ func loadRequests(profile, fixtureBundle, transferRequestFile, withdrawRequestFi
 		if err := json.Unmarshal(bz, &bundle); err != nil {
 			return nil, fmt.Errorf("decode fixture bundle: %w", err)
 		}
+		if len(bundle.Transfer.Request) != 0 {
+			requestsByRoute["transfer"] = requestPayload{
+				Route: "transfer",
+				Path:  privacyprovertransport.TransferProofPath,
+				Body:  append([]byte(nil), bundle.Transfer.Request...),
+			}
+		}
+		if len(bundle.Withdraw.Request) != 0 {
+			requestsByRoute["withdraw"] = requestPayload{
+				Route: "withdraw",
+				Path:  privacyprovertransport.WithdrawProofPath,
+				Body:  append([]byte(nil), bundle.Withdraw.Request...),
+			}
+		}
 	}
-	transferBody, err := requestBody(transferRequestFile, bundle.Transfer.Request)
-	if err != nil {
-		return nil, fmt.Errorf("transfer request: %w", err)
+
+	if strings.TrimSpace(transferRequestFile) != "" {
+		body, err := os.ReadFile(transferRequestFile)
+		if err != nil {
+			return nil, fmt.Errorf("read transfer request: %w", err)
+		}
+		requestsByRoute["transfer"] = requestPayload{Route: "transfer", Path: privacyprovertransport.TransferProofPath, Body: body}
 	}
-	withdrawBody, err := requestBody(withdrawRequestFile, bundle.Withdraw.Request)
-	if err != nil {
-		return nil, fmt.Errorf("withdraw request: %w", err)
+	if strings.TrimSpace(withdrawRequestFile) != "" {
+		body, err := os.ReadFile(withdrawRequestFile)
+		if err != nil {
+			return nil, fmt.Errorf("read withdraw request: %w", err)
+		}
+		requestsByRoute["withdraw"] = requestPayload{Route: "withdraw", Path: privacyprovertransport.WithdrawProofPath, Body: body}
 	}
-	transfer := requestPayload{Route: "transfer", Path: privacyprovertransport.TransferProofPath, Body: transferBody}
-	withdraw := requestPayload{Route: "withdraw", Path: privacyprovertransport.WithdrawProofPath, Body: withdrawBody}
+
+	return scheduleRequests(profile, requestsByRoute)
+}
+
+func scheduleRequests(profile string, requestsByRoute map[string]requestPayload) ([]requestPayload, error) {
+	transfer := requestsByRoute["transfer"]
+	withdraw := requestsByRoute["withdraw"]
+	if len(transfer.Body) == 0 {
+		return nil, fmt.Errorf("transfer request body is empty")
+	}
+	if len(withdraw.Body) == 0 {
+		return nil, fmt.Errorf("withdraw request body is empty")
+	}
 
 	switch strings.TrimSpace(profile) {
 	case "transfer_only":
@@ -211,14 +264,24 @@ func loadRequests(profile, fixtureBundle, transferRequestFile, withdrawRequestFi
 	}
 }
 
-func requestBody(path string, fallback json.RawMessage) ([]byte, error) {
-	if strings.TrimSpace(path) != "" {
-		return os.ReadFile(path)
+func preflightRequests(ctx context.Context, client *http.Client, baseURL, bearerToken string, requests []requestPayload) error {
+	seen := map[string]bool{}
+	for _, request := range requests {
+		key := request.Route + " " + request.Path
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		result := doRequest(ctx, client, baseURL, bearerToken, request)
+		if result.Err != nil {
+			detail := strings.TrimSpace(result.ResponseBody)
+			if detail != "" {
+				return fmt.Errorf("%s request failed: %w (status=%d response=%s)", request.Route, result.Err, result.StatusCode, truncateString(detail, 512))
+			}
+			return fmt.Errorf("%s request failed: %w", request.Route, result.Err)
+		}
 	}
-	if len(fallback) == 0 {
-		return nil, fmt.Errorf("request file is required when fixture bundle does not contain the request")
-	}
-	return append([]byte(nil), fallback...), nil
+	return nil
 }
 
 func runLoadBucket(ctx context.Context, client *http.Client, baseURL, bearerToken string, requests []requestPayload, concurrency int, duration time.Duration, quiet bool, telemetryInterval time.Duration) ([]loadResult, time.Duration, []telemetrySample) {
@@ -326,9 +389,11 @@ func doRequest(ctx context.Context, client *http.Client, baseURL, bearerToken st
 		LatencyMS:     float64(time.Since(start)) / float64(time.Millisecond),
 		RequestBytes:  len(payload.Body),
 		ResponseBytes: len(responseBytes),
+		StatusCode:    resp.StatusCode,
 	}
 	if resp.StatusCode != http.StatusOK {
 		result.Err = fmt.Errorf("status %d", resp.StatusCode)
+		result.ResponseBody = truncateString(string(responseBytes), 1024)
 	}
 	return result
 }
@@ -609,4 +674,11 @@ func max(values []float64) float64 {
 func fatalf(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, format+"\n", args...)
 	os.Exit(1)
+}
+
+func truncateString(value string, maxLen int) string {
+	if maxLen <= 0 || len(value) <= maxLen {
+		return value
+	}
+	return value[:maxLen] + "...<truncated>"
 }

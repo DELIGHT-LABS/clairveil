@@ -17,7 +17,7 @@ duration="${PROVERLOAD_DURATION:-30s}"
 warmup="${PROVERLOAD_WARMUP:-5s}"
 timeout="${PROVERLOAD_TIMEOUT:-2m}"
 telemetry_interval="${PROVERLOAD_TELEMETRY_INTERVAL:-1s}"
-fixture_bundle="${PROVERLOAD_FIXTURE_BUNDLE:-x/privacy/client/sdk/conformance/testdata/privacy_prover_example_bundle.json}"
+fixture_bundle="${PROVERLOAD_FIXTURE_BUNDLE:-}"
 transfer_request="${PROVERLOAD_TRANSFER_REQUEST:-}"
 withdraw_request="${PROVERLOAD_WITHDRAW_REQUEST:-}"
 bearer_token="${PROVERD_BEARER_TOKEN:-${CLAIRVEIL_PROVERD_BEARER_TOKEN:-}}"
@@ -54,7 +54,6 @@ run_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 load_args=(
   run ./cmd/clairveil-proverload
   -base-url "$proverd_url"
-  -fixture-bundle "$fixture_bundle"
   -profile "$profile"
   -concurrency "$concurrency"
   -duration "$duration"
@@ -65,6 +64,9 @@ load_args=(
 )
 if [[ -n "$bearer_token" ]]; then
   load_args+=(-bearer-token "$bearer_token")
+fi
+if [[ -n "$fixture_bundle" ]]; then
+  load_args+=(-fixture-bundle "$fixture_bundle")
 fi
 if [[ -n "$transfer_request" ]]; then
   load_args+=(-transfer-request "$transfer_request")
@@ -79,6 +81,11 @@ echo "  PROVERLOAD_PROFILE=$profile"
 echo "  PROVERLOAD_CONCURRENCY=$concurrency"
 echo "  PROVERLOAD_DURATION=$duration"
 echo "  PROVERLOAD_TELEMETRY_INTERVAL=$telemetry_interval"
+if [[ -n "$fixture_bundle" ]]; then
+  echo "  PROVERLOAD_FIXTURE_BUNDLE=$fixture_bundle"
+else
+  echo "  PROVERLOAD_FIXTURE_BUNDLE=<generated prover-valid requests>"
+fi
 go "${load_args[@]}"
 run_ended_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cp "$summary_file" "$bench_out_dir/latest-load-summary.json"
