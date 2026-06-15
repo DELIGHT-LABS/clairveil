@@ -150,6 +150,39 @@ EVM profiles use MetaMask:
 
 Add default static chain profiles in `public/dapp-config.js`. This file does not decide whether the DApp is server-backed; it only provides the chain list the browser can use. The checked-in static default exposes the Cosmos/Keplr profile only. To show EVM/MetaMask in a static deployment, add an EVM profile to `chainProfiles` or provide it through `globalThis.CLAIRVEIL_DAPP_CONFIG`. In local server mode, the server can also return the same profile shape through `/api/config`.
 
+EVM static profile example:
+
+```js
+const myEvmProfile = {
+  id: "my-evm",
+  label: "My EVM Privacy Chain",
+  chainName: "My EVM Privacy Chain",
+  transport: "evm",
+  wallet: "metamask",
+  chainId: "my-evm-host-1",
+  rpc: "https://cosmos-rpc.example.com",
+  rest: "https://cosmos-rest.example.com",
+  proverUrl: "https://prover.example.com",
+  accountPrefix: "clair",
+  shieldedPrefix: "clairs",
+  denom: "utoken",
+  displayDenom: "TOKEN",
+  coinDecimals: 18,
+  evmRpc: "https://evm-rpc.example.com",
+  evmChainId: "0x1234",
+  evmChainName: "My EVM Privacy Chain",
+  evmPrivacyPrecompileAddress: "0x100000000000000000000000000000000000000b",
+  evmGasLimit: "0x989680",
+  evmSendGasLimit: "0x5208"
+};
+
+export const defaultDappConfig = {
+  // ...
+  activeChainProfileId: myEvmProfile.id,
+  chainProfiles: [clairveilProfile, myEvmProfile]
+};
+```
+
 Cosmos profile requirements:
 
 - Clairveil privacy module embedded in the chain
@@ -165,7 +198,7 @@ EVM profile requirements:
 - Host chain Cosmos REST/RPC for Clairveil privacy events and queries
 - Clairveil-compatible EVM `IPrivacy` precompile ABI
 - Fixed `evmPrivacyPrecompileAddress` published by the target chain
-- Compatible EVM-address-to-Bech32 account mapping
+- Clairveil privacy account prefix for EVM-derived identity material
 - Prover support for `/v1/prover/transfer` and `/v1/prover/withdraw`
 
 This DApp does not support arbitrary EVM privacy ABI shapes. EVM Clairveil chains must use the same privacy precompile ABI and payload semantics.

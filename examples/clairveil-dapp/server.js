@@ -7,12 +7,10 @@ import { fileURLToPath } from "node:url";
 import { homedir, networkInterfaces } from "node:os";
 import { JsonRpcProvider, Wallet } from "ethers";
 import {
-  bech32AddressToEvm,
   createClairveilClient,
   ClairveilError,
   ClairveilErrorCode,
   derivePrivacyMaterial,
-  evmAddressToBech32,
   isEvmAddress,
   evmPrivacyPrecompileAddress,
   plannerStatusToErrorCode
@@ -315,7 +313,6 @@ function dappChainProfiles() {
     rest: (process.env.CLAIRVEIL_EVM_HOST_REST ?? (isEvmTransport() ? config.rest : "http://127.0.0.1:1317")).replace(/\/$/, ""),
     proverUrl: process.env.CLAIRVEIL_EVM_PROVER_URL ?? config.publicProverUrl,
     accountPrefix: process.env.CLAIRVEIL_EVM_PRIVACY_ACCOUNT_PREFIX ?? "clair",
-    hostAccountPrefix: process.env.CLAIRVEIL_EVM_ACCOUNT_PREFIX ?? (isEvmTransport() ? config.accountPrefix : "evm"),
     shieldedPrefix: process.env.CLAIRVEIL_EVM_SHIELDED_PREFIX ?? (isEvmTransport() ? config.shieldedPrefix : "clairs"),
     denom: process.env.CLAIRVEIL_EVM_DENOM ?? (isEvmTransport() ? config.denom : "utoken"),
     displayDenom: process.env.CLAIRVEIL_EVM_DISPLAY_DENOM ?? (isEvmTransport() ? config.displayDenom : "TOKEN"),
@@ -328,7 +325,7 @@ function dappChainProfiles() {
     evmSendGasLimit: config.evmSendGasLimit
   };
 
-  return [clairveilProfile, evmProfile];
+  return [isEvmTransport() ? evmProfile : clairveilProfile];
 }
 
 function activeChainProfileId() {
@@ -692,19 +689,6 @@ function validateEvmAddress(value) {
   return `0x${String(value).trim().replace(/^0x/i, "").toLowerCase()}`;
 }
 
-function validateEvmOrTransparentAddress(value) {
-  const text = String(value || "").trim();
-  if (isEvmAddress(text)) {
-    return validateEvmAddress(text);
-  }
-  return bech32AddressToEvm(text);
-}
-
-function hostBalanceAddressFromRecipient(value) {
-  const recipientEvm = validateEvmOrTransparentAddress(value);
-  return evmAddressToBech32(recipientEvm, config.accountPrefix);
-}
-
 function evmDefaultSigner(name) {
   return evmDefaultSignerAccounts.find(account => account.name === name);
 }
@@ -908,6 +892,19 @@ async function queryBalances(address) {
   return clairveil.getBalances(address);
 }
 
+async function queryEvmNativeBalance(address) {
+  const recipientEvm = validateEvmAddress(address);
+  const balanceHex = await evmJsonRpc("eth_getBalance", [recipientEvm, "latest"]);
+  return {
+    balances: [{
+      denom: config.denom,
+      amount: BigInt(balanceHex || "0x0").toString()
+    }],
+    evmAddress: recipientEvm,
+    hex: balanceHex
+  };
+}
+
 function serverFeaturesForRequest(req) {
   const localTestMode = config.localTestMode;
   const localSignerAdmin = localTestMode && localAdminAccessAllowed(req);
@@ -941,17 +938,19 @@ function publicConfig(req) {
     coinDecimals: config.coinDecimals,
     accountPrefix: config.accountPrefix,
     shieldedPrefix: config.shieldedPrefix,
-    evmRpc: config.evmRpc,
-    evmChainId: config.evmChainId,
-    evmChainName: config.evmChainName,
-    evmPrivacyPrecompileAddress: config.evmPrivacyPrecompileAddress,
-    evmGasLimit: config.evmGasLimit,
-    evmSendGasLimit: config.evmSendGasLimit,
     localTestMode: config.localTestMode,
     serverFeatures,
     activeChainProfileId: activeChainProfileId(),
     chainProfiles: dappChainProfiles(),
-    keplrChainInfo: keplrChainInfo()
+    keplrChainInfo: keplrChainInfo(),
+    ...(isEvmTransport() ? {
+      evmRpc: config.evmRpc,
+      evmChainId: config.evmChainId,
+      evmChainName: config.evmChainName,
+      evmPrivacyPrecompileAddress: config.evmPrivacyPrecompileAddress,
+      evmGasLimit: config.evmGasLimit,
+      evmSendGasLimit: config.evmSendGasLimit
+    } : {})
   };
 }
 
@@ -974,7 +973,7 @@ async function evmJsonRpc(method, params = []) {
 }
 
 async function sendEvmFaucet({ from, recipient, amount }) {
-  const recipientEvm = validateEvmOrTransparentAddress(recipient);
+  const recipientEvm = validateEvmAddress(recipient);
   const provider = new JsonRpcProvider(config.evmRpc);
   const wallet = evmWalletForLocalSigner(from).connect(provider);
   const tx = await wallet.sendTransaction({
@@ -1094,20 +1093,18 @@ async function handleApi(req, res, url) {
       assertSignerMutationAllowed(req);
       const body = await readBody(req);
       const rawRecipient = String(body.recipient || "").trim();
-      const recipient = isEvmTransport()
-        ? hostBalanceAddressFromRecipient(rawRecipient)
-        : validateClairAddress(rawRecipient);
       const amount = normalizeFaucetAmount(body.amount);
       const from = validateAccount(body.from ?? "alice");
-      const beforeBalance = await queryBalances(recipient);
 
       if (isEvmTransport()) {
+        const recipient = validateEvmAddress(rawRecipient);
+        const beforeBalance = await queryEvmNativeBalance(recipient);
         const faucet = await sendEvmFaucet({
           from,
-          recipient: rawRecipient,
+          recipient,
           amount: parseCoin(amount.funded)
         });
-        const balance = await queryBalances(recipient);
+        const balance = await queryEvmNativeBalance(recipient);
         sendJson(res, 200, {
           broadcast: { txhash: faucet.txHash },
           receipt: faucet.receipt,
@@ -1121,6 +1118,8 @@ async function handleApi(req, res, url) {
         return;
       }
 
+      const recipient = validateClairAddress(rawRecipient);
+      const beforeBalance = await queryBalances(recipient);
       const result = await runClairveild([
         "tx", "bank", "send", from, recipient, amount.funded,
         "--from", from,

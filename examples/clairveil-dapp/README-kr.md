@@ -248,7 +248,7 @@ const myEvmProfile = {
 export const defaultDappConfig = {
   // ...
   activeChainProfileId: myCosmosProfile.id,
-  chainProfiles: [clairveilProfile, evmProfile, myCosmosProfile, myEvmProfile]
+  chainProfiles: [clairveilProfile, myCosmosProfile, myEvmProfile]
 };
 ```
 
@@ -307,7 +307,7 @@ EVM profile은 아래 조건을 만족해야 합니다.
 - Host chain 쪽 Cosmos REST/RPC가 Clairveil privacy event/query surface를 제공해야 합니다.
 - EVM privacy precompile ABI가 ClairveilJS의 `IPrivacy` ABI와 호환되어야 합니다.
 - Profile의 `evmPrivacyPrecompileAddress`가 target chain이 공개한 fixed precompile address와 일치해야 합니다.
-- EVM address를 `accountPrefix` Bech32 address로 매핑하는 방식이 chain과 일치해야 합니다.
+- EVM-derived identity material에 사용할 Clairveil privacy account prefix가 chain과 일치해야 합니다.
 - Prover가 `/v1/prover/transfer`, `/v1/prover/withdraw` contract를 지원해야 합니다.
 
 현재 DApp은 임의의 EVM privacy ABI shape를 지원하지 않습니다. EVM Clairveil 지원 chain은 같은 privacy precompile ABI와 payload semantics를 사용해야 합니다.

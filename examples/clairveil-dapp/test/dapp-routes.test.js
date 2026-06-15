@@ -86,20 +86,19 @@ test("DApp exposes config, health, and bundled frontend assets", async () => {
     const config = await waitForJson(`${baseUrl}/api/config`);
     assert.equal(config.response.status, 200);
     assert.equal(config.json.chainId.startsWith("clairveil-local-"), true);
-    assert.equal(config.json.evmChainId, "0x32f");
+    assert.equal("evmChainId" in config.json, false);
     assert.equal(config.json.activeChainProfileId, "clairveil-local");
-    assert.equal(config.json.chainProfiles.length, 2);
-    assert.equal(config.json.chainProfiles.find(profile => profile.id === "clairveil-local").wallet, "keplr");
-    const evmProfile = config.json.chainProfiles.find(profile => profile.id === "evm-local");
-    assert.equal(evmProfile.wallet, "metamask");
-    assert.equal(evmProfile.accountPrefix, "clair");
+    assert.equal(config.json.chainProfiles.length, 1);
+    assert.equal(config.json.chainProfiles[0].id, "clairveil-local");
+    assert.equal(config.json.chainProfiles[0].wallet, "keplr");
+    assert.equal(config.json.chainProfiles.find(profile => profile.id === "evm-local"), undefined);
     assert.equal(config.json.chainProfiles.find(profile => profile.id === "clairveil-local").proverUrl, "http://127.0.0.1:8080");
     assert.equal(config.json.keplrChainInfo.bech32Config.bech32PrefixAccAddr, "clair");
 
     const health = await waitForJson(`${baseUrl}/api/health`);
     assert.equal(health.response.status, 200);
     assert.equal(health.json.config.keplrChainInfo.chainId, config.json.chainId);
-    assert.equal(health.json.config.evmChainId, config.json.evmChainId);
+    assert.equal("evmChainId" in health.json.config, false);
     assert.ok(Array.isArray(health.json.errors));
 
     const appBundle = await fetch(`${baseUrl}/app.bundle.js`);
@@ -121,7 +120,7 @@ test("DApp exposes config, health, and bundled frontend assets", async () => {
   }
 });
 
-test("DApp EVM profile separates privacy prefix from host chain prefix", async () => {
+test("DApp exposes EVM profile only when EVM transport is active", async () => {
   const port = await freePort();
   const child = spawn(process.execPath, ["server.js"], {
     cwd: new URL("..", import.meta.url),
@@ -130,11 +129,10 @@ test("DApp EVM profile separates privacy prefix from host chain prefix", async (
       PORT: String(port),
       CLAIRVEIL_DAPP_PORT: String(port),
       CLAIRVEIL_TRANSPORT: "evm",
-      CHAIN_ID: "maroo-privacy-local-1",
-      CLAIRVEIL_ACCOUNT_PREFIX: "maroo",
-      CLAIRVEIL_EVM_ACCOUNT_PREFIX: "maroo",
-      CLAIRVEIL_DENOM: "aokrw",
-      CLAIRVEIL_DISPLAY_DENOM: "OKRW"
+      CHAIN_ID: "evm-privacy-local-1",
+      CLAIRVEIL_ACCOUNT_PREFIX: "evm",
+      CLAIRVEIL_DENOM: "utoken",
+      CLAIRVEIL_DISPLAY_DENOM: "TOKEN"
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -147,12 +145,15 @@ test("DApp EVM profile separates privacy prefix from host chain prefix", async (
     const config = await waitForJson(`${baseUrl}/api/config`);
     assert.equal(config.response.status, 200);
     assert.equal(config.json.transport, "evm");
-    assert.equal(config.json.accountPrefix, "maroo");
+    assert.equal(config.json.accountPrefix, "evm");
+    assert.equal(config.json.evmChainId, "0x32f");
     assert.equal(config.json.activeChainProfileId, "evm-local");
-    const evmProfile = config.json.chainProfiles.find(profile => profile.id === "evm-local");
+    assert.equal(config.json.chainProfiles.length, 1);
+    const evmProfile = config.json.chainProfiles[0];
+    assert.equal(evmProfile.id, "evm-local");
     assert.equal(evmProfile.accountPrefix, "clair");
-    assert.equal(evmProfile.hostAccountPrefix, "maroo");
-    assert.equal(evmProfile.denom, "aokrw");
+    assert.equal("hostAccountPrefix" in evmProfile, false);
+    assert.equal(evmProfile.denom, "utoken");
   } finally {
     child.kill("SIGTERM");
     await once(child, "exit");

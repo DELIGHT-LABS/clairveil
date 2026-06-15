@@ -66,30 +66,6 @@ clairveilProfile.keplrChainInfo = keplrChainInfo({
   gasPriceStep: clairveilProfile.gasPriceStep
 });
 
-const evmProfile = {
-  id: "evm-local",
-  label: "EVM Localnet",
-  chainName: "EVM Localnet",
-  transport: "evm",
-  wallet: "metamask",
-  chainId: "evm-local-1",
-  rpc: localRpc,
-  rest: localRest,
-  proverUrl: localProver,
-  accountPrefix: "clair",
-  hostAccountPrefix: "maroo",
-  shieldedPrefix: "clairs",
-  denom: "aokrw",
-  displayDenom: "OKRW",
-  coinDecimals: 18,
-  evmRpc: "http://127.0.0.1:8545",
-  evmChainId: "0x32f",
-  evmChainName: "EVM Localnet",
-  evmPrivacyPrecompileAddress: "0x100000000000000000000000000000000000000b",
-  evmGasLimit: "0x989680",
-  evmSendGasLimit: "0x5208"
-};
-
 export const defaultDappConfig = {
   serverBacked: false,
   modeLabel: "Static Public DApp",
@@ -106,10 +82,6 @@ export const defaultDappConfig = {
   coinDecimals: clairveilProfile.coinDecimals,
   accountPrefix: clairveilProfile.accountPrefix,
   shieldedPrefix: clairveilProfile.shieldedPrefix,
-  evmRpc: evmProfile.evmRpc,
-  evmChainId: evmProfile.evmChainId,
-  evmChainName: evmProfile.evmChainName,
-  evmPrivacyPrecompileAddress: evmProfile.evmPrivacyPrecompileAddress,
   localTestMode: false,
   serverFeatures: {
     localTestMode: false,
@@ -118,7 +90,6 @@ export const defaultDappConfig = {
     auditorAdmin: false
   },
   activeChainProfileId: clairveilProfile.id,
-  // chainProfiles: [clairveilProfile, evmProfile],
   chainProfiles: [clairveilProfile],
   keplrChainInfo: clairveilProfile.keplrChainInfo
 };

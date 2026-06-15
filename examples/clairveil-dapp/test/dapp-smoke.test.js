@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const appSource = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
+const configSource = await readFile(new URL("../public/dapp-config.js", import.meta.url), "utf8");
+const readmeSource = await readFile(new URL("../README.md", import.meta.url), "utf8");
 const serverSource = await readFile(new URL("../server.js", import.meta.url), "utf8");
 const htmlSource = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../public/styles.css", import.meta.url), "utf8");
@@ -102,6 +104,13 @@ test("DApp exposes chain profiles and filters wallet connect buttons by chain", 
   assert.match(serverSource, /wallet: "keplr"/);
   assert.match(serverSource, /id: "evm-local"/);
   assert.match(serverSource, /wallet: "metamask"/);
+  assert.match(serverSource, /return \[isEvmTransport\(\) \? evmProfile : clairveilProfile\]/);
+  assert.match(configSource, /chainProfiles: \[clairveilProfile\]/);
+  assert.doesNotMatch(configSource, /^const evmProfile/m);
+  assert.doesNotMatch(configSource, /^\s*evmChainId:/m);
+  assert.match(readmeSource, /EVM static profile example/);
+  assert.match(readmeSource, /const myEvmProfile = \{/);
+  assert.match(readmeSource, /chainProfiles: \[clairveilProfile, myEvmProfile\]/);
   assert.match(serverSource, /chainProfiles: dappChainProfiles\(\)/);
   assert.match(appSource, /function activeChainProfile/);
   assert.match(appSource, /function activeWalletKind/);
@@ -143,7 +152,7 @@ test("DApp hides local-only panels unless the server enables local test features
 });
 
 test("DApp keeps EVM public send 0x-only without self-wallet suggestions", () => {
-  assert.match(appSource, /import \{ bech32AddressToEvm, evmAddressToBech32 \} from "clairveiljs\/evm"/);
+  assert.match(appSource, /import \{ bech32AddressToEvm \} from "clairveiljs\/evm"/);
   assert.match(appSource, /function connectedWalletAddressSuggestions/);
   assert.match(appSource, /function activeServerAccounts\(\) \{[\s\S]*selectedProfileMatchesServer\(\) \? state\.accounts : \[\]/);
   assert.match(appSource, /const accounts = activeServerAccounts\(\);[\s\S]*const preferred = accounts\.filter/);
@@ -166,9 +175,10 @@ test("DApp keeps EVM public send 0x-only without self-wallet suggestions", () =>
   assert.match(appSource, /const seenAddresses = new Set\(\)/);
   assert.match(appSource, /function transparentDisplayAddressFor/);
   assert.match(appSource, /selectedTransparentAddress = transparentDisplayAddressFor/);
-  assert.match(appSource, /function hostAccountPrefix/);
-  assert.match(appSource, /function balanceQueryAddressForConnectedWallet/);
-  assert.match(appSource, /evmAddressToBech32\(state\.wallet\.account, hostAccountPrefix\(\)\)/);
+  assert.doesNotMatch(appSource, /function hostAccountPrefix/);
+  assert.doesNotMatch(appSource, /hostAccountPrefix/);
+  assert.doesNotMatch(appSource, /evmAddressToBech32/);
+  assert.match(appSource, /method: "eth_getBalance"/);
 });
 
 test("DApp uses the npm ClairveilJS browser client for public wallet and privacy flows", () => {
@@ -291,9 +301,10 @@ test("DApp server keeps only local helper responsibilities", () => {
   assert.match(serverSource, /allowLanSigning: process\.env\.CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING === "1"/);
   assert.match(serverSource, /allowLanAdmin: process\.env\.CLAIRVEIL_DAPP_ALLOW_LAN_ADMIN === "1"/);
   assert.match(serverSource, /accountPrefix: process\.env\.CLAIRVEIL_EVM_PRIVACY_ACCOUNT_PREFIX \?\? "clair"/);
-  assert.match(serverSource, /hostAccountPrefix: process\.env\.CLAIRVEIL_EVM_ACCOUNT_PREFIX/);
-  assert.match(serverSource, /function hostBalanceAddressFromRecipient/);
-  assert.match(serverSource, /return evmAddressToBech32\(recipientEvm, config\.accountPrefix\)/);
+  assert.doesNotMatch(serverSource, /hostAccountPrefix/);
+  assert.doesNotMatch(serverSource, /CLAIRVEIL_EVM_ACCOUNT_PREFIX/);
+  assert.match(serverSource, /function queryEvmNativeBalance/);
+  assert.match(serverSource, /eth_getBalance/);
   assert.match(serverSource, /function assertSignerMutationAllowed/);
   assert.match(serverSource, /function assertLocalAdminAccessAllowed/);
   assert.match(serverSource, /\/api\/local-signers\/ensure"\) \{\s*assertLocalTestBackendAllowed\("local signer setup"\);\s*assertSignerMutationAllowed\(req\);/);
@@ -323,7 +334,7 @@ test("DApp shows a send result confirmation before refresh side effects", () => 
   assert.match(appSource, /showSendResult\(\{[\s\S]*success: true,[\s\S]*wallet: "Keplr"/);
   assert.match(appSource, /els\.keplrTxState\.textContent = "Send submitted"/);
   assert.match(appSource, /watchEvmBroadcast\(broadcast/);
-  assert.match(appSource, /Promise\.allSettled\(\[refreshKeplrBalance\(\), refreshBlockEvents\(\)\]\)/);
+  assert.match(appSource, /Promise\.allSettled\(\[refreshWalletBalance\(\), refreshBlockEvents\(\)\]\)/);
   assert.doesNotMatch(appSource, /toast\("MetaMask send included"\)/);
   assert.doesNotMatch(appSource, /toast\("Keplr send included"\)/);
   assert.match(cssSource, /#noticeMessage\s*\{[\s\S]*white-space: pre-wrap/);

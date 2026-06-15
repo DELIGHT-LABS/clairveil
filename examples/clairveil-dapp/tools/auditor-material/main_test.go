@@ -43,7 +43,7 @@ func TestBuildAuditorMaterialReadsEthSecp256k1Keyring(t *testing.T) {
 		Home:           home,
 		KeyName:        keyName,
 		KeyringBackend: sdkkeyring.BackendTest,
-		AccountPrefix:  "maroo",
+		AccountPrefix:  "evm",
 	})
 	if err != nil {
 		t.Fatalf("build auditor material: %v", err)
@@ -51,7 +51,7 @@ func TestBuildAuditorMaterialReadsEthSecp256k1Keyring(t *testing.T) {
 	if out.KeyName != keyName {
 		t.Fatalf("key name mismatch: got %q want %q", out.KeyName, keyName)
 	}
-	if !strings.HasPrefix(out.FromAddress, "maroo1") {
+	if !strings.HasPrefix(out.FromAddress, "evm1") {
 		t.Fatalf("address prefix mismatch: got %q", out.FromAddress)
 	}
 	if out.TransparentPubKeyHex != hex.EncodeToString(pubKey.Bytes()) {

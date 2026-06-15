@@ -80011,29 +80011,6 @@ clairveilProfile.keplrChainInfo = keplrChainInfo({
   coinDecimals: clairveilProfile.coinDecimals,
   gasPriceStep: clairveilProfile.gasPriceStep
 });
-var evmProfile = {
-  id: "evm-local",
-  label: "EVM Localnet",
-  chainName: "EVM Localnet",
-  transport: "evm",
-  wallet: "metamask",
-  chainId: "evm-local-1",
-  rpc: localRpc,
-  rest: localRest,
-  proverUrl: localProver,
-  accountPrefix: "clair",
-  hostAccountPrefix: "maroo",
-  shieldedPrefix: "clairs",
-  denom: "aokrw",
-  displayDenom: "OKRW",
-  coinDecimals: 18,
-  evmRpc: "http://127.0.0.1:8545",
-  evmChainId: "0x32f",
-  evmChainName: "EVM Localnet",
-  evmPrivacyPrecompileAddress: "0x100000000000000000000000000000000000000b",
-  evmGasLimit: "0x989680",
-  evmSendGasLimit: "0x5208"
-};
 var defaultDappConfig = {
   serverBacked: false,
   modeLabel: "Static Public DApp",
@@ -80050,10 +80027,6 @@ var defaultDappConfig = {
   coinDecimals: clairveilProfile.coinDecimals,
   accountPrefix: clairveilProfile.accountPrefix,
   shieldedPrefix: clairveilProfile.shieldedPrefix,
-  evmRpc: evmProfile.evmRpc,
-  evmChainId: evmProfile.evmChainId,
-  evmChainName: evmProfile.evmChainName,
-  evmPrivacyPrecompileAddress: evmProfile.evmPrivacyPrecompileAddress,
   localTestMode: false,
   serverFeatures: {
     localTestMode: false,
@@ -80062,7 +80035,6 @@ var defaultDappConfig = {
     auditorAdmin: false
   },
   activeChainProfileId: clairveilProfile.id,
-  // chainProfiles: [clairveilProfile, evmProfile],
   chainProfiles: [clairveilProfile],
   keplrChainInfo: clairveilProfile.keplrChainInfo
 };
@@ -80218,10 +80190,6 @@ function selectedProfileMatchesServer(profile = activeChainProfile()) {
 function accountPrefix() {
   const profile = activeChainProfile();
   return profile?.accountPrefix || state.config?.accountPrefix || state.config?.keplrChainInfo?.bech32Config?.bech32PrefixAccAddr || "clair";
-}
-function hostAccountPrefix() {
-  const profile = activeChainProfile();
-  return profile?.hostAccountPrefix || state.config?.hostAccountPrefix || accountPrefix();
 }
 function shieldedPrefix() {
   return activeChainProfile()?.shieldedPrefix || state.config?.shieldedPrefix || "clairs";
@@ -80446,7 +80414,7 @@ var els = {
   keplrFaucetAmount: $("#keplrFaucetAmount"),
   fundKeplr: $("#fundKeplr"),
   setupKeplrPrivacy: $("#setupKeplrPrivacy"),
-  refreshKeplrBalance: $("#refreshKeplrBalance"),
+  refreshWalletBalance: $("#refreshKeplrBalance"),
   scanKeplrNotes: $("#scanKeplrNotes"),
   keplrTxState: $("#keplrTxState"),
   keplrSendAmount: $("#keplrSendAmount"),
@@ -81514,12 +81482,6 @@ function connectedPublicRecipientAddress() {
   }
   return state.keplr.account || "";
 }
-function balanceQueryAddressForConnectedWallet() {
-  if (isEvmTransparentMode() && state.wallet.account) {
-    return evmAddressToBech32(state.wallet.account, hostAccountPrefix());
-  }
-  return state.keplr.account || "";
-}
 function renderWalletSession() {
   const activeWallet = state.activeWallet;
   const profile = activeChainProfile();
@@ -81576,7 +81538,7 @@ function renderKeplr() {
   els.fundKeplr.disabled = !serverFeature("faucet") || !signerReady;
   els.setupKeplrPrivacy.disabled = !signerReady;
   els.copyKeplrDisclosurePubKey.disabled = !state.keplr.disclosurePubKeyHex;
-  els.refreshKeplrBalance.disabled = !connected;
+  els.refreshWalletBalance.disabled = !connected;
   els.scanKeplrNotes.disabled = !signerReady || !state.keplr.rootSignatureBase64;
   updateAmountActionButtons({ signerReady, veiledReady });
   renderEventDetail();
@@ -81725,12 +81687,22 @@ async function refreshSelectedAccount() {
   els.balanceValue.textContent = (balance.balances || []).map((coin) => `${coin.amount}${coin.denom}`).join(", ") || zeroCoinText();
   await refreshNotes();
 }
-async function refreshKeplrBalance() {
+async function refreshWalletBalance() {
   if (!state.keplr.account) return;
-  const address = balanceQueryAddressForConnectedWallet();
-  if (!address) return;
-  const data = await clairveilBrowserClient().getBalances(address);
-  state.keplr.balance = formatBalances(data.balances);
+  if (isEvmTransparentMode()) {
+    if (!state.wallet.account) return;
+    const balanceHex = await requestMetaMask({
+      method: "eth_getBalance",
+      params: [state.wallet.account, "latest"]
+    });
+    state.keplr.balance = formatBalances([{
+      denom: baseDenom(),
+      amount: BigInt(balanceHex || "0x0").toString()
+    }]);
+  } else {
+    const data = await clairveilBrowserClient().getBalances(state.keplr.account);
+    state.keplr.balance = formatBalances(data.balances);
+  }
   renderKeplr();
 }
 async function refreshNotes() {
@@ -82245,7 +82217,7 @@ async function connectWallet() {
   renderWallet();
   renderKeplr();
   try {
-    await refreshKeplrBalance();
+    await refreshWalletBalance();
   } catch (error) {
     state.keplr.balance = error.message;
     renderKeplr();
@@ -82409,7 +82381,7 @@ async function connectKeplr() {
     );
     return;
   }
-  await refreshKeplrBalance();
+  await refreshWalletBalance();
   toast("Keplr connected");
 }
 async function signKeplrSession() {
@@ -82468,7 +82440,7 @@ async function fundKeplr() {
     state.keplr.faucetSent = formatUclairAsClair(data.amount?.funded?.replace(baseDenom(), "") || "0");
     state.keplr.faucetRecipient = isEvmTransparentMode() ? data.recipientEvm || recipient : data.recipient || recipient;
     state.keplr.balance = formatBalances(data.balance?.balances);
-    await refreshKeplrBalance();
+    await refreshWalletBalance();
     renderKeplr();
     toast(`Faucet sent: ${state.keplr.faucetSent}`);
   } catch (error) {
@@ -82771,7 +82743,7 @@ async function sendFromKeplr() {
         onIncluded: async (included) => {
           state.keplr.sendHash = included.txHash || state.keplr.sendHash;
           els.keplrTxState.textContent = "Send included";
-          await Promise.allSettled([refreshKeplrBalance(), refreshBlockEvents()]);
+          await Promise.allSettled([refreshWalletBalance(), refreshBlockEvents()]);
           renderKeplr();
         },
         onFailed: (error) => {
@@ -82797,7 +82769,7 @@ async function sendFromKeplr() {
       wallet: "Keplr",
       txHash: state.keplr.sendHash
     });
-    await Promise.allSettled([refreshKeplrBalance(), refreshBlockEvents()]);
+    await Promise.allSettled([refreshWalletBalance(), refreshBlockEvents()]);
     renderKeplr();
   } catch (error) {
     els.keplrTxState.textContent = "Send failed";
@@ -82892,7 +82864,7 @@ async function refreshPrivacySurfaces({ balance = false } = {}) {
     refreshNotes()
   ];
   if (balance) {
-    tasks.unshift(refreshKeplrBalance());
+    tasks.unshift(refreshWalletBalance());
   }
   await Promise.allSettled(tasks);
 }
@@ -83153,7 +83125,7 @@ els.copyWalletAccount.addEventListener("click", () => copyWalletAccount().catch(
 els.fundKeplr.addEventListener("click", fundKeplr);
 els.setupKeplrPrivacy.addEventListener("click", () => setupKeplrPrivacy().catch((error) => toast(error.message)));
 els.copyKeplrDisclosurePubKey.addEventListener("click", () => copyKeplrDisclosurePubKey().catch((error) => toast(error.message)));
-els.refreshKeplrBalance.addEventListener("click", () => refreshKeplrBalance().catch((error) => toast(error.message)));
+els.refreshWalletBalance.addEventListener("click", () => refreshWalletBalance().catch((error) => toast(error.message)));
 els.scanKeplrNotes.addEventListener("click", () => scanKeplrNotes().catch((error) => toast(error.message)));
 els.myKeplrSpendableOnly.addEventListener("change", (event) => {
   state.keplr.showSpendableOnly = event.target.checked;
