@@ -32,11 +32,12 @@ make release-pack-verify
 | `make install` | run `make build`, then copy Clairveil binaries to `GOBIN` or `GOPATH/bin` |
 | `make init` | run `make install`, then initialize the default local chain home for `clairveild start` |
 | `make proto` | regenerate privacy protobuf/gateway Go files |
-| `make examples` | run JS audit key, fixture validator, and prover HTTP client examples |
+| `make examples` | run JS audit key, fixture validator, prover HTTP client, and browser DApp examples |
 | `make ci` | `test`, `build`, and `examples` |
 | `make vulncheck` | run govulncheck policy gate |
 | `make localnet-smoke` | briefly verify that the reference daemon can start from genesis |
 | `make privacy-e2e-smoke` | validate full deposit, transfer, disclosure, and withdraw flow |
+| `make dapp-local` | start a local Clairveil node, prover, and browser DApp stack for manual testing |
 | `make release-check` | `ci`, `vulncheck`, `localnet-smoke`, and `privacy-e2e-smoke` |
 | `make release-pack` | create downstream handoff archive and sha256 |
 | `make release-pack-verify` | verify handoff archive checksum, internal checksum, required files, and manifest commit |
@@ -80,6 +81,11 @@ Internally runs:
 npm --prefix examples/audit-disclosure-keys test
 npm --prefix examples/js-sdk-fixture-validator run validate
 npm --prefix examples/js-sdk-prover-http-client run demo
+npm --prefix examples/clairveil-dapp ci
+npm --prefix examples/clairveil-dapp run check:dapp
+npm --prefix examples/clairveil-dapp run test:dapp
+npm --prefix examples/clairveil-dapp run check:clairveiljs
+npm --prefix examples/clairveil-dapp run test:clairveiljs
 ```
 
 Validation scope:
@@ -91,6 +97,7 @@ Validation scope:
 - relayed withdraw final payload hash
 - prover HTTP request/response version
 - timeout/auth client shape
+- browser DApp boundary checks, static bundle freshness, local helper route policy, and ClairveilJS package surface smoke tests
 
 ## 5. Localnet Smoke
 

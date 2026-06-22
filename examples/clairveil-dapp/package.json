@@ -1,0 +1,31 @@
+{
+  "name": "@clairveil/example-dapp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build:dapp": "esbuild public/app.js --bundle --format=esm --platform=browser --target=es2022 --outfile=public/app.bundle.js",
+    "start": "npm run build:dapp && node server.js",
+    "dev": "npm run build:dapp && node server.js",
+    "check:dapp": "npm run build:dapp && npm run check:bundle && node --check server.js && node --check public/app.js && node --check public/dapp-config.js && node --check public/app.bundle.js",
+    "check:bundle": "git diff --exit-code -- public/app.bundle.js",
+    "test:dapp": "node --test test/dapp-smoke.test.js test/dapp-routes.test.js",
+    "check:clairveiljs": "npm run check:clairveiljs:types",
+    "check:clairveiljs:types": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --strict test/clairveiljs-types.ts",
+    "test:clairveiljs": "node --test test/clairveiljs.test.js test/clairveiljs-package.test.js"
+  },
+  "dependencies": {
+    "clairveiljs": "github:DELIGHT-LABS/clairveiljs",
+    "ethers": "^6.16.0"
+  },
+  "overrides": {
+    "ws": "^8.20.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0",
+    "typescript": "^5.8.3"
+  }
+}
