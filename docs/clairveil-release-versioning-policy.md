@@ -101,6 +101,7 @@ Use `docs/clairveil-release-note-template.md` for GitHub release or downstream h
 - [ ] `make release-pack`
 - [ ] `make release-pack-verify`
 - [ ] `make docker-proverd-build` if prover image is included
+- [ ] If publishing performance numbers, confirm `make privacy-proverd-load-bench`, `make privacy-localnet-tps-bench`, `make privacy-user-latency-bench`, and `make privacy-public-capacity-report` outputs have `claim_eligible=true` with evidence hashes
 
 ## 3. Handoff Artifacts
 

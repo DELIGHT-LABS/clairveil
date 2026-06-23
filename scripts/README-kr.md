@@ -10,6 +10,14 @@
 - `govulncheck-with-policy.sh`: `govulncheck`를 실행하고 repo vulnerability exception policy를 적용합니다.
 - `localnet-smoke.sh`: `clairveild`를 build하고 임시 local validator genesis를 만든 뒤 node start와 block commit을 짧게 검증합니다.
 - `privacy-e2e-smoke.sh`: deposit, transfer, disclosure decode, direct withdraw, relayed withdraw까지 local privacy flow 전체를 검증합니다.
+- `privacy-bench.sh`: privacy circuit benchmark를 실행하고 structured JSON/Markdown report를 생성합니다.
+- `privacy-proverd-bench.sh`: in-process prover HTTP transport benchmark를 실행합니다.
+- `privacy-proverd-load-bench.sh`: 이미 실행 중인 external `clairveil-proverd`를 대상으로 load summary를 생성합니다.
+- `privacy-bench-localnet.sh`: localnet privacy smoke를 실행하고 fee, gas, reserve, localnet summary를 생성합니다.
+- `privacy-localnet-tps-bench.sh`: localnet smoke output을 `chain_tps` benchmark family로 변환합니다.
+- `privacy-user-latency-bench.sh`: localnet privacy smoke를 wallet-flow latency tracing enabled 상태로 실행하고 `privacy-user-latency` report를 생성합니다. `USER_LATENCY_REPEAT=N`으로 반복 sample을 모을 수 있으며, `RUN_PROFILE=public_claim`은 blocked dry run override가 없으면 최소 100회 반복을 요구합니다.
+- `privacy-public-capacity-report.sh`: component report를 public capacity aggregate로 병합하고, component 또는 claim별 evidence가 public gate를 통과하지 못하면 aggregate도 ineligible 상태로 남깁니다.
+- `privacy-benchmark-report.sh`: family별 `latest.json`을 합쳐 사람이 한 문서로 읽을 수 있는 `benchmarks/clairveil-benchmark-results-report-kr.md`를 생성합니다. `privacy-public-capacity-report.sh`는 기본적으로 이 script를 마지막에 호출하며, `GENERATE_HUMAN_BENCHMARK_REPORT=0`으로 끌 수 있습니다.
 - `release-pack.sh`: downstream handoff tarball과 외부 sha256 파일을 `dist/` 아래 생성합니다.
 - `release-pack-verify.sh`: handoff tarball checksum, 내부 `SHA256SUMS.txt`, 필수 파일, manifest commit을 검증합니다.
 - `docker-proverd-build.sh`: prover compose file을 검증하고 reference prover Docker image를 build/inspect합니다.

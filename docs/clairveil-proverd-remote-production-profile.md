@@ -39,7 +39,7 @@ Remote production must satisfy at least the baseline below.
 | Concurrency | Limit worker count and queue depth. Do not allow unlimited goroutine proof generation. |
 | Logging | Do not log request/response body or bearer tokens. |
 | Artifact | Provide the artifact directory as a read-only mount. Use manifest/checksum and strict preflight. |
-| Health | Do not expose `/healthz` and `/readyz` to the public internet, or restrict them to internal auth/network. |
+| Health/metrics | Do not expose `/healthz`, `/readyz`, or `/debug/vars` to the public internet, or restrict them to internal auth/network. |
 
 ## 4. Docker Packaging Validation
 
@@ -142,6 +142,8 @@ Recommended metrics:
 - worker queue depth
 - CPU, memory, and open file descriptor usage
 
+The reference `clairveil-proverd` exposes process telemetry at `/debug/vars` for benchmark/load-test collection. Treat it as an internal operations endpoint. It can reveal process sizing and traffic timing information, so expose it only on loopback, a private network, or an authenticated operations plane.
+
 Do not log:
 
 - bearer token
@@ -161,7 +163,7 @@ Before operating a remote prover in a production-like environment, confirm:
 5. Concurrent proof limit or async queue exists.
 6. Request/response body logging is disabled or redacted.
 7. Artifact directory is read-only and preflight is strict.
-8. Health/readiness routes are internal-only.
+8. Health/readiness/metrics routes are internal-only.
 9. JS SDK uses request timeout and validates response version plus payload hash.
 10. Remote prover is included in the downstream threat model as a trusted privacy-sensitive component.
 
