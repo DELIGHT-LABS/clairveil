@@ -15,8 +15,12 @@ import (
 	privacyproverservice "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/proverservice"
 )
 
-func main() {
+func configureSDK() {
 	clairveiltypes.SetConfig()
+}
+
+func main() {
+	configureSDK()
 
 	config := privacyproverservice.DefaultServerConfig()
 

@@ -65,6 +65,45 @@ func TestHandlerReadinessRouteFailsWhenCheckerFails(t *testing.T) {
 	require.Contains(t, response.Error, "artifacts missing")
 }
 
+func TestDefaultRuntimeInfoIncludesMetricsRoute(t *testing.T) {
+	info := DefaultRuntimeInfo()
+	require.Contains(t, info.Routes, MetricsPath)
+}
+
+func TestHandlerMetricsRoute(t *testing.T) {
+	handler := NewHandler(nil, nil, nil, nil, DefaultRuntimeInfo(), "", DefaultMaxRequestBz)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, MetricsPath, nil)
+	handler.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+
+	var response MetricsResponse
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	require.Equal(t, StatusVersion, response.Version)
+	require.Equal(t, ServiceName, response.ServiceName)
+	require.NotEmpty(t, response.Timestamp)
+	require.Positive(t, response.Goroutines)
+	require.Positive(t, response.SysBytes)
+	require.Positive(t, response.RSSBytes)
+	require.NotEmpty(t, response.RSSSource)
+}
+
+func TestHandlerMetricsRouteRejectsNonGET(t *testing.T) {
+	handler := NewHandler(nil, nil, nil, nil, DefaultRuntimeInfo(), "", DefaultMaxRequestBz)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, MetricsPath, nil)
+	handler.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusMethodNotAllowed, recorder.Code)
+
+	errorResponse, err := privacyprovertransport.DecodeErrorResponseJSON(recorder.Body.Bytes())
+	require.NoError(t, err)
+	require.Equal(t, privacyprovertransport.ErrorCodeMethodNotAllowed, errorResponse.Code)
+}
+
 func TestHandlerDelegatesProofRouteMethodValidation(t *testing.T) {
 	handler := NewHandler(nil, nil, nil, nil, DefaultRuntimeInfo(), "", DefaultMaxRequestBz)
 

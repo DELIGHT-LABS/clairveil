@@ -9,6 +9,10 @@
 /clairveil-setup
 /clairveil-verify
 /clairveil-proverd
+/clairveil-benchreport
+/clairveil-proverload
+/clairveil-localnetload
+/clairveil-userlatency
 /dist/
 /tmp/
 
@@ -27,6 +31,7 @@ yarn-error.log*
 /.clairveil/
 /clairveil-home/
 /artifacts/
+/benchmarks/
 *.log
 
 # Local commit notes

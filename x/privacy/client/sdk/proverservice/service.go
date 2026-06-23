@@ -6,8 +6,11 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"cosmossdk.io/log/v2"
@@ -28,6 +31,7 @@ const (
 	StatusVersion        = "v1"
 	HealthPath           = "/healthz"
 	ReadinessPath        = "/readyz"
+	MetricsPath          = "/debug/vars"
 	DefaultListenAddress = "127.0.0.1:8080"
 	DefaultMaxRequestBz  = int64(8 << 20)
 	BearerTokenEnv       = "CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN"
@@ -61,6 +65,21 @@ type StatusResponse struct {
 	AuthEnabled   bool     `json:"auth_enabled,omitempty"`
 	Routes        []string `json:"routes,omitempty"`
 	Error         string   `json:"error,omitempty"`
+}
+
+type MetricsResponse struct {
+	Version           string  `json:"version"`
+	ServiceName       string  `json:"service"`
+	Timestamp         string  `json:"timestamp"`
+	Goroutines        int     `json:"goroutines"`
+	HeapAllocBytes    uint64  `json:"heap_alloc_bytes"`
+	HeapSysBytes      uint64  `json:"heap_sys_bytes"`
+	StackInUseBytes   uint64  `json:"stack_inuse_bytes"`
+	SysBytes          uint64  `json:"sys_bytes"`
+	RSSBytes          uint64  `json:"rss_bytes"`
+	MaxRSSBytes       uint64  `json:"max_rss_bytes"`
+	RSSSource         string  `json:"rss_source"`
+	ProcessCPUSeconds float64 `json:"process_cpu_seconds"`
 }
 
 type ReadinessChecker func() error
@@ -154,6 +173,7 @@ func DefaultRuntimeInfo() RuntimeInfo {
 		Routes: []string{
 			HealthPath,
 			ReadinessPath,
+			MetricsPath,
 			privacyprovertransport.TransferProofPath,
 			privacyprovertransport.WithdrawProofPath,
 		},
@@ -225,6 +245,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveHealth(w, r)
 	case ReadinessPath:
 		h.serveReadiness(w, r)
+	case MetricsPath:
+		h.serveMetrics(w, r)
 	default:
 		if isProofRoute(r.URL.Path) && h.bearerToken != "" && !authorized(r, h.bearerToken) {
 			writeErrorResponse(w, http.StatusUnauthorized, privacyprovertransport.ErrorCodeUnauthorized, "missing or invalid bearer token")
@@ -340,6 +362,74 @@ func (h *Handler) serveReadiness(w http.ResponseWriter, r *http.Request) {
 		AuthEnabled:   h.info.AuthEnabled,
 		Routes:        h.info.Routes,
 	})
+}
+
+func (h *Handler) serveMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErrorResponse(w, http.StatusMethodNotAllowed, privacyprovertransport.ErrorCodeMethodNotAllowed, "metrics route requires GET")
+		return
+	}
+
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
+	rssBytes, rssSource := currentRSSBytes(mem)
+	maxRSSBytes := rssBytes
+	if value, ok := processMaxRSSBytes(); ok && value > maxRSSBytes {
+		maxRSSBytes = value
+	}
+
+	writeJSON(w, http.StatusOK, MetricsResponse{
+		Version:           StatusVersion,
+		ServiceName:       h.info.ServiceName,
+		Timestamp:         time.Now().UTC().Format(time.RFC3339Nano),
+		Goroutines:        runtime.NumGoroutine(),
+		HeapAllocBytes:    mem.HeapAlloc,
+		HeapSysBytes:      mem.HeapSys,
+		StackInUseBytes:   mem.StackInuse,
+		SysBytes:          mem.Sys,
+		RSSBytes:          rssBytes,
+		MaxRSSBytes:       maxRSSBytes,
+		RSSSource:         rssSource,
+		ProcessCPUSeconds: processCPUSeconds(),
+	})
+}
+
+func currentRSSBytes(mem runtime.MemStats) (uint64, string) {
+	if runtime.GOOS == "linux" {
+		if bz, err := os.ReadFile("/proc/self/statm"); err == nil {
+			fields := strings.Fields(string(bz))
+			if len(fields) >= 2 {
+				if residentPages, err := strconv.ParseUint(fields[1], 10, 64); err == nil {
+					return residentPages * uint64(os.Getpagesize()), "procfs_statm"
+				}
+			}
+		}
+	}
+
+	return mem.Sys, "runtime_memstats_sys"
+}
+
+func processMaxRSSBytes() (uint64, bool) {
+	var usage syscall.Rusage
+	if err := syscall.Getrusage(syscall.RUSAGE_SELF, &usage); err != nil || usage.Maxrss <= 0 {
+		return 0, false
+	}
+	if runtime.GOOS == "darwin" || runtime.GOOS == "ios" {
+		return uint64(usage.Maxrss), true
+	}
+	return uint64(usage.Maxrss) * 1024, true
+}
+
+func processCPUSeconds() float64 {
+	var usage syscall.Rusage
+	if err := syscall.Getrusage(syscall.RUSAGE_SELF, &usage); err != nil {
+		return 0
+	}
+	return timevalSeconds(usage.Utime) + timevalSeconds(usage.Stime)
+}
+
+func timevalSeconds(value syscall.Timeval) float64 {
+	return float64(value.Sec) + float64(value.Usec)/1_000_000
 }
 
 func isProofRoute(path string) bool {

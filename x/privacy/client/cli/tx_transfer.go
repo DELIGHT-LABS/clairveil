@@ -45,6 +45,13 @@ type transferRuntimeConfig struct {
 	auditDisclosureTargetPubKeyBz []byte
 }
 
+func transferLatencyFlowProfile(userPrivacyPolicy uint32) string {
+	if userPrivacyPolicy == types.TransferPrivacyPolicyAllPrivate {
+		return "transfer_all_private"
+	}
+	return "transfer_with_disclosure"
+}
+
 func CmdTransfer() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "transfer [shielded_address] [amount]",
@@ -96,6 +103,12 @@ Use the single latest shielded transfer flow.
 				autoDummy,
 			)
 
+			latencyFlow := newPrivacyLatencyFlow(transferLatencyFlowProfile(config.userPrivacyPolicy))
+			var runErr error
+			defer func() {
+				latencyFlow.finish(runErr)
+			}()
+
 			txRes, err := executeTransferFlow(
 				cmd,
 				clientCtx,
@@ -112,12 +125,15 @@ Use the single latest shielded transfer flow.
 					AuditDisclosureTargetPubKey:   config.auditDisclosureTargetPubKey,
 					AuditDisclosureTargetPubKeyBz: config.auditDisclosureTargetPubKeyBz,
 				},
+				latencyFlow,
 			)
 			if err != nil {
+				runErr = err
 				return err
 			}
 			if privacyCommandOutputJSONEnabled(cmd) {
-				return printCommandJSON(cmd, txRes)
+				runErr = printCommandJSON(cmd, txRes)
+				return runErr
 			}
 			return nil
 		},
@@ -208,6 +224,7 @@ func executeTransferFlow(
 	targetDenom string,
 	autoDummy bool,
 	disclosure privacytransfer.StepDisclosureConfig,
+	latencyFlow *privacyLatencyFlow,
 ) (*sdk.TxResponse, error) {
 	identity, err := resolveTransferExecutionIdentity(clientCtx)
 	if err != nil {
@@ -224,6 +241,7 @@ func executeTransferFlow(
 		targetDenom,
 		autoDummy,
 		disclosure,
+		latencyFlow,
 	)
 }
 
@@ -237,6 +255,7 @@ func executeTransferFlowWithIdentity(
 	targetDenom string,
 	autoDummy bool,
 	disclosure privacytransfer.StepDisclosureConfig,
+	latencyFlow *privacyLatencyFlow,
 ) (*sdk.TxResponse, error) {
 	if identity == nil {
 		return nil, fmt.Errorf("transfer execution identity is required")
@@ -264,13 +283,14 @@ func executeTransferFlowWithIdentity(
 			MerklePaths: privacyprovider.NewTransferQueryProvider(types.NewQueryClient(clientCtx)),
 			Signer:      manualJoinSplitNoteHashSigner{scalar: identity.scalar, pubKey: identity.spendPubKey},
 			Artifacts:   transferJoinSplitArtifactProvider{},
-			Runner:      transferJoinSplitProofRunner{logWriter: privacyCommandLogWriter(cmd)},
+			Runner:      transferJoinSplitProofRunner{logWriter: privacyCommandLogWriter(cmd), latencyFlow: latencyFlow},
 			Broadcaster: transferMessageBroadcaster{
 				broadcaster: privacyprovider.CosmosTxBroadcaster{
 					ClientContext: clientCtx,
 					Flags:         cmd.Flags(),
 					FromName:      clientCtx.GetFromName(),
 				},
+				latencyFlow: latencyFlow,
 			},
 		},
 		privacytransfer.ExecuteTransferInput{
@@ -381,21 +401,35 @@ func (transferJoinSplitArtifactProvider) JoinSplitProvingKey() (groth16.ProvingK
 }
 
 type transferJoinSplitProofRunner struct {
-	logWriter io.Writer
+	logWriter   io.Writer
+	latencyFlow *privacyLatencyFlow
 }
 
 func (r transferJoinSplitProofRunner) ProveJoinSplit(r1cs constraint.ConstraintSystem, provingKey groth16.ProvingKey, joinSplitWitness witness.Witness) (groth16.Proof, error) {
-	return withGnarkLoggerOutput(r.logWriter, func() (groth16.Proof, error) {
-		return groth16.Prove(r1cs, provingKey, joinSplitWitness)
+	if r.latencyFlow != nil {
+		r.latencyFlow.recordPrepareUntil(time.Now())
+	}
+	return observePrivacyLatencyPhase(r.latencyFlow, "proof", func() (groth16.Proof, error) {
+		return withGnarkLoggerOutput(r.logWriter, func() (groth16.Proof, error) {
+			return groth16.Prove(r1cs, provingKey, joinSplitWitness)
+		})
 	})
 }
 
 type transferMessageBroadcaster struct {
 	broadcaster privacyprovider.CosmosTxBroadcaster
+	latencyFlow *privacyLatencyFlow
 }
 
 func (b transferMessageBroadcaster) BroadcastTransferMessage(ctx context.Context, msg *types.MsgTransfer) (*sdk.TxResponse, error) {
-	return b.broadcaster.BroadcastSDKMessage(ctx, msg)
+	startedAt := time.Now()
+	res, err := b.broadcaster.BroadcastSDKMessage(ctx, msg)
+	txHash := ""
+	if res != nil {
+		txHash = res.TxHash
+	}
+	b.latencyFlow.recordSubmit(startedAt, txHash, err)
+	return res, err
 }
 
 func findZeroNote(notes []FoundNote, excludeIndex int) int {

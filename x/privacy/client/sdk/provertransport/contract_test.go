@@ -119,7 +119,7 @@ func TestTransferAndWithdrawProofJSONRoundTrip(t *testing.T) {
 }
 
 func testPreparedTransferPayload(
-	t *testing.T,
+	t testing.TB,
 ) (
 	privacytransfer.PreparedTransferPayload,
 	*transferArtifactProvider,
@@ -215,7 +215,7 @@ func testPreparedTransferPayload(
 }
 
 func testPreparedWithdrawProverPayload(
-	t *testing.T,
+	t testing.TB,
 	now time.Time,
 ) (
 	privacywithdraw.PreparedWithdrawProverPayload,
