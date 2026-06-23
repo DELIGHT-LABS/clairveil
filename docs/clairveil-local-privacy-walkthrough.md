@@ -17,6 +17,7 @@ The features validated here are:
 - the single `transfer` command
 - user selective disclosure: private, public, recipient-encrypted
 - mandatory audit disclosure
+- sender self-view disclosure
 - `decode-transfer-disclosure`
 - direct withdraw
 - prepare / relay withdraw
@@ -432,13 +433,28 @@ The auditor reads the audit disclosure.
   --report | tee out/transfer-recipient-audit-report.json
 ```
 
-Summarize both reports.
+Alice reads the sender self-view disclosure.
+
+```bash
+~/clairveil-privacy-walkthrough/bin/clairveild tx privacy decode-transfer-disclosure \
+  --tx-hash "$(cat out/transfer-recipient.txhash)" \
+  --disclosure-plane self-view \
+  --from alice \
+  --keyring-backend test \
+  --report | tee out/transfer-recipient-self-view-report.json
+```
+
+Summarize all three reports.
 
 ```bash
 python3 - <<'PY2'
 import json
 from pathlib import Path
-for path in ['out/transfer-recipient-user-report.json', 'out/transfer-recipient-audit-report.json']:
+for path in [
+    'out/transfer-recipient-user-report.json',
+    'out/transfer-recipient-audit-report.json',
+    'out/transfer-recipient-self-view-report.json',
+]:
     doc = json.loads(Path(path).read_text())
     print(path, doc['summary'])
     print('verified:', doc['verification']['verified'])
@@ -571,5 +587,5 @@ kill "$(cat out/clairveild.pid)"
 - Local genesis and node start work with the standalone `clairveild` daemon.
 - `clairs1...` shielded addresses are derived from `clair1...` transparent keyring accounts.
 - deposit / transfer / withdraw work with `uclair`.
-- user selective disclosure and mandatory audit disclosure work together.
+- user selective disclosure, sender self-view disclosure, and mandatory audit disclosure work together.
 - both direct withdraw and prepared / relayed withdraw work.

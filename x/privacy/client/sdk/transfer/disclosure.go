@@ -187,6 +187,76 @@ func BuildAuditDisclosureData(
 	}, nil
 }
 
+func BuildSelfViewDisclosureData(
+	input DisclosureBuildInput,
+	selfViewDisclosureTargetPubKey *crypto_tedwards.PointAffine,
+) (*DisclosureData, error) {
+	if selfViewDisclosureTargetPubKey == nil {
+		return nil, fmt.Errorf("self-view disclosure target public key is required")
+	}
+
+	commitmentHex := hex.EncodeToString(input.OutputCommitment)
+	assetIDHex, err := privacyfield.CanonicalHexFromBigInt(input.RecipientNote.AssetID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid recipient asset id: %w", err)
+	}
+
+	digest, err := privacytypes.ComputeSelfViewTransferDisclosureDigestBytes(
+		privacytypes.TransferDisclosureRecipientOutputIndex,
+		input.OutputCommitment,
+		input.RecipientNote.Amount,
+		input.RecipientNote.AssetID,
+		input.FromNote.ReceiverSpendPubKeyX,
+		input.FromNote.ReceiverSpendPubKeyY,
+		input.FromNote.ReceiverViewPubKeyX,
+		input.FromNote.ReceiverViewPubKeyY,
+		input.RecipientNote.ReceiverSpendPubKeyX,
+		input.RecipientNote.ReceiverSpendPubKeyY,
+		input.RecipientNote.ReceiverViewPubKeyX,
+		input.RecipientNote.ReceiverViewPubKeyY,
+	)
+	if err != nil {
+		return nil, err
+	}
+	digestHex := hex.EncodeToString(digest)
+
+	fromAddress, toAddress, err := disclosureAddresses(input)
+	if err != nil {
+		return nil, err
+	}
+
+	payload := privacydisclosure.Payload{
+		Version:             privacydisclosure.PayloadVersion,
+		Plane:               privacydisclosure.PlaneSelfView,
+		Policy:              privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom,
+		OutputIndex:         privacytypes.TransferDisclosureRecipientOutputIndex,
+		CommitmentHex:       commitmentHex,
+		DisclosureDigestHex: digestHex,
+		Amount:              input.RecipientNote.Amount.String(),
+		AssetIDHex:          assetIDHex,
+		AssetDenom:          input.TransferDenom,
+		FromShieldedAddress: fromAddress,
+		ToShieldedAddress:   toAddress,
+	}
+
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal self-view disclosure payload: %w", err)
+	}
+
+	cipherText, err := privacycrypto.AsymEncrypt(payloadJSON, *selfViewDisclosureTargetPubKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt self-view disclosure payload: %w", err)
+	}
+
+	return &DisclosureData{
+		PayloadJSON: payloadJSON,
+		CipherText:  cipherText,
+		Digest:      digest,
+		Payload:     payload,
+	}, nil
+}
+
 func disclosureAddresses(input DisclosureBuildInput) (string, string, error) {
 	fromAddress, err := input.FromNote.ReceiverShieldedAddress()
 	if err != nil {

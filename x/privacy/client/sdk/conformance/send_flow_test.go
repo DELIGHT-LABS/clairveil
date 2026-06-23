@@ -21,9 +21,10 @@ import (
 )
 
 const (
-	updateSendCapableFlowFixtureEnv       = "PRIVACY_UPDATE_SEND_CAPABLE_FLOW_FIXTURES"
-	referenceUserDisclosureScalar   int64 = 79
-	referenceAuditDisclosureScalar  int64 = 83
+	updateSendCapableFlowFixtureEnv         = "PRIVACY_UPDATE_SEND_CAPABLE_FLOW_FIXTURES"
+	referenceUserDisclosureScalar     int64 = 79
+	referenceAuditDisclosureScalar    int64 = 83
+	referenceSelfViewDisclosureScalar int64 = 89
 )
 
 type sendCapableReferenceFlowBundle struct {
@@ -56,6 +57,7 @@ type sendCapableTransferBundle struct {
 	UserPrivacyPolicy  string                       `json:"user_privacy_policy"`
 	UserDisclosure     sendCapableDisclosureSummary `json:"user_disclosure"`
 	AuditDisclosure    sendCapableDisclosureSummary `json:"audit_disclosure"`
+	SelfViewDisclosure sendCapableDisclosureSummary `json:"self_view_disclosure"`
 }
 
 type sendCapableDisclosureSummary struct {
@@ -135,6 +137,17 @@ func buildSendCapableReferenceFlowBundle(t *testing.T) sendCapableReferenceFlowB
 	)
 	require.NoError(t, err)
 
+	selfViewDisclosurePayload, err := privacydisclosure.DecryptPayloadHex(
+		transferRequest.Payload.SelfViewDisclosurePayloadHex,
+		big.NewInt(referenceSelfViewDisclosureScalar),
+	)
+	require.NoError(t, err)
+	selfViewDisclosureVerification, err := privacydisclosure.VerifyPayload(
+		selfViewDisclosurePayload,
+		transferRequest.Payload.SelfViewDisclosureDigestHex,
+	)
+	require.NoError(t, err)
+
 	transferMsg, err := transferRequest.Payload.ToMsg(transferResponse.Proof)
 	require.NoError(t, err)
 	require.NoError(t, transferMsg.ValidateBasic())
@@ -142,6 +155,7 @@ func buildSendCapableReferenceFlowBundle(t *testing.T) sendCapableReferenceFlowB
 	require.Equal(t, transferRequest.Payload.PayloadHash, transferResponse.Proof.PayloadHash)
 	require.Equal(t, transferRequest.Payload.UserDisclosureDigestHex, hex.EncodeToString(transferMsg.UserDisclosureDigest))
 	require.Equal(t, transferRequest.Payload.AuditDisclosureDigestHex, hex.EncodeToString(transferMsg.AuditDisclosureDigest))
+	require.Equal(t, transferRequest.Payload.SelfViewDisclosureDigestHex, hex.EncodeToString(transferMsg.SelfViewDisclosureDigest))
 
 	validationNow := time.Unix(exampleFixture.Withdraw.ValidationNowUnix, 0).UTC()
 	withdrawRequest := exampleFixture.Withdraw.Request
@@ -198,6 +212,19 @@ func buildSendCapableReferenceFlowBundle(t *testing.T) sendCapableReferenceFlowB
 				AssetDenom:          auditDisclosurePayload.AssetDenom,
 				FromShieldedAddress: auditDisclosurePayload.FromShieldedAddress,
 				ToShieldedAddress:   auditDisclosurePayload.ToShieldedAddress,
+			},
+			SelfViewDisclosure: sendCapableDisclosureSummary{
+				Plane:               selfViewDisclosurePayload.Plane,
+				Policy:              privacytransfer.PrivacyPolicyLabel(selfViewDisclosurePayload.Policy),
+				OutputIndex:         selfViewDisclosurePayload.OutputIndex,
+				CommitmentHex:       selfViewDisclosurePayload.CommitmentHex,
+				DigestHex:           transferRequest.Payload.SelfViewDisclosureDigestHex,
+				Verified:            selfViewDisclosureVerification.Verified,
+				DisclosedFields:     privacydisclosure.DisclosedFields(selfViewDisclosurePayload),
+				Amount:              selfViewDisclosurePayload.Amount,
+				AssetDenom:          selfViewDisclosurePayload.AssetDenom,
+				FromShieldedAddress: selfViewDisclosurePayload.FromShieldedAddress,
+				ToShieldedAddress:   selfViewDisclosurePayload.ToShieldedAddress,
 			},
 		},
 		Withdraw: sendCapableWithdrawBundle{

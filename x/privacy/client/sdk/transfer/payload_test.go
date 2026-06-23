@@ -19,6 +19,8 @@ func TestBuildPreparedTransferPayloadAndProofRoundTrip(t *testing.T) {
 	require.Len(t, payload.Inputs, 2)
 	require.Len(t, payload.Outputs, 2)
 	require.Len(t, payload.CipherTextHexes, 2)
+	require.NotEmpty(t, payload.SelfViewDisclosureDigestHex)
+	require.NotEmpty(t, payload.SelfViewDisclosurePayloadHex)
 	require.NoError(t, ValidatePreparedTransferPayloadMetadata(*payload))
 
 	proof, err := BuildPreparedTransferProof(*payload, artifacts, runner)
@@ -33,6 +35,8 @@ func TestBuildPreparedTransferPayloadAndProofRoundTrip(t *testing.T) {
 	require.Equal(t, payload.Creator, msg.Creator)
 	require.Equal(t, payload.UserPrivacyPolicy, msg.UserPrivacyPolicy)
 	require.Equal(t, int32(msg.UserDisclosureMode), payload.UserDisclosureMode)
+	require.NotEmpty(t, msg.SelfViewDisclosureDigest)
+	require.NotEmpty(t, msg.SelfViewDisclosurePayload)
 }
 
 func TestValidatePreparedTransferPayloadMetadataRejectsHashMismatch(t *testing.T) {
@@ -44,6 +48,56 @@ func TestValidatePreparedTransferPayloadMetadataRejectsHashMismatch(t *testing.T
 	payload.Creator = "clair1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq08l9p7"
 	err = ValidatePreparedTransferPayloadMetadata(*payload)
 	require.ErrorContains(t, err, "hash mismatch")
+}
+
+func TestBuildPreparedTransferPayloadCanDisableSelfViewDisclosure(t *testing.T) {
+	input, merkleProvider, signer, _, _ := testBuildTransferMessageDeps(t)
+	input.DisableSelfViewDisclosure = true
+	input.SelfViewDisclosureTargetPubKey = nil
+
+	payload, err := BuildPreparedTransferPayload(context.Background(), merkleProvider, signer, input)
+	require.NoError(t, err)
+	require.Empty(t, payload.SelfViewDisclosureDigestHex)
+	require.Empty(t, payload.SelfViewDisclosurePayloadHex)
+	require.NoError(t, ValidatePreparedTransferPayloadMetadata(*payload))
+}
+
+func TestValidatePreparedTransferPayloadMetadataAcceptsLegacyV1WithoutSelfView(t *testing.T) {
+	input, merkleProvider, signer, artifacts, runner := testBuildTransferMessageDeps(t)
+
+	payload, err := BuildPreparedTransferPayload(context.Background(), merkleProvider, signer, input)
+	require.NoError(t, err)
+
+	payload.Version = legacyPreparedTransferPayloadVersionV1
+	payload.SelfViewDisclosureDigestHex = ""
+	payload.SelfViewDisclosurePayloadHex = ""
+	payload.PayloadHash = ComputePreparedTransferPayloadHash(*payload)
+	require.NoError(t, ValidatePreparedTransferPayloadMetadata(*payload))
+
+	proof, err := BuildPreparedTransferProof(*payload, artifacts, runner)
+	require.NoError(t, err)
+	msg, err := payload.ToMsg(*proof)
+	require.NoError(t, err)
+	require.Empty(t, msg.SelfViewDisclosureDigest)
+	require.Empty(t, msg.SelfViewDisclosurePayload)
+}
+
+func TestValidatePreparedTransferPayloadMetadataRejectsLegacyV1WithSelfView(t *testing.T) {
+	input, merkleProvider, signer, _, _ := testBuildTransferMessageDeps(t)
+
+	payload, err := BuildPreparedTransferPayload(context.Background(), merkleProvider, signer, input)
+	require.NoError(t, err)
+
+	payload.Version = legacyPreparedTransferPayloadVersionV1
+	payload.PayloadHash = ComputePreparedTransferPayloadHash(*payload)
+	legacyWithoutSelfView := *payload
+	legacyWithoutSelfView.SelfViewDisclosureDigestHex = ""
+	legacyWithoutSelfView.SelfViewDisclosurePayloadHex = ""
+	require.Equal(t, ComputePreparedTransferPayloadHash(legacyWithoutSelfView), payload.PayloadHash)
+
+	err = ValidatePreparedTransferPayloadMetadata(*payload)
+	require.ErrorContains(t, err, "legacy transfer payload version")
+	require.ErrorContains(t, err, "cannot include self-view disclosure fields")
 }
 
 func TestProvePreparedTransferPayloadRejectsMismatchedCommitment(t *testing.T) {

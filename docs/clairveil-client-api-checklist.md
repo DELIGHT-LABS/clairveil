@@ -52,7 +52,7 @@ Messages the client must build or broadcast:
 
 Important:
 
-- `MsgTransfer` includes user disclosure and mandatory audit disclosure fields.
+- `MsgTransfer` includes user disclosure, mandatory audit disclosure, and optional sender self-view disclosure fields.
 - `MsgDeposit` requires a deposit proof binding the transparent amount/asset to the note commitment.
 - `MsgWithdraw` has no output note fields.
 - Clients must not create legacy `new_note_commitment` or `encrypted_note` withdraw values.
@@ -106,6 +106,7 @@ Minimum validation before client release:
 - shielded transfer e2e
 - public disclosure decode/verify
 - recipient-encrypted disclosure decode/verify
+- sender self-view disclosure decode/verify
 - audit disclosure decode/verify, if auditor UX exists
 - reserve query returns `invariant_holds=true` for the target denom after deposit/withdraw flows
 - direct withdraw

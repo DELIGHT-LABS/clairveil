@@ -46,12 +46,14 @@ func generatedTransferRequest() (requestPayload, error) {
 	recipientSpendScalar := big.NewInt(23)
 	recipientViewScalar := big.NewInt(29)
 	auditScalar := big.NewInt(31)
+	selfViewScalar := big.NewInt(37)
 
 	senderSpendPub := scalarMulBase(senderSpendScalar)
 	senderViewPub := scalarMulBase(senderViewScalar)
 	recipientSpendPub := scalarMulBase(recipientSpendScalar)
 	recipientViewPub := scalarMulBase(recipientViewScalar)
 	auditPub := scalarMulBase(auditScalar)
+	selfViewPub := scalarMulBase(selfViewScalar)
 
 	senderSpendX, senderSpendY := pointBigInts(senderSpendPub)
 	senderViewX, senderViewY := pointBigInts(senderViewPub)
@@ -88,18 +90,19 @@ func generatedTransferRequest() (requestPayload, error) {
 		provider,
 		generatedTransferSigner{scalar: senderSpendScalar, pubKey: &senderSpendPub},
 		privacytransfer.BuildTransferMessageInput{
-			Creator:                       generatedCreatorAddress(),
-			Inputs:                        inputs,
-			RecipientSpendPubKey:          &recipientSpendPub,
-			RecipientViewPubKey:           &recipientViewPub,
-			TransferAmount:                big.NewInt(6),
-			TransferDenom:                 generatedFixtureDenom,
-			SenderSpendPubKey:             &senderSpendPub,
-			SenderViewPubKey:              &senderViewPub,
-			UserPrivacyPolicy:             privacytypes.TransferPrivacyPolicyAllPrivate,
-			UserDisclosureMode:            privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE,
-			AuditDisclosureTargetPubKey:   &auditPub,
-			AuditDisclosureTargetPubKeyBz: encodedPointBytes(auditPub),
+			Creator:                        generatedCreatorAddress(),
+			Inputs:                         inputs,
+			RecipientSpendPubKey:           &recipientSpendPub,
+			RecipientViewPubKey:            &recipientViewPub,
+			TransferAmount:                 big.NewInt(6),
+			TransferDenom:                  generatedFixtureDenom,
+			SenderSpendPubKey:              &senderSpendPub,
+			SenderViewPubKey:               &senderViewPub,
+			UserPrivacyPolicy:              privacytypes.TransferPrivacyPolicyAllPrivate,
+			UserDisclosureMode:             privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE,
+			AuditDisclosureTargetPubKey:    &auditPub,
+			AuditDisclosureTargetPubKeyBz:  encodedPointBytes(auditPub),
+			SelfViewDisclosureTargetPubKey: &selfViewPub,
 		},
 	)
 	if err != nil {

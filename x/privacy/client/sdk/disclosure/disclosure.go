@@ -16,6 +16,7 @@ const (
 	PayloadVersion = "v4"
 	PlaneUser      = "user"
 	PlaneAudit     = "audit"
+	PlaneSelfView  = "self-view"
 )
 
 type Payload struct {
@@ -127,6 +128,22 @@ func ComputeExpectedDisclosureDigest(payload *Payload) (string, *VerificationRep
 	switch payload.Plane {
 	case PlaneAudit:
 		expectedDigestHex, err := privacytypes.ComputeAuditTransferDisclosureDigestHex(
+			payload.OutputIndex,
+			commitmentBytes,
+			amount,
+			assetID,
+			bundleX(fromBundle, true),
+			bundleY(fromBundle, true),
+			bundleX(fromBundle, false),
+			bundleY(fromBundle, false),
+			bundleX(toBundle, true),
+			bundleY(toBundle, true),
+			bundleX(toBundle, false),
+			bundleY(toBundle, false),
+		)
+		return expectedDigestHex, verification, err
+	case PlaneSelfView:
+		expectedDigestHex, err := privacytypes.ComputeSelfViewTransferDisclosureDigestHex(
 			payload.OutputIndex,
 			commitmentBytes,
 			amount,

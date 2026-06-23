@@ -27,14 +27,7 @@ func TestBroadcastTransferStepBuildsAndBroadcasts(t *testing.T) {
 		SenderSpendPubKey:    input.SenderSpendPubKey,
 		SenderViewPubKey:     input.SenderViewPubKey,
 		IsFinal:              true,
-		Disclosure: StepDisclosureConfig{
-			UserPrivacyPolicy:             input.UserPrivacyPolicy,
-			UserDisclosureMode:            input.UserDisclosureMode,
-			UserDisclosureTargetPubKey:    input.UserDisclosureTargetPubKey,
-			UserDisclosureTargetPubKeyBz:  input.UserDisclosureTargetPubKeyBz,
-			AuditDisclosureTargetPubKey:   input.AuditDisclosureTargetPubKey,
-			AuditDisclosureTargetPubKeyBz: input.AuditDisclosureTargetPubKeyBz,
-		},
+		Disclosure:           testStepDisclosureConfig(input),
 	})
 	require.NoError(t, err)
 	require.Equal(t, "tx-ok", res.TxHash)
@@ -58,14 +51,7 @@ func TestBroadcastTransferStepPropagatesBroadcasterError(t *testing.T) {
 		SenderSpendPubKey:    input.SenderSpendPubKey,
 		SenderViewPubKey:     input.SenderViewPubKey,
 		IsFinal:              true,
-		Disclosure: StepDisclosureConfig{
-			UserPrivacyPolicy:             input.UserPrivacyPolicy,
-			UserDisclosureMode:            input.UserDisclosureMode,
-			UserDisclosureTargetPubKey:    input.UserDisclosureTargetPubKey,
-			UserDisclosureTargetPubKeyBz:  input.UserDisclosureTargetPubKeyBz,
-			AuditDisclosureTargetPubKey:   input.AuditDisclosureTargetPubKey,
-			AuditDisclosureTargetPubKeyBz: input.AuditDisclosureTargetPubKeyBz,
-		},
+		Disclosure:           testStepDisclosureConfig(input),
 	})
 	require.ErrorContains(t, err, "broadcast boom")
 }
@@ -86,14 +72,7 @@ func TestBroadcastTransferStepReturnsFailedTxResponse(t *testing.T) {
 		SenderSpendPubKey:    input.SenderSpendPubKey,
 		SenderViewPubKey:     input.SenderViewPubKey,
 		IsFinal:              true,
-		Disclosure: StepDisclosureConfig{
-			UserPrivacyPolicy:             input.UserPrivacyPolicy,
-			UserDisclosureMode:            input.UserDisclosureMode,
-			UserDisclosureTargetPubKey:    input.UserDisclosureTargetPubKey,
-			UserDisclosureTargetPubKeyBz:  input.UserDisclosureTargetPubKeyBz,
-			AuditDisclosureTargetPubKey:   input.AuditDisclosureTargetPubKey,
-			AuditDisclosureTargetPubKeyBz: input.AuditDisclosureTargetPubKeyBz,
-		},
+		Disclosure:           testStepDisclosureConfig(input),
 	})
 	require.ErrorContains(t, err, "tx failed with code 7")
 	require.Equal(t, uint32(7), res.Code)

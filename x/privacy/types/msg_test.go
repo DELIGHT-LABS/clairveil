@@ -130,6 +130,8 @@ func TestMsgTransferValidateBasicLengthChecks(t *testing.T) {
 		validFieldBytes(),
 		validDisclosurePubKeyBytes(t),
 		[]byte("audit"),
+		validFieldBytes(),
+		[]byte("self-view"),
 	)
 	require.NoError(t, valid.ValidateBasic())
 
@@ -148,6 +150,8 @@ func TestMsgTransferValidateBasicLengthChecks(t *testing.T) {
 		validFieldBytes(),
 		validDisclosurePubKeyBytes(t),
 		[]byte("audit"),
+		nil,
+		nil,
 	)
 	err := invalidNullifier.ValidateBasic()
 	require.ErrorContains(t, err, "transfer requires exactly 2 nullifiers")
@@ -174,6 +178,8 @@ func TestMsgTransferValidateBasicUserDisclosureModes(t *testing.T) {
 			validFieldBytes(),
 			auditPubKey,
 			[]byte("audit"),
+			validFieldBytes(),
+			[]byte("self-view"),
 		)
 	}
 
@@ -207,4 +213,9 @@ func TestMsgTransferValidateBasicUserDisclosureModes(t *testing.T) {
 	missingAudit.AuditDisclosureDigest = nil
 	err = missingAudit.ValidateBasic()
 	require.ErrorContains(t, err, "audit disclosure digest must be exactly 32 bytes")
+
+	missingSelfViewPayload := base()
+	missingSelfViewPayload.SelfViewDisclosurePayload = nil
+	err = missingSelfViewPayload.ValidateBasic()
+	require.ErrorContains(t, err, "self-view disclosure digest and payload must be provided together")
 }

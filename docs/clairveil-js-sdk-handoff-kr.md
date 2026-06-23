@@ -61,7 +61,7 @@ MsgWithdraw
 
 `MsgDeposit`에는 `proof` 필드가 있습니다. Client는 `amount`, `asset_id`, `note_commitment`를 binding하는 `DepositCircuit` Groth16 proof를 만들거나 받아와야 하며, proof 없는 deposit은 현재 계약에 포함되지 않습니다.
 
-`MsgTransfer`에는 user disclosure와 audit disclosure 필드가 모두 있습니다. 최신 모델에서 audit disclosure는 선택 기능이 아니라 모든 shielded transfer에 포함되어야 하는 필수 기능입니다.
+`MsgTransfer`에는 user disclosure, audit disclosure, sender self-view disclosure 필드가 있습니다. 최신 모델에서 audit disclosure는 선택 기능이 아니라 모든 shielded transfer에 포함되어야 하는 필수 기능입니다. Sender self-view disclosure는 기본으로 포함되며 명시적 opt-out에서만 빠집니다.
 
 `MsgWithdraw`는 exact-match withdraw 메시지이며 output note 필드를 갖지 않습니다. JS/TS client는 legacy withdraw 필드인 `new_note_commitment`, `encrypted_note`를 모델링하지 말아야 하며, dummy output note 값을 보내지 않아야 합니다.
 
@@ -247,18 +247,23 @@ x/privacy/client/sdk/transfer/service.go
 - output 0은 recipient note, output 1은 change note입니다.
 - 모든 transfer는 audit disclosure를 포함해야 합니다.
 - user disclosure는 `none`, `public`, `recipient-encrypted` mode를 지원합니다.
+- sender self-view disclosure는 기본 enabled이며, 명시적 opt-out일 때만 생략합니다.
 - supported policy는 `all-private`, `amount`, `to`, `amount-to`, `from`, `amount-from`, `from-to`, `amount-from-to`입니다.
-- transfer payload/proof version은 현재 `v1`입니다.
+- JS SDK가 새로 생성하는 transfer payload version은 현재 `v2`이고 transfer proof version은 현재 `v1`입니다.
+- Go SDK/proverd는 migration window 동안 self-view field가 없는 legacy transfer payload `v1`도 검증할 수 있습니다. 단, legacy `v1` payload에 self-view field가 들어오면 해당 field가 legacy hash canon에 포함되지 않으므로 거부합니다.
 - disclosure payload version은 현재 query 기준 `v4`입니다.
 
 ## 9. Disclosure 구현
 
-사용자 selective disclosure와 audit disclosure는 같은 payload 검증 모델을 사용하지만 plane이 다릅니다.
+사용자 selective disclosure, audit disclosure, sender self-view disclosure는 같은 payload 검증 모델을 사용하지만 plane과 delivery 의미가 다릅니다.
 
 ```text
 user disclosure: sender가 선택한 정책과 전달 방식
 audit disclosure: chain audit master key 대상으로 항상 생성
+self-view disclosure: sender 자신의 disclosure key 대상으로 기본 생성
 ```
+
+Self-view disclosure는 sender가 나중에 자신이 보낸 transfer의 amount/from/to를 볼 수 있게 하는 encrypted payload입니다. On-chain event에는 `self_view_disclosure_digest`와 `self_view_disclosure_payload`만 들어가며, sender의 static disclosure public key는 노출하지 않습니다. JS SDK는 sender disclosure private key로 self-view payload를 trial decrypt하고, payload 안의 digest와 on-chain digest를 검증해야 합니다.
 
 웹월렛 UI는 user disclosure에 대해 최소 아래 선택지를 제공하면 됩니다.
 
@@ -274,6 +279,17 @@ clairveild tx privacy decode-transfer-disclosure \
   --tx-hash <transfer_tx_hash> \
   --disclosure-plane audit \
   --from auditor \
+  --keyring-backend test \
+  --report
+```
+
+Sender self-view를 확인하는 CLI 대응 command는 아래입니다.
+
+```bash
+clairveild tx privacy decode-transfer-disclosure \
+  --tx-hash <transfer_tx_hash> \
+  --disclosure-plane self-view \
+  --from sender \
   --keyring-backend test \
   --report
 ```
@@ -430,7 +446,7 @@ JS SDK handoff가 완료되었다고 보려면 아래가 가능해야 합니다.
 - deposit 후 event scan으로 내 note를 찾습니다.
 - transfer prepared payload의 hash가 Go fixture와 같은 방식으로 계산됩니다.
 - prover HTTP contract에 맞춰 transfer/withdraw proof request와 response를 검증합니다.
-- user disclosure와 audit disclosure를 decode하고 `verified=true`를 확인합니다.
+- user disclosure, audit disclosure, sender self-view disclosure를 decode하고 `verified=true`를 확인합니다.
 - exact-match withdraw와 relayed withdraw payload 검증이 동작합니다.
 - Clairveil repo의 `make privacy-e2e-smoke`와 같은 흐름을 JS SDK integration test가 따라갈 수 있습니다.
 

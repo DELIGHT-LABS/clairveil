@@ -133,6 +133,7 @@ func testPreparedTransferPayload(
 	recipientViewPubKey := testPoint(73)
 	disclosurePubKey := testPoint(79)
 	auditPubKey := testPoint(83)
+	selfViewPubKey := testPoint(89)
 
 	inputs := [2]privacyscan.FoundNote{
 		{
@@ -193,20 +194,21 @@ func testPreparedTransferPayload(
 		merkleProvider,
 		signer,
 		privacytransfer.BuildTransferMessageInput{
-			Creator:                       sdk.AccAddress(bytes.Repeat([]byte{0x1}, 20)).String(),
-			Inputs:                        inputs,
-			RecipientSpendPubKey:          recipientSpendPubKey,
-			RecipientViewPubKey:           recipientViewPubKey,
-			TransferAmount:                big.NewInt(7),
-			TransferDenom:                 "uclair",
-			SenderSpendPubKey:             senderSpendPubKey,
-			SenderViewPubKey:              senderViewPubKey,
-			UserPrivacyPolicy:             privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom,
-			UserDisclosureMode:            privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED,
-			UserDisclosureTargetPubKey:    disclosurePubKey,
-			UserDisclosureTargetPubKeyBz:  append([]byte(nil), disclosurePubKeyBytes[:]...),
-			AuditDisclosureTargetPubKey:   auditPubKey,
-			AuditDisclosureTargetPubKeyBz: append([]byte(nil), auditPubKeyBytes[:]...),
+			Creator:                        sdk.AccAddress(bytes.Repeat([]byte{0x1}, 20)).String(),
+			Inputs:                         inputs,
+			RecipientSpendPubKey:           recipientSpendPubKey,
+			RecipientViewPubKey:            recipientViewPubKey,
+			TransferAmount:                 big.NewInt(7),
+			TransferDenom:                  "uclair",
+			SenderSpendPubKey:              senderSpendPubKey,
+			SenderViewPubKey:               senderViewPubKey,
+			UserPrivacyPolicy:              privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom,
+			UserDisclosureMode:             privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED,
+			UserDisclosureTargetPubKey:     disclosurePubKey,
+			UserDisclosureTargetPubKeyBz:   append([]byte(nil), disclosurePubKeyBytes[:]...),
+			AuditDisclosureTargetPubKey:    auditPubKey,
+			AuditDisclosureTargetPubKeyBz:  append([]byte(nil), auditPubKeyBytes[:]...),
+			SelfViewDisclosureTargetPubKey: selfViewPubKey,
 		},
 	)
 	require.NoError(t, err)

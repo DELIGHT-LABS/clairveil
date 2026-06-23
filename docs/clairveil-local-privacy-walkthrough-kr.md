@@ -15,6 +15,7 @@
 - 단일 `transfer` 명령
 - user selective disclosure: private, public, recipient-encrypted
 - mandatory audit disclosure
+- sender self-view disclosure
 - `decode-transfer-disclosure`
 - direct withdraw
 - prepare / relay withdraw
@@ -430,13 +431,28 @@ Auditor가 audit disclosure를 봅니다.
   --report | tee out/transfer-recipient-audit-report.json
 ```
 
-두 report를 요약합니다.
+Alice가 sender self-view disclosure를 봅니다.
+
+```bash
+~/clairveil-privacy-walkthrough/bin/clairveild tx privacy decode-transfer-disclosure \
+  --tx-hash "$(cat out/transfer-recipient.txhash)" \
+  --disclosure-plane self-view \
+  --from alice \
+  --keyring-backend test \
+  --report | tee out/transfer-recipient-self-view-report.json
+```
+
+세 report를 요약합니다.
 
 ```bash
 python3 - <<'PY'
 import json
 from pathlib import Path
-for path in ['out/transfer-recipient-user-report.json', 'out/transfer-recipient-audit-report.json']:
+for path in [
+    'out/transfer-recipient-user-report.json',
+    'out/transfer-recipient-audit-report.json',
+    'out/transfer-recipient-self-view-report.json',
+]:
     doc = json.loads(Path(path).read_text())
     print(path, doc['summary'])
     print('verified:', doc['verification']['verified'])
@@ -569,5 +585,5 @@ kill "$(cat out/clairveild.pid)"
 - `clairveild` standalone daemon으로 local genesis와 node start가 가능함
 - `clair1...` transparent keyring에서 `clairs1...` shielded address가 파생됨
 - deposit / transfer / withdraw가 `uclair` 기준으로 동작함
-- user selective disclosure와 mandatory audit disclosure가 함께 동작함
+- user selective disclosure, sender self-view disclosure, mandatory audit disclosure가 함께 동작함
 - direct withdraw와 prepared / relayed withdraw가 모두 동작함

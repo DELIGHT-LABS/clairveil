@@ -120,4 +120,4 @@ reference app은 아래 모듈만 포함한다.
 - decode disclosure
 - direct withdraw
 - prepare / relay withdraw
-- public, recipient-encrypted, audit disclosure
+- public, recipient-encrypted, sender self-view, audit disclosure

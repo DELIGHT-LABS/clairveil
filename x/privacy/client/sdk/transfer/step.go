@@ -11,12 +11,14 @@ import (
 )
 
 type StepDisclosureConfig struct {
-	UserPrivacyPolicy             uint32
-	UserDisclosureMode            privacytypes.UserDisclosureMode
-	UserDisclosureTargetPubKey    *crypto_tedwards.PointAffine
-	UserDisclosureTargetPubKeyBz  []byte
-	AuditDisclosureTargetPubKey   *crypto_tedwards.PointAffine
-	AuditDisclosureTargetPubKeyBz []byte
+	UserPrivacyPolicy              uint32
+	UserDisclosureMode             privacytypes.UserDisclosureMode
+	UserDisclosureTargetPubKey     *crypto_tedwards.PointAffine
+	UserDisclosureTargetPubKeyBz   []byte
+	AuditDisclosureTargetPubKey    *crypto_tedwards.PointAffine
+	AuditDisclosureTargetPubKeyBz  []byte
+	DisableSelfViewDisclosure      bool
+	SelfViewDisclosureTargetPubKey *crypto_tedwards.PointAffine
 }
 
 type BuildTransferStepMessageInput struct {
@@ -38,10 +40,12 @@ func EffectiveStepDisclosureConfig(config StepDisclosureConfig, isFinal bool) St
 	}
 
 	return StepDisclosureConfig{
-		UserPrivacyPolicy:             privacytypes.TransferPrivacyPolicyAllPrivate,
-		UserDisclosureMode:            privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE,
-		AuditDisclosureTargetPubKey:   config.AuditDisclosureTargetPubKey,
-		AuditDisclosureTargetPubKeyBz: append([]byte(nil), config.AuditDisclosureTargetPubKeyBz...),
+		UserPrivacyPolicy:              privacytypes.TransferPrivacyPolicyAllPrivate,
+		UserDisclosureMode:             privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE,
+		AuditDisclosureTargetPubKey:    config.AuditDisclosureTargetPubKey,
+		AuditDisclosureTargetPubKeyBz:  append([]byte(nil), config.AuditDisclosureTargetPubKeyBz...),
+		DisableSelfViewDisclosure:      config.DisableSelfViewDisclosure,
+		SelfViewDisclosureTargetPubKey: config.SelfViewDisclosureTargetPubKey,
 	}
 }
 
@@ -61,20 +65,22 @@ func BuildTransferStepMessage(
 		artifacts,
 		runner,
 		BuildTransferMessageInput{
-			Creator:                       input.Creator,
-			Inputs:                        input.Inputs,
-			RecipientSpendPubKey:          input.RecipientSpendPubKey,
-			RecipientViewPubKey:           input.RecipientViewPubKey,
-			TransferAmount:                input.TransferAmount,
-			TransferDenom:                 input.TransferDenom,
-			SenderSpendPubKey:             input.SenderSpendPubKey,
-			SenderViewPubKey:              input.SenderViewPubKey,
-			UserPrivacyPolicy:             effectiveDisclosure.UserPrivacyPolicy,
-			UserDisclosureMode:            effectiveDisclosure.UserDisclosureMode,
-			UserDisclosureTargetPubKey:    effectiveDisclosure.UserDisclosureTargetPubKey,
-			UserDisclosureTargetPubKeyBz:  effectiveDisclosure.UserDisclosureTargetPubKeyBz,
-			AuditDisclosureTargetPubKey:   effectiveDisclosure.AuditDisclosureTargetPubKey,
-			AuditDisclosureTargetPubKeyBz: effectiveDisclosure.AuditDisclosureTargetPubKeyBz,
+			Creator:                        input.Creator,
+			Inputs:                         input.Inputs,
+			RecipientSpendPubKey:           input.RecipientSpendPubKey,
+			RecipientViewPubKey:            input.RecipientViewPubKey,
+			TransferAmount:                 input.TransferAmount,
+			TransferDenom:                  input.TransferDenom,
+			SenderSpendPubKey:              input.SenderSpendPubKey,
+			SenderViewPubKey:               input.SenderViewPubKey,
+			UserPrivacyPolicy:              effectiveDisclosure.UserPrivacyPolicy,
+			UserDisclosureMode:             effectiveDisclosure.UserDisclosureMode,
+			UserDisclosureTargetPubKey:     effectiveDisclosure.UserDisclosureTargetPubKey,
+			UserDisclosureTargetPubKeyBz:   effectiveDisclosure.UserDisclosureTargetPubKeyBz,
+			AuditDisclosureTargetPubKey:    effectiveDisclosure.AuditDisclosureTargetPubKey,
+			AuditDisclosureTargetPubKeyBz:  effectiveDisclosure.AuditDisclosureTargetPubKeyBz,
+			DisableSelfViewDisclosure:      effectiveDisclosure.DisableSelfViewDisclosure,
+			SelfViewDisclosureTargetPubKey: effectiveDisclosure.SelfViewDisclosureTargetPubKey,
 		},
 	)
 }

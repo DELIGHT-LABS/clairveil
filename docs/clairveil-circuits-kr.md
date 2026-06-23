@@ -176,6 +176,8 @@ outputs = 2
 
 회로는 disclosure plaintext를 직접 암호화하지 않습니다. 회로가 보장하는 것은 “선택된 disclosure field들이 digest에 맞게 묶였다”는 점입니다. 실제 encryption, public/recipient/audit delivery, decode UX는 SDK/CLI와 event payload가 담당합니다.
 
+Sender self-view disclosure는 별도 encrypted metadata입니다. Self-view digest/payload는 tx event와 signed message에는 포함되지만, joinsplit circuit public input에는 추가되지 않습니다. Wallet은 sender disclosure private key로 payload를 복호화한 뒤 payload digest와 on-chain `self_view_disclosure_digest`를 비교해야 합니다.
+
 ### Audit disclosure
 
 transfer는 mandatory audit disclosure를 항상 포함해야 합니다. 회로는 full audit disclosure digest를 계산하고, keeper는 message 안의 audit disclosure target pubkey가 chain-configured audit key와 일치하는지 확인합니다.

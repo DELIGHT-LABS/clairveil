@@ -85,6 +85,12 @@ message MsgTransfer {
   bytes audit_disclosure_digest = 12;
   bytes audit_disclosure_target_pubkey = 13;
   bytes audit_disclosure_payload = 14;
+
+  // Optional sender self-view disclosure.
+  // The payload is encrypted to the sender's own disclosure key. The target
+  // public key is intentionally omitted to avoid sender clustering.
+  bytes self_view_disclosure_digest = 15;
+  bytes self_view_disclosure_payload = 16;
 }
 
 // MsgDepositResponse

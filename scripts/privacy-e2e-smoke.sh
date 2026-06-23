@@ -254,6 +254,7 @@ wait_tx "$(cat "$out/transfer-recipient.txhash")" "$out/transfer-recipient-query
 
 run tx privacy decode-transfer-disclosure --tx-hash "$(cat "$out/transfer-recipient.txhash")" --disclosure-plane recipient --from bob --keyring-backend test --home "$home" --node "$node" --report >"$out/transfer-recipient-user-report.json"
 run tx privacy decode-transfer-disclosure --tx-hash "$(cat "$out/transfer-recipient.txhash")" --disclosure-plane audit --from auditor --keyring-backend test --home "$home" --node "$node" --report >"$out/transfer-recipient-audit-report.json"
+run tx privacy decode-transfer-disclosure --tx-hash "$(cat "$out/transfer-recipient.txhash")" --disclosure-plane self-view --from alice --keyring-backend test --home "$home" --node "$node" --report >"$out/transfer-recipient-self-view-report.json"
 
 python3 - "$out" <<'PY'
 import json
@@ -264,6 +265,7 @@ out = Path(sys.argv[1])
 public = json.loads((out / "transfer-public-report.json").read_text())
 user = json.loads((out / "transfer-recipient-user-report.json").read_text())
 audit = json.loads((out / "transfer-recipient-audit-report.json").read_text())
+self_view = json.loads((out / "transfer-recipient-self-view-report.json").read_text())
 
 checks = [
     public["summary"]["delivery"] == "public",
@@ -275,6 +277,10 @@ checks = [
     audit["verification"]["verified"] is True,
     audit["summary"]["delivery"] == "audit-encrypted",
     audit["summary"]["amount"] == "10",
+    self_view["verification"]["verified"] is True,
+    self_view["summary"]["plane"] == "self-view",
+    self_view["summary"]["delivery"] == "self-view-encrypted",
+    self_view["summary"]["amount"] == "10",
 ]
 if not all(checks):
     raise SystemExit("disclosure verification failed")

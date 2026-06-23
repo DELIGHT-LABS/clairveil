@@ -127,12 +127,12 @@ Withdraw는 shielded note를 transparent recipient에게 보내는 흐름입니�
 
 ### 2.7 Disclosure Review
 
-Client는 public, recipient-encrypted, audit disclosure payload를 decode하고 검증할 수 있어야 합니다.
+Client는 public, recipient-encrypted, sender self-view, audit disclosure payload를 decode하고 검증할 수 있어야 합니다.
 
 필수 기능:
 
 - disclosure source 선택: tx hash, event payload, pasted payload
-- disclosure plane 선택: public, recipient, audit
+- disclosure plane 선택: public, recipient, self-view, audit
 - decrypt 가능 여부 표시
 - digest verification 결과 표시
 - verified가 아닌 payload는 사실처럼 표시하지 않는 정책

@@ -91,6 +91,7 @@ npm --prefix examples/clairveil-dapp run test:clairveiljs
 - audit disclosure key derivation vector와 genesis public key encoding
 - fixture address prefix
 - prepared transfer payload hash
+- sender self-view disclosure digest/payload field
 - prepared withdraw payload hash
 - relayed withdraw final payload hash
 - relay withdraw handoff의 relayer `creator` / payload `recipient` mapping
@@ -215,7 +216,7 @@ KEEP_WORK_DIR=1 make privacy-e2e-smoke
 - tutorial workspace인 `~/clairveil-privacy-walkthrough` 사용
 - `keyring-backend test` 사용
 - placeholder는 tx hash처럼 이전 출력에서 가져와야 하는 값만 사용
-- public disclosure, recipient disclosure, audit disclosure, direct withdraw, relayed withdraw 포함
+- public disclosure, recipient disclosure, sender self-view disclosure, audit disclosure, direct withdraw, relayed withdraw 포함
 
 튜토리얼을 수정했다면 최소 아래를 실행합니다.
 

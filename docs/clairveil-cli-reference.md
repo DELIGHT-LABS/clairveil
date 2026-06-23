@@ -67,7 +67,7 @@ Production wallets must not write viewing keys into plaintext logs or analytics.
 
 ### show-disclosure-pubkey
 
-Displays the public key used to receive recipient-encrypted disclosure or audit disclosure.
+Displays the public key used for recipient-encrypted disclosure, sender self-view disclosure, and audit disclosure.
 
 ```bash
 clairveild tx privacy show-disclosure-pubkey \
@@ -76,7 +76,7 @@ clairveild tx privacy show-disclosure-pubkey \
   --output json
 ```
 
-This value is used for the genesis audit master pubkey or as a user disclosure recipient key.
+This value is used for the genesis audit master pubkey, as a user disclosure recipient key, or to confirm the sender self-view disclosure key.
 
 ## 3. Deposit
 
@@ -145,6 +145,7 @@ Default behavior:
 
 - The transfer itself remains private on-chain.
 - Audit disclosure is always encrypted to the chain-configured audit key.
+- Sender self-view disclosure is included by default and can be disabled with `--no-self-view`.
 - User disclosure defaults to `all-private` / `none`.
 - Recipient must be a full `clairs1...` shielded address.
 - `--auto-dummy=true` is the default.
@@ -156,6 +157,7 @@ Default behavior:
 | `--privacy-policy` | `all-private`, `amount`, `to`, `amount-to`, `from`, `amount-from`, `from-to`, `amount-from-to` |
 | `--disclosure-mode` | `none`, `public`, `recipient-encrypted` |
 | `--disclosure-pubkey` | Disclosure public key hex for recipient-encrypted mode |
+| `--no-self-view` | Omit sender self-view disclosure |
 
 Public amount disclosure example:
 
@@ -226,15 +228,29 @@ clairveild tx privacy decode-transfer-disclosure \
   --report
 ```
 
+Sender self-view disclosure:
+
+```bash
+clairveild tx privacy decode-transfer-disclosure \
+  --tx-hash "$(cat out/transfer-recipient.txhash)" \
+  --disclosure-plane self-view \
+  --from alice \
+  --keyring-backend test \
+  --node tcp://localhost:26657 \
+  --report
+```
+
 Main flags:
 
 | Flag | Meaning |
 | --- | --- |
 | `--tx-hash` | Find disclosure payload from tx events |
-| `--disclosure-plane` | `auto`, `public`, `recipient`, `audit` |
+| `--disclosure-plane` | `auto`, `public`, `recipient`, `self-view`, `audit` |
 | `--from` | Account used to derive a disclosure private key from keyring |
 | `--disclosure-privkey` | Explicit disclosure private key scalar hex |
 | `--report` | Print source, verification, summary, and payload as one JSON document |
+
+`auto` tries candidate disclosure payloads from the tx event and selects the plane that decrypts and verifies with the current disclosure key.
 
 If `verification.verified=true` is not present, the payload must not be shown to users as factual.
 

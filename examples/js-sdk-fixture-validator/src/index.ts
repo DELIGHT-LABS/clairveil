@@ -38,6 +38,8 @@ interface PreparedTransferPayload {
   audit_disclosure_digest_hex: string;
   audit_disclosure_target_pubkey_hex: string;
   audit_disclosure_payload_hex: string;
+  self_view_disclosure_digest_hex?: string;
+  self_view_disclosure_payload_hex?: string;
   payload_hash: string;
 }
 
@@ -234,6 +236,12 @@ function assertHexLength(value: string, bytes: number, label: string): void {
   }
 }
 
+function assertHexStringNonEmpty(value: string, label: string): void {
+  if (!/^[0-9a-f]+$/i.test(value)) {
+    throw new Error(`${label}: expected non-empty hex, got ${value}`);
+  }
+}
+
 function assertShieldedAmountString(value: string, label: string): void {
   if (!/^(0|[1-9][0-9]*)$/.test(value)) {
     throw new Error(`${label}: expected a canonical non-negative decimal string, got ${value}`);
@@ -396,6 +404,8 @@ function computePreparedTransferPayloadHash(payload: PreparedTransferPayload): s
   write(payload.audit_disclosure_digest_hex);
   write(payload.audit_disclosure_target_pubkey_hex);
   write(payload.audit_disclosure_payload_hex);
+  write(payload.self_view_disclosure_digest_hex);
+  write(payload.self_view_disclosure_payload_hex);
   write(payload.inputs.length);
   for (const input of payload.inputs) {
     write(input.amount);
@@ -519,7 +529,10 @@ function validateProverExampleBundle(bundle: ProverExampleBundle): void {
 
   const transferPayload = bundle.transfer.request.payload;
   const transferHash = computePreparedTransferPayloadHash(transferPayload);
+  assertEqual(transferPayload.version, "v2", "transfer payload version");
   assertStartsWith(transferPayload.creator, "clair1", "transfer creator");
+  assertHexLength(transferPayload.self_view_disclosure_digest_hex ?? "", 32, "transfer self-view disclosure digest");
+  assertHexStringNonEmpty(transferPayload.self_view_disclosure_payload_hex ?? "", "transfer self-view disclosure payload");
   transferPayload.inputs.forEach((input, index) => {
     assertShieldedAmountString(input.amount, `transfer input ${index} amount`);
   });

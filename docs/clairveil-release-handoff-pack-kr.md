@@ -58,7 +58,7 @@ make privacy-e2e-smoke
 | `make ci` | Go test, Go binary build, JS/TS examples를 검증합니다. |
 | `make vulncheck` | govulncheck policy gate를 실행합니다. 새 actionable vulnerability가 있으면 실패합니다. |
 | `make localnet-smoke` | reference daemon이 genesis부터 init/start 가능한지 확인합니다. |
-| `make privacy-e2e-smoke` | deposit, transfer, public disclosure, recipient disclosure, audit disclosure, direct withdraw, relayed withdraw를 로컬 노드에서 검증합니다. |
+| `make privacy-e2e-smoke` | deposit, transfer, public disclosure, recipient disclosure, sender self-view disclosure, audit disclosure, direct withdraw, relayed withdraw를 로컬 노드에서 검증합니다. |
 
 `make release-check`는 pull request마다 자동으로 돌리기에는 무겁습니다. PR 기본 검증은 `.github/workflows/test.yml`의 `make ci`와 `.github/workflows/security.yml`의 `make vulncheck`가 담당하고, release 후보 검증은 사람이 수동으로 `make release-check`를 실행합니다.
 

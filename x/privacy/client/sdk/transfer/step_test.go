@@ -12,14 +12,7 @@ import (
 func TestEffectiveStepDisclosureConfigKeepsFinalTransferDisclosure(t *testing.T) {
 	input, _, _, _, _ := testBuildTransferMessageDeps(t)
 
-	effective := EffectiveStepDisclosureConfig(StepDisclosureConfig{
-		UserPrivacyPolicy:             input.UserPrivacyPolicy,
-		UserDisclosureMode:            input.UserDisclosureMode,
-		UserDisclosureTargetPubKey:    input.UserDisclosureTargetPubKey,
-		UserDisclosureTargetPubKeyBz:  input.UserDisclosureTargetPubKeyBz,
-		AuditDisclosureTargetPubKey:   input.AuditDisclosureTargetPubKey,
-		AuditDisclosureTargetPubKeyBz: input.AuditDisclosureTargetPubKeyBz,
-	}, true)
+	effective := EffectiveStepDisclosureConfig(testStepDisclosureConfig(input), true)
 
 	require.Equal(t, input.UserPrivacyPolicy, effective.UserPrivacyPolicy)
 	require.Equal(t, input.UserDisclosureMode, effective.UserDisclosureMode)
@@ -27,19 +20,13 @@ func TestEffectiveStepDisclosureConfigKeepsFinalTransferDisclosure(t *testing.T)
 	require.Equal(t, input.UserDisclosureTargetPubKeyBz, effective.UserDisclosureTargetPubKeyBz)
 	require.Equal(t, input.AuditDisclosureTargetPubKey.Bytes(), effective.AuditDisclosureTargetPubKey.Bytes())
 	require.Equal(t, input.AuditDisclosureTargetPubKeyBz, effective.AuditDisclosureTargetPubKeyBz)
+	require.Equal(t, input.SelfViewDisclosureTargetPubKey.Bytes(), effective.SelfViewDisclosureTargetPubKey.Bytes())
 }
 
 func TestEffectiveStepDisclosureConfigForcesAllPrivateForSelfMerge(t *testing.T) {
 	input, _, _, _, _ := testBuildTransferMessageDeps(t)
 
-	effective := EffectiveStepDisclosureConfig(StepDisclosureConfig{
-		UserPrivacyPolicy:             input.UserPrivacyPolicy,
-		UserDisclosureMode:            input.UserDisclosureMode,
-		UserDisclosureTargetPubKey:    input.UserDisclosureTargetPubKey,
-		UserDisclosureTargetPubKeyBz:  input.UserDisclosureTargetPubKeyBz,
-		AuditDisclosureTargetPubKey:   input.AuditDisclosureTargetPubKey,
-		AuditDisclosureTargetPubKeyBz: input.AuditDisclosureTargetPubKeyBz,
-	}, false)
+	effective := EffectiveStepDisclosureConfig(testStepDisclosureConfig(input), false)
 
 	require.Equal(t, privacytypes.TransferPrivacyPolicyAllPrivate, effective.UserPrivacyPolicy)
 	require.Equal(t, privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE, effective.UserDisclosureMode)
@@ -47,6 +34,7 @@ func TestEffectiveStepDisclosureConfigForcesAllPrivateForSelfMerge(t *testing.T)
 	require.Nil(t, effective.UserDisclosureTargetPubKeyBz)
 	require.Equal(t, input.AuditDisclosureTargetPubKey.Bytes(), effective.AuditDisclosureTargetPubKey.Bytes())
 	require.Equal(t, input.AuditDisclosureTargetPubKeyBz, effective.AuditDisclosureTargetPubKeyBz)
+	require.Equal(t, input.SelfViewDisclosureTargetPubKey.Bytes(), effective.SelfViewDisclosureTargetPubKey.Bytes())
 }
 
 func TestBuildTransferStepMessageForSelfMergeClearsUserDisclosure(t *testing.T) {
@@ -68,14 +56,7 @@ func TestBuildTransferStepMessageForSelfMergeClearsUserDisclosure(t *testing.T) 
 			SenderSpendPubKey:    input.SenderSpendPubKey,
 			SenderViewPubKey:     input.SenderViewPubKey,
 			IsFinal:              false,
-			Disclosure: StepDisclosureConfig{
-				UserPrivacyPolicy:             input.UserPrivacyPolicy,
-				UserDisclosureMode:            input.UserDisclosureMode,
-				UserDisclosureTargetPubKey:    input.UserDisclosureTargetPubKey,
-				UserDisclosureTargetPubKeyBz:  input.UserDisclosureTargetPubKeyBz,
-				AuditDisclosureTargetPubKey:   input.AuditDisclosureTargetPubKey,
-				AuditDisclosureTargetPubKeyBz: input.AuditDisclosureTargetPubKeyBz,
-			},
+			Disclosure:           testStepDisclosureConfig(input),
 		},
 	)
 	require.NoError(t, err)
@@ -86,6 +67,8 @@ func TestBuildTransferStepMessageForSelfMergeClearsUserDisclosure(t *testing.T) 
 	require.Empty(t, msg.UserDisclosureTargetPubkey)
 	require.Empty(t, msg.UserDisclosurePayload)
 	require.NotEmpty(t, msg.AuditDisclosureDigest)
+	require.NotEmpty(t, msg.SelfViewDisclosureDigest)
+	require.NotEmpty(t, msg.SelfViewDisclosurePayload)
 }
 
 func TestBuildTransferStepMessageForFinalTransferKeepsUserDisclosure(t *testing.T) {
@@ -107,14 +90,7 @@ func TestBuildTransferStepMessageForFinalTransferKeepsUserDisclosure(t *testing.
 			SenderSpendPubKey:    input.SenderSpendPubKey,
 			SenderViewPubKey:     input.SenderViewPubKey,
 			IsFinal:              true,
-			Disclosure: StepDisclosureConfig{
-				UserPrivacyPolicy:             input.UserPrivacyPolicy,
-				UserDisclosureMode:            input.UserDisclosureMode,
-				UserDisclosureTargetPubKey:    input.UserDisclosureTargetPubKey,
-				UserDisclosureTargetPubKeyBz:  input.UserDisclosureTargetPubKeyBz,
-				AuditDisclosureTargetPubKey:   input.AuditDisclosureTargetPubKey,
-				AuditDisclosureTargetPubKeyBz: input.AuditDisclosureTargetPubKeyBz,
-			},
+			Disclosure:           testStepDisclosureConfig(input),
 		},
 	)
 	require.NoError(t, err)
@@ -124,4 +100,6 @@ func TestBuildTransferStepMessageForFinalTransferKeepsUserDisclosure(t *testing.
 	require.NotEmpty(t, msg.UserDisclosureDigest)
 	require.NotEmpty(t, msg.UserDisclosureTargetPubkey)
 	require.NotEmpty(t, msg.UserDisclosurePayload)
+	require.NotEmpty(t, msg.SelfViewDisclosureDigest)
+	require.NotEmpty(t, msg.SelfViewDisclosurePayload)
 }

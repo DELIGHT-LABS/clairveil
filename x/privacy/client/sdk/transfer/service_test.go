@@ -44,17 +44,10 @@ func TestExecuteTransferRunsFinalStepAndReturnsResponse(t *testing.T) {
 			SenderViewPubKey:     input.SenderViewPubKey,
 			TransferAmount:       input.TransferAmount,
 			TransferDenom:        input.TransferDenom,
-			Disclosure: StepDisclosureConfig{
-				UserPrivacyPolicy:             input.UserPrivacyPolicy,
-				UserDisclosureMode:            input.UserDisclosureMode,
-				UserDisclosureTargetPubKey:    input.UserDisclosureTargetPubKey,
-				UserDisclosureTargetPubKeyBz:  input.UserDisclosureTargetPubKeyBz,
-				AuditDisclosureTargetPubKey:   input.AuditDisclosureTargetPubKey,
-				AuditDisclosureTargetPubKeyBz: input.AuditDisclosureTargetPubKeyBz,
-			},
-			StartStep: 1,
-			MaxSteps:  4,
-			AutoDummy: true,
+			Disclosure:           testStepDisclosureConfig(input),
+			StartStep:            1,
+			MaxSteps:             4,
+			AutoDummy:            true,
 		},
 	)
 	require.NoError(t, err)
@@ -98,17 +91,10 @@ func TestExecuteTransferPropagatesBroadcastError(t *testing.T) {
 			SenderViewPubKey:     input.SenderViewPubKey,
 			TransferAmount:       input.TransferAmount,
 			TransferDenom:        input.TransferDenom,
-			Disclosure: StepDisclosureConfig{
-				UserPrivacyPolicy:             input.UserPrivacyPolicy,
-				UserDisclosureMode:            input.UserDisclosureMode,
-				UserDisclosureTargetPubKey:    input.UserDisclosureTargetPubKey,
-				UserDisclosureTargetPubKeyBz:  input.UserDisclosureTargetPubKeyBz,
-				AuditDisclosureTargetPubKey:   input.AuditDisclosureTargetPubKey,
-				AuditDisclosureTargetPubKeyBz: input.AuditDisclosureTargetPubKeyBz,
-			},
-			StartStep: 1,
-			MaxSteps:  4,
-			AutoDummy: true,
+			Disclosure:           testStepDisclosureConfig(input),
+			StartStep:            1,
+			MaxSteps:             4,
+			AutoDummy:            true,
 		},
 	)
 	require.ErrorIs(t, err, context.DeadlineExceeded)

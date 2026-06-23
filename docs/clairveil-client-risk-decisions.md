@@ -68,18 +68,29 @@ Client responsibilities:
 
 Auditor private key custody is a downstream operations responsibility. Production deployments should define HSM/KMS, role separation, access approval, key rotation, and incident response.
 
-## 5. Disclosure Verification Policy
+## 5. Sender Self-View Disclosure
+
+Sender self-view disclosure is the default feature that lets the sender later recover details of their own sent transfer. Clients should include it by default and allow explicit user opt-out.
+
+Key decisions:
+
+- Do not put the self-view target pubkey in the on-chain event. Exposing a static disclosure pubkey gives observers a sender clustering signal.
+- Store only `self_view_disclosure_digest` and `self_view_disclosure_payload`, then trial-decrypt with the sender disclosure private key.
+- Disabling self-view reduces transaction size, but limits recovery of sent-transfer details if the client loses local cache.
+- If the sender disclosure private key is compromised, sent-transfer details with self-view payloads can be exposed.
+
+## 6. Disclosure Verification Policy
 
 Successful decryption is different from successful verification.
 
 Client policy:
 
 - Disclosure plaintext must not be shown as factual unless `verification.verified=true`.
-- Distinguish public disclosure from recipient/audit disclosure.
+- Distinguish public disclosure, recipient disclosure, sender self-view disclosure, and audit disclosure.
 - Treat digest mismatch as a trust failure, not a minor warning.
 - Do not write disclosure plaintext or reports to logs, analytics, or crash reports.
 
-## 6. Logging And Telemetry
+## 7. Logging And Telemetry
 
 Clients and provers must not record these values.
 
@@ -94,7 +105,7 @@ Clients and provers must not record these values.
 
 When needed, keep only lower-sensitivity identifiers such as tx hash, height, or high-level error code.
 
-## 7. Product Risk Decisions
+## 8. Product Risk Decisions
 
 Before release, product/security/operations teams should answer at least these questions.
 
@@ -104,10 +115,11 @@ Before release, product/security/operations teams should answer at least these q
 - How does the product display balance when note scan fails?
 - What does the screen hide or warn about when disclosure verification fails?
 - Who owns auditor key custody and access approval?
+- How does the UI expose the option to disable sender self-view?
 - Where are prepared payload/proof JSON files stored and when are they deleted?
 - Do secure storage requirements differ by mobile/web/desktop profile?
 
-## 8. Related Documents
+## 9. Related Documents
 
 - [Threat model](clairveil-threat-model.md)
 - [Security best practices review](clairveil-security-best-practices-review.md)

@@ -12,6 +12,10 @@
       "type": "string",
       "const": "v1"
     },
+    "transferPayloadVersion": {
+      "type": "string",
+      "const": "v2"
+    },
     "hexString": {
       "type": "string",
       "pattern": "^[0-9a-fA-F]+$"
@@ -186,7 +190,7 @@
       ],
       "properties": {
         "version": {
-          "$ref": "#/$defs/version"
+          "$ref": "#/$defs/transferPayloadVersion"
         },
         "creator": {
           "$ref": "#/$defs/transparentAddress"
@@ -247,6 +251,12 @@
           "$ref": "#/$defs/hex32"
         },
         "audit_disclosure_payload_hex": {
+          "$ref": "#/$defs/hexString"
+        },
+        "self_view_disclosure_digest_hex": {
+          "$ref": "#/$defs/hex32"
+        },
+        "self_view_disclosure_payload_hex": {
           "$ref": "#/$defs/hexString"
         },
         "payload_hash": {
@@ -698,7 +708,8 @@
           "type": "string",
           "enum": [
             "user",
-            "audit"
+            "audit",
+            "self-view"
           ]
         },
         "policy": {
@@ -816,7 +827,8 @@
             "user_disclosure_mode",
             "user_privacy_policy",
             "user_disclosure",
-            "audit_disclosure"
+            "audit_disclosure",
+            "self_view_disclosure"
           ],
           "properties": {
             "request_version": {
@@ -847,6 +859,9 @@
               "$ref": "#/$defs/referenceFlowDisclosure"
             },
             "audit_disclosure": {
+              "$ref": "#/$defs/referenceFlowDisclosure"
+            },
+            "self_view_disclosure": {
               "$ref": "#/$defs/referenceFlowDisclosure"
             }
           }

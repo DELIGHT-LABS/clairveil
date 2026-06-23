@@ -71,17 +71,19 @@ English version: [clairveil-client-ux-flows.md](clairveil-client-ux-flows.md)
 3. User disclosure policy를 선택합니다.
 4. Disclosure mode를 선택합니다.
 5. Spendable note와 dummy input 필요 여부를 계산합니다.
-6. Prepared transfer payload를 만듭니다.
-7. Prover에서 proof를 생성합니다.
-8. `MsgTransfer`를 broadcast합니다.
-9. Event scan으로 recipient/change note 상태를 갱신합니다.
-10. Disclosure report를 검증합니다.
+6. Sender self-view disclosure를 기본 포함하고, 사용자가 명시적으로 끈 경우에만 제외합니다.
+7. Prepared transfer payload를 만듭니다.
+8. Prover에서 proof를 생성합니다.
+9. `MsgTransfer`를 broadcast합니다.
+10. Event scan으로 recipient/change note 상태를 갱신합니다.
+11. Disclosure report를 검증합니다.
 
 필수 UX:
 
 - recipient `clairs1...` validation
 - privacy policy별 공개 범위 설명
 - audit disclosure가 항상 포함된다는 안내
+- sender self-view가 기본 포함되며, 끄면 보낸 transfer 상세 복구가 제한된다는 안내
 - prover 진행률 또는 대기 상태
 - prover timeout/cancel/retry
 - tx broadcast 전 최종 확인
@@ -136,6 +138,12 @@ Disclosure plaintext를 표시할 때는 반드시 digest verification 결과를
 4. 필요하면 disclosure private key로 decrypt합니다.
 5. Digest를 recompute해서 on-chain digest와 비교합니다.
 6. verified 결과와 disclosed fields를 표시합니다.
+
+지원해야 하는 plane:
+
+- `user`: public 또는 recipient-encrypted user disclosure
+- `self-view`: sender가 자신의 disclosure private key로 보는 보낸 transfer 상세
+- `audit`: auditor가 audit disclosure private key로 보는 mandatory audit disclosure
 
 표시 정책:
 

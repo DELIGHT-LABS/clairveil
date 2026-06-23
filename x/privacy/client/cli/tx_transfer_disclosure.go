@@ -29,6 +29,7 @@ const (
 	transferDisclosurePlanePublic    = "public"
 	transferDisclosurePlaneRecipient = "recipient"
 	transferDisclosurePlaneAudit     = "audit"
+	transferDisclosurePlaneSelfView  = "self-view"
 )
 
 type transferDisclosureDecodeInput struct {
@@ -37,6 +38,7 @@ type transferDisclosureDecodeInput struct {
 	TxHash             string
 	IsPlaintextPayload bool
 	SelectedPlane      string
+	Candidates         []transferDisclosureEventData
 }
 
 type transferDisclosureEventData struct {
@@ -47,11 +49,13 @@ type transferDisclosureEventData struct {
 }
 
 type transferDisclosureEventAttrs struct {
-	UserMode        string
-	UserDigestHex   string
-	UserPayloadHex  string
-	AuditDigestHex  string
-	AuditPayloadHex string
+	UserMode           string
+	UserDigestHex      string
+	UserPayloadHex     string
+	AuditDigestHex     string
+	AuditPayloadHex    string
+	SelfViewDigestHex  string
+	SelfViewPayloadHex string
 }
 
 type transferDisclosureVerificationReport = privacydisclosure.VerificationReport
@@ -84,9 +88,9 @@ Decode a disclosure payload and verify that it matches the latest transfer discl
 
 	- Pass ciphertext_hex directly when you already have the encrypted payload bytes.
 	- Use --tx-hash when you want the CLI to look up the disclosure event for you.
-	- Choose the disclosure plane with --disclosure-plane=auto|public|recipient|audit.
+	- Choose the disclosure plane with --disclosure-plane=auto|public|recipient|self-view|audit.
 	- Public disclosure does not require a disclosure private key.
-	- For recipient/audit disclosure, either pass --disclosure-privkey or let the CLI derive it from --from.
+	- For recipient/self-view/audit disclosure, either pass --disclosure-privkey or let the CLI derive it from --from.
 	- --report renders source, verification, summary, and payload in one JSON object.
 		`),
 		Args: cobra.RangeArgs(0, 1),
@@ -101,25 +105,7 @@ Decode a disclosure payload and verify that it matches the latest transfer discl
 				return err
 			}
 
-			var payload *transferDisclosurePayload
-			if decodeInput.IsPlaintextPayload {
-				payload, err = decodePublicTransferDisclosurePayload(decodeInput.PayloadHex)
-			} else {
-				disclosurePrivKeyHex, err := cmd.Flags().GetString(flagTransferDisclosurePrivKey)
-				if err != nil {
-					return err
-				}
-				resolvedDisclosurePrivKeyHex, err := resolveDisclosurePrivateKeyHexFromCmd(cmd, disclosurePrivKeyHex)
-				if err != nil {
-					return err
-				}
-				payload, err = decryptTransferDisclosureCipherText(decodeInput.PayloadHex, resolvedDisclosurePrivKeyHex)
-			}
-			if err != nil {
-				return err
-			}
-
-			verification, err := verifyTransferDisclosurePayload(payload, decodeInput.OnChainDigestHex)
+			payload, verification, decodeInput, err := decodeAndVerifyTransferDisclosureInput(cmd, decodeInput)
 			if err != nil {
 				return err
 			}
@@ -139,7 +125,7 @@ Decode a disclosure payload and verify that it matches the latest transfer discl
 
 	cmd.Flags().String(flagTransferDisclosurePrivKey, "", "Disclosure private key scalar in hex")
 	cmd.Flags().String(flagTransferDisclosureTxHash, "", "Transaction hash containing a transfer disclosure event")
-	cmd.Flags().String(flagTransferDisclosurePlane, transferDisclosurePlaneAuto, "Disclosure plane to decode from a transfer tx: auto|public|recipient|audit")
+	cmd.Flags().String(flagTransferDisclosurePlane, transferDisclosurePlaneAuto, "Disclosure plane to decode from a transfer tx: auto|public|recipient|self-view|audit")
 	cmd.Flags().Bool(flagTransferDisclosureReport, false, "Render a verification report instead of the raw disclosure payload JSON")
 	cmd.Flags().String(flags.FlagFrom, "", "Name or address of private key used to derive the disclosure key when --disclosure-privkey is omitted")
 	flags.AddKeyringFlags(cmd.Flags())
@@ -215,10 +201,11 @@ func lookupTransferDisclosureCipherTextByTxHash(ctx context.Context, clientCtx c
 		return nil, fmt.Errorf("failed to query the tx for --%s %q: %w", flagTransferDisclosureTxHash, txHash, err)
 	}
 
-	eventData, err := extractTransferDisclosureEventDataFromTx(txRes, plane)
+	eventCandidates, err := extractTransferDisclosureEventCandidatesFromTx(txRes, plane)
 	if err != nil {
 		return nil, err
 	}
+	eventData := eventCandidates[0]
 
 	return &transferDisclosureDecodeInput{
 		PayloadHex:         eventData.PayloadHex,
@@ -226,6 +213,7 @@ func lookupTransferDisclosureCipherTextByTxHash(ctx context.Context, clientCtx c
 		TxHash:             strings.ToUpper(strings.TrimSpace(txHash)),
 		IsPlaintextPayload: eventData.IsPlaintextPayload,
 		SelectedPlane:      eventData.SelectedPlane,
+		Candidates:         eventCandidates,
 	}, nil
 }
 
@@ -237,14 +225,24 @@ func normalizeTransferDisclosurePlane(raw string) (string, error) {
 		return transferDisclosurePlanePublic, nil
 	case transferDisclosurePlaneRecipient:
 		return transferDisclosurePlaneRecipient, nil
+	case transferDisclosurePlaneSelfView, "self", "sender":
+		return transferDisclosurePlaneSelfView, nil
 	case transferDisclosurePlaneAudit:
 		return transferDisclosurePlaneAudit, nil
 	default:
-		return "", fmt.Errorf("unsupported --%s value %q; supported values: auto, public, recipient, audit", flagTransferDisclosurePlane, raw)
+		return "", fmt.Errorf("unsupported --%s value %q; supported values: auto, public, recipient, self-view, audit", flagTransferDisclosurePlane, raw)
 	}
 }
 
 func extractTransferDisclosureEventDataFromTx(txRes *cmttypes.ResultTx, plane string) (*transferDisclosureEventData, error) {
+	eventCandidates, err := extractTransferDisclosureEventCandidatesFromTx(txRes, plane)
+	if err != nil {
+		return nil, err
+	}
+	return &eventCandidates[0], nil
+}
+
+func extractTransferDisclosureEventCandidatesFromTx(txRes *cmttypes.ResultTx, plane string) ([]transferDisclosureEventData, error) {
 	attrs, err := extractTransferDisclosureEventAttrs(txRes.TxResult.Events)
 	if err != nil {
 		return nil, err
@@ -252,56 +250,141 @@ func extractTransferDisclosureEventDataFromTx(txRes *cmttypes.ResultTx, plane st
 
 	switch plane {
 	case transferDisclosurePlaneAuto:
+		candidates := make([]transferDisclosureEventData, 0, 4)
 		if attrs.UserMode == types.UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED.String() && attrs.UserPayloadHex != "" {
-			return &transferDisclosureEventData{
+			candidates = append(candidates, transferDisclosureEventData{
 				PayloadHex:          attrs.UserPayloadHex,
 				DisclosureDigestHex: attrs.UserDigestHex,
 				SelectedPlane:       transferDisclosurePlaneRecipient,
-			}, nil
+			})
 		}
 		if attrs.UserMode == types.UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC.String() && attrs.UserPayloadHex != "" {
-			return &transferDisclosureEventData{
+			candidates = append(candidates, transferDisclosureEventData{
 				PayloadHex:          attrs.UserPayloadHex,
 				DisclosureDigestHex: attrs.UserDigestHex,
 				IsPlaintextPayload:  true,
 				SelectedPlane:       transferDisclosurePlanePublic,
-			}, nil
+			})
+		}
+		if attrs.SelfViewPayloadHex != "" {
+			candidates = append(candidates, transferDisclosureEventData{
+				PayloadHex:          attrs.SelfViewPayloadHex,
+				DisclosureDigestHex: attrs.SelfViewDigestHex,
+				SelectedPlane:       transferDisclosurePlaneSelfView,
+			})
 		}
 		if attrs.AuditPayloadHex != "" {
-			return &transferDisclosureEventData{
+			candidates = append(candidates, transferDisclosureEventData{
 				PayloadHex:          attrs.AuditPayloadHex,
 				DisclosureDigestHex: attrs.AuditDigestHex,
 				SelectedPlane:       transferDisclosurePlaneAudit,
-			}, nil
+			})
+		}
+		if len(candidates) > 0 {
+			return candidates, nil
 		}
 	case transferDisclosurePlanePublic:
 		if attrs.UserMode == types.UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC.String() && attrs.UserPayloadHex != "" {
-			return &transferDisclosureEventData{
+			return []transferDisclosureEventData{{
 				PayloadHex:          attrs.UserPayloadHex,
 				DisclosureDigestHex: attrs.UserDigestHex,
 				IsPlaintextPayload:  true,
 				SelectedPlane:       transferDisclosurePlanePublic,
-			}, nil
+			}}, nil
 		}
 	case transferDisclosurePlaneRecipient:
 		if attrs.UserMode == types.UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED.String() && attrs.UserPayloadHex != "" {
-			return &transferDisclosureEventData{
+			return []transferDisclosureEventData{{
 				PayloadHex:          attrs.UserPayloadHex,
 				DisclosureDigestHex: attrs.UserDigestHex,
 				SelectedPlane:       transferDisclosurePlaneRecipient,
-			}, nil
+			}}, nil
+		}
+	case transferDisclosurePlaneSelfView:
+		if attrs.SelfViewPayloadHex != "" {
+			return []transferDisclosureEventData{{
+				PayloadHex:          attrs.SelfViewPayloadHex,
+				DisclosureDigestHex: attrs.SelfViewDigestHex,
+				SelectedPlane:       transferDisclosurePlaneSelfView,
+			}}, nil
 		}
 	case transferDisclosurePlaneAudit:
 		if attrs.AuditPayloadHex != "" {
-			return &transferDisclosureEventData{
+			return []transferDisclosureEventData{{
 				PayloadHex:          attrs.AuditPayloadHex,
 				DisclosureDigestHex: attrs.AuditDigestHex,
 				SelectedPlane:       transferDisclosurePlaneAudit,
-			}, nil
+			}}, nil
 		}
 	}
 
 	return nil, fmt.Errorf("no disclosure payload for plane %q was found in tx %X", plane, txRes.Hash)
+}
+
+func decodeAndVerifyTransferDisclosureInput(
+	cmd *cobra.Command,
+	input *transferDisclosureDecodeInput,
+) (*transferDisclosurePayload, *transferDisclosureVerificationReport, *transferDisclosureDecodeInput, error) {
+	candidates := input.Candidates
+	if len(candidates) == 0 {
+		candidates = []transferDisclosureEventData{{
+			PayloadHex:          input.PayloadHex,
+			DisclosureDigestHex: input.OnChainDigestHex,
+			IsPlaintextPayload:  input.IsPlaintextPayload,
+			SelectedPlane:       input.SelectedPlane,
+		}}
+	}
+
+	var resolvedDisclosurePrivKeyHex string
+	var resolvedDisclosurePrivKey bool
+	var lastErr error
+	for _, candidate := range candidates {
+		candidateInput := *input
+		candidateInput.PayloadHex = candidate.PayloadHex
+		candidateInput.OnChainDigestHex = candidate.DisclosureDigestHex
+		candidateInput.IsPlaintextPayload = candidate.IsPlaintextPayload
+		candidateInput.SelectedPlane = candidate.SelectedPlane
+		candidateInput.Candidates = nil
+
+		var payload *transferDisclosurePayload
+		var err error
+		if candidateInput.IsPlaintextPayload {
+			payload, err = decodePublicTransferDisclosurePayload(candidateInput.PayloadHex)
+		} else {
+			if !resolvedDisclosurePrivKey {
+				disclosurePrivKeyHex, err := cmd.Flags().GetString(flagTransferDisclosurePrivKey)
+				if err != nil {
+					return nil, nil, nil, err
+				}
+				resolvedDisclosurePrivKeyHex, err = resolveDisclosurePrivateKeyHexFromCmd(cmd, disclosurePrivKeyHex)
+				if err != nil {
+					return nil, nil, nil, err
+				}
+				resolvedDisclosurePrivKey = true
+			}
+			payload, err = decryptTransferDisclosureCipherText(candidateInput.PayloadHex, resolvedDisclosurePrivKeyHex)
+		}
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		verification, err := verifyTransferDisclosurePayload(payload, candidateInput.OnChainDigestHex)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		return payload, verification, &candidateInput, nil
+	}
+
+	if lastErr != nil && len(input.Candidates) > 1 {
+		return nil, nil, nil, fmt.Errorf("failed to decode and verify any disclosure payload from tx %s with the available disclosure key: %w", input.TxHash, lastErr)
+	}
+	if lastErr != nil {
+		return nil, nil, nil, lastErr
+	}
+	return nil, nil, nil, fmt.Errorf("no disclosure payload candidates were available")
 }
 
 func extractTransferDisclosureEventAttrs(events []cmtabci.Event) (*transferDisclosureEventAttrs, error) {
@@ -326,10 +409,14 @@ func extractTransferDisclosureEventAttrs(events []cmtabci.Event) (*transferDiscl
 				attrs.AuditDigestHex = value
 			case types.AttributeKeyAuditDisclosurePayload:
 				attrs.AuditPayloadHex = value
+			case types.AttributeKeySelfViewDisclosureDigest:
+				attrs.SelfViewDigestHex = value
+			case types.AttributeKeySelfViewDisclosurePayload:
+				attrs.SelfViewPayloadHex = value
 			}
 		}
 
-		if attrs.UserPayloadHex != "" || attrs.AuditPayloadHex != "" {
+		if attrs.UserPayloadHex != "" || attrs.AuditPayloadHex != "" || attrs.SelfViewPayloadHex != "" {
 			return &attrs, nil
 		}
 	}
@@ -389,6 +476,9 @@ func disclosureReportSource(payload *transferDisclosurePayload, input *transferD
 	if payload.Plane == transferDisclosurePayloadPlaneAudit {
 		return "audit_encrypted"
 	}
+	if payload.Plane == transferDisclosurePayloadPlaneSelfView {
+		return "self_view_encrypted"
+	}
 	if input.IsPlaintextPayload {
 		return "public"
 	}
@@ -399,12 +489,18 @@ func disclosureReportPlane(payload *transferDisclosurePayload) string {
 	if payload.Plane == transferDisclosurePayloadPlaneAudit {
 		return transferDisclosurePayloadPlaneAudit
 	}
+	if payload.Plane == transferDisclosurePayloadPlaneSelfView {
+		return transferDisclosurePayloadPlaneSelfView
+	}
 	return transferDisclosurePayloadPlaneUser
 }
 
 func disclosureReportDelivery(payload *transferDisclosurePayload, input *transferDisclosureDecodeInput) string {
 	if payload.Plane == transferDisclosurePayloadPlaneAudit {
 		return "audit-encrypted"
+	}
+	if payload.Plane == transferDisclosurePayloadPlaneSelfView {
+		return "self-view-encrypted"
 	}
 	if input.IsPlaintextPayload {
 		return transferDisclosureModePublic
@@ -415,6 +511,9 @@ func disclosureReportDelivery(payload *transferDisclosurePayload, input *transfe
 func disclosureReportPolicy(payload *transferDisclosurePayload) string {
 	if payload.Plane == transferDisclosurePayloadPlaneAudit {
 		return "audit-full"
+	}
+	if payload.Plane == transferDisclosurePayloadPlaneSelfView {
+		return "self-view-full"
 	}
 	return policyLabel(payload.Policy)
 }

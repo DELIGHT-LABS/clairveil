@@ -20,8 +20,10 @@ import (
 )
 
 const (
-	PreparedTransferPayloadVersion = "v1"
+	PreparedTransferPayloadVersion = "v2"
 	PreparedTransferProofVersion   = "v1"
+
+	legacyPreparedTransferPayloadVersionV1 = "v1"
 )
 
 type PreparedTransferInput struct {
@@ -59,6 +61,8 @@ type PreparedTransferPayload struct {
 	AuditDisclosureDigestHex       string                   `json:"audit_disclosure_digest_hex"`
 	AuditDisclosureTargetPubKeyHex string                   `json:"audit_disclosure_target_pubkey_hex"`
 	AuditDisclosurePayloadHex      string                   `json:"audit_disclosure_payload_hex"`
+	SelfViewDisclosureDigestHex    string                   `json:"self_view_disclosure_digest_hex,omitempty"`
+	SelfViewDisclosurePayloadHex   string                   `json:"self_view_disclosure_payload_hex,omitempty"`
 	PayloadHash                    string                   `json:"payload_hash"`
 }
 
@@ -111,6 +115,13 @@ func BuildPreparedTransferPayload(
 	if err != nil {
 		return nil, err
 	}
+	var selfViewDisclosureData *DisclosureData
+	if !input.DisableSelfViewDisclosure {
+		selfViewDisclosureData, err = BuildSelfViewDisclosureData(disclosureInput, input.SelfViewDisclosureTargetPubKey)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	cipherTexts, err := EncryptOutputNotes(prepared.RecipientNote, prepared.ChangeNote)
 	if err != nil {
@@ -145,6 +156,10 @@ func BuildPreparedTransferPayload(
 		payload.UserDisclosureDigestHex = hex.EncodeToString(userDisclosureData.Digest)
 		payload.UserDisclosureTargetPubKeyHex = hex.EncodeToString(encodedDisclosureTargetBytes(input.UserDisclosureTargetPubKey, input.UserDisclosureTargetPubKeyBz))
 		payload.UserDisclosurePayloadHex = hex.EncodeToString(userDisclosureData.CipherText)
+	}
+	if selfViewDisclosureData != nil {
+		payload.SelfViewDisclosureDigestHex = hex.EncodeToString(selfViewDisclosureData.Digest)
+		payload.SelfViewDisclosurePayloadHex = hex.EncodeToString(selfViewDisclosureData.CipherText)
 	}
 
 	for i, foundNote := range input.Inputs {
@@ -236,6 +251,10 @@ func ComputePreparedTransferPayloadHash(payload PreparedTransferPayload) string 
 	write(payload.AuditDisclosureDigestHex)
 	write(payload.AuditDisclosureTargetPubKeyHex)
 	write(payload.AuditDisclosurePayloadHex)
+	if preparedTransferPayloadHashIncludesSelfView(payload.Version) {
+		write(payload.SelfViewDisclosureDigestHex)
+		write(payload.SelfViewDisclosurePayloadHex)
+	}
 	write(strconv.Itoa(len(payload.Inputs)))
 	for _, input := range payload.Inputs {
 		write(input.Amount)
@@ -262,8 +281,8 @@ func ComputePreparedTransferPayloadHash(payload PreparedTransferPayload) string 
 }
 
 func ValidatePreparedTransferPayloadMetadata(payload PreparedTransferPayload) error {
-	if payload.Version != PreparedTransferPayloadVersion {
-		return fmt.Errorf("unsupported transfer payload version %q (expected %q)", payload.Version, PreparedTransferPayloadVersion)
+	if err := validatePreparedTransferPayloadVersion(payload); err != nil {
+		return err
 	}
 	if payload.PayloadHash == "" || payload.PayloadHash != ComputePreparedTransferPayloadHash(payload) {
 		return fmt.Errorf("transfer payload hash mismatch; the file may have been modified after preparation")
@@ -323,6 +342,14 @@ func ValidatePreparedTransferPayloadMetadata(payload PreparedTransferPayload) er
 	if err != nil {
 		return err
 	}
+	selfViewDigest, err := decodeOptionalPayloadField(payload.SelfViewDisclosureDigestHex, "self-view disclosure digest")
+	if err != nil {
+		return err
+	}
+	selfViewPayload, err := decodeOptionalOpaqueHex(payload.SelfViewDisclosurePayloadHex, "self-view disclosure payload")
+	if err != nil {
+		return err
+	}
 
 	if err := privacytypes.NewMsgTransferWithDisclosure(
 		payload.Creator,
@@ -339,10 +366,30 @@ func ValidatePreparedTransferPayloadMetadata(payload PreparedTransferPayload) er
 		auditDigest,
 		auditTarget,
 		auditPayload,
+		selfViewDigest,
+		selfViewPayload,
 	).ValidateBasic(); err != nil {
 		return err
 	}
 	return nil
+}
+
+func validatePreparedTransferPayloadVersion(payload PreparedTransferPayload) error {
+	switch payload.Version {
+	case PreparedTransferPayloadVersion:
+		return nil
+	case legacyPreparedTransferPayloadVersionV1:
+		if strings.TrimSpace(payload.SelfViewDisclosureDigestHex) != "" || strings.TrimSpace(payload.SelfViewDisclosurePayloadHex) != "" {
+			return fmt.Errorf("legacy transfer payload version %q cannot include self-view disclosure fields; regenerate it with transfer payload version %q", payload.Version, PreparedTransferPayloadVersion)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported transfer payload version %q (expected %q or legacy %q)", payload.Version, PreparedTransferPayloadVersion, legacyPreparedTransferPayloadVersionV1)
+	}
+}
+
+func preparedTransferPayloadHashIncludesSelfView(version string) bool {
+	return version != legacyPreparedTransferPayloadVersionV1
 }
 
 func DecodePreparedTransferPayloadJSON(payloadBytes []byte) (*PreparedTransferPayload, error) {
@@ -484,6 +531,14 @@ func (p PreparedTransferPayload) ToMsg(proof PreparedTransferProof) (*privacytyp
 	if err != nil {
 		return nil, err
 	}
+	selfViewDigest, err := decodeOptionalPayloadField(p.SelfViewDisclosureDigestHex, "self-view disclosure digest")
+	if err != nil {
+		return nil, err
+	}
+	selfViewPayload, err := decodeOptionalOpaqueHex(p.SelfViewDisclosurePayloadHex, "self-view disclosure payload")
+	if err != nil {
+		return nil, err
+	}
 
 	msg := privacytypes.NewMsgTransferWithDisclosure(
 		p.Creator,
@@ -500,6 +555,8 @@ func (p PreparedTransferPayload) ToMsg(proof PreparedTransferProof) (*privacytyp
 		auditDigest,
 		auditTarget,
 		auditPayload,
+		selfViewDigest,
+		selfViewPayload,
 	)
 	if err := msg.ValidateBasic(); err != nil {
 		return nil, err

@@ -14,7 +14,7 @@ func printCommandSection(cmd *cobra.Command, title string, lines ...string) {
 	}
 }
 
-func printTransferCommandSummary(cmd *cobra.Command, recipient string, amount string, userPolicy string, userMode string, autoDummy bool) {
+func printTransferCommandSummary(cmd *cobra.Command, recipient string, amount string, userPolicy string, userMode string, selfView bool, autoDummy bool) {
 	printCommandSection(
 		cmd,
 		"Shielded transfer",
@@ -22,6 +22,7 @@ func printTransferCommandSummary(cmd *cobra.Command, recipient string, amount st
 		fmt.Sprintf("amount: %s", amount),
 		fmt.Sprintf("user disclosure: %s / %s", userPolicy, userMode),
 		"audit disclosure: enabled (chain-configured key)",
+		fmt.Sprintf("sender self-view: %t", selfView),
 		fmt.Sprintf("auto dummy: %t", autoDummy),
 	)
 }

@@ -71,17 +71,19 @@ Required UX:
 3. Choose user disclosure policy.
 4. Choose disclosure mode.
 5. Select spendable notes and decide whether dummy input is needed.
-6. Build the prepared transfer payload.
-7. Generate the proof through the prover.
-8. Broadcast `MsgTransfer`.
-9. Update recipient/change note state through event scanning.
-10. Verify disclosure reports.
+6. Include sender self-view disclosure by default, omitting it only when the user explicitly disables it.
+7. Build the prepared transfer payload.
+8. Generate the proof through the prover.
+9. Broadcast `MsgTransfer`.
+10. Update recipient/change note state through event scanning.
+11. Verify disclosure reports.
 
 Required UX:
 
 - recipient `clairs1...` validation
 - explanation of disclosed fields by privacy policy
 - explanation that audit disclosure is always included
+- explanation that sender self-view is included by default, and disabling it limits later recovery of sent-transfer details
 - prover progress or waiting state
 - prover timeout/cancel/retry
 - final confirmation before transaction broadcast
@@ -136,6 +138,12 @@ Required UX:
 4. Decrypt with the disclosure private key when needed.
 5. Recompute the digest and compare it with the on-chain digest.
 6. Show verification result and disclosed fields.
+
+Planes to support:
+
+- `user`: public or recipient-encrypted user disclosure
+- `self-view`: sent-transfer details decrypted by the sender's own disclosure private key
+- `audit`: mandatory audit disclosure decrypted by the auditor's disclosure private key
 
 Display policy:
 

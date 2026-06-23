@@ -122,4 +122,4 @@ Done criteria:
 - decode disclosure
 - direct withdraw
 - prepare / relay withdraw
-- public, recipient-encrypted, audit disclosure
+- public, recipient-encrypted, sender self-view, audit disclosure

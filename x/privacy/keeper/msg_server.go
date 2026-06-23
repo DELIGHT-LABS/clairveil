@@ -39,6 +39,8 @@ type shieldedTransferRequest struct {
 	auditDisclosureDigest       []byte
 	auditDisclosureTargetPubKey []byte
 	auditDisclosurePayload      []byte
+	selfViewDisclosureDigest    []byte
+	selfViewDisclosurePayload   []byte
 }
 
 // NewMsgServerImpl returns an implementation of the MsgServer interface.
@@ -247,6 +249,8 @@ func (k msgServer) Transfer(goCtx context.Context, msg *types.MsgTransfer) (*typ
 		auditDisclosureDigest:       msg.AuditDisclosureDigest,
 		auditDisclosureTargetPubKey: msg.AuditDisclosureTargetPubkey,
 		auditDisclosurePayload:      msg.AuditDisclosurePayload,
+		selfViewDisclosureDigest:    msg.SelfViewDisclosureDigest,
+		selfViewDisclosurePayload:   msg.SelfViewDisclosurePayload,
 	}); err != nil {
 		return nil, err
 	}
@@ -382,6 +386,12 @@ func (k msgServer) executeShieldedTransfer(ctx sdk.Context, req shieldedTransfer
 	}
 	if len(req.auditDisclosurePayload) > 0 {
 		eventAttrs = append(eventAttrs, sdk.NewAttribute(types.AttributeKeyAuditDisclosurePayload, fmt.Sprintf("%x", req.auditDisclosurePayload)))
+	}
+	if len(req.selfViewDisclosureDigest) > 0 {
+		eventAttrs = append(eventAttrs, sdk.NewAttribute(types.AttributeKeySelfViewDisclosureDigest, fmt.Sprintf("%x", req.selfViewDisclosureDigest)))
+	}
+	if len(req.selfViewDisclosurePayload) > 0 {
+		eventAttrs = append(eventAttrs, sdk.NewAttribute(types.AttributeKeySelfViewDisclosurePayload, fmt.Sprintf("%x", req.selfViewDisclosurePayload)))
 	}
 
 	if err := k.emitIndexedPrivacyEvent(ctx, types.EventTypeShieldedTransfer, eventAttrs); err != nil {

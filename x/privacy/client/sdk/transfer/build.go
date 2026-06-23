@@ -11,20 +11,22 @@ import (
 )
 
 type BuildTransferMessageInput struct {
-	Creator                       string
-	Inputs                        [2]privacyscan.FoundNote
-	RecipientSpendPubKey          *crypto_tedwards.PointAffine
-	RecipientViewPubKey           *crypto_tedwards.PointAffine
-	TransferAmount                *big.Int
-	TransferDenom                 string
-	SenderSpendPubKey             *crypto_tedwards.PointAffine
-	SenderViewPubKey              *crypto_tedwards.PointAffine
-	UserPrivacyPolicy             uint32
-	UserDisclosureMode            privacytypes.UserDisclosureMode
-	UserDisclosureTargetPubKey    *crypto_tedwards.PointAffine
-	UserDisclosureTargetPubKeyBz  []byte
-	AuditDisclosureTargetPubKey   *crypto_tedwards.PointAffine
-	AuditDisclosureTargetPubKeyBz []byte
+	Creator                        string
+	Inputs                         [2]privacyscan.FoundNote
+	RecipientSpendPubKey           *crypto_tedwards.PointAffine
+	RecipientViewPubKey            *crypto_tedwards.PointAffine
+	TransferAmount                 *big.Int
+	TransferDenom                  string
+	SenderSpendPubKey              *crypto_tedwards.PointAffine
+	SenderViewPubKey               *crypto_tedwards.PointAffine
+	UserPrivacyPolicy              uint32
+	UserDisclosureMode             privacytypes.UserDisclosureMode
+	UserDisclosureTargetPubKey     *crypto_tedwards.PointAffine
+	UserDisclosureTargetPubKeyBz   []byte
+	AuditDisclosureTargetPubKey    *crypto_tedwards.PointAffine
+	AuditDisclosureTargetPubKeyBz  []byte
+	DisableSelfViewDisclosure      bool
+	SelfViewDisclosureTargetPubKey *crypto_tedwards.PointAffine
 }
 
 func BuildTransferMessage(

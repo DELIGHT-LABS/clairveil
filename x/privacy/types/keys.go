@@ -57,6 +57,8 @@ const (
 	AttributeKeyAuditDisclosureDigest                = "audit_disclosure_digest"
 	AttributeKeyAuditDisclosureTargetPubKey          = "audit_disclosure_target_pubkey"
 	AttributeKeyAuditDisclosurePayload               = "audit_disclosure_payload"
+	AttributeKeySelfViewDisclosureDigest             = "self_view_disclosure_digest"
+	AttributeKeySelfViewDisclosurePayload            = "self_view_disclosure_payload"
 	AttributeKeyDisclosureEnvelopeCount              = "disclosure_envelope_count"
 	AttributeKeyDisclosureEnvelopeKindPrefix         = "disclosure_envelope_kind_"
 	AttributeKeyDisclosureEnvelopeTargetPubKeyPrefix = "disclosure_envelope_target_pubkey_"

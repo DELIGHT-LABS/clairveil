@@ -178,6 +178,8 @@ Usually output 0 is the recipient note and output 1 is the sender change note. A
 
 The circuit does not encrypt disclosure plaintext. What it guarantees is that the selected disclosure fields are bound to the digest. Actual encryption, public/recipient/audit delivery, and decode UX are handled by SDK/CLI and event payloads.
 
+Sender self-view disclosure is separate encrypted metadata. Its digest/payload are included in the tx event and signed message, but are not added to the joinsplit circuit public inputs. Wallets must decrypt the payload with the sender disclosure private key, then compare the payload digest with the on-chain `self_view_disclosure_digest`.
+
 ### Audit Disclosure
 
 Every transfer must include mandatory audit disclosure. The circuit computes a full audit disclosure digest, and the keeper checks that the message's audit disclosure target pubkey matches the chain-configured audit key.

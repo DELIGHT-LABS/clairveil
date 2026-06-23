@@ -26,9 +26,10 @@ const (
 	transferPrivacyPolicyFromTo       = "from-to"
 	transferPrivacyPolicyAmountFromTo = "amount-from-to"
 
-	transferDisclosurePayloadVersion    = privacydisclosure.PayloadVersion
-	transferDisclosurePayloadPlaneUser  = privacydisclosure.PlaneUser
-	transferDisclosurePayloadPlaneAudit = privacydisclosure.PlaneAudit
+	transferDisclosurePayloadVersion       = privacydisclosure.PayloadVersion
+	transferDisclosurePayloadPlaneUser     = privacydisclosure.PlaneUser
+	transferDisclosurePayloadPlaneAudit    = privacydisclosure.PlaneAudit
+	transferDisclosurePayloadPlaneSelfView = privacydisclosure.PlaneSelfView
 )
 
 type transferDisclosurePayload = privacydisclosure.Payload

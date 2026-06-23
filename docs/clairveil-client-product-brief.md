@@ -127,12 +127,12 @@ Required capabilities:
 
 ### 2.7 Disclosure Review
 
-The client must be able to decode and verify public, recipient-encrypted, and audit disclosure payloads.
+The client must be able to decode and verify public, recipient-encrypted, sender self-view, and audit disclosure payloads.
 
 Required capabilities:
 
 - disclosure source selection: tx hash, event payload, pasted payload
-- disclosure plane selection: public, recipient, audit
+- disclosure plane selection: public, recipient, self-view, audit
 - decryption availability display
 - digest verification result display
 - policy that unverified payloads must not be shown as factual

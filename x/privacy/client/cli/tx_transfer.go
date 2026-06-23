@@ -29,6 +29,7 @@ import (
 const (
 	flagAutoDummy              = "auto-dummy"
 	flagTransferDisclosureMode = "disclosure-mode"
+	flagTransferNoSelfView     = "no-self-view"
 	maxTransferPlanSteps       = 12
 
 	transferDisclosureModeNone               = "none"
@@ -43,6 +44,7 @@ type transferRuntimeConfig struct {
 	userDisclosureTargetPubKeyBz  []byte
 	auditDisclosureTargetPubKey   *crypto_tedwards.PointAffine
 	auditDisclosureTargetPubKeyBz []byte
+	disableSelfViewDisclosure     bool
 }
 
 func transferLatencyFlowProfile(userPrivacyPolicy uint32) string {
@@ -100,6 +102,7 @@ Use the single latest shielded transfer flow.
 				targetCoin.String(),
 				policyLabel(config.userPrivacyPolicy),
 				userDisclosureModeLabel(config.userDisclosureMode),
+				!config.disableSelfViewDisclosure,
 				autoDummy,
 			)
 
@@ -124,6 +127,7 @@ Use the single latest shielded transfer flow.
 					UserDisclosureTargetPubKeyBz:  config.userDisclosureTargetPubKeyBz,
 					AuditDisclosureTargetPubKey:   config.auditDisclosureTargetPubKey,
 					AuditDisclosureTargetPubKeyBz: config.auditDisclosureTargetPubKeyBz,
+					DisableSelfViewDisclosure:     config.disableSelfViewDisclosure,
 				},
 				latencyFlow,
 			)
@@ -141,6 +145,7 @@ Use the single latest shielded transfer flow.
 	cmd.Flags().String(flagTransferPrivacyPolicy, transferPrivacyPolicyAllPrivate, "User disclosure policy: all-private|amount|to|amount-to|from|amount-from|from-to|amount-from-to")
 	cmd.Flags().String(flagTransferDisclosureMode, transferDisclosureModeNone, "User disclosure mode: none|public|recipient-encrypted")
 	cmd.Flags().String(flagTransferDisclosurePubKey, "", "Recipient disclosure public key hex for recipient-encrypted mode")
+	cmd.Flags().Bool(flagTransferNoSelfView, false, "Disable sender self-view disclosure for this transfer")
 	cmd.Flags().Bool(flagAutoDummy, true, "Automatically create a zero-value dummy note with a preparatory deposit when a single-note split requires it")
 	cmd.Flags().Bool(flagRescanWallet, false, "reset the local privacy wallet cache and rescan from genesis before planner note selection")
 	flags.AddTxFlagsToCmd(cmd)
@@ -159,6 +164,10 @@ func resolveTransferRuntimeConfig(cmd *cobra.Command, clientCtx client.Context) 
 	}
 
 	disclosurePubKeyHex, err := cmd.Flags().GetString(flagTransferDisclosurePubKey)
+	if err != nil {
+		return nil, err
+	}
+	disableSelfViewDisclosure, err := cmd.Flags().GetBool(flagTransferNoSelfView)
 	if err != nil {
 		return nil, err
 	}
@@ -183,6 +192,7 @@ func resolveTransferRuntimeConfig(cmd *cobra.Command, clientCtx client.Context) 
 		userDisclosureTargetPubKeyBz:  config.UserDisclosureTargetPubKeyBz,
 		auditDisclosureTargetPubKey:   config.AuditDisclosureTargetPubKey,
 		auditDisclosureTargetPubKeyBz: config.AuditDisclosureTargetPubKeyBz,
+		disableSelfViewDisclosure:     disableSelfViewDisclosure,
 	}, nil
 }
 
@@ -259,6 +269,10 @@ func executeTransferFlowWithIdentity(
 ) (*sdk.TxResponse, error) {
 	if identity == nil {
 		return nil, fmt.Errorf("transfer execution identity is required")
+	}
+	if !disclosure.DisableSelfViewDisclosure && disclosure.SelfViewDisclosureTargetPubKey == nil {
+		_, selfViewDisclosurePubKey, _ := deriveDisclosureKeys(identity.seed)
+		disclosure.SelfViewDisclosureTargetPubKey = selfViewDisclosurePubKey
 	}
 	forceRescan, err := cmd.Flags().GetBool(flagRescanWallet)
 	if err != nil {

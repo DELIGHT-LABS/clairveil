@@ -93,6 +93,7 @@ Validation scope:
 - audit disclosure key derivation vectors and genesis public key encoding
 - fixture address prefixes
 - prepared transfer payload hash
+- sender self-view disclosure digest/payload fields
 - prepared withdraw payload hash
 - relayed withdraw final payload hash
 - relay withdraw handoff relayer `creator` / payload `recipient` mapping
@@ -217,7 +218,7 @@ Current tutorial criteria:
 - uses tutorial workspace `~/clairveil-privacy-walkthrough`
 - uses `keyring-backend test`
 - minimizes placeholders; only values such as tx hashes copied from earlier output are placeholders
-- includes public disclosure, recipient disclosure, audit disclosure, direct withdraw, and relayed withdraw
+- includes public disclosure, recipient disclosure, sender self-view disclosure, audit disclosure, direct withdraw, and relayed withdraw
 
 If the tutorial changes, run at least:
 

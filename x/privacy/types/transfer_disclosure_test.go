@@ -135,6 +135,45 @@ func TestComputeAuditTransferDisclosureDigestBytes(t *testing.T) {
 	require.NoError(t, validateFieldElementBytesStrict("audit digest", digest))
 }
 
+func TestComputeSelfViewTransferDisclosureDigestBytesUsesDistinctDomain(t *testing.T) {
+	commitment := validFieldBytes()
+
+	auditDigest, err := ComputeAuditTransferDisclosureDigestBytes(
+		TransferDisclosureRecipientOutputIndex,
+		commitment,
+		big.NewInt(10),
+		big.NewInt(7),
+		big.NewInt(17),
+		big.NewInt(19),
+		big.NewInt(23),
+		big.NewInt(29),
+		big.NewInt(11),
+		big.NewInt(13),
+		big.NewInt(31),
+		big.NewInt(37),
+	)
+	require.NoError(t, err)
+
+	selfViewDigest, err := ComputeSelfViewTransferDisclosureDigestBytes(
+		TransferDisclosureRecipientOutputIndex,
+		commitment,
+		big.NewInt(10),
+		big.NewInt(7),
+		big.NewInt(17),
+		big.NewInt(19),
+		big.NewInt(23),
+		big.NewInt(29),
+		big.NewInt(11),
+		big.NewInt(13),
+		big.NewInt(31),
+		big.NewInt(37),
+	)
+	require.NoError(t, err)
+	require.Len(t, selfViewDigest, expectedFieldElementBytes)
+	require.NoError(t, validateFieldElementBytesStrict("self-view digest", selfViewDigest))
+	require.NotEqual(t, auditDigest, selfViewDigest)
+}
+
 func TestComputeAuditTransferDisclosureDigestBytesRequiresFullAddresses(t *testing.T) {
 	commitment := validFieldBytes()
 

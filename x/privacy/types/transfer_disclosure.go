@@ -12,6 +12,7 @@ import (
 
 const TransferDisclosureRecipientOutputIndex uint32 = 0
 const TransferAuditDisclosureDomain uint32 = 255
+const TransferSelfViewDisclosureDomain uint32 = 254
 
 func ComputeTransferDisclosureDigestBytes(
 	policy uint32,
@@ -147,6 +148,52 @@ func ComputeAuditTransferDisclosureDigestBytes(
 	return canonicalDigestBytes(digest)
 }
 
+func ComputeSelfViewTransferDisclosureDigestBytes(
+	outputIndex uint32,
+	commitment []byte,
+	amount *big.Int,
+	assetID *big.Int,
+	fromSpendPubKeyX *big.Int,
+	fromSpendPubKeyY *big.Int,
+	fromViewPubKeyX *big.Int,
+	fromViewPubKeyY *big.Int,
+	toSpendPubKeyX *big.Int,
+	toSpendPubKeyY *big.Int,
+	toViewPubKeyX *big.Int,
+	toViewPubKeyY *big.Int,
+) ([]byte, error) {
+	if err := validateFieldElementBytesStrict("self-view disclosure commitment", commitment); err != nil {
+		return nil, err
+	}
+	if amount == nil || assetID == nil {
+		return nil, fmt.Errorf("self-view disclosure requires amount and asset id")
+	}
+	if fromSpendPubKeyX == nil || fromSpendPubKeyY == nil || fromViewPubKeyX == nil || fromViewPubKeyY == nil {
+		return nil, fmt.Errorf("self-view disclosure requires the full sender shielded address")
+	}
+	if toSpendPubKeyX == nil || toSpendPubKeyY == nil || toViewPubKeyX == nil || toViewPubKeyY == nil {
+		return nil, fmt.Errorf("self-view disclosure requires the full recipient shielded address")
+	}
+
+	digest := privacycrypto.MimcHash(
+		big.NewInt(int64(TransferSelfViewDisclosureDomain)),
+		big.NewInt(int64(outputIndex)),
+		new(big.Int).SetBytes(commitment),
+		new(big.Int).Set(amount),
+		new(big.Int).Set(assetID),
+		new(big.Int).Set(fromSpendPubKeyX),
+		new(big.Int).Set(fromSpendPubKeyY),
+		new(big.Int).Set(fromViewPubKeyX),
+		new(big.Int).Set(fromViewPubKeyY),
+		new(big.Int).Set(toSpendPubKeyX),
+		new(big.Int).Set(toSpendPubKeyY),
+		new(big.Int).Set(toViewPubKeyX),
+		new(big.Int).Set(toViewPubKeyY),
+	)
+
+	return canonicalDigestBytes(digest)
+}
+
 func ComputeTransferDisclosureDigestHex(
 	policy uint32,
 	outputIndex uint32,
@@ -199,6 +246,41 @@ func ComputeAuditTransferDisclosureDigestHex(
 	toViewPubKeyY *big.Int,
 ) (string, error) {
 	bz, err := ComputeAuditTransferDisclosureDigestBytes(
+		outputIndex,
+		commitment,
+		amount,
+		assetID,
+		fromSpendPubKeyX,
+		fromSpendPubKeyY,
+		fromViewPubKeyX,
+		fromViewPubKeyY,
+		toSpendPubKeyX,
+		toSpendPubKeyY,
+		toViewPubKeyX,
+		toViewPubKeyY,
+	)
+	if err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(bz), nil
+}
+
+func ComputeSelfViewTransferDisclosureDigestHex(
+	outputIndex uint32,
+	commitment []byte,
+	amount *big.Int,
+	assetID *big.Int,
+	fromSpendPubKeyX *big.Int,
+	fromSpendPubKeyY *big.Int,
+	fromViewPubKeyX *big.Int,
+	fromViewPubKeyY *big.Int,
+	toSpendPubKeyX *big.Int,
+	toSpendPubKeyY *big.Int,
+	toViewPubKeyX *big.Int,
+	toViewPubKeyY *big.Int,
+) (string, error) {
+	bz, err := ComputeSelfViewTransferDisclosureDigestBytes(
 		outputIndex,
 		commitment,
 		amount,

@@ -92,6 +92,27 @@ func TestBuildAuditDisclosureDataEncryptedPayloadDecrypts(t *testing.T) {
 	require.True(t, report.Verified)
 }
 
+func TestBuildSelfViewDisclosureDataEncryptedPayloadDecrypts(t *testing.T) {
+	input := testDisclosureBuildInput(t)
+	selfViewScalar, selfViewPubKey := testScalarAndPubKey(29)
+
+	data, err := BuildSelfViewDisclosureData(input, selfViewPubKey)
+	require.NoError(t, err)
+	require.NotNil(t, data)
+	require.Equal(t, privacydisclosure.PlaneSelfView, data.Payload.Plane)
+	require.NotEmpty(t, data.Payload.FromShieldedAddress)
+	require.NotEmpty(t, data.Payload.ToShieldedAddress)
+	require.Equal(t, "uclair", data.Payload.AssetDenom)
+
+	payload, err := privacydisclosure.DecryptPayload(data.CipherText, selfViewScalar)
+	require.NoError(t, err)
+	require.Equal(t, data.Payload, *payload)
+
+	report, err := privacydisclosure.VerifyPayload(payload, hex.EncodeToString(data.Digest))
+	require.NoError(t, err)
+	require.True(t, report.Verified)
+}
+
 func TestBuildUserDisclosureDataEncryptedRequiresTargetKey(t *testing.T) {
 	input := testDisclosureBuildInput(t)
 
@@ -109,6 +130,13 @@ func TestBuildAuditDisclosureDataRequiresTargetKey(t *testing.T) {
 
 	_, err := BuildAuditDisclosureData(input, nil)
 	require.ErrorContains(t, err, "audit disclosure target public key is required")
+}
+
+func TestBuildSelfViewDisclosureDataRequiresTargetKey(t *testing.T) {
+	input := testDisclosureBuildInput(t)
+
+	_, err := BuildSelfViewDisclosureData(input, nil)
+	require.ErrorContains(t, err, "self-view disclosure target public key is required")
 }
 
 func testDisclosureBuildInput(t *testing.T) DisclosureBuildInput {

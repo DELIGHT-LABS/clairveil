@@ -175,6 +175,22 @@ func validateAuditDisclosure(digest, targetPubKey, payload []byte) error {
 	return nil
 }
 
+func validateSelfViewDisclosure(digest, payload []byte) error {
+	if len(digest) == 0 && len(payload) == 0 {
+		return nil
+	}
+	if len(digest) == 0 || len(payload) == 0 {
+		return errorsmod.Wrap(
+			sdkerrors.ErrInvalidRequest,
+			"self-view disclosure digest and payload must be provided together",
+		)
+	}
+	if err := validateFieldElementBytesStrict("self-view disclosure digest", digest); err != nil {
+		return err
+	}
+	return nil
+}
+
 func NewMsgDeposit(creator string, amount string, commitment []byte, encryptedNote []byte, proof []byte) *MsgDeposit {
 	return &MsgDeposit{
 		Creator:        creator,
@@ -303,6 +319,8 @@ func NewMsgTransferWithDisclosure(
 	auditDisclosureDigest []byte,
 	auditDisclosureTargetPubKey []byte,
 	auditDisclosurePayload []byte,
+	selfViewDisclosureDigest []byte,
+	selfViewDisclosurePayload []byte,
 ) *MsgTransfer {
 	return &MsgTransfer{
 		Creator:                     creator,
@@ -319,6 +337,8 @@ func NewMsgTransferWithDisclosure(
 		AuditDisclosureDigest:       auditDisclosureDigest,
 		AuditDisclosureTargetPubkey: auditDisclosureTargetPubKey,
 		AuditDisclosurePayload:      auditDisclosurePayload,
+		SelfViewDisclosureDigest:    selfViewDisclosureDigest,
+		SelfViewDisclosurePayload:   selfViewDisclosurePayload,
 	}
 }
 
@@ -345,6 +365,13 @@ func (msg *MsgTransfer) ValidateBasic() error {
 		msg.AuditDisclosureDigest,
 		msg.AuditDisclosureTargetPubkey,
 		msg.AuditDisclosurePayload,
+	); err != nil {
+		return err
+	}
+
+	if err := validateSelfViewDisclosure(
+		msg.SelfViewDisclosureDigest,
+		msg.SelfViewDisclosurePayload,
 	); err != nil {
 		return err
 	}

@@ -36,6 +36,8 @@ func TestBuildTransferMessageAssemblesLatestTransfer(t *testing.T) {
 	require.NotEmpty(t, msg.AuditDisclosureDigest)
 	require.NotEmpty(t, msg.AuditDisclosureTargetPubkey)
 	require.NotEmpty(t, msg.AuditDisclosurePayload)
+	require.NotEmpty(t, msg.SelfViewDisclosureDigest)
+	require.NotEmpty(t, msg.SelfViewDisclosurePayload)
 	require.Len(t, merkleProvider.requests, 2)
 	require.Len(t, signer.hashes, 2)
 	require.True(t, artifacts.r1csCalled)
@@ -57,6 +59,8 @@ func TestBuildTransferMessageAllPrivateLeavesUserDisclosureEmpty(t *testing.T) {
 	require.Empty(t, msg.UserDisclosureTargetPubkey)
 	require.Empty(t, msg.UserDisclosurePayload)
 	require.NotEmpty(t, msg.AuditDisclosureDigest)
+	require.NotEmpty(t, msg.SelfViewDisclosureDigest)
+	require.NotEmpty(t, msg.SelfViewDisclosurePayload)
 }
 
 func testBuildTransferMessageDeps(
@@ -70,6 +74,7 @@ func testBuildTransferMessageDeps(
 	recipientViewScalar, recipientViewPubKey := testScalarAndPubKey(73)
 	disclosureScalar, disclosurePubKey := testScalarAndPubKey(79)
 	auditScalar, auditPubKey := testScalarAndPubKey(83)
+	selfViewScalar, selfViewPubKey := testScalarAndPubKey(89)
 
 	inputs := [2]privacyscan.FoundNote{
 		{
@@ -131,25 +136,41 @@ func testBuildTransferMessageDeps(
 	require.NotNil(t, recipientViewScalar)
 	require.NotNil(t, disclosureScalar)
 	require.NotNil(t, auditScalar)
+	require.NotNil(t, selfViewScalar)
 
-	return BuildTransferMessageInput{
-			Creator:                       sdk.AccAddress(bytes.Repeat([]byte{0x1}, 20)).String(),
-			Inputs:                        inputs,
-			RecipientSpendPubKey:          recipientSpendPubKey,
-			RecipientViewPubKey:           recipientViewPubKey,
-			TransferAmount:                big.NewInt(7),
-			TransferDenom:                 "uclair",
-			SenderSpendPubKey:             senderSpendPubKey,
-			SenderViewPubKey:              senderViewPubKey,
-			UserPrivacyPolicy:             privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom,
-			UserDisclosureMode:            privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED,
-			UserDisclosureTargetPubKey:    disclosurePubKey,
-			UserDisclosureTargetPubKeyBz:  append([]byte(nil), disclosurePubKeyBytes[:]...),
-			AuditDisclosureTargetPubKey:   auditPubKey,
-			AuditDisclosureTargetPubKeyBz: append([]byte(nil), auditPubKeyBytes[:]...),
-		},
+	input := BuildTransferMessageInput{
+		Creator:                        sdk.AccAddress(bytes.Repeat([]byte{0x1}, 20)).String(),
+		Inputs:                         inputs,
+		RecipientSpendPubKey:           recipientSpendPubKey,
+		RecipientViewPubKey:            recipientViewPubKey,
+		TransferAmount:                 big.NewInt(7),
+		TransferDenom:                  "uclair",
+		SenderSpendPubKey:              senderSpendPubKey,
+		SenderViewPubKey:               senderViewPubKey,
+		UserPrivacyPolicy:              privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom,
+		UserDisclosureMode:             privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED,
+		UserDisclosureTargetPubKey:     disclosurePubKey,
+		UserDisclosureTargetPubKeyBz:   append([]byte(nil), disclosurePubKeyBytes[:]...),
+		AuditDisclosureTargetPubKey:    auditPubKey,
+		AuditDisclosureTargetPubKeyBz:  append([]byte(nil), auditPubKeyBytes[:]...),
+		SelfViewDisclosureTargetPubKey: selfViewPubKey,
+	}
+
+	return input,
 		merkleProvider,
 		signer,
 		artifacts,
 		runner
+}
+
+func testStepDisclosureConfig(input BuildTransferMessageInput) StepDisclosureConfig {
+	return StepDisclosureConfig{
+		UserPrivacyPolicy:              input.UserPrivacyPolicy,
+		UserDisclosureMode:             input.UserDisclosureMode,
+		UserDisclosureTargetPubKey:     input.UserDisclosureTargetPubKey,
+		UserDisclosureTargetPubKeyBz:   input.UserDisclosureTargetPubKeyBz,
+		AuditDisclosureTargetPubKey:    input.AuditDisclosureTargetPubKey,
+		AuditDisclosureTargetPubKeyBz:  input.AuditDisclosureTargetPubKeyBz,
+		SelfViewDisclosureTargetPubKey: input.SelfViewDisclosureTargetPubKey,
+	}
 }
