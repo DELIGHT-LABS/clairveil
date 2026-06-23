@@ -108,6 +108,7 @@ required_files=(
 	"docs/schemas/README.md"
 	"docs/schemas/README-kr.md"
 	"x/privacy/client/sdk/conformance/testdata/privacy_prover_example_bundle.json"
+	"x/privacy/client/sdk/conformance/testdata/privacy_relay_withdraw_contract.json"
 	"x/privacy/client/sdk/conformance/testdata/privacy_wallet_golden_vectors.json"
 	"examples/README.md"
 	"examples/README-kr.md"

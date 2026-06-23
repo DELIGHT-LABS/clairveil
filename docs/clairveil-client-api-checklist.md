@@ -87,6 +87,7 @@ Client CI should validate at least:
 - fixture shape matches `docs/schemas/clairveil-js-wallet-contract.schema.json`;
 - fixtures load from `x/privacy/client/sdk/conformance/testdata`;
 - semantic checks match `examples/js-sdk-fixture-validator`;
+- relay withdraw handoff fixtures validate the relayer `creator` and payload `recipient` split;
 - prover timeout/auth/response validation matches `examples/js-sdk-prover-http-client`.
 
 Fast repo-level validation commands:
@@ -108,7 +109,7 @@ Minimum validation before client release:
 - audit disclosure decode/verify, if auditor UX exists
 - reserve query returns `invariant_holds=true` for the target denom after deposit/withdraw flows
 - direct withdraw
-- relayed withdraw
+- relayed withdraw and relayer-submitted `MsgWithdraw` field mapping
 - no-exact-match withdraw failure and self-transfer/planner guidance
 - prover timeout/retry/cancel
 - disclosure verification failure UI
@@ -129,6 +130,7 @@ Changes with breaking or migration impact:
 - reserve/accounting query shape changes
 - fixture schema changes
 - withdraw exact-match policy changes
+- relay withdraw handoff payload/message mapping changes
 - audit disclosure requiredness changes
 
 When these change, update the client product brief, UX flows, risk decisions, API checklist, JS SDK handoff, and release note impact together.

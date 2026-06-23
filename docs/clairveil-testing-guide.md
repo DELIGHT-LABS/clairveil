@@ -95,6 +95,7 @@ Validation scope:
 - prepared transfer payload hash
 - prepared withdraw payload hash
 - relayed withdraw final payload hash
+- relay withdraw handoff relayer `creator` / payload `recipient` mapping
 - prover HTTP request/response version
 - timeout/auth client shape
 - browser DApp boundary checks, static bundle freshness, local helper route policy, and ClairveilJS package surface smoke tests

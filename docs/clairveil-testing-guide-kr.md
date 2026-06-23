@@ -93,6 +93,7 @@ npm --prefix examples/clairveil-dapp run test:clairveiljs
 - prepared transfer payload hash
 - prepared withdraw payload hash
 - relayed withdraw final payload hash
+- relay withdraw handoff의 relayer `creator` / payload `recipient` mapping
 - prover HTTP request/response version
 - timeout/auth client shape
 - browser DApp boundary check, static bundle 최신성, local helper route policy, ClairveilJS package surface smoke test

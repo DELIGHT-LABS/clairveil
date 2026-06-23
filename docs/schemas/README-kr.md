@@ -22,9 +22,11 @@ repo의 예제 validator는 실행 부담을 줄이기 위해 dependency-free su
 - wallet readonly address, view key, disclosure, scan fixture
 - prepared transfer prover payload shape
 - prepared withdraw prover payload shape
+- final prepared withdraw payload shape
+- relay withdraw handoff request와 relayer `MsgWithdraw` mapping shape
 - prover HTTP route, request, response, error contract shape
 - send-capable reference flow fixture shape
 
-이 schema는 field presence, basic type, version constant, address prefix, fixed-size hash, 현재 transfer payload array size, Merkle path helper bit, canonical non-negative uint64 amount string을 확인합니다.
+이 schema는 field presence, basic type, version constant, address prefix, fixed-size hash, 현재 transfer payload array size, Merkle path helper bit, canonical non-negative uint64 amount string, Cosmos SDK coin string을 확인합니다.
 
 단, semantic verification을 대신하지는 않습니다. payload hash 재계산, disclosure digest 검증, Merkle path 재계산, proof verification은 SDK/test가 별도로 수행해야 합니다.

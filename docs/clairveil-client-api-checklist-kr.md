@@ -87,6 +87,7 @@ Client CI는 최소 아래를 검증해야 합니다.
 - `docs/schemas/clairveil-js-wallet-contract.schema.json` fixture shape를 검증합니다.
 - `x/privacy/client/sdk/conformance/testdata` fixture를 로드합니다.
 - `examples/js-sdk-fixture-validator`와 같은 semantic check를 수행합니다.
+- relay withdraw handoff fixture로 relayer `creator`와 payload `recipient` 분리를 검증합니다.
 - `examples/js-sdk-prover-http-client`와 같은 prover timeout/auth/response validation을 구현합니다.
 
 Repo 기준 빠른 검증 명령:
@@ -108,7 +109,7 @@ Client release 전 최소 검증:
 - audit disclosure decode/verify, auditor UX가 있는 경우
 - deposit/withdraw flow 이후 target denom의 reserve query가 `invariant_holds=true`를 반환
 - direct withdraw
-- relayed withdraw
+- relayed withdraw와 relayer 제출 `MsgWithdraw` field mapping
 - exact-match withdraw 실패와 self-transfer/planner 안내 UX
 - prover timeout/retry/cancel
 - disclosure verification failure UI
@@ -129,6 +130,7 @@ Breaking 또는 migration impact가 있는 변경:
 - reserve/accounting query shape 변경
 - fixture schema 변경
 - withdraw exact-match 정책 변경
+- relay withdraw handoff payload/message mapping 변경
 - audit disclosure 필수 여부 변경
 
 이런 변경이 있으면 client product brief, UX flows, risk decisions, API checklist, JS SDK handoff, release note impact를 함께 갱신해야 합니다.

@@ -111,7 +111,7 @@ The JS/TS SDK and web wallet teams confirm:
 1. Use `docs/clairveil-js-sdk-handoff.md` as the baseline document.
 2. Validate fixture shape with `docs/schemas/clairveil-js-wallet-contract.schema.json`.
 3. Include `x/privacy/client/sdk/conformance/testdata` fixtures in SDK CI.
-4. Port payload hash recomputation, route/version checks, and prefix checks from `examples/js-sdk-fixture-validator` into SDK tests.
+4. Port payload hash recomputation, relay withdraw handoff mapping, route/version checks, and prefix checks from `examples/js-sdk-fixture-validator` into SDK tests.
 5. Reflect timeout, bearer auth, and payload hash equality checks from `examples/js-sdk-prover-http-client` in the prover adapter implementation.
 6. Treat wallet note cache, root seed derived secrets, viewing keys, disclosure keys, and prepared payload/proof JSON as privacy-sensitive data; do not leave them in plaintext browser storage.
 7. If using a remote prover, reflect prover-visible metadata and trust boundaries in the user privacy UX and threat model.

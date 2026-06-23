@@ -151,6 +151,42 @@ func TestBuildRelayWithdrawMsgFromFile(t *testing.T) {
 	require.Equal(t, payload.Recipient, msg.Recipient)
 }
 
+func TestBuildRelayWithdrawMsgFromJSONAtUsesProvidedTime(t *testing.T) {
+	creator := testBech32Address()
+	payload := newValidPreparedWithdrawPayload(t, testBech32Address())
+	payload.ExpiresAtUnix = time.Unix(1000, 0).Unix()
+	rebuildPayloadHash(&payload)
+
+	jsonBytes, err := payload.MarshalIndentedJSON()
+	require.NoError(t, err)
+
+	msg, err := BuildRelayWithdrawMsgFromJSONAt(jsonBytes, creator, time.Unix(999, 0))
+	require.NoError(t, err)
+	require.Equal(t, creator, msg.Creator)
+
+	_, err = BuildRelayWithdrawMsgFromJSONAt(jsonBytes, creator, time.Unix(1001, 0))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "payload expired")
+}
+
+func TestBuildRelayWithdrawMsgFromFileAtUsesProvidedTime(t *testing.T) {
+	creator := testBech32Address()
+	payload := newValidPreparedWithdrawPayload(t, testBech32Address())
+	payload.ExpiresAtUnix = time.Unix(1000, 0).Unix()
+	rebuildPayloadHash(&payload)
+	path := filepath.Join(t.TempDir(), "withdraw-payload.json")
+
+	require.NoError(t, payload.WriteJSONFile(path))
+
+	msg, err := BuildRelayWithdrawMsgFromFileAt(path, creator, time.Unix(999, 0))
+	require.NoError(t, err)
+	require.Equal(t, creator, msg.Creator)
+
+	_, err = BuildRelayWithdrawMsgFromFileAt(path, creator, time.Unix(1001, 0))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "payload expired")
+}
+
 func TestPreparedWithdrawPayloadToMsgInvalid(t *testing.T) {
 	payload := newValidPreparedWithdrawPayload(t, "bad")
 	rebuildPayloadHash(&payload)
@@ -186,6 +222,20 @@ func TestPreparedWithdrawPayloadToMsgRejectsExpiredPayload(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "payload expired")
 	require.Contains(t, err.Error(), "prepare-withdraw")
+}
+
+func TestPreparedWithdrawPayloadToMsgAtUsesProvidedTime(t *testing.T) {
+	payload := newValidPreparedWithdrawPayload(t, testBech32Address())
+	payload.ExpiresAtUnix = time.Unix(1000, 0).Unix()
+	rebuildPayloadHash(&payload)
+
+	msg, err := payload.ToMsgAt(testBech32Address(), time.Unix(999, 0))
+	require.NoError(t, err)
+	require.Equal(t, payload.ExpiresAtUnix, msg.ExpiresAtUnix)
+
+	_, err = payload.ToMsgAt(testBech32Address(), time.Unix(1001, 0))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "payload expired")
 }
 
 func TestPreparedWithdrawPayloadToMsgRejectsHashMismatch(t *testing.T) {

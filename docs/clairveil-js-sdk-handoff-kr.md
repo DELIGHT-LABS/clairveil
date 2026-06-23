@@ -326,6 +326,14 @@ clairveild tx privacy relay-withdraw ./withdraw-payload.json \
   --keyring-backend test
 ```
 
+Client 관점의 relayed withdraw 책임 분리는 아래와 같습니다.
+
+- user client는 withdraw proof response를 받아 최종 `PreparedWithdrawPayload` JSON을 만듭니다.
+- user client와 relayer 사이의 전달 방식은 제품별 계약입니다. HTTP, QR, deep link, file handoff 모두 가능합니다.
+- relayer client/server는 payload의 `payload_hash`, `chain_id`, `recipient`, `expires_at_unix`를 검증하고, 자기 주소를 `MsgWithdraw.creator`로 넣어 sign/broadcast합니다.
+- withdraw 대상 투명 주소는 relayer 주소가 아니라 payload의 `recipient`입니다.
+- 이 repo는 production relay HTTP endpoint를 제공하지 않습니다. 대신 final payload에서 relayer 제출 메시지로 변환되는 계약을 `x/privacy/client/sdk/conformance/testdata/privacy_relay_withdraw_contract.json` fixture로 고정합니다.
+
 Go SDK 기준 구현 위치는 아래입니다.
 
 ```text
@@ -512,6 +520,7 @@ npm --prefix examples/js-sdk-fixture-validator run validate
 - Go SDK와 같은 방식으로 transfer prepared payload hash를 계산합니다.
 - Go SDK와 같은 방식으로 withdraw prover payload hash를 계산합니다.
 - relayed withdraw final payload hash를 계산합니다.
+- relay withdraw handoff fixture에서 relayer 주소가 `MsgWithdraw.creator`로, payload recipient가 `MsgWithdraw.recipient`로 유지되는지 확인합니다.
 - prover HTTP path가 `/v1/prover/transfer`, `/v1/prover/withdraw`인지 확인합니다.
 
 이 예제는 production JS SDK가 아니라 첫 reference consumer입니다. 실제 JS SDK는 이 예제의 파일 구조를 그대로 따르기보다, 같은 hash contract와 fixture validation을 CI에 넣는 방식으로 가져가면 됩니다.

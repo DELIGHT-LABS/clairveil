@@ -61,6 +61,18 @@ interface PreparedWithdrawProverPayload {
   payload_hash: string;
 }
 
+interface PreparedWithdrawPayload {
+  version: string;
+  proof_hex: string;
+  root_hex: string;
+  nullifier_hex: string;
+  amount: string;
+  recipient: string;
+  chain_id: string;
+  expires_at_unix: number;
+  payload_hash: string;
+}
+
 interface Proof {
   version: string;
   payload_hash: string;
@@ -138,6 +150,30 @@ interface ProverHTTPAPIContract {
   error_response: {
     version: string;
     codes: string[];
+  };
+}
+
+interface RelayWithdrawContract {
+  schema_version: string;
+  handoff_version: string;
+  transport: string;
+  request: {
+    version: string;
+    payload: PreparedWithdrawPayload;
+  };
+  relayer: {
+    address: string;
+  };
+  expected_msg: {
+    type_url: string;
+    creator: string;
+    proof_hex: string;
+    root_hex: string;
+    nullifier_hex: string;
+    amount: string;
+    recipient: string;
+    chain_id: string;
+    expires_at_unix: number;
   };
 }
 
@@ -318,6 +354,7 @@ function validateFixtureSchemas(): void {
     ["privacy_browser_signer_provider_contract.json", "browserSignerProviderContract"],
     ["privacy_prover_example_bundle.json", "proverExampleBundle"],
     ["privacy_prover_http_api_contract.json", "proverHttpApiContract"],
+    ["privacy_relay_withdraw_contract.json", "relayWithdrawContract"],
     ["privacy_send_capable_reference_flow.json", "sendCapableReferenceFlow"],
     ["privacy_wallet_golden_vectors.json", "walletGoldenVectors"],
     ["privacy_wallet_readonly_reference_bundle.json", "walletReadonlyReferenceBundle"],
@@ -443,6 +480,19 @@ function computePreparedWithdrawPayloadHash(input: {
   ].join("\n"));
 }
 
+function computePreparedWithdrawPayloadHashFromPayload(payload: PreparedWithdrawPayload): string {
+  return computePreparedWithdrawPayloadHash({
+    proofHex: payload.proof_hex,
+    rootHex: payload.root_hex,
+    nullifierHex: payload.nullifier_hex,
+    amount: payload.amount,
+    recipient: payload.recipient,
+    chainID: payload.chain_id,
+    version: payload.version,
+    expiresAtUnix: payload.expires_at_unix,
+  });
+}
+
 function validateWalletFacingPrefixes(): void {
   const unexpectedAddressPattern = /(?<![a-z0-9])([a-z]{2,12}1[0-9a-z]{20,})/g;
   const allowedPrefixes = ["clair1", "clairs1"];
@@ -521,6 +571,37 @@ function validateSendCapableReferenceFlow(
   assertEqual(flow.withdraw.amount, `${withdrawPayload.amount}${withdrawPayload.asset_denom}`, "send-capable withdraw amount");
 }
 
+function validateRelayWithdrawContract(
+  contract: RelayWithdrawContract,
+  flow: SendCapableReferenceFlow,
+): void {
+  assertEqual(contract.schema_version, "v1", "relay-withdraw schema_version");
+  assertEqual(contract.handoff_version, "v1", "relay-withdraw handoff_version");
+  assertEqual(contract.transport, "transport-agnostic", "relay-withdraw transport");
+  assertEqual(contract.request.version, "v1", "relay-withdraw request version");
+
+  const payload = contract.request.payload;
+  const expectedMsg = contract.expected_msg;
+  const finalWithdrawHash = computePreparedWithdrawPayloadHashFromPayload(payload);
+
+  assertEqual(payload.payload_hash, finalWithdrawHash, "relay-withdraw payload_hash");
+  assertEqual(payload.payload_hash, flow.withdraw.final_payload_hash, "relay-withdraw send-flow final payload hash");
+  assertStartsWith(payload.recipient, "clair1", "relay-withdraw recipient");
+  assertStartsWith(contract.relayer.address, "clair1", "relay-withdraw relayer");
+  assertHexLength(payload.root_hex, 32, "relay-withdraw root_hex");
+  assertHexLength(payload.nullifier_hex, 32, "relay-withdraw nullifier_hex");
+
+  assertEqual(expectedMsg.type_url, "/clairveil.privacy.v1.MsgWithdraw", "relay-withdraw MsgWithdraw type URL");
+  assertEqual(expectedMsg.creator, contract.relayer.address, "relay-withdraw MsgWithdraw creator");
+  assertEqual(expectedMsg.proof_hex, payload.proof_hex, "relay-withdraw MsgWithdraw proof");
+  assertEqual(expectedMsg.root_hex, payload.root_hex, "relay-withdraw MsgWithdraw root");
+  assertEqual(expectedMsg.nullifier_hex, payload.nullifier_hex, "relay-withdraw MsgWithdraw nullifier");
+  assertEqual(expectedMsg.amount, payload.amount, "relay-withdraw MsgWithdraw amount");
+  assertEqual(expectedMsg.recipient, payload.recipient, "relay-withdraw MsgWithdraw recipient");
+  assertEqual(expectedMsg.chain_id, payload.chain_id, "relay-withdraw MsgWithdraw chain_id");
+  assertEqual(expectedMsg.expires_at_unix, payload.expires_at_unix, "relay-withdraw MsgWithdraw expires_at_unix");
+}
+
 function validateProverHTTPAPIContract(contract: ProverHTTPAPIContract): void {
   assertEqual(contract.schema_version, "v1", "prover HTTP schema_version");
   assertEqual(contract.content_type, "application/json", "prover HTTP content_type");
@@ -583,11 +664,13 @@ function main(): void {
   const proverBundle = readFixture<ProverExampleBundle>("privacy_prover_example_bundle.json");
   const sendFlow = readFixture<SendCapableReferenceFlow>("privacy_send_capable_reference_flow.json");
   const proverHTTPContract = readFixture<ProverHTTPAPIContract>("privacy_prover_http_api_contract.json");
+  const relayWithdrawContract = readFixture<RelayWithdrawContract>("privacy_relay_withdraw_contract.json");
 
   validateFixtureSchemas();
   validateWalletFacingPrefixes();
   validateProverExampleBundle(proverBundle);
   validateSendCapableReferenceFlow(sendFlow, proverBundle);
+  validateRelayWithdrawContract(relayWithdrawContract, sendFlow);
   validateProverHTTPAPIContract(proverHTTPContract);
   validateWalletFixtures();
 
@@ -595,6 +678,7 @@ function main(): void {
   console.log(`- transfer payload hash: ${proverBundle.transfer.request.payload.payload_hash}`);
   console.log(`- withdraw prover payload hash: ${proverBundle.withdraw.request.payload.payload_hash}`);
   console.log(`- final withdraw payload hash: ${sendFlow.withdraw.final_payload_hash}`);
+  console.log(`- relay withdraw creator: ${relayWithdrawContract.expected_msg.creator}`);
 }
 
 main();

@@ -41,6 +41,11 @@
       "description": "Canonical non-negative uint64 decimal string, 0 <= amount <= 18446744073709551615.",
       "pattern": "^(0|[1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|18446744073709550[0-9]{3}|18446744073709551[0-5][0-9]{2}|1844674407370955160[0-9]|1844674407370955161[0-5])$"
     },
+    "coinString": {
+      "type": "string",
+      "description": "Cosmos SDK coin string using a positive integer amount and a denom.",
+      "pattern": "^[1-9][0-9]*[a-z][a-z0-9/:._-]{2,127}$"
+    },
     "denom": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9/:._-]{2,127}$"
@@ -323,6 +328,149 @@
         },
         "payload_hash": {
           "$ref": "#/$defs/hex32"
+        }
+      }
+    },
+    "preparedWithdrawPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "proof_hex",
+        "root_hex",
+        "nullifier_hex",
+        "amount",
+        "recipient",
+        "chain_id",
+        "expires_at_unix",
+        "payload_hash"
+      ],
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/version"
+        },
+        "proof_hex": {
+          "$ref": "#/$defs/hexString"
+        },
+        "root_hex": {
+          "$ref": "#/$defs/hex32"
+        },
+        "nullifier_hex": {
+          "$ref": "#/$defs/hex32"
+        },
+        "amount": {
+          "$ref": "#/$defs/coinString"
+        },
+        "recipient": {
+          "$ref": "#/$defs/transparentAddress"
+        },
+        "chain_id": {
+          "$ref": "#/$defs/chainId"
+        },
+        "expires_at_unix": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "payload_hash": {
+          "$ref": "#/$defs/hex32"
+        }
+      }
+    },
+    "relayWithdrawContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "handoff_version",
+        "transport",
+        "request",
+        "relayer",
+        "expected_msg"
+      ],
+      "properties": {
+        "schema_version": {
+          "$ref": "#/$defs/schemaVersion"
+        },
+        "handoff_version": {
+          "$ref": "#/$defs/version"
+        },
+        "transport": {
+          "type": "string",
+          "const": "transport-agnostic"
+        },
+        "request": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "version",
+            "payload"
+          ],
+          "properties": {
+            "version": {
+              "$ref": "#/$defs/version"
+            },
+            "payload": {
+              "$ref": "#/$defs/preparedWithdrawPayload"
+            }
+          }
+        },
+        "relayer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "address"
+          ],
+          "properties": {
+            "address": {
+              "$ref": "#/$defs/transparentAddress"
+            }
+          }
+        },
+        "expected_msg": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type_url",
+            "creator",
+            "proof_hex",
+            "root_hex",
+            "nullifier_hex",
+            "amount",
+            "recipient",
+            "chain_id",
+            "expires_at_unix"
+          ],
+          "properties": {
+            "type_url": {
+              "type": "string",
+              "const": "/clairveil.privacy.v1.MsgWithdraw"
+            },
+            "creator": {
+              "$ref": "#/$defs/transparentAddress"
+            },
+            "proof_hex": {
+              "$ref": "#/$defs/hexString"
+            },
+            "root_hex": {
+              "$ref": "#/$defs/hex32"
+            },
+            "nullifier_hex": {
+              "$ref": "#/$defs/hex32"
+            },
+            "amount": {
+              "$ref": "#/$defs/coinString"
+            },
+            "recipient": {
+              "$ref": "#/$defs/transparentAddress"
+            },
+            "chain_id": {
+              "$ref": "#/$defs/chainId"
+            },
+            "expires_at_unix": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
         }
       }
     },

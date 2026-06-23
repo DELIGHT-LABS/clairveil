@@ -158,7 +158,11 @@ func (p PreparedWithdrawPayload) WriteJSONFile(path string) error {
 }
 
 func (p PreparedWithdrawPayload) ToMsg(creator string) (*privacytypes.MsgWithdraw, error) {
-	if err := ValidatePreparedWithdrawPayloadMetadata(p, time.Now()); err != nil {
+	return p.ToMsgAt(creator, time.Now())
+}
+
+func (p PreparedWithdrawPayload) ToMsgAt(creator string, now time.Time) (*privacytypes.MsgWithdraw, error) {
+	if err := ValidatePreparedWithdrawPayloadMetadata(p, now); err != nil {
 		return nil, err
 	}
 
@@ -194,17 +198,25 @@ func (p PreparedWithdrawPayload) ToMsg(creator string) (*privacytypes.MsgWithdra
 }
 
 func BuildRelayWithdrawMsgFromJSON(payloadBytes []byte, creator string) (*privacytypes.MsgWithdraw, error) {
+	return BuildRelayWithdrawMsgFromJSONAt(payloadBytes, creator, time.Now())
+}
+
+func BuildRelayWithdrawMsgFromJSONAt(payloadBytes []byte, creator string, now time.Time) (*privacytypes.MsgWithdraw, error) {
 	payload, err := DecodePreparedWithdrawPayloadJSON(payloadBytes)
 	if err != nil {
 		return nil, err
 	}
-	return payload.ToMsg(creator)
+	return payload.ToMsgAt(creator, now)
 }
 
 func BuildRelayWithdrawMsgFromFile(path string, creator string) (*privacytypes.MsgWithdraw, error) {
+	return BuildRelayWithdrawMsgFromFileAt(path, creator, time.Now())
+}
+
+func BuildRelayWithdrawMsgFromFileAt(path string, creator string, now time.Time) (*privacytypes.MsgWithdraw, error) {
 	payload, err := ReadPreparedWithdrawPayloadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	return payload.ToMsg(creator)
+	return payload.ToMsgAt(creator, now)
 }

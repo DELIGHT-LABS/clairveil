@@ -328,6 +328,14 @@ clairveild tx privacy relay-withdraw ./withdraw-payload.json \
   --keyring-backend test
 ```
 
+From a client perspective, relayed withdraw splits responsibilities as follows.
+
+- The user client receives the withdraw proof response and builds the final `PreparedWithdrawPayload` JSON.
+- Transport between the user client and relayer is product-defined. HTTP, QR, deep link, and file handoff are all possible.
+- The relayer client/server validates `payload_hash`, `chain_id`, `recipient`, and `expires_at_unix`, then sets its own address as `MsgWithdraw.creator` before signing and broadcasting.
+- The transparent withdraw target is the payload `recipient`, not the relayer address.
+- This repository does not provide a production relay HTTP endpoint. Instead, it fixes the final-payload-to-relayer-submitted-message contract in `x/privacy/client/sdk/conformance/testdata/privacy_relay_withdraw_contract.json`.
+
 The Go SDK implementation is in:
 
 ```text
@@ -514,6 +522,7 @@ This example does not start a node. It only validates:
 - transfer prepared payload hash is calculated the same way as the Go SDK;
 - withdraw prover payload hash is calculated the same way as the Go SDK;
 - relayed withdraw final payload hash is calculated;
+- relay withdraw handoff keeps the relayer address as `MsgWithdraw.creator` and the payload recipient as `MsgWithdraw.recipient`;
 - prover HTTP paths are `/v1/prover/transfer` and `/v1/prover/withdraw`.
 
 This is a first reference consumer, not a production JS SDK. A real JS SDK should not copy its file layout directly. Instead, bring the same hash contract and fixture validation into CI.
