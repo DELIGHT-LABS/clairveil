@@ -29,6 +29,8 @@
 | Fixture/schema | 없음 / 있음 |
 | CLI            | 없음 / 있음 |
 | Prover HTTP    | 없음 / 있음 |
+| Scan/query contract | 없음 / 있음 |
+| Transfer/view tags | 없음 / 있음 |
 | ZK artifact    | 없음 / 있음 |
 
 영향이 있으면 downstream action을 아래 7번에 반드시 적습니다.

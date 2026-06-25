@@ -20,10 +20,11 @@ import (
 )
 
 const (
-	PreparedTransferPayloadVersion = "v2"
+	PreparedTransferPayloadVersion = "v3"
 	PreparedTransferProofVersion   = "v1"
 
 	legacyPreparedTransferPayloadVersionV1 = "v1"
+	legacyPreparedTransferPayloadVersionV2 = "v2"
 )
 
 type PreparedTransferInput struct {
@@ -53,6 +54,7 @@ type PreparedTransferPayload struct {
 	Inputs                         []PreparedTransferInput  `json:"inputs"`
 	Outputs                        []PreparedTransferOutput `json:"outputs"`
 	CipherTextHexes                []string                 `json:"cipher_text_hexes"`
+	ViewTagHexes                   []string                 `json:"view_tag_hexes"`
 	UserPrivacyPolicy              uint32                   `json:"user_privacy_policy"`
 	UserDisclosureMode             int32                    `json:"user_disclosure_mode"`
 	UserDisclosureDigestHex        string                   `json:"user_disclosure_digest_hex,omitempty"`
@@ -123,7 +125,7 @@ func BuildPreparedTransferPayload(
 		}
 	}
 
-	cipherTexts, err := EncryptOutputNotes(prepared.RecipientNote, prepared.ChangeNote)
+	cipherTexts, viewTags, err := EncryptOutputNotesWithViewTags(prepared.RecipientNote, prepared.ChangeNote, prepared.OutputCommitments)
 	if err != nil {
 		return nil, err
 	}
@@ -145,6 +147,7 @@ func BuildPreparedTransferPayload(
 		Inputs:                         make([]PreparedTransferInput, 0, len(input.Inputs)),
 		Outputs:                        make([]PreparedTransferOutput, 0, 2),
 		CipherTextHexes:                make([]string, 0, len(cipherTexts)),
+		ViewTagHexes:                   make([]string, 0, len(viewTags)),
 		UserPrivacyPolicy:              input.UserPrivacyPolicy,
 		UserDisclosureMode:             int32(input.UserDisclosureMode),
 		AuditDisclosureDigestHex:       hex.EncodeToString(auditDisclosureData.Digest),
@@ -214,6 +217,9 @@ func BuildPreparedTransferPayload(
 	for _, cipherText := range cipherTexts {
 		payload.CipherTextHexes = append(payload.CipherTextHexes, hex.EncodeToString(cipherText))
 	}
+	for _, viewTag := range viewTags {
+		payload.ViewTagHexes = append(payload.ViewTagHexes, hex.EncodeToString(viewTag))
+	}
 
 	payload.PayloadHash = ComputePreparedTransferPayloadHash(*payload)
 	return payload, nil
@@ -275,6 +281,9 @@ func ComputePreparedTransferPayloadHash(payload PreparedTransferPayload) string 
 		write(output.CommitmentHex)
 	}
 	writeSlice(payload.CipherTextHexes)
+	if preparedTransferPayloadHashIncludesViewTags(payload.Version) {
+		writeSlice(payload.ViewTagHexes)
+	}
 
 	sum := sha256.Sum256([]byte(b.String()))
 	return hex.EncodeToString(sum[:])
@@ -296,6 +305,9 @@ func ValidatePreparedTransferPayloadMetadata(payload PreparedTransferPayload) er
 	if len(payload.CipherTextHexes) != circuit.NumOutputs {
 		return fmt.Errorf("transfer payload requires exactly %d ciphertexts; got %d", circuit.NumOutputs, len(payload.CipherTextHexes))
 	}
+	if preparedTransferPayloadRequiresViewTags(payload.Version) && len(payload.ViewTagHexes) != circuit.NumOutputs {
+		return fmt.Errorf("transfer payload requires exactly %d view tags; got %d", circuit.NumOutputs, len(payload.ViewTagHexes))
+	}
 	for i, input := range payload.Inputs {
 		if err := validateMerklePathHelperBits(input.MerklePathHelper); err != nil {
 			return fmt.Errorf("invalid merkle path helper for input %d: %w", i, err)
@@ -315,6 +327,10 @@ func ValidatePreparedTransferPayloadMetadata(payload PreparedTransferPayload) er
 		return err
 	}
 	cipherTexts, err := decodeOpaqueHexList(payload.CipherTextHexes, "cipher text")
+	if err != nil {
+		return err
+	}
+	viewTags, err := decodeViewTagHexes(payload.ViewTagHexes)
 	if err != nil {
 		return err
 	}
@@ -358,6 +374,7 @@ func ValidatePreparedTransferPayloadMetadata(payload PreparedTransferPayload) er
 		nullifiers,
 		commitments,
 		cipherTexts,
+		viewTags,
 		payload.UserPrivacyPolicy,
 		userDigest,
 		privacytypes.UserDisclosureMode(payload.UserDisclosureMode),
@@ -378,18 +395,25 @@ func validatePreparedTransferPayloadVersion(payload PreparedTransferPayload) err
 	switch payload.Version {
 	case PreparedTransferPayloadVersion:
 		return nil
+	case legacyPreparedTransferPayloadVersionV2:
+		return fmt.Errorf("legacy transfer payload version %q does not include required view tags; regenerate it with transfer payload version %q", payload.Version, PreparedTransferPayloadVersion)
 	case legacyPreparedTransferPayloadVersionV1:
-		if strings.TrimSpace(payload.SelfViewDisclosureDigestHex) != "" || strings.TrimSpace(payload.SelfViewDisclosurePayloadHex) != "" {
-			return fmt.Errorf("legacy transfer payload version %q cannot include self-view disclosure fields; regenerate it with transfer payload version %q", payload.Version, PreparedTransferPayloadVersion)
-		}
-		return nil
+		return fmt.Errorf("legacy transfer payload version %q does not include required self-view disclosure and view tags; regenerate it with transfer payload version %q", payload.Version, PreparedTransferPayloadVersion)
 	default:
-		return fmt.Errorf("unsupported transfer payload version %q (expected %q or legacy %q)", payload.Version, PreparedTransferPayloadVersion, legacyPreparedTransferPayloadVersionV1)
+		return fmt.Errorf("unsupported transfer payload version %q (expected %q or legacy %q/%q)", payload.Version, PreparedTransferPayloadVersion, legacyPreparedTransferPayloadVersionV2, legacyPreparedTransferPayloadVersionV1)
 	}
 }
 
 func preparedTransferPayloadHashIncludesSelfView(version string) bool {
 	return version != legacyPreparedTransferPayloadVersionV1
+}
+
+func preparedTransferPayloadHashIncludesViewTags(version string) bool {
+	return version == PreparedTransferPayloadVersion
+}
+
+func preparedTransferPayloadRequiresViewTags(version string) bool {
+	return version == PreparedTransferPayloadVersion
 }
 
 func DecodePreparedTransferPayloadJSON(payloadBytes []byte) (*PreparedTransferPayload, error) {
@@ -507,6 +531,10 @@ func (p PreparedTransferPayload) ToMsg(proof PreparedTransferProof) (*privacytyp
 	if err != nil {
 		return nil, err
 	}
+	viewTags, err := decodeViewTagHexes(p.ViewTagHexes)
+	if err != nil {
+		return nil, err
+	}
 	userDigest, err := decodeOptionalPayloadField(p.UserDisclosureDigestHex, "user disclosure digest")
 	if err != nil {
 		return nil, err
@@ -547,6 +575,7 @@ func (p PreparedTransferPayload) ToMsg(proof PreparedTransferProof) (*privacytyp
 		nullifiers,
 		commitments,
 		cipherTexts,
+		viewTags,
 		p.UserPrivacyPolicy,
 		userDigest,
 		privacytypes.UserDisclosureMode(p.UserDisclosureMode),
@@ -843,4 +872,17 @@ func decodeOpaqueHexList(values []string, fieldName string) ([][]byte, error) {
 		out = append(out, bz)
 	}
 	return out, nil
+}
+
+func decodeViewTagHexes(values []string) ([][]byte, error) {
+	viewTags, err := decodeOpaqueHexList(values, "view tag")
+	if err != nil {
+		return nil, err
+	}
+	for i, viewTag := range viewTags {
+		if len(viewTag) != privacytypes.ViewTagLength {
+			return nil, fmt.Errorf("view tag %d must be exactly %d bytes", i, privacytypes.ViewTagLength)
+		}
+	}
+	return viewTags, nil
 }

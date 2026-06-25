@@ -127,6 +127,7 @@ func TestGoldenVectorsNoteAndScanContracts(t *testing.T) {
 		privacytypes.EventTypeDeposit,
 		privacytypes.AttributeKeyEncryptedNote,
 		vectors.Note.EncryptedNoteHex,
+		abci.EventAttribute{Key: privacytypes.AttributeKeyCommitment, Value: vectors.Note.CommitmentHex},
 	)
 	depositFound := privacyscan.ProcessTx(depositTx, rootSeed, spendScalar, viewScalar)
 	require.Len(t, depositFound, 1)
@@ -144,6 +145,7 @@ func TestGoldenVectorsNoteAndScanContracts(t *testing.T) {
 		privacytypes.EventTypeShieldedTransfer,
 		privacytypes.AttributeKeyCipherText1,
 		hex.EncodeToString(transferCipherText),
+		abci.EventAttribute{Key: privacytypes.AttributeKeyCommitment1, Value: vectors.Note.CommitmentHex},
 	)
 	transferFound := privacyscan.ProcessTx(transferTx, rootSeed, spendScalar, viewScalar)
 	require.Len(t, transferFound, 1)
@@ -418,19 +420,18 @@ func assetDenomFromNote(t *testing.T, note *privacytypes.Note) string {
 	return "uclair"
 }
 
-func newPrivacyTx(t *testing.T, txHashHex string, height int64, eventType string, attrKey string, attrValue string) *cmttypes.ResultTx {
+func newPrivacyTx(t *testing.T, txHashHex string, height int64, eventType string, attrKey string, attrValue string, extraAttrs ...abci.EventAttribute) *cmttypes.ResultTx {
 	t.Helper()
 
+	attrs := append([]abci.EventAttribute{{Key: attrKey, Value: attrValue}}, extraAttrs...)
 	return &cmttypes.ResultTx{
 		Hash:   mustDecodeHex(t, txHashHex),
 		Height: height,
 		TxResult: abci.ExecTxResult{
 			Events: []abci.Event{
 				{
-					Type: eventType,
-					Attributes: []abci.EventAttribute{
-						{Key: attrKey, Value: attrValue},
-					},
+					Type:       eventType,
+					Attributes: attrs,
 				},
 			},
 		},

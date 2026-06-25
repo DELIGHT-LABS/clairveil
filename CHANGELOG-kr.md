@@ -20,3 +20,6 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 - `examples/audit-disclosure-keys` 아래 dependency-free Node audit disclosure key 예제를 추가했습니다.
 - `MsgWithdraw`에서 legacy output-note field를 제거했습니다. withdraw는 exact-match로 유지되며 client는 dummy output-note 값 없이 proto binding을 다시 생성해야 합니다.
 - wallet/app product planning, UX flow, 보안 결정, API integration을 위한 general client handoff 문서 묶음을 추가했습니다.
+- bounded shielded amount, deposit binding proof, reserve accounting query, ZK artifact contract 갱신을 포함한 privacy accounting hardening update를 추가했습니다.
+- note scan 최적화 계약을 추가했습니다. 여기에는 cursor 기반 `scan_events`, batch `nullifiers`, `view_tag_hexes`를 포함한 transfer payload `v3`, `MsgTransfer.view_tags`가 포함됩니다.
+- scan cursor 저장, empty page 처리, 안전한 view-tag mismatch fallback, proto/schema/fixture 재생성 등 downstream migration 요구사항을 문서화했습니다.

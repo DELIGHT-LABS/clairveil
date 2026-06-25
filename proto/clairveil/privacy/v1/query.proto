@@ -12,6 +12,17 @@ service Query {
       returns (QueryCheckNullifierResponse) {
     option (google.api.http).get = "/clairveil/privacy/v1/nullifier/{nullifier}";
   }
+  // CheckNullifiers: 여러 nullifier 사용 여부를 batch로 확인
+  rpc CheckNullifiers(QueryCheckNullifiersRequest)
+      returns (QueryCheckNullifiersResponse) {
+    option (google.api.http) = {
+      get: "/clairveil/privacy/v1/nullifiers"
+      additional_bindings {
+        post: "/clairveil/privacy/v1/nullifiers"
+        body: "*"
+      }
+    };
+  }
   // Current Merkle tree state 조회
   rpc TreeState(QueryTreeStateRequest) returns (QueryTreeStateResponse) {
     option (google.api.http).get = "/clairveil/privacy/v1/tree_state";
@@ -26,6 +37,10 @@ service Query {
   rpc PrivacyEvents(QueryPrivacyEventsRequest)
       returns (QueryPrivacyEventsResponse) {
     option (google.api.http).get = "/clairveil/privacy/v1/events";
+  }
+  // Wallet scan projection event feed 조회
+  rpc ScanEvents(QueryScanEventsRequest) returns (QueryScanEventsResponse) {
+    option (google.api.http).get = "/clairveil/privacy/v1/scan_events";
   }
   // Merkle Path 조회
   rpc MerklePath(QueryMerklePathRequest) returns (QueryMerklePathResponse) {
@@ -60,6 +75,17 @@ message QueryCheckNullifierRequest {
 
 // QueryCheckNullifierResponse
 message QueryCheckNullifierResponse { bool used = 1; }
+
+message QueryCheckNullifiersRequest { repeated string nullifiers = 1; }
+
+message QueryNullifierStatus {
+  string nullifier = 1;
+  bool used = 2;
+}
+
+message QueryCheckNullifiersResponse {
+  repeated QueryNullifierStatus statuses = 1;
+}
 
 message QueryTreeStateRequest {}
 
@@ -104,6 +130,42 @@ message QueryPrivacyEventsResponse {
   uint64 page = 2;
   uint64 limit = 3;
   bool has_more = 4;
+}
+
+message QueryScanEventsRequest {
+  int64 after_height = 1;
+  uint64 after_sequence = 2;
+  uint64 limit = 3;
+  repeated string event_types = 4;
+}
+
+message QueryScanOutput {
+  uint32 output_index = 1;
+  string commitment_hex = 2;
+  string encrypted_note_hex = 3;
+  string cipher_text_hex = 4;
+  string view_tag_hex = 5;
+  bool leaf_index_found = 6;
+  uint64 leaf_index = 7;
+}
+
+message QueryScanEvent {
+  uint64 sequence = 1;
+  int64 height = 2;
+  string tx_hash_hex = 3;
+  string event_type = 4;
+  repeated QueryScanOutput outputs = 5;
+  repeated string nullifier_hexes = 6;
+}
+
+message QueryScanEventsResponse {
+  repeated QueryScanEvent events = 1;
+  int64 next_height = 2;
+  uint64 next_sequence = 3;
+  uint64 limit = 4;
+  bool has_more = 5;
+  uint32 scan_format_version = 6;
+  uint32 view_tag_version = 7;
 }
 
 // QueryMerklePathRequest

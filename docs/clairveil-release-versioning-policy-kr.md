@@ -34,6 +34,8 @@ v0.MAJOR.MINOR
 - shielded address prefix, transparent prefix, denom, chain-id 기본값 변경
 - ZK circuit input shape, artifact manifest, checksum policy 변경
 - disclosure payload version, policy, mode, digest binding 변경
+- scan projection version, cursor semantics, empty-page/`has_more` 처리 변경
+- transfer view tag 파생 방식, 길이, event field, payload-hash binding 변경
 
 ## 3. Release 전 필수 명령
 
@@ -113,6 +115,8 @@ GitHub release 또는 downstream handoff message는 `docs/clairveil-release-note
 - Fixture/schema:
 - CLI:
 - Prover HTTP:
+- Scan/query contract:
+- Transfer/view tags:
 - ZK artifacts:
 
 ## 5. 알려진 위험 / 허용 예외

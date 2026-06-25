@@ -132,6 +132,69 @@
     "latest_block_height_response": {
       "height": 42
     },
+    "scan_events_request": {
+      "after_height": 0,
+      "after_sequence": 0,
+      "limit": 50,
+      "event_types": [
+        "deposit",
+        "shielded_transfer"
+      ]
+    },
+    "scan_events_response": {
+      "events": [
+        {
+          "sequence": 1,
+          "height": 42,
+          "tx_hash_hex": "AABBCC",
+          "event_type": "deposit",
+          "outputs": [
+            {
+              "output_index": 0,
+              "commitment_hex": "040ca9769b47ec70882162daa846e82dcae14d5d3a5ad2a0ae9e6453c431b204",
+              "encrypted_note_hex": "558c25312d133b45f35d16e45405c9b363e466bcddd2c31fbd9eb67d0f15de079ebd4b81c354473e5a4a183ca536d3afd15e4d064bc9676dbe898133a25790cc9952de0065ebe4aace32261044cc58ab0eb1118ab500c276207e33ef4120d2d7a5e0215790ebac1ebd9606175766883ac78115953e399ec18c0e9e9a98b4fc6b460bdeb5a6023789b6f5490f1b73953920e50156668206ce989d8ee730c41445b9a72d16b075a3d67c45a124ffcc1b9c8a7d26a97475467f7b2b5605cbd76d5ff45360ebe28a65d7c1fed0ea74737f399555c38c4f9cf4573affb435ac14b2caedd8ba204fb32438a2caccf3e59d4e18748d731dffc3a6514127ffa2d5e007c0790778536086894762f3c3c79e3b6781d407d6cef80d9e677a35668b1ff161c2d1b08196fd8677e4385978e03d21430cbbc1367a210d36593460422e30d51378ae2794a7a1d9f360b74486d776f5ef36d84c500d8278599dc6508e884ba8a4196653ca43f9b8eb197f996ec3b8e19b6039c5971d6900577d3392770f320d64b67b6488a1ac04b37bafd64b6bf5ea99f51a676176987b2328317fa7049f31c13f0cfd30e4345a3fe0f185e01e30bbbe27f17507711c377e74f45ff746f1692bdfe27739b991d4ade212348a3d82565caffc927dc1dc06c51abc1bcdd38e4281dd4bc9406cf306",
+              "leaf_index_found": true,
+              "leaf_index": 0
+            }
+          ],
+          "nullifier_hexes": []
+        },
+        {
+          "sequence": 2,
+          "height": 42,
+          "tx_hash_hex": "DDEEFF",
+          "event_type": "shielded_transfer",
+          "outputs": [
+            {
+              "output_index": 0,
+              "commitment_hex": "10b62825eac8a645278d300ec077885a123170460e9ca1048f4521a3f6fb6cb2",
+              "cipher_text_hex": "c0ffee",
+              "view_tag_hex": "13eb",
+              "leaf_index_found": true,
+              "leaf_index": 1
+            },
+            {
+              "output_index": 1,
+              "commitment_hex": "211dee8f0fe0b284c4c953a66a5facd9bb055f101d8dc94c0f55ae762093314b",
+              "cipher_text_hex": "decafbad",
+              "view_tag_hex": "0636",
+              "leaf_index_found": true,
+              "leaf_index": 2
+            }
+          ],
+          "nullifier_hexes": [
+            "17de68060ab4e6225193aa9f6d7c563f1846518000b3f335a9f77fb658198628",
+            "0000000000000000000000000000000000000000000000000000000000000001"
+          ]
+        }
+      ],
+      "next_height": 42,
+      "next_sequence": 2,
+      "limit": 50,
+      "has_more": false,
+      "scan_format_version": 1,
+      "view_tag_version": 1
+    },
     "search_privacy_events_request": {
       "after_height": 0,
       "page": 1,
@@ -150,6 +213,10 @@
           "event_type": "deposit",
           "attributes": [
             {
+              "key": "commitment",
+              "value": "040ca9769b47ec70882162daa846e82dcae14d5d3a5ad2a0ae9e6453c431b204"
+            },
+            {
               "key": "encrypted_note",
               "value": "558c25312d133b45f35d16e45405c9b363e466bcddd2c31fbd9eb67d0f15de079ebd4b81c354473e5a4a183ca536d3afd15e4d064bc9676dbe898133a25790cc9952de0065ebe4aace32261044cc58ab0eb1118ab500c276207e33ef4120d2d7a5e0215790ebac1ebd9606175766883ac78115953e399ec18c0e9e9a98b4fc6b460bdeb5a6023789b6f5490f1b73953920e50156668206ce989d8ee730c41445b9a72d16b075a3d67c45a124ffcc1b9c8a7d26a97475467f7b2b5605cbd76d5ff45360ebe28a65d7c1fed0ea74737f399555c38c4f9cf4573affb435ac14b2caedd8ba204fb32438a2caccf3e59d4e18748d731dffc3a6514127ffa2d5e007c0790778536086894762f3c3c79e3b6781d407d6cef80d9e677a35668b1ff161c2d1b08196fd8677e4385978e03d21430cbbc1367a210d36593460422e30d51378ae2794a7a1d9f360b74486d776f5ef36d84c500d8278599dc6508e884ba8a4196653ca43f9b8eb197f996ec3b8e19b6039c5971d6900577d3392770f320d64b67b6488a1ac04b37bafd64b6bf5ea99f51a676176987b2328317fa7049f31c13f0cfd30e4345a3fe0f185e01e30bbbe27f17507711c377e74f45ff746f1692bdfe27739b991d4ade212348a3d82565caffc927dc1dc06c51abc1bcdd38e4281dd4bc9406cf306"
             }
@@ -165,6 +232,19 @@
     },
     "check_nullifier_response": {
       "used": false
+    },
+    "check_nullifiers_request": {
+      "nullifiers": [
+        "17de68060ab4e6225193aa9f6d7c563f1846518000b3f335a9f77fb658198628"
+      ]
+    },
+    "check_nullifiers_response": {
+      "statuses": [
+        {
+          "nullifier": "17de68060ab4e6225193aa9f6d7c563f1846518000b3f335a9f77fb658198628",
+          "used": false
+        }
+      ]
     }
   },
   "send_provider": {

@@ -30,15 +30,20 @@ Client가 사용할 최소 query:
 GET /clairveil/privacy/v1/tree_state
 GET /clairveil/privacy/v1/commitment/{commitment_hex}
 GET /clairveil/privacy/v1/events
+GET /clairveil/privacy/v1/scan_events
 GET /clairveil/privacy/v1/merkle_path/{commitment_hex}
 GET /clairveil/privacy/v1/audit_config
 GET /clairveil/privacy/v1/disclosure_config
 GET /clairveil/privacy/v1/circuit_config
 GET /clairveil/privacy/v1/reserve/{denom}
 GET /clairveil/privacy/v1/nullifier/{nullifier}
+GET /clairveil/privacy/v1/nullifiers
+POST /clairveil/privacy/v1/nullifiers
 ```
 
-Client는 pagination, timeout, retry, endpoint failover를 구현해야 합니다.
+Wallet note sync에는 cursor 기반 projection인 `scan_events`를 우선 사용해야 합니다. Raw `events` query는 compatibility, debugging, auditor 확인 용도로 유지됩니다. Client는 pagination/cursor 저장, timeout, retry, endpoint failover를 구현해야 합니다. `scan_events`는 page 안에 필터링된 event type만 있을 때 빈 `events` 배열과 `has_more=true`를 반환할 수 있으므로, client는 이 경우에도 `next_height`, `next_sequence`로 cursor를 전진시키고 계속 스캔해야 합니다.
+
+일반적인 batch spent refresh에는 JSON body를 쓰는 `POST /clairveil/privacy/v1/nullifiers`를 사용해야 합니다. 요청당 nullifier는 최대 1000개로 나누고, 더 큰 wallet은 chunk 처리해야 합니다. GET binding은 작은 compatibility check 용도로 남아 있지만, 큰 query string은 browser, mobile gateway, proxy의 URL 길이 제한을 넘을 수 있습니다.
 
 ## 3. Tx Messages
 
@@ -52,10 +57,11 @@ Client가 생성하거나 broadcast해야 하는 message:
 
 중요:
 
-- `MsgTransfer`는 user disclosure, mandatory audit disclosure, optional sender self-view disclosure field를 포함합니다.
+- `MsgTransfer`는 user disclosure, mandatory audit disclosure, optional sender self-view disclosure field, encrypted output note, 정확히 2개의 2-byte `view_tags`를 포함합니다.
 - `MsgDeposit`은 transparent amount/asset과 note commitment를 binding하는 deposit proof를 요구합니다.
 - `MsgWithdraw`는 output note field를 갖지 않습니다.
 - Client는 legacy `new_note_commitment`, `encrypted_note` withdraw 값을 만들면 안 됩니다.
+- Transfer `view_tags`는 local scan 속도를 줄이기 위한 untrusted performance hint입니다. 이것은 server-filterable ownership tag가 아니며, 현재 circuit에 binding되어 있지 않습니다. 안전한 기본 sync는 tag mismatch에서도 full decrypt로 복구할 수 있어야 하며, mismatch output을 건너뛰는 동작은 recovery/rescan을 갖춘 명시적 fast mode 정책이어야 합니다.
 
 ## 4. Prover API
 
@@ -84,6 +90,7 @@ Remote prover를 쓰는 경우 request/response body는 privacy-sensitive data�
 Client CI는 최소 아래를 검증해야 합니다.
 
 - Go SDK와 같은 prepared payload hash를 계산합니다.
+- prepared transfer payload는 version `v3`를 사용하고 `view_tag_hexes`를 포함합니다.
 - `docs/schemas/clairveil-js-wallet-contract.schema.json` fixture shape를 검증합니다.
 - `x/privacy/client/sdk/conformance/testdata` fixture를 로드합니다.
 - `examples/js-sdk-fixture-validator`와 같은 semantic check를 수행합니다.
@@ -102,7 +109,10 @@ go test ./x/privacy/client/sdk/conformance
 Client release 전 최소 검증:
 
 - deposit e2e
-- note scan/rescan
+- `scan_events` 기반 note scan/rescan, `(height, sequence)` cursor 저장, empty page/`has_more` 처리
+- 지원하지 않는 `scan_format_version` 또는 `view_tag_version`이 wallet cursor를 조용히 전진시키지 않는지 검증
+- forced rescan/recovery에서 view tag mismatch를 비권위 힌트로 취급하고 full trial decrypt 수행 가능
+- `nullifiers` 기반 batch spent refresh는 1000개 이하 chunk로 처리하고, 필요 시 개별 nullifier fallback
 - shielded transfer e2e
 - public disclosure decode/verify
 - recipient-encrypted disclosure decode/verify
@@ -125,6 +135,8 @@ Breaking 또는 migration impact가 있는 변경:
 - `proto/clairveil/privacy/v1` field/message/service 변경
 - payload hash 계산 방식 변경
 - prover request/response version 변경
+- scan projection version 또는 cursor semantics 변경
+- view tag 파생 방식, 길이, event field 변경
 - disclosure payload version 변경
 - circuit public input shape 변경
 - deposit proof requirement 변경

@@ -29,6 +29,7 @@ Korean version: [clairveil-release-handoff-pack-kr.md](clairveil-release-handoff
 | Client risk decisions | `docs/clairveil-client-risk-decisions.md` | Product, security, operations | storage, prover, audit, disclosure, and telemetry decisions |
 | Client API checklist | `docs/clairveil-client-api-checklist.md` | Client SDK and app teams | chain/prover API, fixture, release gate, and compatibility checks |
 | JS SDK handoff | `docs/clairveil-js-sdk-handoff.md` | JS SDK team, web wallet team | SDK implementation checklist |
+| Scan optimization plan | `docs/clairveil-scan-optimization-implementation-plan.md` | Core chain team, JS SDK team, web wallet team | `ScanEvents`, batch nullifier, view tag design, and excluded server-filterable/proof-bound scopes |
 | Release policy | `docs/clairveil-release-versioning-policy.md`, `docs/clairveil-release-note-template.md` | Maintainers, release recipients | tag, changelog, release note, compatibility impact rules |
 | Prover profile | `docs/clairveil-proverd-remote-production-profile.md` | Prover operations | remote prover production controls |
 | Merkle restore SOP | `docs/clairveil-merkle-restore-sop.md` | Core chain team, operators | tree state validation after snapshot/restore/migration |
@@ -72,7 +73,7 @@ make docker-proverd-build
 
 This command validates compose config, Dockerfile build, and image inspect. It requires a Docker daemon, so it is not included in the default `release-check`.
 
-`make release-pack` creates `dist/clairveil-handoff-<version>.tar.gz` and its `.sha256` file. This pack is a downstream handoff contract bundle, not a full source distribution. It includes license/notice, major handoff/security/operations docs, circuit/CLI/testing/maintainer docs, Merkle restore SOP, proto, JSON Schema, conformance fixtures, client/JS examples, prover Docker sample, release pack scripts, `RELEASE-MANIFEST.txt`, and `SHA256SUMS.txt`.
+`make release-pack` creates `dist/clairveil-handoff-<version>.tar.gz` and its `.sha256` file. This pack is a downstream handoff contract bundle, not a full source distribution. It includes license/notice, major handoff/security/operations docs, circuit/CLI/testing/maintainer docs, Merkle restore SOP, proto, JSON Schema, conformance fixtures, client/JS examples, scan optimization docs, prover Docker sample, release pack scripts, `RELEASE-MANIFEST.txt`, and `SHA256SUMS.txt`.
 
 `make release-pack-verify` verifies the handoff pack's external `.sha256`, internal `SHA256SUMS.txt`, required handoff files, and that the default archive manifest commit matches current `HEAD`. When `RELEASE_PACK_ARCHIVE` is not set, it regenerates the default pack before validation so stale local archives do not mask missing files. This step checks that the tarball is not just created, but suitable to hand off as a release contract bundle.
 
@@ -111,10 +112,11 @@ The JS/TS SDK and web wallet teams confirm:
 1. Use `docs/clairveil-js-sdk-handoff.md` as the baseline document.
 2. Validate fixture shape with `docs/schemas/clairveil-js-wallet-contract.schema.json`.
 3. Include `x/privacy/client/sdk/conformance/testdata` fixtures in SDK CI.
-4. Port payload hash recomputation, relay withdraw handoff mapping, route/version checks, and prefix checks from `examples/js-sdk-fixture-validator` into SDK tests.
-5. Reflect timeout, bearer auth, and payload hash equality checks from `examples/js-sdk-prover-http-client` in the prover adapter implementation.
-6. Treat wallet note cache, root seed derived secrets, viewing keys, disclosure keys, and prepared payload/proof JSON as privacy-sensitive data; do not leave them in plaintext browser storage.
-7. If using a remote prover, reflect prover-visible metadata and trust boundaries in the user privacy UX and threat model.
+4. Port payload hash recomputation, relay withdraw handoff mapping, route/version checks, scan fixture checks, and prefix checks from `examples/js-sdk-fixture-validator` into SDK tests.
+5. Implement `ScanEvents` cursor sync, empty-page/`has_more` handling, `CheckNullifiers` batch spent refresh, transfer payload `v3`/`view_tag_hexes`, final `MsgTransfer.view_tags`, and safe view-tag mismatch fallback before release.
+6. Reflect timeout, bearer auth, and payload hash equality checks from `examples/js-sdk-prover-http-client` in the prover adapter implementation.
+7. Treat wallet note cache, root seed derived secrets, viewing keys, disclosure keys, and prepared payload/proof JSON as privacy-sensitive data; do not leave them in plaintext browser storage.
+8. If using a remote prover, reflect prover-visible metadata and trust boundaries in the user privacy UX and threat model.
 
 ## 6. Prover Operations Team Acceptance Criteria
 

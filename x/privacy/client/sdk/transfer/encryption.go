@@ -11,12 +11,12 @@ import (
 )
 
 func EncryptOutputNotes(recipientNote privacytypes.Note, changeNote privacytypes.Note) ([][]byte, error) {
-	recipientCipherText, err := encryptNoteForReceiver(recipientNote, "recipient")
+	recipientCipherText, _, err := encryptNoteForReceiver(recipientNote, "recipient", nil, 0, false)
 	if err != nil {
 		return nil, err
 	}
 
-	changeCipherText, err := encryptNoteForReceiver(changeNote, "change")
+	changeCipherText, _, err := encryptNoteForReceiver(changeNote, "change", nil, 1, false)
 	if err != nil {
 		return nil, err
 	}
@@ -24,22 +24,48 @@ func EncryptOutputNotes(recipientNote privacytypes.Note, changeNote privacytypes
 	return [][]byte{recipientCipherText, changeCipherText}, nil
 }
 
-func encryptNoteForReceiver(note privacytypes.Note, label string) ([]byte, error) {
+func EncryptOutputNotesWithViewTags(recipientNote privacytypes.Note, changeNote privacytypes.Note, outputCommitments [][]byte) ([][]byte, [][]byte, error) {
+	if len(outputCommitments) != 2 {
+		return nil, nil, fmt.Errorf("transfer output encryption requires exactly 2 commitments; got %d", len(outputCommitments))
+	}
+
+	recipientCipherText, recipientViewTag, err := encryptNoteForReceiver(recipientNote, "recipient", outputCommitments[0], 0, true)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	changeCipherText, changeViewTag, err := encryptNoteForReceiver(changeNote, "change", outputCommitments[1], 1, true)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return [][]byte{recipientCipherText, changeCipherText}, [][]byte{recipientViewTag, changeViewTag}, nil
+}
+
+func encryptNoteForReceiver(note privacytypes.Note, label string, outputCommitment []byte, outputIndex uint32, includeViewTag bool) ([]byte, []byte, error) {
 	viewPubKey, err := viewPubKeyFromNote(note)
 	if err != nil {
-		return nil, fmt.Errorf("invalid %s note receiver view key: %w", label, err)
+		return nil, nil, fmt.Errorf("invalid %s note receiver view key: %w", label, err)
 	}
 
 	noteJSON, err := json.Marshal(note)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal %s note: %w", label, err)
+		return nil, nil, fmt.Errorf("failed to marshal %s note: %w", label, err)
+	}
+
+	if includeViewTag {
+		cipherText, viewTag, err := privacycrypto.AsymEncryptWithViewTag(noteJSON, *viewPubKey, outputCommitment, outputIndex)
+		if err != nil {
+			return nil, nil, err
+		}
+		return cipherText, viewTag, nil
 	}
 
 	cipherText, err := privacycrypto.AsymEncrypt(noteJSON, *viewPubKey)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return cipherText, nil
+	return cipherText, nil, nil
 }
 
 func viewPubKeyFromNote(note privacytypes.Note) (*crypto_tedwards.PointAffine, error) {

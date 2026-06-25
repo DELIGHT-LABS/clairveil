@@ -159,6 +159,8 @@ outputs = 2
 8. user disclosure가 켜진 경우, policy에 따라 선택된 amount/from/to/asset 정보가 `UserDisclosureDigest`에 묶입니다.
 9. audit disclosure는 항상 full disclosure mask로 계산되어 `AuditDisclosureDigest`에 묶입니다.
 
+현재 format에서 transfer view tag는 `JoinSplitCircuit` public input이 아닙니다. `MsgTransfer`와 event에 실리는 public scan hint이며 message validation에서 byte length만 검증합니다. 따라서 proof-bound note ownership signal로 취급하면 안 됩니다.
+
 ### User disclosure policy
 
 `UserPrivacyPolicy`는 3개 bit로 해석됩니다.

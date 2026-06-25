@@ -12,7 +12,7 @@ This is not a screen wireframe. Each downstream wallet/app team should translate
 2. The user connects a transparent account.
 3. The client requests a root signing message signature.
 4. The client derives shielded identity and disclosure keys.
-5. The client syncs latest tree state and privacy events.
+5. The client syncs latest tree state and wallet scan events.
 6. The client displays shielded address and spendable balance.
 
 Required states:
@@ -26,16 +26,16 @@ Required states:
 
 ## 2. Note Sync
 
-1. Fetch deposit/transfer events with the `PrivacyEvents` query.
+1. Fetch deposit/transfer outputs with the cursor-based `ScanEvents` query.
 2. Find notes decryptable with the viewing key.
 3. Check commitment and Merkle path information.
-4. Check spent status with the nullifier query.
-5. Update the local note cache.
+4. Check spent status with the batch nullifier query when available.
+5. Continue across empty `ScanEvents` pages when `has_more=true`, then store the latest scan height/sequence cursor and update the local note cache.
 
 Required failure states:
 
 - endpoint unavailable
-- event pagination interrupted
+- scan cursor pagination interrupted
 - encrypted note decode failure
 - missing Merkle path
 - missing historical root

@@ -91,6 +91,12 @@ message MsgTransfer {
   // public key is intentionally omitted to avoid sender clustering.
   bytes self_view_disclosure_digest = 15;
   bytes self_view_disclosure_payload = 16;
+
+  // Per-output scan performance tags. Tags are not circuit-bound in this
+  // format version; wallets must treat them as untrusted hints. Safe default
+  // scans must full-decrypt on tag mismatch; explicit fast modes may skip
+  // well-formed mismatches only when recovery/rescan policy is in place.
+  repeated bytes view_tags = 17;
 }
 
 // MsgDepositResponse

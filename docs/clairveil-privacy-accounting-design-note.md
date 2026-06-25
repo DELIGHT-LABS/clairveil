@@ -14,6 +14,7 @@ This document assumes there is no live or public state. If external users have a
 | Amount domain | All shielded amounts share a non-negative 64-bit integer bound. |
 | Spend/withdraw | `SpendCircuit` proves note membership, owner signature, nullifier, amount/asset/recipient binding. |
 | Transfer | `JoinSplitCircuit` proves 2-input/2-output amount conservation, nullifiers, output commitments, and disclosure digest. |
+| Transfer scan hints | `MsgTransfer.view_tags` are off-circuit 2-byte scan hints. They are not part of the accounting proof. |
 | Signature/point hardening | Uses gnark standard `eddsa.Verify`, point on-curve assertions, and malformed point/scalar negative tests. |
 | Reserve accounting | The keeper exposes a `reserve/{denom}` query comparing denom-level deposit/withdraw totals with module-account balance. |
 | Artifact contract | The active circuit set is `privacy-accounting-v2` and includes deposit/spend/joinsplit artifacts. |
@@ -117,6 +118,7 @@ Clients and downstream SDKs must keep these boundaries:
 - `MsgDeposit` does not support proof-less format.
 - Deposit builders must create note commitment, encrypted note, and `DepositCircuit` proof together.
 - Transfer/withdraw prepared payloads must validate version and payload hash.
+- Transfer builders must include `view_tag_hexes` in transfer payload `v3`, but wallets must treat on-chain `view_tags` as untrusted scan hints.
 - Merkle path helpers must be `0` or `1`.
 - `circuit_config` must check `active_set_id` and artifact descriptors.
 - `reserve/{denom}` should return `invariant_holds=true` after deposit/withdraw flows.

@@ -21,3 +21,5 @@ This project follows the release policy documented in:
 - Removed legacy output-note fields from `MsgWithdraw`; withdraw remains exact-match and clients should regenerate proto bindings without dummy output-note values.
 - Added general client handoff documents for wallet/app product planning, UX flows, security decisions, and API integration.
 - Added privacy accounting hardening updates: bounded shielded amounts, deposit binding proofs, reserve accounting queries, and updated ZK artifact contracts.
+- Added note scan optimization contracts: cursor-based `scan_events`, batch `nullifiers`, transfer payload `v3` with `view_tag_hexes`, and `MsgTransfer.view_tags`.
+- Documented downstream migration requirements for scan cursor persistence, empty-page handling, safe view-tag mismatch fallback, and regenerated proto/schema/fixtures.

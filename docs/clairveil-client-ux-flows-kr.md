@@ -12,7 +12,7 @@ English version: [clairveil-client-ux-flows.md](clairveil-client-ux-flows.md)
 2. 사용자가 transparent account를 연결합니다.
 3. Client가 root signing message 서명을 요청합니다.
 4. Shielded identity와 disclosure key를 파생합니다.
-5. 최신 tree state와 privacy events를 sync합니다.
+5. 최신 tree state와 wallet scan event를 sync합니다.
 6. Shielded address와 spendable balance를 표시합니다.
 
 필수 상태:
@@ -26,16 +26,16 @@ English version: [clairveil-client-ux-flows.md](clairveil-client-ux-flows.md)
 
 ## 2. Note Sync
 
-1. `PrivacyEvents` query로 deposit/transfer event를 가져옵니다.
+1. Cursor 기반 `ScanEvents` query로 deposit/transfer output을 가져옵니다.
 2. viewing key로 decrypt 가능한 note를 찾습니다.
 3. commitment와 Merkle path를 확인합니다.
-4. nullifier query로 spent 상태를 확인합니다.
-5. local note cache를 업데이트합니다.
+4. 가능하면 batch nullifier query로 spent 상태를 확인합니다.
+5. `has_more=true`인 빈 `ScanEvents` page도 계속 따라간 뒤, 마지막 scan height/sequence cursor를 저장하고 local note cache를 업데이트합니다.
 
 필수 실패 상태:
 
 - endpoint unavailable
-- event pagination 중단
+- scan cursor pagination 중단
 - encrypted note decode 실패
 - Merkle path 없음
 - historical root 없음

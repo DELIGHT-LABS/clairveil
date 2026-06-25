@@ -22,13 +22,15 @@ The repository validator uses a dependency-free subset validator to keep the sam
 
 - browser signer/root seed derivation fixture shape
 - wallet readonly address, view key, disclosure, and scan fixtures
-- prepared transfer prover payload shape and sender self-view disclosure fields
+- prepared transfer prover payload `v3` shape, `view_tag_hexes`, and sender self-view disclosure fields
 - prepared withdraw prover payload shape
 - final prepared withdraw payload shape
 - relay withdraw handoff request and relayer `MsgWithdraw` mapping shape
 - prover HTTP route, request, response, and error contract shape
+- `scan_events` request/response fixture shape, including cursor fields, projection outputs, `scan_format_version`, and `view_tag_version`
+- batch `check_nullifiers` request/response fixture shape
 - send-capable reference flow fixture shape
 
-This schema checks field presence, basic types, version constants, address prefixes, fixed-size hashes, current transfer payload array sizes, Merkle path helper bits, canonical non-negative uint64 amount strings, and Cosmos SDK coin strings.
+This schema checks field presence, basic types, version constants, address prefixes, fixed-size hashes, 2-byte view tag hex strings, current transfer payload array sizes, scan cursor/version fields, Merkle path helper bits, canonical non-negative uint64 amount strings, and Cosmos SDK coin strings.
 
-It does not replace semantic verification. Payload hash recomputation, disclosure digest verification, sender self-view payload decryption/verification, Merkle path recomputation, and proof verification must be implemented separately by SDK/tests.
+It does not replace semantic verification. Payload hash recomputation, disclosure digest verification, sender self-view payload decryption/verification, Merkle path recomputation, scan cursor advancement behavior, safe view-tag mismatch fallback, and proof verification must be implemented separately by SDK/tests.

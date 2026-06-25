@@ -14,7 +14,7 @@
     },
     "transferPayloadVersion": {
       "type": "string",
-      "const": "v2"
+      "const": "v3"
     },
     "hexString": {
       "type": "string",
@@ -31,6 +31,10 @@
     "hex20": {
       "type": "string",
       "pattern": "^[0-9a-fA-F]{40}$"
+    },
+    "hex2": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{4}$"
     },
     "transparentAddress": {
       "type": "string",
@@ -181,6 +185,7 @@
         "inputs",
         "outputs",
         "cipher_text_hexes",
+        "view_tag_hexes",
         "user_privacy_policy",
         "user_disclosure_mode",
         "audit_disclosure_digest_hex",
@@ -223,6 +228,14 @@
           "maxItems": 2,
           "items": {
             "$ref": "#/$defs/hexString"
+          }
+        },
+        "view_tag_hexes": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/hex2"
           }
         },
         "user_privacy_policy": {
@@ -1603,8 +1616,12 @@
           "additionalProperties": false,
           "required": [
             "latest_block_height_response",
+            "scan_events_request",
+            "scan_events_response",
             "search_privacy_events_request",
             "search_privacy_events_response",
+            "check_nullifiers_request",
+            "check_nullifiers_response",
             "check_nullifier_request",
             "check_nullifier_response"
           ],
@@ -1619,6 +1636,197 @@
                 "height": {
                   "type": "integer",
                   "minimum": 0
+                }
+              }
+            },
+            "scan_events_request": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "after_height",
+                "after_sequence",
+                "limit",
+                "event_types"
+              ],
+              "properties": {
+                "after_height": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "after_sequence": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "event_types": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "scan_events_response": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "events",
+                "next_height",
+                "next_sequence",
+                "limit",
+                "has_more",
+                "scan_format_version",
+                "view_tag_version"
+              ],
+              "properties": {
+                "events": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "sequence",
+                      "height",
+                      "tx_hash_hex",
+                      "event_type",
+                      "outputs",
+                      "nullifier_hexes"
+                    ],
+                    "properties": {
+                      "sequence": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "height": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "tx_hash_hex": {
+                        "$ref": "#/$defs/hexString"
+                      },
+                      "event_type": {
+                        "type": "string"
+                      },
+                      "outputs": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "output_index"
+                          ],
+                          "properties": {
+                            "output_index": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "commitment_hex": {
+                              "$ref": "#/$defs/hex32"
+                            },
+                            "encrypted_note_hex": {
+                              "$ref": "#/$defs/hexString"
+                            },
+                            "cipher_text_hex": {
+                              "$ref": "#/$defs/hexString"
+                            },
+                            "view_tag_hex": {
+                              "$ref": "#/$defs/hex2"
+                            },
+                            "leaf_index_found": {
+                              "type": "boolean"
+                            },
+                            "leaf_index": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          }
+                        }
+                      },
+                      "nullifier_hexes": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/$defs/hex32"
+                        }
+                      }
+                    },
+                    "allOf": [
+                      {
+                        "if": {
+                          "properties": {
+                            "event_type": {
+                              "const": "deposit"
+                            }
+                          }
+                        },
+                        "then": {
+                          "properties": {
+                            "outputs": {
+                              "minItems": 1,
+                              "maxItems": 1,
+                              "items": {
+                                "required": [
+                                  "output_index",
+                                  "commitment_hex",
+                                  "encrypted_note_hex"
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "if": {
+                          "properties": {
+                            "event_type": {
+                              "const": "shielded_transfer"
+                            }
+                          }
+                        },
+                        "then": {
+                          "properties": {
+                            "outputs": {
+                              "minItems": 2,
+                              "maxItems": 2,
+                              "items": {
+                                "required": [
+                                  "output_index",
+                                  "commitment_hex",
+                                  "cipher_text_hex",
+                                  "view_tag_hex"
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "next_height": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "next_sequence": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "has_more": {
+                  "type": "boolean"
+                },
+                "scan_format_version": {
+                  "type": "integer",
+                  "const": 1
+                },
+                "view_tag_version": {
+                  "type": "integer",
+                  "const": 1
                 }
               }
             },
@@ -1745,6 +1953,50 @@
               "properties": {
                 "used": {
                   "type": "boolean"
+                }
+              }
+            },
+            "check_nullifiers_request": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "nullifiers"
+              ],
+              "properties": {
+                "nullifiers": {
+                  "type": "array",
+                  "maxItems": 1000,
+                  "items": {
+                    "$ref": "#/$defs/hex32"
+                  }
+                }
+              }
+            },
+            "check_nullifiers_response": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "statuses"
+              ],
+              "properties": {
+                "statuses": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "nullifier",
+                      "used"
+                    ],
+                    "properties": {
+                      "nullifier": {
+                        "$ref": "#/$defs/hex32"
+                      },
+                      "used": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
                 }
               }
             }

@@ -30,15 +30,20 @@ Minimum queries used by clients:
 GET /clairveil/privacy/v1/tree_state
 GET /clairveil/privacy/v1/commitment/{commitment_hex}
 GET /clairveil/privacy/v1/events
+GET /clairveil/privacy/v1/scan_events
 GET /clairveil/privacy/v1/merkle_path/{commitment_hex}
 GET /clairveil/privacy/v1/audit_config
 GET /clairveil/privacy/v1/disclosure_config
 GET /clairveil/privacy/v1/circuit_config
 GET /clairveil/privacy/v1/reserve/{denom}
 GET /clairveil/privacy/v1/nullifier/{nullifier}
+GET /clairveil/privacy/v1/nullifiers
+POST /clairveil/privacy/v1/nullifiers
 ```
 
-The client should implement pagination, timeout, retry, and endpoint failover.
+Clients should prefer `scan_events` for wallet note sync because it is a cursor-based projection of wallet-relevant event data. The raw `events` query remains useful for compatibility, debugging, and auditors. The client should implement pagination/cursor persistence, timeout, retry, and endpoint failover. `scan_events` can return an empty `events` array with `has_more=true` when the page only contains filtered-out event types; clients must still persist/advance to `next_height` and `next_sequence` and continue scanning.
+
+Use `POST /clairveil/privacy/v1/nullifiers` with a JSON body for normal batch spent refresh. Send at most 1000 nullifiers per request and chunk larger wallets. The GET binding remains available for small compatibility checks, but large query strings can exceed browser, mobile gateway, or proxy URL limits.
 
 ## 3. Tx Messages
 
@@ -52,10 +57,11 @@ Messages the client must build or broadcast:
 
 Important:
 
-- `MsgTransfer` includes user disclosure, mandatory audit disclosure, and optional sender self-view disclosure fields.
+- `MsgTransfer` includes user disclosure, mandatory audit disclosure, optional sender self-view disclosure fields, encrypted output notes, and exactly two 2-byte `view_tags`.
 - `MsgDeposit` requires a deposit proof binding the transparent amount/asset to the note commitment.
 - `MsgWithdraw` has no output note fields.
 - Clients must not create legacy `new_note_commitment` or `encrypted_note` withdraw values.
+- Transfer `view_tags` are untrusted performance hints for local scan. They are not server-filterable ownership tags and are not currently circuit-bound. Safe default sync must still be able to full-decrypt on a tag mismatch; skipping mismatch outputs should be an explicit fast-mode policy with recovery/rescan support.
 
 ## 4. Prover API
 
@@ -84,6 +90,7 @@ When using a remote prover, request/response bodies are privacy-sensitive data.
 Client CI should validate at least:
 
 - prepared payload hashes are calculated the same way as the Go SDK;
+- prepared transfer payloads use version `v3` and include `view_tag_hexes`;
 - fixture shape matches `docs/schemas/clairveil-js-wallet-contract.schema.json`;
 - fixtures load from `x/privacy/client/sdk/conformance/testdata`;
 - semantic checks match `examples/js-sdk-fixture-validator`;
@@ -102,7 +109,10 @@ go test ./x/privacy/client/sdk/conformance
 Minimum validation before client release:
 
 - deposit e2e
-- note scan/rescan
+- note scan/rescan through `scan_events`, including persisted `(height, sequence)` cursor and empty-page/`has_more` handling
+- unsupported `scan_format_version` or `view_tag_version` does not advance the wallet cursor silently
+- forced rescan/recovery treats view tag mismatches as non-authoritative and runs full trial decrypt
+- batch spent refresh through `nullifiers` in <=1000-item chunks, with fallback behavior for individual nullifier checks if needed
 - shielded transfer e2e
 - public disclosure decode/verify
 - recipient-encrypted disclosure decode/verify
@@ -125,6 +135,8 @@ Changes with breaking or migration impact:
 - `proto/clairveil/privacy/v1` field/message/service changes
 - payload hash calculation changes
 - prover request/response version changes
+- scan projection version or cursor semantics changes
+- view tag derivation, length, or event field changes
 - disclosure payload version changes
 - circuit public input shape changes
 - deposit proof requirement changes

@@ -14,6 +14,7 @@ English version: [clairveil-privacy-accounting-design-note.md](clairveil-privacy
 | Amount domain | 모든 shielded amount는 non-negative 64-bit integer bound를 공유합니다. |
 | Spend/withdraw | `SpendCircuit`이 note membership, owner signature, nullifier, amount/asset/recipient binding을 증명합니다. |
 | Transfer | `JoinSplitCircuit`이 2-input/2-output amount conservation, nullifier, output commitment, disclosure digest를 증명합니다. |
+| Transfer scan hints | `MsgTransfer.view_tags`는 off-circuit 2-byte scan hint입니다. accounting proof의 일부가 아닙니다. |
 | Signature/point hardening | gnark 표준 `eddsa.Verify`, point on-curve assertion, malformed point/scalar negative tests를 사용합니다. |
 | Reserve accounting | keeper가 denom별 deposit/withdraw totals와 module-account balance를 비교하는 `reserve/{denom}` query를 제공합니다. |
 | Artifact contract | active circuit set은 `privacy-accounting-v2`이며 deposit/spend/joinsplit artifacts를 모두 포함합니다. |
@@ -117,6 +118,7 @@ Client와 downstream SDK는 아래 경계를 지켜야 합니다.
 - `MsgDeposit`은 proof-less format을 지원하지 않습니다.
 - Deposit builder는 note commitment, encrypted note, `DepositCircuit` proof를 함께 생성해야 합니다.
 - Transfer/withdraw prepared payload는 version과 payload hash를 검증해야 합니다.
+- Transfer builder는 transfer payload `v3`에 `view_tag_hexes`를 포함해야 하지만, wallet은 on-chain `view_tags`를 untrusted scan hint로 취급해야 합니다.
 - Merkle path helper는 `0` 또는 `1`만 허용해야 합니다.
 - `circuit_config`의 `active_set_id`와 artifact descriptors를 확인해야 합니다.
 - `reserve/{denom}` query 결과는 deposit/withdraw flow 이후 `invariant_holds=true`여야 합니다.

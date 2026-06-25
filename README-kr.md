@@ -205,6 +205,7 @@ clairveild tx privacy withdraw 7uclair --from alice --keyring-backend test
 | [Client risk decisions](docs/clairveil-client-risk-decisions-kr.md)                | storage, prover, audit, disclosure, telemetry 결정                 |
 | [Client API checklist](docs/clairveil-client-api-checklist-kr.md)                  | chain/prover API, fixture, release gate, compatibility check       |
 | [JS SDK handoff](docs/clairveil-js-sdk-handoff-kr.md)                              | JS/TS SDK와 웹월렛 구현 계약                                      |
+| [Scan optimization plan](docs/clairveil-scan-optimization-implementation-plan-kr.md) | 구현된 note scan 최적화 범위와 제외한 후속 작업                  |
 | [Prover profile](docs/clairveil-proverd-remote-production-profile-kr.md)           | `clairveil-proverd` remote 운영 profile                           |
 | [Merkle restore SOP](docs/clairveil-merkle-restore-sop-kr.md)                      | snapshot/restore/migration 후 tree 검증 절차                      |
 | [Threat model](docs/clairveil-threat-model-kr.md)                                  | trust boundary, assets, residual risk                             |

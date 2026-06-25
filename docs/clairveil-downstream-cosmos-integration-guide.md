@@ -69,16 +69,25 @@ GET /clairveil/privacy/v1/nullifier/{nullifier}
 GET /clairveil/privacy/v1/tree_state
 GET /clairveil/privacy/v1/commitment/{commitment_hex}
 GET /clairveil/privacy/v1/events
+GET /clairveil/privacy/v1/scan_events
 GET /clairveil/privacy/v1/merkle_path/{commitment_hex}
 GET /clairveil/privacy/v1/audit_config
 GET /clairveil/privacy/v1/disclosure_config
 GET /clairveil/privacy/v1/circuit_config
 GET /clairveil/privacy/v1/reserve/{denom}
+GET /clairveil/privacy/v1/nullifiers
+POST /clairveil/privacy/v1/nullifiers
 ```
 
 If the downstream repo has its own proto generation pipeline, include `proto/clairveil/privacy/v1/*.proto` and update generated output in the same commit so stale generated files do not remain.
 
+`scan_events` uses a `(height, sequence)` cursor. Its `limit` bounds the scan cursor page budget, so filtered pages can return `events=[]` with `has_more=true`. Wallet clients must advance to `next_height` and `next_sequence` and continue instead of treating an empty page as scan completion.
+
+Downstream web and mobile clients should use the POST JSON body binding for batch `nullifiers` checks, chunking requests at 1000 nullifiers. GET is retained for small compatibility calls, but large nullifier batches are likely to exceed common URL length limits.
+
 `MsgWithdraw` does not contain output note fields. Downstream clients upgrading from older generated bindings must drop legacy `new_note_commitment` and `encrypted_note` withdraw values instead of sending dummy output-note bytes.
+
+`MsgTransfer` contains two encrypted output notes and two 2-byte `view_tags`. The tags are untrusted local-scan hints, not server-filterable ownership tags. Safe default wallet sync must full-decrypt on a tag mismatch unless the product explicitly enables a fast mode with recovery/rescan support. Downstream EVM precompiles, bindings, and generated clients must keep `new_commitments`, `cipher_texts`, and `view_tags` aligned by output index.
 
 ## 4. App Wiring Checklist
 
@@ -302,7 +311,7 @@ The query CLI currently exposed directly is:
 query privacy check-nullifier
 ```
 
-`tree_state`, `commitment_info`, `events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, and `reserve/{denom}` are available through gRPC/HTTP gateway queries. If the downstream chain needs an operator CLI, add separate CLI wrappers for those queries.
+`tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `nullifier/{nullifier}`, and `nullifiers` are available through gRPC/HTTP gateway queries. If the downstream chain needs an operator CLI, add separate CLI wrappers for those queries.
 
 ## 9. Downstream Test Order
 
@@ -313,7 +322,7 @@ Do not mix everything with target-chain-specific features from the start. Bring 
 3. Confirm the downstream node can `init`, add genesis accounts, gentx, collect-gentxs, and `start`.
 4. Add the audit master pubkey to genesis, then check that gRPC/HTTP gateway `audit_config` returns it after the first block.
 5. Verify `show-address`, `deposit`, and `list-notes` first through the downstream CLI.
-6. Verify `tree_state`, `events`, `merkle_path`, `disclosure_config`, `circuit_config`, and `reserve/{denom}` through gRPC/HTTP gateway.
+6. Verify `tree_state`, `events`, `scan_events`, `merkle_path`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `nullifier/{nullifier}`, and `nullifiers` through gRPC/HTTP gateway.
 7. Verify user disclosure and audit disclosure through `transfer` and `decode-transfer-disclosure`.
 8. Verify direct and relayed withdraw with `withdraw`, `prepare-withdraw`, and `relay-withdraw`.
 9. Add EVM/policy/precompile integration e2e last.
@@ -338,7 +347,7 @@ Downstream integration is first-pass complete when all of the following pass.
 - The downstream daemon builds with privacy store, keeper, module, query gateway, and tx command included.
 - Privacy state and audit master pubkey are present in genesis.
 - A local single-node chain passes deposit, transfer, disclosure decode, and withdraw.
-- `tree_state`, `events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, and `reserve/{denom}` queries respond correctly.
+- `tree_state`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `nullifier/{nullifier}`, and `nullifiers` queries respond correctly.
 - Audit master private key custody policy is reflected in production operations docs.
 - Wallet storage encryption and remote prover privacy policy are reflected in JS/TS SDK or web wallet design docs.
 - Downstream-specific EVM/policy/precompile integration is separated into separate tests.

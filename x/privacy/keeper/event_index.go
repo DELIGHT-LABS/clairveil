@@ -17,6 +17,8 @@ const (
 	defaultPrivacyEventsPage  = uint64(1)
 	defaultPrivacyEventsLimit = uint64(100)
 	maxPrivacyEventsLimit     = uint64(200)
+	defaultScanEventsLimit    = uint64(500)
+	maxScanEventsLimit        = uint64(1000)
 )
 
 func (k Keeper) emitIndexedPrivacyEvent(ctx sdk.Context, eventType string, attrs []sdk.Attribute) error {
@@ -115,6 +117,150 @@ func (k Keeper) GetPrivacyEvents(ctx sdk.Context, afterHeight int64, page uint64
 	}
 
 	return events, hasMore, nil
+}
+
+func (k Keeper) GetScanEvents(ctx sdk.Context, afterHeight int64, afterSequence uint64, limit uint64, eventTypes []string) ([]*privacytypes.QueryScanEvent, int64, uint64, bool, error) {
+	if limit == 0 {
+		limit = defaultScanEventsLimit
+	}
+	if limit > maxScanEventsLimit {
+		limit = maxScanEventsLimit
+	}
+
+	store := k.storeService.OpenKVStore(ctx)
+
+	startHeight := afterHeight
+	if startHeight < 0 {
+		startHeight = 0
+	}
+
+	iterator, err := store.Iterator(
+		privacytypes.GetPrivacyEventStartKey(startHeight),
+		storetypes.PrefixEndBytes(privacytypes.GetPrivacyEventPrefix()),
+	)
+	if err != nil {
+		return nil, afterHeight, afterSequence, false, err
+	}
+	defer iterator.Close()
+
+	typeFilter := normalizeScanEventTypes(eventTypes)
+	events := make([]*privacytypes.QueryScanEvent, 0, limit)
+	nextHeight := afterHeight
+	nextSequence := afterSequence
+	hasMore := false
+	visited := uint64(0)
+
+	for ; iterator.Valid(); iterator.Next() {
+		var event privacytypes.QueryPrivacyEvent
+		k.cdc.MustUnmarshal(iterator.Value(), &event)
+
+		if event.Height < afterHeight || (event.Height == afterHeight && event.Sequence <= afterSequence) {
+			continue
+		}
+
+		visited++
+		nextHeight = event.Height
+		nextSequence = event.Sequence
+
+		if privacyEventTypeAllowed(event.EventType, typeFilter) {
+			scanEvent := k.projectScanEvent(ctx, &event)
+			if scanEvent != nil {
+				events = append(events, scanEvent)
+			}
+		}
+
+		if visited == limit {
+			iterator.Next()
+			hasMore = iterator.Valid()
+			break
+		}
+	}
+
+	return events, nextHeight, nextSequence, hasMore, nil
+}
+
+func (k Keeper) projectScanEvent(ctx sdk.Context, event *privacytypes.QueryPrivacyEvent) *privacytypes.QueryScanEvent {
+	if event == nil {
+		return nil
+	}
+
+	attrs := privacyEventAttributesMap(event.Attributes)
+	scanEvent := &privacytypes.QueryScanEvent{
+		Sequence:  event.Sequence,
+		Height:    event.Height,
+		TxHashHex: event.TxHashHex,
+		EventType: event.EventType,
+	}
+
+	switch event.EventType {
+	case privacytypes.EventTypeDeposit:
+		scanEvent.Outputs = append(scanEvent.Outputs, k.projectScanOutput(ctx, 0, attrs[privacytypes.AttributeKeyCommitment], attrs[privacytypes.AttributeKeyEncryptedNote], "", ""))
+	case privacytypes.EventTypeShieldedTransfer:
+		scanEvent.Outputs = append(scanEvent.Outputs,
+			k.projectScanOutput(ctx, 0, attrs[privacytypes.AttributeKeyCommitment1], "", attrs[privacytypes.AttributeKeyCipherText1], attrs[privacytypes.AttributeKeyViewTag1]),
+			k.projectScanOutput(ctx, 1, attrs[privacytypes.AttributeKeyCommitment2], "", attrs[privacytypes.AttributeKeyCipherText2], attrs[privacytypes.AttributeKeyViewTag2]),
+		)
+		scanEvent.NullifierHexes = appendIfNotEmpty(scanEvent.NullifierHexes, attrs[privacytypes.AttributeKeyNullifier1])
+		scanEvent.NullifierHexes = appendIfNotEmpty(scanEvent.NullifierHexes, attrs[privacytypes.AttributeKeyNullifier2])
+	case privacytypes.EventTypeWithdraw:
+		scanEvent.NullifierHexes = appendIfNotEmpty(scanEvent.NullifierHexes, attrs[privacytypes.AttributeKeyNullifier])
+	default:
+		return nil
+	}
+
+	return scanEvent
+}
+
+func (k Keeper) projectScanOutput(ctx sdk.Context, outputIndex uint32, commitmentHex string, encryptedNoteHex string, cipherTextHex string, viewTagHex string) *privacytypes.QueryScanOutput {
+	output := &privacytypes.QueryScanOutput{
+		OutputIndex:      outputIndex,
+		CommitmentHex:    commitmentHex,
+		EncryptedNoteHex: encryptedNoteHex,
+		CipherTextHex:    cipherTextHex,
+		ViewTagHex:       viewTagHex,
+	}
+
+	commitmentBytes, err := hex.DecodeString(commitmentHex)
+	if err != nil {
+		return output
+	}
+	canonicalCommitment, err := validateFieldElementBytesStrict(commitmentBytes)
+	if err != nil {
+		return output
+	}
+	leafIndex, found := k.GetCommitmentIndex(ctx, canonicalCommitment)
+	output.LeafIndexFound = found
+	output.LeafIndex = leafIndex
+	return output
+}
+
+func privacyEventAttributesMap(attrs []*privacytypes.QueryPrivacyEventAttribute) map[string]string {
+	out := make(map[string]string, len(attrs))
+	for _, attr := range attrs {
+		if attr == nil {
+			continue
+		}
+		out[attr.Key] = strings.Trim(attr.Value, "\"")
+	}
+	return out
+}
+
+func appendIfNotEmpty(values []string, value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return values
+	}
+	return append(values, value)
+}
+
+func normalizeScanEventTypes(eventTypes []string) map[string]struct{} {
+	normalized := normalizePrivacyEventTypes(eventTypes)
+	if len(normalized) == 0 {
+		return map[string]struct{}{
+			privacytypes.EventTypeDeposit:          {},
+			privacytypes.EventTypeShieldedTransfer: {},
+		}
+	}
+	return normalized
 }
 
 func normalizePrivacyEventTypes(eventTypes []string) map[string]struct{} {

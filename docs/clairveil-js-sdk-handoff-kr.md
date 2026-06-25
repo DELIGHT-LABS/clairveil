@@ -79,6 +79,9 @@ GET /clairveil/privacy/v1/disclosure_config
 GET /clairveil/privacy/v1/circuit_config
 GET /clairveil/privacy/v1/reserve/{denom}
 GET /clairveil/privacy/v1/nullifier/{nullifier}
+GET /clairveil/privacy/v1/nullifiers
+POST /clairveil/privacy/v1/nullifiers
+GET /clairveil/privacy/v1/scan_events
 ```
 
 Go SDK 기준 provider contract는 아래 파일에 있습니다.
@@ -95,12 +98,14 @@ x/privacy/client/sdk/provider/tx.go
 - `TreeState`: 최신 root, leaf count, depth, max leaves, remaining leaves를 읽습니다.
 - `CommitmentInfo`: commitment가 tree에 들어갔는지와 leaf index를 확인합니다.
 - `MerklePath`: proving input에 필요한 path와 path helper를 가져옵니다.
-- `PrivacyEvents`: deposit/transfer event feed를 스캔합니다.
+- `ScanEvents`: cursor 기반 wallet projection으로 deposit/transfer output을 스캔합니다.
+- `PrivacyEvents`: compatibility와 diagnostics용 raw deposit/transfer event feed를 읽습니다.
 - `AuditConfig`: chain에 설정된 master auditor pubkey를 가져옵니다.
 - `DisclosureConfig`: user disclosure policy/mode와 payload version을 표시합니다.
 - `CircuitConfig`: active circuit set과 artifact checksum 정보를 확인합니다.
 - `Reserve`: denom별 privacy module-account balance와 기록된 deposit/withdraw 총량을 비교합니다.
-- `CheckNullifier`: note spent 여부를 판단합니다.
+- `CheckNullifiers`: 여러 note의 spent 상태를 한 번에 갱신합니다. 일반 batch에는 POST JSON body binding을 쓰고, 요청당 1000개로 chunk하며, GET은 작은 compatibility check에만 사용합니다.
+- `CheckNullifier`: batch path를 쓸 수 없을 때 note 1개의 spent 여부를 판단합니다.
 
 ## 5. Identity 파생
 
@@ -150,7 +155,7 @@ npm --prefix examples/js-sdk-fixture-validator run validate
 
 ## 6. Note scanning
 
-웹월렛은 privacy event feed를 읽고 내 viewing key로 note를 복구해야 합니다.
+웹월렛은 wallet scan projection을 읽고 내 viewing key로 note를 복구해야 합니다.
 
 Go SDK 기준 구현 위치는 아래입니다.
 
@@ -160,15 +165,20 @@ x/privacy/client/sdk/scan/service.go
 x/privacy/client/sdk/scan/wallet.go
 ```
 
-scan 흐름은 아래처럼 구성합니다.
+권장 scan 흐름은 아래처럼 구성합니다.
 
-1. `PrivacyEvents` query로 deposit/transfer event를 가져옵니다.
-2. deposit event의 `encrypted_note` 또는 transfer event의 `cipher_text_1`, `cipher_text_2`를 읽습니다.
-3. wallet root seed와 viewing key로 복호화를 시도합니다.
-4. 복호화에 성공한 note만 wallet DB에 저장합니다.
-5. note commitment와 nullifier를 추적합니다.
-6. `CheckNullifier` 또는 event scan 결과로 spent 여부를 갱신합니다.
-7. rollback/reorg 대응을 위해 event height와 tx hash를 함께 저장합니다.
+1. `ScanEvents(after_height, after_sequence, limit, event_types)`로 deposit/transfer output projection을 가져옵니다.
+2. deposit projection의 `encrypted_note`, 또는 transfer projection의 `cipher_text`, `commitment`, `output_index`, `view_tag`를 읽습니다.
+3. Projection을 소비하기 전에 `scan_format_version`, `view_tag_version`을 검증합니다. 지원하지 않는 version이면 raw event path로 fallback하거나 cursor를 전진시키지 않고 중단합니다.
+4. Transfer output은 local 2-byte view tag를 파생합니다. 하지만 tag는 아직 circuit-bound가 아니므로, 안전한 기본값은 tag mismatch에서도 full trial decrypt를 수행해 변조된 hint가 내 note를 숨기지 못하게 하는 것입니다.
+5. `view_tag`는 untrusted optimization으로만 취급합니다. 없거나 형식이 틀리면 full trial decrypt로 fallback합니다. Mismatch output을 건너뛰는 동작은 recovery 또는 forced rescan을 갖춘 명시적 fast mode 정책이어야 합니다.
+6. wallet root seed와 viewing key로 복호화를 시도합니다. view-key 복호화가 실패하면 Go SDK와 호환되는 spend-key compatibility/recovery fallback을 유지합니다.
+7. 복호화에 성공한 note만 wallet DB에 저장합니다.
+8. note commitment와 nullifier를 추적합니다.
+9. 가능하면 `CheckNullifiers`로 spent 상태를 batch 갱신하되 요청당 1000개로 chunk하고, 필요하면 `CheckNullifier`로 fallback합니다.
+10. rollback/reorg 대응을 위해 event height, sequence, tx hash를 함께 저장합니다.
+
+`ScanEvents`는 실제 적용된 `limit`, `scan_format_version=1`, `view_tag_version=1`을 반환합니다. `limit`은 scan cursor page budget으로 취급해야 합니다. 요청한 filter 밖의 event type만 page에 있으면 반환된 event 수가 `limit`보다 작거나 0이어도 `has_more=true`일 수 있습니다. 이 경우 client는 `next_height`, `next_sequence`로 cursor를 전진시키고 계속 스캔해야 합니다. Legacy `PrivacyEvents(after_height, page, limit, event_types)` query는 raw event inspection과 compatibility 용도로 유지되지만, 신규 web/mobile wallet은 offset pagination을 primary rescan UX로 삼지 않는 편이 좋습니다.
 
 JS SDK의 wallet DB에는 최소 아래 필드가 필요합니다.
 
@@ -182,8 +192,11 @@ randomness_hex
 spend_pubkey_hex
 view_pubkey_hex
 height
+sequence
 tx_hash
 spent
+last_scan_height
+last_scan_sequence
 ```
 
 ## 7. Deposit 구현
@@ -249,8 +262,9 @@ x/privacy/client/sdk/transfer/service.go
 - user disclosure는 `none`, `public`, `recipient-encrypted` mode를 지원합니다.
 - sender self-view disclosure는 기본 enabled이며, 명시적 opt-out일 때만 생략합니다.
 - supported policy는 `all-private`, `amount`, `to`, `amount-to`, `from`, `amount-from`, `from-to`, `amount-from-to`입니다.
-- JS SDK가 새로 생성하는 transfer payload version은 현재 `v2`이고 transfer proof version은 현재 `v1`입니다.
-- Go SDK/proverd는 migration window 동안 self-view field가 없는 legacy transfer payload `v1`도 검증할 수 있습니다. 단, legacy `v1` payload에 self-view field가 들어오면 해당 field가 legacy hash canon에 포함되지 않으므로 거부합니다.
+- JS SDK가 새로 생성하는 transfer payload version은 반드시 `v3`이고 transfer proof version은 현재 `v1`입니다.
+- Transfer payload `v3`는 prepared payload hash에 `view_tag_hexes`를 포함합니다. 기존 `v1`/`v2` prepared transfer payload는 replay하지 말고 다시 생성해야 합니다.
+- 최종 `MsgTransfer`는 `new_commitments`, `cipher_texts`와 순서가 맞는 정확히 2개의 `view_tags`를 포함해야 합니다.
 - disclosure payload version은 현재 query 기준 `v4`입니다.
 
 ## 9. Disclosure 구현

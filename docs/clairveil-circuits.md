@@ -161,6 +161,8 @@ Usually output 0 is the recipient note and output 1 is the sender change note. A
 8. When user disclosure is enabled, the fields selected by policy are bound into `UserDisclosureDigest`.
 9. Audit disclosure is always computed with the full disclosure mask and bound into `AuditDisclosureDigest`.
 
+Transfer view tags are not `JoinSplitCircuit` public inputs in the current format. They are public scan hints carried by `MsgTransfer` and events, validated for byte length by message validation, and must not be treated as proof-bound note ownership signals.
+
 ### User Disclosure Policy
 
 `UserPrivacyPolicy` is interpreted as 3 bits.

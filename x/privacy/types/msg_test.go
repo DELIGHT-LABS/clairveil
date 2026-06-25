@@ -31,6 +31,10 @@ func nonCanonicalFieldBytes() []byte {
 	return out
 }
 
+func validViewTags() [][]byte {
+	return [][]byte{{0x01, 0x02}, {0x03, 0x04}}
+}
+
 func validDisclosurePubKeyBytes(t *testing.T) []byte {
 	t.Helper()
 
@@ -44,7 +48,7 @@ func validDisclosurePubKeyBytes(t *testing.T) []byte {
 func TestValidateBasicInvalidCreator(t *testing.T) {
 	deposit := NewMsgDeposit("invalid", "1uclair", []byte{1}, []byte{2}, []byte{3})
 	withdraw := NewMsgWithdraw("invalid", []byte{1}, []byte{2}, []byte{3}, "1uclair", "clair1test", testChainID, testExpiresAtUnix)
-	transfer := NewMsgTransfer("invalid", []byte{1}, []byte{2}, [][]byte{{1}, {2}}, [][]byte{{3}, {4}}, [][]byte{{5}, {6}})
+	transfer := NewMsgTransfer("invalid", []byte{1}, []byte{2}, [][]byte{{1}, {2}}, [][]byte{{3}, {4}}, [][]byte{{5}, {6}}, validViewTags())
 
 	require.Error(t, deposit.ValidateBasic())
 	require.Error(t, withdraw.ValidateBasic())
@@ -122,6 +126,7 @@ func TestMsgTransferValidateBasicLengthChecks(t *testing.T) {
 		[][]byte{validFieldBytes(), validFieldBytes()},
 		[][]byte{validFieldBytes(), validFieldBytes()},
 		[][]byte{{5}, {6}},
+		validViewTags(),
 		TransferPrivacyPolicyAllPrivate,
 		nil,
 		UserDisclosureMode_USER_DISCLOSURE_MODE_NONE,
@@ -142,6 +147,7 @@ func TestMsgTransferValidateBasicLengthChecks(t *testing.T) {
 		[][]byte{validFieldBytes()},
 		[][]byte{validFieldBytes(), validFieldBytes()},
 		[][]byte{{5}, {6}},
+		validViewTags(),
 		TransferPrivacyPolicyAllPrivate,
 		nil,
 		UserDisclosureMode_USER_DISCLOSURE_MODE_NONE,
@@ -170,6 +176,7 @@ func TestMsgTransferValidateBasicUserDisclosureModes(t *testing.T) {
 			[][]byte{validFieldBytes(), validFieldBytes()},
 			[][]byte{validFieldBytes(), validFieldBytes()},
 			[][]byte{{5}, {6}},
+			validViewTags(),
 			TransferPrivacyPolicyAllPrivate,
 			nil,
 			UserDisclosureMode_USER_DISCLOSURE_MODE_NONE,

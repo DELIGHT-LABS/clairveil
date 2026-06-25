@@ -336,8 +336,12 @@ Other queries are available through gRPC/HTTP gateway and generated clients.
 | Query | HTTP path |
 | --- | --- |
 | tree state | `/clairveil/privacy/v1/tree_state` |
+| nullifier | `/clairveil/privacy/v1/nullifier/{nullifier}` |
+| batch nullifiers (GET) | `/clairveil/privacy/v1/nullifiers` |
+| batch nullifiers (POST) | `/clairveil/privacy/v1/nullifiers` |
 | commitment info | `/clairveil/privacy/v1/commitment/{commitment_hex}` |
 | events | `/clairveil/privacy/v1/events` |
+| scan events | `/clairveil/privacy/v1/scan_events` |
 | Merkle path | `/clairveil/privacy/v1/merkle_path/{commitment_hex}` |
 | audit config | `/clairveil/privacy/v1/audit_config` |
 | disclosure config | `/clairveil/privacy/v1/disclosure_config` |

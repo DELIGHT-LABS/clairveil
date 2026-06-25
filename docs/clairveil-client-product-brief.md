@@ -19,7 +19,7 @@ Profiles differ, but the following functional contracts are shared.
 
 - Derive shielded identity from a transparent account.
 - Display and copy the `clairs1...` shielded address.
-- Scan chain events and recover spendable notes.
+- Scan wallet event projections and recover spendable notes.
 - Support deposit, shielded transfer, withdraw, and relayed withdraw.
 - Handle user selective disclosure separately from mandatory audit disclosure.
 - Decide where proofs are generated: browser/WASM, local prover, remote prover, or backend sidecar.
@@ -64,17 +64,18 @@ If the downstream chain changes denom, prefixes, gas policy, or prover topology,
 
 ### 2.3 Note Scan And Local State
 
-The client must scan the privacy event feed and recover the user's own notes with the viewing key.
+The client must scan the wallet scan event projection and recover the user's own notes with the viewing key.
 
 Required capabilities:
 
 - show initial sync progress
-- store the last scan height or cursor
+- store the last scan height/sequence cursor
 - support rescan/reset
-- check spent status through the nullifier query
+- check spent status through the batch nullifier query when available
 - provide a recovery path for local cache corruption or decode failures
 
 The local note cache can reveal amount, asset, and ownership metadata, so it is privacy-sensitive local data.
+Transfer output view tags are an internal scan optimization. They should not be presented as a privacy choice and should not be treated as proof that an output belongs to the user.
 
 ### 2.4 Deposit
 

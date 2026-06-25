@@ -207,6 +207,7 @@ Command purposes, major flags, and output shapes are documented in the [CLI refe
 | [Client risk decisions](docs/clairveil-client-risk-decisions.md) | Storage, prover, audit, disclosure, and telemetry decisions |
 | [Client API checklist](docs/clairveil-client-api-checklist.md) | Chain/prover APIs, fixtures, release gates, and compatibility checks |
 | [JS SDK handoff](docs/clairveil-js-sdk-handoff.md) | Contract for JS/TS SDK and web wallet implementation |
+| [Scan optimization plan](docs/clairveil-scan-optimization-implementation-plan.md) | Implemented note scan optimization scope and excluded future work |
 | [Prover profile](docs/clairveil-proverd-remote-production-profile.md) | Remote operation profile for `clairveil-proverd` |
 | [Merkle restore SOP](docs/clairveil-merkle-restore-sop.md) | Tree verification after snapshot, restore, or migration |
 | [Threat model](docs/clairveil-threat-model.md) | Trust boundaries, assets, and residual risks |

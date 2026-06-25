@@ -13,6 +13,7 @@ Korean version: [clairveil-security-best-practices-review-kr.md](clairveil-secur
 | Mandatory audit disclosure | Transfer passes only when the chain audit master pubkey matches the message audit disclosure target pubkey. |
 | Merkle safety | Fixed-capacity guard, rebuild bound, missing leaf/node explicit failure, and query/path error propagation are implemented. |
 | Prepared payload integrity | Transfer/withdraw prover payloads and proofs carry payload hashes, and they are verified before relay/broadcast. |
+| Scan hint safety | Transfer view tags are validated for shape and treated as untrusted hints; safe default scan can full-decrypt on mismatch. |
 | File permission | Local wallet cache and prepared/proof JSON files are written with `0600`. |
 | Prover service basics | Request body limit, read header/read timeout, idle timeout, optional bearer auth, and readiness preflight exist. |
 | ZK artifact verification | Manifest/env checksum and preflight modes can detect artifact mismatch. |

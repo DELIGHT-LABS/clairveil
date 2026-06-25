@@ -2,6 +2,7 @@ package crypto
 
 import (
 	"crypto/rand"
+	"errors"
 	"testing"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
@@ -54,4 +55,34 @@ func TestDecryptFailure(t *testing.T) {
 	_, err := AsymDecrypt(ciphertext, evePriv)
 	require.Error(t, err)
 	t.Log("Successfully failed to decrypt with wrong key")
+}
+
+func TestAsymEncryptDecryptWithViewTag(t *testing.T) {
+	curve := twistededwards.GetEdwardsCurve()
+
+	receiverPriv, err := rand.Int(rand.Reader, &curve.Order)
+	require.NoError(t, err)
+	var receiverPub twistededwards.PointAffine
+	receiverPub.ScalarMultiplication(&curve.Base, receiverPriv)
+
+	commitment := make([]byte, 32)
+	commitment[31] = 0x11
+	originalMsg := []byte(`{"amount": 100}`)
+
+	ciphertext, viewTag, err := AsymEncryptWithViewTag(originalMsg, receiverPub, commitment, 1)
+	require.NoError(t, err)
+	require.NotEmpty(t, ciphertext)
+	require.Len(t, viewTag, ViewTagLength)
+
+	decryptedMsg, err := AsymDecryptWithViewTag(ciphertext, receiverPriv, commitment, 1, viewTag)
+	require.NoError(t, err)
+	require.Equal(t, originalMsg, decryptedMsg)
+
+	_, err = AsymDecryptWithViewTag(ciphertext, receiverPriv, commitment, 0, viewTag)
+	require.ErrorIs(t, err, ErrViewTagMismatch)
+
+	wrongTag := append([]byte(nil), viewTag...)
+	wrongTag[0] ^= 0xff
+	_, err = AsymDecryptWithViewTag(ciphertext, receiverPriv, commitment, 1, wrongTag)
+	require.True(t, errors.Is(err, ErrViewTagMismatch))
 }

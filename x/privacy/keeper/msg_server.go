@@ -31,6 +31,7 @@ type shieldedTransferRequest struct {
 	nullifiers                  [][]byte
 	newCommitments              [][]byte
 	cipherTexts                 [][]byte
+	viewTags                    [][]byte
 	userPrivacyPolicy           uint32
 	userDisclosureDigest        []byte
 	userDisclosureMode          types.UserDisclosureMode
@@ -241,6 +242,7 @@ func (k msgServer) Transfer(goCtx context.Context, msg *types.MsgTransfer) (*typ
 		nullifiers:                  msg.Nullifiers,
 		newCommitments:              msg.NewCommitments,
 		cipherTexts:                 msg.CipherTexts,
+		viewTags:                    msg.ViewTags,
 		userPrivacyPolicy:           msg.UserPrivacyPolicy,
 		userDisclosureDigest:        msg.UserDisclosureDigest,
 		userDisclosureMode:          msg.UserDisclosureMode,
@@ -276,6 +278,14 @@ func (k msgServer) executeShieldedTransfer(ctx sdk.Context, req shieldedTransfer
 	}
 	if len(req.cipherTexts) != 2 {
 		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "transfer requires exactly 2 ciphertexts; got %d", len(req.cipherTexts))
+	}
+	if len(req.viewTags) != 2 {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "transfer requires exactly 2 view tags; got %d", len(req.viewTags))
+	}
+	for i, viewTag := range req.viewTags {
+		if len(viewTag) != types.ViewTagLength {
+			return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "view tag %d must be exactly %d bytes", i, types.ViewTagLength)
+		}
 	}
 
 	expectedAuditTargetPubKey := k.GetAuditMasterPubkey(ctx)
@@ -366,6 +376,8 @@ func (k msgServer) executeShieldedTransfer(ctx sdk.Context, req shieldedTransfer
 		sdk.NewAttribute(types.AttributeKeyCommitment2, fmt.Sprintf("%x", canonicalCommitments[1])),
 		sdk.NewAttribute(types.AttributeKeyCipherText1, fmt.Sprintf("%x", req.cipherTexts[0])),
 		sdk.NewAttribute(types.AttributeKeyCipherText2, fmt.Sprintf("%x", req.cipherTexts[1])),
+		sdk.NewAttribute(types.AttributeKeyViewTag1, fmt.Sprintf("%x", req.viewTags[0])),
+		sdk.NewAttribute(types.AttributeKeyViewTag2, fmt.Sprintf("%x", req.viewTags[1])),
 		sdk.NewAttribute(types.AttributeKeyUserPrivacyPolicy, strconv.FormatUint(uint64(req.userPrivacyPolicy), 10)),
 		sdk.NewAttribute(types.AttributeKeyUserDisclosureMode, req.userDisclosureMode.String()),
 	}

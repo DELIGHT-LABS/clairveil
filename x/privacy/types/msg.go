@@ -70,7 +70,7 @@ func validateFieldElementBytesStrict(name string, bz []byte) error {
 	return nil
 }
 
-func validateTransferPayload(root []byte, nullifiers, newCommitments, cipherTexts [][]byte) error {
+func validateTransferPayload(root []byte, nullifiers, newCommitments, cipherTexts, viewTags [][]byte) error {
 	if len(nullifiers) != expectedJoinSplitElements {
 		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "transfer requires exactly 2 nullifiers; got %d", len(nullifiers))
 	}
@@ -79,6 +79,9 @@ func validateTransferPayload(root []byte, nullifiers, newCommitments, cipherText
 	}
 	if len(cipherTexts) != expectedJoinSplitElements {
 		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "transfer requires exactly 2 ciphertexts; got %d", len(cipherTexts))
+	}
+	if len(viewTags) != expectedJoinSplitElements {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "transfer requires exactly 2 view tags; got %d", len(viewTags))
 	}
 
 	if err := validateFieldElementBytesStrict("root", root); err != nil {
@@ -94,6 +97,12 @@ func validateTransferPayload(root []byte, nullifiers, newCommitments, cipherText
 	for i, commitment := range newCommitments {
 		if err := validateFieldElementBytesStrict("commitment", commitment); err != nil {
 			return errorsmod.Wrapf(err, "commitment index %d", i)
+		}
+	}
+
+	for i, viewTag := range viewTags {
+		if len(viewTag) != ViewTagLength {
+			return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "view tag index %d must be exactly %d bytes", i, ViewTagLength)
 		}
 	}
 
@@ -293,6 +302,7 @@ func NewMsgTransfer(
 	nullifiers [][]byte,
 	newCommitments [][]byte,
 	cipherTexts [][]byte,
+	viewTags [][]byte,
 ) *MsgTransfer {
 	return &MsgTransfer{
 		Creator:        creator,
@@ -301,6 +311,7 @@ func NewMsgTransfer(
 		Nullifiers:     nullifiers,
 		NewCommitments: newCommitments,
 		CipherTexts:    cipherTexts,
+		ViewTags:       viewTags,
 	}
 }
 
@@ -311,6 +322,7 @@ func NewMsgTransferWithDisclosure(
 	nullifiers [][]byte,
 	newCommitments [][]byte,
 	cipherTexts [][]byte,
+	viewTags [][]byte,
 	userPrivacyPolicy uint32,
 	userDisclosureDigest []byte,
 	userDisclosureMode UserDisclosureMode,
@@ -329,6 +341,7 @@ func NewMsgTransferWithDisclosure(
 		Nullifiers:                  nullifiers,
 		NewCommitments:              newCommitments,
 		CipherTexts:                 cipherTexts,
+		ViewTags:                    viewTags,
 		UserPrivacyPolicy:           userPrivacyPolicy,
 		UserDisclosureDigest:        userDisclosureDigest,
 		UserDisclosureMode:          userDisclosureMode,
@@ -347,7 +360,7 @@ func (msg *MsgTransfer) ValidateBasic() error {
 		return err
 	}
 
-	if err := validateTransferPayload(msg.Root, msg.Nullifiers, msg.NewCommitments, msg.CipherTexts); err != nil {
+	if err := validateTransferPayload(msg.Root, msg.Nullifiers, msg.NewCommitments, msg.CipherTexts, msg.ViewTags); err != nil {
 		return err
 	}
 

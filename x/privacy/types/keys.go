@@ -48,6 +48,8 @@ const (
 	AttributeKeyCommitment2                          = "commitment_2"
 	AttributeKeyCipherText1                          = "cipher_text_1"
 	AttributeKeyCipherText2                          = "cipher_text_2"
+	AttributeKeyViewTag1                             = "view_tag_1"
+	AttributeKeyViewTag2                             = "view_tag_2"
 	AttributeKeyRelayer                              = "relayer"
 	AttributeKeyUserPrivacyPolicy                    = "user_privacy_policy"
 	AttributeKeyUserDisclosureDigest                 = "user_disclosure_digest"
@@ -64,6 +66,12 @@ const (
 	AttributeKeyDisclosureEnvelopeTargetPubKeyPrefix = "disclosure_envelope_target_pubkey_"
 	AttributeKeyDisclosureEnvelopePayloadPrefix      = "disclosure_envelope_payload_"
 	AttributeKeyDisclosureEnvelopeLabelPrefix        = "disclosure_envelope_label_"
+)
+
+const (
+	ScanFormatVersion = uint32(1)
+	ViewTagVersion    = uint32(1)
+	ViewTagLength     = 2
 )
 
 var auditConfigStoreKey = []byte{KeyPrefixAuditConfig}

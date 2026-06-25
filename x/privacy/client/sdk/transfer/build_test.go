@@ -30,6 +30,7 @@ func TestBuildTransferMessageAssemblesLatestTransfer(t *testing.T) {
 	require.Len(t, msg.Nullifiers, 2)
 	require.Len(t, msg.NewCommitments, 2)
 	require.Len(t, msg.CipherTexts, 2)
+	require.Len(t, msg.ViewTags, 2)
 	require.NotEmpty(t, msg.UserDisclosureDigest)
 	require.NotEmpty(t, msg.UserDisclosureTargetPubkey)
 	require.NotEmpty(t, msg.UserDisclosurePayload)

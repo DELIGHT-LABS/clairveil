@@ -36,6 +36,8 @@ Mark release notes with breaking or migration impact when any of these change:
 - shielded address prefix, transparent prefix, denom, or chain-id defaults
 - ZK circuit input shape, artifact manifest, or checksum policy
 - disclosure payload version, policy, mode, or digest binding
+- scan projection version, cursor semantics, or empty-page/`has_more` handling
+- transfer view tag derivation, length, event field, or payload-hash binding
 
 ## 3. Required Pre-Release Commands
 
@@ -115,6 +117,8 @@ Use `docs/clairveil-release-note-template.md` for GitHub release or downstream h
 - Fixture/schema:
 - CLI:
 - Prover HTTP:
+- Scan/query contract:
+- Transfer/view tags:
 - ZK artifacts:
 
 ## 5. Known Risk / Accepted Exceptions

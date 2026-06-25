@@ -14,8 +14,9 @@ import (
 )
 
 type LocalWalletData struct {
-	LastHeight int64       `json:"last_height"`
-	Notes      []FoundNote `json:"notes"`
+	LastHeight   int64       `json:"last_height"`
+	LastSequence uint64      `json:"last_sequence,omitempty"`
+	Notes        []FoundNote `json:"notes"`
 }
 
 type LoadLocalWalletFileResult struct {
@@ -87,8 +88,9 @@ func LoadLocalWalletFile(homeDir string, userAddress string) (*LoadLocalWalletFi
 	dbPath := WalletFilePath(homeDir, userAddress)
 	result := &LoadLocalWalletFileResult{
 		Wallet: &LocalWalletData{
-			LastHeight: 0,
-			Notes:      []FoundNote{},
+			LastHeight:   0,
+			LastSequence: 0,
+			Notes:        []FoundNote{},
 		},
 		Path: dbPath,
 	}
@@ -112,8 +114,9 @@ func LoadLocalWalletFile(homeDir string, userAddress string) (*LoadLocalWalletFi
 			result.CorruptBackupPath = backupPath
 		}
 		result.Wallet = &LocalWalletData{
-			LastHeight: 0,
-			Notes:      []FoundNote{},
+			LastHeight:   0,
+			LastSequence: 0,
+			Notes:        []FoundNote{},
 		}
 	}
 

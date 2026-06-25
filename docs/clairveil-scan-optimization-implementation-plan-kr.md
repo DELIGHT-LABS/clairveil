@@ -1,4 +1,6 @@
-# Clairveil note scan optimization implementation plan
+# Clairveil Note Scan 최적화 구현 계획
+
+English version: [clairveil-scan-optimization-implementation-plan.md](clairveil-scan-optimization-implementation-plan.md)
 
 이 문서는 Clairveil core repository에서 note scan 비용을 줄이기 위해 이번 작업에서 구현할 범위와 의도적으로 제외할 범위를 정리한다. 목표는 web wallet/mobile wallet이 대량 이벤트 구간을 동기화할 때 느끼는 fetch 비용과 local decrypt 비용을 줄이는 것이다.
 
@@ -26,7 +28,7 @@
 1. Core는 private key, root seed, plaintext note를 알면 안 된다.
 2. Prover는 proof payload만 처리하고 note scan을 대신하지 않는다.
 3. Chain node/core는 public event feed를 더 효율적으로 제공한다.
-4. Wallet은 자기 key로 note 소유 여부를 판단하고 encrypted local cache를 유지한다.
+4. Wallet은 자기 key로 note 소유 여부를 판단하고 wallet-owned local cache를 유지한다. Production client의 encrypted storage 정책은 core 밖에서 별도로 구현해야 한다.
 5. Server-filterable hint는 privacy model을 바꾸므로 기본 core scope에 넣지 않는다.
 6. Per-note view tag는 이번에는 untrusted performance hint로 구현하되, 나중에 proof-bound tag로 승격할 수 있게 포맷을 고정한다.
 
@@ -97,7 +99,8 @@ Transfer output마다 2-byte `view_tag`를 추가한다. 이번 구현에서는 
 - 각 tag는 정확히 2 bytes다.
 - event에는 `view_tag_1`, `view_tag_2`를 기록한다.
 - scan projection에는 output별 `view_tag`를 포함한다.
-- 일반 wallet scan은 tag mismatch일 때 AES-GCM open, JSON parse, spend-key fallback을 건너뛴다.
+- 안전한 기본 wallet scan은 tag mismatch일 때도 full trial decrypt로 fallback한다. Tag는 아직 proof/circuit에 묶이지 않으므로, 잘못된 hint만으로 owned note를 누락하면 안 된다.
+- mismatch output을 건너뛰는 fast mode는 recovery/rescan 정책을 갖춘 client가 명시적으로 선택할 때만 사용한다.
 - tag가 없거나 형식이 맞지 않으면 recovery/fallback path로 기존 trial decrypt를 수행한다.
 - forced rescan 또는 rollback recovery처럼 신뢰 복구가 목적일 때는 tag mismatch도 무시하고 full trial decrypt를 수행한다.
 
@@ -120,13 +123,13 @@ view_tag = first_2_bytes(canonical_32_bytes(view_tag_full))
 - tag는 ephemeral shared point에서 파생되므로 stable recipient fingerprint가 아니다.
 - commitment와 output index를 넣어 output swap/reuse 여지를 줄인다.
 - MiMC 기반이라 나중에 circuit이 같은 값을 계산하는 proof-bound tag로 승격하기 쉽다.
-- 이번 버전에서는 untrusted hint이므로 wallet은 tag를 보안 근거로 사용하지 않는다.
+- 이번 버전에서는 untrusted hint이므로 wallet은 tag를 보안 근거로 사용하지 않는다. 특히 기본 sync는 tag mismatch만으로 cursor를 확정하며 owned note를 버리지 않는다.
 
 기대 효과:
 
 - event fetch 수는 줄지 않는다.
-- non-owned transfer output에서 local decrypt 실패 경로 비용을 줄인다.
-- 특히 spend-key fallback을 대부분 건너뛰어 CPU와 allocation을 줄일 수 있다.
+- 명시적 fast mode에서는 non-owned transfer output의 local decrypt 실패 경로 비용을 줄일 수 있다.
+- 안전 기본 모드에서는 성능 개선보다 future proof-bound tag로 승격 가능한 wire format을 먼저 확보한다.
 
 ### 5. Minimal versioning
 

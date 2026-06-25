@@ -14,6 +14,10 @@ import (
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
+const maxBatchNullifiersPerRequest = 1000
+const maxPrivacyEventsPerRequest = 200
+const maxRPCTxSearchPerRequest = 100
+
 type ScanRPCClient interface {
 	Status(ctx context.Context) (*cmttypes.ResultStatus, error)
 	TxSearch(ctx context.Context, query string, prove bool, page, perPage *int, orderBy string) (*cmttypes.ResultTxSearch, error)
@@ -23,21 +27,33 @@ type NullifierQuerier interface {
 	CheckNullifier(ctx context.Context, in *privacytypes.QueryCheckNullifierRequest, opts ...grpc.CallOption) (*privacytypes.QueryCheckNullifierResponse, error)
 }
 
+type BatchNullifierQuerier interface {
+	CheckNullifiers(ctx context.Context, in *privacytypes.QueryCheckNullifiersRequest, opts ...grpc.CallOption) (*privacytypes.QueryCheckNullifiersResponse, error)
+}
+
 type PrivacyEventsQuerier interface {
 	PrivacyEvents(ctx context.Context, in *privacytypes.QueryPrivacyEventsRequest, opts ...grpc.CallOption) (*privacytypes.QueryPrivacyEventsResponse, error)
 }
 
+type ScanEventsQuerier interface {
+	ScanEvents(ctx context.Context, in *privacytypes.QueryScanEventsRequest, opts ...grpc.CallOption) (*privacytypes.QueryScanEventsResponse, error)
+}
+
 type ScanQueryProvider struct {
-	RPCClient            ScanRPCClient
-	NullifierQuerier     NullifierQuerier
-	PrivacyEventsQuerier PrivacyEventsQuerier
+	RPCClient             ScanRPCClient
+	NullifierQuerier      NullifierQuerier
+	BatchNullifierQuerier BatchNullifierQuerier
+	PrivacyEventsQuerier  PrivacyEventsQuerier
+	ScanEventsQuerier     ScanEventsQuerier
 }
 
 func NewScanQueryProvider(rpcClient ScanRPCClient, queryClient privacytypes.QueryClient) ScanQueryProvider {
 	return ScanQueryProvider{
-		RPCClient:            rpcClient,
-		NullifierQuerier:     queryClient,
-		PrivacyEventsQuerier: queryClient,
+		RPCClient:             rpcClient,
+		NullifierQuerier:      queryClient,
+		BatchNullifierQuerier: queryClient,
+		PrivacyEventsQuerier:  queryClient,
+		ScanEventsQuerier:     queryClient,
 	}
 }
 
@@ -58,19 +74,17 @@ func (p ScanQueryProvider) LatestBlockHeight(ctx context.Context) (int64, error)
 }
 
 func (p ScanQueryProvider) SearchPrivacyTxs(ctx context.Context, afterHeight int64, page, limit int) ([]*cmttypes.ResultTx, error) {
+	if page <= 0 {
+		page = 1
+	}
 	if limit <= 0 {
 		limit = 100
 	}
 
 	if p.PrivacyEventsQuerier != nil {
-		response, err := p.PrivacyEventsQuerier.PrivacyEvents(ctx, &privacytypes.QueryPrivacyEventsRequest{
-			AfterHeight: afterHeight,
-			Page:        uint64(page),
-			Limit:       uint64(limit),
-			EventTypes:  []string{privacytypes.EventTypeDeposit, privacytypes.EventTypeShieldedTransfer},
-		})
+		txs, err := p.searchPrivacyEventsTxs(ctx, afterHeight, page, limit)
 		if err == nil {
-			return privacyEventsToResultTxs(response)
+			return txs, nil
 		}
 		if p.RPCClient == nil {
 			return nil, err
@@ -81,22 +95,146 @@ func (p ScanQueryProvider) SearchPrivacyTxs(ctx context.Context, afterHeight int
 		return nil, fmt.Errorf("an rpc client is required")
 	}
 
-	response, err := p.RPCClient.TxSearch(
-		ctx,
-		fmt.Sprintf("message.module='privacy' AND tx.height > %d", afterHeight),
-		false,
-		&page,
-		&limit,
-		"",
-	)
-	if err != nil {
-		return nil, err
-	}
-	if response == nil {
-		return nil, nil
+	return p.searchRPCTxs(ctx, afterHeight, page, limit)
+}
+
+func (p ScanQueryProvider) searchPrivacyEventsTxs(ctx context.Context, afterHeight int64, page, limit int) ([]*cmttypes.ResultTx, error) {
+	queryLimit := limit
+	if queryLimit > maxPrivacyEventsPerRequest {
+		queryLimit = maxPrivacyEventsPerRequest
 	}
 
-	return response.Txs, nil
+	offset := (page - 1) * limit
+	queryPage := offset/queryLimit + 1
+	skipWithinPage := offset % queryLimit
+	txs := make([]*cmttypes.ResultTx, 0, limit)
+
+	for len(txs) < limit {
+		response, err := p.PrivacyEventsQuerier.PrivacyEvents(ctx, &privacytypes.QueryPrivacyEventsRequest{
+			AfterHeight: afterHeight,
+			Page:        uint64(queryPage),
+			Limit:       uint64(queryLimit),
+			EventTypes:  []string{privacytypes.EventTypeDeposit, privacytypes.EventTypeShieldedTransfer},
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		pageTxs, err := privacyEventsToResultTxs(response)
+		if err != nil {
+			return nil, err
+		}
+		if len(pageTxs) == 0 {
+			break
+		}
+
+		if skipWithinPage > 0 {
+			if skipWithinPage >= len(pageTxs) {
+				skipWithinPage -= len(pageTxs)
+				if response == nil || !response.HasMore {
+					break
+				}
+				queryPage++
+				continue
+			}
+			pageTxs = pageTxs[skipWithinPage:]
+			skipWithinPage = 0
+		}
+
+		remaining := limit - len(txs)
+		if len(pageTxs) > remaining {
+			pageTxs = pageTxs[:remaining]
+		}
+		txs = append(txs, pageTxs...)
+
+		if response == nil || !response.HasMore {
+			break
+		}
+		queryPage++
+	}
+
+	return txs, nil
+}
+
+func (p ScanQueryProvider) searchRPCTxs(ctx context.Context, afterHeight int64, page, limit int) ([]*cmttypes.ResultTx, error) {
+	queryLimit := limit
+	if queryLimit > maxRPCTxSearchPerRequest {
+		queryLimit = maxRPCTxSearchPerRequest
+	}
+
+	offset := (page - 1) * limit
+	queryPage := offset/queryLimit + 1
+	skipWithinPage := offset % queryLimit
+	query := fmt.Sprintf("message.module='privacy' AND tx.height > %d", afterHeight)
+	txs := make([]*cmttypes.ResultTx, 0, limit)
+
+	for len(txs) < limit {
+		currentPage := queryPage
+		response, err := p.RPCClient.TxSearch(ctx, query, false, &currentPage, &queryLimit, "")
+		if err != nil {
+			if isRPCTxSearchPageOutOfRange(err) {
+				break
+			}
+			return nil, err
+		}
+		if response == nil || len(response.Txs) == 0 {
+			break
+		}
+
+		pageTxs := response.Txs
+		if skipWithinPage > 0 {
+			if skipWithinPage >= len(pageTxs) {
+				skipWithinPage -= len(pageTxs)
+				if !rpcTxSearchHasMore(response, queryPage, queryLimit) {
+					break
+				}
+				queryPage++
+				continue
+			}
+			pageTxs = pageTxs[skipWithinPage:]
+			skipWithinPage = 0
+		}
+
+		remaining := limit - len(txs)
+		if len(pageTxs) > remaining {
+			pageTxs = pageTxs[:remaining]
+		}
+		txs = append(txs, pageTxs...)
+
+		if !rpcTxSearchHasMore(response, queryPage, queryLimit) {
+			break
+		}
+		queryPage++
+	}
+
+	return txs, nil
+}
+
+func rpcTxSearchHasMore(response *cmttypes.ResultTxSearch, page, perPage int) bool {
+	if response == nil || perPage <= 0 {
+		return false
+	}
+	return response.TotalCount > 0 && page*perPage < response.TotalCount
+}
+
+func isRPCTxSearchPageOutOfRange(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "page should be within")
+}
+
+func (p ScanQueryProvider) ScanPrivacyEvents(ctx context.Context, afterHeight int64, afterSequence uint64, limit int) (*privacytypes.QueryScanEventsResponse, error) {
+	if p.ScanEventsQuerier == nil {
+		return nil, fmt.Errorf("a scan events querier is required")
+	}
+	if limit <= 0 {
+		limit = 500
+	}
+
+	return p.ScanEventsQuerier.ScanEvents(ctx, &privacytypes.QueryScanEventsRequest{
+		AfterHeight:   afterHeight,
+		AfterSequence: afterSequence,
+		Limit:         uint64(limit),
+		EventTypes:    []string{privacytypes.EventTypeDeposit, privacytypes.EventTypeShieldedTransfer},
+	})
 }
 
 func (p ScanQueryProvider) CheckNullifierUsed(ctx context.Context, nullifierHex string) (bool, error) {
@@ -120,6 +258,48 @@ func (p ScanQueryProvider) CheckNullifierUsed(ctx context.Context, nullifierHex 
 	}
 
 	return response.Used, nil
+}
+
+func (p ScanQueryProvider) CheckNullifiersUsed(ctx context.Context, nullifierHexes []string) (map[string]bool, error) {
+	if p.BatchNullifierQuerier == nil {
+		return nil, fmt.Errorf("a batch nullifier querier is required")
+	}
+
+	canonicalHexes := make([]string, 0, len(nullifierHexes))
+	for _, nullifierHex := range nullifierHexes {
+		nullifierBytes, err := privacyfield.DecodeCanonicalHex(nullifierHex, "nullifier")
+		if err != nil {
+			return nil, err
+		}
+		canonicalHexes = append(canonicalHexes, hex.EncodeToString(nullifierBytes))
+	}
+
+	usedByNullifier := make(map[string]bool, len(canonicalHexes))
+	for start := 0; start < len(canonicalHexes); start += maxBatchNullifiersPerRequest {
+		end := start + maxBatchNullifiersPerRequest
+		if end > len(canonicalHexes) {
+			end = len(canonicalHexes)
+		}
+
+		response, err := p.BatchNullifierQuerier.CheckNullifiers(ctx, &privacytypes.QueryCheckNullifiersRequest{
+			Nullifiers: canonicalHexes[start:end],
+		})
+		if err != nil {
+			return nil, err
+		}
+		if response == nil {
+			return nil, fmt.Errorf("nullifier batch query response is unavailable")
+		}
+
+		for _, status := range response.Statuses {
+			if status == nil {
+				continue
+			}
+			usedByNullifier[strings.ToLower(status.Nullifier)] = status.Used
+		}
+	}
+
+	return usedByNullifier, nil
 }
 
 func privacyEventsToResultTxs(response *privacytypes.QueryPrivacyEventsResponse) ([]*cmttypes.ResultTx, error) {

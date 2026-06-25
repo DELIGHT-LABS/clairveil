@@ -92,11 +92,13 @@ Validation scope:
 
 - audit disclosure key derivation vectors and genesis public key encoding
 - fixture address prefixes
-- prepared transfer payload hash
+- prepared transfer payload `v3` hash, including `view_tag_hexes`
 - sender self-view disclosure digest/payload fields
 - prepared withdraw payload hash
 - relayed withdraw final payload hash
 - relay withdraw handoff relayer `creator` / payload `recipient` mapping
+- `scan_events` request/response fixture shape, cursor fields, scan/view tag versions, and projection outputs
+- batch `check_nullifiers` request/response fixture shape
 - prover HTTP request/response version
 - timeout/auth client shape
 - browser DApp boundary checks, static bundle freshness, local helper route policy, and ClairveilJS package surface smoke tests

@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"testing"
 
+	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/stretchr/testify/require"
 
 	privacydisclosure "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/disclosure"
@@ -138,7 +139,15 @@ func buildReadonlyReferenceBundle(t *testing.T) readonlyReferenceBundle {
 	require.NoError(t, err)
 
 	depositFound := privacyscan.ProcessTx(
-		newPrivacyTx(t, vectors.Scan.TxHashHex, vectors.Scan.Height, privacytypes.EventTypeDeposit, privacytypes.AttributeKeyEncryptedNote, vectors.Note.EncryptedNoteHex),
+		newPrivacyTx(
+			t,
+			vectors.Scan.TxHashHex,
+			vectors.Scan.Height,
+			privacytypes.EventTypeDeposit,
+			privacytypes.AttributeKeyEncryptedNote,
+			vectors.Note.EncryptedNoteHex,
+			abci.EventAttribute{Key: privacytypes.AttributeKeyCommitment, Value: vectors.Note.CommitmentHex},
+		),
 		senderRootSeed,
 		senderSpendScalar,
 		senderViewScalar,
@@ -148,7 +157,15 @@ func buildReadonlyReferenceBundle(t *testing.T) readonlyReferenceBundle {
 	transferCipherText, err := privacycrypto.AsymEncrypt(noteBytes, *senderViewPubKey)
 	require.NoError(t, err)
 	transferFound := privacyscan.ProcessTx(
-		newPrivacyTx(t, vectors.Scan.TxHashHex, vectors.Scan.Height, privacytypes.EventTypeShieldedTransfer, privacytypes.AttributeKeyCipherText1, hex.EncodeToString(transferCipherText)),
+		newPrivacyTx(
+			t,
+			vectors.Scan.TxHashHex,
+			vectors.Scan.Height,
+			privacytypes.EventTypeShieldedTransfer,
+			privacytypes.AttributeKeyCipherText1,
+			hex.EncodeToString(transferCipherText),
+			abci.EventAttribute{Key: privacytypes.AttributeKeyCommitment1, Value: vectors.Note.CommitmentHex},
+		),
 		senderRootSeed,
 		senderSpendScalar,
 		senderViewScalar,

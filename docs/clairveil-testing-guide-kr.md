@@ -90,11 +90,13 @@ npm --prefix examples/clairveil-dapp run test:clairveiljs
 
 - audit disclosure key derivation vector와 genesis public key encoding
 - fixture address prefix
-- prepared transfer payload hash
+- `view_tag_hexes`를 포함한 prepared transfer payload `v3` hash
 - sender self-view disclosure digest/payload field
 - prepared withdraw payload hash
 - relayed withdraw final payload hash
 - relay withdraw handoff의 relayer `creator` / payload `recipient` mapping
+- `scan_events` request/response fixture shape, cursor field, scan/view tag version, projection output
+- batch `check_nullifiers` request/response fixture shape
 - prover HTTP request/response version
 - timeout/auth client shape
 - browser DApp boundary check, static bundle 최신성, local helper route policy, ClairveilJS package surface smoke test

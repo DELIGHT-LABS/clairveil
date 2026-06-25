@@ -22,7 +22,7 @@ Production-like node는 최소 아래를 만족해야 합니다.
 1. genesis에 audit master pubkey가 설정되어야 합니다.
 2. ZK artifact preflight는 `strict`로 운영해야 합니다.
 3. privacy module account가 bank module account로 올바르게 등록되어야 합니다.
-4. `tree_state`, `events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}` query가 노출되어야 합니다.
+4. `tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `nullifier/{nullifier}`, batch `nullifiers` query가 노출되어야 합니다.
 5. snapshot/restore rehearsal을 release 전 수행해야 합니다.
 
 Reference local start 예:

@@ -19,7 +19,7 @@ Profile은 다르지만 아래 기능 계약은 공통입니다.
 
 - transparent account에서 shielded identity를 파생합니다.
 - `clairs1...` shielded address를 표시하고 복사할 수 있어야 합니다.
-- chain event를 scan해서 spendable note를 복구합니다.
+- wallet event projection을 scan해서 spendable note를 복구합니다.
 - deposit, shielded transfer, withdraw, relayed withdraw를 지원합니다.
 - user selective disclosure와 mandatory audit disclosure를 구분해서 처리합니다.
 - proof 생성 위치를 browser/WASM, local prover, remote prover, backend sidecar 중 하나로 결정합니다.
@@ -64,17 +64,18 @@ Downstream chain이 denom, prefix, gas policy, prover topology를 바꾸면 clie
 
 ### 2.3 Note Scan And Local State
 
-Client는 privacy event feed를 scan하고 viewing key로 자신의 note를 복구해야 합니다.
+Client는 wallet scan event projection을 scan하고 viewing key로 자신의 note를 복구해야 합니다.
 
 필수 기능:
 
 - 최초 sync 진행률 표시
-- 마지막 scan height 또는 cursor 저장
+- 마지막 scan height/sequence cursor 저장
 - rescan/reset 지원
-- nullifier query로 spent 상태 확인
+- 가능하면 batch nullifier query로 spent 상태 확인
 - local cache corruption 또는 decode 실패 시 복구 경로 제공
 
 Local note cache는 금액, asset, ownership metadata를 포함할 수 있으므로 privacy-sensitive local data입니다.
+Transfer output view tag는 내부 scan 최적화입니다. 사용자가 선택하는 privacy 옵션처럼 보여주면 안 되고, output이 사용자 소유라는 보안 근거로 취급해도 안 됩니다.
 
 ### 2.4 Deposit
 

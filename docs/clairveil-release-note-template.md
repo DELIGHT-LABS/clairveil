@@ -31,6 +31,8 @@ Korean version: [clairveil-release-note-template-kr.md](clairveil-release-note-t
 | Fixture/schema | none / yes |
 | CLI | none / yes |
 | Prover HTTP | none / yes |
+| Scan/query contract | none / yes |
+| Transfer/view tags | none / yes |
 | ZK artifact | none / yes |
 
 If there is impact, record downstream actions in section 7.

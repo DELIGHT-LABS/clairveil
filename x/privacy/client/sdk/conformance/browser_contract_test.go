@@ -108,14 +108,54 @@ type browserCircuitArtifactFixture struct {
 
 type browserScanProviderFixture struct {
 	LatestBlockHeightResponse   browserLatestBlockHeightFixture    `json:"latest_block_height_response"`
+	ScanEventsRequest           browserScanEventsRequest           `json:"scan_events_request"`
+	ScanEventsResponse          browserScanEventsResponse          `json:"scan_events_response"`
 	SearchPrivacyEventsRequest  browserSearchPrivacyEventsRequest  `json:"search_privacy_events_request"`
 	SearchPrivacyEventsResponse browserSearchPrivacyEventsResponse `json:"search_privacy_events_response"`
+	CheckNullifiersRequest      browserCheckNullifiersRequest      `json:"check_nullifiers_request"`
+	CheckNullifiersResponse     browserCheckNullifiersResponse     `json:"check_nullifiers_response"`
 	CheckNullifierRequest       browserCheckNullifierRequest       `json:"check_nullifier_request"`
 	CheckNullifierResponse      browserCheckNullifierResponse      `json:"check_nullifier_response"`
 }
 
 type browserLatestBlockHeightFixture struct {
 	Height int64 `json:"height"`
+}
+
+type browserScanEventsRequest struct {
+	AfterHeight   int64    `json:"after_height"`
+	AfterSequence uint64   `json:"after_sequence"`
+	Limit         uint64   `json:"limit"`
+	EventTypes    []string `json:"event_types"`
+}
+
+type browserScanEventsResponse struct {
+	Events            []browserScanEventFixture `json:"events"`
+	NextHeight        int64                     `json:"next_height"`
+	NextSequence      uint64                    `json:"next_sequence"`
+	Limit             uint64                    `json:"limit"`
+	HasMore           bool                      `json:"has_more"`
+	ScanFormatVersion uint32                    `json:"scan_format_version"`
+	ViewTagVersion    uint32                    `json:"view_tag_version"`
+}
+
+type browserScanEventFixture struct {
+	Sequence       uint64                     `json:"sequence"`
+	Height         int64                      `json:"height"`
+	TxHashHex      string                     `json:"tx_hash_hex"`
+	EventType      string                     `json:"event_type"`
+	Outputs        []browserScanOutputFixture `json:"outputs"`
+	NullifierHexes []string                   `json:"nullifier_hexes"`
+}
+
+type browserScanOutputFixture struct {
+	OutputIndex      uint32 `json:"output_index"`
+	CommitmentHex    string `json:"commitment_hex,omitempty"`
+	EncryptedNoteHex string `json:"encrypted_note_hex,omitempty"`
+	CipherTextHex    string `json:"cipher_text_hex,omitempty"`
+	ViewTagHex       string `json:"view_tag_hex,omitempty"`
+	LeafIndexFound   bool   `json:"leaf_index_found,omitempty"`
+	LeafIndex        uint64 `json:"leaf_index,omitempty"`
 }
 
 type browserSearchPrivacyEventsRequest struct {
@@ -151,6 +191,19 @@ type browserCheckNullifierRequest struct {
 
 type browserCheckNullifierResponse struct {
 	Used bool `json:"used"`
+}
+
+type browserCheckNullifiersRequest struct {
+	Nullifiers []string `json:"nullifiers"`
+}
+
+type browserCheckNullifiersResponse struct {
+	Statuses []browserNullifierStatusFixture `json:"statuses"`
+}
+
+type browserNullifierStatusFixture struct {
+	Nullifier string `json:"nullifier"`
+	Used      bool   `json:"used"`
 }
 
 type browserSendProviderFixture struct {
@@ -228,14 +281,48 @@ func TestBrowserSignerProviderContractFixture(t *testing.T) {
 	}
 
 	require.GreaterOrEqual(t, contract.ScanProvider.LatestBlockHeightResponse.Height, vectors.Scan.Height)
+	require.Equal(t, int64(0), contract.ScanProvider.ScanEventsRequest.AfterHeight)
+	require.Equal(t, uint64(0), contract.ScanProvider.ScanEventsRequest.AfterSequence)
+	require.Equal(t, uint64(50), contract.ScanProvider.ScanEventsRequest.Limit)
+	require.Equal(t, []string{privacytypes.EventTypeDeposit, privacytypes.EventTypeShieldedTransfer}, contract.ScanProvider.ScanEventsRequest.EventTypes)
+	require.Len(t, contract.ScanProvider.ScanEventsResponse.Events, 2)
+	require.Equal(t, vectors.Scan.TxHashHex, contract.ScanProvider.ScanEventsResponse.Events[0].TxHashHex)
+	require.Equal(t, vectors.Scan.Height, contract.ScanProvider.ScanEventsResponse.Events[0].Height)
+	require.Equal(t, privacytypes.EventTypeDeposit, contract.ScanProvider.ScanEventsResponse.Events[0].EventType)
+	require.Len(t, contract.ScanProvider.ScanEventsResponse.Events[0].Outputs, 1)
+	require.Equal(t, uint32(0), contract.ScanProvider.ScanEventsResponse.Events[0].Outputs[0].OutputIndex)
+	require.Equal(t, vectors.Note.CommitmentHex, contract.ScanProvider.ScanEventsResponse.Events[0].Outputs[0].CommitmentHex)
+	require.Equal(t, vectors.Note.EncryptedNoteHex, contract.ScanProvider.ScanEventsResponse.Events[0].Outputs[0].EncryptedNoteHex)
+	require.Empty(t, contract.ScanProvider.ScanEventsResponse.Events[0].NullifierHexes)
+	transferScanEvent := contract.ScanProvider.ScanEventsResponse.Events[1]
+	require.Equal(t, privacytypes.EventTypeShieldedTransfer, transferScanEvent.EventType)
+	require.Len(t, transferScanEvent.Outputs, 2)
+	require.Len(t, transferScanEvent.NullifierHexes, 2)
+	for _, output := range transferScanEvent.Outputs {
+		require.NoError(t, validateCanonicalHex32(output.CommitmentHex, "transfer scan commitment"))
+		require.NotEmpty(t, output.CipherTextHex)
+		require.Len(t, output.ViewTagHex, privacytypes.ViewTagLength*2)
+	}
+	require.Equal(t, vectors.Scan.Height, contract.ScanProvider.ScanEventsResponse.NextHeight)
+	require.Equal(t, uint64(2), contract.ScanProvider.ScanEventsResponse.NextSequence)
+	require.Equal(t, uint64(50), contract.ScanProvider.ScanEventsResponse.Limit)
+	require.False(t, contract.ScanProvider.ScanEventsResponse.HasMore)
+	require.Equal(t, privacytypes.ScanFormatVersion, contract.ScanProvider.ScanEventsResponse.ScanFormatVersion)
+	require.Equal(t, privacytypes.ViewTagVersion, contract.ScanProvider.ScanEventsResponse.ViewTagVersion)
 	require.Equal(t, []string{privacytypes.EventTypeDeposit, privacytypes.EventTypeShieldedTransfer}, contract.ScanProvider.SearchPrivacyEventsRequest.EventTypes)
 	require.Len(t, contract.ScanProvider.SearchPrivacyEventsResponse.Events, 1)
 	require.Equal(t, vectors.Scan.TxHashHex, contract.ScanProvider.SearchPrivacyEventsResponse.Events[0].TxHashHex)
 	require.Equal(t, vectors.Scan.Height, contract.ScanProvider.SearchPrivacyEventsResponse.Events[0].Height)
 	require.Equal(t, privacytypes.EventTypeDeposit, contract.ScanProvider.SearchPrivacyEventsResponse.Events[0].EventType)
-	require.Len(t, contract.ScanProvider.SearchPrivacyEventsResponse.Events[0].Attributes, 1)
-	require.Equal(t, privacytypes.AttributeKeyEncryptedNote, contract.ScanProvider.SearchPrivacyEventsResponse.Events[0].Attributes[0].Key)
-	require.Equal(t, vectors.Note.EncryptedNoteHex, contract.ScanProvider.SearchPrivacyEventsResponse.Events[0].Attributes[0].Value)
+	require.Len(t, contract.ScanProvider.SearchPrivacyEventsResponse.Events[0].Attributes, 2)
+	require.Equal(t, privacytypes.AttributeKeyCommitment, contract.ScanProvider.SearchPrivacyEventsResponse.Events[0].Attributes[0].Key)
+	require.Equal(t, vectors.Note.CommitmentHex, contract.ScanProvider.SearchPrivacyEventsResponse.Events[0].Attributes[0].Value)
+	require.Equal(t, privacytypes.AttributeKeyEncryptedNote, contract.ScanProvider.SearchPrivacyEventsResponse.Events[0].Attributes[1].Key)
+	require.Equal(t, vectors.Note.EncryptedNoteHex, contract.ScanProvider.SearchPrivacyEventsResponse.Events[0].Attributes[1].Value)
+	require.Equal(t, []string{vectors.Note.NullifierHex}, contract.ScanProvider.CheckNullifiersRequest.Nullifiers)
+	require.Len(t, contract.ScanProvider.CheckNullifiersResponse.Statuses, 1)
+	require.Equal(t, vectors.Note.NullifierHex, contract.ScanProvider.CheckNullifiersResponse.Statuses[0].Nullifier)
+	require.False(t, contract.ScanProvider.CheckNullifiersResponse.Statuses[0].Used)
 	require.Equal(t, vectors.Note.NullifierHex, contract.ScanProvider.CheckNullifierRequest.NullifierHex)
 	require.False(t, contract.ScanProvider.CheckNullifierResponse.Used)
 
@@ -364,6 +451,66 @@ func buildBrowserSignerProviderContract(t *testing.T) browserSignerProviderContr
 			LatestBlockHeightResponse: browserLatestBlockHeightFixture{
 				Height: vectors.Scan.Height,
 			},
+			ScanEventsRequest: browserScanEventsRequest{
+				AfterHeight:   0,
+				AfterSequence: 0,
+				Limit:         50,
+				EventTypes:    []string{privacytypes.EventTypeDeposit, privacytypes.EventTypeShieldedTransfer},
+			},
+			ScanEventsResponse: browserScanEventsResponse{
+				Events: []browserScanEventFixture{
+					{
+						Sequence:  1,
+						Height:    vectors.Scan.Height,
+						TxHashHex: vectors.Scan.TxHashHex,
+						EventType: privacytypes.EventTypeDeposit,
+						Outputs: []browserScanOutputFixture{
+							{
+								OutputIndex:      0,
+								CommitmentHex:    vectors.Note.CommitmentHex,
+								EncryptedNoteHex: vectors.Note.EncryptedNoteHex,
+								LeafIndexFound:   true,
+								LeafIndex:        0,
+							},
+						},
+						NullifierHexes: []string{},
+					},
+					{
+						Sequence:  2,
+						Height:    vectors.Scan.Height,
+						TxHashHex: "DDEEFF",
+						EventType: privacytypes.EventTypeShieldedTransfer,
+						Outputs: []browserScanOutputFixture{
+							{
+								OutputIndex:    0,
+								CommitmentHex:  "10b62825eac8a645278d300ec077885a123170460e9ca1048f4521a3f6fb6cb2",
+								CipherTextHex:  "c0ffee",
+								ViewTagHex:     "13eb",
+								LeafIndexFound: true,
+								LeafIndex:      1,
+							},
+							{
+								OutputIndex:    1,
+								CommitmentHex:  "211dee8f0fe0b284c4c953a66a5facd9bb055f101d8dc94c0f55ae762093314b",
+								CipherTextHex:  "decafbad",
+								ViewTagHex:     "0636",
+								LeafIndexFound: true,
+								LeafIndex:      2,
+							},
+						},
+						NullifierHexes: []string{
+							vectors.Note.NullifierHex,
+							"0000000000000000000000000000000000000000000000000000000000000001",
+						},
+					},
+				},
+				NextHeight:        vectors.Scan.Height,
+				NextSequence:      2,
+				Limit:             50,
+				HasMore:           false,
+				ScanFormatVersion: privacytypes.ScanFormatVersion,
+				ViewTagVersion:    privacytypes.ViewTagVersion,
+			},
 			SearchPrivacyEventsRequest: browserSearchPrivacyEventsRequest{
 				AfterHeight: 0,
 				Page:        1,
@@ -378,6 +525,10 @@ func buildBrowserSignerProviderContract(t *testing.T) browserSignerProviderContr
 						TxHashHex: vectors.Scan.TxHashHex,
 						EventType: privacytypes.EventTypeDeposit,
 						Attributes: []browserPrivacyAttributeFixture{
+							{
+								Key:   privacytypes.AttributeKeyCommitment,
+								Value: vectors.Note.CommitmentHex,
+							},
 							{
 								Key:   privacytypes.AttributeKeyEncryptedNote,
 								Value: vectors.Note.EncryptedNoteHex,
@@ -394,6 +545,17 @@ func buildBrowserSignerProviderContract(t *testing.T) browserSignerProviderContr
 			},
 			CheckNullifierResponse: browserCheckNullifierResponse{
 				Used: false,
+			},
+			CheckNullifiersRequest: browserCheckNullifiersRequest{
+				Nullifiers: []string{vectors.Note.NullifierHex},
+			},
+			CheckNullifiersResponse: browserCheckNullifiersResponse{
+				Statuses: []browserNullifierStatusFixture{
+					{
+						Nullifier: vectors.Note.NullifierHex,
+						Used:      false,
+					},
+				},
 			},
 		},
 		SendProvider: browserSendProviderFixture{

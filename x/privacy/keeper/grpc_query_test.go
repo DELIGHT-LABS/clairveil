@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -216,6 +217,167 @@ func TestPrivacyEventsQueryFiltersByType(t *testing.T) {
 	require.Equal(t, privacytypes.EventTypeWithdraw, resp.Events[0].EventType)
 }
 
+func TestCheckNullifiersQueryReturnsBatchStatuses(t *testing.T) {
+	k, ctx, _ := setupMsgServerKeeper()
+	usedNullifier := fixedFieldBytes(31)
+	unusedNullifier := fixedFieldBytes(32)
+	k.SetNullifier(ctx, usedNullifier)
+
+	resp, err := k.CheckNullifiers(sdk.WrapSDKContext(ctx), &privacytypes.QueryCheckNullifiersRequest{
+		Nullifiers: []string{
+			hex.EncodeToString(usedNullifier),
+			hex.EncodeToString(unusedNullifier),
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, resp.Statuses, 2)
+	require.Equal(t, hex.EncodeToString(usedNullifier), resp.Statuses[0].Nullifier)
+	require.True(t, resp.Statuses[0].Used)
+	require.Equal(t, hex.EncodeToString(unusedNullifier), resp.Statuses[1].Nullifier)
+	require.False(t, resp.Statuses[1].Used)
+}
+
+func TestScanEventsQueryReturnsProjectionAndCursor(t *testing.T) {
+	k, ctx, _ := setupMsgServerKeeper()
+
+	depositCommitment := fixedFieldBytes(41)
+	transferCommitment1 := fixedFieldBytes(42)
+	transferCommitment2 := fixedFieldBytes(43)
+
+	ctx = ctx.WithBlockHeight(10)
+	require.NoError(t, k.AppendCommitment(ctx, depositCommitment))
+	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeDeposit, "aabb", []sdk.Attribute{
+		sdk.NewAttribute(privacytypes.AttributeKeyCommitment, fmt.Sprintf("%x", depositCommitment)),
+		sdk.NewAttribute(privacytypes.AttributeKeyEncryptedNote, "deadbeef"),
+	}))
+
+	ctx = ctx.WithBlockHeight(11)
+	require.NoError(t, k.AppendCommitment(ctx, transferCommitment1))
+	require.NoError(t, k.AppendCommitment(ctx, transferCommitment2))
+	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeShieldedTransfer, "ccdd", []sdk.Attribute{
+		sdk.NewAttribute(privacytypes.AttributeKeyNullifier1, fmt.Sprintf("%x", fixedFieldBytes(44))),
+		sdk.NewAttribute(privacytypes.AttributeKeyNullifier2, fmt.Sprintf("%x", fixedFieldBytes(45))),
+		sdk.NewAttribute(privacytypes.AttributeKeyCommitment1, fmt.Sprintf("%x", transferCommitment1)),
+		sdk.NewAttribute(privacytypes.AttributeKeyCommitment2, fmt.Sprintf("%x", transferCommitment2)),
+		sdk.NewAttribute(privacytypes.AttributeKeyCipherText1, "c0ffee"),
+		sdk.NewAttribute(privacytypes.AttributeKeyCipherText2, "decafbad"),
+		sdk.NewAttribute(privacytypes.AttributeKeyViewTag1, "0102"),
+		sdk.NewAttribute(privacytypes.AttributeKeyViewTag2, "0304"),
+	}))
+
+	firstResp, err := k.ScanEvents(sdk.WrapSDKContext(ctx), &privacytypes.QueryScanEventsRequest{
+		Limit: 1,
+	})
+	require.NoError(t, err)
+	require.Len(t, firstResp.Events, 1)
+	require.True(t, firstResp.HasMore)
+	require.Equal(t, uint64(1), firstResp.Limit)
+	require.Equal(t, privacytypes.ScanFormatVersion, firstResp.ScanFormatVersion)
+	require.Equal(t, privacytypes.ViewTagVersion, firstResp.ViewTagVersion)
+	require.Equal(t, int64(10), firstResp.NextHeight)
+	require.Equal(t, uint64(1), firstResp.NextSequence)
+	require.Equal(t, privacytypes.EventTypeDeposit, firstResp.Events[0].EventType)
+	require.Len(t, firstResp.Events[0].Outputs, 1)
+	require.Equal(t, "deadbeef", firstResp.Events[0].Outputs[0].EncryptedNoteHex)
+	require.True(t, firstResp.Events[0].Outputs[0].LeafIndexFound)
+	require.Equal(t, uint64(0), firstResp.Events[0].Outputs[0].LeafIndex)
+
+	secondResp, err := k.ScanEvents(sdk.WrapSDKContext(ctx), &privacytypes.QueryScanEventsRequest{
+		AfterHeight:   firstResp.NextHeight,
+		AfterSequence: firstResp.NextSequence,
+		Limit:         10,
+	})
+	require.NoError(t, err)
+	require.Len(t, secondResp.Events, 1)
+	require.False(t, secondResp.HasMore)
+	require.Equal(t, int64(11), secondResp.NextHeight)
+	require.Equal(t, uint64(2), secondResp.NextSequence)
+	event := secondResp.Events[0]
+	require.Equal(t, privacytypes.EventTypeShieldedTransfer, event.EventType)
+	require.Equal(t, []string{fmt.Sprintf("%x", fixedFieldBytes(44)), fmt.Sprintf("%x", fixedFieldBytes(45))}, event.NullifierHexes)
+	require.Len(t, event.Outputs, 2)
+	require.Equal(t, uint32(0), event.Outputs[0].OutputIndex)
+	require.Equal(t, "c0ffee", event.Outputs[0].CipherTextHex)
+	require.Equal(t, "0102", event.Outputs[0].ViewTagHex)
+	require.True(t, event.Outputs[0].LeafIndexFound)
+	require.Equal(t, uint64(1), event.Outputs[0].LeafIndex)
+	require.Equal(t, uint32(1), event.Outputs[1].OutputIndex)
+	require.Equal(t, "decafbad", event.Outputs[1].CipherTextHex)
+	require.Equal(t, "0304", event.Outputs[1].ViewTagHex)
+	require.True(t, event.Outputs[1].LeafIndexFound)
+	require.Equal(t, uint64(2), event.Outputs[1].LeafIndex)
+}
+
+func TestScanEventsQueryDefaultsToDepositAndTransfer(t *testing.T) {
+	k, ctx, _ := setupMsgServerKeeper()
+	ctx = ctx.WithBlockHeight(20)
+
+	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeWithdraw, "aa", []sdk.Attribute{
+		sdk.NewAttribute(privacytypes.AttributeKeyNullifier, fmt.Sprintf("%x", fixedFieldBytes(46))),
+	}))
+
+	resp, err := k.ScanEvents(sdk.WrapSDKContext(ctx), &privacytypes.QueryScanEventsRequest{})
+	require.NoError(t, err)
+	require.Empty(t, resp.Events)
+
+	blankFilterResp, err := k.ScanEvents(sdk.WrapSDKContext(ctx), &privacytypes.QueryScanEventsRequest{
+		EventTypes: []string{"", " "},
+	})
+	require.NoError(t, err)
+	require.Empty(t, blankFilterResp.Events)
+
+	withdrawResp, err := k.ScanEvents(sdk.WrapSDKContext(ctx), &privacytypes.QueryScanEventsRequest{
+		EventTypes: []string{privacytypes.EventTypeWithdraw},
+	})
+	require.NoError(t, err)
+	require.Len(t, withdrawResp.Events, 1)
+	require.Equal(t, privacytypes.EventTypeWithdraw, withdrawResp.Events[0].EventType)
+	require.Equal(t, []string{fmt.Sprintf("%x", fixedFieldBytes(46))}, withdrawResp.Events[0].NullifierHexes)
+}
+
+func TestScanEventsQueryAdvancesCursorAcrossFilteredEvents(t *testing.T) {
+	k, ctx, _ := setupMsgServerKeeper()
+	depositCommitment := fixedFieldBytes(47)
+
+	ctx = ctx.WithBlockHeight(20)
+	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeWithdraw, "aa", []sdk.Attribute{
+		sdk.NewAttribute(privacytypes.AttributeKeyNullifier, fmt.Sprintf("%x", fixedFieldBytes(48))),
+	}))
+
+	ctx = ctx.WithBlockHeight(21)
+	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeWithdraw, "bb", []sdk.Attribute{
+		sdk.NewAttribute(privacytypes.AttributeKeyNullifier, fmt.Sprintf("%x", fixedFieldBytes(49))),
+	}))
+
+	ctx = ctx.WithBlockHeight(22)
+	require.NoError(t, k.AppendCommitment(ctx, depositCommitment))
+	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeDeposit, "cc", []sdk.Attribute{
+		sdk.NewAttribute(privacytypes.AttributeKeyCommitment, fmt.Sprintf("%x", depositCommitment)),
+		sdk.NewAttribute(privacytypes.AttributeKeyEncryptedNote, "deadbeef"),
+	}))
+
+	firstResp, err := k.ScanEvents(sdk.WrapSDKContext(ctx), &privacytypes.QueryScanEventsRequest{
+		Limit: 2,
+	})
+	require.NoError(t, err)
+	require.Empty(t, firstResp.Events)
+	require.True(t, firstResp.HasMore)
+	require.Equal(t, int64(21), firstResp.NextHeight)
+	require.Equal(t, uint64(2), firstResp.NextSequence)
+
+	secondResp, err := k.ScanEvents(sdk.WrapSDKContext(ctx), &privacytypes.QueryScanEventsRequest{
+		AfterHeight:   firstResp.NextHeight,
+		AfterSequence: firstResp.NextSequence,
+		Limit:         2,
+	})
+	require.NoError(t, err)
+	require.Len(t, secondResp.Events, 1)
+	require.False(t, secondResp.HasMore)
+	require.Equal(t, privacytypes.EventTypeDeposit, secondResp.Events[0].EventType)
+	require.Equal(t, int64(22), secondResp.NextHeight)
+	require.Equal(t, uint64(3), secondResp.NextSequence)
+}
+
 func TestDisclosureConfigQueryReturnsCurrentContract(t *testing.T) {
 	k, ctx, _ := setupMsgServerKeeper()
 
@@ -347,6 +509,14 @@ func TestQueryMethodsRejectNilRequests(t *testing.T) {
 	eventsResp, eventsErr := k.PrivacyEvents(context.Background(), nil)
 	require.Nil(t, eventsResp)
 	require.Error(t, eventsErr)
+
+	scanEventsResp, scanEventsErr := k.ScanEvents(context.Background(), nil)
+	require.Nil(t, scanEventsResp)
+	require.Error(t, scanEventsErr)
+
+	nullifiersResp, nullifiersErr := k.CheckNullifiers(context.Background(), nil)
+	require.Nil(t, nullifiersResp)
+	require.Error(t, nullifiersErr)
 
 	circuitResp, circuitErr := k.CircuitConfig(context.Background(), nil)
 	require.Nil(t, circuitResp)

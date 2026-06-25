@@ -55,6 +55,8 @@ copy_path "docs/clairveil-testing-guide.md"
 copy_path "docs/clairveil-testing-guide-kr.md"
 copy_path "docs/clairveil-operations-guide.md"
 copy_path "docs/clairveil-operations-guide-kr.md"
+copy_path "docs/clairveil-privacy-accounting-design-note.md"
+copy_path "docs/clairveil-privacy-accounting-design-note-kr.md"
 copy_path "docs/clairveil-maintainer-instructions.md"
 copy_path "docs/clairveil-maintainer-instructions-kr.md"
 copy_path "docs/clairveil-downstream-cosmos-integration-guide.md"
@@ -69,6 +71,8 @@ copy_path "docs/clairveil-client-api-checklist.md"
 copy_path "docs/clairveil-client-api-checklist-kr.md"
 copy_path "docs/clairveil-js-sdk-handoff.md"
 copy_path "docs/clairveil-js-sdk-handoff-kr.md"
+copy_path "docs/clairveil-scan-optimization-implementation-plan.md"
+copy_path "docs/clairveil-scan-optimization-implementation-plan-kr.md"
 copy_path "docs/clairveil-proverd-remote-production-profile.md"
 copy_path "docs/clairveil-proverd-remote-production-profile-kr.md"
 copy_path "docs/clairveil-merkle-restore-sop.md"
@@ -109,13 +113,13 @@ Contents:
 - root license, notice, changelog, contribution, and security files
 - English and Korean public documentation pairs
 - proto/clairveil/privacy/v1
-- client and JS/web wallet handoff documents
+- client, JS/web wallet, and scan optimization handoff documents
 - JS/web wallet JSON schemas
 - wallet/prover conformance fixtures
 - JS audit disclosure key, fixture validator, and prover HTTP client examples
 - prover Dockerfile and compose sample
 - release pack generation and verification scripts
-- release, circuit, CLI, testing, operations, downstream integration, client, JS SDK, prover, Merkle restore, threat model, security, and reference app documents
+- release, circuit, CLI, testing, operations, downstream integration, client, JS SDK, scan optimization, prover, Merkle restore, threat model, security, and reference app documents
 - release versioning policy and release note templates
 
 Validation before handoff:

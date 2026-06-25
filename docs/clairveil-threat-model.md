@@ -17,7 +17,7 @@ Korean version: [clairveil-threat-model-kr.md](clairveil-threat-model-kr.md)
 
 ```mermaid
 flowchart LR
-  Wallet["Web wallet / JS SDK / CLI"] -->|"query: tree, events, audit config"| Node["clairveild or downstream chain"]
+  Wallet["Web wallet / JS SDK / CLI"] -->|"query: tree, scan_events, nullifiers, audit config"| Node["clairveild or downstream chain"]
   Wallet -->|"tx: deposit, transfer, withdraw"| Node
   Wallet -->|"optional proof request"| Prover["clairveil-proverd local/remote"]
   Prover -->|"load proving artifacts"| Artifacts["ZK artifacts: R1CS/PK/VK/manifest"]
@@ -35,6 +35,7 @@ flowchart LR
 | Local wallet note cache | Can contain note amount, randomness, nullifier, and scan height | Stores JSON files with `0600` and backs up/resets corrupt files |
 | Prepared transfer/withdraw prover payload | Contains note metadata, Merkle path, signature, and disclosure payload for proof generation | Detects mutation with payload hash, writes files with `0600`, and requires sensitive-data treatment when sent to remote prover |
 | Sender self-view disclosure payload | Encrypted metadata for recovering details of the sender's own sent transfers | Stores only digest/payload without exposing the target pubkey in events, and provides verification helpers |
+| Transfer view tags | Public 2-byte scan hints that can reduce local decrypt work but are not proof-bound | Treats tags as untrusted hints; safe default wallet scan full-decrypts on mismatch |
 | ZK proving/verifying artifacts | Trust base for proof generation/verification | Provides manifest/env checksum, preflight mode, and circuit config query |
 | On-chain privacy state | commitments, historical roots, nullifiers, indexed privacy events | Keeper performs canonical field validation, nullifier replay checks, and Merkle capacity/corrupt-state guards |
 | Audit master private key | Can decrypt every mandatory audit disclosure | Private key custody is downstream responsibility; repo provides public key genesis/config and decode flow |
@@ -45,7 +46,7 @@ flowchart LR
 | Boundary | Untrusted Input | Defense |
 | --- | --- | --- |
 | Wallet/CLI to chain tx | malformed proof, non-canonical field bytes, reused nullifier, wrong root, wrong audit disclosure target | `ValidateBasic`, keeper canonical validation, historical root check, nullifier check, Groth16 verification, audit master pubkey match |
-| Query client to chain | invalid hex, missing commitment, corrupted tree state | query validation, `Internal` error for invalid Merkle state, bounded event pagination |
+| Query client to chain | invalid hex, missing commitment, corrupted tree state, malformed scan cursor/nullifier batch | query validation, `Internal` error for invalid Merkle state, bounded event pagination, cursor projection versioning |
 | Wallet to prover | oversized JSON, stale payload, tampered payload, untrusted remote prover | payload/proof hash validation, payload metadata validation, body limit in `proverservice.Handler`, optional bearer auth |
 | Prover to artifact files | missing/tampered R1CS/PK/VK | artifact checksum support, preflight warn/strict mode |
 | Restore/migration to Merkle state | partial `MerkleNode/*`, missing leaf, oversized rebuild | fixed-capacity guard, missing leaf/node explicit failure, `docs/clairveil-merkle-restore-sop.md` requiring sampled path verification |
@@ -62,6 +63,7 @@ flowchart LR
 | Omit mandatory audit disclosure | Auditor cannot inspect transfer | transfer validation requires configured audit pubkey, audit digest, audit target pubkey, audit payload | Set audit master pubkey in genesis for any production-like chain |
 | Send fake disclosure payload | Recipient/auditor/sender self-view sees false plaintext | off-chain disclosure verifier recomputes digest and compares on-chain digest | Wallets must call disclosure verification, not just decrypt and display plaintext |
 | Expose sender self-view target pubkey | Observers can cluster sender transactions | self-view events omit the target pubkey and store only digest/payload | Do not add static sender disclosure pubkeys to downstream event/indexer schemas |
+| Treat view tag mismatch as authoritative | Wallet may miss an owned note if a tx/event carries a bad unbound hint | SDK safe default full-decrypts on tag mismatch and only allows skip behavior as explicit fast mode | Web/mobile wallets must keep recovery/rescan support before enabling any skip-on-mismatch mode |
 | Expose remote prover without auth/rate limit | DoS, cost abuse, metadata leakage | sample service supports body limits, read timeouts, optional bearer auth | Put remote prover behind TLS, mandatory auth, network ACL, quota/rate limit, monitoring |
 | Remote prover learns proof payload data | Privacy metadata exposure to prover operator | architecture keeps proof generation separable but payload is still sensitive | Prefer local prover for high privacy, or treat remote prover as a trusted service with contractual/logging controls |
 | Tamper ZK artifacts | Invalid or attacker-controlled proving/verifying setup | checksum manifest/env and preflight support | Use strict preflight, signed artifact release, reproducible generation/provenance policy |
@@ -72,9 +74,10 @@ flowchart LR
 
 - `x/privacy/keeper/msg_server.go`: validates roots, nullifiers, audit disclosure target, Groth16 proofs, and state writes.
 - `x/privacy/keeper/tree.go`: defines `MerkleDepth`, `MaxMerkleLeaves`, capacity guard, rebuild bound, missing leaf/node checks.
-- `x/privacy/keeper/grpc_query.go`: exposes tree/audit/disclosure/circuit queries and returns internal errors for invalid tree state.
-- `x/privacy/types/msg.go`: validates canonical field bytes and user/audit/self-view disclosure structure.
+- `x/privacy/keeper/grpc_query.go`: exposes tree/audit/disclosure/circuit/scan/nullifier queries and returns internal errors for invalid tree state.
+- `x/privacy/types/msg.go`: validates canonical field bytes, transfer view tag length, and user/audit/self-view disclosure structure.
 - `x/privacy/client/sdk/transfer/payload.go`: builds and validates prepared transfer payload hashes and proof hashes.
+- `x/privacy/client/sdk/scan/service.go`: treats view tags as non-authoritative scan hints and supports cursor/batch query fallback.
 - `x/privacy/client/sdk/withdraw/prover_payload.go`: validates withdraw prover payload metadata, asset denom/hash, recipient bytes, expiry, and payload hash.
 - `x/privacy/client/sdk/disclosure/disclosure.go`: recomputes disclosure digest and verifies asset denom against asset id.
 - `x/privacy/client/sdk/proverservice/service.go`: provides reference HTTP service with health/readiness, optional bearer auth, request body limit, and server timeouts.

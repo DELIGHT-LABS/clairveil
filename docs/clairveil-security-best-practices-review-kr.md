@@ -11,6 +11,7 @@
 | Mandatory audit disclosure | transfer는 chain audit master pubkey와 message의 audit disclosure target pubkey가 일치해야 통과합니다.                   |
 | Merkle safety              | fixed-capacity guard, rebuild bound, missing leaf/node explicit failure, query/path error propagation이 들어가 있습니다. |
 | Prepared payload integrity | transfer/withdraw prover payload와 proof에 payload hash가 있고, relay/broadcast 전에 검증합니다.                         |
+| Scan hint safety          | Transfer view tag는 shape를 검증하고 untrusted hint로 취급합니다. 안전한 기본 scan은 mismatch에서도 full decrypt할 수 있습니다. |
 | File permission            | local wallet cache와 prepared/proof JSON file을 `0600`으로 씁니다.                                                       |
 | Prover service basics      | request body limit, read header/read timeout, idle timeout, optional bearer auth, readiness preflight가 있습니다.        |
 | ZK artifact verification   | manifest/env checksum과 preflight mode가 있어 artifact mismatch를 감지할 수 있습니다.                                    |

@@ -30,6 +30,7 @@ interface PreparedTransferPayload {
   inputs: TransferInput[];
   outputs: TransferOutput[];
   cipher_text_hexes: string[];
+  view_tag_hexes: string[];
   user_privacy_policy: number;
   user_disclosure_mode: number;
   user_disclosure_digest_hex?: string;
@@ -426,6 +427,7 @@ function computePreparedTransferPayloadHash(payload: PreparedTransferPayload): s
     write(output.commitment_hex);
   }
   writeStringSlice(payload.cipher_text_hexes);
+  writeStringSlice(payload.view_tag_hexes);
 
   return sha256Hex(`${lines.join("\n")}\n`);
 }
@@ -529,7 +531,7 @@ function validateProverExampleBundle(bundle: ProverExampleBundle): void {
 
   const transferPayload = bundle.transfer.request.payload;
   const transferHash = computePreparedTransferPayloadHash(transferPayload);
-  assertEqual(transferPayload.version, "v2", "transfer payload version");
+  assertEqual(transferPayload.version, "v3", "transfer payload version");
   assertStartsWith(transferPayload.creator, "clair1", "transfer creator");
   assertHexLength(transferPayload.self_view_disclosure_digest_hex ?? "", 32, "transfer self-view disclosure digest");
   assertHexStringNonEmpty(transferPayload.self_view_disclosure_payload_hex ?? "", "transfer self-view disclosure payload");
@@ -538,6 +540,10 @@ function validateProverExampleBundle(bundle: ProverExampleBundle): void {
   });
   transferPayload.outputs.forEach((output, index) => {
     assertShieldedAmountString(output.amount, `transfer output ${index} amount`);
+  });
+  assertEqual(transferPayload.view_tag_hexes.length, 2, "transfer view tag count");
+  transferPayload.view_tag_hexes.forEach((viewTag, index) => {
+    assertHexLength(viewTag, 2, `transfer view tag ${index}`);
   });
   assertEqual(transferPayload.payload_hash, transferHash, "transfer payload_hash");
   assertEqual(bundle.transfer.response.proof.payload_hash, transferHash, "transfer proof payload_hash");

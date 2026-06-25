@@ -24,7 +24,7 @@ A production-like node should satisfy at least:
 1. genesis has an audit master pubkey.
 2. ZK artifact preflight runs in `strict` mode.
 3. privacy module account is registered correctly as a bank module account.
-4. `tree_state`, `events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, and `reserve/{denom}` queries are exposed.
+4. `tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `nullifier/{nullifier}`, and batch `nullifiers` queries are exposed.
 5. snapshot/restore rehearsal is completed before release.
 
 Reference local start example:

@@ -81,6 +81,9 @@ GET /clairveil/privacy/v1/disclosure_config
 GET /clairveil/privacy/v1/circuit_config
 GET /clairveil/privacy/v1/reserve/{denom}
 GET /clairveil/privacy/v1/nullifier/{nullifier}
+GET /clairveil/privacy/v1/nullifiers
+POST /clairveil/privacy/v1/nullifiers
+GET /clairveil/privacy/v1/scan_events
 ```
 
 The Go SDK provider contract is in:
@@ -97,12 +100,14 @@ A web wallet needs at least these provider roles.
 - `TreeState`: read the latest root, leaf count, depth, max leaves, and remaining leaves.
 - `CommitmentInfo`: check whether a commitment is in the tree and obtain its leaf index.
 - `MerklePath`: fetch path and path helper needed for proving input.
-- `PrivacyEvents`: scan the deposit/transfer event feed.
+- `ScanEvents`: scan the cursor-based wallet projection for deposit/transfer outputs.
+- `PrivacyEvents`: read the raw deposit/transfer event feed for compatibility and diagnostics.
 - `AuditConfig`: fetch the master auditor pubkey configured on-chain.
 - `DisclosureConfig`: display user disclosure policy/mode and payload version.
 - `CircuitConfig`: check the active circuit set and artifact checksum information.
 - `Reserve`: compare privacy module-account balance to recorded deposit/withdraw totals for a denom.
-- `CheckNullifier`: determine whether a note is spent.
+- `CheckNullifiers`: refresh spent state for many notes in one request. Use the POST JSON body binding for normal batches, chunk at 1000 nullifiers per request, and keep GET only for small compatibility checks.
+- `CheckNullifier`: determine whether one note is spent when a batch path is unavailable.
 
 ## 5. Identity Derivation
 
@@ -152,7 +157,7 @@ This validation pins required fixture fields, versions, address prefixes, hash l
 
 ## 6. Note Scanning
 
-A web wallet must read the privacy event feed and recover its own notes with the viewing key.
+A web wallet must read the wallet scan projection and recover its own notes with the viewing key.
 
 The Go SDK implementation is in:
 
@@ -162,15 +167,20 @@ x/privacy/client/sdk/scan/service.go
 x/privacy/client/sdk/scan/wallet.go
 ```
 
-The scan flow is:
+The preferred scan flow is:
 
-1. Fetch deposit/transfer events with the `PrivacyEvents` query.
-2. Read `encrypted_note` from deposit events, or `cipher_text_1` and `cipher_text_2` from transfer events.
-3. Try to decrypt using the wallet root seed and viewing key.
-4. Store only notes that decrypt successfully in the wallet DB.
-5. Track note commitment and nullifier.
-6. Update spent state using `CheckNullifier` or event scan results.
-7. Store event height and tx hash for rollback/reorg handling.
+1. Fetch deposit/transfer outputs with `ScanEvents(after_height, after_sequence, limit, event_types)`.
+2. Read `encrypted_note` from deposit projections, or output `cipher_text`, `commitment`, `output_index`, and `view_tag` from transfer projections.
+3. Validate `scan_format_version` and `view_tag_version` before consuming the projection; fall back to the raw event path or stop without advancing the cursor on unsupported versions.
+4. For transfer outputs, derive the local 2-byte view tag. Because the tag is not currently circuit-bound, the safe default is to run full trial decrypt on mismatch so a tampered hint cannot hide an owned note.
+5. Treat `view_tag` as an untrusted optimization only. If it is missing or malformed, fall back to full trial decrypt. Skipping mismatch outputs should be an explicit fast-mode policy with recovery or forced-rescan support.
+6. Try to decrypt using the wallet root seed and viewing key. If view-key decryption fails, keep a spend-key compatibility/recovery fallback consistent with the Go SDK.
+7. Store only notes that decrypt successfully in the wallet DB.
+8. Track note commitment and nullifier.
+9. Refresh spent state with `CheckNullifiers` when available, chunking at 1000 nullifiers per request and falling back to `CheckNullifier`.
+10. Store event height, sequence, and tx hash for rollback/reorg handling.
+
+`ScanEvents` returns the effective `limit`, `scan_format_version=1`, and `view_tag_version=1`. Treat `limit` as the scan cursor page budget: a response can contain fewer returned events than `limit`, or even zero events, while still setting `has_more=true` if the page only contained event types filtered out by the request. In that case, advance to `next_height` and `next_sequence` and continue. The legacy `PrivacyEvents(after_height, page, limit, event_types)` query is still available for raw event inspection and compatibility, but new web/mobile wallets should not build primary rescan UX around offset pagination.
 
 The JS SDK wallet DB needs at least these fields.
 
@@ -184,8 +194,11 @@ randomness_hex
 spend_pubkey_hex
 view_pubkey_hex
 height
+sequence
 tx_hash
 spent
+last_scan_height
+last_scan_sequence
 ```
 
 ## 7. Deposit Implementation
@@ -251,8 +264,9 @@ Important constraints:
 - User disclosure supports `none`, `public`, and `recipient-encrypted` mode.
 - Sender self-view disclosure is enabled by default and omitted only by explicit opt-out.
 - Supported policies are `all-private`, `amount`, `to`, `amount-to`, `from`, `amount-from`, `from-to`, and `amount-from-to`.
-- Newly generated transfer payloads should use version `v2`; transfer proof version is currently `v1`.
-- During the migration window, the Go SDK/proverd can also verify legacy transfer payload `v1` when it has no self-view fields. If a legacy `v1` payload includes self-view fields, it is rejected because those fields are not covered by the legacy hash canon.
+- Newly generated transfer payloads must use version `v3`; transfer proof version is currently `v1`.
+- Transfer payload `v3` includes `view_tag_hexes` in the prepared payload hash. Existing `v1`/`v2` prepared transfer payloads should be regenerated instead of replayed.
+- Final `MsgTransfer` must include exactly two `view_tags`, aligned with `new_commitments` and `cipher_texts`.
 - Disclosure payload version is currently `v4` by query.
 
 ## 9. Disclosure Implementation

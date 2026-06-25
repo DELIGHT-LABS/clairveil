@@ -540,6 +540,7 @@ func TestMsgServerTransferRejectsRootNotFoundBeforeZK(t *testing.T) {
 		[][]byte{fixedFieldBytes(31), fixedFieldBytes(32)},
 		[][]byte{fixedFieldBytes(33), fixedFieldBytes(34)},
 		[][]byte{{0x01}, {0x02}},
+		[][]byte{{0x01, 0x02}, {0x03, 0x04}},
 	)
 
 	_, err := server.Transfer(sdk.WrapSDKContext(ctx), msg)
@@ -561,6 +562,7 @@ func TestMsgServerTransferRejectsInvalidNullifierCountBeforeZK(t *testing.T) {
 		[][]byte{fixedFieldBytes(41)},
 		[][]byte{fixedFieldBytes(42), fixedFieldBytes(43)},
 		[][]byte{{0x01}, {0x02}},
+		[][]byte{{0x01, 0x02}, {0x03, 0x04}},
 	)
 
 	_, err := server.Transfer(sdk.WrapSDKContext(ctx), msg)
@@ -584,6 +586,7 @@ func TestMsgServerTransferRejectsInsufficientBatchCapacityBeforeProof(t *testing
 		nullifiers:                  [][]byte{fixedFieldBytes(52), fixedFieldBytes(53)},
 		newCommitments:              [][]byte{fixedFieldBytes(54), fixedFieldBytes(55)},
 		cipherTexts:                 [][]byte{{0x01}, {0x02}},
+		viewTags:                    [][]byte{{0x01, 0x02}, {0x03, 0x04}},
 		auditDisclosureTargetPubKey: auditPubKey,
 	})
 	require.Error(t, err)
@@ -609,6 +612,7 @@ func TestMsgServerTransferRejectsOverflowAsTreeStateError(t *testing.T) {
 		nullifiers:                  [][]byte{fixedFieldBytes(62), fixedFieldBytes(63)},
 		newCommitments:              [][]byte{fixedFieldBytes(64), fixedFieldBytes(65)},
 		cipherTexts:                 [][]byte{{0x01}, {0x02}},
+		viewTags:                    [][]byte{{0x01, 0x02}, {0x03, 0x04}},
 		auditDisclosureTargetPubKey: auditPubKey,
 	})
 	require.Error(t, err)

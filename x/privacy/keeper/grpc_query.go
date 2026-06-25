@@ -16,6 +16,8 @@ import (
 
 var _ types.QueryServer = Keeper{}
 
+const maxBatchNullifierQueryLimit = 1000
+
 func (k Keeper) CheckNullifier(goCtx context.Context, req *types.QueryCheckNullifierRequest) (*types.QueryCheckNullifierResponse, error) {
 	if req == nil {
 		return nil, invalidQueryRequestErr()
@@ -31,6 +33,35 @@ func (k Keeper) CheckNullifier(goCtx context.Context, req *types.QueryCheckNulli
 		return nil, status.Error(codes.InvalidArgument, "nullifier must be canonical 32-byte field bytes")
 	}
 	return &types.QueryCheckNullifierResponse{Used: k.HasNullifier(ctx, canonicalNullifier)}, nil
+}
+
+func (k Keeper) CheckNullifiers(goCtx context.Context, req *types.QueryCheckNullifiersRequest) (*types.QueryCheckNullifiersResponse, error) {
+	if req == nil {
+		return nil, invalidQueryRequestErr()
+	}
+	if len(req.Nullifiers) > maxBatchNullifierQueryLimit {
+		return nil, status.Errorf(codes.InvalidArgument, "nullifier batch limit exceeded: got %d max %d", len(req.Nullifiers), maxBatchNullifierQueryLimit)
+	}
+
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	statuses := make([]*types.QueryNullifierStatus, 0, len(req.Nullifiers))
+	for _, nullifierHex := range req.Nullifiers {
+		nullifierBytes, err := decodeHexQueryArg(nullifierHex, "nullifier must be valid hex")
+		if err != nil {
+			return nil, err
+		}
+		canonicalNullifier, err := validateFieldElementBytesStrict(nullifierBytes)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "nullifier must be canonical 32-byte field bytes")
+		}
+
+		statuses = append(statuses, &types.QueryNullifierStatus{
+			Nullifier: hex.EncodeToString(canonicalNullifier),
+			Used:      k.HasNullifier(ctx, canonicalNullifier),
+		})
+	}
+
+	return &types.QueryCheckNullifiersResponse{Statuses: statuses}, nil
 }
 
 func (k Keeper) TreeState(goCtx context.Context, req *types.QueryTreeStateRequest) (*types.QueryTreeStateResponse, error) {
@@ -131,6 +162,39 @@ func (k Keeper) PrivacyEvents(goCtx context.Context, req *types.QueryPrivacyEven
 		Page:    page,
 		Limit:   limit,
 		HasMore: hasMore,
+	}, nil
+}
+
+func (k Keeper) ScanEvents(goCtx context.Context, req *types.QueryScanEventsRequest) (*types.QueryScanEventsResponse, error) {
+	if req == nil {
+		return nil, invalidQueryRequestErr()
+	}
+	if req.AfterHeight < 0 {
+		return nil, status.Error(codes.InvalidArgument, "after_height must not be negative")
+	}
+
+	limit := req.Limit
+	if limit == 0 {
+		limit = defaultScanEventsLimit
+	}
+	if limit > maxScanEventsLimit {
+		limit = maxScanEventsLimit
+	}
+
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	events, nextHeight, nextSequence, hasMore, err := k.GetScanEvents(ctx, req.AfterHeight, req.AfterSequence, limit, req.EventTypes)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &types.QueryScanEventsResponse{
+		Events:            events,
+		NextHeight:        nextHeight,
+		NextSequence:      nextSequence,
+		Limit:             limit,
+		HasMore:           hasMore,
+		ScanFormatVersion: types.ScanFormatVersion,
+		ViewTagVersion:    types.ViewTagVersion,
 	}, nil
 }
 
