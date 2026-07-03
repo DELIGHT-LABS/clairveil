@@ -267,6 +267,17 @@ x/privacy/client/sdk/transfer/service.go
 - 최종 `MsgTransfer`는 `new_commitments`, `cipher_texts`와 순서가 맞는 정확히 2개의 `view_tags`를 포함해야 합니다.
 - disclosure payload version은 현재 query 기준 `v4`입니다.
 
+Bulk payroll 또는 다른 대량 전송 client에서 쓰는 note reservation은 on-chain protocol이 아니라 client/control-plane layer 계약입니다. Go reference implementation과 fixture는 아래에 있습니다.
+
+```text
+x/privacy/client/sdk/reservation/
+x/privacy/client/sdk/payroll/
+x/privacy/client/sdk/conformance/testdata/privacy_note_reservation_contract.json
+docs/clairveil-note-reservation-design-kr.md
+```
+
+Proof 생성 전에 note를 예약하는 JS/TS client는 fixture에 고정된 reservation status 이름, active reservation 정의, atomic batch-reserve 규칙, compare-and-set 상태 전이, lease token 규칙, HMAC lookup-key test vector, operation 성공 증거 모델을 맞춰야 합니다. Nullifier spent는 note가 소비되었다는 증거이지만, payroll/payment operation을 성공 처리하려면 tx evidence가 expected output commitment, disclosure digest, recipient hash, amount, denom, item index와도 일치해야 합니다.
+
 ## 9. Disclosure 구현
 
 사용자 selective disclosure, audit disclosure, sender self-view disclosure는 같은 payload 검증 모델을 사용하지만 plane과 delivery 의미가 다릅니다.
@@ -448,7 +459,8 @@ docs/clairveil-proverd-remote-production-profile-kr.md
 9. prover adapter와 HTTP prover client를 구현합니다.
 10. `MsgTransfer` builder와 broadcast flow를 구현합니다.
 11. withdraw prepared payload, direct withdraw, relayed withdraw를 구현합니다.
-12. conformance fixture 기반 테스트와 local node e2e를 붙입니다.
+12. bulk payroll client라면 `privacy_note_reservation_contract.json` 기준 note reservation과 operation 상태 추적을 구현합니다.
+13. conformance fixture 기반 테스트와 local node e2e를 붙입니다.
 
 ## 13. 검증 기준
 
@@ -460,6 +472,7 @@ JS SDK handoff가 완료되었다고 보려면 아래가 가능해야 합니다.
 - deposit 후 event scan으로 내 note를 찾습니다.
 - transfer prepared payload의 hash가 Go fixture와 같은 방식으로 계산됩니다.
 - prover HTTP contract에 맞춰 transfer/withdraw proof request와 response를 검증합니다.
+- bulk payroll client가 `privacy_note_reservation_contract.json`의 reservation 전이와 operation 성공 규칙을 재현합니다.
 - user disclosure, audit disclosure, sender self-view disclosure를 decode하고 `verified=true`를 확인합니다.
 - exact-match withdraw와 relayed withdraw payload 검증이 동작합니다.
 - Clairveil repo의 `make privacy-e2e-smoke`와 같은 흐름을 JS SDK integration test가 따라갈 수 있습니다.
@@ -481,6 +494,7 @@ JS SDK handoff가 완료되었다고 보려면 아래가 가능해야 합니다.
 - withdraw proof request/response version `v1`
 - prover HTTP path `/v1/prover/transfer`, `/v1/prover/withdraw`
 - conformance fixture files under `x/privacy/client/sdk/conformance/testdata`
+- `privacy_note_reservation_contract.json`의 note reservation status와 operation evidence contract
 
 아직 JS SDK가 독자적으로 결정해야 하는 항목은 아래입니다.
 
@@ -506,6 +520,7 @@ x/privacy/client/sdk/conformance/testdata/privacy_wallet_golden_vectors.json
 x/privacy/client/sdk/conformance/testdata/privacy_browser_signer_provider_contract.json
 x/privacy/client/sdk/conformance/testdata/privacy_prover_http_api_contract.json
 x/privacy/client/sdk/conformance/testdata/privacy_send_capable_reference_flow.json
+x/privacy/client/sdk/conformance/testdata/privacy_note_reservation_contract.json
 ```
 
 그리고 Go core 쪽 sanity check는 아래 명령으로 확인합니다.

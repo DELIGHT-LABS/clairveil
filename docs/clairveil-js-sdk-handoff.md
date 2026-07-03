@@ -269,6 +269,17 @@ Important constraints:
 - Final `MsgTransfer` must include exactly two `view_tags`, aligned with `new_commitments` and `cipher_texts`.
 - Disclosure payload version is currently `v4` by query.
 
+For bulk payroll or other high-volume transfer clients, the note reservation contract is part of the client/control-plane layer rather than the on-chain protocol. The Go reference implementation and fixture are:
+
+```text
+x/privacy/client/sdk/reservation/
+x/privacy/client/sdk/payroll/
+x/privacy/client/sdk/conformance/testdata/privacy_note_reservation_contract.json
+docs/clairveil-note-reservation-design-kr.md
+```
+
+JS/TS clients that reserve notes before proof generation should match the reservation status names, active-reservation definition, atomic batch-reserve rule, compare-and-set transition rules, lease token rules, HMAC lookup-key test vector, and operation success evidence model in that fixture. A spent nullifier proves that the note was consumed, but it is not enough to mark a payroll/payment operation successful unless the tx evidence also matches the expected output commitment, disclosure digest, recipient hash, amount, denom, and item index.
+
 ## 9. Disclosure Implementation
 
 User selective disclosure, audit disclosure, and sender self-view disclosure use the same payload verification model, but they live on different planes and have different delivery meaning.
@@ -450,7 +461,8 @@ Recommended implementation order:
 9. Implement prover adapter and HTTP prover client.
 10. Implement `MsgTransfer` builder and broadcast flow.
 11. Implement withdraw prepared payload, direct withdraw, and relayed withdraw.
-12. Add conformance fixture-based tests and local node e2e.
+12. For bulk payroll clients, implement note reservation and operation-state tracking from `privacy_note_reservation_contract.json`.
+13. Add conformance fixture-based tests and local node e2e.
 
 ## 13. Validation Criteria
 
@@ -462,6 +474,7 @@ The JS SDK handoff is complete when the following work.
 - After deposit, event scanning finds the user's note.
 - Transfer prepared payload hashes are calculated in the same way as the Go fixtures.
 - Transfer/withdraw proof requests and responses are validated against the prover HTTP contract.
+- Bulk payroll clients reproduce the reservation transitions and operation success rules in `privacy_note_reservation_contract.json`.
 - User disclosure, audit disclosure, and sender self-view disclosure decode with `verified=true`.
 - Exact-match withdraw and relayed withdraw payload validation work.
 - A JS SDK integration test can follow the same flow as Clairveil repo's `make privacy-e2e-smoke`.
@@ -483,6 +496,7 @@ The JS SDK can currently treat these as stable contracts.
 - withdraw proof request/response version `v1`
 - prover HTTP paths `/v1/prover/transfer`, `/v1/prover/withdraw`
 - conformance fixture files under `x/privacy/client/sdk/conformance/testdata`
+- note reservation status and operation evidence contract in `privacy_note_reservation_contract.json`
 
 The JS SDK still needs to decide these independently.
 
@@ -508,6 +522,7 @@ x/privacy/client/sdk/conformance/testdata/privacy_wallet_golden_vectors.json
 x/privacy/client/sdk/conformance/testdata/privacy_browser_signer_provider_contract.json
 x/privacy/client/sdk/conformance/testdata/privacy_prover_http_api_contract.json
 x/privacy/client/sdk/conformance/testdata/privacy_send_capable_reference_flow.json
+x/privacy/client/sdk/conformance/testdata/privacy_note_reservation_contract.json
 ```
 
 Check Go core sanity with:

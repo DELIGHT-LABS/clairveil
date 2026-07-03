@@ -4,14 +4,14 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | Draft |
+| 상태 | 1차 구현 완료, 2차 설계 대기 |
 | 작성일 | 2026-07-03 |
 | 대상 브랜치 | `private/bulk-transfer` |
-| 대상 영역 | `x/privacy` client SDK, prover, benchmark, 이후 privacy protocol |
-| 1차 범위 | Note Reservation, Payroll Control Plane, Proof/Broadcast/Reconcile Queue, Multi-Message Tx, Prover Scaling, E2E Benchmark |
+| 대상 영역 | `x/privacy` client SDK, provider, benchmark, 이후 privacy protocol |
+| 1차 범위 | Note Reservation, Payroll Control Plane, Proof/Broadcast/Reconcile Queue, Multi-Message Tx, Prover Scaling, Capacity Simulation Benchmark |
 | 2차 범위 | N-output batch circuit |
 | 2차 권장 N | `N=32` |
-| 제외 범위 | Payroll Merkle Distribution, protocol-level reservation, production DB implementation |
+| 제외 범위 | Payroll Merkle Distribution, protocol-level reservation, production DB implementation, production scheduler service |
 
 ## 관련 문서
 
@@ -103,12 +103,26 @@ Payroll Control Plane은 최종 사용자 UI 자체가 아니라, 대량 지급�
 3. Proof/Broadcast/Reconcile Queue
 4. Multi-Message Transaction
 5. Prover Scaling
-6. E2E Benchmark
+6. Capacity Simulation Benchmark
 
 2차: protocol-level throughput 개선
 
 7. N-output Batch Circuit, 권장 N=32
 ```
+
+## 현재 구현 상태
+
+2026-07-03 기준 1차 범위는 repo 안에서 reusable SDK/reference implementation과 benchmark harness 형태로 구현되어 있음. Production DB adapter, 운영 scheduler service, 실제 10만건 localnet 실행 결과는 아직 이 repo에 포함하지 않음.
+
+| 단계 | 상태 | 구현 위치 |
+| --- | --- | --- |
+| Phase 1. Note Reservation | 구현 완료 | `x/privacy/client/sdk/reservation`, `x/privacy/client/sdk/conformance/testdata/privacy_note_reservation_contract.json` |
+| Phase 2. Payroll Control Plane | 구현 완료 | `x/privacy/client/sdk/payroll` |
+| Phase 3. Proof/Broadcast/Reconcile Queue | 구현 완료 | `x/privacy/client/sdk/payroll/proof_queue.go`, `broadcast_queue.go`, `reconcile_worker.go`, `retry_policy.go` |
+| Phase 4. Multi-Message Transaction | 구현 완료 | `x/privacy/client/sdk/payroll/chunker.go`, `batch_broadcaster.go`, `sdk_broadcaster.go`, `x/privacy/client/sdk/provider/tx.go` |
+| Phase 5. Prover Scaling | 구현 완료 | `x/privacy/client/sdk/payroll/prover_pool.go` |
+| Phase 6. Capacity Simulation Benchmark | 시뮬레이션 harness 구현 완료 | `cmd/clairveil-bulktransferbench`, `scripts/privacy-bulk-transfer-bench.sh`, `make privacy-bulk-transfer-bench` |
+| Phase 7. N-output Batch Circuit | 미구현 | 2차에서 `BatchJoinSplit32`로 진행 예정임 |
 
 ## 1차 계획
 
@@ -142,7 +156,7 @@ x/privacy/client/sdk/reservation/
 conformance fixture를 추가함.
 
 ```text
-x/privacy/client/sdk/conformance/testdata/note_reservation_contract.json
+x/privacy/client/sdk/conformance/testdata/privacy_note_reservation_contract.json
 x/privacy/client/sdk/conformance/note_reservation_contract_test.go
 ```
 
@@ -153,10 +167,11 @@ x/privacy/client/sdk/conformance/note_reservation_contract_test.go
 - active reservation 상태를 정의함.
 - 허용되는 상태 전이를 코드로 고정함.
 - 같은 `owner_key_id + nullifier_lookup_key` 조합에 active reservation이 하나만 존재하도록 store contract를 정의함.
+- 여러 reservation과 operation을 batch로 생성할 때 하나라도 실패하면 아무 것도 기록하지 않는 원자적 batch reserve contract를 정의함.
 - 상태 변경은 compare-and-set 방식으로 수행함.
-- proof worker와 broadcaster가 사용할 lease/heartbeat 규칙을 구현함.
+- proof worker와 broadcaster가 사용할 lease/heartbeat 규칙을 구현하고, worker-owned 상태 전이는 현재 lease token을 요구함.
 - `nullifier_lookup_key = HMAC(index_key, nullifier)` 형태의 lookup key helper를 제공함.
-- `nullifier_lookup_key_id` 또는 `lookup_key_version`을 포함함.
+- `nullifier_lookup_key_id` 또는 `lookup_key_version`을 포함하고, conformance fixture에 HMAC test vector를 포함함.
 - tx hash 조회, nullifier 조회, expected value 비교를 통한 reconcile helper를 구현함.
 - note 상태와 operation 성공 판정을 분리함.
 
@@ -179,6 +194,7 @@ JS SDK 개발자는 다음을 맞추면 됨.
 
 - 상태 전이 unit test가 통과함.
 - active reservation 중복 방지 test가 통과함.
+- batch reserve가 실패할 때 partial reservation을 남기지 않음.
 - lease 만료, heartbeat, zombie worker 방지 test가 통과함.
 - `Submitted`, `Unknown`, `ManualReview`가 TTL만으로 `Available` 처리되지 않음.
 - nullifier spent와 operation success가 분리되어 판정됨.
@@ -199,12 +215,10 @@ x/privacy/client/sdk/payroll/
   types.go
   status.go
   validator.go
-  planner.go
   note_allocator.go
   service.go
   report.go
   errors.go
-  planner_test.go
   validator_test.go
   note_allocator_test.go
   service_test.go
@@ -216,7 +230,7 @@ x/privacy/client/sdk/payroll/
 - recipient shielded address, amount, denom, duplicate row를 검증함.
 - payroll item별 expected value를 저장할 수 있게 함.
 - treasury note inventory에서 `Available` note만 선택함.
-- plan 확정 시점에 reservation을 생성함.
+- plan 확정 시점에 reservation을 원자적으로 생성함.
 - item별 `reservation_id`, `operation_id`, `batch_id`, `chunk_id`를 연결함.
 - 실패 item만 재계획할 수 있게 함.
 - report DTO를 정의해 지급 결과, 실패 사유, retry 이력을 출력할 수 있게 함.
@@ -233,6 +247,7 @@ x/privacy/client/sdk/payroll/
 
 - 1천건 및 10만건 synthetic payroll plan 생성이 가능함.
 - reservation service와 연동해 plan 확정 시 note가 `Reserved`로 전환됨.
+- plan 확정 중 reservation conflict가 나면 partial reservation이 남지 않음.
 - duplicate recipient, invalid address, insufficient note, reservation conflict가 분류됨.
 - 실패 item만 `ReplanRequired`로 분리할 수 있음.
 - report DTO가 operation status와 reservation status를 함께 표현함.
@@ -252,10 +267,9 @@ x/privacy/client/sdk/payroll/
   proof_queue.go
   broadcast_queue.go
   reconcile_worker.go
-  runner.go
   retry_policy.go
+  sdk_broadcaster.go
   runner_test.go
-  retry_policy_test.go
 ```
 
 필요하면 provider와 transfer helper를 보강함.
@@ -268,7 +282,7 @@ x/privacy/client/sdk/transfer/broadcast.go
 #### 구현 내용
 
 - `Reserved` 상태의 operation을 가져와 proof job으로 실행함.
-- proof worker는 lease를 획득한 뒤 기존 transfer SDK로 `MsgTransfer`를 생성함.
+- proof worker는 lease를 획득한 뒤 lease-token guarded transition으로 `Reserved -> Proving -> ProofReady`를 진행하고 기존 transfer SDK로 `MsgTransfer`를 생성함.
 - proof 생성이 끝나면 reservation을 `ProofReady`로 전환함.
 - broadcaster는 `ProofReady` 상태만 제출함.
 - broadcast 후 `tx_hash`, `tx_bytes_hash`, `sign_doc_hash`, `account_sequence`를 저장함.
@@ -300,7 +314,6 @@ x/privacy/client/sdk/payroll/
   chunker.go
   batch_broadcaster.go
   chunker_test.go
-  batch_broadcaster_test.go
 ```
 
 필요하면 단건 중심 transfer broadcaster를 다건 helper로 확장함.
@@ -316,7 +329,7 @@ x/privacy/client/sdk/provider/tx.go
 - 1차 benchmark 기준 `K=5`, `K=10`, `K=20`, `K=50`을 시험함.
 - 같은 chunk 안에 duplicate nullifier가 없는지 검사함.
 - gas limit, tx size, event size 기준으로 chunk 크기를 조정함.
-- `CosmosTxBroadcaster.GenerateOrBroadcast(msgs ...sdk.Msg)` 경로를 활용함.
+- `CosmosTxBroadcaster.BroadcastSDKMessages(ctx, msgs ...sdk.Msg)`와 payroll `SDKMessageBroadcasterAdapter` 경로를 활용함.
 - chunk 단위 tx hash와 item index mapping을 저장함.
 - chunk 실패 시 전체 chunk retry 또는 item 분리 retry를 지원함.
 
@@ -343,11 +356,11 @@ x/privacy/client/sdk/payroll/
   prover_pool_test.go
 ```
 
-기존 prover load 도구를 확장함.
+1차 구현에서는 기존 prover load 도구를 직접 확장하지 않고, payroll runner가 사용할 prover pool abstraction을 추가함. 실제 prover endpoint 여러 개를 대상으로 한 load 측정은 Phase 6 benchmark harness와 기존 prover load 도구를 함께 사용할 수 있음.
 
 ```text
-cmd/clairveil-proverload/main.go
-scripts/privacy-proverd-load-bench.sh
+x/privacy/client/sdk/payroll/prover_pool.go
+x/privacy/client/sdk/payroll/prover_pool_test.go
 ```
 
 필요하면 prover transport에 batch-friendly metadata를 추가함.
@@ -361,40 +374,36 @@ x/privacy/client/sdk/proverservice/
 
 - prover endpoint 여러 개를 대상으로 proof job을 분산함.
 - per-endpoint concurrency limit을 둠.
-- proof payload hash와 result hash를 기록함.
-- worker timeout, retry, cancellation을 처리함.
-- lease 만료 시 stale worker 결과를 무시함.
+- endpoint별 동시 실행 개수를 제한함.
+- request timeout과 context cancellation을 처리함.
+- endpoint 장애 시 다음 endpoint로 failover함.
+- lease 만료 시 stale worker 결과는 proof worker의 lease-token guarded transition에서 거부함.
 - prover unit `1`, `2`, `4`, `8`, `16`개에서 처리량을 측정함.
 
 #### 완료 기준
 
 - prover worker pool이 proof job을 병렬 처리함.
 - endpoint 장애 시 다른 endpoint로 retry할 수 있음.
-- payload mismatch 또는 stale lease 결과를 거부함.
-- prover unit 수별 throughput과 p95/p99 latency가 benchmark report에 기록됨.
+- endpoint별 concurrency limit을 적용할 수 있음.
+- stale lease 결과를 proof worker 상태 전이에서 거부함.
+- prover unit 수별 예상 throughput이 benchmark report에 기록됨.
 
-### Phase 6. E2E Benchmark
+### Phase 6. Capacity Simulation Benchmark
 
 #### 목표
 
-1차 구현으로 실제 목표 시나리오를 얼마나 처리할 수 있는지 측정함. 이 결과를 바탕으로 2차 N-output batch circuit의 필요성과 목표를 확정함.
+1차 구현으로 실제 목표 시나리오를 어느 정도 처리할 수 있을지 capacity simulation으로 추정함. 이 결과를 바탕으로 2차 N-output batch circuit의 필요성과 목표를 확정함. 실제 localnet 10만건 실행과 장애 주입 E2E benchmark는 이 harness를 기반으로 한 후속 운영 검증으로 둠.
 
 #### repo 작업
 
-localnet load 도구와 report 도구를 확장함.
+bulk transfer 전용 시뮬레이션 benchmark와 report script를 추가함.
 
 ```text
-cmd/clairveil-localnetload/main.go
 cmd/clairveil-benchreport/main.go
-scripts/privacy-localnet-tps-bench.sh
-scripts/privacy-benchmark-report.sh
-```
-
-필요하면 별도 script를 추가함.
-
-```text
+cmd/clairveil-bulktransferbench/main.go
+cmd/clairveil-bulktransferbench/main_test.go
 scripts/privacy-bulk-transfer-bench.sh
-benchmarks/privacy-bulk-transfer/
+Makefile
 ```
 
 #### benchmark 시나리오
@@ -404,29 +413,45 @@ benchmarks/privacy-bulk-transfer/
 - chunk size `K=5`, `K=10`, `K=20`, `K=50`
 - prover unit `1`, `2`, `4`, `8`, `16`
 - tx 처리량 가정 또는 실제 localnet 측정값별 비교
-- reservation conflict가 없는 정상 경로
-- 일부 tx timeout, 일부 nullifier conflict, 일부 proof failure가 섞인 실패 경로
+- reservation conflict, replan, manual review가 없는 정상 capacity path
 
 #### 측정 지표
 
 - payroll item/sec
 - proof/sec
 - tx envelope/sec
-- chunk success/failure rate
-- proof queue latency p50/p95/p99
-- broadcast latency p50/p95/p99
-- scanner/reconcile lag
-- failed item count
+- proof count
+- tx envelope count
+- chunk count
+- proof generation seconds
+- tx submit seconds
+- estimated total seconds
+- reservation conflict count
 - replan count
 - `ManualReview` count
-- tenant별 fairness와 완료 시간
 
 #### 완료 기준
 
-- 10만건 단일 기업의 end-to-end 예상 완료 시간이 산출됨.
-- 100개 기업 x 1천건의 tenant별 완료 시간과 global peak가 산출됨.
+- 10만건 단일 기업의 예상 완료 시간이 산출됨.
+- 100개 기업 x 1천건의 global capacity 추정치가 산출됨.
 - `K`와 prover unit 수에 따른 병목 전환 지점이 확인됨.
 - 2차 N-output batch circuit 진입 여부를 판단할 수 있는 수치가 확보됨.
+
+#### 실행 방법
+
+기본 시나리오는 아래 명령으로 실행함.
+
+```bash
+make privacy-bulk-transfer-bench
+```
+
+임시 출력 경로를 지정하려면 아래처럼 실행함.
+
+```bash
+BENCH_OUT_DIR="$(mktemp -d)" ./scripts/privacy-bulk-transfer-bench.sh
+```
+
+benchmark command는 `single-company-100k`, `hundred-companies-1k` 시나리오, chunk size, prover unit 수, proof/sec, tx/sec 가정을 입력받아 `bulk-summary.json`과 benchreport markdown/json 산출물을 생성함.
 
 ## 1차 산출물 요약
 
@@ -637,7 +662,7 @@ benchmarks/privacy-bulk-transfer/
 
 1차의 목적은 현재 protocol을 유지한 채 어디까지 가능한지 측정 가능한 시스템을 만드는 것임. 7번까지 1차에 넣으면 protocol 변경을 이미 확정한 것처럼 보이고, benchmark 없이 circuit 개발에 들어가게 됨.
 
-따라서 1차는 Note Reservation부터 E2E Benchmark까지로 제한함. 이 범위만으로도 대량 지급 workflow, failure handling, retry/reconcile, prover scaling, tx chunking의 실제 한계를 확인할 수 있음.
+따라서 1차는 Note Reservation부터 Capacity Simulation Benchmark까지로 제한함. 이 범위만으로도 대량 지급 workflow, failure handling, retry/reconcile, prover scaling, tx chunking의 구조적 한계와 예상 병목을 확인할 수 있음.
 
 ### 2차를 N-output batch circuit으로 정한 이유
 
