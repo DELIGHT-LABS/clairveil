@@ -302,7 +302,22 @@ if not all(checks):
     raise SystemExit("disclosure verification failed")
 PY
 
+batch_transfer_baseline_count=0
 if ((batch_transfer_count > 0)); then
+	run tx privacy list-notes --from bob --keyring-backend test --home "$home" --node "$node" --json >"$out/bob-notes-before-batch.json"
+	batch_transfer_baseline_count="$(
+		python3 - "$out/bob-notes-before-batch.json" "$batch_transfer_amount" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+doc = json.loads(Path(sys.argv[1]).read_text())
+batch_amount = sys.argv[2]
+spendable = [note for note in doc["notes"] if note["status"] == "spendable"]
+print(sum(1 for note in spendable if note["amount"] == batch_amount))
+PY
+	)"
+
 	for i in $(seq 1 "$batch_transfer_count"); do
 		run tx privacy deposit "${batch_transfer_amount}uclair" --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas 2500000 --gas-prices 8500000000uclair --yes --output json >"$out/deposit-batch-${i}.json"
 		write_submitted_at "$out/deposit-batch-${i}.submitted-at"
@@ -327,7 +342,7 @@ if ((batch_transfer_count > 0)); then
 fi
 
 run tx privacy list-notes --from bob --keyring-backend test --home "$home" --node "$node" --json >"$out/bob-notes.json"
-python3 - "$out/bob-notes.json" "$batch_transfer_count" "$batch_transfer_amount" <<'PY'
+python3 - "$out/bob-notes.json" "$batch_transfer_count" "$batch_transfer_amount" "$batch_transfer_baseline_count" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -335,15 +350,16 @@ from pathlib import Path
 doc = json.loads(Path(sys.argv[1]).read_text())
 batch_count = int(sys.argv[2])
 batch_amount = sys.argv[3]
+batch_baseline_count = int(sys.argv[4])
 spendable = [note for note in doc["notes"] if note["status"] == "spendable"]
 amounts = {note["amount"] for note in spendable}
 required = {"11", "7", "10"}
 if not required.issubset(amounts):
     raise SystemExit(f"missing bob notes: {required - amounts}")
 if batch_count > 0:
-    received = sum(1 for note in spendable if note["amount"] == batch_amount)
-    if received < batch_count:
-        raise SystemExit(f"missing bob batch notes: expected at least {batch_count} notes with amount {batch_amount}, got {received}")
+    received_delta = sum(1 for note in spendable if note["amount"] == batch_amount) - batch_baseline_count
+    if received_delta < batch_count:
+        raise SystemExit(f"missing bob batch notes: expected at least {batch_count} new notes with amount {batch_amount}, got {received_delta}")
 PY
 
 run tx privacy withdraw 11uclair --recipient "$(cat "$out/alice-address.txt")" --from bob --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas 3500000 --gas-prices 8500000000uclair --yes --output json >"$out/withdraw-direct.json"

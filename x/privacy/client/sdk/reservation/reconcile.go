@@ -48,7 +48,10 @@ func (s Service) Reconcile(ctx context.Context, reservationID string, evidence O
 
 	var operation *PayrollOperation
 	if reservation.OperationID != "" {
-		operation, _ = s.Store.GetOperation(ctx, reservation.OperationID)
+		operation, err = s.Store.GetOperation(ctx, reservation.OperationID)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if evidence.TxFailed && !evidence.NullifierSpent {
@@ -59,7 +62,9 @@ func (s Service) Reconcile(ctx context.Context, reservationID string, evidence O
 		if operation != nil {
 			operation.Status = OperationStatusFailed
 			operation.UpdatedAt = s.now()
-			_, _ = s.Store.UpdateOperation(ctx, *operation)
+			if _, err := s.Store.UpdateOperation(ctx, *operation); err != nil {
+				return nil, err
+			}
 		}
 		return &ReconcileResult{ReservationStatus: updated.Status, OperationStatus: OperationStatusFailed, Reason: "tx failed and nullifier is unspent"}, nil
 	}
@@ -69,13 +74,15 @@ func (s Service) Reconcile(ctx context.Context, reservationID string, evidence O
 			reservation.Status = StatusConfirmedSpent
 			reservation.UpdatedAt = s.now()
 			_, updateErr := s.Store.UpdateReservation(ctx, *reservation)
+			if updateErr != nil {
+				return nil, updateErr
+			}
 			if operation != nil {
 				operation.Status = OperationStatusConflictSpent
 				operation.UpdatedAt = s.now()
-				_, _ = s.Store.UpdateOperation(ctx, *operation)
-			}
-			if updateErr != nil {
-				return nil, updateErr
+				if _, err := s.Store.UpdateOperation(ctx, *operation); err != nil {
+					return nil, err
+				}
 			}
 			return &ReconcileResult{
 				ReservationStatus: StatusConfirmedSpent,
@@ -88,13 +95,15 @@ func (s Service) Reconcile(ctx context.Context, reservationID string, evidence O
 		reservation.Status = StatusConfirmedSpent
 		reservation.UpdatedAt = s.now()
 		_, updateErr := s.Store.UpdateReservation(ctx, *reservation)
+		if updateErr != nil {
+			return nil, updateErr
+		}
 		if operation != nil {
 			operation.Status = OperationStatusSucceeded
 			operation.UpdatedAt = s.now()
-			_, _ = s.Store.UpdateOperation(ctx, *operation)
-		}
-		if updateErr != nil {
-			return nil, updateErr
+			if _, err := s.Store.UpdateOperation(ctx, *operation); err != nil {
+				return nil, err
+			}
 		}
 		return &ReconcileResult{ReservationStatus: StatusConfirmedSpent, OperationStatus: OperationStatusSucceeded, Reason: "operation evidence matched"}, nil
 	}

@@ -2,6 +2,7 @@ package reservation
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -133,6 +134,45 @@ func TestServiceReconcileRequiresBatchItemIndexEvidence(t *testing.T) {
 	}
 }
 
+func TestServiceReconcileReturnsOperationUpdateError(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStore()
+	updateErr := errors.New("operation update failed")
+	svc := Service{Store: operationUpdateFailingStore{Store: store, err: updateErr}, Now: fixedNow}
+
+	_, err := svc.Reserve(ctx, ReserveInput{
+		Reservation: testReservation("r1", "note-a", "op-a"),
+		Operation: &PayrollOperation{
+			OperationID:              "op-a",
+			ExpectedOutputCommitment: "commitment-a",
+			ExpectedDisclosureDigest: "digest-a",
+			ExpectedRecipientHash:    "recipient-a",
+			ExpectedAmountHash:       "amount-a",
+			ExpectedDenom:            "uclair",
+			BatchItemIndex:           0,
+			Status:                   OperationStatusPlanned,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	submitReservationForReconcile(t, ctx, svc, "r1")
+
+	_, err = svc.Reconcile(ctx, "r1", OperationEvidence{
+		NullifierSpent:      true,
+		OutputCommitment:    "commitment-a",
+		DisclosureDigest:    "digest-a",
+		RecipientHash:       "recipient-a",
+		AmountHash:          "amount-a",
+		Denom:               "uclair",
+		BatchItemIndex:      0,
+		BatchItemIndexKnown: true,
+	})
+	if !errors.Is(err, updateErr) {
+		t.Fatalf("expected operation update error, got %v", err)
+	}
+}
+
 func submitReservationForReconcile(t *testing.T, ctx context.Context, svc Service, reservationID string) {
 	t.Helper()
 
@@ -149,4 +189,13 @@ func submitReservationForReconcile(t *testing.T, ctx context.Context, svc Servic
 	if _, err := svc.MarkSubmitted(ctx, reservationID, lease.Token, "txhash", "tx-bytes", "sign-doc", 1); err != nil {
 		t.Fatal(err)
 	}
+}
+
+type operationUpdateFailingStore struct {
+	Store
+	err error
+}
+
+func (s operationUpdateFailingStore) UpdateOperation(context.Context, PayrollOperation) (*PayrollOperation, error) {
+	return nil, s.err
 }
