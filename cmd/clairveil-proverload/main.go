@@ -42,6 +42,7 @@ type benchmarkSummary struct {
 	LoadProfile     string                   `json:"load_profile,omitempty"`
 	Route           string                   `json:"route,omitempty"`
 	Concurrency     int                      `json:"concurrency,omitempty"`
+	EndpointCount   int                      `json:"endpoint_count,omitempty"`
 	WarmupSeconds   int                      `json:"warmup_seconds,omitempty"`
 	DurationSeconds int                      `json:"duration_seconds,omitempty"`
 	Metrics         map[string]metricSummary `json:"metric_summaries,omitempty"`
@@ -58,6 +59,7 @@ type requestPayload struct {
 }
 
 type loadResult struct {
+	Endpoint      string
 	LatencyMS     float64
 	RequestBytes  int
 	ResponseBytes int
@@ -68,6 +70,7 @@ type loadResult struct {
 }
 
 type telemetrySample struct {
+	Endpoint   string
 	CapturedAt time.Time
 	Metrics    privacyproverservice.MetricsResponse
 	Err        error
@@ -92,6 +95,7 @@ func main() {
 	configureSDK()
 
 	var baseURL string
+	var baseURLsValue string
 	var bearerToken string
 	var fixtureBundle string
 	var transferRequestFile string
@@ -105,6 +109,7 @@ func main() {
 	var outPath string
 
 	flag.StringVar(&baseURL, "base-url", "", "clairveil-proverd base URL")
+	flag.StringVar(&baseURLsValue, "base-urls", "", "comma-separated clairveil-proverd base URLs for round-robin pool load")
 	flag.StringVar(&bearerToken, "bearer-token", strings.TrimSpace(os.Getenv("CLAIRVEIL_PROVERD_BEARER_TOKEN")), "optional bearer token for clairveil-proverd")
 	flag.StringVar(&fixtureBundle, "fixture-bundle", "", "optional prover example bundle containing transfer and withdraw requests; defaults to generated prover-valid requests")
 	flag.StringVar(&transferRequestFile, "transfer-request", "", "transfer proof request JSON file")
@@ -118,8 +123,9 @@ func main() {
 	flag.StringVar(&outPath, "out", "benchmarks/privacy-proverd-load/load-summary.json", "structured benchmark summary output path")
 	flag.Parse()
 
-	if strings.TrimSpace(baseURL) == "" {
-		fatalf("-base-url is required")
+	baseURLs, err := parseBaseURLs(baseURL, baseURLsValue)
+	if err != nil {
+		fatalf("parse base urls: %v", err)
 	}
 	duration, err := time.ParseDuration(durationValue)
 	if err != nil || duration <= 0 {
@@ -147,17 +153,19 @@ func main() {
 	}
 
 	client := &http.Client{Timeout: requestTimeout}
-	if err := preflightRequests(context.Background(), client, baseURL, bearerToken, requests); err != nil {
-		fatalf("preflight requests: %v", err)
+	for _, endpoint := range baseURLs {
+		if err := preflightRequests(context.Background(), client, endpoint, bearerToken, requests); err != nil {
+			fatalf("preflight requests for %s: %v", endpoint, err)
+		}
 	}
 
 	var summaries []benchmarkSummary
 	for _, level := range concurrency {
 		if warmup > 0 {
-			_, _, _ = runLoadBucket(context.Background(), client, baseURL, bearerToken, requests, level, warmup, true, 0)
+			_, _, _ = runLoadBucket(context.Background(), client, baseURLs, bearerToken, requests, level, warmup, true, 0)
 		}
-		results, elapsed, telemetry := runLoadBucket(context.Background(), client, baseURL, bearerToken, requests, level, duration, false, telemetryInterval)
-		summaries = append(summaries, summarizeLoadBucket(profile, requests, level, warmup, elapsed, results, telemetry))
+		results, elapsed, telemetry := runLoadBucket(context.Background(), client, baseURLs, bearerToken, requests, level, duration, false, telemetryInterval)
+		summaries = append(summaries, summarizeLoadBucket(profile, requests, len(baseURLs), level, warmup, elapsed, results, telemetry))
 	}
 
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
@@ -171,6 +179,30 @@ func main() {
 		fatalf("write summary: %v", err)
 	}
 	fmt.Printf("prover load summary written to %s\n", outPath)
+}
+
+func parseBaseURLs(baseURL string, baseURLsValue string) ([]string, error) {
+	raw := baseURL
+	if strings.TrimSpace(baseURLsValue) != "" {
+		raw = baseURLsValue
+	}
+	seen := map[string]struct{}{}
+	var urls []string
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if _, ok := seen[part]; ok {
+			continue
+		}
+		seen[part] = struct{}{}
+		urls = append(urls, part)
+	}
+	if len(urls) == 0 {
+		return nil, fmt.Errorf("-base-url or -base-urls is required")
+	}
+	return urls, nil
 }
 
 func parsePositiveInts(value string) ([]int, error) {
@@ -284,7 +316,7 @@ func preflightRequests(ctx context.Context, client *http.Client, baseURL, bearer
 	return nil
 }
 
-func runLoadBucket(ctx context.Context, client *http.Client, baseURL, bearerToken string, requests []requestPayload, concurrency int, duration time.Duration, quiet bool, telemetryInterval time.Duration) ([]loadResult, time.Duration, []telemetrySample) {
+func runLoadBucket(ctx context.Context, client *http.Client, baseURLs []string, bearerToken string, requests []requestPayload, concurrency int, duration time.Duration, quiet bool, telemetryInterval time.Duration) ([]loadResult, time.Duration, []telemetrySample) {
 	var telemetry []telemetrySample
 	var telemetryMu sync.Mutex
 	recordTelemetry := func(sample telemetrySample) {
@@ -293,7 +325,9 @@ func runLoadBucket(ctx context.Context, client *http.Client, baseURL, bearerToke
 		telemetryMu.Unlock()
 	}
 	if telemetryInterval > 0 {
-		recordTelemetry(fetchTelemetry(context.Background(), client, baseURL, bearerToken))
+		for _, sample := range fetchTelemetryFromEndpoints(context.Background(), client, baseURLs, bearerToken) {
+			recordTelemetry(sample)
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, duration)
@@ -324,7 +358,9 @@ func runLoadBucket(ctx context.Context, client *http.Client, baseURL, bearerToke
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					recordTelemetry(fetchTelemetry(ctx, client, baseURL, bearerToken))
+					for _, sample := range fetchTelemetryFromEndpoints(ctx, client, baseURLs, bearerToken) {
+						recordTelemetry(sample)
+					}
 				}
 			}
 		}()
@@ -343,7 +379,8 @@ func runLoadBucket(ctx context.Context, client *http.Client, baseURL, bearerToke
 				}
 				index := counter.Add(1) - 1
 				payload := requests[int(index)%len(requests)]
-				result := doRequest(context.Background(), client, baseURL, bearerToken, payload)
+				endpoint := baseURLs[int(index)%len(baseURLs)]
+				result := doRequest(context.Background(), client, endpoint, bearerToken, payload)
 				if !quiet {
 					results <- result
 				}
@@ -353,7 +390,9 @@ func runLoadBucket(ctx context.Context, client *http.Client, baseURL, bearerToke
 	wg.Wait()
 	elapsed := time.Since(started)
 	if telemetryInterval > 0 {
-		recordTelemetry(fetchTelemetry(context.Background(), client, baseURL, bearerToken))
+		for _, sample := range fetchTelemetryFromEndpoints(context.Background(), client, baseURLs, bearerToken) {
+			recordTelemetry(sample)
+		}
 	}
 	cancel()
 	telemetryWG.Wait()
@@ -366,7 +405,7 @@ func doRequest(ctx context.Context, client *http.Client, baseURL, bearerToken st
 	start := time.Now()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+payload.Path, bytes.NewReader(payload.Body))
 	if err != nil {
-		return loadResult{Err: err}
+		return loadResult{Endpoint: baseURL, Err: err}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if strings.TrimSpace(bearerToken) != "" {
@@ -374,14 +413,15 @@ func doRequest(ctx context.Context, client *http.Client, baseURL, bearerToken st
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return loadResult{Err: err, Timeout: isTimeoutError(ctx, err)}
+		return loadResult{Endpoint: baseURL, Err: err, Timeout: isTimeoutError(ctx, err)}
 	}
 	defer resp.Body.Close()
 	responseBytes, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
-		return loadResult{Err: readErr}
+		return loadResult{Endpoint: baseURL, Err: readErr}
 	}
 	result := loadResult{
+		Endpoint:      baseURL,
 		LatencyMS:     float64(time.Since(start)) / float64(time.Millisecond),
 		RequestBytes:  len(payload.Body),
 		ResponseBytes: len(responseBytes),
@@ -408,10 +448,11 @@ func isTimeoutError(ctx context.Context, err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "timeout")
 }
 
-func summarizeLoadBucket(profile string, requests []requestPayload, concurrency int, warmup time.Duration, elapsed time.Duration, results []loadResult, telemetry []telemetrySample) benchmarkSummary {
+func summarizeLoadBucket(profile string, requests []requestPayload, endpointCount int, concurrency int, warmup time.Duration, elapsed time.Duration, results []loadResult, telemetry []telemetrySample) benchmarkSummary {
 	latencies := make([]float64, 0, len(results))
 	requestBytes := make([]float64, 0, len(results))
 	responseBytes := make([]float64, 0, len(results))
+	requestsPerEndpoint := endpointRequestCounts(results)
 	errors := 0
 	timeouts := 0
 	for _, result := range results {
@@ -443,6 +484,10 @@ func summarizeLoadBucket(profile string, requests []requestPayload, concurrency 
 		"timeout_rate":   scalarMetric(rate(timeouts, total)),
 		"request_bytes":  summarizeValues(requestBytes),
 		"response_bytes": summarizeValues(responseBytes),
+		"endpoint_count": scalarMetric(float64(endpointCount)),
+	}
+	if len(requestsPerEndpoint) > 0 {
+		metrics["requests_per_endpoint"] = summarizeValues(requestsPerEndpoint)
 	}
 	addTelemetryMetrics(metrics, telemetry)
 	return benchmarkSummary{
@@ -453,17 +498,45 @@ func summarizeLoadBucket(profile string, requests []requestPayload, concurrency 
 		LoadProfile:     profile,
 		Route:           route,
 		Concurrency:     concurrency,
+		EndpointCount:   endpointCount,
 		WarmupSeconds:   int(warmup.Round(time.Second).Seconds()),
 		DurationSeconds: int(elapsed.Round(time.Second).Seconds()),
 		Metrics:         metrics,
 	}
 }
 
+func endpointRequestCounts(results []loadResult) []float64 {
+	counts := map[string]int{}
+	for _, result := range results {
+		endpoint := strings.TrimSpace(result.Endpoint)
+		if endpoint == "" {
+			continue
+		}
+		counts[endpoint]++
+	}
+	if len(counts) == 0 {
+		return nil
+	}
+	out := make([]float64, 0, len(counts))
+	for _, count := range counts {
+		out = append(out, float64(count))
+	}
+	return out
+}
+
+func fetchTelemetryFromEndpoints(ctx context.Context, client *http.Client, baseURLs []string, bearerToken string) []telemetrySample {
+	samples := make([]telemetrySample, 0, len(baseURLs))
+	for _, endpoint := range baseURLs {
+		samples = append(samples, fetchTelemetry(ctx, client, endpoint, bearerToken))
+	}
+	return samples
+}
+
 func fetchTelemetry(ctx context.Context, client *http.Client, baseURL, bearerToken string) telemetrySample {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	sample := telemetrySample{CapturedAt: time.Now()}
+	sample := telemetrySample{Endpoint: baseURL, CapturedAt: time.Now()}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(baseURL, "/")+privacyproverservice.MetricsPath, nil)
 	if err != nil {
 		sample.Err = err

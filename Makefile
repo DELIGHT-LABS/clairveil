@@ -64,6 +64,10 @@ privacy-proverd-bench:
 privacy-proverd-load-bench:
 	./scripts/privacy-proverd-load-bench.sh
 
+.PHONY: privacy-proverd-scale-bench
+privacy-proverd-scale-bench:
+	./scripts/privacy-proverd-scale-bench.sh
+
 .PHONY: privacy-user-latency-bench
 privacy-user-latency-bench:
 	./scripts/privacy-user-latency-bench.sh

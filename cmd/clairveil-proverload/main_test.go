@@ -28,6 +28,22 @@ func TestParsePositiveInts(t *testing.T) {
 	}
 }
 
+func TestParseBaseURLsPrefersCommaSeparatedPool(t *testing.T) {
+	got, err := parseBaseURLs("http://ignored:9090", "http://a:9090, http://b:9090, http://a:9090")
+	if err != nil {
+		t.Fatalf("parse base urls: %v", err)
+	}
+	if len(got) != 2 || got[0] != "http://a:9090" || got[1] != "http://b:9090" {
+		t.Fatalf("unexpected base urls: %+v", got)
+	}
+}
+
+func TestParseBaseURLsRequiresAtLeastOneURL(t *testing.T) {
+	if _, err := parseBaseURLs("", " , "); err == nil {
+		t.Fatalf("expected missing base url error")
+	}
+}
+
 func TestLoadRequestsFromFixtureBundle(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bundle.json")
 	err := os.WriteFile(path, []byte(`{
@@ -103,12 +119,13 @@ func TestSummarizeLoadBucket(t *testing.T) {
 		"transfer_only",
 		[]requestPayload{{Route: "transfer", Body: []byte("request")}},
 		2,
+		2,
 		5*time.Second,
 		10*time.Second,
 		[]loadResult{
-			{LatencyMS: 100, RequestBytes: 10, ResponseBytes: 20},
-			{LatencyMS: 200, RequestBytes: 10, ResponseBytes: 30},
-			{Err: errBoom{}},
+			{Endpoint: "http://a:9090", LatencyMS: 100, RequestBytes: 10, ResponseBytes: 20},
+			{Endpoint: "http://b:9090", LatencyMS: 200, RequestBytes: 10, ResponseBytes: 30},
+			{Endpoint: "http://a:9090", Err: errBoom{}},
 		},
 		[]telemetrySample{
 			{
@@ -144,6 +161,9 @@ func TestSummarizeLoadBucket(t *testing.T) {
 	if summary.Samples != 3 || summary.ClaimType != "prover_rps" || summary.Concurrency != 2 {
 		t.Fatalf("unexpected summary metadata: %+v", summary)
 	}
+	if summary.EndpointCount != 2 {
+		t.Fatalf("unexpected endpoint count: %+v", summary)
+	}
 	if got := summary.Metrics["requests/sec"].Mean; got != 0.2 {
 		t.Fatalf("unexpected requests/sec %.3f", got)
 	}
@@ -158,6 +178,12 @@ func TestSummarizeLoadBucket(t *testing.T) {
 	}
 	if got := summary.Metrics["max_rss_bytes"].Mean; got != 20_480 {
 		t.Fatalf("unexpected max rss %.3f", got)
+	}
+	if got := summary.Metrics["endpoint_count"].Mean; got != 2 {
+		t.Fatalf("unexpected endpoint count metric %.3f", got)
+	}
+	if got := summary.Metrics["requests_per_endpoint"].Max; got != 2 {
+		t.Fatalf("unexpected requests per endpoint max %.3f", got)
 	}
 	if got := summary.Metrics["telemetry_error_rate"].Mean; got != 0 {
 		t.Fatalf("unexpected telemetry error rate %.3f", got)
@@ -178,7 +204,7 @@ func TestRunLoadBucketDrainsMoreResultsThanChannelBuffer(t *testing.T) {
 		results, _, _ := runLoadBucket(
 			context.Background(),
 			server.Client(),
-			server.URL,
+			[]string{server.URL},
 			"",
 			[]requestPayload{{Route: "transfer", Path: "/prove/transfer", Body: []byte(`{}`)}},
 			1,
@@ -199,6 +225,42 @@ func TestRunLoadBucketDrainsMoreResultsThanChannelBuffer(t *testing.T) {
 	}
 }
 
+func TestRunLoadBucketDistributesRequestsAcrossEndpoints(t *testing.T) {
+	var first atomic.Int64
+	var second atomic.Int64
+	firstServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		first.Add(1)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer firstServer.Close()
+	secondServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		second.Add(1)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer secondServer.Close()
+
+	results, _, _ := runLoadBucket(
+		context.Background(),
+		firstServer.Client(),
+		[]string{firstServer.URL, secondServer.URL},
+		"",
+		[]requestPayload{{Route: "transfer", Path: "/prove/transfer", Body: []byte(`{}`)}},
+		2,
+		50*time.Millisecond,
+		false,
+		0,
+	)
+
+	if len(results) == 0 {
+		t.Fatal("expected load results")
+	}
+	if first.Load() == 0 || second.Load() == 0 {
+		t.Fatalf("expected both endpoints to receive requests, got first=%d second=%d", first.Load(), second.Load())
+	}
+}
+
 func TestRunLoadBucketLetsInFlightRequestFinishAtDurationDeadline(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(30 * time.Millisecond)
@@ -212,7 +274,7 @@ func TestRunLoadBucketLetsInFlightRequestFinishAtDurationDeadline(t *testing.T) 
 	results, _, _ := runLoadBucket(
 		context.Background(),
 		client,
-		server.URL,
+		[]string{server.URL},
 		"",
 		[]requestPayload{{Route: "transfer", Path: "/prove/transfer", Body: []byte(`{}`)}},
 		1,

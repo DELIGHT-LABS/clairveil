@@ -12,7 +12,8 @@ Korean version: [README-kr.md](README-kr.md)
 - `privacy-e2e-smoke.sh`: validates the full local privacy flow: deposit, transfer, disclosure decode, direct withdraw, and relayed withdraw.
 - `privacy-bench.sh`: runs privacy circuit benchmarks and writes structured JSON/Markdown reports.
 - `privacy-proverd-bench.sh`: runs in-process prover HTTP transport benchmarks.
-- `privacy-proverd-load-bench.sh`: summarizes external `clairveil-proverd` load against an already running prover.
+- `privacy-proverd-load-bench.sh`: summarizes external `clairveil-proverd` load against one already running prover via `PROVERD_URL`, or a round-robin prover pool via `PROVERD_URLS`.
+- `privacy-proverd-scale-bench.sh`: runs the external prover load benchmark with pool-oriented defaults and writes `privacy-proverd-scale` reports. Requires comma-separated `PROVERD_URLS`.
 - `privacy-bench-localnet.sh`: runs localnet privacy smoke and writes fee, gas, reserve, and localnet summaries.
 - `privacy-localnet-tps-bench.sh`: wraps localnet smoke output as a `chain_tps` benchmark family.
 - `privacy-transfer-batch-localnet-bench.sh`: runs the localnet smoke with an extra multi-message `transfer-batch` tx enabled. Set `TRANSFER_BATCH_COUNT=N` and `TRANSFER_BATCH_AMOUNT=A` to vary the batch envelope.

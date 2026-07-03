@@ -5,12 +5,14 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 proverd_url="${PROVERD_URL:-}"
-if [[ -z "$proverd_url" ]]; then
-  echo "PROVERD_URL is required, for example PROVERD_URL=http://127.0.0.1:9090" >&2
+proverd_urls="${PROVERD_URLS:-}"
+if [[ -z "$proverd_url" && -z "$proverd_urls" ]]; then
+  echo "PROVERD_URL or PROVERD_URLS is required, for example PROVERD_URL=http://127.0.0.1:9090 or PROVERD_URLS=http://127.0.0.1:9090,http://127.0.0.1:9091" >&2
   exit 1
 fi
 
 bench_out_dir="${BENCH_OUT_DIR:-benchmarks/privacy-proverd-load}"
+result_family="${RESULT_FAMILY:-privacy-proverd-load}"
 profile="${PROVERLOAD_PROFILE:-transfer_only}"
 concurrency="${PROVERLOAD_CONCURRENCY:-1,2}"
 duration="${PROVERLOAD_DURATION:-30s}"
@@ -42,7 +44,7 @@ claim_saturation_profile_sha256="${CLAIM_SATURATION_PROFILE_SHA256:-}"
 source_commit="$(git rev-parse HEAD 2>/dev/null || true)"
 source_dirty="false"
 source_status="$(git status --short --untracked-files=all -- . 2>/dev/null || true)"
-if [[ -n "$(printf '%s\n' "$source_status" | awk 'NF { status=substr($0,1,2); path=substr($0,4); if (status=="??" && path ~ /^benchmarks\/(privacy-circuits|privacy-proverd|privacy-localnet|privacy-proverd-load|privacy-localnet-tps|privacy-user-latency|public-capacity)\//) next; if (status=="??" && path ~ /^(clairveild|clairveil-setup|clairveil-verify|clairveil-proverd|clairveil-benchreport|clairveil-proverload|clairveil-localnetload|clairveil-userlatency)$/) next; print }')" ]]; then
+if [[ -n "$(printf '%s\n' "$source_status" | awk 'NF { status=substr($0,1,2); path=substr($0,4); if (status=="??" && path ~ /^benchmarks\/(privacy-circuits|privacy-proverd|privacy-localnet|privacy-proverd-load|privacy-proverd-scale|privacy-localnet-tps|privacy-user-latency|public-capacity)\//) next; if (status=="??" && path ~ /^(clairveild|clairveil-setup|clairveil-verify|clairveil-proverd|clairveil-benchreport|clairveil-proverload|clairveil-localnetload|clairveil-userlatency)$/) next; print }')" ]]; then
   source_dirty="true"
 fi
 
@@ -53,7 +55,6 @@ run_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 load_args=(
   run ./cmd/clairveil-proverload
-  -base-url "$proverd_url"
   -profile "$profile"
   -concurrency "$concurrency"
   -duration "$duration"
@@ -62,6 +63,11 @@ load_args=(
   -telemetry-interval "$telemetry_interval"
   -out "$summary_file"
 )
+if [[ -n "$proverd_urls" ]]; then
+  load_args+=(-base-urls "$proverd_urls")
+else
+  load_args+=(-base-url "$proverd_url")
+fi
 if [[ -n "$bearer_token" ]]; then
   load_args+=(-bearer-token "$bearer_token")
 fi
@@ -76,7 +82,11 @@ if [[ -n "$withdraw_request" ]]; then
 fi
 
 echo "running external clairveil-proverd load benchmark"
-echo "  PROVERD_URL=$proverd_url"
+if [[ -n "$proverd_urls" ]]; then
+  echo "  PROVERD_URLS=$proverd_urls"
+else
+  echo "  PROVERD_URL=$proverd_url"
+fi
 echo "  PROVERLOAD_PROFILE=$profile"
 echo "  PROVERLOAD_CONCURRENCY=$concurrency"
 echo "  PROVERLOAD_DURATION=$duration"
@@ -96,7 +106,7 @@ report_args=(
   -out "$bench_out_dir"
   -commit "$source_commit"
   -dirty "$source_dirty"
-  -result-family "privacy-proverd-load"
+  -result-family "$result_family"
   -source-files "$summary_file"
   -run-started-at "$run_started_at"
   -run-ended-at "$run_ended_at"

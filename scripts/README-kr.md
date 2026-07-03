@@ -12,7 +12,8 @@
 - `privacy-e2e-smoke.sh`: deposit, transfer, disclosure decode, direct withdraw, relayed withdraw까지 local privacy flow 전체를 검증합니다.
 - `privacy-bench.sh`: privacy circuit benchmark를 실행하고 structured JSON/Markdown report를 생성합니다.
 - `privacy-proverd-bench.sh`: in-process prover HTTP transport benchmark를 실행합니다.
-- `privacy-proverd-load-bench.sh`: 이미 실행 중인 external `clairveil-proverd`를 대상으로 load summary를 생성합니다.
+- `privacy-proverd-load-bench.sh`: `PROVERD_URL`로 이미 실행 중인 external `clairveil-proverd` 1개를 측정하거나, `PROVERD_URLS`로 round-robin prover pool을 측정합니다.
+- `privacy-proverd-scale-bench.sh`: pool 측정용 기본값으로 external prover load benchmark를 실행하고 `privacy-proverd-scale` report를 생성합니다. comma-separated `PROVERD_URLS`가 필요합니다.
 - `privacy-bench-localnet.sh`: localnet privacy smoke를 실행하고 fee, gas, reserve, localnet summary를 생성합니다.
 - `privacy-localnet-tps-bench.sh`: localnet smoke output을 `chain_tps` benchmark family로 변환합니다.
 - `privacy-transfer-batch-localnet-bench.sh`: localnet smoke에 multi-message `transfer-batch` tx를 추가로 켜서 실행합니다. `TRANSFER_BATCH_COUNT=N`, `TRANSFER_BATCH_AMOUNT=A`로 batch envelope 크기를 바꿀 수 있습니다.
