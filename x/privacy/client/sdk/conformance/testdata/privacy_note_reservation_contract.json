@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "active_reservation_statuses": [
+    "Reserved",
+    "Proving",
+    "ProofReady",
+    "Submitted",
+    "Unknown",
+    "ManualReview"
+  ],
+  "allowed_transitions": [
+    ["Available", "Reserved"],
+    ["Reserved", "Proving"],
+    ["Reserved", "Released"],
+    ["Proving", "ProofReady"],
+    ["Proving", "Reserved"],
+    ["ProofReady", "Submitted"],
+    ["Submitted", "ConfirmedSpent"],
+    ["Submitted", "Failed"],
+    ["Submitted", "Unknown"],
+    ["Unknown", "ConfirmedSpent"],
+    ["Unknown", "Failed"],
+    ["Unknown", "ManualReview"],
+    ["ManualReview", "ConfirmedSpent"],
+    ["ManualReview", "Released"],
+    ["Released", "Available"]
+  ],
+  "rejected_transitions": [
+    ["Submitted", "Available"],
+    ["ProofReady", "Available"],
+    ["Unknown", "Available"],
+    ["ManualReview", "Available"]
+  ],
+  "active_unique_key": ["owner_key_id", "nullifier_lookup_key"],
+  "nullifier_lookup_key": {
+    "algorithm": "HMAC-SHA256",
+    "encoding": "hex",
+    "key_version_field": "nullifier_lookup_key_id"
+  },
+  "success_evidence_required": [
+    "tx_hash_or_tx_result",
+    "expected_output_commitment",
+    "expected_disclosure_digest",
+    "expected_recipient_hash",
+    "expected_amount_hash",
+    "expected_denom",
+    "batch_item_index"
+  ]
+}

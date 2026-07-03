@@ -1,0 +1,93 @@
+package reservation
+
+type ReservationStatus string
+
+const (
+	StatusDiscovered     ReservationStatus = "Discovered"
+	StatusAvailable      ReservationStatus = "Available"
+	StatusReserved       ReservationStatus = "Reserved"
+	StatusProving        ReservationStatus = "Proving"
+	StatusProofReady     ReservationStatus = "ProofReady"
+	StatusSubmitted      ReservationStatus = "Submitted"
+	StatusConfirmedSpent ReservationStatus = "ConfirmedSpent"
+	StatusFailed         ReservationStatus = "Failed"
+	StatusReplanRequired ReservationStatus = "ReplanRequired"
+	StatusReleased       ReservationStatus = "Released"
+	StatusUnknown        ReservationStatus = "Unknown"
+	StatusManualReview   ReservationStatus = "ManualReview"
+)
+
+type OperationStatus string
+
+const (
+	OperationStatusPlanned        OperationStatus = "Planned"
+	OperationStatusProving        OperationStatus = "Proving"
+	OperationStatusProofReady     OperationStatus = "ProofReady"
+	OperationStatusSubmitted      OperationStatus = "Submitted"
+	OperationStatusSucceeded      OperationStatus = "Succeeded"
+	OperationStatusFailed         OperationStatus = "Failed"
+	OperationStatusReplanRequired OperationStatus = "ReplanRequired"
+	OperationStatusUnknown        OperationStatus = "Unknown"
+	OperationStatusManualReview   OperationStatus = "ManualReview"
+	OperationStatusConflictSpent  OperationStatus = "ConflictSpent"
+)
+
+func IsActiveReservationStatus(status ReservationStatus) bool {
+	switch status {
+	case StatusReserved, StatusProving, StatusProofReady, StatusSubmitted, StatusUnknown, StatusManualReview:
+		return true
+	default:
+		return false
+	}
+}
+
+func CanTransitionReservation(from ReservationStatus, to ReservationStatus) bool {
+	if from == to {
+		return true
+	}
+
+	switch from {
+	case StatusDiscovered:
+		return to == StatusAvailable || to == StatusFailed
+	case StatusAvailable:
+		return to == StatusReserved
+	case StatusReserved:
+		return to == StatusProving || to == StatusReleased || to == StatusReplanRequired || to == StatusManualReview
+	case StatusProving:
+		return to == StatusProofReady || to == StatusReserved || to == StatusReplanRequired || to == StatusManualReview || to == StatusReleased
+	case StatusProofReady:
+		return to == StatusSubmitted || to == StatusReplanRequired || to == StatusManualReview || to == StatusReleased
+	case StatusSubmitted:
+		return to == StatusConfirmedSpent || to == StatusFailed || to == StatusUnknown || to == StatusReplanRequired || to == StatusManualReview
+	case StatusUnknown:
+		return to == StatusConfirmedSpent || to == StatusFailed || to == StatusSubmitted || to == StatusReplanRequired || to == StatusManualReview
+	case StatusManualReview:
+		return to == StatusConfirmedSpent || to == StatusFailed || to == StatusReleased || to == StatusReplanRequired
+	case StatusFailed:
+		return to == StatusReplanRequired
+	case StatusReleased:
+		return to == StatusAvailable
+	case StatusReplanRequired:
+		return to == StatusReserved || to == StatusFailed || to == StatusManualReview
+	default:
+		return false
+	}
+}
+
+func IsTerminalReservationStatus(status ReservationStatus) bool {
+	switch status {
+	case StatusConfirmedSpent, StatusFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsTerminalOperationStatus(status OperationStatus) bool {
+	switch status {
+	case OperationStatusSucceeded, OperationStatusFailed, OperationStatusConflictSpent:
+		return true
+	default:
+		return false
+	}
+}
