@@ -1,9 +1,12 @@
 package payroll
 
 import (
+	"encoding/base64"
 	"fmt"
 	"math/big"
 	"sort"
+
+	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
 type NoteAllocator struct{}
@@ -34,9 +37,10 @@ func (a NoteAllocator) Allocate(input PayrollInput, notes []TreasuryNote) ([]Pay
 			CompanyID:                input.CompanyID,
 			PayrollID:                input.PayrollID,
 			BatchID:                  input.BatchID,
+			Attempt:                  input.Attempt,
 			ItemID:                   item.ItemID,
 			EmployeeID:               item.EmployeeID,
-			OperationID:              operationID(input.PayrollID, item.ItemID),
+			OperationID:              operationID(input.PayrollID, item.ItemID, input.Attempt),
 			RecipientAddress:         item.RecipientAddress,
 			ExpectedRecipientHash:    HashRecipient(item.RecipientAddress),
 			Amount:                   cloneBigInt(item.Amount),
@@ -47,7 +51,7 @@ func (a NoteAllocator) Allocate(input PayrollInput, notes []TreasuryNote) ([]Pay
 			InputNotes:               selected,
 			Status:                   ItemStatusPlanned,
 			RetryCount:               0,
-			ChunkID:                  chunkID(input.PayrollID, itemIndex),
+			ChunkID:                  chunkID(input.PayrollID, input.Attempt, itemIndex),
 		})
 	}
 
@@ -97,7 +101,7 @@ func selectInputNotes(target *big.Int, available []TreasuryNote, used map[string
 			if _, ok := used[note.NoteID]; ok {
 				continue
 			}
-			if note.Amount.Cmp(target) >= 0 {
+			if finalPayrollOutputsWithinBound(note.Amount, target) {
 				return cloneTreasuryNotes([]TreasuryNote{note, available[zeroIndex]}), nil
 			}
 		}
@@ -114,7 +118,7 @@ func selectInputNotes(target *big.Int, available []TreasuryNote, used map[string
 				continue
 			}
 			total := new(big.Int).Add(available[i].Amount, available[j].Amount)
-			if total.Cmp(target) < 0 {
+			if !finalPayrollOutputsWithinBound(total, target) {
 				continue
 			}
 			if bestTotal == nil || total.Cmp(bestTotal) < 0 {
@@ -130,10 +134,39 @@ func selectInputNotes(target *big.Int, available []TreasuryNote, used map[string
 	return nil, ErrInsufficientNotes
 }
 
-func operationID(payrollID string, itemID string) string {
-	return payrollID + ":" + itemID
+func finalPayrollOutputsWithinBound(total *big.Int, target *big.Int) bool {
+	if total == nil || target == nil {
+		return false
+	}
+	maxOutputAmount := privacytypes.MaxShieldedAmount()
+	if target.Sign() <= 0 || target.Cmp(maxOutputAmount) > 0 {
+		return false
+	}
+	if total.Cmp(target) < 0 {
+		return false
+	}
+	change := new(big.Int).Sub(total, target)
+	return change.Cmp(maxOutputAmount) <= 0
 }
 
-func chunkID(payrollID string, itemIndex int) string {
-	return fmt.Sprintf("%s:chunk:%06d", payrollID, itemIndex)
+func operationID(payrollID string, itemID string, attempt int) string {
+	base := "payroll:" + idComponent(payrollID) + ":item:" + idComponent(itemID)
+	if attempt <= 0 {
+		return base
+	}
+	return fmt.Sprintf("%s:attempt:%03d", base, attempt)
+}
+
+func chunkID(payrollID string, attempt int, itemIndex int) string {
+	if attempt <= 0 {
+		return fmt.Sprintf("payroll:%s:chunk:%06d", idComponent(payrollID), itemIndex)
+	}
+	return fmt.Sprintf("payroll:%s:attempt:%03d:chunk:%06d", idComponent(payrollID), attempt, itemIndex)
+}
+
+func idComponent(value string) string {
+	if value == "" {
+		return "_"
+	}
+	return base64.RawURLEncoding.EncodeToString([]byte(value))
 }

@@ -10,6 +10,7 @@ type PayrollInput struct {
 	PayrollID string
 	BatchID   string
 	Denom     string
+	Attempt   int
 	Items     []PayrollItemInput
 	CreatedAt time.Time
 }
@@ -40,6 +41,7 @@ type PayrollPlan struct {
 	PayrollID string
 	BatchID   string
 	Denom     string
+	Attempt   int
 	Status    PlanStatus
 	Items     []PayrollPlanItem
 	CreatedAt time.Time
@@ -50,6 +52,7 @@ type PayrollPlanItem struct {
 	CompanyID                string
 	PayrollID                string
 	BatchID                  string
+	Attempt                  int
 	ChunkID                  string
 	ItemID                   string
 	EmployeeID               string

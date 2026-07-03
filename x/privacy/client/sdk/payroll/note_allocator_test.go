@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
 func TestNoteAllocatorAllocatesAvailableTwoInputNotes(t *testing.T) {
@@ -53,4 +55,32 @@ func TestNoteAllocatorRejectsInsufficientNotes(t *testing.T) {
 
 	_, err := NoteAllocator{}.Allocate(input, notes)
 	require.ErrorIs(t, err, ErrInsufficientNotes)
+}
+
+func TestNoteAllocatorRejectsPairThatWouldOverflowChangeOutput(t *testing.T) {
+	input := testPayrollInput()
+	input.Items[0].Amount = big.NewInt(1)
+	tooLargeChange := new(big.Int).Add(privacytypes.MaxShieldedAmount(), big.NewInt(2))
+	notes := []TreasuryNote{
+		testTreasuryNoteBig("huge", "uclair", tooLargeChange, false, ""),
+		testTreasuryNote("one", "uclair", 1, false, ""),
+	}
+
+	_, err := NoteAllocator{}.Allocate(input, notes)
+	require.ErrorIs(t, err, ErrInsufficientNotes)
+}
+
+func TestPayrollIDsDoNotCollideAcrossDelimitedInputs(t *testing.T) {
+	require.NotEqual(t,
+		operationID("payroll", "item:attempt:001", 0),
+		operationID("payroll:item", "attempt", 1),
+	)
+	require.NotEqual(t,
+		chunkID("payroll:attempt:001", 0, 7),
+		chunkID("payroll", 1, 7),
+	)
+	require.NotEqual(t,
+		reservationID(operationID("payroll", "item", 1), "note:abc"),
+		reservationID(operationID("payroll", "item:note", 0), "abc"),
+	)
 }

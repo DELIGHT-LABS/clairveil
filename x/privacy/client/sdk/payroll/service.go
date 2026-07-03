@@ -28,6 +28,7 @@ func (s Service) CreatePlan(_ context.Context, input PayrollInput, treasuryNotes
 		PayrollID: input.PayrollID,
 		BatchID:   input.BatchID,
 		Denom:     input.Denom,
+		Attempt:   input.Attempt,
 		Status:    PlanStatusDraft,
 		Items:     items,
 		CreatedAt: input.CreatedAt.UTC(),
@@ -52,7 +53,7 @@ func (s Service) ConfirmPlan(ctx context.Context, plan PayrollPlan) (*PayrollPla
 	for itemIndex := range confirmed.Items {
 		item := &confirmed.Items[itemIndex]
 		for noteIndex, note := range item.InputNotes {
-			reservationID := reservationID(item.PayrollID, item.ItemID, note.NoteID)
+			reservationID := reservationID(item.OperationID, note.NoteID)
 			reservationInput := privacyreservation.ReserveInput{
 				Reservation: privacyreservation.NoteReservation{
 					ReservationID:        reservationID,
@@ -116,12 +117,14 @@ func (s Service) ReplanItems(input PayrollInput, treasuryNotes []TreasuryNote, f
 			PayrollID: input.PayrollID,
 			BatchID:   input.BatchID,
 			Denom:     input.Denom,
+			Attempt:   input.Attempt + 1,
 			Status:    PlanStatusDraft,
 			Items:     []PayrollPlanItem{},
 			CreatedAt: s.now(),
 			UpdatedAt: s.now(),
 		}, nil
 	}
+	filtered.Attempt = input.Attempt + 1
 	return s.CreatePlan(context.Background(), filtered, treasuryNotes)
 }
 
@@ -132,6 +135,6 @@ func (s Service) now() time.Time {
 	return time.Now().UTC()
 }
 
-func reservationID(payrollID string, itemID string, noteID string) string {
-	return payrollID + ":" + itemID + ":" + noteID
+func reservationID(operationID string, noteID string) string {
+	return operationID + ":note:" + idComponent(noteID)
 }

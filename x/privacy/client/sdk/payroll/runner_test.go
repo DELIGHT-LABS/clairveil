@@ -2,6 +2,7 @@ package payroll
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -75,6 +76,118 @@ func TestProofAndBroadcastWorkersAdvanceReservationLifecycle(t *testing.T) {
 	require.Equal(t, "TXHASH", operation.TxHash)
 }
 
+func TestProofWorkerRollsBackProvingReservationsOnPayloadFailure(t *testing.T) {
+	ctx := context.Background()
+	store := privacyreservation.NewMemoryStore()
+	reservationService := privacyreservation.Service{Store: store, Now: testNow}
+	planner := Service{Reservation: reservationService, Now: testNow}
+
+	input := testPayrollInput()
+	input.Items[0].Amount = big.NewInt(70)
+	plan, err := planner.CreatePlan(ctx, input, []TreasuryNote{
+		testTreasuryNote("large", "uclair", 100, false, ""),
+		testTreasuryNote("zero", "uclair", 0, false, ""),
+	})
+	require.NoError(t, err)
+	confirmed, err := planner.ConfirmPlan(ctx, *plan)
+	require.NoError(t, err)
+	item := confirmed.Items[0]
+
+	proofWorker := ProofWorker{
+		Reservation:    reservationService,
+		PayloadBuilder: failingPayloadBuilder{},
+		ProofRunner:    fakeProofRunner{},
+		LeaseOwner:     "proof-worker-a",
+		LeaseTTL:       time.Minute,
+	}
+	_, err = proofWorker.Process(ctx, item)
+	require.ErrorContains(t, err, "payload failed")
+
+	for _, note := range item.InputNotes {
+		reservation, err := store.GetReservation(ctx, note.ReservationID)
+		require.NoError(t, err)
+		require.Equal(t, privacyreservation.StatusReserved, reservation.Status)
+		require.Empty(t, reservation.LeaseToken)
+	}
+}
+
+func TestProofWorkerHeartbeatsDuringLongProof(t *testing.T) {
+	ctx := context.Background()
+	store := privacyreservation.NewMemoryStore()
+	now := func() time.Time { return time.Now().UTC() }
+	reservationService := privacyreservation.Service{Store: store, Now: now}
+	planner := Service{Reservation: reservationService, Now: now}
+
+	input := testPayrollInput()
+	input.Items[0].Amount = big.NewInt(70)
+	plan, err := planner.CreatePlan(ctx, input, []TreasuryNote{
+		testTreasuryNote("large", "uclair", 100, false, ""),
+		testTreasuryNote("zero", "uclair", 0, false, ""),
+	})
+	require.NoError(t, err)
+	confirmed, err := planner.ConfirmPlan(ctx, *plan)
+	require.NoError(t, err)
+	item := confirmed.Items[0]
+
+	proofWorker := ProofWorker{
+		Reservation:    reservationService,
+		PayloadBuilder: fakePayloadBuilder{},
+		ProofRunner:    slowProofRunner{},
+		Assembler:      fakeAssembler{},
+		LeaseOwner:     "proof-worker-a",
+		LeaseTTL:       30 * time.Millisecond,
+	}
+	_, err = proofWorker.Process(ctx, item)
+	require.NoError(t, err)
+
+	for _, note := range item.InputNotes {
+		reservation, err := store.GetReservation(ctx, note.ReservationID)
+		require.NoError(t, err)
+		require.Equal(t, privacyreservation.StatusProofReady, reservation.Status)
+		require.True(t, reservation.LeaseUntil.After(time.Now().UTC()), "expected heartbeat to extend lease")
+	}
+}
+
+func TestProofWorkerDoesNotTakeOverProofReadyLease(t *testing.T) {
+	ctx := context.Background()
+	now := testNow()
+	store := privacyreservation.NewMemoryStore()
+	reservationService := privacyreservation.Service{Store: store, Now: func() time.Time { return now }}
+	planner := Service{Reservation: reservationService, Now: func() time.Time { return now }}
+
+	input := testPayrollInput()
+	input.Items[0].Amount = big.NewInt(70)
+	plan, err := planner.CreatePlan(ctx, input, []TreasuryNote{
+		testTreasuryNote("large", "uclair", 100, false, ""),
+		testTreasuryNote("zero", "uclair", 0, false, ""),
+	})
+	require.NoError(t, err)
+	confirmed, err := planner.ConfirmPlan(ctx, *plan)
+	require.NoError(t, err)
+	item := confirmed.Items[0]
+
+	proofWorker := ProofWorker{
+		Reservation:    reservationService,
+		PayloadBuilder: fakePayloadBuilder{},
+		ProofRunner:    fakeProofRunner{},
+		Assembler:      fakeAssembler{},
+		LeaseOwner:     "proof-worker-a",
+		LeaseTTL:       time.Minute,
+	}
+	result, err := proofWorker.Process(ctx, item)
+	require.NoError(t, err)
+	firstToken := result.ReservationLeases[item.InputNotes[0].ReservationID]
+
+	now = now.Add(2 * time.Minute)
+	_, err = proofWorker.Process(ctx, item)
+	require.ErrorIs(t, err, privacyreservation.ErrCompareAndSetFailed)
+
+	reservation, err := store.GetReservation(ctx, item.InputNotes[0].ReservationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.StatusProofReady, reservation.Status)
+	require.Equal(t, firstToken, reservation.LeaseToken)
+}
+
 func TestClassifyBroadcastError(t *testing.T) {
 	require.Equal(t, RetryActionRetrySameTx, ClassifyBroadcastError("rpc timeout").Action)
 	require.Equal(t, RetryActionRebuildTx, ClassifyBroadcastError("account sequence mismatch").Action)
@@ -101,9 +214,32 @@ func (fakePayloadBuilder) BuildPreparedTransferPayload(_ context.Context, _ Payr
 	}, nil
 }
 
+type failingPayloadBuilder struct{}
+
+func (failingPayloadBuilder) BuildPreparedTransferPayload(_ context.Context, _ PayrollPlanItem) (*privacytransfer.PreparedTransferPayload, error) {
+	return nil, fmt.Errorf("payload failed")
+}
+
 type fakeProofRunner struct{}
 
 func (fakeProofRunner) BuildPreparedTransferProof(_ context.Context, payload privacytransfer.PreparedTransferPayload) (*privacytransfer.PreparedTransferProof, error) {
+	return &privacytransfer.PreparedTransferProof{
+		Version:     privacytransfer.PreparedTransferProofVersion,
+		PayloadHash: payload.PayloadHash,
+		ProofHex:    "proof-a",
+	}, nil
+}
+
+type slowProofRunner struct{}
+
+func (r slowProofRunner) BuildPreparedTransferProof(ctx context.Context, payload privacytransfer.PreparedTransferPayload) (*privacytransfer.PreparedTransferProof, error) {
+	for i := 0; i < 6; i++ {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 	return &privacytransfer.PreparedTransferProof{
 		Version:     privacytransfer.PreparedTransferProofVersion,
 		PayloadHash: payload.PayloadHash,

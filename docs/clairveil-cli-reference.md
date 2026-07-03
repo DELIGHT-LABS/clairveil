@@ -190,6 +190,31 @@ clairveild tx privacy transfer "$(cat out/bob-shielded-address.txt)" 10uclair \
   --output json
 ```
 
+### transfer-batch
+
+Broadcasts several independent `MsgTransfer` messages in one Cosmos tx envelope.
+
+```bash
+clairveild tx privacy transfer-batch "$(cat out/bob-shielded-address.txt)" \
+  7uclair 8uclair 9uclair \
+  --from alice \
+  --keyring-backend test \
+  --chain-id clairveil-local-1 \
+  --gas 25000000 \
+  --gas-prices 8500000000uclair \
+  --yes \
+  --output json
+```
+
+Current limitations:
+
+- Intended for bulk-transfer readiness and localnet capacity testing.
+- Supports `all-private` / `none` only.
+- Does not run the recursive split/merge planner.
+- Each amount must already be satisfiable from spendable exact or pairable notes without reusing an input note inside the same batch.
+- Zero-value dummy notes must already exist when a selected transfer input needs a dummy note.
+- JSON output includes `txhash`, `height`, `code`, `message_count`, and requested `amounts`.
+
 ## 6. Disclosure Decode
 
 Decrypts a transfer disclosure payload and produces a digest verification report.

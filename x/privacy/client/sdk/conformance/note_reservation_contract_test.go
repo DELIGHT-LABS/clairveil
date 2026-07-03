@@ -55,6 +55,22 @@ func TestNoteReservationContractFixtureMatchesGoSDK(t *testing.T) {
 			privacyreservation.ReservationStatus(transition[1]),
 		), "expected transition %s -> %s to be allowed", transition[0], transition[1])
 	}
+	fixtureTransitions := make(map[string]struct{}, len(contract.AllowedTransitions))
+	for _, transition := range contract.AllowedTransitions {
+		fixtureTransitions[transitionKey(transition[0], transition[1])] = struct{}{}
+	}
+	for _, from := range allReservationStatuses() {
+		for _, to := range allReservationStatuses() {
+			if from == to {
+				continue
+			}
+			if !privacyreservation.CanTransitionReservation(from, to) {
+				continue
+			}
+			_, ok := fixtureTransitions[transitionKey(string(from), string(to))]
+			require.True(t, ok, "fixture is missing allowed transition %s -> %s", from, to)
+		}
+	}
 	for _, transition := range contract.RejectedTransitions {
 		require.Len(t, transition, 2)
 		require.False(t, privacyreservation.CanTransitionReservation(
@@ -69,6 +85,10 @@ func TestNoteReservationContractFixtureMatchesGoSDK(t *testing.T) {
 			privacyreservation.ReservationStatus(transition[0]),
 			privacyreservation.ReservationStatus(transition[1]),
 		), "expected lease-guarded transition %s -> %s to be allowed", transition[0], transition[1])
+		require.True(t, privacyreservation.RequiresLeaseToken(
+			privacyreservation.ReservationStatus(transition[0]),
+			privacyreservation.ReservationStatus(transition[1]),
+		), "expected transition %s -> %s to require a lease token", transition[0], transition[1])
 	}
 	for _, vector := range contract.NullifierLookupKey.TestVectors {
 		got, err := privacyreservation.NullifierLookupKey([]byte(vector.IndexKeyUTF8), []byte(vector.NullifierUTF8))
@@ -94,4 +114,25 @@ func readNoteReservationContractFixture(t *testing.T) []byte {
 	data, err := os.ReadFile(fixturePath)
 	require.NoError(t, err)
 	return data
+}
+
+func allReservationStatuses() []privacyreservation.ReservationStatus {
+	return []privacyreservation.ReservationStatus{
+		privacyreservation.StatusDiscovered,
+		privacyreservation.StatusAvailable,
+		privacyreservation.StatusReserved,
+		privacyreservation.StatusProving,
+		privacyreservation.StatusProofReady,
+		privacyreservation.StatusSubmitted,
+		privacyreservation.StatusUnknown,
+		privacyreservation.StatusManualReview,
+		privacyreservation.StatusFailed,
+		privacyreservation.StatusReleased,
+		privacyreservation.StatusReplanRequired,
+		privacyreservation.StatusConfirmedSpent,
+	}
+}
+
+func transitionKey(from string, to string) string {
+	return from + "\x00" + to
 }

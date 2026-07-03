@@ -78,6 +78,24 @@ type Lease struct {
 	Until time.Time
 }
 
+type SubmittedReservationUpdate struct {
+	TxHash          string
+	TxBytesHash     string
+	SignDocHash     string
+	AccountSequence uint64
+}
+
+type SubmittedReservationRef struct {
+	ReservationID string
+	LeaseToken    string
+}
+
+type ProofReadyOperationUpdate struct {
+	OperationID              string
+	ExpectedOutputCommitment string
+	ExpectedDisclosureDigest string
+}
+
 type ReservationFilter struct {
 	Statuses []ReservationStatus
 	Limit    int

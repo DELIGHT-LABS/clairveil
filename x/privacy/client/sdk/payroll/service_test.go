@@ -100,6 +100,39 @@ func TestServiceConfirmPlanDoesNotPartiallyReserveOnBatchConflict(t *testing.T) 
 	require.Empty(t, reservations)
 }
 
+func TestServiceReplanItemsUsesNewAttemptIDs(t *testing.T) {
+	ctx := context.Background()
+	reservationStore := privacyreservation.NewMemoryStore()
+	svc := Service{
+		Reservation: privacyreservation.Service{Store: reservationStore, Now: testNow},
+		Now:         testNow,
+	}
+	input := testPayrollInput()
+	input.Items[0].Amount = big.NewInt(70)
+
+	firstPlan, err := svc.CreatePlan(ctx, input, []TreasuryNote{
+		testTreasuryNote("large-a", "uclair", 100, false, ""),
+		testTreasuryNote("zero-a", "uclair", 0, false, ""),
+	})
+	require.NoError(t, err)
+	firstConfirmed, err := svc.ConfirmPlan(ctx, *firstPlan)
+	require.NoError(t, err)
+
+	replan, err := svc.ReplanItems(input, []TreasuryNote{
+		testTreasuryNote("large-b", "uclair", 100, false, ""),
+		testTreasuryNote("zero-b", "uclair", 0, false, ""),
+	}, map[string]struct{}{input.Items[0].ItemID: {}})
+	require.NoError(t, err)
+	require.Equal(t, 1, replan.Attempt)
+	require.NotEqual(t, firstConfirmed.Items[0].OperationID, replan.Items[0].OperationID)
+
+	secondConfirmed, err := svc.ConfirmPlan(ctx, *replan)
+	require.NoError(t, err)
+	require.NotEqual(t, firstConfirmed.Items[0].InputNotes[0].ReservationID, secondConfirmed.Items[0].InputNotes[0].ReservationID)
+	_, err = reservationStore.GetOperation(ctx, replan.Items[0].OperationID)
+	require.NoError(t, err)
+}
+
 func TestBuildPlanReportCountsItemStatuses(t *testing.T) {
 	plan := PayrollPlan{
 		PayrollID: "payroll-a",
@@ -141,13 +174,17 @@ func testRecipientAddress(suffix string) string {
 }
 
 func testTreasuryNote(noteID string, denom string, amount int64, spent bool, reservationID string) TreasuryNote {
+	return testTreasuryNoteBig(noteID, denom, big.NewInt(amount), spent, reservationID)
+}
+
+func testTreasuryNoteBig(noteID string, denom string, amount *big.Int, spent bool, reservationID string) TreasuryNote {
 	return TreasuryNote{
 		NoteID:               noteID,
 		OwnerKeyID:           "owner-a",
 		NullifierLookupKey:   "lookup-" + noteID,
 		NullifierLookupKeyID: "lookup-v1",
 		Denom:                denom,
-		Amount:               big.NewInt(amount),
+		Amount:               cloneBigInt(amount),
 		IsSpent:              spent,
 		ReservationID:        reservationID,
 	}

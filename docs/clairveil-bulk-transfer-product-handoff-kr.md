@@ -29,6 +29,8 @@ repo에는 note reservation, payroll control plane, proof/broadcast/reconcile qu
 - planner note selection에서 `FOR UPDATE SKIP LOCKED` 또는 owner 단위 advisory lock 적용
 - 상태 변경 compare-and-set 적용
 - worker lease 필드 적용: `lease_owner`, `lease_token`, `lease_until`, `last_heartbeat_at`
+- lease 획득, heartbeat, lease clear, `ProofReady -> Submitted`는 `Get -> Update` 조합이 아니라 단일 DB update/transaction으로 원자적 처리
+- proof worker는 `Reserved` 상태 한정 lease 획득과 proof 생성 중 heartbeat를 사용
 - `nullifier_lookup_key = HMAC(index_key, nullifier)` 형태의 deterministic keyed lookup 사용
 - raw nullifier, commitment, recipient, amount 등 민감정보 암호화 저장
 - payload/log/telemetry에 원문 민감정보가 남지 않도록 필터링
@@ -46,6 +48,7 @@ Go SDK의 `payroll` model을 실제 job/run/item/operation service로 연결해�
 - run 확정 시 note reservation 생성
 - proof worker queue와 broadcast worker queue 운영
 - operation-level idempotency: `operation_id`, `sign_doc_hash`, `tx_bytes_hash`, `tx_hash`, `account_sequence`
+- replan attempt별 `operation_id`/`reservation_id` 분리
 - 실패 원인 분류: insufficient note, reservation conflict, proof invalid, root invalid, gas/sequence, RPC timeout, payload mismatch
 - 실패 item만 `ReplanRequired`로 분리하고 재계획
 - confirmation scanner/reconcile worker가 note 상태와 operation 상태를 각각 갱신

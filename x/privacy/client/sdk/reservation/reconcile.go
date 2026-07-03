@@ -7,19 +7,20 @@ import (
 )
 
 type OperationEvidence struct {
-	TxHash           string
-	SignDocHash      string
-	TxBytesHash      string
-	OutputCommitment string
-	DisclosureDigest string
-	RecipientHash    string
-	AmountHash       string
-	Denom            string
-	BatchItemIndex   int
-	NullifierSpent   bool
-	TxSucceeded      bool
-	TxFailed         bool
-	TxKnown          bool
+	TxHash              string
+	SignDocHash         string
+	TxBytesHash         string
+	OutputCommitment    string
+	DisclosureDigest    string
+	RecipientHash       string
+	AmountHash          string
+	Denom               string
+	BatchItemIndex      int
+	BatchItemIndexKnown bool
+	NullifierSpent      bool
+	TxSucceeded         bool
+	TxFailed            bool
+	TxKnown             bool
 }
 
 type ReconcileResult struct {
@@ -129,8 +130,13 @@ func operationMatchesEvidence(operation *PayrollOperation, evidence OperationEvi
 	if !matchOptional(operation.ExpectedDenom, evidence.Denom) {
 		return false
 	}
-	if operation.BatchItemIndex >= 0 && evidence.BatchItemIndex >= 0 && operation.BatchItemIndex != evidence.BatchItemIndex {
-		return false
+	if operation.BatchItemIndex >= 0 {
+		if !evidence.BatchItemIndexKnown {
+			return false
+		}
+		if operation.BatchItemIndex != evidence.BatchItemIndex {
+			return false
+		}
 	}
 	return true
 }

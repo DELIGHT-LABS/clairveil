@@ -2,7 +2,9 @@ package payroll
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	privacyreservation "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/reservation"
@@ -45,7 +47,7 @@ type ProofResult struct {
 	ReservationLeases map[string]string
 }
 
-func (w ProofWorker) Process(ctx context.Context, item PayrollPlanItem) (*ProofResult, error) {
+func (w ProofWorker) Process(ctx context.Context, item PayrollPlanItem) (_ *ProofResult, runErr error) {
 	if w.Reservation.Store == nil {
 		return nil, fmt.Errorf("reservation service is required")
 	}
@@ -71,28 +73,50 @@ func (w ProofWorker) Process(ctx context.Context, item PayrollPlanItem) (*ProofR
 	}
 
 	leases := make(map[string]string, len(item.InputNotes))
+	acquiredReservations := make([]string, 0, len(item.InputNotes))
+	provingReservations := make([]string, 0, len(item.InputNotes))
+	defer func() {
+		if runErr == nil {
+			return
+		}
+		if cleanupErr := w.rollbackProofReservations(ctx, leases, acquiredReservations, provingReservations); cleanupErr != nil {
+			runErr = errors.Join(runErr, cleanupErr)
+		}
+	}()
 	for _, note := range item.InputNotes {
 		if note.ReservationID == "" {
 			return nil, fmt.Errorf("payroll item %s input note %s has no reservation", item.ItemID, note.NoteID)
 		}
-		lease, err := w.Reservation.AcquireLease(ctx, note.ReservationID, w.LeaseOwner, leaseTTL)
+		lease, err := w.Reservation.AcquireLeaseForStatus(ctx, note.ReservationID, w.LeaseOwner, privacyreservation.StatusReserved, leaseTTL)
 		if err != nil {
 			return nil, err
 		}
 		leases[note.ReservationID] = lease.Token
+		acquiredReservations = append(acquiredReservations, note.ReservationID)
 		if _, err := w.Reservation.TransitionWithLease(ctx, note.ReservationID, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving); err != nil {
 			return nil, err
 		}
+		provingReservations = append(provingReservations, note.ReservationID)
 	}
 
-	payload, err := w.PayloadBuilder.BuildPreparedTransferPayload(ctx, item)
+	proofCtx, stopHeartbeat := w.startProvingHeartbeat(ctx, leases, provingReservations, leaseTTL)
+	defer func() {
+		if stopHeartbeat == nil {
+			return
+		}
+		if heartbeatErr := stopHeartbeat(); heartbeatErr != nil && runErr == nil {
+			runErr = heartbeatErr
+		}
+	}()
+
+	payload, err := w.PayloadBuilder.BuildPreparedTransferPayload(proofCtx, item)
 	if err != nil {
 		return nil, err
 	}
 	if payload == nil {
 		return nil, fmt.Errorf("prepared transfer payload builder returned nil")
 	}
-	proof, err := w.ProofRunner.BuildPreparedTransferProof(ctx, *payload)
+	proof, err := w.ProofRunner.BuildPreparedTransferProof(proofCtx, *payload)
 	if err != nil {
 		return nil, err
 	}
@@ -107,13 +131,24 @@ func (w ProofWorker) Process(ctx context.Context, item PayrollPlanItem) (*ProofR
 		return nil, fmt.Errorf("transfer message assembler returned nil")
 	}
 
-	if err := w.updateOperationProofReady(ctx, item.OperationID, *payload); err != nil {
+	refs, err := proofReadyReservationRefs(item, leases)
+	if err != nil {
 		return nil, err
 	}
-	for _, note := range item.InputNotes {
-		if _, err := w.Reservation.TransitionWithLease(ctx, note.ReservationID, leases[note.ReservationID], privacyreservation.StatusProving, privacyreservation.StatusProofReady); err != nil {
-			return nil, err
-		}
+	update := privacyreservation.ProofReadyOperationUpdate{
+		OperationID:              item.OperationID,
+		ExpectedDisclosureDigest: preferredDisclosureDigest(*payload),
+	}
+	if len(payload.Outputs) > 0 {
+		update.ExpectedOutputCommitment = payload.Outputs[0].CommitmentHex
+	}
+	if heartbeatErr := stopHeartbeat(); heartbeatErr != nil {
+		stopHeartbeat = nil
+		return nil, heartbeatErr
+	}
+	stopHeartbeat = nil
+	if _, _, err := w.Reservation.MarkProofReadyBatch(ctx, refs, update); err != nil {
+		return nil, err
 	}
 
 	return &ProofResult{
@@ -125,24 +160,99 @@ func (w ProofWorker) Process(ctx context.Context, item PayrollPlanItem) (*ProofR
 	}, nil
 }
 
-func (w ProofWorker) updateOperationProofReady(ctx context.Context, operationID string, payload privacytransfer.PreparedTransferPayload) error {
-	if operationID == "" {
-		return nil
+func (w ProofWorker) startProvingHeartbeat(ctx context.Context, leases map[string]string, reservationIDs []string, ttl time.Duration) (context.Context, func() error) {
+	if len(reservationIDs) == 0 {
+		return ctx, func() error { return nil }
 	}
-	operation, err := w.Reservation.Store.GetOperation(ctx, operationID)
-	if err != nil {
-		return err
+	heartbeatCtx, cancel := context.WithCancel(ctx)
+	interval := ttl / 3
+	if interval <= 0 {
+		interval = ttl
 	}
-	if len(payload.Outputs) > 0 && operation.ExpectedOutputCommitment == "" {
-		operation.ExpectedOutputCommitment = payload.Outputs[0].CommitmentHex
+	if interval <= 0 {
+		interval = time.Second
 	}
-	if operation.ExpectedDisclosureDigest == "" {
-		operation.ExpectedDisclosureDigest = preferredDisclosureDigest(payload)
+	errCh := make(chan error, 1)
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-heartbeatCtx.Done():
+				return
+			case <-ticker.C:
+				for _, reservationID := range reservationIDs {
+					token := leases[reservationID]
+					if token == "" {
+						continue
+					}
+					if _, err := w.Reservation.HeartbeatLeaseForStatus(heartbeatCtx, reservationID, token, privacyreservation.StatusProving, ttl); err != nil {
+						select {
+						case errCh <- err:
+						default:
+						}
+						cancel()
+						return
+					}
+				}
+			}
+		}
+	}()
+
+	var stopOnce sync.Once
+	return heartbeatCtx, func() error {
+		stopOnce.Do(func() {
+			cancel()
+			<-done
+		})
+		select {
+		case err := <-errCh:
+			return err
+		default:
+			return nil
+		}
 	}
-	operation.Status = privacyreservation.OperationStatusProofReady
-	operation.UpdatedAt = reservationNow(w.Reservation)
-	_, err = w.Reservation.Store.UpdateOperation(ctx, *operation)
-	return err
+}
+
+func (w ProofWorker) rollbackProofReservations(ctx context.Context, leases map[string]string, acquiredReservationIDs []string, provingReservationIDs []string) error {
+	var cleanupErr error
+	proving := make(map[string]struct{}, len(provingReservationIDs))
+	for _, reservationID := range provingReservationIDs {
+		proving[reservationID] = struct{}{}
+		token := leases[reservationID]
+		if token == "" {
+			continue
+		}
+		if _, err := w.Reservation.TransitionWithLease(ctx, reservationID, token, privacyreservation.StatusProving, privacyreservation.StatusReserved); err != nil {
+			if errors.Is(err, privacyreservation.ErrLeaseUnavailable) {
+				if _, transitionErr := w.Reservation.Transition(ctx, reservationID, privacyreservation.StatusProving, privacyreservation.StatusReserved); transitionErr != nil && !errors.Is(transitionErr, privacyreservation.ErrCompareAndSetFailed) {
+					cleanupErr = errors.Join(cleanupErr, transitionErr)
+				}
+			} else if !errors.Is(err, privacyreservation.ErrCompareAndSetFailed) && !errors.Is(err, privacyreservation.ErrLeaseMismatch) {
+				cleanupErr = errors.Join(cleanupErr, err)
+			}
+			continue
+		}
+		if _, err := w.Reservation.ClearLease(ctx, reservationID, token); err != nil && !errors.Is(err, privacyreservation.ErrLeaseUnavailable) && !errors.Is(err, privacyreservation.ErrLeaseMismatch) {
+			cleanupErr = errors.Join(cleanupErr, err)
+		}
+	}
+	for _, reservationID := range acquiredReservationIDs {
+		if _, ok := proving[reservationID]; ok {
+			continue
+		}
+		token := leases[reservationID]
+		if token == "" {
+			continue
+		}
+		if _, err := w.Reservation.ClearLease(ctx, reservationID, token); err != nil && !errors.Is(err, privacyreservation.ErrLeaseUnavailable) && !errors.Is(err, privacyreservation.ErrLeaseMismatch) {
+			cleanupErr = errors.Join(cleanupErr, err)
+		}
+	}
+	return cleanupErr
 }
 
 func preferredDisclosureDigest(payload privacytransfer.PreparedTransferPayload) string {
@@ -155,9 +265,17 @@ func preferredDisclosureDigest(payload privacytransfer.PreparedTransferPayload) 
 	return payload.AuditDisclosureDigestHex
 }
 
-func reservationNow(svc privacyreservation.Service) time.Time {
-	if svc.Now != nil {
-		return svc.Now().UTC()
+func proofReadyReservationRefs(item PayrollPlanItem, leases map[string]string) ([]privacyreservation.SubmittedReservationRef, error) {
+	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(item.InputNotes))
+	for _, note := range item.InputNotes {
+		token := leases[note.ReservationID]
+		if note.ReservationID == "" || token == "" {
+			return nil, fmt.Errorf("payroll item %s has no lease token for reservation %s", item.ItemID, note.ReservationID)
+		}
+		refs = append(refs, privacyreservation.SubmittedReservationRef{
+			ReservationID: note.ReservationID,
+			LeaseToken:    token,
+		})
 	}
-	return time.Now().UTC()
+	return refs, nil
 }

@@ -74,6 +74,19 @@ func CanTransitionReservation(from ReservationStatus, to ReservationStatus) bool
 	}
 }
 
+func RequiresLeaseToken(from ReservationStatus, to ReservationStatus) bool {
+	switch {
+	case from == StatusReserved && to == StatusProving:
+		return true
+	case from == StatusProving && to == StatusProofReady:
+		return true
+	case from == StatusProofReady && to == StatusSubmitted:
+		return true
+	default:
+		return false
+	}
+}
+
 func IsTerminalReservationStatus(status ReservationStatus) bool {
 	switch status {
 	case StatusConfirmedSpent, StatusFailed:

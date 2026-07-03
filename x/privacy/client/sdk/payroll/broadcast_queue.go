@@ -3,6 +3,7 @@ package payroll
 import (
 	"context"
 	"fmt"
+	"time"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
@@ -26,6 +27,7 @@ type MessageBroadcaster interface {
 type BroadcastWorker struct {
 	Reservation privacyreservation.Service
 	Broadcaster MessageBroadcaster
+	LeaseTTL    time.Duration
 }
 
 func (w BroadcastWorker) SubmitProofResult(ctx context.Context, result ProofResult) (*BroadcastResult, error) {
@@ -39,9 +41,14 @@ func (w BroadcastWorker) SubmitProofResult(ctx context.Context, result ProofResu
 		return nil, fmt.Errorf("proof result has no transfer message")
 	}
 
-	broadcast, err := w.Broadcaster.BroadcastMessages(ctx, result.Message)
+	refs, operationIDs, err := preflightSubmissionState(ctx, w.Reservation, []ProofResult{result}, w.LeaseTTL)
 	if err != nil {
 		return nil, err
+	}
+
+	broadcast, err := w.Broadcaster.BroadcastMessages(ctx, result.Message)
+	if err != nil {
+		return broadcast, err
 	}
 	if broadcast == nil {
 		return nil, fmt.Errorf("message broadcaster returned nil result")
@@ -50,8 +57,8 @@ func (w BroadcastWorker) SubmitProofResult(ctx context.Context, result ProofResu
 		return broadcast, fmt.Errorf("tx failed with code %d: %s", broadcast.Code, broadcast.RawLog)
 	}
 
-	if err := markProofResultSubmitted(ctx, w.Reservation, result, broadcast); err != nil {
-		return nil, err
+	if err := markProofResultsSubmitted(ctx, w.Reservation, refs, operationIDs, broadcast); err != nil {
+		return broadcast, err
 	}
 
 	return broadcast, nil

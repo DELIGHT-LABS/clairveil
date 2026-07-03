@@ -410,6 +410,10 @@ proof worker와 broadcaster worker는 reservation을 처리하기 전에 lease�
 
 worker는 작업 중 주기적으로 heartbeat를 보내 `lease_until`을 연장함. 상태 변경은 `lease_token`이 일치하는 경우에만 허용함.
 
+proof worker는 `Reserved` 상태의 reservation에 대해서만 lease를 획득해야 함. 이미 `ProofReady` 또는 `Submitted` 상태인 reservation의 lease가 만료되어 있더라도 stale proof worker가 새 lease를 잡아 기존 broadcast 권한을 덮어쓰면 안 됨. 긴 proof 생성 작업에서는 `Proving` 상태와 같은 `lease_token`을 조건으로 heartbeat를 계속 갱신해야 함.
+
+lease 획득, heartbeat 갱신, lease clear, `ProofReady -> Submitted` 전이는 저장소에서 원자적으로 처리해야 함. 즉, application layer에서 reservation을 먼저 읽고 나중에 일반 update로 덮어쓰면 안 됨. DB 구현은 하나의 `UPDATE ... WHERE reservation_id = ? AND status = ? AND lease_token = ? AND lease_until > NOW()` 또는 동일한 transaction/row lock 안에서 조건 확인과 필드 갱신을 함께 수행해야 함.
+
 예:
 
 ```sql
@@ -426,7 +430,7 @@ WHERE reservation_id = $1
 
 권장 정책:
 
-- worker는 작업 시작 전 lease를 획득함.
+- worker는 작업 시작 전 대상 상태를 조건으로 lease를 획득함. 예를 들어 proof worker는 `Reserved` 상태에서만 lease를 획득함.
 - 긴 proof 생성 작업은 heartbeat로 lease를 연장함.
 - lease가 만료되면 다른 worker가 takeover할 수 있음.
 - 오래된 worker는 상태 변경 전 lease token을 다시 확인함.
@@ -617,6 +621,8 @@ Reserved -> Released -> Available
 ## Tx retry idempotency
 
 broadcast retry는 `operation_id` 기준으로 idempotent해야 함. retry 때마다 새로운 논리 작업을 만들면 sequence, fee, nullifier 상태가 꼬일 수 있음.
+
+같은 payment item을 replan하는 경우에는 기존 operation과 새 operation을 구분할 수 있는 attempt/run 차원이 필요함. 최초 plan은 기존 `payroll_id:item_id` 형태를 유지할 수 있지만, replan 결과는 `payroll_id:item_id:attempt:N`처럼 새 `operation_id`와 새 `reservation_id`를 사용해야 기존 terminal 또는 review 대상 operation과 충돌하지 않음.
 
 권장 필드:
 

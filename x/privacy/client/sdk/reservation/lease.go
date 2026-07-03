@@ -9,6 +9,14 @@ import (
 )
 
 func (s Service) AcquireLease(ctx context.Context, reservationID string, owner string, ttl time.Duration) (*Lease, error) {
+	return s.acquireLease(ctx, reservationID, owner, "", ttl)
+}
+
+func (s Service) AcquireLeaseForStatus(ctx context.Context, reservationID string, owner string, status ReservationStatus, ttl time.Duration) (*Lease, error) {
+	return s.acquireLease(ctx, reservationID, owner, status, ttl)
+}
+
+func (s Service) acquireLease(ctx context.Context, reservationID string, owner string, status ReservationStatus, ttl time.Duration) (*Lease, error) {
 	if s.Store == nil {
 		return nil, fmt.Errorf("reservation store is required")
 	}
@@ -19,28 +27,18 @@ func (s Service) AcquireLease(ctx context.Context, reservationID string, owner s
 		return nil, fmt.Errorf("lease ttl must be positive")
 	}
 
-	current, err := s.Store.GetReservation(ctx, reservationID)
-	if err != nil {
-		return nil, err
-	}
 	now := s.now()
-	if !IsActiveReservationStatus(current.Status) {
-		return nil, fmt.Errorf("%w: status %s is not active", ErrLeaseUnavailable, current.Status)
-	}
-	if current.LeaseToken != "" && current.LeaseUntil.After(now) {
-		return nil, ErrLeaseUnavailable
-	}
-
 	token, err := randomToken()
 	if err != nil {
 		return nil, err
 	}
-	current.LeaseOwner = owner
-	current.LeaseToken = token
-	current.LeaseUntil = now.Add(ttl)
-	current.LastHeartbeatAt = now
-	current.UpdatedAt = now
-	updated, err := s.Store.UpdateReservation(ctx, *current)
+	leaseUntil := now.Add(ttl)
+	var updated *NoteReservation
+	if status == "" {
+		updated, err = s.Store.AcquireReservationLease(ctx, reservationID, owner, token, leaseUntil, now)
+	} else {
+		updated, err = s.Store.AcquireReservationLeaseForStatus(ctx, reservationID, owner, token, status, leaseUntil, now)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -56,18 +54,8 @@ func (s Service) HeartbeatLease(ctx context.Context, reservationID string, token
 	if ttl <= 0 {
 		return nil, fmt.Errorf("lease ttl must be positive")
 	}
-	current, err := s.Store.GetReservation(ctx, reservationID)
-	if err != nil {
-		return nil, err
-	}
 	now := s.now()
-	if err := requireLeaseToken(*current, token, now); err != nil {
-		return nil, err
-	}
-	current.LeaseUntil = now.Add(ttl)
-	current.LastHeartbeatAt = now
-	current.UpdatedAt = now
-	updated, err := s.Store.UpdateReservation(ctx, *current)
+	updated, err := s.Store.HeartbeatReservationLease(ctx, reservationID, token, now.Add(ttl), now)
 	if err != nil {
 		return nil, err
 	}
@@ -79,18 +67,7 @@ func (s Service) HeartbeatLease(ctx context.Context, reservationID string, token
 }
 
 func (s Service) ClearLease(ctx context.Context, reservationID string, token string) (*NoteReservation, error) {
-	current, err := s.Store.GetReservation(ctx, reservationID)
-	if err != nil {
-		return nil, err
-	}
-	if err := requireLeaseToken(*current, token, s.now()); err != nil {
-		return nil, err
-	}
-	current.LeaseOwner = ""
-	current.LeaseToken = ""
-	current.LeaseUntil = time.Time{}
-	current.UpdatedAt = s.now()
-	return s.Store.UpdateReservation(ctx, *current)
+	return s.Store.ClearReservationLease(ctx, reservationID, token, s.now())
 }
 
 func requireLeaseToken(reservation NoteReservation, token string, now time.Time) error {

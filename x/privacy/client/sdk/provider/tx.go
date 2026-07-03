@@ -2,6 +2,8 @@ package provider
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -11,12 +13,21 @@ import (
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
+	authsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
 )
 
 type CosmosTxBroadcaster struct {
 	ClientContext client.Context
 	Flags         *pflag.FlagSet
 	FromName      string
+}
+
+type CosmosTxBroadcastResult struct {
+	Response        *sdk.TxResponse
+	TxBytesHash     string
+	SignDocHash     string
+	AccountSequence uint64
 }
 
 func (b CosmosTxBroadcaster) PrepareFactory(msg sdk.Msg) (tx.Factory, error) {
@@ -80,6 +91,14 @@ func (b CosmosTxBroadcaster) BroadcastSDKMessage(ctx context.Context, msg sdk.Ms
 }
 
 func (b CosmosTxBroadcaster) BroadcastSDKMessages(ctx context.Context, msgs ...sdk.Msg) (*sdk.TxResponse, error) {
+	result, err := b.BroadcastSDKMessagesWithMetadata(ctx, msgs...)
+	if err != nil {
+		return nil, err
+	}
+	return result.Response, nil
+}
+
+func (b CosmosTxBroadcaster) BroadcastSDKMessagesWithMetadata(ctx context.Context, msgs ...sdk.Msg) (*CosmosTxBroadcastResult, error) {
 	txf, err := b.PrepareFactoryForMessages(msgs...)
 	if err != nil {
 		return nil, err
@@ -101,13 +120,27 @@ func (b CosmosTxBroadcaster) BroadcastSDKMessages(ctx context.Context, msgs ...s
 	if err := tx.Sign(ctx, txf, fromName, txBuilder, true); err != nil {
 		return nil, err
 	}
+	signDocHash, err := b.signDocHash(ctx, txf, txBuilder)
+	if err != nil {
+		return nil, err
+	}
 
 	txBytes, err := b.ClientContext.TxConfig.TxEncoder()(txBuilder.GetTx())
 	if err != nil {
 		return nil, err
 	}
 
-	return b.ClientContext.BroadcastTx(txBytes)
+	result := &CosmosTxBroadcastResult{
+		TxBytesHash:     sha256Hex(txBytes),
+		SignDocHash:     signDocHash,
+		AccountSequence: txf.Sequence(),
+	}
+	response, err := b.ClientContext.BroadcastTx(txBytes)
+	if err != nil {
+		return result, err
+	}
+	result.Response = response
+	return result, nil
 }
 
 func (b CosmosTxBroadcaster) GenerateOrBroadcast(msgs ...sdk.Msg) error {
@@ -130,4 +163,36 @@ func (b CosmosTxBroadcaster) resolveFromName() (string, error) {
 		return "", fmt.Errorf("from name is required to sign the tx")
 	}
 	return fromName, nil
+}
+
+func (b CosmosTxBroadcaster) signDocHash(ctx context.Context, txf tx.Factory, txBuilder client.TxBuilder) (string, error) {
+	signatures, err := txBuilder.GetTx().GetSignaturesV2()
+	if err != nil {
+		return "", err
+	}
+	if len(signatures) == 0 {
+		return "", nil
+	}
+	signature := signatures[0]
+	single, ok := signature.Data.(*signingtypes.SingleSignatureData)
+	if !ok || signature.PubKey == nil {
+		return "", nil
+	}
+	signerData := authsigning.SignerData{
+		ChainID:       txf.ChainID(),
+		AccountNumber: txf.AccountNumber(),
+		Sequence:      txf.Sequence(),
+		PubKey:        signature.PubKey,
+		Address:       sdk.AccAddress(signature.PubKey.Address()).String(),
+	}
+	signBytes, err := authsigning.GetSignBytesAdapter(ctx, b.ClientContext.TxConfig.SignModeHandler(), single.SignMode, signerData, txBuilder.GetTx())
+	if err != nil {
+		return "", err
+	}
+	return sha256Hex(signBytes), nil
+}
+
+func sha256Hex(bz []byte) string {
+	sum := sha256.Sum256(bz)
+	return hex.EncodeToString(sum[:])
 }

@@ -170,6 +170,8 @@ x/privacy/client/sdk/conformance/note_reservation_contract_test.go
 - 여러 reservation과 operation을 batch로 생성할 때 하나라도 실패하면 아무 것도 기록하지 않는 원자적 batch reserve contract를 정의함.
 - 상태 변경은 compare-and-set 방식으로 수행함.
 - proof worker와 broadcaster가 사용할 lease/heartbeat 규칙을 구현하고, worker-owned 상태 전이는 현재 lease token을 요구함.
+- lease 획득, heartbeat, lease clear, `ProofReady -> Submitted`는 store 단위 원자적 연산으로 제공함.
+- proof worker는 `Reserved` 상태 한정 lease 획득과 proof 생성 중 heartbeat를 사용함.
 - `nullifier_lookup_key = HMAC(index_key, nullifier)` 형태의 lookup key helper를 제공함.
 - `nullifier_lookup_key_id` 또는 `lookup_key_version`을 포함하고, conformance fixture에 HMAC test vector를 포함함.
 - tx hash 조회, nullifier 조회, expected value 비교를 통한 reconcile helper를 구현함.
@@ -283,6 +285,7 @@ x/privacy/client/sdk/transfer/broadcast.go
 
 - `Reserved` 상태의 operation을 가져와 proof job으로 실행함.
 - proof worker는 lease를 획득한 뒤 lease-token guarded transition으로 `Reserved -> Proving -> ProofReady`를 진행하고 기존 transfer SDK로 `MsgTransfer`를 생성함.
+- replan attempt는 기존 payment item과 다른 `operation_id`/`reservation_id`를 사용해 이전 operation과 충돌하지 않게 함.
 - proof 생성이 끝나면 reservation을 `ProofReady`로 전환함.
 - broadcaster는 `ProofReady` 상태만 제출함.
 - broadcast 후 `tx_hash`, `tx_bytes_hash`, `sign_doc_hash`, `account_sequence`를 저장함.

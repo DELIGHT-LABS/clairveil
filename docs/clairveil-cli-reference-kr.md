@@ -188,6 +188,31 @@ clairveild tx privacy transfer "$(cat out/bob-shielded-address.txt)" 10uclair \
   --output json
 ```
 
+### transfer-batch
+
+여러 독립적인 `MsgTransfer`를 하나의 Cosmos tx envelope에 담아 broadcast합니다.
+
+```bash
+clairveild tx privacy transfer-batch "$(cat out/bob-shielded-address.txt)" \
+  7uclair 8uclair 9uclair \
+  --from alice \
+  --keyring-backend test \
+  --chain-id clairveil-local-1 \
+  --gas 25000000 \
+  --gas-prices 8500000000uclair \
+  --yes \
+  --output json
+```
+
+현재 제한:
+
+- bulk-transfer readiness와 localnet capacity test 용도입니다.
+- `all-private` / `none`만 지원합니다.
+- recursive split/merge planner를 실행하지 않습니다.
+- 각 amount는 같은 batch 안에서 input note를 재사용하지 않고 spendable exact note 또는 pairable note로 이미 충족 가능해야 합니다.
+- 선택된 transfer input에 dummy note가 필요하면 zero-value dummy note가 미리 존재해야 합니다.
+- JSON output에는 `txhash`, `height`, `code`, `message_count`, 요청한 `amounts`가 포함됩니다.
+
 ## 6. Disclosure decode
 
 transfer disclosure payload를 복호화하고 digest 검증 report를 만듭니다.

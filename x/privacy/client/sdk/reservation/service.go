@@ -99,6 +99,9 @@ func (s Service) Transition(ctx context.Context, reservationID string, from Rese
 	if !CanTransitionReservation(from, to) {
 		return nil, fmt.Errorf("%w: %s -> %s", ErrInvalidTransition, from, to)
 	}
+	if RequiresLeaseToken(from, to) {
+		return nil, fmt.Errorf("%w: %s -> %s requires lease token", ErrLeaseMismatch, from, to)
+	}
 	return s.Store.CompareAndSetReservationStatus(ctx, reservationID, from, to, s.now())
 }
 
@@ -113,25 +116,45 @@ func (s Service) TransitionWithLease(ctx context.Context, reservationID string, 
 }
 
 func (s Service) MarkSubmitted(ctx context.Context, reservationID string, leaseToken string, txHash string, txBytesHash string, signDocHash string, accountSequence uint64) (*NoteReservation, error) {
-	current, err := s.Store.GetReservation(ctx, reservationID)
+	return s.Store.MarkReservationSubmitted(ctx, reservationID, leaseToken, SubmittedReservationUpdate{
+		TxHash:          txHash,
+		TxBytesHash:     txBytesHash,
+		SignDocHash:     signDocHash,
+		AccountSequence: accountSequence,
+	}, s.now())
+}
+
+func (s Service) HeartbeatLeaseForStatus(ctx context.Context, reservationID string, token string, status ReservationStatus, ttl time.Duration) (*Lease, error) {
+	if s.Store == nil {
+		return nil, fmt.Errorf("reservation store is required")
+	}
+	if ttl <= 0 {
+		return nil, fmt.Errorf("lease ttl must be positive")
+	}
+	now := s.now()
+	updated, err := s.Store.HeartbeatReservationLeaseForStatus(ctx, reservationID, token, status, now.Add(ttl), now)
 	if err != nil {
 		return nil, err
 	}
-	if current.Status != StatusProofReady {
-		return nil, fmt.Errorf("%w: expected ProofReady got %s", ErrCompareAndSetFailed, current.Status)
+	return &Lease{
+		Owner: updated.LeaseOwner,
+		Token: updated.LeaseToken,
+		Until: updated.LeaseUntil,
+	}, nil
+}
+
+func (s Service) MarkSubmittedBatch(ctx context.Context, refs []SubmittedReservationRef, operationIDs []string, update SubmittedReservationUpdate) ([]NoteReservation, []PayrollOperation, error) {
+	if s.Store == nil {
+		return nil, nil, fmt.Errorf("reservation store is required")
 	}
-	if err := requireLeaseToken(*current, leaseToken, s.now()); err != nil {
-		return nil, err
+	return s.Store.MarkReservationsSubmitted(ctx, refs, operationIDs, update, s.now())
+}
+
+func (s Service) MarkProofReadyBatch(ctx context.Context, refs []SubmittedReservationRef, update ProofReadyOperationUpdate) ([]NoteReservation, *PayrollOperation, error) {
+	if s.Store == nil {
+		return nil, nil, fmt.Errorf("reservation store is required")
 	}
-	current.Status = StatusSubmitted
-	current.TxHash = txHash
-	current.TxBytesHash = txBytesHash
-	current.SignDocHash = signDocHash
-	current.AccountSequence = accountSequence
-	current.BroadcastAttemptCount++
-	current.LastBroadcastAt = s.now()
-	current.UpdatedAt = current.LastBroadcastAt
-	return s.Store.UpdateReservation(ctx, *current)
+	return s.Store.MarkReservationsProofReady(ctx, refs, update, s.now())
 }
 
 func (s Service) Release(ctx context.Context, reservationID string, from ReservationStatus) (*NoteReservation, error) {
