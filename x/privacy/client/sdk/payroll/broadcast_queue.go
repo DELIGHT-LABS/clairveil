@@ -50,34 +50,8 @@ func (w BroadcastWorker) SubmitProofResult(ctx context.Context, result ProofResu
 		return broadcast, fmt.Errorf("tx failed with code %d: %s", broadcast.Code, broadcast.RawLog)
 	}
 
-	for _, note := range result.Item.InputNotes {
-		token := result.ReservationLeases[note.ReservationID]
-		if _, err := w.Reservation.MarkSubmitted(
-			ctx,
-			note.ReservationID,
-			token,
-			broadcast.TxHash,
-			broadcast.TxBytesHash,
-			broadcast.SignDocHash,
-			broadcast.AccountSequence,
-		); err != nil {
-			return nil, err
-		}
-	}
-
-	if result.Item.OperationID != "" {
-		operation, err := w.Reservation.Store.GetOperation(ctx, result.Item.OperationID)
-		if err != nil {
-			return nil, err
-		}
-		operation.Status = privacyreservation.OperationStatusSubmitted
-		operation.TxHash = broadcast.TxHash
-		operation.TxBytesHash = broadcast.TxBytesHash
-		operation.SignDocHash = broadcast.SignDocHash
-		operation.UpdatedAt = reservationNow(w.Reservation)
-		if _, err := w.Reservation.Store.UpdateOperation(ctx, *operation); err != nil {
-			return nil, err
-		}
+	if err := markProofResultSubmitted(ctx, w.Reservation, result, broadcast); err != nil {
+		return nil, err
 	}
 
 	return broadcast, nil

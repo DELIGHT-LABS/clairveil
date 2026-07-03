@@ -20,8 +20,17 @@ type CosmosTxBroadcaster struct {
 }
 
 func (b CosmosTxBroadcaster) PrepareFactory(msg sdk.Msg) (tx.Factory, error) {
-	if msg == nil {
-		return tx.Factory{}, fmt.Errorf("an sdk message is required to prepare a tx factory")
+	return b.PrepareFactoryForMessages(msg)
+}
+
+func (b CosmosTxBroadcaster) PrepareFactoryForMessages(msgs ...sdk.Msg) (tx.Factory, error) {
+	if len(msgs) == 0 {
+		return tx.Factory{}, fmt.Errorf("at least one sdk message is required to prepare a tx factory")
+	}
+	for _, msg := range msgs {
+		if msg == nil {
+			return tx.Factory{}, fmt.Errorf("sdk messages must not be nil")
+		}
 	}
 	if b.Flags == nil {
 		return tx.Factory{}, fmt.Errorf("tx flags are required to prepare a tx factory")
@@ -56,7 +65,7 @@ func (b CosmosTxBroadcaster) PrepareFactory(msg sdk.Msg) (tx.Factory, error) {
 
 	if txf.Gas() == flags.DefaultGasLimit || txf.Gas() == 0 {
 		txf = txf.WithGasAdjustment(1.5)
-		_, adjusted, err := tx.CalculateGas(b.ClientContext, txf, msg)
+		_, adjusted, err := tx.CalculateGas(b.ClientContext, txf, msgs...)
 		if err != nil {
 			return txf, fmt.Errorf("failed to calculate tx gas: %w", err)
 		}
@@ -67,7 +76,11 @@ func (b CosmosTxBroadcaster) PrepareFactory(msg sdk.Msg) (tx.Factory, error) {
 }
 
 func (b CosmosTxBroadcaster) BroadcastSDKMessage(ctx context.Context, msg sdk.Msg) (*sdk.TxResponse, error) {
-	txf, err := b.PrepareFactory(msg)
+	return b.BroadcastSDKMessages(ctx, msg)
+}
+
+func (b CosmosTxBroadcaster) BroadcastSDKMessages(ctx context.Context, msgs ...sdk.Msg) (*sdk.TxResponse, error) {
+	txf, err := b.PrepareFactoryForMessages(msgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +90,7 @@ func (b CosmosTxBroadcaster) BroadcastSDKMessage(ctx context.Context, msg sdk.Ms
 		return nil, err
 	}
 
-	txBuilder, err := txf.BuildUnsignedTx(msg)
+	txBuilder, err := txf.BuildUnsignedTx(msgs...)
 	if err != nil {
 		return nil, err
 	}
