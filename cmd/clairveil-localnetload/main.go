@@ -54,15 +54,17 @@ type txMetricBucket struct {
 }
 
 type txMetric struct {
-	TxType      string `json:"tx_type"`
-	TxHash      string `json:"txhash,omitempty"`
-	SourceFile  string `json:"source_file,omitempty"`
-	Height      int64  `json:"height,omitempty"`
-	GasUsed     uint64 `json:"gas_used"`
-	GasWanted   uint64 `json:"gas_wanted,omitempty"`
-	Success     *bool  `json:"success,omitempty"`
-	SubmittedAt string `json:"submitted_at,omitempty"`
-	IncludedAt  string `json:"included_at,omitempty"`
+	TxType          string `json:"tx_type"`
+	TxHash          string `json:"txhash,omitempty"`
+	SourceFile      string `json:"source_file,omitempty"`
+	Height          int64  `json:"height,omitempty"`
+	GasUsed         uint64 `json:"gas_used"`
+	GasWanted       uint64 `json:"gas_wanted,omitempty"`
+	MessageCount    int    `json:"message_count,omitempty"`
+	TxJSONSizeBytes int    `json:"tx_json_size_bytes,omitempty"`
+	Success         *bool  `json:"success,omitempty"`
+	SubmittedAt     string `json:"submitted_at,omitempty"`
+	IncludedAt      string `json:"included_at,omitempty"`
 }
 
 func main() {
@@ -175,6 +177,8 @@ func summarizeBucket(bucket txMetricBucket) (benchmarkSummary, error) {
 	heights := make(map[int64]struct{})
 	var inclusionLatencies []float64
 	var gasUsed []float64
+	var messageCounts []float64
+	var txJSONSizeBytes []float64
 	for _, tx := range bucket.Transactions {
 		if tx.Height > 0 {
 			included++
@@ -187,6 +191,12 @@ func summarizeBucket(bucket txMetricBucket) (benchmarkSummary, error) {
 		}
 		if tx.GasUsed > 0 {
 			gasUsed = append(gasUsed, float64(tx.GasUsed))
+		}
+		if tx.MessageCount > 0 {
+			messageCounts = append(messageCounts, float64(tx.MessageCount))
+		}
+		if tx.TxJSONSizeBytes > 0 {
+			txJSONSizeBytes = append(txJSONSizeBytes, float64(tx.TxJSONSizeBytes))
 		}
 		if latency, ok := txInclusionLatencyMS(tx); ok {
 			inclusionLatencies = append(inclusionLatencies, latency)
@@ -212,6 +222,12 @@ func summarizeBucket(bucket txMetricBucket) (benchmarkSummary, error) {
 	}
 	if len(inclusionLatencies) > 0 {
 		metrics["inclusion_latency_ms"] = summarizeValues(inclusionLatencies)
+	}
+	if len(messageCounts) > 0 {
+		metrics["message_count"] = summarizeValues(messageCounts)
+	}
+	if len(txJSONSizeBytes) > 0 {
+		metrics["tx_json_size_bytes"] = summarizeValues(txJSONSizeBytes)
 	}
 	return benchmarkSummary{
 		Name:            "LocalnetTPS" + profileName(name),

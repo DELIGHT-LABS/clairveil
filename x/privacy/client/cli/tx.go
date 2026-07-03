@@ -130,6 +130,7 @@ func GetTxCmd() *cobra.Command {
 		CmdRelayWithdraw(),
 		CmdListNotes(),
 		CmdTransfer(),
+		CmdTransferBatch(),
 		CmdShowDisclosurePubKey(),
 		CmdDecodeTransferDisclosure(),
 		CmdShowShieldedAddress(),

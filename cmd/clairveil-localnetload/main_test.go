@@ -13,20 +13,24 @@ func TestSummarizeBucket(t *testing.T) {
 		EndedAt:        "2026-06-12T00:00:10Z",
 		Transactions: []txMetric{
 			{
-				TxType:      "deposit",
-				Height:      2,
-				GasUsed:     100,
-				Success:     &success,
-				SubmittedAt: "2026-06-12T00:00:01Z",
-				IncludedAt:  "2026-06-12T00:00:03Z",
+				TxType:          "deposit",
+				Height:          2,
+				GasUsed:         100,
+				MessageCount:    1,
+				TxJSONSizeBytes: 900,
+				Success:         &success,
+				SubmittedAt:     "2026-06-12T00:00:01Z",
+				IncludedAt:      "2026-06-12T00:00:03Z",
 			},
 			{
-				TxType:      "transfer",
-				Height:      3,
-				GasUsed:     200,
-				Success:     &failed,
-				SubmittedAt: "2026-06-12T00:00:02Z",
-				IncludedAt:  "2026-06-12T00:00:06Z",
+				TxType:          "transfer",
+				Height:          3,
+				GasUsed:         200,
+				MessageCount:    4,
+				TxJSONSizeBytes: 1200,
+				Success:         &failed,
+				SubmittedAt:     "2026-06-12T00:00:02Z",
+				IncludedAt:      "2026-06-12T00:00:06Z",
 			},
 		},
 	})
@@ -50,6 +54,12 @@ func TestSummarizeBucket(t *testing.T) {
 	}
 	if got := summary.Metrics["gas_used"].P95; got != 195 {
 		t.Fatalf("unexpected gas p95 %.3f", got)
+	}
+	if got := summary.Metrics["message_count"].Max; got != 4 {
+		t.Fatalf("unexpected message count max %.3f", got)
+	}
+	if got := summary.Metrics["tx_json_size_bytes"].Mean; got != 1050 {
+		t.Fatalf("unexpected tx json size mean %.3f", got)
 	}
 }
 

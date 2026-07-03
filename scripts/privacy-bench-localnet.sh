@@ -99,6 +99,8 @@ def classify(path: Path) -> str:
         return "dummy_deposit"
     if name.startswith("deposit-"):
         return "deposit"
+    if name == "transfer-batch":
+        return "transfer_batch"
     if name.startswith("transfer-"):
         return "transfer"
     if name == "withdraw-direct":
@@ -117,6 +119,15 @@ for path in sorted(out.glob("*-query.json")):
     tx_name = path.name.removesuffix("-query.json")
     submitted_path = out / f"{tx_name}.submitted-at"
     submitted_at = submitted_path.read_text().strip() if submitted_path.exists() else ""
+    command_output_path = out / f"{tx_name}.json"
+    command_output = {}
+    if command_output_path.exists():
+        command_output = json.loads(command_output_path.read_text())
+    tx_doc = doc.get("tx") or {}
+    body = tx_doc.get("body") or {}
+    messages = body.get("messages") if isinstance(body, dict) else []
+    message_count = len(messages) if isinstance(messages, list) and messages else int(command_output.get("message_count") or 1)
+    tx_json_size_bytes = len(json.dumps(tx_doc or doc, separators=(",", ":"), sort_keys=True).encode())
     transactions.append({
         "tx_type": classify(path),
         "txhash": response.get("txhash", ""),
@@ -124,6 +135,8 @@ for path in sorted(out.glob("*-query.json")):
         "height": int(response.get("height") or 0),
         "gas_used": gas_used,
         "gas_wanted": gas_wanted,
+        "message_count": message_count,
+        "tx_json_size_bytes": tx_json_size_bytes,
         "success": code == 0,
         "submitted_at": submitted_at,
         "included_at": response.get("timestamp", ""),

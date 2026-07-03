@@ -15,7 +15,23 @@ api_port="${API_PORT:-1317}"
 pprof_port="${PPROF_PORT:-6060}"
 tx_wait_attempts="${TX_WAIT_ATTEMPTS:-60}"
 tx_wait_sleep_seconds="${TX_WAIT_SLEEP_SECONDS:-2}"
+batch_transfer_count="${PRIVACY_E2E_BATCH_TRANSFER_COUNT:-0}"
+batch_transfer_amount="${PRIVACY_E2E_BATCH_TRANSFER_AMOUNT:-1}"
+batch_transfer_gas="${PRIVACY_E2E_BATCH_TRANSFER_GAS:-20000000}"
 node="tcp://127.0.0.1:${rpc_port}"
+
+if ! [[ "$batch_transfer_count" =~ ^[0-9]+$ ]]; then
+	echo "PRIVACY_E2E_BATCH_TRANSFER_COUNT must be a non-negative integer" >&2
+	exit 1
+fi
+if ! [[ "$batch_transfer_amount" =~ ^[1-9][0-9]*$ ]]; then
+	echo "PRIVACY_E2E_BATCH_TRANSFER_AMOUNT must be a positive integer" >&2
+	exit 1
+fi
+if ! [[ "$batch_transfer_gas" =~ ^[1-9][0-9]*$ ]]; then
+	echo "PRIVACY_E2E_BATCH_TRANSFER_GAS must be a positive integer" >&2
+	exit 1
+fi
 
 if [[ -n "${CLAIRVEILD_BIN:-}" ]]; then
 	clairveild="$CLAIRVEILD_BIN"
@@ -286,17 +302,48 @@ if not all(checks):
     raise SystemExit("disclosure verification failed")
 PY
 
+if ((batch_transfer_count > 0)); then
+	for i in $(seq 1 "$batch_transfer_count"); do
+		run tx privacy deposit "${batch_transfer_amount}uclair" --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas 2500000 --gas-prices 8500000000uclair --yes --output json >"$out/deposit-batch-${i}.json"
+		write_submitted_at "$out/deposit-batch-${i}.submitted-at"
+		write_txhash "$out/deposit-batch-${i}.json" "$out/deposit-batch-${i}.txhash"
+		wait_tx "$(cat "$out/deposit-batch-${i}.txhash")" "$out/deposit-batch-${i}-query.json"
+
+		run tx privacy deposit 0uclair --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas 2500000 --gas-prices 8500000000uclair --yes --output json >"$out/deposit-batch-${i}-dummy.json"
+		write_submitted_at "$out/deposit-batch-${i}-dummy.submitted-at"
+		write_txhash "$out/deposit-batch-${i}-dummy.json" "$out/deposit-batch-${i}-dummy.txhash"
+		wait_tx "$(cat "$out/deposit-batch-${i}-dummy.txhash")" "$out/deposit-batch-${i}-dummy-query.json"
+	done
+
+	batch_args=()
+	for _ in $(seq 1 "$batch_transfer_count"); do
+		batch_args+=("${batch_transfer_amount}uclair")
+	done
+
+	run tx privacy transfer-batch "$(cat "$out/bob-shielded-address.txt")" "${batch_args[@]}" --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas "$batch_transfer_gas" --gas-prices 8500000000uclair --yes --output json >"$out/transfer-batch.json"
+	write_submitted_at "$out/transfer-batch.submitted-at"
+	write_txhash "$out/transfer-batch.json" "$out/transfer-batch.txhash"
+	wait_tx "$(cat "$out/transfer-batch.txhash")" "$out/transfer-batch-query.json"
+fi
+
 run tx privacy list-notes --from bob --keyring-backend test --home "$home" --node "$node" --json >"$out/bob-notes.json"
-python3 - "$out/bob-notes.json" <<'PY'
+python3 - "$out/bob-notes.json" "$batch_transfer_count" "$batch_transfer_amount" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 doc = json.loads(Path(sys.argv[1]).read_text())
-amounts = {note["amount"] for note in doc["notes"] if note["status"] == "spendable"}
+batch_count = int(sys.argv[2])
+batch_amount = sys.argv[3]
+spendable = [note for note in doc["notes"] if note["status"] == "spendable"]
+amounts = {note["amount"] for note in spendable}
 required = {"11", "7", "10"}
 if not required.issubset(amounts):
     raise SystemExit(f"missing bob notes: {required - amounts}")
+if batch_count > 0:
+    received = sum(1 for note in spendable if note["amount"] == batch_amount)
+    if received < batch_count:
+        raise SystemExit(f"missing bob batch notes: expected at least {batch_count} notes with amount {batch_amount}, got {received}")
 PY
 
 run tx privacy withdraw 11uclair --recipient "$(cat "$out/alice-address.txt")" --from bob --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas 3500000 --gas-prices 8500000000uclair --yes --output json >"$out/withdraw-direct.json"

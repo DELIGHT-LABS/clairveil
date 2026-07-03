@@ -52,6 +52,10 @@ privacy-bench-localnet:
 privacy-localnet-tps-bench:
 	./scripts/privacy-localnet-tps-bench.sh
 
+.PHONY: privacy-transfer-batch-localnet-bench
+privacy-transfer-batch-localnet-bench:
+	./scripts/privacy-transfer-batch-localnet-bench.sh
+
 .PHONY: privacy-proverd-bench
 privacy-proverd-bench:
 	./scripts/privacy-proverd-bench.sh
