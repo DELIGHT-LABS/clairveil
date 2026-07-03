@@ -18,6 +18,7 @@
 - `privacy-localnet-tps-bench.sh`: localnet smoke output을 `chain_tps` benchmark family로 변환합니다.
 - `privacy-transfer-batch-localnet-bench.sh`: localnet smoke에 multi-message `transfer-batch` tx를 추가로 켜서 실행합니다. `TRANSFER_BATCH_COUNT=N`, `TRANSFER_BATCH_AMOUNT=A`로 batch envelope 크기를 바꿀 수 있습니다.
 - `privacy-bulk-transfer-bench.sh`: chunk size, prover 수, tx/sec 계획을 위한 synthetic bulk payroll 처리량 summary를 생성합니다.
+- `privacy-bulk-readiness-check.sh`: bulk transfer production-readiness check를 실행합니다. critical unit test, reservation failure invariant, synthetic bulk bench를 기본 실행하고, localnet/prover-pool 검증은 옵션으로 켤 수 있습니다.
 - `privacy-user-latency-bench.sh`: localnet privacy smoke를 wallet-flow latency tracing enabled 상태로 실행하고 `privacy-user-latency` report를 생성합니다. `USER_LATENCY_REPEAT=N`으로 반복 sample을 모을 수 있으며, `RUN_PROFILE=public_claim`은 blocked dry run override가 없으면 최소 100회 반복을 요구합니다.
 - `privacy-public-capacity-report.sh`: component report를 public capacity aggregate로 병합하고, component 또는 claim별 evidence가 public gate를 통과하지 못하면 aggregate도 ineligible 상태로 남깁니다.
 - `privacy-benchmark-report.sh`: family별 `latest.json`을 합쳐 사람이 한 문서로 읽을 수 있는 `benchmarks/clairveil-benchmark-results-report-kr.md`를 생성합니다. `privacy-public-capacity-report.sh`는 기본적으로 이 script를 마지막에 호출하며, `GENERATE_HUMAN_BENCHMARK_REPORT=0`으로 끌 수 있습니다.

@@ -76,6 +76,10 @@ privacy-user-latency-bench:
 privacy-bulk-transfer-bench:
 	./scripts/privacy-bulk-transfer-bench.sh
 
+.PHONY: privacy-bulk-readiness-check
+privacy-bulk-readiness-check:
+	./scripts/privacy-bulk-readiness-check.sh
+
 .PHONY: privacy-public-capacity-report
 privacy-public-capacity-report:
 	./scripts/privacy-public-capacity-report.sh
