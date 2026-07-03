@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | 1차 구현 완료, 2차 설계 대기 |
+| 상태 | 1차 repo 구현 및 후속 검증 harness 완료, 제품/운영 구현 분리 필요 |
 | 작성일 | 2026-07-03 |
 | 대상 브랜치 | `private/bulk-transfer` |
 | 대상 영역 | `x/privacy` client SDK, provider, benchmark, 이후 privacy protocol |
@@ -112,16 +112,16 @@ Payroll Control Plane은 최종 사용자 UI 자체가 아니라, 대량 지급�
 
 ## 현재 구현 상태
 
-2026-07-03 기준 1차 범위는 repo 안에서 reusable SDK/reference implementation과 benchmark harness 형태로 구현되어 있음. Production DB adapter, 운영 scheduler service, 실제 10만건 localnet 실행 결과는 아직 이 repo에 포함하지 않음.
+2026-07-03 기준 1차 범위는 repo 안에서 reusable SDK/reference implementation, localnet validation harness, prover pool load harness, readiness check 형태로 구현되어 있음. Production DB adapter, 운영 scheduler service, 실제 10만건 production rehearsal 결과는 아직 이 repo에 포함하지 않음.
 
 | 단계 | 상태 | 구현 위치 |
 | --- | --- | --- |
 | Phase 1. Note Reservation | 구현 완료 | `x/privacy/client/sdk/reservation`, `x/privacy/client/sdk/conformance/testdata/privacy_note_reservation_contract.json` |
 | Phase 2. Payroll Control Plane | 구현 완료 | `x/privacy/client/sdk/payroll` |
 | Phase 3. Proof/Broadcast/Reconcile Queue | 구현 완료 | `x/privacy/client/sdk/payroll/proof_queue.go`, `broadcast_queue.go`, `reconcile_worker.go`, `retry_policy.go` |
-| Phase 4. Multi-Message Transaction | 구현 완료 | `x/privacy/client/sdk/payroll/chunker.go`, `batch_broadcaster.go`, `sdk_broadcaster.go`, `x/privacy/client/sdk/provider/tx.go` |
-| Phase 5. Prover Scaling | 구현 완료 | `x/privacy/client/sdk/payroll/prover_pool.go` |
-| Phase 6. Capacity Simulation Benchmark | 시뮬레이션 harness 구현 완료 | `cmd/clairveil-bulktransferbench`, `scripts/privacy-bulk-transfer-bench.sh`, `make privacy-bulk-transfer-bench` |
+| Phase 4. Multi-Message Transaction | 구현 및 localnet 검증 harness 완료 | `x/privacy/client/sdk/payroll/chunker.go`, `batch_broadcaster.go`, `sdk_broadcaster.go`, `x/privacy/client/sdk/provider/tx.go`, `x/privacy/client/cli/tx_transfer_batch.go`, `scripts/privacy-transfer-batch-localnet-bench.sh` |
+| Phase 5. Prover Scaling | 구현 및 pool load harness 완료 | `x/privacy/client/sdk/payroll/prover_pool.go`, `cmd/clairveil-proverload`, `scripts/privacy-proverd-scale-bench.sh` |
+| Phase 6. Capacity Simulation Benchmark | 시뮬레이션 및 readiness harness 완료 | `cmd/clairveil-bulktransferbench`, `scripts/privacy-bulk-transfer-bench.sh`, `scripts/privacy-bulk-readiness-check.sh`, `make privacy-bulk-readiness-check` |
 | Phase 7. N-output Batch Circuit | 미구현 | 2차에서 `BatchJoinSplit32`로 진행 예정임 |
 
 ## 1차 계획
@@ -313,14 +313,16 @@ x/privacy/client/sdk/transfer/broadcast.go
 x/privacy/client/sdk/payroll/
   chunker.go
   batch_broadcaster.go
+  sdk_broadcaster.go
   chunker_test.go
 ```
 
 필요하면 단건 중심 transfer broadcaster를 다건 helper로 확장함.
 
 ```text
-x/privacy/client/sdk/transfer/broadcast.go
 x/privacy/client/sdk/provider/tx.go
+x/privacy/client/cli/tx_transfer_batch.go
+scripts/privacy-transfer-batch-localnet-bench.sh
 ```
 
 #### 구현 내용
@@ -339,6 +341,7 @@ x/privacy/client/sdk/provider/tx.go
 - chunk 안의 nullifier 중복을 사전에 거부함.
 - `K=5`, `K=10`, `K=20`, `K=50`별 gas/size/inclusion 결과를 측정할 수 있음.
 - 실패한 chunk에서 item 단위 replan 또는 smaller chunk retry가 가능함.
+- `make privacy-transfer-batch-localnet-bench`로 localnet에서 multi-message envelope를 재현하고 `message_count`, `tx_json_size_bytes`, gas 사용량을 기록할 수 있음.
 
 ### Phase 5. Prover Scaling
 
@@ -356,11 +359,13 @@ x/privacy/client/sdk/payroll/
   prover_pool_test.go
 ```
 
-1차 구현에서는 기존 prover load 도구를 직접 확장하지 않고, payroll runner가 사용할 prover pool abstraction을 추가함. 실제 prover endpoint 여러 개를 대상으로 한 load 측정은 Phase 6 benchmark harness와 기존 prover load 도구를 함께 사용할 수 있음.
+1차 구현에서는 payroll runner가 사용할 prover pool abstraction을 추가하고, 기존 prover load 도구도 여러 endpoint를 하나의 pool처럼 round-robin 측정할 수 있게 확장함.
 
 ```text
 x/privacy/client/sdk/payroll/prover_pool.go
 x/privacy/client/sdk/payroll/prover_pool_test.go
+cmd/clairveil-proverload/main.go
+scripts/privacy-proverd-scale-bench.sh
 ```
 
 필요하면 prover transport에 batch-friendly metadata를 추가함.
@@ -387,6 +392,7 @@ x/privacy/client/sdk/proverservice/
 - endpoint별 concurrency limit을 적용할 수 있음.
 - stale lease 결과를 proof worker 상태 전이에서 거부함.
 - prover unit 수별 예상 throughput이 benchmark report에 기록됨.
+- `PROVERD_URLS=url1,url2 make privacy-proverd-scale-bench`로 endpoint 수, endpoint별 request 분산, aggregate requests/sec, latency, timeout/error rate를 측정할 수 있음.
 
 ### Phase 6. Capacity Simulation Benchmark
 
@@ -403,6 +409,7 @@ cmd/clairveil-benchreport/main.go
 cmd/clairveil-bulktransferbench/main.go
 cmd/clairveil-bulktransferbench/main_test.go
 scripts/privacy-bulk-transfer-bench.sh
+scripts/privacy-bulk-readiness-check.sh
 Makefile
 ```
 
@@ -452,6 +459,49 @@ BENCH_OUT_DIR="$(mktemp -d)" ./scripts/privacy-bulk-transfer-bench.sh
 ```
 
 benchmark command는 `single-company-100k`, `hundred-companies-1k` 시나리오, chunk size, prover unit 수, proof/sec, tx/sec 가정을 입력받아 `bulk-summary.json`과 benchreport markdown/json 산출물을 생성함.
+
+## 1차 후속 검증 및 운영 준비
+
+1차 repo 구현은 완료되었지만, production 적용 전에는 다음 검증을 별도 실행해야 함.
+
+### Repo 안에서 실행할 검증
+
+```bash
+make privacy-bulk-readiness-check
+```
+
+기본 readiness check는 다음을 실행함.
+
+- reservation/payroll/proverload/localnetload/bulktransferbench critical unit test
+- active reservation duplicate, compare-and-set, lease token, reconcile evidence mismatch 같은 failure invariant test
+- 10만건 synthetic bulk capacity benchmark
+
+무거운 검증은 필요할 때 옵션으로 켬.
+
+```bash
+RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=5 make privacy-bulk-readiness-check
+```
+
+위 명령은 localnet smoke에 `transfer-batch`를 추가해 multi-message transaction envelope가 실제 chain에서 처리되는지 확인함.
+
+```bash
+RUN_PROVER_SCALE=1 PROVERD_URLS=http://127.0.0.1:9090,http://127.0.0.1:9091 make privacy-bulk-readiness-check
+```
+
+위 명령은 external `clairveil-proverd` pool을 대상으로 aggregate load를 측정함.
+
+### 제품/운영 팀이 이어서 해야 하는 검증
+
+repo는 protocol과 SDK 기준 reference implementation, local harness, synthetic benchmark를 제공함. 실제 제품화에는 다음 작업이 추가로 필요함.
+
+- production DB schema와 adapter 구현
+- PostgreSQL transaction lock, partial unique index, HMAC lookup key, field-level encryption 적용
+- payroll scheduler service와 tenant별 run orchestration 구현
+- operator UI, alert, manual review flow 구현
+- 실제 1천건, 1만건, 10만건 rehearsal runbook 작성 및 실행
+- JS SDK/wallet storage와 note reservation 상태 계약의 conformance 확인
+
+이 항목들은 repo 내부 code만으로 완료되는 작업이 아니며, 제품팀 전달 문서에서 별도 owner와 산출물을 정의해야 함.
 
 ## 1차 산출물 요약
 
