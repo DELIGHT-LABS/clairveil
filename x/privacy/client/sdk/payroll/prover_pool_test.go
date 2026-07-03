@@ -3,7 +3,9 @@ package payroll
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -48,6 +50,48 @@ func TestProverPoolFallsBackToNextEndpoint(t *testing.T) {
 	require.Equal(t, 1, healthy.calls)
 }
 
+func TestProverPoolLimitsEndpointConcurrency(t *testing.T) {
+	runner := &blockingProofRunner{
+		entered: make(chan struct{}, 2),
+		release: make(chan struct{}),
+	}
+	pool := &ProverPool{
+		Endpoints: []ProverEndpoint{
+			{ID: "single", Runner: runner},
+		},
+		MaxConcurrencyPerEndpoint: 1,
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_, err := pool.BuildPreparedTransferProof(context.Background(), privacytransfer.PreparedTransferPayload{PayloadHash: "a"})
+		require.NoError(t, err)
+	}()
+	<-runner.entered
+
+	secondDone := make(chan struct{})
+	go func() {
+		defer wg.Done()
+		defer close(secondDone)
+		_, err := pool.BuildPreparedTransferProof(context.Background(), privacytransfer.PreparedTransferPayload{PayloadHash: "b"})
+		require.NoError(t, err)
+	}()
+
+	select {
+	case <-runner.entered:
+		t.Fatal("second proof entered endpoint before first proof released")
+	case <-time.After(25 * time.Millisecond):
+	}
+
+	runner.release <- struct{}{}
+	<-runner.entered
+	runner.release <- struct{}{}
+	wg.Wait()
+	<-secondDone
+}
+
 type recordingProofRunner struct {
 	id    string
 	err   error
@@ -63,5 +107,20 @@ func (r *recordingProofRunner) BuildPreparedTransferProof(_ context.Context, pay
 		Version:     privacytransfer.PreparedTransferProofVersion,
 		PayloadHash: payload.PayloadHash,
 		ProofHex:    r.id + "-proof",
+	}, nil
+}
+
+type blockingProofRunner struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (r *blockingProofRunner) BuildPreparedTransferProof(_ context.Context, payload privacytransfer.PreparedTransferPayload) (*privacytransfer.PreparedTransferProof, error) {
+	r.entered <- struct{}{}
+	<-r.release
+	return &privacytransfer.PreparedTransferProof{
+		Version:     privacytransfer.PreparedTransferProofVersion,
+		PayloadHash: payload.PayloadHash,
+		ProofHex:    "proof",
 	}, nil
 }

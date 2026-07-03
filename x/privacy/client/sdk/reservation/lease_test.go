@@ -55,3 +55,30 @@ func TestServiceLeaseRejectsStaleToken(t *testing.T) {
 		t.Fatalf("expected stale token rejection, got %v", err)
 	}
 }
+
+func TestServiceTransitionWithLeaseRejectsStaleToken(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStore()
+	svc := Service{Store: store, Now: fixedNow}
+
+	created, err := svc.Reserve(ctx, ReserveInput{Reservation: testReservation("r1", "note-a", "op-a")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := svc.AcquireLease(ctx, created.ReservationID, "worker-a", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = svc.TransitionWithLease(ctx, created.ReservationID, "stale-token", StatusReserved, StatusProving)
+	if !errors.Is(err, ErrLeaseMismatch) {
+		t.Fatalf("expected stale token rejection, got %v", err)
+	}
+	updated, err := svc.TransitionWithLease(ctx, created.ReservationID, lease.Token, StatusReserved, StatusProving)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Status != StatusProving {
+		t.Fatalf("expected Proving got %s", updated.Status)
+	}
+}

@@ -20,32 +20,61 @@ func (s Service) Reserve(ctx context.Context, input ReserveInput) (*NoteReservat
 	if s.Store == nil {
 		return nil, fmt.Errorf("reservation store is required")
 	}
+	created, err := s.ReserveBatch(ctx, []ReserveInput{input})
+	if err != nil {
+		return nil, err
+	}
+	return &created[0], nil
+}
+
+func (s Service) ReserveBatch(ctx context.Context, inputs []ReserveInput) ([]NoteReservation, error) {
+	if s.Store == nil {
+		return nil, fmt.Errorf("reservation store is required")
+	}
+	if len(inputs) == 0 {
+		return []NoteReservation{}, nil
+	}
 	now := s.now()
+
+	reservations := make([]NoteReservation, 0, len(inputs))
+	operations := make([]PayrollOperation, 0, len(inputs))
+	for _, input := range inputs {
+		reservation, operation, err := normalizeReserveInput(input, now)
+		if err != nil {
+			return nil, err
+		}
+		reservations = append(reservations, reservation)
+		if operation != nil {
+			operations = append(operations, *operation)
+		}
+	}
+
+	return s.Store.CreateReservationBatch(ctx, reservations, operations)
+}
+
+func normalizeReserveInput(input ReserveInput, now time.Time) (NoteReservation, *PayrollOperation, error) {
 	reservation := input.Reservation
 	if reservation.ReservationID == "" {
-		return nil, fmt.Errorf("%w: reservation_id is required", ErrInvalidReservation)
+		return NoteReservation{}, nil, fmt.Errorf("%w: reservation_id is required", ErrInvalidReservation)
 	}
 	if reservation.OwnerKeyID == "" {
-		return nil, fmt.Errorf("%w: owner_key_id is required", ErrInvalidReservation)
+		return NoteReservation{}, nil, fmt.Errorf("%w: owner_key_id is required", ErrInvalidReservation)
 	}
 	if reservation.NullifierLookupKey == "" {
-		return nil, fmt.Errorf("%w: nullifier_lookup_key is required", ErrInvalidReservation)
+		return NoteReservation{}, nil, fmt.Errorf("%w: nullifier_lookup_key is required", ErrInvalidReservation)
 	}
 	if reservation.Status == "" {
 		reservation.Status = StatusReserved
 	}
 	if reservation.Status != StatusReserved {
-		return nil, fmt.Errorf("%w: reservation must start as Reserved", ErrInvalidReservation)
+		return NoteReservation{}, nil, fmt.Errorf("%w: reservation must start as Reserved", ErrInvalidReservation)
 	}
 	if reservation.CreatedAt.IsZero() {
 		reservation.CreatedAt = now
 	}
 	reservation.UpdatedAt = now
 
-	created, err := s.Store.CreateReservation(ctx, reservation)
-	if err != nil {
-		return nil, err
-	}
+	var normalizedOperation *PayrollOperation
 	if input.Operation != nil {
 		operation := *input.Operation
 		if operation.ReservationID == "" {
@@ -58,11 +87,9 @@ func (s Service) Reserve(ctx context.Context, input ReserveInput) (*NoteReservat
 			operation.CreatedAt = now
 		}
 		operation.UpdatedAt = now
-		if _, err := s.Store.CreateOperation(ctx, operation); err != nil {
-			return nil, err
-		}
+		normalizedOperation = &operation
 	}
-	return created, nil
+	return reservation, normalizedOperation, nil
 }
 
 func (s Service) Transition(ctx context.Context, reservationID string, from ReservationStatus, to ReservationStatus) (*NoteReservation, error) {
@@ -73,6 +100,16 @@ func (s Service) Transition(ctx context.Context, reservationID string, from Rese
 		return nil, fmt.Errorf("%w: %s -> %s", ErrInvalidTransition, from, to)
 	}
 	return s.Store.CompareAndSetReservationStatus(ctx, reservationID, from, to, s.now())
+}
+
+func (s Service) TransitionWithLease(ctx context.Context, reservationID string, leaseToken string, from ReservationStatus, to ReservationStatus) (*NoteReservation, error) {
+	if s.Store == nil {
+		return nil, fmt.Errorf("reservation store is required")
+	}
+	if !CanTransitionReservation(from, to) {
+		return nil, fmt.Errorf("%w: %s -> %s", ErrInvalidTransition, from, to)
+	}
+	return s.Store.CompareAndSetReservationStatusWithLease(ctx, reservationID, leaseToken, from, to, s.now())
 }
 
 func (s Service) MarkSubmitted(ctx context.Context, reservationID string, leaseToken string, txHash string, txBytesHash string, signDocHash string, accountSequence uint64) (*NoteReservation, error) {

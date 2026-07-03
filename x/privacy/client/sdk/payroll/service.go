@@ -48,6 +48,7 @@ func (s Service) ConfirmPlan(ctx context.Context, plan PayrollPlan) (*PayrollPla
 	confirmed.Status = PlanStatusConfirmed
 	confirmed.UpdatedAt = now
 
+	reservationInputs := make([]privacyreservation.ReserveInput, 0)
 	for itemIndex := range confirmed.Items {
 		item := &confirmed.Items[itemIndex]
 		for noteIndex, note := range item.InputNotes {
@@ -88,12 +89,14 @@ func (s Service) ConfirmPlan(ctx context.Context, plan PayrollPlan) (*PayrollPla
 					CreatedAt:                now,
 				}
 			}
-			if _, err := s.Reservation.Reserve(ctx, reservationInput); err != nil {
-				return nil, err
-			}
+			reservationInputs = append(reservationInputs, reservationInput)
 			item.InputNotes[noteIndex].ReservationID = reservationID
 		}
 		item.Status = ItemStatusReserved
+	}
+
+	if _, err := s.Reservation.ReserveBatch(ctx, reservationInputs); err != nil {
+		return nil, err
 	}
 
 	return &confirmed, nil

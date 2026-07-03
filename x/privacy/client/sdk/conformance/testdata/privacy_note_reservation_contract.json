@@ -32,10 +32,31 @@
     ["ManualReview", "Available"]
   ],
   "active_unique_key": ["owner_key_id", "nullifier_lookup_key"],
+  "batch_reserve": {
+    "atomic": true,
+    "error_policy": "if any reservation or operation in the batch is invalid, no reservation or operation is created",
+    "lock_requirement": "production stores must select and reserve notes in one database transaction or equivalent single-writer critical section"
+  },
   "nullifier_lookup_key": {
     "algorithm": "HMAC-SHA256",
     "encoding": "hex",
-    "key_version_field": "nullifier_lookup_key_id"
+    "key_version_field": "nullifier_lookup_key_id",
+    "test_vectors": [
+      {
+        "index_key_utf8": "index-key-v1",
+        "nullifier_utf8": "nullifier-0001",
+        "lookup_key_hex": "be314f12370f9e73eac4d34dab5efbfded54b813389666e6e6e547762b61159a"
+      }
+    ]
+  },
+  "lease_transition_preconditions": {
+    "token_required_for": [
+      ["Reserved", "Proving"],
+      ["Proving", "ProofReady"],
+      ["ProofReady", "Submitted"]
+    ],
+    "fields": ["lease_owner", "lease_token", "lease_until", "last_heartbeat_at"],
+    "policy": "only the current non-expired lease token may advance worker-owned states"
   },
   "success_evidence_required": [
     "tx_hash_or_tx_result",
@@ -45,5 +66,21 @@
     "expected_amount_hash",
     "expected_denom",
     "batch_item_index"
+  ],
+  "operation_success_examples": [
+    {
+      "name": "matching evidence marks operation succeeded",
+      "nullifier_spent": true,
+      "evidence_matches_expected_values": true,
+      "note_status": "ConfirmedSpent",
+      "operation_status": "Succeeded"
+    },
+    {
+      "name": "spent nullifier without matching operation evidence is conflict",
+      "nullifier_spent": true,
+      "evidence_matches_expected_values": false,
+      "note_status": "ConfirmedSpent",
+      "operation_status": "ConflictSpent"
+    }
   ]
 }

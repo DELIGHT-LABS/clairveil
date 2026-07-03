@@ -80,7 +80,7 @@ func (w ProofWorker) Process(ctx context.Context, item PayrollPlanItem) (*ProofR
 			return nil, err
 		}
 		leases[note.ReservationID] = lease.Token
-		if _, err := w.Reservation.Transition(ctx, note.ReservationID, privacyreservation.StatusReserved, privacyreservation.StatusProving); err != nil {
+		if _, err := w.Reservation.TransitionWithLease(ctx, note.ReservationID, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving); err != nil {
 			return nil, err
 		}
 	}
@@ -111,7 +111,7 @@ func (w ProofWorker) Process(ctx context.Context, item PayrollPlanItem) (*ProofR
 		return nil, err
 	}
 	for _, note := range item.InputNotes {
-		if _, err := w.Reservation.Transition(ctx, note.ReservationID, privacyreservation.StatusProving, privacyreservation.StatusProofReady); err != nil {
+		if _, err := w.Reservation.TransitionWithLease(ctx, note.ReservationID, leases[note.ReservationID], privacyreservation.StatusProving, privacyreservation.StatusProofReady); err != nil {
 			return nil, err
 		}
 	}

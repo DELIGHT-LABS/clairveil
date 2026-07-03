@@ -17,6 +17,26 @@ type noteReservationContract struct {
 	ActiveReservationStatuses []string   `json:"active_reservation_statuses"`
 	AllowedTransitions        [][]string `json:"allowed_transitions"`
 	RejectedTransitions       [][]string `json:"rejected_transitions"`
+	BatchReserve              struct {
+		Atomic bool `json:"atomic"`
+	} `json:"batch_reserve"`
+	NullifierLookupKey struct {
+		TestVectors []struct {
+			IndexKeyUTF8  string `json:"index_key_utf8"`
+			NullifierUTF8 string `json:"nullifier_utf8"`
+			LookupKeyHex  string `json:"lookup_key_hex"`
+		} `json:"test_vectors"`
+	} `json:"nullifier_lookup_key"`
+	LeaseTransitionPreconditions struct {
+		TokenRequiredFor [][]string `json:"token_required_for"`
+	} `json:"lease_transition_preconditions"`
+	OperationSuccessExamples []struct {
+		Name            string `json:"name"`
+		NullifierSpent  bool   `json:"nullifier_spent"`
+		EvidenceMatches bool   `json:"evidence_matches_expected_values"`
+		NoteStatus      string `json:"note_status"`
+		OperationStatus string `json:"operation_status"`
+	} `json:"operation_success_examples"`
 }
 
 func TestNoteReservationContractFixtureMatchesGoSDK(t *testing.T) {
@@ -41,6 +61,26 @@ func TestNoteReservationContractFixtureMatchesGoSDK(t *testing.T) {
 			privacyreservation.ReservationStatus(transition[0]),
 			privacyreservation.ReservationStatus(transition[1]),
 		), "expected transition %s -> %s to be rejected", transition[0], transition[1])
+	}
+	require.True(t, contract.BatchReserve.Atomic)
+	for _, transition := range contract.LeaseTransitionPreconditions.TokenRequiredFor {
+		require.Len(t, transition, 2)
+		require.True(t, privacyreservation.CanTransitionReservation(
+			privacyreservation.ReservationStatus(transition[0]),
+			privacyreservation.ReservationStatus(transition[1]),
+		), "expected lease-guarded transition %s -> %s to be allowed", transition[0], transition[1])
+	}
+	for _, vector := range contract.NullifierLookupKey.TestVectors {
+		got, err := privacyreservation.NullifierLookupKey([]byte(vector.IndexKeyUTF8), []byte(vector.NullifierUTF8))
+		require.NoError(t, err)
+		require.Equal(t, vector.LookupKeyHex, got)
+	}
+	require.NotEmpty(t, contract.OperationSuccessExamples)
+	for _, example := range contract.OperationSuccessExamples {
+		require.NotEmpty(t, example.Name)
+		require.True(t, example.NullifierSpent)
+		require.NotEmpty(t, example.NoteStatus)
+		require.NotEmpty(t, example.OperationStatus)
 	}
 }
 

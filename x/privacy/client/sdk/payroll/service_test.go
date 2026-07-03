@@ -50,6 +50,56 @@ func TestServiceCreateAndConfirmPlanCreatesReservations(t *testing.T) {
 	require.Equal(t, HashAmount("uclair", input.Items[0].Amount), operation.ExpectedAmountHash)
 }
 
+func TestServiceConfirmPlanDoesNotPartiallyReserveOnBatchConflict(t *testing.T) {
+	ctx := context.Background()
+	reservationStore := privacyreservation.NewMemoryStore()
+	svc := Service{
+		Reservation: privacyreservation.Service{Store: reservationStore, Now: testNow},
+		Now:         testNow,
+	}
+	plan := PayrollPlan{
+		CompanyID: "company-a",
+		PayrollID: "payroll-a",
+		BatchID:   "batch-a",
+		Denom:     "uclair",
+		Status:    PlanStatusDraft,
+		Items: []PayrollPlanItem{
+			{
+				CompanyID:        "company-a",
+				PayrollID:        "payroll-a",
+				BatchID:          "batch-a",
+				ChunkID:          "chunk-a",
+				ItemID:           "item-1",
+				OperationID:      "op-1",
+				RecipientAddress: testRecipientAddress("1"),
+				Amount:           big.NewInt(10),
+				Denom:            "uclair",
+				InputNotes:       []TreasuryNote{testTreasuryNote("shared", "uclair", 10, false, "")},
+			},
+			{
+				CompanyID:        "company-a",
+				PayrollID:        "payroll-a",
+				BatchID:          "batch-a",
+				ChunkID:          "chunk-a",
+				ItemID:           "item-2",
+				OperationID:      "op-2",
+				RecipientAddress: testRecipientAddress("2"),
+				Amount:           big.NewInt(10),
+				Denom:            "uclair",
+				InputNotes:       []TreasuryNote{testTreasuryNote("shared-again", "uclair", 10, false, "")},
+			},
+		},
+	}
+	plan.Items[1].InputNotes[0].NullifierLookupKey = plan.Items[0].InputNotes[0].NullifierLookupKey
+
+	_, err := svc.ConfirmPlan(ctx, plan)
+	require.ErrorIs(t, err, privacyreservation.ErrActiveReservationExists)
+
+	reservations, listErr := reservationStore.ListReservations(ctx, privacyreservation.ReservationFilter{})
+	require.NoError(t, listErr)
+	require.Empty(t, reservations)
+}
+
 func TestBuildPlanReportCountsItemStatuses(t *testing.T) {
 	plan := PayrollPlan{
 		PayrollID: "payroll-a",

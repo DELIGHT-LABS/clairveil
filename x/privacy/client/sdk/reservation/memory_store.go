@@ -21,29 +21,83 @@ func NewMemoryStore() *MemoryStore {
 	}
 }
 
-func (s *MemoryStore) CreateReservation(_ context.Context, reservation NoteReservation) (*NoteReservation, error) {
+func (s *MemoryStore) CreateReservation(ctx context.Context, reservation NoteReservation) (*NoteReservation, error) {
+	created, err := s.CreateReservationBatch(ctx, []NoteReservation{reservation}, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &created[0], nil
+}
+
+func (s *MemoryStore) CreateReservationBatch(_ context.Context, reservations []NoteReservation, operations []PayrollOperation) ([]NoteReservation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if len(reservations) == 0 {
+		return []NoteReservation{}, nil
+	}
+	pendingReservations := make(map[string]NoteReservation, len(reservations))
+	pendingOperations := make(map[string]PayrollOperation, len(operations))
+	for _, reservation := range reservations {
+		if err := s.validateReservationCreateLocked(reservation, pendingReservations); err != nil {
+			return nil, err
+		}
+		pendingReservations[reservation.ReservationID] = reservation
+	}
+	for _, operation := range operations {
+		if err := s.validateOperationCreateLocked(operation, pendingOperations); err != nil {
+			return nil, err
+		}
+		pendingOperations[operation.OperationID] = operation
+	}
+
+	created := make([]NoteReservation, 0, len(reservations))
+	for _, reservation := range reservations {
+		s.reservations[reservation.ReservationID] = cloneReservation(reservation)
+		created = append(created, cloneReservation(reservation))
+	}
+	for _, operation := range operations {
+		s.operations[operation.OperationID] = cloneOperation(operation)
+	}
+	return created, nil
+}
+
+func (s *MemoryStore) validateReservationCreateLocked(reservation NoteReservation, pending map[string]NoteReservation) error {
 	if reservation.ReservationID == "" {
-		return nil, fmt.Errorf("%w: reservation_id is required", ErrInvalidReservation)
+		return fmt.Errorf("%w: reservation_id is required", ErrInvalidReservation)
 	}
 	if _, exists := s.reservations[reservation.ReservationID]; exists {
-		return nil, fmt.Errorf("%w: reservation_id already exists", ErrActiveReservationExists)
+		return fmt.Errorf("%w: reservation_id already exists", ErrActiveReservationExists)
+	}
+	if _, exists := pending[reservation.ReservationID]; exists {
+		return fmt.Errorf("%w: reservation_id already exists in batch", ErrActiveReservationExists)
 	}
 	if IsActiveReservationStatus(reservation.Status) {
 		for _, existing := range s.reservations {
-			if existing.ReservationID == reservation.ReservationID {
-				continue
-			}
 			if IsActiveReservationStatus(existing.Status) && existing.OwnerKeyID == reservation.OwnerKeyID && existing.NullifierLookupKey == reservation.NullifierLookupKey {
-				return nil, ErrActiveReservationExists
+				return ErrActiveReservationExists
+			}
+		}
+		for _, existing := range pending {
+			if IsActiveReservationStatus(existing.Status) && existing.OwnerKeyID == reservation.OwnerKeyID && existing.NullifierLookupKey == reservation.NullifierLookupKey {
+				return ErrActiveReservationExists
 			}
 		}
 	}
-	s.reservations[reservation.ReservationID] = cloneReservation(reservation)
-	created := cloneReservation(reservation)
-	return &created, nil
+	return nil
+}
+
+func (s *MemoryStore) validateOperationCreateLocked(operation PayrollOperation, pending map[string]PayrollOperation) error {
+	if operation.OperationID == "" {
+		return fmt.Errorf("operation_id is required")
+	}
+	if _, exists := s.operations[operation.OperationID]; exists {
+		return fmt.Errorf("operation already exists")
+	}
+	if _, exists := pending[operation.OperationID]; exists {
+		return fmt.Errorf("operation already exists in batch")
+	}
+	return nil
 }
 
 func (s *MemoryStore) GetReservation(_ context.Context, reservationID string) (*NoteReservation, error) {
@@ -89,6 +143,24 @@ func (s *MemoryStore) CompareAndSetReservationStatus(_ context.Context, reservat
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	return s.compareAndSetReservationStatusLocked(reservationID, from, to, now)
+}
+
+func (s *MemoryStore) CompareAndSetReservationStatusWithLease(_ context.Context, reservationID string, leaseToken string, from ReservationStatus, to ReservationStatus, now time.Time) (*NoteReservation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	reservation, ok := s.reservations[reservationID]
+	if !ok {
+		return nil, ErrReservationNotFound
+	}
+	if err := requireLeaseToken(reservation, leaseToken, now); err != nil {
+		return nil, err
+	}
+	return s.compareAndSetReservationStatusLocked(reservationID, from, to, now)
+}
+
+func (s *MemoryStore) compareAndSetReservationStatusLocked(reservationID string, from ReservationStatus, to ReservationStatus, now time.Time) (*NoteReservation, error) {
 	reservation, ok := s.reservations[reservationID]
 	if !ok {
 		return nil, ErrReservationNotFound
@@ -132,11 +204,8 @@ func (s *MemoryStore) CreateOperation(_ context.Context, operation PayrollOperat
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if operation.OperationID == "" {
-		return nil, fmt.Errorf("operation_id is required")
-	}
-	if _, exists := s.operations[operation.OperationID]; exists {
-		return nil, fmt.Errorf("operation already exists")
+	if err := s.validateOperationCreateLocked(operation, nil); err != nil {
+		return nil, err
 	}
 	s.operations[operation.OperationID] = cloneOperation(operation)
 	created := cloneOperation(operation)
