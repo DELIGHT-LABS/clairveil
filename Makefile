@@ -14,6 +14,7 @@ build:
 	go build ./cmd/clairveil-proverload
 	go build ./cmd/clairveil-localnetload
 	go build ./cmd/clairveil-userlatency
+	go build ./cmd/clairveil-bulktransferbench
 
 .PHONY: install
 install: build
@@ -62,6 +63,10 @@ privacy-proverd-load-bench:
 .PHONY: privacy-user-latency-bench
 privacy-user-latency-bench:
 	./scripts/privacy-user-latency-bench.sh
+
+.PHONY: privacy-bulk-transfer-bench
+privacy-bulk-transfer-bench:
+	./scripts/privacy-bulk-transfer-bench.sh
 
 .PHONY: privacy-public-capacity-report
 privacy-public-capacity-report:
@@ -113,4 +118,4 @@ docker-proverd-build:
 
 .PHONY: clean
 clean:
-	rm -f clairveild clairveil-setup clairveil-verify clairveil-proverd clairveil-benchreport clairveil-proverload clairveil-localnetload clairveil-userlatency
+	rm -f clairveild clairveil-setup clairveil-verify clairveil-proverd clairveil-benchreport clairveil-proverload clairveil-localnetload clairveil-userlatency clairveil-bulktransferbench
