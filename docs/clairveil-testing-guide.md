@@ -28,7 +28,7 @@ make release-pack-verify
 | Command | Meaning |
 | --- | --- |
 | `make test` | run `go test ./...` |
-| `make build` | build `clairveild`, `clairveil-setup`, `clairveil-verify`, and `clairveil-proverd` |
+| `make build` | build `clairveild`, `clairveil-setup`, `clairveil-verify`, `clairveil-proverd`, and benchmark/load tools (`clairveil-benchreport`, `clairveil-proverload`, `clairveil-localnetload`, `clairveil-userlatency`, `clairveil-bulktransferbench`) |
 | `make install` | run `make build`, then copy Clairveil binaries to `GOBIN` or `GOPATH/bin` |
 | `make init` | run `make install`, then initialize the default local chain home for `clairveild start` |
 | `make proto` | regenerate privacy protobuf/gateway Go files |
@@ -38,7 +38,7 @@ make release-pack-verify
 | `make localnet-smoke` | briefly verify that the reference daemon can start from genesis |
 | `make privacy-e2e-smoke` | validate full deposit, transfer, disclosure, and withdraw flow |
 | `make dapp-local` | start a local Clairveil node, prover, and browser DApp stack for manual testing |
-| `make release-check` | `ci`, `vulncheck`, `localnet-smoke`, and `privacy-e2e-smoke` |
+| `make release-check` | `ci`, `vulncheck`, `localnet-smoke`, `privacy-e2e-smoke`, and bulk readiness with localnet transfer-batch smoke |
 | `make release-pack` | create downstream handoff archive and sha256 |
 | `make release-pack-verify` | verify handoff archive checksum, internal checksum, required files, and manifest commit |
 | `make docker-proverd-build` | validate prover Dockerfile/compose build |

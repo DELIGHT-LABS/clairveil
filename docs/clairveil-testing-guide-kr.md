@@ -26,7 +26,7 @@ make release-pack-verify
 | 명령 | 의미 |
 | --- | --- |
 | `make test` | `go test ./...` 실행 |
-| `make build` | `clairveild`, `clairveil-setup`, `clairveil-verify`, `clairveil-proverd` build |
+| `make build` | `clairveild`, `clairveil-setup`, `clairveil-verify`, `clairveil-proverd`와 benchmark/load tool(`clairveil-benchreport`, `clairveil-proverload`, `clairveil-localnetload`, `clairveil-userlatency`, `clairveil-bulktransferbench`) build |
 | `make install` | `make build` 후 Clairveil binary를 `GOBIN` 또는 `GOPATH/bin`으로 복사 |
 | `make init` | `make install` 후 기본 local chain home을 초기화해 `clairveild start` 준비 |
 | `make proto` | privacy protobuf/gateway Go file 재생성 |
@@ -36,7 +36,7 @@ make release-pack-verify
 | `make localnet-smoke` | reference daemon이 genesis부터 start 가능한지 짧게 검증 |
 | `make privacy-e2e-smoke` | deposit, transfer, disclosure, withdraw 전체 flow 검증 |
 | `make dapp-local` | 수동 테스트용 local Clairveil node, prover, browser DApp stack 실행 |
-| `make release-check` | `ci`, `vulncheck`, `localnet-smoke`, `privacy-e2e-smoke` 묶음 |
+| `make release-check` | `ci`, `vulncheck`, `localnet-smoke`, `privacy-e2e-smoke`, localnet transfer-batch smoke를 포함한 bulk readiness 묶음 |
 | `make release-pack` | downstream handoff archive와 sha256 생성 |
 | `make release-pack-verify` | handoff archive checksum, 내부 checksum, 필수 파일, manifest commit 검증 |
 | `make docker-proverd-build` | prover Dockerfile/compose build 검증 |

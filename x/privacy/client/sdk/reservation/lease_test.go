@@ -13,7 +13,7 @@ func TestServiceLeaseRejectsConcurrentWorkerAndAllowsHeartbeat(t *testing.T) {
 	store := NewMemoryStore()
 	svc := Service{Store: store, Now: func() time.Time { return now }}
 
-	created, err := svc.Reserve(ctx, ReserveInput{Reservation: testReservation("r1", "note-a", "op-a")})
+	created, err := svc.Reserve(ctx, ReserveInput{Reservation: testReservation("r1", "note-a", "")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestServiceLeaseRejectsStaleToken(t *testing.T) {
 	store := NewMemoryStore()
 	svc := Service{Store: store, Now: fixedNow}
 
-	created, err := svc.Reserve(ctx, ReserveInput{Reservation: testReservation("r1", "note-a", "op-a")})
+	created, err := svc.Reserve(ctx, ReserveInput{Reservation: testReservation("r1", "note-a", "")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestServiceTransitionWithLeaseRejectsStaleToken(t *testing.T) {
 	store := NewMemoryStore()
 	svc := Service{Store: store, Now: fixedNow}
 
-	created, err := svc.Reserve(ctx, ReserveInput{Reservation: testReservation("r1", "note-a", "op-a")})
+	created, err := svc.Reserve(ctx, ReserveInput{Reservation: testReservation("r1", "note-a", "")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestServiceLeaseTakeoverRejectsStaleHeartbeatAndClear(t *testing.T) {
 	store := NewMemoryStore()
 	svc := Service{Store: store, Now: func() time.Time { return now }}
 
-	created, err := svc.Reserve(ctx, ReserveInput{Reservation: testReservation("r1", "note-a", "op-a")})
+	created, err := svc.Reserve(ctx, ReserveInput{Reservation: testReservation("r1", "note-a", "")})
 	if err != nil {
 		t.Fatal(err)
 	}

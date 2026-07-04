@@ -9,6 +9,7 @@ import (
 )
 
 func ValidateInput(input PayrollInput) error {
+	input = normalizePayrollInput(input)
 	if strings.TrimSpace(input.CompanyID) == "" {
 		return fmt.Errorf("%w: company_id is required", ErrInvalidPayrollInput)
 	}
@@ -39,16 +40,37 @@ func ValidateInput(input PayrollInput) error {
 			}
 			seenEmployees[item.EmployeeID] = struct{}{}
 		}
-		if !strings.HasPrefix(strings.TrimSpace(item.RecipientAddress), privacytypes.ShieldedBech32Prefix) {
-			return fmt.Errorf("%w: item %s recipient must use shielded prefix %s", ErrInvalidPayrollInput, item.ItemID, privacytypes.ShieldedBech32Prefix)
+		if _, err := privacytypes.DecodeShieldedAddressBundle(item.RecipientAddress); err != nil {
+			return fmt.Errorf("%w: item %s recipient must be a valid shielded address with prefix %s: %v", ErrInvalidPayrollInput, item.ItemID, privacytypes.ShieldedBech32Prefix, err)
 		}
 		if item.Amount == nil || item.Amount.Cmp(big.NewInt(0)) <= 0 {
 			return fmt.Errorf("%w: item %s amount must be positive", ErrInvalidPayrollInput, item.ItemID)
 		}
-		itemDenom := strings.TrimSpace(item.Denom)
-		if itemDenom != "" && itemDenom != input.Denom {
-			return fmt.Errorf("%w: item %s denom %s does not match payroll denom %s", ErrInvalidPayrollInput, item.ItemID, itemDenom, input.Denom)
+		if item.Denom != "" && item.Denom != input.Denom {
+			return fmt.Errorf("%w: item %s denom %s does not match payroll denom %s", ErrInvalidPayrollInput, item.ItemID, item.Denom, input.Denom)
 		}
 	}
 	return nil
+}
+
+func normalizePayrollInput(input PayrollInput) PayrollInput {
+	input.CompanyID = strings.TrimSpace(input.CompanyID)
+	input.PayrollID = strings.TrimSpace(input.PayrollID)
+	input.BatchID = strings.TrimSpace(input.BatchID)
+	input.Denom = strings.TrimSpace(input.Denom)
+	input.Items = append([]PayrollItemInput(nil), input.Items...)
+	for i := range input.Items {
+		input.Items[i] = normalizePayrollItemInput(input.Items[i])
+	}
+	return input
+}
+
+func normalizePayrollItemInput(item PayrollItemInput) PayrollItemInput {
+	item.ItemID = strings.TrimSpace(item.ItemID)
+	item.EmployeeID = strings.TrimSpace(item.EmployeeID)
+	item.RecipientAddress = strings.TrimSpace(item.RecipientAddress)
+	item.Denom = strings.TrimSpace(item.Denom)
+	item.ExpectedOutputCommitment = strings.TrimSpace(item.ExpectedOutputCommitment)
+	item.ExpectedDisclosureDigest = strings.TrimSpace(item.ExpectedDisclosureDigest)
+	return item
 }

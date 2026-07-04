@@ -76,6 +76,11 @@ type telemetrySample struct {
 	Err        error
 }
 
+type endpointPreflightFailure struct {
+	Endpoint string
+	Err      error
+}
+
 type exampleBundle struct {
 	Transfer struct {
 		Request json.RawMessage `json:"request"`
@@ -107,9 +112,11 @@ func main() {
 	var timeoutValue string
 	var telemetryIntervalValue string
 	var outPath string
+	var allowUnhealthyEndpoints bool
 
 	flag.StringVar(&baseURL, "base-url", "", "clairveil-proverd base URL")
 	flag.StringVar(&baseURLsValue, "base-urls", "", "comma-separated clairveil-proverd base URLs for round-robin pool load")
+	flag.BoolVar(&allowUnhealthyEndpoints, "allow-unhealthy-endpoints", false, "exclude endpoints that fail preflight instead of aborting the load run")
 	flag.StringVar(&bearerToken, "bearer-token", strings.TrimSpace(os.Getenv("CLAIRVEIL_PROVERD_BEARER_TOKEN")), "optional bearer token for clairveil-proverd")
 	flag.StringVar(&fixtureBundle, "fixture-bundle", "", "optional prover example bundle containing transfer and withdraw requests; defaults to generated prover-valid requests")
 	flag.StringVar(&transferRequestFile, "transfer-request", "", "transfer proof request JSON file")
@@ -152,11 +159,14 @@ func main() {
 		fatalf("load requests: %v", err)
 	}
 
+	configuredEndpointCount := len(baseURLs)
 	client := &http.Client{Timeout: requestTimeout}
-	for _, endpoint := range baseURLs {
-		if err := preflightRequests(context.Background(), client, endpoint, bearerToken, requests); err != nil {
-			fatalf("preflight requests for %s: %v", endpoint, err)
-		}
+	baseURLs, preflightFailures, err := preflightEndpointPool(context.Background(), client, baseURLs, bearerToken, requests, allowUnhealthyEndpoints)
+	if err != nil {
+		fatalf("preflight prover endpoints: %v", err)
+	}
+	for _, failure := range preflightFailures {
+		fmt.Fprintf(os.Stderr, "excluding unhealthy prover endpoint %s: %v\n", failure.Endpoint, failure.Err)
 	}
 
 	var summaries []benchmarkSummary
@@ -165,7 +175,7 @@ func main() {
 			_, _, _ = runLoadBucket(context.Background(), client, baseURLs, bearerToken, requests, level, warmup, true, 0)
 		}
 		results, elapsed, telemetry := runLoadBucket(context.Background(), client, baseURLs, bearerToken, requests, level, duration, false, telemetryInterval)
-		summaries = append(summaries, summarizeLoadBucket(profile, requests, len(baseURLs), level, warmup, elapsed, results, telemetry))
+		summaries = append(summaries, summarizeLoadBucket(profile, requests, len(baseURLs), configuredEndpointCount-len(baseURLs), level, warmup, elapsed, results, telemetry))
 	}
 
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
@@ -316,6 +326,26 @@ func preflightRequests(ctx context.Context, client *http.Client, baseURL, bearer
 	return nil
 }
 
+func preflightEndpointPool(ctx context.Context, client *http.Client, baseURLs []string, bearerToken string, requests []requestPayload, allowUnhealthy bool) ([]string, []endpointPreflightFailure, error) {
+	healthy := make([]string, 0, len(baseURLs))
+	failures := make([]endpointPreflightFailure, 0)
+	for _, endpoint := range baseURLs {
+		err := preflightRequests(ctx, client, endpoint, bearerToken, requests)
+		if err == nil {
+			healthy = append(healthy, endpoint)
+			continue
+		}
+		if !allowUnhealthy {
+			return nil, nil, fmt.Errorf("%s: %w", endpoint, err)
+		}
+		failures = append(failures, endpointPreflightFailure{Endpoint: endpoint, Err: err})
+	}
+	if len(healthy) == 0 {
+		return nil, failures, fmt.Errorf("all prover endpoints failed preflight")
+	}
+	return healthy, failures, nil
+}
+
 func runLoadBucket(ctx context.Context, client *http.Client, baseURLs []string, bearerToken string, requests []requestPayload, concurrency int, duration time.Duration, quiet bool, telemetryInterval time.Duration) ([]loadResult, time.Duration, []telemetrySample) {
 	var telemetry []telemetrySample
 	var telemetryMu sync.Mutex
@@ -378,8 +408,8 @@ func runLoadBucket(ctx context.Context, client *http.Client, baseURLs []string, 
 				default:
 				}
 				index := counter.Add(1) - 1
-				payload := requests[int(index)%len(requests)]
 				endpoint := baseURLs[int(index)%len(baseURLs)]
+				payload := requestForLoadIndex(index, len(baseURLs), requests)
 				result := doRequest(context.Background(), client, endpoint, bearerToken, payload)
 				if !quiet {
 					results <- result
@@ -401,6 +431,13 @@ func runLoadBucket(ctx context.Context, client *http.Client, baseURLs []string, 
 	return collected, elapsed, telemetry
 }
 
+func requestForLoadIndex(index uint64, endpointCount int, requests []requestPayload) requestPayload {
+	if endpointCount <= 0 {
+		endpointCount = 1
+	}
+	return requests[int((index/uint64(endpointCount))%uint64(len(requests)))]
+}
+
 func doRequest(ctx context.Context, client *http.Client, baseURL, bearerToken string, payload requestPayload) loadResult {
 	start := time.Now()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+payload.Path, bytes.NewReader(payload.Body))
@@ -418,7 +455,15 @@ func doRequest(ctx context.Context, client *http.Client, baseURL, bearerToken st
 	defer resp.Body.Close()
 	responseBytes, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
-		return loadResult{Endpoint: baseURL, Err: readErr}
+		return loadResult{
+			Endpoint:      baseURL,
+			LatencyMS:     float64(time.Since(start)) / float64(time.Millisecond),
+			RequestBytes:  len(payload.Body),
+			ResponseBytes: len(responseBytes),
+			StatusCode:    resp.StatusCode,
+			Err:           readErr,
+			Timeout:       isTimeoutError(ctx, readErr),
+		}
 	}
 	result := loadResult{
 		Endpoint:      baseURL,
@@ -448,7 +493,7 @@ func isTimeoutError(ctx context.Context, err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "timeout")
 }
 
-func summarizeLoadBucket(profile string, requests []requestPayload, endpointCount int, concurrency int, warmup time.Duration, elapsed time.Duration, results []loadResult, telemetry []telemetrySample) benchmarkSummary {
+func summarizeLoadBucket(profile string, requests []requestPayload, endpointCount int, unhealthyEndpointCount int, concurrency int, warmup time.Duration, elapsed time.Duration, results []loadResult, telemetry []telemetrySample) benchmarkSummary {
 	latencies := make([]float64, 0, len(results))
 	requestBytes := make([]float64, 0, len(results))
 	responseBytes := make([]float64, 0, len(results))
@@ -478,13 +523,15 @@ func summarizeLoadBucket(profile string, requests []requestPayload, endpointCoun
 		route = "mixed"
 	}
 	metrics := map[string]metricSummary{
-		"requests/sec":   scalarMetric(float64(successes) / elapsedSeconds),
-		"latency_ms":     summarizeValues(latencies),
-		"error_rate":     scalarMetric(rate(errors, total)),
-		"timeout_rate":   scalarMetric(rate(timeouts, total)),
-		"request_bytes":  summarizeValues(requestBytes),
-		"response_bytes": summarizeValues(responseBytes),
-		"endpoint_count": scalarMetric(float64(endpointCount)),
+		"requests/sec":              scalarMetric(float64(successes) / elapsedSeconds),
+		"latency_ms":                summarizeValues(latencies),
+		"error_rate":                scalarMetric(rate(errors, total)),
+		"timeout_rate":              scalarMetric(rate(timeouts, total)),
+		"request_bytes":             summarizeValues(requestBytes),
+		"response_bytes":            summarizeValues(responseBytes),
+		"endpoint_count":            scalarMetric(float64(endpointCount)),
+		"configured_endpoint_count": scalarMetric(float64(endpointCount + unhealthyEndpointCount)),
+		"unhealthy_endpoint_count":  scalarMetric(float64(unhealthyEndpointCount)),
 	}
 	if len(requestsPerEndpoint) > 0 {
 		metrics["requests_per_endpoint"] = summarizeValues(requestsPerEndpoint)
@@ -625,6 +672,24 @@ func addTelemetryMetrics(metrics map[string]metricSummary, telemetry []telemetry
 }
 
 func telemetryCPUPercent(samples []telemetrySample) (float64, bool) {
+	byEndpoint := make(map[string][]telemetrySample)
+	for _, sample := range samples {
+		endpoint := strings.TrimSpace(sample.Endpoint)
+		byEndpoint[endpoint] = append(byEndpoint[endpoint], sample)
+	}
+	percentages := make([]float64, 0, len(byEndpoint))
+	for _, endpointSamples := range byEndpoint {
+		if cpuPercent, ok := telemetryCPUPercentSeries(endpointSamples); ok {
+			percentages = append(percentages, cpuPercent)
+		}
+	}
+	if len(percentages) == 0 {
+		return 0, false
+	}
+	return mean(percentages), true
+}
+
+func telemetryCPUPercentSeries(samples []telemetrySample) (float64, bool) {
 	var first telemetrySample
 	var last telemetrySample
 	foundFirst := false

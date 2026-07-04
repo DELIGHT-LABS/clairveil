@@ -30,9 +30,10 @@
 - Claim type을 `chain_tps`, `prover_rps`, `user_latency`로 분리했습니다.
 - Run profile을 `smoke`, `reference`, `production_like`, `public_claim`으로 분리했습니다.
 - Public claim용 result family를 제한했습니다.
-  - `prover_rps`: `privacy-proverd-load` 또는 `public-capacity`
+  - `prover_rps`: `privacy-proverd-load`, `privacy-proverd-scale`, 또는 `public-capacity`
   - `chain_tps`: `privacy-localnet-tps` 또는 `public-capacity`
   - `user_latency`: `privacy-user-latency` 또는 `public-capacity`
+- Prover pool report에 `unhealthy_endpoint_count`가 있으면 public claim eligibility는 이 값이 `0`일 때만 통과합니다.
 - `public-capacity` aggregate report에서 claim type이 둘 이상이면 `claim_evidence_by_type`을 요구합니다.
 - `-input`, `-benchmark-summaries`, `-tx-metrics`, evidence file을 `source_files`에 자동 포함하고 SHA-256을 계산합니다.
 - Evidence file의 SHA-256과 `source_file_sha256` 값이 다르면 public claim을 차단합니다.

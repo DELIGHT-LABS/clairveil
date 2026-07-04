@@ -19,6 +19,7 @@ duration="${PROVERLOAD_DURATION:-30s}"
 warmup="${PROVERLOAD_WARMUP:-5s}"
 timeout="${PROVERLOAD_TIMEOUT:-2m}"
 telemetry_interval="${PROVERLOAD_TELEMETRY_INTERVAL:-1s}"
+allow_unhealthy_endpoints="${PROVERLOAD_ALLOW_UNHEALTHY_ENDPOINTS:-0}"
 fixture_bundle="${PROVERLOAD_FIXTURE_BUNDLE:-}"
 transfer_request="${PROVERLOAD_TRANSFER_REQUEST:-}"
 withdraw_request="${PROVERLOAD_WITHDRAW_REQUEST:-}"
@@ -44,7 +45,7 @@ claim_saturation_profile_sha256="${CLAIM_SATURATION_PROFILE_SHA256:-}"
 source_commit="$(git rev-parse HEAD 2>/dev/null || true)"
 source_dirty="false"
 source_status="$(git status --short --untracked-files=all -- . 2>/dev/null || true)"
-if [[ -n "$(printf '%s\n' "$source_status" | awk 'NF { status=substr($0,1,2); path=substr($0,4); if (status=="??" && path ~ /^benchmarks\/(privacy-circuits|privacy-proverd|privacy-localnet|privacy-proverd-load|privacy-proverd-scale|privacy-localnet-tps|privacy-user-latency|public-capacity)\//) next; if (status=="??" && path ~ /^(clairveild|clairveil-setup|clairveil-verify|clairveil-proverd|clairveil-benchreport|clairveil-proverload|clairveil-localnetload|clairveil-userlatency)$/) next; print }')" ]]; then
+if [[ -n "$(printf '%s\n' "$source_status" | awk 'NF { status=substr($0,1,2); path=substr($0,4); if (status=="??" && path ~ /^benchmarks\/(privacy-circuits|privacy-proverd|privacy-localnet|privacy-transfer-batch-localnet|privacy-proverd-load|privacy-proverd-scale|privacy-localnet-tps|privacy-user-latency|privacy-bulk-transfer|privacy-bulk-readiness|public-capacity)\//) next; if (status=="??" && path ~ /^(clairveild|clairveil-setup|clairveil-verify|clairveil-proverd|clairveil-benchreport|clairveil-proverload|clairveil-localnetload|clairveil-userlatency|clairveil-bulktransferbench)$/) next; print }')" ]]; then
   source_dirty="true"
 fi
 
@@ -67,6 +68,9 @@ if [[ -n "$proverd_urls" ]]; then
   load_args+=(-base-urls "$proverd_urls")
 else
   load_args+=(-base-url "$proverd_url")
+fi
+if [[ "$allow_unhealthy_endpoints" == "1" ]]; then
+  load_args+=(-allow-unhealthy-endpoints)
 fi
 if [[ -n "$bearer_token" ]]; then
   load_args+=(-bearer-token "$bearer_token")
@@ -91,6 +95,7 @@ echo "  PROVERLOAD_PROFILE=$profile"
 echo "  PROVERLOAD_CONCURRENCY=$concurrency"
 echo "  PROVERLOAD_DURATION=$duration"
 echo "  PROVERLOAD_TELEMETRY_INTERVAL=$telemetry_interval"
+echo "  PROVERLOAD_ALLOW_UNHEALTHY_ENDPOINTS=$allow_unhealthy_endpoints"
 if [[ -n "$fixture_bundle" ]]; then
   echo "  PROVERLOAD_FIXTURE_BUNDLE=$fixture_bundle"
 else

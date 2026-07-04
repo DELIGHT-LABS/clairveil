@@ -179,6 +179,7 @@ type benchmarkSummary struct {
 	ColdWarm        string                   `json:"cold_warm,omitempty"`
 	Route           string                   `json:"route,omitempty"`
 	Concurrency     int                      `json:"concurrency,omitempty"`
+	EndpointCount   int                      `json:"endpoint_count,omitempty"`
 	WarmupSeconds   int                      `json:"warmup_seconds,omitempty"`
 	DurationSeconds int                      `json:"duration_seconds,omitempty"`
 	TargetTxPerSec  float64                  `json:"target_tx_per_sec,omitempty"`
@@ -966,9 +967,12 @@ func standardReportPaths() []string {
 		"benchmarks/privacy-circuits/latest.json",
 		"benchmarks/privacy-proverd/latest.json",
 		"benchmarks/privacy-proverd-load/latest.json",
+		"benchmarks/privacy-proverd-scale/latest.json",
 		"benchmarks/privacy-localnet/latest.json",
+		"benchmarks/privacy-transfer-batch-localnet/latest.json",
 		"benchmarks/privacy-localnet-tps/latest.json",
 		"benchmarks/privacy-user-latency/latest.json",
+		"benchmarks/privacy-bulk-transfer/latest.json",
 		"benchmarks/public-capacity/latest.json",
 	}
 }
@@ -1013,12 +1017,18 @@ func humanSummaryFamilyOrder(family string) int {
 		return 20
 	case "privacy-proverd-load":
 		return 30
+	case "privacy-proverd-scale":
+		return 35
 	case "privacy-localnet":
 		return 40
+	case "privacy-transfer-batch-localnet":
+		return 45
 	case "privacy-localnet-tps":
 		return 50
 	case "privacy-user-latency":
 		return 60
+	case "privacy-bulk-transfer":
+		return 65
 	case "public-capacity":
 		return 70
 	default:
@@ -1303,12 +1313,18 @@ func humanSummaryTargetForFamily(family string) string {
 		return "make privacy-proverd-bench"
 	case "privacy-proverd-load":
 		return "make privacy-proverd-load-bench"
+	case "privacy-proverd-scale":
+		return "make privacy-proverd-scale-bench"
 	case "privacy-localnet":
 		return "make privacy-bench-localnet"
+	case "privacy-transfer-batch-localnet":
+		return "make privacy-transfer-batch-localnet-bench"
 	case "privacy-localnet-tps":
 		return "make privacy-localnet-tps-bench"
 	case "privacy-user-latency":
 		return "make privacy-user-latency-bench"
+	case "privacy-bulk-transfer":
+		return "make privacy-bulk-transfer-bench"
 	case "public-capacity":
 		return "make privacy-public-capacity-report"
 	default:
@@ -1324,12 +1340,18 @@ func humanSummaryFamilyNote(family string) string {
 		return "In-process HTTP prover transport overhead"
 	case "privacy-proverd-load":
 		return "External clairveil-proverd load"
+	case "privacy-proverd-scale":
+		return "External clairveil-proverd pool scale load"
 	case "privacy-localnet":
 		return "CLI e2e, fee/gas, reserve snapshot"
+	case "privacy-transfer-batch-localnet":
+		return "Localnet multi-message transfer-batch smoke"
 	case "privacy-localnet-tps":
 		return "Localnet smoke를 chain TPS schema로 변환"
 	case "privacy-user-latency":
 		return "Wallet flow latency trace"
+	case "privacy-bulk-transfer":
+		return "Bulk payroll throughput simulation"
 	case "public-capacity":
 		return "Public claim gate aggregate"
 	default:
@@ -1425,12 +1447,16 @@ func renderHumanSummaryMarkdownKR(components []humanSummaryComponent, generatedA
 	renderHumanSummaryHTTPTransportKR(&b, component, ok)
 	component, ok = findComponentByFamily(components, "privacy-proverd-load")
 	renderHumanSummaryExternalProverdKR(&b, component, ok)
+	component, ok = findComponentByFamily(components, "privacy-proverd-scale")
+	renderHumanSummaryExternalProverdKR(&b, component, ok)
 	component, ok = findPreferredFeeComponent(components)
 	renderHumanSummaryLocalnetKR(&b, component, ok)
 	component, ok = findComponentByFamily(components, "privacy-localnet-tps")
 	renderHumanSummaryTPSKR(&b, component, ok)
 	component, ok = findComponentByFamily(components, "privacy-user-latency")
 	renderHumanSummaryUserLatencyKR(&b, component, ok)
+	component, ok = findComponentByFamily(components, "privacy-bulk-transfer")
+	renderHumanSummaryBulkTransferKR(&b, component, ok)
 	component, ok = findComponentByFamily(components, "public-capacity")
 	renderHumanSummaryPublicCapacityKR(&b, component, ok)
 	renderHumanSummaryArtifactsKR(&b, components)
@@ -1462,6 +1488,13 @@ func humanSummaryHeadlineLines(components []humanSummaryComponent) []string {
 			}
 		}
 	}
+	if component, ok := findComponentByFamily(components, "privacy-proverd-scale"); ok {
+		best := bestMetricBenchmark(component.Report.Benchmarks, "requests/sec")
+		if best != nil {
+			configuredEndpointCount := configuredEndpointCount(best)
+			lines = append(lines, fmt.Sprintf("Proverd pool scale smoke는 configured endpoint %.0f개 중 healthy %.0f개, unhealthy %.0f개이며, %s에서 %.3f req/s로 측정됐다.", configuredEndpointCount, metricMean(best, "endpoint_count"), metricMean(best, "unhealthy_endpoint_count"), best.Name, metricMean(best, "requests/sec")))
+		}
+	}
 	if component, ok := findComponentByFamily(components, "privacy-localnet-tps"); ok {
 		if bench, ok := firstBenchmarkByKind(component.Report.Benchmarks, "chain_tps"); ok {
 			if metric, ok := bench.Metrics["tx/sec"]; ok {
@@ -1474,6 +1507,11 @@ func humanSummaryHeadlineLines(components []humanSummaryComponent) []string {
 		deposit := firstBenchmarkByFlow(component.Report.Benchmarks, "deposit")
 		if transfer != nil && deposit != nil {
 			lines = append(lines, fmt.Sprintf("User latency smoke는 deposit 평균 %.3f ms, all-private transfer 평균 %.3f ms 수준으로 관측됐다.", metricMean(deposit, "total_latency_ms"), metricMean(transfer, "total_latency_ms")))
+		}
+	}
+	if component, ok := findComponentByFamily(components, "privacy-bulk-transfer"); ok {
+		if bench, ok := firstBenchmarkByKind(component.Report.Benchmarks, "bulk_payroll_simulation"); ok {
+			lines = append(lines, fmt.Sprintf("Bulk transfer simulation은 %.0f명 지급을 약 %.3f초, %.3f item/s로 추정했다.", metricMean(&bench, "recipient_count"), metricMean(&bench, "estimated_total_seconds"), metricMean(&bench, "payroll_item_per_sec")))
 		}
 	}
 	if component, ok := findComponentByFamily(components, "public-capacity"); ok {
@@ -1493,9 +1531,12 @@ func renderHumanSummaryExecutionKR(b *strings.Builder, components []humanSummary
 		"privacy-circuits",
 		"privacy-proverd",
 		"privacy-proverd-load",
+		"privacy-proverd-scale",
 		"privacy-localnet",
+		"privacy-transfer-batch-localnet",
 		"privacy-localnet-tps",
 		"privacy-user-latency",
+		"privacy-bulk-transfer",
 		"public-capacity",
 	} {
 		component, ok := findComponentByFamily(components, family)
@@ -1591,11 +1632,41 @@ func renderHumanSummaryExternalProverdKR(b *strings.Builder, component humanSumm
 	if !ok {
 		return
 	}
-	fmt.Fprintf(b, "## External Proverd Load\n\n")
-	fmt.Fprintf(b, "| Bucket | Concurrency | Samples | Requests/sec | Latency mean | Latency p95 | Latency p99 | Error rate | Timeout rate | RSS p95 |\n")
-	fmt.Fprintf(b, "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+	isScale := component.Report.ResultFamily == "privacy-proverd-scale"
+	title := "External Proverd Load"
+	if isScale {
+		title = "External Proverd Scale Load"
+	}
+	fmt.Fprintf(b, "## %s\n\n", title)
+	if isScale {
+		fmt.Fprintf(b, "| Bucket | Configured endpoints | Healthy endpoints | Unhealthy endpoints | Concurrency | Samples | Requests/sec | Latency mean | Latency p95 | Latency p99 | Error rate | Timeout rate | RSS p95 |\n")
+		fmt.Fprintf(b, "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+	} else {
+		fmt.Fprintf(b, "| Bucket | Concurrency | Samples | Requests/sec | Latency mean | Latency p95 | Latency p99 | Error rate | Timeout rate | RSS p95 |\n")
+		fmt.Fprintf(b, "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+	}
 	for _, bench := range sortedBenchmarksByName(component.Report.Benchmarks) {
 		if bench.MetricKind != "prover_load" {
+			continue
+		}
+		if isScale {
+			fmt.Fprintf(
+				b,
+				"| `%s` | %.0f | %.0f | %.0f | %d | %d | %.3f | %.3f ms | %.3f ms | %.3f ms | %.6g | %.6g | %.0f B |\n",
+				bench.Name,
+				configuredEndpointCount(&bench),
+				metricMean(&bench, "endpoint_count"),
+				metricMean(&bench, "unhealthy_endpoint_count"),
+				bench.Concurrency,
+				bench.Samples,
+				metricMean(&bench, "requests/sec"),
+				metricMean(&bench, "latency_ms"),
+				metricP95(&bench, "latency_ms"),
+				metricP99(&bench, "latency_ms"),
+				metricMean(&bench, "error_rate"),
+				metricMean(&bench, "timeout_rate"),
+				metricP95(&bench, "rss_bytes"),
+			)
 			continue
 		}
 		fmt.Fprintf(
@@ -1615,7 +1686,19 @@ func renderHumanSummaryExternalProverdKR(b *strings.Builder, component humanSumm
 	}
 	fmt.Fprintf(b, "\n해석:\n\n")
 	fmt.Fprintf(b, "- 실제 `clairveil-proverd` 프로세스에 HTTP 요청을 넣은 결과다.\n")
-	fmt.Fprintf(b, "- Smoke duration이 짧으므로 운영 capacity claim으로 쓰려면 더 긴 steady-state, saturation sweep, machine/config evidence가 필요하다.\n\n")
+	fmt.Fprintf(b, "- Smoke duration이 짧으므로 운영 capacity claim으로 쓰려면 더 긴 steady-state, saturation sweep, machine/config evidence가 필요하다.\n")
+	if isScale {
+		fmt.Fprintf(b, "- Public claim으로 쓰려면 `unhealthy_endpoint_count`가 0이어야 한다.\n")
+	}
+	fmt.Fprintf(b, "\n")
+}
+
+func configuredEndpointCount(bench *benchmarkSummary) float64 {
+	configured := metricMean(bench, "configured_endpoint_count")
+	if configured > 0 {
+		return configured
+	}
+	return metricMean(bench, "endpoint_count") + metricMean(bench, "unhealthy_endpoint_count")
 }
 
 func renderHumanSummaryLocalnetKR(b *strings.Builder, component humanSummaryComponent, ok bool) {
@@ -1713,6 +1796,34 @@ func renderHumanSummaryUserLatencyKR(b *strings.Builder, component humanSummaryC
 	fmt.Fprintf(b, "\n해석:\n\n")
 	fmt.Fprintf(b, "- Warm native smoke 기준 사용자 체감 latency를 flow별로 분해한 값이다.\n")
 	fmt.Fprintf(b, "- Sample 수가 작으면 p95/p99 public claim에는 사용할 수 없다.\n\n")
+}
+
+func renderHumanSummaryBulkTransferKR(b *strings.Builder, component humanSummaryComponent, ok bool) {
+	if !ok {
+		return
+	}
+	fmt.Fprintf(b, "## Bulk Transfer Simulation\n\n")
+	fmt.Fprintf(b, "| Scenario | Recipients | Chunk size | Prover units | Tx envelopes | Estimated seconds | Payroll items/sec |\n")
+	fmt.Fprintf(b, "| --- | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+	for _, bench := range sortedBenchmarksByName(component.Report.Benchmarks) {
+		if bench.MetricKind != "bulk_payroll_simulation" {
+			continue
+		}
+		fmt.Fprintf(
+			b,
+			"| `%s` | %.0f | %.0f | %.0f | %.0f | %.3f | %.3f |\n",
+			valueOrDash(bench.LoadProfile),
+			metricMean(&bench, "recipient_count"),
+			metricMean(&bench, "chunk_size"),
+			metricMean(&bench, "prover_units"),
+			metricMean(&bench, "tx_envelope_count"),
+			metricMean(&bench, "estimated_total_seconds"),
+			metricMean(&bench, "payroll_item_per_sec"),
+		)
+	}
+	fmt.Fprintf(b, "\n해석:\n\n")
+	fmt.Fprintf(b, "- 이 값은 현재 1-output transfer를 전제로 한 synthetic planning estimate다.\n")
+	fmt.Fprintf(b, "- 실제 운영 capacity claim에는 prover pool saturation, localnet/chain tx inclusion, retry/reconcile overhead 측정이 추가로 필요하다.\n\n")
 }
 
 func renderHumanSummaryPublicCapacityKR(b *strings.Builder, component humanSummaryComponent, ok bool) {
@@ -2252,9 +2363,13 @@ func generatedBenchmarkPrefixes() []string {
 		"benchmarks/privacy-circuits/",
 		"benchmarks/privacy-proverd/",
 		"benchmarks/privacy-localnet/",
+		"benchmarks/privacy-transfer-batch-localnet/",
 		"benchmarks/privacy-proverd-load/",
+		"benchmarks/privacy-proverd-scale/",
 		"benchmarks/privacy-localnet-tps/",
 		"benchmarks/privacy-user-latency/",
+		"benchmarks/privacy-bulk-transfer/",
+		"benchmarks/privacy-bulk-readiness/",
 		"benchmarks/public-capacity/",
 	}
 }
@@ -2269,6 +2384,7 @@ func generatedRootBuildArtifacts() []string {
 		"clairveil-proverload",
 		"clairveil-localnetload",
 		"clairveil-userlatency",
+		"clairveil-bulktransferbench",
 	}
 }
 
@@ -2602,14 +2718,17 @@ func missingClaimMetrics(rep report, claimType string) []string {
 	rows, _ := claimBenchmarkRows(rep, claimType)
 	switch claimType {
 	case "prover_rps":
-		return missingMetricGroups(
-			rows,
+		groups := [][]string{
 			[]string{"proofs/sec", "requests/sec"},
 			[]string{"latency_ms", "proof_latency_ms", "roundtrip_latency_ms"},
 			[]string{"errors/op", "error_rate"},
 			[]string{"cpu_percent"},
 			[]string{"rss_bytes", "max_rss_bytes"},
-		)
+		}
+		if rep.ResultFamily == "privacy-proverd-scale" {
+			groups = append(groups, []string{"unhealthy_endpoint_count"})
+		}
+		return missingMetricGroups(rows, groups...)
 	case "chain_tps":
 		return missingMetricGroups(
 			rows,
@@ -2642,14 +2761,17 @@ func incompleteClaimMetricRows(rep report, claimType string) []string {
 		name := benchmarkDisplayName(bench)
 		switch claimType {
 		case "prover_rps":
-			if missing := missingMetricGroupsInBenchmark(
-				bench,
+			groups := [][]string{
 				[]string{"proofs/sec", "requests/sec"},
 				[]string{"latency_ms", "proof_latency_ms", "roundtrip_latency_ms"},
 				[]string{"errors/op", "error_rate"},
 				[]string{"cpu_percent"},
 				[]string{"rss_bytes", "max_rss_bytes"},
-			); len(missing) > 0 {
+			}
+			if rep.ResultFamily == "privacy-proverd-scale" {
+				groups = append(groups, []string{"unhealthy_endpoint_count"})
+			}
+			if missing := missingMetricGroupsInBenchmark(bench, groups...); len(missing) > 0 {
 				incomplete = append(incomplete, fmt.Sprintf("%s missing %s", name, strings.Join(missing, ", ")))
 			}
 		case "chain_tps":
@@ -3155,7 +3277,7 @@ func publicClaimFamilyAllowed(resultFamily, claimType string) bool {
 func allowedResultFamilies(claimType string) []string {
 	switch claimType {
 	case "prover_rps":
-		return []string{"privacy-proverd-load", "public-capacity"}
+		return []string{"privacy-proverd-load", "privacy-proverd-scale", "public-capacity"}
 	case "chain_tps":
 		return []string{"privacy-localnet-tps", "public-capacity"}
 	case "user_latency":
@@ -3174,6 +3296,9 @@ func invalidClaimMetrics(rep report, claimType string) []string {
 		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "latency_ms", "proof_latency_ms", "roundtrip_latency_ms")...)
 		invalid = append(invalid, requireClaimMetricP99AtMost(rep, claimType, evidence.LatencyP99SLOMS, "latency_ms", "proof_latency_ms", "roundtrip_latency_ms")...)
 		invalid = append(invalid, requireClaimMetricRange(rep, claimType, 0, 0.001, "errors/op", "error_rate")...)
+		if _, ok := findClaimMetric(rep, claimType, "unhealthy_endpoint_count"); ok {
+			invalid = append(invalid, requireClaimMetricRange(rep, claimType, 0, 0, "unhealthy_endpoint_count")...)
+		}
 		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "cpu_percent")...)
 		invalid = append(invalid, requireClaimMetricPositive(rep, claimType, "rss_bytes", "max_rss_bytes")...)
 	case "chain_tps":

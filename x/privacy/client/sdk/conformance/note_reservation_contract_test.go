@@ -30,6 +30,8 @@ type noteReservationContract struct {
 	LeaseTransitionPreconditions struct {
 		TokenRequiredFor [][]string `json:"token_required_for"`
 	} `json:"lease_transition_preconditions"`
+	SuccessEvidenceRequired  []string `json:"success_evidence_required"`
+	BatchItemIndexPolicy     string   `json:"batch_item_index_policy"`
 	OperationSuccessExamples []struct {
 		Name            string `json:"name"`
 		NullifierSpent  bool   `json:"nullifier_spent"`
@@ -61,9 +63,6 @@ func TestNoteReservationContractFixtureMatchesGoSDK(t *testing.T) {
 	}
 	for _, from := range allReservationStatuses() {
 		for _, to := range allReservationStatuses() {
-			if from == to {
-				continue
-			}
 			if !privacyreservation.CanTransitionReservation(from, to) {
 				continue
 			}
@@ -79,6 +78,17 @@ func TestNoteReservationContractFixtureMatchesGoSDK(t *testing.T) {
 		), "expected transition %s -> %s to be rejected", transition[0], transition[1])
 	}
 	require.True(t, contract.BatchReserve.Atomic)
+	require.Equal(t, []string{
+		"tx_hash_or_tx_result",
+		"expected_output_commitment",
+		"expected_disclosure_digest",
+		"expected_recipient_hash",
+		"expected_amount_hash",
+		"expected_denom",
+		"batch_item_index",
+		"batch_item_index_known",
+	}, contract.SuccessEvidenceRequired)
+	require.NotEmpty(t, contract.BatchItemIndexPolicy)
 	for _, transition := range contract.LeaseTransitionPreconditions.TokenRequiredFor {
 		require.Len(t, transition, 2)
 		require.True(t, privacyreservation.CanTransitionReservation(

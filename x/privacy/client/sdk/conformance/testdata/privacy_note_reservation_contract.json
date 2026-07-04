@@ -20,11 +20,11 @@
     ["Proving", "Reserved"],
     ["Proving", "ReplanRequired"],
     ["Proving", "ManualReview"],
-    ["Proving", "Released"],
     ["ProofReady", "Submitted"],
+    ["ProofReady", "Unknown"],
+    ["ProofReady", "ConfirmedSpent"],
     ["ProofReady", "ReplanRequired"],
     ["ProofReady", "ManualReview"],
-    ["ProofReady", "Released"],
     ["Submitted", "ConfirmedSpent"],
     ["Submitted", "Failed"],
     ["Submitted", "Unknown"],
@@ -32,7 +32,6 @@
     ["Submitted", "ManualReview"],
     ["Unknown", "ConfirmedSpent"],
     ["Unknown", "Failed"],
-    ["Unknown", "Submitted"],
     ["Unknown", "ReplanRequired"],
     ["Unknown", "ManualReview"],
     ["ManualReview", "ConfirmedSpent"],
@@ -47,8 +46,11 @@
   ],
   "rejected_transitions": [
     ["Submitted", "Available"],
+    ["Proving", "Released"],
     ["ProofReady", "Available"],
+    ["ProofReady", "Released"],
     ["Unknown", "Available"],
+    ["Unknown", "Submitted"],
     ["ManualReview", "Available"]
   ],
   "active_unique_key": ["owner_key_id", "nullifier_lookup_key"],
@@ -73,7 +75,8 @@
     "token_required_for": [
       ["Reserved", "Proving"],
       ["Proving", "ProofReady"],
-      ["ProofReady", "Submitted"]
+      ["ProofReady", "Submitted"],
+      ["ProofReady", "Unknown"]
     ],
     "fields": ["lease_owner", "lease_token", "lease_until", "last_heartbeat_at"],
     "policy": "only the current non-expired lease token may advance worker-owned states"
@@ -85,8 +88,10 @@
     "expected_recipient_hash",
     "expected_amount_hash",
     "expected_denom",
-    "batch_item_index"
+    "batch_item_index",
+    "batch_item_index_known"
   ],
+  "batch_item_index_policy": "PayrollOperation must set batch_item_index_known=true when batch_item_index is an expected success-evidence value. Payroll and batch-transfer operations set it true; direct integrations may leave it false only when batch item position is not part of the success predicate.",
   "operation_success_examples": [
     {
       "name": "matching evidence marks operation succeeded",

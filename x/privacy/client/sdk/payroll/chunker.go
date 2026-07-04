@@ -4,8 +4,6 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
-
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -15,10 +13,8 @@ type ChunkOptions struct {
 }
 
 type MessageChunk struct {
-	ChunkID      string
-	Results      []ProofResult
-	Messages     []sdk.Msg
-	OperationIDs []string
+	ChunkID string
+	Results []ProofResult
 }
 
 func ChunkProofResults(results []ProofResult, options ChunkOptions) ([]MessageChunk, error) {
@@ -41,15 +37,13 @@ func ChunkProofResults(results []ProofResult, options ChunkOptions) ([]MessageCh
 			return nil, err
 		}
 
-		if len(chunks) == 0 || len(chunks[len(chunks)-1].Messages) >= maxMessages {
+		if len(chunks) == 0 || len(chunks[len(chunks)-1].Results) >= maxMessages {
 			chunks = append(chunks, MessageChunk{
 				ChunkID: fmt.Sprintf("%s-%06d", prefix, len(chunks)+1),
 			})
 		}
 		current := &chunks[len(chunks)-1]
 		current.Results = append(current.Results, result)
-		current.Messages = append(current.Messages, result.Message)
-		current.OperationIDs = append(current.OperationIDs, result.Item.OperationID)
 	}
 
 	return chunks, nil

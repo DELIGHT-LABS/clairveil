@@ -50,6 +50,7 @@ make ci
 make vulncheck
 make localnet-smoke
 make privacy-e2e-smoke
+RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check
 ```
 
 각 단계의 의미는 아래와 같습니다.
@@ -60,6 +61,7 @@ make privacy-e2e-smoke
 | `make vulncheck` | govulncheck policy gate를 실행합니다. 새 actionable vulnerability가 있으면 실패합니다. |
 | `make localnet-smoke` | reference daemon이 genesis부터 init/start 가능한지 확인합니다. |
 | `make privacy-e2e-smoke` | deposit, transfer, public disclosure, recipient disclosure, sender self-view disclosure, audit disclosure, direct withdraw, relayed withdraw를 로컬 노드에서 검증합니다. |
+| `RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check` | bulk transfer 핵심 unit, reservation invariant, synthetic capacity estimate, multi-message transfer localnet 경로를 검증합니다. |
 
 `make release-check`는 pull request마다 자동으로 돌리기에는 무겁습니다. PR 기본 검증은 `.github/workflows/test.yml`의 `make ci`와 `.github/workflows/security.yml`의 `make vulncheck`가 담당하고, release 후보 검증은 사람이 수동으로 `make release-check`를 실행합니다.
 
@@ -71,7 +73,7 @@ make docker-proverd-build
 
 이 명령은 compose config, Dockerfile build, image inspect를 확인합니다. Docker daemon이 필요한 검증이므로 기본 `release-check`에는 포함하지 않습니다.
 
-`make release-pack`은 `dist/clairveil-handoff-<version>.tar.gz`와 `.sha256` 파일을 생성합니다. 이 pack은 전체 소스 배포본이 아니라 downstream handoff 계약 묶음입니다. 포함 대상은 license/notice, 주요 handoff/security/operation 문서, circuit/CLI/testing/maintainer 문서, Merkle restore SOP, proto, JSON Schema, conformance fixture, client/JS 예제, scan optimization 문서, prover Docker sample, release pack scripts, `RELEASE-MANIFEST.txt`, `SHA256SUMS.txt`입니다.
+`make release-pack`은 `dist/clairveil-handoff-<version>.tar.gz`와 `.sha256` 파일을 생성합니다. 이 pack은 전체 소스 배포본이 아니라 downstream handoff 계약 묶음입니다. 포함 대상은 license/notice, 주요 handoff/security/operation 문서, circuit/CLI/testing/maintainer 문서, Merkle restore SOP, proto, JSON Schema, conformance fixture, client/JS 예제, scan optimization 문서, bulk transfer handoff/design/plan 문서, prover Docker sample, release pack scripts, `RELEASE-MANIFEST.txt`, `SHA256SUMS.txt`입니다. bulk transfer plan 문서는 현재 한국어 작업 기록이며, 언어 중립적인 구현 계약은 schema, conformance fixture, CLI/API reference, readiness command가 담당합니다. readiness 명령은 handoff 전에 source checkout에서 실행하고, pack은 계약 산출물과 검증 기대값을 기록합니다.
 
 `make release-pack-verify`는 handoff pack의 외부 `.sha256`, pack 내부 `SHA256SUMS.txt`, 필수 handoff 파일 목록, 그리고 기본 archive의 manifest commit이 현재 `HEAD`와 일치하는지 확인합니다. `RELEASE_PACK_ARCHIVE`를 지정하지 않은 기본 실행에서는 stale local archive가 누락 파일을 가리지 않도록 검증 전에 기본 pack을 다시 생성합니다. 이 검증은 “tarball이 만들어졌다”가 아니라 “넘겨도 되는 계약 묶음인지”를 확인하는 단계입니다.
 
@@ -110,7 +112,7 @@ JS/TS SDK와 web wallet 팀은 아래를 확인합니다.
 1. `docs/clairveil-js-sdk-handoff-kr.md`를 기준 문서로 사용합니다.
 2. `docs/schemas/clairveil-js-wallet-contract.schema.json`으로 fixture shape를 검증합니다.
 3. `x/privacy/client/sdk/conformance/testdata` fixture를 SDK CI에 포함합니다.
-4. `examples/js-sdk-fixture-validator`의 payload hash 재계산, relay withdraw handoff mapping, route/version 확인, scan fixture check, prefix check를 SDK 테스트로 옮깁니다.
+4. `examples/js-sdk-fixture-validator`의 payload hash 재계산, relay withdraw handoff mapping, route/version 확인, scan fixture check, note reservation status/transition/evidence check, prefix check를 SDK 테스트로 옮깁니다.
 5. Release 전 `ScanEvents` cursor sync, empty-page/`has_more` 처리, `CheckNullifiers` batch spent refresh, transfer payload `v3`/`view_tag_hexes`, 최종 `MsgTransfer.view_tags`, 안전한 view-tag mismatch fallback을 구현합니다.
 6. `examples/js-sdk-prover-http-client`의 timeout, bearer auth, payload hash equality check를 prover adapter 구현에 반영합니다.
 7. wallet note cache, root seed derived secret, viewing key, disclosure key, prepared payload/proof JSON은 privacy-sensitive data로 분류하고 plaintext browser storage에 남기지 않습니다.

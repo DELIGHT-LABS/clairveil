@@ -276,7 +276,7 @@ x/privacy/client/sdk/conformance/testdata/privacy_note_reservation_contract.json
 docs/clairveil-note-reservation-design-kr.md
 ```
 
-Proof 생성 전에 note를 예약하는 JS/TS client는 fixture에 고정된 reservation status 이름, active reservation 정의, atomic batch-reserve 규칙, compare-and-set 상태 전이, lease token 규칙, HMAC lookup-key test vector, operation 성공 증거 모델을 맞춰야 합니다. Nullifier spent는 note가 소비되었다는 증거이지만, payroll/payment operation을 성공 처리하려면 tx evidence가 expected output commitment, disclosure digest, recipient hash, amount, denom, item index와도 일치해야 합니다.
+Proof 생성 전에 note를 예약하는 JS/TS client는 fixture에 고정된 reservation status 이름, active reservation 정의, atomic batch-reserve 규칙, compare-and-set 상태 전이, lease token 규칙, HMAC lookup-key test vector, operation 성공 증거 모델을 맞춰야 합니다. Nullifier spent는 note가 소비되었다는 증거이지만, payroll/payment operation을 성공 처리하려면 tx evidence가 expected output commitment, audit disclosure digest, recipient hash, amount, denom, item index와도 일치해야 합니다. fixture의 `expected_disclosure_digest`는 user disclosure나 sender self-view digest가 아니라 audit disclosure digest를 뜻합니다.
 
 ## 9. Disclosure 구현
 

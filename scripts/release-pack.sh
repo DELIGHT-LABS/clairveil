@@ -71,6 +71,11 @@ copy_path "docs/clairveil-client-api-checklist.md"
 copy_path "docs/clairveil-client-api-checklist-kr.md"
 copy_path "docs/clairveil-js-sdk-handoff.md"
 copy_path "docs/clairveil-js-sdk-handoff-kr.md"
+copy_path "docs/clairveil-bulk-transfer-product-handoff-kr.md"
+copy_path "docs/clairveil-bulk-transfer-prover-scale-option-kr.md"
+copy_path "docs/clairveil-bulk-transfer-strategy-kr.md"
+copy_path "docs/clairveil-bulk-transfer-time-simulation-kr.md"
+copy_path "docs/clairveil-note-reservation-design-kr.md"
 copy_path "docs/clairveil-scan-optimization-implementation-plan.md"
 copy_path "docs/clairveil-scan-optimization-implementation-plan-kr.md"
 copy_path "docs/clairveil-proverd-remote-production-profile.md"
@@ -90,6 +95,7 @@ copy_path "docs/clairveil-local-privacy-walkthrough-kr.md"
 copy_path "docs/clairveild-reference-app-plan.md"
 copy_path "docs/clairveild-reference-app-plan-kr.md"
 copy_path "docs/schemas"
+copy_path "plans/clairveil-bulk-transfer-implementation-plan-kr.md"
 copy_path "x/privacy/client/sdk/conformance/testdata"
 copy_path "examples/README.md"
 copy_path "examples/README-kr.md"
@@ -111,24 +117,31 @@ source_repo: github.com/DELIGHT-LABS/clairveil
 
 Contents:
 - root license, notice, changelog, contribution, and security files
-- English and Korean public documentation pairs
+- English and Korean public documentation pairs where available
 - proto/clairveil/privacy/v1
 - client, JS/web wallet, and scan optimization handoff documents
+- bulk transfer design, plan, product handoff, simulation, and readiness materials
 - JS/web wallet JSON schemas
 - wallet/prover conformance fixtures
 - JS audit disclosure key, fixture validator, and prover HTTP client examples
 - prover Dockerfile and compose sample
 - release pack generation and verification scripts
 - release, circuit, CLI, testing, operations, downstream integration, client, JS SDK, scan optimization, prover, Merkle restore, threat model, security, and reference app documents
+- Korean bulk transfer planning documents and source-repo readiness commands
 - release versioning policy and release note templates
 
 Validation before handoff:
 - make release-check
+- make privacy-bulk-readiness-check from the source checkout when doing extra bulk-readiness rehearsal
+- RUN_PROVER_SCALE=1 PROVERD_URLS=url1,url2 make privacy-bulk-readiness-check before making prover-pool scale claims
 - make release-pack
 - make release-pack-verify
 
 Notes:
 - This pack is a handoff contract bundle, not a full source distribution.
+- Bulk-transfer planning documents are currently Korean working records; the
+  language-neutral implementation contract is carried by schemas, conformance
+  fixtures, CLI/API references, and readiness commands.
 - Downstream production apps must still own EVM/policy/precompile integration,
   audit private key custody, wallet storage encryption, artifact signing, and
   remote prover deployment policy.

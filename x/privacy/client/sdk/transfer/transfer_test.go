@@ -183,3 +183,22 @@ func TestSelectInputsChoosesLargestMergePairWhenNoFinalPairExists(t *testing.T) 
 	require.Equal(t, int64(3), selection.Inputs[0].Note.Amount.Int64())
 	require.Equal(t, int64(9), selection.Inputs[1].Note.Amount.Int64())
 }
+
+func TestSelectInputBatchBacktracksAcrossOriginalOrder(t *testing.T) {
+	notes := []privacyscan.FoundNote{
+		{Note: privacytypes.Note{Amount: big.NewInt(0), AssetID: privacycrypto.HashString("uclair")}, Nullifier: "zero", Height: 1, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(2), AssetID: privacycrypto.HashString("uclair")}, Nullifier: "two", Height: 2, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacycrypto.HashString("uclair")}, Nullifier: "three", Height: 3, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(100), AssetID: privacycrypto.HashString("uclair")}, Nullifier: "hundred", Height: 4, IsSpent: false},
+	}
+
+	selections, err := SelectInputBatch(notes, "uclair", []*big.Int{big.NewInt(5), big.NewInt(100)})
+	require.NoError(t, err)
+	require.Len(t, selections, 2)
+	require.True(t, selections[0].IsFinal)
+	require.True(t, selections[1].IsFinal)
+	require.Equal(t, int64(5), selections[0].Total.Int64())
+	require.Equal(t, []int64{2, 3}, []int64{selections[0].Inputs[0].Note.Amount.Int64(), selections[0].Inputs[1].Note.Amount.Int64()})
+	require.Equal(t, int64(100), selections[1].Total.Int64())
+	require.Equal(t, []int64{100, 0}, []int64{selections[1].Inputs[0].Note.Amount.Int64(), selections[1].Inputs[1].Note.Amount.Int64()})
+}

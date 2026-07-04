@@ -1342,6 +1342,247 @@
         }
       }
     },
+    "reservationStatus": {
+      "type": "string",
+      "enum": [
+        "Discovered",
+        "Available",
+        "Reserved",
+        "Proving",
+        "ProofReady",
+        "Submitted",
+        "ConfirmedSpent",
+        "Failed",
+        "ReplanRequired",
+        "Released",
+        "Unknown",
+        "ManualReview"
+      ]
+    },
+    "reservationStatusTransition": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "$ref": "#/$defs/reservationStatus"
+      }
+    },
+    "operationStatus": {
+      "type": "string",
+      "enum": [
+        "Planned",
+        "Proving",
+        "ProofReady",
+        "Submitted",
+        "Succeeded",
+        "Failed",
+        "ReplanRequired",
+        "Unknown",
+        "ManualReview",
+        "ConflictSpent"
+      ]
+    },
+    "snakeFieldName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "noteReservationContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "active_reservation_statuses",
+        "allowed_transitions",
+        "rejected_transitions",
+        "active_unique_key",
+        "batch_reserve",
+        "nullifier_lookup_key",
+        "lease_transition_preconditions",
+        "success_evidence_required",
+        "batch_item_index_policy",
+        "operation_success_examples"
+      ],
+      "properties": {
+        "version": {
+          "type": "number",
+          "const": 1
+        },
+        "active_reservation_statuses": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/reservationStatus"
+          }
+        },
+        "allowed_transitions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/reservationStatusTransition"
+          }
+        },
+        "rejected_transitions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/reservationStatusTransition"
+          }
+        },
+        "active_unique_key": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/snakeFieldName"
+          }
+        },
+        "batch_reserve": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "atomic",
+            "error_policy",
+            "lock_requirement"
+          ],
+          "properties": {
+            "atomic": {
+              "type": "boolean",
+              "const": true
+            },
+            "error_policy": {
+              "type": "string",
+              "minLength": 1
+            },
+            "lock_requirement": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "nullifier_lookup_key": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "algorithm",
+            "encoding",
+            "key_version_field",
+            "test_vectors"
+          ],
+          "properties": {
+            "algorithm": {
+              "type": "string",
+              "const": "HMAC-SHA256"
+            },
+            "encoding": {
+              "type": "string",
+              "const": "hex"
+            },
+            "key_version_field": {
+              "$ref": "#/$defs/snakeFieldName"
+            },
+            "test_vectors": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "index_key_utf8",
+                  "nullifier_utf8",
+                  "lookup_key_hex"
+                ],
+                "properties": {
+                  "index_key_utf8": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "nullifier_utf8": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "lookup_key_hex": {
+                    "$ref": "#/$defs/hex32"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "lease_transition_preconditions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "token_required_for",
+            "fields",
+            "policy"
+          ],
+          "properties": {
+            "token_required_for": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/reservationStatusTransition"
+              }
+            },
+            "fields": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/snakeFieldName"
+              }
+            },
+            "policy": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "success_evidence_required": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/snakeFieldName"
+          }
+        },
+        "batch_item_index_policy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "operation_success_examples": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "nullifier_spent",
+              "evidence_matches_expected_values",
+              "note_status",
+              "operation_status"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "nullifier_spent": {
+                "type": "boolean"
+              },
+              "evidence_matches_expected_values": {
+                "type": "boolean"
+              },
+              "note_status": {
+                "$ref": "#/$defs/reservationStatus"
+              },
+              "operation_status": {
+                "$ref": "#/$defs/operationStatus"
+              }
+            }
+          }
+        }
+      }
+    },
     "browserSignerProviderContract": {
       "type": "object",
       "additionalProperties": false,

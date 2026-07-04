@@ -29,8 +29,11 @@ repo에는 note reservation, payroll control plane, proof/broadcast/reconcile qu
 - planner note selection에서 `FOR UPDATE SKIP LOCKED` 또는 owner 단위 advisory lock 적용
 - 상태 변경 compare-and-set 적용
 - worker lease 필드 적용: `lease_owner`, `lease_token`, `lease_until`, `last_heartbeat_at`
-- lease 획득, heartbeat, lease clear, `ProofReady -> Submitted`는 `Get -> Update` 조합이 아니라 단일 DB update/transaction으로 원자적 처리
+- lease 획득, heartbeat, lease clear, worker-owned `ProofReady -> Submitted/Unknown`은 `Get -> Update` 조합이 아니라 단일 DB update/transaction으로 원자적 처리. `ProofReady -> ConfirmedSpent` recovery도 chain evidence 기반 compare-and-set/transaction 경로로 처리함.
 - proof worker는 `Reserved` 상태 한정 lease 획득과 proof 생성 중 heartbeat를 사용
+- broadcast worker는 `NullifierChecker`에 chain nullifier query provider를 연결해 tx 제출 직전 spent nullifier를 차단
+- tx 제출 전 spent nullifier가 감지되면 SDK broadcast worker는 `SpentNullifierError`를 반환하고, scheduler/reconcile layer가 해당 item을 `ConflictSpent`, `ManualReview`, 또는 `ReplanRequired`로 전환함. 같은 `ProofReady` 작업을 그대로 무한 재시도하지 않아야 함.
+- payroll/payment success evidence의 `expected_disclosure_digest`는 audit disclosure digest임. user disclosure 또는 sender self-view disclosure digest를 operation 성공 판정에 대신 쓰지 않음.
 - `nullifier_lookup_key = HMAC(index_key, nullifier)` 형태의 deterministic keyed lookup 사용
 - raw nullifier, commitment, recipient, amount 등 민감정보 암호화 저장
 - payload/log/telemetry에 원문 민감정보가 남지 않도록 필터링
@@ -47,9 +50,11 @@ Go SDK의 `payroll` model을 실제 job/run/item/operation service로 연결해�
 - tenant별 `PayrollRun` 생성과 run locking
 - run 확정 시 note reservation 생성
 - proof worker queue와 broadcast worker queue 운영
+- proof worker 결과 저장소 구현: repo의 `ProofResultSink` 역할처럼 proof/message/payload를 durable queue 또는 DB에 먼저 저장하고, 저장 성공 후에만 `ProofReady`로 전환해야 함.
 - operation-level idempotency: `operation_id`, `sign_doc_hash`, `tx_bytes_hash`, `tx_hash`, `account_sequence`
 - replan attempt별 `operation_id`/`reservation_id` 분리
 - 실패 원인 분류: insufficient note, reservation conflict, proof invalid, root invalid, gas/sequence, RPC timeout, payload mismatch
+- RPC timeout/mempool eviction은 즉시 새 tx 생성으로 처리하지 않고 `Unknown`/`ReconcileUnknown` 흐름에서 `tx_hash`와 nullifier 상태를 먼저 확인해야 함.
 - 실패 item만 `ReplanRequired`로 분리하고 재계획
 - confirmation scanner/reconcile worker가 note 상태와 operation 상태를 각각 갱신
 
@@ -79,11 +84,11 @@ JS SDK가 이미 `docs/clairveil-note-reservation-design-kr.md`를 기준으로 
 - endpoint별 concurrency limit과 timeout 설정
 - endpoint health check와 장애 endpoint 제외
 - proof queue worker의 retry/failover 정책
-- `PROVERD_URLS` 기반 scale benchmark 실행
+- `PROVERD_URLS` 기반 scale benchmark 실행 및 unhealthy endpoint count 기록
 - endpoint별 latency, error rate, timeout rate, RSS/CPU telemetry 수집
 - peak payroll window 전 warm-up 및 capacity check
 
-완료 기준은 prover 1개, 2개, 4개, 8개 환경에서 aggregate proof/sec가 측정되고, 장애 endpoint가 있어도 queue가 멈추지 않는 것임.
+완료 기준은 prover 1개, 2개, 4개, 8개 환경에서 aggregate proof/sec가 측정되고, 장애 endpoint가 있어도 healthy endpoint만으로 queue가 멈추지 않으며, `unhealthy_endpoint_count`가 benchmark report에 남는 것임.
 
 ### 5. Rehearsal Runbook
 
@@ -122,8 +127,17 @@ JS SDK가 이미 `docs/clairveil-note-reservation-design-kr.md`를 기준으로 
 ## 전달 체크리스트
 
 - 제품팀은 `make privacy-bulk-readiness-check` 결과를 확인함.
+- release 전에는 `RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check`로 multi-message transfer localnet 경로를 확인함.
+- prover pool scale claim을 하려면 `RUN_PROVER_SCALE=1 PROVERD_URLS=url1,url2 make privacy-bulk-readiness-check` 결과를 별도 산출물로 남김. scale benchmark는 기본적으로 preflight 실패 endpoint를 제외하고 `unhealthy_endpoint_count`를 기록하지만, public claim 수치로 쓰려면 `unhealthy_endpoint_count=0`이어야 함.
 - backend 팀은 production DB adapter 설계를 작성함.
 - JS SDK 팀은 note reservation conformance fixture를 검증함.
 - 운영팀은 prover pool endpoint 구성과 telemetry 수집 방식을 정함.
 - 제품팀은 1천건 rehearsal runbook을 먼저 실행함.
 - 1차 결과로 SLA가 부족하면 2차 `BatchJoinSplit32` 개발을 시작함.
+
+## 비차단 후속 backlog
+
+- `examples/clairveil-dapp/**` consumer drift 점검은 이 bulk-transfer review scope에서 제외되었으므로, dapp scope가 열릴 때 별도 점검함.
+- full `make check`와 full `make release-check`는 dapp/localnet/external smoke 범위를 포함하므로 release candidate에서 별도 실행함.
+- live localnet/prover-scale 수치를 public claim에 쓰려면 `RUN_LOCALNET=1` 및 `RUN_PROVER_SCALE=1` readiness run 결과를 release 산출물로 남김.
+- allocator는 targeted regression과 fixed-seed property-style test로 현재 handoff risk를 닫음. 임의 생성 기반의 exhaustive fuzz suite는 release blocker가 아닌 장기 test-depth 강화 후보로 분리함.

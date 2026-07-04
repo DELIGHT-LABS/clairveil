@@ -113,12 +113,66 @@ func TestPreflightRequestsFailsBeforeMeasuredLoad(t *testing.T) {
 	}
 }
 
+func TestPreflightEndpointPoolAllowsUnhealthyEndpoints(t *testing.T) {
+	healthyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer healthyServer.Close()
+	unhealthyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"warming"}`))
+	}))
+	defer unhealthyServer.Close()
+
+	healthy, failures, err := preflightEndpointPool(
+		context.Background(),
+		healthyServer.Client(),
+		[]string{healthyServer.URL, unhealthyServer.URL},
+		"",
+		[]requestPayload{{Route: "transfer", Path: "/prove/transfer", Body: []byte(`{}`)}},
+		true,
+	)
+	if err != nil {
+		t.Fatalf("expected degraded preflight to continue with healthy endpoints: %v", err)
+	}
+	if len(healthy) != 1 || healthy[0] != healthyServer.URL {
+		t.Fatalf("unexpected healthy endpoints: %+v", healthy)
+	}
+	if len(failures) != 1 || failures[0].Endpoint != unhealthyServer.URL {
+		t.Fatalf("unexpected preflight failures: %+v", failures)
+	}
+}
+
+func TestPreflightEndpointPoolFailsWhenAllEndpointsUnhealthy(t *testing.T) {
+	unhealthyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer unhealthyServer.Close()
+
+	_, failures, err := preflightEndpointPool(
+		context.Background(),
+		unhealthyServer.Client(),
+		[]string{unhealthyServer.URL},
+		"",
+		[]requestPayload{{Route: "transfer", Path: "/prove/transfer", Body: []byte(`{}`)}},
+		true,
+	)
+	if err == nil {
+		t.Fatal("expected all-unhealthy preflight failure")
+	}
+	if len(failures) != 1 {
+		t.Fatalf("expected one failed endpoint, got %+v", failures)
+	}
+}
+
 func TestSummarizeLoadBucket(t *testing.T) {
 	started := time.Unix(1_700_000_000, 0)
 	summary := summarizeLoadBucket(
 		"transfer_only",
 		[]requestPayload{{Route: "transfer", Body: []byte("request")}},
 		2,
+		1,
 		2,
 		5*time.Second,
 		10*time.Second,
@@ -182,11 +236,49 @@ func TestSummarizeLoadBucket(t *testing.T) {
 	if got := summary.Metrics["endpoint_count"].Mean; got != 2 {
 		t.Fatalf("unexpected endpoint count metric %.3f", got)
 	}
+	if got := summary.Metrics["configured_endpoint_count"].Mean; got != 3 {
+		t.Fatalf("unexpected configured endpoint count metric %.3f", got)
+	}
+	if got := summary.Metrics["unhealthy_endpoint_count"].Mean; got != 1 {
+		t.Fatalf("unexpected unhealthy endpoint count metric %.3f", got)
+	}
 	if got := summary.Metrics["requests_per_endpoint"].Max; got != 2 {
 		t.Fatalf("unexpected requests per endpoint max %.3f", got)
 	}
 	if got := summary.Metrics["telemetry_error_rate"].Mean; got != 0 {
 		t.Fatalf("unexpected telemetry error rate %.3f", got)
+	}
+}
+
+func TestTelemetryCPUPercentGroupsByEndpoint(t *testing.T) {
+	started := time.Unix(1_700_000_000, 0)
+	got, ok := telemetryCPUPercent([]telemetrySample{
+		{
+			Endpoint:   "http://a:9090",
+			CapturedAt: started,
+			Metrics:    privacyproverservice.MetricsResponse{ProcessCPUSeconds: 10},
+		},
+		{
+			Endpoint:   "http://b:9090",
+			CapturedAt: started.Add(time.Second),
+			Metrics:    privacyproverservice.MetricsResponse{ProcessCPUSeconds: 100},
+		},
+		{
+			Endpoint:   "http://a:9090",
+			CapturedAt: started.Add(10 * time.Second),
+			Metrics:    privacyproverservice.MetricsResponse{ProcessCPUSeconds: 11},
+		},
+		{
+			Endpoint:   "http://b:9090",
+			CapturedAt: started.Add(11 * time.Second),
+			Metrics:    privacyproverservice.MetricsResponse{ProcessCPUSeconds: 102},
+		},
+	})
+	if !ok {
+		t.Fatal("expected endpoint CPU percent")
+	}
+	if got != 15 {
+		t.Fatalf("expected mean endpoint CPU percent 15, got %.3f", got)
 	}
 }
 
@@ -261,6 +353,31 @@ func TestRunLoadBucketDistributesRequestsAcrossEndpoints(t *testing.T) {
 	}
 }
 
+func TestRequestForLoadIndexDistributesMixedProfileAcrossEndpoints(t *testing.T) {
+	requests, err := scheduleRequests("mixed_80_20", map[string]requestPayload{
+		"transfer": {Route: "transfer", Body: []byte(`{}`)},
+		"withdraw": {Route: "withdraw", Body: []byte(`{}`)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpointCount := 5
+	counts := make([]map[string]int, endpointCount)
+	for endpoint := range counts {
+		counts[endpoint] = make(map[string]int)
+	}
+	for index := uint64(0); index < uint64(endpointCount*len(requests)); index++ {
+		endpoint := int(index) % endpointCount
+		payload := requestForLoadIndex(index, endpointCount, requests)
+		counts[endpoint][payload.Route]++
+	}
+	for endpoint, routes := range counts {
+		if routes["transfer"] != 4 || routes["withdraw"] != 1 {
+			t.Fatalf("endpoint %d got skewed route mix: %+v", endpoint, routes)
+		}
+	}
+}
+
 func TestRunLoadBucketLetsInFlightRequestFinishAtDurationDeadline(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(30 * time.Millisecond)
@@ -313,6 +430,42 @@ func TestDoRequestClassifiesClientTimeout(t *testing.T) {
 	}
 	if !result.Timeout {
 		t.Fatalf("expected client timeout to be classified for timeout_rate, got %+v", result)
+	}
+}
+
+func TestDoRequestClassifiesBodyReadTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "1024")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"partial":`))
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		time.Sleep(100 * time.Millisecond)
+		_, _ = w.Write([]byte(`true}`))
+	}))
+	defer server.Close()
+
+	client := server.Client()
+	client.Timeout = 10 * time.Millisecond
+	result := doRequest(
+		context.Background(),
+		client,
+		server.URL,
+		"",
+		requestPayload{Route: "transfer", Path: "/prove/transfer", Body: []byte(`{"request":true}`)},
+	)
+	if result.Err == nil {
+		t.Fatal("expected body read timeout error")
+	}
+	if !result.Timeout {
+		t.Fatalf("expected body read timeout to be classified for timeout_rate, got %+v", result)
+	}
+	if result.StatusCode != http.StatusOK {
+		t.Fatalf("expected response status to be preserved, got %+v", result)
+	}
+	if result.RequestBytes == 0 || result.LatencyMS <= 0 {
+		t.Fatalf("expected request metadata to be preserved, got %+v", result)
 	}
 }
 

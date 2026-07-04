@@ -23,5 +23,6 @@ PY
 export BENCH_OUT_DIR="${BENCH_OUT_DIR:-benchmarks/privacy-proverd-scale}"
 export RESULT_FAMILY="${RESULT_FAMILY:-privacy-proverd-scale}"
 export CLAIM_LOAD_PROFILE="${CLAIM_LOAD_PROFILE:-prover_pool_${endpoint_count}x_${PROVERLOAD_PROFILE:-transfer_only}}"
+export PROVERLOAD_ALLOW_UNHEALTHY_ENDPOINTS="${PROVERLOAD_ALLOW_UNHEALTHY_ENDPOINTS:-1}"
 
 ./scripts/privacy-proverd-load-bench.sh

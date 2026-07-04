@@ -4,6 +4,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/stretchr/testify/require"
 
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
@@ -28,6 +29,51 @@ func TestParseTransferBatchCoinsRejectsNonPositiveAmount(t *testing.T) {
 	_, err := parseTransferBatchCoins([]string{"0uclair"})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "positive")
+}
+
+func TestTransferBatchUsesStandardTxCLIForNonBroadcastModes(t *testing.T) {
+	cases := []struct {
+		name      string
+		clientCtx client.Context
+		want      bool
+	}{
+		{
+			name:      "confirmed broadcast keeps metadata path",
+			clientCtx: client.Context{}.WithSkipConfirmation(true),
+			want:      false,
+		},
+		{
+			name:      "generate only",
+			clientCtx: client.Context{}.WithSkipConfirmation(true).WithGenerateOnly(true),
+			want:      true,
+		},
+		{
+			name:      "dry run simulation",
+			clientCtx: client.Context{}.WithSkipConfirmation(true).WithSimulation(true),
+			want:      true,
+		},
+		{
+			name:      "aux signer",
+			clientCtx: client.Context{}.WithSkipConfirmation(true).WithAux(true),
+			want:      true,
+		},
+		{
+			name:      "offline",
+			clientCtx: client.Context{}.WithSkipConfirmation(true).WithOffline(true),
+			want:      true,
+		},
+		{
+			name:      "confirmation prompt",
+			clientCtx: client.Context{},
+			want:      true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, transferBatchUsesStandardTxCLI(tc.clientCtx))
+		})
+	}
 }
 
 func TestRemoveTransferBatchInputsRemovesSelectedNullifiers(t *testing.T) {

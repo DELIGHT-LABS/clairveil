@@ -42,10 +42,6 @@ func IsActiveReservationStatus(status ReservationStatus) bool {
 }
 
 func CanTransitionReservation(from ReservationStatus, to ReservationStatus) bool {
-	if from == to {
-		return true
-	}
-
 	switch from {
 	case StatusDiscovered:
 		return to == StatusAvailable || to == StatusFailed
@@ -54,13 +50,13 @@ func CanTransitionReservation(from ReservationStatus, to ReservationStatus) bool
 	case StatusReserved:
 		return to == StatusProving || to == StatusReleased || to == StatusReplanRequired || to == StatusManualReview
 	case StatusProving:
-		return to == StatusProofReady || to == StatusReserved || to == StatusReplanRequired || to == StatusManualReview || to == StatusReleased
+		return to == StatusProofReady || to == StatusReserved || to == StatusReplanRequired || to == StatusManualReview
 	case StatusProofReady:
-		return to == StatusSubmitted || to == StatusReplanRequired || to == StatusManualReview || to == StatusReleased
+		return to == StatusSubmitted || to == StatusUnknown || to == StatusConfirmedSpent || to == StatusReplanRequired || to == StatusManualReview
 	case StatusSubmitted:
 		return to == StatusConfirmedSpent || to == StatusFailed || to == StatusUnknown || to == StatusReplanRequired || to == StatusManualReview
 	case StatusUnknown:
-		return to == StatusConfirmedSpent || to == StatusFailed || to == StatusSubmitted || to == StatusReplanRequired || to == StatusManualReview
+		return to == StatusConfirmedSpent || to == StatusFailed || to == StatusReplanRequired || to == StatusManualReview
 	case StatusManualReview:
 		return to == StatusConfirmedSpent || to == StatusFailed || to == StatusReleased || to == StatusReplanRequired
 	case StatusFailed:
@@ -81,6 +77,8 @@ func RequiresLeaseToken(from ReservationStatus, to ReservationStatus) bool {
 	case from == StatusProving && to == StatusProofReady:
 		return true
 	case from == StatusProofReady && to == StatusSubmitted:
+		return true
+	case from == StatusProofReady && to == StatusUnknown:
 		return true
 	default:
 		return false

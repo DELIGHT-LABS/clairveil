@@ -115,6 +115,7 @@ release-check:
 	$(MAKE) vulncheck
 	$(MAKE) localnet-smoke
 	$(MAKE) privacy-e2e-smoke
+	RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 $(MAKE) privacy-bulk-readiness-check
 
 .PHONY: release-pack
 release-pack:

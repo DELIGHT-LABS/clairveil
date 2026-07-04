@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -180,11 +180,118 @@ interface RelayWithdrawContract {
   };
 }
 
+interface NoteReservationContract {
+  version: number;
+  active_reservation_statuses: string[];
+  allowed_transitions: string[][];
+  rejected_transitions: string[][];
+  active_unique_key: string[];
+  batch_reserve: {
+    atomic: boolean;
+    error_policy: string;
+    lock_requirement: string;
+  };
+  nullifier_lookup_key: {
+    algorithm: string;
+    encoding: string;
+    key_version_field: string;
+    test_vectors: Array<{
+      index_key_utf8: string;
+      nullifier_utf8: string;
+      lookup_key_hex: string;
+    }>;
+  };
+  lease_transition_preconditions: {
+    token_required_for: string[][];
+    fields: string[];
+    policy: string;
+  };
+  success_evidence_required: string[];
+  batch_item_index_policy: string;
+  operation_success_examples: Array<{
+    name: string;
+    nullifier_spent: boolean;
+    evidence_matches_expected_values: boolean;
+    note_status: string;
+    operation_status: string;
+  }>;
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "../../..");
 const testdataDir = join(repoRoot, "x/privacy/client/sdk/conformance/testdata");
 const schemaDir = join(repoRoot, "docs/schemas");
 const maxShieldedAmount = (1n << 64n) - 1n;
+const expectedActiveReservationStatuses = [
+  "Reserved",
+  "Proving",
+  "ProofReady",
+  "Submitted",
+  "Unknown",
+  "ManualReview",
+];
+const expectedAllowedTransitions = [
+  ["Discovered", "Available"],
+  ["Discovered", "Failed"],
+  ["Available", "Reserved"],
+  ["Reserved", "Proving"],
+  ["Reserved", "Released"],
+  ["Reserved", "ReplanRequired"],
+  ["Reserved", "ManualReview"],
+  ["Proving", "ProofReady"],
+  ["Proving", "Reserved"],
+  ["Proving", "ReplanRequired"],
+  ["Proving", "ManualReview"],
+  ["ProofReady", "Submitted"],
+  ["ProofReady", "Unknown"],
+  ["ProofReady", "ConfirmedSpent"],
+  ["ProofReady", "ReplanRequired"],
+  ["ProofReady", "ManualReview"],
+  ["Submitted", "ConfirmedSpent"],
+  ["Submitted", "Failed"],
+  ["Submitted", "Unknown"],
+  ["Submitted", "ReplanRequired"],
+  ["Submitted", "ManualReview"],
+  ["Unknown", "ConfirmedSpent"],
+  ["Unknown", "Failed"],
+  ["Unknown", "ReplanRequired"],
+  ["Unknown", "ManualReview"],
+  ["ManualReview", "ConfirmedSpent"],
+  ["ManualReview", "Failed"],
+  ["ManualReview", "Released"],
+  ["ManualReview", "ReplanRequired"],
+  ["Failed", "ReplanRequired"],
+  ["Released", "Available"],
+  ["ReplanRequired", "Reserved"],
+  ["ReplanRequired", "Failed"],
+  ["ReplanRequired", "ManualReview"],
+];
+const expectedRejectedTransitions = [
+  ["Submitted", "Available"],
+  ["Proving", "Released"],
+  ["ProofReady", "Available"],
+  ["ProofReady", "Released"],
+  ["Unknown", "Available"],
+  ["Unknown", "Submitted"],
+  ["ManualReview", "Available"],
+];
+const expectedLeaseRequiredTransitions = [
+  ["Reserved", "Proving"],
+  ["Proving", "ProofReady"],
+  ["ProofReady", "Submitted"],
+  ["ProofReady", "Unknown"],
+];
+const expectedLeaseFields = ["lease_owner", "lease_token", "lease_until", "last_heartbeat_at"];
+const expectedSuccessEvidenceRequired = [
+  "tx_hash_or_tx_result",
+  "expected_output_commitment",
+  "expected_disclosure_digest",
+  "expected_recipient_hash",
+  "expected_amount_hash",
+  "expected_denom",
+  "batch_item_index",
+  "batch_item_index_known",
+];
 
 type JsonSchema = {
   $ref?: string;
@@ -195,6 +302,9 @@ type JsonSchema = {
   required?: string[];
   properties?: Record<string, JsonSchema>;
   additionalProperties?: boolean;
+  allOf?: JsonSchema[];
+  if?: JsonSchema;
+  then?: JsonSchema;
   items?: JsonSchema;
   minItems?: number;
   maxItems?: number;
@@ -219,10 +329,36 @@ function sha256Hex(source: string): string {
   return createHash("sha256").update(source, "utf8").digest("hex");
 }
 
+function hmacSHA256Hex(keyUtf8: string, messageUtf8: string): string {
+  return createHmac("sha256", Buffer.from(keyUtf8, "utf8"))
+    .update(Buffer.from(messageUtf8, "utf8"))
+    .digest("hex");
+}
+
 function assertEqual(actual: unknown, expected: unknown, label: string): void {
   if (actual !== expected) {
     throw new Error(`${label}: expected ${String(expected)}, got ${String(actual)}`);
   }
+}
+
+function assertStringArrayEqual(actual: string[], expected: string[], label: string): void {
+  assertEqual(actual.length, expected.length, `${label} length`);
+  for (const [index, expectedValue] of expected.entries()) {
+    assertEqual(actual[index], expectedValue, `${label}[${index}]`);
+  }
+}
+
+function transitionKey(transition: string[]): string {
+  if (transition.length !== 2) {
+    throw new Error(`transition: expected [from, to], got ${JSON.stringify(transition)}`);
+  }
+  return `${transition[0]}\u0000${transition[1]}`;
+}
+
+function assertTransitionSetEqual(actual: string[][], expected: string[][], label: string): void {
+  const actualKeys = actual.map(transitionKey).sort();
+  const expectedKeys = expected.map(transitionKey).sort();
+  assertStringArrayEqual(actualKeys, expectedKeys, label);
 }
 
 function assertStartsWith(value: string, prefix: string, label: string): void {
@@ -288,6 +424,13 @@ function validateJSONSchema(value: unknown, schema: JsonSchema, label: string, r
   if (schema.$ref) {
     validateJSONSchema(value, resolveSchemaRef(root, schema.$ref), label, root);
     return;
+  }
+
+  for (const [index, subschema] of (schema.allOf ?? []).entries()) {
+    validateJSONSchema(value, subschema, `${label}.allOf[${index}]`, root);
+  }
+  if (schema.if && schema.then && schemaMatches(value, schema.if, root)) {
+    validateJSONSchema(value, schema.then, `${label}.then`, root);
   }
 
   if ("const" in schema) {
@@ -357,12 +500,22 @@ function validateJSONSchema(value: unknown, schema: JsonSchema, label: string, r
   }
 }
 
+function schemaMatches(value: unknown, schema: JsonSchema, root: JsonSchemaDocument): boolean {
+  try {
+    validateJSONSchema(value, schema, "schema condition", root);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function validateFixtureSchemas(): void {
   const schema = readJSONFile<JsonSchemaDocument>(join(schemaDir, "clairveil-js-wallet-contract.schema.json"));
   const fixtureSchemas: Array<[string, string]> = [
     ["privacy_browser_signer_provider_contract.json", "browserSignerProviderContract"],
     ["privacy_prover_example_bundle.json", "proverExampleBundle"],
     ["privacy_prover_http_api_contract.json", "proverHttpApiContract"],
+    ["privacy_note_reservation_contract.json", "noteReservationContract"],
     ["privacy_relay_withdraw_contract.json", "relayWithdrawContract"],
     ["privacy_send_capable_reference_flow.json", "sendCapableReferenceFlow"],
     ["privacy_wallet_golden_vectors.json", "walletGoldenVectors"],
@@ -373,6 +526,56 @@ function validateFixtureSchemas(): void {
     const fixture = readFixture<unknown>(fixtureName);
     validateJSONSchema(fixture, resolveSchemaRef(schema, `#/$defs/${schemaName}`), fixtureName, schema);
   }
+  validateSchemaNegativeCases(schema);
+}
+
+function validateSchemaNegativeCases(schema: JsonSchemaDocument): void {
+  const browserFixture = readFixture<Record<string, unknown>>("privacy_browser_signer_provider_contract.json");
+  const browserSchema = resolveSchemaRef(schema, "#/$defs/browserSignerProviderContract");
+
+  const malformedDeposit = deepClone(browserFixture);
+  const depositEvents = scanEvents(malformedDeposit);
+  depositEvents[0].outputs = [];
+  assertSchemaRejects(malformedDeposit, browserSchema, "negative deposit scan event", schema, "expected at least 1 items");
+
+  const malformedTransfer = deepClone(browserFixture);
+  const transferEvents = scanEvents(malformedTransfer);
+  transferEvents[1].outputs = transferEvents[1].outputs.slice(0, 1);
+  assertSchemaRejects(malformedTransfer, browserSchema, "negative transfer scan event", schema, "expected at least 2 items");
+}
+
+function deepClone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function scanEvents(fixture: Record<string, unknown>): Array<Record<string, unknown> & { outputs: unknown[] }> {
+  const scanProvider = asRecord(fixture.scan_provider, "scan_provider");
+  const response = asRecord(scanProvider.scan_events_response, "scan_events_response");
+  const events = response.events;
+  if (!Array.isArray(events)) {
+    throw new Error("scan_events_response.events: expected array");
+  }
+  return events as Array<Record<string, unknown> & { outputs: unknown[] }>;
+}
+
+function asRecord(value: unknown, label: string): Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label}: expected object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function assertSchemaRejects(value: unknown, schema: JsonSchema, label: string, root: JsonSchemaDocument, expectedMessage: string): void {
+  try {
+    validateJSONSchema(value, schema, label, root);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes(expectedMessage)) {
+      throw new Error(`${label}: expected rejection containing ${expectedMessage}, got ${message}`);
+    }
+    return;
+  }
+  throw new Error(`${label}: expected schema validation to fail`);
 }
 
 function computePreparedTransferPayloadHash(payload: PreparedTransferPayload): string {
@@ -650,6 +853,92 @@ function validateProverHTTPAPIContract(contract: ProverHTTPAPIContract): void {
   }
 }
 
+function validateNoteReservationContract(contract: NoteReservationContract): void {
+  assertEqual(contract.version, 1, "note reservation version");
+  assertStringArrayEqual(
+    contract.active_reservation_statuses,
+    expectedActiveReservationStatuses,
+    "note reservation active statuses",
+  );
+  assertTransitionSetEqual(contract.allowed_transitions, expectedAllowedTransitions, "note reservation allowed transitions");
+  assertTransitionSetEqual(contract.rejected_transitions, expectedRejectedTransitions, "note reservation rejected transitions");
+  assertStringArrayEqual(
+    contract.active_unique_key,
+    ["owner_key_id", "nullifier_lookup_key"],
+    "note reservation active unique key",
+  );
+
+  assertEqual(contract.batch_reserve.atomic, true, "note reservation batch reserve atomic");
+  assertSchema(
+    contract.batch_reserve.error_policy.trim().length > 0,
+    "note reservation batch reserve error_policy",
+    "expected non-empty policy",
+  );
+  assertSchema(
+    contract.batch_reserve.lock_requirement.trim().length > 0,
+    "note reservation batch reserve lock_requirement",
+    "expected non-empty lock requirement",
+  );
+
+  assertEqual(contract.nullifier_lookup_key.algorithm, "HMAC-SHA256", "note reservation lookup algorithm");
+  assertEqual(contract.nullifier_lookup_key.encoding, "hex", "note reservation lookup encoding");
+  assertEqual(
+    contract.nullifier_lookup_key.key_version_field,
+    "nullifier_lookup_key_id",
+    "note reservation lookup key version field",
+  );
+  assertSchema(
+    contract.nullifier_lookup_key.test_vectors.length > 0,
+    "note reservation lookup vectors",
+    "expected at least one vector",
+  );
+  for (const [index, vector] of contract.nullifier_lookup_key.test_vectors.entries()) {
+    assertEqual(
+      vector.lookup_key_hex,
+      hmacSHA256Hex(vector.index_key_utf8, vector.nullifier_utf8),
+      `note reservation lookup vector ${index}`,
+    );
+  }
+
+  assertTransitionSetEqual(
+    contract.lease_transition_preconditions.token_required_for,
+    expectedLeaseRequiredTransitions,
+    "note reservation lease-required transitions",
+  );
+  assertStringArrayEqual(contract.lease_transition_preconditions.fields, expectedLeaseFields, "note reservation lease fields");
+  assertSchema(
+    contract.lease_transition_preconditions.policy.trim().length > 0,
+    "note reservation lease policy",
+    "expected non-empty policy",
+  );
+  assertStringArrayEqual(
+    contract.success_evidence_required,
+    expectedSuccessEvidenceRequired,
+    "note reservation success evidence",
+  );
+  assertSchema(
+    contract.batch_item_index_policy.trim().length > 0,
+    "note reservation batch item index policy",
+    "expected non-empty batch item index policy",
+  );
+
+  assertEqual(contract.operation_success_examples.length, 2, "note reservation success example count");
+  const successExample = contract.operation_success_examples.find((example) => example.evidence_matches_expected_values);
+  const conflictExample = contract.operation_success_examples.find((example) => !example.evidence_matches_expected_values);
+  assertSchema(Boolean(successExample), "note reservation success example", "expected matching-evidence example");
+  assertSchema(Boolean(conflictExample), "note reservation conflict example", "expected mismatch-evidence example");
+  if (successExample) {
+    assertEqual(successExample.nullifier_spent, true, "note reservation success example nullifier_spent");
+    assertEqual(successExample.note_status, "ConfirmedSpent", "note reservation success example note status");
+    assertEqual(successExample.operation_status, "Succeeded", "note reservation success example operation status");
+  }
+  if (conflictExample) {
+    assertEqual(conflictExample.nullifier_spent, true, "note reservation conflict example nullifier_spent");
+    assertEqual(conflictExample.note_status, "ConfirmedSpent", "note reservation conflict example note status");
+    assertEqual(conflictExample.operation_status, "ConflictSpent", "note reservation conflict example operation status");
+  }
+}
+
 function validateWalletFixtures(): void {
   const golden = readFixture<Record<string, any>>("privacy_wallet_golden_vectors.json");
   const readonly = readFixture<Record<string, any>>("privacy_wallet_readonly_reference_bundle.json");
@@ -684,6 +973,7 @@ function main(): void {
   const sendFlow = readFixture<SendCapableReferenceFlow>("privacy_send_capable_reference_flow.json");
   const proverHTTPContract = readFixture<ProverHTTPAPIContract>("privacy_prover_http_api_contract.json");
   const relayWithdrawContract = readFixture<RelayWithdrawContract>("privacy_relay_withdraw_contract.json");
+  const noteReservationContract = readFixture<NoteReservationContract>("privacy_note_reservation_contract.json");
 
   validateFixtureSchemas();
   validateWalletFacingPrefixes();
@@ -691,6 +981,7 @@ function main(): void {
   validateSendCapableReferenceFlow(sendFlow, proverBundle);
   validateRelayWithdrawContract(relayWithdrawContract, sendFlow);
   validateProverHTTPAPIContract(proverHTTPContract);
+  validateNoteReservationContract(noteReservationContract);
   validateWalletFixtures();
 
   console.log("Clairveil JS SDK fixture validator passed");

@@ -115,14 +115,21 @@ Discovered
 -> Submitted
 -> ConfirmedSpent
 
-Reserved / Proving / ProofReady
+Reserved
 -> Released
 -> Available
+
+ManualReview
+-> Released
+-> Available
+
+ProofReady
+-> ConfirmedSpent
 
 Submitted
 -> Failed
 -> ReplanRequired
--> Available 또는 Reserved(new note)
+-> Reserved(new note)
 
 Submitted
 -> Unknown
@@ -150,7 +157,7 @@ Unknown
 
 중요한 점은 `ProofReady` 상태도 lock 상태라는 것임. proof를 이미 만들었다고 해서 note를 다른 곳에 풀면 안 됨. 해당 proof는 특정 input note와 root에 묶여 있기 때문임.
 
-또한 `Released` 전이는 상태별로 의미가 다름. 자동 release는 `Reserved` 상태에만 제한적으로 허용함. `Proving` 또는 `ProofReady`에서 `Released`로 전환하려면 proof artifact 폐기, tx 미제출, lease 상태 확인이 먼저 필요함.
+또한 `Released` 전이는 상태별로 의미가 다름. 자동 release는 `Reserved` 상태에만 제한적으로 허용함. `Proving` 또는 `ProofReady`에서 `Released`로 직접 전환하는 것은 repo contract에서 거부함. proof artifact 폐기, tx 미제출, lease 상태 확인이 필요하면 먼저 `ReplanRequired` 또는 `ManualReview`로 보내고, 운영자가 안전하다고 확인한 경우에만 `ManualReview -> Released -> Available` 경로를 사용함. `ProofReady -> ConfirmedSpent`는 이미 chain spent 증거가 확인된 recovery/reconcile 경로임.
 
 `Reconcile`은 저장 상태가 아니라 worker 또는 process 이름으로 봄. 즉, `Unknown` 상태의 reservation을 reconcile worker가 조회하고, 확인 결과에 따라 `ConfirmedSpent`, `ReplanRequired`, `ManualReview` 등으로 전환함.
 
@@ -175,7 +182,7 @@ active 상태의 reservation은 같은 `owner_key_id + nullifier_lookup_key` 조
 
 - tx hash 또는 tx result가 현재 `operation_id`와 연결되어 있음
 - event의 output commitment가 expected output commitment와 일치함
-- disclosure digest 또는 disclosure payload가 expected recipient/amount와 일치함
+- audit disclosure digest 또는 audit disclosure payload가 expected recipient/amount와 일치함
 - recipient shielded key, amount, denom, batch item index가 plan과 일치함
 - `sign_doc_hash`, `tx_bytes_hash`, `tx_hash`가 저장된 operation record와 일치함
 
@@ -249,6 +256,10 @@ PayrollOperation {
   expected_amount_hash
   expected_denom
   batch_item_index
+  batch_item_index_known
+  sign_doc_hash
+  tx_bytes_hash
+  tx_hash
   status
   created_at
   updated_at
@@ -267,7 +278,7 @@ encrypted_nullifier = Encrypt(db_field_key, nullifier)
 
 `nullifier_lookup_key`는 unique/index 용도의 deterministic keyed value임. key rotation을 고려해 `nullifier_lookup_key_id` 또는 `lookup_key_version`을 함께 저장하는 것이 좋음. raw nullifier는 암호화 저장하고, 로그나 telemetry에 남기지 않음.
 
-`PayrollOperation` 또는 `PayrollItem` record에는 operation 성공 판정에 필요한 expected value를 저장함. 예를 들어 `expected_output_commitment`, `expected_disclosure_digest`, `expected_recipient_hash`, `expected_amount`, `expected_denom`, `batch_item_index`를 저장해야 함. recipient와 amount가 민감하면 원문 대신 encrypted value, hash, HMAC 형태로 저장함.
+`PayrollOperation` 또는 `PayrollItem` record에는 operation 성공 판정에 필요한 expected value를 저장함. 예를 들어 `expected_output_commitment`, `expected_disclosure_digest`, `expected_recipient_hash`, `expected_amount`, `expected_denom`, `batch_item_index`를 저장해야 함. 현재 Go payroll worker의 `expected_disclosure_digest`는 `PreparedTransferPayload.AuditDisclosureDigestHex`와 `MsgTransfer.AuditDisclosureDigest`에 대응하는 audit disclosure digest임. user disclosure digest 또는 sender self-view disclosure digest를 operation success evidence로 대신 쓰면 안 됨. `batch_item_index`는 zero value와 실제 0번 item을 구분할 수 있도록 `batch_item_index_known` 같은 boolean과 함께 저장함. payroll/batch operation은 이 값을 true로 두고, batch 위치가 성공 판정에 포함되지 않는 직접 연동만 false를 사용할 수 있음. recipient와 amount가 민감하면 원문 대신 encrypted value, hash, HMAC 형태로 저장함.
 
 ## Active reservation 중복 방지
 
@@ -392,10 +403,16 @@ WHERE reservation_id = $1
 | --- | --- |
 | `Reserved -> Proving` | `status = 'Reserved'`이고 유효한 lease 획득 |
 | `Proving -> ProofReady` | `status = 'Proving'`이고 같은 `lease_token` 보유 |
-| `ProofReady -> Submitted` | `status = 'ProofReady'`이고 broadcast 직전 nullifier unspent 확인 |
+| `ProofReady -> Submitted` | `status = 'ProofReady'`이고 같은 `lease_token` 보유, broadcast 직전 nullifier unspent 확인 |
+| `ProofReady -> Unknown` | 같은 `lease_token` 보유, signed tx 또는 broadcast attempt metadata는 있으나 RPC timeout 등으로 제출 결과가 불명확 |
+| `ProofReady -> ConfirmedSpent` | local submitted 기록 전이라도 chain nullifier/tx evidence가 현재 operation과 일치해 이미 spend가 확인된 reconcile recovery |
+| `Reserved -> Released` | proof/broadcast가 시작되지 않은 예약을 compare-and-set으로 해제 |
+| `ManualReview -> Released` | 운영자가 proof artifact 폐기, tx 미제출, lease 상태를 확인해 재사용 가능하다고 승인 |
 | `Submitted -> ConfirmedSpent` | 현재 operation과 일치하는 tx success 또는 spent 증거 확인 |
 | `Submitted -> Unknown` | tx 결과 불명확 |
 | `Unknown -> ManualReview` | 자동 판단 불가 |
+
+`Unknown -> Submitted` 전이는 권장하지 않음. `Unknown`은 이미 signed tx 또는 broadcast attempt의 결과가 불명확한 상태이므로, reconcile worker는 같은 operation의 evidence를 확인해 `ConfirmedSpent`, `Failed`, `ReplanRequired`, `ManualReview` 중 하나로 좁히는 방식으로 처리함.
 
 ### Worker lease와 heartbeat
 
@@ -412,7 +429,7 @@ worker는 작업 중 주기적으로 heartbeat를 보내 `lease_until`을 연장
 
 proof worker는 `Reserved` 상태의 reservation에 대해서만 lease를 획득해야 함. 이미 `ProofReady` 또는 `Submitted` 상태인 reservation의 lease가 만료되어 있더라도 stale proof worker가 새 lease를 잡아 기존 broadcast 권한을 덮어쓰면 안 됨. 긴 proof 생성 작업에서는 `Proving` 상태와 같은 `lease_token`을 조건으로 heartbeat를 계속 갱신해야 함.
 
-lease 획득, heartbeat 갱신, lease clear, `ProofReady -> Submitted` 전이는 저장소에서 원자적으로 처리해야 함. 즉, application layer에서 reservation을 먼저 읽고 나중에 일반 update로 덮어쓰면 안 됨. DB 구현은 하나의 `UPDATE ... WHERE reservation_id = ? AND status = ? AND lease_token = ? AND lease_until > NOW()` 또는 동일한 transaction/row lock 안에서 조건 확인과 필드 갱신을 함께 수행해야 함.
+lease 획득, heartbeat 갱신, lease clear, worker-owned `ProofReady -> Submitted/Unknown` 전이는 저장소에서 원자적으로 처리해야 함. `ProofReady -> ConfirmedSpent`도 recovery/reconcile 증거를 조건으로 한 compare-and-set 또는 동일한 transaction/row lock 경로를 사용해야 하지만, broadcaster lease token으로 제출 권한을 행사하는 전이는 아님. 즉, application layer에서 reservation을 먼저 읽고 나중에 일반 update로 덮어쓰면 안 됨. DB 구현은 하나의 `UPDATE ... WHERE reservation_id = ? AND status = ? AND lease_token = ? AND lease_until > NOW()` 또는 동일한 transaction/row lock 안에서 조건 확인과 필드 갱신을 함께 수행해야 함.
 
 예:
 
@@ -522,9 +539,9 @@ RPC timeout, mempool eviction, scanner 지연처럼 실패로 보이는 상황�
 대응:
 
 ```text
-1. Submitted 상태를 Unknown으로 전환
+1. 제출 attempt metadata가 있으면 ProofReady 또는 Submitted 상태를 Unknown으로 전환
 2. tx_hash가 있으면 tx 조회
-3. tx 성공이면 expected output/disclosure/recipient/amount와 일치하는지 확인
+3. tx 성공이면 expected output/audit disclosure digest/recipient/amount와 일치하는지 확인
 4. tx 실패이면 실패 원인 분류
 5. tx가 없으면 nullifier 조회
 6. nullifier가 spent이면 note 상태는 ConfirmedSpent로 갱신
@@ -549,7 +566,7 @@ RPC timeout, mempool eviction, scanner 지연처럼 실패로 보이는 상황�
 2. fee/gas/chunk size 조정
 3. broadcast 재시도
 4. 오래 지연되면 proof 폐기 여부 확인
-5. tx가 제출되지 않았고 proof artifact를 폐기했음이 확인된 뒤 release 또는 replan
+5. tx가 제출되지 않았고 proof artifact를 폐기했음이 확인된 뒤 `ManualReview -> Released` 또는 `ReplanRequired` 경로로 처리
 ```
 
 ### chunk 일부 item 문제
@@ -574,7 +591,7 @@ multi-message transaction이나 `MsgBatchTransfer`는 보통 all-or-nothing으�
 | --- | --- |
 | `Reserved` | proof/broadcast가 시작되지 않았으면 release 가능. 단 release도 compare-and-set으로 수행함. |
 | `Proving` | worker lease가 만료되면 proof artifact와 attempt record를 확인함. proof가 저장되지 않았으면 `Reserved`로 되돌리거나 `ReplanRequired`로 보냄. proof 완성 여부가 불명확하면 자동 release하지 않고 `ManualReview`로 보냄. |
-| `ProofReady` | TTL만으로 `Available`로 되돌리면 안 됨. proof 폐기와 tx 미제출이 확인된 뒤에만 release 가능함. |
+| `ProofReady` | TTL만으로 `Available`로 되돌리면 안 됨. proof 폐기와 tx 미제출이 확인되어도 직접 release하지 않고 `ManualReview` 또는 `ReplanRequired`로 보냄. 운영자가 재사용 가능하다고 승인한 경우에만 `ManualReview -> Released -> Available`을 사용함. chain spent 증거가 현재 operation과 일치하면 `ProofReady -> ConfirmedSpent`로 reconcile할 수 있음. |
 | `Submitted` | TTL만으로 `Available`로 되돌리면 안 됨. tx가 RPC timeout처럼 보여도 실제로 chain에 들어갔을 수 있음. |
 | `Unknown` | 반드시 tx hash/nullifier 조회로 reconcile한 뒤 상태를 바꿈. |
 | `ManualReview` | 운영자가 확인하기 전까지 active lock 상태로 유지함. |
@@ -587,13 +604,15 @@ Reserved -> Released -> Available
 
 그 외 상태는 proof artifact, tx hash, nullifier, worker lease를 확인한 뒤에만 상태를 바꿈.
 
+broadcast worker가 RPC/network error를 받았지만 tx hash, tx bytes hash, sign doc hash 같은 broadcast attempt metadata를 얻지 못한 경우에는 `ProofReady`를 `Unknown`으로 바꾸지 않음. 이때는 기존 `ProofReady` lock과 lease를 유지하고, takeover lease를 획득한 worker라면 그 lease가 만료된 뒤 재시도 worker가 다시 획득하게 둠. metadata가 있는 error 또는 non-zero tx code처럼 제출 attempt를 식별할 수 있을 때만 `ProofReady -> Unknown`으로 기록함.
+
 ## Submitted / Unknown / ManualReview reconcile
 
 `Submitted` 또는 `Unknown` 상태는 다음 순서로 확인함.
 
 ```text
 1. tx_hash가 있으면 tx 조회
-2. tx 성공이면 expected output/disclosure/recipient/amount와 일치하는지 확인
+2. tx 성공이면 expected output/audit disclosure digest/recipient/amount와 일치하는지 확인
 3. tx 실패이면 실패 원인 확인
 4. tx가 없으면 nullifier 조회
 5. nullifier spent이면 note 상태는 ConfirmedSpent로 갱신
@@ -608,11 +627,11 @@ Reserved -> Released -> Available
 | 실패 원인 | 처리 |
 | --- | --- |
 | RPC timeout | tx_hash/nullifier 조회 후 retry 가능 |
-| mempool eviction | tx_hash/nullifier 조회 후 동일 tx 재전송 또는 재구성 검토 |
+| mempool eviction | tx_hash/nullifier 조회 후, 저장된 signed tx bytes가 있으면 동일 tx 재전송을 검토함. 없으면 nullifier unspent 확인 뒤 재구성 검토 |
 | gas 부족 | nullifier unspent 확인 후 gas 조정 및 재서명 가능 |
 | sequence mismatch | account sequence 확인 후 재서명 가능. 단 재서명 전 nullifier unspent 확인 필요 |
 | proof invalid | `ReplanRequired` |
-| nullifier spent | note 상태는 `ConfirmedSpent`로 갱신. operation 성공은 expected output/disclosure/recipient/amount가 현재 operation과 일치할 때만 인정. 불일치하거나 증거가 부족하면 `ManualReview` 또는 operation-level `ConflictSpent` |
+| nullifier spent | note 상태는 `ConfirmedSpent`로 갱신. operation 성공은 expected output/audit disclosure digest/recipient/amount가 현재 operation과 일치할 때만 인정. 불일치하거나 증거가 부족하면 `ManualReview` 또는 operation-level `ConflictSpent` |
 | root invalid | 새 root 기준 proof 재생성이 필요하므로 `ReplanRequired` |
 | payload mismatch | proof/payload 불일치 원인 조사 후 `ReplanRequired` 또는 `ManualReview` |
 
@@ -643,7 +662,9 @@ broadcast retry는 `operation_id` 기준으로 idempotent해야 함. retry 때�
 - 동일 tx bytes 재전송은 허용할 수 있음.
 - 새 sequence로 재서명하기 전에는 nullifier가 unspent인지 확인함.
 - gas/sequence 문제로 tx를 재구성해야 하는 경우에도 기존 `operation_id`와 reservation을 유지함.
-- nullifier가 spent이면 note 상태는 `ConfirmedSpent`로 갱신할 수 있음. 다만 tx 조회가 실패한 상태에서 payment success로 처리하려면 expected output/disclosure/recipient/amount가 현재 operation과 일치한다는 별도 증거가 필요함.
+- nullifier가 spent이면 note 상태는 `ConfirmedSpent`로 갱신할 수 있음. 다만 tx 조회가 실패한 상태에서 payment success로 처리하려면 expected output/audit disclosure digest/recipient/amount가 현재 operation과 일치한다는 별도 증거가 필요함.
+
+현재 Go reference SDK는 `tx_hash`, `tx_bytes_hash`, `sign_doc_hash` 같은 식별자와 hash를 저장하는 contract를 제공함. 실제로 동일 signed tx bytes를 재전송하려면 scheduler 또는 broadcaster queue가 원본 signed tx bytes를 별도 durable storage에 보관해야 함. 이 저장소가 없다면 timeout/mempool 계열 실패는 `ReconcileUnknown` 흐름으로 보고, `tx_hash`와 nullifier 상태 확인을 먼저 수행한 뒤 재서명 또는 replan 여부를 결정함.
 
 예상 흐름:
 
@@ -656,7 +677,8 @@ ProofReady
 -> timeout 발생
 -> tx_hash 조회
 -> nullifier 조회
--> unspent이면 동일 tx 재전송 또는 재서명
+-> unspent이고 signed tx bytes가 있으면 동일 tx 재전송 검토
+-> signed tx bytes가 없거나 gas/sequence 조정이 필요하면 재서명 검토
 -> spent이면 note ConfirmedSpent
 -> operation 증거 일치 시 payment success
 -> 증거 부족 또는 불일치 시 ManualReview 또는 ConflictSpent
@@ -762,12 +784,12 @@ Protocol-level reservation은 다음 조건이 생겼을 때 검토하는 것이
 ## 클라이언트 구현 체크리스트
 
 - note inventory DB가 있는가
-- note 상태가 `Available`, `Reserved`, `Proving`, `ProofReady`, `Submitted`, `Unknown`, `ManualReview`, `ConfirmedSpent`, `Failed`로 관리되는가
+- note 상태가 `Discovered`, `Available`, `Reserved`, `Proving`, `ProofReady`, `Submitted`, `Unknown`, `ManualReview`, `ConfirmedSpent`, `Failed`, `Released`, `ReplanRequired`로 관리되는가
 - `payroll plan` 확정 시점에 선택된 note를 즉시 `Reserved`로 전환하는가
 - `payroll plan`이 available note만 선택하는가
 - active reservation에 대해 `owner_key_id + nullifier_lookup_key` unique constraint 또는 동등한 보장이 있는가
 - `nullifier_lookup_key`에 대해 `index_key_id` 또는 `lookup_key_version`을 함께 저장하는가
-- operation 성공 판정에 필요한 expected output commitment, disclosure digest, recipient hash, amount, denom, batch item index가 `PayrollOperation` 또는 `PayrollItem`에 저장되는가
+- operation 성공 판정에 필요한 expected output commitment, audit disclosure digest, recipient hash, amount, denom, batch item index가 `PayrollOperation` 또는 `PayrollItem`에 저장되는가
 - planner가 DB transaction, row lock, `FOR UPDATE SKIP LOCKED` 또는 대체 single writer lock으로 note를 선택하는가
 - 상태 전이가 compare-and-set 방식으로 구현되어 있는가
 - proof worker와 broadcaster가 lease, heartbeat, lease token을 사용하는가
@@ -780,7 +802,7 @@ Protocol-level reservation은 다음 조건이 생겼을 때 검토하는 것이
 - `Submitted`, `Unknown`, `ManualReview` 상태가 TTL만으로 `Available` 처리되지 않는가
 - tx retry가 `operation_id` 기준으로 idempotent하게 처리되는가
 - tx hash와 nullifier 조회 순서로 reconcile하는가
-- `ConfirmedSpent`를 payment success로 처리하기 전에 expected output commitment, disclosure digest, recipient, amount가 현재 operation과 일치하는지 확인하는가
+- `ConfirmedSpent`를 payment success로 처리하기 전에 expected output commitment, audit disclosure digest, recipient, amount가 현재 operation과 일치하는지 확인하는가
 - reservation DB가 raw nullifier/amount/recipient를 평문 로그에 남기지 않는가
 - payroll treasury key가 일반 wallet transfer와 분리되어 있는가
 

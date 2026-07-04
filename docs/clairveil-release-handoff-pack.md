@@ -52,6 +52,7 @@ make ci
 make vulncheck
 make localnet-smoke
 make privacy-e2e-smoke
+RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check
 ```
 
 Each step means:
@@ -62,6 +63,7 @@ Each step means:
 | `make vulncheck` | Runs the govulncheck policy gate. New actionable vulnerabilities fail the check. |
 | `make localnet-smoke` | Confirms the reference daemon can init and start from genesis. |
 | `make privacy-e2e-smoke` | Verifies deposit, transfer, public disclosure, recipient disclosure, sender self-view disclosure, audit disclosure, direct withdraw, and relayed withdraw on a local node. |
+| `RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check` | Verifies bulk-transfer critical units, reservation invariants, synthetic capacity estimate, and the multi-message transfer localnet path. |
 
 `make release-check` is intentionally heavy for every pull request. The default PR checks are `.github/workflows/test.yml` with `make ci` and `.github/workflows/security.yml` with `make vulncheck`; release-candidate validation is run manually with `make release-check`.
 
@@ -73,7 +75,7 @@ make docker-proverd-build
 
 This command validates compose config, Dockerfile build, and image inspect. It requires a Docker daemon, so it is not included in the default `release-check`.
 
-`make release-pack` creates `dist/clairveil-handoff-<version>.tar.gz` and its `.sha256` file. This pack is a downstream handoff contract bundle, not a full source distribution. It includes license/notice, major handoff/security/operations docs, circuit/CLI/testing/maintainer docs, Merkle restore SOP, proto, JSON Schema, conformance fixtures, client/JS examples, scan optimization docs, prover Docker sample, release pack scripts, `RELEASE-MANIFEST.txt`, and `SHA256SUMS.txt`.
+`make release-pack` creates `dist/clairveil-handoff-<version>.tar.gz` and its `.sha256` file. This pack is a downstream handoff contract bundle, not a full source distribution. It includes license/notice, major handoff/security/operations docs, circuit/CLI/testing/maintainer docs, Merkle restore SOP, proto, JSON Schema, conformance fixtures, client/JS examples, scan optimization docs, bulk-transfer handoff/design/planning docs, prover Docker sample, release pack scripts, `RELEASE-MANIFEST.txt`, and `SHA256SUMS.txt`. The bulk-transfer planning docs are currently Korean working records; language-neutral implementation contracts are carried by schemas, conformance fixtures, CLI/API references, and readiness commands. Readiness commands are run from the source checkout before handoff; the pack records the contract artifacts and validation expectations.
 
 `make release-pack-verify` verifies the handoff pack's external `.sha256`, internal `SHA256SUMS.txt`, required handoff files, and that the default archive manifest commit matches current `HEAD`. When `RELEASE_PACK_ARCHIVE` is not set, it regenerates the default pack before validation so stale local archives do not mask missing files. This step checks that the tarball is not just created, but suitable to hand off as a release contract bundle.
 
@@ -112,7 +114,7 @@ The JS/TS SDK and web wallet teams confirm:
 1. Use `docs/clairveil-js-sdk-handoff.md` as the baseline document.
 2. Validate fixture shape with `docs/schemas/clairveil-js-wallet-contract.schema.json`.
 3. Include `x/privacy/client/sdk/conformance/testdata` fixtures in SDK CI.
-4. Port payload hash recomputation, relay withdraw handoff mapping, route/version checks, scan fixture checks, and prefix checks from `examples/js-sdk-fixture-validator` into SDK tests.
+4. Port payload hash recomputation, relay withdraw handoff mapping, route/version checks, scan fixture checks, note reservation status/transition/evidence checks, and prefix checks from `examples/js-sdk-fixture-validator` into SDK tests.
 5. Implement `ScanEvents` cursor sync, empty-page/`has_more` handling, `CheckNullifiers` batch spent refresh, transfer payload `v3`/`view_tag_hexes`, final `MsgTransfer.view_tags`, and safe view-tag mismatch fallback before release.
 6. Reflect timeout, bearer auth, and payload hash equality checks from `examples/js-sdk-prover-http-client` in the prover adapter implementation.
 7. Treat wallet note cache, root seed derived secrets, viewing keys, disclosure keys, and prepared payload/proof JSON as privacy-sensitive data; do not leave them in plaintext browser storage.

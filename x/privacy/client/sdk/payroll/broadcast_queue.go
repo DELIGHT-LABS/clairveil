@@ -2,6 +2,7 @@ package payroll
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -25,9 +26,11 @@ type MessageBroadcaster interface {
 }
 
 type BroadcastWorker struct {
-	Reservation privacyreservation.Service
-	Broadcaster MessageBroadcaster
-	LeaseTTL    time.Duration
+	Reservation      privacyreservation.Service
+	Broadcaster      MessageBroadcaster
+	NullifierChecker BroadcastNullifierChecker
+	LeaseOwner       string
+	LeaseTTL         time.Duration
 }
 
 func (w BroadcastWorker) SubmitProofResult(ctx context.Context, result ProofResult) (*BroadcastResult, error) {
@@ -41,20 +44,29 @@ func (w BroadcastWorker) SubmitProofResult(ctx context.Context, result ProofResu
 		return nil, fmt.Errorf("proof result has no transfer message")
 	}
 
-	refs, operationIDs, err := preflightSubmissionState(ctx, w.Reservation, []ProofResult{result}, w.LeaseTTL)
+	refs, operationIDs, acquiredLeases, err := preflightSubmissionState(ctx, w.Reservation, []ProofResult{result}, w.LeaseOwner, w.LeaseTTL)
 	if err != nil {
 		return nil, err
 	}
+	if err := ensureNullifiersUnspent(ctx, resolveBroadcastNullifierChecker(w.NullifierChecker, w.Broadcaster), []ProofResult{result}); err != nil {
+		return nil, errors.Join(err, clearAcquiredSubmissionLeases(ctx, w.Reservation, acquiredLeases))
+	}
 
-	broadcast, err := w.Broadcaster.BroadcastMessages(ctx, result.Message)
+	broadcast, err := broadcastWithSubmissionLeaseHeartbeat(ctx, w.Reservation, refs, w.LeaseTTL, func(broadcastCtx context.Context) (*BroadcastResult, error) {
+		return w.Broadcaster.BroadcastMessages(broadcastCtx, result.Message)
+	})
 	if err != nil {
+		if broadcast != nil {
+			err = errors.Join(err, markProofResultsBroadcastUnknown(ctx, w.Reservation, refs, operationIDs, broadcast, err))
+		}
 		return broadcast, err
 	}
 	if broadcast == nil {
 		return nil, fmt.Errorf("message broadcaster returned nil result")
 	}
 	if broadcast.Code != 0 {
-		return broadcast, fmt.Errorf("tx failed with code %d: %s", broadcast.Code, broadcast.RawLog)
+		txErr := broadcastCodeError(broadcast)
+		return broadcast, errors.Join(txErr, markProofResultsBroadcastUnknown(ctx, w.Reservation, refs, operationIDs, broadcast, txErr))
 	}
 
 	if err := markProofResultsSubmitted(ctx, w.Reservation, refs, operationIDs, broadcast); err != nil {

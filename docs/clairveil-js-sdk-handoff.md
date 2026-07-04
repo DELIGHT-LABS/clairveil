@@ -278,7 +278,7 @@ x/privacy/client/sdk/conformance/testdata/privacy_note_reservation_contract.json
 docs/clairveil-note-reservation-design-kr.md
 ```
 
-JS/TS clients that reserve notes before proof generation should match the reservation status names, active-reservation definition, atomic batch-reserve rule, compare-and-set transition rules, lease token rules, HMAC lookup-key test vector, and operation success evidence model in that fixture. A spent nullifier proves that the note was consumed, but it is not enough to mark a payroll/payment operation successful unless the tx evidence also matches the expected output commitment, disclosure digest, recipient hash, amount, denom, and item index.
+JS/TS clients that reserve notes before proof generation should treat `privacy_note_reservation_contract.json` as the language-neutral source of truth. The detailed design note is currently Korean-only. Match the reservation status names, active-reservation definition, atomic batch-reserve rule, compare-and-set transition rules, lease token rules, HMAC lookup-key test vector, and operation success evidence model in that fixture. A spent nullifier proves that the note was consumed, but it is not enough to mark a payroll/payment operation successful unless the tx evidence also matches the expected output commitment, audit disclosure digest, recipient hash, amount, denom, and item index. The fixture field `expected_disclosure_digest` refers to the audit disclosure digest, not the user disclosure or sender self-view digest.
 
 ## 9. Disclosure Implementation
 

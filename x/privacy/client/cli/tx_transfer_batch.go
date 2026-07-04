@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/big"
 	"strings"
 	"time"
 
@@ -113,12 +114,19 @@ single note is used as an input.
 				return err
 			}
 
-			startedAt := time.Now()
-			txRes, err := privacyprovider.CosmosTxBroadcaster{
+			broadcaster := privacyprovider.CosmosTxBroadcaster{
 				ClientContext: clientCtx,
 				Flags:         cmd.Flags(),
 				FromName:      clientCtx.GetFromName(),
-			}.BroadcastSDKMessages(cmd.Context(), msgs...)
+			}
+			startedAt := time.Now()
+			if transferBatchUsesStandardTxCLI(clientCtx) {
+				runErr = broadcaster.GenerateOrBroadcast(msgs...)
+				latencyFlow.recordSubmit(startedAt, "", runErr)
+				return runErr
+			}
+
+			txRes, err := broadcaster.BroadcastSDKMessages(cmd.Context(), msgs...)
 			txHash := ""
 			if txRes != nil {
 				txHash = txRes.TxHash
@@ -156,6 +164,14 @@ single note is used as an input.
 	cmd.Flags().Bool(flagRescanWallet, false, "reset the local privacy wallet cache and rescan from genesis before note selection")
 	flags.AddTxFlagsToCmd(cmd)
 	return cmd
+}
+
+func transferBatchUsesStandardTxCLI(clientCtx client.Context) bool {
+	return clientCtx.IsAux ||
+		clientCtx.GenerateOnly ||
+		clientCtx.Simulate ||
+		clientCtx.Offline ||
+		!clientCtx.SkipConfirm
 }
 
 func parseTransferBatchCoins(args []string) ([]sdk.Coin, error) {
@@ -202,13 +218,18 @@ func buildTransferBatchMessages(
 		disclosure.SelfViewDisclosureTargetPubKey = selfViewDisclosurePubKey
 	}
 
-	available := append([]FoundNote(nil), notes...)
+	targets := make([]*big.Int, len(coins))
+	for i, coin := range coins {
+		targets[i] = coin.Amount.BigInt()
+	}
+	selections, err := privacytransfer.SelectInputBatch(notes, coins[0].Denom, targets)
+	if err != nil {
+		return nil, fmt.Errorf("transfer-batch input selection: %w", err)
+	}
+
 	msgs := make([]sdk.Msg, 0, len(coins))
 	for i, coin := range coins {
-		selection := privacytransfer.SelectInputs(available, coin.Denom, coin.Amount.BigInt())
-		if selection.NeedsZeroDummy || !selection.IsFinal || selection.Total.Sign() == 0 {
-			return nil, fmt.Errorf("batch item %d (%s) needs note preparation before batching; create exact/pairable notes and zero dummy notes first", i, coin.String())
-		}
+		selection := selections[i]
 		msg, err := privacytransfer.BuildTransferStepMessage(
 			ctx,
 			privacyprovider.NewTransferQueryProvider(privacytypes.NewQueryClient(clientCtx)),
@@ -232,7 +253,6 @@ func buildTransferBatchMessages(
 			return nil, fmt.Errorf("build batch item %d (%s): %w", i, coin.String(), err)
 		}
 		msgs = append(msgs, msg)
-		available = removeTransferBatchInputs(available, selection.Inputs)
 	}
 	return msgs, nil
 }

@@ -50,6 +50,43 @@ func TestProverPoolFallsBackToNextEndpoint(t *testing.T) {
 	require.Equal(t, 1, healthy.calls)
 }
 
+func TestProverPoolFallsBackOnNilProof(t *testing.T) {
+	nilProof := &recordingProofRunner{id: "nil-proof", nilProof: true}
+	healthy := &recordingProofRunner{id: "healthy"}
+	pool := &ProverPool{
+		Endpoints: []ProverEndpoint{
+			{ID: "nil-proof", Runner: nilProof},
+			{ID: "healthy", Runner: healthy},
+		},
+	}
+
+	proof, err := pool.BuildPreparedTransferProof(context.Background(), privacytransfer.PreparedTransferPayload{PayloadHash: "payload"})
+	require.NoError(t, err)
+	require.Equal(t, "payload", proof.PayloadHash)
+	require.Equal(t, "healthy-proof", proof.ProofHex)
+	require.Equal(t, 1, nilProof.calls)
+	require.Equal(t, 1, healthy.calls)
+}
+
+func TestProverPoolFallsBackAfterEndpointTimeout(t *testing.T) {
+	slow := &timeoutProofRunner{}
+	healthy := &recordingProofRunner{id: "healthy"}
+	pool := &ProverPool{
+		Endpoints: []ProverEndpoint{
+			{ID: "slow", Runner: slow},
+			{ID: "healthy", Runner: healthy},
+		},
+		RequestTimeout: 10 * time.Millisecond,
+	}
+
+	proof, err := pool.BuildPreparedTransferProof(context.Background(), privacytransfer.PreparedTransferPayload{PayloadHash: "payload"})
+	require.NoError(t, err)
+	require.Equal(t, "payload", proof.PayloadHash)
+	require.Equal(t, "healthy-proof", proof.ProofHex)
+	require.Equal(t, 1, slow.calls)
+	require.Equal(t, 1, healthy.calls)
+}
+
 func TestProverPoolLimitsEndpointConcurrency(t *testing.T) {
 	runner := &blockingProofRunner{
 		entered: make(chan struct{}, 2),
@@ -92,10 +129,53 @@ func TestProverPoolLimitsEndpointConcurrency(t *testing.T) {
 	<-secondDone
 }
 
+func TestProverPoolRequestTimeoutIncludesConcurrencyWait(t *testing.T) {
+	pool := &ProverPool{
+		Endpoints: []ProverEndpoint{
+			{ID: "single", Runner: &recordingProofRunner{id: "single"}},
+		},
+		RequestTimeout:            25 * time.Millisecond,
+		MaxConcurrencyPerEndpoint: 1,
+	}
+	release, err := pool.acquireEndpoint(context.Background(), 0)
+	require.NoError(t, err)
+	defer release()
+
+	started := time.Now()
+	_, err = pool.BuildPreparedTransferProof(context.Background(), privacytransfer.PreparedTransferPayload{PayloadHash: "b"})
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Less(t, time.Since(started), 250*time.Millisecond)
+}
+
+func TestProverPoolSkipsSaturatedEndpointWhenAnotherEndpointIsIdle(t *testing.T) {
+	first := &recordingProofRunner{id: "first"}
+	second := &recordingProofRunner{id: "second"}
+	pool := &ProverPool{
+		Endpoints: []ProverEndpoint{
+			{ID: "first", Runner: first},
+			{ID: "second", Runner: second},
+		},
+		RequestTimeout:            time.Second,
+		MaxConcurrencyPerEndpoint: 1,
+	}
+	release, err := pool.acquireEndpoint(context.Background(), 0)
+	require.NoError(t, err)
+	defer release()
+
+	started := time.Now()
+	proof, err := pool.BuildPreparedTransferProof(context.Background(), privacytransfer.PreparedTransferPayload{PayloadHash: "payload"})
+	require.NoError(t, err)
+	require.Equal(t, "second-proof", proof.ProofHex)
+	require.Equal(t, 0, first.calls)
+	require.Equal(t, 1, second.calls)
+	require.Less(t, time.Since(started), 250*time.Millisecond)
+}
+
 type recordingProofRunner struct {
-	id    string
-	err   error
-	calls int
+	id       string
+	err      error
+	nilProof bool
+	calls    int
 }
 
 func (r *recordingProofRunner) BuildPreparedTransferProof(_ context.Context, payload privacytransfer.PreparedTransferPayload) (*privacytransfer.PreparedTransferProof, error) {
@@ -103,11 +183,24 @@ func (r *recordingProofRunner) BuildPreparedTransferProof(_ context.Context, pay
 	if r.err != nil {
 		return nil, r.err
 	}
+	if r.nilProof {
+		return nil, nil
+	}
 	return &privacytransfer.PreparedTransferProof{
 		Version:     privacytransfer.PreparedTransferProofVersion,
 		PayloadHash: payload.PayloadHash,
 		ProofHex:    r.id + "-proof",
 	}, nil
+}
+
+type timeoutProofRunner struct {
+	calls int
+}
+
+func (r *timeoutProofRunner) BuildPreparedTransferProof(ctx context.Context, _ privacytransfer.PreparedTransferPayload) (*privacytransfer.PreparedTransferProof, error) {
+	r.calls++
+	<-ctx.Done()
+	return nil, ctx.Err()
 }
 
 type blockingProofRunner struct {

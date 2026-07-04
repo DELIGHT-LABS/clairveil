@@ -11,7 +11,8 @@ summary_file="$bench_out_dir/readiness-summary-$stamp.json"
 latest_summary_file="$bench_out_dir/latest-readiness-summary.json"
 source_commit="$(git rev-parse HEAD 2>/dev/null || true)"
 source_dirty="false"
-if [[ -n "$(git status --short --untracked-files=all -- . 2>/dev/null | awk 'NF { status=substr($0,1,2); path=substr($0,4); if (status=="??" && path ~ /^benchmarks\//) next; print }')" ]]; then
+source_status="$(git status --short --untracked-files=all -- . 2>/dev/null || true)"
+if [[ -n "$(printf '%s\n' "$source_status" | awk 'NF { status=substr($0,1,2); path=substr($0,4); if (status=="??" && path ~ /^benchmarks\/(privacy-circuits|privacy-proverd|privacy-localnet|privacy-transfer-batch-localnet|privacy-proverd-load|privacy-proverd-scale|privacy-localnet-tps|privacy-user-latency|privacy-bulk-transfer|privacy-bulk-readiness|public-capacity)\//) next; if (status=="??" && path ~ /^(clairveild|clairveil-setup|clairveil-verify|clairveil-proverd|clairveil-benchreport|clairveil-proverload|clairveil-localnetload|clairveil-userlatency|clairveil-bulktransferbench)$/) next; print }')" ]]; then
   source_dirty="true"
 fi
 
@@ -73,23 +74,26 @@ skip_step() {
 failed=0
 
 run_step "bulk-critical-unit-tests" "1" \
-  go test \
-    ./x/privacy/client/sdk/reservation \
-    ./x/privacy/client/sdk/payroll \
-    ./cmd/clairveil-bulktransferbench \
-    ./cmd/clairveil-proverload \
-    ./cmd/clairveil-localnetload || failed=1
+	  go test \
+	    ./x/privacy/client/sdk/reservation \
+	    ./x/privacy/client/sdk/payroll \
+	    ./x/privacy/client/sdk/provider \
+	    ./x/privacy/client/sdk/conformance \
+	    ./x/privacy/client/cli \
+	    ./cmd/clairveil-bulktransferbench \
+	    ./cmd/clairveil-proverload \
+	    ./cmd/clairveil-localnetload || failed=1
 
 run_step "reservation-failure-invariants" "1" \
   go test ./x/privacy/client/sdk/reservation \
-    -run 'TestService(ReserveRejectsActiveDuplicate|TransitionUsesCompareAndSet|LeaseRejectsConcurrentWorkerAndAllowsHeartbeat|LeaseRejectsStaleToken|TransitionWithLeaseRejectsStaleToken|ReconcileRequiresOperationEvidenceForSuccess)' || failed=1
+    -run 'TestService(ReserveRejectsActiveDuplicate|ReserveLinksOperationToReservation|ReserveRejectsOperationLinkMismatch|TransitionUsesCompareAndSet|TransitionRejectsActiveDuplicate|LeaseRejectsConcurrentWorkerAndAllowsHeartbeat|LeaseRejectsStaleToken|TransitionWithLeaseRejectsStaleToken|ReconcileRequiresOperationEvidenceForSuccess|ReconcileRejectsStaleSpentReservationUpdate)' || failed=1
 
 run_step "bulk-synthetic-bench" "1" \
   env BENCH_OUT_DIR="$bench_out_dir/bulk-transfer" ./scripts/privacy-bulk-transfer-bench.sh || failed=1
 
 if [[ "${RUN_LOCALNET:-0}" == "1" ]]; then
   run_step "transfer-batch-localnet" "1" \
-    env BENCH_OUT_DIR="$bench_out_dir/transfer-batch-localnet" TRANSFER_BATCH_COUNT="${TRANSFER_BATCH_COUNT:-1}" ./scripts/privacy-transfer-batch-localnet-bench.sh || failed=1
+    env BENCH_OUT_DIR="$bench_out_dir/transfer-batch-localnet" TRANSFER_BATCH_COUNT="${TRANSFER_BATCH_COUNT:-2}" ./scripts/privacy-transfer-batch-localnet-bench.sh || failed=1
 else
   skip_step "transfer-batch-localnet" "skipped; set RUN_LOCALNET=1 to include localnet multi-message transfer validation"
 fi

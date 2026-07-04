@@ -64,6 +64,7 @@ type PayrollOperation struct {
 	ExpectedAmountHash         string
 	ExpectedDenom              string
 	BatchItemIndex             int
+	BatchItemIndexKnown        bool
 	SignDocHash                string
 	TxBytesHash                string
 	TxHash                     string
@@ -83,6 +84,14 @@ type SubmittedReservationUpdate struct {
 	TxBytesHash     string
 	SignDocHash     string
 	AccountSequence uint64
+}
+
+type BroadcastAttemptUpdate struct {
+	TxHash             string
+	TxBytesHash        string
+	SignDocHash        string
+	AccountSequence    uint64
+	LastBroadcastError string
 }
 
 type SubmittedReservationRef struct {

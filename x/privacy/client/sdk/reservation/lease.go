@@ -51,6 +51,9 @@ func (s Service) acquireLease(ctx context.Context, reservationID string, owner s
 }
 
 func (s Service) HeartbeatLease(ctx context.Context, reservationID string, token string, ttl time.Duration) (*Lease, error) {
+	if s.Store == nil {
+		return nil, fmt.Errorf("reservation store is required")
+	}
 	if ttl <= 0 {
 		return nil, fmt.Errorf("lease ttl must be positive")
 	}
@@ -67,6 +70,9 @@ func (s Service) HeartbeatLease(ctx context.Context, reservationID string, token
 }
 
 func (s Service) ClearLease(ctx context.Context, reservationID string, token string) (*NoteReservation, error) {
+	if s.Store == nil {
+		return nil, fmt.Errorf("reservation store is required")
+	}
 	return s.Store.ClearReservationLease(ctx, reservationID, token, s.now())
 }
 

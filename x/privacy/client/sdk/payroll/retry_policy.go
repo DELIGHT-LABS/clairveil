@@ -5,7 +5,7 @@ import "strings"
 type RetryAction string
 
 const (
-	RetryActionRetrySameTx       RetryAction = "RetrySameTx"
+	RetryActionReconcileUnknown  RetryAction = "ReconcileUnknown"
 	RetryActionRebuildTx         RetryAction = "RebuildTx"
 	RetryActionReplan            RetryAction = "Replan"
 	RetryActionManualReview      RetryAction = "ManualReview"
@@ -21,7 +21,7 @@ func ClassifyBroadcastError(message string) RetryDecision {
 	normalized := strings.ToLower(message)
 	switch {
 	case strings.Contains(normalized, "timeout") || strings.Contains(normalized, "mempool"):
-		return RetryDecision{Action: RetryActionRetrySameTx, Reason: "broadcast result is ambiguous; check tx_hash and nullifier before rebuilding"}
+		return RetryDecision{Action: RetryActionReconcileUnknown, Reason: "broadcast result is ambiguous; reconcile tx_hash and nullifier before rebuilding"}
 	case strings.Contains(normalized, "sequence") || strings.Contains(normalized, "account") || strings.Contains(normalized, "gas"):
 		return RetryDecision{Action: RetryActionRebuildTx, Reason: "tx envelope can be rebuilt after nullifier is confirmed unspent"}
 	case strings.Contains(normalized, "invalid proof") || strings.Contains(normalized, "root") || strings.Contains(normalized, "payload"):

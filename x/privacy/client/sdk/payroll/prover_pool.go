@@ -2,7 +2,6 @@ package payroll
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -26,6 +25,12 @@ type ProverPool struct {
 	semaphores map[int]chan struct{}
 }
 
+type proverEndpointAttempt struct {
+	Endpoint ProverEndpoint
+	Index    int
+	Attempt  int
+}
+
 func (p *ProverPool) BuildPreparedTransferProof(ctx context.Context, payload privacytransfer.PreparedTransferPayload) (*privacytransfer.PreparedTransferProof, error) {
 	if len(p.Endpoints) == 0 {
 		return nil, fmt.Errorf("at least one prover endpoint is required")
@@ -33,38 +38,101 @@ func (p *ProverPool) BuildPreparedTransferProof(ctx context.Context, payload pri
 	if ctx == nil {
 		ctx = context.Background()
 	}
-
 	start := p.nextEndpointIndex()
 	var failures []string
+	var lastErr error
+	var busy []proverEndpointAttempt
 	for attempt := 0; attempt < len(p.Endpoints); attempt++ {
-		endpoint := p.Endpoints[(start+attempt)%len(p.Endpoints)]
+		index := (start + attempt) % len(p.Endpoints)
+		endpoint := p.Endpoints[index]
 		if endpoint.Runner == nil {
-			failures = append(failures, fmt.Sprintf("%s: runner is nil", endpointName(endpoint, attempt)))
+			lastErr = fmt.Errorf("runner is nil")
+			failures = append(failures, fmt.Sprintf("%s: %v", endpointName(endpoint, attempt), lastErr))
 			continue
 		}
-		release, err := p.acquireEndpoint(ctx, (start+attempt)%len(p.Endpoints))
-		if err != nil {
-			return nil, err
+		release, ok := p.tryAcquireEndpoint(index)
+		if !ok {
+			busy = append(busy, proverEndpointAttempt{Endpoint: endpoint, Index: index, Attempt: attempt})
+			continue
 		}
-
-		proofCtx := ctx
+		attemptCtx := ctx
 		cancel := func() {}
 		if p.RequestTimeout > 0 {
-			proofCtx, cancel = context.WithTimeout(ctx, p.RequestTimeout)
+			attemptCtx, cancel = context.WithTimeout(ctx, p.RequestTimeout)
 		}
-		proof, err := endpoint.Runner.BuildPreparedTransferProof(proofCtx, payload)
-		cancel()
-		release()
+		proof, err := runProverEndpointAttempt(attemptCtx, endpoint, payload, release)
 		if err == nil {
+			cancel()
 			return proof, nil
 		}
-		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return nil, ctx.Err()
+		cancel()
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
 		}
+		lastErr = err
 		failures = append(failures, fmt.Sprintf("%s: %v", endpointName(endpoint, attempt), err))
 	}
+	for _, candidate := range busy {
+		attemptCtx := ctx
+		cancel := func() {}
+		if p.RequestTimeout > 0 {
+			attemptCtx, cancel = context.WithTimeout(ctx, p.RequestTimeout)
+		}
+		release, err := p.acquireEndpoint(attemptCtx, candidate.Index)
+		if err != nil {
+			cancel()
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
+			lastErr = err
+			failures = append(failures, fmt.Sprintf("%s: %v", endpointName(candidate.Endpoint, candidate.Attempt), err))
+			continue
+		}
+		proof, err := runProverEndpointAttempt(attemptCtx, candidate.Endpoint, payload, release)
+		if err == nil {
+			cancel()
+			return proof, nil
+		}
+		cancel()
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		lastErr = err
+		failures = append(failures, fmt.Sprintf("%s: %v", endpointName(candidate.Endpoint, candidate.Attempt), err))
+	}
 
+	if lastErr != nil {
+		return nil, fmt.Errorf("all prover endpoints failed: %s: %w", strings.Join(failures, "; "), lastErr)
+	}
 	return nil, fmt.Errorf("all prover endpoints failed: %s", strings.Join(failures, "; "))
+}
+
+func runProverEndpointAttempt(ctx context.Context, endpoint ProverEndpoint, payload privacytransfer.PreparedTransferPayload, release func()) (*privacytransfer.PreparedTransferProof, error) {
+	defer release()
+	proof, err := endpoint.Runner.BuildPreparedTransferProof(ctx, payload)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
+	if err != nil {
+		return nil, err
+	}
+	if proof == nil {
+		return nil, fmt.Errorf("returned nil proof")
+	}
+	return proof, nil
+}
+
+func (p *ProverPool) tryAcquireEndpoint(index int) (func(), bool) {
+	if p.MaxConcurrencyPerEndpoint <= 0 {
+		return func() {}, true
+	}
+	sem := p.endpointSemaphore(index)
+	select {
+	case sem <- struct{}{}:
+		return func() { <-sem }, true
+	default:
+		return nil, false
+	}
 }
 
 func (p *ProverPool) acquireEndpoint(ctx context.Context, index int) (func(), error) {
@@ -72,7 +140,18 @@ func (p *ProverPool) acquireEndpoint(ctx context.Context, index int) (func(), er
 		return func() {}, nil
 	}
 
+	sem := p.endpointSemaphore(index)
+	select {
+	case sem <- struct{}{}:
+		return func() { <-sem }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (p *ProverPool) endpointSemaphore(index int) chan struct{} {
 	p.mu.Lock()
+	defer p.mu.Unlock()
 	if p.semaphores == nil {
 		p.semaphores = make(map[int]chan struct{}, len(p.Endpoints))
 	}
@@ -81,14 +160,7 @@ func (p *ProverPool) acquireEndpoint(ctx context.Context, index int) (func(), er
 		sem = make(chan struct{}, p.MaxConcurrencyPerEndpoint)
 		p.semaphores[index] = sem
 	}
-	p.mu.Unlock()
-
-	select {
-	case sem <- struct{}{}:
-		return func() { <-sem }, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
+	return sem
 }
 
 func (p *ProverPool) nextEndpointIndex() int {

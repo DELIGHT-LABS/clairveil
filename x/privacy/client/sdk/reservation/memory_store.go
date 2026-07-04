@@ -4,20 +4,23 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
 
 type MemoryStore struct {
-	mu           sync.Mutex
-	reservations map[string]NoteReservation
-	operations   map[string]PayrollOperation
+	mu                     sync.Mutex
+	reservations           map[string]NoteReservation
+	operations             map[string]PayrollOperation
+	activeReservationByKey map[string]string
 }
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		reservations: make(map[string]NoteReservation),
-		operations:   make(map[string]PayrollOperation),
+		reservations:           make(map[string]NoteReservation),
+		operations:             make(map[string]PayrollOperation),
+		activeReservationByKey: make(map[string]string),
 	}
 }
 
@@ -36,10 +39,12 @@ func (s *MemoryStore) CreateReservationBatch(_ context.Context, reservations []N
 	if len(reservations) == 0 {
 		return []NoteReservation{}, nil
 	}
+	s.ensureMapsLocked()
 	pendingReservations := make(map[string]NoteReservation, len(reservations))
+	pendingActiveKeys := make(map[string]string, len(reservations))
 	pendingOperations := make(map[string]PayrollOperation, len(operations))
 	for _, reservation := range reservations {
-		if err := s.validateReservationCreateLocked(reservation, pendingReservations); err != nil {
+		if err := s.validateReservationCreateLocked(reservation, pendingReservations, pendingActiveKeys); err != nil {
 			return nil, err
 		}
 		pendingReservations[reservation.ReservationID] = reservation
@@ -53,7 +58,7 @@ func (s *MemoryStore) CreateReservationBatch(_ context.Context, reservations []N
 
 	created := make([]NoteReservation, 0, len(reservations))
 	for _, reservation := range reservations {
-		s.reservations[reservation.ReservationID] = cloneReservation(reservation)
+		s.storeReservationLocked(reservation)
 		created = append(created, cloneReservation(reservation))
 	}
 	for _, operation := range operations {
@@ -62,7 +67,7 @@ func (s *MemoryStore) CreateReservationBatch(_ context.Context, reservations []N
 	return created, nil
 }
 
-func (s *MemoryStore) validateReservationCreateLocked(reservation NoteReservation, pending map[string]NoteReservation) error {
+func (s *MemoryStore) validateReservationCreateLocked(reservation NoteReservation, pending map[string]NoteReservation, pendingActiveKeys map[string]string) error {
 	if reservation.ReservationID == "" {
 		return fmt.Errorf("%w: reservation_id is required", ErrInvalidReservation)
 	}
@@ -73,16 +78,14 @@ func (s *MemoryStore) validateReservationCreateLocked(reservation NoteReservatio
 		return fmt.Errorf("%w: reservation_id already exists in batch", ErrActiveReservationExists)
 	}
 	if IsActiveReservationStatus(reservation.Status) {
-		for _, existing := range s.reservations {
-			if IsActiveReservationStatus(existing.Status) && existing.OwnerKeyID == reservation.OwnerKeyID && existing.NullifierLookupKey == reservation.NullifierLookupKey {
-				return ErrActiveReservationExists
-			}
+		activeKey := reservation.ActiveKey()
+		if _, exists := s.activeReservationByKey[activeKey]; exists {
+			return ErrActiveReservationExists
 		}
-		for _, existing := range pending {
-			if IsActiveReservationStatus(existing.Status) && existing.OwnerKeyID == reservation.OwnerKeyID && existing.NullifierLookupKey == reservation.NullifierLookupKey {
-				return ErrActiveReservationExists
-			}
+		if _, exists := pendingActiveKeys[activeKey]; exists {
+			return ErrActiveReservationExists
 		}
+		pendingActiveKeys[activeKey] = reservation.ReservationID
 	}
 	return nil
 }
@@ -143,7 +146,70 @@ func (s *MemoryStore) CompareAndSetReservationStatus(_ context.Context, reservat
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if RequiresLeaseToken(from, to) {
+		return nil, fmt.Errorf("%w: %s -> %s requires lease token", ErrLeaseMismatch, from, to)
+	}
 	return s.compareAndSetReservationStatusLocked(reservationID, from, to, now)
+}
+
+func (s *MemoryStore) CompareAndSetReservationStatusWithOperation(_ context.Context, reservationID string, from ReservationStatus, to ReservationStatus, operation *PayrollOperation, now time.Time) (*NoteReservation, *PayrollOperation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureMapsLocked()
+
+	if RequiresLeaseToken(from, to) {
+		return nil, nil, fmt.Errorf("%w: %s -> %s requires lease token", ErrLeaseMismatch, from, to)
+	}
+	reservation, ok := s.reservations[reservationID]
+	if !ok {
+		return nil, nil, ErrReservationNotFound
+	}
+	if reservation.Status != from {
+		return nil, nil, ErrCompareAndSetFailed
+	}
+	if !CanTransitionReservation(from, to) {
+		return nil, nil, ErrInvalidTransition
+	}
+	candidate := reservation
+	candidate.Status = to
+	if IsActiveReservationStatus(to) && s.activeReservationConflictLocked(candidate, reservationID) {
+		return nil, nil, ErrActiveReservationExists
+	}
+	clearLeaseForStatusTransition(&candidate, to)
+
+	var operationUpdate *PayrollOperation
+	if operation != nil {
+		if operation.OperationID == "" {
+			return nil, nil, fmt.Errorf("%w: operation_id is required", ErrInvalidReservation)
+		}
+		existing, ok := s.operations[operation.OperationID]
+		if !ok {
+			return nil, nil, ErrOperationNotFound
+		}
+		if reservation.OperationID != "" && reservation.OperationID != operation.OperationID {
+			return nil, nil, fmt.Errorf("%w: reservation %s belongs to operation %s", ErrInvalidReservation, reservationID, reservation.OperationID)
+		}
+		cloned := cloneOperation(*operation)
+		cloned.ReservationID = existing.ReservationID
+		if existing.ReservationID == "" {
+			cloned.ReservationID = reservationID
+		}
+		operationUpdate = &cloned
+	}
+
+	candidate.UpdatedAt = now
+	s.storeReservationLocked(candidate)
+	if operationUpdate != nil {
+		s.operations[operationUpdate.OperationID] = *operationUpdate
+	}
+
+	clonedReservation := cloneReservation(candidate)
+	var clonedOperation *PayrollOperation
+	if operationUpdate != nil {
+		cloned := cloneOperation(*operationUpdate)
+		clonedOperation = &cloned
+	}
+	return &clonedReservation, clonedOperation, nil
 }
 
 func (s *MemoryStore) CompareAndSetReservationStatusWithLease(_ context.Context, reservationID string, leaseToken string, from ReservationStatus, to ReservationStatus, now time.Time) (*NoteReservation, error) {
@@ -161,6 +227,7 @@ func (s *MemoryStore) CompareAndSetReservationStatusWithLease(_ context.Context,
 }
 
 func (s *MemoryStore) compareAndSetReservationStatusLocked(reservationID string, from ReservationStatus, to ReservationStatus, now time.Time) (*NoteReservation, error) {
+	s.ensureMapsLocked()
 	reservation, ok := s.reservations[reservationID]
 	if !ok {
 		return nil, ErrReservationNotFound
@@ -171,10 +238,15 @@ func (s *MemoryStore) compareAndSetReservationStatusLocked(reservationID string,
 	if !CanTransitionReservation(from, to) {
 		return nil, ErrInvalidTransition
 	}
-	reservation.Status = to
-	reservation.UpdatedAt = now
-	s.reservations[reservationID] = reservation
-	cloned := cloneReservation(reservation)
+	candidate := reservation
+	candidate.Status = to
+	if IsActiveReservationStatus(to) && s.activeReservationConflictLocked(candidate, reservationID) {
+		return nil, ErrActiveReservationExists
+	}
+	clearLeaseForStatusTransition(&candidate, to)
+	candidate.UpdatedAt = now
+	s.storeReservationLocked(candidate)
+	cloned := cloneReservation(candidate)
 	return &cloned, nil
 }
 
@@ -193,6 +265,7 @@ func (s *MemoryStore) AcquireReservationLeaseForStatus(_ context.Context, reserv
 }
 
 func (s *MemoryStore) acquireReservationLeaseLocked(reservationID string, owner string, leaseToken string, requiredStatus ReservationStatus, leaseUntil time.Time, now time.Time) (*NoteReservation, error) {
+	s.ensureMapsLocked()
 	reservation, ok := s.reservations[reservationID]
 	if !ok {
 		return nil, ErrReservationNotFound
@@ -215,7 +288,7 @@ func (s *MemoryStore) acquireReservationLeaseLocked(reservationID string, owner 
 	reservation.LeaseUntil = leaseUntil
 	reservation.LastHeartbeatAt = now
 	reservation.UpdatedAt = now
-	s.reservations[reservationID] = reservation
+	s.storeReservationLocked(reservation)
 	cloned := cloneReservation(reservation)
 	return &cloned, nil
 }
@@ -238,7 +311,7 @@ func (s *MemoryStore) HeartbeatReservationLease(_ context.Context, reservationID
 	reservation.LeaseUntil = leaseUntil
 	reservation.LastHeartbeatAt = now
 	reservation.UpdatedAt = now
-	s.reservations[reservationID] = reservation
+	s.storeReservationLocked(reservation)
 	cloned := cloneReservation(reservation)
 	return &cloned, nil
 }
@@ -264,7 +337,7 @@ func (s *MemoryStore) HeartbeatReservationLeaseForStatus(_ context.Context, rese
 	reservation.LeaseUntil = leaseUntil
 	reservation.LastHeartbeatAt = now
 	reservation.UpdatedAt = now
-	s.reservations[reservationID] = reservation
+	s.storeReservationLocked(reservation)
 	cloned := cloneReservation(reservation)
 	return &cloned, nil
 }
@@ -285,7 +358,7 @@ func (s *MemoryStore) ClearReservationLease(_ context.Context, reservationID str
 	reservation.LeaseToken = ""
 	reservation.LeaseUntil = time.Time{}
 	reservation.UpdatedAt = now
-	s.reservations[reservationID] = reservation
+	s.storeReservationLocked(reservation)
 	cloned := cloneReservation(reservation)
 	return &cloned, nil
 }
@@ -301,6 +374,13 @@ func (s *MemoryStore) MarkReservationsProofReady(_ context.Context, refs []Submi
 	if err != nil {
 		return nil, nil, err
 	}
+	if operationUpdate.OperationID == "" {
+		for _, reservation := range reservations {
+			if reservation.OperationID != "" {
+				return nil, nil, fmt.Errorf("%w: operation_id is required for linked reservation %s", ErrInvalidReservation, reservation.ReservationID)
+			}
+		}
+	}
 
 	var operation *PayrollOperation
 	if operationUpdate.OperationID != "" {
@@ -308,13 +388,20 @@ func (s *MemoryStore) MarkReservationsProofReady(_ context.Context, refs []Submi
 		if !ok {
 			return nil, nil, ErrOperationNotFound
 		}
+		if err := s.validateReservationOperationLinksLocked(reservations, map[string]struct{}{operationUpdate.OperationID: {}}); err != nil {
+			return nil, nil, err
+		}
+		if updated, err := mergeExpectedProofReadyValue("expected_output_commitment", existing.ExpectedOutputCommitment, operationUpdate.ExpectedOutputCommitment); err != nil {
+			return nil, nil, err
+		} else {
+			existing.ExpectedOutputCommitment = updated
+		}
+		if updated, err := mergeExpectedProofReadyValue("expected_disclosure_digest", existing.ExpectedDisclosureDigest, operationUpdate.ExpectedDisclosureDigest); err != nil {
+			return nil, nil, err
+		} else {
+			existing.ExpectedDisclosureDigest = updated
+		}
 		existing.Status = OperationStatusProofReady
-		if len(operationUpdate.ExpectedOutputCommitment) > 0 && existing.ExpectedOutputCommitment == "" {
-			existing.ExpectedOutputCommitment = operationUpdate.ExpectedOutputCommitment
-		}
-		if len(operationUpdate.ExpectedDisclosureDigest) > 0 && existing.ExpectedDisclosureDigest == "" {
-			existing.ExpectedDisclosureDigest = operationUpdate.ExpectedDisclosureDigest
-		}
 		existing.UpdatedAt = now
 		operation = &existing
 	}
@@ -323,7 +410,7 @@ func (s *MemoryStore) MarkReservationsProofReady(_ context.Context, refs []Submi
 	for _, reservation := range reservations {
 		reservation.Status = StatusProofReady
 		reservation.UpdatedAt = now
-		s.reservations[reservation.ReservationID] = reservation
+		s.storeReservationLocked(reservation)
 		updatedReservations = append(updatedReservations, cloneReservation(reservation))
 	}
 
@@ -357,28 +444,22 @@ func (s *MemoryStore) MarkReservationsSubmitted(_ context.Context, refs []Submit
 		}
 		return []NoteReservation{}, []PayrollOperation{}, nil
 	}
+	if !submittedUpdateHasTxIdentity(update) {
+		return nil, nil, fmt.Errorf("%w: submitted update requires tx_hash, tx_bytes_hash, or sign_doc_hash", ErrInvalidReservation)
+	}
 
 	reservations, err := s.validateLeasedReservationsForStatusLocked(refs, StatusProofReady, now)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	operations := make([]PayrollOperation, 0, len(operationIDs))
-	seenOperations := make(map[string]struct{}, len(operationIDs))
-	for _, operationID := range operationIDs {
-		if operationID == "" {
-			continue
-		}
-		if _, exists := seenOperations[operationID]; exists {
-			continue
-		}
-		seenOperations[operationID] = struct{}{}
-
-		operation, ok := s.operations[operationID]
-		if !ok {
-			return nil, nil, ErrOperationNotFound
-		}
-		operations = append(operations, operation)
+	effectiveOperationIDs := operationIDsForReservationUpdate(reservations, operationIDs)
+	operations, operationIDSet, err := s.loadLinkedOperationsLocked(effectiveOperationIDs)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.validateReservationOperationLinksLocked(reservations, operationIDSet); err != nil {
+		return nil, nil, err
 	}
 
 	updatedReservations := make([]NoteReservation, 0, len(reservations))
@@ -390,14 +471,72 @@ func (s *MemoryStore) MarkReservationsSubmitted(_ context.Context, refs []Submit
 		reservation.AccountSequence = update.AccountSequence
 		reservation.BroadcastAttemptCount++
 		reservation.LastBroadcastAt = now
+		clearReservationLeaseFields(&reservation)
 		reservation.UpdatedAt = now
-		s.reservations[reservation.ReservationID] = reservation
+		s.storeReservationLocked(reservation)
 		updatedReservations = append(updatedReservations, cloneReservation(reservation))
 	}
 
 	updatedOperations := make([]PayrollOperation, 0, len(operations))
 	for _, operation := range operations {
 		operation.Status = OperationStatusSubmitted
+		operation.TxHash = update.TxHash
+		operation.TxBytesHash = update.TxBytesHash
+		operation.SignDocHash = update.SignDocHash
+		operation.UpdatedAt = now
+		s.operations[operation.OperationID] = operation
+		updatedOperations = append(updatedOperations, cloneOperation(operation))
+	}
+
+	return updatedReservations, updatedOperations, nil
+}
+
+func (s *MemoryStore) MarkReservationsBroadcastUnknown(_ context.Context, refs []SubmittedReservationRef, operationIDs []string, update BroadcastAttemptUpdate, now time.Time) ([]NoteReservation, []PayrollOperation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if len(refs) == 0 {
+		if hasOperationID(operationIDs) {
+			return nil, nil, fmt.Errorf("%w: reservation refs are required", ErrInvalidReservation)
+		}
+		return []NoteReservation{}, []PayrollOperation{}, nil
+	}
+	if !broadcastAttemptHasTxIdentity(update) {
+		return nil, nil, fmt.Errorf("%w: broadcast attempt update requires tx_hash, tx_bytes_hash, or sign_doc_hash", ErrInvalidReservation)
+	}
+
+	reservations, err := s.validateLeasedReservationsForStatusLocked(refs, StatusProofReady, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	effectiveOperationIDs := operationIDsForReservationUpdate(reservations, operationIDs)
+	operations, operationIDSet, err := s.loadLinkedOperationsLocked(effectiveOperationIDs)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.validateReservationOperationLinksLocked(reservations, operationIDSet); err != nil {
+		return nil, nil, err
+	}
+
+	updatedReservations := make([]NoteReservation, 0, len(reservations))
+	for _, reservation := range reservations {
+		reservation.Status = StatusUnknown
+		reservation.TxHash = update.TxHash
+		reservation.TxBytesHash = update.TxBytesHash
+		reservation.SignDocHash = update.SignDocHash
+		reservation.AccountSequence = update.AccountSequence
+		reservation.BroadcastAttemptCount++
+		reservation.LastBroadcastAt = now
+		reservation.LastBroadcastError = update.LastBroadcastError
+		clearReservationLeaseFields(&reservation)
+		reservation.UpdatedAt = now
+		s.storeReservationLocked(reservation)
+		updatedReservations = append(updatedReservations, cloneReservation(reservation))
+	}
+
+	updatedOperations := make([]PayrollOperation, 0, len(operations))
+	for _, operation := range operations {
+		operation.Status = OperationStatusUnknown
 		operation.TxHash = update.TxHash
 		operation.TxBytesHash = update.TxBytesHash
 		operation.SignDocHash = update.SignDocHash
@@ -449,24 +588,133 @@ func hasOperationID(operationIDs []string) bool {
 	return false
 }
 
+func operationIDsForReservationUpdate(reservations []NoteReservation, operationIDs []string) []string {
+	if hasOperationID(operationIDs) {
+		return operationIDs
+	}
+	linkedOperationIDs := make([]string, 0, len(reservations))
+	for _, reservation := range reservations {
+		if reservation.OperationID != "" {
+			linkedOperationIDs = append(linkedOperationIDs, reservation.OperationID)
+		}
+	}
+	return linkedOperationIDs
+}
+
+func submittedUpdateHasTxIdentity(update SubmittedReservationUpdate) bool {
+	return strings.TrimSpace(update.TxHash) != "" ||
+		strings.TrimSpace(update.TxBytesHash) != "" ||
+		strings.TrimSpace(update.SignDocHash) != ""
+}
+
+func broadcastAttemptHasTxIdentity(update BroadcastAttemptUpdate) bool {
+	return strings.TrimSpace(update.TxHash) != "" ||
+		strings.TrimSpace(update.TxBytesHash) != "" ||
+		strings.TrimSpace(update.SignDocHash) != ""
+}
+
+func (s *MemoryStore) loadLinkedOperationsLocked(operationIDs []string) ([]PayrollOperation, map[string]struct{}, error) {
+	operations := make([]PayrollOperation, 0, len(operationIDs))
+	seenOperations := make(map[string]struct{}, len(operationIDs))
+	operationIDSet := make(map[string]struct{}, len(operationIDs))
+	for _, operationID := range operationIDs {
+		if operationID == "" {
+			continue
+		}
+		if _, exists := seenOperations[operationID]; exists {
+			continue
+		}
+		seenOperations[operationID] = struct{}{}
+		operationIDSet[operationID] = struct{}{}
+
+		operation, ok := s.operations[operationID]
+		if !ok {
+			return nil, nil, ErrOperationNotFound
+		}
+		operations = append(operations, operation)
+	}
+	return operations, operationIDSet, nil
+}
+
+func (s *MemoryStore) validateReservationOperationLinksLocked(reservations []NoteReservation, operationIDs map[string]struct{}) error {
+	if len(operationIDs) == 0 {
+		return nil
+	}
+	linked := make(map[string]map[string]struct{}, len(operationIDs))
+	for _, reservation := range reservations {
+		if reservation.OperationID == "" {
+			return fmt.Errorf("%w: reservation %s has no operation_id", ErrInvalidReservation, reservation.ReservationID)
+		}
+		if _, ok := operationIDs[reservation.OperationID]; !ok {
+			return fmt.Errorf("%w: reservation %s belongs to operation %s", ErrInvalidReservation, reservation.ReservationID, reservation.OperationID)
+		}
+		if linked[reservation.OperationID] == nil {
+			linked[reservation.OperationID] = make(map[string]struct{})
+		}
+		linked[reservation.OperationID][reservation.ReservationID] = struct{}{}
+	}
+	for operationID := range operationIDs {
+		if _, ok := linked[operationID]; !ok {
+			return fmt.Errorf("%w: operation %s has no linked reservation", ErrInvalidReservation, operationID)
+		}
+	}
+	for _, reservation := range s.reservations {
+		if reservation.OperationID == "" || !IsActiveReservationStatus(reservation.Status) {
+			continue
+		}
+		if _, ok := operationIDs[reservation.OperationID]; !ok {
+			continue
+		}
+		if _, ok := linked[reservation.OperationID][reservation.ReservationID]; !ok {
+			return fmt.Errorf("%w: operation %s missing reservation %s", ErrInvalidReservation, reservation.OperationID, reservation.ReservationID)
+		}
+	}
+	return nil
+}
+
+func clearLeaseForStatusTransition(reservation *NoteReservation, to ReservationStatus) {
+	switch to {
+	case StatusProving, StatusProofReady:
+		return
+	default:
+		clearReservationLeaseFields(reservation)
+	}
+}
+
+func clearReservationLeaseFields(reservation *NoteReservation) {
+	reservation.LeaseOwner = ""
+	reservation.LeaseToken = ""
+	reservation.LeaseUntil = time.Time{}
+	reservation.LastHeartbeatAt = time.Time{}
+}
+
+func mergeExpectedProofReadyValue(fieldName string, existing string, incoming string) (string, error) {
+	if incoming == "" {
+		return existing, nil
+	}
+	if existing == "" {
+		return incoming, nil
+	}
+	if existing != incoming {
+		return "", fmt.Errorf("%w: %s mismatch", ErrInvalidReservation, fieldName)
+	}
+	return existing, nil
+}
+
 func (s *MemoryStore) UpdateReservation(_ context.Context, reservation NoteReservation) (*NoteReservation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.ensureMapsLocked()
 
 	if _, ok := s.reservations[reservation.ReservationID]; !ok {
 		return nil, ErrReservationNotFound
 	}
 	if IsActiveReservationStatus(reservation.Status) {
-		for _, existing := range s.reservations {
-			if existing.ReservationID == reservation.ReservationID {
-				continue
-			}
-			if IsActiveReservationStatus(existing.Status) && existing.OwnerKeyID == reservation.OwnerKeyID && existing.NullifierLookupKey == reservation.NullifierLookupKey {
-				return nil, ErrActiveReservationExists
-			}
+		if s.activeReservationConflictLocked(reservation, reservation.ReservationID) {
+			return nil, ErrActiveReservationExists
 		}
 	}
-	s.reservations[reservation.ReservationID] = cloneReservation(reservation)
+	s.storeReservationLocked(reservation)
 	updated := cloneReservation(reservation)
 	return &updated, nil
 }
@@ -505,6 +753,45 @@ func (s *MemoryStore) UpdateOperation(_ context.Context, operation PayrollOperat
 	s.operations[operation.OperationID] = cloneOperation(operation)
 	updated := cloneOperation(operation)
 	return &updated, nil
+}
+
+func (s *MemoryStore) activeReservationConflictLocked(candidate NoteReservation, excludeReservationID string) bool {
+	s.ensureMapsLocked()
+	existingID, ok := s.activeReservationByKey[candidate.ActiveKey()]
+	if !ok {
+		return false
+	}
+	return existingID != excludeReservationID
+}
+
+func (s *MemoryStore) ensureMapsLocked() {
+	if s.reservations == nil {
+		s.reservations = make(map[string]NoteReservation)
+	}
+	if s.operations == nil {
+		s.operations = make(map[string]PayrollOperation)
+	}
+	if s.activeReservationByKey != nil {
+		return
+	}
+	s.activeReservationByKey = make(map[string]string, len(s.reservations))
+	for reservationID, reservation := range s.reservations {
+		if IsActiveReservationStatus(reservation.Status) {
+			s.activeReservationByKey[reservation.ActiveKey()] = reservationID
+		}
+	}
+}
+
+func (s *MemoryStore) storeReservationLocked(reservation NoteReservation) {
+	s.ensureMapsLocked()
+	if existing, ok := s.reservations[reservation.ReservationID]; ok && IsActiveReservationStatus(existing.Status) {
+		delete(s.activeReservationByKey, existing.ActiveKey())
+	}
+	cloned := cloneReservation(reservation)
+	s.reservations[reservation.ReservationID] = cloned
+	if IsActiveReservationStatus(cloned.Status) {
+		s.activeReservationByKey[cloned.ActiveKey()] = cloned.ReservationID
+	}
 }
 
 func cloneReservation(reservation NoteReservation) NoteReservation {

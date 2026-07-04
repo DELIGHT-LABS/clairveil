@@ -170,7 +170,7 @@ x/privacy/client/sdk/conformance/note_reservation_contract_test.go
 - 여러 reservation과 operation을 batch로 생성할 때 하나라도 실패하면 아무 것도 기록하지 않는 원자적 batch reserve contract를 정의함.
 - 상태 변경은 compare-and-set 방식으로 수행함.
 - proof worker와 broadcaster가 사용할 lease/heartbeat 규칙을 구현하고, worker-owned 상태 전이는 현재 lease token을 요구함.
-- lease 획득, heartbeat, lease clear, `ProofReady -> Submitted`는 store 단위 원자적 연산으로 제공함.
+- lease 획득, heartbeat, lease clear, worker-owned `ProofReady -> Submitted/Unknown`은 store 단위 원자적 연산으로 제공함. `ProofReady -> ConfirmedSpent` recovery는 chain evidence 기반 compare-and-set/transaction 경로로 처리함.
 - proof worker는 `Reserved` 상태 한정 lease 획득과 proof 생성 중 heartbeat를 사용함.
 - `nullifier_lookup_key = HMAC(index_key, nullifier)` 형태의 lookup key helper를 제공함.
 - `nullifier_lookup_key_id` 또는 `lookup_key_version`을 포함하고, conformance fixture에 HMAC test vector를 포함함.
@@ -286,17 +286,18 @@ x/privacy/client/sdk/transfer/broadcast.go
 - `Reserved` 상태의 operation을 가져와 proof job으로 실행함.
 - proof worker는 lease를 획득한 뒤 lease-token guarded transition으로 `Reserved -> Proving -> ProofReady`를 진행하고 기존 transfer SDK로 `MsgTransfer`를 생성함.
 - replan attempt는 기존 payment item과 다른 `operation_id`/`reservation_id`를 사용해 이전 operation과 충돌하지 않게 함.
-- proof 생성이 끝나면 reservation을 `ProofReady`로 전환함.
-- broadcaster는 `ProofReady` 상태만 제출함.
+- proof 생성이 끝나면 proof/message/payload 결과를 `ProofResultSink` 같은 durable queue 또는 artifact store에 저장하고, 저장 성공 후 reservation을 `ProofReady`로 전환함.
+- broadcaster는 `ProofReady` 상태만 제출하며, 제출 직전 `NullifierChecker`로 input nullifier가 아직 unspent인지 확인함. checker가 없으면 제출하지 않음.
 - broadcast 후 `tx_hash`, `tx_bytes_hash`, `sign_doc_hash`, `account_sequence`를 저장함.
-- tx result가 불명확하면 `Unknown`으로 보내고 reconcile worker가 처리함.
+- tx result가 불명확하면 즉시 새 tx를 만들지 않고 `Unknown`으로 보내며, retry policy는 `ReconcileUnknown`으로 분류해 reconcile worker가 `tx_hash`와 nullifier 상태를 먼저 확인함.
 - nullifier spent만으로 payroll success를 인정하지 않음.
-- expected output commitment, disclosure digest, recipient hash, amount, denom이 operation과 일치해야 success로 처리함.
+- expected output commitment, audit disclosure digest, recipient hash, amount, denom이 operation과 일치해야 success로 처리함.
 - RPC timeout, mempool eviction, gas/sequence 문제, proof invalid, nullifier spent를 서로 다르게 분류함.
 
 #### 완료 기준
 
 - proof worker가 같은 reservation을 중복 처리하지 않음.
+- `ProofReady`로 전환된 operation은 broadcast worker가 다시 읽을 수 있는 proof/message artifact를 가지고 있음.
 - broadcaster가 stale lease로 tx를 제출하지 않음.
 - broadcast retry가 `operation_id` 기준으로 idempotent하게 동작함.
 - tx hash 조회 실패 후 nullifier 조회로 note 상태를 reconcile할 수 있음.

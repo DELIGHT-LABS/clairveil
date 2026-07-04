@@ -326,6 +326,35 @@ func TestRenderHumanSummaryMarkdownKRIncludesAllInOneSections(t *testing.T) {
 			},
 		},
 		{
+			Path: "benchmarks/privacy-proverd-scale/latest.json",
+			Report: report{
+				ResultFamily: "privacy-proverd-scale",
+				GeneratedAt:  "2026-06-13T16:01:30Z",
+				Commit:       "abc123",
+				ActiveSetID:  "privacy-accounting-v2",
+				Benchmarks: []benchmarkSummary{
+					{
+						Name:          "ProverScaleTransferOnlyC16",
+						Samples:       512,
+						MetricKind:    "prover_load",
+						Concurrency:   16,
+						LoadProfile:   "transfer_only",
+						WarmupSeconds: 5,
+						Metrics: map[string]metricSummary{
+							"requests/sec":              {Mean: 42.5},
+							"latency_ms":                {Mean: 376, P95: 420, P99: 470},
+							"error_rate":                {Mean: 0},
+							"timeout_rate":              {Mean: 0},
+							"rss_bytes":                 {P95: 1465804128},
+							"endpoint_count":            {Mean: 4},
+							"configured_endpoint_count": {Mean: 4},
+							"unhealthy_endpoint_count":  {Mean: 0},
+						},
+					},
+				},
+			},
+		},
+		{
 			Path: "benchmarks/privacy-localnet-tps/latest.json",
 			Report: report{
 				ResultFamily: "privacy-localnet-tps",
@@ -417,6 +446,9 @@ func TestRenderHumanSummaryMarkdownKRIncludesAllInOneSections(t *testing.T) {
 		"자동 생성된다",
 		"## Native Circuit",
 		"## External Proverd Load",
+		"## External Proverd Scale Load",
+		"configured endpoint 4개 중 healthy 4개, unhealthy 0개",
+		"`unhealthy_endpoint_count`가 0이어야 한다",
 		"## Localnet Fee 및 Reserve",
 		"| module balance | 10 |",
 		"## Localnet TPS Smoke",
@@ -647,6 +679,7 @@ func TestReadBenchmarkSummariesAcceptsStructuredEnvelope(t *testing.T) {
       "name": "ProverLoadTransfer",
       "samples": 600,
       "metric_kind": "prover_load",
+      "endpoint_count": 2,
       "metric_summaries": {
         "proofs/sec": {"mean": 12, "p50": 12, "p95": 12, "p99": 12, "min": 10, "max": 13}
       }
@@ -666,6 +699,9 @@ func TestReadBenchmarkSummariesAcceptsStructuredEnvelope(t *testing.T) {
 	}
 	if summaries[0].Metrics["proofs/sec"].Mean != 12 {
 		t.Fatalf("custom metric summary not retained: %+v", summaries[0].Metrics)
+	}
+	if summaries[0].EndpointCount != 2 {
+		t.Fatalf("endpoint count metadata not retained: %+v", summaries[0])
 	}
 }
 
@@ -768,8 +804,11 @@ func TestSourceStatusDirtyIgnoresGeneratedArtifactsOnly(t *testing.T) {
 	status := strings.Join([]string{
 		"?? benchmarks/privacy-circuits/latest.json",
 		"?? benchmarks/privacy-proverd/raw.txt",
+		"?? benchmarks/privacy-bulk-transfer/latest.json",
+		"?? benchmarks/privacy-bulk-readiness/readiness-summary.json",
 		"?? clairveil-benchreport",
 		"?? clairveil-localnetload",
+		"?? clairveil-bulktransferbench",
 	}, "\n")
 	if sourceStatusDirty(status) {
 		t.Fatalf("expected generated benchmark files and build artifacts to be ignored")
@@ -807,6 +846,19 @@ func TestSourceStatusDirtyIgnoresGeneratedArtifactsOnly(t *testing.T) {
 	}, "\n")
 	if !sourceStatusDirty(status) {
 		t.Fatalf("expected build-artifact-like untracked file to mark source dirty")
+	}
+}
+
+func TestStandardReportPathsIncludeBulkReadinessFamilies(t *testing.T) {
+	paths := standardReportPaths()
+	for _, want := range []string{
+		"benchmarks/privacy-proverd-scale/latest.json",
+		"benchmarks/privacy-transfer-batch-localnet/latest.json",
+		"benchmarks/privacy-bulk-transfer/latest.json",
+	} {
+		if !containsString(paths, want) {
+			t.Fatalf("standard report paths missing %q: %+v", want, paths)
+		}
 	}
 }
 
@@ -1033,6 +1085,45 @@ func TestEvaluateClaimProfileRequiresPositiveSamples(t *testing.T) {
 	}
 	if !containsString(profile.BlockingReasons, "benchmark samples invalid: BenchmarkProverLoadTransfer samples must be positive") {
 		t.Fatalf("expected sample count blocker, got %+v", profile.BlockingReasons)
+	}
+}
+
+func TestEvaluateClaimProfileAllowsProverScaleFamily(t *testing.T) {
+	rep := completePublicProverReport()
+	rep.ResultFamily = "privacy-proverd-scale"
+	rep.Benchmarks[0].Metrics["unhealthy_endpoint_count"] = metricSummary{Mean: 0, P50: 0, P95: 0, P99: 0, Min: 0, Max: 0}
+	rep.Benchmarks[1].Metrics["unhealthy_endpoint_count"] = metricSummary{Mean: 0, P50: 0, P95: 0, P99: 0, Min: 0, Max: 0}
+	profile := evaluateClaimProfile(rep)
+	if !profile.Eligible || len(profile.BlockingReasons) != 0 {
+		t.Fatalf("expected prover scale family to be eligible, got %+v", profile)
+	}
+}
+
+func TestEvaluateClaimProfileRequiresUnhealthyEndpointCountForProverScaleFamily(t *testing.T) {
+	rep := completePublicProverReport()
+	rep.ResultFamily = "privacy-proverd-scale"
+
+	profile := evaluateClaimProfile(rep)
+	if profile.Eligible {
+		t.Fatalf("expected prover scale family without unhealthy endpoint count to be blocked")
+	}
+	if !containsString(profile.BlockingReasons, "prover_rps metrics missing: unhealthy_endpoint_count") {
+		t.Fatalf("expected missing unhealthy endpoint count blocker, got %+v", profile.BlockingReasons)
+	}
+}
+
+func TestEvaluateClaimProfileRejectsUnhealthyProverEndpoints(t *testing.T) {
+	rep := completePublicProverReport()
+	rep.ResultFamily = "privacy-proverd-scale"
+	rep.Benchmarks[0].Metrics["unhealthy_endpoint_count"] = metricSummary{Mean: 1, P50: 1, P95: 1, P99: 1, Min: 1, Max: 1}
+	rep.Benchmarks[1].Metrics["unhealthy_endpoint_count"] = metricSummary{Mean: 0, P50: 0, P95: 0, P99: 0, Min: 0, Max: 0}
+
+	profile := evaluateClaimProfile(rep)
+	if profile.Eligible {
+		t.Fatalf("expected unhealthy endpoint count to block eligibility")
+	}
+	if !containsString(profile.BlockingReasons, "prover_rps metrics invalid: BenchmarkProverLoadTransfer/unhealthy_endpoint_count max 1.000000 exceeds 0.000000") {
+		t.Fatalf("expected unhealthy endpoint blocker, got %+v", profile.BlockingReasons)
 	}
 }
 
@@ -1666,7 +1757,7 @@ func TestEvaluateClaimProfileBlocksWrongFamilyAndSLO(t *testing.T) {
 	if profile.Eligible {
 		t.Fatalf("expected public claim to be blocked")
 	}
-	if !containsString(profile.BlockingReasons, "prover_rps claim requires result_family privacy-proverd-load|public-capacity") {
+	if !containsString(profile.BlockingReasons, "prover_rps claim requires result_family privacy-proverd-load|privacy-proverd-scale|public-capacity") {
 		t.Fatalf("expected wrong family blocker, got %+v", profile.BlockingReasons)
 	}
 	if !containsString(profile.BlockingReasons, "prover_rps metrics invalid: BenchmarkProverLoadTransfer/latency_ms p99 150.000000 exceeds 120.000000, BenchmarkProverLoadTransfer/errors/op max 0.020000 exceeds 0.001000") {

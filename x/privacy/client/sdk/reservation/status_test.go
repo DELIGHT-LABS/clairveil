@@ -20,7 +20,13 @@ func TestReservationStatusContract(t *testing.T) {
 	if !CanTransitionReservation(StatusReserved, StatusProving) {
 		t.Fatalf("Reserved -> Proving should be allowed")
 	}
+	if CanTransitionReservation(StatusReserved, StatusReserved) {
+		t.Fatalf("Reserved -> Reserved self-transition should not be allowed")
+	}
 	if CanTransitionReservation(StatusSubmitted, StatusAvailable) {
 		t.Fatalf("Submitted -> Available should not be allowed")
+	}
+	if !CanTransitionReservation(StatusProofReady, StatusConfirmedSpent) {
+		t.Fatalf("ProofReady -> ConfirmedSpent should be allowed for reconcile recovery")
 	}
 }

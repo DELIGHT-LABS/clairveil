@@ -24,6 +24,15 @@ type TransferMessageAssembler interface {
 	BuildTransferMessage(payload privacytransfer.PreparedTransferPayload, proof privacytransfer.PreparedTransferProof) (*privacytypes.MsgTransfer, error)
 }
 
+type ProofResultSink interface {
+	SaveProofResult(ctx context.Context, result ProofResult) error
+}
+
+type ProofResultStore interface {
+	ProofResultSink
+	GetProofResult(ctx context.Context, operationID string) (*ProofResult, error)
+}
+
 type DefaultTransferMessageAssembler struct{}
 
 func (DefaultTransferMessageAssembler) BuildTransferMessage(payload privacytransfer.PreparedTransferPayload, proof privacytransfer.PreparedTransferProof) (*privacytypes.MsgTransfer, error) {
@@ -31,12 +40,13 @@ func (DefaultTransferMessageAssembler) BuildTransferMessage(payload privacytrans
 }
 
 type ProofWorker struct {
-	Reservation    privacyreservation.Service
-	PayloadBuilder PreparedPayloadBuilder
-	ProofRunner    PreparedProofRunner
-	Assembler      TransferMessageAssembler
-	LeaseOwner     string
-	LeaseTTL       time.Duration
+	Reservation     privacyreservation.Service
+	PayloadBuilder  PreparedPayloadBuilder
+	ProofRunner     PreparedProofRunner
+	Assembler       TransferMessageAssembler
+	ProofResultSink ProofResultSink
+	LeaseOwner      string
+	LeaseTTL        time.Duration
 }
 
 type ProofResult struct {
@@ -45,6 +55,45 @@ type ProofResult struct {
 	Proof             privacytransfer.PreparedTransferProof
 	Message           *privacytypes.MsgTransfer
 	ReservationLeases map[string]string
+}
+
+type MemoryProofResultStore struct {
+	mu      sync.Mutex
+	results map[string]ProofResult
+}
+
+func NewMemoryProofResultStore() *MemoryProofResultStore {
+	return &MemoryProofResultStore{results: make(map[string]ProofResult)}
+}
+
+func (s *MemoryProofResultStore) SaveProofResult(ctx context.Context, result ProofResult) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if result.Item.OperationID == "" {
+		return fmt.Errorf("%w: proof result has no operation_id", ErrInvalidPayrollInput)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.results == nil {
+		s.results = make(map[string]ProofResult)
+	}
+	s.results[result.Item.OperationID] = cloneProofResult(result)
+	return nil
+}
+
+func (s *MemoryProofResultStore) GetProofResult(ctx context.Context, operationID string) (*ProofResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result, ok := s.results[operationID]
+	if !ok {
+		return nil, fmt.Errorf("proof result %s not found", operationID)
+	}
+	cloned := cloneProofResult(result)
+	return &cloned, nil
 }
 
 func (w ProofWorker) Process(ctx context.Context, item PayrollPlanItem) (_ *ProofResult, runErr error) {
@@ -56,6 +105,9 @@ func (w ProofWorker) Process(ctx context.Context, item PayrollPlanItem) (_ *Proo
 	}
 	if w.ProofRunner == nil {
 		return nil, fmt.Errorf("a prepared transfer proof runner is required")
+	}
+	if w.ProofResultSink == nil {
+		return nil, fmt.Errorf("a proof result sink is required")
 	}
 	assembler := w.Assembler
 	if assembler == nil {
@@ -130,6 +182,16 @@ func (w ProofWorker) Process(ctx context.Context, item PayrollPlanItem) (_ *Proo
 	if msg == nil {
 		return nil, fmt.Errorf("transfer message assembler returned nil")
 	}
+	result := ProofResult{
+		Item:              clonePlanItem(item),
+		Payload:           *payload,
+		Proof:             *proof,
+		Message:           msg,
+		ReservationLeases: cloneStringMap(leases),
+	}
+	if err := w.ProofResultSink.SaveProofResult(proofCtx, result); err != nil {
+		return nil, err
+	}
 
 	refs, err := proofReadyReservationRefs(item, leases)
 	if err != nil {
@@ -151,13 +213,7 @@ func (w ProofWorker) Process(ctx context.Context, item PayrollPlanItem) (_ *Proo
 		return nil, err
 	}
 
-	return &ProofResult{
-		Item:              clonePlanItem(item),
-		Payload:           *payload,
-		Proof:             *proof,
-		Message:           msg,
-		ReservationLeases: leases,
-	}, nil
+	return &result, nil
 }
 
 func (w ProofWorker) startProvingHeartbeat(ctx context.Context, leases map[string]string, reservationIDs []string, ttl time.Duration) (context.Context, func() error) {
@@ -227,11 +283,7 @@ func (w ProofWorker) rollbackProofReservations(ctx context.Context, leases map[s
 			continue
 		}
 		if _, err := w.Reservation.TransitionWithLease(ctx, reservationID, token, privacyreservation.StatusProving, privacyreservation.StatusReserved); err != nil {
-			if errors.Is(err, privacyreservation.ErrLeaseUnavailable) {
-				if _, transitionErr := w.Reservation.Transition(ctx, reservationID, privacyreservation.StatusProving, privacyreservation.StatusReserved); transitionErr != nil && !errors.Is(transitionErr, privacyreservation.ErrCompareAndSetFailed) {
-					cleanupErr = errors.Join(cleanupErr, transitionErr)
-				}
-			} else if !errors.Is(err, privacyreservation.ErrCompareAndSetFailed) && !errors.Is(err, privacyreservation.ErrLeaseMismatch) {
+			if !errors.Is(err, privacyreservation.ErrCompareAndSetFailed) && !errors.Is(err, privacyreservation.ErrLeaseMismatch) {
 				cleanupErr = errors.Join(cleanupErr, err)
 			}
 			continue
@@ -255,13 +307,68 @@ func (w ProofWorker) rollbackProofReservations(ctx context.Context, leases map[s
 	return cleanupErr
 }
 
+func cloneProofResult(result ProofResult) ProofResult {
+	result.Item = clonePlanItem(result.Item)
+	result.Payload = clonePreparedTransferPayload(result.Payload)
+	result.Message = cloneTransferMessage(result.Message)
+	result.ReservationLeases = cloneStringMap(result.ReservationLeases)
+	return result
+}
+
+func clonePreparedTransferPayload(payload privacytransfer.PreparedTransferPayload) privacytransfer.PreparedTransferPayload {
+	payload.Inputs = append([]privacytransfer.PreparedTransferInput(nil), payload.Inputs...)
+	for i := range payload.Inputs {
+		payload.Inputs[i].MerklePath = append([]string(nil), payload.Inputs[i].MerklePath...)
+		payload.Inputs[i].MerklePathHelper = append([]uint32(nil), payload.Inputs[i].MerklePathHelper...)
+	}
+	payload.Outputs = append([]privacytransfer.PreparedTransferOutput(nil), payload.Outputs...)
+	payload.CipherTextHexes = append([]string(nil), payload.CipherTextHexes...)
+	payload.ViewTagHexes = append([]string(nil), payload.ViewTagHexes...)
+	return payload
+}
+
+func cloneTransferMessage(message *privacytypes.MsgTransfer) *privacytypes.MsgTransfer {
+	if message == nil {
+		return nil
+	}
+	cloned := *message
+	cloned.Proof = append([]byte(nil), message.Proof...)
+	cloned.Root = append([]byte(nil), message.Root...)
+	cloned.Nullifiers = cloneBytesSlice(message.Nullifiers)
+	cloned.NewCommitments = cloneBytesSlice(message.NewCommitments)
+	cloned.CipherTexts = cloneBytesSlice(message.CipherTexts)
+	cloned.UserDisclosureDigest = append([]byte(nil), message.UserDisclosureDigest...)
+	cloned.UserDisclosureTargetPubkey = append([]byte(nil), message.UserDisclosureTargetPubkey...)
+	cloned.UserDisclosurePayload = append([]byte(nil), message.UserDisclosurePayload...)
+	cloned.AuditDisclosureDigest = append([]byte(nil), message.AuditDisclosureDigest...)
+	cloned.AuditDisclosureTargetPubkey = append([]byte(nil), message.AuditDisclosureTargetPubkey...)
+	cloned.AuditDisclosurePayload = append([]byte(nil), message.AuditDisclosurePayload...)
+	cloned.SelfViewDisclosureDigest = append([]byte(nil), message.SelfViewDisclosureDigest...)
+	cloned.SelfViewDisclosurePayload = append([]byte(nil), message.SelfViewDisclosurePayload...)
+	cloned.ViewTags = cloneBytesSlice(message.ViewTags)
+	return &cloned
+}
+
+func cloneBytesSlice(values [][]byte) [][]byte {
+	out := make([][]byte, len(values))
+	for i := range values {
+		out[i] = append([]byte(nil), values[i]...)
+	}
+	return out
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if values == nil {
+		return nil
+	}
+	out := make(map[string]string, len(values))
+	for key, value := range values {
+		out[key] = value
+	}
+	return out
+}
+
 func preferredDisclosureDigest(payload privacytransfer.PreparedTransferPayload) string {
-	if payload.UserDisclosureDigestHex != "" {
-		return payload.UserDisclosureDigestHex
-	}
-	if payload.SelfViewDisclosureDigestHex != "" {
-		return payload.SelfViewDisclosureDigestHex
-	}
 	return payload.AuditDisclosureDigestHex
 }
 
