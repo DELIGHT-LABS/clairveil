@@ -2,8 +2,20 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createTcpServer } from "node:net";
+import { networkInterfaces, tmpdir } from "node:os";
+import { join } from "node:path";
+import { evmAddressToBech32 } from "clairveiljs/evm";
+import { computePreparedWithdrawProverPayloadHash } from "clairveiljs/payload";
+
+function lanIpv4Address() {
+  return Object.values(networkInterfaces())
+    .flat()
+    .find(entry => entry && !entry.internal && (entry.family === "IPv4" || entry.family === 4))
+    ?.address || "";
+}
 
 async function freePort() {
   const server = createTcpServer();
@@ -19,8 +31,11 @@ async function startDummyProver(responseBody = {}) {
   const calls = [];
   const responseJson = {
     version: "v1",
-    proof_hex: "00",
-    payload_hash: "11".repeat(32),
+    proof: {
+      version: "v1",
+      proof_hex: "00",
+      payload_hash: "11".repeat(32)
+    },
     ...responseBody
   };
   const server = createHttpServer(async (req, res) => {
@@ -50,7 +65,42 @@ async function startDummyProver(responseBody = {}) {
   };
 }
 
-async function waitForJson(url, timeoutMs = 5000) {
+function withdrawProverPayload({ recipient, evmRecipient }) {
+  const payload = {
+    version: "v1",
+    root_hex: "01".repeat(32),
+    nullifier_hex: "02".repeat(32),
+    amount: "7uclair",
+    asset_denom: "uclair",
+    asset_id_hex: "03".repeat(32),
+    recipient,
+    recipient_bytes_hex: evmRecipient.replace(/^0x/i, "").toLowerCase(),
+    chain_id: "evm-privacy-local-1",
+    expires_at_unix: 2000000000,
+    note_randomness_hex: "04".repeat(32),
+    spend_pubkey_hex: "05".repeat(32),
+    view_pubkey_hex: "06".repeat(32),
+    merkle_path: ["07".repeat(32), "08".repeat(32)],
+    merkle_path_helper: [0, 1],
+    spend_note_hash_signature_hex: "09".repeat(64)
+  };
+  payload.payload_hash = computePreparedWithdrawProverPayloadHash(payload);
+  return payload;
+}
+
+async function writeLocalAccountFixtures(home) {
+  const out = join(home, "init-out");
+  await mkdir(out, { recursive: true });
+  await Promise.all([
+    writeFile(join(out, "alice-address.txt"), "clair1alice0000000000000000000000000000000"),
+    writeFile(join(out, "bob-address.txt"), "clair1bob000000000000000000000000000000000"),
+    writeFile(join(out, "relayer-address.txt"), "clair1relayer00000000000000000000000000000"),
+    writeFile(join(out, "auditor-address.txt"), "clair1auditor00000000000000000000000000000")
+  ]);
+}
+
+async function waitForJson(url, options = {}) {
+  const { timeoutMs = 15000, debugOutput = () => "" } = typeof options === "number" ? { timeoutMs: options } : options;
   const deadline = Date.now() + timeoutMs;
   let lastError;
   while (Date.now() < deadline) {
@@ -63,7 +113,12 @@ async function waitForJson(url, timeoutMs = 5000) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
   }
-  throw lastError || new Error(`timed out waiting for ${url}`);
+  const debug = debugOutput();
+  const message = `timed out waiting for ${url}${debug ? `\n${debug}` : ""}`;
+  if (lastError) {
+    throw new Error(message, { cause: lastError });
+  }
+  throw new Error(message);
 }
 
 test("DApp exposes config, health, and bundled frontend assets", async () => {
@@ -78,12 +133,20 @@ test("DApp exposes config, health, and bundled frontend assets", async () => {
     stdio: ["ignore", "pipe", "pipe"]
   });
 
+  const stdout = [];
   const stderr = [];
+  child.stdout.on("data", chunk => stdout.push(String(chunk)));
   child.stderr.on("data", chunk => stderr.push(String(chunk)));
+  const debugOutput = () => [
+    "server stdout:",
+    stdout.join("").trim() || "-",
+    "server stderr:",
+    stderr.join("").trim() || "-"
+  ].join("\n");
 
   try {
     const baseUrl = `http://127.0.0.1:${port}`;
-    const config = await waitForJson(`${baseUrl}/api/config`);
+    const config = await waitForJson(`${baseUrl}/api/config`, { debugOutput });
     assert.equal(config.response.status, 200);
     assert.equal(config.json.chainId.startsWith("clairveil-local-"), true);
     assert.equal("evmChainId" in config.json, false);
@@ -165,8 +228,11 @@ test("DApp proxies same-origin prover requests for browser SDK flows", async () 
   const port = await freePort();
   const prover = await startDummyProver();
   const publicProver = await startDummyProver({
-    proof_hex: "ff",
-    payload_hash: "22".repeat(32)
+    proof: {
+      version: "v1",
+      proof_hex: "ff",
+      payload_hash: "22".repeat(32)
+    }
   });
   const child = spawn(process.execPath, ["server.js"], {
     cwd: new URL("..", import.meta.url),
@@ -202,8 +268,11 @@ test("DApp proxies same-origin prover requests for browser SDK flows", async () 
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
       version: "v1",
-      proof_hex: "00",
-      payload_hash: "11".repeat(32)
+      proof: {
+        version: "v1",
+        proof_hex: "00",
+        payload_hash: "11".repeat(32)
+      }
     });
     assert.equal(prover.calls.length, 1);
     assert.equal(prover.calls[0].method, "POST");
@@ -225,8 +294,137 @@ test("DApp proxies same-origin prover requests for browser SDK flows", async () 
   }
 });
 
+test("EVM prover proxy leaves reference-prefixed withdraw payloads unchanged", async () => {
+  const port = await freePort();
+  const prover = await startDummyProver();
+  const child = spawn(process.execPath, ["server.js"], {
+    cwd: new URL("..", import.meta.url),
+    env: {
+      ...process.env,
+      PORT: String(port),
+      CLAIRVEIL_DAPP_PORT: String(port),
+      CLAIRVEIL_TRANSPORT: "evm",
+      CLAIRVEIL_ACCOUNT_PREFIX: "maroo",
+      CLAIRVEIL_PROVER_ACCOUNT_PREFIX: "clair",
+      CLAIRVEIL_PROVER_URL: prover.url
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  const stderr = [];
+  child.stderr.on("data", chunk => stderr.push(String(chunk)));
+
+  try {
+    const baseUrl = `http://127.0.0.1:${port}`;
+    const config = await waitForJson(`${baseUrl}/api/config`);
+    assert.equal(config.response.status, 200);
+    assert.equal(config.json.transport, "evm");
+    const response = await fetch(`${baseUrl}/v1/prover/withdraw`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        version: "v1",
+        payload: {
+          recipient: "clair1cml96vmptgw99syqrrz8az79xer2pcgphasy4k"
+        }
+      })
+    });
+    assert.equal(response.status, 200);
+    assert.equal(prover.calls.length, 1);
+    const forwarded = JSON.parse(prover.calls[0].body);
+    assert.equal(
+      forwarded.payload.recipient,
+      "clair1cml96vmptgw99syqrrz8az79xer2pcgphasy4k"
+    );
+  } finally {
+    child.kill("SIGTERM");
+    await once(child, "exit");
+    await prover.close();
+    assert.equal(stderr.join("").trim(), "");
+  }
+});
+
+test("EVM prover proxy rewrites local-prefixed withdraw payloads for the reference prover", async () => {
+  const port = await freePort();
+  const evmRecipient = "0x1111111111111111111111111111111111111111";
+  const localRecipient = evmAddressToBech32(evmRecipient, "maroo");
+  const referenceRecipient = evmAddressToBech32(evmRecipient, "clair");
+  const originalPayload = withdrawProverPayload({
+    recipient: localRecipient,
+    evmRecipient
+  });
+  const rewrittenPayload = {
+    ...originalPayload,
+    recipient: referenceRecipient,
+    recipient_bytes_hex: evmRecipient.replace(/^0x/i, "").toLowerCase()
+  };
+  rewrittenPayload.payload_hash = computePreparedWithdrawProverPayloadHash(rewrittenPayload);
+  const prover = await startDummyProver({
+    proof: {
+      version: "v1",
+      proof_hex: "00",
+      payload_hash: "ff".repeat(32)
+    }
+  });
+  const child = spawn(process.execPath, ["server.js"], {
+    cwd: new URL("..", import.meta.url),
+    env: {
+      ...process.env,
+      PORT: String(port),
+      CLAIRVEIL_DAPP_PORT: String(port),
+      CLAIRVEIL_TRANSPORT: "evm",
+      CLAIRVEIL_ACCOUNT_PREFIX: "maroo",
+      CLAIRVEIL_PROVER_ACCOUNT_PREFIX: "clair",
+      CLAIRVEIL_PROVER_URL: prover.url
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  const stderr = [];
+  child.stderr.on("data", chunk => stderr.push(String(chunk)));
+
+  try {
+    const baseUrl = `http://127.0.0.1:${port}`;
+    const config = await waitForJson(`${baseUrl}/api/config`);
+    assert.equal(config.response.status, 200);
+    assert.equal(config.json.transport, "evm");
+    const response = await fetch(`${baseUrl}/v1/prover/withdraw`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        version: "v1",
+        payload: originalPayload
+      })
+    });
+    assert.equal(response.status, 200);
+    assert.equal(prover.calls.length, 1);
+    const forwarded = JSON.parse(prover.calls[0].body);
+    assert.equal(forwarded.version, "v1");
+    assert.equal(forwarded.payload.recipient, referenceRecipient);
+    assert.equal(forwarded.payload.recipient_bytes_hex, evmRecipient.slice(2).toLowerCase());
+    assert.equal(forwarded.payload.payload_hash, rewrittenPayload.payload_hash);
+    assert.notEqual(forwarded.payload.payload_hash, originalPayload.payload_hash);
+
+    const proxied = await response.json();
+    assert.deepEqual(proxied, {
+      version: "v1",
+      proof: {
+        version: "v1",
+        proof_hex: "00",
+        payload_hash: originalPayload.payload_hash
+      }
+    });
+  } finally {
+    child.kill("SIGTERM");
+    await once(child, "exit");
+    await prover.close();
+    assert.equal(stderr.join("").trim(), "");
+  }
+});
+
 test("DApp disables local-only backend routes outside local test mode", async () => {
   const port = await freePort();
+  const prover = await startDummyProver();
   const child = spawn(process.execPath, ["server.js"], {
     cwd: new URL("..", import.meta.url),
     env: {
@@ -236,7 +434,8 @@ test("DApp disables local-only backend routes outside local test mode", async ()
       CLAIRVEIL_DAPP_LOCAL_TEST_MODE: "0",
       CLAIRVEIL_RPC: "https://rpc.public.example",
       CLAIRVEIL_REST: "https://rest.public.example",
-      CLAIRVEIL_PROVER_URL: "https://prover.public.example"
+      CLAIRVEIL_PROVER_URL: prover.url,
+      CLAIRVEIL_PROVER_BEARER_TOKEN: "public-mode-token"
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -263,6 +462,8 @@ test("DApp disables local-only backend routes outside local test mode", async ()
       { path: "/api/auditor/decode", init: { method: "POST", body: "{}" } },
       { path: "/api/wallet/alice/show-address", init: { method: "GET" } },
       { path: "/api/wallet/alice/notes", init: { method: "GET" } },
+      { path: "/api/deposit/proof", init: { method: "POST", body: "{}" } },
+      { path: "/api/relayer/withdraw", init: { method: "POST", body: "{}" } },
       { path: "/api/deposit", init: { method: "POST", body: "{}" } }
     ];
 
@@ -296,9 +497,91 @@ test("DApp disables local-only backend routes outside local test mode", async ()
       });
       assert.equal(response.status, 404, `${route.path} should be owned by browser ClairveilJS, not the demo server`);
     }
+
+    const proverProxy = await fetch(`${baseUrl}/v1/prover/transfer`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ version: "v1", payload: {} })
+    });
+    assert.equal(proverProxy.status, 404);
+    assert.equal(prover.calls.length, 0);
   } finally {
     child.kill("SIGTERM");
     await once(child, "exit");
+    await prover.close();
+    assert.equal(stderr.join("").trim(), "");
+  }
+});
+
+test("DApp exposes only the relayer account to LAN signing clients", async (t) => {
+  const lanAddress = lanIpv4Address();
+  if (!lanAddress) {
+    t.skip("no LAN IPv4 address is available for non-loopback route coverage");
+    return;
+  }
+
+  const port = await freePort();
+  const home = await mkdtemp(join(tmpdir(), "clairveil-dapp-routes-"));
+  await writeLocalAccountFixtures(home);
+
+  const child = spawn(process.execPath, ["server.js", "--host", "0.0.0.0"], {
+    cwd: new URL("..", import.meta.url),
+    env: {
+      ...process.env,
+      PORT: String(port),
+      CLAIRVEIL_DAPP_PORT: String(port),
+      CLAIRVEIL_HOME: home,
+      CLAIRVEIL_DAPP_LOCAL_TEST_MODE: "1",
+      CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING: "1",
+      CLAIRVEIL_DAPP_ALLOW_LAN_ADMIN: "0",
+      CLAIRVEIL_TRANSPORT: "cosmos"
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  const stdout = [];
+  const stderr = [];
+  child.stdout.on("data", chunk => stdout.push(String(chunk)));
+  child.stderr.on("data", chunk => stderr.push(String(chunk)));
+  const debugOutput = () => [
+    "server stdout:",
+    stdout.join("").trim() || "-",
+    "server stderr:",
+    stderr.join("").trim() || "-"
+  ].join("\n");
+
+  try {
+    const baseUrl = `http://${lanAddress}:${port}`;
+    const config = await waitForJson(`${baseUrl}/api/config`, { debugOutput });
+    assert.equal(config.response.status, 200);
+    assert.equal(config.json.serverFeatures.localSignerAdmin, false);
+    assert.equal(config.json.serverFeatures.localSigners, false);
+    assert.equal(config.json.serverFeatures.auditorAdmin, false);
+    assert.equal(config.json.serverFeatures.relayer, true);
+    assert.deepEqual(config.json.accounts.map(account => account.name), ["relayer"]);
+    assert.deepEqual(config.json.accounts.map(account => account.transparentAddress), [
+      "clair1relayer00000000000000000000000000000"
+    ]);
+
+    const health = await waitForJson(`${baseUrl}/api/health`, { debugOutput });
+    assert.equal(health.response.status, 200);
+    assert.deepEqual(health.json.accounts.map(account => account.name), ["relayer"]);
+
+    const auditorResponse = await fetch(`${baseUrl}/api/auditor/test-scalar`);
+    assert.equal(auditorResponse.status, 403);
+    const auditorJson = await auditorResponse.json();
+    assert.match(auditorJson.error, /LAN access to local admin\/private-read APIs is disabled/);
+
+    const proverProxy = await fetch(`${baseUrl}/v1/prover/transfer`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ version: "v1", payload: {} })
+    });
+    assert.equal(proverProxy.status, 404);
+  } finally {
+    child.kill("SIGTERM");
+    await once(child, "exit");
+    await rm(home, { recursive: true, force: true });
     assert.equal(stderr.join("").trim(), "");
   }
 });

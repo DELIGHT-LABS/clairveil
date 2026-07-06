@@ -3903,8 +3903,8 @@ var require_sleep = __commonJS({
   "node_modules/@cosmjs/utils/build/sleep.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
-    exports.sleep = sleep;
-    async function sleep(ms) {
+    exports.sleep = sleep2;
+    async function sleep2(ms) {
       return new Promise((resolve) => setTimeout(resolve, ms));
     }
   }
@@ -74509,7 +74509,8 @@ function createBaseMsgDeposit() {
     creator: "",
     amount: "",
     noteCommitment: new Uint8Array(),
-    encryptedNote: new Uint8Array()
+    encryptedNote: new Uint8Array(),
+    proof: new Uint8Array()
   };
 }
 var MsgDeposit = {
@@ -74526,6 +74527,9 @@ var MsgDeposit = {
     }
     if (message.encryptedNote.length !== 0) {
       writer.uint32(34).bytes(message.encryptedNote);
+    }
+    if (message.proof.length !== 0) {
+      writer.uint32(42).bytes(message.proof);
     }
     return writer;
   },
@@ -74548,6 +74552,9 @@ var MsgDeposit = {
         case 4:
           message.encryptedNote = reader.bytes();
           break;
+        case 5:
+          message.proof = reader.bytes();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -74561,6 +74568,7 @@ var MsgDeposit = {
     message.amount = object.amount ?? "";
     message.noteCommitment = object.noteCommitment ?? new Uint8Array();
     message.encryptedNote = object.encryptedNote ?? new Uint8Array();
+    message.proof = object.proof ?? new Uint8Array();
     return message;
   }
 };
@@ -74671,7 +74679,9 @@ function createBaseMsgTransfer() {
     userDisclosurePayload: new Uint8Array(),
     auditDisclosureDigest: new Uint8Array(),
     auditDisclosureTargetPubkey: new Uint8Array(),
-    auditDisclosurePayload: new Uint8Array()
+    auditDisclosurePayload: new Uint8Array(),
+    selfViewDisclosureDigest: new Uint8Array(),
+    selfViewDisclosurePayload: new Uint8Array()
   };
 }
 var MsgTransfer = {
@@ -74718,6 +74728,12 @@ var MsgTransfer = {
     }
     if (message.auditDisclosurePayload.length !== 0) {
       writer.uint32(114).bytes(message.auditDisclosurePayload);
+    }
+    if (message.selfViewDisclosureDigest.length !== 0) {
+      writer.uint32(122).bytes(message.selfViewDisclosureDigest);
+    }
+    if (message.selfViewDisclosurePayload.length !== 0) {
+      writer.uint32(130).bytes(message.selfViewDisclosurePayload);
     }
     return writer;
   },
@@ -74770,6 +74786,12 @@ var MsgTransfer = {
         case 14:
           message.auditDisclosurePayload = reader.bytes();
           break;
+        case 15:
+          message.selfViewDisclosureDigest = reader.bytes();
+          break;
+        case 16:
+          message.selfViewDisclosurePayload = reader.bytes();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -74793,6 +74815,8 @@ var MsgTransfer = {
     message.auditDisclosureDigest = object.auditDisclosureDigest ?? new Uint8Array();
     message.auditDisclosureTargetPubkey = object.auditDisclosureTargetPubkey ?? new Uint8Array();
     message.auditDisclosurePayload = object.auditDisclosurePayload ?? new Uint8Array();
+    message.selfViewDisclosureDigest = object.selfViewDisclosureDigest ?? new Uint8Array();
+    message.selfViewDisclosurePayload = object.selfViewDisclosurePayload ?? new Uint8Array();
     return message;
   }
 };
@@ -75655,6 +75679,7 @@ function asymDecryptHex(ciphertextHex, scalar) {
 var payloadVersion = "v4";
 var planeUser = "user";
 var planeAudit = "audit";
+var planeSelfView = "self-view";
 var userDisclosureModeNone = "USER_DISCLOSURE_MODE_NONE";
 var userDisclosureModePublic = "USER_DISCLOSURE_MODE_PUBLIC";
 var userDisclosureModeRecipientEncrypted = "USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED";
@@ -75663,6 +75688,7 @@ var transferPrivacyPolicyDiscloseAmount = 1;
 var transferPrivacyPolicyDiscloseTo = 2;
 var transferPrivacyPolicyDiscloseFrom = 4;
 var transferAuditDisclosureDomain = 255;
+var transferSelfViewDisclosureDomain = 254;
 var transferDisclosureRecipientOutputIndex = 0;
 var supportedPolicies = /* @__PURE__ */ new Set([0, 1, 2, 3, 4, 5, 6, 7]);
 function privacyPolicyLabel(policy) {
@@ -75845,6 +75871,46 @@ function computeAuditTransferDisclosureDigestHex({
     toViewPubKeyY
   ));
 }
+function computeSelfViewTransferDisclosureDigestHex({
+  outputIndex = transferDisclosureRecipientOutputIndex,
+  commitment,
+  amount,
+  assetId,
+  fromSpendPubKeyX,
+  fromSpendPubKeyY,
+  fromViewPubKeyX,
+  fromViewPubKeyY,
+  toSpendPubKeyX,
+  toSpendPubKeyY,
+  toViewPubKeyX,
+  toViewPubKeyY
+}) {
+  const commitmentBytes = commitment instanceof Uint8Array ? commitment : decodeCanonicalFieldHex(commitment, "self-view disclosure commitment");
+  if (amount == null || assetId == null) {
+    throw new Error("self-view disclosure requires amount and asset id");
+  }
+  if ([fromSpendPubKeyX, fromSpendPubKeyY, fromViewPubKeyX, fromViewPubKeyY].some((value) => value == null)) {
+    throw new Error("self-view disclosure requires the full sender shielded address");
+  }
+  if ([toSpendPubKeyX, toSpendPubKeyY, toViewPubKeyX, toViewPubKeyY].some((value) => value == null)) {
+    throw new Error("self-view disclosure requires the full recipient shielded address");
+  }
+  return canonicalFieldHex(mimcHash(
+    BigInt(transferSelfViewDisclosureDomain),
+    BigInt(outputIndex),
+    bytesToBigIntBE(commitmentBytes),
+    amount,
+    assetId,
+    fromSpendPubKeyX,
+    fromSpendPubKeyY,
+    fromViewPubKeyX,
+    fromViewPubKeyY,
+    toSpendPubKeyX,
+    toSpendPubKeyY,
+    toViewPubKeyX,
+    toViewPubKeyY
+  ));
+}
 function computeExpectedDisclosureDigestHex(payload, options = {}) {
   const commitment = decodeCanonicalFieldHex(payload?.commitment_hex || "", "commitment");
   const { amount, assetId } = disclosureAmountAndAsset(payload);
@@ -75867,6 +75933,8 @@ function computeExpectedDisclosureDigestHex(payload, options = {}) {
   switch (payload?.plane || planeUser) {
     case planeAudit:
       return computeAuditTransferDisclosureDigestHex(common);
+    case planeSelfView:
+      return computeSelfViewTransferDisclosureDigestHex(common);
     case "":
     case planeUser:
       return computeTransferDisclosureDigestHex({
@@ -75910,10 +75978,10 @@ function buildDisclosureReport({
   shieldedPrefix: shieldedPrefix2
 }) {
   const verification = verifyPayload(payload, onChainDigestHex, { shieldedPrefix: shieldedPrefix2 });
-  const plane = payload?.plane === planeAudit ? planeAudit : planeUser;
-  const resolvedSource = source || (plane === planeAudit ? "audit_encrypted" : "recipient_encrypted");
-  const resolvedDelivery = delivery || (plane === planeAudit ? "audit-encrypted" : "recipient-encrypted");
-  const policy = plane === planeAudit ? "audit-full" : privacyPolicyLabel(payload?.policy);
+  const plane = payload?.plane === planeAudit ? planeAudit : payload?.plane === planeSelfView ? planeSelfView : planeUser;
+  const resolvedSource = source || (plane === planeAudit ? "audit_encrypted" : plane === planeSelfView ? "self_view_encrypted" : "recipient_encrypted");
+  const resolvedDelivery = delivery || (plane === planeAudit ? "audit-encrypted" : plane === planeSelfView ? "self-view-encrypted" : "recipient-encrypted");
+  const policy = plane === planeAudit ? "audit-full" : plane === planeSelfView ? "amount-from-to" : privacyPolicyLabel(payload?.policy);
   const amount = payload?.amount || "";
   const assetDenom = payload?.asset_denom || "";
   const from = payload?.from_shielded_address || "";
@@ -75966,7 +76034,7 @@ function decodeUserDisclosureFromEvent(event, disclosureScalar, disclosurePubKey
     throw new Error(`selected transfer uses unsupported user disclosure mode ${JSON.stringify(mode || "none")}`);
   }
   if (!targetPubKey || targetPubKey.toLowerCase() !== String(disclosurePubKeyHex || "").toLowerCase()) {
-    throw new Error("\uB0B4 disclosure pubkey \uB300\uC0C1\uC774 \uC544\uB2D9\uB2C8\uB2E4");
+    throw new Error("This transfer is not targeted to the provided disclosure public key");
   }
   const payload = decryptPayloadHex(payloadHex, disclosureScalar);
   return buildDisclosureReport({
@@ -75975,6 +76043,25 @@ function decodeUserDisclosureFromEvent(event, disclosureScalar, disclosurePubKey
     txHash,
     source: "recipient_encrypted",
     delivery: "recipient-encrypted",
+    shieldedPrefix: options.shieldedPrefix
+  });
+}
+function decodeSelfViewDisclosureFromEvent(event, disclosureScalar, txHash = event?.tx_hash_hex || "", options = {}) {
+  if (event?.event_type !== "shielded_transfer") {
+    throw new Error("selected event is not a shielded transfer");
+  }
+  const payloadHex = eventAttribute(event, "self_view_disclosure_payload");
+  const digestHex = eventAttribute(event, "self_view_disclosure_digest");
+  if (!payloadHex) {
+    throw new Error("selected transfer has no self-view disclosure");
+  }
+  const payload = decryptPayloadHex(payloadHex, disclosureScalar);
+  return buildDisclosureReport({
+    payload,
+    onChainDigestHex: digestHex,
+    txHash,
+    source: "self_view_encrypted",
+    delivery: "self-view-encrypted",
     shieldedPrefix: options.shieldedPrefix
   });
 }
@@ -76371,7 +76458,7 @@ function normalizeFoundNote(foundNote) {
 
 // node_modules/clairveiljs/src/privacy/payload.js
 var import_encoding2 = __toESM(require_build(), 1);
-var preparedTransferPayloadVersion = "v1";
+var preparedTransferPayloadVersion = "v2";
 var preparedTransferProofVersion = "v1";
 var preparedWithdrawProverPayloadVersion = "v1";
 var preparedWithdrawProofVersion = "v1";
@@ -76726,6 +76813,39 @@ function buildAuditDisclosureData({
     mode: userDisclosureModeValue["recipient-encrypted"]
   };
 }
+function buildSelfViewDisclosureData({
+  outputCommitmentHex,
+  transferDenom = defaultAssetDenom,
+  fromNote,
+  recipientNote,
+  targetPubKeyHex,
+  shieldedPrefix: shieldedPrefix2
+}) {
+  const target = normalizeDisclosurePubKey(targetPubKeyHex, "self-view disclosure target pubkey");
+  if (!target.point) {
+    throw new Error("self-view disclosure target pubkey is required");
+  }
+  const digestHex = computeSelfViewTransferDisclosureDigestHex(
+    disclosureCommon({ outputCommitmentHex, fromNote, recipientNote })
+  );
+  const payload = buildDisclosurePayload({
+    plane: planeSelfView,
+    policy: 7,
+    outputCommitmentHex,
+    digestHex,
+    transferDenom,
+    fromNote,
+    recipientNote,
+    shieldedPrefix: shieldedPrefix2
+  });
+  const cipherText = asymEncrypt(utf8Bytes(JSON.stringify(payload)), target.point);
+  return {
+    payload,
+    digest_hex: digestHex,
+    payload_hex: hexFromBytes2(cipherText),
+    mode: userDisclosureModeValue["recipient-encrypted"]
+  };
+}
 async function lookupMerklePath(provider, commitmentHex) {
   if (!provider) {
     throw new Error("a merkle path provider is required");
@@ -76752,6 +76872,9 @@ function normalizeMerklePathResult(result, label) {
     pathHelper: [...result?.path_helper ?? result?.pathHelper ?? result?.PathHelper ?? []].map((value) => Number(value))
   };
 }
+function transferPayloadHashIncludesSelfView(version) {
+  return String(version || "") !== "v1";
+}
 function computePreparedTransferPayloadHash(payload) {
   const lines = [
     payload.version,
@@ -76765,9 +76888,15 @@ function computePreparedTransferPayloadHash(payload) {
     payload.user_disclosure_payload_hex || "",
     payload.audit_disclosure_digest_hex,
     payload.audit_disclosure_target_pubkey_hex,
-    payload.audit_disclosure_payload_hex,
-    String(payload.inputs.length)
+    payload.audit_disclosure_payload_hex
   ];
+  if (transferPayloadHashIncludesSelfView(payload.version)) {
+    lines.push(
+      payload.self_view_disclosure_digest_hex || "",
+      payload.self_view_disclosure_payload_hex || ""
+    );
+  }
+  lines.push(String(payload.inputs.length));
   for (const input of payload.inputs) {
     lines.push(
       input.amount,
@@ -76811,6 +76940,8 @@ async function buildPreparedTransferPayload({
   userDisclosureMode,
   userDisclosureTargetPubKeyHex = "",
   auditDisclosureTargetPubKeyHex,
+  disableSelfViewDisclosure = false,
+  selfViewDisclosureTargetPubKeyHex,
   shieldedPrefix: shieldedPrefix2
 } = {}) {
   const coin = parseCoin(amount ?? transferAmount, transferDenom || defaultAssetDenom);
@@ -76878,6 +77009,16 @@ async function buildPreparedTransferPayload({
     auditPubKeyHex: auditDisclosureTargetPubKeyHex,
     shieldedPrefix: shieldedPrefix2
   });
+  const explicitSelfViewTargetPubKeyHex = String(selfViewDisclosureTargetPubKeyHex || "").trim();
+  const selfViewTargetPubKeyHex = explicitSelfViewTargetPubKeyHex || (rootSeed ? deriveDisclosureKeys(rootSeed).pubKeyHex : "");
+  const selfViewDisclosure = !disableSelfViewDisclosure && selfViewTargetPubKeyHex ? buildSelfViewDisclosureData({
+    outputCommitmentHex: recipientCommitmentHex,
+    transferDenom: coin.denom,
+    fromNote: foundInputs[0].note,
+    recipientNote,
+    targetPubKeyHex: selfViewTargetPubKeyHex,
+    shieldedPrefix: shieldedPrefix2
+  }) : null;
   const preparedInputs = [];
   let commonRootHex = "";
   for (let i = 0; i < foundInputs.length; i += 1) {
@@ -76922,7 +77063,9 @@ async function buildPreparedTransferPayload({
     user_disclosure_payload_hex: userDisclosure?.payload_hex || "",
     audit_disclosure_digest_hex: auditDisclosure.digest_hex,
     audit_disclosure_target_pubkey_hex: auditDisclosure.target_pubkey_hex,
-    audit_disclosure_payload_hex: auditDisclosure.payload_hex
+    audit_disclosure_payload_hex: auditDisclosure.payload_hex,
+    self_view_disclosure_digest_hex: selfViewDisclosure?.digest_hex || "",
+    self_view_disclosure_payload_hex: selfViewDisclosure?.payload_hex || ""
   };
   payload.payload_hash = computePreparedTransferPayloadHash(payload);
   return payload;
@@ -76953,7 +77096,9 @@ function buildTransferMsgFromPayloadAndProof(payload, proof) {
     userDisclosurePayload: optionalHexToBytes(payload.user_disclosure_payload_hex, "user disclosure payload"),
     auditDisclosureDigest: hexToBytes3(payload.audit_disclosure_digest_hex, "audit disclosure digest"),
     auditDisclosureTargetPubkey: hexToBytes3(payload.audit_disclosure_target_pubkey_hex, "audit disclosure target pubkey"),
-    auditDisclosurePayload: hexToBytes3(payload.audit_disclosure_payload_hex, "audit disclosure payload")
+    auditDisclosurePayload: hexToBytes3(payload.audit_disclosure_payload_hex, "audit disclosure payload"),
+    selfViewDisclosureDigest: optionalHexToBytes(payload.self_view_disclosure_digest_hex, "self-view disclosure digest"),
+    selfViewDisclosurePayload: optionalHexToBytes(payload.self_view_disclosure_payload_hex, "self-view disclosure payload")
   };
 }
 async function buildTransferMessage({ proverAdapter, ...input } = {}) {
@@ -77039,6 +77184,12 @@ async function buildPreparedWithdrawProverPayload({
   if (!signer) {
     throw new Error("spendNoteHashSigner or rootSeed is required");
   }
+  const normalizedExpiresAtUnix = assertFutureUnixTimestamp(
+    expiresAtUnix,
+    Math.floor(Date.now() / 1e3),
+    "withdraw prover payload expired",
+    "withdraw prover payload expires_at_unix"
+  );
   const signature = await resolveWithdrawSignature(signer, computeWithdrawNoteHash(selected.note, recipientBytes));
   const payload = {
     version: preparedWithdrawProverPayloadVersion,
@@ -77050,7 +77201,7 @@ async function buildPreparedWithdrawProverPayload({
     recipient: String(recipient),
     recipient_bytes_hex: hexFromBytes2(recipientBytes),
     chain_id: String(chainId || "").trim(),
-    expires_at_unix: Number(expiresAtUnix),
+    expires_at_unix: normalizedExpiresAtUnix,
     note_randomness_hex: canonicalFieldHex(selected.note.randomness),
     spend_pubkey_hex: noteSpendPubKeyHex(selected.note),
     view_pubkey_hex: noteViewPubKeyHex(selected.note),
@@ -77093,9 +77244,12 @@ function validatePreparedWithdrawProof(proverPayload, proof, nowUnix = Math.floo
   if (proof.payload_hash !== proverPayload.payload_hash) {
     throw new Error("withdraw proof payload hash mismatch");
   }
-  if (Number(proverPayload.expires_at_unix) <= nowUnix) {
-    throw new Error("withdraw prover payload expired");
-  }
+  assertFutureUnixTimestamp(
+    proverPayload.expires_at_unix,
+    nowUnix,
+    "withdraw prover payload expired",
+    "withdraw prover payload expires_at_unix"
+  );
   normalizeHex(proof.proof_hex, "withdraw proof");
   return true;
 }
@@ -77115,20 +77269,73 @@ function buildPreparedWithdrawPayloadFromProof(proverPayload, proof, nowUnix) {
   payload.payload_hash = computePreparedWithdrawPayloadHash(payload);
   return payload;
 }
+function assertFutureUnixTimestamp(value, nowUnix, expiredMessage, label) {
+  const timestamp = Number(value);
+  if (!Number.isSafeInteger(timestamp)) {
+    throw new Error(`${label} must be a safe integer unix timestamp`);
+  }
+  if (timestamp <= nowUnix) {
+    throw new Error(expiredMessage);
+  }
+  return timestamp;
+}
 function validatePreparedWithdrawPayload(payload, nowUnix = Math.floor(Date.now() / 1e3)) {
   if (payload.version !== preparedWithdrawPayloadVersion) {
     throw new Error(`unsupported withdraw payload version ${JSON.stringify(payload.version)}`);
   }
-  if (Number(payload.expires_at_unix) <= nowUnix) {
-    throw new Error("withdraw payload expired");
-  }
+  assertFutureUnixTimestamp(
+    payload.expires_at_unix,
+    nowUnix,
+    "withdraw payload expired",
+    "withdraw payload expires_at_unix"
+  );
   if (payload.payload_hash !== computePreparedWithdrawPayloadHash(payload)) {
     throw new Error("withdraw payload hash mismatch");
   }
   return true;
 }
-function buildWithdrawMsgFromPayload(payload, creator) {
-  validatePreparedWithdrawPayload(payload);
+function validateRelayWithdrawPayload(payload, {
+  nowUnix,
+  expectedChainId,
+  expectedRecipient,
+  accountPrefix: accountPrefix2
+} = {}) {
+  validatePreparedWithdrawPayload(payload, nowUnix);
+  if (!String(payload.chain_id || "").trim()) {
+    throw new Error("withdraw payload chain_id is required");
+  }
+  const coinText2 = String(payload.amount || "").trim();
+  if (!/^(0|[1-9][0-9]*)[a-zA-Z][a-zA-Z0-9/:._-]*$/.test(coinText2)) {
+    throw new Error("withdraw payload amount must be a positive coin string with denom");
+  }
+  positiveBigInt(parseCoin(coinText2).amount, "withdraw payload amount");
+  const proofHex = normalizeHex(payload.proof_hex, "withdraw proof");
+  if (!proofHex) {
+    throw new Error("withdraw proof is required");
+  }
+  if (normalizeHex(payload.root_hex, "withdraw root").length !== 64) {
+    throw new Error("withdraw root must be a 32-byte hex string");
+  }
+  if (normalizeHex(payload.nullifier_hex, "withdraw nullifier").length !== 64) {
+    throw new Error("withdraw nullifier must be a 32-byte hex string");
+  }
+  const recipientDecoded = (0, import_encoding2.fromBech32)(payload.recipient);
+  if (accountPrefix2 != null) {
+    const expectedPrefix = normalizeBech32Prefix(accountPrefix2, "accountPrefix");
+    if (recipientDecoded.prefix !== expectedPrefix) {
+      throw new Error(`withdraw recipient prefix mismatch: expected ${expectedPrefix}, got ${recipientDecoded.prefix}`);
+    }
+  }
+  if (expectedChainId != null && String(payload.chain_id) !== String(expectedChainId)) {
+    throw new Error(`withdraw payload chain_id mismatch: expected ${expectedChainId}, got ${payload.chain_id}`);
+  }
+  if (expectedRecipient != null && String(payload.recipient) !== String(expectedRecipient)) {
+    throw new Error(`withdraw payload recipient mismatch: expected ${expectedRecipient}, got ${payload.recipient}`);
+  }
+  return true;
+}
+function buildWithdrawMsgFromPayload(payload, creator, nowUnix) {
+  validatePreparedWithdrawPayload(payload, nowUnix);
   return {
     creator: String(creator || ""),
     proof: hexToBytes3(payload.proof_hex, "withdraw proof"),
@@ -77140,7 +77347,22 @@ function buildWithdrawMsgFromPayload(payload, creator) {
     expiresAtUnix: BigInt(payload.expires_at_unix)
   };
 }
-async function buildWithdrawMessage({ proverAdapter, creator, ...input } = {}) {
+function buildRelayWithdrawMsgFromPayload(payload, relayer, options = {}) {
+  validateRelayWithdrawPayload(payload, options);
+  const creator = String(relayer || "").trim();
+  if (!creator) {
+    throw new Error("relayer is required for relay withdraw");
+  }
+  const relayerDecoded = (0, import_encoding2.fromBech32)(creator);
+  if (options.accountPrefix != null) {
+    const expectedPrefix = normalizeBech32Prefix(options.accountPrefix, "accountPrefix");
+    if (relayerDecoded.prefix !== expectedPrefix) {
+      throw new Error(`relayer prefix mismatch: expected ${expectedPrefix}, got ${relayerDecoded.prefix}`);
+    }
+  }
+  return buildWithdrawMsgFromPayload(payload, creator, options.nowUnix);
+}
+async function buildRelayWithdrawPayload({ proverAdapter, ...input } = {}) {
   if (!proverAdapter?.proveWithdraw) {
     throw new Error("proverAdapter.proveWithdraw is required");
   }
@@ -77155,31 +77377,27 @@ async function buildWithdrawMessage({ proverAdapter, creator, ...input } = {}) {
     selectedNote,
     proverPayload,
     proof,
-    payload,
-    message: buildWithdrawMsgFromPayload(payload, creator)
+    payload
   };
 }
-function createRestMerklePathProvider({ rest, fetchImpl = fetch } = {}) {
-  const base = String(rest || "").replace(/\/$/, "");
-  if (!base) {
-    throw new Error("rest endpoint is required");
-  }
+async function buildWithdrawMessage({ proverAdapter, creator, ...input } = {}) {
+  const { selectedNote, proverPayload, proof, payload } = await buildRelayWithdrawPayload({
+    proverAdapter,
+    ...input
+  });
   return {
-    async lookupMerklePath(commitmentHex) {
-      const response = await fetchImpl(`${base}/clairveil/privacy/v1/merkle_path/${commitmentHex}`, {
-        headers: { accept: "application/json" }
-      });
-      if (!response.ok) {
-        throw new Error(`merkle path query failed with status ${response.status}: ${await response.text()}`);
-      }
-      return response.json();
-    }
+    selectedNote,
+    proverPayload,
+    proof,
+    payload,
+    message: buildWithdrawMsgFromPayload(payload, creator)
   };
 }
 
 // node_modules/clairveiljs/src/core/errors.js
 var ClairveilErrorCode = Object.freeze({
   INVALID_ARGUMENT: "INVALID_ARGUMENT",
+  INVALID_AMOUNT: "INVALID_AMOUNT",
   WALLET_UNAVAILABLE: "WALLET_UNAVAILABLE",
   ROOT_SIGNATURE_REQUIRED: "ROOT_SIGNATURE_REQUIRED",
   SIGNER_MISMATCH: "SIGNER_MISMATCH",
@@ -77203,6 +77421,8 @@ var ClairveilError = class extends Error {
 };
 function plannerStatusToErrorCode(status) {
   switch (status) {
+    case "invalid_amount":
+      return ClairveilErrorCode.INVALID_AMOUNT;
     case "insufficient_balance":
       return ClairveilErrorCode.INSUFFICIENT_BALANCE;
     case "self_merge_required":
@@ -77277,6 +77497,16 @@ function planTransferNotes({ notes, amount, denom = defaultAssetDenom } = {}) {
     spendable,
     selectedTotal: selection.total
   });
+  if (requested <= 0n) {
+    return {
+      status: "invalid_amount",
+      canBuildTx: false,
+      action: "enter_positive_amount",
+      message: "Transfer amount must be greater than 0.",
+      facts,
+      selection
+    };
+  }
   if (selection.needsZeroDummy) {
     return {
       status: "zero_dummy_required",
@@ -77288,12 +77518,11 @@ function planTransferNotes({ notes, amount, denom = defaultAssetDenom } = {}) {
     };
   }
   if (selection.total === 0n || !selection.isFinal && spendableTotal < requested) {
-    const message = requested === 0n ? "No zero note is available; a 0uclair helper deposit is required." : `Need ${coin.raw}, but spendable total is ${spendableTotal}${coin.denom}.`;
     return {
       status: "insufficient_balance",
       canBuildTx: false,
       action: "deposit_or_receive_notes",
-      message,
+      message: `Need ${coin.raw}, but spendable total is ${spendableTotal}${coin.denom}.`,
       facts,
       selection
     };
@@ -77331,6 +77560,16 @@ function planWithdrawNotes({ notes, amount, denom = defaultAssetDenom } = {}) {
     spendable,
     selectedTotal: selected ? selected.note.amount : 0n
   });
+  if (requested <= 0n) {
+    return {
+      status: "invalid_amount",
+      canBuildTx: false,
+      action: "enter_positive_amount",
+      message: "Withdraw amount must be greater than 0.",
+      facts,
+      selectedNote: null
+    };
+  }
   if (selected) {
     return {
       status: "withdraw_ready",
@@ -77575,12 +77814,25 @@ function normalizeSignatureBytes(signature, label = "privacy root signature") {
     return Uint8Array.from(signature);
   }
   if (typeof signature === "string") {
-    return base64ToBytes(signature, label);
+    const text = signature.trim();
+    if (/^0x[0-9a-fA-F]+$/.test(text)) {
+      return bytesFromHex2(text.replace(/^0x/i, ""), label);
+    }
+    if (text.length >= 64 && text.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(text)) {
+      throw new Error(`${label} hex strings must be prefixed with 0x`);
+    }
+    return base64ToBytes(text, label);
+  }
+  if (signature?.signatureHex || signature?.signature_hex) {
+    return bytesFromHex2(signature.signatureHex ?? signature.signature_hex, label);
+  }
+  if (signature?.signatureBase64 || signature?.signature_base64) {
+    return base64ToBytes(signature.signatureBase64 ?? signature.signature_base64, label);
   }
   if (signature?.signature) {
     return normalizeSignatureBytes(signature.signature, label);
   }
-  throw new Error(`${label} must be bytes or base64`);
+  throw new Error(`${label} must be bytes, hex, or base64`);
 }
 function buildPrivacyRootSigningMessage({ address, transparentPubKeyHex, pubKeyHex }) {
   const resolvedPubKeyHex = normalizePubKeyHex(transparentPubKeyHex ?? pubKeyHex);
@@ -77840,6 +78092,94 @@ var msgDepositTypeUrl = MsgDeposit.typeUrl;
 var msgTransferTypeUrl = MsgTransfer.typeUrl;
 var msgWithdrawTypeUrl = MsgWithdraw.typeUrl;
 var defaultPrepareScanMaxPages = 1e3;
+var defaultFetchTimeoutMs = 3e4;
+var defaultRetryStatuses = Object.freeze([408, 429, 502, 503, 504]);
+var defaultQueryRetry = Object.freeze({
+  retries: 2,
+  baseDelayMs: 250,
+  maxDelayMs: 1500,
+  jitter: true,
+  retryStatuses: defaultRetryStatuses
+});
+function normalizeTimeoutMs(value, label = "timeoutMs") {
+  const timeoutMs = Number(value);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error(`${label} must be positive`);
+  }
+  return timeoutMs;
+}
+function normalizeNonNegativeInteger(value, label) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    throw new Error(`${label} must be a non-negative integer`);
+  }
+  return number;
+}
+function normalizeDelayMs(value, label) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) {
+    throw new Error(`${label} must be non-negative`);
+  }
+  return number;
+}
+function normalizeQueryRetry(value = {}) {
+  if (value === false) {
+    return {
+      retries: 0,
+      baseDelayMs: defaultQueryRetry.baseDelayMs,
+      maxDelayMs: defaultQueryRetry.maxDelayMs,
+      jitter: false,
+      retryStatuses: new Set(defaultRetryStatuses)
+    };
+  }
+  const retry = value || {};
+  return {
+    retries: normalizeNonNegativeInteger(retry.retries ?? defaultQueryRetry.retries, "queryRetry.retries"),
+    baseDelayMs: normalizeDelayMs(retry.baseDelayMs ?? defaultQueryRetry.baseDelayMs, "queryRetry.baseDelayMs"),
+    maxDelayMs: normalizeDelayMs(retry.maxDelayMs ?? defaultQueryRetry.maxDelayMs, "queryRetry.maxDelayMs"),
+    jitter: retry.jitter ?? defaultQueryRetry.jitter,
+    retryStatuses: new Set(retry.retryStatuses ?? defaultRetryStatuses)
+  };
+}
+function retryDelayMs(attemptNumber, retry) {
+  const base = retry.baseDelayMs * (attemptNumber <= 1 ? 1 : 3 ** (attemptNumber - 1));
+  const capped = Math.min(retry.maxDelayMs, base);
+  if (!retry.jitter || capped <= 0) return capped;
+  return Math.round(capped + Math.random() * capped * 0.2);
+}
+function sleep(ms) {
+  return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
+}
+function isRetryableFetchError(error, retry) {
+  if (error?.name === "AbortError" || error?.code === "FETCH_TIMEOUT") return true;
+  if (error?.status != null) return retry.retryStatuses.has(Number(error.status));
+  return true;
+}
+function normalizeRestEndpoints(primary, restEndpoints = []) {
+  const endpoints = [];
+  for (const endpoint of [primary, ...Array.isArray(restEndpoints) ? restEndpoints : []]) {
+    const normalized = normalizeRestEndpoint(String(endpoint || ""));
+    if (normalized && !endpoints.includes(normalized)) {
+      endpoints.push(normalized);
+    }
+  }
+  if (!endpoints.length) {
+    throw new Error("rest endpoint is required");
+  }
+  return endpoints;
+}
+function requiredDepositProof(input = {}) {
+  if (input?.proof != null) {
+    const proof = typeof input.proof === "string" ? bytesFromHex2(input.proof, "deposit proof") : Uint8Array.from(input.proof);
+    if (proof.length) return proof;
+  }
+  const proofHex = input?.proofHex ?? input?.proof_hex;
+  if (proofHex != null && String(proofHex).trim()) {
+    const proof = bytesFromHex2(proofHex, "deposit proof");
+    if (proof.length) return proof;
+  }
+  throw new Error("deposit proof is required; provide proof or proofHex");
+}
 var MsgDeposit2 = MsgDeposit;
 var MsgTransfer2 = MsgTransfer;
 var MsgWithdraw2 = MsgWithdraw;
@@ -77906,12 +78246,56 @@ function directSignDocFromBase64(signDoc) {
 function fromHex(value, label = "hex") {
   return bytesFromHex(value, label);
 }
-async function fetchJson(url) {
-  const response = await fetch(url, { headers: { accept: "application/json" } });
-  if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
+async function fetchJson(url, { timeoutMs = defaultFetchTimeoutMs, fetchImpl = globalThis.fetch } = {}) {
+  const resolvedTimeoutMs = normalizeTimeoutMs(timeoutMs, "fetch timeoutMs");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), resolvedTimeoutMs);
+  try {
+    const response = await fetchImpl(url, {
+      headers: { accept: "application/json" },
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      const error = new Error(`${response.status} ${response.statusText}`);
+      error.status = response.status;
+      error.statusText = response.statusText;
+      throw error;
+    }
+    return response.json();
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      const timeoutError = new Error(`fetch request timed out after ${resolvedTimeoutMs}ms: ${url}`);
+      timeoutError.code = "FETCH_TIMEOUT";
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  return response.json();
+}
+async function fetchJsonWithRetry(urlForEndpoint, endpoints, { timeoutMs, retry, fetchImpl } = {}) {
+  const normalizedRetry = normalizeQueryRetry(retry);
+  let lastError = null;
+  for (const endpoint of endpoints) {
+    for (let attempt = 0; attempt <= normalizedRetry.retries; attempt += 1) {
+      try {
+        return {
+          data: await fetchJson(urlForEndpoint(endpoint), { timeoutMs, fetchImpl }),
+          endpoint
+        };
+      } catch (error) {
+        lastError = error;
+        const retryable = isRetryableFetchError(error, normalizedRetry);
+        if (!retryable) {
+          throw error;
+        }
+        const canRetry = attempt < normalizedRetry.retries && retryable;
+        if (!canRetry) break;
+        await sleep(retryDelayMs(attempt + 1, normalizedRetry));
+      }
+    }
+  }
+  throw lastError;
 }
 function privacyEventsQuery({
   afterHeight,
@@ -78028,15 +78412,35 @@ function publicPrivacyAccount(material) {
   };
 }
 var ClairveilJS = class {
-  constructor({ rpc, rest, chainId, accountPrefix: accountPrefix2, bech32Prefix, shieldedPrefix: shieldedPrefix2, defaultDenom = defaultAssetDenom, assetDenom, registry = createClairveilRegistry() }) {
+  constructor({
+    rpc,
+    rest,
+    restEndpoints,
+    chainId,
+    accountPrefix: accountPrefix2,
+    bech32Prefix,
+    shieldedPrefix: shieldedPrefix2,
+    defaultDenom = defaultAssetDenom,
+    assetDenom,
+    registry = createClairveilRegistry(),
+    queryTimeoutMs = defaultFetchTimeoutMs,
+    fetchTimeoutMs,
+    queryRetry,
+    nullifierFailover = false
+  } = {}) {
     this.rpc = normalizeRpcEndpoint(rpc);
-    this.rest = normalizeRestEndpoint(rest);
+    this.restEndpoints = normalizeRestEndpoints(rest, restEndpoints);
+    this.rest = this.restEndpoints[0];
+    this.activeRestEndpoint = this.rest;
     this.chainId = chainId;
     this.accountPrefix = normalizeBech32Prefix(accountPrefix2 ?? bech32Prefix ?? defaultAccountPrefix, "accountPrefix");
     this.bech32Prefix = this.accountPrefix;
     this.shieldedPrefix = normalizeBech32Prefix(shieldedPrefix2 ?? `${this.accountPrefix}s`, "shieldedPrefix");
     this.defaultDenom = String(assetDenom ?? defaultDenom ?? defaultAssetDenom);
     this.registry = registry;
+    this.queryTimeoutMs = normalizeTimeoutMs(fetchTimeoutMs ?? queryTimeoutMs, "queryTimeoutMs");
+    this.queryRetry = normalizeQueryRetry(queryRetry);
+    this.nullifierFailover = Boolean(nullifierFailover);
     this.clientPromise = null;
   }
   async connect() {
@@ -78051,11 +78455,38 @@ var ClairveilJS = class {
     client.disconnect();
     this.clientPromise = null;
   }
-  restUrl(path) {
-    return `${this.rest}${path}`;
+  restUrl(path, endpoint = this.activeRestEndpoint) {
+    return `${endpoint}${path}`;
+  }
+  async fetchJson(pathOrUrl, { failover = false, retry = this.queryRetry } = {}) {
+    const text = String(pathOrUrl || "");
+    const isAbsolute = /^https?:\/\//i.test(text);
+    if (isAbsolute) {
+      const result2 = await fetchJsonWithRetry(
+        (url) => url,
+        [text],
+        {
+          timeoutMs: this.queryTimeoutMs,
+          retry
+        }
+      );
+      return result2.data;
+    }
+    const path = text;
+    const endpoints = failover ? [this.activeRestEndpoint, ...this.restEndpoints.filter((endpoint) => endpoint !== this.activeRestEndpoint)] : [this.activeRestEndpoint];
+    const result = await fetchJsonWithRetry(
+      (endpoint) => this.restUrl(path, endpoint),
+      endpoints,
+      {
+        timeoutMs: this.queryTimeoutMs,
+        retry
+      }
+    );
+    this.activeRestEndpoint = result.endpoint;
+    return result.data;
   }
   async getAccountInfo(address) {
-    const data = await fetchJson(this.restUrl(`/cosmos/auth/v1beta1/account_info/${address}`));
+    const data = await this.fetchJson(`/cosmos/auth/v1beta1/account_info/${address}`, { failover: true });
     const info = data.info;
     if (!info?.account_number || info.sequence == null) {
       throw new Error("account not found on-chain; fund it first");
@@ -78086,28 +78517,35 @@ var ClairveilJS = class {
     return null;
   }
   async fetchPrivacyEvents(options = {}) {
-    return fetchJson(this.restUrl(`/clairveil/privacy/v1/events${privacyEventsQuery(options)}`));
+    return this.fetchJson(`/clairveil/privacy/v1/events${privacyEventsQuery(options)}`, { failover: true });
   }
   async fetchTreeState() {
-    return fetchJson(this.restUrl("/clairveil/privacy/v1/tree_state"));
+    return this.fetchJson("/clairveil/privacy/v1/tree_state", { failover: true });
   }
   async fetchCommitmentInfo(commitmentHex) {
-    return fetchJson(this.restUrl(`/clairveil/privacy/v1/commitment/${commitmentHex}`));
+    return this.fetchJson(`/clairveil/privacy/v1/commitment/${commitmentHex}`, { failover: true });
   }
   async lookupMerklePath(commitmentHex) {
-    return createRestMerklePathProvider({ rest: this.rest }).lookupMerklePath(commitmentHex);
+    return this.fetchJson(`/clairveil/privacy/v1/merkle_path/${commitmentHex}`, { failover: true });
   }
   async fetchAuditConfig() {
-    return fetchJson(this.restUrl("/clairveil/privacy/v1/audit_config"));
+    return this.fetchJson("/clairveil/privacy/v1/audit_config", { failover: true });
   }
   async fetchDisclosureConfig() {
-    return fetchJson(this.restUrl("/clairveil/privacy/v1/disclosure_config"));
+    return this.fetchJson("/clairveil/privacy/v1/disclosure_config", { failover: true });
   }
   async fetchCircuitConfig() {
-    return fetchJson(this.restUrl("/clairveil/privacy/v1/circuit_config"));
+    return this.fetchJson("/clairveil/privacy/v1/circuit_config", { failover: true });
+  }
+  async fetchReserve(denom) {
+    const normalizedDenom = String(denom || "").trim();
+    if (!normalizedDenom) {
+      throw new Error("reserve denom is required");
+    }
+    return this.fetchJson(`/clairveil/privacy/v1/reserve/${encodeURIComponent(normalizedDenom)}`, { failover: true });
   }
   async checkNullifier(nullifierHex) {
-    return fetchJson(this.restUrl(`/clairveil/privacy/v1/nullifier/${nullifierHex}`));
+    return this.fetchJson(`/clairveil/privacy/v1/nullifier/${nullifierHex}`, { failover: this.nullifierFailover });
   }
   async deriveWalletPrivacyMaterial(wallet) {
     return derivePrivacyMaterialFromWallet(wallet, {
@@ -78250,18 +78688,28 @@ var ClairveilJS = class {
     });
   }
   buildDepositMessage(input) {
-    const material = buildDepositMaterial({
+    const material = input?.depositMaterial ?? input?.deposit_material ?? (input?.material?.note_commitment && input?.material?.encrypted_note ? input.material : buildDepositMaterial({
       shieldedPrefix: this.shieldedPrefix,
       assetDenom: input?.assetDenom ?? input?.denom ?? this.defaultDenom,
       ...input
-    });
+    }));
+    const expectedCreator = String(input?.creator || "").trim();
+    if (expectedCreator && String(material.creator || "").trim() !== expectedCreator) {
+      throw new Error(`deposit material creator mismatch: expected ${expectedCreator}, got ${material.creator || ""}`);
+    }
+    const expectedAmount = input?.amount == null ? "" : parseCoin(input.amount, input?.assetDenom ?? input?.denom ?? this.defaultDenom).raw;
+    if (expectedAmount && String(material.amount || "").trim() !== expectedAmount) {
+      throw new Error(`deposit material amount mismatch: expected ${expectedAmount}, got ${material.amount || ""}`);
+    }
+    const proof = requiredDepositProof(input);
     return {
       material,
       message: {
         creator: material.creator,
         amount: material.amount,
         noteCommitment: material.note_commitment,
-        encryptedNote: material.encrypted_note
+        encryptedNote: material.encrypted_note,
+        proof
       }
     };
   }
@@ -78372,14 +78820,17 @@ var ClairveilJS = class {
       scan
     };
   }
-  async prepareDeposit({ wallet, material, amount, memo = "Clairveil deposit", gasLimit = 25e5, denom, assetDenom } = {}) {
+  async prepareDeposit({ wallet, material, depositMaterial, deposit_material, amount, memo = "Clairveil deposit", gasLimit = 25e5, denom, assetDenom, proof, proofHex, proof_hex } = {}) {
     const privacy = material || await this.deriveWalletPrivacyMaterial(wallet);
     const prepared = this.buildDepositMessage({
+      depositMaterial: depositMaterial ?? deposit_material,
       creator: privacy.address,
       rootSeed: privacy.rootSeed,
       amount,
       assetDenom: assetDenom ?? denom ?? this.defaultDenom,
-      memo
+      memo,
+      proof,
+      proofHex: proofHex ?? proof_hex
     });
     const signDoc = await this.buildDirectSignDoc({
       signer: privacy.address,
@@ -78391,7 +78842,7 @@ var ClairveilJS = class {
           value: prepared.message
         }
       ],
-      memo: "Clairveil privacy deposit"
+      memo
     });
     return {
       status: "ready",
@@ -78532,6 +78983,7 @@ var ClairveilJS = class {
     max_pages,
     eventTypes,
     event_types,
+    expiresAtUnix,
     gasLimit = 5e6
   } = {}) {
     const privacy = material || await this.deriveWalletPrivacyMaterial(wallet);
@@ -78575,7 +79027,8 @@ var ClairveilJS = class {
       assetDenom: assetDenom ?? denom ?? this.defaultDenom,
       recipient,
       rootSeed: privacy.rootSeed,
-      chainId: this.chainId
+      chainId: this.chainId,
+      expiresAtUnix
     });
     const signDoc = await this.buildDirectSignDoc({
       signer: privacy.address,
@@ -78602,6 +79055,79 @@ var ClairveilJS = class {
       privacyAccount: publicPrivacyAccount(privacy)
     };
   }
+  async prepareRelayWithdraw({
+    wallet,
+    material,
+    amount,
+    recipient,
+    proverAdapter,
+    denom,
+    assetDenom,
+    scan,
+    afterHeight,
+    after_height,
+    page,
+    limit = 200,
+    maxPages = defaultPrepareScanMaxPages,
+    max_pages,
+    eventTypes,
+    event_types,
+    expiresAtUnix
+  } = {}) {
+    const privacy = material || await this.deriveWalletPrivacyMaterial(wallet);
+    const scanOptions = resolveScanOptions({
+      scan,
+      afterHeight,
+      after_height,
+      page,
+      limit,
+      maxPages,
+      max_pages,
+      eventTypes,
+      event_types
+    });
+    const scanResult = await this.scanNotes({
+      rootSeed: privacy.rootSeed,
+      ...scanOptions,
+      limit: scanOptions.limit ?? 200,
+      maxPages: scanOptions.maxPages ?? defaultPrepareScanMaxPages,
+      includeFoundNotes: true
+    });
+    const plan = planWithdrawNotes({
+      notes: scanResult.foundNotes,
+      amount,
+      denom: assetDenom ?? denom ?? this.defaultDenom
+    });
+    if (!plan.canBuildTx) {
+      return {
+        status: plan.status,
+        plan,
+        scan: scanResult,
+        privacyAccount: publicPrivacyAccount(privacy)
+      };
+    }
+    assertPlanCanBuildTx(plan);
+    const built = await this.buildRelayWithdrawPayload({
+      proverAdapter,
+      notes: scanResult.foundNotes,
+      amount,
+      assetDenom: assetDenom ?? denom ?? this.defaultDenom,
+      recipient,
+      rootSeed: privacy.rootSeed,
+      chainId: this.chainId,
+      expiresAtUnix
+    });
+    return {
+      status: "ready",
+      plan,
+      scan: scanResult,
+      proverPayload: built.proverPayload,
+      proof: built.proof,
+      payload: built.payload,
+      selectedNote: built.selectedNote,
+      privacyAccount: publicPrivacyAccount(privacy)
+    };
+  }
   async createDepositSignDoc(input) {
     return this.prepareDeposit(input);
   }
@@ -78616,6 +79142,13 @@ var ClairveilJS = class {
     const result = await this.prepareWithdraw(input);
     if (result.status !== "ready") {
       throw new Error(result.plan?.message || `withdraw is not ready: ${result.status}`);
+    }
+    return result;
+  }
+  async createRelayWithdrawPayload(input) {
+    const result = await this.prepareRelayWithdraw(input);
+    if (result.status !== "ready") {
+      throw new Error(result.plan?.message || `relay withdraw is not ready: ${result.status}`);
     }
     return result;
   }
@@ -78644,6 +79177,15 @@ var ClairveilJS = class {
       chainId: input?.chainId ?? this.chainId
     });
   }
+  async buildRelayWithdrawPayload(input) {
+    return buildRelayWithdrawPayload({
+      merklePathProvider: this,
+      accountPrefix: this.accountPrefix,
+      assetDenom: input?.assetDenom ?? input?.denom ?? this.defaultDenom,
+      ...input,
+      chainId: input?.chainId ?? this.chainId
+    });
+  }
   async buildWithdrawMessage(input) {
     return buildWithdrawMessage({
       merklePathProvider: this,
@@ -78652,6 +79194,69 @@ var ClairveilJS = class {
       ...input,
       chainId: input?.chainId ?? this.chainId
     });
+  }
+  buildRelayWithdrawMessageFromPayload({
+    payload,
+    relayer,
+    creator,
+    nowUnix,
+    expectedChainId,
+    expectedRecipient,
+    accountPrefix: accountPrefix2
+  } = {}) {
+    if (!payload) {
+      throw new Error("payload is required for relay withdraw");
+    }
+    return buildRelayWithdrawMsgFromPayload(payload, relayer ?? creator, {
+      nowUnix,
+      expectedChainId: expectedChainId ?? this.chainId,
+      expectedRecipient,
+      accountPrefix: accountPrefix2 ?? this.accountPrefix
+    });
+  }
+  async createRelayWithdrawSignDoc({
+    payload,
+    relayer,
+    creator,
+    pubKeyHex,
+    pub_key_hex,
+    gasLimit = 5e6,
+    feeAmount = [],
+    memo = "Clairveil relay withdraw",
+    nowUnix,
+    expectedChainId,
+    expectedRecipient,
+    accountPrefix: accountPrefix2
+  } = {}) {
+    const signer = relayer ?? creator;
+    const message = this.buildRelayWithdrawMessageFromPayload({
+      payload,
+      relayer: signer,
+      nowUnix,
+      expectedChainId,
+      expectedRecipient,
+      accountPrefix: accountPrefix2
+    });
+    const signDoc = await this.buildDirectSignDoc({
+      signer: String(signer || ""),
+      pubKeyHex: pubKeyHex ?? pub_key_hex,
+      gasLimit,
+      feeAmount,
+      messages: [
+        {
+          typeUrl: msgWithdrawTypeUrl,
+          value: message
+        }
+      ],
+      memo
+    });
+    return {
+      status: "ready",
+      relayer: message.creator,
+      payload,
+      message,
+      signDoc
+    };
   }
   async decodeUserDisclosure({
     txHash,
@@ -78691,6 +79296,52 @@ var ClairveilJS = class {
       event,
       material.disclosureScalar,
       material.disclosurePubKeyHex,
+      normalizedTxHash,
+      { shieldedPrefix: this.shieldedPrefix }
+    );
+  }
+  async decodeSelfViewDisclosure({
+    txHash,
+    tx_hash,
+    address,
+    pubKeyHex,
+    pub_key_hex,
+    signatureBase64,
+    signature_base64,
+    skipSignerPubKeyCheck,
+    skip_signer_pubkey_check,
+    disclosureScalar,
+    disclosure_scalar,
+    disclosureScalarHex,
+    disclosure_scalar_hex,
+    ...eventQuery
+  }) {
+    const normalizedTxHash = String(txHash ?? tx_hash ?? "").trim().toUpperCase();
+    const event = await this.findPrivacyEventByTxHash(normalizedTxHash, eventQuery);
+    const directScalar = disclosureScalar ?? disclosure_scalar;
+    const directScalarHex = disclosureScalarHex ?? disclosure_scalar_hex;
+    if (directScalar != null || directScalarHex != null) {
+      return decodeSelfViewDisclosureFromEvent(
+        event,
+        directScalar != null ? directScalar : disclosureScalarFromHex(directScalarHex),
+        normalizedTxHash,
+        { shieldedPrefix: this.shieldedPrefix }
+      );
+    }
+    const signerPubKeyHex = pubKeyHex ?? pub_key_hex;
+    const skipSignerCheck = Boolean(skipSignerPubKeyCheck ?? skip_signer_pubkey_check);
+    if (!skipSignerCheck) {
+      assertSignerPubKey(address, signerPubKeyHex, this.bech32Prefix);
+    }
+    const material = derivePrivacyMaterial({
+      address,
+      pubKeyHex: signerPubKeyHex,
+      signatureBase64: signatureBase64 ?? signature_base64,
+      shieldedPrefix: this.shieldedPrefix
+    });
+    return decodeSelfViewDisclosureFromEvent(
+      event,
+      material.disclosureScalar,
       normalizedTxHash,
       { shieldedPrefix: this.shieldedPrefix }
     );
@@ -78744,13 +79395,25 @@ var ClairveilJS = class {
     const txBytes = this.buildTxRawBytes(signedTx);
     const txhash = await client.broadcastTxSync(txBytes);
     const tx = await this.waitForTx(txhash, waitOptions);
+    const txCode = Number(tx?.code ?? 0);
+    const rawLog = String(tx?.raw_log || "");
+    const broadcast = {
+      txhash,
+      code: txCode,
+      raw_log: tx ? rawLog : `transaction was broadcast but not found yet: ${txhash}`
+    };
+    if (tx && txCode !== 0) {
+      const error = new Error(`broadcasted transaction failed with code ${txCode}: ${rawLog || "no raw log"}`);
+      error.txhash = txhash;
+      error.broadcast = broadcast;
+      error.tx = tx;
+      throw error;
+    }
     return {
-      broadcast: {
-        txhash,
-        code: 0,
-        raw_log: ""
-      },
-      tx
+      ok: Boolean(tx && txCode === 0),
+      broadcast,
+      tx,
+      error: tx ? "" : broadcast.raw_log
     };
   }
   async signDirectAndBroadcast({ wallet, signDoc, waitOptions } = {}) {
@@ -79068,9 +79731,32 @@ function bytesArray(value, label, byteLength) {
   }
   return value.map((item, index) => requiredBytes(item, `${label}[${index}]`, byteLength));
 }
-function withdrawRecipientToEvmAddress(message, options = {}) {
+function explicitWithdrawEvmRecipient(message) {
   const recipient = valueFrom(message, ["evmRecipient", "evm_recipient", "recipientAddress", "recipient_address"], null);
-  if (recipient) return normalizeEvmAddress(recipient, "withdraw recipient");
+  return recipient ? normalizeEvmAddress(recipient, "withdraw recipient") : "";
+}
+function assertWithdrawEvmRecipientMatchesMessage(evmRecipient, messageRecipient, accountPrefix2) {
+  if (!evmRecipient || messageRecipient == null) return;
+  const recipient = String(messageRecipient).trim();
+  if (!recipient) return;
+  if (isEvmAddress(recipient)) {
+    const normalizedRecipient = normalizeEvmAddress(recipient, "withdraw recipient");
+    if (normalizedRecipient.toLowerCase() !== evmRecipient.toLowerCase()) {
+      throw new Error(`withdraw evmRecipient does not match message recipient: ${evmRecipient} does not match ${normalizedRecipient}`);
+    }
+    return;
+  }
+  const decodedRecipient = bech32AddressToEvm(recipient, accountPrefix2);
+  if (decodedRecipient.toLowerCase() !== evmRecipient.toLowerCase()) {
+    throw new Error(`withdraw evmRecipient does not match message recipient: ${evmRecipient} does not match ${decodedRecipient}`);
+  }
+}
+function withdrawRecipientToEvmAddress(message, options = {}) {
+  const recipient = explicitWithdrawEvmRecipient(message);
+  if (recipient) {
+    assertWithdrawEvmRecipientMatchesMessage(recipient, valueFrom(message, ["recipient"], null), options.accountPrefix);
+    return recipient;
+  }
   const fallback = valueFrom(message, ["recipient"], null);
   if (isEvmAddress(fallback)) return normalizeEvmAddress(fallback, "withdraw recipient");
   return bech32AddressToEvm(fallback, options.accountPrefix);
@@ -79100,6 +79786,14 @@ function encodeEvmPrivacyDeposit(message, options = {}) {
   );
 }
 function encodeEvmPrivacyTransfer(message, options = {}) {
+  const hasSelfViewDisclosure = (value) => {
+    if (value == null) return false;
+    if (typeof value === "string") return strip0x(value).length > 0;
+    return value.length > 0;
+  };
+  if (hasSelfViewDisclosure(message.selfViewDisclosureDigest ?? message.self_view_disclosure_digest) || hasSelfViewDisclosure(message.selfViewDisclosurePayload ?? message.self_view_disclosure_payload)) {
+    throw new Error("EVM privacy transfer ABI does not support self-view disclosure fields");
+  }
   const request = {
     proof: requiredBytes(message.proof, "transfer proof"),
     root: requiredBytes(message.root, "transfer root", 32),
@@ -79167,10 +79861,14 @@ function createEip1193WalletAdapter({ provider, account } = {}) {
     async signPrivacyRoot(messageBytes) {
       const address = await this.getAddress();
       const messageHex = with0x(hexFromBytes2(messageBytes));
-      return provider.request({
+      const signature = await provider.request({
         method: "personal_sign",
         params: [messageHex, address]
       });
+      if (typeof signature !== "string" || !/^0x[0-9a-fA-F]+$/.test(signature)) {
+        throw new Error("EVM wallet personal_sign must return a 0x-prefixed hex signature");
+      }
+      return signature;
     },
     async sendTransaction(transaction) {
       const from = transaction.from ? normalizeEvmAddress(transaction.from, "transaction from") : await this.getAddress();
@@ -79284,7 +79982,22 @@ var ClairveilEvmClient = class {
     });
   }
   buildDepositTransaction(input = {}) {
-    const material = input.material || this.buildDepositMaterial(input);
+    if (input.message) {
+      return {
+        status: "ready",
+        message: input.message,
+        transaction: this.contract.buildDepositTransaction(input.message, input.transactionOptions)
+      };
+    }
+    const material = input.material || input.depositMaterial || input.deposit_material || this.buildDepositMaterial(input);
+    const expectedCreator = String(input.creator || "").trim();
+    if (expectedCreator && String(material.creator || "").trim() !== expectedCreator) {
+      throw new Error(`deposit material creator mismatch: expected ${expectedCreator}, got ${material.creator || ""}`);
+    }
+    const expectedAmount = input.amount == null ? "" : parseCoin(input.amount, input.assetDenom ?? input.denom ?? this.defaultDenom).raw;
+    if (expectedAmount && String(material.amount || "").trim() !== expectedAmount) {
+      throw new Error(`deposit material amount mismatch: expected ${expectedAmount}, got ${material.amount || ""}`);
+    }
     const message = input.message || {
       amount: material.amount,
       noteCommitment: material.note_commitment,
@@ -79301,7 +80014,8 @@ var ClairveilEvmClient = class {
     const built = input.message ? { message: input.message, payload: input.payload, proof: input.proof } : await buildTransferMessage({
       shieldedPrefix: this.shieldedPrefix,
       transferDenom: input.transferDenom ?? input.denom ?? this.defaultDenom,
-      ...input
+      ...input,
+      disableSelfViewDisclosure: input.disableSelfViewDisclosure ?? true
     });
     return {
       status: "ready",
@@ -79313,7 +80027,8 @@ var ClairveilEvmClient = class {
     return buildPreparedTransferPayload({
       shieldedPrefix: this.shieldedPrefix,
       transferDenom: input.transferDenom ?? input.denom ?? this.defaultDenom,
-      ...input
+      ...input,
+      disableSelfViewDisclosure: input.disableSelfViewDisclosure ?? true
     });
   }
   async buildPreparedWithdrawProverPayload(input = {}) {
@@ -79327,16 +80042,55 @@ var ClairveilEvmClient = class {
     });
   }
   async buildWithdrawTransaction(input = {}) {
+    const accountPrefix2 = input.accountPrefix ?? this.accountPrefix;
     const evmRecipient = input.evmRecipient ?? input.evm_recipient ?? (isEvmAddress(input.recipient) ? normalizeEvmAddress(input.recipient, "withdraw recipient") : void 0);
-    const recipient = evmRecipient ? evmAddressToBech32(evmRecipient, input.accountPrefix ?? this.accountPrefix) : input.recipient;
-    const built = input.message ? { message: input.message, payload: input.payload, proof: input.proof, proverPayload: input.proverPayload } : await buildWithdrawMessage({
-      assetDenom: input.assetDenom ?? input.denom ?? this.defaultDenom,
-      ...input,
-      recipient,
-      accountPrefix: input.accountPrefix ?? this.accountPrefix,
-      chainId: input.chainId ?? this.chainId
-    });
-    const message = evmRecipient ? { ...built.message, evmRecipient } : built.message;
+    const recipient = evmRecipient ? evmAddressToBech32(evmRecipient, accountPrefix2) : input.recipient;
+    let built;
+    if (input.message) {
+      built = {
+        message: input.message,
+        payload: input.payload,
+        proof: input.proof,
+        proverPayload: input.proverPayload,
+        selectedNote: input.selectedNote
+      };
+    } else if (input.payload) {
+      const expectedRecipientInput = input.expectedRecipient ?? input.expected_recipient ?? (input.recipient == null ? void 0 : recipient);
+      const expectedRecipient = isEvmAddress(expectedRecipientInput) ? evmAddressToBech32(expectedRecipientInput, accountPrefix2) : expectedRecipientInput;
+      const expectedChainId = input.expectedChainId ?? input.expected_chain_id ?? input.chainId ?? input.chain_id ?? this.chainId;
+      if (!String(expectedChainId ?? "").trim()) {
+        throw new Error("expectedChainId is required for relay withdraw payload validation");
+      }
+      validateRelayWithdrawPayload(input.payload, {
+        nowUnix: input.nowUnix ?? input.now_unix,
+        expectedChainId,
+        expectedRecipient,
+        accountPrefix: accountPrefix2
+      });
+      built = {
+        message: buildWithdrawMsgFromPayload(
+          input.payload,
+          input.relayer ?? input.creator ?? input.address ?? "",
+          input.nowUnix ?? input.now_unix
+        ),
+        payload: input.payload,
+        proof: input.proof,
+        proverPayload: input.proverPayload,
+        selectedNote: input.selectedNote
+      };
+    } else {
+      built = await buildWithdrawMessage({
+        assetDenom: input.assetDenom ?? input.denom ?? this.defaultDenom,
+        ...input,
+        recipient,
+        accountPrefix: accountPrefix2,
+        chainId: input.chainId ?? this.chainId
+      });
+    }
+    const candidateMessage = evmRecipient ? { ...built.message, evmRecipient } : built.message;
+    const messageEvmRecipient = explicitWithdrawEvmRecipient(candidateMessage);
+    assertWithdrawEvmRecipientMatchesMessage(messageEvmRecipient, candidateMessage?.recipient, accountPrefix2);
+    const message = messageEvmRecipient ? { ...candidateMessage, evmRecipient: messageEvmRecipient } : candidateMessage;
     return {
       status: "ready",
       ...built,
@@ -79361,38 +80115,80 @@ function createClairveilEvmClient(options) {
 
 // node_modules/clairveiljs/src/browser/wallet-client.js
 var defaultPrepareScanMaxPages2 = 1e3;
+var defaultFetchTimeoutMs2 = 3e4;
 function trimTrailingSlash(value) {
   return String(value || "").replace(/\/$/, "");
 }
 function normalizeRpcEndpoint2(value) {
   return trimTrailingSlash(String(value || "").replace(/^tcp:\/\//, "http://"));
 }
-async function fetchJson2(url, options = {}) {
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      accept: "application/json",
-      ...options.body ? { "content-type": "application/json" } : {},
-      ...options.headers || {}
-    }
-  });
-  const text = await response.text();
-  let data = null;
-  if (text) {
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = { error: text };
+function normalizeRestEndpoints2(primary, restEndpoints = []) {
+  const endpoints = [];
+  for (const endpoint of [primary, ...Array.isArray(restEndpoints) ? restEndpoints : []]) {
+    const normalized = trimTrailingSlash(endpoint);
+    if (normalized && !endpoints.includes(normalized)) {
+      endpoints.push(normalized);
     }
   }
-  if (!response.ok || data?.error) {
-    const message = data?.error?.message || data?.error || response.statusText;
-    throw new Error(message);
+  if (!endpoints.length) {
+    throw new Error("rest endpoint is required");
   }
-  return data;
+  return endpoints;
 }
-function walletTypeFromBody(body = {}) {
-  const walletType = body.walletType ?? body.wallet_type ?? "cosmos";
+function normalizeTimeoutMs2(value, label = "timeoutMs") {
+  const timeoutMs = Number(value);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error(`${label} must be positive`);
+  }
+  return timeoutMs;
+}
+async function fetchJson2(url, options = {}) {
+  const { timeoutMs = defaultFetchTimeoutMs2, ...fetchOptions } = options;
+  const resolvedTimeoutMs = normalizeTimeoutMs2(timeoutMs, "fetch timeoutMs");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), resolvedTimeoutMs);
+  if (fetchOptions.signal) {
+    if (fetchOptions.signal.aborted) {
+      controller.abort();
+    } else {
+      fetchOptions.signal.addEventListener("abort", () => controller.abort(), { once: true });
+    }
+  }
+  try {
+    const response = await fetch(url, {
+      ...fetchOptions,
+      headers: {
+        accept: "application/json",
+        ...fetchOptions.body ? { "content-type": "application/json" } : {},
+        ...fetchOptions.headers || {}
+      },
+      signal: controller.signal
+    });
+    const text = await response.text();
+    let data = null;
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { error: text };
+      }
+    }
+    if (!response.ok || data?.error) {
+      const message = data?.error?.message || data?.error || response.statusText;
+      throw new Error(message);
+    }
+    return data;
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`fetch request timed out after ${resolvedTimeoutMs}ms: ${url}`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+function walletTypeFromBody(body = {}, fallback = "cosmos") {
+  const walletType = body.walletType ?? body.wallet_type ?? fallback;
   if (walletType === "cosmos" || walletType === "evm") return walletType;
   throw new ClairveilError(
     ClairveilErrorCode.INVALID_ARGUMENT,
@@ -79413,6 +80209,16 @@ function scanOptionsFromBody(body = {}) {
     maxPages: scan.maxPages ?? scan.max_pages ?? body.scanMaxPages ?? body.scan_max_pages ?? body.maxPages ?? body.max_pages,
     eventTypes: scan.eventTypes ?? scan.event_types ?? body.eventTypes ?? body.event_types
   };
+}
+function positiveCoinForDenom(amount, denom, label) {
+  const coin = parseCoin(amount, denom);
+  if (coin.denom !== denom) {
+    throw new Error(`${label} denom must be ${denom}, got ${coin.denom}`);
+  }
+  if (BigInt(coin.amount) <= 0n) {
+    throw new Error(`${label} amount must be greater than 0.`);
+  }
+  return coin;
 }
 function txEventAttribute(event, key) {
   return (event?.attributes || []).find((attribute) => attribute.key === key)?.value || "";
@@ -79484,12 +80290,17 @@ var ClairveilBrowserClient = class {
     profile,
     rpc,
     rest,
+    restEndpoints,
     chainId,
     accountPrefix: accountPrefix2,
     shieldedPrefix: shieldedPrefix2,
     denom,
     proverUrl,
     proverTimeoutMs = 12e4,
+    queryTimeoutMs = defaultFetchTimeoutMs2,
+    fetchTimeoutMs,
+    queryRetry,
+    nullifierFailover,
     evmRpc,
     evmChainId,
     evmPrivacyPrecompileAddress: evmPrivacyPrecompileAddress2,
@@ -79498,14 +80309,20 @@ var ClairveilBrowserClient = class {
   } = {}) {
     const resolved = profile || {};
     this.profile = resolved;
+    this.defaultWalletType = walletTypeFromBody({}, resolved.transport ?? "cosmos");
     this.rpc = normalizeRpcEndpoint2(resolved.rpc || rpc);
-    this.rest = trimTrailingSlash(resolved.rest || rest);
+    this.restEndpoints = normalizeRestEndpoints2(
+      resolved.rest || rest,
+      resolved.restEndpoints || restEndpoints
+    );
+    this.rest = this.restEndpoints[0];
     this.chainId = resolved.chainId || chainId;
     this.accountPrefix = resolved.accountPrefix || accountPrefix2 || "clair";
     this.shieldedPrefix = resolved.shieldedPrefix || shieldedPrefix2 || `${this.accountPrefix}s`;
     this.denom = resolved.denom || denom || "uclair";
     this.proverUrl = trimTrailingSlash(resolved.proverUrl || proverUrl || "");
     this.proverTimeoutMs = proverTimeoutMs;
+    this.queryTimeoutMs = normalizeTimeoutMs2(fetchTimeoutMs ?? queryTimeoutMs, "queryTimeoutMs");
     this.evmRpc = resolved.evmRpc || evmRpc || "";
     this.evmChainId = resolved.evmChainId || evmChainId || "";
     this.evmGasLimit = resolved.evmGasLimit || evmGasLimit;
@@ -79516,7 +80333,11 @@ var ClairveilBrowserClient = class {
       chainId: this.chainId,
       accountPrefix: this.accountPrefix,
       shieldedPrefix: this.shieldedPrefix,
-      defaultDenom: this.denom
+      defaultDenom: this.denom,
+      restEndpoints: this.restEndpoints,
+      queryTimeoutMs: this.queryTimeoutMs,
+      queryRetry,
+      nullifierFailover
     });
     this.evm = createClairveilEvmClient({
       contractAddress: resolved.evmPrivacyPrecompileAddress || evmPrivacyPrecompileAddress2,
@@ -79532,6 +80353,9 @@ var ClairveilBrowserClient = class {
   rpcUrl(path) {
     return `${this.rpc}${path.startsWith("/") ? path : `/${path}`}`;
   }
+  fetchJson(url, options = {}) {
+    return fetchJson2(url, { timeoutMs: this.queryTimeoutMs, ...options });
+  }
   proverAdapter() {
     if (!this.proverUrl) {
       throw new ClairveilError(
@@ -79546,9 +80370,9 @@ var ClairveilBrowserClient = class {
   }
   async health() {
     const [status, tree, audit] = await Promise.allSettled([
-      fetchJson2(this.rpcUrl("/status")),
-      fetchJson2(this.restUrl("/clairveil/privacy/v1/tree_state")),
-      fetchJson2(this.restUrl("/clairveil/privacy/v1/audit_config"))
+      this.fetchJson(this.rpcUrl("/status")),
+      this.cosmos.fetchTreeState(),
+      this.cosmos.fetchAuditConfig()
     ]);
     return {
       status: status.status === "fulfilled" ? status.value.result : null,
@@ -79565,7 +80389,7 @@ var ClairveilBrowserClient = class {
     url.searchParams.set("page", "1");
     url.searchParams.set("per_page", String(limit));
     url.searchParams.set("order_by", '"desc"');
-    const data = await fetchJson2(url);
+    const data = await this.fetchJson(url);
     return {
       events: (data.result?.txs || []).map((tx) => ({
         type: blockEventType(tx),
@@ -79584,6 +80408,9 @@ var ClairveilBrowserClient = class {
   async fetchAuditableTransfers(options = {}) {
     return this.cosmos.fetchAuditableTransfers(options);
   }
+  async fetchReserve(denom) {
+    return this.cosmos.fetchReserve(denom);
+  }
   buildRootSigningMessage(address, pubKeyHex) {
     return buildRootSigningMessage2(address, pubKeyHex);
   }
@@ -79601,7 +80428,10 @@ var ClairveilBrowserClient = class {
   derivePrivacyAccount(input) {
     return this.cosmos.derivePrivacyAccount(input);
   }
-  privacyMaterial(body, walletType = walletTypeFromBody(body)) {
+  walletTypeFromBody(body = {}) {
+    return walletTypeFromBody(body, this.defaultWalletType);
+  }
+  privacyMaterial(body, walletType = this.walletTypeFromBody(body)) {
     const material = derivePrivacyMaterial({
       address: body.address,
       pubKeyHex: body.pubKeyHex ?? body.pub_key_hex,
@@ -79614,7 +80444,7 @@ var ClairveilBrowserClient = class {
     return material;
   }
   async getBalances(address) {
-    return fetchJson2(this.restUrl(`/cosmos/bank/v1beta1/balances/${address}`));
+    return this.cosmos.fetchJson(`/cosmos/bank/v1beta1/balances/${address}`, { failover: true });
   }
   async waitForTx(txHash, options) {
     return this.cosmos.waitForTx(txHash, options);
@@ -79629,16 +80459,29 @@ var ClairveilBrowserClient = class {
     return null;
   }
   async evmJsonRpc(method, params = []) {
-    const response = await fetch(this.evmRpc, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: Date.now(),
-        method,
-        params
-      })
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.queryTimeoutMs);
+    let response;
+    try {
+      response = await fetch(this.evmRpc, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: Date.now(),
+          method,
+          params
+        })
+      });
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        throw new Error(`EVM RPC ${method} timed out after ${this.queryTimeoutMs}ms`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
     const data = await response.json();
     if (data.error) {
       throw new Error(data.error.message || `EVM RPC ${method} failed`);
@@ -79658,14 +80501,16 @@ var ClairveilBrowserClient = class {
     };
   }
   evmNativeSendTransaction({ to, amount }) {
+    const coin = positiveCoinForDenom(amount, this.denom, "send");
     return {
       to: normalizeEvmAddress(to, "send recipient"),
       chainId: this.evmChainId,
-      value: `0x${BigInt(String(amount).replace(this.denom, "")).toString(16)}`,
+      value: `0x${BigInt(coin.amount).toString(16)}`,
       gas: this.evmSendGasLimit
     };
   }
   async buildBankSendSignDoc({ from, pubKeyHex, to, amount }) {
+    const coin = positiveCoinForDenom(amount, this.denom, "send");
     return this.cosmos.buildDirectSignDoc({
       signer: from,
       pubKeyHex,
@@ -79676,8 +80521,8 @@ var ClairveilBrowserClient = class {
             fromAddress: from,
             toAddress: to,
             amount: [{
-              denom: this.denom,
-              amount: String(amount).replace(this.denom, "")
+              denom: coin.denom,
+              amount: coin.amount
             }]
           }
         }
@@ -79689,11 +80534,13 @@ var ClairveilBrowserClient = class {
     return this.cosmos.broadcastSignedTx(input, waitOptions);
   }
   async prepareDeposit(body) {
-    const walletType = walletTypeFromBody(body);
+    const walletType = this.walletTypeFromBody(body);
     const material = this.privacyMaterial(body, walletType);
     const amount = body.amount;
+    let depositMaterial = body.depositMaterial ?? body.deposit_material ?? null;
     if (walletType === "evm") {
       const built = this.evm.buildDepositTransaction({
+        material: depositMaterial,
         creator: material.address,
         rootSeed: material.rootSeed,
         amount,
@@ -79712,10 +80559,37 @@ var ClairveilBrowserClient = class {
         }
       };
     }
+    let depositProof = body.proof ?? null;
+    let depositProofHex = body.proofHex ?? body.proof_hex ?? "";
+    if (!depositProof && !depositProofHex && typeof body.depositProofProvider === "function") {
+      depositMaterial = depositMaterial ?? this.cosmos.buildDepositMaterial({
+        creator: material.address,
+        rootSeed: material.rootSeed,
+        amount,
+        assetDenom: this.denom
+      });
+      const proof = await body.depositProofProvider({
+        material: depositMaterial,
+        amount: depositMaterial.amount,
+        note: depositMaterial.note,
+        noteJson: depositMaterial.note_json,
+        note_json: depositMaterial.note_json,
+        noteCommitmentHex: depositMaterial.note_commitment_hex,
+        note_commitment_hex: depositMaterial.note_commitment_hex
+      });
+      depositProof = proof?.proof ?? proof?.depositProof ?? proof?.deposit_proof ?? null;
+      depositProofHex = proof?.proofHex ?? proof?.proof_hex ?? proof?.depositProofHex ?? proof?.deposit_proof_hex ?? "";
+    }
+    if (!depositProof && !depositProofHex) {
+      throw new Error("deposit proof is required; provide proof/proofHex or depositProofProvider");
+    }
     const prepared = await this.cosmos.prepareDeposit({
       material,
+      depositMaterial,
       amount,
-      gasLimit: 25e5
+      gasLimit: 25e5,
+      proof: depositProof,
+      proofHex: depositProofHex
     });
     return {
       signDoc: prepared.signDoc,
@@ -79727,7 +80601,7 @@ var ClairveilBrowserClient = class {
     };
   }
   async prepareTransfer(body) {
-    const walletType = walletTypeFromBody(body);
+    const walletType = this.walletTypeFromBody(body);
     const material = this.privacyMaterial(body, walletType);
     const amount = body.amount;
     const recipient = body.recipient;
@@ -79793,7 +80667,8 @@ var ClairveilBrowserClient = class {
       userPrivacyPolicy: isFinal ? userPrivacyPolicy : "all-private",
       userDisclosureMode: isFinal ? userDisclosureMode : "none",
       userDisclosureTargetPubKeyHex: isFinal ? userDisclosureTargetPubKeyHex : "",
-      auditDisclosureTargetPubKeyHex: auditPubKeyHex
+      auditDisclosureTargetPubKeyHex: auditPubKeyHex,
+      disableSelfViewDisclosure: true
     });
     const transaction = this.evm.contract.buildTransferTransaction(built.message);
     return {
@@ -79816,7 +80691,7 @@ var ClairveilBrowserClient = class {
     };
   }
   async prepareWithdraw(body) {
-    const walletType = walletTypeFromBody(body);
+    const walletType = this.walletTypeFromBody(body);
     const material = this.privacyMaterial(body, walletType);
     const amount = body.amount;
     const rawRecipient = body.recipient;
@@ -79829,6 +80704,7 @@ var ClairveilBrowserClient = class {
         amount,
         recipient,
         scan: scanOptionsFromBody(body),
+        expiresAtUnix: body.expiresAtUnix ?? body.expires_at_unix,
         gasLimit: 5e6
       });
       if (prepared.status !== "ready") throw plannerError(prepared);
@@ -79863,7 +80739,8 @@ var ClairveilBrowserClient = class {
       assetDenom: this.denom,
       recipient,
       rootSeed: material.rootSeed,
-      chainId: this.chainId
+      chainId: this.chainId,
+      expiresAtUnix: body.expiresAtUnix ?? body.expires_at_unix
     });
     const message = evmRecipient ? { ...built.message, evmRecipient } : built.message;
     const transaction = this.evm.contract.buildWithdrawTransaction(message);
@@ -79878,6 +80755,93 @@ var ClairveilBrowserClient = class {
         expiresAtUnix: built.payload.expires_at_unix
       },
       plan
+    };
+  }
+  async prepareRelayWithdraw(body) {
+    const walletType = this.walletTypeFromBody(body);
+    const material = this.privacyMaterial(body, walletType);
+    const amount = body.amount;
+    const rawRecipient = body.recipient;
+    const evmRecipient = isEvmAddress(rawRecipient) ? normalizeEvmAddress(rawRecipient, "withdraw recipient") : "";
+    const recipient = evmRecipient ? evmAddressToBech32(evmRecipient, this.accountPrefix) : rawRecipient;
+    const prepared = await this.cosmos.prepareRelayWithdraw({
+      proverAdapter: this.proverAdapter(),
+      material,
+      amount,
+      recipient,
+      scan: scanOptionsFromBody(body),
+      expiresAtUnix: body.expiresAtUnix ?? body.expires_at_unix
+    });
+    if (prepared.status !== "ready") throw plannerError(prepared);
+    if (walletType === "evm") {
+      const built = await this.evm.buildWithdrawTransaction({
+        payload: prepared.payload,
+        proof: prepared.proof,
+        proverPayload: prepared.proverPayload,
+        selectedNote: prepared.selectedNote,
+        evmRecipient: evmRecipient || void 0,
+        transactionOptions: body.transactionOptions ?? body.transaction_options
+      });
+      return {
+        payload: prepared.payload,
+        transaction: { chainId: this.evmChainId, gas: this.evmGasLimit, ...built.transaction },
+        prepared: {
+          shieldedAddress: prepared.privacyAccount.shielded_address,
+          amount: prepared.payload.amount,
+          recipient: prepared.payload.recipient,
+          evmRecipient,
+          selectedNoteNullifier: prepared.selectedNote?.nullifier || prepared.payload.nullifier_hex,
+          expiresAtUnix: prepared.payload.expires_at_unix,
+          payload: prepared.payload,
+          proof: prepared.proof,
+          message: built.message
+        },
+        plan: prepared.plan
+      };
+    }
+    return {
+      payload: prepared.payload,
+      prepared: {
+        shieldedAddress: prepared.privacyAccount.shielded_address,
+        amount: prepared.payload.amount,
+        recipient: prepared.payload.recipient,
+        evmRecipient,
+        selectedNoteNullifier: prepared.selectedNote?.nullifier || prepared.payload.nullifier_hex,
+        expiresAtUnix: prepared.payload.expires_at_unix,
+        payload: prepared.payload,
+        proof: prepared.proof
+      },
+      plan: prepared.plan
+    };
+  }
+  buildRelayWithdrawMessageFromPayload(body = {}) {
+    return this.cosmos.buildRelayWithdrawMessageFromPayload({
+      payload: body.payload,
+      relayer: body.relayer ?? body.creator ?? body.address,
+      nowUnix: body.nowUnix ?? body.now_unix,
+      expectedChainId: body.expectedChainId ?? body.expected_chain_id,
+      expectedRecipient: body.expectedRecipient ?? body.expected_recipient,
+      accountPrefix: body.accountPrefix ?? body.account_prefix
+    });
+  }
+  async createRelayWithdrawSignDoc(body = {}) {
+    const result = await this.cosmos.createRelayWithdrawSignDoc({
+      payload: body.payload,
+      relayer: body.relayer ?? body.creator ?? body.address,
+      pubKeyHex: body.pubKeyHex ?? body.pub_key_hex,
+      gasLimit: body.gasLimit ?? body.gas_limit,
+      feeAmount: body.feeAmount ?? body.fee_amount ?? [],
+      memo: body.memo,
+      nowUnix: body.nowUnix ?? body.now_unix,
+      expectedChainId: body.expectedChainId ?? body.expected_chain_id,
+      expectedRecipient: body.expectedRecipient ?? body.expected_recipient,
+      accountPrefix: body.accountPrefix ?? body.account_prefix
+    });
+    return {
+      signDoc: result.signDoc,
+      message: result.message,
+      payload: result.payload,
+      relayer: result.relayer
     };
   }
   async scanWalletNotes(body) {
@@ -79917,10 +80881,25 @@ var ClairveilBrowserClient = class {
     addIfPresent(request, "maxPages", body.maxPages ?? body.max_pages);
     addIfPresent(request, "eventTypes", body.eventTypes ?? body.event_types);
     if (body.address && (body.pubKeyHex || body.pub_key_hex) && (body.signatureBase64 || body.signature_base64)) {
-      const walletType = walletTypeFromBody(body);
+      const walletType = this.walletTypeFromBody(body);
       Object.assign(request, walletType === "evm" ? { ...body, skipSignerPubKeyCheck: true } : body);
     }
     return this.cosmos.decodeUserDisclosure(request);
+  }
+  async decodeSelfViewDisclosure(body) {
+    const request = { txHash: body.txHash ?? body.tx_hash };
+    addIfPresent(request, "afterHeight", body.afterHeight ?? body.after_height);
+    addIfPresent(request, "page", body.page);
+    addIfPresent(request, "limit", body.limit);
+    addIfPresent(request, "maxPages", body.maxPages ?? body.max_pages);
+    addIfPresent(request, "eventTypes", body.eventTypes ?? body.event_types);
+    addIfPresent(request, "disclosureScalar", body.disclosureScalar ?? body.disclosure_scalar);
+    addIfPresent(request, "disclosureScalarHex", body.disclosureScalarHex ?? body.disclosure_scalar_hex);
+    if (body.address && (body.pubKeyHex || body.pub_key_hex) && (body.signatureBase64 || body.signature_base64)) {
+      const walletType = this.walletTypeFromBody(body);
+      Object.assign(request, walletType === "evm" ? { ...body, skipSignerPubKeyCheck: true } : body);
+    }
+    return this.cosmos.decodeSelfViewDisclosure(request);
   }
   async decodeAuditDisclosure(body = {}) {
     const request = {
@@ -80097,6 +81076,17 @@ function defaultKeplrState() {
     transferHash: "",
     withdrawHash: "",
     withdrawHeight: "",
+    relayWithdrawHash: "",
+    relayWithdrawHeight: "",
+    relayWithdrawRelayer: "",
+    relayWithdrawPayloadHash: "",
+    relayWithdrawPayload: null,
+    relayWithdrawPayloadText: "",
+    relayWithdrawPayloadAmount: "",
+    relayWithdrawPayloadRecipient: "",
+    relayWithdrawPayloadChainId: "",
+    relayWithdrawPayloadExpiresAt: "",
+    relayWithdrawPayloadSubmitted: false,
     notesSummary: "",
     notes: [],
     notesScanned: false,
@@ -80118,6 +81108,10 @@ var state = {
   activeWallet: "",
   wallet: defaultMetaMaskState(),
   keplr: defaultKeplrState(),
+  relayer: {
+    balance: "",
+    error: ""
+  },
   auditor: {
     events: [],
     selectedTxHash: "",
@@ -80166,7 +81160,11 @@ function configuredChainProfile() {
   };
 }
 function activeChainProfile() {
-  return state.chainProfiles.find((profile) => profile.id === state.selectedChainProfileId) || state.chainProfiles.find((profile) => profile.id === state.config?.activeChainProfileId) || configuredChainProfile();
+  return state.chainProfiles.find(
+    (profile) => profile.id === state.selectedChainProfileId
+  ) || state.chainProfiles.find(
+    (profile) => profile.id === state.config?.activeChainProfileId
+  ) || configuredChainProfile();
 }
 function activeWalletKind() {
   const profile = activeChainProfile();
@@ -80194,6 +81192,9 @@ function accountPrefix() {
 function shieldedPrefix() {
   return activeChainProfile()?.shieldedPrefix || state.config?.shieldedPrefix || "clairs";
 }
+function isConfiguredShieldedAddress(address) {
+  return address.trim().toLowerCase().startsWith(`${shieldedPrefix().toLowerCase()}1`);
+}
 function baseDenom() {
   return activeChainProfile()?.denom || state.config?.denom || "uclair";
 }
@@ -80213,10 +81214,18 @@ function renderServerFeatureVisibility() {
   if (els.localSignerPanel) {
     els.localSignerPanel.hidden = !localSigners;
   }
+  if (els.relayerPanel) {
+    els.relayerPanel.hidden = !serverFeature("relayer");
+  }
   if (els.faucetRow) {
     els.faucetRow.hidden = !faucet;
   }
-  for (const row of [els.localHomeRow, els.faucetHashRow, els.faucetSentRow, els.faucetRecipientRow]) {
+  for (const row of [
+    els.localHomeRow,
+    els.faucetHashRow,
+    els.faucetSentRow,
+    els.faucetRecipientRow
+  ]) {
     if (row) row.hidden = !localTestBackendEnabled();
   }
   if (els.auditorSection) {
@@ -80224,7 +81233,9 @@ function renderServerFeatureVisibility() {
   }
 }
 function expectedEvmChainIdHex() {
-  const value = String(activeChainProfile()?.evmChainId || state.config?.evmChainId || "").trim();
+  const value = String(
+    activeChainProfile()?.evmChainId || state.config?.evmChainId || ""
+  ).trim();
   if (/^0x[0-9a-fA-F]+$/.test(value)) {
     return `0x${BigInt(value).toString(16)}`;
   }
@@ -80250,7 +81261,9 @@ function evmRpcUrlForWallet(profile = activeChainProfile()) {
   return browserEndpointUrl(configured);
 }
 function browserRpcUrl(profile = activeChainProfile()) {
-  return browserEndpointUrl(profile?.rpc || state.config?.rpc || "", { trim: true });
+  return browserEndpointUrl(profile?.rpc || state.config?.rpc || "", {
+    trim: true
+  });
 }
 function browserRestUrl(profile = activeChainProfile()) {
   const configured = profile?.rest || state.config?.rest || "";
@@ -80310,14 +81323,20 @@ function injectedEthereumProviders() {
   const provider = window.ethereum;
   if (!provider) return [];
   const providers = Array.isArray(provider.providers) ? provider.providers : [];
-  return [.../* @__PURE__ */ new Set([...providers, provider])].filter((candidate) => candidate?.request);
+  return [.../* @__PURE__ */ new Set([...providers, provider])].filter(
+    (candidate) => candidate?.request
+  );
 }
 function metaMaskProvider() {
   const providers = injectedEthereumProviders();
-  return providers.find((provider) => provider.isMetaMask) || providers.find((provider) => provider.isRabby || provider.isBraveWallet || provider.isCoinbaseWallet) || providers[0] || null;
+  return providers.find((provider) => provider.isMetaMask) || providers.find(
+    (provider) => provider.isRabby || provider.isBraveWallet || provider.isCoinbaseWallet
+  ) || providers[0] || null;
 }
 function unsupportedEvmMethodError(error) {
-  return error?.code === -32601 || /method .*not supported|not supported|unsupported method|does not support/i.test(error?.message || "");
+  return error?.code === -32601 || /method .*not supported|not supported|unsupported method|does not support/i.test(
+    error?.message || ""
+  );
 }
 async function requestMetaMask(payload) {
   const provider = metaMaskProvider();
@@ -80329,7 +81348,9 @@ async function requestMetaMask(payload) {
   } catch (error) {
     const method = payload?.method || "EVM request";
     if (unsupportedEvmMethodError(error)) {
-      throw new Error(`${method} is not supported by the injected wallet provider. Open this DApp in a browser with MetaMask or another EVM wallet selected.`);
+      throw new Error(
+        `${method} is not supported by the injected wallet provider. Open this DApp in a browser with MetaMask or another EVM wallet selected.`
+      );
     }
     throw error;
   }
@@ -80357,16 +81378,18 @@ async function ensureMetaMaskChain() {
     }
     await requestMetaMask({
       method: "wallet_addEthereumChain",
-      params: [{
-        chainId: expected,
-        chainName: state.config?.evmChainName || "EVM Localnet",
-        nativeCurrency: {
-          name: displayDenom(),
-          symbol: displayDenom(),
-          decimals: coinDecimals()
-        },
-        rpcUrls: [evmRpcUrlForWallet()]
-      }]
+      params: [
+        {
+          chainId: expected,
+          chainName: state.config?.evmChainName || "EVM Localnet",
+          nativeCurrency: {
+            name: displayDenom(),
+            symbol: displayDenom(),
+            decimals: coinDecimals()
+          },
+          rpcUrls: [evmRpcUrlForWallet()]
+        }
+      ]
     });
   }
   const updated = await requestMetaMask({ method: "eth_chainId" });
@@ -80377,7 +81400,9 @@ async function ensureMetaMaskChain() {
   renderWallet();
 }
 function coinDecimals() {
-  return Number(activeChainProfile()?.coinDecimals ?? state.config?.coinDecimals ?? 18);
+  return Number(
+    activeChainProfile()?.coinDecimals ?? state.config?.coinDecimals ?? 18
+  );
 }
 function coinTextFromAmount(amount) {
   return `${amount}${baseDenom()}`;
@@ -80415,6 +81440,7 @@ var els = {
   fundKeplr: $("#fundKeplr"),
   setupKeplrPrivacy: $("#setupKeplrPrivacy"),
   refreshWalletBalance: $("#refreshKeplrBalance"),
+  refreshClairBalance: $("#refreshClairBalance"),
   scanKeplrNotes: $("#scanKeplrNotes"),
   keplrTxState: $("#keplrTxState"),
   keplrSendAmount: $("#keplrSendAmount"),
@@ -80445,9 +81471,29 @@ var els = {
   veiledWithdrawRecipient: $("#veiledWithdrawRecipient"),
   veiledWithdrawRecipientSuggestions: $("#veiledWithdrawRecipientSuggestions"),
   withdrawFromVeiled: $("#withdrawFromVeiled"),
+  relayWithdrawAmount: $("#relayWithdrawAmount"),
+  relayWithdrawRecipient: $("#relayWithdrawRecipient"),
+  relayWithdrawRecipientSuggestions: $(
+    "#relayWithdrawRecipientSuggestions"
+  ),
+  relayWithdrawFromVeiled: $("#relayWithdrawFromVeiled"),
+  copyRelayWithdrawPayload: $("#copyRelayWithdrawPayload"),
+  relayPreparedWithdraw: $("#relayPreparedWithdraw"),
   keplrTransferHash: $("#keplrTransferHash"),
   keplrWithdrawHash: $("#keplrWithdrawHash"),
   keplrWithdrawHeight: $("#keplrWithdrawHeight"),
+  keplrRelayWithdrawHash: $("#keplrRelayWithdrawHash"),
+  keplrRelayWithdrawRelayer: $("#keplrRelayWithdrawRelayer"),
+  relayerPanel: $(".relayer-panel"),
+  relayerState: $("#relayerState"),
+  relayerTransparentAddress: $("#relayerTransparentAddress"),
+  relayerBalance: $("#relayerBalance"),
+  relayWithdrawPreparedAmount: $("#relayWithdrawPreparedAmount"),
+  relayWithdrawPreparedRecipient: $("#relayWithdrawPreparedRecipient"),
+  relayWithdrawPreparedChainId: $("#relayWithdrawPreparedChainId"),
+  relayWithdrawPreparedExpiresAt: $("#relayWithdrawPreparedExpiresAt"),
+  relayWithdrawPreparedPayloadHash: $("#relayWithdrawPreparedPayloadHash"),
+  relayWithdrawPreparedPayloadJson: $("#relayWithdrawPreparedPayloadJson"),
   localHome: $("#localHome"),
   localHomeRow: $("#localHome")?.closest("div"),
   faucetHashRow: $("#keplrFaucetHash")?.closest("div"),
@@ -80476,8 +81522,15 @@ var els = {
   eventDetailTx: $("#eventDetailTx"),
   eventDetailTarget: $("#eventDetailTarget"),
   eventDetailUserMode: $("#eventDetailUserMode"),
+  eventDisclosurePlane: $("#eventDisclosurePlane"),
+  eventDisclosurePolicy: $("#eventDisclosurePolicy"),
+  eventDisclosureOutputIndex: $("#eventDisclosureOutputIndex"),
+  eventDisclosureCommitment: $("#eventDisclosureCommitment"),
+  eventDisclosureDigest: $("#eventDisclosureDigest"),
+  eventDisclosureVerified: $("#eventDisclosureVerified"),
   eventDisclosureFields: $("#eventDisclosureFields"),
   eventDisclosureAmount: $("#eventDisclosureAmount"),
+  eventDisclosureAssetDenom: $("#eventDisclosureAssetDenom"),
   eventDisclosureFrom: $("#eventDisclosureFrom"),
   eventDisclosureTo: $("#eventDisclosureTo"),
   eventDisclosureState: $("#eventDisclosureState"),
@@ -80568,7 +81621,9 @@ function transferDisclosurePolicy() {
   const from = els.veiledDisclosureFrom.checked;
   const to = els.veiledDisclosureTo.checked;
   if (!amount && !from && !to) {
-    throw new Error("Advanced disclosure\uC5D0\uC11C \uACF5\uAC1C\uD560 \uD56D\uBAA9\uC744 \uD558\uB098 \uC774\uC0C1 \uC120\uD0DD\uD574\uC918.");
+    throw new Error(
+      "Advanced disclosure\uC5D0\uC11C \uACF5\uAC1C\uD560 \uD56D\uBAA9\uC744 \uD558\uB098 \uC774\uC0C1 \uC120\uD0DD\uD574\uC918."
+    );
   }
   const privacyPolicy = [
     amount ? "amount" : "",
@@ -80582,7 +81637,9 @@ function transferDisclosurePolicy() {
     };
   }
   if (!/^[0-9a-fA-F]{64}$/.test(pubKeyHex)) {
-    throw new Error("Disclosure target\uC740 show-disclosure-pubkey\uB85C \uB9CC\uB4E0 32-byte hex \uAC12\uC744 \uB123\uC5B4\uC918.");
+    throw new Error(
+      "Disclosure target\uC740 show-disclosure-pubkey\uB85C \uB9CC\uB4E0 32-byte hex \uAC12\uC744 \uB123\uC5B4\uC918."
+    );
   }
   return {
     privacyPolicy,
@@ -80661,6 +81718,20 @@ var privacyFlowCopies = {
     successTitle: "Withdraw \uC694\uCCAD\uC774 \uC131\uACF5\uD558\uC600\uC2B5\uB2C8\uB2E4",
     successCopy: "Clair balance\uC640 \uCD5C\uC2E0 notes\uB97C \uB2E4\uC2DC \uBD88\uB7EC\uC628 \uC0C1\uD0DC\uC785\uB2C8\uB2E4.",
     failureTitle: "Withdraw \uC694\uCCAD\uC774 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4"
+  },
+  relayWithdraw: {
+    title: "Relay Withdraw \uD655\uC778",
+    lead: "Clair\uB85C \uCD9C\uAE08\uD560 payload\uB294 \uBE0C\uB77C\uC6B0\uC800 SDK\uAC00 \uB9CC\uB4E4\uACE0, \uB9C8\uC9C0\uB9C9 broadcast\uB294 Relayer \uD328\uB110\uC5D0\uC11C relayer \uACC4\uC815\uC774 \uC81C\uCD9C\uD569\uB2C8\uB2E4.",
+    runningLead: "note \uC900\uBE44 \uB2E8\uACC4\uC5D0\uC11C\uB294 \uC9C0\uAC11 \uD655\uC778\uC774 \uD544\uC694\uD560 \uC218 \uC788\uACE0, \uC644\uB8CC \uD6C4 payload\uAC00 \uD654\uBA74\uC5D0 \uACE0\uC815\uB429\uB2C8\uB2E4.",
+    doneLead: "\uC694\uCCAD\uC774 \uCC98\uB9AC\uB418\uC5C8\uC2B5\uB2C8\uB2E4.",
+    failedLead: "\uC694\uCCAD\uC774 \uC644\uB8CC\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.",
+    stepOneTitle: "\uB178\uD2B8 \uC900\uBE44",
+    stepOneCopy: "Relay withdraw\uB3C4 \uC785\uB825 \uAE08\uC561\uACFC \uC815\uD655\uD788 \uAC19\uC740 note\uAC00 \uD544\uC694\uD569\uB2C8\uB2E4. \uC5C6\uC73C\uBA74 \uB0B4 Veiled balance \uC548\uC5D0\uC11C note\uB97C \uC7AC\uAD6C\uC131\uD569\uB2C8\uB2E4.",
+    stepTwoTitle: "Payload \uC900\uBE44",
+    stepTwoCopy: "\uC900\uBE44\uB41C relay withdraw payload\uB97C \uC624\uB978\uCABD \uD654\uBA74\uC5D0 \uACE0\uC815\uD569\uB2C8\uB2E4.",
+    successTitle: "Relay withdraw payload\uAC00 \uC900\uBE44\uB418\uC5C8\uC2B5\uB2C8\uB2E4",
+    successCopy: "\uC624\uB978\uCABD Relayer \uD328\uB110\uC5D0\uC11C payload\uB97C \uD655\uC778\uD55C \uB4A4 relayer \uACC4\uC815\uC73C\uB85C \uC81C\uCD9C\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
+    failureTitle: "Relay withdraw \uC694\uCCAD\uC774 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4"
   }
 };
 var ApiError = class extends Error {
@@ -80677,7 +81748,9 @@ var ApiError = class extends Error {
 };
 function browserDataLoadErrorMessage(error) {
   const message = error?.message || String(error || "Request failed");
-  if (/failed to fetch|load failed|networkerror|network request failed/i.test(message)) {
+  if (/failed to fetch|load failed|networkerror|network request failed/i.test(
+    message
+  )) {
     return `${message}. Browser cannot reach the selected chain REST/RPC endpoint; enable CORS or expose browser-accessible RPC/REST URLs.`;
   }
   return message;
@@ -80767,7 +81840,9 @@ function setTransferFlowStep(activeKey, stateText) {
   if (stateText) {
     els.transferModalState.textContent = stateText;
   }
-  const activeIndex = transferFlowSteps.findIndex((step) => step.key === activeKey);
+  const activeIndex = transferFlowSteps.findIndex(
+    (step) => step.key === activeKey
+  );
   for (const [index, step] of transferFlowSteps.entries()) {
     const element = step.element();
     const isActive = step.key === activeKey;
@@ -80857,10 +81932,13 @@ async function api(path, options = {}) {
   });
   const data = await response.json();
   if (!response.ok || data.error) {
-    throw new ApiError({
-      error: data.error || response.statusText,
-      ...data
-    }, response.status);
+    throw new ApiError(
+      {
+        error: data.error || response.statusText,
+        ...data
+      },
+      response.status
+    );
   }
   return data;
 }
@@ -80898,13 +81976,18 @@ function isSendRecipientForWallet(value, walletKind = activeWalletKind()) {
 }
 function requireValidSendRecipient() {
   const recipient = els.keplrSendRecipient.value.trim();
-  if (isSendRecipientForWallet(recipient, state.activeWallet || activeWalletKind())) {
+  if (isSendRecipientForWallet(
+    recipient,
+    state.activeWallet || activeWalletKind()
+  )) {
     return recipient;
   }
   if (isEvmTransparentMode(state.activeWallet || activeWalletKind())) {
     throw new Error("EVM send recipient must be a 0x address.");
   }
-  throw new Error(`Cosmos send recipient must be a ${accountPrefix()}1... address.`);
+  throw new Error(
+    `Cosmos send recipient must be a ${accountPrefix()}1... address.`
+  );
 }
 function evmQuantityToBigInt(value, label = "EVM quantity") {
   const text = String(value || "").trim();
@@ -80919,10 +82002,13 @@ function bigIntToEvmQuantity(value) {
 async function withEstimatedEvmGas(transaction) {
   const tx = { ...transaction };
   try {
-    const estimated = evmQuantityToBigInt(await requestMetaMask({
-      method: "eth_estimateGas",
-      params: [tx]
-    }), "estimated gas");
+    const estimated = evmQuantityToBigInt(
+      await requestMetaMask({
+        method: "eth_estimateGas",
+        params: [tx]
+      }),
+      "estimated gas"
+    );
     const padded = (estimated * 13n + 9n) / 10n;
     const existing = tx.gas ? evmQuantityToBigInt(tx.gas, "transaction gas") : 0n;
     tx.gas = bigIntToEvmQuantity(existing > padded ? existing : padded);
@@ -80971,11 +82057,16 @@ function clairInputToUclair(input) {
   const decimals = coinDecimals();
   const pattern = new RegExp(`^(0|[1-9][0-9]*)(\\.[0-9]{0,${decimals}})?$`);
   if (!pattern.test(raw)) {
-    throw new Error(`${displayDenom()} amount must be a positive number with up to ${decimals} decimals`);
+    throw new Error(
+      `${displayDenom()} amount must be a positive number with up to ${decimals} decimals`
+    );
   }
   const [whole, fraction = ""] = raw.split(".");
   const scale = 10n ** BigInt(decimals);
-  const paddedFraction = `${fraction}${"0".repeat(decimals)}`.slice(0, decimals);
+  const paddedFraction = `${fraction}${"0".repeat(decimals)}`.slice(
+    0,
+    decimals
+  );
   const amount = BigInt(whole) * scale + BigInt(paddedFraction || "0");
   return coinTextFromAmount(amount);
 }
@@ -81022,9 +82113,14 @@ function noteStatusLabel(note) {
   return isHelperNote(note) ? "helper" : String(note?.status || "-");
 }
 function summarizeSpendableValueNotes(notes) {
-  const spendableValueNotes = (notes || []).filter((note) => isSpendableNote(note) && !isZeroAmountNote(note));
+  const spendableValueNotes = (notes || []).filter(
+    (note) => isSpendableNote(note) && !isZeroAmountNote(note)
+  );
   const helperCount = (notes || []).filter(isHelperNote).length;
-  const total = spendableValueNotes.reduce((sum, note) => sum + noteAmountValue(note), 0n);
+  const total = spendableValueNotes.reduce(
+    (sum, note) => sum + noteAmountValue(note),
+    0n
+  );
   const helperText = helperCount ? ` \xB7 ${helperCount} helper` : "";
   return `${total}${baseDenom()} / ${spendableValueNotes.length} spendable${helperText}`;
 }
@@ -81040,7 +82136,9 @@ function mergeCachedNotes(existingNotes = [], incomingNotes = []) {
   return [...byKey.values()].sort((left, right) => {
     const heightCompare = Number(left?.height || 0) - Number(right?.height || 0);
     if (heightCompare !== 0) return heightCompare;
-    return String(left?.tx_hash || left?.txHash || "").localeCompare(String(right?.tx_hash || right?.txHash || ""));
+    return String(left?.tx_hash || left?.txHash || "").localeCompare(
+      String(right?.tx_hash || right?.txHash || "")
+    );
   });
 }
 function noteScanRequestOptions({ reset = false } = {}) {
@@ -81058,14 +82156,25 @@ function applyNoteScanResult(data, { reset = false } = {}) {
   const previous = reset ? defaultNoteScanCursor() : state.keplr.noteScanCursor || defaultNoteScanCursor();
   const cursor = data?.scanCursor || data?.scan_cursor || {};
   const hasMore = Boolean(cursor.has_more ?? cursor.hasMore);
-  const cursorAfterHeight = Number(cursor.after_height ?? cursor.afterHeight ?? previous.afterHeight ?? 0);
+  const cursorAfterHeight = Number(
+    cursor.after_height ?? cursor.afterHeight ?? previous.afterHeight ?? 0
+  );
   const latestHeight = Number(cursor.latest_height ?? cursor.latestHeight ?? 0);
-  const completedLatestHeight = Math.max(Number(previous.latestHeight || 0), latestHeight, hasMore ? 0 : cursorAfterHeight);
-  state.keplr.notes = mergeCachedNotes(reset ? [] : state.keplr.notes, data?.notes || []);
+  const completedLatestHeight = Math.max(
+    Number(previous.latestHeight || 0),
+    latestHeight,
+    hasMore ? 0 : cursorAfterHeight
+  );
+  state.keplr.notes = mergeCachedNotes(
+    reset ? [] : state.keplr.notes,
+    data?.notes || []
+  );
   state.keplr.noteScanCursor = {
     afterHeight: hasMore ? cursorAfterHeight : completedLatestHeight,
     page: Number(cursor.page || previous.page || 1),
-    nextPage: hasMore ? Number(cursor.next_page ?? cursor.nextPage ?? Number(cursor.page || previous.page || 1) + 1) : 1,
+    nextPage: hasMore ? Number(
+      cursor.next_page ?? cursor.nextPage ?? Number(cursor.page || previous.page || 1) + 1
+    ) : 1,
     limit: Number(cursor.limit || previous.limit || 200),
     maxPages: Number(previous.maxPages || 5),
     hasMore,
@@ -81078,21 +82187,27 @@ function applyNoteScanResult(data, { reset = false } = {}) {
   state.keplr.notesScanned = true;
 }
 async function refreshCachedNoteStatuses() {
-  const spendableNotes2 = (state.keplr.notes || []).filter((note) => isSpendableNote(note) && noteNullifier(note));
+  const spendableNotes2 = (state.keplr.notes || []).filter(
+    (note) => isSpendableNote(note) && noteNullifier(note)
+  );
   if (!spendableNotes2.length) return;
   const spentNullifiers = /* @__PURE__ */ new Set();
   const concurrency = 8;
   for (let index = 0; index < spendableNotes2.length; index += concurrency) {
     const chunk = spendableNotes2.slice(index, index + concurrency);
-    await Promise.all(chunk.map(async (note) => {
-      try {
-        const result = await clairveilBrowserClient().checkNullifier(noteNullifier(note));
-        if (Boolean(result?.used ?? result?.Used ?? result)) {
-          spentNullifiers.add(noteNullifier(note));
+    await Promise.all(
+      chunk.map(async (note) => {
+        try {
+          const result = await clairveilBrowserClient().checkNullifier(
+            noteNullifier(note)
+          );
+          if (Boolean(result?.used ?? result?.Used ?? result)) {
+            spentNullifiers.add(noteNullifier(note));
+          }
+        } catch {
         }
-      } catch {
-      }
-    }));
+      })
+    );
   }
   if (!spentNullifiers.size) return;
   state.keplr.notes = state.keplr.notes.map((note) => {
@@ -81110,6 +82225,79 @@ async function refreshCachedNoteStatuses() {
 function selectedLocalAccount() {
   const accounts = activeServerAccounts();
   return accounts.find((account) => account.name === state.selectedAccount) || accounts[0];
+}
+function localRelayerAccount() {
+  if (!serverFeature("relayer")) return null;
+  return state.accounts.find((account) => account.name === "relayer") || state.accounts.find((account) => account.name === "dev0") || state.accounts[0] || null;
+}
+function relayPayloadText(payload) {
+  return payload ? JSON.stringify(payload, null, 2) : "";
+}
+function formatRelayPayloadExpiry(value) {
+  if (value === void 0 || value === null || value === "") {
+    return "";
+  }
+  const raw = typeof value === "bigint" ? value.toString() : String(value);
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds)) {
+    return raw;
+  }
+  const date = new Date(seconds * 1e3);
+  if (Number.isNaN(date.getTime())) {
+    return raw;
+  }
+  return `${raw} (${date.toISOString()})`;
+}
+function setPreparedRelayWithdrawPayload(data, { amount = "", recipient = "" } = {}) {
+  const payload = data?.payload || data || null;
+  const canonicalRecipient = payload?.recipient || data?.prepared?.recipient || recipient;
+  state.keplr.relayWithdrawPayload = payload;
+  state.keplr.relayWithdrawPayloadText = relayPayloadText(payload);
+  state.keplr.relayWithdrawPayloadAmount = amount || "";
+  state.keplr.relayWithdrawPayloadRecipient = canonicalRecipient || "";
+  state.keplr.relayWithdrawPayloadChainId = payload?.chain_id || payload?.chainId || "";
+  state.keplr.relayWithdrawPayloadExpiresAt = formatRelayPayloadExpiry(
+    payload?.expires_at_unix || payload?.expiresAtUnix || ""
+  );
+  state.keplr.relayWithdrawPayloadHash = payload?.payload_hash || data?.payloadHash || "";
+  state.keplr.relayWithdrawPayloadSubmitted = false;
+  state.keplr.relayWithdrawHash = "";
+  state.keplr.relayWithdrawHeight = "";
+  state.keplr.relayWithdrawRelayer = "";
+}
+function clearPreparedRelayWithdrawPayload({ clearPayloadHash = false } = {}) {
+  const shouldClearPayloadHash = clearPayloadHash || Boolean(state.keplr.relayWithdrawPayload) && !state.keplr.relayWithdrawPayloadSubmitted;
+  state.keplr.relayWithdrawPayload = null;
+  state.keplr.relayWithdrawPayloadText = "";
+  state.keplr.relayWithdrawPayloadAmount = "";
+  state.keplr.relayWithdrawPayloadRecipient = "";
+  state.keplr.relayWithdrawPayloadChainId = "";
+  state.keplr.relayWithdrawPayloadExpiresAt = "";
+  state.keplr.relayWithdrawPayloadSubmitted = false;
+  if (shouldClearPayloadHash) {
+    state.keplr.relayWithdrawPayloadHash = "";
+  }
+}
+function renderRelayerPanel() {
+  const relayer = localRelayerAccount();
+  const hasRelayedPayload = Boolean(state.keplr.relayWithdrawPayload);
+  const relayerReady = Boolean(relayer?.transparentAddress) && serverFeature("relayer");
+  if (els.relayerPanel) {
+    els.relayerPanel.hidden = !serverFeature("relayer");
+  }
+  els.relayerTransparentAddress.textContent = transparentDisplayAddressFor(relayer) || "-";
+  els.relayerBalance.textContent = state.relayer.error || state.relayer.balance || (relayerReady ? "Loading..." : "-");
+  els.relayerState.textContent = state.keplr.relayWithdrawHash ? "Relay included" : hasRelayedPayload ? "Payload ready" : relayerReady ? "Waiting for payload" : "Relayer unavailable";
+  els.keplrRelayWithdrawHash.textContent = state.keplr.relayWithdrawHash ? shorten(state.keplr.relayWithdrawHash, 14, 12) : "-";
+  els.keplrRelayWithdrawRelayer.textContent = state.keplr.relayWithdrawRelayer || "-";
+  els.relayWithdrawPreparedAmount.textContent = state.keplr.relayWithdrawPayloadAmount || "-";
+  els.relayWithdrawPreparedRecipient.textContent = state.keplr.relayWithdrawPayloadRecipient || "-";
+  els.relayWithdrawPreparedChainId.textContent = state.keplr.relayWithdrawPayloadChainId || "-";
+  els.relayWithdrawPreparedExpiresAt.textContent = state.keplr.relayWithdrawPayloadExpiresAt || "-";
+  els.relayWithdrawPreparedPayloadHash.textContent = state.keplr.relayWithdrawPayloadHash || "-";
+  els.relayWithdrawPreparedPayloadJson.textContent = state.keplr.relayWithdrawPayloadText || "No prepared payload";
+  els.copyRelayWithdrawPayload.disabled = !hasRelayedPayload;
+  els.relayPreparedWithdraw.disabled = !hasRelayedPayload || !relayerReady || state.keplr.relayWithdrawPayloadSubmitted;
 }
 function activeServerAccounts() {
   return serverFeature("localSigners") && selectedProfileMatchesServer() ? state.accounts : [];
@@ -81151,6 +82339,7 @@ function renderChainDependentUi() {
   }
   els.veiledTransferRecipient.placeholder = `${shieldedPrefix()}1...`;
   els.veiledWithdrawRecipient.placeholder = transparentFormat === "evm" ? "0x..." : `${accountPrefix()}1...`;
+  els.relayWithdrawRecipient.placeholder = transparentFormat === "evm" ? "0x..." : `${accountPrefix()}1...`;
   document.querySelectorAll(".amount-control .denom").forEach((label) => {
     label.textContent = label.closest(".faucet-row") ? displayDenom() : baseDenom();
   });
@@ -81172,7 +82361,9 @@ function selectDappChainProfile(profileId) {
 }
 function recipientTestAccounts() {
   const accounts = activeServerAccounts();
-  const preferred = accounts.filter((account) => ["alice", "bob"].includes(account.name));
+  const preferred = accounts.filter(
+    (account) => ["alice", "bob"].includes(account.name)
+  );
   if (preferred.length) return preferred;
   return accounts.filter((account) => account.name !== "auditor");
 }
@@ -81190,7 +82381,9 @@ async function ensureLocalSignersIfNeeded(data) {
     if (error?.statusCode !== 403) {
       throw error;
     }
-    toast("Local signer setup is blocked for LAN browsers. Create accounts on the server machine first, or restart with CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING=1.");
+    toast(
+      "Local signer setup is blocked for LAN browsers. Create accounts on the server machine first, or restart with CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING=1."
+    );
     return {
       ...data,
       accounts: []
@@ -81202,7 +82395,9 @@ async function ensureLocalSignersIfNeeded(data) {
   };
 }
 function firstConfigProfile(config) {
-  return (config.chainProfiles || []).find((profile) => profile.id === config.activeChainProfileId) || config.chainProfiles?.[0] || null;
+  return (config.chainProfiles || []).find(
+    (profile) => profile.id === config.activeChainProfileId
+  ) || config.chainProfiles?.[0] || null;
 }
 async function browserHealthFromStaticConfig(config) {
   const profile = firstConfigProfile(config);
@@ -81254,6 +82449,14 @@ function addressSuggestionConfigs() {
       label: transparentFormat === "evm" ? "EVM" : "transparent",
       format: transparentFormat,
       includeWallet: true
+    },
+    {
+      input: els.relayWithdrawRecipient,
+      list: els.relayWithdrawRecipientSuggestions,
+      kind: "transparent",
+      label: transparentFormat === "evm" ? "EVM" : "transparent",
+      format: transparentFormat,
+      includeWallet: true
     }
   ];
 }
@@ -81281,17 +82484,21 @@ function connectedWalletAddressSuggestions(config) {
   }
   if (config.format === "evm") {
     if (state.wallet.account) {
-      return [{
-        name: "My wallet",
-        address: state.wallet.account
-      }];
+      return [
+        {
+          name: "My wallet",
+          address: state.wallet.account
+        }
+      ];
     }
     if (state.keplr.account) {
       try {
-        return [{
-          name: "My wallet",
-          address: bech32AddressToEvm(state.keplr.account, accountPrefix())
-        }];
+        return [
+          {
+            name: "My wallet",
+            address: bech32AddressToEvm(state.keplr.account, accountPrefix())
+          }
+        ];
       } catch {
         return [];
       }
@@ -81301,10 +82508,12 @@ function connectedWalletAddressSuggestions(config) {
   if (!state.keplr.account) {
     return [];
   }
-  const suggestions = [{
-    name: "My wallet",
-    address: state.keplr.account
-  }];
+  const suggestions = [
+    {
+      name: "My wallet",
+      address: state.keplr.account
+    }
+  ];
   return suggestions;
 }
 function hideAddressSuggestions(config) {
@@ -81392,7 +82601,9 @@ function renderVisibleAddressSuggestions() {
   }
 }
 async function ensureShieldedAddressBook() {
-  const missing = recipientTestAccounts().filter((account) => !state.addressBook.shieldedByName[account.name]);
+  const missing = recipientTestAccounts().filter(
+    (account) => !state.addressBook.shieldedByName[account.name]
+  );
   if (!missing.length) return;
   if (shieldedAddressBookPromise) {
     await shieldedAddressBookPromise;
@@ -81401,13 +82612,15 @@ async function ensureShieldedAddressBook() {
   state.addressBook.loadingShielded = true;
   state.addressBook.shieldedError = "";
   renderVisibleAddressSuggestions();
-  shieldedAddressBookPromise = Promise.allSettled(missing.map(async (account) => {
-    const data = await api(`/api/wallet/${account.name}/show-address`);
-    const address = data.address || "";
-    if (address) {
-      state.addressBook.shieldedByName[account.name] = address;
-    }
-  }));
+  shieldedAddressBookPromise = Promise.allSettled(
+    missing.map(async (account) => {
+      const data = await api(`/api/wallet/${account.name}/show-address`);
+      const address = data.address || "";
+      if (address) {
+        state.addressBook.shieldedByName[account.name] = address;
+      }
+    })
+  );
   const results = await shieldedAddressBookPromise;
   state.addressBook.loadingShielded = false;
   shieldedAddressBookPromise = null;
@@ -81434,8 +82647,14 @@ function setupAddressSuggestions() {
   for (const config of addressSuggestionConfigs()) {
     if (!config.input || !config.list) continue;
     const currentConfig = () => addressSuggestionConfigs().find((next) => next.input === config.input) || config;
-    config.input.addEventListener("focus", () => showAddressSuggestions(currentConfig()));
-    config.input.addEventListener("click", () => showAddressSuggestions(currentConfig()));
+    config.input.addEventListener(
+      "focus",
+      () => showAddressSuggestions(currentConfig())
+    );
+    config.input.addEventListener(
+      "click",
+      () => showAddressSuggestions(currentConfig())
+    );
     config.input.addEventListener("input", () => {
       const latestConfig = currentConfig();
       if (!latestConfig.list.hidden) {
@@ -81531,14 +82750,19 @@ function renderKeplr() {
   els.keplrTransferHash.textContent = state.keplr.transferHash ? shorten(state.keplr.transferHash, 14, 12) : "-";
   els.keplrWithdrawHash.textContent = state.keplr.withdrawHash ? shorten(state.keplr.withdrawHash, 14, 12) : "-";
   els.keplrWithdrawHeight.textContent = state.keplr.withdrawHeight || "-";
+  renderRelayerPanel();
   if (connected && !els.veiledWithdrawRecipient.value) {
     els.veiledWithdrawRecipient.value = state.keplr.account;
+  }
+  if (connected && !els.relayWithdrawRecipient.value) {
+    els.relayWithdrawRecipient.value = state.keplr.account;
   }
   renderMyKeplrNotes();
   els.fundKeplr.disabled = !serverFeature("faucet") || !signerReady;
   els.setupKeplrPrivacy.disabled = !signerReady;
   els.copyKeplrDisclosurePubKey.disabled = !state.keplr.disclosurePubKeyHex;
   els.refreshWalletBalance.disabled = !connected;
+  els.refreshClairBalance.disabled = !connected;
   els.scanKeplrNotes.disabled = !signerReady || !state.keplr.rootSignatureBase64;
   updateAmountActionButtons({ signerReady, veiledReady });
   renderEventDetail();
@@ -81547,10 +82771,14 @@ function updateAmountActionButtons(status = {}) {
   const connected = Boolean(state.keplr.account);
   const signerReady = status.signerReady ?? (connected && state.keplr.addressMatches);
   const veiledReady = status.veiledReady ?? (signerReady && Boolean(state.keplr.rootSignatureBase64));
-  els.sendFromKeplr.disabled = !signerReady || !hasPositiveUclairInput(els.keplrSendAmount) || !isSendRecipientForWallet(els.keplrSendRecipient.value, state.activeWallet || activeWalletKind());
-  els.depositFromKeplr.disabled = !signerReady || !hasPositiveUclairInput(els.keplrDepositAmount);
+  els.sendFromKeplr.disabled = !signerReady || !hasPositiveUclairInput(els.keplrSendAmount) || !isSendRecipientForWallet(
+    els.keplrSendRecipient.value,
+    state.activeWallet || activeWalletKind()
+  );
+  els.depositFromKeplr.disabled = !signerReady || !hasPositiveUclairInput(els.keplrDepositAmount) || !serverFeature("depositProof");
   els.transferFromVeiled.disabled = !veiledReady || !hasPositiveUclairInput(els.veiledTransferAmount);
   els.withdrawFromVeiled.disabled = !veiledReady || !hasPositiveUclairInput(els.veiledWithdrawAmount);
+  els.relayWithdrawFromVeiled.disabled = !veiledReady || !hasPositiveUclairInput(els.relayWithdrawAmount) || !serverFeature("relayer");
 }
 function renderMyKeplrNotes() {
   els.myKeplrSpendable.textContent = state.keplr.notesSummary || "-";
@@ -81570,7 +82798,9 @@ function renderMyKeplrNotes() {
     els.myKeplrNotesList.append(empty);
     return;
   }
-  const valueNotes = state.keplr.notes.filter((note) => !isZeroAmountNote(note));
+  const valueNotes = state.keplr.notes.filter(
+    (note) => !isZeroAmountNote(note)
+  );
   const notes = state.keplr.showSpendableOnly ? valueNotes.filter(isSpendableNote) : valueNotes;
   if (notes.length === 0) {
     const empty = document.createElement("p");
@@ -81607,6 +82837,7 @@ function renderAccounts() {
   const selectedTransparentAddress = transparentDisplayAddressFor(account);
   els.localSignerNotesTitle.textContent = "Notes";
   els.transparentAddress.textContent = selectedTransparentAddress || "-";
+  renderRelayerPanel();
   if (!accounts.length) {
     els.keplrSendRecipient.value = "";
   } else if (!isSendRecipientForWallet(els.keplrSendRecipient.value) && selectedTransparentAddress) {
@@ -81617,7 +82848,9 @@ function renderAccounts() {
 function renderHealth(data) {
   state.config = data.config;
   state.chainProfiles = data.config?.chainProfiles || [];
-  if (!state.selectedChainProfileId || !state.chainProfiles.some((profile) => profile.id === state.selectedChainProfileId)) {
+  if (!state.selectedChainProfileId || !state.chainProfiles.some(
+    (profile) => profile.id === state.selectedChainProfileId
+  )) {
     state.selectedChainProfileId = data.config?.activeChainProfileId || state.chainProfiles[0]?.id || "";
   }
   state.accounts = data.accounts || [];
@@ -81657,6 +82890,9 @@ async function refreshHealth() {
     }
   }
   const tasks = [refreshEvents({ allowFailure: true })];
+  if (serverFeature("relayer")) {
+    tasks.push(refreshRelayerAccount());
+  }
   if (serverFeature("auditorAdmin")) {
     tasks.push(refreshAuditorTransfers(), refreshAuditorTestScalar());
   }
@@ -81687,6 +82923,27 @@ async function refreshSelectedAccount() {
   els.balanceValue.textContent = (balance.balances || []).map((coin) => `${coin.amount}${coin.denom}`).join(", ") || zeroCoinText();
   await refreshNotes();
 }
+async function refreshRelayerAccount() {
+  const relayer = localRelayerAccount();
+  state.relayer.error = "";
+  if (!relayer?.transparentAddress || !serverFeature("relayer")) {
+    state.relayer.balance = "";
+    renderRelayerPanel();
+    return;
+  }
+  state.relayer.balance = "Loading...";
+  renderRelayerPanel();
+  try {
+    const balance = await clairveilBrowserClient().getBalances(
+      relayer.transparentAddress
+    );
+    state.relayer.balance = formatBalances(balance.balances);
+  } catch (error) {
+    state.relayer.balance = "";
+    state.relayer.error = error.message;
+  }
+  renderRelayerPanel();
+}
 async function refreshWalletBalance() {
   if (!state.keplr.account) return;
   if (isEvmTransparentMode()) {
@@ -81695,12 +82952,16 @@ async function refreshWalletBalance() {
       method: "eth_getBalance",
       params: [state.wallet.account, "latest"]
     });
-    state.keplr.balance = formatBalances([{
-      denom: baseDenom(),
-      amount: BigInt(balanceHex || "0x0").toString()
-    }]);
+    state.keplr.balance = formatBalances([
+      {
+        denom: baseDenom(),
+        amount: BigInt(balanceHex || "0x0").toString()
+      }
+    ]);
   } else {
-    const data = await clairveilBrowserClient().getBalances(state.keplr.account);
+    const data = await clairveilBrowserClient().getBalances(
+      state.keplr.account
+    );
     state.keplr.balance = formatBalances(data.balances);
   }
   renderKeplr();
@@ -81747,7 +83008,9 @@ async function refreshEvents({ allowFailure = false } = {}) {
   ]);
   if (privacyResult.status === "rejected") {
     state.privacyEvents.events = [];
-    state.privacyEvents.loadError = browserDataLoadErrorMessage(privacyResult.reason);
+    state.privacyEvents.loadError = browserDataLoadErrorMessage(
+      privacyResult.reason
+    );
     state.blockEvents.events = [];
     state.blockEvents.error = blockResult.status === "rejected" ? browserDataLoadErrorMessage(blockResult.reason) : "";
     renderPrivacyEvents();
@@ -81765,7 +83028,9 @@ async function refreshEvents({ allowFailure = false } = {}) {
     state.blockEvents.events = [];
     state.blockEvents.error = browserDataLoadErrorMessage(blockResult.reason);
   }
-  if (state.privacyEvents.selectedTxHash && !state.privacyEvents.events.some((event) => event.tx_hash_hex === state.privacyEvents.selectedTxHash)) {
+  if (state.privacyEvents.selectedTxHash && !state.privacyEvents.events.some(
+    (event) => event.tx_hash_hex === state.privacyEvents.selectedTxHash
+  )) {
     state.privacyEvents.selectedTxHash = "";
     state.privacyEvents.decoded = null;
     state.privacyEvents.error = "";
@@ -81787,25 +83052,61 @@ async function refreshBlockEvents() {
 }
 function disclosureTargetMatches(event) {
   const target = eventAttribute4(event, "user_disclosure_target_pubkey");
-  return Boolean(target && state.keplr.disclosurePubKeyHex && target.toLowerCase() === state.keplr.disclosurePubKeyHex.toLowerCase());
+  return Boolean(
+    target && state.keplr.disclosurePubKeyHex && target.toLowerCase() === state.keplr.disclosurePubKeyHex.toLowerCase()
+  );
 }
 function isPublicDisclosureEvent(event) {
   return Boolean(
     event?.event_type === "shielded_transfer" && eventAttribute4(event, "user_disclosure_mode") === "USER_DISCLOSURE_MODE_PUBLIC" && eventAttribute4(event, "user_disclosure_payload")
   );
 }
-function canDecodeEventDisclosure(event) {
+function isCosmosProfile() {
+  return activeChainProfile()?.transport !== "evm";
+}
+function hasSelfViewDisclosureEvent(event) {
+  return Boolean(
+    event?.event_type === "shielded_transfer" && eventAttribute4(event, "self_view_disclosure_payload")
+  );
+}
+function canDecodeUserEventDisclosure(event) {
   if (!event || event.event_type !== "shielded_transfer") return false;
   if (isPublicDisclosureEvent(event)) return true;
   return disclosureTargetMatches(event);
 }
+function canDecodeSelfViewDisclosure(event) {
+  return Boolean(
+    isCosmosProfile() && hasSelfViewDisclosureEvent(event) && state.keplr.account && state.keplr.pubkeyHex && state.keplr.rootSignatureBase64
+  );
+}
+function selectedEventDisclosurePlane(event) {
+  if (!event || event.event_type !== "shielded_transfer") return "-";
+  if (canDecodeUserEventDisclosure(event)) return "user";
+  if (canDecodeSelfViewDisclosure(event)) return "self-view";
+  if (eventAttribute4(event, "user_disclosure_payload")) return "user";
+  if (hasSelfViewDisclosureEvent(event)) return "self-view";
+  return "-";
+}
+function canDecodeEventDisclosure(event) {
+  return canDecodeUserEventDisclosure(event) || canDecodeSelfViewDisclosure(event);
+}
 function eventDisclosureStatus(event) {
   if (!event) return "Select an event.";
-  if (event.event_type !== "shielded_transfer") return "Disclosure \uC870\uD68C\uB294 shielded transfer\uC5D0\uC11C\uB9CC \uAC00\uB2A5\uD569\uB2C8\uB2E4.";
+  if (event.event_type !== "shielded_transfer")
+    return "Disclosure \uC870\uD68C\uB294 shielded transfer\uC5D0\uC11C\uB9CC \uAC00\uB2A5\uD569\uB2C8\uB2E4.";
+  if (canDecodeSelfViewDisclosure(event) && !canDecodeUserEventDisclosure(event)) {
+    return "Sender self-view disclosure\uC785\uB2C8\uB2E4. \uB0B4 wallet material\uB85C \uC870\uD68C\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
+  }
+  if (hasSelfViewDisclosureEvent(event) && !isCosmosProfile()) {
+    return "Self-view disclosure\uB294 \uD604\uC7AC EVM profile\uC5D0\uC11C \uC870\uD68C\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.";
+  }
   const mode = eventAttribute4(event, "user_disclosure_mode");
   const target = eventAttribute4(event, "user_disclosure_target_pubkey");
   const payload = eventAttribute4(event, "user_disclosure_payload");
   if (!payload) {
+    if (hasSelfViewDisclosureEvent(event)) {
+      return "Cosmos sender self-view disclosure\uAC00 \uC788\uC2B5\uB2C8\uB2E4. Setup Clairveil \uD6C4 \uC870\uD68C\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
+    }
     return "\uC774 transfer\uC5D0\uB294 user disclosure payload\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.";
   }
   if (mode === "USER_DISCLOSURE_MODE_PUBLIC") {
@@ -81821,6 +83122,9 @@ function eventDisclosureStatus(event) {
     return "Disclosure target pubkey\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.";
   }
   if (!disclosureTargetMatches(event)) {
+    if (hasSelfViewDisclosureEvent(event)) {
+      return state.keplr.rootSignatureBase64 ? "User disclosure \uB300\uC0C1\uC740 \uC544\uB2C8\uC9C0\uB9CC sender self-view\uB85C \uC870\uD68C\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4." : "User disclosure \uB300\uC0C1\uC740 \uC544\uB2D9\uB2C8\uB2E4. Setup Clairveil \uD6C4 sender self-view \uC870\uD68C\uB97C \uC2DC\uB3C4\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
+    }
     return "\uB0B4 disclosure pubkey \uB300\uC0C1\uC774 \uC544\uB2D9\uB2C8\uB2E4.";
   }
   return "\uB0B4 disclosure pubkey \uB300\uC0C1\uC785\uB2C8\uB2E4. \uC870\uD68C\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
@@ -81840,10 +83144,16 @@ function renderPrivacyEvents() {
     const row = document.createElement("button");
     row.type = "button";
     row.className = "event-row";
-    row.classList.toggle("selected", event.tx_hash_hex === state.privacyEvents.selectedTxHash);
+    row.classList.toggle(
+      "selected",
+      event.tx_hash_hex === state.privacyEvents.selectedTxHash
+    );
     row.disabled = !canSelect;
     if (canSelect) {
-      row.addEventListener("click", () => selectPrivacyEvent(event.tx_hash_hex));
+      row.addEventListener(
+        "click",
+        () => selectPrivacyEvent(event.tx_hash_hex)
+      );
     }
     const copy = document.createElement("div");
     copy.className = "row-copy";
@@ -81914,22 +83224,40 @@ function selectPrivacyEvent(txHash) {
   renderEventDetail();
 }
 function selectedPrivacyEvent() {
-  return state.privacyEvents.events.find((event) => event.tx_hash_hex === state.privacyEvents.selectedTxHash);
+  return state.privacyEvents.events.find(
+    (event) => event.tx_hash_hex === state.privacyEvents.selectedTxHash
+  );
 }
 function clearEventDisclosureResult() {
+  els.eventDisclosurePolicy.textContent = "-";
+  els.eventDisclosureOutputIndex.textContent = "-";
+  els.eventDisclosureCommitment.textContent = "-";
+  els.eventDisclosureDigest.textContent = "-";
+  els.eventDisclosureVerified.textContent = "-";
   els.eventDisclosureFields.textContent = "-";
   els.eventDisclosureAmount.textContent = "-";
+  els.eventDisclosureAssetDenom.textContent = "-";
   els.eventDisclosureFrom.textContent = "-";
   els.eventDisclosureTo.textContent = "-";
 }
 function renderEventDisclosureReport(report) {
   const summary = report?.summary || {};
-  const amount = summary.amount ? `${summary.amount}${summary.asset_denom ? ` ${summary.asset_denom}` : ""}` : "-";
+  const payload = report?.payload || {};
+  const assetDenom = summary.asset_denom || report?.asset_denom || payload.asset_denom || "";
+  const amount = summary.amount || report?.amount || payload.amount ? `${summary.amount || report?.amount || payload.amount}${assetDenom ? ` ${assetDenom}` : ""}` : "-";
+  const verified = report?.verification?.verified ?? summary.verified ?? report?.verified;
+  els.eventDisclosurePlane.textContent = summary.plane || report?.payload?.plane || "-";
+  els.eventDisclosurePolicy.textContent = summary.policy || report?.policy || payload.policy || "-";
+  els.eventDisclosureOutputIndex.textContent = summary.output_index ?? report?.output_index ?? payload.output_index ?? "-";
+  els.eventDisclosureCommitment.textContent = summary.commitment_hex || report?.commitment_hex || payload.commitment_hex || "-";
+  els.eventDisclosureDigest.textContent = summary.digest_hex || report?.digest_hex || payload.disclosure_digest_hex || payload.digest_hex || "-";
+  els.eventDisclosureVerified.textContent = typeof verified === "boolean" ? verified ? "true" : "false" : "-";
   els.eventDisclosureFields.textContent = (summary.disclosed_fields || []).map(prettyDisclosureField).join(", ") || "-";
   els.eventDisclosureAmount.textContent = amount;
+  els.eventDisclosureAssetDenom.textContent = assetDenom || "-";
   els.eventDisclosureFrom.textContent = summary.from_shielded_address || "-";
   els.eventDisclosureTo.textContent = summary.to_shielded_address || "-";
-  els.eventDisclosureState.textContent = report?.verification?.verified ? `${summary.delivery || "recipient-encrypted"} / ${summary.policy || "unknown policy"}` : "Disclosure verification failed.";
+  els.eventDisclosureState.textContent = verified ? `${summary.delivery || "recipient-encrypted"} / ${summary.policy || "unknown policy"}` : "Disclosure verification failed.";
 }
 function renderEventDetail() {
   const event = selectedPrivacyEvent();
@@ -81938,6 +83266,7 @@ function renderEventDetail() {
   els.eventDetailTx.textContent = event?.tx_hash_hex || "-";
   els.eventDetailUserMode.textContent = event ? eventAttribute4(event, "user_disclosure_mode") || "-" : "-";
   els.eventDetailTarget.textContent = event ? eventAttribute4(event, "user_disclosure_target_pubkey") || "-" : "-";
+  els.eventDisclosurePlane.textContent = selectedEventDisclosurePlane(event);
   clearEventDisclosureResult();
   if (state.privacyEvents.decoded) {
     renderEventDisclosureReport(state.privacyEvents.decoded);
@@ -81988,7 +83317,9 @@ async function refreshAuditorTestScalar() {
     const data = await api("/api/auditor/test-scalar");
     state.auditor.testScalar = data.disclosure_private_scalar_hex || "";
     state.auditor.testScalarError = "";
-    state.auditor.testScalarMatchesAuditConfig = Boolean(data.matches_audit_config);
+    state.auditor.testScalarMatchesAuditConfig = Boolean(
+      data.matches_audit_config
+    );
   } catch (error) {
     state.auditor.testScalar = "";
     state.auditor.testScalarError = `Unavailable: ${error.message}`;
@@ -82011,7 +83342,11 @@ async function decodeSelectedEventDisclosure() {
   els.eventDisclosureState.textContent = "Disclosure \uC870\uD68C \uC911...";
   renderEventDetail();
   try {
-    const report = await clairveilBrowserClient().decodeUserDisclosure(privacyRequest({ txHash: event.tx_hash_hex }));
+    const report = canDecodeUserEventDisclosure(event) ? await clairveilBrowserClient().decodeUserDisclosure(
+      privacyRequest({ txHash: event.tx_hash_hex })
+    ) : await clairveilBrowserClient().decodeSelfViewDisclosure(
+      keplrPrivacyRequest({ txHash: event.tx_hash_hex })
+    );
     state.privacyEvents.decoded = report;
     renderEventDisclosureReport(report);
   } catch (error) {
@@ -82071,7 +83406,9 @@ function renderAuditorReport(report) {
   els.auditorTo.textContent = summary.to_shielded_address || "-";
   els.auditorFields.textContent = (summary.disclosed_fields || []).map(prettyDisclosureField).join(", ") || "-";
   els.auditorDigest.textContent = payload.disclosure_digest_hex || eventAttribute4(
-    state.auditor.events.find((event) => event.tx_hash_hex === state.auditor.selectedTxHash),
+    state.auditor.events.find(
+      (event) => event.tx_hash_hex === state.auditor.selectedTxHash
+    ),
     "audit_disclosure_digest"
   ) || "-";
   setAuditorValueTone(auditorDetailValueElements(), "decoded");
@@ -82086,9 +83423,15 @@ function renderAuditorTransfers() {
     const row = document.createElement("button");
     row.type = "button";
     row.className = "audit-row";
-    row.classList.toggle("selected", event.tx_hash_hex === state.auditor.selectedTxHash);
+    row.classList.toggle(
+      "selected",
+      event.tx_hash_hex === state.auditor.selectedTxHash
+    );
     row.disabled = state.auditor.loading;
-    row.addEventListener("click", () => selectAuditorTransfer(event.tx_hash_hex));
+    row.addEventListener(
+      "click",
+      () => selectAuditorTransfer(event.tx_hash_hex)
+    );
     const copy = document.createElement("div");
     copy.className = "row-copy";
     const title = document.createElement("strong");
@@ -82096,7 +83439,11 @@ function renderAuditorTransfers() {
     const meta = document.createElement("span");
     meta.textContent = `height ${event.height}`;
     const digest = document.createElement("code");
-    digest.textContent = shorten(eventAttribute4(event, "audit_disclosure_digest"), 12, 10);
+    digest.textContent = shorten(
+      eventAttribute4(event, "audit_disclosure_digest"),
+      12,
+      10
+    );
     copy.append(title, meta);
     row.append(copy, digest);
     els.auditorEventsList.append(row);
@@ -82114,13 +83461,19 @@ async function refreshAuditorTransfers() {
   try {
     const data = await clairveilBrowserClient().fetchAuditableTransfers();
     state.auditor.events = data.events || [];
-    if (state.auditor.selectedTxHash && !state.auditor.events.some((event) => event.tx_hash_hex === state.auditor.selectedTxHash)) {
+    if (state.auditor.selectedTxHash && !state.auditor.events.some(
+      (event) => event.tx_hash_hex === state.auditor.selectedTxHash
+    )) {
       state.auditor.selectedTxHash = "";
       state.auditor.decoded = null;
       clearAuditorReport();
     }
     renderAuditorTransfers();
-    renderAuditorEventDetail(state.auditor.events.find((event) => event.tx_hash_hex === state.auditor.selectedTxHash));
+    renderAuditorEventDetail(
+      state.auditor.events.find(
+        (event) => event.tx_hash_hex === state.auditor.selectedTxHash
+      )
+    );
   } finally {
     setBusy(els.refreshAuditorTransfers, false);
   }
@@ -82130,7 +83483,9 @@ function selectAuditorTransfer(txHash) {
   state.auditor.selectedTxHash = txHash;
   state.auditor.decoded = null;
   renderAuditorTransfers();
-  renderAuditorEventDetail(state.auditor.events.find((event) => event.tx_hash_hex === txHash));
+  renderAuditorEventDetail(
+    state.auditor.events.find((event) => event.tx_hash_hex === txHash)
+  );
   updateAuditorDecodeButton();
 }
 async function decodeAuditorTransfer(txHash = state.auditor.selectedTxHash) {
@@ -82183,7 +83538,9 @@ async function connectWallet() {
     return;
   }
   if (!selectedProfileMatchesServer()) {
-    toast("Selected chain is not running in this DApp server. Restart the server for that chain profile.");
+    toast(
+      "Selected chain is not running in this DApp server. Restart the server for that chain profile."
+    );
     return;
   }
   if (!metaMaskProvider()) {
@@ -82213,6 +83570,9 @@ async function connectWallet() {
   state.keplr.signerCheck = "OK (EVM address)";
   if (!els.veiledWithdrawRecipient.value && identity.evmAddress) {
     els.veiledWithdrawRecipient.value = identity.evmAddress;
+  }
+  if (!els.relayWithdrawRecipient.value && identity.evmAddress) {
+    els.relayWithdrawRecipient.value = identity.evmAddress;
   }
   renderWallet();
   renderKeplr();
@@ -82299,7 +83659,10 @@ async function resolveKeplrSigner(chainId, key) {
   );
   for (const candidate of uniqueCandidates) {
     try {
-      const signerCheck = clairveilBrowserClient().verifySignerPubKey(candidate.address, candidate.pubKeyHex);
+      const signerCheck = clairveilBrowserClient().verifySignerPubKey(
+        candidate.address,
+        candidate.pubKeyHex
+      );
       if (signerCheck.matches) {
         return { ...candidate, signerCheck, candidates: uniqueCandidates };
       }
@@ -82309,7 +83672,11 @@ async function resolveKeplrSigner(chainId, key) {
     }
   }
   return {
-    ...uniqueCandidates[0] || { source: "Keplr", address: key?.bech32Address || "", pubKeyHex: "" },
+    ...uniqueCandidates[0] || {
+      source: "Keplr",
+      address: key?.bech32Address || "",
+      pubKeyHex: ""
+    },
     signerCheck: uniqueCandidates[0]?.signerCheck || {
       expectedAddress: "",
       matches: false
@@ -82324,7 +83691,9 @@ async function connectKeplr() {
     return;
   }
   if (!selectedProfileMatchesServer()) {
-    toast("Selected chain is not running in this DApp server. Restart the server for that chain profile.");
+    toast(
+      "Selected chain is not running in this DApp server. Restart the server for that chain profile."
+    );
     return;
   }
   if (!window.keplr) {
@@ -82363,6 +83732,11 @@ async function connectKeplr() {
   state.keplr.transferHash = "";
   state.keplr.withdrawHash = "";
   state.keplr.withdrawHeight = "";
+  state.keplr.relayWithdrawHash = "";
+  state.keplr.relayWithdrawHeight = "";
+  state.keplr.relayWithdrawRelayer = "";
+  state.keplr.relayWithdrawPayloadHash = "";
+  clearPreparedRelayWithdrawPayload();
   state.keplr.notesSummary = "";
   state.keplr.notes = [];
   state.keplr.notesScanned = false;
@@ -82375,7 +83749,9 @@ async function connectKeplr() {
   state.keplr.signerCheck = state.keplr.addressMatches ? `OK (${signer.source})` : `Mismatch: ${shorten(state.keplr.expectedAddress, 12, 10)}`;
   renderKeplr();
   if (!state.keplr.addressMatches) {
-    const sources = signer.candidates?.length ? signer.candidates.map((candidate) => `${candidate.source}: ${shorten(candidate.address, 12, 10)}`).join(", ") : "no Keplr signer candidates";
+    const sources = signer.candidates?.length ? signer.candidates.map(
+      (candidate) => `${candidate.source}: ${shorten(candidate.address, 12, 10)}`
+    ).join(", ") : "no Keplr signer candidates";
     toast(
       `Keplr address/pubKey mismatch on ${chainInfo.chainId}. Checked ${sources}. Remove Clairveil Localnet (${chainInfo.chainId}) from Keplr once, reconnect, and try again. You do not need to change chains on every restart.`
     );
@@ -82398,7 +83774,11 @@ async function signKeplrSession() {
     `Chain: ${chainInfo.chainId}`,
     `Time: ${(/* @__PURE__ */ new Date()).toISOString()}`
   ].join("\n");
-  const signature = await window.keplr.signArbitrary(chainInfo.chainId, state.keplr.account, message);
+  const signature = await window.keplr.signArbitrary(
+    chainInfo.chainId,
+    state.keplr.account,
+    message
+  );
   state.keplr.signatureHash = await digestText(signature.signature);
   if (typeof window.keplr.verifyArbitrary === "function") {
     state.keplr.verified = await window.keplr.verifyArbitrary(
@@ -82420,7 +83800,9 @@ function disconnectWallet() {
 async function fundKeplr() {
   if (!state.keplr.account) return;
   if (!serverFeature("faucet")) {
-    toast("Faucet is available only when this DApp server is attached to a local test node.");
+    toast(
+      "Faucet is available only when this DApp server is attached to a local test node."
+    );
     return;
   }
   const amount = clairInputToUclair(els.keplrFaucetAmount);
@@ -82437,7 +83819,9 @@ async function fundKeplr() {
       })
     });
     state.keplr.faucetHash = data.broadcast?.txhash || "";
-    state.keplr.faucetSent = formatUclairAsClair(data.amount?.funded?.replace(baseDenom(), "") || "0");
+    state.keplr.faucetSent = formatUclairAsClair(
+      data.amount?.funded?.replace(baseDenom(), "") || "0"
+    );
     state.keplr.faucetRecipient = isEvmTransparentMode() ? data.recipientEvm || recipient : data.recipient || recipient;
     state.keplr.balance = formatBalances(data.balance?.balances);
     await refreshWalletBalance();
@@ -82460,7 +83844,10 @@ async function setupKeplrPrivacy() {
     let account;
     if (state.activeWallet === "metamask") {
       await ensureMetaMaskChain();
-      const rootMessage = clairveilBrowserClient().buildRootSigningMessage(state.keplr.account, state.keplr.pubkeyHex);
+      const rootMessage = clairveilBrowserClient().buildRootSigningMessage(
+        state.keplr.account,
+        state.keplr.pubkeyHex
+      );
       const signatureHex = await requestMetaMask({
         method: "personal_sign",
         params: [rootMessage, state.wallet.account]
@@ -82478,8 +83865,15 @@ async function setupKeplrPrivacy() {
       if (!chainInfo) {
         throw new Error("Selected chain does not include Keplr chain info");
       }
-      const rootMessage = clairveilBrowserClient().buildRootSigningMessage(state.keplr.account, state.keplr.pubkeyHex);
-      const signature = await window.keplr.signArbitrary(chainInfo.chainId, state.keplr.account, rootMessage);
+      const rootMessage = clairveilBrowserClient().buildRootSigningMessage(
+        state.keplr.account,
+        state.keplr.pubkeyHex
+      );
+      const signature = await window.keplr.signArbitrary(
+        chainInfo.chainId,
+        state.keplr.account,
+        rootMessage
+      );
       state.keplr.rootSignatureBase64 = signature.signature;
       account = clairveilBrowserClient().derivePrivacyAccount({
         address: state.keplr.account,
@@ -82518,6 +83912,14 @@ async function copyWalletAccount() {
   await navigator.clipboard.writeText(account);
   toast("Account copied");
 }
+async function copyRelayWithdrawPayload() {
+  if (!state.keplr.relayWithdrawPayloadText) {
+    toast("Prepared relay withdraw payload\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.");
+    return;
+  }
+  await navigator.clipboard.writeText(state.keplr.relayWithdrawPayloadText);
+  toast("Relay withdraw payload copied");
+}
 async function signDirectAndBroadcast(signDoc) {
   if (!window.keplr?.signDirect) {
     throw new Error("Keplr signDirect not available");
@@ -82528,7 +83930,11 @@ async function signDirectAndBroadcast(signDoc) {
     chainId: signDoc.chainId,
     accountNumber: BigInt(signDoc.accountNumber)
   };
-  const signed = await window.keplr.signDirect(signDoc.chainId, state.keplr.account, directSignDoc);
+  const signed = await window.keplr.signDirect(
+    signDoc.chainId,
+    state.keplr.account,
+    directSignDoc
+  );
   return clairveilBrowserClient().broadcastSignedTx({
     bodyBytes: bytesToBase642(signed.signed.bodyBytes),
     authInfoBytes: bytesToBase642(signed.signed.authInfoBytes),
@@ -82540,7 +83946,10 @@ async function submitEvmTransaction(transaction) {
     throw new Error("MetaMask is not connected");
   }
   await ensureMetaMaskChain();
-  const tx = await withEstimatedEvmGas({ ...transaction, from: state.wallet.account });
+  const tx = await withEstimatedEvmGas({
+    ...transaction,
+    from: state.wallet.account
+  });
   const txHash = await requestMetaMask({
     method: "eth_sendTransaction",
     params: [tx]
@@ -82596,23 +84005,62 @@ function privacyRequest(extra = {}) {
   return state.activeWallet === "metamask" ? evmPrivacyRequest(extra) : keplrPrivacyRequest(extra);
 }
 async function preparePrivacyDepositSignDoc(amount) {
-  return clairveilBrowserClient().prepareDeposit(privacyRequest({ amount }));
+  const request = privacyRequest({ amount });
+  request.depositProofProvider = async ({ material }) => {
+    if (!serverFeature("depositProof")) {
+      throw new Error(
+        "Deposit proof helper is unavailable. \uCD5C\uC2E0 Clairveil chain\uC740 deposit proof\uAC00 \uD544\uC694\uD558\uBBC0\uB85C local DApp server/prover setup\uC73C\uB85C \uB2E4\uC2DC \uC2E4\uD589\uD574\uC918."
+      );
+    }
+    return api("/api/deposit/proof", {
+      method: "POST",
+      body: JSON.stringify({
+        note_json: material.note_json,
+        note_commitment_hex: material.note_commitment_hex
+      })
+    });
+  };
+  return clairveilBrowserClient().prepareDeposit(request);
 }
 async function preparePrivacyTransferSignDoc(amount, recipient, disclosure = {}, options = {}) {
-  return clairveilBrowserClient().prepareTransfer(privacyRequest({
-    amount,
-    recipient,
-    scan: { limit: 200, maxPages: 1e3 },
-    ...disclosure,
-    allowPlanStep: Boolean(options.allowPlanStep)
-  }));
+  return clairveilBrowserClient().prepareTransfer(
+    privacyRequest({
+      amount,
+      recipient,
+      scan: { limit: 200, maxPages: 1e3 },
+      ...disclosure,
+      allowPlanStep: Boolean(options.allowPlanStep)
+    })
+  );
 }
 async function preparePrivacyWithdrawSignDoc(amount, recipient) {
-  return clairveilBrowserClient().prepareWithdraw(privacyRequest({
-    amount,
-    recipient,
-    scan: { limit: 200, maxPages: 1e3 }
-  }));
+  return clairveilBrowserClient().prepareWithdraw(
+    privacyRequest({
+      amount,
+      recipient,
+      scan: { limit: 200, maxPages: 1e3 }
+    })
+  );
+}
+async function preparePrivacyRelayWithdrawPayload(amount, recipient) {
+  return clairveilBrowserClient().prepareRelayWithdraw(
+    privacyRequest({
+      amount,
+      recipient,
+      scan: { limit: 200, maxPages: 1e3 }
+    })
+  );
+}
+async function relayPreparedWithdrawPayload(payload, recipient) {
+  const relayer = localRelayerAccount()?.name || (isEvmTransparentMode() ? "dev0" : "relayer");
+  return api("/api/relayer/withdraw", {
+    method: "POST",
+    body: JSON.stringify({
+      payload,
+      expectedRecipient: recipient,
+      relayer
+    })
+  });
 }
 async function broadcastPrivacyDeposit(amount, label = "deposit", options = {}) {
   els.keplrTxState.textContent = `Preparing ${label}`;
@@ -82657,10 +84105,14 @@ function assertSuccessfulBroadcast(broadcast, label = "transaction") {
     return;
   }
   if (!broadcast?.tx) {
-    throw new Error(`${label} was broadcast but not found yet: ${txHash || "unknown tx"}`);
+    throw new Error(
+      `${label} was broadcast but not found yet: ${txHash || "unknown tx"}`
+    );
   }
   if (Number(broadcast.tx.code || 0) !== 0) {
-    throw new Error(broadcast.tx.raw_log || `${label} failed with code ${broadcast.tx.code}`);
+    throw new Error(
+      broadcast.tx.raw_log || `${label} failed with code ${broadcast.tx.code}`
+    );
   }
 }
 async function broadcastPreparedPrivacy(data, label = "privacy transaction", options = {}) {
@@ -82678,7 +84130,9 @@ function isZeroHelperNeededError(error) {
   return error?.code === "ZERO_DUMMY_REQUIRED" || error?.status === "zero_dummy_required";
 }
 function isSelfTransferRecipient(recipient) {
-  return Boolean(state.keplr.shieldedAddress && recipient === state.keplr.shieldedAddress);
+  return Boolean(
+    state.keplr.shieldedAddress && recipient === state.keplr.shieldedAddress
+  );
 }
 async function createExactWithdrawNote(amount, hooks = {}) {
   if (!state.keplr.shieldedAddress) {
@@ -82690,32 +84144,49 @@ async function createExactWithdrawNote(amount, hooks = {}) {
     hooks.onPlanCheck?.(step, maxPlannerSteps);
     let data;
     try {
-      data = await preparePrivacyTransferSignDoc(amount, state.keplr.shieldedAddress, {}, { allowPlanStep: true });
+      data = await preparePrivacyTransferSignDoc(
+        amount,
+        state.keplr.shieldedAddress,
+        {},
+        { allowPlanStep: true }
+      );
     } catch (error) {
       if (!isZeroHelperNeededError(error)) {
         throw error;
       }
       hooks.onZeroHelperNeeded?.(error, step, maxPlannerSteps);
-      await broadcastPrivacyDeposit(zeroCoinText(), "zero helper note", { waitForEvmReceipt: true });
+      await broadcastPrivacyDeposit(zeroCoinText(), "zero helper note", {
+        waitForEvmReceipt: true
+      });
       await refreshPrivacySurfaces();
       continue;
     }
     if (data.prepared?.isFinal === false || data.prepared?.planAction === "self_merge") {
       hooks.onSelfMergeNeeded?.(data, step, maxPlannerSteps);
       els.keplrTxState.textContent = `${state.activeWallet === "metamask" ? "Waiting for MetaMask" : "Waiting for Keplr"} (${step}/${maxPlannerSteps})`;
-      const plannerBroadcast = await broadcastPreparedPrivacy(data, "exact-note self transaction", { waitForEvmReceipt: true });
+      const plannerBroadcast = await broadcastPreparedPrivacy(
+        data,
+        "exact-note self transaction",
+        { waitForEvmReceipt: true }
+      );
       state.keplr.transferHash = plannerBroadcast.broadcast?.txhash || plannerBroadcast.txHash || "";
       await refreshPrivacySurfaces();
       continue;
     }
     hooks.onFinalExactTransfer?.(data, step, maxPlannerSteps);
     els.keplrTxState.textContent = state.activeWallet === "metamask" ? "Waiting for MetaMask" : "Waiting for Keplr";
-    const broadcast = await broadcastPreparedPrivacy(data, "exact-note self transfer", { waitForEvmReceipt: true });
+    const broadcast = await broadcastPreparedPrivacy(
+      data,
+      "exact-note self transfer",
+      { waitForEvmReceipt: true }
+    );
     state.keplr.transferHash = broadcast.broadcast?.txhash || broadcast.txHash || "";
     await refreshPrivacySurfaces();
     return data;
   }
-  throw new Error("Withdraw\uC5D0 \uD544\uC694\uD55C exact note \uC900\uBE44\uAC00 \uB108\uBB34 \uC624\uB798 \uAC78\uB9BD\uB2C8\uB2E4. notes\uB97C \uB2E4\uC2DC \uC2A4\uCE94\uD55C \uB4A4 \uC7AC\uC2DC\uB3C4\uD574\uC918.");
+  throw new Error(
+    "Withdraw\uC5D0 \uD544\uC694\uD55C exact note \uC900\uBE44\uAC00 \uB108\uBB34 \uC624\uB798 \uAC78\uB9BD\uB2C8\uB2E4. notes\uB97C \uB2E4\uC2DC \uC2A4\uCE94\uD55C \uB4A4 \uC7AC\uC2DC\uB3C4\uD574\uC918."
+  );
 }
 async function sendFromKeplr() {
   if (!state.keplr.account) return;
@@ -82729,7 +84200,9 @@ async function sendFromKeplr() {
         amount: amountInputValue(els.keplrSendAmount)
       });
       els.keplrTxState.textContent = "Waiting for MetaMask";
-      const broadcast2 = await sendEvmTransaction(transaction, { label: "EVM send" });
+      const broadcast2 = await sendEvmTransaction(transaction, {
+        label: "EVM send"
+      });
       assertSuccessfulBroadcast(broadcast2, "EVM send");
       state.keplr.sendHash = broadcast2.txHash || "";
       els.keplrTxState.textContent = "Send submitted";
@@ -82743,7 +84216,10 @@ async function sendFromKeplr() {
         onIncluded: async (included) => {
           state.keplr.sendHash = included.txHash || state.keplr.sendHash;
           els.keplrTxState.textContent = "Send included";
-          await Promise.allSettled([refreshWalletBalance(), refreshBlockEvents()]);
+          await Promise.allSettled([
+            refreshWalletBalance(),
+            refreshBlockEvents()
+          ]);
           renderKeplr();
         },
         onFailed: (error) => {
@@ -82784,12 +84260,22 @@ async function sendFromKeplr() {
 }
 async function depositFromKeplr() {
   if (!state.keplr.account) return;
+  if (!serverFeature("depositProof")) {
+    showNotice({
+      title: "Deposit unavailable",
+      message: "Deposit requires a DepositCircuit proof provider. Enable the local deposit proof helper or wire a product-specific browser/WASM proof provider before using Deposit.",
+      failed: true
+    });
+    return;
+  }
   await setupKeplrPrivacy();
   if (!state.keplr.rootSignatureBase64) return;
   setBusy(els.depositFromKeplr, true);
   els.keplrTxState.textContent = "Preparing deposit";
   try {
-    const broadcast = await broadcastPrivacyDeposit(amountInputValue(els.keplrDepositAmount));
+    const broadcast = await broadcastPrivacyDeposit(
+      amountInputValue(els.keplrDepositAmount)
+    );
     const isPendingEvm = Boolean(broadcast.pending);
     els.keplrTxState.textContent = isPendingEvm ? "Deposit submitted" : "Deposit included";
     renderKeplr();
@@ -82809,7 +84295,11 @@ Tx: ${shorten(state.keplr.depositHash, 14, 12)}`
         },
         onFailed: (error) => {
           els.keplrTxState.textContent = "Deposit failed";
-          showNotice({ title: "Deposit \uC2E4\uD328", message: error.message, failed: true });
+          showNotice({
+            title: "Deposit \uC2E4\uD328",
+            message: error.message,
+            failed: true
+          });
         }
       });
       return;
@@ -82834,16 +84324,20 @@ async function scanKeplrNotes(options = {}) {
   try {
     const reset = Boolean(options.reset);
     const scanOptions = noteScanRequestOptions({ reset });
-    const data = await clairveilBrowserClient().scanWalletNotes(privacyRequest({
-      ...scanOptions,
-      includeFoundNotes: true
-    }));
+    const data = await clairveilBrowserClient().scanWalletNotes(
+      privacyRequest({
+        ...scanOptions,
+        includeFoundNotes: true
+      })
+    );
     applyNoteScanResult(data, { reset });
     await refreshCachedNoteStatuses();
     if (!options.quiet) {
       const cursor = state.keplr.noteScanCursor || defaultNoteScanCursor();
       els.keplrTxState.textContent = "Ready";
-      toast(cursor.hasMore ? `Keplr notes scanned (${cursor.pagesScanned} pages, more queued)` : "Keplr notes scanned");
+      toast(
+        cursor.hasMore ? `Keplr notes scanned (${cursor.pagesScanned} pages, more queued)` : "Keplr notes scanned"
+      );
     }
     renderKeplr();
   } catch (error) {
@@ -82875,11 +84369,21 @@ async function transferFromVeiled() {
   const amount = amountInputValue(els.veiledTransferAmount);
   const recipient = els.veiledTransferRecipient.value.trim();
   if (!recipient) {
-    toast(`Enter the recipient's ${shieldedPrefix()} address in Transfer recipient.`);
+    toast(
+      `Enter the recipient's ${shieldedPrefix()} address in Transfer recipient.`
+    );
+    return;
+  }
+  if (!isConfiguredShieldedAddress(recipient)) {
+    toast(
+      `Transfer recipient must be a ${shieldedPrefix()} shielded address, not a transparent account address.`
+    );
     return;
   }
   if (isSelfTransferRecipient(recipient)) {
-    toast("\uC774 \uC8FC\uC18C\uB294 \uB0B4 shielded address\uC57C. \uC5EC\uAE30\uB85C \uBCF4\uB0B4\uBA74 \uC678\uBD80 \uC804\uC1A1\uC774 \uC544\uB2C8\uB77C note split/change self-transfer\uAC00 \uB3FC.");
+    toast(
+      "\uC774 \uC8FC\uC18C\uB294 \uB0B4 shielded address\uC57C. \uC5EC\uAE30\uB85C \uBCF4\uB0B4\uBA74 \uC678\uBD80 \uC804\uC1A1\uC774 \uC544\uB2C8\uB77C note split/change self-transfer\uAC00 \uB3FC."
+    );
     return;
   }
   let disclosure;
@@ -82905,7 +84409,12 @@ async function transferFromVeiled() {
       );
       let data;
       try {
-        data = await preparePrivacyTransferSignDoc(amount, recipient, disclosure, { allowPlanStep: true });
+        data = await preparePrivacyTransferSignDoc(
+          amount,
+          recipient,
+          disclosure,
+          { allowPlanStep: true }
+        );
       } catch (error) {
         if (!isZeroHelperNeededError(error)) {
           throw error;
@@ -82919,7 +84428,9 @@ async function transferFromVeiled() {
           "Self transaction \uC11C\uBA85 \uB300\uAE30",
           "\uC694\uCCAD \uAE08\uC561\uC744 \uB9CC\uB4E4\uAE30 \uC704\uD574 note \uC815\uB9AC\uAC00 \uD544\uC694\uD569\uB2C8\uB2E4. \uC774 \uB2E8\uACC4\uB294 \uB0B4 Veiled balance \uC548\uC5D0\uC11C note\uB97C \uC7AC\uAD6C\uC131\uD558\uBA70, \uBC1B\uB294 \uC0AC\uB78C\uC5D0\uAC8C\uB294 \uC544\uC9C1 \uC804\uC1A1\uB418\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
         );
-        await broadcastPrivacyDeposit(zeroCoinText(), "zero helper note", { waitForEvmReceipt: true });
+        await broadcastPrivacyDeposit(zeroCoinText(), "zero helper note", {
+          waitForEvmReceipt: true
+        });
         await refreshPrivacySurfaces();
         continue;
       }
@@ -82935,7 +84446,11 @@ async function transferFromVeiled() {
           "\uC694\uCCAD \uAE08\uC561\uC744 \uB9CC\uB4E4\uAE30 \uC704\uD574 note \uC815\uB9AC\uAC00 \uD544\uC694\uD569\uB2C8\uB2E4. \uC774 \uB2E8\uACC4\uB294 \uB0B4 Veiled balance \uC548\uC5D0\uC11C note\uB97C \uC7AC\uAD6C\uC131\uD558\uBA70, \uBC1B\uB294 \uC0AC\uB78C\uC5D0\uAC8C\uB294 \uC544\uC9C1 \uC804\uC1A1\uB418\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
         );
         els.keplrTxState.textContent = `${state.activeWallet === "metamask" ? "Waiting for MetaMask" : "Waiting for Keplr"} (${step}/${maxPlannerSteps})`;
-        const plannerBroadcast = await broadcastPreparedPrivacy(data, "self transaction", { waitForEvmReceipt: true });
+        const plannerBroadcast = await broadcastPreparedPrivacy(
+          data,
+          "self transaction",
+          { waitForEvmReceipt: true }
+        );
         state.keplr.transferHash = plannerBroadcast.broadcast?.txhash || plannerBroadcast.txHash || "";
         await refreshPrivacySurfaces();
         continue;
@@ -82944,7 +84459,9 @@ async function transferFromVeiled() {
       break;
     }
     if (!finalData) {
-      throw new Error("\uC785\uB825\uD558\uC2E0 \uAE08\uC561\uC758 \uB178\uD2B8 \uC900\uBE44\uAC00 \uB108\uBB34 \uC624\uB798 \uAC78\uB9BD\uB2C8\uB2E4. notes\uB97C \uB2E4\uC2DC \uC2A4\uCE94\uD55C \uB4A4 \uC7AC\uC2DC\uB3C4\uD574\uC918.");
+      throw new Error(
+        "\uC785\uB825\uD558\uC2E0 \uAE08\uC561\uC758 \uB178\uD2B8 \uC900\uBE44\uAC00 \uB108\uBB34 \uC624\uB798 \uAC78\uB9BD\uB2C8\uB2E4. notes\uB97C \uB2E4\uC2DC \uC2A4\uCE94\uD55C \uB4A4 \uC7AC\uC2DC\uB3C4\uD574\uC918."
+      );
     }
     resetTransferPlannerFacts();
     updateTransferFlow(
@@ -82953,12 +84470,17 @@ async function transferFromVeiled() {
       `note \uC900\uBE44\uAC00 \uC644\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uC774\uC81C \uBC1B\uB294 \uC0AC\uB78C\uC5D0\uAC8C privacy transfer\uB97C \uC694\uCCAD\uD569\uB2C8\uB2E4. ${state.activeWallet === "metamask" ? "MetaMask" : "Keplr"}\uC5D0\uC11C \uCD5C\uC885 \uC804\uC1A1 \uB0B4\uC6A9\uC744 \uD655\uC778\uD558\uACE0 \uC11C\uBA85\uD574 \uC8FC\uC138\uC694.`
     );
     els.keplrTxState.textContent = state.activeWallet === "metamask" ? "Waiting for MetaMask" : "Waiting for Keplr";
-    const broadcast = await broadcastPreparedPrivacy(finalData, "privacy transfer");
+    const broadcast = await broadcastPreparedPrivacy(
+      finalData,
+      "privacy transfer"
+    );
     state.keplr.transferHash = broadcast.broadcast?.txhash || broadcast.txHash || "";
     const isPendingEvm = Boolean(broadcast.pending);
     els.keplrTxState.textContent = isPendingEvm ? "Transfer submitted" : "Transfer included";
     renderKeplr();
-    finishTransferFlow(isPendingEvm ? "\uD2B8\uB79C\uC2A4\uD37C \uC694\uCCAD\uC774 \uC81C\uCD9C\uB418\uC5C8\uC2B5\uB2C8\uB2E4" : "\uD2B8\uB79C\uC2A4\uD37C \uC694\uCCAD\uC774 \uC131\uACF5\uD558\uC600\uC2B5\uB2C8\uB2E4");
+    finishTransferFlow(
+      isPendingEvm ? "\uD2B8\uB79C\uC2A4\uD37C \uC694\uCCAD\uC774 \uC81C\uCD9C\uB418\uC5C8\uC2B5\uB2C8\uB2E4" : "\uD2B8\uB79C\uC2A4\uD37C \uC694\uCCAD\uC774 \uC131\uACF5\uD558\uC600\uC2B5\uB2C8\uB2E4"
+    );
     if (isPendingEvm) {
       watchEvmBroadcast(broadcast, {
         onIncluded: async (included) => {
@@ -83090,7 +84612,9 @@ async function withdrawFromVeiled() {
     const isPendingEvm = Boolean(broadcast.pending);
     els.keplrTxState.textContent = isPendingEvm ? "Withdraw submitted" : "Withdraw included";
     renderKeplr();
-    finishTransferFlow(isPendingEvm ? "Withdraw \uC694\uCCAD\uC774 \uC81C\uCD9C\uB418\uC5C8\uC2B5\uB2C8\uB2E4" : "Withdraw \uC694\uCCAD\uC774 \uC131\uACF5\uD558\uC600\uC2B5\uB2C8\uB2E4");
+    finishTransferFlow(
+      isPendingEvm ? "Withdraw \uC694\uCCAD\uC774 \uC81C\uCD9C\uB418\uC5C8\uC2B5\uB2C8\uB2E4" : "Withdraw \uC694\uCCAD\uC774 \uC131\uACF5\uD558\uC600\uC2B5\uB2C8\uB2E4"
+    );
     if (isPendingEvm) {
       watchEvmBroadcast(broadcast, {
         onIncluded: async (included) => {
@@ -83116,17 +84640,204 @@ async function withdrawFromVeiled() {
     renderKeplr();
   }
 }
-els.connectWallet.addEventListener("click", () => connectWallet().catch((error) => toast(error.message)));
-els.connectKeplr.addEventListener("click", () => connectKeplr().catch((error) => toast(error.message)));
+async function relayWithdrawFromVeiled() {
+  if (!state.keplr.account) return;
+  if (!serverFeature("relayer")) {
+    toast(
+      "Local relayer helper is disabled. Use loopback access or set CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING=1 for LAN testing."
+    );
+    return;
+  }
+  let amount;
+  try {
+    amount = amountInputValue(els.relayWithdrawAmount);
+  } catch (error) {
+    toast(error.message);
+    return;
+  }
+  const recipient = els.relayWithdrawRecipient.value.trim();
+  if (!recipient) {
+    toast(`Withdraw recipient\uC5D0 \uBC1B\uC744 ${accountPrefix()} \uC8FC\uC18C\uB97C \uB123\uC5B4\uC918.`);
+    return;
+  }
+  await setupKeplrPrivacy();
+  if (!state.keplr.rootSignatureBase64) return;
+  const confirmed = await openTransferFlowModal("relayWithdraw");
+  if (!confirmed) return;
+  setBusy(els.relayWithdrawFromVeiled, true);
+  els.keplrTxState.textContent = "Preparing relay withdraw";
+  try {
+    resetTransferPlannerFacts();
+    updateTransferFlow(
+      "zero",
+      "\uB178\uD2B8 \uD655\uC778 \uC911",
+      "Relay withdraw\uC5D0 \uC0AC\uC6A9\uD560 \uC815\uD655\uD55C \uAE08\uC561\uC758 note\uAC00 \uC788\uB294\uC9C0 \uD655\uC778\uD569\uB2C8\uB2E4."
+    );
+    let data;
+    try {
+      data = await preparePrivacyRelayWithdrawPayload(amount, recipient);
+    } catch (error) {
+      if (!isExactMatchWithdrawError(error)) {
+        throw error;
+      }
+      showTransferPlannerFacts({
+        requested: amount,
+        action: `${coinText(amount)} exact note\uB97C \uB9CC\uB4E4\uAE30 \uC704\uD574 self transaction\uC744 \uC694\uCCAD\uD569\uB2C8\uB2E4.`
+      });
+      updateTransferFlow(
+        "zero",
+        "Self transaction \uC11C\uBA85 \uB300\uAE30",
+        "Relay withdraw\uB3C4 \uC785\uB825 \uAE08\uC561\uACFC \uC815\uD655\uD788 \uAC19\uC740 note\uAC00 \uD544\uC694\uD569\uB2C8\uB2E4. \uBA3C\uC800 \uB0B4 Veiled balance \uC548\uC5D0\uC11C exact note\uB97C \uB9CC\uB4ED\uB2C8\uB2E4."
+      );
+      await createExactWithdrawNote(amount, {
+        onPlanCheck: (step) => {
+          updateTransferFlow(
+            "zero",
+            step === 1 ? "\uB178\uD2B8 \uD655\uC778 \uC911" : "\uB178\uD2B8 \uC7AC\uD655\uC778 \uC911",
+            "Relay withdraw\uC5D0 \uD544\uC694\uD55C exact note\uB97C \uB9CC\uB4E4 \uC218 \uC788\uB294 note \uC870\uD569\uC744 \uD655\uC778\uD569\uB2C8\uB2E4."
+          );
+        },
+        onSelfMergeNeeded: (data2) => {
+          showTransferPlannerFacts({
+            requested: amount,
+            currentMax: plannerCurrentExactNoteMaxForWithdraw(data2, amount),
+            action: `\uB450 note\uB97C \uD569\uCCD0 ${data2.prepared?.amount || data2.plan?.nextAmount || "\uB354 \uD070"} self note\uB97C \uB9CC\uB4ED\uB2C8\uB2E4.`
+          });
+          updateTransferFlow(
+            "zero",
+            "Self transaction \uC11C\uBA85 \uB300\uAE30",
+            "\uC694\uCCAD \uAE08\uC561\uC758 exact note\uB97C \uB9CC\uB4E4\uAE30 \uC704\uD574 \uB450 note\uB97C \uBA3C\uC800 \uD569\uCE69\uB2C8\uB2E4. \uC774 \uB2E8\uACC4\uB294 \uB0B4 Veiled balance \uC548\uC5D0\uC11C\uB9CC \uC900\uBE44\uB429\uB2C8\uB2E4."
+          );
+        },
+        onZeroHelperNeeded: () => {
+          showTransferPlannerFacts({
+            requested: amount,
+            action: `${zeroCoinText()} zero note\uB97C \uB9CC\uB4E4\uC5B4 exact note self transaction\uC5D0 \uC0AC\uC6A9\uD569\uB2C8\uB2E4.`
+          });
+          updateTransferFlow(
+            "zero",
+            "Zero note \uC11C\uBA85 \uB300\uAE30",
+            "exact note\uB97C \uB9CC\uB4E4\uAE30 \uC704\uD55C \uBCF4\uC870 zero note\uAC00 \uD544\uC694\uD569\uB2C8\uB2E4. \uC774 \uB2E8\uACC4\uB3C4 \uB0B4 Veiled balance \uC548\uC5D0\uC11C\uB9CC \uC900\uBE44\uB429\uB2C8\uB2E4."
+          );
+        },
+        onFinalExactTransfer: (data2) => {
+          showTransferPlannerFacts({
+            requested: amount,
+            currentMax: plannerCurrentExactNoteMaxForWithdraw(data2, amount),
+            action: `${coinText(amount)} exact note\uB97C \uB9CC\uB4DC\uB294 \uB9C8\uC9C0\uB9C9 self transaction\uC744 \uC694\uCCAD\uD569\uB2C8\uB2E4.`
+          });
+          updateTransferFlow(
+            "zero",
+            "Self transaction \uC11C\uBA85 \uB300\uAE30",
+            "\uC785\uB825 \uAE08\uC561\uACFC \uC815\uD655\uD788 \uAC19\uC740 note\uB97C \uB9CC\uB4E4\uAE30 \uC704\uD574 self transaction\uC744 \uC694\uCCAD\uD569\uB2C8\uB2E4."
+          );
+        }
+      });
+      resetTransferPlannerFacts();
+      updateTransferFlow(
+        "zero",
+        "\uB178\uD2B8 \uC7AC\uD655\uC778 \uC911",
+        "exact note \uC900\uBE44\uAC00 \uB05D\uB0AC\uC2B5\uB2C8\uB2E4. relay withdraw payload\uB97C \uB2E4\uC2DC \uC900\uBE44\uD569\uB2C8\uB2E4."
+      );
+      data = await preparePrivacyRelayWithdrawPayload(amount, recipient);
+    }
+    updateTransferFlow(
+      "transfer",
+      "Payload \uC900\uBE44 \uC644\uB8CC",
+      "relay withdraw payload\uAC00 \uC900\uBE44\uB418\uC5C8\uC2B5\uB2C8\uB2E4. Relayer \uD328\uB110\uC5D0\uC11C \uB0B4\uC6A9\uC744 \uD655\uC778\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4."
+    );
+    setPreparedRelayWithdrawPayload(data, { amount, recipient });
+    els.keplrTxState.textContent = "Relay payload ready";
+    renderKeplr();
+    finishTransferFlow("Relay withdraw payload\uAC00 \uC900\uBE44\uB418\uC5C8\uC2B5\uB2C8\uB2E4");
+  } catch (error) {
+    els.keplrTxState.textContent = "Relay withdraw failed";
+    finishTransferFlow(error.message, false);
+  } finally {
+    setBusy(els.relayWithdrawFromVeiled, false);
+    renderKeplr();
+  }
+}
+async function relayPreparedWithdraw() {
+  const payload = state.keplr.relayWithdrawPayload;
+  if (!payload) {
+    toast("\uBA3C\uC800 relay withdraw payload\uB97C \uC900\uBE44\uD574\uC918.");
+    return;
+  }
+  if (!serverFeature("relayer")) {
+    toast(
+      "Local relayer helper is disabled. Use loopback access or set CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING=1 for LAN testing."
+    );
+    return;
+  }
+  setBusy(els.relayPreparedWithdraw, true);
+  els.keplrTxState.textContent = "Relayer broadcasting";
+  try {
+    const relay = await relayPreparedWithdrawPayload(
+      payload,
+      state.keplr.relayWithdrawPayloadRecipient
+    );
+    state.keplr.relayWithdrawHash = relay.broadcast?.txhash || "";
+    state.keplr.relayWithdrawHeight = relay.tx?.height || relay.receipt?.blockNumber || "";
+    const relayerDisplayAddress = relay.relayerEvmAddress || relay.relayerAddress;
+    state.keplr.relayWithdrawRelayer = relayerDisplayAddress ? `${relay.relayer || "relayer"} ${shorten(relayerDisplayAddress, 12, 10)}` : relay.relayer || "";
+    state.keplr.relayWithdrawPayloadHash = relay.payloadHash || payload?.payload_hash || "";
+    clearPreparedRelayWithdrawPayload({ clearPayloadHash: true });
+    els.keplrTxState.textContent = "Relay withdraw included";
+    renderKeplr();
+    toast("Relay withdraw submitted");
+    await refreshPrivacySurfaces({ balance: true });
+    await refreshRelayerAccount();
+  } catch (error) {
+    els.keplrTxState.textContent = "Relay withdraw failed";
+    toast(error.message);
+  } finally {
+    setBusy(els.relayPreparedWithdraw, false);
+    renderKeplr();
+  }
+}
+els.connectWallet.addEventListener(
+  "click",
+  () => connectWallet().catch((error) => toast(error.message))
+);
+els.connectKeplr.addEventListener(
+  "click",
+  () => connectKeplr().catch((error) => toast(error.message))
+);
 els.disconnectWallet.addEventListener("click", disconnectWallet);
-els.dappChainSelect.addEventListener("change", (event) => selectDappChainProfile(event.target.value));
-els.signSession.addEventListener("click", () => signSession().catch((error) => toast(error.message)));
-els.copyWalletAccount.addEventListener("click", () => copyWalletAccount().catch((error) => toast(error.message)));
+els.dappChainSelect.addEventListener(
+  "change",
+  (event) => selectDappChainProfile(event.target.value)
+);
+els.signSession.addEventListener(
+  "click",
+  () => signSession().catch((error) => toast(error.message))
+);
+els.copyWalletAccount.addEventListener(
+  "click",
+  () => copyWalletAccount().catch((error) => toast(error.message))
+);
 els.fundKeplr.addEventListener("click", fundKeplr);
-els.setupKeplrPrivacy.addEventListener("click", () => setupKeplrPrivacy().catch((error) => toast(error.message)));
-els.copyKeplrDisclosurePubKey.addEventListener("click", () => copyKeplrDisclosurePubKey().catch((error) => toast(error.message)));
-els.refreshWalletBalance.addEventListener("click", () => refreshWalletBalance().catch((error) => toast(error.message)));
-els.scanKeplrNotes.addEventListener("click", () => scanKeplrNotes().catch((error) => toast(error.message)));
+els.setupKeplrPrivacy.addEventListener(
+  "click",
+  () => setupKeplrPrivacy().catch((error) => toast(error.message))
+);
+els.copyKeplrDisclosurePubKey.addEventListener(
+  "click",
+  () => copyKeplrDisclosurePubKey().catch((error) => toast(error.message))
+);
+els.refreshWalletBalance.addEventListener(
+  "click",
+  () => refreshWalletBalance().catch((error) => toast(error.message))
+);
+els.refreshClairBalance.addEventListener(
+  "click",
+  () => refreshWalletBalance().catch((error) => toast(error.message))
+);
+els.scanKeplrNotes.addEventListener(
+  "click",
+  () => scanKeplrNotes().catch((error) => toast(error.message))
+);
 els.myKeplrSpendableOnly.addEventListener("change", (event) => {
   state.keplr.showSpendableOnly = event.target.checked;
   renderMyKeplrNotes();
@@ -83138,23 +84849,66 @@ els.depositFromKeplr.addEventListener("click", depositFromKeplr);
   els.keplrSendRecipient,
   els.keplrDepositAmount,
   els.veiledTransferAmount,
-  els.veiledWithdrawAmount
+  els.veiledWithdrawAmount,
+  els.relayWithdrawAmount
 ].forEach((input) => {
   input.addEventListener("input", updateAmountActionButtons);
 });
-els.veiledDisclosureAdvanced.addEventListener("change", renderTransferDisclosureAdvanced);
-els.veiledDisclosureMode.addEventListener("change", renderTransferDisclosureAdvanced);
+[els.relayWithdrawAmount, els.relayWithdrawRecipient].forEach((input) => {
+  input.addEventListener("input", () => {
+    clearPreparedRelayWithdrawPayload();
+    renderKeplr();
+  });
+});
+els.veiledDisclosureAdvanced.addEventListener(
+  "change",
+  renderTransferDisclosureAdvanced
+);
+els.veiledDisclosureMode.addEventListener(
+  "change",
+  renderTransferDisclosureAdvanced
+);
 els.transferFromVeiled.addEventListener("click", transferFromVeiled);
 els.withdrawFromVeiled.addEventListener("click", withdrawFromVeiled);
-els.refreshAll.addEventListener("click", () => refreshHealth().catch((error) => toast(error.message)));
-els.refreshNotes.addEventListener("click", () => refreshNotes().catch((error) => toast(error.message)));
-els.refreshEvents.addEventListener("click", () => refreshEvents().catch((error) => toast(error.message)));
-els.decodeEventDisclosure.addEventListener("click", () => decodeSelectedEventDisclosure().catch((error) => toast(error.message)));
+els.relayWithdrawFromVeiled.addEventListener(
+  "click",
+  relayWithdrawFromVeiled
+);
+els.copyRelayWithdrawPayload.addEventListener(
+  "click",
+  () => copyRelayWithdrawPayload().catch((error) => toast(error.message))
+);
+els.relayPreparedWithdraw.addEventListener(
+  "click",
+  () => relayPreparedWithdraw().catch((error) => toast(error.message))
+);
+els.refreshAll.addEventListener(
+  "click",
+  () => refreshHealth().catch((error) => toast(error.message))
+);
+els.refreshNotes.addEventListener(
+  "click",
+  () => refreshNotes().catch((error) => toast(error.message))
+);
+els.refreshEvents.addEventListener(
+  "click",
+  () => refreshEvents().catch((error) => toast(error.message))
+);
+els.decodeEventDisclosure.addEventListener(
+  "click",
+  () => decodeSelectedEventDisclosure().catch((error) => toast(error.message))
+);
 if (els.refreshAuditorTransfers) {
-  els.refreshAuditorTransfers.addEventListener("click", () => refreshAuditorTransfers().catch((error) => toast(error.message)));
+  els.refreshAuditorTransfers.addEventListener(
+    "click",
+    () => refreshAuditorTransfers().catch((error) => toast(error.message))
+  );
 }
 if (els.decodeAuditorTransfer) {
-  els.decodeAuditorTransfer.addEventListener("click", () => decodeAuditorTransfer().catch((error) => toast(error.message)));
+  els.decodeAuditorTransfer.addEventListener(
+    "click",
+    () => decodeAuditorTransfer().catch((error) => toast(error.message))
+  );
 }
 els.closeNoticeModal.addEventListener("click", closeNoticeModal);
 els.cancelTransferFlow.addEventListener("click", cancelTransferFlow);
@@ -83191,7 +84945,9 @@ if (injectedMetaMask) {
     if (!accounts[0]) {
       return;
     }
-    toast("MetaMask account changed. Reconnect wallet to refresh privacy identity.");
+    toast(
+      "MetaMask account changed. Reconnect wallet to refresh privacy identity."
+    );
   });
   injectedMetaMask.on?.("chainChanged", (chainId) => {
     if (state.activeWallet !== "metamask") return;

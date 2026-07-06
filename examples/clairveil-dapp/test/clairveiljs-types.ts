@@ -118,7 +118,8 @@ async function typeSmoke() {
       disclosurePubKey: { x: 0n, y: 1n },
       disclosurePubKeyHex: "00".repeat(32)
     },
-    amount: "1uclair"
+    amount: "1uclair",
+    proofHex: "ab"
   });
   client.createTransferSignDoc({
     material: {
@@ -207,6 +208,13 @@ async function typeSmoke() {
   });
   client.decodeUserDisclosure({
     txHash: "AA"
+  });
+  client.decodeSelfViewDisclosure({
+    txHash: "AA",
+    address: "clair1example",
+    pubKeyHex: "02".padEnd(66, "0"),
+    signatureBase64: "AQID",
+    skipSignerPubKeyCheck: true
   });
   client.decodeAuditDisclosure({
     txHash: "AA",

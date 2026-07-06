@@ -306,7 +306,8 @@ test("EVM adapter builds deposit transaction calldata and sends through EIP-1193
   const prepared = client.buildDepositTransaction({
     creator: material.address,
     rootSeed: material.rootSeed,
-    amount: "9"
+    amount: "9",
+    proofHex: "ab"
   });
   const wallet = createEip1193WalletAdapter({ provider });
   const txHash = await client.sendTransaction(wallet, prepared.transaction);
@@ -383,9 +384,9 @@ test("planner errors expose stable error codes", () => {
 });
 
 test("transfer planner explains missing zero helper notes clearly", () => {
-  const plan = planTransferNotes({ amount: "0uclair", notes: [] });
-  assert.equal(plan.status, "insufficient_balance");
-  assert.equal(plan.message, "No zero note is available; a 0uclair helper deposit is required.");
+  const plan = planTransferNotes({ amount: "1uclair", notes: [foundNote(1, 1)] });
+  assert.equal(plan.status, "zero_dummy_required");
+  assert.equal(plan.message, "A second zero-value helper note is required before this transfer can be built.");
 });
 
 test("async job prover adapter polls completed transfer jobs", async () => {

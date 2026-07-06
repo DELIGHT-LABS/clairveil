@@ -8,9 +8,9 @@ The boundary is intentional:
 
 - **DApp** owns inputs, wallet UI, and result rendering.
 - **ClairveilJS** owns privacy logic: note creation, commitments, encrypted notes, note scan, note planning, prover payloads, disclosure encode/decode, and deposit/transfer/withdraw preparation.
-- **Optional local server** owns only static serving and local-test helpers such as faucet, local signers, and admin/auditor test routes.
+- **Optional local server** owns only static serving and local-test helpers such as faucet, local signers, deposit proof generation, relayer broadcast, and admin/auditor test routes.
 
-For a public node deployment, the DApp should work with only the static DApp, ClairveilJS, public RPC/REST endpoints, and a prover URL. A backend is optional.
+For a public node deployment, the DApp can run with the static DApp, ClairveilJS, public RPC/REST endpoints, and a prover URL. Deposit also requires a product-provided `DepositCircuit` proof provider, such as a browser/WASM prover or a trusted proof endpoint.
 
 ## Key Files
 
@@ -23,7 +23,7 @@ For a public node deployment, the DApp should work with only the static DApp, Cl
 | `.env.example` | Optional environment override template for local/server-backed runs |
 | `test/dapp-smoke.test.js` | Boundary and DApp smoke tests |
 
-The standalone SDK is not copied into this example. The package dependency points at `github:DELIGHT-LABS/clairveiljs`; during local SDK development you can temporarily switch it to a local `file:` dependency. Minimal SDK flow examples live in ClairveilJS at `examples/minimal-keplr-flow.js` and `examples/minimal-metamask-flow.js`.
+The standalone SDK is not copied into this example. The DApp installs `clairveiljs` from the [DELIGHT-LABS/clairveiljs](https://github.com/DELIGHT-LABS/clairveiljs) GitHub repository, with the resolved commit pinned in `package-lock.json`. Minimal SDK flow examples live in ClairveilJS at `examples/minimal-keplr-flow.js` and `examples/minimal-metamask-flow.js`.
 
 ## Main Features
 
@@ -34,6 +34,7 @@ The standalone SDK is not copied into this example. The package dependency point
 - Veiled note scan with spendable-only filtering
 - Veiled transfer with note planning and self-transaction guidance
 - Withdraw from veiled notes back to a transparent account
+- Relay withdraw payload test flow through the local relayer helper
 - Disclosure modes: `none`, `public`, `recipient-encrypted`
 - Privacy Events and Event Block views
 - Local signer, faucet, and auditor/admin test helpers in local mode
@@ -62,7 +63,7 @@ The DApp does not send wallet privacy preparation work to the server. Deposit, t
 
 ### Optional DApp Server
 
-These routes exist only when `server.js` is running. In a public-node deployment, wallet privacy flows can run with the static DApp plus ClairveilJS without local helper routes.
+These routes exist only when `server.js` is running. In a public-node deployment, wallet privacy flows can run with the static DApp plus ClairveilJS without these local helper routes only after the product wires equivalent production services where required. In this checked-in example, Deposit is disabled unless the local `/api/deposit/proof` helper is available.
 
 | Endpoint | Mode | Purpose |
 | --- | --- | --- |
@@ -72,6 +73,8 @@ These routes exist only when `server.js` is running. In a public-node deployment
 | `GET /api/wallet/:name/show-address` | local only | Show local signer transparent/shielded address |
 | `GET /api/wallet/:name/notes` | local only | Scan local signer notes through CLI |
 | `POST /api/faucet` | local only | Send local faucet funds to the connected wallet |
+| `POST /api/deposit/proof` | local only | Generate a deposit proof for the browser-prepared wallet deposit material |
+| `POST /api/relayer/withdraw` | local only | Relay a browser-prepared withdraw payload with the local `relayer` key |
 | `POST /api/deposit` | local only | Local CLI deposit test |
 | `GET /api/auditor/test-scalar` | local/admin only | Test auditor scalar |
 | `POST /api/auditor/decode` | local/admin only | Decode audit disclosure with an audit private scalar |
@@ -124,7 +127,7 @@ The active profile provides `proverUrl`.
 | `POST /v1/prover/transfer` | Transfer proof |
 | `POST /v1/prover/withdraw` | Withdraw proof |
 
-Deposit does not need a ZK proof.
+Deposit requires a `DepositCircuit` proof. In this example the browser builds the deposit material and, in local test mode, asks the local-only `/api/deposit/proof` helper to generate the proof before preparing `MsgDeposit`.
 
 ### Browser Wallet APIs
 
@@ -224,6 +227,7 @@ Common values:
 | `CLAIRVEIL_RPC` / `CLAIRVEIL_REST` | Server-side Cosmos/CometBFT endpoints |
 | `CLAIRVEIL_PUBLIC_RPC` / `CLAIRVEIL_PUBLIC_REST` | Browser/Keplr-visible endpoints; empty means reuse the server endpoints |
 | `CLAIRVEIL_PROVER_URL` / `CLAIRVEIL_PUBLIC_PROVER_URL` | Server-side and browser-visible prover endpoints |
+| `CLAIRVEIL_DAPP_ENABLE_PROVER_PROXY` | Explicit opt-in for exposing the same-origin `/v1/prover/*` proxy to non-loopback clients or public-node mode. Loopback local-test requests are enabled by default. Keep disabled for public deployments unless the proxy has origin, auth, and rate-limit controls. |
 | `CLAIRVEIL_ACCOUNT_PREFIX` / `CLAIRVEIL_SHIELDED_PREFIX` | Transparent and shielded address prefixes |
 | `CLAIRVEIL_DENOM` / `CLAIRVEIL_DISPLAY_DENOM` / `CLAIRVEIL_COIN_DECIMALS` | Coin metadata |
 | `CLAIRVEIL_EVM_*` | Optional EVM/MetaMask profile settings |
@@ -300,6 +304,8 @@ Open:
 http://127.0.0.1:5173
 ```
 
+When the DApp is bound to `0.0.0.0`, local signer/admin LAN access still requires `CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING=1` or `CLAIRVEIL_DAPP_ALLOW_LAN_ADMIN=1`, and the same-origin prover proxy remains loopback-only unless `CLAIRVEIL_DAPP_ENABLE_PROVER_PROXY=1` is set.
+
 ## Public Node Mode
 
 ```bash
@@ -310,7 +316,7 @@ CLAIRVEIL_PROVER_URL=https://prover.example \
 npm start
 ```
 
-In this mode, local signer, faucet, local CLI deposit, and auditor test-secret routes are disabled. Wallet-driven send/deposit/transfer/withdraw/scan/decode still run in the browser through ClairveilJS.
+In this mode, local signer, faucet, local CLI deposit, auditor test-secret routes, and the same-origin prover proxy are disabled by default. Wallet-driven send, transfer, withdraw, scan, and decode still run in the browser through ClairveilJS. Deposit requires a production `DepositCircuit` proof provider; this example enables Deposit only when the local `/api/deposit/proof` helper is available.
 
 ## Tests
 

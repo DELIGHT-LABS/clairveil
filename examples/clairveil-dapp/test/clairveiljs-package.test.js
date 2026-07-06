@@ -11,7 +11,10 @@ test("package export map exposes public SDK entrypoints", async () => {
     "createAsyncJobProverAdapter",
     "ClairveilError",
     "ClairveilErrorCode",
-    "MemoryNoteStore"
+    "MemoryNoteStore",
+    "buildRelayWithdrawMsgFromPayload",
+    "buildRelayWithdrawPayload",
+    "validateRelayWithdrawPayload"
   ]) {
     assert.equal(typeof sdk[name], name === "ClairveilErrorCode" ? "object" : "function", `${name} export`);
   }
@@ -23,7 +26,9 @@ test("package subpath exports are available", async () => {
   const cosmosClient = await import("clairveiljs/cosmos-client");
   const evm = await import("clairveiljs/evm");
   const crypto = await import("clairveiljs/browser-crypto");
+  const browserDapp = await import("clairveiljs/browser-dapp");
   const planner = await import("clairveiljs/planner");
+  const payload = await import("clairveiljs/payload");
   const prover = await import("clairveiljs/prover");
   const tx = await import("clairveiljs/generated/clairveil/privacy/v1/tx");
 
@@ -32,7 +37,14 @@ test("package subpath exports are available", async () => {
   assert.equal(typeof cosmosClient.createClairveilClient, "function");
   assert.equal(typeof evm.createClairveilEvmClient, "function");
   assert.equal(typeof crypto.sha256Hex, "function");
+  assert.equal(typeof browserDapp.createClairveilBrowserDappClient, "function");
+  assert.equal(typeof browserDapp.ClairveilBrowserDappClient.prototype.prepareRelayWithdraw, "function");
+  assert.equal(typeof browserDapp.ClairveilBrowserDappClient.prototype.createRelayWithdrawSignDoc, "function");
+  assert.equal(typeof browserDapp.ClairveilBrowserDappClient.prototype.buildRelayWithdrawMessageFromPayload, "function");
   assert.equal(typeof planner.planTransferNotes, "function");
+  assert.equal(typeof payload.buildRelayWithdrawMsgFromPayload, "function");
+  assert.equal(typeof payload.buildRelayWithdrawPayload, "function");
+  assert.equal(typeof payload.validateRelayWithdrawPayload, "function");
   assert.equal(typeof prover.createAsyncJobProverAdapter, "function");
   assert.equal(typeof tx.MsgDeposit.encode, "function");
   assert.equal(typeof tx.MsgTransfer.decode, "function");

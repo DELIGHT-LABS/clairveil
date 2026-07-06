@@ -6,9 +6,9 @@ Clairveil DApp은 브라우저에서 Keplr 또는 MetaMask를 연결해 Clairvei
 
 - **DApp**: 입력값과 UI 흐름만 관리하고, ClairveilJS high-level API를 호출합니다.
 - **ClairveilJS**: note 생성, commitment/encrypted note, scan, note planning, prover payload, disclosure encode/decode, deposit/transfer/withdraw 준비를 처리합니다.
-- **Optional local server**: 로컬 테스트용 static server, faucet, local signer, auditor/admin helper만 제공합니다.
+- **Optional local server**: 로컬 테스트용 static server, faucet, local signer, deposit proof 생성, relayer broadcast, auditor/admin helper만 제공합니다.
 
-즉 일반적인 public node 환경에서는 DApp + ClairveilJS + 공개 RPC/REST + prover URL만 있으면 됩니다. 백엔드 서버는 필수가 아닙니다.
+즉 일반적인 public node 환경에서는 DApp + ClairveilJS + 공개 RPC/REST + prover URL로 실행할 수 있습니다. 다만 Deposit은 `DepositCircuit` proof provider가 추가로 필요하므로, production static 배포에서는 browser/WASM prover 또는 신뢰할 수 있는 proof endpoint를 별도로 연결해야 합니다.
 
 ## 파일 구조
 
@@ -21,7 +21,7 @@ Clairveil DApp은 브라우저에서 Keplr 또는 MetaMask를 연결해 Clairvei
 | `.env.example` | 로컬/server-backed 실행에서 사용할 수 있는 환경 변수 override 템플릿 |
 | `test/dapp-smoke.test.js` | DApp 구조와 privacy boundary smoke test |
 
-Standalone SDK는 이 repo 안에 복사하지 않습니다. 현재 package dependency는 `github:DELIGHT-LABS/clairveiljs`를 가리키며, SDK를 로컬에서 같이 개발할 때만 임시로 `file:` dependency로 바꿀 수 있습니다. 최소 SDK 사용 흐름 예제는 ClairveilJS 쪽 `examples/minimal-keplr-flow.js`, `examples/minimal-metamask-flow.js`에 둡니다.
+Standalone SDK는 이 repo 안에 복사하지 않습니다. DApp은 [DELIGHT-LABS/clairveiljs](https://github.com/DELIGHT-LABS/clairveiljs) GitHub repository에서 `clairveiljs`를 설치하고, 실제 resolved commit은 `package-lock.json`에 고정합니다. 최소 SDK 사용 흐름 예제는 ClairveilJS 쪽 `examples/minimal-keplr-flow.js`, `examples/minimal-metamask-flow.js`에 둡니다.
 
 ## 주요 기능
 
@@ -40,6 +40,7 @@ Standalone SDK는 이 repo 안에 복사하지 않습니다. 현재 package depe
   - spendable-only toggle
   - Transfer, 즉 veiled send
   - Withdraw, 즉 veiled balance를 transparent account로 이동
+  - Relay withdraw payload를 local relayer helper로 제출하는 테스트 흐름
   - self transaction/planner 단계 안내
 - Disclosure
   - none
@@ -53,7 +54,7 @@ Standalone SDK는 이 repo 안에 복사하지 않습니다. 현재 package depe
   - disclosure 가능한 transfer detail
 - Local test helpers
   - faucet
-  - alice/bob/auditor local signer
+  - alice/bob/relayer/auditor local signer
   - local CLI deposit/note scan
   - auditor test scalar/decode
 
@@ -83,16 +84,18 @@ DApp은 사용자 wallet privacy flow를 서버로 보내지 않습니다. `depo
 
 ### Optional DApp server endpoints
 
-이 엔드포인트들은 `server.js`가 켜져 있을 때만 있습니다. Public node 환경에서는 local helper 기능 없이 static DApp + ClairveilJS만으로 wallet privacy flow를 수행할 수 있습니다.
+이 엔드포인트들은 `server.js`가 켜져 있을 때만 있습니다. Public node 환경에서는 필요한 production 서비스를 따로 연결한 뒤 local helper 없이 static DApp + ClairveilJS로 wallet privacy flow를 수행할 수 있습니다. 현재 예제의 Deposit 버튼은 local `/api/deposit/proof` helper가 있을 때만 활성화됩니다.
 
 | Endpoint | Mode | 용도 |
 | --- | --- | --- |
 | `GET /api/config` | all | server-backed config와 chain profile 전달 |
 | `GET /api/health` | all | local node 상태, tree/audit config, local accounts 확인 |
-| `POST /api/local-signers/ensure` | local only | alice/bob/auditor 등 local signer 생성 |
+| `POST /api/local-signers/ensure` | local only | alice/bob/relayer/auditor 등 local signer 생성 |
 | `GET /api/wallet/:name/show-address` | local only | local signer의 transparent/shielded 주소 조회 |
 | `GET /api/wallet/:name/notes` | local only | local signer note scan |
 | `POST /api/faucet` | local only | alice/dev account에서 연결된 wallet으로 faucet 송금 |
+| `POST /api/deposit/proof` | local only | 브라우저가 준비한 wallet deposit material의 deposit proof 생성 |
+| `POST /api/relayer/withdraw` | local only | 브라우저가 준비한 withdraw payload를 local `relayer` key로 제출 |
 | `POST /api/deposit` | local only | local CLI signer deposit 테스트 |
 | `GET /api/auditor/test-scalar` | local/admin only | 테스트 auditor scalar 조회 |
 | `POST /api/auditor/decode` | local/admin only | audit disclosure private scalar로 disclosure decode |
@@ -147,7 +150,7 @@ Cosmos transaction broadcast는 ClairveilJS가 CosmJS/CometBFT RPC를 통해 처
 | `POST /v1/prover/transfer` | transfer proof 생성 |
 | `POST /v1/prover/withdraw` | withdraw proof 생성 |
 
-Deposit은 새 note commitment/encrypted note 생성만 필요하고 ZK proof는 필요하지 않습니다.
+Deposit은 `DepositCircuit` proof가 필요합니다. 이 예제에서는 브라우저가 deposit material을 만들고, local test mode에서 local-only `/api/deposit/proof` helper에 proof 생성을 요청한 뒤 `MsgDeposit`을 준비합니다.
 
 ### Browser wallet APIs -> Keplr
 
@@ -278,6 +281,7 @@ npm start
 | `CLAIRVEIL_PUBLIC_REST` | 브라우저/Keplr에 노출할 REST |
 | `CLAIRVEIL_PROVER_URL` | prover URL |
 | `CLAIRVEIL_PUBLIC_PROVER_URL` | 브라우저에 노출할 prover URL |
+| `CLAIRVEIL_DAPP_ENABLE_PROVER_PROXY` | non-loopback client 또는 public node mode에서 same-origin `/v1/prover/*` proxy를 열 때만 명시적으로 `1`. Loopback local test 요청은 기본 허용됩니다. Public 배포에서는 origin/auth/rate limit 정책이 없으면 비활성화하세요. |
 | `CLAIRVEIL_DENOM` / `CLAIRVEIL_DISPLAY_DENOM` / `CLAIRVEIL_COIN_DECIMALS` | coin metadata |
 | `CLAIRVEIL_ACCOUNT_PREFIX` | transparent account prefix |
 | `CLAIRVEIL_SHIELDED_PREFIX` | shielded address prefix |
@@ -415,7 +419,7 @@ http://127.0.0.1:5173
 http://192.168.0.10:5173
 ```
 
-다른 기기에서 wallet까지 테스트하려면 RPC/REST/prover URL도 그 기기에서 접근 가능한 주소여야 합니다.
+다른 기기에서 wallet까지 테스트하려면 RPC/REST/prover URL도 그 기기에서 접근 가능한 주소여야 합니다. `0.0.0.0`으로 DApp을 열어도 local signer/admin LAN 접근은 `CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING=1` 또는 `CLAIRVEIL_DAPP_ALLOW_LAN_ADMIN=1`이 필요하고, same-origin prover proxy는 `CLAIRVEIL_DAPP_ENABLE_PROVER_PROXY=1`을 설정하지 않으면 loopback에서만 열립니다.
 
 ## Public node mode
 
@@ -429,7 +433,7 @@ CLAIRVEIL_PROVER_URL=https://prover.example \
 npm start
 ```
 
-이 모드에서는 local signer, faucet, auditor test scalar/decode, local CLI deposit route가 비활성화됩니다. Wallet-driven send/deposit/transfer/withdraw/scan/decode는 브라우저 ClairveilJS가 계속 처리합니다.
+이 모드에서는 local signer, faucet, auditor test scalar/decode, local CLI deposit route, same-origin prover proxy가 기본 비활성화됩니다. Wallet-driven send, transfer, withdraw, scan, decode는 브라우저 ClairveilJS가 계속 처리합니다. Deposit은 production `DepositCircuit` proof provider가 필요하며, 이 예제에서는 local `/api/deposit/proof` helper가 있을 때만 활성화됩니다.
 
 ## 최소 SDK 흐름
 

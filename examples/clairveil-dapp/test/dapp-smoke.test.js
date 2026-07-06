@@ -5,9 +5,19 @@ import { readFile } from "node:fs/promises";
 const appSource = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
 const configSource = await readFile(new URL("../public/dapp-config.js", import.meta.url), "utf8");
 const readmeSource = await readFile(new URL("../README.md", import.meta.url), "utf8");
+const packageSource = await readFile(new URL("../package.json", import.meta.url), "utf8");
+const packageJson = JSON.parse(packageSource);
 const serverSource = await readFile(new URL("../server.js", import.meta.url), "utf8");
 const htmlSource = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../public/styles.css", import.meta.url), "utf8");
+
+function sourceBetween(source, start, end) {
+  const startIndex = source.indexOf(start);
+  assert.notEqual(startIndex, -1, `missing source marker: ${start}`);
+  const endIndex = source.indexOf(end, startIndex + start.length);
+  assert.notEqual(endIndex, -1, `missing source marker: ${end}`);
+  return source.slice(startIndex, endIndex);
+}
 
 test("DApp keeps minimal-denom amount inputs as integer strings", () => {
   assert.match(appSource, /function amountInputValue/);
@@ -16,14 +26,23 @@ test("DApp keeps minimal-denom amount inputs as integer strings", () => {
 });
 
 test("DApp disables value-moving actions for zero or invalid minimal-denom amounts", () => {
+  const updateActions = sourceBetween(appSource, "function updateAmountActionButtons", "function renderMyKeplrNotes");
+  const withdrawAction = sourceBetween(appSource, "async function withdrawFromVeiled", "async function relayWithdrawFromVeiled");
+  const relayWithdrawAction = sourceBetween(appSource, "async function relayWithdrawFromVeiled", "async function relayPreparedWithdraw");
   assert.match(appSource, /function hasPositiveUclairInput/);
   assert.match(appSource, /amount <= 0n/);
-  assert.match(appSource, /function updateAmountActionButtons/);
-  assert.match(appSource, /sendFromKeplr\.disabled = !signerReady[\s\S]*!hasPositiveUclairInput\(els\.keplrSendAmount\)[\s\S]*!isSendRecipientForWallet\(els\.keplrSendRecipient\.value/);
-  assert.match(appSource, /depositFromKeplr\.disabled = !signerReady \|\| !hasPositiveUclairInput\(els\.keplrDepositAmount\)/);
-  assert.match(appSource, /transferFromVeiled\.disabled = !veiledReady \|\| !hasPositiveUclairInput\(els\.veiledTransferAmount\)/);
-  assert.match(appSource, /withdrawFromVeiled\.disabled = !veiledReady \|\| !hasPositiveUclairInput\(els\.veiledWithdrawAmount\)/);
+  assert.match(updateActions, /sendFromKeplr\.disabled =[\s\S]*!signerReady[\s\S]*!hasPositiveUclairInput\(els\.keplrSendAmount\)[\s\S]*!isSendRecipientForWallet\([\s\S]*els\.keplrSendRecipient\.value/);
+  assert.match(updateActions, /depositFromKeplr\.disabled =[\s\S]*!signerReady[\s\S]*!hasPositiveUclairInput\(els\.keplrDepositAmount\)[\s\S]*!serverFeature\("depositProof"\)/);
+  assert.match(updateActions, /transferFromVeiled\.disabled =[\s\S]*!veiledReady \|\| !hasPositiveUclairInput\(els\.veiledTransferAmount\)/);
+  assert.match(updateActions, /withdrawFromVeiled\.disabled =[\s\S]*!veiledReady \|\| !hasPositiveUclairInput\(els\.veiledWithdrawAmount\)/);
+  assert.match(updateActions, /relayWithdrawFromVeiled\.disabled =[\s\S]*!veiledReady[\s\S]*!hasPositiveUclairInput\(els\.relayWithdrawAmount\)[\s\S]*!serverFeature\("relayer"\)/);
   assert.match(appSource, /keplrSendAmount,[\s\S]*keplrSendRecipient,[\s\S]*veiledWithdrawAmount[\s\S]*addEventListener\("input", updateAmountActionButtons\)/);
+  assert.match(withdrawAction, /amount = amountInputValue\(els\.veiledWithdrawAmount\);/);
+  assert.match(withdrawAction, /const recipient = els\.veiledWithdrawRecipient\.value\.trim\(\);/);
+  assert.match(withdrawAction, /setBusy\(els\.withdrawFromVeiled/);
+  assert.match(relayWithdrawAction, /amount = amountInputValue\(els\.relayWithdrawAmount\);/);
+  assert.match(relayWithdrawAction, /const recipient = els\.relayWithdrawRecipient\.value\.trim\(\);/);
+  assert.match(relayWithdrawAction, /setBusy\(els\.relayWithdrawFromVeiled/);
 });
 
 test("DApp faucet sends the requested amount without minimum top-up", () => {
@@ -35,7 +54,7 @@ test("DApp faucet sends the requested amount without minimum top-up", () => {
   assert.match(appSource, /recipient = connectedPublicRecipientAddress\(\)/);
   assert.match(appSource, /recipient,\s*amount/);
   assert.match(appSource, /data\.recipientEvm \|\| recipient/);
-  assert.match(appSource, /const localSigner = selectedLocalAccount\(\)\?\.name/);
+  assert.match(appSource, /const localSigner =[\s\S]*selectedLocalAccount\(\)\?\.name/);
   assert.doesNotMatch(htmlSource, /Fund amount/);
   assert.doesNotMatch(htmlSource, /Fund Wallet/);
   assert.match(htmlSource, /<button id="fundKeplr" type="button" disabled>Faucet<\/button>/);
@@ -95,6 +114,15 @@ test("DApp renders one combined wallet session panel", () => {
   assert.match(cssSource, /\.account-copy\s*\{/);
 });
 
+test("DApp exposes a Clair balance refresh button", () => {
+  assert.match(htmlSource, /id="myClairBalance"/);
+  assert.match(htmlSource, /id="refreshClairBalance"[\s\S]*Refresh/);
+  assert.match(appSource, /refreshClairBalance: \$\("#refreshClairBalance"\)/);
+  assert.match(appSource, /refreshClairBalance\.disabled = !connected/);
+  assert.match(appSource, /els\.refreshClairBalance\.addEventListener\("click"[\s\S]*refreshWalletBalance\(\)/);
+  assert.match(cssSource, /\.balance-refresh-button\s*\{/);
+});
+
 test("DApp exposes chain profiles and filters wallet connect buttons by chain", () => {
   assert.match(htmlSource, /DApp chain info/);
   assert.match(htmlSource, /id="dappChainSelect"/);
@@ -111,7 +139,7 @@ test("DApp exposes chain profiles and filters wallet connect buttons by chain", 
   assert.match(readmeSource, /EVM static profile example/);
   assert.match(readmeSource, /const myEvmProfile = \{/);
   assert.match(readmeSource, /chainProfiles: \[clairveilProfile, myEvmProfile\]/);
-  assert.match(serverSource, /chainProfiles: dappChainProfiles\(\)/);
+  assert.match(serverSource, /chainProfiles: dappChainProfiles\(proverUrl\)/);
   assert.match(appSource, /function activeChainProfile/);
   assert.match(appSource, /function activeWalletKind/);
   assert.match(appSource, /function selectedProfileMatchesServer/);
@@ -134,10 +162,16 @@ test("DApp hides local-only panels unless the server enables local test features
   assert.doesNotMatch(serverSource, /function isLocalEndpoint/);
   assert.match(serverSource, /function assertLocalTestBackendAllowed/);
   assert.match(serverSource, /function serverFeaturesForRequest\(req\)/);
+  assert.match(serverSource, /new Set\(\["alice", "bob", "relayer", "auditor"\]\)/);
   assert.match(serverSource, /localSigners: localSignerAdmin/);
   assert.match(serverSource, /localSignerSetup: localSignerMutation/);
   assert.match(serverSource, /faucet: localSignerMutation/);
+  assert.match(serverSource, /depositProof: localSignerMutation/);
+  assert.match(serverSource, /relayer: localSignerMutation/);
   assert.match(serverSource, /auditorAdmin: localSignerAdmin/);
+  assert.match(serverSource, /function localAccountsForPublicConfig\(serverFeatures\)/);
+  assert.match(serverSource, /serverFeatures\.localSignerAdmin[\s\S]*return accounts/);
+  assert.match(serverSource, /accounts\.filter\(account => account\.name === localRelayerName\(\)\)/);
   assert.match(serverSource, /function publicConfig\(req\)/);
   assert.match(serverSource, /modeLabel: config\.localTestMode \? "Local Note Test Web" : "Public Node DApp"/);
   assert.match(appSource, /function serverFeature/);
@@ -154,7 +188,7 @@ test("DApp hides local-only panels unless the server enables local test features
 test("DApp keeps EVM public send 0x-only without self-wallet suggestions", () => {
   assert.match(appSource, /import \{ bech32AddressToEvm \} from "clairveiljs\/evm"/);
   assert.match(appSource, /function connectedWalletAddressSuggestions/);
-  assert.match(appSource, /function activeServerAccounts\(\) \{[\s\S]*selectedProfileMatchesServer\(\) \? state\.accounts : \[\]/);
+  assert.match(appSource, /function activeServerAccounts\(\) \{[\s\S]*return serverFeature\("localSigners"\) && selectedProfileMatchesServer\(\)[\s\S]*\? state\.accounts[\s\S]*: \[\]/);
   assert.match(appSource, /const accounts = activeServerAccounts\(\);[\s\S]*const preferred = accounts\.filter/);
   assert.match(appSource, /els\.accountSelect\.disabled = !accounts\.length/);
   assert.match(appSource, /if \(!accounts\.length\) \{[\s\S]*els\.keplrSendRecipient\.value = ""/);
@@ -162,8 +196,9 @@ test("DApp keeps EVM public send 0x-only without self-wallet suggestions", () =>
   assert.match(appSource, /function isSendRecipientForWallet/);
   assert.match(appSource, /function activeTransparentAddressFormat/);
   assert.match(appSource, /function isEvmTransparentMode/);
-  assert.match(appSource, /keplrSendRecipient\.placeholder = transparentFormat === "evm" \? "0x\.\.\."/);
-  assert.match(appSource, /veiledWithdrawRecipient\.placeholder = transparentFormat === "evm" \? "0x\.\.\."/);
+  assert.match(appSource, /keplrSendRecipient\.placeholder =[\s\S]*transparentFormat === "evm" \? "0x\.\.\."/);
+  assert.match(appSource, /veiledWithdrawRecipient\.placeholder =[\s\S]*transparentFormat === "evm" \? "0x\.\.\."/);
+  assert.match(appSource, /relayWithdrawRecipient\.placeholder =[\s\S]*transparentFormat === "evm" \? "0x\.\.\."/);
   assert.match(appSource, /format: transparentFormat/);
   assert.match(appSource, /includeWallet: true/);
   assert.match(appSource, /name: "My wallet"/);
@@ -182,13 +217,58 @@ test("DApp keeps EVM public send 0x-only without self-wallet suggestions", () =>
 });
 
 test("DApp uses the npm ClairveilJS browser client for public wallet and privacy flows", () => {
+  const depositPrepare = sourceBetween(
+    appSource,
+    "async function preparePrivacyDepositSignDoc",
+    "async function preparePrivacyTransferSignDoc",
+  );
   assert.match(appSource, /import \{ createClairveilBrowserDappClient \} from "clairveiljs\/browser-dapp"/);
   assert.match(appSource, /function clairveilBrowserClient/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.fetchPrivacyEvents\(\)/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.fetchAuditableTransfers\(\)/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.prepareDeposit/);
+  assert.match(appSource, /depositProofProvider/);
+  assert.match(appSource, /\/api\/deposit\/proof/);
+  assert.match(appSource, /Deposit requires a DepositCircuit proof provider/);
+  assert.match(depositPrepare, /request\.depositProofProvider = async/);
+  assert.doesNotMatch(depositPrepare, /state\.activeWallet !== "metamask"/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.prepareTransfer/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.prepareWithdraw/);
+  assert.match(appSource, /clairveilBrowserClient\(\)\.prepareRelayWithdraw/);
+  assert.match(htmlSource, /class="panel account-panel relayer-panel"/);
+  assert.match(htmlSource, /<h2>Relay Withdraw<\/h2>/);
+  assert.match(htmlSource, /id="relayerPrepareTitle"[\s\S]*<h3 class="relayer-account-title">Relayer<\/h3>/);
+  assert.match(htmlSource, /<h3 class="relayer-account-title">Relayer<\/h3>/);
+  assert.doesNotMatch(htmlSource, /id="relayerAccountName"/);
+  assert.match(htmlSource, /id="relayerBalance"/);
+  assert.match(htmlSource, /Prepared Payload/);
+  assert.match(htmlSource, /id="relayWithdrawAmount"/);
+  assert.match(htmlSource, /class="amount-row relayer-prepare-amount-row"[\s\S]*id="relayWithdrawAmount"[\s\S]*id="relayWithdrawFromVeiled"[\s\S]*<div class="field address-field">[\s\S]*id="relayWithdrawRecipient"/);
+  assert.match(htmlSource, /id="relayWithdrawRecipient"/);
+  assert.match(htmlSource, /id="relayWithdrawRecipientSuggestions"/);
+  assert.match(htmlSource, /id="relayWithdrawRecipient"[\s\S]*aria-haspopup="listbox"[\s\S]*aria-controls="relayWithdrawRecipientSuggestions"/);
+  assert.doesNotMatch(htmlSource, /id="relayWithdrawRecipientSuggestions"[\s\S]*id="relayWithdrawFromVeiled"/);
+  assert.match(htmlSource, /id="relayPreparedWithdraw"/);
+  assert.match(htmlSource, /id="copyRelayWithdrawPayload"/);
+  assert.match(htmlSource, /id="relayWithdrawPreparedChainId"/);
+  assert.match(htmlSource, /id="relayWithdrawPreparedExpiresAt"/);
+  assert.match(htmlSource, /prepared[\s\S]*payload\/proof JSON is privacy-sensitive/);
+  assert.match(appSource, /input: els\.relayWithdrawRecipient,[\s\S]*list: els\.relayWithdrawRecipientSuggestions,[\s\S]*kind: "transparent"/);
+  assert.match(appSource, /function setPreparedRelayWithdrawPayload/);
+  assert.match(appSource, /const canonicalRecipient =[\s\S]*payload\?\.recipient[\s\S]*data\?\.prepared\?\.recipient[\s\S]*recipient/);
+  assert.match(appSource, /relayWithdrawPayloadRecipient = canonicalRecipient \|\| ""/);
+  assert.match(appSource, /relayWithdrawPayloadChainId =[\s\S]*payload\?\.chain_id[\s\S]*payload\?\.chainId/);
+  assert.match(appSource, /relayWithdrawPayloadExpiresAt = formatRelayPayloadExpiry/);
+  assert.match(appSource, /function renderRelayerPanel/);
+  assert.match(appSource, /function localRelayerAccount\(\) \{[\s\S]*serverFeature\("relayer"\)[\s\S]*account\.name === "relayer"[\s\S]*account\.name === "dev0"/);
+  assert.match(appSource, /function refreshRelayerAccount/);
+  assert.match(appSource, /function relayPreparedWithdraw/);
+  assert.match(appSource, /relayPreparedWithdrawPayload\([\s\S]*payload,[\s\S]*state\.keplr\.relayWithdrawPayloadRecipient[\s\S]*\)/);
+  assert.match(appSource, /clearPreparedRelayWithdrawPayload\(\{ clearPayloadHash: true \}\)/);
+  assert.doesNotMatch(appSource, /state\.keplr\.relayWithdrawPayloadSubmitted = true/);
+  assert.doesNotMatch(appSource, /const relay = await relayPreparedWithdrawPayload\(data\.payload, recipient\)/);
+  assert.match(appSource, /function localRelayerAccount/);
+  assert.match(appSource, /const relayer =[\s\S]*localRelayerAccount\(\)\?\.name \|\| \(isEvmTransparentMode\(\) \? "dev0" : "relayer"\)/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.scanWalletNotes/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.checkNullifier/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.decodeUserDisclosure/);
@@ -200,7 +280,7 @@ test("DApp uses the npm ClairveilJS browser client for public wallet and privacy
   assert.match(appSource, /function refreshCachedNoteStatuses/);
   assert.match(appSource, /status: "spent"/);
   assert.match(appSource, /await refreshCachedNoteStatuses\(\)/);
-  assert.match(appSource, /scanWalletNotes\(privacyRequest\(\{\s*\.\.\.scanOptions,\s*includeFoundNotes: true/s);
+  assert.match(appSource, /scanWalletNotes\([\s\S]*privacyRequest\(\{[\s\S]*\.\.\.scanOptions,[\s\S]*includeFoundNotes: true/);
   assert.match(appSource, /more events queued/);
   assert.match(appSource, /scan: \{ limit: 200, maxPages: 1000 \}/);
   assert.match(appSource, /function browserProverUrl/);
@@ -215,6 +295,7 @@ test("DApp uses the npm ClairveilJS browser client for public wallet and privacy
   assert.doesNotMatch(appSource, /\/api\/tx\//);
   assert.doesNotMatch(appSource, /\/api\/keplr\/privacy/);
   assert.doesNotMatch(appSource, /\/api\/evm\/privacy/);
+  assert.match(appSource, /\/api\/relayer\/withdraw/);
   assert.doesNotMatch(appSource, /\/sdk\/clairveiljs/);
   assert.doesNotMatch(appSource, /buildPreparedTransferPayload/);
   assert.doesNotMatch(appSource, /buildPreparedWithdrawProverPayload/);
@@ -231,6 +312,15 @@ test("DApp uses the npm ClairveilJS browser client for public wallet and privacy
   assert.doesNotMatch(serverSource, /planWithdrawNotes/);
   assert.doesNotMatch(serverSource, /prepareEvmTransfer/);
   assert.doesNotMatch(serverSource, /prepareEvmWithdraw/);
+});
+
+test("DApp default check does not require a clean generated bundle diff", () => {
+  assert.match(packageJson.scripts["check:dapp"], /npm run build:dapp/);
+  assert.doesNotMatch(packageJson.scripts["check:dapp"], /check:bundle:fresh/);
+  assert.equal(packageJson.scripts["check:bundle"], "node --check public/app.bundle.js");
+  assert.match(packageJson.scripts["check:bundle:fresh"], /npm run build:dapp/);
+  assert.match(packageJson.scripts["check:bundle:fresh"], /git diff --quiet -- public\/app\.bundle\.js/);
+  assert.match(packageJson.scripts["check:bundle:fresh"], /public\/app\.bundle\.js is stale/);
 });
 
 test("DApp planner UX uses structured API errors instead of message parsing", () => {
@@ -254,7 +344,7 @@ test("DApp shows current transferable max planner fact only for note merge steps
   assert.match(appSource, /facts\.currentMaxNoteValue/);
   assert.match(appSource, /currentExactNoteMaxValue >= requestedValue/);
   assert.match(appSource, /currentMax: plannerCurrentExactNoteMaxForWithdraw\(data, amount\)/);
-  assert.match(appSource, /onFinalExactTransfer: data =>/);
+  assert.match(appSource, /onFinalExactTransfer: \(data\) =>/);
   assert.doesNotMatch(appSource, /currentMax: zeroCoinText\(\)/);
   assert.doesNotMatch(appSource, /currentMax: error\.prepared/);
   assert.doesNotMatch(appSource, /currentMax: amount/);
@@ -275,10 +365,25 @@ test("DApp renders public disclosure reports without recipient-only branching", 
   assert.match(appSource, /renderEventDisclosureReport/);
   assert.match(appSource, /summary\.delivery/);
   assert.match(appSource, /function isPublicDisclosureEvent/);
+  assert.match(appSource, /function hasSelfViewDisclosureEvent/);
   assert.match(appSource, /function canDecodeEventDisclosure/);
+  assert.match(appSource, /function canDecodeSelfViewDisclosure/);
   assert.match(appSource, /if \(isPublicDisclosureEvent\(event\)\) return true/);
   assert.match(appSource, /decodeSelectedEventDisclosure/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.decodeUserDisclosure/);
+  assert.match(appSource, /clairveilBrowserClient\(\)\.decodeSelfViewDisclosure/);
+  assert.match(htmlSource, /id="eventDisclosurePlane"/);
+  assert.match(htmlSource, /id="eventDisclosurePolicy"/);
+  assert.match(htmlSource, /id="eventDisclosureOutputIndex"/);
+  assert.match(htmlSource, /id="eventDisclosureCommitment"/);
+  assert.match(htmlSource, /id="eventDisclosureDigest"/);
+  assert.match(htmlSource, /id="eventDisclosureVerified"/);
+  assert.match(htmlSource, /id="eventDisclosureAssetDenom"/);
+  assert.match(appSource, /els\.eventDisclosurePolicy\.textContent/);
+  assert.match(appSource, /els\.eventDisclosureOutputIndex\.textContent/);
+  assert.match(appSource, /els\.eventDisclosureCommitment\.textContent/);
+  assert.match(appSource, /els\.eventDisclosureDigest\.textContent/);
+  assert.match(appSource, /els\.eventDisclosureVerified\.textContent/);
   assert.doesNotMatch(appSource, /\/api\/keplr\/privacy\/disclosure\/decode/);
 });
 
@@ -309,6 +414,14 @@ test("DApp server keeps only local helper responsibilities", () => {
   assert.match(serverSource, /function assertLocalAdminAccessAllowed/);
   assert.match(serverSource, /\/api\/local-signers\/ensure"\) \{\s*assertLocalTestBackendAllowed\("local signer setup"\);\s*assertSignerMutationAllowed\(req\);/);
   assert.match(serverSource, /\/api\/faucet"\) \{\s*assertLocalTestBackendAllowed\("faucet"\);\s*assertSignerMutationAllowed\(req\);/);
+  assert.match(serverSource, /\/api\/deposit\/proof"\) \{\s*assertLocalTestBackendAllowed\("deposit proof"\);\s*assertSignerMutationAllowed\(req\);/);
+  assert.match(serverSource, /go", \["run", "\.\/examples\/clairveil-dapp\/tools\/deposit-proof"\]/);
+  assert.match(serverSource, /\/api\/relayer\/withdraw"\) \{\s*assertLocalTestBackendAllowed\("relay withdraw"\);\s*assertSignerMutationAllowed\(req\);/);
+  assert.match(serverSource, /body\.relayer \?\? body\.from \?\? localRelayerName\(\)/);
+  assert.match(serverSource, /buildRelayWithdrawMessageFromPayload/);
+  assert.match(serverSource, /createClairveilEvmClient/);
+  assert.match(serverSource, /evmClient\.buildWithdrawTransaction/);
+  assert.match(serverSource, /"tx", "privacy", "relay-withdraw"/);
   assert.match(serverSource, /\/api\/deposit"\) \{\s*assertLocalTestBackendAllowed\("local CLI deposit"\);\s*assertSignerMutationAllowed\(req\);/);
   assert.match(serverSource, /\/api\/auditor\/test-scalar"\) \{\s*assertLocalTestBackendAllowed\("auditor test scalar"\);\s*assertLocalAdminAccessAllowed\(req\);/);
   assert.match(serverSource, /\/api\/auditor\/decode"\) \{\s*assertLocalTestBackendAllowed\("auditor disclosure decode"\);\s*assertLocalAdminAccessAllowed\(req\);/);
@@ -343,7 +456,7 @@ test("DApp shows a send result confirmation before refresh side effects", () => 
 test("DApp submits final MetaMask transactions before waiting for receipt", () => {
   assert.match(appSource, /async function submitEvmTransaction/);
   assert.match(appSource, /async function waitForEvmTransaction/);
-  assert.match(appSource, /async function sendEvmTransaction\(transaction, \{ waitForReceipt = false/);
+  assert.match(appSource, /async function sendEvmTransaction\([\s\S]*transaction,[\s\S]*\{ waitForReceipt = false/);
   assert.match(appSource, /pending: true/);
   assert.match(appSource, /waitPromise/);
   assert.match(appSource, /broadcast\?\.pending && txHash/);
@@ -352,8 +465,8 @@ test("DApp submits final MetaMask transactions before waiting for receipt", () =
   assert.match(appSource, /트랜스퍼 요청이 제출되었습니다/);
   assert.match(appSource, /Withdraw submitted/);
   assert.match(appSource, /Withdraw 요청이 제출되었습니다/);
-  assert.match(appSource, /zero helper note", \{ waitForEvmReceipt: true \}/);
-  assert.match(appSource, /self transaction", \{ waitForEvmReceipt: true \}/);
+  assert.match(appSource, /zero helper note",[\s\S]*\{ waitForEvmReceipt: true \}/);
+  assert.match(appSource, /self transaction",[\s\S]*\{ waitForEvmReceipt: true \}/);
 });
 
 test("DApp forces MetaMask onto the configured EVM chain", () => {
@@ -374,12 +487,12 @@ test("DApp estimates EVM gas before opening MetaMask confirmation", () => {
   assert.match(appSource, /tx\.gas = bigIntToEvmQuantity\(existing > padded \? existing : padded\)/);
   assert.doesNotMatch(appSource, /existing > 0n && existing < padded/);
   assert.match(appSource, /delete tx\.gas/);
-  assert.match(appSource, /const tx = await withEstimatedEvmGas\(\{ \.\.\.transaction, from: state\.wallet\.account \}\)/);
+  assert.match(appSource, /const tx = await withEstimatedEvmGas\(\{[\s\S]*\.\.\.transaction,[\s\S]*from: state\.wallet\.account[\s\S]*\}\)/);
   assert.match(appSource, /params: \[tx\]/);
 });
 
 test("DApp resets MetaMask privacy identity after account changes", () => {
-  const block = appSource.match(/accountsChanged", accounts => \{[\s\S]*?\n  \}\);/)?.[0] || "";
+  const block = sourceBetween(appSource, 'injectedMetaMask.on?.("accountsChanged"', 'injectedMetaMask.on?.("chainChanged"');
   assert.match(block, /resetWalletSession\(\);/);
   assert.match(block, /renderWallet\(\);/);
   assert.match(block, /renderKeplr\(\);/);

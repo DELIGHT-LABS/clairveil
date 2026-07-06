@@ -6,7 +6,7 @@ function defaultMetaMaskState() {
   return {
     account: "",
     chainId: "",
-    signatureHash: ""
+    signatureHash: "",
   };
 }
 
@@ -20,7 +20,7 @@ function defaultNoteScanCursor() {
     hasMore: false,
     latestHeight: 0,
     pagesScanned: 0,
-    completed: false
+    completed: false,
   };
 }
 
@@ -48,11 +48,22 @@ function defaultKeplrState() {
     transferHash: "",
     withdrawHash: "",
     withdrawHeight: "",
+    relayWithdrawHash: "",
+    relayWithdrawHeight: "",
+    relayWithdrawRelayer: "",
+    relayWithdrawPayloadHash: "",
+    relayWithdrawPayload: null,
+    relayWithdrawPayloadText: "",
+    relayWithdrawPayloadAmount: "",
+    relayWithdrawPayloadRecipient: "",
+    relayWithdrawPayloadChainId: "",
+    relayWithdrawPayloadExpiresAt: "",
+    relayWithdrawPayloadSubmitted: false,
     notesSummary: "",
     notes: [],
     notesScanned: false,
     noteScanCursor: defaultNoteScanCursor(),
-    showSpendableOnly: true
+    showSpendableOnly: true,
   };
 }
 
@@ -65,11 +76,15 @@ const state = {
   addressBook: {
     shieldedByName: {},
     shieldedError: "",
-    loadingShielded: false
+    loadingShielded: false,
   },
   activeWallet: "",
   wallet: defaultMetaMaskState(),
   keplr: defaultKeplrState(),
+  relayer: {
+    balance: "",
+    error: "",
+  },
   auditor: {
     events: [],
     selectedTxHash: "",
@@ -77,7 +92,7 @@ const state = {
     testScalar: "",
     testScalarError: "",
     testScalarMatchesAuditConfig: false,
-    loading: false
+    loading: false,
   },
   privacyEvents: {
     events: [],
@@ -85,15 +100,15 @@ const state = {
     decoded: null,
     error: "",
     loadError: "",
-    loading: false
+    loading: false,
   },
   blockEvents: {
     events: [],
-    error: ""
-  }
+    error: "",
+  },
 };
 
-const $ = selector => document.querySelector(selector);
+const $ = (selector) => document.querySelector(selector);
 let shieldedAddressBookPromise = null;
 let browserClient = null;
 let browserClientKey = "";
@@ -116,28 +131,42 @@ function configuredChainProfile() {
     evmRpc: state.config.evmRpc,
     evmChainId: state.config.evmChainId,
     evmChainName: state.config.evmChainName,
-    keplrChainInfo: state.config.keplrChainInfo
+    keplrChainInfo: state.config.keplrChainInfo,
   };
 }
 
 function activeChainProfile() {
-  return state.chainProfiles.find(profile => profile.id === state.selectedChainProfileId)
-    || state.chainProfiles.find(profile => profile.id === state.config?.activeChainProfileId)
-    || configuredChainProfile();
+  return (
+    state.chainProfiles.find(
+      (profile) => profile.id === state.selectedChainProfileId,
+    ) ||
+    state.chainProfiles.find(
+      (profile) => profile.id === state.config?.activeChainProfileId,
+    ) ||
+    configuredChainProfile()
+  );
 }
 
 function activeWalletKind() {
   const profile = activeChainProfile();
-  return profile?.wallet || (profile?.transport === "evm" ? "metamask" : "keplr");
+  return (
+    profile?.wallet || (profile?.transport === "evm" ? "metamask" : "keplr")
+  );
 }
 
 function activeTransparentAddressFormat() {
   const profile = activeChainProfile();
-  return profile?.transport === "evm" || activeWalletKind() === "metamask" ? "evm" : "bech32";
+  return profile?.transport === "evm" || activeWalletKind() === "metamask"
+    ? "evm"
+    : "bech32";
 }
 
 function isEvmTransparentMode(walletKind = activeWalletKind()) {
-  return activeTransparentAddressFormat() === "evm" || walletKind === "metamask" || walletKind === "evm";
+  return (
+    activeTransparentAddressFormat() === "evm" ||
+    walletKind === "metamask" ||
+    walletKind === "evm"
+  );
 }
 
 function activeKeplrChainInfo() {
@@ -147,16 +176,35 @@ function activeKeplrChainInfo() {
 function selectedProfileMatchesServer(profile = activeChainProfile()) {
   if (state.config?.serverBacked === false) return true;
   if (!profile || !state.config) return true;
-  return profile.transport === state.config.transport && profile.chainId === state.config.chainId;
+  return (
+    profile.transport === state.config.transport &&
+    profile.chainId === state.config.chainId
+  );
 }
 
 function accountPrefix() {
   const profile = activeChainProfile();
-  return profile?.accountPrefix || state.config?.accountPrefix || state.config?.keplrChainInfo?.bech32Config?.bech32PrefixAccAddr || "clair";
+  return (
+    profile?.accountPrefix ||
+    state.config?.accountPrefix ||
+    state.config?.keplrChainInfo?.bech32Config?.bech32PrefixAccAddr ||
+    "clair"
+  );
 }
 
 function shieldedPrefix() {
-  return activeChainProfile()?.shieldedPrefix || state.config?.shieldedPrefix || "clairs";
+  return (
+    activeChainProfile()?.shieldedPrefix ||
+    state.config?.shieldedPrefix ||
+    "clairs"
+  );
+}
+
+function isConfiguredShieldedAddress(address) {
+  return address
+    .trim()
+    .toLowerCase()
+    .startsWith(`${shieldedPrefix().toLowerCase()}1`);
 }
 
 function baseDenom() {
@@ -164,7 +212,9 @@ function baseDenom() {
 }
 
 function displayDenom() {
-  return activeChainProfile()?.displayDenom || state.config?.displayDenom || "CLAIR";
+  return (
+    activeChainProfile()?.displayDenom || state.config?.displayDenom || "CLAIR"
+  );
 }
 
 function serverFeature(name) {
@@ -183,10 +233,18 @@ function renderServerFeatureVisibility() {
   if (els.localSignerPanel) {
     els.localSignerPanel.hidden = !localSigners;
   }
+  if (els.relayerPanel) {
+    els.relayerPanel.hidden = !serverFeature("relayer");
+  }
   if (els.faucetRow) {
     els.faucetRow.hidden = !faucet;
   }
-  for (const row of [els.localHomeRow, els.faucetHashRow, els.faucetSentRow, els.faucetRecipientRow]) {
+  for (const row of [
+    els.localHomeRow,
+    els.faucetHashRow,
+    els.faucetSentRow,
+    els.faucetRecipientRow,
+  ]) {
     if (row) row.hidden = !localTestBackendEnabled();
   }
   if (els.auditorSection) {
@@ -195,7 +253,9 @@ function renderServerFeatureVisibility() {
 }
 
 function expectedEvmChainIdHex() {
-  const value = String(activeChainProfile()?.evmChainId || state.config?.evmChainId || "").trim();
+  const value = String(
+    activeChainProfile()?.evmChainId || state.config?.evmChainId || "",
+  ).trim();
   if (/^0x[0-9a-fA-F]+$/.test(value)) {
     return `0x${BigInt(value).toString(16)}`;
   }
@@ -208,7 +268,10 @@ function expectedEvmChainIdHex() {
 function browserEndpointUrl(configured, { trim = false } = {}) {
   try {
     const url = new URL(configured);
-    if ((url.hostname === "127.0.0.1" || url.hostname === "localhost") && window.location.hostname) {
+    if (
+      (url.hostname === "127.0.0.1" || url.hostname === "localhost") &&
+      window.location.hostname
+    ) {
       url.hostname = window.location.hostname;
     }
     const text = url.toString();
@@ -219,12 +282,15 @@ function browserEndpointUrl(configured, { trim = false } = {}) {
 }
 
 function evmRpcUrlForWallet(profile = activeChainProfile()) {
-  const configured = profile?.evmRpc || state.config?.evmRpc || "http://127.0.0.1:8545";
+  const configured =
+    profile?.evmRpc || state.config?.evmRpc || "http://127.0.0.1:8545";
   return browserEndpointUrl(configured);
 }
 
 function browserRpcUrl(profile = activeChainProfile()) {
-  return browserEndpointUrl(profile?.rpc || state.config?.rpc || "", { trim: true });
+  return browserEndpointUrl(profile?.rpc || state.config?.rpc || "", {
+    trim: true,
+  });
 }
 
 function browserRestUrl(profile = activeChainProfile()) {
@@ -255,12 +321,16 @@ function clairveilBrowserClient(profile = activeChainProfile()) {
     rest: browserRestUrl(resolved),
     chainId: resolved?.chainId || state.config?.chainId || "",
     accountPrefix: resolved?.accountPrefix || state.config?.accountPrefix || "",
-    shieldedPrefix: resolved?.shieldedPrefix || state.config?.shieldedPrefix || "",
+    shieldedPrefix:
+      resolved?.shieldedPrefix || state.config?.shieldedPrefix || "",
     denom: resolved?.denom || state.config?.denom || "",
     proverUrl: browserProverUrl(resolved),
     evmRpc: evmRpcUrlForWallet(resolved),
     evmChainId: resolved?.evmChainId || state.config?.evmChainId || "",
-    evmPrivacyPrecompileAddress: resolved?.evmPrivacyPrecompileAddress || state.config?.evmPrivacyPrecompileAddress || ""
+    evmPrivacyPrecompileAddress:
+      resolved?.evmPrivacyPrecompileAddress ||
+      state.config?.evmPrivacyPrecompileAddress ||
+      "",
   });
   if (!browserClient || browserClientKey !== key) {
     browserClient = createClairveilBrowserDappClient({
@@ -270,15 +340,19 @@ function clairveilBrowserClient(profile = activeChainProfile()) {
         rest: browserRestUrl(resolved),
         chainId: resolved?.chainId || state.config?.chainId,
         accountPrefix: resolved?.accountPrefix || state.config?.accountPrefix,
-        shieldedPrefix: resolved?.shieldedPrefix || state.config?.shieldedPrefix,
+        shieldedPrefix:
+          resolved?.shieldedPrefix || state.config?.shieldedPrefix,
         denom: resolved?.denom || state.config?.denom,
         proverUrl: browserProverUrl(resolved),
         evmRpc: evmRpcUrlForWallet(resolved),
         evmChainId: resolved?.evmChainId || state.config?.evmChainId,
-        evmPrivacyPrecompileAddress: resolved?.evmPrivacyPrecompileAddress || state.config?.evmPrivacyPrecompileAddress,
+        evmPrivacyPrecompileAddress:
+          resolved?.evmPrivacyPrecompileAddress ||
+          state.config?.evmPrivacyPrecompileAddress,
         evmGasLimit: resolved?.evmGasLimit || state.config?.evmGasLimit,
-        evmSendGasLimit: resolved?.evmSendGasLimit || state.config?.evmSendGasLimit
-      }
+        evmSendGasLimit:
+          resolved?.evmSendGasLimit || state.config?.evmSendGasLimit,
+      },
     });
     browserClientKey = key;
   }
@@ -289,20 +363,31 @@ function injectedEthereumProviders() {
   const provider = window.ethereum;
   if (!provider) return [];
   const providers = Array.isArray(provider.providers) ? provider.providers : [];
-  return [...new Set([...providers, provider])].filter(candidate => candidate?.request);
+  return [...new Set([...providers, provider])].filter(
+    (candidate) => candidate?.request,
+  );
 }
 
 function metaMaskProvider() {
   const providers = injectedEthereumProviders();
-  return providers.find(provider => provider.isMetaMask)
-    || providers.find(provider => provider.isRabby || provider.isBraveWallet || provider.isCoinbaseWallet)
-    || providers[0]
-    || null;
+  return (
+    providers.find((provider) => provider.isMetaMask) ||
+    providers.find(
+      (provider) =>
+        provider.isRabby || provider.isBraveWallet || provider.isCoinbaseWallet,
+    ) ||
+    providers[0] ||
+    null
+  );
 }
 
 function unsupportedEvmMethodError(error) {
-  return error?.code === -32601
-    || /method .*not supported|not supported|unsupported method|does not support/i.test(error?.message || "");
+  return (
+    error?.code === -32601 ||
+    /method .*not supported|not supported|unsupported method|does not support/i.test(
+      error?.message || "",
+    )
+  );
 }
 
 async function requestMetaMask(payload) {
@@ -315,7 +400,9 @@ async function requestMetaMask(payload) {
   } catch (error) {
     const method = payload?.method || "EVM request";
     if (unsupportedEvmMethodError(error)) {
-      throw new Error(`${method} is not supported by the injected wallet provider. Open this DApp in a browser with MetaMask or another EVM wallet selected.`);
+      throw new Error(
+        `${method} is not supported by the injected wallet provider. Open this DApp in a browser with MetaMask or another EVM wallet selected.`,
+      );
     }
     throw error;
   }
@@ -337,25 +424,29 @@ async function ensureMetaMaskChain() {
   try {
     await requestMetaMask({
       method: "wallet_switchEthereumChain",
-      params: [{ chainId: expected }]
+      params: [{ chainId: expected }],
     });
   } catch (error) {
-    const unknownChain = error?.code === 4902 || /unknown|unrecognized|not added/i.test(error?.message || "");
+    const unknownChain =
+      error?.code === 4902 ||
+      /unknown|unrecognized|not added/i.test(error?.message || "");
     if (!unknownChain) {
       throw error;
     }
     await requestMetaMask({
       method: "wallet_addEthereumChain",
-      params: [{
-        chainId: expected,
-        chainName: state.config?.evmChainName || "EVM Localnet",
-        nativeCurrency: {
-          name: displayDenom(),
-          symbol: displayDenom(),
-          decimals: coinDecimals()
+      params: [
+        {
+          chainId: expected,
+          chainName: state.config?.evmChainName || "EVM Localnet",
+          nativeCurrency: {
+            name: displayDenom(),
+            symbol: displayDenom(),
+            decimals: coinDecimals(),
+          },
+          rpcUrls: [evmRpcUrlForWallet()],
         },
-        rpcUrls: [evmRpcUrlForWallet()]
-      }]
+      ],
     });
   }
 
@@ -368,7 +459,9 @@ async function ensureMetaMaskChain() {
 }
 
 function coinDecimals() {
-  return Number(activeChainProfile()?.coinDecimals ?? state.config?.coinDecimals ?? 18);
+  return Number(
+    activeChainProfile()?.coinDecimals ?? state.config?.coinDecimals ?? 18,
+  );
 }
 
 function coinTextFromAmount(amount) {
@@ -409,6 +502,7 @@ const els = {
   fundKeplr: $("#fundKeplr"),
   setupKeplrPrivacy: $("#setupKeplrPrivacy"),
   refreshWalletBalance: $("#refreshKeplrBalance"),
+  refreshClairBalance: $("#refreshClairBalance"),
   scanKeplrNotes: $("#scanKeplrNotes"),
   keplrTxState: $("#keplrTxState"),
   keplrSendAmount: $("#keplrSendAmount"),
@@ -439,9 +533,29 @@ const els = {
   veiledWithdrawRecipient: $("#veiledWithdrawRecipient"),
   veiledWithdrawRecipientSuggestions: $("#veiledWithdrawRecipientSuggestions"),
   withdrawFromVeiled: $("#withdrawFromVeiled"),
+  relayWithdrawAmount: $("#relayWithdrawAmount"),
+  relayWithdrawRecipient: $("#relayWithdrawRecipient"),
+  relayWithdrawRecipientSuggestions: $(
+    "#relayWithdrawRecipientSuggestions",
+  ),
+  relayWithdrawFromVeiled: $("#relayWithdrawFromVeiled"),
+  copyRelayWithdrawPayload: $("#copyRelayWithdrawPayload"),
+  relayPreparedWithdraw: $("#relayPreparedWithdraw"),
   keplrTransferHash: $("#keplrTransferHash"),
   keplrWithdrawHash: $("#keplrWithdrawHash"),
   keplrWithdrawHeight: $("#keplrWithdrawHeight"),
+  keplrRelayWithdrawHash: $("#keplrRelayWithdrawHash"),
+  keplrRelayWithdrawRelayer: $("#keplrRelayWithdrawRelayer"),
+  relayerPanel: $(".relayer-panel"),
+  relayerState: $("#relayerState"),
+  relayerTransparentAddress: $("#relayerTransparentAddress"),
+  relayerBalance: $("#relayerBalance"),
+  relayWithdrawPreparedAmount: $("#relayWithdrawPreparedAmount"),
+  relayWithdrawPreparedRecipient: $("#relayWithdrawPreparedRecipient"),
+  relayWithdrawPreparedChainId: $("#relayWithdrawPreparedChainId"),
+  relayWithdrawPreparedExpiresAt: $("#relayWithdrawPreparedExpiresAt"),
+  relayWithdrawPreparedPayloadHash: $("#relayWithdrawPreparedPayloadHash"),
+  relayWithdrawPreparedPayloadJson: $("#relayWithdrawPreparedPayloadJson"),
   localHome: $("#localHome"),
   localHomeRow: $("#localHome")?.closest("div"),
   faucetHashRow: $("#keplrFaucetHash")?.closest("div"),
@@ -470,8 +584,15 @@ const els = {
   eventDetailTx: $("#eventDetailTx"),
   eventDetailTarget: $("#eventDetailTarget"),
   eventDetailUserMode: $("#eventDetailUserMode"),
+  eventDisclosurePlane: $("#eventDisclosurePlane"),
+  eventDisclosurePolicy: $("#eventDisclosurePolicy"),
+  eventDisclosureOutputIndex: $("#eventDisclosureOutputIndex"),
+  eventDisclosureCommitment: $("#eventDisclosureCommitment"),
+  eventDisclosureDigest: $("#eventDisclosureDigest"),
+  eventDisclosureVerified: $("#eventDisclosureVerified"),
   eventDisclosureFields: $("#eventDisclosureFields"),
   eventDisclosureAmount: $("#eventDisclosureAmount"),
+  eventDisclosureAssetDenom: $("#eventDisclosureAssetDenom"),
   eventDisclosureFrom: $("#eventDisclosureFrom"),
   eventDisclosureTo: $("#eventDisclosureTo"),
   eventDisclosureState: $("#eventDisclosureState"),
@@ -515,7 +636,7 @@ const els = {
   transferPlannerCurrentMax: $("#transferPlannerCurrentMax"),
   transferPlannerAction: $("#transferPlannerAction"),
   cancelTransferFlow: $("#cancelTransferFlow"),
-  confirmTransferFlow: $("#confirmTransferFlow")
+  confirmTransferFlow: $("#confirmTransferFlow"),
 };
 
 function shorten(value, head = 10, tail = 8) {
@@ -524,7 +645,10 @@ function shorten(value, head = 10, tail = 8) {
 }
 
 function eventAttribute(event, key) {
-  return (event?.attributes || []).find(attribute => attribute.key === key)?.value || "";
+  return (
+    (event?.attributes || []).find((attribute) => attribute.key === key)
+      ?.value || ""
+  );
 }
 
 function prettyDisclosureField(value) {
@@ -536,33 +660,39 @@ function renderTransferDisclosureAdvanced() {
   const mode = els.veiledDisclosureMode?.value || "none";
   const noDisclosure = mode === "none";
   const isPublic = mode === "public";
-  const disableTarget = !els.veiledDisclosureAdvanced.checked || noDisclosure || isPublic;
+  const disableTarget =
+    !els.veiledDisclosureAdvanced.checked || noDisclosure || isPublic;
   els.veiledDisclosurePubKey.disabled = disableTarget;
-  els.veiledDisclosurePubKey.closest(".field").classList.toggle("muted", disableTarget);
+  els.veiledDisclosurePubKey
+    .closest(".field")
+    .classList.toggle("muted", disableTarget);
   [
     els.veiledDisclosureAmount,
     els.veiledDisclosureFrom,
-    els.veiledDisclosureTo
-  ].forEach(checkbox => {
+    els.veiledDisclosureTo,
+  ].forEach((checkbox) => {
     checkbox.disabled = !els.veiledDisclosureAdvanced.checked || noDisclosure;
-    checkbox.closest(".checkbox-control").classList.toggle("muted", noDisclosure);
+    checkbox
+      .closest(".checkbox-control")
+      .classList.toggle("muted", noDisclosure);
   });
 }
 
 function transferDisclosurePolicy() {
   if (!els.veiledDisclosureAdvanced.checked) {
     return {
-      privacyPolicy: "all-private"
+      privacyPolicy: "all-private",
     };
   }
 
-  const disclosureMode = els.veiledDisclosureMode?.value || "recipient-encrypted";
+  const disclosureMode =
+    els.veiledDisclosureMode?.value || "recipient-encrypted";
   const pubKeyHex = els.veiledDisclosurePubKey.value.trim();
 
   if (disclosureMode === "none") {
     return {
       privacyPolicy: "all-private",
-      disclosureMode
+      disclosureMode,
     };
   }
 
@@ -570,30 +700,36 @@ function transferDisclosurePolicy() {
   const from = els.veiledDisclosureFrom.checked;
   const to = els.veiledDisclosureTo.checked;
   if (!amount && !from && !to) {
-    throw new Error("Advanced disclosure에서 공개할 항목을 하나 이상 선택해줘.");
+    throw new Error(
+      "Advanced disclosure에서 공개할 항목을 하나 이상 선택해줘.",
+    );
   }
 
   const privacyPolicy = [
     amount ? "amount" : "",
     from ? "from" : "",
-    to ? "to" : ""
-  ].filter(Boolean).join("-");
+    to ? "to" : "",
+  ]
+    .filter(Boolean)
+    .join("-");
 
   if (disclosureMode === "public") {
     return {
       privacyPolicy,
-      disclosureMode
+      disclosureMode,
     };
   }
 
   if (!/^[0-9a-fA-F]{64}$/.test(pubKeyHex)) {
-    throw new Error("Disclosure target은 show-disclosure-pubkey로 만든 32-byte hex 값을 넣어줘.");
+    throw new Error(
+      "Disclosure target은 show-disclosure-pubkey로 만든 32-byte hex 값을 넣어줘.",
+    );
   }
 
   return {
     privacyPolicy,
     disclosureMode: "recipient-encrypted",
-    disclosurePubKeyHex: pubKeyHex
+    disclosurePubKeyHex: pubKeyHex,
   };
 }
 
@@ -624,7 +760,7 @@ function showSendResult({ success, wallet, txHash, error }) {
   if (success) {
     showNotice({
       title: "Send 요청됨",
-      message: `${wallet} send가 제출되었습니다.\nTx: ${shorten(txHash, 14, 12)}`
+      message: `${wallet} send가 제출되었습니다.\nTx: ${shorten(txHash, 14, 12)}`,
     });
     return;
   }
@@ -632,19 +768,19 @@ function showSendResult({ success, wallet, txHash, error }) {
   showNotice({
     title: "Send 실패",
     message: error || "Send 요청이 완료되지 않았습니다.",
-    failed: true
+    failed: true,
   });
 }
 
 const transferFlowState = {
   resolve: null,
   running: false,
-  copy: null
+  copy: null,
 };
 
 const transferFlowSteps = [
   { key: "zero", element: () => els.transferStepZero },
-  { key: "transfer", element: () => els.transferStepTransfer }
+  { key: "transfer", element: () => els.transferStepTransfer },
 ];
 
 const privacyFlowCopies = {
@@ -655,12 +791,14 @@ const privacyFlowCopies = {
     doneLead: "요청이 처리되었습니다.",
     failedLead: "요청이 완료되지 않았습니다.",
     stepOneTitle: "노트 준비",
-    stepOneCopy: "입력하신 금액의 노트를 만들기 위해 self transaction이 필요한지 확인합니다.",
+    stepOneCopy:
+      "입력하신 금액의 노트를 만들기 위해 self transaction이 필요한지 확인합니다.",
     stepTwoTitle: "트랜스퍼 서명",
-    stepTwoCopy: "준비된 note로 실제 privacy transfer를 요청합니다. Keplr에서 내용을 확인하고 서명합니다.",
+    stepTwoCopy:
+      "준비된 note로 실제 privacy transfer를 요청합니다. Keplr에서 내용을 확인하고 서명합니다.",
     successTitle: "트랜스퍼 요청이 성공하였습니다",
     successCopy: "최신 notes를 다시 스캔한 상태입니다.",
-    failureTitle: "트랜스퍼 요청이 실패했습니다"
+    failureTitle: "트랜스퍼 요청이 실패했습니다",
   },
   withdraw: {
     title: "Privacy Withdraw 확인",
@@ -669,13 +807,32 @@ const privacyFlowCopies = {
     doneLead: "요청이 처리되었습니다.",
     failedLead: "요청이 완료되지 않았습니다.",
     stepOneTitle: "노트 준비",
-    stepOneCopy: "Withdraw에 사용할 정확한 금액의 note가 있는지 확인합니다. 없으면 내 Veiled balance 안에서 note를 재구성합니다.",
+    stepOneCopy:
+      "Withdraw에 사용할 정확한 금액의 note가 있는지 확인합니다. 없으면 내 Veiled balance 안에서 note를 재구성합니다.",
     stepTwoTitle: "위드드로우 서명",
-    stepTwoCopy: "준비된 note로 실제 withdraw를 요청합니다. Keplr에서 받을 Clair 주소와 금액을 확인하고 서명합니다.",
+    stepTwoCopy:
+      "준비된 note로 실제 withdraw를 요청합니다. Keplr에서 받을 Clair 주소와 금액을 확인하고 서명합니다.",
     successTitle: "Withdraw 요청이 성공하였습니다",
     successCopy: "Clair balance와 최신 notes를 다시 불러온 상태입니다.",
-    failureTitle: "Withdraw 요청이 실패했습니다"
-  }
+    failureTitle: "Withdraw 요청이 실패했습니다",
+  },
+  relayWithdraw: {
+    title: "Relay Withdraw 확인",
+    lead: "Clair로 출금할 payload는 브라우저 SDK가 만들고, 마지막 broadcast는 Relayer 패널에서 relayer 계정이 제출합니다.",
+    runningLead:
+      "note 준비 단계에서는 지갑 확인이 필요할 수 있고, 완료 후 payload가 화면에 고정됩니다.",
+    doneLead: "요청이 처리되었습니다.",
+    failedLead: "요청이 완료되지 않았습니다.",
+    stepOneTitle: "노트 준비",
+    stepOneCopy:
+      "Relay withdraw도 입력 금액과 정확히 같은 note가 필요합니다. 없으면 내 Veiled balance 안에서 note를 재구성합니다.",
+    stepTwoTitle: "Payload 준비",
+    stepTwoCopy: "준비된 relay withdraw payload를 오른쪽 화면에 고정합니다.",
+    successTitle: "Relay withdraw payload가 준비되었습니다",
+    successCopy:
+      "오른쪽 Relayer 패널에서 payload를 확인한 뒤 relayer 계정으로 제출할 수 있습니다.",
+    failureTitle: "Relay withdraw 요청이 실패했습니다",
+  },
 };
 
 class ApiError extends Error {
@@ -693,7 +850,11 @@ class ApiError extends Error {
 
 function browserDataLoadErrorMessage(error) {
   const message = error?.message || String(error || "Request failed");
-  if (/failed to fetch|load failed|networkerror|network request failed/i.test(message)) {
+  if (
+    /failed to fetch|load failed|networkerror|network request failed/i.test(
+      message,
+    )
+  ) {
     return `${message}. Browser cannot reach the selected chain REST/RPC endpoint; enable CORS or expose browser-accessible RPC/REST URLs.`;
   }
   return message;
@@ -727,17 +888,24 @@ function resetTransferPlannerFacts() {
 
 function showTransferPlannerFacts({ requested, currentMax, action }) {
   const currentMaxRow = els.transferPlannerCurrentMax.closest("div");
-  const hasCurrentMax = currentMax !== undefined && currentMax !== null && String(currentMax).trim() !== "";
+  const hasCurrentMax =
+    currentMax !== undefined &&
+    currentMax !== null &&
+    String(currentMax).trim() !== "";
   els.transferPlannerFacts.hidden = false;
   els.transferPlannerRequested.textContent = coinText(requested);
   currentMaxRow.hidden = !hasCurrentMax;
-  els.transferPlannerCurrentMax.textContent = hasCurrentMax ? coinText(currentMax) : "-";
+  els.transferPlannerCurrentMax.textContent = hasCurrentMax
+    ? coinText(currentMax)
+    : "-";
   els.transferPlannerAction.textContent = action || "-";
 }
 
 function parsePlannerAmountValue(value) {
   const text = String(value || "").trim();
-  const raw = text.endsWith(baseDenom()) ? text.slice(0, -baseDenom().length) : text;
+  const raw = text.endsWith(baseDenom())
+    ? text.slice(0, -baseDenom().length)
+    : text;
   if (!/^\d+$/.test(raw)) return null;
   return BigInt(raw);
 }
@@ -745,15 +913,26 @@ function parsePlannerAmountValue(value) {
 function plannerCurrentTransferMaxForNoteMerge(data, requested) {
   const facts = data?.plan?.facts || {};
   const requestedValue = parsePlannerAmountValue(requested);
-  const currentTransferMax = facts.selectedInputTotalValue
-    || facts.selectedInputTotal
-    || data?.plan?.nextAmount
-    || data?.prepared?.amount;
+  const currentTransferMax =
+    facts.selectedInputTotalValue ||
+    facts.selectedInputTotal ||
+    data?.plan?.nextAmount ||
+    data?.prepared?.amount;
   const currentTransferMaxValue = parsePlannerAmountValue(currentTransferMax);
-  if (requestedValue === null || currentTransferMaxValue === null || currentTransferMaxValue >= requestedValue) {
+  if (
+    requestedValue === null ||
+    currentTransferMaxValue === null ||
+    currentTransferMaxValue >= requestedValue
+  ) {
     return "";
   }
-  return facts.selectedInputTotal || facts.selectedInputTotalValue || data?.plan?.nextAmount || data?.prepared?.amount || "";
+  return (
+    facts.selectedInputTotal ||
+    facts.selectedInputTotalValue ||
+    data?.plan?.nextAmount ||
+    data?.prepared?.amount ||
+    ""
+  );
 }
 
 function plannerCurrentExactNoteMaxForWithdraw(data, requested) {
@@ -761,7 +940,11 @@ function plannerCurrentExactNoteMaxForWithdraw(data, requested) {
   const requestedValue = parsePlannerAmountValue(requested);
   const currentExactNoteMax = facts.currentMaxNoteValue || facts.currentMaxNote;
   const currentExactNoteMaxValue = parsePlannerAmountValue(currentExactNoteMax);
-  if (requestedValue === null || currentExactNoteMaxValue === null || currentExactNoteMaxValue >= requestedValue) {
+  if (
+    requestedValue === null ||
+    currentExactNoteMaxValue === null ||
+    currentExactNoteMaxValue >= requestedValue
+  ) {
     return "";
   }
   return facts.currentMaxNote || facts.currentMaxNoteValue || "";
@@ -797,11 +980,14 @@ function setTransferFlowStep(activeKey, stateText) {
     els.transferModalState.textContent = stateText;
   }
 
-  const activeIndex = transferFlowSteps.findIndex(step => step.key === activeKey);
+  const activeIndex = transferFlowSteps.findIndex(
+    (step) => step.key === activeKey,
+  );
   for (const [index, step] of transferFlowSteps.entries()) {
     const element = step.element();
     const isActive = step.key === activeKey;
-    const isDone = activeKey === "done" || (activeIndex > -1 && index < activeIndex);
+    const isDone =
+      activeKey === "done" || (activeIndex > -1 && index < activeIndex);
     element.classList.toggle("active", isActive);
     element.classList.toggle("done", isDone);
   }
@@ -825,7 +1011,7 @@ function openTransferFlowModal(kind = "transfer") {
   els.transferFlowModal.hidden = false;
   requestAnimationFrame(() => els.transferFlowModal.classList.add("visible"));
   els.confirmTransferFlow.focus();
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     transferFlowState.resolve = resolve;
   });
 }
@@ -837,7 +1023,9 @@ function confirmTransferFlowStart() {
   transferFlowState.running = true;
   els.cancelTransferFlow.hidden = true;
   els.confirmTransferFlow.hidden = true;
-  els.transferModalLead.textContent = transferFlowState.copy?.runningLead || privacyFlowCopies.transfer.runningLead;
+  els.transferModalLead.textContent =
+    transferFlowState.copy?.runningLead ||
+    privacyFlowCopies.transfer.runningLead;
   resolve(true);
 }
 
@@ -874,7 +1062,8 @@ function finishTransferFlow(message, success = true) {
   } else {
     els.transferSteps.hidden = false;
     els.transferSuccessPanel.hidden = true;
-    els.transferFailureReason.textContent = message || "알 수 없는 오류가 발생했습니다.";
+    els.transferFailureReason.textContent =
+      message || "알 수 없는 오류가 발생했습니다.";
     els.transferFailurePanel.hidden = false;
   }
   els.cancelTransferFlow.textContent = "닫기";
@@ -888,15 +1077,18 @@ async function api(path, options = {}) {
     ...options,
     headers: {
       "content-type": "application/json",
-      ...(options.headers || {})
-    }
+      ...(options.headers || {}),
+    },
   });
   const data = await response.json();
   if (!response.ok || data.error) {
-    throw new ApiError({
-      error: data.error || response.statusText,
-      ...data
-    }, response.status);
+    throw new ApiError(
+      {
+        error: data.error || response.statusText,
+        ...data,
+      },
+      response.status,
+    );
   }
   return data;
 }
@@ -904,16 +1096,23 @@ async function api(path, options = {}) {
 async function digestText(value) {
   const bytes = new TextEncoder().encode(value);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 function bytesToHex(bytes) {
-  const view = bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : new Uint8Array(bytes || []);
-  return [...view].map(byte => byte.toString(16).padStart(2, "0")).join("");
+  const view =
+    bytes instanceof ArrayBuffer
+      ? new Uint8Array(bytes)
+      : new Uint8Array(bytes || []);
+  return [...view].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function hexToBytes(value) {
-  const hex = String(value || "").trim().replace(/^0x/i, "");
+  const hex = String(value || "")
+    .trim()
+    .replace(/^0x/i, "");
   if (!/^[0-9a-fA-F]*$/.test(hex) || hex.length % 2 !== 0) {
     throw new Error("hex value is invalid");
   }
@@ -925,7 +1124,9 @@ function hexToBytes(value) {
 }
 
 function isEvmAddress(value) {
-  const hex = String(value || "").trim().replace(/^0x/i, "");
+  const hex = String(value || "")
+    .trim()
+    .replace(/^0x/i, "");
   return /^[0-9a-fA-F]{40}$/.test(hex);
 }
 
@@ -940,13 +1141,20 @@ function isSendRecipientForWallet(value, walletKind = activeWalletKind()) {
 
 function requireValidSendRecipient() {
   const recipient = els.keplrSendRecipient.value.trim();
-  if (isSendRecipientForWallet(recipient, state.activeWallet || activeWalletKind())) {
+  if (
+    isSendRecipientForWallet(
+      recipient,
+      state.activeWallet || activeWalletKind(),
+    )
+  ) {
     return recipient;
   }
   if (isEvmTransparentMode(state.activeWallet || activeWalletKind())) {
     throw new Error("EVM send recipient must be a 0x address.");
   }
-  throw new Error(`Cosmos send recipient must be a ${accountPrefix()}1... address.`);
+  throw new Error(
+    `Cosmos send recipient must be a ${accountPrefix()}1... address.`,
+  );
 }
 
 function evmQuantityToBigInt(value, label = "EVM quantity") {
@@ -964,12 +1172,17 @@ function bigIntToEvmQuantity(value) {
 async function withEstimatedEvmGas(transaction) {
   const tx = { ...transaction };
   try {
-    const estimated = evmQuantityToBigInt(await requestMetaMask({
-      method: "eth_estimateGas",
-      params: [tx]
-    }), "estimated gas");
+    const estimated = evmQuantityToBigInt(
+      await requestMetaMask({
+        method: "eth_estimateGas",
+        params: [tx],
+      }),
+      "estimated gas",
+    );
     const padded = (estimated * 13n + 9n) / 10n;
-    const existing = tx.gas ? evmQuantityToBigInt(tx.gas, "transaction gas") : 0n;
+    const existing = tx.gas
+      ? evmQuantityToBigInt(tx.gas, "transaction gas")
+      : 0n;
     tx.gas = bigIntToEvmQuantity(existing > padded ? existing : padded);
     return tx;
   } catch {
@@ -979,7 +1192,10 @@ async function withEstimatedEvmGas(transaction) {
 }
 
 function normalizeEvmTxHash(txHash) {
-  return String(txHash || "").trim().replace(/^0x/i, "").toUpperCase();
+  return String(txHash || "")
+    .trim()
+    .replace(/^0x/i, "")
+    .toUpperCase();
 }
 
 function bytesToBase64(bytes) {
@@ -1000,7 +1216,9 @@ function base64ToBytes(value) {
 }
 
 function amountInputValue(input) {
-  const raw = String(input.value || "").trim().replace(/,/g, "");
+  const raw = String(input.value || "")
+    .trim()
+    .replace(/,/g, "");
   if (!/^(0|[1-9][0-9]*)$/.test(raw)) {
     throw new Error(`${baseDenom()} amount must be a positive integer`);
   }
@@ -1012,22 +1230,31 @@ function amountInputValue(input) {
 }
 
 function hasPositiveUclairInput(input) {
-  const raw = String(input?.value || "").trim().replace(/,/g, "");
+  const raw = String(input?.value || "")
+    .trim()
+    .replace(/,/g, "");
   if (!/^(0|[1-9][0-9]*)$/.test(raw)) return false;
   return BigInt(raw) > 0n;
 }
 
 function clairInputToUclair(input) {
-  const raw = String(input.value || "").trim().replace(/,/g, "");
+  const raw = String(input.value || "")
+    .trim()
+    .replace(/,/g, "");
   const decimals = coinDecimals();
   const pattern = new RegExp(`^(0|[1-9][0-9]*)(\\.[0-9]{0,${decimals}})?$`);
   if (!pattern.test(raw)) {
-    throw new Error(`${displayDenom()} amount must be a positive number with up to ${decimals} decimals`);
+    throw new Error(
+      `${displayDenom()} amount must be a positive number with up to ${decimals} decimals`,
+    );
   }
 
   const [whole, fraction = ""] = raw.split(".");
   const scale = 10n ** BigInt(decimals);
-  const paddedFraction = `${fraction}${"0".repeat(decimals)}`.slice(0, decimals);
+  const paddedFraction = `${fraction}${"0".repeat(decimals)}`.slice(
+    0,
+    decimals,
+  );
   const amount = BigInt(whole) * scale + BigInt(paddedFraction || "0");
   return coinTextFromAmount(amount);
 }
@@ -1042,19 +1269,24 @@ function formatUclairAsClair(amount) {
     return `${whole} ${displayDenom()}`;
   }
 
-  const fractionText = fraction.toString().padStart(decimals, "0").replace(/0+$/, "");
+  const fractionText = fraction
+    .toString()
+    .padStart(decimals, "0")
+    .replace(/0+$/, "");
   return `${whole}.${fractionText} ${displayDenom()}`;
 }
 
 function formatBalances(balances) {
-  return (balances || [])
-    .map(coin => {
-      if (coin.denom === baseDenom()) {
-        return `${formatUclairAsClair(coin.amount)} (${coin.amount}${baseDenom()})`;
-      }
-      return `${coin.amount}${coin.denom}`;
-    })
-    .join(", ") || `0 ${displayDenom()} (${zeroCoinText()})`;
+  return (
+    (balances || [])
+      .map((coin) => {
+        if (coin.denom === baseDenom()) {
+          return `${formatUclairAsClair(coin.amount)} (${coin.amount}${baseDenom()})`;
+        }
+        return `${coin.amount}${coin.denom}`;
+      })
+      .join(", ") || `0 ${displayDenom()} (${zeroCoinText()})`
+  );
 }
 
 function noteAmountValue(note) {
@@ -1070,7 +1302,9 @@ function isSpendableNote(note) {
 }
 
 function noteNullifier(note) {
-  return String(note?.nullifier || note?.nullifier_hex || "").trim().toLowerCase();
+  return String(note?.nullifier || note?.nullifier_hex || "")
+    .trim()
+    .toLowerCase();
 }
 
 function isZeroAmountNote(note) {
@@ -1086,9 +1320,14 @@ function noteStatusLabel(note) {
 }
 
 function summarizeSpendableValueNotes(notes) {
-  const spendableValueNotes = (notes || []).filter(note => isSpendableNote(note) && !isZeroAmountNote(note));
+  const spendableValueNotes = (notes || []).filter(
+    (note) => isSpendableNote(note) && !isZeroAmountNote(note),
+  );
   const helperCount = (notes || []).filter(isHelperNote).length;
-  const total = spendableValueNotes.reduce((sum, note) => sum + noteAmountValue(note), 0n);
+  const total = spendableValueNotes.reduce(
+    (sum, note) => sum + noteAmountValue(note),
+    0n,
+  );
   const helperText = helperCount ? ` · ${helperCount} helper` : "";
   return `${total}${baseDenom()} / ${spendableValueNotes.length} spendable${helperText}`;
 }
@@ -1104,91 +1343,244 @@ function mergeCachedNotes(existingNotes = [], incomingNotes = []) {
   for (const note of existingNotes) byKey.set(noteCacheKey(note), note);
   for (const note of incomingNotes) byKey.set(noteCacheKey(note), note);
   return [...byKey.values()].sort((left, right) => {
-    const heightCompare = Number(left?.height || 0) - Number(right?.height || 0);
+    const heightCompare =
+      Number(left?.height || 0) - Number(right?.height || 0);
     if (heightCompare !== 0) return heightCompare;
-    return String(left?.tx_hash || left?.txHash || "").localeCompare(String(right?.tx_hash || right?.txHash || ""));
+    return String(left?.tx_hash || left?.txHash || "").localeCompare(
+      String(right?.tx_hash || right?.txHash || ""),
+    );
   });
 }
 
 function noteScanRequestOptions({ reset = false } = {}) {
-  const cursor = reset ? defaultNoteScanCursor() : state.keplr.noteScanCursor || defaultNoteScanCursor();
+  const cursor = reset
+    ? defaultNoteScanCursor()
+    : state.keplr.noteScanCursor || defaultNoteScanCursor();
   const hasMore = !reset && Boolean(cursor.hasMore);
   return {
-    afterHeight: hasMore ? Number(cursor.afterHeight || 0) : Number(cursor.latestHeight || 0),
+    afterHeight: hasMore
+      ? Number(cursor.afterHeight || 0)
+      : Number(cursor.latestHeight || 0),
     page: hasMore ? Number(cursor.nextPage || 1) : 1,
     limit: Number(cursor.limit || 200),
     maxPages: Number(cursor.maxPages || 5),
-    eventTypes: ["deposit", "shielded_transfer"]
+    eventTypes: ["deposit", "shielded_transfer"],
   };
 }
 
 function applyNoteScanResult(data, { reset = false } = {}) {
-  const previous = reset ? defaultNoteScanCursor() : state.keplr.noteScanCursor || defaultNoteScanCursor();
+  const previous = reset
+    ? defaultNoteScanCursor()
+    : state.keplr.noteScanCursor || defaultNoteScanCursor();
   const cursor = data?.scanCursor || data?.scan_cursor || {};
   const hasMore = Boolean(cursor.has_more ?? cursor.hasMore);
-  const cursorAfterHeight = Number(cursor.after_height ?? cursor.afterHeight ?? previous.afterHeight ?? 0);
+  const cursorAfterHeight = Number(
+    cursor.after_height ?? cursor.afterHeight ?? previous.afterHeight ?? 0,
+  );
   const latestHeight = Number(cursor.latest_height ?? cursor.latestHeight ?? 0);
-  const completedLatestHeight = Math.max(Number(previous.latestHeight || 0), latestHeight, hasMore ? 0 : cursorAfterHeight);
-  state.keplr.notes = mergeCachedNotes(reset ? [] : state.keplr.notes, data?.notes || []);
+  const completedLatestHeight = Math.max(
+    Number(previous.latestHeight || 0),
+    latestHeight,
+    hasMore ? 0 : cursorAfterHeight,
+  );
+  state.keplr.notes = mergeCachedNotes(
+    reset ? [] : state.keplr.notes,
+    data?.notes || [],
+  );
   state.keplr.noteScanCursor = {
     afterHeight: hasMore ? cursorAfterHeight : completedLatestHeight,
     page: Number(cursor.page || previous.page || 1),
     nextPage: hasMore
-      ? Number(cursor.next_page ?? cursor.nextPage ?? (Number(cursor.page || previous.page || 1) + 1))
+      ? Number(
+          cursor.next_page ??
+            cursor.nextPage ??
+            Number(cursor.page || previous.page || 1) + 1,
+        )
       : 1,
     limit: Number(cursor.limit || previous.limit || 200),
     maxPages: Number(previous.maxPages || 5),
     hasMore,
     latestHeight: completedLatestHeight,
     pagesScanned: Number(cursor.pages_scanned ?? cursor.pagesScanned ?? 1),
-    completed: Boolean(cursor.completed ?? !hasMore)
+    completed: Boolean(cursor.completed ?? !hasMore),
   };
-  const moreText = state.keplr.noteScanCursor.hasMore ? " · more events queued" : "";
+  const moreText = state.keplr.noteScanCursor.hasMore
+    ? " · more events queued"
+    : "";
   state.keplr.notesSummary = `${summarizeSpendableValueNotes(state.keplr.notes)}${moreText}`;
   state.keplr.notesScanned = true;
 }
 
 async function refreshCachedNoteStatuses() {
-  const spendableNotes = (state.keplr.notes || []).filter(note => isSpendableNote(note) && noteNullifier(note));
+  const spendableNotes = (state.keplr.notes || []).filter(
+    (note) => isSpendableNote(note) && noteNullifier(note),
+  );
   if (!spendableNotes.length) return;
 
   const spentNullifiers = new Set();
   const concurrency = 8;
   for (let index = 0; index < spendableNotes.length; index += concurrency) {
     const chunk = spendableNotes.slice(index, index + concurrency);
-    await Promise.all(chunk.map(async note => {
-      try {
-        const result = await clairveilBrowserClient().checkNullifier(noteNullifier(note));
-        if (Boolean(result?.used ?? result?.Used ?? result)) {
-          spentNullifiers.add(noteNullifier(note));
+    await Promise.all(
+      chunk.map(async (note) => {
+        try {
+          const result = await clairveilBrowserClient().checkNullifier(
+            noteNullifier(note),
+          );
+          if (Boolean(result?.used ?? result?.Used ?? result)) {
+            spentNullifiers.add(noteNullifier(note));
+          }
+        } catch {
+          // Keep the cached status if the chain nullifier query is temporarily unavailable.
         }
-      } catch {
-        // Keep the cached status if the chain nullifier query is temporarily unavailable.
-      }
-    }));
+      }),
+    );
   }
   if (!spentNullifiers.size) return;
 
-  state.keplr.notes = state.keplr.notes.map(note => {
+  state.keplr.notes = state.keplr.notes.map((note) => {
     if (!spentNullifiers.has(noteNullifier(note))) return note;
     return {
       ...note,
       status: "spent",
       spent: true,
-      isSpent: true
+      isSpent: true,
     };
   });
-  const moreText = state.keplr.noteScanCursor?.hasMore ? " · more events queued" : "";
+  const moreText = state.keplr.noteScanCursor?.hasMore
+    ? " · more events queued"
+    : "";
   state.keplr.notesSummary = `${summarizeSpendableValueNotes(state.keplr.notes)}${moreText}`;
 }
 
 function selectedLocalAccount() {
   const accounts = activeServerAccounts();
-  return accounts.find(account => account.name === state.selectedAccount) || accounts[0];
+  return (
+    accounts.find((account) => account.name === state.selectedAccount) ||
+    accounts[0]
+  );
+}
+
+function localRelayerAccount() {
+  if (!serverFeature("relayer")) return null;
+  return (
+    state.accounts.find((account) => account.name === "relayer") ||
+    state.accounts.find((account) => account.name === "dev0") ||
+    state.accounts[0] ||
+    null
+  );
+}
+
+function relayPayloadText(payload) {
+  return payload ? JSON.stringify(payload, null, 2) : "";
+}
+
+function formatRelayPayloadExpiry(value) {
+  if (value === undefined || value === null || value === "") {
+    return "";
+  }
+  const raw = typeof value === "bigint" ? value.toString() : String(value);
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds)) {
+    return raw;
+  }
+  const date = new Date(seconds * 1000);
+  if (Number.isNaN(date.getTime())) {
+    return raw;
+  }
+  return `${raw} (${date.toISOString()})`;
+}
+
+function setPreparedRelayWithdrawPayload(
+  data,
+  { amount = "", recipient = "" } = {},
+) {
+  const payload = data?.payload || data || null;
+  const canonicalRecipient =
+    payload?.recipient || data?.prepared?.recipient || recipient;
+  state.keplr.relayWithdrawPayload = payload;
+  state.keplr.relayWithdrawPayloadText = relayPayloadText(payload);
+  state.keplr.relayWithdrawPayloadAmount = amount || "";
+  state.keplr.relayWithdrawPayloadRecipient = canonicalRecipient || "";
+  state.keplr.relayWithdrawPayloadChainId =
+    payload?.chain_id || payload?.chainId || "";
+  state.keplr.relayWithdrawPayloadExpiresAt = formatRelayPayloadExpiry(
+    payload?.expires_at_unix || payload?.expiresAtUnix || "",
+  );
+  state.keplr.relayWithdrawPayloadHash =
+    payload?.payload_hash || data?.payloadHash || "";
+  state.keplr.relayWithdrawPayloadSubmitted = false;
+  state.keplr.relayWithdrawHash = "";
+  state.keplr.relayWithdrawHeight = "";
+  state.keplr.relayWithdrawRelayer = "";
+}
+
+function clearPreparedRelayWithdrawPayload({ clearPayloadHash = false } = {}) {
+  const shouldClearPayloadHash =
+    clearPayloadHash ||
+    (Boolean(state.keplr.relayWithdrawPayload) &&
+      !state.keplr.relayWithdrawPayloadSubmitted);
+  state.keplr.relayWithdrawPayload = null;
+  state.keplr.relayWithdrawPayloadText = "";
+  state.keplr.relayWithdrawPayloadAmount = "";
+  state.keplr.relayWithdrawPayloadRecipient = "";
+  state.keplr.relayWithdrawPayloadChainId = "";
+  state.keplr.relayWithdrawPayloadExpiresAt = "";
+  state.keplr.relayWithdrawPayloadSubmitted = false;
+  if (shouldClearPayloadHash) {
+    state.keplr.relayWithdrawPayloadHash = "";
+  }
+}
+
+function renderRelayerPanel() {
+  const relayer = localRelayerAccount();
+  const hasRelayedPayload = Boolean(state.keplr.relayWithdrawPayload);
+  const relayerReady =
+    Boolean(relayer?.transparentAddress) && serverFeature("relayer");
+  if (els.relayerPanel) {
+    els.relayerPanel.hidden = !serverFeature("relayer");
+  }
+  els.relayerTransparentAddress.textContent =
+    transparentDisplayAddressFor(relayer) || "-";
+  els.relayerBalance.textContent =
+    state.relayer.error ||
+    state.relayer.balance ||
+    (relayerReady ? "Loading..." : "-");
+  els.relayerState.textContent = state.keplr.relayWithdrawHash
+    ? "Relay included"
+    : hasRelayedPayload
+      ? "Payload ready"
+      : relayerReady
+        ? "Waiting for payload"
+        : "Relayer unavailable";
+  els.keplrRelayWithdrawHash.textContent = state.keplr.relayWithdrawHash
+    ? shorten(state.keplr.relayWithdrawHash, 14, 12)
+    : "-";
+  els.keplrRelayWithdrawRelayer.textContent =
+    state.keplr.relayWithdrawRelayer || "-";
+  els.relayWithdrawPreparedAmount.textContent =
+    state.keplr.relayWithdrawPayloadAmount || "-";
+  els.relayWithdrawPreparedRecipient.textContent =
+    state.keplr.relayWithdrawPayloadRecipient || "-";
+  els.relayWithdrawPreparedChainId.textContent =
+    state.keplr.relayWithdrawPayloadChainId || "-";
+  els.relayWithdrawPreparedExpiresAt.textContent =
+    state.keplr.relayWithdrawPayloadExpiresAt || "-";
+  els.relayWithdrawPreparedPayloadHash.textContent =
+    state.keplr.relayWithdrawPayloadHash || "-";
+  els.relayWithdrawPreparedPayloadJson.textContent =
+    state.keplr.relayWithdrawPayloadText || "No prepared payload";
+  els.copyRelayWithdrawPayload.disabled = !hasRelayedPayload;
+  els.relayPreparedWithdraw.disabled =
+    !hasRelayedPayload ||
+    !relayerReady ||
+    state.keplr.relayWithdrawPayloadSubmitted;
 }
 
 function activeServerAccounts() {
-  return serverFeature("localSigners") && selectedProfileMatchesServer() ? state.accounts : [];
+  return serverFeature("localSigners") && selectedProfileMatchesServer()
+    ? state.accounts
+    : [];
 }
 
 function localSignerLabel(name) {
@@ -1198,7 +1590,9 @@ function localSignerLabel(name) {
 
 function renderDappChainSelect() {
   if (!els.dappChainSelect) return;
-  const profiles = state.chainProfiles.length ? state.chainProfiles : [configuredChainProfile()].filter(Boolean);
+  const profiles = state.chainProfiles.length
+    ? state.chainProfiles
+    : [configuredChainProfile()].filter(Boolean);
   els.dappChainSelect.innerHTML = "";
   for (const profile of profiles) {
     const option = document.createElement("option");
@@ -1206,8 +1600,12 @@ function renderDappChainSelect() {
     option.textContent = `${profile.label} (${profile.transport === "evm" ? "EVM" : "Cosmos"})`;
     els.dappChainSelect.append(option);
   }
-  if (!state.selectedChainProfileId || !profiles.some(profile => profile.id === state.selectedChainProfileId)) {
-    state.selectedChainProfileId = state.config?.activeChainProfileId || profiles[0]?.id || "";
+  if (
+    !state.selectedChainProfileId ||
+    !profiles.some((profile) => profile.id === state.selectedChainProfileId)
+  ) {
+    state.selectedChainProfileId =
+      state.config?.activeChainProfileId || profiles[0]?.id || "";
   }
   els.dappChainSelect.value = state.selectedChainProfileId;
   renderDappChainHint();
@@ -1227,14 +1625,23 @@ function renderDappChainHint() {
 function renderChainDependentUi() {
   const walletKind = activeWalletKind();
   const transparentFormat = activeTransparentAddressFormat();
-  els.keplrSendRecipient.placeholder = transparentFormat === "evm" ? "0x..." : `${accountPrefix()}1...`;
-  if (els.keplrSendRecipient.value && !isSendRecipientForWallet(els.keplrSendRecipient.value, walletKind)) {
+  els.keplrSendRecipient.placeholder =
+    transparentFormat === "evm" ? "0x..." : `${accountPrefix()}1...`;
+  if (
+    els.keplrSendRecipient.value &&
+    !isSendRecipientForWallet(els.keplrSendRecipient.value, walletKind)
+  ) {
     els.keplrSendRecipient.value = "";
   }
   els.veiledTransferRecipient.placeholder = `${shieldedPrefix()}1...`;
-  els.veiledWithdrawRecipient.placeholder = transparentFormat === "evm" ? "0x..." : `${accountPrefix()}1...`;
-  document.querySelectorAll(".amount-control .denom").forEach(label => {
-    label.textContent = label.closest(".faucet-row") ? displayDenom() : baseDenom();
+  els.veiledWithdrawRecipient.placeholder =
+    transparentFormat === "evm" ? "0x..." : `${accountPrefix()}1...`;
+  els.relayWithdrawRecipient.placeholder =
+    transparentFormat === "evm" ? "0x..." : `${accountPrefix()}1...`;
+  document.querySelectorAll(".amount-control .denom").forEach((label) => {
+    label.textContent = label.closest(".faucet-row")
+      ? displayDenom()
+      : baseDenom();
   });
   const faucetSource = activeServerAccounts()[0]?.name || "local signer";
   els.faucetHelpText.textContent = `(${displayDenom()} get from ${localSignerLabel(faucetSource)}'s wallet)`;
@@ -1256,48 +1663,61 @@ function selectDappChainProfile(profileId) {
 
 function recipientTestAccounts() {
   const accounts = activeServerAccounts();
-  const preferred = accounts.filter(account => ["alice", "bob"].includes(account.name));
+  const preferred = accounts.filter((account) =>
+    ["alice", "bob"].includes(account.name),
+  );
   if (preferred.length) return preferred;
-  return accounts.filter(account => account.name !== "auditor");
+  return accounts.filter((account) => account.name !== "auditor");
 }
 
 async function ensureLocalSignersIfNeeded(data) {
-  if (!data.config?.serverFeatures?.localSignerSetup || data.config?.transport !== "evm" || (data.accounts || []).length) {
+  if (
+    !data.config?.serverFeatures?.localSignerSetup ||
+    data.config?.transport !== "evm" ||
+    (data.accounts || []).length
+  ) {
     return data;
   }
   let ensured;
   try {
     ensured = await api("/api/local-signers/ensure", {
       method: "POST",
-      body: JSON.stringify({})
+      body: JSON.stringify({}),
     });
   } catch (error) {
     if (error?.statusCode !== 403) {
       throw error;
     }
-    toast("Local signer setup is blocked for LAN browsers. Create accounts on the server machine first, or restart with CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING=1.");
+    toast(
+      "Local signer setup is blocked for LAN browsers. Create accounts on the server machine first, or restart with CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING=1.",
+    );
     return {
       ...data,
-      accounts: []
+      accounts: [],
     };
   }
   return {
     ...data,
-    accounts: ensured.accounts || []
+    accounts: ensured.accounts || [],
   };
 }
 
 function firstConfigProfile(config) {
-  return (config.chainProfiles || []).find(profile => profile.id === config.activeChainProfileId)
-    || config.chainProfiles?.[0]
-    || null;
+  return (
+    (config.chainProfiles || []).find(
+      (profile) => profile.id === config.activeChainProfileId,
+    ) ||
+    config.chainProfiles?.[0] ||
+    null
+  );
 }
 
 async function browserHealthFromStaticConfig(config) {
   const profile = firstConfigProfile(config);
   state.config = config;
   state.chainProfiles = config.chainProfiles || [];
-  state.selectedChainProfileId = config.activeChainProfileId || profile?.id || "";
+  state.selectedChainProfileId =
+    config.activeChainProfileId || profile?.id || "";
   const health = await clairveilBrowserClient(profile).health();
   return {
     config,
@@ -1305,7 +1725,7 @@ async function browserHealthFromStaticConfig(config) {
     tree: health.tree,
     audit: health.audit,
     accounts: [],
-    errors: health.errors || []
+    errors: health.errors || [],
   };
 }
 
@@ -1330,13 +1750,13 @@ function addressSuggestionConfigs() {
       list: els.keplrSendRecipientSuggestions,
       kind: "transparent",
       label: transparentFormat === "evm" ? "EVM" : "transparent",
-      format: transparentFormat
+      format: transparentFormat,
     },
     {
       input: els.veiledTransferRecipient,
       list: els.veiledTransferRecipientSuggestions,
       kind: "shielded",
-      label: "shielded"
+      label: "shielded",
     },
     {
       input: els.veiledWithdrawRecipient,
@@ -1344,8 +1764,16 @@ function addressSuggestionConfigs() {
       kind: "transparent",
       label: transparentFormat === "evm" ? "EVM" : "transparent",
       format: transparentFormat,
-      includeWallet: true
-    }
+      includeWallet: true,
+    },
+    {
+      input: els.relayWithdrawRecipient,
+      list: els.relayWithdrawRecipientSuggestions,
+      kind: "transparent",
+      label: transparentFormat === "evm" ? "EVM" : "transparent",
+      format: transparentFormat,
+      includeWallet: true,
+    },
   ];
 }
 
@@ -1367,7 +1795,7 @@ function suggestedAddressFor(account, config) {
 function transparentDisplayAddressFor(account) {
   return suggestedAddressFor(account || {}, {
     kind: "transparent",
-    format: activeTransparentAddressFormat()
+    format: activeTransparentAddressFormat(),
   });
 }
 
@@ -1378,17 +1806,21 @@ function connectedWalletAddressSuggestions(config) {
 
   if (config.format === "evm") {
     if (state.wallet.account) {
-      return [{
-        name: "My wallet",
-        address: state.wallet.account
-      }];
+      return [
+        {
+          name: "My wallet",
+          address: state.wallet.account,
+        },
+      ];
     }
     if (state.keplr.account) {
       try {
-        return [{
-          name: "My wallet",
-          address: bech32AddressToEvm(state.keplr.account, accountPrefix())
-        }];
+        return [
+          {
+            name: "My wallet",
+            address: bech32AddressToEvm(state.keplr.account, accountPrefix()),
+          },
+        ];
       } catch {
         return [];
       }
@@ -1400,10 +1832,12 @@ function connectedWalletAddressSuggestions(config) {
     return [];
   }
 
-  const suggestions = [{
-    name: "My wallet",
-    address: state.keplr.account
-  }];
+  const suggestions = [
+    {
+      name: "My wallet",
+      address: state.keplr.account,
+    },
+  ];
 
   return suggestions;
 }
@@ -1443,11 +1877,11 @@ function renderAddressSuggestions(config) {
   const seenAddresses = new Set();
   const suggestions = [
     ...connectedWalletAddressSuggestions(config),
-    ...accounts.map(account => ({
+    ...accounts.map((account) => ({
       name: account.name,
-      address: suggestedAddressFor(account, config)
-    }))
-  ].filter(entry => {
+      address: suggestedAddressFor(account, config),
+    })),
+  ].filter((entry) => {
     if (!entry.address) return false;
     if (config.format === "evm" && !isEvmAddress(entry.address)) return false;
     const key = entry.address.toLowerCase();
@@ -1456,11 +1890,19 @@ function renderAddressSuggestions(config) {
     return true;
   });
 
-  if (config.kind === "shielded" && state.addressBook.loadingShielded && suggestions.length < accounts.length) {
+  if (
+    config.kind === "shielded" &&
+    state.addressBook.loadingShielded &&
+    suggestions.length < accounts.length
+  ) {
     appendAddressSuggestionEmpty(config, "Loading shielded addresses...");
   }
 
-  if (config.kind === "shielded" && state.addressBook.shieldedError && !suggestions.length) {
+  if (
+    config.kind === "shielded" &&
+    state.addressBook.shieldedError &&
+    !suggestions.length
+  ) {
     appendAddressSuggestionEmpty(config, state.addressBook.shieldedError);
     return;
   }
@@ -1476,11 +1918,11 @@ function renderAddressSuggestions(config) {
     option.setAttribute("role", "option");
     option.setAttribute("tabindex", "0");
     option.title = suggestion.address;
-    option.addEventListener("mousedown", event => {
+    option.addEventListener("mousedown", (event) => {
       event.preventDefault();
       selectAddressSuggestion(config, suggestion.address);
     });
-    option.addEventListener("keydown", event => {
+    option.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" && event.key !== " ") return;
       event.preventDefault();
       selectAddressSuggestion(config, suggestion.address);
@@ -1507,7 +1949,9 @@ function renderVisibleAddressSuggestions() {
 }
 
 async function ensureShieldedAddressBook() {
-  const missing = recipientTestAccounts().filter(account => !state.addressBook.shieldedByName[account.name]);
+  const missing = recipientTestAccounts().filter(
+    (account) => !state.addressBook.shieldedByName[account.name],
+  );
   if (!missing.length) return;
   if (shieldedAddressBookPromise) {
     await shieldedAddressBookPromise;
@@ -1518,18 +1962,20 @@ async function ensureShieldedAddressBook() {
   state.addressBook.shieldedError = "";
   renderVisibleAddressSuggestions();
 
-  shieldedAddressBookPromise = Promise.allSettled(missing.map(async account => {
-    const data = await api(`/api/wallet/${account.name}/show-address`);
-    const address = data.address || "";
-    if (address) {
-      state.addressBook.shieldedByName[account.name] = address;
-    }
-  }));
+  shieldedAddressBookPromise = Promise.allSettled(
+    missing.map(async (account) => {
+      const data = await api(`/api/wallet/${account.name}/show-address`);
+      const address = data.address || "";
+      if (address) {
+        state.addressBook.shieldedByName[account.name] = address;
+      }
+    }),
+  );
 
   const results = await shieldedAddressBookPromise;
   state.addressBook.loadingShielded = false;
   shieldedAddressBookPromise = null;
-  if (results.some(result => result.status === "rejected")) {
+  if (results.some((result) => result.status === "rejected")) {
     state.addressBook.shieldedError = "Unable to load shielded addresses";
   }
   renderVisibleAddressSuggestions();
@@ -1541,7 +1987,7 @@ function showAddressSuggestions(config) {
   config.list.hidden = false;
   config.input.setAttribute("aria-expanded", "true");
   if (config.kind === "shielded") {
-    ensureShieldedAddressBook().catch(error => {
+    ensureShieldedAddressBook().catch((error) => {
       state.addressBook.loadingShielded = false;
       state.addressBook.shieldedError = error.message;
       shieldedAddressBookPromise = null;
@@ -1553,9 +1999,15 @@ function showAddressSuggestions(config) {
 function setupAddressSuggestions() {
   for (const config of addressSuggestionConfigs()) {
     if (!config.input || !config.list) continue;
-    const currentConfig = () => addressSuggestionConfigs().find(next => next.input === config.input) || config;
-    config.input.addEventListener("focus", () => showAddressSuggestions(currentConfig()));
-    config.input.addEventListener("click", () => showAddressSuggestions(currentConfig()));
+    const currentConfig = () =>
+      addressSuggestionConfigs().find((next) => next.input === config.input) ||
+      config;
+    config.input.addEventListener("focus", () =>
+      showAddressSuggestions(currentConfig()),
+    );
+    config.input.addEventListener("click", () =>
+      showAddressSuggestions(currentConfig()),
+    );
     config.input.addEventListener("input", () => {
       const latestConfig = currentConfig();
       if (!latestConfig.list.hidden) {
@@ -1570,7 +2022,7 @@ function setupAddressSuggestions() {
     });
   }
 
-  document.addEventListener("pointerdown", event => {
+  document.addEventListener("pointerdown", (event) => {
     if (event.target.closest(".address-field")) return;
     hideAllAddressSuggestions();
   });
@@ -1614,8 +2066,10 @@ function renderWalletSession() {
   const profile = activeChainProfile();
   const walletKind = activeWalletKind();
   const profileReady = selectedProfileMatchesServer(profile);
-  const metamaskConnected = activeWallet === "metamask" && Boolean(state.wallet.account);
-  const keplrConnected = activeWallet === "keplr" && Boolean(state.keplr.account);
+  const metamaskConnected =
+    activeWallet === "metamask" && Boolean(state.wallet.account);
+  const keplrConnected =
+    activeWallet === "keplr" && Boolean(state.keplr.account);
   const privacyConnected = Boolean(state.keplr.account);
   const keplrReady = keplrConnected && state.keplr.addressMatches;
   const connected = metamaskConnected || keplrConnected;
@@ -1637,7 +2091,11 @@ function renderWalletSession() {
   els.connectKeplr.disabled = !profileReady;
   els.disconnectWallet.hidden = !connected;
 
-  els.sessionWallet.textContent = metamaskConnected ? "MetaMask" : keplrConnected ? "Keplr" : "Not connected";
+  els.sessionWallet.textContent = metamaskConnected
+    ? "MetaMask"
+    : keplrConnected
+      ? "Keplr"
+      : "Not connected";
   els.walletAccount.textContent = metamaskConnected
     ? shorten(state.wallet.account, 12, 10)
     : keplrConnected
@@ -1647,21 +2105,43 @@ function renderWalletSession() {
   els.walletChain.textContent = metamaskConnected
     ? state.wallet.chainId || "-"
     : keplrConnected
-      ? activeKeplrChainInfo()?.chainId || profile?.chainId || state.config?.chainId || "-"
+      ? activeKeplrChainInfo()?.chainId ||
+        profile?.chainId ||
+        state.config?.chainId ||
+        "-"
       : "-";
-  els.walletSignatureHash.textContent = metamaskConnected && state.wallet.signatureHash
-    ? shorten(state.wallet.signatureHash, 14, 12)
-    : keplrConnected && state.keplr.signatureHash
-      ? `${shorten(state.keplr.signatureHash, 14, 12)}${state.keplr.verified ? " verified" : ""}`
+  els.walletSignatureHash.textContent =
+    metamaskConnected && state.wallet.signatureHash
+      ? shorten(state.wallet.signatureHash, 14, 12)
+      : keplrConnected && state.keplr.signatureHash
+        ? `${shorten(state.keplr.signatureHash, 14, 12)}${state.keplr.verified ? " verified" : ""}`
+        : "-";
+  els.keplrName.textContent = privacyConnected
+    ? state.keplr.name || (metamaskConnected ? "MetaMask" : "Keplr")
+    : "-";
+  els.keplrPubkey.textContent =
+    privacyConnected && state.keplr.pubkeyHex
+      ? shorten(state.keplr.pubkeyHex, 14, 12)
       : "-";
-  els.keplrName.textContent = privacyConnected ? state.keplr.name || (metamaskConnected ? "MetaMask" : "Keplr") : "-";
-  els.keplrPubkey.textContent = privacyConnected && state.keplr.pubkeyHex ? shorten(state.keplr.pubkeyHex, 14, 12) : "-";
-  els.keplrSignerCheck.textContent = privacyConnected ? state.keplr.signerCheck || "Checking..." : "-";
-  els.keplrBalance.textContent = privacyConnected ? state.keplr.balance || "-" : "-";
-  els.keplrFaucetHash.textContent = privacyConnected && state.keplr.faucetHash ? shorten(state.keplr.faucetHash, 14, 12) : "-";
-  els.keplrFaucetSent.textContent = privacyConnected ? state.keplr.faucetSent || "-" : "-";
-  els.keplrFaucetRecipient.textContent = privacyConnected ? state.keplr.faucetRecipient || "-" : "-";
-  els.keplrShieldedAddress.textContent = privacyConnected ? state.keplr.shieldedAddress || "Not set up" : "Not set up";
+  els.keplrSignerCheck.textContent = privacyConnected
+    ? state.keplr.signerCheck || "Checking..."
+    : "-";
+  els.keplrBalance.textContent = privacyConnected
+    ? state.keplr.balance || "-"
+    : "-";
+  els.keplrFaucetHash.textContent =
+    privacyConnected && state.keplr.faucetHash
+      ? shorten(state.keplr.faucetHash, 14, 12)
+      : "-";
+  els.keplrFaucetSent.textContent = privacyConnected
+    ? state.keplr.faucetSent || "-"
+    : "-";
+  els.keplrFaucetRecipient.textContent = privacyConnected
+    ? state.keplr.faucetRecipient || "-"
+    : "-";
+  els.keplrShieldedAddress.textContent = privacyConnected
+    ? state.keplr.shieldedAddress || "Not set up"
+    : "Not set up";
   els.signSession.disabled = !connected;
   renderDappChainHint();
 }
@@ -1676,36 +2156,67 @@ function renderKeplr() {
   const veiledReady = signerReady && Boolean(state.keplr.rootSignatureBase64);
   renderWalletSession();
   els.myClairBalance.textContent = connected ? state.keplr.balance || "-" : "-";
-  els.keplrDisclosurePubKey.textContent = state.keplr.disclosurePubKeyHex || "Setup Clairveil first";
-  els.keplrSendHash.textContent = state.keplr.sendHash ? shorten(state.keplr.sendHash, 14, 12) : "-";
-  els.keplrDepositHash.textContent = state.keplr.depositHash ? shorten(state.keplr.depositHash, 14, 12) : "-";
+  els.keplrDisclosurePubKey.textContent =
+    state.keplr.disclosurePubKeyHex || "Setup Clairveil first";
+  els.keplrSendHash.textContent = state.keplr.sendHash
+    ? shorten(state.keplr.sendHash, 14, 12)
+    : "-";
+  els.keplrDepositHash.textContent = state.keplr.depositHash
+    ? shorten(state.keplr.depositHash, 14, 12)
+    : "-";
   els.keplrDepositHeight.textContent = state.keplr.depositHeight || "-";
-  els.keplrTransferHash.textContent = state.keplr.transferHash ? shorten(state.keplr.transferHash, 14, 12) : "-";
-  els.keplrWithdrawHash.textContent = state.keplr.withdrawHash ? shorten(state.keplr.withdrawHash, 14, 12) : "-";
+  els.keplrTransferHash.textContent = state.keplr.transferHash
+    ? shorten(state.keplr.transferHash, 14, 12)
+    : "-";
+  els.keplrWithdrawHash.textContent = state.keplr.withdrawHash
+    ? shorten(state.keplr.withdrawHash, 14, 12)
+    : "-";
   els.keplrWithdrawHeight.textContent = state.keplr.withdrawHeight || "-";
+  renderRelayerPanel();
   if (connected && !els.veiledWithdrawRecipient.value) {
     els.veiledWithdrawRecipient.value = state.keplr.account;
+  }
+  if (connected && !els.relayWithdrawRecipient.value) {
+    els.relayWithdrawRecipient.value = state.keplr.account;
   }
   renderMyKeplrNotes();
   els.fundKeplr.disabled = !serverFeature("faucet") || !signerReady;
   els.setupKeplrPrivacy.disabled = !signerReady;
   els.copyKeplrDisclosurePubKey.disabled = !state.keplr.disclosurePubKeyHex;
   els.refreshWalletBalance.disabled = !connected;
-  els.scanKeplrNotes.disabled = !signerReady || !state.keplr.rootSignatureBase64;
+  els.refreshClairBalance.disabled = !connected;
+  els.scanKeplrNotes.disabled =
+    !signerReady || !state.keplr.rootSignatureBase64;
   updateAmountActionButtons({ signerReady, veiledReady });
   renderEventDetail();
 }
 
 function updateAmountActionButtons(status = {}) {
   const connected = Boolean(state.keplr.account);
-  const signerReady = status.signerReady ?? (connected && state.keplr.addressMatches);
-  const veiledReady = status.veiledReady ?? (signerReady && Boolean(state.keplr.rootSignatureBase64));
-  els.sendFromKeplr.disabled = !signerReady
-    || !hasPositiveUclairInput(els.keplrSendAmount)
-    || !isSendRecipientForWallet(els.keplrSendRecipient.value, state.activeWallet || activeWalletKind());
-  els.depositFromKeplr.disabled = !signerReady || !hasPositiveUclairInput(els.keplrDepositAmount);
-  els.transferFromVeiled.disabled = !veiledReady || !hasPositiveUclairInput(els.veiledTransferAmount);
-  els.withdrawFromVeiled.disabled = !veiledReady || !hasPositiveUclairInput(els.veiledWithdrawAmount);
+  const signerReady =
+    status.signerReady ?? (connected && state.keplr.addressMatches);
+  const veiledReady =
+    status.veiledReady ??
+    (signerReady && Boolean(state.keplr.rootSignatureBase64));
+  els.sendFromKeplr.disabled =
+    !signerReady ||
+    !hasPositiveUclairInput(els.keplrSendAmount) ||
+    !isSendRecipientForWallet(
+      els.keplrSendRecipient.value,
+      state.activeWallet || activeWalletKind(),
+    );
+  els.depositFromKeplr.disabled =
+    !signerReady ||
+    !hasPositiveUclairInput(els.keplrDepositAmount) ||
+    !serverFeature("depositProof");
+  els.transferFromVeiled.disabled =
+    !veiledReady || !hasPositiveUclairInput(els.veiledTransferAmount);
+  els.withdrawFromVeiled.disabled =
+    !veiledReady || !hasPositiveUclairInput(els.veiledWithdrawAmount);
+  els.relayWithdrawFromVeiled.disabled =
+    !veiledReady ||
+    !hasPositiveUclairInput(els.relayWithdrawAmount) ||
+    !serverFeature("relayer");
 }
 
 function renderMyKeplrNotes() {
@@ -1729,7 +2240,9 @@ function renderMyKeplrNotes() {
     return;
   }
 
-  const valueNotes = state.keplr.notes.filter(note => !isZeroAmountNote(note));
+  const valueNotes = state.keplr.notes.filter(
+    (note) => !isZeroAmountNote(note),
+  );
   const notes = state.keplr.showSpendableOnly
     ? valueNotes.filter(isSpendableNote)
     : valueNotes;
@@ -1739,8 +2252,12 @@ function renderMyKeplrNotes() {
     empty.className = "empty";
     const hiddenZeroCount = state.keplr.notes.filter(isZeroAmountNote).length;
     empty.textContent = state.keplr.showSpendableOnly
-      ? hiddenZeroCount ? `No value spendable notes (${hiddenZeroCount} zero notes hidden)` : "No spendable notes"
-      : hiddenZeroCount ? `No value notes (${hiddenZeroCount} zero notes hidden)` : "No notes";
+      ? hiddenZeroCount
+        ? `No value spendable notes (${hiddenZeroCount} zero notes hidden)`
+        : "No spendable notes"
+      : hiddenZeroCount
+        ? `No value notes (${hiddenZeroCount} zero notes hidden)`
+        : "No notes";
     els.myKeplrNotesList.append(empty);
     return;
   }
@@ -1774,9 +2291,13 @@ function renderAccounts() {
   const selectedTransparentAddress = transparentDisplayAddressFor(account);
   els.localSignerNotesTitle.textContent = "Notes";
   els.transparentAddress.textContent = selectedTransparentAddress || "-";
+  renderRelayerPanel();
   if (!accounts.length) {
     els.keplrSendRecipient.value = "";
-  } else if (!isSendRecipientForWallet(els.keplrSendRecipient.value) && selectedTransparentAddress) {
+  } else if (
+    !isSendRecipientForWallet(els.keplrSendRecipient.value) &&
+    selectedTransparentAddress
+  ) {
     els.keplrSendRecipient.value = selectedTransparentAddress;
   }
   renderVisibleAddressSuggestions();
@@ -1785,27 +2306,40 @@ function renderAccounts() {
 function renderHealth(data) {
   state.config = data.config;
   state.chainProfiles = data.config?.chainProfiles || [];
-  if (!state.selectedChainProfileId || !state.chainProfiles.some(profile => profile.id === state.selectedChainProfileId)) {
-    state.selectedChainProfileId = data.config?.activeChainProfileId || state.chainProfiles[0]?.id || "";
+  if (
+    !state.selectedChainProfileId ||
+    !state.chainProfiles.some(
+      (profile) => profile.id === state.selectedChainProfileId,
+    )
+  ) {
+    state.selectedChainProfileId =
+      data.config?.activeChainProfileId || state.chainProfiles[0]?.id || "";
   }
   state.accounts = data.accounts || [];
-  if (!state.accounts.some(account => account.name === state.selectedAccount)) {
+  if (
+    !state.accounts.some((account) => account.name === state.selectedAccount)
+  ) {
     state.selectedAccount = state.accounts[0]?.name || "alice";
   }
 
   renderServerFeatureVisibility();
-  els.modeBadge.textContent = data.config?.modeLabel || (localTestBackendEnabled() ? "Local Note Test Web" : "Public Node DApp");
+  els.modeBadge.textContent =
+    data.config?.modeLabel ||
+    (localTestBackendEnabled() ? "Local Note Test Web" : "Public Node DApp");
   els.modeBadge.classList.toggle("public-mode", !localTestBackendEnabled());
-  els.localHome.textContent = data.config?.localSignerHome || data.config?.home || "-";
-  els.chainId.textContent = data.status?.node_info?.network || data.config?.chainId || "-";
-  els.blockHeight.textContent = data.status?.sync_info?.latest_block_height || "-";
+  els.localHome.textContent =
+    data.config?.localSignerHome || data.config?.home || "-";
+  els.chainId.textContent =
+    data.status?.node_info?.network || data.config?.chainId || "-";
+  els.blockHeight.textContent =
+    data.status?.sync_info?.latest_block_height || "-";
   els.leafCount.textContent = data.tree?.leaf_count || "-";
   els.restState.textContent = data.tree ? "Online" : "Offline";
   renderDappChainSelect();
   renderChainDependentUi();
   renderAccounts();
   renderWalletSession();
-  ensureShieldedAddressBook().catch(error => {
+  ensureShieldedAddressBook().catch((error) => {
     state.addressBook.loadingShielded = false;
     state.addressBook.shieldedError = error.message;
     shieldedAddressBookPromise = null;
@@ -1827,6 +2361,9 @@ async function refreshHealth() {
     }
   }
   const tasks = [refreshEvents({ allowFailure: true })];
+  if (serverFeature("relayer")) {
+    tasks.push(refreshRelayerAccount());
+  }
   if (serverFeature("auditorAdmin")) {
     tasks.push(refreshAuditorTransfers(), refreshAuditorTestScalar());
   }
@@ -1848,21 +2385,46 @@ async function refreshSelectedAccount() {
     return;
   }
 
-  els.transparentAddress.textContent = transparentDisplayAddressFor(account) || "-";
+  els.transparentAddress.textContent =
+    transparentDisplayAddressFor(account) || "-";
   els.shieldedAddress.textContent = "Loading...";
   els.balanceValue.textContent = "Loading...";
 
   const [shielded, balance] = await Promise.all([
     api(`/api/wallet/${account.name}/show-address`),
-    clairveilBrowserClient().getBalances(account.transparentAddress)
+    clairveilBrowserClient().getBalances(account.transparentAddress),
   ]);
 
   els.shieldedAddress.textContent = shielded.address || "-";
-  els.balanceValue.textContent = (balance.balances || [])
-    .map(coin => `${coin.amount}${coin.denom}`)
-    .join(", ") || zeroCoinText();
+  els.balanceValue.textContent =
+    (balance.balances || [])
+      .map((coin) => `${coin.amount}${coin.denom}`)
+      .join(", ") || zeroCoinText();
 
   await refreshNotes();
+}
+
+async function refreshRelayerAccount() {
+  const relayer = localRelayerAccount();
+  state.relayer.error = "";
+  if (!relayer?.transparentAddress || !serverFeature("relayer")) {
+    state.relayer.balance = "";
+    renderRelayerPanel();
+    return;
+  }
+
+  state.relayer.balance = "Loading...";
+  renderRelayerPanel();
+  try {
+    const balance = await clairveilBrowserClient().getBalances(
+      relayer.transparentAddress,
+    );
+    state.relayer.balance = formatBalances(balance.balances);
+  } catch (error) {
+    state.relayer.balance = "";
+    state.relayer.error = error.message;
+  }
+  renderRelayerPanel();
 }
 
 async function refreshWalletBalance() {
@@ -1871,14 +2433,18 @@ async function refreshWalletBalance() {
     if (!state.wallet.account) return;
     const balanceHex = await requestMetaMask({
       method: "eth_getBalance",
-      params: [state.wallet.account, "latest"]
+      params: [state.wallet.account, "latest"],
     });
-    state.keplr.balance = formatBalances([{
-      denom: baseDenom(),
-      amount: BigInt(balanceHex || "0x0").toString()
-    }]);
+    state.keplr.balance = formatBalances([
+      {
+        denom: baseDenom(),
+        amount: BigInt(balanceHex || "0x0").toString(),
+      },
+    ]);
   } else {
-    const data = await clairveilBrowserClient().getBalances(state.keplr.account);
+    const data = await clairveilBrowserClient().getBalances(
+      state.keplr.account,
+    );
     state.keplr.balance = formatBalances(data.balances);
   }
   renderKeplr();
@@ -1925,16 +2491,19 @@ async function refreshNotes() {
 async function refreshEvents({ allowFailure = false } = {}) {
   const [privacyResult, blockResult] = await Promise.allSettled([
     clairveilBrowserClient().fetchPrivacyEvents(),
-    clairveilBrowserClient().fetchBlockEvents(30)
+    clairveilBrowserClient().fetchBlockEvents(30),
   ]);
 
   if (privacyResult.status === "rejected") {
     state.privacyEvents.events = [];
-    state.privacyEvents.loadError = browserDataLoadErrorMessage(privacyResult.reason);
+    state.privacyEvents.loadError = browserDataLoadErrorMessage(
+      privacyResult.reason,
+    );
     state.blockEvents.events = [];
-    state.blockEvents.error = blockResult.status === "rejected"
-      ? browserDataLoadErrorMessage(blockResult.reason)
-      : "";
+    state.blockEvents.error =
+      blockResult.status === "rejected"
+        ? browserDataLoadErrorMessage(blockResult.reason)
+        : "";
     renderPrivacyEvents();
     renderEventDetail();
     renderBlockEvents();
@@ -1952,7 +2521,12 @@ async function refreshEvents({ allowFailure = false } = {}) {
     state.blockEvents.error = browserDataLoadErrorMessage(blockResult.reason);
   }
 
-  if (state.privacyEvents.selectedTxHash && !state.privacyEvents.events.some(event => event.tx_hash_hex === state.privacyEvents.selectedTxHash)) {
+  if (
+    state.privacyEvents.selectedTxHash &&
+    !state.privacyEvents.events.some(
+      (event) => event.tx_hash_hex === state.privacyEvents.selectedTxHash,
+    )
+  ) {
     state.privacyEvents.selectedTxHash = "";
     state.privacyEvents.decoded = null;
     state.privacyEvents.error = "";
@@ -1976,30 +2550,79 @@ async function refreshBlockEvents() {
 
 function disclosureTargetMatches(event) {
   const target = eventAttribute(event, "user_disclosure_target_pubkey");
-  return Boolean(target && state.keplr.disclosurePubKeyHex && target.toLowerCase() === state.keplr.disclosurePubKeyHex.toLowerCase());
+  return Boolean(
+    target &&
+    state.keplr.disclosurePubKeyHex &&
+    target.toLowerCase() === state.keplr.disclosurePubKeyHex.toLowerCase(),
+  );
 }
 
 function isPublicDisclosureEvent(event) {
   return Boolean(
     event?.event_type === "shielded_transfer" &&
-    eventAttribute(event, "user_disclosure_mode") === "USER_DISCLOSURE_MODE_PUBLIC" &&
-    eventAttribute(event, "user_disclosure_payload")
+    eventAttribute(event, "user_disclosure_mode") ===
+      "USER_DISCLOSURE_MODE_PUBLIC" &&
+    eventAttribute(event, "user_disclosure_payload"),
   );
 }
 
-function canDecodeEventDisclosure(event) {
+function isCosmosProfile() {
+  return activeChainProfile()?.transport !== "evm";
+}
+
+function hasSelfViewDisclosureEvent(event) {
+  return Boolean(
+    event?.event_type === "shielded_transfer" &&
+      eventAttribute(event, "self_view_disclosure_payload"),
+  );
+}
+
+function canDecodeUserEventDisclosure(event) {
   if (!event || event.event_type !== "shielded_transfer") return false;
   if (isPublicDisclosureEvent(event)) return true;
   return disclosureTargetMatches(event);
 }
 
+function canDecodeSelfViewDisclosure(event) {
+  return Boolean(
+    isCosmosProfile() &&
+      hasSelfViewDisclosureEvent(event) &&
+      state.keplr.account &&
+      state.keplr.pubkeyHex &&
+      state.keplr.rootSignatureBase64,
+  );
+}
+
+function selectedEventDisclosurePlane(event) {
+  if (!event || event.event_type !== "shielded_transfer") return "-";
+  if (canDecodeUserEventDisclosure(event)) return "user";
+  if (canDecodeSelfViewDisclosure(event)) return "self-view";
+  if (eventAttribute(event, "user_disclosure_payload")) return "user";
+  if (hasSelfViewDisclosureEvent(event)) return "self-view";
+  return "-";
+}
+
+function canDecodeEventDisclosure(event) {
+  return canDecodeUserEventDisclosure(event) || canDecodeSelfViewDisclosure(event);
+}
+
 function eventDisclosureStatus(event) {
   if (!event) return "Select an event.";
-  if (event.event_type !== "shielded_transfer") return "Disclosure 조회는 shielded transfer에서만 가능합니다.";
+  if (event.event_type !== "shielded_transfer")
+    return "Disclosure 조회는 shielded transfer에서만 가능합니다.";
+  if (canDecodeSelfViewDisclosure(event) && !canDecodeUserEventDisclosure(event)) {
+    return "Sender self-view disclosure입니다. 내 wallet material로 조회할 수 있습니다.";
+  }
+  if (hasSelfViewDisclosureEvent(event) && !isCosmosProfile()) {
+    return "Self-view disclosure는 현재 EVM profile에서 조회하지 않습니다.";
+  }
   const mode = eventAttribute(event, "user_disclosure_mode");
   const target = eventAttribute(event, "user_disclosure_target_pubkey");
   const payload = eventAttribute(event, "user_disclosure_payload");
   if (!payload) {
+    if (hasSelfViewDisclosureEvent(event)) {
+      return "Cosmos sender self-view disclosure가 있습니다. Setup Clairveil 후 조회할 수 있습니다.";
+    }
     return "이 transfer에는 user disclosure payload가 없습니다.";
   }
   if (mode === "USER_DISCLOSURE_MODE_PUBLIC") {
@@ -2015,6 +2638,11 @@ function eventDisclosureStatus(event) {
     return "Disclosure target pubkey가 없습니다.";
   }
   if (!disclosureTargetMatches(event)) {
+    if (hasSelfViewDisclosureEvent(event)) {
+      return state.keplr.rootSignatureBase64
+        ? "User disclosure 대상은 아니지만 sender self-view로 조회할 수 있습니다."
+        : "User disclosure 대상은 아닙니다. Setup Clairveil 후 sender self-view 조회를 시도할 수 있습니다.";
+    }
     return "내 disclosure pubkey 대상이 아닙니다.";
   }
   return "내 disclosure pubkey 대상입니다. 조회할 수 있습니다.";
@@ -2037,10 +2665,15 @@ function renderPrivacyEvents() {
     const row = document.createElement("button");
     row.type = "button";
     row.className = "event-row";
-    row.classList.toggle("selected", event.tx_hash_hex === state.privacyEvents.selectedTxHash);
+    row.classList.toggle(
+      "selected",
+      event.tx_hash_hex === state.privacyEvents.selectedTxHash,
+    );
     row.disabled = !canSelect;
     if (canSelect) {
-      row.addEventListener("click", () => selectPrivacyEvent(event.tx_hash_hex));
+      row.addEventListener("click", () =>
+        selectPrivacyEvent(event.tx_hash_hex),
+      );
     }
     const copy = document.createElement("div");
     copy.className = "row-copy";
@@ -2122,26 +2755,54 @@ function selectPrivacyEvent(txHash) {
 }
 
 function selectedPrivacyEvent() {
-  return state.privacyEvents.events.find(event => event.tx_hash_hex === state.privacyEvents.selectedTxHash);
+  return state.privacyEvents.events.find(
+    (event) => event.tx_hash_hex === state.privacyEvents.selectedTxHash,
+  );
 }
 
 function clearEventDisclosureResult() {
+  els.eventDisclosurePolicy.textContent = "-";
+  els.eventDisclosureOutputIndex.textContent = "-";
+  els.eventDisclosureCommitment.textContent = "-";
+  els.eventDisclosureDigest.textContent = "-";
+  els.eventDisclosureVerified.textContent = "-";
   els.eventDisclosureFields.textContent = "-";
   els.eventDisclosureAmount.textContent = "-";
+  els.eventDisclosureAssetDenom.textContent = "-";
   els.eventDisclosureFrom.textContent = "-";
   els.eventDisclosureTo.textContent = "-";
 }
 
 function renderEventDisclosureReport(report) {
   const summary = report?.summary || {};
-  const amount = summary.amount
-    ? `${summary.amount}${summary.asset_denom ? ` ${summary.asset_denom}` : ""}`
+  const payload = report?.payload || {};
+  const assetDenom = summary.asset_denom || report?.asset_denom || payload.asset_denom || "";
+  const amount = summary.amount || report?.amount || payload.amount
+    ? `${summary.amount || report?.amount || payload.amount}${assetDenom ? ` ${assetDenom}` : ""}`
     : "-";
-  els.eventDisclosureFields.textContent = (summary.disclosed_fields || []).map(prettyDisclosureField).join(", ") || "-";
+  const verified = report?.verification?.verified ?? summary.verified ?? report?.verified;
+  els.eventDisclosurePlane.textContent = summary.plane || report?.payload?.plane || "-";
+  els.eventDisclosurePolicy.textContent = summary.policy || report?.policy || payload.policy || "-";
+  els.eventDisclosureOutputIndex.textContent =
+    summary.output_index ?? report?.output_index ?? payload.output_index ?? "-";
+  els.eventDisclosureCommitment.textContent =
+    summary.commitment_hex || report?.commitment_hex || payload.commitment_hex || "-";
+  els.eventDisclosureDigest.textContent =
+    summary.digest_hex ||
+    report?.digest_hex ||
+    payload.disclosure_digest_hex ||
+    payload.digest_hex ||
+    "-";
+  els.eventDisclosureVerified.textContent =
+    typeof verified === "boolean" ? (verified ? "true" : "false") : "-";
+  els.eventDisclosureFields.textContent =
+    (summary.disclosed_fields || []).map(prettyDisclosureField).join(", ") ||
+    "-";
   els.eventDisclosureAmount.textContent = amount;
+  els.eventDisclosureAssetDenom.textContent = assetDenom || "-";
   els.eventDisclosureFrom.textContent = summary.from_shielded_address || "-";
   els.eventDisclosureTo.textContent = summary.to_shielded_address || "-";
-  els.eventDisclosureState.textContent = report?.verification?.verified
+  els.eventDisclosureState.textContent = verified
     ? `${summary.delivery || "recipient-encrypted"} / ${summary.policy || "unknown policy"}`
     : "Disclosure verification failed.";
 }
@@ -2151,8 +2812,13 @@ function renderEventDetail() {
   els.eventDetailType.textContent = event?.event_type || "-";
   els.eventDetailHeight.textContent = event?.height || "-";
   els.eventDetailTx.textContent = event?.tx_hash_hex || "-";
-  els.eventDetailUserMode.textContent = event ? eventAttribute(event, "user_disclosure_mode") || "-" : "-";
-  els.eventDetailTarget.textContent = event ? eventAttribute(event, "user_disclosure_target_pubkey") || "-" : "-";
+  els.eventDetailUserMode.textContent = event
+    ? eventAttribute(event, "user_disclosure_mode") || "-"
+    : "-";
+  els.eventDetailTarget.textContent = event
+    ? eventAttribute(event, "user_disclosure_target_pubkey") || "-"
+    : "-";
+  els.eventDisclosurePlane.textContent = selectedEventDisclosurePlane(event);
   clearEventDisclosureResult();
   if (state.privacyEvents.decoded) {
     renderEventDisclosureReport(state.privacyEvents.decoded);
@@ -2161,11 +2827,15 @@ function renderEventDetail() {
   } else {
     els.eventDisclosureState.textContent = eventDisclosureStatus(event);
   }
-  els.decodeEventDisclosure.disabled = state.privacyEvents.loading || !canDecodeEventDisclosure(event);
+  els.decodeEventDisclosure.disabled =
+    state.privacyEvents.loading || !canDecodeEventDisclosure(event);
 }
 
 function hasAuditorUi() {
-  return serverFeature("auditorAdmin") && Boolean(els.refreshAuditorTransfers && els.auditorEventsList);
+  return (
+    serverFeature("auditorAdmin") &&
+    Boolean(els.refreshAuditorTransfers && els.auditorEventsList)
+  );
 }
 
 function auditorDetailValueElements() {
@@ -2176,7 +2846,7 @@ function auditorDetailValueElements() {
     els.auditorDigest,
     els.auditorFrom,
     els.auditorFields,
-    els.auditorTo
+    els.auditorTo,
   ].filter(Boolean);
 }
 
@@ -2192,7 +2862,9 @@ function setAuditorValueTone(elements, tone = "") {
 function renderAuditorTestScalar() {
   if (!els.auditorTestScalar) return;
   if (state.auditor.testScalar) {
-    const suffix = state.auditor.testScalarMatchesAuditConfig ? " (matches audit config)" : " (not current audit config)";
+    const suffix = state.auditor.testScalarMatchesAuditConfig
+      ? " (matches audit config)"
+      : " (not current audit config)";
     els.auditorTestScalar.textContent = `${state.auditor.testScalar}${suffix}`;
   } else {
     els.auditorTestScalar.textContent = state.auditor.testScalarError || "-";
@@ -2208,7 +2880,9 @@ async function refreshAuditorTestScalar() {
     const data = await api("/api/auditor/test-scalar");
     state.auditor.testScalar = data.disclosure_private_scalar_hex || "";
     state.auditor.testScalarError = "";
-    state.auditor.testScalarMatchesAuditConfig = Boolean(data.matches_audit_config);
+    state.auditor.testScalarMatchesAuditConfig = Boolean(
+      data.matches_audit_config,
+    );
   } catch (error) {
     state.auditor.testScalar = "";
     state.auditor.testScalarError = `Unavailable: ${error.message}`;
@@ -2221,7 +2895,8 @@ async function refreshAuditorTestScalar() {
 function updateAuditorDecodeButton() {
   if (!els.decodeAuditorTransfer) return;
   const scalar = state.auditor.testScalar || "";
-  els.decodeAuditorTransfer.disabled = state.auditor.loading ||
+  els.decodeAuditorTransfer.disabled =
+    state.auditor.loading ||
     !state.auditor.selectedTxHash ||
     !/^[0-9a-fA-F]{1,64}$/.test(scalar);
 }
@@ -2235,7 +2910,13 @@ async function decodeSelectedEventDisclosure() {
   els.eventDisclosureState.textContent = "Disclosure 조회 중...";
   renderEventDetail();
   try {
-    const report = await clairveilBrowserClient().decodeUserDisclosure(privacyRequest({ txHash: event.tx_hash_hex }));
+    const report = canDecodeUserEventDisclosure(event)
+      ? await clairveilBrowserClient().decodeUserDisclosure(
+          privacyRequest({ txHash: event.tx_hash_hex }),
+        )
+      : await clairveilBrowserClient().decodeSelfViewDisclosure(
+          keplrPrivacyRequest({ txHash: event.tx_hash_hex }),
+        );
     state.privacyEvents.decoded = report;
     renderEventDisclosureReport(report);
   } catch (error) {
@@ -2280,9 +2961,10 @@ function renderAuditorEventDetail(event) {
   els.auditorTo.textContent = "decode UI deferred";
   setAuditorValueTone(
     [els.auditorTxHash, els.auditorAmount, els.auditorDigest, els.auditorFrom],
-    "encoded"
+    "encoded",
   );
-  els.auditorDecodeState.textContent = "Audit disclosure is present. Select Decode to use the local admin test scalar.";
+  els.auditorDecodeState.textContent =
+    "Audit disclosure is present. Select Decode to use the local admin test scalar.";
   updateAuditorDecodeButton();
 }
 
@@ -2296,16 +2978,24 @@ function renderAuditorReport(report) {
     ? `${summary.amount}${summary.asset_denom ? ` ${summary.asset_denom}` : ""}`
     : "-";
 
-  els.auditorTxHash.textContent = report?.tx_hash || state.auditor.selectedTxHash || "-";
+  els.auditorTxHash.textContent =
+    report?.tx_hash || state.auditor.selectedTxHash || "-";
   els.auditorVerification.textContent = verified;
   els.auditorAmount.textContent = amount;
   els.auditorFrom.textContent = summary.from_shielded_address || "-";
   els.auditorTo.textContent = summary.to_shielded_address || "-";
-  els.auditorFields.textContent = (summary.disclosed_fields || []).map(prettyDisclosureField).join(", ") || "-";
-  els.auditorDigest.textContent = payload.disclosure_digest_hex || eventAttribute(
-    state.auditor.events.find(event => event.tx_hash_hex === state.auditor.selectedTxHash),
-    "audit_disclosure_digest"
-  ) || "-";
+  els.auditorFields.textContent =
+    (summary.disclosed_fields || []).map(prettyDisclosureField).join(", ") ||
+    "-";
+  els.auditorDigest.textContent =
+    payload.disclosure_digest_hex ||
+    eventAttribute(
+      state.auditor.events.find(
+        (event) => event.tx_hash_hex === state.auditor.selectedTxHash,
+      ),
+      "audit_disclosure_digest",
+    ) ||
+    "-";
   setAuditorValueTone(auditorDetailValueElements(), "decoded");
   els.auditorDecodeState.textContent = `${summary.delivery || report?.source || "audit"} / ${summary.policy || "unknown policy"}`;
   updateAuditorDecodeButton();
@@ -2320,9 +3010,14 @@ function renderAuditorTransfers() {
     const row = document.createElement("button");
     row.type = "button";
     row.className = "audit-row";
-    row.classList.toggle("selected", event.tx_hash_hex === state.auditor.selectedTxHash);
+    row.classList.toggle(
+      "selected",
+      event.tx_hash_hex === state.auditor.selectedTxHash,
+    );
     row.disabled = state.auditor.loading;
-    row.addEventListener("click", () => selectAuditorTransfer(event.tx_hash_hex));
+    row.addEventListener("click", () =>
+      selectAuditorTransfer(event.tx_hash_hex),
+    );
 
     const copy = document.createElement("div");
     copy.className = "row-copy";
@@ -2331,7 +3026,11 @@ function renderAuditorTransfers() {
     const meta = document.createElement("span");
     meta.textContent = `height ${event.height}`;
     const digest = document.createElement("code");
-    digest.textContent = shorten(eventAttribute(event, "audit_disclosure_digest"), 12, 10);
+    digest.textContent = shorten(
+      eventAttribute(event, "audit_disclosure_digest"),
+      12,
+      10,
+    );
 
     copy.append(title, meta);
     row.append(copy, digest);
@@ -2352,13 +3051,22 @@ async function refreshAuditorTransfers() {
   try {
     const data = await clairveilBrowserClient().fetchAuditableTransfers();
     state.auditor.events = data.events || [];
-    if (state.auditor.selectedTxHash && !state.auditor.events.some(event => event.tx_hash_hex === state.auditor.selectedTxHash)) {
+    if (
+      state.auditor.selectedTxHash &&
+      !state.auditor.events.some(
+        (event) => event.tx_hash_hex === state.auditor.selectedTxHash,
+      )
+    ) {
       state.auditor.selectedTxHash = "";
       state.auditor.decoded = null;
       clearAuditorReport();
     }
     renderAuditorTransfers();
-    renderAuditorEventDetail(state.auditor.events.find(event => event.tx_hash_hex === state.auditor.selectedTxHash));
+    renderAuditorEventDetail(
+      state.auditor.events.find(
+        (event) => event.tx_hash_hex === state.auditor.selectedTxHash,
+      ),
+    );
   } finally {
     setBusy(els.refreshAuditorTransfers, false);
   }
@@ -2369,7 +3077,9 @@ function selectAuditorTransfer(txHash) {
   state.auditor.selectedTxHash = txHash;
   state.auditor.decoded = null;
   renderAuditorTransfers();
-  renderAuditorEventDetail(state.auditor.events.find(event => event.tx_hash_hex === txHash));
+  renderAuditorEventDetail(
+    state.auditor.events.find((event) => event.tx_hash_hex === txHash),
+  );
   updateAuditorDecodeButton();
 }
 
@@ -2399,7 +3109,7 @@ async function decodeAuditorTransfer(txHash = state.auditor.selectedTxHash) {
   try {
     const report = await api("/api/auditor/decode", {
       method: "POST",
-      body: JSON.stringify({ txHash, disclosurePrivKeyHex })
+      body: JSON.stringify({ txHash, disclosurePrivKeyHex }),
     });
     state.auditor.decoded = report;
     renderAuditorReport(report);
@@ -2427,7 +3137,9 @@ async function connectWallet() {
     return;
   }
   if (!selectedProfileMatchesServer()) {
-    toast("Selected chain is not running in this DApp server. Restart the server for that chain profile.");
+    toast(
+      "Selected chain is not running in this DApp server. Restart the server for that chain profile.",
+    );
     return;
   }
   if (!metaMaskProvider()) {
@@ -2458,6 +3170,9 @@ async function connectWallet() {
   if (!els.veiledWithdrawRecipient.value && identity.evmAddress) {
     els.veiledWithdrawRecipient.value = identity.evmAddress;
   }
+  if (!els.relayWithdrawRecipient.value && identity.evmAddress) {
+    els.relayWithdrawRecipient.value = identity.evmAddress;
+  }
   renderWallet();
   renderKeplr();
   try {
@@ -2478,11 +3193,11 @@ async function signMetaMaskSession() {
     `MetaMask: ${account}`,
     `Local signer: ${local}`,
     `Chain: ${state.config?.chainId || "clairveil-local-2"}`,
-    `Time: ${new Date().toISOString()}`
+    `Time: ${new Date().toISOString()}`,
   ].join("\n");
   const signature = await requestMetaMask({
     method: "personal_sign",
-    params: [message, account]
+    params: [message, account],
   });
   state.wallet.signatureHash = await digestText(signature);
   renderWallet();
@@ -2526,7 +3241,7 @@ async function resolveKeplrSigner(chainId, key) {
     candidates.push({
       source: "Keplr getKey",
       address: key.bech32Address,
-      pubKeyHex: bytesToHex(key.pubKey)
+      pubKeyHex: bytesToHex(key.pubKey),
     });
   }
 
@@ -2538,19 +3253,25 @@ async function resolveKeplrSigner(chainId, key) {
     candidates.push({
       source: "Keplr offline signer",
       address,
-      pubKeyHex: bytesToHex(pubKey)
+      pubKeyHex: bytesToHex(pubKey),
     });
   }
 
-  const uniqueCandidates = candidates.filter((candidate, index) =>
-    candidates.findIndex(other =>
-      other.address === candidate.address && other.pubKeyHex === candidate.pubKeyHex
-    ) === index
+  const uniqueCandidates = candidates.filter(
+    (candidate, index) =>
+      candidates.findIndex(
+        (other) =>
+          other.address === candidate.address &&
+          other.pubKeyHex === candidate.pubKeyHex,
+      ) === index,
   );
 
   for (const candidate of uniqueCandidates) {
     try {
-      const signerCheck = clairveilBrowserClient().verifySignerPubKey(candidate.address, candidate.pubKeyHex);
+      const signerCheck = clairveilBrowserClient().verifySignerPubKey(
+        candidate.address,
+        candidate.pubKeyHex,
+      );
       if (signerCheck.matches) {
         return { ...candidate, signerCheck, candidates: uniqueCandidates };
       }
@@ -2561,12 +3282,16 @@ async function resolveKeplrSigner(chainId, key) {
   }
 
   return {
-    ...(uniqueCandidates[0] || { source: "Keplr", address: key?.bech32Address || "", pubKeyHex: "" }),
+    ...(uniqueCandidates[0] || {
+      source: "Keplr",
+      address: key?.bech32Address || "",
+      pubKeyHex: "",
+    }),
     signerCheck: uniqueCandidates[0]?.signerCheck || {
       expectedAddress: "",
-      matches: false
+      matches: false,
     },
-    candidates: uniqueCandidates
+    candidates: uniqueCandidates,
   };
 }
 
@@ -2577,7 +3302,9 @@ async function connectKeplr() {
     return;
   }
   if (!selectedProfileMatchesServer()) {
-    toast("Selected chain is not running in this DApp server. Restart the server for that chain profile.");
+    toast(
+      "Selected chain is not running in this DApp server. Restart the server for that chain profile.",
+    );
     return;
   }
   if (!window.keplr) {
@@ -2617,6 +3344,11 @@ async function connectKeplr() {
   state.keplr.transferHash = "";
   state.keplr.withdrawHash = "";
   state.keplr.withdrawHeight = "";
+  state.keplr.relayWithdrawHash = "";
+  state.keplr.relayWithdrawHeight = "";
+  state.keplr.relayWithdrawRelayer = "";
+  state.keplr.relayWithdrawPayloadHash = "";
+  clearPreparedRelayWithdrawPayload();
   state.keplr.notesSummary = "";
   state.keplr.notes = [];
   state.keplr.notesScanned = false;
@@ -2634,10 +3366,15 @@ async function connectKeplr() {
 
   if (!state.keplr.addressMatches) {
     const sources = signer.candidates?.length
-      ? signer.candidates.map(candidate => `${candidate.source}: ${shorten(candidate.address, 12, 10)}`).join(", ")
+      ? signer.candidates
+          .map(
+            (candidate) =>
+              `${candidate.source}: ${shorten(candidate.address, 12, 10)}`,
+          )
+          .join(", ")
       : "no Keplr signer candidates";
     toast(
-      `Keplr address/pubKey mismatch on ${chainInfo.chainId}. Checked ${sources}. Remove Clairveil Localnet (${chainInfo.chainId}) from Keplr once, reconnect, and try again. You do not need to change chains on every restart.`
+      `Keplr address/pubKey mismatch on ${chainInfo.chainId}. Checked ${sources}. Remove Clairveil Localnet (${chainInfo.chainId}) from Keplr once, reconnect, and try again. You do not need to change chains on every restart.`,
     );
     return;
   }
@@ -2658,16 +3395,20 @@ async function signKeplrSession() {
     `Keplr: ${state.keplr.account}`,
     `Local signer: ${local}`,
     `Chain: ${chainInfo.chainId}`,
-    `Time: ${new Date().toISOString()}`
+    `Time: ${new Date().toISOString()}`,
   ].join("\n");
-  const signature = await window.keplr.signArbitrary(chainInfo.chainId, state.keplr.account, message);
+  const signature = await window.keplr.signArbitrary(
+    chainInfo.chainId,
+    state.keplr.account,
+    message,
+  );
   state.keplr.signatureHash = await digestText(signature.signature);
   if (typeof window.keplr.verifyArbitrary === "function") {
     state.keplr.verified = await window.keplr.verifyArbitrary(
       chainInfo.chainId,
       state.keplr.account,
       message,
-      signature
+      signature,
     );
   }
   renderKeplr();
@@ -2684,12 +3425,15 @@ function disconnectWallet() {
 async function fundKeplr() {
   if (!state.keplr.account) return;
   if (!serverFeature("faucet")) {
-    toast("Faucet is available only when this DApp server is attached to a local test node.");
+    toast(
+      "Faucet is available only when this DApp server is attached to a local test node.",
+    );
     return;
   }
   const amount = clairInputToUclair(els.keplrFaucetAmount);
   const recipient = connectedPublicRecipientAddress();
-  const localSigner = selectedLocalAccount()?.name || state.accounts[0]?.name || "alice";
+  const localSigner =
+    selectedLocalAccount()?.name || state.accounts[0]?.name || "alice";
   setBusy(els.fundKeplr, true);
   try {
     const data = await api("/api/faucet", {
@@ -2697,12 +3441,16 @@ async function fundKeplr() {
       body: JSON.stringify({
         from: localSigner,
         recipient,
-        amount
-      })
+        amount,
+      }),
     });
     state.keplr.faucetHash = data.broadcast?.txhash || "";
-    state.keplr.faucetSent = formatUclairAsClair(data.amount?.funded?.replace(baseDenom(), "") || "0");
-    state.keplr.faucetRecipient = isEvmTransparentMode() ? data.recipientEvm || recipient : data.recipient || recipient;
+    state.keplr.faucetSent = formatUclairAsClair(
+      data.amount?.funded?.replace(baseDenom(), "") || "0",
+    );
+    state.keplr.faucetRecipient = isEvmTransparentMode()
+      ? data.recipientEvm || recipient
+      : data.recipient || recipient;
     state.keplr.balance = formatBalances(data.balance?.balances);
     await refreshWalletBalance();
     renderKeplr();
@@ -2716,7 +3464,11 @@ async function fundKeplr() {
 
 async function setupKeplrPrivacy() {
   if (!state.keplr.account) return;
-  if (state.keplr.rootSignatureBase64 && state.keplr.shieldedAddress && state.keplr.disclosurePubKeyHex) {
+  if (
+    state.keplr.rootSignatureBase64 &&
+    state.keplr.shieldedAddress &&
+    state.keplr.disclosurePubKeyHex
+  ) {
     return;
   }
 
@@ -2726,17 +3478,20 @@ async function setupKeplrPrivacy() {
     let account;
     if (state.activeWallet === "metamask") {
       await ensureMetaMaskChain();
-      const rootMessage = clairveilBrowserClient().buildRootSigningMessage(state.keplr.account, state.keplr.pubkeyHex);
+      const rootMessage = clairveilBrowserClient().buildRootSigningMessage(
+        state.keplr.account,
+        state.keplr.pubkeyHex,
+      );
       const signatureHex = await requestMetaMask({
         method: "personal_sign",
-        params: [rootMessage, state.wallet.account]
+        params: [rootMessage, state.wallet.account],
       });
       state.keplr.rootSignatureBase64 = bytesToBase64(hexToBytes(signatureHex));
       account = clairveilBrowserClient().derivePrivacyAccount({
         walletType: "evm",
         address: state.keplr.account,
         pubKeyHex: state.keplr.pubkeyHex,
-        signatureBase64: state.keplr.rootSignatureBase64
+        signatureBase64: state.keplr.rootSignatureBase64,
       });
     } else {
       if (!window.keplr) return;
@@ -2744,13 +3499,20 @@ async function setupKeplrPrivacy() {
       if (!chainInfo) {
         throw new Error("Selected chain does not include Keplr chain info");
       }
-      const rootMessage = clairveilBrowserClient().buildRootSigningMessage(state.keplr.account, state.keplr.pubkeyHex);
-      const signature = await window.keplr.signArbitrary(chainInfo.chainId, state.keplr.account, rootMessage);
+      const rootMessage = clairveilBrowserClient().buildRootSigningMessage(
+        state.keplr.account,
+        state.keplr.pubkeyHex,
+      );
+      const signature = await window.keplr.signArbitrary(
+        chainInfo.chainId,
+        state.keplr.account,
+        rootMessage,
+      );
       state.keplr.rootSignatureBase64 = signature.signature;
       account = clairveilBrowserClient().derivePrivacyAccount({
         address: state.keplr.account,
         pubKeyHex: state.keplr.pubkeyHex,
-        signatureBase64: signature.signature
+        signatureBase64: signature.signature,
       });
     }
     state.keplr.shieldedAddress = account.shielded_address || "";
@@ -2787,6 +3549,15 @@ async function copyWalletAccount() {
   toast("Account copied");
 }
 
+async function copyRelayWithdrawPayload() {
+  if (!state.keplr.relayWithdrawPayloadText) {
+    toast("Prepared relay withdraw payload가 없습니다.");
+    return;
+  }
+  await navigator.clipboard.writeText(state.keplr.relayWithdrawPayloadText);
+  toast("Relay withdraw payload copied");
+}
+
 async function signDirectAndBroadcast(signDoc) {
   if (!window.keplr?.signDirect) {
     throw new Error("Keplr signDirect not available");
@@ -2795,13 +3566,17 @@ async function signDirectAndBroadcast(signDoc) {
     bodyBytes: base64ToBytes(signDoc.bodyBytes),
     authInfoBytes: base64ToBytes(signDoc.authInfoBytes),
     chainId: signDoc.chainId,
-    accountNumber: BigInt(signDoc.accountNumber)
+    accountNumber: BigInt(signDoc.accountNumber),
   };
-  const signed = await window.keplr.signDirect(signDoc.chainId, state.keplr.account, directSignDoc);
+  const signed = await window.keplr.signDirect(
+    signDoc.chainId,
+    state.keplr.account,
+    directSignDoc,
+  );
   return clairveilBrowserClient().broadcastSignedTx({
     bodyBytes: bytesToBase64(signed.signed.bodyBytes),
     authInfoBytes: bytesToBase64(signed.signed.authInfoBytes),
-    signature: signed.signature.signature
+    signature: signed.signature.signature,
   });
 }
 
@@ -2810,21 +3585,28 @@ async function submitEvmTransaction(transaction) {
     throw new Error("MetaMask is not connected");
   }
   await ensureMetaMaskChain();
-  const tx = await withEstimatedEvmGas({ ...transaction, from: state.wallet.account });
+  const tx = await withEstimatedEvmGas({
+    ...transaction,
+    from: state.wallet.account,
+  });
   const txHash = await requestMetaMask({
     method: "eth_sendTransaction",
-    params: [tx]
+    params: [tx],
   });
   return normalizeEvmTxHash(txHash);
 }
 
 async function waitForEvmTransaction(txHash, label = "EVM transaction") {
-  const broadcast = await clairveilBrowserClient().waitForEvmTransaction(txHash);
+  const broadcast =
+    await clairveilBrowserClient().waitForEvmTransaction(txHash);
   assertSuccessfulBroadcast(broadcast, label);
   return broadcast;
 }
 
-async function sendEvmTransaction(transaction, { waitForReceipt = false, label = "EVM transaction" } = {}) {
+async function sendEvmTransaction(
+  transaction,
+  { waitForReceipt = false, label = "EVM transaction" } = {},
+) {
   const txHash = await submitEvmTransaction(transaction);
   if (waitForReceipt) {
     const broadcast = await waitForEvmTransaction(txHash, label);
@@ -2835,17 +3617,19 @@ async function sendEvmTransaction(transaction, { waitForReceipt = false, label =
   return {
     txHash,
     pending: true,
-    waitPromise
+    waitPromise,
   };
 }
 
 function watchEvmBroadcast(broadcast, { onIncluded, onFailed } = {}) {
   if (!broadcast?.waitPromise) return;
-  broadcast.waitPromise.then(result => {
-    onIncluded?.(result);
-  }).catch(error => {
-    onFailed?.(error);
-  });
+  broadcast.waitPromise
+    .then((result) => {
+      onIncluded?.(result);
+    })
+    .catch((error) => {
+      onFailed?.(error);
+    });
 }
 
 function keplrPrivacyRequest(extra = {}) {
@@ -2853,7 +3637,7 @@ function keplrPrivacyRequest(extra = {}) {
     address: state.keplr.account,
     pubKeyHex: state.keplr.pubkeyHex,
     signatureBase64: state.keplr.rootSignatureBase64,
-    ...extra
+    ...extra,
   };
 }
 
@@ -2863,7 +3647,7 @@ function evmPrivacyRequest(extra = {}) {
     address: state.keplr.account,
     pubKeyHex: state.keplr.pubkeyHex,
     signatureBase64: state.keplr.rootSignatureBase64,
-    ...extra
+    ...extra,
   };
 }
 
@@ -2874,36 +3658,92 @@ function privacyRequest(extra = {}) {
 }
 
 async function preparePrivacyDepositSignDoc(amount) {
-  return clairveilBrowserClient().prepareDeposit(privacyRequest({ amount }));
+  const request = privacyRequest({ amount });
+  request.depositProofProvider = async ({ material }) => {
+    if (!serverFeature("depositProof")) {
+      throw new Error(
+        "Deposit proof helper is unavailable. 최신 Clairveil chain은 deposit proof가 필요하므로 local DApp server/prover setup으로 다시 실행해줘.",
+      );
+    }
+    return api("/api/deposit/proof", {
+      method: "POST",
+      body: JSON.stringify({
+        note_json: material.note_json,
+        note_commitment_hex: material.note_commitment_hex,
+      }),
+    });
+  };
+  return clairveilBrowserClient().prepareDeposit(request);
 }
 
-async function preparePrivacyTransferSignDoc(amount, recipient, disclosure = {}, options = {}) {
-  return clairveilBrowserClient().prepareTransfer(privacyRequest({
-    amount,
-    recipient,
-    scan: { limit: 200, maxPages: 1000 },
-    ...disclosure,
-    allowPlanStep: Boolean(options.allowPlanStep)
-  }));
+async function preparePrivacyTransferSignDoc(
+  amount,
+  recipient,
+  disclosure = {},
+  options = {},
+) {
+  return clairveilBrowserClient().prepareTransfer(
+    privacyRequest({
+      amount,
+      recipient,
+      scan: { limit: 200, maxPages: 1000 },
+      ...disclosure,
+      allowPlanStep: Boolean(options.allowPlanStep),
+    }),
+  );
 }
 
 async function preparePrivacyWithdrawSignDoc(amount, recipient) {
-  return clairveilBrowserClient().prepareWithdraw(privacyRequest({
-    amount,
-    recipient,
-    scan: { limit: 200, maxPages: 1000 }
-  }));
+  return clairveilBrowserClient().prepareWithdraw(
+    privacyRequest({
+      amount,
+      recipient,
+      scan: { limit: 200, maxPages: 1000 },
+    }),
+  );
 }
 
-async function broadcastPrivacyDeposit(amount, label = "deposit", options = {}) {
+async function preparePrivacyRelayWithdrawPayload(amount, recipient) {
+  return clairveilBrowserClient().prepareRelayWithdraw(
+    privacyRequest({
+      amount,
+      recipient,
+      scan: { limit: 200, maxPages: 1000 },
+    }),
+  );
+}
+
+async function relayPreparedWithdrawPayload(payload, recipient) {
+  const relayer =
+    localRelayerAccount()?.name || (isEvmTransparentMode() ? "dev0" : "relayer");
+  return api("/api/relayer/withdraw", {
+    method: "POST",
+    body: JSON.stringify({
+      payload,
+      expectedRecipient: recipient,
+      relayer,
+    }),
+  });
+}
+
+async function broadcastPrivacyDeposit(
+  amount,
+  label = "deposit",
+  options = {},
+) {
   els.keplrTxState.textContent = `Preparing ${label}`;
   const data = await preparePrivacyDepositSignDoc(amount);
-  state.keplr.shieldedAddress = data.prepared?.shieldedAddress || state.keplr.shieldedAddress;
-  els.keplrTxState.textContent = state.activeWallet === "metamask" ? "Waiting for MetaMask" : "Waiting for Keplr";
+  state.keplr.shieldedAddress =
+    data.prepared?.shieldedAddress || state.keplr.shieldedAddress;
+  els.keplrTxState.textContent =
+    state.activeWallet === "metamask"
+      ? "Waiting for MetaMask"
+      : "Waiting for Keplr";
   const broadcast = await broadcastPreparedPrivacy(data, label, options);
   state.keplr.depositHash = broadcast.broadcast?.txhash || "";
   state.keplr.depositHash = state.keplr.depositHash || broadcast.txHash || "";
-  state.keplr.depositHeight = broadcast.tx?.height || broadcast.receipt?.blockNumber || "pending";
+  state.keplr.depositHeight =
+    broadcast.tx?.height || broadcast.receipt?.blockNumber || "pending";
   return broadcast;
 }
 
@@ -2912,7 +3752,10 @@ function broadcastTxEvents(broadcast) {
 }
 
 function broadcastEventAttribute(event, key) {
-  return (event?.attributes || []).find(attribute => attribute.key === key)?.value || "";
+  return (
+    (event?.attributes || []).find((attribute) => attribute.key === key)
+      ?.value || ""
+  );
 }
 
 function evmFailureMessageFromBroadcast(broadcast, label = "transaction") {
@@ -2920,8 +3763,8 @@ function evmFailureMessageFromBroadcast(broadcast, label = "transaction") {
     return broadcast.error;
   }
   const evmFailure = broadcastTxEvents(broadcast)
-    .filter(event => event.type === "ethereum_tx")
-    .map(event => broadcastEventAttribute(event, "ethereumTxFailed"))
+    .filter((event) => event.type === "ethereum_tx")
+    .map((event) => broadcastEventAttribute(event, "ethereumTxFailed"))
     .find(Boolean);
   if (evmFailure) {
     return `${label} failed: EVM execution reverted (${evmFailure})`;
@@ -2945,43 +3788,75 @@ function assertSuccessfulBroadcast(broadcast, label = "transaction") {
     return;
   }
   if (!broadcast?.tx) {
-    throw new Error(`${label} was broadcast but not found yet: ${txHash || "unknown tx"}`);
+    throw new Error(
+      `${label} was broadcast but not found yet: ${txHash || "unknown tx"}`,
+    );
   }
   if (Number(broadcast.tx.code || 0) !== 0) {
-    throw new Error(broadcast.tx.raw_log || `${label} failed with code ${broadcast.tx.code}`);
+    throw new Error(
+      broadcast.tx.raw_log || `${label} failed with code ${broadcast.tx.code}`,
+    );
   }
 }
 
-async function broadcastPreparedPrivacy(data, label = "privacy transaction", options = {}) {
-  const broadcast = state.activeWallet === "metamask"
-    ? await sendEvmTransaction(data.transaction, {
-      label,
-      waitForReceipt: Boolean(options.waitForEvmReceipt)
-    })
-    : await signDirectAndBroadcast(data.signDoc);
+async function broadcastPreparedPrivacy(
+  data,
+  label = "privacy transaction",
+  options = {},
+) {
+  const broadcast =
+    state.activeWallet === "metamask"
+      ? await sendEvmTransaction(data.transaction, {
+          label,
+          waitForReceipt: Boolean(options.waitForEvmReceipt),
+        })
+      : await signDirectAndBroadcast(data.signDoc);
   assertSuccessfulBroadcast(broadcast, label);
   return broadcast;
 }
 
-async function broadcastVeiledTransfer(amount, recipient, label = "veiled transfer", disclosure = {}, options = {}) {
+async function broadcastVeiledTransfer(
+  amount,
+  recipient,
+  label = "veiled transfer",
+  disclosure = {},
+  options = {},
+) {
   els.keplrTxState.textContent = `Preparing ${label}`;
-  const data = await preparePrivacyTransferSignDoc(amount, recipient, disclosure, options);
-  els.keplrTxState.textContent = state.activeWallet === "metamask" ? "Waiting for MetaMask" : "Waiting for Keplr";
+  const data = await preparePrivacyTransferSignDoc(
+    amount,
+    recipient,
+    disclosure,
+    options,
+  );
+  els.keplrTxState.textContent =
+    state.activeWallet === "metamask"
+      ? "Waiting for MetaMask"
+      : "Waiting for Keplr";
   const broadcast = await broadcastPreparedPrivacy(data, label);
-  state.keplr.transferHash = broadcast.broadcast?.txhash || broadcast.txHash || "";
+  state.keplr.transferHash =
+    broadcast.broadcast?.txhash || broadcast.txHash || "";
   return { ...broadcast, prepared: data.prepared };
 }
 
 function isExactMatchWithdrawError(error) {
-  return error?.code === "EXACT_NOTE_REQUIRED" || error?.status === "exact_note_required";
+  return (
+    error?.code === "EXACT_NOTE_REQUIRED" ||
+    error?.status === "exact_note_required"
+  );
 }
 
 function isZeroHelperNeededError(error) {
-  return error?.code === "ZERO_DUMMY_REQUIRED" || error?.status === "zero_dummy_required";
+  return (
+    error?.code === "ZERO_DUMMY_REQUIRED" ||
+    error?.status === "zero_dummy_required"
+  );
 }
 
 function isSelfTransferRecipient(recipient) {
-  return Boolean(state.keplr.shieldedAddress && recipient === state.keplr.shieldedAddress);
+  return Boolean(
+    state.keplr.shieldedAddress && recipient === state.keplr.shieldedAddress,
+  );
 }
 
 async function createExactWithdrawNote(amount, hooks = {}) {
@@ -2996,35 +3871,60 @@ async function createExactWithdrawNote(amount, hooks = {}) {
 
     let data;
     try {
-      data = await preparePrivacyTransferSignDoc(amount, state.keplr.shieldedAddress, {}, { allowPlanStep: true });
+      data = await preparePrivacyTransferSignDoc(
+        amount,
+        state.keplr.shieldedAddress,
+        {},
+        { allowPlanStep: true },
+      );
     } catch (error) {
       if (!isZeroHelperNeededError(error)) {
         throw error;
       }
       hooks.onZeroHelperNeeded?.(error, step, maxPlannerSteps);
-      await broadcastPrivacyDeposit(zeroCoinText(), "zero helper note", { waitForEvmReceipt: true });
+      await broadcastPrivacyDeposit(zeroCoinText(), "zero helper note", {
+        waitForEvmReceipt: true,
+      });
       await refreshPrivacySurfaces();
       continue;
     }
 
-    if (data.prepared?.isFinal === false || data.prepared?.planAction === "self_merge") {
+    if (
+      data.prepared?.isFinal === false ||
+      data.prepared?.planAction === "self_merge"
+    ) {
       hooks.onSelfMergeNeeded?.(data, step, maxPlannerSteps);
       els.keplrTxState.textContent = `${state.activeWallet === "metamask" ? "Waiting for MetaMask" : "Waiting for Keplr"} (${step}/${maxPlannerSteps})`;
-      const plannerBroadcast = await broadcastPreparedPrivacy(data, "exact-note self transaction", { waitForEvmReceipt: true });
-      state.keplr.transferHash = plannerBroadcast.broadcast?.txhash || plannerBroadcast.txHash || "";
+      const plannerBroadcast = await broadcastPreparedPrivacy(
+        data,
+        "exact-note self transaction",
+        { waitForEvmReceipt: true },
+      );
+      state.keplr.transferHash =
+        plannerBroadcast.broadcast?.txhash || plannerBroadcast.txHash || "";
       await refreshPrivacySurfaces();
       continue;
     }
 
     hooks.onFinalExactTransfer?.(data, step, maxPlannerSteps);
-    els.keplrTxState.textContent = state.activeWallet === "metamask" ? "Waiting for MetaMask" : "Waiting for Keplr";
-    const broadcast = await broadcastPreparedPrivacy(data, "exact-note self transfer", { waitForEvmReceipt: true });
-    state.keplr.transferHash = broadcast.broadcast?.txhash || broadcast.txHash || "";
+    els.keplrTxState.textContent =
+      state.activeWallet === "metamask"
+        ? "Waiting for MetaMask"
+        : "Waiting for Keplr";
+    const broadcast = await broadcastPreparedPrivacy(
+      data,
+      "exact-note self transfer",
+      { waitForEvmReceipt: true },
+    );
+    state.keplr.transferHash =
+      broadcast.broadcast?.txhash || broadcast.txHash || "";
     await refreshPrivacySurfaces();
     return data;
   }
 
-  throw new Error("Withdraw에 필요한 exact note 준비가 너무 오래 걸립니다. notes를 다시 스캔한 뒤 재시도해줘.");
+  throw new Error(
+    "Withdraw에 필요한 exact note 준비가 너무 오래 걸립니다. notes를 다시 스캔한 뒤 재시도해줘.",
+  );
 }
 
 async function sendFromKeplr() {
@@ -3036,10 +3936,12 @@ async function sendFromKeplr() {
     if (state.activeWallet === "metamask") {
       const transaction = clairveilBrowserClient().evmNativeSendTransaction({
         to: recipient,
-        amount: amountInputValue(els.keplrSendAmount)
+        amount: amountInputValue(els.keplrSendAmount),
       });
       els.keplrTxState.textContent = "Waiting for MetaMask";
-      const broadcast = await sendEvmTransaction(transaction, { label: "EVM send" });
+      const broadcast = await sendEvmTransaction(transaction, {
+        label: "EVM send",
+      });
       assertSuccessfulBroadcast(broadcast, "EVM send");
       state.keplr.sendHash = broadcast.txHash || "";
       els.keplrTxState.textContent = "Send submitted";
@@ -3047,19 +3949,22 @@ async function sendFromKeplr() {
       showSendResult({
         success: true,
         wallet: "MetaMask",
-        txHash: state.keplr.sendHash
+        txHash: state.keplr.sendHash,
       });
       watchEvmBroadcast(broadcast, {
-        onIncluded: async included => {
+        onIncluded: async (included) => {
           state.keplr.sendHash = included.txHash || state.keplr.sendHash;
           els.keplrTxState.textContent = "Send included";
-          await Promise.allSettled([refreshWalletBalance(), refreshBlockEvents()]);
+          await Promise.allSettled([
+            refreshWalletBalance(),
+            refreshBlockEvents(),
+          ]);
           renderKeplr();
         },
-        onFailed: error => {
+        onFailed: (error) => {
           els.keplrTxState.textContent = "Send failed";
           showSendResult({ success: false, error: error.message });
-        }
+        },
       });
       return;
     }
@@ -3068,7 +3973,7 @@ async function sendFromKeplr() {
       from: state.keplr.account,
       pubKeyHex: state.keplr.pubkeyHex,
       to: recipient,
-      amount: amountInputValue(els.keplrSendAmount)
+      amount: amountInputValue(els.keplrSendAmount),
     });
     els.keplrTxState.textContent = "Waiting for Keplr";
     const broadcast = await signDirectAndBroadcast(signDoc);
@@ -3078,7 +3983,7 @@ async function sendFromKeplr() {
     showSendResult({
       success: true,
       wallet: "Keplr",
-      txHash: state.keplr.sendHash
+      txHash: state.keplr.sendHash,
     });
     await Promise.allSettled([refreshWalletBalance(), refreshBlockEvents()]);
     renderKeplr();
@@ -3086,7 +3991,7 @@ async function sendFromKeplr() {
     els.keplrTxState.textContent = "Send failed";
     showSendResult({
       success: false,
-      error: error.message
+      error: error.message,
     });
   } finally {
     setBusy(els.sendFromKeplr, false);
@@ -3096,33 +4001,51 @@ async function sendFromKeplr() {
 
 async function depositFromKeplr() {
   if (!state.keplr.account) return;
+  if (!serverFeature("depositProof")) {
+    showNotice({
+      title: "Deposit unavailable",
+      message:
+        "Deposit requires a DepositCircuit proof provider. Enable the local deposit proof helper or wire a product-specific browser/WASM proof provider before using Deposit.",
+      failed: true,
+    });
+    return;
+  }
   await setupKeplrPrivacy();
   if (!state.keplr.rootSignatureBase64) return;
 
   setBusy(els.depositFromKeplr, true);
   els.keplrTxState.textContent = "Preparing deposit";
   try {
-    const broadcast = await broadcastPrivacyDeposit(amountInputValue(els.keplrDepositAmount));
+    const broadcast = await broadcastPrivacyDeposit(
+      amountInputValue(els.keplrDepositAmount),
+    );
     const isPendingEvm = Boolean(broadcast.pending);
-    els.keplrTxState.textContent = isPendingEvm ? "Deposit submitted" : "Deposit included";
+    els.keplrTxState.textContent = isPendingEvm
+      ? "Deposit submitted"
+      : "Deposit included";
     renderKeplr();
     showNotice({
       title: isPendingEvm ? "Deposit 요청됨" : "Deposit 성공",
-      message: `${state.activeWallet === "metamask" ? "MetaMask" : "Keplr"} deposit이 ${isPendingEvm ? "제출되었습니다" : "처리되었습니다"}.\nTx: ${shorten(state.keplr.depositHash, 14, 12)}`
+      message: `${state.activeWallet === "metamask" ? "MetaMask" : "Keplr"} deposit이 ${isPendingEvm ? "제출되었습니다" : "처리되었습니다"}.\nTx: ${shorten(state.keplr.depositHash, 14, 12)}`,
     });
     if (isPendingEvm) {
       watchEvmBroadcast(broadcast, {
-        onIncluded: async included => {
+        onIncluded: async (included) => {
           state.keplr.depositHash = included.txHash || state.keplr.depositHash;
-          state.keplr.depositHeight = included.receipt?.blockNumber || state.keplr.depositHeight;
+          state.keplr.depositHeight =
+            included.receipt?.blockNumber || state.keplr.depositHeight;
           els.keplrTxState.textContent = "Deposit included";
           await refreshPrivacySurfaces({ balance: true });
           renderKeplr();
         },
-        onFailed: error => {
+        onFailed: (error) => {
           els.keplrTxState.textContent = "Deposit failed";
-          showNotice({ title: "Deposit 실패", message: error.message, failed: true });
-        }
+          showNotice({
+            title: "Deposit 실패",
+            message: error.message,
+            failed: true,
+          });
+        },
       });
       return;
     }
@@ -3148,18 +4071,22 @@ async function scanKeplrNotes(options = {}) {
   try {
     const reset = Boolean(options.reset);
     const scanOptions = noteScanRequestOptions({ reset });
-    const data = await clairveilBrowserClient().scanWalletNotes(privacyRequest({
-      ...scanOptions,
-      includeFoundNotes: true
-    }));
+    const data = await clairveilBrowserClient().scanWalletNotes(
+      privacyRequest({
+        ...scanOptions,
+        includeFoundNotes: true,
+      }),
+    );
     applyNoteScanResult(data, { reset });
     await refreshCachedNoteStatuses();
     if (!options.quiet) {
       const cursor = state.keplr.noteScanCursor || defaultNoteScanCursor();
       els.keplrTxState.textContent = "Ready";
-      toast(cursor.hasMore
-        ? `Keplr notes scanned (${cursor.pagesScanned} pages, more queued)`
-        : "Keplr notes scanned");
+      toast(
+        cursor.hasMore
+          ? `Keplr notes scanned (${cursor.pagesScanned} pages, more queued)`
+          : "Keplr notes scanned",
+      );
     }
     renderKeplr();
   } catch (error) {
@@ -3178,7 +4105,7 @@ async function refreshPrivacySurfaces({ balance = false } = {}) {
     refreshEvents(),
     refreshAuditorTransfers(),
     scanKeplrNotes({ quiet: true }),
-    refreshNotes()
+    refreshNotes(),
   ];
   if (balance) {
     tasks.unshift(refreshWalletBalance());
@@ -3194,11 +4121,21 @@ async function transferFromVeiled() {
   const amount = amountInputValue(els.veiledTransferAmount);
   const recipient = els.veiledTransferRecipient.value.trim();
   if (!recipient) {
-    toast(`Enter the recipient's ${shieldedPrefix()} address in Transfer recipient.`);
+    toast(
+      `Enter the recipient's ${shieldedPrefix()} address in Transfer recipient.`,
+    );
+    return;
+  }
+  if (!isConfiguredShieldedAddress(recipient)) {
+    toast(
+      `Transfer recipient must be a ${shieldedPrefix()} shielded address, not a transparent account address.`,
+    );
     return;
   }
   if (isSelfTransferRecipient(recipient)) {
-    toast("이 주소는 내 shielded address야. 여기로 보내면 외부 전송이 아니라 note split/change self-transfer가 돼.");
+    toast(
+      "이 주소는 내 shielded address야. 여기로 보내면 외부 전송이 아니라 note split/change self-transfer가 돼.",
+    );
     return;
   }
   let disclosure;
@@ -3222,44 +4159,59 @@ async function transferFromVeiled() {
       updateTransferFlow(
         "zero",
         step === 1 ? "노트 확인 중" : "노트 재확인 중",
-        "요청 금액을 보낼 수 있는 note 조합이 있는지 확인합니다."
+        "요청 금액을 보낼 수 있는 note 조합이 있는지 확인합니다.",
       );
 
       let data;
       try {
-        data = await preparePrivacyTransferSignDoc(amount, recipient, disclosure, { allowPlanStep: true });
+        data = await preparePrivacyTransferSignDoc(
+          amount,
+          recipient,
+          disclosure,
+          { allowPlanStep: true },
+        );
       } catch (error) {
         if (!isZeroHelperNeededError(error)) {
           throw error;
         }
         showTransferPlannerFacts({
           requested: amount,
-          action: `${zeroCoinText()} helper note를 만들어 다음 self transaction에 사용합니다.`
+          action: `${zeroCoinText()} helper note를 만들어 다음 self transaction에 사용합니다.`,
         });
         updateTransferFlow(
           "zero",
           "Self transaction 서명 대기",
-          "요청 금액을 만들기 위해 note 정리가 필요합니다. 이 단계는 내 Veiled balance 안에서 note를 재구성하며, 받는 사람에게는 아직 전송되지 않습니다."
+          "요청 금액을 만들기 위해 note 정리가 필요합니다. 이 단계는 내 Veiled balance 안에서 note를 재구성하며, 받는 사람에게는 아직 전송되지 않습니다.",
         );
-        await broadcastPrivacyDeposit(zeroCoinText(), "zero helper note", { waitForEvmReceipt: true });
+        await broadcastPrivacyDeposit(zeroCoinText(), "zero helper note", {
+          waitForEvmReceipt: true,
+        });
         await refreshPrivacySurfaces();
         continue;
       }
 
-      if (data.prepared?.isFinal === false || data.prepared?.planAction === "self_merge") {
+      if (
+        data.prepared?.isFinal === false ||
+        data.prepared?.planAction === "self_merge"
+      ) {
         showTransferPlannerFacts({
           requested: amount,
           currentMax: plannerCurrentTransferMaxForNoteMerge(data, amount),
-          action: `두 note를 합쳐 ${data.prepared?.amount || "새 note"} note를 만듭니다.`
+          action: `두 note를 합쳐 ${data.prepared?.amount || "새 note"} note를 만듭니다.`,
         });
         updateTransferFlow(
           "zero",
           "Self transaction 서명 대기",
-          "요청 금액을 만들기 위해 note 정리가 필요합니다. 이 단계는 내 Veiled balance 안에서 note를 재구성하며, 받는 사람에게는 아직 전송되지 않습니다."
+          "요청 금액을 만들기 위해 note 정리가 필요합니다. 이 단계는 내 Veiled balance 안에서 note를 재구성하며, 받는 사람에게는 아직 전송되지 않습니다.",
         );
         els.keplrTxState.textContent = `${state.activeWallet === "metamask" ? "Waiting for MetaMask" : "Waiting for Keplr"} (${step}/${maxPlannerSteps})`;
-        const plannerBroadcast = await broadcastPreparedPrivacy(data, "self transaction", { waitForEvmReceipt: true });
-        state.keplr.transferHash = plannerBroadcast.broadcast?.txhash || plannerBroadcast.txHash || "";
+        const plannerBroadcast = await broadcastPreparedPrivacy(
+          data,
+          "self transaction",
+          { waitForEvmReceipt: true },
+        );
+        state.keplr.transferHash =
+          plannerBroadcast.broadcast?.txhash || plannerBroadcast.txHash || "";
         await refreshPrivacySurfaces();
         continue;
       }
@@ -3269,34 +4221,50 @@ async function transferFromVeiled() {
     }
 
     if (!finalData) {
-      throw new Error("입력하신 금액의 노트 준비가 너무 오래 걸립니다. notes를 다시 스캔한 뒤 재시도해줘.");
+      throw new Error(
+        "입력하신 금액의 노트 준비가 너무 오래 걸립니다. notes를 다시 스캔한 뒤 재시도해줘.",
+      );
     }
 
     resetTransferPlannerFacts();
     updateTransferFlow(
       "transfer",
       "트랜스퍼 서명 대기",
-      `note 준비가 완료되었습니다. 이제 받는 사람에게 privacy transfer를 요청합니다. ${state.activeWallet === "metamask" ? "MetaMask" : "Keplr"}에서 최종 전송 내용을 확인하고 서명해 주세요.`
+      `note 준비가 완료되었습니다. 이제 받는 사람에게 privacy transfer를 요청합니다. ${state.activeWallet === "metamask" ? "MetaMask" : "Keplr"}에서 최종 전송 내용을 확인하고 서명해 주세요.`,
     );
-    els.keplrTxState.textContent = state.activeWallet === "metamask" ? "Waiting for MetaMask" : "Waiting for Keplr";
-    const broadcast = await broadcastPreparedPrivacy(finalData, "privacy transfer");
-    state.keplr.transferHash = broadcast.broadcast?.txhash || broadcast.txHash || "";
+    els.keplrTxState.textContent =
+      state.activeWallet === "metamask"
+        ? "Waiting for MetaMask"
+        : "Waiting for Keplr";
+    const broadcast = await broadcastPreparedPrivacy(
+      finalData,
+      "privacy transfer",
+    );
+    state.keplr.transferHash =
+      broadcast.broadcast?.txhash || broadcast.txHash || "";
     const isPendingEvm = Boolean(broadcast.pending);
-    els.keplrTxState.textContent = isPendingEvm ? "Transfer submitted" : "Transfer included";
+    els.keplrTxState.textContent = isPendingEvm
+      ? "Transfer submitted"
+      : "Transfer included";
     renderKeplr();
-    finishTransferFlow(isPendingEvm ? "트랜스퍼 요청이 제출되었습니다" : "트랜스퍼 요청이 성공하였습니다");
+    finishTransferFlow(
+      isPendingEvm
+        ? "트랜스퍼 요청이 제출되었습니다"
+        : "트랜스퍼 요청이 성공하였습니다",
+    );
     if (isPendingEvm) {
       watchEvmBroadcast(broadcast, {
-        onIncluded: async included => {
-          state.keplr.transferHash = included.txHash || state.keplr.transferHash;
+        onIncluded: async (included) => {
+          state.keplr.transferHash =
+            included.txHash || state.keplr.transferHash;
           els.keplrTxState.textContent = "Transfer included";
           await refreshPrivacySurfaces();
           renderKeplr();
         },
-        onFailed: error => {
+        onFailed: (error) => {
           els.keplrTxState.textContent = "Transfer failed";
           finishTransferFlow(error.message, false);
-        }
+        },
       });
       return;
     }
@@ -3338,7 +4306,7 @@ async function withdrawFromVeiled() {
     updateTransferFlow(
       "zero",
       "노트 확인 중",
-      "Withdraw에 사용할 정확한 금액의 note가 있는지 확인합니다."
+      "Withdraw에 사용할 정확한 금액의 note가 있는지 확인합니다.",
     );
     let data;
     try {
@@ -3349,91 +4317,104 @@ async function withdrawFromVeiled() {
       }
       showTransferPlannerFacts({
         requested: amount,
-        action: `${coinText(amount)} exact note를 만들기 위해 self transaction을 요청합니다.`
+        action: `${coinText(amount)} exact note를 만들기 위해 self transaction을 요청합니다.`,
       });
       updateTransferFlow(
         "zero",
         "Self transaction 서명 대기",
-        "Withdraw는 입력 금액과 정확히 같은 note가 필요합니다. 지금은 내 Veiled balance 안에서 exact note를 먼저 만듭니다."
+        "Withdraw는 입력 금액과 정확히 같은 note가 필요합니다. 지금은 내 Veiled balance 안에서 exact note를 먼저 만듭니다.",
       );
       await createExactWithdrawNote(amount, {
-        onPlanCheck: step => {
+        onPlanCheck: (step) => {
           updateTransferFlow(
             "zero",
             step === 1 ? "노트 확인 중" : "노트 재확인 중",
-            "Withdraw에 필요한 exact note를 만들 수 있는 note 조합을 확인합니다."
+            "Withdraw에 필요한 exact note를 만들 수 있는 note 조합을 확인합니다.",
           );
         },
-        onSelfMergeNeeded: data => {
+        onSelfMergeNeeded: (data) => {
           showTransferPlannerFacts({
             requested: amount,
             currentMax: plannerCurrentExactNoteMaxForWithdraw(data, amount),
-            action: `두 note를 합쳐 ${data.prepared?.amount || data.plan?.nextAmount || "더 큰"} self note를 만듭니다.`
+            action: `두 note를 합쳐 ${data.prepared?.amount || data.plan?.nextAmount || "더 큰"} self note를 만듭니다.`,
           });
           updateTransferFlow(
             "zero",
             "Self transaction 서명 대기",
-            "요청 금액의 exact note를 만들기 위해 두 note를 먼저 합칩니다. 이 단계는 내 Veiled balance 안에서만 준비됩니다."
+            "요청 금액의 exact note를 만들기 위해 두 note를 먼저 합칩니다. 이 단계는 내 Veiled balance 안에서만 준비됩니다.",
           );
         },
         onZeroHelperNeeded: () => {
           showTransferPlannerFacts({
             requested: amount,
-            action: `${zeroCoinText()} zero note를 만들어 exact note self transaction에 사용합니다.`
+            action: `${zeroCoinText()} zero note를 만들어 exact note self transaction에 사용합니다.`,
           });
           updateTransferFlow(
             "zero",
             "Zero note 서명 대기",
-            "exact note를 만들기 위한 보조 zero note가 필요합니다. 이 단계도 내 Veiled balance 안에서만 준비됩니다."
+            "exact note를 만들기 위한 보조 zero note가 필요합니다. 이 단계도 내 Veiled balance 안에서만 준비됩니다.",
           );
         },
-        onFinalExactTransfer: data => {
+        onFinalExactTransfer: (data) => {
           showTransferPlannerFacts({
             requested: amount,
             currentMax: plannerCurrentExactNoteMaxForWithdraw(data, amount),
-            action: `${coinText(amount)} exact note를 만드는 마지막 self transaction을 요청합니다.`
+            action: `${coinText(amount)} exact note를 만드는 마지막 self transaction을 요청합니다.`,
           });
           updateTransferFlow(
             "zero",
             "Self transaction 서명 대기",
-            "입력 금액과 정확히 같은 note를 만들기 위해 self transaction을 요청합니다."
+            "입력 금액과 정확히 같은 note를 만들기 위해 self transaction을 요청합니다.",
           );
-        }
+        },
       });
       resetTransferPlannerFacts();
       updateTransferFlow(
         "zero",
         "노트 재확인 중",
-        "exact note 준비가 끝났습니다. withdraw sign-doc을 다시 준비합니다."
+        "exact note 준비가 끝났습니다. withdraw sign-doc을 다시 준비합니다.",
       );
       data = await preparePrivacyWithdrawSignDoc(amount, recipient);
     }
     updateTransferFlow(
       "transfer",
       "위드드로우 서명 대기",
-      `note 준비가 완료되었습니다. 이제 Clair balance로 이동할 withdraw를 요청합니다. ${state.activeWallet === "metamask" ? "MetaMask" : "Keplr"}에서 최종 내용을 확인하고 서명해 주세요.`
+      `note 준비가 완료되었습니다. 이제 Clair balance로 이동할 withdraw를 요청합니다. ${state.activeWallet === "metamask" ? "MetaMask" : "Keplr"}에서 최종 내용을 확인하고 서명해 주세요.`,
     );
-    els.keplrTxState.textContent = state.activeWallet === "metamask" ? "Waiting for MetaMask" : "Waiting for Keplr";
+    els.keplrTxState.textContent =
+      state.activeWallet === "metamask"
+        ? "Waiting for MetaMask"
+        : "Waiting for Keplr";
     const broadcast = await broadcastPreparedPrivacy(data, "privacy withdraw");
-    state.keplr.withdrawHash = broadcast.broadcast?.txhash || broadcast.txHash || "";
-    state.keplr.withdrawHeight = broadcast.tx?.height || broadcast.receipt?.blockNumber || "pending";
+    state.keplr.withdrawHash =
+      broadcast.broadcast?.txhash || broadcast.txHash || "";
+    state.keplr.withdrawHeight =
+      broadcast.tx?.height || broadcast.receipt?.blockNumber || "pending";
     const isPendingEvm = Boolean(broadcast.pending);
-    els.keplrTxState.textContent = isPendingEvm ? "Withdraw submitted" : "Withdraw included";
+    els.keplrTxState.textContent = isPendingEvm
+      ? "Withdraw submitted"
+      : "Withdraw included";
     renderKeplr();
-    finishTransferFlow(isPendingEvm ? "Withdraw 요청이 제출되었습니다" : "Withdraw 요청이 성공하였습니다");
+    finishTransferFlow(
+      isPendingEvm
+        ? "Withdraw 요청이 제출되었습니다"
+        : "Withdraw 요청이 성공하였습니다",
+    );
     if (isPendingEvm) {
       watchEvmBroadcast(broadcast, {
-        onIncluded: async included => {
-          state.keplr.withdrawHash = included.txHash || state.keplr.withdrawHash;
-          state.keplr.withdrawHeight = included.receipt?.blockNumber || state.keplr.withdrawHeight;
+        onIncluded: async (included) => {
+          state.keplr.withdrawHash =
+            included.txHash || state.keplr.withdrawHash;
+          state.keplr.withdrawHeight =
+            included.receipt?.blockNumber || state.keplr.withdrawHeight;
           els.keplrTxState.textContent = "Withdraw included";
           await refreshPrivacySurfaces({ balance: true });
           renderKeplr();
         },
-        onFailed: error => {
+        onFailed: (error) => {
           els.keplrTxState.textContent = "Withdraw failed";
           finishTransferFlow(error.message, false);
-        }
+        },
       });
       return;
     }
@@ -3447,18 +4428,207 @@ async function withdrawFromVeiled() {
   }
 }
 
-els.connectWallet.addEventListener("click", () => connectWallet().catch(error => toast(error.message)));
-els.connectKeplr.addEventListener("click", () => connectKeplr().catch(error => toast(error.message)));
+async function relayWithdrawFromVeiled() {
+  if (!state.keplr.account) return;
+  if (!serverFeature("relayer")) {
+    toast(
+      "Local relayer helper is disabled. Use loopback access or set CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING=1 for LAN testing.",
+    );
+    return;
+  }
+
+  let amount;
+  try {
+    amount = amountInputValue(els.relayWithdrawAmount);
+  } catch (error) {
+    toast(error.message);
+    return;
+  }
+  const recipient = els.relayWithdrawRecipient.value.trim();
+  if (!recipient) {
+    toast(`Withdraw recipient에 받을 ${accountPrefix()} 주소를 넣어줘.`);
+    return;
+  }
+
+  await setupKeplrPrivacy();
+  if (!state.keplr.rootSignatureBase64) return;
+
+  const confirmed = await openTransferFlowModal("relayWithdraw");
+  if (!confirmed) return;
+
+  setBusy(els.relayWithdrawFromVeiled, true);
+  els.keplrTxState.textContent = "Preparing relay withdraw";
+  try {
+    resetTransferPlannerFacts();
+    updateTransferFlow(
+      "zero",
+      "노트 확인 중",
+      "Relay withdraw에 사용할 정확한 금액의 note가 있는지 확인합니다.",
+    );
+    let data;
+    try {
+      data = await preparePrivacyRelayWithdrawPayload(amount, recipient);
+    } catch (error) {
+      if (!isExactMatchWithdrawError(error)) {
+        throw error;
+      }
+      showTransferPlannerFacts({
+        requested: amount,
+        action: `${coinText(amount)} exact note를 만들기 위해 self transaction을 요청합니다.`,
+      });
+      updateTransferFlow(
+        "zero",
+        "Self transaction 서명 대기",
+        "Relay withdraw도 입력 금액과 정확히 같은 note가 필요합니다. 먼저 내 Veiled balance 안에서 exact note를 만듭니다.",
+      );
+      await createExactWithdrawNote(amount, {
+        onPlanCheck: (step) => {
+          updateTransferFlow(
+            "zero",
+            step === 1 ? "노트 확인 중" : "노트 재확인 중",
+            "Relay withdraw에 필요한 exact note를 만들 수 있는 note 조합을 확인합니다.",
+          );
+        },
+        onSelfMergeNeeded: (data) => {
+          showTransferPlannerFacts({
+            requested: amount,
+            currentMax: plannerCurrentExactNoteMaxForWithdraw(data, amount),
+            action: `두 note를 합쳐 ${data.prepared?.amount || data.plan?.nextAmount || "더 큰"} self note를 만듭니다.`,
+          });
+          updateTransferFlow(
+            "zero",
+            "Self transaction 서명 대기",
+            "요청 금액의 exact note를 만들기 위해 두 note를 먼저 합칩니다. 이 단계는 내 Veiled balance 안에서만 준비됩니다.",
+          );
+        },
+        onZeroHelperNeeded: () => {
+          showTransferPlannerFacts({
+            requested: amount,
+            action: `${zeroCoinText()} zero note를 만들어 exact note self transaction에 사용합니다.`,
+          });
+          updateTransferFlow(
+            "zero",
+            "Zero note 서명 대기",
+            "exact note를 만들기 위한 보조 zero note가 필요합니다. 이 단계도 내 Veiled balance 안에서만 준비됩니다.",
+          );
+        },
+        onFinalExactTransfer: (data) => {
+          showTransferPlannerFacts({
+            requested: amount,
+            currentMax: plannerCurrentExactNoteMaxForWithdraw(data, amount),
+            action: `${coinText(amount)} exact note를 만드는 마지막 self transaction을 요청합니다.`,
+          });
+          updateTransferFlow(
+            "zero",
+            "Self transaction 서명 대기",
+            "입력 금액과 정확히 같은 note를 만들기 위해 self transaction을 요청합니다.",
+          );
+        },
+      });
+      resetTransferPlannerFacts();
+      updateTransferFlow(
+        "zero",
+        "노트 재확인 중",
+        "exact note 준비가 끝났습니다. relay withdraw payload를 다시 준비합니다.",
+      );
+      data = await preparePrivacyRelayWithdrawPayload(amount, recipient);
+    }
+
+    updateTransferFlow(
+      "transfer",
+      "Payload 준비 완료",
+      "relay withdraw payload가 준비되었습니다. Relayer 패널에서 내용을 확인할 수 있습니다.",
+    );
+    setPreparedRelayWithdrawPayload(data, { amount, recipient });
+    els.keplrTxState.textContent = "Relay payload ready";
+    renderKeplr();
+    finishTransferFlow("Relay withdraw payload가 준비되었습니다");
+  } catch (error) {
+    els.keplrTxState.textContent = "Relay withdraw failed";
+    finishTransferFlow(error.message, false);
+  } finally {
+    setBusy(els.relayWithdrawFromVeiled, false);
+    renderKeplr();
+  }
+}
+
+async function relayPreparedWithdraw() {
+  const payload = state.keplr.relayWithdrawPayload;
+  if (!payload) {
+    toast("먼저 relay withdraw payload를 준비해줘.");
+    return;
+  }
+  if (!serverFeature("relayer")) {
+    toast(
+      "Local relayer helper is disabled. Use loopback access or set CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING=1 for LAN testing.",
+    );
+    return;
+  }
+
+  setBusy(els.relayPreparedWithdraw, true);
+  els.keplrTxState.textContent = "Relayer broadcasting";
+  try {
+    const relay = await relayPreparedWithdrawPayload(
+      payload,
+      state.keplr.relayWithdrawPayloadRecipient,
+    );
+    state.keplr.relayWithdrawHash = relay.broadcast?.txhash || "";
+    state.keplr.relayWithdrawHeight =
+      relay.tx?.height || relay.receipt?.blockNumber || "";
+    const relayerDisplayAddress = relay.relayerEvmAddress || relay.relayerAddress;
+    state.keplr.relayWithdrawRelayer = relayerDisplayAddress
+      ? `${relay.relayer || "relayer"} ${shorten(relayerDisplayAddress, 12, 10)}`
+      : relay.relayer || "";
+    state.keplr.relayWithdrawPayloadHash =
+      relay.payloadHash || payload?.payload_hash || "";
+    clearPreparedRelayWithdrawPayload({ clearPayloadHash: true });
+    els.keplrTxState.textContent = "Relay withdraw included";
+    renderKeplr();
+    toast("Relay withdraw submitted");
+    await refreshPrivacySurfaces({ balance: true });
+    await refreshRelayerAccount();
+  } catch (error) {
+    els.keplrTxState.textContent = "Relay withdraw failed";
+    toast(error.message);
+  } finally {
+    setBusy(els.relayPreparedWithdraw, false);
+    renderKeplr();
+  }
+}
+
+els.connectWallet.addEventListener("click", () =>
+  connectWallet().catch((error) => toast(error.message)),
+);
+els.connectKeplr.addEventListener("click", () =>
+  connectKeplr().catch((error) => toast(error.message)),
+);
 els.disconnectWallet.addEventListener("click", disconnectWallet);
-els.dappChainSelect.addEventListener("change", event => selectDappChainProfile(event.target.value));
-els.signSession.addEventListener("click", () => signSession().catch(error => toast(error.message)));
-els.copyWalletAccount.addEventListener("click", () => copyWalletAccount().catch(error => toast(error.message)));
+els.dappChainSelect.addEventListener("change", (event) =>
+  selectDappChainProfile(event.target.value),
+);
+els.signSession.addEventListener("click", () =>
+  signSession().catch((error) => toast(error.message)),
+);
+els.copyWalletAccount.addEventListener("click", () =>
+  copyWalletAccount().catch((error) => toast(error.message)),
+);
 els.fundKeplr.addEventListener("click", fundKeplr);
-els.setupKeplrPrivacy.addEventListener("click", () => setupKeplrPrivacy().catch(error => toast(error.message)));
-els.copyKeplrDisclosurePubKey.addEventListener("click", () => copyKeplrDisclosurePubKey().catch(error => toast(error.message)));
-els.refreshWalletBalance.addEventListener("click", () => refreshWalletBalance().catch(error => toast(error.message)));
-els.scanKeplrNotes.addEventListener("click", () => scanKeplrNotes().catch(error => toast(error.message)));
-els.myKeplrSpendableOnly.addEventListener("change", event => {
+els.setupKeplrPrivacy.addEventListener("click", () =>
+  setupKeplrPrivacy().catch((error) => toast(error.message)),
+);
+els.copyKeplrDisclosurePubKey.addEventListener("click", () =>
+  copyKeplrDisclosurePubKey().catch((error) => toast(error.message)),
+);
+els.refreshWalletBalance.addEventListener("click", () =>
+  refreshWalletBalance().catch((error) => toast(error.message)),
+);
+els.refreshClairBalance.addEventListener("click", () =>
+  refreshWalletBalance().catch((error) => toast(error.message)),
+);
+els.scanKeplrNotes.addEventListener("click", () =>
+  scanKeplrNotes().catch((error) => toast(error.message)),
+);
+els.myKeplrSpendableOnly.addEventListener("change", (event) => {
   state.keplr.showSpendableOnly = event.target.checked;
   renderMyKeplrNotes();
 });
@@ -3469,38 +4639,73 @@ els.depositFromKeplr.addEventListener("click", depositFromKeplr);
   els.keplrSendRecipient,
   els.keplrDepositAmount,
   els.veiledTransferAmount,
-  els.veiledWithdrawAmount
-].forEach(input => {
+  els.veiledWithdrawAmount,
+  els.relayWithdrawAmount,
+].forEach((input) => {
   input.addEventListener("input", updateAmountActionButtons);
 });
-els.veiledDisclosureAdvanced.addEventListener("change", renderTransferDisclosureAdvanced);
-els.veiledDisclosureMode.addEventListener("change", renderTransferDisclosureAdvanced);
+[els.relayWithdrawAmount, els.relayWithdrawRecipient].forEach((input) => {
+  input.addEventListener("input", () => {
+    clearPreparedRelayWithdrawPayload();
+    renderKeplr();
+  });
+});
+els.veiledDisclosureAdvanced.addEventListener(
+  "change",
+  renderTransferDisclosureAdvanced,
+);
+els.veiledDisclosureMode.addEventListener(
+  "change",
+  renderTransferDisclosureAdvanced,
+);
 els.transferFromVeiled.addEventListener("click", transferFromVeiled);
 els.withdrawFromVeiled.addEventListener("click", withdrawFromVeiled);
-els.refreshAll.addEventListener("click", () => refreshHealth().catch(error => toast(error.message)));
-els.refreshNotes.addEventListener("click", () => refreshNotes().catch(error => toast(error.message)));
-els.refreshEvents.addEventListener("click", () => refreshEvents().catch(error => toast(error.message)));
-els.decodeEventDisclosure.addEventListener("click", () => decodeSelectedEventDisclosure().catch(error => toast(error.message)));
+els.relayWithdrawFromVeiled.addEventListener(
+  "click",
+  relayWithdrawFromVeiled,
+);
+els.copyRelayWithdrawPayload.addEventListener("click", () =>
+  copyRelayWithdrawPayload().catch((error) => toast(error.message)),
+);
+els.relayPreparedWithdraw.addEventListener("click", () =>
+  relayPreparedWithdraw().catch((error) => toast(error.message)),
+);
+els.refreshAll.addEventListener("click", () =>
+  refreshHealth().catch((error) => toast(error.message)),
+);
+els.refreshNotes.addEventListener("click", () =>
+  refreshNotes().catch((error) => toast(error.message)),
+);
+els.refreshEvents.addEventListener("click", () =>
+  refreshEvents().catch((error) => toast(error.message)),
+);
+els.decodeEventDisclosure.addEventListener("click", () =>
+  decodeSelectedEventDisclosure().catch((error) => toast(error.message)),
+);
 if (els.refreshAuditorTransfers) {
-  els.refreshAuditorTransfers.addEventListener("click", () => refreshAuditorTransfers().catch(error => toast(error.message)));
+  els.refreshAuditorTransfers.addEventListener("click", () =>
+    refreshAuditorTransfers().catch((error) => toast(error.message)),
+  );
 }
 if (els.decodeAuditorTransfer) {
-  els.decodeAuditorTransfer.addEventListener("click", () => decodeAuditorTransfer().catch(error => toast(error.message)));
+  els.decodeAuditorTransfer.addEventListener("click", () =>
+    decodeAuditorTransfer().catch((error) => toast(error.message)),
+  );
 }
 els.closeNoticeModal.addEventListener("click", closeNoticeModal);
 els.cancelTransferFlow.addEventListener("click", cancelTransferFlow);
 els.confirmTransferFlow.addEventListener("click", confirmTransferFlowStart);
-els.noticeModal.addEventListener("click", event => {
+els.noticeModal.addEventListener("click", (event) => {
   if (event.target === els.noticeModal) {
     closeNoticeModal();
   }
 });
-els.transferFlowModal.addEventListener("click", event => {
+els.transferFlowModal.addEventListener("click", (event) => {
   if (event.target === els.transferFlowModal) {
     cancelTransferFlow();
   }
 });
-window.addEventListener("keydown", event => {
+window.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   if (!els.transferFlowModal.hidden) {
     cancelTransferFlow();
@@ -3508,14 +4713,14 @@ window.addEventListener("keydown", event => {
     closeNoticeModal();
   }
 });
-els.accountSelect.addEventListener("change", event => {
+els.accountSelect.addEventListener("change", (event) => {
   state.selectedAccount = event.target.value;
-  refreshSelectedAccount().catch(error => toast(error.message));
+  refreshSelectedAccount().catch((error) => toast(error.message));
 });
 
 const injectedMetaMask = metaMaskProvider();
 if (injectedMetaMask) {
-  injectedMetaMask.on?.("accountsChanged", accounts => {
+  injectedMetaMask.on?.("accountsChanged", (accounts) => {
     if (state.activeWallet !== "metamask") return;
     resetWalletSession();
     renderWallet();
@@ -3523,9 +4728,11 @@ if (injectedMetaMask) {
     if (!accounts[0]) {
       return;
     }
-    toast("MetaMask account changed. Reconnect wallet to refresh privacy identity.");
+    toast(
+      "MetaMask account changed. Reconnect wallet to refresh privacy identity.",
+    );
   });
-  injectedMetaMask.on?.("chainChanged", chainId => {
+  injectedMetaMask.on?.("chainChanged", (chainId) => {
     if (state.activeWallet !== "metamask") return;
     state.wallet.chainId = chainId;
     renderWallet();
@@ -3545,4 +4752,4 @@ renderWallet();
 renderKeplr();
 renderTransferDisclosureAdvanced();
 setupAddressSuggestions();
-refreshHealth().catch(error => toast(error.message));
+refreshHealth().catch((error) => toast(error.message));

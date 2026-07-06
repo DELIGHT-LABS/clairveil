@@ -1,16 +1,21 @@
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createReadStream, existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { homedir, networkInterfaces } from "node:os";
+import { homedir, networkInterfaces, tmpdir } from "node:os";
 import { JsonRpcProvider, Wallet } from "ethers";
 import {
   createClairveilClient,
+  createClairveilEvmClient,
   ClairveilError,
   ClairveilErrorCode,
+  bech32AddressToEvm,
+  computePreparedTransferPayloadHash,
+  computePreparedWithdrawProverPayloadHash,
   derivePrivacyMaterial,
+  evmAddressToBech32,
   isEvmAddress,
   evmPrivacyPrecompileAddress,
   plannerStatusToErrorCode
@@ -93,8 +98,10 @@ const config = {
   publicRest: process.env.CLAIRVEIL_PUBLIC_REST ?? "",
   proverUrl: process.env.CLAIRVEIL_PROVER_URL ?? "http://127.0.0.1:8080",
   publicProverUrl: process.env.CLAIRVEIL_PUBLIC_PROVER_URL ?? process.env.CLAIRVEIL_PROVER_PUBLIC_URL ?? process.env.CLAIRVEIL_PROVER_URL ?? "http://127.0.0.1:8080",
+  referenceProverAccountPrefix: process.env.CLAIRVEIL_REFERENCE_PROVER_ACCOUNT_PREFIX ?? process.env.CLAIRVEIL_PROVER_ACCOUNT_PREFIX ?? "clair",
   proverBearerToken: process.env.CLAIRVEIL_PROVER_BEARER_TOKEN ?? process.env.CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN ?? "",
   proverTimeoutMs: Number(process.env.CLAIRVEIL_PROVER_TIMEOUT_MS ?? 120000),
+  enableProverProxy: envFlag("CLAIRVEIL_DAPP_ENABLE_PROVER_PROXY", false),
   transport: process.env.CLAIRVEIL_TRANSPORT ?? "cosmos",
   denom: configuredDenom,
   displayDenom: process.env.CLAIRVEIL_DISPLAY_DENOM ?? "CLAIR",
@@ -128,7 +135,7 @@ const clairveil = createClairveilClient({
   defaultDenom: config.denom
 });
 
-const cosmosAccountNames = new Set(["alice", "bob", "auditor"]);
+const cosmosAccountNames = new Set(["alice", "bob", "relayer", "auditor"]);
 const evmDefaultSignerAccounts = [
   {
     name: "dev0",
@@ -203,6 +210,21 @@ function localSignerNames() {
     : cosmosAccountNames;
 }
 
+function localRelayerName() {
+  const fallback = isEvmTransport() ? "dev0" : "relayer";
+  const configured = process.env.CLAIRVEIL_LOCAL_RELAYER
+    ?? process.env.CLAIRVEIL_RELAYER_ACCOUNT
+    ?? process.env.CLAIRVEIL_EVM_RELAYER_ACCOUNT
+    ?? fallback;
+  return localSignerNames().has(configured) ? configured : fallback;
+}
+
+function evmPrivacyAccountPrefix() {
+  return process.env.CLAIRVEIL_EVM_PRIVACY_ACCOUNT_PREFIX
+    ?? config.referenceProverAccountPrefix
+    ?? "clair";
+}
+
 function buildKeplrChainInfo({
   chainId,
   chainName,
@@ -270,7 +292,7 @@ function keplrChainInfo() {
   });
 }
 
-function dappChainProfiles() {
+function dappChainProfiles(proverUrl = config.publicProverUrl) {
   const clairveilProfile = {
     id: "clairveil-local",
     label: "Clairveil Localnet",
@@ -280,7 +302,7 @@ function dappChainProfiles() {
     chainId: process.env.CLAIRVEIL_COSMOS_CHAIN_ID ?? (isEvmTransport() ? "clairveil-local-2" : config.chainId),
     rpc: httpRpcEndpoint(process.env.CLAIRVEIL_COSMOS_RPC ?? (isEvmTransport() ? "tcp://127.0.0.1:26657" : config.rpc)),
     rest: (process.env.CLAIRVEIL_COSMOS_REST ?? (isEvmTransport() ? "http://127.0.0.1:1317" : config.rest)).replace(/\/$/, ""),
-    proverUrl: process.env.CLAIRVEIL_COSMOS_PROVER_URL ?? config.publicProverUrl,
+    proverUrl: process.env.CLAIRVEIL_COSMOS_PROVER_URL ?? proverUrl,
     accountPrefix: process.env.CLAIRVEIL_COSMOS_ACCOUNT_PREFIX ?? "clair",
     shieldedPrefix: process.env.CLAIRVEIL_COSMOS_SHIELDED_PREFIX ?? "clairs",
     denom: process.env.CLAIRVEIL_COSMOS_DENOM ?? "uclair",
@@ -311,7 +333,7 @@ function dappChainProfiles() {
     chainId: process.env.CLAIRVEIL_EVM_HOST_CHAIN_ID ?? (isEvmTransport() ? config.chainId : "evm-local-1"),
     rpc: httpRpcEndpoint(process.env.CLAIRVEIL_EVM_HOST_RPC ?? (isEvmTransport() ? config.rpc : "tcp://127.0.0.1:26657")),
     rest: (process.env.CLAIRVEIL_EVM_HOST_REST ?? (isEvmTransport() ? config.rest : "http://127.0.0.1:1317")).replace(/\/$/, ""),
-    proverUrl: process.env.CLAIRVEIL_EVM_PROVER_URL ?? config.publicProverUrl,
+    proverUrl: process.env.CLAIRVEIL_EVM_PROVER_URL ?? proverUrl,
     accountPrefix: process.env.CLAIRVEIL_EVM_PRIVACY_ACCOUNT_PREFIX ?? "clair",
     shieldedPrefix: process.env.CLAIRVEIL_EVM_SHIELDED_PREFIX ?? (isEvmTransport() ? config.shieldedPrefix : "clairs"),
     denom: process.env.CLAIRVEIL_EVM_DENOM ?? (isEvmTransport() ? config.denom : "utoken"),
@@ -410,6 +432,20 @@ function sendJson(res, status, data) {
   res.end(body);
 }
 
+function requestOrigin(req) {
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  const proto = forwardedProto || "http";
+  const host = req.headers.host || `${isWildcardHost(config.host) ? "127.0.0.1" : config.host}:${config.port}`;
+  return `${proto}://${host}`;
+}
+
+function browserProverUrl(req) {
+  if (config.localTestMode && isEvmTransport()) {
+    return requestOrigin(req);
+  }
+  return config.publicProverUrl;
+}
+
 function sendPlannerResult(res, result) {
   const code = plannerStatusToErrorCode(result?.status);
   sendJson(res, 409, {
@@ -492,9 +528,117 @@ function proverProxyPath(pathname) {
   return "";
 }
 
+function proverProxyEnabled(req) {
+  return config.enableProverProxy
+    || (config.localTestMode && isLoopbackRemoteAddress(req.socket?.remoteAddress));
+}
+
+function shouldRewriteTransferProofForReferenceProver(path) {
+  return path === "/v1/prover/transfer"
+    && config.localTestMode
+    && isEvmTransport()
+    && config.accountPrefix !== config.referenceProverAccountPrefix;
+}
+
+function shouldRewriteWithdrawProofForReferenceProver(path) {
+  return path === "/v1/prover/withdraw"
+    && config.localTestMode
+    && isEvmTransport()
+    && config.accountPrefix !== config.referenceProverAccountPrefix;
+}
+
+function bech32PrefixOf(value) {
+  const text = String(value || "").trim();
+  const separator = text.indexOf("1");
+  return separator > 0 ? text.slice(0, separator) : "";
+}
+
+function maybeRewriteBech32ForReferenceProver(value, label) {
+  const prefix = bech32PrefixOf(value);
+  if (!prefix || prefix === config.referenceProverAccountPrefix) {
+    return { value, rewritten: false, evmAddress: "" };
+  }
+  if (prefix !== config.accountPrefix) {
+    throw new Error(`${label} prefix mismatch: expected ${config.accountPrefix} or ${config.referenceProverAccountPrefix}, got ${prefix}`);
+  }
+  const evmAddress = bech32AddressToEvm(value, config.accountPrefix);
+  return {
+    value: evmAddressToBech32(evmAddress, config.referenceProverAccountPrefix),
+    rewritten: true,
+    evmAddress
+  };
+}
+
+function rewriteProofBodyForReferenceProver(path, body) {
+  if (!shouldRewriteTransferProofForReferenceProver(path) && !shouldRewriteWithdrawProofForReferenceProver(path)) {
+    return { body };
+  }
+
+  // Local EVM tests use the EVM chain account prefix, while the reference
+  // prover still validates payload metadata with the Clairveil account prefix.
+  // The EVM precompile works with EVM addresses, so this rewrite is only a
+  // proof-service compatibility shim for the example server.
+  const request = JSON.parse(body.toString("utf8"));
+  const payload = request?.payload;
+  if (!payload || typeof payload !== "object") {
+    return { body };
+  }
+
+  let originalPayloadHash = "";
+  let rewrittenPayload = payload;
+  if (shouldRewriteTransferProofForReferenceProver(path)) {
+    const rewrite = maybeRewriteBech32ForReferenceProver(payload.creator, "transfer creator");
+    if (rewrite.rewritten) {
+      originalPayloadHash = payload.payload_hash || computePreparedTransferPayloadHash(payload);
+      rewrittenPayload = {
+        ...payload,
+        creator: rewrite.value
+      };
+      rewrittenPayload.payload_hash = computePreparedTransferPayloadHash(rewrittenPayload);
+    }
+  }
+  if (shouldRewriteWithdrawProofForReferenceProver(path)) {
+    const rewrite = maybeRewriteBech32ForReferenceProver(payload.recipient, "withdraw recipient");
+    if (rewrite.rewritten) {
+      originalPayloadHash = payload.payload_hash || computePreparedWithdrawProverPayloadHash(payload);
+      rewrittenPayload = {
+        ...payload,
+        recipient: rewrite.value,
+        recipient_bytes_hex: rewrite.evmAddress.replace(/^0x/i, "").toLowerCase()
+      };
+      rewrittenPayload.payload_hash = computePreparedWithdrawProverPayloadHash(rewrittenPayload);
+    }
+  }
+
+  if (!originalPayloadHash) {
+    return { body };
+  }
+
+  return {
+    body: Buffer.from(JSON.stringify({ ...request, payload: rewrittenPayload }, jsonReplacer), "utf8"),
+    originalPayloadHash
+  };
+}
+
+function restoreProofHashForBrowser(path, text, originalPayloadHash) {
+  if (!originalPayloadHash || (path !== "/v1/prover/transfer" && path !== "/v1/prover/withdraw")) {
+    return text;
+  }
+
+  const response = JSON.parse(text);
+  if (response?.proof?.payload_hash) {
+    response.proof.payload_hash = originalPayloadHash;
+  }
+  return JSON.stringify(response, jsonReplacer, 2);
+}
+
 async function handleProverProxy(req, res, url) {
   const path = proverProxyPath(url.pathname);
   if (!path) {
+    sendJson(res, 404, { error: "not found" });
+    return;
+  }
+  if (!proverProxyEnabled(req)) {
     sendJson(res, 404, { error: "not found" });
     return;
   }
@@ -520,7 +664,8 @@ async function handleProverProxy(req, res, url) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.proverTimeoutMs);
   try {
-    const body = await readRawBody(req);
+    const rawBody = await readRawBody(req);
+    const rewritten = rewriteProofBodyForReferenceProver(path, rawBody);
     const target = new URL(path, config.proverUrl.replace(/\/$/, ""));
     const headers = {
       "content-type": req.headers["content-type"] || "application/json",
@@ -532,10 +677,13 @@ async function handleProverProxy(req, res, url) {
     const response = await fetch(target, {
       method: "POST",
       headers,
-      body,
+      body: rewritten.body,
       signal: controller.signal
     });
-    const text = await response.text();
+    const responseText = await response.text();
+    const text = response.ok
+      ? restoreProofHashForBrowser(path, responseText, rewritten.originalPayloadHash)
+      : responseText;
     res.writeHead(response.status, {
       "content-type": response.headers.get("content-type") || "application/json; charset=utf-8",
       "cache-control": "no-store"
@@ -853,6 +1001,44 @@ async function runAuditorMaterial(input) {
   });
 }
 
+async function runDepositProof(input) {
+  const timeoutMs = 120000;
+  const env = {
+    ...process.env,
+    ...(await readEnvFile()),
+    CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE: process.env.CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE ?? "strict"
+  };
+  return new Promise((resolveRun, reject) => {
+    const child = spawn("go", ["run", "./examples/clairveil-dapp/tools/deposit-proof"], {
+      cwd: repoRoot,
+      env,
+      timeout: timeoutMs
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", chunk => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", chunk => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", code => {
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || stdout.trim() || `deposit-proof exited with code ${code}`));
+        return;
+      }
+      try {
+        resolveRun(extractLastJson(stdout));
+      } catch {
+        const output = stdout.trim() || stderr.trim();
+        reject(new Error(output ? `deposit-proof did not return JSON: ${output.slice(0, 500)}` : "deposit-proof did not return JSON"));
+      }
+    });
+    child.stdin.end(JSON.stringify(input));
+  });
+}
+
 function testAuditMaterialFromConfig(auditMasterPubKeyHex) {
   if (String(auditMasterPubKeyHex || "").toLowerCase() !== localTestAuditMaterial.auditMasterPubKeyHex) {
     return null;
@@ -915,13 +1101,27 @@ function serverFeaturesForRequest(req) {
     localSignerAdmin,
     localSignerSetup: localSignerMutation,
     faucet: localSignerMutation,
+    depositProof: localSignerMutation,
+    relayer: localSignerMutation,
     auditorAdmin: localSignerAdmin
   };
+}
+
+async function localAccountsForPublicConfig(serverFeatures) {
+  if (!serverFeatures.localSignerAdmin && !serverFeatures.relayer) {
+    return [];
+  }
+  const accounts = await localAccounts();
+  if (serverFeatures.localSignerAdmin) {
+    return accounts;
+  }
+  return accounts.filter(account => account.name === localRelayerName());
 }
 
 function publicConfig(req) {
   const serverFeatures = serverFeaturesForRequest(req);
   const exposeLocalAdmin = serverFeatures.localSignerAdmin;
+  const proverUrl = browserProverUrl(req);
   return {
     serverBacked: true,
     modeLabel: config.localTestMode ? "Local Note Test Web" : "Public Node DApp",
@@ -931,7 +1131,7 @@ function publicConfig(req) {
     chainId: config.chainId,
     rpc: config.rpc,
     rest: config.rest,
-    proverUrl: config.publicProverUrl,
+    proverUrl,
     transport: config.transport,
     denom: config.denom,
     displayDenom: config.displayDenom,
@@ -941,7 +1141,7 @@ function publicConfig(req) {
     localTestMode: config.localTestMode,
     serverFeatures,
     activeChainProfileId: activeChainProfileId(),
-    chainProfiles: dappChainProfiles(),
+    chainProfiles: dappChainProfiles(proverUrl),
     keplrChainInfo: keplrChainInfo(),
     ...(isEvmTransport() ? {
       evmRpc: config.evmRpc,
@@ -1012,7 +1212,7 @@ async function handleApi(req, res, url) {
       const cfg = publicConfig(req);
       sendJson(res, 200, {
         ...cfg,
-        accounts: cfg.serverFeatures.localSignerAdmin ? await localAccounts() : []
+        accounts: await localAccountsForPublicConfig(cfg.serverFeatures)
       });
       return;
     }
@@ -1023,7 +1223,7 @@ async function handleApi(req, res, url) {
         fetchJson(rpcHttpUrl("/status")),
         fetchJson(restUrl("/clairveil/privacy/v1/tree_state")),
         fetchJson(restUrl("/clairveil/privacy/v1/audit_config")),
-        cfg.serverFeatures.localSignerAdmin ? localAccounts() : []
+        localAccountsForPublicConfig(cfg.serverFeatures)
       ]);
       sendJson(res, 200, {
         config: cfg,
@@ -1141,6 +1341,129 @@ async function handleApi(req, res, url) {
       }
       const balance = await queryBalances(recipient);
       sendJson(res, 200, { broadcast: result.json, tx, balance, beforeBalance, amount, from, recipient });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/relayer/withdraw") {
+      assertLocalTestBackendAllowed("relay withdraw");
+      assertSignerMutationAllowed(req);
+
+      const body = await readBody(req);
+      const payload = body.payload;
+      const relayer = validateAccount(body.relayer ?? body.from ?? localRelayerName());
+      const account = (await localAccounts()).find(entry => entry.name === relayer);
+      if (!account?.transparentAddress) {
+        throw new Error(`local relayer account ${relayer} is not initialized`);
+      }
+
+      if (isEvmTransport()) {
+        const evmClient = createClairveilEvmClient({
+          contractAddress: config.evmPrivacyPrecompileAddress,
+          chainId: config.chainId,
+          accountPrefix: evmPrivacyAccountPrefix(),
+          shieldedPrefix: config.shieldedPrefix,
+          defaultDenom: config.denom
+        });
+        const built = await evmClient.buildWithdrawTransaction({
+          payload,
+          relayer: account.transparentAddress,
+          expectedChainId: config.chainId,
+          expectedRecipient: body.expectedRecipient ?? body.expected_recipient ?? payload?.recipient
+        });
+        const provider = new JsonRpcProvider(config.evmRpc);
+        const wallet = evmWalletForLocalSigner(relayer).connect(provider);
+        const tx = await wallet.sendTransaction({
+          to: built.transaction.to,
+          data: built.transaction.data,
+          value: built.transaction.value ?? "0x0",
+          gasLimit: BigInt(config.evmGasLimit)
+        });
+        const txHash = validateTxHashHex(tx.hash);
+        const receipt = await waitForEvmReceipt(txHash);
+        if (!receipt) {
+          throw new Error(`relay withdraw tx was broadcast but not found yet: ${txHash}`);
+        }
+        if (receipt.status && receipt.status !== "0x1") {
+          throw new Error(`relay withdraw tx failed with EVM receipt status ${receipt.status}`);
+        }
+        sendJson(res, 200, {
+          broadcast: { txhash: txHash },
+          receipt,
+          relayer,
+          relayerAddress: account.transparentAddress,
+          relayerEvmAddress: wallet.address,
+          payloadHash: payload?.payload_hash || "",
+          message: {
+            creator: built.message.creator,
+            amount: built.message.amount,
+            recipient: built.message.recipient,
+            evmRecipient: built.message.evmRecipient || "",
+            chainId: built.message.chainId,
+            expiresAtUnix: built.message.expiresAtUnix?.toString?.() ?? String(built.message.expiresAtUnix ?? "")
+          }
+        });
+        return;
+      }
+
+      const message = clairveil.buildRelayWithdrawMessageFromPayload({
+        payload,
+        relayer: account.transparentAddress,
+        expectedChainId: config.chainId,
+        expectedRecipient: body.expectedRecipient ?? body.expected_recipient ?? payload?.recipient,
+        accountPrefix: config.accountPrefix
+      });
+
+      const workDir = await mkdtemp(join(tmpdir(), "clairveil-relay-withdraw-"));
+      const payloadPath = join(workDir, "payload.json");
+      try {
+        await writeFile(payloadPath, JSON.stringify(payload, null, 2), "utf8");
+        const result = await runClairveild([
+          "tx", "privacy", "relay-withdraw", payloadPath,
+          "--from", relayer,
+          "--keyring-backend", "test",
+          "--home", config.home,
+          "--node", config.rpc,
+          "--chain-id", config.chainId,
+          "--gas", "5000000",
+          "--gas-prices", config.gasPrices,
+          "--yes",
+          "--output", "json"
+        ]);
+        const tx = await waitForTx(result.json.txhash);
+        if (!tx) {
+          throw new Error(`relay withdraw tx was broadcast but not found yet: ${result.json.txhash}`);
+        }
+        if (Number(tx.code || 0) !== 0) {
+          throw new Error(tx.raw_log || `relay withdraw tx failed with code ${tx.code}`);
+        }
+        sendJson(res, 200, {
+          broadcast: result.json,
+          tx,
+          relayer,
+          relayerAddress: account.transparentAddress,
+          payloadHash: payload?.payload_hash || "",
+          message: {
+            creator: message.creator,
+            amount: message.amount,
+            recipient: message.recipient,
+            chainId: message.chainId,
+            expiresAtUnix: message.expiresAtUnix?.toString?.() ?? String(message.expiresAtUnix ?? "")
+          }
+        });
+      } finally {
+        await rm(workDir, { recursive: true, force: true });
+      }
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/deposit/proof") {
+      assertLocalTestBackendAllowed("deposit proof");
+      assertSignerMutationAllowed(req);
+      const body = await readBody(req);
+      sendJson(res, 200, await runDepositProof({
+        note_json: body.note_json ?? body.noteJson,
+        note_commitment_hex: body.note_commitment_hex ?? body.noteCommitmentHex
+      }));
       return;
     }
 

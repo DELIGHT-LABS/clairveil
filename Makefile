@@ -117,6 +117,7 @@ examples:
 	npm --prefix examples/js-sdk-prover-http-client run demo
 	npm --prefix examples/clairveil-dapp ci
 	npm --prefix examples/clairveil-dapp run check:dapp
+	npm --prefix examples/clairveil-dapp run check:bundle:fresh
 	npm --prefix examples/clairveil-dapp run test:dapp
 	npm --prefix examples/clairveil-dapp run check:clairveiljs
 	npm --prefix examples/clairveil-dapp run test:clairveiljs

@@ -10,15 +10,16 @@
     "build:dapp": "esbuild public/app.js --bundle --format=esm --platform=browser --target=es2022 --outfile=public/app.bundle.js",
     "start": "npm run build:dapp && node server.js",
     "dev": "npm run build:dapp && node server.js",
-    "check:dapp": "npm run build:dapp && npm run check:bundle && node --check server.js && node --check public/app.js && node --check public/dapp-config.js && node --check public/app.bundle.js",
-    "check:bundle": "git diff --exit-code -- public/app.bundle.js",
+    "check:dapp": "npm run build:dapp && node --check server.js && node --check public/app.js && node --check public/dapp-config.js && node --check public/app.bundle.js",
+    "check:bundle": "node --check public/app.bundle.js",
+    "check:bundle:fresh": "npm run build:dapp && (git diff --quiet -- public/app.bundle.js || (echo \"public/app.bundle.js is stale; run npm run build:dapp and commit the updated bundle.\" && exit 1))",
     "test:dapp": "node --test test/dapp-smoke.test.js test/dapp-routes.test.js",
     "check:clairveiljs": "npm run check:clairveiljs:types",
     "check:clairveiljs:types": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --strict test/clairveiljs-types.ts",
     "test:clairveiljs": "node --test test/clairveiljs.test.js test/clairveiljs-package.test.js"
   },
   "dependencies": {
-    "clairveiljs": "github:DELIGHT-LABS/clairveiljs",
+    "clairveiljs": "https://github.com/DELIGHT-LABS/clairveiljs/archive/671eec0e800c6a42bbe1ad4b6724cdb36c112485.tar.gz",
     "ethers": "^6.16.0"
   },
   "overrides": {

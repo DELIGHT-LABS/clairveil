@@ -234,7 +234,8 @@ h3 {
   grid-column: 1 / -1;
 }
 
-.local-signer-panel {
+.local-signer-panel,
+.relayer-panel {
   grid-column: 1 / -1;
 }
 
@@ -454,6 +455,15 @@ select {
   margin-bottom: 16px;
 }
 
+.relayer-account-title {
+  margin-bottom: 16px;
+}
+
+.relayer-account-facts > div:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
 .local-signer-layout {
   display: grid;
   column-gap: 18px;
@@ -479,6 +489,89 @@ select {
   gap: 10px;
   grid-template-columns: minmax(0, 1fr) auto;
   margin-bottom: 16px;
+}
+
+.action-buttons {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.action-buttons > button {
+  min-width: 116px;
+}
+
+.payload-json {
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.payload-warning {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  color: #7c2d12;
+  font-size: 0.84rem;
+  font-weight: 800;
+  line-height: 1.35;
+  margin: 0;
+  padding: 10px 12px;
+}
+
+.relayer-payload-output {
+  border-top: 2px solid var(--line-strong);
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 18px;
+}
+
+.relayer-payload-actions {
+  justify-content: stretch;
+}
+
+.relayer-payload-actions > button {
+  flex: 1;
+}
+
+.relayer-prepare-pane {
+  align-content: start;
+  display: grid;
+  gap: 16px;
+  overflow: visible;
+}
+
+.relayer-prepare-pane .panel-heading {
+  margin-bottom: 0;
+}
+
+.relayer-prepare-pane .address-field {
+  z-index: 2;
+}
+
+.relayer-prepare-pane .address-suggestions {
+  z-index: 80;
+}
+
+.relayer-prepare-amount-row {
+  margin-bottom: 0;
+}
+
+.relayer-payload-facts {
+  column-gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .faucet-row {
@@ -652,7 +745,7 @@ select {
 }
 
 .note-summary {
-  align-items: baseline;
+  align-items: center;
   background: var(--surface-strong);
   border-radius: 8px;
   display: flex;
@@ -673,6 +766,17 @@ select {
   min-width: 0;
   overflow-wrap: anywhere;
   text-align: right;
+}
+
+.clair-balance-summary strong {
+  text-align: left;
+}
+
+.balance-refresh-button {
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  min-height: 34px;
+  padding: 0 12px;
 }
 
 .notes-list,
@@ -1279,6 +1383,15 @@ select {
     grid-template-columns: 1fr;
   }
 
+  .action-buttons {
+    justify-content: stretch;
+    width: 100%;
+  }
+
+  .action-buttons > button {
+    flex: 1;
+  }
+
   .audit-row code {
     justify-self: start;
   }
@@ -1311,6 +1424,10 @@ select {
   }
 
   .wallet-session-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .relayer-payload-facts {
     grid-template-columns: 1fr;
   }
 }
