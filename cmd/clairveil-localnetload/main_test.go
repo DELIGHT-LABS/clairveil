@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestSummarizeBucket(t *testing.T) {
 	success := true
@@ -40,27 +43,13 @@ func TestSummarizeBucket(t *testing.T) {
 	if summary.Name != "LocalnetTPSMixedTarget2" || summary.ClaimType != "chain_tps" || summary.TargetTxPerSec != 2 {
 		t.Fatalf("unexpected summary metadata: %+v", summary)
 	}
-	if got := summary.Metrics["tx/sec"].Mean; got != 0.1 {
-		t.Fatalf("unexpected successful tx/sec %.3f", got)
-	}
-	if got := summary.Metrics["submitted_tx/sec"].Mean; got != 0.2 {
-		t.Fatalf("unexpected submitted tx/sec %.3f", got)
-	}
-	if got := summary.Metrics["failed_tx_rate"].Mean; got != 0.5 {
-		t.Fatalf("unexpected failed tx rate %.3f", got)
-	}
-	if got := summary.Metrics["inclusion_latency_ms"].P50; got != 3000 {
-		t.Fatalf("unexpected inclusion p50 %.3f", got)
-	}
-	if got := summary.Metrics["gas_used"].P95; got != 195 {
-		t.Fatalf("unexpected gas p95 %.3f", got)
-	}
-	if got := summary.Metrics["message_count"].Max; got != 4 {
-		t.Fatalf("unexpected message count max %.3f", got)
-	}
-	if got := summary.Metrics["tx_json_size_bytes"].Mean; got != 1050 {
-		t.Fatalf("unexpected tx json size mean %.3f", got)
-	}
+	requireFloatNear(t, "successful tx/sec", summary.Metrics["tx/sec"].Mean, 0.1)
+	requireFloatNear(t, "submitted tx/sec", summary.Metrics["submitted_tx/sec"].Mean, 0.2)
+	requireFloatNear(t, "failed tx rate", summary.Metrics["failed_tx_rate"].Mean, 0.5)
+	requireFloatNear(t, "inclusion p50", summary.Metrics["inclusion_latency_ms"].P50, 3000)
+	requireFloatNear(t, "gas p95", summary.Metrics["gas_used"].P95, 195)
+	requireFloatNear(t, "message count max", summary.Metrics["message_count"].Max, 4)
+	requireFloatNear(t, "tx json size mean", summary.Metrics["tx_json_size_bytes"].Mean, 1050)
 }
 
 func TestSummarizeBucketRequiresDuration(t *testing.T) {
@@ -97,12 +86,8 @@ func TestSummarizeBucketTreatsMissingSuccessAsFailed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("summarize bucket: %v", err)
 	}
-	if got := summary.Metrics["tx/sec"].Mean; got != 0 {
-		t.Fatalf("unexpected successful tx/sec %.3f", got)
-	}
-	if got := summary.Metrics["failed_tx_rate"].Mean; got != 1 {
-		t.Fatalf("unexpected failed tx rate %.3f", got)
-	}
+	requireFloatNear(t, "successful tx/sec", summary.Metrics["tx/sec"].Mean, 0)
+	requireFloatNear(t, "failed tx rate", summary.Metrics["failed_tx_rate"].Mean, 1)
 }
 
 func TestSummarizeBucketOmitsMissingInclusionLatency(t *testing.T) {
@@ -129,5 +114,12 @@ func TestSummarizeBucketOmitsMissingInclusionLatency(t *testing.T) {
 	}
 	if _, ok := summary.Metrics["inclusion_latency_ms"]; ok {
 		t.Fatalf("expected non-positive inclusion latency samples to be omitted: %+v", summary.Metrics["inclusion_latency_ms"])
+	}
+}
+
+func requireFloatNear(t *testing.T, name string, got, want float64) {
+	t.Helper()
+	if math.Abs(got-want) > 1e-9 {
+		t.Fatalf("unexpected %s: got %.12g want %.12g", name, got, want)
 	}
 }

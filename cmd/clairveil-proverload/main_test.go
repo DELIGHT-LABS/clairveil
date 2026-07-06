@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -218,36 +219,16 @@ func TestSummarizeLoadBucket(t *testing.T) {
 	if summary.EndpointCount != 2 {
 		t.Fatalf("unexpected endpoint count: %+v", summary)
 	}
-	if got := summary.Metrics["requests/sec"].Mean; got != 0.2 {
-		t.Fatalf("unexpected requests/sec %.3f", got)
-	}
-	if got := summary.Metrics["latency_ms"].P50; got != 150 {
-		t.Fatalf("unexpected latency p50 %.3f", got)
-	}
-	if got := summary.Metrics["error_rate"].Mean; got != 1.0/3.0 {
-		t.Fatalf("unexpected error rate %.6f", got)
-	}
-	if got := summary.Metrics["cpu_percent"].Mean; got != 20 {
-		t.Fatalf("unexpected cpu percent %.3f", got)
-	}
-	if got := summary.Metrics["max_rss_bytes"].Mean; got != 20_480 {
-		t.Fatalf("unexpected max rss %.3f", got)
-	}
-	if got := summary.Metrics["endpoint_count"].Mean; got != 2 {
-		t.Fatalf("unexpected endpoint count metric %.3f", got)
-	}
-	if got := summary.Metrics["configured_endpoint_count"].Mean; got != 3 {
-		t.Fatalf("unexpected configured endpoint count metric %.3f", got)
-	}
-	if got := summary.Metrics["unhealthy_endpoint_count"].Mean; got != 1 {
-		t.Fatalf("unexpected unhealthy endpoint count metric %.3f", got)
-	}
-	if got := summary.Metrics["requests_per_endpoint"].Max; got != 2 {
-		t.Fatalf("unexpected requests per endpoint max %.3f", got)
-	}
-	if got := summary.Metrics["telemetry_error_rate"].Mean; got != 0 {
-		t.Fatalf("unexpected telemetry error rate %.3f", got)
-	}
+	requireFloatNear(t, "requests/sec", summary.Metrics["requests/sec"].Mean, 0.2)
+	requireFloatNear(t, "latency p50", summary.Metrics["latency_ms"].P50, 150)
+	requireFloatNear(t, "error rate", summary.Metrics["error_rate"].Mean, 1.0/3.0)
+	requireFloatNear(t, "cpu percent", summary.Metrics["cpu_percent"].Mean, 20)
+	requireFloatNear(t, "max rss", summary.Metrics["max_rss_bytes"].Mean, 20_480)
+	requireFloatNear(t, "endpoint count metric", summary.Metrics["endpoint_count"].Mean, 2)
+	requireFloatNear(t, "configured endpoint count metric", summary.Metrics["configured_endpoint_count"].Mean, 3)
+	requireFloatNear(t, "unhealthy endpoint count metric", summary.Metrics["unhealthy_endpoint_count"].Mean, 1)
+	requireFloatNear(t, "requests per endpoint max", summary.Metrics["requests_per_endpoint"].Max, 2)
+	requireFloatNear(t, "telemetry error rate", summary.Metrics["telemetry_error_rate"].Mean, 0)
 }
 
 func TestTelemetryCPUPercentGroupsByEndpoint(t *testing.T) {
@@ -277,9 +258,7 @@ func TestTelemetryCPUPercentGroupsByEndpoint(t *testing.T) {
 	if !ok {
 		t.Fatal("expected endpoint CPU percent")
 	}
-	if got != 15 {
-		t.Fatalf("expected mean endpoint CPU percent 15, got %.3f", got)
-	}
+	requireFloatNear(t, "mean endpoint CPU percent", got, 15)
 }
 
 func TestRunLoadBucketDrainsMoreResultsThanChannelBuffer(t *testing.T) {
@@ -472,3 +451,10 @@ func TestDoRequestClassifiesBodyReadTimeout(t *testing.T) {
 type errBoom struct{}
 
 func (errBoom) Error() string { return "boom" }
+
+func requireFloatNear(t *testing.T, name string, got, want float64) {
+	t.Helper()
+	if math.Abs(got-want) > 1e-9 {
+		t.Fatalf("unexpected %s: got %.12g want %.12g", name, got, want)
+	}
+}

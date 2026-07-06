@@ -33,12 +33,9 @@ PASS
 	if samples[0].Name != "BenchmarkDepositCircuitProve" {
 		t.Fatalf("unexpected benchmark name %q", samples[0].Name)
 	}
-	if samples[0].NSOp != 1200000000 {
-		t.Fatalf("unexpected ns/op %.0f", samples[0].NSOp)
-	}
-	if samples[0].BytesOp != 4096 || samples[0].AllocsOp != 12 {
-		t.Fatalf("unexpected allocation metrics %.0f %.0f", samples[0].BytesOp, samples[0].AllocsOp)
-	}
+	requireFloatNear(t, "ns/op", samples[0].NSOp, 1200000000)
+	requireFloatNear(t, "bytes/op", samples[0].BytesOp, 4096)
+	requireFloatNear(t, "allocs/op", samples[0].AllocsOp, 12)
 }
 
 func TestParseBenchmarkOutputKeepsCustomMetrics(t *testing.T) {
@@ -58,9 +55,8 @@ BenchmarkHTTPProverLoadTransfer-16     100   1000000 ns/op   12.5 proofs/sec   0
 	if got.Name != "BenchmarkHTTPProverLoadTransfer" {
 		t.Fatalf("unexpected benchmark name %q", got.Name)
 	}
-	if got.Metrics["proofs/sec"] != 12.5 || got.Metrics["errors/op"] != 0.01 {
-		t.Fatalf("custom metrics not retained: %+v", got.Metrics)
-	}
+	requireFloatNear(t, "proofs/sec", got.Metrics["proofs/sec"], 12.5)
+	requireFloatNear(t, "errors/op", got.Metrics["errors/op"], 0.01)
 }
 
 func TestSummarizeBenchmarks(t *testing.T) {
@@ -80,12 +76,11 @@ func TestSummarizeBenchmarks(t *testing.T) {
 	if prove.MetricKind != "native_proving" {
 		t.Fatalf("unexpected metric kind %q", prove.MetricKind)
 	}
-	if prove.NSOpMean != 150 || prove.NSOpP50 != 150 || prove.NSOpP95 != 195 {
-		t.Fatalf("unexpected ns summary: mean %.0f p50 %.0f p95 %.0f", prove.NSOpMean, prove.NSOpP50, prove.NSOpP95)
-	}
-	if prove.BytesOp != 20 || prove.AllocsOp != 2 {
-		t.Fatalf("unexpected allocation summary %.0f %.0f", prove.BytesOp, prove.AllocsOp)
-	}
+	requireFloatNear(t, "ns/op mean", prove.NSOpMean, 150)
+	requireFloatNear(t, "ns/op p50", prove.NSOpP50, 150)
+	requireFloatNear(t, "ns/op p95", prove.NSOpP95, 195)
+	requireFloatNear(t, "bytes/op", prove.BytesOp, 20)
+	requireFloatNear(t, "allocs/op", prove.AllocsOp, 2)
 }
 
 func TestSummarizeBenchmarksIncludesMetricSummaries(t *testing.T) {
@@ -98,9 +93,9 @@ func TestSummarizeBenchmarksIncludesMetricSummaries(t *testing.T) {
 		t.Fatalf("expected 1 summary, got %d", len(summaries))
 	}
 	proofs := summaries[0].Metrics["proofs/sec"]
-	if proofs.Mean != 15 || proofs.P50 != 15 || proofs.P95 != 19.5 {
-		t.Fatalf("unexpected proofs/sec summary: %+v", proofs)
-	}
+	requireFloatNear(t, "proofs/sec mean", proofs.Mean, 15)
+	requireFloatNear(t, "proofs/sec p50", proofs.P50, 15)
+	requireFloatNear(t, "proofs/sec p95", proofs.P95, 19.5)
 }
 
 func TestBenchmarkMetricKindClassifiesHTTPProverRoundTrip(t *testing.T) {
@@ -697,9 +692,7 @@ func TestReadBenchmarkSummariesAcceptsStructuredEnvelope(t *testing.T) {
 	if len(summaries) != 1 || summaries[0].Name != "ProverLoadTransfer" {
 		t.Fatalf("unexpected benchmark summaries: %+v", summaries)
 	}
-	if summaries[0].Metrics["proofs/sec"].Mean != 12 {
-		t.Fatalf("custom metric summary not retained: %+v", summaries[0].Metrics)
-	}
+	requireFloatNear(t, "proofs/sec mean", summaries[0].Metrics["proofs/sec"].Mean, 12)
 	if summaries[0].EndpointCount != 2 {
 		t.Fatalf("endpoint count metadata not retained: %+v", summaries[0])
 	}
@@ -2198,4 +2191,11 @@ func containsString(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func requireFloatNear(t *testing.T, name string, got, want float64) {
+	t.Helper()
+	if math.Abs(got-want) > 1e-9 {
+		t.Fatalf("unexpected %s: got %.12g want %.12g", name, got, want)
+	}
 }

@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestSummarizeLatencyTraceGroupsFlowsAndInclusion(t *testing.T) {
 	events := []latencyTraceEvent{
@@ -28,29 +31,24 @@ func TestSummarizeLatencyTraceGroupsFlowsAndInclusion(t *testing.T) {
 	if summary.Name != "UserLatencyTransferAllPrivateNativeWarm" || summary.Samples != 2 {
 		t.Fatalf("unexpected summary metadata: %+v", summary)
 	}
-	if got := summary.Metrics["prepare_latency_ms"].Mean; got != 15 {
-		t.Fatalf("unexpected prepare mean %.3f", got)
-	}
-	if got := summary.Metrics["proof_latency_ms"].P50; got != 95 {
-		t.Fatalf("unexpected proof p50 %.3f", got)
-	}
-	if got := summary.Metrics["time_to_submit_ms"].Mean; got != 25 {
-		t.Fatalf("unexpected submit mean %.3f", got)
-	}
-	if got := summary.Metrics["total_latency_ms"].P99; got != 159.7 {
-		t.Fatalf("unexpected total p99 %.3f", got)
-	}
-	if got := summary.Metrics["inclusion_latency_ms"].Mean; got != 1500 {
-		t.Fatalf("unexpected inclusion mean %.3f", got)
-	}
-	if got := summary.Metrics["error_rate"].Mean; got != 0 {
-		t.Fatalf("unexpected error rate %.3f", got)
-	}
+	requireFloatNear(t, "prepare mean", summary.Metrics["prepare_latency_ms"].Mean, 15)
+	requireFloatNear(t, "proof p50", summary.Metrics["proof_latency_ms"].P50, 95)
+	requireFloatNear(t, "submit mean", summary.Metrics["time_to_submit_ms"].Mean, 25)
+	requireFloatNear(t, "total p99", summary.Metrics["total_latency_ms"].P99, 159.7)
+	requireFloatNear(t, "inclusion mean", summary.Metrics["inclusion_latency_ms"].Mean, 1500)
+	requireFloatNear(t, "error rate", summary.Metrics["error_rate"].Mean, 0)
 }
 
 func TestSummarizeLatencyTraceRejectsMissingFlowID(t *testing.T) {
 	_, err := summarizeLatencyTrace([]latencyTraceEvent{{Phase: "prepare", DurationMS: 1, Success: true}}, nil)
 	if err == nil {
 		t.Fatal("expected missing flow_id error")
+	}
+}
+
+func requireFloatNear(t *testing.T, name string, got, want float64) {
+	t.Helper()
+	if math.Abs(got-want) > 1e-9 {
+		t.Fatalf("unexpected %s: got %.12g want %.12g", name, got, want)
 	}
 }
