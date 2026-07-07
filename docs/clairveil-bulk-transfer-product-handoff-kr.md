@@ -4,7 +4,7 @@
 
 이 문서는 `private/bulk-transfer` 브랜치의 1차 repo 구현을 제품/운영 구현으로 이어가기 위한 전달 문서임.
 
-repo에는 note reservation, payroll control plane, proof/broadcast/reconcile queue, multi-message tx, prover pool, benchmark/readiness harness, reference payroll CLI, file-backed reference artifact store의 reference implementation이 들어 있음. 그러나 production DB, scheduler service, tenant 운영 정책, operator UI, 실제 10만건 rehearsal은 제품/운영 영역에서 이어서 구현해야 함.
+repo에는 note reservation, payroll control plane, proof/broadcast/reconcile queue, multi-message tx, prover pool, benchmark/readiness harness, reference payroll CLI, file-backed reference artifact store, durable reservation state store의 reference implementation이 들어 있음. 제품/운영 영역에서는 managed production DB 배포 방식, tenant 운영 정책, operator UI, 실제 10만건 rehearsal을 이어서 결정해야 함.
 
 ## Repo에서 제공하는 것
 
@@ -12,17 +12,18 @@ repo에는 note reservation, payroll control plane, proof/broadcast/reconcile qu
 - Note reservation 설계: `docs/clairveil-note-reservation-design-kr.md`
 - 대량 전송 전략/시뮬레이션: `docs/clairveil-bulk-transfer-strategy-kr.md`, `docs/clairveil-bulk-transfer-time-simulation-kr.md`
 - Go reference packages: `x/privacy/client/sdk/reservation`, `x/privacy/client/sdk/payroll`
-- Reference payroll CLI: `clairveil-payroll validate`, `prepare-notes`, `plan`, `status`, `export-report`
+- Reference payroll CLI: `clairveil-payroll validate`, `prepare-notes`, `plan`, `run`, `status`, `reconcile`, `export-report`
 - File-backed reference artifact store: `x/privacy/client/sdk/payroll.FileArtifactStore`
+- Durable reservation state store: `x/privacy/client/sdk/reservation.DurableFileStore`
 - 검증 entrypoint: `make privacy-bulk-readiness-check`
 - localnet batch 검증: `make privacy-transfer-batch-localnet-bench`
 - prover pool 측정: `PROVERD_URLS=url1,url2 make privacy-proverd-scale-bench`
 
-## 제품팀이 구현해야 하는 영역
+## 제품팀이 이어서 결정/연결해야 하는 영역
 
-### 1. Production DB Adapter
+### 1. Production DB 배포 방식
 
-`reservation.Store` contract를 production DB로 구현해야 함.
+repo는 `reservation.Store` contract를 만족하는 `DurableFileStore` reference adapter를 제공함. 실제 고객 환경에서 PostgreSQL/MySQL/cloud DB를 사용하려면 같은 contract를 production DB로 옮기거나, reference adapter를 운영 정책에 맞게 감싸야 함.
 
 필수 구현 내용은 다음과 같음.
 
@@ -40,17 +41,17 @@ repo에는 note reservation, payroll control plane, proof/broadcast/reconcile qu
 - raw nullifier, commitment, recipient, amount 등 민감정보 암호화 저장
 - payload/log/telemetry에 원문 민감정보가 남지 않도록 필터링
 
-완료 기준은 동시에 두 payroll planner가 같은 note를 reserve하지 못하고, stale worker가 상태를 덮어쓰지 못하며, `Submitted`, `Unknown`, `ManualReview` note가 TTL만으로 available 처리되지 않는 것임.
+완료 기준은 사용하는 DB/adapter가 동시에 두 payroll planner가 같은 note를 reserve하지 못하게 하고, stale worker가 상태를 덮어쓰지 못하며, `Submitted`, `Unknown`, `ManualReview` note가 TTL만으로 available 처리되지 않게 하는 것임.
 
-### 2. Payroll Scheduler Service
+### 2. Payroll Scheduler / Worker Wiring
 
-Go SDK의 `payroll` model을 실제 job/run/item/operation service로 연결해야 함.
+repo는 `clairveil-payroll run`으로 plan을 durable reservation/operation state에 확정하고, `clairveil-payroll reconcile`로 evidence 기반 상태 갱신을 수행할 수 있음. 제품 환경에서는 이 state를 proof worker, broadcast worker, chain scanner와 연결해야 함.
 
 필수 구현 내용은 다음과 같음.
 
 - 월별 payroll upload/import flow
 - tenant별 `PayrollRun` 생성과 run locking
-- run 확정 시 note reservation 생성
+- run 확정 시 note reservation 생성. reference CLI에서는 `clairveil-payroll run -plan ... -state ...`가 담당함.
 - proof worker queue와 broadcast worker queue 운영
 - proof worker 결과 저장소 구현: repo의 `ProofResultSink` 역할처럼 proof/message/payload를 durable queue 또는 DB에 먼저 저장하고, 저장 성공 후에만 `ProofReady`로 전환해야 함.
 - operation-level idempotency: `operation_id`, `sign_doc_hash`, `tx_bytes_hash`, `tx_hash`, `account_sequence`
@@ -58,9 +59,9 @@ Go SDK의 `payroll` model을 실제 job/run/item/operation service로 연결해�
 - 실패 원인 분류: insufficient note, reservation conflict, proof invalid, root invalid, gas/sequence, RPC timeout, payload mismatch
 - RPC timeout/mempool eviction은 즉시 새 tx 생성으로 처리하지 않고 `Unknown`/`ReconcileUnknown` 흐름에서 `tx_hash`와 nullifier 상태를 먼저 확인해야 함.
 - 실패 item만 `ReplanRequired`로 분리하고 재계획
-- confirmation scanner/reconcile worker가 note 상태와 operation 상태를 각각 갱신
+- confirmation scanner/reconcile worker가 note 상태와 operation 상태를 각각 갱신. reference CLI에서는 `clairveil-payroll reconcile -state ... -evidence ...`가 evidence 반영을 담당함.
 
-완료 기준은 1천건 run을 중단/재시작해도 중복 지급 없이 재개되고, 실패 item만 재시도할 수 있는 것임.
+완료 기준은 1천건 rehearsal run을 중단/재시작해도 중복 지급 없이 재개되고, 실패 item만 재시도할 수 있는 것임.
 
 ### 3. JS SDK 및 Wallet 연동
 
@@ -131,7 +132,7 @@ JS SDK가 이미 `docs/clairveil-note-reservation-design-kr.md`를 기준으로 
 - 제품팀은 `make privacy-bulk-readiness-check` 결과를 확인함.
 - release 전에는 `RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check`로 multi-message transfer localnet 경로를 확인함.
 - prover pool scale claim을 하려면 `RUN_PROVER_SCALE=1 PROVERD_URLS=url1,url2 make privacy-bulk-readiness-check` 결과를 별도 산출물로 남김. scale benchmark는 기본적으로 preflight 실패 endpoint를 제외하고 `unhealthy_endpoint_count`를 기록하지만, public claim 수치로 쓰려면 `unhealthy_endpoint_count=0`이어야 함.
-- backend 팀은 production DB adapter 설계를 작성함.
+- backend 팀은 `clairveil-payroll run -state ...`와 `clairveil-payroll reconcile -state ...` durable control-plane workflow를 확인하고, managed DB가 필요하면 같은 `reservation.Store` contract로 이전 계획을 작성함.
 - JS SDK 팀은 note reservation conformance fixture를 검증함.
 - 운영팀은 prover pool endpoint 구성과 telemetry 수집 방식을 정함.
 - 제품팀은 1천건 rehearsal runbook을 먼저 실행함.

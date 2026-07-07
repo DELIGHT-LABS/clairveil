@@ -412,8 +412,11 @@ Runs the reference payroll product workflow around local files and JSON reports.
 clairveil-payroll validate -input payroll.json -out validation.json
 clairveil-payroll prepare-notes -input payroll.json -out note-preparation.json
 clairveil-payroll plan -input payroll.json -out plan.json
+clairveil-payroll run -plan plan.json -state .clairveil-payroll/reservation-state.json -out confirmed-plan.json
 clairveil-payroll status -plan plan.json -out status.json
+clairveil-payroll status -state .clairveil-payroll/reservation-state.json -out state-status.json
+clairveil-payroll reconcile -state .clairveil-payroll/reservation-state.json -evidence evidence.json -out reconcile.json
 clairveil-payroll export-report -plan plan.json -out payroll-report.json
 ```
 
-`prepare-notes` and `plan` also accept `-store-dir .clairveil-payroll` to write results into the file-backed reference artifact store. For the detailed workflow, see [clairveil-reference-payroll-product-kr.md](clairveil-reference-payroll-product-kr.md).
+`prepare-notes` and `plan` also accept `-store-dir .clairveil-payroll` to write results into the file-backed reference artifact store. `run` and `reconcile` use the durable reservation state file. For the detailed workflow, see [clairveil-reference-payroll-product-kr.md](clairveil-reference-payroll-product-kr.md).

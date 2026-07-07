@@ -127,11 +127,13 @@ Reference CLI는 payroll workflow를 아래처럼 끊어서 실행할 수 있는
 validate
 prepare-notes
 plan
+run
 status
+reconcile
 export-report
 ```
 
-아직 `run`과 `reconcile`을 완전한 daemon/service 명령으로 제공하지는 않음. 이 둘은 production DB adapter, scheduler, signer/prover/broadcaster 운영 정책과 묶이는 영역이므로, 현재 repo에서는 SDK worker와 queue building block, 그리고 CLI 전 단계 산출물까지 제공함.
+`run`과 `reconcile`은 rehearsal 직전 control-plane daemon 표면을 제공함. 즉 plan 확정, durable reservation/operation state 저장, evidence 기반 reconcile을 처리함. 실제 proof 생성과 chain broadcast는 기존 `ProofWorker`, `BatchBroadcastWorker`, provider/prover 설정을 연결하는 운영 단계이며, rehearsal에서 wiring을 검증해야 함.
 
 ### 입력 JSON
 
@@ -227,9 +229,22 @@ clairveil-payroll plan \
   -store-dir .clairveil-payroll
 ```
 
+### `clairveil-payroll run`
+
+Plan JSON을 durable reservation state에 확정함. 이 단계에서 item별 input note가 `Reserved`가 되고, `PayrollOperation` record가 저장됨.
+
+```bash
+clairveil-payroll run \
+  -plan payroll-plan.json \
+  -state .clairveil-payroll/reservation-state.json \
+  -out payroll-confirmed-plan.json
+```
+
+`run`은 같은 plan으로 재실행해도 이미 생성된 reservation을 읽어 confirmed plan을 다시 출력하도록 idempotent하게 동작함. 이 명령은 proof 생성과 chain broadcast를 직접 수행하지 않음. 그 작업은 persisted reservation state를 입력으로 proof/broadcast worker를 연결하는 rehearsal 단계에서 검증함.
+
 ### `clairveil-payroll status`
 
-Plan JSON을 읽어서 상태별 item count를 출력함.
+Plan JSON 또는 durable reservation state를 읽어서 상태별 count를 출력함.
 
 ```bash
 clairveil-payroll status \
@@ -237,7 +252,48 @@ clairveil-payroll status \
   -out payroll-status.json
 ```
 
-출력은 `Planned`, `Reserved`, `Submitted`, `Confirmed`, `Failed`, `ReplanRequired`, `ManualReview` item 수를 집계함.
+```bash
+clairveil-payroll status \
+  -state .clairveil-payroll/reservation-state.json \
+  -out payroll-state-status.json
+```
+
+Plan 기준 출력은 `Planned`, `Reserved`, `Submitted`, `Confirmed`, `Failed`, `ReplanRequired`, `ManualReview` item 수를 집계함. State 기준 출력은 reservation status와 operation status를 각각 집계함.
+
+### `clairveil-payroll reconcile`
+
+Evidence JSON을 받아 durable reservation state의 reservation/operation 상태를 갱신함.
+
+```bash
+clairveil-payroll reconcile \
+  -state .clairveil-payroll/reservation-state.json \
+  -evidence reconcile-evidence.json \
+  -out reconcile-report.json
+```
+
+Evidence JSON은 다음 형태를 사용함.
+
+```json
+{
+  "evidence": [
+    {
+      "reservation_id": "operation-a:note:note-large",
+      "tx_hash": "ABC123",
+      "output_commitment": "commitment-a",
+      "disclosure_digest": "digest-a",
+      "recipient_hash": "recipient-hash-a",
+      "amount_hash": "amount-hash-a",
+      "denom": "uclair",
+      "batch_item_index": 0,
+      "batch_item_index_known": true,
+      "nullifier_spent": true,
+      "tx_succeeded": true
+    }
+  ]
+}
+```
+
+`nullifier_spent=true`만으로 operation success로 처리하지 않음. 저장된 operation의 tx identity, output commitment, disclosure digest, recipient hash, amount hash, denom, batch item index와 일치해야 성공으로 reconcile됨. 일치하지 않으면 review/conflict 상태로 남김.
 
 ### `clairveil-payroll export-report`
 
@@ -253,7 +309,9 @@ clairveil-payroll export-report \
 
 ## File Artifact Store
 
-Reference product는 production DB adapter를 대신 구현하지 않음. 다만 로컬/테스트/샘플 제품에서 plan과 report를 잃어버리지 않도록 `FileArtifactStore`를 제공함.
+Reference product는 plan/report artifact 저장용 `FileArtifactStore`와 reservation/operation 상태 저장용 `DurableFileStore`를 구분함.
+
+`FileArtifactStore`는 로컬/테스트/샘플 제품에서 plan과 report를 잃어버리지 않도록 제공함.
 
 저장 범위는 다음과 같음.
 
@@ -266,6 +324,21 @@ disclosure-keys
 
 파일은 `0600`, 디렉토리는 `0700` 권한으로 생성함. 이 store는 민감정보를 포함할 수 있으므로 production에서는 암호화 DB 또는 secret storage로 대체하는 것이 원칙임.
 
+## Durable Reservation State Store
+
+`x/privacy/client/sdk/reservation.DurableFileStore`는 `reservation.Store` contract를 만족하는 durable reference adapter임. 상태 전이, active reservation uniqueness, compare-and-set, lease/heartbeat, operation evidence update는 기존 memory store와 같은 contract를 사용하고, 각 mutation 후 snapshot을 JSON 파일에 atomic write함.
+
+기본 사용 예시는 다음과 같음.
+
+```bash
+clairveil-payroll run \
+  -plan payroll-plan.json \
+  -state .clairveil-payroll/reservation-state.json \
+  -out payroll-confirmed-plan.json
+```
+
+이 adapter는 rehearsal과 reference product에서 재시작/재실행 동작을 검증하기 위한 repo-local production-style adapter임. 실제 고객 환경에서 PostgreSQL, MySQL, cloud secret-backed DB를 쓰는 경우에도 같은 `reservation.Store` 의미와 상태 전이 규칙을 지켜야 함.
+
 ## 완료 기준
 
 Reference Payroll Product 1.5차의 repo 기준 완료 조건은 다음과 같음.
@@ -274,7 +347,8 @@ Reference Payroll Product 1.5차의 repo 기준 완료 조건은 다음과 같�
 - disclosure policy와 key registry contract가 제공됨.
 - note preparation analyzer가 제공됨.
 - file-backed reference artifact store가 제공됨.
-- `clairveil-payroll validate`, `prepare-notes`, `plan`, `status`, `export-report` 명령이 제공됨.
+- durable reservation state store가 제공됨.
+- `clairveil-payroll validate`, `prepare-notes`, `plan`, `run`, `status`, `reconcile`, `export-report` 명령이 제공됨.
 - JS SDK handoff 문서가 제공됨.
 - wallet handoff 문서가 제공됨.
 - downstream이 payroll workflow를 조립할 수 있는 기준 문서가 제공됨.
@@ -283,10 +357,9 @@ Reference Payroll Product 1.5차의 repo 기준 완료 조건은 다음과 같�
 
 이 repo가 직접 완료하지 않는 작업은 다음과 같음.
 
-- 실제 production DB adapter
-- scheduler/daemon service
+- managed production DB deployment와 tenant별 운영 schema hardening
+- proof/broadcast worker wiring rehearsal
 - admin UI
-- `clairveil-payroll run` / `reconcile` 수준의 완전한 운영 daemon
 - JS SDK 구현
 - 웹/모바일 지갑 구현
 - 실제 고객사의 payroll policy 결정

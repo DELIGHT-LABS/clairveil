@@ -31,6 +31,7 @@ yarn-error.log*
 
 # Local chain and generated runtime data
 /.clairveil/
+/.clairveil-payroll/
 /clairveil-home/
 /artifacts/
 /benchmarks/

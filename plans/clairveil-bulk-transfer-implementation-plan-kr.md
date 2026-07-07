@@ -12,7 +12,7 @@
 | 1.5차 범위 | Reference Payroll Product, 상품화 보강, JS SDK/지갑 handoff |
 | 2차 범위 | N-output batch circuit |
 | 2차 권장 N | `N=32` |
-| 제외 범위 | Payroll Merkle Distribution, protocol-level reservation, production DB implementation, production scheduler service |
+| 제외 범위 | Payroll Merkle Distribution, protocol-level reservation, managed production DB deployment, customer-specific scheduler operations |
 
 ## 관련 문서
 
@@ -122,7 +122,7 @@ Payroll Control Plane은 최종 사용자 UI 자체가 아니라, 대량 지급�
 
 2026-07-07 추가 결정으로 1.5차를 `Reference Payroll Product`로 정의함. 이는 protocol 필수 요소는 아니지만 `clairveil-proverd`처럼 downstream adoption에 필요한 companion/reference product로 제공하는 것을 목표로 함. 샘플이더라도 대충 만든 demo가 아니라, 실제 클라이언트가 그대로 가져가거나 fork해 production product의 출발점으로 삼을 수 있는 품질을 지향함.
 
-2026-07-07 후속 구현으로 1.5차 repo 보강은 `validate`, `prepare-notes`, `plan`, `status`, `export-report` CLI, file-backed reference artifact store, note preparation operation hint까지 확장됨. 아직 `run`/`reconcile`을 완전한 daemon 명령으로 제공하지는 않으며, 이 부분은 production DB adapter, scheduler, signer/prover/broadcaster 운영 정책과 묶이는 제품/운영 integration 영역으로 남김.
+2026-07-07 후속 구현으로 1.5차 repo 보강은 `validate`, `prepare-notes`, `plan`, `run`, `status`, `reconcile`, `export-report` CLI, file-backed reference artifact store, durable reservation state store, note preparation operation hint까지 확장됨. `run`은 plan을 durable reservation/operation state로 확정하고, `reconcile`은 evidence JSON으로 durable state를 갱신함. 실제 proof 생성과 chain broadcast worker wiring은 rehearsal 단계에서 검증함.
 
 | 단계 | 상태 | 구현 위치 |
 | --- | --- | --- |
@@ -507,16 +507,16 @@ RUN_PROVER_SCALE=1 PROVERD_URLS=http://127.0.0.1:9090,http://127.0.0.1:9091 make
 
 ### 제품/운영 팀이 이어서 해야 하는 검증
 
-repo는 protocol과 SDK 기준 reference implementation, local harness, synthetic benchmark를 제공함. 실제 제품화에는 다음 작업이 추가로 필요함.
+repo는 protocol과 SDK 기준 reference implementation, durable control-plane adapter, local harness, synthetic benchmark를 제공함. 실제 제품화에는 다음 작업이 추가로 필요함.
 
-- production DB schema와 adapter 구현
-- PostgreSQL transaction lock, partial unique index, HMAC lookup key, field-level encryption 적용
-- payroll scheduler service와 tenant별 run orchestration 구현
+- managed production DB 선택 시 PostgreSQL transaction lock, partial unique index, HMAC lookup key, field-level encryption 적용
+- `DurableFileStore` 또는 production DB adapter를 tenant별 운영 정책에 맞게 배포
+- proof/broadcast worker와 chain scanner를 `clairveil-payroll run`으로 생성된 durable state에 연결
 - operator UI, alert, manual review flow 구현
 - 실제 1천건, 1만건, 10만건 rehearsal runbook 작성 및 실행
 - JS SDK/wallet storage와 note reservation 상태 계약의 conformance 확인
 
-이 항목들은 repo 내부 code만으로 완료되는 작업이 아니며, 제품팀 전달 문서에서 별도 owner와 산출물을 정의해야 함.
+이 항목들은 repo 내부 reference code를 운영 환경에 연결하고 검증하는 작업이며, 제품팀 전달 문서에서 별도 owner와 산출물을 정의해야 함.
 
 ## 1.5차 Reference Payroll Product 계획
 
@@ -638,7 +638,7 @@ preparation policy
 
 초기에는 durable DB 구현보다 interface와 test contract를 우선함. 다만 reference CLI/service가 필요하면 SQLite adapter부터 시작할 수 있음.
 
-2026-07-07 구현 상태: production DB adapter 대신 `x/privacy/client/sdk/payroll.FileArtifactStore`를 추가함. 이 store는 `plans`, `plan-reports`, `note-preparation-reports`, `disclosure-keys`를 파일로 저장하고 다시 읽는 local/reference artifact store임. 파일은 `0600`, 디렉토리는 `0700`으로 생성함. 이는 production reservation DB를 대체하지 않으며, production에서는 암호화 DB와 worker lease/operation evidence persistence가 별도로 필요함.
+2026-07-07 구현 상태: `x/privacy/client/sdk/payroll.FileArtifactStore`와 `x/privacy/client/sdk/reservation.DurableFileStore`를 추가함. `FileArtifactStore`는 `plans`, `plan-reports`, `note-preparation-reports`, `disclosure-keys`를 파일로 저장하고 다시 읽는 local/reference artifact store임. `DurableFileStore`는 `reservation.Store` contract를 만족하는 durable reservation/operation state adapter이며, active reservation uniqueness, compare-and-set, lease/heartbeat, operation evidence update를 snapshot JSON에 저장함. 파일은 `0600`, 디렉토리는 `0700`으로 생성함. 실제 고객 환경에서 PostgreSQL/MySQL/cloud DB를 쓰는 경우에도 이 store와 같은 상태 전이 의미를 지켜야 함.
 
 ### Phase 1.5.6 Reference CLI/service 후보
 
@@ -654,9 +654,9 @@ clairveil-payroll reconcile
 clairveil-payroll export-report
 ```
 
-2026-07-07 구현 상태: `validate`, `prepare-notes`, `plan`, `status`, `export-report`를 구현함. `prepare-notes`와 `plan`은 `-store-dir`로 file-backed artifact store에 결과를 저장할 수 있음. `run`과 `reconcile`은 production DB adapter, scheduler, signer/prover/broadcaster 운영 정책이 필요하므로 아직 완전한 daemon 명령으로 구현하지 않음.
+2026-07-07 구현 상태: `validate`, `prepare-notes`, `plan`, `run`, `status`, `reconcile`, `export-report`를 구현함. `prepare-notes`와 `plan`은 `-store-dir`로 file-backed artifact store에 결과를 저장할 수 있음. `run`은 `-state` durable reservation state에 plan을 확정하며 재실행 idempotency를 제공함. `status`는 plan 또는 state 기준 집계를 제공함. `reconcile`은 evidence JSON을 받아 reservation/operation 상태를 갱신함.
 
-1.5차 repo 완료 기준은 모든 command를 완전한 daemon으로 구현하는 것이 아니라, product workflow를 code와 문서로 조립 가능하게 만드는 것임.
+1.5차 repo 완료 기준은 proof/broadcast 실운영을 대신하는 것이 아니라, rehearsal 직전까지 필요한 durable control-plane workflow를 code와 문서로 조립 가능하게 만드는 것임.
 
 ### Phase 1.5.7 JS SDK handoff
 
@@ -688,8 +688,9 @@ JS SDK 팀이 직접 구현해야 할 항목은 이 repo에서 대신 구현하�
 - user disclosure policy와 disclosure key registry contract가 Go SDK 또는 문서로 제공됨.
 - note preparation helper가 최소 analyzer/recommendation 수준으로 제공됨.
 - note preparation helper가 operation hint를 제공함.
-- reference CLI가 `validate`, `prepare-notes`, `plan`, `status`, `export-report`를 제공함.
+- reference CLI가 `validate`, `prepare-notes`, `plan`, `run`, `status`, `reconcile`, `export-report`를 제공함.
 - file-backed reference artifact store가 제공됨.
+- durable reservation state store가 제공됨.
 - JS SDK 팀과 지갑팀 handoff 문서가 추가됨.
 - downstream이 "core는 있는데 제품 레이어가 없어 못 쓰는" 상태를 피할 수 있는 최소 reference product 경로가 생김.
 

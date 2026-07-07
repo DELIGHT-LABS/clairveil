@@ -410,8 +410,11 @@ Reference payroll product workflow를 로컬 파일과 JSON report 중심으로 
 clairveil-payroll validate -input payroll.json -out validation.json
 clairveil-payroll prepare-notes -input payroll.json -out note-preparation.json
 clairveil-payroll plan -input payroll.json -out plan.json
+clairveil-payroll run -plan plan.json -state .clairveil-payroll/reservation-state.json -out confirmed-plan.json
 clairveil-payroll status -plan plan.json -out status.json
+clairveil-payroll status -state .clairveil-payroll/reservation-state.json -out state-status.json
+clairveil-payroll reconcile -state .clairveil-payroll/reservation-state.json -evidence evidence.json -out reconcile.json
 clairveil-payroll export-report -plan plan.json -out payroll-report.json
 ```
 
-`prepare-notes`와 `plan`은 `-store-dir .clairveil-payroll`을 받아 file-backed reference artifact store에도 결과를 저장할 수 있습니다. 상세 workflow는 [clairveil-reference-payroll-product-kr.md](clairveil-reference-payroll-product-kr.md)를 따릅니다.
+`prepare-notes`와 `plan`은 `-store-dir .clairveil-payroll`을 받아 file-backed reference artifact store에도 결과를 저장할 수 있습니다. `run`과 `reconcile`은 durable reservation state 파일을 사용합니다. 상세 workflow는 [clairveil-reference-payroll-product-kr.md](clairveil-reference-payroll-product-kr.md)를 따릅니다.
