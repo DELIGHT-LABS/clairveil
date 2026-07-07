@@ -47,6 +47,10 @@ func TestAnalyzeNotePreparationRecommendsDummyForSingleNote(t *testing.T) {
 	require.Equal(t, 1, report.ZeroDummyRequired)
 	require.NotEmpty(t, report.Recommendations)
 	require.Equal(t, NotePreparationRecommendationMakeDummy, report.Recommendations[0].Kind)
+	require.NotEmpty(t, report.OperationHints)
+	require.Equal(t, NotePreparationRecommendationMakeDummy, report.OperationHints[0].Kind)
+	require.Equal(t, 1, report.OperationHints[0].RequiredCount)
+	require.Equal(t, []string{"large"}, report.OperationHints[0].CandidateNoteIDs)
 }
 
 func TestAnalyzeNotePreparationExcludesReservedNotes(t *testing.T) {

@@ -33,6 +33,7 @@ type NotePreparationReport struct {
 	EstimatedMessageChunks int
 	Items                  []NotePreparationItemReport
 	Recommendations        []NotePreparationRecommendation
+	OperationHints         []NotePreparationOperationHint
 }
 
 type NotePreparationItemReport struct {
@@ -45,9 +46,23 @@ type NotePreparationItemReport struct {
 }
 
 type NotePreparationRecommendation struct {
-	Kind    string
-	ItemID  string
-	Message string
+	Kind             string
+	ItemID           string
+	Message          string
+	RequiredCount    int
+	TargetAmount     *big.Int
+	Denom            string
+	CandidateNoteIDs []string
+}
+
+type NotePreparationOperationHint struct {
+	Kind             string
+	ItemID           string
+	Message          string
+	RequiredCount    int
+	TargetAmount     *big.Int
+	Denom            string
+	CandidateNoteIDs []string
 }
 
 const (
@@ -118,45 +133,74 @@ func AnalyzeNotePreparation(input NotePreparationInput) (*NotePreparationReport,
 		itemReport.Reason = err.Error()
 		report.BlockedItems++
 		report.Items[i] = itemReport
-		report.Recommendations = append(report.Recommendations, preparationRecommendationForBlockedItem(item, available, report.ZeroDummyAvailable))
+		report.addRecommendation(preparationRecommendationForBlockedItem(item, available, report.ZeroDummyAvailable, payrollInput.Denom))
 	}
 
 	if report.TotalSpendableAmount.Cmp(report.TotalPayrollAmount) < 0 {
-		report.Recommendations = append(report.Recommendations, NotePreparationRecommendation{
-			Kind:    NotePreparationRecommendationAddFunds,
-			Message: fmt.Sprintf("spendable total %s is below payroll total %s", report.TotalSpendableAmount.String(), report.TotalPayrollAmount.String()),
+		shortage := new(big.Int).Sub(report.TotalPayrollAmount, report.TotalSpendableAmount)
+		report.addRecommendation(NotePreparationRecommendation{
+			Kind:          NotePreparationRecommendationAddFunds,
+			Message:       fmt.Sprintf("spendable total %s is below payroll total %s", report.TotalSpendableAmount.String(), report.TotalPayrollAmount.String()),
+			TargetAmount:  shortage,
+			Denom:         payrollInput.Denom,
+			RequiredCount: 1,
 		})
 	}
 	if report.ReservedNoteCount > 0 {
-		report.Recommendations = append(report.Recommendations, NotePreparationRecommendation{
-			Kind:    NotePreparationRecommendationResolveLock,
-			Message: fmt.Sprintf("%d treasury notes are already reserved and excluded from preparation", report.ReservedNoteCount),
+		report.addRecommendation(NotePreparationRecommendation{
+			Kind:          NotePreparationRecommendationResolveLock,
+			Message:       fmt.Sprintf("%d treasury notes are already reserved and excluded from preparation", report.ReservedNoteCount),
+			RequiredCount: report.ReservedNoteCount,
 		})
 	}
 
 	report.ZeroDummyRequired = zeroDummyShortage(payrollInput.Items, available)
 	if report.ZeroDummyRequired > 0 {
-		report.Recommendations = append(report.Recommendations, NotePreparationRecommendation{
-			Kind:    NotePreparationRecommendationMakeDummy,
-			Message: fmt.Sprintf("prepare at least %d additional zero-value dummy notes", report.ZeroDummyRequired),
+		report.addRecommendation(NotePreparationRecommendation{
+			Kind:          NotePreparationRecommendationMakeDummy,
+			Message:       fmt.Sprintf("prepare at least %d additional zero-value dummy notes", report.ZeroDummyRequired),
+			RequiredCount: report.ZeroDummyRequired,
+			TargetAmount:  big.NewInt(0),
+			Denom:         payrollInput.Denom,
 		})
 	}
 	report.EstimatedMessageChunks = estimatePreparationMessageChunks(report.ReadyItems, input.Policy.MaxMessagesPerTx)
 	return report, nil
 }
 
-func preparationRecommendationForBlockedItem(item PayrollItemInput, available []TreasuryNote, zeroAvailable int) NotePreparationRecommendation {
+func (r *NotePreparationReport) addRecommendation(recommendation NotePreparationRecommendation) {
+	r.Recommendations = append(r.Recommendations, recommendation)
+	r.OperationHints = append(r.OperationHints, NotePreparationOperationHint{
+		Kind:             recommendation.Kind,
+		ItemID:           recommendation.ItemID,
+		Message:          recommendation.Message,
+		RequiredCount:    recommendation.RequiredCount,
+		TargetAmount:     cloneBigInt(recommendation.TargetAmount),
+		Denom:            recommendation.Denom,
+		CandidateNoteIDs: append([]string(nil), recommendation.CandidateNoteIDs...),
+	})
+}
+
+func preparationRecommendationForBlockedItem(item PayrollItemInput, available []TreasuryNote, zeroAvailable int, denom string) NotePreparationRecommendation {
 	if hasSingleNoteCandidate(item.Amount, available) && zeroAvailable == 0 {
 		return NotePreparationRecommendation{
-			Kind:    NotePreparationRecommendationMakeDummy,
-			ItemID:  item.ItemID,
-			Message: "a sufficient single note exists, but a zero-value dummy note is required by the current 2-input transfer circuit",
+			Kind:             NotePreparationRecommendationMakeDummy,
+			ItemID:           item.ItemID,
+			Message:          "a sufficient single note exists, but a zero-value dummy note is required by the current 2-input transfer circuit",
+			RequiredCount:    1,
+			TargetAmount:     big.NewInt(0),
+			Denom:            denom,
+			CandidateNoteIDs: candidateNoteIDsForSingleNote(item.Amount, available, 3),
 		}
 	}
 	return NotePreparationRecommendation{
-		Kind:    NotePreparationRecommendationSplitMerge,
-		ItemID:  item.ItemID,
-		Message: "prepare exact or pairable notes before batching this payroll item",
+		Kind:             NotePreparationRecommendationSplitMerge,
+		ItemID:           item.ItemID,
+		Message:          "prepare exact or pairable notes before batching this payroll item",
+		RequiredCount:    1,
+		TargetAmount:     cloneBigInt(item.Amount),
+		Denom:            denom,
+		CandidateNoteIDs: candidateNoteIDsForPreparation(item.Amount, available, 6),
 	}
 }
 
@@ -196,6 +240,52 @@ func estimatePreparationMessageChunks(readyItems int, maxMessagesPerTx int) int 
 		maxMessagesPerTx = 1
 	}
 	return (readyItems + maxMessagesPerTx - 1) / maxMessagesPerTx
+}
+
+func candidateNoteIDsForSingleNote(target *big.Int, available []TreasuryNote, limit int) []string {
+	if target == nil || limit <= 0 {
+		return nil
+	}
+	ids := make([]string, 0, limit)
+	for _, index := range payrollSingleCandidateIndexes(available, target, limit) {
+		ids = append(ids, available[index].NoteID)
+	}
+	return ids
+}
+
+func candidateNoteIDsForPreparation(target *big.Int, available []TreasuryNote, limit int) []string {
+	if target == nil || limit <= 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, limit)
+	ids := make([]string, 0, limit)
+	add := func(note TreasuryNote) bool {
+		if note.NoteID == "" {
+			return true
+		}
+		if _, exists := seen[note.NoteID]; exists {
+			return true
+		}
+		seen[note.NoteID] = struct{}{}
+		ids = append(ids, note.NoteID)
+		return len(ids) < limit
+	}
+	for _, index := range payrollZeroCandidateIndexes(available, limit) {
+		if !add(available[index]) {
+			return ids
+		}
+	}
+	for _, index := range payrollSingleCandidateIndexes(available, target, limit) {
+		if !add(available[index]) {
+			return ids
+		}
+	}
+	for _, candidate := range boundedPayrollPairCandidates(available, target, limit) {
+		if !add(available[candidate.left]) || !add(available[candidate.right]) {
+			return ids
+		}
+	}
+	return ids
 }
 
 func noteIDs(notes []TreasuryNote) []string {
