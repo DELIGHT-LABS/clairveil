@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -64,6 +65,73 @@ func TestRunOnceCompletesDurableState(t *testing.T) {
 	require.Equal(t, privacyreservation.OperationStatusSucceeded, operation.Status)
 }
 
+func TestRunLiveModeReconcilesSubmittedState(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "reservation-state.json")
+	planPath := filepath.Join(dir, "payroll-plan.json")
+	txPath := filepath.Join(dir, "tx-query.json")
+	reportPath := filepath.Join(dir, "payrolld-live-report.json")
+
+	store, err := privacyreservation.OpenDurableFileStore(statePath)
+	require.NoError(t, err)
+	svc := privacypayroll.Service{Reservation: privacyreservation.Service{Store: store}}
+	input := privacypayroll.PayrollInput{
+		CompanyID: "company-live",
+		PayrollID: "payroll-live",
+		BatchID:   "run-001",
+		Denom:     "uclair",
+		Items: []privacypayroll.PayrollItemInput{{
+			ItemID:                   "item-001",
+			EmployeeID:               "employee-001",
+			RecipientAddress:         testPayrolldRecipientA,
+			Amount:                   big.NewInt(70),
+			ExpectedOutputCommitment: "commitment-a",
+			ExpectedDisclosureDigest: "digest-a",
+		}},
+	}
+	plan, err := svc.CreatePlan(ctx, input, []privacypayroll.TreasuryNote{
+		testPayrolldTreasuryNote("note-large", "uclair", 70),
+		testPayrolldTreasuryNote("note-zero", "uclair", 0),
+	})
+	require.NoError(t, err)
+	confirmed, err := svc.ConfirmPlan(ctx, *plan)
+	require.NoError(t, err)
+	writeJSONForPayrolldTest(t, planPath, confirmed)
+	markPayrolldPlanSubmitted(t, ctx, store, *confirmed)
+	writeJSONForPayrolldTest(t, txPath, map[string]any{
+		"tx_response": map[string]any{
+			"txhash": "txhash",
+			"height": "9",
+			"code":   0,
+			"events": []map[string]any{{
+				"type": "shielded_transfer",
+				"attributes": []map[string]string{
+					{"key": "nullifier_1", "value": "lookup-note-large"},
+					{"key": "nullifier_2", "value": "lookup-note-zero"},
+					{"key": "commitment_1", "value": "commitment-a"},
+					{"key": "user_disclosure_digest", "value": "digest-a"},
+				},
+			}},
+		},
+	})
+
+	require.NoError(t, run([]string{"-mode", "live", "-state", statePath, "-plan", planPath, "-tx-query", txPath, "-once", "-out", reportPath}))
+	reportBytes, err := os.ReadFile(reportPath)
+	require.NoError(t, err)
+	var report privacypayroll.ReferenceDaemonRunReport
+	require.NoError(t, json.Unmarshal(reportBytes, &report))
+	require.Equal(t, "live", report.Mode)
+	require.Equal(t, 2, report.Reconciled)
+	require.Equal(t, 0, report.RequiresReview)
+
+	reloadedStore, err := privacyreservation.OpenDurableFileStore(statePath)
+	require.NoError(t, err)
+	operation, err := reloadedStore.GetOperation(ctx, confirmed.Items[0].OperationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusSucceeded, operation.Status)
+}
+
 func testPayrolldTreasuryNote(id string, denom string, amount int64) privacypayroll.TreasuryNote {
 	return privacypayroll.TreasuryNote{
 		NoteID:               id,
@@ -73,4 +141,36 @@ func testPayrolldTreasuryNote(id string, denom string, amount int64) privacypayr
 		Denom:                denom,
 		Amount:               big.NewInt(amount),
 	}
+}
+
+func markPayrolldPlanSubmitted(t *testing.T, ctx context.Context, store privacyreservation.Store, plan privacypayroll.PayrollPlan) {
+	t.Helper()
+	svc := privacyreservation.Service{Store: store}
+	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(plan.Items[0].InputNotes))
+	for _, note := range plan.Items[0].InputNotes {
+		lease, err := svc.AcquireLeaseForStatus(ctx, note.ReservationID, "test-live-broadcaster", privacyreservation.StatusReserved, time.Minute)
+		require.NoError(t, err)
+		_, err = svc.TransitionWithLease(ctx, note.ReservationID, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving)
+		require.NoError(t, err)
+		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: note.ReservationID, LeaseToken: lease.Token})
+	}
+	_, _, err := svc.MarkProofReadyBatch(ctx, refs, privacyreservation.ProofReadyOperationUpdate{
+		OperationID:              plan.Items[0].OperationID,
+		ExpectedOutputCommitment: "commitment-a",
+		ExpectedDisclosureDigest: "digest-a",
+	})
+	require.NoError(t, err)
+	_, _, err = svc.MarkSubmittedBatch(ctx, refs, []string{plan.Items[0].OperationID}, privacyreservation.SubmittedReservationUpdate{
+		TxHash:      "txhash",
+		TxBytesHash: "tx-bytes",
+		SignDocHash: "sign-doc",
+	})
+	require.NoError(t, err)
+}
+
+func writeJSONForPayrolldTest(t *testing.T, path string, payload any) {
+	t.Helper()
+	bz, err := json.Marshal(payload)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, bz, 0o600))
 }

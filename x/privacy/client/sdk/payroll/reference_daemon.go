@@ -86,7 +86,11 @@ func (d ReferenceDaemon) RunOnce(ctx context.Context) (*ReferenceDaemonRunReport
 }
 
 func (d ReferenceDaemon) groupsByStatus(ctx context.Context, status privacyreservation.ReservationStatus) ([]referenceReservationGroup, error) {
-	reservations, err := d.Reservation.Store.ListReservations(ctx, privacyreservation.ReservationFilter{Statuses: []privacyreservation.ReservationStatus{status}})
+	return referenceDaemonGroupsByStatus(ctx, d.Reservation.Store, status)
+}
+
+func referenceDaemonGroupsByStatus(ctx context.Context, store privacyreservation.Store, status privacyreservation.ReservationStatus) ([]referenceReservationGroup, error) {
+	reservations, err := store.ListReservations(ctx, privacyreservation.ReservationFilter{Statuses: []privacyreservation.ReservationStatus{status}})
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +109,7 @@ func (d ReferenceDaemon) groupsByStatus(ctx context.Context, status privacyreser
 
 	groups := make([]referenceReservationGroup, 0, len(operationIDs))
 	for _, operationID := range operationIDs {
-		operation, err := d.Reservation.Store.GetOperation(ctx, operationID)
+		operation, err := store.GetOperation(ctx, operationID)
 		if err != nil {
 			return nil, err
 		}

@@ -434,9 +434,18 @@ clairveil-payrolld \
   -state .clairveil-payroll/reservation-state.json \
   -once \
   -out .clairveil-payroll/payrolld-report.json
+
+clairveil-payrolld \
+  -mode live \
+  -state .clairveil-payroll/reservation-state.json \
+  -plan .clairveil-payroll/payroll-plan.json \
+  -tx-query .clairveil-payroll/tx-query.json \
+  -interval 5s
 ```
 
-현재 mode는 `simulated`만 지원합니다. 이 mode는 실제 proof 생성과 chain broadcast를 수행하지 않고, durable reservation state 위에서 proof ready, submitted, reconciled 상태 전이를 시뮬레이션합니다. 운영팀이 repo만으로 payroll workflow를 끝까지 확인할 때 사용합니다.
+`simulated` mode는 실제 proof 생성과 chain broadcast를 수행하지 않고, durable reservation state 위에서 proof ready, submitted, reconciled 상태 전이를 시뮬레이션합니다. 운영팀이 repo만으로 payroll workflow를 끝까지 확인할 때 사용합니다.
+
+`live` mode는 long-running scheduler 표면입니다. 현재 CLI reference 구현은 `-tx-query` 파일을 tick마다 다시 읽어 `Submitted` 또는 `Unknown` 상태의 operation을 tx event/nullifier evidence로 reconcile합니다. proof 생성과 broadcast는 SDK의 `LiveOperationExecutor` 인터페이스에 production worker를 연결하거나, 외부 worker가 durable state를 `Submitted`까지 진행시키는 방식으로 붙입니다.
 
 전체 demo는 아래처럼 실행합니다.
 
