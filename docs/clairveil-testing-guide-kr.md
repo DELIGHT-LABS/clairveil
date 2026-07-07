@@ -36,6 +36,7 @@ make release-pack-verify
 | `make localnet-smoke` | reference daemon이 genesis부터 start 가능한지 짧게 검증 |
 | `make privacy-e2e-smoke` | deposit, transfer, disclosure, withdraw 전체 flow 검증 |
 | `make reference-payroll-demo` | reference payroll product의 validate, prepare, plan, reserve, simulated daemon, final report 흐름 검증 |
+| `make reference-payroll-live-localnet` | 실제 localnet에서 payroll input, reservation, transfer-batch, recipient scan, settle, final report 흐름 검증 |
 | `make dapp-local` | 수동 테스트용 local Clairveil node, prover, browser DApp stack 실행 |
 | `make release-check` | `ci`, `vulncheck`, `localnet-smoke`, `privacy-e2e-smoke`, localnet transfer-batch smoke를 포함한 bulk readiness 묶음 |
 | `make release-pack` | downstream handoff archive와 sha256 생성 |
@@ -248,6 +249,27 @@ make reference-payroll-demo
 7. final payroll report export
 
 기본 출력은 `tmp/reference-payroll-demo/` 아래에 생성됩니다. 성공 기준은 `status-after-daemon.json`의 모든 reservation이 `ConfirmedSpent`, 모든 operation이 `Succeeded`이고, `final-report.json`의 payroll status가 `Confirmed`인 것입니다.
+
+## 7.2 Reference Payroll Live Localnet
+
+```bash
+make reference-payroll-live-localnet
+```
+
+이 target은 실제 localnet을 시작하고 payroll reference product를 실제 `transfer-batch` tx까지 연결해 검증합니다.
+
+검증 범위:
+
+1. localnet init/start
+2. treasury shielded note deposit
+3. `list-notes --json` 결과에서 payroll input 생성
+4. payroll validate, prepare, plan, reserve
+5. 실제 `clairveild tx privacy transfer-batch` broadcast
+6. recipient note scan delta 확인
+7. `clairveil-payroll settle-transfer-batch`
+8. final payroll report export
+
+자세한 수동 단계는 [clairveil-reference-payroll-live-localnet-tutorial-kr.md](clairveil-reference-payroll-live-localnet-tutorial-kr.md)를 따릅니다.
 
 ## 8. Release pack 검증
 

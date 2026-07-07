@@ -408,16 +408,20 @@ Reference payroll product workflow를 로컬 파일과 JSON report 중심으로 
 
 ```bash
 clairveil-payroll validate -input payroll.json -out validation.json
+clairveil-payroll build-input-from-notes -template payroll-template.json -notes alice-notes.json -out payroll.json
 clairveil-payroll prepare-notes -input payroll.json -out note-preparation.json
 clairveil-payroll plan -input payroll.json -out plan.json
 clairveil-payroll run -plan plan.json -state .clairveil-payroll/reservation-state.json -out confirmed-plan.json
 clairveil-payroll status -plan plan.json -out status.json
 clairveil-payroll status -state .clairveil-payroll/reservation-state.json -out state-status.json
 clairveil-payroll reconcile -state .clairveil-payroll/reservation-state.json -evidence evidence.json -out reconcile.json
+clairveil-payroll settle-transfer-batch -plan plan.json -state .clairveil-payroll/reservation-state.json -tx transfer-batch.json -recipient-before bob-before.json -recipient-after bob-after.json -out settle.json
 clairveil-payroll export-report -plan plan.json -state .clairveil-payroll/reservation-state.json -out payroll-report.json
 ```
 
-`prepare-notes`와 `plan`은 `-store-dir .clairveil-payroll`을 받아 file-backed reference artifact store에도 결과를 저장할 수 있습니다. `run`과 `reconcile`은 durable reservation state 파일을 사용합니다. 상세 workflow는 [clairveil-reference-payroll-product-kr.md](clairveil-reference-payroll-product-kr.md)를 따릅니다.
+`build-input-from-notes`는 `list-notes --json` 결과에서 spendable note를 읽어 payroll input의 `treasury_notes`를 채웁니다. `settle-transfer-batch`는 실제 `transfer-batch` tx 결과와 recipient note scan delta를 검증한 뒤 durable reservation state를 settle합니다.
+
+`prepare-notes`와 `plan`은 `-store-dir .clairveil-payroll`을 받아 file-backed reference artifact store에도 결과를 저장할 수 있습니다. `run`, `reconcile`, `settle-transfer-batch`는 durable reservation state 파일을 사용합니다. 상세 workflow는 [clairveil-reference-payroll-product-kr.md](clairveil-reference-payroll-product-kr.md)를 따릅니다.
 
 ### clairveil-payrolld
 
@@ -437,3 +441,11 @@ clairveil-payrolld \
 ```bash
 make reference-payroll-demo
 ```
+
+실제 localnet에서 payroll transfer-batch까지 실행하는 live 튜토리얼은 아래처럼 실행합니다.
+
+```bash
+make reference-payroll-live-localnet
+```
+
+자세한 단계는 [clairveil-reference-payroll-live-localnet-tutorial-kr.md](clairveil-reference-payroll-live-localnet-tutorial-kr.md)를 따릅니다.

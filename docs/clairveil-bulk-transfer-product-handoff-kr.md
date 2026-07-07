@@ -4,7 +4,7 @@
 
 이 문서는 `private/bulk-transfer` 브랜치의 1차 repo 구현을 제품/운영 구현으로 이어가기 위한 전달 문서임.
 
-repo에는 note reservation, payroll control plane, proof/broadcast/reconcile queue, multi-message tx, prover pool, benchmark/readiness harness, reference payroll CLI, simulated reference payroll daemon, repo-local demo product, file-backed reference artifact store, durable reservation state store의 reference implementation이 들어 있음. 제품/운영 영역에서는 managed production DB 배포 방식, tenant 운영 정책, live proof/broadcast/scanner mode, operator UI, 실제 10만건 rehearsal을 이어서 결정해야 함.
+repo에는 note reservation, payroll control plane, proof/broadcast/reconcile queue, multi-message tx, prover pool, benchmark/readiness harness, reference payroll CLI, simulated reference payroll daemon, repo-local demo product, live localnet payroll tutorial, file-backed reference artifact store, durable reservation state store의 reference implementation이 들어 있음. 제품/운영 영역에서는 managed production DB 배포 방식, tenant 운영 정책, production-grade live proof/broadcast/scanner daemon, operator UI, 실제 10만건 rehearsal을 이어서 결정해야 함.
 
 ## Repo에서 제공하는 것
 
@@ -13,8 +13,10 @@ repo에는 note reservation, payroll control plane, proof/broadcast/reconcile qu
 - 대량 전송 전략/시뮬레이션: `docs/clairveil-bulk-transfer-strategy-kr.md`, `docs/clairveil-bulk-transfer-time-simulation-kr.md`
 - Go reference packages: `x/privacy/client/sdk/reservation`, `x/privacy/client/sdk/payroll`
 - Reference payroll CLI: `clairveil-payroll validate`, `prepare-notes`, `plan`, `run`, `status`, `reconcile`, `export-report`
+- Live payroll CLI helpers: `clairveil-payroll build-input-from-notes`, `settle-transfer-batch`
 - Reference payroll daemon: `clairveil-payrolld -mode simulated`
 - Repo-local demo product: `make reference-payroll-demo`
+- Live localnet tutorial: `make reference-payroll-live-localnet`
 - File-backed reference artifact store: `x/privacy/client/sdk/payroll.FileArtifactStore`
 - Durable reservation state store: `x/privacy/client/sdk/reservation.DurableFileStore`
 - 검증 entrypoint: `make privacy-bulk-readiness-check`
@@ -47,9 +49,9 @@ repo는 `reservation.Store` contract를 만족하는 `DurableFileStore` referenc
 
 ### 2. Payroll Scheduler / Worker Wiring
 
-repo는 `clairveil-payroll run`으로 plan을 durable reservation/operation state에 확정하고, `clairveil-payroll reconcile`로 evidence 기반 상태 갱신을 수행할 수 있음. 또한 `clairveil-payrolld -mode simulated`로 같은 state 위에서 proof ready, submitted, reconciled 전이를 repo-local로 체험할 수 있음.
+repo는 `clairveil-payroll run`으로 plan을 durable reservation/operation state에 확정하고, `clairveil-payroll reconcile`로 evidence 기반 상태 갱신을 수행할 수 있음. 또한 `clairveil-payrolld -mode simulated`로 같은 state 위에서 proof ready, submitted, reconciled 전이를 repo-local로 체험할 수 있음. 실제 localnet 튜토리얼에서는 `settle-transfer-batch`가 실제 `transfer-batch` tx 결과와 recipient note delta를 검증해 payroll state를 settle함.
 
-제품 환경에서는 이 state를 live proof worker, broadcast worker, chain scanner와 연결해야 함. 즉 simulated daemon은 운영 flow와 report를 검증하는 reference product이고, 실제 chain 제출 daemon은 같은 상태 계약을 live provider/prover/scanner로 대체하는 작업임.
+제품 환경에서는 이 state를 long-running live proof worker, broadcast worker, chain scanner와 연결해야 함. 즉 simulated daemon과 live localnet tutorial은 운영 flow와 report를 검증하는 reference product이고, 실제 production 제출 daemon은 같은 상태 계약을 provider/prover/scanner로 대체하는 작업임.
 
 필수 구현 내용은 다음과 같음.
 
@@ -136,6 +138,7 @@ JS SDK가 이미 `docs/clairveil-note-reservation-design-kr.md`를 기준으로 
 
 - 제품팀은 `make privacy-bulk-readiness-check` 결과를 확인함.
 - 운영팀은 `make reference-payroll-demo`로 repo-local payroll product flow를 먼저 실행함.
+- 운영팀은 `make reference-payroll-live-localnet`으로 실제 localnet payroll transfer-batch tutorial을 실행함.
 - release 전에는 `RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check`로 multi-message transfer localnet 경로를 확인함.
 - prover pool scale claim을 하려면 `RUN_PROVER_SCALE=1 PROVERD_URLS=url1,url2 make privacy-bulk-readiness-check` 결과를 별도 산출물로 남김. scale benchmark는 기본적으로 preflight 실패 endpoint를 제외하고 `unhealthy_endpoint_count`를 기록하지만, public claim 수치로 쓰려면 `unhealthy_endpoint_count=0`이어야 함.
 - backend 팀은 `clairveil-payroll run -state ...`, `clairveil-payrolld -state ... -once`, `clairveil-payroll reconcile -state ...` durable control-plane workflow를 확인하고, managed DB가 필요하면 같은 `reservation.Store` contract로 이전 계획을 작성함.

@@ -27,6 +27,7 @@ Reference Payroll Product는 core protocol 필수 요소가 아님. 그러나 `c
 | reference payroll CLI | `cmd/clairveil-payroll` |
 | reference payroll daemon | `cmd/clairveil-payrolld`, `x/privacy/client/sdk/payroll/reference_daemon.go` |
 | repo-local demo product | `examples/reference-payroll/payroll-demo.json`, `scripts/reference-payroll-demo.sh` |
+| live localnet tutorial | `scripts/reference-payroll-live-localnet.sh`, `docs/clairveil-reference-payroll-live-localnet-tutorial-kr.md` |
 | proof/broadcast/reconcile worker | `x/privacy/client/sdk/payroll/proof_queue.go`, `broadcast_queue.go`, `batch_broadcaster.go`, `reconcile_worker.go` |
 | multi-message chunking | `x/privacy/client/sdk/payroll/chunker.go` |
 | prover pool | `x/privacy/client/sdk/payroll/prover_pool.go` |
@@ -127,15 +128,21 @@ Reference CLI는 payroll workflow를 아래처럼 끊어서 실행할 수 있는
 
 ```text
 validate
+build-input-from-notes
 prepare-notes
 plan
 run
 status
 reconcile
+settle-transfer-batch
 export-report
 ```
 
 `run`과 `reconcile`은 durable control-plane 표면을 제공함. 즉 plan 확정, durable reservation/operation state 저장, evidence 기반 reconcile을 처리함.
+
+`build-input-from-notes`는 실제 chain에서 `list-notes --json`으로 scan한 treasury note를 payroll input의 `treasury_notes`로 변환함.
+
+`settle-transfer-batch`는 실제 `transfer-batch` tx 결과와 recipient note scan delta를 검증한 뒤 durable reservation state를 settle함. 이 명령은 live localnet 튜토리얼에서 실제 chain tx와 payroll final report를 연결하는 bridge 역할을 함.
 
 `clairveil-payrolld`는 같은 durable state를 읽어 repo 안에서 운영 흐름을 끝까지 체험할 수 있게 하는 reference daemon임. 현재 제공 mode는 `simulated`이며, 실제 chain proof와 broadcast 대신 deterministic simulated proof/tx/evidence를 생성해 `Reserved -> Proving -> ProofReady -> Submitted -> ConfirmedSpent` 흐름을 검증함. 따라서 운영팀은 별도 제품 repo 없이 payroll run의 상태 전이와 report export를 바로 확인할 수 있음.
 
@@ -400,6 +407,32 @@ clairveil-payroll export-report -state
 
 성공 기준은 `status-after-daemon.json`에 모든 reservation이 `ConfirmedSpent`, 모든 operation이 `Succeeded`로 집계되고, `final-report.json`의 payroll status가 `Confirmed`인 것임.
 
+## Live Localnet Tutorial
+
+실제 localnet에서 payroll flow를 실행하는 target도 제공함.
+
+```bash
+make reference-payroll-live-localnet
+```
+
+이 target은 다음을 실제 chain 위에서 수행함.
+
+```text
+localnet init/start
+-> Alice treasury note deposit
+-> Alice list-notes scan
+-> payroll input 생성
+-> validate / prepare-notes / plan / run
+-> 실제 transfer-batch broadcast
+-> Bob recipient note scan
+-> settle-transfer-batch
+-> final report export
+```
+
+성공 기준은 `payroll-status-after-settle.json`에서 모든 reservation이 `ConfirmedSpent`, 모든 operation이 `Succeeded`이고, `payroll-final-report.json`의 payroll status가 `Confirmed`인 것임.
+
+상세 단계는 [clairveil-reference-payroll-live-localnet-tutorial-kr.md](clairveil-reference-payroll-live-localnet-tutorial-kr.md)를 따름.
+
 ## File Artifact Store
 
 Reference product는 plan/report artifact 저장용 `FileArtifactStore`와 reservation/operation 상태 저장용 `DurableFileStore`를 구분함.
@@ -443,7 +476,8 @@ Reference Payroll Product 1.5차의 repo 기준 완료 조건은 다음과 같�
 - durable reservation state store가 제공됨.
 - `clairveil-payrolld` simulated reference daemon이 제공됨.
 - `make reference-payroll-demo`로 repo-local end-to-end payroll demo를 실행할 수 있음.
-- `clairveil-payroll validate`, `prepare-notes`, `plan`, `run`, `status`, `reconcile`, `export-report` 명령이 제공됨.
+- `make reference-payroll-live-localnet`으로 실제 localnet payroll transfer-batch 튜토리얼을 실행할 수 있음.
+- `clairveil-payroll validate`, `build-input-from-notes`, `prepare-notes`, `plan`, `run`, `status`, `reconcile`, `settle-transfer-batch`, `export-report` 명령이 제공됨.
 - JS SDK handoff 문서가 제공됨.
 - wallet handoff 문서가 제공됨.
 - downstream이 payroll workflow를 조립할 수 있는 기준 문서가 제공됨.
@@ -453,7 +487,7 @@ Reference Payroll Product 1.5차의 repo 기준 완료 조건은 다음과 같�
 이 repo가 직접 완료하지 않는 작업은 다음과 같음.
 
 - managed production DB deployment와 tenant별 운영 schema hardening
-- live proof/broadcast/scanner mode wiring rehearsal
+- production-grade live scanner/reconcile daemon
 - admin UI
 - JS SDK 구현
 - 웹/모바일 지갑 구현

@@ -410,16 +410,20 @@ Runs the reference payroll product workflow around local files and JSON reports.
 
 ```bash
 clairveil-payroll validate -input payroll.json -out validation.json
+clairveil-payroll build-input-from-notes -template payroll-template.json -notes alice-notes.json -out payroll.json
 clairveil-payroll prepare-notes -input payroll.json -out note-preparation.json
 clairveil-payroll plan -input payroll.json -out plan.json
 clairveil-payroll run -plan plan.json -state .clairveil-payroll/reservation-state.json -out confirmed-plan.json
 clairveil-payroll status -plan plan.json -out status.json
 clairveil-payroll status -state .clairveil-payroll/reservation-state.json -out state-status.json
 clairveil-payroll reconcile -state .clairveil-payroll/reservation-state.json -evidence evidence.json -out reconcile.json
+clairveil-payroll settle-transfer-batch -plan plan.json -state .clairveil-payroll/reservation-state.json -tx transfer-batch.json -recipient-before bob-before.json -recipient-after bob-after.json -out settle.json
 clairveil-payroll export-report -plan plan.json -state .clairveil-payroll/reservation-state.json -out payroll-report.json
 ```
 
-`prepare-notes` and `plan` also accept `-store-dir .clairveil-payroll` to write results into the file-backed reference artifact store. `run` and `reconcile` use the durable reservation state file. For the detailed workflow, see [clairveil-reference-payroll-product-kr.md](clairveil-reference-payroll-product-kr.md).
+`build-input-from-notes` reads spendable notes from `list-notes --json` output and fills the payroll input `treasury_notes`. `settle-transfer-batch` verifies the actual `transfer-batch` tx result and recipient note scan delta before settling the durable reservation state.
+
+`prepare-notes` and `plan` also accept `-store-dir .clairveil-payroll` to write results into the file-backed reference artifact store. `run`, `reconcile`, and `settle-transfer-batch` use the durable reservation state file. For the detailed workflow, see [clairveil-reference-payroll-product-kr.md](clairveil-reference-payroll-product-kr.md).
 
 ### clairveil-payrolld
 
@@ -439,3 +443,11 @@ Run the complete demo with:
 ```bash
 make reference-payroll-demo
 ```
+
+Run the live localnet payroll tutorial with:
+
+```bash
+make reference-payroll-live-localnet
+```
+
+The Korean walkthrough is [clairveil-reference-payroll-live-localnet-tutorial-kr.md](clairveil-reference-payroll-live-localnet-tutorial-kr.md).
