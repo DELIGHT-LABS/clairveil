@@ -126,7 +126,7 @@ Payroll Control Plane은 최종 사용자 UI 자체가 아니라, 대량 지급�
 
 2026-07-07 추가 구현으로 `clairveil-payrolld` simulated reference daemon과 `make reference-payroll-demo`를 추가함. 이제 운영팀은 repo만으로 sample payroll input을 검증하고, note preparation을 확인하고, plan/reservation state를 만들고, daemon tick으로 `Reserved -> ProofReady -> Submitted -> ConfirmedSpent` 흐름을 시뮬레이션한 뒤 final report까지 볼 수 있음.
 
-2026-07-08 추가 구현으로 `make reference-payroll-live-localnet`과 `clairveil-payroll build-input-from-notes`, `settle-transfer-batch`를 추가함. 이 경로는 실제 localnet에서 treasury note deposit, note scan, payroll plan/reservation, 실제 `transfer-batch` broadcast, recipient note scan, payroll state settle, final report export까지 검증함. 같은 날 `clairveil-payroll scan-evidence`와 SDK `EvidenceScanner`를 추가해 tx event/nullifier evidence를 durable reservation state에 적용할 수 있게 함. 이어서 SDK `LiveDaemon`과 `clairveil-payrolld -mode live`를 추가해 proof/broadcast/scan executor를 장기 실행 상태머신에 연결할 수 있게 하고, CLI reference는 tx query 파일을 tick마다 다시 읽어 submitted/unknown operation을 reconcile함. 또한 `reservation.SQLStore`와 PostgreSQL/SQLite schema helper를 추가해 production-like DB adapter contract를 코드로 제공함.
+2026-07-08 추가 구현으로 `make reference-payroll-live-localnet`과 `clairveil-payroll build-input-from-notes`, `settle-transfer-batch`를 추가함. 이 경로는 실제 localnet에서 treasury note deposit, note scan, payroll plan/reservation, 실제 `transfer-batch` broadcast, recipient note scan, payroll state settle, final report export까지 검증함. 같은 날 `clairveil-payroll scan-evidence`와 SDK `EvidenceScanner`를 추가해 tx event/nullifier evidence를 durable reservation state에 적용할 수 있게 함. 이어서 SDK `LiveDaemon`과 `clairveil-payrolld -mode live`를 추가해 proof/broadcast/scan executor를 장기 실행 상태머신에 연결할 수 있게 하고, CLI reference는 tx query 파일을 tick마다 다시 읽어 submitted/unknown operation을 reconcile함. 또한 `reservation.SQLStore`와 PostgreSQL/SQLite schema helper를 추가해 production-like DB adapter contract를 코드로 제공함. 마지막으로 `make reference-payroll-rehearsal`을 추가해 1천건, 1만건, 10만건, 100개 회사 x 1천건 capacity rehearsal report를 반복 생성할 수 있게 함.
 
 | 단계 | 상태 | 구현 위치 |
 | --- | --- | --- |
@@ -136,7 +136,7 @@ Payroll Control Plane은 최종 사용자 UI 자체가 아니라, 대량 지급�
 | Phase 4. Multi-Message Transaction | 구현 및 localnet 검증 harness 완료 | `x/privacy/client/sdk/payroll/chunker.go`, `batch_broadcaster.go`, `sdk_broadcaster.go`, `x/privacy/client/sdk/provider/tx.go`, `x/privacy/client/cli/tx_transfer_batch.go`, `scripts/privacy-transfer-batch-localnet-bench.sh` |
 | Phase 5. Prover Scaling | 구현 및 pool load harness 완료 | `x/privacy/client/sdk/payroll/prover_pool.go`, `cmd/clairveil-proverload`, `scripts/privacy-proverd-scale-bench.sh` |
 | Phase 6. Capacity Simulation Benchmark | 시뮬레이션 및 readiness harness 완료 | `cmd/clairveil-bulktransferbench`, `scripts/privacy-bulk-transfer-bench.sh`, `scripts/privacy-bulk-readiness-check.sh`, `make privacy-bulk-readiness-check` |
-| Phase 1.5. Reference Payroll Product | repo 보강 완료, simulated daemon/demo 완료, live localnet tutorial 완료, scanner/live daemon reference 완료, SQL adapter 완료, rehearsal 남음 | `cmd/clairveil-payroll`, `cmd/clairveil-payrolld`, `examples/reference-payroll`, `scripts/reference-payroll-live-localnet.sh`, `x/privacy/client/sdk/payroll`, `x/privacy/client/sdk/reservation/sql_store.go`, handoff 문서 |
+| Phase 1.5. Reference Payroll Product | repo 보강 완료, simulated daemon/demo 완료, live localnet tutorial 완료, scanner/live daemon reference 완료, SQL adapter 완료, rehearsal harness 완료 | `cmd/clairveil-payroll`, `cmd/clairveil-payrolld`, `examples/reference-payroll`, `scripts/reference-payroll-live-localnet.sh`, `scripts/reference-payroll-rehearsal.sh`, `x/privacy/client/sdk/payroll`, `x/privacy/client/sdk/reservation/sql_store.go`, handoff 문서 |
 | Phase 7. N-output Batch Circuit | 미구현 | 2차에서 `BatchJoinSplit32`로 진행 예정임 |
 
 ## 1차 계획
@@ -672,6 +672,8 @@ clairveil-payrolld
 2026-07-08 live daemon 보강 상태: `x/privacy/client/sdk/payroll.LiveDaemon`을 추가함. 이 daemon은 `Reserved -> Proving -> ProofReady`, `ProofReady -> Submitted/Unknown`, `Submitted/Unknown -> Reconcile` 상태머신을 long-running tick에서 실행하고, 실제 proof/broadcast/scan 동작은 `LiveOperationExecutor`로 주입받음. `clairveil-payrolld -mode live`는 파일 기반 reference executor를 사용해 tx query evidence를 tick마다 다시 읽고 submitted/unknown 상태를 reconcile함.
 
 2026-07-08 DB adapter 보강 상태: `x/privacy/client/sdk/reservation.SQLStore`를 추가함. 이 adapter는 `database/sql` 기반 reference store이며, `PostgreSQLSchema()`와 `SQLiteSchema()`로 active reservation partial unique index, status index, operation link index를 포함한 schema를 제공함. managed production deployment, tenant partitioning, field-level encryption, migration 운영은 여전히 제품/운영 DB 정책으로 남김.
+
+2026-07-08 rehearsal 보강 상태: `scripts/reference-payroll-rehearsal.sh`, `make reference-payroll-rehearsal`, `docs/clairveil-reference-payroll-rehearsal-kr.md`를 추가함. 이 harness는 `single-company-1k`, `single-company-10k`, `single-company-100k`, `hundred-companies-1k` simulation report를 만들고, 선택적으로 작은 live localnet smoke를 함께 실행함. 실제 10만건 full localnet 제출은 운영 비용이 큰 별도 soak test로 남김.
 
 1.5차 repo 완료 기준은 production 실운영 daemon을 대신하는 것이 아니라, 운영팀이 repo만으로 payroll product 상태 모델과 실제 localnet tx 경로를 끝까지 체험하고, production scanner/daemon 구현 전까지 필요한 durable control-plane workflow를 code와 문서로 조립 가능하게 만드는 것임.
 

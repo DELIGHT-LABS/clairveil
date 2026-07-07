@@ -459,4 +459,10 @@ make reference-payroll-demo
 make reference-payroll-live-localnet
 ```
 
-자세한 단계는 [clairveil-reference-payroll-live-localnet-tutorial-kr.md](clairveil-reference-payroll-live-localnet-tutorial-kr.md)를 따릅니다.
+대규모 payroll rehearsal simulation은 아래처럼 실행합니다.
+
+```bash
+make reference-payroll-rehearsal
+```
+
+live localnet 자세한 단계는 [clairveil-reference-payroll-live-localnet-tutorial-kr.md](clairveil-reference-payroll-live-localnet-tutorial-kr.md)를 따릅니다. rehearsal 자세한 단계는 [clairveil-reference-payroll-rehearsal-kr.md](clairveil-reference-payroll-rehearsal-kr.md)를 따릅니다.

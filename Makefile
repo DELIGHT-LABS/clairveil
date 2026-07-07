@@ -90,6 +90,10 @@ reference-payroll-demo:
 reference-payroll-live-localnet:
 	./scripts/reference-payroll-live-localnet.sh
 
+.PHONY: reference-payroll-rehearsal
+reference-payroll-rehearsal:
+	./scripts/reference-payroll-rehearsal.sh
+
 .PHONY: privacy-public-capacity-report
 privacy-public-capacity-report:
 	./scripts/privacy-public-capacity-report.sh

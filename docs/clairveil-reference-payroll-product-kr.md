@@ -29,6 +29,7 @@ Reference Payroll Product는 core protocol 필수 요소가 아님. 그러나 `c
 | reference payroll daemon | `cmd/clairveil-payrolld`, `x/privacy/client/sdk/payroll/reference_daemon.go`, `x/privacy/client/sdk/payroll/live_daemon.go` |
 | repo-local demo product | `examples/reference-payroll/payroll-demo.json`, `scripts/reference-payroll-demo.sh` |
 | live localnet tutorial | `scripts/reference-payroll-live-localnet.sh`, `docs/clairveil-reference-payroll-live-localnet-tutorial-kr.md` |
+| large-scale rehearsal | `scripts/reference-payroll-rehearsal.sh`, `docs/clairveil-reference-payroll-rehearsal-kr.md` |
 | proof/broadcast/reconcile worker | `x/privacy/client/sdk/payroll/proof_queue.go`, `broadcast_queue.go`, `batch_broadcaster.go`, `reconcile_worker.go` |
 | multi-message chunking | `x/privacy/client/sdk/payroll/chunker.go` |
 | prover pool | `x/privacy/client/sdk/payroll/prover_pool.go` |
