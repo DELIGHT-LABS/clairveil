@@ -390,9 +390,29 @@ test("transfer planner explains missing zero helper notes clearly", () => {
 });
 
 test("async job prover adapter polls completed transfer jobs", async () => {
-  const payload = {
-    payload_hash: "aa".repeat(32)
-  };
+  const sender = derivePrivacyMaterial({
+    address: "clair1sender000000000000000000000000000000",
+    pubKeyHex: "02".padEnd(66, "0"),
+    signatureBase64: Buffer.from("sender-signature").toString("base64")
+  });
+  const recipient = derivePrivacyMaterial({
+    address: "clair1recipient0000000000000000000000000000",
+    pubKeyHex: "03".padEnd(66, "0"),
+    signatureBase64: Buffer.from("recipient-signature").toString("base64")
+  });
+  const payload = await buildPreparedTransferPayload({
+    creator: sender.address,
+    inputs: [foundNote(4, 1), foundNote(7, 2)],
+    recipient: recipient.shieldedAddress,
+    amount: "10uclair",
+    rootSeed: sender.rootSeed,
+    merklePathProvider: () => ({
+      root: "11".repeat(32),
+      path: [],
+      path_helper: []
+    }),
+    auditDisclosureTargetPubKeyHex: sender.disclosurePubKeyHex
+  });
   const adapter = createAsyncJobProverAdapter({
     submitTransferJob: async () => ({ jobId: "job-1" }),
     submitWithdrawJob: async () => ({ jobId: "job-2" }),
@@ -529,7 +549,7 @@ test("legacy external ClairveilJS scanner fails closed on privacy-fixed-v1 depos
   assert.equal(result.summary.spendable_count, 0);
 });
 
-test("ClairveilJS scanNotes sends paginated event feed query parameters", async () => {
+test("ClairveilJS scanNotes sends scan event cursor query parameters", async () => {
   const originalFetch = globalThis.fetch;
   const seen = [];
   globalThis.fetch = async url => {
@@ -541,7 +561,10 @@ test("ClairveilJS scanNotes sends paginated event feed query parameters", async 
       async json() {
         return {
           events: [],
-          page: 2,
+          scan_format_version: 1,
+          view_tag_version: 1,
+          next_height: 5,
+          next_sequence: 0,
           limit: 50,
           has_more: false
         };
@@ -563,13 +586,13 @@ test("ClairveilJS scanNotes sends paginated event feed query parameters", async 
       eventTypes: ["deposit", "shielded_transfer"]
     });
     const url = new URL(seen[0]);
-    assert.equal(url.pathname, "/clairveil/privacy/v1/events");
+    assert.equal(url.pathname, "/clairveil/privacy/v1/scan_events");
     assert.equal(url.searchParams.get("after_height"), "5");
-    assert.equal(url.searchParams.get("page"), "2");
+    assert.equal(url.searchParams.get("after_sequence"), "0");
     assert.equal(url.searchParams.get("limit"), "50");
     assert.deepEqual(url.searchParams.getAll("event_types"), ["deposit", "shielded_transfer"]);
     assert.equal(result.scanCursor.after_height, 5);
-    assert.equal(result.scanCursor.page, 2);
+    assert.equal(result.scanCursor.after_sequence, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }

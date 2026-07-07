@@ -74681,7 +74681,8 @@ function createBaseMsgTransfer() {
     auditDisclosureTargetPubkey: new Uint8Array(),
     auditDisclosurePayload: new Uint8Array(),
     selfViewDisclosureDigest: new Uint8Array(),
-    selfViewDisclosurePayload: new Uint8Array()
+    selfViewDisclosurePayload: new Uint8Array(),
+    viewTags: []
   };
 }
 var MsgTransfer = {
@@ -74734,6 +74735,9 @@ var MsgTransfer = {
     }
     if (message.selfViewDisclosurePayload.length !== 0) {
       writer.uint32(130).bytes(message.selfViewDisclosurePayload);
+    }
+    for (const v of message.viewTags) {
+      writer.uint32(138).bytes(v);
     }
     return writer;
   },
@@ -74792,6 +74796,9 @@ var MsgTransfer = {
         case 16:
           message.selfViewDisclosurePayload = reader.bytes();
           break;
+        case 17:
+          message.viewTags.push(reader.bytes());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -74817,6 +74824,7 @@ var MsgTransfer = {
     message.auditDisclosurePayload = object.auditDisclosurePayload ?? new Uint8Array();
     message.selfViewDisclosureDigest = object.selfViewDisclosureDigest ?? new Uint8Array();
     message.selfViewDisclosurePayload = object.selfViewDisclosurePayload ?? new Uint8Array();
+    message.viewTags = object.viewTags?.map((e) => e) || [];
     return message;
   }
 };
@@ -76113,6 +76121,18 @@ var scalarLimit = maxUint256 - maxUint256 % CURVE_ORDER;
 function cloneBytes(bytes3) {
   return Uint8Array.from(bytes3);
 }
+function bytesFromBytesLike(value, label = "bytes") {
+  if (value == null) return new Uint8Array();
+  if (typeof value === "string") return bytesFromHex2(value, label);
+  if (value instanceof Uint8Array) return Uint8Array.from(value);
+  if (ArrayBuffer.isView(value)) {
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength).slice();
+  }
+  if (value instanceof ArrayBuffer) {
+    return new Uint8Array(value).slice();
+  }
+  return Uint8Array.from(value);
+}
 function randomScalar({ allowZero = false } = {}) {
   while (true) {
     const candidate = BigInt(`0x${hexFromBytes2(randomBytes4(32))}`);
@@ -76312,7 +76332,7 @@ function decryptWithRootSeed(ciphertextBytes, rootSeed) {
 function encryptNoteWithRootSeed(noteLike, rootSeed) {
   return encryptWithRootSeed(noteToGoJSONBytes(noteLike), rootSeed);
 }
-function asymEncrypt(plaintext, receiverPubKey) {
+function asymEncryptWithSharedPoint(plaintext, receiverPubKey) {
   const ephemeralScalar = randomScalar();
   const ephemeralPubKey = scalarMultiply(CURVE_BASE, ephemeralScalar);
   const sharedPoint = scalarMultiply(receiverPubKey, ephemeralScalar);
@@ -76323,10 +76343,43 @@ function asymEncrypt(plaintext, receiverPubKey) {
     nonce,
     plaintext
   });
-  return concatBytes4(packPoint(ephemeralPubKey), nonce, ciphertextAndTag);
+  return {
+    cipherText: concatBytes4(packPoint(ephemeralPubKey), nonce, ciphertextAndTag),
+    sharedPoint
+  };
 }
-function encryptNoteForReceiver(noteLike) {
-  return asymEncrypt(noteToGoJSONBytes(noteLike), noteViewPubKey(noteLike));
+var viewTagLength = 2;
+function deriveViewTag(sharedPoint, outputCommitment, outputIndex) {
+  const commitmentBytes = bytesFromBytesLike(outputCommitment, "output commitment");
+  if (commitmentBytes.length !== 32) {
+    throw new Error("output commitment must be exactly 32 bytes");
+  }
+  const tagFull = mimcHash(
+    hashStringToField("clairveil.view_tag.v1"),
+    pointCoordinate(sharedPoint, "x"),
+    pointCoordinate(sharedPoint, "y"),
+    bytesToBigIntBE(commitmentBytes),
+    BigInt(outputIndex)
+  );
+  return canonicalFieldBytes(tagFull).slice(0, viewTagLength);
+}
+function asymEncrypt(plaintext, receiverPubKey) {
+  return asymEncryptWithSharedPoint(plaintext, receiverPubKey).cipherText;
+}
+function asymEncryptWithViewTag(plaintext, receiverPubKey, outputCommitment, outputIndex) {
+  const encrypted = asymEncryptWithSharedPoint(plaintext, receiverPubKey);
+  return {
+    cipherText: encrypted.cipherText,
+    viewTag: deriveViewTag(encrypted.sharedPoint, outputCommitment, outputIndex)
+  };
+}
+function encryptNoteForReceiverWithViewTag(noteLike, outputCommitment, outputIndex) {
+  return asymEncryptWithViewTag(
+    noteToGoJSONBytes(noteLike),
+    noteViewPubKey(noteLike),
+    outputCommitment,
+    outputIndex
+  );
 }
 function computeTransferNoteHash(noteLike) {
   const note = normalizeNote(noteLike);
@@ -76452,13 +76505,14 @@ function normalizeFoundNote(foundNote) {
     nullifier: String(foundNote.nullifier ?? foundNote.Nullifier ?? computeNoteNullifierHex(note)).toLowerCase(),
     isSpent: Boolean(foundNote.isSpent ?? foundNote.IsSpent ?? false),
     txHash: String(foundNote.txHash ?? foundNote.tx_hash ?? foundNote.TxHash ?? ""),
-    height: Number(foundNote.height ?? foundNote.Height ?? 0)
+    height: Number(foundNote.height ?? foundNote.Height ?? 0),
+    sequence: Number(foundNote.sequence ?? foundNote.Sequence ?? 0)
   };
 }
 
 // node_modules/clairveiljs/src/privacy/payload.js
 var import_encoding2 = __toESM(require_build(), 1);
-var preparedTransferPayloadVersion = "v2";
+var preparedTransferPayloadVersion = "v3";
 var preparedTransferProofVersion = "v1";
 var preparedWithdrawProverPayloadVersion = "v1";
 var preparedWithdrawProofVersion = "v1";
@@ -76571,6 +76625,11 @@ function foundNoteIdentityKey(found) {
   if (nullifier) return `nullifier:${nullifier}`;
   return `fallback:${found.height}:${String(found.txHash || "").toLowerCase()}:${found.note.amount}`;
 }
+var maxShieldedAmount = (1n << 64n) - 1n;
+var exactInputBatchFullNoteLimit = 32;
+var exactInputBatchCandidateNoteLimit = 48;
+var exactInputBatchCandidatePairLimit = 16;
+var exactInputBatchSearchStepLimit = 25e4;
 function foundNotePlannerLess(left, right) {
   if (left.note.amount !== right.note.amount) return left.note.amount < right.note.amount;
   if (left.height !== right.height) return left.height < right.height;
@@ -76579,6 +76638,20 @@ function foundNotePlannerLess(left, right) {
   const nullifierCompare = String(left.nullifier || "").toLowerCase().localeCompare(String(right.nullifier || "").toLowerCase());
   if (nullifierCompare !== 0) return nullifierCompare < 0;
   return foundNoteIdentityKey(left) < foundNoteIdentityKey(right);
+}
+function foundNotePlannerCompare(left, right) {
+  if (foundNotePlannerLess(left, right)) return -1;
+  if (foundNotePlannerLess(right, left)) return 1;
+  return 0;
+}
+function finalTransferOutputsWithinBound(total, target) {
+  if (target < 0n || target > maxShieldedAmount) return false;
+  if (total < target) return false;
+  return total - target <= maxShieldedAmount;
+}
+function orderedInputPair(left, right) {
+  if (left.note.amount === 0n && right.note.amount > 0n) return [right, left];
+  return [left, right];
 }
 function betterSufficientPairCandidate(left, right, total, bestLeft, bestRight, bestTotal) {
   if (total !== bestTotal) return total < bestTotal;
@@ -76598,7 +76671,7 @@ function betterMergePairCandidate(left, right, total, bestLeft, bestRight, bestT
 }
 function summarizeSpendableNotesByDenom(notes, denom = defaultAssetDenom) {
   const targetAssetIdHex = canonicalFieldHex(hashStringToField(denom));
-  const spendable = [...notes || []].map(normalizeFoundNote).filter((found) => !found.isSpent && canonicalFieldHex(found.note.assetID) === targetAssetIdHex).sort(foundNotePlannerLess);
+  const spendable = [...notes || []].map(normalizeFoundNote).filter((found) => !found.isSpent && canonicalFieldHex(found.note.assetID) === targetAssetIdHex).sort(foundNotePlannerCompare);
   const total = spendable.reduce((sum, found) => sum + found.note.amount, 0n);
   return { notes: spendable, total };
 }
@@ -76616,7 +76689,7 @@ function selectTransferInputs(notes, denom, targetAmount) {
   let requiresDummyForSingleNote = false;
   for (let i = 0; i < sameDenomNotes.length; i += 1) {
     const note = sameDenomNotes[i];
-    if (note.note.amount >= target) {
+    if (finalTransferOutputsWithinBound(note.note.amount, target)) {
       const zeroNoteIndex = findZeroNote(sameDenomNotes, i);
       if (zeroNoteIndex !== -1) {
         return {
@@ -76636,7 +76709,7 @@ function selectTransferInputs(notes, denom, targetAmount) {
     for (let j = i + 1; j < sameDenomNotes.length; j += 1) {
       if (sameDenomNotes[j].note.amount === 0n) continue;
       const total = sameDenomNotes[i].note.amount + sameDenomNotes[j].note.amount;
-      if (total >= target && (!bestPair || betterSufficientPairCandidate(
+      if (finalTransferOutputsWithinBound(total, target) && (!bestPair || betterSufficientPairCandidate(
         sameDenomNotes[i],
         sameDenomNotes[j],
         total,
@@ -76659,6 +76732,7 @@ function selectTransferInputs(notes, denom, targetAmount) {
     for (let j = i + 1; j < sameDenomNotes.length; j += 1) {
       if (sameDenomNotes[j].note.amount === 0n) continue;
       const total = sameDenomNotes[i].note.amount + sameDenomNotes[j].note.amount;
+      if (total > maxShieldedAmount) continue;
       if (!bestMerge || betterMergePairCandidate(
         sameDenomNotes[i],
         sameDenomNotes[j],
@@ -76679,6 +76753,205 @@ function selectTransferInputs(notes, denom, targetAmount) {
     return { inputs, total: 0n, isFinal: false, needsZeroDummy: true };
   }
   return { inputs, total: 0n, isFinal: false, needsZeroDummy: false };
+}
+function targetOrderDescending(targets) {
+  return targets.map((_, index) => index).sort((left, right) => {
+    if (targets[left] !== targets[right]) return targets[left] > targets[right] ? -1 : 1;
+    return left - right;
+  });
+}
+function noteIndexUsed(usedMask, index) {
+  return (usedMask & 1n << BigInt(index)) !== 0n;
+}
+function pairCandidates(notes, usedMask, target) {
+  const candidates = [];
+  for (let i = 0; i < notes.length; i += 1) {
+    if (noteIndexUsed(usedMask, i)) continue;
+    for (let j = i + 1; j < notes.length; j += 1) {
+      if (noteIndexUsed(usedMask, j)) continue;
+      const total = notes[i].note.amount + notes[j].note.amount;
+      if (!finalTransferOutputsWithinBound(total, target)) continue;
+      candidates.push({ left: i, right: j, total });
+    }
+  }
+  candidates.sort((a, b) => {
+    if (a.total !== b.total) return a.total < b.total ? -1 : 1;
+    const leftAmount = notes[a.left].note.amount;
+    const otherLeftAmount = notes[b.left].note.amount;
+    if (leftAmount !== otherLeftAmount) return leftAmount < otherLeftAmount ? -1 : 1;
+    const rightAmount = notes[a.right].note.amount;
+    const otherRightAmount = notes[b.right].note.amount;
+    if (rightAmount !== otherRightAmount) return rightAmount < otherRightAmount ? -1 : 1;
+    if (foundNotePlannerLess(notes[a.left], notes[b.left])) return -1;
+    if (foundNotePlannerLess(notes[b.left], notes[a.left])) return 1;
+    return foundNotePlannerCompare(notes[a.right], notes[b.right]);
+  });
+  return candidates;
+}
+function zeroCandidateIndexes(notes, limit) {
+  const indexes = [];
+  for (let i = 0; i < notes.length; i += 1) {
+    if (notes[i].note.amount > 0n) break;
+    indexes.push(i);
+    if (indexes.length >= limit) break;
+  }
+  return indexes;
+}
+function lowerBoundNoteAmount(notes, target) {
+  let low = 0;
+  let high = notes.length;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (notes[mid].note.amount >= target) high = mid;
+    else low = mid + 1;
+  }
+  return low;
+}
+function singleCandidateIndexes(notes, target, limit) {
+  const indexes = [];
+  for (let i = lowerBoundNoteAmount(notes, target); i < notes.length; i += 1) {
+    if (finalTransferOutputsWithinBound(notes[i].note.amount, target)) {
+      indexes.push(i);
+    }
+    if (indexes.length >= limit) break;
+  }
+  return indexes;
+}
+function boundedPairCandidateIndexes(notes, target, limit) {
+  if (limit <= 0) return [];
+  const leftIndexes = [];
+  for (let i = lowerBoundNoteAmount(notes, 1n); i < notes.length; i += 1) {
+    leftIndexes.push(i);
+    if (leftIndexes.length >= limit * 4) break;
+  }
+  const candidates = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const left of leftIndexes) {
+    let needed = target - notes[left].note.amount;
+    if (needed <= 0n) needed = 1n;
+    let addedForLeft = 0;
+    for (let right = lowerBoundNoteAmount(notes, needed); right < notes.length && addedForLeft < 4; right += 1) {
+      if (right === left || notes[right].note.amount <= 0n) continue;
+      const i = Math.min(left, right);
+      const j = Math.max(left, right);
+      const key = `${i}:${j}`;
+      if (seen.has(key)) continue;
+      const total = notes[i].note.amount + notes[j].note.amount;
+      if (!finalTransferOutputsWithinBound(total, target)) continue;
+      seen.add(key);
+      candidates.push({ left: i, right: j, total });
+      addedForLeft += 1;
+    }
+  }
+  candidates.sort((a, b) => {
+    if (a.total !== b.total) return a.total < b.total ? -1 : 1;
+    const leftAmount = notes[a.left].note.amount;
+    const otherLeftAmount = notes[b.left].note.amount;
+    if (leftAmount !== otherLeftAmount) return leftAmount < otherLeftAmount ? -1 : 1;
+    const rightAmount = notes[a.right].note.amount;
+    const otherRightAmount = notes[b.right].note.amount;
+    if (rightAmount !== otherRightAmount) return rightAmount < otherRightAmount ? -1 : 1;
+    if (foundNotePlannerLess(notes[a.left], notes[b.left])) return -1;
+    if (foundNotePlannerLess(notes[b.left], notes[a.left])) return 1;
+    return foundNotePlannerCompare(notes[a.right], notes[b.right]);
+  });
+  return candidates.slice(0, limit);
+}
+function exactInputBatchCandidateNotes(notes, targets, order) {
+  if (notes.length <= exactInputBatchFullNoteLimit) return [...notes];
+  const selected = /* @__PURE__ */ new Set();
+  const candidates = [];
+  const addIndex = (index) => {
+    if (index < 0 || index >= notes.length) return true;
+    if (selected.has(index)) return true;
+    if (candidates.length >= exactInputBatchCandidateNoteLimit) return false;
+    selected.add(index);
+    candidates.push(notes[index]);
+    return true;
+  };
+  for (const targetIndex of order) {
+    const target = targets[targetIndex];
+    for (const index of zeroCandidateIndexes(notes, exactInputBatchCandidatePairLimit)) {
+      if (!addIndex(index)) break;
+    }
+    for (const index of singleCandidateIndexes(notes, target, exactInputBatchCandidatePairLimit)) {
+      if (!addIndex(index)) break;
+    }
+    for (const candidate of boundedPairCandidateIndexes(notes, target, exactInputBatchCandidatePairLimit)) {
+      if (!addIndex(candidate.left) || !addIndex(candidate.right)) break;
+    }
+    if (candidates.length >= exactInputBatchCandidateNoteLimit) break;
+  }
+  return [...candidates].sort(foundNotePlannerCompare);
+}
+function exactSelectTransferInputBatch(notes, targets, order) {
+  if (notes.length > exactInputBatchCandidateNoteLimit) return null;
+  if (targets.length * 2 > notes.length) return null;
+  const selections = Array.from({ length: targets.length }, () => null);
+  const failed = /* @__PURE__ */ new Set();
+  let steps = 0;
+  function search(position, usedMask) {
+    steps += 1;
+    if (steps > exactInputBatchSearchStepLimit) return false;
+    if (position === order.length) return true;
+    const key = `${position}:${usedMask.toString(16)}`;
+    if (failed.has(key)) return false;
+    const targetIndex = order[position];
+    for (const candidate of pairCandidates(notes, usedMask, targets[targetIndex])) {
+      const nextMask = usedMask | 1n << BigInt(candidate.left) | 1n << BigInt(candidate.right);
+      selections[targetIndex] = {
+        inputs: orderedInputPair(notes[candidate.left], notes[candidate.right]),
+        total: candidate.total,
+        isFinal: true,
+        needsZeroDummy: false
+      };
+      if (search(position + 1, nextMask)) return true;
+      selections[targetIndex] = null;
+    }
+    failed.add(key);
+    return false;
+  }
+  return search(0, 0n) ? selections : null;
+}
+function removeSelectedInputNotes(notes, inputs) {
+  const used = /* @__PURE__ */ new Map();
+  for (const input of inputs || []) {
+    const key = foundNoteIdentityKey(input);
+    used.set(key, (used.get(key) || 0) + 1);
+  }
+  return notes.filter((note) => {
+    const key = foundNoteIdentityKey(note);
+    const count = used.get(key) || 0;
+    if (!count) return true;
+    used.set(key, count - 1);
+    return false;
+  });
+}
+function selectTransferInputBatch(notes, denom, targetAmounts = []) {
+  const targets = [...targetAmounts || []].map((amount, index) => {
+    const target = BigInt(bigintDecimal(amount, `batch item ${index} transfer amount`));
+    if (target <= 0n) {
+      throw new Error(`batch item ${index} target amount must be positive`);
+    }
+    return target;
+  });
+  if (!targets.length) return [];
+  const sameDenomNotes = summarizeSpendableNotesByDenom(notes, denom).notes;
+  const order = targetOrderDescending(targets);
+  const candidates = exactInputBatchCandidateNotes(sameDenomNotes, targets, order);
+  const exact = exactSelectTransferInputBatch(candidates, targets, order);
+  if (exact) return exact;
+  let available = [...sameDenomNotes];
+  const selections = Array.from({ length: targets.length }, () => null);
+  for (const targetIndex of order) {
+    const selection = selectTransferInputs(available, denom, targets[targetIndex].toString());
+    if (selection.needsZeroDummy || !selection.isFinal || selection.total === 0n) {
+      throw new Error(`batch item ${targetIndex} needs note preparation before batching`);
+    }
+    selections[targetIndex] = selection;
+    available = removeSelectedInputNotes(available, selection.inputs);
+  }
+  return selections;
 }
 function disclosureCommon({ outputCommitmentHex, fromNote, recipientNote }) {
   const from = normalizeNote(fromNote);
@@ -76875,6 +77148,41 @@ function normalizeMerklePathResult(result, label) {
 function transferPayloadHashIncludesSelfView(version) {
   return String(version || "") !== "v1";
 }
+function transferPayloadHashIncludesViewTags(version) {
+  return String(version || "") === preparedTransferPayloadVersion;
+}
+function validatePreparedTransferPayloadMetadata(payload) {
+  if (payload?.version === preparedTransferPayloadVersion) {
+  } else if (payload?.version === "v2") {
+    throw new Error(`legacy transfer payload version "v2" does not include required view tags; regenerate it with transfer payload version "${preparedTransferPayloadVersion}"`);
+  } else if (payload?.version === "v1") {
+    throw new Error(`legacy transfer payload version "v1" does not include required self-view disclosure and view tags; regenerate it with transfer payload version "${preparedTransferPayloadVersion}"`);
+  } else {
+    throw new Error(`unsupported transfer payload version ${JSON.stringify(payload?.version)} (expected "${preparedTransferPayloadVersion}")`);
+  }
+  if (!Array.isArray(payload.inputs) || payload.inputs.length !== 2) {
+    throw new Error(`transfer payload requires exactly 2 inputs; got ${payload.inputs?.length ?? 0}`);
+  }
+  if (!Array.isArray(payload.outputs) || payload.outputs.length !== 2) {
+    throw new Error(`transfer payload requires exactly 2 outputs; got ${payload.outputs?.length ?? 0}`);
+  }
+  if (!Array.isArray(payload.cipher_text_hexes) || payload.cipher_text_hexes.length !== 2) {
+    throw new Error(`transfer payload requires exactly 2 ciphertexts; got ${payload.cipher_text_hexes?.length ?? 0}`);
+  }
+  if (!Array.isArray(payload.view_tag_hexes) || payload.view_tag_hexes.length !== 2) {
+    throw new Error(`transfer payload requires exactly 2 view tags; got ${payload.view_tag_hexes?.length ?? 0}`);
+  }
+  payload.view_tag_hexes.forEach((value, index) => {
+    const hex2 = normalizeHex(value, `transfer view tag ${index}`);
+    if (hex2.length !== 4) {
+      throw new Error(`transfer view tag ${index} must be exactly 2 bytes`);
+    }
+  });
+  if (!payload.payload_hash || payload.payload_hash !== computePreparedTransferPayloadHash(payload)) {
+    throw new Error("transfer payload hash mismatch; the file may have been modified after preparation");
+  }
+  return true;
+}
 function computePreparedTransferPayloadHash(payload) {
   const lines = [
     payload.version,
@@ -76922,6 +77230,10 @@ function computePreparedTransferPayloadHash(payload) {
     );
   }
   lines.push(String(payload.cipher_text_hexes.length), ...payload.cipher_text_hexes);
+  if (transferPayloadHashIncludesViewTags(payload.version)) {
+    const viewTagHexes = payload.view_tag_hexes || [];
+    lines.push(String(viewTagHexes.length), ...viewTagHexes);
+  }
   return sha256Hex2(writeLines(lines));
 }
 async function buildPreparedTransferPayload({
@@ -77042,6 +77354,11 @@ async function buildPreparedTransferPayload({
       nullifier_hex: computeNoteNullifierHex(found.note)
     });
   }
+  const encryptedOutputs = outputNotes.map((note, index) => encryptNoteForReceiverWithViewTag(
+    note,
+    hexToBytes3(outputCommitmentHexes[index], `transfer output ${index} commitment`),
+    index
+  ));
   const payload = {
     version: preparedTransferPayloadVersion,
     creator: String(creator || ""),
@@ -77055,7 +77372,8 @@ async function buildPreparedTransferPayload({
       view_pubkey_hex: noteViewPubKeyHex(note),
       commitment_hex: outputCommitmentHexes[i]
     })),
-    cipher_text_hexes: outputNotes.map((note) => hexFromBytes2(encryptNoteForReceiver(note))),
+    cipher_text_hexes: encryptedOutputs.map((output) => hexFromBytes2(output.cipherText)),
+    view_tag_hexes: encryptedOutputs.map((output) => hexFromBytes2(output.viewTag)),
     user_privacy_policy: policy,
     user_disclosure_mode: mode,
     user_disclosure_digest_hex: userDisclosure?.digest_hex || "",
@@ -77071,6 +77389,7 @@ async function buildPreparedTransferPayload({
   return payload;
 }
 function validatePreparedTransferProof(payload, proof) {
+  validatePreparedTransferPayloadMetadata(payload);
   if (!proof || proof.version !== preparedTransferProofVersion) {
     throw new Error(`unsupported transfer proof version ${JSON.stringify(proof?.version)}`);
   }
@@ -77089,6 +77408,7 @@ function buildTransferMsgFromPayloadAndProof(payload, proof) {
     nullifiers: payload.inputs.map((input) => hexToBytes3(input.nullifier_hex, "transfer nullifier")),
     newCommitments: payload.outputs.map((output) => hexToBytes3(output.commitment_hex, "transfer commitment")),
     cipherTexts: payload.cipher_text_hexes.map((value) => hexToBytes3(value, "transfer ciphertext")),
+    viewTags: (payload.view_tag_hexes || []).map((value) => hexToBytes3(value, "transfer view tag")),
     userPrivacyPolicy: payload.user_privacy_policy,
     userDisclosureDigest: optionalHexToBytes(payload.user_disclosure_digest_hex, "user disclosure digest"),
     userDisclosureMode: payload.user_disclosure_mode,
@@ -77548,6 +77868,90 @@ function planTransferNotes({ notes, amount, denom = defaultAssetDenom } = {}) {
     selection
   };
 }
+function planTransferBatchNotes({ notes, amounts = [], denom = defaultAssetDenom } = {}) {
+  const coins = [...amounts || []].map((amount) => parseCoin(amount, denom));
+  const batchDenom = coins[0]?.denom ?? denom;
+  const spendable = spendableNotes(notes, batchDenom);
+  const spendableTotal = spendable.reduce((sum, found) => sum + found.note.amount, 0n);
+  const requestedTotal = coins.reduce((sum, coin) => sum + BigInt(coin.amount), 0n);
+  const facts = {
+    requestedAmount: coinString(requestedTotal, batchDenom),
+    requestedAmountValue: requestedTotal.toString(),
+    denom: batchDenom,
+    spendableTotal: coinString(spendableTotal, batchDenom),
+    spendableTotalValue: spendableTotal.toString(),
+    spendableCount: spendable.length,
+    currentMaxNote: coinString(maxBigInt(spendable.map(noteAmount)), batchDenom),
+    currentMaxNoteValue: maxBigInt(spendable.map(noteAmount)).toString(),
+    selectedInputTotal: "0" + batchDenom,
+    selectedInputTotalValue: "0"
+  };
+  if (!coins.length) {
+    return {
+      status: "invalid_batch",
+      canBuildTx: false,
+      action: "enter_batch_amounts",
+      message: "Batch transfer requires at least one amount.",
+      facts,
+      selections: []
+    };
+  }
+  if (coins.some((coin) => coin.denom !== batchDenom)) {
+    return {
+      status: "mixed_denom_unsupported",
+      canBuildTx: false,
+      action: "split_batch_by_denom",
+      message: "Batch transfer amounts must use the same denom.",
+      facts,
+      selections: []
+    };
+  }
+  if (coins.some((coin) => BigInt(coin.amount) <= 0n)) {
+    return {
+      status: "invalid_amount",
+      canBuildTx: false,
+      action: "enter_positive_amounts",
+      message: "Every batch transfer amount must be greater than 0.",
+      facts,
+      selections: []
+    };
+  }
+  if (spendableTotal < requestedTotal) {
+    return {
+      status: "insufficient_balance",
+      canBuildTx: false,
+      action: "deposit_or_receive_notes",
+      message: `Need ${requestedTotal}${batchDenom}, but spendable total is ${spendableTotal}${batchDenom}.`,
+      facts,
+      selections: []
+    };
+  }
+  try {
+    const selections = selectTransferInputBatch(notes, batchDenom, coins.map((coin) => coin.amount));
+    const selectedTotal = selections.reduce((sum, selection) => sum + selection.total, 0n);
+    return {
+      status: "batch_transfer_ready",
+      canBuildTx: true,
+      action: "build_multi_message_transfer",
+      message: "The selected notes can satisfy the batch without reusing inputs.",
+      facts: {
+        ...facts,
+        selectedInputTotal: coinString(selectedTotal, batchDenom),
+        selectedInputTotalValue: selectedTotal.toString()
+      },
+      selections
+    };
+  } catch (error) {
+    return {
+      status: "batch_note_preparation_required",
+      canBuildTx: false,
+      action: "prepare_notes_before_batching",
+      message: error?.message || "Batch transfer needs note preparation before it can be built.",
+      facts,
+      selections: []
+    };
+  }
+}
 function planWithdrawNotes({ notes, amount, denom = defaultAssetDenom } = {}) {
   const coin = parseCoin(amount, denom);
   const requested = BigInt(coin.amount);
@@ -77658,9 +78062,22 @@ function foundNoteFromEvent(note, event) {
     note,
     nullifier: computeNoteNullifierHex(note).toLowerCase(),
     isSpent: false,
-    txHash: String(event?.tx_hash_hex || "").toUpperCase(),
-    height: Number(event?.height || 0)
+    txHash: String(event?.tx_hash_hex ?? event?.txHashHex ?? "").toUpperCase(),
+    height: Number(event?.height || 0),
+    sequence: Number(event?.sequence || 0)
   };
+}
+function outputField(output, snake, camel) {
+  return output?.[snake] ?? output?.[camel] ?? "";
+}
+function noteCommitmentMatches(note, commitmentHex) {
+  const text = String(commitmentHex || "").trim().toLowerCase();
+  if (!text) return true;
+  try {
+    return computeNoteCommitmentHex(note).toLowerCase() === text;
+  } catch {
+    return false;
+  }
 }
 function processDepositEvent(event, rootSeed) {
   const encryptedNoteHex = stripQuotes(eventAttribute2(event, "encrypted_note"));
@@ -77695,11 +78112,54 @@ function processTransferEvent(event, spendScalar, viewScalar) {
   }
   return found;
 }
+function processScanProjectionEvent(event, rootSeed, spendScalar, viewScalar) {
+  const found = [];
+  for (const output of event?.outputs || event?.Outputs || []) {
+    if (event?.event_type === "deposit" || event?.eventType === "deposit") {
+      const encryptedNoteHex = outputField(output, "encrypted_note_hex", "encryptedNoteHex");
+      if (!encryptedNoteHex) continue;
+      try {
+        const noteBytes = decryptWithRootSeed(bytesFromHex(encryptedNoteHex, "encrypted note"), rootSeed);
+        const note = parseNoteBytes(noteBytes);
+        if (!noteCommitmentMatches(note, outputField(output, "commitment_hex", "commitmentHex"))) continue;
+        found.push(foundNoteFromEvent(note, event));
+      } catch {
+      }
+      continue;
+    }
+    if (event?.event_type === "shielded_transfer" || event?.eventType === "shielded_transfer") {
+      const cipherTextHex = outputField(output, "cipher_text_hex", "cipherTextHex");
+      if (!cipherTextHex) continue;
+      let noteBytes;
+      try {
+        noteBytes = asymDecryptHex(cipherTextHex, viewScalar);
+      } catch {
+        if (spendScalar == null || spendScalar === viewScalar) continue;
+        try {
+          noteBytes = asymDecryptHex(cipherTextHex, spendScalar);
+        } catch {
+          continue;
+        }
+      }
+      try {
+        const note = parseNoteBytes(noteBytes);
+        if (!noteCommitmentMatches(note, outputField(output, "commitment_hex", "commitmentHex"))) continue;
+        found.push(foundNoteFromEvent(note, event));
+      } catch {
+      }
+    }
+  }
+  return found;
+}
 function processPrivacyEvent(event, { rootSeed, spendScalar, viewScalar } = {}) {
-  if (event?.event_type === "deposit") {
+  if (Array.isArray(event?.outputs) || Array.isArray(event?.Outputs)) {
+    return processScanProjectionEvent(event, rootSeed, spendScalar, viewScalar);
+  }
+  const eventType = event?.event_type ?? event?.eventType;
+  if (eventType === "deposit") {
     return processDepositEvent(event, rootSeed);
   }
-  if (event?.event_type === "shielded_transfer") {
+  if (eventType === "shielded_transfer") {
     return processTransferEvent(event, spendScalar, viewScalar);
   }
   return [];
@@ -77731,13 +78191,15 @@ function noteResponse(found, index) {
     amount: found.note.amount.toString(),
     nullifier: found.nullifier,
     tx_hash: found.txHash,
-    height: found.height
+    height: found.height,
+    sequence: found.sequence
   };
 }
 async function scanNotes({
   rootSeed,
   events,
   checkNullifier,
+  checkNullifiers,
   includeFoundNotes = false
 } = {}) {
   if (!rootSeed) {
@@ -77750,8 +78212,44 @@ async function scanNotes({
     found.push(...processPrivacyEvent(event, { rootSeed, spendScalar, viewScalar }));
   }
   found = normalizeFoundNotes(found);
-  if (checkNullifier) {
+  let batchSpentRefreshSucceeded = false;
+  let missingBatchNullifiers = null;
+  if (checkNullifiers && found.length) {
+    try {
+      const nullifiers = [...new Set(found.map((note) => String(note.nullifier || "").toLowerCase()).filter(Boolean))];
+      const result2 = await checkNullifiers(nullifiers);
+      const statuses = result2 instanceof Map ? result2 : /* @__PURE__ */ new Map();
+      if (!(result2 instanceof Map)) {
+        if (Array.isArray(result2?.statuses)) {
+          for (const status of result2.statuses) {
+            statuses.set(String(status?.nullifier || "").toLowerCase(), Boolean(status?.used ?? status?.Used));
+          }
+        } else if (result2 && typeof result2 === "object") {
+          for (const [key, value] of Object.entries(result2)) {
+            statuses.set(String(key).toLowerCase(), Boolean(value?.used ?? value?.Used ?? value));
+          }
+        }
+      }
+      const missing = nullifiers.filter((nullifier) => !statuses.has(nullifier));
+      for (const note of found) {
+        if (statuses.has(note.nullifier)) {
+          note.isSpent = Boolean(statuses.get(note.nullifier));
+        }
+      }
+      batchSpentRefreshSucceeded = missing.length === 0;
+      if (!batchSpentRefreshSucceeded) {
+        missingBatchNullifiers = new Set(missing);
+      }
+    } catch {
+    }
+  }
+  if (!batchSpentRefreshSucceeded && checkNullifier && (missingBatchNullifiers?.size || found.some((note) => !note.isSpent))) {
     for (const note of found) {
+      if (missingBatchNullifiers) {
+        if (!missingBatchNullifiers.has(note.nullifier)) continue;
+      } else if (note.isSpent) {
+        continue;
+      }
       try {
         const result2 = await checkNullifier(note.nullifier);
         note.isSpent = Boolean(result2?.used ?? result2?.Used ?? result2);
@@ -78246,13 +78744,26 @@ function directSignDocFromBase64(signDoc) {
 function fromHex(value, label = "hex") {
   return bytesFromHex(value, label);
 }
-async function fetchJson(url, { timeoutMs = defaultFetchTimeoutMs, fetchImpl = globalThis.fetch } = {}) {
+async function fetchJson(url, {
+  timeoutMs = defaultFetchTimeoutMs,
+  fetchImpl = globalThis.fetch,
+  method = "GET",
+  body,
+  headers
+} = {}) {
   const resolvedTimeoutMs = normalizeTimeoutMs(timeoutMs, "fetch timeoutMs");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), resolvedTimeoutMs);
+  const requestHeaders = {
+    accept: "application/json",
+    ...body != null ? { "content-type": "application/json" } : {},
+    ...headers || {}
+  };
   try {
     const response = await fetchImpl(url, {
-      headers: { accept: "application/json" },
+      method,
+      headers: requestHeaders,
+      body,
       signal: controller.signal
     });
     if (!response.ok) {
@@ -78273,14 +78784,14 @@ async function fetchJson(url, { timeoutMs = defaultFetchTimeoutMs, fetchImpl = g
     clearTimeout(timeout);
   }
 }
-async function fetchJsonWithRetry(urlForEndpoint, endpoints, { timeoutMs, retry, fetchImpl } = {}) {
+async function fetchJsonWithRetry(urlForEndpoint, endpoints, { timeoutMs, retry, fetchImpl, method, body, headers } = {}) {
   const normalizedRetry = normalizeQueryRetry(retry);
   let lastError = null;
   for (const endpoint of endpoints) {
     for (let attempt = 0; attempt <= normalizedRetry.retries; attempt += 1) {
       try {
         return {
-          data: await fetchJson(urlForEndpoint(endpoint), { timeoutMs, fetchImpl }),
+          data: await fetchJson(urlForEndpoint(endpoint), { timeoutMs, fetchImpl, method, body, headers }),
           endpoint
         };
       } catch (error) {
@@ -78329,6 +78840,40 @@ function privacyEventsQuery({
   const query = params.toString();
   return query ? `?${query}` : "";
 }
+function scanEventsQuery({
+  afterHeight,
+  after_height,
+  afterSequence,
+  after_sequence,
+  limit,
+  eventTypes,
+  event_types
+} = {}) {
+  const params = new URLSearchParams();
+  const resolvedAfterHeight = afterHeight ?? after_height;
+  if (resolvedAfterHeight != null) {
+    params.set("after_height", String(resolvedAfterHeight));
+  }
+  const resolvedAfterSequence = afterSequence ?? after_sequence;
+  if (resolvedAfterSequence != null) {
+    params.set("after_sequence", String(resolvedAfterSequence));
+  }
+  if (limit != null) {
+    params.set("limit", String(limit));
+  }
+  const resolvedEventTypes = eventTypes ?? event_types;
+  if (Array.isArray(resolvedEventTypes)) {
+    for (const eventType of resolvedEventTypes) {
+      if (String(eventType || "").trim()) {
+        params.append("event_types", String(eventType).trim());
+      }
+    }
+  } else if (resolvedEventTypes != null && String(resolvedEventTypes).trim()) {
+    params.set("event_types", String(resolvedEventTypes).trim());
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
 function privacyEventsCursor(data, request = {}) {
   const events = data?.events || [];
   let latestHeight = 0;
@@ -78350,8 +78895,72 @@ function privacyEventsCursor(data, request = {}) {
     latest_tx_hash: latestTxHash
   };
 }
+function scanEventsCursor(data, request = {}) {
+  const events = data?.events || [];
+  let latestHeight = 0;
+  let latestSequence = 0;
+  let latestTxHash = "";
+  for (const event of events) {
+    const height = Number(event?.height || 0);
+    const sequence = Number(event?.sequence || 0);
+    if (height > latestHeight || height === latestHeight && sequence >= latestSequence) {
+      latestHeight = height;
+      latestSequence = sequence;
+      latestTxHash = String(event?.tx_hash_hex ?? event?.txHashHex ?? "").toUpperCase();
+    }
+  }
+  return {
+    source: "scan_events",
+    after_height: Number(request.afterHeight ?? request.after_height ?? 0),
+    after_sequence: Number(request.afterSequence ?? request.after_sequence ?? 0),
+    limit: Number(data?.limit ?? request.limit ?? events.length),
+    event_types: request.eventTypes ?? request.event_types ?? [],
+    has_more: Boolean(data?.has_more),
+    next_height: Number(data?.next_height ?? data?.nextHeight ?? request.afterHeight ?? request.after_height ?? 0),
+    next_sequence: Number(data?.next_sequence ?? data?.nextSequence ?? request.afterSequence ?? request.after_sequence ?? 0),
+    latest_height: latestHeight,
+    latest_sequence: latestSequence,
+    latest_tx_hash: latestTxHash,
+    scan_format_version: Number(data?.scan_format_version ?? data?.scanFormatVersion ?? 0),
+    view_tag_version: Number(data?.view_tag_version ?? data?.viewTagVersion ?? 0)
+  };
+}
+function assertScanEventsVersions(data) {
+  const scanFormatVersion = Number(data?.scan_format_version ?? data?.scanFormatVersion ?? 0);
+  const viewTagVersion = Number(data?.view_tag_version ?? data?.viewTagVersion ?? 0);
+  if (scanFormatVersion !== 1) {
+    const error = new Error(`unsupported scan_format_version ${scanFormatVersion}; expected 1`);
+    error.code = "UNSUPPORTED_SCAN_EVENTS_VERSION";
+    throw error;
+  }
+  if (viewTagVersion !== 1) {
+    const error = new Error(`unsupported view_tag_version ${viewTagVersion}; expected 1`);
+    error.code = "UNSUPPORTED_SCAN_EVENTS_VERSION";
+    throw error;
+  }
+}
 function nextPrivacyScanOptions(scanOrCursor = {}, defaults = {}) {
   const cursor = scanOrCursor?.scanCursor || scanOrCursor || {};
+  if (cursor.source === "scan_events" || cursor.next_sequence != null || cursor.nextSequence != null) {
+    const hasMore2 = Boolean(cursor.has_more ?? cursor.hasMore);
+    const next2 = {
+      afterHeight: Number(
+        hasMore2 ? cursor.next_height ?? cursor.nextHeight ?? cursor.after_height ?? cursor.afterHeight ?? 0 : cursor.next_height ?? cursor.nextHeight ?? cursor.latest_height ?? cursor.latestHeight ?? cursor.after_height ?? cursor.afterHeight ?? 0
+      ),
+      afterSequence: Number(
+        hasMore2 ? cursor.next_sequence ?? cursor.nextSequence ?? cursor.after_sequence ?? cursor.afterSequence ?? 0 : cursor.next_sequence ?? cursor.nextSequence ?? cursor.latest_sequence ?? cursor.latestSequence ?? cursor.after_sequence ?? cursor.afterSequence ?? 0
+      ),
+      limit: Number(cursor.limit ?? defaults.limit ?? 200),
+      eventTypes: cursor.event_types ?? cursor.eventTypes ?? defaults.eventTypes ?? defaults.event_types ?? [],
+      hasMore: hasMore2,
+      completed: !hasMore2
+    };
+    const maxPages2 = defaults.maxPages ?? defaults.max_pages;
+    if (maxPages2 != null) next2.maxPages = maxPages2;
+    const includeFoundNotes2 = defaults.includeFoundNotes ?? defaults.include_found_notes;
+    if (includeFoundNotes2 != null) next2.includeFoundNotes = Boolean(includeFoundNotes2);
+    return next2;
+  }
   const afterHeight = Number(cursor.after_height ?? cursor.afterHeight ?? defaults.afterHeight ?? defaults.after_height ?? 0);
   const latestHeight = Number(cursor.latest_height ?? cursor.latestHeight ?? 0);
   const hasMore = Boolean(cursor.has_more ?? cursor.hasMore);
@@ -78375,6 +78984,8 @@ function resolveScanOptions({
   scan,
   afterHeight,
   after_height,
+  afterSequence,
+  after_sequence,
   page,
   limit,
   maxPages,
@@ -78384,6 +78995,7 @@ function resolveScanOptions({
 } = {}) {
   return {
     afterHeight: scan?.afterHeight ?? scan?.after_height ?? afterHeight ?? after_height,
+    afterSequence: scan?.afterSequence ?? scan?.after_sequence ?? afterSequence ?? after_sequence,
     page: scan?.page ?? page,
     limit: scan?.limit ?? limit,
     maxPages: scan?.maxPages ?? scan?.max_pages ?? maxPages ?? max_pages,
@@ -78458,7 +79070,7 @@ var ClairveilJS = class {
   restUrl(path, endpoint = this.activeRestEndpoint) {
     return `${endpoint}${path}`;
   }
-  async fetchJson(pathOrUrl, { failover = false, retry = this.queryRetry } = {}) {
+  async fetchJson(pathOrUrl, { failover = false, retry = this.queryRetry, method, body, headers } = {}) {
     const text = String(pathOrUrl || "");
     const isAbsolute = /^https?:\/\//i.test(text);
     if (isAbsolute) {
@@ -78467,7 +79079,10 @@ var ClairveilJS = class {
         [text],
         {
           timeoutMs: this.queryTimeoutMs,
-          retry
+          retry,
+          method,
+          body,
+          headers
         }
       );
       return result2.data;
@@ -78479,7 +79094,10 @@ var ClairveilJS = class {
       endpoints,
       {
         timeoutMs: this.queryTimeoutMs,
-        retry
+        retry,
+        method,
+        body,
+        headers
       }
     );
     this.activeRestEndpoint = result.endpoint;
@@ -78519,6 +79137,11 @@ var ClairveilJS = class {
   async fetchPrivacyEvents(options = {}) {
     return this.fetchJson(`/clairveil/privacy/v1/events${privacyEventsQuery(options)}`, { failover: true });
   }
+  async fetchScanEvents(options = {}) {
+    const data = await this.fetchJson(`/clairveil/privacy/v1/scan_events${scanEventsQuery(options)}`, { failover: true });
+    assertScanEventsVersions(data);
+    return data;
+  }
   async fetchTreeState() {
     return this.fetchJson("/clairveil/privacy/v1/tree_state", { failover: true });
   }
@@ -78547,6 +79170,23 @@ var ClairveilJS = class {
   async checkNullifier(nullifierHex) {
     return this.fetchJson(`/clairveil/privacy/v1/nullifier/${nullifierHex}`, { failover: this.nullifierFailover });
   }
+  async checkNullifiers(nullifierHexes = []) {
+    const normalized = [...new Set((nullifierHexes || []).map((value) => String(value || "").trim().toLowerCase()).filter(Boolean))];
+    const usedByNullifier = /* @__PURE__ */ new Map();
+    const chunkSize = 1e3;
+    for (let start = 0; start < normalized.length; start += chunkSize) {
+      const chunk = normalized.slice(start, start + chunkSize);
+      const response = await this.fetchJson("/clairveil/privacy/v1/nullifiers", {
+        method: "POST",
+        body: JSON.stringify({ nullifiers: chunk }),
+        failover: this.nullifierFailover
+      });
+      for (const status of response?.statuses || response?.Statuses || []) {
+        usedByNullifier.set(String(status?.nullifier || status?.Nullifier || "").toLowerCase(), Boolean(status?.used ?? status?.Used));
+      }
+    }
+    return usedByNullifier;
+  }
   async deriveWalletPrivacyMaterial(wallet) {
     return derivePrivacyMaterialFromWallet(wallet, {
       shieldedPrefix: this.shieldedPrefix
@@ -78556,17 +79196,101 @@ var ClairveilJS = class {
     rootSeed,
     afterHeight,
     after_height,
+    afterSequence,
+    after_sequence,
     page = 1,
     limit = 200,
     maxPages = 1,
     eventTypes = ["deposit", "shielded_transfer"],
     event_types,
-    includeFoundNotes = false
+    includeFoundNotes = false,
+    scanSource = "scan_events",
+    scan_source
   } = {}) {
     const resolvedEventTypes = event_types ?? eventTypes;
-    const startPage = Math.max(1, Number(page || 1));
     const pageLimit = Math.max(1, Number(limit || 200));
     const pageBudget = Math.max(1, Number(maxPages || 1));
+    const source = scan_source ?? scanSource;
+    if (source !== "privacy_events") {
+      const startAfterHeight = Number(afterHeight ?? after_height ?? 0);
+      const startAfterSequence = Number(afterSequence ?? after_sequence ?? 0);
+      const events2 = [];
+      let currentAfterHeight = startAfterHeight;
+      let currentAfterSequence = startAfterSequence;
+      let pagesScanned2 = 0;
+      let hasMore2 = false;
+      let lastData2 = null;
+      try {
+        for (; pagesScanned2 < pageBudget; ) {
+          const request = {
+            afterHeight: currentAfterHeight,
+            afterSequence: currentAfterSequence,
+            limit: pageLimit,
+            eventTypes: resolvedEventTypes
+          };
+          const data = await this.fetchScanEvents(request);
+          lastData2 = data;
+          events2.push(...data.events || []);
+          pagesScanned2 += 1;
+          hasMore2 = Boolean(data.has_more ?? data.hasMore);
+          const nextHeight = Number(data.next_height ?? data.nextHeight ?? currentAfterHeight);
+          const nextSequence = Number(data.next_sequence ?? data.nextSequence ?? currentAfterSequence);
+          if (hasMore2 && nextHeight === currentAfterHeight && nextSequence === currentAfterSequence) {
+            throw new Error("scan events cursor did not advance");
+          }
+          currentAfterHeight = nextHeight;
+          currentAfterSequence = nextSequence;
+          if (!hasMore2) break;
+        }
+        const result2 = await scanNotes({
+          rootSeed,
+          events: events2,
+          checkNullifiers: (nullifiers) => this.checkNullifiers(nullifiers),
+          checkNullifier: (nullifierHex) => this.checkNullifier(nullifierHex),
+          includeFoundNotes
+        });
+        const cursor2 = scanEventsCursor(lastData2 || {
+          events: events2,
+          limit: pageLimit,
+          has_more: hasMore2,
+          next_height: currentAfterHeight,
+          next_sequence: currentAfterSequence,
+          scan_format_version: 1,
+          view_tag_version: 1
+        }, {
+          afterHeight: startAfterHeight,
+          afterSequence: startAfterSequence,
+          limit: pageLimit,
+          eventTypes: resolvedEventTypes
+        });
+        return {
+          ...result2,
+          diagnostics: {
+            ...result2.diagnostics,
+            pages_scanned: pagesScanned2,
+            max_pages: pageBudget
+          },
+          scanCursor: {
+            ...cursor2,
+            pages_scanned: pagesScanned2,
+            completed: !hasMore2
+          },
+          nextScanOptions: nextPrivacyScanOptions({
+            ...cursor2,
+            pages_scanned: pagesScanned2,
+            completed: !hasMore2
+          }, {
+            maxPages: pageBudget,
+            includeFoundNotes,
+            eventTypes: resolvedEventTypes
+          })
+        };
+      } catch (error) {
+        const canFallback = error?.status === 404 || error?.status === 501 || error?.status === 503 || error?.code === "UNSUPPORTED_SCAN_EVENTS_VERSION";
+        if (!canFallback) throw error;
+      }
+    }
+    const startPage = Math.max(1, Number(page || 1));
     const baseRequest = {
       afterHeight,
       after_height,
@@ -78591,6 +79315,7 @@ var ClairveilJS = class {
     const result = await scanNotes({
       rootSeed,
       events,
+      checkNullifiers: (nullifiers) => this.checkNullifiers(nullifiers),
       checkNullifier: (nullifierHex) => this.checkNullifier(nullifierHex),
       includeFoundNotes
     });
@@ -78723,21 +79448,29 @@ var ClairveilJS = class {
     includeFoundNotes = false,
     afterHeight,
     after_height,
+    afterSequence,
+    after_sequence,
     page,
     eventTypes,
     event_types
   } = {}) {
     const privacy = material || await this.deriveWalletPrivacyMaterial(wallet);
     let resolvedAfterHeight = afterHeight ?? after_height;
+    let resolvedAfterSequence = afterSequence ?? after_sequence;
     let resolvedPage = page;
     if (resolvedAfterHeight == null && noteStore) {
       const cached = await noteStore.load();
       const cachedCursor = cached.scanCursor || {};
-      if (cachedCursor.has_more && (cachedCursor.next_page || cachedCursor.nextPage)) {
+      if (cachedCursor.has_more && (cachedCursor.next_sequence != null || cachedCursor.nextSequence != null)) {
+        resolvedAfterHeight = cachedCursor.next_height ?? cachedCursor.nextHeight ?? cached.lastScannedHeight ?? 0;
+        resolvedAfterSequence = cachedCursor.next_sequence ?? cachedCursor.nextSequence ?? cached.lastScannedSequence ?? 0;
+      } else if (cachedCursor.has_more && (cachedCursor.next_page || cachedCursor.nextPage)) {
         resolvedAfterHeight = cachedCursor.after_height ?? cachedCursor.afterHeight ?? cached.lastScannedHeight ?? 0;
+        resolvedAfterSequence = cachedCursor.after_sequence ?? cachedCursor.afterSequence ?? cached.lastScannedSequence ?? 0;
         resolvedPage = resolvedPage ?? cachedCursor.next_page ?? cachedCursor.nextPage;
       } else {
         resolvedAfterHeight = cached.lastScannedHeight || 0;
+        resolvedAfterSequence = cached.lastScannedSequence || 0;
       }
     }
     const scan = await this.scanNotes({
@@ -78745,6 +79478,7 @@ var ClairveilJS = class {
       limit,
       maxPages: max_pages ?? maxPages,
       afterHeight: resolvedAfterHeight,
+      afterSequence: resolvedAfterSequence,
       page: resolvedPage,
       eventTypes: event_types ?? eventTypes,
       includeFoundNotes: true
@@ -78767,20 +79501,35 @@ var ClairveilJS = class {
   }
   async refreshNoteStoreSpentStatuses(noteStore) {
     if (!noteStore) return null;
-    const current = await noteStore.load();
+    let current = await noteStore.load();
     const nullifiers = [];
     for (const note of current.notes || []) {
       const nullifier = String(note?.nullifier || "").trim().toLowerCase();
       if (!nullifier || note.isSpent || note.spent) continue;
+      nullifiers.push(nullifier);
+    }
+    if (!nullifiers.length) return current;
+    try {
+      const statuses = await this.checkNullifiers(nullifiers);
+      const spent2 = nullifiers.filter((nullifier) => Boolean(statuses.get(nullifier)));
+      if (spent2.length) {
+        current = await noteStore.markSpent(spent2);
+      }
+      const missing = nullifiers.filter((nullifier) => !statuses.has(nullifier));
+      if (!missing.length) return current;
+      nullifiers.length = 0;
+      nullifiers.push(...missing);
+    } catch {
+    }
+    const spent = [];
+    for (const nullifier of nullifiers) {
       try {
         const result = await this.checkNullifier(nullifier);
-        if (Boolean(result?.used ?? result?.Used ?? result)) {
-          nullifiers.push(nullifier);
-        }
+        if (Boolean(result?.used ?? result?.Used ?? result)) spent.push(nullifier);
       } catch {
       }
     }
-    return nullifiers.length ? noteStore.markSpent(nullifiers) : current;
+    return spent.length ? noteStore.markSpent(spent) : current;
   }
   async planWalletTransfer({ wallet, material, amount, denom, limit = 200, maxPages = defaultPrepareScanMaxPages, scan: scanOptions } = {}) {
     const resolvedScanOptions = resolveScanOptions({ scan: scanOptions, limit, maxPages });
@@ -78966,6 +79715,107 @@ var ClairveilJS = class {
       privacyAccount: publicPrivacyAccount(privacy)
     };
   }
+  async prepareTransferBatch({
+    wallet,
+    material,
+    amounts,
+    recipient,
+    proverAdapter,
+    userPrivacyPolicy = "all-private",
+    userDisclosureMode = "none",
+    userDisclosureTargetPubKeyHex = "",
+    auditDisclosureTargetPubKeyHex,
+    denom,
+    scan,
+    afterHeight,
+    after_height,
+    page,
+    limit = 200,
+    maxPages = defaultPrepareScanMaxPages,
+    max_pages,
+    eventTypes,
+    event_types,
+    gasLimit = 25e6
+  } = {}) {
+    const privacy = material || await this.deriveWalletPrivacyMaterial(wallet);
+    const scanOptions = resolveScanOptions({
+      scan,
+      afterHeight,
+      after_height,
+      page,
+      limit,
+      maxPages,
+      max_pages,
+      eventTypes,
+      event_types
+    });
+    const scanResult = await this.scanNotes({
+      rootSeed: privacy.rootSeed,
+      ...scanOptions,
+      limit: scanOptions.limit ?? 200,
+      maxPages: scanOptions.maxPages ?? defaultPrepareScanMaxPages,
+      includeFoundNotes: true
+    });
+    const plan = planTransferBatchNotes({
+      notes: scanResult.foundNotes,
+      amounts,
+      denom: denom ?? this.defaultDenom
+    });
+    if (!plan.canBuildTx) {
+      return {
+        status: plan.status,
+        plan,
+        scan: scanResult,
+        privacyAccount: publicPrivacyAccount(privacy)
+      };
+    }
+    assertPlanCanBuildTx(plan);
+    const auditPubKeyHex = auditDisclosureTargetPubKeyHex || (await this.fetchAuditConfig()).audit_master_pubkey_hex;
+    const builtItems = [];
+    for (let i = 0; i < amounts.length; i += 1) {
+      const built = await this.buildTransferMessage({
+        proverAdapter,
+        creator: privacy.address,
+        inputs: plan.selections[i].inputs,
+        recipient,
+        amount: amounts[i],
+        transferDenom: denom ?? this.defaultDenom,
+        rootSeed: privacy.rootSeed,
+        shieldedPrefix: this.shieldedPrefix,
+        userPrivacyPolicy,
+        userDisclosureMode,
+        userDisclosureTargetPubKeyHex,
+        auditDisclosureTargetPubKeyHex: auditPubKeyHex
+      });
+      builtItems.push(built);
+    }
+    const signDoc = await this.buildDirectSignDoc({
+      signer: privacy.address,
+      pubKeyHex: privacy.pubKeyHex,
+      gasLimit,
+      messages: builtItems.map((built) => ({
+        typeUrl: msgTransferTypeUrl,
+        value: built.message
+      })),
+      memo: "Clairveil batch veiled transfer"
+    });
+    return {
+      status: "ready",
+      plan,
+      scan: scanResult,
+      signDoc,
+      payloads: builtItems.map((built) => built.payload),
+      proofs: builtItems.map((built) => built.proof),
+      messages: builtItems.map((built) => built.message),
+      prepared: {
+        planAction: "batch_transfer",
+        amounts: [...amounts],
+        recipient,
+        selectedInputTotals: plan.selections.map((selection) => selection.total.toString())
+      },
+      privacyAccount: publicPrivacyAccount(privacy)
+    };
+  }
   async prepareWithdraw({
     wallet,
     material,
@@ -79135,6 +79985,13 @@ var ClairveilJS = class {
     const result = await this.prepareTransfer(input);
     if (result.status !== "ready") {
       throw new Error(result.plan?.message || `transfer is not ready: ${result.status}`);
+    }
+    return result;
+  }
+  async createTransferBatchSignDoc(input) {
+    const result = await this.prepareTransferBatch(input);
+    if (result.status !== "ready") {
+      throw new Error(result.plan?.message || `transfer batch is not ready: ${result.status}`);
     }
     return result;
   }
@@ -79440,7 +80297,7 @@ var zeroWord = "0".repeat(64);
 var emptyBytes = new Uint8Array();
 var zeroBytes32 = new Uint8Array(32);
 var evmPrivacyDepositSignature = "deposit((string,bytes,bytes))";
-var evmPrivacyTransferSignature = "transfer((bytes,bytes,bytes[],bytes[],bytes[],uint32,bytes,uint8,bytes,bytes,bytes,bytes,bytes))";
+var evmPrivacyTransferSignature = "transfer((bytes,bytes,bytes[],bytes[],bytes[],bytes[],uint32,bytes,uint8,bytes,bytes,bytes,bytes,bytes))";
 var evmPrivacyWithdrawSignature = "withdraw((bytes,bytes,bytes,bytes,bytes,string,address,string,uint64))";
 var evmPrivacyPrecompileAddress = "0x100000000000000000000000000000000000000b";
 var defaultEvmPrivacyPrecompileAddress = evmPrivacyPrecompileAddress;
@@ -79476,6 +80333,7 @@ var evmPrivacyPrecompileAbi = Object.freeze([
           { name: "nullifiers", type: "bytes[]" },
           { name: "newCommitments", type: "bytes[]" },
           { name: "cipherTexts", type: "bytes[]" },
+          { name: "viewTags", type: "bytes[]" },
           { name: "userPrivacyPolicy", type: "uint32" },
           { name: "userDisclosureDigest", type: "bytes" },
           { name: "userDisclosureMode", type: "uint8" },
@@ -79800,6 +80658,7 @@ function encodeEvmPrivacyTransfer(message, options = {}) {
     nullifiers: bytesArray(message.nullifiers, "transfer nullifiers", 32),
     newCommitments: bytesArray(message.newCommitments, "transfer new commitments", 32),
     cipherTexts: bytesArray(message.cipherTexts, "transfer cipher texts"),
+    viewTags: bytesArray(message.viewTags, "transfer view tags", 2),
     userPrivacyPolicy: message.userPrivacyPolicy ?? 0,
     userDisclosureDigest: optionalBytes(message.userDisclosureDigest),
     userDisclosureMode: message.userDisclosureMode ?? 0,
@@ -80405,6 +81264,9 @@ var ClairveilBrowserClient = class {
   async fetchPrivacyEvents(options = {}) {
     return this.cosmos.fetchPrivacyEvents(options);
   }
+  async fetchScanEvents(options = {}) {
+    return this.cosmos.fetchScanEvents(options);
+  }
   async fetchAuditableTransfers(options = {}) {
     return this.cosmos.fetchAuditableTransfers(options);
   }
@@ -80690,6 +81552,46 @@ var ClairveilBrowserClient = class {
       plan
     };
   }
+  async prepareTransferBatch(body) {
+    const walletType = this.walletTypeFromBody(body);
+    if (walletType === "evm") {
+      throw new Error("batch transfer is currently supported for Cosmos wallet profiles only");
+    }
+    const material = this.privacyMaterial(body, walletType);
+    const amounts = body.amounts || [];
+    const recipient = body.recipient;
+    const userPrivacyPolicy = body.privacyPolicy ?? body.privacy_policy ?? "all-private";
+    const userDisclosureMode = body.disclosureMode ?? body.disclosure_mode ?? "none";
+    const userDisclosureTargetPubKeyHex = body.disclosurePubKeyHex ?? body.disclosure_pubkey_hex ?? "";
+    const scanOptions = scanOptionsFromBody(body);
+    const prepared = await this.cosmos.prepareTransferBatch({
+      proverAdapter: this.proverAdapter(),
+      material,
+      recipient,
+      amounts,
+      userPrivacyPolicy,
+      userDisclosureMode,
+      userDisclosureTargetPubKeyHex,
+      scan: scanOptions,
+      gasLimit: body.gasLimit ?? body.gas_limit ?? 25e6
+    });
+    if (prepared.status !== "ready") throw plannerError(prepared);
+    return {
+      signDoc: prepared.signDoc,
+      prepared: {
+        ...prepared.prepared,
+        shieldedAddress: prepared.privacyAccount.shielded_address,
+        privacyPolicy: userPrivacyPolicy,
+        disclosureMode: userDisclosureMode,
+        planStatus: prepared.plan?.status || "",
+        planAction: prepared.prepared?.planAction || prepared.plan?.action || "",
+        payloads: prepared.payloads,
+        proofs: prepared.proofs,
+        messages: prepared.messages
+      },
+      plan: prepared.plan
+    };
+  }
   async prepareWithdraw(body) {
     const walletType = this.walletTypeFromBody(body);
     const material = this.privacyMaterial(body, walletType);
@@ -80872,6 +81774,9 @@ var ClairveilBrowserClient = class {
   }
   async checkNullifier(nullifierHex) {
     return this.cosmos.checkNullifier(nullifierHex);
+  }
+  async checkNullifiers(nullifierHexes) {
+    return this.cosmos.checkNullifiers(nullifierHexes);
   }
   async decodeUserDisclosure(body) {
     const request = { txHash: body.txHash ?? body.tx_hash };

@@ -23,7 +23,7 @@ For a public node deployment, the DApp can run with the static DApp, ClairveilJS
 | `.env.example` | Optional environment override template for local/server-backed runs |
 | `test/dapp-smoke.test.js` | Boundary and DApp smoke tests |
 
-The standalone SDK is not copied into this example. The DApp installs `clairveiljs` from the [DELIGHT-LABS/clairveiljs](https://github.com/DELIGHT-LABS/clairveiljs) GitHub repository, with the resolved commit pinned in `package-lock.json`. Minimal SDK flow examples live in ClairveilJS at `examples/minimal-keplr-flow.js` and `examples/minimal-metamask-flow.js`.
+The standalone SDK is not copied into this example. The DApp installs `clairveiljs` from the [DELIGHT-LABS/clairveiljs](https://github.com/DELIGHT-LABS/clairveiljs) GitHub repository with the resolved commit pinned in `package-lock.json`. Update the SDK dependency, lockfile, and generated bundle together when checking compatibility with a newer SDK. Minimal SDK flow examples live in ClairveilJS at `examples/minimal-keplr-flow.js` and `examples/minimal-metamask-flow.js`.
 
 ## Main Features
 
@@ -294,7 +294,7 @@ Start the DApp:
 
 ```bash
 cd examples/clairveil-dapp
-npm install
+npm ci
 CLAIRVEIL_HOME=/tmp/clairveil-dapp-local CHAIN_ID=clairveil-local-2 npm start -- --host 0.0.0.0
 ```
 

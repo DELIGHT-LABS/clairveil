@@ -21,7 +21,7 @@ Clairveil DApp은 브라우저에서 Keplr 또는 MetaMask를 연결해 Clairvei
 | `.env.example` | 로컬/server-backed 실행에서 사용할 수 있는 환경 변수 override 템플릿 |
 | `test/dapp-smoke.test.js` | DApp 구조와 privacy boundary smoke test |
 
-Standalone SDK는 이 repo 안에 복사하지 않습니다. DApp은 [DELIGHT-LABS/clairveiljs](https://github.com/DELIGHT-LABS/clairveiljs) GitHub repository에서 `clairveiljs`를 설치하고, 실제 resolved commit은 `package-lock.json`에 고정합니다. 최소 SDK 사용 흐름 예제는 ClairveilJS 쪽 `examples/minimal-keplr-flow.js`, `examples/minimal-metamask-flow.js`에 둡니다.
+Standalone SDK는 이 repo 안에 복사하지 않습니다. DApp은 [DELIGHT-LABS/clairveiljs](https://github.com/DELIGHT-LABS/clairveiljs) GitHub repository에서 `clairveiljs`를 설치하고, 실제 resolved commit은 `package-lock.json`에 고정합니다. 더 최신 SDK와의 호환성을 확인할 때는 SDK dependency, lockfile, generated bundle을 같은 변경으로 갱신합니다. 최소 SDK 사용 흐름 예제는 ClairveilJS 쪽 `examples/minimal-keplr-flow.js`, `examples/minimal-metamask-flow.js`에 둡니다.
 
 ## 주요 기능
 
@@ -403,7 +403,7 @@ DApp:
 
 ```bash
 cd examples/clairveil-dapp
-npm install
+npm ci
 CLAIRVEIL_HOME=/tmp/clairveil-dapp-local CHAIN_ID=clairveil-local-2 npm start -- --host 0.0.0.0
 ```
 

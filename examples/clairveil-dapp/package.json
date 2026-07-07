@@ -19,14 +19,14 @@
     "test:clairveiljs": "node --test test/clairveiljs.test.js test/clairveiljs-package.test.js"
   },
   "dependencies": {
-    "clairveiljs": "https://github.com/DELIGHT-LABS/clairveiljs/archive/671eec0e800c6a42bbe1ad4b6724cdb36c112485.tar.gz",
-    "ethers": "^6.16.0"
+    "clairveiljs": "https://github.com/DELIGHT-LABS/clairveiljs/archive/bb3e1526062e7caa86b0d8ff024e05a7eea0af86.tar.gz",
+    "ethers": "6.16.0"
   },
   "overrides": {
-    "ws": "^8.20.1"
+    "ws": "8.21.0"
   },
   "devDependencies": {
-    "esbuild": "^0.28.0",
-    "typescript": "^5.8.3"
+    "esbuild": "0.28.0",
+    "typescript": "5.9.3"
   }
 }
