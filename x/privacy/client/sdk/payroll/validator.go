@@ -19,6 +19,9 @@ func ValidateInput(input PayrollInput) error {
 	if strings.TrimSpace(input.Denom) == "" {
 		return fmt.Errorf("%w: denom is required", ErrInvalidPayrollInput)
 	}
+	if err := ValidateDisclosurePolicy(input.DefaultDisclosurePolicy); err != nil {
+		return err
+	}
 	if len(input.Items) == 0 {
 		return fmt.Errorf("%w: at least one payroll item is required", ErrInvalidPayrollInput)
 	}
@@ -49,6 +52,9 @@ func ValidateInput(input PayrollInput) error {
 		if item.Denom != "" && item.Denom != input.Denom {
 			return fmt.Errorf("%w: item %s denom %s does not match payroll denom %s", ErrInvalidPayrollInput, item.ItemID, item.Denom, input.Denom)
 		}
+		if err := ValidateDisclosurePolicy(effectiveDisclosurePolicy(input.DefaultDisclosurePolicy, item.DisclosurePolicy)); err != nil {
+			return fmt.Errorf("item %s disclosure policy: %w", item.ItemID, err)
+		}
 	}
 	return nil
 }
@@ -58,18 +64,20 @@ func normalizePayrollInput(input PayrollInput) PayrollInput {
 	input.PayrollID = strings.TrimSpace(input.PayrollID)
 	input.BatchID = strings.TrimSpace(input.BatchID)
 	input.Denom = strings.TrimSpace(input.Denom)
+	input.DefaultDisclosurePolicy = normalizeDisclosurePolicy(input.DefaultDisclosurePolicy)
 	input.Items = append([]PayrollItemInput(nil), input.Items...)
 	for i := range input.Items {
-		input.Items[i] = normalizePayrollItemInput(input.Items[i])
+		input.Items[i] = normalizePayrollItemInput(input.Items[i], input.DefaultDisclosurePolicy)
 	}
 	return input
 }
 
-func normalizePayrollItemInput(item PayrollItemInput) PayrollItemInput {
+func normalizePayrollItemInput(item PayrollItemInput, defaultDisclosure PayrollDisclosurePolicy) PayrollItemInput {
 	item.ItemID = strings.TrimSpace(item.ItemID)
 	item.EmployeeID = strings.TrimSpace(item.EmployeeID)
 	item.RecipientAddress = strings.TrimSpace(item.RecipientAddress)
 	item.Denom = strings.TrimSpace(item.Denom)
+	item.DisclosurePolicy = effectiveDisclosurePolicy(defaultDisclosure, item.DisclosurePolicy)
 	item.ExpectedOutputCommitment = strings.TrimSpace(item.ExpectedOutputCommitment)
 	item.ExpectedDisclosureDigest = strings.TrimSpace(item.ExpectedDisclosureDigest)
 	return item

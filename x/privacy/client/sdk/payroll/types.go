@@ -3,16 +3,19 @@ package payroll
 import (
 	"math/big"
 	"time"
+
+	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
 type PayrollInput struct {
-	CompanyID string
-	PayrollID string
-	BatchID   string
-	Denom     string
-	Attempt   int
-	Items     []PayrollItemInput
-	CreatedAt time.Time
+	CompanyID               string
+	PayrollID               string
+	BatchID                 string
+	Denom                   string
+	Attempt                 int
+	DefaultDisclosurePolicy PayrollDisclosurePolicy
+	Items                   []PayrollItemInput
+	CreatedAt               time.Time
 }
 
 type PayrollItemInput struct {
@@ -21,8 +24,19 @@ type PayrollItemInput struct {
 	RecipientAddress         string
 	Amount                   *big.Int
 	Denom                    string
+	DisclosurePolicy         PayrollDisclosurePolicy
 	ExpectedOutputCommitment string
 	ExpectedDisclosureDigest string
+}
+
+type PayrollDisclosurePolicy struct {
+	UserPrivacyPolicy                uint32
+	UserDisclosureMode               privacytypes.UserDisclosureMode
+	UserDisclosureTargetPubKeyHex    string
+	UserDisclosureTargetKeyID        string
+	ExpectedUserDisclosureDigest     string
+	ExpectedAuditDisclosureDigest    string
+	ExpectedSelfViewDisclosureDigest string
 }
 
 type TreasuryNote struct {
@@ -62,6 +76,7 @@ type PayrollPlanItem struct {
 	Amount                   *big.Int
 	ExpectedAmountHash       string
 	Denom                    string
+	DisclosurePolicy         PayrollDisclosurePolicy
 	ExpectedOutputCommitment string
 	ExpectedDisclosureDigest string
 	InputNotes               []TreasuryNote

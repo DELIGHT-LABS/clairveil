@@ -229,6 +229,7 @@ func normalizePayrollPlanItem(item PayrollPlanItem) PayrollPlanItem {
 	item.ExpectedRecipientHash = strings.TrimSpace(item.ExpectedRecipientHash)
 	item.ExpectedAmountHash = strings.TrimSpace(item.ExpectedAmountHash)
 	item.Denom = strings.TrimSpace(item.Denom)
+	item.DisclosurePolicy = normalizeDisclosurePolicy(item.DisclosurePolicy)
 	item.ExpectedOutputCommitment = strings.TrimSpace(item.ExpectedOutputCommitment)
 	item.ExpectedDisclosureDigest = strings.TrimSpace(item.ExpectedDisclosureDigest)
 	item.InputNotes = append([]TreasuryNote(nil), item.InputNotes...)

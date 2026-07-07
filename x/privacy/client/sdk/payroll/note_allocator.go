@@ -53,8 +53,9 @@ func (a NoteAllocator) Allocate(input PayrollInput, notes []TreasuryNote) ([]Pay
 			Amount:                   cloneBigInt(item.Amount),
 			ExpectedAmountHash:       HashAmount(itemDenom, item.Amount),
 			Denom:                    itemDenom,
+			DisclosurePolicy:         item.DisclosurePolicy,
 			ExpectedOutputCommitment: item.ExpectedOutputCommitment,
-			ExpectedDisclosureDigest: item.ExpectedDisclosureDigest,
+			ExpectedDisclosureDigest: preferredExpectedDisclosureDigest(item),
 			InputNotes:               selected,
 			Status:                   ItemStatusPlanned,
 			RetryCount:               0,
@@ -63,6 +64,16 @@ func (a NoteAllocator) Allocate(input PayrollInput, notes []TreasuryNote) ([]Pay
 	}
 
 	return planned, nil
+}
+
+func preferredExpectedDisclosureDigest(item PayrollItemInput) string {
+	if item.ExpectedDisclosureDigest != "" {
+		return item.ExpectedDisclosureDigest
+	}
+	if item.DisclosurePolicy.ExpectedUserDisclosureDigest != "" {
+		return item.DisclosurePolicy.ExpectedUserDisclosureDigest
+	}
+	return ""
 }
 
 func allocatePayrollInputNotes(items []PayrollItemInput, available []TreasuryNote, itemOrder []int) ([][]TreasuryNote, error) {
