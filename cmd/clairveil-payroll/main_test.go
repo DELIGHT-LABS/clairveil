@@ -205,6 +205,60 @@ func TestRunStatusAndReconcileCommandsUseDurableState(t *testing.T) {
 	require.Equal(t, privacypayroll.ItemStatusConfirmed, exported.Items[0].Status)
 }
 
+func TestScanEvidenceCommandAppliesTxObservation(t *testing.T) {
+	dir := t.TempDir()
+	inputPath := filepath.Join(dir, "payroll.json")
+	planPath := filepath.Join(dir, "plan.json")
+	confirmedPath := filepath.Join(dir, "confirmed-plan.json")
+	statePath := filepath.Join(dir, "reservation-state.json")
+	txPath := filepath.Join(dir, "tx-query.json")
+	scanPath := filepath.Join(dir, "scan.json")
+	payload := validPrepareNotesPayload()
+	payload.Items[0].ExpectedOutputCommitment = "commitment-a"
+	payload.Items[0].ExpectedDisclosureDigest = "digest-a"
+	writePayrollInput(t, inputPath, payload)
+	require.NoError(t, runPlan([]string{"-input", inputPath, "-out", planPath}))
+	require.NoError(t, runRun([]string{"-plan", planPath, "-state", statePath, "-out", confirmedPath}))
+
+	confirmedBytes, err := os.ReadFile(confirmedPath)
+	require.NoError(t, err)
+	var confirmed privacypayroll.PayrollPlan
+	require.NoError(t, json.Unmarshal(confirmedBytes, &confirmed))
+	markConfirmedPlanSubmitted(t, statePath, confirmed)
+	writeJSONForTest(t, txPath, map[string]any{
+		"tx_response": map[string]any{
+			"txhash": "txhash",
+			"height": "10",
+			"code":   0,
+			"events": []map[string]any{{
+				"type": "shielded_transfer",
+				"attributes": []map[string]string{
+					{"key": "nullifier_1", "value": "lookup-large"},
+					{"key": "nullifier_2", "value": "lookup-zero"},
+					{"key": "commitment_1", "value": "commitment-a"},
+					{"key": "user_disclosure_digest", "value": "digest-a"},
+				},
+			}},
+		},
+	})
+
+	require.NoError(t, runScanEvidence([]string{"-plan", planPath, "-state", statePath, "-tx-query", txPath, "-apply", "-out", scanPath}))
+	scanBytes, err := os.ReadFile(scanPath)
+	require.NoError(t, err)
+	var scan scanEvidenceReport
+	require.NoError(t, json.Unmarshal(scanBytes, &scan))
+	require.True(t, scan.TxSucceeded)
+	require.Len(t, scan.Evidence, 2)
+	require.NotNil(t, scan.Reconcile)
+	require.Equal(t, 0, scan.Reconcile.RequiresReview)
+
+	store, err := privacyreservation.OpenDurableFileStore(statePath)
+	require.NoError(t, err)
+	operation, err := store.GetOperation(context.Background(), confirmed.Items[0].OperationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusSucceeded, operation.Status)
+}
+
 func TestSettleTransferBatchCommandConfirmsDurableState(t *testing.T) {
 	dir := t.TempDir()
 	inputPath := filepath.Join(dir, "payroll.json")

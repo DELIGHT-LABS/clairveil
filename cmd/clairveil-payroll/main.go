@@ -116,6 +116,18 @@ type reconcileReport struct {
 	Results        []reconcileItemReport `json:"results"`
 }
 
+type scanEvidenceReport struct {
+	TxHash              string                      `json:"tx_hash,omitempty"`
+	TxKnown             bool                        `json:"tx_known"`
+	TxSucceeded         bool                        `json:"tx_succeeded"`
+	TxFailed            bool                        `json:"tx_failed"`
+	ObservedEvents      int                         `json:"observed_events"`
+	ScannedReservations int                         `json:"scanned_reservations"`
+	Warnings            []string                    `json:"warnings,omitempty"`
+	Evidence            []reconcileEvidenceItemFile `json:"evidence"`
+	Reconcile           *reconcileReport            `json:"reconcile,omitempty"`
+}
+
 type reconcileItemReport struct {
 	ReservationID     string                               `json:"reservation_id"`
 	ReservationStatus privacyreservation.ReservationStatus `json:"reservation_status"`
@@ -164,7 +176,7 @@ type settleTransferBatchReport struct {
 
 func main() {
 	if len(os.Args) < 2 {
-		fatalf("usage: clairveil-payroll <validate|build-input-from-notes|prepare-notes|plan|run|status|reconcile|settle-transfer-batch|export-report> [flags]")
+		fatalf("usage: clairveil-payroll <validate|build-input-from-notes|prepare-notes|plan|run|status|scan-evidence|reconcile|settle-transfer-batch|export-report> [flags]")
 	}
 	switch os.Args[1] {
 	case "validate":
@@ -193,6 +205,10 @@ func main() {
 		}
 	case "reconcile":
 		if err := runReconcile(os.Args[2:]); err != nil {
+			fatalf("%v", err)
+		}
+	case "scan-evidence":
+		if err := runScanEvidence(os.Args[2:]); err != nil {
 			fatalf("%v", err)
 		}
 	case "settle-transfer-batch":
@@ -442,28 +458,72 @@ func runReconcile(args []string) error {
 	if err != nil {
 		return err
 	}
-	report := reconcileReport{
-		Total:   len(evidence),
-		Results: make([]reconcileItemReport, 0, len(evidence)),
+	report, err := reconcileEvidenceItems(context.Background(), store, evidence)
+	if err != nil {
+		return err
 	}
-	worker := privacypayroll.ReconcileWorker{
-		Reservation: privacyreservation.Service{Store: store},
+	return writeJSONOutput(outPath, report)
+}
+
+func runScanEvidence(args []string) error {
+	flags := flag.NewFlagSet("scan-evidence", flag.ContinueOnError)
+	var planPath string
+	var statePath string
+	var txPath string
+	var nullifiersPath string
+	var outPath string
+	var apply bool
+	flags.StringVar(&planPath, "plan", "", "payroll plan JSON path")
+	flags.StringVar(&statePath, "state", "", "durable reservation state JSON path")
+	flags.StringVar(&txPath, "tx-query", "", "clairveild query tx JSON path or TxObservation JSON path")
+	flags.StringVar(&nullifiersPath, "nullifiers", "", "optional nullifier status JSON path")
+	flags.StringVar(&outPath, "out", "", "optional scan evidence report JSON path; stdout when empty")
+	flags.BoolVar(&apply, "apply", false, "also reconcile scanned evidence into the durable state")
+	if err := flags.Parse(args); err != nil {
+		return err
 	}
-	for _, item := range evidence {
-		result, err := worker.ReconcileReservation(context.Background(), item.ReservationID, item.toSDK())
+	plan, err := readPlanInput(planPath)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(statePath) == "" {
+		return fmt.Errorf("-state is required")
+	}
+	tx, err := readTxObservation(txPath)
+	if err != nil {
+		return err
+	}
+	nullifiers, err := readNullifierStatuses(nullifiersPath)
+	if err != nil {
+		return err
+	}
+	store, err := privacyreservation.OpenDurableFileStore(statePath)
+	if err != nil {
+		return err
+	}
+	scanned, err := (privacypayroll.EvidenceScanner{Store: store}).ScanTransferBatch(context.Background(), *plan, tx, nullifiers)
+	if err != nil {
+		return err
+	}
+	report := scanEvidenceReport{
+		TxHash:              scanned.TxHash,
+		TxKnown:             scanned.TxKnown,
+		TxSucceeded:         scanned.TxSucceeded,
+		TxFailed:            scanned.TxFailed,
+		ObservedEvents:      scanned.ObservedEvents,
+		ScannedReservations: scanned.ScannedReservations,
+		Warnings:            scanned.Warnings,
+		Evidence:            make([]reconcileEvidenceItemFile, 0, len(scanned.Evidence)),
+	}
+	for _, item := range scanned.Evidence {
+		report.Evidence = append(report.Evidence, reconcileEvidenceItemFromSDK(item.ReservationID, item.Evidence))
+	}
+	if apply {
+		reconciled, err := reconcileEvidenceItems(context.Background(), store, report.Evidence)
 		if err != nil {
 			return err
 		}
-		if result.RequiresReview {
-			report.RequiresReview++
-		}
-		report.Results = append(report.Results, reconcileItemReport{
-			ReservationID:     item.ReservationID,
-			ReservationStatus: result.ReservationStatus,
-			OperationStatus:   result.OperationStatus,
-			RequiresReview:    result.RequiresReview,
-			Reason:            result.Reason,
-		})
+		report.Reconcile = reconciled
 	}
 	return writeJSONOutput(outPath, report)
 }
@@ -654,6 +714,38 @@ func readReconcileEvidence(path string) ([]reconcileEvidenceItemFile, error) {
 	return items, nil
 }
 
+func readTxObservation(path string) (privacypayroll.TxObservation, error) {
+	if strings.TrimSpace(path) == "" {
+		return privacypayroll.TxObservation{}, fmt.Errorf("-tx-query is required")
+	}
+	bz, err := os.ReadFile(path)
+	if err != nil {
+		return privacypayroll.TxObservation{}, err
+	}
+	return privacypayroll.ParseTxObservationJSON(bz)
+}
+
+func readNullifierStatuses(path string) ([]privacypayroll.NullifierStatus, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, nil
+	}
+	bz, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var wrapped struct {
+		Statuses []privacypayroll.NullifierStatus `json:"statuses"`
+	}
+	if err := json.Unmarshal(bz, &wrapped); err == nil && len(wrapped.Statuses) > 0 {
+		return wrapped.Statuses, nil
+	}
+	var statuses []privacypayroll.NullifierStatus
+	if err := json.Unmarshal(bz, &statuses); err == nil && len(statuses) > 0 {
+		return statuses, nil
+	}
+	return nil, fmt.Errorf("nullifier status file is empty or invalid")
+}
+
 func (e reconcileEvidenceItemFile) toSDK() privacyreservation.OperationEvidence {
 	return privacyreservation.OperationEvidence{
 		TxHash:              e.TxHash,
@@ -671,6 +763,53 @@ func (e reconcileEvidenceItemFile) toSDK() privacyreservation.OperationEvidence 
 		TxFailed:            e.TxFailed,
 		TxKnown:             e.TxKnown,
 	}
+}
+
+func reconcileEvidenceItemFromSDK(reservationID string, evidence privacyreservation.OperationEvidence) reconcileEvidenceItemFile {
+	return reconcileEvidenceItemFile{
+		ReservationID:       reservationID,
+		TxHash:              evidence.TxHash,
+		SignDocHash:         evidence.SignDocHash,
+		TxBytesHash:         evidence.TxBytesHash,
+		OutputCommitment:    evidence.OutputCommitment,
+		DisclosureDigest:    evidence.DisclosureDigest,
+		RecipientHash:       evidence.RecipientHash,
+		AmountHash:          evidence.AmountHash,
+		Denom:               evidence.Denom,
+		BatchItemIndex:      evidence.BatchItemIndex,
+		BatchItemIndexKnown: evidence.BatchItemIndexKnown,
+		NullifierSpent:      evidence.NullifierSpent,
+		TxSucceeded:         evidence.TxSucceeded,
+		TxFailed:            evidence.TxFailed,
+		TxKnown:             evidence.TxKnown,
+	}
+}
+
+func reconcileEvidenceItems(ctx context.Context, store privacyreservation.Store, evidence []reconcileEvidenceItemFile) (*reconcileReport, error) {
+	report := &reconcileReport{
+		Total:   len(evidence),
+		Results: make([]reconcileItemReport, 0, len(evidence)),
+	}
+	worker := privacypayroll.ReconcileWorker{
+		Reservation: privacyreservation.Service{Store: store},
+	}
+	for _, item := range evidence {
+		result, err := worker.ReconcileReservation(ctx, item.ReservationID, item.toSDK())
+		if err != nil {
+			return nil, err
+		}
+		if result.RequiresReview {
+			report.RequiresReview++
+		}
+		report.Results = append(report.Results, reconcileItemReport{
+			ReservationID:     item.ReservationID,
+			ReservationStatus: result.ReservationStatus,
+			OperationStatus:   result.OperationStatus,
+			RequiresReview:    result.RequiresReview,
+			Reason:            result.Reason,
+		})
+	}
+	return report, nil
 }
 
 func writeJSONOutput(path string, value any) error {

@@ -414,14 +414,16 @@ clairveil-payroll plan -input payroll.json -out plan.json
 clairveil-payroll run -plan plan.json -state .clairveil-payroll/reservation-state.json -out confirmed-plan.json
 clairveil-payroll status -plan plan.json -out status.json
 clairveil-payroll status -state .clairveil-payroll/reservation-state.json -out state-status.json
+clairveil-payroll scan-evidence -plan plan.json -state .clairveil-payroll/reservation-state.json -tx-query tx-query.json -out scanned-evidence.json
+clairveil-payroll scan-evidence -plan plan.json -state .clairveil-payroll/reservation-state.json -tx-query tx-query.json -apply -out scanned-and-reconciled.json
 clairveil-payroll reconcile -state .clairveil-payroll/reservation-state.json -evidence evidence.json -out reconcile.json
 clairveil-payroll settle-transfer-batch -plan plan.json -state .clairveil-payroll/reservation-state.json -tx transfer-batch.json -recipient-before bob-before.json -recipient-after bob-after.json -out settle.json
 clairveil-payroll export-report -plan plan.json -state .clairveil-payroll/reservation-state.json -out payroll-report.json
 ```
 
-`build-input-from-notes`는 `list-notes --json` 결과에서 spendable note를 읽어 payroll input의 `treasury_notes`를 채웁니다. `settle-transfer-batch`는 실제 `transfer-batch` tx 결과와 recipient note scan delta를 검증한 뒤 durable reservation state를 settle합니다.
+`build-input-from-notes`는 `list-notes --json` 결과에서 spendable note를 읽어 payroll input의 `treasury_notes`를 채웁니다. `scan-evidence`는 `clairveild query tx --output json` 결과 또는 같은 형태의 tx observation JSON을 읽어 `shielded_transfer` event, output commitment, disclosure digest, nullifier spent evidence를 payroll operation별 reconcile evidence로 변환합니다. `-apply`를 주면 스캔한 evidence를 즉시 durable reservation state에 반영합니다. `settle-transfer-batch`는 실제 `transfer-batch` tx 결과와 recipient note scan delta를 검증한 뒤 durable reservation state를 settle합니다.
 
-`prepare-notes`와 `plan`은 `-store-dir .clairveil-payroll`을 받아 file-backed reference artifact store에도 결과를 저장할 수 있습니다. `run`, `reconcile`, `settle-transfer-batch`는 durable reservation state 파일을 사용합니다. 상세 workflow는 [clairveil-reference-payroll-product-kr.md](clairveil-reference-payroll-product-kr.md)를 따릅니다.
+`prepare-notes`와 `plan`은 `-store-dir .clairveil-payroll`을 받아 file-backed reference artifact store에도 결과를 저장할 수 있습니다. `run`, `scan-evidence`, `reconcile`, `settle-transfer-batch`는 durable reservation state 파일을 사용합니다. 상세 workflow는 [clairveil-reference-payroll-product-kr.md](clairveil-reference-payroll-product-kr.md)를 따릅니다.
 
 ### clairveil-payrolld
 
