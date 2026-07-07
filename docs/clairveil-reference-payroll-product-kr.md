@@ -23,6 +23,7 @@ Reference Payroll Product는 core protocol 필수 요소가 아님. 그러나 `c
 | disclosure policy helper | `x/privacy/client/sdk/payroll/disclosure.go` |
 | disclosure key registry contract | `x/privacy/client/sdk/payroll/disclosure_registry.go` |
 | note preparation analyzer | `x/privacy/client/sdk/payroll/note_preparation.go` |
+| reference payroll CLI | `cmd/clairveil-payroll` |
 | proof/broadcast/reconcile worker | `x/privacy/client/sdk/payroll/proof_queue.go`, `broadcast_queue.go`, `batch_broadcaster.go`, `reconcile_worker.go` |
 | multi-message chunking | `x/privacy/client/sdk/payroll/chunker.go` |
 | prover pool | `x/privacy/client/sdk/payroll/prover_pool.go` |
@@ -113,6 +114,58 @@ Production registry는 제품 repo에서 구현하되, key format과 lookup 의�
 - 예상 message chunk 수
 
 이 helper는 자동 split/merge tx를 직접 실행하지 않음. Product layer는 report를 보고 operator approval 또는 auto-prepare flow를 구현해야 함.
+
+### `clairveil-payroll prepare-notes`
+
+Reference CLI는 note preparation analyzer를 실행하는 첫 제품 표면을 제공함.
+
+```bash
+clairveil-payroll prepare-notes \
+  -input payroll-prepare.json \
+  -out payroll-prepare-report.json
+```
+
+입력 JSON은 payroll item과 treasury note inventory를 포함함.
+
+```json
+{
+  "company_id": "company-a",
+  "payroll_id": "payroll-2026-07",
+  "batch_id": "run-001",
+  "denom": "uclair",
+  "max_messages_per_tx": 20,
+  "default_disclosure_policy": {
+    "user_privacy_policy": "all-private",
+    "user_disclosure_mode": "none"
+  },
+  "items": [
+    {
+      "item_id": "item-001",
+      "employee_id": "employee-001",
+      "recipient_address": "clairs1...",
+      "amount": "70"
+    }
+  ],
+  "treasury_notes": [
+    {
+      "note_id": "note-large",
+      "owner_key_id": "treasury-key",
+      "nullifier_lookup_key": "lookup-note-large",
+      "denom": "uclair",
+      "amount": "100"
+    },
+    {
+      "note_id": "note-zero",
+      "owner_key_id": "treasury-key",
+      "nullifier_lookup_key": "lookup-note-zero",
+      "denom": "uclair",
+      "amount": "0"
+    }
+  ]
+}
+```
+
+출력 report는 ready/blocked item 수, dummy note 부족 여부, reserved note 제외 여부, split/merge recommendation을 JSON으로 제공함.
 
 ## 완료 기준
 

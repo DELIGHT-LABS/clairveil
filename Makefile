@@ -15,6 +15,7 @@ build:
 	go build ./cmd/clairveil-localnetload
 	go build ./cmd/clairveil-userlatency
 	go build ./cmd/clairveil-bulktransferbench
+	go build ./cmd/clairveil-payroll
 
 .PHONY: install
 install: build
