@@ -50,6 +50,35 @@ func TestValidateCommandWritesReport(t *testing.T) {
 	require.Equal(t, 1, report.NotePreparation.ReadyItems)
 }
 
+func TestBuildInputFromNotesCommandImportsSpendableNotes(t *testing.T) {
+	dir := t.TempDir()
+	templatePath := filepath.Join(dir, "template.json")
+	notesPath := filepath.Join(dir, "notes.json")
+	outPath := filepath.Join(dir, "payroll.json")
+	template := validPrepareNotesPayload()
+	template.TreasuryNotes = nil
+	writePayrollInput(t, templatePath, template)
+	notes := listNotesFile{Notes: []listNotesFileNote{
+		{Index: 1, Status: "spendable", Amount: "70", Nullifier: "lookup-70"},
+		{Index: 2, Status: "spent", Amount: "10", Nullifier: "lookup-spent"},
+		{Index: 3, Status: "spendable", Amount: "0", Nullifier: "lookup-zero"},
+	}}
+	bz, err := json.Marshal(notes)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(notesPath, bz, 0o600))
+
+	require.NoError(t, runBuildInputFromNotes([]string{"-template", templatePath, "-notes", notesPath, "-owner-key-id", "owner-a", "-lookup-key-id", "lookup-v1", "-out", outPath}))
+	outBytes, err := os.ReadFile(outPath)
+	require.NoError(t, err)
+	var payload prepareNotesFile
+	require.NoError(t, json.Unmarshal(outBytes, &payload))
+	require.Len(t, payload.TreasuryNotes, 2)
+	require.Equal(t, "scan-001", payload.TreasuryNotes[0].NoteID)
+	require.Equal(t, "lookup-70", payload.TreasuryNotes[0].NullifierLookupKey)
+	require.Equal(t, "owner-a", payload.TreasuryNotes[0].OwnerKeyID)
+	require.Equal(t, "lookup-v1", payload.TreasuryNotes[0].NullifierLookupKeyID)
+}
+
 func TestPlanStatusAndExportReportCommands(t *testing.T) {
 	dir := t.TempDir()
 	inputPath := filepath.Join(dir, "payroll.json")
@@ -176,6 +205,52 @@ func TestRunStatusAndReconcileCommandsUseDurableState(t *testing.T) {
 	require.Equal(t, privacypayroll.ItemStatusConfirmed, exported.Items[0].Status)
 }
 
+func TestSettleTransferBatchCommandConfirmsDurableState(t *testing.T) {
+	dir := t.TempDir()
+	inputPath := filepath.Join(dir, "payroll.json")
+	planPath := filepath.Join(dir, "plan.json")
+	confirmedPath := filepath.Join(dir, "confirmed-plan.json")
+	statePath := filepath.Join(dir, "reservation-state.json")
+	txPath := filepath.Join(dir, "transfer-batch.json")
+	beforePath := filepath.Join(dir, "recipient-before.json")
+	afterPath := filepath.Join(dir, "recipient-after.json")
+	settlePath := filepath.Join(dir, "settle.json")
+	exportPath := filepath.Join(dir, "export.json")
+	payload := validPrepareNotesPayload()
+	payload.TreasuryNotes[0].Amount = "70"
+	writePayrollInput(t, inputPath, payload)
+	require.NoError(t, runPlan([]string{"-input", inputPath, "-out", planPath}))
+	require.NoError(t, runRun([]string{"-plan", planPath, "-state", statePath, "-out", confirmedPath}))
+
+	writeJSONForTest(t, txPath, transferBatchResultFile{TxHash: "LIVE_TX_HASH", Code: 0, MessageCount: 1, Amounts: []string{"70uclair"}})
+	writeJSONForTest(t, beforePath, listNotesFile{Notes: []listNotesFileNote{}})
+	writeJSONForTest(t, afterPath, listNotesFile{Notes: []listNotesFileNote{{Index: 1, Status: "spendable", Amount: "70", Nullifier: "recipient-note"}}})
+
+	require.NoError(t, runSettleTransferBatch([]string{
+		"-plan", planPath,
+		"-state", statePath,
+		"-tx", txPath,
+		"-recipient-before", beforePath,
+		"-recipient-after", afterPath,
+		"-out", settlePath,
+	}))
+	settleBytes, err := os.ReadFile(settlePath)
+	require.NoError(t, err)
+	var settle settleTransferBatchReport
+	require.NoError(t, json.Unmarshal(settleBytes, &settle))
+	require.Equal(t, "LIVE_TX_HASH", settle.TxHash)
+	require.Equal(t, 2, settle.TotalReservations)
+	require.Equal(t, 0, settle.RequiresReview)
+
+	require.NoError(t, runExportReport([]string{"-plan", planPath, "-state", statePath, "-out", exportPath}))
+	exportBytes, err := os.ReadFile(exportPath)
+	require.NoError(t, err)
+	var exported payrollExportReport
+	require.NoError(t, json.Unmarshal(exportBytes, &exported))
+	require.Equal(t, privacypayroll.PlanStatusConfirmed, exported.Status)
+	require.Equal(t, privacypayroll.ItemStatusConfirmed, exported.Items[0].Status)
+}
+
 func TestParsePrivacyPolicyLabels(t *testing.T) {
 	_, err := parsePrivacyPolicy("amount-from-to")
 	require.NoError(t, err)
@@ -220,6 +295,11 @@ func validPrepareNotesPayload() prepareNotesFile {
 }
 
 func writePayrollInput(t *testing.T, path string, payload prepareNotesFile) {
+	t.Helper()
+	writeJSONForTest(t, path, payload)
+}
+
+func writeJSONForTest(t *testing.T, path string, payload any) {
 	t.Helper()
 	bz, err := json.Marshal(payload)
 	require.NoError(t, err)

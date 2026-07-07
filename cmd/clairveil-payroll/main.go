@@ -131,13 +131,48 @@ type stateStatusReport struct {
 	OperationsByStatus   map[string]int `json:"operations_by_status"`
 }
 
+type listNotesFile struct {
+	Notes []listNotesFileNote `json:"notes"`
+}
+
+type listNotesFileNote struct {
+	Index     int    `json:"index"`
+	Status    string `json:"status"`
+	Amount    string `json:"amount"`
+	Nullifier string `json:"nullifier,omitempty"`
+	TxHash    string `json:"txhash,omitempty"`
+	Height    int64  `json:"height,omitempty"`
+}
+
+type transferBatchResultFile struct {
+	TxHash       string   `json:"txhash"`
+	Height       int64    `json:"height"`
+	Code         uint32   `json:"code"`
+	RawLog       string   `json:"raw_log,omitempty"`
+	MessageCount int      `json:"message_count"`
+	Amounts      []string `json:"amounts"`
+}
+
+type settleTransferBatchReport struct {
+	TxHash                  string                `json:"tx_hash"`
+	MessageCount            int                   `json:"message_count"`
+	VerifiedRecipientDeltas map[string]int        `json:"verified_recipient_deltas,omitempty"`
+	TotalReservations       int                   `json:"total_reservations"`
+	RequiresReview          int                   `json:"requires_review"`
+	Results                 []reconcileItemReport `json:"results"`
+}
+
 func main() {
 	if len(os.Args) < 2 {
-		fatalf("usage: clairveil-payroll <validate|prepare-notes|plan|run|status|reconcile|export-report> [flags]")
+		fatalf("usage: clairveil-payroll <validate|build-input-from-notes|prepare-notes|plan|run|status|reconcile|settle-transfer-batch|export-report> [flags]")
 	}
 	switch os.Args[1] {
 	case "validate":
 		if err := runValidate(os.Args[2:]); err != nil {
+			fatalf("%v", err)
+		}
+	case "build-input-from-notes":
+		if err := runBuildInputFromNotes(os.Args[2:]); err != nil {
 			fatalf("%v", err)
 		}
 	case "prepare-notes":
@@ -158,6 +193,10 @@ func main() {
 		}
 	case "reconcile":
 		if err := runReconcile(os.Args[2:]); err != nil {
+			fatalf("%v", err)
+		}
+	case "settle-transfer-batch":
+		if err := runSettleTransferBatch(os.Args[2:]); err != nil {
 			fatalf("%v", err)
 		}
 	case "export-report":
@@ -209,6 +248,36 @@ func runValidate(args []string) error {
 		return fmt.Errorf("payroll input validation failed")
 	}
 	return nil
+}
+
+func runBuildInputFromNotes(args []string) error {
+	flags := flag.NewFlagSet("build-input-from-notes", flag.ContinueOnError)
+	var templatePath string
+	var notesPath string
+	var ownerKeyID string
+	var lookupKeyID string
+	var outPath string
+	flags.StringVar(&templatePath, "template", "", "payroll input template JSON path without treasury_notes")
+	flags.StringVar(&notesPath, "notes", "", "clairveild tx privacy list-notes --json output path")
+	flags.StringVar(&ownerKeyID, "owner-key-id", "treasury-key", "owner key id to attach to imported notes")
+	flags.StringVar(&lookupKeyID, "lookup-key-id", "localnet-scan", "nullifier lookup key id to attach to imported notes")
+	flags.StringVar(&outPath, "out", "", "optional output JSON path; stdout when empty")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	template, err := readPrepareNotesFile(templatePath)
+	if err != nil {
+		return err
+	}
+	notes, err := readListNotesFile(notesPath)
+	if err != nil {
+		return err
+	}
+	template.TreasuryNotes = treasuryNotesFromListNotes(notes, template.Denom, ownerKeyID, lookupKeyID)
+	if len(template.TreasuryNotes) == 0 {
+		return fmt.Errorf("no spendable notes found in %s", notesPath)
+	}
+	return writeJSONOutput(outPath, template)
 }
 
 func runPrepareNotes(args []string) error {
@@ -399,6 +468,72 @@ func runReconcile(args []string) error {
 	return writeJSONOutput(outPath, report)
 }
 
+func runSettleTransferBatch(args []string) error {
+	flags := flag.NewFlagSet("settle-transfer-batch", flag.ContinueOnError)
+	var planPath string
+	var statePath string
+	var txPath string
+	var recipientBeforePath string
+	var recipientAfterPath string
+	var outPath string
+	var leaseOwner string
+	var leaseTTL time.Duration
+	flags.StringVar(&planPath, "plan", "", "payroll plan JSON path")
+	flags.StringVar(&statePath, "state", "", "durable reservation state JSON path")
+	flags.StringVar(&txPath, "tx", "", "transfer-batch command JSON output path")
+	flags.StringVar(&recipientBeforePath, "recipient-before", "", "optional recipient list-notes JSON before transfer-batch")
+	flags.StringVar(&recipientAfterPath, "recipient-after", "", "optional recipient list-notes JSON after transfer-batch")
+	flags.StringVar(&outPath, "out", "", "optional settle report JSON path; stdout when empty")
+	flags.StringVar(&leaseOwner, "lease-owner", "clairveil-payroll-live-settle", "reservation lease owner used while settling")
+	flags.DurationVar(&leaseTTL, "lease-ttl", time.Minute, "reservation lease ttl used while settling")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	plan, err := readPlanInput(planPath)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(statePath) == "" {
+		return fmt.Errorf("-state is required")
+	}
+	txResult, err := readTransferBatchResult(txPath)
+	if err != nil {
+		return err
+	}
+	if err := validateTransferBatchResult(*plan, txResult); err != nil {
+		return err
+	}
+	verifiedDeltas, err := verifyRecipientNoteDeltas(*plan, recipientBeforePath, recipientAfterPath)
+	if err != nil {
+		return err
+	}
+	store, err := privacyreservation.OpenDurableFileStore(statePath)
+	if err != nil {
+		return err
+	}
+	service := privacyreservation.Service{Store: store}
+	report := settleTransferBatchReport{
+		TxHash:                  txResult.TxHash,
+		MessageCount:            txResult.MessageCount,
+		VerifiedRecipientDeltas: verifiedDeltas,
+		Results:                 make([]reconcileItemReport, 0),
+	}
+	for itemIndex, item := range plan.Items {
+		results, err := settleTransferBatchItem(context.Background(), service, item, itemIndex, txResult, leaseOwner, leaseTTL)
+		if err != nil {
+			return err
+		}
+		for _, result := range results {
+			report.TotalReservations++
+			if result.RequiresReview {
+				report.RequiresReview++
+			}
+			report.Results = append(report.Results, result)
+		}
+	}
+	return writeJSONOutput(outPath, report)
+}
+
 func runExportReport(args []string) error {
 	flags := flag.NewFlagSet("export-report", flag.ContinueOnError)
 	var planPath string
@@ -429,15 +564,57 @@ func runExportReport(args []string) error {
 }
 
 func readPrepareNotesInput(path string) (privacypayroll.NotePreparationInput, error) {
-	bz, err := os.ReadFile(path)
+	payload, err := readPrepareNotesFile(path)
 	if err != nil {
 		return privacypayroll.NotePreparationInput{}, err
 	}
+	return payload.toSDK()
+}
+
+func readPrepareNotesFile(path string) (prepareNotesFile, error) {
+	if strings.TrimSpace(path) == "" {
+		return prepareNotesFile{}, fmt.Errorf("-input is required")
+	}
+	bz, err := os.ReadFile(path)
+	if err != nil {
+		return prepareNotesFile{}, err
+	}
 	var payload prepareNotesFile
 	if err := json.Unmarshal(bz, &payload); err != nil {
-		return privacypayroll.NotePreparationInput{}, err
+		return prepareNotesFile{}, err
 	}
-	return payload.toSDK()
+	return payload, nil
+}
+
+func readListNotesFile(path string) (listNotesFile, error) {
+	if strings.TrimSpace(path) == "" {
+		return listNotesFile{}, fmt.Errorf("-notes is required")
+	}
+	bz, err := os.ReadFile(path)
+	if err != nil {
+		return listNotesFile{}, err
+	}
+	var payload listNotesFile
+	if err := json.Unmarshal(bz, &payload); err != nil {
+		return listNotesFile{}, err
+	}
+	return payload, nil
+}
+
+func readTransferBatchResult(path string) (transferBatchResultFile, error) {
+	if strings.TrimSpace(path) == "" {
+		return transferBatchResultFile{}, fmt.Errorf("-tx is required")
+	}
+	bz, err := os.ReadFile(path)
+	if err != nil {
+		return transferBatchResultFile{}, err
+	}
+	var payload transferBatchResultFile
+	if err := json.Unmarshal(bz, &payload); err != nil {
+		return transferBatchResultFile{}, err
+	}
+	payload.TxHash = strings.TrimSpace(payload.TxHash)
+	return payload, nil
 }
 
 func readPlanInput(path string) (*privacypayroll.PayrollPlan, error) {
@@ -619,6 +796,225 @@ func buildStateStatusReport(ctx context.Context, store *privacyreservation.Durab
 		report.OperationsByStatus[string(operation.Status)]++
 	}
 	return report, nil
+}
+
+func treasuryNotesFromListNotes(notes listNotesFile, denom string, ownerKeyID string, lookupKeyID string) []treasuryNoteFile {
+	out := make([]treasuryNoteFile, 0, len(notes.Notes))
+	for _, note := range notes.Notes {
+		if strings.TrimSpace(note.Status) != "spendable" {
+			continue
+		}
+		amount := strings.TrimSpace(note.Amount)
+		if amount == "" {
+			continue
+		}
+		lookupKey := strings.TrimSpace(note.Nullifier)
+		if lookupKey == "" {
+			lookupKey = fmt.Sprintf("tx:%s:index:%d:amount:%s", strings.TrimSpace(note.TxHash), note.Index, amount)
+		}
+		noteID := fmt.Sprintf("scan-%03d", len(out)+1)
+		if note.Index > 0 {
+			noteID = fmt.Sprintf("scan-%03d", note.Index)
+		}
+		out = append(out, treasuryNoteFile{
+			NoteID:               noteID,
+			OwnerKeyID:           strings.TrimSpace(ownerKeyID),
+			NullifierLookupKey:   lookupKey,
+			NullifierLookupKeyID: strings.TrimSpace(lookupKeyID),
+			Denom:                strings.TrimSpace(denom),
+			Amount:               amount,
+		})
+	}
+	return out
+}
+
+func validateTransferBatchResult(plan privacypayroll.PayrollPlan, tx transferBatchResultFile) error {
+	if tx.TxHash == "" {
+		return fmt.Errorf("transfer-batch result has no txhash")
+	}
+	if tx.Code != 0 {
+		return fmt.Errorf("transfer-batch tx %s failed with code %d: %s", tx.TxHash, tx.Code, tx.RawLog)
+	}
+	if tx.MessageCount != len(plan.Items) {
+		return fmt.Errorf("transfer-batch message_count %d does not match payroll item count %d", tx.MessageCount, len(plan.Items))
+	}
+	if len(tx.Amounts) != len(plan.Items) {
+		return fmt.Errorf("transfer-batch amount count %d does not match payroll item count %d", len(tx.Amounts), len(plan.Items))
+	}
+	for i, item := range plan.Items {
+		expected := payrollItemCoinString(item)
+		if tx.Amounts[i] != expected {
+			return fmt.Errorf("transfer-batch amount %d is %s, expected %s", i, tx.Amounts[i], expected)
+		}
+	}
+	return nil
+}
+
+func verifyRecipientNoteDeltas(plan privacypayroll.PayrollPlan, beforePath string, afterPath string) (map[string]int, error) {
+	if strings.TrimSpace(beforePath) == "" && strings.TrimSpace(afterPath) == "" {
+		return nil, nil
+	}
+	if strings.TrimSpace(beforePath) == "" || strings.TrimSpace(afterPath) == "" {
+		return nil, fmt.Errorf("both -recipient-before and -recipient-after are required when verifying recipient notes")
+	}
+	before, err := readListNotesFileAtFlag(beforePath, "-recipient-before")
+	if err != nil {
+		return nil, err
+	}
+	after, err := readListNotesFileAtFlag(afterPath, "-recipient-after")
+	if err != nil {
+		return nil, err
+	}
+	required := make(map[string]int)
+	for _, item := range plan.Items {
+		required[payrollItemAmountString(item)]++
+	}
+	beforeCounts := spendableNoteCountsByAmount(before)
+	afterCounts := spendableNoteCountsByAmount(after)
+	verified := make(map[string]int, len(required))
+	for amount, count := range required {
+		delta := afterCounts[amount] - beforeCounts[amount]
+		if delta < count {
+			return nil, fmt.Errorf("recipient note delta for amount %s is %d, expected at least %d", amount, delta, count)
+		}
+		verified[amount] = delta
+	}
+	return verified, nil
+}
+
+func readListNotesFileAtFlag(path string, flagName string) (listNotesFile, error) {
+	if strings.TrimSpace(path) == "" {
+		return listNotesFile{}, fmt.Errorf("%s is required", flagName)
+	}
+	bz, err := os.ReadFile(path)
+	if err != nil {
+		return listNotesFile{}, err
+	}
+	var payload listNotesFile
+	if err := json.Unmarshal(bz, &payload); err != nil {
+		return listNotesFile{}, err
+	}
+	return payload, nil
+}
+
+func spendableNoteCountsByAmount(notes listNotesFile) map[string]int {
+	counts := make(map[string]int)
+	for _, note := range notes.Notes {
+		if strings.TrimSpace(note.Status) != "spendable" {
+			continue
+		}
+		amount := strings.TrimSpace(note.Amount)
+		if amount == "" {
+			continue
+		}
+		counts[amount]++
+	}
+	return counts
+}
+
+func settleTransferBatchItem(ctx context.Context, service privacyreservation.Service, item privacypayroll.PayrollPlanItem, itemIndex int, tx transferBatchResultFile, leaseOwner string, leaseTTL time.Duration) ([]reconcileItemReport, error) {
+	if len(item.InputNotes) == 0 {
+		return nil, fmt.Errorf("payroll item %s has no input notes", item.ItemID)
+	}
+	if leaseTTL <= 0 {
+		leaseTTL = time.Minute
+	}
+	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(item.InputNotes))
+	for _, note := range item.InputNotes {
+		reservationID := note.ReservationID
+		if reservationID == "" {
+			reservationID = privacypayroll.ReservationIDForInputNote(item.OperationID, note.NoteID)
+		}
+		reservation, err := service.Store.GetReservation(ctx, reservationID)
+		if err != nil {
+			return nil, err
+		}
+		if reservation.Status == privacyreservation.StatusConfirmedSpent {
+			refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservationID})
+			continue
+		}
+		lease, err := service.AcquireLeaseForStatus(ctx, reservationID, leaseOwner, privacyreservation.StatusReserved, leaseTTL)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := service.TransitionWithLease(ctx, reservationID, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving); err != nil {
+			return nil, err
+		}
+		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservationID, LeaseToken: lease.Token})
+	}
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	if _, _, err := service.MarkProofReadyBatch(ctx, refsWithLeaseTokens(refs), privacyreservation.ProofReadyOperationUpdate{
+		OperationID:              item.OperationID,
+		ExpectedOutputCommitment: liveSettlementOutputCommitment(tx.TxHash, item.OperationID),
+		ExpectedDisclosureDigest: liveSettlementDisclosureDigest(tx.TxHash, item.OperationID),
+	}); err != nil {
+		return nil, err
+	}
+	if _, _, err := service.MarkSubmittedBatch(ctx, refsWithLeaseTokens(refs), []string{item.OperationID}, privacyreservation.SubmittedReservationUpdate{
+		TxHash: tx.TxHash,
+	}); err != nil {
+		return nil, err
+	}
+	results := make([]reconcileItemReport, 0, len(refs))
+	worker := privacypayroll.ReconcileWorker{Reservation: service}
+	for _, ref := range refs {
+		result, err := worker.ReconcileReservation(ctx, ref.ReservationID, privacyreservation.OperationEvidence{
+			TxHash:              tx.TxHash,
+			OutputCommitment:    liveSettlementOutputCommitment(tx.TxHash, item.OperationID),
+			DisclosureDigest:    liveSettlementDisclosureDigest(tx.TxHash, item.OperationID),
+			RecipientHash:       item.ExpectedRecipientHash,
+			AmountHash:          item.ExpectedAmountHash,
+			Denom:               item.Denom,
+			BatchItemIndex:      itemIndex,
+			BatchItemIndexKnown: true,
+			NullifierSpent:      true,
+			TxSucceeded:         true,
+			TxKnown:             true,
+		})
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, reconcileItemReport{
+			ReservationID:     ref.ReservationID,
+			ReservationStatus: result.ReservationStatus,
+			OperationStatus:   result.OperationStatus,
+			RequiresReview:    result.RequiresReview,
+			Reason:            result.Reason,
+		})
+	}
+	return results, nil
+}
+
+func refsWithLeaseTokens(refs []privacyreservation.SubmittedReservationRef) []privacyreservation.SubmittedReservationRef {
+	out := make([]privacyreservation.SubmittedReservationRef, 0, len(refs))
+	for _, ref := range refs {
+		if ref.LeaseToken == "" {
+			continue
+		}
+		out = append(out, ref)
+	}
+	return out
+}
+
+func payrollItemCoinString(item privacypayroll.PayrollPlanItem) string {
+	return payrollItemAmountString(item) + item.Denom
+}
+
+func payrollItemAmountString(item privacypayroll.PayrollPlanItem) string {
+	if item.Amount == nil {
+		return ""
+	}
+	return item.Amount.String()
+}
+
+func liveSettlementOutputCommitment(txHash string, operationID string) string {
+	return "live-transfer-batch-output:" + strings.ToLower(strings.TrimSpace(txHash)) + ":" + operationID
+}
+
+func liveSettlementDisclosureDigest(txHash string, operationID string) string {
+	return "live-transfer-batch-disclosure:" + strings.ToLower(strings.TrimSpace(txHash)) + ":" + operationID
 }
 
 func buildPayrollExportReport(plan privacypayroll.PayrollPlan, now time.Time) payrollExportReport {

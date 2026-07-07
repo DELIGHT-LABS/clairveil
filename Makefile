@@ -86,6 +86,10 @@ privacy-bulk-readiness-check:
 reference-payroll-demo:
 	./scripts/reference-payroll-demo.sh
 
+.PHONY: reference-payroll-live-localnet
+reference-payroll-live-localnet:
+	./scripts/reference-payroll-live-localnet.sh
+
 .PHONY: privacy-public-capacity-report
 privacy-public-capacity-report:
 	./scripts/privacy-public-capacity-report.sh
