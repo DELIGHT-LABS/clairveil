@@ -402,8 +402,10 @@ func runReconcile(args []string) error {
 func runExportReport(args []string) error {
 	flags := flag.NewFlagSet("export-report", flag.ContinueOnError)
 	var planPath string
+	var statePath string
 	var outPath string
 	flags.StringVar(&planPath, "plan", "", "payroll plan JSON path")
+	flags.StringVar(&statePath, "state", "", "optional durable reservation state JSON path")
 	flags.StringVar(&outPath, "out", "", "optional output JSON path; stdout when empty")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -411,6 +413,17 @@ func runExportReport(args []string) error {
 	plan, err := readPlanInput(planPath)
 	if err != nil {
 		return err
+	}
+	if strings.TrimSpace(statePath) != "" {
+		store, err := privacyreservation.OpenDurableFileStore(statePath)
+		if err != nil {
+			return err
+		}
+		if statePlan, ok, err := loadConfirmedPlanFromState(context.Background(), store, *plan); err != nil {
+			return err
+		} else if ok {
+			plan = statePlan
+		}
 	}
 	return writeJSONOutput(outPath, buildPayrollExportReport(*plan, time.Now().UTC()))
 }

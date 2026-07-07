@@ -112,6 +112,7 @@ func TestRunStatusAndReconcileCommandsUseDurableState(t *testing.T) {
 	statusPath := filepath.Join(dir, "state-status.json")
 	evidencePath := filepath.Join(dir, "evidence.json")
 	reconcilePath := filepath.Join(dir, "reconcile.json")
+	exportPath := filepath.Join(dir, "export.json")
 	payload := validPrepareNotesPayload()
 	payload.Items[0].ExpectedOutputCommitment = "commitment-a"
 	payload.Items[0].ExpectedDisclosureDigest = "digest-a"
@@ -166,6 +167,13 @@ func TestRunStatusAndReconcileCommandsUseDurableState(t *testing.T) {
 	require.Equal(t, 0, report.RequiresReview)
 	require.Equal(t, privacyreservation.StatusConfirmedSpent, report.Results[0].ReservationStatus)
 	require.Equal(t, privacyreservation.OperationStatusSucceeded, report.Results[0].OperationStatus)
+
+	require.NoError(t, runExportReport([]string{"-plan", planPath, "-state", statePath, "-out", exportPath}))
+	exportBytes, err := os.ReadFile(exportPath)
+	require.NoError(t, err)
+	var exported payrollExportReport
+	require.NoError(t, json.Unmarshal(exportBytes, &exported))
+	require.Equal(t, privacypayroll.ItemStatusConfirmed, exported.Items[0].Status)
 }
 
 func TestParsePrivacyPolicyLabels(t *testing.T) {

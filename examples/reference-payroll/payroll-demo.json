@@ -1,0 +1,59 @@
+{
+  "company_id": "company-demo",
+  "payroll_id": "payroll-2026-07-demo",
+  "batch_id": "run-001",
+  "denom": "uclair",
+  "max_messages_per_tx": 20,
+  "default_disclosure_policy": {
+    "user_privacy_policy": "all-private",
+    "user_disclosure_mode": "none"
+  },
+  "items": [
+    {
+      "item_id": "item-001",
+      "employee_id": "employee-001",
+      "recipient_address": "clairs19x5u4mf4l4zqcpvr7d809fh4tjy5j50p2mwgky0nj38jpqpj7svndu3hqshu5e3s8w6pea5p30xek5p9flxjf7f44xh7cnfrlsd84pc7upgh3",
+      "amount": "70"
+    },
+    {
+      "item_id": "item-002",
+      "employee_id": "employee-002",
+      "recipient_address": "clairs1uwnerzqjukcmg56pqwe509jmfvsvdnd8j4k657d8c839f5rthu0q6d9yk3vda5wyhmvggjgkj94axzegkchypz0h3nx577vw3th7lpq7mwjed",
+      "amount": "30"
+    }
+  ],
+  "treasury_notes": [
+    {
+      "note_id": "note-large-001",
+      "owner_key_id": "treasury-key",
+      "nullifier_lookup_key": "lookup-note-large-001",
+      "nullifier_lookup_key_id": "lookup-v1",
+      "denom": "uclair",
+      "amount": "100"
+    },
+    {
+      "note_id": "note-zero-001",
+      "owner_key_id": "treasury-key",
+      "nullifier_lookup_key": "lookup-note-zero-001",
+      "nullifier_lookup_key_id": "lookup-v1",
+      "denom": "uclair",
+      "amount": "0"
+    },
+    {
+      "note_id": "note-small-001",
+      "owner_key_id": "treasury-key",
+      "nullifier_lookup_key": "lookup-note-small-001",
+      "nullifier_lookup_key_id": "lookup-v1",
+      "denom": "uclair",
+      "amount": "30"
+    },
+    {
+      "note_id": "note-zero-002",
+      "owner_key_id": "treasury-key",
+      "nullifier_lookup_key": "lookup-note-zero-002",
+      "nullifier_lookup_key_id": "lookup-v1",
+      "denom": "uclair",
+      "amount": "0"
+    }
+  ]
+}

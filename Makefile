@@ -16,6 +16,7 @@ build:
 	go build ./cmd/clairveil-userlatency
 	go build ./cmd/clairveil-bulktransferbench
 	go build ./cmd/clairveil-payroll
+	go build ./cmd/clairveil-payrolld
 
 .PHONY: install
 install: build
@@ -81,6 +82,10 @@ privacy-bulk-transfer-bench:
 privacy-bulk-readiness-check:
 	./scripts/privacy-bulk-readiness-check.sh
 
+.PHONY: reference-payroll-demo
+reference-payroll-demo:
+	./scripts/reference-payroll-demo.sh
+
 .PHONY: privacy-public-capacity-report
 privacy-public-capacity-report:
 	./scripts/privacy-public-capacity-report.sh
@@ -132,4 +137,4 @@ docker-proverd-build:
 
 .PHONY: clean
 clean:
-	rm -f clairveild clairveil-setup clairveil-verify clairveil-proverd clairveil-benchreport clairveil-proverload clairveil-localnetload clairveil-userlatency clairveil-bulktransferbench
+	rm -f clairveild clairveil-setup clairveil-verify clairveil-proverd clairveil-benchreport clairveil-proverload clairveil-localnetload clairveil-userlatency clairveil-bulktransferbench clairveil-payroll clairveil-payrolld
