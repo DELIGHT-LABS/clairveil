@@ -6,10 +6,12 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	privacypayroll "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/payroll"
+	privacyreservation "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/reservation"
 )
 
 func TestPrepareNotesCommandWritesReport(t *testing.T) {
@@ -101,6 +103,71 @@ func TestPlanCommandCanWriteFileArtifactStore(t *testing.T) {
 	require.Len(t, plan.Items, 1)
 }
 
+func TestRunStatusAndReconcileCommandsUseDurableState(t *testing.T) {
+	dir := t.TempDir()
+	inputPath := filepath.Join(dir, "payroll.json")
+	planPath := filepath.Join(dir, "plan.json")
+	confirmedPath := filepath.Join(dir, "confirmed-plan.json")
+	statePath := filepath.Join(dir, "reservation-state.json")
+	statusPath := filepath.Join(dir, "state-status.json")
+	evidencePath := filepath.Join(dir, "evidence.json")
+	reconcilePath := filepath.Join(dir, "reconcile.json")
+	payload := validPrepareNotesPayload()
+	payload.Items[0].ExpectedOutputCommitment = "commitment-a"
+	payload.Items[0].ExpectedDisclosureDigest = "digest-a"
+	writePayrollInput(t, inputPath, payload)
+	require.NoError(t, runPlan([]string{"-input", inputPath, "-out", planPath}))
+
+	require.NoError(t, runRun([]string{"-plan", planPath, "-state", statePath, "-out", confirmedPath}))
+	require.NoError(t, runRun([]string{"-plan", planPath, "-state", statePath, "-out", filepath.Join(dir, "confirmed-again.json")}))
+
+	confirmedBytes, err := os.ReadFile(confirmedPath)
+	require.NoError(t, err)
+	var confirmed privacypayroll.PayrollPlan
+	require.NoError(t, json.Unmarshal(confirmedBytes, &confirmed))
+	require.Equal(t, privacypayroll.PlanStatusConfirmed, confirmed.Status)
+	require.Equal(t, privacypayroll.ItemStatusReserved, confirmed.Items[0].Status)
+	require.Len(t, confirmed.Items[0].InputNotes, 2)
+	require.NotEmpty(t, confirmed.Items[0].InputNotes[0].ReservationID)
+
+	require.NoError(t, runStatus([]string{"-state", statePath, "-out", statusPath}))
+	statusBytes, err := os.ReadFile(statusPath)
+	require.NoError(t, err)
+	var status stateStatusReport
+	require.NoError(t, json.Unmarshal(statusBytes, &status))
+	require.Equal(t, 2, status.ReservationTotal)
+	require.Equal(t, 1, status.OperationTotal)
+	require.Equal(t, 2, status.ReservationsByStatus[string(privacyreservation.StatusReserved)])
+
+	markConfirmedPlanSubmitted(t, statePath, confirmed)
+	evidence := reconcileEvidenceFile{Evidence: []reconcileEvidenceItemFile{{
+		ReservationID:       confirmed.Items[0].InputNotes[0].ReservationID,
+		TxHash:              "txhash",
+		OutputCommitment:    "commitment-a",
+		DisclosureDigest:    "digest-a",
+		RecipientHash:       confirmed.Items[0].ExpectedRecipientHash,
+		AmountHash:          confirmed.Items[0].ExpectedAmountHash,
+		Denom:               "uclair",
+		NullifierSpent:      true,
+		BatchItemIndex:      0,
+		BatchItemIndexKnown: true,
+		TxSucceeded:         true,
+	}}}
+	bz, err := json.Marshal(evidence)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(evidencePath, bz, 0o600))
+
+	require.NoError(t, runReconcile([]string{"-state", statePath, "-evidence", evidencePath, "-out", reconcilePath}))
+	reconcileBytes, err := os.ReadFile(reconcilePath)
+	require.NoError(t, err)
+	var report reconcileReport
+	require.NoError(t, json.Unmarshal(reconcileBytes, &report))
+	require.Equal(t, 1, report.Total)
+	require.Equal(t, 0, report.RequiresReview)
+	require.Equal(t, privacyreservation.StatusConfirmedSpent, report.Results[0].ReservationStatus)
+	require.Equal(t, privacyreservation.OperationStatusSucceeded, report.Results[0].OperationStatus)
+}
+
 func TestParsePrivacyPolicyLabels(t *testing.T) {
 	_, err := parsePrivacyPolicy("amount-from-to")
 	require.NoError(t, err)
@@ -149,4 +216,34 @@ func writePayrollInput(t *testing.T, path string, payload prepareNotesFile) {
 	bz, err := json.Marshal(payload)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(path, bz, 0o600))
+}
+
+func markConfirmedPlanSubmitted(t *testing.T, statePath string, plan privacypayroll.PayrollPlan) {
+	t.Helper()
+	ctx := context.Background()
+	store, err := privacyreservation.OpenDurableFileStore(statePath)
+	require.NoError(t, err)
+	now := time.Date(2026, 7, 7, 12, 0, 0, 0, time.UTC)
+	svc := privacyreservation.Service{Store: store, Now: func() time.Time { return now }}
+
+	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(plan.Items[0].InputNotes))
+	for _, note := range plan.Items[0].InputNotes {
+		lease, err := svc.AcquireLeaseForStatus(ctx, note.ReservationID, "test-broadcaster", privacyreservation.StatusReserved, time.Minute)
+		require.NoError(t, err)
+		_, err = svc.TransitionWithLease(ctx, note.ReservationID, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving)
+		require.NoError(t, err)
+		_, err = svc.TransitionWithLease(ctx, note.ReservationID, lease.Token, privacyreservation.StatusProving, privacyreservation.StatusProofReady)
+		require.NoError(t, err)
+		refs = append(refs, privacyreservation.SubmittedReservationRef{
+			ReservationID: note.ReservationID,
+			LeaseToken:    lease.Token,
+		})
+	}
+	_, _, err = svc.MarkSubmittedBatch(ctx, refs, nil, privacyreservation.SubmittedReservationUpdate{
+		TxHash:          "txhash",
+		TxBytesHash:     "tx-bytes",
+		SignDocHash:     "sign-doc",
+		AccountSequence: 7,
+	})
+	require.NoError(t, err)
 }

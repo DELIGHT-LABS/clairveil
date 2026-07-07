@@ -193,6 +193,10 @@ func (s Service) now() time.Time {
 }
 
 func reservationID(operationID string, noteID string) string {
+	return ReservationIDForInputNote(operationID, noteID)
+}
+
+func ReservationIDForInputNote(operationID string, noteID string) string {
 	return operationID + ":note:" + idComponent(noteID)
 }
 
