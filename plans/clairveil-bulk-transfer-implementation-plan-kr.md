@@ -671,7 +671,7 @@ clairveil-payrolld
 
 2026-07-08 live daemon 보강 상태: `x/privacy/client/sdk/payroll.LiveDaemon`을 추가함. 이 daemon은 `Reserved -> Proving -> ProofReady`, `ProofReady -> Submitted/Unknown`, `Submitted/Unknown -> Reconcile` 상태머신을 long-running tick에서 실행하고, 실제 proof/broadcast/scan 동작은 `LiveOperationExecutor`로 주입받음. `clairveil-payrolld -mode live`는 파일 기반 reference executor를 사용해 tx query evidence를 tick마다 다시 읽고 submitted/unknown 상태를 reconcile함.
 
-2026-07-08 DB adapter 보강 상태: `x/privacy/client/sdk/reservation.SQLStore`를 추가함. 이 adapter는 `database/sql` 기반 reference store이며, `PostgreSQLSchema()`와 `SQLiteSchema()`로 active reservation partial unique index, status index, operation link index를 포함한 schema를 제공함. managed production deployment, tenant partitioning, field-level encryption, migration 운영은 여전히 제품/운영 DB 정책으로 남김.
+2026-07-08 DB adapter 보강 상태: `x/privacy/client/sdk/reservation.SQLStore`를 추가함. 이 adapter는 `database/sql` 기반 reference store이며, `PostgreSQLSchema()`와 `SQLiteSchema()`로 active reservation partial unique index, status index, operation link index, transaction-backed single-writer lock row를 포함한 schema를 제공함. managed production deployment, tenant partitioning, field-level encryption, migration 운영은 여전히 제품/운영 DB 정책으로 남김.
 
 2026-07-08 rehearsal 보강 상태: `scripts/reference-payroll-rehearsal.sh`, `make reference-payroll-rehearsal`, `docs/clairveil-reference-payroll-rehearsal-kr.md`를 추가함. 이 harness는 `single-company-1k`, `single-company-10k`, `single-company-100k`, `hundred-companies-1k` simulation report를 만들고, 선택적으로 작은 live localnet smoke를 함께 실행함. 실제 10만건 full localnet 제출은 운영 비용이 큰 별도 soak test로 남김.
 

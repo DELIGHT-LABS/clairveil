@@ -33,6 +33,9 @@ func InitSQLStore(ctx context.Context, db *sql.DB, dialect SQLDialect) error {
 			return err
 		}
 	}
+	if _, err := db.ExecContext(ctx, sqlStoreLockSeedStatement(dialect)); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -319,6 +322,10 @@ func (s *SQLStore) withMemoryWrite(ctx context.Context, update func(*MemoryStore
 	if err != nil {
 		return err
 	}
+	if err := s.lockStoreTx(ctx, tx); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
 	memory, err := s.loadMemoryTx(ctx, tx)
 	if err != nil {
 		_ = tx.Rollback()
@@ -333,6 +340,31 @@ func (s *SQLStore) withMemoryWrite(ctx context.Context, update func(*MemoryStore
 		return err
 	}
 	return tx.Commit()
+}
+
+func (s *SQLStore) lockStoreTx(ctx context.Context, tx *sql.Tx) error {
+	switch s.Dialect {
+	case SQLDialectPostgres:
+		rows, err := tx.QueryContext(ctx, "SELECT lock_id FROM reservation_store_locks WHERE lock_id = 1 FOR UPDATE")
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		if !rows.Next() {
+			return fmt.Errorf("reservation SQL store lock row is missing; run InitSQLStore")
+		}
+		return rows.Err()
+	default:
+		result, err := tx.ExecContext(ctx, "UPDATE reservation_store_locks SET touched_at = touched_at WHERE lock_id = 1")
+		if err != nil {
+			return err
+		}
+		rows, err := result.RowsAffected()
+		if err == nil && rows == 0 {
+			return fmt.Errorf("reservation SQL store lock row is missing; run InitSQLStore")
+		}
+		return nil
+	}
 }
 
 func (s *SQLStore) loadMemoryTx(ctx context.Context, tx *sql.Tx) (*MemoryStore, error) {
@@ -468,6 +500,10 @@ func sqlSchemaStatements(dialect SQLDialect) []string {
 		timestampType = "TEXT"
 	}
 	return []string{
+		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS reservation_store_locks (
+  lock_id INTEGER PRIMARY KEY,
+  touched_at %s
+)`, timestampType),
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS payroll_operations (
   operation_id TEXT PRIMARY KEY,
   status TEXT NOT NULL,
@@ -493,4 +529,11 @@ ON note_reservations(operation_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_payroll_operations_status
 ON payroll_operations(status)`,
 	}
+}
+
+func sqlStoreLockSeedStatement(dialect SQLDialect) string {
+	if dialect == SQLDialectPostgres {
+		return "INSERT INTO reservation_store_locks (lock_id, touched_at) VALUES (1, NOW()) ON CONFLICT (lock_id) DO NOTHING"
+	}
+	return "INSERT INTO reservation_store_locks (lock_id, touched_at) VALUES (1, CURRENT_TIMESTAMP) ON CONFLICT (lock_id) DO NOTHING"
 }

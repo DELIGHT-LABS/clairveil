@@ -14,6 +14,7 @@ func TestSQLStoreSatisfiesStoreInterface(t *testing.T) {
 func TestPostgreSQLSchemaIncludesActiveReservationConstraint(t *testing.T) {
 	schema := PostgreSQLSchema()
 	require.Contains(t, schema, "CREATE UNIQUE INDEX IF NOT EXISTS uniq_active_note_reservation")
+	require.Contains(t, schema, "CREATE TABLE IF NOT EXISTS reservation_store_locks")
 	require.Contains(t, schema, "owner_key_id, nullifier_lookup_key")
 	require.Contains(t, schema, "'Reserved', 'Proving', 'ProofReady', 'Submitted', 'Unknown', 'ManualReview'")
 	require.Contains(t, schema, "TIMESTAMPTZ")

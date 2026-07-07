@@ -473,6 +473,7 @@ clairveil-payroll run \
 - `owner_key_id + nullifier_lookup_key` active reservation partial unique index
 - reservation/operation status index
 - operation link index
+- transaction-backed single-writer lock row
 - JSON payload 보존
 - `reservation.Store`와 같은 CAS, lease, heartbeat, reconcile 의미
 
