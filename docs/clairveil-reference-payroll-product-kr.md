@@ -24,8 +24,9 @@ Reference Payroll Product는 core protocol 필수 요소가 아님. 그러나 `c
 | disclosure key registry contract | `x/privacy/client/sdk/payroll/disclosure_registry.go` |
 | note preparation analyzer | `x/privacy/client/sdk/payroll/note_preparation.go` |
 | file-backed reference artifact store | `x/privacy/client/sdk/payroll/file_artifact_store.go` |
+| SQL reservation store contract | `x/privacy/client/sdk/reservation/sql_store.go` |
 | reference payroll CLI | `cmd/clairveil-payroll` |
-| reference payroll daemon | `cmd/clairveil-payrolld`, `x/privacy/client/sdk/payroll/reference_daemon.go` |
+| reference payroll daemon | `cmd/clairveil-payrolld`, `x/privacy/client/sdk/payroll/reference_daemon.go`, `x/privacy/client/sdk/payroll/live_daemon.go` |
 | repo-local demo product | `examples/reference-payroll/payroll-demo.json`, `scripts/reference-payroll-demo.sh` |
 | live localnet tutorial | `scripts/reference-payroll-live-localnet.sh`, `docs/clairveil-reference-payroll-live-localnet-tutorial-kr.md` |
 | proof/broadcast/reconcile worker | `x/privacy/client/sdk/payroll/proof_queue.go`, `broadcast_queue.go`, `batch_broadcaster.go`, `reconcile_worker.go` |
@@ -133,20 +134,21 @@ prepare-notes
 plan
 run
 status
+scan-evidence
 reconcile
 settle-transfer-batch
 export-report
 ```
 
-`run`과 `reconcile`은 durable control-plane 표면을 제공함. 즉 plan 확정, durable reservation/operation state 저장, evidence 기반 reconcile을 처리함.
+`run`, `scan-evidence`, `reconcile`은 durable control-plane 표면을 제공함. 즉 plan 확정, durable reservation/operation state 저장, tx event/nullifier evidence scan, evidence 기반 reconcile을 처리함.
 
 `build-input-from-notes`는 실제 chain에서 `list-notes --json`으로 scan한 treasury note를 payroll input의 `treasury_notes`로 변환함.
 
 `settle-transfer-batch`는 실제 `transfer-batch` tx 결과와 recipient note scan delta를 검증한 뒤 durable reservation state를 settle함. 이 명령은 live localnet 튜토리얼에서 실제 chain tx와 payroll final report를 연결하는 bridge 역할을 함.
 
-`clairveil-payrolld`는 같은 durable state를 읽어 repo 안에서 운영 흐름을 끝까지 체험할 수 있게 하는 reference daemon임. 현재 제공 mode는 `simulated`이며, 실제 chain proof와 broadcast 대신 deterministic simulated proof/tx/evidence를 생성해 `Reserved -> Proving -> ProofReady -> Submitted -> ConfirmedSpent` 흐름을 검증함. 따라서 운영팀은 별도 제품 repo 없이 payroll run의 상태 전이와 report export를 바로 확인할 수 있음.
+`clairveil-payrolld`는 같은 durable state를 읽어 repo 안에서 운영 흐름을 끝까지 체험할 수 있게 하는 reference daemon임. `simulated` mode는 실제 chain proof와 broadcast 대신 deterministic simulated proof/tx/evidence를 생성해 `Reserved -> Proving -> ProofReady -> Submitted -> ConfirmedSpent` 흐름을 검증함. 따라서 운영팀은 별도 제품 repo 없이 payroll run의 상태 전이와 report export를 바로 확인할 수 있음.
 
-실제 chain proof 생성, tx broadcast, scanner evidence 수집을 자동으로 수행하는 live mode는 rehearsal/production integration 단계에서 기존 `ProofWorker`, `BatchBroadcastWorker`, provider/prover 설정을 연결해 추가해야 함.
+`live` mode는 SDK `LiveDaemon` 상태머신을 사용함. proof 생성, tx broadcast, scanner evidence 수집은 `LiveOperationExecutor`로 주입할 수 있고, CLI reference 구현은 `-tx-query` 파일을 tick마다 다시 읽어 `Submitted` 또는 `Unknown` 상태를 reconcile함. production 제품은 기존 `ProofWorker`, `BatchBroadcastWorker`, provider/prover 설정을 executor로 연결하면 됨.
 
 ### 입력 JSON
 
@@ -464,6 +466,16 @@ clairveil-payroll run \
 ```
 
 이 adapter는 rehearsal과 reference product에서 재시작/재실행 동작을 검증하기 위한 repo-local production-style adapter임. 실제 고객 환경에서 PostgreSQL, MySQL, cloud secret-backed DB를 쓰는 경우에도 같은 `reservation.Store` 의미와 상태 전이 규칙을 지켜야 함.
+
+`x/privacy/client/sdk/reservation.SQLStore`는 `database/sql` 기반 reference adapter임. repo는 DB driver를 고정하지 않고 제품이 PostgreSQL 또는 SQLite driver로 `*sql.DB`를 주입하게 함. 제공 schema는 다음 요구사항을 명시함.
+
+- `owner_key_id + nullifier_lookup_key` active reservation partial unique index
+- reservation/operation status index
+- operation link index
+- JSON payload 보존
+- `reservation.Store`와 같은 CAS, lease, heartbeat, reconcile 의미
+
+schema 문자열은 `reservation.PostgreSQLSchema()`와 `reservation.SQLiteSchema()`로 얻을 수 있음. 이 adapter는 reference 수준의 transaction-backed store이므로, multi-tenant production에서는 tenant partitioning, field-level encryption, raw nullifier 비저장 정책, connection pool, migration tool, row-level lock 전략을 제품 DB 정책에 맞게 보강해야 함.
 
 ## 완료 기준
 

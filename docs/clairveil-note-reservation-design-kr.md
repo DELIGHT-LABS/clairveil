@@ -299,6 +299,8 @@ WHERE status IN (
 );
 ```
 
+repo의 `x/privacy/client/sdk/reservation.SQLStore`는 이 제약을 포함한 PostgreSQL/SQLite reference schema를 제공함. 실제 production DB는 같은 active uniqueness 의미를 유지하되, tenant partitioning, field-level encryption, migration, connection pool 정책을 제품 환경에 맞게 추가해야 함.
+
 local SQLite, IndexedDB, mobile DB처럼 partial unique index 지원이 제한적이면 다음 중 하나를 사용함.
 
 - `owner_key_id` 단위 single writer queue
