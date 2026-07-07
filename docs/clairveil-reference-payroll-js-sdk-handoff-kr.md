@@ -44,6 +44,7 @@ PayrollPlan
 PayrollPlanItem
 TreasuryNote
 NotePreparationReport
+NotePreparationOperationHint
 DisclosureKeyEntry
 NoteReservation
 PayrollOperation
@@ -118,8 +119,24 @@ analyzeNotePreparation(input, treasuryNotes, policy)
 - zero dummy available/required
 - selected note ids
 - recommendations
+- operation hints
 
 JS SDK는 note preparation이 부족한 상태에서 payroll run을 무조건 진행하지 않도록 제품 UI에 signal을 제공해야 함.
+
+`operation_hints`는 Go reference의 `NotePreparationOperationHint`와 같은 의미를 가져야 함. 제품 UI나 backend scheduler는 이 값을 보고 `make-dummy`, `split-merge`, `add-funds`, `resolve-reservation-lock` 같은 준비 작업 후보를 표시하거나 승인 flow로 넘길 수 있어야 함.
+
+## File Artifact Store 참고사항
+
+Go reference는 `FileArtifactStore`를 제공하지만, JS SDK가 반드시 같은 file layout을 구현해야 하는 것은 아님. 다만 local sample product나 CLI 연동을 지원한다면 다음 artifact 의미는 맞춰두는 것이 좋음.
+
+```text
+plans
+plan-reports
+note-preparation-reports
+disclosure-keys
+```
+
+이 파일들은 payroll item, recipient, amount, selected note, disclosure key를 포함할 수 있으므로 local 저장소에서도 민감정보로 취급해야 함.
 
 ## Provider / Query 요구사항
 

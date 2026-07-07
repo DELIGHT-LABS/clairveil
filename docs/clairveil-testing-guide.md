@@ -28,7 +28,7 @@ make release-pack-verify
 | Command | Meaning |
 | --- | --- |
 | `make test` | run `go test ./...` |
-| `make build` | build `clairveild`, `clairveil-setup`, `clairveil-verify`, `clairveil-proverd`, and benchmark/load tools (`clairveil-benchreport`, `clairveil-proverload`, `clairveil-localnetload`, `clairveil-userlatency`, `clairveil-bulktransferbench`) |
+| `make build` | build `clairveild`, `clairveil-setup`, `clairveil-verify`, `clairveil-proverd`, `clairveil-payroll`, and benchmark/load tools (`clairveil-benchreport`, `clairveil-proverload`, `clairveil-localnetload`, `clairveil-userlatency`, `clairveil-bulktransferbench`) |
 | `make install` | run `make build`, then copy Clairveil binaries to `GOBIN` or `GOPATH/bin` |
 | `make init` | run `make install`, then initialize the default local chain home for `clairveild start` |
 | `make proto` | regenerate privacy protobuf/gateway Go files |

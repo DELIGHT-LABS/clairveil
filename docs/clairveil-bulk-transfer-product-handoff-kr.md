@@ -4,7 +4,7 @@
 
 이 문서는 `private/bulk-transfer` 브랜치의 1차 repo 구현을 제품/운영 구현으로 이어가기 위한 전달 문서임.
 
-repo에는 note reservation, payroll control plane, proof/broadcast/reconcile queue, multi-message tx, prover pool, benchmark/readiness harness의 reference implementation이 들어 있음. 그러나 production DB, scheduler service, tenant 운영 정책, operator UI, 실제 10만건 rehearsal은 제품/운영 영역에서 이어서 구현해야 함.
+repo에는 note reservation, payroll control plane, proof/broadcast/reconcile queue, multi-message tx, prover pool, benchmark/readiness harness, reference payroll CLI, file-backed reference artifact store의 reference implementation이 들어 있음. 그러나 production DB, scheduler service, tenant 운영 정책, operator UI, 실제 10만건 rehearsal은 제품/운영 영역에서 이어서 구현해야 함.
 
 ## Repo에서 제공하는 것
 
@@ -12,6 +12,8 @@ repo에는 note reservation, payroll control plane, proof/broadcast/reconcile qu
 - Note reservation 설계: `docs/clairveil-note-reservation-design-kr.md`
 - 대량 전송 전략/시뮬레이션: `docs/clairveil-bulk-transfer-strategy-kr.md`, `docs/clairveil-bulk-transfer-time-simulation-kr.md`
 - Go reference packages: `x/privacy/client/sdk/reservation`, `x/privacy/client/sdk/payroll`
+- Reference payroll CLI: `clairveil-payroll validate`, `prepare-notes`, `plan`, `status`, `export-report`
+- File-backed reference artifact store: `x/privacy/client/sdk/payroll.FileArtifactStore`
 - 검증 entrypoint: `make privacy-bulk-readiness-check`
 - localnet batch 검증: `make privacy-transfer-batch-localnet-bench`
 - prover pool 측정: `PROVERD_URLS=url1,url2 make privacy-proverd-scale-bench`

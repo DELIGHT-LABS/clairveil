@@ -403,3 +403,17 @@ clairveil-proverd \
 ```
 
 Follow the remote production profile in [clairveil-proverd-remote-production-profile.md](clairveil-proverd-remote-production-profile.md).
+
+### clairveil-payroll
+
+Runs the reference payroll product workflow around local files and JSON reports.
+
+```bash
+clairveil-payroll validate -input payroll.json -out validation.json
+clairveil-payroll prepare-notes -input payroll.json -out note-preparation.json
+clairveil-payroll plan -input payroll.json -out plan.json
+clairveil-payroll status -plan plan.json -out status.json
+clairveil-payroll export-report -plan plan.json -out payroll-report.json
+```
+
+`prepare-notes` and `plan` also accept `-store-dir .clairveil-payroll` to write results into the file-backed reference artifact store. For the detailed workflow, see [clairveil-reference-payroll-product-kr.md](clairveil-reference-payroll-product-kr.md).

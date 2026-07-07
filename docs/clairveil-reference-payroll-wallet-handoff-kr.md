@@ -110,6 +110,8 @@ Reference payroll product가 note preparation report를 제공하면 지갑은 �
 - split/merge 준비 필요
 - payroll run 가능 여부
 
+Go reference의 `NotePreparationOperationHint`가 제공되면 지갑 또는 admin console은 이를 그대로 준비 작업 후보로 표시할 수 있음. 예를 들어 `make-dummy`는 zero dummy note 준비, `split-merge`는 note 재구성 필요, `add-funds`는 treasury funding 부족, `resolve-reservation-lock`은 기존 reservation 확인 필요를 의미함.
+
 최종 제품에서 이 화면을 wallet에 둘지 admin console에 둘지는 제품팀 결정 사항임.
 
 ## Privacy-Safe Logging

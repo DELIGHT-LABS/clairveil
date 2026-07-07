@@ -26,7 +26,7 @@ make release-pack-verify
 | 명령 | 의미 |
 | --- | --- |
 | `make test` | `go test ./...` 실행 |
-| `make build` | `clairveild`, `clairveil-setup`, `clairveil-verify`, `clairveil-proverd`와 benchmark/load tool(`clairveil-benchreport`, `clairveil-proverload`, `clairveil-localnetload`, `clairveil-userlatency`, `clairveil-bulktransferbench`) build |
+| `make build` | `clairveild`, `clairveil-setup`, `clairveil-verify`, `clairveil-proverd`, `clairveil-payroll`와 benchmark/load tool(`clairveil-benchreport`, `clairveil-proverload`, `clairveil-localnetload`, `clairveil-userlatency`, `clairveil-bulktransferbench`) build |
 | `make install` | `make build` 후 Clairveil binary를 `GOBIN` 또는 `GOPATH/bin`으로 복사 |
 | `make init` | `make install` 후 기본 local chain home을 초기화해 `clairveild start` 준비 |
 | `make proto` | privacy protobuf/gateway Go file 재생성 |

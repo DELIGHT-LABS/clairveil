@@ -23,6 +23,7 @@ Reference Payroll Product는 core protocol 필수 요소가 아님. 그러나 `c
 | disclosure policy helper | `x/privacy/client/sdk/payroll/disclosure.go` |
 | disclosure key registry contract | `x/privacy/client/sdk/payroll/disclosure_registry.go` |
 | note preparation analyzer | `x/privacy/client/sdk/payroll/note_preparation.go` |
+| file-backed reference artifact store | `x/privacy/client/sdk/payroll/file_artifact_store.go` |
 | reference payroll CLI | `cmd/clairveil-payroll` |
 | proof/broadcast/reconcile worker | `x/privacy/client/sdk/payroll/proof_queue.go`, `broadcast_queue.go`, `batch_broadcaster.go`, `reconcile_worker.go` |
 | multi-message chunking | `x/privacy/client/sdk/payroll/chunker.go` |
@@ -111,21 +112,30 @@ Production registry는 제품 repo에서 구현하되, key format과 lookup 의�
 - ready item 수
 - blocked item 수
 - 필요한 dummy note 또는 split/merge recommendation
+- 제품 레이어가 실행 계획으로 옮기기 쉬운 operation hint
 - 예상 message chunk 수
 
 이 helper는 자동 split/merge tx를 직접 실행하지 않음. Product layer는 report를 보고 operator approval 또는 auto-prepare flow를 구현해야 함.
 
-### `clairveil-payroll prepare-notes`
+`operation_hints`는 recommendation을 제품 레이어가 실행 계획으로 옮기기 쉽게 만든 값임. 예를 들어 dummy note가 부족하면 `make-dummy`, 특정 지급건의 note 조합이 맞지 않으면 `split-merge`, spendable 총액이 부족하면 `add-funds`, active reservation 때문에 제외된 note가 있으면 `resolve-reservation-lock` hint가 들어감.
 
-Reference CLI는 note preparation analyzer를 실행하는 첫 제품 표면을 제공함.
+## Reference CLI
 
-```bash
-clairveil-payroll prepare-notes \
-  -input payroll-prepare.json \
-  -out payroll-prepare-report.json
+Reference CLI는 payroll workflow를 아래처럼 끊어서 실행할 수 있는 제품 표면을 제공함.
+
+```text
+validate
+prepare-notes
+plan
+status
+export-report
 ```
 
-입력 JSON은 payroll item과 treasury note inventory를 포함함.
+아직 `run`과 `reconcile`을 완전한 daemon/service 명령으로 제공하지는 않음. 이 둘은 production DB adapter, scheduler, signer/prover/broadcaster 운영 정책과 묶이는 영역이므로, 현재 repo에서는 SDK worker와 queue building block, 그리고 CLI 전 단계 산출물까지 제공함.
+
+### 입력 JSON
+
+`validate`, `prepare-notes`, `plan`은 같은 입력 JSON을 사용함. 입력 JSON은 payroll item과 treasury note inventory를 포함함.
 
 ```json
 {
@@ -165,7 +175,96 @@ clairveil-payroll prepare-notes \
 }
 ```
 
-출력 report는 ready/blocked item 수, dummy note 부족 여부, reserved note 제외 여부, split/merge recommendation을 JSON으로 제공함.
+### `clairveil-payroll validate`
+
+Payroll input의 recipient address, amount, denom, duplicate row, disclosure policy를 검증하고 note preparation summary를 함께 출력함.
+
+```bash
+clairveil-payroll validate \
+  -input payroll-prepare.json \
+  -out payroll-validation.json
+```
+
+출력은 `valid`, `errors`, `warnings`, `note_preparation`으로 구성됨. 입력 자체가 유효하지만 준비된 note가 부족하면 `warnings`에 준비 필요 항목이 표시됨.
+
+### `clairveil-payroll prepare-notes`
+
+Note preparation analyzer를 실행함.
+
+```bash
+clairveil-payroll prepare-notes \
+  -input payroll-prepare.json \
+  -out payroll-prepare-report.json
+```
+
+`-store-dir`을 추가하면 file-backed reference artifact store에도 같은 report를 저장함.
+
+```bash
+clairveil-payroll prepare-notes \
+  -input payroll-prepare.json \
+  -store-dir .clairveil-payroll
+```
+
+출력 report는 ready/blocked item 수, dummy note 부족 여부, reserved note 제외 여부, split/merge recommendation, operation hint를 JSON으로 제공함.
+
+### `clairveil-payroll plan`
+
+준비된 note inventory와 payroll input으로 draft payroll plan을 생성함.
+
+```bash
+clairveil-payroll plan \
+  -input payroll-prepare.json \
+  -out payroll-plan.json
+```
+
+생성된 plan에는 item별 `operation_id`, `chunk_id`, selected input notes, expected recipient/amount hash, disclosure expected digest가 포함됨. 아직 note reservation을 DB에 확정하는 단계는 아님. 확정은 production reservation store 또는 scheduler service에서 `Service.ConfirmPlan` 의미로 수행해야 함.
+
+`-store-dir`을 추가하면 plan을 file-backed reference artifact store에도 저장함.
+
+```bash
+clairveil-payroll plan \
+  -input payroll-prepare.json \
+  -store-dir .clairveil-payroll
+```
+
+### `clairveil-payroll status`
+
+Plan JSON을 읽어서 상태별 item count를 출력함.
+
+```bash
+clairveil-payroll status \
+  -plan payroll-plan.json \
+  -out payroll-status.json
+```
+
+출력은 `Planned`, `Reserved`, `Submitted`, `Confirmed`, `Failed`, `ReplanRequired`, `ManualReview` item 수를 집계함.
+
+### `clairveil-payroll export-report`
+
+기업 고객 또는 운영자가 볼 수 있는 item 단위 report JSON을 출력함.
+
+```bash
+clairveil-payroll export-report \
+  -plan payroll-plan.json \
+  -out payroll-report.json
+```
+
+출력은 plan summary와 item별 `item_id`, `employee_id`, `operation_id`, `chunk_id`, `status`, `amount`, `denom`, `failure_reason`, `retry_count`를 포함함.
+
+## File Artifact Store
+
+Reference product는 production DB adapter를 대신 구현하지 않음. 다만 로컬/테스트/샘플 제품에서 plan과 report를 잃어버리지 않도록 `FileArtifactStore`를 제공함.
+
+저장 범위는 다음과 같음.
+
+```text
+plans
+plan-reports
+note-preparation-reports
+disclosure-keys
+```
+
+파일은 `0600`, 디렉토리는 `0700` 권한으로 생성함. 이 store는 민감정보를 포함할 수 있으므로 production에서는 암호화 DB 또는 secret storage로 대체하는 것이 원칙임.
 
 ## 완료 기준
 
@@ -174,6 +273,8 @@ Reference Payroll Product 1.5차의 repo 기준 완료 조건은 다음과 같�
 - 1차 readiness check가 통과함.
 - disclosure policy와 key registry contract가 제공됨.
 - note preparation analyzer가 제공됨.
+- file-backed reference artifact store가 제공됨.
+- `clairveil-payroll validate`, `prepare-notes`, `plan`, `status`, `export-report` 명령이 제공됨.
 - JS SDK handoff 문서가 제공됨.
 - wallet handoff 문서가 제공됨.
 - downstream이 payroll workflow를 조립할 수 있는 기준 문서가 제공됨.
@@ -185,6 +286,7 @@ Reference Payroll Product 1.5차의 repo 기준 완료 조건은 다음과 같�
 - 실제 production DB adapter
 - scheduler/daemon service
 - admin UI
+- `clairveil-payroll run` / `reconcile` 수준의 완전한 운영 daemon
 - JS SDK 구현
 - 웹/모바일 지갑 구현
 - 실제 고객사의 payroll policy 결정

@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | 1차 repo 구현 완료, 1차 안정화 및 1.5차 Reference Payroll Product 진행 |
+| 상태 | 1차 repo 구현 완료, 1차 안정화 및 1.5차 Reference Payroll Product repo 보강 완료, rehearsal/production integration 남음 |
 | 작성일 | 2026-07-03 |
 | 대상 브랜치 | `private/bulk-transfer` |
 | 대상 영역 | `x/privacy` client SDK, provider, benchmark, 이후 privacy protocol |
@@ -122,6 +122,8 @@ Payroll Control Plane은 최종 사용자 UI 자체가 아니라, 대량 지급�
 
 2026-07-07 추가 결정으로 1.5차를 `Reference Payroll Product`로 정의함. 이는 protocol 필수 요소는 아니지만 `clairveil-proverd`처럼 downstream adoption에 필요한 companion/reference product로 제공하는 것을 목표로 함. 샘플이더라도 대충 만든 demo가 아니라, 실제 클라이언트가 그대로 가져가거나 fork해 production product의 출발점으로 삼을 수 있는 품질을 지향함.
 
+2026-07-07 후속 구현으로 1.5차 repo 보강은 `validate`, `prepare-notes`, `plan`, `status`, `export-report` CLI, file-backed reference artifact store, note preparation operation hint까지 확장됨. 아직 `run`/`reconcile`을 완전한 daemon 명령으로 제공하지는 않으며, 이 부분은 production DB adapter, scheduler, signer/prover/broadcaster 운영 정책과 묶이는 제품/운영 integration 영역으로 남김.
+
 | 단계 | 상태 | 구현 위치 |
 | --- | --- | --- |
 | Phase 1. Note Reservation | 구현 완료 | `x/privacy/client/sdk/reservation`, `x/privacy/client/sdk/conformance/testdata/privacy_note_reservation_contract.json` |
@@ -130,7 +132,7 @@ Payroll Control Plane은 최종 사용자 UI 자체가 아니라, 대량 지급�
 | Phase 4. Multi-Message Transaction | 구현 및 localnet 검증 harness 완료 | `x/privacy/client/sdk/payroll/chunker.go`, `batch_broadcaster.go`, `sdk_broadcaster.go`, `x/privacy/client/sdk/provider/tx.go`, `x/privacy/client/cli/tx_transfer_batch.go`, `scripts/privacy-transfer-batch-localnet-bench.sh` |
 | Phase 5. Prover Scaling | 구현 및 pool load harness 완료 | `x/privacy/client/sdk/payroll/prover_pool.go`, `cmd/clairveil-proverload`, `scripts/privacy-proverd-scale-bench.sh` |
 | Phase 6. Capacity Simulation Benchmark | 시뮬레이션 및 readiness harness 완료 | `cmd/clairveil-bulktransferbench`, `scripts/privacy-bulk-transfer-bench.sh`, `scripts/privacy-bulk-readiness-check.sh`, `make privacy-bulk-readiness-check` |
-| Phase 1.5. Reference Payroll Product | 진행 예정 | reference payroll product SDK/helper, CLI/service 후보, handoff 문서 |
+| Phase 1.5. Reference Payroll Product | repo 보강 완료, rehearsal/production integration 남음 | `cmd/clairveil-payroll`, `x/privacy/client/sdk/payroll`, handoff 문서 |
 | Phase 7. N-output Batch Circuit | 미구현 | 2차에서 `BatchJoinSplit32`로 진행 예정임 |
 
 ## 1차 계획
@@ -619,6 +621,8 @@ preparation policy
 
 초기 구현은 자동 split/merge tx를 직접 실행하기보다 analyzer와 recommendation을 먼저 제공함. 이후 reference CLI/service에서 operator approval 또는 auto-prepare mode를 붙일 수 있음.
 
+2026-07-07 구현 상태: `AnalyzeNotePreparation`은 recommendation과 함께 `operation_hints`를 제공함. Product layer는 이 hint를 `make-dummy`, `split-merge`, `add-funds`, `resolve-reservation-lock` 준비 작업 후보로 표시하거나 operator approval flow로 넘길 수 있음.
+
 ### Phase 1.5.5 Durable store / worker contract
 
 현재 repo에는 in-memory reference store가 있음. Reference product는 production DB adapter가 따라야 할 contract를 명확히 해야 함.
@@ -634,6 +638,8 @@ preparation policy
 
 초기에는 durable DB 구현보다 interface와 test contract를 우선함. 다만 reference CLI/service가 필요하면 SQLite adapter부터 시작할 수 있음.
 
+2026-07-07 구현 상태: production DB adapter 대신 `x/privacy/client/sdk/payroll.FileArtifactStore`를 추가함. 이 store는 `plans`, `plan-reports`, `note-preparation-reports`, `disclosure-keys`를 파일로 저장하고 다시 읽는 local/reference artifact store임. 파일은 `0600`, 디렉토리는 `0700`으로 생성함. 이는 production reservation DB를 대체하지 않으며, production에서는 암호화 DB와 worker lease/operation evidence persistence가 별도로 필요함.
+
 ### Phase 1.5.6 Reference CLI/service 후보
 
 초기 reference product command 후보는 다음과 같음.
@@ -648,7 +654,9 @@ clairveil-payroll reconcile
 clairveil-payroll export-report
 ```
 
-1.5차 초기 완료 기준은 모든 command를 완전한 daemon으로 구현하는 것이 아니라, product workflow를 code와 문서로 조립 가능하게 만드는 것임.
+2026-07-07 구현 상태: `validate`, `prepare-notes`, `plan`, `status`, `export-report`를 구현함. `prepare-notes`와 `plan`은 `-store-dir`로 file-backed artifact store에 결과를 저장할 수 있음. `run`과 `reconcile`은 production DB adapter, scheduler, signer/prover/broadcaster 운영 정책이 필요하므로 아직 완전한 daemon 명령으로 구현하지 않음.
+
+1.5차 repo 완료 기준은 모든 command를 완전한 daemon으로 구현하는 것이 아니라, product workflow를 code와 문서로 조립 가능하게 만드는 것임.
 
 ### Phase 1.5.7 JS SDK handoff
 
@@ -679,6 +687,9 @@ JS SDK 팀이 직접 구현해야 할 항목은 이 repo에서 대신 구현하�
 - Reference payroll product scope와 workflow가 계획 문서에 고정됨.
 - user disclosure policy와 disclosure key registry contract가 Go SDK 또는 문서로 제공됨.
 - note preparation helper가 최소 analyzer/recommendation 수준으로 제공됨.
+- note preparation helper가 operation hint를 제공함.
+- reference CLI가 `validate`, `prepare-notes`, `plan`, `status`, `export-report`를 제공함.
+- file-backed reference artifact store가 제공됨.
 - JS SDK 팀과 지갑팀 handoff 문서가 추가됨.
 - downstream이 "core는 있는데 제품 레이어가 없어 못 쓰는" 상태를 피할 수 있는 최소 reference product 경로가 생김.
 
