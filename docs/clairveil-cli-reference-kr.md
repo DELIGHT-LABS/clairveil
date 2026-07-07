@@ -414,7 +414,26 @@ clairveil-payroll run -plan plan.json -state .clairveil-payroll/reservation-stat
 clairveil-payroll status -plan plan.json -out status.json
 clairveil-payroll status -state .clairveil-payroll/reservation-state.json -out state-status.json
 clairveil-payroll reconcile -state .clairveil-payroll/reservation-state.json -evidence evidence.json -out reconcile.json
-clairveil-payroll export-report -plan plan.json -out payroll-report.json
+clairveil-payroll export-report -plan plan.json -state .clairveil-payroll/reservation-state.json -out payroll-report.json
 ```
 
 `prepare-notes`와 `plan`은 `-store-dir .clairveil-payroll`을 받아 file-backed reference artifact store에도 결과를 저장할 수 있습니다. `run`과 `reconcile`은 durable reservation state 파일을 사용합니다. 상세 workflow는 [clairveil-reference-payroll-product-kr.md](clairveil-reference-payroll-product-kr.md)를 따릅니다.
+
+### clairveil-payrolld
+
+Reference payroll product의 scheduler/daemon 표면입니다.
+
+```bash
+clairveil-payrolld \
+  -state .clairveil-payroll/reservation-state.json \
+  -once \
+  -out .clairveil-payroll/payrolld-report.json
+```
+
+현재 mode는 `simulated`만 지원합니다. 이 mode는 실제 proof 생성과 chain broadcast를 수행하지 않고, durable reservation state 위에서 proof ready, submitted, reconciled 상태 전이를 시뮬레이션합니다. 운영팀이 repo만으로 payroll workflow를 끝까지 확인할 때 사용합니다.
+
+전체 demo는 아래처럼 실행합니다.
+
+```bash
+make reference-payroll-demo
+```

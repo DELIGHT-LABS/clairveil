@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | 1차 repo 구현 완료, 1차 안정화 및 1.5차 Reference Payroll Product repo 보강 완료, rehearsal/production integration 남음 |
+| 상태 | 1차 repo 구현 완료, 1차 안정화 및 1.5차 Reference Payroll Product repo 보강 완료, simulated daemon/demo 완료, live rehearsal/production integration 남음 |
 | 작성일 | 2026-07-03 |
 | 대상 브랜치 | `private/bulk-transfer` |
 | 대상 영역 | `x/privacy` client SDK, provider, benchmark, 이후 privacy protocol |
@@ -122,7 +122,9 @@ Payroll Control Plane은 최종 사용자 UI 자체가 아니라, 대량 지급�
 
 2026-07-07 추가 결정으로 1.5차를 `Reference Payroll Product`로 정의함. 이는 protocol 필수 요소는 아니지만 `clairveil-proverd`처럼 downstream adoption에 필요한 companion/reference product로 제공하는 것을 목표로 함. 샘플이더라도 대충 만든 demo가 아니라, 실제 클라이언트가 그대로 가져가거나 fork해 production product의 출발점으로 삼을 수 있는 품질을 지향함.
 
-2026-07-07 후속 구현으로 1.5차 repo 보강은 `validate`, `prepare-notes`, `plan`, `run`, `status`, `reconcile`, `export-report` CLI, file-backed reference artifact store, durable reservation state store, note preparation operation hint까지 확장됨. `run`은 plan을 durable reservation/operation state로 확정하고, `reconcile`은 evidence JSON으로 durable state를 갱신함. 실제 proof 생성과 chain broadcast worker wiring은 rehearsal 단계에서 검증함.
+2026-07-07 후속 구현으로 1.5차 repo 보강은 `validate`, `prepare-notes`, `plan`, `run`, `status`, `reconcile`, `export-report` CLI, file-backed reference artifact store, durable reservation state store, note preparation operation hint까지 확장됨. `run`은 plan을 durable reservation/operation state로 확정하고, `reconcile`은 evidence JSON으로 durable state를 갱신함.
+
+2026-07-07 추가 구현으로 `clairveil-payrolld` simulated reference daemon과 `make reference-payroll-demo`를 추가함. 이제 운영팀은 repo만으로 sample payroll input을 검증하고, note preparation을 확인하고, plan/reservation state를 만들고, daemon tick으로 `Reserved -> ProofReady -> Submitted -> ConfirmedSpent` 흐름을 시뮬레이션한 뒤 final report까지 볼 수 있음. 실제 proof 생성, chain broadcast, scanner evidence 수집을 자동으로 수행하는 live mode는 rehearsal 단계에서 연결함.
 
 | 단계 | 상태 | 구현 위치 |
 | --- | --- | --- |
@@ -132,7 +134,7 @@ Payroll Control Plane은 최종 사용자 UI 자체가 아니라, 대량 지급�
 | Phase 4. Multi-Message Transaction | 구현 및 localnet 검증 harness 완료 | `x/privacy/client/sdk/payroll/chunker.go`, `batch_broadcaster.go`, `sdk_broadcaster.go`, `x/privacy/client/sdk/provider/tx.go`, `x/privacy/client/cli/tx_transfer_batch.go`, `scripts/privacy-transfer-batch-localnet-bench.sh` |
 | Phase 5. Prover Scaling | 구현 및 pool load harness 완료 | `x/privacy/client/sdk/payroll/prover_pool.go`, `cmd/clairveil-proverload`, `scripts/privacy-proverd-scale-bench.sh` |
 | Phase 6. Capacity Simulation Benchmark | 시뮬레이션 및 readiness harness 완료 | `cmd/clairveil-bulktransferbench`, `scripts/privacy-bulk-transfer-bench.sh`, `scripts/privacy-bulk-readiness-check.sh`, `make privacy-bulk-readiness-check` |
-| Phase 1.5. Reference Payroll Product | repo 보강 완료, rehearsal/production integration 남음 | `cmd/clairveil-payroll`, `x/privacy/client/sdk/payroll`, handoff 문서 |
+| Phase 1.5. Reference Payroll Product | repo 보강 완료, simulated daemon/demo 완료, live integration 남음 | `cmd/clairveil-payroll`, `cmd/clairveil-payrolld`, `examples/reference-payroll`, `x/privacy/client/sdk/payroll`, handoff 문서 |
 | Phase 7. N-output Batch Circuit | 미구현 | 2차에서 `BatchJoinSplit32`로 진행 예정임 |
 
 ## 1차 계획
@@ -511,7 +513,7 @@ repo는 protocol과 SDK 기준 reference implementation, durable control-plane a
 
 - managed production DB 선택 시 PostgreSQL transaction lock, partial unique index, HMAC lookup key, field-level encryption 적용
 - `DurableFileStore` 또는 production DB adapter를 tenant별 운영 정책에 맞게 배포
-- proof/broadcast worker와 chain scanner를 `clairveil-payroll run`으로 생성된 durable state에 연결
+- live proof/broadcast worker와 chain scanner를 `clairveil-payroll run`으로 생성된 durable state에 연결
 - operator UI, alert, manual review flow 구현
 - 실제 1천건, 1만건, 10만건 rehearsal runbook 작성 및 실행
 - JS SDK/wallet storage와 note reservation 상태 계약의 conformance 확인
@@ -565,7 +567,7 @@ payroll import
 -> status/report export
 ```
 
-초기 산출물은 CLI/library 중심으로 둠. API server와 admin UI는 뒤 단계에서 붙일 수 있게 interface를 먼저 고정함.
+초기 산출물은 CLI/library/daemon 중심으로 둠. API server와 admin UI는 뒤 단계에서 붙일 수 있게 interface를 먼저 고정함.
 
 ### Phase 1.5.2 User disclosure policy model
 
@@ -652,11 +654,14 @@ clairveil-payroll run
 clairveil-payroll status
 clairveil-payroll reconcile
 clairveil-payroll export-report
+clairveil-payrolld
 ```
 
 2026-07-07 구현 상태: `validate`, `prepare-notes`, `plan`, `run`, `status`, `reconcile`, `export-report`를 구현함. `prepare-notes`와 `plan`은 `-store-dir`로 file-backed artifact store에 결과를 저장할 수 있음. `run`은 `-state` durable reservation state에 plan을 확정하며 재실행 idempotency를 제공함. `status`는 plan 또는 state 기준 집계를 제공함. `reconcile`은 evidence JSON을 받아 reservation/operation 상태를 갱신함.
 
-1.5차 repo 완료 기준은 proof/broadcast 실운영을 대신하는 것이 아니라, rehearsal 직전까지 필요한 durable control-plane workflow를 code와 문서로 조립 가능하게 만드는 것임.
+2026-07-07 추가 구현 상태: `clairveil-payrolld`를 추가함. 현재 mode는 `simulated`이며, durable reservation state 위에서 proof ready, submitted, reconcile 상태 전이를 시뮬레이션함. `scripts/reference-payroll-demo.sh`와 `make reference-payroll-demo`는 sample input으로 validate, prepare, plan, run, daemon tick, status, final report export를 한 번에 실행함.
+
+1.5차 repo 완료 기준은 live proof/broadcast 실운영을 대신하는 것이 아니라, 운영팀이 repo만으로 payroll product 상태 모델을 끝까지 체험하고, rehearsal 직전까지 필요한 durable control-plane workflow를 code와 문서로 조립 가능하게 만드는 것임.
 
 ### Phase 1.5.7 JS SDK handoff
 
@@ -689,6 +694,8 @@ JS SDK 팀이 직접 구현해야 할 항목은 이 repo에서 대신 구현하�
 - note preparation helper가 최소 analyzer/recommendation 수준으로 제공됨.
 - note preparation helper가 operation hint를 제공함.
 - reference CLI가 `validate`, `prepare-notes`, `plan`, `run`, `status`, `reconcile`, `export-report`를 제공함.
+- `clairveil-payrolld`가 simulated scheduler/daemon tick을 제공함.
+- `make reference-payroll-demo`가 repo-local end-to-end payroll demo를 제공함.
 - file-backed reference artifact store가 제공됨.
 - durable reservation state store가 제공됨.
 - JS SDK 팀과 지갑팀 handoff 문서가 추가됨.

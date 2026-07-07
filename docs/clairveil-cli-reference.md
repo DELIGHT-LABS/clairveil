@@ -416,7 +416,26 @@ clairveil-payroll run -plan plan.json -state .clairveil-payroll/reservation-stat
 clairveil-payroll status -plan plan.json -out status.json
 clairveil-payroll status -state .clairveil-payroll/reservation-state.json -out state-status.json
 clairveil-payroll reconcile -state .clairveil-payroll/reservation-state.json -evidence evidence.json -out reconcile.json
-clairveil-payroll export-report -plan plan.json -out payroll-report.json
+clairveil-payroll export-report -plan plan.json -state .clairveil-payroll/reservation-state.json -out payroll-report.json
 ```
 
 `prepare-notes` and `plan` also accept `-store-dir .clairveil-payroll` to write results into the file-backed reference artifact store. `run` and `reconcile` use the durable reservation state file. For the detailed workflow, see [clairveil-reference-payroll-product-kr.md](clairveil-reference-payroll-product-kr.md).
+
+### clairveil-payrolld
+
+Runs the scheduler/daemon surface for the reference payroll product.
+
+```bash
+clairveil-payrolld \
+  -state .clairveil-payroll/reservation-state.json \
+  -once \
+  -out .clairveil-payroll/payrolld-report.json
+```
+
+The only current mode is `simulated`. It does not generate live proofs or broadcast chain transactions. Instead, it simulates proof-ready, submitted, and reconciled transitions against the durable reservation state so operators can exercise the full payroll workflow from this repo alone.
+
+Run the complete demo with:
+
+```bash
+make reference-payroll-demo
+```

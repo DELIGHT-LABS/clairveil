@@ -25,6 +25,8 @@ Reference Payroll Product는 core protocol 필수 요소가 아님. 그러나 `c
 | note preparation analyzer | `x/privacy/client/sdk/payroll/note_preparation.go` |
 | file-backed reference artifact store | `x/privacy/client/sdk/payroll/file_artifact_store.go` |
 | reference payroll CLI | `cmd/clairveil-payroll` |
+| reference payroll daemon | `cmd/clairveil-payrolld`, `x/privacy/client/sdk/payroll/reference_daemon.go` |
+| repo-local demo product | `examples/reference-payroll/payroll-demo.json`, `scripts/reference-payroll-demo.sh` |
 | proof/broadcast/reconcile worker | `x/privacy/client/sdk/payroll/proof_queue.go`, `broadcast_queue.go`, `batch_broadcaster.go`, `reconcile_worker.go` |
 | multi-message chunking | `x/privacy/client/sdk/payroll/chunker.go` |
 | prover pool | `x/privacy/client/sdk/payroll/prover_pool.go` |
@@ -133,7 +135,11 @@ reconcile
 export-report
 ```
 
-`run`과 `reconcile`은 rehearsal 직전 control-plane daemon 표면을 제공함. 즉 plan 확정, durable reservation/operation state 저장, evidence 기반 reconcile을 처리함. 실제 proof 생성과 chain broadcast는 기존 `ProofWorker`, `BatchBroadcastWorker`, provider/prover 설정을 연결하는 운영 단계이며, rehearsal에서 wiring을 검증해야 함.
+`run`과 `reconcile`은 durable control-plane 표면을 제공함. 즉 plan 확정, durable reservation/operation state 저장, evidence 기반 reconcile을 처리함.
+
+`clairveil-payrolld`는 같은 durable state를 읽어 repo 안에서 운영 흐름을 끝까지 체험할 수 있게 하는 reference daemon임. 현재 제공 mode는 `simulated`이며, 실제 chain proof와 broadcast 대신 deterministic simulated proof/tx/evidence를 생성해 `Reserved -> Proving -> ProofReady -> Submitted -> ConfirmedSpent` 흐름을 검증함. 따라서 운영팀은 별도 제품 repo 없이 payroll run의 상태 전이와 report export를 바로 확인할 수 있음.
+
+실제 chain proof 생성, tx broadcast, scanner evidence 수집을 자동으로 수행하는 live mode는 rehearsal/production integration 단계에서 기존 `ProofWorker`, `BatchBroadcastWorker`, provider/prover 설정을 연결해 추가해야 함.
 
 ### 입력 JSON
 
@@ -305,7 +311,94 @@ clairveil-payroll export-report \
   -out payroll-report.json
 ```
 
+durable reservation state를 함께 넘기면 state에 저장된 operation 결과를 plan에 반영해서 report를 출력함.
+
+```bash
+clairveil-payroll export-report \
+  -plan payroll-plan.json \
+  -state .clairveil-payroll/reservation-state.json \
+  -out payroll-report.json
+```
+
 출력은 plan summary와 item별 `item_id`, `employee_id`, `operation_id`, `chunk_id`, `status`, `amount`, `denom`, `failure_reason`, `retry_count`를 포함함.
+
+## Reference Payroll Daemon
+
+`clairveil-payrolld`는 reference payroll product의 scheduler/daemon 표면임.
+
+```bash
+clairveil-payrolld \
+  -state .clairveil-payroll/reservation-state.json \
+  -once \
+  -out .clairveil-payroll/payrolld-report.json
+```
+
+주요 flag는 다음과 같음.
+
+| flag | 의미 |
+| --- | --- |
+| `-state` | `clairveil-payroll run`이 만든 durable reservation state JSON 경로 |
+| `-mode` | 현재는 `simulated`만 지원함 |
+| `-once` | scheduler tick을 한 번 실행하고 종료함 |
+| `-interval` | `-once=false`일 때 반복 실행 주기 |
+| `-lease-owner` | reservation lease owner 값 |
+| `-lease-ttl` | worker lease TTL |
+| `-max-operations` | tick당 처리할 operation 수. `0`이면 제한 없음 |
+| `-out` | `-once` report JSON 경로. 비우면 stdout 출력 |
+
+`simulated` mode는 product rehearsal용임. 이 mode는 실제 proof를 만들거나 chain에 tx를 보내지 않음. 대신 다음을 repo-local state에서 실행함.
+
+```text
+Reserved operation 선택
+-> lease 획득
+-> Proving 전환
+-> simulated proof artifact expected value 저장
+-> ProofReady 전환
+-> simulated tx metadata 저장
+-> Submitted 전환
+-> expected value가 일치하는 simulated evidence로 reconcile
+-> ConfirmedSpent / Succeeded 전환
+```
+
+이 daemon 덕분에 운영팀은 production DB, scheduler, scanner, admin UI가 아직 없어도 payroll product의 상태 모델과 최종 report를 끝까지 시험할 수 있음.
+
+## Repo-local Demo Product
+
+운영팀이 바로 실행할 수 있는 최소 demo product는 아래 target으로 제공함.
+
+```bash
+make reference-payroll-demo
+```
+
+내부적으로 아래 순서를 실행함.
+
+```text
+clairveil-payroll validate
+clairveil-payroll prepare-notes
+clairveil-payroll plan
+clairveil-payroll run
+clairveil-payroll status
+clairveil-payrolld -once
+clairveil-payroll status
+clairveil-payroll export-report -state
+```
+
+기본 입력은 `examples/reference-payroll/payroll-demo.json`이고, 출력은 `tmp/reference-payroll-demo/` 아래에 생성됨.
+
+주요 산출물은 다음과 같음.
+
+| 파일 | 의미 |
+| --- | --- |
+| `validation.json` | input validation과 note preparation summary |
+| `note-preparation.json` | 준비된 note, 부족한 dummy/split/merge hint |
+| `plan.json` | draft payroll plan |
+| `confirmed-plan.json` | durable state에 reservation을 확정한 plan |
+| `reservation-state.json` | reservation/operation durable state |
+| `payrolld-report.json` | daemon tick 처리 report |
+| `status-after-daemon.json` | daemon 실행 후 state summary |
+| `final-report.json` | 기업 고객/운영자용 item status report |
+
+성공 기준은 `status-after-daemon.json`에 모든 reservation이 `ConfirmedSpent`, 모든 operation이 `Succeeded`로 집계되고, `final-report.json`의 payroll status가 `Confirmed`인 것임.
 
 ## File Artifact Store
 
@@ -348,6 +441,8 @@ Reference Payroll Product 1.5차의 repo 기준 완료 조건은 다음과 같�
 - note preparation analyzer가 제공됨.
 - file-backed reference artifact store가 제공됨.
 - durable reservation state store가 제공됨.
+- `clairveil-payrolld` simulated reference daemon이 제공됨.
+- `make reference-payroll-demo`로 repo-local end-to-end payroll demo를 실행할 수 있음.
 - `clairveil-payroll validate`, `prepare-notes`, `plan`, `run`, `status`, `reconcile`, `export-report` 명령이 제공됨.
 - JS SDK handoff 문서가 제공됨.
 - wallet handoff 문서가 제공됨.
@@ -358,7 +453,7 @@ Reference Payroll Product 1.5차의 repo 기준 완료 조건은 다음과 같�
 이 repo가 직접 완료하지 않는 작업은 다음과 같음.
 
 - managed production DB deployment와 tenant별 운영 schema hardening
-- proof/broadcast worker wiring rehearsal
+- live proof/broadcast/scanner mode wiring rehearsal
 - admin UI
 - JS SDK 구현
 - 웹/모바일 지갑 구현

@@ -28,7 +28,7 @@ make release-pack-verify
 | Command | Meaning |
 | --- | --- |
 | `make test` | run `go test ./...` |
-| `make build` | build `clairveild`, `clairveil-setup`, `clairveil-verify`, `clairveil-proverd`, `clairveil-payroll`, and benchmark/load tools (`clairveil-benchreport`, `clairveil-proverload`, `clairveil-localnetload`, `clairveil-userlatency`, `clairveil-bulktransferbench`) |
+| `make build` | build `clairveild`, `clairveil-setup`, `clairveil-verify`, `clairveil-proverd`, `clairveil-payroll`, `clairveil-payrolld`, and benchmark/load tools (`clairveil-benchreport`, `clairveil-proverload`, `clairveil-localnetload`, `clairveil-userlatency`, `clairveil-bulktransferbench`) |
 | `make install` | run `make build`, then copy Clairveil binaries to `GOBIN` or `GOPATH/bin` |
 | `make init` | run `make install`, then initialize the default local chain home for `clairveild start` |
 | `make proto` | regenerate privacy protobuf/gateway Go files |
@@ -37,6 +37,7 @@ make release-pack-verify
 | `make vulncheck` | run govulncheck policy gate |
 | `make localnet-smoke` | briefly verify that the reference daemon can start from genesis |
 | `make privacy-e2e-smoke` | validate full deposit, transfer, disclosure, and withdraw flow |
+| `make reference-payroll-demo` | validate the reference payroll product flow: validate, prepare, plan, reserve, simulated daemon, final report |
 | `make dapp-local` | start a local Clairveil node, prover, and browser DApp stack for manual testing |
 | `make release-check` | `ci`, `vulncheck`, `localnet-smoke`, `privacy-e2e-smoke`, and bulk readiness with localnet transfer-batch smoke |
 | `make release-pack` | create downstream handoff archive and sha256 |
@@ -229,6 +230,26 @@ make privacy-e2e-smoke
 ```
 
 If command strings changed heavily, manually follow the walkthrough once in a shell.
+
+## 7.1 Reference Payroll Demo
+
+```bash
+make reference-payroll-demo
+```
+
+This target validates the reference payroll product flow using repo-local files only. It does not start a local chain.
+
+Validation scope:
+
+1. sample payroll input validation
+2. note preparation analysis
+3. payroll plan creation
+4. plan confirmation into durable reservation state
+5. one `clairveil-payrolld -once` simulated scheduler tick
+6. reservation/operation status reload
+7. final payroll report export
+
+The default outputs are written under `tmp/reference-payroll-demo/`. A successful run has all reservations in `ConfirmedSpent`, all operations in `Succeeded`, and the final payroll report status in `Confirmed`.
 
 ## 8. Release Pack Verification
 

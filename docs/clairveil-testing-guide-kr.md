@@ -26,7 +26,7 @@ make release-pack-verify
 | 명령 | 의미 |
 | --- | --- |
 | `make test` | `go test ./...` 실행 |
-| `make build` | `clairveild`, `clairveil-setup`, `clairveil-verify`, `clairveil-proverd`, `clairveil-payroll`와 benchmark/load tool(`clairveil-benchreport`, `clairveil-proverload`, `clairveil-localnetload`, `clairveil-userlatency`, `clairveil-bulktransferbench`) build |
+| `make build` | `clairveild`, `clairveil-setup`, `clairveil-verify`, `clairveil-proverd`, `clairveil-payroll`, `clairveil-payrolld`와 benchmark/load tool(`clairveil-benchreport`, `clairveil-proverload`, `clairveil-localnetload`, `clairveil-userlatency`, `clairveil-bulktransferbench`) build |
 | `make install` | `make build` 후 Clairveil binary를 `GOBIN` 또는 `GOPATH/bin`으로 복사 |
 | `make init` | `make install` 후 기본 local chain home을 초기화해 `clairveild start` 준비 |
 | `make proto` | privacy protobuf/gateway Go file 재생성 |
@@ -35,6 +35,7 @@ make release-pack-verify
 | `make vulncheck` | govulncheck policy gate 실행 |
 | `make localnet-smoke` | reference daemon이 genesis부터 start 가능한지 짧게 검증 |
 | `make privacy-e2e-smoke` | deposit, transfer, disclosure, withdraw 전체 flow 검증 |
+| `make reference-payroll-demo` | reference payroll product의 validate, prepare, plan, reserve, simulated daemon, final report 흐름 검증 |
 | `make dapp-local` | 수동 테스트용 local Clairveil node, prover, browser DApp stack 실행 |
 | `make release-check` | `ci`, `vulncheck`, `localnet-smoke`, `privacy-e2e-smoke`, localnet transfer-batch smoke를 포함한 bulk readiness 묶음 |
 | `make release-pack` | downstream handoff archive와 sha256 생성 |
@@ -227,6 +228,26 @@ make privacy-e2e-smoke
 ```
 
 명령 문자열 자체를 많이 바꿨다면 manual walkthrough도 한 번 실제 shell에서 따라가야 합니다.
+
+## 7.1 Reference Payroll Demo
+
+```bash
+make reference-payroll-demo
+```
+
+이 target은 local chain을 띄우지 않고 repo-local 파일만으로 reference payroll product 흐름을 검증합니다.
+
+검증 범위:
+
+1. sample payroll input validation
+2. note preparation analysis
+3. payroll plan 생성
+4. durable reservation state에 plan 확정
+5. `clairveil-payrolld -once` simulated scheduler tick 실행
+6. reservation/operation status 재조회
+7. final payroll report export
+
+기본 출력은 `tmp/reference-payroll-demo/` 아래에 생성됩니다. 성공 기준은 `status-after-daemon.json`의 모든 reservation이 `ConfirmedSpent`, 모든 operation이 `Succeeded`이고, `final-report.json`의 payroll status가 `Confirmed`인 것입니다.
 
 ## 8. Release pack 검증
 

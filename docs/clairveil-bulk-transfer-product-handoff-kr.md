@@ -4,7 +4,7 @@
 
 이 문서는 `private/bulk-transfer` 브랜치의 1차 repo 구현을 제품/운영 구현으로 이어가기 위한 전달 문서임.
 
-repo에는 note reservation, payroll control plane, proof/broadcast/reconcile queue, multi-message tx, prover pool, benchmark/readiness harness, reference payroll CLI, file-backed reference artifact store, durable reservation state store의 reference implementation이 들어 있음. 제품/운영 영역에서는 managed production DB 배포 방식, tenant 운영 정책, operator UI, 실제 10만건 rehearsal을 이어서 결정해야 함.
+repo에는 note reservation, payroll control plane, proof/broadcast/reconcile queue, multi-message tx, prover pool, benchmark/readiness harness, reference payroll CLI, simulated reference payroll daemon, repo-local demo product, file-backed reference artifact store, durable reservation state store의 reference implementation이 들어 있음. 제품/운영 영역에서는 managed production DB 배포 방식, tenant 운영 정책, live proof/broadcast/scanner mode, operator UI, 실제 10만건 rehearsal을 이어서 결정해야 함.
 
 ## Repo에서 제공하는 것
 
@@ -13,6 +13,8 @@ repo에는 note reservation, payroll control plane, proof/broadcast/reconcile qu
 - 대량 전송 전략/시뮬레이션: `docs/clairveil-bulk-transfer-strategy-kr.md`, `docs/clairveil-bulk-transfer-time-simulation-kr.md`
 - Go reference packages: `x/privacy/client/sdk/reservation`, `x/privacy/client/sdk/payroll`
 - Reference payroll CLI: `clairveil-payroll validate`, `prepare-notes`, `plan`, `run`, `status`, `reconcile`, `export-report`
+- Reference payroll daemon: `clairveil-payrolld -mode simulated`
+- Repo-local demo product: `make reference-payroll-demo`
 - File-backed reference artifact store: `x/privacy/client/sdk/payroll.FileArtifactStore`
 - Durable reservation state store: `x/privacy/client/sdk/reservation.DurableFileStore`
 - 검증 entrypoint: `make privacy-bulk-readiness-check`
@@ -45,13 +47,16 @@ repo는 `reservation.Store` contract를 만족하는 `DurableFileStore` referenc
 
 ### 2. Payroll Scheduler / Worker Wiring
 
-repo는 `clairveil-payroll run`으로 plan을 durable reservation/operation state에 확정하고, `clairveil-payroll reconcile`로 evidence 기반 상태 갱신을 수행할 수 있음. 제품 환경에서는 이 state를 proof worker, broadcast worker, chain scanner와 연결해야 함.
+repo는 `clairveil-payroll run`으로 plan을 durable reservation/operation state에 확정하고, `clairveil-payroll reconcile`로 evidence 기반 상태 갱신을 수행할 수 있음. 또한 `clairveil-payrolld -mode simulated`로 같은 state 위에서 proof ready, submitted, reconciled 전이를 repo-local로 체험할 수 있음.
+
+제품 환경에서는 이 state를 live proof worker, broadcast worker, chain scanner와 연결해야 함. 즉 simulated daemon은 운영 flow와 report를 검증하는 reference product이고, 실제 chain 제출 daemon은 같은 상태 계약을 live provider/prover/scanner로 대체하는 작업임.
 
 필수 구현 내용은 다음과 같음.
 
 - 월별 payroll upload/import flow
 - tenant별 `PayrollRun` 생성과 run locking
 - run 확정 시 note reservation 생성. reference CLI에서는 `clairveil-payroll run -plan ... -state ...`가 담당함.
+- simulated 운영 체험. reference daemon에서는 `clairveil-payrolld -state ... -once`가 담당함.
 - proof worker queue와 broadcast worker queue 운영
 - proof worker 결과 저장소 구현: repo의 `ProofResultSink` 역할처럼 proof/message/payload를 durable queue 또는 DB에 먼저 저장하고, 저장 성공 후에만 `ProofReady`로 전환해야 함.
 - operation-level idempotency: `operation_id`, `sign_doc_hash`, `tx_bytes_hash`, `tx_hash`, `account_sequence`
@@ -130,9 +135,10 @@ JS SDK가 이미 `docs/clairveil-note-reservation-design-kr.md`를 기준으로 
 ## 전달 체크리스트
 
 - 제품팀은 `make privacy-bulk-readiness-check` 결과를 확인함.
+- 운영팀은 `make reference-payroll-demo`로 repo-local payroll product flow를 먼저 실행함.
 - release 전에는 `RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check`로 multi-message transfer localnet 경로를 확인함.
 - prover pool scale claim을 하려면 `RUN_PROVER_SCALE=1 PROVERD_URLS=url1,url2 make privacy-bulk-readiness-check` 결과를 별도 산출물로 남김. scale benchmark는 기본적으로 preflight 실패 endpoint를 제외하고 `unhealthy_endpoint_count`를 기록하지만, public claim 수치로 쓰려면 `unhealthy_endpoint_count=0`이어야 함.
-- backend 팀은 `clairveil-payroll run -state ...`와 `clairveil-payroll reconcile -state ...` durable control-plane workflow를 확인하고, managed DB가 필요하면 같은 `reservation.Store` contract로 이전 계획을 작성함.
+- backend 팀은 `clairveil-payroll run -state ...`, `clairveil-payrolld -state ... -once`, `clairveil-payroll reconcile -state ...` durable control-plane workflow를 확인하고, managed DB가 필요하면 같은 `reservation.Store` contract로 이전 계획을 작성함.
 - JS SDK 팀은 note reservation conformance fixture를 검증함.
 - 운영팀은 prover pool endpoint 구성과 telemetry 수집 방식을 정함.
 - 제품팀은 1천건 rehearsal runbook을 먼저 실행함.
