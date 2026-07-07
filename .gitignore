@@ -38,6 +38,9 @@ yarn-error.log*
 # Local commit notes
 docs/commit-notes/
 
+# Local temporary docs
+tmpdocs/
+
 # Environment files
 .env
 .env.*

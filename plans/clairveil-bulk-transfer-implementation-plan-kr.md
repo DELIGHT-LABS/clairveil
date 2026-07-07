@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | 1차 repo 구현 및 후속 검증 harness 완료, 제품/운영 구현 분리 필요 |
+| 상태 | 1차 repo 구현 및 후속 검증 harness 완료, 상품화 보강 TODO 기록됨 |
 | 작성일 | 2026-07-03 |
 | 대상 브랜치 | `private/bulk-transfer` |
 | 대상 영역 | `x/privacy` client SDK, provider, benchmark, 이후 privacy protocol |
@@ -113,6 +113,8 @@ Payroll Control Plane은 최종 사용자 UI 자체가 아니라, 대량 지급�
 ## 현재 구현 상태
 
 2026-07-03 기준 1차 범위는 repo 안에서 reusable SDK/reference implementation, localnet validation harness, prover pool load harness, readiness check 형태로 구현되어 있음. Production DB adapter, 운영 scheduler service, 실제 10만건 production rehearsal 결과는 아직 이 repo에 포함하지 않음.
+
+2026-07-07 검토 기준으로, 현재 1차 구현은 상품형 payroll UX 자체가 아니라 상품화를 위한 하부 레일로 봄. 기존 `MsgTransfer`와 기존 transfer UX는 유지하면서, 대량 지급을 plan/reserve/prove/broadcast/reconcile/report 흐름으로 운영할 수 있는 기반을 만든 상태임. 실제 상품화에는 user disclosure 정책 관리, disclosure public key 관리, note preparation 운영 helper, production DB/worker/UI가 추가로 필요함.
 
 | 단계 | 상태 | 구현 위치 |
 | --- | --- | --- |
@@ -506,6 +508,137 @@ repo는 protocol과 SDK 기준 reference implementation, local harness, syntheti
 - JS SDK/wallet storage와 note reservation 상태 계약의 conformance 확인
 
 이 항목들은 repo 내부 code만으로 완료되는 작업이 아니며, 제품팀 전달 문서에서 별도 owner와 산출물을 정의해야 함.
+
+## 상품화 보강 TODO
+
+2026-07-07 검토에서 현재 1차 구현만으로는 바로 상품형 payroll 대량전송으로 보기 어렵다는 점을 기록함. 현재 repo 구현은 안전한 대량전송 실행 기반이며, 실제 고객-facing 제품에는 아래 보강 작업이 필요함.
+
+### 1. User disclosure 정책 모델 보강
+
+현재 `transfer-batch` CLI는 capacity/readiness 검증을 위해 `all-private` / `none` 중심으로 제한되어 있음. 이 제한은 mandatory audit disclosure를 끄는 의미가 아니라, 사용자 선택 공개를 제품 복잡도에서 분리해 multi-message 제출, note 충돌, gas/size, proof 병목 검증에 집중하기 위한 것임.
+
+상품형 payroll에서는 회사별 또는 지급건별 user disclosure 정책이 필요할 수 있음. 따라서 payroll input, payroll plan item, operation record에 다음 정책 필드를 추가하거나 연결해야 함.
+
+- `user_privacy_policy`
+- `user_disclosure_mode`
+- `user_disclosure_target_pubkey`
+- `expected_user_disclosure_digest`
+- `expected_audit_disclosure_digest`
+- `expected_self_view_disclosure_digest`
+
+이 보강이 있어야 payroll report와 reconcile worker가 "어떤 지급건이 어떤 공개 정책으로 생성되었는지"와 "tx/event의 disclosure digest가 의도한 operation과 일치하는지"를 item 단위로 판정할 수 있음.
+
+### 2. Disclosure public key 관리
+
+`recipient-encrypted` user disclosure를 payroll 제품에서 지원하려면 recipient 또는 disclosure recipient의 public key를 안정적으로 관리해야 함. 단순히 shielded address만 저장하는 것으로는 충분하지 않음.
+
+필요한 기능은 다음과 같음.
+
+- payroll import 시 disclosure public key를 함께 입력하거나 조회함.
+- employee, company, auditor, external recipient 단위 disclosure key registry를 둠.
+- key 누락, key rotation, 잘못된 key format, 만료된 key를 plan 단계에서 검출함.
+- key id 또는 key version을 operation expected value와 함께 저장함.
+- disclosure payload 원문은 민감정보로 취급하고, report/telemetry에는 digest 또는 축약값만 남김.
+
+이 작업은 JS SDK, wallet, payroll backend가 함께 맞춰야 하는 제품 계약임. repo 안에서는 우선 Go reference type과 conformance fixture 확장으로 계약을 고정하고, production registry와 UI는 제품 repo에서 구현하는 방향이 적절함.
+
+### 3. Note preparation helper
+
+현재 multi-message `transfer-batch`는 준비된 spendable note가 이미 있다는 가정이 강함. recursive split/merge planner를 batch CLI 안에서 자동 실행하지 않는 이유는, split/merge가 중간 tx, block wait, rescan, reservation, replan, failure recovery를 동반하기 때문임. 이 로직은 단일 CLI 명령보다 payroll control plane 또는 scheduler가 담당하는 편이 안전함.
+
+상품형 payroll에는 별도의 note preparation 단계가 필요함.
+
+```text
+treasury note scan
+-> payroll 총액과 item별 amount 계산
+-> 필요한 exact/pairable note 및 zero dummy note 수량 산출
+-> 큰 treasury note를 shard note로 split
+-> 지나치게 작은 note는 merge
+-> 준비 tx 포함 대기
+-> wallet rescan 및 nullifier 상태 갱신
+-> 준비된 note를 payroll plan에 reservation
+```
+
+예상 산출물은 다음과 같음.
+
+- `payroll prepare-notes` 또는 backend API
+- treasury note inventory analyzer
+- dummy note 부족 감지 및 생성 helper
+- shard split plan generator
+- merge plan generator
+- preparation tx retry/reconcile flow
+- preparation 완료 후 payroll run 가능 여부 report
+
+이 helper가 없으면 사용자는 `transfer-batch` 또는 payroll run 단계에서 "batch item needs note preparation before batching" 류의 실패를 자주 만나게 됨. 상품 UX에서는 실행 직전에 실패시키기보다 plan/prepare 단계에서 필요한 note 상태를 만들어두는 것이 맞음.
+
+### 4. Production worker와 DB adapter
+
+현재 reservation/payroll 구현은 Go SDK/reference implementation과 in-memory store를 포함함. 상품화에는 durable DB와 worker orchestration이 필요함.
+
+필요한 작업은 다음과 같음.
+
+- PostgreSQL 또는 제품 DB 기반 reservation store adapter
+- `owner_key_id + nullifier_lookup_key` active unique constraint
+- `FOR UPDATE SKIP LOCKED` 또는 동등한 note selection lock
+- compare-and-set 상태 전이
+- worker lease/heartbeat persistence
+- proof artifact store
+- broadcast attempt store
+- operation evidence store
+- retry/reconcile scheduler
+- manual review queue
+
+이 작업은 core protocol 변경이 아니라 제품 운영 인프라에 가까움. 다만 repo의 `x/privacy/client/sdk/reservation.Store`와 `x/privacy/client/sdk/payroll` interface 의미를 그대로 지켜야 함.
+
+### 5. Product UX와 report
+
+고객-facing payroll 제품은 단순히 transfer를 많이 보내는 기능이 아니라, 운영자가 job 상태를 이해하고 실패를 복구할 수 있는 도구여야 함.
+
+필요한 UX는 다음과 같음.
+
+- payroll CSV/HR import
+- recipient shielded address와 disclosure key 검증
+- payroll plan preview
+- note preparation 필요 여부 표시
+- estimated proof time, tx envelope count, chunk count 표시
+- run start/stop/retry
+- item별 `Planned`, `Reserved`, `Proving`, `ProofReady`, `Submitted`, `Unknown`, `Succeeded`, `Failed`, `ManualReview` 상태 표시
+- 실패 원인별 필터와 retry
+- 기업 고객용 완료 report export
+- 운영자 manual review flow
+
+이 UX가 있어야 1차 repo 구현이 실제 상품으로 연결됨.
+
+### 6. JS SDK / wallet 연동
+
+JS SDK와 wallet은 Go reference를 그대로 복사하지 않아도 되지만, 상태 의미와 fixture는 맞춰야 함.
+
+필수 작업은 다음과 같음.
+
+- note reservation status enum 반영
+- reserved note를 일반 transfer, split, merge 후보에서 제외
+- batch nullifier check 사용
+- disclosure public key lookup/import flow
+- payroll item별 expected evidence 저장 또는 backend와 동기화
+- proof service 또는 browser prover 연동
+- wallet rescan 후 prepared note inventory 갱신
+- conformance fixture 검증을 CI에 포함
+
+이 작업이 없으면 backend가 note를 reserved로 봐도 wallet이 같은 note를 일반 transfer에 써버리는 식의 제품 장애가 발생할 수 있음.
+
+### 7. 상품화 전 의사결정 필요 항목
+
+아래는 구현 전에 제품/운영/보안이 함께 결정해야 함.
+
+- payroll product에서 기본 user disclosure 정책을 `all-private`로 둘지, 회사별 설정으로 둘지 결정함.
+- recipient-encrypted disclosure를 employee별로 요구할지, 회사/auditor 단위 recipient로 요구할지 결정함.
+- disclosure public key registry의 owner를 wallet, payroll backend, company admin 중 어디에 둘지 결정함.
+- note preparation을 자동으로 실행할지, operator approval 후 실행할지 결정함.
+- preparation tx 수수료와 relayer 사용 여부를 결정함.
+- failed item retry를 자동으로 할지, 금액/recipient 변경 가능성이 있으면 manual approval을 요구할지 결정함.
+- manual review SLA와 운영자 권한 모델을 결정함.
+
+이 항목들이 정리되어야 1차 구현을 고객-facing payroll 제품으로 안전하게 끌어올릴 수 있음.
 
 ## 1차 산출물 요약
 
