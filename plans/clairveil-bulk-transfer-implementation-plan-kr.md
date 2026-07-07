@@ -4,11 +4,12 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | 1차 repo 구현 및 후속 검증 harness 완료, 상품화 보강 TODO 기록됨 |
+| 상태 | 1차 repo 구현 완료, 1차 안정화 및 1.5차 Reference Payroll Product 진행 |
 | 작성일 | 2026-07-03 |
 | 대상 브랜치 | `private/bulk-transfer` |
 | 대상 영역 | `x/privacy` client SDK, provider, benchmark, 이후 privacy protocol |
 | 1차 범위 | Note Reservation, Payroll Control Plane, Proof/Broadcast/Reconcile Queue, Multi-Message Tx, Prover Scaling, Capacity Simulation Benchmark |
+| 1.5차 범위 | Reference Payroll Product, 상품화 보강, JS SDK/지갑 handoff |
 | 2차 범위 | N-output batch circuit |
 | 2차 권장 N | `N=32` |
 | 제외 범위 | Payroll Merkle Distribution, protocol-level reservation, production DB implementation, production scheduler service |
@@ -116,6 +117,8 @@ Payroll Control Plane은 최종 사용자 UI 자체가 아니라, 대량 지급�
 
 2026-07-07 검토 기준으로, 현재 1차 구현은 상품형 payroll UX 자체가 아니라 상품화를 위한 하부 레일로 봄. 기존 `MsgTransfer`와 기존 transfer UX는 유지하면서, 대량 지급을 plan/reserve/prove/broadcast/reconcile/report 흐름으로 운영할 수 있는 기반을 만든 상태임. 실제 상품화에는 user disclosure 정책 관리, disclosure public key 관리, note preparation 운영 helper, production DB/worker/UI가 추가로 필요함.
 
+2026-07-07 추가 결정으로 1.5차를 `Reference Payroll Product`로 정의함. 이는 protocol 필수 요소는 아니지만 `clairveil-proverd`처럼 downstream adoption에 필요한 companion/reference product로 제공하는 것을 목표로 함. 샘플이더라도 대충 만든 demo가 아니라, 실제 클라이언트가 그대로 가져가거나 fork해 production product의 출발점으로 삼을 수 있는 품질을 지향함.
+
 | 단계 | 상태 | 구현 위치 |
 | --- | --- | --- |
 | Phase 1. Note Reservation | 구현 완료 | `x/privacy/client/sdk/reservation`, `x/privacy/client/sdk/conformance/testdata/privacy_note_reservation_contract.json` |
@@ -124,6 +127,7 @@ Payroll Control Plane은 최종 사용자 UI 자체가 아니라, 대량 지급�
 | Phase 4. Multi-Message Transaction | 구현 및 localnet 검증 harness 완료 | `x/privacy/client/sdk/payroll/chunker.go`, `batch_broadcaster.go`, `sdk_broadcaster.go`, `x/privacy/client/sdk/provider/tx.go`, `x/privacy/client/cli/tx_transfer_batch.go`, `scripts/privacy-transfer-batch-localnet-bench.sh` |
 | Phase 5. Prover Scaling | 구현 및 pool load harness 완료 | `x/privacy/client/sdk/payroll/prover_pool.go`, `cmd/clairveil-proverload`, `scripts/privacy-proverd-scale-bench.sh` |
 | Phase 6. Capacity Simulation Benchmark | 시뮬레이션 및 readiness harness 완료 | `cmd/clairveil-bulktransferbench`, `scripts/privacy-bulk-transfer-bench.sh`, `scripts/privacy-bulk-readiness-check.sh`, `make privacy-bulk-readiness-check` |
+| Phase 1.5. Reference Payroll Product | 진행 예정 | reference payroll product SDK/helper, CLI/service 후보, handoff 문서 |
 | Phase 7. N-output Batch Circuit | 미구현 | 2차에서 `BatchJoinSplit32`로 진행 예정임 |
 
 ## 1차 계획
@@ -508,6 +512,172 @@ repo는 protocol과 SDK 기준 reference implementation, local harness, syntheti
 - JS SDK/wallet storage와 note reservation 상태 계약의 conformance 확인
 
 이 항목들은 repo 내부 code만으로 완료되는 작업이 아니며, 제품팀 전달 문서에서 별도 owner와 산출물을 정의해야 함.
+
+## 1.5차 Reference Payroll Product 계획
+
+1.5차의 목표는 repo 사용자가 core module만 보고 제품 레이어 부재 때문에 대량전송을 못 쓰는 일을 줄이는 것임. 이 레이어는 `clairveil-proverd`와 같은 companion product 성격임. Core protocol에 필수는 아니지만, web/mobile/backend/downstream이 실제 product workflow를 붙일 때 기준점이 됨.
+
+### 원칙
+
+- 샘플 제품이지만 production reference 품질로 작성함.
+- 기존 `MsgTransfer`, 기존 circuit, 기존 keeper semantics를 유지함.
+- 1.5차에서는 JS SDK와 지갑 구현을 직접 하지 않음.
+- JS SDK 팀과 지갑팀이 해야 할 작업은 handoff 문서, fixture, schema, conformance 기준으로 제공함.
+- reference product는 privacy-sensitive data를 다루므로 기본 logging, report, storage 정책을 보수적으로 둠.
+- note preparation, user disclosure, durable worker, status/report는 실제 상품화에 필요한 최소 레이어로 취급함.
+
+### Phase 1.0 안정화
+
+목표는 이미 구현된 1차 foundation이 흔들리지 않도록 검증과 경계 조건을 보강하는 것임.
+
+작업 항목은 다음과 같음.
+
+- reservation/payroll/prover/bulk readiness test를 다시 실행함.
+- 기존 단건 transfer UX가 bulk 구현으로 바뀌지 않았음을 문서화함.
+- `transfer-batch`가 readiness/capacity command라는 제한을 명확히 유지함.
+- failure invariant, duplicate nullifier, lease token, reconcile evidence mismatch test가 계속 통과하는지 확인함.
+- 문제가 발견되면 작은 fix commit으로 분리함.
+
+산출물은 다음과 같음.
+
+- stabilization test 결과
+- 필요한 경우 regression test 또는 문서 보강
+- readiness check 통과 기록
+
+### Phase 1.5.1 Reference product scope
+
+Reference Payroll Product는 다음 기능을 목표로 함.
+
+```text
+payroll import
+-> validate
+-> plan preview
+-> note preparation analysis
+-> reservation
+-> proof queue
+-> batch broadcast
+-> reconcile
+-> status/report export
+```
+
+초기 산출물은 CLI/library 중심으로 둠. API server와 admin UI는 뒤 단계에서 붙일 수 있게 interface를 먼저 고정함.
+
+### Phase 1.5.2 User disclosure policy model
+
+상품형 payroll에서는 회사별 또는 지급건별 user disclosure 정책이 필요할 수 있음. Payroll input, plan item, operation record에 user disclosure 정책과 expected digest를 연결할 수 있어야 함.
+
+필요한 필드는 다음과 같음.
+
+- `user_privacy_policy`
+- `user_disclosure_mode`
+- `user_disclosure_target_pubkey`
+- `expected_user_disclosure_digest`
+- `expected_audit_disclosure_digest`
+- `expected_self_view_disclosure_digest`
+
+구현 방향은 다음과 같음.
+
+- Go SDK에 reference type과 validator를 추가함.
+- 기존 `transfer-batch` CLI는 capacity/readiness 목적상 `all-private` / `none` 제한을 유지함.
+- reference payroll product는 per-item disclosure policy를 plan 단계에서 검증하고, proof/payload 생성 시 기존 transfer SDK disclosure config로 변환함.
+
+### Phase 1.5.3 Disclosure public key registry contract
+
+`recipient-encrypted` user disclosure를 지원하려면 disclosure public key 관리가 필요함.
+
+Reference product는 다음 contract를 제공함.
+
+- employee/company/auditor/external recipient 단위 key entry model
+- key id 또는 key version
+- pubkey format validation
+- payroll import 시 missing/invalid key 검출
+- key 원문 로그 금지
+- report에는 key id와 digest/축약값만 표시
+
+실제 registry DB와 admin UI는 제품 구현 영역이지만, repo는 reference type, validation helper, handoff 문서를 제공함.
+
+### Phase 1.5.4 Note preparation helper
+
+현재 `transfer-batch`는 준비된 spendable note가 이미 있다는 가정이 강함. 상품형 payroll에는 plan 실행 전에 필요한 exact/pairable note와 zero dummy note를 준비하는 helper가 필요함.
+
+Reference helper는 다음을 제공함.
+
+```text
+treasury note inventory
+payroll item amount list
+target denom
+preparation policy
+-> 준비 필요 여부
+-> ready item count
+-> missing dummy count
+-> split/merge recommendation
+-> blocking reason
+```
+
+초기 구현은 자동 split/merge tx를 직접 실행하기보다 analyzer와 recommendation을 먼저 제공함. 이후 reference CLI/service에서 operator approval 또는 auto-prepare mode를 붙일 수 있음.
+
+### Phase 1.5.5 Durable store / worker contract
+
+현재 repo에는 in-memory reference store가 있음. Reference product는 production DB adapter가 따라야 할 contract를 명확히 해야 함.
+
+필요한 산출물은 다음과 같음.
+
+- reservation store contract 문서 보강
+- PostgreSQL/SQLite adapter 후보 설계
+- transaction lock 요구사항
+- active reservation unique constraint
+- worker lease/heartbeat persistence 요구사항
+- operation evidence persistence 요구사항
+
+초기에는 durable DB 구현보다 interface와 test contract를 우선함. 다만 reference CLI/service가 필요하면 SQLite adapter부터 시작할 수 있음.
+
+### Phase 1.5.6 Reference CLI/service 후보
+
+초기 reference product command 후보는 다음과 같음.
+
+```text
+clairveil-payroll validate
+clairveil-payroll plan
+clairveil-payroll prepare-notes
+clairveil-payroll run
+clairveil-payroll status
+clairveil-payroll reconcile
+clairveil-payroll export-report
+```
+
+1.5차 초기 완료 기준은 모든 command를 완전한 daemon으로 구현하는 것이 아니라, product workflow를 code와 문서로 조립 가능하게 만드는 것임.
+
+### Phase 1.5.7 JS SDK handoff
+
+JS SDK 팀이 직접 구현해야 할 항목은 이 repo에서 대신 구현하지 않음. 대신 다음을 제공함.
+
+- JS SDK handoff 문서
+- reservation/payroll/disclosure type mapping
+- fixture/schema 요구사항
+- expected evidence helper 요구사항
+- batch nullifier query 사용 가이드
+- prover HTTP client 연동 가이드
+
+### Phase 1.5.8 Wallet handoff
+
+지갑팀이 직접 구현해야 할 항목은 이 repo에서 대신 구현하지 않음. 대신 다음을 제공함.
+
+- wallet handoff 문서
+- reserved note exclusion requirement
+- disclosure public key UX requirement
+- wallet DB migration requirement
+- batch nullifier sync requirement
+- payroll incoming note 표시 정책
+- privacy-safe logging policy
+
+### Phase 1.5 완료 기준
+
+- 1차 readiness check가 통과함.
+- Reference payroll product scope와 workflow가 계획 문서에 고정됨.
+- user disclosure policy와 disclosure key registry contract가 Go SDK 또는 문서로 제공됨.
+- note preparation helper가 최소 analyzer/recommendation 수준으로 제공됨.
+- JS SDK 팀과 지갑팀 handoff 문서가 추가됨.
+- downstream이 "core는 있는데 제품 레이어가 없어 못 쓰는" 상태를 피할 수 있는 최소 reference product 경로가 생김.
 
 ## 상품화 보강 TODO
 
