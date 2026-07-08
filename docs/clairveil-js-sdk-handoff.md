@@ -275,10 +275,11 @@ For bulk payroll or other high-volume transfer clients, the note reservation con
 x/privacy/client/sdk/reservation/
 x/privacy/client/sdk/payroll/
 x/privacy/client/sdk/conformance/testdata/privacy_note_reservation_contract.json
+docs/clairveil-note-reservation-design.md
 docs/clairveil-note-reservation-design-kr.md
 ```
 
-JS/TS clients that reserve notes before proof generation should treat `privacy_note_reservation_contract.json` as the language-neutral source of truth. The detailed design note is currently Korean-only. Match the reservation status names, active-reservation definition, atomic batch-reserve rule, compare-and-set transition rules, lease token rules, HMAC lookup-key test vector, and operation success evidence model in that fixture. A spent nullifier proves that the note was consumed, but it is not enough to mark a payroll/payment operation successful unless the tx evidence also matches the expected output commitment, audit disclosure digest, recipient hash, amount, denom, and item index. The fixture field `expected_disclosure_digest` refers to the audit disclosure digest, not the user disclosure or sender self-view digest.
+JS/TS clients that reserve notes before proof generation should treat `privacy_note_reservation_contract.json` as the language-neutral source of truth and use [Clairveil Note Reservation Design Note](clairveil-note-reservation-design.md) for the detailed design rationale. Match the reservation status names, active-reservation definition, atomic batch-reserve rule, compare-and-set transition rules, lease token rules, HMAC lookup-key test vector, and operation success evidence model in that fixture. A spent nullifier proves that the note was consumed, but it is not enough to mark a payroll/payment operation successful unless the tx evidence also matches the expected output commitment, audit disclosure digest, recipient hash, amount, denom, and item index. The fixture field `expected_disclosure_digest` refers to the audit disclosure digest, not the user disclosure or sender self-view digest.
 
 ## 9. Disclosure Implementation
 
@@ -373,6 +374,7 @@ From a client perspective, relayed withdraw splits responsibilities as follows.
 
 - The user client receives the withdraw proof response and builds the final `PreparedWithdrawPayload` JSON.
 - Transport between the user client and relayer is product-defined. HTTP, QR, deep link, and file handoff are all possible.
+- After the payload is handed to the relayer, it may still be submitted until `expires_at_unix`. Local cancel, UI dismissal, or releasing a local reservation does not invalidate the already-created payload.
 - The relayer client/server validates `payload_hash`, `chain_id`, `recipient`, and `expires_at_unix`, then sets its own address as `MsgWithdraw.creator` before signing and broadcasting.
 - The transparent withdraw target is the payload `recipient`, not the relayer address.
 - This repository does not provide a production relay HTTP endpoint. Instead, it fixes the final-payload-to-relayer-submitted-message contract in `x/privacy/client/sdk/conformance/testdata/privacy_relay_withdraw_contract.json`.
@@ -393,6 +395,7 @@ The JS SDK must clearly show these constraints to users.
 - `MsgWithdraw` does not contain output note fields. Do not create a dummy output commitment or encrypted note for withdraw.
 - If there is no exact-match note, the user must first create the desired note size with a shielded self-transfer.
 - Relayed withdraw payload must validate `chain_id`, `recipient`, `expires_at_unix`, and `payload_hash`.
+- Once handed off, a relayed withdraw payload remains submit-capable until expiry; the wallet must not treat local cancellation as proof that the note is reusable.
 - The relayer does not need to know the user's shielded secret.
 
 ## 11. Prover Connection Model

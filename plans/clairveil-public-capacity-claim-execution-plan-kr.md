@@ -2,7 +2,7 @@
 
 이 문서는 public capacity claim을 실제로 만들기 위해 남은 운영/확장 작업을 관리합니다.
 
-`docs/clairveil-public-capacity-benchmark-followup-plan-kr.md`는 이미 구현된 benchmark 하네스와 gate를 기록합니다. 이 문서는 그 하네스를 사용해 공개 가능한 TPS, 운영 prover 처리량, 사용자 체감 지연 수치를 산출하기 위한 남은 일을 다룹니다.
+`plans/clairveil-public-capacity-benchmark-followup-plan-kr.md`는 이미 구현된 benchmark 하네스와 gate를 기록합니다. 이 문서는 그 하네스를 사용해 공개 가능한 TPS, 운영 prover 처리량, 사용자 체감 지연 수치를 산출하기 위한 남은 일을 다룹니다.
 
 ## 1. 목표
 

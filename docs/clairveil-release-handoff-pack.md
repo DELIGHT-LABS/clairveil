@@ -29,8 +29,8 @@ Korean version: [clairveil-release-handoff-pack-kr.md](clairveil-release-handoff
 | Client risk decisions | `docs/clairveil-client-risk-decisions.md` | Product, security, operations | storage, prover, audit, disclosure, and telemetry decisions |
 | Client API checklist | `docs/clairveil-client-api-checklist.md` | Client SDK and app teams | chain/prover API, fixture, release gate, and compatibility checks |
 | JS SDK handoff | `docs/clairveil-js-sdk-handoff.md` | JS SDK team, web wallet team | SDK implementation checklist |
-| Scan optimization plan | `docs/clairveil-scan-optimization-implementation-plan.md` | Core chain team, JS SDK team, web wallet team | `ScanEvents`, batch nullifier, view tag design, and excluded server-filterable/proof-bound scopes |
-| Reference payroll product | `docs/clairveil-reference-payroll-product-kr.md`, `docs/clairveil-reference-payroll-*-kr.md`, `examples/reference-payroll` | Operators, JS SDK team, wallet teams | payroll control-plane reference product, localnet tutorial, rehearsal records, and team handoff notes |
+| Scan optimization plan | `plans/clairveil-scan-optimization-implementation-plan.md` | Core chain team, JS SDK team, web wallet team | `ScanEvents`, batch nullifier, view tag design, and excluded server-filterable/proof-bound scopes |
+| Reference payroll product | `docs/clairveil-reference-payroll-product.md`, `docs/clairveil-reference-payroll-*.md`, `examples/reference-payroll` | Operators, JS SDK team, wallet teams | payroll control-plane reference product, localnet tutorial, rehearsal records, and team handoff notes |
 | Release policy | `docs/clairveil-release-versioning-policy.md`, `docs/clairveil-release-note-template.md` | Maintainers, release recipients | tag, changelog, release note, compatibility impact rules |
 | Prover profile | `docs/clairveil-proverd-remote-production-profile.md` | Prover operations | remote prover production controls |
 | Merkle restore SOP | `docs/clairveil-merkle-restore-sop.md` | Core chain team, operators | tree state validation after snapshot/restore/migration |

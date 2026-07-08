@@ -1,5 +1,7 @@
 # Clairveil Reference Payroll Product 가이드
 
+English version: [clairveil-reference-payroll-product.md](clairveil-reference-payroll-product.md)
+
 ## 목적
 
 이 문서는 Clairveil 대량전송 1.5차의 Reference Payroll Product 기준을 정의함.

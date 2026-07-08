@@ -1,5 +1,7 @@
 # Clairveil Note Reservation 설계 노트
 
+English version: [clairveil-note-reservation-design.md](clairveil-note-reservation-design.md)
+
 ## 목적
 
 이 문서는 Clairveil에서 payroll, batch transfer, 대량 전송을 구현할 때 필요한 note reservation 설계를 정리함.

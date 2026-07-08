@@ -428,7 +428,7 @@ clairveil-payroll export-report -plan plan.json -state .clairveil-payroll/reserv
 
 `seed-localnet-notes` is a localnet rehearsal helper. It writes payroll amount notes and zero dummy notes into localnet genesis commitments and the local wallet cache so large restart/retry rehearsals do not spend time preparing deposit txs. It is not a production note-preparation feature.
 
-`prepare-notes` and `plan` also accept `-store-dir .clairveil-payroll` to write results into the file-backed reference artifact store. `run`, `scan-evidence`, `reconcile`, and `settle-transfer-batch` use the durable reservation state file. For the detailed workflow, see [clairveil-reference-payroll-product-kr.md](clairveil-reference-payroll-product-kr.md).
+`prepare-notes` and `plan` also accept `-store-dir .clairveil-payroll` to write results into the file-backed reference artifact store. `run`, `scan-evidence`, `reconcile`, and `settle-transfer-batch` use the durable reservation state file. For the detailed workflow, see [clairveil-reference-payroll-product.md](clairveil-reference-payroll-product.md).
 
 ### clairveil-payrolld
 
@@ -470,4 +470,4 @@ Run the large-scale payroll rehearsal simulation with:
 make reference-payroll-rehearsal
 ```
 
-The Korean live localnet walkthrough is [clairveil-reference-payroll-live-localnet-tutorial-kr.md](clairveil-reference-payroll-live-localnet-tutorial-kr.md). The rehearsal walkthrough is [clairveil-reference-payroll-rehearsal-kr.md](clairveil-reference-payroll-rehearsal-kr.md).
+The live localnet walkthrough is [clairveil-reference-payroll-live-localnet-tutorial.md](clairveil-reference-payroll-live-localnet-tutorial.md). The rehearsal walkthrough is currently documented in Korean at [clairveil-reference-payroll-rehearsal-kr.md](clairveil-reference-payroll-rehearsal-kr.md).

@@ -1,5 +1,7 @@
 # Clairveil Reference Payroll Live Localnet 튜토리얼
 
+English version: [clairveil-reference-payroll-live-localnet-tutorial.md](clairveil-reference-payroll-live-localnet-tutorial.md)
+
 이 문서는 payroll reference product를 실제 localnet 위에서 끝까지 실행하는 방법을 설명함.
 
 이 튜토리얼은 simulated `clairveil-payrolld` 흐름이 아니라 실제 chain tx를 사용함.

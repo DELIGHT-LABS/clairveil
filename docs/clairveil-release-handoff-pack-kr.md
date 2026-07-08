@@ -27,8 +27,8 @@ Clairveil repo는 reusable privacy core와 reference host를 제공합니다. �
 | Client risk decisions | `docs/clairveil-client-risk-decisions-kr.md` | Product, security, operations | storage, prover, audit, disclosure, telemetry 결정 |
 | Client API checklist | `docs/clairveil-client-api-checklist-kr.md` | Client SDK, app 팀 | chain/prover API, fixture, release gate, compatibility check |
 | JS SDK handoff | `docs/clairveil-js-sdk-handoff-kr.md` | JS SDK team, web wallet team | SDK implementation checklist |
-| Scan optimization plan | `docs/clairveil-scan-optimization-implementation-plan-kr.md` | Core chain team, JS SDK team, web wallet team | `ScanEvents`, batch nullifier, view tag 설계와 제외된 server-filterable/proof-bound 범위 |
-| Reference payroll product | `docs/clairveil-reference-payroll-product-kr.md`, `docs/clairveil-reference-payroll-*-kr.md`, `examples/reference-payroll` | Operators, JS SDK team, wallet teams | payroll control-plane reference product, localnet tutorial, rehearsal 기록, 팀별 handoff note |
+| Scan optimization plan | `plans/clairveil-scan-optimization-implementation-plan-kr.md` | Core chain team, JS SDK team, web wallet team | `ScanEvents`, batch nullifier, view tag 설계와 제외된 server-filterable/proof-bound 범위 |
+| Reference payroll product | `docs/clairveil-reference-payroll-product-kr.md`, `docs/clairveil-reference-payroll-*.md`, `examples/reference-payroll` | Operators, JS SDK team, wallet teams | payroll control-plane reference product, localnet tutorial, rehearsal 기록, 팀별 handoff note |
 | Release policy | `docs/clairveil-release-versioning-policy-kr.md`, `docs/clairveil-release-note-template-kr.md` | Maintainers, release recipients | tag, changelog, release note, compatibility impact 기준 |
 | Prover profile | `docs/clairveil-proverd-remote-production-profile-kr.md` | Prover operations | remote prover production controls |
 | Merkle restore SOP | `docs/clairveil-merkle-restore-sop-kr.md` | Core chain team, operators | snapshot/restore/migration 후 tree state 검증 |

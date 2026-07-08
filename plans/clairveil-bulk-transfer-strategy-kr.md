@@ -19,7 +19,7 @@
 - 각 transfer마다 nullifier, commitment, ciphertext, disclosure event가 발생함.
 - 큰 treasury note 하나에서 계속 지급하면 change note chain이 생겨 병렬화가 어려움.
 - 대량 지급에는 note inventory, 실패 재시도, transaction 상태 추적, 결과 리포트, 감사 로그가 필요함.
-- 1번/2번 방식처럼 기존 transfer를 반복하거나 묶어서 쓰는 경우, 준비한 input note가 다른 transfer, split, merge에 먼저 사용되지 않도록 note reservation이 필요함. 자세한 내용은 [Clairveil Note Reservation 설계 노트](./clairveil-note-reservation-design-kr.md)를 참고함.
+- 1번/2번 방식처럼 기존 transfer를 반복하거나 묶어서 쓰는 경우, 준비한 input note가 다른 transfer, split, merge에 먼저 사용되지 않도록 note reservation이 필요함. 자세한 내용은 [Clairveil Note Reservation 설계 노트](../docs/clairveil-note-reservation-design-kr.md)를 참고함.
 - 공개 claim으로 사용할 수 있는 production benchmark는 아직 없음. 다만 repo의 smoke/reference 결과를 바탕으로 한 소요시간 시뮬레이션은 [Clairveil 대량 전송 소요시간 시뮬레이션 노트](./clairveil-bulk-transfer-time-simulation-kr.md)를 참고함.
 
 ## 방안 1. Shielded Payroll Batch UX
@@ -112,7 +112,7 @@ payroll item에는 다음 정보를 둠.
 - `x/privacy/client/sdk/transfer.ExecuteTransfer`
 - `x/privacy/client/cli transfer`
 
-이 방안에서 note inventory planner와 treasury shard allocator는 단순 편의 기능이 아니라 안전한 대량 지급의 핵심임. payroll plan에서 선택한 note가 실행 중 다른 transfer, split, merge에 소비되면 proof와 broadcast가 실패할 수 있으므로, 클라이언트는 별도의 [note reservation 모델](./clairveil-note-reservation-design-kr.md)을 구현해야 함.
+이 방안에서 note inventory planner와 treasury shard allocator는 단순 편의 기능이 아니라 안전한 대량 지급의 핵심임. payroll plan에서 선택한 note가 실행 중 다른 transfer, split, merge에 소비되면 proof와 broadcast가 실패할 수 있으므로, 클라이언트는 별도의 [note reservation 모델](../docs/clairveil-note-reservation-design-kr.md)을 구현해야 함.
 
 ### 장점
 
@@ -211,7 +211,7 @@ MsgBatchTransfer
 
 `MsgBatchTransfer`의 장점은 module 관점에서 batch를 하나의 명시적인 도메인 개념으로 다룰 수 있다는 점임. 반면 proto, generated code, keeper, SDK, CLI, tests가 모두 늘어나므로 1차 MVP는 multi-message transaction으로 시작하는 편이 안전함.
 
-multi-message transaction과 `MsgBatchTransfer` 모두 input note 충돌을 자동으로 해결하지는 않음. batch에 들어가는 item들은 사전에 예약된 note만 사용해야 하고, 같은 chunk 안에서 동일 note/nullifier가 중복되지 않아야 함. 이 정책은 [Clairveil Note Reservation 설계 노트](./clairveil-note-reservation-design-kr.md)의 상태 머신과 실패 대응 흐름을 따름.
+multi-message transaction과 `MsgBatchTransfer` 모두 input note 충돌을 자동으로 해결하지는 않음. batch에 들어가는 item들은 사전에 예약된 note만 사용해야 하고, 같은 chunk 안에서 동일 note/nullifier가 중복되지 않아야 함. 이 정책은 [Clairveil Note Reservation 설계 노트](../docs/clairveil-note-reservation-design-kr.md)의 상태 머신과 실패 대응 흐름을 따름.
 
 ### 장점
 

@@ -210,7 +210,7 @@ clairveild tx privacy withdraw 7uclair --from alice --keyring-backend test
 
 | 문서                                                                               | 역할                                                              |
 | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| [Reference app](docs/clairveild-reference-app-plan-kr.md)                          | `clairveild` reference host의 설계 의도와 현재 상태               |
+| [Reference app](plans/clairveild-reference-app-plan-kr.md)                         | `clairveild` reference host의 설계 의도와 현재 상태               |
 | [Local walkthrough](docs/clairveil-local-privacy-walkthrough-kr.md)                | 로컬 노드에서 deposit, transfer, disclosure, withdraw를 직접 실행 |
 | [Circuit guide](docs/clairveil-circuits-kr.md)                                     | Spend/JoinSplit 회로가 증명하는 것과 증명하지 않는 것             |
 | [CLI reference](docs/clairveil-cli-reference-kr.md)                                | `clairveild tx/query privacy` 명령별 사용법                       |
@@ -223,7 +223,7 @@ clairveild tx privacy withdraw 7uclair --from alice --keyring-backend test
 | [Client risk decisions](docs/clairveil-client-risk-decisions-kr.md)                | storage, prover, audit, disclosure, telemetry 결정                 |
 | [Client API checklist](docs/clairveil-client-api-checklist-kr.md)                  | chain/prover API, fixture, release gate, compatibility check       |
 | [JS SDK handoff](docs/clairveil-js-sdk-handoff-kr.md)                              | JS/TS SDK와 웹월렛 구현 계약                                      |
-| [Scan optimization plan](docs/clairveil-scan-optimization-implementation-plan-kr.md) | 구현된 note scan 최적화 범위와 제외한 후속 작업                  |
+| [Scan optimization plan](plans/clairveil-scan-optimization-implementation-plan-kr.md) | 구현된 note scan 최적화 범위와 제외한 후속 작업                  |
 | [Reference payroll product](docs/clairveil-reference-payroll-product-kr.md)        | payroll control-plane, localnet tutorial, rehearsal reference product |
 | [Prover profile](docs/clairveil-proverd-remote-production-profile-kr.md)           | `clairveil-proverd` remote 운영 profile                           |
 | [Merkle restore SOP](docs/clairveil-merkle-restore-sop-kr.md)                      | snapshot/restore/migration 후 tree 검증 절차                      |

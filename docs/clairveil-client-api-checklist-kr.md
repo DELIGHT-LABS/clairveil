@@ -41,9 +41,11 @@ GET /clairveil/privacy/v1/nullifiers
 POST /clairveil/privacy/v1/nullifiers
 ```
 
-Wallet note sync에는 cursor 기반 projection인 `scan_events`를 우선 사용해야 합니다. Raw `events` query는 compatibility, debugging, auditor 확인 용도로 유지됩니다. Client는 pagination/cursor 저장, timeout, retry, endpoint failover를 구현해야 합니다. `scan_events`는 page 안에 필터링된 event type만 있을 때 빈 `events` 배열과 `has_more=true`를 반환할 수 있으므로, client는 이 경우에도 `next_height`, `next_sequence`로 cursor를 전진시키고 계속 스캔해야 합니다.
+Wallet note sync에는 cursor 기반 projection인 `scan_events`를 우선 사용해야 합니다. Raw `events` query는 compatibility, debugging, auditor 확인 용도로 유지됩니다. Client는 pagination/cursor 저장과 bounded retry를 구현해야 합니다. Endpoint failover는 `tree_state`, `audit_config`, `circuit_config`, `scan_events` 같은 public read query에 한해 기본적으로 안전합니다. `scan_events`는 page 안에 필터링된 event type만 있을 때 빈 `events` 배열과 `has_more=true`를 반환할 수 있으므로, client는 이 경우에도 `next_height`, `next_sequence`로 cursor를 전진시키고 계속 스캔해야 합니다.
 
 일반적인 batch spent refresh에는 JSON body를 쓰는 `POST /clairveil/privacy/v1/nullifiers`를 사용해야 합니다. 요청당 nullifier는 최대 1000개로 나누고, 더 큰 wallet은 chunk 처리해야 합니다. GET binding은 작은 compatibility check 용도로 남아 있지만, 큰 query string은 browser, mobile gateway, proxy의 URL 길이 제한을 넘을 수 있습니다.
+
+Nullifier query는 privacy-sensitive합니다. Wallet이 특정 nullifier의 spent 여부를 묻는다는 것은 그 note를 추적하고 있을 가능성을 endpoint에 알리는 신호가 될 수 있습니다. 기본 정책은 같은 endpoint 안에서만 nullifier query를 retry하는 것입니다. 같은 nullifier 묶음을 다른 public endpoint로 failover하는 동작은 제품/사용자가 명시적으로 켠 경우에만 허용해야 합니다.
 
 ## 3. Tx Messages
 
@@ -85,7 +87,22 @@ Client가 검증해야 할 것:
 
 Remote prover를 쓰는 경우 request/response body는 privacy-sensitive data로 취급해야 합니다.
 
-## 5. Fixture And Schema Checks
+Prover request failover는 일반 read query failover처럼 동작하면 안 됩니다. Prover request에는 note amount, randomness, Merkle path, nullifier, disclosure payload metadata가 들어갈 수 있습니다. Prover A가 실패했다고 같은 payload를 Prover B, C로 자동 전송하면 privacy boundary가 넓어집니다. 안전한 기본값은 configured prover boundary 안에서 timeout, response validation, retry를 수행하는 것이고, multi-prover failover는 명시적인 제품/보안 정책 결정이어야 합니다.
+
+## 5. Retry And Failover Policy
+
+Retry와 endpoint failover를 같은 기능으로 취급하지 않습니다.
+
+| 요청 유형 | 기본 정책 |
+| --- | --- |
+| `tree_state`, `audit_config`, `circuit_config`, `scan_events` 같은 public read query | bounded retry와 endpoint failover 허용 가능 |
+| nullifier query | 기본은 같은 endpoint retry. 다른 endpoint failover는 opt-in |
+| tx broadcast | 자동 retry/failover 기본 off. 재구성/재전송 전 tx hash와 nullifier 상태 확인 |
+| prover request | timeout과 response validation은 필수. multi-prover failover는 opt-in |
+
+Tx broadcast timeout은 실패를 증명하지 않습니다. Tx가 이미 mempool 또는 chain에 들어갔지만 client가 응답만 받지 못했을 수 있습니다. 새 tx를 만들거나 endpoint를 바꾸거나 새 sequence로 재서명하기 전에는 가능한 경우 tx hash를 먼저 확인하고, 그 다음 nullifier 상태를 확인해야 합니다. 이렇게 해야 sequence 혼선, 중복 제출, nullifier conflict를 줄일 수 있습니다.
+
+## 6. Fixture And Schema Checks
 
 Client CI는 최소 아래를 검증해야 합니다.
 
@@ -104,7 +121,7 @@ make examples
 go test ./x/privacy/client/sdk/conformance
 ```
 
-## 6. Release Gate Checklist
+## 7. Release Gate Checklist
 
 Client release 전 최소 검증:
 
@@ -122,13 +139,14 @@ Client release 전 최소 검증:
 - direct withdraw
 - relayed withdraw와 relayer 제출 `MsgWithdraw` field mapping
 - exact-match withdraw 실패와 self-transfer/planner 안내 UX
+- retry/failover 정책이 public read query, nullifier query, tx broadcast, prover request를 분리함
 - prover timeout/retry/cancel
 - disclosure verification failure UI
 - remote prover auth/rate limit/logging/retention, remote prover를 쓰는 경우
 
 Downstream release gate는 repo의 `make examples`만으로 충분하지 않습니다. 실제 chain prefix, denom, endpoint, audit pubkey, prover topology를 적용한 testnet e2e가 필요합니다.
 
-## 7. Compatibility Checklist
+## 8. Compatibility Checklist
 
 Breaking 또는 migration impact가 있는 변경:
 
@@ -148,7 +166,7 @@ Breaking 또는 migration impact가 있는 변경:
 
 이런 변경이 있으면 client product brief, UX flows, risk decisions, API checklist, JS SDK handoff, release note impact를 함께 갱신해야 합니다.
 
-## 8. Related Documents
+## 9. Related Documents
 
 - [Client product brief](clairveil-client-product-brief-kr.md)
 - [Client UX flows](clairveil-client-ux-flows-kr.md)

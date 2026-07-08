@@ -41,9 +41,11 @@ GET /clairveil/privacy/v1/nullifiers
 POST /clairveil/privacy/v1/nullifiers
 ```
 
-Clients should prefer `scan_events` for wallet note sync because it is a cursor-based projection of wallet-relevant event data. The raw `events` query remains useful for compatibility, debugging, and auditors. The client should implement pagination/cursor persistence, timeout, retry, and endpoint failover. `scan_events` can return an empty `events` array with `has_more=true` when the page only contains filtered-out event types; clients must still persist/advance to `next_height` and `next_sequence` and continue scanning.
+Clients should prefer `scan_events` for wallet note sync because it is a cursor-based projection of wallet-relevant event data. The raw `events` query remains useful for compatibility, debugging, and auditors. The client should implement pagination/cursor persistence and bounded retry. Endpoint failover is safe by default only for public read queries such as `tree_state`, `audit_config`, `circuit_config`, and `scan_events`. `scan_events` can return an empty `events` array with `has_more=true` when the page only contains filtered-out event types; clients must still persist/advance to `next_height` and `next_sequence` and continue scanning.
 
 Use `POST /clairveil/privacy/v1/nullifiers` with a JSON body for normal batch spent refresh. Send at most 1000 nullifiers per request and chunk larger wallets. The GET binding remains available for small compatibility checks, but large query strings can exceed browser, mobile gateway, or proxy URL limits.
+
+Nullifier queries are privacy-sensitive because a wallet asking about a nullifier reveals that it may be tracking the corresponding note. The default policy should retry nullifier queries only against the same endpoint. Failing over the same nullifier set to a different public endpoint should be an explicit product/user opt-in.
 
 ## 3. Tx Messages
 
@@ -85,7 +87,22 @@ The client must validate:
 
 When using a remote prover, request/response bodies are privacy-sensitive data.
 
-## 5. Fixture And Schema Checks
+Prover request failover must not behave like ordinary read-query failover. A prover request can include note amounts, randomness, Merkle paths, nullifiers, and disclosure payload metadata. If prover A fails, automatically sending the same payload to prover B or C expands the privacy boundary. The safe default is timeout, response validation, and retry policy within the configured prover boundary; multi-prover failover must be an explicit product/security decision.
+
+## 5. Retry And Failover Policy
+
+Do not treat retry and endpoint failover as the same feature.
+
+| Request type | Default policy |
+| --- | --- |
+| Public read queries such as `tree_state`, `audit_config`, `circuit_config`, `scan_events` | bounded retry and endpoint failover are acceptable |
+| Nullifier queries | retry against the same endpoint by default; cross-endpoint failover is opt-in |
+| Tx broadcast | automatic retry/failover is off by default; check tx hash and nullifier status before rebuilding or rebroadcasting |
+| Prover requests | timeout and response validation are required; multi-prover failover is opt-in |
+
+For tx broadcast, a timeout does not prove failure. The tx may already be in the mempool or chain while the client missed the response. Before creating a new tx, changing endpoint, or re-signing with a new sequence, clients should check the tx hash when available and then check nullifier status. This prevents sequence confusion, duplicate submission, and nullifier conflicts.
+
+## 6. Fixture And Schema Checks
 
 Client CI should validate at least:
 
@@ -104,7 +121,7 @@ make examples
 go test ./x/privacy/client/sdk/conformance
 ```
 
-## 6. Release Gate Checklist
+## 7. Release Gate Checklist
 
 Minimum validation before client release:
 
@@ -122,13 +139,14 @@ Minimum validation before client release:
 - direct withdraw
 - relayed withdraw and relayer-submitted `MsgWithdraw` field mapping
 - no-exact-match withdraw failure and self-transfer/planner guidance
+- retry/failover policy separates public read queries, nullifier queries, tx broadcast, and prover requests
 - prover timeout/retry/cancel
 - disclosure verification failure UI
 - remote prover auth/rate limit/logging/retention, if using a remote prover
 
 Downstream release gates are not satisfied by repository-level `make examples` alone. The downstream client also needs testnet e2e with its real chain prefix, denom, endpoints, audit pubkey, and prover topology.
 
-## 7. Compatibility Checklist
+## 8. Compatibility Checklist
 
 Changes with breaking or migration impact:
 
@@ -148,7 +166,7 @@ Changes with breaking or migration impact:
 
 When these change, update the client product brief, UX flows, risk decisions, API checklist, JS SDK handoff, and release note impact together.
 
-## 8. Related Documents
+## 9. Related Documents
 
 - [Client product brief](clairveil-client-product-brief.md)
 - [Client UX flows](clairveil-client-ux-flows.md)

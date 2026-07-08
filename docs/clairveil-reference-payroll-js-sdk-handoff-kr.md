@@ -1,5 +1,7 @@
 # Clairveil Reference Payroll JS SDK Handoff
 
+English version: [clairveil-reference-payroll-js-sdk-handoff.md](clairveil-reference-payroll-js-sdk-handoff.md)
+
 ## 목적
 
 이 문서는 JS SDK 팀이 Reference Payroll Product를 지원하기 위해 구현해야 할 작업을 정리함.

@@ -272,7 +272,7 @@ Validation scope:
 7. `clairveil-payroll settle-transfer-batch`
 8. final payroll report export
 
-The Korean manual walkthrough is [clairveil-reference-payroll-live-localnet-tutorial-kr.md](clairveil-reference-payroll-live-localnet-tutorial-kr.md).
+The manual walkthrough is [clairveil-reference-payroll-live-localnet-tutorial.md](clairveil-reference-payroll-live-localnet-tutorial.md).
 
 ## 7.3 Reference Payroll Rehearsal
 

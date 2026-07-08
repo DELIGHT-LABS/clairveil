@@ -10,7 +10,7 @@ repo에는 note reservation, payroll control plane, proof/broadcast/reconcile qu
 
 - 계획 문서: `plans/clairveil-bulk-transfer-implementation-plan-kr.md`
 - Note reservation 설계: `docs/clairveil-note-reservation-design-kr.md`
-- 대량 전송 전략/시뮬레이션: `docs/clairveil-bulk-transfer-strategy-kr.md`, `docs/clairveil-bulk-transfer-time-simulation-kr.md`
+- 대량 전송 전략/시뮬레이션: `plans/clairveil-bulk-transfer-strategy-kr.md`, `plans/clairveil-bulk-transfer-time-simulation-kr.md`
 - Go reference packages: `x/privacy/client/sdk/reservation`, `x/privacy/client/sdk/payroll`
 - Reference payroll CLI: `clairveil-payroll validate`, `build-input-from-notes`, `prepare-notes`, `plan`, `run`, `status`, `scan-evidence`, `reconcile`, `settle-transfer-batch`, `seed-localnet-notes`, `export-report`
 - Reference payroll daemon: `clairveil-payrolld -mode simulated`, `clairveil-payrolld -mode live`

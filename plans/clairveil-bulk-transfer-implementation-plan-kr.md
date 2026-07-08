@@ -16,9 +16,8 @@
 
 ## 관련 문서
 
-- [Clairveil 대량 전송 방안 검토 리포트](../docs/clairveil-bulk-transfer-strategy-kr.md)
-- [Clairveil 대량 전송 소요시간 시뮬레이션 노트](../docs/clairveil-bulk-transfer-time-simulation-kr.md)
-- [Clairveil 대량 전송에서 1/2번 방안과 Prover 수평확장만 적용하는 대안 검토](../docs/clairveil-bulk-transfer-prover-scale-option-kr.md)
+- [Clairveil 대량 전송 방안 검토 리포트](clairveil-bulk-transfer-strategy-kr.md)
+- [Clairveil 대량 전송 소요시간 시뮬레이션 노트](clairveil-bulk-transfer-time-simulation-kr.md)
 - [Clairveil Note Reservation 설계 노트](../docs/clairveil-note-reservation-design-kr.md)
 - [Clairveil Reference Payroll Product 가이드](../docs/clairveil-reference-payroll-product-kr.md)
 - [Clairveil Reference Payroll JS SDK Handoff](../docs/clairveil-reference-payroll-js-sdk-handoff-kr.md)

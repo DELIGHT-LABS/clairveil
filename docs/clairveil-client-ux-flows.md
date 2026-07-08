@@ -128,6 +128,7 @@ Required UX:
 - Explain that the relayer does not need the user's shielded secret.
 - Show payload expiry.
 - Explain that the recipient cannot be changed after preparation.
+- Explain that after handoff the relayer may still submit until expiry; local cancel or reservation release does not invalidate the payload.
 - Warn that prepared payload/proof JSON is privacy-sensitive data.
 
 ## 7. Disclosure Review

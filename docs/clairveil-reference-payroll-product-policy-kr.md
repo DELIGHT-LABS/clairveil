@@ -1,5 +1,7 @@
 # Clairveil Reference Payroll 제품 정책 기본값
 
+English version: [clairveil-reference-payroll-product-policy.md](clairveil-reference-payroll-product-policy.md)
+
 ## 목적
 
 이 문서는 Reference Payroll Product를 제품화할 때 repo 기준으로 먼저 고정해둘 기본 정책을 정리함.

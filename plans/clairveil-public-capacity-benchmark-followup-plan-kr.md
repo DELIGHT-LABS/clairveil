@@ -2,7 +2,7 @@
 
 이 문서는 `private/benchmark` 브랜치에서 완료한 public capacity benchmark 하네스와 public claim gate 보강 범위를 기록합니다.
 
-남은 운영형 public capacity claim 실행 계획은 별도 문서인 `docs/clairveil-public-capacity-claim-execution-plan-kr.md`에서 관리합니다. 이 문서는 "이번에 완료한 구현 범위"만 다룹니다.
+남은 운영형 public capacity claim 실행 계획은 별도 문서인 `plans/clairveil-public-capacity-claim-execution-plan-kr.md`에서 관리합니다. 이 문서는 "이번에 완료한 구현 범위"만 다룹니다.
 
 ## 1. 목표
 
@@ -182,4 +182,4 @@
 
 ## 10. 비범위
 
-이번 완료 계획은 구현된 benchmark 하네스와 gate를 기록하는 문서입니다. Public capacity claim 산출을 위해 남은 운영/확장 작업은 `docs/clairveil-public-capacity-claim-execution-plan-kr.md`에서 관리합니다.
+이번 완료 계획은 구현된 benchmark 하네스와 gate를 기록하는 문서입니다. Public capacity claim 산출을 위해 남은 운영/확장 작업은 `plans/clairveil-public-capacity-claim-execution-plan-kr.md`에서 관리합니다.

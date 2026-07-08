@@ -273,6 +273,7 @@ Bulk payroll 또는 다른 대량 전송 client에서 쓰는 note reservation은
 x/privacy/client/sdk/reservation/
 x/privacy/client/sdk/payroll/
 x/privacy/client/sdk/conformance/testdata/privacy_note_reservation_contract.json
+docs/clairveil-note-reservation-design.md
 docs/clairveil-note-reservation-design-kr.md
 ```
 
@@ -371,6 +372,7 @@ Client 관점의 relayed withdraw 책임 분리는 아래와 같습니다.
 
 - user client는 withdraw proof response를 받아 최종 `PreparedWithdrawPayload` JSON을 만듭니다.
 - user client와 relayer 사이의 전달 방식은 제품별 계약입니다. HTTP, QR, deep link, file handoff 모두 가능합니다.
+- payload를 relayer에게 넘긴 뒤에는 `expires_at_unix` 전까지 여전히 제출될 수 있습니다. local cancel, UI dismiss, local reservation release는 이미 만들어진 payload를 무효화하지 않습니다.
 - relayer client/server는 payload의 `payload_hash`, `chain_id`, `recipient`, `expires_at_unix`를 검증하고, 자기 주소를 `MsgWithdraw.creator`로 넣어 sign/broadcast합니다.
 - withdraw 대상 투명 주소는 relayer 주소가 아니라 payload의 `recipient`입니다.
 - 이 repo는 production relay HTTP endpoint를 제공하지 않습니다. 대신 final payload에서 relayer 제출 메시지로 변환되는 계약을 `x/privacy/client/sdk/conformance/testdata/privacy_relay_withdraw_contract.json` fixture로 고정합니다.
@@ -391,6 +393,7 @@ JS SDK가 사용자에게 분명히 보여줘야 하는 제약은 아래입니�
 - `MsgWithdraw`에는 output note 필드가 없습니다. withdraw를 위해 dummy output commitment나 encrypted note를 만들지 마십시오.
 - exact-match note가 없으면 먼저 shielded self-transfer로 원하는 크기의 note를 만들어야 합니다.
 - relayed withdraw payload는 `chain_id`, `recipient`, `expires_at_unix`, `payload_hash`를 검증해야 합니다.
+- relayed withdraw payload는 handoff 후 expiry 전까지 제출 가능하므로, 지갑은 local cancel을 note 재사용 가능 증거로 취급하면 안 됩니다.
 - relayer는 사용자의 shielded secret을 알 필요가 없습니다.
 
 ## 11. Prover 연결 모델

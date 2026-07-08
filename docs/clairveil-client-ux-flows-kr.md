@@ -128,6 +128,7 @@ Disclosure plaintext를 표시할 때는 반드시 digest verification 결과를
 - relayer는 user shielded secret을 알 필요가 없다는 안내
 - payload expiry 표시
 - recipient 변경 불가 안내
+- handoff 이후 relayer는 expiry 전까지 제출할 수 있으며 local cancel 또는 reservation release가 payload를 무효화하지 않는다는 안내
 - prepared payload/proof JSON이 privacy-sensitive data라는 경고
 
 ## 7. Disclosure Review

@@ -1,5 +1,7 @@
 # Clairveil Reference Payroll Wallet Handoff
 
+English version: [clairveil-reference-payroll-wallet-handoff.md](clairveil-reference-payroll-wallet-handoff.md)
+
 ## 목적
 
 이 문서는 웹/모바일 지갑팀이 Reference Payroll Product와 연동하기 위해 구현해야 할 작업을 정리함.

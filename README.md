@@ -212,7 +212,7 @@ Command purposes, major flags, and output shapes are documented in the [CLI refe
 
 | Document | Purpose |
 | --- | --- |
-| [Reference app](docs/clairveild-reference-app-plan.md) | Design intent and current status of the `clairveild` reference host |
+| [Reference app](plans/clairveild-reference-app-plan.md) | Design intent and current status of the `clairveild` reference host |
 | [Local walkthrough](docs/clairveil-local-privacy-walkthrough.md) | Manually run deposit, transfer, disclosure, and withdraw on a local node |
 | [Circuit guide](docs/clairveil-circuits.md) | What the Spend/JoinSplit circuits prove and do not prove |
 | [CLI reference](docs/clairveil-cli-reference.md) | Usage of `clairveild tx/query privacy` commands |
@@ -225,8 +225,8 @@ Command purposes, major flags, and output shapes are documented in the [CLI refe
 | [Client risk decisions](docs/clairveil-client-risk-decisions.md) | Storage, prover, audit, disclosure, and telemetry decisions |
 | [Client API checklist](docs/clairveil-client-api-checklist.md) | Chain/prover APIs, fixtures, release gates, and compatibility checks |
 | [JS SDK handoff](docs/clairveil-js-sdk-handoff.md) | Contract for JS/TS SDK and web wallet implementation |
-| [Scan optimization plan](docs/clairveil-scan-optimization-implementation-plan.md) | Implemented note scan optimization scope and excluded future work |
-| [Reference payroll product (KR)](docs/clairveil-reference-payroll-product-kr.md) | Payroll control-plane, localnet tutorial, and rehearsal reference product |
+| [Scan optimization plan](plans/clairveil-scan-optimization-implementation-plan.md) | Implemented note scan optimization scope and excluded future work |
+| [Reference payroll product](docs/clairveil-reference-payroll-product.md) | Payroll control-plane, localnet tutorial, and rehearsal reference product |
 | [Prover profile](docs/clairveil-proverd-remote-production-profile.md) | Remote operation profile for `clairveil-proverd` |
 | [Merkle restore SOP](docs/clairveil-merkle-restore-sop.md) | Tree verification after snapshot, restore, or migration |
 | [Threat model](docs/clairveil-threat-model.md) | Trust boundaries, assets, and residual risks |
