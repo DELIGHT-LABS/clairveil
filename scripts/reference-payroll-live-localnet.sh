@@ -16,6 +16,7 @@ tx_wait_sleep_seconds="${TX_WAIT_SLEEP_SECONDS:-2}"
 payroll_item_count="${PAYROLL_ITEM_COUNT:-2}"
 payroll_amount="${PAYROLL_ITEM_AMOUNT:-1}"
 payroll_chunk_size="${PAYROLL_CHUNK_SIZE:-$payroll_item_count}"
+payroll_seed_notes="${PAYROLL_SEED_NOTES:-0}"
 transfer_batch_gas="${PAYROLL_TRANSFER_BATCH_GAS:-$((payroll_chunk_size * 9000000 + 3000000))}"
 gas_prices="${GAS_PRICES:-8500000000uclair}"
 node="tcp://127.0.0.1:${rpc_port}"
@@ -30,6 +31,10 @@ if ! [[ "$payroll_amount" =~ ^[1-9][0-9]*$ ]]; then
 fi
 if ! [[ "$payroll_chunk_size" =~ ^[1-9][0-9]*$ ]]; then
 	echo "PAYROLL_CHUNK_SIZE must be a positive integer" >&2
+	exit 1
+fi
+if [[ "$payroll_seed_notes" != "0" && "$payroll_seed_notes" != "1" ]]; then
+	echo "PAYROLL_SEED_NOTES must be 0 or 1" >&2
 	exit 1
 fi
 
@@ -156,6 +161,19 @@ run keys add auditor --keyring-backend test --home "$home" --output json >"$out/
 run keys show -a alice --keyring-backend test --home "$home" >"$out/alice-address.txt"
 run keys show -a bob --keyring-backend test --home "$home" >"$out/bob-address.txt"
 
+run tx privacy show-address --from alice --keyring-backend test --home "$home" --output json >"$out/alice-shielded.json"
+python3 - "$out/alice-shielded.json" "$out/alice-shielded-address.txt" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+data = json.loads(Path(sys.argv[1]).read_text())
+address = data["address"]
+if not address.startswith("clairs1"):
+    raise SystemExit(f"unexpected shielded address: {address}")
+Path(sys.argv[2]).write_text(address + "\n")
+PY
+
 run tx privacy show-disclosure-pubkey --from auditor --keyring-backend test --home "$home" --output json >"$out/auditor-disclosure.json"
 python3 - "$out/auditor-disclosure.json" "$out/auditor-disclosure.hex" <<'PY'
 import json
@@ -188,6 +206,19 @@ doc["app_state"]["privacy"]["audit_master_pubkey"] = base64.b64encode(bytes.from
 genesis_path.write_text(json.dumps(doc, indent=2))
 PY
 
+if [[ "$payroll_seed_notes" == "1" ]]; then
+	"$clairveil_payroll" seed-localnet-notes \
+		-genesis "$home/config/genesis.json" \
+		-wallet-home "$home" \
+		-owner-address "$(cat "$out/alice-address.txt")" \
+		-shielded-address "$(cat "$out/alice-shielded-address.txt")" \
+		-count "$payroll_item_count" \
+		-amount "$payroll_amount" \
+		-denom uclair \
+		-notes-out "$out/alice-notes.json" \
+		-out "$out/seed-localnet-notes.json"
+fi
+
 run validate --home "$home" >"$out/validate.stdout" 2>"$out/validate.stderr"
 
 set -a
@@ -214,17 +245,19 @@ PY
 
 run tx privacy list-notes --from bob --keyring-backend test --home "$home" --node "$node" --rescan-wallet --json >"$out/bob-notes-before.json"
 
-for i in $(seq 1 "$payroll_item_count"); do
-	run tx privacy deposit "${payroll_amount}uclair" --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas 2500000 --gas-prices "$gas_prices" --yes --output json >"$out/deposit-payroll-${i}.json"
-	write_txhash "$out/deposit-payroll-${i}.json" "$out/deposit-payroll-${i}.txhash"
-	wait_tx "$(cat "$out/deposit-payroll-${i}.txhash")" "$out/deposit-payroll-${i}-query.json"
+if [[ "$payroll_seed_notes" == "0" ]]; then
+	for i in $(seq 1 "$payroll_item_count"); do
+		run tx privacy deposit "${payroll_amount}uclair" --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas 2500000 --gas-prices "$gas_prices" --yes --output json >"$out/deposit-payroll-${i}.json"
+		write_txhash "$out/deposit-payroll-${i}.json" "$out/deposit-payroll-${i}.txhash"
+		wait_tx "$(cat "$out/deposit-payroll-${i}.txhash")" "$out/deposit-payroll-${i}-query.json"
 
-	run tx privacy deposit 0uclair --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas 2500000 --gas-prices "$gas_prices" --yes --output json >"$out/deposit-payroll-${i}-dummy.json"
-	write_txhash "$out/deposit-payroll-${i}-dummy.json" "$out/deposit-payroll-${i}-dummy.txhash"
-	wait_tx "$(cat "$out/deposit-payroll-${i}-dummy.txhash")" "$out/deposit-payroll-${i}-dummy-query.json"
-done
+		run tx privacy deposit 0uclair --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas 2500000 --gas-prices "$gas_prices" --yes --output json >"$out/deposit-payroll-${i}-dummy.json"
+		write_txhash "$out/deposit-payroll-${i}-dummy.json" "$out/deposit-payroll-${i}-dummy.txhash"
+		wait_tx "$(cat "$out/deposit-payroll-${i}-dummy.txhash")" "$out/deposit-payroll-${i}-dummy-query.json"
+	done
 
-run tx privacy list-notes --from alice --keyring-backend test --home "$home" --node "$node" --rescan-wallet --json >"$out/alice-notes.json"
+	run tx privacy list-notes --from alice --keyring-backend test --home "$home" --node "$node" --rescan-wallet --json >"$out/alice-notes.json"
+fi
 
 python3 - "$out/payroll-template.json" "$out/bob-shielded-address.txt" "$payroll_item_count" "$payroll_amount" "$payroll_chunk_size" <<'PY'
 import json
@@ -282,7 +315,11 @@ while (( item_start < payroll_item_count )); do
 	done
 
 	run tx privacy list-notes --from bob --keyring-backend test --home "$home" --node "$node" --rescan-wallet --json >"$out/bob-notes-before-chunk-${chunk_label}.json"
-	run tx privacy transfer-batch "$(cat "$out/bob-shielded-address.txt")" "${batch_args[@]}" --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas "$transfer_batch_gas" --gas-prices "$gas_prices" --yes --rescan-wallet --output json >"$out/payroll-transfer-batch-${chunk_label}.json"
+	if [[ "$payroll_seed_notes" == "0" ]]; then
+		run tx privacy transfer-batch "$(cat "$out/bob-shielded-address.txt")" "${batch_args[@]}" --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas "$transfer_batch_gas" --gas-prices "$gas_prices" --yes --rescan-wallet --output json >"$out/payroll-transfer-batch-${chunk_label}.json"
+	else
+		run tx privacy transfer-batch "$(cat "$out/bob-shielded-address.txt")" "${batch_args[@]}" --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas "$transfer_batch_gas" --gas-prices "$gas_prices" --yes --output json >"$out/payroll-transfer-batch-${chunk_label}.json"
+	fi
 	write_txhash "$out/payroll-transfer-batch-${chunk_label}.json" "$out/payroll-transfer-batch-${chunk_label}.txhash"
 	wait_tx "$(cat "$out/payroll-transfer-batch-${chunk_label}.txhash")" "$out/payroll-transfer-batch-${chunk_label}-query.json"
 	run tx privacy list-notes --from bob --keyring-backend test --home "$home" --node "$node" --rescan-wallet --json >"$out/bob-notes-after-chunk-${chunk_label}.json"
@@ -303,7 +340,7 @@ run tx privacy list-notes --from bob --keyring-backend test --home "$home" --nod
 "$clairveil_payroll" status -state "$out/payroll-reservation-state.json" -out "$out/payroll-status-after-settle.json"
 "$clairveil_payroll" export-report -plan "$out/payroll-plan.json" -state "$out/payroll-reservation-state.json" -out "$out/payroll-final-report.json"
 
-python3 - "$out/payroll-final-report.json" "$out/payroll-status-after-settle.json" "$payroll_item_count" "$payroll_chunk_size" "$chunk_index" "$out/rehearsal-summary.json" <<'PY'
+python3 - "$out/payroll-final-report.json" "$out/payroll-status-after-settle.json" "$payroll_item_count" "$payroll_chunk_size" "$chunk_index" "$out/rehearsal-summary.json" "$payroll_seed_notes" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -314,6 +351,7 @@ count = int(sys.argv[3])
 chunk_size = int(sys.argv[4])
 chunk_count = int(sys.argv[5])
 summary_path = Path(sys.argv[6])
+seeded_notes = sys.argv[7] == "1"
 if report["status"] != "Confirmed":
     raise SystemExit(f"payroll report status is {report['status']}, expected Confirmed")
 if report["summary"]["ConfirmedItems"] != count:
@@ -324,6 +362,7 @@ if status["reservations_by_status"].get("ConfirmedSpent") != count * 2:
     raise SystemExit("not all input reservations are confirmed spent")
 summary = {
     "schema_version": "clairveil.reference_payroll_live_localnet_rehearsal.v1",
+    "seeded_notes": seeded_notes,
     "payroll_item_count": count,
     "payroll_item_amount": report["items"][0]["amount"] if report["items"] else "",
     "chunk_size": chunk_size,

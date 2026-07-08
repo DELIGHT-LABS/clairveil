@@ -176,7 +176,7 @@ type settleTransferBatchReport struct {
 
 func main() {
 	if len(os.Args) < 2 {
-		fatalf("usage: clairveil-payroll <validate|build-input-from-notes|prepare-notes|plan|run|status|scan-evidence|reconcile|settle-transfer-batch|export-report> [flags]")
+		fatalf("usage: clairveil-payroll <validate|build-input-from-notes|prepare-notes|plan|run|status|scan-evidence|reconcile|settle-transfer-batch|seed-localnet-notes|export-report> [flags]")
 	}
 	switch os.Args[1] {
 	case "validate":
@@ -213,6 +213,10 @@ func main() {
 		}
 	case "settle-transfer-batch":
 		if err := runSettleTransferBatch(os.Args[2:]); err != nil {
+			fatalf("%v", err)
+		}
+	case "seed-localnet-notes":
+		if err := runSeedLocalnetNotes(os.Args[2:]); err != nil {
 			fatalf("%v", err)
 		}
 	case "export-report":
