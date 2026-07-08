@@ -292,7 +292,8 @@ clairveil-payroll settle-transfer-batch \
 - tx `code`가 `0`임.
 - tx `message_count`가 선택된 payroll item 수와 같음.
 - tx amount 목록이 선택된 payroll item amount 목록과 같음.
-- recipient scan 결과에서 지급 amount note가 선택된 payroll item 수만큼 증가함.
+- tx item evidence에 선택된 input nullifier, output commitment, audit disclosure digest가 포함됨.
+- recipient scan 결과에서 같은 `txhash`의 지급 amount note가 선택된 payroll item 수만큼 증가함.
 - `-item-start`와 `-item-limit`으로 plan의 어느 구간을 해당 tx와 매칭할지 지정함.
 
 확인이 끝나면 durable reservation state를 `ConfirmedSpent`, operation state를 `Succeeded`로 갱신함.
@@ -345,11 +346,12 @@ clairveil-payroll export-report \
 
 - 실제 `transfer-batch` tx가 성공함.
 - tx message 수와 amount 목록이 payroll plan과 일치함.
-- recipient의 spendable note가 지급 amount별로 필요한 수만큼 증가함.
+- tx output evidence가 선택된 reservation nullifier를 선택된 payroll item과 연결함.
+- recipient의 spendable note 중 transfer tx에서 나온 note가 지급 amount별로 필요한 수만큼 증가함.
 
 아직 남은 production-grade 보강은 다음과 같음.
 
-- tx event/nullifier scanner는 `clairveil-payroll scan-evidence`와 SDK `EvidenceScanner`로 제공되지만, 이 튜토리얼 스크립트는 beginner-friendly settle bridge를 기본으로 사용함.
+- tx event/nullifier scanner는 `clairveil-payroll scan-evidence`와 SDK `EvidenceScanner`로 제공됨. Production 배포에서는 command-local tx metadata만 믿기보다 chain tx query에서 나온 scanner output을 연결해야 함.
 - production daemon은 `scan-evidence` 또는 동등한 scanner를 long-running worker로 연결해야 함.
 - 같은 amount가 많은 payroll에서 recipient note delta와 operation item을 더 강하게 매칭함.
 - `PAYROLL_SEED_NOTES=1`은 localnet-only rehearsal helper이므로 production note preparation 성능 주장의 근거로 쓰면 안 됨.

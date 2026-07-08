@@ -76,11 +76,14 @@ func (s EvidenceScanner) ScanTransferBatch(ctx context.Context, plan PayrollPlan
 		report.Warnings = append(report.Warnings, fmt.Sprintf("observed %d shielded_transfer events for %d payroll items", len(transferEvents), len(plan.Items)))
 	}
 
+	usedEvents := make(map[int]struct{}, len(transferEvents))
 	for itemIndex, item := range plan.Items {
-		var attrs map[string]string
-		if itemIndex < len(transferEvents) {
-			attrs = eventAttributes(transferEvents[itemIndex])
-		} else {
+		attrs, hasEvent := transferEventAttributesForItem(item, itemIndex, transferEvents, usedEvents)
+		hasFailedTxEvidence := report.TxFailed && report.TxKnown
+		if !hasEvent {
+			if !hasFailedTxEvidence && !itemHasExplicitNullifierStatus(item, spentByNullifier) {
+				continue
+			}
 			attrs = map[string]string{}
 		}
 		for _, note := range item.InputNotes {
@@ -96,6 +99,9 @@ func (s EvidenceScanner) ScanTransferBatch(ctx context.Context, plan PayrollPlan
 			if err != nil {
 				return nil, err
 			}
+			if !hasEvent && hasFailedTxEvidence && !reservationOrOperationTxMatchesObservation(reservation, operation, tx) {
+				continue
+			}
 			evidence := privacyreservation.OperationEvidence{
 				TxHash:                   tx.TxHash,
 				OutputCommitment:         attrs[privacytypes.AttributeKeyCommitment1],
@@ -109,9 +115,9 @@ func (s EvidenceScanner) ScanTransferBatch(ctx context.Context, plan PayrollPlan
 				BatchItemIndex:           itemIndex,
 				BatchItemIndexKnown:      true,
 				NullifierSpent:           reservationNullifierSpent(reservation, attrs, spentByNullifier),
-				TxSucceeded:              report.TxSucceeded,
-				TxFailed:                 report.TxFailed,
-				TxKnown:                  report.TxKnown,
+				TxSucceeded:              report.TxSucceeded && hasEvent,
+				TxFailed:                 hasFailedTxEvidence,
+				TxKnown:                  report.TxKnown && (hasEvent || hasFailedTxEvidence),
 			}
 			report.Evidence = append(report.Evidence, ScannedOperationEvidence{
 				ReservationID: reservation.ReservationID,
@@ -123,6 +129,88 @@ func (s EvidenceScanner) ScanTransferBatch(ctx context.Context, plan PayrollPlan
 		}
 	}
 	return report, nil
+}
+
+func transferEventAttributesForItem(item PayrollPlanItem, fallbackIndex int, events []ChainEvent, usedEvents map[int]struct{}) (map[string]string, bool) {
+	if transferEventsHaveNullifierEvidence(events) {
+		for eventIndex, event := range events {
+			if _, used := usedEvents[eventIndex]; used {
+				continue
+			}
+			attrs := eventAttributes(event)
+			if eventMatchesItemNullifiers(item, attrs) {
+				usedEvents[eventIndex] = struct{}{}
+				return attrs, true
+			}
+		}
+		return nil, false
+	}
+	if fallbackIndex >= len(events) {
+		return nil, false
+	}
+	usedEvents[fallbackIndex] = struct{}{}
+	return eventAttributes(events[fallbackIndex]), true
+}
+
+func transferEventsHaveNullifierEvidence(events []ChainEvent) bool {
+	for _, event := range events {
+		attrs := eventAttributes(event)
+		if normalizeEvidenceHex(attrs[privacytypes.AttributeKeyNullifier1]) != "" || normalizeEvidenceHex(attrs[privacytypes.AttributeKeyNullifier2]) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func eventMatchesItemNullifiers(item PayrollPlanItem, attrs map[string]string) bool {
+	eventNullifiers := map[string]struct{}{}
+	for _, key := range []string{privacytypes.AttributeKeyNullifier1, privacytypes.AttributeKeyNullifier2} {
+		if value := normalizeEvidenceHex(attrs[key]); value != "" {
+			eventNullifiers[value] = struct{}{}
+		}
+	}
+	if len(eventNullifiers) == 0 {
+		return false
+	}
+	required := 0
+	for _, note := range item.InputNotes {
+		lookup := normalizeEvidenceHex(note.NullifierLookupKey)
+		if lookup == "" {
+			continue
+		}
+		required++
+		if _, ok := eventNullifiers[lookup]; !ok {
+			return false
+		}
+	}
+	return required > 0
+}
+
+func itemHasExplicitNullifierStatus(item PayrollPlanItem, spentByNullifier map[string]bool) bool {
+	for _, note := range item.InputNotes {
+		lookup := normalizeEvidenceHex(note.NullifierLookupKey)
+		if lookup == "" {
+			continue
+		}
+		if _, ok := spentByNullifier[lookup]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func reservationOrOperationTxMatchesObservation(reservation *privacyreservation.NoteReservation, operation *privacyreservation.PayrollOperation, tx TxObservation) bool {
+	txHash := normalizedTxIdentity(tx.TxHash)
+	if txHash == "" {
+		return false
+	}
+	if reservation != nil && normalizedTxIdentity(reservation.TxHash) == txHash {
+		return true
+	}
+	if operation != nil && normalizedTxIdentity(operation.TxHash) == txHash {
+		return true
+	}
+	return false
 }
 
 func ParseTxObservationJSON(bz []byte) (TxObservation, error) {
@@ -247,6 +335,10 @@ func normalizeEvidenceHex(value string) string {
 	value = strings.TrimSpace(strings.ToLower(value))
 	value = strings.TrimPrefix(value, "0x")
 	return value
+}
+
+func normalizedTxIdentity(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 func firstNonEmptyString(values ...string) string {

@@ -132,6 +132,60 @@ func TestRunLiveModeReconcilesSubmittedState(t *testing.T) {
 	require.Equal(t, privacyreservation.OperationStatusSucceeded, operation.Status)
 }
 
+func TestRunRejectsMissingStatePath(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "missing-state.json")
+	err := run([]string{"-state", statePath, "-once"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "does not exist")
+}
+
+func TestDaemonRunnerReopensStateEachTick(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "reservation-state.json")
+	store, err := privacyreservation.OpenDurableFileStore(statePath)
+	require.NoError(t, err)
+	svc := privacypayroll.Service{Reservation: privacyreservation.Service{Store: store}}
+	input := privacypayroll.PayrollInput{
+		CompanyID: "company-live",
+		PayrollID: "payroll-live",
+		BatchID:   "run-001",
+		Denom:     "uclair",
+		Items: []privacypayroll.PayrollItemInput{{
+			ItemID:                   "item-001",
+			EmployeeID:               "employee-001",
+			RecipientAddress:         testPayrolldRecipientA,
+			Amount:                   big.NewInt(70),
+			ExpectedOutputCommitment: "commitment-a",
+			ExpectedDisclosureDigest: "digest-a",
+		}},
+	}
+	plan, err := svc.CreatePlan(ctx, input, []privacypayroll.TreasuryNote{
+		testPayrolldTreasuryNote("note-large", "uclair", 70),
+		testPayrolldTreasuryNote("note-zero", "uclair", 0),
+	})
+	require.NoError(t, err)
+	confirmed, err := svc.ConfirmPlan(ctx, *plan)
+	require.NoError(t, err)
+
+	runner, err := buildDaemonRunner("simulated", statePath, "", "", "", "clairveil-payrolld-test", time.Minute, 0)
+	require.NoError(t, err)
+	externalStore, err := privacyreservation.OpenDurableFileStore(statePath)
+	require.NoError(t, err)
+	markPayrolldPlanSubmitted(t, ctx, externalStore, *confirmed)
+
+	report, err := runner.RunOnce(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, report.ProofReady)
+	require.Equal(t, 0, report.Submitted)
+	require.Equal(t, 2, report.Reconciled)
+	reloadedStore, err := privacyreservation.OpenDurableFileStore(statePath)
+	require.NoError(t, err)
+	operation, err := reloadedStore.GetOperation(ctx, confirmed.Items[0].OperationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusSucceeded, operation.Status)
+}
+
 func testPayrolldTreasuryNote(id string, denom string, amount int64) privacypayroll.TreasuryNote {
 	return privacypayroll.TreasuryNote{
 		NoteID:               id,

@@ -211,7 +211,7 @@ clairveild tx privacy transfer-batch "$(cat out/bob-shielded-address.txt)" \
 - recursive split/merge planner를 실행하지 않습니다.
 - 각 amount는 같은 batch 안에서 input note를 재사용하지 않고 spendable exact note 또는 pairable note로 이미 충족 가능해야 합니다.
 - 선택된 transfer input에 dummy note가 필요하면 zero-value dummy note가 미리 존재해야 합니다.
-- JSON output에는 `txhash`, `height`, `code`, `message_count`, 요청한 `amounts`가 포함됩니다.
+- JSON output에는 `txhash`, `height`, `code`, `message_count`, 요청한 `amounts`, 그리고 message별 nullifier, output commitment, disclosure digest를 담은 `items` evidence가 포함됩니다.
 
 ## 6. Disclosure decode
 
@@ -422,7 +422,7 @@ clairveil-payroll seed-localnet-notes -genesis home/config/genesis.json -wallet-
 clairveil-payroll export-report -plan plan.json -state .clairveil-payroll/reservation-state.json -out payroll-report.json
 ```
 
-`build-input-from-notes`는 `list-notes --json` 결과에서 spendable note를 읽어 payroll input의 `treasury_notes`를 채웁니다. `scan-evidence`는 `clairveild query tx --output json` 결과 또는 같은 형태의 tx observation JSON을 읽어 `shielded_transfer` event, output commitment, disclosure digest, nullifier spent evidence를 payroll operation별 reconcile evidence로 변환합니다. `-apply`를 주면 스캔한 evidence를 즉시 durable reservation state에 반영합니다. `settle-transfer-batch`는 실제 `transfer-batch` tx 결과와 recipient note scan delta를 검증한 뒤 durable reservation state를 settle합니다.
+`build-input-from-notes`는 `list-notes --json` 결과에서 spendable note를 읽어 payroll input의 `treasury_notes`를 채웁니다. `scan-evidence`는 `clairveild query tx --output json` 결과 또는 같은 형태의 tx observation JSON을 읽어 `shielded_transfer` event, output commitment, disclosure digest, nullifier spent evidence를 payroll operation별 reconcile evidence로 변환합니다. `-apply`를 주면 스캔한 evidence를 즉시 durable reservation state에 반영합니다. `settle-transfer-batch`는 실제 `transfer-batch` tx 결과, message별 nullifier/output/disclosure evidence, recipient note scan delta를 검증한 뒤 durable reservation state를 settle합니다.
 
 `seed-localnet-notes`는 localnet rehearsal helper입니다. localnet genesis commitment와 local wallet cache에 payroll용 amount note와 zero dummy note를 기록해 큰 restart/retry rehearsal에서 deposit 준비 시간을 줄입니다. Production note preparation 기능이 아니며 staging/testnet에서는 실제 deposit, split/merge, approval 기반 preparation flow를 사용해야 합니다.
 

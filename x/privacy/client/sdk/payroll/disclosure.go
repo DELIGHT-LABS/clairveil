@@ -101,8 +101,8 @@ func normalizeDisclosurePolicy(policy PayrollDisclosurePolicy) PayrollDisclosure
 	return policy
 }
 
-func effectiveDisclosurePolicy(defaultPolicy PayrollDisclosurePolicy, itemPolicy PayrollDisclosurePolicy) PayrollDisclosurePolicy {
-	if isZeroDisclosurePolicy(itemPolicy) {
+func effectiveDisclosurePolicy(defaultPolicy PayrollDisclosurePolicy, itemPolicy PayrollDisclosurePolicy, itemPolicySet bool) PayrollDisclosurePolicy {
+	if !itemPolicySet && isZeroDisclosurePolicy(itemPolicy) {
 		return normalizeDisclosurePolicy(defaultPolicy)
 	}
 	return normalizeDisclosurePolicy(itemPolicy)

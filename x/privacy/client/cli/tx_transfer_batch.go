@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"math/big"
@@ -23,12 +24,22 @@ import (
 )
 
 type transferBatchOutput struct {
-	TxHash       string   `json:"txhash"`
-	Height       int64    `json:"height"`
-	Code         uint32   `json:"code"`
-	RawLog       string   `json:"raw_log,omitempty"`
-	MessageCount int      `json:"message_count"`
-	Amounts      []string `json:"amounts"`
+	TxHash       string                    `json:"txhash"`
+	Height       int64                     `json:"height"`
+	Code         uint32                    `json:"code"`
+	RawLog       string                    `json:"raw_log,omitempty"`
+	MessageCount int                       `json:"message_count"`
+	Amounts      []string                  `json:"amounts"`
+	Items        []transferBatchItemOutput `json:"items,omitempty"`
+}
+
+type transferBatchItemOutput struct {
+	Amount                   string   `json:"amount"`
+	Nullifiers               []string `json:"nullifiers,omitempty"`
+	OutputCommitment         string   `json:"output_commitment,omitempty"`
+	UserDisclosureDigest     string   `json:"user_disclosure_digest,omitempty"`
+	AuditDisclosureDigest    string   `json:"audit_disclosure_digest,omitempty"`
+	SelfViewDisclosureDigest string   `json:"self_view_disclosure_digest,omitempty"`
 }
 
 func CmdTransferBatch() *cobra.Command {
@@ -136,6 +147,11 @@ Broadcast several independent MsgTransfer messages in one Cosmos transaction env
 				runErr = err
 				return err
 			}
+			items, err := transferBatchOutputItems(coins, msgs)
+			if err != nil {
+				runErr = err
+				return err
+			}
 			if txRes.Code != 0 {
 				runErr = fmt.Errorf("tx failed with code %d: %s", txRes.Code, txRes.RawLog)
 				return runErr
@@ -148,6 +164,7 @@ Broadcast several independent MsgTransfer messages in one Cosmos transaction env
 				RawLog:       txRes.RawLog,
 				MessageCount: len(msgs),
 				Amounts:      coinStrings(coins),
+				Items:        items,
 			}
 			if privacyCommandOutputJSONEnabled(cmd) {
 				runErr = printCommandJSON(cmd, output)
@@ -293,6 +310,42 @@ func transferBatchNoteCanComputeCommitment(note privacytypes.Note) bool {
 		note.Amount != nil &&
 		note.AssetID != nil &&
 		note.Randomness != nil
+}
+
+func transferBatchOutputItems(coins []sdk.Coin, msgs []sdk.Msg) ([]transferBatchItemOutput, error) {
+	if len(coins) != len(msgs) {
+		return nil, fmt.Errorf("transfer-batch metadata has %d amounts for %d messages", len(coins), len(msgs))
+	}
+	items := make([]transferBatchItemOutput, 0, len(msgs))
+	for i, msg := range msgs {
+		transferMsg, ok := msg.(*privacytypes.MsgTransfer)
+		if !ok || transferMsg == nil {
+			return nil, fmt.Errorf("transfer-batch metadata message %d is %T, expected *privacytypes.MsgTransfer", i, msg)
+		}
+		item := transferBatchItemOutput{
+			Amount:                   coins[i].String(),
+			Nullifiers:               hexList(transferMsg.Nullifiers),
+			UserDisclosureDigest:     hex.EncodeToString(transferMsg.UserDisclosureDigest),
+			AuditDisclosureDigest:    hex.EncodeToString(transferMsg.AuditDisclosureDigest),
+			SelfViewDisclosureDigest: hex.EncodeToString(transferMsg.SelfViewDisclosureDigest),
+		}
+		if len(transferMsg.NewCommitments) > 0 {
+			item.OutputCommitment = hex.EncodeToString(transferMsg.NewCommitments[0])
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func hexList(values [][]byte) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if len(value) == 0 {
+			continue
+		}
+		out = append(out, hex.EncodeToString(value))
+	}
+	return out
 }
 
 func coinStrings(coins []sdk.Coin) []string {

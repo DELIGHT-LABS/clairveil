@@ -29,14 +29,14 @@ type prepareNotesFile struct {
 }
 
 type payrollItemFile struct {
-	ItemID                   string               `json:"item_id"`
-	EmployeeID               string               `json:"employee_id,omitempty"`
-	RecipientAddress         string               `json:"recipient_address"`
-	Amount                   string               `json:"amount"`
-	Denom                    string               `json:"denom,omitempty"`
-	DisclosurePolicy         disclosurePolicyFile `json:"disclosure_policy,omitempty"`
-	ExpectedOutputCommitment string               `json:"expected_output_commitment,omitempty"`
-	ExpectedDisclosureDigest string               `json:"expected_disclosure_digest,omitempty"`
+	ItemID                   string                `json:"item_id"`
+	EmployeeID               string                `json:"employee_id,omitempty"`
+	RecipientAddress         string                `json:"recipient_address"`
+	Amount                   string                `json:"amount"`
+	Denom                    string                `json:"denom,omitempty"`
+	DisclosurePolicy         *disclosurePolicyFile `json:"disclosure_policy,omitempty"`
+	ExpectedOutputCommitment string                `json:"expected_output_commitment,omitempty"`
+	ExpectedDisclosureDigest string                `json:"expected_disclosure_digest,omitempty"`
 }
 
 type treasuryNoteFile struct {
@@ -93,21 +93,24 @@ type reconcileEvidenceFile struct {
 }
 
 type reconcileEvidenceItemFile struct {
-	ReservationID       string `json:"reservation_id"`
-	TxHash              string `json:"tx_hash,omitempty"`
-	SignDocHash         string `json:"sign_doc_hash,omitempty"`
-	TxBytesHash         string `json:"tx_bytes_hash,omitempty"`
-	OutputCommitment    string `json:"output_commitment,omitempty"`
-	DisclosureDigest    string `json:"disclosure_digest,omitempty"`
-	RecipientHash       string `json:"recipient_hash,omitempty"`
-	AmountHash          string `json:"amount_hash,omitempty"`
-	Denom               string `json:"denom,omitempty"`
-	BatchItemIndex      int    `json:"batch_item_index,omitempty"`
-	BatchItemIndexKnown bool   `json:"batch_item_index_known,omitempty"`
-	NullifierSpent      bool   `json:"nullifier_spent,omitempty"`
-	TxSucceeded         bool   `json:"tx_succeeded,omitempty"`
-	TxFailed            bool   `json:"tx_failed,omitempty"`
-	TxKnown             bool   `json:"tx_known,omitempty"`
+	ReservationID            string `json:"reservation_id"`
+	TxHash                   string `json:"tx_hash,omitempty"`
+	SignDocHash              string `json:"sign_doc_hash,omitempty"`
+	TxBytesHash              string `json:"tx_bytes_hash,omitempty"`
+	OutputCommitment         string `json:"output_commitment,omitempty"`
+	DisclosureDigest         string `json:"disclosure_digest,omitempty"`
+	UserDisclosureDigest     string `json:"user_disclosure_digest,omitempty"`
+	AuditDisclosureDigest    string `json:"audit_disclosure_digest,omitempty"`
+	SelfViewDisclosureDigest string `json:"self_view_disclosure_digest,omitempty"`
+	RecipientHash            string `json:"recipient_hash,omitempty"`
+	AmountHash               string `json:"amount_hash,omitempty"`
+	Denom                    string `json:"denom,omitempty"`
+	BatchItemIndex           int    `json:"batch_item_index,omitempty"`
+	BatchItemIndexKnown      bool   `json:"batch_item_index_known,omitempty"`
+	NullifierSpent           bool   `json:"nullifier_spent,omitempty"`
+	TxSucceeded              bool   `json:"tx_succeeded,omitempty"`
+	TxFailed                 bool   `json:"tx_failed,omitempty"`
+	TxKnown                  bool   `json:"tx_known,omitempty"`
 }
 
 type reconcileReport struct {
@@ -157,12 +160,22 @@ type listNotesFileNote struct {
 }
 
 type transferBatchResultFile struct {
-	TxHash       string   `json:"txhash"`
-	Height       int64    `json:"height"`
-	Code         uint32   `json:"code"`
-	RawLog       string   `json:"raw_log,omitempty"`
-	MessageCount int      `json:"message_count"`
-	Amounts      []string `json:"amounts"`
+	TxHash       string                        `json:"txhash"`
+	Height       int64                         `json:"height"`
+	Code         uint32                        `json:"code"`
+	RawLog       string                        `json:"raw_log,omitempty"`
+	MessageCount int                           `json:"message_count"`
+	Amounts      []string                      `json:"amounts"`
+	Items        []transferBatchResultItemFile `json:"items,omitempty"`
+}
+
+type transferBatchResultItemFile struct {
+	Amount                   string   `json:"amount,omitempty"`
+	Nullifiers               []string `json:"nullifiers,omitempty"`
+	OutputCommitment         string   `json:"output_commitment,omitempty"`
+	UserDisclosureDigest     string   `json:"user_disclosure_digest,omitempty"`
+	AuditDisclosureDigest    string   `json:"audit_disclosure_digest,omitempty"`
+	SelfViewDisclosureDigest string   `json:"self_view_disclosure_digest,omitempty"`
 }
 
 type settleTransferBatchReport struct {
@@ -547,8 +560,8 @@ func runSettleTransferBatch(args []string) error {
 	flags.StringVar(&planPath, "plan", "", "payroll plan JSON path")
 	flags.StringVar(&statePath, "state", "", "durable reservation state JSON path")
 	flags.StringVar(&txPath, "tx", "", "transfer-batch command JSON output path")
-	flags.StringVar(&recipientBeforePath, "recipient-before", "", "optional recipient list-notes JSON before transfer-batch")
-	flags.StringVar(&recipientAfterPath, "recipient-after", "", "optional recipient list-notes JSON after transfer-batch")
+	flags.StringVar(&recipientBeforePath, "recipient-before", "", "recipient list-notes JSON before transfer-batch")
+	flags.StringVar(&recipientAfterPath, "recipient-after", "", "recipient list-notes JSON after transfer-batch")
 	flags.StringVar(&outPath, "out", "", "optional settle report JSON path; stdout when empty")
 	flags.StringVar(&leaseOwner, "lease-owner", "clairveil-payroll-live-settle", "reservation lease owner used while settling")
 	flags.DurationVar(&leaseTTL, "lease-ttl", time.Minute, "reservation lease ttl used while settling")
@@ -572,10 +585,13 @@ func runSettleTransferBatch(args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := validateSettlementRecipientScope(items); err != nil {
+		return err
+	}
 	if err := validateTransferBatchResult(items, txResult); err != nil {
 		return err
 	}
-	verifiedDeltas, err := verifyRecipientNoteDeltas(items, recipientBeforePath, recipientAfterPath)
+	verifiedDeltas, err := verifyRecipientNoteDeltas(items, txResult.TxHash, recipientBeforePath, recipientAfterPath)
 	if err != nil {
 		return err
 	}
@@ -592,7 +608,7 @@ func runSettleTransferBatch(args []string) error {
 	}
 	for relativeIndex, item := range items {
 		itemIndex := itemStart + relativeIndex
-		results, err := settleTransferBatchItem(context.Background(), service, item, itemIndex, txResult, leaseOwner, leaseTTL)
+		results, err := settleTransferBatchItem(context.Background(), service, item, relativeIndex, itemIndex, txResult, leaseOwner, leaseTTL)
 		if err != nil {
 			return err
 		}
@@ -761,40 +777,46 @@ func readNullifierStatuses(path string) ([]privacypayroll.NullifierStatus, error
 
 func (e reconcileEvidenceItemFile) toSDK() privacyreservation.OperationEvidence {
 	return privacyreservation.OperationEvidence{
-		TxHash:              e.TxHash,
-		SignDocHash:         e.SignDocHash,
-		TxBytesHash:         e.TxBytesHash,
-		OutputCommitment:    e.OutputCommitment,
-		DisclosureDigest:    e.DisclosureDigest,
-		RecipientHash:       e.RecipientHash,
-		AmountHash:          e.AmountHash,
-		Denom:               e.Denom,
-		BatchItemIndex:      e.BatchItemIndex,
-		BatchItemIndexKnown: e.BatchItemIndexKnown,
-		NullifierSpent:      e.NullifierSpent,
-		TxSucceeded:         e.TxSucceeded,
-		TxFailed:            e.TxFailed,
-		TxKnown:             e.TxKnown,
+		TxHash:                   e.TxHash,
+		SignDocHash:              e.SignDocHash,
+		TxBytesHash:              e.TxBytesHash,
+		OutputCommitment:         e.OutputCommitment,
+		DisclosureDigest:         e.DisclosureDigest,
+		UserDisclosureDigest:     e.UserDisclosureDigest,
+		AuditDisclosureDigest:    e.AuditDisclosureDigest,
+		SelfViewDisclosureDigest: e.SelfViewDisclosureDigest,
+		RecipientHash:            e.RecipientHash,
+		AmountHash:               e.AmountHash,
+		Denom:                    e.Denom,
+		BatchItemIndex:           e.BatchItemIndex,
+		BatchItemIndexKnown:      e.BatchItemIndexKnown,
+		NullifierSpent:           e.NullifierSpent,
+		TxSucceeded:              e.TxSucceeded,
+		TxFailed:                 e.TxFailed,
+		TxKnown:                  e.TxKnown,
 	}
 }
 
 func reconcileEvidenceItemFromSDK(reservationID string, evidence privacyreservation.OperationEvidence) reconcileEvidenceItemFile {
 	return reconcileEvidenceItemFile{
-		ReservationID:       reservationID,
-		TxHash:              evidence.TxHash,
-		SignDocHash:         evidence.SignDocHash,
-		TxBytesHash:         evidence.TxBytesHash,
-		OutputCommitment:    evidence.OutputCommitment,
-		DisclosureDigest:    evidence.DisclosureDigest,
-		RecipientHash:       evidence.RecipientHash,
-		AmountHash:          evidence.AmountHash,
-		Denom:               evidence.Denom,
-		BatchItemIndex:      evidence.BatchItemIndex,
-		BatchItemIndexKnown: evidence.BatchItemIndexKnown,
-		NullifierSpent:      evidence.NullifierSpent,
-		TxSucceeded:         evidence.TxSucceeded,
-		TxFailed:            evidence.TxFailed,
-		TxKnown:             evidence.TxKnown,
+		ReservationID:            reservationID,
+		TxHash:                   evidence.TxHash,
+		SignDocHash:              evidence.SignDocHash,
+		TxBytesHash:              evidence.TxBytesHash,
+		OutputCommitment:         evidence.OutputCommitment,
+		DisclosureDigest:         evidence.DisclosureDigest,
+		UserDisclosureDigest:     evidence.UserDisclosureDigest,
+		AuditDisclosureDigest:    evidence.AuditDisclosureDigest,
+		SelfViewDisclosureDigest: evidence.SelfViewDisclosureDigest,
+		RecipientHash:            evidence.RecipientHash,
+		AmountHash:               evidence.AmountHash,
+		Denom:                    evidence.Denom,
+		BatchItemIndex:           evidence.BatchItemIndex,
+		BatchItemIndexKnown:      evidence.BatchItemIndexKnown,
+		NullifierSpent:           evidence.NullifierSpent,
+		TxSucceeded:              evidence.TxSucceeded,
+		TxFailed:                 evidence.TxFailed,
+		TxKnown:                  evidence.TxKnown,
 	}
 }
 
@@ -1013,21 +1035,41 @@ func validateTransferBatchResult(items []privacypayroll.PayrollPlanItem, tx tran
 	if len(tx.Amounts) != len(items) {
 		return fmt.Errorf("transfer-batch amount count %d does not match selected payroll item count %d", len(tx.Amounts), len(items))
 	}
+	if len(tx.Items) != len(items) {
+		return fmt.Errorf("transfer-batch item evidence count %d does not match selected payroll item count %d", len(tx.Items), len(items))
+	}
 	for i, item := range items {
 		expected := payrollItemCoinString(item)
 		if tx.Amounts[i] != expected {
 			return fmt.Errorf("transfer-batch amount %d is %s, expected %s", i, tx.Amounts[i], expected)
 		}
+		if err := validateTransferBatchItemEvidence(item, tx.Items[i], i); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func verifyRecipientNoteDeltas(items []privacypayroll.PayrollPlanItem, beforePath string, afterPath string) (map[string]int, error) {
-	if strings.TrimSpace(beforePath) == "" && strings.TrimSpace(afterPath) == "" {
-		return nil, nil
+func validateSettlementRecipientScope(items []privacypayroll.PayrollPlanItem) error {
+	if len(items) == 0 {
+		return nil
 	}
+	recipient := strings.TrimSpace(items[0].RecipientAddress)
+	for i, item := range items {
+		if strings.TrimSpace(item.RecipientAddress) != recipient {
+			return fmt.Errorf("settle-transfer-batch selected item %d recipient differs from the first selected item; split mixed-recipient batches before settling", i)
+		}
+	}
+	return nil
+}
+
+func verifyRecipientNoteDeltas(items []privacypayroll.PayrollPlanItem, txHash string, beforePath string, afterPath string) (map[string]int, error) {
 	if strings.TrimSpace(beforePath) == "" || strings.TrimSpace(afterPath) == "" {
-		return nil, fmt.Errorf("both -recipient-before and -recipient-after are required when verifying recipient notes")
+		return nil, fmt.Errorf("both -recipient-before and -recipient-after are required for settle-transfer-batch recipient verification")
+	}
+	txHash = strings.TrimSpace(txHash)
+	if txHash == "" {
+		return nil, fmt.Errorf("recipient verification requires transfer-batch txhash")
 	}
 	before, err := readListNotesFileAtFlag(beforePath, "-recipient-before")
 	if err != nil {
@@ -1041,13 +1083,13 @@ func verifyRecipientNoteDeltas(items []privacypayroll.PayrollPlanItem, beforePat
 	for _, item := range items {
 		required[payrollItemAmountString(item)]++
 	}
-	beforeCounts := spendableNoteCountsByAmount(before)
-	afterCounts := spendableNoteCountsByAmount(after)
+	beforeCounts := spendableNoteCountsByAmountAndTxHash(before, txHash)
+	afterCounts := spendableNoteCountsByAmountAndTxHash(after, txHash)
 	verified := make(map[string]int, len(required))
 	for amount, count := range required {
 		delta := afterCounts[amount] - beforeCounts[amount]
 		if delta < count {
-			return nil, fmt.Errorf("recipient note delta for amount %s is %d, expected at least %d", amount, delta, count)
+			return nil, fmt.Errorf("recipient note delta for amount %s from tx %s is %d, expected at least %d", amount, txHash, delta, count)
 		}
 		verified[amount] = delta
 	}
@@ -1084,14 +1126,48 @@ func spendableNoteCountsByAmount(notes listNotesFile) map[string]int {
 	return counts
 }
 
-func settleTransferBatchItem(ctx context.Context, service privacyreservation.Service, item privacypayroll.PayrollPlanItem, itemIndex int, tx transferBatchResultFile, leaseOwner string, leaseTTL time.Duration) ([]reconcileItemReport, error) {
+func spendableNoteCountsByAmountAndTxHash(notes listNotesFile, txHash string) map[string]int {
+	counts := make(map[string]int)
+	txHash = strings.TrimSpace(txHash)
+	for _, note := range notes.Notes {
+		if strings.TrimSpace(note.Status) != "spendable" {
+			continue
+		}
+		if strings.TrimSpace(note.TxHash) != txHash {
+			continue
+		}
+		amount := strings.TrimSpace(note.Amount)
+		if amount == "" {
+			continue
+		}
+		counts[amount]++
+	}
+	return counts
+}
+
+func settleTransferBatchItem(ctx context.Context, service privacyreservation.Service, item privacypayroll.PayrollPlanItem, txItemIndex int, itemIndex int, tx transferBatchResultFile, leaseOwner string, leaseTTL time.Duration) (results []reconcileItemReport, runErr error) {
 	if len(item.InputNotes) == 0 {
 		return nil, fmt.Errorf("payroll item %s has no input notes", item.ItemID)
 	}
 	if leaseTTL <= 0 {
 		leaseTTL = time.Minute
 	}
+	evidence, err := settlementEvidenceForItem(item, txItemIndex, itemIndex, tx)
+	if err != nil {
+		return nil, err
+	}
 	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(item.InputNotes))
+	provingRefs := make([]privacyreservation.SubmittedReservationRef, 0, len(item.InputNotes))
+	submissionRefs := make([]privacyreservation.SubmittedReservationRef, 0, len(item.InputNotes))
+	rollbackRequired := true
+	defer func() {
+		if !rollbackRequired || len(provingRefs) == 0 {
+			return
+		}
+		if rollbackErr := rollbackProvingRefs(ctx, service, provingRefs); rollbackErr != nil {
+			runErr = errors.Join(runErr, rollbackErr)
+		}
+	}()
 	for _, note := range item.InputNotes {
 		reservationID := note.ReservationID
 		if reservationID == "" {
@@ -1101,52 +1177,74 @@ func settleTransferBatchItem(ctx context.Context, service privacyreservation.Ser
 		if err != nil {
 			return nil, err
 		}
-		if reservation.Status == privacyreservation.StatusConfirmedSpent {
+		switch reservation.Status {
+		case privacyreservation.StatusConfirmedSpent:
 			refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservationID})
-			continue
+		case privacyreservation.StatusReserved:
+			lease, err := service.AcquireLeaseForStatus(ctx, reservationID, leaseOwner, privacyreservation.StatusReserved, leaseTTL)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := service.TransitionWithLease(ctx, reservationID, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving); err != nil {
+				return nil, err
+			}
+			ref := privacyreservation.SubmittedReservationRef{ReservationID: reservationID, LeaseToken: lease.Token}
+			refs = append(refs, ref)
+			provingRefs = append(provingRefs, ref)
+		case privacyreservation.StatusProving:
+			lease, err := service.AcquireLeaseForStatus(ctx, reservationID, leaseOwner, privacyreservation.StatusProving, leaseTTL)
+			if err != nil {
+				return nil, err
+			}
+			ref := privacyreservation.SubmittedReservationRef{ReservationID: reservationID, LeaseToken: lease.Token}
+			refs = append(refs, ref)
+			provingRefs = append(provingRefs, ref)
+		case privacyreservation.StatusProofReady:
+			lease, err := service.AcquireLeaseForStatus(ctx, reservationID, leaseOwner, privacyreservation.StatusProofReady, leaseTTL)
+			if err != nil {
+				return nil, err
+			}
+			ref := privacyreservation.SubmittedReservationRef{ReservationID: reservationID, LeaseToken: lease.Token}
+			refs = append(refs, ref)
+			submissionRefs = append(submissionRefs, ref)
+		case privacyreservation.StatusSubmitted, privacyreservation.StatusUnknown:
+			refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservationID})
+		default:
+			return nil, fmt.Errorf("reservation %s has status %s; settle-transfer-batch can only resume Reserved, Proving, ProofReady, Submitted, Unknown, or ConfirmedSpent", reservationID, reservation.Status)
 		}
-		lease, err := service.AcquireLeaseForStatus(ctx, reservationID, leaseOwner, privacyreservation.StatusReserved, leaseTTL)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := service.TransitionWithLease(ctx, reservationID, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving); err != nil {
-			return nil, err
-		}
-		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservationID, LeaseToken: lease.Token})
 	}
 	if len(refs) == 0 {
 		return nil, nil
 	}
-	if _, _, err := service.MarkProofReadyBatch(ctx, refsWithLeaseTokens(refs), privacyreservation.ProofReadyOperationUpdate{
-		OperationID:                   item.OperationID,
-		ExpectedOutputCommitment:      liveSettlementOutputCommitment(tx.TxHash, item.OperationID),
-		ExpectedDisclosureDigest:      liveSettlementDisclosureDigest(tx.TxHash, item.OperationID),
-		ExpectedAuditDisclosureDigest: liveSettlementDisclosureDigest(tx.TxHash, item.OperationID),
-	}); err != nil {
-		return nil, err
+	if len(provingRefs) > 0 {
+		if _, _, err := service.MarkProofReadyBatch(ctx, provingRefs, privacyreservation.ProofReadyOperationUpdate{
+			OperationID:                      item.OperationID,
+			ExpectedOutputCommitment:         evidence.OutputCommitment,
+			ExpectedDisclosureDigest:         evidence.AuditDisclosureDigest,
+			ExpectedUserDisclosureDigest:     evidence.UserDisclosureDigest,
+			ExpectedAuditDisclosureDigest:    evidence.AuditDisclosureDigest,
+			ExpectedSelfViewDisclosureDigest: evidence.SelfViewDisclosureDigest,
+		}); err != nil {
+			return nil, err
+		}
+		submissionRefs = append(submissionRefs, provingRefs...)
+		rollbackRequired = false
 	}
-	if _, _, err := service.MarkSubmittedBatch(ctx, refsWithLeaseTokens(refs), []string{item.OperationID}, privacyreservation.SubmittedReservationUpdate{
-		TxHash: tx.TxHash,
-	}); err != nil {
-		return nil, err
+	if len(submissionRefs) > 0 {
+		if _, _, err := service.MarkSubmittedBatch(ctx, submissionRefs, []string{item.OperationID}, privacyreservation.SubmittedReservationUpdate{
+			TxHash: tx.TxHash,
+		}); err != nil {
+			return nil, errors.Join(err, clearSettlementLeases(ctx, service, submissionRefs))
+		}
 	}
+	return reconcileSettlementRefs(ctx, service, refs, evidence)
+}
+
+func reconcileSettlementRefs(ctx context.Context, service privacyreservation.Service, refs []privacyreservation.SubmittedReservationRef, evidence privacyreservation.OperationEvidence) ([]reconcileItemReport, error) {
 	results := make([]reconcileItemReport, 0, len(refs))
 	worker := privacypayroll.ReconcileWorker{Reservation: service}
 	for _, ref := range refs {
-		result, err := worker.ReconcileReservation(ctx, ref.ReservationID, privacyreservation.OperationEvidence{
-			TxHash:                tx.TxHash,
-			OutputCommitment:      liveSettlementOutputCommitment(tx.TxHash, item.OperationID),
-			DisclosureDigest:      liveSettlementDisclosureDigest(tx.TxHash, item.OperationID),
-			AuditDisclosureDigest: liveSettlementDisclosureDigest(tx.TxHash, item.OperationID),
-			RecipientHash:         item.ExpectedRecipientHash,
-			AmountHash:            item.ExpectedAmountHash,
-			Denom:                 item.Denom,
-			BatchItemIndex:        itemIndex,
-			BatchItemIndexKnown:   true,
-			NullifierSpent:        true,
-			TxSucceeded:           true,
-			TxKnown:               true,
-		})
+		result, err := worker.ReconcileReservation(ctx, ref.ReservationID, evidence)
 		if err != nil {
 			return nil, err
 		}
@@ -1161,15 +1259,102 @@ func settleTransferBatchItem(ctx context.Context, service privacyreservation.Ser
 	return results, nil
 }
 
-func refsWithLeaseTokens(refs []privacyreservation.SubmittedReservationRef) []privacyreservation.SubmittedReservationRef {
-	out := make([]privacyreservation.SubmittedReservationRef, 0, len(refs))
-	for _, ref := range refs {
-		if ref.LeaseToken == "" {
+func settlementEvidenceForItem(item privacypayroll.PayrollPlanItem, txItemIndex int, itemIndex int, tx transferBatchResultFile) (privacyreservation.OperationEvidence, error) {
+	if txItemIndex < 0 || txItemIndex >= len(tx.Items) {
+		return privacyreservation.OperationEvidence{}, fmt.Errorf("transfer-batch item evidence %d is missing", txItemIndex)
+	}
+	txItem := tx.Items[txItemIndex]
+	if err := validateTransferBatchItemEvidence(item, txItem, txItemIndex); err != nil {
+		return privacyreservation.OperationEvidence{}, err
+	}
+	auditDigest := strings.TrimSpace(txItem.AuditDisclosureDigest)
+	return privacyreservation.OperationEvidence{
+		TxHash:                   tx.TxHash,
+		OutputCommitment:         strings.TrimSpace(txItem.OutputCommitment),
+		DisclosureDigest:         auditDigest,
+		UserDisclosureDigest:     strings.TrimSpace(txItem.UserDisclosureDigest),
+		AuditDisclosureDigest:    auditDigest,
+		SelfViewDisclosureDigest: strings.TrimSpace(txItem.SelfViewDisclosureDigest),
+		RecipientHash:            item.ExpectedRecipientHash,
+		AmountHash:               item.ExpectedAmountHash,
+		Denom:                    item.Denom,
+		BatchItemIndex:           itemIndex,
+		BatchItemIndexKnown:      true,
+		NullifierSpent:           true,
+		TxSucceeded:              true,
+		TxKnown:                  true,
+	}, nil
+}
+
+func validateTransferBatchItemEvidence(item privacypayroll.PayrollPlanItem, txItem transferBatchResultItemFile, txItemIndex int) error {
+	if amount := strings.TrimSpace(txItem.Amount); amount != "" && amount != payrollItemCoinString(item) {
+		return fmt.Errorf("transfer-batch item %d amount is %s, expected %s", txItemIndex, amount, payrollItemCoinString(item))
+	}
+	if strings.TrimSpace(txItem.OutputCommitment) == "" {
+		return fmt.Errorf("transfer-batch item %d is missing output_commitment evidence", txItemIndex)
+	}
+	if strings.TrimSpace(txItem.AuditDisclosureDigest) == "" {
+		return fmt.Errorf("transfer-batch item %d is missing audit_disclosure_digest evidence", txItemIndex)
+	}
+	nullifiers := settlementNullifierSet(txItem.Nullifiers)
+	if len(nullifiers) == 0 {
+		return fmt.Errorf("transfer-batch item %d is missing nullifier evidence", txItemIndex)
+	}
+	for _, note := range item.InputNotes {
+		lookup := normalizeSettlementEvidenceHex(note.NullifierLookupKey)
+		if lookup == "" {
+			return fmt.Errorf("payroll item %s input note %s has no nullifier lookup key", item.ItemID, note.NoteID)
+		}
+		if _, ok := nullifiers[lookup]; !ok {
+			return fmt.Errorf("transfer-batch item %d missing nullifier evidence for reservation %s", txItemIndex, note.ReservationID)
+		}
+	}
+	return nil
+}
+
+func settlementNullifierSet(values []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		normalized := normalizeSettlementEvidenceHex(value)
+		if normalized == "" {
 			continue
 		}
-		out = append(out, ref)
+		out[normalized] = struct{}{}
 	}
 	return out
+}
+
+func normalizeSettlementEvidenceHex(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	value = strings.TrimPrefix(value, "0x")
+	return value
+}
+
+func rollbackProvingRefs(ctx context.Context, service privacyreservation.Service, refs []privacyreservation.SubmittedReservationRef) error {
+	var rollbackErr error
+	for _, ref := range refs {
+		if ref.ReservationID == "" || ref.LeaseToken == "" {
+			continue
+		}
+		_, err := service.TransitionWithLease(ctx, ref.ReservationID, ref.LeaseToken, privacyreservation.StatusProving, privacyreservation.StatusReserved)
+		if err != nil && !errors.Is(err, privacyreservation.ErrCompareAndSetFailed) && !errors.Is(err, privacyreservation.ErrLeaseMismatch) {
+			rollbackErr = errors.Join(rollbackErr, err)
+		}
+	}
+	return rollbackErr
+}
+
+func clearSettlementLeases(ctx context.Context, service privacyreservation.Service, refs []privacyreservation.SubmittedReservationRef) error {
+	var clearErr error
+	for _, ref := range refs {
+		if ref.ReservationID == "" || ref.LeaseToken == "" {
+			continue
+		}
+		if _, err := service.ClearLease(ctx, ref.ReservationID, ref.LeaseToken); err != nil && !errors.Is(err, privacyreservation.ErrLeaseUnavailable) && !errors.Is(err, privacyreservation.ErrLeaseMismatch) {
+			clearErr = errors.Join(clearErr, err)
+		}
+	}
+	return clearErr
 }
 
 func payrollItemCoinString(item privacypayroll.PayrollPlanItem) string {
@@ -1181,14 +1366,6 @@ func payrollItemAmountString(item privacypayroll.PayrollPlanItem) string {
 		return ""
 	}
 	return item.Amount.String()
-}
-
-func liveSettlementOutputCommitment(txHash string, operationID string) string {
-	return "live-transfer-batch-output:" + strings.ToLower(strings.TrimSpace(txHash)) + ":" + operationID
-}
-
-func liveSettlementDisclosureDigest(txHash string, operationID string) string {
-	return "live-transfer-batch-disclosure:" + strings.ToLower(strings.TrimSpace(txHash)) + ":" + operationID
 }
 
 func buildPayrollExportReport(plan privacypayroll.PayrollPlan, now time.Time) payrollExportReport {
@@ -1295,9 +1472,13 @@ func (p payrollItemFile) toSDK() (privacypayroll.PayrollItemInput, error) {
 	if err != nil {
 		return privacypayroll.PayrollItemInput{}, err
 	}
-	disclosure, err := p.DisclosurePolicy.toSDK()
-	if err != nil {
-		return privacypayroll.PayrollItemInput{}, err
+	var disclosure privacypayroll.PayrollDisclosurePolicy
+	disclosureSet := p.DisclosurePolicy != nil
+	if p.DisclosurePolicy != nil {
+		disclosure, err = p.DisclosurePolicy.toSDK()
+		if err != nil {
+			return privacypayroll.PayrollItemInput{}, err
+		}
 	}
 	return privacypayroll.PayrollItemInput{
 		ItemID:                   p.ItemID,
@@ -1306,6 +1487,7 @@ func (p payrollItemFile) toSDK() (privacypayroll.PayrollItemInput, error) {
 		Amount:                   amount,
 		Denom:                    p.Denom,
 		DisclosurePolicy:         disclosure,
+		DisclosurePolicySet:      disclosureSet,
 		ExpectedOutputCommitment: p.ExpectedOutputCommitment,
 		ExpectedDisclosureDigest: p.ExpectedDisclosureDigest,
 	}, nil

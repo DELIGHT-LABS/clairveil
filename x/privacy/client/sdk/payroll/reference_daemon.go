@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -61,6 +62,7 @@ func (d ReferenceDaemon) RunOnce(ctx context.Context) (*ReferenceDaemonRunReport
 	processed := 0
 	for _, status := range []privacyreservation.ReservationStatus{
 		privacyreservation.StatusReserved,
+		privacyreservation.StatusProving,
 		privacyreservation.StatusProofReady,
 		privacyreservation.StatusSubmitted,
 		privacyreservation.StatusUnknown,
@@ -128,8 +130,24 @@ func referenceDaemonGroupsByStatus(ctx context.Context, store privacyreservation
 func (d ReferenceDaemon) processGroup(ctx context.Context, status privacyreservation.ReservationStatus, group referenceReservationGroup, report *ReferenceDaemonRunReport) error {
 	switch status {
 	case privacyreservation.StatusReserved:
+		if mixed, err := referenceDaemonHasActiveReservationsOutsideStatus(ctx, d.Reservation.Store, group.Operation.OperationID, status); err != nil {
+			return err
+		} else if mixed {
+			report.Skipped++
+			report.Items = append(report.Items, referenceDaemonItem(group, "skipped", status, group.Operation.Status, false, "operation has active reservations in another status"))
+			return nil
+		}
 		return d.simulateProofAndSubmit(ctx, group, report)
+	case privacyreservation.StatusProving:
+		return d.rollbackExpiredProving(ctx, group, report)
 	case privacyreservation.StatusProofReady:
+		if mixed, err := referenceDaemonHasActiveReservationsOutsideStatus(ctx, d.Reservation.Store, group.Operation.OperationID, status); err != nil {
+			return err
+		} else if mixed {
+			report.Skipped++
+			report.Items = append(report.Items, referenceDaemonItem(group, "skipped", status, group.Operation.Status, false, "operation has active reservations in another status"))
+			return nil
+		}
 		return d.simulateSubmit(ctx, group, report)
 	case privacyreservation.StatusSubmitted, privacyreservation.StatusUnknown:
 		return d.simulateReconcile(ctx, group, report)
@@ -140,8 +158,44 @@ func (d ReferenceDaemon) processGroup(ctx context.Context, status privacyreserva
 	}
 }
 
-func (d ReferenceDaemon) simulateProofAndSubmit(ctx context.Context, group referenceReservationGroup, report *ReferenceDaemonRunReport) error {
+func referenceDaemonHasActiveReservationsOutsideStatus(ctx context.Context, store privacyreservation.Store, operationID string, status privacyreservation.ReservationStatus) (bool, error) {
+	if operationID == "" {
+		return false, nil
+	}
+	reservations, err := store.ListReservations(ctx, privacyreservation.ReservationFilter{Statuses: referenceDaemonActiveReservationStatuses()})
+	if err != nil {
+		return false, err
+	}
+	for _, reservation := range reservations {
+		if reservation.OperationID == operationID && reservation.Status != status {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func referenceDaemonActiveReservationStatuses() []privacyreservation.ReservationStatus {
+	return []privacyreservation.ReservationStatus{
+		privacyreservation.StatusReserved,
+		privacyreservation.StatusProving,
+		privacyreservation.StatusProofReady,
+		privacyreservation.StatusSubmitted,
+		privacyreservation.StatusUnknown,
+		privacyreservation.StatusManualReview,
+	}
+}
+
+func (d ReferenceDaemon) simulateProofAndSubmit(ctx context.Context, group referenceReservationGroup, report *ReferenceDaemonRunReport) (runErr error) {
 	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(group.Reservations))
+	rollbackRequired := true
+	defer func() {
+		if !rollbackRequired || len(refs) == 0 {
+			return
+		}
+		if rollbackErr := rollbackProvingReservations(ctx, d.Reservation, refs); rollbackErr != nil {
+			runErr = errors.Join(runErr, rollbackErr)
+		}
+	}()
 	for _, reservation := range group.Reservations {
 		lease, err := d.Reservation.AcquireLeaseForStatus(ctx, reservation.ReservationID, d.leaseOwner(), privacyreservation.StatusReserved, d.leaseTTL())
 		if err != nil {
@@ -164,6 +218,7 @@ func (d ReferenceDaemon) simulateProofAndSubmit(ctx context.Context, group refer
 	if err != nil {
 		return err
 	}
+	rollbackRequired = false
 	report.ProofReady++
 	operation := group.Operation
 	if updatedOperation != nil {
@@ -171,6 +226,33 @@ func (d ReferenceDaemon) simulateProofAndSubmit(ctx context.Context, group refer
 	}
 	report.Items = append(report.Items, referenceDaemonItem(referenceReservationGroup{Operation: operation, Reservations: updatedReservations}, "proof-ready", privacyreservation.StatusProofReady, operation.Status, false, "simulated proof artifact stored"))
 	return d.submitWithRefs(ctx, operation, updatedReservations, refs, report)
+}
+
+func (d ReferenceDaemon) rollbackExpiredProving(ctx context.Context, group referenceReservationGroup, report *ReferenceDaemonRunReport) error {
+	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(group.Reservations))
+	for _, reservation := range group.Reservations {
+		lease, err := d.Reservation.AcquireLeaseForStatus(ctx, reservation.ReservationID, d.leaseOwner(), privacyreservation.StatusProving, d.leaseTTL())
+		if err != nil {
+			if clearErr := clearAcquiredSubmissionLeases(ctx, d.Reservation, refs); clearErr != nil {
+				err = errors.Join(err, clearErr)
+			}
+			if errors.Is(err, privacyreservation.ErrLeaseUnavailable) || errors.Is(err, privacyreservation.ErrLeaseMismatch) || errors.Is(err, privacyreservation.ErrCompareAndSetFailed) {
+				report.Skipped++
+				report.Items = append(report.Items, referenceDaemonItem(group, "skipped", privacyreservation.StatusProving, group.Operation.Status, false, "proving lease is owned by another worker"))
+				return nil
+			}
+			return err
+		}
+		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseToken: lease.Token})
+	}
+	for _, ref := range refs {
+		if _, err := d.Reservation.TransitionWithLease(ctx, ref.ReservationID, ref.LeaseToken, privacyreservation.StatusProving, privacyreservation.StatusReserved); err != nil {
+			return err
+		}
+	}
+	report.Skipped++
+	report.Items = append(report.Items, referenceDaemonItem(group, "rolled-back", privacyreservation.StatusReserved, group.Operation.Status, false, "expired proving reservations returned to reserved"))
+	return nil
 }
 
 func (d ReferenceDaemon) simulateSubmit(ctx context.Context, group referenceReservationGroup, report *ReferenceDaemonRunReport) error {

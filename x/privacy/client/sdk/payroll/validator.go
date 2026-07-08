@@ -52,7 +52,7 @@ func ValidateInput(input PayrollInput) error {
 		if item.Denom != "" && item.Denom != input.Denom {
 			return fmt.Errorf("%w: item %s denom %s does not match payroll denom %s", ErrInvalidPayrollInput, item.ItemID, item.Denom, input.Denom)
 		}
-		if err := ValidateDisclosurePolicy(effectiveDisclosurePolicy(input.DefaultDisclosurePolicy, item.DisclosurePolicy)); err != nil {
+		if err := ValidateDisclosurePolicy(effectiveDisclosurePolicy(input.DefaultDisclosurePolicy, item.DisclosurePolicy, item.DisclosurePolicySet)); err != nil {
 			return fmt.Errorf("item %s disclosure policy: %w", item.ItemID, err)
 		}
 	}
@@ -77,7 +77,8 @@ func normalizePayrollItemInput(item PayrollItemInput, defaultDisclosure PayrollD
 	item.EmployeeID = strings.TrimSpace(item.EmployeeID)
 	item.RecipientAddress = strings.TrimSpace(item.RecipientAddress)
 	item.Denom = strings.TrimSpace(item.Denom)
-	item.DisclosurePolicy = effectiveDisclosurePolicy(defaultDisclosure, item.DisclosurePolicy)
+	item.DisclosurePolicy = effectiveDisclosurePolicy(defaultDisclosure, item.DisclosurePolicy, item.DisclosurePolicySet)
+	item.DisclosurePolicySet = true
 	item.ExpectedOutputCommitment = strings.TrimSpace(item.ExpectedOutputCommitment)
 	item.ExpectedDisclosureDigest = strings.TrimSpace(item.ExpectedDisclosureDigest)
 	return item

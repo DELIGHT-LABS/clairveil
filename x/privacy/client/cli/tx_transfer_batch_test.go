@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/cosmos/cosmos-sdk/client"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/stretchr/testify/require"
 
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
@@ -117,6 +118,26 @@ func TestRemoveTransferBatchInputsFallsBackToCommitmentKey(t *testing.T) {
 
 	require.Len(t, remaining, 1)
 	require.Equal(t, int64(7), remaining[0].Note.Amount.Int64())
+}
+
+func TestTransferBatchOutputItemsIncludeMessageEvidence(t *testing.T) {
+	msg := &privacytypes.MsgTransfer{
+		Nullifiers:               [][]byte{{0x01}, {0x02}},
+		NewCommitments:           [][]byte{{0x03}, {0x04}},
+		UserDisclosureDigest:     []byte{0x05},
+		AuditDisclosureDigest:    []byte{0x06},
+		SelfViewDisclosureDigest: []byte{0x07},
+	}
+
+	items, err := transferBatchOutputItems([]sdk.Coin{sdk.NewInt64Coin("uclair", 7)}, []sdk.Msg{msg})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, "7uclair", items[0].Amount)
+	require.Equal(t, []string{"01", "02"}, items[0].Nullifiers)
+	require.Equal(t, "03", items[0].OutputCommitment)
+	require.Equal(t, "05", items[0].UserDisclosureDigest)
+	require.Equal(t, "06", items[0].AuditDisclosureDigest)
+	require.Equal(t, "07", items[0].SelfViewDisclosureDigest)
 }
 
 func testTransferBatchFoundNote(nullifier string, amount int64) FoundNote {

@@ -45,8 +45,10 @@ func (d LiveDaemon) RunOnce(ctx context.Context) (*ReferenceDaemonRunReport, err
 		Items:     make([]ReferenceDaemonItemRunReport, 0),
 	}
 	processed := 0
+	ownedProofReadyLeases := make(map[string]string)
 	for _, status := range []privacyreservation.ReservationStatus{
 		privacyreservation.StatusReserved,
+		privacyreservation.StatusProving,
 		privacyreservation.StatusProofReady,
 		privacyreservation.StatusSubmitted,
 		privacyreservation.StatusUnknown,
@@ -60,7 +62,7 @@ func (d LiveDaemon) RunOnce(ctx context.Context) (*ReferenceDaemonRunReport, err
 				report.Skipped++
 				continue
 			}
-			if err := d.processGroup(ctx, status, liveGroupFromReference(group), report); err != nil {
+			if err := d.processGroup(ctx, status, liveGroupFromReference(group), report, ownedProofReadyLeases); err != nil {
 				return nil, err
 			}
 			processed++
@@ -70,12 +72,28 @@ func (d LiveDaemon) RunOnce(ctx context.Context) (*ReferenceDaemonRunReport, err
 	return report, nil
 }
 
-func (d LiveDaemon) processGroup(ctx context.Context, status privacyreservation.ReservationStatus, group LiveOperationGroup, report *ReferenceDaemonRunReport) error {
+func (d LiveDaemon) processGroup(ctx context.Context, status privacyreservation.ReservationStatus, group LiveOperationGroup, report *ReferenceDaemonRunReport, ownedProofReadyLeases map[string]string) error {
 	switch status {
 	case privacyreservation.StatusReserved:
-		return d.buildProofReady(ctx, group, report)
+		if mixed, err := referenceDaemonHasActiveReservationsOutsideStatus(ctx, d.Reservation.Store, group.Operation.OperationID, status); err != nil {
+			return err
+		} else if mixed {
+			report.Skipped++
+			report.Items = append(report.Items, liveDaemonItem(group, "skipped", status, group.Operation.Status, false, "operation has active reservations in another status"))
+			return nil
+		}
+		return d.buildProofReady(ctx, group, report, ownedProofReadyLeases)
+	case privacyreservation.StatusProving:
+		return d.rollbackExpiredProving(ctx, group, report)
 	case privacyreservation.StatusProofReady:
-		return d.broadcastProofReady(ctx, group, report)
+		if mixed, err := referenceDaemonHasActiveReservationsOutsideStatus(ctx, d.Reservation.Store, group.Operation.OperationID, status); err != nil {
+			return err
+		} else if mixed {
+			report.Skipped++
+			report.Items = append(report.Items, liveDaemonItem(group, "skipped", status, group.Operation.Status, false, "operation has active reservations in another status"))
+			return nil
+		}
+		return d.broadcastProofReady(ctx, group, report, ownedProofReadyLeases)
 	case privacyreservation.StatusSubmitted, privacyreservation.StatusUnknown:
 		return d.reconcileSubmitted(ctx, group, report)
 	default:
@@ -85,34 +103,71 @@ func (d LiveDaemon) processGroup(ctx context.Context, status privacyreservation.
 	}
 }
 
-func (d LiveDaemon) buildProofReady(ctx context.Context, group LiveOperationGroup, report *ReferenceDaemonRunReport) error {
+func (d LiveDaemon) buildProofReady(ctx context.Context, group LiveOperationGroup, report *ReferenceDaemonRunReport, ownedProofReadyLeases map[string]string) (runErr error) {
+	leases := make(map[string]string, len(group.Reservations))
 	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(group.Reservations))
+	rollbackRequired := true
+	defer func() {
+		if !rollbackRequired || len(refs) == 0 {
+			return
+		}
+		if rollbackErr := rollbackProvingReservations(ctx, d.Reservation, refs); rollbackErr != nil {
+			runErr = errors.Join(runErr, rollbackErr)
+		}
+	}()
 	for _, reservation := range group.Reservations {
 		lease, err := d.Reservation.AcquireLeaseForStatus(ctx, reservation.ReservationID, d.leaseOwner(), privacyreservation.StatusReserved, d.leaseTTL())
 		if err != nil {
+			if errors.Is(err, privacyreservation.ErrLeaseUnavailable) || errors.Is(err, privacyreservation.ErrLeaseMismatch) || errors.Is(err, privacyreservation.ErrCompareAndSetFailed) {
+				report.Skipped++
+				report.Items = append(report.Items, liveDaemonItem(group, "skipped", privacyreservation.StatusReserved, group.Operation.Status, false, "reserved lease is owned by another worker"))
+				return nil
+			}
 			return err
 		}
+		leases[reservation.ReservationID] = lease.Token
 		if _, err := d.Reservation.TransitionWithLease(ctx, reservation.ReservationID, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving); err != nil {
 			return err
 		}
 		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseToken: lease.Token})
 	}
-	update, reason, err := d.Executor.BuildProofReady(ctx, group)
+
+	proofCtx, stopHeartbeat := (ProofWorker{Reservation: d.Reservation}).startProvingHeartbeat(ctx, leases, reservationIDsFromRefs(refs), d.leaseTTL())
+	defer func() {
+		if stopHeartbeat == nil {
+			return
+		}
+		if heartbeatErr := stopHeartbeat(); heartbeatErr != nil {
+			runErr = errors.Join(runErr, heartbeatErr)
+		}
+	}()
+
+	update, reason, err := d.Executor.BuildProofReady(proofCtx, group)
 	if err != nil {
-		rollbackErr := d.rollbackProving(ctx, refs)
 		if errors.Is(err, ErrLiveDaemonSkip) {
 			report.Skipped++
 			report.Items = append(report.Items, liveDaemonItem(group, "skipped", privacyreservation.StatusReserved, group.Operation.Status, false, firstNonEmptyString(reason, err.Error())))
-			return rollbackErr
+			return nil
 		}
-		return errors.Join(err, rollbackErr)
+		return err
 	}
 	if update.OperationID == "" {
 		update.OperationID = group.Operation.OperationID
 	}
+	if heartbeatErr := stopHeartbeat(); heartbeatErr != nil {
+		stopHeartbeat = nil
+		return heartbeatErr
+	}
+	stopHeartbeat = nil
 	reservations, operation, err := d.Reservation.MarkProofReadyBatch(ctx, refs, update)
 	if err != nil {
 		return err
+	}
+	rollbackRequired = false
+	for _, ref := range refs {
+		if ref.ReservationID != "" && ref.LeaseToken != "" {
+			ownedProofReadyLeases[ref.ReservationID] = ref.LeaseToken
+		}
 	}
 	report.ProofReady++
 	operationStatus := group.Operation.Status
@@ -123,29 +178,93 @@ func (d LiveDaemon) buildProofReady(ctx context.Context, group LiveOperationGrou
 	return nil
 }
 
-func (d LiveDaemon) rollbackProving(ctx context.Context, refs []privacyreservation.SubmittedReservationRef) error {
+func (d LiveDaemon) rollbackExpiredProving(ctx context.Context, group LiveOperationGroup, report *ReferenceDaemonRunReport) error {
+	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(group.Reservations))
+	for _, reservation := range group.Reservations {
+		lease, err := d.Reservation.AcquireLeaseForStatus(ctx, reservation.ReservationID, d.leaseOwner(), privacyreservation.StatusProving, d.leaseTTL())
+		if err != nil {
+			if clearErr := clearAcquiredSubmissionLeases(ctx, d.Reservation, refs); clearErr != nil {
+				err = errors.Join(err, clearErr)
+			}
+			if errors.Is(err, privacyreservation.ErrLeaseUnavailable) || errors.Is(err, privacyreservation.ErrLeaseMismatch) || errors.Is(err, privacyreservation.ErrCompareAndSetFailed) {
+				report.Skipped++
+				report.Items = append(report.Items, liveDaemonItem(group, "skipped", privacyreservation.StatusProving, group.Operation.Status, false, "proving lease is owned by another worker"))
+				return nil
+			}
+			return err
+		}
+		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseToken: lease.Token})
+	}
+	for _, ref := range refs {
+		if _, err := d.Reservation.TransitionWithLease(ctx, ref.ReservationID, ref.LeaseToken, privacyreservation.StatusProving, privacyreservation.StatusReserved); err != nil {
+			return err
+		}
+	}
+	report.Skipped++
+	report.Items = append(report.Items, liveDaemonItem(group, "rolled-back", privacyreservation.StatusReserved, group.Operation.Status, false, "expired proving reservations returned to reserved"))
+	return nil
+}
+
+func rollbackProvingReservations(ctx context.Context, service privacyreservation.Service, refs []privacyreservation.SubmittedReservationRef) error {
 	var rollbackErr error
 	for _, ref := range refs {
-		_, err := d.Reservation.TransitionWithLease(ctx, ref.ReservationID, ref.LeaseToken, privacyreservation.StatusProving, privacyreservation.StatusReserved)
+		_, err := service.TransitionWithLease(ctx, ref.ReservationID, ref.LeaseToken, privacyreservation.StatusProving, privacyreservation.StatusReserved)
 		if err != nil {
-			rollbackErr = errors.Join(rollbackErr, err)
+			if !errors.Is(err, privacyreservation.ErrCompareAndSetFailed) && !errors.Is(err, privacyreservation.ErrLeaseMismatch) {
+				rollbackErr = errors.Join(rollbackErr, err)
+			}
 		}
 	}
 	return rollbackErr
 }
 
-func (d LiveDaemon) broadcastProofReady(ctx context.Context, group LiveOperationGroup, report *ReferenceDaemonRunReport) error {
+func reservationIDsFromRefs(refs []privacyreservation.SubmittedReservationRef) []string {
+	ids := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if ref.ReservationID != "" {
+			ids = append(ids, ref.ReservationID)
+		}
+	}
+	return ids
+}
+
+func (d LiveDaemon) broadcastProofReady(ctx context.Context, group LiveOperationGroup, report *ReferenceDaemonRunReport, ownedProofReadyLeases map[string]string) error {
 	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(group.Reservations))
+	acquiredRefs := make([]privacyreservation.SubmittedReservationRef, 0, len(group.Reservations))
 	for _, reservation := range group.Reservations {
-		lease, err := d.proofReadyLease(ctx, reservation)
+		lease, acquired, err := d.proofReadyLease(ctx, reservation, ownedProofReadyLeases)
 		if err != nil {
+			if clearErr := clearAcquiredSubmissionLeases(ctx, d.Reservation, acquiredRefs); clearErr != nil {
+				err = errors.Join(err, clearErr)
+			}
+			if errors.Is(err, privacyreservation.ErrLeaseUnavailable) || errors.Is(err, privacyreservation.ErrLeaseMismatch) {
+				report.Skipped++
+				report.Items = append(report.Items, liveDaemonItem(group, "skipped", privacyreservation.StatusProofReady, group.Operation.Status, false, "proof-ready lease is owned by another worker"))
+				return nil
+			}
 			return err
 		}
-		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseToken: lease.Token})
+		ref := privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseToken: lease.Token}
+		refs = append(refs, ref)
+		if acquired || ownedProofReadyLeases[reservation.ReservationID] == lease.Token {
+			acquiredRefs = append(acquiredRefs, ref)
+		}
+		if acquired {
+			ownedProofReadyLeases[reservation.ReservationID] = lease.Token
+		}
 	}
-	broadcast, reason, err := d.Executor.BroadcastProofReady(ctx, group)
+	var reason string
+	broadcast, err := broadcastWithSubmissionLeaseHeartbeat(ctx, d.Reservation, refs, d.leaseTTL(), func(broadcastCtx context.Context) (*BroadcastResult, error) {
+		var broadcastErr error
+		var result *BroadcastResult
+		result, reason, broadcastErr = d.Executor.BroadcastProofReady(broadcastCtx, group)
+		return result, broadcastErr
+	})
 	if err != nil {
 		if errors.Is(err, ErrLiveDaemonSkip) {
+			if clearErr := clearAcquiredSubmissionLeases(ctx, d.Reservation, acquiredRefs); clearErr != nil {
+				return errors.Join(err, clearErr)
+			}
 			report.Skipped++
 			report.Items = append(report.Items, liveDaemonItem(group, "skipped", privacyreservation.StatusProofReady, group.Operation.Status, false, firstNonEmptyString(reason, err.Error())))
 			return nil
@@ -167,7 +286,7 @@ func (d LiveDaemon) broadcastProofReady(ctx context.Context, group LiveOperation
 		if markErr != nil {
 			return markErr
 		}
-		report.Submitted++
+		report.RequiresReview++
 		report.Items = append(report.Items, liveDaemonItem(group, "broadcast-unknown", privacyreservation.StatusUnknown, privacyreservation.OperationStatusUnknown, true, firstNonEmptyString(reason, broadcastCodeError(broadcast).Error())))
 		return nil
 	}
@@ -189,14 +308,21 @@ func (d LiveDaemon) broadcastProofReady(ctx context.Context, group LiveOperation
 	return nil
 }
 
-func (d LiveDaemon) proofReadyLease(ctx context.Context, reservation privacyreservation.NoteReservation) (*privacyreservation.Lease, error) {
-	if reservation.LeaseToken != "" {
-		lease, err := d.Reservation.HeartbeatLeaseForStatus(ctx, reservation.ReservationID, reservation.LeaseToken, privacyreservation.StatusProofReady, d.leaseTTL())
+func (d LiveDaemon) proofReadyLease(ctx context.Context, reservation privacyreservation.NoteReservation, ownedProofReadyLeases map[string]string) (*privacyreservation.Lease, bool, error) {
+	if ownedProofReadyLeases != nil && ownedProofReadyLeases[reservation.ReservationID] != "" && ownedProofReadyLeases[reservation.ReservationID] == reservation.LeaseToken {
+		lease, err := d.Reservation.HeartbeatLeaseForStatus(ctx, reservation.ReservationID, ownedProofReadyLeases[reservation.ReservationID], privacyreservation.StatusProofReady, d.leaseTTL())
 		if err == nil {
-			return lease, nil
+			return lease, false, nil
+		}
+		if !errors.Is(err, privacyreservation.ErrLeaseUnavailable) && !errors.Is(err, privacyreservation.ErrLeaseMismatch) {
+			return nil, false, err
 		}
 	}
-	return d.Reservation.AcquireLeaseForStatus(ctx, reservation.ReservationID, d.leaseOwner(), privacyreservation.StatusProofReady, d.leaseTTL())
+	lease, err := d.Reservation.AcquireLeaseForStatus(ctx, reservation.ReservationID, d.leaseOwner(), privacyreservation.StatusProofReady, d.leaseTTL())
+	if err != nil {
+		return nil, false, err
+	}
+	return lease, true, nil
 }
 
 func (d LiveDaemon) reconcileSubmitted(ctx context.Context, group LiveOperationGroup, report *ReferenceDaemonRunReport) error {

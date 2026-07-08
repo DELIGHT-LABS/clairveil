@@ -63,6 +63,34 @@ func TestServiceCreatePlanCarriesDefaultDisclosurePolicy(t *testing.T) {
 	require.Equal(t, strings.Repeat("0", 63)+"2", plan.Items[0].ExpectedDisclosureDigest)
 }
 
+func TestServiceCreatePlanAllowsItemAllPrivateDisclosureOverride(t *testing.T) {
+	ctx := context.Background()
+	input := testPayrollInput()
+	input.DefaultDisclosurePolicy = PayrollDisclosurePolicy{
+		UserPrivacyPolicy:             privacytypes.TransferPrivacyPolicyDiscloseAmount,
+		UserDisclosureMode:            privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC,
+		ExpectedUserDisclosureDigest:  strings.Repeat("0", 63) + "1",
+		ExpectedAuditDisclosureDigest: strings.Repeat("0", 63) + "2",
+	}
+	input.Items[0].DisclosurePolicy = PayrollDisclosurePolicy{
+		UserPrivacyPolicy:  privacytypes.TransferPrivacyPolicyAllPrivate,
+		UserDisclosureMode: privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE,
+	}
+	input.Items[0].DisclosurePolicySet = true
+	input.Items[0].Amount = big.NewInt(70)
+	notes := []TreasuryNote{
+		testTreasuryNote("large", "uclair", 100, false, ""),
+		testTreasuryNote("zero", "uclair", 0, false, ""),
+	}
+
+	plan, err := (Service{}).CreatePlan(ctx, input, notes)
+	require.NoError(t, err)
+	require.Len(t, plan.Items, 1)
+	require.Equal(t, privacytypes.TransferPrivacyPolicyAllPrivate, plan.Items[0].DisclosurePolicy.UserPrivacyPolicy)
+	require.Equal(t, privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE, plan.Items[0].DisclosurePolicy.UserDisclosureMode)
+	require.Empty(t, plan.Items[0].DisclosurePolicy.ExpectedUserDisclosureDigest)
+}
+
 func TestMemoryDisclosureKeyRegistryLookup(t *testing.T) {
 	pubKey := strings.Repeat("a", 64)
 	registry, err := NewMemoryDisclosureKeyRegistry([]DisclosureKeyEntry{{

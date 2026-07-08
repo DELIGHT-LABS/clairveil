@@ -25,6 +25,7 @@ type PayrollItemInput struct {
 	Amount                   *big.Int
 	Denom                    string
 	DisclosurePolicy         PayrollDisclosurePolicy
+	DisclosurePolicySet      bool
 	ExpectedOutputCommitment string
 	ExpectedDisclosureDigest string
 }

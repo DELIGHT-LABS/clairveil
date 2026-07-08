@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -78,6 +79,173 @@ func TestEvidenceScannerBuildsTransferBatchEvidence(t *testing.T) {
 	}
 }
 
+func TestEvidenceScannerSkipsItemsWithoutObservedEvents(t *testing.T) {
+	ctx := context.Background()
+	store := privacyreservation.NewMemoryStore()
+	reservationService := privacyreservation.Service{Store: store, Now: testNow}
+	for _, input := range []privacyreservation.ReserveInput{
+		{
+			Reservation: privacyreservation.NoteReservation{ReservationID: "reservation-1", OwnerKeyID: "owner-a", NullifierLookupKey: "lookup-large", OperationID: "op-1"},
+			Operation:   &privacyreservation.PayrollOperation{OperationID: "op-1", ItemID: "item-1", Status: privacyreservation.OperationStatusPlanned},
+		},
+		{
+			Reservation: privacyreservation.NoteReservation{ReservationID: "reservation-2", OwnerKeyID: "owner-a", NullifierLookupKey: "lookup-second", OperationID: "op-2"},
+			Operation:   &privacyreservation.PayrollOperation{OperationID: "op-2", ItemID: "item-2", Status: privacyreservation.OperationStatusPlanned},
+		},
+	} {
+		_, err := reservationService.Reserve(ctx, input)
+		require.NoError(t, err)
+	}
+
+	plan := PayrollPlan{Items: []PayrollPlanItem{
+		{
+			ItemID:      "item-1",
+			OperationID: "op-1",
+			Denom:       "uclair",
+			InputNotes: []TreasuryNote{{
+				NoteID:               "large",
+				ReservationID:        "reservation-1",
+				NullifierLookupKey:   "lookup-large",
+				NullifierLookupKeyID: "lookup-v1",
+			}},
+		},
+		{
+			ItemID:      "item-2",
+			OperationID: "op-2",
+			Denom:       "uclair",
+			InputNotes: []TreasuryNote{{
+				NoteID:               "second",
+				ReservationID:        "reservation-2",
+				NullifierLookupKey:   "lookup-second",
+				NullifierLookupKeyID: "lookup-v1",
+			}},
+		},
+	}}
+	tx := TxObservation{
+		TxHash: "TXHASH",
+		Code:   0,
+		Events: []ChainEvent{{
+			Type: privacytypes.EventTypeShieldedTransfer,
+			Attributes: []ChainEventAttribute{
+				{Key: privacytypes.AttributeKeyNullifier1, Value: "lookup-large"},
+				{Key: privacytypes.AttributeKeyCommitment1, Value: "commitment-a"},
+			},
+		}},
+	}
+
+	report, err := (EvidenceScanner{Store: store}).ScanTransferBatch(ctx, plan, tx, nil)
+	require.NoError(t, err)
+	require.Equal(t, 1, report.ObservedEvents)
+	require.Equal(t, 1, report.ScannedReservations)
+	require.Len(t, report.Evidence, 1)
+	require.Contains(t, report.Warnings[0], "observed 1 shielded_transfer events for 2 payroll items")
+	require.Equal(t, "reservation-1", report.Evidence[0].ReservationID)
+	require.Equal(t, "op-1", report.Evidence[0].OperationID)
+}
+
+func TestEvidenceScannerMatchesLaterChunkByNullifier(t *testing.T) {
+	ctx := context.Background()
+	store := privacyreservation.NewMemoryStore()
+	reservationService := privacyreservation.Service{Store: store, Now: testNow}
+	for _, input := range []privacyreservation.ReserveInput{
+		{
+			Reservation: privacyreservation.NoteReservation{ReservationID: "reservation-1", OwnerKeyID: "owner-a", NullifierLookupKey: "lookup-large", OperationID: "op-1"},
+			Operation:   &privacyreservation.PayrollOperation{OperationID: "op-1", ItemID: "item-1", Status: privacyreservation.OperationStatusPlanned},
+		},
+		{
+			Reservation: privacyreservation.NoteReservation{ReservationID: "reservation-2", OwnerKeyID: "owner-a", NullifierLookupKey: "lookup-second", OperationID: "op-2"},
+			Operation:   &privacyreservation.PayrollOperation{OperationID: "op-2", ItemID: "item-2", Status: privacyreservation.OperationStatusPlanned},
+		},
+	} {
+		_, err := reservationService.Reserve(ctx, input)
+		require.NoError(t, err)
+	}
+	plan := PayrollPlan{Items: []PayrollPlanItem{
+		{
+			ItemID:      "item-1",
+			OperationID: "op-1",
+			Denom:       "uclair",
+			InputNotes: []TreasuryNote{{
+				NoteID:             "large",
+				ReservationID:      "reservation-1",
+				NullifierLookupKey: "lookup-large",
+			}},
+		},
+		{
+			ItemID:      "item-2",
+			OperationID: "op-2",
+			Denom:       "uclair",
+			InputNotes: []TreasuryNote{{
+				NoteID:             "second",
+				ReservationID:      "reservation-2",
+				NullifierLookupKey: "lookup-second",
+			}},
+		},
+	}}
+	tx := TxObservation{
+		TxHash: "TXHASH",
+		Code:   0,
+		Events: []ChainEvent{{
+			Type: privacytypes.EventTypeShieldedTransfer,
+			Attributes: []ChainEventAttribute{
+				{Key: privacytypes.AttributeKeyNullifier1, Value: "lookup-second"},
+				{Key: privacytypes.AttributeKeyCommitment1, Value: "commitment-b"},
+			},
+		}},
+	}
+
+	report, err := (EvidenceScanner{Store: store}).ScanTransferBatch(ctx, plan, tx, nil)
+	require.NoError(t, err)
+	require.Len(t, report.Evidence, 1)
+	require.Equal(t, "reservation-2", report.Evidence[0].ReservationID)
+	require.Equal(t, "op-2", report.Evidence[0].OperationID)
+	require.Equal(t, 1, report.Evidence[0].Evidence.BatchItemIndex)
+	require.Equal(t, "commitment-b", report.Evidence[0].Evidence.OutputCommitment)
+}
+
+func TestEvidenceScannerRequiresAllItemNullifiersForEventMatch(t *testing.T) {
+	ctx := context.Background()
+	store := privacyreservation.NewMemoryStore()
+	reservationService := privacyreservation.Service{Store: store, Now: testNow}
+	for _, input := range []privacyreservation.ReserveInput{
+		{
+			Reservation: privacyreservation.NoteReservation{ReservationID: "reservation-large", OwnerKeyID: "owner-a", NullifierLookupKey: "lookup-large", OperationID: "op-1"},
+			Operation:   &privacyreservation.PayrollOperation{OperationID: "op-1", ItemID: "item-1", Status: privacyreservation.OperationStatusPlanned},
+		},
+		{
+			Reservation: privacyreservation.NoteReservation{ReservationID: "reservation-zero", OwnerKeyID: "owner-a", NullifierLookupKey: "lookup-zero", OperationID: "op-1"},
+		},
+	} {
+		_, err := reservationService.Reserve(ctx, input)
+		require.NoError(t, err)
+	}
+	plan := PayrollPlan{Items: []PayrollPlanItem{{
+		ItemID:      "item-1",
+		OperationID: "op-1",
+		Denom:       "uclair",
+		InputNotes: []TreasuryNote{
+			{NoteID: "large", ReservationID: "reservation-large", NullifierLookupKey: "lookup-large"},
+			{NoteID: "zero", ReservationID: "reservation-zero", NullifierLookupKey: "lookup-zero"},
+		},
+	}}}
+	tx := TxObservation{
+		TxHash: "TXHASH",
+		Code:   0,
+		Events: []ChainEvent{{
+			Type: privacytypes.EventTypeShieldedTransfer,
+			Attributes: []ChainEventAttribute{
+				{Key: privacytypes.AttributeKeyNullifier1, Value: "lookup-large"},
+				{Key: privacytypes.AttributeKeyCommitment1, Value: "commitment-a"},
+			},
+		}},
+	}
+
+	report, err := (EvidenceScanner{Store: store}).ScanTransferBatch(ctx, plan, tx, nil)
+	require.NoError(t, err)
+	require.Len(t, report.Evidence, 0)
+	require.Equal(t, 0, report.ScannedReservations)
+}
+
 func TestParseTxObservationJSONAcceptsCosmosTxResponse(t *testing.T) {
 	payload := map[string]any{
 		"tx_response": map[string]any{
@@ -130,4 +298,127 @@ func TestEvidenceScannerUsesExplicitNullifierStatuses(t *testing.T) {
 	require.Len(t, report.Evidence, 2)
 	require.True(t, report.Evidence[0].Evidence.NullifierSpent)
 	require.False(t, report.Evidence[1].Evidence.NullifierSpent)
+}
+
+func TestEvidenceScannerEmitsFailedEvidenceWithoutEvents(t *testing.T) {
+	ctx := context.Background()
+	store := privacyreservation.NewMemoryStore()
+	reservationService := privacyreservation.Service{Store: store, Now: testNow}
+	service := Service{Reservation: reservationService, Now: testNow}
+
+	input := testPayrollInput()
+	input.Items[0].Amount = big.NewInt(70)
+	plan, err := service.CreatePlan(ctx, input, []TreasuryNote{
+		testTreasuryNote("large", "uclair", 100, false, ""),
+		testTreasuryNote("zero", "uclair", 0, false, ""),
+	})
+	require.NoError(t, err)
+	confirmed, err := service.ConfirmPlan(ctx, *plan)
+	require.NoError(t, err)
+	markPayrollPlanSubmittedForScannerTest(t, ctx, reservationService, confirmed.Items[0], "FAILED_TX")
+
+	report, err := (EvidenceScanner{Store: store}).ScanTransferBatch(ctx, *confirmed, TxObservation{
+		TxHash: "FAILED_TX",
+		Height: 42,
+		Code:   7,
+		RawLog: "out of gas",
+	}, nil)
+	require.NoError(t, err)
+	require.True(t, report.TxFailed)
+	require.Equal(t, 0, report.ObservedEvents)
+	require.Equal(t, 2, report.ScannedReservations)
+	require.Len(t, report.Evidence, 2)
+	for _, item := range report.Evidence {
+		require.True(t, item.Evidence.TxKnown)
+		require.True(t, item.Evidence.TxFailed)
+		require.False(t, item.Evidence.TxSucceeded)
+		require.False(t, item.Evidence.NullifierSpent)
+		result, err := reservationService.Reconcile(ctx, item.ReservationID, item.Evidence)
+		require.NoError(t, err)
+		require.Equal(t, privacyreservation.StatusFailed, result.ReservationStatus)
+	}
+	operation, err := store.GetOperation(ctx, confirmed.Items[0].OperationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusFailed, operation.Status)
+}
+
+func TestEvidenceScannerLimitsFailedEvidenceWithoutEventsToMatchingTx(t *testing.T) {
+	ctx := context.Background()
+	store := privacyreservation.NewMemoryStore()
+	reservationService := privacyreservation.Service{Store: store, Now: testNow}
+	for _, input := range []privacyreservation.ReserveInput{
+		{
+			Reservation: privacyreservation.NoteReservation{ReservationID: "reservation-1", OwnerKeyID: "owner-a", NullifierLookupKey: "lookup-1", OperationID: "op-1"},
+			Operation:   &privacyreservation.PayrollOperation{OperationID: "op-1", ItemID: "item-1", Status: privacyreservation.OperationStatusPlanned},
+		},
+		{
+			Reservation: privacyreservation.NoteReservation{ReservationID: "reservation-2", OwnerKeyID: "owner-a", NullifierLookupKey: "lookup-2", OperationID: "op-2"},
+			Operation:   &privacyreservation.PayrollOperation{OperationID: "op-2", ItemID: "item-2", Status: privacyreservation.OperationStatusPlanned},
+		},
+	} {
+		_, err := reservationService.Reserve(ctx, input)
+		require.NoError(t, err)
+	}
+	markReservationSubmittedForScannerTest(t, ctx, reservationService, "reservation-1", "op-1", "FAILED_TX")
+	markReservationSubmittedForScannerTest(t, ctx, reservationService, "reservation-2", "op-2", "OTHER_TX")
+	plan := PayrollPlan{Items: []PayrollPlanItem{
+		{
+			ItemID:      "item-1",
+			OperationID: "op-1",
+			Denom:       "uclair",
+			InputNotes:  []TreasuryNote{{NoteID: "note-1", ReservationID: "reservation-1", NullifierLookupKey: "lookup-1"}},
+		},
+		{
+			ItemID:      "item-2",
+			OperationID: "op-2",
+			Denom:       "uclair",
+			InputNotes:  []TreasuryNote{{NoteID: "note-2", ReservationID: "reservation-2", NullifierLookupKey: "lookup-2"}},
+		},
+	}}
+
+	report, err := (EvidenceScanner{Store: store}).ScanTransferBatch(ctx, plan, TxObservation{
+		TxHash: "FAILED_TX",
+		Height: 42,
+		Code:   7,
+		RawLog: "out of gas",
+	}, []NullifierStatus{
+		{Nullifier: "lookup-1", Used: false},
+		{Nullifier: "lookup-2", Used: false},
+	})
+	require.NoError(t, err)
+	require.Len(t, report.Evidence, 1)
+	require.Equal(t, "reservation-1", report.Evidence[0].ReservationID)
+	require.True(t, report.Evidence[0].Evidence.TxFailed)
+}
+
+func markPayrollPlanSubmittedForScannerTest(t *testing.T, ctx context.Context, service privacyreservation.Service, item PayrollPlanItem, txHash string) {
+	t.Helper()
+	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(item.InputNotes))
+	for _, note := range item.InputNotes {
+		ref := markReservationProofReadyForScannerTest(t, ctx, service, note.ReservationID)
+		refs = append(refs, privacyreservation.SubmittedReservationRef{
+			ReservationID: ref.ReservationID,
+			LeaseToken:    ref.LeaseToken,
+		})
+	}
+	_, _, err := service.MarkSubmittedBatch(ctx, refs, []string{item.OperationID}, privacyreservation.SubmittedReservationUpdate{TxHash: txHash})
+	require.NoError(t, err)
+}
+
+func markReservationSubmittedForScannerTest(t *testing.T, ctx context.Context, service privacyreservation.Service, reservationID string, operationID string, txHash string) {
+	t.Helper()
+	ref := markReservationProofReadyForScannerTest(t, ctx, service, reservationID)
+	_, _, err := service.MarkSubmittedBatch(ctx, []privacyreservation.SubmittedReservationRef{ref}, []string{operationID}, privacyreservation.SubmittedReservationUpdate{TxHash: txHash})
+	require.NoError(t, err)
+}
+
+func markReservationProofReadyForScannerTest(t *testing.T, ctx context.Context, service privacyreservation.Service, reservationID string) privacyreservation.SubmittedReservationRef {
+	t.Helper()
+	lease, err := service.AcquireLeaseForStatus(ctx, reservationID, "scanner-test", privacyreservation.StatusReserved, time.Minute)
+	require.NoError(t, err)
+	_, err = service.TransitionWithLease(ctx, reservationID, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving)
+	require.NoError(t, err)
+	_, err = service.TransitionWithLease(ctx, reservationID, lease.Token, privacyreservation.StatusProving, privacyreservation.StatusProofReady)
+	require.NoError(t, err)
+	return privacyreservation.SubmittedReservationRef{ReservationID: reservationID, LeaseToken: lease.Token}
 }

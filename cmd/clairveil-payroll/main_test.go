@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -144,8 +145,18 @@ func TestRunStatusAndReconcileCommandsUseDurableState(t *testing.T) {
 	reconcilePath := filepath.Join(dir, "reconcile.json")
 	exportPath := filepath.Join(dir, "export.json")
 	payload := validPrepareNotesPayload()
+	userDigest := strings.Repeat("0", 63) + "1"
+	auditDigest := strings.Repeat("0", 63) + "2"
+	selfViewDigest := strings.Repeat("0", 63) + "3"
+	payload.Items[0].DisclosurePolicy = &disclosurePolicyFile{
+		UserPrivacyPolicy:                "amount",
+		UserDisclosureMode:               "public",
+		ExpectedUserDisclosureDigest:     userDigest,
+		ExpectedAuditDisclosureDigest:    auditDigest,
+		ExpectedSelfViewDisclosureDigest: selfViewDigest,
+	}
 	payload.Items[0].ExpectedOutputCommitment = "commitment-a"
-	payload.Items[0].ExpectedDisclosureDigest = "digest-a"
+	payload.Items[0].ExpectedDisclosureDigest = auditDigest
 	writePayrollInput(t, inputPath, payload)
 	require.NoError(t, runPlan([]string{"-input", inputPath, "-out", planPath}))
 
@@ -172,17 +183,20 @@ func TestRunStatusAndReconcileCommandsUseDurableState(t *testing.T) {
 
 	markConfirmedPlanSubmitted(t, statePath, confirmed)
 	evidence := reconcileEvidenceFile{Evidence: []reconcileEvidenceItemFile{{
-		ReservationID:       confirmed.Items[0].InputNotes[0].ReservationID,
-		TxHash:              "txhash",
-		OutputCommitment:    "commitment-a",
-		DisclosureDigest:    "digest-a",
-		RecipientHash:       confirmed.Items[0].ExpectedRecipientHash,
-		AmountHash:          confirmed.Items[0].ExpectedAmountHash,
-		Denom:               "uclair",
-		NullifierSpent:      true,
-		BatchItemIndex:      0,
-		BatchItemIndexKnown: true,
-		TxSucceeded:         true,
+		ReservationID:            confirmed.Items[0].InputNotes[0].ReservationID,
+		TxHash:                   "txhash",
+		OutputCommitment:         "commitment-a",
+		DisclosureDigest:         auditDigest,
+		UserDisclosureDigest:     userDigest,
+		AuditDisclosureDigest:    auditDigest,
+		SelfViewDisclosureDigest: selfViewDigest,
+		RecipientHash:            confirmed.Items[0].ExpectedRecipientHash,
+		AmountHash:               confirmed.Items[0].ExpectedAmountHash,
+		Denom:                    "uclair",
+		NullifierSpent:           true,
+		BatchItemIndex:           0,
+		BatchItemIndexKnown:      true,
+		TxSucceeded:              true,
 	}}}
 	bz, err := json.Marshal(evidence)
 	require.NoError(t, err)
@@ -215,8 +229,18 @@ func TestScanEvidenceCommandAppliesTxObservation(t *testing.T) {
 	txPath := filepath.Join(dir, "tx-query.json")
 	scanPath := filepath.Join(dir, "scan.json")
 	payload := validPrepareNotesPayload()
+	userDigest := strings.Repeat("0", 63) + "1"
+	auditDigest := strings.Repeat("0", 63) + "2"
+	selfViewDigest := strings.Repeat("0", 63) + "3"
+	payload.Items[0].DisclosurePolicy = &disclosurePolicyFile{
+		UserPrivacyPolicy:                "amount",
+		UserDisclosureMode:               "public",
+		ExpectedUserDisclosureDigest:     userDigest,
+		ExpectedAuditDisclosureDigest:    auditDigest,
+		ExpectedSelfViewDisclosureDigest: selfViewDigest,
+	}
 	payload.Items[0].ExpectedOutputCommitment = "commitment-a"
-	payload.Items[0].ExpectedDisclosureDigest = "digest-a"
+	payload.Items[0].ExpectedDisclosureDigest = auditDigest
 	writePayrollInput(t, inputPath, payload)
 	require.NoError(t, runPlan([]string{"-input", inputPath, "-out", planPath}))
 	require.NoError(t, runRun([]string{"-plan", planPath, "-state", statePath, "-out", confirmedPath}))
@@ -237,7 +261,9 @@ func TestScanEvidenceCommandAppliesTxObservation(t *testing.T) {
 					{"key": "nullifier_1", "value": "lookup-large"},
 					{"key": "nullifier_2", "value": "lookup-zero"},
 					{"key": "commitment_1", "value": "commitment-a"},
-					{"key": "audit_disclosure_digest", "value": "digest-a"},
+					{"key": "user_disclosure_digest", "value": userDigest},
+					{"key": "audit_disclosure_digest", "value": auditDigest},
+					{"key": "self_view_disclosure_digest", "value": selfViewDigest},
 				},
 			}},
 		},
@@ -250,6 +276,9 @@ func TestScanEvidenceCommandAppliesTxObservation(t *testing.T) {
 	require.NoError(t, json.Unmarshal(scanBytes, &scan))
 	require.True(t, scan.TxSucceeded)
 	require.Len(t, scan.Evidence, 2)
+	require.Equal(t, userDigest, scan.Evidence[0].UserDisclosureDigest)
+	require.Equal(t, auditDigest, scan.Evidence[0].AuditDisclosureDigest)
+	require.Equal(t, selfViewDigest, scan.Evidence[0].SelfViewDisclosureDigest)
 	require.NotNil(t, scan.Reconcile)
 	require.Equal(t, 0, scan.Reconcile.RequiresReview)
 
@@ -278,8 +307,50 @@ func TestSelectPlanItemsForSettlementSupportsChunkRanges(t *testing.T) {
 		TxHash:       "txhash",
 		MessageCount: 1,
 		Amounts:      []string{"2uclair"},
+		Items: []transferBatchResultItemFile{{
+			Amount:                "2uclair",
+			Nullifiers:            []string{"lookup-2"},
+			OutputCommitment:      "commitment-2",
+			AuditDisclosureDigest: "audit-2",
+		}},
 	})
 	require.NoError(t, err)
+}
+
+func TestValidateSettlementRecipientScopeRejectsMixedRecipients(t *testing.T) {
+	items := []privacypayroll.PayrollPlanItem{
+		{RecipientAddress: testPayrollRecipientAddress()},
+		{RecipientAddress: "clairs1uwnerzqjukcmg56pqwe509jmfvsvdnd8j4k657d8c839f5rthu0q6d9yk3vda5wyhmvggjgkj94axzegkchypz0h3nx577vw3th7lpq7mwjed"},
+	}
+
+	require.Error(t, validateSettlementRecipientScope(items))
+}
+
+func TestSettleTransferBatchRequiresRecipientDeltaEvidence(t *testing.T) {
+	dir := t.TempDir()
+	inputPath := filepath.Join(dir, "payroll.json")
+	planPath := filepath.Join(dir, "plan.json")
+	confirmedPath := filepath.Join(dir, "confirmed-plan.json")
+	statePath := filepath.Join(dir, "reservation-state.json")
+	txPath := filepath.Join(dir, "transfer-batch.json")
+	payload := validPrepareNotesPayload()
+	payload.TreasuryNotes[0].Amount = "70"
+	writePayrollInput(t, inputPath, payload)
+	require.NoError(t, runPlan([]string{"-input", inputPath, "-out", planPath}))
+	require.NoError(t, runRun([]string{"-plan", planPath, "-state", statePath, "-out", confirmedPath}))
+	confirmedBytes, err := os.ReadFile(confirmedPath)
+	require.NoError(t, err)
+	var confirmed privacypayroll.PayrollPlan
+	require.NoError(t, json.Unmarshal(confirmedBytes, &confirmed))
+	writeJSONForTest(t, txPath, settlementTxResultForItem("LIVE_TX_HASH", confirmed.Items[0], "settle-commitment", "settle-audit"))
+
+	err = runSettleTransferBatch([]string{
+		"-plan", planPath,
+		"-state", statePath,
+		"-tx", txPath,
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "-recipient-before")
 }
 
 func TestSettleTransferBatchCommandConfirmsDurableState(t *testing.T) {
@@ -298,10 +369,14 @@ func TestSettleTransferBatchCommandConfirmsDurableState(t *testing.T) {
 	writePayrollInput(t, inputPath, payload)
 	require.NoError(t, runPlan([]string{"-input", inputPath, "-out", planPath}))
 	require.NoError(t, runRun([]string{"-plan", planPath, "-state", statePath, "-out", confirmedPath}))
+	confirmedBytes, err := os.ReadFile(confirmedPath)
+	require.NoError(t, err)
+	var confirmed privacypayroll.PayrollPlan
+	require.NoError(t, json.Unmarshal(confirmedBytes, &confirmed))
 
-	writeJSONForTest(t, txPath, transferBatchResultFile{TxHash: "LIVE_TX_HASH", Code: 0, MessageCount: 1, Amounts: []string{"70uclair"}})
+	writeJSONForTest(t, txPath, settlementTxResultForItem("LIVE_TX_HASH", confirmed.Items[0], "settle-commitment", "settle-audit"))
 	writeJSONForTest(t, beforePath, listNotesFile{Notes: []listNotesFileNote{}})
-	writeJSONForTest(t, afterPath, listNotesFile{Notes: []listNotesFileNote{{Index: 1, Status: "spendable", Amount: "70", Nullifier: "recipient-note"}}})
+	writeJSONForTest(t, afterPath, listNotesFile{Notes: []listNotesFileNote{{Index: 1, Status: "spendable", Amount: "70", Nullifier: "recipient-note", TxHash: "LIVE_TX_HASH"}}})
 
 	require.NoError(t, runSettleTransferBatch([]string{
 		"-plan", planPath,
@@ -326,6 +401,184 @@ func TestSettleTransferBatchCommandConfirmsDurableState(t *testing.T) {
 	require.NoError(t, json.Unmarshal(exportBytes, &exported))
 	require.Equal(t, privacypayroll.PlanStatusConfirmed, exported.Status)
 	require.Equal(t, privacypayroll.ItemStatusConfirmed, exported.Items[0].Status)
+
+	require.NoError(t, runSettleTransferBatch([]string{
+		"-plan", planPath,
+		"-state", statePath,
+		"-tx", txPath,
+		"-recipient-before", beforePath,
+		"-recipient-after", afterPath,
+		"-out", settlePath,
+	}))
+	settleBytes, err = os.ReadFile(settlePath)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(settleBytes, &settle))
+	require.Equal(t, 2, settle.TotalReservations)
+	require.Equal(t, 0, settle.RequiresReview)
+}
+
+func TestSettleTransferBatchRejectsRecipientDeltaFromDifferentTx(t *testing.T) {
+	dir := t.TempDir()
+	inputPath := filepath.Join(dir, "payroll.json")
+	planPath := filepath.Join(dir, "plan.json")
+	confirmedPath := filepath.Join(dir, "confirmed-plan.json")
+	statePath := filepath.Join(dir, "reservation-state.json")
+	txPath := filepath.Join(dir, "transfer-batch.json")
+	beforePath := filepath.Join(dir, "recipient-before.json")
+	afterPath := filepath.Join(dir, "recipient-after.json")
+	payload := validPrepareNotesPayload()
+	payload.TreasuryNotes[0].Amount = "70"
+	writePayrollInput(t, inputPath, payload)
+	require.NoError(t, runPlan([]string{"-input", inputPath, "-out", planPath}))
+	require.NoError(t, runRun([]string{"-plan", planPath, "-state", statePath, "-out", confirmedPath}))
+	confirmedBytes, err := os.ReadFile(confirmedPath)
+	require.NoError(t, err)
+	var confirmed privacypayroll.PayrollPlan
+	require.NoError(t, json.Unmarshal(confirmedBytes, &confirmed))
+
+	writeJSONForTest(t, txPath, settlementTxResultForItem("LIVE_TX_HASH", confirmed.Items[0], "settle-commitment", "settle-audit"))
+	writeJSONForTest(t, beforePath, listNotesFile{Notes: []listNotesFileNote{}})
+	writeJSONForTest(t, afterPath, listNotesFile{Notes: []listNotesFileNote{{Index: 1, Status: "spendable", Amount: "70", Nullifier: "recipient-note", TxHash: "OTHER_TX_HASH"}}})
+
+	err = runSettleTransferBatch([]string{
+		"-plan", planPath,
+		"-state", statePath,
+		"-tx", txPath,
+		"-recipient-before", beforePath,
+		"-recipient-after", afterPath,
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "LIVE_TX_HASH")
+}
+
+func TestSettleTransferBatchRejectsMismatchedNullifierEvidence(t *testing.T) {
+	dir := t.TempDir()
+	inputPath := filepath.Join(dir, "payroll.json")
+	planPath := filepath.Join(dir, "plan.json")
+	confirmedPath := filepath.Join(dir, "confirmed-plan.json")
+	statePath := filepath.Join(dir, "reservation-state.json")
+	txPath := filepath.Join(dir, "transfer-batch.json")
+	payload := validPrepareNotesPayload()
+	payload.TreasuryNotes[0].Amount = "70"
+	writePayrollInput(t, inputPath, payload)
+	require.NoError(t, runPlan([]string{"-input", inputPath, "-out", planPath}))
+	require.NoError(t, runRun([]string{"-plan", planPath, "-state", statePath, "-out", confirmedPath}))
+	confirmedBytes, err := os.ReadFile(confirmedPath)
+	require.NoError(t, err)
+	var confirmed privacypayroll.PayrollPlan
+	require.NoError(t, json.Unmarshal(confirmedBytes, &confirmed))
+	tx := settlementTxResultForItem("LIVE_TX_HASH", confirmed.Items[0], "settle-commitment", "settle-audit")
+	tx.Items[0].Nullifiers = []string{"different-nullifier"}
+	writeJSONForTest(t, txPath, tx)
+
+	err = runSettleTransferBatch([]string{
+		"-plan", planPath,
+		"-state", statePath,
+		"-tx", txPath,
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "missing nullifier evidence")
+
+	store, err := privacyreservation.OpenDurableFileStore(statePath)
+	require.NoError(t, err)
+	for _, note := range confirmed.Items[0].InputNotes {
+		reservation, err := store.GetReservation(context.Background(), note.ReservationID)
+		require.NoError(t, err)
+		require.Equal(t, privacyreservation.StatusReserved, reservation.Status)
+	}
+}
+
+func TestSettleTransferBatchResumesProofReadyAndSubmittedState(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		submit bool
+	}{
+		{name: "proof ready", submit: false},
+		{name: "submitted", submit: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			inputPath := filepath.Join(dir, "payroll.json")
+			planPath := filepath.Join(dir, "plan.json")
+			confirmedPath := filepath.Join(dir, "confirmed-plan.json")
+			statePath := filepath.Join(dir, "reservation-state.json")
+			txPath := filepath.Join(dir, "transfer-batch.json")
+			beforePath := filepath.Join(dir, "recipient-before.json")
+			afterPath := filepath.Join(dir, "recipient-after.json")
+			settlePath := filepath.Join(dir, "settle.json")
+			payload := validPrepareNotesPayload()
+			payload.TreasuryNotes[0].Amount = "70"
+			writePayrollInput(t, inputPath, payload)
+			require.NoError(t, runPlan([]string{"-input", inputPath, "-out", planPath}))
+			require.NoError(t, runRun([]string{"-plan", planPath, "-state", statePath, "-out", confirmedPath}))
+			confirmedBytes, err := os.ReadFile(confirmedPath)
+			require.NoError(t, err)
+			var confirmed privacypayroll.PayrollPlan
+			require.NoError(t, json.Unmarshal(confirmedBytes, &confirmed))
+			tx := settlementTxResultForItem("LIVE_TX_HASH", confirmed.Items[0], "settle-commitment", "settle-audit")
+			writeJSONForTest(t, txPath, tx)
+			markConfirmedPlanProofReadyForSettlement(t, statePath, confirmed, tx, tc.submit)
+			writeJSONForTest(t, beforePath, listNotesFile{Notes: []listNotesFileNote{}})
+			writeJSONForTest(t, afterPath, listNotesFile{Notes: []listNotesFileNote{{Index: 1, Status: "spendable", Amount: "70", Nullifier: "recipient-note", TxHash: "LIVE_TX_HASH"}}})
+
+			require.NoError(t, runSettleTransferBatch([]string{
+				"-plan", planPath,
+				"-state", statePath,
+				"-tx", txPath,
+				"-recipient-before", beforePath,
+				"-recipient-after", afterPath,
+				"-out", settlePath,
+			}))
+			settleBytes, err := os.ReadFile(settlePath)
+			require.NoError(t, err)
+			var settle settleTransferBatchReport
+			require.NoError(t, json.Unmarshal(settleBytes, &settle))
+			require.Equal(t, 2, settle.TotalReservations)
+			require.Equal(t, 0, settle.RequiresReview)
+		})
+	}
+}
+
+func TestSettleTransferBatchRollsBackProvingOnProofReadyFailure(t *testing.T) {
+	dir := t.TempDir()
+	inputPath := filepath.Join(dir, "payroll.json")
+	planPath := filepath.Join(dir, "plan.json")
+	confirmedPath := filepath.Join(dir, "confirmed-plan.json")
+	statePath := filepath.Join(dir, "reservation-state.json")
+	txPath := filepath.Join(dir, "transfer-batch.json")
+	beforePath := filepath.Join(dir, "recipient-before.json")
+	afterPath := filepath.Join(dir, "recipient-after.json")
+	payload := validPrepareNotesPayload()
+	payload.TreasuryNotes[0].Amount = "70"
+	payload.Items[0].ExpectedOutputCommitment = "expected-commitment"
+	writePayrollInput(t, inputPath, payload)
+	require.NoError(t, runPlan([]string{"-input", inputPath, "-out", planPath}))
+	require.NoError(t, runRun([]string{"-plan", planPath, "-state", statePath, "-out", confirmedPath}))
+
+	confirmedBytes, err := os.ReadFile(confirmedPath)
+	require.NoError(t, err)
+	var confirmed privacypayroll.PayrollPlan
+	require.NoError(t, json.Unmarshal(confirmedBytes, &confirmed))
+	writeJSONForTest(t, txPath, settlementTxResultForItem("LIVE_TX_HASH", confirmed.Items[0], "different-commitment", "settle-audit"))
+	writeJSONForTest(t, beforePath, listNotesFile{Notes: []listNotesFileNote{}})
+	writeJSONForTest(t, afterPath, listNotesFile{Notes: []listNotesFileNote{{Index: 1, Status: "spendable", Amount: "70", Nullifier: "recipient-note", TxHash: "LIVE_TX_HASH"}}})
+
+	err = runSettleTransferBatch([]string{
+		"-plan", planPath,
+		"-state", statePath,
+		"-tx", txPath,
+		"-recipient-before", beforePath,
+		"-recipient-after", afterPath,
+	})
+	require.Error(t, err)
+
+	store, err := privacyreservation.OpenDurableFileStore(statePath)
+	require.NoError(t, err)
+	for _, note := range confirmed.Items[0].InputNotes {
+		reservation, err := store.GetReservation(context.Background(), note.ReservationID)
+		require.NoError(t, err)
+		require.Equal(t, privacyreservation.StatusReserved, reservation.Status)
+	}
 }
 
 func TestParsePrivacyPolicyLabels(t *testing.T) {
@@ -411,4 +664,59 @@ func markConfirmedPlanSubmitted(t *testing.T, statePath string, plan privacypayr
 		AccountSequence: 7,
 	})
 	require.NoError(t, err)
+}
+
+func settlementTxResultForItem(txHash string, item privacypayroll.PayrollPlanItem, outputCommitment string, auditDigest string) transferBatchResultFile {
+	nullifiers := make([]string, 0, len(item.InputNotes))
+	for _, note := range item.InputNotes {
+		nullifiers = append(nullifiers, note.NullifierLookupKey)
+	}
+	amount := payrollItemCoinString(item)
+	return transferBatchResultFile{
+		TxHash:       txHash,
+		Code:         0,
+		MessageCount: 1,
+		Amounts:      []string{amount},
+		Items: []transferBatchResultItemFile{{
+			Amount:                   amount,
+			Nullifiers:               nullifiers,
+			OutputCommitment:         outputCommitment,
+			AuditDisclosureDigest:    auditDigest,
+			SelfViewDisclosureDigest: item.DisclosurePolicy.ExpectedSelfViewDisclosureDigest,
+		}},
+	}
+}
+
+func markConfirmedPlanProofReadyForSettlement(t *testing.T, statePath string, plan privacypayroll.PayrollPlan, tx transferBatchResultFile, submit bool) {
+	t.Helper()
+	ctx := context.Background()
+	store, err := privacyreservation.OpenDurableFileStore(statePath)
+	require.NoError(t, err)
+	now := time.Date(2026, 7, 7, 12, 0, 0, 0, time.UTC)
+	svc := privacyreservation.Service{Store: store, Now: func() time.Time { return now }}
+	item := plan.Items[0]
+	txItem := tx.Items[0]
+	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(item.InputNotes))
+	for _, note := range item.InputNotes {
+		lease, err := svc.AcquireLeaseForStatus(ctx, note.ReservationID, "test-proof-worker", privacyreservation.StatusReserved, time.Minute)
+		require.NoError(t, err)
+		_, err = svc.TransitionWithLease(ctx, note.ReservationID, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving)
+		require.NoError(t, err)
+		refs = append(refs, privacyreservation.SubmittedReservationRef{
+			ReservationID: note.ReservationID,
+			LeaseToken:    lease.Token,
+		})
+	}
+	_, _, err = svc.MarkProofReadyBatch(ctx, refs, privacyreservation.ProofReadyOperationUpdate{
+		OperationID:                      item.OperationID,
+		ExpectedOutputCommitment:         txItem.OutputCommitment,
+		ExpectedDisclosureDigest:         txItem.AuditDisclosureDigest,
+		ExpectedAuditDisclosureDigest:    txItem.AuditDisclosureDigest,
+		ExpectedSelfViewDisclosureDigest: txItem.SelfViewDisclosureDigest,
+	})
+	require.NoError(t, err)
+	if submit {
+		_, _, err = svc.MarkSubmittedBatch(ctx, refs, []string{item.OperationID}, privacyreservation.SubmittedReservationUpdate{TxHash: tx.TxHash})
+		require.NoError(t, err)
+	}
 }

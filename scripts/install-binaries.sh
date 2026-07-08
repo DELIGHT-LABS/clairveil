@@ -19,6 +19,8 @@ binaries=(
 	clairveil-setup
 	clairveil-verify
 	clairveil-proverd
+	clairveil-payroll
+	clairveil-payrolld
 )
 
 mkdir -p "$gobin"

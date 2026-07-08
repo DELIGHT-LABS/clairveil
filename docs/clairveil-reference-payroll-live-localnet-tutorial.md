@@ -292,7 +292,8 @@ clairveil-payroll settle-transfer-batch \
 - tx `code` is `0`
 - tx `message_count` equals the selected payroll item count
 - tx amount list equals the selected payroll item amount list
-- recipient scan result gained enough spendable notes for each payment amount
+- tx item evidence includes the selected input nullifiers, output commitment, and audit disclosure digest
+- recipient scan result gained enough spendable notes from the same `txhash` for each payment amount
 - `-item-start` and `-item-limit` identify the plan slice matched to the tx
 
 After verification, durable reservation state is updated to `ConfirmedSpent` and operation state to `Succeeded`.
@@ -345,11 +346,12 @@ Current `settle-transfer-batch` success judgment uses:
 
 - actual `transfer-batch` tx success
 - tx message count and amount list matching the payroll plan
-- recipient spendable notes increasing by the expected payment amount counts
+- tx output evidence tying selected reservation nullifiers to each selected payroll item
+- recipient spendable notes from the transfer tx increasing by the expected payment amount counts
 
 Remaining production-grade work:
 
-- tx event/nullifier scanner is provided by `clairveil-payroll scan-evidence` and SDK `EvidenceScanner`, but this tutorial script uses a beginner-friendly settle bridge by default
+- tx event/nullifier scanner is provided by `clairveil-payroll scan-evidence` and SDK `EvidenceScanner`; production deployments should feed scanner output from chain tx queries instead of relying only on command-local tx metadata
 - production daemon should connect `scan-evidence` or an equivalent scanner as a long-running worker
 - when many payroll items have the same amount, recipient note delta should be matched to operation items more strongly
 - `PAYROLL_SEED_NOTES=1` is a localnet-only rehearsal helper and must not be used as evidence for production note preparation performance

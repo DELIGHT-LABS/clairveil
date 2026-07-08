@@ -60,11 +60,7 @@ func run(args []string) error {
 		return fmt.Errorf("-interval must be positive")
 	}
 
-	store, err := privacyreservation.OpenDurableFileStore(statePath)
-	if err != nil {
-		return err
-	}
-	runner, err := buildDaemonRunner(mode, store, planPath, txQueryPath, nullifiersPath, leaseOwner, leaseTTL, maxOperations)
+	runner, err := buildDaemonRunner(mode, statePath, planPath, txQueryPath, nullifiersPath, leaseOwner, leaseTTL, maxOperations)
 	if err != nil {
 		return err
 	}
@@ -102,7 +98,73 @@ type daemonRunner interface {
 	RunOnce(context.Context) (*privacypayroll.ReferenceDaemonRunReport, error)
 }
 
-func buildDaemonRunner(mode string, store privacyreservation.Store, planPath string, txQueryPath string, nullifiersPath string, leaseOwner string, leaseTTL time.Duration, maxOperations int) (daemonRunner, error) {
+type reopeningDaemonRunner struct {
+	mode           string
+	statePath      string
+	planPath       string
+	txQueryPath    string
+	nullifiersPath string
+	leaseOwner     string
+	leaseTTL       time.Duration
+	maxOperations  int
+}
+
+func (r reopeningDaemonRunner) RunOnce(ctx context.Context) (*privacypayroll.ReferenceDaemonRunReport, error) {
+	if err := requireExistingStatePath(r.statePath); err != nil {
+		return nil, err
+	}
+	store, err := privacyreservation.OpenDurableFileStore(r.statePath)
+	if err != nil {
+		return nil, err
+	}
+	runner, err := buildDaemonRunnerForStore(r.mode, store, r.planPath, r.txQueryPath, r.nullifiersPath, r.leaseOwner, r.leaseTTL, r.maxOperations)
+	if err != nil {
+		return nil, err
+	}
+	return runner.RunOnce(ctx)
+}
+
+func buildDaemonRunner(mode string, statePath string, planPath string, txQueryPath string, nullifiersPath string, leaseOwner string, leaseTTL time.Duration, maxOperations int) (daemonRunner, error) {
+	if err := requireExistingStatePath(statePath); err != nil {
+		return nil, err
+	}
+	if _, err := privacyreservation.OpenDurableFileStore(statePath); err != nil {
+		return nil, err
+	}
+	if mode == "live" {
+		if _, err := readPayrollPlan(planPath); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(txQueryPath) == "" {
+			return nil, fmt.Errorf("-tx-query is required in live mode")
+		}
+	}
+	return reopeningDaemonRunner{
+		mode:           mode,
+		statePath:      statePath,
+		planPath:       planPath,
+		txQueryPath:    txQueryPath,
+		nullifiersPath: nullifiersPath,
+		leaseOwner:     leaseOwner,
+		leaseTTL:       leaseTTL,
+		maxOperations:  maxOperations,
+	}, nil
+}
+
+func requireExistingStatePath(path string) error {
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("-state is required")
+	}
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("durable reservation state %s does not exist; run clairveil-payroll run first", path)
+		}
+		return err
+	}
+	return nil
+}
+
+func buildDaemonRunnerForStore(mode string, store privacyreservation.Store, planPath string, txQueryPath string, nullifiersPath string, leaseOwner string, leaseTTL time.Duration, maxOperations int) (daemonRunner, error) {
 	reservationService := privacyreservation.Service{Store: store}
 	switch mode {
 	case "simulated":

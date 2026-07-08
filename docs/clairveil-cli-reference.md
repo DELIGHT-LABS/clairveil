@@ -213,7 +213,7 @@ Current limitations:
 - Does not run the recursive split/merge planner.
 - Each amount must already be satisfiable from spendable exact or pairable notes without reusing an input note inside the same batch.
 - Zero-value dummy notes must already exist when a selected transfer input needs a dummy note.
-- JSON output includes `txhash`, `height`, `code`, `message_count`, and requested `amounts`.
+- JSON output includes `txhash`, `height`, `code`, `message_count`, requested `amounts`, and per-message `items` evidence with nullifiers, output commitment, and disclosure digests.
 
 ## 6. Disclosure Decode
 
@@ -424,7 +424,7 @@ clairveil-payroll seed-localnet-notes -genesis home/config/genesis.json -wallet-
 clairveil-payroll export-report -plan plan.json -state .clairveil-payroll/reservation-state.json -out payroll-report.json
 ```
 
-`build-input-from-notes` reads spendable notes from `list-notes --json` output and fills the payroll input `treasury_notes`. `scan-evidence` reads `clairveild query tx --output json` output or the equivalent TxObservation JSON, converts `shielded_transfer` events, output commitments, disclosure digests, and nullifier evidence into payroll reconcile evidence, and applies it to durable state when `-apply` is set. `settle-transfer-batch` verifies the actual `transfer-batch` tx result and recipient note scan delta before settling the durable reservation state.
+`build-input-from-notes` reads spendable notes from `list-notes --json` output and fills the payroll input `treasury_notes`. `scan-evidence` reads `clairveild query tx --output json` output or the equivalent TxObservation JSON, converts `shielded_transfer` events, output commitments, disclosure digests, and nullifier evidence into payroll reconcile evidence, and applies it to durable state when `-apply` is set. `settle-transfer-batch` verifies the actual `transfer-batch` tx result, per-message nullifier/output/disclosure evidence, and recipient note scan delta before settling the durable reservation state.
 
 `seed-localnet-notes` is a localnet rehearsal helper. It writes payroll amount notes and zero dummy notes into localnet genesis commitments and the local wallet cache so large restart/retry rehearsals do not spend time preparing deposit txs. It is not a production note-preparation feature.
 
