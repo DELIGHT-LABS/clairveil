@@ -538,6 +538,8 @@ func runSettleTransferBatch(args []string) error {
 	var outPath string
 	var leaseOwner string
 	var leaseTTL time.Duration
+	var itemStart int
+	var itemLimit int
 	flags.StringVar(&planPath, "plan", "", "payroll plan JSON path")
 	flags.StringVar(&statePath, "state", "", "durable reservation state JSON path")
 	flags.StringVar(&txPath, "tx", "", "transfer-batch command JSON output path")
@@ -546,6 +548,8 @@ func runSettleTransferBatch(args []string) error {
 	flags.StringVar(&outPath, "out", "", "optional settle report JSON path; stdout when empty")
 	flags.StringVar(&leaseOwner, "lease-owner", "clairveil-payroll-live-settle", "reservation lease owner used while settling")
 	flags.DurationVar(&leaseTTL, "lease-ttl", time.Minute, "reservation lease ttl used while settling")
+	flags.IntVar(&itemStart, "item-start", 0, "zero-based payroll plan item offset for this transfer-batch tx")
+	flags.IntVar(&itemLimit, "item-limit", 0, "maximum number of payroll plan items to settle; 0 means all remaining items")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -560,10 +564,14 @@ func runSettleTransferBatch(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := validateTransferBatchResult(*plan, txResult); err != nil {
+	items, err := selectPlanItemsForSettlement(*plan, itemStart, itemLimit)
+	if err != nil {
 		return err
 	}
-	verifiedDeltas, err := verifyRecipientNoteDeltas(*plan, recipientBeforePath, recipientAfterPath)
+	if err := validateTransferBatchResult(items, txResult); err != nil {
+		return err
+	}
+	verifiedDeltas, err := verifyRecipientNoteDeltas(items, recipientBeforePath, recipientAfterPath)
 	if err != nil {
 		return err
 	}
@@ -578,7 +586,8 @@ func runSettleTransferBatch(args []string) error {
 		VerifiedRecipientDeltas: verifiedDeltas,
 		Results:                 make([]reconcileItemReport, 0),
 	}
-	for itemIndex, item := range plan.Items {
+	for relativeIndex, item := range items {
+		itemIndex := itemStart + relativeIndex
 		results, err := settleTransferBatchItem(context.Background(), service, item, itemIndex, txResult, leaseOwner, leaseTTL)
 		if err != nil {
 			return err
@@ -967,20 +976,40 @@ func treasuryNotesFromListNotes(notes listNotesFile, denom string, ownerKeyID st
 	return out
 }
 
-func validateTransferBatchResult(plan privacypayroll.PayrollPlan, tx transferBatchResultFile) error {
+func selectPlanItemsForSettlement(plan privacypayroll.PayrollPlan, itemStart int, itemLimit int) ([]privacypayroll.PayrollPlanItem, error) {
+	if itemStart < 0 {
+		return nil, fmt.Errorf("-item-start must be non-negative")
+	}
+	if itemLimit < 0 {
+		return nil, fmt.Errorf("-item-limit must be non-negative")
+	}
+	if itemStart > len(plan.Items) {
+		return nil, fmt.Errorf("-item-start %d exceeds payroll item count %d", itemStart, len(plan.Items))
+	}
+	itemEnd := len(plan.Items)
+	if itemLimit > 0 && itemStart+itemLimit < itemEnd {
+		itemEnd = itemStart + itemLimit
+	}
+	if itemStart == itemEnd {
+		return nil, fmt.Errorf("selected payroll item range is empty")
+	}
+	return plan.Items[itemStart:itemEnd], nil
+}
+
+func validateTransferBatchResult(items []privacypayroll.PayrollPlanItem, tx transferBatchResultFile) error {
 	if tx.TxHash == "" {
 		return fmt.Errorf("transfer-batch result has no txhash")
 	}
 	if tx.Code != 0 {
 		return fmt.Errorf("transfer-batch tx %s failed with code %d: %s", tx.TxHash, tx.Code, tx.RawLog)
 	}
-	if tx.MessageCount != len(plan.Items) {
-		return fmt.Errorf("transfer-batch message_count %d does not match payroll item count %d", tx.MessageCount, len(plan.Items))
+	if tx.MessageCount != len(items) {
+		return fmt.Errorf("transfer-batch message_count %d does not match selected payroll item count %d", tx.MessageCount, len(items))
 	}
-	if len(tx.Amounts) != len(plan.Items) {
-		return fmt.Errorf("transfer-batch amount count %d does not match payroll item count %d", len(tx.Amounts), len(plan.Items))
+	if len(tx.Amounts) != len(items) {
+		return fmt.Errorf("transfer-batch amount count %d does not match selected payroll item count %d", len(tx.Amounts), len(items))
 	}
-	for i, item := range plan.Items {
+	for i, item := range items {
 		expected := payrollItemCoinString(item)
 		if tx.Amounts[i] != expected {
 			return fmt.Errorf("transfer-batch amount %d is %s, expected %s", i, tx.Amounts[i], expected)
@@ -989,7 +1018,7 @@ func validateTransferBatchResult(plan privacypayroll.PayrollPlan, tx transferBat
 	return nil
 }
 
-func verifyRecipientNoteDeltas(plan privacypayroll.PayrollPlan, beforePath string, afterPath string) (map[string]int, error) {
+func verifyRecipientNoteDeltas(items []privacypayroll.PayrollPlanItem, beforePath string, afterPath string) (map[string]int, error) {
 	if strings.TrimSpace(beforePath) == "" && strings.TrimSpace(afterPath) == "" {
 		return nil, nil
 	}
@@ -1005,7 +1034,7 @@ func verifyRecipientNoteDeltas(plan privacypayroll.PayrollPlan, beforePath strin
 		return nil, err
 	}
 	required := make(map[string]int)
-	for _, item := range plan.Items {
+	for _, item := range items {
 		required[payrollItemAmountString(item)]++
 	}
 	beforeCounts := spendableNoteCountsByAmount(before)
@@ -1085,9 +1114,10 @@ func settleTransferBatchItem(ctx context.Context, service privacyreservation.Ser
 		return nil, nil
 	}
 	if _, _, err := service.MarkProofReadyBatch(ctx, refsWithLeaseTokens(refs), privacyreservation.ProofReadyOperationUpdate{
-		OperationID:              item.OperationID,
-		ExpectedOutputCommitment: liveSettlementOutputCommitment(tx.TxHash, item.OperationID),
-		ExpectedDisclosureDigest: liveSettlementDisclosureDigest(tx.TxHash, item.OperationID),
+		OperationID:                   item.OperationID,
+		ExpectedOutputCommitment:      liveSettlementOutputCommitment(tx.TxHash, item.OperationID),
+		ExpectedDisclosureDigest:      liveSettlementDisclosureDigest(tx.TxHash, item.OperationID),
+		ExpectedAuditDisclosureDigest: liveSettlementDisclosureDigest(tx.TxHash, item.OperationID),
 	}); err != nil {
 		return nil, err
 	}
@@ -1100,17 +1130,18 @@ func settleTransferBatchItem(ctx context.Context, service privacyreservation.Ser
 	worker := privacypayroll.ReconcileWorker{Reservation: service}
 	for _, ref := range refs {
 		result, err := worker.ReconcileReservation(ctx, ref.ReservationID, privacyreservation.OperationEvidence{
-			TxHash:              tx.TxHash,
-			OutputCommitment:    liveSettlementOutputCommitment(tx.TxHash, item.OperationID),
-			DisclosureDigest:    liveSettlementDisclosureDigest(tx.TxHash, item.OperationID),
-			RecipientHash:       item.ExpectedRecipientHash,
-			AmountHash:          item.ExpectedAmountHash,
-			Denom:               item.Denom,
-			BatchItemIndex:      itemIndex,
-			BatchItemIndexKnown: true,
-			NullifierSpent:      true,
-			TxSucceeded:         true,
-			TxKnown:             true,
+			TxHash:                tx.TxHash,
+			OutputCommitment:      liveSettlementOutputCommitment(tx.TxHash, item.OperationID),
+			DisclosureDigest:      liveSettlementDisclosureDigest(tx.TxHash, item.OperationID),
+			AuditDisclosureDigest: liveSettlementDisclosureDigest(tx.TxHash, item.OperationID),
+			RecipientHash:         item.ExpectedRecipientHash,
+			AmountHash:            item.ExpectedAmountHash,
+			Denom:                 item.Denom,
+			BatchItemIndex:        itemIndex,
+			BatchItemIndexKnown:   true,
+			NullifierSpent:        true,
+			TxSucceeded:           true,
+			TxKnown:               true,
 		})
 		if err != nil {
 			return nil, err

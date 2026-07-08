@@ -15,7 +15,9 @@ tx_wait_attempts="${TX_WAIT_ATTEMPTS:-60}"
 tx_wait_sleep_seconds="${TX_WAIT_SLEEP_SECONDS:-2}"
 payroll_item_count="${PAYROLL_ITEM_COUNT:-2}"
 payroll_amount="${PAYROLL_ITEM_AMOUNT:-1}"
-transfer_batch_gas="${PAYROLL_TRANSFER_BATCH_GAS:-$((payroll_item_count * 9000000 + 3000000))}"
+payroll_chunk_size="${PAYROLL_CHUNK_SIZE:-$payroll_item_count}"
+transfer_batch_gas="${PAYROLL_TRANSFER_BATCH_GAS:-$((payroll_chunk_size * 9000000 + 3000000))}"
+gas_prices="${GAS_PRICES:-8500000000uclair}"
 node="tcp://127.0.0.1:${rpc_port}"
 
 if ! [[ "$payroll_item_count" =~ ^[1-9][0-9]*$ ]]; then
@@ -24,6 +26,10 @@ if ! [[ "$payroll_item_count" =~ ^[1-9][0-9]*$ ]]; then
 fi
 if ! [[ "$payroll_amount" =~ ^[1-9][0-9]*$ ]]; then
 	echo "PAYROLL_ITEM_AMOUNT must be a positive integer" >&2
+	exit 1
+fi
+if ! [[ "$payroll_chunk_size" =~ ^[1-9][0-9]*$ ]]; then
+	echo "PAYROLL_CHUNK_SIZE must be a positive integer" >&2
 	exit 1
 fi
 
@@ -209,18 +215,18 @@ PY
 run tx privacy list-notes --from bob --keyring-backend test --home "$home" --node "$node" --rescan-wallet --json >"$out/bob-notes-before.json"
 
 for i in $(seq 1 "$payroll_item_count"); do
-	run tx privacy deposit "${payroll_amount}uclair" --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas 2500000 --gas-prices 8500000000uclair --yes --output json >"$out/deposit-payroll-${i}.json"
+	run tx privacy deposit "${payroll_amount}uclair" --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas 2500000 --gas-prices "$gas_prices" --yes --output json >"$out/deposit-payroll-${i}.json"
 	write_txhash "$out/deposit-payroll-${i}.json" "$out/deposit-payroll-${i}.txhash"
 	wait_tx "$(cat "$out/deposit-payroll-${i}.txhash")" "$out/deposit-payroll-${i}-query.json"
 
-	run tx privacy deposit 0uclair --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas 2500000 --gas-prices 8500000000uclair --yes --output json >"$out/deposit-payroll-${i}-dummy.json"
+	run tx privacy deposit 0uclair --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas 2500000 --gas-prices "$gas_prices" --yes --output json >"$out/deposit-payroll-${i}-dummy.json"
 	write_txhash "$out/deposit-payroll-${i}-dummy.json" "$out/deposit-payroll-${i}-dummy.txhash"
 	wait_tx "$(cat "$out/deposit-payroll-${i}-dummy.txhash")" "$out/deposit-payroll-${i}-dummy-query.json"
 done
 
 run tx privacy list-notes --from alice --keyring-backend test --home "$home" --node "$node" --rescan-wallet --json >"$out/alice-notes.json"
 
-python3 - "$out/payroll-template.json" "$out/bob-shielded-address.txt" "$payroll_item_count" "$payroll_amount" <<'PY'
+python3 - "$out/payroll-template.json" "$out/bob-shielded-address.txt" "$payroll_item_count" "$payroll_amount" "$payroll_chunk_size" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -229,12 +235,13 @@ out = Path(sys.argv[1])
 recipient = Path(sys.argv[2]).read_text().strip()
 count = int(sys.argv[3])
 amount = sys.argv[4]
+chunk_size = int(sys.argv[5])
 doc = {
     "company_id": "company-live-localnet",
     "payroll_id": "payroll-live-localnet",
     "batch_id": "run-001",
     "denom": "uclair",
-    "max_messages_per_tx": count,
+    "max_messages_per_tx": chunk_size,
     "default_disclosure_policy": {
         "user_privacy_policy": "all-private",
         "user_disclosure_mode": "none",
@@ -257,23 +264,46 @@ PY
 "$clairveil_payroll" prepare-notes -input "$out/payroll-input.json" -out "$out/payroll-note-preparation.json"
 "$clairveil_payroll" plan -input "$out/payroll-input.json" -out "$out/payroll-plan.json"
 "$clairveil_payroll" run -plan "$out/payroll-plan.json" -state "$out/payroll-reservation-state.json" -out "$out/payroll-confirmed-plan.json"
+"$clairveil_payroll" run -plan "$out/payroll-plan.json" -state "$out/payroll-reservation-state.json" -out "$out/payroll-confirmed-plan-retry.json"
 
-batch_args=()
-for _ in $(seq 1 "$payroll_item_count"); do
-	batch_args+=("${payroll_amount}uclair")
+chunk_index=0
+item_start=0
+while (( item_start < payroll_item_count )); do
+	chunk_index=$((chunk_index + 1))
+	remaining=$((payroll_item_count - item_start))
+	item_limit="$payroll_chunk_size"
+	if (( item_limit > remaining )); then
+		item_limit="$remaining"
+	fi
+	chunk_label="$(printf "%03d" "$chunk_index")"
+	batch_args=()
+	for _ in $(seq 1 "$item_limit"); do
+		batch_args+=("${payroll_amount}uclair")
+	done
+
+	run tx privacy list-notes --from bob --keyring-backend test --home "$home" --node "$node" --rescan-wallet --json >"$out/bob-notes-before-chunk-${chunk_label}.json"
+	run tx privacy transfer-batch "$(cat "$out/bob-shielded-address.txt")" "${batch_args[@]}" --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas "$transfer_batch_gas" --gas-prices "$gas_prices" --yes --rescan-wallet --output json >"$out/payroll-transfer-batch-${chunk_label}.json"
+	write_txhash "$out/payroll-transfer-batch-${chunk_label}.json" "$out/payroll-transfer-batch-${chunk_label}.txhash"
+	wait_tx "$(cat "$out/payroll-transfer-batch-${chunk_label}.txhash")" "$out/payroll-transfer-batch-${chunk_label}-query.json"
+	run tx privacy list-notes --from bob --keyring-backend test --home "$home" --node "$node" --rescan-wallet --json >"$out/bob-notes-after-chunk-${chunk_label}.json"
+
+	"$clairveil_payroll" settle-transfer-batch \
+		-plan "$out/payroll-plan.json" \
+		-state "$out/payroll-reservation-state.json" \
+		-tx "$out/payroll-transfer-batch-${chunk_label}.json" \
+		-recipient-before "$out/bob-notes-before-chunk-${chunk_label}.json" \
+		-recipient-after "$out/bob-notes-after-chunk-${chunk_label}.json" \
+		-item-start "$item_start" \
+		-item-limit "$item_limit" \
+		-out "$out/payroll-settle-report-${chunk_label}.json"
+	item_start=$((item_start + item_limit))
 done
 
-run tx privacy transfer-batch "$(cat "$out/bob-shielded-address.txt")" "${batch_args[@]}" --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas "$transfer_batch_gas" --gas-prices 8500000000uclair --yes --rescan-wallet --output json >"$out/payroll-transfer-batch.json"
-write_txhash "$out/payroll-transfer-batch.json" "$out/payroll-transfer-batch.txhash"
-wait_tx "$(cat "$out/payroll-transfer-batch.txhash")" "$out/payroll-transfer-batch-query.json"
-
 run tx privacy list-notes --from bob --keyring-backend test --home "$home" --node "$node" --rescan-wallet --json >"$out/bob-notes-after.json"
-
-"$clairveil_payroll" settle-transfer-batch -plan "$out/payroll-plan.json" -state "$out/payroll-reservation-state.json" -tx "$out/payroll-transfer-batch.json" -recipient-before "$out/bob-notes-before.json" -recipient-after "$out/bob-notes-after.json" -out "$out/payroll-settle-report.json"
 "$clairveil_payroll" status -state "$out/payroll-reservation-state.json" -out "$out/payroll-status-after-settle.json"
 "$clairveil_payroll" export-report -plan "$out/payroll-plan.json" -state "$out/payroll-reservation-state.json" -out "$out/payroll-final-report.json"
 
-python3 - "$out/payroll-final-report.json" "$out/payroll-status-after-settle.json" "$payroll_item_count" <<'PY'
+python3 - "$out/payroll-final-report.json" "$out/payroll-status-after-settle.json" "$payroll_item_count" "$payroll_chunk_size" "$chunk_index" "$out/rehearsal-summary.json" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -281,6 +311,9 @@ from pathlib import Path
 report = json.loads(Path(sys.argv[1]).read_text())
 status = json.loads(Path(sys.argv[2]).read_text())
 count = int(sys.argv[3])
+chunk_size = int(sys.argv[4])
+chunk_count = int(sys.argv[5])
+summary_path = Path(sys.argv[6])
 if report["status"] != "Confirmed":
     raise SystemExit(f"payroll report status is {report['status']}, expected Confirmed")
 if report["summary"]["ConfirmedItems"] != count:
@@ -289,6 +322,18 @@ if status["operations_by_status"].get("Succeeded") != count:
     raise SystemExit("not all operations succeeded")
 if status["reservations_by_status"].get("ConfirmedSpent") != count * 2:
     raise SystemExit("not all input reservations are confirmed spent")
+summary = {
+    "schema_version": "clairveil.reference_payroll_live_localnet_rehearsal.v1",
+    "payroll_item_count": count,
+    "payroll_item_amount": report["items"][0]["amount"] if report["items"] else "",
+    "chunk_size": chunk_size,
+    "chunk_count": chunk_count,
+    "final_payroll_status": report["status"],
+    "confirmed_items": report["summary"]["ConfirmedItems"],
+    "succeeded_operations": status["operations_by_status"].get("Succeeded", 0),
+    "confirmed_spent_reservations": status["reservations_by_status"].get("ConfirmedSpent", 0),
+}
+summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
 PY
 
 cat <<EOF
@@ -298,8 +343,9 @@ Work dir:              $work_dir
 Payroll input:         $out/payroll-input.json
 Payroll plan:          $out/payroll-plan.json
 Reservation state:     $out/payroll-reservation-state.json
-Transfer batch tx:     $out/payroll-transfer-batch.json
-Settle report:         $out/payroll-settle-report.json
+Confirmed retry plan:  $out/payroll-confirmed-plan-retry.json
+Transfer batch chunks: $chunk_index
+Rehearsal summary:    $out/rehearsal-summary.json
 Final status:          $out/payroll-status-after-settle.json
 Final payroll report:  $out/payroll-final-report.json
 Node log:              $log_file

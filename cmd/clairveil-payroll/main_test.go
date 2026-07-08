@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"math/big"
 	"os"
 	"path/filepath"
 	"testing"
@@ -257,6 +258,28 @@ func TestScanEvidenceCommandAppliesTxObservation(t *testing.T) {
 	operation, err := store.GetOperation(context.Background(), confirmed.Items[0].OperationID)
 	require.NoError(t, err)
 	require.Equal(t, privacyreservation.OperationStatusSucceeded, operation.Status)
+}
+
+func TestSelectPlanItemsForSettlementSupportsChunkRanges(t *testing.T) {
+	plan := privacypayroll.PayrollPlan{
+		Items: []privacypayroll.PayrollPlanItem{
+			{ItemID: "item-1", Amount: big.NewInt(1), Denom: "uclair"},
+			{ItemID: "item-2", Amount: big.NewInt(2), Denom: "uclair"},
+			{ItemID: "item-3", Amount: big.NewInt(3), Denom: "uclair"},
+		},
+	}
+
+	items, err := selectPlanItemsForSettlement(plan, 1, 1)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, "item-2", items[0].ItemID)
+
+	err = validateTransferBatchResult(items, transferBatchResultFile{
+		TxHash:       "txhash",
+		MessageCount: 1,
+		Amounts:      []string{"2uclair"},
+	})
+	require.NoError(t, err)
 }
 
 func TestSettleTransferBatchCommandConfirmsDurableState(t *testing.T) {
