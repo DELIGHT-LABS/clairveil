@@ -543,7 +543,7 @@ repo는 protocol과 SDK 기준 reference implementation, durable control-plane a
 
 - reservation/payroll/prover/bulk readiness test를 다시 실행함.
 - 기존 단건 transfer UX가 bulk 구현으로 바뀌지 않았음을 문서화함.
-- `transfer-batch`가 readiness/capacity command라는 제한을 명확히 유지함.
+- `transfer-batch`가 recursive split/merge와 payroll control-plane을 대신하지 않는 readiness/capacity command임을 명확히 유지함.
 - failure invariant, duplicate nullifier, lease token, reconcile evidence mismatch test가 계속 통과하는지 확인함.
 - 문제가 발견되면 작은 fix commit으로 분리함.
 
@@ -587,8 +587,10 @@ payroll import
 구현 방향은 다음과 같음.
 
 - Go SDK에 reference type과 validator를 추가함.
-- 기존 `transfer-batch` CLI는 capacity/readiness 목적상 `all-private` / `none` 제한을 유지함.
+- `transfer-batch` CLI는 일반 `transfer`와 같은 shared disclosure option을 지원함.
 - reference payroll product는 per-item disclosure policy를 plan 단계에서 검증하고, proof/payload 생성 시 기존 transfer SDK disclosure config로 변환함.
+
+2026-07-08 구현 상태: `transfer-batch` CLI의 `all-private` / `none` 제한을 제거하고, `--privacy-policy`, `--disclosure-mode`, `--disclosure-pubkey`, `--no-self-view`를 일반 transfer와 같은 방식으로 공유 적용하게 함. payroll operation/evidence에는 audit, user, self-view disclosure digest를 별도 필드로 저장함. operation success 판정은 audit digest를 primary evidence로 사용하고, user/self-view digest는 expected field가 있을 때만 추가 확인함.
 
 ### Phase 1.5.3 Disclosure public key registry contract
 
@@ -675,6 +677,8 @@ clairveil-payrolld
 
 2026-07-08 rehearsal 보강 상태: `scripts/reference-payroll-rehearsal.sh`, `make reference-payroll-rehearsal`, `docs/clairveil-reference-payroll-rehearsal-kr.md`를 추가함. 이 harness는 `single-company-1k`, `single-company-10k`, `single-company-100k`, `hundred-companies-1k` simulation report를 만들고, 선택적으로 작은 live localnet smoke를 함께 실행함. 실제 10만건 full localnet 제출은 운영 비용이 큰 별도 soak test로 남김.
 
+2026-07-08 localnet restart/retry 보강 상태: `scripts/reference-payroll-live-localnet.sh`가 `PAYROLL_CHUNK_SIZE`를 받아 여러 `transfer-batch` tx로 plan을 나누어 제출하고, `settle-transfer-batch -item-start -item-limit`로 chunk별 plan 구간을 settle함. 같은 plan에 대해 `clairveil-payroll run`을 두 번 실행해 reservation idempotency를 확인하고, `rehearsal-summary.json`에 item 수, chunk 수, 최종 성공 count를 기록함.
+
 1.5차 repo 완료 기준은 production 실운영 daemon을 대신하는 것이 아니라, 운영팀이 repo만으로 payroll product 상태 모델과 실제 localnet tx 경로를 끝까지 체험하고, production scanner/daemon 구현 전까지 필요한 durable control-plane workflow를 code와 문서로 조립 가능하게 만드는 것임.
 
 ### Phase 1.5.7 JS SDK handoff
@@ -705,6 +709,8 @@ JS SDK 팀이 직접 구현해야 할 항목은 이 repo에서 대신 구현하�
 - 1차 readiness check가 통과함.
 - Reference payroll product scope와 workflow가 계획 문서에 고정됨.
 - user disclosure policy와 disclosure key registry contract가 Go SDK 또는 문서로 제공됨.
+- product disclosure/retry/note-preparation 기본 정책 문서가 제공됨.
+- `transfer-batch` CLI가 일반 transfer와 같은 shared disclosure option을 지원함.
 - note preparation helper가 최소 analyzer/recommendation 수준으로 제공됨.
 - note preparation helper가 operation hint를 제공함.
 - reference CLI가 `validate`, `prepare-notes`, `plan`, `run`, `status`, `reconcile`, `export-report`를 제공함.
@@ -723,7 +729,7 @@ JS SDK 팀이 직접 구현해야 할 항목은 이 repo에서 대신 구현하�
 
 ### 1. User disclosure 정책 모델 보강
 
-현재 `transfer-batch` CLI는 capacity/readiness 검증을 위해 `all-private` / `none` 중심으로 제한되어 있음. 이 제한은 mandatory audit disclosure를 끄는 의미가 아니라, 사용자 선택 공개를 제품 복잡도에서 분리해 multi-message 제출, note 충돌, gas/size, proof 병목 검증에 집중하기 위한 것임.
+기본 user disclosure 정책은 `all-private` / `none`으로 두되, payroll 제품과 `transfer-batch` CLI는 일반 transfer와 같은 user disclosure option을 지원함. 이 기본값은 mandatory audit disclosure를 끄는 의미가 아니라, user-facing disclosure를 기본 off로 둔다는 의미임.
 
 상품형 payroll에서는 회사별 또는 지급건별 user disclosure 정책이 필요할 수 있음. 따라서 payroll input, payroll plan item, operation record에 다음 정책 필드를 추가하거나 연결해야 함.
 

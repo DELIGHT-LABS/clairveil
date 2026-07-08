@@ -80,6 +80,40 @@ RUN_LOCALNET=1 LOCALNET_PAYROLL_ITEM_COUNT=2 make reference-payroll-rehearsal
 
 `LOCALNET_PAYROLL_ITEM_COUNT`를 높이면 localnet 실행 시간이 길어지고 proof/tx 비용이 커짐. 기본 rehearsal에서는 큰 수치 검증을 simulation으로 하고, chain path는 작은 smoke로 확인하는 것을 권장함.
 
+## 1천건 Localnet Restart/Retry Rehearsal
+
+repo-local chain path에서 1천건 restart/retry 동작을 확인하려면 아래 명령을 사용함.
+
+```bash
+CLAIRVEIL_PAYROLL_LIVE_WORK_DIR=tmp/reference-payroll-live-localnet-1k \
+PAYROLL_ITEM_COUNT=1000 \
+PAYROLL_CHUNK_SIZE=20 \
+GAS_PRICES=0uclair \
+make reference-payroll-live-localnet
+```
+
+이 rehearsal은 다음을 확인함.
+
+- 직원 1천명 기준 treasury note deposit과 scan이 가능함.
+- `clairveil-payroll run`을 같은 plan으로 두 번 실행해도 중복 reservation 없이 idempotent하게 재개됨.
+- 20건 단위 `transfer-batch` chunk 50개가 실제 localnet에 제출됨.
+- 각 chunk가 `settle-transfer-batch -item-start -item-limit`로 plan의 해당 구간만 settle함.
+- 최종 `payroll-status-after-settle.json`에서 operation 1천건이 `Succeeded`이고 input reservation 2천개가 `ConfirmedSpent`임.
+
+`GAS_PRICES=0uclair`는 1천건 localnet rehearsal이 genesis 계정 잔액보다 fee 소모가 커지는 것을 피하기 위한 local-only 설정임. staging/testnet에서는 실제 fee policy로 다시 실행해야 함.
+
+성공 시 주요 산출물은 다음과 같음.
+
+```text
+tmp/reference-payroll-live-localnet-1k/out/rehearsal-summary.json
+tmp/reference-payroll-live-localnet-1k/out/payroll-status-after-settle.json
+tmp/reference-payroll-live-localnet-1k/out/payroll-final-report.json
+tmp/reference-payroll-live-localnet-1k/out/payroll-confirmed-plan-retry.json
+tmp/reference-payroll-live-localnet-1k/out/payroll-settle-report-001.json ... payroll-settle-report-050.json
+```
+
+1천건 localnet run은 개발 중 restart/retry invariant를 확인하는 목적임. 1만건, 10만건, 여러 tenant 동시 peak는 localnet full tx 제출보다 staging/testnet rehearsal과 simulation report를 함께 남기는 방식을 권장함.
+
 ## 결과 해석
 
 `latest-rehearsal-summary.json`은 다음 구조를 가짐.

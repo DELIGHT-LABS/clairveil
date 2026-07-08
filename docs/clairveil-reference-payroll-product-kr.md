@@ -61,9 +61,11 @@ Reference Payroll Product는 proof 수를 줄이는 것이 아니라, 현재 구
 
 ## User Disclosure 정책
 
-`transfer-batch` CLI는 readiness/capacity 검증을 위해 `all-private` / `none` 중심 제한을 유지함.
+기본 user disclosure 정책은 `all-private` / `none`으로 둠. 이 기본값은 mandatory audit disclosure를 끄는 의미가 아니라, user-facing disclosure를 기본 off로 둔다는 의미임.
 
-Reference Payroll Product는 더 넓은 정책을 표현할 수 있어야 하므로 `PayrollDisclosurePolicy`를 제공함.
+`transfer-batch` CLI는 일반 `transfer`와 같은 shared disclosure flag를 지원함. 따라서 payroll 제품도 `all-private`뿐 아니라 `amount`, `to`, `amount-to`, `from`, `amount-from`, `from-to`, `amount-from-to` 정책을 표현할 수 있어야 함.
+
+Reference Payroll Product는 이 정책을 표현하기 위해 `PayrollDisclosurePolicy`를 제공함.
 
 ```text
 user_privacy_policy
@@ -76,6 +78,8 @@ expected_self_view_disclosure_digest
 ```
 
 상품 구현은 plan 단계에서 policy를 검증하고, proof/payload 생성 단계에서 기존 transfer SDK disclosure config로 변환해야 함.
+
+제품 기본값과 성공 판정 원칙은 [clairveil-reference-payroll-product-policy-kr.md](clairveil-reference-payroll-product-policy-kr.md)를 따름.
 
 ## Disclosure Key Registry
 
@@ -297,6 +301,9 @@ Evidence JSON은 다음 형태를 사용함.
       "tx_hash": "ABC123",
       "output_commitment": "commitment-a",
       "disclosure_digest": "digest-a",
+      "audit_disclosure_digest": "digest-a",
+      "user_disclosure_digest": "user-digest-a",
+      "self_view_disclosure_digest": "self-view-digest-a",
       "recipient_hash": "recipient-hash-a",
       "amount_hash": "amount-hash-a",
       "denom": "uclair",
@@ -309,7 +316,7 @@ Evidence JSON은 다음 형태를 사용함.
 }
 ```
 
-`nullifier_spent=true`만으로 operation success로 처리하지 않음. 저장된 operation의 tx identity, output commitment, disclosure digest, recipient hash, amount hash, denom, batch item index와 일치해야 성공으로 reconcile됨. 일치하지 않으면 review/conflict 상태로 남김.
+`nullifier_spent=true`만으로 operation success로 처리하지 않음. 저장된 operation의 tx identity, output commitment, audit disclosure digest, recipient hash, amount hash, denom, batch item index와 일치해야 성공으로 reconcile됨. user/self-view disclosure digest는 expected field가 있을 때 별도로 확인함. 일치하지 않으면 review/conflict 상태로 남김.
 
 ### `clairveil-payroll export-report`
 
@@ -348,7 +355,7 @@ clairveil-payrolld \
 | flag | 의미 |
 | --- | --- |
 | `-state` | `clairveil-payroll run`이 만든 durable reservation state JSON 경로 |
-| `-mode` | 현재는 `simulated`만 지원함 |
+| `-mode` | `simulated` 또는 `live` |
 | `-once` | scheduler tick을 한 번 실행하고 종료함 |
 | `-interval` | `-once=false`일 때 반복 실행 주기 |
 | `-lease-owner` | reservation lease owner 값 |
@@ -371,6 +378,8 @@ Reserved operation 선택
 ```
 
 이 daemon 덕분에 운영팀은 production DB, scheduler, scanner, admin UI가 아직 없어도 payroll product의 상태 모델과 최종 report를 끝까지 시험할 수 있음.
+
+`live` mode는 `LiveOperationExecutor`를 통해 proof, broadcast, scan 단계를 외부 구현으로 주입받는 long-running 상태머신임. CLI reference executor는 `-tx-query` 파일을 tick마다 읽어 submitted/unknown operation을 reconcile하는 최소 live wiring을 제공함. production 제품은 같은 상태머신에 실제 prover, tx broadcaster, tx/nullifier scanner를 연결해야 함.
 
 ## Repo-local Demo Product
 
@@ -426,13 +435,14 @@ localnet init/start
 -> Alice list-notes scan
 -> payroll input 생성
 -> validate / prepare-notes / plan / run
+-> run 재실행으로 idempotency 확인
 -> 실제 transfer-batch broadcast
 -> Bob recipient note scan
 -> settle-transfer-batch
 -> final report export
 ```
 
-성공 기준은 `payroll-status-after-settle.json`에서 모든 reservation이 `ConfirmedSpent`, 모든 operation이 `Succeeded`이고, `payroll-final-report.json`의 payroll status가 `Confirmed`인 것임.
+성공 기준은 `payroll-status-after-settle.json`에서 모든 reservation이 `ConfirmedSpent`, 모든 operation이 `Succeeded`이고, `payroll-final-report.json`의 payroll status가 `Confirmed`인 것임. `PAYROLL_CHUNK_SIZE`를 지정하면 여러 `transfer-batch` tx로 나누어 실행하고, 각 chunk는 `settle-transfer-batch -item-start -item-limit`로 plan의 해당 구간만 settle함.
 
 상세 단계는 [clairveil-reference-payroll-live-localnet-tutorial-kr.md](clairveil-reference-payroll-live-localnet-tutorial-kr.md)를 따름.
 
@@ -491,7 +501,8 @@ Reference Payroll Product 1.5차의 repo 기준 완료 조건은 다음과 같�
 - `clairveil-payrolld` simulated reference daemon이 제공됨.
 - `make reference-payroll-demo`로 repo-local end-to-end payroll demo를 실행할 수 있음.
 - `make reference-payroll-live-localnet`으로 실제 localnet payroll transfer-batch 튜토리얼을 실행할 수 있음.
-- `clairveil-payroll validate`, `build-input-from-notes`, `prepare-notes`, `plan`, `run`, `status`, `reconcile`, `settle-transfer-batch`, `export-report` 명령이 제공됨.
+- `clairveil-payroll validate`, `build-input-from-notes`, `prepare-notes`, `plan`, `run`, `status`, `scan-evidence`, `reconcile`, `settle-transfer-batch`, `export-report` 명령이 제공됨.
+- `transfer-batch` CLI가 일반 transfer와 같은 shared disclosure option을 지원함.
 - JS SDK handoff 문서가 제공됨.
 - wallet handoff 문서가 제공됨.
 - downstream이 payroll workflow를 조립할 수 있는 기준 문서가 제공됨.
@@ -501,7 +512,7 @@ Reference Payroll Product 1.5차의 repo 기준 완료 조건은 다음과 같�
 이 repo가 직접 완료하지 않는 작업은 다음과 같음.
 
 - managed production DB deployment와 tenant별 운영 schema hardening
-- production-grade live scanner/reconcile daemon
+- production-grade live scanner/reconcile daemon 운영 배포와 tenant별 hardening
 - admin UI
 - JS SDK 구현
 - 웹/모바일 지갑 구현

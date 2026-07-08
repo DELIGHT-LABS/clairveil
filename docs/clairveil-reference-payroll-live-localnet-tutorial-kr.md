@@ -10,6 +10,7 @@ localnet 기동
 -> list-notes scan
 -> payroll input 생성
 -> validate / prepare-notes / plan / run
+-> run 재실행으로 idempotency 확인
 -> 실제 transfer-batch broadcast
 -> recipient note scan
 -> transfer-batch 결과로 payroll state settle
@@ -33,8 +34,9 @@ Work dir:              tmp/reference-payroll-live-localnet
 Payroll input:         tmp/reference-payroll-live-localnet/out/payroll-input.json
 Payroll plan:          tmp/reference-payroll-live-localnet/out/payroll-plan.json
 Reservation state:     tmp/reference-payroll-live-localnet/out/payroll-reservation-state.json
-Transfer batch tx:     tmp/reference-payroll-live-localnet/out/payroll-transfer-batch.json
-Settle report:         tmp/reference-payroll-live-localnet/out/payroll-settle-report.json
+Confirmed retry plan:  tmp/reference-payroll-live-localnet/out/payroll-confirmed-plan-retry.json
+Transfer batch chunks: 1
+Rehearsal summary:    tmp/reference-payroll-live-localnet/out/rehearsal-summary.json
 Final status:          tmp/reference-payroll-live-localnet/out/payroll-status-after-settle.json
 Final payroll report:  tmp/reference-payroll-live-localnet/out/payroll-final-report.json
 ```
@@ -44,7 +46,7 @@ Final payroll report:  tmp/reference-payroll-live-localnet/out/payroll-final-rep
 ## 옵션
 
 ```bash
-PAYROLL_ITEM_COUNT=3 PAYROLL_ITEM_AMOUNT=2 make reference-payroll-live-localnet
+PAYROLL_ITEM_COUNT=3 PAYROLL_ITEM_AMOUNT=2 PAYROLL_CHUNK_SIZE=2 make reference-payroll-live-localnet
 ```
 
 주요 환경변수는 다음과 같음.
@@ -54,7 +56,9 @@ PAYROLL_ITEM_COUNT=3 PAYROLL_ITEM_AMOUNT=2 make reference-payroll-live-localnet
 | `CLAIRVEIL_PAYROLL_LIVE_WORK_DIR` | 튜토리얼 출력 디렉토리. 기본값은 `tmp/reference-payroll-live-localnet` |
 | `PAYROLL_ITEM_COUNT` | payroll item 수. 기본값은 `2` |
 | `PAYROLL_ITEM_AMOUNT` | item별 지급 금액. 기본값은 `1` |
-| `PAYROLL_TRANSFER_BATCH_GAS` | transfer-batch gas limit. 기본값은 item 수 기반 자동 계산 |
+| `PAYROLL_CHUNK_SIZE` | transfer-batch tx 하나에 담을 payroll item 수. 기본값은 전체 item 수 |
+| `PAYROLL_TRANSFER_BATCH_GAS` | transfer-batch gas limit. 기본값은 chunk size 기반 자동 계산 |
+| `GAS_PRICES` | localnet tx gas price. 기본값은 `8500000000uclair` |
 | `RPC_PORT`, `P2P_PORT`, `GRPC_PORT`, `API_PORT` | localnet port 충돌 회피 |
 | `CLAIRVEILD_BIN`, `CLAIRVEIL_SETUP_BIN`, `PAYROLL_BIN` | 이미 빌드한 binary 사용 |
 
@@ -65,7 +69,7 @@ PAYROLL_ITEM_COUNT=3 PAYROLL_ITEM_AMOUNT=2 make reference-payroll-live-localnet
 | 파일 | 의미 |
 | --- | --- |
 | `bob-shielded-address.txt` | payroll recipient shielded address |
-| `bob-notes-before.json` | transfer-batch 전 recipient note scan |
+| `bob-notes-before.json` | 전체 실행 전 recipient note scan |
 | `alice-notes.json` | treasury 역할의 Alice note scan |
 | `payroll-template.json` | 직원 목록과 지급액만 가진 payroll template |
 | `payroll-input.json` | `alice-notes.json`에서 treasury note를 채운 payroll input |
@@ -73,13 +77,17 @@ PAYROLL_ITEM_COUNT=3 PAYROLL_ITEM_AMOUNT=2 make reference-payroll-live-localnet
 | `payroll-note-preparation.json` | note preparation 분석 결과 |
 | `payroll-plan.json` | draft payroll plan |
 | `payroll-confirmed-plan.json` | durable state에 reservation 확정된 plan |
+| `payroll-confirmed-plan-retry.json` | 같은 plan 재실행 idempotency 확인 결과 |
 | `payroll-reservation-state.json` | reservation/operation durable state |
-| `payroll-transfer-batch.json` | 실제 `transfer-batch` tx 결과 |
-| `payroll-transfer-batch-query.json` | 실제 chain tx query 결과 |
-| `bob-notes-after.json` | transfer-batch 후 recipient note scan |
-| `payroll-settle-report.json` | actual tx와 recipient note delta 기반 settle 결과 |
+| `payroll-transfer-batch-001.json` | 첫 번째 실제 `transfer-batch` tx 결과 |
+| `payroll-transfer-batch-001-query.json` | 첫 번째 chain tx query 결과 |
+| `bob-notes-before-chunk-001.json` | 첫 번째 chunk 전 recipient note scan |
+| `bob-notes-after-chunk-001.json` | 첫 번째 chunk 후 recipient note scan |
+| `payroll-settle-report-001.json` | 첫 번째 chunk의 actual tx와 recipient note delta 기반 settle 결과 |
+| `bob-notes-after.json` | 모든 chunk 이후 recipient note scan |
 | `payroll-status-after-settle.json` | settle 후 reservation/operation status |
 | `payroll-final-report.json` | payroll 최종 report |
+| `rehearsal-summary.json` | item 수, chunk 수, 최종 성공 count 요약 |
 
 ## 단계별 명령 흐름
 
@@ -191,7 +199,18 @@ clairveil-payroll run \
   -out tmp/reference-payroll-live-localnet/out/payroll-confirmed-plan.json
 ```
 
+같은 plan을 한 번 더 실행해도 중복 reservation을 만들지 않고 기존 state를 재사용해야 함.
+
+```bash
+clairveil-payroll run \
+  -plan tmp/reference-payroll-live-localnet/out/payroll-plan.json \
+  -state tmp/reference-payroll-live-localnet/out/payroll-reservation-state.json \
+  -out tmp/reference-payroll-live-localnet/out/payroll-confirmed-plan-retry.json
+```
+
 ### 7. 실제 transfer-batch broadcast
+
+chunk size가 2이고 item이 2개이면 chunk 1개가 만들어짐. item 수가 더 많으면 chunk label이 `001`, `002`, `003`처럼 증가함.
 
 ```bash
 clairveild tx privacy transfer-batch "$(cat tmp/reference-payroll-live-localnet/out/bob-shielded-address.txt)" \
@@ -205,7 +224,7 @@ clairveild tx privacy transfer-batch "$(cat tmp/reference-payroll-live-localnet/
   --gas-prices 8500000000uclair \
   --yes \
   --rescan-wallet \
-  --output json > tmp/reference-payroll-live-localnet/out/payroll-transfer-batch.json
+  --output json > tmp/reference-payroll-live-localnet/out/payroll-transfer-batch-001.json
 ```
 
 이 단계는 실제 Groth16 proof를 만들고 실제 localnet에 tx를 broadcast함.
@@ -219,7 +238,7 @@ clairveild tx privacy list-notes \
   --home tmp/reference-payroll-live-localnet/home \
   --node tcp://127.0.0.1:26657 \
   --rescan-wallet \
-  --json > tmp/reference-payroll-live-localnet/out/bob-notes-after.json
+  --json > tmp/reference-payroll-live-localnet/out/bob-notes-after-chunk-001.json
 ```
 
 ### 9. Payroll state settle
@@ -228,18 +247,21 @@ clairveild tx privacy list-notes \
 clairveil-payroll settle-transfer-batch \
   -plan tmp/reference-payroll-live-localnet/out/payroll-plan.json \
   -state tmp/reference-payroll-live-localnet/out/payroll-reservation-state.json \
-  -tx tmp/reference-payroll-live-localnet/out/payroll-transfer-batch.json \
-  -recipient-before tmp/reference-payroll-live-localnet/out/bob-notes-before.json \
-  -recipient-after tmp/reference-payroll-live-localnet/out/bob-notes-after.json \
-  -out tmp/reference-payroll-live-localnet/out/payroll-settle-report.json
+  -tx tmp/reference-payroll-live-localnet/out/payroll-transfer-batch-001.json \
+  -recipient-before tmp/reference-payroll-live-localnet/out/bob-notes-before-chunk-001.json \
+  -recipient-after tmp/reference-payroll-live-localnet/out/bob-notes-after-chunk-001.json \
+  -item-start 0 \
+  -item-limit 2 \
+  -out tmp/reference-payroll-live-localnet/out/payroll-settle-report-001.json
 ```
 
 `settle-transfer-batch`는 다음을 확인함.
 
 - tx `code`가 `0`임.
-- tx `message_count`가 payroll item 수와 같음.
-- tx amount 목록이 payroll item amount 목록과 같음.
-- recipient scan 결과에서 지급 amount note가 payroll item 수만큼 증가함.
+- tx `message_count`가 선택된 payroll item 수와 같음.
+- tx amount 목록이 선택된 payroll item amount 목록과 같음.
+- recipient scan 결과에서 지급 amount note가 선택된 payroll item 수만큼 증가함.
+- `-item-start`와 `-item-limit`으로 plan의 어느 구간을 해당 tx와 매칭할지 지정함.
 
 확인이 끝나면 durable reservation state를 `ConfirmedSpent`, operation state를 `Succeeded`로 갱신함.
 
@@ -295,8 +317,7 @@ clairveil-payroll export-report \
 
 아직 남은 production-grade 보강은 다음과 같음.
 
-- tx event에서 operation별 output commitment를 직접 추출함.
-- disclosure digest를 tx event에서 직접 추출함.
-- operation별 nullifier spent 여부를 chain query로 직접 대조함.
+- tx event/nullifier scanner는 `clairveil-payroll scan-evidence`와 SDK `EvidenceScanner`로 제공되지만, 이 튜토리얼 스크립트는 beginner-friendly settle bridge를 기본으로 사용함.
+- production daemon은 `scan-evidence` 또는 동등한 scanner를 long-running worker로 연결해야 함.
 - 같은 amount가 많은 payroll에서 recipient note delta와 operation item을 더 강하게 매칭함.
-- `clairveil-payrolld`에 long-running live scheduler mode를 붙임.
+- staging/testnet에서는 같은 runbook으로 restart/retry와 scanner evidence artifact를 release 산출물로 남겨야 함.

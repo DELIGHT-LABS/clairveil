@@ -12,11 +12,12 @@ repo에는 note reservation, payroll control plane, proof/broadcast/reconcile qu
 - Note reservation 설계: `docs/clairveil-note-reservation-design-kr.md`
 - 대량 전송 전략/시뮬레이션: `docs/clairveil-bulk-transfer-strategy-kr.md`, `docs/clairveil-bulk-transfer-time-simulation-kr.md`
 - Go reference packages: `x/privacy/client/sdk/reservation`, `x/privacy/client/sdk/payroll`
-- Reference payroll CLI: `clairveil-payroll validate`, `prepare-notes`, `plan`, `run`, `status`, `reconcile`, `export-report`
+- Reference payroll CLI: `clairveil-payroll validate`, `prepare-notes`, `plan`, `run`, `status`, `scan-evidence`, `reconcile`, `export-report`
 - Live payroll CLI helpers: `clairveil-payroll build-input-from-notes`, `settle-transfer-batch`
-- Reference payroll daemon: `clairveil-payrolld -mode simulated`
+- Reference payroll daemon: `clairveil-payrolld -mode simulated`, `clairveil-payrolld -mode live`
 - Repo-local demo product: `make reference-payroll-demo`
 - Live localnet tutorial: `make reference-payroll-live-localnet`
+- 제품 정책 기본값: `docs/clairveil-reference-payroll-product-policy-kr.md`
 - File-backed reference artifact store: `x/privacy/client/sdk/payroll.FileArtifactStore`
 - Durable reservation state store: `x/privacy/client/sdk/reservation.DurableFileStore`
 - 검증 entrypoint: `make privacy-bulk-readiness-check`
@@ -40,7 +41,8 @@ repo는 `reservation.Store` contract를 만족하는 `DurableFileStore` referenc
 - proof worker는 `Reserved` 상태 한정 lease 획득과 proof 생성 중 heartbeat를 사용
 - broadcast worker는 `NullifierChecker`에 chain nullifier query provider를 연결해 tx 제출 직전 spent nullifier를 차단
 - tx 제출 전 spent nullifier가 감지되면 SDK broadcast worker는 `SpentNullifierError`를 반환하고, scheduler/reconcile layer가 해당 item을 `ConflictSpent`, `ManualReview`, 또는 `ReplanRequired`로 전환함. 같은 `ProofReady` 작업을 그대로 무한 재시도하지 않아야 함.
-- payroll/payment success evidence의 `expected_disclosure_digest`는 audit disclosure digest임. user disclosure 또는 sender self-view disclosure digest를 operation 성공 판정에 대신 쓰지 않음.
+- payroll/payment success evidence의 `expected_disclosure_digest`는 audit disclosure digest 호환 필드임. 신규 구현은 `expected_audit_disclosure_digest`, `expected_user_disclosure_digest`, `expected_self_view_disclosure_digest`를 분리해 저장함.
+- operation 성공 판정은 audit disclosure digest를 primary evidence로 사용하고, user/self-view disclosure digest는 expected field가 있을 때 별도로 확인함. user disclosure 또는 sender self-view disclosure digest를 audit digest 대신 쓰지 않음.
 - `nullifier_lookup_key = HMAC(index_key, nullifier)` 형태의 deterministic keyed lookup 사용
 - raw nullifier, commitment, recipient, amount 등 민감정보 암호화 저장
 - payload/log/telemetry에 원문 민감정보가 남지 않도록 필터링
@@ -49,7 +51,7 @@ repo는 `reservation.Store` contract를 만족하는 `DurableFileStore` referenc
 
 ### 2. Payroll Scheduler / Worker Wiring
 
-repo는 `clairveil-payroll run`으로 plan을 durable reservation/operation state에 확정하고, `clairveil-payroll reconcile`로 evidence 기반 상태 갱신을 수행할 수 있음. 또한 `clairveil-payrolld -mode simulated`로 같은 state 위에서 proof ready, submitted, reconciled 전이를 repo-local로 체험할 수 있음. 실제 localnet 튜토리얼에서는 `settle-transfer-batch`가 실제 `transfer-batch` tx 결과와 recipient note delta를 검증해 payroll state를 settle함.
+repo는 `clairveil-payroll run`으로 plan을 durable reservation/operation state에 확정하고, `clairveil-payroll scan-evidence`와 `clairveil-payroll reconcile`로 evidence 기반 상태 갱신을 수행할 수 있음. 또한 `clairveil-payrolld -mode simulated`로 같은 state 위에서 proof ready, submitted, reconciled 전이를 repo-local로 체험할 수 있고, `clairveil-payrolld -mode live`로 proof/broadcast/scan executor를 주입하는 long-running 상태머신을 사용할 수 있음. 실제 localnet 튜토리얼에서는 `settle-transfer-batch`가 실제 `transfer-batch` tx 결과와 recipient note delta를 검증해 payroll state를 settle함.
 
 제품 환경에서는 이 state를 long-running live proof worker, broadcast worker, chain scanner와 연결해야 함. 즉 simulated daemon과 live localnet tutorial은 운영 flow와 report를 검증하는 reference product이고, 실제 production 제출 daemon은 같은 상태 계약을 provider/prover/scanner로 대체하는 작업임.
 
@@ -67,6 +69,7 @@ repo는 `clairveil-payroll run`으로 plan을 durable reservation/operation stat
 - RPC timeout/mempool eviction은 즉시 새 tx 생성으로 처리하지 않고 `Unknown`/`ReconcileUnknown` 흐름에서 `tx_hash`와 nullifier 상태를 먼저 확인해야 함.
 - 실패 item만 `ReplanRequired`로 분리하고 재계획
 - confirmation scanner/reconcile worker가 note 상태와 operation 상태를 각각 갱신. reference CLI에서는 `clairveil-payroll reconcile -state ... -evidence ...`가 evidence 반영을 담당함.
+- product 기본 정책은 `docs/clairveil-reference-payroll-product-policy-kr.md`의 기본값을 따른 뒤 tenant별 override로 확장함.
 
 완료 기준은 1천건 rehearsal run을 중단/재시작해도 중복 지급 없이 재개되고, 실패 item만 재시도할 수 있는 것임.
 
@@ -139,6 +142,7 @@ JS SDK가 이미 `docs/clairveil-note-reservation-design-kr.md`를 기준으로 
 - 제품팀은 `make privacy-bulk-readiness-check` 결과를 확인함.
 - 운영팀은 `make reference-payroll-demo`로 repo-local payroll product flow를 먼저 실행함.
 - 운영팀은 `make reference-payroll-live-localnet`으로 실제 localnet payroll transfer-batch tutorial을 실행함.
+- 운영팀은 1천건 localnet restart/retry 확인 시 `PAYROLL_ITEM_COUNT=1000 PAYROLL_CHUNK_SIZE=20 GAS_PRICES=0uclair make reference-payroll-live-localnet`을 실행하고 `rehearsal-summary.json`을 산출물로 남김.
 - release 전에는 `RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check`로 multi-message transfer localnet 경로를 확인함.
 - prover pool scale claim을 하려면 `RUN_PROVER_SCALE=1 PROVERD_URLS=url1,url2 make privacy-bulk-readiness-check` 결과를 별도 산출물로 남김. scale benchmark는 기본적으로 preflight 실패 endpoint를 제외하고 `unhealthy_endpoint_count`를 기록하지만, public claim 수치로 쓰려면 `unhealthy_endpoint_count=0`이어야 함.
 - backend 팀은 `clairveil-payroll run -state ...`, `clairveil-payrolld -state ... -once`, `clairveil-payroll reconcile -state ...` durable control-plane workflow를 확인하고, managed DB가 필요하면 같은 `reservation.Store` contract로 이전 계획을 작성함.
