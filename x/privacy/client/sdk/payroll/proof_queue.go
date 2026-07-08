@@ -198,8 +198,11 @@ func (w ProofWorker) Process(ctx context.Context, item PayrollPlanItem) (_ *Proo
 		return nil, err
 	}
 	update := privacyreservation.ProofReadyOperationUpdate{
-		OperationID:              item.OperationID,
-		ExpectedDisclosureDigest: preferredDisclosureDigest(*payload),
+		OperationID:                      item.OperationID,
+		ExpectedDisclosureDigest:         preferredDisclosureDigest(*payload),
+		ExpectedUserDisclosureDigest:     payload.UserDisclosureDigestHex,
+		ExpectedAuditDisclosureDigest:    payload.AuditDisclosureDigestHex,
+		ExpectedSelfViewDisclosureDigest: payload.SelfViewDisclosureDigestHex,
 	}
 	if len(payload.Outputs) > 0 {
 		update.ExpectedOutputCommitment = payload.Outputs[0].CommitmentHex

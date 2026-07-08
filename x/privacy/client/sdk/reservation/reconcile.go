@@ -7,20 +7,23 @@ import (
 )
 
 type OperationEvidence struct {
-	TxHash              string
-	SignDocHash         string
-	TxBytesHash         string
-	OutputCommitment    string
-	DisclosureDigest    string
-	RecipientHash       string
-	AmountHash          string
-	Denom               string
-	BatchItemIndex      int
-	BatchItemIndexKnown bool
-	NullifierSpent      bool
-	TxSucceeded         bool
-	TxFailed            bool
-	TxKnown             bool
+	TxHash                   string
+	SignDocHash              string
+	TxBytesHash              string
+	OutputCommitment         string
+	DisclosureDigest         string
+	UserDisclosureDigest     string
+	AuditDisclosureDigest    string
+	SelfViewDisclosureDigest string
+	RecipientHash            string
+	AmountHash               string
+	Denom                    string
+	BatchItemIndex           int
+	BatchItemIndexKnown      bool
+	NullifierSpent           bool
+	TxSucceeded              bool
+	TxFailed                 bool
+	TxKnown                  bool
 }
 
 type ReconcileResult struct {
@@ -210,7 +213,15 @@ func operationMatchesEvidence(operation *PayrollOperation, evidence OperationEvi
 	if !matchRequired(operation.ExpectedOutputCommitment, evidence.OutputCommitment) {
 		return false
 	}
-	if !matchRequired(operation.ExpectedDisclosureDigest, evidence.DisclosureDigest) {
+	expectedAuditDigest := firstNonEmpty(operation.ExpectedAuditDisclosureDigest, operation.ExpectedDisclosureDigest)
+	actualAuditDigest := firstNonEmpty(evidence.AuditDisclosureDigest, evidence.DisclosureDigest)
+	if !matchRequired(expectedAuditDigest, actualAuditDigest) {
+		return false
+	}
+	if operation.ExpectedUserDisclosureDigest != "" && !matchRequired(operation.ExpectedUserDisclosureDigest, evidence.UserDisclosureDigest) {
+		return false
+	}
+	if operation.ExpectedSelfViewDisclosureDigest != "" && !matchRequired(operation.ExpectedSelfViewDisclosureDigest, evidence.SelfViewDisclosureDigest) {
 		return false
 	}
 	if !matchRequired(operation.ExpectedRecipientHash, evidence.RecipientHash) {
@@ -284,6 +295,15 @@ func txIdentityMatches(expectedValues []string, actualValues []string) (bool, bo
 
 func normalizedTxIdentity(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func matchRequired(expected string, actual string) bool {

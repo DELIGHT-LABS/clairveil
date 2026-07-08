@@ -24,6 +24,9 @@ func ValidateDisclosurePolicy(policy PayrollDisclosurePolicy) error {
 		if policy.UserDisclosureTargetPubKeyHex != "" || policy.UserDisclosureTargetKeyID != "" {
 			return fmt.Errorf("%w: all-private disclosure policy must not include a user disclosure target key", ErrInvalidPayrollInput)
 		}
+		if policy.ExpectedUserDisclosureDigest != "" {
+			return fmt.Errorf("%w: all-private disclosure policy must not include expected_user_disclosure_digest", ErrInvalidPayrollInput)
+		}
 	default:
 		switch policy.UserDisclosureMode {
 		case privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC:

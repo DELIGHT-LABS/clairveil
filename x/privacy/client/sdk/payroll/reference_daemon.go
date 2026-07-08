@@ -153,9 +153,12 @@ func (d ReferenceDaemon) simulateProofAndSubmit(ctx context.Context, group refer
 		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseToken: lease.Token})
 	}
 	proofReadyUpdate := privacyreservation.ProofReadyOperationUpdate{
-		OperationID:              group.Operation.OperationID,
-		ExpectedOutputCommitment: expectedOrSimulated(group.Operation.ExpectedOutputCommitment, "commitment", group.Operation.OperationID),
-		ExpectedDisclosureDigest: expectedOrSimulated(group.Operation.ExpectedDisclosureDigest, "disclosure", group.Operation.OperationID),
+		OperationID:                      group.Operation.OperationID,
+		ExpectedOutputCommitment:         expectedOrSimulated(group.Operation.ExpectedOutputCommitment, "commitment", group.Operation.OperationID),
+		ExpectedDisclosureDigest:         expectedOrSimulated(group.Operation.ExpectedDisclosureDigest, "audit-disclosure", group.Operation.OperationID),
+		ExpectedAuditDisclosureDigest:    expectedOrSimulated(firstNonEmpty(group.Operation.ExpectedAuditDisclosureDigest, group.Operation.ExpectedDisclosureDigest), "audit-disclosure", group.Operation.OperationID),
+		ExpectedUserDisclosureDigest:     group.Operation.ExpectedUserDisclosureDigest,
+		ExpectedSelfViewDisclosureDigest: group.Operation.ExpectedSelfViewDisclosureDigest,
 	}
 	updatedReservations, updatedOperation, err := d.Reservation.MarkProofReadyBatch(ctx, refs, proofReadyUpdate)
 	if err != nil {
@@ -204,19 +207,22 @@ func (d ReferenceDaemon) submitWithRefs(ctx context.Context, operation privacyre
 func (d ReferenceDaemon) simulateReconcile(ctx context.Context, group referenceReservationGroup, report *ReferenceDaemonRunReport) error {
 	for _, reservation := range group.Reservations {
 		evidence := privacyreservation.OperationEvidence{
-			TxHash:              firstNonEmpty(group.Operation.TxHash, simulatedHex("tx", group.Operation.OperationID)),
-			SignDocHash:         firstNonEmpty(group.Operation.SignDocHash, simulatedHex("sign-doc", group.Operation.OperationID)),
-			TxBytesHash:         firstNonEmpty(group.Operation.TxBytesHash, simulatedHex("tx-bytes", group.Operation.OperationID)),
-			OutputCommitment:    expectedOrSimulated(group.Operation.ExpectedOutputCommitment, "commitment", group.Operation.OperationID),
-			DisclosureDigest:    expectedOrSimulated(group.Operation.ExpectedDisclosureDigest, "disclosure", group.Operation.OperationID),
-			RecipientHash:       group.Operation.ExpectedRecipientHash,
-			AmountHash:          group.Operation.ExpectedAmountHash,
-			Denom:               group.Operation.ExpectedDenom,
-			BatchItemIndex:      group.Operation.BatchItemIndex,
-			BatchItemIndexKnown: group.Operation.BatchItemIndexKnown,
-			NullifierSpent:      true,
-			TxSucceeded:         true,
-			TxKnown:             true,
+			TxHash:                   firstNonEmpty(group.Operation.TxHash, simulatedHex("tx", group.Operation.OperationID)),
+			SignDocHash:              firstNonEmpty(group.Operation.SignDocHash, simulatedHex("sign-doc", group.Operation.OperationID)),
+			TxBytesHash:              firstNonEmpty(group.Operation.TxBytesHash, simulatedHex("tx-bytes", group.Operation.OperationID)),
+			OutputCommitment:         expectedOrSimulated(group.Operation.ExpectedOutputCommitment, "commitment", group.Operation.OperationID),
+			DisclosureDigest:         expectedOrSimulated(firstNonEmpty(group.Operation.ExpectedAuditDisclosureDigest, group.Operation.ExpectedDisclosureDigest), "audit-disclosure", group.Operation.OperationID),
+			UserDisclosureDigest:     group.Operation.ExpectedUserDisclosureDigest,
+			AuditDisclosureDigest:    expectedOrSimulated(firstNonEmpty(group.Operation.ExpectedAuditDisclosureDigest, group.Operation.ExpectedDisclosureDigest), "audit-disclosure", group.Operation.OperationID),
+			SelfViewDisclosureDigest: group.Operation.ExpectedSelfViewDisclosureDigest,
+			RecipientHash:            group.Operation.ExpectedRecipientHash,
+			AmountHash:               group.Operation.ExpectedAmountHash,
+			Denom:                    group.Operation.ExpectedDenom,
+			BatchItemIndex:           group.Operation.BatchItemIndex,
+			BatchItemIndexKnown:      group.Operation.BatchItemIndexKnown,
+			NullifierSpent:           true,
+			TxSucceeded:              true,
+			TxKnown:                  true,
 		}
 		result, err := d.Reservation.Reconcile(ctx, reservation.ReservationID, evidence)
 		if err != nil {

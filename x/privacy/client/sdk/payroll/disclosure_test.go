@@ -25,6 +25,20 @@ func TestValidateInputRejectsEncryptedDisclosureWithoutPubkey(t *testing.T) {
 	require.Contains(t, err.Error(), "target pubkey")
 }
 
+func TestValidateInputRejectsAllPrivateExpectedUserDisclosureDigest(t *testing.T) {
+	input := testPayrollInput()
+	input.DefaultDisclosurePolicy = PayrollDisclosurePolicy{
+		UserPrivacyPolicy:            privacytypes.TransferPrivacyPolicyAllPrivate,
+		UserDisclosureMode:           privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE,
+		ExpectedUserDisclosureDigest: strings.Repeat("0", 63) + "1",
+	}
+
+	err := ValidateInput(input)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrInvalidPayrollInput), "expected invalid input, got %v", err)
+	require.Contains(t, err.Error(), "expected_user_disclosure_digest")
+}
+
 func TestServiceCreatePlanCarriesDefaultDisclosurePolicy(t *testing.T) {
 	ctx := context.Background()
 	input := testPayrollInput()
@@ -46,7 +60,7 @@ func TestServiceCreatePlanCarriesDefaultDisclosurePolicy(t *testing.T) {
 	require.Len(t, plan.Items, 1)
 	require.Equal(t, privacytypes.TransferPrivacyPolicyDiscloseAmount, plan.Items[0].DisclosurePolicy.UserPrivacyPolicy)
 	require.Equal(t, privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC, plan.Items[0].DisclosurePolicy.UserDisclosureMode)
-	require.Equal(t, strings.Repeat("0", 63)+"1", plan.Items[0].ExpectedDisclosureDigest)
+	require.Equal(t, strings.Repeat("0", 63)+"2", plan.Items[0].ExpectedDisclosureDigest)
 }
 
 func TestMemoryDisclosureKeyRegistryLookup(t *testing.T) {

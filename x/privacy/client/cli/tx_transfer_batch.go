@@ -38,12 +38,15 @@ func CmdTransferBatch() *cobra.Command {
 		Long: strings.TrimSpace(`
 Broadcast several independent MsgTransfer messages in one Cosmos transaction envelope.
 
-This command is intended for bulk-transfer readiness testing. It does not run the
-recursive split/merge planner. Each requested amount must be satisfiable from the
-currently spendable notes without reusing an input note inside the same batch.
-Prepare enough exact or pairable notes, including zero-value dummy notes when a
-single note is used as an input.
-		`),
+	This command does not run the recursive split/merge planner. Each requested amount
+	must be satisfiable from the currently spendable notes without reusing an input
+	note inside the same batch. Prepare enough exact or pairable notes, including
+	zero-value dummy notes when a single note is used as an input.
+
+	User disclosure uses the same shared flags as transfer:
+	--privacy-policy all-private|amount|to|amount-to|from|amount-from|from-to|amount-from-to
+	--disclosure-mode none|public|recipient-encrypted
+			`),
 		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientCtx, err := client.GetClientTxContext(cmd)
@@ -66,9 +69,6 @@ single note is used as an input.
 			identity, err := resolveTransferExecutionIdentity(clientCtx)
 			if err != nil {
 				return err
-			}
-			if config.userPrivacyPolicy != privacytypes.TransferPrivacyPolicyAllPrivate || config.userDisclosureMode != privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE {
-				return fmt.Errorf("transfer-batch currently supports all-private mode only for capacity testing")
 			}
 
 			forceRescan, err := cmd.Flags().GetBool(flagRescanWallet)

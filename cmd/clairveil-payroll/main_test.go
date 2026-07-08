@@ -236,7 +236,7 @@ func TestScanEvidenceCommandAppliesTxObservation(t *testing.T) {
 					{"key": "nullifier_1", "value": "lookup-large"},
 					{"key": "nullifier_2", "value": "lookup-zero"},
 					{"key": "commitment_1", "value": "commitment-a"},
-					{"key": "user_disclosure_digest", "value": "digest-a"},
+					{"key": "audit_disclosure_digest", "value": "digest-a"},
 				},
 			}},
 		},

@@ -133,6 +133,9 @@ func TestProofWorkerStoresAuditDisclosureDigestWhenMultiplePlanesExist(t *testin
 	require.NoError(t, err)
 	require.Equal(t, privacyreservation.OperationStatusProofReady, operation.Status)
 	require.Equal(t, "audit-digest-a", operation.ExpectedDisclosureDigest)
+	require.Equal(t, "user-digest-a", operation.ExpectedUserDisclosureDigest)
+	require.Equal(t, "audit-digest-a", operation.ExpectedAuditDisclosureDigest)
+	require.Equal(t, "self-view-digest-a", operation.ExpectedSelfViewDisclosureDigest)
 }
 
 func TestBroadcastWorkerRecordsUnknownAttemptOnNonzeroCode(t *testing.T) {

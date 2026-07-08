@@ -97,6 +97,54 @@ func TestServiceReconcileMarksSuccessWhenEvidenceMatches(t *testing.T) {
 	}
 }
 
+func TestServiceReconcileRequiresAuditDigestForOperationSuccess(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStore()
+	svc := Service{Store: store, Now: fixedNow}
+
+	_, err := svc.Reserve(ctx, ReserveInput{
+		Reservation: testReservation("r1", "note-a", "op-a"),
+		Operation: &PayrollOperation{
+			OperationID:                   "op-a",
+			ExpectedOutputCommitment:      "commitment-a",
+			ExpectedDisclosureDigest:      "audit-digest-a",
+			ExpectedUserDisclosureDigest:  "user-digest-a",
+			ExpectedAuditDisclosureDigest: "audit-digest-a",
+			ExpectedRecipientHash:         "recipient-a",
+			ExpectedAmountHash:            "amount-a",
+			ExpectedDenom:                 "uclair",
+			BatchItemIndex:                0,
+			BatchItemIndexKnown:           true,
+			Status:                        OperationStatusPlanned,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	submitReservationForReconcile(t, ctx, svc, "r1")
+
+	result, err := svc.Reconcile(ctx, "r1", OperationEvidence{
+		NullifierSpent:       true,
+		TxHash:               "txhash",
+		OutputCommitment:     "commitment-a",
+		UserDisclosureDigest: "user-digest-a",
+		RecipientHash:        "recipient-a",
+		AmountHash:           "amount-a",
+		Denom:                "uclair",
+		BatchItemIndex:       0,
+		BatchItemIndexKnown:  true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.RequiresReview {
+		t.Fatalf("expected review when user digest matches but audit digest is missing")
+	}
+	if result.OperationStatus != OperationStatusConflictSpent {
+		t.Fatalf("expected conflict spent, got %s", result.OperationStatus)
+	}
+}
+
 func TestServiceReconcileMatchesTxHashEvidenceAgainstStoredTxBytesHash(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemoryStore()

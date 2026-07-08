@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -20,7 +21,15 @@ func TestEvidenceScannerBuildsTransferBatchEvidence(t *testing.T) {
 	input := testPayrollInput()
 	input.Items[0].Amount = big.NewInt(70)
 	input.Items[0].ExpectedOutputCommitment = "recipient-commitment-a"
-	input.Items[0].ExpectedDisclosureDigest = "user-digest-a"
+	userDigest := strings.Repeat("0", 63) + "1"
+	auditDigest := strings.Repeat("0", 63) + "2"
+	selfViewDigest := strings.Repeat("0", 63) + "3"
+	input.Items[0].ExpectedDisclosureDigest = auditDigest
+	input.Items[0].DisclosurePolicy.UserPrivacyPolicy = privacytypes.TransferPrivacyPolicyDiscloseAmount
+	input.Items[0].DisclosurePolicy.UserDisclosureMode = privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC
+	input.Items[0].DisclosurePolicy.ExpectedUserDisclosureDigest = userDigest
+	input.Items[0].DisclosurePolicy.ExpectedAuditDisclosureDigest = auditDigest
+	input.Items[0].DisclosurePolicy.ExpectedSelfViewDisclosureDigest = selfViewDigest
 	plan, err := service.CreatePlan(ctx, input, []TreasuryNote{
 		testTreasuryNote("large", "uclair", 100, false, ""),
 		testTreasuryNote("zero", "uclair", 0, false, ""),
@@ -40,7 +49,9 @@ func TestEvidenceScannerBuildsTransferBatchEvidence(t *testing.T) {
 				{Key: privacytypes.AttributeKeyNullifier2, Value: "lookup-zero"},
 				{Key: privacytypes.AttributeKeyCommitment1, Value: "recipient-commitment-a"},
 				{Key: privacytypes.AttributeKeyCommitment2, Value: "change-commitment-a"},
-				{Key: privacytypes.AttributeKeyUserDisclosureDigest, Value: "user-digest-a"},
+				{Key: privacytypes.AttributeKeyUserDisclosureDigest, Value: userDigest},
+				{Key: privacytypes.AttributeKeyAuditDisclosureDigest, Value: auditDigest},
+				{Key: privacytypes.AttributeKeySelfViewDisclosureDigest, Value: selfViewDigest},
 			},
 		}},
 	}
@@ -57,7 +68,10 @@ func TestEvidenceScannerBuildsTransferBatchEvidence(t *testing.T) {
 		require.Equal(t, confirmed.Items[0].OperationID, item.OperationID)
 		require.Equal(t, "TXHASH", item.Evidence.TxHash)
 		require.Equal(t, "recipient-commitment-a", item.Evidence.OutputCommitment)
-		require.Equal(t, "user-digest-a", item.Evidence.DisclosureDigest)
+		require.Equal(t, auditDigest, item.Evidence.DisclosureDigest)
+		require.Equal(t, userDigest, item.Evidence.UserDisclosureDigest)
+		require.Equal(t, auditDigest, item.Evidence.AuditDisclosureDigest)
+		require.Equal(t, selfViewDigest, item.Evidence.SelfViewDisclosureDigest)
 		require.True(t, item.Evidence.NullifierSpent)
 		require.True(t, item.Evidence.BatchItemIndexKnown)
 		require.Equal(t, 0, item.Evidence.BatchItemIndex)

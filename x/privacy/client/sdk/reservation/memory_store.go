@@ -401,6 +401,21 @@ func (s *MemoryStore) MarkReservationsProofReady(_ context.Context, refs []Submi
 		} else {
 			existing.ExpectedDisclosureDigest = updated
 		}
+		if updated, err := mergeExpectedProofReadyValue("expected_user_disclosure_digest", existing.ExpectedUserDisclosureDigest, operationUpdate.ExpectedUserDisclosureDigest); err != nil {
+			return nil, nil, err
+		} else {
+			existing.ExpectedUserDisclosureDigest = updated
+		}
+		if updated, err := mergeExpectedProofReadyValue("expected_audit_disclosure_digest", existing.ExpectedAuditDisclosureDigest, operationUpdate.ExpectedAuditDisclosureDigest); err != nil {
+			return nil, nil, err
+		} else {
+			existing.ExpectedAuditDisclosureDigest = updated
+		}
+		if updated, err := mergeExpectedProofReadyValue("expected_self_view_disclosure_digest", existing.ExpectedSelfViewDisclosureDigest, operationUpdate.ExpectedSelfViewDisclosureDigest); err != nil {
+			return nil, nil, err
+		} else {
+			existing.ExpectedSelfViewDisclosureDigest = updated
+		}
 		existing.Status = OperationStatusProofReady
 		existing.UpdatedAt = now
 		operation = &existing

@@ -59,8 +59,9 @@ type testLiveExecutor struct {
 
 func (e testLiveExecutor) BuildProofReady(context.Context, LiveOperationGroup) (privacyreservation.ProofReadyOperationUpdate, string, error) {
 	return privacyreservation.ProofReadyOperationUpdate{
-		ExpectedOutputCommitment: "commitment-a",
-		ExpectedDisclosureDigest: "digest-a",
+		ExpectedOutputCommitment:      "commitment-a",
+		ExpectedDisclosureDigest:      "digest-a",
+		ExpectedAuditDisclosureDigest: "digest-a",
 	}, "test proof", nil
 }
 
@@ -72,19 +73,20 @@ func (e testLiveExecutor) ScanSubmitted(_ context.Context, group LiveOperationGr
 	out := make(map[string]privacyreservation.OperationEvidence, len(group.Reservations))
 	for _, reservation := range group.Reservations {
 		out[reservation.ReservationID] = privacyreservation.OperationEvidence{
-			TxHash:              "TXHASH",
-			TxBytesHash:         "tx-bytes",
-			SignDocHash:         "sign-doc",
-			OutputCommitment:    "commitment-a",
-			DisclosureDigest:    "digest-a",
-			RecipientHash:       e.item.ExpectedRecipientHash,
-			AmountHash:          e.item.ExpectedAmountHash,
-			Denom:               e.item.Denom,
-			BatchItemIndex:      0,
-			BatchItemIndexKnown: true,
-			NullifierSpent:      true,
-			TxSucceeded:         true,
-			TxKnown:             true,
+			TxHash:                "TXHASH",
+			TxBytesHash:           "tx-bytes",
+			SignDocHash:           "sign-doc",
+			OutputCommitment:      "commitment-a",
+			DisclosureDigest:      "digest-a",
+			AuditDisclosureDigest: "digest-a",
+			RecipientHash:         e.item.ExpectedRecipientHash,
+			AmountHash:            e.item.ExpectedAmountHash,
+			Denom:                 e.item.Denom,
+			BatchItemIndex:        0,
+			BatchItemIndexKnown:   true,
+			NullifierSpent:        true,
+			TxSucceeded:           true,
+			TxKnown:               true,
 		}
 	}
 	return out, "test scan", nil

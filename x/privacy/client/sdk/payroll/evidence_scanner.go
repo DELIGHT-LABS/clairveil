@@ -97,18 +97,21 @@ func (s EvidenceScanner) ScanTransferBatch(ctx context.Context, plan PayrollPlan
 				return nil, err
 			}
 			evidence := privacyreservation.OperationEvidence{
-				TxHash:              tx.TxHash,
-				OutputCommitment:    firstNonEmptyString(attrs[privacytypes.AttributeKeyCommitment1], operation.ExpectedOutputCommitment),
-				DisclosureDigest:    firstNonEmptyString(attrs[privacytypes.AttributeKeyUserDisclosureDigest], attrs[privacytypes.AttributeKeyAuditDisclosureDigest], attrs[privacytypes.AttributeKeySelfViewDisclosureDigest], operation.ExpectedDisclosureDigest),
-				RecipientHash:       item.ExpectedRecipientHash,
-				AmountHash:          item.ExpectedAmountHash,
-				Denom:               item.Denom,
-				BatchItemIndex:      itemIndex,
-				BatchItemIndexKnown: true,
-				NullifierSpent:      reservationNullifierSpent(reservation, attrs, spentByNullifier),
-				TxSucceeded:         report.TxSucceeded,
-				TxFailed:            report.TxFailed,
-				TxKnown:             report.TxKnown,
+				TxHash:                   tx.TxHash,
+				OutputCommitment:         attrs[privacytypes.AttributeKeyCommitment1],
+				DisclosureDigest:         attrs[privacytypes.AttributeKeyAuditDisclosureDigest],
+				UserDisclosureDigest:     attrs[privacytypes.AttributeKeyUserDisclosureDigest],
+				AuditDisclosureDigest:    attrs[privacytypes.AttributeKeyAuditDisclosureDigest],
+				SelfViewDisclosureDigest: attrs[privacytypes.AttributeKeySelfViewDisclosureDigest],
+				RecipientHash:            item.ExpectedRecipientHash,
+				AmountHash:               item.ExpectedAmountHash,
+				Denom:                    item.Denom,
+				BatchItemIndex:           itemIndex,
+				BatchItemIndexKnown:      true,
+				NullifierSpent:           reservationNullifierSpent(reservation, attrs, spentByNullifier),
+				TxSucceeded:              report.TxSucceeded,
+				TxFailed:                 report.TxFailed,
+				TxKnown:                  report.TxKnown,
 			}
 			report.Evidence = append(report.Evidence, ScannedOperationEvidence{
 				ReservationID: reservation.ReservationID,

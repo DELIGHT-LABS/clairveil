@@ -70,10 +70,17 @@ func preferredExpectedDisclosureDigest(item PayrollItemInput) string {
 	if item.ExpectedDisclosureDigest != "" {
 		return item.ExpectedDisclosureDigest
 	}
-	if item.DisclosurePolicy.ExpectedUserDisclosureDigest != "" {
-		return item.DisclosurePolicy.ExpectedUserDisclosureDigest
+	if item.DisclosurePolicy.ExpectedAuditDisclosureDigest != "" {
+		return item.DisclosurePolicy.ExpectedAuditDisclosureDigest
 	}
 	return ""
+}
+
+func expectedAuditDisclosureDigest(item PayrollPlanItem) string {
+	if item.DisclosurePolicy.ExpectedAuditDisclosureDigest != "" {
+		return item.DisclosurePolicy.ExpectedAuditDisclosureDigest
+	}
+	return item.ExpectedDisclosureDigest
 }
 
 func allocatePayrollInputNotes(items []PayrollItemInput, available []TreasuryNote, itemOrder []int) ([][]TreasuryNote, error) {
