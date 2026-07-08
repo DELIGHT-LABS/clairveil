@@ -110,7 +110,7 @@ func TestRunLiveModeReconcilesSubmittedState(t *testing.T) {
 					{"key": "nullifier_1", "value": "lookup-note-large"},
 					{"key": "nullifier_2", "value": "lookup-note-zero"},
 					{"key": "commitment_1", "value": "commitment-a"},
-					{"key": "user_disclosure_digest", "value": "digest-a"},
+					{"key": "audit_disclosure_digest", "value": "digest-a"},
 				},
 			}},
 		},
@@ -155,9 +155,10 @@ func markPayrolldPlanSubmitted(t *testing.T, ctx context.Context, store privacyr
 		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: note.ReservationID, LeaseToken: lease.Token})
 	}
 	_, _, err := svc.MarkProofReadyBatch(ctx, refs, privacyreservation.ProofReadyOperationUpdate{
-		OperationID:              plan.Items[0].OperationID,
-		ExpectedOutputCommitment: "commitment-a",
-		ExpectedDisclosureDigest: "digest-a",
+		OperationID:                   plan.Items[0].OperationID,
+		ExpectedOutputCommitment:      "commitment-a",
+		ExpectedDisclosureDigest:      "digest-a",
+		ExpectedAuditDisclosureDigest: "digest-a",
 	})
 	require.NoError(t, err)
 	_, _, err = svc.MarkSubmittedBatch(ctx, refs, []string{plan.Items[0].OperationID}, privacyreservation.SubmittedReservationUpdate{
