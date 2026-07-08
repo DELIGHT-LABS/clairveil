@@ -57,6 +57,7 @@ PAYROLL_ITEM_COUNT=3 PAYROLL_ITEM_AMOUNT=2 PAYROLL_CHUNK_SIZE=2 make reference-p
 | `PAYROLL_ITEM_COUNT` | payroll item 수. 기본값은 `2` |
 | `PAYROLL_ITEM_AMOUNT` | item별 지급 금액. 기본값은 `1` |
 | `PAYROLL_CHUNK_SIZE` | transfer-batch tx 하나에 담을 payroll item 수. 기본값은 전체 item 수 |
+| `PAYROLL_SEED_NOTES` | `1`이면 localnet genesis와 Alice wallet cache에 payroll용 note를 seed함. 기본값은 `0` |
 | `PAYROLL_TRANSFER_BATCH_GAS` | transfer-batch gas limit. 기본값은 chunk size 기반 자동 계산 |
 | `GAS_PRICES` | localnet tx gas price. 기본값은 `8500000000uclair` |
 | `RPC_PORT`, `P2P_PORT`, `GRPC_PORT`, `API_PORT` | localnet port 충돌 회피 |
@@ -71,6 +72,7 @@ PAYROLL_ITEM_COUNT=3 PAYROLL_ITEM_AMOUNT=2 PAYROLL_CHUNK_SIZE=2 make reference-p
 | `bob-shielded-address.txt` | payroll recipient shielded address |
 | `bob-notes-before.json` | 전체 실행 전 recipient note scan |
 | `alice-notes.json` | treasury 역할의 Alice note scan |
+| `seed-localnet-notes.json` | `PAYROLL_SEED_NOTES=1`일 때 생성되는 localnet-only seeded note report |
 | `payroll-template.json` | 직원 목록과 지급액만 가진 payroll template |
 | `payroll-input.json` | `alice-notes.json`에서 treasury note를 채운 payroll input |
 | `payroll-validation.json` | payroll input validation 결과 |
@@ -119,7 +121,7 @@ clairveild tx privacy show-address \
 
 ### 3. Treasury note 준비
 
-직원 1명당 현재 2-input transfer circuit에 맞춰 지급 amount note 1개와 zero dummy note 1개를 deposit함.
+기본값인 `PAYROLL_SEED_NOTES=0`에서는 직원 1명당 현재 2-input transfer circuit에 맞춰 지급 amount note 1개와 zero dummy note 1개를 실제 deposit tx로 준비함.
 
 ```bash
 clairveild tx privacy deposit 1uclair \
@@ -146,6 +148,34 @@ clairveild tx privacy deposit 0uclair \
   --yes \
   --output json
 ```
+
+1천건 이상 restart/retry rehearsal처럼 deposit 준비 시간이 너무 큰 경우에는 localnet-only seed mode를 사용할 수 있음.
+
+```bash
+CLAIRVEIL_PAYROLL_LIVE_WORK_DIR=tmp/reference-payroll-live-localnet-1k-seeded \
+PAYROLL_SEED_NOTES=1 \
+PAYROLL_ITEM_COUNT=1000 \
+PAYROLL_CHUNK_SIZE=20 \
+GAS_PRICES=0uclair \
+make reference-payroll-live-localnet
+```
+
+seed mode는 `clairveil-payroll seed-localnet-notes`를 사용해 localnet genesis commitment와 Alice wallet cache에 amount note와 zero dummy note를 직접 기록함. 이렇게 하면 2천개의 deposit tx 준비를 생략할 수 있음.
+
+```bash
+clairveil-payroll seed-localnet-notes \
+  -genesis tmp/reference-payroll-live-localnet/home/config/genesis.json \
+  -wallet-home tmp/reference-payroll-live-localnet/home \
+  -owner-address "$(cat tmp/reference-payroll-live-localnet/out/alice-address.txt)" \
+  -shielded-address "$(cat tmp/reference-payroll-live-localnet/out/alice-shielded-address.txt)" \
+  -count 1000 \
+  -amount 1 \
+  -denom uclair \
+  -notes-out tmp/reference-payroll-live-localnet/out/alice-notes.json \
+  -out tmp/reference-payroll-live-localnet/out/seed-localnet-notes.json
+```
+
+이 helper는 localnet rehearsal 준비용임. Production note preparation, staging/testnet deposit, 운영 approval 기반 treasury note 준비를 대체하지 않음. Seed mode에서도 이후 payroll input 생성, reservation 확정, 실제 Groth16 proof 생성, 실제 `transfer-batch` broadcast, recipient scan, settle, final report export는 그대로 실행됨.
 
 ### 4. Treasury note scan
 
@@ -320,4 +350,5 @@ clairveil-payroll export-report \
 - tx event/nullifier scanner는 `clairveil-payroll scan-evidence`와 SDK `EvidenceScanner`로 제공되지만, 이 튜토리얼 스크립트는 beginner-friendly settle bridge를 기본으로 사용함.
 - production daemon은 `scan-evidence` 또는 동등한 scanner를 long-running worker로 연결해야 함.
 - 같은 amount가 많은 payroll에서 recipient note delta와 operation item을 더 강하게 매칭함.
+- `PAYROLL_SEED_NOTES=1`은 localnet-only rehearsal helper이므로 production note preparation 성능 주장의 근거로 쓰면 안 됨.
 - staging/testnet에서는 같은 runbook으로 restart/retry와 scanner evidence artifact를 release 산출물로 남겨야 함.

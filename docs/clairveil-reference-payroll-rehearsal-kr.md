@@ -78,7 +78,7 @@ RUN_LOCALNET=1 LOCALNET_PAYROLL_ITEM_COUNT=2 make reference-payroll-rehearsal
 
 이 옵션은 내부적으로 `scripts/reference-payroll-live-localnet.sh`를 실행함. localnet에서 treasury deposit, note scan, payroll plan/reservation, 실제 `transfer-batch`, recipient note scan, settle, final report export까지 확인함.
 
-`LOCALNET_PAYROLL_ITEM_COUNT`를 높이면 localnet 실행 시간이 길어지고 proof/tx 비용이 커짐. 기본 rehearsal에서는 큰 수치 검증을 simulation으로 하고, chain path는 작은 smoke로 확인하는 것을 권장함.
+`LOCALNET_PAYROLL_ITEM_COUNT`를 높이면 localnet 실행 시간이 길어지고 proof/tx 비용이 커짐. 기본 rehearsal에서는 큰 수치 검증을 simulation으로 하고, chain path는 작은 smoke로 확인하는 것을 권장함. 1천건 이상 restart/retry rehearsal은 아래 seed mode를 사용함.
 
 ## 1천건 Localnet Restart/Retry Rehearsal
 
@@ -86,6 +86,7 @@ repo-local chain path에서 1천건 restart/retry 동작을 확인하려면 아�
 
 ```bash
 CLAIRVEIL_PAYROLL_LIVE_WORK_DIR=tmp/reference-payroll-live-localnet-1k \
+PAYROLL_SEED_NOTES=1 \
 PAYROLL_ITEM_COUNT=1000 \
 PAYROLL_CHUNK_SIZE=20 \
 GAS_PRICES=0uclair \
@@ -94,27 +95,33 @@ make reference-payroll-live-localnet
 
 이 rehearsal은 다음을 확인함.
 
-- 직원 1천명 기준 treasury note deposit과 scan이 가능함.
+- 직원 1천명 기준 localnet-only seeded treasury note와 wallet cache를 준비함.
 - `clairveil-payroll run`을 같은 plan으로 두 번 실행해도 중복 reservation 없이 idempotent하게 재개됨.
 - 20건 단위 `transfer-batch` chunk 50개가 실제 localnet에 제출됨.
+- 각 `transfer-batch`는 실제 Groth16 proof를 만들고 실제 chain tx로 포함됨.
 - 각 chunk가 `settle-transfer-batch -item-start -item-limit`로 plan의 해당 구간만 settle함.
 - 최종 `payroll-status-after-settle.json`에서 operation 1천건이 `Succeeded`이고 input reservation 2천개가 `ConfirmedSpent`임.
 
 `GAS_PRICES=0uclair`는 1천건 localnet rehearsal이 genesis 계정 잔액보다 fee 소모가 커지는 것을 피하기 위한 local-only 설정임. staging/testnet에서는 실제 fee policy로 다시 실행해야 함.
 
+`PAYROLL_SEED_NOTES=1`은 localnet genesis commitment와 Alice wallet cache에 payroll용 amount note와 zero dummy note를 미리 넣는 rehearsal helper임. 이 옵션은 2천개의 deposit tx 준비 시간을 제거하지만, 이후 payroll input 생성, reservation 확정, transfer proof 생성, tx broadcast, recipient scan, settle 경로는 실제로 실행함. 이 옵션은 production note preparation 방식이 아님.
+
 성공 시 주요 산출물은 다음과 같음.
 
 ```text
 tmp/reference-payroll-live-localnet-1k/out/rehearsal-summary.json
+tmp/reference-payroll-live-localnet-1k/out/seed-localnet-notes.json
 tmp/reference-payroll-live-localnet-1k/out/payroll-status-after-settle.json
 tmp/reference-payroll-live-localnet-1k/out/payroll-final-report.json
 tmp/reference-payroll-live-localnet-1k/out/payroll-confirmed-plan-retry.json
 tmp/reference-payroll-live-localnet-1k/out/payroll-settle-report-001.json ... payroll-settle-report-050.json
 ```
 
+2026-07-08 기준 성공한 1천건 seeded localnet run은 `confirmed_items=1000`, `succeeded_operations=1000`, `confirmed_spent_reservations=2000`, `chunk_count=50`을 기록했고 wall-clock은 약 8분 57초였음.
+
 1천건 localnet run은 개발 중 restart/retry invariant를 확인하는 목적임. 1만건, 10만건, 여러 tenant 동시 peak는 localnet full tx 제출보다 staging/testnet rehearsal과 simulation report를 함께 남기는 방식을 권장함.
 
-2026-07-08 actual 1천건 localnet 시도 결과와 작은 multi-chunk smoke 성공 기록은 [clairveil-reference-payroll-localnet-rehearsal-result-kr.md](clairveil-reference-payroll-localnet-rehearsal-result-kr.md)에 남김.
+2026-07-08 actual 1천건 localnet 성공 결과와 작은 multi-chunk smoke 성공 기록은 [clairveil-reference-payroll-localnet-rehearsal-result-kr.md](clairveil-reference-payroll-localnet-rehearsal-result-kr.md)에 남김.
 
 ## 결과 해석
 

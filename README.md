@@ -12,8 +12,9 @@ It packages shielded identity derived from transparent accounts, shielded deposi
 - `clairveild`: reference daemon that runs the privacy module on a real local chain
 - `clairveil-setup`: Groth16 circuit artifact generator
 - `clairveil-proverd`: local/remote companion prover reference service
+- `clairveil-payroll` and `clairveil-payrolld`: reference payroll control-plane CLI and daemon
 - CLI, Go SDK helpers, and JS/web wallet conformance fixtures
-- Local walkthrough, e2e smoke tests, and release handoff pack
+- Local walkthrough, e2e smoke tests, reference payroll rehearsals, and release handoff pack
 
 > Clairveil does not replace a downstream production app. Related modules, validator operations, audit key custody, wallet storage encryption, artifact signing, and deployment policy must be decided by the project that imports or forks Clairveil.
 
@@ -78,6 +79,13 @@ Main binaries:
 | `clairveil-setup` | ZK artifact generator |
 | `clairveil-verify` | legacy/debug note verification helper |
 | `clairveil-proverd` | companion prover HTTP service |
+| `clairveil-payroll` | reference payroll planning, reservation, reconcile, and report CLI |
+| `clairveil-payrolld` | reference payroll scheduler/daemon surface |
+| `clairveil-benchreport` | benchmark report renderer |
+| `clairveil-proverload` | external prover load benchmark tool |
+| `clairveil-localnetload` | localnet load metric converter |
+| `clairveil-userlatency` | wallet/user latency trace summarizer |
+| `clairveil-bulktransferbench` | synthetic bulk-transfer capacity simulator |
 
 You can also build each binary directly:
 
@@ -86,6 +94,13 @@ go build ./cmd/clairveild
 go build ./cmd/clairveil-setup
 go build ./cmd/clairveil-verify
 go build ./cmd/clairveil-proverd
+go build ./cmd/clairveil-payroll
+go build ./cmd/clairveil-payrolld
+go build ./cmd/clairveil-benchreport
+go build ./cmd/clairveil-proverload
+go build ./cmd/clairveil-localnetload
+go build ./cmd/clairveil-userlatency
+go build ./cmd/clairveil-bulktransferbench
 ```
 
 Install built binaries into the Go install path:
@@ -143,6 +158,9 @@ You can also run individual checks:
 make test
 make localnet-smoke
 make privacy-e2e-smoke
+make reference-payroll-demo
+make reference-payroll-live-localnet
+make reference-payroll-rehearsal
 ```
 
 `make localnet-smoke` and `make privacy-e2e-smoke` start their own validation nodes. If a node is already using the default ports, the smoke tests can collide with it.
@@ -208,6 +226,7 @@ Command purposes, major flags, and output shapes are documented in the [CLI refe
 | [Client API checklist](docs/clairveil-client-api-checklist.md) | Chain/prover APIs, fixtures, release gates, and compatibility checks |
 | [JS SDK handoff](docs/clairveil-js-sdk-handoff.md) | Contract for JS/TS SDK and web wallet implementation |
 | [Scan optimization plan](docs/clairveil-scan-optimization-implementation-plan.md) | Implemented note scan optimization scope and excluded future work |
+| [Reference payroll product (KR)](docs/clairveil-reference-payroll-product-kr.md) | Payroll control-plane, localnet tutorial, and rehearsal reference product |
 | [Prover profile](docs/clairveil-proverd-remote-production-profile.md) | Remote operation profile for `clairveil-proverd` |
 | [Merkle restore SOP](docs/clairveil-merkle-restore-sop.md) | Tree verification after snapshot, restore, or migration |
 | [Threat model](docs/clairveil-threat-model.md) | Trust boundaries, assets, and residual risks |

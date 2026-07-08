@@ -39,6 +39,7 @@ make release-pack-verify
 | `make privacy-e2e-smoke` | validate full deposit, transfer, disclosure, and withdraw flow |
 | `make reference-payroll-demo` | validate the reference payroll product flow: validate, prepare, plan, reserve, simulated daemon, final report |
 | `make reference-payroll-live-localnet` | validate the live localnet payroll flow: payroll input, reservation, transfer-batch, recipient scan, settle, final report |
+| `make reference-payroll-rehearsal` | generate reference payroll capacity simulations and optional live localnet smoke |
 | `make dapp-local` | start a local Clairveil node, prover, and browser DApp stack for manual testing |
 | `make release-check` | `ci`, `vulncheck`, `localnet-smoke`, `privacy-e2e-smoke`, and bulk readiness with localnet transfer-batch smoke |
 | `make release-pack` | create downstream handoff archive and sha256 |
@@ -272,6 +273,22 @@ Validation scope:
 8. final payroll report export
 
 The Korean manual walkthrough is [clairveil-reference-payroll-live-localnet-tutorial-kr.md](clairveil-reference-payroll-live-localnet-tutorial-kr.md).
+
+## 7.3 Reference Payroll Rehearsal
+
+```bash
+make reference-payroll-rehearsal
+```
+
+This target generates payroll capacity simulation reports for 1k, 10k, 100k, and 100 companies x 1k profiles. To include a small live localnet smoke, run `RUN_LOCALNET=1 LOCALNET_PAYROLL_ITEM_COUNT=2 make reference-payroll-rehearsal`.
+
+The repo-local 1k restart/retry rehearsal uses the actual localnet transfer path while seeding localnet-only notes to avoid deposit preparation time:
+
+```bash
+PAYROLL_SEED_NOTES=1 PAYROLL_ITEM_COUNT=1000 PAYROLL_CHUNK_SIZE=20 GAS_PRICES=0uclair make reference-payroll-live-localnet
+```
+
+The Korean rehearsal guide is [clairveil-reference-payroll-rehearsal-kr.md](clairveil-reference-payroll-rehearsal-kr.md), and the recorded localnet result is [clairveil-reference-payroll-localnet-rehearsal-result-kr.md](clairveil-reference-payroll-localnet-rehearsal-result-kr.md).
 
 ## 8. Release Pack Verification
 

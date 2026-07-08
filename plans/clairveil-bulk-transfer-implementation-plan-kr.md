@@ -4,9 +4,9 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | 1차 repo 구현 완료, 1차 안정화 및 1.5차 Reference Payroll Product repo 보강 완료, simulated daemon/demo 완료, live localnet tutorial 완료, production scanner/daemon integration 남음 |
+| 상태 | 1차 repo 구현 완료, 1차 안정화 및 1.5차 Reference Payroll Product repo 보강 완료, simulated/live daemon reference 완료, live localnet tutorial 완료, repo-local 1천건 rehearsal 완료, production 운영 배포/hardening 남음 |
 | 작성일 | 2026-07-03 |
-| 대상 브랜치 | `private/bulk-transfer` |
+| 대상 브랜치 | `private/bulk-transfer-v2` |
 | 대상 영역 | `x/privacy` client SDK, provider, benchmark, 이후 privacy protocol |
 | 1차 범위 | Note Reservation, Payroll Control Plane, Proof/Broadcast/Reconcile Queue, Multi-Message Tx, Prover Scaling, Capacity Simulation Benchmark |
 | 1.5차 범위 | Reference Payroll Product, 상품화 보강, JS SDK/지갑 handoff |
@@ -78,7 +78,7 @@ Note Reservation은 Go SDK만의 내부 구현이 아니라 JS SDK, wallet, payr
 - 상태 전이 unit test
 - JS SDK가 재사용할 수 있는 conformance fixture
 
-production DB 구현은 이 repo의 1차 범위에서 제외함. PostgreSQL schema 예시는 문서와 fixture로 제공하되, 실제 DB adapter는 payroll backend 또는 JS SDK 쪽에서 구현할 수 있게 함.
+managed production DB deployment는 이 repo의 1차 범위에서 제외함. 대신 repo는 `reservation.Store` contract, memory/file reference store, `SQLStore` reference adapter, PostgreSQL/SQLite schema helper를 제공함. 실제 multi-tenant DB 배포, field-level encryption, migration, connection pool, tenant partitioning은 payroll backend 또는 downstream 운영 환경에서 정책에 맞게 확정함.
 
 ### 3. Payroll Control Plane은 후속 실행기의 입력 모델임
 
@@ -116,7 +116,7 @@ Payroll Control Plane은 최종 사용자 UI 자체가 아니라, 대량 지급�
 
 ## 현재 구현 상태
 
-2026-07-03 기준 1차 범위는 repo 안에서 reusable SDK/reference implementation, localnet validation harness, prover pool load harness, readiness check 형태로 구현되어 있음. Production DB adapter, 운영 scheduler service, 실제 10만건 production rehearsal 결과는 아직 이 repo에 포함하지 않음.
+2026-07-03 기준 1차 범위는 repo 안에서 reusable SDK/reference implementation, localnet validation harness, prover pool load harness, readiness check 형태로 구현되어 있음. 이후 `SQLStore` reference adapter와 `clairveil-payrolld` reference daemon이 추가되었지만, managed production DB deployment, 고객사별 운영 scheduler service, 실제 10만건 production rehearsal 결과는 이 repo에 포함하지 않음.
 
 2026-07-07 검토 기준으로, 현재 1차 구현은 상품형 payroll UX 자체가 아니라 상품화를 위한 하부 레일로 봄. 기존 `MsgTransfer`와 기존 transfer UX는 유지하면서, 대량 지급을 plan/reserve/prove/broadcast/reconcile/report 흐름으로 운영할 수 있는 기반을 만든 상태임. 실제 상품화에는 user disclosure 정책 관리, disclosure public key 관리, note preparation 운영 helper, production DB/worker/UI가 추가로 필요함.
 
@@ -513,8 +513,8 @@ RUN_PROVER_SCALE=1 PROVERD_URLS=http://127.0.0.1:9090,http://127.0.0.1:9091 make
 
 repo는 protocol과 SDK 기준 reference implementation, durable control-plane adapter, local harness, synthetic benchmark를 제공함. 실제 제품화에는 다음 작업이 추가로 필요함.
 
-- managed production DB 선택 시 PostgreSQL transaction lock, partial unique index, HMAC lookup key, field-level encryption 적용
-- `DurableFileStore` 또는 production DB adapter를 tenant별 운영 정책에 맞게 배포
+- managed production DB 선택 시 `SQLStore` reference schema의 transaction lock, partial unique index, HMAC lookup key 의미를 유지하고 field-level encryption, migration, connection pool, tenant partitioning 적용
+- `DurableFileStore`, `SQLStore`, 또는 downstream production DB adapter를 tenant별 운영 정책에 맞게 배포
 - production-grade live proof/broadcast worker와 chain scanner를 `clairveil-payroll run`으로 생성된 durable state에 연결
 - operator UI, alert, manual review flow 구현
 - 실제 1천건, 1만건, 10만건 rehearsal runbook 작성 및 실행
@@ -631,18 +631,18 @@ preparation policy
 
 ### Phase 1.5.5 Durable store / worker contract
 
-현재 repo에는 in-memory reference store가 있음. Reference product는 production DB adapter가 따라야 할 contract를 명확히 해야 함.
+repo에는 in-memory store, durable file store, `database/sql` 기반 `SQLStore` reference adapter가 있음. Reference product는 production DB adapter가 따라야 할 contract를 명확히 해야 함.
 
 필요한 산출물은 다음과 같음.
 
 - reservation store contract 문서 보강
-- PostgreSQL/SQLite adapter 후보 설계
+- PostgreSQL/SQLite reference adapter와 schema helper
 - transaction lock 요구사항
 - active reservation unique constraint
 - worker lease/heartbeat persistence 요구사항
 - operation evidence persistence 요구사항
 
-초기에는 durable DB 구현보다 interface와 test contract를 우선함. 다만 reference CLI/service가 필요하면 SQLite adapter부터 시작할 수 있음.
+초기 원칙은 durable DB 구현보다 interface와 test contract를 우선하는 것이었음. 현재 repo는 그 contract 위에 `DurableFileStore`와 `SQLStore`를 reference adapter로 제공함.
 
 2026-07-07 구현 상태: `x/privacy/client/sdk/payroll.FileArtifactStore`와 `x/privacy/client/sdk/reservation.DurableFileStore`를 추가함. `FileArtifactStore`는 `plans`, `plan-reports`, `note-preparation-reports`, `disclosure-keys`를 파일로 저장하고 다시 읽는 local/reference artifact store임. `DurableFileStore`는 `reservation.Store` contract를 만족하는 durable reservation/operation state adapter이며, active reservation uniqueness, compare-and-set, lease/heartbeat, operation evidence update를 snapshot JSON에 저장함. 파일은 `0600`, 디렉토리는 `0700`으로 생성함. 실제 고객 환경에서 PostgreSQL/MySQL/cloud DB를 쓰는 경우에도 이 store와 같은 상태 전이 의미를 지켜야 함.
 
@@ -659,6 +659,7 @@ clairveil-payroll status
 clairveil-payroll scan-evidence
 clairveil-payroll reconcile
 clairveil-payroll settle-transfer-batch
+clairveil-payroll seed-localnet-notes
 clairveil-payroll export-report
 clairveil-payrolld
 ```
@@ -671,7 +672,7 @@ clairveil-payrolld
 
 2026-07-08 production scanner 보강 상태: `x/privacy/client/sdk/payroll.EvidenceScanner`와 `clairveil-payroll scan-evidence`를 추가함. scanner는 `clairveild query tx --output json` 결과에서 `shielded_transfer` event를 읽고, `commitment_1`, disclosure digest, nullifier spent 상태를 payroll item/reservation별 reconcile evidence로 변환함. `-apply`를 사용하면 기존 `reconcile`과 같은 durable state update 경로로 즉시 반영함.
 
-2026-07-08 live daemon 보강 상태: `x/privacy/client/sdk/payroll.LiveDaemon`을 추가함. 이 daemon은 `Reserved -> Proving -> ProofReady`, `ProofReady -> Submitted/Unknown`, `Submitted/Unknown -> Reconcile` 상태머신을 long-running tick에서 실행하고, 실제 proof/broadcast/scan 동작은 `LiveOperationExecutor`로 주입받음. `clairveil-payrolld -mode live`는 파일 기반 reference executor를 사용해 tx query evidence를 tick마다 다시 읽고 submitted/unknown 상태를 reconcile함.
+2026-07-08 live daemon 보강 상태: `x/privacy/client/sdk/payroll.LiveDaemon`을 추가함. 이 daemon은 `Reserved -> Proving -> ProofReady`, `ProofReady -> Submitted/Unknown` 전이와 `Submitted`/`Unknown` 상태의 reconcile worker 실행을 long-running tick에서 처리하고, 실제 proof/broadcast/scan 동작은 `LiveOperationExecutor`로 주입받음. `clairveil-payrolld -mode live`는 파일 기반 reference executor를 사용해 tx query evidence를 tick마다 다시 읽고 submitted/unknown 상태를 reconcile함.
 
 2026-07-08 DB adapter 보강 상태: `x/privacy/client/sdk/reservation.SQLStore`를 추가함. 이 adapter는 `database/sql` 기반 reference store이며, `PostgreSQLSchema()`와 `SQLiteSchema()`로 active reservation partial unique index, status index, operation link index, transaction-backed single-writer lock row를 포함한 schema를 제공함. managed production deployment, tenant partitioning, field-level encryption, migration 운영은 여전히 제품/운영 DB 정책으로 남김.
 
@@ -679,7 +680,7 @@ clairveil-payrolld
 
 2026-07-08 localnet restart/retry 보강 상태: `scripts/reference-payroll-live-localnet.sh`가 `PAYROLL_CHUNK_SIZE`를 받아 여러 `transfer-batch` tx로 plan을 나누어 제출하고, `settle-transfer-batch -item-start -item-limit`로 chunk별 plan 구간을 settle함. 같은 plan에 대해 `clairveil-payroll run`을 두 번 실행해 reservation idempotency를 확인하고, `rehearsal-summary.json`에 item 수, chunk 수, 최종 성공 count를 기록함.
 
-2026-07-08 rehearsal 실행 기록: actual 1천건 localnet run은 시도했으나, 직원 1명당 amount note 1개와 zero dummy note 1개를 실제 deposit tx로 준비하는 현재 script 특성상 deposit 준비만 수 시간 규모로 외삽되어 수동 중단함. 대신 `PAYROLL_ITEM_COUNT=4 PAYROLL_CHUNK_SIZE=2` actual localnet smoke가 성공했고, 1천건/1만건/10만건 profile은 `make reference-payroll-rehearsal` simulation으로 산출함. 자세한 기록은 `docs/clairveil-reference-payroll-localnet-rehearsal-result-kr.md`에 둠.
+2026-07-08 rehearsal 실행 기록: deposit mode actual 1천건 localnet run은 직원 1명당 amount note 1개와 zero dummy note 1개를 실제 deposit tx로 준비하는 특성상 deposit 준비만 수 시간 규모로 외삽되어 수동 중단함. 이후 `clairveil-payroll seed-localnet-notes`와 `PAYROLL_SEED_NOTES=1`을 추가해 localnet genesis commitment와 Alice wallet cache에 1천건 payroll용 note 2천개를 seed하는 rehearsal harness를 제공함. 이 seed mode로 `PAYROLL_ITEM_COUNT=1000 PAYROLL_CHUNK_SIZE=20 GAS_PRICES=0uclair make reference-payroll-live-localnet`을 실행했고, 실제 Groth16 proof와 실제 `transfer-batch` tx 50개, recipient scan, chunk settle까지 완료함. 결과는 `confirmed_items=1000`, `succeeded_operations=1000`, `confirmed_spent_reservations=2000`, wall-clock 약 8분 57초였음. `PAYROLL_ITEM_COUNT=4 PAYROLL_CHUNK_SIZE=2` actual localnet smoke도 성공했고, 1천건/1만건/10만건 profile은 `make reference-payroll-rehearsal` simulation으로 산출함. 자세한 기록은 `docs/clairveil-reference-payroll-localnet-rehearsal-result-kr.md`에 둠.
 
 1.5차 repo 완료 기준은 production 실운영 daemon을 대신하는 것이 아니라, 운영팀이 repo만으로 payroll product 상태 모델과 실제 localnet tx 경로를 끝까지 체험하고, production scanner/daemon 구현 전까지 필요한 durable control-plane workflow를 code와 문서로 조립 가능하게 만드는 것임.
 
@@ -715,13 +716,14 @@ JS SDK 팀이 직접 구현해야 할 항목은 이 repo에서 대신 구현하�
 - `transfer-batch` CLI가 일반 transfer와 같은 shared disclosure option을 지원함.
 - note preparation helper가 최소 analyzer/recommendation 수준으로 제공됨.
 - note preparation helper가 operation hint를 제공함.
-- reference CLI가 `validate`, `prepare-notes`, `plan`, `run`, `status`, `reconcile`, `export-report`를 제공함.
-- reference CLI가 `build-input-from-notes`, `settle-transfer-batch`를 제공함.
-- `clairveil-payrolld`가 simulated scheduler/daemon tick을 제공함.
+- reference CLI가 `validate`, `build-input-from-notes`, `prepare-notes`, `plan`, `run`, `status`, `scan-evidence`, `reconcile`, `settle-transfer-batch`, `seed-localnet-notes`, `export-report`를 제공함.
+- `clairveil-payrolld`가 simulated scheduler tick과 live mode reference scheduler 표면을 제공함.
 - `make reference-payroll-demo`가 repo-local end-to-end payroll demo를 제공함.
 - `make reference-payroll-live-localnet`이 실제 localnet payroll transfer-batch tutorial을 제공함.
+- `make reference-payroll-rehearsal`이 large-scale payroll simulation report와 선택적 localnet smoke를 제공함.
 - file-backed reference artifact store가 제공됨.
 - durable reservation state store가 제공됨.
+- `SQLStore` reference adapter와 PostgreSQL/SQLite schema helper가 제공됨.
 - JS SDK 팀과 지갑팀 handoff 문서가 추가됨.
 - downstream이 "core는 있는데 제품 레이어가 없어 못 쓰는" 상태를 피할 수 있는 최소 reference product 경로가 생김.
 

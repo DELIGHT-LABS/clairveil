@@ -142,6 +142,7 @@ status
 scan-evidence
 reconcile
 settle-transfer-batch
+seed-localnet-notes
 export-report
 ```
 
@@ -150,6 +151,8 @@ export-report
 `build-input-from-notes`는 실제 chain에서 `list-notes --json`으로 scan한 treasury note를 payroll input의 `treasury_notes`로 변환함.
 
 `settle-transfer-batch`는 실제 `transfer-batch` tx 결과와 recipient note scan delta를 검증한 뒤 durable reservation state를 settle함. 이 명령은 live localnet 튜토리얼에서 실제 chain tx와 payroll final report를 연결하는 bridge 역할을 함.
+
+`seed-localnet-notes`는 localnet rehearsal 전용 helper임. localnet genesis commitment와 local wallet cache에 payroll용 amount note와 zero dummy note를 기록해 큰 restart/retry rehearsal에서 deposit 준비 시간을 줄임. Production note preparation 기능이 아니며 staging/testnet에서는 실제 deposit, split/merge, approval 기반 preparation flow를 검증해야 함.
 
 `clairveil-payrolld`는 같은 durable state를 읽어 repo 안에서 운영 흐름을 끝까지 체험할 수 있게 하는 reference daemon임. `simulated` mode는 실제 chain proof와 broadcast 대신 deterministic simulated proof/tx/evidence를 생성해 `Reserved -> Proving -> ProofReady -> Submitted -> ConfirmedSpent` 흐름을 검증함. 따라서 운영팀은 별도 제품 repo 없이 payroll run의 상태 전이와 report export를 바로 확인할 수 있음.
 
@@ -239,7 +242,7 @@ clairveil-payroll plan \
   -out payroll-plan.json
 ```
 
-생성된 plan에는 item별 `operation_id`, `chunk_id`, selected input notes, expected recipient/amount hash, disclosure expected digest가 포함됨. 아직 note reservation을 DB에 확정하는 단계는 아님. 확정은 production reservation store 또는 scheduler service에서 `Service.ConfirmPlan` 의미로 수행해야 함.
+생성된 plan에는 item별 `operation_id`, `chunk_id`, selected input notes, expected recipient/amount hash, disclosure expected digest가 포함됨. 이 단계는 아직 note reservation을 durable state에 확정하지 않는 draft 단계임. repo-local flow에서는 다음 `clairveil-payroll run` 명령이 `DurableFileStore`에 `Service.ConfirmPlan` 의미로 확정하고, production flow에서는 같은 contract를 `SQLStore` 또는 제품 scheduler service가 수행함.
 
 `-store-dir`을 추가하면 plan을 file-backed reference artifact store에도 저장함.
 
@@ -260,7 +263,7 @@ clairveil-payroll run \
   -out payroll-confirmed-plan.json
 ```
 
-`run`은 같은 plan으로 재실행해도 이미 생성된 reservation을 읽어 confirmed plan을 다시 출력하도록 idempotent하게 동작함. 이 명령은 proof 생성과 chain broadcast를 직접 수행하지 않음. 그 작업은 persisted reservation state를 입력으로 proof/broadcast worker를 연결하는 rehearsal 단계에서 검증함.
+`run`은 같은 plan으로 재실행해도 이미 생성된 reservation을 읽어 confirmed plan을 다시 출력하도록 idempotent하게 동작함. 이 명령은 proof 생성과 chain broadcast를 직접 수행하지 않음. 그 작업은 persisted reservation state를 입력으로 live localnet tutorial의 `transfer-batch`/`settle-transfer-batch` 경로 또는 제품 proof/broadcast worker에서 수행함.
 
 ### `clairveil-payroll status`
 
@@ -356,6 +359,9 @@ clairveil-payrolld \
 | --- | --- |
 | `-state` | `clairveil-payroll run`이 만든 durable reservation state JSON 경로 |
 | `-mode` | `simulated` 또는 `live` |
+| `-plan` | `live` mode에서 evidence를 operation expected value와 대조할 payroll plan JSON 경로 |
+| `-tx-query` | `live` mode에서 읽을 `clairveild query tx --output json` 결과 또는 `TxObservation` JSON 경로 |
+| `-nullifiers` | `live` mode에서 선택적으로 읽을 nullifier status JSON 경로 |
 | `-once` | scheduler tick을 한 번 실행하고 종료함 |
 | `-interval` | `-once=false`일 때 반복 실행 주기 |
 | `-lease-owner` | reservation lease owner 값 |
@@ -498,10 +504,10 @@ Reference Payroll Product 1.5차의 repo 기준 완료 조건은 다음과 같�
 - note preparation analyzer가 제공됨.
 - file-backed reference artifact store가 제공됨.
 - durable reservation state store가 제공됨.
-- `clairveil-payrolld` simulated reference daemon이 제공됨.
+- `clairveil-payrolld` simulated/live reference daemon이 제공됨.
 - `make reference-payroll-demo`로 repo-local end-to-end payroll demo를 실행할 수 있음.
 - `make reference-payroll-live-localnet`으로 실제 localnet payroll transfer-batch 튜토리얼을 실행할 수 있음.
-- `clairveil-payroll validate`, `build-input-from-notes`, `prepare-notes`, `plan`, `run`, `status`, `scan-evidence`, `reconcile`, `settle-transfer-batch`, `export-report` 명령이 제공됨.
+- `clairveil-payroll validate`, `build-input-from-notes`, `prepare-notes`, `plan`, `run`, `status`, `scan-evidence`, `reconcile`, `settle-transfer-batch`, `seed-localnet-notes`, `export-report` 명령이 제공됨.
 - `transfer-batch` CLI가 일반 transfer와 같은 shared disclosure option을 지원함.
 - JS SDK handoff 문서가 제공됨.
 - wallet handoff 문서가 제공됨.
@@ -518,3 +524,7 @@ Reference Payroll Product 1.5차의 repo 기준 완료 조건은 다음과 같�
 - 웹/모바일 지갑 구현
 - 실제 고객사의 payroll policy 결정
 - staging/production rehearsal 실행
+
+## Repo-local rehearsal 완료 기록
+
+2026-07-08 기준 repo-local 1천건 restart/retry rehearsal은 `PAYROLL_SEED_NOTES=1` localnet seed mode로 완료됨. 이 mode는 localnet genesis와 Alice wallet cache에 payroll용 note를 미리 넣어 deposit 준비 시간을 줄이는 테스트 harness임. 이후 payroll plan, reservation, 실제 Groth16 proof, 실제 `transfer-batch` tx, recipient scan, settle 경로는 모두 실행되지만, 이 seed mode는 production note preparation 방식을 대체하지 않음. Production/staging에서는 실제 deposit, split/merge, approval 기반 preparation flow를 별도로 검증해야 함.

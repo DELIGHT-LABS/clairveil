@@ -31,7 +31,9 @@ status
 export-report -state
 ```
 
-현재 `clairveil-payrolld`는 `simulated` mode만 지원함. 실제 proof 생성과 chain broadcast를 하지 않고, durable reservation state 위에서 proof ready, submitted, reconcile 결과를 시뮬레이션함.
+이 demo는 `clairveil-payrolld`의 기본값인 `simulated` mode를 사용함. 이 mode에서는 실제 proof 생성과 chain broadcast를 하지 않고, durable reservation state 위에서 proof ready, submitted, reconcile 결과를 시뮬레이션함.
+
+`clairveil-payrolld`는 long-running scheduler 표면인 `live` mode도 지원함. CLI reference live mode는 tx evidence 파일에서 submitted/unknown operation을 reconcile하며, production proof 생성과 broadcast는 SDK live executor 또는 외부 worker로 연결함.
 
 ## 출력
 

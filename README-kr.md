@@ -10,8 +10,9 @@ Clairveil은 Cosmos SDK 체인에 붙일 수 있는 auditable shielded privacy c
 - `clairveild`: privacy module을 실제 체인 위에서 검증하는 reference daemon
 - `clairveil-setup`: Groth16 circuit artifact 생성 도구
 - `clairveil-proverd`: local/remote companion prover reference service
+- `clairveil-payroll`, `clairveil-payrolld`: reference payroll control-plane CLI와 daemon
 - CLI, Go SDK helper, JS/web wallet conformance fixture
-- local walkthrough, e2e smoke, release handoff pack
+- local walkthrough, e2e smoke, reference payroll rehearsal, release handoff pack
 
 > Clairveil은 downstream production app을 대신하지 않습니다. 관련 module, validator 운영, audit key custody, wallet storage encryption, artifact signing 등은 Clairveil을 가져다 쓰는 프로젝트가 자기 환경에 맞게 결정해야 합니다.
 
@@ -76,6 +77,13 @@ make build
 | `clairveil-setup`   | ZK artifact 생성                      |
 | `clairveil-verify`  | legacy/debug note verification helper |
 | `clairveil-proverd` | companion prover HTTP service         |
+| `clairveil-payroll` | reference payroll plan/reservation/reconcile/report CLI |
+| `clairveil-payrolld` | reference payroll scheduler/daemon 표면 |
+| `clairveil-benchreport` | benchmark report renderer |
+| `clairveil-proverload` | external prover load benchmark tool |
+| `clairveil-localnetload` | localnet load metric converter |
+| `clairveil-userlatency` | wallet/user latency trace summarizer |
+| `clairveil-bulktransferbench` | synthetic bulk-transfer capacity simulator |
 
 개별 binary를 직접 빌드할 수도 있습니다.
 
@@ -84,6 +92,13 @@ go build ./cmd/clairveild
 go build ./cmd/clairveil-setup
 go build ./cmd/clairveil-verify
 go build ./cmd/clairveil-proverd
+go build ./cmd/clairveil-payroll
+go build ./cmd/clairveil-payrolld
+go build ./cmd/clairveil-benchreport
+go build ./cmd/clairveil-proverload
+go build ./cmd/clairveil-localnetload
+go build ./cmd/clairveil-userlatency
+go build ./cmd/clairveil-bulktransferbench
 ```
 
 빌드한 binary를 Go install 경로로 복사하려면 아래를 실행합니다.
@@ -141,6 +156,9 @@ make ci
 make test
 make localnet-smoke
 make privacy-e2e-smoke
+make reference-payroll-demo
+make reference-payroll-live-localnet
+make reference-payroll-rehearsal
 ```
 
 `make localnet-smoke`와 `make privacy-e2e-smoke`는 검증용 local node를 직접 띄웁니다. 이미 기본 포트를 쓰는 노드가 있으면 smoke test와 충돌할 수 있습니다.
@@ -206,6 +224,7 @@ clairveild tx privacy withdraw 7uclair --from alice --keyring-backend test
 | [Client API checklist](docs/clairveil-client-api-checklist-kr.md)                  | chain/prover API, fixture, release gate, compatibility check       |
 | [JS SDK handoff](docs/clairveil-js-sdk-handoff-kr.md)                              | JS/TS SDK와 웹월렛 구현 계약                                      |
 | [Scan optimization plan](docs/clairveil-scan-optimization-implementation-plan-kr.md) | 구현된 note scan 최적화 범위와 제외한 후속 작업                  |
+| [Reference payroll product](docs/clairveil-reference-payroll-product-kr.md)        | payroll control-plane, localnet tutorial, rehearsal reference product |
 | [Prover profile](docs/clairveil-proverd-remote-production-profile-kr.md)           | `clairveil-proverd` remote 운영 profile                           |
 | [Merkle restore SOP](docs/clairveil-merkle-restore-sop-kr.md)                      | snapshot/restore/migration 후 tree 검증 절차                      |
 | [Threat model](docs/clairveil-threat-model-kr.md)                                  | trust boundary, assets, residual risk                             |

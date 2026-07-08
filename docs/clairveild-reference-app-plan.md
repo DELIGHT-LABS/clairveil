@@ -40,7 +40,7 @@ The reference app includes only these modules.
 
 ## Implementation Status
 
-As of 2026-05-04, the standalone repo implements the following.
+The standalone repo currently implements the following.
 
 | Item | Status |
 | --- | --- |
@@ -65,17 +65,23 @@ The minimal Cosmos SDK app under `app` is the reference chain host.
 Main files:
 
 - `app/app.go`
-- `app/encoding.go`
 - `app/genesis.go`
-- `app/export.go`
-- `app/modules.go`
+- `app/defaults.go`
+- `app/ante.go`
+- `app/app_test.go`
 
 Done criteria:
 
-- `go test ./app/...` passes
+- `go test ./app` passes
 - `x/privacy` keeper is connected to bank keeper
 - module account `privacy` is registered as a bank module account
 - `DefaultNodeHome` is `~/.clairveil`
+
+Implementation note: codec setup, module wiring, lifecycle hooks, API/tx
+registration, and export support are intentionally kept in `app/app.go`.
+`app/defaults.go` rewrites the generic SDK genesis defaults to the Clairveil
+denom/prefix baseline, while `app/ante.go` keeps the standard Cosmos SDK
+signature, sequence, and gas ante chain separate from the app constructor.
 
 ### 2. clairveild root command
 

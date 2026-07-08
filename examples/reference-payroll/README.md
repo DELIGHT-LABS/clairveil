@@ -33,7 +33,9 @@ status
 export-report -state
 ```
 
-`clairveil-payrolld` currently supports `simulated` mode only. It does not generate live proofs or broadcast chain transactions. It simulates proof-ready, submitted, and reconciled transitions against the durable reservation state.
+This demo uses `clairveil-payrolld` in its default `simulated` mode. In this mode it does not generate live proofs or broadcast chain transactions. It simulates proof-ready, submitted, and reconciled transitions against the durable reservation state.
+
+`clairveil-payrolld` also has a `live` mode for the long-running scheduler surface. The CLI reference live mode reconciles submitted/unknown operations from tx evidence files; production proof generation and broadcast are connected through the SDK live executor or an external worker.
 
 ## Outputs
 

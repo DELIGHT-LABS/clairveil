@@ -20,6 +20,7 @@
 - `privacy-bulk-transfer-bench.sh`: chunk size, prover 수, tx/sec 계획을 위한 synthetic bulk payroll 처리량 summary를 생성합니다.
 - `reference-payroll-demo.sh`: local file state 위에서 reference payroll product를 simulated daemon까지 실행합니다.
 - `reference-payroll-live-localnet.sh`: 실제 localnet에서 payroll input, reservation, `transfer-batch`, recipient scan, settle, final report를 끝까지 실행합니다.
+- `reference-payroll-rehearsal.sh`: 1천건, 1만건, 10만건, 100개 회사 x 1천건 reference payroll capacity simulation report를 생성하고, 옵션으로 작은 live localnet smoke를 함께 실행합니다.
 - `privacy-bulk-readiness-check.sh`: bulk transfer production-readiness check를 실행합니다. critical unit test, reservation failure invariant, synthetic bulk bench를 기본 실행하고, localnet/prover-pool 검증은 옵션으로 켤 수 있습니다.
 - `privacy-user-latency-bench.sh`: localnet privacy smoke를 wallet-flow latency tracing enabled 상태로 실행하고 `privacy-user-latency` report를 생성합니다. `USER_LATENCY_REPEAT=N`으로 반복 sample을 모을 수 있으며, `RUN_PROFILE=public_claim`은 blocked dry run override가 없으면 최소 100회 반복을 요구합니다.
 - `privacy-public-capacity-report.sh`: component report를 public capacity aggregate로 병합하고, component 또는 claim별 evidence가 public gate를 통과하지 못하면 aggregate도 ineligible 상태로 남깁니다. prover report가 둘 다 있으면 기본 입력은 alternative `prover_rps` evidence 충돌을 피하기 위해 `privacy-proverd-load`보다 `privacy-proverd-scale`을 우선합니다.

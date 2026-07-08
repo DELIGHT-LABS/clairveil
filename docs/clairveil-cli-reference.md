@@ -209,7 +209,7 @@ clairveild tx privacy transfer-batch "$(cat out/bob-shielded-address.txt)" \
 Current limitations:
 
 - Intended for bulk-transfer readiness and localnet capacity testing.
-- Supports `all-private` / `none` only.
+- `--privacy-policy`, `--disclosure-mode`, `--disclosure-pubkey`, and `--no-self-view` apply to the whole batch. Mixing different disclosure policies per item is not supported.
 - Does not run the recursive split/merge planner.
 - Each amount must already be satisfiable from spendable exact or pairable notes without reusing an input note inside the same batch.
 - Zero-value dummy notes must already exist when a selected transfer input needs a dummy note.
@@ -416,14 +416,19 @@ clairveil-payroll plan -input payroll.json -out plan.json
 clairveil-payroll run -plan plan.json -state .clairveil-payroll/reservation-state.json -out confirmed-plan.json
 clairveil-payroll status -plan plan.json -out status.json
 clairveil-payroll status -state .clairveil-payroll/reservation-state.json -out state-status.json
+clairveil-payroll scan-evidence -plan plan.json -state .clairveil-payroll/reservation-state.json -tx-query tx-query.json -out scanned-evidence.json
+clairveil-payroll scan-evidence -plan plan.json -state .clairveil-payroll/reservation-state.json -tx-query tx-query.json -apply -out scanned-and-reconciled.json
 clairveil-payroll reconcile -state .clairveil-payroll/reservation-state.json -evidence evidence.json -out reconcile.json
 clairveil-payroll settle-transfer-batch -plan plan.json -state .clairveil-payroll/reservation-state.json -tx transfer-batch.json -recipient-before bob-before.json -recipient-after bob-after.json -out settle.json
+clairveil-payroll seed-localnet-notes -genesis home/config/genesis.json -wallet-home home -owner-address clair1... -shielded-address clairs1... -count 1000 -amount 1 -denom uclair -notes-out alice-notes.json -out seed-localnet-notes.json
 clairveil-payroll export-report -plan plan.json -state .clairveil-payroll/reservation-state.json -out payroll-report.json
 ```
 
-`build-input-from-notes` reads spendable notes from `list-notes --json` output and fills the payroll input `treasury_notes`. `settle-transfer-batch` verifies the actual `transfer-batch` tx result and recipient note scan delta before settling the durable reservation state.
+`build-input-from-notes` reads spendable notes from `list-notes --json` output and fills the payroll input `treasury_notes`. `scan-evidence` reads `clairveild query tx --output json` output or the equivalent TxObservation JSON, converts `shielded_transfer` events, output commitments, disclosure digests, and nullifier evidence into payroll reconcile evidence, and applies it to durable state when `-apply` is set. `settle-transfer-batch` verifies the actual `transfer-batch` tx result and recipient note scan delta before settling the durable reservation state.
 
-`prepare-notes` and `plan` also accept `-store-dir .clairveil-payroll` to write results into the file-backed reference artifact store. `run`, `reconcile`, and `settle-transfer-batch` use the durable reservation state file. For the detailed workflow, see [clairveil-reference-payroll-product-kr.md](clairveil-reference-payroll-product-kr.md).
+`seed-localnet-notes` is a localnet rehearsal helper. It writes payroll amount notes and zero dummy notes into localnet genesis commitments and the local wallet cache so large restart/retry rehearsals do not spend time preparing deposit txs. It is not a production note-preparation feature.
+
+`prepare-notes` and `plan` also accept `-store-dir .clairveil-payroll` to write results into the file-backed reference artifact store. `run`, `scan-evidence`, `reconcile`, and `settle-transfer-batch` use the durable reservation state file. For the detailed workflow, see [clairveil-reference-payroll-product-kr.md](clairveil-reference-payroll-product-kr.md).
 
 ### clairveil-payrolld
 
@@ -434,9 +439,18 @@ clairveil-payrolld \
   -state .clairveil-payroll/reservation-state.json \
   -once \
   -out .clairveil-payroll/payrolld-report.json
+
+clairveil-payrolld \
+  -mode live \
+  -state .clairveil-payroll/reservation-state.json \
+  -plan .clairveil-payroll/payroll-plan.json \
+  -tx-query .clairveil-payroll/tx-query.json \
+  -interval 5s
 ```
 
-The only current mode is `simulated`. It does not generate live proofs or broadcast chain transactions. Instead, it simulates proof-ready, submitted, and reconciled transitions against the durable reservation state so operators can exercise the full payroll workflow from this repo alone.
+`simulated` mode does not generate live proofs or broadcast chain transactions. Instead, it simulates proof-ready, submitted, and reconciled transitions against the durable reservation state so operators can exercise the full payroll workflow from this repo alone.
+
+`live` mode is the long-running scheduler surface. The CLI reference implementation rereads the `-tx-query` file on every tick and reconciles `Submitted` or `Unknown` operations with tx event/nullifier evidence. Proof generation and broadcast are connected by injecting a production worker into the SDK `LiveOperationExecutor`, or by letting an external worker advance durable state to `Submitted`.
 
 Run the complete demo with:
 
@@ -450,4 +464,10 @@ Run the live localnet payroll tutorial with:
 make reference-payroll-live-localnet
 ```
 
-The Korean walkthrough is [clairveil-reference-payroll-live-localnet-tutorial-kr.md](clairveil-reference-payroll-live-localnet-tutorial-kr.md).
+Run the large-scale payroll rehearsal simulation with:
+
+```bash
+make reference-payroll-rehearsal
+```
+
+The Korean live localnet walkthrough is [clairveil-reference-payroll-live-localnet-tutorial-kr.md](clairveil-reference-payroll-live-localnet-tutorial-kr.md). The rehearsal walkthrough is [clairveil-reference-payroll-rehearsal-kr.md](clairveil-reference-payroll-rehearsal-kr.md).

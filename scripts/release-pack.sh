@@ -76,6 +76,13 @@ copy_path "docs/clairveil-bulk-transfer-prover-scale-option-kr.md"
 copy_path "docs/clairveil-bulk-transfer-strategy-kr.md"
 copy_path "docs/clairveil-bulk-transfer-time-simulation-kr.md"
 copy_path "docs/clairveil-note-reservation-design-kr.md"
+copy_path "docs/clairveil-reference-payroll-product-kr.md"
+copy_path "docs/clairveil-reference-payroll-product-policy-kr.md"
+copy_path "docs/clairveil-reference-payroll-js-sdk-handoff-kr.md"
+copy_path "docs/clairveil-reference-payroll-wallet-handoff-kr.md"
+copy_path "docs/clairveil-reference-payroll-live-localnet-tutorial-kr.md"
+copy_path "docs/clairveil-reference-payroll-rehearsal-kr.md"
+copy_path "docs/clairveil-reference-payroll-localnet-rehearsal-result-kr.md"
 copy_path "docs/clairveil-scan-optimization-implementation-plan.md"
 copy_path "docs/clairveil-scan-optimization-implementation-plan-kr.md"
 copy_path "docs/clairveil-proverd-remote-production-profile.md"
@@ -102,6 +109,7 @@ copy_path "examples/README-kr.md"
 copy_path "examples/audit-disclosure-keys"
 copy_path "examples/js-sdk-fixture-validator"
 copy_path "examples/js-sdk-prover-http-client"
+copy_path "examples/reference-payroll"
 copy_path "build/clairveil-proverd"
 copy_path "scripts/release-pack.sh"
 copy_path "scripts/release-pack-verify.sh"
@@ -120,10 +128,10 @@ Contents:
 - English and Korean public documentation pairs where available
 - proto/clairveil/privacy/v1
 - client, JS/web wallet, and scan optimization handoff documents
-- bulk transfer design, plan, product handoff, simulation, and readiness materials
+- bulk transfer design, plan, product handoff, simulation, reference payroll, and readiness materials
 - JS/web wallet JSON schemas
 - wallet/prover conformance fixtures
-- JS audit disclosure key, fixture validator, and prover HTTP client examples
+- JS audit disclosure key, fixture validator, prover HTTP client, and reference payroll examples
 - prover Dockerfile and compose sample
 - release pack generation and verification scripts
 - release, circuit, CLI, testing, operations, downstream integration, client, JS SDK, scan optimization, prover, Merkle restore, threat model, security, and reference app documents

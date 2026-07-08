@@ -38,7 +38,7 @@ reference app은 아래 모듈만 포함한다.
 
 ## 구현 상태
 
-2026-05-04 기준 standalone repo에는 아래가 구현되어 있다.
+현재 standalone repo에는 아래가 구현되어 있다.
 
 | 항목                          | 상태                                                                                                                                       |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -63,17 +63,23 @@ reference app은 아래 모듈만 포함한다.
 주요 파일:
 
 - `app/app.go`
-- `app/encoding.go`
 - `app/genesis.go`
-- `app/export.go`
-- `app/modules.go`
+- `app/defaults.go`
+- `app/ante.go`
+- `app/app_test.go`
 
 완료 기준:
 
-- `go test ./app/...` 통과
+- `go test ./app` 통과
 - `x/privacy` keeper가 bank keeper와 연결됨
 - module account `privacy`가 bank module account로 등록됨
 - `DefaultNodeHome`은 `~/.clairveil`
+
+구현 메모: codec 설정, module wiring, lifecycle hook, API/tx 등록, export
+지원은 현재 `app/app.go` 안에 모여 있다. `app/defaults.go`는 generic SDK
+genesis default를 Clairveil denom/prefix 기준으로 보정하고, `app/ante.go`는
+표준 Cosmos SDK signature, sequence, gas ante chain을 app constructor에서
+분리해 둔다.
 
 ### 2. clairveild root command
 

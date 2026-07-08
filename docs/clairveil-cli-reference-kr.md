@@ -207,7 +207,7 @@ clairveild tx privacy transfer-batch "$(cat out/bob-shielded-address.txt)" \
 현재 제한:
 
 - bulk-transfer readiness와 localnet capacity test 용도입니다.
-- `all-private` / `none`만 지원합니다.
+- `--privacy-policy`, `--disclosure-mode`, `--disclosure-pubkey`, `--no-self-view`는 batch 전체에 동일하게 적용됩니다. item별로 서로 다른 disclosure policy를 섞는 기능은 제공하지 않습니다.
 - recursive split/merge planner를 실행하지 않습니다.
 - 각 amount는 같은 batch 안에서 input note를 재사용하지 않고 spendable exact note 또는 pairable note로 이미 충족 가능해야 합니다.
 - 선택된 transfer input에 dummy note가 필요하면 zero-value dummy note가 미리 존재해야 합니다.
@@ -418,10 +418,13 @@ clairveil-payroll scan-evidence -plan plan.json -state .clairveil-payroll/reserv
 clairveil-payroll scan-evidence -plan plan.json -state .clairveil-payroll/reservation-state.json -tx-query tx-query.json -apply -out scanned-and-reconciled.json
 clairveil-payroll reconcile -state .clairveil-payroll/reservation-state.json -evidence evidence.json -out reconcile.json
 clairveil-payroll settle-transfer-batch -plan plan.json -state .clairveil-payroll/reservation-state.json -tx transfer-batch.json -recipient-before bob-before.json -recipient-after bob-after.json -out settle.json
+clairveil-payroll seed-localnet-notes -genesis home/config/genesis.json -wallet-home home -owner-address clair1... -shielded-address clairs1... -count 1000 -amount 1 -denom uclair -notes-out alice-notes.json -out seed-localnet-notes.json
 clairveil-payroll export-report -plan plan.json -state .clairveil-payroll/reservation-state.json -out payroll-report.json
 ```
 
 `build-input-from-notes`는 `list-notes --json` 결과에서 spendable note를 읽어 payroll input의 `treasury_notes`를 채웁니다. `scan-evidence`는 `clairveild query tx --output json` 결과 또는 같은 형태의 tx observation JSON을 읽어 `shielded_transfer` event, output commitment, disclosure digest, nullifier spent evidence를 payroll operation별 reconcile evidence로 변환합니다. `-apply`를 주면 스캔한 evidence를 즉시 durable reservation state에 반영합니다. `settle-transfer-batch`는 실제 `transfer-batch` tx 결과와 recipient note scan delta를 검증한 뒤 durable reservation state를 settle합니다.
+
+`seed-localnet-notes`는 localnet rehearsal helper입니다. localnet genesis commitment와 local wallet cache에 payroll용 amount note와 zero dummy note를 기록해 큰 restart/retry rehearsal에서 deposit 준비 시간을 줄입니다. Production note preparation 기능이 아니며 staging/testnet에서는 실제 deposit, split/merge, approval 기반 preparation flow를 사용해야 합니다.
 
 `prepare-notes`와 `plan`은 `-store-dir .clairveil-payroll`을 받아 file-backed reference artifact store에도 결과를 저장할 수 있습니다. `run`, `scan-evidence`, `reconcile`, `settle-transfer-batch`는 durable reservation state 파일을 사용합니다. 상세 workflow는 [clairveil-reference-payroll-product-kr.md](clairveil-reference-payroll-product-kr.md)를 따릅니다.
 

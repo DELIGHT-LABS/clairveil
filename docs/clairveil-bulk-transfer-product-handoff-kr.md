@@ -2,9 +2,9 @@
 
 ## 목적
 
-이 문서는 `private/bulk-transfer` 브랜치의 1차 repo 구현을 제품/운영 구현으로 이어가기 위한 전달 문서임.
+이 문서는 `private/bulk-transfer-v2` 브랜치의 1차 repo 구현을 제품/운영 구현으로 이어가기 위한 전달 문서임.
 
-repo에는 note reservation, payroll control plane, proof/broadcast/reconcile queue, multi-message tx, prover pool, benchmark/readiness harness, reference payroll CLI, simulated reference payroll daemon, repo-local demo product, live localnet payroll tutorial, file-backed reference artifact store, durable reservation state store의 reference implementation이 들어 있음. 제품/운영 영역에서는 managed production DB 배포 방식, tenant 운영 정책, production-grade live proof/broadcast/scanner daemon, operator UI, 실제 10만건 rehearsal을 이어서 결정해야 함.
+repo에는 note reservation, payroll control plane, proof/broadcast/reconcile queue, multi-message tx, prover pool, benchmark/readiness harness, reference payroll CLI, simulated/live reference payroll daemon, repo-local demo product, live localnet payroll tutorial, rehearsal harness, file-backed reference artifact store, durable reservation state store, SQL reference store의 reference implementation이 들어 있음. 제품/운영 영역에서는 managed production DB 배포 방식, tenant 운영 정책, production-grade live proof/broadcast/scanner daemon, operator UI, 실제 10만건 rehearsal을 이어서 결정해야 함.
 
 ## Repo에서 제공하는 것
 
@@ -12,14 +12,15 @@ repo에는 note reservation, payroll control plane, proof/broadcast/reconcile qu
 - Note reservation 설계: `docs/clairveil-note-reservation-design-kr.md`
 - 대량 전송 전략/시뮬레이션: `docs/clairveil-bulk-transfer-strategy-kr.md`, `docs/clairveil-bulk-transfer-time-simulation-kr.md`
 - Go reference packages: `x/privacy/client/sdk/reservation`, `x/privacy/client/sdk/payroll`
-- Reference payroll CLI: `clairveil-payroll validate`, `prepare-notes`, `plan`, `run`, `status`, `scan-evidence`, `reconcile`, `export-report`
-- Live payroll CLI helpers: `clairveil-payroll build-input-from-notes`, `settle-transfer-batch`
+- Reference payroll CLI: `clairveil-payroll validate`, `build-input-from-notes`, `prepare-notes`, `plan`, `run`, `status`, `scan-evidence`, `reconcile`, `settle-transfer-batch`, `seed-localnet-notes`, `export-report`
 - Reference payroll daemon: `clairveil-payrolld -mode simulated`, `clairveil-payrolld -mode live`
 - Repo-local demo product: `make reference-payroll-demo`
 - Live localnet tutorial: `make reference-payroll-live-localnet`
+- Large-scale rehearsal: `make reference-payroll-rehearsal`
 - 제품 정책 기본값: `docs/clairveil-reference-payroll-product-policy-kr.md`
 - File-backed reference artifact store: `x/privacy/client/sdk/payroll.FileArtifactStore`
 - Durable reservation state store: `x/privacy/client/sdk/reservation.DurableFileStore`
+- SQL reference reservation state store: `x/privacy/client/sdk/reservation.SQLStore`
 - 검증 entrypoint: `make privacy-bulk-readiness-check`
 - localnet batch 검증: `make privacy-transfer-batch-localnet-bench`
 - prover pool 측정: `PROVERD_URLS=url1,url2 make privacy-proverd-scale-bench`
@@ -28,7 +29,7 @@ repo에는 note reservation, payroll control plane, proof/broadcast/reconcile qu
 
 ### 1. Production DB 배포 방식
 
-repo는 `reservation.Store` contract를 만족하는 `DurableFileStore` reference adapter를 제공함. 실제 고객 환경에서 PostgreSQL/MySQL/cloud DB를 사용하려면 같은 contract를 production DB로 옮기거나, reference adapter를 운영 정책에 맞게 감싸야 함.
+repo는 `reservation.Store` contract를 만족하는 `DurableFileStore`와 `SQLStore` reference adapter를 제공함. `SQLStore`는 PostgreSQL/SQLite schema helper와 `database/sql` 기반 contract 구현을 제공하지만, managed production DB 배포 자체는 제품/운영 영역임. 실제 고객 환경에서 PostgreSQL/MySQL/cloud DB를 사용하려면 같은 contract와 schema 의미를 유지하면서 tenant partitioning, field-level encryption, migration, connection pool, 운영 lock 정책을 확정해야 함.
 
 필수 구현 내용은 다음과 같음.
 
@@ -142,13 +143,14 @@ JS SDK가 이미 `docs/clairveil-note-reservation-design-kr.md`를 기준으로 
 - 제품팀은 `make privacy-bulk-readiness-check` 결과를 확인함.
 - 운영팀은 `make reference-payroll-demo`로 repo-local payroll product flow를 먼저 실행함.
 - 운영팀은 `make reference-payroll-live-localnet`으로 실제 localnet payroll transfer-batch tutorial을 실행함.
-- 운영팀은 1천건 localnet restart/retry 확인 시 `PAYROLL_ITEM_COUNT=1000 PAYROLL_CHUNK_SIZE=20 GAS_PRICES=0uclair make reference-payroll-live-localnet`을 장시간 soak test로 실행하고 `rehearsal-summary.json`을 산출물로 남김. 2026-07-08 개발 세션의 actual 1천건 시도와 작은 multi-chunk smoke 결과는 `docs/clairveil-reference-payroll-localnet-rehearsal-result-kr.md`를 확인함.
+- 운영팀은 repo-local 1천건 restart/retry 확인 시 `PAYROLL_SEED_NOTES=1 PAYROLL_ITEM_COUNT=1000 PAYROLL_CHUNK_SIZE=20 GAS_PRICES=0uclair make reference-payroll-live-localnet`을 실행하고 `rehearsal-summary.json`을 산출물로 남김. 2026-07-08 개발 세션에서는 seeded actual 1천건 localnet run이 성공했으며, 결과는 `docs/clairveil-reference-payroll-localnet-rehearsal-result-kr.md`를 확인함.
 - release 전에는 `RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check`로 multi-message transfer localnet 경로를 확인함.
 - prover pool scale claim을 하려면 `RUN_PROVER_SCALE=1 PROVERD_URLS=url1,url2 make privacy-bulk-readiness-check` 결과를 별도 산출물로 남김. scale benchmark는 기본적으로 preflight 실패 endpoint를 제외하고 `unhealthy_endpoint_count`를 기록하지만, public claim 수치로 쓰려면 `unhealthy_endpoint_count=0`이어야 함.
 - backend 팀은 `clairveil-payroll run -state ...`, `clairveil-payrolld -state ... -once`, `clairveil-payroll reconcile -state ...` durable control-plane workflow를 확인하고, managed DB가 필요하면 같은 `reservation.Store` contract로 이전 계획을 작성함.
 - JS SDK 팀은 note reservation conformance fixture를 검증함.
 - 운영팀은 prover pool endpoint 구성과 telemetry 수집 방식을 정함.
 - 제품팀은 1천건 rehearsal runbook을 먼저 실행함.
+- staging/production note preparation은 `PAYROLL_SEED_NOTES=1`을 사용하지 않고 실제 deposit, split/merge, approval 기반 preparation flow로 검증함.
 - 1차 결과로 SLA가 부족하면 2차 `BatchJoinSplit32` 개발을 시작함.
 
 ## 비차단 후속 backlog

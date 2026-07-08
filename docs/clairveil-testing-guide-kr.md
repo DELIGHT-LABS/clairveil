@@ -37,6 +37,7 @@ make release-pack-verify
 | `make privacy-e2e-smoke` | deposit, transfer, disclosure, withdraw 전체 flow 검증 |
 | `make reference-payroll-demo` | reference payroll product의 validate, prepare, plan, reserve, simulated daemon, final report 흐름 검증 |
 | `make reference-payroll-live-localnet` | 실제 localnet에서 payroll input, reservation, transfer-batch, recipient scan, settle, final report 흐름 검증 |
+| `make reference-payroll-rehearsal` | reference payroll capacity simulation과 선택적 live localnet smoke 검증 |
 | `make dapp-local` | 수동 테스트용 local Clairveil node, prover, browser DApp stack 실행 |
 | `make release-check` | `ci`, `vulncheck`, `localnet-smoke`, `privacy-e2e-smoke`, localnet transfer-batch smoke를 포함한 bulk readiness 묶음 |
 | `make release-pack` | downstream handoff archive와 sha256 생성 |
@@ -270,6 +271,22 @@ make reference-payroll-live-localnet
 8. final payroll report export
 
 자세한 수동 단계는 [clairveil-reference-payroll-live-localnet-tutorial-kr.md](clairveil-reference-payroll-live-localnet-tutorial-kr.md)를 따릅니다.
+
+## 7.3 Reference Payroll Rehearsal
+
+```bash
+make reference-payroll-rehearsal
+```
+
+이 target은 1천건, 1만건, 10만건, 100개 회사 x 1천건 profile의 payroll capacity simulation report를 생성합니다. 필요하면 `RUN_LOCALNET=1 LOCALNET_PAYROLL_ITEM_COUNT=2 make reference-payroll-rehearsal`처럼 작은 live localnet smoke를 함께 실행할 수 있습니다.
+
+1천건 repo-local restart/retry rehearsal은 아래처럼 실제 localnet transfer path를 실행하되, deposit 준비 시간을 줄이기 위해 localnet-only seed helper를 사용합니다.
+
+```bash
+PAYROLL_SEED_NOTES=1 PAYROLL_ITEM_COUNT=1000 PAYROLL_CHUNK_SIZE=20 GAS_PRICES=0uclair make reference-payroll-live-localnet
+```
+
+자세한 rehearsal 기준과 결과 해석은 [clairveil-reference-payroll-rehearsal-kr.md](clairveil-reference-payroll-rehearsal-kr.md)와 [clairveil-reference-payroll-localnet-rehearsal-result-kr.md](clairveil-reference-payroll-localnet-rehearsal-result-kr.md)를 따릅니다.
 
 ## 8. Release pack 검증
 
