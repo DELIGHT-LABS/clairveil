@@ -679,6 +679,8 @@ clairveil-payrolld
 
 2026-07-08 localnet restart/retry 보강 상태: `scripts/reference-payroll-live-localnet.sh`가 `PAYROLL_CHUNK_SIZE`를 받아 여러 `transfer-batch` tx로 plan을 나누어 제출하고, `settle-transfer-batch -item-start -item-limit`로 chunk별 plan 구간을 settle함. 같은 plan에 대해 `clairveil-payroll run`을 두 번 실행해 reservation idempotency를 확인하고, `rehearsal-summary.json`에 item 수, chunk 수, 최종 성공 count를 기록함.
 
+2026-07-08 rehearsal 실행 기록: actual 1천건 localnet run은 시도했으나, 직원 1명당 amount note 1개와 zero dummy note 1개를 실제 deposit tx로 준비하는 현재 script 특성상 deposit 준비만 수 시간 규모로 외삽되어 수동 중단함. 대신 `PAYROLL_ITEM_COUNT=4 PAYROLL_CHUNK_SIZE=2` actual localnet smoke가 성공했고, 1천건/1만건/10만건 profile은 `make reference-payroll-rehearsal` simulation으로 산출함. 자세한 기록은 `docs/clairveil-reference-payroll-localnet-rehearsal-result-kr.md`에 둠.
+
 1.5차 repo 완료 기준은 production 실운영 daemon을 대신하는 것이 아니라, 운영팀이 repo만으로 payroll product 상태 모델과 실제 localnet tx 경로를 끝까지 체험하고, production scanner/daemon 구현 전까지 필요한 durable control-plane workflow를 code와 문서로 조립 가능하게 만드는 것임.
 
 ### Phase 1.5.7 JS SDK handoff

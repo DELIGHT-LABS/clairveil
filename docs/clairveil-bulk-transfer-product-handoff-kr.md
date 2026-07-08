@@ -142,7 +142,7 @@ JS SDK가 이미 `docs/clairveil-note-reservation-design-kr.md`를 기준으로 
 - 제품팀은 `make privacy-bulk-readiness-check` 결과를 확인함.
 - 운영팀은 `make reference-payroll-demo`로 repo-local payroll product flow를 먼저 실행함.
 - 운영팀은 `make reference-payroll-live-localnet`으로 실제 localnet payroll transfer-batch tutorial을 실행함.
-- 운영팀은 1천건 localnet restart/retry 확인 시 `PAYROLL_ITEM_COUNT=1000 PAYROLL_CHUNK_SIZE=20 GAS_PRICES=0uclair make reference-payroll-live-localnet`을 실행하고 `rehearsal-summary.json`을 산출물로 남김.
+- 운영팀은 1천건 localnet restart/retry 확인 시 `PAYROLL_ITEM_COUNT=1000 PAYROLL_CHUNK_SIZE=20 GAS_PRICES=0uclair make reference-payroll-live-localnet`을 장시간 soak test로 실행하고 `rehearsal-summary.json`을 산출물로 남김. 2026-07-08 개발 세션의 actual 1천건 시도와 작은 multi-chunk smoke 결과는 `docs/clairveil-reference-payroll-localnet-rehearsal-result-kr.md`를 확인함.
 - release 전에는 `RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check`로 multi-message transfer localnet 경로를 확인함.
 - prover pool scale claim을 하려면 `RUN_PROVER_SCALE=1 PROVERD_URLS=url1,url2 make privacy-bulk-readiness-check` 결과를 별도 산출물로 남김. scale benchmark는 기본적으로 preflight 실패 endpoint를 제외하고 `unhealthy_endpoint_count`를 기록하지만, public claim 수치로 쓰려면 `unhealthy_endpoint_count=0`이어야 함.
 - backend 팀은 `clairveil-payroll run -state ...`, `clairveil-payrolld -state ... -once`, `clairveil-payroll reconcile -state ...` durable control-plane workflow를 확인하고, managed DB가 필요하면 같은 `reservation.Store` contract로 이전 계획을 작성함.

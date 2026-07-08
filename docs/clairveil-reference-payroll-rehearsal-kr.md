@@ -114,6 +114,8 @@ tmp/reference-payroll-live-localnet-1k/out/payroll-settle-report-001.json ... pa
 
 1천건 localnet run은 개발 중 restart/retry invariant를 확인하는 목적임. 1만건, 10만건, 여러 tenant 동시 peak는 localnet full tx 제출보다 staging/testnet rehearsal과 simulation report를 함께 남기는 방식을 권장함.
 
+2026-07-08 actual 1천건 localnet 시도 결과와 작은 multi-chunk smoke 성공 기록은 [clairveil-reference-payroll-localnet-rehearsal-result-kr.md](clairveil-reference-payroll-localnet-rehearsal-result-kr.md)에 남김.
+
 ## 결과 해석
 
 `latest-rehearsal-summary.json`은 다음 구조를 가짐.
