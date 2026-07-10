@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | Not Started |
+| 상태 | Complete |
 | 선행 문서 | [BatchJoinSplit16x32 Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md) |
 | 후속 세션 | [Session 2 Foundation](clairveil-batch-joinsplit-16x32-session-2-foundation-kr.md) |
 | 권장 모델 | `gpt-5.6-sol` |
@@ -540,46 +540,69 @@ NoteV1의 새 commitment/nullifier formula는 Session 2에서 production circuit
 
 ## 13. Acceptance Criteria
 
-- [ ] duplicate input exploit witness가 circuit에서 실패함.
-- [ ] duplicate nullifier/commitment가 types/keeper에서 빠르게 실패함.
-- [ ] commitment가 Deposit/2x2/genesis를 가로질러 전역으로 유일함.
-- [ ] SDK/payroll이 같은 note 재사용을 거부함.
-- [ ] 2x2가 single owner signature를 사용함.
-- [ ] transfer recipient/amount/payload substitution이 실패함.
-- [ ] transfer chain/expiry 변경이 실패함.
-- [ ] SpendIntentV2가 chain domain과 expiry를 proof-bound함.
-- [ ] withdraw expiry extension과 cross-chain replay가 실패함.
-- [ ] recipient leading-zero alias가 불가능함.
-- [ ] current user/audit/self-view disclosure가 독립 blinding을 사용하고 dictionary regression test가 통과함.
-- [ ] malformed point/signature/envelope가 panic 없이 거부됨.
-- [ ] prover endpoint failover가 기본 비활성화되고 explicit opt-in만 허용됨.
-- [ ] forged historical root와 artifact identity mismatch가 startup/readiness에서 실패함.
-- [ ] proof verification gas가 cryptographic work 전에 precharge됨.
-- [ ] transfer/withdraw creator replacement가 성공함.
-- [ ] SHA-256 two-limb vector가 circuit/native/keeper에서 일치함.
-- [ ] prepared payload/prover/fixture/schema version이 일치함.
-- [ ] development artifact strict preflight와 E2E가 통과함.
-- [ ] 한영 문서가 실제 trust boundary와 일치함.
-- [ ] generated artifact binary/secret이 tracked되지 않음.
-- [ ] master ledger가 갱신됨.
+- [x] duplicate input exploit witness가 circuit에서 실패함.
+- [x] duplicate nullifier/commitment가 types/keeper에서 빠르게 실패함.
+- [x] commitment가 Deposit/2x2/genesis를 가로질러 전역으로 유일함.
+- [x] SDK/payroll이 같은 note 재사용을 거부함.
+- [x] 2x2가 single owner signature를 사용함.
+- [x] transfer recipient/amount/payload substitution이 실패함.
+- [x] transfer chain/expiry 변경이 실패함.
+- [x] SpendIntentV2가 chain domain과 expiry를 proof-bound함.
+- [x] withdraw expiry extension과 cross-chain replay가 실패함.
+- [x] recipient leading-zero alias가 불가능함.
+- [x] current user/audit/self-view disclosure가 독립 blinding을 사용하고 dictionary regression test가 통과함.
+- [x] malformed point/signature/envelope가 panic 없이 거부됨.
+- [x] prover endpoint failover가 기본 비활성화되고 explicit opt-in만 허용됨.
+- [x] forged historical root와 artifact identity mismatch가 startup/readiness에서 실패함.
+- [x] proof verification gas가 cryptographic work 전에 precharge됨.
+- [x] transfer/withdraw creator replacement가 성공함.
+- [x] SHA-256 two-limb vector가 circuit/native/keeper에서 일치함.
+- [x] prepared payload/prover/fixture/schema version이 일치함.
+- [x] development artifact strict preflight와 E2E가 통과함.
+- [x] 한영 문서가 실제 trust boundary와 일치함.
+- [x] generated artifact binary/secret이 tracked되지 않음.
+- [x] master ledger가 갱신됨.
 
 ## 14. Session 2 Handoff
 
-```text
 ## Completion Record
 
-- 시작 commit:
-- 완료 commit:
-- circuit set ID:
-- TransferIntent/SpendIntent version:
-- prepared payload/prover versions:
+- 시작 commit: `e427370`
+- 완료 commit: `33f0a73` (`Session 1` 구현·공개 계약 완료 기준; 이 Completion Record/Ledger 기록 commit은 후속 문서 commit)
+- circuit set ID: `privacy-intent-v2`; consensus `CircuitSetIdentity` schema `v1`; artifact manifest schema `v2`
+- TransferIntent/SpendIntent version: `TransferIntentV2`, `SpendIntentV2`
+- prepared payload/prover versions: transfer payload `v5`, transfer proof/request/response `v2`; withdraw prover/final payload, proof, request/response, relay schema/handoff `v2`; disclosure plaintext/query `v5`
 - SHA-256 limb fixture:
+  - chain domain `clairveil-localnet-1` + `privacy-intent-v2`: hi `264159934158684874548762591990728337770`, lo `270095241217876371844524170513424412119`
+  - canonical transfer payload fixture: hi `167934897245902538552295964807751055480`, lo `315400652074988150791302303081971100397`
+  - withdraw recipient raw bytes `00 01 02 03`: hi `211336406829810441348458686997852034571`, lo `265630251913956315626555014078061856515`
 - 추가한 security invariant:
+  - 2x2 input nullifier와 output commitment local distinctness, Deposit/2x2/genesis 전체의 global commitment uniqueness, duplicate 실패 시 state 불변성을 강제함.
+  - 같은 spend/view owner의 단일 `OwnerSignature`가 ordered nullifier/commitment, final output/disclosure/ciphertext effect, current chain domain, absolute expiry를 포함한 `TransferIntentV2` 전체를 인증함. `creator`는 relayer 교체를 위해 의도적으로 제외함.
+  - `SpendIntentV2`가 current chain domain, `block_time >= expiry` 경계, length-prefixed raw recipient SHA-256 limbs를 proof/signature에 묶어 cross-chain replay, expiry 연장, leading-zero alias를 거부함.
+  - user/full disclosure에 서로 독립적인 CSPRNG blinding을 사용하고, point/signature/envelope를 canonical·curve·non-identity·prime-subgroup 조건으로 panic 없이 거부함.
+  - prover multi-endpoint failover는 명시적 opt-in이 없으면 비활성화되고, historical root 재계산, consensus artifact identity 일치, proof canonical framing과 cryptographic work 전 gas precharge를 강제함.
 - downstream breaking contract와 migration/reset 지침:
+  - legacy prepared payload/proof/request/response와 disclosure file은 compatibility decode하지 않고 위 version으로 다시 생성함.
+  - `privacy-intent-v2` 적용 시 cached proof job과 R1CS/PK/VK/manifest를 폐기·재생성하고 validator의 local VK identity를 consensus genesis/state와 맞춤. 기존 개발 체인은 새 genesis identity로 reset/reinitialize하며 production migration은 이 세션 범위에 포함하지 않음.
+  - JS/TS client는 exact public-input 순서, big-endian non-reduced 128-bit SHA limbs, canonical transfer binary effect encoder를 그대로 구현해야 함.
 - 실행한 검증과 결과:
+  - 시작 gate의 circuit/types/keeper 및 transfer/withdraw unit test: 통과.
+  - `make proto`: 통과, generated diff 없음.
+  - `go test ./x/privacy/... -count=1`, `GOTOOLCHAIN=go1.25.12 go test ./... -count=1`: 통과.
+  - `make examples`, `make privacy-e2e-smoke`, `make reference-payroll-live-localnet`: 통과. Payroll live 검증이 실제 `tx_hash` evidence 계약 불일치를 발견했고 `7807a85`에서 수정한 뒤 전체 재실행해 통과함.
+  - `make vulncheck`: 통과. 새 fixed-version finding은 Go `1.25.12`와 dependency update로 제거했고, no-fixed-version 예외만 exact ID/module 정책으로 제한함.
+  - `make release-check`: 통과. 내부 `make ci`, `make vulncheck`, `make localnet-smoke`, `make privacy-e2e-smoke`, `TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check`가 모두 통과함.
+  - `FuzzDecodeCanonicalPointNoPanic`, `FuzzDecodeCanonicalEdDSASignatureNoPanic`, `FuzzAsymDecryptMalformedEnvelopeNoPanic` 각 5초: 통과(각각 112,954 / 80,964 / 835,066 executions).
+  - `make release-pack`, `make release-pack-verify`: 통과(필수 파일 110개와 내·외부 checksum/manifest commit 검증). `git diff --check`: 통과.
 - 미해결 finding:
+  - 현재 transfer/withdraw protocol의 미해결 Critical/High finding은 없음.
+  - upstream fixed version이 없는 `GO-2024-2584`, `GO-2026-4479`, `GO-2026-5932`는 exact policy exception과 downstream risk로 계속 추적함. `GO-2026-5932`는 Cosmos SDK의 local ASCII key armor 경로만 reachable하며 Clairveil은 OpenPGP signing/encryption을 사용하지 않음. Fixed path가 생기면 예외는 즉시 실패함.
+  - JS example `npm audit`의 low-severity finding 1건, prepared witness JSON의 plaintext-at-rest 위험, formal trusted setup과 외부 audit 미수행은 공개 known risk/후속 production gate로 남음.
 - Session 2가 재사용할 helper/vector:
-- worktree 상태:
-```
+  - `x/privacy/types/intent.go`의 `SplitDigestToLimbs`, `ComputeChainDomainV1`, `ComputeWithdrawRecipientDigestV1`, `CanonicalTransferPayloadBytesV1`, `ComputeTransferPayloadDigestV1`, `ComputeOrderedSetDigestV1`, `ComputeTransferIntentV2`, `ComputeSpendIntentV2`와 `x/privacy/types/intent_test.go` golden vector.
+  - `x/privacy/zk/schema.go`의 ordered public-input schema/digest helper, `x/privacy/zk/manifest.go`의 exact descriptor/identity helper, `x/privacy/crypto/decoder.go`의 canonical decoder.
+  - `x/privacy/client/sdk/conformance/testdata/privacy_prover_example_bundle.json`, `privacy_prover_http_api_contract.json`, `privacy_relay_withdraw_contract.json`, `privacy_send_capable_reference_flow.json`, `privacy_browser_signer_provider_contract.json`의 versioned fixture.
+- worktree 상태: Completion Record/Ledger commit 후 tracked worktree clean. `dist/` release pack과 `benchmarks/` readiness summary만 gitignored 검증 산출물이며 generated R1CS/PK/VK 또는 secret은 tracked되지 않음. Session 2 구현은 시작하지 않음.
 
 미해결 Critical/High finding이 있으면 Session 2를 시작하지 않음.
