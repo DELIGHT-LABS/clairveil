@@ -707,6 +707,10 @@ func autoPlanWithdrawExactMatchNote(cmd *cobra.Command, clientCtx client.Context
 	}
 
 	printPlannerSelfTransferSummary(cmd, targetCoin.String(), selfShieldedAddress)
+	expiresAtUnix, err := resolveTransferExpiresAtUnix(cmd)
+	if err != nil {
+		return err
+	}
 
 	res, err := executeTransferFlowWithIdentity(
 		cmd,
@@ -717,6 +721,7 @@ func autoPlanWithdrawExactMatchNote(cmd *cobra.Command, clientCtx client.Context
 		targetCoin.Amount.BigInt(),
 		targetCoin.Denom,
 		autoDummy,
+		expiresAtUnix,
 		privacytransfer.StepDisclosureConfig{
 			UserPrivacyPolicy:             types.TransferPrivacyPolicyAllPrivate,
 			UserDisclosureMode:            types.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE,

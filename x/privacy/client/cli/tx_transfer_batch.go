@@ -81,6 +81,10 @@ Broadcast several independent MsgTransfer messages in one Cosmos transaction env
 			if err != nil {
 				return err
 			}
+			expiresAtUnix, err := resolveTransferExpiresAtUnix(cmd)
+			if err != nil {
+				return err
+			}
 
 			forceRescan, err := cmd.Flags().GetBool(flagRescanWallet)
 			if err != nil {
@@ -108,6 +112,7 @@ Broadcast several independent MsgTransfer messages in one Cosmos transaction env
 				recipientSpendPubKey,
 				recipientViewPubKey,
 				coins,
+				expiresAtUnix,
 				privacytransfer.StepDisclosureConfig{
 					UserPrivacyPolicy:             config.userPrivacyPolicy,
 					UserDisclosureMode:            config.userDisclosureMode,
@@ -178,6 +183,7 @@ Broadcast several independent MsgTransfer messages in one Cosmos transaction env
 	cmd.Flags().String(flagTransferDisclosureMode, transferDisclosureModeNone, "User disclosure mode shared by every batched transfer: none|public|recipient-encrypted")
 	cmd.Flags().String(flagTransferDisclosurePubKey, "", "Recipient disclosure public key hex for recipient-encrypted mode")
 	cmd.Flags().Bool(flagTransferNoSelfView, false, "Disable sender self-view disclosure for every batched transfer")
+	cmd.Flags().Int64(flagTransferExpiresIn, int64(defaultPreparedWithdrawExpiry/time.Second), "owner intent validity window in seconds")
 	cmd.Flags().Bool(flagRescanWallet, false, "reset the local privacy wallet cache and rescan from genesis before note selection")
 	flags.AddTxFlagsToCmd(cmd)
 	return cmd
@@ -217,6 +223,7 @@ func buildTransferBatchMessages(
 	recipientSpendPubKey *crypto_tedwards.PointAffine,
 	recipientViewPubKey *crypto_tedwards.PointAffine,
 	coins []sdk.Coin,
+	expiresAtUnix int64,
 	disclosure privacytransfer.StepDisclosureConfig,
 	logWriter io.Writer,
 	latencyFlow *privacyLatencyFlow,
@@ -250,11 +257,13 @@ func buildTransferBatchMessages(
 		msg, err := privacytransfer.BuildTransferStepMessage(
 			ctx,
 			privacyprovider.NewTransferQueryProvider(privacytypes.NewQueryClient(clientCtx)),
-			manualJoinSplitNoteHashSigner{scalar: identity.scalar, pubKey: identity.spendPubKey},
+			manualTransferOwnerIntentSigner{scalar: identity.scalar, pubKey: identity.spendPubKey},
 			transferJoinSplitArtifactProvider{},
 			transferJoinSplitProofRunner{logWriter: logWriter, latencyFlow: latencyFlow},
 			privacytransfer.BuildTransferStepMessageInput{
 				Creator:              clientCtx.GetFromAddress().String(),
+				ChainID:              clientCtx.ChainID,
+				ExpiresAtUnix:        expiresAtUnix,
 				Inputs:               selection.Inputs,
 				RecipientSpendPubKey: recipientSpendPubKey,
 				RecipientViewPubKey:  recipientViewPubKey,

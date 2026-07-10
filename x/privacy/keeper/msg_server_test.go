@@ -559,11 +559,32 @@ func TestMsgServerTransferRejectsRootNotFoundBeforeZK(t *testing.T) {
 		[][]byte{fixedFieldBytes(33), fixedFieldBytes(34)},
 		[][]byte{{0x01}, {0x02}},
 		[][]byte{{0x01, 0x02}, {0x03, 0x04}},
+		ctx.BlockTime().Add(time.Hour).Unix(),
 	)
 
 	_, err := server.Transfer(sdk.WrapSDKContext(ctx), msg)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "transfer root was not found in the historical merkle roots")
+}
+
+func TestMsgServerTransferTreatsExpiryBoundaryAsExpired(t *testing.T) {
+	k, ctx, _ := setupMsgServerKeeper()
+	server := NewMsgServerImpl(*k)
+	msg := privacytypes.NewMsgTransfer(
+		testAddress(0x78),
+		[]byte{0x01},
+		fixedFieldBytes(30),
+		[][]byte{fixedFieldBytes(31), fixedFieldBytes(32)},
+		[][]byte{fixedFieldBytes(33), fixedFieldBytes(34)},
+		[][]byte{{0x01}, {0x02}},
+		[][]byte{{0x01, 0x02}, {0x03, 0x04}},
+		ctx.BlockTime().Unix(),
+	)
+
+	_, err := server.Transfer(sdk.WrapSDKContext(ctx), msg)
+	require.ErrorContains(t, err, "transfer payload has expired")
+	require.False(t, k.HasNullifier(ctx, fixedFieldBytes(31)))
+	require.Equal(t, uint64(0), k.GetLeafCount(ctx))
 }
 
 func TestMsgServerTransferRejectsInvalidNullifierCountBeforeZK(t *testing.T) {
@@ -581,6 +602,7 @@ func TestMsgServerTransferRejectsInvalidNullifierCountBeforeZK(t *testing.T) {
 		[][]byte{fixedFieldBytes(42), fixedFieldBytes(43)},
 		[][]byte{{0x01}, {0x02}},
 		[][]byte{{0x01, 0x02}, {0x03, 0x04}},
+		ctx.BlockTime().Add(time.Hour).Unix(),
 	)
 
 	_, err := server.Transfer(sdk.WrapSDKContext(ctx), msg)
@@ -614,6 +636,7 @@ func TestMsgServerTransferRejectsLocalDuplicatesBeforeProof(t *testing.T) {
 			k.SetHistoricalRoot(ctx, root)
 
 			err := msgServer{Keeper: *k}.executeShieldedTransfer(ctx, shieldedTransferRequest{
+				expiresAtUnix:  4_102_444_800,
 				root:           root,
 				proof:          []byte{0x01},
 				nullifiers:     tc.nullifiers,
@@ -641,6 +664,7 @@ func TestMsgServerTransferRejectsGlobalCommitmentCollisionBeforeProof(t *testing
 	rootBefore := append([]byte(nil), root...)
 
 	err := msgServer{Keeper: *k}.executeShieldedTransfer(ctx, shieldedTransferRequest{
+		expiresAtUnix:               4_102_444_800,
 		root:                        root,
 		proof:                       []byte{0x01},
 		nullifiers:                  [][]byte{fixedFieldBytes(58), fixedFieldBytes(59)},
@@ -666,6 +690,7 @@ func TestMsgServerTransferRejectsInsufficientBatchCapacityBeforeProof(t *testing
 	k.SetAuditMasterPubkey(ctx, auditPubKey)
 
 	err := msgServer{Keeper: *k}.executeShieldedTransfer(ctx, shieldedTransferRequest{
+		expiresAtUnix:               4_102_444_800,
 		relayer:                     testAddress(0x89),
 		proof:                       []byte{0x01},
 		root:                        root,
@@ -692,6 +717,7 @@ func TestMsgServerTransferRejectsOverflowAsTreeStateError(t *testing.T) {
 	k.SetAuditMasterPubkey(ctx, auditPubKey)
 
 	err := msgServer{Keeper: *k}.executeShieldedTransfer(ctx, shieldedTransferRequest{
+		expiresAtUnix:               4_102_444_800,
 		relayer:                     testAddress(0x8a),
 		proof:                       []byte{0x01},
 		root:                        root,

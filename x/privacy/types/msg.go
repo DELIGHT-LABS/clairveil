@@ -313,6 +313,7 @@ func NewMsgTransfer(
 	newCommitments [][]byte,
 	cipherTexts [][]byte,
 	viewTags [][]byte,
+	expiresAtUnix int64,
 ) *MsgTransfer {
 	return &MsgTransfer{
 		Creator:        creator,
@@ -322,6 +323,7 @@ func NewMsgTransfer(
 		NewCommitments: newCommitments,
 		CipherTexts:    cipherTexts,
 		ViewTags:       viewTags,
+		ExpiresAtUnix:  expiresAtUnix,
 	}
 }
 
@@ -343,6 +345,7 @@ func NewMsgTransferWithDisclosure(
 	auditDisclosurePayload []byte,
 	selfViewDisclosureDigest []byte,
 	selfViewDisclosurePayload []byte,
+	expiresAtUnix int64,
 ) *MsgTransfer {
 	return &MsgTransfer{
 		Creator:                     creator,
@@ -362,6 +365,7 @@ func NewMsgTransferWithDisclosure(
 		AuditDisclosurePayload:      auditDisclosurePayload,
 		SelfViewDisclosureDigest:    selfViewDisclosureDigest,
 		SelfViewDisclosurePayload:   selfViewDisclosurePayload,
+		ExpiresAtUnix:               expiresAtUnix,
 	}
 }
 
@@ -398,6 +402,9 @@ func (msg *MsgTransfer) ValidateBasic() error {
 		msg.SelfViewDisclosurePayload,
 	); err != nil {
 		return err
+	}
+	if msg.ExpiresAtUnix <= 0 {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "expires_at_unix must be positive for transfer")
 	}
 
 	return nil

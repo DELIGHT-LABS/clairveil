@@ -1,12 +1,15 @@
 package transfer
 
 import (
+	"bytes"
 	"context"
 	"math/big"
 	"testing"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DELIGHT-LABS/clairveil/x/privacy/circuit"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -47,7 +50,7 @@ func TestValidatePreparedTransferPayloadMetadataRejectsHashMismatch(t *testing.T
 	payload, err := BuildPreparedTransferPayload(context.Background(), merkleProvider, signer, input)
 	require.NoError(t, err)
 
-	payload.Creator = "clair1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq08l9p7"
+	payload.Creator = sdk.AccAddress(bytes.Repeat([]byte{0x2}, 20)).String()
 	err = ValidatePreparedTransferPayloadMetadata(*payload)
 	require.ErrorContains(t, err, "hash mismatch")
 }
@@ -132,6 +135,72 @@ func TestProvePreparedTransferPayloadRejectsMismatchedCommitment(t *testing.T) {
 
 	_, err = ProvePreparedTransferPayload(*payload, artifacts, runner)
 	require.ErrorContains(t, err, "output commitment 0 does not match payload witness")
+}
+
+func TestPreparedTransferOwnerIntentBindsFinalPayloadAndExcludesCreator(t *testing.T) {
+	input, merkleProvider, signer, _, _ := testBuildTransferMessageDeps(t)
+	payload, err := BuildPreparedTransferPayload(context.Background(), merkleProvider, signer, input)
+	require.NoError(t, err)
+	require.Len(t, signer.hashes, 1)
+
+	assignment, err := buildJoinSplitAssignmentFromPreparedTransferPayload(*payload)
+	require.NoError(t, err)
+	originalIntent, err := transferIntentFromAssignment(assignment)
+	require.NoError(t, err)
+	require.Equal(t, 0, signer.hashes[0].Cmp(originalIntent))
+
+	originalMessage, err := payload.transferEffectMessage(nil)
+	require.NoError(t, err)
+	originalDigest, err := privacytypes.ComputeTransferPayloadDigestV1(originalMessage)
+	require.NoError(t, err)
+
+	payload.Creator = sdk.AccAddress(bytes.Repeat([]byte{0x3}, 20)).String()
+	payload.PayloadHash = ComputePreparedTransferPayloadHash(*payload)
+	relayerMessage, err := payload.transferEffectMessage(nil)
+	require.NoError(t, err)
+	relayerDigest, err := privacytypes.ComputeTransferPayloadDigestV1(relayerMessage)
+	require.NoError(t, err)
+	require.Equal(t, originalDigest, relayerDigest)
+
+	last := len(payload.CipherTextHexes[0]) - 1
+	replacement := "0"
+	if payload.CipherTextHexes[0][last] == '0' {
+		replacement = "1"
+	}
+	payload.CipherTextHexes[0] = payload.CipherTextHexes[0][:last] + replacement
+	payload.PayloadHash = ComputePreparedTransferPayloadHash(*payload)
+	mutatedAssignment, err := buildJoinSplitAssignmentFromPreparedTransferPayload(*payload)
+	require.NoError(t, err)
+	mutatedIntent, err := transferIntentFromAssignment(mutatedAssignment)
+	require.NoError(t, err)
+	require.NotEqual(t, 0, signer.hashes[0].Cmp(mutatedIntent))
+}
+
+func TestPreparedTransferRejectsMalformedOwnerSignature(t *testing.T) {
+	input, merkleProvider, signer, _, _ := testBuildTransferMessageDeps(t)
+	payload, err := BuildPreparedTransferPayload(context.Background(), merkleProvider, signer, input)
+	require.NoError(t, err)
+
+	payload.OwnerSignatureHex = payload.OwnerSignatureHex[:len(payload.OwnerSignatureHex)-2]
+	payload.PayloadHash = ComputePreparedTransferPayloadHash(*payload)
+	err = ValidatePreparedTransferPayloadMetadata(*payload)
+	require.ErrorContains(t, err, "owner intent signature")
+}
+
+func transferIntentFromAssignment(assignment *circuit.JoinSplitCircuit) (*big.Int, error) {
+	return privacytypes.ComputeTransferIntentV2(privacytypes.TransferIntentV2Input{
+		ChainDomainHi:        assignment.ChainDomainHi.(*big.Int),
+		ChainDomainLo:        assignment.ChainDomainLo.(*big.Int),
+		MerkleRoot:           assignment.MerkleRoot.(*big.Int),
+		AssetID:              assignment.AssetID.(*big.Int),
+		Nullifiers:           [2]*big.Int{assignment.Nullifiers[0].(*big.Int), assignment.Nullifiers[1].(*big.Int)},
+		Commitments:          [2]*big.Int{assignment.Commitments[0].(*big.Int), assignment.Commitments[1].(*big.Int)},
+		UserDisclosureDigest: assignment.UserDisclosureDigest.(*big.Int),
+		FullDisclosureDigest: assignment.FullDisclosureDigest.(*big.Int),
+		PayloadDigestHi:      assignment.PayloadDigestHi.(*big.Int),
+		PayloadDigestLo:      assignment.PayloadDigestLo.(*big.Int),
+		ExpiresAtUnix:        assignment.ExpiresAtUnix.(*big.Int).Int64(),
+	})
 }
 
 func TestParseDecimalFieldRequiresCanonicalShieldedAmount(t *testing.T) {

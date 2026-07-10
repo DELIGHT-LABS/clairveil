@@ -19,6 +19,8 @@ func TestBroadcastTransferStepBuildsAndBroadcasts(t *testing.T) {
 
 	res, err := BroadcastTransferStep(context.Background(), merkleProvider, signer, artifacts, runner, broadcaster, BuildTransferStepMessageInput{
 		Creator:              input.Creator,
+		ChainID:              input.ChainID,
+		ExpiresAtUnix:        input.ExpiresAtUnix,
 		Inputs:               input.Inputs,
 		RecipientSpendPubKey: input.RecipientSpendPubKey,
 		RecipientViewPubKey:  input.RecipientViewPubKey,
@@ -43,6 +45,8 @@ func TestBroadcastTransferStepPropagatesBroadcasterError(t *testing.T) {
 
 	_, err := BroadcastTransferStep(context.Background(), merkleProvider, signer, artifacts, runner, broadcaster, BuildTransferStepMessageInput{
 		Creator:              input.Creator,
+		ChainID:              input.ChainID,
+		ExpiresAtUnix:        input.ExpiresAtUnix,
 		Inputs:               input.Inputs,
 		RecipientSpendPubKey: input.RecipientSpendPubKey,
 		RecipientViewPubKey:  input.RecipientViewPubKey,
@@ -64,6 +68,8 @@ func TestBroadcastTransferStepReturnsFailedTxResponse(t *testing.T) {
 
 	res, err := BroadcastTransferStep(context.Background(), merkleProvider, signer, artifacts, runner, broadcaster, BuildTransferStepMessageInput{
 		Creator:              input.Creator,
+		ChainID:              input.ChainID,
+		ExpiresAtUnix:        input.ExpiresAtUnix,
 		Inputs:               input.Inputs,
 		RecipientSpendPubKey: input.RecipientSpendPubKey,
 		RecipientViewPubKey:  input.RecipientViewPubKey,

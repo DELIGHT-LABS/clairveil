@@ -91,6 +91,8 @@ func generatedTransferRequest() (requestPayload, error) {
 		generatedTransferSigner{scalar: senderSpendScalar, pubKey: &senderSpendPub},
 		privacytransfer.BuildTransferMessageInput{
 			Creator:                        generatedCreatorAddress(),
+			ChainID:                        "clairveil-load-1",
+			ExpiresAtUnix:                  4_102_444_800,
 			Inputs:                         inputs,
 			RecipientSpendPubKey:           &recipientSpendPub,
 			RecipientViewPubKey:            &recipientViewPub,
@@ -259,7 +261,7 @@ type generatedTransferSigner struct {
 	pubKey *crypto_tedwards.PointAffine
 }
 
-func (s generatedTransferSigner) SignNoteHash(msgHash *big.Int) ([]byte, error) {
+func (s generatedTransferSigner) SignOwnerIntent(msgHash *big.Int) ([]byte, error) {
 	return signGeneratedNoteHash(msgHash, s.scalar, s.pubKey)
 }
 

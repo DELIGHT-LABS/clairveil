@@ -55,7 +55,7 @@ func validDisclosurePubKeyBytes(t *testing.T) []byte {
 func TestValidateBasicInvalidCreator(t *testing.T) {
 	deposit := NewMsgDeposit("invalid", "1uclair", []byte{1}, []byte{2}, []byte{3})
 	withdraw := NewMsgWithdraw("invalid", []byte{1}, []byte{2}, []byte{3}, "1uclair", "clair1test", testChainID, testExpiresAtUnix)
-	transfer := NewMsgTransfer("invalid", []byte{1}, []byte{2}, [][]byte{{1}, {2}}, [][]byte{{3}, {4}}, [][]byte{{5}, {6}}, validViewTags())
+	transfer := NewMsgTransfer("invalid", []byte{1}, []byte{2}, [][]byte{{1}, {2}}, [][]byte{{3}, {4}}, [][]byte{{5}, {6}}, validViewTags(), testExpiresAtUnix)
 
 	require.Error(t, deposit.ValidateBasic())
 	require.Error(t, withdraw.ValidateBasic())
@@ -144,6 +144,7 @@ func TestMsgTransferValidateBasicLengthChecks(t *testing.T) {
 		[]byte("audit"),
 		validFieldBytes(),
 		[]byte("self-view"),
+		testExpiresAtUnix,
 	)
 	require.NoError(t, valid.ValidateBasic())
 
@@ -165,6 +166,7 @@ func TestMsgTransferValidateBasicLengthChecks(t *testing.T) {
 		[]byte("audit"),
 		nil,
 		nil,
+		testExpiresAtUnix,
 	)
 	err := invalidNullifier.ValidateBasic()
 	require.ErrorContains(t, err, "transfer requires exactly 2 nullifiers")
@@ -196,6 +198,7 @@ func TestMsgTransferValidateBasicRejectsDuplicateNullifiersAndCommitments(t *tes
 			[]byte("audit"),
 			fieldTwo,
 			[]byte("self-view"),
+			testExpiresAtUnix,
 		)
 	}
 
@@ -232,6 +235,7 @@ func TestMsgTransferValidateBasicUserDisclosureModes(t *testing.T) {
 			[]byte("audit"),
 			validFieldBytes(),
 			[]byte("self-view"),
+			testExpiresAtUnix,
 		)
 	}
 

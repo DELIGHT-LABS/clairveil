@@ -20,23 +20,23 @@ import (
 )
 
 const (
-	PreparedTransferPayloadVersion = "v4"
-	PreparedTransferProofVersion   = "v1"
+	PreparedTransferPayloadVersion = "v5"
+	PreparedTransferProofVersion   = "v2"
 
 	legacyPreparedTransferPayloadVersionV1 = "v1"
 	legacyPreparedTransferPayloadVersionV2 = "v2"
 	legacyPreparedTransferPayloadVersionV3 = "v3"
+	legacyPreparedTransferPayloadVersionV4 = "v4"
 )
 
 type PreparedTransferInput struct {
-	Amount               string   `json:"amount"`
-	RandomnessHex        string   `json:"randomness_hex"`
-	SpendPubKeyHex       string   `json:"spend_pubkey_hex"`
-	ViewPubKeyHex        string   `json:"view_pubkey_hex"`
-	MerklePath           []string `json:"merkle_path"`
-	MerklePathHelper     []uint32 `json:"merkle_path_helper"`
-	NoteHashSignatureHex string   `json:"note_hash_signature_hex"`
-	NullifierHex         string   `json:"nullifier_hex"`
+	Amount           string   `json:"amount"`
+	RandomnessHex    string   `json:"randomness_hex"`
+	SpendPubKeyHex   string   `json:"spend_pubkey_hex"`
+	ViewPubKeyHex    string   `json:"view_pubkey_hex"`
+	MerklePath       []string `json:"merkle_path"`
+	MerklePathHelper []uint32 `json:"merkle_path_helper"`
+	NullifierHex     string   `json:"nullifier_hex"`
 }
 
 type PreparedTransferOutput struct {
@@ -50,6 +50,8 @@ type PreparedTransferOutput struct {
 type PreparedTransferPayload struct {
 	Version                        string                   `json:"version"`
 	Creator                        string                   `json:"creator"`
+	ChainID                        string                   `json:"chain_id"`
+	ExpiresAtUnix                  int64                    `json:"expires_at_unix"`
 	RootHex                        string                   `json:"root_hex"`
 	AssetIDHex                     string                   `json:"asset_id_hex"`
 	Inputs                         []PreparedTransferInput  `json:"inputs"`
@@ -68,6 +70,7 @@ type PreparedTransferPayload struct {
 	SelfViewDisclosurePayloadHex   string                   `json:"self_view_disclosure_payload_hex,omitempty"`
 	UserDisclosureBlindingHex      string                   `json:"user_disclosure_blinding_hex,omitempty"`
 	FullDisclosureBlindingHex      string                   `json:"full_disclosure_blinding_hex"`
+	OwnerSignatureHex              string                   `json:"owner_signature_hex"`
 	PayloadHash                    string                   `json:"payload_hash"`
 }
 
@@ -80,13 +83,21 @@ type PreparedTransferProof struct {
 func BuildPreparedTransferPayload(
 	ctx context.Context,
 	merklePaths MerklePathProvider,
-	signer NoteHashSigner,
+	signer OwnerIntentSigner,
 	input BuildTransferMessageInput,
 ) (*PreparedTransferPayload, error) {
+	if signer == nil {
+		return nil, fmt.Errorf("an owner intent signer is required to prepare a transfer")
+	}
+	if input.ChainID == "" {
+		return nil, fmt.Errorf("chain id is required to prepare a transfer")
+	}
+	if input.ExpiresAtUnix <= 0 {
+		return nil, fmt.Errorf("expires_at_unix must be positive to prepare a transfer")
+	}
 	prepared, err := PrepareJoinSplitTransfer(
 		ctx,
 		merklePaths,
-		signer,
 		PrepareJoinSplitInput{
 			Inputs:               input.Inputs,
 			RecipientSpendPubKey: input.RecipientSpendPubKey,
@@ -169,6 +180,8 @@ func BuildPreparedTransferPayload(
 	payload := &PreparedTransferPayload{
 		Version:                        PreparedTransferPayloadVersion,
 		Creator:                        input.Creator,
+		ChainID:                        input.ChainID,
+		ExpiresAtUnix:                  input.ExpiresAtUnix,
 		RootHex:                        rootHex,
 		AssetIDHex:                     assetIDHex,
 		Inputs:                         make([]PreparedTransferInput, 0, len(input.Inputs)),
@@ -209,14 +222,13 @@ func BuildPreparedTransferPayload(
 		}
 
 		payload.Inputs = append(payload.Inputs, PreparedTransferInput{
-			Amount:               foundNote.Note.Amount.String(),
-			RandomnessHex:        randomnessHex,
-			SpendPubKeyHex:       spendPubKeyHex,
-			ViewPubKeyHex:        viewPubKeyHex,
-			MerklePath:           append([]string(nil), prepared.InputMerklePaths[i]...),
-			MerklePathHelper:     append([]uint32(nil), prepared.InputPathHelpers[i]...),
-			NoteHashSignatureHex: hex.EncodeToString(prepared.InputSignatures[i]),
-			NullifierHex:         hex.EncodeToString(prepared.InputNullifiers[i]),
+			Amount:           foundNote.Note.Amount.String(),
+			RandomnessHex:    randomnessHex,
+			SpendPubKeyHex:   spendPubKeyHex,
+			ViewPubKeyHex:    viewPubKeyHex,
+			MerklePath:       append([]string(nil), prepared.InputMerklePaths[i]...),
+			MerklePathHelper: append([]uint32(nil), prepared.InputPathHelpers[i]...),
+			NullifierHex:     hex.EncodeToString(prepared.InputNullifiers[i]),
 		})
 	}
 
@@ -250,6 +262,59 @@ func BuildPreparedTransferPayload(
 		payload.ViewTagHexes = append(payload.ViewTagHexes, hex.EncodeToString(viewTag))
 	}
 
+	effectMessage := privacytypes.NewMsgTransferWithDisclosure(
+		input.Creator,
+		nil,
+		prepared.CommonRoot,
+		prepared.InputNullifiers,
+		prepared.OutputCommitments,
+		cipherTexts,
+		viewTags,
+		input.UserPrivacyPolicy,
+		digestBytes(userDisclosureData),
+		input.UserDisclosureMode,
+		encodedDisclosureTargetBytes(input.UserDisclosureTargetPubKey, input.UserDisclosureTargetPubKeyBz),
+		cipherTextBytes(userDisclosureData),
+		auditDisclosureData.Digest,
+		encodedDisclosureTargetBytes(input.AuditDisclosureTargetPubKey, input.AuditDisclosureTargetPubKeyBz),
+		auditDisclosureData.CipherText,
+		digestBytes(selfViewDisclosureData),
+		cipherTextBytes(selfViewDisclosureData),
+		input.ExpiresAtUnix,
+	)
+	payloadDigest, err := privacytypes.ComputeTransferPayloadDigestV1(effectMessage)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute canonical transfer payload digest: %w", err)
+	}
+	chainDomain, err := privacytypes.ComputeChainDomainV1(input.ChainID, privacytypes.ActiveCircuitSetID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute transfer chain domain: %w", err)
+	}
+	ownerIntent, err := privacytypes.ComputeTransferIntentV2(privacytypes.TransferIntentV2Input{
+		ChainDomainHi:        chainDomain.Hi,
+		ChainDomainLo:        chainDomain.Lo,
+		MerkleRoot:           new(big.Int).SetBytes(prepared.CommonRoot),
+		AssetID:              prepared.FromNote.AssetID,
+		Nullifiers:           [2]*big.Int{new(big.Int).SetBytes(prepared.InputNullifiers[0]), new(big.Int).SetBytes(prepared.InputNullifiers[1])},
+		Commitments:          [2]*big.Int{new(big.Int).SetBytes(prepared.OutputCommitments[0]), new(big.Int).SetBytes(prepared.OutputCommitments[1])},
+		UserDisclosureDigest: new(big.Int).SetBytes(digestBytes(userDisclosureData)),
+		FullDisclosureDigest: new(big.Int).SetBytes(auditDisclosureData.Digest),
+		PayloadDigestHi:      payloadDigest.Hi,
+		PayloadDigestLo:      payloadDigest.Lo,
+		ExpiresAtUnix:        input.ExpiresAtUnix,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute transfer owner intent: %w", err)
+	}
+	ownerSignature, err := signer.SignOwnerIntent(ownerIntent)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign transfer owner intent: %w", err)
+	}
+	if _, err := privacycrypto.DecodeCanonicalEdDSASignature(ownerSignature); err != nil {
+		return nil, fmt.Errorf("invalid owner intent signature: %w", err)
+	}
+	payload.OwnerSignatureHex = hex.EncodeToString(ownerSignature)
+
 	payload.PayloadHash = ComputePreparedTransferPayloadHash(*payload)
 	return payload, nil
 }
@@ -276,6 +341,8 @@ func ComputePreparedTransferPayloadHash(payload PreparedTransferPayload) string 
 
 	write(payload.Version)
 	write(payload.Creator)
+	write(payload.ChainID)
+	write(strconv.FormatInt(payload.ExpiresAtUnix, 10))
 	write(payload.RootHex)
 	write(payload.AssetIDHex)
 	write(strconv.FormatUint(uint64(payload.UserPrivacyPolicy), 10))
@@ -286,14 +353,11 @@ func ComputePreparedTransferPayloadHash(payload PreparedTransferPayload) string 
 	write(payload.AuditDisclosureDigestHex)
 	write(payload.AuditDisclosureTargetPubKeyHex)
 	write(payload.AuditDisclosurePayloadHex)
-	if preparedTransferPayloadHashIncludesSelfView(payload.Version) {
-		write(payload.SelfViewDisclosureDigestHex)
-		write(payload.SelfViewDisclosurePayloadHex)
-	}
-	if preparedTransferPayloadHashIncludesDisclosureBlindings(payload.Version) {
-		write(payload.UserDisclosureBlindingHex)
-		write(payload.FullDisclosureBlindingHex)
-	}
+	write(payload.SelfViewDisclosureDigestHex)
+	write(payload.SelfViewDisclosurePayloadHex)
+	write(payload.UserDisclosureBlindingHex)
+	write(payload.FullDisclosureBlindingHex)
+	write(payload.OwnerSignatureHex)
 	write(strconv.Itoa(len(payload.Inputs)))
 	for _, input := range payload.Inputs {
 		write(input.Amount)
@@ -302,7 +366,6 @@ func ComputePreparedTransferPayloadHash(payload PreparedTransferPayload) string 
 		write(input.ViewPubKeyHex)
 		writeSlice(input.MerklePath)
 		writeUint32Slice(input.MerklePathHelper)
-		write(input.NoteHashSignatureHex)
 		write(input.NullifierHex)
 	}
 	write(strconv.Itoa(len(payload.Outputs)))
@@ -314,9 +377,7 @@ func ComputePreparedTransferPayloadHash(payload PreparedTransferPayload) string 
 		write(output.CommitmentHex)
 	}
 	writeSlice(payload.CipherTextHexes)
-	if preparedTransferPayloadHashIncludesViewTags(payload.Version) {
-		writeSlice(payload.ViewTagHexes)
-	}
+	writeSlice(payload.ViewTagHexes)
 
 	sum := sha256.Sum256([]byte(b.String()))
 	return hex.EncodeToString(sum[:])
@@ -338,7 +399,7 @@ func ValidatePreparedTransferPayloadMetadata(payload PreparedTransferPayload) er
 	if len(payload.CipherTextHexes) != circuit.NumOutputs {
 		return fmt.Errorf("transfer payload requires exactly %d ciphertexts; got %d", circuit.NumOutputs, len(payload.CipherTextHexes))
 	}
-	if preparedTransferPayloadRequiresViewTags(payload.Version) && len(payload.ViewTagHexes) != circuit.NumOutputs {
+	if len(payload.ViewTagHexes) != circuit.NumOutputs {
 		return fmt.Errorf("transfer payload requires exactly %d view tags; got %d", circuit.NumOutputs, len(payload.ViewTagHexes))
 	}
 	for i, input := range payload.Inputs {
@@ -409,10 +470,17 @@ func ValidatePreparedTransferPayloadMetadata(payload PreparedTransferPayload) er
 	if _, err := decodeNonZeroCanonicalBlindingHex(payload.FullDisclosureBlindingHex, "full disclosure blinding"); err != nil {
 		return err
 	}
+	ownerSignature, err := decodeSignatureHex(payload.OwnerSignatureHex)
+	if err != nil {
+		return fmt.Errorf("invalid owner intent signature: %w", err)
+	}
+	if _, err := privacycrypto.DecodeCanonicalEdDSASignature(ownerSignature); err != nil {
+		return fmt.Errorf("invalid owner intent signature: %w", err)
+	}
 
-	if err := privacytypes.NewMsgTransferWithDisclosure(
+	effectMessage := privacytypes.NewMsgTransferWithDisclosure(
 		payload.Creator,
-		make([]byte, 32),
+		nil,
 		rootBytes,
 		nullifiers,
 		commitments,
@@ -428,7 +496,15 @@ func ValidatePreparedTransferPayloadMetadata(payload PreparedTransferPayload) er
 		auditPayload,
 		selfViewDigest,
 		selfViewPayload,
-	).ValidateBasic(); err != nil {
+		payload.ExpiresAtUnix,
+	)
+	if err := effectMessage.ValidateBasic(); err != nil {
+		return err
+	}
+	if _, err := privacytypes.ComputeChainDomainV1(payload.ChainID, privacytypes.ActiveCircuitSetID); err != nil {
+		return err
+	}
+	if _, err := privacytypes.ComputeTransferPayloadDigestV1(effectMessage); err != nil {
 		return err
 	}
 	return nil
@@ -438,6 +514,8 @@ func validatePreparedTransferPayloadVersion(payload PreparedTransferPayload) err
 	switch payload.Version {
 	case PreparedTransferPayloadVersion:
 		return nil
+	case legacyPreparedTransferPayloadVersionV4:
+		return fmt.Errorf("legacy transfer payload version %q does not bind the final owner intent; regenerate it with transfer payload version %q", payload.Version, PreparedTransferPayloadVersion)
 	case legacyPreparedTransferPayloadVersionV3:
 		return fmt.Errorf("legacy transfer payload version %q does not include required disclosure blinding; regenerate it with transfer payload version %q", payload.Version, PreparedTransferPayloadVersion)
 	case legacyPreparedTransferPayloadVersionV2:
@@ -445,24 +523,8 @@ func validatePreparedTransferPayloadVersion(payload PreparedTransferPayload) err
 	case legacyPreparedTransferPayloadVersionV1:
 		return fmt.Errorf("legacy transfer payload version %q does not include required self-view disclosure and view tags; regenerate it with transfer payload version %q", payload.Version, PreparedTransferPayloadVersion)
 	default:
-		return fmt.Errorf("unsupported transfer payload version %q (expected %q or legacy %q/%q/%q)", payload.Version, PreparedTransferPayloadVersion, legacyPreparedTransferPayloadVersionV3, legacyPreparedTransferPayloadVersionV2, legacyPreparedTransferPayloadVersionV1)
+		return fmt.Errorf("unsupported transfer payload version %q (expected %q)", payload.Version, PreparedTransferPayloadVersion)
 	}
-}
-
-func preparedTransferPayloadHashIncludesSelfView(version string) bool {
-	return version != legacyPreparedTransferPayloadVersionV1
-}
-
-func preparedTransferPayloadHashIncludesViewTags(version string) bool {
-	return version == PreparedTransferPayloadVersion || version == legacyPreparedTransferPayloadVersionV3
-}
-
-func preparedTransferPayloadRequiresViewTags(version string) bool {
-	return version == PreparedTransferPayloadVersion || version == legacyPreparedTransferPayloadVersionV3
-}
-
-func preparedTransferPayloadHashIncludesDisclosureBlindings(version string) bool {
-	return version == PreparedTransferPayloadVersion
 }
 
 func DecodePreparedTransferPayloadJSON(payloadBytes []byte) (*PreparedTransferPayload, error) {
@@ -635,11 +697,87 @@ func (p PreparedTransferPayload) ToMsg(proof PreparedTransferProof) (*privacytyp
 		auditPayload,
 		selfViewDigest,
 		selfViewPayload,
+		p.ExpiresAtUnix,
 	)
 	if err := msg.ValidateBasic(); err != nil {
 		return nil, err
 	}
 	return msg, nil
+}
+
+func (p PreparedTransferPayload) transferEffectMessage(proofBytes []byte) (*privacytypes.MsgTransfer, error) {
+	rootBytes, err := decodePayloadField(p.RootHex, "root")
+	if err != nil {
+		return nil, err
+	}
+	nullifiers, err := decodePayloadFieldList(p.inputNullifierHexes(), "nullifier")
+	if err != nil {
+		return nil, err
+	}
+	commitments, err := decodePayloadFieldList(p.outputCommitmentHexes(), "commitment")
+	if err != nil {
+		return nil, err
+	}
+	cipherTexts, err := decodeOpaqueHexList(p.CipherTextHexes, "cipher text")
+	if err != nil {
+		return nil, err
+	}
+	viewTags, err := decodeViewTagHexes(p.ViewTagHexes)
+	if err != nil {
+		return nil, err
+	}
+	userDigest, err := decodeOptionalPayloadField(p.UserDisclosureDigestHex, "user disclosure digest")
+	if err != nil {
+		return nil, err
+	}
+	userTarget, err := decodeOptionalOpaqueHex(p.UserDisclosureTargetPubKeyHex, "user disclosure target pubkey")
+	if err != nil {
+		return nil, err
+	}
+	userPayload, err := decodeOptionalOpaqueHex(p.UserDisclosurePayloadHex, "user disclosure payload")
+	if err != nil {
+		return nil, err
+	}
+	auditDigest, err := decodePayloadField(p.AuditDisclosureDigestHex, "audit disclosure digest")
+	if err != nil {
+		return nil, err
+	}
+	auditTarget, err := decodeOpaqueHex(p.AuditDisclosureTargetPubKeyHex, "audit disclosure target pubkey")
+	if err != nil {
+		return nil, err
+	}
+	auditPayload, err := decodeOpaqueHex(p.AuditDisclosurePayloadHex, "audit disclosure payload")
+	if err != nil {
+		return nil, err
+	}
+	selfViewDigest, err := decodeOptionalPayloadField(p.SelfViewDisclosureDigestHex, "self-view disclosure digest")
+	if err != nil {
+		return nil, err
+	}
+	selfViewPayload, err := decodeOptionalOpaqueHex(p.SelfViewDisclosurePayloadHex, "self-view disclosure payload")
+	if err != nil {
+		return nil, err
+	}
+	return privacytypes.NewMsgTransferWithDisclosure(
+		p.Creator,
+		proofBytes,
+		rootBytes,
+		nullifiers,
+		commitments,
+		cipherTexts,
+		viewTags,
+		p.UserPrivacyPolicy,
+		userDigest,
+		privacytypes.UserDisclosureMode(p.UserDisclosureMode),
+		userTarget,
+		userPayload,
+		auditDigest,
+		auditTarget,
+		auditPayload,
+		selfViewDigest,
+		selfViewPayload,
+		p.ExpiresAtUnix,
+	), nil
 }
 
 func ProvePreparedTransferPayload(
@@ -701,11 +839,35 @@ func buildJoinSplitAssignmentFromPreparedTransferPayload(payload PreparedTransfe
 	assignment := &circuit.JoinSplitCircuit{
 		MerkleRoot:             new(big.Int).SetBytes(rootBytes),
 		AssetID:                new(big.Int).SetBytes(assetIDBytes),
+		ExpiresAtUnix:          big.NewInt(payload.ExpiresAtUnix),
 		UserPrivacyPolicy:      big.NewInt(int64(payload.UserPrivacyPolicy)),
 		UserDisclosureDigest:   userDigest,
 		FullDisclosureDigest:   auditDigest,
 		UserDisclosureBlinding: userDisclosureBlinding,
 		FullDisclosureBlinding: fullDisclosureBlinding,
+	}
+	chainDomain, err := privacytypes.ComputeChainDomainV1(payload.ChainID, privacytypes.ActiveCircuitSetID)
+	if err != nil {
+		return nil, err
+	}
+	assignment.ChainDomainHi = chainDomain.Hi
+	assignment.ChainDomainLo = chainDomain.Lo
+	effectMessage, err := payload.transferEffectMessage(nil)
+	if err != nil {
+		return nil, err
+	}
+	payloadDigest, err := privacytypes.ComputeTransferPayloadDigestV1(effectMessage)
+	if err != nil {
+		return nil, err
+	}
+	assignment.PayloadDigestHi = payloadDigest.Hi
+	assignment.PayloadDigestLo = payloadDigest.Lo
+	ownerSignatureBytes, err := decodeSignatureHex(payload.OwnerSignatureHex)
+	if err != nil {
+		return nil, fmt.Errorf("invalid owner intent signature: %w", err)
+	}
+	if err := assignSignature(&assignment.OwnerSignature, ownerSignatureBytes); err != nil {
+		return nil, fmt.Errorf("invalid owner intent signature: %w", err)
 	}
 
 	for i, input := range payload.Inputs {
@@ -725,10 +887,6 @@ func buildJoinSplitAssignmentFromPreparedTransferPayload(payload PreparedTransfe
 		if err != nil {
 			return nil, err
 		}
-		signatureBytes, err := decodeSignatureHex(input.NoteHashSignatureHex)
-		if err != nil {
-			return nil, fmt.Errorf("invalid input note hash signature %d: %w", i, err)
-		}
 		nullifier, err := decodeCanonicalHexBigInt(input.NullifierHex, "input nullifier")
 		if err != nil {
 			return nil, err
@@ -737,7 +895,6 @@ func buildJoinSplitAssignmentFromPreparedTransferPayload(payload PreparedTransfe
 		assignment.InputAmounts[i] = amount
 		assignment.InputRandomness[i] = randomness
 		assignment.Nullifiers[i] = nullifier
-		assignSignature(&assignment.InputSignatures[i], signatureBytes)
 		assignPubKey(&assignment.InputSpendPubKeys[i], *spendPubKey)
 		assignPubKey(&assignment.InputViewPubKeys[i], *viewPubKey)
 
@@ -816,6 +973,20 @@ func notePubKeyHex(note privacytypes.Note, spend bool) (string, error) {
 
 	pointBytes := point.Bytes()
 	return hex.EncodeToString(pointBytes[:]), nil
+}
+
+func digestBytes(data *DisclosureData) []byte {
+	if data == nil {
+		return nil
+	}
+	return data.Digest
+}
+
+func cipherTextBytes(data *DisclosureData) []byte {
+	if data == nil {
+		return nil
+	}
+	return data.CipherText
 }
 
 func pointAffineCoordinate(point *crypto_tedwards.PointAffine, x bool) *big.Int {

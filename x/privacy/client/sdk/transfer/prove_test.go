@@ -102,7 +102,6 @@ func testJoinSplitAssignment(t *testing.T) *circuit.JoinSplitCircuit {
 	prepared, err := PrepareJoinSplitTransfer(
 		context.Background(),
 		merkleProvider,
-		&stubNoteHashSigner{signature: testSignatureBytes(t)},
 		PrepareJoinSplitInput{
 			Inputs:               inputs,
 			RecipientSpendPubKey: recipientSpendPubKey,
@@ -124,6 +123,12 @@ func testJoinSplitAssignment(t *testing.T) *circuit.JoinSplitCircuit {
 	prepared.Assignment.FullDisclosureDigest = big.NewInt(0)
 	prepared.Assignment.UserDisclosureBlinding = big.NewInt(0)
 	prepared.Assignment.FullDisclosureBlinding = big.NewInt(1)
+	prepared.Assignment.ChainDomainHi = big.NewInt(1)
+	prepared.Assignment.ChainDomainLo = big.NewInt(2)
+	prepared.Assignment.ExpiresAtUnix = big.NewInt(3)
+	prepared.Assignment.PayloadDigestHi = big.NewInt(4)
+	prepared.Assignment.PayloadDigestLo = big.NewInt(5)
+	require.NoError(t, assignSignature(&prepared.Assignment.OwnerSignature, testSignatureBytes(t)))
 
 	return &prepared.Assignment
 }

@@ -38,6 +38,8 @@ func TestExecuteTransferRunsFinalStepAndReturnsResponse(t *testing.T) {
 		},
 		ExecuteTransferInput{
 			Creator:              input.Creator,
+			ChainID:              input.ChainID,
+			ExpiresAtUnix:        input.ExpiresAtUnix,
 			RecipientSpendPubKey: input.RecipientSpendPubKey,
 			RecipientViewPubKey:  input.RecipientViewPubKey,
 			SenderSpendPubKey:    input.SenderSpendPubKey,
@@ -85,6 +87,8 @@ func TestExecuteTransferPropagatesBroadcastError(t *testing.T) {
 		},
 		ExecuteTransferInput{
 			Creator:              input.Creator,
+			ChainID:              input.ChainID,
+			ExpiresAtUnix:        input.ExpiresAtUnix,
 			RecipientSpendPubKey: input.RecipientSpendPubKey,
 			RecipientViewPubKey:  input.RecipientViewPubKey,
 			SenderSpendPubKey:    input.SenderSpendPubKey,

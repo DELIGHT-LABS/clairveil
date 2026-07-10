@@ -195,6 +195,8 @@ func testPreparedTransferPayload(
 		signer,
 		privacytransfer.BuildTransferMessageInput{
 			Creator:                        sdk.AccAddress(bytes.Repeat([]byte{0x1}, 20)).String(),
+			ChainID:                        "clairveil-test-1",
+			ExpiresAtUnix:                  2_000_000_000,
 			Inputs:                         inputs,
 			RecipientSpendPubKey:           recipientSpendPubKey,
 			RecipientViewPubKey:            recipientViewPubKey,
@@ -287,7 +289,7 @@ type transferNoteSigner struct {
 	signature []byte
 }
 
-func (s *transferNoteSigner) SignNoteHash(_ *big.Int) ([]byte, error) {
+func (s *transferNoteSigner) SignOwnerIntent(_ *big.Int) ([]byte, error) {
 	return append([]byte(nil), s.signature...), nil
 }
 

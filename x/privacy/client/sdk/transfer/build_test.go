@@ -40,7 +40,8 @@ func TestBuildTransferMessageAssemblesLatestTransfer(t *testing.T) {
 	require.NotEmpty(t, msg.SelfViewDisclosureDigest)
 	require.NotEmpty(t, msg.SelfViewDisclosurePayload)
 	require.Len(t, merkleProvider.requests, 2)
-	require.Len(t, signer.hashes, 2)
+	require.Len(t, signer.hashes, 1)
+	require.Equal(t, input.ExpiresAtUnix, msg.ExpiresAtUnix)
 	require.True(t, artifacts.r1csCalled)
 	require.True(t, artifacts.provingKeyCalled)
 	require.NotNil(t, runner.witness)
@@ -141,6 +142,8 @@ func testBuildTransferMessageDeps(
 
 	input := BuildTransferMessageInput{
 		Creator:                        sdk.AccAddress(bytes.Repeat([]byte{0x1}, 20)).String(),
+		ChainID:                        "clairveil-test-1",
+		ExpiresAtUnix:                  2_000_000_000,
 		Inputs:                         inputs,
 		RecipientSpendPubKey:           recipientSpendPubKey,
 		RecipientViewPubKey:            recipientViewPubKey,

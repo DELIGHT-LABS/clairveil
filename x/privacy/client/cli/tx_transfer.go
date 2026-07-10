@@ -30,6 +30,7 @@ const (
 	flagAutoDummy              = "auto-dummy"
 	flagTransferDisclosureMode = "disclosure-mode"
 	flagTransferNoSelfView     = "no-self-view"
+	flagTransferExpiresIn      = "expires-in"
 	maxTransferPlanSteps       = 12
 
 	transferDisclosureModeNone               = "none"
@@ -95,6 +96,10 @@ Use the single latest shielded transfer flow.
 			if err != nil {
 				return err
 			}
+			expiresAtUnix, err := resolveTransferExpiresAtUnix(cmd)
+			if err != nil {
+				return err
+			}
 
 			printTransferCommandSummary(
 				cmd,
@@ -104,6 +109,8 @@ Use the single latest shielded transfer flow.
 				userDisclosureModeLabel(config.userDisclosureMode),
 				!config.disableSelfViewDisclosure,
 				autoDummy,
+				clientCtx.ChainID,
+				expiresAtUnix,
 			)
 
 			latencyFlow := newPrivacyLatencyFlow(transferLatencyFlowProfile(config.userPrivacyPolicy))
@@ -120,6 +127,7 @@ Use the single latest shielded transfer flow.
 				targetAmount,
 				targetCoin.Denom,
 				autoDummy,
+				expiresAtUnix,
 				privacytransfer.StepDisclosureConfig{
 					UserPrivacyPolicy:             config.userPrivacyPolicy,
 					UserDisclosureMode:            config.userDisclosureMode,
@@ -147,6 +155,7 @@ Use the single latest shielded transfer flow.
 	cmd.Flags().String(flagTransferDisclosurePubKey, "", "Recipient disclosure public key hex for recipient-encrypted mode")
 	cmd.Flags().Bool(flagTransferNoSelfView, false, "Disable sender self-view disclosure for this transfer")
 	cmd.Flags().Bool(flagAutoDummy, true, "Automatically create a zero-value dummy note with a preparatory deposit when a single-note split requires it")
+	cmd.Flags().Int64(flagTransferExpiresIn, int64(defaultPreparedWithdrawExpiry/time.Second), "owner intent validity window in seconds")
 	cmd.Flags().Bool(flagRescanWallet, false, "reset the local privacy wallet cache and rescan from genesis before planner note selection")
 	flags.AddTxFlagsToCmd(cmd)
 	return cmd
@@ -233,6 +242,7 @@ func executeTransferFlow(
 	targetAmount *big.Int,
 	targetDenom string,
 	autoDummy bool,
+	expiresAtUnix int64,
 	disclosure privacytransfer.StepDisclosureConfig,
 	latencyFlow *privacyLatencyFlow,
 ) (*sdk.TxResponse, error) {
@@ -250,6 +260,7 @@ func executeTransferFlow(
 		targetAmount,
 		targetDenom,
 		autoDummy,
+		expiresAtUnix,
 		disclosure,
 		latencyFlow,
 	)
@@ -264,6 +275,7 @@ func executeTransferFlowWithIdentity(
 	targetAmount *big.Int,
 	targetDenom string,
 	autoDummy bool,
+	expiresAtUnix int64,
 	disclosure privacytransfer.StepDisclosureConfig,
 	latencyFlow *privacyLatencyFlow,
 ) (*sdk.TxResponse, error) {
@@ -295,7 +307,7 @@ func executeTransferFlowWithIdentity(
 		transferRecursiveObserver{cmd: cmd},
 		privacytransfer.ExecuteTransferDependencies{
 			MerklePaths: privacyprovider.NewTransferQueryProvider(types.NewQueryClient(clientCtx)),
-			Signer:      manualJoinSplitNoteHashSigner{scalar: identity.scalar, pubKey: identity.spendPubKey},
+			Signer:      manualTransferOwnerIntentSigner{scalar: identity.scalar, pubKey: identity.spendPubKey},
 			Artifacts:   transferJoinSplitArtifactProvider{},
 			Runner:      transferJoinSplitProofRunner{logWriter: privacyCommandLogWriter(cmd), latencyFlow: latencyFlow},
 			Broadcaster: transferMessageBroadcaster{
@@ -309,6 +321,8 @@ func executeTransferFlowWithIdentity(
 		},
 		privacytransfer.ExecuteTransferInput{
 			Creator:              clientCtx.GetFromAddress().String(),
+			ChainID:              clientCtx.ChainID,
+			ExpiresAtUnix:        expiresAtUnix,
 			RecipientSpendPubKey: finalRecipientSpend,
 			RecipientViewPubKey:  finalRecipientView,
 			SenderSpendPubKey:    identity.spendPubKey,
@@ -321,6 +335,17 @@ func executeTransferFlowWithIdentity(
 			AutoDummy:            autoDummy,
 		},
 	)
+}
+
+func resolveTransferExpiresAtUnix(cmd *cobra.Command) (int64, error) {
+	expiresInSeconds, err := cmd.Flags().GetInt64(flagTransferExpiresIn)
+	if err != nil {
+		return 0, err
+	}
+	if expiresInSeconds <= 0 {
+		return 0, fmt.Errorf("expires-in must be positive")
+	}
+	return time.Now().Add(time.Duration(expiresInSeconds) * time.Second).Unix(), nil
 }
 
 type transferRecursiveNoteSource struct {
@@ -388,12 +413,12 @@ func resolveTransferRecipient(targetAddrStr string) (*crypto_tedwards.PointAffin
 	return privacytransfer.ResolveRecipient(targetAddrStr)
 }
 
-type manualJoinSplitNoteHashSigner struct {
+type manualTransferOwnerIntentSigner struct {
 	scalar *big.Int
 	pubKey *crypto_tedwards.PointAffine
 }
 
-func (s manualJoinSplitNoteHashSigner) SignNoteHash(msgHash *big.Int) ([]byte, error) {
+func (s manualTransferOwnerIntentSigner) SignOwnerIntent(msgHash *big.Int) ([]byte, error) {
 	return manualSign(msgHash, s.scalar, s.pubKey)
 }
 

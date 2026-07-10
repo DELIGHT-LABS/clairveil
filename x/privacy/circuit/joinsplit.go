@@ -19,11 +19,16 @@ const (
 
 type JoinSplitCircuit struct {
 	MerkleRoot           frontend.Variable             `gnark:",public"`
+	ChainDomainHi        frontend.Variable             `gnark:",public"`
+	ChainDomainLo        frontend.Variable             `gnark:",public"`
+	ExpiresAtUnix        frontend.Variable             `gnark:",public"`
 	Nullifiers           [NumInputs]frontend.Variable  `gnark:",public"`
 	Commitments          [NumOutputs]frontend.Variable `gnark:",public"`
 	UserPrivacyPolicy    frontend.Variable             `gnark:",public"`
 	UserDisclosureDigest frontend.Variable             `gnark:",public"`
 	FullDisclosureDigest frontend.Variable             `gnark:",public"`
+	PayloadDigestHi      frontend.Variable             `gnark:",public"`
+	PayloadDigestLo      frontend.Variable             `gnark:",public"`
 
 	AssetID frontend.Variable `gnark:",secret"`
 
@@ -33,7 +38,7 @@ type JoinSplitCircuit struct {
 	InputPaths       [NumInputs][MerkleDepth]frontend.Variable `gnark:",secret"`
 	InputPathHelpers [NumInputs][MerkleDepth]frontend.Variable `gnark:",secret"`
 
-	InputSignatures    [NumInputs]eddsa.Signature    `gnark:",secret"`
+	OwnerSignature     eddsa.Signature               `gnark:",secret"`
 	InputSpendPubKeys  [NumInputs]eddsa.PublicKey    `gnark:",secret"`
 	InputViewPubKeys   [NumInputs]eddsa.PublicKey    `gnark:",secret"`
 	OutputAmounts      [NumOutputs]frontend.Variable `gnark:",secret"`
@@ -48,17 +53,23 @@ type JoinSplitCircuit struct {
 func (c *JoinSplitCircuit) Define(api frontend.API) error {
 	h, _ := mimc.NewMiMC(api)
 	curve, _ := twistededwards.NewEdCurve(api, ecc_twistededwards.BN254)
+	api.ToBinary(c.ChainDomainHi, 128)
+	api.ToBinary(c.ChainDomainLo, 128)
+	api.ToBinary(c.PayloadDigestHi, 128)
+	api.ToBinary(c.PayloadDigestLo, 128)
+	api.ToBinary(c.ExpiresAtUnix, 64)
+	api.AssertIsDifferent(c.ExpiresAtUnix, 0)
 	api.AssertIsDifferent(c.Nullifiers[0], c.Nullifiers[1])
 	api.AssertIsDifferent(c.Commitments[0], c.Commitments[1])
+	assertCanonicalEdDSASignature(api, curve, c.OwnerSignature)
 
 	var totalInputAmount frontend.Variable = 0
 	var totalOutputAmount frontend.Variable = 0
 
 	for i := 0; i < NumInputs; i++ {
 		assertAmountRange(api, c.InputAmounts[i])
-		curve.AssertIsOnCurve(c.InputSpendPubKeys[i].A)
-		curve.AssertIsOnCurve(c.InputViewPubKeys[i].A)
-		curve.AssertIsOnCurve(c.InputSignatures[i].R)
+		assertPrimeSubgroupPoint(api, curve, c.InputSpendPubKeys[i].A)
+		assertPrimeSubgroupPoint(api, curve, c.InputViewPubKeys[i].A)
 
 		h.Reset()
 		h.Write(
@@ -84,15 +95,6 @@ func (c *JoinSplitCircuit) Define(api frontend.API) error {
 		api.AssertIsEqual(currentHash, c.MerkleRoot)
 
 		h.Reset()
-		h.Write(c.InputAmounts[i], c.AssetID, c.InputRandomness[i])
-		msg := h.Sum()
-
-		h.Reset()
-		if err := eddsa.Verify(curve, c.InputSignatures[i], msg, c.InputSpendPubKeys[i], &h); err != nil {
-			return err
-		}
-
-		h.Reset()
 		h.Write(c.InputRandomness[i], c.InputSpendPubKeys[i].A.X, c.InputSpendPubKeys[i].A.Y)
 		api.AssertIsEqual(h.Sum(), c.Nullifiers[i])
 
@@ -106,10 +108,50 @@ func (c *JoinSplitCircuit) Define(api frontend.API) error {
 	api.AssertIsEqual(c.InputViewPubKeys[0].A.X, c.InputViewPubKeys[1].A.X)
 	api.AssertIsEqual(c.InputViewPubKeys[0].A.Y, c.InputViewPubKeys[1].A.Y)
 
+	h.Reset()
+	h.Write(
+		privacycrypto.HashString(privacytypes.NullifierSetV1FieldDomain),
+		NumInputs,
+		c.Nullifiers[0],
+		c.Nullifiers[1],
+	)
+	nullifierSetDigest := h.Sum()
+	h.Reset()
+	h.Write(
+		privacycrypto.HashString(privacytypes.CommitmentSetV1FieldDomain),
+		NumOutputs,
+		c.Commitments[0],
+		c.Commitments[1],
+	)
+	commitmentSetDigest := h.Sum()
+	h.Reset()
+	h.Write(
+		privacycrypto.HashString(privacytypes.TransferIntentV2FieldDomain),
+		c.ChainDomainHi,
+		c.ChainDomainLo,
+		privacycrypto.HashString(privacytypes.JoinSplit2x2V2CircuitKindFieldDomain),
+		c.MerkleRoot,
+		NumInputs,
+		NumOutputs,
+		c.AssetID,
+		nullifierSetDigest,
+		commitmentSetDigest,
+		c.UserDisclosureDigest,
+		c.FullDisclosureDigest,
+		c.PayloadDigestHi,
+		c.PayloadDigestLo,
+		c.ExpiresAtUnix,
+	)
+	transferIntent := h.Sum()
+	h.Reset()
+	if err := eddsa.Verify(curve, c.OwnerSignature, transferIntent, c.InputSpendPubKeys[0], &h); err != nil {
+		return err
+	}
+
 	for i := 0; i < NumOutputs; i++ {
 		assertAmountRange(api, c.OutputAmounts[i])
-		curve.AssertIsOnCurve(c.OutputSpendPubKeys[i].A)
-		curve.AssertIsOnCurve(c.OutputViewPubKeys[i].A)
+		assertPrimeSubgroupPoint(api, curve, c.OutputSpendPubKeys[i].A)
+		assertPrimeSubgroupPoint(api, curve, c.OutputViewPubKeys[i].A)
 
 		h.Reset()
 		h.Write(

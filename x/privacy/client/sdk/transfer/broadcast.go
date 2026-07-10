@@ -16,7 +16,7 @@ type TransferMessageBroadcaster interface {
 func BroadcastTransferStep(
 	ctx context.Context,
 	merklePaths MerklePathProvider,
-	signer NoteHashSigner,
+	signer OwnerIntentSigner,
 	artifacts JoinSplitArtifactProvider,
 	runner JoinSplitProofRunner,
 	broadcaster TransferMessageBroadcaster,

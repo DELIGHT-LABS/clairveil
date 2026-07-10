@@ -12,6 +12,8 @@ import (
 
 type BuildTransferMessageInput struct {
 	Creator                        string
+	ChainID                        string
+	ExpiresAtUnix                  int64
 	Inputs                         [2]privacyscan.FoundNote
 	RecipientSpendPubKey           *crypto_tedwards.PointAffine
 	RecipientViewPubKey            *crypto_tedwards.PointAffine
@@ -32,7 +34,7 @@ type BuildTransferMessageInput struct {
 func BuildTransferMessage(
 	ctx context.Context,
 	merklePaths MerklePathProvider,
-	signer NoteHashSigner,
+	signer OwnerIntentSigner,
 	artifacts JoinSplitArtifactProvider,
 	runner JoinSplitProofRunner,
 	input BuildTransferMessageInput,

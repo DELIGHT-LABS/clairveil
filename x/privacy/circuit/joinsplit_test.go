@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/frontend"
@@ -35,14 +36,28 @@ func TestJoinSplitCircuitValidProof(t *testing.T) {
 
 	publicWitness, err := frontend.NewWitness(assignment, ecc.BN254.ScalarField(), frontend.PublicOnly())
 	require.NoError(t, err)
+	require.Len(t, publicWitness.Vector().(fr.Vector), 13)
 	require.NoError(t, groth16.Verify(proof, vk, publicWitness))
 
-	tampered := *assignment
-	tampered.FullDisclosureDigest = new(big.Int).Add(tampered.FullDisclosureDigest.(*big.Int), big.NewInt(1))
-
-	tamperedPublicWitness, err := frontend.NewWitness(&tampered, ecc.BN254.ScalarField(), frontend.PublicOnly())
-	require.NoError(t, err)
-	require.Error(t, groth16.Verify(proof, vk, tamperedPublicWitness))
+	for _, tc := range []struct {
+		name   string
+		mutate func(*JoinSplitCircuit)
+	}{
+		{name: "chain domain", mutate: func(tampered *JoinSplitCircuit) { tampered.ChainDomainHi = big.NewInt(102) }},
+		{name: "expiry", mutate: func(tampered *JoinSplitCircuit) { tampered.ExpiresAtUnix = big.NewInt(2_000_000_001) }},
+		{name: "full disclosure", mutate: func(tampered *JoinSplitCircuit) {
+			tampered.FullDisclosureDigest = new(big.Int).Add(tampered.FullDisclosureDigest.(*big.Int), big.NewInt(1))
+		}},
+		{name: "payload digest", mutate: func(tampered *JoinSplitCircuit) { tampered.PayloadDigestLo = big.NewInt(110) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tampered := *assignment
+			tc.mutate(&tampered)
+			tamperedPublicWitness, err := frontend.NewWitness(&tampered, ecc.BN254.ScalarField(), frontend.PublicOnly())
+			require.NoError(t, err)
+			require.Error(t, groth16.Verify(proof, vk, tamperedPublicWitness))
+		})
+	}
 }
 
 func TestJoinSplitCircuitRejectsOutputAmountOutsideRange(t *testing.T) {
@@ -83,19 +98,19 @@ func TestJoinSplitCircuitRejectsMalformedInputSpendPubKey(t *testing.T) {
 	assert.ProverFailed(&JoinSplitCircuit{}, assignment, test.WithCurves(ecc.BN254))
 }
 
-func TestJoinSplitCircuitRejectsMalformedInputSignaturePoint(t *testing.T) {
+func TestJoinSplitCircuitRejectsMalformedOwnerSignaturePoint(t *testing.T) {
 	assignment := buildValidJoinSplitAssignment(t)
 	x, y := invalidEdwardsPointForTest(t)
-	assignment.InputSignatures[0].R.X = x
-	assignment.InputSignatures[0].R.Y = y
+	assignment.OwnerSignature.R.X = x
+	assignment.OwnerSignature.R.Y = y
 
 	assert := test.NewAssert(t)
 	assert.ProverFailed(&JoinSplitCircuit{}, assignment, test.WithCurves(ecc.BN254))
 }
 
-func TestJoinSplitCircuitRejectsInputSignatureScalarAboveOrder(t *testing.T) {
+func TestJoinSplitCircuitRejectsOwnerSignatureScalarAboveOrder(t *testing.T) {
 	assignment := buildValidJoinSplitAssignment(t)
-	assignment.InputSignatures[0].S = signatureScalarAboveOrderForTest()
+	assignment.OwnerSignature.S = signatureScalarAboveOrderForTest()
 
 	assert := test.NewAssert(t)
 	assert.ProverFailed(&JoinSplitCircuit{}, assignment, test.WithCurves(ecc.BN254))
@@ -201,9 +216,14 @@ func buildJoinSplitAssignmentWithAmounts(
 
 	assignment := &JoinSplitCircuit{
 		MerkleRoot:             root,
+		ChainDomainHi:          big.NewInt(101),
+		ChainDomainLo:          big.NewInt(103),
+		ExpiresAtUnix:          big.NewInt(2_000_000_000),
 		UserPrivacyPolicy:      big.NewInt(int64(privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom)),
 		UserDisclosureDigest:   new(big.Int).SetBytes(userDigest),
 		FullDisclosureDigest:   new(big.Int).SetBytes(auditDigest),
+		PayloadDigestHi:        big.NewInt(107),
+		PayloadDigestLo:        big.NewInt(109),
 		UserDisclosureBlinding: userDisclosureBlinding,
 		FullDisclosureBlinding: fullDisclosureBlinding,
 		AssetID:                assetID,
@@ -223,8 +243,6 @@ func buildJoinSplitAssignmentWithAmounts(
 		assignment.InputRandomness[i] = inputRandomness[i]
 		assignment.Nullifiers[i] = privacycrypto.MimcHash(inputRandomness[i], inputSpendPubX, inputSpendPubY)
 
-		msg := privacycrypto.MimcHash(inputAmounts[i], assetID, inputRandomness[i])
-		assignment.InputSignatures[i] = signSpendMessage(t, msg, inputSpendScalar, inputSpendPubKey)
 	}
 
 	assignJoinSplitPath(&assignment.InputPaths[0], &assignment.InputPathHelpers[0], inputCommitments[1], 0)
@@ -237,6 +255,22 @@ func buildJoinSplitAssignmentWithAmounts(
 	assignment.OutputAmounts[1] = outputAmounts[1]
 	assignment.OutputRandomness[1] = outputRandomness[1]
 	assignment.Commitments[1] = outputCommitment1
+
+	intent, err := privacytypes.ComputeTransferIntentV2(privacytypes.TransferIntentV2Input{
+		ChainDomainHi:        assignment.ChainDomainHi.(*big.Int),
+		ChainDomainLo:        assignment.ChainDomainLo.(*big.Int),
+		MerkleRoot:           root,
+		AssetID:              assetID,
+		Nullifiers:           [2]*big.Int{assignment.Nullifiers[0].(*big.Int), assignment.Nullifiers[1].(*big.Int)},
+		Commitments:          [2]*big.Int{outputCommitment0, outputCommitment1},
+		UserDisclosureDigest: assignment.UserDisclosureDigest.(*big.Int),
+		FullDisclosureDigest: assignment.FullDisclosureDigest.(*big.Int),
+		PayloadDigestHi:      assignment.PayloadDigestHi.(*big.Int),
+		PayloadDigestLo:      assignment.PayloadDigestLo.(*big.Int),
+		ExpiresAtUnix:        assignment.ExpiresAtUnix.(*big.Int).Int64(),
+	})
+	require.NoError(t, err)
+	assignment.OwnerSignature = signSpendMessage(t, intent, inputSpendScalar, inputSpendPubKey)
 
 	return assignment
 }

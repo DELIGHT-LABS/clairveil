@@ -64,13 +64,9 @@ func TestPrepareJoinSplitTransferBuildsAssignmentAndOutputs(t *testing.T) {
 		}
 	}
 
-	signature := testSignatureBytes(t)
-	signer := &stubNoteHashSigner{signature: signature}
-
 	prepared, err := PrepareJoinSplitTransfer(
 		context.Background(),
 		merkleProvider,
-		signer,
 		PrepareJoinSplitInput{
 			Inputs:               inputs,
 			RecipientSpendPubKey: recipientSpendPubKey,
@@ -82,7 +78,6 @@ func TestPrepareJoinSplitTransferBuildsAssignmentAndOutputs(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Len(t, merkleProvider.requests, 2)
-	require.Len(t, signer.hashes, 2)
 	require.Equal(t, rootBytes, prepared.CommonRoot)
 	require.Len(t, prepared.InputNullifiers, 2)
 	require.Len(t, prepared.OutputCommitments, 2)
@@ -159,7 +154,6 @@ func TestPrepareJoinSplitTransferRejectsMerkleRootMismatch(t *testing.T) {
 	_, err = PrepareJoinSplitTransfer(
 		context.Background(),
 		merkleProvider,
-		&stubNoteHashSigner{signature: testSignatureBytes(t)},
 		PrepareJoinSplitInput{
 			Inputs:               inputs,
 			RecipientSpendPubKey: recipientSpendPubKey,
@@ -183,7 +177,6 @@ func TestPrepareJoinSplitTransferRejectsOverTransfer(t *testing.T) {
 	_, err := PrepareJoinSplitTransfer(
 		context.Background(),
 		fixture.merkleProvider,
-		&stubNoteHashSigner{signature: testSignatureBytes(t)},
 		PrepareJoinSplitInput{
 			Inputs:               fixture.inputs,
 			RecipientSpendPubKey: fixture.recipientSpendPubKey,
@@ -203,7 +196,6 @@ func TestPrepareJoinSplitTransferRejectsDuplicateInputBeforePathLookup(t *testin
 	_, err := PrepareJoinSplitTransfer(
 		context.Background(),
 		fixture.merkleProvider,
-		&stubNoteHashSigner{signature: testSignatureBytes(t)},
 		PrepareJoinSplitInput{
 			Inputs:               fixture.inputs,
 			RecipientSpendPubKey: fixture.recipientSpendPubKey,
@@ -217,6 +209,26 @@ func TestPrepareJoinSplitTransferRejectsDuplicateInputBeforePathLookup(t *testin
 	require.Empty(t, fixture.merkleProvider.requests)
 }
 
+func TestPrepareJoinSplitTransferRejectsMixedOwnersBeforePathLookup(t *testing.T) {
+	fixture := newPrepareJoinSplitFixture(t, []uint32{0, 1})
+	fixture.inputs[1].Note.ReceiverSpendPubKeyX = new(big.Int).Add(fixture.inputs[1].Note.ReceiverSpendPubKeyX, big.NewInt(1))
+
+	_, err := PrepareJoinSplitTransfer(
+		context.Background(),
+		fixture.merkleProvider,
+		PrepareJoinSplitInput{
+			Inputs:               fixture.inputs,
+			RecipientSpendPubKey: fixture.recipientSpendPubKey,
+			RecipientViewPubKey:  fixture.recipientViewPubKey,
+			TransferAmount:       big.NewInt(7),
+			SenderSpendPubKey:    fixture.senderSpendPubKey,
+			SenderViewPubKey:     fixture.senderViewPubKey,
+		},
+	)
+	require.ErrorContains(t, err, "same owner and asset")
+	require.Empty(t, fixture.merkleProvider.requests)
+}
+
 func TestPrepareJoinSplitTransferRejectsChangeAmountAboveShieldedLimit(t *testing.T) {
 	fixture := newPrepareJoinSplitFixture(t, []uint32{0, 1})
 	maxAmount := privacytypes.MaxShieldedAmount()
@@ -226,7 +238,6 @@ func TestPrepareJoinSplitTransferRejectsChangeAmountAboveShieldedLimit(t *testin
 	_, err := PrepareJoinSplitTransfer(
 		context.Background(),
 		fixture.merkleProvider,
-		&stubNoteHashSigner{signature: testSignatureBytes(t)},
 		PrepareJoinSplitInput{
 			Inputs:               fixture.inputs,
 			RecipientSpendPubKey: fixture.recipientSpendPubKey,
@@ -246,7 +257,6 @@ func TestPrepareJoinSplitTransferRejectsInvalidPathHelper(t *testing.T) {
 	_, err := PrepareJoinSplitTransfer(
 		context.Background(),
 		fixture.merkleProvider,
-		&stubNoteHashSigner{signature: testSignatureBytes(t)},
 		PrepareJoinSplitInput{
 			Inputs:               fixture.inputs,
 			RecipientSpendPubKey: fixture.recipientSpendPubKey,
@@ -345,7 +355,7 @@ type stubNoteHashSigner struct {
 	returnErr error
 }
 
-func (s *stubNoteHashSigner) SignNoteHash(msgHash *big.Int) ([]byte, error) {
+func (s *stubNoteHashSigner) SignOwnerIntent(msgHash *big.Int) ([]byte, error) {
 	if s.returnErr != nil {
 		return nil, s.returnErr
 	}

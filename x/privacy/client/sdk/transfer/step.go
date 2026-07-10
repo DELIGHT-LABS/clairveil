@@ -23,6 +23,8 @@ type StepDisclosureConfig struct {
 
 type BuildTransferStepMessageInput struct {
 	Creator              string
+	ChainID              string
+	ExpiresAtUnix        int64
 	Inputs               [2]privacyscan.FoundNote
 	RecipientSpendPubKey *crypto_tedwards.PointAffine
 	RecipientViewPubKey  *crypto_tedwards.PointAffine
@@ -52,7 +54,7 @@ func EffectiveStepDisclosureConfig(config StepDisclosureConfig, isFinal bool) St
 func BuildTransferStepMessage(
 	ctx context.Context,
 	merklePaths MerklePathProvider,
-	signer NoteHashSigner,
+	signer OwnerIntentSigner,
 	artifacts JoinSplitArtifactProvider,
 	runner JoinSplitProofRunner,
 	input BuildTransferStepMessageInput,
@@ -66,6 +68,8 @@ func BuildTransferStepMessage(
 		runner,
 		BuildTransferMessageInput{
 			Creator:                        input.Creator,
+			ChainID:                        input.ChainID,
+			ExpiresAtUnix:                  input.ExpiresAtUnix,
 			Inputs:                         input.Inputs,
 			RecipientSpendPubKey:           input.RecipientSpendPubKey,
 			RecipientViewPubKey:            input.RecipientViewPubKey,

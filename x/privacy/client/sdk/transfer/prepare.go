@@ -27,8 +27,8 @@ type MerklePathProvider interface {
 	LookupMerklePath(ctx context.Context, commitmentHex string) (*MerklePathResult, error)
 }
 
-type NoteHashSigner interface {
-	SignNoteHash(msgHash *big.Int) ([]byte, error)
+type OwnerIntentSigner interface {
+	SignOwnerIntent(intent *big.Int) ([]byte, error)
 }
 
 type PrepareJoinSplitInput struct {
@@ -46,7 +46,6 @@ type PreparedJoinSplitTransfer struct {
 	InputNullifiers   [][]byte
 	InputMerklePaths  [][]string
 	InputPathHelpers  [][]uint32
-	InputSignatures   [][]byte
 	OutputCommitments [][]byte
 	FromNote          privacytypes.Note
 	RecipientNote     privacytypes.Note
@@ -56,14 +55,10 @@ type PreparedJoinSplitTransfer struct {
 func PrepareJoinSplitTransfer(
 	ctx context.Context,
 	provider MerklePathProvider,
-	signer NoteHashSigner,
 	input PrepareJoinSplitInput,
 ) (*PreparedJoinSplitTransfer, error) {
 	if provider == nil {
 		return nil, fmt.Errorf("a merkle path provider is required to prepare a joinsplit transfer")
-	}
-	if signer == nil {
-		return nil, fmt.Errorf("a note hash signer is required to prepare a joinsplit transfer")
 	}
 	if input.RecipientSpendPubKey == nil || input.RecipientViewPubKey == nil {
 		return nil, fmt.Errorf("recipient spend/view public keys are required to prepare a joinsplit transfer")
@@ -81,6 +76,9 @@ func PrepareJoinSplitTransfer(
 		if err := privacytypes.ValidateShieldedAmount(fmt.Sprintf("input note %d amount", i), foundNote.Note.Amount); err != nil {
 			return nil, err
 		}
+	}
+	if err := validateCommonInputOwnerAndAsset(input.Inputs); err != nil {
+		return nil, err
 	}
 	inputNullifierCandidates := make([][]byte, len(input.Inputs))
 	for i, foundNote := range input.Inputs {
@@ -142,7 +140,6 @@ func PrepareJoinSplitTransfer(
 	inputNullifiers := make([][]byte, 2)
 	inputMerklePaths := make([][]string, len(input.Inputs))
 	inputPathHelpers := make([][]uint32, len(input.Inputs))
-	inputSignatures := make([][]byte, len(input.Inputs))
 	assetID := input.Inputs[0].Note.AssetID
 	assignment.AssetID = assetID
 
@@ -184,14 +181,6 @@ func PrepareJoinSplitTransfer(
 
 		assignment.InputAmounts[i] = foundNote.Note.Amount
 		assignment.InputRandomness[i] = foundNote.Note.Randomness
-
-		msgHash := privacycrypto.MimcHash(foundNote.Note.Amount, assetID, foundNote.Note.Randomness)
-		sigBytes, err := signer.SignNoteHash(msgHash)
-		if err != nil {
-			return nil, err
-		}
-		inputSignatures[i] = append([]byte(nil), sigBytes...)
-		assignSignature(&assignment.InputSignatures[i], sigBytes)
 
 		spendPubKey, err := spendPubKeyFromNote(foundNote.Note)
 		if err != nil {
@@ -247,12 +236,31 @@ func PrepareJoinSplitTransfer(
 		InputNullifiers:   inputNullifiers,
 		InputMerklePaths:  inputMerklePaths,
 		InputPathHelpers:  inputPathHelpers,
-		InputSignatures:   inputSignatures,
 		OutputCommitments: outputCommitments,
 		FromNote:          input.Inputs[0].Note,
 		RecipientNote:     recipientNote,
 		ChangeNote:        changeNote,
 	}, nil
+}
+
+func validateCommonInputOwnerAndAsset(inputs [2]privacyscan.FoundNote) error {
+	left := inputs[0].Note
+	right := inputs[1].Note
+	for _, field := range []struct {
+		name        string
+		left, right *big.Int
+	}{
+		{"spend public key x", left.ReceiverSpendPubKeyX, right.ReceiverSpendPubKeyX},
+		{"spend public key y", left.ReceiverSpendPubKeyY, right.ReceiverSpendPubKeyY},
+		{"view public key x", left.ReceiverViewPubKeyX, right.ReceiverViewPubKeyX},
+		{"view public key y", left.ReceiverViewPubKeyY, right.ReceiverViewPubKeyY},
+		{"asset id", left.AssetID, right.AssetID},
+	} {
+		if field.left == nil || field.right == nil || field.left.Cmp(field.right) != 0 {
+			return fmt.Errorf("joinsplit inputs must share the same owner and asset: %s mismatch", field.name)
+		}
+	}
+	return nil
 }
 
 func decodeMerkleProof(path []string, pathHelper []uint32) ([circuit.MerkleDepth]*big.Int, [circuit.MerkleDepth]int) {
@@ -303,7 +311,10 @@ func spendPubKeyFromNote(note privacytypes.Note) (*crypto_tedwards.PointAffine, 
 	return &point, nil
 }
 
-func assignSignature(target *eddsa.Signature, sigBytes []byte) {
+func assignSignature(target *eddsa.Signature, sigBytes []byte) error {
+	if _, err := privacycrypto.DecodeCanonicalEdDSASignature(sigBytes); err != nil {
+		return err
+	}
 	rBytes := sigBytes[:32]
 	sBytes := sigBytes[32:]
 
@@ -317,6 +328,7 @@ func assignSignature(target *eddsa.Signature, sigBytes []byte) {
 	target.R.X = rx
 	target.R.Y = ry
 	target.S = new(big.Int).SetBytes(sBytes)
+	return nil
 }
 
 func assignPubKey(target *eddsa.PublicKey, source crypto_tedwards.PointAffine) {

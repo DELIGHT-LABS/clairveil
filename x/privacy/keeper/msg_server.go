@@ -42,6 +42,7 @@ type shieldedTransferRequest struct {
 	auditDisclosurePayload      []byte
 	selfViewDisclosureDigest    []byte
 	selfViewDisclosurePayload   []byte
+	expiresAtUnix               int64
 }
 
 // NewMsgServerImpl returns an implementation of the MsgServer interface.
@@ -256,6 +257,7 @@ func (k msgServer) Transfer(goCtx context.Context, msg *types.MsgTransfer) (*typ
 		auditDisclosurePayload:      msg.AuditDisclosurePayload,
 		selfViewDisclosureDigest:    msg.SelfViewDisclosureDigest,
 		selfViewDisclosurePayload:   msg.SelfViewDisclosurePayload,
+		expiresAtUnix:               msg.ExpiresAtUnix,
 	}); err != nil {
 		return nil, err
 	}
@@ -264,6 +266,12 @@ func (k msgServer) Transfer(goCtx context.Context, msg *types.MsgTransfer) (*typ
 }
 
 func (k msgServer) executeShieldedTransfer(ctx sdk.Context, req shieldedTransferRequest) error {
+	if req.expiresAtUnix <= 0 {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "expires_at_unix must be positive for transfer")
+	}
+	if ctx.BlockTime().Unix() >= req.expiresAtUnix {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "transfer payload has expired")
+	}
 	canonicalRoot, err := validateFieldElementBytesStrict(req.root)
 	if err != nil {
 		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "transfer root must be canonical 32-byte field bytes")
@@ -355,6 +363,37 @@ func (k msgServer) executeShieldedTransfer(ctx sdk.Context, req shieldedTransfer
 		assignment.UserDisclosureDigest = big.NewInt(0)
 	}
 	assignment.FullDisclosureDigest = new(big.Int).SetBytes(req.auditDisclosureDigest)
+	chainDomain, err := types.ComputeChainDomainV1(ctx.ChainID(), types.ActiveCircuitSetID)
+	if err != nil {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "failed to compute transfer chain domain: %v", err)
+	}
+	assignment.ChainDomainHi = chainDomain.Hi
+	assignment.ChainDomainLo = chainDomain.Lo
+	assignment.ExpiresAtUnix = big.NewInt(req.expiresAtUnix)
+	effectMessage := &types.MsgTransfer{
+		Root:                        canonicalRoot,
+		Nullifiers:                  canonicalNullifiers,
+		NewCommitments:              canonicalCommitments,
+		CipherTexts:                 req.cipherTexts,
+		ViewTags:                    req.viewTags,
+		UserPrivacyPolicy:           req.userPrivacyPolicy,
+		UserDisclosureDigest:        req.userDisclosureDigest,
+		UserDisclosureMode:          req.userDisclosureMode,
+		UserDisclosureTargetPubkey:  req.userDisclosureTargetPubKey,
+		UserDisclosurePayload:       req.userDisclosurePayload,
+		AuditDisclosureDigest:       req.auditDisclosureDigest,
+		AuditDisclosureTargetPubkey: req.auditDisclosureTargetPubKey,
+		AuditDisclosurePayload:      req.auditDisclosurePayload,
+		SelfViewDisclosureDigest:    req.selfViewDisclosureDigest,
+		SelfViewDisclosurePayload:   req.selfViewDisclosurePayload,
+		ExpiresAtUnix:               req.expiresAtUnix,
+	}
+	payloadDigest, err := types.ComputeTransferPayloadDigestV1(effectMessage)
+	if err != nil {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "failed to compute canonical transfer payload digest: %v", err)
+	}
+	assignment.PayloadDigestHi = payloadDigest.Hi
+	assignment.PayloadDigestLo = payloadDigest.Lo
 
 	publicWitness, err := newPublicWitnessBN254(&assignment)
 	if err != nil {

@@ -48,6 +48,8 @@ func TestBuildTransferStepMessageForSelfMergeClearsUserDisclosure(t *testing.T) 
 		runner,
 		BuildTransferStepMessageInput{
 			Creator:              input.Creator,
+			ChainID:              input.ChainID,
+			ExpiresAtUnix:        input.ExpiresAtUnix,
 			Inputs:               input.Inputs,
 			RecipientSpendPubKey: input.RecipientSpendPubKey,
 			RecipientViewPubKey:  input.RecipientViewPubKey,
@@ -82,6 +84,8 @@ func TestBuildTransferStepMessageForFinalTransferKeepsUserDisclosure(t *testing.
 		runner,
 		BuildTransferStepMessageInput{
 			Creator:              input.Creator,
+			ChainID:              input.ChainID,
+			ExpiresAtUnix:        input.ExpiresAtUnix,
 			Inputs:               input.Inputs,
 			RecipientSpendPubKey: input.RecipientSpendPubKey,
 			RecipientViewPubKey:  input.RecipientViewPubKey,

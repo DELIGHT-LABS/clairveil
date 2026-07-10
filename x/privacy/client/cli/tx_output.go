@@ -14,7 +14,7 @@ func printCommandSection(cmd *cobra.Command, title string, lines ...string) {
 	}
 }
 
-func printTransferCommandSummary(cmd *cobra.Command, recipient string, amount string, userPolicy string, userMode string, selfView bool, autoDummy bool) {
+func printTransferCommandSummary(cmd *cobra.Command, recipient string, amount string, userPolicy string, userMode string, selfView bool, autoDummy bool, chainID string, expiresAtUnix int64) {
 	printCommandSection(
 		cmd,
 		"Shielded transfer",
@@ -24,6 +24,8 @@ func printTransferCommandSummary(cmd *cobra.Command, recipient string, amount st
 		"audit disclosure: enabled (chain-configured key)",
 		fmt.Sprintf("sender self-view: %t", selfView),
 		fmt.Sprintf("auto dummy: %t", autoDummy),
+		fmt.Sprintf("chain id: %s", chainID),
+		fmt.Sprintf("owner intent expires at unix: %d", expiresAtUnix),
 	)
 }
 

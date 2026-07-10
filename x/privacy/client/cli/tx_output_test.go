@@ -16,11 +16,11 @@ import (
 func TestPrintTransferCommandSummary(t *testing.T) {
 	cmd, out := newOutputTestCommand()
 
-	printTransferCommandSummary(cmd, "clairs1recipient", "10uclair", "amount-to", "public", true, true)
+	printTransferCommandSummary(cmd, "clairs1recipient", "10uclair", "amount-to", "public", true, true, "clairveil-test-1", 2_000_000_000)
 
 	require.Equal(
 		t,
-		"Shielded transfer\n- recipient: clairs1recipient\n- amount: 10uclair\n- user disclosure: amount-to / public\n- audit disclosure: enabled (chain-configured key)\n- sender self-view: true\n- auto dummy: true\n",
+		"Shielded transfer\n- recipient: clairs1recipient\n- amount: 10uclair\n- user disclosure: amount-to / public\n- audit disclosure: enabled (chain-configured key)\n- sender self-view: true\n- auto dummy: true\n- chain id: clairveil-test-1\n- owner intent expires at unix: 2000000000\n",
 		out.String(),
 	)
 }

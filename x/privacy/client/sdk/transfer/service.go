@@ -11,7 +11,7 @@ import (
 
 type ExecuteTransferDependencies struct {
 	MerklePaths MerklePathProvider
-	Signer      NoteHashSigner
+	Signer      OwnerIntentSigner
 	Artifacts   JoinSplitArtifactProvider
 	Runner      JoinSplitProofRunner
 	Broadcaster TransferMessageBroadcaster
@@ -19,6 +19,8 @@ type ExecuteTransferDependencies struct {
 
 type ExecuteTransferInput struct {
 	Creator              string
+	ChainID              string
+	ExpiresAtUnix        int64
 	RecipientSpendPubKey *crypto_tedwards.PointAffine
 	RecipientViewPubKey  *crypto_tedwards.PointAffine
 	SenderSpendPubKey    *crypto_tedwards.PointAffine
@@ -94,6 +96,8 @@ func (e *transferServiceStepExecutor) ExecuteTransferStep(
 		e.deps.Broadcaster,
 		BuildTransferStepMessageInput{
 			Creator:              e.input.Creator,
+			ChainID:              e.input.ChainID,
+			ExpiresAtUnix:        e.input.ExpiresAtUnix,
 			Inputs:               decision.Inputs,
 			RecipientSpendPubKey: decision.RecipientSpendPubKey,
 			RecipientViewPubKey:  decision.RecipientViewPubKey,
