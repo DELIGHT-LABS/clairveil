@@ -92,7 +92,7 @@ This command validates compose config, Dockerfile build, and image inspect. It r
 8. Confirm `x/privacy/client/sdk/conformance/testdata` fixtures come from the same release commit delivered to the downstream JS SDK team.
 9. Include ZK artifact checksums and preflight mode policy in the release note.
 10. If Merkle snapshot/restore/migration behavior changed, include the sample path recomputation procedure from `docs/clairveil-merkle-restore-sop.md` in the release note.
-11. Ensure accepted vulnerability policy exceptions such as `GO-2024-2584` and `GO-2026-4479` remain listed in the release note known risks.
+11. Ensure accepted vulnerability policy exceptions `GO-2024-2584`, `GO-2026-4479`, and `GO-2026-5932` remain listed in the release note known risks.
 12. State in the release note that the downstream project owns audit master private key custody, wallet storage encryption, and remote prover topology in separate operations documents.
 13. Use the release note template in `docs/clairveil-release-versioning-policy.md` to document compatibility impact and downstream action.
 
@@ -139,6 +139,7 @@ Release recipients must know the following risks.
 | --- | --- | --- |
 | `GO-2024-2584` | Accepted in the repository `govulncheck` policy as a Cosmos SDK no-fixed-version actionable finding | Reassess in the downstream production risk register and realign dependencies if an upstream fixed path becomes available. |
 | `GO-2026-4479` | Accepted in the repository `govulncheck` policy for the pion/dtls v2 no-fixed-version actionable finding reachable through the Cosmos SDK/CometBFT server stack | Reassess in the downstream production risk register and realign dependencies if an upstream fixed path becomes available. |
+| `GO-2026-5932` | Accepted narrowly because Cosmos SDK reaches `x/crypto/openpgp/armor` only for local ASCII key armor; Clairveil does not use OpenPGP signing or encryption, and no fixed upstream version exists | Reassess in the downstream production risk register and remove the exception as soon as a fixed dependency path becomes available. |
 | Audit master private key custody | Clairveil provides public key config and disclosure decode flow only | Downstream owns HSM/KMS, access control, rotation, and incident response. |
 | Wallet local storage | The reference CLI uses `0600` plaintext JSON | Web wallets and production wallets must implement encrypted storage and telemetry redaction. |
 | Remote prover metadata exposure | A remote prover can see proof input metadata | Include the remote prover as a trusted component in user privacy UX and the deployment threat model. |

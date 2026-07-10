@@ -39,6 +39,7 @@
 
 - `GO-2024-2584`: Cosmos SDK no-fixed-version advisory. downstream risk register에서 다시 평가해야 합니다.
 - `GO-2026-4479`: Cosmos SDK/CometBFT server stack을 통해 reachable한 pion/dtls v2 no-fixed-version advisory. downstream risk register에서 다시 평가해야 합니다.
+- `GO-2026-5932`: Cosmos SDK의 local ASCII key armor에서만 좁게 reachable한 no-fixed-version `x/crypto/openpgp` advisory이며 Clairveil은 OpenPGP signing/encryption을 사용하지 않습니다. downstream에서 재평가하고 fixed dependency path가 생기면 예외를 제거해야 합니다.
 
 ## 6. 운영 메모
 

@@ -41,6 +41,7 @@ If there is impact, record downstream actions in section 7.
 
 - `GO-2024-2584`: Cosmos SDK no-fixed-version advisory. Reassess in downstream risk register.
 - `GO-2026-4479`: pion/dtls v2 no-fixed-version advisory reachable through the Cosmos SDK/CometBFT server stack. Reassess in downstream risk register.
+- `GO-2026-5932`: no-fixed-version `x/crypto/openpgp` advisory, narrowly reachable through Cosmos SDK local ASCII key armor only; Clairveil does not use OpenPGP signing or encryption. Reassess and remove the exception when a fixed dependency path exists.
 
 ## 6. Operations Notes
 

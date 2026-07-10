@@ -90,7 +90,7 @@ make docker-proverd-build
 8. `x/privacy/client/sdk/conformance/testdata` fixture가 downstream JS SDK 팀에게 전달될 release commit과 같은 commit인지 확인합니다.
 9. ZK artifact checksum과 preflight mode 정책이 release note에 포함되어 있는지 확인합니다.
 10. Merkle snapshot/restore/migration 관련 변경이 있으면 `docs/clairveil-merkle-restore-sop-kr.md`의 샘플 path 재계산 절차가 release note에 반영되어 있는지 확인합니다.
-11. `GO-2024-2584`, `GO-2026-4479` 같은 accepted vulnerability policy exception이 release note의 known risk에 남아 있는지 확인합니다.
+11. accepted vulnerability policy exception인 `GO-2024-2584`, `GO-2026-4479`, `GO-2026-5932`가 release note의 known risk에 남아 있는지 확인합니다.
 12. downstream project가 audit master private key custody, wallet storage encryption, remote prover topology를 별도 운영 문서로 소유한다는 점을 release note에 명시합니다.
 13. `docs/clairveil-release-versioning-policy-kr.md`의 release note template을 사용해 compatibility impact와 downstream action을 작성합니다.
 
@@ -137,6 +137,7 @@ Prover 운영 팀은 아래를 확인합니다.
 | --- | --- | --- |
 | `GO-2024-2584` | Cosmos SDK no-fixed-version actionable finding으로 `govulncheck` policy에서 명시 accept | downstream production risk register에서 재평가하고 upstream fixed path가 나오면 dependency alignment를 다시 수행합니다. |
 | `GO-2026-4479` | Cosmos SDK/CometBFT server stack을 통해 reachable한 pion/dtls v2 no-fixed-version actionable finding으로 `govulncheck` policy에서 명시 accept | downstream production risk register에서 재평가하고 upstream fixed path가 나오면 dependency alignment를 다시 수행합니다. |
+| `GO-2026-5932` | Cosmos SDK가 local ASCII key armor에만 `x/crypto/openpgp/armor`를 사용해 reachable하고 Clairveil은 OpenPGP signing/encryption을 사용하지 않으며 upstream fixed version이 없어 좁게 accept | downstream production risk register에서 재평가하고 fixed dependency path가 생기는 즉시 예외를 제거합니다. |
 | Audit master private key custody | Clairveil repo는 public key config와 decode flow만 제공 | downstream project가 HSM/KMS, access control, rotation, incident response를 소유합니다. |
 | Wallet local storage | reference CLI는 `0600` plaintext JSON을 사용 | web wallet/production wallet은 encrypted storage와 telemetry redaction을 구현합니다. |
 | Remote prover metadata exposure | remote prover는 proof input metadata를 볼 수 있음 | user privacy UX와 deployment threat model에 remote prover를 trusted component로 포함합니다. |
