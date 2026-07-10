@@ -147,6 +147,7 @@ fi
 
 echo "privacy e2e work dir: $work_dir"
 "$clairveil_setup" --out "$artifacts" >"$out/setup.stdout" 2>"$out/setup.stderr"
+export CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR="$artifacts"
 
 run keys add alice --keyring-backend test --home "$home" --output json >"$out/alice-key.json"
 run keys add bob --keyring-backend test --home "$home" --output json >"$out/bob-key.json"
