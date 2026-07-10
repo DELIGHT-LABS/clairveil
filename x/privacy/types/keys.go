@@ -30,6 +30,7 @@ const (
 	KeyPrefixPrivacyEventSeq = 0x07
 	KeyPrefixReserveDeposit  = 0x08
 	KeyPrefixReserveWithdraw = 0x09
+	KeyPrefixCircuitIdentity = 0x0a
 )
 
 // Event types and attribute keys emitted by the module.
@@ -76,6 +77,7 @@ const (
 
 var auditConfigStoreKey = []byte{KeyPrefixAuditConfig}
 var privacyEventSequenceStoreKey = []byte{KeyPrefixPrivacyEventSeq}
+var circuitIdentityStoreKey = []byte{KeyPrefixCircuitIdentity}
 
 func DisclosureEnvelopeKindAttributeKey(index int) string {
 	return AttributeKeyDisclosureEnvelopeKindPrefix + strconv.Itoa(index)
@@ -120,6 +122,10 @@ func GetCommitmentIndexKey(commitment []byte) []byte {
 
 func GetAuditConfigKey() []byte {
 	return append([]byte(nil), auditConfigStoreKey...)
+}
+
+func GetCircuitIdentityKey() []byte {
+	return append([]byte(nil), circuitIdentityStoreKey...)
 }
 
 func GetPrivacyEventKey(height int64, sequence uint64) []byte {

@@ -24,10 +24,11 @@ const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 // GenesisState defines the bank module's genesis state.
 type GenesisState struct {
-	Commitments       [][]byte `protobuf:"bytes,1,rep,name=commitments,proto3" json:"commitments,omitempty"`
-	HistoricalRoots   [][]byte `protobuf:"bytes,2,rep,name=historical_roots,json=historicalRoots,proto3" json:"historical_roots,omitempty"`
-	Nullifiers        [][]byte `protobuf:"bytes,3,rep,name=nullifiers,proto3" json:"nullifiers,omitempty"`
-	AuditMasterPubkey []byte   `protobuf:"bytes,4,opt,name=audit_master_pubkey,json=auditMasterPubkey,proto3" json:"audit_master_pubkey,omitempty"`
+	Commitments        [][]byte            `protobuf:"bytes,1,rep,name=commitments,proto3" json:"commitments,omitempty"`
+	HistoricalRoots    [][]byte            `protobuf:"bytes,2,rep,name=historical_roots,json=historicalRoots,proto3" json:"historical_roots,omitempty"`
+	Nullifiers         [][]byte            `protobuf:"bytes,3,rep,name=nullifiers,proto3" json:"nullifiers,omitempty"`
+	AuditMasterPubkey  []byte              `protobuf:"bytes,4,opt,name=audit_master_pubkey,json=auditMasterPubkey,proto3" json:"audit_master_pubkey,omitempty"`
+	CircuitSetIdentity *CircuitSetIdentity `protobuf:"bytes,5,opt,name=circuit_set_identity,json=circuitSetIdentity,proto3" json:"circuit_set_identity,omitempty"`
 }
 
 func (m *GenesisState) Reset()         { *m = GenesisState{} }
@@ -91,8 +92,145 @@ func (m *GenesisState) GetAuditMasterPubkey() []byte {
 	return nil
 }
 
+func (m *GenesisState) GetCircuitSetIdentity() *CircuitSetIdentity {
+	if m != nil {
+		return m.CircuitSetIdentity
+	}
+	return nil
+}
+
+type CircuitIdentity struct {
+	CircuitId               string `protobuf:"bytes,1,opt,name=circuit_id,json=circuitId,proto3" json:"circuit_id,omitempty"`
+	VerifyingKeySha256      string `protobuf:"bytes,2,opt,name=verifying_key_sha256,json=verifyingKeySha256,proto3" json:"verifying_key_sha256,omitempty"`
+	PublicInputSchemaSha256 string `protobuf:"bytes,3,opt,name=public_input_schema_sha256,json=publicInputSchemaSha256,proto3" json:"public_input_schema_sha256,omitempty"`
+}
+
+func (m *CircuitIdentity) Reset()         { *m = CircuitIdentity{} }
+func (m *CircuitIdentity) String() string { return proto.CompactTextString(m) }
+func (*CircuitIdentity) ProtoMessage()    {}
+func (*CircuitIdentity) Descriptor() ([]byte, []int) {
+	return fileDescriptor_c6c50cde138729b1, []int{1}
+}
+func (m *CircuitIdentity) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *CircuitIdentity) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_CircuitIdentity.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *CircuitIdentity) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_CircuitIdentity.Merge(m, src)
+}
+func (m *CircuitIdentity) XXX_Size() int {
+	return m.Size()
+}
+func (m *CircuitIdentity) XXX_DiscardUnknown() {
+	xxx_messageInfo_CircuitIdentity.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_CircuitIdentity proto.InternalMessageInfo
+
+func (m *CircuitIdentity) GetCircuitId() string {
+	if m != nil {
+		return m.CircuitId
+	}
+	return ""
+}
+
+func (m *CircuitIdentity) GetVerifyingKeySha256() string {
+	if m != nil {
+		return m.VerifyingKeySha256
+	}
+	return ""
+}
+
+func (m *CircuitIdentity) GetPublicInputSchemaSha256() string {
+	if m != nil {
+		return m.PublicInputSchemaSha256
+	}
+	return ""
+}
+
+type CircuitSetIdentity struct {
+	SchemaVersion string             `protobuf:"bytes,1,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
+	CircuitSetId  string             `protobuf:"bytes,2,opt,name=circuit_set_id,json=circuitSetId,proto3" json:"circuit_set_id,omitempty"`
+	Curve         string             `protobuf:"bytes,3,opt,name=curve,proto3" json:"curve,omitempty"`
+	Circuits      []*CircuitIdentity `protobuf:"bytes,4,rep,name=circuits,proto3" json:"circuits,omitempty"`
+}
+
+func (m *CircuitSetIdentity) Reset()         { *m = CircuitSetIdentity{} }
+func (m *CircuitSetIdentity) String() string { return proto.CompactTextString(m) }
+func (*CircuitSetIdentity) ProtoMessage()    {}
+func (*CircuitSetIdentity) Descriptor() ([]byte, []int) {
+	return fileDescriptor_c6c50cde138729b1, []int{2}
+}
+func (m *CircuitSetIdentity) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *CircuitSetIdentity) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_CircuitSetIdentity.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *CircuitSetIdentity) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_CircuitSetIdentity.Merge(m, src)
+}
+func (m *CircuitSetIdentity) XXX_Size() int {
+	return m.Size()
+}
+func (m *CircuitSetIdentity) XXX_DiscardUnknown() {
+	xxx_messageInfo_CircuitSetIdentity.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_CircuitSetIdentity proto.InternalMessageInfo
+
+func (m *CircuitSetIdentity) GetSchemaVersion() string {
+	if m != nil {
+		return m.SchemaVersion
+	}
+	return ""
+}
+
+func (m *CircuitSetIdentity) GetCircuitSetId() string {
+	if m != nil {
+		return m.CircuitSetId
+	}
+	return ""
+}
+
+func (m *CircuitSetIdentity) GetCurve() string {
+	if m != nil {
+		return m.Curve
+	}
+	return ""
+}
+
+func (m *CircuitSetIdentity) GetCircuits() []*CircuitIdentity {
+	if m != nil {
+		return m.Circuits
+	}
+	return nil
+}
+
 func init() {
 	proto.RegisterType((*GenesisState)(nil), "clairveil.privacy.v1.GenesisState")
+	proto.RegisterType((*CircuitIdentity)(nil), "clairveil.privacy.v1.CircuitIdentity")
+	proto.RegisterType((*CircuitSetIdentity)(nil), "clairveil.privacy.v1.CircuitSetIdentity")
 }
 
 func init() {
@@ -100,24 +238,37 @@ func init() {
 }
 
 var fileDescriptor_c6c50cde138729b1 = []byte{
-	// 262 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x4c, 0x90, 0x31, 0x4e, 0xf3, 0x30,
-	0x18, 0x40, 0xe3, 0xbf, 0xbf, 0x18, 0x4c, 0x24, 0x20, 0x30, 0x64, 0xb2, 0xa2, 0x4e, 0x65, 0x20,
-	0x51, 0xc4, 0x09, 0xa8, 0x40, 0x05, 0x51, 0x24, 0x94, 0x32, 0xb1, 0x44, 0x4e, 0x30, 0xed, 0x27,
-	0xec, 0x38, 0xb2, 0xbf, 0x44, 0xe4, 0x16, 0xdc, 0x83, 0x8b, 0x30, 0x76, 0x64, 0x44, 0xc9, 0x45,
-	0x10, 0x06, 0xb5, 0x5d, 0xdf, 0x7b, 0xd3, 0xa3, 0xe3, 0x52, 0x72, 0x30, 0xad, 0x00, 0x99, 0xd4,
-	0x06, 0x5a, 0x5e, 0x76, 0x49, 0x9b, 0x26, 0x4b, 0x51, 0x09, 0x0b, 0x36, 0xae, 0x8d, 0x46, 0x1d,
-	0x9c, 0x6c, 0x9a, 0xf8, 0xaf, 0x89, 0xdb, 0x74, 0xfc, 0x4e, 0xa8, 0x3f, 0xfb, 0xed, 0x16, 0xc8,
-	0x51, 0x04, 0x11, 0xdd, 0x2f, 0xb5, 0x52, 0x80, 0x4a, 0x54, 0x68, 0x43, 0x12, 0x8d, 0x26, 0x7e,
-	0xb6, 0x8b, 0x82, 0x53, 0x7a, 0xb8, 0x02, 0x8b, 0xda, 0x40, 0xc9, 0x65, 0x6e, 0xb4, 0x46, 0x1b,
-	0xfe, 0x73, 0xd9, 0xc1, 0x96, 0x67, 0x3f, 0x38, 0x60, 0x94, 0x56, 0x8d, 0x94, 0xf0, 0x0c, 0xc2,
-	0xd8, 0x70, 0xe4, 0xa2, 0x1d, 0x12, 0xc4, 0xf4, 0x98, 0x37, 0x4f, 0x80, 0xb9, 0xe2, 0x16, 0x85,
-	0xc9, 0xeb, 0xa6, 0x78, 0x11, 0x5d, 0xf8, 0x3f, 0x22, 0x13, 0x3f, 0x3b, 0x72, 0xea, 0xce, 0x99,
-	0x7b, 0x27, 0xa6, 0xb7, 0x1f, 0x3d, 0x23, 0xeb, 0x9e, 0x91, 0xaf, 0x9e, 0x91, 0xb7, 0x81, 0x79,
-	0xeb, 0x81, 0x79, 0x9f, 0x03, 0xf3, 0x1e, 0xd3, 0x25, 0xe0, 0xaa, 0x29, 0xe2, 0x52, 0xab, 0xe4,
-	0xf2, 0x6a, 0x7e, 0x33, 0xbb, 0x7e, 0x38, 0x9b, 0x5f, 0x4c, 0x17, 0xc9, 0xf6, 0xcc, 0xeb, 0xe6,
-	0x0d, 0x76, 0xb5, 0xb0, 0xc5, 0x9e, 0xfb, 0x72, 0xfe, 0x1d, 0x00, 0x00, 0xff, 0xff, 0x4a, 0xd9,
-	0xee, 0x2f, 0x3d, 0x01, 0x00, 0x00,
+	// 467 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x7c, 0x92, 0xcf, 0x6e, 0xd3, 0x4c,
+	0x14, 0xc5, 0x33, 0x49, 0xfb, 0xe9, 0xeb, 0x24, 0xb4, 0x30, 0x44, 0xc2, 0x42, 0xc2, 0xb2, 0x22,
+	0x2a, 0x99, 0x05, 0x36, 0x09, 0x82, 0x0d, 0xab, 0x16, 0x50, 0x89, 0x5a, 0x24, 0x64, 0x23, 0x16,
+	0xdd, 0x8c, 0x9c, 0xc9, 0x6d, 0x72, 0x55, 0xff, 0xd3, 0xcc, 0xd8, 0xc2, 0x4f, 0xc0, 0x96, 0x37,
+	0xe0, 0x3d, 0x78, 0x02, 0x96, 0x5d, 0xb2, 0x44, 0xc9, 0x8b, 0xa0, 0x8e, 0x1d, 0x37, 0xa8, 0x88,
+	0xa5, 0xcf, 0xf9, 0x1d, 0xcf, 0xbd, 0x47, 0x97, 0x8e, 0x44, 0x1c, 0xa1, 0x2c, 0x01, 0x63, 0x3f,
+	0x97, 0x58, 0x46, 0xa2, 0xf2, 0xcb, 0xb1, 0xbf, 0x80, 0x14, 0x14, 0x2a, 0x2f, 0x97, 0x99, 0xce,
+	0xd8, 0xb0, 0x65, 0xbc, 0x86, 0xf1, 0xca, 0xf1, 0xe8, 0x4b, 0x97, 0x0e, 0x4e, 0x6a, 0x2e, 0xd4,
+	0x91, 0x06, 0xe6, 0xd0, 0xbe, 0xc8, 0x92, 0x04, 0x75, 0x02, 0xa9, 0x56, 0x16, 0x71, 0x7a, 0xee,
+	0x20, 0xd8, 0x96, 0xd8, 0x13, 0x7a, 0x77, 0x89, 0x4a, 0x67, 0x12, 0x45, 0x14, 0x73, 0x99, 0x65,
+	0x5a, 0x59, 0x5d, 0x83, 0x1d, 0xdc, 0xe8, 0xc1, 0xb5, 0xcc, 0x6c, 0x4a, 0xd3, 0x22, 0x8e, 0xf1,
+	0x02, 0x41, 0x2a, 0xab, 0x67, 0xa0, 0x2d, 0x85, 0x79, 0xf4, 0x7e, 0x54, 0xcc, 0x51, 0xf3, 0x24,
+	0x52, 0x1a, 0x24, 0xcf, 0x8b, 0xd9, 0x25, 0x54, 0xd6, 0x8e, 0x43, 0xdc, 0x41, 0x70, 0xcf, 0x58,
+	0xef, 0x8d, 0xf3, 0xc1, 0x18, 0xec, 0x9c, 0x0e, 0x05, 0x4a, 0x51, 0xa0, 0xe6, 0x0a, 0x34, 0xc7,
+	0x39, 0xa4, 0x1a, 0x75, 0x65, 0xed, 0x3a, 0xc4, 0xed, 0x4f, 0x5c, 0xef, 0x6f, 0x2b, 0x7a, 0xaf,
+	0xeb, 0x44, 0x08, 0x7a, 0xda, 0xf0, 0x01, 0x13, 0xb7, 0xb4, 0xd1, 0x37, 0x42, 0x0f, 0x1a, 0x74,
+	0xa3, 0xb1, 0x47, 0x94, 0x6e, 0xde, 0xc3, 0xb9, 0x45, 0x1c, 0xe2, 0xee, 0x05, 0x7b, 0x62, 0x03,
+	0xb1, 0x67, 0x74, 0x58, 0x82, 0xc4, 0x8b, 0x0a, 0xd3, 0x05, 0xbf, 0x84, 0x8a, 0xab, 0x65, 0x34,
+	0x79, 0xf1, 0xd2, 0xea, 0x1a, 0x90, 0xb5, 0xde, 0x29, 0x54, 0xa1, 0x71, 0xd8, 0x2b, 0xfa, 0x30,
+	0x2f, 0x66, 0x31, 0x0a, 0x8e, 0x69, 0x5e, 0x68, 0xae, 0xc4, 0x12, 0x92, 0x68, 0x93, 0xeb, 0x99,
+	0xdc, 0x83, 0x9a, 0x98, 0x5e, 0x03, 0xa1, 0xf1, 0xeb, 0xf0, 0xe8, 0x3b, 0xa1, 0xec, 0xf6, 0x32,
+	0xec, 0x90, 0xee, 0x37, 0xbf, 0x29, 0x41, 0x2a, 0xcc, 0xd2, 0x66, 0xd0, 0x3b, 0xb5, 0xfa, 0xa9,
+	0x16, 0xd9, 0x63, 0xba, 0xff, 0x67, 0x77, 0xcd, 0x98, 0x83, 0xed, 0x2e, 0xd8, 0x90, 0xee, 0x8a,
+	0x42, 0x96, 0xd0, 0xcc, 0x52, 0x7f, 0xb0, 0x23, 0xfa, 0x7f, 0x43, 0x29, 0x6b, 0xc7, 0xe9, 0xb9,
+	0xfd, 0xc9, 0xe1, 0x3f, 0xbb, 0x6e, 0x8b, 0x6e, 0x63, 0xc7, 0xa7, 0x3f, 0x56, 0x36, 0xb9, 0x5a,
+	0xd9, 0xe4, 0xd7, 0xca, 0x26, 0x5f, 0xd7, 0x76, 0xe7, 0x6a, 0x6d, 0x77, 0x7e, 0xae, 0xed, 0xce,
+	0xf9, 0x78, 0x81, 0x7a, 0x59, 0xcc, 0x3c, 0x91, 0x25, 0xfe, 0x9b, 0xb7, 0x67, 0xd3, 0x93, 0x77,
+	0x1f, 0x9f, 0x9e, 0x1d, 0x1d, 0x87, 0xfe, 0xcd, 0x51, 0x7f, 0x6e, 0xcf, 0x5a, 0x57, 0x39, 0xa8,
+	0xd9, 0x7f, 0xe6, 0xa4, 0x9f, 0xff, 0x0e, 0x00, 0x00, 0xff, 0xff, 0x10, 0xef, 0xff, 0x5b, 0xf8,
+	0x02, 0x00, 0x00,
 }
 
 func (m *GenesisState) Marshal() (dAtA []byte, err error) {
@@ -140,6 +291,18 @@ func (m *GenesisState) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.CircuitSetIdentity != nil {
+		{
+			size, err := m.CircuitSetIdentity.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintGenesis(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x2a
+	}
 	if len(m.AuditMasterPubkey) > 0 {
 		i -= len(m.AuditMasterPubkey)
 		copy(dAtA[i:], m.AuditMasterPubkey)
@@ -173,6 +336,108 @@ func (m *GenesisState) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			i--
 			dAtA[i] = 0xa
 		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *CircuitIdentity) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *CircuitIdentity) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *CircuitIdentity) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.PublicInputSchemaSha256) > 0 {
+		i -= len(m.PublicInputSchemaSha256)
+		copy(dAtA[i:], m.PublicInputSchemaSha256)
+		i = encodeVarintGenesis(dAtA, i, uint64(len(m.PublicInputSchemaSha256)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.VerifyingKeySha256) > 0 {
+		i -= len(m.VerifyingKeySha256)
+		copy(dAtA[i:], m.VerifyingKeySha256)
+		i = encodeVarintGenesis(dAtA, i, uint64(len(m.VerifyingKeySha256)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.CircuitId) > 0 {
+		i -= len(m.CircuitId)
+		copy(dAtA[i:], m.CircuitId)
+		i = encodeVarintGenesis(dAtA, i, uint64(len(m.CircuitId)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *CircuitSetIdentity) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *CircuitSetIdentity) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *CircuitSetIdentity) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Circuits) > 0 {
+		for iNdEx := len(m.Circuits) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Circuits[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintGenesis(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x22
+		}
+	}
+	if len(m.Curve) > 0 {
+		i -= len(m.Curve)
+		copy(dAtA[i:], m.Curve)
+		i = encodeVarintGenesis(dAtA, i, uint64(len(m.Curve)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.CircuitSetId) > 0 {
+		i -= len(m.CircuitSetId)
+		copy(dAtA[i:], m.CircuitSetId)
+		i = encodeVarintGenesis(dAtA, i, uint64(len(m.CircuitSetId)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.SchemaVersion) > 0 {
+		i -= len(m.SchemaVersion)
+		copy(dAtA[i:], m.SchemaVersion)
+		i = encodeVarintGenesis(dAtA, i, uint64(len(m.SchemaVersion)))
+		i--
+		dAtA[i] = 0xa
 	}
 	return len(dAtA) - i, nil
 }
@@ -215,6 +480,58 @@ func (m *GenesisState) Size() (n int) {
 	l = len(m.AuditMasterPubkey)
 	if l > 0 {
 		n += 1 + l + sovGenesis(uint64(l))
+	}
+	if m.CircuitSetIdentity != nil {
+		l = m.CircuitSetIdentity.Size()
+		n += 1 + l + sovGenesis(uint64(l))
+	}
+	return n
+}
+
+func (m *CircuitIdentity) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.CircuitId)
+	if l > 0 {
+		n += 1 + l + sovGenesis(uint64(l))
+	}
+	l = len(m.VerifyingKeySha256)
+	if l > 0 {
+		n += 1 + l + sovGenesis(uint64(l))
+	}
+	l = len(m.PublicInputSchemaSha256)
+	if l > 0 {
+		n += 1 + l + sovGenesis(uint64(l))
+	}
+	return n
+}
+
+func (m *CircuitSetIdentity) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.SchemaVersion)
+	if l > 0 {
+		n += 1 + l + sovGenesis(uint64(l))
+	}
+	l = len(m.CircuitSetId)
+	if l > 0 {
+		n += 1 + l + sovGenesis(uint64(l))
+	}
+	l = len(m.Curve)
+	if l > 0 {
+		n += 1 + l + sovGenesis(uint64(l))
+	}
+	if len(m.Circuits) > 0 {
+		for _, e := range m.Circuits {
+			l = e.Size()
+			n += 1 + l + sovGenesis(uint64(l))
+		}
 	}
 	return n
 }
@@ -382,6 +699,368 @@ func (m *GenesisState) Unmarshal(dAtA []byte) error {
 			m.AuditMasterPubkey = append(m.AuditMasterPubkey[:0], dAtA[iNdEx:postIndex]...)
 			if m.AuditMasterPubkey == nil {
 				m.AuditMasterPubkey = []byte{}
+			}
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CircuitSetIdentity", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.CircuitSetIdentity == nil {
+				m.CircuitSetIdentity = &CircuitSetIdentity{}
+			}
+			if err := m.CircuitSetIdentity.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGenesis(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *CircuitIdentity) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGenesis
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: CircuitIdentity: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: CircuitIdentity: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CircuitId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.CircuitId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field VerifyingKeySha256", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.VerifyingKeySha256 = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PublicInputSchemaSha256", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.PublicInputSchemaSha256 = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGenesis(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *CircuitSetIdentity) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGenesis
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: CircuitSetIdentity: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: CircuitSetIdentity: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SchemaVersion", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.SchemaVersion = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CircuitSetId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.CircuitSetId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Curve", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Curve = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Circuits", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Circuits = append(m.Circuits, &CircuitIdentity{})
+			if err := m.Circuits[len(m.Circuits)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
 			}
 			iNdEx = postIndex
 		default:

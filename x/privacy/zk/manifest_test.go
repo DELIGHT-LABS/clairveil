@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -31,22 +32,11 @@ func TestManifestFromChecksumsBuildsDescriptors(t *testing.T) {
 func TestLoadArtifactManifestSupportsStructuredManifest(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ArtifactManifestFile)
-	manifest := RuntimeArtifactManifest{
-		SchemaVersion: CircuitConfigSchemaVersion,
-		GeneratedAt:   "2026-04-15T00:00:00Z",
-		Curve:         CircuitCurve,
-		ActiveSetID:   ActiveCircuitSetID,
-		ArtifactDir:   dir,
-		Artifacts: []ArtifactDescriptor{
-			{
-				CircuitID:    "spend",
-				ArtifactType: "r1cs",
-				Filename:     SpendR1CSFile,
-				ChecksumEnv:  SpendR1CSSHA256Env,
-				SHA256:       "abcd",
-			},
-		},
+	checksums := make(map[string]string)
+	for _, descriptor := range DefaultArtifactDescriptors() {
+		checksums[descriptor.ChecksumEnv] = strings.Repeat("a", 64)
 	}
+	manifest := ManifestFromChecksums(dir, "2026-04-15T00:00:00Z", checksums)
 
 	bz, err := json.Marshal(manifest)
 	require.NoError(t, err)
@@ -55,11 +45,11 @@ func TestLoadArtifactManifestSupportsStructuredManifest(t *testing.T) {
 	loaded, err := LoadArtifactManifest(path)
 	require.NoError(t, err)
 	require.Equal(t, manifest.SchemaVersion, loaded.SchemaVersion)
-	require.Len(t, loaded.Artifacts, 1)
-	require.Equal(t, "abcd", loaded.Artifacts[0].SHA256)
+	require.Len(t, loaded.Artifacts, 9)
+	require.Equal(t, strings.Repeat("a", 64), loaded.Artifacts[0].SHA256)
 }
 
-func TestLoadArtifactManifestSupportsLegacyChecksumsJSON(t *testing.T) {
+func TestLoadArtifactManifestRejectsLegacyChecksumsJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, LegacyChecksumsJSONFile)
 	legacy := legacyChecksumsManifest{
@@ -75,11 +65,8 @@ func TestLoadArtifactManifestSupportsLegacyChecksumsJSON(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(path, bz, 0o600))
 
-	loaded, err := LoadArtifactManifest(path)
-	require.NoError(t, err)
-	require.Equal(t, CircuitConfigSchemaVersion, loaded.SchemaVersion)
-	require.Len(t, loaded.Artifacts, 9)
-	require.Equal(t, "spend-r1cs", loaded.Artifacts[3].SHA256)
+	_, err = LoadArtifactManifest(path)
+	require.ErrorContains(t, err, "legacy artifact manifests are not accepted")
 }
 
 func TestResolveRuntimeArtifactManifestFallsBackToEnvChecksums(t *testing.T) {

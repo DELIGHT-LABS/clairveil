@@ -78,6 +78,7 @@ import (
 	"github.com/DELIGHT-LABS/clairveil/x/privacy"
 	privacykeeper "github.com/DELIGHT-LABS/clairveil/x/privacy/keeper"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
+	privacyzk "github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
 )
 
 const appName = "Clairveil"
@@ -380,6 +381,19 @@ func NewClairveilApp(
 	if loadLatest {
 		if err := app.LoadLatestVersion(); err != nil {
 			panic(fmt.Errorf("error loading latest version: %w", err))
+		}
+		if app.LastBlockHeight() > 0 {
+			ctx := app.NewContextLegacy(true, tmproto.Header{Height: app.LastBlockHeight()})
+			identity, found, err := app.PrivacyKeeper.GetCircuitSetIdentity(ctx)
+			if err != nil {
+				panic(fmt.Errorf("load consensus privacy circuit identity: %w", err))
+			}
+			if !found {
+				panic("consensus privacy circuit identity is missing; fresh genesis or an explicit upgrade is required")
+			}
+			if err := privacyzk.ValidateLocalVerifierIdentity(identity); err != nil {
+				panic(fmt.Errorf("privacy verifier identity mismatch: %w", err))
+			}
 		}
 	}
 

@@ -7,12 +7,22 @@ import (
 
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/keeper"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/types"
+	"github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
 )
 
 // InitGenesis initializes the module's state from a provided genesis state.
 func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) {
 	if err := genState.Validate(); err != nil {
 		panic(fmt.Errorf("invalid privacy genesis state: %w", err))
+	}
+	if genState.CircuitSetIdentity == nil {
+		panic("invalid privacy genesis state: circuit_set_identity is required")
+	}
+	if err := zk.ValidateLocalVerifierIdentity(genState.CircuitSetIdentity); err != nil {
+		panic(fmt.Errorf("privacy circuit identity preflight failed: %w", err))
+	}
+	if err := k.SetCircuitSetIdentity(ctx, genState.CircuitSetIdentity); err != nil {
+		panic(fmt.Errorf("failed to initialize privacy circuit identity: %w", err))
 	}
 
 	if err := k.InitGenesisCommitments(ctx, genState.Commitments); err != nil {
@@ -55,6 +65,13 @@ func ExportGenesis(ctx sdk.Context, k keeper.Keeper) *types.GenesisState {
 	genesis.HistoricalRoots = historicalRoots
 	genesis.Nullifiers = nullifiers
 	genesis.AuditMasterPubkey = k.GetAuditMasterPubkey(ctx)
+	identity, found, err := k.GetCircuitSetIdentity(ctx)
+	if err != nil {
+		panic(fmt.Errorf("failed to export privacy circuit identity: %w", err))
+	}
+	if found {
+		genesis.CircuitSetIdentity = identity
+	}
 
 	return genesis
 }

@@ -37,6 +37,7 @@ import (
 
 	"github.com/DELIGHT-LABS/clairveil/app"
 	clairveiltypes "github.com/DELIGHT-LABS/clairveil/types"
+	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	privacyzk "github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
 )
 
@@ -167,6 +168,14 @@ func rewriteGenesisDefaults(cmd *cobra.Command, cdc codec.Codec) error {
 		return err
 	}
 	app.ApplyClairveilGenesisDefaults(cdc, appState)
+	identity, err := privacyzk.LoadLocalCircuitSetIdentity()
+	if err != nil {
+		return err
+	}
+	var privacyState privacytypes.GenesisState
+	cdc.MustUnmarshalJSON(appState[privacytypes.ModuleName], &privacyState)
+	privacyState.CircuitSetIdentity = identity
+	appState[privacytypes.ModuleName] = cdc.MustMarshalJSON(&privacyState)
 
 	appStateJSON, err := json.MarshalIndent(appState, "", " ")
 	if err != nil {
@@ -275,7 +284,7 @@ type appCreator struct{}
 func (a appCreator) newApp(logger log.Logger, db dbm.DB, appOpts servertypes.AppOptions) servertypes.Application {
 	baseappOptions := server.DefaultBaseappOptions(appOpts)
 
-	if err := privacyzk.RunPreflight(logger.With(log.ModuleKey, "privacy")); err != nil {
+	if err := privacyzk.RunVerifierPreflight(logger.With(log.ModuleKey, "privacy")); err != nil {
 		panic(err)
 	}
 

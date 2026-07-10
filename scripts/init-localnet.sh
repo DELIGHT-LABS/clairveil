@@ -120,6 +120,7 @@ if [[ -n "$backup_path" ]]; then
 fi
 
 "$clairveil_setup" --out "$artifacts" >"$out/setup.stdout" 2>"$out/setup.stderr"
+export CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR="$artifacts"
 
 read -r -a accounts <<<"$accounts_raw"
 if [[ "${#accounts[@]}" -eq 0 ]]; then
@@ -182,8 +183,5 @@ echo "keyring backend: $keyring_backend"
 echo "zk artifacts: $artifacts"
 echo "env file: $env_file"
 echo
-echo "Start with default warn-mode preflight:"
-echo "  clairveild start"
-echo
-echo "Start with strict ZK artifact preflight:"
+echo "Start with consensus-pinned strict ZK artifact preflight:"
 echo "  source $env_file && clairveild start"

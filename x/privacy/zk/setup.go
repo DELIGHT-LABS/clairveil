@@ -45,6 +45,13 @@ var (
 
 	setupErr error
 	once     sync.Once
+
+	depositVerifierOnce sync.Once
+	depositVerifierErr  error
+	spendVerifierOnce   sync.Once
+	spendVerifierErr    error
+	joinVerifierOnce    sync.Once
+	joinVerifierErr     error
 )
 
 const (
@@ -187,10 +194,6 @@ func readFile(filename string, obj interface {
 }
 
 func expectedChecksum(filename string) (string, error) {
-	if expected := strings.TrimSpace(expectedChecksumFromEnv(filename)); expected != "" {
-		return expected, nil
-	}
-
 	manifest, checksumSource, err := ResolveRuntimeArtifactManifest()
 	if err != nil {
 		return "", fmt.Errorf("load artifact manifest checksum for %s: %w", filename, err)
@@ -207,6 +210,9 @@ func expectedChecksum(filename string) (string, error) {
 			}
 			if err := validateExpectedSHA256(filename, expected); err != nil {
 				return "", err
+			}
+			if configured := strings.TrimSpace(expectedChecksumFromEnv(filename)); configured != "" && !strings.EqualFold(configured, expected) {
+				return "", fmt.Errorf("environment checksum for %s cannot override manifest checksum", filename)
 			}
 			return expected, nil
 		}
@@ -227,6 +233,9 @@ func ValidateZKSetup() error {
 }
 
 func ValidateZKArtifacts() error {
+	if _, err := LoadLocalCircuitSetIdentity(); err != nil {
+		return err
+	}
 	_, err := loadArtifacts(readFile)
 	return err
 }
@@ -264,8 +273,11 @@ func GetDepositProvingKey() (groth16.ProvingKey, error) {
 }
 
 func GetDepositVerifyingKey() (groth16.VerifyingKey, error) {
-	if err := loadZKSetup(); err != nil {
-		return nil, err
+	depositVerifierOnce.Do(func() {
+		depositVerifyingKey, depositVerifierErr = loadVerifyingKey(DepositVKFile)
+	})
+	if depositVerifierErr != nil {
+		return nil, depositVerifierErr
 	}
 	return depositVerifyingKey, nil
 }
@@ -285,8 +297,11 @@ func GetSpendProvingKey() (groth16.ProvingKey, error) {
 }
 
 func GetSpendVerifyingKey() (groth16.VerifyingKey, error) {
-	if err := loadZKSetup(); err != nil {
-		return nil, err
+	spendVerifierOnce.Do(func() {
+		spendVerifyingKey, spendVerifierErr = loadVerifyingKey(SpendVKFile)
+	})
+	if spendVerifierErr != nil {
+		return nil, spendVerifierErr
 	}
 	return spendVerifyingKey, nil
 }
@@ -306,10 +321,21 @@ func GetJoinSplitProvingKey() (groth16.ProvingKey, error) {
 }
 
 func GetJoinSplitVerifyingKey() (groth16.VerifyingKey, error) {
-	if err := loadZKSetup(); err != nil {
-		return nil, err
+	joinVerifierOnce.Do(func() {
+		joinSplitVerifyingKey, joinVerifierErr = loadVerifyingKey(JoinSplitVKFile)
+	})
+	if joinVerifierErr != nil {
+		return nil, joinVerifierErr
 	}
 	return joinSplitVerifyingKey, nil
+}
+
+func loadVerifyingKey(filename string) (groth16.VerifyingKey, error) {
+	vk := groth16.NewVerifyingKey(ecc.BN254)
+	if err := readFile(filename, vk); err != nil {
+		return nil, fmt.Errorf("load %s: %w", artifactPath(filename), err)
+	}
+	return vk, nil
 }
 
 func GetJoinSplitR1CS() (constraint.ConstraintSystem, error) {

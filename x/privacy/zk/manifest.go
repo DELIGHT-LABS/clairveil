@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
@@ -12,7 +14,7 @@ import (
 const (
 	ArtifactManifestFile       = "privacy_zk_manifest.json"
 	LegacyChecksumsJSONFile    = "privacy_zk_checksums.json"
-	CircuitConfigSchemaVersion = "v1"
+	CircuitConfigSchemaVersion = "v2"
 	ActiveCircuitSetID         = privacytypes.ActiveCircuitSetID
 	CircuitCurve               = "BN254"
 
@@ -30,12 +32,13 @@ type ArtifactDescriptor struct {
 }
 
 type RuntimeArtifactManifest struct {
-	SchemaVersion string               `json:"schema_version"`
-	GeneratedAt   string               `json:"generated_at,omitempty"`
-	Curve         string               `json:"curve"`
-	ActiveSetID   string               `json:"active_set_id"`
-	ArtifactDir   string               `json:"artifact_dir,omitempty"`
-	Artifacts     []ArtifactDescriptor `json:"artifacts"`
+	SchemaVersion      string                           `json:"schema_version"`
+	GeneratedAt        string                           `json:"generated_at,omitempty"`
+	Curve              string                           `json:"curve"`
+	ActiveSetID        string                           `json:"active_set_id"`
+	ArtifactDir        string                           `json:"artifact_dir,omitempty"`
+	Artifacts          []ArtifactDescriptor             `json:"artifacts"`
+	CircuitSetIdentity *privacytypes.CircuitSetIdentity `json:"circuit_set_identity"`
 }
 
 type legacyChecksumsManifest struct {
@@ -110,14 +113,38 @@ func ManifestFromChecksums(outDir, generatedAt string, checksums map[string]stri
 		descriptors[i].SHA256 = checksums[descriptors[i].ChecksumEnv]
 	}
 
+	identity, _ := CircuitSetIdentityFromChecksums(checksums)
 	return RuntimeArtifactManifest{
-		SchemaVersion: CircuitConfigSchemaVersion,
-		GeneratedAt:   generatedAt,
-		Curve:         CircuitCurve,
-		ActiveSetID:   ActiveCircuitSetID,
-		ArtifactDir:   outDir,
-		Artifacts:     descriptors,
+		SchemaVersion:      CircuitConfigSchemaVersion,
+		GeneratedAt:        generatedAt,
+		Curve:              CircuitCurve,
+		ActiveSetID:        ActiveCircuitSetID,
+		ArtifactDir:        outDir,
+		Artifacts:          descriptors,
+		CircuitSetIdentity: identity,
 	}
+}
+
+func CircuitSetIdentityFromChecksums(checksums map[string]string) (*privacytypes.CircuitSetIdentity, error) {
+	identity := &privacytypes.CircuitSetIdentity{
+		SchemaVersion: privacytypes.CircuitSetIdentitySchemaVersion,
+		CircuitSetId:  ActiveCircuitSetID,
+		Curve:         CircuitCurve,
+		Circuits:      make([]*privacytypes.CircuitIdentity, 0, len(privacytypes.RequiredCircuitIdentityOrder)),
+	}
+	for _, circuitID := range privacytypes.RequiredCircuitIdentityOrder {
+		vkEnv := verifyingKeyChecksumEnv(circuitID)
+		schemaDigest, err := PublicInputSchemaSHA256(circuitID)
+		if err != nil {
+			return nil, err
+		}
+		identity.Circuits = append(identity.Circuits, &privacytypes.CircuitIdentity{
+			CircuitId:               circuitID,
+			VerifyingKeySha256:      strings.TrimSpace(checksums[vkEnv]),
+			PublicInputSchemaSha256: schemaDigest,
+		})
+	}
+	return identity, nil
 }
 
 func LoadArtifactManifest(path string) (*RuntimeArtifactManifest, error) {
@@ -128,6 +155,9 @@ func LoadArtifactManifest(path string) (*RuntimeArtifactManifest, error) {
 
 	var manifest RuntimeArtifactManifest
 	if err := json.Unmarshal(bz, &manifest); err == nil && len(manifest.Artifacts) != 0 {
+		if err := ValidateRuntimeArtifactManifest(&manifest); err != nil {
+			return nil, err
+		}
 		return &manifest, nil
 	}
 
@@ -136,11 +166,98 @@ func LoadArtifactManifest(path string) (*RuntimeArtifactManifest, error) {
 		return nil, fmt.Errorf("failed to decode artifact manifest: %w", err)
 	}
 
-	converted := ManifestFromChecksums(legacy.ArtifactDir, legacy.GeneratedAt, legacy.Checksums)
-	if legacy.Curve != "" {
-		converted.Curve = legacy.Curve
+	return nil, fmt.Errorf("legacy artifact manifests are not accepted for circuit set %s", ActiveCircuitSetID)
+}
+
+func ValidateRuntimeArtifactManifest(manifest *RuntimeArtifactManifest) error {
+	if manifest == nil {
+		return fmt.Errorf("artifact manifest is required")
 	}
-	return &converted, nil
+	if manifest.SchemaVersion != CircuitConfigSchemaVersion {
+		return fmt.Errorf("artifact manifest schema_version must be %q", CircuitConfigSchemaVersion)
+	}
+	if manifest.ActiveSetID != ActiveCircuitSetID {
+		return fmt.Errorf("artifact manifest active_set_id must be %q", ActiveCircuitSetID)
+	}
+	if manifest.Curve != CircuitCurve {
+		return fmt.Errorf("artifact manifest curve must be %q", CircuitCurve)
+	}
+	expected := DefaultArtifactDescriptors()
+	if len(manifest.Artifacts) != len(expected) {
+		return fmt.Errorf("artifact manifest must contain exactly %d artifacts", len(expected))
+	}
+	for i := range expected {
+		got := manifest.Artifacts[i]
+		want := expected[i]
+		if got.CircuitID != want.CircuitID || got.ArtifactType != want.ArtifactType || got.Filename != want.Filename || got.ChecksumEnv != want.ChecksumEnv {
+			return fmt.Errorf("artifact manifest descriptor %d does not match the canonical descriptor", i)
+		}
+		if err := validateExpectedSHA256(got.Filename, got.SHA256); err != nil {
+			return err
+		}
+		if got.SHA256 != strings.ToLower(got.SHA256) {
+			return fmt.Errorf("artifact manifest sha256 for %s must be lowercase", got.Filename)
+		}
+	}
+	if err := privacytypes.ValidateCircuitSetIdentity(manifest.CircuitSetIdentity); err != nil {
+		return fmt.Errorf("artifact manifest circuit_set_identity: %w", err)
+	}
+	expectedIdentity, err := identityFromArtifactDescriptors(manifest.Artifacts)
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(expectedIdentity, manifest.CircuitSetIdentity) {
+		return fmt.Errorf("artifact manifest circuit_set_identity does not match VK and schema descriptors")
+	}
+	return nil
+}
+
+func identityFromArtifactDescriptors(descriptors []ArtifactDescriptor) (*privacytypes.CircuitSetIdentity, error) {
+	checksums := make(map[string]string, len(descriptors))
+	for _, descriptor := range descriptors {
+		checksums[descriptor.ChecksumEnv] = descriptor.SHA256
+	}
+	return CircuitSetIdentityFromChecksums(checksums)
+}
+
+func LoadLocalCircuitSetIdentity() (*privacytypes.CircuitSetIdentity, error) {
+	manifest, source, err := ResolveRuntimeArtifactManifest()
+	if err != nil {
+		return nil, err
+	}
+	if source != ChecksumSourceManifest {
+		return nil, fmt.Errorf("structured artifact manifest %s is required", ArtifactManifestFile)
+	}
+	if err := ValidateRuntimeArtifactManifest(manifest); err != nil {
+		return nil, err
+	}
+	return privacytypes.CloneCircuitSetIdentity(manifest.CircuitSetIdentity), nil
+}
+
+func verifyingKeyFilename(circuitID string) string {
+	switch circuitID {
+	case "deposit":
+		return DepositVKFile
+	case "spend":
+		return SpendVKFile
+	case "joinsplit":
+		return JoinSplitVKFile
+	default:
+		return ""
+	}
+}
+
+func verifyingKeyChecksumEnv(circuitID string) string {
+	switch circuitID {
+	case "deposit":
+		return DepositVKSHA256Env
+	case "spend":
+		return SpendVKSHA256Env
+	case "joinsplit":
+		return JoinSplitVKSHA256Env
+	default:
+		return ""
+	}
 }
 
 func ResolveRuntimeArtifactManifest() (*RuntimeArtifactManifest, string, error) {

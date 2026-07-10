@@ -1,9 +1,20 @@
 package privacy
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark/backend/groth16"
+	"github.com/consensys/gnark/frontend"
+	"github.com/consensys/gnark/frontend/cs/r1cs"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 	"github.com/cosmos/cosmos-sdk/testutil"
@@ -11,8 +22,10 @@ import (
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DELIGHT-LABS/clairveil/x/privacy/circuit"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/keeper"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
+	privacyzk "github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
 )
 
 func setupPrivacyGenesisKeeper() (*keeper.Keeper, sdk.Context) {
@@ -32,6 +45,8 @@ func fixedFieldBytesFromUint64(v uint64) []byte {
 
 func TestGenesisRoundTrip(t *testing.T) {
 	k, ctx := setupPrivacyGenesisKeeper()
+	identity := setupGenesisCircuitIdentity(t)
+	require.NoError(t, k.SetCircuitSetIdentity(ctx, identity))
 
 	commitments := [][]byte{
 		fixedFieldBytesFromUint64(1),
@@ -93,13 +108,70 @@ func TestInitGenesisPanicsWithInvalidState(t *testing.T) {
 
 func TestInitGenesisPanicsWithForgedHistoricalRoot(t *testing.T) {
 	k, ctx := setupPrivacyGenesisKeeper()
+	identity := setupGenesisCircuitIdentity(t)
 
 	state := privacytypes.GenesisState{
-		Commitments:     [][]byte{fixedFieldBytesFromUint64(1)},
-		HistoricalRoots: [][]byte{fixedFieldBytesFromUint64(99)},
+		Commitments:        [][]byte{fixedFieldBytesFromUint64(1)},
+		HistoricalRoots:    [][]byte{fixedFieldBytesFromUint64(99)},
+		CircuitSetIdentity: identity,
 	}
 
 	require.PanicsWithError(t, "failed to initialize privacy historical roots: genesis historical root at index 0 does not match any commitment prefix root", func() {
 		InitGenesis(ctx, *k, state)
 	})
+}
+
+func TestInitGenesisRejectsCircuitIdentityMismatchBeforeStateWrites(t *testing.T) {
+	k, ctx := setupPrivacyGenesisKeeper()
+	identity := setupGenesisCircuitIdentity(t)
+	identity.Circuits[0].VerifyingKeySha256 = strings.Repeat("f", 64)
+	state := privacytypes.GenesisState{
+		Commitments:        [][]byte{fixedFieldBytesFromUint64(1)},
+		CircuitSetIdentity: identity,
+	}
+
+	require.Panics(t, func() { InitGenesis(ctx, *k, state) })
+	require.Equal(t, uint64(0), k.GetLeafCount(ctx))
+	_, found, err := k.GetCircuitSetIdentity(ctx)
+	require.NoError(t, err)
+	require.False(t, found)
+}
+
+func setupGenesisCircuitIdentity(t *testing.T) *privacytypes.CircuitSetIdentity {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv(privacyzk.ZKArtifactDirEnv, dir)
+	cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit.DepositCircuit{})
+	require.NoError(t, err)
+	_, vk, err := groth16.Setup(cs)
+	require.NoError(t, err)
+	var encoded bytes.Buffer
+	_, err = vk.WriteTo(&encoded)
+	require.NoError(t, err)
+	vkBytes := encoded.Bytes()
+	vkSum := sha256.Sum256(vkBytes)
+	vkChecksum := hex.EncodeToString(vkSum[:])
+
+	checksums := make(map[string]string)
+	for _, descriptor := range privacyzk.DefaultArtifactDescriptors() {
+		checksums[descriptor.ChecksumEnv] = strings.Repeat("0", 64)
+	}
+	for _, circuitID := range privacytypes.RequiredCircuitIdentityOrder {
+		var filename, checksumEnv string
+		switch circuitID {
+		case "deposit":
+			filename, checksumEnv = privacyzk.DepositVKFile, privacyzk.DepositVKSHA256Env
+		case "spend":
+			filename, checksumEnv = privacyzk.SpendVKFile, privacyzk.SpendVKSHA256Env
+		case "joinsplit":
+			filename, checksumEnv = privacyzk.JoinSplitVKFile, privacyzk.JoinSplitVKSHA256Env
+		}
+		require.NoError(t, os.WriteFile(filepath.Join(dir, filename), vkBytes, 0o600))
+		checksums[checksumEnv] = vkChecksum
+	}
+	manifest := privacyzk.ManifestFromChecksums(dir, "", checksums)
+	manifestBytes, err := json.Marshal(manifest)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, privacyzk.ArtifactManifestFile), manifestBytes, 0o600))
+	return privacytypes.CloneCircuitSetIdentity(manifest.CircuitSetIdentity)
 }

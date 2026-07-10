@@ -33,6 +33,14 @@ func ParseZKPreflightMode(raw string) (ZKPreflightMode, error) {
 }
 
 func RunPreflight(logger log.Logger) error {
+	return runPreflight(logger, ValidateZKArtifacts)
+}
+
+func RunVerifierPreflight(logger log.Logger) error {
+	return runPreflight(logger, ValidateLocalVerifierArtifacts)
+}
+
+func runPreflight(logger log.Logger, validate func() error) error {
 	mode, err := ParseZKPreflightMode(os.Getenv(ZKPreflightModeEnv))
 	if err != nil {
 		return err
@@ -42,7 +50,7 @@ func RunPreflight(logger log.Logger) error {
 		return nil
 	}
 
-	if err := ValidateZKArtifacts(); err != nil {
+	if err := validate(); err != nil {
 		if mode == ZKPreflightWarn {
 			logger.Warn("privacy zk preflight failed", "mode", mode, "err", err)
 			return nil

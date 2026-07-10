@@ -33,6 +33,12 @@ func resetZKSetupStateForTest() {
 	joinSplitProvingKey = nil
 	joinSplitVerifyingKey = nil
 	joinSplitR1CS = nil
+	depositVerifierOnce = sync.Once{}
+	depositVerifierErr = nil
+	spendVerifierOnce = sync.Once{}
+	spendVerifierErr = nil
+	joinVerifierOnce = sync.Once{}
+	joinVerifierErr = nil
 }
 
 func TestArtifactPathUsesEnv(t *testing.T) {
@@ -72,7 +78,9 @@ func TestValidateZKSetupFailsOnChecksumMismatch(t *testing.T) {
 
 	bad := make([]byte, 32)
 	bad[0] = 0x01
-	t.Setenv(DepositR1CSSHA256Env, hex.EncodeToString(bad))
+	checksums := validPlaceholderChecksums()
+	checksums[DepositR1CSSHA256Env] = hex.EncodeToString(bad)
+	require.NoError(t, writeTestManifest(dir, checksums))
 
 	err := ValidateZKSetup()
 	require.Error(t, err)
@@ -135,17 +143,13 @@ func TestRunPreflightStrictRejectsManifestChecksumMismatch(t *testing.T) {
 
 	require.NoError(t, writeTestArtifacts(dir))
 
-	descriptors := DefaultArtifactDescriptors()
+	manifest, _, err := ResolveRuntimeArtifactManifest()
+	require.NoError(t, err)
+	descriptors := manifest.Artifacts
 	badChecksum := make([]byte, 32)
 	badChecksum[0] = 0x01
 	descriptors[0].SHA256 = hex.EncodeToString(badChecksum)
-	manifest := RuntimeArtifactManifest{
-		SchemaVersion: CircuitConfigSchemaVersion,
-		Curve:         CircuitCurve,
-		ActiveSetID:   ActiveCircuitSetID,
-		ArtifactDir:   dir,
-		Artifacts:     descriptors,
-	}
+	manifest.Artifacts = descriptors
 	bz, err := json.Marshal(manifest)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, ArtifactManifestFile), bz, 0o600))
@@ -167,7 +171,7 @@ func TestRunPreflightStrictRejectsIncompleteManifestChecksums(t *testing.T) {
 			updateDescriptors: func(descriptors []ArtifactDescriptor) []ArtifactDescriptor {
 				return descriptors[1:]
 			},
-			want: "artifact manifest does not describe privacy_deposit_r1cs.bin",
+			want: "artifact manifest must contain exactly 9 artifacts",
 		},
 		{
 			name: "empty sha256",
@@ -175,7 +179,7 @@ func TestRunPreflightStrictRejectsIncompleteManifestChecksums(t *testing.T) {
 				descriptors[0].SHA256 = ""
 				return descriptors
 			},
-			want: "artifact manifest is missing sha256 for privacy_deposit_r1cs.bin",
+			want: "artifact manifest sha256 for privacy_deposit_r1cs.bin must be a 64-character hex string",
 		},
 		{
 			name: "malformed sha256",
@@ -196,13 +200,9 @@ func TestRunPreflightStrictRejectsIncompleteManifestChecksums(t *testing.T) {
 
 			require.NoError(t, os.WriteFile(filepath.Join(dir, DepositR1CSFile), []byte("present"), 0o600))
 
-			manifest := RuntimeArtifactManifest{
-				SchemaVersion: CircuitConfigSchemaVersion,
-				Curve:         CircuitCurve,
-				ActiveSetID:   ActiveCircuitSetID,
-				ArtifactDir:   dir,
-				Artifacts:     testCase.updateDescriptors(DefaultArtifactDescriptors()),
-			}
+			checksums := validPlaceholderChecksums()
+			manifest := ManifestFromChecksums(dir, "", checksums)
+			manifest.Artifacts = testCase.updateDescriptors(manifest.Artifacts)
 			bz, err := json.Marshal(manifest)
 			require.NoError(t, err)
 			require.NoError(t, os.WriteFile(filepath.Join(dir, ArtifactManifestFile), bz, 0o600))
@@ -215,27 +215,19 @@ func TestRunPreflightStrictRejectsIncompleteManifestChecksums(t *testing.T) {
 	}
 }
 
-func TestExpectedChecksumPrefersEnvOverIncompleteManifest(t *testing.T) {
+func TestExpectedChecksumRejectsEnvironmentOverride(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv(ZKArtifactDirEnv, dir)
 
 	envChecksum := strings.Repeat("a", sha256.Size*2)
 	t.Setenv(DepositR1CSSHA256Env, envChecksum)
 
-	manifest := RuntimeArtifactManifest{
-		SchemaVersion: CircuitConfigSchemaVersion,
-		Curve:         CircuitCurve,
-		ActiveSetID:   ActiveCircuitSetID,
-		ArtifactDir:   dir,
-		Artifacts:     DefaultArtifactDescriptors()[1:],
-	}
-	bz, err := json.Marshal(manifest)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, ArtifactManifestFile), bz, 0o600))
+	checksums := validPlaceholderChecksums()
+	checksums[DepositR1CSSHA256Env] = strings.Repeat("b", sha256.Size*2)
+	require.NoError(t, writeTestManifest(dir, checksums))
 
-	expected, err := expectedChecksum(DepositR1CSFile)
-	require.NoError(t, err)
-	require.Equal(t, envChecksum, expected)
+	_, err := expectedChecksum(DepositR1CSFile)
+	require.ErrorContains(t, err, "cannot override manifest checksum")
 }
 
 func writeTestArtifacts(dir string) error {
@@ -299,5 +291,31 @@ func writeTestArtifacts(dir string) error {
 		}
 	}
 
-	return nil
+	checksums := make(map[string]string, len(artifacts))
+	for _, descriptor := range DefaultArtifactDescriptors() {
+		bz, err := os.ReadFile(filepath.Join(dir, descriptor.Filename))
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(bz)
+		checksums[descriptor.ChecksumEnv] = hex.EncodeToString(sum[:])
+	}
+	return writeTestManifest(dir, checksums)
+}
+
+func validPlaceholderChecksums() map[string]string {
+	checksums := make(map[string]string)
+	for _, descriptor := range DefaultArtifactDescriptors() {
+		checksums[descriptor.ChecksumEnv] = strings.Repeat("a", sha256.Size*2)
+	}
+	return checksums
+}
+
+func writeTestManifest(dir string, checksums map[string]string) error {
+	manifest := ManifestFromChecksums(dir, "", checksums)
+	bz, err := json.Marshal(manifest)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, ArtifactManifestFile), bz, 0o600)
 }

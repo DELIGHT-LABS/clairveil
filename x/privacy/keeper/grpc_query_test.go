@@ -3,10 +3,8 @@ package keeper
 import (
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
+	"strings"
 	"testing"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -15,7 +13,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
-	"github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
 )
 
 func TestTreeStateQueryReturnsZeroRootWhenEmpty(t *testing.T) {
@@ -389,43 +386,35 @@ func TestDisclosureConfigQueryReturnsCurrentContract(t *testing.T) {
 	require.Equal(t, privacytypes.SupportedUserDisclosureModes(), resp.SupportedUserModes)
 }
 
-func TestCircuitConfigQueryReturnsRuntimeManifest(t *testing.T) {
+func TestCircuitConfigQueryReturnsConsensusIdentity(t *testing.T) {
 	k, ctx, _ := setupMsgServerKeeper()
-	dir := t.TempDir()
-	t.Setenv(zk.ZKArtifactDirEnv, dir)
-
-	manifest := zk.RuntimeArtifactManifest{
-		SchemaVersion: zk.CircuitConfigSchemaVersion,
-		GeneratedAt:   "2026-04-15T00:00:00Z",
-		Curve:         zk.CircuitCurve,
-		ActiveSetID:   zk.ActiveCircuitSetID,
-		ArtifactDir:   dir,
-		Artifacts: []zk.ArtifactDescriptor{
-			{
-				CircuitID:    "spend",
-				ArtifactType: "r1cs",
-				Filename:     zk.SpendR1CSFile,
-				ChecksumEnv:  zk.SpendR1CSSHA256Env,
-				SHA256:       "abcd",
-			},
-		},
+	identity := &privacytypes.CircuitSetIdentity{
+		SchemaVersion: privacytypes.CircuitSetIdentitySchemaVersion,
+		CircuitSetId:  privacytypes.ActiveCircuitSetID,
+		Curve:         privacytypes.CircuitCurveBN254,
 	}
-	bz, err := json.Marshal(manifest)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, zk.ArtifactManifestFile), bz, 0o600))
+	for i, circuitID := range privacytypes.RequiredCircuitIdentityOrder {
+		identity.Circuits = append(identity.Circuits, &privacytypes.CircuitIdentity{
+			CircuitId:               circuitID,
+			VerifyingKeySha256:      strings.Repeat(fmt.Sprintf("%x", i+1), 64),
+			PublicInputSchemaSha256: strings.Repeat(fmt.Sprintf("%x", i+4), 64),
+		})
+	}
+	require.NoError(t, k.SetCircuitSetIdentity(ctx, identity))
 
 	resp, err := k.CircuitConfig(sdk.WrapSDKContext(ctx), &privacytypes.QueryCircuitConfigRequest{})
 	require.NoError(t, err)
-	require.Equal(t, zk.CircuitConfigSchemaVersion, resp.SchemaVersion)
-	require.Equal(t, zk.ActiveCircuitSetID, resp.ActiveSetId)
-	require.Equal(t, zk.CircuitCurve, resp.Curve)
-	require.Equal(t, zk.ArtifactManifestFile, resp.ManifestFile)
-	require.True(t, resp.ManifestAvailable)
-	require.Equal(t, zk.ChecksumSourceManifest, resp.ChecksumSource)
-	require.Equal(t, "2026-04-15T00:00:00Z", resp.GeneratedAt)
-	require.Len(t, resp.Artifacts, 1)
-	require.Equal(t, "spend", resp.Artifacts[0].CircuitId)
-	require.Equal(t, "abcd", resp.Artifacts[0].Sha256)
+	require.Equal(t, privacytypes.CircuitSetIdentitySchemaVersion, resp.SchemaVersion)
+	require.Equal(t, privacytypes.ActiveCircuitSetID, resp.ActiveSetId)
+	require.Equal(t, privacytypes.CircuitCurveBN254, resp.Curve)
+	require.Empty(t, resp.ManifestFile)
+	require.False(t, resp.ManifestAvailable)
+	require.Equal(t, "consensus", resp.ChecksumSource)
+	require.Empty(t, resp.GeneratedAt)
+	require.Len(t, resp.Artifacts, 3)
+	require.Equal(t, "spend", resp.Artifacts[1].CircuitId)
+	require.Equal(t, identity.Circuits[1].VerifyingKeySha256, resp.Artifacts[1].Sha256)
+	require.Equal(t, identity, resp.CircuitSetIdentity)
 }
 
 func TestReserveQueryReturnsAccountingSnapshot(t *testing.T) {

@@ -11,7 +11,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/types"
-	"github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
 )
 
 var _ types.QueryServer = Keeper{}
@@ -260,30 +259,31 @@ func (k Keeper) CircuitConfig(goCtx context.Context, req *types.QueryCircuitConf
 	if req == nil {
 		return nil, invalidQueryRequestErr()
 	}
-	_ = sdk.UnwrapSDKContext(goCtx)
-
-	manifest, checksumSource, err := zk.ResolveRuntimeArtifactManifest()
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	identity, found, err := k.GetCircuitSetIdentity(ctx)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	if !found {
+		return nil, status.Error(codes.FailedPrecondition, "consensus circuit identity is not initialized")
+	}
 
 	response := &types.QueryCircuitConfigResponse{
-		SchemaVersion:     manifest.SchemaVersion,
-		ActiveSetId:       manifest.ActiveSetID,
-		Curve:             manifest.Curve,
-		ManifestFile:      zk.ArtifactManifestFile,
-		ManifestAvailable: checksumSource == zk.ChecksumSourceManifest,
-		ChecksumSource:    checksumSource,
-		GeneratedAt:       manifest.GeneratedAt,
-		Artifacts:         make([]*types.QueryCircuitArtifact, 0, len(manifest.Artifacts)),
+		SchemaVersion:      identity.SchemaVersion,
+		ActiveSetId:        identity.CircuitSetId,
+		Curve:              identity.Curve,
+		ManifestFile:       "",
+		ManifestAvailable:  false,
+		ChecksumSource:     "consensus",
+		GeneratedAt:        "",
+		Artifacts:          make([]*types.QueryCircuitArtifact, 0, len(identity.Circuits)),
+		CircuitSetIdentity: types.CloneCircuitSetIdentity(identity),
 	}
-	for _, artifact := range manifest.Artifacts {
+	for _, circuit := range identity.Circuits {
 		response.Artifacts = append(response.Artifacts, &types.QueryCircuitArtifact{
-			CircuitId:    artifact.CircuitID,
-			ArtifactType: artifact.ArtifactType,
-			Filename:     artifact.Filename,
-			ChecksumEnv:  artifact.ChecksumEnv,
-			Sha256:       artifact.SHA256,
+			CircuitId:    circuit.CircuitId,
+			ArtifactType: "verifying_key",
+			Sha256:       circuit.VerifyingKeySha256,
 		})
 	}
 

@@ -9,4 +9,18 @@ message GenesisState {
   repeated bytes historical_roots = 2;
   repeated bytes nullifiers = 3;
   bytes audit_master_pubkey = 4;
+  CircuitSetIdentity circuit_set_identity = 5;
+}
+
+message CircuitIdentity {
+  string circuit_id = 1;
+  string verifying_key_sha256 = 2;
+  string public_input_schema_sha256 = 3;
+}
+
+message CircuitSetIdentity {
+  string schema_version = 1;
+  string circuit_set_id = 2;
+  string curve = 3;
+  repeated CircuitIdentity circuits = 4;
 }

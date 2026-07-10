@@ -2,6 +2,7 @@ syntax = "proto3";
 package clairveil.privacy.v1;
 
 import "google/api/annotations.proto";
+import "clairveil/privacy/v1/genesis.proto";
 
 option go_package = "github.com/DELIGHT-LABS/clairveil/x/privacy/types";
 
@@ -212,6 +213,7 @@ message QueryCircuitConfigResponse {
   string checksum_source = 6;
   string generated_at = 7;
   repeated QueryCircuitArtifact artifacts = 8;
+  CircuitSetIdentity circuit_set_identity = 9;
 }
 
 message QueryReserveRequest { string denom = 1; }
