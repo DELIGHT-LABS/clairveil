@@ -29,7 +29,7 @@ func printTransferCommandSummary(cmd *cobra.Command, recipient string, amount st
 	)
 }
 
-func printWithdrawCommandSummary(cmd *cobra.Command, title string, recipient string, amount string, autoPlan bool, autoDummy bool) {
+func printWithdrawCommandSummary(cmd *cobra.Command, title string, recipient string, amount string, autoPlan bool, autoDummy bool, chainID string, expiresAtUnix int64) {
 	printCommandSection(
 		cmd,
 		title,
@@ -37,6 +37,8 @@ func printWithdrawCommandSummary(cmd *cobra.Command, title string, recipient str
 		fmt.Sprintf("amount: %s", amount),
 		fmt.Sprintf("auto plan: %t", autoPlan),
 		fmt.Sprintf("auto dummy: %t", autoDummy),
+		fmt.Sprintf("chain id: %s", chainID),
+		fmt.Sprintf("spend intent expires at unix: %d", expiresAtUnix),
 	)
 }
 

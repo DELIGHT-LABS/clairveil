@@ -893,9 +893,8 @@ If you want exact-match-only behavior without the planner, run with --auto-plan=
 			defer func() {
 				latencyFlow.finish(runErr)
 			}()
-			printWithdrawCommandSummary(cmd, "Shielded withdraw", recipientAddr.String(), targetCoin.String(), autoPlan, autoDummy)
-
 			expiresAt := time.Now().Add(defaultPreparedWithdrawExpiry)
+			printWithdrawCommandSummary(cmd, "Shielded withdraw", recipientAddr.String(), targetCoin.String(), autoPlan, autoDummy, clientCtx.ChainID, expiresAt.Unix())
 			payload, err := buildWithdrawPayload(cmd, clientCtx, targetCoin, recipientAddr, expiresAt, autoPlan, latencyFlow)
 			if err != nil {
 				runErr = err
@@ -973,8 +972,6 @@ If you want exact-match-only behavior without the planner, run with --auto-plan=
 			if err != nil {
 				return err
 			}
-			printWithdrawCommandSummary(cmd, "Prepare shielded withdraw", recipientAddr.String(), targetCoin.String(), autoPlan, autoDummy)
-
 			expiresInSec, err := cmd.Flags().GetInt64("expires-in")
 			if err != nil {
 				return err
@@ -990,6 +987,7 @@ If you want exact-match-only behavior without the planner, run with --auto-plan=
 			}()
 
 			expiresAt := time.Now().Add(time.Duration(expiresInSec) * time.Second)
+			printWithdrawCommandSummary(cmd, "Prepare shielded withdraw", recipientAddr.String(), targetCoin.String(), autoPlan, autoDummy, clientCtx.ChainID, expiresAt.Unix())
 
 			payload, err := buildWithdrawPayload(cmd, clientCtx, targetCoin, recipientAddr, expiresAt, autoPlan, latencyFlow)
 			if err != nil {

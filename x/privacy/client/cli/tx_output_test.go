@@ -28,11 +28,11 @@ func TestPrintTransferCommandSummary(t *testing.T) {
 func TestPrintWithdrawCommandSummary(t *testing.T) {
 	cmd, out := newOutputTestCommand()
 
-	printWithdrawCommandSummary(cmd, "Shielded withdraw", "clair1recipient", "7uclair", true, false)
+	printWithdrawCommandSummary(cmd, "Shielded withdraw", "clair1recipient", "7uclair", true, false, "clairveil-test-1", 2_000_000_000)
 
 	require.Equal(
 		t,
-		"Shielded withdraw\n- recipient: clair1recipient\n- amount: 7uclair\n- auto plan: true\n- auto dummy: false\n",
+		"Shielded withdraw\n- recipient: clair1recipient\n- amount: 7uclair\n- auto plan: true\n- auto dummy: false\n- chain id: clairveil-test-1\n- spend intent expires at unix: 2000000000\n",
 		out.String(),
 	)
 }
