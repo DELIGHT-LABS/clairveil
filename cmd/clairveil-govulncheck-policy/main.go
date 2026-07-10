@@ -45,6 +45,11 @@ var acceptedActionableVulnerabilities = map[string]acceptedActionableVulnerabili
 		RequireNoFixedVersion:  true,
 		VulnerableSymbolModule: "github.com/pion/dtls/v2",
 	},
+	"GO-2026-5932": {
+		Reason:                 "Cosmos SDK uses x/crypto/openpgp only for local ASCII key armor, not OpenPGP signing or encryption; upstream has no fixed version, so keep the dependency narrowly tracked until Cosmos SDK removes it.",
+		RequireNoFixedVersion:  true,
+		VulnerableSymbolModule: "golang.org/x/crypto",
+	},
 }
 
 func main() {

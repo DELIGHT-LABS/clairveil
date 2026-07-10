@@ -54,6 +54,30 @@ func TestAcceptedActionableReasonIsScopedToNoFixedVulnerableModule(t *testing.T)
 	}
 }
 
+func TestAcceptedOpenPGPArmorFindingIsScopedToNoFixedXCryptoModule(t *testing.T) {
+	accepted := govulncheckFinding{
+		OSV: "GO-2026-5932",
+		Trace: []govulncheckTraceRef{
+			{Module: "golang.org/x/crypto", Package: "golang.org/x/crypto/openpgp/armor", Function: "Decode"},
+		},
+	}
+	if _, ok := accepted.acceptedActionableReason(); !ok {
+		t.Fatalf("expected no-fixed x/crypto OpenPGP armor finding to be accepted")
+	}
+
+	fixed := accepted
+	fixed.FixedVersion = "v0.55.0"
+	if _, ok := fixed.acceptedActionableReason(); ok {
+		t.Fatalf("expected OpenPGP finding with a fixed version to be disallowed")
+	}
+
+	wrongModule := accepted
+	wrongModule.Trace[0].Module = "example.com/openpgp"
+	if _, ok := wrongModule.acceptedActionableReason(); ok {
+		t.Fatalf("expected OpenPGP finding from another module to be disallowed")
+	}
+}
+
 func TestReadFindingsSkipsNonFindingMessages(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "govulncheck.jsonl")
 	input := `{"config":{"protocol_version":"v1"}}
