@@ -17,7 +17,6 @@ import (
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
-	"github.com/consensys/gnark/backend/groth16"
 )
 
 type msgServer struct {
@@ -96,22 +95,7 @@ func (k msgServer) Deposit(goCtx context.Context, msg *types.MsgDeposit) (*types
 	assignment.Amount = new(big.Int).Set(coin.Amount.BigInt())
 	assignment.AssetID = privacycrypto.HashString(coin.Denom)
 
-	publicWitness, err := newPublicWitnessBN254(&assignment)
-	if err != nil {
-		return nil, errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "failed to create the deposit public witness: %v", err)
-	}
-
-	proof, err := readProofBN254(msg.Proof)
-	if err != nil {
-		return nil, errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "failed to decode the deposit proof")
-	}
-
-	depositVK, err := zk.GetDepositVerifyingKey()
-	if err != nil {
-		return nil, errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "failed to load the deposit verifying key: %v", err)
-	}
-
-	if err := groth16.Verify(proof, depositVK, publicWitness); err != nil {
+	if err := verifyProofBN254(ctx, msg.Proof, &assignment, DepositProofVerificationGas, "privacy deposit proof verification", zk.GetDepositVerifyingKey); err != nil {
 		return nil, errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "deposit proof verification failed; the proof, amount, asset, or commitment may not match: %v", err)
 	}
 
@@ -206,22 +190,7 @@ func (k msgServer) Withdraw(goCtx context.Context, msg *types.MsgWithdraw) (*typ
 	assignment.Amount = amountVal
 	assignment.AssetID = privacycrypto.HashString(coin.Denom)
 
-	publicWitness, err := newPublicWitnessBN254(&assignment)
-	if err != nil {
-		return nil, errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "failed to create the spend public witness: %v", err)
-	}
-
-	proof, err := readProofBN254(msg.Proof)
-	if err != nil {
-		return nil, errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "failed to decode the spend proof")
-	}
-
-	spendVK, err := zk.GetSpendVerifyingKey()
-	if err != nil {
-		return nil, errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "failed to load the spend verifying key: %v", err)
-	}
-
-	if err := groth16.Verify(proof, spendVK, publicWitness); err != nil {
+	if err := verifyProofBN254(ctx, msg.Proof, &assignment, SpendProofVerificationGas, "privacy spend proof verification", zk.GetSpendVerifyingKey); err != nil {
 		return nil, errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "spend proof verification failed; the proof, recipient, amount, or asset may not match: %v", err)
 	}
 
@@ -355,11 +324,6 @@ func (k msgServer) executeShieldedTransfer(ctx sdk.Context, req shieldedTransfer
 		return wrapMerkleAppendPreconditionErr(err, "not enough merkle tree capacity for transfer outputs")
 	}
 
-	proof, err := readProofBN254(req.proof)
-	if err != nil {
-		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "failed to decode the joinsplit proof")
-	}
-
 	var assignment circuit.JoinSplitCircuit
 	assignment.MerkleRoot = new(big.Int).SetBytes(canonicalRoot)
 	assignment.Nullifiers[0] = new(big.Int).SetBytes(canonicalNullifiers[0])
@@ -405,17 +369,7 @@ func (k msgServer) executeShieldedTransfer(ctx sdk.Context, req shieldedTransfer
 	assignment.PayloadDigestHi = payloadDigest.Hi
 	assignment.PayloadDigestLo = payloadDigest.Lo
 
-	publicWitness, err := newPublicWitnessBN254(&assignment)
-	if err != nil {
-		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "failed to create the joinsplit public witness: %v", err)
-	}
-
-	verifyingKey, err := zk.GetJoinSplitVerifyingKey()
-	if err != nil {
-		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "failed to load the joinsplit verifying key: %v", err)
-	}
-
-	if err := groth16.Verify(proof, verifyingKey, publicWitness); err != nil {
+	if err := verifyProofBN254(ctx, req.proof, &assignment, JoinSplitProofVerificationGas, "privacy joinsplit proof verification", zk.GetJoinSplitVerifyingKey); err != nil {
 		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "joinsplit proof verification failed: %v", err)
 	}
 

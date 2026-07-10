@@ -267,6 +267,31 @@ func TestMsgServerDepositSuccess(t *testing.T) {
 	require.True(t, k.CheckHistoricalRoot(ctx, root))
 }
 
+func TestMsgServerDepositProofFramingAndGasFailurePathsKeepStateUnchanged(t *testing.T) {
+	ensureDepositTestArtifacts(t)
+	consumed := make(map[string]storetypes.Gas)
+	for _, tc := range []struct {
+		name  string
+		proof func(*testing.T) []byte
+	}{
+		{name: "short framing", proof: func(*testing.T) []byte { return []byte{0x01} }},
+		{name: "framing valid invalid proof", proof: canonicalTestProofBytes},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			k, ctx, bankKeeper := setupMsgServerKeeper()
+			ctx = ctx.WithGasMeter(storetypes.NewGasMeter(2 * DepositProofVerificationGas))
+			msg := privacytypes.NewMsgDeposit(testAddress(0x13), "1uclair", fixedFieldBytes(0x7d), []byte("note"), tc.proof(t))
+
+			_, err := NewMsgServerImpl(*k).Deposit(sdk.WrapSDKContext(ctx), msg)
+			require.Error(t, err)
+			consumed[tc.name] = ctx.GasMeter().GasConsumed()
+			require.Equal(t, uint64(0), k.GetLeafCount(ctx))
+			require.Equal(t, 0, bankKeeper.fromAccountToModuleCalls)
+		})
+	}
+	require.Equal(t, storetypes.Gas(DepositProofVerificationGas), consumed["framing valid invalid proof"]-consumed["short framing"])
+}
+
 func TestMsgServerDepositRejectsGlobalCommitmentCollisionBeforeBank(t *testing.T) {
 	k, ctx, bankKeeper := setupMsgServerKeeper()
 	server := NewMsgServerImpl(*k)
