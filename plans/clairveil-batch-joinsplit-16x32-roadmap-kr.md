@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | 진행 중 (Session 1 완료, Session 2 미착수) |
+| 상태 | 진행 중 (Session 1 완료, Session 2 Unblocked·미착수) |
 | 작성일 | 2026-07-10 |
 | 대상 브랜치 | `private/bulk-transfer-v2` |
 | 최종 목표 | 현재 shielded protocol의 알려진 보안·프라이버시 결함을 먼저 제거하고 안전하고 견고한 최대 16-input / 32-output shielded batch transfer를 구현함 |
@@ -269,8 +269,8 @@ Gate 4: PUBLICATION_READY_EXPERIMENTAL
 
 | 세션 | 상태 | 시작 commit | 완료 commit | 검증 요약 | 잔여 사항 |
 | --- | --- | --- | --- | --- | --- |
-| 1. 현재 보안 수정 | Complete (Gate 1 충족) | `e427370` | `33f0a73` | unit/proto/전체 Go/examples/vulncheck/localnet/privacy E2E/payroll live/release-check/bulk readiness/fuzz/release-pack 검증 통과 | current protocol Critical/High 0건. no-fixed-version `GO-2024-2584`, `GO-2026-4479`, `GO-2026-5932`, npm low 1건, formal setup/external audit 미수행을 known risk로 추적 |
-| 2. 기반/설계 확정 | Not Started (Gate 1 충족) | - | - | Session 2 구현·검증 미착수 | Session 1 Completion Record의 v2 helper/vector와 breaking/reset 지침을 시작 gate에서 재확인 |
+| 1. 현재 보안 수정 | Complete (Gate 1 충족) | `e427370` | `2c1bfb1` | unit/proto/전체 Go/examples/vulncheck/localnet/privacy E2E/payroll live/release-check/bulk readiness/fuzz/release-pack 및 review-fix 검증 통과 | current protocol Critical/High 0건. no-fixed-version `GO-2024-2584`, `GO-2026-4479`, `GO-2026-5932`, npm low 1건, formal setup/external audit 미수행을 known risk로 추적 |
+| 2. 기반/설계 확정 | Unblocked (Not Started; Gate 1 충족) | - | - | Session 2 구현·검증 미착수 | Session 1 Completion Record의 v2 helper/vector와 breaking/reset 지침을 시작 gate에서 재확인 |
 | 3A. Circuit/chain core | Blocked by Session 2 | - | - | - | - |
 | 3B. Client/product integration | Blocked by Session 3A | - | - | - | - |
 | 4. 독립 검증/공개 gate | Blocked by Session 3B | - | - | - | - |
