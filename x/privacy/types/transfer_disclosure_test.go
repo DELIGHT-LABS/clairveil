@@ -27,6 +27,7 @@ func TestComputeTransferDisclosureDigestBytes(t *testing.T) {
 		big.NewInt(13),
 		big.NewInt(31),
 		big.NewInt(37),
+		big.NewInt(41),
 	)
 	require.NoError(t, err)
 	require.Len(t, digest, expectedFieldElementBytes)
@@ -50,6 +51,7 @@ func TestComputeTransferDisclosureDigestBytesZerosHiddenFields(t *testing.T) {
 		big.NewInt(13),
 		big.NewInt(31),
 		big.NewInt(37),
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -67,6 +69,7 @@ func TestComputeTransferDisclosureDigestBytesZerosHiddenFields(t *testing.T) {
 		big.NewInt(987),
 		big.NewInt(111),
 		big.NewInt(222),
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -84,14 +87,9 @@ func TestComputeTransferDisclosureDigestBytesRequiresPolicyInputs(t *testing.T) 
 		commitment,
 		nil,
 		big.NewInt(7),
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
+		nil, nil, nil, nil,
+		nil, nil, nil, nil,
+		big.NewInt(41),
 	)
 	require.Error(t, err)
 
@@ -101,14 +99,9 @@ func TestComputeTransferDisclosureDigestBytesRequiresPolicyInputs(t *testing.T) 
 		commitment,
 		nil,
 		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
+		nil, nil, nil, nil,
+		nil, nil, nil, nil,
+		big.NewInt(41),
 	)
 	require.Error(t, err)
 }
@@ -129,13 +122,14 @@ func TestComputeAuditTransferDisclosureDigestBytes(t *testing.T) {
 		big.NewInt(13),
 		big.NewInt(31),
 		big.NewInt(37),
+		big.NewInt(43),
 	)
 	require.NoError(t, err)
 	require.Len(t, digest, expectedFieldElementBytes)
 	require.NoError(t, validateFieldElementBytesStrict("audit digest", digest))
 }
 
-func TestComputeSelfViewTransferDisclosureDigestBytesUsesDistinctDomain(t *testing.T) {
+func TestComputeSelfViewTransferDisclosureDigestBytesSharesFullDigest(t *testing.T) {
 	commitment := validFieldBytes()
 
 	auditDigest, err := ComputeAuditTransferDisclosureDigestBytes(
@@ -151,6 +145,7 @@ func TestComputeSelfViewTransferDisclosureDigestBytesUsesDistinctDomain(t *testi
 		big.NewInt(13),
 		big.NewInt(31),
 		big.NewInt(37),
+		big.NewInt(43),
 	)
 	require.NoError(t, err)
 
@@ -167,11 +162,12 @@ func TestComputeSelfViewTransferDisclosureDigestBytesUsesDistinctDomain(t *testi
 		big.NewInt(13),
 		big.NewInt(31),
 		big.NewInt(37),
+		big.NewInt(43),
 	)
 	require.NoError(t, err)
 	require.Len(t, selfViewDigest, expectedFieldElementBytes)
 	require.NoError(t, validateFieldElementBytesStrict("self-view digest", selfViewDigest))
-	require.NotEqual(t, auditDigest, selfViewDigest)
+	require.Equal(t, auditDigest, selfViewDigest)
 }
 
 func TestComputeAuditTransferDisclosureDigestBytesRequiresFullAddresses(t *testing.T) {
@@ -190,7 +186,34 @@ func TestComputeAuditTransferDisclosureDigestBytesRequiresFullAddresses(t *testi
 		big.NewInt(13),
 		big.NewInt(31),
 		big.NewInt(37),
+		big.NewInt(43),
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "sender shielded address")
+}
+
+func TestDisclosureDigestBlindingPreventsDictionaryMatch(t *testing.T) {
+	commitment := validFieldBytes()
+	args := func(blinding *big.Int) ([]byte, error) {
+		return ComputeTransferDisclosureDigestBytes(
+			TransferPrivacyPolicyDiscloseAmount,
+			TransferDisclosureRecipientOutputIndex,
+			commitment,
+			big.NewInt(10),
+			big.NewInt(7),
+			nil, nil, nil, nil, nil, nil, nil, nil,
+			blinding,
+		)
+	}
+
+	first, err := args(big.NewInt(101))
+	require.NoError(t, err)
+	second, err := args(big.NewInt(102))
+	require.NoError(t, err)
+	require.NotEqual(t, first, second)
+
+	_, err = args(nil)
+	require.ErrorContains(t, err, "blinding")
+	_, err = args(big.NewInt(0))
+	require.ErrorContains(t, err, "non-zero")
 }

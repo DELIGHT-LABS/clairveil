@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
 
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 
@@ -14,10 +15,12 @@ import (
 )
 
 type DisclosureBuildInput struct {
-	OutputCommitment []byte
-	TransferDenom    string
-	FromNote         privacytypes.Note
-	RecipientNote    privacytypes.Note
+	OutputCommitment       []byte
+	TransferDenom          string
+	FromNote               privacytypes.Note
+	RecipientNote          privacytypes.Note
+	UserDisclosureBlinding *big.Int
+	FullDisclosureBlinding *big.Int
 }
 
 type DisclosureData struct {
@@ -57,11 +60,16 @@ func BuildUserDisclosureData(
 		input.RecipientNote.ReceiverSpendPubKeyY,
 		input.RecipientNote.ReceiverViewPubKeyX,
 		input.RecipientNote.ReceiverViewPubKeyY,
+		input.UserDisclosureBlinding,
 	)
 	if err != nil {
 		return nil, err
 	}
 	digestHex := hex.EncodeToString(digest)
+	blindingHex, err := privacyfield.CanonicalHexFromBigInt(input.UserDisclosureBlinding)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user disclosure blinding: %w", err)
+	}
 
 	fromAddress, toAddress, err := disclosureAddresses(input)
 	if err != nil {
@@ -75,6 +83,7 @@ func BuildUserDisclosureData(
 		OutputIndex:         privacytypes.TransferDisclosureRecipientOutputIndex,
 		CommitmentHex:       commitmentHex,
 		DisclosureDigestHex: digestHex,
+		BlindingHex:         blindingHex,
 	}
 
 	if userPrivacyPolicy&privacytypes.TransferPrivacyPolicyDiscloseAmount != 0 {
@@ -144,11 +153,16 @@ func BuildAuditDisclosureData(
 		input.RecipientNote.ReceiverSpendPubKeyY,
 		input.RecipientNote.ReceiverViewPubKeyX,
 		input.RecipientNote.ReceiverViewPubKeyY,
+		input.FullDisclosureBlinding,
 	)
 	if err != nil {
 		return nil, err
 	}
 	digestHex := hex.EncodeToString(digest)
+	blindingHex, err := privacyfield.CanonicalHexFromBigInt(input.FullDisclosureBlinding)
+	if err != nil {
+		return nil, fmt.Errorf("invalid full disclosure blinding: %w", err)
+	}
 
 	fromAddress, toAddress, err := disclosureAddresses(input)
 	if err != nil {
@@ -162,6 +176,7 @@ func BuildAuditDisclosureData(
 		OutputIndex:         privacytypes.TransferDisclosureRecipientOutputIndex,
 		CommitmentHex:       commitmentHex,
 		DisclosureDigestHex: digestHex,
+		BlindingHex:         blindingHex,
 		Amount:              input.RecipientNote.Amount.String(),
 		AssetIDHex:          assetIDHex,
 		AssetDenom:          input.TransferDenom,
@@ -214,11 +229,16 @@ func BuildSelfViewDisclosureData(
 		input.RecipientNote.ReceiverSpendPubKeyY,
 		input.RecipientNote.ReceiverViewPubKeyX,
 		input.RecipientNote.ReceiverViewPubKeyY,
+		input.FullDisclosureBlinding,
 	)
 	if err != nil {
 		return nil, err
 	}
 	digestHex := hex.EncodeToString(digest)
+	blindingHex, err := privacyfield.CanonicalHexFromBigInt(input.FullDisclosureBlinding)
+	if err != nil {
+		return nil, fmt.Errorf("invalid full disclosure blinding: %w", err)
+	}
 
 	fromAddress, toAddress, err := disclosureAddresses(input)
 	if err != nil {
@@ -232,6 +252,7 @@ func BuildSelfViewDisclosureData(
 		OutputIndex:         privacytypes.TransferDisclosureRecipientOutputIndex,
 		CommitmentHex:       commitmentHex,
 		DisclosureDigestHex: digestHex,
+		BlindingHex:         blindingHex,
 		Amount:              input.RecipientNote.Amount.String(),
 		AssetIDHex:          assetIDHex,
 		AssetDenom:          input.TransferDenom,

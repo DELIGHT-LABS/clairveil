@@ -1,7 +1,7 @@
 package types
 
 const (
-	DisclosurePayloadVersion      = "v4"
+	DisclosurePayloadVersion      = "v5"
 	DisclosureConfigSchemaVersion = "v1"
 )
 

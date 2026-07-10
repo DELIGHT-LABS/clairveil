@@ -20,11 +20,12 @@ import (
 )
 
 const (
-	PreparedTransferPayloadVersion = "v3"
+	PreparedTransferPayloadVersion = "v4"
 	PreparedTransferProofVersion   = "v1"
 
 	legacyPreparedTransferPayloadVersionV1 = "v1"
 	legacyPreparedTransferPayloadVersionV2 = "v2"
+	legacyPreparedTransferPayloadVersionV3 = "v3"
 )
 
 type PreparedTransferInput struct {
@@ -65,6 +66,8 @@ type PreparedTransferPayload struct {
 	AuditDisclosurePayloadHex      string                   `json:"audit_disclosure_payload_hex"`
 	SelfViewDisclosureDigestHex    string                   `json:"self_view_disclosure_digest_hex,omitempty"`
 	SelfViewDisclosurePayloadHex   string                   `json:"self_view_disclosure_payload_hex,omitempty"`
+	UserDisclosureBlindingHex      string                   `json:"user_disclosure_blinding_hex,omitempty"`
+	FullDisclosureBlindingHex      string                   `json:"full_disclosure_blinding_hex"`
 	PayloadHash                    string                   `json:"payload_hash"`
 }
 
@@ -97,11 +100,24 @@ func BuildPreparedTransferPayload(
 		return nil, err
 	}
 
+	fullDisclosureBlinding, err := privacycrypto.GenerateNonZeroRandomness()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate full disclosure blinding: %w", err)
+	}
+	userDisclosureBlinding := big.NewInt(0)
+	if input.UserPrivacyPolicy != privacytypes.TransferPrivacyPolicyAllPrivate {
+		userDisclosureBlinding, err = privacycrypto.GenerateNonZeroRandomness()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate user disclosure blinding: %w", err)
+		}
+	}
 	disclosureInput := DisclosureBuildInput{
-		OutputCommitment: prepared.OutputCommitments[0],
-		TransferDenom:    input.TransferDenom,
-		FromNote:         prepared.FromNote,
-		RecipientNote:    prepared.RecipientNote,
+		OutputCommitment:       prepared.OutputCommitments[0],
+		TransferDenom:          input.TransferDenom,
+		FromNote:               prepared.FromNote,
+		RecipientNote:          prepared.RecipientNote,
+		UserDisclosureBlinding: userDisclosureBlinding,
+		FullDisclosureBlinding: fullDisclosureBlinding,
 	}
 
 	userDisclosureData, err := BuildUserDisclosureData(
@@ -138,6 +154,17 @@ func BuildPreparedTransferPayload(
 	if err != nil {
 		return nil, fmt.Errorf("invalid asset id: %w", err)
 	}
+	fullDisclosureBlindingHex, err := privacyfield.CanonicalHexFromBigInt(fullDisclosureBlinding)
+	if err != nil {
+		return nil, fmt.Errorf("invalid full disclosure blinding: %w", err)
+	}
+	userDisclosureBlindingHex := ""
+	if userDisclosureBlinding.Sign() != 0 {
+		userDisclosureBlindingHex, err = privacyfield.CanonicalHexFromBigInt(userDisclosureBlinding)
+		if err != nil {
+			return nil, fmt.Errorf("invalid user disclosure blinding: %w", err)
+		}
+	}
 
 	payload := &PreparedTransferPayload{
 		Version:                        PreparedTransferPayloadVersion,
@@ -153,12 +180,14 @@ func BuildPreparedTransferPayload(
 		AuditDisclosureDigestHex:       hex.EncodeToString(auditDisclosureData.Digest),
 		AuditDisclosureTargetPubKeyHex: hex.EncodeToString(encodedDisclosureTargetBytes(input.AuditDisclosureTargetPubKey, input.AuditDisclosureTargetPubKeyBz)),
 		AuditDisclosurePayloadHex:      hex.EncodeToString(auditDisclosureData.CipherText),
+		FullDisclosureBlindingHex:      fullDisclosureBlindingHex,
 	}
 
 	if userDisclosureData != nil {
 		payload.UserDisclosureDigestHex = hex.EncodeToString(userDisclosureData.Digest)
 		payload.UserDisclosureTargetPubKeyHex = hex.EncodeToString(encodedDisclosureTargetBytes(input.UserDisclosureTargetPubKey, input.UserDisclosureTargetPubKeyBz))
 		payload.UserDisclosurePayloadHex = hex.EncodeToString(userDisclosureData.CipherText)
+		payload.UserDisclosureBlindingHex = userDisclosureBlindingHex
 	}
 	if selfViewDisclosureData != nil {
 		payload.SelfViewDisclosureDigestHex = hex.EncodeToString(selfViewDisclosureData.Digest)
@@ -260,6 +289,10 @@ func ComputePreparedTransferPayloadHash(payload PreparedTransferPayload) string 
 	if preparedTransferPayloadHashIncludesSelfView(payload.Version) {
 		write(payload.SelfViewDisclosureDigestHex)
 		write(payload.SelfViewDisclosurePayloadHex)
+	}
+	if preparedTransferPayloadHashIncludesDisclosureBlindings(payload.Version) {
+		write(payload.UserDisclosureBlindingHex)
+		write(payload.FullDisclosureBlindingHex)
 	}
 	write(strconv.Itoa(len(payload.Inputs)))
 	for _, input := range payload.Inputs {
@@ -366,6 +399,16 @@ func ValidatePreparedTransferPayloadMetadata(payload PreparedTransferPayload) er
 	if err != nil {
 		return err
 	}
+	if payload.UserPrivacyPolicy == privacytypes.TransferPrivacyPolicyAllPrivate {
+		if strings.TrimSpace(payload.UserDisclosureBlindingHex) != "" {
+			return fmt.Errorf("all-private transfer payload must not include user disclosure blinding")
+		}
+	} else if _, err := decodeNonZeroCanonicalBlindingHex(payload.UserDisclosureBlindingHex, "user disclosure blinding"); err != nil {
+		return err
+	}
+	if _, err := decodeNonZeroCanonicalBlindingHex(payload.FullDisclosureBlindingHex, "full disclosure blinding"); err != nil {
+		return err
+	}
 
 	if err := privacytypes.NewMsgTransferWithDisclosure(
 		payload.Creator,
@@ -395,12 +438,14 @@ func validatePreparedTransferPayloadVersion(payload PreparedTransferPayload) err
 	switch payload.Version {
 	case PreparedTransferPayloadVersion:
 		return nil
+	case legacyPreparedTransferPayloadVersionV3:
+		return fmt.Errorf("legacy transfer payload version %q does not include required disclosure blinding; regenerate it with transfer payload version %q", payload.Version, PreparedTransferPayloadVersion)
 	case legacyPreparedTransferPayloadVersionV2:
 		return fmt.Errorf("legacy transfer payload version %q does not include required view tags; regenerate it with transfer payload version %q", payload.Version, PreparedTransferPayloadVersion)
 	case legacyPreparedTransferPayloadVersionV1:
 		return fmt.Errorf("legacy transfer payload version %q does not include required self-view disclosure and view tags; regenerate it with transfer payload version %q", payload.Version, PreparedTransferPayloadVersion)
 	default:
-		return fmt.Errorf("unsupported transfer payload version %q (expected %q or legacy %q/%q)", payload.Version, PreparedTransferPayloadVersion, legacyPreparedTransferPayloadVersionV2, legacyPreparedTransferPayloadVersionV1)
+		return fmt.Errorf("unsupported transfer payload version %q (expected %q or legacy %q/%q/%q)", payload.Version, PreparedTransferPayloadVersion, legacyPreparedTransferPayloadVersionV3, legacyPreparedTransferPayloadVersionV2, legacyPreparedTransferPayloadVersionV1)
 	}
 }
 
@@ -409,10 +454,14 @@ func preparedTransferPayloadHashIncludesSelfView(version string) bool {
 }
 
 func preparedTransferPayloadHashIncludesViewTags(version string) bool {
-	return version == PreparedTransferPayloadVersion
+	return version == PreparedTransferPayloadVersion || version == legacyPreparedTransferPayloadVersionV3
 }
 
 func preparedTransferPayloadRequiresViewTags(version string) bool {
+	return version == PreparedTransferPayloadVersion || version == legacyPreparedTransferPayloadVersionV3
+}
+
+func preparedTransferPayloadHashIncludesDisclosureBlindings(version string) bool {
 	return version == PreparedTransferPayloadVersion
 }
 
@@ -637,13 +686,26 @@ func buildJoinSplitAssignmentFromPreparedTransferPayload(payload PreparedTransfe
 		return nil, err
 	}
 	auditDigest := new(big.Int).SetBytes(auditDigestBytes)
+	userDisclosureBlinding := big.NewInt(0)
+	if payload.UserPrivacyPolicy != privacytypes.TransferPrivacyPolicyAllPrivate {
+		userDisclosureBlinding, err = decodeNonZeroCanonicalBlindingHex(payload.UserDisclosureBlindingHex, "user disclosure blinding")
+		if err != nil {
+			return nil, err
+		}
+	}
+	fullDisclosureBlinding, err := decodeNonZeroCanonicalBlindingHex(payload.FullDisclosureBlindingHex, "full disclosure blinding")
+	if err != nil {
+		return nil, err
+	}
 
 	assignment := &circuit.JoinSplitCircuit{
-		MerkleRoot:            new(big.Int).SetBytes(rootBytes),
-		AssetID:               new(big.Int).SetBytes(assetIDBytes),
-		UserPrivacyPolicy:     big.NewInt(int64(payload.UserPrivacyPolicy)),
-		UserDisclosureDigest:  userDigest,
-		AuditDisclosureDigest: auditDigest,
+		MerkleRoot:             new(big.Int).SetBytes(rootBytes),
+		AssetID:                new(big.Int).SetBytes(assetIDBytes),
+		UserPrivacyPolicy:      big.NewInt(int64(payload.UserPrivacyPolicy)),
+		UserDisclosureDigest:   userDigest,
+		FullDisclosureDigest:   auditDigest,
+		UserDisclosureBlinding: userDisclosureBlinding,
+		FullDisclosureBlinding: fullDisclosureBlinding,
 	}
 
 	for i, input := range payload.Inputs {
@@ -783,6 +845,17 @@ func decodeCanonicalHexBigInt(value, fieldName string) (*big.Int, error) {
 		return nil, err
 	}
 	return new(big.Int).SetBytes(bz), nil
+}
+
+func decodeNonZeroCanonicalBlindingHex(value, fieldName string) (*big.Int, error) {
+	blinding, err := decodeCanonicalHexBigInt(value, fieldName)
+	if err != nil {
+		return nil, err
+	}
+	if blinding.Sign() == 0 {
+		return nil, fmt.Errorf("%s must be non-zero", fieldName)
+	}
+	return blinding, nil
 }
 
 func decodePublicKeyHex(value string, fieldName string) (*crypto_tedwards.PointAffine, error) {

@@ -354,7 +354,7 @@ func (k msgServer) executeShieldedTransfer(ctx sdk.Context, req shieldedTransfer
 	} else {
 		assignment.UserDisclosureDigest = big.NewInt(0)
 	}
-	assignment.AuditDisclosureDigest = new(big.Int).SetBytes(req.auditDisclosureDigest)
+	assignment.FullDisclosureDigest = new(big.Int).SetBytes(req.auditDisclosureDigest)
 
 	publicWitness, err := newPublicWitnessBN254(&assignment)
 	if err != nil {

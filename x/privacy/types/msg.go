@@ -1,6 +1,7 @@
 package types
 
 import (
+	"bytes"
 	"strings"
 
 	errorsmod "cosmossdk.io/errors"
@@ -190,7 +191,7 @@ func validateAuditDisclosure(digest, targetPubKey, payload []byte) error {
 	return nil
 }
 
-func validateSelfViewDisclosure(digest, payload []byte) error {
+func validateSelfViewDisclosure(fullDigest, digest, payload []byte) error {
 	if len(digest) == 0 && len(payload) == 0 {
 		return nil
 	}
@@ -202,6 +203,9 @@ func validateSelfViewDisclosure(digest, payload []byte) error {
 	}
 	if err := validateFieldElementBytesStrict("self-view disclosure digest", digest); err != nil {
 		return err
+	}
+	if !bytes.Equal(fullDigest, digest) {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "audit and self-view disclosures must use the same full disclosure digest")
 	}
 	return nil
 }
@@ -389,6 +393,7 @@ func (msg *MsgTransfer) ValidateBasic() error {
 	}
 
 	if err := validateSelfViewDisclosure(
+		msg.AuditDisclosureDigest,
 		msg.SelfViewDisclosureDigest,
 		msg.SelfViewDisclosurePayload,
 	); err != nil {

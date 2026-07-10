@@ -22,6 +22,9 @@ func TestVerifyPayloadForAmountOnlyUserDisclosure(t *testing.T) {
 	assetID := privacycrypto.HashString("uclair")
 	assetIDHex, err := privacyfield.CanonicalHexFromBigInt(assetID)
 	require.NoError(t, err)
+	blinding := big.NewInt(77)
+	blindingHex, err := privacyfield.CanonicalHexFromBigInt(blinding)
+	require.NoError(t, err)
 
 	digestHex, err := privacytypes.ComputeTransferDisclosureDigestHex(
 		privacytypes.TransferPrivacyPolicyDiscloseAmount,
@@ -29,14 +32,9 @@ func TestVerifyPayloadForAmountOnlyUserDisclosure(t *testing.T) {
 		commitmentBytes,
 		big.NewInt(7),
 		assetID,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
+		nil, nil, nil, nil,
+		nil, nil, nil, nil,
+		blinding,
 	)
 	require.NoError(t, err)
 
@@ -47,6 +45,7 @@ func TestVerifyPayloadForAmountOnlyUserDisclosure(t *testing.T) {
 		OutputIndex:         privacytypes.TransferDisclosureRecipientOutputIndex,
 		CommitmentHex:       commitmentHex,
 		DisclosureDigestHex: digestHex,
+		BlindingHex:         blindingHex,
 		Amount:              "7",
 		AssetIDHex:          assetIDHex,
 		AssetDenom:          "uclair",

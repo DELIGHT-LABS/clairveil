@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	PayloadVersion = "v4"
+	PayloadVersion = "v5"
 	PlaneUser      = "user"
 	PlaneAudit     = "audit"
 	PlaneSelfView  = "self-view"
@@ -26,6 +26,7 @@ type Payload struct {
 	OutputIndex         uint32 `json:"output_index"`
 	CommitmentHex       string `json:"commitment_hex"`
 	DisclosureDigestHex string `json:"disclosure_digest_hex,omitempty"`
+	BlindingHex         string `json:"disclosure_blinding_hex"`
 	Amount              string `json:"amount,omitempty"`
 	AssetIDHex          string `json:"asset_id_hex,omitempty"`
 	AssetDenom          string `json:"asset_denom,omitempty"`
@@ -102,11 +103,22 @@ func VerifyPayload(payload *Payload, onChainDigestHex string) (*VerificationRepo
 
 func ComputeExpectedDisclosureDigest(payload *Payload) (string, *VerificationReport, error) {
 	verification := &VerificationReport{}
+	if payload == nil {
+		return "", nil, fmt.Errorf("disclosure payload is required")
+	}
+	if payload.Version != PayloadVersion {
+		return "", nil, fmt.Errorf("unsupported disclosure payload version %q (expected %q)", payload.Version, PayloadVersion)
+	}
 
 	commitmentBytes, err := privacyfield.DecodeCanonicalHex(payload.CommitmentHex, "commitment")
 	if err != nil {
 		return "", nil, err
 	}
+	blindingBytes, err := privacyfield.DecodeCanonicalHex(payload.BlindingHex, "disclosure blinding")
+	if err != nil {
+		return "", nil, err
+	}
+	blinding := new(big.Int).SetBytes(blindingBytes)
 
 	amount, assetID, err := DisclosureAmountAndAsset(payload)
 	if err != nil {
@@ -140,6 +152,7 @@ func ComputeExpectedDisclosureDigest(payload *Payload) (string, *VerificationRep
 			bundleY(toBundle, true),
 			bundleX(toBundle, false),
 			bundleY(toBundle, false),
+			blinding,
 		)
 		return expectedDigestHex, verification, err
 	case PlaneSelfView:
@@ -156,6 +169,7 @@ func ComputeExpectedDisclosureDigest(payload *Payload) (string, *VerificationRep
 			bundleY(toBundle, true),
 			bundleX(toBundle, false),
 			bundleY(toBundle, false),
+			blinding,
 		)
 		return expectedDigestHex, verification, err
 	case "", PlaneUser:
@@ -173,6 +187,7 @@ func ComputeExpectedDisclosureDigest(payload *Payload) (string, *VerificationRep
 			bundleY(toBundle, true),
 			bundleX(toBundle, false),
 			bundleY(toBundle, false),
+			blinding,
 		)
 		return expectedDigestHex, verification, err
 	default:

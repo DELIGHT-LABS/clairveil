@@ -58,7 +58,7 @@ func TestWalletInfoQueryProviderDisclosureConfig(t *testing.T) {
 	provider := WalletInfoQueryProvider{
 		DisclosureConfigQuerier: stubDisclosureConfigQuerier{
 			response: &privacytypes.QueryDisclosureConfigResponse{
-				PayloadVersion:          "v4",
+				PayloadVersion:          privacytypes.DisclosurePayloadVersion,
 				AuditDisclosureRequired: true,
 				SupportedUserPolicies:   []string{"all-private", "amount"},
 				SupportedUserModes:      []string{"none", "public"},
@@ -68,7 +68,7 @@ func TestWalletInfoQueryProviderDisclosureConfig(t *testing.T) {
 
 	result, err := provider.DisclosureConfig(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, "v4", result.PayloadVersion)
+	require.Equal(t, privacytypes.DisclosurePayloadVersion, result.PayloadVersion)
 	require.True(t, result.AuditDisclosureRequired)
 	require.Equal(t, []string{"all-private", "amount"}, result.SupportedUserPolicies)
 	require.Equal(t, []string{"none", "public"}, result.SupportedUserModes)

@@ -12,7 +12,11 @@ import (
 
 const TransferDisclosureRecipientOutputIndex uint32 = 0
 const TransferAuditDisclosureDomain uint32 = 255
-const TransferSelfViewDisclosureDomain uint32 = 254
+
+const (
+	TransferUserDisclosureV2FieldDomain = "CLAIRVEIL_USER_DISCLOSURE_V2"
+	TransferFullDisclosureV2FieldDomain = "CLAIRVEIL_FULL_DISCLOSURE_V2"
+)
 
 func ComputeTransferDisclosureDigestBytes(
 	policy uint32,
@@ -28,6 +32,7 @@ func ComputeTransferDisclosureDigestBytes(
 	toSpendPubKeyY *big.Int,
 	toViewPubKeyX *big.Int,
 	toViewPubKeyY *big.Int,
+	disclosureBlinding *big.Int,
 ) ([]byte, error) {
 	if err := validateTransferDisclosurePolicy(policy); err != nil {
 		return nil, err
@@ -39,6 +44,9 @@ func ComputeTransferDisclosureDigestBytes(
 
 	if policy == TransferPrivacyPolicyAllPrivate {
 		return canonicalDigestBytes(big.NewInt(0))
+	}
+	if err := validateDisclosureBlinding(disclosureBlinding); err != nil {
+		return nil, fmt.Errorf("user disclosure blinding: %w", err)
 	}
 
 	selectedAmount := big.NewInt(0)
@@ -84,6 +92,7 @@ func ComputeTransferDisclosureDigestBytes(
 	}
 
 	digest := privacycrypto.MimcHash(
+		privacycrypto.HashString(TransferUserDisclosureV2FieldDomain),
 		big.NewInt(int64(policy)),
 		big.NewInt(int64(outputIndex)),
 		new(big.Int).SetBytes(commitment),
@@ -97,6 +106,7 @@ func ComputeTransferDisclosureDigestBytes(
 		selectedToSpendY,
 		selectedToViewX,
 		selectedToViewY,
+		new(big.Int).Set(disclosureBlinding),
 	)
 
 	return canonicalDigestBytes(digest)
@@ -115,6 +125,39 @@ func ComputeAuditTransferDisclosureDigestBytes(
 	toSpendPubKeyY *big.Int,
 	toViewPubKeyX *big.Int,
 	toViewPubKeyY *big.Int,
+	disclosureBlinding *big.Int,
+) ([]byte, error) {
+	return ComputeFullTransferDisclosureDigestBytes(
+		outputIndex,
+		commitment,
+		amount,
+		assetID,
+		fromSpendPubKeyX,
+		fromSpendPubKeyY,
+		fromViewPubKeyX,
+		fromViewPubKeyY,
+		toSpendPubKeyX,
+		toSpendPubKeyY,
+		toViewPubKeyX,
+		toViewPubKeyY,
+		disclosureBlinding,
+	)
+}
+
+func ComputeFullTransferDisclosureDigestBytes(
+	outputIndex uint32,
+	commitment []byte,
+	amount *big.Int,
+	assetID *big.Int,
+	fromSpendPubKeyX *big.Int,
+	fromSpendPubKeyY *big.Int,
+	fromViewPubKeyX *big.Int,
+	fromViewPubKeyY *big.Int,
+	toSpendPubKeyX *big.Int,
+	toSpendPubKeyY *big.Int,
+	toViewPubKeyX *big.Int,
+	toViewPubKeyY *big.Int,
+	disclosureBlinding *big.Int,
 ) ([]byte, error) {
 	if err := validateFieldElementBytesStrict("audit disclosure commitment", commitment); err != nil {
 		return nil, err
@@ -128,8 +171,12 @@ func ComputeAuditTransferDisclosureDigestBytes(
 	if toSpendPubKeyX == nil || toSpendPubKeyY == nil || toViewPubKeyX == nil || toViewPubKeyY == nil {
 		return nil, fmt.Errorf("audit disclosure requires the full recipient shielded address")
 	}
+	if err := validateDisclosureBlinding(disclosureBlinding); err != nil {
+		return nil, fmt.Errorf("full disclosure blinding: %w", err)
+	}
 
 	digest := privacycrypto.MimcHash(
+		privacycrypto.HashString(TransferFullDisclosureV2FieldDomain),
 		big.NewInt(int64(TransferAuditDisclosureDomain)),
 		big.NewInt(int64(outputIndex)),
 		new(big.Int).SetBytes(commitment),
@@ -143,6 +190,7 @@ func ComputeAuditTransferDisclosureDigestBytes(
 		new(big.Int).Set(toSpendPubKeyY),
 		new(big.Int).Set(toViewPubKeyX),
 		new(big.Int).Set(toViewPubKeyY),
+		new(big.Int).Set(disclosureBlinding),
 	)
 
 	return canonicalDigestBytes(digest)
@@ -161,37 +209,23 @@ func ComputeSelfViewTransferDisclosureDigestBytes(
 	toSpendPubKeyY *big.Int,
 	toViewPubKeyX *big.Int,
 	toViewPubKeyY *big.Int,
+	disclosureBlinding *big.Int,
 ) ([]byte, error) {
-	if err := validateFieldElementBytesStrict("self-view disclosure commitment", commitment); err != nil {
-		return nil, err
-	}
-	if amount == nil || assetID == nil {
-		return nil, fmt.Errorf("self-view disclosure requires amount and asset id")
-	}
-	if fromSpendPubKeyX == nil || fromSpendPubKeyY == nil || fromViewPubKeyX == nil || fromViewPubKeyY == nil {
-		return nil, fmt.Errorf("self-view disclosure requires the full sender shielded address")
-	}
-	if toSpendPubKeyX == nil || toSpendPubKeyY == nil || toViewPubKeyX == nil || toViewPubKeyY == nil {
-		return nil, fmt.Errorf("self-view disclosure requires the full recipient shielded address")
-	}
-
-	digest := privacycrypto.MimcHash(
-		big.NewInt(int64(TransferSelfViewDisclosureDomain)),
-		big.NewInt(int64(outputIndex)),
-		new(big.Int).SetBytes(commitment),
-		new(big.Int).Set(amount),
-		new(big.Int).Set(assetID),
-		new(big.Int).Set(fromSpendPubKeyX),
-		new(big.Int).Set(fromSpendPubKeyY),
-		new(big.Int).Set(fromViewPubKeyX),
-		new(big.Int).Set(fromViewPubKeyY),
-		new(big.Int).Set(toSpendPubKeyX),
-		new(big.Int).Set(toSpendPubKeyY),
-		new(big.Int).Set(toViewPubKeyX),
-		new(big.Int).Set(toViewPubKeyY),
+	return ComputeFullTransferDisclosureDigestBytes(
+		outputIndex,
+		commitment,
+		amount,
+		assetID,
+		fromSpendPubKeyX,
+		fromSpendPubKeyY,
+		fromViewPubKeyX,
+		fromViewPubKeyY,
+		toSpendPubKeyX,
+		toSpendPubKeyY,
+		toViewPubKeyX,
+		toViewPubKeyY,
+		disclosureBlinding,
 	)
-
-	return canonicalDigestBytes(digest)
 }
 
 func ComputeTransferDisclosureDigestHex(
@@ -208,6 +242,7 @@ func ComputeTransferDisclosureDigestHex(
 	toSpendPubKeyY *big.Int,
 	toViewPubKeyX *big.Int,
 	toViewPubKeyY *big.Int,
+	disclosureBlinding *big.Int,
 ) (string, error) {
 	bz, err := ComputeTransferDisclosureDigestBytes(
 		policy,
@@ -223,6 +258,7 @@ func ComputeTransferDisclosureDigestHex(
 		toSpendPubKeyY,
 		toViewPubKeyX,
 		toViewPubKeyY,
+		disclosureBlinding,
 	)
 	if err != nil {
 		return "", err
@@ -244,6 +280,7 @@ func ComputeAuditTransferDisclosureDigestHex(
 	toSpendPubKeyY *big.Int,
 	toViewPubKeyX *big.Int,
 	toViewPubKeyY *big.Int,
+	disclosureBlinding *big.Int,
 ) (string, error) {
 	bz, err := ComputeAuditTransferDisclosureDigestBytes(
 		outputIndex,
@@ -258,6 +295,7 @@ func ComputeAuditTransferDisclosureDigestHex(
 		toSpendPubKeyY,
 		toViewPubKeyX,
 		toViewPubKeyY,
+		disclosureBlinding,
 	)
 	if err != nil {
 		return "", err
@@ -279,6 +317,7 @@ func ComputeSelfViewTransferDisclosureDigestHex(
 	toSpendPubKeyY *big.Int,
 	toViewPubKeyX *big.Int,
 	toViewPubKeyY *big.Int,
+	disclosureBlinding *big.Int,
 ) (string, error) {
 	bz, err := ComputeSelfViewTransferDisclosureDigestBytes(
 		outputIndex,
@@ -293,6 +332,7 @@ func ComputeSelfViewTransferDisclosureDigestHex(
 		toSpendPubKeyY,
 		toViewPubKeyX,
 		toViewPubKeyY,
+		disclosureBlinding,
 	)
 	if err != nil {
 		return "", err
@@ -306,4 +346,14 @@ func canonicalDigestBytes(v *big.Int) ([]byte, error) {
 	elem.SetBigInt(v)
 	bz := elem.Bytes()
 	return append([]byte(nil), bz[:]...), nil
+}
+
+func validateDisclosureBlinding(blinding *big.Int) error {
+	if blinding == nil {
+		return fmt.Errorf("is required")
+	}
+	if blinding.Sign() <= 0 || blinding.Cmp(fr.Modulus()) >= 0 {
+		return fmt.Errorf("must be a non-zero canonical BN254 field element")
+	}
+	return nil
 }

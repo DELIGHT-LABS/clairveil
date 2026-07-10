@@ -38,7 +38,7 @@ func TestJoinSplitCircuitValidProof(t *testing.T) {
 	require.NoError(t, groth16.Verify(proof, vk, publicWitness))
 
 	tampered := *assignment
-	tampered.AuditDisclosureDigest = new(big.Int).Add(tampered.AuditDisclosureDigest.(*big.Int), big.NewInt(1))
+	tampered.FullDisclosureDigest = new(big.Int).Add(tampered.FullDisclosureDigest.(*big.Int), big.NewInt(1))
 
 	tamperedPublicWitness, err := frontend.NewWitness(&tampered, ecc.BN254.ScalarField(), frontend.PublicOnly())
 	require.NoError(t, err)
@@ -129,6 +129,8 @@ func buildJoinSplitAssignmentWithAmounts(
 	assetID := big.NewInt(21)
 	inputRandomness := [NumInputs]*big.Int{big.NewInt(31), big.NewInt(37)}
 	outputRandomness := [NumOutputs]*big.Int{big.NewInt(41), big.NewInt(43)}
+	userDisclosureBlinding := big.NewInt(47)
+	fullDisclosureBlinding := big.NewInt(53)
 
 	inputSpendScalar := big.NewInt(17)
 	inputViewScalar := big.NewInt(19)
@@ -176,6 +178,7 @@ func buildJoinSplitAssignmentWithAmounts(
 		outputSpendPubY,
 		outputViewPubX,
 		outputViewPubY,
+		userDisclosureBlinding,
 	)
 	require.NoError(t, err)
 
@@ -192,15 +195,18 @@ func buildJoinSplitAssignmentWithAmounts(
 		outputSpendPubY,
 		outputViewPubX,
 		outputViewPubY,
+		fullDisclosureBlinding,
 	)
 	require.NoError(t, err)
 
 	assignment := &JoinSplitCircuit{
-		MerkleRoot:            root,
-		UserPrivacyPolicy:     big.NewInt(int64(privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom)),
-		UserDisclosureDigest:  new(big.Int).SetBytes(userDigest),
-		AuditDisclosureDigest: new(big.Int).SetBytes(auditDigest),
-		AssetID:               assetID,
+		MerkleRoot:             root,
+		UserPrivacyPolicy:      big.NewInt(int64(privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom)),
+		UserDisclosureDigest:   new(big.Int).SetBytes(userDigest),
+		FullDisclosureDigest:   new(big.Int).SetBytes(auditDigest),
+		UserDisclosureBlinding: userDisclosureBlinding,
+		FullDisclosureBlinding: fullDisclosureBlinding,
+		AssetID:                assetID,
 	}
 
 	assignPubKey(&assignment.InputSpendPubKeys[0], inputSpendPubKey)

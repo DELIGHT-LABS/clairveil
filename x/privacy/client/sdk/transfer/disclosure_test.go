@@ -113,6 +113,19 @@ func TestBuildSelfViewDisclosureDataEncryptedPayloadDecrypts(t *testing.T) {
 	require.True(t, report.Verified)
 }
 
+func TestAuditAndSelfViewShareBlindedFullDigest(t *testing.T) {
+	input := testDisclosureBuildInput(t)
+	_, auditPubKey := testScalarAndPubKey(23)
+	_, selfViewPubKey := testScalarAndPubKey(29)
+
+	audit, err := BuildAuditDisclosureData(input, auditPubKey)
+	require.NoError(t, err)
+	selfView, err := BuildSelfViewDisclosureData(input, selfViewPubKey)
+	require.NoError(t, err)
+	require.Equal(t, audit.Digest, selfView.Digest)
+	require.Equal(t, audit.Payload.BlindingHex, selfView.Payload.BlindingHex)
+}
+
 func TestBuildUserDisclosureDataEncryptedRequiresTargetKey(t *testing.T) {
 	input := testDisclosureBuildInput(t)
 
@@ -177,10 +190,12 @@ func testDisclosureBuildInput(t *testing.T) DisclosureBuildInput {
 	require.NotNil(t, toViewScalar)
 
 	return DisclosureBuildInput{
-		OutputCommitment: commitmentBytes,
-		TransferDenom:    "uclair",
-		FromNote:         fromNote,
-		RecipientNote:    recipientNote,
+		OutputCommitment:       commitmentBytes,
+		TransferDenom:          "uclair",
+		FromNote:               fromNote,
+		RecipientNote:          recipientNote,
+		UserDisclosureBlinding: big.NewInt(303),
+		FullDisclosureBlinding: big.NewInt(307),
 	}
 }
 

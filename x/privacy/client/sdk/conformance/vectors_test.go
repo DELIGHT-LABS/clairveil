@@ -249,10 +249,12 @@ func buildGoldenVectorsFixture(t *testing.T) goldenVectors {
 	require.NoError(t, err)
 	disclosure, err := privacytransfer.BuildUserDisclosureData(
 		privacytransfer.DisclosureBuildInput{
-			OutputCommitment: recipientOutputCommitment,
-			TransferDenom:    "uclair",
-			FromNote:         note,
-			RecipientNote:    recipientOutputNote,
+			OutputCommitment:       recipientOutputCommitment,
+			TransferDenom:          "uclair",
+			FromNote:               note,
+			RecipientNote:          recipientOutputNote,
+			UserDisclosureBlinding: big.NewInt(1771003),
+			FullDisclosureBlinding: big.NewInt(1771004),
 		},
 		privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom,
 		privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED,

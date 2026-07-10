@@ -15,8 +15,8 @@
     "request_version": "v1",
     "response_version": "v1",
     "creator": "clair1qyqszqgpqyqszqgpqyqszqgpqyqszqgpq6pe73",
-    "payload_hash": "6a25e8b8c4b0311bdd6c2b29a958816a5d5924bc5a832f20558bd19c025197b0",
-    "proof_payload_hash": "6a25e8b8c4b0311bdd6c2b29a958816a5d5924bc5a832f20558bd19c025197b0",
+    "payload_hash": "714696d07220372b5dc3641f9c9017bc50ee0b7ee31e808a55bc6b7ecb11bf6d",
+    "proof_payload_hash": "714696d07220372b5dc3641f9c9017bc50ee0b7ee31e808a55bc6b7ecb11bf6d",
     "msg_creator": "clair1qyqszqgpqyqszqgpqyqszqgpqyqszqgpq6pe73",
     "user_disclosure_mode": "recipient-encrypted",
     "user_privacy_policy": "amount-from-to",
@@ -25,7 +25,7 @@
       "policy": "amount-from-to",
       "output_index": 0,
       "commitment_hex": "10b62825eac8a645278d300ec077885a123170460e9ca1048f4521a3f6fb6cb2",
-      "digest_hex": "03dac6be7802043b361bc0fa81b152797fc0d886c5395677963389e7845655a9",
+      "digest_hex": "12a1636d3c1a1a0ea0a20fbc7bfc8ef7c7a5a8e00412b313c0a15be16ec7ad06",
       "verified": true,
       "disclosed_fields": [
         "amount",
@@ -42,7 +42,7 @@
       "policy": "amount-from-to",
       "output_index": 0,
       "commitment_hex": "10b62825eac8a645278d300ec077885a123170460e9ca1048f4521a3f6fb6cb2",
-      "digest_hex": "2e731f04c8705e099228a7eb7d7eca9ce16b0a77eae1b6fab99e7b105cafbd12",
+      "digest_hex": "2ebb6f2660eed6194f4f95163268068252838ef01fe0cc28437f149803c68d0a",
       "verified": true,
       "disclosed_fields": [
         "amount",
@@ -59,7 +59,7 @@
       "policy": "amount-from-to",
       "output_index": 0,
       "commitment_hex": "10b62825eac8a645278d300ec077885a123170460e9ca1048f4521a3f6fb6cb2",
-      "digest_hex": "1b1838bcde6d854e8de97683d53ef9bdaf4879338a8c6db4beb7d29a059bc261",
+      "digest_hex": "2ebb6f2660eed6194f4f95163268068252838ef01fe0cc28437f149803c68d0a",
       "verified": true,
       "disclosed_fields": [
         "amount",

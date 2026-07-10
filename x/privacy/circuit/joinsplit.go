@@ -1,6 +1,8 @@
 package circuit
 
 import (
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
+	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/std/algebra/native/twistededwards"
 	"github.com/consensys/gnark/std/hash/mimc"
@@ -16,12 +18,12 @@ const (
 )
 
 type JoinSplitCircuit struct {
-	MerkleRoot            frontend.Variable             `gnark:",public"`
-	Nullifiers            [NumInputs]frontend.Variable  `gnark:",public"`
-	Commitments           [NumOutputs]frontend.Variable `gnark:",public"`
-	UserPrivacyPolicy     frontend.Variable             `gnark:",public"`
-	UserDisclosureDigest  frontend.Variable             `gnark:",public"`
-	AuditDisclosureDigest frontend.Variable             `gnark:",public"`
+	MerkleRoot           frontend.Variable             `gnark:",public"`
+	Nullifiers           [NumInputs]frontend.Variable  `gnark:",public"`
+	Commitments          [NumOutputs]frontend.Variable `gnark:",public"`
+	UserPrivacyPolicy    frontend.Variable             `gnark:",public"`
+	UserDisclosureDigest frontend.Variable             `gnark:",public"`
+	FullDisclosureDigest frontend.Variable             `gnark:",public"`
 
 	AssetID frontend.Variable `gnark:",secret"`
 
@@ -38,6 +40,9 @@ type JoinSplitCircuit struct {
 	OutputRandomness   [NumOutputs]frontend.Variable `gnark:",secret"`
 	OutputSpendPubKeys [NumOutputs]eddsa.PublicKey   `gnark:",secret"`
 	OutputViewPubKeys  [NumOutputs]eddsa.PublicKey   `gnark:",secret"`
+
+	UserDisclosureBlinding frontend.Variable `gnark:",secret"`
+	FullDisclosureBlinding frontend.Variable `gnark:",secret"`
 }
 
 func (c *JoinSplitCircuit) Define(api frontend.API) error {
@@ -139,9 +144,11 @@ func (c *JoinSplitCircuit) Define(api frontend.API) error {
 	selectedToSpendY := api.Select(revealTo, c.OutputSpendPubKeys[0].A.Y, 0)
 	selectedToViewX := api.Select(revealTo, c.OutputViewPubKeys[0].A.X, 0)
 	selectedToViewY := api.Select(revealTo, c.OutputViewPubKeys[0].A.Y, 0)
+	userDisclosureEnabled := api.Sub(1, api.IsZero(c.UserPrivacyPolicy))
 
 	h.Reset()
 	h.Write(
+		privacycrypto.HashString(privacytypes.TransferUserDisclosureV2FieldDomain),
 		c.UserPrivacyPolicy,
 		0,
 		c.Commitments[0],
@@ -155,14 +162,17 @@ func (c *JoinSplitCircuit) Define(api frontend.API) error {
 		selectedToSpendY,
 		selectedToViewX,
 		selectedToViewY,
+		api.Select(userDisclosureEnabled, c.UserDisclosureBlinding, 0),
 	)
 	calcUserDisclosureDigest := h.Sum()
 
-	userDisclosureEnabled := api.Sub(1, api.IsZero(c.UserPrivacyPolicy))
+	api.AssertIsEqual(api.Select(userDisclosureEnabled, api.IsZero(c.UserDisclosureBlinding), 0), 0)
 	api.AssertIsEqual(api.Select(userDisclosureEnabled, calcUserDisclosureDigest, 0), c.UserDisclosureDigest)
 
+	api.AssertIsDifferent(c.FullDisclosureBlinding, 0)
 	h.Reset()
 	h.Write(
+		privacycrypto.HashString(privacytypes.TransferFullDisclosureV2FieldDomain),
 		AuditDisclosureFullMask,
 		0,
 		c.Commitments[0],
@@ -176,8 +186,9 @@ func (c *JoinSplitCircuit) Define(api frontend.API) error {
 		c.OutputSpendPubKeys[0].A.Y,
 		c.OutputViewPubKeys[0].A.X,
 		c.OutputViewPubKeys[0].A.Y,
+		c.FullDisclosureBlinding,
 	)
-	api.AssertIsEqual(h.Sum(), c.AuditDisclosureDigest)
+	api.AssertIsEqual(h.Sum(), c.FullDisclosureDigest)
 
 	return nil
 }

@@ -18,3 +18,18 @@ func GenerateRandomness() (*big.Int, error) {
 
 	return r, nil
 }
+
+// GenerateNonZeroRandomness returns a cryptographically secure non-zero
+// scalar. It is used for blindings where zero would remove the privacy
+// protection even though it is a valid field value.
+func GenerateNonZeroRandomness() (*big.Int, error) {
+	for {
+		r, err := GenerateRandomness()
+		if err != nil {
+			return nil, err
+		}
+		if r.Sign() != 0 {
+			return r, nil
+		}
+	}
+}

@@ -121,7 +121,9 @@ func testJoinSplitAssignment(t *testing.T) *circuit.JoinSplitCircuit {
 
 	prepared.Assignment.UserPrivacyPolicy = big.NewInt(0)
 	prepared.Assignment.UserDisclosureDigest = big.NewInt(0)
-	prepared.Assignment.AuditDisclosureDigest = big.NewInt(0)
+	prepared.Assignment.FullDisclosureDigest = big.NewInt(0)
+	prepared.Assignment.UserDisclosureBlinding = big.NewInt(0)
+	prepared.Assignment.FullDisclosureBlinding = big.NewInt(1)
 
 	return &prepared.Assignment
 }
