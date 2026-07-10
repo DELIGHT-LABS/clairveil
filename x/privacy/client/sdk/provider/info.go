@@ -64,14 +64,15 @@ type CircuitArtifact struct {
 }
 
 type CircuitConfig struct {
-	SchemaVersion     string
-	ActiveSetID       string
-	Curve             string
-	ManifestFile      string
-	ManifestAvailable bool
-	ChecksumSource    string
-	GeneratedAt       string
-	Artifacts         []CircuitArtifact
+	SchemaVersion      string
+	ActiveSetID        string
+	Curve              string
+	ManifestFile       string
+	ManifestAvailable  bool
+	ChecksumSource     string
+	GeneratedAt        string
+	Artifacts          []CircuitArtifact
+	CircuitSetIdentity *privacytypes.CircuitSetIdentity
 }
 
 func NewWalletInfoQueryProvider(queryClient privacytypes.QueryClient) WalletInfoQueryProvider {
@@ -182,13 +183,14 @@ func (p WalletInfoQueryProvider) CircuitConfig(ctx context.Context) (*CircuitCon
 	}
 
 	return &CircuitConfig{
-		SchemaVersion:     response.SchemaVersion,
-		ActiveSetID:       response.ActiveSetId,
-		Curve:             response.Curve,
-		ManifestFile:      response.ManifestFile,
-		ManifestAvailable: response.ManifestAvailable,
-		ChecksumSource:    response.ChecksumSource,
-		GeneratedAt:       response.GeneratedAt,
-		Artifacts:         artifacts,
+		SchemaVersion:      response.SchemaVersion,
+		ActiveSetID:        response.ActiveSetId,
+		Curve:              response.Curve,
+		ManifestFile:       response.ManifestFile,
+		ManifestAvailable:  response.ManifestAvailable,
+		ChecksumSource:     response.ChecksumSource,
+		GeneratedAt:        response.GeneratedAt,
+		Artifacts:          artifacts,
+		CircuitSetIdentity: response.CircuitSetIdentity,
 	}, nil
 }

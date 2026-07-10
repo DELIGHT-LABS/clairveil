@@ -75,16 +75,22 @@ func TestWalletInfoQueryProviderDisclosureConfig(t *testing.T) {
 }
 
 func TestWalletInfoQueryProviderCircuitConfig(t *testing.T) {
+	identity := &privacytypes.CircuitSetIdentity{
+		SchemaVersion: "v1",
+		CircuitSetId:  "privacy-intent-v2",
+		Curve:         "BN254",
+	}
 	provider := WalletInfoQueryProvider{
 		CircuitConfigQuerier: stubCircuitConfigQuerier{
 			response: &privacytypes.QueryCircuitConfigResponse{
-				SchemaVersion:     "v1",
-				ActiveSetId:       "latest-single-transfer",
-				Curve:             "BN254",
-				ManifestFile:      "privacy_zk_manifest.json",
-				ManifestAvailable: true,
-				ChecksumSource:    "manifest",
-				GeneratedAt:       "2026-04-15T00:00:00Z",
+				SchemaVersion:      "v1",
+				ActiveSetId:        "latest-single-transfer",
+				Curve:              "BN254",
+				ManifestFile:       "privacy_zk_manifest.json",
+				ManifestAvailable:  true,
+				ChecksumSource:     "manifest",
+				GeneratedAt:        "2026-04-15T00:00:00Z",
+				CircuitSetIdentity: identity,
 				Artifacts: []*privacytypes.QueryCircuitArtifact{
 					{
 						CircuitId:    "spend",
@@ -107,6 +113,7 @@ func TestWalletInfoQueryProviderCircuitConfig(t *testing.T) {
 	require.True(t, result.ManifestAvailable)
 	require.Equal(t, "manifest", result.ChecksumSource)
 	require.Equal(t, "2026-04-15T00:00:00Z", result.GeneratedAt)
+	require.Same(t, identity, result.CircuitSetIdentity)
 	require.Len(t, result.Artifacts, 1)
 	require.Equal(t, "spend", result.Artifacts[0].CircuitID)
 	require.Equal(t, "abcd", result.Artifacts[0].SHA256)

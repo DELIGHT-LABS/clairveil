@@ -88,11 +88,11 @@ func buildRelayWithdrawContractFixture(t *testing.T) relayWithdrawContractFixtur
 	require.NoError(t, msg.ValidateBasic())
 
 	return relayWithdrawContractFixture{
-		SchemaVersion:  "v1",
-		HandoffVersion: "v1",
+		SchemaVersion:  "v2",
+		HandoffVersion: "v2",
 		Transport:      "transport-agnostic",
 		Request: relayWithdrawRequestFixture{
-			Version: "v1",
+			Version: "v2",
 			Payload: *finalWithdrawPayload,
 		},
 		Relayer: relayWithdrawRelayerFixture{
@@ -127,8 +127,8 @@ func requireRelayWithdrawContractInvariants(t *testing.T, fixture relayWithdrawC
 		payload.ExpiresAtUnix,
 	)
 
-	require.Equal(t, "v1", fixture.SchemaVersion)
-	require.Equal(t, "v1", fixture.HandoffVersion)
+	require.Equal(t, "v2", fixture.SchemaVersion)
+	require.Equal(t, "v2", fixture.HandoffVersion)
 	require.Equal(t, "transport-agnostic", fixture.Transport)
 	require.Equal(t, expectedHash, payload.PayloadHash)
 	require.Equal(t, msgWithdrawTypeURL, fixture.ExpectedMsg.TypeURL)

@@ -1,5 +1,5 @@
 {
-  "schema_version": "v1",
+  "schema_version": "v2",
   "root_signer": {
     "get_account_response": {
       "transparent_address": "clair1lm4z6g0p7n0jq3m2t0y8m7s8u6x5w4v3c2r9q8",
@@ -55,77 +55,57 @@
     },
     "circuit_config_response": {
       "schema_version": "v1",
-      "active_set_id": "privacy-accounting-v2",
+      "active_set_id": "privacy-intent-v2",
       "curve": "BN254",
-      "manifest_file": "privacy_zk_manifest.json",
+      "manifest_file": "",
       "manifest_available": false,
-      "checksum_source": "none",
+      "checksum_source": "consensus",
       "generated_at": "",
       "artifacts": [
         {
           "circuit_id": "deposit",
-          "artifact_type": "r1cs",
-          "filename": "privacy_deposit_r1cs.bin",
-          "checksum_env": "CLAIRVEIL_PRIVACY_DEPOSIT_R1CS_SHA256",
-          "sha256": ""
-        },
-        {
-          "circuit_id": "deposit",
-          "artifact_type": "proving_key",
-          "filename": "privacy_deposit_pk.bin",
-          "checksum_env": "CLAIRVEIL_PRIVACY_DEPOSIT_PK_SHA256",
-          "sha256": ""
-        },
-        {
-          "circuit_id": "deposit",
           "artifact_type": "verifying_key",
-          "filename": "privacy_deposit_vk.bin",
-          "checksum_env": "CLAIRVEIL_PRIVACY_DEPOSIT_VK_SHA256",
-          "sha256": ""
-        },
-        {
-          "circuit_id": "spend",
-          "artifact_type": "r1cs",
-          "filename": "privacy_spend_r1cs.bin",
-          "checksum_env": "CLAIRVEIL_PRIVACY_SPEND_R1CS_SHA256",
-          "sha256": ""
-        },
-        {
-          "circuit_id": "spend",
-          "artifact_type": "proving_key",
-          "filename": "privacy_spend_pk.bin",
-          "checksum_env": "CLAIRVEIL_PRIVACY_SPEND_PK_SHA256",
-          "sha256": ""
+          "filename": "",
+          "checksum_env": "",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         },
         {
           "circuit_id": "spend",
           "artifact_type": "verifying_key",
-          "filename": "privacy_spend_vk.bin",
-          "checksum_env": "CLAIRVEIL_PRIVACY_SPEND_VK_SHA256",
-          "sha256": ""
-        },
-        {
-          "circuit_id": "joinsplit",
-          "artifact_type": "r1cs",
-          "filename": "privacy_joinsplit_r1cs.bin",
-          "checksum_env": "CLAIRVEIL_PRIVACY_JOINSPLIT_R1CS_SHA256",
-          "sha256": ""
-        },
-        {
-          "circuit_id": "joinsplit",
-          "artifact_type": "proving_key",
-          "filename": "privacy_joinsplit_pk.bin",
-          "checksum_env": "CLAIRVEIL_PRIVACY_JOINSPLIT_PK_SHA256",
-          "sha256": ""
+          "filename": "",
+          "checksum_env": "",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         },
         {
           "circuit_id": "joinsplit",
           "artifact_type": "verifying_key",
-          "filename": "privacy_joinsplit_vk.bin",
-          "checksum_env": "CLAIRVEIL_PRIVACY_JOINSPLIT_VK_SHA256",
-          "sha256": ""
+          "filename": "",
+          "checksum_env": "",
+          "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
         }
-      ]
+      ],
+      "circuit_set_identity": {
+        "schema_version": "v1",
+        "circuit_set_id": "privacy-intent-v2",
+        "curve": "BN254",
+        "circuits": [
+          {
+            "circuit_id": "deposit",
+            "verifying_key_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "public_input_schema_sha256": "c3231fb5ae62539d2e4baeb78aa4be8a4c44e3cd8fa325ba60f13b7f563d5a1e"
+          },
+          {
+            "circuit_id": "spend",
+            "verifying_key_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "public_input_schema_sha256": "d0a033aa2f7b6e098873307a815545ee3e83d974026c0e52bf39a038e08f4872"
+          },
+          {
+            "circuit_id": "joinsplit",
+            "verifying_key_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "public_input_schema_sha256": "4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82"
+          }
+        ]
+      }
     }
   },
   "scan_provider": {

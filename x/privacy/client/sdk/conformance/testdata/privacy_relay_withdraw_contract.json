@@ -1,9 +1,9 @@
 {
-  "schema_version": "v1",
-  "handoff_version": "v1",
+  "schema_version": "v2",
+  "handoff_version": "v2",
   "transport": "transport-agnostic",
   "request": {
-    "version": "v1",
+    "version": "v2",
     "payload": {
       "proof_hex": "4000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000",
       "root_hex": "000000000000000000000000000000000000000000000000000000000000038d",
@@ -11,9 +11,9 @@
       "amount": "10uclair",
       "recipient": "clair1qgpqyqszqgpqyqszqgpqyqszqgpqyqsz378u48",
       "chain_id": "clairveil-local-1",
-      "version": "v1",
+      "version": "v2",
       "expires_at_unix": 4102448400,
-      "payload_hash": "5ee0606c1b9fe7f4d17cdcfbcb29f88966fcbee71bd66e0909e540725bb7f9f9"
+      "payload_hash": "29faa11087a4bb2d5abd10df05816afac22434e9b13a6b7dae8d9423c55d061c"
     }
   },
   "relayer": {

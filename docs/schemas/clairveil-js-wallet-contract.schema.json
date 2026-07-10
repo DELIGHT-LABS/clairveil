@@ -12,9 +12,17 @@
       "type": "string",
       "const": "v1"
     },
+    "shieldedContractVersion": {
+      "type": "string",
+      "const": "v2"
+    },
     "transferPayloadVersion": {
       "type": "string",
-      "const": "v3"
+      "const": "v5"
+    },
+    "withdrawPayloadVersion": {
+      "type": "string",
+      "const": "v2"
     },
     "hexString": {
       "type": "string",
@@ -27,6 +35,10 @@
     "hex32": {
       "type": "string",
       "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "hex64": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{128}$"
     },
     "hex20": {
       "type": "string",
@@ -116,7 +128,6 @@
         "view_pubkey_hex",
         "merkle_path",
         "merkle_path_helper",
-        "note_hash_signature_hex",
         "nullifier_hex"
       ],
       "properties": {
@@ -137,9 +148,6 @@
         },
         "merkle_path_helper": {
           "$ref": "#/$defs/merklePathHelper"
-        },
-        "note_hash_signature_hex": {
-          "$ref": "#/$defs/hexString"
         },
         "nullifier_hex": {
           "$ref": "#/$defs/hex32"
@@ -180,6 +188,8 @@
       "required": [
         "version",
         "creator",
+        "chain_id",
+        "expires_at_unix",
         "root_hex",
         "asset_id_hex",
         "inputs",
@@ -191,6 +201,8 @@
         "audit_disclosure_digest_hex",
         "audit_disclosure_target_pubkey_hex",
         "audit_disclosure_payload_hex",
+        "full_disclosure_blinding_hex",
+        "owner_signature_hex",
         "payload_hash"
       ],
       "properties": {
@@ -199,6 +211,13 @@
         },
         "creator": {
           "$ref": "#/$defs/transparentAddress"
+        },
+        "chain_id": {
+          "$ref": "#/$defs/chainId"
+        },
+        "expires_at_unix": {
+          "type": "integer",
+          "minimum": 1
         },
         "root_hex": {
           "$ref": "#/$defs/hex32"
@@ -272,6 +291,15 @@
         "self_view_disclosure_payload_hex": {
           "$ref": "#/$defs/hexString"
         },
+        "user_disclosure_blinding_hex": {
+          "$ref": "#/$defs/hex32"
+        },
+        "full_disclosure_blinding_hex": {
+          "$ref": "#/$defs/hex32"
+        },
+        "owner_signature_hex": {
+          "$ref": "#/$defs/hex64"
+        },
         "payload_hash": {
           "$ref": "#/$defs/hex32"
         }
@@ -296,12 +324,12 @@
         "view_pubkey_hex",
         "merkle_path",
         "merkle_path_helper",
-        "spend_note_hash_signature_hex",
+        "spend_intent_signature_hex",
         "payload_hash"
       ],
       "properties": {
         "version": {
-          "$ref": "#/$defs/version"
+          "$ref": "#/$defs/withdrawPayloadVersion"
         },
         "root_hex": {
           "$ref": "#/$defs/hex32"
@@ -329,7 +357,7 @@
         },
         "expires_at_unix": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 1
         },
         "note_randomness_hex": {
           "$ref": "#/$defs/hex32"
@@ -346,8 +374,8 @@
         "merkle_path_helper": {
           "$ref": "#/$defs/merklePathHelper"
         },
-        "spend_note_hash_signature_hex": {
-          "$ref": "#/$defs/hexString"
+        "spend_intent_signature_hex": {
+          "$ref": "#/$defs/hex64"
         },
         "payload_hash": {
           "$ref": "#/$defs/hex32"
@@ -370,7 +398,7 @@
       ],
       "properties": {
         "version": {
-          "$ref": "#/$defs/version"
+          "$ref": "#/$defs/withdrawPayloadVersion"
         },
         "proof_hex": {
           "$ref": "#/$defs/hexString"
@@ -392,7 +420,7 @@
         },
         "expires_at_unix": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 1
         },
         "payload_hash": {
           "$ref": "#/$defs/hex32"
@@ -412,10 +440,10 @@
       ],
       "properties": {
         "schema_version": {
-          "$ref": "#/$defs/schemaVersion"
+          "$ref": "#/$defs/shieldedContractVersion"
         },
         "handoff_version": {
-          "$ref": "#/$defs/version"
+          "$ref": "#/$defs/shieldedContractVersion"
         },
         "transport": {
           "type": "string",
@@ -430,7 +458,7 @@
           ],
           "properties": {
             "version": {
-              "$ref": "#/$defs/version"
+              "$ref": "#/$defs/shieldedContractVersion"
             },
             "payload": {
               "$ref": "#/$defs/preparedWithdrawPayload"
@@ -507,7 +535,7 @@
       ],
       "properties": {
         "version": {
-          "$ref": "#/$defs/version"
+          "$ref": "#/$defs/shieldedContractVersion"
         },
         "payload_hash": {
           "$ref": "#/$defs/hex32"
@@ -527,7 +555,7 @@
       ],
       "properties": {
         "schema_version": {
-          "$ref": "#/$defs/schemaVersion"
+          "$ref": "#/$defs/shieldedContractVersion"
         },
         "transfer": {
           "type": "object",
@@ -546,7 +574,7 @@
               ],
               "properties": {
                 "version": {
-                  "$ref": "#/$defs/version"
+                  "$ref": "#/$defs/shieldedContractVersion"
                 },
                 "payload": {
                   "$ref": "#/$defs/preparedTransferPayload"
@@ -562,7 +590,7 @@
               ],
               "properties": {
                 "version": {
-                  "$ref": "#/$defs/version"
+                  "$ref": "#/$defs/shieldedContractVersion"
                 },
                 "proof": {
                   "$ref": "#/$defs/proof"
@@ -593,7 +621,7 @@
               ],
               "properties": {
                 "version": {
-                  "$ref": "#/$defs/version"
+                  "$ref": "#/$defs/shieldedContractVersion"
                 },
                 "payload": {
                   "$ref": "#/$defs/preparedWithdrawProverPayload"
@@ -609,7 +637,7 @@
               ],
               "properties": {
                 "version": {
-                  "$ref": "#/$defs/version"
+                  "$ref": "#/$defs/shieldedContractVersion"
                 },
                 "proof": {
                   "$ref": "#/$defs/proof"
@@ -639,10 +667,10 @@
           "pattern": "^/v1/prover/(transfer|withdraw)$"
         },
         "request_version": {
-          "$ref": "#/$defs/version"
+          "$ref": "#/$defs/shieldedContractVersion"
         },
         "response_version": {
-          "$ref": "#/$defs/version"
+          "$ref": "#/$defs/shieldedContractVersion"
         }
       }
     },
@@ -658,7 +686,7 @@
       ],
       "properties": {
         "schema_version": {
-          "$ref": "#/$defs/schemaVersion"
+          "$ref": "#/$defs/shieldedContractVersion"
         },
         "content_type": {
           "type": "string",
@@ -775,7 +803,7 @@
       ],
       "properties": {
         "schema_version": {
-          "$ref": "#/$defs/schemaVersion"
+          "$ref": "#/$defs/shieldedContractVersion"
         },
         "phase": {
           "type": "string",
@@ -845,10 +873,10 @@
           ],
           "properties": {
             "request_version": {
-              "$ref": "#/$defs/version"
+              "$ref": "#/$defs/shieldedContractVersion"
             },
             "response_version": {
-              "$ref": "#/$defs/version"
+              "$ref": "#/$defs/shieldedContractVersion"
             },
             "creator": {
               "$ref": "#/$defs/transparentAddress"
@@ -901,10 +929,10 @@
               "minimum": 0
             },
             "request_version": {
-              "$ref": "#/$defs/version"
+              "$ref": "#/$defs/shieldedContractVersion"
             },
             "response_version": {
-              "$ref": "#/$defs/version"
+              "$ref": "#/$defs/shieldedContractVersion"
             },
             "payload_hash": {
               "$ref": "#/$defs/hex32"
@@ -1595,7 +1623,7 @@
       ],
       "properties": {
         "schema_version": {
-          "$ref": "#/$defs/schemaVersion"
+          "$ref": "#/$defs/shieldedContractVersion"
         },
         "root_signer": {
           "type": "object",
@@ -1762,7 +1790,7 @@
               "properties": {
                 "payload_version": {
                   "type": "string",
-                  "const": "v4"
+                  "const": "v5"
                 },
                 "audit_disclosure_required": {
                   "type": "boolean"
@@ -1792,7 +1820,8 @@
                 "manifest_available",
                 "checksum_source",
                 "generated_at",
-                "artifacts"
+                "artifacts",
+                "circuit_set_identity"
               ],
               "properties": {
                 "schema_version": {
@@ -1844,6 +1873,59 @@
                       },
                       "sha256": {
                         "$ref": "#/$defs/hexStringMaybeEmpty"
+                      }
+                    }
+                  }
+                },
+                "circuit_set_identity": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "schema_version",
+                    "circuit_set_id",
+                    "curve",
+                    "circuits"
+                  ],
+                  "properties": {
+                    "schema_version": {
+                      "$ref": "#/$defs/schemaVersion"
+                    },
+                    "circuit_set_id": {
+                      "type": "string",
+                      "const": "privacy-intent-v2"
+                    },
+                    "curve": {
+                      "type": "string",
+                      "const": "BN254"
+                    },
+                    "circuits": {
+                      "type": "array",
+                      "minItems": 3,
+                      "maxItems": 3,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "circuit_id",
+                          "verifying_key_sha256",
+                          "public_input_schema_sha256"
+                        ],
+                        "properties": {
+                          "circuit_id": {
+                            "type": "string",
+                            "enum": [
+                              "deposit",
+                              "spend",
+                              "joinsplit"
+                            ]
+                          },
+                          "verifying_key_sha256": {
+                            "$ref": "#/$defs/hex32"
+                          },
+                          "public_input_schema_sha256": {
+                            "$ref": "#/$defs/hex32"
+                          }
+                        }
                       }
                     }
                   }

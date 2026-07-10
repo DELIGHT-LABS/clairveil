@@ -1,5 +1,5 @@
 {
-  "schema_version": "v1",
+  "schema_version": "v2",
   "phase": "phase-a-send-capable",
   "topology": "remote-sidecar-first",
   "service": {
@@ -12,11 +12,11 @@
     "max_request_bytes": 8388608
   },
   "transfer": {
-    "request_version": "v1",
-    "response_version": "v1",
+    "request_version": "v2",
+    "response_version": "v2",
     "creator": "clair1qyqszqgpqyqszqgpqyqszqgpqyqszqgpq6pe73",
-    "payload_hash": "714696d07220372b5dc3641f9c9017bc50ee0b7ee31e808a55bc6b7ecb11bf6d",
-    "proof_payload_hash": "714696d07220372b5dc3641f9c9017bc50ee0b7ee31e808a55bc6b7ecb11bf6d",
+    "payload_hash": "61bb8db27cb30528e4f8f2f164acdbd30467d2bc27b893ceadf264b10796aa00",
+    "proof_payload_hash": "61bb8db27cb30528e4f8f2f164acdbd30467d2bc27b893ceadf264b10796aa00",
     "msg_creator": "clair1qyqszqgpqyqszqgpqyqszqgpqyqszqgpq6pe73",
     "user_disclosure_mode": "recipient-encrypted",
     "user_privacy_policy": "amount-from-to",
@@ -74,11 +74,11 @@
   },
   "withdraw": {
     "validation_now_unix": 4102444800,
-    "request_version": "v1",
-    "response_version": "v1",
-    "payload_hash": "a3faf327376d9d33dd045e53384dcc8466e9c42e2a8698df53e3e3c9699af530",
-    "proof_payload_hash": "a3faf327376d9d33dd045e53384dcc8466e9c42e2a8698df53e3e3c9699af530",
-    "final_payload_hash": "5ee0606c1b9fe7f4d17cdcfbcb29f88966fcbee71bd66e0909e540725bb7f9f9",
+    "request_version": "v2",
+    "response_version": "v2",
+    "payload_hash": "9d417ea947b3e4a27d2368daa0ebd91b08e2ab236306014e7446f86db4e14a88",
+    "proof_payload_hash": "9d417ea947b3e4a27d2368daa0ebd91b08e2ab236306014e7446f86db4e14a88",
+    "final_payload_hash": "29faa11087a4bb2d5abd10df05816afac22434e9b13a6b7dae8d9423c55d061c",
     "amount": "10uclair",
     "asset_denom": "uclair",
     "recipient": "clair1qgpqyqszqgpqyqszqgpqyqszqgpqyqsz378u48",

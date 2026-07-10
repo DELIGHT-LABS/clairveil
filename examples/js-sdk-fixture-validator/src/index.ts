@@ -10,7 +10,6 @@ interface TransferInput {
   view_pubkey_hex: string;
   merkle_path: string[];
   merkle_path_helper: number[];
-  note_hash_signature_hex: string;
   nullifier_hex: string;
 }
 
@@ -25,6 +24,8 @@ interface TransferOutput {
 interface PreparedTransferPayload {
   version: string;
   creator: string;
+  chain_id: string;
+  expires_at_unix: number;
   root_hex: string;
   asset_id_hex: string;
   inputs: TransferInput[];
@@ -41,6 +42,9 @@ interface PreparedTransferPayload {
   audit_disclosure_payload_hex: string;
   self_view_disclosure_digest_hex?: string;
   self_view_disclosure_payload_hex?: string;
+  user_disclosure_blinding_hex?: string;
+  full_disclosure_blinding_hex: string;
+  owner_signature_hex: string;
   payload_hash: string;
 }
 
@@ -60,7 +64,7 @@ interface PreparedWithdrawProverPayload {
   view_pubkey_hex: string;
   merkle_path: string[];
   merkle_path_helper: number[];
-  spend_note_hash_signature_hex: string;
+  spend_intent_signature_hex: string;
   payload_hash: string;
 }
 
@@ -598,6 +602,8 @@ function computePreparedTransferPayloadHash(payload: PreparedTransferPayload): s
 
   write(payload.version);
   write(payload.creator);
+  write(payload.chain_id);
+  write(payload.expires_at_unix);
   write(payload.root_hex);
   write(payload.asset_id_hex);
   write(payload.user_privacy_policy);
@@ -610,6 +616,9 @@ function computePreparedTransferPayloadHash(payload: PreparedTransferPayload): s
   write(payload.audit_disclosure_payload_hex);
   write(payload.self_view_disclosure_digest_hex);
   write(payload.self_view_disclosure_payload_hex);
+  write(payload.user_disclosure_blinding_hex);
+  write(payload.full_disclosure_blinding_hex);
+  write(payload.owner_signature_hex);
   write(payload.inputs.length);
   for (const input of payload.inputs) {
     write(input.amount);
@@ -618,7 +627,6 @@ function computePreparedTransferPayloadHash(payload: PreparedTransferPayload): s
     write(input.view_pubkey_hex);
     writeStringSlice(input.merkle_path);
     writeUint32Slice(input.merkle_path_helper);
-    write(input.note_hash_signature_hex);
     write(input.nullifier_hex);
   }
   write(payload.outputs.length);
@@ -668,7 +676,7 @@ function computePreparedWithdrawProverPayloadHash(payload: PreparedWithdrawProve
   write(payload.view_pubkey_hex);
   writeStringSlice(payload.merkle_path);
   writeUint32Slice(payload.merkle_path_helper);
-  write(payload.spend_note_hash_signature_hex);
+  write(payload.spend_intent_signature_hex);
 
   return sha256Hex(`${lines.join("\n")}\n`);
 }
@@ -726,15 +734,15 @@ function validateWalletFacingPrefixes(): void {
 }
 
 function validateProverExampleBundle(bundle: ProverExampleBundle): void {
-  assertEqual(bundle.schema_version, "v1", "prover bundle schema_version");
-  assertEqual(bundle.transfer.request.version, "v1", "transfer request version");
-  assertEqual(bundle.transfer.response.version, "v1", "transfer response version");
-  assertEqual(bundle.withdraw.request.version, "v1", "withdraw request version");
-  assertEqual(bundle.withdraw.response.version, "v1", "withdraw response version");
+  assertEqual(bundle.schema_version, "v2", "prover bundle schema_version");
+  assertEqual(bundle.transfer.request.version, "v2", "transfer request version");
+  assertEqual(bundle.transfer.response.version, "v2", "transfer response version");
+  assertEqual(bundle.withdraw.request.version, "v2", "withdraw request version");
+  assertEqual(bundle.withdraw.response.version, "v2", "withdraw response version");
 
   const transferPayload = bundle.transfer.request.payload;
   const transferHash = computePreparedTransferPayloadHash(transferPayload);
-  assertEqual(transferPayload.version, "v3", "transfer payload version");
+  assertEqual(transferPayload.version, "v5", "transfer payload version");
   assertStartsWith(transferPayload.creator, "clair1", "transfer creator");
   assertHexLength(transferPayload.self_view_disclosure_digest_hex ?? "", 32, "transfer self-view disclosure digest");
   assertHexStringNonEmpty(transferPayload.self_view_disclosure_payload_hex ?? "", "transfer self-view disclosure payload");
@@ -749,6 +757,7 @@ function validateProverExampleBundle(bundle: ProverExampleBundle): void {
     assertHexLength(viewTag, 2, `transfer view tag ${index}`);
   });
   assertEqual(transferPayload.payload_hash, transferHash, "transfer payload_hash");
+  assertHexLength(transferPayload.owner_signature_hex, 64, "transfer owner intent signature");
   assertEqual(bundle.transfer.response.proof.payload_hash, transferHash, "transfer proof payload_hash");
 
   const withdrawPayload = bundle.withdraw.request.payload;
@@ -757,6 +766,7 @@ function validateProverExampleBundle(bundle: ProverExampleBundle): void {
   assertStartsWith(withdrawPayload.recipient, "clair1", "withdraw recipient");
   assertHexLength(withdrawPayload.recipient_bytes_hex, 20, "withdraw recipient_bytes_hex");
   assertEqual(withdrawPayload.payload_hash, withdrawHash, "withdraw prover payload_hash");
+  assertHexLength(withdrawPayload.spend_intent_signature_hex, 64, "withdraw spend intent signature");
   assertEqual(bundle.withdraw.response.proof.payload_hash, withdrawHash, "withdraw proof payload_hash");
 }
 
@@ -764,7 +774,7 @@ function validateSendCapableReferenceFlow(
   flow: SendCapableReferenceFlow,
   bundle: ProverExampleBundle,
 ): void {
-  assertEqual(flow.schema_version, "v1", "send-capable schema_version");
+  assertEqual(flow.schema_version, "v2", "send-capable schema_version");
   assertEqual(flow.service.transfer_path, "/v1/prover/transfer", "transfer prover path");
   assertEqual(flow.service.withdraw_path, "/v1/prover/withdraw", "withdraw prover path");
 
@@ -782,7 +792,7 @@ function validateSendCapableReferenceFlow(
     amount: `${withdrawPayload.amount}${withdrawPayload.asset_denom}`,
     recipient: withdrawPayload.recipient,
     chainID: withdrawPayload.chain_id,
-    version: "v1",
+    version: "v2",
     expiresAtUnix: withdrawPayload.expires_at_unix,
   });
 
@@ -797,10 +807,10 @@ function validateRelayWithdrawContract(
   contract: RelayWithdrawContract,
   flow: SendCapableReferenceFlow,
 ): void {
-  assertEqual(contract.schema_version, "v1", "relay-withdraw schema_version");
-  assertEqual(contract.handoff_version, "v1", "relay-withdraw handoff_version");
+  assertEqual(contract.schema_version, "v2", "relay-withdraw schema_version");
+  assertEqual(contract.handoff_version, "v2", "relay-withdraw handoff_version");
   assertEqual(contract.transport, "transport-agnostic", "relay-withdraw transport");
-  assertEqual(contract.request.version, "v1", "relay-withdraw request version");
+  assertEqual(contract.request.version, "v2", "relay-withdraw request version");
 
   const payload = contract.request.payload;
   const expectedMsg = contract.expected_msg;
@@ -825,16 +835,16 @@ function validateRelayWithdrawContract(
 }
 
 function validateProverHTTPAPIContract(contract: ProverHTTPAPIContract): void {
-  assertEqual(contract.schema_version, "v1", "prover HTTP schema_version");
+  assertEqual(contract.schema_version, "v2", "prover HTTP schema_version");
   assertEqual(contract.content_type, "application/json", "prover HTTP content_type");
   assertEqual(contract.transfer_route.method, "POST", "transfer HTTP method");
   assertEqual(contract.transfer_route.path, "/v1/prover/transfer", "transfer HTTP path");
-  assertEqual(contract.transfer_route.request_version, "v1", "transfer HTTP request version");
-  assertEqual(contract.transfer_route.response_version, "v1", "transfer HTTP response version");
+  assertEqual(contract.transfer_route.request_version, "v2", "transfer HTTP request version");
+  assertEqual(contract.transfer_route.response_version, "v2", "transfer HTTP response version");
   assertEqual(contract.withdraw_route.method, "POST", "withdraw HTTP method");
   assertEqual(contract.withdraw_route.path, "/v1/prover/withdraw", "withdraw HTTP path");
-  assertEqual(contract.withdraw_route.request_version, "v1", "withdraw HTTP request version");
-  assertEqual(contract.withdraw_route.response_version, "v1", "withdraw HTTP response version");
+  assertEqual(contract.withdraw_route.request_version, "v2", "withdraw HTTP request version");
+  assertEqual(contract.withdraw_route.response_version, "v2", "withdraw HTTP response version");
 
   const requiredErrorCodes = [
     "invalid_request",

@@ -126,16 +126,16 @@ function requestHeaders(bearerToken?: string): Headers {
 }
 
 function validateTransferResponse(request: TransferProofRequest, response: TransferProofResponse): void {
-  assertEqual(request.version, "v1", "transfer request version");
-  assertEqual(response.version, "v1", "transfer response version");
-  assertEqual(response.proof.version, "v1", "transfer proof version");
+  assertEqual(request.version, "v2", "transfer request version");
+  assertEqual(response.version, "v2", "transfer response version");
+  assertEqual(response.proof.version, "v2", "transfer proof version");
   assertEqual(response.proof.payload_hash, request.payload.payload_hash, "transfer proof payload_hash");
 }
 
 function validateWithdrawResponse(request: WithdrawProofRequest, response: WithdrawProofResponse): void {
-  assertEqual(request.version, "v1", "withdraw request version");
-  assertEqual(response.version, "v1", "withdraw response version");
-  assertEqual(response.proof.version, "v1", "withdraw proof version");
+  assertEqual(request.version, "v2", "withdraw request version");
+  assertEqual(response.version, "v2", "withdraw response version");
+  assertEqual(response.proof.version, "v2", "withdraw proof version");
   assertEqual(response.proof.payload_hash, request.payload.payload_hash, "withdraw proof payload_hash");
 }
 

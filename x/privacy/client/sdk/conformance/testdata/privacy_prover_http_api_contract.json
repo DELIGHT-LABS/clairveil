@@ -1,17 +1,17 @@
 {
-  "schema_version": "v1",
+  "schema_version": "v2",
   "content_type": "application/json",
   "transfer_route": {
     "method": "POST",
     "path": "/v1/prover/transfer",
-    "request_version": "v1",
-    "response_version": "v1"
+    "request_version": "v2",
+    "response_version": "v2"
   },
   "withdraw_route": {
     "method": "POST",
     "path": "/v1/prover/withdraw",
-    "request_version": "v1",
-    "response_version": "v1"
+    "request_version": "v2",
+    "response_version": "v2"
   },
   "error_response": {
     "version": "v1",

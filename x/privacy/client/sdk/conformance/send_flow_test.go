@@ -166,7 +166,7 @@ func buildSendCapableReferenceFlowBundle(t *testing.T) sendCapableReferenceFlowB
 	require.Equal(t, withdrawRequest.Payload.PayloadHash, withdrawResponse.Proof.PayloadHash)
 
 	return sendCapableReferenceFlowBundle{
-		SchemaVersion: "v1",
+		SchemaVersion: "v2",
 		Phase:         "phase-a-send-capable",
 		Topology:      "remote-sidecar-first",
 		Service: sendCapableServiceBundle{
@@ -251,7 +251,7 @@ func loadSendCapableReferenceFlowBundle(t *testing.T) sendCapableReferenceFlowBu
 
 	var bundle sendCapableReferenceFlowBundle
 	require.NoError(t, json.Unmarshal(bz, &bundle))
-	require.Equal(t, "v1", bundle.SchemaVersion)
+	require.Equal(t, "v2", bundle.SchemaVersion)
 	return bundle
 }
 

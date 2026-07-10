@@ -22,6 +22,7 @@ import (
 )
 
 const updateProverExampleFixtureEnv = "PRIVACY_UPDATE_PROVER_EXAMPLE_FIXTURE"
+const referenceCanonicalIntentSignatureHex = "3153c1da87e13085b53a042a4255416a3db2355fa64cadc79c757275eb04942a0000000000000000000000000000000000000000000000000000000000000013"
 
 type proverExampleBundleFixture struct {
 	SchemaVersion string                 `json:"schema_version"`
@@ -42,7 +43,7 @@ type withdrawExampleFixture struct {
 
 func TestProverExampleBundleFixture(t *testing.T) {
 	fixture := loadProverExampleBundleFixture(t)
-	require.Equal(t, "v1", fixture.SchemaVersion)
+	require.Equal(t, "v2", fixture.SchemaVersion)
 
 	transferRequestJSON, err := fixture.Transfer.Request.MarshalIndentedJSON()
 	require.NoError(t, err)
@@ -85,6 +86,7 @@ func TestWriteProverExampleBundleFixture(t *testing.T) {
 	}
 
 	fixture := loadProverExampleBundleFixture(t)
+	fixture.SchemaVersion = "v2"
 	payload := &fixture.Transfer.Request.Payload
 	userBlinding := big.NewInt(1901)
 	fullBlinding := big.NewInt(1907)
@@ -110,10 +112,25 @@ func TestWriteProverExampleBundleFixture(t *testing.T) {
 	require.Equal(t, payload.AuditDisclosureDigestHex, payload.SelfViewDisclosureDigestHex)
 
 	payload.Version = privacytransfer.PreparedTransferPayloadVersion
+	payload.ChainID = "clairveil-local-1"
+	payload.ExpiresAtUnix = 4_102_448_400
 	payload.UserDisclosureBlindingHex = mustCanonicalBigIntHex(t, userBlinding)
 	payload.FullDisclosureBlindingHex = mustCanonicalBigIntHex(t, fullBlinding)
+	payload.OwnerSignatureHex = referenceCanonicalIntentSignatureHex
 	payload.PayloadHash = privacytransfer.ComputePreparedTransferPayloadHash(*payload)
+	fixture.Transfer.Request.Version = privacyprovertransport.TransferProofRequestVersion
+	fixture.Transfer.Response.Version = privacyprovertransport.TransferProofResponseVersion
+	fixture.Transfer.Response.Proof.Version = privacytransfer.PreparedTransferProofVersion
 	fixture.Transfer.Response.Proof.PayloadHash = payload.PayloadHash
+
+	withdrawPayload := &fixture.Withdraw.Request.Payload
+	withdrawPayload.Version = privacywithdraw.PreparedWithdrawProverPayloadVersion
+	withdrawPayload.SpendIntentSignatureHex = referenceCanonicalIntentSignatureHex
+	withdrawPayload.PayloadHash = privacywithdraw.ComputePreparedWithdrawProverPayloadHash(*withdrawPayload)
+	fixture.Withdraw.Request.Version = privacyprovertransport.WithdrawProofRequestVersion
+	fixture.Withdraw.Response.Version = privacyprovertransport.WithdrawProofResponseVersion
+	fixture.Withdraw.Response.Proof.Version = privacywithdraw.PreparedWithdrawProofVersion
+	fixture.Withdraw.Response.Proof.PayloadHash = withdrawPayload.PayloadHash
 
 	bz, err := json.MarshalIndent(fixture, "", "  ")
 	require.NoError(t, err)

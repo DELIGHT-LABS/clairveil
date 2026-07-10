@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -88,14 +89,15 @@ type browserDisclosureConfigFixture struct {
 }
 
 type browserCircuitConfigFixture struct {
-	SchemaVersion     string                          `json:"schema_version"`
-	ActiveSetID       string                          `json:"active_set_id"`
-	Curve             string                          `json:"curve"`
-	ManifestFile      string                          `json:"manifest_file"`
-	ManifestAvailable bool                            `json:"manifest_available"`
-	ChecksumSource    string                          `json:"checksum_source"`
-	GeneratedAt       string                          `json:"generated_at"`
-	Artifacts         []browserCircuitArtifactFixture `json:"artifacts"`
+	SchemaVersion      string                           `json:"schema_version"`
+	ActiveSetID        string                           `json:"active_set_id"`
+	Curve              string                           `json:"curve"`
+	ManifestFile       string                           `json:"manifest_file"`
+	ManifestAvailable  bool                             `json:"manifest_available"`
+	ChecksumSource     string                           `json:"checksum_source"`
+	GeneratedAt        string                           `json:"generated_at"`
+	Artifacts          []browserCircuitArtifactFixture  `json:"artifacts"`
+	CircuitSetIdentity *privacytypes.CircuitSetIdentity `json:"circuit_set_identity"`
 }
 
 type browserCircuitArtifactFixture struct {
@@ -230,7 +232,7 @@ func TestBrowserSignerProviderContractFixture(t *testing.T) {
 	vectors := loadGoldenVectors(t)
 	contract := loadBrowserSignerProviderContract(t)
 
-	require.Equal(t, "v1", contract.SchemaVersion)
+	require.Equal(t, "v2", contract.SchemaVersion)
 
 	require.Equal(t, vectors.SenderRootSeed.Address, contract.RootSigner.GetAccountResponse.TransparentAddress)
 	require.Equal(t, vectors.SenderRootSeed.TransparentPubKeyHex, contract.RootSigner.GetAccountResponse.TransparentPubKeyHex)
@@ -263,21 +265,21 @@ func TestBrowserSignerProviderContractFixture(t *testing.T) {
 	require.Equal(t, privacytypes.SupportedUserDisclosurePolicies(), contract.WalletInfoProvider.DisclosureConfigResponse.SupportedUserPolicies)
 	require.Equal(t, privacytypes.SupportedUserDisclosureModes(), contract.WalletInfoProvider.DisclosureConfigResponse.SupportedUserModes)
 
-	require.Equal(t, privacyzk.CircuitConfigSchemaVersion, contract.WalletInfoProvider.CircuitConfigResponse.SchemaVersion)
+	require.Equal(t, privacytypes.CircuitSetIdentitySchemaVersion, contract.WalletInfoProvider.CircuitConfigResponse.SchemaVersion)
 	require.Equal(t, privacyzk.ActiveCircuitSetID, contract.WalletInfoProvider.CircuitConfigResponse.ActiveSetID)
 	require.Equal(t, privacyzk.CircuitCurve, contract.WalletInfoProvider.CircuitConfigResponse.Curve)
-	require.Equal(t, privacyzk.ArtifactManifestFile, contract.WalletInfoProvider.CircuitConfigResponse.ManifestFile)
+	require.Empty(t, contract.WalletInfoProvider.CircuitConfigResponse.ManifestFile)
 	require.False(t, contract.WalletInfoProvider.CircuitConfigResponse.ManifestAvailable)
-	require.Equal(t, privacyzk.ChecksumSourceNone, contract.WalletInfoProvider.CircuitConfigResponse.ChecksumSource)
+	require.Equal(t, "consensus", contract.WalletInfoProvider.CircuitConfigResponse.ChecksumSource)
 
-	defaultArtifacts := privacyzk.DefaultArtifactDescriptors()
-	require.Len(t, contract.WalletInfoProvider.CircuitConfigResponse.Artifacts, len(defaultArtifacts))
+	require.NoError(t, privacytypes.ValidateCircuitSetIdentity(contract.WalletInfoProvider.CircuitConfigResponse.CircuitSetIdentity))
+	require.Len(t, contract.WalletInfoProvider.CircuitConfigResponse.Artifacts, len(privacytypes.RequiredCircuitIdentityOrder))
 	for i, artifact := range contract.WalletInfoProvider.CircuitConfigResponse.Artifacts {
-		require.Equal(t, defaultArtifacts[i].CircuitID, artifact.CircuitID)
-		require.Equal(t, defaultArtifacts[i].ArtifactType, artifact.ArtifactType)
-		require.Equal(t, defaultArtifacts[i].Filename, artifact.Filename)
-		require.Equal(t, defaultArtifacts[i].ChecksumEnv, artifact.ChecksumEnv)
-		require.Empty(t, artifact.SHA256)
+		require.Equal(t, privacytypes.RequiredCircuitIdentityOrder[i], artifact.CircuitID)
+		require.Equal(t, "verifying_key", artifact.ArtifactType)
+		require.Empty(t, artifact.Filename)
+		require.Empty(t, artifact.ChecksumEnv)
+		require.Equal(t, contract.WalletInfoProvider.CircuitConfigResponse.CircuitSetIdentity.Circuits[i].VerifyingKeySha256, artifact.SHA256)
 	}
 
 	require.GreaterOrEqual(t, contract.ScanProvider.LatestBlockHeightResponse.Height, vectors.Scan.Height)
@@ -382,20 +384,30 @@ func buildBrowserSignerProviderContract(t *testing.T) browserSignerProviderContr
 
 	vectors := loadGoldenVectors(t)
 
-	defaultArtifacts := privacyzk.DefaultArtifactDescriptors()
-	artifacts := make([]browserCircuitArtifactFixture, 0, len(defaultArtifacts))
-	for _, artifact := range defaultArtifacts {
+	circuitIdentity := &privacytypes.CircuitSetIdentity{
+		SchemaVersion: privacytypes.CircuitSetIdentitySchemaVersion,
+		CircuitSetId:  privacytypes.ActiveCircuitSetID,
+		Curve:         privacytypes.CircuitCurveBN254,
+	}
+	artifacts := make([]browserCircuitArtifactFixture, 0, len(privacytypes.RequiredCircuitIdentityOrder))
+	for i, circuitID := range privacytypes.RequiredCircuitIdentityOrder {
+		schemaDigest, err := privacyzk.PublicInputSchemaSHA256(circuitID)
+		require.NoError(t, err)
+		vkDigest := strings.Repeat(string(rune('a'+i)), 64)
+		circuitIdentity.Circuits = append(circuitIdentity.Circuits, &privacytypes.CircuitIdentity{
+			CircuitId:               circuitID,
+			VerifyingKeySha256:      vkDigest,
+			PublicInputSchemaSha256: schemaDigest,
+		})
 		artifacts = append(artifacts, browserCircuitArtifactFixture{
-			CircuitID:    artifact.CircuitID,
-			ArtifactType: artifact.ArtifactType,
-			Filename:     artifact.Filename,
-			ChecksumEnv:  artifact.ChecksumEnv,
-			SHA256:       "",
+			CircuitID:    circuitID,
+			ArtifactType: "verifying_key",
+			SHA256:       vkDigest,
 		})
 	}
 
 	return browserSignerProviderContract{
-		SchemaVersion: "v1",
+		SchemaVersion: "v2",
 		RootSigner: browserRootSignerFixture{
 			GetAccountResponse: browserSignerAccountFixture{
 				TransparentAddress:   vectors.SenderRootSeed.Address,
@@ -437,14 +449,15 @@ func buildBrowserSignerProviderContract(t *testing.T) browserSignerProviderContr
 				SupportedUserModes:      privacytypes.SupportedUserDisclosureModes(),
 			},
 			CircuitConfigResponse: browserCircuitConfigFixture{
-				SchemaVersion:     privacyzk.CircuitConfigSchemaVersion,
-				ActiveSetID:       privacyzk.ActiveCircuitSetID,
-				Curve:             privacyzk.CircuitCurve,
-				ManifestFile:      privacyzk.ArtifactManifestFile,
-				ManifestAvailable: false,
-				ChecksumSource:    privacyzk.ChecksumSourceNone,
-				GeneratedAt:       "",
-				Artifacts:         artifacts,
+				SchemaVersion:      privacytypes.CircuitSetIdentitySchemaVersion,
+				ActiveSetID:        privacyzk.ActiveCircuitSetID,
+				Curve:              privacyzk.CircuitCurve,
+				ManifestFile:       "",
+				ManifestAvailable:  false,
+				ChecksumSource:     "consensus",
+				GeneratedAt:        "",
+				Artifacts:          artifacts,
+				CircuitSetIdentity: circuitIdentity,
 			},
 		},
 		ScanProvider: browserScanProviderFixture{

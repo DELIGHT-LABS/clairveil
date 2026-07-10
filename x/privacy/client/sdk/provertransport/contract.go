@@ -11,10 +11,10 @@ import (
 )
 
 const (
-	TransferProofRequestVersion  = "v1"
-	TransferProofResponseVersion = "v1"
-	WithdrawProofRequestVersion  = "v1"
-	WithdrawProofResponseVersion = "v1"
+	TransferProofRequestVersion  = "v2"
+	TransferProofResponseVersion = "v2"
+	WithdrawProofRequestVersion  = "v2"
+	WithdrawProofResponseVersion = "v2"
 )
 
 type TransferProofRequest struct {

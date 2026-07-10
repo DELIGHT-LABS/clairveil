@@ -35,7 +35,7 @@ type proverHTTPErrorFixture struct {
 func TestProverHTTPContractFixtureMatchesSDK(t *testing.T) {
 	fixture := loadProverHTTPContractFixture(t)
 
-	require.Equal(t, "v1", fixture.SchemaVersion)
+	require.Equal(t, "v2", fixture.SchemaVersion)
 	require.Equal(t, "application/json", fixture.ContentType)
 
 	require.Equal(t, "POST", fixture.TransferRoute.Method)
