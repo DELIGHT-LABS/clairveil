@@ -97,6 +97,10 @@ message MsgTransfer {
   // scans must full-decrypt on tag mismatch; explicit fast modes may skip
   // well-formed mismatches only when recovery/rescan policy is in place.
   repeated bytes view_tags = 17;
+
+  // Absolute authorization expiry. The owner signature and proof bind this
+  // value; the transaction is expired when block_time >= expires_at_unix.
+  int64 expires_at_unix = 18;
 }
 
 // MsgDepositResponse

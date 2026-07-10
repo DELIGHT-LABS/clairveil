@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
 const (
 	ArtifactManifestFile       = "privacy_zk_manifest.json"
 	LegacyChecksumsJSONFile    = "privacy_zk_checksums.json"
 	CircuitConfigSchemaVersion = "v1"
-	ActiveCircuitSetID         = "privacy-accounting-v2"
+	ActiveCircuitSetID         = privacytypes.ActiveCircuitSetID
 	CircuitCurve               = "BN254"
 
 	ChecksumSourceManifest = "manifest"
