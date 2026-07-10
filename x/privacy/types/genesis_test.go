@@ -33,3 +33,16 @@ func TestGenesisValidateRejectsNonCanonicalFieldBytes(t *testing.T) {
 
 	require.Error(t, gs.Validate())
 }
+
+func TestGenesisValidateRejectsDuplicateStateElements(t *testing.T) {
+	value := make([]byte, genesisFieldElementByteSize)
+	value[len(value)-1] = 1
+
+	for _, gs := range []GenesisState{
+		{Commitments: [][]byte{value, append([]byte(nil), value...)}},
+		{HistoricalRoots: [][]byte{value, append([]byte(nil), value...)}},
+		{Nullifiers: [][]byte{value, append([]byte(nil), value...)}},
+	} {
+		require.ErrorContains(t, gs.Validate(), "duplicates index 0")
+	}
+}

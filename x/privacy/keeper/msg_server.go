@@ -82,6 +82,9 @@ func (k msgServer) Deposit(goCtx context.Context, msg *types.MsgDeposit) (*types
 	if err != nil {
 		return nil, errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "note commitment must be canonical 32-byte field bytes")
 	}
+	if k.HasCommitment(ctx, canonicalCommitment) {
+		return nil, errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "note commitment already exists")
+	}
 
 	if err := k.EnsureCanAppendCommitments(ctx, 1); err != nil {
 		return nil, wrapMerkleAppendPreconditionErr(err, "not enough merkle tree capacity for deposit output")
@@ -282,6 +285,12 @@ func (k msgServer) executeShieldedTransfer(ctx sdk.Context, req shieldedTransfer
 	if len(req.viewTags) != 2 {
 		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "transfer requires exactly 2 view tags; got %d", len(req.viewTags))
 	}
+	if err := types.ValidateDistinctCanonicalFieldElements("nullifier", req.nullifiers); err != nil {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, err.Error())
+	}
+	if err := types.ValidateDistinctCanonicalFieldElements("commitment", req.newCommitments); err != nil {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, err.Error())
+	}
 	for i, viewTag := range req.viewTags {
 		if len(viewTag) != types.ViewTagLength {
 			return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "view tag %d must be exactly %d bytes", i, types.ViewTagLength)
@@ -319,6 +328,9 @@ func (k msgServer) executeShieldedTransfer(ctx sdk.Context, req shieldedTransfer
 			return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "commitment %d must be canonical 32-byte field bytes", i)
 		}
 		canonicalCommitments[i] = canonicalCommitment
+		if k.HasCommitment(ctx, canonicalCommitment) {
+			return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "commitment %d already exists", i)
+		}
 	}
 
 	if err := k.EnsureCanAppendCommitments(ctx, uint64(len(canonicalCommitments))); err != nil {

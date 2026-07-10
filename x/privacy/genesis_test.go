@@ -51,9 +51,6 @@ func TestGenesisRoundTrip(t *testing.T) {
 		k.SetNullifier(ctx, nullifier)
 	}
 
-	extraHistoricalRoot := fixedFieldBytesFromUint64(99)
-	k.SetHistoricalRoot(ctx, extraHistoricalRoot)
-
 	exported := ExportGenesis(ctx, *k)
 	require.NotNil(t, exported)
 	require.NoError(t, exported.Validate())
@@ -90,6 +87,19 @@ func TestInitGenesisPanicsWithInvalidState(t *testing.T) {
 	}
 
 	require.Panics(t, func() {
+		InitGenesis(ctx, *k, state)
+	})
+}
+
+func TestInitGenesisPanicsWithForgedHistoricalRoot(t *testing.T) {
+	k, ctx := setupPrivacyGenesisKeeper()
+
+	state := privacytypes.GenesisState{
+		Commitments:     [][]byte{fixedFieldBytesFromUint64(1)},
+		HistoricalRoots: [][]byte{fixedFieldBytesFromUint64(99)},
+	}
+
+	require.PanicsWithError(t, "failed to initialize privacy historical roots: genesis historical root at index 0 does not match any commitment prefix root", func() {
 		InitGenesis(ctx, *k, state)
 	})
 }

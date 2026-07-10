@@ -24,17 +24,26 @@ func (gs GenesisState) Validate() error {
 			return fmt.Errorf("commitments[%d]: %w", i, err)
 		}
 	}
+	if err := ValidateDistinctCanonicalFieldElements("commitment", gs.Commitments); err != nil {
+		return fmt.Errorf("commitments: %w", err)
+	}
 
 	for i, root := range gs.HistoricalRoots {
 		if err := validateGenesisFieldElementBytes(root); err != nil {
 			return fmt.Errorf("historical_roots[%d]: %w", i, err)
 		}
 	}
+	if err := ValidateDistinctCanonicalFieldElements("historical root", gs.HistoricalRoots); err != nil {
+		return fmt.Errorf("historical_roots: %w", err)
+	}
 
 	for i, nullifier := range gs.Nullifiers {
 		if err := validateGenesisFieldElementBytes(nullifier); err != nil {
 			return fmt.Errorf("nullifiers[%d]: %w", i, err)
 		}
+	}
+	if err := ValidateDistinctCanonicalFieldElements("nullifier", gs.Nullifiers); err != nil {
+		return fmt.Errorf("nullifiers: %w", err)
 	}
 
 	if len(gs.AuditMasterPubkey) != 0 {

@@ -13,6 +13,9 @@ func (k Keeper) InitGenesisCommitments(ctx sdk.Context, commitments [][]byte) er
 	if err := k.EnsureCanAppendCommitments(ctx, uint64(len(commitments))); err != nil {
 		return fmt.Errorf("genesis commitments exceed merkle tree capacity: %w", err)
 	}
+	if err := types.ValidateDistinctCanonicalFieldElements("genesis commitment", commitments); err != nil {
+		return fmt.Errorf("invalid genesis commitments: %w", err)
+	}
 
 	for i, commitment := range commitments {
 		canonicalCommitment, err := validateFieldElementBytesStrict(commitment)
@@ -29,19 +32,34 @@ func (k Keeper) InitGenesisCommitments(ctx sdk.Context, commitments [][]byte) er
 }
 
 func (k Keeper) InitGenesisHistoricalRoots(ctx sdk.Context, roots [][]byte) error {
+	if err := types.ValidateDistinctCanonicalFieldElements("genesis historical root", roots); err != nil {
+		return fmt.Errorf("invalid genesis historical roots: %w", err)
+	}
+	recomputedRoots, err := k.ExportGenesisHistoricalRoots(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to read recomputed commitment prefix roots: %w", err)
+	}
+	if len(roots) != len(recomputedRoots) {
+		return fmt.Errorf("genesis historical roots do not match commitment prefixes: got %d roots, recomputed %d", len(roots), len(recomputedRoots))
+	}
 	for i, root := range roots {
 		canonicalRoot, err := validateFieldElementBytesStrict(root)
 		if err != nil {
 			return fmt.Errorf("genesis historical root at index %d is invalid: %w", i, err)
 		}
 
-		k.SetHistoricalRoot(ctx, canonicalRoot)
+		if !k.CheckHistoricalRoot(ctx, canonicalRoot) {
+			return fmt.Errorf("genesis historical root at index %d does not match any commitment prefix root", i)
+		}
 	}
 
 	return nil
 }
 
 func (k Keeper) InitGenesisNullifiers(ctx sdk.Context, nullifiers [][]byte) error {
+	if err := types.ValidateDistinctCanonicalFieldElements("genesis nullifier", nullifiers); err != nil {
+		return fmt.Errorf("invalid genesis nullifiers: %w", err)
+	}
 	for i, nullifier := range nullifiers {
 		canonicalNullifier, err := validateFieldElementBytesStrict(nullifier)
 		if err != nil {

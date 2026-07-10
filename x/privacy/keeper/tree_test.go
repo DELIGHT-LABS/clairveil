@@ -186,17 +186,25 @@ func TestGetPathBootstrapsLegacyLeafState(t *testing.T) {
 	require.Equal(t, uint64(1), idx)
 }
 
-func TestCommitmentIndexKeepsLatestDuplicate(t *testing.T) {
+func TestAppendCommitmentRejectsDuplicateWithoutChangingState(t *testing.T) {
 	k, ctx := setupTreeKeeper()
 
 	dup := []byte{0x42}
 	require.NoError(t, k.AppendCommitment(ctx, dup))
 	require.NoError(t, k.AppendCommitment(ctx, []byte{0x99}))
-	require.NoError(t, k.AppendCommitment(ctx, dup))
+	rootBefore := append([]byte(nil), k.GetMerkleNode(ctx, uint8(MerkleDepth), 0)...)
+	countBefore := k.GetLeafCount(ctx)
+
+	err := k.AppendCommitment(ctx, dup)
+	require.ErrorIs(t, err, errMerkleDuplicateCommitment)
+	require.Equal(t, countBefore, k.GetLeafCount(ctx))
+	require.Equal(t, rootBefore, k.GetMerkleNode(ctx, uint8(MerkleDepth), 0))
+	require.Empty(t, k.GetLeaf(ctx, countBefore))
 
 	idx, found := k.GetCommitmentIndex(ctx, dup)
 	require.True(t, found)
-	require.Equal(t, uint64(2), idx)
+	require.Equal(t, uint64(0), idx)
+	require.True(t, k.HasCommitment(ctx, dup))
 }
 
 func TestGetPathNotFound(t *testing.T) {

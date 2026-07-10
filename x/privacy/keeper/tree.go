@@ -28,6 +28,7 @@ var (
 	errMerkleTreeNodeMissing     = errors.New("merkle tree node is missing")
 	errMerkleTreeLeafMissing     = errors.New("merkle tree leaf is missing")
 	errMerkleTreeLeafMismatch    = errors.New("merkle tree commitment index does not match stored leaf")
+	errMerkleDuplicateCommitment = errors.New("commitment already exists in the merkle tree")
 )
 
 func validateMerkleLeafCount(count uint64) error {
@@ -146,6 +147,9 @@ func (k Keeper) AppendCommitment(ctx sdk.Context, commitment []byte) error {
 	canonicalCommitment, err := canonicalizeFieldBytes(commitment)
 	if err != nil {
 		return err
+	}
+	if k.HasCommitment(ctx, canonicalCommitment) {
+		return fmt.Errorf("%w: commitment=%x", errMerkleDuplicateCommitment, canonicalCommitment)
 	}
 
 	if err := k.EnsureCanAppendCommitments(ctx, 1); err != nil {
@@ -456,4 +460,9 @@ func (k Keeper) GetCommitmentIndex(ctx sdk.Context, commitment []byte) (uint64, 
 	}
 
 	return binary.BigEndian.Uint64(bz), true
+}
+
+func (k Keeper) HasCommitment(ctx sdk.Context, commitment []byte) bool {
+	_, found := k.GetCommitmentIndex(ctx, commitment)
+	return found
 }

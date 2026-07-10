@@ -267,6 +267,24 @@ func TestMsgServerDepositSuccess(t *testing.T) {
 	require.True(t, k.CheckHistoricalRoot(ctx, root))
 }
 
+func TestMsgServerDepositRejectsGlobalCommitmentCollisionBeforeBank(t *testing.T) {
+	k, ctx, bankKeeper := setupMsgServerKeeper()
+	server := NewMsgServerImpl(*k)
+	msg := testDepositMsg(t, testAddress(0x12), "1uclair", big.NewInt(1), "uclair", []byte{0x01})
+
+	_, err := server.Deposit(sdk.WrapSDKContext(ctx), msg)
+	require.NoError(t, err)
+	rootBefore := append([]byte(nil), k.GetMerkleNode(ctx, uint8(MerkleDepth), 0)...)
+	countBefore := k.GetLeafCount(ctx)
+	bankCallsBefore := bankKeeper.fromAccountToModuleCalls
+
+	_, err = server.Deposit(sdk.WrapSDKContext(ctx), msg)
+	require.ErrorContains(t, err, "note commitment already exists")
+	require.Equal(t, bankCallsBefore, bankKeeper.fromAccountToModuleCalls)
+	require.Equal(t, countBefore, k.GetLeafCount(ctx))
+	require.Equal(t, rootBefore, k.GetMerkleNode(ctx, uint8(MerkleDepth), 0))
+}
+
 func TestMsgServerDepositEmitsExpectedEvent(t *testing.T) {
 	k, ctx, _ := setupMsgServerKeeper()
 	server := NewMsgServerImpl(*k)
@@ -568,6 +586,74 @@ func TestMsgServerTransferRejectsInvalidNullifierCountBeforeZK(t *testing.T) {
 	_, err := server.Transfer(sdk.WrapSDKContext(ctx), msg)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "transfer requires exactly 2 nullifiers")
+}
+
+func TestMsgServerTransferRejectsLocalDuplicatesBeforeProof(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		nullifiers  [][]byte
+		commitments [][]byte
+		want        string
+	}{
+		{
+			name:        "nullifier",
+			nullifiers:  [][]byte{fixedFieldBytes(44), fixedFieldBytes(44)},
+			commitments: [][]byte{fixedFieldBytes(45), fixedFieldBytes(46)},
+			want:        "nullifier index 1 duplicates index 0",
+		},
+		{
+			name:        "commitment",
+			nullifiers:  [][]byte{fixedFieldBytes(47), fixedFieldBytes(48)},
+			commitments: [][]byte{fixedFieldBytes(49), fixedFieldBytes(49)},
+			want:        "commitment index 1 duplicates index 0",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			k, ctx, _ := setupMsgServerKeeper()
+			root := fixedFieldBytes(43)
+			k.SetHistoricalRoot(ctx, root)
+
+			err := msgServer{Keeper: *k}.executeShieldedTransfer(ctx, shieldedTransferRequest{
+				root:           root,
+				proof:          []byte{0x01},
+				nullifiers:     tc.nullifiers,
+				newCommitments: tc.commitments,
+				cipherTexts:    [][]byte{{0x01}, {0x02}},
+				viewTags:       [][]byte{{0x01, 0x02}, {0x03, 0x04}},
+			})
+			require.ErrorContains(t, err, tc.want)
+			for _, nullifier := range tc.nullifiers {
+				require.False(t, k.HasNullifier(ctx, nullifier))
+			}
+			require.Equal(t, uint64(0), k.GetLeafCount(ctx))
+		})
+	}
+}
+
+func TestMsgServerTransferRejectsGlobalCommitmentCollisionBeforeProof(t *testing.T) {
+	k, ctx := setupTreeKeeper()
+	existing := fixedFieldBytes(56)
+	require.NoError(t, k.AppendCommitment(ctx, existing))
+	root := append([]byte(nil), k.GetMerkleNode(ctx, uint8(MerkleDepth), 0)...)
+	auditPubKey := fixedFieldBytes(57)
+	k.SetAuditMasterPubkey(ctx, auditPubKey)
+	countBefore := k.GetLeafCount(ctx)
+	rootBefore := append([]byte(nil), root...)
+
+	err := msgServer{Keeper: *k}.executeShieldedTransfer(ctx, shieldedTransferRequest{
+		root:                        root,
+		proof:                       []byte{0x01},
+		nullifiers:                  [][]byte{fixedFieldBytes(58), fixedFieldBytes(59)},
+		newCommitments:              [][]byte{existing, fixedFieldBytes(60)},
+		cipherTexts:                 [][]byte{{0x01}, {0x02}},
+		viewTags:                    [][]byte{{0x01, 0x02}, {0x03, 0x04}},
+		auditDisclosureTargetPubKey: auditPubKey,
+	})
+	require.ErrorContains(t, err, "commitment 0 already exists")
+	require.Equal(t, countBefore, k.GetLeafCount(ctx))
+	require.Equal(t, rootBefore, k.GetMerkleNode(ctx, uint8(MerkleDepth), 0))
+	require.False(t, k.HasNullifier(ctx, fixedFieldBytes(58)))
+	require.False(t, k.HasNullifier(ctx, fixedFieldBytes(59)))
 }
 
 func TestMsgServerTransferRejectsInsufficientBatchCapacityBeforeProof(t *testing.T) {
