@@ -1,21 +1,26 @@
 # Clairveil 대량 전송 실행 계획
 
+> **2026-07-10 2차 계획 대체 안내**
+>
+> 이 문서의 1차/1.5차 payroll 구현 기록과 배경 설명은 유지함. 다만 아래의 `Phase 7`, `N-output Batch Circuit`, `BatchJoinSplit32` 관련 2차 실행 계획은 더 이상 구현 기준이 아님. 최종 2차 protocol 작업은 최대 16-input / 32-output, current security remediation, NoteV1 동결, core/client 분리 구현, 독립 공개 검증을 포함하는 [BatchJoinSplit16x32 Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md)과 연결된 세션별 계획을 기준으로 진행함.
+
 ## 메타데이터
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | 1차 repo 구현 완료, 1차 안정화 및 1.5차 Reference Payroll Product repo 보강 완료, simulated/live daemon reference 완료, live localnet tutorial 완료, repo-local 1천건 rehearsal 완료, production 운영 배포/hardening 남음 |
+| 상태 | 1차 repo 구현 완료, 1차 안정화 및 1.5차 Reference Payroll Product repo 보강 완료, 2차 계획은 BatchJoinSplit16x32 roadmap으로 대체됨 |
 | 작성일 | 2026-07-03 |
 | 대상 브랜치 | `private/bulk-transfer-v2` |
 | 대상 영역 | `x/privacy` client SDK, provider, benchmark, 이후 privacy protocol |
 | 1차 범위 | Note Reservation, Payroll Control Plane, Proof/Broadcast/Reconcile Queue, Multi-Message Tx, Prover Scaling, Capacity Simulation Benchmark |
 | 1.5차 범위 | Reference Payroll Product, 상품화 보강, JS SDK/지갑 handoff |
-| 2차 범위 | N-output batch circuit |
-| 2차 권장 N | `N=32` |
+| 2차 범위 | 이 문서의 기존 N-output 계획은 대체됨. 새 roadmap의 16-input / 32-output protocol 작업을 따름 |
+| 2차 target | `BatchJoinSplit16x32` |
 | 제외 범위 | Payroll Merkle Distribution, protocol-level reservation, managed production DB deployment, customer-specific scheduler operations |
 
 ## 관련 문서
 
+- [BatchJoinSplit16x32 Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md)
 - [Clairveil 대량 전송 방안 검토 리포트](clairveil-bulk-transfer-strategy-kr.md)
 - [Clairveil 대량 전송 소요시간 시뮬레이션 노트](clairveil-bulk-transfer-time-simulation-kr.md)
 - [Clairveil Note Reservation 설계 노트](../docs/clairveil-note-reservation-design-kr.md)
@@ -32,7 +37,7 @@
 - 단일 기업이 월 1회 직원 10만 명에게 급여를 push 방식으로 지급함.
 - 100개 기업이 월 1회 각 1천 명에게 급여를 지급하는 SaaS형 payroll을 운영함.
 
-1차 계획은 현재 protocol과 circuit을 유지한 상태에서 운영 레이어, SDK 레이어, worker 레이어, benchmark 레이어를 구축하는 것임. 2차 계획은 1차 benchmark 이후에도 push payroll 처리량이 부족하다고 판단될 때, N-output batch circuit을 도입해 proof 수와 tx envelope 수를 함께 줄이는 것임.
+1차 계획은 현재 protocol과 circuit을 유지한 상태에서 운영 레이어, SDK 레이어, worker 레이어, benchmark 레이어를 구축하는 것임. 후속 protocol 계획은 current security remediation을 먼저 수행한 뒤 최대 16-input/32-output batch circuit을 도입해 proof 수와 tx envelope 수를 함께 줄이는 것임.
 
 ## 배경
 
@@ -55,7 +60,7 @@ tx 결과 scan/reconcile 100,000건
 1. protocol 변경 없이 운영 가능한 대량 지급 기반을 먼저 만듦.
 2. note reservation과 payroll control plane을 먼저 고정해 후속 worker가 같은 상태 모델을 공유하게 함.
 3. multi-message tx와 prover scaling으로 현재 구조의 한계를 측정함.
-4. benchmark가 부족하다고 판단되면 N-output batch circuit을 2차로 진행함.
+4. benchmark가 부족하다고 판단되면 별도 `BatchJoinSplit16x32` roadmap의 순차 gate를 진행함.
 
 ## 설계 원칙
 
@@ -63,7 +68,7 @@ tx 결과 scan/reconcile 100,000건
 
 1차 범위는 기존 `MsgTransfer`, 기존 join-split circuit, 기존 keeper validation을 최대한 재사용함. 필요한 변경은 주로 client SDK, control plane library, worker, benchmark에 둠.
 
-`proto/clairveil/privacy/v1/tx.proto`, `x/privacy/keeper`, `x/privacy/circuit` 변경은 2차 N-output batch circuit에서 다룸.
+`proto/clairveil/privacy/v1/tx.proto`, `x/privacy/keeper`, `x/privacy/circuit` 변경은 별도 `BatchJoinSplit16x32` roadmap에서 다룸.
 
 ### 2. Note Reservation은 공통 계약으로 둠
 
@@ -83,17 +88,17 @@ managed production DB deployment는 이 repo의 1차 범위에서 제외함. 대
 
 Payroll Control Plane은 최종 사용자 UI 자체가 아니라, 대량 지급을 job/run/item/operation 단위로 표현하는 공통 모델임.
 
-이 모델은 3차 proof queue, 4차 multi-message broadcaster, 5차 prover scaler, 6차 benchmark, 2차 N-output batch circuit adapter가 모두 입력으로 사용함.
+이 모델은 3차 proof queue, 4차 multi-message broadcaster, 5차 prover scaler, 6차 benchmark, 후속 BatchJoinSplit16x32 adapter가 모두 입력으로 사용함.
 
-### 4. 2차는 N-output batch circuit으로 고정함
+### 4. 후속 protocol target은 BatchJoinSplit16x32로 고정함
 
-장기 protocol 후보에는 N-output batch circuit과 Payroll Merkle Distribution이 있음. 이 계획에서는 2차를 N-output batch circuit으로 고정함.
+장기 protocol 후보에는 batch circuit과 Payroll Merkle Distribution이 있음. 최종 target과 안전성 gate는 `BatchJoinSplit16x32` roadmap에서 고정함.
 
 이유는 다음과 같음.
 
 - 현재 제품 방향이 "회사가 직원에게 직접 push 지급"에 가깝다고 가정함.
 - Merkle Distribution은 claim 기반 제품 UX를 요구하므로 지급 완료의 의미가 달라짐.
-- N-output batch circuit은 현재 transfer 모델의 직접 확장임.
+- BatchJoinSplit16x32는 현재 transfer 모델의 직접 확장임.
 - 1차에서 만든 reservation, payroll item, operation, report 모델을 그대로 batch adapter에 연결하기 쉬움.
 
 ## 전체 단계
@@ -108,9 +113,9 @@ Payroll Control Plane은 최종 사용자 UI 자체가 아니라, 대량 지급�
 5. Prover Scaling
 6. Capacity Simulation Benchmark
 
-2차: protocol-level throughput 개선
+후속: protocol-level throughput 개선
 
-7. N-output Batch Circuit, 권장 N=32
+7. BatchJoinSplit16x32 Master Roadmap의 Session 1 -> 2 -> 3A -> 3B -> 4
 ```
 
 ## 현재 구현 상태
@@ -136,7 +141,7 @@ Payroll Control Plane은 최종 사용자 UI 자체가 아니라, 대량 지급�
 | Phase 5. Prover Scaling | 구현 및 pool load harness 완료 | `x/privacy/client/sdk/payroll/prover_pool.go`, `cmd/clairveil-proverload`, `scripts/privacy-proverd-scale-bench.sh` |
 | Phase 6. Capacity Simulation Benchmark | 시뮬레이션 및 readiness harness 완료 | `cmd/clairveil-bulktransferbench`, `scripts/privacy-bulk-transfer-bench.sh`, `scripts/privacy-bulk-readiness-check.sh`, `make privacy-bulk-readiness-check` |
 | Phase 1.5. Reference Payroll Product | repo 보강 완료, simulated daemon/demo 완료, live localnet tutorial 완료, scanner/live daemon reference 완료, SQL adapter 완료, rehearsal harness 완료 | `cmd/clairveil-payroll`, `cmd/clairveil-payrolld`, `examples/reference-payroll`, `scripts/reference-payroll-live-localnet.sh`, `scripts/reference-payroll-rehearsal.sh`, `x/privacy/client/sdk/payroll`, `x/privacy/client/sdk/reservation/sql_store.go`, handoff 문서 |
-| Phase 7. N-output Batch Circuit | 미구현 | 2차에서 `BatchJoinSplit32`로 진행 예정임 |
+| Phase 7. N-output Batch Circuit | 대체됨 | `BatchJoinSplit16x32` master roadmap과 세션별 계획을 따름 |
 
 ## 1차 계획
 
@@ -257,7 +262,7 @@ x/privacy/client/sdk/payroll/
 - Phase 4 multi-message broadcaster는 `PayrollOperation`을 chunk로 묶음.
 - Phase 5 prover scaling은 `PayrollOperation` proof job을 여러 worker에 분배함.
 - Phase 6 benchmark는 synthetic payroll input을 `PayrollPlan`으로 변환해 전체 처리량을 측정함.
-- Phase 7 N-output batch circuit은 `PayrollItem`들을 `BatchJoinSplit32` witness input으로 변환함.
+- 후속 BatchJoinSplit16x32 integration은 `PayrollItem`들을 many-to-many batch operation/output 모델로 변환함.
 
 #### 완료 기준
 
@@ -876,7 +881,11 @@ benchmark report
 
 ## 2차 계획
 
+> 아래 내용은 최초 N-output-only 설계의 역사적 기록임. 구현 지시로 사용하지 않으며, 실제 작업은 이 문서 상단에 연결한 `BatchJoinSplit16x32` roadmap을 따름.
+
 ### Phase 7. N-output Batch Circuit
+
+> **역사적 기록 전용:** 아래의 `BatchJoinSplit32`, 2-input/33-output shape, remainder 처리, proto 예시는 폐기된 초기안임. 신규 구현·review·handoff의 요구사항으로 인용하지 않으며, 상단의 `BatchJoinSplit16x32 Master Roadmap`과 Session 1~4 문서만 normative source로 사용함.
 
 #### 목표
 
@@ -1068,15 +1077,15 @@ benchmarks/privacy-bulk-transfer/
 
 따라서 1차는 Note Reservation부터 Capacity Simulation Benchmark까지로 제한함. 이 범위만으로도 대량 지급 workflow, failure handling, retry/reconcile, prover scaling, tx chunking의 구조적 한계와 예상 병목을 확인할 수 있음.
 
-### 2차를 N-output batch circuit으로 정한 이유
+### [폐기된 기록] 2차를 N-output batch circuit으로 정한 이유
 
 2차는 N-output batch circuit으로 진행함. Payroll Merkle Distribution은 확장성은 가장 크지만 claim 기반 UX로 제품 의미가 달라짐. 이번 계획은 회사가 직접 직원에게 지급하는 push payroll 모델을 개선하는 데 초점을 둠.
 
-### `N=32`를 선택한 이유
+### [폐기된 기록] `N=32`를 선택한 이유
 
 `N=32`는 처리량 개선과 구현 리스크 사이의 균형점으로 봄. `N=16`은 안전하지만 tx/proof 감소 효과가 절반이고, `N=64`는 회로와 payload 리스크가 커짐. 기존 시뮬레이션도 `N=32`를 기준으로 의미 있는 개선을 보였으므로, 2차 target은 `BatchJoinSplit32`로 둠.
 
-## 최종 권장 실행 순서
+## [폐기된 기록] 최초 권장 실행 순서
 
 ```text
 1. reservation contract와 Go reference implementation을 먼저 만듦
@@ -1085,7 +1094,7 @@ benchmarks/privacy-bulk-transfer/
 4. multi-message tx chunking으로 tx envelope 수를 줄임
 5. prover worker pool로 proof 병목을 줄임
 6. 10만건 및 100개 기업 x 1천건 benchmark를 실행함
-7. 1차 benchmark 결과를 바탕으로 BatchJoinSplit32를 구현함
+7. 1차 benchmark 결과를 바탕으로 후속 batch protocol을 검토함
 ```
 
 이 순서를 따르면 1차 산출물이 단기 운영에도 쓰이고, 2차 protocol 확장에도 그대로 재사용됨. 반대로 reservation과 payroll control plane 없이 바로 batch circuit으로 가면 proof 수는 줄일 수 있지만, 실패 처리, 재시도, 결과 리포트, note 충돌 대응이 흩어지므로 실제 payroll 제품으로 운영하기 어려움.
