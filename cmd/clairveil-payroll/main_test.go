@@ -81,6 +81,29 @@ func TestBuildInputFromNotesCommandImportsSpendableNotes(t *testing.T) {
 	require.Equal(t, "lookup-v1", payload.TreasuryNotes[0].NullifierLookupKeyID)
 }
 
+func TestReadListNotesFileUsesCLITransactionHashField(t *testing.T) {
+	dir := t.TempDir()
+	notesPath := filepath.Join(dir, "notes.json")
+	require.NoError(t, os.WriteFile(notesPath, []byte(`{
+  "notes": [
+    {
+      "index": 1,
+      "status": "spendable",
+      "amount": "70",
+      "nullifier": "recipient-note",
+      "tx_hash": "LIVE_TX_HASH",
+      "height": 9
+    }
+  ]
+}`), 0o600))
+
+	notes, err := readListNotesFileAtFlag(notesPath, "-notes")
+	require.NoError(t, err)
+	require.Len(t, notes.Notes, 1)
+	require.Equal(t, "LIVE_TX_HASH", notes.Notes[0].TxHash)
+	require.Equal(t, map[string]int{"70": 1}, spendableNoteCountsByAmountAndTxHash(notes, "LIVE_TX_HASH"))
+}
+
 func TestPlanStatusAndExportReportCommands(t *testing.T) {
 	dir := t.TempDir()
 	inputPath := filepath.Join(dir, "payroll.json")

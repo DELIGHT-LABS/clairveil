@@ -155,7 +155,7 @@ type listNotesFileNote struct {
 	Status    string `json:"status"`
 	Amount    string `json:"amount"`
 	Nullifier string `json:"nullifier,omitempty"`
-	TxHash    string `json:"txhash,omitempty"`
+	TxHash    string `json:"tx_hash,omitempty"`
 	Height    int64  `json:"height,omitempty"`
 }
 
