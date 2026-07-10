@@ -82,6 +82,17 @@ func PrepareJoinSplitTransfer(
 			return nil, err
 		}
 	}
+	inputNullifierCandidates := make([][]byte, len(input.Inputs))
+	for i, foundNote := range input.Inputs {
+		nullifierBytes, err := privacyfield.CanonicalBytesFromBigInt(foundNote.Note.ComputeNullifier())
+		if err != nil {
+			return nil, fmt.Errorf("invalid nullifier for note %d: %w", i, err)
+		}
+		inputNullifierCandidates[i] = nullifierBytes
+	}
+	if err := privacytypes.ValidateDistinctCanonicalFieldElements("input nullifier", inputNullifierCandidates); err != nil {
+		return nil, fmt.Errorf("joinsplit inputs must be distinct: %w", err)
+	}
 
 	totalInput := new(big.Int).Add(input.Inputs[0].Note.Amount, input.Inputs[1].Note.Amount)
 	changeAmount := new(big.Int).Sub(totalInput, input.TransferAmount)
@@ -213,6 +224,10 @@ func PrepareJoinSplitTransfer(
 	if err != nil {
 		return nil, fmt.Errorf("invalid change note commitment: %w", err)
 	}
+	outputCommitments := [][]byte{recipientCommitmentBytes, changeCommitmentBytes}
+	if err := privacytypes.ValidateDistinctCanonicalFieldElements("output commitment", outputCommitments); err != nil {
+		return nil, fmt.Errorf("joinsplit outputs must be distinct: %w", err)
+	}
 
 	assignment.OutputAmounts[0] = recipientNote.Amount
 	assignment.OutputRandomness[0] = recipientNote.Randomness
@@ -233,7 +248,7 @@ func PrepareJoinSplitTransfer(
 		InputMerklePaths:  inputMerklePaths,
 		InputPathHelpers:  inputPathHelpers,
 		InputSignatures:   inputSignatures,
-		OutputCommitments: [][]byte{recipientCommitmentBytes, changeCommitmentBytes},
+		OutputCommitments: outputCommitments,
 		FromNote:          input.Inputs[0].Note,
 		RecipientNote:     recipientNote,
 		ChangeNote:        changeNote,

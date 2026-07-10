@@ -93,11 +93,17 @@ func validateTransferPayload(root []byte, nullifiers, newCommitments, cipherText
 			return errorsmod.Wrapf(err, "nullifier index %d", i)
 		}
 	}
+	if err := ValidateDistinctCanonicalFieldElements("nullifier", nullifiers); err != nil {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, err.Error())
+	}
 
 	for i, commitment := range newCommitments {
 		if err := validateFieldElementBytesStrict("commitment", commitment); err != nil {
 			return errorsmod.Wrapf(err, "commitment index %d", i)
 		}
+	}
+	if err := ValidateDistinctCanonicalFieldElements("commitment", newCommitments); err != nil {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, err.Error())
 	}
 
 	for i, viewTag := range viewTags {

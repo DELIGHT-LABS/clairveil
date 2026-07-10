@@ -50,6 +50,9 @@ func ChunkProofResults(results []ProofResult, options ChunkOptions) ([]MessageCh
 }
 
 func checkDuplicateNullifiers(msg *privacytypes.MsgTransfer, operationID string, seen map[string]string) error {
+	if err := privacytypes.ValidateDistinctCanonicalFieldElements("nullifier", msg.Nullifiers); err != nil {
+		return fmt.Errorf("operation %s has invalid joinsplit inputs: %w", operationID, err)
+	}
 	for _, nullifier := range msg.Nullifiers {
 		key := hex.EncodeToString(nullifier)
 		if previousOperationID, ok := seen[key]; ok {

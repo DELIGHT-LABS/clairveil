@@ -537,7 +537,7 @@ type fakeAssembler struct{}
 
 func (fakeAssembler) BuildTransferMessage(_ privacytransfer.PreparedTransferPayload, _ privacytransfer.PreparedTransferProof) (*privacytypes.MsgTransfer, error) {
 	return &privacytypes.MsgTransfer{
-		Nullifiers: [][]byte{[]byte("nullifier-a"), []byte("nullifier-b")},
+		Nullifiers: [][]byte{testCanonicalNullifier("nullifier-a"), testCanonicalNullifier("nullifier-b")},
 	}, nil
 }
 

@@ -196,6 +196,27 @@ func TestPrepareJoinSplitTransferRejectsOverTransfer(t *testing.T) {
 	require.ErrorContains(t, err, "transfer amount exceeds selected input total")
 }
 
+func TestPrepareJoinSplitTransferRejectsDuplicateInputBeforePathLookup(t *testing.T) {
+	fixture := newPrepareJoinSplitFixture(t, []uint32{0, 1})
+	fixture.inputs[1] = fixture.inputs[0]
+
+	_, err := PrepareJoinSplitTransfer(
+		context.Background(),
+		fixture.merkleProvider,
+		&stubNoteHashSigner{signature: testSignatureBytes(t)},
+		PrepareJoinSplitInput{
+			Inputs:               fixture.inputs,
+			RecipientSpendPubKey: fixture.recipientSpendPubKey,
+			RecipientViewPubKey:  fixture.recipientViewPubKey,
+			TransferAmount:       big.NewInt(7),
+			SenderSpendPubKey:    fixture.senderSpendPubKey,
+			SenderViewPubKey:     fixture.senderViewPubKey,
+		},
+	)
+	require.ErrorContains(t, err, "joinsplit inputs must be distinct")
+	require.Empty(t, fixture.merkleProvider.requests)
+}
+
 func TestPrepareJoinSplitTransferRejectsChangeAmountAboveShieldedLimit(t *testing.T) {
 	fixture := newPrepareJoinSplitFixture(t, []uint32{0, 1})
 	maxAmount := privacytypes.MaxShieldedAmount()

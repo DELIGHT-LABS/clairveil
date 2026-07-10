@@ -24,6 +24,13 @@ func validFieldBytes() []byte {
 	return bz
 }
 
+func distinctFieldBytesPair() [][]byte {
+	first := validFieldBytes()
+	second := validFieldBytes()
+	second[len(second)-1] = 0x02
+	return [][]byte{first, second}
+}
+
 func nonCanonicalFieldBytes() []byte {
 	bz := fr.Modulus().Bytes()
 	out := make([]byte, len(bz))
@@ -123,8 +130,8 @@ func TestMsgTransferValidateBasicLengthChecks(t *testing.T) {
 		creator,
 		[]byte{1},
 		validFieldBytes(),
-		[][]byte{validFieldBytes(), validFieldBytes()},
-		[][]byte{validFieldBytes(), validFieldBytes()},
+		distinctFieldBytesPair(),
+		distinctFieldBytesPair(),
 		[][]byte{{5}, {6}},
 		validViewTags(),
 		TransferPrivacyPolicyAllPrivate,
@@ -145,7 +152,7 @@ func TestMsgTransferValidateBasicLengthChecks(t *testing.T) {
 		[]byte{1},
 		validFieldBytes(),
 		[][]byte{validFieldBytes()},
-		[][]byte{validFieldBytes(), validFieldBytes()},
+		distinctFieldBytesPair(),
 		[][]byte{{5}, {6}},
 		validViewTags(),
 		TransferPrivacyPolicyAllPrivate,
@@ -163,6 +170,44 @@ func TestMsgTransferValidateBasicLengthChecks(t *testing.T) {
 	require.ErrorContains(t, err, "transfer requires exactly 2 nullifiers")
 }
 
+func TestMsgTransferValidateBasicRejectsDuplicateNullifiersAndCommitments(t *testing.T) {
+	creator := testCreatorAddress()
+	auditPubKey := validDisclosurePubKeyBytes(t)
+	fieldOne := validFieldBytes()
+	fieldTwo := append([]byte(nil), fieldOne...)
+	fieldTwo[len(fieldTwo)-1] = 2
+
+	base := func() *MsgTransfer {
+		return NewMsgTransferWithDisclosure(
+			creator,
+			[]byte{1},
+			fieldOne,
+			[][]byte{fieldOne, fieldTwo},
+			[][]byte{fieldOne, fieldTwo},
+			[][]byte{{5}, {6}},
+			validViewTags(),
+			TransferPrivacyPolicyAllPrivate,
+			nil,
+			UserDisclosureMode_USER_DISCLOSURE_MODE_NONE,
+			nil,
+			nil,
+			fieldOne,
+			auditPubKey,
+			[]byte("audit"),
+			fieldTwo,
+			[]byte("self-view"),
+		)
+	}
+
+	duplicateNullifier := base()
+	duplicateNullifier.Nullifiers[1] = append([]byte(nil), duplicateNullifier.Nullifiers[0]...)
+	require.ErrorContains(t, duplicateNullifier.ValidateBasic(), "nullifier index 1 duplicates index 0")
+
+	duplicateCommitment := base()
+	duplicateCommitment.NewCommitments[1] = append([]byte(nil), duplicateCommitment.NewCommitments[0]...)
+	require.ErrorContains(t, duplicateCommitment.ValidateBasic(), "commitment index 1 duplicates index 0")
+}
+
 func TestMsgTransferValidateBasicUserDisclosureModes(t *testing.T) {
 	creator := testCreatorAddress()
 	auditPubKey := validDisclosurePubKeyBytes(t)
@@ -173,8 +218,8 @@ func TestMsgTransferValidateBasicUserDisclosureModes(t *testing.T) {
 			creator,
 			[]byte{1},
 			validFieldBytes(),
-			[][]byte{validFieldBytes(), validFieldBytes()},
-			[][]byte{validFieldBytes(), validFieldBytes()},
+			distinctFieldBytesPair(),
+			distinctFieldBytesPair(),
 			[][]byte{{5}, {6}},
 			validViewTags(),
 			TransferPrivacyPolicyAllPrivate,

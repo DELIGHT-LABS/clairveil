@@ -43,6 +43,8 @@ type JoinSplitCircuit struct {
 func (c *JoinSplitCircuit) Define(api frontend.API) error {
 	h, _ := mimc.NewMiMC(api)
 	curve, _ := twistededwards.NewEdCurve(api, ecc_twistededwards.BN254)
+	api.AssertIsDifferent(c.Nullifiers[0], c.Nullifiers[1])
+	api.AssertIsDifferent(c.Commitments[0], c.Commitments[1])
 
 	var totalInputAmount frontend.Variable = 0
 	var totalOutputAmount frontend.Variable = 0

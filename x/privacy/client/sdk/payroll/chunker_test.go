@@ -2,6 +2,7 @@ package payroll
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"math/big"
@@ -39,6 +40,14 @@ func TestChunkProofResultsRejectsDuplicateNullifiers(t *testing.T) {
 	require.ErrorContains(t, err, "duplicate nullifier")
 }
 
+func TestChunkProofResultsRejectsDuplicateNullifiersWithinOperation(t *testing.T) {
+	result := testProofResult("op-1", "same")
+	result.Message.Nullifiers[1] = append([]byte(nil), result.Message.Nullifiers[0]...)
+
+	_, err := ChunkProofResults([]ProofResult{result}, ChunkOptions{MaxMessagesPerTx: 1})
+	require.ErrorContains(t, err, "nullifier index 1 duplicates index 0")
+}
+
 func TestBatchBroadcastWorkerSubmitsChunkOnce(t *testing.T) {
 	ctx := context.Background()
 	store := privacyreservation.NewMemoryStore()
@@ -73,7 +82,7 @@ func TestBatchBroadcastWorkerSubmitsChunkOnce(t *testing.T) {
 	for _, item := range confirmed.Items {
 		result, err := proofWorker.Process(ctx, item)
 		require.NoError(t, err)
-		result.Message = &privacytypes.MsgTransfer{Nullifiers: [][]byte{[]byte(item.OperationID + "-a"), []byte(item.OperationID + "-b")}}
+		result.Message = &privacytypes.MsgTransfer{Nullifiers: [][]byte{testCanonicalNullifier(item.OperationID + "-a"), testCanonicalNullifier(item.OperationID + "-b")}}
 		results = append(results, *result)
 	}
 	chunks, err := ChunkProofResults(results, ChunkOptions{MaxMessagesPerTx: 10})
@@ -547,7 +556,7 @@ func prepareTestMessageChunk(t *testing.T, ctx context.Context, reservationServi
 	for _, item := range confirmed.Items {
 		result, err := proofWorker.Process(ctx, item)
 		require.NoError(t, err)
-		result.Message = &privacytypes.MsgTransfer{Nullifiers: [][]byte{[]byte(item.OperationID + "-a"), []byte(item.OperationID + "-b")}}
+		result.Message = &privacytypes.MsgTransfer{Nullifiers: [][]byte{testCanonicalNullifier(item.OperationID + "-a"), testCanonicalNullifier(item.OperationID + "-b")}}
 		results = append(results, *result)
 	}
 	chunks, err := ChunkProofResults(results, ChunkOptions{MaxMessagesPerTx: 10})
@@ -560,9 +569,16 @@ func testProofResult(operationID string, nullifierPrefix string) ProofResult {
 	return ProofResult{
 		Item: PayrollPlanItem{OperationID: operationID},
 		Message: &privacytypes.MsgTransfer{
-			Nullifiers: [][]byte{[]byte(nullifierPrefix + "-a"), []byte(nullifierPrefix + "-b")},
+			Nullifiers: [][]byte{testCanonicalNullifier(nullifierPrefix + "-a"), testCanonicalNullifier(nullifierPrefix + "-b")},
 		},
 	}
+}
+
+func testCanonicalNullifier(label string) []byte {
+	sum := sha256.Sum256([]byte(label))
+	// Keep the fixture below the BN254 scalar modulus without reducing it.
+	sum[0] &= 0x1f
+	return append([]byte(nil), sum[:]...)
 }
 
 type recordingBroadcaster struct {

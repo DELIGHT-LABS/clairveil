@@ -57,6 +57,22 @@ func TestJoinSplitCircuitRejectsOutputAmountOutsideRange(t *testing.T) {
 	assert.ProverFailed(&JoinSplitCircuit{}, assignment, test.WithCurves(ecc.BN254))
 }
 
+func TestJoinSplitCircuitRejectsDuplicateInputNullifier(t *testing.T) {
+	assignment := buildValidJoinSplitAssignment(t)
+	assignment.Nullifiers[1] = assignment.Nullifiers[0]
+
+	assert := test.NewAssert(t)
+	assert.ProverFailed(&JoinSplitCircuit{}, assignment, test.WithCurves(ecc.BN254))
+}
+
+func TestJoinSplitCircuitRejectsDuplicateOutputCommitment(t *testing.T) {
+	assignment := buildValidJoinSplitAssignment(t)
+	assignment.Commitments[1] = assignment.Commitments[0]
+
+	assert := test.NewAssert(t)
+	assert.ProverFailed(&JoinSplitCircuit{}, assignment, test.WithCurves(ecc.BN254))
+}
+
 func TestJoinSplitCircuitRejectsMalformedInputSpendPubKey(t *testing.T) {
 	assignment := buildValidJoinSplitAssignment(t)
 	x, y := invalidEdwardsPointForTest(t)
