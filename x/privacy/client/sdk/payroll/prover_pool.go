@@ -15,10 +15,35 @@ type ProverEndpoint struct {
 	Runner PreparedProofRunner
 }
 
+const MultiProverFailoverPrivacyWarning = "multi-prover failover can send the same privacy-sensitive prover payload to multiple endpoints"
+
+// MultiProverFailoverOptIn explicitly allows a prepared prover payload to be
+// retried against more than one endpoint. EndpointIDs is the complete ordered
+// set of endpoints that may receive the same payload.
+type MultiProverFailoverOptIn struct {
+	EndpointIDs                []string
+	PrivacyWarningAcknowledged bool
+}
+
+// MultiProverFailoverDisclosure is suitable for presenting the expanded
+// privacy boundary before multi-prover failover is enabled.
+type MultiProverFailoverDisclosure struct {
+	EndpointIDs    []string
+	PrivacyWarning string
+}
+
+func (o MultiProverFailoverOptIn) Disclosure() MultiProverFailoverDisclosure {
+	return MultiProverFailoverDisclosure{
+		EndpointIDs:    append([]string(nil), o.EndpointIDs...),
+		PrivacyWarning: MultiProverFailoverPrivacyWarning,
+	}
+}
+
 type ProverPool struct {
 	Endpoints                 []ProverEndpoint
 	RequestTimeout            time.Duration
 	MaxConcurrencyPerEndpoint int
+	MultiProverFailover       *MultiProverFailoverOptIn
 
 	mu         sync.Mutex
 	next       int
@@ -28,31 +53,30 @@ type ProverPool struct {
 type proverEndpointAttempt struct {
 	Endpoint ProverEndpoint
 	Index    int
-	Attempt  int
 }
 
 func (p *ProverPool) BuildPreparedTransferProof(ctx context.Context, payload privacytransfer.PreparedTransferPayload) (*privacytransfer.PreparedTransferProof, error) {
-	if len(p.Endpoints) == 0 {
-		return nil, fmt.Errorf("at least one prover endpoint is required")
+	endpointIndices, err := p.endpointIndicesForRequest()
+	if err != nil {
+		return nil, err
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	start := p.nextEndpointIndex()
 	var failures []string
 	var lastErr error
 	var busy []proverEndpointAttempt
-	for attempt := 0; attempt < len(p.Endpoints); attempt++ {
-		index := (start + attempt) % len(p.Endpoints)
+	for attempt := 0; attempt < len(endpointIndices); attempt++ {
+		index := endpointIndices[attempt]
 		endpoint := p.Endpoints[index]
 		if endpoint.Runner == nil {
 			lastErr = fmt.Errorf("runner is nil")
-			failures = append(failures, fmt.Sprintf("%s: %v", endpointName(endpoint, attempt), lastErr))
+			failures = append(failures, fmt.Sprintf("%s: %v", endpointName(endpoint, index), lastErr))
 			continue
 		}
 		release, ok := p.tryAcquireEndpoint(index)
 		if !ok {
-			busy = append(busy, proverEndpointAttempt{Endpoint: endpoint, Index: index, Attempt: attempt})
+			busy = append(busy, proverEndpointAttempt{Endpoint: endpoint, Index: index})
 			continue
 		}
 		attemptCtx := ctx
@@ -70,7 +94,7 @@ func (p *ProverPool) BuildPreparedTransferProof(ctx context.Context, payload pri
 			return nil, ctxErr
 		}
 		lastErr = err
-		failures = append(failures, fmt.Sprintf("%s: %v", endpointName(endpoint, attempt), err))
+		failures = append(failures, fmt.Sprintf("%s: %v", endpointName(endpoint, index), err))
 	}
 	for _, candidate := range busy {
 		attemptCtx := ctx
@@ -85,7 +109,7 @@ func (p *ProverPool) BuildPreparedTransferProof(ctx context.Context, payload pri
 				return nil, ctxErr
 			}
 			lastErr = err
-			failures = append(failures, fmt.Sprintf("%s: %v", endpointName(candidate.Endpoint, candidate.Attempt), err))
+			failures = append(failures, fmt.Sprintf("%s: %v", endpointName(candidate.Endpoint, candidate.Index), err))
 			continue
 		}
 		proof, err := runProverEndpointAttempt(attemptCtx, candidate.Endpoint, payload, release)
@@ -98,13 +122,95 @@ func (p *ProverPool) BuildPreparedTransferProof(ctx context.Context, payload pri
 			return nil, ctxErr
 		}
 		lastErr = err
-		failures = append(failures, fmt.Sprintf("%s: %v", endpointName(candidate.Endpoint, candidate.Attempt), err))
+		failures = append(failures, fmt.Sprintf("%s: %v", endpointName(candidate.Endpoint, candidate.Index), err))
 	}
 
 	if lastErr != nil {
-		return nil, fmt.Errorf("all prover endpoints failed: %s: %w", strings.Join(failures, "; "), lastErr)
+		return nil, fmt.Errorf("selected prover endpoints failed: %s: %w", strings.Join(failures, "; "), lastErr)
 	}
-	return nil, fmt.Errorf("all prover endpoints failed: %s", strings.Join(failures, "; "))
+	return nil, fmt.Errorf("selected prover endpoints failed: %s", strings.Join(failures, "; "))
+}
+
+// Validate rejects an ambiguous multi-prover privacy boundary before any
+// prepared payload is sent. Without MultiProverFailover, validation still
+// permits multiple configured endpoints because each request selects exactly
+// one of them and never fails over to another endpoint.
+func (p *ProverPool) Validate() error {
+	_, err := p.configuredFailoverEndpointIndices()
+	return err
+}
+
+func (p *ProverPool) endpointIndicesForRequest() ([]int, error) {
+	indices, err := p.configuredFailoverEndpointIndices()
+	if err != nil {
+		return nil, err
+	}
+	start := p.nextEndpointIndex(len(indices))
+	if p.MultiProverFailover != nil {
+		ordered := make([]int, 0, len(indices))
+		ordered = append(ordered, indices[start:]...)
+		ordered = append(ordered, indices[:start]...)
+		return ordered, nil
+	}
+	return []int{indices[start]}, nil
+}
+
+func (p *ProverPool) configuredFailoverEndpointIndices() ([]int, error) {
+	if p == nil {
+		return nil, fmt.Errorf("prover pool is required")
+	}
+	if len(p.Endpoints) == 0 {
+		return nil, fmt.Errorf("at least one prover endpoint is required")
+	}
+	if p.MultiProverFailover == nil {
+		indices := make([]int, len(p.Endpoints))
+		for i := range p.Endpoints {
+			indices[i] = i
+		}
+		return indices, nil
+	}
+
+	optIn := p.MultiProverFailover
+	if !optIn.PrivacyWarningAcknowledged {
+		return nil, fmt.Errorf("multi-prover failover requires acknowledging the privacy warning: %s", MultiProverFailoverPrivacyWarning)
+	}
+	if len(optIn.EndpointIDs) < 2 {
+		return nil, fmt.Errorf("multi-prover failover requires at least two endpoint IDs")
+	}
+
+	configured := make(map[string]int, len(p.Endpoints))
+	duplicateConfigured := make(map[string]struct{})
+	for i, endpoint := range p.Endpoints {
+		if endpoint.ID == "" {
+			continue
+		}
+		if _, exists := configured[endpoint.ID]; exists {
+			duplicateConfigured[endpoint.ID] = struct{}{}
+			continue
+		}
+		configured[endpoint.ID] = i
+	}
+
+	indices := make([]int, 0, len(optIn.EndpointIDs))
+	seen := make(map[string]struct{}, len(optIn.EndpointIDs))
+	for _, endpointID := range optIn.EndpointIDs {
+		if strings.TrimSpace(endpointID) == "" {
+			return nil, fmt.Errorf("multi-prover failover endpoint ID cannot be empty")
+		}
+		if _, exists := seen[endpointID]; exists {
+			return nil, fmt.Errorf("multi-prover failover endpoint ID %q is duplicated", endpointID)
+		}
+		seen[endpointID] = struct{}{}
+		if _, duplicate := duplicateConfigured[endpointID]; duplicate {
+			return nil, fmt.Errorf("configured prover endpoint ID %q is not unique", endpointID)
+		}
+		index, exists := configured[endpointID]
+		if !exists {
+			return nil, fmt.Errorf("multi-prover failover endpoint ID %q is not configured", endpointID)
+		}
+		indices = append(indices, index)
+	}
+	return indices, nil
 }
 
 func runProverEndpointAttempt(ctx context.Context, endpoint ProverEndpoint, payload privacytransfer.PreparedTransferPayload, release func()) (*privacytransfer.PreparedTransferProof, error) {
@@ -163,12 +269,12 @@ func (p *ProverPool) endpointSemaphore(index int) chan struct{} {
 	return sem
 }
 
-func (p *ProverPool) nextEndpointIndex() int {
+func (p *ProverPool) nextEndpointIndex(endpointCount int) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	index := p.next
-	p.next = (p.next + 1) % len(p.Endpoints)
+	index := p.next % endpointCount
+	p.next = (index + 1) % endpointCount
 	return index
 }
 

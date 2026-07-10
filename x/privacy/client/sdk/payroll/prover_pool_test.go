@@ -36,11 +36,14 @@ func TestProverPoolRoundRobinsEndpoints(t *testing.T) {
 func TestProverPoolFallsBackToNextEndpoint(t *testing.T) {
 	failing := &recordingProofRunner{id: "failing", err: fmt.Errorf("temporary outage")}
 	healthy := &recordingProofRunner{id: "healthy"}
+	unlisted := &recordingProofRunner{id: "unlisted"}
 	pool := &ProverPool{
 		Endpoints: []ProverEndpoint{
 			{ID: "failing", Runner: failing},
 			{ID: "healthy", Runner: healthy},
+			{ID: "unlisted", Runner: unlisted},
 		},
+		MultiProverFailover: acknowledgedMultiProverFailover("failing", "healthy"),
 	}
 
 	proof, err := pool.BuildPreparedTransferProof(context.Background(), privacytransfer.PreparedTransferPayload{PayloadHash: "payload"})
@@ -48,6 +51,7 @@ func TestProverPoolFallsBackToNextEndpoint(t *testing.T) {
 	require.Equal(t, "payload", proof.PayloadHash)
 	require.Equal(t, 1, failing.calls)
 	require.Equal(t, 1, healthy.calls)
+	require.Equal(t, 0, unlisted.calls)
 }
 
 func TestProverPoolFallsBackOnNilProof(t *testing.T) {
@@ -58,6 +62,7 @@ func TestProverPoolFallsBackOnNilProof(t *testing.T) {
 			{ID: "nil-proof", Runner: nilProof},
 			{ID: "healthy", Runner: healthy},
 		},
+		MultiProverFailover: acknowledgedMultiProverFailover("nil-proof", "healthy"),
 	}
 
 	proof, err := pool.BuildPreparedTransferProof(context.Background(), privacytransfer.PreparedTransferPayload{PayloadHash: "payload"})
@@ -68,7 +73,7 @@ func TestProverPoolFallsBackOnNilProof(t *testing.T) {
 	require.Equal(t, 1, healthy.calls)
 }
 
-func TestProverPoolFallsBackAfterEndpointTimeout(t *testing.T) {
+func TestProverPoolDoesNotFailOverAfterEndpointTimeoutByDefault(t *testing.T) {
 	slow := &timeoutProofRunner{}
 	healthy := &recordingProofRunner{id: "healthy"}
 	pool := &ProverPool{
@@ -77,6 +82,25 @@ func TestProverPoolFallsBackAfterEndpointTimeout(t *testing.T) {
 			{ID: "healthy", Runner: healthy},
 		},
 		RequestTimeout: 10 * time.Millisecond,
+	}
+
+	proof, err := pool.BuildPreparedTransferProof(context.Background(), privacytransfer.PreparedTransferPayload{PayloadHash: "payload"})
+	require.Nil(t, proof)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Equal(t, 1, slow.calls)
+	require.Equal(t, 0, healthy.calls)
+}
+
+func TestProverPoolFallsBackAfterEndpointTimeoutWithExplicitOptIn(t *testing.T) {
+	slow := &timeoutProofRunner{}
+	healthy := &recordingProofRunner{id: "healthy"}
+	pool := &ProverPool{
+		Endpoints: []ProverEndpoint{
+			{ID: "slow", Runner: slow},
+			{ID: "healthy", Runner: healthy},
+		},
+		RequestTimeout:      10 * time.Millisecond,
+		MultiProverFailover: acknowledgedMultiProverFailover("slow", "healthy"),
 	}
 
 	proof, err := pool.BuildPreparedTransferProof(context.Background(), privacytransfer.PreparedTransferPayload{PayloadHash: "payload"})
@@ -157,6 +181,7 @@ func TestProverPoolSkipsSaturatedEndpointWhenAnotherEndpointIsIdle(t *testing.T)
 		},
 		RequestTimeout:            time.Second,
 		MaxConcurrencyPerEndpoint: 1,
+		MultiProverFailover:       acknowledgedMultiProverFailover("first", "second"),
 	}
 	release, err := pool.acquireEndpoint(context.Background(), 0)
 	require.NoError(t, err)
@@ -169,6 +194,72 @@ func TestProverPoolSkipsSaturatedEndpointWhenAnotherEndpointIsIdle(t *testing.T)
 	require.Equal(t, 0, first.calls)
 	require.Equal(t, 1, second.calls)
 	require.Less(t, time.Since(started), 250*time.Millisecond)
+}
+
+func TestProverPoolMultiProverFailoverDisclosure(t *testing.T) {
+	optIn := acknowledgedMultiProverFailover("first", "second")
+
+	disclosure := optIn.Disclosure()
+	require.Equal(t, []string{"first", "second"}, disclosure.EndpointIDs)
+	require.Equal(t, MultiProverFailoverPrivacyWarning, disclosure.PrivacyWarning)
+
+	disclosure.EndpointIDs[0] = "mutated"
+	require.Equal(t, []string{"first", "second"}, optIn.EndpointIDs)
+}
+
+func TestProverPoolRejectsFailoverWithoutPrivacyWarningAcknowledgement(t *testing.T) {
+	first := &recordingProofRunner{id: "first"}
+	second := &recordingProofRunner{id: "second"}
+	pool := &ProverPool{
+		Endpoints: []ProverEndpoint{
+			{ID: "first", Runner: first},
+			{ID: "second", Runner: second},
+		},
+		MultiProverFailover: &MultiProverFailoverOptIn{
+			EndpointIDs: []string{"first", "second"},
+		},
+	}
+
+	err := pool.Validate()
+	require.ErrorContains(t, err, MultiProverFailoverPrivacyWarning)
+
+	_, err = pool.BuildPreparedTransferProof(context.Background(), privacytransfer.PreparedTransferPayload{PayloadHash: "payload"})
+	require.ErrorContains(t, err, MultiProverFailoverPrivacyWarning)
+	require.Equal(t, 0, first.calls)
+	require.Equal(t, 0, second.calls)
+}
+
+func TestProverPoolRejectsUnlistedFailoverEndpoint(t *testing.T) {
+	pool := &ProverPool{
+		Endpoints: []ProverEndpoint{
+			{ID: "first", Runner: &recordingProofRunner{id: "first"}},
+			{ID: "second", Runner: &recordingProofRunner{id: "second"}},
+		},
+		MultiProverFailover: acknowledgedMultiProverFailover("first", "unknown"),
+	}
+
+	err := pool.Validate()
+	require.EqualError(t, err, `multi-prover failover endpoint ID "unknown" is not configured`)
+}
+
+func TestProverPoolRejectsDuplicateFailoverEndpoint(t *testing.T) {
+	pool := &ProverPool{
+		Endpoints: []ProverEndpoint{
+			{ID: "first", Runner: &recordingProofRunner{id: "first"}},
+			{ID: "second", Runner: &recordingProofRunner{id: "second"}},
+		},
+		MultiProverFailover: acknowledgedMultiProverFailover("first", "first"),
+	}
+
+	err := pool.Validate()
+	require.EqualError(t, err, `multi-prover failover endpoint ID "first" is duplicated`)
+}
+
+func acknowledgedMultiProverFailover(endpointIDs ...string) *MultiProverFailoverOptIn {
+	return &MultiProverFailoverOptIn{
+		EndpointIDs:                endpointIDs,
+		PrivacyWarningAcknowledged: true,
+	}
 }
 
 type recordingProofRunner struct {
