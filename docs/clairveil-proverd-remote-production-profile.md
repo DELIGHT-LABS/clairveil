@@ -8,6 +8,7 @@ Korean version: [clairveil-proverd-remote-production-profile-kr.md](clairveil-pr
 
 - `clairveil-proverd` does not receive private seeds directly, but it does receive prepared proof payloads.
 - Prepared proof payloads can include note amount, randomness, Merkle path, nullifier, shielded public keys, and disclosure payloads.
+- Final outputs are owner-intent-bound, but this does not make the prepared payload non-sensitive: it still contains private note witness and is authority-equivalent privacy metadata.
 - Therefore a remote prover is not merely a CPU worker. It is a privacy-sensitive trusted component.
 - A local daemon is suitable for development and high-trust user environments.
 - A remote daemon is good for UX and operations convenience, but auth, rate limit, logging, and data retention policy are mandatory.
@@ -23,6 +24,8 @@ Korean version: [clairveil-proverd-remote-production-profile-kr.md](clairveil-pr
 | Public remote prover | general web wallet UX | DoS, abuse, metadata exposure | strong auth, quota, monitoring |
 
 The Clairveil repo does not force one of these choices. `clairveil-proverd` and the prover HTTP contract are references that let downstream projects swap topology behind the same wallet adapter.
+
+The client safe default is one configured prover endpoint with automatic failover disabled. Same-endpoint retry is allowed after timeout/response checks. Sending a witness-bearing request to a second endpoint requires explicit user/product-policy opt-in that names the added operator/privacy boundary; availability alone is not permission to widen disclosure.
 
 ## 3. Safe Baseline
 
@@ -107,6 +110,8 @@ Assume a remote prover operator can see:
 
 Therefore the remote prover must be a component trusted by the user. If the wallet UX requires the user not to trust a remote prover, provide local daemon or browser/WASM proving.
 
+Current request/response/proof contracts are `v2` for transfer and withdraw. Transfer prepared payload is `v5`; withdraw prover/final payloads are `v2`; disclosure plaintext/query is `v5`. Reject legacy inputs. Request bodies, bearer credentials, signatures, disclosure plaintext/blindings, and proofs must be excluded from logs, traces, crash dumps, and analytics.
+
 ## 8. Do Not Expose The Raw Handler
 
 `x/privacy/client/sdk/provertransport.HTTPHandler` in the Go SDK is a low-level handler for testing and reusing the transport contract. The handler itself reads the request body with `io.ReadAll`.
@@ -121,13 +126,15 @@ If the raw `provertransport.HTTPHandler` is attached directly to a public server
 
 ## 9. Artifact Profile
 
-A remote prover reads proving keys and R1CS artifacts. In production:
+A remote prover lazily reads proving keys and R1CS artifacts; validators need only VK files. The active set is `privacy-intent-v2`. `privacy_zk_manifest.json` schema `v2` must exactly match consensus `CircuitSetIdentity` schema `v1`, including ordered circuit descriptors, VK SHA-256, and public-input schema SHA-256. Environment checksum values cannot override consensus identity, and mismatch must fail startup/readiness. In production:
 
 - use `CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict`;
 - deploy `privacy_zk_manifest.json` or checksum env with release artifacts;
 - mount the artifact directory as read-only;
 - record circuit source commit, generation command, checksum, and signer for artifact releases;
 - block stale artifact and chain verifier artifact mismatch at the release gate.
+
+Artifacts produced by the repository setup flow are development artifacts. No formal trusted setup or external audit is implied; production must supply its own ceremony/provenance and signing policy.
 
 ## 10. Observability
 
@@ -166,6 +173,8 @@ Before operating a remote prover in a production-like environment, confirm:
 8. Health/readiness/metrics routes are internal-only.
 9. JS SDK uses request timeout and validates response version plus payload hash.
 10. Remote prover is included in the downstream threat model as a trusted privacy-sensitive component.
+11. Automatic multi-prover failover is disabled, or every additional endpoint has explicit informed opt-in.
+12. Manifest/VK/public-input schema identity exactly matches the chain before readiness.
 
 ## 12. Related Files
 

@@ -22,7 +22,7 @@ The repository validator uses a dependency-free subset validator to keep the sam
 
 - browser signer/root seed derivation fixture shape
 - wallet readonly address, view key, disclosure, and scan fixtures
-- prepared transfer prover payload `v3` shape, `view_tag_hexes`, and sender self-view disclosure fields
+- prepared transfer prover payload `v5` shape, final owner intent, disclosure blindings, `view_tag_hexes`, and sender self-view disclosure fields
 - prepared withdraw prover payload shape
 - final prepared withdraw payload shape
 - relay withdraw handoff request and relayer `MsgWithdraw` mapping shape

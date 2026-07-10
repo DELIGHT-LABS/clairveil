@@ -10,11 +10,12 @@
 | Double-spend 방어          | transfer/withdraw 모두 nullifier 재사용을 상태 변경 전에 막습니다.                                                       |
 | Mandatory audit disclosure | transfer는 chain audit master pubkey와 message의 audit disclosure target pubkey가 일치해야 통과합니다.                   |
 | Merkle safety              | fixed-capacity guard, rebuild bound, missing leaf/node explicit failure, query/path error propagation이 들어가 있습니다. |
-| Prepared payload integrity | transfer/withdraw prover payload와 proof에 payload hash가 있고, relay/broadcast 전에 검증합니다.                         |
+| Prepared payload integrity | `TransferIntentV2`/`SpendIntentV2`가 chain, expiry, recipient/output/disclosure effect를 묶고 transfer는 final owner signature 하나를 사용하며 creator replacement는 relayer-safe합니다. |
 | Scan hint safety          | Transfer view tag는 shape를 검증하고 untrusted hint로 취급합니다. 안전한 기본 scan은 mismatch에서도 full decrypt할 수 있습니다. |
 | File permission            | local wallet cache와 prepared/proof JSON file을 `0600`으로 씁니다.                                                       |
 | Prover service basics      | request body limit, read header/read timeout, idle timeout, optional bearer auth, readiness preflight가 있습니다.        |
-| ZK artifact verification   | manifest/env checksum과 preflight mode가 있어 artifact mismatch를 감지할 수 있습니다.                                    |
+| ZK artifact verification   | consensus가 exact ordered VK/public-input schema hash를 고정하고 local verifier mismatch는 startup/readiness를 막으며 env checksum은 override할 수 없습니다. |
+| Proof verification cost    | cheap canonical proof framing 뒤 decode/VK load/cryptographic verification 전에 fixed gas를 precharge합니다. |
 | Conformance fixture        | JS SDK/외부 wallet이 따라야 할 query, payload hash, prover HTTP contract fixture가 있습니다.                             |
 
 ## 2. Production 전 반드시 결정할 항목
@@ -52,6 +53,10 @@ Remote prover는 private seed를 직접 받지는 않지만, prepared payload에
 - 개발/고신뢰 환경: local daemon
 - 사용자 privacy 우선 wallet: local daemon 또는 browser/WASM proving
 - 운영 편의 우선 wallet: remote prover 가능, 단 remote prover를 trusted component로 threat model에 포함
+
+`ProverPool`은 witness-bearing request를 기본적으로 endpoint 하나에만 보냅니다. 같은 payload를 다른 operator에게 보내면 privacy boundary가 넓어지므로 automatic failover는 비활성화되어 있습니다. Multi-endpoint failover는 endpoint set과 경고를 보여 준 뒤 사용자 또는 product policy가 명시적으로 opt-in한 경우에만 허용합니다.
+
+Owner intent가 output, disclosure envelope, ciphertext, chain, expiry를 불변으로 만들어도 prepared prover payload는 여전히 private note witness를 포함합니다. Authority-equivalent privacy-sensitive material로 취급하고 log, crash report, telemetry에 남기거나 proof workflow 이후 보관하지 않습니다.
 
 ### 2.4 Wallet storage encryption
 
@@ -91,6 +96,8 @@ Checksum 검증은 file corruption과 단순 tamper를 잡는 데 도움이 됩�
 - strict preflight 기본화
 - release artifact checksum CI 검증
 
+Active identity는 `privacy-intent-v2`입니다. `privacy_zk_manifest.json` schema `v2`는 descriptor order, exact VK SHA-256, public-input schema SHA-256까지 genesis/state `CircuitSetIdentity` schema `v1`과 일치해야 합니다. Validator는 VK만 필요하고 prover는 proving 시 R1CS/PK를 lazy load합니다. Session 1은 development artifact만 생성했으며 formal trusted setup이나 external audit는 수행하지 않았습니다.
+
 ## 3. Repo 기준 권장 개선 사항
 
 | Priority | 항목                                                                    | 이유                                                                                                                                            |
@@ -107,13 +114,14 @@ Checksum 검증은 file corruption과 단순 tamper를 잡는 데 도움이 됩�
 
 ## 4. 현재 발견한 코드 레벨 주의점
 
-현재 sampled surface에서 즉시 치명적인 P0/P1 implementation bug는 확인하지 못했습니다. 다만 아래는 downstream SDK/service 구현자가 혼동하면 문제가 될 수 있는 지점입니다.
+Session 1 remediation은 known current duplicate-input/output, intent substitution, replay, disclosure oracle, decoder, failover default, genesis/artifact identity, proof gas issue를 닫았습니다. 해당 범위에 미해결 Critical/High finding은 없습니다. 다만 아래는 downstream SDK/service 구현자가 혼동하면 문제가 될 수 있는 지점입니다.
 
 - `x/privacy/client/sdk/proverservice/service.go`의 body limit은 proof route에만 적용됩니다. 이는 의도적으로 맞지만, downstream이 health/readiness를 외부에 노출할지 여부는 별도로 결정해야 합니다.
 - `x/privacy/client/sdk/provertransport/http.go`의 raw `HTTPHandler`는 `io.ReadAll`로 body를 읽습니다. public service로 노출할 때는 반드시 `proverservice.Handler`나 별도 `MaxBytesReader` wrapper를 사용해야 합니다.
 - `cmd/clairveil-proverd/main.go`는 bearer token env가 비어 있으면 `auth_enabled=false`로 실행됩니다. local daemon에는 편리하지만 remote service에서는 금지해야 합니다.
 - `build/clairveil-proverd/compose.yaml`은 host bind를 `127.0.0.1`로 제한합니다. 단, Dockerfile 자체는 `0.0.0.0:8080` listen이므로 downstream compose/k8s manifest에서 network policy를 다시 확인해야 합니다.
 - prepared payload JSON과 wallet JSON은 `0600`으로 저장되지만 암호화되지는 않습니다. production wallet은 별도 encryption layer가 필요합니다.
+- Transfer/prover contract version은 의도적인 breaking change입니다. Transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload와 proof/request/response `v2`, disclosure plaintext/query `v5`이며 legacy payload는 compatibility decode하지 말고 다시 생성해야 합니다.
 
 ## 5. Downstream 개발자에게 전달할 최소 지침
 
@@ -128,3 +136,4 @@ JS/TS SDK, web wallet, downstream Cosmos SDK chain 개발자에게는 아래를 
 7. Disclosure plaintext는 복호화 결과만 믿으면 안 되고 digest verification을 통과해야 합니다.
 8. Production artifact는 checksum뿐 아니라 provenance와 signing policy를 가져야 합니다.
 9. Snapshot/restore/migration 후에는 `docs/clairveil-merkle-restore-sop-kr.md`에 따라 샘플 Merkle path를 재계산해야 합니다.
+10. Legacy prepared payload를 거부하고 `SpendIntentV2`/`TransferIntentV2` public-input 순서를 정확히 보존하며 `privacy-intent-v2` 적용 시 cached proof job/artifact를 reset해야 합니다.

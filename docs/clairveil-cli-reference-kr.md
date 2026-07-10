@@ -85,6 +85,7 @@ clairveild tx privacy deposit 10uclair \
   --from alice \
   --keyring-backend test \
   --chain-id clairveil-local-1 \
+  --expires-in 1800 \
   --gas 2500000 \
   --gas-prices 8500000000uclair \
   --yes \
@@ -147,6 +148,7 @@ clairveild tx privacy transfer "$(cat out/bob-shielded-address.txt)" 7uclair \
 - user disclosure는 기본값 `all-private` / `none`입니다.
 - recipient는 full `clairs1...` shielded address여야 합니다.
 - `--auto-dummy=true`가 기본값입니다.
+- Proof 전 summary는 정확한 `chain id`와 absolute `owner intent expires at unix`를 출력합니다. Chain은 `block_time >= expires_at_unix`에서 거부합니다.
 
 ### selective disclosure flag
 
@@ -156,6 +158,7 @@ clairveild tx privacy transfer "$(cat out/bob-shielded-address.txt)" 7uclair \
 | `--disclosure-mode`   | `none`, `public`, `recipient-encrypted`                                                        |
 | `--disclosure-pubkey` | recipient-encrypted mode에서 받을 사람의 disclosure pubkey hex                                 |
 | `--no-self-view`      | sender self-view disclosure를 생략                                                             |
+| `--expires-in`        | owner-intent validity window(seconds). Sign/prove 전에 absolute Unix expiry로 한 번 변환         |
 
 Public amount disclosure 예:
 
@@ -295,6 +298,8 @@ clairveild tx privacy withdraw 11uclair \
 
 withdraw는 exact-match note를 사용합니다. output note나 change note를 만들지 않습니다. 요청 amount와 같은 spendable note가 없으면 기본적으로 planner가 self-transfer로 exact-match note를 만들려고 시도합니다.
 
+Proof 전에 CLI가 current `chain id`와 absolute `spend intent expires at unix`를 출력합니다. 이 값과 recipient, amount, asset, root, nullifier는 owner-signed/proof-bound입니다. `creator`는 fee payer라 relayer가 바꿀 수 있습니다.
+
 주요 flag:
 
 | flag              | 기본값         | 의미                                                  |
@@ -343,7 +348,9 @@ clairveild tx privacy relay-withdraw out/withdraw-payload.json \
 | `--auto-plan`  | `true`         | exact-match note 자동 준비         |
 | `--auto-dummy` | `true`         | dummy note 자동 준비               |
 
-Prepared payload JSON은 privacy-sensitive data입니다. production wallet은 암호화 저장과 만료/삭제 정책을 가져야 합니다.
+Summary가 resolved absolute expiry와 chain ID를 출력하고 JSON도 같은 `expires_at_unix`를 사용합니다. 해당 second 이상에서는 제출이 실패하고 relayer는 연장할 수 없습니다. Prepared payload/proof JSON은 privacy-sensitive하며 output/recipient/chain/expiry를 바꿀 수 없어도 prover payload에는 private note witness가 남습니다. Production wallet은 암호화 저장과 만료/삭제 정책을 가져야 합니다.
+
+현재 CLI handoff version은 transfer payload `v5`, transfer proof/prover contract `v2`, withdraw prover/final payload와 proof/prover/relay contract `v2`, disclosure plaintext/query `v5`입니다. Legacy file은 다시 생성합니다.
 
 ## 9. Query
 
@@ -375,7 +382,7 @@ clairveild query privacy check-nullifier <hex_nullifier> \
 
 ### clairveil-setup
 
-ZK artifact를 생성합니다.
+Active set `privacy-intent-v2`, manifest schema `v2`의 development ZK artifact를 생성합니다. Generated R1CS/PK/VK binary는 source artifact가 아니며 이 command는 formal trusted setup ceremony가 아닙니다.
 
 ```bash
 clairveil-setup --out artifacts/privacy
@@ -401,6 +408,8 @@ clairveil-proverd \
 ```
 
 Remote production profile은 [clairveil-proverd-remote-production-profile-kr.md](clairveil-proverd-remote-production-profile-kr.md)를 따릅니다.
+
+Validator startup은 local VK/public-input schema hash를 consensus `CircuitSetIdentity` schema `v1`과 비교하며 checksum env로 override할 수 없습니다. Validator는 VK만 필요하고 `clairveil-proverd`는 proof 생성 시 R1CS/PK를 lazy load합니다. Prover endpoint failover는 기본 off이며 explicit privacy opt-in이 필요합니다.
 
 ### clairveil-payroll
 

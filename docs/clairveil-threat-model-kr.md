@@ -33,8 +33,8 @@ flowchart LR
 | Local wallet note cache                      | note amount, randomness, nullifier, scan height를 담을 수 있음                     | JSON file을 `0600`으로 저장하고 corrupt file은 backup 후 reset                                        |
 | Prepared transfer/withdraw prover payload    | proof 생성을 위해 note metadata, merkle path, signature, disclosure payload를 포함 | payload hash로 변경 감지, file mode `0600`, remote prover 전달 시 민감 데이터로 취급 필요             |
 | Sender self-view disclosure payload          | sender가 보낸 transfer 상세를 복구하는 encrypted metadata                         | target pubkey를 event에 노출하지 않고 digest/payload만 저장, verification helper 제공                |
-| Transfer view tag                           | local decrypt 비용을 줄일 수 있지만 proof-bound가 아닌 public 2-byte scan hint    | tag를 untrusted hint로 취급하며 안전한 기본 wallet scan은 mismatch에서도 full decrypt 수행           |
-| ZK proving/verifying artifacts               | proof 생성/검증 신뢰 기반                                                          | manifest/env checksum, preflight mode, circuit config query 제공                                      |
+| Transfer view tag                           | signed canonical transfer effect에는 포함되지만 ownership 증거는 아닌 public 2-byte scan hint | tag를 untrusted hint로 취급하며 안전한 기본 wallet scan은 mismatch에서도 full decrypt 수행 |
+| ZK proving/verifying artifacts               | proof 생성/검증 신뢰 기반 | consensus가 circuit set, VK hash, public-input schema digest를 고정하며 local verifier identity가 startup/readiness 전에 일치해야 함 |
 | On-chain privacy state                       | commitments, historical roots, nullifiers, indexed privacy events                  | keeper가 canonical field validation, nullifier replay check, Merkle capacity/corrupt-state guard 수행 |
 | Audit master private key                     | 모든 mandatory audit disclosure 복호화 가능                                        | private key custody는 downstream 책임, repo는 public key genesis/config와 decode flow 제공            |
 | Prover bearer token                          | remote proof API 접근 제어                                                         | env var 기반 optional bearer auth 제공, production auth policy는 downstream 책임                      |
@@ -43,10 +43,10 @@ flowchart LR
 
 | Boundary                          | 신뢰하지 말아야 하는 입력                                                                               | 방어                                                                                                                                    |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Wallet/CLI to chain tx            | malformed proof, non-canonical field bytes, reused nullifier, wrong root, wrong audit disclosure target | `ValidateBasic`, keeper canonical validation, historical root check, nullifier check, Groth16 verification, audit master pubkey match   |
+| Wallet/CLI to chain tx            | malformed proof/point/signature, duplicate/reused nullifier/commitment, wrong root/chain/expiry/recipient/output/disclosure | canonical decoder, local/global uniqueness, historical-root 재계산, `TransferIntentV2`/`SpendIntentV2`, gas-precharged Groth16 verification |
 | Query client to chain             | invalid hex, missing commitment, corrupted tree state, malformed scan cursor/nullifier batch                          | query validation, `Internal` error for invalid Merkle state, bounded event pagination, cursor projection versioning                     |
-| Wallet to prover                  | oversized JSON, stale payload, tampered payload, untrusted remote prover                                | payload/proof hash validation, payload metadata validation, body limit in `proverservice.Handler`, optional bearer auth                 |
-| Prover to artifact files          | missing/tampered R1CS/PK/VK                                                                             | artifact checksum support, preflight warn/strict mode                                                                                   |
+| Wallet to prover                  | oversized JSON, stale/tampered authority-equivalent witness payload, endpoint correlation | payload/proof hash, body limit, optional bearer auth, default single endpoint/no failover; failover는 explicit opt-in |
+| Prover/validator to artifact files | missing/tampered/stale R1CS/PK/VK | exact consensus identity 비교; validator는 VK만 필요하고 prover는 R1CS/PK를 lazy load하며 env checksum은 identity를 override하지 못함 |
 | Restore/migration to Merkle state | partial `MerkleNode/*`, missing leaf, oversized rebuild                                                 | fixed-capacity guard, missing leaf/node explicit failure, `docs/clairveil-merkle-restore-sop-kr.md` requiring sampled path verification |
 | Downstream chain integration      | wrong genesis audit pubkey, wrong denom/prefix, missing query routes, custom policy conflict            | integration guide, reference app, conformance fixture, walkthrough                                                                      |
 
@@ -55,35 +55,41 @@ flowchart LR
 | Threat                                       | Impact                                                           | Current mitigation                                                                                                              | Downstream requirement                                                                                              |
 | -------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | Reuse an already spent note                  | Double spend attempt                                             | `MsgTransfer` and `MsgWithdraw` reject used nullifiers before state update                                                      | Keep keeper logic unchanged or preserve equivalent invariant during integration                                     |
+| 한 transfer 안에서 input/nullifier 또는 output commitment 반복 | input value inflation 또는 state ambiguity | circuit distinctness와 canonical local-set 검사가 global lookup/state write보다 먼저 실행 | circuit/host 검사를 모두 보존 |
+| deposit/transfer/genesis import 사이 commitment 재사용 | leaf identity와 scan/state corruption | global commitment index 하나와 duplicate-rejecting append/import | migration도 global uniqueness 검증 |
+| transfer output/disclosure/chain/expiry 치환 | owner 의도와 다른 지출 | 단일 owner signature가 final effect-bound `TransferIntentV2`를 인증하고 keeper가 chain/payload digest 재계산 | prover output으로 intent를 재구성하지 않음 |
+| withdraw expiry 연장, cross-chain replay, recipient 치환 | unauthorized transparent release | `SpendIntentV2`가 current-context chain domain, raw recipient digest, expiry를 묶고 `block_time >= expiry`에서 거부 | raw recipient byte와 absolute expiry를 그대로 보존 |
 | Submit proof for unknown root                | Spend from non-existing tree state                               | keeper checks historical root before proof acceptance                                                                           | Preserve historical root store through migration and snapshot restore                                               |
 | Fill or overflow Merkle tree                 | Undefined root/path behavior or consensus risk                   | fixed depth 32 capacity guard, batch capacity check for 2-output transfer, explicit overflow failure                            | Monitor `leaf_count`, `remaining_leaves`, usage thresholds; plan new pool/circuit before exhaustion                 |
 | Restore partial Merkle state                 | Path or append may silently use zero sibling if state is corrupt | required leaf/node checks on path/append/rebuild; `docs/clairveil-merkle-restore-sop-kr.md` requires sampled path recomputation | Restore `Leaf/*`, `MerkleNode/*`, `CommitmentIndex/*`, `HistoricalRoot/*`, and verify samples before resuming       |
 | Omit mandatory audit disclosure              | Auditor cannot inspect transfer                                  | transfer validation requires configured audit pubkey, audit digest, audit target pubkey, audit payload                          | Set audit master pubkey in genesis for any production-like chain                                                    |
-| Send fake disclosure payload                 | Recipient/auditor/sender self-view sees false plaintext           | off-chain disclosure verifier recomputes digest and compares on-chain digest                                                    | Wallets must call disclosure verification, not just decrypt and display plaintext                                   |
+| 작은 disclosure space dictionary attack 또는 fake plaintext | metadata recovery 또는 false disclosure 표시 | user/full digest가 독립 CSPRNG blinding을 쓰고 versioned plaintext가 blinding을 전달하며 verifier가 digest 재계산 | decrypt 후 반드시 검증하고 blinding을 재사용하지 않음 |
 | Expose sender self-view target pubkey        | Observers can cluster sender transactions                         | self-view event omits target pubkey and stores only digest/payload                                                              | Do not add static sender disclosure pubkey to downstream event/indexer schemas                                      |
 | Treat view tag mismatch as authoritative     | bad unbound hint 때문에 wallet이 자기 note를 놓칠 수 있음          | SDK safe default는 tag mismatch에서도 full decrypt하고 skip 동작은 explicit fast mode로만 허용                                  | Web/mobile wallet은 skip-on-mismatch mode를 켜기 전에 recovery/rescan 지원을 유지해야 함                           |
 | Expose remote prover without auth/rate limit | DoS, cost abuse, metadata leakage                                | sample service supports body limits, read timeouts, optional bearer auth                                                        | Put remote prover behind TLS, mandatory auth, network ACL, quota/rate limit, monitoring                             |
 | Remote prover learns proof payload data      | Privacy metadata exposure to prover operator                     | architecture keeps proof generation separable but payload is still sensitive                                                    | Prefer local prover for high privacy, or treat remote prover as a trusted service with contractual/logging controls |
-| Tamper ZK artifacts                          | Invalid or attacker-controlled proving/verifying setup           | checksum manifest/env and preflight support                                                                                     | Use strict preflight, signed artifact release, reproducible generation/provenance policy                            |
+| ZK artifact tamper/substitution | consensus split 또는 attacker-controlled setup | genesis/state가 ordered descriptor, VK SHA-256, public-input schema SHA-256을 고정하고 mismatch startup/readiness 차단 | signed release와 reproducible provenance도 추가 |
 | Compromise master auditor private key        | All mandatory audit disclosures become readable by attacker      | repo does not custody production private keys                                                                                   | Use HSM/KMS or equivalent, least privilege, rotation, break-glass, audit logs                                       |
 | Compromise sender disclosure private key     | Sent-transfer self-view payloads become readable by attacker     | self-view uses the same derived disclosure key custody boundary as other disclosure flows                                       | Protect disclosure keys with the same secure storage policy as spend/view material                                  |
 
 ## 6. Code Evidence
 
-- `x/privacy/keeper/msg_server.go`: validates roots, nullifiers, audit disclosure target, Groth16 proofs, and state writes.
+- `x/privacy/keeper/msg_server.go`: chain/intent witness 재계산, uniqueness/root/expiry 검증, proof gas precharge, failure state atomicity
 - `x/privacy/keeper/tree.go`: defines `MerkleDepth`, `MaxMerkleLeaves`, capacity guard, rebuild bound, missing leaf/node checks.
 - `x/privacy/keeper/grpc_query.go`: tree/audit/disclosure/circuit/scan/nullifier query를 노출하고 invalid tree state에는 internal error를 반환합니다.
-- `x/privacy/types/msg.go`: canonical field bytes, transfer view tag 길이, user/audit/self-view disclosure 구조를 검증합니다.
-- `x/privacy/client/sdk/transfer/payload.go`: builds and validates prepared transfer payload hashes and proof hashes.
+- `x/privacy/types/intent.go`: non-reduced SHA-256 limb, chain/recipient/payload digest, ordered set, `TransferIntentV2`/`SpendIntentV2` contract
+- `x/privacy/types/msg.go`: canonical field, local/global commitment/nullifier invariant, view tag, disclosure 구조 검증
+- `x/privacy/client/sdk/transfer/payload.go`: output/disclosure/ciphertext 확정 후 single owner signature 생성, payload/proof hash 검증
 - `x/privacy/client/sdk/scan/service.go`: view tag를 non-authoritative scan hint로 취급하고 cursor/batch query fallback을 지원합니다.
 - `x/privacy/client/sdk/withdraw/prover_payload.go`: validates withdraw prover payload metadata, asset denom/hash, recipient bytes, expiry, and payload hash.
 - `x/privacy/client/sdk/disclosure/disclosure.go`: recomputes disclosure digest and verifies asset denom against asset id.
 - `x/privacy/client/sdk/proverservice/service.go`: provides reference HTTP service with health/readiness, optional bearer auth, request body limit, and server timeouts.
-- `x/privacy/zk/setup.go` and `x/privacy/zk/manifest.go`: load artifacts and support checksum manifest/env verification.
+- `x/privacy/zk/identity.go`, `manifest.go`, `schema.go`: local VK-only verifier identity와 consensus 비교, exact public-input schema 고정
 
 ## 7. Residual Risk
 
 - Groth16 artifact provenance and trusted setup ceremony are outside this repo's current security boundary. Downstream production should define artifact release, signing, reproducibility, and audit process.
+- Session 1 artifact는 development 전용이며 formal trusted setup이나 external audit를 수행하지 않았습니다.
 - `clairveil-proverd` is a reference service. Remote production deployment still needs TLS termination, mandatory authentication, rate limits, abuse monitoring, and secret management.
 - Local wallet files and prepared payloads are plaintext JSON with restrictive file permissions. This is acceptable for reference CLI/development, but production wallets should encrypt at rest.
 - Health/readiness routes expose service metadata. This is low sensitivity for local samples, but remote deployments should keep them private or behind authenticated internal networks.
@@ -97,7 +103,8 @@ Before a downstream project treats Clairveil as production-ready, it should at m
 2. Define remote prover authentication, TLS, rate limit, timeout, logging, and data-retention policy.
 3. Define wallet storage encryption and seed/key derivation custody policy.
 4. Define master auditor private key custody, rotation, and incident response.
-5. Pin and verify ZK artifacts with strict preflight and signed artifact release metadata.
+5. Consensus `privacy-intent-v2` identity를 고정·검증하고 strict preflight와 signed artifact release metadata를 사용합니다.
 6. Run Clairveil conformance fixtures against the downstream JS/TS SDK.
 7. Run local node e2e with downstream prefixes, denoms, genesis audit pubkey, and query routes.
 8. Add chain-specific threat model for EVM, policy module, precompile, relayer, and frontend integrations.
+9. 사용자가 같은 private witness를 추가 endpoint에 보내는 것을 명시적으로 수락하지 않는 한 prover failover를 비활성화합니다.

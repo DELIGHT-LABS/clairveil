@@ -16,7 +16,7 @@ Downstream chain/client team은 client release 전에 아래 값을 확정해야
 - prover topology와 endpoint
 - prover auth policy
 - audit master pubkey
-- circuit artifact/version/checksum policy
+- consensus circuit identity(`privacy-intent-v2`), manifest `v2`, VK/schema checksum policy
 - gas policy
 - relayer 지원 여부
 - disclosure UX policy
@@ -59,11 +59,12 @@ Client가 생성하거나 broadcast해야 하는 message:
 
 중요:
 
-- `MsgTransfer`는 user disclosure, mandatory audit disclosure, optional sender self-view disclosure field, encrypted output note, 정확히 2개의 2-byte `view_tags`를 포함합니다.
+- `MsgTransfer`는 absolute `expires_at_unix`, user disclosure, mandatory audit disclosure, optional sender self-view disclosure field, encrypted output note, 정확히 2개의 2-byte `view_tags`를 포함합니다.
 - `MsgDeposit`은 transparent amount/asset과 note commitment를 binding하는 deposit proof를 요구합니다.
 - `MsgWithdraw`는 output note field를 갖지 않습니다.
 - Client는 legacy `new_note_commitment`, `encrypted_note` withdraw 값을 만들면 안 됩니다.
-- Transfer `view_tags`는 local scan 속도를 줄이기 위한 untrusted performance hint입니다. 이것은 server-filterable ownership tag가 아니며, 현재 circuit에 binding되어 있지 않습니다. 안전한 기본 sync는 tag mismatch에서도 full decrypt로 복구할 수 있어야 하며, mismatch output을 건너뛰는 동작은 recovery/rescan을 갖춘 명시적 fast mode 정책이어야 합니다.
+- Transfer `view_tags`는 signed canonical payload digest에 포함되지만 server-filterable ownership 증거는 아닌 untrusted performance hint입니다. 안전한 기본 sync는 mismatch에서도 full decrypt해야 하고 skip은 recovery/rescan을 갖춘 explicit fast-mode opt-in이어야 합니다.
+- `creator`는 transfer/withdraw에서 의도적으로 replaceable합니다. Transfer output/disclosure/chain/expiry와 withdraw recipient/chain/expiry는 owner intent/proof-bound입니다.
 
 ## 4. Prover API
 
@@ -85,9 +86,11 @@ Client가 검증해야 할 것:
 - auth failure
 - malformed response
 
+현재 breaking version은 transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload와 proof/request/response `v2`, relay handoff/schema `v2`, disclosure plaintext/query `v5`입니다. Legacy payload는 거부하고 다시 생성합니다.
+
 Remote prover를 쓰는 경우 request/response body는 privacy-sensitive data로 취급해야 합니다.
 
-Prover request failover는 일반 read query failover처럼 동작하면 안 됩니다. Prover request에는 note amount, randomness, Merkle path, nullifier, disclosure payload metadata가 들어갈 수 있습니다. Prover A가 실패했다고 같은 payload를 Prover B, C로 자동 전송하면 privacy boundary가 넓어집니다. 안전한 기본값은 configured prover boundary 안에서 timeout, response validation, retry를 수행하는 것이고, multi-prover failover는 명시적인 제품/보안 정책 결정이어야 합니다.
+Prepared payload는 output이 immutable이어도 private note witness를 포함하므로 prover failover를 일반 read query처럼 처리하면 안 됩니다. Prover A 실패 후 B/C로 보내면 privacy boundary가 넓어집니다. 안전한 기본값은 single endpoint/no failover이고 같은 endpoint retry만 가능합니다. Multi-prover failover는 추가 endpoint를 명시한 경고 뒤 사용자/product-policy가 explicit opt-in해야 합니다.
 
 ## 5. Retry And Failover Policy
 
@@ -98,7 +101,7 @@ Retry와 endpoint failover를 같은 기능으로 취급하지 않습니다.
 | `tree_state`, `audit_config`, `circuit_config`, `scan_events` 같은 public read query | bounded retry와 endpoint failover 허용 가능 |
 | nullifier query | 기본은 같은 endpoint retry. 다른 endpoint failover는 opt-in |
 | tx broadcast | 자동 retry/failover 기본 off. 재구성/재전송 전 tx hash와 nullifier 상태 확인 |
-| prover request | timeout과 response validation은 필수. multi-prover failover는 opt-in |
+| prover request | 기본은 timeout/validation과 same-endpoint retry만 허용. multi-prover failover는 explicit opt-in |
 
 Tx broadcast timeout은 실패를 증명하지 않습니다. Tx가 이미 mempool 또는 chain에 들어갔지만 client가 응답만 받지 못했을 수 있습니다. 새 tx를 만들거나 endpoint를 바꾸거나 새 sequence로 재서명하기 전에는 가능한 경우 tx hash를 먼저 확인하고, 그 다음 nullifier 상태를 확인해야 합니다. 이렇게 해야 sequence 혼선, 중복 제출, nullifier conflict를 줄일 수 있습니다.
 
@@ -107,7 +110,9 @@ Tx broadcast timeout은 실패를 증명하지 않습니다. Tx가 이미 mempoo
 Client CI는 최소 아래를 검증해야 합니다.
 
 - Go SDK와 같은 prepared payload hash를 계산합니다.
-- prepared transfer payload는 version `v3`를 사용하고 `view_tag_hexes`를 포함합니다.
+- transfer payload/proof/request/response가 `v5`/`v2`/`v2`/`v2`, withdraw prover/final payload와 proof/request/response가 `v2`인지 검증합니다.
+- Exact 13-field transfer/9-field spend public-input 순서와 non-reduced SHA-256 128-bit limb를 fixture로 재현합니다.
+- `CircuitConfig`가 consensus `CircuitSetIdentity`를 반환하고 local manifest/env checksum을 consensus authority로 쓰지 않는지 검증합니다.
 - `docs/schemas/clairveil-js-wallet-contract.schema.json` fixture shape를 검증합니다.
 - `x/privacy/client/sdk/conformance/testdata` fixture를 로드합니다.
 - `examples/js-sdk-fixture-validator`와 같은 semantic check를 수행합니다.
@@ -138,6 +143,8 @@ Client release 전 최소 검증:
 - deposit/withdraw flow 이후 target denom의 reserve query가 `invariant_holds=true`를 반환
 - direct withdraw
 - relayed withdraw와 relayer 제출 `MsgWithdraw` field mapping
+- `block_time >= expires_at_unix`에서 transfer/withdraw가 거부되고 relay handoff가 expiry 연장/recipient 치환을 못 하는지 검증
+- cross-chain replay, output/disclosure substitution, duplicate nullifier/commitment 거부와 creator-replacement 성공 case
 - exact-match withdraw 실패와 self-transfer/planner 안내 UX
 - retry/failover 정책이 public read query, nullifier query, tx broadcast, prover request를 분리함
 - prover timeout/retry/cancel
@@ -165,6 +172,8 @@ Breaking 또는 migration impact가 있는 변경:
 - audit disclosure 필수 여부 변경
 
 이런 변경이 있으면 client product brief, UX flows, risk decisions, API checklist, JS SDK handoff, release note impact를 함께 갱신해야 합니다.
+
+이 계약을 적용할 때 cached prepared payload, proof response/job, old local development artifact를 지우고 `privacy-intent-v2` artifact를 다시 생성하며 old circuit/disclosure version metadata를 저장한 client cache를 resync해야 합니다. Legacy prepared-payload decode path는 없습니다.
 
 ## 9. Related Documents
 

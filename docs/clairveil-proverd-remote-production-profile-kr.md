@@ -6,6 +6,7 @@
 
 - `clairveil-proverd`는 private seed를 직접 받지 않지만 prepared proof payload를 받습니다.
 - prepared proof payload에는 note amount, randomness, merkle path, nullifier, shielded public keys, disclosure payload가 포함될 수 있습니다.
+- Final output이 owner-intent-bound되어도 prepared payload에는 private note witness가 남으므로 authority-equivalent privacy metadata입니다.
 - 따라서 remote prover는 단순 CPU worker가 아니라 privacy-sensitive trusted component입니다.
 - local daemon은 개발과 고신뢰 사용자 환경에 적합합니다.
 - remote daemon은 UX와 운영 편의에는 좋지만 auth, rate limit, logging, data retention 정책이 반드시 필요합니다.
@@ -21,6 +22,8 @@
 | Public remote prover   | 일반 web wallet UX                                | DoS, abuse, metadata exposure                   | strong auth, quota, monitoring   |
 
 Clairveil repo는 이 중 하나를 강제하지 않습니다. `clairveil-proverd`와 prover HTTP contract는 downstream이 같은 wallet adapter 뒤에서 topology를 바꿀 수 있게 하기 위한 reference입니다.
+
+Client safe default는 configured prover endpoint 하나와 automatic failover off입니다. Timeout/response check 후 같은 endpoint retry는 허용합니다. Witness-bearing request를 두 번째 endpoint로 보내려면 추가 operator/privacy boundary를 명시한 사용자/product-policy opt-in이 필요하며 availability만으로 disclosure 확대 권한이 생기지 않습니다.
 
 ## 3. Safe baseline
 
@@ -111,6 +114,8 @@ Remote prover operator는 아래 정보를 볼 수 있다고 가정해야 합니
 
 따라서 remote prover는 사용자가 trust하는 component여야 합니다. 사용자가 remote prover를 신뢰하지 않아야 하는 wallet UX라면 local daemon 또는 browser/WASM proving을 제공해야 합니다.
 
+현재 transfer/withdraw request/response/proof contract는 `v2`입니다. Transfer prepared payload는 `v5`, withdraw prover/final payload는 `v2`, disclosure plaintext/query는 `v5`이며 legacy input은 거부합니다. Request body, bearer credential, signature, disclosure plaintext/blinding, proof를 log, trace, crash dump, analytics에서 제외합니다.
+
 ## 8. Raw handler 사용 금지
 
 Go SDK의 `x/privacy/client/sdk/provertransport.HTTPHandler`는 transport contract를 테스트하고 재사용하기 위한 낮은 수준의 handler입니다. 이 handler 자체는 `io.ReadAll`로 request body를 읽습니다.
@@ -125,13 +130,15 @@ Raw `provertransport.HTTPHandler`를 public server에 직접 붙이면 request b
 
 ## 9. Artifact profile
 
-Remote prover는 proving key와 R1CS artifact를 읽습니다. Production에서는 아래를 지킵니다.
+Remote prover는 proving key/R1CS를 lazy load하고 validator는 VK만 필요합니다. Active set은 `privacy-intent-v2`입니다. `privacy_zk_manifest.json` schema `v2`는 ordered circuit descriptor, VK SHA-256, public-input schema SHA-256까지 consensus `CircuitSetIdentity` schema `v1`과 정확히 일치해야 합니다. Environment checksum은 consensus identity를 override하지 못하며 mismatch는 startup/readiness를 실패시켜야 합니다. Production에서는 아래를 지킵니다.
 
 - `CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict`를 사용합니다.
 - `privacy_zk_manifest.json` 또는 checksum env를 release artifact와 함께 배포합니다.
 - artifact directory는 read-only volume으로 mount합니다.
 - artifact release는 circuit source commit, generation command, checksum, signer를 함께 기록합니다.
 - stale artifact와 chain verifier artifact mismatch를 release gate에서 막습니다.
+
+Repository setup flow가 만드는 artifact는 development용입니다. Formal trusted setup이나 external audit를 의미하지 않으며 production은 별도 ceremony/provenance/signing policy를 가져야 합니다.
 
 ## 10. Observability
 
@@ -170,6 +177,8 @@ Remote prover를 production-like 환경에 올리기 전 아래를 확인합니�
 8. Health/readiness/metrics routes are internal-only.
 9. JS SDK uses request timeout and validates response version plus payload hash.
 10. Remote prover is included in the downstream threat model as a trusted privacy-sensitive component.
+11. Automatic multi-prover failover를 비활성화하거나 모든 추가 endpoint에 informed explicit opt-in을 받습니다.
+12. Readiness 전에 manifest/VK/public-input schema identity가 chain과 정확히 일치하는지 검증합니다.
 
 ## 12. 관련 파일
 

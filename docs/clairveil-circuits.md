@@ -79,13 +79,19 @@ All shielded amounts are constrained as non-negative 64-bit integers. Keeper, SD
 
 ### Public Input
 
-| Input | Meaning |
-| --- | --- |
-| `MerkleRoot` | Historical Merkle root containing the spent note |
-| `Nullifier` | Public nullifier that prevents reuse of the same note |
-| `Amount` | Amount to withdraw |
-| `Recipient` | Transparent recipient bound as a field element |
-| `AssetID` | Asset id derived by hashing the denom |
+The `SpendIntentV2` public-input order is consensus-critical:
+
+| Order | Input | Meaning |
+| --- | --- | --- |
+| 1 | `MerkleRoot` | Historical Merkle root containing the spent note |
+| 2 | `ChainDomainHi` | High 128 bits of the chain-domain SHA-256 digest |
+| 3 | `ChainDomainLo` | Low 128 bits of the chain-domain SHA-256 digest |
+| 4 | `ExpiresAtUnix` | Absolute proof expiry |
+| 5 | `Nullifier` | Public nullifier that prevents reuse of the same note |
+| 6 | `Amount` | Amount to withdraw |
+| 7 | `RecipientDigestHi` | High 128 bits of the raw recipient-byte digest |
+| 8 | `RecipientDigestLo` | Low 128 bits of the raw recipient-byte digest |
+| 9 | `AssetID` | Asset id derived by hashing the denom |
 
 ### Secret Witness
 
@@ -93,15 +99,15 @@ All shielded amounts are constrained as non-negative 64-bit integers. Keeper, SD
 | --- | --- |
 | `ReceiverSpendPubKey` | Shielded spend public key representing note ownership |
 | `ReceiverViewPubKey` | View public key used for note recovery/scanning |
-| `Signature` | Evidence that the note owner signed the withdraw message |
+| `Signature` | Evidence that the note owner signed `SpendIntentV2` |
 | `Randomness` | Note randomness used to build the commitment and nullifier |
 | `Path`, `PathHelper` | Merkle path from commitment leaf to root |
 
 ### What It Proves
 
 1. The commitment computed from the secret note data is included in `MerkleRoot`.
-2. `Signature` is valid for `ReceiverSpendPubKey`.
-3. The signature message is bound to `Amount`, `AssetID`, `Randomness`, and `Recipient`.
+2. `Signature` is valid for `ReceiverSpendPubKey` and authenticates the chain domain, root, nullifier, amount, asset, recipient digest, and expiry in `SpendIntentV2`.
+3. The recipient digest is `SHA-256("clairveil.withdraw-recipient.v1" || u32be(len(raw_recipient_bytes)) || raw_recipient_bytes)`, split into two non-reduced big-endian 128-bit limbs. Leading-zero byte strings therefore cannot alias another recipient.
 4. `Nullifier = MiMC(Randomness, spend_pubkey_x, spend_pubkey_y)`.
 5. `Amount` fits the 64-bit shielded amount bound.
 6. Reusing the same note yields the same nullifier, which lets the keeper reject double spend.
@@ -109,7 +115,8 @@ All shielded amounts are constrained as non-negative 64-bit integers. Keeper, SD
 ### What It Does Not Prove
 
 - The circuit does not understand the transparent recipient string itself.
-- Recipient address decoding, denom string handling, and tx signer checks are keeper/SDK/CLI responsibilities outside the circuit.
+- Recipient address decoding, raw-byte preservation, denom string handling, tx signer checks, and the expiry boundary are keeper/SDK/CLI responsibilities outside the circuit. The keeper rejects at `block_time >= expires_at_unix`.
+- `creator` is the fee-paying transaction signer/relayer and is intentionally not part of `SpendIntentV2`; `recipient` is proof-bound and cannot be replaced.
 - Withdraw does not create a direct change note. It uses an exact-match note, or an exact-match note created by the planner.
 - Withdraw has no output commitment public input. The keeper marks the input nullifier as spent and releases transparent funds, but it does not append a new note leaf.
 
@@ -128,14 +135,23 @@ Usually output 0 is the recipient note and output 1 is the sender change note. A
 
 ### Public Input
 
-| Input | Meaning |
-| --- | --- |
-| `MerkleRoot` | Historical Merkle root containing the input notes |
-| `Nullifiers[2]` | Nullifiers for the two input notes |
-| `Commitments[2]` | Commitments for the two output notes |
-| `UserPrivacyPolicy` | User selective disclosure policy mask |
-| `UserDisclosureDigest` | Digest binding user disclosure payload to the output note |
-| `AuditDisclosureDigest` | Digest binding mandatory audit disclosure payload to the output note |
+The `TransferIntentV2` public-input order is consensus-critical:
+
+| Order | Input | Meaning |
+| --- | --- | --- |
+| 1 | `MerkleRoot` | Historical Merkle root containing the input notes |
+| 2 | `ChainDomainHi` | High 128 bits of the chain-domain SHA-256 digest |
+| 3 | `ChainDomainLo` | Low 128 bits of the chain-domain SHA-256 digest |
+| 4 | `ExpiresAtUnix` | Absolute proof expiry |
+| 5 | `Nullifier0` | First ordered input nullifier |
+| 6 | `Nullifier1` | Second ordered input nullifier |
+| 7 | `Commitment0` | First ordered output commitment |
+| 8 | `Commitment1` | Second ordered output commitment |
+| 9 | `UserPrivacyPolicy` | User selective-disclosure policy mask |
+| 10 | `UserDisclosureDigest` | Independently blinded selective-disclosure digest |
+| 11 | `FullDisclosureDigest` | Independently blinded full digest shared by audit and self-view verification |
+| 12 | `PayloadDigestHi` | High 128 bits of the canonical transfer-effect SHA-256 digest |
+| 13 | `PayloadDigestLo` | Low 128 bits of the canonical transfer-effect SHA-256 digest |
 
 ### Secret Witness
 
@@ -144,24 +160,29 @@ Usually output 0 is the recipient note and output 1 is the sender change note. A
 | `AssetID` | Transfer asset id |
 | `InputAmounts[2]`, `InputRandomness[2]` | Input note amount/randomness |
 | `InputPaths[2]`, `InputPathHelpers[2]` | Merkle path for each input note |
-| `InputSignatures[2]` | Ownership signature for each input note |
+| `OwnerSignature` | One signature over the final `TransferIntentV2` |
 | `InputSpendPubKeys[2]`, `InputViewPubKeys[2]` | Input note owner keys |
 | `OutputAmounts[2]`, `OutputRandomness[2]` | Output note amount/randomness |
 | `OutputSpendPubKeys[2]`, `OutputViewPubKeys[2]` | Recipient/change note keys |
+| `UserDisclosureBlinding` | Independent non-zero blinding for enabled user disclosure |
+| `FullDisclosureBlinding` | Independent non-zero blinding for audit/self-view full disclosure |
 
 ### What It Proves
 
 1. Both input note commitments are included in the same `MerkleRoot`.
-2. Both input signatures are valid.
+2. Both inputs have the same spend and view owner keys, and one `OwnerSignature` is valid for that owner over the final `TransferIntentV2`.
 3. Both nullifiers are computed from the corresponding input note randomness and spend public key.
-4. Both input notes belong to the same shielded owner.
+4. The two nullifiers are distinct, and both output commitments are distinct.
 5. Both output commitments match the secret output data.
 6. `sum(input amounts) = sum(output amounts)`.
 7. Each input and output amount fits the 64-bit shielded amount bound.
-8. When user disclosure is enabled, the fields selected by policy are bound into `UserDisclosureDigest`.
-9. Audit disclosure is always computed with the full disclosure mask and bound into `AuditDisclosureDigest`.
+8. When user disclosure is enabled, the fields selected by policy and a fresh non-zero blinding are bound into `UserDisclosureDigest`.
+9. Audit/self-view full disclosure uses a separate fresh non-zero blinding and is bound into `FullDisclosureDigest`.
+10. Ordered nullifiers, commitments, ciphertexts, view tags, all disclosure envelopes, and expiry are finalized before signing and are bound through the canonical payload digest. `creator`, proof bytes, fee, gas, memo, sequence, and tx signature are excluded so a relayer may replace only `creator`.
 
-Transfer view tags are not `JoinSplitCircuit` public inputs in the current format. They are public scan hints carried by `MsgTransfer` and events, validated for byte length by message validation, and must not be treated as proof-bound note ownership signals.
+Transfer view tags are not separate `JoinSplitCircuit` public inputs. They are ordered public scan hints carried by `MsgTransfer` and events and are included in the canonical payload digest, but must still not be treated as note-ownership signals.
+
+The chain domain is `SHA-256("clairveil.chain-domain.v1" || u32be(len(chain_id)) || chain_id || u32be(len(circuit_set_id)) || circuit_set_id)`. SHA-256 digests are split into two big-endian 128-bit limbs without field-modulus reduction. The SDK derives the domain from its configured chain, while the keeper recomputes it from the current chain context. The keeper rejects transfer and withdraw at `block_time >= expires_at_unix`.
 
 ### User Disclosure Policy
 
@@ -180,11 +201,11 @@ Transfer view tags are not `JoinSplitCircuit` public inputs in the current forma
 
 The circuit does not encrypt disclosure plaintext. What it guarantees is that the selected disclosure fields are bound to the digest. Actual encryption, public/recipient/audit delivery, and decode UX are handled by SDK/CLI and event payloads.
 
-Sender self-view disclosure is separate encrypted metadata. Its digest/payload are included in the tx event and signed message, but are not added to the joinsplit circuit public inputs. Wallets must decrypt the payload with the sender disclosure private key, then compare the payload digest with the on-chain `self_view_disclosure_digest`.
+Sender self-view disclosure is separate encrypted metadata. Its payload is included in the signed canonical transfer effect and uses the same blinded `FullDisclosureDigest` as audit disclosure. Wallets must decrypt it, recover the blinding from the versioned plaintext, recompute the full digest, and compare it with the on-chain digest.
 
 ### Audit Disclosure
 
-Every transfer must include mandatory audit disclosure. The circuit computes a full audit disclosure digest, and the keeper checks that the message's audit disclosure target pubkey matches the chain-configured audit key.
+Every transfer must include mandatory audit disclosure. The circuit computes the independently blinded full disclosure digest, and the keeper checks that the message's audit disclosure target pubkey matches the chain-configured audit key.
 
 This means:
 
@@ -194,7 +215,7 @@ This means:
 
 ## 6. Artifacts
 
-`clairveil-setup` generates the following artifacts. The active circuit set is `privacy-accounting-v2`.
+`clairveil-setup` generates the following development artifacts. The active circuit set is `privacy-intent-v2`.
 
 | File | Meaning |
 | --- | --- |
@@ -224,6 +245,10 @@ source artifacts/privacy/privacy_zk_checksums.env
 export CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict
 ```
 
+`privacy_zk_manifest.json` schema `v2` records the exact ordered circuit descriptors, VK SHA-256 values, and public-input schema SHA-256 values. Genesis and consensus state pin the corresponding `CircuitSetIdentity` schema `v1`; local checksum environment variables cannot override that identity. A node compares its local verifier identity with consensus before serving: validators need only the three VK files and load them lazily, while a prover loads R1CS/PK only when proving. A mismatch blocks startup/readiness. Generated R1CS/PK/VK binaries and secrets are not committed.
+
+The setup used here is development-only. Session 1 does not perform or claim a formal trusted setup, artifact signing ceremony, or external audit.
+
 ## 7. Reserve Accounting Query
 
 Circuit soundness is paired with keeper-level reserve accounting. The keeper records denom-level `total_deposited` and `total_withdrawn`, then compares the expected reserve (`total_deposited - total_withdrawn`) to the actual privacy module-account balance.
@@ -250,3 +275,4 @@ When changing circuits, update these in one commit or a short commit series:
 - The circuit uses a fixed 2-input/2-output transfer model.
 - Ciphertext delivery itself is not proven directly by the circuit; it is verified with digest binding and off-chain verification.
 - Production deployment still needs artifact signing, reproducible generation, and release provenance.
+- Proof verification is precharged by the keeper after cheap canonical Groth16 framing succeeds and before decoding, VK loading, or pairing work. Deposit, spend, and joinsplit each currently charge `1,000,000` gas per verification attempt; invalid cryptographic proofs still consume the full precharge, while malformed framing does not.

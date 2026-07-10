@@ -12,11 +12,12 @@ Korean version: [clairveil-security-best-practices-review-kr.md](clairveil-secur
 | Double-spend protection | Both transfer and withdraw reject nullifier reuse before state mutation. |
 | Mandatory audit disclosure | Transfer passes only when the chain audit master pubkey matches the message audit disclosure target pubkey. |
 | Merkle safety | Fixed-capacity guard, rebuild bound, missing leaf/node explicit failure, and query/path error propagation are implemented. |
-| Prepared payload integrity | Transfer/withdraw prover payloads and proofs carry payload hashes, and they are verified before relay/broadcast. |
+| Prepared payload integrity | `TransferIntentV2`/`SpendIntentV2` bind chain, expiry, recipient/output/disclosure effects; transfer uses one final owner signature and creator replacement remains relayer-safe. |
 | Scan hint safety | Transfer view tags are validated for shape and treated as untrusted hints; safe default scan can full-decrypt on mismatch. |
 | File permission | Local wallet cache and prepared/proof JSON files are written with `0600`. |
 | Prover service basics | Request body limit, read header/read timeout, idle timeout, optional bearer auth, and readiness preflight exist. |
-| ZK artifact verification | Manifest/env checksum and preflight modes can detect artifact mismatch. |
+| ZK artifact verification | Consensus pins exact ordered VK and public-input schema hashes; local verifier mismatch blocks startup/readiness and env checksums cannot override it. |
+| Proof verification cost | Canonical proof framing is checked cheaply, then fixed gas is precharged before decode, VK load, or cryptographic verification. |
 | Conformance fixture | Query, payload hash, and prover HTTP contract fixtures exist for JS SDK/external wallets. |
 
 ## 2. Production Decisions Required Before Launch
@@ -54,6 +55,10 @@ Recommended defaults:
 - development/high-trust environment: local daemon
 - user-privacy-first wallet: local daemon or browser/WASM proving
 - operations-convenience-first wallet: remote prover is possible, but include it as a trusted component in the threat model
+
+`ProverPool` sends a witness-bearing request to one endpoint only by default. Automatic failover is disabled because sending the same payload to another operator expands the privacy boundary. Multi-endpoint failover must be an explicit user or product-policy opt-in, with a clear warning and endpoint set.
+
+Even after outputs, disclosure envelopes, ciphertexts, chain, and expiry are immutable under the owner intent, the prepared prover payload still contains private note witness data. Treat the payload as authority-equivalent privacy-sensitive material; do not log it, include it in crash reports, or retain it beyond the proof workflow.
 
 ### 2.4 Wallet Storage Encryption
 
@@ -93,6 +98,8 @@ Required work:
 - make strict preflight the default
 - verify release artifact checksums in CI
 
+The active identity is `privacy-intent-v2`. `privacy_zk_manifest.json` schema `v2` must match the genesis/state `CircuitSetIdentity` schema `v1`, including descriptor order, exact VK SHA-256 values, and public-input schema SHA-256 values. Validators need VK files only; a prover lazily loads R1CS/PK for proving. Session 1 generated development artifacts only and did not perform a formal trusted setup or external audit.
+
 ## 3. Recommended Repo-Level Improvements
 
 | Priority | Item | Reason |
@@ -109,13 +116,14 @@ The repository currently configures `.github/workflows/security.yml` to run `mak
 
 ## 4. Current Code-Level Notes
 
-No immediately critical P0/P1 implementation bug was found in the sampled surface. These points can still become issues if downstream SDK/service implementers misunderstand them.
+The Session 1 remediation closed the known current duplicate-input/output, intent-substitution, replay, disclosure-oracle, decoder, failover-default, genesis/artifact-identity, and proof-gas issues. No unresolved Critical/High finding remains in that scope. These points can still become issues if downstream SDK/service implementers misunderstand them.
 
 - The body limit in `x/privacy/client/sdk/proverservice/service.go` applies only to proof routes. This is intentional, but downstream must separately decide whether health/readiness should be externally exposed.
 - The raw `HTTPHandler` in `x/privacy/client/sdk/provertransport/http.go` reads body with `io.ReadAll`. Public services must use `proverservice.Handler` or a separate `MaxBytesReader` wrapper.
 - `cmd/clairveil-proverd/main.go` runs with `auth_enabled=false` when the bearer token env is empty. This is convenient locally, but must be forbidden for remote services.
 - `build/clairveil-proverd/compose.yaml` limits host bind to `127.0.0.1`. However, the Dockerfile itself listens on `0.0.0.0:8080`, so downstream compose/k8s manifests must re-check network policy.
 - Prepared payload JSON and wallet JSON are stored with `0600`, but they are not encrypted. Production wallets need an encryption layer.
+- Transfer/prover contract versions are intentionally breaking: transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload and proof/request/response `v2`, and disclosure plaintext/query version `v5`. Legacy payloads must be regenerated, not replayed or decoded through a compatibility path.
 
 ## 5. Minimum Guidance To Downstream Developers
 
@@ -130,3 +138,4 @@ JS/TS SDK, web wallet, and downstream Cosmos SDK chain developers should receive
 7. Disclosure plaintext must not be trusted just because it decrypted; digest verification must pass.
 8. Production artifacts need provenance and signing policy in addition to checksum.
 9. After snapshot/restore/migration, recompute sample Merkle paths according to `docs/clairveil-merkle-restore-sop.md`.
+10. Reject legacy prepared payloads, preserve the exact `SpendIntentV2`/`TransferIntentV2` public-input order, and reset cached proof jobs/artifacts when adopting `privacy-intent-v2`.

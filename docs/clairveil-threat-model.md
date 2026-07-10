@@ -35,8 +35,8 @@ flowchart LR
 | Local wallet note cache | Can contain note amount, randomness, nullifier, and scan height | Stores JSON files with `0600` and backs up/resets corrupt files |
 | Prepared transfer/withdraw prover payload | Contains note metadata, Merkle path, signature, and disclosure payload for proof generation | Detects mutation with payload hash, writes files with `0600`, and requires sensitive-data treatment when sent to remote prover |
 | Sender self-view disclosure payload | Encrypted metadata for recovering details of the sender's own sent transfers | Stores only digest/payload without exposing the target pubkey in events, and provides verification helpers |
-| Transfer view tags | Public 2-byte scan hints that can reduce local decrypt work but are not proof-bound | Treats tags as untrusted hints; safe default wallet scan full-decrypts on mismatch |
-| ZK proving/verifying artifacts | Trust base for proof generation/verification | Provides manifest/env checksum, preflight mode, and circuit config query |
+| Transfer view tags | Public 2-byte scan hints included in the signed canonical transfer effect but not ownership evidence | Treats tags as untrusted hints; safe default wallet scan full-decrypts on mismatch |
+| ZK proving/verifying artifacts | Trust base for proof generation/verification | Consensus pins circuit set, VK hashes, and public-input schema digests; local verifier identity must match before startup/readiness |
 | On-chain privacy state | commitments, historical roots, nullifiers, indexed privacy events | Keeper performs canonical field validation, nullifier replay checks, and Merkle capacity/corrupt-state guards |
 | Audit master private key | Can decrypt every mandatory audit disclosure | Private key custody is downstream responsibility; repo provides public key genesis/config and decode flow |
 | Prover bearer token | Access control for remote proof API | Provides env-var based optional bearer auth; production auth policy is downstream responsibility |
@@ -45,10 +45,10 @@ flowchart LR
 
 | Boundary | Untrusted Input | Defense |
 | --- | --- | --- |
-| Wallet/CLI to chain tx | malformed proof, non-canonical field bytes, reused nullifier, wrong root, wrong audit disclosure target | `ValidateBasic`, keeper canonical validation, historical root check, nullifier check, Groth16 verification, audit master pubkey match |
+| Wallet/CLI to chain tx | malformed proof/point/signature, duplicate or reused nullifier/commitment, wrong root/chain/expiry/recipient/output/disclosure | canonical decoders, local/global uniqueness checks, historical-root recomputation, `TransferIntentV2`/`SpendIntentV2`, gas-precharged Groth16 verification |
 | Query client to chain | invalid hex, missing commitment, corrupted tree state, malformed scan cursor/nullifier batch | query validation, `Internal` error for invalid Merkle state, bounded event pagination, cursor projection versioning |
-| Wallet to prover | oversized JSON, stale payload, tampered payload, untrusted remote prover | payload/proof hash validation, payload metadata validation, body limit in `proverservice.Handler`, optional bearer auth |
-| Prover to artifact files | missing/tampered R1CS/PK/VK | artifact checksum support, preflight warn/strict mode |
+| Wallet to prover | oversized JSON, stale/tampered authority-equivalent witness payload, endpoint correlation | payload/proof hash validation, body limit, optional bearer auth, single endpoint/no failover by default; failover requires explicit opt-in |
+| Prover/validator to artifact files | missing/tampered/stale R1CS/PK/VK | exact consensus identity comparison; validators require VK only, provers lazily load R1CS/PK; environment checksums cannot override identity |
 | Restore/migration to Merkle state | partial `MerkleNode/*`, missing leaf, oversized rebuild | fixed-capacity guard, missing leaf/node explicit failure, `docs/clairveil-merkle-restore-sop.md` requiring sampled path verification |
 | Downstream chain integration | wrong genesis audit pubkey, wrong denom/prefix, missing query routes, custom policy conflict | integration guide, reference app, conformance fixture, walkthrough |
 
@@ -57,35 +57,41 @@ flowchart LR
 | Threat | Impact | Current Mitigation | Downstream Requirement |
 | --- | --- | --- | --- |
 | Reuse an already spent note | Double spend attempt | `MsgTransfer` and `MsgWithdraw` reject used nullifiers before state update | Keep keeper logic unchanged or preserve equivalent invariant during integration |
+| Repeat one input/nullifier or output commitment inside a transfer | Inflate input value or create ambiguous output/state | circuit distinctness plus canonical local-set checks run before global lookups or state writes | Preserve both circuit and host checks |
+| Reuse a commitment across deposit, transfer, or genesis import | Ambiguous leaf identity and scan/state corruption | one global commitment index and duplicate-rejecting append/import path | Migration tooling must preserve and validate global uniqueness |
+| Replace transfer output, disclosure metadata, chain, or expiry | Spend owner funds with a different final effect | one owner signature authenticates the final effect-bound `TransferIntentV2`; keeper recomputes chain/payload digests | Do not reconstruct intent from untrusted prover output |
+| Extend withdraw expiry, replay on another chain, or replace recipient | Unauthorized transparent release | `SpendIntentV2` binds current-context chain domain, raw recipient digest, and expiry; rejection begins at `block_time >= expiry` | Preserve raw recipient bytes and absolute expiry exactly |
 | Submit proof for unknown root | Spend from non-existing tree state | keeper checks historical root before proof acceptance | Preserve historical root store through migration and snapshot restore |
 | Fill or overflow Merkle tree | Undefined root/path behavior or consensus risk | fixed depth 32 capacity guard, batch capacity check for 2-output transfer, explicit overflow failure | Monitor `leaf_count`, `remaining_leaves`, usage thresholds; plan new pool/circuit before exhaustion |
 | Restore partial Merkle state | Path or append may silently use zero sibling if state is corrupt | required leaf/node checks on path/append/rebuild; `docs/clairveil-merkle-restore-sop.md` requires sampled path recomputation | Restore `Leaf/*`, `MerkleNode/*`, `CommitmentIndex/*`, `HistoricalRoot/*`, and verify samples before resuming |
 | Omit mandatory audit disclosure | Auditor cannot inspect transfer | transfer validation requires configured audit pubkey, audit digest, audit target pubkey, audit payload | Set audit master pubkey in genesis for any production-like chain |
-| Send fake disclosure payload | Recipient/auditor/sender self-view sees false plaintext | off-chain disclosure verifier recomputes digest and compares on-chain digest | Wallets must call disclosure verification, not just decrypt and display plaintext |
+| Dictionary-attack a small disclosure space or send fake plaintext | Recover metadata offline or display false disclosure | user and full disclosure digests use independent CSPRNG blindings carried in versioned plaintext; verifier recomputes the digest | Wallets must verify after decryption and never reuse blindings |
 | Expose sender self-view target pubkey | Observers can cluster sender transactions | self-view events omit the target pubkey and store only digest/payload | Do not add static sender disclosure pubkeys to downstream event/indexer schemas |
 | Treat view tag mismatch as authoritative | Wallet may miss an owned note if a tx/event carries a bad unbound hint | SDK safe default full-decrypts on tag mismatch and only allows skip behavior as explicit fast mode | Web/mobile wallets must keep recovery/rescan support before enabling any skip-on-mismatch mode |
 | Expose remote prover without auth/rate limit | DoS, cost abuse, metadata leakage | sample service supports body limits, read timeouts, optional bearer auth | Put remote prover behind TLS, mandatory auth, network ACL, quota/rate limit, monitoring |
 | Remote prover learns proof payload data | Privacy metadata exposure to prover operator | architecture keeps proof generation separable but payload is still sensitive | Prefer local prover for high privacy, or treat remote prover as a trusted service with contractual/logging controls |
-| Tamper ZK artifacts | Invalid or attacker-controlled proving/verifying setup | checksum manifest/env and preflight support | Use strict preflight, signed artifact release, reproducible generation/provenance policy |
+| Tamper or substitute ZK artifacts | Consensus split or attacker-controlled verifier/prover setup | genesis/state pins exact ordered descriptors, VK SHA-256, and public-input schema SHA-256; mismatch blocks startup/readiness | Also use signed releases and reproducible generation/provenance policy |
 | Compromise master auditor private key | All mandatory audit disclosures become readable by attacker | repo does not custody production private keys | Use HSM/KMS or equivalent, least privilege, rotation, break-glass, audit logs |
 | Compromise sender disclosure private key | Sent-transfer self-view payloads become readable by attacker | self-view uses the same derived disclosure key custody boundary as other disclosure flows | Protect disclosure keys with the same secure storage policy as spend/view material |
 
 ## 6. Code Evidence
 
-- `x/privacy/keeper/msg_server.go`: validates roots, nullifiers, audit disclosure target, Groth16 proofs, and state writes.
+- `x/privacy/keeper/msg_server.go`: recomputes chain/intent witnesses, validates uniqueness/roots/expiry, precharges proof gas, and keeps failure paths state-atomic.
 - `x/privacy/keeper/tree.go`: defines `MerkleDepth`, `MaxMerkleLeaves`, capacity guard, rebuild bound, missing leaf/node checks.
 - `x/privacy/keeper/grpc_query.go`: exposes tree/audit/disclosure/circuit/scan/nullifier queries and returns internal errors for invalid tree state.
-- `x/privacy/types/msg.go`: validates canonical field bytes, transfer view tag length, and user/audit/self-view disclosure structure.
-- `x/privacy/client/sdk/transfer/payload.go`: builds and validates prepared transfer payload hashes and proof hashes.
+- `x/privacy/types/intent.go`: defines non-reduced SHA-256 limbs, chain/recipient/payload digests, ordered sets, and `TransferIntentV2`/`SpendIntentV2` golden contracts.
+- `x/privacy/types/msg.go`: validates canonical fields, local/global commitment/nullifier invariants, transfer view tags, and disclosure structure.
+- `x/privacy/client/sdk/transfer/payload.go`: finalizes outputs/disclosures/ciphertexts before creating one owner signature and validates payload/proof hashes.
 - `x/privacy/client/sdk/scan/service.go`: treats view tags as non-authoritative scan hints and supports cursor/batch query fallback.
 - `x/privacy/client/sdk/withdraw/prover_payload.go`: validates withdraw prover payload metadata, asset denom/hash, recipient bytes, expiry, and payload hash.
 - `x/privacy/client/sdk/disclosure/disclosure.go`: recomputes disclosure digest and verifies asset denom against asset id.
 - `x/privacy/client/sdk/proverservice/service.go`: provides reference HTTP service with health/readiness, optional bearer auth, request body limit, and server timeouts.
-- `x/privacy/zk/setup.go` and `x/privacy/zk/manifest.go`: load artifacts and support checksum manifest/env verification.
+- `x/privacy/zk/identity.go`, `manifest.go`, and `schema.go`: compare local VK-only verifier identity to consensus and pin exact public-input schemas.
 
 ## 7. Residual Risk
 
 - Groth16 artifact provenance and trusted setup ceremony are outside this repo's current security boundary. Downstream production should define artifact release, signing, reproducibility, and audit process.
+- Session 1 artifacts are development-only; no formal trusted setup or external audit has been performed.
 - `clairveil-proverd` is a reference service. Remote production deployment still needs TLS termination, mandatory authentication, rate limits, abuse monitoring, and secret management.
 - Local wallet files and prepared payloads are plaintext JSON with restrictive file permissions. This is acceptable for reference CLI/development, but production wallets should encrypt at rest.
 - Health/readiness routes expose service metadata. This is low sensitivity for local samples, but remote deployments should keep them private or behind authenticated internal networks.
@@ -99,7 +105,8 @@ Before a downstream project treats Clairveil as production-ready, it should at m
 2. Define remote prover authentication, TLS, rate limit, timeout, logging, and data-retention policy.
 3. Define wallet storage encryption and seed/key derivation custody policy.
 4. Define master auditor private key custody, rotation, and incident response.
-5. Pin and verify ZK artifacts with strict preflight and signed artifact release metadata.
+5. Pin and verify the consensus `privacy-intent-v2` identity, use strict preflight, and add signed artifact release metadata.
 6. Run Clairveil conformance fixtures against the downstream JS/TS SDK.
 7. Run local node e2e with downstream prefixes, denoms, genesis audit pubkey, and query routes.
 8. Add chain-specific threat model for EVM, policy module, precompile, relayer, and frontend integrations.
+9. Keep prover failover disabled unless the user explicitly accepts sending the same private witness to additional endpoints.

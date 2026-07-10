@@ -16,7 +16,7 @@ The downstream chain/client team must finalize these values before client releas
 - prover topology and endpoint
 - prover auth policy
 - audit master pubkey
-- circuit artifact/version/checksum policy
+- consensus circuit identity (`privacy-intent-v2`), manifest `v2`, VK/schema checksum policy
 - gas policy
 - relayer support
 - disclosure UX policy
@@ -59,11 +59,12 @@ Messages the client must build or broadcast:
 
 Important:
 
-- `MsgTransfer` includes user disclosure, mandatory audit disclosure, optional sender self-view disclosure fields, encrypted output notes, and exactly two 2-byte `view_tags`.
+- `MsgTransfer` includes absolute `expires_at_unix`, user disclosure, mandatory audit disclosure, optional sender self-view disclosure fields, encrypted output notes, and exactly two 2-byte `view_tags`.
 - `MsgDeposit` requires a deposit proof binding the transparent amount/asset to the note commitment.
 - `MsgWithdraw` has no output note fields.
 - Clients must not create legacy `new_note_commitment` or `encrypted_note` withdraw values.
-- Transfer `view_tags` are untrusted performance hints for local scan. They are not server-filterable ownership tags and are not currently circuit-bound. Safe default sync must still be able to full-decrypt on a tag mismatch; skipping mismatch outputs should be an explicit fast-mode policy with recovery/rescan support.
+- Transfer `view_tags` are untrusted performance hints for local scan. They are included in the signed canonical payload digest but are not server-filterable ownership evidence. Safe default sync must still full-decrypt on a mismatch; skipping mismatch outputs requires explicit fast-mode opt-in and recovery/rescan support.
+- `creator` is intentionally replaceable for transfer and withdraw. Transfer outputs/disclosures/chain/expiry and withdraw recipient/chain/expiry are owner-intent/proof-bound.
 
 ## 4. Prover API
 
@@ -85,9 +86,11 @@ The client must validate:
 - auth failure
 - malformed response
 
+Current breaking versions are transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload and proof/request/response `v2`, relay handoff/schema `v2`, and disclosure plaintext/query `v5`. Reject and regenerate legacy payloads.
+
 When using a remote prover, request/response bodies are privacy-sensitive data.
 
-Prover request failover must not behave like ordinary read-query failover. A prover request can include note amounts, randomness, Merkle paths, nullifiers, and disclosure payload metadata. If prover A fails, automatically sending the same payload to prover B or C expands the privacy boundary. The safe default is timeout, response validation, and retry policy within the configured prover boundary; multi-prover failover must be an explicit product/security decision.
+Prover request failover must not behave like ordinary read-query failover. A prepared payload still contains private note witness even though its outputs are immutable. If prover A fails, sending it to B or C expands the privacy boundary. The safe default is a single endpoint with no failover; retry may target the same endpoint. Multi-prover failover requires explicit user/product-policy opt-in and a warning naming the additional endpoints.
 
 ## 5. Retry And Failover Policy
 
@@ -98,7 +101,7 @@ Do not treat retry and endpoint failover as the same feature.
 | Public read queries such as `tree_state`, `audit_config`, `circuit_config`, `scan_events` | bounded retry and endpoint failover are acceptable |
 | Nullifier queries | retry against the same endpoint by default; cross-endpoint failover is opt-in |
 | Tx broadcast | automatic retry/failover is off by default; check tx hash and nullifier status before rebuilding or rebroadcasting |
-| Prover requests | timeout and response validation are required; multi-prover failover is opt-in |
+| Prover requests | timeout/validation and same-endpoint retry only by default; multi-prover failover requires explicit opt-in |
 
 For tx broadcast, a timeout does not prove failure. The tx may already be in the mempool or chain while the client missed the response. Before creating a new tx, changing endpoint, or re-signing with a new sequence, clients should check the tx hash when available and then check nullifier status. This prevents sequence confusion, duplicate submission, and nullifier conflicts.
 
@@ -107,7 +110,9 @@ For tx broadcast, a timeout does not prove failure. The tx may already be in the
 Client CI should validate at least:
 
 - prepared payload hashes are calculated the same way as the Go SDK;
-- prepared transfer payloads use version `v3` and include `view_tag_hexes`;
+- transfer payload/proof/request/response use `v5`/`v2`/`v2`/`v2`; withdraw prover/final payload and proof/request/response use `v2`;
+- fixtures reproduce the exact 13-field transfer and 9-field spend public-input order and non-reduced SHA-256 128-bit limbs;
+- `CircuitConfig` returns consensus `CircuitSetIdentity` and never treats local manifest paths/env checksums as consensus authority;
 - fixture shape matches `docs/schemas/clairveil-js-wallet-contract.schema.json`;
 - fixtures load from `x/privacy/client/sdk/conformance/testdata`;
 - semantic checks match `examples/js-sdk-fixture-validator`;
@@ -138,6 +143,8 @@ Minimum validation before client release:
 - reserve query returns `invariant_holds=true` for the target denom after deposit/withdraw flows
 - direct withdraw
 - relayed withdraw and relayer-submitted `MsgWithdraw` field mapping
+- expiry boundary rejects transfer/withdraw at `block_time >= expires_at_unix`, and relayed handoff cannot extend expiry or replace recipient
+- cross-chain replay, output/disclosure substitution, duplicate nullifier/commitment, and creator-replacement positive cases
 - no-exact-match withdraw failure and self-transfer/planner guidance
 - retry/failover policy separates public read queries, nullifier queries, tx broadcast, and prover requests
 - prover timeout/retry/cancel
@@ -165,6 +172,8 @@ Changes with breaking or migration impact:
 - audit disclosure requiredness changes
 
 When these change, update the client product brief, UX flows, risk decisions, API checklist, JS SDK handoff, and release note impact together.
+
+Adopting this contract requires clearing cached prepared payloads, proof responses/jobs, and old local development artifacts, regenerating `privacy-intent-v2` artifacts, and resyncing any client cache that persisted old circuit or disclosure-version metadata. There is no legacy prepared-payload decode path.
 
 ## 9. Related Documents
 

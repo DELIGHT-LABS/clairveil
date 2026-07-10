@@ -63,7 +63,7 @@ MsgWithdraw
 
 `MsgDeposit` includes a `proof` field. Clients must build or obtain a `DepositCircuit` Groth16 proof binding `amount`, `asset_id`, and `note_commitment`; proof-less deposits are not part of the current contract.
 
-`MsgTransfer` contains user disclosure, audit disclosure, and sender self-view disclosure fields. In the latest model, audit disclosure is not optional. It must be included in every shielded transfer. Sender self-view disclosure is included by default and omitted only by explicit opt-out.
+`MsgTransfer` contains `expires_at_unix`, user disclosure, audit disclosure, and sender self-view disclosure fields. Audit disclosure is not optional. Sender self-view disclosure is included by default and omitted only by explicit opt-out. `creator` is the replaceable fee payer/relayer; it is deliberately excluded from the owner intent.
 
 `MsgWithdraw` is an exact-match withdraw message and does not contain output note fields. JS/TS clients must not model the legacy `new_note_commitment` or `encrypted_note` withdraw fields, and they must not send dummy output-note values.
 
@@ -104,7 +104,7 @@ A web wallet needs at least these provider roles.
 - `PrivacyEvents`: read the raw deposit/transfer event feed for compatibility and diagnostics.
 - `AuditConfig`: fetch the master auditor pubkey configured on-chain.
 - `DisclosureConfig`: display user disclosure policy/mode and payload version.
-- `CircuitConfig`: check the active circuit set and artifact checksum information.
+- `CircuitConfig`: read the consensus `CircuitSetIdentity`, active set, ordered VK hashes, and public-input schema hashes. Do not infer consensus identity from a node-local manifest path or checksum environment variable.
 - `Reserve`: compare privacy module-account balance to recorded deposit/withdraw totals for a denom.
 - `CheckNullifiers`: refresh spent state for many notes in one request. Use the POST JSON body binding for normal batches, chunk at 1000 nullifiers per request, and keep GET only for small compatibility checks.
 - `CheckNullifier`: determine whether one note is spent when a batch path is unavailable.
@@ -172,7 +172,7 @@ The preferred scan flow is:
 1. Fetch deposit/transfer outputs with `ScanEvents(after_height, after_sequence, limit, event_types)`.
 2. Read `encrypted_note` from deposit projections, or output `cipher_text`, `commitment`, `output_index`, and `view_tag` from transfer projections.
 3. Validate `scan_format_version` and `view_tag_version` before consuming the projection; fall back to the raw event path or stop without advancing the cursor on unsupported versions.
-4. For transfer outputs, derive the local 2-byte view tag. Because the tag is not currently circuit-bound, the safe default is to run full trial decrypt on mismatch so a tampered hint cannot hide an owned note.
+4. For transfer outputs, derive the local 2-byte view tag. The ordered tag is included in the signed canonical transfer effect but is not ownership evidence, so the safe default still runs full trial decrypt on mismatch.
 5. Treat `view_tag` as an untrusted optimization only. If it is missing or malformed, fall back to full trial decrypt. Skipping mismatch outputs should be an explicit fast-mode policy with recovery or forced-rescan support.
 6. Try to decrypt using the wallet root seed and viewing key. If view-key decryption fails, keep a spend-key compatibility/recovery fallback consistent with the Go SDK.
 7. Store only notes that decrypt successfully in the wallet DB.
@@ -264,10 +264,14 @@ Important constraints:
 - User disclosure supports `none`, `public`, and `recipient-encrypted` mode.
 - Sender self-view disclosure is enabled by default and omitted only by explicit opt-out.
 - Supported policies are `all-private`, `amount`, `to`, `amount-to`, `from`, `amount-from`, `from-to`, and `amount-from-to`.
-- Newly generated transfer payloads must use version `v3`; transfer proof version is currently `v1`.
-- Transfer payload `v3` includes `view_tag_hexes` in the prepared payload hash. Existing `v1`/`v2` prepared transfer payloads should be regenerated instead of replayed.
+- Newly generated transfer payloads must use `v5`; transfer proof and prover request/response use `v2`. All earlier transfer payload/proof/request versions are rejected and must be regenerated.
+- Build both outputs, ordered ciphertexts/view tags, user/audit/self-view envelopes, independent disclosure blindings, chain ID, and absolute expiry first. Then encode the canonical transfer effect, derive `TransferIntentV2`, and create exactly one `owner_signature_hex`. There are no per-input note-hash signatures.
+- The canonical binary effect uses fixed field order and `u32be(length) || bytes` for variable bytes. It includes format version, root, ordered nullifiers/commitments/ciphertexts/view tags, every disclosure field, and expiry. It excludes proof, `creator`, fee/gas/memo/sequence/tx signature, and its own digest. The keeper recomputes it from `MsgTransfer`.
 - Final `MsgTransfer` must include exactly two `view_tags`, aligned with `new_commitments` and `cipher_texts`.
-- Disclosure payload version is currently `v4` by query.
+- Disclosure plaintext/query version is `v5`. Enabled user disclosure and full audit/self-view disclosure use independent fresh CSPRNG blindings. After decrypting, recover the blinding and recompute the digest; decryption alone is not verification.
+- `expires_at_unix` is absolute. The chain rejects at `block_time >= expires_at_unix`.
+
+The exact `JoinSplitCircuit` public-input order is: `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `Nullifier0`, `Nullifier1`, `Commitment0`, `Commitment1`, `UserPrivacyPolicy`, `UserDisclosureDigest`, `FullDisclosureDigest`, `PayloadDigestHi`, `PayloadDigestLo`. Do not sort or rename fields. SHA-256 chain/payload digests are split into two non-reduced big-endian 128-bit limbs. Chain domain input is `"clairveil.chain-domain.v1"`, length-prefixed `chain_id`, then length-prefixed `circuit_set_id` (`privacy-intent-v2`).
 
 For bulk payroll or other high-volume transfer clients, the note reservation contract is part of the client/control-plane layer rather than the on-chain protocol. The Go reference implementation and fixture are:
 
@@ -292,6 +296,8 @@ self-view disclosure: generated by default for the sender's own disclosure key
 ```
 
 Self-view disclosure is an encrypted payload that lets the sender later view the amount/from/to details of their own sent transfer. The on-chain event includes only `self_view_disclosure_digest` and `self_view_disclosure_payload`; it intentionally does not expose the sender's static disclosure public key. The JS SDK should trial-decrypt self-view payloads with the sender disclosure private key, then verify the payload digest against the on-chain digest.
+
+Audit and self-view plaintext carry the same fresh full-disclosure blinding and verify against `FullDisclosureDigest`; optional user disclosure uses a different fresh blinding. Never derive a blinding from low-entropy plaintext or reuse it across transfers/planes.
 
 The web wallet UI should provide at least these user disclosure choices.
 
@@ -395,6 +401,10 @@ The JS SDK must clearly show these constraints to users.
 - `MsgWithdraw` does not contain output note fields. Do not create a dummy output commitment or encrypted note for withdraw.
 - If there is no exact-match note, the user must first create the desired note size with a shielded self-transfer.
 - Relayed withdraw payload must validate `chain_id`, `recipient`, `expires_at_unix`, and `payload_hash`.
+- Withdraw prover payload, proof, final payload, prover request, prover response, relay schema, and relay handoff are all `v2`; legacy files must be regenerated.
+- `spend_intent_signature_hex` authenticates `SpendIntentV2`. The recipient is hashed from the exact raw decoded address bytes as `SHA-256("clairveil.withdraw-recipient.v1" || u32be(len(bytes)) || bytes)` and split into non-reduced big-endian 128-bit limbs. Do not convert the bytes through a field element or strip leading zeros.
+- The exact spend public-input order is `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `Nullifier`, `Amount`, `RecipientDigestHi`, `RecipientDigestLo`, `AssetID`.
+- `creator` is intentionally replaceable by a relayer; `recipient`, chain, and expiry are proof-bound. Submission at `block_time >= expires_at_unix` fails.
 - Once handed off, a relayed withdraw payload remains submit-capable until expiry; the wallet must not treat local cancellation as proof that the note is reusable.
 - The relayer does not need to know the user's shielded secret.
 
@@ -417,8 +427,8 @@ The current Go-side prover HTTP contract is:
 POST /v1/prover/transfer
 POST /v1/prover/withdraw
 Content-Type: application/json
-request_version: v1
-response_version: v1
+request_version: v2
+response_version: v2
 ```
 
 Error codes are:
@@ -441,6 +451,8 @@ x/privacy/client/sdk/conformance/testdata/privacy_send_capable_reference_flow.js
 ```
 
 Whether the prover is a local daemon or a remote sidecar, it should look like the same adapter from the JS SDK's perspective. A future browser/WASM proving backend should also sit behind the same interface.
+
+The prepared prover payload is authority-equivalent privacy-sensitive witness data even though its final outputs can no longer be changed. Never log or persist it unnecessarily. A prover pool must use one endpoint with no automatic failover by default. Sending the same witness to another endpoint is allowed only after explicit user/product-policy opt-in that names the additional privacy boundary; retries may target the same endpoint.
 
 When connecting a remote prover, enforce request timeout and response validation at the client boundary. The examples and operations profile are:
 
@@ -495,8 +507,10 @@ The JS SDK can currently treat these as stable contracts.
 - mandatory audit disclosure
 - user disclosure policy/mode labels
 - deposit proof requirement for `MsgDeposit`
-- transfer proof request/response version `v1`
-- withdraw proof request/response version `v1`
+- transfer payload `v5` and transfer proof/request/response `v2`
+- withdraw prover/final payload and proof/request/response `v2`
+- disclosure plaintext/query version `v5`
+- active circuit set `privacy-intent-v2` with consensus `CircuitSetIdentity` schema `v1` and manifest schema `v2`
 - prover HTTP paths `/v1/prover/transfer`, `/v1/prover/withdraw`
 - conformance fixture files under `x/privacy/client/sdk/conformance/testdata`
 - note reservation status and operation evidence contract in `privacy_note_reservation_contract.json`
@@ -591,5 +605,5 @@ This example runs a fixture-backed mock prover instead of a live `clairveil-prov
 
 - `fetch` requests use a finite timeout;
 - bearer tokens are sent as `Authorization: Bearer ...`;
-- transfer/withdraw request and response versions are `v1`;
+- transfer/withdraw request, response, and proof versions are `v2`;
 - proof `payload_hash` equals the prepared payload `payload_hash`.

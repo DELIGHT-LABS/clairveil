@@ -87,6 +87,7 @@ clairveild tx privacy deposit 10uclair \
   --from alice \
   --keyring-backend test \
   --chain-id clairveil-local-1 \
+  --expires-in 1800 \
   --gas 2500000 \
   --gas-prices 8500000000uclair \
   --yes \
@@ -149,6 +150,7 @@ Default behavior:
 - User disclosure defaults to `all-private` / `none`.
 - Recipient must be a full `clairs1...` shielded address.
 - `--auto-dummy=true` is the default.
+- The pre-proof summary prints the exact `chain id` and absolute `owner intent expires at unix`. The chain rejects at `block_time >= expires_at_unix`.
 
 ### Selective Disclosure Flags
 
@@ -158,6 +160,7 @@ Default behavior:
 | `--disclosure-mode` | `none`, `public`, `recipient-encrypted` |
 | `--disclosure-pubkey` | Disclosure public key hex for recipient-encrypted mode |
 | `--no-self-view` | Omit sender self-view disclosure |
+| `--expires-in` | Owner-intent validity window in seconds; converted once to an absolute Unix expiry before signing/proving |
 
 Public amount disclosure example:
 
@@ -297,6 +300,8 @@ clairveild tx privacy withdraw 11uclair \
 
 Withdraw currently uses exact-match notes. It does not create an output note or change note. If no spendable note exactly matches the requested amount, the planner tries to create one with a shielded self-transfer by default.
 
+Before proving, the CLI prints the current `chain id` and absolute `spend intent expires at unix`. These, the recipient, amount, asset, root, and nullifier are owner-signed and proof-bound. `creator` remains the fee payer and may be replaced by a relayer.
+
 Main flags:
 
 | Flag | Default | Meaning |
@@ -345,7 +350,9 @@ clairveild tx privacy relay-withdraw out/withdraw-payload.json \
 | `--auto-plan` | `true` | create an exact-match note automatically |
 | `--auto-dummy` | `true` | prepare a dummy note automatically |
 
-Prepared payload JSON is privacy-sensitive data. Production wallets need encrypted storage and expiry/deletion policy.
+The summary prints the resolved absolute expiry and chain ID, and JSON uses the same `expires_at_unix`. Submission at or after that second fails; the relayer cannot extend it. Prepared payload/proof JSON is privacy-sensitive, and the prover payload still contains private note witness even though output/recipient/chain/expiry cannot be changed. Production wallets need encrypted storage and expiry/deletion policy.
+
+Current CLI handoff versions are transfer payload `v5`, transfer proof/prover contract `v2`, withdraw prover/final payload and proof/prover/relay contract `v2`, and disclosure plaintext/query `v5`. Regenerate legacy files.
 
 ## 9. Query
 
@@ -377,7 +384,7 @@ Other queries are available through gRPC/HTTP gateway and generated clients.
 
 ### clairveil-setup
 
-Generates ZK artifacts.
+Generates development ZK artifacts for active set `privacy-intent-v2` and manifest schema `v2`. Generated R1CS/PK/VK binaries are not source artifacts and this command is not a formal trusted setup ceremony.
 
 ```bash
 clairveil-setup --out artifacts/privacy
@@ -403,6 +410,8 @@ clairveil-proverd \
 ```
 
 Follow the remote production profile in [clairveil-proverd-remote-production-profile.md](clairveil-proverd-remote-production-profile.md).
+
+Validator startup compares the local VK hashes/public-input schema hashes to consensus `CircuitSetIdentity` schema `v1`; checksum env values cannot override it. Validators need VK only, while `clairveil-proverd` lazily loads R1CS/PK for proof generation. Prover endpoint failover is off by default and requires explicit privacy opt-in.
 
 ### clairveil-payroll
 

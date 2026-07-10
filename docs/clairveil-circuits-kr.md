@@ -77,13 +77,19 @@ commitment = MiMC(
 
 ### Public input
 
-| 입력         | 의미                                                |
-| ------------ | --------------------------------------------------- |
-| `MerkleRoot` | spend 대상 note가 포함된 historical Merkle root     |
-| `Nullifier`  | 같은 note 재사용을 막기 위한 공개 nullifier         |
-| `Amount`     | withdraw할 amount                                   |
-| `Recipient`  | transparent recipient를 field element로 바인딩한 값 |
-| `AssetID`    | denom을 hash한 asset id                             |
+`SpendIntentV2` public-input 순서는 consensus-critical contract입니다.
+
+| 순서 | 입력 | 의미 |
+| --- | --- | --- |
+| 1 | `MerkleRoot` | spend 대상 note가 포함된 historical Merkle root |
+| 2 | `ChainDomainHi` | chain-domain SHA-256 digest의 상위 128 bit |
+| 3 | `ChainDomainLo` | chain-domain SHA-256 digest의 하위 128 bit |
+| 4 | `ExpiresAtUnix` | proof의 absolute expiry |
+| 5 | `Nullifier` | 같은 note 재사용을 막는 공개 nullifier |
+| 6 | `Amount` | withdraw할 amount |
+| 7 | `RecipientDigestHi` | raw recipient byte digest의 상위 128 bit |
+| 8 | `RecipientDigestLo` | raw recipient byte digest의 하위 128 bit |
+| 9 | `AssetID` | denom을 hash한 asset id |
 
 ### Secret witness
 
@@ -91,15 +97,15 @@ commitment = MiMC(
 | --------------------- | ------------------------------------------------ |
 | `ReceiverSpendPubKey` | note 소유권을 나타내는 shielded spend public key |
 | `ReceiverViewPubKey`  | note 복구/scan에 쓰이는 view public key          |
-| `Signature`           | note 소유자가 withdraw message에 서명했다는 증거 |
+| `Signature`           | note 소유자가 `SpendIntentV2`에 서명했다는 증거 |
 | `Randomness`          | commitment와 nullifier를 만드는 note randomness  |
 | `Path`, `PathHelper`  | commitment leaf에서 root까지의 Merkle path       |
 
 ### 증명하는 것
 
 1. secret note data로 계산한 commitment가 `MerkleRoot` 안에 포함됩니다.
-2. `Signature`가 `ReceiverSpendPubKey`에 대해 유효합니다.
-3. signature message는 `Amount`, `AssetID`, `Randomness`, `Recipient`에 묶입니다.
+2. `Signature`가 `ReceiverSpendPubKey`에 대해 유효하고 `SpendIntentV2`의 chain domain, root, nullifier, amount, asset, recipient digest, expiry를 인증합니다.
+3. Recipient digest는 `SHA-256("clairveil.withdraw-recipient.v1" || u32be(len(raw_recipient_bytes)) || raw_recipient_bytes)`이며 field reduction 없이 big-endian 128-bit limb 두 개로 나눕니다. 따라서 leading-zero byte string이 다른 recipient와 alias되지 않습니다.
 4. `Nullifier = MiMC(Randomness, spend_pubkey_x, spend_pubkey_y)`입니다.
 5. `Amount`가 64-bit shielded amount bound 안에 있습니다.
 6. 즉 같은 note를 다시 쓰면 같은 nullifier가 나오고 keeper가 재사용을 거부할 수 있습니다.
@@ -107,7 +113,8 @@ commitment = MiMC(
 ### 증명하지 않는 것
 
 - transparent recipient 문자열 자체를 회로가 직접 이해하지 않습니다.
-- recipient address decoding, denom string handling, tx signer 검사는 회로 밖 keeper/SDK/CLI 책임입니다.
+- recipient address decoding, raw byte 보존, denom string handling, tx signer 검사, expiry boundary는 회로 밖 keeper/SDK/CLI 책임입니다. Keeper는 `block_time >= expires_at_unix`에서 거부합니다.
+- `creator`는 fee를 내는 tx signer/relayer이며 의도적으로 `SpendIntentV2`에서 제외됩니다. `recipient`는 proof-bound되어 바꿀 수 없습니다.
 - withdraw는 direct change note를 만들지 않습니다. exact-match note 또는 planner가 만든 exact-match note를 사용합니다.
 - withdraw에는 output commitment public input이 없습니다. keeper는 input nullifier를 spent로 표시하고 transparent fund를 release하지만, 새 note leaf를 append하지 않습니다.
 
@@ -126,14 +133,23 @@ outputs = 2
 
 ### Public input
 
-| 입력                    | 의미                                                           |
-| ----------------------- | -------------------------------------------------------------- |
-| `MerkleRoot`            | input note들이 포함된 historical Merkle root                   |
-| `Nullifiers[2]`         | 두 input note의 nullifier                                      |
-| `Commitments[2]`        | 두 output note commitment                                      |
-| `UserPrivacyPolicy`     | user selective disclosure 정책 mask                            |
-| `UserDisclosureDigest`  | user disclosure payload와 output note를 묶는 digest            |
-| `AuditDisclosureDigest` | mandatory audit disclosure payload와 output note를 묶는 digest |
+`TransferIntentV2` public-input 순서는 consensus-critical contract입니다.
+
+| 순서 | 입력 | 의미 |
+| --- | --- | --- |
+| 1 | `MerkleRoot` | input note들이 포함된 historical Merkle root |
+| 2 | `ChainDomainHi` | chain-domain SHA-256 digest의 상위 128 bit |
+| 3 | `ChainDomainLo` | chain-domain SHA-256 digest의 하위 128 bit |
+| 4 | `ExpiresAtUnix` | proof의 absolute expiry |
+| 5 | `Nullifier0` | 첫 번째 ordered input nullifier |
+| 6 | `Nullifier1` | 두 번째 ordered input nullifier |
+| 7 | `Commitment0` | 첫 번째 ordered output commitment |
+| 8 | `Commitment1` | 두 번째 ordered output commitment |
+| 9 | `UserPrivacyPolicy` | user selective-disclosure policy mask |
+| 10 | `UserDisclosureDigest` | 독립 blinding이 들어간 selective-disclosure digest |
+| 11 | `FullDisclosureDigest` | audit/self-view 검증이 공유하는 독립 blinded full digest |
+| 12 | `PayloadDigestHi` | canonical transfer-effect SHA-256 digest의 상위 128 bit |
+| 13 | `PayloadDigestLo` | canonical transfer-effect SHA-256 digest의 하위 128 bit |
 
 ### Secret witness
 
@@ -142,24 +158,29 @@ outputs = 2
 | `AssetID`                                       | transfer asset id              |
 | `InputAmounts[2]`, `InputRandomness[2]`         | input note amount/randomness   |
 | `InputPaths[2]`, `InputPathHelpers[2]`          | 각 input note의 Merkle path    |
-| `InputSignatures[2]`                            | 각 input note 소유권 signature |
+| `OwnerSignature`                                | final `TransferIntentV2`에 대한 단일 signature |
 | `InputSpendPubKeys[2]`, `InputViewPubKeys[2]`   | input note owner key           |
 | `OutputAmounts[2]`, `OutputRandomness[2]`       | output note amount/randomness  |
 | `OutputSpendPubKeys[2]`, `OutputViewPubKeys[2]` | recipient/change note key      |
+| `UserDisclosureBlinding`                        | enabled user disclosure용 독립 non-zero blinding |
+| `FullDisclosureBlinding`                        | audit/self-view full disclosure용 독립 non-zero blinding |
 
 ### 증명하는 것
 
 1. 두 input note commitment가 같은 `MerkleRoot` 안에 포함됩니다.
-2. 두 input signature가 각각 유효합니다.
+2. 두 input의 spend/view owner key가 같고, 그 owner의 `OwnerSignature` 하나가 final `TransferIntentV2`에 대해 유효합니다.
 3. 두 nullifier가 input note randomness와 spend public key에 맞게 계산됩니다.
-4. 두 input note는 같은 shielded owner에 속합니다.
+4. 두 nullifier가 서로 다르고 두 output commitment도 서로 다릅니다.
 5. 두 output commitment가 secret output data와 일치합니다.
 6. `sum(input amounts) = sum(output amounts)`입니다.
 7. 각 input/output amount가 64-bit shielded amount bound 안에 있습니다.
-8. user disclosure가 켜진 경우, policy에 따라 선택된 amount/from/to/asset 정보가 `UserDisclosureDigest`에 묶입니다.
-9. audit disclosure는 항상 full disclosure mask로 계산되어 `AuditDisclosureDigest`에 묶입니다.
+8. user disclosure가 켜진 경우 policy로 선택한 field와 fresh non-zero blinding이 `UserDisclosureDigest`에 묶입니다.
+9. audit/self-view full disclosure는 별도의 fresh non-zero blinding을 사용하고 `FullDisclosureDigest`에 묶입니다.
+10. Ordered nullifier, commitment, ciphertext, view tag, 모든 disclosure envelope, expiry는 서명 전에 확정되고 canonical payload digest를 통해 묶입니다. Relayer가 `creator`만 바꿀 수 있도록 `creator`, proof bytes, fee, gas, memo, sequence, tx signature는 제외됩니다.
 
-현재 format에서 transfer view tag는 `JoinSplitCircuit` public input이 아닙니다. `MsgTransfer`와 event에 실리는 public scan hint이며 message validation에서 byte length만 검증합니다. 따라서 proof-bound note ownership signal로 취급하면 안 됩니다.
+Transfer view tag는 별도 `JoinSplitCircuit` public input은 아니지만 ordered canonical payload digest에는 포함됩니다. `MsgTransfer`와 event에 실리는 public scan hint이며 note ownership signal로 취급하면 안 됩니다.
+
+Chain domain은 `SHA-256("clairveil.chain-domain.v1" || u32be(len(chain_id)) || chain_id || u32be(len(circuit_set_id)) || circuit_set_id)`입니다. SHA-256 digest는 field modulus로 reduce하지 않고 big-endian 128-bit limb 두 개로 나눕니다. SDK는 configured chain에서 계산하고 keeper는 current chain context로 다시 계산합니다. Keeper는 transfer/withdraw 모두 `block_time >= expires_at_unix`에서 거부합니다.
 
 ### User disclosure policy
 
@@ -178,11 +199,11 @@ outputs = 2
 
 회로는 disclosure plaintext를 직접 암호화하지 않습니다. 회로가 보장하는 것은 “선택된 disclosure field들이 digest에 맞게 묶였다”는 점입니다. 실제 encryption, public/recipient/audit delivery, decode UX는 SDK/CLI와 event payload가 담당합니다.
 
-Sender self-view disclosure는 별도 encrypted metadata입니다. Self-view digest/payload는 tx event와 signed message에는 포함되지만, joinsplit circuit public input에는 추가되지 않습니다. Wallet은 sender disclosure private key로 payload를 복호화한 뒤 payload digest와 on-chain `self_view_disclosure_digest`를 비교해야 합니다.
+Sender self-view disclosure는 별도 encrypted metadata입니다. Payload는 signed canonical transfer effect에 포함되고 audit disclosure와 같은 blinded `FullDisclosureDigest`를 사용합니다. Wallet은 복호화한 versioned plaintext에서 blinding을 복원하고 full digest를 다시 계산해 on-chain digest와 비교해야 합니다.
 
 ### Audit disclosure
 
-transfer는 mandatory audit disclosure를 항상 포함해야 합니다. 회로는 full audit disclosure digest를 계산하고, keeper는 message 안의 audit disclosure target pubkey가 chain-configured audit key와 일치하는지 확인합니다.
+transfer는 mandatory audit disclosure를 항상 포함해야 합니다. 회로는 독립 blinding이 들어간 full disclosure digest를 계산하고, keeper는 message 안의 audit disclosure target pubkey가 chain-configured audit key와 일치하는지 확인합니다.
 
 이 구조의 의미는 아래입니다.
 
@@ -192,7 +213,7 @@ transfer는 mandatory audit disclosure를 항상 포함해야 합니다. 회로�
 
 ## 6. Artifact
 
-`clairveil-setup`은 아래 artifact를 생성합니다. Active circuit set은 `privacy-accounting-v2`입니다.
+`clairveil-setup`은 아래 development artifact를 생성합니다. Active circuit set은 `privacy-intent-v2`입니다.
 
 | 파일                         | 의미                               |
 | ---------------------------- | ---------------------------------- |
@@ -222,6 +243,10 @@ source artifacts/privacy/privacy_zk_checksums.env
 export CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict
 ```
 
+`privacy_zk_manifest.json` schema `v2`는 정확한 ordered circuit descriptor, VK SHA-256, public-input schema SHA-256을 기록합니다. Genesis/consensus state는 대응하는 `CircuitSetIdentity` schema `v1`을 고정하며 local checksum environment variable은 이를 override할 수 없습니다. Node는 serving 전에 local verifier identity와 consensus를 비교합니다. Validator는 세 VK만 필요하고 lazy load하며, prover는 proving 시 R1CS/PK를 load합니다. Mismatch는 startup/readiness를 막습니다. Generated R1CS/PK/VK binary와 secret은 commit하지 않습니다.
+
+여기서 생성하는 setup은 development 전용입니다. Session 1은 formal trusted setup, artifact signing ceremony, external audit를 수행하거나 주장하지 않습니다.
+
 ## 7. Reserve accounting query
 
 Circuit soundness는 keeper-level reserve accounting과 함께 검증해야 합니다. Keeper는 denom별 `total_deposited`, `total_withdrawn`을 기록하고, 기대 reserve(`total_deposited - total_withdrawn`)와 실제 privacy module-account balance를 비교합니다.
@@ -248,3 +273,4 @@ GET /clairveil/privacy/v1/reserve/{denom}
 - 회로는 fixed 2-input/2-output transfer 모델입니다.
 - ciphertext delivery 자체는 회로가 직접 증명하지 않고 digest binding과 off-chain verification으로 검증합니다.
 - production 배포에서는 artifact signing, reproducible generation, release provenance가 추가로 필요합니다.
+- Keeper는 cheap canonical Groth16 framing이 통과한 뒤 decode, VK load, pairing 전에 proof verification gas를 precharge합니다. Deposit/spend/joinsplit은 현재 attempt당 각각 `1,000,000` gas를 charge합니다. Cryptographically invalid proof도 full precharge를 소비하고 malformed framing은 소비하지 않습니다.

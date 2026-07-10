@@ -95,7 +95,7 @@ Validation scope:
 
 - audit disclosure key derivation vectors and genesis public key encoding
 - fixture address prefixes
-- prepared transfer payload `v3` hash, including `view_tag_hexes`
+- prepared transfer payload `v5` hash, including chain/expiry, disclosure blindings, owner signature, and `view_tag_hexes`
 - sender self-view disclosure digest/payload fields
 - prepared withdraw payload hash
 - relayed withdraw final payload hash

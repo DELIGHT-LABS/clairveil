@@ -17,7 +17,7 @@ This document assumes there is no live or public state. If external users have a
 | Transfer scan hints | `MsgTransfer.view_tags` are off-circuit 2-byte scan hints. They are not part of the accounting proof. |
 | Signature/point hardening | Uses gnark standard `eddsa.Verify`, point on-curve assertions, and malformed point/scalar negative tests. |
 | Reserve accounting | The keeper exposes a `reserve/{denom}` query comparing denom-level deposit/withdraw totals with module-account balance. |
-| Artifact contract | The active circuit set is `privacy-accounting-v2` and includes deposit/spend/joinsplit artifacts. |
+| Artifact contract | The active circuit set is `privacy-intent-v2` and includes deposit/spend/joinsplit artifacts with consensus-pinned VK/schema identity. |
 
 ## 2. Pre-Public Risk Model
 
@@ -109,7 +109,7 @@ Complete. Transfer/withdraw prover payload contracts keep version/hash verificat
 
 ### Phase 6: Artifact Rotation
 
-Complete. Added the `privacy-accounting-v2` active circuit set id and deposit/spend/joinsplit artifact descriptors. Generated binary artifacts are not committed to the source repo; regenerate them with `clairveil-setup`.
+Superseded by the Session 1 intent hardening. The active set is now `privacy-intent-v2`, with deposit/spend/joinsplit descriptors and consensus-pinned VK/public-input schema hashes. Generated binaries remain untracked and are regenerated with `clairveil-setup`.
 
 ## 5. Client Contract Notes
 
@@ -118,7 +118,7 @@ Clients and downstream SDKs must keep these boundaries:
 - `MsgDeposit` does not support proof-less format.
 - Deposit builders must create note commitment, encrypted note, and `DepositCircuit` proof together.
 - Transfer/withdraw prepared payloads must validate version and payload hash.
-- Transfer builders must include `view_tag_hexes` in transfer payload `v3`, but wallets must treat on-chain `view_tags` as untrusted scan hints.
+- Transfer builders must include ordered `view_tag_hexes` in the signed transfer payload `v5`, but wallets must still treat on-chain `view_tags` as untrusted scan hints rather than ownership evidence.
 - Merkle path helpers must be `0` or `1`.
 - `circuit_config` must check `active_set_id` and artifact descriptors.
 - `reserve/{denom}` should return `invariant_holds=true` after deposit/withdraw flows.
@@ -145,7 +145,7 @@ make release-pack-verify
 Artifact validation:
 
 1. Regenerate deposit/spend/joinsplit R1CS/PK/VK with `clairveil-setup`.
-2. Confirm `privacy_zk_manifest.json` has `active_set_id=privacy-accounting-v2`.
+2. Confirm `privacy_zk_manifest.json` has `active_set_id=privacy-intent-v2` and matches consensus VK/public-input schema hashes.
 3. Use checksum env with strict preflight.
 4. Confirm downstream handoff docs and fixture schema reflect the new contract.
 

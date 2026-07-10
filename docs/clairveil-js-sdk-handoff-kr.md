@@ -61,7 +61,7 @@ MsgWithdraw
 
 `MsgDeposit`에는 `proof` 필드가 있습니다. Client는 `amount`, `asset_id`, `note_commitment`를 binding하는 `DepositCircuit` Groth16 proof를 만들거나 받아와야 하며, proof 없는 deposit은 현재 계약에 포함되지 않습니다.
 
-`MsgTransfer`에는 user disclosure, audit disclosure, sender self-view disclosure 필드가 있습니다. 최신 모델에서 audit disclosure는 선택 기능이 아니라 모든 shielded transfer에 포함되어야 하는 필수 기능입니다. Sender self-view disclosure는 기본으로 포함되며 명시적 opt-out에서만 빠집니다.
+`MsgTransfer`에는 `expires_at_unix`, user disclosure, audit disclosure, sender self-view disclosure 필드가 있습니다. Audit disclosure는 필수이고 sender self-view disclosure는 기본 포함되며 명시적 opt-out에서만 빠집니다. `creator`는 replaceable fee payer/relayer이며 owner intent에서 의도적으로 제외됩니다.
 
 `MsgWithdraw`는 exact-match withdraw 메시지이며 output note 필드를 갖지 않습니다. JS/TS client는 legacy withdraw 필드인 `new_note_commitment`, `encrypted_note`를 모델링하지 말아야 하며, dummy output note 값을 보내지 않아야 합니다.
 
@@ -102,7 +102,7 @@ x/privacy/client/sdk/provider/tx.go
 - `PrivacyEvents`: compatibility와 diagnostics용 raw deposit/transfer event feed를 읽습니다.
 - `AuditConfig`: chain에 설정된 master auditor pubkey를 가져옵니다.
 - `DisclosureConfig`: user disclosure policy/mode와 payload version을 표시합니다.
-- `CircuitConfig`: active circuit set과 artifact checksum 정보를 확인합니다.
+- `CircuitConfig`: consensus `CircuitSetIdentity`, active set, ordered VK hash, public-input schema hash를 읽습니다. Node-local manifest path나 checksum environment variable에서 consensus identity를 추론하지 않습니다.
 - `Reserve`: denom별 privacy module-account balance와 기록된 deposit/withdraw 총량을 비교합니다.
 - `CheckNullifiers`: 여러 note의 spent 상태를 한 번에 갱신합니다. 일반 batch에는 POST JSON body binding을 쓰고, 요청당 1000개로 chunk하며, GET은 작은 compatibility check에만 사용합니다.
 - `CheckNullifier`: batch path를 쓸 수 없을 때 note 1개의 spent 여부를 판단합니다.
@@ -170,7 +170,7 @@ x/privacy/client/sdk/scan/wallet.go
 1. `ScanEvents(after_height, after_sequence, limit, event_types)`로 deposit/transfer output projection을 가져옵니다.
 2. deposit projection의 `encrypted_note`, 또는 transfer projection의 `cipher_text`, `commitment`, `output_index`, `view_tag`를 읽습니다.
 3. Projection을 소비하기 전에 `scan_format_version`, `view_tag_version`을 검증합니다. 지원하지 않는 version이면 raw event path로 fallback하거나 cursor를 전진시키지 않고 중단합니다.
-4. Transfer output은 local 2-byte view tag를 파생합니다. 하지만 tag는 아직 circuit-bound가 아니므로, 안전한 기본값은 tag mismatch에서도 full trial decrypt를 수행해 변조된 hint가 내 note를 숨기지 못하게 하는 것입니다.
+4. Transfer output은 local 2-byte view tag를 파생합니다. Ordered tag는 signed canonical transfer effect에 포함되지만 ownership 증거는 아니므로 안전한 기본값은 tag mismatch에서도 full trial decrypt를 수행하는 것입니다.
 5. `view_tag`는 untrusted optimization으로만 취급합니다. 없거나 형식이 틀리면 full trial decrypt로 fallback합니다. Mismatch output을 건너뛰는 동작은 recovery 또는 forced rescan을 갖춘 명시적 fast mode 정책이어야 합니다.
 6. wallet root seed와 viewing key로 복호화를 시도합니다. view-key 복호화가 실패하면 Go SDK와 호환되는 spend-key compatibility/recovery fallback을 유지합니다.
 7. 복호화에 성공한 note만 wallet DB에 저장합니다.
@@ -262,10 +262,14 @@ x/privacy/client/sdk/transfer/service.go
 - user disclosure는 `none`, `public`, `recipient-encrypted` mode를 지원합니다.
 - sender self-view disclosure는 기본 enabled이며, 명시적 opt-out일 때만 생략합니다.
 - supported policy는 `all-private`, `amount`, `to`, `amount-to`, `from`, `amount-from`, `from-to`, `amount-from-to`입니다.
-- JS SDK가 새로 생성하는 transfer payload version은 반드시 `v3`이고 transfer proof version은 현재 `v1`입니다.
-- Transfer payload `v3`는 prepared payload hash에 `view_tag_hexes`를 포함합니다. 기존 `v1`/`v2` prepared transfer payload는 replay하지 말고 다시 생성해야 합니다.
+- 새 transfer payload는 `v5`, transfer proof와 prover request/response는 `v2`를 사용합니다. 이전 transfer payload/proof/request version은 모두 거부하고 다시 생성해야 합니다.
+- 두 output, ordered ciphertext/view tag, user/audit/self-view envelope, 독립 disclosure blinding, chain ID, absolute expiry를 먼저 확정합니다. 그 다음 canonical transfer effect와 `TransferIntentV2`를 계산하고 정확히 하나의 `owner_signature_hex`를 만듭니다. Per-input note-hash signature는 없습니다.
+- Canonical binary effect는 고정 field 순서와 variable byte의 `u32be(length) || bytes` encoding을 사용합니다. Format version, root, ordered nullifier/commitment/ciphertext/view tag, 모든 disclosure field, expiry를 포함하고 proof, `creator`, fee/gas/memo/sequence/tx signature, digest 자신은 제외합니다. Keeper가 `MsgTransfer`에서 다시 계산합니다.
 - 최종 `MsgTransfer`는 `new_commitments`, `cipher_texts`와 순서가 맞는 정확히 2개의 `view_tags`를 포함해야 합니다.
-- disclosure payload version은 현재 query 기준 `v4`입니다.
+- Disclosure plaintext/query version은 `v5`입니다. Enabled user disclosure와 full audit/self-view disclosure는 서로 독립적인 fresh CSPRNG blinding을 사용합니다. 복호화 후 blinding을 복원해 digest를 재계산해야 하며 decrypt 성공만으로 verified 처리하면 안 됩니다.
+- `expires_at_unix`는 absolute 값이고 chain은 `block_time >= expires_at_unix`에서 거부합니다.
+
+정확한 `JoinSplitCircuit` public-input 순서는 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `Nullifier0`, `Nullifier1`, `Commitment0`, `Commitment1`, `UserPrivacyPolicy`, `UserDisclosureDigest`, `FullDisclosureDigest`, `PayloadDigestHi`, `PayloadDigestLo`입니다. Field를 sort하거나 rename하면 안 됩니다. SHA-256 chain/payload digest는 field reduction 없이 big-endian 128-bit limb 두 개로 나눕니다. Chain domain input은 `"clairveil.chain-domain.v1"`, length-prefixed `chain_id`, length-prefixed `circuit_set_id`(`privacy-intent-v2`) 순서입니다.
 
 Bulk payroll 또는 다른 대량 전송 client에서 쓰는 note reservation은 on-chain protocol이 아니라 client/control-plane layer 계약입니다. Go reference implementation과 fixture는 아래에 있습니다.
 
@@ -290,6 +294,8 @@ self-view disclosure: sender 자신의 disclosure key 대상으로 기본 생성
 ```
 
 Self-view disclosure는 sender가 나중에 자신이 보낸 transfer의 amount/from/to를 볼 수 있게 하는 encrypted payload입니다. On-chain event에는 `self_view_disclosure_digest`와 `self_view_disclosure_payload`만 들어가며, sender의 static disclosure public key는 노출하지 않습니다. JS SDK는 sender disclosure private key로 self-view payload를 trial decrypt하고, payload 안의 digest와 on-chain digest를 검증해야 합니다.
+
+Audit/self-view plaintext는 같은 fresh full-disclosure blinding을 운반하고 `FullDisclosureDigest`에 대해 검증합니다. Optional user disclosure는 별도의 fresh blinding을 사용합니다. Low-entropy plaintext에서 blinding을 derive하거나 transfer/plane 사이에 재사용하면 안 됩니다.
 
 웹월렛 UI는 user disclosure에 대해 최소 아래 선택지를 제공하면 됩니다.
 
@@ -393,6 +399,10 @@ JS SDK가 사용자에게 분명히 보여줘야 하는 제약은 아래입니�
 - `MsgWithdraw`에는 output note 필드가 없습니다. withdraw를 위해 dummy output commitment나 encrypted note를 만들지 마십시오.
 - exact-match note가 없으면 먼저 shielded self-transfer로 원하는 크기의 note를 만들어야 합니다.
 - relayed withdraw payload는 `chain_id`, `recipient`, `expires_at_unix`, `payload_hash`를 검증해야 합니다.
+- Withdraw prover payload, proof, final payload, prover request/response, relay schema/handoff는 모두 `v2`이며 legacy file은 다시 생성해야 합니다.
+- `spend_intent_signature_hex`는 `SpendIntentV2`를 인증합니다. Recipient는 정확한 raw decoded address byte를 `SHA-256("clairveil.withdraw-recipient.v1" || u32be(len(bytes)) || bytes)`로 hash하고 field reduction 없이 big-endian 128-bit limb 두 개로 나눕니다. Byte를 field element로 변환하거나 leading zero를 제거하면 안 됩니다.
+- 정확한 spend public-input 순서는 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `Nullifier`, `Amount`, `RecipientDigestHi`, `RecipientDigestLo`, `AssetID`입니다.
+- `creator`는 relayer가 바꿀 수 있지만 `recipient`, chain, expiry는 proof-bound입니다. `block_time >= expires_at_unix`이면 제출이 실패합니다.
 - relayed withdraw payload는 handoff 후 expiry 전까지 제출 가능하므로, 지갑은 local cancel을 note 재사용 가능 증거로 취급하면 안 됩니다.
 - relayer는 사용자의 shielded secret을 알 필요가 없습니다.
 
@@ -415,8 +425,8 @@ Browser SDK
 POST /v1/prover/transfer
 POST /v1/prover/withdraw
 Content-Type: application/json
-request_version: v1
-response_version: v1
+request_version: v2
+response_version: v2
 ```
 
 error code는 아래입니다.
@@ -439,6 +449,8 @@ x/privacy/client/sdk/conformance/testdata/privacy_send_capable_reference_flow.js
 ```
 
 Prover가 local daemon이든 remote sidecar든 JS SDK 입장에서는 같은 adapter로 보이게 해야 합니다. 브라우저에서 직접 proving을 하는 wasm backend를 나중에 붙이더라도 같은 interface 뒤에 넣는 것이 좋습니다.
+
+Final output을 더는 바꿀 수 없더라도 prepared prover payload는 authority-equivalent privacy-sensitive witness data입니다. 불필요하게 log/persist하지 않습니다. Prover pool은 기본 single endpoint/no automatic failover여야 합니다. 같은 witness를 다른 endpoint로 보내는 것은 추가 privacy boundary를 명시한 user/product-policy opt-in 후에만 허용하고 retry는 같은 endpoint에 할 수 있습니다.
 
 Remote prover를 붙일 때는 request timeout과 response validation을 client boundary에서 강제해야 합니다. 예제와 운영 profile은 아래에 있습니다.
 
@@ -493,8 +505,10 @@ JS SDK handoff가 완료되었다고 보려면 아래가 가능해야 합니다.
 - mandatory audit disclosure
 - user disclosure policy/mode label
 - `MsgDeposit` deposit proof requirement
-- transfer proof request/response version `v1`
-- withdraw proof request/response version `v1`
+- transfer payload `v5`, transfer proof/request/response `v2`
+- withdraw prover/final payload와 proof/request/response `v2`
+- disclosure plaintext/query version `v5`
+- active circuit set `privacy-intent-v2`, consensus `CircuitSetIdentity` schema `v1`, manifest schema `v2`
 - prover HTTP path `/v1/prover/transfer`, `/v1/prover/withdraw`
 - conformance fixture files under `x/privacy/client/sdk/conformance/testdata`
 - `privacy_note_reservation_contract.json`의 note reservation status와 operation evidence contract
@@ -589,5 +603,5 @@ npm --prefix examples/js-sdk-prover-http-client run demo
 
 - `fetch` request에 finite timeout을 겁니다.
 - bearer token을 `Authorization: Bearer ...`로 전달합니다.
-- transfer/withdraw request와 response version이 `v1`인지 확인합니다.
+- transfer/withdraw request, response, proof version이 `v2`인지 확인합니다.
 - proof `payload_hash`가 prepared payload `payload_hash`와 같은지 확인합니다.

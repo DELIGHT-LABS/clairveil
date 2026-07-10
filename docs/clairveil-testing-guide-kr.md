@@ -93,7 +93,7 @@ npm --prefix examples/clairveil-dapp run test:clairveiljs
 
 - audit disclosure key derivation vector와 genesis public key encoding
 - fixture address prefix
-- `view_tag_hexes`를 포함한 prepared transfer payload `v3` hash
+- chain/expiry, disclosure blinding, owner signature, `view_tag_hexes`를 포함한 prepared transfer payload `v5` hash
 - sender self-view disclosure digest/payload field
 - prepared withdraw payload hash
 - relayed withdraw final payload hash

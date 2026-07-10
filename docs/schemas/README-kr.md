@@ -22,7 +22,7 @@ repo의 예제 validator는 실행 부담을 줄이기 위해 dependency-free su
 
 - browser signer/root seed derivation fixture shape
 - wallet readonly address, view key, disclosure, scan fixture
-- prepared transfer prover payload `v3` shape, `view_tag_hexes`, sender self-view disclosure field
+- prepared transfer prover payload `v5` shape, final owner intent, disclosure blinding, `view_tag_hexes`, sender self-view disclosure field
 - prepared withdraw prover payload shape
 - final prepared withdraw payload shape
 - relay withdraw handoff request와 relayer `MsgWithdraw` mapping shape

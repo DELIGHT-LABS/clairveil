@@ -114,7 +114,7 @@ JS/TS SDK와 web wallet 팀은 아래를 확인합니다.
 2. `docs/schemas/clairveil-js-wallet-contract.schema.json`으로 fixture shape를 검증합니다.
 3. `x/privacy/client/sdk/conformance/testdata` fixture를 SDK CI에 포함합니다.
 4. `examples/js-sdk-fixture-validator`의 payload hash 재계산, relay withdraw handoff mapping, route/version 확인, scan fixture check, note reservation status/transition/evidence check, prefix check를 SDK 테스트로 옮깁니다.
-5. Release 전 `ScanEvents` cursor sync, empty-page/`has_more` 처리, `CheckNullifiers` batch spent refresh, transfer payload `v3`/`view_tag_hexes`, 최종 `MsgTransfer.view_tags`, 안전한 view-tag mismatch fallback을 구현합니다.
+5. Release 전 `ScanEvents` cursor sync, empty-page/`has_more` 처리, `CheckNullifiers` batch spent refresh, transfer payload `v5`/owner intent/`view_tag_hexes`, 최종 `MsgTransfer.view_tags`, 안전한 view-tag mismatch fallback을 구현합니다.
 6. `examples/js-sdk-prover-http-client`의 timeout, bearer auth, payload hash equality check를 prover adapter 구현에 반영합니다.
 7. wallet note cache, root seed derived secret, viewing key, disclosure key, prepared payload/proof JSON은 privacy-sensitive data로 분류하고 plaintext browser storage에 남기지 않습니다.
 8. remote prover를 쓰는 경우 prover가 알 수 있는 metadata와 trust boundary를 사용자 UX와 threat model에 반영합니다.

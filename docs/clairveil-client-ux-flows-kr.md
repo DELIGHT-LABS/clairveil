@@ -13,7 +13,7 @@ English version: [clairveil-client-ux-flows.md](clairveil-client-ux-flows.md)
 3. Client가 root signing message 서명을 요청합니다.
 4. Shielded identity와 disclosure key를 파생합니다.
 5. 최신 tree state와 wallet scan event를 sync합니다.
-6. Shielded address와 spendable balance를 표시합니다.
+6. Consensus `privacy-intent-v2` circuit identity를 확인하고 shielded address와 spendable balance를 표시합니다.
 
 필수 상태:
 
@@ -73,10 +73,11 @@ English version: [clairveil-client-ux-flows.md](clairveil-client-ux-flows.md)
 5. Spendable note와 dummy input 필요 여부를 계산합니다.
 6. Sender self-view disclosure를 기본 포함하고, 사용자가 명시적으로 끈 경우에만 제외합니다.
 7. Prepared transfer payload를 만듭니다.
-8. Prover에서 proof를 생성합니다.
-9. `MsgTransfer`를 broadcast합니다.
-10. Event scan으로 recipient/change note 상태를 갱신합니다.
-11. Disclosure report를 검증합니다.
+8. Chain ID, absolute expiry, recipient/change effect, disclosure plane을 표시하고 확정한 뒤 owner-intent signature 하나를 만듭니다.
+9. Prover에서 proof를 생성합니다.
+10. `MsgTransfer`를 broadcast합니다.
+11. Event scan으로 recipient/change note 상태를 갱신합니다.
+12. Disclosure report를 검증합니다.
 
 필수 UX:
 
@@ -86,6 +87,8 @@ English version: [clairveil-client-ux-flows.md](clairveil-client-ux-flows.md)
 - sender self-view가 기본 포함되며, 끄면 보낸 transfer 상세 복구가 제한된다는 안내
 - prover 진행률 또는 대기 상태
 - prover timeout/cancel/retry
+- 다른 prover로 automatic switch하지 않으며 witness 공유 boundary 확장은 명시적 경고와 opt-in 필요
+- `block_time >= expires_at_unix`이면 만료되므로 기존 payload expiry를 연장하지 말고 rebuild/re-sign
 - tx broadcast 전 최종 확인
 
 Disclosure plaintext를 표시할 때는 반드시 digest verification 결과를 함께 보여줘야 합니다.
@@ -111,6 +114,7 @@ Disclosure plaintext를 표시할 때는 반드시 digest verification 결과를
 - exact-match note 없음
 - recipient address invalid
 - payload expired
+- chain/circuit identity mismatch
 - historical root 없음
 - nullifier already spent
 - proof verification 실패
@@ -128,8 +132,11 @@ Disclosure plaintext를 표시할 때는 반드시 digest verification 결과를
 - relayer는 user shielded secret을 알 필요가 없다는 안내
 - payload expiry 표시
 - recipient 변경 불가 안내
+- `creator`는 fee payer relayer라 바뀔 수 있지만 recipient, chain, expiry는 바뀌지 않는다는 안내
 - handoff 이후 relayer는 expiry 전까지 제출할 수 있으며 local cancel 또는 reservation release가 payload를 무효화하지 않는다는 안내
+- `block_time >= expires_at_unix`는 expired이며 wallet/relayer 모두 연장할 수 없다는 안내
 - prepared payload/proof JSON이 privacy-sensitive data라는 경고
+- output을 redirect할 수 없더라도 prover payload가 private note witness를 노출한다는 경고
 
 ## 7. Disclosure Review
 
@@ -137,7 +144,7 @@ Disclosure plaintext를 표시할 때는 반드시 digest verification 결과를
 2. Client가 disclosure event를 찾습니다.
 3. Disclosure plane을 선택하거나 자동 감지합니다.
 4. 필요하면 disclosure private key로 decrypt합니다.
-5. Digest를 recompute해서 on-chain digest와 비교합니다.
+5. Versioned plaintext의 blinding을 복원하고 독립 blinded user/full digest를 recompute해서 on-chain digest와 비교합니다.
 6. verified 결과와 disclosed fields를 표시합니다.
 
 지원해야 하는 plane:
@@ -158,7 +165,8 @@ Disclosure plaintext를 표시할 때는 반드시 digest verification 결과를
 | --- | --- | --- |
 | note scan 실패 | shielded balance가 최신이 아닐 수 있음 | retry, endpoint 변경, rescan |
 | local cache 손상 | local note DB를 신뢰할 수 없음 | backup 후 reset/rescan |
-| prover timeout | proof 생성이 끝나지 않음 | retry, local/remote prover 전환 |
+| prover timeout | proof 생성이 끝나지 않음 | 같은 endpoint retry 또는 rebuild, 다른 endpoint는 explicit privacy opt-in 후에만 사용 |
+| circuit identity mismatch | local verifier/prover artifact가 consensus와 다름 | 중단 후 exact `privacy-intent-v2` artifact 설치, restart/rescan |
 | payload expired | relayed payload가 더 이상 유효하지 않음 | 새 payload 생성 |
 | disclosure verification 실패 | payload를 사실로 신뢰할 수 없음 | verified=false 표시, 원문 숨김 또는 경고 |
 | exact-match withdraw note 없음 | withdraw 가능한 동일 금액 note가 없음 | shielded self-transfer 또는 planner flow로 note 크기 맞춤 |
