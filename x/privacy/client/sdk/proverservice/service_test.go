@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -15,7 +16,7 @@ import (
 
 type stubTransferProver struct{}
 
-func (stubTransferProver) ProveTransfer(request privacyprovertransport.TransferProofRequest) (*privacyprovertransport.TransferProofResponse, error) {
+func (stubTransferProver) ProveTransfer(request privacyprovertransport.TransferProofRequest, _ time.Time) (*privacyprovertransport.TransferProofResponse, error) {
 	return nil, fmt.Errorf("unexpected proof request: %s", request.Version)
 }
 

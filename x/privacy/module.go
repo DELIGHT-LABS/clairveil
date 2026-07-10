@@ -20,6 +20,7 @@ import (
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/client/cli"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/keeper"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/types"
+	"github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
 )
 
 var (
@@ -38,7 +39,11 @@ func (AppModuleBasic) RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 }
 
 func (AppModuleBasic) DefaultGenesis(cdc codec.JSONCodec) json.RawMessage {
-	return cdc.MustMarshalJSON(types.DefaultGenesis())
+	identity, err := zk.LoadLocalCircuitSetIdentity()
+	if err != nil {
+		panic(fmt.Errorf("load default privacy circuit identity: %w", err))
+	}
+	return cdc.MustMarshalJSON(types.DefaultGenesis(identity))
 }
 
 func (AppModuleBasic) ValidateGenesis(cdc codec.JSONCodec, config client.TxEncodingConfig, bz json.RawMessage) error {

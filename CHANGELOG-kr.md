@@ -23,3 +23,6 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 - bounded shielded amount, deposit binding proof, reserve accounting query, ZK artifact contract 갱신을 포함한 privacy accounting hardening update를 추가했습니다.
 - note scan 최적화 계약을 추가했습니다. 여기에는 cursor 기반 `scan_events`, batch `nullifiers`, `view_tag_hexes`를 포함한 transfer payload `v3`, `MsgTransfer.view_tags`가 포함됩니다.
 - scan cursor 저장, empty page 처리, 안전한 view-tag mismatch fallback, proto/schema/fixture 재생성 등 downstream migration 요구사항을 문서화했습니다.
+- Transfer authorization contract를 prepared payload/disclosure plaintext `v5`, prover request/response/proof `v2`로 교체하고 chain ID, absolute expiry, final owner intent, canonical signature/point decoding, disclosure blinding을 추가했습니다. Legacy payload는 다시 생성해야 합니다.
+- Consensus에 고정되는 circuit-set/verifier identity, manifest-authoritative artifact checksum, proof verification gas bound, global nullifier/commitment collision 검증, privacy boundary를 넓히는 multi-prover failover의 명시적 opt-in을 추가했습니다.
+- Breaking deployment requirement: `privacy-intent-v2`는 legacy chain-state migration을 포함하지 않습니다. 기존 개발 체인은 새 consensus `CircuitSetIdentity`를 포함한 fresh genesis를 사용하거나 reset/reinitialize해야 하며 cached proof job, prepared payload, wallet note/reservation cache, 기존 R1CS/PK/VK/manifest artifact를 폐기해야 합니다. 별도 migration을 설계하지 않은 기존 production chain에는 in-place upgrade하지 마십시오.

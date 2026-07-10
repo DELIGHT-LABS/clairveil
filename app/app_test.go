@@ -1,6 +1,10 @@
 package app
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	dbm "github.com/cosmos/cosmos-db"
@@ -15,6 +19,8 @@ import (
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	clairveiltypes "github.com/DELIGHT-LABS/clairveil/types"
+	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
+	privacyzk "github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
 )
 
 type testAppOptions map[string]any
@@ -25,6 +31,7 @@ func (opts testAppOptions) Get(key string) any {
 
 func TestDefaultGenesisUsesClairveilDenom(t *testing.T) {
 	clairveiltypes.SetConfig()
+	configureTestPrivacyManifest(t)
 
 	app := NewClairveilApp(log.NewNopLogger(), dbm.NewMemDB(), nil, false, testAppOptions{})
 	genesis := app.DefaultGenesis()
@@ -59,4 +66,22 @@ func TestDefaultGenesisUsesClairveilDenom(t *testing.T) {
 	require.Equal(t, uint32(0), metadata.DenomUnits[0].Exponent)
 	require.Equal(t, "clair", metadata.DenomUnits[1].Denom)
 	require.Equal(t, uint32(clairveiltypes.DefaultDenomPrecision), metadata.DenomUnits[1].Exponent)
+
+	var privacyState privacytypes.GenesisState
+	app.AppCodec().MustUnmarshalJSON(genesis[privacytypes.ModuleName], &privacyState)
+	require.NoError(t, privacyState.Validate())
+}
+
+func configureTestPrivacyManifest(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	checksums := make(map[string]string)
+	for _, descriptor := range privacyzk.DefaultArtifactDescriptors() {
+		checksums[descriptor.ChecksumEnv] = strings.Repeat("a", 64)
+	}
+	manifest := privacyzk.ManifestFromChecksums(dir, "", checksums)
+	manifestBytes, err := json.Marshal(manifest)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, privacyzk.ArtifactManifestFile), manifestBytes, 0o600))
+	t.Setenv(privacyzk.ZKArtifactDirEnv, dir)
 }

@@ -109,6 +109,9 @@ func ComputeExpectedDisclosureDigest(payload *Payload) (string, *VerificationRep
 	if payload.Version != PayloadVersion {
 		return "", nil, fmt.Errorf("unsupported disclosure payload version %q (expected %q)", payload.Version, PayloadVersion)
 	}
+	if err := validatePayloadSemantics(payload); err != nil {
+		return "", nil, err
+	}
 
 	commitmentBytes, err := privacyfield.DecodeCanonicalHex(payload.CommitmentHex, "commitment")
 	if err != nil {
@@ -172,7 +175,7 @@ func ComputeExpectedDisclosureDigest(payload *Payload) (string, *VerificationRep
 			blinding,
 		)
 		return expectedDigestHex, verification, err
-	case "", PlaneUser:
+	case PlaneUser:
 		expectedDigestHex, err := privacytypes.ComputeTransferDisclosureDigestHex(
 			payload.Policy,
 			payload.OutputIndex,
@@ -203,9 +206,9 @@ func DisclosureAmountAndAsset(payload *Payload) (*big.Int, *big.Int, error) {
 		return nil, nil, fmt.Errorf("amount disclosure payload must include amount, asset_id_hex, and asset_denom together")
 	}
 
-	amount, ok := new(big.Int).SetString(strings.TrimSpace(payload.Amount), 10)
-	if !ok {
-		return nil, nil, fmt.Errorf("invalid disclosure amount %q", payload.Amount)
+	amount, err := privacytypes.ParseCanonicalShieldedAmount("disclosure amount", payload.Amount)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	assetIDBytes, err := privacyfield.DecodeCanonicalHex(payload.AssetIDHex, "asset id")
@@ -219,6 +222,53 @@ func DisclosureAmountAndAsset(payload *Payload) (*big.Int, *big.Int, error) {
 	}
 
 	return amount, assetID, nil
+}
+
+func validatePayloadSemantics(payload *Payload) error {
+	if payload.OutputIndex != privacytypes.TransferDisclosureRecipientOutputIndex {
+		return fmt.Errorf("unsupported disclosure output_index %d (expected %d)", payload.OutputIndex, privacytypes.TransferDisclosureRecipientOutputIndex)
+	}
+
+	amountPresent := payload.Amount != "" || payload.AssetIDHex != "" || payload.AssetDenom != ""
+	fromPresent := payload.FromShieldedAddress != ""
+	toPresent := payload.ToShieldedAddress != ""
+
+	switch payload.Plane {
+	case PlaneUser:
+		if payload.Policy == privacytypes.TransferPrivacyPolicyAllPrivate {
+			return fmt.Errorf("user disclosure payload cannot use the all-private policy")
+		}
+		if err := requireDisclosureField("amount", amountPresent, payload.Policy&privacytypes.TransferPrivacyPolicyDiscloseAmount != 0); err != nil {
+			return err
+		}
+		if err := requireDisclosureField("from_shielded_address", fromPresent, payload.Policy&privacytypes.TransferPrivacyPolicyDiscloseFrom != 0); err != nil {
+			return err
+		}
+		if err := requireDisclosureField("to_shielded_address", toPresent, payload.Policy&privacytypes.TransferPrivacyPolicyDiscloseTo != 0); err != nil {
+			return err
+		}
+	case PlaneAudit, PlaneSelfView:
+		if payload.Policy != privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom {
+			return fmt.Errorf("%s disclosure payload must use the full disclosure policy", payload.Plane)
+		}
+		if !amountPresent || !fromPresent || !toPresent {
+			return fmt.Errorf("%s disclosure payload must include amount, sender, and recipient fields", payload.Plane)
+		}
+	default:
+		return fmt.Errorf("unsupported disclosure payload plane %q", payload.Plane)
+	}
+
+	return nil
+}
+
+func requireDisclosureField(name string, present, required bool) error {
+	if required && !present {
+		return fmt.Errorf("user disclosure policy requires %s", name)
+	}
+	if !required && present {
+		return fmt.Errorf("user disclosure policy does not authenticate %s", name)
+	}
+	return nil
 }
 
 func DisclosedFields(payload *Payload) []string {

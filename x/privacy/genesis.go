@@ -44,7 +44,14 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 
 // ExportGenesis returns the module's exported genesis.
 func ExportGenesis(ctx sdk.Context, k keeper.Keeper) *types.GenesisState {
-	genesis := types.DefaultGenesis()
+	identity, found, err := k.GetCircuitSetIdentity(ctx)
+	if err != nil {
+		panic(fmt.Errorf("failed to export privacy circuit identity: %w", err))
+	}
+	if !found {
+		panic("failed to export privacy circuit identity: identity is missing")
+	}
+	genesis := types.DefaultGenesis(identity)
 
 	commitments, err := k.ExportGenesisCommitments(ctx)
 	if err != nil {
@@ -65,13 +72,5 @@ func ExportGenesis(ctx sdk.Context, k keeper.Keeper) *types.GenesisState {
 	genesis.HistoricalRoots = historicalRoots
 	genesis.Nullifiers = nullifiers
 	genesis.AuditMasterPubkey = k.GetAuditMasterPubkey(ctx)
-	identity, found, err := k.GetCircuitSetIdentity(ctx)
-	if err != nil {
-		panic(fmt.Errorf("failed to export privacy circuit identity: %w", err))
-	}
-	if found {
-		genesis.CircuitSetIdentity = identity
-	}
-
 	return genesis
 }

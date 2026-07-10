@@ -92,10 +92,12 @@ message MsgTransfer {
   bytes self_view_disclosure_digest = 15;
   bytes self_view_disclosure_payload = 16;
 
-  // Per-output scan performance tags. Tags are not circuit-bound in this
-  // format version; wallets must treat them as untrusted hints. Safe default
-  // scans must full-decrypt on tag mismatch; explicit fast modes may skip
-  // well-formed mismatches only when recovery/rescan policy is in place.
+  // Per-output scan performance tags. The exact tag bytes are bound to the
+  // owner-authorized payload digest and proof, but the circuit does not
+  // constrain their derivation from encrypted-output key material. Wallets
+  // must treat ownership semantics as untrusted hints. Safe default scans must
+  // full-decrypt on tag mismatch; explicit fast modes may skip well-formed
+  // mismatches only when recovery/rescan policy is in place.
   repeated bytes view_tags = 17;
 
   // Absolute authorization expiry. The owner signature and proof bind this

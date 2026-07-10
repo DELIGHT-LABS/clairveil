@@ -129,7 +129,7 @@ If the raw `provertransport.HTTPHandler` is attached directly to a public server
 A remote prover lazily reads proving keys and R1CS artifacts; validators need only VK files. The active set is `privacy-intent-v2`. `privacy_zk_manifest.json` schema `v2` must exactly match consensus `CircuitSetIdentity` schema `v1`, including ordered circuit descriptors, VK SHA-256, and public-input schema SHA-256. Environment checksum values cannot override consensus identity, and mismatch must fail startup/readiness. In production:
 
 - use `CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict`;
-- deploy `privacy_zk_manifest.json` or checksum env with release artifacts;
+- deploy the required `privacy_zk_manifest.json` with release artifacts; checksum env values may add consistency checks but cannot replace the structured manifest;
 - mount the artifact directory as read-only;
 - record circuit source commit, generation command, checksum, and signer for artifact releases;
 - block stale artifact and chain verifier artifact mismatch at the release gate.

@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 
@@ -17,6 +18,7 @@ import (
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
+	privacyzk "github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
 )
 
 const (
@@ -510,6 +512,16 @@ func ValidatePreparedTransferPayloadMetadata(payload PreparedTransferPayload) er
 	return nil
 }
 
+func ValidatePreparedTransferPayloadMetadataAt(payload PreparedTransferPayload, now time.Time) error {
+	if err := ValidatePreparedTransferPayloadMetadata(payload); err != nil {
+		return err
+	}
+	if now.Unix() >= payload.ExpiresAtUnix {
+		return fmt.Errorf("transfer payload expired; regenerate it before requesting a proof")
+	}
+	return nil
+}
+
 func validatePreparedTransferPayloadVersion(payload PreparedTransferPayload) error {
 	switch payload.Version {
 	case PreparedTransferPayloadVersion:
@@ -560,8 +572,35 @@ func BuildPreparedTransferProof(
 	artifacts JoinSplitArtifactProvider,
 	runner JoinSplitProofRunner,
 ) (*PreparedTransferProof, error) {
+	return buildPreparedTransferProofWithClock(payload, artifacts, runner, time.Now)
+}
+
+func BuildPreparedTransferProofAt(
+	payload PreparedTransferPayload,
+	artifacts JoinSplitArtifactProvider,
+	runner JoinSplitProofRunner,
+	now time.Time,
+) (*PreparedTransferProof, error) {
+	return buildPreparedTransferProofWithClock(payload, artifacts, runner, func() time.Time { return now })
+}
+
+func buildPreparedTransferProofWithClock(
+	payload PreparedTransferPayload,
+	artifacts JoinSplitArtifactProvider,
+	runner JoinSplitProofRunner,
+	now func() time.Time,
+) (*PreparedTransferProof, error) {
+	if now == nil {
+		now = time.Now
+	}
+	if err := ValidatePreparedTransferPayloadMetadataAt(payload, now()); err != nil {
+		return nil, err
+	}
 	proofBytes, err := ProvePreparedTransferPayload(payload, artifacts, runner)
 	if err != nil {
+		return nil, err
+	}
+	if err := ValidatePreparedTransferPayloadMetadataAt(payload, now()); err != nil {
 		return nil, err
 	}
 
@@ -573,17 +612,25 @@ func BuildPreparedTransferProof(
 }
 
 func ValidatePreparedTransferProof(payload PreparedTransferPayload, proof PreparedTransferProof) error {
+	return ValidatePreparedTransferProofAt(payload, proof, time.Now())
+}
+
+func ValidatePreparedTransferProofAt(payload PreparedTransferPayload, proof PreparedTransferProof, now time.Time) error {
 	if proof.Version != PreparedTransferProofVersion {
 		return fmt.Errorf("unsupported transfer proof version %q (expected %q)", proof.Version, PreparedTransferProofVersion)
 	}
-	if err := ValidatePreparedTransferPayloadMetadata(payload); err != nil {
+	if err := ValidatePreparedTransferPayloadMetadataAt(payload, now); err != nil {
 		return err
 	}
 	if proof.PayloadHash == "" || proof.PayloadHash != payload.PayloadHash {
 		return fmt.Errorf("transfer proof payload hash mismatch")
 	}
-	if _, err := hex.DecodeString(proof.ProofHex); err != nil {
+	proofBytes, err := hex.DecodeString(proof.ProofHex)
+	if err != nil {
 		return fmt.Errorf("invalid transfer proof hex: %w", err)
+	}
+	if err := privacyzk.ValidateCanonicalProofBN254(proofBytes); err != nil {
+		return fmt.Errorf("invalid transfer proof encoding: %w", err)
 	}
 	return nil
 }
@@ -617,7 +664,11 @@ func (p PreparedTransferProof) WriteJSONFile(path string) error {
 }
 
 func (p PreparedTransferPayload) ToMsg(proof PreparedTransferProof) (*privacytypes.MsgTransfer, error) {
-	if err := ValidatePreparedTransferProof(p, proof); err != nil {
+	return p.ToMsgAt(proof, time.Now())
+}
+
+func (p PreparedTransferPayload) ToMsgAt(proof PreparedTransferProof, now time.Time) (*privacytypes.MsgTransfer, error) {
+	if err := ValidatePreparedTransferProofAt(p, proof, now); err != nil {
 		return nil, err
 	}
 

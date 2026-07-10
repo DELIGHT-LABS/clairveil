@@ -19,9 +19,9 @@ Items 1-5 in this document are included in the current implementation. Item 6, s
 
 - Core queries provide a `ScanEvents` cursor projection and a `CheckNullifiers` batch spent query.
 - The SDK scan service prefers `ScanEvents` and `CheckNullifiers` when available, while keeping the previous provider path as a fallback.
-- Transfer payloads use `v3`, and `view_tag_hexes` is included in the prepared payload hash.
+- Transfer payloads use `v5`, and `view_tag_hexes` is included in the owner-authorized prepared payload hash.
 - `MsgTransfer.view_tags` and the transfer event attributes `view_tag_1` and `view_tag_2` are aligned with encrypted outputs by output index.
-- View tags are not circuit-bound yet, so wallets must use them only as local decrypt optimization hints.
+- Exact view-tag bytes are bound to the owner-authorized payload digest and proof, but their derivation is not circuit-constrained, so wallets must use them only as local decrypt optimization hints.
 
 ## Design Philosophy
 
@@ -90,7 +90,7 @@ Expected effect:
 
 ### 4. Privacy-Safe Per-Note View Tag
 
-Add a 2-byte `view_tag` to each transfer output. In this implementation the tag is not bound to the proof/circuit.
+Add a 2-byte `view_tag` to each transfer output. In this implementation its exact bytes are bound to the owner-authorized payload digest and proof, while the circuit does not constrain the tag derivation from encrypted-output key material.
 
 Requirements:
 
@@ -99,7 +99,7 @@ Requirements:
 - Each tag is exactly 2 bytes.
 - Events record `view_tag_1` and `view_tag_2`.
 - The scan projection includes the output-level `view_tag`.
-- Safe default wallet scan must full trial decrypt even on tag mismatch. Since the tag is not proof/circuit-bound yet, a bad hint must not be able to hide an owned note.
+- Safe default wallet scan must full trial decrypt even on tag mismatch. Since the tag's ownership derivation is not circuit-constrained, a bad hint must not be able to hide an owned note.
 - Skipping mismatch outputs is allowed only as an explicit fast mode chosen by a client that also has recovery/rescan policy.
 - If the tag is missing or malformed, the wallet uses the existing trial decrypt recovery/fallback path.
 - Forced rescan or rollback recovery ignores tag mismatches and runs full trial decrypt.
@@ -155,7 +155,7 @@ Reason for exclusion:
 
 ### 7. Proof-Bound Tag
 
-Binding the view tag into circuit public inputs is excluded from this scope.
+Constraining the view-tag derivation directly in the circuit is excluded from this scope.
 
 Reason for exclusion:
 

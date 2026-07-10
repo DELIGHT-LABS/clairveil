@@ -265,10 +265,12 @@ type MsgTransfer struct {
 	// public key is intentionally omitted to avoid sender clustering.
 	SelfViewDisclosureDigest  []byte `protobuf:"bytes,15,opt,name=self_view_disclosure_digest,json=selfViewDisclosureDigest,proto3" json:"self_view_disclosure_digest,omitempty"`
 	SelfViewDisclosurePayload []byte `protobuf:"bytes,16,opt,name=self_view_disclosure_payload,json=selfViewDisclosurePayload,proto3" json:"self_view_disclosure_payload,omitempty"`
-	// Per-output scan performance tags. Tags are not circuit-bound in this
-	// format version; wallets must treat them as untrusted hints. Safe default
-	// scans must full-decrypt on tag mismatch; explicit fast modes may skip
-	// well-formed mismatches only when recovery/rescan policy is in place.
+	// Per-output scan performance tags. The exact tag bytes are bound to the
+	// owner-authorized payload digest and proof, but the circuit does not
+	// constrain their derivation from encrypted-output key material. Wallets
+	// must treat ownership semantics as untrusted hints. Safe default scans must
+	// full-decrypt on tag mismatch; explicit fast modes may skip well-formed
+	// mismatches only when recovery/rescan policy is in place.
 	ViewTags [][]byte `protobuf:"bytes,17,rep,name=view_tags,json=viewTags,proto3" json:"view_tags,omitempty"`
 	// Absolute authorization expiry. The owner signature and proof bind this
 	// value; the transaction is expired when block_time >= expires_at_unix.

@@ -65,6 +65,14 @@ ls ~/clairveil-privacy-walkthrough/artifacts
 - `privacy_joinsplit_pk.bin`
 - `privacy_joinsplit_vk.bin`
 
+Genesis를 생성하거나 검증하는 명령을 실행하기 전에 방금 만든 artifact 위치와 checksum을 적용합니다. 이후 walkthrough가 끝날 때까지 이 환경 변수를 export한 상태로 유지합니다.
+
+```bash
+set -a
+source ~/clairveil-privacy-walkthrough/artifacts/privacy_zk_checksums.env
+set +a
+```
+
 ## 4. transparent 계정 생성
 
 ```bash
@@ -180,7 +188,7 @@ PY
 
 ## 10. 노드 시작
 
-zk artifact checksum env를 적용하고 preflight를 strict로 둡니다.
+zk artifact checksum env를 다시 적용하고 preflight를 strict로 둡니다.
 
 ```bash
 set -a

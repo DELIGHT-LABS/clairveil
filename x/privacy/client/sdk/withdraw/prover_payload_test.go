@@ -39,6 +39,18 @@ func TestBuildPreparedWithdrawProverPayloadAndProofRoundTrip(t *testing.T) {
 	require.Equal(t, input.Recipient.String(), finalPayload.Recipient)
 }
 
+func TestValidatePreparedWithdrawProofRejectsEmptyProof(t *testing.T) {
+	input, source, planner, merklePaths, signer, artifacts, runner := testBuildPreparedWithdrawProverPayloadDeps(t)
+	result, err := BuildPreparedWithdrawProverPayload(context.Background(), source, planner, merklePaths, signer, input)
+	require.NoError(t, err)
+	proof, err := BuildPreparedWithdrawProof(*result.Payload, artifacts, runner)
+	require.NoError(t, err)
+
+	proof.ProofHex = ""
+	err = ValidatePreparedWithdrawProof(*result.Payload, *proof, time.Now())
+	require.ErrorContains(t, err, "proof must be exactly")
+}
+
 func TestValidatePreparedWithdrawProverPayloadMetadataRejectsHashMismatch(t *testing.T) {
 	input, source, planner, merklePaths, signer, _, _ := testBuildPreparedWithdrawProverPayloadDeps(t)
 

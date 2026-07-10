@@ -17,12 +17,16 @@ const (
 
 var RequiredCircuitIdentityOrder = []string{"deposit", "spend", "joinsplit"}
 
-// DefaultGenesis returns the default genesis state
-func DefaultGenesis() *GenesisState {
+// DefaultGenesis returns the default genesis state for a specific circuit set.
+func DefaultGenesis(identity *CircuitSetIdentity) *GenesisState {
+	if identity == nil {
+		panic("default privacy genesis requires circuit set identity")
+	}
 	return &GenesisState{
-		Commitments:     [][]byte{},
-		HistoricalRoots: [][]byte{},
-		Nullifiers:      [][]byte{},
+		Commitments:        [][]byte{},
+		HistoricalRoots:    [][]byte{},
+		Nullifiers:         [][]byte{},
+		CircuitSetIdentity: CloneCircuitSetIdentity(identity),
 	}
 }
 
@@ -60,10 +64,11 @@ func (gs GenesisState) Validate() error {
 			return fmt.Errorf("audit_master_pubkey: %w", err)
 		}
 	}
-	if gs.CircuitSetIdentity != nil {
-		if err := ValidateCircuitSetIdentity(gs.CircuitSetIdentity); err != nil {
-			return fmt.Errorf("circuit_set_identity: %w", err)
-		}
+	if gs.CircuitSetIdentity == nil {
+		return fmt.Errorf("circuit_set_identity: is required")
+	}
+	if err := ValidateCircuitSetIdentity(gs.CircuitSetIdentity); err != nil {
+		return fmt.Errorf("circuit_set_identity: %w", err)
 	}
 
 	return nil

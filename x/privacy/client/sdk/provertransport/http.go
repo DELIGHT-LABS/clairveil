@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	TransferProofPath    = "/v1/prover/transfer"
-	WithdrawProofPath    = "/v1/prover/withdraw"
-	ErrorResponseVersion = "v1"
+	TransferProofPath             = "/v1/prover/transfer"
+	WithdrawProofPath             = "/v1/prover/withdraw"
+	ErrorResponseVersion          = "v1"
+	DefaultMaxResponseBytes int64 = 1 << 20
 )
 
 const (
@@ -36,7 +37,7 @@ type ErrorResponse struct {
 }
 
 type TransferProver interface {
-	ProveTransfer(request TransferProofRequest) (*TransferProofResponse, error)
+	ProveTransfer(request TransferProofRequest, now time.Time) (*TransferProofResponse, error)
 }
 
 type WithdrawProver interface {
@@ -64,13 +65,14 @@ type HTTPDoer interface {
 }
 
 type HTTPProverClient struct {
-	BaseURL string
-	Client  HTTPDoer
-	Now     func() time.Time
+	BaseURL          string
+	Client           HTTPDoer
+	Now              func() time.Time
+	MaxResponseBytes int64
 }
 
-func (p ReferenceTransferProver) ProveTransfer(request TransferProofRequest) (*TransferProofResponse, error) {
-	return BuildTransferProofResponse(request, p.Artifacts, p.Runner)
+func (p ReferenceTransferProver) ProveTransfer(request TransferProofRequest, now time.Time) (*TransferProofResponse, error) {
+	return BuildTransferProofResponseAt(request, p.Artifacts, p.Runner, now)
 }
 
 func (p ReferenceWithdrawProver) ProveWithdraw(request WithdrawProofRequest, now time.Time) (*WithdrawProofResponse, error) {
@@ -124,13 +126,18 @@ func (h *HTTPHandler) serveTransferProof(w http.ResponseWriter, r *http.Request)
 		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, err.Error())
 		return
 	}
+	currentTime := h.Now()
+	if err := ValidateTransferProofRequestAt(*request, currentTime); err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, err.Error())
+		return
+	}
 
-	response, err := h.TransferProver.ProveTransfer(*request)
+	response, err := h.TransferProver.ProveTransfer(*request, currentTime)
 	if err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeProofFailed, err.Error())
 		return
 	}
-	if err := ValidateTransferProofResponse(*request, *response); err != nil {
+	if err := ValidateTransferProofResponseAt(*request, *response, h.Now()); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeProofFailed, err.Error())
 		return
 	}
@@ -173,7 +180,11 @@ func (h *HTTPHandler) serveWithdrawProof(w http.ResponseWriter, r *http.Request)
 }
 
 func (c HTTPProverClient) ProveTransfer(ctx context.Context, request TransferProofRequest) (*TransferProofResponse, error) {
-	if err := ValidateTransferProofRequest(request); err != nil {
+	now := time.Now
+	if c.Now != nil {
+		now = c.Now
+	}
+	if err := ValidateTransferProofRequestAt(request, now()); err != nil {
 		return nil, err
 	}
 	responseBytes, err := c.doJSONRequest(ctx, TransferProofPath, request)
@@ -184,7 +195,7 @@ func (c HTTPProverClient) ProveTransfer(ctx context.Context, request TransferPro
 	if err != nil {
 		return nil, err
 	}
-	if err := ValidateTransferProofResponse(request, *response); err != nil {
+	if err := ValidateTransferProofResponseAt(request, *response, now()); err != nil {
 		return nil, err
 	}
 	return response, nil
@@ -195,9 +206,7 @@ func (c HTTPProverClient) ProveWithdraw(ctx context.Context, request WithdrawPro
 	if c.Now != nil {
 		now = c.Now
 	}
-	currentTime := now()
-
-	if err := ValidateWithdrawProofRequest(request, currentTime); err != nil {
+	if err := ValidateWithdrawProofRequest(request, now()); err != nil {
 		return nil, err
 	}
 	responseBytes, err := c.doJSONRequest(ctx, WithdrawProofPath, request)
@@ -208,7 +217,7 @@ func (c HTTPProverClient) ProveWithdraw(ctx context.Context, request WithdrawPro
 	if err != nil {
 		return nil, err
 	}
-	if err := ValidateWithdrawProofResponse(request, *response, currentTime); err != nil {
+	if err := ValidateWithdrawProofResponse(request, *response, now()); err != nil {
 		return nil, err
 	}
 	return response, nil
@@ -238,9 +247,16 @@ func (c HTTPProverClient) doJSONRequest(ctx context.Context, path string, body i
 	}
 	defer resp.Body.Close()
 
-	responseBytes, err := io.ReadAll(resp.Body)
+	responseLimit := c.MaxResponseBytes
+	if responseLimit <= 0 {
+		responseLimit = DefaultMaxResponseBytes
+	}
+	responseBytes, err := io.ReadAll(io.LimitReader(resp.Body, responseLimit+1))
 	if err != nil {
 		return nil, err
+	}
+	if int64(len(responseBytes)) > responseLimit {
+		return nil, fmt.Errorf("prover transport response exceeds %d bytes", responseLimit)
 	}
 	if resp.StatusCode != http.StatusOK {
 		if errorResponse, decodeErr := DecodeErrorResponseJSON(responseBytes); decodeErr == nil {

@@ -20,6 +20,7 @@ import (
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
+	privacyzk "github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
 )
 
 const (
@@ -311,8 +312,12 @@ func ValidatePreparedWithdrawProof(payload PreparedWithdrawProverPayload, proof 
 	if proof.PayloadHash == "" || proof.PayloadHash != payload.PayloadHash {
 		return fmt.Errorf("withdraw proof payload hash mismatch")
 	}
-	if _, err := hex.DecodeString(proof.ProofHex); err != nil {
+	proofBytes, err := hex.DecodeString(proof.ProofHex)
+	if err != nil {
 		return fmt.Errorf("invalid withdraw proof hex: %w", err)
+	}
+	if err := privacyzk.ValidateCanonicalProofBN254(proofBytes); err != nil {
+		return fmt.Errorf("invalid withdraw proof encoding: %w", err)
 	}
 	return nil
 }

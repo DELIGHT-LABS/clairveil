@@ -71,3 +71,74 @@ func TestDisclosureAmountAndAssetRejectsMismatchedDenom(t *testing.T) {
 	})
 	require.ErrorContains(t, err, "does not match")
 }
+
+func TestVerifyPayloadRejectsFieldOutsideUserPolicy(t *testing.T) {
+	payload, digestHex := amountOnlyPayload(t)
+	payload.ToShieldedAddress = "not-authenticated-by-the-amount-only-digest"
+
+	_, err := VerifyPayload(payload, digestHex)
+	require.ErrorContains(t, err, "does not authenticate to_shielded_address")
+}
+
+func TestVerifyPayloadRejectsNonCanonicalAmount(t *testing.T) {
+	payload, digestHex := amountOnlyPayload(t)
+	payload.Amount = "07"
+
+	_, err := VerifyPayload(payload, digestHex)
+	require.ErrorContains(t, err, "canonical non-negative decimal string")
+}
+
+func TestComputeExpectedDisclosureDigestRejectsInvalidPlanePolicy(t *testing.T) {
+	payload, _ := amountOnlyPayload(t)
+	payload.Plane = PlaneAudit
+
+	_, _, err := ComputeExpectedDisclosureDigest(payload)
+	require.ErrorContains(t, err, "must use the full disclosure policy")
+}
+
+func TestComputeExpectedDisclosureDigestRejectsMissingPlane(t *testing.T) {
+	payload, _ := amountOnlyPayload(t)
+	payload.Plane = ""
+
+	_, _, err := ComputeExpectedDisclosureDigest(payload)
+	require.ErrorContains(t, err, "unsupported disclosure payload plane")
+}
+
+func amountOnlyPayload(t *testing.T) (*Payload, string) {
+	t.Helper()
+
+	commitmentBytes, err := privacyfield.CanonicalBytesFromBigInt(big.NewInt(12345))
+	require.NoError(t, err)
+	commitmentHex, err := privacyfield.CanonicalHexFromBigInt(big.NewInt(12345))
+	require.NoError(t, err)
+	assetID := privacycrypto.HashString("uclair")
+	assetIDHex, err := privacyfield.CanonicalHexFromBigInt(assetID)
+	require.NoError(t, err)
+	blinding := big.NewInt(77)
+	blindingHex, err := privacyfield.CanonicalHexFromBigInt(blinding)
+	require.NoError(t, err)
+	digestHex, err := privacytypes.ComputeTransferDisclosureDigestHex(
+		privacytypes.TransferPrivacyPolicyDiscloseAmount,
+		privacytypes.TransferDisclosureRecipientOutputIndex,
+		commitmentBytes,
+		big.NewInt(7),
+		assetID,
+		nil, nil, nil, nil,
+		nil, nil, nil, nil,
+		blinding,
+	)
+	require.NoError(t, err)
+
+	return &Payload{
+		Version:             PayloadVersion,
+		Plane:               PlaneUser,
+		Policy:              privacytypes.TransferPrivacyPolicyDiscloseAmount,
+		OutputIndex:         privacytypes.TransferDisclosureRecipientOutputIndex,
+		CommitmentHex:       commitmentHex,
+		DisclosureDigestHex: digestHex,
+		BlindingHex:         blindingHex,
+		Amount:              "7",
+		AssetIDHex:          assetIDHex,
+		AssetDenom:          "uclair",
+	}, digestHex
+}

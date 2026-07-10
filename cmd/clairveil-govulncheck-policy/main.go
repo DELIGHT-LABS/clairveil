@@ -29,9 +29,10 @@ type govulncheckTraceRef struct {
 }
 
 type acceptedActionableVulnerability struct {
-	Reason                 string
-	RequireNoFixedVersion  bool
-	VulnerableSymbolModule string
+	Reason                   string
+	RequireNoFixedVersion    bool
+	VulnerableSymbolModule   string
+	VulnerableSymbolPackages []string
 }
 
 var acceptedActionableVulnerabilities = map[string]acceptedActionableVulnerability{
@@ -46,9 +47,13 @@ var acceptedActionableVulnerabilities = map[string]acceptedActionableVulnerabili
 		VulnerableSymbolModule: "github.com/pion/dtls/v2",
 	},
 	"GO-2026-5932": {
-		Reason:                 "Cosmos SDK uses x/crypto/openpgp only for local ASCII key armor, not OpenPGP signing or encryption; upstream has no fixed version, so keep the dependency narrowly tracked until Cosmos SDK removes it.",
+		Reason:                 "Cosmos SDK uses x/crypto/openpgp only for local ASCII key armor and its error-only dependency, not OpenPGP signing or encryption; upstream has no fixed version, so keep the dependency narrowly tracked until Cosmos SDK removes it.",
 		RequireNoFixedVersion:  true,
 		VulnerableSymbolModule: "golang.org/x/crypto",
+		VulnerableSymbolPackages: []string{
+			"golang.org/x/crypto/openpgp/armor",
+			"golang.org/x/crypto/openpgp/errors",
+		},
 	},
 }
 
@@ -154,23 +159,38 @@ func (f govulncheckFinding) acceptedActionableReason() (string, bool) {
 	if rule.RequireNoFixedVersion && strings.TrimSpace(f.FixedVersion) != "" {
 		return "", false
 	}
-	if rule.VulnerableSymbolModule != "" {
-		module, ok := f.firstActionableSymbolModule()
-		if !ok || module != rule.VulnerableSymbolModule {
+	if rule.VulnerableSymbolModule != "" || len(rule.VulnerableSymbolPackages) != 0 {
+		ref, ok := f.firstActionableSymbol()
+		if !ok {
+			return "", false
+		}
+		if rule.VulnerableSymbolModule != "" && strings.TrimSpace(ref.Module) != rule.VulnerableSymbolModule {
+			return "", false
+		}
+		if len(rule.VulnerableSymbolPackages) != 0 && !containsString(rule.VulnerableSymbolPackages, strings.TrimSpace(ref.Package)) {
 			return "", false
 		}
 	}
 	return rule.Reason, true
 }
 
-func (f govulncheckFinding) firstActionableSymbolModule() (string, bool) {
+func (f govulncheckFinding) firstActionableSymbol() (govulncheckTraceRef, bool) {
 	for _, ref := range f.Trace {
 		if strings.TrimSpace(ref.Function) == "" {
 			continue
 		}
-		return strings.TrimSpace(ref.Module), true
+		return ref, true
 	}
-	return "", false
+	return govulncheckTraceRef{}, false
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (f govulncheckFinding) traceLabel() string {

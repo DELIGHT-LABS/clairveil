@@ -5,6 +5,7 @@ import (
 	"context"
 	"math/big"
 	"testing"
+	"time"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/stretchr/testify/require"
@@ -42,6 +43,57 @@ func TestBuildPreparedTransferPayloadAndProofRoundTrip(t *testing.T) {
 	require.NotEmpty(t, msg.SelfViewDisclosureDigest)
 	require.NotEmpty(t, msg.SelfViewDisclosurePayload)
 	require.Len(t, msg.ViewTags, 2)
+}
+
+func TestValidatePreparedTransferProofRejectsEmptyProof(t *testing.T) {
+	input, merkleProvider, signer, artifacts, runner := testBuildTransferMessageDeps(t)
+	payload, err := BuildPreparedTransferPayload(context.Background(), merkleProvider, signer, input)
+	require.NoError(t, err)
+	proof, err := BuildPreparedTransferProof(*payload, artifacts, runner)
+	require.NoError(t, err)
+
+	proof.ProofHex = ""
+	err = ValidatePreparedTransferProof(*payload, *proof)
+	require.ErrorContains(t, err, "proof must be exactly")
+}
+
+func TestBuildPreparedTransferProofRejectsExpiredPayloadBeforeProving(t *testing.T) {
+	input, merkleProvider, signer, artifacts, runner := testBuildTransferMessageDeps(t)
+	payload, err := BuildPreparedTransferPayload(context.Background(), merkleProvider, signer, input)
+	require.NoError(t, err)
+	now := time.Unix(payload.ExpiresAtUnix, 0)
+
+	_, err = BuildPreparedTransferProofAt(*payload, artifacts, runner, now)
+	require.ErrorContains(t, err, "expired")
+}
+
+func TestBuildPreparedTransferProofRejectsPayloadThatExpiresDuringProving(t *testing.T) {
+	input, merkleProvider, signer, artifacts, runner := testBuildTransferMessageDeps(t)
+	payload, err := BuildPreparedTransferPayload(context.Background(), merkleProvider, signer, input)
+	require.NoError(t, err)
+	clockCalls := 0
+	now := func() time.Time {
+		clockCalls++
+		if clockCalls == 1 {
+			return time.Unix(payload.ExpiresAtUnix-1, 0)
+		}
+		return time.Unix(payload.ExpiresAtUnix, 0)
+	}
+
+	_, err = buildPreparedTransferProofWithClock(*payload, artifacts, runner, now)
+	require.ErrorContains(t, err, "expired")
+	require.Equal(t, 2, clockCalls)
+}
+
+func TestPreparedTransferPayloadToMsgRejectsExpiredProof(t *testing.T) {
+	input, merkleProvider, signer, artifacts, runner := testBuildTransferMessageDeps(t)
+	payload, err := BuildPreparedTransferPayload(context.Background(), merkleProvider, signer, input)
+	require.NoError(t, err)
+	proof, err := BuildPreparedTransferProofAt(*payload, artifacts, runner, time.Unix(payload.ExpiresAtUnix-1, 0))
+	require.NoError(t, err)
+
+	_, err = payload.ToMsgAt(*proof, time.Unix(payload.ExpiresAtUnix, 0))
+	require.ErrorContains(t, err, "expired")
 }
 
 func TestValidatePreparedTransferPayloadMetadataRejectsHashMismatch(t *testing.T) {

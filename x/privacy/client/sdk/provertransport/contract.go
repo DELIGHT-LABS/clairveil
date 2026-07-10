@@ -38,10 +38,14 @@ type WithdrawProofResponse struct {
 }
 
 func NewTransferProofRequest(payload privacytransfer.PreparedTransferPayload) (*TransferProofRequest, error) {
-	if err := ValidateTransferProofRequest(TransferProofRequest{
+	return NewTransferProofRequestAt(payload, time.Now())
+}
+
+func NewTransferProofRequestAt(payload privacytransfer.PreparedTransferPayload, now time.Time) (*TransferProofRequest, error) {
+	if err := ValidateTransferProofRequestAt(TransferProofRequest{
 		Version: TransferProofRequestVersion,
 		Payload: payload,
-	}); err != nil {
+	}, now); err != nil {
 		return nil, err
 	}
 	return &TransferProofRequest{
@@ -51,10 +55,17 @@ func NewTransferProofRequest(payload privacytransfer.PreparedTransferPayload) (*
 }
 
 func ValidateTransferProofRequest(request TransferProofRequest) error {
+	return ValidateTransferProofRequestAt(request, time.Now())
+}
+
+func ValidateTransferProofRequestAt(request TransferProofRequest, now time.Time) error {
 	if request.Version != TransferProofRequestVersion {
 		return fmt.Errorf("unsupported transfer proof request version %q (expected %q)", request.Version, TransferProofRequestVersion)
 	}
-	return privacytransfer.ValidatePreparedTransferPayloadMetadata(request.Payload)
+	if err := privacytransfer.ValidatePreparedTransferPayloadMetadataAt(request.Payload, now); err != nil {
+		return err
+	}
+	return nil
 }
 
 func BuildTransferProofResponse(
@@ -62,10 +73,19 @@ func BuildTransferProofResponse(
 	artifacts privacytransfer.JoinSplitArtifactProvider,
 	runner privacytransfer.JoinSplitProofRunner,
 ) (*TransferProofResponse, error) {
-	if err := ValidateTransferProofRequest(request); err != nil {
+	return BuildTransferProofResponseAt(request, artifacts, runner, time.Now())
+}
+
+func BuildTransferProofResponseAt(
+	request TransferProofRequest,
+	artifacts privacytransfer.JoinSplitArtifactProvider,
+	runner privacytransfer.JoinSplitProofRunner,
+	now time.Time,
+) (*TransferProofResponse, error) {
+	if err := ValidateTransferProofRequestAt(request, now); err != nil {
 		return nil, err
 	}
-	proof, err := privacytransfer.BuildPreparedTransferProof(request.Payload, artifacts, runner)
+	proof, err := privacytransfer.BuildPreparedTransferProofAt(request.Payload, artifacts, runner, now)
 	if err != nil {
 		return nil, err
 	}
@@ -76,13 +96,17 @@ func BuildTransferProofResponse(
 }
 
 func ValidateTransferProofResponse(request TransferProofRequest, response TransferProofResponse) error {
+	return ValidateTransferProofResponseAt(request, response, time.Now())
+}
+
+func ValidateTransferProofResponseAt(request TransferProofRequest, response TransferProofResponse, now time.Time) error {
 	if response.Version != TransferProofResponseVersion {
 		return fmt.Errorf("unsupported transfer proof response version %q (expected %q)", response.Version, TransferProofResponseVersion)
 	}
-	if err := ValidateTransferProofRequest(request); err != nil {
+	if err := ValidateTransferProofRequestAt(request, now); err != nil {
 		return err
 	}
-	return privacytransfer.ValidatePreparedTransferProof(request.Payload, response.Proof)
+	return privacytransfer.ValidatePreparedTransferProofAt(request.Payload, response.Proof, now)
 }
 
 func DecodeTransferProofRequestJSON(payloadBytes []byte) (*TransferProofRequest, error) {

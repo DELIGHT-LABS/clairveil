@@ -19,9 +19,9 @@ English version: [clairveil-scan-optimization-implementation-plan.md](clairveil-
 
 - Core query는 `ScanEvents` cursor projection과 `CheckNullifiers` batch spent query를 제공한다.
 - SDK scan service는 `ScanEvents`와 `CheckNullifiers`가 있으면 우선 사용하고, 기존 provider path를 fallback으로 유지한다.
-- Transfer payload는 `v3`이며 `view_tag_hexes`가 prepared payload hash에 포함된다.
+- Transfer payload는 `v5`이며 `view_tag_hexes`가 owner-authorized prepared payload hash에 포함된다.
 - `MsgTransfer.view_tags`와 transfer event의 `view_tag_1`, `view_tag_2`는 output index 기준으로 encrypted output과 정렬된다.
-- View tag는 아직 circuit-bound가 아니므로 wallet은 local decrypt 최적화에만 사용해야 한다.
+- View tag의 exact byte는 owner-authorized payload digest와 proof에 묶이지만 derivation은 circuit constraint가 없으므로, wallet은 local decrypt 최적화에만 사용해야 한다.
 
 ## 설계 철학
 
@@ -90,7 +90,7 @@ SDK wallet scan을 새 `ScanEvents` query를 우선 사용하는 구조로 전�
 
 ### 4. Privacy-safe per-note view tag
 
-Transfer output마다 2-byte `view_tag`를 추가한다. 이번 구현에서는 proof/circuit에 묶지 않는다.
+Transfer output마다 2-byte `view_tag`를 추가한다. 이번 구현에서는 exact byte가 owner-authorized payload digest와 proof에 묶이지만, encrypted-output key material로부터의 tag derivation은 circuit이 constraint하지 않는다.
 
 요구사항:
 
@@ -99,7 +99,7 @@ Transfer output마다 2-byte `view_tag`를 추가한다. 이번 구현에서는 
 - 각 tag는 정확히 2 bytes다.
 - event에는 `view_tag_1`, `view_tag_2`를 기록한다.
 - scan projection에는 output별 `view_tag`를 포함한다.
-- 안전한 기본 wallet scan은 tag mismatch일 때도 full trial decrypt로 fallback한다. Tag는 아직 proof/circuit에 묶이지 않으므로, 잘못된 hint만으로 owned note를 누락하면 안 된다.
+- 안전한 기본 wallet scan은 tag mismatch일 때도 full trial decrypt로 fallback한다. Tag의 ownership derivation은 circuit constraint가 없으므로, 잘못된 hint만으로 owned note를 누락하면 안 된다.
 - mismatch output을 건너뛰는 fast mode는 recovery/rescan 정책을 갖춘 client가 명시적으로 선택할 때만 사용한다.
 - tag가 없거나 형식이 맞지 않으면 recovery/fallback path로 기존 trial decrypt를 수행한다.
 - forced rescan 또는 rollback recovery처럼 신뢰 복구가 목적일 때는 tag mismatch도 무시하고 full trial decrypt를 수행한다.
@@ -155,7 +155,7 @@ view_tag = first_2_bytes(canonical_32_bytes(view_tag_full))
 
 ### 7. Proof-bound tag
 
-View tag를 circuit public input에 묶는 작업은 이번 범위에서 제외한다.
+View-tag derivation을 circuit에서 직접 constraint하는 작업은 이번 범위에서 제외한다.
 
 제외 이유:
 

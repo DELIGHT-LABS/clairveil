@@ -133,7 +133,7 @@ Raw `provertransport.HTTPHandler`를 public server에 직접 붙이면 request b
 Remote prover는 proving key/R1CS를 lazy load하고 validator는 VK만 필요합니다. Active set은 `privacy-intent-v2`입니다. `privacy_zk_manifest.json` schema `v2`는 ordered circuit descriptor, VK SHA-256, public-input schema SHA-256까지 consensus `CircuitSetIdentity` schema `v1`과 정확히 일치해야 합니다. Environment checksum은 consensus identity를 override하지 못하며 mismatch는 startup/readiness를 실패시켜야 합니다. Production에서는 아래를 지킵니다.
 
 - `CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict`를 사용합니다.
-- `privacy_zk_manifest.json` 또는 checksum env를 release artifact와 함께 배포합니다.
+- 필수 `privacy_zk_manifest.json`을 release artifact와 함께 배포합니다. Checksum env는 추가 consistency check로 사용할 수 있지만 structured manifest를 대체할 수 없습니다.
 - artifact directory는 read-only volume으로 mount합니다.
 - artifact release는 circuit source commit, generation command, checksum, signer를 함께 기록합니다.
 - stale artifact와 chain verifier artifact mismatch를 release gate에서 막습니다.

@@ -54,7 +54,7 @@ func TestAcceptedActionableReasonIsScopedToNoFixedVulnerableModule(t *testing.T)
 	}
 }
 
-func TestAcceptedOpenPGPArmorFindingIsScopedToNoFixedXCryptoModule(t *testing.T) {
+func TestAcceptedOpenPGPArmorFindingIsScopedToNoFixedXCryptoArmorPackage(t *testing.T) {
 	accepted := govulncheckFinding{
 		OSV: "GO-2026-5932",
 		Trace: []govulncheckTraceRef{
@@ -71,10 +71,26 @@ func TestAcceptedOpenPGPArmorFindingIsScopedToNoFixedXCryptoModule(t *testing.T)
 		t.Fatalf("expected OpenPGP finding with a fixed version to be disallowed")
 	}
 
+	allowedErrorsPackage := accepted
+	allowedErrorsPackage.Trace = append([]govulncheckTraceRef(nil), accepted.Trace...)
+	allowedErrorsPackage.Trace[0].Package = "golang.org/x/crypto/openpgp/errors"
+	allowedErrorsPackage.Trace[0].Function = "Error"
+	if _, ok := allowedErrorsPackage.acceptedActionableReason(); !ok {
+		t.Fatalf("expected the error-only dependency of OpenPGP armor to be accepted")
+	}
+
 	wrongModule := accepted
+	wrongModule.Trace = append([]govulncheckTraceRef(nil), accepted.Trace...)
 	wrongModule.Trace[0].Module = "example.com/openpgp"
 	if _, ok := wrongModule.acceptedActionableReason(); ok {
 		t.Fatalf("expected OpenPGP finding from another module to be disallowed")
+	}
+
+	wrongPackage := accepted
+	wrongPackage.Trace = append([]govulncheckTraceRef(nil), accepted.Trace...)
+	wrongPackage.Trace[0].Package = "golang.org/x/crypto/openpgp"
+	if _, ok := wrongPackage.acceptedActionableReason(); ok {
+		t.Fatalf("expected non-armor OpenPGP finding from x/crypto to be disallowed")
 	}
 }
 

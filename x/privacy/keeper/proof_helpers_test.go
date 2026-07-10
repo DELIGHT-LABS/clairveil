@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/circuit"
+	privacyzk "github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
 	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
@@ -101,7 +102,7 @@ func canonicalTestProofBytes(t *testing.T) []byte {
 	var encoded bytes.Buffer
 	_, err := proof.WriteTo(&encoded)
 	require.NoError(t, err)
-	require.Len(t, encoded.Bytes(), canonicalBN254Groth16ProofSize)
+	require.Len(t, encoded.Bytes(), privacyzk.CanonicalBN254Groth16ProofSize)
 	return append([]byte(nil), encoded.Bytes()...)
 }
 

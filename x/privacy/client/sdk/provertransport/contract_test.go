@@ -49,6 +49,19 @@ func TestValidateTransferProofRequestRejectsHashMismatch(t *testing.T) {
 	require.ErrorContains(t, err, "hash mismatch")
 }
 
+func TestValidateTransferProofRequestRejectsExpiredPayload(t *testing.T) {
+	now := time.Now()
+	payload, _, _ := testPreparedTransferPayload(t)
+	payload.ExpiresAtUnix = now.Add(-time.Minute).Unix()
+	payload.PayloadHash = privacytransfer.ComputePreparedTransferPayloadHash(payload)
+
+	err := ValidateTransferProofRequestAt(TransferProofRequest{
+		Version: TransferProofRequestVersion,
+		Payload: payload,
+	}, now)
+	require.ErrorContains(t, err, "expired")
+}
+
 func TestBuildWithdrawProofResponseRoundTrip(t *testing.T) {
 	now := time.Now()
 	payload, artifacts, runner := testPreparedWithdrawProverPayload(t, now)

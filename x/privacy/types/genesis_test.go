@@ -1,6 +1,7 @@
 package types
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
@@ -8,12 +9,28 @@ import (
 )
 
 func TestDefaultGenesis(t *testing.T) {
-	gs := DefaultGenesis()
+	gs := DefaultGenesis(validTestCircuitSetIdentity())
 	require.NotNil(t, gs)
 	require.Empty(t, gs.Commitments)
 	require.Empty(t, gs.HistoricalRoots)
 	require.Empty(t, gs.Nullifiers)
 	require.NoError(t, gs.Validate())
+}
+
+func TestDefaultGenesisRequiresCircuitIdentity(t *testing.T) {
+	require.PanicsWithValue(t, "default privacy genesis requires circuit set identity", func() {
+		DefaultGenesis(nil)
+	})
+}
+
+func TestGenesisValidateRejectsMissingCircuitIdentity(t *testing.T) {
+	gs := GenesisState{
+		Commitments:     [][]byte{},
+		HistoricalRoots: [][]byte{},
+		Nullifiers:      [][]byte{},
+	}
+
+	require.ErrorContains(t, gs.Validate(), "circuit_set_identity: is required")
 }
 
 func TestGenesisValidateRejectsInvalidLength(t *testing.T) {
@@ -45,4 +62,21 @@ func TestGenesisValidateRejectsDuplicateStateElements(t *testing.T) {
 	} {
 		require.ErrorContains(t, gs.Validate(), "duplicates index 0")
 	}
+}
+
+func validTestCircuitSetIdentity() *CircuitSetIdentity {
+	identity := &CircuitSetIdentity{
+		SchemaVersion: CircuitSetIdentitySchemaVersion,
+		CircuitSetId:  ActiveCircuitSetID,
+		Curve:         CircuitCurveBN254,
+		Circuits:      make([]*CircuitIdentity, 0, len(RequiredCircuitIdentityOrder)),
+	}
+	for _, circuitID := range RequiredCircuitIdentityOrder {
+		identity.Circuits = append(identity.Circuits, &CircuitIdentity{
+			CircuitId:               circuitID,
+			VerifyingKeySha256:      strings.Repeat("a", 64),
+			PublicInputSchemaSha256: strings.Repeat("b", 64),
+		})
+	}
+	return identity
 }

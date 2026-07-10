@@ -67,6 +67,16 @@ At minimum, these files should be present.
 - `privacy_joinsplit_pk.bin`
 - `privacy_joinsplit_vk.bin`
 
+Load the generated artifact location and checksums before running commands that
+create or validate genesis. Keep these variables exported for the rest of the
+walkthrough.
+
+```bash
+set -a
+source ~/clairveil-privacy-walkthrough/artifacts/privacy_zk_checksums.env
+set +a
+```
+
 ## 4. Create Transparent Accounts
 
 ```bash
@@ -182,7 +192,7 @@ Validate genesis again.
 
 ## 10. Start Node
 
-Apply the zk artifact checksum environment and set preflight to strict.
+Refresh the zk artifact checksum environment and set preflight to strict.
 
 ```bash
 set -a
