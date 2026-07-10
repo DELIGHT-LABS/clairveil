@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
+
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 )
 
 type AuditDisclosureTargetProvider interface {
@@ -19,12 +21,12 @@ func DecodeDisclosurePubKeyHex(value string) (*crypto_tedwards.PointAffine, []by
 		return nil, nil, fmt.Errorf("invalid disclosure pubkey hex: %w; use the hex output from show-disclosure-pubkey", err)
 	}
 
-	var pubKey crypto_tedwards.PointAffine
-	if _, err := pubKey.SetBytes(bz); err != nil {
+	pubKey, err := privacycrypto.DecodeCanonicalPoint(bz)
+	if err != nil {
 		return nil, nil, fmt.Errorf("invalid disclosure pubkey bytes: %w; expected a compressed BN254 public key from show-disclosure-pubkey", err)
 	}
 
-	return &pubKey, append([]byte(nil), bz...), nil
+	return pubKey, append([]byte(nil), bz...), nil
 }
 
 func ResolveAuditDisclosureTarget(

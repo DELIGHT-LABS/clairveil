@@ -54,3 +54,44 @@ func TestShieldedAddressInvalidLength(t *testing.T) {
 	_, err = DecodeShieldedAddressBundle(addr)
 	require.EqualError(t, err, "invalid decoded length: expected 64 bytes, got 31")
 }
+
+func TestShieldedAddressRejectsIdentityPublicKey(t *testing.T) {
+	curve := twistededwards.GetEdwardsCurve()
+	identity := twistededwards.PointAffine{}
+	identity.Y.SetOne()
+	valid := curve.Base
+
+	_, err := EncodeShieldedAddressWithView(&identity, &valid)
+	require.ErrorContains(t, err, "identity point is not allowed")
+
+	identityBytes := identity.Bytes()
+	validBytes := valid.Bytes()
+	payload := append(append([]byte(nil), identityBytes[:]...), validBytes[:]...)
+	address, err := sdkbech32.ConvertAndEncode(ShieldedBech32Prefix, payload)
+	require.NoError(t, err)
+
+	_, err = DecodeShieldedAddressBundle(address)
+	require.ErrorContains(t, err, "identity point is not allowed")
+}
+
+func TestShieldedAddressRejectsNonSubgroupPublicKey(t *testing.T) {
+	curve := twistededwards.GetEdwardsCurve()
+	orderTwo := twistededwards.PointAffine{}
+	orderTwo.Y.SetOne()
+	orderTwo.Y.Neg(&orderTwo.Y)
+	require.True(t, orderTwo.IsOnCurve())
+	require.False(t, orderTwo.IsZero())
+	valid := curve.Base
+
+	_, err := EncodeShieldedAddressWithView(&valid, &orderTwo)
+	require.ErrorContains(t, err, "point is not in the prime-order subgroup")
+
+	validBytes := valid.Bytes()
+	orderTwoBytes := orderTwo.Bytes()
+	payload := append(append([]byte(nil), validBytes[:]...), orderTwoBytes[:]...)
+	address, err := sdkbech32.ConvertAndEncode(ShieldedBech32Prefix, payload)
+	require.NoError(t, err)
+
+	_, err = DecodeShieldedAddressBundle(address)
+	require.ErrorContains(t, err, "point is not in the prime-order subgroup")
+}

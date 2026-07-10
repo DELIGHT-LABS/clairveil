@@ -16,6 +16,11 @@ import (
 
 const ViewTagLength = 2
 
+const (
+	asymNonceSize = 12
+	asymTagSize   = 16
+)
+
 var ErrViewTagMismatch = errors.New("view tag mismatch")
 
 // AsymEncrypt encrypts msg to receiverPubKey and returns
@@ -38,11 +43,19 @@ func AsymEncryptWithViewTag(msg []byte, receiverPubKey twistededwards.PointAffin
 }
 
 func asymEncrypt(msg []byte, receiverPubKey twistededwards.PointAffine) ([]byte, twistededwards.PointAffine, error) {
+	if err := ValidatePrimeSubgroupPoint(&receiverPubKey); err != nil {
+		return nil, twistededwards.PointAffine{}, fmt.Errorf("invalid receiver public key: %w", err)
+	}
+
 	curve := twistededwards.GetEdwardsCurve()
 
-	ephemeralPriv, err := rand.Int(rand.Reader, &curve.Order)
-	if err != nil {
-		return nil, twistededwards.PointAffine{}, err
+	var ephemeralPriv *big.Int
+	for ephemeralPriv == nil || ephemeralPriv.Sign() == 0 {
+		var err error
+		ephemeralPriv, err = rand.Int(rand.Reader, &curve.Order)
+		if err != nil {
+			return nil, twistededwards.PointAffine{}, err
+		}
 	}
 
 	var ephemeralPub twistededwards.PointAffine
@@ -116,7 +129,10 @@ func AsymDecryptWithViewTag(fullCipherBytes []byte, myPrivKey *big.Int, outputCo
 		return nil, err
 	}
 
-	sharedPoint := deriveSharedPoint(ephemeralPub, myPrivKey)
+	sharedPoint, err := deriveSharedPoint(ephemeralPub, myPrivKey)
+	if err != nil {
+		return nil, err
+	}
 	viewTag, err := DeriveViewTag(sharedPoint, outputCommitment, outputIndex)
 	if err != nil {
 		return nil, err
@@ -129,34 +145,45 @@ func AsymDecryptWithViewTag(fullCipherBytes []byte, myPrivKey *big.Int, outputCo
 }
 
 func splitAsymCiphertext(fullCipherBytes []byte) (twistededwards.PointAffine, []byte, []byte, error) {
-	pointSize := 32
-	nonceSize := 12
-
-	if len(fullCipherBytes) < pointSize+nonceSize {
-		return twistededwards.PointAffine{}, nil, nil, errors.New("invalid ciphertext length")
+	minimumSize := CanonicalPointSize + asymNonceSize + asymTagSize
+	if len(fullCipherBytes) < minimumSize {
+		return twistededwards.PointAffine{}, nil, nil, fmt.Errorf("invalid ciphertext length: expected at least %d bytes, got %d", minimumSize, len(fullCipherBytes))
 	}
 
-	ephemeralPubBytes := fullCipherBytes[:pointSize]
-	nonce := fullCipherBytes[pointSize : pointSize+nonceSize]
-	ciphertext := fullCipherBytes[pointSize+nonceSize:]
+	ephemeralPubBytes := fullCipherBytes[:CanonicalPointSize]
+	nonce := fullCipherBytes[CanonicalPointSize : CanonicalPointSize+asymNonceSize]
+	ciphertext := fullCipherBytes[CanonicalPointSize+asymNonceSize:]
 
-	var ephemeralPub twistededwards.PointAffine
-	if _, err := ephemeralPub.SetBytes(ephemeralPubBytes); err != nil {
+	ephemeralPub, err := DecodeCanonicalPoint(ephemeralPubBytes)
+	if err != nil {
 		return twistededwards.PointAffine{}, nil, nil, fmt.Errorf("invalid ephemeral public key: %w", err)
 	}
 
-	return ephemeralPub, nonce, ciphertext, nil
+	return *ephemeralPub, nonce, ciphertext, nil
 }
 
 func decryptAsymCiphertext(ephemeralPub twistededwards.PointAffine, nonce []byte, ciphertext []byte, myPrivKey *big.Int) ([]byte, error) {
-	sharedPoint := deriveSharedPoint(ephemeralPub, myPrivKey)
+	sharedPoint, err := deriveSharedPoint(ephemeralPub, myPrivKey)
+	if err != nil {
+		return nil, err
+	}
 	return decryptWithSharedPoint(sharedPoint, nonce, ciphertext)
 }
 
-func deriveSharedPoint(ephemeralPub twistededwards.PointAffine, myPrivKey *big.Int) twistededwards.PointAffine {
+func deriveSharedPoint(ephemeralPub twistededwards.PointAffine, myPrivKey *big.Int) (twistededwards.PointAffine, error) {
+	if err := ValidatePrimeSubgroupPoint(&ephemeralPub); err != nil {
+		return twistededwards.PointAffine{}, fmt.Errorf("invalid ephemeral public key: %w", err)
+	}
+	if err := validatePrivateScalar(myPrivKey); err != nil {
+		return twistededwards.PointAffine{}, err
+	}
+
 	var sharedPoint twistededwards.PointAffine
 	sharedPoint.ScalarMultiplication(&ephemeralPub, myPrivKey)
-	return sharedPoint
+	if err := ValidatePrimeSubgroupPoint(&sharedPoint); err != nil {
+		return twistededwards.PointAffine{}, fmt.Errorf("invalid ECIES shared point: %w", err)
+	}
+	return sharedPoint, nil
 }
 
 func decryptWithSharedPoint(sharedPoint twistededwards.PointAffine, nonce []byte, ciphertext []byte) ([]byte, error) {
@@ -179,4 +206,15 @@ func decryptWithSharedPoint(sharedPoint twistededwards.PointAffine, nonce []byte
 	}
 
 	return plaintext, nil
+}
+
+func validatePrivateScalar(privateScalar *big.Int) error {
+	if privateScalar == nil {
+		return errors.New("invalid ECIES private scalar: scalar is nil")
+	}
+	curve := twistededwards.GetEdwardsCurve()
+	if privateScalar.Sign() <= 0 || privateScalar.Cmp(&curve.Order) >= 0 {
+		return errors.New("invalid ECIES private scalar: scalar must be in the range 0 < scalar < subgroup order")
+	}
+	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,6 +22,23 @@ func TestDecodeDisclosurePubKeyHexDecodesValidPoint(t *testing.T) {
 func TestDecodeDisclosurePubKeyHexRejectsInvalidHex(t *testing.T) {
 	_, _, err := DecodeDisclosurePubKeyHex("zz")
 	require.ErrorContains(t, err, "invalid disclosure pubkey hex")
+}
+
+func TestDecodeDisclosurePubKeyHexRejectsIdentityAndNonSubgroupPoints(t *testing.T) {
+	identity := twistededwards.PointAffine{}
+	identity.Y.SetOne()
+	identityBytes := identity.Bytes()
+	_, _, err := DecodeDisclosurePubKeyHex(fmt.Sprintf("%x", identityBytes[:]))
+	require.ErrorContains(t, err, "identity point is not allowed")
+
+	orderTwo := twistededwards.PointAffine{}
+	orderTwo.Y.SetOne()
+	orderTwo.Y.Neg(&orderTwo.Y)
+	require.True(t, orderTwo.IsOnCurve())
+	require.False(t, orderTwo.IsZero())
+	orderTwoBytes := orderTwo.Bytes()
+	_, _, err = DecodeDisclosurePubKeyHex(fmt.Sprintf("%x", orderTwoBytes[:]))
+	require.ErrorContains(t, err, "point is not in the prime-order subgroup")
 }
 
 func TestResolveAuditDisclosureTargetUsesProvider(t *testing.T) {

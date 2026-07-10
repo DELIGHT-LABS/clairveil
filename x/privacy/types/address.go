@@ -7,6 +7,7 @@ import (
 	sdkbech32 "github.com/cosmos/cosmos-sdk/types/bech32"
 
 	clairveiltypes "github.com/DELIGHT-LABS/clairveil/types"
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 )
 
 // ShieldedBech32Prefix is the human-readable prefix for full shielded addresses.
@@ -20,6 +21,13 @@ type ShieldedAddressBundle struct {
 }
 
 func EncodeShieldedAddressWithView(spendPubKey, viewPubKey *twistededwards.PointAffine) (string, error) {
+	if err := privacycrypto.ValidatePrimeSubgroupPoint(spendPubKey); err != nil {
+		return "", fmt.Errorf("invalid spend public key: %w", err)
+	}
+	if err := privacycrypto.ValidatePrimeSubgroupPoint(viewPubKey); err != nil {
+		return "", fmt.Errorf("invalid view public key: %w", err)
+	}
+
 	spendBytes := spendPubKey.Bytes()
 	viewBytes := viewPubKey.Bytes()
 
@@ -61,11 +69,10 @@ func DecodeShieldedAddressBundle(address string) (*ShieldedAddressBundle, error)
 }
 
 func decodePublicKey(bz []byte) (*twistededwards.PointAffine, error) {
-	var pubKey twistededwards.PointAffine
-	_, err := pubKey.SetBytes(bz)
+	pubKey, err := privacycrypto.DecodeCanonicalPoint(bz)
 	if err != nil {
 		return nil, fmt.Errorf("invalid public key bytes: %w", err)
 	}
 
-	return &pubKey, nil
+	return pubKey, nil
 }
