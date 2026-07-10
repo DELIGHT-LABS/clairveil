@@ -28,7 +28,7 @@ func BuildWithdrawPayload(
 	source ExactMatchNoteSource,
 	planner ExactMatchAutoPlanner,
 	merklePaths MerklePathProvider,
-	signer SpendNoteHashSigner,
+	signer SpendIntentSigner,
 	artifacts SpendArtifactProvider,
 	runner SpendProofRunner,
 	input BuildWithdrawPayloadInput,

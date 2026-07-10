@@ -26,13 +26,15 @@ type MerklePathProvider interface {
 	LookupMerklePath(ctx context.Context, commitmentHex string) (*MerklePathResult, error)
 }
 
-type SpendNoteHashSigner interface {
-	SignSpendNoteHash(msgHash *big.Int) ([]byte, error)
+type SpendIntentSigner interface {
+	SignSpendIntent(intent *big.Int) ([]byte, error)
 }
 
 type PrepareSpendWithdrawInput struct {
 	Note           privacyscan.FoundNote
 	RecipientBytes []byte
+	ChainID        string
+	ExpiresAtUnix  int64
 }
 
 type PreparedSpendWithdraw struct {
@@ -47,17 +49,23 @@ type PreparedSpendWithdraw struct {
 func PrepareSpendWithdraw(
 	ctx context.Context,
 	provider MerklePathProvider,
-	signer SpendNoteHashSigner,
+	signer SpendIntentSigner,
 	input PrepareSpendWithdrawInput,
 ) (*PreparedSpendWithdraw, error) {
 	if provider == nil {
 		return nil, fmt.Errorf("a merkle path provider is required to prepare a spend withdraw proof")
 	}
 	if signer == nil {
-		return nil, fmt.Errorf("a spend note hash signer is required to prepare a spend withdraw proof")
+		return nil, fmt.Errorf("a spend intent signer is required to prepare a spend withdraw proof")
 	}
 	if len(input.RecipientBytes) == 0 {
 		return nil, fmt.Errorf("recipient bytes are required to prepare a spend withdraw proof")
+	}
+	if input.ChainID == "" {
+		return nil, fmt.Errorf("chain id is required to prepare a spend withdraw proof")
+	}
+	if input.ExpiresAtUnix <= 0 {
+		return nil, fmt.Errorf("expires_at_unix must be positive to prepare a spend withdraw proof")
 	}
 
 	selectedNote := input.Note.Note
@@ -78,10 +86,21 @@ func PrepareSpendWithdraw(
 	var assignment circuit.SpendCircuit
 	assignment.MerkleRoot = new(big.Int).SetBytes(merklePath.Root)
 	assignment.Amount = selectedNote.Amount
-	recipientInt := new(big.Int).SetBytes(input.RecipientBytes)
-	assignment.Recipient = recipientInt
 	assignment.AssetID = selectedNote.AssetID
 	assignment.Nullifier = selectedNote.ComputeNullifier()
+	chainDomain, err := privacytypes.ComputeChainDomainV1(input.ChainID, privacytypes.ActiveCircuitSetID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute withdraw chain domain: %w", err)
+	}
+	recipientDigest, err := privacytypes.ComputeWithdrawRecipientDigestV1(input.RecipientBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute withdraw recipient digest: %w", err)
+	}
+	assignment.ChainDomainHi = chainDomain.Hi
+	assignment.ChainDomainLo = chainDomain.Lo
+	assignment.ExpiresAtUnix = big.NewInt(input.ExpiresAtUnix)
+	assignment.RecipientDigestHi = recipientDigest.Hi
+	assignment.RecipientDigestLo = recipientDigest.Lo
 
 	pathNodes, pathHelpers := decodeMerkleProof(merklePath.Path, merklePath.PathHelper)
 	for i := 0; i < circuit.MerkleDepth; i++ {
@@ -102,12 +121,27 @@ func PrepareSpendWithdraw(
 	assignPubKey(&assignment.ReceiverViewPubKey, *viewPubKey)
 	assignment.Randomness = selectedNote.Randomness
 
-	msgHash := privacycrypto.MimcHash(selectedNote.Amount, selectedNote.AssetID, selectedNote.Randomness, recipientInt)
-	sigBytes, err := signer.SignSpendNoteHash(msgHash)
+	spendIntent, err := privacytypes.ComputeSpendIntentV2(privacytypes.SpendIntentV2Input{
+		ChainDomainHi:     chainDomain.Hi,
+		ChainDomainLo:     chainDomain.Lo,
+		MerkleRoot:        new(big.Int).SetBytes(merklePath.Root),
+		Nullifier:         selectedNote.ComputeNullifier(),
+		Amount:            selectedNote.Amount,
+		AssetID:           selectedNote.AssetID,
+		RecipientDigestHi: recipientDigest.Hi,
+		RecipientDigestLo: recipientDigest.Lo,
+		ExpiresAtUnix:     input.ExpiresAtUnix,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute spend intent: %w", err)
+	}
+	sigBytes, err := signer.SignSpendIntent(spendIntent)
 	if err != nil {
 		return nil, err
 	}
-	assignSignature(&assignment.Signature, sigBytes)
+	if err := assignSignature(&assignment.Signature, sigBytes); err != nil {
+		return nil, fmt.Errorf("invalid spend intent signature: %w", err)
+	}
 
 	nullifierBig, ok := assignment.Nullifier.(*big.Int)
 	if !ok {
@@ -156,6 +190,9 @@ func spendPubKeyFromNote(note privacytypes.Note) (*crypto_tedwards.PointAffine, 
 	var point crypto_tedwards.PointAffine
 	point.X.SetBigInt(note.ReceiverSpendPubKeyX)
 	point.Y.SetBigInt(note.ReceiverSpendPubKeyY)
+	if err := privacycrypto.ValidatePrimeSubgroupPoint(&point); err != nil {
+		return nil, err
+	}
 	return &point, nil
 }
 
@@ -167,10 +204,16 @@ func viewPubKeyFromNote(note privacytypes.Note) (*crypto_tedwards.PointAffine, e
 	var point crypto_tedwards.PointAffine
 	point.X.SetBigInt(note.ReceiverViewPubKeyX)
 	point.Y.SetBigInt(note.ReceiverViewPubKeyY)
+	if err := privacycrypto.ValidatePrimeSubgroupPoint(&point); err != nil {
+		return nil, err
+	}
 	return &point, nil
 }
 
-func assignSignature(target *eddsa.Signature, sigBytes []byte) {
+func assignSignature(target *eddsa.Signature, sigBytes []byte) error {
+	if _, err := privacycrypto.DecodeCanonicalEdDSASignature(sigBytes); err != nil {
+		return err
+	}
 	rBytes := sigBytes[:32]
 	sBytes := sigBytes[32:]
 
@@ -184,6 +227,7 @@ func assignSignature(target *eddsa.Signature, sigBytes []byte) {
 	target.R.X = rx
 	target.R.Y = ry
 	target.S = new(big.Int).SetBytes(sBytes)
+	return nil
 }
 
 func assignPubKey(target *eddsa.PublicKey, source crypto_tedwards.PointAffine) {

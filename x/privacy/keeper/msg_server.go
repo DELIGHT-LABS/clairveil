@@ -156,7 +156,7 @@ func (k msgServer) Withdraw(goCtx context.Context, msg *types.MsgWithdraw) (*typ
 		return nil, errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "withdraw chain id mismatch: expected %s, got %s", ctx.ChainID(), msg.ChainId)
 	}
 
-	if ctx.BlockTime().Unix() > msg.ExpiresAtUnix {
+	if ctx.BlockTime().Unix() >= msg.ExpiresAtUnix {
 		return nil, errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "withdraw payload has expired")
 	}
 
@@ -174,13 +174,23 @@ func (k msgServer) Withdraw(goCtx context.Context, msg *types.MsgWithdraw) (*typ
 	if err != nil {
 		return nil, errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "recipient address %q is invalid", msg.Recipient)
 	}
-	recipientInt := new(big.Int).SetBytes(recipientAddr.Bytes())
-
 	var assignment circuit.SpendCircuit
 
 	assignment.MerkleRoot = new(big.Int).SetBytes(canonicalRoot)
 	assignment.Nullifier = new(big.Int).SetBytes(canonicalNullifier)
-	assignment.Recipient = recipientInt
+	chainDomain, err := types.ComputeChainDomainV1(ctx.ChainID(), types.ActiveCircuitSetID)
+	if err != nil {
+		return nil, errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "failed to compute withdraw chain domain: %v", err)
+	}
+	recipientDigest, err := types.ComputeWithdrawRecipientDigestV1(recipientAddr.Bytes())
+	if err != nil {
+		return nil, errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "failed to compute withdraw recipient digest: %v", err)
+	}
+	assignment.ChainDomainHi = chainDomain.Hi
+	assignment.ChainDomainLo = chainDomain.Lo
+	assignment.ExpiresAtUnix = big.NewInt(msg.ExpiresAtUnix)
+	assignment.RecipientDigestHi = recipientDigest.Hi
+	assignment.RecipientDigestLo = recipientDigest.Lo
 
 	coin, err := sdk.ParseCoinNormalized(msg.Amount)
 	if err != nil {

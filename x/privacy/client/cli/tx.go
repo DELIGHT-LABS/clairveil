@@ -605,7 +605,7 @@ func buildWithdrawPayload(cmd *cobra.Command, clientCtx client.Context, targetCo
 			clientCtx: clientCtx,
 		},
 		privacyprovider.NewWithdrawQueryProvider(types.NewQueryClient(clientCtx)),
-		manualSpendNoteHashSigner{scalar: scalar, pubKey: pubKey},
+		manualSpendIntentSigner{scalar: scalar, pubKey: pubKey},
 		withdrawSpendArtifactProvider{},
 		withdrawSpendProofRunner{logWriter: privacyCommandLogWriter(cmd), latencyFlow: latencyFlow},
 		privacywithdraw.BuildWithdrawPayloadInput{
@@ -623,12 +623,12 @@ func buildWithdrawPayload(cmd *cobra.Command, clientCtx client.Context, targetCo
 	return result.Payload, nil
 }
 
-type manualSpendNoteHashSigner struct {
+type manualSpendIntentSigner struct {
 	scalar *big.Int
 	pubKey *crypto_tedwards.PointAffine
 }
 
-func (s manualSpendNoteHashSigner) SignSpendNoteHash(msgHash *big.Int) ([]byte, error) {
+func (s manualSpendIntentSigner) SignSpendIntent(msgHash *big.Int) ([]byte, error) {
 	return manualSign(msgHash, s.scalar, s.pubKey)
 }
 

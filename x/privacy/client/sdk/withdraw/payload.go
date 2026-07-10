@@ -14,7 +14,7 @@ import (
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
-const PreparedWithdrawPayloadVersion = "v1"
+const PreparedWithdrawPayloadVersion = "v2"
 
 type PreparedWithdrawPayload struct {
 	ProofHex      string `json:"proof_hex"`
@@ -112,7 +112,7 @@ func ValidatePreparedWithdrawPayloadMetadata(payload PreparedWithdrawPayload, no
 		return fmt.Errorf("withdraw payload hash mismatch; the file may have been modified after prepare-withdraw")
 	}
 
-	if now.Unix() > payload.ExpiresAtUnix {
+	if now.Unix() >= payload.ExpiresAtUnix {
 		return fmt.Errorf("withdraw payload expired; generate a fresh payload with prepare-withdraw")
 	}
 	coin, err := sdk.ParseCoinNormalized(payload.Amount)

@@ -50,6 +50,26 @@ func TestValidatePreparedWithdrawProverPayloadMetadataRejectsHashMismatch(t *tes
 	require.ErrorContains(t, err, "hash mismatch")
 }
 
+func TestValidatePreparedWithdrawProverPayloadRejectsExpiryBoundary(t *testing.T) {
+	input, source, planner, merklePaths, signer, _, _ := testBuildPreparedWithdrawProverPayloadDeps(t)
+	result, err := BuildPreparedWithdrawProverPayload(context.Background(), source, planner, merklePaths, signer, input)
+	require.NoError(t, err)
+
+	err = ValidatePreparedWithdrawProverPayloadMetadata(*result.Payload, time.Unix(result.Payload.ExpiresAtUnix, 0))
+	require.ErrorContains(t, err, "expired")
+}
+
+func TestValidatePreparedWithdrawProverPayloadRejectsMalformedIntentSignature(t *testing.T) {
+	input, source, planner, merklePaths, signer, _, _ := testBuildPreparedWithdrawProverPayloadDeps(t)
+	result, err := BuildPreparedWithdrawProverPayload(context.Background(), source, planner, merklePaths, signer, input)
+	require.NoError(t, err)
+
+	result.Payload.SpendIntentSignatureHex = result.Payload.SpendIntentSignatureHex[:len(result.Payload.SpendIntentSignatureHex)-2]
+	result.Payload.PayloadHash = ComputePreparedWithdrawProverPayloadHash(*result.Payload)
+	err = ValidatePreparedWithdrawProverPayloadMetadata(*result.Payload, time.Now())
+	require.ErrorContains(t, err, "spend intent signature")
+}
+
 func TestProvePreparedWithdrawPayloadRejectsMismatchedNullifier(t *testing.T) {
 	input, source, planner, merklePaths, signer, artifacts, runner := testBuildPreparedWithdrawProverPayloadDeps(t)
 

@@ -19,7 +19,7 @@ import (
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
-func TestSpendCircuitBindsRecipient(t *testing.T) {
+func TestSpendCircuitBindsRecipientDigest(t *testing.T) {
 	assertion := buildValidSpendAssignment(t, big.NewInt(424242))
 
 	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &SpendCircuit{})
@@ -36,14 +36,25 @@ func TestSpendCircuitBindsRecipient(t *testing.T) {
 
 	publicWitness, err := frontend.NewWitness(assertion, ecc.BN254.ScalarField(), frontend.PublicOnly())
 	require.NoError(t, err)
+	require.Len(t, publicWitness.Vector().(fr.Vector), 9)
 	require.NoError(t, groth16.Verify(proof, vk, publicWitness))
 
-	tampered := *assertion
-	tampered.Recipient = big.NewInt(424243)
-
-	tamperedPublicWitness, err := frontend.NewWitness(&tampered, ecc.BN254.ScalarField(), frontend.PublicOnly())
-	require.NoError(t, err)
-	require.Error(t, groth16.Verify(proof, vk, tamperedPublicWitness))
+	for _, tc := range []struct {
+		name   string
+		mutate func(*SpendCircuit)
+	}{
+		{name: "recipient", mutate: func(tampered *SpendCircuit) { tampered.RecipientDigestHi = big.NewInt(424243) }},
+		{name: "chain", mutate: func(tampered *SpendCircuit) { tampered.ChainDomainLo = big.NewInt(104) }},
+		{name: "expiry", mutate: func(tampered *SpendCircuit) { tampered.ExpiresAtUnix = big.NewInt(2_000_000_001) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tampered := *assertion
+			tc.mutate(&tampered)
+			tamperedPublicWitness, err := frontend.NewWitness(&tampered, ecc.BN254.ScalarField(), frontend.PublicOnly())
+			require.NoError(t, err)
+			require.Error(t, groth16.Verify(proof, vk, tamperedPublicWitness))
+		})
+	}
 }
 
 func TestSpendCircuitBindsAssetID(t *testing.T) {
@@ -126,9 +137,6 @@ func buildValidSpendAssignmentWithAmount(t testing.TB, recipient, amount *big.In
 	spendPubKeyX, spendPubKeyY := pointBigInts(spendPubKey)
 	viewPubKeyX, viewPubKeyY := pointBigInts(viewPubKey)
 
-	msg := privacycrypto.MimcHash(amount, assetID, randomness, recipient)
-	sig := signSpendMessage(t, msg, spendScalar, spendPubKey)
-
 	commitment := privacycrypto.MimcHash(
 		spendPubKeyX,
 		spendPubKeyY,
@@ -139,14 +147,36 @@ func buildValidSpendAssignmentWithAmount(t testing.TB, recipient, amount *big.In
 		randomness,
 	)
 	root := merkleRootFromLeaf(commitment)
+	nullifier := privacycrypto.MimcHash(randomness, spendPubKeyX, spendPubKeyY)
+	chainDomainHi := big.NewInt(101)
+	chainDomainLo := big.NewInt(103)
+	recipientDigestLo := big.NewInt(107)
+	expiresAtUnix := int64(2_000_000_000)
+	intent, err := privacytypes.ComputeSpendIntentV2(privacytypes.SpendIntentV2Input{
+		ChainDomainHi:     chainDomainHi,
+		ChainDomainLo:     chainDomainLo,
+		MerkleRoot:        root,
+		Nullifier:         nullifier,
+		Amount:            amount,
+		AssetID:           assetID,
+		RecipientDigestHi: recipient,
+		RecipientDigestLo: recipientDigestLo,
+		ExpiresAtUnix:     expiresAtUnix,
+	})
+	require.NoError(t, err)
+	sig := signSpendMessage(t, intent, spendScalar, spendPubKey)
 
 	assignment := &SpendCircuit{
-		MerkleRoot: root,
-		Nullifier:  privacycrypto.MimcHash(randomness, spendPubKeyX, spendPubKeyY),
-		Amount:     amount,
-		Recipient:  recipient,
-		AssetID:    assetID,
-		Randomness: randomness,
+		MerkleRoot:        root,
+		ChainDomainHi:     chainDomainHi,
+		ChainDomainLo:     chainDomainLo,
+		ExpiresAtUnix:     big.NewInt(expiresAtUnix),
+		Nullifier:         nullifier,
+		Amount:            amount,
+		RecipientDigestHi: recipient,
+		RecipientDigestLo: recipientDigestLo,
+		AssetID:           assetID,
+		Randomness:        randomness,
 	}
 
 	for i := 0; i < MerkleDepth; i++ {

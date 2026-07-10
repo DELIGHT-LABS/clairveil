@@ -52,6 +52,18 @@ type TransferIntentV2Input struct {
 	ExpiresAtUnix        int64
 }
 
+type SpendIntentV2Input struct {
+	ChainDomainHi     *big.Int
+	ChainDomainLo     *big.Int
+	MerkleRoot        *big.Int
+	Nullifier         *big.Int
+	Amount            *big.Int
+	AssetID           *big.Int
+	RecipientDigestHi *big.Int
+	RecipientDigestLo *big.Int
+	ExpiresAtUnix     int64
+}
+
 func SplitDigestToLimbs(digest [sha256.Size]byte) DigestLimbs {
 	return DigestLimbs{
 		Hi: new(big.Int).SetBytes(digest[:sha256.Size/2]),
@@ -73,6 +85,19 @@ func ComputeChainDomainV1(chainID, circuitSetID string) (DigestLimbs, error) {
 		return DigestLimbs{}, err
 	}
 	if err := writeLengthPrefixedBytes(&encoded, []byte(circuitSetID)); err != nil {
+		return DigestLimbs{}, err
+	}
+	digest := sha256.Sum256(encoded.Bytes())
+	return SplitDigestToLimbs(digest), nil
+}
+
+func ComputeWithdrawRecipientDigestV1(recipientBytes []byte) (DigestLimbs, error) {
+	if len(recipientBytes) == 0 {
+		return DigestLimbs{}, fmt.Errorf("withdraw recipient bytes are required")
+	}
+	var encoded bytes.Buffer
+	encoded.WriteString(WithdrawRecipientV1ByteDomain)
+	if err := writeLengthPrefixedBytes(&encoded, recipientBytes); err != nil {
 		return DigestLimbs{}, err
 	}
 	digest := sha256.Sum256(encoded.Bytes())
@@ -215,6 +240,48 @@ func ComputeTransferIntentV2(input TransferIntentV2Input) (*big.Int, error) {
 		input.FullDisclosureDigest,
 		input.PayloadDigestHi,
 		input.PayloadDigestLo,
+		big.NewInt(input.ExpiresAtUnix),
+	), nil
+}
+
+func ComputeSpendIntentV2(input SpendIntentV2Input) (*big.Int, error) {
+	fields := []struct {
+		name  string
+		value *big.Int
+	}{
+		{"chain domain hi", input.ChainDomainHi},
+		{"chain domain lo", input.ChainDomainLo},
+		{"merkle root", input.MerkleRoot},
+		{"nullifier", input.Nullifier},
+		{"amount", input.Amount},
+		{"asset id", input.AssetID},
+		{"recipient digest hi", input.RecipientDigestHi},
+		{"recipient digest lo", input.RecipientDigestLo},
+	}
+	for _, field := range fields {
+		if err := validateIntentFieldElement(field.name, field.value); err != nil {
+			return nil, err
+		}
+	}
+	if !fitsUnsignedBits(input.ChainDomainHi, 128) || !fitsUnsignedBits(input.ChainDomainLo, 128) ||
+		!fitsUnsignedBits(input.RecipientDigestHi, 128) || !fitsUnsignedBits(input.RecipientDigestLo, 128) {
+		return nil, fmt.Errorf("chain and recipient digest limbs must be unsigned 128-bit integers")
+	}
+	if input.ExpiresAtUnix <= 0 {
+		return nil, fmt.Errorf("expires_at_unix must be positive")
+	}
+
+	return privacycrypto.MimcHash(
+		privacycrypto.HashString(SpendIntentV2FieldDomain),
+		input.ChainDomainHi,
+		input.ChainDomainLo,
+		privacycrypto.HashString(SpendV2CircuitKindFieldDomain),
+		input.MerkleRoot,
+		input.Nullifier,
+		input.Amount,
+		input.AssetID,
+		input.RecipientDigestHi,
+		input.RecipientDigestLo,
 		big.NewInt(input.ExpiresAtUnix),
 	), nil
 }

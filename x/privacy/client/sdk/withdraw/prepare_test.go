@@ -54,6 +54,8 @@ func TestPrepareSpendWithdrawBuildsAssignment(t *testing.T) {
 		PrepareSpendWithdrawInput{
 			Note:           note,
 			RecipientBytes: recipientBytes,
+			ChainID:        "clairveil-test-1",
+			ExpiresAtUnix:  2_000_000_000,
 		},
 	)
 	require.NoError(t, err)
@@ -66,7 +68,23 @@ func TestPrepareSpendWithdrawBuildsAssignment(t *testing.T) {
 	require.Len(t, signer.hashes, 1)
 	require.Equal(t, 0, prepared.Assignment.Amount.(*big.Int).Cmp(big.NewInt(7)))
 	require.Equal(t, 0, prepared.Assignment.AssetID.(*big.Int).Cmp(privacycrypto.HashString("uclair")))
-	require.Equal(t, 0, prepared.Assignment.Recipient.(*big.Int).Cmp(new(big.Int).SetBytes(recipientBytes)))
+	recipientDigest, err := privacytypes.ComputeWithdrawRecipientDigestV1(recipientBytes)
+	require.NoError(t, err)
+	require.Equal(t, 0, prepared.Assignment.RecipientDigestHi.(*big.Int).Cmp(recipientDigest.Hi))
+	require.Equal(t, 0, prepared.Assignment.RecipientDigestLo.(*big.Int).Cmp(recipientDigest.Lo))
+	expectedIntent, err := privacytypes.ComputeSpendIntentV2(privacytypes.SpendIntentV2Input{
+		ChainDomainHi:     prepared.Assignment.ChainDomainHi.(*big.Int),
+		ChainDomainLo:     prepared.Assignment.ChainDomainLo.(*big.Int),
+		MerkleRoot:        prepared.Assignment.MerkleRoot.(*big.Int),
+		Nullifier:         prepared.Assignment.Nullifier.(*big.Int),
+		Amount:            prepared.Assignment.Amount.(*big.Int),
+		AssetID:           prepared.Assignment.AssetID.(*big.Int),
+		RecipientDigestHi: prepared.Assignment.RecipientDigestHi.(*big.Int),
+		RecipientDigestLo: prepared.Assignment.RecipientDigestLo.(*big.Int),
+		ExpiresAtUnix:     prepared.Assignment.ExpiresAtUnix.(*big.Int).Int64(),
+	})
+	require.NoError(t, err)
+	require.Equal(t, 0, signer.hashes[0].Cmp(expectedIntent))
 	require.Equal(t, 0, prepared.Assignment.PathHelper[0].(int))
 	require.Equal(t, 1, prepared.Assignment.PathHelper[1].(int))
 }
@@ -91,6 +109,8 @@ func TestPrepareSpendWithdrawPropagatesMerkleQueryError(t *testing.T) {
 		PrepareSpendWithdrawInput{
 			Note:           note,
 			RecipientBytes: []byte{0x01},
+			ChainID:        "clairveil-test-1",
+			ExpiresAtUnix:  2_000_000_000,
 		},
 	)
 	require.ErrorContains(t, err, "merkle path query failed for the selected note")
@@ -121,7 +141,7 @@ type stubSpendNoteHashSigner struct {
 	returnErr error
 }
 
-func (s *stubSpendNoteHashSigner) SignSpendNoteHash(msgHash *big.Int) ([]byte, error) {
+func (s *stubSpendNoteHashSigner) SignSpendIntent(msgHash *big.Int) ([]byte, error) {
 	if s.returnErr != nil {
 		return nil, s.returnErr
 	}

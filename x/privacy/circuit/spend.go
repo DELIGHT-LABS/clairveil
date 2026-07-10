@@ -6,6 +6,7 @@ import (
 	"github.com/consensys/gnark/std/hash/mimc"
 	"github.com/consensys/gnark/std/signature/eddsa"
 
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	ecc_twistededwards "github.com/consensys/gnark-crypto/ecc/twistededwards"
 )
@@ -13,11 +14,15 @@ import (
 const MerkleDepth = 32
 
 type SpendCircuit struct {
-	MerkleRoot frontend.Variable `gnark:",public"`
-	Nullifier  frontend.Variable `gnark:",public"`
-	Amount     frontend.Variable `gnark:",public"`
-	Recipient  frontend.Variable `gnark:",public"`
-	AssetID    frontend.Variable `gnark:",public"`
+	MerkleRoot        frontend.Variable `gnark:",public"`
+	ChainDomainHi     frontend.Variable `gnark:",public"`
+	ChainDomainLo     frontend.Variable `gnark:",public"`
+	ExpiresAtUnix     frontend.Variable `gnark:",public"`
+	Nullifier         frontend.Variable `gnark:",public"`
+	Amount            frontend.Variable `gnark:",public"`
+	RecipientDigestHi frontend.Variable `gnark:",public"`
+	RecipientDigestLo frontend.Variable `gnark:",public"`
+	AssetID           frontend.Variable `gnark:",public"`
 
 	ReceiverSpendPubKey eddsa.PublicKey `gnark:",secret"`
 	ReceiverViewPubKey  eddsa.PublicKey `gnark:",secret"`
@@ -34,9 +39,15 @@ func (c *SpendCircuit) Define(api frontend.API) error {
 	curve, _ := twistededwards.NewEdCurve(api, ecc_twistededwards.BN254)
 
 	assertAmountRange(api, c.Amount)
-	curve.AssertIsOnCurve(c.ReceiverSpendPubKey.A)
-	curve.AssertIsOnCurve(c.ReceiverViewPubKey.A)
-	curve.AssertIsOnCurve(c.Signature.R)
+	api.ToBinary(c.ChainDomainHi, 128)
+	api.ToBinary(c.ChainDomainLo, 128)
+	api.ToBinary(c.RecipientDigestHi, 128)
+	api.ToBinary(c.RecipientDigestLo, 128)
+	api.ToBinary(c.ExpiresAtUnix, 64)
+	api.AssertIsDifferent(c.ExpiresAtUnix, 0)
+	assertPrimeSubgroupPoint(api, curve, c.ReceiverSpendPubKey.A)
+	assertPrimeSubgroupPoint(api, curve, c.ReceiverViewPubKey.A)
+	assertCanonicalEdDSASignature(api, curve, c.Signature)
 
 	h.Write(
 		c.ReceiverSpendPubKey.A.X,
@@ -59,7 +70,19 @@ func (c *SpendCircuit) Define(api frontend.API) error {
 	api.AssertIsEqual(currentHash, c.MerkleRoot)
 
 	h.Reset()
-	h.Write(c.Amount, c.AssetID, c.Randomness, c.Recipient)
+	h.Write(
+		privacycrypto.HashString(privacytypes.SpendIntentV2FieldDomain),
+		c.ChainDomainHi,
+		c.ChainDomainLo,
+		privacycrypto.HashString(privacytypes.SpendV2CircuitKindFieldDomain),
+		c.MerkleRoot,
+		c.Nullifier,
+		c.Amount,
+		c.AssetID,
+		c.RecipientDigestHi,
+		c.RecipientDigestLo,
+		c.ExpiresAtUnix,
+	)
 	msg := h.Sum()
 
 	h.Reset()

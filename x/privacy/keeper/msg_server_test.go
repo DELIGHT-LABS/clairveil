@@ -547,6 +547,30 @@ func TestMsgServerWithdrawRejectsExpiredPayload(t *testing.T) {
 	require.False(t, k.HasNullifier(ctx, nullifier))
 }
 
+func TestMsgServerWithdrawTreatsExpiryBoundaryAsExpired(t *testing.T) {
+	k, ctx, bankKeeper := setupMsgServerKeeper()
+	server := NewMsgServerImpl(*k)
+	root := fixedFieldBytes(0x7b)
+	nullifier := fixedFieldBytes(0x7c)
+	k.SetHistoricalRoot(ctx, root)
+
+	msg := privacytypes.NewMsgWithdraw(
+		testAddress(0x5c),
+		[]byte{0x01},
+		root,
+		nullifier,
+		"1uclair",
+		testAddress(0x6d),
+		msgServerTestChainID,
+		ctx.BlockTime().Unix(),
+	)
+
+	_, err := server.Withdraw(sdk.WrapSDKContext(ctx), msg)
+	require.ErrorContains(t, err, "withdraw payload has expired")
+	require.Equal(t, 0, bankKeeper.fromModuleToAccountCalls)
+	require.False(t, k.HasNullifier(ctx, nullifier))
+}
+
 func TestMsgServerTransferRejectsRootNotFoundBeforeZK(t *testing.T) {
 	k, ctx, _ := setupMsgServerKeeper()
 	server := NewMsgServerImpl(*k)

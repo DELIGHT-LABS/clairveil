@@ -10,11 +10,15 @@ import (
 
 func TestNewPublicWitnessBN254(t *testing.T) {
 	assignment := &circuit.SpendCircuit{
-		MerkleRoot: big.NewInt(0),
-		Nullifier:  big.NewInt(0),
-		Amount:     big.NewInt(0),
-		Recipient:  big.NewInt(0),
-		AssetID:    big.NewInt(0),
+		MerkleRoot:        big.NewInt(0),
+		ChainDomainHi:     big.NewInt(0),
+		ChainDomainLo:     big.NewInt(0),
+		ExpiresAtUnix:     big.NewInt(1),
+		Nullifier:         big.NewInt(0),
+		Amount:            big.NewInt(0),
+		RecipientDigestHi: big.NewInt(0),
+		RecipientDigestLo: big.NewInt(0),
+		AssetID:           big.NewInt(0),
 	}
 
 	w, err := newPublicWitnessBN254(assignment)

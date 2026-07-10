@@ -233,6 +233,9 @@ func TestPreparedWithdrawPayloadToMsgAtUsesProvidedTime(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, payload.ExpiresAtUnix, msg.ExpiresAtUnix)
 
+	_, err = payload.ToMsgAt(testBech32Address(), time.Unix(1000, 0))
+	require.ErrorContains(t, err, "payload expired")
+
 	_, err = payload.ToMsgAt(testBech32Address(), time.Unix(1001, 0))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "payload expired")
@@ -308,7 +311,7 @@ func TestPreparedWithdrawPayloadHashBindsUserIntentFields(t *testing.T) {
 		base.Amount,
 		base.Recipient,
 		base.ChainID,
-		"v2",
+		"v3",
 		base.ExpiresAtUnix,
 	))
 	require.NotEqual(t, baseHash, ComputePreparedWithdrawPayloadHash(

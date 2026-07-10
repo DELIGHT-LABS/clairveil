@@ -23,28 +23,28 @@ import (
 )
 
 const (
-	PreparedWithdrawProverPayloadVersion = "v1"
-	PreparedWithdrawProofVersion         = "v1"
+	PreparedWithdrawProverPayloadVersion = "v2"
+	PreparedWithdrawProofVersion         = "v2"
 )
 
 type PreparedWithdrawProverPayload struct {
-	Version                   string   `json:"version"`
-	RootHex                   string   `json:"root_hex"`
-	NullifierHex              string   `json:"nullifier_hex"`
-	Amount                    string   `json:"amount"`
-	AssetDenom                string   `json:"asset_denom"`
-	AssetIDHex                string   `json:"asset_id_hex"`
-	Recipient                 string   `json:"recipient"`
-	RecipientBytesHex         string   `json:"recipient_bytes_hex"`
-	ChainID                   string   `json:"chain_id"`
-	ExpiresAtUnix             int64    `json:"expires_at_unix"`
-	NoteRandomnessHex         string   `json:"note_randomness_hex"`
-	SpendPubKeyHex            string   `json:"spend_pubkey_hex"`
-	ViewPubKeyHex             string   `json:"view_pubkey_hex"`
-	MerklePath                []string `json:"merkle_path"`
-	MerklePathHelper          []uint32 `json:"merkle_path_helper"`
-	SpendNoteHashSignatureHex string   `json:"spend_note_hash_signature_hex"`
-	PayloadHash               string   `json:"payload_hash"`
+	Version                 string   `json:"version"`
+	RootHex                 string   `json:"root_hex"`
+	NullifierHex            string   `json:"nullifier_hex"`
+	Amount                  string   `json:"amount"`
+	AssetDenom              string   `json:"asset_denom"`
+	AssetIDHex              string   `json:"asset_id_hex"`
+	Recipient               string   `json:"recipient"`
+	RecipientBytesHex       string   `json:"recipient_bytes_hex"`
+	ChainID                 string   `json:"chain_id"`
+	ExpiresAtUnix           int64    `json:"expires_at_unix"`
+	NoteRandomnessHex       string   `json:"note_randomness_hex"`
+	SpendPubKeyHex          string   `json:"spend_pubkey_hex"`
+	ViewPubKeyHex           string   `json:"view_pubkey_hex"`
+	MerklePath              []string `json:"merkle_path"`
+	MerklePathHelper        []uint32 `json:"merkle_path_helper"`
+	SpendIntentSignatureHex string   `json:"spend_intent_signature_hex"`
+	PayloadHash             string   `json:"payload_hash"`
 }
 
 type PreparedWithdrawProof struct {
@@ -63,7 +63,7 @@ func BuildPreparedWithdrawProverPayload(
 	source ExactMatchNoteSource,
 	planner ExactMatchAutoPlanner,
 	merklePaths MerklePathProvider,
-	signer SpendNoteHashSigner,
+	signer SpendIntentSigner,
 	input BuildWithdrawPayloadInput,
 ) (*BuildPreparedWithdrawProverPayloadResult, error) {
 	if source == nil {
@@ -73,7 +73,7 @@ func BuildPreparedWithdrawProverPayload(
 		return nil, fmt.Errorf("a merkle path provider is required to build a withdraw prover payload")
 	}
 	if signer == nil {
-		return nil, fmt.Errorf("a spend note hash signer is required to build a withdraw prover payload")
+		return nil, fmt.Errorf("a spend intent signer is required to build a withdraw prover payload")
 	}
 	if err := validateBuildWithdrawPayloadInput(input); err != nil {
 		return nil, err
@@ -91,6 +91,8 @@ func BuildPreparedWithdrawProverPayload(
 		PrepareSpendWithdrawInput{
 			Note:           *selectedFoundNote,
 			RecipientBytes: input.Recipient.Bytes(),
+			ChainID:        strings.TrimSpace(input.ChainID),
+			ExpiresAtUnix:  input.ExpiresAt.Unix(),
 		},
 	)
 	if err != nil {
@@ -119,22 +121,22 @@ func BuildPreparedWithdrawProverPayload(
 	}
 
 	payload := &PreparedWithdrawProverPayload{
-		Version:                   PreparedWithdrawProverPayloadVersion,
-		RootHex:                   rootHex,
-		NullifierHex:              hex.EncodeToString(preparedWithdraw.NullifierBytes),
-		Amount:                    input.TargetCoin.Amount.String(),
-		AssetDenom:                input.TargetCoin.Denom,
-		AssetIDHex:                assetIDHex,
-		Recipient:                 input.Recipient.String(),
-		RecipientBytesHex:         hex.EncodeToString(input.Recipient.Bytes()),
-		ChainID:                   strings.TrimSpace(input.ChainID),
-		ExpiresAtUnix:             input.ExpiresAt.Unix(),
-		NoteRandomnessHex:         randomnessHex,
-		SpendPubKeyHex:            spendPubKeyHex,
-		ViewPubKeyHex:             viewPubKeyHex,
-		MerklePath:                append([]string(nil), preparedWithdraw.MerklePath...),
-		MerklePathHelper:          append([]uint32(nil), preparedWithdraw.PathHelper...),
-		SpendNoteHashSignatureHex: hex.EncodeToString(preparedWithdraw.Signature),
+		Version:                 PreparedWithdrawProverPayloadVersion,
+		RootHex:                 rootHex,
+		NullifierHex:            hex.EncodeToString(preparedWithdraw.NullifierBytes),
+		Amount:                  input.TargetCoin.Amount.String(),
+		AssetDenom:              input.TargetCoin.Denom,
+		AssetIDHex:              assetIDHex,
+		Recipient:               input.Recipient.String(),
+		RecipientBytesHex:       hex.EncodeToString(input.Recipient.Bytes()),
+		ChainID:                 strings.TrimSpace(input.ChainID),
+		ExpiresAtUnix:           input.ExpiresAt.Unix(),
+		NoteRandomnessHex:       randomnessHex,
+		SpendPubKeyHex:          spendPubKeyHex,
+		ViewPubKeyHex:           viewPubKeyHex,
+		MerklePath:              append([]string(nil), preparedWithdraw.MerklePath...),
+		MerklePathHelper:        append([]uint32(nil), preparedWithdraw.PathHelper...),
+		SpendIntentSignatureHex: hex.EncodeToString(preparedWithdraw.Signature),
 	}
 	payload.PayloadHash = ComputePreparedWithdrawProverPayloadHash(*payload)
 
@@ -179,7 +181,7 @@ func ComputePreparedWithdrawProverPayloadHash(payload PreparedWithdrawProverPayl
 	write(payload.ViewPubKeyHex)
 	writeSlice(payload.MerklePath)
 	writeUint32Slice(payload.MerklePathHelper)
-	write(payload.SpendNoteHashSignatureHex)
+	write(payload.SpendIntentSignatureHex)
 
 	sum := sha256.Sum256([]byte(b.String()))
 	return hex.EncodeToString(sum[:])
@@ -198,7 +200,7 @@ func ValidatePreparedWithdrawProverPayloadMetadata(payload PreparedWithdrawProve
 	if payload.ExpiresAtUnix <= 0 {
 		return fmt.Errorf("withdraw prover payload expires_at_unix must be positive")
 	}
-	if now.Unix() > payload.ExpiresAtUnix {
+	if now.Unix() >= payload.ExpiresAtUnix {
 		return fmt.Errorf("withdraw prover payload expired; regenerate it before requesting a proof")
 	}
 
@@ -243,8 +245,12 @@ func ValidatePreparedWithdrawProverPayloadMetadata(payload PreparedWithdrawProve
 	if _, err := decodePublicKeyHex(payload.ViewPubKeyHex, "view pubkey"); err != nil {
 		return err
 	}
-	if _, err := decodeSignatureHex(payload.SpendNoteHashSignatureHex); err != nil {
-		return fmt.Errorf("invalid spend note hash signature: %w", err)
+	signatureBytes, err := decodeSignatureHex(payload.SpendIntentSignatureHex)
+	if err != nil {
+		return fmt.Errorf("invalid spend intent signature: %w", err)
+	}
+	if _, err := privacycrypto.DecodeCanonicalEdDSASignature(signatureBytes); err != nil {
+		return fmt.Errorf("invalid spend intent signature: %w", err)
 	}
 
 	return nil
@@ -421,22 +427,36 @@ func buildSpendAssignmentFromPreparedWithdrawPayload(payload PreparedWithdrawPro
 	if err != nil {
 		return nil, err
 	}
-	signatureBytes, err := decodeSignatureHex(payload.SpendNoteHashSignatureHex)
+	signatureBytes, err := decodeSignatureHex(payload.SpendIntentSignatureHex)
 	if err != nil {
-		return nil, fmt.Errorf("invalid spend note hash signature: %w", err)
+		return nil, fmt.Errorf("invalid spend intent signature: %w", err)
+	}
+	chainDomain, err := privacytypes.ComputeChainDomainV1(payload.ChainID, privacytypes.ActiveCircuitSetID)
+	if err != nil {
+		return nil, err
+	}
+	recipientDigest, err := privacytypes.ComputeWithdrawRecipientDigestV1(recipientBytes)
+	if err != nil {
+		return nil, err
 	}
 
 	assignment := &circuit.SpendCircuit{
-		MerkleRoot: new(big.Int).SetBytes(rootBytes),
-		Amount:     amount,
-		Recipient:  new(big.Int).SetBytes(recipientBytes),
-		AssetID:    assetID,
-		Nullifier:  nullifier,
-		Randomness: randomness,
+		MerkleRoot:        new(big.Int).SetBytes(rootBytes),
+		ChainDomainHi:     chainDomain.Hi,
+		ChainDomainLo:     chainDomain.Lo,
+		ExpiresAtUnix:     big.NewInt(payload.ExpiresAtUnix),
+		Amount:            amount,
+		RecipientDigestHi: recipientDigest.Hi,
+		RecipientDigestLo: recipientDigest.Lo,
+		AssetID:           assetID,
+		Nullifier:         nullifier,
+		Randomness:        randomness,
 	}
 	assignPubKey(&assignment.ReceiverSpendPubKey, *spendPubKey)
 	assignPubKey(&assignment.ReceiverViewPubKey, *viewPubKey)
-	assignSignature(&assignment.Signature, signatureBytes)
+	if err := assignSignature(&assignment.Signature, signatureBytes); err != nil {
+		return nil, fmt.Errorf("invalid spend intent signature: %w", err)
+	}
 
 	pathNodes, pathHelpers := decodeMerkleProof(payload.MerklePath, payload.MerklePathHelper)
 	for depth := 0; depth < circuit.MerkleDepth; depth++ {
@@ -506,11 +526,11 @@ func decodePublicKeyHex(value, fieldName string) (*crypto_tedwards.PointAffine, 
 	if err != nil {
 		return nil, fmt.Errorf("invalid %s hex: %w", fieldName, err)
 	}
-	var point crypto_tedwards.PointAffine
-	if _, err := point.SetBytes(bz); err != nil {
+	point, err := privacycrypto.DecodeCanonicalPoint(bz)
+	if err != nil {
 		return nil, fmt.Errorf("invalid %s bytes: %w", fieldName, err)
 	}
-	return &point, nil
+	return point, nil
 }
 
 func decodeSignatureHex(value string) ([]byte, error) {
@@ -520,6 +540,9 @@ func decodeSignatureHex(value string) ([]byte, error) {
 	}
 	if len(signatureBytes) != 64 {
 		return nil, fmt.Errorf("signature must be 64 bytes")
+	}
+	if _, err := privacycrypto.DecodeCanonicalEdDSASignature(signatureBytes); err != nil {
+		return nil, err
 	}
 	return signatureBytes, nil
 }

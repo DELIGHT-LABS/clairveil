@@ -91,6 +91,8 @@ func testSpendAssignment(t *testing.T) *circuit.SpendCircuit {
 		PrepareSpendWithdrawInput{
 			Note:           note,
 			RecipientBytes: []byte{0x01, 0x02, 0x03},
+			ChainID:        "clairveil-test-1",
+			ExpiresAtUnix:  2_000_000_000,
 		},
 	)
 	require.NoError(t, err)

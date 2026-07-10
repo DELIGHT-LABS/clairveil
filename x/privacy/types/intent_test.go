@@ -87,6 +87,33 @@ func TestTransferIntentV2RejectsOversizedDigestLimb(t *testing.T) {
 	require.ErrorContains(t, err, "128-bit")
 }
 
+func TestWithdrawRecipientAndSpendIntentV2GoldenVectors(t *testing.T) {
+	recipient, err := ComputeWithdrawRecipientDigestV1([]byte{0, 1, 2, 3})
+	require.NoError(t, err)
+	require.Equal(t, "211336406829810441348458686997852034571", recipient.Hi.String())
+	require.Equal(t, "265630251913956315626555014078061856515", recipient.Lo.String())
+
+	withoutLeadingZero, err := ComputeWithdrawRecipientDigestV1([]byte{1, 2, 3})
+	require.NoError(t, err)
+	require.NotEqual(t, recipient, withoutLeadingZero)
+
+	chainDomain, err := ComputeChainDomainV1("clairveil-localnet-1", ActiveCircuitSetID)
+	require.NoError(t, err)
+	intent, err := ComputeSpendIntentV2(SpendIntentV2Input{
+		ChainDomainHi:     chainDomain.Hi,
+		ChainDomainLo:     chainDomain.Lo,
+		MerkleRoot:        big.NewInt(41),
+		Nullifier:         big.NewInt(43),
+		Amount:            big.NewInt(47),
+		AssetID:           big.NewInt(53),
+		RecipientDigestHi: recipient.Hi,
+		RecipientDigestLo: recipient.Lo,
+		ExpiresAtUnix:     2_000_000_000,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "13191783163059326543049206717388639829443167257927871854890138339708944197419", intent.String())
+}
+
 func intentTestTransferMessage() *MsgTransfer {
 	return &MsgTransfer{
 		Creator:                     "clair1relayer",

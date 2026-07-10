@@ -270,7 +270,7 @@ type generatedWithdrawSigner struct {
 	pubKey *crypto_tedwards.PointAffine
 }
 
-func (s generatedWithdrawSigner) SignSpendNoteHash(msgHash *big.Int) ([]byte, error) {
+func (s generatedWithdrawSigner) SignSpendIntent(msgHash *big.Int) ([]byte, error) {
 	return signGeneratedNoteHash(msgHash, s.scalar, s.pubKey)
 }
 

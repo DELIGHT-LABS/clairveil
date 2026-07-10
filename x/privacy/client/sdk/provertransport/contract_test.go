@@ -345,7 +345,7 @@ type withdrawSpendSigner struct {
 	signature []byte
 }
 
-func (s *withdrawSpendSigner) SignSpendNoteHash(_ *big.Int) ([]byte, error) {
+func (s *withdrawSpendSigner) SignSpendIntent(_ *big.Int) ([]byte, error) {
 	return append([]byte(nil), s.signature...), nil
 }
 
