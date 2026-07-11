@@ -54,3 +54,26 @@ func verifyProofBN254(
 	}
 	return groth16.Verify(proof, verifyingKey, publicWitness)
 }
+
+// verifyPrechargedProofBN254 performs the same canonical decode and Groth16
+// verification without consuming gas. Callers must charge their complete
+// deterministic resource model before invoking this helper.
+func verifyPrechargedProofBN254(
+	proofBytes []byte,
+	assignment frontend.Circuit,
+	loadVerifyingKey func() (groth16.VerifyingKey, error),
+) error {
+	proof, err := readProofBN254(proofBytes)
+	if err != nil {
+		return err
+	}
+	publicWitness, err := newPublicWitnessBN254(assignment)
+	if err != nil {
+		return err
+	}
+	verifyingKey, err := loadVerifyingKey()
+	if err != nil {
+		return err
+	}
+	return groth16.Verify(proof, verifyingKey, publicWitness)
+}

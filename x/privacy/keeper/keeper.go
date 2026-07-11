@@ -27,6 +27,10 @@ type Keeper struct {
 	paramstore                      paramtypes.Subspace
 	bankKeeper                      BankKeeper
 	historicalPathQueryRebuildSlots chan struct{}
+	// batchTransitionHook is nil in production and is intentionally unexported.
+	// Keeper-package integration tests use it to prove that the nested cache is
+	// discarded when a deterministic mid-transition failure occurs.
+	batchTransitionHook func(stage string) error
 }
 
 func NewKeeper(

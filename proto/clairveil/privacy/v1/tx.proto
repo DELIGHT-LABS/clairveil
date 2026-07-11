@@ -17,6 +17,9 @@ service Msg {
 
   // Transfer: shielded pool 내부 전송
   rpc Transfer(MsgTransfer) returns (MsgTransferResponse);
+
+  // BatchTransfer: one-proof 1..16 input / 1..32 output shielded transfer
+  rpc BatchTransfer(MsgBatchTransfer) returns (MsgBatchTransferResponse);
 }
 
 enum UserDisclosureMode {
