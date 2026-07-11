@@ -437,44 +437,123 @@ Go reference, conformance fixture, CLI/tutorial은 repo에서 완성함.
 
 ## 15. Acceptance Criteria
 
-- [ ] batchtransfer SDK가 1..16 input/1..32 output을 준비함.
-- [ ] one owner signature가 final roots/payload/chain/expiry를 인증함.
-- [ ] fixed-size NoteV1/disclosure를 사용함.
-- [ ] local/remote prover route가 payload-bound proof를 생성함.
-- [ ] prover admission/body/error/log 경계가 안전함.
-- [ ] structured signer가 roots/payload/intent를 독립 재계산하고 opaque blind-signing을 허용하지 않음.
-- [ ] broadcast retry가 idempotent하고 nullifier-first reconcile을 사용함.
-- [ ] typed scanner가 32 outputs를 누락/중복 없이 복구함.
-- [ ] scanner 기본값이 view-tag mismatch에서도 decrypt하며 typed-query failure를 lossy fallback하지 않음.
-- [ ] user/audit/self-view disclosure가 full/user roots와 일치함.
-- [ ] payroll이 31+change와 exact 32 payment를 올바르게 계획함.
-- [ ] payroll durable schema가 many-input reservations -> one batch operation -> many item outputs를 atomic하게 표현함.
-- [ ] batch status와 item evidence status가 분리됨.
-- [ ] CLI/localnet tutorial을 처음부터 끝까지 따라갈 수 있음.
-- [ ] existing 2x2/multi-message/payroll regression이 없음.
-- [ ] schema/fixture/docs/release pack이 contract version과 일치함.
-- [ ] artifact/secret이 tracked되지 않음.
-- [ ] master ledger가 갱신됨.
+- [x] batchtransfer SDK가 1..16 input/1..32 output을 준비함.
+- [x] one owner signature가 final roots/payload/chain/expiry를 인증함.
+- [x] fixed-size NoteV1/disclosure를 사용함.
+- [x] local/remote prover route가 payload-bound proof를 생성함.
+- [x] prover admission/body/error/log 경계가 안전함.
+- [x] structured signer가 roots/payload/intent를 독립 재계산하고 opaque blind-signing을 허용하지 않음.
+- [x] broadcast retry가 idempotent하고 nullifier-first reconcile을 사용함.
+- [x] typed scanner가 32 outputs를 누락/중복 없이 복구함.
+- [x] scanner 기본값이 view-tag mismatch에서도 decrypt하며 typed-query failure를 lossy fallback하지 않음.
+- [x] user/audit/self-view disclosure가 full/user roots와 일치함.
+- [x] payroll이 31+change와 exact 32 payment를 올바르게 계획함.
+- [x] payroll durable schema가 many-input reservations -> one batch operation -> many item outputs를 atomic하게 표현함.
+- [x] batch status와 item evidence status가 분리됨.
+- [x] CLI/localnet tutorial을 처음부터 끝까지 따라갈 수 있음.
+- [x] existing 2x2/multi-message/payroll regression이 없음.
+- [x] schema/fixture/docs/release pack이 contract version과 일치함.
+- [x] artifact/secret이 tracked되지 않음.
+- [x] master ledger가 갱신됨.
 
 ## 16. Session 4 Handoff
 
-```text
 ## Completion Record
 
-- 시작 commit:
-- 완료 commit:
-- review scope base..HEAD:
-- SDK/payload/prover versions:
-- batch route/admission defaults:
-- scanner cursor/schema:
-- payroll operation/item evidence contract:
-- localnet cases/results:
-- 1/1, 3/4, 16/32 resource snapshot:
-- invariant matrix 경로:
-- residual finding:
-- formal setup: NOT PERFORMED
-- external audit: NOT PERFORMED
-- worktree 상태:
-```
+- 상태: **Complete — Gate 3B 충족. Session 4는 시작하지 않음.**
+- 작업 기준/시작 commit: `cd9b4124ee0a7d3f7faeec1e76f765ec3330a88d`
+- 완료 구현 commit: `43b49460cacc91e27ab0ae8cdb9607b44d2edce8`
+- completion/ledger closure commit: 이 record와 Master Roadmap Ledger를 함께 고정한 commit
+- review scope: `cd9b4124ee0a7d3f7faeec1e76f765ec3330a88d..HEAD`
 
-end-to-end gate가 미완료이면 Session 4를 시작하지 않음.
+### Gate 3A 선행 검증과 frozen core
+
+- Session 3A Completion Record, production circuit, 12 public input, `MsgBatchTransfer`, keeper/gas/atomic state, typed scan state, genesis, artifact descriptor/readiness와 direct core integration을 현재 코드에 대조함.
+- 작업 시작 전 `go test ./x/privacy/... -count=1`과 `make release-pack-verify`가 PASS했으며, repo 밖 development artifact의 batch R1CS/PK/VK SHA-256이 각각 `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`로 Completion Record와 일치함.
+- **Gate 3A: PASS.** Session 3B에서 production circuit, public witness 순서/의미, keeper invariant와 gas model은 변경하지 않았음. `x/privacy/circuit/batch_joinsplit_16x32_bench_test.go`에는 test-only `3x4` 측정 shape만 추가함.
+
+### SDK, payload, signer, prover contract
+
+- SDK: `x/privacy/client/sdk/batchtransfer`; prepared payload `batch-transfer-payload-v1`, prepared proof `batch-transfer-proof-v1`, active circuit set `privacy-note-v1`, circuit `batch-joinsplit-16x32-v1`.
+- prover request/response version은 `v1`/`v1`, route는 `POST /v1/proofs/batch-transfer`임. local prover와 사용자가 명시적으로 선택한 remote prover 한 곳만 지원하며 automatic multi-prover failover는 기본 비활성화가 아니라 **구현 자체가 없음**.
+- planner는 1..16 input과 1..32 payment/change/padding output, compact/exact32, active zero padding을 지원함. 각 active output의 output randomness, user disclosure blinding, full disclosure blinding을 독립 생성/검증함.
+- structured signing request가 ordered input/output 전체, owner keys, final root, asset, totals, audit identity, self-view mode, 네 vector root, canonical payload, payload digest, chain/expiry와 expected intent를 독립 재계산함. opaque intent bytes만 넘기는 blind-signing API는 없음.
+- prepared/proof 파일은 version과 request payload hash를 검증하고 `0600`으로 저장함. mutation, version/hash mismatch, expiry, malformed proof를 build/broadcast 전에 거부함.
+- prover 기본 body limit은 wire와 gzip decompressed body 각각 `8 MiB`, circuit별 admission은 in-flight `1`/queued `4`임. bounded framing 뒤 permit을 얻고 semantic validation부터 실제 gnark prove return까지 유지함. saturation은 payload-free HTTP `429 busy`, cancellation은 진행 중 prove가 끝나기 전에 permit을 반환하지 않음.
+
+### Broadcast, typed scan, disclosure
+
+- signed tx bytes를 최초 전송 전에 durable storage에 stage하고 tx hash를 먼저, 이어 모든 input nullifier를 batch query해 reconcile함. ambiguous retry는 같은 signed bytes만 재전송하며 자동 재서명/부분 output retry를 하지 않음.
+- scan schema는 `privacy-scan-v2`, cursor는 `(height, global_sequence, output_index)`인 `PrivacyScanCursorV1`임. Deposit/2x2/Batch가 같은 typed cursor를 사용하며 typed query 실패 시 ciphertext가 없는 ABCI event로 fallback하지 않음.
+- scanner safe default는 view-tag mismatch에서도 decrypt를 수행하고 tag-only skip은 명시적 opt-in임. 32 output pagination은 cursor가 페이지 중간에서 끊겨도 transactional retry와 de-duplication으로 lossless하게 복구함.
+- owned `NoteV1` plaintext의 commitment를 재계산한 뒤 wallet에 넣고 `AssetRegistryV1` asset ID/denom mapping을 역검증함. output별 public/recipient user disclosure와 audit/self-view full disclosure를 output index, commitment, policy, digest, blinding에 대해 검증함.
+- live regression에서 기존 2x2 real output만 self-view를 갖는 framing과 typed scanner의 lower-case tx hash를 보존하도록 호환성 결함 두 건을 수정함. batch-level self-view all-or-none와 tx-hash identity 검증은 그대로 유지함.
+
+### Durable payroll contract
+
+- schema version은 `privacy-payroll-batch-v1`이며 `many input reservations -> one BatchOperation -> many PayrollItemOutput/ExpectedOutputEvidence` 관계를 memory, private file, SQLite/PostgreSQL dialect schema로 저장함.
+- batch reservation/lease token/CAS, encrypted prepared payload/proof/signed tx bytes, payload/proof/tx/sign-doc hash, account sequence, broadcast history, output별 evidence를 atomic하게 유지함. expired proving lease recovery와 caller cancellation 이후 실제 prove 종료까지 이어지는 heartbeat를 검증함.
+- operation chain status와 item evidence status(`Pending`, `Succeeded`, `ManualReview`, `Failed`)는 별도임. 모든 input note가 spent여도 expected output commitment/recipient/amount/asset/disclosure evidence가 맞지 않으면 payroll item을 성공 처리하지 않음.
+- 31 payments+change와 exact 32 payments를 한 proof로 계획하고, restart/ambiguous broadcast/repeated reconcile에서 operation ID와 reservation을 유지함. 동일 evidence 재처리는 idempotent함.
+
+### 실제 localnet E2E 결과
+
+`RUN_LOCALNET=1 CLAIRVEIL_BATCH_ARTIFACT_DIR=/tmp/clairveil-session3a-artifacts-381c984 make privacy-batch-joinsplit-localnet`을 최종 구현에서 실행함. 모든 proof는 `/v1/proofs/batch-transfer`를 거쳤고 automatic failover는 사용하지 않았음.
+
+| case | shape | tx hash | DeliverTx | gas used | prepared/proof bytes |
+| --- | --- | --- | ---: | ---: | ---: |
+| 1 payment | 1/1 | `5CCE911550AAA40A8574F18898901D98BF7A7973585796F99CB4560390CBC17A` | `0` | `1,609,514` | `7,947 / 410` |
+| mixed disclosure | 3/4 | `9D6F7B2A110B5E4E97F4A2D054A1046BF8CC5A00FF79306AD0950FCE13F2665B` | `0` | `3,141,099` | `25,878 / 410` |
+| 31 payments + change | 16/32 | `15675341BC6EFEA1D400963B02648D7E78E6B13C5A44E8EEB8682D3CECB2ADD8` | `0` | `16,017,355` | `132,583 / 410` |
+| exact 32 payments | 16/32 | `1AB163FF489B938335990C1A07D3BCA71AF8603E8CC08E0F464BF15D621F0A12` | `0` | `16,876,619` | `154,135 / 410` |
+| explicit zero padding | 1/32 | `8B88CD2D0315C5647A9EC37E9539D392009F46AC54AED984240C0B15159CFC65` | `0` | `15,529,326` | `79,306 / 410` |
+
+- node/prover restart 뒤 stored exact-32 tx hash를 canonical query로 reconcile함.
+- 같은 signed tx 재전송은 tx `D298FC32D3DCD9658F9655FB44172A29C3C6E0D2EDEF7CC1F64FFB588C54C86F`에서 DeliverTx code `18`, `batch nullifier 0 was already used`로 거절됨을 확인함.
+- 결과 schema `clairveil.batch-transfer.localnet-result.v1`의 `status=passed`, `restart_tx_hash_reconciled=true`, `spent_nullifier_retry_rejected=true`를 확인함. 결과는 ignored test workdir `tmp/privacy-batch-joinsplit-localnet/out/`에만 생성되고 artifact/secret은 tracked되지 않음.
+- 기존 회귀는 `make privacy-e2e-smoke`의 Deposit/2x2 세 disclosure mode/Withdraw/prepared Withdraw, `TRANSFER_BATCH_COUNT=2` multi-message localnet, `make reference-payroll-live-localnet`의 durable reservation/settlement/idempotent retry를 각각 실제 체인에서 PASS함.
+
+### 1/1, 3/4, 16/32 resource snapshot
+
+Apple M5 Pro에서 production CCS를 한 번 compile해 재사용하고 `-benchtime=1x -count=1 -benchmem`으로 측정한 단일 snapshot임. SLA나 shape 간 유의미한 성능 비교로 해석하지 않음.
+
+| shape | solve ns/op | B/op | allocs/op | actual localnet gas |
+| --- | ---: | ---: | ---: | ---: |
+| 1/1 | `385,685,250` | `238,733,528` | `11,439` | `1,609,514` |
+| 3/4 | `377,207,541` | `238,752,168` | `11,534` | `3,141,099` |
+| 16/32 exact-32 | `390,604,625` | `238,994,416` | `17,321` | `16,876,619` |
+
+production circuit constraint는 Session 3A와 같은 `1,111,837`이며 formal setup resource 측정으로 해석하지 않음.
+
+### 검증 기록
+
+| 명령/검증 | 결과 |
+| --- | --- |
+| Session 3B 문서의 5개 targeted SDK test 묶음 | PASS |
+| `go test ./x/privacy/... -count=1` | PASS |
+| `go test -race ./x/privacy/client/sdk/... ./x/privacy/client/cli ./cmd/clairveil-payroll -count=1` | PASS; macOS linker의 비치명적 `LC_DYSYMTAB` warning만 관찰 |
+| `go vet ./...` | PASS; unkeyed disclosure input 두 곳을 keyed literal로 수정 후 재통과 |
+| `make examples` | PASS |
+| batch 전용 actual localnet | PASS; 5 cases + restart/retry |
+| `make privacy-e2e-smoke` | PASS |
+| `RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check` | PASS |
+| `make reference-payroll-live-localnet` | PASS |
+| `make release-check` | PASS; 전체 Go test/build/examples/vulnerability policy/plain localnet/privacy E2E/multi-message 포함 |
+| `make release-pack` / `make release-pack-verify` | PASS |
+| `git diff --check` | PASS |
+
+### Handoff, invariant matrix, residual risk
+
+- conformance fixture: `x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_session3b_contract.json`.
+- invariant traceability matrix: [한글](../docs/clairveil-batch-joinsplit-16x32-kr.md#13-invariant-traceability-matrix), [영문](../docs/clairveil-batch-joinsplit-16x32.md#13-invariant-traceability-matrix).
+- Session 3B handoff: [한글](../docs/clairveil-session3b-batch-transfer-handoff-kr.md), [영문](../docs/clairveil-session3b-batch-transfer-handoff.md). CLI/localnet tutorial과 release pack verifier가 fixture/schema/handoff를 포함함.
+- review에서 expired `Proving` lease recovery, failed tx result propagation, repeated reconcile evidence 보존, plan/payload recipient·disclosure binding, nullifier lookup binding, ambiguous `Unknown` operation/reservation consistency를 보강함. 이후 실제 회귀에서 발견한 legacy 2x2 self-view framing과 tx-hash case normalization도 회귀 test와 localnet 재실행으로 닫음.
+- 최종 active Critical/High/Medium/actionable finding은 `0`건임. Formal trusted setup, production artifact, external ZK audit, managed production DB/multi-tenant SaaS, production remote prover deployment, downstream JS SDK/wallet 제품은 범위 밖이며 수행하지 않았음.
+- in-process gnark prove의 hard cancellation/resource containment에는 production process isolation이 필요함. fixed version이 없는 `GO-2024-2584`, `GO-2026-4479`, `GO-2026-5932`와 examples npm low 1건은 기존 release policy의 known dependency risk로 계속 추적함.
+- formal trusted setup: **NOT PERFORMED**.
+- external audit: **NOT PERFORMED**.
+- **Gate 3B: PASS.** prepare -> local/remote prove -> build -> broadcast -> typed scan/disclosure -> payroll item reconcile의 end-to-end가 frozen Session 2/3A contract를 낮추지 않고 통과함.
+- **Session 4: Unblocked, Not Started.** 독립 검증은 이 세션에서 시작하지 않았음.
+- worktree 상태: completion/ledger closure commit과 최종 release-pack 재검증 뒤 `git status --short --branch`가 clean임을 확인함.
+
+Gate 3B가 미완료이면 Session 4를 시작하지 않는 조건은 충족됐으며, 이 작업은 Session 4를 수행하지 않고 종료함.
