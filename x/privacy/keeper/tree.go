@@ -155,7 +155,11 @@ func (k Keeper) AppendCommitment(ctx sdk.Context, commitment []byte) error {
 	if bytes.Equal(canonicalCommitment, zeroNodeBytes()) {
 		return errMerkleZeroCommitment
 	}
-	if k.HasCommitment(ctx, canonicalCommitment) {
+	commitmentExists, err := k.HasCommitment(ctx, canonicalCommitment)
+	if err != nil {
+		return fmt.Errorf("check existing commitment: %w", err)
+	}
+	if commitmentExists {
 		return fmt.Errorf("%w: commitment=%x", errMerkleDuplicateCommitment, canonicalCommitment)
 	}
 
@@ -263,7 +267,10 @@ func (k Keeper) GetPath(ctx sdk.Context, commitment []byte) ([]string, []uint32,
 	}
 
 	canonicalCommitment := canonicalizeFieldBytesOrOriginal(commitment)
-	targetIndex, found := k.GetCommitmentIndex(ctx, canonicalCommitment)
+	targetIndex, found, err := k.GetCommitmentIndex(ctx, canonicalCommitment)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	if !found || targetIndex >= count {
 		return nil, nil, nil, errMerkleCommitmentNotFound
 	}
@@ -455,28 +462,34 @@ func (k Keeper) SetCommitmentIndex(ctx sdk.Context, commitment []byte, index uin
 	store.Set(types.GetCommitmentIndexKey(canonicalizeFieldBytesOrOriginal(commitment)), bz)
 }
 
-func (k Keeper) GetCommitmentIndex(ctx sdk.Context, commitment []byte) (uint64, bool) {
+func (k Keeper) GetCommitmentIndex(ctx sdk.Context, commitment []byte) (uint64, bool, error) {
 	store := k.storeService.OpenKVStore(ctx)
 	canonicalCommitment, err := canonicalizeFieldBytes(commitment)
 	if err != nil {
-		return 0, false
+		return 0, false, err
 	}
 
 	key := types.GetCommitmentIndexKey(canonicalCommitment)
-	flag, _ := store.Has(key)
+	flag, err := store.Has(key)
+	if err != nil {
+		return 0, false, fmt.Errorf("check commitment index: %w", err)
+	}
 	if !flag {
-		return 0, false
+		return 0, false, nil
 	}
 
-	bz, _ := store.Get(key)
+	bz, err := store.Get(key)
+	if err != nil {
+		return 0, false, fmt.Errorf("read commitment index: %w", err)
+	}
 	if len(bz) != 8 {
-		return 0, false
+		return 0, false, fmt.Errorf("commitment index is corrupt: expected 8 bytes, got %d", len(bz))
 	}
 
-	return binary.BigEndian.Uint64(bz), true
+	return binary.BigEndian.Uint64(bz), true, nil
 }
 
-func (k Keeper) HasCommitment(ctx sdk.Context, commitment []byte) bool {
-	_, found := k.GetCommitmentIndex(ctx, commitment)
-	return found
+func (k Keeper) HasCommitment(ctx sdk.Context, commitment []byte) (bool, error) {
+	_, found, err := k.GetCommitmentIndex(ctx, commitment)
+	return found, err
 }

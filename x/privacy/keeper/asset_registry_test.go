@@ -107,3 +107,17 @@ func TestAssetRegistryV1GenesisExportIsCanonicalOrder(t *testing.T) {
 	require.Equal(t, "uatom", exported[0].CanonicalDenom)
 	require.Equal(t, "uclair", exported[1].CanonicalDenom)
 }
+
+func TestAssetRegistryV1GenesisExportRejectsOrphanReverseEntry(t *testing.T) {
+	k, ctx, _ := setupMsgServerKeeper()
+	_, err := k.RegisterCanonicalAssetV1(ctx, "uclair")
+	require.NoError(t, err)
+
+	orphanID, err := CanonicalAssetIDV1("uatom")
+	require.NoError(t, err)
+	store := k.storeService.OpenKVStore(ctx)
+	require.NoError(t, store.Set(privacytypes.GetAssetByIDKey(orphanID), []byte("uatom")))
+
+	_, err = k.ExportGenesisAssetRegistryV1(ctx)
+	require.ErrorContains(t, err, "forward mapping is missing or inconsistent")
+}

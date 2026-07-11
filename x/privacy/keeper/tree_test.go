@@ -152,7 +152,8 @@ func TestAppendCommitmentAllowsFinalLeaf(t *testing.T) {
 	require.NoError(t, k.AppendCommitment(ctx, commitment))
 	require.Equal(t, MaxMerkleLeaves, k.GetLeafCount(ctx))
 
-	index, found := k.GetCommitmentIndex(ctx, commitment)
+	index, found, err := k.GetCommitmentIndex(ctx, commitment)
+	require.NoError(t, err)
 	require.True(t, found)
 	require.Equal(t, MaxMerkleLeaves-1, index)
 }
@@ -217,7 +218,8 @@ func TestGetPathBootstrapsLegacyLeafState(t *testing.T) {
 	require.Equal(t, expectedRoot, root)
 	require.True(t, k.HasMerkleNode(ctx, uint8(MerkleDepth), 0))
 
-	idx, found := k.GetCommitmentIndex(ctx, leaves[1])
+	idx, found, err := k.GetCommitmentIndex(ctx, leaves[1])
+	require.NoError(t, err)
 	require.True(t, found)
 	require.Equal(t, uint64(1), idx)
 }
@@ -237,10 +239,13 @@ func TestAppendCommitmentRejectsDuplicateWithoutChangingState(t *testing.T) {
 	require.Equal(t, rootBefore, k.GetMerkleNode(ctx, uint8(MerkleDepth), 0))
 	require.Empty(t, k.GetLeaf(ctx, countBefore))
 
-	idx, found := k.GetCommitmentIndex(ctx, dup)
+	idx, found, err := k.GetCommitmentIndex(ctx, dup)
+	require.NoError(t, err)
 	require.True(t, found)
 	require.Equal(t, uint64(0), idx)
-	require.True(t, k.HasCommitment(ctx, dup))
+	hasCommitment, err := k.HasCommitment(ctx, dup)
+	require.NoError(t, err)
+	require.True(t, hasCommitment)
 }
 
 func TestGetPathNotFound(t *testing.T) {
@@ -302,8 +307,28 @@ func TestAppendCommitmentRejectsMissingRequiredLeftSibling(t *testing.T) {
 	require.Contains(t, err.Error(), "index=0")
 	require.Empty(t, k.GetLeaf(ctx, 1))
 
-	_, found := k.GetCommitmentIndex(ctx, newCommitment)
+	_, found, indexErr := k.GetCommitmentIndex(ctx, newCommitment)
+	require.NoError(t, indexErr)
 	require.False(t, found)
+}
+
+func TestCommitmentIndexCorruptionFailsClosed(t *testing.T) {
+	k, ctx := setupTreeKeeper()
+	commitment := fixedFieldBytes(0x51)
+	store := k.storeService.OpenKVStore(ctx)
+	require.NoError(t, store.Set(privacytypes.GetCommitmentIndexKey(commitment), []byte{0x01}))
+
+	_, found, err := k.GetCommitmentIndex(ctx, commitment)
+	require.False(t, found)
+	require.ErrorContains(t, err, "commitment index is corrupt")
+
+	hasCommitment, err := k.HasCommitment(ctx, commitment)
+	require.False(t, hasCommitment)
+	require.ErrorContains(t, err, "commitment index is corrupt")
+
+	err = k.AppendCommitment(ctx, commitment)
+	require.ErrorContains(t, err, "check existing commitment")
+	require.Zero(t, k.GetLeafCount(ctx))
 }
 
 func TestRecalculateRootRejectsMissingLeaf(t *testing.T) {

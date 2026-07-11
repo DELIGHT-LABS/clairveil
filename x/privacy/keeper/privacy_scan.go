@@ -385,7 +385,10 @@ func (k Keeper) validatePrivacyScanOutputStateV2(ctx sdk.Context, summary *types
 	if !output.LeafIndexFound {
 		return fmt.Errorf("privacy scan output leaf index must be present")
 	}
-	leafIndex, found := k.GetCommitmentIndex(ctx, output.Commitment)
+	leafIndex, found, err := k.GetCommitmentIndex(ctx, output.Commitment)
+	if err != nil {
+		return err
+	}
 	if !found || leafIndex != output.LeafIndex {
 		return fmt.Errorf("privacy scan output leaf index does not match commitment state")
 	}
@@ -574,7 +577,10 @@ func (k Keeper) buildLegacyPrivacyScanV2(ctx sdk.Context, sequence uint64, heigh
 		if err != nil {
 			return nil, err
 		}
-		leafIndex, found := k.GetCommitmentIndex(ctx, canonicalCommitment)
+		leafIndex, found, err := k.GetCommitmentIndex(ctx, canonicalCommitment)
+		if err != nil {
+			return nil, err
+		}
 		if !found {
 			return nil, fmt.Errorf("privacy scan commitment is missing from commitment index")
 		}

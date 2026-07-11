@@ -92,7 +92,8 @@ func TestGenesisRoundTrip(t *testing.T) {
 	require.Equal(t, uint64(len(exported.Commitments)), restoredKeeper.GetLeafCount(restoredCtx))
 
 	for _, commitment := range exported.Commitments {
-		_, found := restoredKeeper.GetCommitmentIndex(restoredCtx, commitment)
+		_, found, err := restoredKeeper.GetCommitmentIndex(restoredCtx, commitment)
+		require.NoError(t, err)
 		require.True(t, found)
 	}
 

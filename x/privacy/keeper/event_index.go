@@ -154,7 +154,10 @@ func (k Keeper) GetScanEvents(ctx sdk.Context, afterHeight int64, afterSequence 
 		nextSequence = event.Sequence
 
 		if privacyEventTypeAllowed(event.EventType, typeFilter) {
-			scanEvent := k.projectScanEvent(ctx, &event)
+			scanEvent, err := k.projectScanEvent(ctx, &event)
+			if err != nil {
+				return nil, 0, 0, false, err
+			}
 			if scanEvent != nil {
 				events = append(events, scanEvent)
 			}
@@ -170,9 +173,9 @@ func (k Keeper) GetScanEvents(ctx sdk.Context, afterHeight int64, afterSequence 
 	return events, nextHeight, nextSequence, hasMore, nil
 }
 
-func (k Keeper) projectScanEvent(ctx sdk.Context, event *privacytypes.QueryPrivacyEvent) *privacytypes.QueryScanEvent {
+func (k Keeper) projectScanEvent(ctx sdk.Context, event *privacytypes.QueryPrivacyEvent) (*privacytypes.QueryScanEvent, error) {
 	if event == nil {
-		return nil
+		return nil, nil
 	}
 
 	attrs := privacyEventAttributesMap(event.Attributes)
@@ -185,24 +188,33 @@ func (k Keeper) projectScanEvent(ctx sdk.Context, event *privacytypes.QueryPriva
 
 	switch event.EventType {
 	case privacytypes.EventTypeDeposit:
-		scanEvent.Outputs = append(scanEvent.Outputs, k.projectScanOutput(ctx, 0, attrs[privacytypes.AttributeKeyCommitment], attrs[privacytypes.AttributeKeyEncryptedNote], "", ""))
+		output, err := k.projectScanOutput(ctx, 0, attrs[privacytypes.AttributeKeyCommitment], attrs[privacytypes.AttributeKeyEncryptedNote], "", "")
+		if err != nil {
+			return nil, err
+		}
+		scanEvent.Outputs = append(scanEvent.Outputs, output)
 	case privacytypes.EventTypeShieldedTransfer:
-		scanEvent.Outputs = append(scanEvent.Outputs,
-			k.projectScanOutput(ctx, 0, attrs[privacytypes.AttributeKeyCommitment1], "", attrs[privacytypes.AttributeKeyCipherText1], attrs[privacytypes.AttributeKeyViewTag1]),
-			k.projectScanOutput(ctx, 1, attrs[privacytypes.AttributeKeyCommitment2], "", attrs[privacytypes.AttributeKeyCipherText2], attrs[privacytypes.AttributeKeyViewTag2]),
-		)
+		for i, commitmentKey := range []string{privacytypes.AttributeKeyCommitment1, privacytypes.AttributeKeyCommitment2} {
+			ciphertextKey := []string{privacytypes.AttributeKeyCipherText1, privacytypes.AttributeKeyCipherText2}[i]
+			viewTagKey := []string{privacytypes.AttributeKeyViewTag1, privacytypes.AttributeKeyViewTag2}[i]
+			output, err := k.projectScanOutput(ctx, uint32(i), attrs[commitmentKey], "", attrs[ciphertextKey], attrs[viewTagKey])
+			if err != nil {
+				return nil, err
+			}
+			scanEvent.Outputs = append(scanEvent.Outputs, output)
+		}
 		scanEvent.NullifierHexes = appendIfNotEmpty(scanEvent.NullifierHexes, attrs[privacytypes.AttributeKeyNullifier1])
 		scanEvent.NullifierHexes = appendIfNotEmpty(scanEvent.NullifierHexes, attrs[privacytypes.AttributeKeyNullifier2])
 	case privacytypes.EventTypeWithdraw:
 		scanEvent.NullifierHexes = appendIfNotEmpty(scanEvent.NullifierHexes, attrs[privacytypes.AttributeKeyNullifier])
 	default:
-		return nil
+		return nil, nil
 	}
 
-	return scanEvent
+	return scanEvent, nil
 }
 
-func (k Keeper) projectScanOutput(ctx sdk.Context, outputIndex uint32, commitmentHex string, encryptedNoteHex string, cipherTextHex string, viewTagHex string) *privacytypes.QueryScanOutput {
+func (k Keeper) projectScanOutput(ctx sdk.Context, outputIndex uint32, commitmentHex string, encryptedNoteHex string, cipherTextHex string, viewTagHex string) (*privacytypes.QueryScanOutput, error) {
 	output := &privacytypes.QueryScanOutput{
 		OutputIndex:      outputIndex,
 		CommitmentHex:    commitmentHex,
@@ -213,16 +225,19 @@ func (k Keeper) projectScanOutput(ctx sdk.Context, outputIndex uint32, commitmen
 
 	commitmentBytes, err := hex.DecodeString(commitmentHex)
 	if err != nil {
-		return output
+		return output, nil
 	}
 	canonicalCommitment, err := validateFieldElementBytesStrict(commitmentBytes)
 	if err != nil {
-		return output
+		return output, nil
 	}
-	leafIndex, found := k.GetCommitmentIndex(ctx, canonicalCommitment)
+	leafIndex, found, err := k.GetCommitmentIndex(ctx, canonicalCommitment)
+	if err != nil {
+		return nil, err
+	}
 	output.LeafIndexFound = found
 	output.LeafIndex = leafIndex
-	return output
+	return output, nil
 }
 
 func privacyEventAttributesMap(attrs []*privacytypes.QueryPrivacyEventAttribute) map[string]string {

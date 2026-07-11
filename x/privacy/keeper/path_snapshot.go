@@ -447,7 +447,10 @@ func (k Keeper) GetCommitmentPathsAtRootV1(ctx sdk.Context, commitments [][]byte
 			if !bytes.Equal(pathRoot, canonicalRoot) {
 				return nil, nil, fmt.Errorf("incremental path provider returned a different root")
 			}
-			leafIndex, ok := k.GetCommitmentIndex(ctx, canonicalCommitment)
+			leafIndex, ok, err := k.GetCommitmentIndex(ctx, canonicalCommitment)
+			if err != nil {
+				return nil, nil, err
+			}
 			if !ok || leafIndex >= snapshot.LeafCount {
 				return nil, nil, errMerkleCommitmentNotFound
 			}
@@ -479,7 +482,10 @@ func (k Keeper) GetCommitmentPathsAtRootV1(ctx sdk.Context, commitments [][]byte
 		if err != nil {
 			return nil, nil, err
 		}
-		leafIndex, found := k.GetCommitmentIndex(ctx, canonicalCommitment)
+		leafIndex, found, err := k.GetCommitmentIndex(ctx, canonicalCommitment)
+		if err != nil {
+			return nil, nil, err
+		}
 		if !found || leafIndex >= snapshot.LeafCount || !bytes.Equal(layer[leafIndex], canonicalCommitment) {
 			return nil, nil, errMerkleCommitmentNotFound
 		}

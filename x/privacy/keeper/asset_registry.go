@@ -176,8 +176,8 @@ func (k Keeper) InitGenesisAssetRegistryV1(ctx sdk.Context, entries []*types.Ass
 
 func (k Keeper) ExportGenesisAssetRegistryV1(ctx sdk.Context) ([]*types.AssetRegistryEntryV1, error) {
 	store := k.storeService.OpenKVStore(ctx)
-	prefix := types.GetAssetByDenomPrefix()
-	iterator, err := store.Iterator(prefix, storetypes.PrefixEndBytes(prefix))
+	denomPrefix := types.GetAssetByDenomPrefix()
+	iterator, err := store.Iterator(denomPrefix, storetypes.PrefixEndBytes(denomPrefix))
 	if err != nil {
 		return nil, err
 	}
@@ -186,10 +186,10 @@ func (k Keeper) ExportGenesisAssetRegistryV1(ctx sdk.Context) ([]*types.AssetReg
 	entries := make([]*types.AssetRegistryEntryV1, 0)
 	for ; iterator.Valid(); iterator.Next() {
 		key := iterator.Key()
-		if len(key) <= len(prefix) {
+		if len(key) <= len(denomPrefix) {
 			return nil, fmt.Errorf("asset registry contains an empty denom key")
 		}
-		canonicalDenom := string(key[len(prefix):])
+		canonicalDenom := string(key[len(denomPrefix):])
 		entry, found, err := k.GetAssetByDenomV1(ctx, canonicalDenom)
 		if err != nil {
 			return nil, err
@@ -198,6 +198,35 @@ func (k Keeper) ExportGenesisAssetRegistryV1(ctx sdk.Context) ([]*types.AssetReg
 			return nil, fmt.Errorf("asset registry entry %q disappeared during export", canonicalDenom)
 		}
 		entries = append(entries, entry)
+	}
+
+	// Validate the reverse namespace independently. Walking only the forward
+	// map would omit an orphan ID key from genesis export and silently turn a
+	// corrupt 1:1 registry into apparently valid exported state.
+	idPrefix := types.GetAssetByIDPrefix()
+	reverseIterator, err := store.Iterator(idPrefix, storetypes.PrefixEndBytes(idPrefix))
+	if err != nil {
+		return nil, err
+	}
+	defer reverseIterator.Close()
+	reverseCount := 0
+	for ; reverseIterator.Valid(); reverseIterator.Next() {
+		key := reverseIterator.Key()
+		if len(key) != len(idPrefix)+fieldElementByteSize {
+			return nil, fmt.Errorf("asset registry contains a malformed reverse ID key")
+		}
+		assetID := append([]byte(nil), key[len(idPrefix):]...)
+		_, found, err := k.GetAssetByIDV1(ctx, assetID)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			return nil, fmt.Errorf("asset registry reverse entry %x disappeared during export", assetID)
+		}
+		reverseCount++
+	}
+	if reverseCount != len(entries) {
+		return nil, fmt.Errorf("asset registry forward/reverse entry count mismatch: forward=%d reverse=%d", len(entries), reverseCount)
 	}
 	return entries, nil
 }

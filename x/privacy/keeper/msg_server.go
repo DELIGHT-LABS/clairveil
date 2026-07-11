@@ -84,7 +84,11 @@ func (k msgServer) Deposit(goCtx context.Context, msg *types.MsgDeposit) (*types
 	if err != nil {
 		return nil, errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "note commitment must be canonical 32-byte field bytes")
 	}
-	if k.HasCommitment(ctx, canonicalCommitment) {
+	commitmentExists, err := k.HasCommitment(ctx, canonicalCommitment)
+	if err != nil {
+		return nil, fmt.Errorf("check deposit commitment index: %w", err)
+	}
+	if commitmentExists {
 		return nil, errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "note commitment already exists")
 	}
 
@@ -331,7 +335,11 @@ func (k msgServer) executeShieldedTransfer(ctx sdk.Context, req shieldedTransfer
 			return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "commitment %d must be canonical 32-byte field bytes", i)
 		}
 		canonicalCommitments[i] = canonicalCommitment
-		if k.HasCommitment(ctx, canonicalCommitment) {
+		commitmentExists, err := k.HasCommitment(ctx, canonicalCommitment)
+		if err != nil {
+			return fmt.Errorf("check transfer commitment %d index: %w", i, err)
+		}
+		if commitmentExists {
 			return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "commitment %d already exists", i)
 		}
 	}

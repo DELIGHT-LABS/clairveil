@@ -122,7 +122,10 @@ func (k Keeper) CommitmentInfo(goCtx context.Context, req *types.QueryCommitment
 		return nil, status.Error(codes.InvalidArgument, "commitment must be canonical 32-byte field bytes")
 	}
 
-	leafIndex, found := k.GetCommitmentIndex(ctx, canonicalCommitment)
+	leafIndex, found, err := k.GetCommitmentIndex(ctx, canonicalCommitment)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
 	return &types.QueryCommitmentInfoResponse{
 		Found:     found,
 		LeafIndex: leafIndex,
