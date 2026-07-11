@@ -82,6 +82,8 @@ try:
     if archive.stat().st_size > max_archive_bytes:
         raise ValueError("compressed archive exceeds the verification limit")
     seen: set[str] = set()
+    directory_members: set[str] = set()
+    required_directories: set[str] = set()
     top_level: str | None = None
     total_bytes = 0
     member_count = 0
@@ -105,17 +107,31 @@ try:
             seen.add(name)
             if not (member.isdir() or member.isreg()):
                 raise ValueError(f"non-regular archive member: {name}")
+            if member.isdir():
+                if member.mode != 0o755:
+                    raise ValueError(
+                        f"non-canonical directory mode for {name}: {member.mode:04o}"
+                    )
+                directory_members.add(name)
+            elif member.mode not in (0o644, 0o755):
+                raise ValueError(
+                    f"non-canonical regular-file mode for {name}: {member.mode:04o}"
+                )
             if len(path.parts) == 1 and not member.isdir():
                 raise ValueError("archive top level must be a directory")
             if top_level is None:
                 top_level = path.parts[0]
             elif path.parts[0] != top_level:
                 raise ValueError("archive must contain exactly one top-level directory")
+            for parent in path.parents:
+                if str(parent) == ".":
+                    break
+                required_directories.add(str(parent))
 
             target = destination.joinpath(*path.parts)
             if member.isdir():
                 target.mkdir(parents=True, exist_ok=True)
-                os.chmod(target, member.mode & 0o777)
+                os.chmod(target, member.mode)
                 continue
             if member.size > max_file_bytes:
                 raise ValueError(f"archive member exceeds the file limit: {name}")
@@ -128,9 +144,15 @@ try:
                 raise ValueError(f"failed to read archive member: {name}")
             with source, target.open("xb") as output:
                 shutil.copyfileobj(source, output)
-            os.chmod(target, member.mode & 0o777)
+            os.chmod(target, member.mode)
     if top_level is None:
         raise ValueError("archive is empty")
+    missing_directories = required_directories - directory_members
+    if missing_directories:
+        raise ValueError(
+            "archive omits explicit directory members: "
+            + ", ".join(sorted(missing_directories)[:5])
+        )
     print(top_level)
 except (OSError, tarfile.TarError, ValueError) as error:
     print(f"unsafe release archive: {error}", file=sys.stderr)
@@ -141,6 +163,9 @@ PY
 fi
 pack_root="$work_dir/$pack_root_name"
 [[ -d "$pack_root" ]] || fail "missing extracted pack root: $pack_root_name"
+while IFS= read -r -d '' packed_directory; do
+	[[ "$(release_file_mode "$packed_directory")" == "0755" ]] || fail "archive directory must have mode 0755: ${packed_directory#"$pack_root/"}"
+done < <(find "$pack_root" -type d -print0)
 
 manifest_commit_line_count="$(grep -Ec '^commit:' "$pack_root/RELEASE-MANIFEST.txt" 2>/dev/null || true)"
 manifest_commit_count="$(grep -Ec '^commit: [0-9a-f]{40}$' "$pack_root/RELEASE-MANIFEST.txt" 2>/dev/null || true)"

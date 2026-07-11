@@ -57,6 +57,27 @@ copy_path() {
 	cp -R "$source_root/$path" "$pack_root/$path"
 }
 
+canonicalize_packed_git_modes() {
+	find "$pack_root" -type d -exec chmod 0755 {} +
+	while IFS= read -r -d '' packed_file; do
+		relative_path="${packed_file#"$pack_root/"}"
+		git_entry="$(git -C "$repo_root" ls-tree "$source_commit" -- "$relative_path")"
+		git_mode="${git_entry%% *}"
+		case "$git_mode" in
+		100644)
+			chmod 0644 "$packed_file"
+			;;
+		100755)
+			chmod 0755 "$packed_file"
+			;;
+		*)
+			echo "unsupported Git file mode in release pack: $relative_path ($git_mode)" >&2
+			exit 1
+			;;
+		esac
+	done < <(find "$pack_root" -type f -print0)
+}
+
 mkdir -p "$source_root" "$pack_root" "$dist_dir"
 git -C "$repo_root" archive --format=tar "$source_commit" | tar -xf - -C "$source_root"
 
@@ -73,6 +94,7 @@ duplicate_path="$(LC_ALL=C sort "$paths_file" | uniq -d | head -1)"
 while IFS= read -r path || [[ -n "$path" ]]; do
 	copy_path "$path"
 done <"$paths_file"
+canonicalize_packed_git_modes
 
 # Recheck after copying so a concurrent working-tree mutation cannot be
 # attributed to the immutable HEAD recorded in the manifest.
@@ -93,6 +115,7 @@ awk \
 		gsub(/@GENERATED_AT_UTC@/, generated_at_utc)
 		print
 	}' "$source_root/scripts/release-manifest-template.txt" >"$pack_root/RELEASE-MANIFEST.txt"
+chmod 0644 "$pack_root/RELEASE-MANIFEST.txt"
 
 (
 	cd "$pack_root"
@@ -100,9 +123,11 @@ awk \
 		shasum -a 256 "$file"
 	done >SHA256SUMS.txt
 )
+chmod 0644 "$pack_root/SHA256SUMS.txt"
 
-tar -C "$work_dir" -czf "$archive_path" "$pack_name"
+COPYFILE_DISABLE=1 tar -C "$work_dir" -czf "$archive_path" "$pack_name"
 shasum -a 256 "$archive_path" >"$checksum_path"
+chmod 0644 "$archive_path" "$checksum_path"
 
 echo "release pack: $archive_path"
 echo "checksum: $checksum_path"
