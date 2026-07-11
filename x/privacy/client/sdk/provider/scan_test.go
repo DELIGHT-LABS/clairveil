@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"testing"
 
 	abci "github.com/cometbft/cometbft/abci/types"
@@ -300,6 +301,28 @@ func TestScanQueryProviderCheckNullifiersUsedChunksLargeBatches(t *testing.T) {
 	require.Len(t, querier.requests[1].Nullifiers, 1)
 	require.False(t, used[nullifiers[0]])
 	require.True(t, used[nullifiers[1000]])
+}
+
+func TestScanQueryProviderCheckNullifiersUsedRejectsCorruptResponseFraming(t *testing.T) {
+	requested := testNullifierHex(1)
+	tests := []struct {
+		name     string
+		statuses []*privacytypes.QueryNullifierStatus
+		want     string
+	}{
+		{name: "missing", statuses: nil, want: "incomplete"},
+		{name: "nil", statuses: []*privacytypes.QueryNullifierStatus{nil}, want: "nil status"},
+		{name: "unrequested", statuses: []*privacytypes.QueryNullifierStatus{{Nullifier: testNullifierHex(2)}}, want: "unrequested"},
+		{name: "duplicate", statuses: []*privacytypes.QueryNullifierStatus{{Nullifier: requested}, {Nullifier: requested}}, want: "duplicate"},
+		{name: "noncanonical", statuses: []*privacytypes.QueryNullifierStatus{{Nullifier: strings.Repeat("ff", 32)}}, want: "canonical"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := ScanQueryProvider{BatchNullifierQuerier: &stubBatchNullifierQuerier{response: &privacytypes.QueryCheckNullifiersResponse{Statuses: tc.statuses}}}
+			_, err := provider.CheckNullifiersUsed(context.Background(), []string{requested})
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
 }
 
 type stubScanRPCClient struct {

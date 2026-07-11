@@ -30,6 +30,17 @@ type CosmosTxBroadcastResult struct {
 	AccountSequence uint64
 }
 
+// CosmosSignedTx is the immutable signed transaction artifact used by
+// idempotent broadcast workers. TxHash is the CometBFT SHA-256 transaction
+// hash and TxBytesHash binds the exact bytes that must be retried.
+type CosmosSignedTx struct {
+	Bytes           []byte
+	TxBytesHash     string
+	SignDocHash     string
+	TxHash          string
+	AccountSequence uint64
+}
+
 func (b CosmosTxBroadcaster) PrepareFactory(msg sdk.Msg) (tx.Factory, error) {
 	return b.PrepareFactoryForMessages(msg)
 }
@@ -99,6 +110,27 @@ func (b CosmosTxBroadcaster) BroadcastSDKMessages(ctx context.Context, msgs ...s
 }
 
 func (b CosmosTxBroadcaster) BroadcastSDKMessagesWithMetadata(ctx context.Context, msgs ...sdk.Msg) (*CosmosTxBroadcastResult, error) {
+	signed, err := b.BuildSignedSDKMessages(ctx, msgs...)
+	if err != nil {
+		return nil, err
+	}
+	result := &CosmosTxBroadcastResult{
+		TxBytesHash:     signed.TxBytesHash,
+		SignDocHash:     signed.SignDocHash,
+		AccountSequence: signed.AccountSequence,
+	}
+	response, err := b.BroadcastSignedTxBytes(ctx, signed.Bytes)
+	if err != nil {
+		return result, err
+	}
+	result.Response = response
+	return result, nil
+}
+
+// BuildSignedSDKMessages signs once without broadcasting. Callers can durably
+// store Bytes before network submission and reuse them byte-for-byte after an
+// ambiguous response.
+func (b CosmosTxBroadcaster) BuildSignedSDKMessages(ctx context.Context, msgs ...sdk.Msg) (*CosmosSignedTx, error) {
 	txf, err := b.PrepareFactoryForMessages(msgs...)
 	if err != nil {
 		return nil, err
@@ -130,17 +162,27 @@ func (b CosmosTxBroadcaster) BroadcastSDKMessagesWithMetadata(ctx context.Contex
 		return nil, err
 	}
 
-	result := &CosmosTxBroadcastResult{
-		TxBytesHash:     sha256Hex(txBytes),
+	txBytesHash := sha256Hex(txBytes)
+	return &CosmosSignedTx{
+		Bytes:           append([]byte(nil), txBytes...),
+		TxBytesHash:     txBytesHash,
 		SignDocHash:     signDocHash,
+		TxHash:          strings.ToUpper(txBytesHash),
 		AccountSequence: txf.Sequence(),
+	}, nil
+}
+
+// BroadcastSignedTxBytes submits the supplied immutable bytes without signing
+// or refreshing account state.
+func (b CosmosTxBroadcaster) BroadcastSignedTxBytes(ctx context.Context, txBytes []byte) (*sdk.TxResponse, error) {
+	if len(txBytes) == 0 {
+		return nil, fmt.Errorf("signed tx bytes are required")
 	}
-	response, err := b.ClientContext.BroadcastTx(txBytes)
-	if err != nil {
-		return result, err
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	result.Response = response
-	return result, nil
+	clientContext := b.ClientContext.WithCmdContext(ctx)
+	return clientContext.BroadcastTx(append([]byte(nil), txBytes...))
 }
 
 func (b CosmosTxBroadcaster) GenerateOrBroadcast(msgs ...sdk.Msg) error {

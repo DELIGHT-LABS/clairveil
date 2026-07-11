@@ -13,6 +13,10 @@ type MemoryStore struct {
 	mu                     sync.Mutex
 	reservations           map[string]NoteReservation
 	operations             map[string]PayrollOperation
+	batchOperations        map[string]BatchOperation
+	batchInputs            map[string][]OperationInputReservation
+	batchItems             map[string][]PayrollItemOutput
+	batchEvidence          map[string][]ExpectedOutputEvidence
 	activeReservationByKey map[string]string
 }
 
@@ -20,6 +24,10 @@ func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
 		reservations:           make(map[string]NoteReservation),
 		operations:             make(map[string]PayrollOperation),
+		batchOperations:        make(map[string]BatchOperation),
+		batchInputs:            make(map[string][]OperationInputReservation),
+		batchItems:             make(map[string][]PayrollItemOutput),
+		batchEvidence:          make(map[string][]ExpectedOutputEvidence),
 		activeReservationByKey: make(map[string]string),
 	}
 }
@@ -785,6 +793,18 @@ func (s *MemoryStore) ensureMapsLocked() {
 	}
 	if s.operations == nil {
 		s.operations = make(map[string]PayrollOperation)
+	}
+	if s.batchOperations == nil {
+		s.batchOperations = make(map[string]BatchOperation)
+	}
+	if s.batchInputs == nil {
+		s.batchInputs = make(map[string][]OperationInputReservation)
+	}
+	if s.batchItems == nil {
+		s.batchItems = make(map[string][]PayrollItemOutput)
+	}
+	if s.batchEvidence == nil {
+		s.batchEvidence = make(map[string][]ExpectedOutputEvidence)
 	}
 	if s.activeReservationByKey != nil {
 		return

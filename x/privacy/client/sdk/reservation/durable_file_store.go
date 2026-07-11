@@ -24,10 +24,15 @@ type DurableFileStore struct {
 }
 
 type DurableFileStoreSnapshot struct {
-	Version      int                `json:"version"`
-	UpdatedAt    time.Time          `json:"updated_at"`
-	Reservations []NoteReservation  `json:"reservations"`
-	Operations   []PayrollOperation `json:"operations"`
+	Version            int                         `json:"version"`
+	BatchSchemaVersion string                      `json:"batch_schema_version,omitempty"`
+	UpdatedAt          time.Time                   `json:"updated_at"`
+	Reservations       []NoteReservation           `json:"reservations"`
+	Operations         []PayrollOperation          `json:"operations"`
+	BatchOperations    []BatchOperation            `json:"batch_operations,omitempty"`
+	BatchInputs        []OperationInputReservation `json:"batch_inputs,omitempty"`
+	BatchItems         []PayrollItemOutput         `json:"batch_items,omitempty"`
+	BatchEvidence      []ExpectedOutputEvidence    `json:"batch_evidence,omitempty"`
 }
 
 func OpenDurableFileStore(path string) (*DurableFileStore, error) {
@@ -504,12 +509,28 @@ func (s *DurableFileStore) snapshotLocked() DurableFileStoreSnapshot {
 	sort.Slice(operations, func(i, j int) bool {
 		return operations[i].OperationID < operations[j].OperationID
 	})
+	batchOperations := make([]BatchOperation, 0, len(s.memory.batchOperations))
+	batchInputs := make([]OperationInputReservation, 0)
+	batchItems := make([]PayrollItemOutput, 0)
+	batchEvidence := make([]ExpectedOutputEvidence, 0)
+	for operationID, operation := range s.memory.batchOperations {
+		batchOperations = append(batchOperations, cloneBatchOperation(operation))
+		batchInputs = append(batchInputs, cloneBatchInputs(s.memory.batchInputs[operationID])...)
+		batchItems = append(batchItems, cloneBatchItems(s.memory.batchItems[operationID])...)
+		batchEvidence = append(batchEvidence, cloneBatchEvidence(s.memory.batchEvidence[operationID])...)
+	}
+	sortBatchSnapshotRelations(batchOperations, batchInputs, batchItems, batchEvidence)
 
 	return DurableFileStoreSnapshot{
-		Version:      durableFileStoreVersion,
-		UpdatedAt:    time.Now().UTC(),
-		Reservations: reservations,
-		Operations:   operations,
+		Version:            durableFileStoreVersion,
+		BatchSchemaVersion: BatchOperationSchemaVersionV1,
+		UpdatedAt:          time.Now().UTC(),
+		Reservations:       reservations,
+		Operations:         operations,
+		BatchOperations:    batchOperations,
+		BatchInputs:        batchInputs,
+		BatchItems:         batchItems,
+		BatchEvidence:      batchEvidence,
 	}
 }
 
@@ -538,6 +559,9 @@ func readDurableFileStoreSnapshot(path string) (DurableFileStoreSnapshot, error)
 	if snapshot.Version != durableFileStoreVersion {
 		return DurableFileStoreSnapshot{}, fmt.Errorf("%w: unsupported durable reservation store version %d", ErrInvalidReservation, snapshot.Version)
 	}
+	if snapshotHasBatchData(snapshot) && snapshot.BatchSchemaVersion != BatchOperationSchemaVersionV1 {
+		return DurableFileStoreSnapshot{}, fmt.Errorf("%w: unsupported batch operation schema version %q", ErrInvalidReservation, snapshot.BatchSchemaVersion)
+	}
 	return snapshot, nil
 }
 
@@ -551,6 +575,7 @@ func durableSnapshotsEquivalent(left DurableFileStoreSnapshot, right DurableFile
 
 func canonicalDurableSnapshot(snapshot DurableFileStoreSnapshot) DurableFileStoreSnapshot {
 	snapshot.Version = durableFileStoreVersion
+	snapshot.BatchSchemaVersion = BatchOperationSchemaVersionV1
 	snapshot.UpdatedAt = time.Time{}
 	snapshot.Reservations = append([]NoteReservation(nil), snapshot.Reservations...)
 	sort.Slice(snapshot.Reservations, func(i, j int) bool {
@@ -565,6 +590,13 @@ func canonicalDurableSnapshot(snapshot DurableFileStoreSnapshot) DurableFileStor
 	}
 	if len(snapshot.Operations) == 0 {
 		snapshot.Operations = nil
+	}
+	sortBatchSnapshotRelations(snapshot.BatchOperations, snapshot.BatchInputs, snapshot.BatchItems, snapshot.BatchEvidence)
+	if len(snapshot.BatchOperations) == 0 {
+		snapshot.BatchOperations = nil
+		snapshot.BatchInputs = nil
+		snapshot.BatchItems = nil
+		snapshot.BatchEvidence = nil
 	}
 	return snapshot
 }
@@ -598,5 +630,57 @@ func memoryStoreFromSnapshot(snapshot DurableFileStoreSnapshot) (*MemoryStore, e
 		}
 		store.storeReservationLocked(reservation)
 	}
+	if snapshotHasBatchData(snapshot) {
+		if snapshot.BatchSchemaVersion != BatchOperationSchemaVersionV1 {
+			return nil, fmt.Errorf("%w: unsupported batch operation schema version %q", ErrInvalidReservation, snapshot.BatchSchemaVersion)
+		}
+		for _, operation := range snapshot.BatchOperations {
+			if operation.SchemaVersion != BatchOperationSchemaVersionV1 || strings.TrimSpace(operation.OperationID) == "" {
+				return nil, fmt.Errorf("%w: invalid persisted batch operation", ErrInvalidReservation)
+			}
+			if _, exists := store.batchOperations[operation.OperationID]; exists {
+				return nil, fmt.Errorf("%w: duplicate batch operation_id %s", ErrInvalidReservation, operation.OperationID)
+			}
+			store.batchOperations[operation.OperationID] = cloneBatchOperation(operation)
+		}
+		for _, input := range snapshot.BatchInputs {
+			store.batchInputs[input.OperationID] = append(store.batchInputs[input.OperationID], input)
+		}
+		for _, item := range snapshot.BatchItems {
+			store.batchItems[item.OperationID] = append(store.batchItems[item.OperationID], item)
+		}
+		for _, evidence := range snapshot.BatchEvidence {
+			store.batchEvidence[evidence.OperationID] = append(store.batchEvidence[evidence.OperationID], evidence)
+		}
+		if err := store.validatePersistedBatchGraphsLocked(); err != nil {
+			return nil, err
+		}
+	}
 	return store, nil
+}
+
+func snapshotHasBatchData(snapshot DurableFileStoreSnapshot) bool {
+	return len(snapshot.BatchOperations) > 0 || len(snapshot.BatchInputs) > 0 || len(snapshot.BatchItems) > 0 || len(snapshot.BatchEvidence) > 0
+}
+
+func sortBatchSnapshotRelations(operations []BatchOperation, inputs []OperationInputReservation, items []PayrollItemOutput, evidence []ExpectedOutputEvidence) {
+	sort.Slice(operations, func(i, j int) bool { return operations[i].OperationID < operations[j].OperationID })
+	sort.Slice(inputs, func(i, j int) bool {
+		if inputs[i].OperationID != inputs[j].OperationID {
+			return inputs[i].OperationID < inputs[j].OperationID
+		}
+		return inputs[i].InputIndex < inputs[j].InputIndex
+	})
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].OperationID != items[j].OperationID {
+			return items[i].OperationID < items[j].OperationID
+		}
+		return items[i].OutputIndex < items[j].OutputIndex
+	})
+	sort.Slice(evidence, func(i, j int) bool {
+		if evidence[i].OperationID != evidence[j].OperationID {
+			return evidence[i].OperationID < evidence[j].OperationID
+		}
+		return evidence[i].OutputIndex < evidence[j].OutputIndex
+	})
 }

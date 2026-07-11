@@ -36,6 +36,9 @@ func InitSQLStore(ctx context.Context, db *sql.DB, dialect SQLDialect) error {
 	if _, err := db.ExecContext(ctx, sqlStoreLockSeedStatement(dialect)); err != nil {
 		return err
 	}
+	if _, err := db.ExecContext(ctx, sqlBatchSchemaSeedStatement(dialect)); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -369,6 +372,13 @@ func (s *SQLStore) lockStoreTx(ctx context.Context, tx *sql.Tx) error {
 
 func (s *SQLStore) loadMemoryTx(ctx context.Context, tx *sql.Tx) (*MemoryStore, error) {
 	memory := NewMemoryStore()
+	var batchSchemaVersion string
+	if err := tx.QueryRowContext(ctx, "SELECT schema_version FROM batch_operation_store_meta WHERE singleton_id = 1").Scan(&batchSchemaVersion); err != nil {
+		return nil, err
+	}
+	if batchSchemaVersion != BatchOperationSchemaVersionV1 {
+		return nil, fmt.Errorf("%w: unsupported batch operation SQL schema version %q", ErrInvalidReservation, batchSchemaVersion)
+	}
 	reservationRows, err := tx.QueryContext(ctx, "SELECT payload_json FROM note_reservations")
 	if err != nil {
 		return nil, err
@@ -420,10 +430,18 @@ func (s *SQLStore) loadMemoryTx(ctx context.Context, tx *sql.Tx) (*MemoryStore, 
 	if err := operationRows.Err(); err != nil {
 		return nil, err
 	}
+	if err := s.loadBatchRelationsTx(ctx, tx, memory); err != nil {
+		return nil, err
+	}
 	return memory, nil
 }
 
 func (s *SQLStore) persistMemoryTx(ctx context.Context, tx *sql.Tx, memory *MemoryStore) error {
+	for _, table := range []string{"expected_output_evidence", "payroll_item_outputs", "batch_operation_inputs", "batch_operations"} {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM "+table); err != nil {
+			return err
+		}
+	}
 	if _, err := tx.ExecContext(ctx, "DELETE FROM note_reservations"); err != nil {
 		return err
 	}
@@ -472,7 +490,7 @@ func (s *SQLStore) persistMemoryTx(ctx context.Context, tx *sql.Tx, memory *Memo
 			return err
 		}
 	}
-	return nil
+	return s.persistBatchRelationsTx(ctx, tx, memory)
 }
 
 func (s *SQLStore) insertReservationSQL() string {
@@ -504,11 +522,45 @@ func sqlSchemaStatements(dialect SQLDialect) []string {
   lock_id INTEGER PRIMARY KEY,
   touched_at %s
 )`, timestampType),
+		`CREATE TABLE IF NOT EXISTS batch_operation_store_meta (
+  singleton_id INTEGER PRIMARY KEY,
+  schema_version TEXT NOT NULL
+)`,
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS payroll_operations (
   operation_id TEXT PRIMARY KEY,
   status TEXT NOT NULL,
   payload_json TEXT NOT NULL,
   updated_at %s
+)`, timestampType),
+		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS batch_operations (
+  operation_id TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  updated_at %s
+)`, timestampType),
+		`CREATE TABLE IF NOT EXISTS batch_operation_inputs (
+  operation_id TEXT NOT NULL,
+  input_index INTEGER NOT NULL,
+  reservation_id TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  PRIMARY KEY (operation_id, input_index),
+  UNIQUE (reservation_id)
+)`,
+		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS payroll_item_outputs (
+  operation_id TEXT NOT NULL,
+  output_index INTEGER NOT NULL,
+  item_id TEXT,
+  evidence_status TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  updated_at %s,
+  PRIMARY KEY (operation_id, output_index)
+)`, timestampType),
+		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS expected_output_evidence (
+  operation_id TEXT NOT NULL,
+  output_index INTEGER NOT NULL,
+  payload_json TEXT NOT NULL,
+  updated_at %s,
+  PRIMARY KEY (operation_id, output_index)
 )`, timestampType),
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS note_reservations (
   reservation_id TEXT PRIMARY KEY,
@@ -528,6 +580,10 @@ ON note_reservations(status)`,
 ON note_reservations(operation_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_payroll_operations_status
 ON payroll_operations(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_batch_operations_status
+ON batch_operations(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_payroll_item_outputs_status
+ON payroll_item_outputs(evidence_status)`,
 	}
 }
 
@@ -536,4 +592,11 @@ func sqlStoreLockSeedStatement(dialect SQLDialect) string {
 		return "INSERT INTO reservation_store_locks (lock_id, touched_at) VALUES (1, NOW()) ON CONFLICT (lock_id) DO NOTHING"
 	}
 	return "INSERT INTO reservation_store_locks (lock_id, touched_at) VALUES (1, CURRENT_TIMESTAMP) ON CONFLICT (lock_id) DO NOTHING"
+}
+
+func sqlBatchSchemaSeedStatement(dialect SQLDialect) string {
+	if dialect == SQLDialectPostgres {
+		return "INSERT INTO batch_operation_store_meta (singleton_id, schema_version) VALUES (1, '" + BatchOperationSchemaVersionV1 + "') ON CONFLICT (singleton_id) DO NOTHING"
+	}
+	return "INSERT INTO batch_operation_store_meta (singleton_id, schema_version) VALUES (1, '" + BatchOperationSchemaVersionV1 + "') ON CONFLICT (singleton_id) DO NOTHING"
 }

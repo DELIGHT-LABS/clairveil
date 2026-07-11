@@ -309,11 +309,31 @@ func (p ScanQueryProvider) CheckNullifiersUsed(ctx context.Context, nullifierHex
 			return nil, fmt.Errorf("nullifier batch query response is unavailable")
 		}
 
+		requested := make(map[string]struct{}, end-start)
+		for _, canonical := range canonicalHexes[start:end] {
+			requested[canonical] = struct{}{}
+		}
+		seen := make(map[string]struct{}, end-start)
 		for _, status := range response.Statuses {
 			if status == nil {
-				continue
+				return nil, fmt.Errorf("nullifier batch query returned a nil status")
 			}
-			usedByNullifier[strings.ToLower(status.Nullifier)] = status.Used
+			statusBytes, err := privacyfield.DecodeCanonicalHex(status.Nullifier, "nullifier response")
+			if err != nil {
+				return nil, err
+			}
+			canonical := hex.EncodeToString(statusBytes)
+			if _, ok := requested[canonical]; !ok {
+				return nil, fmt.Errorf("nullifier batch query returned an unrequested status")
+			}
+			if _, duplicate := seen[canonical]; duplicate {
+				return nil, fmt.Errorf("nullifier batch query returned a duplicate status")
+			}
+			seen[canonical] = struct{}{}
+			usedByNullifier[canonical] = status.Used
+		}
+		if len(seen) != len(requested) {
+			return nil, fmt.Errorf("nullifier batch query response is incomplete")
 		}
 	}
 
