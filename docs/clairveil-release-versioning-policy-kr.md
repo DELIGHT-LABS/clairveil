@@ -183,4 +183,4 @@ Session 3A chain core를 포함하는 release note는 아래를 한 묶음으로
 - development artifact identity: constraint `1,111,837`; R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`; PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`; VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`; generation/readiness peak RSS `3,308,797,952 B` / `1,295,482,880 B`;
 - direct core integration, atomic scan failure, cross-message 2x2+batch/batch+batch rollback 결과.
 
-같은 release note에 public batch Go SDK, remote batch prover route, wallet scanner/decrypt UX, one-proof payroll integration, batch CLI/tutorial, formal trusted setup, production artifact distribution은 Session 3A 범위가 아님을 명시해야 합니다. Development artifact hash는 검증한 binary의 identity일 뿐 production 배포를 허가하지 않습니다.
+같은 release note에서 Session 3B experimental reference Go SDK/prover/scanner/payroll/CLI surface와 downstream JS/product 완료를 구분해야 합니다. Formal trusted setup, external audit, production artifact 배포, production 운영은 계속 제외합니다. Development artifact hash는 검증한 binary identity일 뿐 production 배포를 허가하지 않습니다.

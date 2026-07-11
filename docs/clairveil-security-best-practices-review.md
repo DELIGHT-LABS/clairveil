@@ -153,7 +153,7 @@ The keeper permits only cheap bounded framing before `BatchGasModelV1` precharge
 
 The measured development batch artifact identity is R1CS `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, and VK `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`. These checksums do not replace artifact signing, provenance, reproducible generation, formal setup, or external review.
 
-Session 3B user-facing surfaces remain absent: no public batch Go SDK, remote batch HTTP prover route, wallet scanner/decrypt UX, one-proof payroll workflow, or batch CLI/tutorial is shipped. Do not confuse the existing multi-message `transfer-batch`/payroll workflow with `MsgBatchTransfer`, and do not expose an unreviewed witness-bearing route.
+Session 3B now provides experimental reference Go surfaces for the one-proof batch planner/preparer, bounded remote HTTP prover route, typed scanner/decrypt flow, durable payroll graph, and staged CLI/tutorial. They are not a downstream JS/TS SDK, audited production workflow, or production deployment profile. Keep the one-proof `MsgBatchTransfer` path distinct from the older multi-message `transfer-batch` flow, never expose the raw transport handler, and treat every prover request as highly sensitive witness data. Deposit CLI output must not print `NotePlaintextV1` or randomness.
 
 Artifact access and proving must remain bounded:
 

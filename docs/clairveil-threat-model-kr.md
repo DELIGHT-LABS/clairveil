@@ -125,4 +125,4 @@ Active identity는 required descriptor `deposit`, `spend`, `joinsplit`, `batch-j
 
 Live public-input 순서는 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`이고 schema SHA-256은 `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`입니다. 변경하려면 새 identity/schema와 security review가 필요합니다.
 
-Session 3B는 이 boundary 밖입니다. Public batch Go SDK, remote batch prover route, wallet scanner/decrypt UX, one-proof payroll integration, batch CLI/tutorial은 없습니다. Formal setup과 production artifact custody/distribution도 없습니다. 이 interface를 ad hoc하게 노출하면 필요한 review 없이 private-witness/compatibility boundary를 넓히게 됩니다.
+Session 3B reference Go SDK, bounded remote prover, typed scanner, one-proof payroll graph, batch CLI/tutorial은 이제 이 repository threat boundary 안에 있습니다. Downstream JS/TS product, formal setup, external audit, production artifact custody/distribution은 여전히 boundary 밖입니다. Raw handler나 ad hoc downstream variant를 노출하면 필요한 review 없이 private-witness/compatibility boundary를 넓히게 됩니다.

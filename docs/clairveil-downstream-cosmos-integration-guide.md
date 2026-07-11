@@ -12,7 +12,7 @@ The recommended model separates responsibilities as follows.
 - The downstream chain imports `x/privacy` and wires it into its own `app.go`, genesis, CLI/API, and testnet configuration.
 - EVM, policy modules, precompiles, fee policy, and permission policy are implemented by the downstream chain.
 - The Clairveil reference daemon `clairveild` is a host for verifying that the module can run end-to-end by itself. It does not replace the downstream app.
-- Session 3A supplies the production `MsgBatchTransfer` chain core and fourth circuit, but not the public batch Go SDK, remote prover route, wallet/payroll UX, or batch CLI/tutorial. Those Session 3B surfaces must not be inferred from the proto alone.
+- Session 3A supplies the production `MsgBatchTransfer` chain core and fourth circuit. Session 3B adds reference Go SDK, bounded remote prover, typed wallet/payroll, and batch CLI/tutorial surfaces. Import their concrete packages and fixtures; do not infer a downstream JS/product contract from the proto alone.
 
 ## 2. Go Module Dependency
 

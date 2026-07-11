@@ -2,14 +2,14 @@
 
 ## 1. 상태와 범위
 
-이 문서는 Session 2 프로토콜 계약을 동결하고 Session 3A consensus/core 구현 상태를 기록한다. NoteV1, domain separation, 고정 인코딩, production 16-input/32-output statement, aggregate vector root, disclosure digest, scan state, artifact identity, resource accounting에 대한 normative 문서다.
+이 문서는 Session 2 프로토콜 계약을 동결하고 Session 3A consensus/core 및 Session 3B reference-client 구현 상태를 기록한다. NoteV1, domain separation, 고정 인코딩, production 16-input/32-output statement, aggregate vector root, disclosure digest, scan state, artifact identity, resource accounting에 대한 normative 문서다.
 
 **Session 2 Gate 2: PASS.** final two-stage user-disclosure contract를 기준으로 두 feasibility gate를 재실행하거나 재확인했다.
 
 - **Full-shape circuit gate: PASS.** corrected Groth16/BN254 prototype이 compile과 development setup을 완료했고, OOM 없이 `16/32`를 포함한 모든 shape를 prove했으며, current JoinSplit2x2 baseline보다 output당 warm proving cost를 개선했다.
 - **Max wire/state gate: PASS.** 실제 protobuf message를 실제 Cosmos `TxRaw`에 넣고 typed scan KV record, tree-write allowance, minimal ABCI event, query response까지 측정한 결과 동결된 reference limit 안에 들었다.
 
-Session 3A는 production `BatchJoinSplit16x32` circuit, `MsgBatchTransfer`, deterministic gas precharge, proof-gated atomic keeper transition, typed scan state, minimal ABCI event, role-aware development artifact lifecycle을 구현한다. Public batch Go SDK, remote batch prover HTTP route, wallet scanning/decryption UX, payroll integration, batch CLI/tutorial, formal trusted setup, production artifact 배포는 구현하지 않으며 Session 3B 또는 release 범위로 남는다.
+Session 3A는 production circuit과 consensus path를 구현한다. Session 3B는 repository의 reference Go batch planner/preparer, remote batch prover route, lossless typed scanner, durable payroll graph, staged CLI, localnet tutorial을 추가했고 Session 4가 이를 독립 재검증했다. Downstream JS/TS SDK 또는 product, formal trusted setup, external audit, production artifact 배포와 production 운영은 repository-level 완료 범위 밖이다.
 
 Active circuit set은 계속 `privacy-note-v1`이고 이제 Deposit, Spend, JoinSplit2x2, `batch-joinsplit-16x32-v1`을 이 순서로 요구한다. Development R1CS/PK/VK identity는 Gate 3A 증거이지 production trust anchor가 아니다.
 
@@ -764,16 +764,16 @@ Production coverage를 명시한다. `TestBatchJoinSplit16x32ProductionPositiveM
 | NOTE-COMMITMENT | 하나의 domain-separated NoteV1 공식, active input commitment non-zero | Deposit/Spend/JoinSplit/Batch | `ComputeNoteCommitmentV1` | `Note.ComputeCommitment`, keeper tree input | fixed note decode/recompute | six-path vector 및 production negative matrix | §3.2, §4.3 |
 | NOTE-NULLIFIER | commitment-bound, domain-separated, non-zero | Spend/JoinSplit/Batch | `ComputeNoteNullifierV1` | `Note.ComputeNullifier` | scanner/witness recompute | six-path vector 및 production negative matrix | §3.2 |
 | NOTE-KEY-SUBGROUP | canonical, curve, non-identity, prime subgroup | 관련 circuit의 `assertPrimeSubgroupPoint` | `DecodeCanonicalPoint`, `ValidatePrimeSubgroupPoint` | `Note.ValidateV1` | address/envelope decode | crypto decoder 및 circuit subgroup test | §3.4 |
-| ACTIVE-PREFIX | slot은 정확히 `[0,count)` | `exactActivePrefix` | vector count validation | `MsgBatchTransfer` count bound | Session 3B builder 미구현 | production positive/negative matrix | §4.3 |
+| ACTIVE-PREFIX | slot은 정확히 `[0,count)` | `exactActivePrefix` | vector count validation | `MsgBatchTransfer` count bound | `PlanBatchTransfer`, prepared-payload validation | production positive/negative/property matrix | §4.3 |
 | INPUT-MEMBERSHIP | 16개 independent depth-32 path가 한 root 공유 | gated path loop | NoteV1 tree helper | same-root path query | local/query path provider | `invalid_merkle_path`, non-boolean helper, same-root round-trip | §4.3, §8.3 |
-| NULLIFIER-DISTINCT | active input nullifier가 pairwise distinct | active-pair check | vector validation | local/global duplicate guard | Session 3B builder 미구현 | adjacent/non-adjacent duplicate, cross-message rollback | §4.3 |
+| NULLIFIER-DISTINCT | active input nullifier가 pairwise distinct | active-pair check | vector validation | local/global duplicate guard | planner/preparer duplicate guard | adjacent/non-adjacent duplicate, cross-message rollback | §4.3 |
 | COMMITMENT-DISTINCT | active output commitment가 pairwise distinct | active-pair check | vector validation | `HasCommitment`/`AppendCommitment` | 기존 preflight pattern | circuit duplicate 및 Deposit/2x2/Batch global collision | §4.3, §8.1 |
-| VALUE-CONSERVATION | 64-bit active sum이 같음 | range/sum constraint | shielded amount validation | handler는 verified proof 사용 | Session 3B builder 미구현 | overflow와 conservation negative case | §4.3 |
-| OWNER-INTENT | owner 한 명이 exact batch effect에 서명 | EdDSA verifier 하나 | `ComputeBatchTransferIntentV1` | 동결된 12-value witness | Session 3B builder 미구현 | invalid signature/intent mutation과 direct proof | §4.2 |
-| CHAIN-EXPIRY | chain/circuit domain과 expiry가 proof-bound | intent input, limb/range check | chain-domain 및 batch-intent helper | context domain과 host expiry 거부 | Session 3B builder 미구현 | domain/limb/expiry matrix와 wrong-chain/expired core case | §4.2 |
-| USER-DISCLOSURE | exact selected field, asset, policy 및 two-stage user value | raw digest 32개 + user-value constraint 32개 | `ComputeBatchUserDisclosureDigestV1`, `ComputeBatchUserDisclosureVectorRootV1` | fixed plaintext validation | Session 3B builder 미구현 | golden/helper와 production disclosure-root/blinding negative case | §5.1–§5.2 |
+| VALUE-CONSERVATION | 64-bit active sum이 같음 | range/sum constraint | shielded amount validation | handler는 verified proof 사용 | planner/preparer total과 role | overflow와 conservation negative case | §4.3 |
+| OWNER-INTENT | owner 한 명이 exact batch effect에 서명 | EdDSA verifier 하나 | `ComputeBatchTransferIntentV1` | 동결된 12-value witness | structured signing-request validation | invalid signature/intent mutation과 direct proof | §4.2 |
+| CHAIN-EXPIRY | chain/circuit domain과 expiry가 proof-bound | intent input, limb/range check | chain-domain 및 batch-intent helper | context domain과 host expiry 거부 | prepared payload/proof expiry validation | domain/limb/expiry matrix와 wrong-chain/expired core case | §4.2 |
+| USER-DISCLOSURE | exact selected field, asset, policy 및 two-stage user value | raw digest 32개 + user-value constraint 32개 | `ComputeBatchUserDisclosureDigestV1`, `ComputeBatchUserDisclosureVectorRootV1` | fixed plaintext validation | output별 plaintext/encryption builder | golden/helper와 production disclosure-root/blinding negative case | §5.1–§5.2 |
 | FULL-DISCLOSURE | complete per-output evidence | digest constraint 32개 | `ComputeBatchFullDisclosureDigestV1` | fixed plaintext validation | audit/self-view builder | production full-root/digest/blinding negative case | §5.3 |
-| PAYLOAD-BINDING | ciphertext/metadata substitution이 public limb 변경 | public payload limb와 signed intent | canonical production message helper | keeper가 exact encoder 재사용 | Session 3B builder 미구현 | independent golden/effect mutation, wrong-payload core rejection | §4.2, §7.1 |
+| PAYLOAD-BINDING | ciphertext/metadata substitution이 public limb 변경 | public payload limb와 signed intent | canonical production message helper | keeper가 exact encoder 재사용 | canonical effect/signing-request check | independent golden/effect mutation, wrong-payload core rejection | §4.2, §7.1 |
 | BATCH-EFFECT-ID | proof/relayer와 무관한 stable ID | in-circuit 불필요 | `ComputeBatchEffectIDV1` | typed/minimal summary | conformance helper | independent golden과 creator/proof/order regression | §7.2 |
 | ATOMIC-STATE | proof 전에 write 없음, effect는 all-or-nothing | proof가 state를 authorize | — | nested keeper cache | result semantics | proof/scan failure와 cross-message full rollback | §12 |
 | SCAN-CURSOR | summary-driven lossless resume와 exact event-prefixed record | — | cursor comparison | `PrivacyScan`, typed state | scanner cursor | cursor/zero-output test, `TestPrivacyScanV2RejectsCorruptExactOutputContracts` | §7.4, §8.2 |
@@ -781,15 +781,15 @@ Production coverage를 명시한다. `TestBatchJoinSplit16x32ProductionPositiveM
 | GLOBAL-COMMITMENT-UNIQUE | commitment 하나에 global leaf index 하나 | active distinctness | canonical field validation | commitment index/append | 기존 preflight pattern | Deposit/2x2/Batch/genesis collision test | §8.1 |
 | ASSET-REGISTRY | denom/ID가 authoritative 1:1 state | asset field 하나 | `ComputeAssetIDV1` | `AssetRegistryV1` query/state | registry lookup | collision/re-registration/corruption test | §3.3 |
 | DISCLOSURE-BLINDING | fresh non-zero이며 서로 재사용하지 않는 user/full/note secret | reuse inequality 96개와 per-output non-zero check | disclosure digest helper | fixed plaintext에 blinding 포함 | CSPRNG builder | production reuse/zero negative case와 dictionary-resistance helper | §5 |
-| AUDIT-IDENTITY | bounded canonical ID, positive epoch, canonical target point | digest/intent가 payload bind | `ValidateAuditKeyIDV1`, canonical point decoder | exact chain config와 typed record | Session 3B builder 미구현 | partial-state fail closed 및 ID/epoch/target mismatch | §7.1, §7.4 |
+| AUDIT-IDENTITY | bounded canonical ID, positive epoch, canonical target point | digest/intent가 payload bind | `ValidateAuditKeyIDV1`, canonical point decoder | exact chain config와 typed record | prepared payload와 payroll evidence identity | partial-state fail closed 및 ID/epoch/target mismatch | §7.1, §7.4 |
 | GLOBAL-SCAN-SEQUENCE | 모든 privacy effect가 sequence 하나 공유 | — | allocation helper | global sequence/index | cursor consumer | Deposit/2x2/Batch 및 genesis continuity | §8.2 |
 | ARTIFACT-CONSENSUS-IDENTITY | local artifact identity가 consensus와 같음 | public schema 동결 | schema/manifest digest helper | genesis circuit identity | role-aware registry | mismatch/override와 development artifact gate | §9.1 |
 
 ## 14. Residual risk와 명시적 non-goal
 
-- Session 3A circuit, message, keeper, scan state, artifact descriptor는 구현되었다. Production audit, formal trusted setup, production artifact 배포, Session 3B client/product integration이 남아 있다.
+- Session 3A core와 Session 3B reference Go client/prover/scanner/payroll/CLI surface는 구현되고 독립 재검증되었다. Downstream JS/TS 또는 product integration, production audit, formal trusted setup, production artifact 배포가 남아 있다.
 - Development setup artifact는 production trust anchor가 아니며 commit하지 않는다. 기록된 checksum은 이 Gate 3A run만 식별한다.
-- final reference run의 peak RSS는 exact `3,339,862,016 B`, 약 3.11 GiB다. lazy loading은 불필요한 artifact 상주를 줄이지만 process-level hard isolation을 제공하지 않는다.
+- Session 4 reference run의 peak RSS는 `3,429,646,336 B`, 약 3.19 GiB였다. lazy loading은 불필요한 artifact 상주를 줄이지만 process-level hard isolation을 제공하지 않는다.
 - client cancellation은 gnark proving을 중단할 수 없다. production process isolation, worker recycling, memory limit, overload operation이 필요하다.
 - ciphertext decryptability는 proof하지 않는다. auditor-key compromise, key-epoch rotation, delivery failure manual review가 operational risk로 남는다.
 - public input/output count, timing, root, batch grouping, minimal summary는 public metadata다.

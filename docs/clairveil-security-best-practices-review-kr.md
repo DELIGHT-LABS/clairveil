@@ -151,7 +151,7 @@ Keeper는 `BatchGasModelV1` precharge 전에 cheap bounded framing만 허용합�
 
 측정된 development batch artifact identity는 R1CS `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`입니다. 이 checksum은 artifact signing, provenance, reproducible generation, formal setup, external review를 대체하지 않습니다.
 
-Session 3B user-facing surface는 없습니다. Public batch Go SDK, remote batch HTTP prover route, wallet scanner/decrypt UX, one-proof payroll workflow, batch CLI/tutorial을 제공하지 않습니다. 기존 multi-message `transfer-batch`/payroll workflow를 `MsgBatchTransfer`와 혼동하거나 review되지 않은 witness-bearing route를 노출하면 안 됩니다.
+Session 3B는 one-proof batch planner/preparer, bounded remote HTTP prover route, typed scanner/decrypt flow, durable payroll graph, staged CLI/tutorial의 experimental reference Go surface를 제공합니다. 이는 downstream JS/TS SDK, audited production workflow, production deployment profile이 아닙니다. One-proof `MsgBatchTransfer` path와 기존 multi-message `transfer-batch` flow를 구분하고 raw transport handler를 노출하지 않으며 모든 prover request를 매우 민감한 witness data로 취급합니다. Deposit CLI output은 `NotePlaintextV1` 또는 randomness를 출력하면 안 됩니다.
 
 Artifact access와 proving은 계속 bounded해야 합니다.
 

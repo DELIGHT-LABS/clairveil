@@ -10,7 +10,7 @@
 - Downstream 체인은 `x/privacy`를 import하고 자신의 `app.go`, genesis, CLI/API, 테스트넷 설정에 연결합니다.
 - EVM, policy module, precompile, fee policy, 권한 정책은 downstream 체인에서 구현합니다.
 - Clairveil reference daemon인 `clairveild`는 “모듈이 단독으로 완주되는지”를 검증하는 호스트이며, downstream app을 대체하지 않습니다.
-- Session 3A는 production `MsgBatchTransfer` chain core와 네 번째 circuit을 제공하지만 public batch Go SDK, remote prover route, wallet/payroll UX, batch CLI/tutorial은 제공하지 않습니다. Proto만 보고 Session 3B surface를 추론하면 안 됩니다.
+- Session 3A는 production `MsgBatchTransfer` chain core와 네 번째 circuit을 제공합니다. Session 3B는 reference Go SDK, bounded remote prover, typed wallet/payroll, batch CLI/tutorial surface를 추가합니다. Concrete package와 fixture를 import하고 proto만 보고 downstream JS/product contract를 추론하면 안 됩니다.
 
 ## 2. Go module 의존성
 
