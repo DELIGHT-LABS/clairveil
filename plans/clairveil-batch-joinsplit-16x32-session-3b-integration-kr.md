@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | Blocked by Session 3A |
+| 상태 | Unblocked by Session 3A (Not Started) |
 | 선행 문서 | [Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md), [Session 3A](clairveil-batch-joinsplit-16x32-session-3-implementation-kr.md) |
 | 후속 세션 | [Session 4 Publication Validation](clairveil-batch-joinsplit-16x32-session-4-publication-validation-kr.md) |
 | 권장 모델 | `gpt-5.6-sol` |

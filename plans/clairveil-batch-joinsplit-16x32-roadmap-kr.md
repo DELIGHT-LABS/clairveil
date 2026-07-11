@@ -4,9 +4,9 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | 진행 중 (Session 1·2 완료, Gate 2 충족, Session 3A Unblocked·미착수) |
+| 상태 | 진행 중 (Session 1·2·3A 완료, Gate 3A 충족, Session 3B Unblocked·미착수) |
 | 작성일 | 2026-07-10 |
-| 대상 브랜치 | `private/bulk-transfer-v2` |
+| 대상 브랜치 | `private/multi-circuit` |
 | 최종 목표 | 현재 shielded protocol의 알려진 보안·프라이버시 결함을 먼저 제거하고 안전하고 견고한 최대 16-input / 32-output shielded batch transfer를 구현함 |
 | 실행 방식 | Session 1 -> 2 -> 3A -> 3B -> 4 순서로 실행하며 병렬 실행하지 않음 |
 | 회로 기반 | `gnark v0.14.0`, Groth16, BN254 |
@@ -271,8 +271,8 @@ Gate 4: PUBLICATION_READY_EXPERIMENTAL
 | --- | --- | --- | --- | --- | --- |
 | 1. 현재 보안 수정 | Complete (Gate 1 충족) | `e427370` | `14d85f5` | unit/proto/전체 Go/examples/vulncheck/localnet/privacy E2E/payroll live/release-check/bulk readiness/fuzz/release-pack, review-fix 및 prepared-transfer canonical key 회귀 검증 통과 | current protocol Critical/High 0건. no-fixed-version `GO-2024-2584`, `GO-2026-4479`, `GO-2026-5932`, npm low 1건, formal setup/external audit 미수행을 known risk로 추적 |
 | 2. 기반/설계 확정 | Complete (Gate 2 충족) | `ad99ef7193fdc0683e483e4440e5cda1f0945432` | `f117b4f8487c78b6531efe2be1ecccccefe6c5c1` | Gate 1 재검증, NoteV1/fixed payload/exact batch effect/registry/scan/path/artifact/admission 구현, corrected 16x32 full-shape와 max wire/state gate, 전체 privacy/release/E2E 검증 통과. 후속 review-fix에서 slash denom REST binding, reserve/registry genesis linkage, historical path online admission/cancellation·cached-root fail-closed, Note memo validation/fallible encoding을 보강하고 fresh consecutive clean review 2회를 통과함 | Critical/High/P0/P1/P2 0건. Historical path public rebuild는 1,024 leaves/동시 2개로 제한되고 offline recovery/export는 1,048,576 bound를 유지함. Production batch circuit/message/handler/integration, formal setup/audit는 후속 세션이며 약 3.11 GiB peak RSS와 process isolation/downstream fixed-encoding 전환을 risk로 추적 |
-| 3A. Circuit/chain core | Unblocked (Not Started; Gate 2 충족) | - | - | Session 2 circuit/wire Gate PASS, design TBD 없음 | Session 2의 16/32 capacity, security constraint, NoteV1, 12-input order, vector/disclosure/fixed-state 계약을 유지하고 production core를 구현해야 함 |
-| 3B. Client/product integration | Blocked by Session 3A | - | - | - | - |
+| 3A. Circuit/chain core | Complete (Gate 3A 충족) | `b7a97acd03c5e97b9e7e0bf52197ba421feda3c8` | `67115090d63578d3643617c866d03ef953b103f2` + completion/ledger commit | production 16x32 circuit/12-input witness, proto/types, signed raw 128 KiB cap, keeper precharge/proof-gated atomic state, global uniqueness/sequence, typed scan/minimal event, genesis/root, four-circuit artifact identity/readiness를 구현함. Direct real-proof core integration, 2x2+Batch/Batch+Batch 양방향 rollback, 59-case negative matrix, full Go/build/examples/localnet/privacy E2E/bulk/release/artifact gate가 통과함 | Critical/High/Medium 0건. Formal setup/audit/production artifact, process isolation, gas/governance/pruning calibration은 residual. Public SDK/prover/scanner/payroll/CLI는 3B 범위 |
+| 3B. Client/product integration | Unblocked (Not Started; Gate 3A 충족) | - | - | Session 3A direct core/development artifact Gate PASS | Session 2/3A frozen contract를 유지해 SDK/prover/scanner/payroll/CLI end-to-end를 구현해야 함 |
 | 4. 독립 검증/공개 gate | Blocked by Session 3B | - | - | - | - |
 
 ## 6. 공통 실행 규칙

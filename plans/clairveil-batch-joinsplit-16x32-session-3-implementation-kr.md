@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | Blocked by Session 2 |
+| 상태 | Complete (Gate 3A 충족, Session 3B Unblocked·미착수) |
 | 선행 문서 | [Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md), [Session 2](clairveil-batch-joinsplit-16x32-session-2-foundation-kr.md) |
 | 후속 세션 | [Session 3B Integration](clairveil-batch-joinsplit-16x32-session-3b-integration-kr.md) |
 | 권장 모델 | `gpt-5.6-sol` |
@@ -485,48 +485,116 @@ git diff --check
 
 ## 14. Acceptance Criteria
 
-- [ ] production circuit이 normative 12 public input과 일치함.
-- [ ] single owner signature를 사용함.
-- [ ] active prefix, NoteV1 membership, distinctness, conservation, disclosure roots가 circuit에서 강제됨.
-- [ ] `MsgBatchTransfer`와 structured output proto가 생성됨.
-- [ ] types/keeper hard limit과 local/global duplicate check가 있음.
-- [ ] commitment가 Deposit/2x2/Batch/genesis 전체에서 전역 유일함.
-- [ ] keeper가 public witness를 message/context에서 직접 계산함.
-- [ ] explicit gas와 atomic state transition test가 있음.
-- [ ] gas가 expensive validation/proof 전에 charge되고 Cosmos KV gas와의 책임이 명시됨.
-- [ ] minimal ABCI event만 emit함.
-- [ ] batch effect ID가 canonical vector와 일치함.
-- [ ] typed binary KV scan index가 payload를 한 번만 저장함.
-- [ ] Deposit/2x2/Batch가 하나의 global privacy sequence/cursor를 사용함.
-- [ ] typed query failure가 lossy event fallback 없이 fail closed함.
-- [ ] same-root batch path snapshot query/local provider가 동작함.
-- [ ] cursor/output/byte-limited query가 동작함.
-- [ ] artifact descriptor/setup/strict readiness가 동작함.
-- [ ] consensus artifact identity와 local VK/schema mismatch가 startup/readiness를 막음.
-- [ ] direct proof/message/keeper integration이 통과함.
-- [ ] existing Deposit/Spend/2x2 regression이 없음.
-- [ ] invariant matrix와 한영 docs가 code/test location을 가리킴.
-- [ ] artifact binary/secret이 tracked되지 않음.
-- [ ] master ledger가 갱신됨.
+- [x] production circuit이 normative 12 public input과 일치함.
+- [x] single owner signature를 사용함.
+- [x] active prefix, NoteV1 membership, distinctness, conservation, disclosure roots가 circuit에서 강제됨.
+- [x] `MsgBatchTransfer`와 structured output proto가 생성됨.
+- [x] types/keeper hard limit과 local/global duplicate check가 있음.
+- [x] commitment가 Deposit/2x2/Batch/genesis 전체에서 전역 유일함.
+- [x] keeper가 public witness를 message/context에서 직접 계산함.
+- [x] explicit gas와 atomic state transition test가 있음.
+- [x] gas가 expensive validation/proof 전에 charge되고 Cosmos KV gas와의 책임이 명시됨.
+- [x] minimal ABCI event만 emit함.
+- [x] batch effect ID가 canonical vector와 일치함.
+- [x] typed binary KV scan index가 payload를 한 번만 저장함.
+- [x] Deposit/2x2/Batch가 하나의 global privacy sequence/cursor를 사용함.
+- [x] typed query failure가 lossy event fallback 없이 fail closed함.
+- [x] same-root batch path snapshot query/local provider가 동작함.
+- [x] cursor/output/byte-limited query가 동작함.
+- [x] artifact descriptor/setup/strict readiness가 동작함.
+- [x] consensus artifact identity와 local VK/schema mismatch가 startup/readiness를 막음.
+- [x] direct proof/message/keeper integration이 통과함.
+- [x] existing Deposit/Spend/2x2 regression이 없음.
+- [x] invariant matrix와 한영 docs가 code/test location을 가리킴.
+- [x] artifact binary/secret이 tracked되지 않음.
+- [x] master ledger가 갱신됨.
 
 ## 15. Session 3B Handoff
 
-```text
 ## Completion Record
 
-- 시작 commit:
-- 완료 commit:
-- circuit set ID/source/constraint count:
-- batch proto/API version:
-- public witness order:
-- gas constants:
-- typed scan schema/query cursor:
-- artifact names/checksums:
-- direct core integration 결과:
-- invariant matrix 경로:
-- 미해결 finding:
-- Session 3B review scope:
-- worktree 상태:
-```
+- 상태: **Complete — Gate 3A 충족. Session 3B는 Unblocked이지만 시작하지 않음.**
+- 시작 commit: `b7a97acd03c5e97b9e7e0bf52197ba421feda3c8`
+- 완료 core commit: `62d052699b538800374fede592b337e83de3a253`
+- 공개 계약 문서 commit: `67115090d63578d3643617c866d03ef953b103f2`
+- completion/ledger commit: 이 record와 Master Roadmap을 갱신한 commit
+
+### Gate 2 재검증
+
+- corrected full-shape gate는 production alias와 같은 16/32 circuit에서 constraint `1,111,837`, max witness prove/verify, peak RSS `3,339,862,016 B`를 기록해 PASS함.
+- max-shape gate는 canonical owner-effect payload `65,384 B`, protobuf Tx `65,294 B`, typed scan KV `75,105 B`, total KV write `173,409 B`, minimal event `584 B`, query response `74,551 B`로 모든 hard limit을 통과함.
+- public input 12개의 exact 순서, NoteV1/vector root/disabled sentinel/disclosure 공식, independent golden vector와 invariant traceability matrix가 존재함을 재확인함.
+- Session 2의 fresh clean review 결과와 현재 구현 전 review를 대조해 unresolved Critical/High design finding이 0건임을 확인함. Frozen protocol contract 변경이나 capacity/security constraint 축소가 없어 decision change proposal은 필요하지 않았음.
+
+### 동결된 protocol/consensus identity
+
+- circuit set ID: `privacy-note-v1`
+- required circuit order: `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`
+- production batch source: `x/privacy/circuit/batch_joinsplit_16x32.go`; max input/output `16/32`; constraint `1,111,837`
+- artifact manifest schema: `v2`; circuit identity schema: `v1`; privacy module/state version: `2`
+- batch proto/API: package `clairveil.privacy.v1`, `MsgBatchTransfer`, `BatchTransferOutput`, canonical owner-effect format `1`, signed raw `Any.value` cap `128 KiB`
+- fixed payload/envelope: `privacy-fixed-v1`; AssetRegistry: `privacy-asset-registry-v1`
+- public witness exact order: `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`
+- public-input schema SHA-256: `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`
+
+### Gas, state, scan contract
+
+- `BatchGasModelV1`: verify base `1,000,000`; per input `25,000`; per output `50,000`; per canonical payload byte `4`; per typed state byte `8`; per tree-node write `5,000`; per global lookup `10,000` gas.
+- resource bounds: canonical payload `65,384 B`, typed state `256 KiB`, tree node writes `1,056`, global lookups `48`. Cheap signed-wire/framing 검사 뒤 canonical/semantic/state/proof 작업 전에 deterministic precharge함. Cosmos KV gas는 실제 store I/O를 별도로 charge하며 real `1/1` handler와 max `16/32` post-proof transition에서 두 layer를 독립 계측함.
+- scan schema/sequence: `privacy-scan-v2` / `privacy-sequence-v1`; lexicographic query cursor `(height, global_sequence, output_index)`. Deposit/2x2/Batch가 같은 global sequence를 사용하며 ciphertext/disclosure bytes는 typed output record에 한 번만 저장함.
+- `EventBatchTransferV1`은 effect ID, count, root, version, expiry, relayer, audit identity만 emit함. Same-root path snapshot, output/record/byte limit, typed fail-closed query, genesis export/import와 모든 historical prefix root 재검증을 통과함.
+- exact audit key ID/epoch/target과 `AssetRegistryV1` mapping을 consensus state/genesis/query에서 검증함. Nullifier와 commitment는 local duplicate 및 global Deposit/2x2/Batch/genesis uniqueness를 모두 검사함.
+
+### Development artifact identity
+
+Artifact는 repo 밖 `/tmp/clairveil-session3a-artifacts-381c984`에서 source `381c984189e823e5797104eb7cd2beb2386eaf80`, 생성 시각 `2026-07-11T09:32:32Z` 기준으로 만들었으며 binary/secret은 commit하지 않았음.
+
+| 파일 | 크기 | SHA-256 |
+| --- | ---: | --- |
+| `privacy_batch_joinsplit_16x32_r1cs.bin` | `122,813,535 B` | `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210` |
+| `privacy_batch_joinsplit_16x32_pk.bin` | `209,218,621 B` | `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470` |
+| `privacy_batch_joinsplit_16x32_vk.bin` | `716 B` | `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621` |
+
+Generation peak RSS는 `3,308,797,952 B`, role readiness peak RSS는 `1,295,482,880 B`였음. Validator role은 batch VK만, prover role은 batch R1CS/PK만 읽었고 exact consensus identity, VK hash, schema hash, constraint count mismatch가 readiness를 막는 것을 확인함.
+
+### Direct core/invariant 결과
+
+- `TestBatchTransferDirectCoreIntegration`은 internal deterministic fixture로 실제 Groth16 proof를 생성하고 `MsgBatchTransfer` handler를 직접 호출해 proof 성공 뒤에만 nullifier, commitment, root snapshot, scan state, minimal event가 atomic commit됨을 검증함.
+- `TestBatchTransferCoreRejectionsAndAtomicScanFailure`은 canonical/public witness/proof/state failure가 partial state를 남기지 않음을 검증함.
+- `TestCrossMessageNullifierFailureRollsBackWholeCosmosTxCache`은 2x2+Batch와 Batch+Batch를 두 ordering 모두 실행해 후속 nullifier conflict가 outer Cosmos tx cache 전체를 rollback함을 검증함.
+- production positive matrix는 `1/1`, `1/2`, `3/4`, `8/16`, `16/31`, `16/32`, mixed disclosure, active zero-value padding을 포함하고 negative matrix 59건은 count/sentinel/path/distinctness/owner/asset/key/value/root/domain/expiry/signature/disclosure/vector separation을 포함함.
+- invariant matrix와 공개 계약: [한글](../docs/clairveil-batch-joinsplit-16x32-kr.md), [영문](../docs/clairveil-batch-joinsplit-16x32.md). 관련 한영 circuit/testing/operations/security/threat/downstream 문서도 code/test location으로 갱신함.
+
+### 전체 검증
+
+| 명령 | 결과 |
+| --- | --- |
+| `make proto` | PASS; generated proto에 unexpected diff 없음 |
+| `go test ./x/privacy/circuit -count=1` | PASS |
+| `go test ./x/privacy/types ./x/privacy/keeper -count=1` | PASS |
+| `go test ./x/privacy/zk -count=1` | PASS |
+| `go test ./x/privacy/client/sdk/conformance -count=1` | PASS |
+| `go test ./x/privacy/... -count=1` | PASS |
+| `make examples` | PASS; 기존 npm low 1건은 known risk로 유지 |
+| `make privacy-e2e-smoke` | PASS; deposit, disclosure 3 mode transfer, direct/relayed withdraw |
+| development artifact generation + `TestBatchDevelopmentArtifactRoleReadinessGate` | PASS |
+| `make release-check` | PASS; `go test ./...`, command build, examples, vulnerability policy, localnet smoke, privacy E2E, bulk readiness 포함 |
+| `make release-pack` / `make release-pack-verify` | PASS |
+| `git diff --check` | PASS |
+
+### Review finding과 residual risk
+
+- Independent circuit/proto review와 keeper/state/gas review에서 최종 unresolved Critical/High/Medium finding은 0건임.
+- Review 중 발견한 두 Medium은 signed raw protobuf duplicate-field wire-cap bypass 방어와 max-shape Cosmos KV gas/explicit precharge 경계 증명으로 수정했으며 follow-up review가 두 finding의 해소와 새 Critical/High/Medium 0건을 확인함.
+- Low residual: 향후 `authz`/`group`처럼 nested message를 즉시 실행하는 wrapper를 ante 밖에 추가하면 recursive raw `Any.value` cap을 다시 검토해야 함.
+- Formal trusted setup, external audit, production artifact signing/distribution은 미수행임. Development setup generation은 약 `3.08 GiB`, readiness는 약 `1.21 GiB` peak RSS를 사용하므로 production prover hard cancellation/resource containment에는 process isolation이 필요함.
+- Public batch Go SDK, remote prover batch HTTP route, wallet scanner/decrypt UX, one-proof payroll planner/worker/reconcile, batch CLI/tutorial은 의도적으로 미구현이며 Session 3B 범위임. Remote historical path query의 wallet-interest leakage, state pruning/governance calibration, new-asset governance도 residual operational risk임.
+- Accepted no-fixed-version Go findings `GO-2024-2584`, `GO-2026-4479`, `GO-2026-5932`와 examples npm low 1건을 기존 release policy에 따라 계속 추적함.
+
+### Session 3B 진입 판정
+
+- **Gate 3A: PASS.** Direct core integration, development artifact identity/readiness, atomic cross-message rollback, full validation이 모두 통과했고 unresolved Critical/High core finding이 없음.
+- **Session 3B: Unblocked, Not Started.** Review scope는 public batch Go SDK/builder, remote prover batch route, wallet scan/decrypt, payroll prepare/worker/reconcile, batch CLI/tutorial, recipient scan부터 reconcile까지의 end-to-end임. Session 2/3A의 16/32 capacity, 12-input order, NoteV1/sentinel/vector/disclosure, gas, scan schema를 변경하려면 Session 3A decision change로 되돌아가야 함.
+- worktree 상태: completion/ledger commit과 최종 release-pack 재검증 후 `git status --short --branch`가 clean임을 확인함.
 
 core gate가 미완료이면 Session 3B를 시작하지 않음.
