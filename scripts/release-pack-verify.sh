@@ -10,6 +10,10 @@ pack_name="clairveil-handoff-${version}"
 archive_path="${RELEASE_PACK_ARCHIVE:-"$dist_dir/${pack_name}.tar.gz"}"
 checksum_path="${RELEASE_PACK_CHECKSUM:-"$archive_path.sha256"}"
 work_dir="$(mktemp -d)"
+explicit_archive=false
+if [[ -n "${RELEASE_PACK_ARCHIVE:-}" ]]; then
+	explicit_archive=true
+fi
 
 cleanup() {
 	rm -rf "$work_dir"
@@ -42,6 +46,20 @@ pack_root_name="$(tar -tzf "$archive_path" | awk -F/ 'NF {print $1; exit}')"
 tar -xzf "$archive_path" -C "$work_dir"
 pack_root="$work_dir/$pack_root_name"
 [[ -d "$pack_root" ]] || fail "missing extracted pack root: $pack_root_name"
+
+manifest_commit_line_count="$(grep -Ec '^commit:' "$pack_root/RELEASE-MANIFEST.txt" 2>/dev/null || true)"
+manifest_commit_count="$(grep -Ec '^commit: [0-9a-f]{40}$' "$pack_root/RELEASE-MANIFEST.txt" 2>/dev/null || true)"
+[[ "$manifest_commit_line_count" == "1" && "$manifest_commit_count" == "1" ]] || fail "manifest must contain exactly one canonical full commit"
+manifest_commit="$(sed -nE 's/^commit: ([0-9a-f]{40})$/\1/p' "$pack_root/RELEASE-MANIFEST.txt")"
+
+if [[ "$explicit_archive" == true ]]; then
+	[[ -n "${RELEASE_PACK_EXPECTED_COMMIT:-}" ]] || fail "RELEASE_PACK_EXPECTED_COMMIT is required for an explicit archive"
+	expected_commit="$(git -C "$repo_root" rev-parse --verify "${RELEASE_PACK_EXPECTED_COMMIT}^{commit}" 2>/dev/null)" || fail "expected commit is not available in the local Git repository"
+else
+	expected_commit="$(git -C "$repo_root" rev-parse HEAD)"
+fi
+[[ "$manifest_commit" == "$expected_commit" ]] || fail "manifest commit does not match expected commit"
+git -C "$repo_root" cat-file -e "${manifest_commit}^{commit}" 2>/dev/null || fail "manifest commit is not available in the local Git repository"
 
 required_files=(
 	"RELEASE-MANIFEST.txt"
@@ -181,11 +199,23 @@ done
 	shasum -a 256 -c SHA256SUMS.txt >/dev/null
 )
 
-if [[ -z "${RELEASE_PACK_ARCHIVE:-}" ]]; then
-	full_commit="$(git -C "$repo_root" rev-parse HEAD)"
-	grep -Fq "commit: $full_commit" "$pack_root/RELEASE-MANIFEST.txt" || fail "manifest commit does not match HEAD"
-fi
+first_nonregular="$(find "$pack_root" ! -type d ! -type f -print -quit)"
+[[ -z "$first_nonregular" ]] || fail "archive contains a non-regular entry: ${first_nonregular#"$pack_root/"}"
+
+while IFS= read -r -d '' packed_file; do
+	relative_path="${packed_file#"$pack_root/"}"
+	case "$relative_path" in
+	"RELEASE-MANIFEST.txt" | "SHA256SUMS.txt")
+		continue
+		;;
+	esac
+	git -C "$repo_root" cat-file -e "${manifest_commit}:${relative_path}" 2>/dev/null || fail "archive file is not tracked by manifest commit: $relative_path"
+	if ! git -C "$repo_root" show "${manifest_commit}:${relative_path}" | cmp -s - "$packed_file"; then
+		fail "archive file differs from manifest commit: $relative_path"
+	fi
+done < <(find "$pack_root" -type f -print0)
 
 echo "release pack verified: $archive_path"
 echo "checksum verified: $checksum_path"
 echo "required files: ${#required_files[@]}"
+echo "manifest commit verified: $manifest_commit"
