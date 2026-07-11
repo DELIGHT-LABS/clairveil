@@ -1,0 +1,166 @@
+package batchtransfer
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"math/big"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr/mimc"
+	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
+	cryptoeddsa "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
+	"github.com/stretchr/testify/require"
+
+	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
+)
+
+func TestPlanBatchTransferShapesAndModes(t *testing.T) {
+	owner, view := testKey(t, 1), testKey(t, 2)
+	cases := []struct {
+		name                       string
+		inputs, payments           int
+		inputAmount, paymentAmount int64
+		mode                       OutputMode
+		wantOutputs                int
+	}{
+		{"one_one_compact", 1, 1, 5, 5, OutputModeCompact, 1},
+		{"three_four_compact", 3, 4, 4, 3, OutputModeCompact, 4},
+		{"thirty_one_plus_change", 1, 31, 32, 1, OutputModeCompact, 32},
+		{"exact_thirty_two", 1, 32, 32, 1, OutputModeExact32, 32},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ins := make([]InputNote, tc.inputs)
+			for i := range ins {
+				ins[i] = InputNote{testNote(t, owner, view, tc.inputAmount, int64(i+10))}
+			}
+			pays := make([]Payment, tc.payments)
+			for i := range pays {
+				pays[i] = Payment{SpendPubKey: testKey(t, int64(100+i)), ViewPubKey: testKey(t, int64(200+i)), Amount: big.NewInt(tc.paymentAmount)}
+			}
+			plan, err := PlanBatchTransfer(PlanBatchTransferInput{Inputs: ins, Payments: pays, OwnerSpendPubKey: owner, OwnerViewPubKey: view, Mode: tc.mode})
+			require.NoError(t, err)
+			require.Len(t, plan.Outputs, tc.wantOutputs)
+		})
+	}
+}
+
+func TestPlanBatchTransferMixedDisclosurePaddingAndDuplicates(t *testing.T) {
+	owner, view := testKey(t, 1), testKey(t, 2)
+	in := InputNote{testNote(t, owner, view, 10, 3)}
+	recipient := testKey(t, 4)
+	target := testKey(t, 5)
+	plan, err := PlanBatchTransfer(PlanBatchTransferInput{Inputs: []InputNote{in}, Payments: []Payment{{SpendPubKey: recipient, ViewPubKey: recipient, Amount: big.NewInt(3), PrivacyPolicy: privacytypes.TransferPrivacyPolicyDiscloseAmount, DisclosureMode: privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED, DisclosureTargetPubKey: target}}, OwnerSpendPubKey: owner, OwnerViewPubKey: view, Mode: OutputModeExact32})
+	require.NoError(t, err)
+	require.Len(t, plan.Outputs, 32)
+	require.Equal(t, OutputChange, plan.Outputs[1].Kind)
+	require.Equal(t, OutputPadding, plan.Outputs[31].Kind)
+	_, err = PlanBatchTransfer(PlanBatchTransferInput{Inputs: []InputNote{in, in}, Payments: []Payment{{SpendPubKey: recipient, ViewPubKey: recipient, Amount: big.NewInt(1)}}, OwnerSpendPubKey: owner, OwnerViewPubKey: view, Mode: OutputModeCompact})
+	require.ErrorContains(t, err, "duplicate")
+}
+
+func TestPreparedPayloadMutationExpirySignatureAndFileMode(t *testing.T) {
+	payload := testPayload(t)
+	require.NoError(t, ValidatePreparedBatchTransferPayloadMetadataAt(payload, time.Unix(payload.ExpiresAtUnix-1, 0)))
+	mutated := *payload
+	mutated.OwnerSignature = append([]byte(nil), payload.OwnerSignature...)
+	mutated.OwnerSignature[63] ^= 1
+	require.ErrorContains(t, ValidatePreparedBatchTransferPayloadMetadataAt(&mutated, time.Unix(payload.ExpiresAtUnix-1, 0)), "signature")
+	require.ErrorContains(t, ValidatePreparedBatchTransferPayloadMetadataAt(payload, time.Unix(payload.ExpiresAtUnix, 0)), "expired")
+	mutated = *payload
+	mutated.PayloadHash = "00"
+	require.ErrorContains(t, ValidatePreparedBatchTransferPayloadMetadataAt(&mutated, time.Unix(payload.ExpiresAtUnix-1, 0)), "hash")
+	canonical, err := privacytypes.CanonicalMsgBatchTransferPayloadBytesV1(payload.effectMessage(nil, ""))
+	require.NoError(t, err)
+	request := signingRequest(payload, canonical)
+	request.OrderedOutputs[0].Amount = new(big.Int).Add(request.OrderedOutputs[0].Amount, big.NewInt(1))
+	require.ErrorContains(t, ValidateBatchTransferSigningRequest(request), "commitment recomputation")
+	path := filepath.Join(t.TempDir(), "prepared.json")
+	require.NoError(t, os.WriteFile(path, []byte("old"), 0o644))
+	require.NoError(t, WritePreparedBatchTransferPayload(path, payload))
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+}
+
+func TestPrepareBatchTransferRejectsRootMismatch(t *testing.T) {
+	owner, view := testKey(t, 1), testKey(t, 2)
+	notes := []InputNote{{testNote(t, owner, view, 2, 3)}, {testNote(t, owner, view, 2, 4)}}
+	plan, err := PlanBatchTransfer(PlanBatchTransferInput{Inputs: notes, Payments: []Payment{{SpendPubKey: testKey(t, 5), ViewPubKey: testKey(t, 6), Amount: big.NewInt(4)}}, OwnerSpendPubKey: owner, OwnerViewPubKey: view, Mode: OutputModeCompact})
+	require.NoError(t, err)
+	provider := pathProvider{roots: map[string]byte{notes[0].Note.ComputeCommitment().String(): 1}}
+	_, err = PrepareBatchTransfer(context.Background(), provider, plan)
+	require.ErrorIs(t, err, ErrWalletSyncRequired)
+}
+
+type structuredSigner struct{ key *cryptoeddsa.PrivateKey }
+
+func (s structuredSigner) SignBatchTransfer(req BatchTransferSigningRequest) ([]byte, error) {
+	if err := ValidateBatchTransferSigningRequest(req); err != nil {
+		return nil, err
+	}
+	return s.key.Sign(req.ExpectedIntent.FillBytes(make([]byte, 32)), mimc.NewMiMC())
+}
+
+type pathProvider struct{ roots map[string]byte }
+
+func (p pathProvider) LookupMerklePath(_ context.Context, commitmentHex string) (*MerklePathResult, error) {
+	commitment := new(big.Int)
+	commitment.SetString(commitmentHex, 16)
+	siblings := privacytypes.EmptyNoteTreeRootsV1(32)
+	cur := new(big.Int).Set(commitment)
+	path := make([]string, 32)
+	helper := make([]uint32, 32)
+	for i := 0; i < 32; i++ {
+		path[i] = fmt.Sprintf("%x", siblings[i].FillBytes(make([]byte, 32)))
+		cur = privacytypes.ComputeNoteTreeNodeV1(uint32(i), cur, siblings[i])
+	}
+	if len(p.roots) > 0 {
+		for k := range p.roots {
+			if k != commitment.String() {
+				cur.Add(cur, big.NewInt(1))
+			}
+		}
+	}
+	return &MerklePathResult{Root: cur.FillBytes(make([]byte, 32)), Path: path, PathHelper: helper}, nil
+}
+
+func testPayload(t *testing.T) *PreparedBatchTransferPayload {
+	ownerKey, err := cryptoeddsa.GenerateKey(bytes.NewReader(bytes.Repeat([]byte{0x42}, 32)))
+	require.NoError(t, err)
+	ownerBytes := ownerKey.PublicKey.Bytes()
+	owner, err := pointFromBytes(ownerBytes)
+	require.NoError(t, err)
+	view := testKey(t, 2)
+	note := testNote(t, owner, view, 5, 3)
+	recipient := testKey(t, 4)
+	plan, err := PlanBatchTransfer(PlanBatchTransferInput{Inputs: []InputNote{{note}}, Payments: []Payment{{SpendPubKey: recipient, ViewPubKey: recipient, Amount: big.NewInt(5)}}, OwnerSpendPubKey: owner, OwnerViewPubKey: view, Mode: OutputModeCompact})
+	require.NoError(t, err)
+	prepared, err := PrepareBatchTransfer(context.Background(), pathProvider{}, plan)
+	require.NoError(t, err)
+	payload, err := BuildPreparedBatchTransferPayload(prepared, structuredSigner{ownerKey}, BuildPreparedBatchTransferPayloadInput{ChainID: "clairveil-test-1", ExpiresAtUnix: time.Now().Add(time.Hour).Unix(), AuditKeyID: "audit-1", AuditKeyEpoch: 1, AuditDisclosureTargetPubKey: testKey(t, 9), DisableSelfViewDisclosure: true})
+	require.NoError(t, err)
+	return payload
+}
+func testKey(t *testing.T, scalar int64) *crypto_tedwards.PointAffine {
+	curve := crypto_tedwards.GetEdwardsCurve()
+	var p crypto_tedwards.PointAffine
+	p.ScalarMultiplication(&curve.Base, big.NewInt(scalar))
+	return &p
+}
+func pointFromBytes(b []byte) (*crypto_tedwards.PointAffine, error) {
+	var p crypto_tedwards.PointAffine
+	_, err := p.SetBytes(b)
+	return &p, err
+}
+func testNote(t *testing.T, spend, view *crypto_tedwards.PointAffine, amount, randomness int64) privacytypes.Note {
+	sx, sy := pointCoordinates(spend)
+	vx, vy := pointCoordinates(view)
+	n := privacytypes.Note{ReceiverSpendPubKeyX: sx, ReceiverSpendPubKeyY: sy, ReceiverViewPubKeyX: vx, ReceiverViewPubKeyY: vy, Amount: big.NewInt(amount), AssetID: privacytypes.ComputeAssetIDV1("uclair"), Randomness: big.NewInt(randomness)}
+	require.NoError(t, n.ValidateV1())
+	return n
+}
