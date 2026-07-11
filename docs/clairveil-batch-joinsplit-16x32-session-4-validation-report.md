@@ -4,8 +4,8 @@
 
 | Item | Result |
 | --- | --- |
-| Review range | `e427370..8b4848350f9199439eed48e8adddd6ac4d4749c8` |
-| Validated implementation HEAD | `8b4848350f9199439eed48e8adddd6ac4d4749c8` |
+| Review range | `e427370..816f627ec733c88c0433f40fe55bf2b5b864e754` |
+| Validated implementation HEAD | `816f627ec733c88c0433f40fe55bf2b5b864e754` |
 | Review role | Fresh reviewer independent of Sessions 1–3B implementation |
 | Gate 3B on entry | Initially blocked by an uncommitted integration tree; closed only after the fixes and revalidation recorded below |
 | Session 4 publication state | `PUBLICATION_READY_EXPERIMENTAL` |
@@ -42,8 +42,10 @@ The review reconstructed:
 | S4-10 | High | The deposit CLI printed the complete NotePlaintextV1 hex to stderr. | Receiver keys, amount, randomness, and memo could leak to terminal capture or application logs. | Closed by `c40c865`: the helper now returns only the message and does not log note plaintext. |
 | S4-11 | Medium | English and Korean handoff/security documents still described the batch Go implementation as pending or conflated it with downstream product completion. | Reviewers and integrators could rely on a contract state different from the code. | Closed by `cee89a7`: 18 public EN/KR documents now distinguish the implemented Go reference from pending downstream/formal/production work. |
 | S4-12 | Medium | The public low-level prover `HTTPHandler` bounded only the batch route; transfer and withdraw used unbounded `io.ReadAll` before admission. | A directly mounted handler could materialize an attacker-controlled body in memory before acquiring a permit, creating a memory DoS path. | Closed by `fc45edd`: all three routes share the same hard reader, wire/gzip overflow returns 413, errors do not echo payloads, and transfer/withdraw overflow is tested before admission. |
-| S4-13 | Medium | The initial Completion Record used mutable `HEAD` ranges and a `Session 4 closure commit` placeholder. | A published validation claim could not be reproduced against one immutable source snapshot. | Closed by this record: the reports, Completion Record, and master ledger pin validated implementation `8b4848350f9199439eed48e8adddd6ac4d4749c8`; the generated release manifest separately records the exact publication-record commit and archive checksum. |
+| S4-13 | Medium | The initial Completion Record used mutable `HEAD` ranges and a `Session 4 closure commit` placeholder. | A published validation claim could not be reproduced against one immutable source snapshot. | Closed by this record: the reports, Completion Record, and master ledger pin validated implementation `816f627ec733c88c0433f40fe55bf2b5b864e754`; the generated release manifest separately records the exact publication-record commit and archive checksum. |
 | S4-14 | Medium | Release-pack generation copied working-tree files but recorded only `HEAD`, and verification regenerated the same dirty content. | Uncommitted docs, schemas, fixtures, or source could pass verification while being absent from the claimed commit. | Closed by `8b48483`: generation checks tracked and untracked non-ignored state before copying and again before writing the manifest; dirty generation and default verification fail closed, while ignored `dist/` and `tmp/` outputs remain allowed. |
+| S4-15 | Medium | The clean-worktree check ignored files, while recursive directory copies included ignored `.env`, `node_modules`, or other local files. | A local secret or development artifact could leak into the pack without changing Git status or the claimed commit. | Closed by `816f627`: every selected path is copied from `git archive` of the pinned source commit, so only tracked blobs can enter. An ignored `.env` probe inside a copied example directory was confirmed absent from the archive. |
+| S4-16 | Medium | Two status checks did not detect a concurrent change that was committed between individual working-tree copies and manifest creation. | The archive could mix old content while recording a newer clean `HEAD`. | Closed by `816f627`: source SHA is pinned before extraction, every file comes from that Git tree, HEAD must still equal the pinned SHA before manifest creation, and the manifest writes only the pinned SHA. |
 
 No finding required a protocol contract, public-input order, or NoteV1 change. Session 2/3A re-entry was therefore not required. Unresolved Critical/High findings: 0. Unresolved security-relevant Medium findings: 0.
 
@@ -145,7 +147,7 @@ The separate privacy smoke regression covered Deposit, JoinSplit2x2, and Withdra
 | `make release-check` | Passed, including CI, vulnerability policy, general localnet, privacy E2E, and two-batch bulk readiness |
 | `make release-pack` | Passed; Session 4 EN/KR reports included |
 | `make release-pack-verify` | Passed; 123 required files plus internal and archive checksums verified |
-| `git diff --check e427370..8b4848350f9199439eed48e8adddd6ac4d4749c8` and publication hygiene checks | Passed; tracked artifact/secret/personal-path results were empty and generated `dist/`/`tmp/` remained ignored |
+| `git diff --check e427370..816f627ec733c88c0433f40fe55bf2b5b864e754` and publication hygiene checks | Passed; tracked artifact/secret/personal-path results were empty and generated `dist/`/`tmp/` remained ignored |
 
 ## Accepted residual risks and Production TODO
 
