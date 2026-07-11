@@ -17,6 +17,13 @@ cleanup() {
 }
 trap cleanup EXIT
 
+require_clean_worktree() {
+	if [[ -n "$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)" ]]; then
+		echo "release pack generation requires a clean worktree" >&2
+		exit 1
+	fi
+}
+
 copy_path() {
 	local path="$1"
 	if [[ ! -e "$repo_root/$path" ]]; then
@@ -27,6 +34,7 @@ copy_path() {
 	cp -R "$repo_root/$path" "$pack_root/$path"
 }
 
+require_clean_worktree
 mkdir -p "$pack_root" "$dist_dir"
 
 copy_path "README.md"
@@ -130,6 +138,10 @@ copy_path "build/clairveil-proverd"
 copy_path "scripts/release-pack.sh"
 copy_path "scripts/release-pack-verify.sh"
 copy_path "scripts/privacy-batch-joinsplit-localnet.sh"
+
+# Recheck after copying so a concurrent working-tree mutation cannot be
+# attributed to the immutable HEAD recorded in the manifest.
+require_clean_worktree
 
 cat >"$pack_root/RELEASE-MANIFEST.txt" <<EOF
 Clairveil release handoff pack
