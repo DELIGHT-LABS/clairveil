@@ -195,3 +195,13 @@ batch_item_index
 - Product UI can show insufficient note preparation status.
 - Batch nullifier queries are chunked.
 - Prepared transfer payload and prover response round-trip validation works.
+
+## Session 2 Foundation Boundary
+
+The payroll reference remains on the current production deposit/native-2x2-transfer/withdraw surface. Session 2's `BatchJoinSplit16x32` protobuf and circuit are feasibility prototypes and frozen future contracts; do not add a batch message, prover route, or payroll execution path until the production consensus circuit, keeper handler, and scanner contract are delivered. The existing payroll `transfer-batch` flow coordinates current 2x2 messages and is not one 16x32 proof.
+
+New JS implementations must pin `privacy-note-v1`, use canonical `privacy-fixed-v1` note/disclosure/typed-envelope bytes, and reject raw ciphertext or legacy JSON plaintext. Resolve every 32-byte asset ID through authoritative `AssetRegistryV1`; payroll denomination configuration and registry results must agree. Migrate only with fresh genesis: clear note reservations, cached notes/cursors, prepared/proof jobs, and development artifacts, then regenerate and rescan.
+
+Use the complete unified scan cursor `(height, global_sequence, output_index)` and same-root Merkle path snapshots. A current-root incremental path has no 1,048,576-leaf cap. A non-current historical path uses persisted root/count/height metadata, but its nodes are rebuilt under a 1,048,576-leaf bound; above that cap, use the current root or a trusted local historical index. Remote historical path queries can reveal treasury activity, so retain the privacy warning and use privacy-preserving infrastructure where required. Future batch schema work must preserve the exact order `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`, but must not advertise it as live.
+
+For prover integration, use the bounded service wrapper and the role-aware lazy artifact loader. Defaults are one in-flight and four queued jobs per circuit plus a positive 8 MiB request limit; zero is invalid. Keep automatic failover off. Client cancellation may leave in-process proving running and holding a reservation/admission slot, so reconcile job and note state before reuse; use isolated worker processes when hard termination is required.

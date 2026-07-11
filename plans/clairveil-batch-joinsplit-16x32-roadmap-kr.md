@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | 진행 중 (Session 1 완료, Session 2 Unblocked·미착수) |
+| 상태 | 진행 중 (Session 1·2 완료, Gate 2 충족, Session 3A Unblocked·미착수) |
 | 작성일 | 2026-07-10 |
 | 대상 브랜치 | `private/bulk-transfer-v2` |
 | 최종 목표 | 현재 shielded protocol의 알려진 보안·프라이버시 결함을 먼저 제거하고 안전하고 견고한 최대 16-input / 32-output shielded batch transfer를 구현함 |
@@ -270,8 +270,8 @@ Gate 4: PUBLICATION_READY_EXPERIMENTAL
 | 세션 | 상태 | 시작 commit | 완료 commit | 검증 요약 | 잔여 사항 |
 | --- | --- | --- | --- | --- | --- |
 | 1. 현재 보안 수정 | Complete (Gate 1 충족) | `e427370` | `14d85f5` | unit/proto/전체 Go/examples/vulncheck/localnet/privacy E2E/payroll live/release-check/bulk readiness/fuzz/release-pack, review-fix 및 prepared-transfer canonical key 회귀 검증 통과 | current protocol Critical/High 0건. no-fixed-version `GO-2024-2584`, `GO-2026-4479`, `GO-2026-5932`, npm low 1건, formal setup/external audit 미수행을 known risk로 추적 |
-| 2. 기반/설계 확정 | Unblocked (Not Started; Gate 1 충족) | - | - | Session 2 구현·검증 미착수 | Session 1 Completion Record의 v2 helper/vector와 breaking/reset 지침을 시작 gate에서 재확인 |
-| 3A. Circuit/chain core | Blocked by Session 2 | - | - | - | - |
+| 2. 기반/설계 확정 | Complete (Gate 2 충족) | `ad99ef7193fdc0683e483e4440e5cda1f0945432` | `43d0e8d` | Gate 1 재검증, NoteV1/fixed payload/exact batch effect/registry/scan/path/artifact/admission 구현, corrected 16x32 full-shape와 max wire/state gate, 전체 privacy/release/E2E 검증 통과 | Critical/High/P0/P1/P2 0건. production batch circuit/message/handler/integration, formal setup/audit는 후속 세션이며 약 3.11 GiB peak RSS와 process isolation/downstream fixed-encoding 전환을 risk로 추적 |
+| 3A. Circuit/chain core | Unblocked (Not Started; Gate 2 충족) | - | - | Session 2 circuit/wire Gate PASS, design TBD 없음 | Session 2의 16/32 capacity, security constraint, NoteV1, 12-input order, vector/disclosure/fixed-state 계약을 유지하고 production core를 구현해야 함 |
 | 3B. Client/product integration | Blocked by Session 3A | - | - | - | - |
 | 4. 독립 검증/공개 gate | Blocked by Session 3B | - | - | - | - |
 

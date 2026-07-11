@@ -16,7 +16,7 @@ The downstream chain/client team must finalize these values before client releas
 - prover topology and endpoint
 - prover auth policy
 - audit master pubkey
-- consensus circuit identity (`privacy-intent-v2`), manifest `v2`, VK/schema checksum policy
+- consensus circuit identity (`privacy-note-v1`), manifest `v2`, VK/schema checksum policy
 - gas policy
 - relayer support
 - disclosure UX policy
@@ -86,7 +86,7 @@ The client must validate:
 - auth failure
 - malformed response
 
-Current breaking versions are transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload and proof/request/response `v2`, relay handoff/schema `v2`, and disclosure plaintext/query `v5`. Reject and regenerate legacy payloads.
+Current breaking versions are transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload and proof/request/response `v2`, relay handoff/schema `v2`, and disclosure plaintext/query `privacy-fixed-v1`. Reject and regenerate legacy payloads.
 
 When using a remote prover, request/response bodies are privacy-sensitive data.
 
@@ -173,7 +173,7 @@ Changes with breaking or migration impact:
 
 When these change, update the client product brief, UX flows, risk decisions, API checklist, JS SDK handoff, and release note impact together.
 
-Adopting this contract requires clearing cached prepared payloads, proof responses/jobs, and old local development artifacts, regenerating `privacy-intent-v2` artifacts, and resyncing any client cache that persisted old circuit or disclosure-version metadata. There is no legacy prepared-payload decode path.
+Adopting this contract requires clearing cached prepared payloads, proof responses/jobs, and old local development artifacts, regenerating `privacy-note-v1` artifacts, and resyncing any client cache that persisted old circuit or disclosure-version metadata. There is no legacy prepared-payload decode path.
 
 ## 9. Related Documents
 
@@ -183,3 +183,16 @@ Adopting this contract requires clearing cached prepared payloads, proof respons
 - [JS SDK handoff](clairveil-js-sdk-handoff.md)
 - [Downstream integration guide](clairveil-downstream-cosmos-integration-guide.md)
 - [Testing guide](clairveil-testing-guide.md)
+
+## 10. Session 2 Foundation Gate
+
+This checklist distinguishes the currently supported deposit/2x2 transfer/withdraw APIs from the future `BatchJoinSplit16x32` contract. The Session 2 batch protobuf and circuit are wire/resource feasibility prototypes only; do not publish a `MsgBatchTransfer`, keeper endpoint, prover route, or SDK/payroll feature from them.
+
+- [ ] Pin consensus active set `privacy-note-v1` and reject any artifact identity, VK hash, or public-input schema mismatch.
+- [ ] Encode note/disclosure/envelope payloads as canonical `privacy-fixed-v1`; reject raw ciphertext, JSON plaintext, incorrect envelope kind, non-zero reserved bytes, and trailing bytes.
+- [ ] Treat `AssetRegistryV1` as authoritative for denom-to-`asset_id` and reverse lookup; fail closed on missing, colliding, or inconsistent entries.
+- [ ] Consume unified `privacy-scan-v2` state with the full `(height, global_sequence, output_index)` cursor and request a path snapshot for the exact selected root. A current-root incremental path has no 1,048,576-leaf cap. A non-current historical path uses persisted root/count/height metadata, but its nodes are rebuilt under a 1,048,576-leaf bound; above that cap, use the current root or a trusted local historical index. Retain the warning that remote historical root/path queries may leak wallet interest.
+- [ ] Clear note/scan/proof caches and old artifacts, start from fresh genesis, regenerate `privacy-note-v1` artifacts, and rescan. Do not offer legacy decode or in-place migration.
+- [ ] Reserve, but do not yet advertise, the future 12-field order: `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`.
+- [ ] Use role-aware artifact readiness: validator VK only; prover selected R1CS/PK loaded lazily. Configure per-circuit admission with defaults `max_in_flight=1`, `max_queued=4`, and positive `max_request_bytes=8388608`; zero is invalid.
+- [ ] Expose only the bounded `proverservice.Handler`, never the raw transport handler. Keep automatic prover failover off. Model cancellation as client-wait cancellation, not guaranteed solver termination; use process isolation for a hard resource boundary.

@@ -352,7 +352,7 @@ clairveild tx privacy relay-withdraw out/withdraw-payload.json \
 
 The summary prints the resolved absolute expiry and chain ID, and JSON uses the same `expires_at_unix`. Submission at or after that second fails; the relayer cannot extend it. Prepared payload/proof JSON is privacy-sensitive, and the prover payload still contains private note witness even though output/recipient/chain/expiry cannot be changed. Production wallets need encrypted storage and expiry/deletion policy.
 
-Current CLI handoff versions are transfer payload `v5`, transfer proof/prover contract `v2`, withdraw prover/final payload and proof/prover/relay contract `v2`, and disclosure plaintext/query `v5`. Regenerate legacy files.
+Current CLI handoff versions are transfer payload `v5`, transfer proof/prover contract `v2`, withdraw prover/final payload and proof/prover/relay contract `v2`, and disclosure plaintext/query `privacy-fixed-v1`. Regenerate legacy files.
 
 ## 9. Query
 
@@ -384,7 +384,7 @@ Other queries are available through gRPC/HTTP gateway and generated clients.
 
 ### clairveil-setup
 
-Generates development ZK artifacts for active set `privacy-intent-v2` and manifest schema `v2`. Generated R1CS/PK/VK binaries are not source artifacts and this command is not a formal trusted setup ceremony.
+Generates development ZK artifacts for active set `privacy-note-v1` and manifest schema `v2`. Generated R1CS/PK/VK binaries are not source artifacts and this command is not a formal trusted setup ceremony.
 
 ```bash
 clairveil-setup --out artifacts/privacy
@@ -480,3 +480,13 @@ make reference-payroll-rehearsal
 ```
 
 The live localnet walkthrough is [clairveil-reference-payroll-live-localnet-tutorial.md](clairveil-reference-payroll-live-localnet-tutorial.md). The rehearsal walkthrough is currently documented in Korean at [clairveil-reference-payroll-rehearsal-kr.md](clairveil-reference-payroll-rehearsal-kr.md).
+
+## 11. Session 2 Foundation Compatibility
+
+The active circuit set generated and checked by the CLI is `privacy-note-v1`. Notes, disclosures, and encrypted envelopes use canonical `privacy-fixed-v1`; commands emit/consume the typed envelope rather than raw ciphertext or legacy JSON plaintext. `AssetRegistryV1` is authoritative for resolving canonical denoms and 32-byte asset IDs. On upgrade, use fresh genesis, delete local wallet/scan/proof caches and old development artifacts, regenerate artifacts, and rescan. There is no legacy decode or in-place state migration.
+
+Wallet scan state is ordered by the complete cursor `(height, global_sequence, output_index)`. Any spend path must be obtained from a snapshot for exactly the selected root. A current-root incremental path has no 1,048,576-leaf cap. A non-current historical path uses persisted root/count/height metadata, but its nodes are rebuilt under a 1,048,576-leaf bound; above that cap, use the current root or a trusted local historical index. Remote historical root/path queries can reveal wallet interest, so retain the privacy warning and prefer local or privacy-preserving infrastructure when that matters.
+
+`BatchJoinSplit16x32` remains a Session 2 feasibility prototype. No CLI command in this reference submits a production 16x32 message. In particular, `transfer-batch` still coordinates current native 2x2 transfers. The future public schema is reserved, in order, as `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`; it must not be treated as a live circuit or transaction.
+
+`clairveil-proverd` uses the role-aware lazy artifact registry and per-circuit admission defaults of one in-flight and four queued requests. `-max-request-bytes` defaults to `8388608` and must be greater than zero; `0` is invalid and does not disable the limit. Expose only the bounded `proverservice.Handler`, never the raw transport handler. Automatic endpoint failover remains disabled. Cancellation may stop the caller while an in-process proof continues and retains its slot; operators needing hard cancellation or memory containment must isolate and terminate worker processes.

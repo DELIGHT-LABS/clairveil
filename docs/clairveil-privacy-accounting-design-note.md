@@ -17,7 +17,7 @@ This document assumes there is no live or public state. If external users have a
 | Transfer scan hints | `MsgTransfer.view_tags` are off-circuit 2-byte scan hints. They are not part of the accounting proof. |
 | Signature/point hardening | Uses gnark standard `eddsa.Verify`, point on-curve assertions, and malformed point/scalar negative tests. |
 | Reserve accounting | The keeper exposes a `reserve/{denom}` query comparing denom-level deposit/withdraw totals with module-account balance. |
-| Artifact contract | The active circuit set is `privacy-intent-v2` and includes deposit/spend/joinsplit artifacts with consensus-pinned VK/schema identity. |
+| Artifact contract | The active circuit set is `privacy-note-v1` and includes deposit/spend/joinsplit artifacts with consensus-pinned VK/schema identity. |
 
 ## 2. Pre-Public Risk Model
 
@@ -109,7 +109,7 @@ Complete. Transfer/withdraw prover payload contracts keep version/hash verificat
 
 ### Phase 6: Artifact Rotation
 
-Superseded by the Session 1 intent hardening. The active set is now `privacy-intent-v2`, with deposit/spend/joinsplit descriptors and consensus-pinned VK/public-input schema hashes. Generated binaries remain untracked and are regenerated with `clairveil-setup`.
+Superseded by the Session 2 NoteV1 foundation. The active set is now `privacy-note-v1`, with deposit/spend/joinsplit descriptors and consensus-pinned VK/public-input schema hashes. Generated binaries remain untracked and are regenerated with `clairveil-setup`.
 
 ## 5. Client Contract Notes
 
@@ -145,7 +145,7 @@ make release-pack-verify
 Artifact validation:
 
 1. Regenerate deposit/spend/joinsplit R1CS/PK/VK with `clairveil-setup`.
-2. Confirm `privacy_zk_manifest.json` has `active_set_id=privacy-intent-v2` and matches consensus VK/public-input schema hashes.
+2. Confirm `privacy_zk_manifest.json` has `active_set_id=privacy-note-v1` and matches consensus VK/public-input schema hashes.
 3. Use checksum env with strict preflight.
 4. Confirm downstream handoff docs and fixture schema reflect the new contract.
 

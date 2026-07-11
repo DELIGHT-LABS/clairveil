@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | Blocked by Session 1 |
+| 상태 | Complete (Gate 2 충족, Session 3A Unblocked·미착수) |
 | 선행 문서 | [Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md), [Session 1](clairveil-batch-joinsplit-16x32-session-1-security-remediation-kr.md) |
 | 후속 세션 | [Session 3A Core Implementation](clairveil-batch-joinsplit-16x32-session-3-implementation-kr.md) |
 | 권장 모델 | `gpt-5.6-sol` |
@@ -29,6 +29,10 @@ git status --short --branch
 git log -8 --oneline
 go test ./x/privacy/... -count=1
 ```
+
+### 진입 Gate 검증 결과
+
+2026-07-11에 사용자가 지정한 `ad99ef7193fdc0683e483e4440e5cda1f0945432`에서 시작했다. 시작 worktree는 clean이었고 Session 1 Completion Record와 Master Roadmap Gate 1을 실제 코드, 공격 회귀 테스트, artifact/state 계약과 대조했다. `go test ./x/privacy/... -count=1`을 재실행했고 authorization, duplicate nullifier/commitment, canonical crypto decoder, disclosure blinding, global commitment uniqueness, artifact identity, prover failover 경계를 독립 재검토했다. 미해결 Critical/High finding, 불완전한 필수 테스트, Completion Record와 코드의 실질적 불일치를 발견하지 않아 **Gate 1을 PASS**로 판정하고 Session 2를 시작했다.
 
 ## 2. 목적과 순서
 
@@ -487,6 +491,23 @@ BatchTransferOutput
 - self-view digest를 중복 전달하지 않고 full digest를 사용함.
 - proof와 creator는 canonical payload digest에서 제외함.
 
+Session 2에서 `lp(x) = u32be(len(x)) || x`로 두고 canonical owner-effect bytes를 다음처럼 동결함. 각 `output_effect_i`는 위 `BatchTransferOutput` field를 정확히 선언 순서대로 encoding하며 policy/mode는 `u32be`, 나머지 byte field는 `lp`를 사용함.
+
+```text
+canonical_batch_payload_v1 =
+  u32be(1) || lp(root) ||
+  u32be(input_count) || lp(nullifier_0) || ... || lp(nullifier_{input_count-1}) ||
+  u32be(output_count) || output_effect_0 || ... || output_effect_{output_count-1} ||
+  lp(audit_key_id) || u64be(audit_key_epoch) ||
+  lp(audit_disclosure_target_pubkey) || u64be(expires_at_unix)
+
+payload_sha256 = SHA-256(
+  "clairveil.batch-transfer-payload.v1" || canonical_batch_payload_v1
+)
+```
+
+`PayloadDigestHi/Lo`는 위 SHA-256의 앞/뒤 16 bytes를 non-reduced unsigned big-endian `uint128`로 해석함. empty optional field는 `lp(empty)=u32be(0)`이며 self-view는 batch-level all-or-none임. independent 2x2 golden과 max 16x32 payload size는 Completion Record 및 한영 normative 문서에 기록함.
+
 ## 10. Scan Data Plane
 
 ### 10.1 Batch effect ID
@@ -770,53 +791,86 @@ feasibility report에는 hardware/OS/Go/gnark, warm/cold, sample 수를 기록�
 
 ## 20. Acceptance Criteria
 
-- [ ] NoteV1 commitment/nullifier/tree-node domain이 동결됨.
-- [ ] Deposit/Spend/2x2/native/scanner cross-circuit vector가 일치함.
-- [ ] key canonical/on-curve/non-identity/subgroup validation이 host/circuit에 정의됨.
-- [ ] full-shape 16x32 prototype가 dominant constraints를 모두 포함함.
-- [ ] single owner signature 하나만 사용함.
-- [ ] feasibility report가 max-shape compile/setup/prove/RSS/artifact를 기록함.
-- [ ] 12 public input 순서에 TBD가 없음.
-- [ ] active-prefix/sentinel/distinctness/root contract가 고정됨.
-- [ ] vector internal-node domain/level과 disabled input/output sentinel의 모든 field가 exact하게 고정됨.
-- [ ] user/full disclosure와 optional self-view contract가 고정됨.
-- [ ] disclosure digest가 per-output secret blinding을 포함하고 dictionary vector가 존재함.
-- [ ] fixed-size encoding이 deposit/2x2/scanner/fixture에 적용됨.
-- [ ] AssetRegistryV1이 asset ID/denom을 1:1로 검증하고 query함.
-- [ ] structured batch message contract가 고정됨.
-- [ ] minimal ABCI event와 typed KV scan index가 고정됨.
-- [ ] 모든 privacy operation이 global sequence/cursor를 공유하고 typed query failure가 fail closed함.
-- [ ] same-root batch path snapshot query/local provider가 정의됨.
-- [ ] batch effect ID canonical formula와 golden vector가 고정됨.
-- [ ] gas/state byte formula가 고정됨.
-- [ ] max-shape wire/state feasibility gate가 tx/block/query/KV 한도를 통과함.
-- [ ] consensus circuit identity와 validator local artifact mismatch가 fail closed함.
-- [ ] fresh genesis/reset 및 cache/reservation invalidation handoff가 고정됨.
-- [ ] artifact lazy loader와 prover admission이 구현됨.
-- [ ] invariant traceability matrix가 존재함.
-- [ ] 미해결 Critical/High design finding이 없음.
-- [ ] master ledger가 갱신됨.
+- [x] NoteV1 commitment/nullifier/tree-node domain이 동결됨.
+- [x] Deposit/Spend/2x2/native/scanner cross-circuit vector가 일치함.
+- [x] key canonical/on-curve/non-identity/subgroup validation이 host/circuit에 정의됨.
+- [x] full-shape 16x32 prototype가 dominant constraints를 모두 포함함.
+- [x] single owner signature 하나만 사용함.
+- [x] feasibility report가 max-shape compile/setup/prove/RSS/artifact를 기록함.
+- [x] 12 public input 순서에 TBD가 없음.
+- [x] active-prefix/sentinel/distinctness/root contract가 고정됨.
+- [x] vector internal-node domain/level과 disabled input/output sentinel의 모든 field가 exact하게 고정됨.
+- [x] user/full disclosure와 optional self-view contract가 고정됨.
+- [x] disclosure digest가 per-output secret blinding을 포함하고 dictionary vector가 존재함.
+- [x] fixed-size encoding이 deposit/2x2/scanner/fixture에 적용됨.
+- [x] AssetRegistryV1이 asset ID/denom을 1:1로 검증하고 query함.
+- [x] structured batch message contract가 고정됨.
+- [x] minimal ABCI event와 typed KV scan index가 고정됨.
+- [x] 모든 privacy operation이 global sequence/cursor를 공유하고 typed query failure가 fail closed함.
+- [x] same-root batch path snapshot query/local provider가 정의됨.
+- [x] batch effect ID canonical formula와 golden vector가 고정됨.
+- [x] gas/state byte formula가 고정됨.
+- [x] max-shape wire/state feasibility gate가 tx/block/query/KV 한도를 통과함.
+- [x] consensus circuit identity와 validator local artifact mismatch가 fail closed함.
+- [x] fresh genesis/reset 및 cache/reservation invalidation handoff가 고정됨.
+- [x] artifact lazy loader와 prover admission이 구현됨.
+- [x] invariant traceability matrix가 존재함.
+- [x] 미해결 Critical/High design finding이 없음.
+- [x] master ledger가 갱신됨.
 
 ## 21. Session 3A Handoff
 
-```text
 ## Completion Record
 
-- 시작 commit:
-- 완료 commit:
-- NoteV1/domain/asset versions:
-- fixed payload version/length:
-- public input 순서:
-- golden fixture 경로:
-- full-shape constraint/resource 결과:
-- max-shape wire/state 결과와 downstream limit:
-- independent path vs multiproof 결정:
-- artifact loader contract:
-- prover admission defaults:
-- invariant matrix 경로:
-- 미해결 finding:
-- Session 3A가 변경하면 안 되는 결정:
-- worktree 상태:
-```
+- 시작 commit: `ad99ef7193fdc0683e483e4440e5cda1f0945432`. 시작 시 branch HEAD가 exact commit이고 tracked worktree가 clean임을 확인했다.
+- 완료 commit: `43d0e8d` (`Session 2` 구현, feasibility 보정, release fixture 정렬, fail-closed state hardening, exact canonical batch effect 동결 완료 기준; 이 Completion Record/Ledger와 공개 문서 bookkeeping은 후속 문서 commit).
+- Gate 1 재검증: Session 1 Completion Record와 Master Roadmap을 코드에 대조하고 `go test ./x/privacy/... -count=1`을 통과했다. authorization, inflation/duplicate, disclosure oracle, canonical crypto decode, global commitment uniqueness, artifact identity, prover failover 범위를 독립 검토했으며 Critical/High 또는 필수 테스트/문서 불일치가 없어 Gate 1을 PASS로 판정했다.
+- NoteV1/domain/asset version:
+  - active circuit set `privacy-note-v1`, module consensus/state version `2`, Note tree depth `32`, asset registry `privacy-asset-registry-v1`.
+  - `domain_field(label) = SHA-256("clairveil.field-domain.v1" || u32be(len(label)) || label) mod Fr`; commitment/nullifier/tree label과 field constant는 한영 normative 문서와 fixture에 동결했다.
+  - asset ID는 `SHA-256("clairveil.asset-id.v1" || u32be(len(denom)) || denom) mod Fr`; `uclair` ID는 `238d5f23e4d918d40b0982ce3aef16a75c4d1760193d1c3b30b9f5df681903ca`다.
+  - independent NoteV1 commitment `023aab554dcb995210888fa4e28c3d718568c1de0623578c690a2b6ca9d3610a`, nullifier `13b50fceae57ce77eee3f686abc1563aadc27ff6d1e32ce2fcc599463d28585b`, depth-32 empty root `057551a52590c07629bf07fa2b61832f852fb69ff8472bb21c30e5675ae8e8c1`.
+- fixed payload/scan version과 길이:
+  - `privacy-fixed-v1`, binary version `1`; Note plaintext `350 B`, disclosure plaintext `392 B`, envelope header `20 B`.
+  - exact envelope는 symmetric deposit note `398 B`, ECIES transfer note `430 B`, user/audit/self-view disclosure `472 B`이며 legacy JSON/raw fallback은 없다.
+  - scan schema `privacy-scan-v2`, global sequence `privacy-sequence-v1`, cursor `(height, global_sequence, output_index)`.
+- public input 순서: `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`의 정확한 12개 순서를 동결했다. reserved schema SHA-256은 `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`이다.
+- canonical batch payload: format `1`, SHA-256 domain `clairveil.batch-transfer-payload.v1`. `u32be` count/length framing으로 root, ordered nullifier/output effect 전체, audit ID/epoch/target, expiry를 묶고 `creator`/`proof`만 제외한다. Independent 2x2 vector는 `3,702 B`, digest `f2588c7543fb83a7822aa0043e4747af0ac4c9dc14a038c230850f1cab5e24b0`, hi `322132945931579789235567236199104333743`, lo `14314064343031468430392382204273370288`이다.
+- golden fixture 경로: `x/privacy/client/sdk/conformance/testdata/privacy_note_v1_contract.json`, `privacy_batch_joinsplit_v1_contract.json`; 한영 normative contract와 traceability matrix는 `docs/clairveil-batch-joinsplit-16x32.md`, `docs/clairveil-batch-joinsplit-16x32-kr.md`다.
+- full-shape circuit feasibility 결과:
+  - 2026-07-11 Apple M5 Pro/RAM 64 GiB/macOS 26.5.1, `darwin/arm64`, Go `1.25.12`, gnark `0.14.0`, gnark-crypto `0.19.2`, BN254 Groth16 development setup에서 측정했다.
+  - corrected 16x32 prototype `1,111,837` constraints, current JoinSplit2x2 `99,765`; subgroup point `67`, subgroup incremental `161,202` constraints.
+  - compile `1,047.684 ms`, setup `17,160.691 ms`, R1CS `122,813,535 B`, PK `209,218,621 B`, VK `716 B`, proof `164 B`, peak RSS `3,339,862,016 B`(`~3.11 GiB`).
+  - `16/32` warm prove `[1,791.545, 1,785.570] ms`, mean `1,788.5575 ms`, verify `[0.699, 0.677, 0.698] ms`; `55.892422 ms/output`으로 2x2 baseline 대비 `2.788813x` 개선했다. `1/1`, `3/4`, `8/16`, `16/32` 모두 OOM 없이 compile/setup/prove/verify를 통과했다.
+- max-shape wire/state feasibility 결과:
+  - canonical owner-effect payload `65,384 B`, actual prototype message `65,060 B`, signed Cosmos `TxRaw` `65,294 B`, summary `788 B`, 32 output records `73,628 B`, key 포함 scan KV `75,105 B`, tree allowance `98,304 B`, total KV write `173,409 B`, minimal event `584 B`, max query response `74,551 B`.
+  - reference limit `1 MiB` tx, `21 MiB` block bytes, `4 MiB` gRPC/query body, `256 KiB` scan/total KV, `16 KiB` event를 모두 통과했다.
+- independent path vs multiproof 결정: security constraint와 16개의 independent depth-32 path를 유지한 full-shape gate가 통과했으므로 constrained multiproof는 Gate 2 필수 대안이 아니다. current root는 cap 없는 incremental provider를 사용하고, 모든 non-current historical root는 exact persisted root/count/height snapshot과 deterministic prefix rebuild를 사용하며 `1,048,576` leaves cap을 넘으면 archival/local provider를 요구한다.
+- state/scan/registry 계약:
+  - Deposit, Withdraw, JoinSplit2x2와 future batch가 하나의 summary-driven global sequence/cursor를 공유하며 zero-output Withdraw, page 중간 resume, missing/extra/non-adjacent output, malformed envelope를 exact하게 처리한다.
+  - commitment index는 operation 전체에서 global이며 malformed stored index/read error를 absent로 축약하지 않는다. AssetRegistryV1 export는 forward/reverse namespace를 모두 순회하여 orphan/malformed reverse entry도 fail closed한다.
+  - 모든 append가 `(root,height,leaf_count)` snapshot을 영속하고 genesis export/import가 registry, scan, sequence, tree/index/snapshot, reserve와 circuit identity를 보존한다.
+- artifact loader contract: injectable/thread-safe registry가 validator에서는 requested VK만, prover에서는 selected R1CS/PK만 lazy load한다. consensus의 `circuit_set_id`, VK SHA-256, public-input schema SHA-256과 local manifest/artifact가 다르면 readiness가 실패하며 development override는 production에서 거부된다. reserved batch identity는 production required circuit 목록에 등록하지 않았다.
+- prover admission/gas contract: circuit별 default in-flight `1`, queue `4`, body `8 MiB`; cheap framing 후 semantic/cryptographic work 전에 permit을 얻고 실제 gnark prove return까지 보유한다. queue full은 `429`, `code="busy"`, `retryable=true`이며 automatic multi-prover failover는 off다. gas model은 verify, input/output, canonical payload byte, typed state byte, tree write, global lookup을 positive bounded coefficient와 overflow check로 계량한다.
+- 실행한 검증과 결과:
+  - targeted circuit/types/crypto/keeper/SDK/scanner/artifact/admission/gas/wire tests와 `go test ./x/privacy/... -count=1`: 통과.
+  - opt-in full gate `/usr/bin/time -l env CLAIRVEIL_RUN_BATCH_FEASIBILITY=1 go test ./x/privacy/circuit -run TestBatchJoinSplit16x32FullShapeResourceGate -count=1 -v`: 통과; 위 corrected resource 수치를 생성했다.
+  - `go test ./x/privacy/types -run TestBatchJoinSplit16x32MaxWireStateFeasibilityGate -count=1 -v`: 통과; 위 corrected wire/state 수치를 생성했다.
+  - `go vet ./x/privacy/...`: 통과. prover service/transport/zk race test 통과(macOS linker의 known `LC_DYSYMTAB` warning만 관찰).
+  - `make proto` 후 generated diff 없음, `make examples`, `make privacy-e2e-smoke`, `make release-check`: 통과. release-check가 full Go/CLI/examples, vuln policy, localnet, privacy E2E, 2-batch bulk readiness를 통과했다.
+  - `make release-pack`, `make release-pack-verify`, `git diff --check`: 통과.
+- 미해결 finding과 residual risk:
+  - Session 2의 미해결 P0/P1/P2 및 Critical/High finding은 `0`건이다. 독립 final review도 같은 판정을 내렸다.
+  - `BatchJoinSplit16x32`와 wire proto는 feasibility prototype/reserved schema다. production circuit/artifact, `MsgBatchTransfer`, keeper handler, batch SDK/prover route/scanner/payroll, formal trusted setup과 외부 audit는 구현하지 않았다.
+  - final R1CS/PK와 약 3.11 GiB peak RSS는 lazy loader와 production capacity/process isolation을 요구한다. client cancellation은 in-process gnark solver를 중단하지 못한다.
+  - external ClairveilJS는 `privacy-fixed-v1`을 아직 decode하지 못하며 conformance test가 fail-closed 동작만 확인한다. downstream은 compatibility fallback 없이 새 fixture/encoder로 갱신해야 한다.
+  - historical internal node를 영속하지 않으므로 non-current root는 위 rebuild cap을 가진다. remote path query는 input-note linkage를 노출할 수 있다.
+  - current 2x2 SDK는 note/user/full blinding을 독립 CSPRNG로 생성하지만 batch prototype의 세 equality처럼 circuit에서 재사용을 별도로 금지하지 않는다. 정상 SDK flow의 collision은 negligible이나 future hardening 후보로 남긴다.
+  - `QueryPrivacyScanResponse.encoded_bytes`는 record proto 합계이고 wrapper/tag overhead는 별도 actual-response 측정으로 보완했다. 둘 다 4 MiB gate에 충분한 margin이 있다.
+  - public count/grouping/timing, ciphertext decryptability 비보장, remote prover witness exposure, audit key/epoch 운영, AssetRegistry governance message와 production gas coefficient/state pruning은 후속 risk다.
+  - no-fixed-version `GO-2024-2584`, `GO-2026-4479`, `GO-2026-5932`와 example npm low 1건은 기존 exact policy/known risk로 계속 추적한다.
+- Session 3A 진입 Gate: **Gate 2 PASS, Session 3A Unblocked (Not Started)**. Session 3A 작업은 이 세션에서 시작하지 않았다.
+- Session 3A가 변경하면 안 되는 결정: 16/32 capacity, security constraint/subgroup check/independent membership, NoteV1와 exact empty tree, 12 public input 순서, active-prefix/disabled sentinel, typed vector leaf/node/root, two-stage user disclosure와 per-output full/user blinding, fixed payload framing, AssetRegistryV1/global uniqueness, unified scan cursor/same-root snapshot, consensus artifact identity, bounded admission/gas category를 임의로 약화·재해석하면 안 된다.
+- worktree 상태: Completion Record/Ledger·공개 문서 commit과 release-pack 검증 후 tracked worktree clean. `dist/` release pack과 `benchmarks/` 측정 summary는 gitignored 검증 산출물이고 generated R1CS/PK/VK 또는 secret은 tracked되지 않는다.
 
 full-shape feasibility 또는 design gate가 미완료이면 Session 3A를 시작하지 않음.

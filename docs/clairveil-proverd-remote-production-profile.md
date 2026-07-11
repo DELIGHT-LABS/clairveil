@@ -110,7 +110,7 @@ Assume a remote prover operator can see:
 
 Therefore the remote prover must be a component trusted by the user. If the wallet UX requires the user not to trust a remote prover, provide local daemon or browser/WASM proving.
 
-Current request/response/proof contracts are `v2` for transfer and withdraw. Transfer prepared payload is `v5`; withdraw prover/final payloads are `v2`; disclosure plaintext/query is `v5`. Reject legacy inputs. Request bodies, bearer credentials, signatures, disclosure plaintext/blindings, and proofs must be excluded from logs, traces, crash dumps, and analytics.
+Current request/response/proof contracts are `v2` for transfer and withdraw. Transfer prepared payload is `v5`; withdraw prover/final payloads are `v2`; disclosure plaintext/query is `privacy-fixed-v1`. Reject legacy inputs. Request bodies, bearer credentials, signatures, disclosure plaintext/blindings, and proofs must be excluded from logs, traces, crash dumps, and analytics.
 
 ## 8. Do Not Expose The Raw Handler
 
@@ -126,7 +126,7 @@ If the raw `provertransport.HTTPHandler` is attached directly to a public server
 
 ## 9. Artifact Profile
 
-A remote prover lazily reads proving keys and R1CS artifacts; validators need only VK files. The active set is `privacy-intent-v2`. `privacy_zk_manifest.json` schema `v2` must exactly match consensus `CircuitSetIdentity` schema `v1`, including ordered circuit descriptors, VK SHA-256, and public-input schema SHA-256. Environment checksum values cannot override consensus identity, and mismatch must fail startup/readiness. In production:
+A remote prover lazily reads proving keys and R1CS artifacts; validators need only VK files. The active set is `privacy-note-v1`. `privacy_zk_manifest.json` schema `v2` must exactly match consensus `CircuitSetIdentity` schema `v1`, including ordered circuit descriptors, VK SHA-256, and public-input schema SHA-256. Environment checksum values cannot override consensus identity, and mismatch must fail startup/readiness. In production:
 
 - use `CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict`;
 - deploy the required `privacy_zk_manifest.json` with release artifacts; checksum env values may add consistency checks but cannot replace the structured manifest;
@@ -185,3 +185,15 @@ Before operating a remote prover in a production-like environment, confirm:
 - `x/privacy/client/sdk/proverservice/service.go`
 - `x/privacy/client/sdk/provertransport/http.go`
 - `examples/js-sdk-prover-http-client`
+
+## 13. Session 2 Admission And Artifact Addendum
+
+The active consensus circuit set is `privacy-note-v1`; the fixed note/disclosure/envelope contract is `privacy-fixed-v1`. This is incompatible with earlier cached artifacts and proof jobs. Deploy from fresh genesis, remove old R1CS/PK/VK sets and queued/cached requests, regenerate the exact active set, and require clients to clear note/scan caches and rescan. Session 2's `BatchJoinSplit16x32` circuit is a feasibility benchmark only and must not be installed, advertised, or routed as a production proving circuit.
+
+The artifact registry is role-aware. Validator readiness requires consensus identity and reads only the requested VKs. Prover readiness reads only selected R1CS/PK pairs and loads them lazily; it must still fail closed when supplied consensus metadata does not match. Do not preload unrelated proving keys merely because they exist in the manifest.
+
+Reference admission defaults are per circuit: `max_in_flight=1` and `max_queued=4`. The request-body default is `max_request_bytes=8388608` (8 MiB) and must be positive; `0` is invalid and never means unlimited. Queue saturation returns a retryable busy response. Operators should export in-flight, queued, rejected, canceled, queue-wait, prove-time, CPU, and RSS metrics without request or witness content.
+
+Only expose the bounded `proverservice.Handler`; never mount `provertransport.HTTPHandler` directly on a public listener or behind a proxy and assume the proxy is the only body bound. Keep automatic prover failover disabled, because another endpoint expands the private-witness trust boundary. Context cancellation stops the caller's wait, but an already running in-process gnark proof can continue until return and retains its permit; the reference service cannot preempt the solver. Use isolated, memory-limited worker processes and terminate them for hard cancellation or OOM containment.
+
+The future 16x32 public schema is reserved in this exact order: `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`. Reserving a schema is not authorization to create a production endpoint or artifact.

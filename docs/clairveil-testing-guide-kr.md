@@ -54,13 +54,14 @@ make test
 
 | Package | 검증 내용 |
 | --- | --- |
-| `x/privacy/circuit` | Deposit/Spend/JoinSplit circuit constraint |
-| `x/privacy/keeper` | deposit/transfer/withdraw state transition, Merkle capacity, query error handling |
-| `x/privacy/types` | Msg validation, address, gateway path |
+| `x/privacy/circuit` | Deposit/Spend/native JoinSplit constraint, shared NoteV1 consistency, non-production BatchJoinSplit16x32 feasibility circuit |
+| `x/privacy/keeper` | deposit/transfer/withdraw state transition, global commitment uniqueness, `AssetRegistryV1`, `privacy-scan-v2`, same-root path snapshot, Merkle capacity, query error handling |
+| `x/privacy/types` | Msg validation, canonical `privacy-fixed-v1` payload, NoteV1 domain/empty root/key validation, future batch vector/public-input contract, max-shape wire/state feasibility, address, gateway path |
 | `x/privacy/client/cli` | CLI parsing, output, disclosure decode helper |
 | `x/privacy/client/sdk/*` | identity, deposit, scan, transfer, withdraw, disclosure, prover transport |
-| `x/privacy/client/sdk/conformance` | JS/web wallet fixture contract |
-| `x/privacy/zk` | artifact manifest/checksum loading |
+| `x/privacy/client/sdk/proverservice` | bounded request handling과 circuit별 admission(default in-flight `1`, queued `4`, positive body limit `8 MiB`) |
+| `x/privacy/client/sdk/conformance` | JS/web wallet fixture contract와 independent NoteV1/future-batch golden vector |
+| `x/privacy/zk` | consensus identity, public-input schema hash, role-aware lazy artifact loading, bounded batch gas/resource formula |
 
 특정 package만 볼 때:
 
@@ -69,6 +70,41 @@ go test ./x/privacy/circuit
 go test ./x/privacy/keeper
 go test ./x/privacy/client/sdk/transfer
 ```
+
+### 3.1 Session 2 Foundation Gate
+
+현재 active circuit set은 `privacy-note-v1`입니다. 현재 deposit, spend, native 2x2 JoinSplit path는 NoteV1을 공유하고 canonical plaintext/envelope는 `privacy-fixed-v1`을 사용합니다. Note plaintext는 정확히 350 bytes, disclosure plaintext는 정확히 392 bytes, typed envelope header는 정확히 20 bytes입니다. `AssetRegistryV1`이 denom/asset-ID mapping의 authoritative source입니다. `privacy-scan-v2`는 global lexicographic cursor `(height, global_sequence, output_index)`를 사용하고 path test는 선택한 root와 일치하는 하나의 snapshot을 강제합니다.
+
+이 계약의 focused test 위치는 아래와 같습니다.
+
+- `x/privacy/types/note_v1_test.go`, `x/privacy/circuit/note_v1_consistency_test.go`: domain-separated commitment/nullifier/tree, exact empty root, canonical key, circuit/scanner 간 단일 shared 구현.
+- `x/privacy/types/fixed_payload_test.go`, `x/privacy/types/batch_contract_test.go`: exact 350/392/20-byte encoding, envelope kind, reserved byte, padding, trailing-byte rejection, canonical `audit_key_id` validation. Audit key ID는 1..64 bytes이며 `[a-z0-9][a-z0-9._-]*`와 일치해야 합니다.
+- `x/privacy/keeper/asset_registry_test.go`: one-to-one registry, collision/corruption rejection, query bound, canonical genesis export.
+- `x/privacy/keeper/privacy_scan_test.go`, `x/privacy/keeper/path_snapshot_test.go`: global scan order, event 내부 resume, record/byte bound, sequence reuse rejection, same-root path, exact event type/fixed envelope kind/digest/key/zero·disabled sentinel/orphan·non-adjacent output의 fail-closed validation.
+- `x/privacy/zk/registry_test.go`, `x/privacy/client/sdk/proverservice/admission_test.go`: role-aware lazy artifact access, exact identity behavior, queue bound, cancellation lifetime, unbounded-value rejection.
+- `x/privacy/client/sdk/conformance/session2_contract_test.go`: `privacy_note_v1_contract.json`, `privacy_batch_joinsplit_v1_contract.json`의 independent verification.
+
+Future `BatchJoinSplit16x32` public input은 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo` 순서로 정확히 reserve됩니다. Prototype protobuf와 circuit은 production batch message, keeper handler, artifact, prover route를 만들지 않습니다.
+
+Same-root path 동작에는 두 가지 resource boundary가 있습니다. Current root request는 incremental tree node를 사용하므로 1,048,576-leaf rebuild cap이 없습니다. 모든 non-current historical-root request는 persisted `(root, leaf_count, height)` metadata를 요구하고 node를 deterministic rebuild하므로 1,048,576 leaves로 제한됩니다. 그 이상에서는 current root 또는 trusted local historical-path index를 사용해야 합니다. Complete per-prefix snapshot metadata index가 persisted되어 있다면 cap을 넘는 tree도 genesis export할 수 있습니다. 이 경우 export는 모든 historical node를 rebuild할 필요가 없습니다.
+
+항상 실행되는 max-shape protobuf/Tx/KV/event/query wire-state gate는 아래와 같습니다.
+
+```bash
+go test ./x/privacy/types -run TestBatchJoinSplit16x32MaxWireStateFeasibilityGate -count=1 -v
+```
+
+정정된 max-shape golden은 canonical owner-effect payload `65,384` bytes, Tx `65,294` bytes, typed scan KV `75,105` bytes, total KV write `173,409` bytes, query response `74,551` bytes입니다.
+
+비용이 큰 full-shape circuit setup/prove/resource gate는 명시적으로 실행합니다.
+
+```bash
+CLAIRVEIL_RUN_BATCH_FEASIBILITY=1 go test ./x/privacy/circuit -run TestBatchJoinSplit16x32FullShapeResourceGate -count=1 -v
+```
+
+Full gate는 16x32 circuit compile, development Groth16 setup, 여러 shape의 proof를 수행하며 constraint, artifact size, proving/verification timing, resource measurement를 출력하므로 opt-in입니다. 정정된 reference run은 constraint `1,111,837`, peak RSS `3,339,862,016` bytes, max-shape warm proving cost `55.892 ms/output`, 현재 native 2x2 baseline 대비 per-output `2.789x` 개선을 측정했습니다. Production artifact generation이나 trusted setup command가 아니라 feasibility measurement입니다.
+
+Prepared transfer payload `v5`는 현재 outer prepared-payload contract로 그대로 유효합니다. 이 version을 inner note/disclosure encoding과 혼동하면 안 됩니다. Inner canonical payload와 envelope는 `privacy-fixed-v1`입니다. Compatibility fallback은 금지됩니다. External ClairveilJS package는 이 handoff 시점에 아직 legacy이므로 upgrade 전까지 old decoder로 해석하지 말고 새 fixed fixture를 fail closed로 거부해야 합니다.
 
 ## 4. JS/web wallet fixture 검증
 

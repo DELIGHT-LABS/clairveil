@@ -105,8 +105,22 @@ Before a downstream project treats Clairveil as production-ready, it should at m
 2. Define remote prover authentication, TLS, rate limit, timeout, logging, and data-retention policy.
 3. Define wallet storage encryption and seed/key derivation custody policy.
 4. Define master auditor private key custody, rotation, and incident response.
-5. Pin and verify the consensus `privacy-intent-v2` identity, use strict preflight, and add signed artifact release metadata.
+5. Pin and verify the consensus `privacy-note-v1` identity, use strict preflight, and add signed artifact release metadata.
 6. Run Clairveil conformance fixtures against the downstream JS/TS SDK.
 7. Run local node e2e with downstream prefixes, denoms, genesis audit pubkey, and query routes.
 8. Add chain-specific threat model for EVM, policy module, precompile, relayer, and frontend integrations.
 9. Keep prover failover disabled unless the user explicitly accepts sending the same private witness to additional endpoints.
+
+## 9. Session 2 Foundation Threat Delta
+
+Session 2 changes the active identity to `privacy-note-v1` and the canonical payload contract to `privacy-fixed-v1`. Earlier state, raw ciphertext, JSON note/disclosure plaintext, artifacts, proof jobs, and wallet caches are deliberately incompatible. Reusing them creates cross-version aliasing and stale-root risks, so the supported transition is fresh genesis plus artifact/cache deletion and full rescan.
+
+New or clarified trust-boundary threats are:
+
+- `AssetRegistryV1` is consensus-authoritative for the one-to-one denom/32-byte asset-ID mapping. Missing, colliding, or corrupt reverse entries must fail closed; clients must not construct a display denom from untrusted note bytes.
+- Unified scan ordering is `(height, global_sequence, output_index)`. Partial cursor persistence can skip or duplicate outputs, and using a path from a different root invalidates the witness. A current-root incremental path has no 1,048,576-leaf cap. A non-current historical path uses persisted root/count/height metadata, but its nodes are rebuilt under a 1,048,576-leaf bound; above that cap, use the current root or a trusted local historical index. Remote historical root/path requests also reveal wallet timing and state interest to the provider, so retain that privacy warning.
+- The future `BatchJoinSplit16x32` 12-input schema and 16/32 shape are frozen only for feasibility. Treating the prototype protobuf/circuit as a live message, verifier artifact, prover route, or payroll flow would bypass the missing production review and consensus integration.
+- The role-aware loader reduces unnecessary key exposure, but exact consensus identity remains mandatory. The reference admission bound is one in-flight plus four queued jobs per circuit and a positive 8 MiB body limit; zero is invalid. Mounting the raw transport handler bypasses this expected service boundary.
+- Automatic prover failover stays off because private witness disclosure compounds across operators. Client cancellation cannot preempt an already running in-process solver, so admission can remain occupied and memory can remain allocated. Hard termination and OOM containment require process isolation, limits, and supervision outside the reference service.
+
+The reserved future public-input order is `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`; any later production design change requires a new identity/schema and security review.

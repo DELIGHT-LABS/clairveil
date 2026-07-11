@@ -103,8 +103,22 @@ Before a downstream project treats Clairveil as production-ready, it should at m
 2. Define remote prover authentication, TLS, rate limit, timeout, logging, and data-retention policy.
 3. Define wallet storage encryption and seed/key derivation custody policy.
 4. Define master auditor private key custody, rotation, and incident response.
-5. Consensus `privacy-intent-v2` identity를 고정·검증하고 strict preflight와 signed artifact release metadata를 사용합니다.
+5. Consensus `privacy-note-v1` identity를 고정·검증하고 strict preflight와 signed artifact release metadata를 사용합니다.
 6. Run Clairveil conformance fixtures against the downstream JS/TS SDK.
 7. Run local node e2e with downstream prefixes, denoms, genesis audit pubkey, and query routes.
 8. Add chain-specific threat model for EVM, policy module, precompile, relayer, and frontend integrations.
 9. 사용자가 같은 private witness를 추가 endpoint에 보내는 것을 명시적으로 수락하지 않는 한 prover failover를 비활성화합니다.
+
+## 9. Session 2 Foundation Threat Delta
+
+Session 2는 active identity를 `privacy-note-v1`, canonical payload contract를 `privacy-fixed-v1`로 변경합니다. 이전 state, raw ciphertext, JSON note/disclosure plaintext, artifact, proof job, wallet cache는 의도적으로 호환되지 않습니다. 재사용하면 cross-version alias와 stale-root risk가 생기므로 지원하는 전환 방식은 fresh genesis, artifact/cache 삭제, full rescan입니다.
+
+새롭거나 더 명확해진 trust-boundary threat는 아래와 같습니다.
+
+- `AssetRegistryV1`이 one-to-one denom/32-byte asset-ID mapping의 consensus-authoritative source입니다. Missing, collision, corrupt reverse entry에서는 fail closed해야 하며 client가 untrusted note byte에서 display denom을 만들면 안 됩니다.
+- Unified scan order는 `(height, global_sequence, output_index)`입니다. Partial cursor persistence는 output을 skip 또는 duplicate할 수 있고 다른 root의 path를 사용하면 witness가 invalid합니다. Current-root incremental path에는 1,048,576-leaf cap이 없습니다. Non-current historical path는 persisted root/count/height metadata를 사용하지만 node를 bounded rebuild하므로 1,048,576 leaves로 제한됩니다. Cap을 넘으면 current root 또는 trusted local historical index를 사용합니다. Remote historical root/path request는 provider에게 wallet timing과 state interest를 노출하므로 privacy warning을 유지합니다.
+- Future `BatchJoinSplit16x32`의 12-input schema와 16/32 shape는 feasibility 목적으로만 동결되었습니다. Prototype protobuf/circuit을 live message, verifier artifact, prover route, payroll flow로 취급하면 아직 없는 production review와 consensus integration을 우회하게 됩니다.
+- Role-aware loader는 불필요한 key 노출을 줄이지만 exact consensus identity는 계속 mandatory입니다. Reference admission bound는 circuit별 in-flight 1개와 queued 4개, positive 8 MiB body limit이며 0은 invalid입니다. Raw transport handler를 mount하면 이 expected service boundary를 우회합니다.
+- Private witness disclosure는 operator가 늘 때 누적되므로 automatic prover failover를 끕니다. Client cancellation은 이미 실행 중인 in-process solver를 preempt하지 못해 admission과 memory가 계속 점유될 수 있습니다. Hard termination과 OOM containment에는 reference service 밖의 process isolation, limit, supervision이 필요합니다.
+
+Reserve된 future public-input 순서는 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`입니다. 이후 production design에서 바꾸려면 새 identity/schema와 security review가 필요합니다.

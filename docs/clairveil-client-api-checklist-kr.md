@@ -16,7 +16,7 @@ Downstream chain/client team은 client release 전에 아래 값을 확정해야
 - prover topology와 endpoint
 - prover auth policy
 - audit master pubkey
-- consensus circuit identity(`privacy-intent-v2`), manifest `v2`, VK/schema checksum policy
+- consensus circuit identity(`privacy-note-v1`), manifest `v2`, VK/schema checksum policy
 - gas policy
 - relayer 지원 여부
 - disclosure UX policy
@@ -86,7 +86,7 @@ Client가 검증해야 할 것:
 - auth failure
 - malformed response
 
-현재 breaking version은 transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload와 proof/request/response `v2`, relay handoff/schema `v2`, disclosure plaintext/query `v5`입니다. Legacy payload는 거부하고 다시 생성합니다.
+현재 breaking version은 transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload와 proof/request/response `v2`, relay handoff/schema `v2`, disclosure plaintext/query `privacy-fixed-v1`입니다. Legacy payload는 거부하고 다시 생성합니다.
 
 Remote prover를 쓰는 경우 request/response body는 privacy-sensitive data로 취급해야 합니다.
 
@@ -173,7 +173,7 @@ Breaking 또는 migration impact가 있는 변경:
 
 이런 변경이 있으면 client product brief, UX flows, risk decisions, API checklist, JS SDK handoff, release note impact를 함께 갱신해야 합니다.
 
-이 계약을 적용할 때 cached prepared payload, proof response/job, old local development artifact를 지우고 `privacy-intent-v2` artifact를 다시 생성하며 old circuit/disclosure version metadata를 저장한 client cache를 resync해야 합니다. Legacy prepared-payload decode path는 없습니다.
+이 계약을 적용할 때 cached prepared payload, proof response/job, old local development artifact를 지우고 `privacy-note-v1` artifact를 다시 생성하며 old circuit/disclosure version metadata를 저장한 client cache를 resync해야 합니다. Legacy prepared-payload decode path는 없습니다.
 
 ## 9. Related Documents
 
@@ -183,3 +183,16 @@ Breaking 또는 migration impact가 있는 변경:
 - [JS SDK handoff](clairveil-js-sdk-handoff-kr.md)
 - [Downstream integration guide](clairveil-downstream-cosmos-integration-guide-kr.md)
 - [Testing guide](clairveil-testing-guide-kr.md)
+
+## 10. Session 2 Foundation Gate
+
+이 checklist는 현재 지원하는 deposit/2x2 transfer/withdraw API와 future `BatchJoinSplit16x32` contract를 구분합니다. Session 2 batch protobuf와 circuit은 wire/resource feasibility prototype일 뿐이므로 여기서 `MsgBatchTransfer`, keeper endpoint, prover route, SDK/payroll feature를 공개하지 않습니다.
+
+- [ ] Consensus active set `privacy-note-v1`을 pin하고 artifact identity, VK hash, public-input schema가 하나라도 다르면 거부합니다.
+- [ ] Note/disclosure/envelope payload를 canonical `privacy-fixed-v1`으로 encode합니다. Raw ciphertext, JSON plaintext, 잘못된 envelope kind, non-zero reserved byte, trailing byte를 거부합니다.
+- [ ] `AssetRegistryV1`을 denom-to-`asset_id`와 reverse lookup의 authoritative source로 사용하며 missing, collision, inconsistent entry에서는 fail closed합니다.
+- [ ] Unified `privacy-scan-v2` state를 전체 `(height, global_sequence, output_index)` cursor로 소비하고 선택한 root와 정확히 같은 path snapshot을 요청합니다. Current-root incremental path에는 1,048,576-leaf cap이 없습니다. Non-current historical path는 persisted root/count/height metadata를 사용하지만 node를 bounded rebuild하므로 1,048,576 leaves로 제한됩니다. Cap을 넘으면 current root 또는 trusted local historical index를 사용합니다. Remote historical root/path query가 wallet 관심을 누설할 수 있다는 warning을 유지합니다.
+- [ ] Note/scan/proof cache와 old artifact를 지우고 fresh genesis에서 시작하여 `privacy-note-v1` artifact를 다시 생성하고 rescan합니다. Legacy decode나 in-place migration을 제공하지 않습니다.
+- [ ] Future 12-field 순서 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`를 reserve하되 아직 advertise하지 않습니다.
+- [ ] Role-aware artifact readiness를 사용합니다. Validator는 VK만, prover는 선택한 R1CS/PK만 lazy load합니다. Circuit별 admission default는 `max_in_flight=1`, `max_queued=4`, positive `max_request_bytes=8388608`이며 0은 invalid입니다.
+- [ ] Bounded `proverservice.Handler`만 노출하고 raw transport handler는 절대 직접 노출하지 않습니다. Automatic prover failover를 끕니다. Cancellation은 client wait cancellation이지 solver termination 보장이 아니므로 hard resource boundary에는 process isolation을 사용합니다.

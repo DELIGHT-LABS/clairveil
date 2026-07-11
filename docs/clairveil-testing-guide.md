@@ -56,13 +56,14 @@ Main coverage:
 
 | Package | Coverage |
 | --- | --- |
-| `x/privacy/circuit` | Deposit/Spend/JoinSplit circuit constraints |
-| `x/privacy/keeper` | deposit/transfer/withdraw state transitions, Merkle capacity, query error handling |
-| `x/privacy/types` | message validation, address, gateway paths |
+| `x/privacy/circuit` | Deposit/Spend/native JoinSplit constraints, shared NoteV1 consistency, and the non-production BatchJoinSplit16x32 feasibility circuit |
+| `x/privacy/keeper` | deposit/transfer/withdraw state transitions, global commitment uniqueness, `AssetRegistryV1`, `privacy-scan-v2`, same-root path snapshots, Merkle capacity, and query error handling |
+| `x/privacy/types` | message validation, canonical `privacy-fixed-v1` payloads, NoteV1 domains/empty roots/key validation, future batch vector/public-input contracts, max-shape wire/state feasibility, addresses, and gateway paths |
 | `x/privacy/client/cli` | CLI parsing, output, disclosure decode helpers |
 | `x/privacy/client/sdk/*` | identity, deposit, scan, transfer, withdraw, disclosure, prover transport |
-| `x/privacy/client/sdk/conformance` | JS/web wallet fixture contract |
-| `x/privacy/zk` | artifact manifest/checksum loading |
+| `x/privacy/client/sdk/proverservice` | bounded request handling and per-circuit admission (`1` in flight, `4` queued, positive `8 MiB` body limit by default) |
+| `x/privacy/client/sdk/conformance` | JS/web wallet fixture contracts plus independent NoteV1 and future-batch golden vectors |
+| `x/privacy/zk` | consensus identity, public-input schema hashes, role-aware lazy artifact loading, and bounded batch gas/resource formulas |
 
 Focused package examples:
 
@@ -71,6 +72,41 @@ go test ./x/privacy/circuit
 go test ./x/privacy/keeper
 go test ./x/privacy/client/sdk/transfer
 ```
+
+### 3.1 Session 2 Foundation Gates
+
+The active current circuit set is `privacy-note-v1`. Current deposit, spend, and native 2x2 JoinSplit paths share NoteV1, while canonical plaintext/envelopes use `privacy-fixed-v1`: note plaintext is exactly 350 bytes, disclosure plaintext is exactly 392 bytes, and the typed envelope header is exactly 20 bytes. `AssetRegistryV1` is authoritative for denom/asset-ID mapping. `privacy-scan-v2` uses the global lexicographic cursor `(height, global_sequence, output_index)`, and path tests enforce a single snapshot matching the selected root.
+
+Focused tests for these contracts live at:
+
+- `x/privacy/types/note_v1_test.go` and `x/privacy/circuit/note_v1_consistency_test.go`: domain-separated commitment/nullifier/tree, exact empty roots, canonical keys, and one shared implementation across circuits/scanner.
+- `x/privacy/types/fixed_payload_test.go` and `x/privacy/types/batch_contract_test.go`: exact 350/392/20-byte encodings, envelope kinds, reserved bytes, padding, trailing-byte rejection, and canonical `audit_key_id` validation. An audit key ID is 1..64 bytes and matches `[a-z0-9][a-z0-9._-]*`.
+- `x/privacy/keeper/asset_registry_test.go`: one-to-one registry, collision/corruption rejection, query bounds, and canonical genesis export.
+- `x/privacy/keeper/privacy_scan_test.go` and `x/privacy/keeper/path_snapshot_test.go`: global scan ordering, within-event resume, record/byte bounds, sequence reuse rejection, same-root paths, and fail-closed validation of exact event types, fixed envelope kinds, digests, keys, zero/disabled sentinels, and orphan or non-adjacent outputs.
+- `x/privacy/zk/registry_test.go` and `x/privacy/client/sdk/proverservice/admission_test.go`: role-aware lazy artifact access, exact identity behavior, queue bounds, cancellation lifetime, and unbounded-value rejection.
+- `x/privacy/client/sdk/conformance/session2_contract_test.go`: independent verification of `privacy_note_v1_contract.json` and `privacy_batch_joinsplit_v1_contract.json`.
+
+The future `BatchJoinSplit16x32` public inputs are reserved in this exact order: `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`. The prototype protobuf and circuit do not create a production batch message, keeper handler, artifact, or prover route.
+
+Same-root path behavior has two resource boundaries. Requests for the current root use incremental tree nodes and have no 1,048,576-leaf rebuild cap. Every non-current historical-root request requires persisted `(root, leaf_count, height)` metadata and deterministically rebuilds nodes, so it is capped at 1,048,576 leaves. Above that count, use the current root or a trusted local historical-path index. Genesis export remains possible above the cap when the complete per-prefix snapshot metadata index was persisted; export does not need to rebuild all historical nodes in that case.
+
+Run the always-on max-shape protobuf/Tx/KV/event/query wire-state gate with:
+
+```bash
+go test ./x/privacy/types -run TestBatchJoinSplit16x32MaxWireStateFeasibilityGate -count=1 -v
+```
+
+The corrected max-shape goldens are: canonical owner-effect payload `65,384` bytes, Tx `65,294` bytes, typed scan KV `75,105` bytes, total KV write `173,409` bytes, and query response `74,551` bytes.
+
+Run the expensive full-shape circuit setup/prove/resource gate explicitly with:
+
+```bash
+CLAIRVEIL_RUN_BATCH_FEASIBILITY=1 go test ./x/privacy/circuit -run TestBatchJoinSplit16x32FullShapeResourceGate -count=1 -v
+```
+
+The full gate is opt-in because it compiles the 16x32 circuit, performs a development Groth16 setup, and proves multiple shapes while reporting constraints, artifact sizes, proving/verification timings, and resource measurements. The corrected reference run measured `1,111,837` constraints, peak RSS `3,339,862,016` bytes, max-shape warm proving cost `55.892 ms/output`, and `2.789x` per-output improvement over the current native 2x2 baseline. It is a feasibility measurement, not a production artifact generation or trusted setup command.
+
+Prepared transfer payload `v5` remains the current outer prepared-payload contract. Do not confuse that version with the inner note/disclosure encoding: inner canonical payloads and envelopes are `privacy-fixed-v1`. Compatibility fallback is forbidden. The external ClairveilJS package is still legacy at this handoff point; it must fail closed on the new fixed fixtures until it is upgraded, rather than interpreting them through its old decoder.
 
 ## 4. JS/Web Wallet Fixture Validation
 

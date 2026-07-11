@@ -49,6 +49,8 @@ copy_path "docs/clairveil-release-handoff-pack.md"
 copy_path "docs/clairveil-release-handoff-pack-kr.md"
 copy_path "docs/clairveil-circuits.md"
 copy_path "docs/clairveil-circuits-kr.md"
+copy_path "docs/clairveil-batch-joinsplit-16x32.md"
+copy_path "docs/clairveil-batch-joinsplit-16x32-kr.md"
 copy_path "docs/clairveil-cli-reference.md"
 copy_path "docs/clairveil-cli-reference-kr.md"
 copy_path "docs/clairveil-testing-guide.md"
@@ -143,6 +145,7 @@ Contents:
 - prover Dockerfile and compose sample
 - release pack generation and verification scripts
 - release, circuit, CLI, testing, operations, downstream integration, client, JS SDK, scan optimization, prover, Merkle restore, threat model, security, and reference app documents
+- NoteV1 and BatchJoinSplit16x32 foundation contracts and independent golden fixtures
 - Korean bulk transfer planning documents and source-repo readiness commands
 - release versioning policy and release note templates
 

@@ -13,7 +13,7 @@ English version: [clairveil-client-ux-flows.md](clairveil-client-ux-flows.md)
 3. Client가 root signing message 서명을 요청합니다.
 4. Shielded identity와 disclosure key를 파생합니다.
 5. 최신 tree state와 wallet scan event를 sync합니다.
-6. Consensus `privacy-intent-v2` circuit identity를 확인하고 shielded address와 spendable balance를 표시합니다.
+6. Consensus `privacy-note-v1` circuit identity를 확인하고 shielded address와 spendable balance를 표시합니다.
 
 필수 상태:
 
@@ -166,7 +166,7 @@ Disclosure plaintext를 표시할 때는 반드시 digest verification 결과를
 | note scan 실패 | shielded balance가 최신이 아닐 수 있음 | retry, endpoint 변경, rescan |
 | local cache 손상 | local note DB를 신뢰할 수 없음 | backup 후 reset/rescan |
 | prover timeout | proof 생성이 끝나지 않음 | 같은 endpoint retry 또는 rebuild, 다른 endpoint는 explicit privacy opt-in 후에만 사용 |
-| circuit identity mismatch | local verifier/prover artifact가 consensus와 다름 | 중단 후 exact `privacy-intent-v2` artifact 설치, restart/rescan |
+| circuit identity mismatch | local verifier/prover artifact가 consensus와 다름 | 중단 후 exact `privacy-note-v1` artifact 설치, restart/rescan |
 | payload expired | relayed payload가 더 이상 유효하지 않음 | 새 payload 생성 |
 | disclosure verification 실패 | payload를 사실로 신뢰할 수 없음 | verified=false 표시, 원문 숨김 또는 경고 |
 | exact-match withdraw note 없음 | withdraw 가능한 동일 금액 note가 없음 | shielded self-transfer 또는 planner flow로 note 크기 맞춤 |
@@ -180,3 +180,13 @@ Disclosure plaintext를 표시할 때는 반드시 digest verification 결과를
 - [Client risk decisions](clairveil-client-risk-decisions-kr.md)
 - [Client API checklist](clairveil-client-api-checklist-kr.md)
 - [CLI reference](clairveil-cli-reference-kr.md)
+
+## 10. Session 2 Migration And Future-Batch UX
+
+Production UX는 여전히 deposit, native 2x2 transfer, withdraw입니다. `BatchJoinSplit16x32`는 unavailable 또는 experimental documentation으로만 표시합니다. 현재 `transfer-batch` command는 여러 기존 2x2 operation을 coordination할 뿐 하나의 16x32 proof처럼 표현하면 안 됩니다.
+
+`privacy-note-v1` / `privacy-fixed-v1` 전환 시 fresh genesis와 destructive local reset을 요구합니다. Old note, cursor state, pending/proof job, circuit artifact를 제거한 뒤 artifact를 다시 생성하고 rescan합니다. Legacy JSON note, disclosure, raw ciphertext, cached proof를 fixed binary contract로 조용히 해석하면 안 됩니다. 표시 denom은 authoritative `AssetRegistryV1`으로 resolve하며 unknown `asset_id`는 printable fallback denom이 아니라 error입니다.
+
+Unified scan cursor는 `(height, global_sequence, output_index)` 전체로 저장하고 해당 cursor까지 모든 output이 durable해진 뒤에만 commit합니다. Spend screen은 prover에 표시한 root와 정확히 같은 Merkle path snapshot을 사용해야 합니다. Current-root incremental path에는 1,048,576-leaf cap이 없습니다. Non-current historical path는 persisted root/count/height metadata를 사용하지만 node를 bounded rebuild하므로 1,048,576 leaves로 제한됩니다. Cap을 넘으면 current root 또는 trusted local historical index를 사용합니다. Remote historical lookup을 수행할 때는 어떤 state에 언제 관심을 보였는지 노출될 수 있다는 warning을 유지합니다.
+
+Future batch review screen은 동결된 count와 root를 기준으로 설계할 수 있지만 network support를 암시하면 안 됩니다. 12개 public input 순서는 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`입니다. Prover-busy response는 같은 endpoint에 retry할 수 있지만 automatic cross-endpoint failover는 계속 꺼 둡니다. Screen을 cancel해도 in-process proving이 중단됐다는 뜻이 아니므로 transaction/proof-job state를 reconcile할 때까지 note reservation을 유지합니다.

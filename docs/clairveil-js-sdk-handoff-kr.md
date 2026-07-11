@@ -266,10 +266,10 @@ x/privacy/client/sdk/transfer/service.go
 - 두 output, ordered ciphertext/view tag, user/audit/self-view envelope, 독립 disclosure blinding, chain ID, absolute expiry를 먼저 확정합니다. 그 다음 canonical transfer effect와 `TransferIntentV2`를 계산하고 정확히 하나의 `owner_signature_hex`를 만듭니다. Per-input note-hash signature는 없습니다.
 - Canonical binary effect는 고정 field 순서와 variable byte의 `u32be(length) || bytes` encoding을 사용합니다. Format version, root, ordered nullifier/commitment/ciphertext/view tag, 모든 disclosure field, expiry를 포함하고 proof, `creator`, fee/gas/memo/sequence/tx signature, digest 자신은 제외합니다. Keeper가 `MsgTransfer`에서 다시 계산합니다.
 - 최종 `MsgTransfer`는 `new_commitments`, `cipher_texts`와 순서가 맞는 정확히 2개의 `view_tags`를 포함해야 합니다.
-- Disclosure plaintext/query version은 `v5`입니다. Enabled user disclosure와 full audit/self-view disclosure는 서로 독립적인 fresh CSPRNG blinding을 사용합니다. 복호화 후 blinding을 복원해 digest를 재계산해야 하며 decrypt 성공만으로 verified 처리하면 안 됩니다.
+- Disclosure plaintext/query version은 `privacy-fixed-v1`입니다. Enabled user disclosure와 full audit/self-view disclosure는 서로 독립적인 fresh CSPRNG blinding을 사용합니다. 복호화 후 blinding을 복원해 digest를 재계산해야 하며 decrypt 성공만으로 verified 처리하면 안 됩니다.
 - `expires_at_unix`는 absolute 값이고 chain은 `block_time >= expires_at_unix`에서 거부합니다.
 
-정확한 `JoinSplitCircuit` public-input 순서는 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `Nullifier0`, `Nullifier1`, `Commitment0`, `Commitment1`, `UserPrivacyPolicy`, `UserDisclosureDigest`, `FullDisclosureDigest`, `PayloadDigestHi`, `PayloadDigestLo`입니다. Field를 sort하거나 rename하면 안 됩니다. SHA-256 chain/payload digest는 field reduction 없이 big-endian 128-bit limb 두 개로 나눕니다. Chain domain input은 `"clairveil.chain-domain.v1"`, length-prefixed `chain_id`, length-prefixed `circuit_set_id`(`privacy-intent-v2`) 순서입니다.
+정확한 `JoinSplitCircuit` public-input 순서는 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `Nullifier0`, `Nullifier1`, `Commitment0`, `Commitment1`, `UserPrivacyPolicy`, `UserDisclosureDigest`, `FullDisclosureDigest`, `PayloadDigestHi`, `PayloadDigestLo`입니다. Field를 sort하거나 rename하면 안 됩니다. SHA-256 chain/payload digest는 field reduction 없이 big-endian 128-bit limb 두 개로 나눕니다. Chain domain input은 `"clairveil.chain-domain.v1"`, length-prefixed `chain_id`, length-prefixed `circuit_set_id`(`privacy-note-v1`) 순서입니다.
 
 Bulk payroll 또는 다른 대량 전송 client에서 쓰는 note reservation은 on-chain protocol이 아니라 client/control-plane layer 계약입니다. Go reference implementation과 fixture는 아래에 있습니다.
 
@@ -507,8 +507,8 @@ JS SDK handoff가 완료되었다고 보려면 아래가 가능해야 합니다.
 - `MsgDeposit` deposit proof requirement
 - transfer payload `v5`, transfer proof/request/response `v2`
 - withdraw prover/final payload와 proof/request/response `v2`
-- disclosure plaintext/query version `v5`
-- active circuit set `privacy-intent-v2`, consensus `CircuitSetIdentity` schema `v1`, manifest schema `v2`
+- disclosure plaintext/query version `privacy-fixed-v1`
+- active circuit set `privacy-note-v1`, consensus `CircuitSetIdentity` schema `v1`, manifest schema `v2`
 - prover HTTP path `/v1/prover/transfer`, `/v1/prover/withdraw`
 - conformance fixture files under `x/privacy/client/sdk/conformance/testdata`
 - `privacy_note_reservation_contract.json`의 note reservation status와 operation evidence contract
@@ -605,3 +605,18 @@ npm --prefix examples/js-sdk-prover-http-client run demo
 - bearer token을 `Authorization: Bearer ...`로 전달합니다.
 - transfer/withdraw request, response, proof version이 `v2`인지 확인합니다.
 - proof `payload_hash`가 prepared payload `payload_hash`와 같은지 확인합니다.
+
+## 17. Session 2 Foundation Addendum
+
+Session 2는 현재 `DepositCircuit`, `SpendCircuit`, native `JoinSplitCircuit` 2x2 flow, keeper, scanner가 공유하는 기반을 변경합니다. Production transaction surface는 여전히 deposit, 2x2 transfer, withdraw입니다. `BatchJoinSplit16x32`는 feasibility prototype이자 동결된 future contract일 뿐이며 production batch circuit descriptor/artifact, `MsgBatchTransfer`, keeper handler, batch prover route, scanner integration, payroll integration은 아직 없습니다. 기존 `transfer-batch` helper는 현재 2x2 message를 orchestration할 뿐 future 16x32 transaction이 아닙니다.
+
+새 SDK 작업에는 아래 breaking rule을 normative하게 적용합니다.
+
+- Active circuit set은 `privacy-note-v1`입니다. Note, disclosure, encrypted-envelope binary data는 `privacy-fixed-v1`을 사용합니다. `NotePlaintextV1`은 정확히 350 bytes, `DisclosurePlaintextV1`은 정확히 392 bytes이며 모든 encrypted payload에는 canonical 20-byte envelope header와 정확한 kind가 있어야 합니다. Raw ciphertext, JSON plaintext, trailing bytes, cross-kind decoding은 거부합니다.
+- 이 전환에는 fresh genesis가 필요합니다. Cached note, scan cursor, prepared/proof job, circuit identity metadata, old development artifact를 삭제한 뒤 artifact를 다시 생성하고 rescan합니다. 이전 계약을 위한 compatibility decode나 in-place state migration은 없습니다.
+- `AssetRegistryV1`이 canonical denom과 32-byte `asset_id`의 authoritative one-to-one mapping입니다. Client는 검증을 위해 ID를 derive할 수 있지만 ID를 해석하거나 hash해서 denom을 임의로 만들면 안 됩니다. Registry query로 resolve하고 mismatch에서는 fail closed합니다.
+- Wallet sync는 unified `privacy-scan-v2` projection과 lexicographic cursor `(height, global_sequence, output_index)`를 사용합니다. 전체 cursor를 atomically 저장합니다. 모든 Merkle path는 선택한 root와 정확히 일치하는 snapshot에서 가져와야 하며 current path와 older root를 섞으면 invalid입니다. Current-root incremental path에는 1,048,576-leaf cap이 없습니다. Non-current historical path는 persisted root/count/height metadata를 사용하지만 node를 bounded rebuild하므로 1,048,576 leaves로 제한됩니다. Cap을 넘으면 current root 또는 trusted local historical index를 사용합니다. Remote historical lookup은 wallet timing과 관심 대상을 노출하므로 privacy warning을 유지하고 product threat model이 요구하면 privacy-preserving infrastructure를 사용합니다.
+- Future `BatchJoinSplit16x32` public-input 순서는 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`로 동결되었습니다. Consensus artifact와 handler가 생기기 전에는 이 schema를 supported production transaction으로 노출하지 않습니다.
+- Future batch builder는 `CanonicalBatchTransferPayloadBytesV1`을 exact하게 재현해야 합니다. Format `1`, `u32be` vector count, 모든 byte field의 `u32be(length) || bytes`, proto 선언 순서의 output field, audit ID/epoch/target, expiry 순서입니다. SHA-256 domain `clairveil.batch-transfer-payload.v1`을 non-reduced 128-bit limb 둘로 나눕니다. `creator`와 `proof`만 제외하며 protobuf marshal, JSON, sorted-field 대안을 만들면 안 됩니다.
+- Artifact loading은 role-aware입니다. Validator는 exact consensus identity를 검증한 뒤 필요한 VK만 load하고 prover는 선택한 R1CS/PK pair만 lazy load합니다. Reference prover admission default는 circuit별 in-flight 1개, queued 4개, positive 8 MiB request limit입니다. 0은 invalid이며 body limit을 비활성화하지 않습니다.
+- `provertransport.HTTPHandler`를 직접 노출하지 말고 bounded `proverservice.Handler` wrapper를 사용합니다. Prover request에는 automatic endpoint failover가 없습니다. Cancellation은 대기를 중단하고 response를 버리지만 in-process proving은 solver가 반환할 때까지 계속되면서 admission capacity를 점유할 수 있습니다. Hard cancellation 또는 memory containment가 필요한 production operator는 이 reference 구현 밖에서 process isolation과 termination을 추가해야 합니다.

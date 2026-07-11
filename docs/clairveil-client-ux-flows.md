@@ -13,7 +13,7 @@ This is not a screen wireframe. Each downstream wallet/app team should translate
 3. The client requests a root signing message signature.
 4. The client derives shielded identity and disclosure keys.
 5. The client syncs latest tree state and wallet scan events.
-6. The client checks the consensus `privacy-intent-v2` circuit identity and displays shielded address and spendable balance.
+6. The client checks the consensus `privacy-note-v1` circuit identity and displays shielded address and spendable balance.
 
 Required states:
 
@@ -166,7 +166,7 @@ Display policy:
 | note scan failure | shielded balance may be stale | retry, change endpoint, rescan |
 | local cache corruption | local note DB cannot be trusted | backup then reset/rescan |
 | prover timeout | proof generation did not finish | retry the same endpoint or rebuild; switch/extra endpoint only after explicit privacy opt-in |
-| circuit identity mismatch | local verifier/prover artifacts do not match consensus | stop, install the exact `privacy-intent-v2` artifact set, then restart/rescan |
+| circuit identity mismatch | local verifier/prover artifacts do not match consensus | stop, install the exact `privacy-note-v1` artifact set, then restart/rescan |
 | payload expired | relayed payload is no longer valid | create a fresh payload |
 | disclosure verification failure | payload cannot be trusted as factual | show verified=false, hide plaintext or warn |
 | no exact-match withdraw note | no spendable same-amount note exists | create matching note with shielded self-transfer or planner flow |
@@ -180,3 +180,13 @@ Display policy:
 - [Client risk decisions](clairveil-client-risk-decisions.md)
 - [Client API checklist](clairveil-client-api-checklist.md)
 - [CLI reference](clairveil-cli-reference.md)
+
+## 10. Session 2 Migration And Future-Batch UX
+
+The production UX remains deposit, native 2x2 transfer, and withdraw. Label `BatchJoinSplit16x32` as unavailable or experimental documentation only; the current `transfer-batch` command merely coordinates multiple existing 2x2 operations and must not be presented as one 16x32 proof.
+
+On the `privacy-note-v1` / `privacy-fixed-v1` transition, require fresh genesis and a destructive local reset: remove old notes, cursor state, pending/proof jobs, and circuit artifacts, regenerate artifacts, and rescan. Never silently interpret a legacy JSON note, disclosure, raw ciphertext, or cached proof as the fixed binary contract. Resolve display denoms through authoritative `AssetRegistryV1`; an unknown `asset_id` is an error, not a printable fallback denom.
+
+Store the unified scan cursor as `(height, global_sequence, output_index)` and only mark it committed after all outputs through that cursor are durable. A spend screen must use a Merkle path snapshot for exactly the root shown to the prover. A current-root incremental path has no 1,048,576-leaf cap. A non-current historical path uses persisted root/count/height metadata, but its nodes are rebuilt under a 1,048,576-leaf bound; above that cap, use the current root or a trusted local historical index. If the wallet performs a remote historical lookup, retain the warning that the request can reveal when and which state the wallet is interested in.
+
+The future batch review screen may be designed around the frozen counts and roots, but it must not imply network support. Its 12 public inputs are ordered as `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`. A prover-busy response is retryable against the same endpoint; automatic cross-endpoint failover remains off. Canceling the screen does not prove that in-process proving stopped, so keep notes reserved until transaction/proof-job state is reconciled.

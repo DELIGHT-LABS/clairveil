@@ -215,7 +215,7 @@ This means:
 
 ## 6. Artifacts
 
-`clairveil-setup` generates the following development artifacts. The active circuit set is `privacy-intent-v2`.
+`clairveil-setup` generates the following development artifacts. The active circuit set is `privacy-note-v1`.
 
 | File | Meaning |
 | --- | --- |
@@ -276,3 +276,30 @@ When changing circuits, update these in one commit or a short commit series:
 - Ciphertext delivery itself is not proven directly by the circuit; it is verified with digest binding and off-chain verification.
 - Production deployment still needs artifact signing, reproducible generation, and release provenance.
 - Proof verification is precharged by the keeper after cheap canonical Groth16 framing succeeds and before decoding, VK loading, or pairing work. Deposit, spend, and joinsplit each currently charge `1,000,000` gas per verification attempt; invalid cryptographic proofs still consume the full precharge, while malformed framing does not.
+
+## 10. Session 2 NoteV1 And Batch Foundation
+
+The active circuit set is now `privacy-note-v1`. `DepositCircuit`, `SpendCircuit`, native `JoinSplitCircuit` 2x2, the keeper tree, and scanners share one domain-separated NoteV1 commitment/nullifier/tree contract, canonical field/key checks, and exact depth-specific empty roots. Denoms never enter the circuit as strings: `AssetRegistryV1` is the authoritative one-to-one mapping to a 32-byte `asset_id`. This is a breaking state and artifact transition that requires fresh genesis, regenerated artifacts, deleted proof/note/scan caches, and a full rescan.
+
+Canonical plaintext and encrypted payloads use `privacy-fixed-v1`: fixed 350-byte note plaintext, fixed 392-byte disclosure plaintext, and a 20-byte typed envelope header before the exact encryption payload. Raw ciphertext and cross-kind or trailing-byte decode are invalid. User and full disclosure use independent non-zero per-output blindings; all-private user disclosure alone uses the zero sentinel. This prevents low-entropy disclosed values from becoming a practical dictionary oracle.
+
+`BatchJoinSplit16x32` in Session 2 is a full-shape feasibility circuit, not a registered production circuit. It fixes capacities 16/32, exact active prefixes, zero disabled sentinels, 16 independent depth-32 paths, subgroup/key constraints, per-output NoteV1/disclosure checks, and ordered vector commitments. It freezes this 12-input order:
+
+1. `MerkleRoot`
+2. `ChainDomainHi`
+3. `ChainDomainLo`
+4. `ExpiresAtUnix`
+5. `InputCount`
+6. `OutputCount`
+7. `NullifierRoot`
+8. `CommitmentRoot`
+9. `UserDisclosureRoot`
+10. `FullDisclosureRoot`
+11. `PayloadDigestHi`
+12. `PayloadDigestLo`
+
+For each vector kind, the fixed-capacity leaf, node, and final root are domain-separated; leaves bind `(index, enabled, value)`, nodes bind `(level, left, right)`, and the final root binds `(capacity, count, tree_root)`. These formulas and public order are reserved for future consensus work. No production batch descriptor/VK/PK, `MsgBatchTransfer`, keeper handler, prover HTTP route, scanner/payroll integration, or trusted setup is introduced in Session 2.
+
+The future owner-effect encoding is already exact rather than deferred: format `1` uses `u32be` counts and `u32be(length) || bytes` framing over root, ordered nullifiers, every ordered output effect field, audit ID/epoch/target, and expiry. SHA-256 domain `clairveil.batch-transfer-payload.v1` produces public inputs 11–12 as non-reduced big-endian 128-bit limbs. `creator` and `proof` alone are excluded. See the normative batch contract and conformance fixture for the byte grammar and golden.
+
+The artifact registry is role-aware: a validator verifies exact consensus identity and loads required VKs only, while a prover lazily loads selected R1CS/PK pairs. The reference prover bounds each current circuit to one in-flight and four queued jobs and uses a positive 8 MiB body limit. Canceling a request cannot terminate an already running in-process gnark solver; hard cancellation and memory isolation require a worker-process boundary. Automatic prover failover remains disabled.

@@ -268,10 +268,10 @@ Important constraints:
 - Build both outputs, ordered ciphertexts/view tags, user/audit/self-view envelopes, independent disclosure blindings, chain ID, and absolute expiry first. Then encode the canonical transfer effect, derive `TransferIntentV2`, and create exactly one `owner_signature_hex`. There are no per-input note-hash signatures.
 - The canonical binary effect uses fixed field order and `u32be(length) || bytes` for variable bytes. It includes format version, root, ordered nullifiers/commitments/ciphertexts/view tags, every disclosure field, and expiry. It excludes proof, `creator`, fee/gas/memo/sequence/tx signature, and its own digest. The keeper recomputes it from `MsgTransfer`.
 - Final `MsgTransfer` must include exactly two `view_tags`, aligned with `new_commitments` and `cipher_texts`.
-- Disclosure plaintext/query version is `v5`. Enabled user disclosure and full audit/self-view disclosure use independent fresh CSPRNG blindings. After decrypting, recover the blinding and recompute the digest; decryption alone is not verification.
+- Disclosure plaintext/query version is `privacy-fixed-v1`. Enabled user disclosure and full audit/self-view disclosure use independent fresh CSPRNG blindings. After decrypting, recover the blinding and recompute the digest; decryption alone is not verification.
 - `expires_at_unix` is absolute. The chain rejects at `block_time >= expires_at_unix`.
 
-The exact `JoinSplitCircuit` public-input order is: `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `Nullifier0`, `Nullifier1`, `Commitment0`, `Commitment1`, `UserPrivacyPolicy`, `UserDisclosureDigest`, `FullDisclosureDigest`, `PayloadDigestHi`, `PayloadDigestLo`. Do not sort or rename fields. SHA-256 chain/payload digests are split into two non-reduced big-endian 128-bit limbs. Chain domain input is `"clairveil.chain-domain.v1"`, length-prefixed `chain_id`, then length-prefixed `circuit_set_id` (`privacy-intent-v2`).
+The exact `JoinSplitCircuit` public-input order is: `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `Nullifier0`, `Nullifier1`, `Commitment0`, `Commitment1`, `UserPrivacyPolicy`, `UserDisclosureDigest`, `FullDisclosureDigest`, `PayloadDigestHi`, `PayloadDigestLo`. Do not sort or rename fields. SHA-256 chain/payload digests are split into two non-reduced big-endian 128-bit limbs. Chain domain input is `"clairveil.chain-domain.v1"`, length-prefixed `chain_id`, then length-prefixed `circuit_set_id` (`privacy-note-v1`).
 
 For bulk payroll or other high-volume transfer clients, the note reservation contract is part of the client/control-plane layer rather than the on-chain protocol. The Go reference implementation and fixture are:
 
@@ -509,8 +509,8 @@ The JS SDK can currently treat these as stable contracts.
 - deposit proof requirement for `MsgDeposit`
 - transfer payload `v5` and transfer proof/request/response `v2`
 - withdraw prover/final payload and proof/request/response `v2`
-- disclosure plaintext/query version `v5`
-- active circuit set `privacy-intent-v2` with consensus `CircuitSetIdentity` schema `v1` and manifest schema `v2`
+- disclosure plaintext/query version `privacy-fixed-v1`
+- active circuit set `privacy-note-v1` with consensus `CircuitSetIdentity` schema `v1` and manifest schema `v2`
 - prover HTTP paths `/v1/prover/transfer`, `/v1/prover/withdraw`
 - conformance fixture files under `x/privacy/client/sdk/conformance/testdata`
 - note reservation status and operation evidence contract in `privacy_note_reservation_contract.json`
@@ -607,3 +607,18 @@ This example runs a fixture-backed mock prover instead of a live `clairveil-prov
 - bearer tokens are sent as `Authorization: Bearer ...`;
 - transfer/withdraw request, response, and proof versions are `v2`;
 - proof `payload_hash` equals the prepared payload `payload_hash`.
+
+## 17. Session 2 Foundation Addendum
+
+Session 2 changes the shared foundation used by the current `DepositCircuit`, `SpendCircuit`, native `JoinSplitCircuit` 2x2 flow, keeper, and scanner. The production transaction surface is still deposit, 2x2 transfer, and withdraw. `BatchJoinSplit16x32` is a feasibility prototype and a frozen future contract only: there is no production batch circuit descriptor/artifact, `MsgBatchTransfer`, keeper handler, batch prover route, scanner integration, or payroll integration yet. The existing `transfer-batch` helper still orchestrates current 2x2 messages; it is not the future 16x32 transaction.
+
+The following rules are breaking and normative for new SDK work:
+
+- The active circuit set is `privacy-note-v1`. Note, disclosure, and encrypted-envelope binary data use `privacy-fixed-v1`; `NotePlaintextV1` is exactly 350 bytes, `DisclosurePlaintextV1` is exactly 392 bytes, and every encrypted payload includes the canonical 20-byte envelope header and exact kind. Raw ciphertext, JSON plaintext, trailing bytes, and cross-kind decoding must be rejected.
+- This transition requires fresh genesis. Delete cached notes, scan cursors, prepared/proof jobs, circuit identity metadata, and old development artifacts, then regenerate artifacts and rescan. There is no compatibility decode or in-place state migration from the earlier contract.
+- `AssetRegistryV1` is the authoritative one-to-one mapping between canonical denom and 32-byte `asset_id`. A client may derive an ID for validation, but must not invent a denom by interpreting or hashing an ID; resolve it through the registry query and fail closed on a mismatch.
+- Wallet synchronization uses the unified `privacy-scan-v2` projection and lexicographic cursor `(height, global_sequence, output_index)`. Persist the whole cursor atomically. Obtain every Merkle path from a snapshot that matches the selected root exactly; mixing a current path with an older root is invalid. A current-root incremental path has no 1,048,576-leaf cap. A non-current historical path uses persisted root/count/height metadata, but its nodes are rebuilt under a 1,048,576-leaf bound; above that cap, use the current root or a trusted local historical index. Remote historical lookups can reveal wallet timing and interest, so retain the privacy warning and use privacy-preserving infrastructure where the product threat model requires it.
+- The future `BatchJoinSplit16x32` public-input order is frozen as `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`. Do not expose this schema as a supported production transaction until its consensus artifact and handler exist.
+- A future batch builder must reproduce `CanonicalBatchTransferPayloadBytesV1` exactly: format `1`, `u32be` vector counts, `u32be(length) || bytes` for every byte field, output fields in proto declaration order, followed by audit ID/epoch/target and expiry. SHA-256 domain `clairveil.batch-transfer-payload.v1` is split into non-reduced 128-bit limbs. Only `creator` and `proof` are excluded. Do not invent protobuf-marshal, JSON, or sorted-field alternatives.
+- Artifact loading is role-aware: validators load only the required VKs after exact consensus identity verification; provers lazily load only selected R1CS/PK pairs. The reference prover admission defaults are one in-flight request and four queued requests per circuit, with a positive 8 MiB request limit. A value of zero is invalid and does not disable the body limit.
+- Never expose `provertransport.HTTPHandler` directly; use the bounded `proverservice.Handler` wrapper. Prover requests have no automatic endpoint failover. Cancellation stops waiting and discards the response, but in-process proving may continue until the solver returns and still holds admission capacity. Production operators that require hard cancellation or memory containment must add process isolation and termination outside this reference implementation.

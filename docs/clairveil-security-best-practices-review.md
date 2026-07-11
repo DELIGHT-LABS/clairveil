@@ -98,7 +98,7 @@ Required work:
 - make strict preflight the default
 - verify release artifact checksums in CI
 
-The active identity is `privacy-intent-v2`. `privacy_zk_manifest.json` schema `v2` must match the genesis/state `CircuitSetIdentity` schema `v1`, including descriptor order, exact VK SHA-256 values, and public-input schema SHA-256 values. Validators need VK files only; a prover lazily loads R1CS/PK for proving. Session 1 generated development artifacts only and did not perform a formal trusted setup or external audit.
+The active identity is `privacy-note-v1`. `privacy_zk_manifest.json` schema `v2` must match the genesis/state `CircuitSetIdentity` schema `v1`, including descriptor order, exact VK SHA-256 values, and public-input schema SHA-256 values. Validators need VK files only; a prover lazily loads R1CS/PK for proving. Session 1 generated development artifacts only and did not perform a formal trusted setup or external audit.
 
 ## 3. Recommended Repo-Level Improvements
 
@@ -123,7 +123,7 @@ The Session 1 remediation closed the known current duplicate-input/output, inten
 - `cmd/clairveil-proverd/main.go` runs with `auth_enabled=false` when the bearer token env is empty. This is convenient locally, but must be forbidden for remote services.
 - `build/clairveil-proverd/compose.yaml` limits host bind to `127.0.0.1`. However, the Dockerfile itself listens on `0.0.0.0:8080`, so downstream compose/k8s manifests must re-check network policy.
 - Prepared payload JSON and wallet JSON are stored with `0600`, but they are not encrypted. Production wallets need an encryption layer.
-- Transfer/prover contract versions are intentionally breaking: transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload and proof/request/response `v2`, and disclosure plaintext/query version `v5`. Legacy payloads must be regenerated, not replayed or decoded through a compatibility path.
+- Transfer/prover contract versions are intentionally breaking: transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload and proof/request/response `v2`, and disclosure plaintext/query version `privacy-fixed-v1`. Legacy payloads must be regenerated, not replayed or decoded through a compatibility path.
 
 ## 5. Minimum Guidance To Downstream Developers
 
@@ -138,4 +138,19 @@ JS/TS SDK, web wallet, and downstream Cosmos SDK chain developers should receive
 7. Disclosure plaintext must not be trusted just because it decrypted; digest verification must pass.
 8. Production artifacts need provenance and signing policy in addition to checksum.
 9. After snapshot/restore/migration, recompute sample Merkle paths according to `docs/clairveil-merkle-restore-sop.md`.
-10. Reject legacy prepared payloads, preserve the exact `SpendIntentV2`/`TransferIntentV2` public-input order, and reset cached proof jobs/artifacts when adopting `privacy-intent-v2`.
+10. Reject legacy prepared payloads, preserve the exact `SpendIntentV2`/`TransferIntentV2` public-input order, and reset cached proof jobs/artifacts when adopting `privacy-note-v1`.
+
+## 6. Session 2 Foundation Security Addendum
+
+The current production circuits and state now share the `privacy-note-v1` NoteV1 commitment/nullifier/tree contract and canonical key validation. Canonical note, disclosure, and encrypted-envelope bytes are versioned `privacy-fixed-v1`; raw ciphertext, JSON plaintext, wrong envelope kind, non-canonical field/key data, non-zero reserved bytes, and trailing bytes must fail closed. `AssetRegistryV1` is the consensus-authoritative one-to-one denom/32-byte asset-ID mapping. Global commitment uniqueness is consensus state, not an SDK-only precheck.
+
+This contract is intentionally incompatible with earlier state and artifacts. Use fresh genesis, remove wallet note/scan caches and prepared/proof jobs, regenerate the exact `privacy-note-v1` artifact set, and rescan. Do not add a permissive compatibility decoder or in-place migration. Unified scan order is `(height, global_sequence, output_index)` and a spend witness must use a path snapshot for the exact public root. A current-root incremental path has no 1,048,576-leaf cap. A non-current historical path uses persisted root/count/height metadata, but its nodes are rebuilt under a 1,048,576-leaf bound; above that cap, use the current root or a trusted local historical index. Remote historical path/root queries can disclose wallet interest, so retain that privacy warning and use privacy-preserving infrastructure when required.
+
+The Session 2 `BatchJoinSplit16x32` implementation is a full-shape feasibility prototype only. It freezes capacities 16/32, active-prefix/zero-disabled rules, vector formulas, per-output independent user/full disclosure blindings, and the public-input order `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`. It does not authorize a production batch circuit/artifact, `MsgBatchTransfer`, keeper handler, route, scanner, payroll integration, or trusted setup.
+
+Artifact access and proving must remain bounded:
+
+- Validators load requested VKs only after exact consensus identity comparison; provers lazily load selected R1CS/PK pairs. Any mismatch fails readiness.
+- Reference admission defaults are one in-flight and four queued jobs per circuit, and request bodies are limited to a positive 8 MiB. Zero is invalid.
+- Public deployments use the bounded `proverservice.Handler`, never the raw transport handler. Automatic prover failover remains disabled.
+- Context cancellation does not preempt an already running in-process solver; it may retain memory and its admission permit until return. Use supervised, memory-limited worker processes when hard cancellation or OOM containment is a security requirement.

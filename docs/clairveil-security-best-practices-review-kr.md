@@ -96,7 +96,7 @@ Checksum 검증은 file corruption과 단순 tamper를 잡는 데 도움이 됩�
 - strict preflight 기본화
 - release artifact checksum CI 검증
 
-Active identity는 `privacy-intent-v2`입니다. `privacy_zk_manifest.json` schema `v2`는 descriptor order, exact VK SHA-256, public-input schema SHA-256까지 genesis/state `CircuitSetIdentity` schema `v1`과 일치해야 합니다. Validator는 VK만 필요하고 prover는 proving 시 R1CS/PK를 lazy load합니다. Session 1은 development artifact만 생성했으며 formal trusted setup이나 external audit는 수행하지 않았습니다.
+Active identity는 `privacy-note-v1`입니다. `privacy_zk_manifest.json` schema `v2`는 descriptor order, exact VK SHA-256, public-input schema SHA-256까지 genesis/state `CircuitSetIdentity` schema `v1`과 일치해야 합니다. Validator는 VK만 필요하고 prover는 proving 시 R1CS/PK를 lazy load합니다. Session 1은 development artifact만 생성했으며 formal trusted setup이나 external audit는 수행하지 않았습니다.
 
 ## 3. Repo 기준 권장 개선 사항
 
@@ -121,7 +121,7 @@ Session 1 remediation은 known current duplicate-input/output, intent substituti
 - `cmd/clairveil-proverd/main.go`는 bearer token env가 비어 있으면 `auth_enabled=false`로 실행됩니다. local daemon에는 편리하지만 remote service에서는 금지해야 합니다.
 - `build/clairveil-proverd/compose.yaml`은 host bind를 `127.0.0.1`로 제한합니다. 단, Dockerfile 자체는 `0.0.0.0:8080` listen이므로 downstream compose/k8s manifest에서 network policy를 다시 확인해야 합니다.
 - prepared payload JSON과 wallet JSON은 `0600`으로 저장되지만 암호화되지는 않습니다. production wallet은 별도 encryption layer가 필요합니다.
-- Transfer/prover contract version은 의도적인 breaking change입니다. Transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload와 proof/request/response `v2`, disclosure plaintext/query `v5`이며 legacy payload는 compatibility decode하지 말고 다시 생성해야 합니다.
+- Transfer/prover contract version은 의도적인 breaking change입니다. Transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload와 proof/request/response `v2`, disclosure plaintext/query `privacy-fixed-v1`이며 legacy payload는 compatibility decode하지 말고 다시 생성해야 합니다.
 
 ## 5. Downstream 개발자에게 전달할 최소 지침
 
@@ -136,4 +136,19 @@ JS/TS SDK, web wallet, downstream Cosmos SDK chain 개발자에게는 아래를 
 7. Disclosure plaintext는 복호화 결과만 믿으면 안 되고 digest verification을 통과해야 합니다.
 8. Production artifact는 checksum뿐 아니라 provenance와 signing policy를 가져야 합니다.
 9. Snapshot/restore/migration 후에는 `docs/clairveil-merkle-restore-sop-kr.md`에 따라 샘플 Merkle path를 재계산해야 합니다.
-10. Legacy prepared payload를 거부하고 `SpendIntentV2`/`TransferIntentV2` public-input 순서를 정확히 보존하며 `privacy-intent-v2` 적용 시 cached proof job/artifact를 reset해야 합니다.
+10. Legacy prepared payload를 거부하고 `SpendIntentV2`/`TransferIntentV2` public-input 순서를 정확히 보존하며 `privacy-note-v1` 적용 시 cached proof job/artifact를 reset해야 합니다.
+
+## 6. Session 2 Foundation Security Addendum
+
+현재 production circuit과 state는 `privacy-note-v1` NoteV1 commitment/nullifier/tree contract와 canonical key validation을 공유합니다. Canonical note, disclosure, encrypted-envelope byte는 versioned `privacy-fixed-v1`입니다. Raw ciphertext, JSON plaintext, 잘못된 envelope kind, non-canonical field/key data, non-zero reserved byte, trailing byte는 fail closed해야 합니다. `AssetRegistryV1`이 consensus-authoritative one-to-one denom/32-byte asset-ID mapping입니다. Global commitment uniqueness는 SDK-only precheck가 아니라 consensus state입니다.
+
+이 계약은 이전 state와 artifact와 의도적으로 호환되지 않습니다. Fresh genesis를 사용하고 wallet note/scan cache와 prepared/proof job을 제거하며 exact `privacy-note-v1` artifact set을 다시 생성한 뒤 rescan합니다. Permissive compatibility decoder나 in-place migration을 추가하지 않습니다. Unified scan order는 `(height, global_sequence, output_index)`이고 spend witness는 exact public root의 path snapshot을 사용해야 합니다. Current-root incremental path에는 1,048,576-leaf cap이 없습니다. Non-current historical path는 persisted root/count/height metadata를 사용하지만 node를 bounded rebuild하므로 1,048,576 leaves로 제한됩니다. Cap을 넘으면 current root 또는 trusted local historical index를 사용합니다. Remote historical path/root query는 wallet interest를 노출하므로 privacy warning을 유지하고 필요하면 privacy-preserving infrastructure를 사용합니다.
+
+Session 2 `BatchJoinSplit16x32` 구현은 full-shape feasibility prototype일 뿐입니다. Capacity 16/32, active-prefix/zero-disabled rule, vector formula, output별 independent user/full disclosure blinding, public-input 순서 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`를 동결합니다. Production batch circuit/artifact, `MsgBatchTransfer`, keeper handler, route, scanner, payroll integration, trusted setup을 허가하는 작업이 아닙니다.
+
+Artifact access와 proving은 계속 bounded해야 합니다.
+
+- Validator는 exact consensus identity 비교 후 요청된 VK만 load하고 prover는 선택한 R1CS/PK pair를 lazy load합니다. Mismatch는 readiness를 실패시킵니다.
+- Reference admission default는 circuit별 in-flight 1개, queued 4개이며 request body는 positive 8 MiB로 제한합니다. 0은 invalid입니다.
+- Public deployment는 bounded `proverservice.Handler`를 사용하고 raw transport handler는 절대 직접 노출하지 않습니다. Automatic prover failover는 계속 비활성화합니다.
+- Context cancellation은 이미 실행 중인 in-process solver를 preempt하지 못해 반환할 때까지 memory와 admission permit을 유지할 수 있습니다. Hard cancellation 또는 OOM containment가 security requirement이면 supervised, memory-limited worker process를 사용합니다.

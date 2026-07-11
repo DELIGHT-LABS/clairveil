@@ -18,6 +18,9 @@ Korean version: [clairveil-release-handoff-pack-kr.md](clairveil-release-handoff
 | ZK artifact tooling | `cmd/clairveil-setup`, `cmd/clairveil-verify`, `x/privacy/zk` | Core chain team, prover operations | artifact generation, checksum, preflight |
 | Walkthrough | `docs/clairveil-local-privacy-walkthrough.md` | Integrators | local end-to-end manual verification |
 | Circuit guide | `docs/clairveil-circuits.md` | Core chain team, prover operations, security reviewers | Deposit/Spend/JoinSplit circuit and artifact impact explanation |
+| Session 2 normative foundation | `docs/clairveil-batch-joinsplit-16x32.md`, `docs/clairveil-batch-joinsplit-16x32-kr.md` | Core chain, SDK, prover, security teams | NoteV1/fixed encoding/state contracts and the reserved, non-production 16x32 protocol |
+| Session 2 independent fixtures | `x/privacy/client/sdk/conformance/testdata/privacy_note_v1_contract.json`, `x/privacy/client/sdk/conformance/testdata/privacy_batch_joinsplit_v1_contract.json` | Core chain, SDK, security teams | independent domains/empty-root/encoding, canonical audit-key ID, vector/public-input, and corrected wire-state goldens |
+| Batch feasibility proto | `proto/clairveil/privacy/v1/batch_feasibility.proto` | Core chain, SDK, security teams | max-shape wire/state measurement only; not a production tx service or `MsgBatchTransfer` contract |
 | CLI reference | `docs/clairveil-cli-reference.md` | Integrators, wallet/SDK teams | user-facing commands and flags |
 | Testing guide | `docs/clairveil-testing-guide.md` | Maintainers, integrators | test matrix and release validation commands |
 | Operations guide | `docs/clairveil-operations-guide.md` | Operators, security reviewers | node/prover/artifact/Merkle/audit operations baseline |
@@ -76,7 +79,7 @@ make docker-proverd-build
 
 This command validates compose config, Dockerfile build, and image inspect. It requires a Docker daemon, so it is not included in the default `release-check`.
 
-`make release-pack` creates `dist/clairveil-handoff-<version>.tar.gz` and its `.sha256` file. This pack is a downstream handoff contract bundle, not a full source distribution. It includes license/notice, major handoff/security/operations docs, circuit/CLI/testing/maintainer docs, Merkle restore SOP, proto, JSON Schema, conformance fixtures, client/JS examples, scan optimization docs, bulk-transfer handoff/design/planning docs, reference payroll product docs/examples, prover Docker sample, release pack scripts, `RELEASE-MANIFEST.txt`, and `SHA256SUMS.txt`. The bulk-transfer planning docs are currently Korean working records; language-neutral implementation contracts are carried by schemas, conformance fixtures, CLI/API references, and readiness commands. Readiness commands are run from the source checkout before handoff; the pack records the contract artifacts and validation expectations.
+`make release-pack` creates `dist/clairveil-handoff-<version>.tar.gz` and its `.sha256` file. This pack is a downstream handoff contract bundle, not a full source distribution. It includes license/notice, major handoff/security/operations docs, circuit/CLI/testing/maintainer docs, Merkle restore SOP, proto, JSON Schema, conformance fixtures, client/JS examples, scan optimization docs, bulk-transfer handoff/design/planning docs, reference payroll product docs/examples, prover Docker sample, release pack scripts, `RELEASE-MANIFEST.txt`, and `SHA256SUMS.txt`. Session 2 makes the bilingual `clairveil-batch-joinsplit-16x32` contract, both independent golden fixtures, and `batch_feasibility.proto` normative handoff artifacts; the proto remains a feasibility message shape, not a production transaction service. The bulk-transfer planning docs are currently Korean working records; language-neutral implementation contracts are carried by schemas, conformance fixtures, CLI/API references, and readiness commands. Readiness commands are run from the source checkout before handoff; the pack records the contract artifacts and validation expectations.
 
 `make release-pack-verify` verifies the handoff pack's external `.sha256`, internal `SHA256SUMS.txt`, required handoff files, and that the default archive manifest commit matches current `HEAD`. When `RELEASE_PACK_ARCHIVE` is not set, it regenerates the default pack before validation so stale local archives do not mask missing files. This step checks that the tarball is not just created, but suitable to hand off as a release contract bundle.
 
@@ -95,6 +98,9 @@ This command validates compose config, Dockerfile build, and image inspect. It r
 11. Ensure accepted vulnerability policy exceptions `GO-2024-2584`, `GO-2026-4479`, and `GO-2026-5932` remain listed in the release note known risks.
 12. State in the release note that the downstream project owns audit master private key custody, wallet storage encryption, and remote prover topology in separate operations documents.
 13. Use the release note template in `docs/clairveil-release-versioning-policy.md` to document compatibility impact and downstream action.
+14. Run `go test ./x/privacy/types -run TestBatchJoinSplit16x32MaxWireStateFeasibilityGate -count=1 -v` and confirm the corrected max-shape goldens: canonical owner-effect payload `65,384` bytes, Tx `65,294` bytes, typed scan KV `75,105` bytes, total KV write `173,409` bytes, and query response `74,551` bytes.
+15. For a Session 2 foundation release, run `CLAIRVEIL_RUN_BATCH_FEASIBILITY=1 go test ./x/privacy/circuit -run TestBatchJoinSplit16x32FullShapeResourceGate -count=1 -v` and retain its constraint, artifact-size, timing, and resource report. The corrected reference result is `1,111,837` constraints, peak RSS `3,339,862,016` bytes, `55.892 ms/output` at max-shape warm proving, and `2.789x` per-output improvement over native 2x2. This is a feasibility gate, not trusted setup.
+16. Confirm that release-pack verification requires the bilingual batch contract, `batch_feasibility.proto`, and both independent Session 2 fixtures.
 
 ## 4. Downstream Core Chain Team Acceptance Criteria
 
@@ -107,6 +113,9 @@ The core chain team confirms:
 5. Set the audit master public key in production-like genesis.
 6. Run ZK artifact preflight in `strict` mode for release candidates and production-like nodes.
 7. Write downstream EVM, policy module, and precompile integration tests separately from Clairveil repository smoke tests.
+8. Start from fresh genesis with active circuit set `privacy-note-v1`; old note/tree/scan state and artifacts are incompatible and must not be migrated through a compatibility decoder.
+9. Treat `AssetRegistryV1` as the authoritative one-to-one denom/32-byte asset-ID mapping, consume `privacy-scan-v2` with cursor `(height, global_sequence, output_index)`, and obtain spend paths from a snapshot matching the selected root exactly. Current-root incremental paths have no 1,048,576-leaf rebuild cap. Every non-current historical path requires persisted root/count/height metadata and is capped at 1,048,576 leaves because nodes are rebuilt; above it, use the current root or a trusted local historical index. Genesis export above the cap remains supported when the complete per-prefix snapshot metadata index exists.
+10. Reserve the future public-input order `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`, canonical `audit_key_id` as 1..64 bytes matching `[a-z0-9][a-z0-9._-]*`, and the exact `CanonicalBatchTransferPayloadBytesV1` grammar/domain. Do not register the prototype as a production batch circuit, message, artifact, or handler.
 
 ## 5. JS/TS SDK And Web Wallet Team Acceptance Criteria
 
@@ -120,6 +129,10 @@ The JS/TS SDK and web wallet teams confirm:
 6. Reflect timeout, bearer auth, and payload hash equality checks from `examples/js-sdk-prover-http-client` in the prover adapter implementation.
 7. Treat wallet note cache, root seed derived secrets, viewing keys, disclosure keys, and prepared payload/proof JSON as privacy-sensitive data; do not leave them in plaintext browser storage.
 8. If using a remote prover, reflect prover-visible metadata and trust boundaries in the user privacy UX and threat model.
+9. Implement `privacy-fixed-v1` exactly: 350-byte note plaintext, 392-byte disclosure plaintext, and a 20-byte typed envelope header. Reject raw ciphertext, legacy JSON plaintext, wrong kinds, and trailing bytes without a compatibility fallback.
+10. Keep prepared transfer payload `v5` as the outer prepared-payload version; it is not the note/disclosure encoding version and must not be renamed to `privacy-fixed-v1`.
+11. Resolve asset IDs through `AssetRegistryV1` and persist the full `privacy-scan-v2` cursor. Reject typed scan records with a wrong event type, fixed-envelope kind, digest, key, sentinel, or orphan/non-adjacent output. Use same-root path snapshots and account for the privacy leak and rebuild cap of remote historical-root/path queries.
+12. The external ClairveilJS package is still legacy at this handoff point. Its safe behavior is to fail closed on the new fixed fixtures until a downstream upgrade lands; silently decoding them with the old format is prohibited.
 
 ## 6. Prover Operations Team Acceptance Criteria
 
@@ -130,6 +143,8 @@ The prover operations team confirms:
 3. For remote deployment, define TLS/mTLS, auth, quota, rate limit, body limit, timeout, redacted logging, and health/readiness exposure policy.
 4. Run the prover artifact directory read-only and treat checksum mismatch as a release blocker.
 5. Preserve `payload_hash` equality checks on both the SDK and server sides for proof requests/responses.
+6. Use the role-aware artifact registry: validators load required VKs after exact consensus identity verification, while provers lazily load selected R1CS/PK pairs.
+7. Enforce per-circuit admission defaults of one in-flight and four queued jobs and a positive 8 MiB body limit. A zero body limit is invalid. Keep automatic prover failover disabled, and use process isolation if hard cancellation or memory containment is required.
 
 ## 7. Known Risk And Accepted Exceptions
 
@@ -144,6 +159,10 @@ Release recipients must know the following risks.
 | Wallet local storage | The reference CLI uses `0600` plaintext JSON | Web wallets and production wallets must implement encrypted storage and telemetry redaction. |
 | Remote prover metadata exposure | A remote prover can see proof input metadata | Include the remote prover as a trusted component in user privacy UX and the deployment threat model. |
 | ZK artifact provenance | The repository provides checksum/preflight tooling, but ceremony and release-signing policy are downstream responsibilities | Production releases should define artifact signing, provenance, and reproducibility policy separately. |
+| Session 2 batch prototype | The 16x32 circuit/proto and frozen 12 public inputs passed feasibility gates but are not a production batch transaction, verifier artifact, handler, route, scanner, payroll integration, or trusted setup | Do not expose or register them as production. Complete the later production-circuit and consensus-integration session first. |
+| External ClairveilJS compatibility | The external package is still based on the legacy note/disclosure representation and does not yet implement `privacy-fixed-v1` | Fail closed on the new fixtures, upgrade downstream explicitly, and never add a compatibility fallback. Prepared transfer payload `v5` remains valid and is a separate outer version. |
+| Prover cancellation boundary | Canceling a request does not preempt an already running in-process solver; its permit and memory may remain in use until return | Bound admission to `1`/`4` with positive `8 MiB` requests and use supervised worker-process isolation for hard cancellation or OOM containment. |
+| Historical path rebuild boundary | Current-root paths use incremental nodes without the rebuild cap, but non-current paths rebuild nodes and stop at 1,048,576 leaves even when complete root/count/height metadata exists | Above the cap, spend against the current root or use a trusted local historical-path index. Preserve the complete snapshot metadata index so genesis export stays available. |
 
 ## 8. Handoff Completion Criteria
 
@@ -156,5 +175,6 @@ Release handoff is complete when:
 5. The web wallet team reflected wallet storage encryption and prover topology in its design document.
 6. The prover operations team selected the remote/local prover production profile.
 7. The security/operations team recorded accepted vulnerabilities, audit key custody, and ZK artifact provenance in the risk register.
+8. All teams accepted the fresh-genesis `privacy-note-v1` / `privacy-fixed-v1` compatibility break, verified both independent Session 2 fixtures, and recorded that the reserved 16x32 prototype is not production functionality.
 
 This document is not a replacement for a release package archive. It is a handoff index that lets teams start integration from the same release commit, fixtures, schema, and verification commands.

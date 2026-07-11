@@ -350,7 +350,7 @@ clairveild tx privacy relay-withdraw out/withdraw-payload.json \
 
 Summary가 resolved absolute expiry와 chain ID를 출력하고 JSON도 같은 `expires_at_unix`를 사용합니다. 해당 second 이상에서는 제출이 실패하고 relayer는 연장할 수 없습니다. Prepared payload/proof JSON은 privacy-sensitive하며 output/recipient/chain/expiry를 바꿀 수 없어도 prover payload에는 private note witness가 남습니다. Production wallet은 암호화 저장과 만료/삭제 정책을 가져야 합니다.
 
-현재 CLI handoff version은 transfer payload `v5`, transfer proof/prover contract `v2`, withdraw prover/final payload와 proof/prover/relay contract `v2`, disclosure plaintext/query `v5`입니다. Legacy file은 다시 생성합니다.
+현재 CLI handoff version은 transfer payload `v5`, transfer proof/prover contract `v2`, withdraw prover/final payload와 proof/prover/relay contract `v2`, disclosure plaintext/query `privacy-fixed-v1`입니다. Legacy file은 다시 생성합니다.
 
 ## 9. Query
 
@@ -382,7 +382,7 @@ clairveild query privacy check-nullifier <hex_nullifier> \
 
 ### clairveil-setup
 
-Active set `privacy-intent-v2`, manifest schema `v2`의 development ZK artifact를 생성합니다. Generated R1CS/PK/VK binary는 source artifact가 아니며 이 command는 formal trusted setup ceremony가 아닙니다.
+Active set `privacy-note-v1`, manifest schema `v2`의 development ZK artifact를 생성합니다. Generated R1CS/PK/VK binary는 source artifact가 아니며 이 command는 formal trusted setup ceremony가 아닙니다.
 
 ```bash
 clairveil-setup --out artifacts/privacy
@@ -478,3 +478,13 @@ make reference-payroll-rehearsal
 ```
 
 live localnet 자세한 단계는 [clairveil-reference-payroll-live-localnet-tutorial-kr.md](clairveil-reference-payroll-live-localnet-tutorial-kr.md)를 따릅니다. rehearsal 자세한 단계는 [clairveil-reference-payroll-rehearsal-kr.md](clairveil-reference-payroll-rehearsal-kr.md)를 따릅니다.
+
+## 11. Session 2 Foundation Compatibility
+
+CLI가 생성하고 검사하는 active circuit set은 `privacy-note-v1`입니다. Note, disclosure, encrypted envelope는 canonical `privacy-fixed-v1`을 사용합니다. Command는 raw ciphertext나 legacy JSON plaintext가 아니라 typed envelope를 emit/consume합니다. `AssetRegistryV1`이 canonical denom과 32-byte asset ID resolve의 authoritative source입니다. Upgrade 시 fresh genesis를 사용하고 local wallet/scan/proof cache와 old development artifact를 삭제한 뒤 artifact를 다시 생성하고 rescan합니다. Legacy decode나 in-place state migration은 없습니다.
+
+Wallet scan state는 전체 cursor `(height, global_sequence, output_index)`로 정렬됩니다. 모든 spend path는 선택한 root와 정확히 같은 snapshot에서 얻어야 합니다. Current-root incremental path에는 1,048,576-leaf cap이 없습니다. Non-current historical path는 persisted root/count/height metadata를 사용하지만 node를 bounded rebuild하므로 1,048,576 leaves로 제한됩니다. Cap을 넘으면 current root 또는 trusted local historical index를 사용합니다. Remote historical root/path query는 wallet interest를 노출하므로 privacy warning을 유지하고 중요하면 local 또는 privacy-preserving infrastructure를 우선합니다.
+
+`BatchJoinSplit16x32`는 Session 2 feasibility prototype으로 남아 있습니다. 이 reference의 어떤 CLI command도 production 16x32 message를 submit하지 않습니다. 특히 `transfer-batch`는 여전히 현재 native 2x2 transfer를 coordination합니다. Future public schema는 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo` 순서로 reserve되며 live circuit이나 transaction으로 취급하면 안 됩니다.
+
+`clairveil-proverd`는 role-aware lazy artifact registry와 circuit별 in-flight 1개, queued 4개의 admission default를 사용합니다. `-max-request-bytes` default는 `8388608`이고 0보다 커야 합니다. `0`은 invalid이며 limit을 비활성화하지 않습니다. Bounded `proverservice.Handler`만 노출하고 raw transport handler는 절대 직접 노출하지 않습니다. Automatic endpoint failover는 계속 비활성화합니다. Cancellation으로 caller가 중단되어도 in-process proof가 계속되며 slot을 유지할 수 있습니다. Hard cancellation이나 memory containment가 필요한 operator는 worker process를 isolate하고 terminate해야 합니다.

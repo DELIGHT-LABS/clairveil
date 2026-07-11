@@ -114,7 +114,7 @@ Remote prover operator는 아래 정보를 볼 수 있다고 가정해야 합니
 
 따라서 remote prover는 사용자가 trust하는 component여야 합니다. 사용자가 remote prover를 신뢰하지 않아야 하는 wallet UX라면 local daemon 또는 browser/WASM proving을 제공해야 합니다.
 
-현재 transfer/withdraw request/response/proof contract는 `v2`입니다. Transfer prepared payload는 `v5`, withdraw prover/final payload는 `v2`, disclosure plaintext/query는 `v5`이며 legacy input은 거부합니다. Request body, bearer credential, signature, disclosure plaintext/blinding, proof를 log, trace, crash dump, analytics에서 제외합니다.
+현재 transfer/withdraw request/response/proof contract는 `v2`입니다. Transfer prepared payload는 `v5`, withdraw prover/final payload는 `v2`, disclosure plaintext/query는 `privacy-fixed-v1`이며 legacy input은 거부합니다. Request body, bearer credential, signature, disclosure plaintext/blinding, proof를 log, trace, crash dump, analytics에서 제외합니다.
 
 ## 8. Raw handler 사용 금지
 
@@ -130,7 +130,7 @@ Raw `provertransport.HTTPHandler`를 public server에 직접 붙이면 request b
 
 ## 9. Artifact profile
 
-Remote prover는 proving key/R1CS를 lazy load하고 validator는 VK만 필요합니다. Active set은 `privacy-intent-v2`입니다. `privacy_zk_manifest.json` schema `v2`는 ordered circuit descriptor, VK SHA-256, public-input schema SHA-256까지 consensus `CircuitSetIdentity` schema `v1`과 정확히 일치해야 합니다. Environment checksum은 consensus identity를 override하지 못하며 mismatch는 startup/readiness를 실패시켜야 합니다. Production에서는 아래를 지킵니다.
+Remote prover는 proving key/R1CS를 lazy load하고 validator는 VK만 필요합니다. Active set은 `privacy-note-v1`입니다. `privacy_zk_manifest.json` schema `v2`는 ordered circuit descriptor, VK SHA-256, public-input schema SHA-256까지 consensus `CircuitSetIdentity` schema `v1`과 정확히 일치해야 합니다. Environment checksum은 consensus identity를 override하지 못하며 mismatch는 startup/readiness를 실패시켜야 합니다. Production에서는 아래를 지킵니다.
 
 - `CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict`를 사용합니다.
 - 필수 `privacy_zk_manifest.json`을 release artifact와 함께 배포합니다. Checksum env는 추가 consistency check로 사용할 수 있지만 structured manifest를 대체할 수 없습니다.
@@ -189,3 +189,15 @@ Remote prover를 production-like 환경에 올리기 전 아래를 확인합니�
 - `x/privacy/client/sdk/proverservice/service.go`
 - `x/privacy/client/sdk/provertransport/http.go`
 - `examples/js-sdk-prover-http-client`
+
+## 13. Session 2 Admission And Artifact Addendum
+
+Active consensus circuit set은 `privacy-note-v1`이며 fixed note/disclosure/envelope 계약은 `privacy-fixed-v1`입니다. 이전 cached artifact와 proof job과 호환되지 않습니다. Fresh genesis에서 배포하고 old R1CS/PK/VK set과 queued/cached request를 제거하며 exact active set을 다시 생성합니다. Client도 note/scan cache를 지우고 rescan해야 합니다. Session 2의 `BatchJoinSplit16x32` circuit은 feasibility benchmark일 뿐이므로 production proving circuit으로 install, advertise, route하면 안 됩니다.
+
+Artifact registry는 role-aware입니다. Validator readiness는 consensus identity를 요구하고 요청된 VK만 읽습니다. Prover readiness는 선택한 R1CS/PK pair만 읽어 lazy load하며 supplied consensus metadata가 다르면 계속 fail closed해야 합니다. Manifest에 존재한다는 이유만으로 unrelated proving key를 preload하지 않습니다.
+
+Reference admission default는 circuit별 `max_in_flight=1`, `max_queued=4`입니다. Request-body default는 `max_request_bytes=8388608`(8 MiB)이고 반드시 positive여야 합니다. `0`은 invalid이며 unlimited를 뜻하지 않습니다. Queue saturation은 retryable busy response를 반환합니다. Operator는 request/witness content 없이 in-flight, queued, rejected, canceled, queue-wait, prove-time, CPU, RSS metric을 export해야 합니다.
+
+Bounded `proverservice.Handler`만 노출합니다. `provertransport.HTTPHandler`를 public listener에 직접 mount하거나 proxy만 유일한 body bound라고 가정하면 안 됩니다. 다른 endpoint는 private-witness trust boundary를 넓히므로 automatic prover failover를 비활성화합니다. Context cancellation은 caller의 wait를 중단하지만 이미 실행 중인 in-process gnark proof는 반환할 때까지 계속되고 permit을 유지합니다. Reference service는 solver를 preempt하지 못합니다. Hard cancellation 또는 OOM containment에는 isolated, memory-limited worker process와 termination을 사용합니다.
+
+Future 16x32 public schema는 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo` 순서로 reserve됩니다. Schema reserve가 production endpoint나 artifact 생성 권한을 뜻하지는 않습니다.

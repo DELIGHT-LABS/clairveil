@@ -213,7 +213,7 @@ transfer는 mandatory audit disclosure를 항상 포함해야 합니다. 회로�
 
 ## 6. Artifact
 
-`clairveil-setup`은 아래 development artifact를 생성합니다. Active circuit set은 `privacy-intent-v2`입니다.
+`clairveil-setup`은 아래 development artifact를 생성합니다. Active circuit set은 `privacy-note-v1`입니다.
 
 | 파일                         | 의미                               |
 | ---------------------------- | ---------------------------------- |
@@ -274,3 +274,30 @@ GET /clairveil/privacy/v1/reserve/{denom}
 - ciphertext delivery 자체는 회로가 직접 증명하지 않고 digest binding과 off-chain verification으로 검증합니다.
 - production 배포에서는 artifact signing, reproducible generation, release provenance가 추가로 필요합니다.
 - Keeper는 cheap canonical Groth16 framing이 통과한 뒤 decode, VK load, pairing 전에 proof verification gas를 precharge합니다. Deposit/spend/joinsplit은 현재 attempt당 각각 `1,000,000` gas를 charge합니다. Cryptographically invalid proof도 full precharge를 소비하고 malformed framing은 소비하지 않습니다.
+
+## 10. Session 2 NoteV1 And Batch Foundation
+
+Active circuit set은 이제 `privacy-note-v1`입니다. `DepositCircuit`, `SpendCircuit`, native `JoinSplitCircuit` 2x2, keeper tree, scanner는 하나의 domain-separated NoteV1 commitment/nullifier/tree 계약, canonical field/key 검사, exact depth-specific empty root를 공유합니다. Denom string은 circuit에 들어가지 않습니다. `AssetRegistryV1`이 32-byte `asset_id`에 대한 authoritative one-to-one mapping입니다. 이 변경은 breaking state/artifact transition이므로 fresh genesis, artifact 재생성, proof/note/scan cache 삭제, full rescan이 필요합니다.
+
+Canonical plaintext와 encrypted payload는 `privacy-fixed-v1`을 사용합니다. Note plaintext는 fixed 350 bytes, disclosure plaintext는 fixed 392 bytes이며 exact encryption payload 앞에는 20-byte typed envelope header가 붙습니다. Raw ciphertext, cross-kind decode, trailing-byte decode는 invalid입니다. User disclosure와 full disclosure는 output마다 서로 독립적인 non-zero blinding을 사용하며 all-private user disclosure만 zero sentinel을 사용합니다. 이 제약은 low-entropy disclosed value가 실용적인 dictionary oracle이 되는 것을 막습니다.
+
+Session 2의 `BatchJoinSplit16x32`는 full-shape feasibility circuit이지 registered production circuit이 아닙니다. Capacity 16/32, exact active prefix, zero disabled sentinel, 16개 independent depth-32 path, subgroup/key constraint, per-output NoteV1/disclosure 검사, ordered vector commitment를 고정합니다. 아래 12-input 순서를 동결합니다.
+
+1. `MerkleRoot`
+2. `ChainDomainHi`
+3. `ChainDomainLo`
+4. `ExpiresAtUnix`
+5. `InputCount`
+6. `OutputCount`
+7. `NullifierRoot`
+8. `CommitmentRoot`
+9. `UserDisclosureRoot`
+10. `FullDisclosureRoot`
+11. `PayloadDigestHi`
+12. `PayloadDigestLo`
+
+각 vector kind의 fixed-capacity leaf, node, final root는 domain-separated됩니다. Leaf는 `(index, enabled, value)`, node는 `(level, left, right)`, final root는 `(capacity, count, tree_root)`를 bind합니다. 이 공식과 public order는 future consensus 작업을 위해 reserve됩니다. Session 2에는 production batch descriptor/VK/PK, `MsgBatchTransfer`, keeper handler, prover HTTP route, scanner/payroll integration, trusted setup이 추가되지 않습니다.
+
+Future owner-effect encoding도 deferred가 아니라 exact하게 동결되었습니다. Format `1`은 root, ordered nullifier, ordered output effect field 전체, audit ID/epoch/target, expiry에 `u32be` count와 `u32be(length) || bytes` framing을 사용합니다. SHA-256 domain `clairveil.batch-transfer-payload.v1`의 앞/뒤 non-reduced big-endian 128-bit limb가 public input 11–12입니다. `creator`와 `proof`만 제외합니다. Exact byte grammar와 golden은 normative batch contract와 conformance fixture를 따릅니다.
+
+Artifact registry는 role-aware입니다. Validator는 exact consensus identity를 검증하고 필요한 VK만 load하며 prover는 선택한 R1CS/PK pair를 lazy load합니다. Reference prover는 현재 circuit별 in-flight 1개와 queued 4개로 제한하고 positive 8 MiB body limit을 사용합니다. Request cancellation은 이미 실행 중인 in-process gnark solver를 종료하지 못합니다. Hard cancellation과 memory isolation에는 worker-process boundary가 필요합니다. Automatic prover failover는 계속 비활성화됩니다.
