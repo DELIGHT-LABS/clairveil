@@ -14,9 +14,10 @@ import (
 )
 
 type LocalWalletData struct {
-	LastHeight   int64       `json:"last_height"`
-	LastSequence uint64      `json:"last_sequence,omitempty"`
-	Notes        []FoundNote `json:"notes"`
+	LastHeight      int64       `json:"last_height"`
+	LastSequence    uint64      `json:"last_sequence,omitempty"`
+	LastOutputIndex uint32      `json:"last_output_index,omitempty"`
+	Notes           []FoundNote `json:"notes"`
 }
 
 type LoadLocalWalletFileResult struct {

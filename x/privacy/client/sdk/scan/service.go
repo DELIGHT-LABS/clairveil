@@ -24,6 +24,10 @@ type PrivacyScanEventSource interface {
 	ScanPrivacyEvents(ctx context.Context, afterHeight int64, afterSequence uint64, limit int) (*privacytypes.QueryScanEventsResponse, error)
 }
 
+type PrivacyScanV2Source interface {
+	PrivacyScan(ctx context.Context, after *privacytypes.PrivacyScanCursorV1, outputLimit, eventLimit uint32, maxEncodedBytes uint64, eventTypes []string) (*privacytypes.QueryPrivacyScanResponse, error)
+}
+
 type NullifierUsageChecker interface {
 	CheckNullifierUsed(ctx context.Context, nullifierHex string) (bool, error)
 }
@@ -40,12 +44,14 @@ type SyncObserver interface {
 }
 
 type SyncInput struct {
-	UserAddress         string
-	RootSeed            []byte
-	Wallet              *LocalWalletData
-	ForceRescan         bool
-	PageLimit           int
-	SkipViewTagMismatch bool
+	UserAddress                string
+	RootSeed                   []byte
+	Wallet                     *LocalWalletData
+	ForceRescan                bool
+	PageLimit                  int
+	SkipViewTagMismatch        bool
+	PrivacyScanEventLimit      uint32
+	PrivacyScanMaxEncodedBytes uint64
 }
 
 type SyncDiagnostics struct {
@@ -115,6 +121,8 @@ func SyncNotes(
 	viewScalar, _, _ := privacyidentity.DeriveViewKeys(input.RootSeed)
 	scanOptions := processOptions{
 		SkipViewTagMismatch: input.SkipViewTagMismatch && !input.ForceRescan,
+		EventLimit:          input.PrivacyScanEventLimit,
+		MaxEncodedBytes:     input.PrivacyScanMaxEncodedBytes,
 	}
 
 	if normalizedNotes, changed := NormalizeFoundNotes(wallet.Notes); changed {
@@ -133,6 +141,7 @@ func SyncNotes(
 		}
 		wallet.LastHeight = 0
 		wallet.LastSequence = 0
+		wallet.LastOutputIndex = 0
 		wallet.Notes = []FoundNote{}
 		walletChanged = true
 		diagnostics.ForcedRescan = true
@@ -144,6 +153,7 @@ func SyncNotes(
 		scanOptions.SkipViewTagMismatch = false
 		wallet.LastHeight = 0
 		wallet.LastSequence = 0
+		wallet.LastOutputIndex = 0
 		wallet.Notes = []FoundNote{}
 		walletChanged = true
 		diagnostics.RollbackReset = true
@@ -163,8 +173,11 @@ func SyncNotes(
 		walletChanged = walletChanged || changed
 		diagnostics.NewNotesFound += newNotes
 
-		wallet.LastHeight = currentHeight
-		wallet.LastSequence = ^uint64(0)
+		if _, typed := source.(PrivacyScanV2Source); !typed {
+			wallet.LastHeight = currentHeight
+			wallet.LastSequence = ^uint64(0)
+			wallet.LastOutputIndex = ^uint32(0)
+		}
 		walletChanged = true
 	}
 
@@ -200,6 +213,11 @@ func syncNewNotes(
 	pageLimit int,
 	scanOptions processOptions,
 ) (int, bool, error) {
+	if typedSource, ok := source.(PrivacyScanV2Source); ok {
+		// Typed query failures are terminal. Falling back to minimal ABCI events
+		// would silently omit batch ciphertexts.
+		return syncNewNotesFromPrivacyScanV2(ctx, typedSource, observer, rootSeed, spendScalar, viewScalar, wallet, pageLimit, scanOptions)
+	}
 	if scanSource, ok := source.(PrivacyScanEventSource); ok {
 		newNotes, changed, err := syncNewNotesFromScanEvents(ctx, scanSource, observer, rootSeed, spendScalar, viewScalar, wallet, pageLimit, scanOptions)
 		if err == nil {
@@ -211,6 +229,122 @@ func syncNewNotes(
 		return newNotes, changed, err
 	}
 	return syncNewNotesFromTxSearch(ctx, source, observer, rootSeed, spendScalar, viewScalar, wallet, pageLimit, scanOptions)
+}
+
+func syncNewNotesFromPrivacyScanV2(ctx context.Context, source PrivacyScanV2Source, observer SyncObserver, rootSeed []byte, spendScalar, viewScalar *big.Int, wallet *LocalWalletData, pageLimit int, scanOptions processOptions) (int, bool, error) {
+	startCursor := &privacytypes.PrivacyScanCursorV1{Height: wallet.LastHeight, GlobalSequence: wallet.LastSequence, OutputIndex: wallet.LastOutputIndex}
+	cursor := &privacytypes.PrivacyScanCursorV1{Height: startCursor.Height, GlobalSequence: startCursor.GlobalSequence, OutputIndex: startCursor.OutputIndex}
+	seen := make(map[string]struct{}, len(wallet.Notes))
+	selfViewByEvent := make(map[string]bool)
+	newlyFound := make([]FoundNote, 0)
+	for _, note := range wallet.Notes {
+		seen[foundNoteIdentityKey(note)] = struct{}{}
+	}
+	for {
+		response, err := source.PrivacyScan(ctx, cursor, uint32(pageLimit), scanOptions.EventLimit, scanOptions.MaxEncodedBytes, []string{privacytypes.EventTypeDeposit, privacytypes.EventTypeShieldedTransfer, privacytypes.EventTypeBatchTransferV1})
+		if err != nil {
+			return 0, false, fmt.Errorf("failed typed privacy scan (ABCI fallback disabled): %w", err)
+		}
+		if response == nil || response.NextCursor == nil {
+			return 0, false, fmt.Errorf("typed privacy scan response/cursor is unavailable")
+		}
+		if err := validateTypedScanResponseForSync(response, cursor, selfViewByEvent); err != nil {
+			return 0, false, fmt.Errorf("invalid typed privacy scan response: %w", err)
+		}
+		for _, output := range response.Outputs {
+			found, decryptErr := ProcessPrivacyScanOutput(output, rootSeed, spendScalar, viewScalar, scanOptions.SkipViewTagMismatch)
+			if decryptErr != nil {
+				if errors.Is(decryptErr, ErrPrivacyScanOutputNotOwned) {
+					continue
+				}
+				return 0, false, fmt.Errorf("invalid typed privacy scan output: %w", decryptErr)
+			}
+			key := foundNoteIdentityKey(*found)
+			if _, duplicate := seen[key]; duplicate {
+				continue
+			}
+			seen[key] = struct{}{}
+			newlyFound = append(newlyFound, *found)
+		}
+		if compareScanCursor(response.NextCursor, cursor) < 0 || (response.HasMore && compareScanCursor(response.NextCursor, cursor) <= 0) {
+			return 0, false, fmt.Errorf("typed privacy scan cursor did not advance")
+		}
+		cursor = &privacytypes.PrivacyScanCursorV1{Height: response.NextCursor.Height, GlobalSequence: response.NextCursor.GlobalSequence, OutputIndex: response.NextCursor.OutputIndex}
+		if !response.HasMore {
+			break
+		}
+	}
+	wallet.Notes = append(wallet.Notes, newlyFound...)
+	wallet.LastHeight, wallet.LastSequence, wallet.LastOutputIndex = cursor.Height, cursor.GlobalSequence, cursor.OutputIndex
+	if observer != nil {
+		for _, found := range newlyFound {
+			observer.OnNotesFound(found.TxHash, 1)
+		}
+	}
+	changed := len(newlyFound) > 0 || compareScanCursor(cursor, startCursor) != 0
+	return len(newlyFound), changed, nil
+}
+
+func validateTypedScanResponseForSync(response *privacytypes.QueryPrivacyScanResponse, after *privacytypes.PrivacyScanCursorV1, selfViewByEvent map[string]bool) error {
+	if response.ScanSchemaVersion != privacytypes.PrivacyScanSchemaVersionV2 {
+		return fmt.Errorf("unsupported scan schema version %q", response.ScanSchemaVersion)
+	}
+	previous := after
+	for _, output := range response.Outputs {
+		if output == nil {
+			return fmt.Errorf("nil typed output")
+		}
+		cursor := &privacytypes.PrivacyScanCursorV1{Height: output.Height, GlobalSequence: output.GlobalSequence, OutputIndex: output.OutputIndex}
+		if previous != nil && compareScanCursor(cursor, previous) <= 0 {
+			return fmt.Errorf("typed outputs are not strictly ordered")
+		}
+		if previous != nil && previous.Height == cursor.Height && previous.GlobalSequence == cursor.GlobalSequence && cursor.OutputIndex != previous.OutputIndex+1 {
+			return fmt.Errorf("typed output indices are not contiguous")
+		}
+		if previous != nil && (previous.Height != cursor.Height || previous.GlobalSequence != cursor.GlobalSequence) && cursor.OutputIndex != 0 {
+			return fmt.Errorf("typed event output does not start at zero")
+		}
+		event := fmt.Sprintf("%d/%d", output.Height, output.GlobalSequence)
+		selfViewPresent := len(output.SelfViewDisclosurePayload) > 0
+		if expected, exists := selfViewByEvent[event]; exists && expected != selfViewPresent {
+			return fmt.Errorf("batch self-view disclosure is not all-or-none")
+		}
+		selfViewByEvent[event] = selfViewPresent
+		previous = cursor
+	}
+	if len(response.Outputs) > 0 {
+		last := response.Outputs[len(response.Outputs)-1]
+		lastCursor := &privacytypes.PrivacyScanCursorV1{Height: last.Height, GlobalSequence: last.GlobalSequence, OutputIndex: last.OutputIndex}
+		if compareScanCursor(response.NextCursor, lastCursor) != 0 {
+			return fmt.Errorf("typed next cursor does not equal the final output")
+		}
+	}
+	if response.HasMore && compareScanCursor(response.NextCursor, after) <= 0 {
+		return fmt.Errorf("typed has_more response did not advance")
+	}
+	return nil
+}
+
+func compareScanCursor(a, b *privacytypes.PrivacyScanCursorV1) int {
+	if a.Height != b.Height {
+		if a.Height < b.Height {
+			return -1
+		}
+		return 1
+	}
+	if a.GlobalSequence != b.GlobalSequence {
+		if a.GlobalSequence < b.GlobalSequence {
+			return -1
+		}
+		return 1
+	}
+	if a.OutputIndex < b.OutputIndex {
+		return -1
+	}
+	if a.OutputIndex > b.OutputIndex {
+		return 1
+	}
+	return 0
 }
 
 func shouldFallbackFromScanEvents(err error) bool {

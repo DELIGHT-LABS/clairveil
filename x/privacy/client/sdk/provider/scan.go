@@ -39,12 +39,27 @@ type ScanEventsQuerier interface {
 	ScanEvents(ctx context.Context, in *privacytypes.QueryScanEventsRequest, opts ...grpc.CallOption) (*privacytypes.QueryScanEventsResponse, error)
 }
 
+type PrivacyScanQuerier interface {
+	PrivacyScan(ctx context.Context, in *privacytypes.QueryPrivacyScanRequest, opts ...grpc.CallOption) (*privacytypes.QueryPrivacyScanResponse, error)
+}
+
+type CommitmentPathsAtRootQuerier interface {
+	CommitmentPathsAtRoot(ctx context.Context, in *privacytypes.QueryCommitmentPathsAtRootRequest, opts ...grpc.CallOption) (*privacytypes.QueryCommitmentPathsAtRootResponse, error)
+}
+
+type AssetByIDQuerier interface {
+	AssetByID(ctx context.Context, in *privacytypes.QueryAssetByIDRequest, opts ...grpc.CallOption) (*privacytypes.QueryAssetByIDResponse, error)
+}
+
 type ScanQueryProvider struct {
 	RPCClient             ScanRPCClient
 	NullifierQuerier      NullifierQuerier
 	BatchNullifierQuerier BatchNullifierQuerier
 	PrivacyEventsQuerier  PrivacyEventsQuerier
 	ScanEventsQuerier     ScanEventsQuerier
+	PrivacyScanQuerier    PrivacyScanQuerier
+	PathsAtRootQuerier    CommitmentPathsAtRootQuerier
+	AssetByIDQuerier      AssetByIDQuerier
 }
 
 func NewScanQueryProvider(rpcClient ScanRPCClient, queryClient privacytypes.QueryClient) ScanQueryProvider {
@@ -54,6 +69,9 @@ func NewScanQueryProvider(rpcClient ScanRPCClient, queryClient privacytypes.Quer
 		BatchNullifierQuerier: queryClient,
 		PrivacyEventsQuerier:  queryClient,
 		ScanEventsQuerier:     queryClient,
+		PrivacyScanQuerier:    queryClient,
+		PathsAtRootQuerier:    queryClient,
+		AssetByIDQuerier:      queryClient,
 	}
 }
 

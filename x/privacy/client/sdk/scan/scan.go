@@ -14,16 +14,24 @@ import (
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
+var ErrPrivacyScanOutputNotOwned = errors.New("privacy scan output is not decryptable by this wallet")
+
 type FoundNote struct {
-	Note      privacytypes.Note `json:"note"`
-	Nullifier string            `json:"nullifier"`
-	IsSpent   bool              `json:"-"`
-	TxHash    string            `json:"tx_hash"`
-	Height    int64             `json:"height"`
+	Note           privacytypes.Note `json:"note"`
+	Nullifier      string            `json:"nullifier"`
+	IsSpent        bool              `json:"-"`
+	TxHash         string            `json:"tx_hash"`
+	Height         int64             `json:"height"`
+	GlobalSequence uint64            `json:"global_sequence,omitempty"`
+	OutputIndex    uint32            `json:"output_index,omitempty"`
+	Commitment     string            `json:"commitment,omitempty"`
+	AssetDenom     string            `json:"asset_denom,omitempty"`
 }
 
 type processOptions struct {
 	SkipViewTagMismatch bool
+	EventLimit          uint32
+	MaxEncodedBytes     uint64
 }
 
 func ProcessTx(txRes *cmttypes.ResultTx, rootSeed []byte, spendScalar *big.Int, viewScalar *big.Int) []FoundNote {
@@ -200,7 +208,7 @@ func processScanEventWithOptions(event *privacytypes.QueryScanEvent, rootSeed []
 func decryptTransferOutput(cipherBytes []byte, viewScalar *big.Int, spendScalar *big.Int, commitmentHex string, outputIndex uint32, viewTagHex string, skipViewTagMismatch bool) ([]byte, error) {
 	rawCipherText, err := privacytypes.UnwrapEncryptedEnvelopeV1(cipherBytes, privacytypes.EnvelopeTransferNoteV1)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid transfer note envelope: %w", err)
 	}
 	if viewScalar != nil {
 		if commitmentBytes, viewTagBytes, ok := decodeViewTagInputs(commitmentHex, viewTagHex); ok {
@@ -209,7 +217,7 @@ func decryptTransferOutput(cipherBytes []byte, viewScalar *big.Int, spendScalar 
 				return noteBytes, nil
 			}
 			if errors.Is(err, privacycrypto.ErrViewTagMismatch) && skipViewTagMismatch {
-				return nil, err
+				return nil, fmt.Errorf("%w: %v", ErrPrivacyScanOutputNotOwned, err)
 			}
 		}
 
@@ -219,10 +227,14 @@ func decryptTransferOutput(cipherBytes []byte, viewScalar *big.Int, spendScalar 
 		}
 	}
 	if spendScalar != nil && (viewScalar == nil || spendScalar.Cmp(viewScalar) != 0) {
-		return privacycrypto.AsymDecrypt(rawCipherText, spendScalar)
+		noteBytes, err := privacycrypto.AsymDecrypt(rawCipherText, spendScalar)
+		if err == nil {
+			return noteBytes, nil
+		}
+		return nil, fmt.Errorf("%w: %v", ErrPrivacyScanOutputNotOwned, err)
 	}
 
-	return nil, errors.New("transfer output decryption failed")
+	return nil, ErrPrivacyScanOutputNotOwned
 }
 
 func decodeViewTagInputs(commitmentHex string, viewTagHex string) ([]byte, []byte, bool) {
@@ -273,6 +285,54 @@ func BuildFoundNoteFromScanEvent(note *privacytypes.Note, event *privacytypes.Qu
 		return buildFoundNote(note, "", 0)
 	}
 	return buildFoundNote(note, event.TxHashHex, event.Height)
+}
+
+// ProcessPrivacyScanOutput decrypts one ciphertext-bearing V2 record. A view
+// tag mismatch is ignored by default; tag-only skipping is an explicit opt-in.
+func ProcessPrivacyScanOutput(output *privacytypes.PrivacyScanOutputV2, rootSeed []byte, spendScalar, viewScalar *big.Int, tagOnlyFastMode bool) (*FoundNote, error) {
+	if output == nil {
+		return nil, fmt.Errorf("privacy scan output is required")
+	}
+	if err := privacyfield.ValidateCanonicalBytes32(output.Commitment); err != nil || new(big.Int).SetBytes(output.Commitment).Sign() == 0 {
+		return nil, fmt.Errorf("privacy scan commitment is not an active canonical field")
+	}
+	var noteBytes []byte
+	var err error
+	switch output.EventType {
+	case privacytypes.EventTypeDeposit:
+		var raw []byte
+		raw, err = privacytypes.UnwrapEncryptedEnvelopeV1(output.EncryptedNote, privacytypes.EnvelopeDepositNoteV1)
+		if err != nil {
+			return nil, fmt.Errorf("invalid deposit note envelope: %w", err)
+		}
+		noteBytes, err = privacycrypto.Decrypt(raw, rootSeed)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrPrivacyScanOutputNotOwned, err)
+		}
+	case privacytypes.EventTypeShieldedTransfer, privacytypes.EventTypeBatchTransferV1:
+		if len(output.ViewTag) != privacytypes.ViewTagLength {
+			return nil, fmt.Errorf("privacy scan view tag has invalid framing")
+		}
+		noteBytes, err = decryptTransferOutput(output.Ciphertext, viewScalar, spendScalar, hex.EncodeToString(output.Commitment), output.OutputIndex, hex.EncodeToString(output.ViewTag), tagOnlyFastMode)
+	default:
+		return nil, fmt.Errorf("unsupported privacy scan output event type %q", output.EventType)
+	}
+	if err != nil {
+		return nil, err
+	}
+	note, err := ParseNoteBytes(noteBytes)
+	if err != nil {
+		return nil, err
+	}
+	commitmentHex := hex.EncodeToString(output.Commitment)
+	if !noteCommitmentMatches(note, commitmentHex) {
+		return nil, fmt.Errorf("NoteV1 commitment mismatch")
+	}
+	found := buildFoundNote(note, hex.EncodeToString(output.TxHash), output.Height)
+	found.GlobalSequence = output.GlobalSequence
+	found.OutputIndex = output.OutputIndex
+	found.Commitment = commitmentHex
+	return &found, nil
 }
 
 func buildFoundNote(note *privacytypes.Note, txHash string, height int64) FoundNote {
