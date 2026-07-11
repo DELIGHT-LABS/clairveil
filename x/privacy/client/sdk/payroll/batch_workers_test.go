@@ -90,6 +90,30 @@ func TestIdempotentBatchBroadcastRechecksNullifiersImmediatelyBeforeSend(t *test
 	require.Empty(t, stored.Operation.LeaseToken)
 }
 
+func TestIdempotentBatchBroadcastRejectsProofDifferentFromDurableArtifact(t *testing.T) {
+	payload := batchReconcileTestPayload(t)
+	store, graph := testProofReadyBatchStore(t, payload)
+	differentProof := testPreparedBatchProof(payload)
+	differentProof.Proof[0] = 1
+	builder := &testSignedBatchBuilder{bytes: []byte("must-not-be-signed")}
+	sender := &testSignedBatchSender{}
+	worker := IdempotentBatchBroadcastWorker{
+		Store: store, Builder: builder, Sender: sender,
+		Reconciler: &testBatchBroadcastChain{statuses: unspentBatchStatuses(payload)}, Cipher: testPayrollCipher{},
+		LeaseOwner: "broadcast-worker", LeaseTTL: time.Minute,
+	}
+	creator := sdk.AccAddress(bytes.Repeat([]byte{8}, 20)).String()
+
+	_, err := worker.Submit(context.Background(), graph.Operation.OperationID, payload, differentProof, creator, BatchBroadcastOptions{})
+	require.ErrorContains(t, err, "does not match the durable proof artifact")
+	require.Zero(t, builder.calls)
+	require.Zero(t, sender.calls)
+	stored, err := store.GetBatchOperation(context.Background(), graph.Operation.OperationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusProofReady, stored.Operation.Status)
+	require.Empty(t, stored.Operation.LeaseToken)
+}
+
 func TestIdempotentBatchBroadcastNeverResignsSubmittedOperation(t *testing.T) {
 	payload := batchReconcileTestPayload(t)
 	store, graph := testProofReadyBatchStore(t, payload)
@@ -122,6 +146,46 @@ func TestIdempotentBatchBroadcastReturnsFoundChainFailure(t *testing.T) {
 	outcome, err := worker.Submit(context.Background(), graph.Operation.OperationID, payload, testPreparedBatchProof(payload), creator, BatchBroadcastOptions{})
 	require.ErrorContains(t, err, "failed on chain")
 	require.True(t, outcome.ReconciledExistingTx)
+	require.Equal(t, 1, sender.calls)
+}
+
+func TestIdempotentBatchBroadcastHeartbeatsLeaseUntilUninterruptibleSendReturns(t *testing.T) {
+	payload := batchReconcileTestPayload(t)
+	store, graph := testProofReadyBatchStore(t, payload)
+	creator := sdk.AccAddress(bytes.Repeat([]byte{5}, 20)).String()
+	sender := &blockingSignedBatchSender{started: make(chan struct{}), release: make(chan struct{})}
+	worker := IdempotentBatchBroadcastWorker{
+		Store: store, Builder: &testSignedBatchBuilder{bytes: []byte("slow-signed-batch")}, Sender: sender,
+		Reconciler: &testBatchBroadcastChain{statuses: unspentBatchStatuses(payload)}, Cipher: testPayrollCipher{},
+		LeaseOwner: "slow-broadcast-worker", LeaseTTL: 90 * time.Millisecond,
+	}
+	callerCtx, cancel := context.WithCancel(context.Background())
+	resultCh := make(chan error, 1)
+	go func() {
+		_, submitErr := worker.Submit(callerCtx, graph.Operation.OperationID, payload, testPreparedBatchProof(payload), creator, BatchBroadcastOptions{})
+		resultCh <- submitErr
+	}()
+	select {
+	case <-sender.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("broadcast did not start")
+	}
+	// The sender deliberately ignores cancellation, matching an HSM/RPC call
+	// that cannot be interrupted once it starts.
+	cancel()
+	time.Sleep(180 * time.Millisecond)
+	leased, err := store.GetBatchOperation(context.Background(), graph.Operation.OperationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusProofReady, leased.Operation.Status)
+	require.True(t, leased.Operation.LeaseUntil.After(time.Now()), "heartbeat must keep the broadcast lease alive")
+	_, err = store.AcquireBatchOperationLease(context.Background(), graph.Operation.OperationID, "competitor", "competitor-token", time.Now().Add(time.Minute), time.Now())
+	require.ErrorIs(t, err, privacyreservation.ErrLeaseUnavailable)
+	close(sender.release)
+	require.NoError(t, <-resultCh)
+	finished, err := store.GetBatchOperation(context.Background(), graph.Operation.OperationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusSubmitted, finished.Operation.Status)
+	require.Empty(t, finished.Operation.LeaseToken)
 	require.Equal(t, 1, sender.calls)
 }
 
@@ -162,6 +226,32 @@ func TestBatchProofWorkerKeepsSharedLeaseUntilUninterruptibleProveReturns(t *tes
 	require.Equal(t, privacyreservation.OperationStatusProofReady, finished.Operation.Status)
 	require.NotEmpty(t, finished.Operation.ProofCiphertext)
 	require.Empty(t, finished.Operation.LeaseToken)
+}
+
+func TestBatchProofWorkerReleasesLeaseWhenProvingClaimFails(t *testing.T) {
+	payload := batchReconcileTestPayload(t)
+	now := time.Now().UTC()
+	store := privacyreservation.NewMemoryStore()
+	reservations, graph := batchReconcileTestGraph(payload, now)
+	_, err := store.CreateBatchOperation(context.Background(), reservations, graph)
+	require.NoError(t, err)
+	claimErr := errors.New("durable proving claim failed")
+	failingStore := &failingBatchProvingClaimStore{BatchOperationStore: store, err: claimErr}
+	worker := BatchProofWorker{
+		Store: failingStore, Prover: &blockingBatchPayrollProver{}, Sealer: testPayrollCipher{},
+		LeaseOwner: "proof-worker", LeaseTTL: time.Minute,
+	}
+
+	_, err = worker.Process(context.Background(), graph.Operation.OperationID, payload)
+	require.ErrorIs(t, err, claimErr)
+	stored, err := store.GetBatchOperation(context.Background(), graph.Operation.OperationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusPlanned, stored.Operation.Status)
+	require.Empty(t, stored.Operation.LeaseToken)
+	takeover, err := store.AcquireBatchOperationLease(context.Background(), graph.Operation.OperationID, "retry-worker", "retry-token", now.Add(2*time.Minute), now.Add(time.Second))
+	require.NoError(t, err, "claim failure must not block an immediate retry")
+	_, err = store.ReleaseBatchOperationLease(context.Background(), graph.Operation.OperationID, takeover.LeaseToken, now.Add(time.Second))
+	require.NoError(t, err)
 }
 
 func TestBatchProofWorkerRecoversExpiredProvingLeaseAfterDurableRestart(t *testing.T) {
@@ -221,6 +311,10 @@ func TestBuildBatchOperationGraphBindsRecipientAndDisclosurePlan(t *testing.T) {
 	require.Len(t, reservations, 1)
 	require.Len(t, graph.Items, len(items))
 	require.Equal(t, payload.Outputs[0].PrivacyPolicy, graph.Evidence[0].UserPrivacyPolicy)
+	_, _, err = buildBatchOperationGraph(context.Background(), plan, payload, testPayrollCipher{}, time.Time{}, func() time.Time {
+		return time.Unix(payload.ExpiresAtUnix+1, 0)
+	})
+	require.ErrorContains(t, err, "expired")
 	plan.InputNotes[0].NullifierLookupKey = strings.Repeat("00", 32)
 	_, _, err = BuildBatchOperationGraph(context.Background(), plan, payload, testPayrollCipher{}, now)
 	require.ErrorContains(t, err, "nullifier does not match")
@@ -253,7 +347,8 @@ func testProofReadyBatchStore(t *testing.T, payload *privacybatchtransfer.Prepar
 	require.NoError(t, err)
 	_, err = store.CompareAndSetBatchOperationStatus(context.Background(), graph.Operation.OperationID, lease.LeaseToken, privacyreservation.OperationStatusPlanned, privacyreservation.OperationStatusProving, now)
 	require.NoError(t, err)
-	_, err = store.SaveBatchProofArtifacts(context.Background(), graph.Operation.OperationID, lease.LeaseToken, privacyreservation.BatchProofArtifactUpdate{ProofCiphertext: []byte("sealed-proof"), ProofHash: "proof-hash"}, now)
+	proofDigest := sha256.Sum256(testPreparedBatchProof(payload).Proof)
+	_, err = store.SaveBatchProofArtifacts(context.Background(), graph.Operation.OperationID, lease.LeaseToken, privacyreservation.BatchProofArtifactUpdate{ProofCiphertext: []byte("sealed-proof"), ProofHash: hex.EncodeToString(proofDigest[:])}, now)
 	require.NoError(t, err)
 	return store, graph
 }
@@ -293,6 +388,21 @@ type testSignedBatchSender struct {
 	errors []error
 	calls  int
 	sent   [][]byte
+}
+
+type blockingSignedBatchSender struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+	calls   int
+}
+
+func (s *blockingSignedBatchSender) BroadcastSignedBatchTx(_ context.Context, signed []byte) (*BatchBroadcastReceipt, error) {
+	s.once.Do(func() { close(s.started) })
+	<-s.release
+	s.calls++
+	digest := sha256.Sum256(signed)
+	return &BatchBroadcastReceipt{TxHash: hex.EncodeToString(digest[:])}, nil
 }
 
 func (s *testSignedBatchSender) BroadcastSignedBatchTx(_ context.Context, signed []byte) (*BatchBroadcastReceipt, error) {
@@ -351,6 +461,15 @@ type blockingBatchPayrollProver struct {
 	release chan struct{}
 	proof   *privacybatchtransfer.PreparedBatchTransferProof
 	once    sync.Once
+}
+
+type failingBatchProvingClaimStore struct {
+	privacyreservation.BatchOperationStore
+	err error
+}
+
+func (s *failingBatchProvingClaimStore) CompareAndSetBatchOperationStatus(context.Context, string, string, privacyreservation.OperationStatus, privacyreservation.OperationStatus, time.Time) (*privacyreservation.BatchOperation, error) {
+	return nil, s.err
 }
 
 func shieldedAddressForBatchNote(t *testing.T, note privacytypes.Note) string {

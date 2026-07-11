@@ -428,10 +428,21 @@ func (s *DurableFileStore) persistLockedWithFileLock(ctx context.Context) error 
 		_ = tmp.Close()
 		return err
 	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpPath, s.path)
+	if err := os.Rename(tmpPath, s.path); err != nil {
+		return err
+	}
+	directory, err := os.Open(filepath.Dir(s.path))
+	if err != nil {
+		return err
+	}
+	return errors.Join(directory.Sync(), directory.Close())
 }
 
 func (s *DurableFileStore) persistMutationLocked(ctx context.Context, before DurableFileStoreSnapshot) error {

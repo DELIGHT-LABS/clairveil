@@ -108,6 +108,73 @@ func TestBatchReconcileDurableRestartRetryTxHashFirstAndItemEvidenceSeparate(t *
 	require.Contains(t, repeated.Graph.Items[1].ManualReviewReason, "missing")
 }
 
+func TestBatchReconcileFindsSucceededHistoricalTxAfterResignStaging(t *testing.T) {
+	ctx := context.Background()
+	payload := batchReconcileTestPayload(t)
+	now := time.Date(2026, 7, 11, 3, 0, 0, 0, time.UTC)
+	store := privacyreservation.NewMemoryStore()
+	reservations, graph := batchReconcileTestGraph(payload, now)
+	_, err := store.CreateBatchOperation(ctx, reservations, graph)
+	require.NoError(t, err)
+
+	lease, err := store.AcquireBatchOperationLease(ctx, graph.Operation.OperationID, "proof-worker", "proof-lease", now.Add(time.Minute), now)
+	require.NoError(t, err)
+	_, err = store.CompareAndSetBatchOperationStatus(ctx, graph.Operation.OperationID, lease.LeaseToken, privacyreservation.OperationStatusPlanned, privacyreservation.OperationStatusProving, now)
+	require.NoError(t, err)
+	_, err = store.SaveBatchProofArtifacts(ctx, graph.Operation.OperationID, lease.LeaseToken, privacyreservation.BatchProofArtifactUpdate{
+		ProofCiphertext: []byte("sealed-proof"), ProofHash: "proof-hash",
+	}, now)
+	require.NoError(t, err)
+
+	lease, err = store.AcquireBatchOperationLease(ctx, graph.Operation.OperationID, "broadcast-worker", "broadcast-a", now.Add(time.Minute), now)
+	require.NoError(t, err)
+	_, err = store.SaveBatchSignedTx(ctx, graph.Operation.OperationID, lease.LeaseToken, privacyreservation.BatchSignedTxUpdate{
+		SignedTxBytesCiphertext: []byte("sealed-signed-a"), TxBytesHash: "bytes-a", SignDocHash: "sign-a", TxHash: "aaaa", AccountSequence: 10,
+	}, now)
+	require.NoError(t, err)
+	_, err = store.RecordBatchBroadcast(ctx, graph.Operation.OperationID, lease.LeaseToken, privacyreservation.BatchBroadcastUpdate{
+		TxBytesHash: "bytes-a", SignDocHash: "sign-a", TxHash: "aaaa", AccountSequence: 10,
+		LastBroadcastError: "rpc response lost", Unknown: true,
+	}, now)
+	require.NoError(t, err)
+
+	// Explicitly stage a new-sequence transaction B after A was absent. If A
+	// lands in the gap before B's final nullifier check, reconciliation must
+	// still attribute A rather than losing it behind the current B hash.
+	lease, err = store.AcquireBatchOperationLease(ctx, graph.Operation.OperationID, "broadcast-worker", "broadcast-b", now.Add(2*time.Minute), now.Add(time.Second))
+	require.NoError(t, err)
+	_, err = store.SaveBatchSignedTx(ctx, graph.Operation.OperationID, lease.LeaseToken, privacyreservation.BatchSignedTxUpdate{
+		SignedTxBytesCiphertext: []byte("sealed-signed-b"), TxBytesHash: "bytes-b", SignDocHash: "sign-b", TxHash: "bbbb", AccountSequence: 11,
+	}, now.Add(time.Second))
+	require.NoError(t, err)
+
+	nullifier := hex.EncodeToString(payload.Inputs[0].Nullifier)
+	chain := &orderedBatchReconcileChain{
+		lookups: map[string]*BatchTxLookupResult{
+			"bbbb": {Found: false, TxHash: "bbbb"},
+			"aaaa": {Found: true, Succeeded: true, TxHash: "0xAAAA", Height: 23},
+		},
+		nullifiers: map[string]bool{nullifier: true},
+	}
+	observed := make([]privacyreservation.ObservedOutputEvidence, len(graph.Evidence))
+	for i, expected := range graph.Evidence {
+		observed[i] = batchMatchingObservedOutput(expected)
+	}
+	result, err := (BatchReconcileWorker{Store: store, Reconciler: chain, Now: func() time.Time { return now.Add(2 * time.Second) }}).Reconcile(
+		ctx,
+		BatchReconcileRequest{OperationID: graph.Operation.OperationID, Payload: payload, ObservedOutputs: observed},
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{"lookup:bbbb", "lookup:aaaa", "nullifiers"}, chain.calls)
+	require.Equal(t, privacyreservation.OperationStatusSucceeded, result.Graph.Operation.Status)
+	require.Equal(t, "0xAAAA", result.Graph.Operation.TxHash)
+	require.Equal(t, "bytes-a", result.Graph.Operation.TxBytesHash)
+	require.Equal(t, "sign-a", result.Graph.Operation.SignDocHash)
+	require.Equal(t, uint64(10), result.Graph.Operation.AccountSequence)
+	require.Equal(t, []byte("sealed-signed-a"), result.Graph.Operation.SignedTxBytesCiphertext)
+	require.Len(t, result.Graph.Operation.BroadcastHistory, 1)
+}
+
 func TestBatchReconcileLeavesUnknownUnspentOperationPending(t *testing.T) {
 	payload := batchReconcileTestPayload(t)
 	_, graph := batchReconcileTestGraph(payload, time.Now().UTC())
@@ -120,6 +187,46 @@ func TestBatchReconcileLeavesUnknownUnspentOperationPending(t *testing.T) {
 	require.True(t, result.PendingChainEvidence)
 	require.False(t, store.reconciled)
 	require.Equal(t, []string{"lookup:ccdd", "nullifiers"}, chain.calls)
+}
+
+func TestBatchReconcilePersistsReviewWhenTerminalChainEvidenceDisappears(t *testing.T) {
+	payload := batchReconcileTestPayload(t)
+	now := time.Now().UTC()
+	reservations, graph := batchReconcileTestGraph(payload, now)
+	store := privacyreservation.NewMemoryStore()
+	_, err := store.CreateBatchOperation(context.Background(), reservations, graph)
+	require.NoError(t, err)
+	observed := make([]privacyreservation.ObservedOutputEvidence, len(graph.Evidence))
+	for i, expected := range graph.Evidence {
+		observed[i] = batchMatchingObservedOutput(expected)
+	}
+	terminal, err := store.ReconcileBatchOperation(context.Background(), graph.Operation.OperationID, privacyreservation.BatchReconcileUpdate{
+		TxHash: "ccdd", TxSucceeded: true,
+		SpentReservationIDs: []string{reservations[0].ReservationID}, ObservedOutputs: observed,
+	}, now)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusSucceeded, terminal.Operation.Status)
+
+	nullifier := hex.EncodeToString(payload.Inputs[0].Nullifier)
+	chain := &orderedBatchReconcileChain{
+		lookup: &BatchTxLookupResult{Found: false, TxHash: "ccdd"},
+		nullifiers: map[string]bool{
+			nullifier: false,
+		},
+	}
+	result, err := (BatchReconcileWorker{Store: store, Reconciler: chain, Now: func() time.Time { return now.Add(time.Second) }}).Reconcile(
+		context.Background(), BatchReconcileRequest{OperationID: graph.Operation.OperationID, Payload: payload},
+	)
+	require.NoError(t, err)
+	require.True(t, result.PendingChainEvidence)
+	require.Equal(t, privacyreservation.OperationStatusManualReview, result.Graph.Operation.Status)
+	require.Contains(t, result.Graph.Operation.LastBroadcastError, "no current transaction or spent-nullifier evidence")
+	for _, item := range result.Graph.Items {
+		require.Equal(t, privacyreservation.BatchItemEvidenceManualReview, item.EvidenceStatus)
+	}
+	input, err := store.GetReservation(context.Background(), reservations[0].ReservationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.StatusConfirmedSpent, input.Status)
 }
 
 func TestBatchOperationReportClassifiesDisclosureAndStateCosts(t *testing.T) {
@@ -158,12 +265,21 @@ func TestBatchOperationReportClassifiesDisclosureAndStateCosts(t *testing.T) {
 
 type orderedBatchReconcileChain struct {
 	lookup     *BatchTxLookupResult
+	lookups    map[string]*BatchTxLookupResult
 	nullifiers map[string]bool
 	calls      []string
 }
 
 func (c *orderedBatchReconcileChain) LookupBatchTx(_ context.Context, txHash string) (*BatchTxLookupResult, error) {
 	c.calls = append(c.calls, "lookup:"+txHash)
+	if c.lookups != nil {
+		lookup := c.lookups[normalizeBatchEvidenceHex(txHash)]
+		if lookup == nil {
+			return &BatchTxLookupResult{Found: false, TxHash: txHash}, nil
+		}
+		copy := *lookup
+		return &copy, nil
+	}
 	return c.lookup, nil
 }
 

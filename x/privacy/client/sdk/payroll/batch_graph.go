@@ -32,8 +32,15 @@ type PayrollBatchArtifactProtector interface {
 // The caller persists the returned graph and all input reservations in one
 // BatchOperationStore transaction.
 func BuildBatchOperationGraph(ctx context.Context, plan BatchPayrollOperationPlan, payload *privacybatchtransfer.PreparedBatchTransferPayload, protector PayrollBatchArtifactProtector, now time.Time) ([]privacyreservation.NoteReservation, privacyreservation.BatchOperationGraph, error) {
+	return buildBatchOperationGraph(ctx, plan, payload, protector, now, time.Now)
+}
+
+func buildBatchOperationGraph(ctx context.Context, plan BatchPayrollOperationPlan, payload *privacybatchtransfer.PreparedBatchTransferPayload, protector PayrollBatchArtifactProtector, now time.Time, currentTime func() time.Time) ([]privacyreservation.NoteReservation, privacyreservation.BatchOperationGraph, error) {
 	if payload == nil || protector == nil {
 		return nil, privacyreservation.BatchOperationGraph{}, fmt.Errorf("prepared batch payload and payroll evidence sealer are required")
+	}
+	if now.IsZero() {
+		now = currentTime().UTC()
 	}
 	if err := privacybatchtransfer.ValidatePreparedBatchTransferPayloadMetadataAt(payload, now); err != nil {
 		return nil, privacyreservation.BatchOperationGraph{}, err
@@ -51,10 +58,6 @@ func BuildBatchOperationGraph(ctx context.Context, plan BatchPayrollOperationPla
 	if err := validateBatchPayrollPlanBinding(plan, payload); err != nil {
 		return nil, privacyreservation.BatchOperationGraph{}, err
 	}
-	if now.IsZero() {
-		now = time.Now().UTC()
-	}
-
 	assetIDHex := hex.EncodeToString(payload.AssetID.FillBytes(make([]byte, 32)))
 	preparedPayloadBytes, err := json.Marshal(payload)
 	if err != nil {

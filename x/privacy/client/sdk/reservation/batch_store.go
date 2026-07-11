@@ -14,6 +14,9 @@ type BatchOperationStore interface {
 	AcquireBatchOperationLease(ctx context.Context, operationID, owner, token string, leaseUntil, now time.Time) (*BatchOperation, error)
 	HeartbeatBatchOperationLease(ctx context.Context, operationID, token string, leaseUntil, now time.Time) (*BatchOperation, error)
 	ReleaseBatchOperationLease(ctx context.Context, operationID, token string, now time.Time) (*BatchOperation, error)
+	// CompareAndSetBatchOperationStatus only claims or rolls back the proving
+	// state. Proof, broadcast, and reconcile transitions use their dedicated
+	// atomic methods so operation and input-reservation relations stay aligned.
 	CompareAndSetBatchOperationStatus(ctx context.Context, operationID, leaseToken string, from, to OperationStatus, now time.Time) (*BatchOperation, error)
 	SaveBatchProofArtifacts(ctx context.Context, operationID, leaseToken string, update BatchProofArtifactUpdate, now time.Time) (*BatchOperation, error)
 	SaveBatchSignedTx(ctx context.Context, operationID, leaseToken string, update BatchSignedTxUpdate, now time.Time) (*BatchOperation, error)

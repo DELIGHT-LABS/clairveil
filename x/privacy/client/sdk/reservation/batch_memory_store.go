@@ -14,6 +14,8 @@ import (
 
 var _ BatchOperationStore = (*MemoryStore)(nil)
 
+const batchTerminalReconcileConflictReason = "terminal batch reconciliation contradicts the prior terminal outcome"
+
 func (s *MemoryStore) CreateBatchOperation(_ context.Context, reservations []NoteReservation, graph BatchOperationGraph) (*BatchOperationGraph, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -208,16 +210,39 @@ func (s *MemoryStore) HeartbeatBatchOperationLease(_ context.Context, operationI
 	if !leaseUntil.After(now) {
 		return nil, ErrLeaseUnavailable
 	}
-	op.LeaseUntil = leaseUntil
-	op.LastHeartbeatAt = now
-	op.UpdatedAt = now
-	s.batchOperations[operationID] = cloneBatchOperation(op)
+	inputReservations := make([]NoteReservation, 0, len(s.batchInputs[operationID]))
+	latestHeartbeatAt := op.LastHeartbeatAt
+	effectiveLeaseUntil := op.LeaseUntil
 	for _, input := range s.batchInputs[operationID] {
 		reservation := s.reservations[input.ReservationID]
 		if err := requireLeaseToken(reservation, token, now); err != nil {
 			return nil, err
 		}
-		reservation.LeaseUntil = leaseUntil
+		if reservation.LastHeartbeatAt.After(latestHeartbeatAt) {
+			latestHeartbeatAt = reservation.LastHeartbeatAt
+		}
+		if reservation.LeaseUntil.After(effectiveLeaseUntil) {
+			effectiveLeaseUntil = reservation.LeaseUntil
+		}
+		inputReservations = append(inputReservations, reservation)
+	}
+	if now.Before(latestHeartbeatAt) {
+		// A heartbeat can commit after a newer explicit pre/post-submit beat
+		// when a transaction-backed store was delayed on its lock. Treat that
+		// older observation as a successful no-op so lease time never moves
+		// backwards.
+		cloned := cloneBatchOperation(op)
+		return &cloned, nil
+	}
+	if leaseUntil.After(effectiveLeaseUntil) {
+		effectiveLeaseUntil = leaseUntil
+	}
+	op.LeaseUntil = effectiveLeaseUntil
+	op.LastHeartbeatAt = now
+	op.UpdatedAt = now
+	s.batchOperations[operationID] = cloneBatchOperation(op)
+	for _, reservation := range inputReservations {
+		reservation.LeaseUntil = effectiveLeaseUntil
 		reservation.LastHeartbeatAt = now
 		reservation.UpdatedAt = now
 		s.storeReservationLocked(reservation)
@@ -254,7 +279,7 @@ func (s *MemoryStore) CompareAndSetBatchOperationStatus(_ context.Context, opera
 	if to == OperationStatusProofReady || to == OperationStatusSubmitted || to == OperationStatusUnknown {
 		return nil, fmt.Errorf("%w: use the durable proof/broadcast transition", ErrInvalidTransition)
 	}
-	if !canTransitionBatchOperation(from, to) {
+	if !canCompareAndSetBatchOperation(from, to) {
 		return nil, ErrInvalidTransition
 	}
 	if err := s.transitionBatchInputReservationsLocked(operationID, from, to, leaseToken, now); err != nil {
@@ -432,8 +457,21 @@ func (s *MemoryStore) ReconcileBatchOperation(_ context.Context, operationID str
 	if !ok {
 		return nil, ErrOperationNotFound
 	}
+	var historicalAttempt *BatchBroadcastAttempt
 	if op.TxHash != "" && update.TxHash != "" && !equalNormalized(op.TxHash, update.TxHash) {
-		return nil, fmt.Errorf("%w: reconcile tx hash does not match stored broadcast", ErrInvalidReservation)
+		for i := range op.BroadcastHistory {
+			if equalNormalized(op.BroadcastHistory[i].TxHash, update.TxHash) {
+				attempt := op.BroadcastHistory[i]
+				historicalAttempt = &attempt
+				break
+			}
+		}
+		if historicalAttempt == nil {
+			return nil, fmt.Errorf("%w: reconcile tx hash does not match a stored broadcast candidate", ErrInvalidReservation)
+		}
+		if len(historicalAttempt.SignedTxBytesCiphertext) == 0 || strings.TrimSpace(historicalAttempt.TxBytesHash) == "" {
+			return nil, fmt.Errorf("%w: historical broadcast candidate is missing its signed transaction artifact", ErrInvalidReservation)
+		}
 	}
 	if update.TxSucceeded && update.TxFailed {
 		return nil, fmt.Errorf("%w: tx cannot be both succeeded and failed", ErrInvalidReservation)
@@ -467,14 +505,31 @@ func (s *MemoryStore) ReconcileBatchOperation(_ context.Context, operationID str
 	}
 
 	allInputsSpent := len(spentIDs) == len(inputs)
+	targetStatus := OperationStatusManualReview
+	switch {
+	case update.TxSucceeded && allInputsSpent:
+		targetStatus = OperationStatusSucceeded
+	case update.TxFailed && len(spentIDs) == 0:
+		targetStatus = OperationStatusFailed
+	}
+	terminalConflict := IsTerminalOperationStatus(op.Status) && targetStatus != op.Status
+	if terminalConflict {
+		if op.Status == OperationStatusConflictSpent || (op.Status == OperationStatusFailed && len(spentIDs) > 0) {
+			targetStatus = OperationStatusConflictSpent
+		} else {
+			targetStatus = OperationStatusManualReview
+		}
+	}
 	for _, input := range inputs {
 		reservation := s.reservations[input.ReservationID]
 		if _, spent := spentIDs[input.ReservationID]; spent {
+			// A confirmed nullifier spend is monotonic even when it contradicts a
+			// prior terminal transaction outcome.
 			reservation.Status = StatusConfirmedSpent
 			clearLeaseForStatusTransition(&reservation, StatusConfirmedSpent)
 			reservation.UpdatedAt = now
 			s.storeReservationLocked(reservation)
-		} else if update.TxFailed && IsActiveReservationStatus(reservation.Status) {
+		} else if !terminalConflict && update.TxFailed && IsActiveReservationStatus(reservation.Status) {
 			reservation.Status = StatusReplanRequired
 			clearLeaseForStatusTransition(&reservation, StatusReplanRequired)
 			reservation.UpdatedAt = now
@@ -490,6 +545,12 @@ func (s *MemoryStore) ReconcileBatchOperation(_ context.Context, operationID str
 	items := cloneBatchItems(s.batchItems[operationID])
 	for i := range items {
 		item := &items[i]
+		if terminalConflict {
+			item.EvidenceStatus = BatchItemEvidenceManualReview
+			item.ManualReviewReason = batchTerminalReconcileConflictReason
+			item.UpdatedAt = now
+			continue
+		}
 		expectedIndex := evidenceByIndex[item.OutputIndex]
 		expected := &evidence[expectedIndex]
 		observed, found := observedByIndex[item.OutputIndex]
@@ -533,19 +594,27 @@ func (s *MemoryStore) ReconcileBatchOperation(_ context.Context, operationID str
 	}
 
 	if update.TxHash != "" {
+		if historicalAttempt != nil {
+			op.SignedTxBytesCiphertext = append([]byte(nil), historicalAttempt.SignedTxBytesCiphertext...)
+			op.TxBytesHash = historicalAttempt.TxBytesHash
+			op.SignDocHash = historicalAttempt.SignDocHash
+			op.AccountSequence = historicalAttempt.AccountSequence
+		}
 		op.TxHash = update.TxHash
 	}
-	switch {
-	case update.TxSucceeded && allInputsSpent:
-		op.Status = OperationStatusSucceeded
-	case update.TxFailed && len(spentIDs) == 0:
-		op.Status = OperationStatusFailed
-	default:
-		op.Status = OperationStatusManualReview
+	op.Status = targetStatus
+	failureReason := strings.TrimSpace(update.FailureReason)
+	if terminalConflict {
+		if failureReason == "" {
+			failureReason = batchTerminalReconcileConflictReason
+		} else {
+			failureReason = batchTerminalReconcileConflictReason + ": " + failureReason
+		}
 	}
-	op.LastBroadcastError = update.FailureReason
+	op.LastBroadcastError = failureReason
 	op.UpdatedAt = now
 	clearBatchOperationLease(&op)
+	s.clearBatchInputLeasesLocked(operationID, now)
 	s.batchOperations[operationID] = cloneBatchOperation(op)
 	s.batchItems[operationID] = cloneBatchItems(items)
 	s.batchEvidence[operationID] = cloneBatchEvidence(evidence)
@@ -594,14 +663,8 @@ func (s *MemoryStore) transitionBatchInputReservationsLocked(operationID string,
 		reservationFrom, reservationTo = StatusReserved, StatusProving
 	case from == OperationStatusProving && to == OperationStatusPlanned:
 		reservationFrom, reservationTo = StatusProving, StatusReserved
-	case from == OperationStatusProving && to == OperationStatusProofReady:
-		reservationFrom, reservationTo = StatusProving, StatusProofReady
-	case from == OperationStatusProofReady && to == OperationStatusSubmitted:
-		reservationFrom, reservationTo = StatusProofReady, StatusSubmitted
-	case from == OperationStatusProofReady && to == OperationStatusUnknown:
-		reservationFrom, reservationTo = StatusProofReady, StatusUnknown
 	default:
-		return nil
+		return ErrInvalidTransition
 	}
 	return s.transitionBatchInputReservationsExactLocked(operationID, reservationFrom, reservationTo, leaseToken, now)
 }
@@ -710,23 +773,9 @@ func (s *MemoryStore) validatePersistedBatchGraphsLocked() error {
 	return nil
 }
 
-func canTransitionBatchOperation(from, to OperationStatus) bool {
-	switch from {
-	case OperationStatusPlanned:
-		return to == OperationStatusProving || to == OperationStatusReplanRequired || to == OperationStatusManualReview
-	case OperationStatusProving:
-		return to == OperationStatusPlanned || to == OperationStatusProofReady || to == OperationStatusReplanRequired || to == OperationStatusManualReview
-	case OperationStatusProofReady:
-		return to == OperationStatusSubmitted || to == OperationStatusUnknown || to == OperationStatusManualReview
-	case OperationStatusSubmitted:
-		return to == OperationStatusSucceeded || to == OperationStatusFailed || to == OperationStatusUnknown || to == OperationStatusManualReview
-	case OperationStatusUnknown:
-		return to == OperationStatusSubmitted || to == OperationStatusSucceeded || to == OperationStatusFailed || to == OperationStatusManualReview
-	case OperationStatusManualReview:
-		return to == OperationStatusSucceeded || to == OperationStatusFailed || to == OperationStatusReplanRequired
-	default:
-		return false
-	}
+func canCompareAndSetBatchOperation(from, to OperationStatus) bool {
+	return (from == OperationStatusPlanned && to == OperationStatusProving) ||
+		(from == OperationStatusProving && to == OperationStatusPlanned)
 }
 
 func validBatchOutputRole(role BatchOutputRole) bool {

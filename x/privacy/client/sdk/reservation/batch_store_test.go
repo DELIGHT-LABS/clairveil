@@ -85,6 +85,72 @@ func TestBatchOperationLeaseProofBroadcastAndIdempotentRetry(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestBatchOperationCASRejectsUnmappedRelationTransitions(t *testing.T) {
+	for _, target := range []OperationStatus{OperationStatusReplanRequired, OperationStatusManualReview} {
+		t.Run(string(target), func(t *testing.T) {
+			ctx := context.Background()
+			store := NewMemoryStore()
+			reservations, graph := testBatchOperationGraph("batch-op-cas-"+string(target), 2, 2)
+			_, err := store.CreateBatchOperation(ctx, reservations, graph)
+			require.NoError(t, err)
+			now := fixedNow()
+			lease, err := store.AcquireBatchOperationLease(ctx, graph.Operation.OperationID, "worker", "lease-token", now.Add(time.Minute), now)
+			require.NoError(t, err)
+			_, err = store.CompareAndSetBatchOperationStatus(ctx, graph.Operation.OperationID, lease.LeaseToken, OperationStatusPlanned, OperationStatusProving, now)
+			require.NoError(t, err)
+
+			_, err = store.CompareAndSetBatchOperationStatus(ctx, graph.Operation.OperationID, lease.LeaseToken, OperationStatusProving, target, now)
+			require.ErrorIs(t, err, ErrInvalidTransition)
+			stored, err := store.GetBatchOperation(ctx, graph.Operation.OperationID)
+			require.NoError(t, err)
+			require.Equal(t, OperationStatusProving, stored.Operation.Status)
+			require.Equal(t, lease.LeaseToken, stored.Operation.LeaseToken)
+			for _, reservation := range reservations {
+				input, getErr := store.GetReservation(ctx, reservation.ReservationID)
+				require.NoError(t, getErr)
+				require.Equal(t, StatusProving, input.Status)
+				require.Equal(t, lease.LeaseToken, input.LeaseToken)
+			}
+		})
+	}
+}
+
+func TestBatchOperationHeartbeatNeverRegressesSharedLease(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStore()
+	reservations, graph := testBatchOperationGraph("batch-op-monotonic-heartbeat", 2, 2)
+	_, err := store.CreateBatchOperation(ctx, reservations, graph)
+	require.NoError(t, err)
+	now := fixedNow()
+	lease, err := store.AcquireBatchOperationLease(ctx, graph.Operation.OperationID, "worker", "lease-token", now.Add(5*time.Minute), now)
+	require.NoError(t, err)
+
+	newerAt := now.Add(2 * time.Minute)
+	newerUntil := now.Add(7 * time.Minute)
+	_, err = store.HeartbeatBatchOperationLease(ctx, graph.Operation.OperationID, lease.LeaseToken, newerUntil, newerAt)
+	require.NoError(t, err)
+
+	staleAt := now.Add(time.Minute)
+	staleUntil := now.Add(6 * time.Minute)
+	stale, err := store.HeartbeatBatchOperationLease(ctx, graph.Operation.OperationID, lease.LeaseToken, staleUntil, staleAt)
+	require.NoError(t, err)
+	require.Equal(t, newerAt, stale.LastHeartbeatAt)
+	require.Equal(t, newerUntil, stale.LeaseUntil)
+
+	laterAt := now.Add(3 * time.Minute)
+	shorterUntil := now.Add(6*time.Minute + 30*time.Second)
+	later, err := store.HeartbeatBatchOperationLease(ctx, graph.Operation.OperationID, lease.LeaseToken, shorterUntil, laterAt)
+	require.NoError(t, err)
+	require.Equal(t, laterAt, later.LastHeartbeatAt)
+	require.Equal(t, newerUntil, later.LeaseUntil)
+	for _, input := range reservations {
+		stored, getErr := store.GetReservation(ctx, input.ReservationID)
+		require.NoError(t, getErr)
+		require.Equal(t, laterAt, stored.LastHeartbeatAt)
+		require.Equal(t, newerUntil, stored.LeaseUntil)
+	}
+}
+
 func TestBatchReconcileSeparatesSpentNotesFromItemEvidence(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemoryStore()
@@ -111,6 +177,96 @@ func TestBatchReconcileSeparatesSpentNotesFromItemEvidence(t *testing.T) {
 		stored, getErr := store.GetReservation(ctx, reservation.ReservationID)
 		require.NoError(t, getErr)
 		require.Equal(t, StatusConfirmedSpent, stored.Status)
+	}
+}
+
+func TestBatchReconcileMovesContradictoryTerminalEvidenceToManualReview(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStore()
+	reservations, graph := testBatchOperationGraph("batch-op-terminal-conflict", 1, 2)
+	_, err := store.CreateBatchOperation(ctx, reservations, graph)
+	require.NoError(t, err)
+	observed := make([]ObservedOutputEvidence, len(graph.Evidence))
+	for i, expected := range graph.Evidence {
+		observed[i] = ObservedOutputEvidence{
+			OutputIndex: expected.OutputIndex, Commitment: expected.Commitment,
+			UserDisclosureDigest: expected.UserDisclosureDigest, FullDisclosureDigest: expected.FullDisclosureDigest,
+			RecipientHash: expected.RecipientHash,
+		}
+	}
+	succeeded, err := store.ReconcileBatchOperation(ctx, graph.Operation.OperationID, BatchReconcileUpdate{
+		TxHash: "terminal-tx", TxSucceeded: true,
+		SpentReservationIDs: []string{reservations[0].ReservationID}, ObservedOutputs: observed,
+	}, fixedNow())
+	require.NoError(t, err)
+	require.Equal(t, OperationStatusSucceeded, succeeded.Operation.Status)
+
+	contradicted, err := store.ReconcileBatchOperation(ctx, graph.Operation.OperationID, BatchReconcileUpdate{
+		TxHash: "terminal-tx", TxFailed: true, FailureReason: "stale node reported failure",
+	}, fixedNow().Add(time.Second))
+	require.NoError(t, err)
+	require.Equal(t, OperationStatusManualReview, contradicted.Operation.Status)
+	require.Contains(t, contradicted.Operation.LastBroadcastError, batchTerminalReconcileConflictReason)
+	for _, item := range contradicted.Items {
+		require.Equal(t, BatchItemEvidenceManualReview, item.EvidenceStatus)
+		require.Equal(t, batchTerminalReconcileConflictReason, item.ManualReviewReason)
+	}
+	input, err := store.GetReservation(ctx, reservations[0].ReservationID)
+	require.NoError(t, err)
+	require.Equal(t, StatusConfirmedSpent, input.Status, "contradictory evidence must not partially rewrite terminal input state")
+}
+
+func TestBatchReconcilePromotesSpentEvidenceAfterFailureToConflictSpent(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStore()
+	reservations, graph := testBatchOperationGraph("batch-op-failed-then-spent", 1, 1)
+	_, err := store.CreateBatchOperation(ctx, reservations, graph)
+	require.NoError(t, err)
+	failed, err := store.ReconcileBatchOperation(ctx, graph.Operation.OperationID, BatchReconcileUpdate{
+		TxHash: "failed-tx", TxFailed: true,
+	}, fixedNow())
+	require.NoError(t, err)
+	require.Equal(t, OperationStatusFailed, failed.Operation.Status)
+	input, err := store.GetReservation(ctx, reservations[0].ReservationID)
+	require.NoError(t, err)
+	require.Equal(t, StatusReplanRequired, input.Status)
+
+	conflict, err := store.ReconcileBatchOperation(ctx, graph.Operation.OperationID, BatchReconcileUpdate{
+		TxHash: "failed-tx", SpentReservationIDs: []string{reservations[0].ReservationID},
+		FailureReason: "nullifier became spent after failed transaction evidence",
+	}, fixedNow().Add(time.Second))
+	require.NoError(t, err)
+	require.Equal(t, OperationStatusConflictSpent, conflict.Operation.Status)
+	require.Contains(t, conflict.Operation.LastBroadcastError, batchTerminalReconcileConflictReason)
+	input, err = store.GetReservation(ctx, reservations[0].ReservationID)
+	require.NoError(t, err)
+	require.Equal(t, StatusConfirmedSpent, input.Status)
+	require.Equal(t, BatchItemEvidenceManualReview, conflict.Items[0].EvidenceStatus)
+}
+
+func TestBatchReconcileClearsSharedOperationAndInputLeases(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStore()
+	reservations, graph := testBatchOperationGraph("batch-op-reconcile-lease", 2, 2)
+	_, err := store.CreateBatchOperation(ctx, reservations, graph)
+	require.NoError(t, err)
+	now := fixedNow()
+	lease, err := store.AcquireBatchOperationLease(ctx, graph.Operation.OperationID, "proof-worker", "shared-lease", now.Add(time.Minute), now)
+	require.NoError(t, err)
+	_, err = store.CompareAndSetBatchOperationStatus(ctx, graph.Operation.OperationID, lease.LeaseToken, OperationStatusPlanned, OperationStatusProving, now)
+	require.NoError(t, err)
+
+	updated, err := store.ReconcileBatchOperation(ctx, graph.Operation.OperationID, BatchReconcileUpdate{
+		SpentReservationIDs: []string{reservations[0].ReservationID},
+	}, now.Add(time.Second))
+	require.NoError(t, err)
+	require.Equal(t, OperationStatusManualReview, updated.Operation.Status)
+	require.Empty(t, updated.Operation.LeaseToken)
+	for _, reservation := range reservations {
+		stored, getErr := store.GetReservation(ctx, reservation.ReservationID)
+		require.NoError(t, getErr)
+		require.Empty(t, stored.LeaseToken)
+		require.True(t, stored.LeaseUntil.IsZero())
 	}
 }
 

@@ -111,6 +111,10 @@ func (w BatchProofWorker) Process(ctx context.Context, operationID string, paylo
 		return nil, err
 	}
 	if _, err := w.Store.CompareAndSetBatchOperationStatus(ctx, operationID, lease.LeaseToken, privacyreservation.OperationStatusPlanned, privacyreservation.OperationStatusProving, now); err != nil {
+		_, releaseErr := w.Store.ReleaseBatchOperationLease(context.Background(), operationID, lease.LeaseToken, w.now())
+		if releaseErr != nil && !errors.Is(releaseErr, privacyreservation.ErrLeaseMismatch) {
+			return nil, errors.Join(err, fmt.Errorf("release batch proof lease after claim failure: %w", releaseErr))
+		}
 		return nil, err
 	}
 	proofCtx, stopHeartbeat := w.startHeartbeat(ctx, operationID, lease.LeaseToken, ttl)
@@ -181,12 +185,16 @@ func (w BatchProofWorker) recoverExpiredProvingOperation(ctx context.Context, op
 }
 
 func (w BatchProofWorker) startHeartbeat(ctx context.Context, operationID, leaseToken string, ttl time.Duration) (context.Context, func() error) {
+	return startBatchOperationLeaseHeartbeat(ctx, w.Store, operationID, leaseToken, ttl, w.now)
+}
+
+func startBatchOperationLeaseHeartbeat(ctx context.Context, store privacyreservation.BatchOperationStore, operationID, leaseToken string, ttl time.Duration, now func() time.Time) (context.Context, func() error) {
 	// The lease heartbeat is intentionally independent of caller cancellation:
-	// a local prover may not be interruptible, so its permit/lease must remain
-	// held until the actual Prove call returns. Heartbeat failure still cancels
-	// cooperative local/remote provers.
+	// a local prover, signer, or broadcaster may not be interruptible, so the
+	// lease must remain held until the actual external call returns. Heartbeat
+	// failure still cancels cooperative work.
 	heartbeatCtx, cancelHeartbeat := context.WithCancel(context.Background())
-	proofCtx, cancelProof := context.WithCancel(ctx)
+	workCtx, cancelWork := context.WithCancel(ctx)
 	interval := ttl / 3
 	if interval <= 0 {
 		interval = time.Second
@@ -202,24 +210,24 @@ func (w BatchProofWorker) startHeartbeat(ctx context.Context, operationID, lease
 			case <-heartbeatCtx.Done():
 				return
 			case <-ticker.C:
-				now := w.now()
-				if _, err := w.Store.HeartbeatBatchOperationLease(heartbeatCtx, operationID, leaseToken, now.Add(ttl), now); err != nil {
+				heartbeatAt := now()
+				if _, err := store.HeartbeatBatchOperationLease(heartbeatCtx, operationID, leaseToken, heartbeatAt.Add(ttl), heartbeatAt); err != nil {
 					select {
 					case errCh <- err:
 					default:
 					}
-					cancelProof()
+					cancelWork()
 					return
 				}
 			}
 		}
 	}()
 	var once sync.Once
-	return proofCtx, func() error {
+	return workCtx, func() error {
 		once.Do(func() {
 			cancelHeartbeat()
 			<-done
-			cancelProof()
+			cancelWork()
 		})
 		select {
 		case err := <-errCh:

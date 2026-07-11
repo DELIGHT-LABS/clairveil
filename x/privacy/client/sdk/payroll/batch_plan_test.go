@@ -89,6 +89,47 @@ func TestBatchPayrollPlannerRequiresExplicitPreparationBeyondSixteenInputs(t *te
 	require.ErrorIs(t, err, privacybatchtransfer.ErrPreparationRequired)
 }
 
+func TestBatchPayrollPlannerBacktracksAcrossOwnersForRemainingPayments(t *testing.T) {
+	input := batchPlannerInput(33, 1)
+	input.Items[30].Amount = big.NewInt(30)
+	input.Items[31].Amount = big.NewInt(50)
+	input.Items[32].Amount = big.NewInt(50)
+	ownerA := testTreasuryNote("owner-a-100", input.Denom, 100, false, "")
+	ownerA.OwnerKeyID = "owner-a"
+	ownerB := testTreasuryNote("owner-b-60", input.Denom, 60, false, "")
+	ownerB.OwnerKeyID = "owner-b"
+	notes := []TreasuryNote{ownerA, ownerB}
+
+	plan, err := (BatchPayrollPlanner{}).Plan(input, notes)
+	require.NoError(t, err)
+	require.Len(t, plan.Operations, 2)
+	require.Len(t, plan.Operations[0].Items, 31)
+	require.Equal(t, "owner-b", plan.Operations[0].InputNotes[0].OwnerKeyID)
+	require.Equal(t, int64(60), plan.Operations[0].PaymentTotal.Int64())
+	require.Len(t, plan.Operations[1].Items, 2)
+	require.Equal(t, "owner-a", plan.Operations[1].InputNotes[0].OwnerKeyID)
+	require.Equal(t, int64(100), plan.Operations[1].PaymentTotal.Int64())
+}
+
+func TestBatchPayrollPlannerBacktracksWithinOwnerToPreserveFutureNote(t *testing.T) {
+	input := batchPlannerInput(33, 1)
+	input.Items[30].Amount = big.NewInt(70)
+	input.Items[31].Amount = big.NewInt(20)
+	input.Items[32].Amount = big.NewInt(20)
+	notes := []TreasuryNote{
+		testTreasuryNote("owner-70", input.Denom, 70, false, ""),
+		testTreasuryNote("owner-40", input.Denom, 40, false, ""),
+		testTreasuryNote("owner-30", input.Denom, 30, false, ""),
+	}
+
+	plan, err := (BatchPayrollPlanner{}).Plan(input, notes)
+	require.NoError(t, err)
+	require.Len(t, plan.Operations, 2)
+	require.Equal(t, []string{"owner-30", "owner-70"}, []string{plan.Operations[0].InputNotes[0].NoteID, plan.Operations[0].InputNotes[1].NoteID})
+	require.Equal(t, int64(100), plan.Operations[0].InputTotal.Int64())
+	require.Equal(t, "owner-40", plan.Operations[1].InputNotes[0].NoteID)
+}
+
 func batchPlannerInput(paymentCount int, paymentAmount int64) PayrollInput {
 	input := PayrollInput{CompanyID: "company-batch", PayrollID: "payroll-batch", BatchID: "run-batch", Denom: "uclair", Attempt: 1}
 	input.Items = make([]PayrollItemInput, paymentCount)

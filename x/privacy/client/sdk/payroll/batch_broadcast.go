@@ -82,7 +82,7 @@ type IdempotentBatchBroadcastWorker struct {
 	Now        func() time.Time
 }
 
-func (w IdempotentBatchBroadcastWorker) Submit(ctx context.Context, operationID string, payload *privacybatchtransfer.PreparedBatchTransferPayload, proof *privacybatchtransfer.PreparedBatchTransferProof, creator string, options BatchBroadcastOptions) (*BatchBroadcastOutcome, error) {
+func (w IdempotentBatchBroadcastWorker) Submit(ctx context.Context, operationID string, payload *privacybatchtransfer.PreparedBatchTransferPayload, proof *privacybatchtransfer.PreparedBatchTransferProof, creator string, options BatchBroadcastOptions) (_ *BatchBroadcastOutcome, runErr error) {
 	if w.Store == nil || w.Builder == nil || w.Sender == nil || w.Reconciler == nil || w.Cipher == nil || strings.TrimSpace(w.LeaseOwner) == "" {
 		return nil, fmt.Errorf("batch broadcast store, builder, sender, reconciler, cipher, and lease owner are required")
 	}
@@ -95,6 +95,9 @@ func (w IdempotentBatchBroadcastWorker) Submit(ctx context.Context, operationID 
 	}
 	if graph.Operation.PreparedPayloadHash != payload.PayloadHash {
 		return nil, fmt.Errorf("batch operation payload hash mismatch")
+	}
+	if err := validateDurableBatchProof(graph.Operation, proof); err != nil {
+		return nil, err
 	}
 	nullifiers := batchPayloadNullifierHexes(payload)
 	outcome := &BatchBroadcastOutcome{}
@@ -149,19 +152,31 @@ func (w IdempotentBatchBroadcastWorker) Submit(ctx context.Context, operationID 
 		return nil, err
 	}
 	leaseHeld := true
+	broadcastCtx, stopHeartbeat := startBatchOperationLeaseHeartbeat(ctx, w.Store, operationID, lease.LeaseToken, ttl, w.now)
 	defer func() {
+		if stopHeartbeat != nil {
+			if heartbeatErr := stopHeartbeat(); heartbeatErr != nil {
+				runErr = errors.Join(runErr, fmt.Errorf("heartbeat batch broadcast lease: %w", heartbeatErr))
+			}
+		}
 		if leaseHeld {
 			_, _ = w.Store.ReleaseBatchOperationLease(context.Background(), operationID, lease.LeaseToken, w.now())
 		}
 	}()
-	freshGraph, err := w.Store.GetBatchOperation(ctx, operationID)
+	freshGraph, err := w.Store.GetBatchOperation(broadcastCtx, operationID)
 	if err != nil {
 		return nil, err
 	}
-	if freshGraph.Operation.Status != graph.Operation.Status || !strings.EqualFold(freshGraph.Operation.TxBytesHash, graph.Operation.TxBytesHash) || !strings.EqualFold(freshGraph.Operation.TxHash, graph.Operation.TxHash) {
+	if freshGraph.Operation.Status != graph.Operation.Status ||
+		!strings.EqualFold(freshGraph.Operation.ProofHash, graph.Operation.ProofHash) ||
+		!strings.EqualFold(freshGraph.Operation.TxBytesHash, graph.Operation.TxBytesHash) ||
+		!strings.EqualFold(freshGraph.Operation.TxHash, graph.Operation.TxHash) {
 		return nil, fmt.Errorf("batch operation changed during broadcast admission; reconcile and retry")
 	}
 	graph = freshGraph
+	if err := validateDurableBatchProof(graph.Operation, proof); err != nil {
+		return nil, err
+	}
 
 	msg, err := privacybatchtransfer.BuildMsgBatchTransfer(payload, proof, creator)
 	if err != nil {
@@ -169,7 +184,7 @@ func (w IdempotentBatchBroadcastWorker) Submit(ctx context.Context, operationID 
 	}
 	var signed *SignedBatchTx
 	if graph.Operation.TxBytesHash != "" && !options.ResignWithNewSequence {
-		storedBytes, err := w.Cipher.OpenPayrollEvidence(ctx, graph.Operation.SignedTxBytesCiphertext)
+		storedBytes, err := w.Cipher.OpenPayrollEvidence(broadcastCtx, graph.Operation.SignedTxBytesCiphertext)
 		if err != nil {
 			return nil, fmt.Errorf("open stored signed batch tx: %w", err)
 		}
@@ -183,7 +198,7 @@ func (w IdempotentBatchBroadcastWorker) Submit(ctx context.Context, operationID 
 		}
 		outcome.UsedStoredSignedBytes = true
 	} else {
-		signed, err = w.Builder.BuildSignedBatchTx(ctx, msg)
+		signed, err = w.Builder.BuildSignedBatchTx(broadcastCtx, msg)
 		if err != nil {
 			return nil, err
 		}
@@ -191,9 +206,12 @@ func (w IdempotentBatchBroadcastWorker) Submit(ctx context.Context, operationID 
 			return nil, err
 		}
 	}
-	encryptedSignedBytes, err := w.Cipher.SealPayrollEvidence(context.Background(), signed.Bytes)
+	encryptedSignedBytes, err := w.Cipher.SealPayrollEvidence(broadcastCtx, signed.Bytes)
 	if err != nil {
 		return nil, fmt.Errorf("seal signed batch tx: %w", err)
+	}
+	if err := broadcastCtx.Err(); err != nil {
+		return nil, err
 	}
 	if _, err := w.Store.SaveBatchSignedTx(context.Background(), operationID, lease.LeaseToken, privacyreservation.BatchSignedTxUpdate{
 		SignedTxBytesCiphertext: encryptedSignedBytes, TxBytesHash: signed.TxBytesHash, SignDocHash: signed.SignDocHash,
@@ -201,7 +219,7 @@ func (w IdempotentBatchBroadcastWorker) Submit(ctx context.Context, operationID 
 	}, w.now()); err != nil {
 		return nil, err
 	}
-	usedImmediatelyBeforeBroadcast, err := w.Reconciler.CheckBatchNullifiers(ctx, nullifiers)
+	usedImmediatelyBeforeBroadcast, err := w.Reconciler.CheckBatchNullifiers(broadcastCtx, nullifiers)
 	if err != nil {
 		return nil, fmt.Errorf("check batch nullifiers immediately before broadcast: %w", err)
 	}
@@ -214,7 +232,30 @@ func (w IdempotentBatchBroadcastWorker) Submit(ctx context.Context, operationID 
 		return outcome, nil
 	}
 
-	receipt, broadcastErr := w.Sender.BroadcastSignedBatchTx(ctx, signed.Bytes)
+	if err := broadcastCtx.Err(); err != nil {
+		return nil, err
+	}
+	confirmedAt := w.now()
+	if _, err := w.Store.HeartbeatBatchOperationLease(context.Background(), operationID, lease.LeaseToken, confirmedAt.Add(ttl), confirmedAt); err != nil {
+		return nil, fmt.Errorf("confirm batch broadcast lease before submission: %w", err)
+	}
+	if err := broadcastCtx.Err(); err != nil {
+		return nil, err
+	}
+
+	receipt, broadcastErr := w.Sender.BroadcastSignedBatchTx(broadcastCtx, signed.Bytes)
+	outcome.Receipt = receipt
+	outcome.TxBytesHash = signed.TxBytesHash
+	confirmedAt = w.now()
+	_, ownershipErr := w.Store.HeartbeatBatchOperationLease(context.Background(), operationID, lease.LeaseToken, confirmedAt.Add(ttl), confirmedAt)
+	heartbeatErr := stopHeartbeat()
+	stopHeartbeat = nil
+	if ownershipErr != nil {
+		return outcome, errors.Join(broadcastErr, heartbeatErr, fmt.Errorf("confirm batch broadcast lease after submission: %w", ownershipErr))
+	}
+	if heartbeatErr != nil {
+		broadcastErr = errors.Join(broadcastErr, fmt.Errorf("heartbeat batch broadcast lease: %w", heartbeatErr))
+	}
 	unknown := broadcastErr != nil || receipt == nil || receipt.Unknown || (receipt != nil && receipt.Code != 0)
 	txHash := signed.TxHash
 	lastError := ""
@@ -238,8 +279,6 @@ func (w IdempotentBatchBroadcastWorker) Submit(ctx context.Context, operationID 
 	if recordErr == nil {
 		leaseHeld = false
 	}
-	outcome.Receipt = receipt
-	outcome.TxBytesHash = signed.TxBytesHash
 	if recordErr != nil {
 		return outcome, errors.Join(broadcastErr, recordErr)
 	}
@@ -250,6 +289,17 @@ func (w IdempotentBatchBroadcastWorker) Submit(ctx context.Context, operationID 
 		return outcome, fmt.Errorf("batch tx failed with code %d: %s", receipt.Code, receipt.RawLog)
 	}
 	return outcome, nil
+}
+
+func validateDurableBatchProof(operation privacyreservation.BatchOperation, proof *privacybatchtransfer.PreparedBatchTransferProof) error {
+	if proof == nil || len(operation.ProofCiphertext) == 0 || strings.TrimSpace(operation.ProofHash) == "" {
+		return fmt.Errorf("durable batch proof artifact is required before broadcast")
+	}
+	digest := sha256.Sum256(proof.Proof)
+	if !strings.EqualFold(strings.TrimPrefix(strings.TrimSpace(operation.ProofHash), "0x"), hex.EncodeToString(digest[:])) {
+		return fmt.Errorf("provided batch proof does not match the durable proof artifact")
+	}
+	return nil
 }
 
 func validateSignedBatchTx(signed *SignedBatchTx) error {

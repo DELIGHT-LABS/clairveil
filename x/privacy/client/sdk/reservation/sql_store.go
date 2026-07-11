@@ -43,11 +43,17 @@ func InitSQLStore(ctx context.Context, db *sql.DB, dialect SQLDialect) error {
 }
 
 func PostgreSQLSchema() string {
-	return strings.Join(sqlSchemaStatements(SQLDialectPostgres), ";\n\n") + ";\n"
+	return sqlSchemaWithSeeds(SQLDialectPostgres)
 }
 
 func SQLiteSchema() string {
-	return strings.Join(sqlSchemaStatements(SQLDialectSQLite), ";\n\n") + ";\n"
+	return sqlSchemaWithSeeds(SQLDialectSQLite)
+}
+
+func sqlSchemaWithSeeds(dialect SQLDialect) string {
+	statements := sqlSchemaStatements(dialect)
+	statements = append(statements, sqlStoreLockSeedStatement(dialect), sqlBatchSchemaSeedStatement(dialect))
+	return strings.Join(statements, ";\n\n") + ";\n"
 }
 
 func (s *SQLStore) CreateReservation(ctx context.Context, reservation NoteReservation) (*NoteReservation, error) {
@@ -302,7 +308,7 @@ func (s *SQLStore) loadMemory(ctx context.Context) (*MemoryStore, error) {
 	if s == nil || s.DB == nil {
 		return nil, fmt.Errorf("sql db is required")
 	}
-	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := s.DB.BeginTx(ctx, s.readTxOptions())
 	if err != nil {
 		return nil, err
 	}
@@ -315,6 +321,17 @@ func (s *SQLStore) loadMemory(ctx context.Context) (*MemoryStore, error) {
 		return nil, err
 	}
 	return memory, nil
+}
+
+func (s *SQLStore) readTxOptions() *sql.TxOptions {
+	options := &sql.TxOptions{ReadOnly: true}
+	if s != nil && s.Dialect == SQLDialectPostgres {
+		// loadMemory reconstructs one graph from several relational SELECTs.
+		// PostgreSQL READ COMMITTED can expose a different committed snapshot to
+		// each SELECT, so require a transaction-wide snapshot for every read.
+		options.Isolation = sql.LevelRepeatableRead
+	}
+	return options
 }
 
 func (s *SQLStore) withMemoryWrite(ctx context.Context, update func(*MemoryStore) error) error {

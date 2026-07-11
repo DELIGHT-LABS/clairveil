@@ -66,24 +66,11 @@ func (w BatchReconcileWorker) Reconcile(ctx context.Context, request BatchReconc
 
 	result := &BatchReconcileResult{Graph: graph}
 	txHash := graph.Operation.TxHash
-	if txHash != "" {
-		lookup, lookupErr := w.Reconciler.LookupBatchTx(ctx, txHash)
-		if lookupErr != nil {
-			return nil, fmt.Errorf("lookup batch tx hash before nullifiers: %w", lookupErr)
-		}
-		if lookup != nil {
-			if lookup.Found && lookup.Succeeded == lookup.Failed {
-				return nil, fmt.Errorf("found batch tx lookup must be exactly one of succeeded or failed")
-			}
-			if !lookup.Found && (lookup.Succeeded || lookup.Failed) {
-				return nil, fmt.Errorf("absent batch tx lookup cannot be succeeded or failed")
-			}
-			if lookup.TxHash != "" && !equalEvidenceHex(txHash, lookup.TxHash) {
-				return nil, fmt.Errorf("batch tx lookup hash does not match durable tx hash")
-			}
-			result.TxLookup = lookup
-		}
+	lookup, err := w.lookupBatchTxCandidates(ctx, graph.Operation)
+	if err != nil {
+		return nil, err
 	}
+	result.TxLookup = lookup
 
 	nullifiers := make([]string, len(request.Payload.Inputs))
 	for i := range request.Payload.Inputs {
@@ -116,8 +103,23 @@ func (w BatchReconcileWorker) Reconcile(ctx context.Context, request BatchReconc
 	lookupFound := result.TxLookup != nil && result.TxLookup.Found
 	if !lookupFound && len(result.SpentReservationIDs) == 0 {
 		// Absence of both tx and spent-nullifier evidence is still an in-flight
-		// state. Do not collapse it into Failed or ManualReview.
+		// state for a non-terminal operation. If previously terminal evidence
+		// disappears, persist the contradiction for operator/reorg review.
 		result.PendingChainEvidence = true
+		if privacyreservation.IsTerminalOperationStatus(graph.Operation.Status) {
+			failureReason := strings.TrimSpace(request.FailureReason)
+			if failureReason == "" {
+				failureReason = "previously terminal batch operation has no current transaction or spent-nullifier evidence"
+			}
+			updated, reconcileErr := w.Store.ReconcileBatchOperation(ctx, request.OperationID, privacyreservation.BatchReconcileUpdate{
+				TxHash:        txHash,
+				FailureReason: failureReason,
+			}, w.now())
+			if reconcileErr != nil {
+				return nil, reconcileErr
+			}
+			result.Graph = updated
+		}
 		return result, nil
 	}
 	txSucceeded := lookupFound && result.TxLookup.Succeeded
@@ -149,6 +151,69 @@ func (w BatchReconcileWorker) Reconcile(ctx context.Context, request BatchReconc
 	}
 	result.Graph = updated
 	return result, nil
+}
+
+func (w BatchReconcileWorker) lookupBatchTxCandidates(ctx context.Context, operation privacyreservation.BatchOperation) (*BatchTxLookupResult, error) {
+	candidates := batchReconcileTxCandidates(operation)
+	var currentLookup *BatchTxLookupResult
+	var succeededLookup *BatchTxLookupResult
+	for _, candidate := range candidates {
+		lookup, err := w.Reconciler.LookupBatchTx(ctx, candidate)
+		if err != nil {
+			return nil, fmt.Errorf("lookup batch tx hash %s before nullifiers: %w", candidate, err)
+		}
+		if lookup == nil {
+			continue
+		}
+		normalized := *lookup
+		if normalized.Found && normalized.Succeeded == normalized.Failed {
+			return nil, fmt.Errorf("found batch tx lookup must be exactly one of succeeded or failed")
+		}
+		if !normalized.Found && (normalized.Succeeded || normalized.Failed) {
+			return nil, fmt.Errorf("absent batch tx lookup cannot be succeeded or failed")
+		}
+		if normalized.TxHash != "" && !equalEvidenceHex(candidate, normalized.TxHash) {
+			return nil, fmt.Errorf("batch tx lookup hash does not match durable broadcast candidate")
+		}
+		if normalized.Found && normalized.TxHash == "" {
+			normalized.TxHash = candidate
+		}
+		if equalEvidenceHex(candidate, operation.TxHash) {
+			currentLookup = &normalized
+		}
+		if normalized.Found && normalized.Succeeded {
+			if succeededLookup != nil && !equalEvidenceHex(succeededLookup.TxHash, normalized.TxHash) {
+				return nil, fmt.Errorf("multiple batch broadcast candidates are reported as succeeded")
+			}
+			succeededLookup = &normalized
+		}
+	}
+	if succeededLookup != nil {
+		return succeededLookup, nil
+	}
+	return currentLookup, nil
+}
+
+func batchReconcileTxCandidates(operation privacyreservation.BatchOperation) []string {
+	candidates := make([]string, 0, 1+len(operation.BroadcastHistory))
+	seen := make(map[string]struct{}, 1+len(operation.BroadcastHistory))
+	appendCandidate := func(value string) {
+		value = strings.TrimSpace(value)
+		normalized := normalizeBatchEvidenceHex(value)
+		if normalized == "" {
+			return
+		}
+		if _, exists := seen[normalized]; exists {
+			return
+		}
+		seen[normalized] = struct{}{}
+		candidates = append(candidates, value)
+	}
+	appendCandidate(operation.TxHash)
+	for i := len(operation.BroadcastHistory) - 1; i >= 0; i-- {
+		appendCandidate(operation.BroadcastHistory[i].TxHash)
+	}
+	return candidates
 }
 
 func batchInputsByIndex(inputs []privacyreservation.OperationInputReservation, count int) ([]privacyreservation.OperationInputReservation, error) {
