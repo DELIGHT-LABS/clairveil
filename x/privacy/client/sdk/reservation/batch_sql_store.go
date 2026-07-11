@@ -58,6 +58,12 @@ func (s *SQLStore) CompareAndSetBatchOperationStatus(ctx context.Context, operat
 	})
 }
 
+func (s *SQLStore) PrepareBatchOperationResign(ctx context.Context, operationID, leaseToken, failedTxHash string, failureCode uint32, now time.Time) (*BatchOperation, error) {
+	return s.mutateBatchOperation(ctx, func(memory *MemoryStore) (*BatchOperation, error) {
+		return memory.PrepareBatchOperationResign(ctx, operationID, leaseToken, failedTxHash, failureCode, now)
+	})
+}
+
 func (s *SQLStore) SaveBatchProofArtifacts(ctx context.Context, operationID, leaseToken string, update BatchProofArtifactUpdate, now time.Time) (*BatchOperation, error) {
 	return s.mutateBatchOperation(ctx, func(memory *MemoryStore) (*BatchOperation, error) {
 		return memory.SaveBatchProofArtifacts(ctx, operationID, leaseToken, update, now)

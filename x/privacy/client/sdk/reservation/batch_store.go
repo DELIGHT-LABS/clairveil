@@ -18,6 +18,10 @@ type BatchOperationStore interface {
 	// state. Proof, broadcast, and reconcile transitions use their dedicated
 	// atomic methods so operation and input-reservation relations stay aligned.
 	CompareAndSetBatchOperationStatus(ctx context.Context, operationID, leaseToken string, from, to OperationStatus, now time.Time) (*BatchOperation, error)
+	// PrepareBatchOperationResign records an explicitly reconciled, confirmed
+	// failed transaction and moves its submitted reservation graph to Unknown so
+	// a caller may stage replacement signed bytes only after nullifier checks.
+	PrepareBatchOperationResign(ctx context.Context, operationID, leaseToken, failedTxHash string, failureCode uint32, now time.Time) (*BatchOperation, error)
 	SaveBatchProofArtifacts(ctx context.Context, operationID, leaseToken string, update BatchProofArtifactUpdate, now time.Time) (*BatchOperation, error)
 	SaveBatchSignedTx(ctx context.Context, operationID, leaseToken string, update BatchSignedTxUpdate, now time.Time) (*BatchOperation, error)
 	RecordBatchBroadcast(ctx context.Context, operationID, leaseToken string, update BatchBroadcastUpdate, now time.Time) (*BatchOperation, error)

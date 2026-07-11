@@ -149,6 +149,56 @@ func TestIdempotentBatchBroadcastReturnsFoundChainFailure(t *testing.T) {
 	require.Equal(t, 1, sender.calls)
 }
 
+func TestIdempotentBatchBroadcastExplicitlyResignsConfirmedChainFailure(t *testing.T) {
+	payload := batchReconcileTestPayload(t)
+	store, graph := testProofReadyBatchStore(t, payload)
+	creator := sdk.AccAddress(bytes.Repeat([]byte{9}, 20)).String()
+	builder := &testSignedBatchBuilder{bytes: []byte("first-sequence-batch")}
+	sender := &testSignedBatchSender{}
+	chain := &testBatchBroadcastChain{statuses: unspentBatchStatuses(payload)}
+	worker := IdempotentBatchBroadcastWorker{
+		Store: store, Builder: builder, Sender: sender, Reconciler: chain, Cipher: testPayrollCipher{},
+		LeaseOwner: "worker", LeaseTTL: time.Minute,
+	}
+
+	_, err := worker.Submit(context.Background(), graph.Operation.OperationID, payload, testPreparedBatchProof(payload), creator, BatchBroadcastOptions{})
+	require.NoError(t, err)
+	first, err := store.GetBatchOperation(context.Background(), graph.Operation.OperationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusSubmitted, first.Operation.Status)
+	firstTxHash := first.Operation.TxHash
+	chain.lookup = &BatchTxLookupResult{Found: true, Failed: true, TxHash: firstTxHash, Code: 32}
+	builder.bytes = []byte("replacement-sequence-batch")
+
+	outcome, err := worker.Submit(
+		context.Background(),
+		graph.Operation.OperationID,
+		payload,
+		testPreparedBatchProof(payload),
+		creator,
+		BatchBroadcastOptions{ResignWithNewSequence: true},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, outcome.Receipt)
+	require.NotEqual(t, firstTxHash, outcome.Receipt.TxHash)
+	require.Equal(t, 2, builder.calls)
+	require.Equal(t, 2, sender.calls)
+	require.Equal(t, 4, chain.checks, "both attempts must check nullifiers before signing and immediately before broadcast")
+
+	updated, err := store.GetBatchOperation(context.Background(), graph.Operation.OperationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusUnknown, updated.Operation.Status, "replacement submission stays conservative until canonical reconciliation")
+	require.Equal(t, outcome.Receipt.TxHash, updated.Operation.TxHash)
+	require.Len(t, updated.Operation.BroadcastHistory, 2)
+	require.Equal(t, firstTxHash, updated.Operation.BroadcastHistory[0].TxHash)
+	require.Equal(t, outcome.Receipt.TxHash, updated.Operation.BroadcastHistory[1].TxHash)
+	for _, input := range updated.Inputs {
+		reservation, getErr := store.GetReservation(context.Background(), input.ReservationID)
+		require.NoError(t, getErr)
+		require.Equal(t, privacyreservation.StatusUnknown, reservation.Status)
+	}
+}
+
 func TestIdempotentBatchBroadcastHeartbeatsLeaseUntilUninterruptibleSendReturns(t *testing.T) {
 	payload := batchReconcileTestPayload(t)
 	store, graph := testProofReadyBatchStore(t, payload)

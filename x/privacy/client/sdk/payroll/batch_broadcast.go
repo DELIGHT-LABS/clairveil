@@ -59,7 +59,8 @@ type BatchChainReconciler interface {
 
 type BatchBroadcastOptions struct {
 	// ResignWithNewSequence is never automatic. When true, the worker first
-	// proves the prior tx hash is absent and every input nullifier is unspent.
+	// proves the prior tx hash is absent or canonically failed and every input
+	// nullifier is still unspent.
 	ResignWithNewSequence bool
 }
 
@@ -102,6 +103,7 @@ func (w IdempotentBatchBroadcastWorker) Submit(ctx context.Context, operationID 
 	nullifiers := batchPayloadNullifierHexes(payload)
 	outcome := &BatchBroadcastOutcome{}
 	priorLookup := &BatchTxLookupResult{}
+	confirmedFailedPrior := false
 	if graph.Operation.TxHash != "" {
 		priorLookup, err = w.Reconciler.LookupBatchTx(ctx, graph.Operation.TxHash)
 		if err != nil {
@@ -117,9 +119,13 @@ func (w IdempotentBatchBroadcastWorker) Submit(ctx context.Context, operationID 
 			outcome.ReconciledExistingTx = true
 			outcome.Receipt = &BatchBroadcastReceipt{TxHash: priorLookup.TxHash, Height: priorLookup.Height, Code: priorLookup.Code}
 			if priorLookup.Failed {
-				return outcome, fmt.Errorf("prior batch tx failed on chain with code %d", priorLookup.Code)
+				if !options.ResignWithNewSequence {
+					return outcome, fmt.Errorf("prior batch tx failed on chain with code %d", priorLookup.Code)
+				}
+				confirmedFailedPrior = true
+			} else {
+				return outcome, nil
 			}
-			return outcome, nil
 		}
 	}
 	used, err := w.Reconciler.CheckBatchNullifiers(ctx, nullifiers)
@@ -134,7 +140,7 @@ func (w IdempotentBatchBroadcastWorker) Submit(ctx context.Context, operationID 
 		outcome.NullifierEvidenceExists = true
 		return outcome, nil
 	}
-	if options.ResignWithNewSequence && graph.Operation.TxBytesHash != "" && graph.Operation.Status != privacyreservation.OperationStatusUnknown {
+	if options.ResignWithNewSequence && graph.Operation.TxBytesHash != "" && graph.Operation.Status != privacyreservation.OperationStatusUnknown && !confirmedFailedPrior {
 		return nil, fmt.Errorf("new-sequence re-sign requires an Unknown prior broadcast")
 	}
 
@@ -174,6 +180,20 @@ func (w IdempotentBatchBroadcastWorker) Submit(ctx context.Context, operationID 
 		return nil, fmt.Errorf("batch operation changed during broadcast admission; reconcile and retry")
 	}
 	graph = freshGraph
+	if confirmedFailedPrior {
+		prepared, err := w.Store.PrepareBatchOperationResign(
+			broadcastCtx,
+			operationID,
+			lease.LeaseToken,
+			graph.Operation.TxHash,
+			priorLookup.Code,
+			w.now(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("prepare confirmed failed batch tx for explicit re-sign: %w", err)
+		}
+		graph.Operation = *prepared
+	}
 	if err := validateDurableBatchProof(graph.Operation, proof); err != nil {
 		return nil, err
 	}

@@ -57,6 +57,12 @@ func (s *DurableFileStore) CompareAndSetBatchOperationStatus(ctx context.Context
 	})
 }
 
+func (s *DurableFileStore) PrepareBatchOperationResign(ctx context.Context, operationID, leaseToken, failedTxHash string, failureCode uint32, now time.Time) (*BatchOperation, error) {
+	return s.mutateBatchOperation(ctx, func() (*BatchOperation, error) {
+		return s.memory.PrepareBatchOperationResign(ctx, operationID, leaseToken, failedTxHash, failureCode, now)
+	})
+}
+
 func (s *DurableFileStore) SaveBatchProofArtifacts(ctx context.Context, operationID, leaseToken string, update BatchProofArtifactUpdate, now time.Time) (*BatchOperation, error) {
 	return s.mutateBatchOperation(ctx, func() (*BatchOperation, error) {
 		return s.memory.SaveBatchProofArtifacts(ctx, operationID, leaseToken, update, now)

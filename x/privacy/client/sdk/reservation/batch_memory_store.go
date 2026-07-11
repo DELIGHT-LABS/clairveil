@@ -296,6 +296,32 @@ func (s *MemoryStore) CompareAndSetBatchOperationStatus(_ context.Context, opera
 	return &cloned, nil
 }
 
+func (s *MemoryStore) PrepareBatchOperationResign(_ context.Context, operationID, leaseToken, failedTxHash string, failureCode uint32, now time.Time) (*BatchOperation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	op, err := s.requireBatchLeaseLocked(operationID, leaseToken, now)
+	if err != nil {
+		return nil, err
+	}
+	if failureCode == 0 || strings.TrimSpace(failedTxHash) == "" || !equalNormalized(op.TxHash, failedTxHash) {
+		return nil, fmt.Errorf("%w: confirmed failed transaction evidence does not match the current batch transaction", ErrInvalidReservation)
+	}
+	if op.Status != OperationStatusSubmitted && op.Status != OperationStatusUnknown {
+		return nil, ErrCompareAndSetFailed
+	}
+	if op.Status == OperationStatusSubmitted {
+		if err := s.transitionBatchInputReservationsExactLocked(operationID, StatusSubmitted, StatusUnknown, leaseToken, now); err != nil {
+			return nil, err
+		}
+	}
+	op.Status = OperationStatusUnknown
+	op.LastBroadcastError = fmt.Sprintf("confirmed batch transaction failed with code %d; explicit re-sign authorized", failureCode)
+	op.UpdatedAt = now
+	s.batchOperations[operationID] = cloneBatchOperation(op)
+	cloned := cloneBatchOperation(op)
+	return &cloned, nil
+}
+
 func (s *MemoryStore) clearBatchInputLeasesLocked(operationID string, now time.Time) {
 	for _, input := range s.batchInputs[operationID] {
 		reservation, ok := s.reservations[input.ReservationID]
