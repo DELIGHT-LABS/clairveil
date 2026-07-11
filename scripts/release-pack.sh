@@ -4,10 +4,21 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 dist_dir="${DIST_DIR:-"$repo_root/dist"}"
-commit="$(git -C "$repo_root" rev-parse --short=12 HEAD)"
-version="${RELEASE_VERSION:-"$(git -C "$repo_root" describe --tags --always --dirty 2>/dev/null || printf '%s' "$commit")"}"
+
+require_clean_worktree() {
+	if [[ -n "$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)" ]]; then
+		echo "release pack generation requires a clean worktree" >&2
+		exit 1
+	fi
+}
+
+require_clean_worktree
+source_commit="$(git -C "$repo_root" rev-parse HEAD)"
+commit="$(git -C "$repo_root" rev-parse --short=12 "$source_commit")"
+version="${RELEASE_VERSION:-"$(git -C "$repo_root" describe --tags --always "$source_commit" 2>/dev/null || printf '%s' "$commit")"}"
 pack_name="clairveil-handoff-${version}"
 work_dir="$(mktemp -d)"
+source_root="$work_dir/source"
 pack_root="$work_dir/$pack_name"
 archive_path="$dist_dir/${pack_name}.tar.gz"
 checksum_path="$archive_path.sha256"
@@ -17,25 +28,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
-require_clean_worktree() {
-	if [[ -n "$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)" ]]; then
-		echo "release pack generation requires a clean worktree" >&2
-		exit 1
-	fi
-}
-
 copy_path() {
 	local path="$1"
-	if [[ ! -e "$repo_root/$path" ]]; then
+	if [[ ! -e "$source_root/$path" ]]; then
 		echo "missing release pack path: $path" >&2
 		exit 1
 	fi
 	mkdir -p "$pack_root/$(dirname "$path")"
-	cp -R "$repo_root/$path" "$pack_root/$path"
+	cp -R "$source_root/$path" "$pack_root/$path"
 }
 
-require_clean_worktree
-mkdir -p "$pack_root" "$dist_dir"
+mkdir -p "$source_root" "$pack_root" "$dist_dir"
+git -C "$repo_root" archive --format=tar "$source_commit" | tar -xf - -C "$source_root"
 
 copy_path "README.md"
 copy_path "README-kr.md"
@@ -142,13 +146,17 @@ copy_path "scripts/privacy-batch-joinsplit-localnet.sh"
 # Recheck after copying so a concurrent working-tree mutation cannot be
 # attributed to the immutable HEAD recorded in the manifest.
 require_clean_worktree
+if [[ "$(git -C "$repo_root" rev-parse HEAD)" != "$source_commit" ]]; then
+	echo "release pack source commit changed during generation" >&2
+	exit 1
+fi
 
 cat >"$pack_root/RELEASE-MANIFEST.txt" <<EOF
 Clairveil release handoff pack
 ==============================
 
 version: $version
-commit: $(git -C "$repo_root" rev-parse HEAD)
+commit: $source_commit
 generated_at_utc: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
 source_repo: github.com/DELIGHT-LABS/clairveil
 
