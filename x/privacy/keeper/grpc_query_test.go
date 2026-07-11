@@ -260,6 +260,37 @@ func TestCheckNullifiersQueryReturnsBatchStatuses(t *testing.T) {
 	require.False(t, resp.Statuses[1].Used)
 }
 
+func TestAuditConfigQueryReturnsExactChainConfig(t *testing.T) {
+	k, ctx, _ := setupMsgServerKeeper()
+	pubKey := testKeeperDisclosurePubKey()
+	require.NoError(t, k.SetAuditConfigV1(ctx, "audit.production-1", 7, pubKey))
+
+	resp, err := k.AuditConfig(sdk.WrapSDKContext(ctx), &privacytypes.QueryAuditConfigRequest{})
+	require.NoError(t, err)
+	require.Equal(t, hex.EncodeToString(pubKey), resp.AuditMasterPubkeyHex)
+	require.Equal(t, "audit.production-1", resp.AuditKeyId)
+	require.Equal(t, uint64(7), resp.AuditKeyEpoch)
+}
+
+func TestAuditConfigQueryReturnsEmptyWhenUnconfigured(t *testing.T) {
+	k, ctx, _ := setupMsgServerKeeper()
+
+	resp, err := k.AuditConfig(sdk.WrapSDKContext(ctx), &privacytypes.QueryAuditConfigRequest{})
+	require.NoError(t, err)
+	require.Equal(t, &privacytypes.QueryAuditConfigResponse{}, resp)
+}
+
+func TestAuditConfigQueryFailsClosedOnPartialState(t *testing.T) {
+	k, ctx, _ := setupMsgServerKeeper()
+	store := k.storeService.OpenKVStore(ctx)
+	require.NoError(t, store.Set(privacytypes.GetAuditConfigKey(), testKeeperDisclosurePubKey()))
+
+	resp, err := k.AuditConfig(sdk.WrapSDKContext(ctx), &privacytypes.QueryAuditConfigRequest{})
+	require.Nil(t, resp)
+	require.Equal(t, codes.Internal, status.Code(err))
+	require.ErrorContains(t, err, "audit config state is partial")
+}
+
 func TestScanEventsQueryReturnsProjectionAndCursor(t *testing.T) {
 	k, ctx, _ := setupMsgServerKeeper()
 
@@ -442,9 +473,10 @@ func TestCircuitConfigQueryReturnsConsensusIdentity(t *testing.T) {
 	require.False(t, resp.ManifestAvailable)
 	require.Equal(t, "consensus", resp.ChecksumSource)
 	require.Empty(t, resp.GeneratedAt)
-	require.Len(t, resp.Artifacts, 3)
+	require.Len(t, resp.Artifacts, len(privacytypes.RequiredCircuitIdentityOrder))
 	require.Equal(t, "spend", resp.Artifacts[1].CircuitId)
 	require.Equal(t, identity.Circuits[1].VerifyingKeySha256, resp.Artifacts[1].Sha256)
+	require.Equal(t, "batch-joinsplit-16x32-v1", resp.Artifacts[len(resp.Artifacts)-1].CircuitId)
 	require.Equal(t, identity, resp.CircuitSetIdentity)
 }
 

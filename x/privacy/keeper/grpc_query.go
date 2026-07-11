@@ -237,10 +237,18 @@ func (k Keeper) AuditConfig(goCtx context.Context, req *types.QueryAuditConfigRe
 	}
 
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	pubKey := k.GetAuditMasterPubkey(ctx)
+	config, configured, err := k.GetAuditConfigV1(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if !configured {
+		return &types.QueryAuditConfigResponse{}, nil
+	}
 
 	return &types.QueryAuditConfigResponse{
-		AuditMasterPubkeyHex: hex.EncodeToString(pubKey),
+		AuditMasterPubkeyHex: hex.EncodeToString(config.AuditTargetPubkey),
+		AuditKeyId:           config.AuditKeyID,
+		AuditKeyEpoch:        config.AuditKeyEpoch,
 	}, nil
 }
 

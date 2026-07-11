@@ -14,7 +14,7 @@ import (
 func TestAuditConfigQueryReturnsHexEncodedPubKey(t *testing.T) {
 	k, ctx, _ := setupMsgServerKeeper()
 
-	pubKey := fixedFieldBytes(42)
+	pubKey := testKeeperDisclosurePubKey()
 	k.SetAuditMasterPubkey(ctx, pubKey)
 
 	resp, err := k.AuditConfig(sdk.WrapSDKContext(ctx), &privacytypes.QueryAuditConfigRequest{})

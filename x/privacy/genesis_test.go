@@ -6,12 +6,14 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/consensys/gnark-crypto/ecc"
+	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
@@ -37,6 +39,14 @@ func setupPrivacyGenesisKeeper() (*keeper.Keeper, sdk.Context) {
 	return k, ctx
 }
 
+func genesisAuditTargetPubkey() []byte {
+	curve := crypto_tedwards.GetEdwardsCurve()
+	var point crypto_tedwards.PointAffine
+	point.ScalarMultiplication(&curve.Base, big.NewInt(23))
+	encoded := point.Bytes()
+	return append([]byte(nil), encoded[:]...)
+}
+
 func fixedFieldBytesFromUint64(v uint64) []byte {
 	bz := make([]byte, 32)
 	binary.BigEndian.PutUint64(bz[24:], v)
@@ -49,6 +59,8 @@ func TestGenesisRoundTrip(t *testing.T) {
 	require.NoError(t, k.SetCircuitSetIdentity(ctx, identity))
 	_, err := k.RegisterCanonicalAssetV1(ctx, "uclair")
 	require.NoError(t, err)
+	auditTarget := genesisAuditTargetPubkey()
+	require.NoError(t, k.SetAuditConfigV1(ctx, "audit.production-1", 7, auditTarget))
 
 	commitments := [][]byte{
 		fixedFieldBytesFromUint64(1),
@@ -79,6 +91,9 @@ func TestGenesisRoundTrip(t *testing.T) {
 	require.ElementsMatch(t, nullifiers, exported.Nullifiers)
 	require.NotEmpty(t, exported.HistoricalRoots)
 	require.Len(t, exported.AssetRegistry, 1)
+	require.Equal(t, "audit.production-1", exported.AuditKeyId)
+	require.Equal(t, uint64(7), exported.AuditKeyEpoch)
+	require.Equal(t, auditTarget, exported.AuditMasterPubkey)
 	require.Equal(t, uint64(1), exported.PrivacyGlobalSequence)
 	require.Len(t, exported.MerkleRootSnapshots, len(commitments))
 	require.Equal(t, "25", exported.ReserveBalances[0].TotalDeposited)
@@ -179,6 +194,8 @@ func setupGenesisCircuitIdentity(t *testing.T) *privacytypes.CircuitSetIdentity 
 			filename, checksumEnv = privacyzk.SpendVKFile, privacyzk.SpendVKSHA256Env
 		case "joinsplit":
 			filename, checksumEnv = privacyzk.JoinSplitVKFile, privacyzk.JoinSplitVKSHA256Env
+		case "batch-joinsplit-16x32-v1":
+			filename, checksumEnv = privacyzk.BatchJoinSplit16x32VKFile, privacyzk.BatchJoinSplit16x32VKSHA256Env
 		}
 		require.NoError(t, os.WriteFile(filepath.Join(dir, filename), vkBytes, 0o600))
 		checksums[checksumEnv] = vkChecksum

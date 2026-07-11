@@ -210,6 +210,8 @@ message QueryAuditConfigRequest {}
 
 message QueryAuditConfigResponse {
   string audit_master_pubkey_hex = 1;
+  string audit_key_id = 2;
+  uint64 audit_key_epoch = 3;
 }
 
 message QueryDisclosureConfigRequest {}

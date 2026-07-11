@@ -18,6 +18,8 @@ message GenesisState {
   repeated MerkleRootSnapshotV1 merkle_root_snapshots = 11;
   repeated ReserveBalanceV1 reserve_balances = 12;
   uint32 state_version = 13;
+  string audit_key_id = 14;
+  uint64 audit_key_epoch = 15;
 }
 
 // AssetRegistryEntryV1 is the consensus 1:1 mapping between a canonical

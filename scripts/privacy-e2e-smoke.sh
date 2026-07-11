@@ -191,6 +191,8 @@ auditor_hex = Path(sys.argv[2]).read_text().strip()
 genesis_path = home / "config" / "genesis.json"
 doc = json.loads(genesis_path.read_text())
 doc["app_state"]["privacy"]["audit_master_pubkey"] = base64.b64encode(bytes.fromhex(auditor_hex)).decode()
+doc["app_state"]["privacy"]["audit_key_id"] = "master"
+doc["app_state"]["privacy"]["audit_key_epoch"] = "1"
 genesis_path.write_text(json.dumps(doc, indent=2))
 PY
 

@@ -37,6 +37,8 @@ const (
 	KeyPrefixScanOutput      = 0x0e
 	KeyPrefixRootSnapshot    = 0x0f
 	KeyPrefixScanSequence    = 0x10
+	KeyPrefixAuditKeyID      = 0x11
+	KeyPrefixAuditKeyEpoch   = 0x12
 )
 
 // Event types and attribute keys emitted by the module.
@@ -85,6 +87,8 @@ const (
 )
 
 var auditConfigStoreKey = []byte{KeyPrefixAuditConfig}
+var auditKeyIDStoreKey = []byte{KeyPrefixAuditKeyID}
+var auditKeyEpochStoreKey = []byte{KeyPrefixAuditKeyEpoch}
 var privacyEventSequenceStoreKey = []byte{KeyPrefixPrivacyEventSeq}
 var circuitIdentityStoreKey = []byte{KeyPrefixCircuitIdentity}
 
@@ -131,6 +135,14 @@ func GetCommitmentIndexKey(commitment []byte) []byte {
 
 func GetAuditConfigKey() []byte {
 	return append([]byte(nil), auditConfigStoreKey...)
+}
+
+func GetAuditKeyIDKey() []byte {
+	return append([]byte(nil), auditKeyIDStoreKey...)
+}
+
+func GetAuditKeyEpochKey() []byte {
+	return append([]byte(nil), auditKeyEpochStoreKey...)
 }
 
 func GetCircuitIdentityKey() []byte {

@@ -16,9 +16,20 @@ import (
 const genesisFieldElementByteSize = 32
 
 const (
-	CircuitSetIdentitySchemaVersion = "v1"
-	CircuitCurveBN254               = "BN254"
+	CircuitSetIdentitySchemaVersion        = "v1"
+	CircuitCurveBN254                      = "BN254"
+	DefaultAuditKeyIDV1                    = "master"
+	DefaultAuditKeyEpochV1          uint64 = 1
 )
+
+// AuditConfigV1 is the exact chain-level audit disclosure identity. The
+// all-zero value means that audit disclosure is not configured; otherwise all
+// fields must be present and canonical.
+type AuditConfigV1 struct {
+	AuditKeyID        string
+	AuditKeyEpoch     uint64
+	AuditTargetPubkey []byte
+}
 
 var RequiredCircuitIdentityOrder = []string{"deposit", "spend", "joinsplit", "batch-joinsplit-16x32-v1"}
 
@@ -82,10 +93,12 @@ func (gs GenesisState) Validate() error {
 		return fmt.Errorf("nullifiers: %w", err)
 	}
 
-	if len(gs.AuditMasterPubkey) != 0 {
-		if _, err := decodePublicKey(gs.AuditMasterPubkey); err != nil {
-			return fmt.Errorf("audit_master_pubkey: %w", err)
-		}
+	if err := ValidateAuditConfigV1(AuditConfigV1{
+		AuditKeyID:        gs.AuditKeyId,
+		AuditKeyEpoch:     gs.AuditKeyEpoch,
+		AuditTargetPubkey: gs.AuditMasterPubkey,
+	}); err != nil {
+		return err
 	}
 	if gs.CircuitSetIdentity == nil {
 		return fmt.Errorf("circuit_set_identity: is required")
@@ -106,6 +119,27 @@ func (gs GenesisState) Validate() error {
 		return fmt.Errorf("reserve_balances: %w", err)
 	}
 
+	return nil
+}
+
+// ValidateAuditConfigV1 accepts exactly an all-zero configuration or a fully
+// populated canonical audit identity.
+func ValidateAuditConfigV1(config AuditConfigV1) error {
+	hasID := config.AuditKeyID != ""
+	hasEpoch := config.AuditKeyEpoch != 0
+	hasTarget := len(config.AuditTargetPubkey) != 0
+	if !hasID && !hasEpoch && !hasTarget {
+		return nil
+	}
+	if !hasID || !hasEpoch || !hasTarget {
+		return fmt.Errorf("audit config must be all-zero or include audit_key_id, positive audit_key_epoch, and audit_master_pubkey")
+	}
+	if err := ValidateAuditKeyIDV1(config.AuditKeyID); err != nil {
+		return fmt.Errorf("audit_key_id: %w", err)
+	}
+	if _, err := decodePublicKey(config.AuditTargetPubkey); err != nil {
+		return fmt.Errorf("audit_master_pubkey: %w", err)
+	}
 	return nil
 }
 

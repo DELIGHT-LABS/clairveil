@@ -52,6 +52,10 @@ var (
 	depositArtifactErr  error
 	depositTestR1CS     constraint.ConstraintSystem
 	depositTestPK       groth16.ProvingKey
+	batchTestR1CS       constraint.ConstraintSystem
+	batchTestPK         groth16.ProvingKey
+	joinSplitTestR1CS   constraint.ConstraintSystem
+	joinSplitTestPK     groth16.ProvingKey
 )
 
 func (m *mockPrivacyBankKeeper) GetBalance(_ context.Context, _ sdk.AccAddress, denom string) sdk.Coin {
@@ -150,9 +154,23 @@ func ensureDepositTestArtifacts(t *testing.T) {
 			depositArtifactErr = err
 			return
 		}
+		batchCS, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit.BatchJoinSplit16x32{})
+		if err != nil {
+			depositArtifactErr = err
+			return
+		}
+		batchPK, batchVK, err := groth16.Setup(batchCS)
+		if err != nil {
+			depositArtifactErr = err
+			return
+		}
 
 		depositTestR1CS = depositCS
 		depositTestPK = depositPK
+		batchTestR1CS = batchCS
+		batchTestPK = batchPK
+		joinSplitTestR1CS = joinSplitCS
+		joinSplitTestPK = joinSplitPK
 		depositArtifactErr = writeKeeperTestArtifacts(dir, []keeperTestArtifact{
 			{privacyzk.DepositR1CSFile, depositCS},
 			{privacyzk.DepositPKFile, depositPK},
@@ -163,6 +181,9 @@ func ensureDepositTestArtifacts(t *testing.T) {
 			{privacyzk.JoinSplitR1CSFile, joinSplitCS},
 			{privacyzk.JoinSplitPKFile, joinSplitPK},
 			{privacyzk.JoinSplitVKFile, joinSplitVK},
+			{privacyzk.BatchJoinSplit16x32R1CSFile, batchCS},
+			{privacyzk.BatchJoinSplit16x32PKFile, batchPK},
+			{privacyzk.BatchJoinSplit16x32VKFile, batchVK},
 		})
 	})
 	require.NoError(t, depositArtifactErr)
@@ -793,7 +814,7 @@ func TestMsgServerTransferRejectsGlobalCommitmentCollisionBeforeProof(t *testing
 	existing := fixedFieldBytes(56)
 	require.NoError(t, k.AppendCommitment(ctx, existing))
 	root := append([]byte(nil), k.GetMerkleNode(ctx, uint8(MerkleDepth), 0)...)
-	auditPubKey := fixedFieldBytes(57)
+	auditPubKey := testKeeperDisclosurePubKey()
 	k.SetAuditMasterPubkey(ctx, auditPubKey)
 	countBefore := k.GetLeafCount(ctx)
 	rootBefore := append([]byte(nil), root...)
@@ -820,7 +841,7 @@ func TestMsgServerTransferRejectsInsufficientBatchCapacityBeforeProof(t *testing
 	k.SetLeafCount(ctx, MaxMerkleLeaves-1)
 
 	root := fixedFieldBytes(50)
-	auditPubKey := fixedFieldBytes(51)
+	auditPubKey := testKeeperDisclosurePubKey()
 	k.SetHistoricalRoot(ctx, root)
 	k.SetAuditMasterPubkey(ctx, auditPubKey)
 
@@ -847,7 +868,7 @@ func TestMsgServerTransferRejectsOverflowAsTreeStateError(t *testing.T) {
 	k.SetLeafCount(ctx, MaxMerkleLeaves+1)
 
 	root := fixedFieldBytes(60)
-	auditPubKey := fixedFieldBytes(61)
+	auditPubKey := testKeeperDisclosurePubKey()
 	k.SetHistoricalRoot(ctx, root)
 	k.SetAuditMasterPubkey(ctx, auditPubKey)
 

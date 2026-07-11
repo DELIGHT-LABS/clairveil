@@ -49,8 +49,8 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 		panic(fmt.Errorf("failed to initialize privacy scan index: %w", err))
 	}
 
-	if len(genState.AuditMasterPubkey) != 0 {
-		k.SetAuditMasterPubkey(ctx, genState.AuditMasterPubkey)
+	if err := k.SetAuditConfigV1(ctx, genState.AuditKeyId, genState.AuditKeyEpoch, genState.AuditMasterPubkey); err != nil {
+		panic(fmt.Errorf("failed to initialize privacy audit config: %w", err))
 	}
 }
 
@@ -104,10 +104,19 @@ func ExportGenesis(ctx sdk.Context, k keeper.Keeper) *types.GenesisState {
 		panic(fmt.Errorf("failed to export privacy global sequence: %w", err))
 	}
 
+	auditConfig, auditConfigured, err := k.GetAuditConfigV1(ctx)
+	if err != nil {
+		panic(fmt.Errorf("failed to export privacy audit config: %w", err))
+	}
+
 	genesis.Commitments = commitments
 	genesis.HistoricalRoots = historicalRoots
 	genesis.Nullifiers = nullifiers
-	genesis.AuditMasterPubkey = k.GetAuditMasterPubkey(ctx)
+	if auditConfigured {
+		genesis.AuditMasterPubkey = auditConfig.AuditTargetPubkey
+		genesis.AuditKeyId = auditConfig.AuditKeyID
+		genesis.AuditKeyEpoch = auditConfig.AuditKeyEpoch
+	}
 	genesis.AssetRegistry = assetRegistry
 	genesis.MerkleRootSnapshots = rootSnapshots
 	genesis.ReserveBalances = reserveBalances
