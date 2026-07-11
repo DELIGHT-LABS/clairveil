@@ -11,6 +11,7 @@ import (
 	"time"
 
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
+	privatefile "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/internal/privatefile"
 )
 
 type LocalWalletData struct {
@@ -129,7 +130,7 @@ func SaveLocalWalletFile(dbPath string, data *LocalWalletData) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dbPath, fileBytes, 0600)
+	return privatefile.Write(dbPath, fileBytes)
 }
 
 func foundNoteIdentityKey(note FoundNote) string {

@@ -11,6 +11,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
+	privatefile "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/internal/privatefile"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -154,7 +155,7 @@ func (p PreparedWithdrawPayload) WriteJSONFile(path string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, payloadBytes, 0600)
+	return privatefile.Write(path, payloadBytes)
 }
 
 func (p PreparedWithdrawPayload) ToMsg(creator string) (*privacytypes.MsgWithdraw, error) {

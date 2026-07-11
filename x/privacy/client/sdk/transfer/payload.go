@@ -16,6 +16,7 @@ import (
 
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/circuit"
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
+	privatefile "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/internal/privatefile"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	privacyzk "github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
@@ -578,7 +579,7 @@ func (p PreparedTransferPayload) WriteJSONFile(path string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, payloadBytes, 0o600)
+	return privatefile.Write(path, payloadBytes)
 }
 
 func BuildPreparedTransferProof(
@@ -674,7 +675,7 @@ func (p PreparedTransferProof) WriteJSONFile(path string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, proofBytes, 0o600)
+	return privatefile.Write(path, proofBytes)
 }
 
 func (p PreparedTransferPayload) ToMsg(proof PreparedTransferProof) (*privacytypes.MsgTransfer, error) {

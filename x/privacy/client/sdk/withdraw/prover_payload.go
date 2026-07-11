@@ -17,6 +17,7 @@ import (
 
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/circuit"
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
+	privatefile "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/internal/privatefile"
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
@@ -282,7 +283,7 @@ func (p PreparedWithdrawProverPayload) WriteJSONFile(path string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, payloadBytes, 0o600)
+	return privatefile.Write(path, payloadBytes)
 }
 
 func BuildPreparedWithdrawProof(
@@ -347,7 +348,7 @@ func (p PreparedWithdrawProof) WriteJSONFile(path string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, proofBytes, 0o600)
+	return privatefile.Write(path, proofBytes)
 }
 
 func (p PreparedWithdrawProverPayload) ToPreparedWithdrawPayload(proof PreparedWithdrawProof, now time.Time) (*PreparedWithdrawPayload, error) {

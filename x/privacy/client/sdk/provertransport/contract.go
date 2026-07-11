@@ -3,14 +3,13 @@ package provertransport
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"time"
 
 	privacybatchtransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/batchtransfer"
+	privatefile "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/internal/privatefile"
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
 	privacywithdraw "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/withdraw"
 )
@@ -265,34 +264,7 @@ func (r BatchTransferProofResponse) WriteJSONFile(path string) error {
 }
 
 func writePrivateFile(path string, payloadBytes []byte) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	defer tmp.Close()
-	if err := tmp.Chmod(0o600); err != nil {
-		return err
-	}
-	if _, err := tmp.Write(payloadBytes); err != nil {
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return err
-	}
-	directory, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	return errors.Join(directory.Sync(), directory.Close())
+	return privatefile.Write(path, payloadBytes)
 }
 
 func NewTransferProofRequest(payload privacytransfer.PreparedTransferPayload) (*TransferProofRequest, error) {
@@ -392,7 +364,7 @@ func (r TransferProofRequest) WriteJSONFile(path string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, payloadBytes, 0o600)
+	return writePrivateFile(path, payloadBytes)
 }
 
 func DecodeTransferProofResponseJSON(payloadBytes []byte) (*TransferProofResponse, error) {
@@ -420,7 +392,7 @@ func (r TransferProofResponse) WriteJSONFile(path string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, payloadBytes, 0o600)
+	return writePrivateFile(path, payloadBytes)
 }
 
 func NewWithdrawProofRequest(payload privacywithdraw.PreparedWithdrawProverPayload, now time.Time) (*WithdrawProofRequest, error) {
@@ -497,7 +469,7 @@ func (r WithdrawProofRequest) WriteJSONFile(path string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, payloadBytes, 0o600)
+	return writePrivateFile(path, payloadBytes)
 }
 
 func DecodeWithdrawProofResponseJSON(payloadBytes []byte) (*WithdrawProofResponse, error) {
@@ -525,5 +497,5 @@ func (r WithdrawProofResponse) WriteJSONFile(path string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, payloadBytes, 0o600)
+	return writePrivateFile(path, payloadBytes)
 }

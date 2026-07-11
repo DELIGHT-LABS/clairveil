@@ -97,7 +97,12 @@ func TestSaveLocalWalletFileRoundTrip(t *testing.T) {
 		},
 	}
 
+	require.NoError(t, os.WriteFile(dbPath, []byte("old"), 0o644))
+	require.NoError(t, os.Chmod(dbPath, 0o644))
 	require.NoError(t, SaveLocalWalletFile(dbPath, original))
+	info, err := os.Stat(dbPath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 
 	result, err := LoadLocalWalletFile(tempDir, userAddress)
 	require.NoError(t, err)

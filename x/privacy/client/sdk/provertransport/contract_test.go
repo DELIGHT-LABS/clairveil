@@ -163,14 +163,34 @@ func TestBatchTransferProofJSONDecodeIsStrict(t *testing.T) {
 	require.ErrorContains(t, err, "duplicate JSON object key")
 }
 
-func TestBatchTransferProofFilesArePrivate(t *testing.T) {
+func TestProofFilesReplacePermissiveModes(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "batch-request.json")
-	require.NoError(t, os.WriteFile(path, []byte("old"), 0o644))
-	require.NoError(t, (BatchTransferProofRequest{Version: BatchTransferProofRequestVersion}).WriteJSONFile(path))
-	info, err := os.Stat(path)
-	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	writers := []struct {
+		name  string
+		write func(string) error
+	}{
+		{name: "batch-request", write: (BatchTransferProofRequest{Version: BatchTransferProofRequestVersion}).WriteJSONFile},
+		{name: "batch-response", write: (BatchTransferProofResponse{Version: BatchTransferProofResponseVersion}).WriteJSONFile},
+		{name: "transfer-request", write: (TransferProofRequest{Version: TransferProofRequestVersion}).WriteJSONFile},
+		{name: "transfer-response", write: (TransferProofResponse{Version: TransferProofResponseVersion}).WriteJSONFile},
+		{name: "withdraw-request", write: (WithdrawProofRequest{Version: WithdrawProofRequestVersion}).WriteJSONFile},
+		{name: "withdraw-response", write: (WithdrawProofResponse{Version: WithdrawProofResponseVersion}).WriteJSONFile},
+	}
+	for _, writer := range writers {
+		t.Run(writer.name, func(t *testing.T) {
+			path := filepath.Join(dir, writer.name+".json")
+			require.NoError(t, os.WriteFile(path, []byte("old"), 0o644))
+			require.NoError(t, os.Chmod(path, 0o644))
+			require.NoError(t, writer.write(path))
+			info, err := os.Stat(path)
+			require.NoError(t, err)
+			require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+		})
+	}
+}
+
+func TestBatchTransferProofFileAtomicallyReplacesSymlink(t *testing.T) {
+	dir := t.TempDir()
 
 	targetPath := filepath.Join(dir, "existing-private-artifact.json")
 	require.NoError(t, os.WriteFile(targetPath, []byte("existing artifact"), 0o600))
@@ -182,7 +202,7 @@ func TestBatchTransferProofFilesArePrivate(t *testing.T) {
 	targetBytes, err := os.ReadFile(targetPath)
 	require.NoError(t, err)
 	require.Equal(t, []byte("existing artifact"), targetBytes)
-	info, err = os.Lstat(responsePath)
+	info, err := os.Lstat(responsePath)
 	require.NoError(t, err)
 	require.Zero(t, info.Mode()&os.ModeSymlink)
 	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
