@@ -72,6 +72,40 @@ func TestBatchTransferRawFramingRejectsNestedWrapperCapBypass(t *testing.T) {
 	}
 }
 
+func TestBatchTransferRawFramingRejectsMalformedWire(t *testing.T) {
+	t.Run("truncated bytes field", func(t *testing.T) {
+		err := inspectRawAny([]byte{0x0a, 0x80}, 0, "test any")
+		require.ErrorContains(t, err, "decode raw protobuf field")
+	})
+
+	t.Run("type url uses non-bytes wire type", func(t *testing.T) {
+		err := inspectRawAny([]byte{0x08, 0x01}, 0, "test any")
+		require.ErrorContains(t, err, "type_url has wire type 0")
+	})
+
+	t.Run("value uses non-bytes wire type", func(t *testing.T) {
+		rawAny := appendProtoBytesField(nil, 1, []byte(batchTransferMsgTypeURL))
+		rawAny = append(rawAny, 0x10, 0x01)
+		err := inspectRawAny(rawAny, 0, "test any")
+		require.ErrorContains(t, err, "value has wire type 0")
+	})
+}
+
+func TestBatchTransferRawFramingEnforcesWrapperDepthBoundary(t *testing.T) {
+	boundedBatchAny := rawAnyBytes(batchTransferMsgTypeURL, []byte{0x01})
+	wrapped := boundedBatchAny
+	for range maxBatchWrapperDepth {
+		wrapperValue := appendProtoBytesField(nil, 2, wrapped)
+		wrapped = rawAnyBytes(authzExecMsgTypeURL, wrapperValue)
+	}
+	require.NoError(t, validateRawBatchTransferMessageSizes(rawTxBytesWithRawAny(t, wrapped)))
+
+	wrapperValue := appendProtoBytesField(nil, 2, wrapped)
+	overDepth := rawAnyBytes(authzExecMsgTypeURL, wrapperValue)
+	err := validateRawBatchTransferMessageSizes(rawTxBytesWithRawAny(t, overDepth))
+	require.ErrorContains(t, err, "exceeds nested message depth 8")
+}
+
 func TestBatchTransferRawFramingAllowsBoundedBatchAndIgnoresOtherTypes(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

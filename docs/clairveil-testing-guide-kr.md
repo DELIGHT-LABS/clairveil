@@ -85,7 +85,7 @@ Active circuit set은 `privacy-note-v1`이고 required 순서는 `deposit`, `spe
 - `x/privacy/client/sdk/conformance/session2_contract_test.go`: `privacy_note_v1_contract.json`, `privacy_batch_joinsplit_v1_contract.json`의 independent verification.
 - `x/privacy/circuit/batch_joinsplit_16x32_test.go`: production positive shape, exact sentinel/active-prefix, key/range/root/signature tamper, output/disclosure order, vector type/level separation.
 - `x/privacy/keeper/batch_gas_test.go`, `batch_scan_index_test.go`, `batch_transfer_core_integration_test.go`: deterministic precharge 순서, single-copy typed payload/minimal event, global Deposit/2x2/batch sequence, direct proof/state integration, atomic failure, cross-message rollback, batch scan genesis round-trip.
-- `app/ante_batch_transfer_test.go`: signed raw `Any.value` 128 KiB cap과 duplicate-singular-field decode overwrite 우회를 검사한다. Keeper gas test는 실제 `1/1`과 max `16/32` state path에서 explicit precharge와 Cosmos KV descriptor를 분리 계측한다.
+- `app/ante_batch_transfer_test.go`: signed raw `Any.value` 128 KiB cap, duplicate-singular-field decode overwrite, nested governance/authz wrapper, malformed wire, 8-level recursion boundary를 검사한다. Keeper gas test는 실제 `1/1`과 max `16/32` state path에서 explicit precharge와 Cosmos KV descriptor를 분리 계측한다.
 - `x/privacy/genesis_test.go`, `x/privacy/keeper/path_snapshot_test.go`: state write 전 circuit identity 검사, imported historical root 전체 재계산, restore 후 exported per-prefix root snapshot query.
 - `x/privacy/zk/development_artifact_gate_test.go`: 네 번째 descriptor schema identity와 generated development artifact에 대한 validator VK-only/prover R1CS·PK-only readiness.
 

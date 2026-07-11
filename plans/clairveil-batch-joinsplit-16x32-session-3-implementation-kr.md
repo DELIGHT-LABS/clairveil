@@ -515,9 +515,10 @@ git diff --check
 
 - 상태: **Complete — Gate 3A 충족. Session 3B는 Unblocked이지만 시작하지 않음.**
 - 시작 commit: `b7a97acd03c5e97b9e7e0bf52197ba421feda3c8`
-- 완료 core commit: `62d052699b538800374fede592b337e83de3a253`
+- 완료 core hardening commit: `fc391f5e1d69634e0b64a14735d0956302038032`
 - 공개 계약 문서 commit: `67115090d63578d3643617c866d03ef953b103f2`
-- completion/ledger commit: 이 record와 Master Roadmap을 갱신한 commit
+- 최초 completion/ledger commit: `838da3ca502c330cd4493212d0528b570bc2bd5f`
+- 최종 closure commit: 최신 hardening, 재검증, 이 record와 Master Roadmap 정정을 함께 고정한 commit
 
 ### Gate 2 재검증
 
@@ -532,7 +533,7 @@ git diff --check
 - required circuit order: `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`
 - production batch source: `x/privacy/circuit/batch_joinsplit_16x32.go`; max input/output `16/32`; constraint `1,111,837`
 - artifact manifest schema: `v2`; circuit identity schema: `v1`; privacy module/state version: `2`
-- batch proto/API: package `clairveil.privacy.v1`, `MsgBatchTransfer`, `BatchTransferOutput`, canonical owner-effect format `1`, signed raw `Any.value` cap `128 KiB`
+- batch proto/API: package `clairveil.privacy.v1`, `MsgBatchTransfer`, `BatchTransferOutput`, canonical owner-effect format `1`, signed raw `Any.value` cap `128 KiB`. Direct message와 nested governance/authz wrapper에서 batch `Any`의 type URL/value singleton을 raw wire 기준으로 검사하고 malformed wire와 8-level 초과 nesting을 fail closed함.
 - fixed payload/envelope: `privacy-fixed-v1`; AssetRegistry: `privacy-asset-registry-v1`
 - public witness exact order: `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`
 - public-input schema SHA-256: `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`
@@ -540,7 +541,7 @@ git diff --check
 ### Gas, state, scan contract
 
 - `BatchGasModelV1`: verify base `1,000,000`; per input `25,000`; per output `50,000`; per canonical payload byte `4`; per typed state byte `8`; per tree-node write `5,000`; per global lookup `10,000` gas.
-- resource bounds: canonical payload `65,384 B`, typed state `256 KiB`, tree node writes `1,056`, global lookups `48`. Cheap signed-wire/framing 검사 뒤 canonical/semantic/state/proof 작업 전에 deterministic precharge함. Cosmos KV gas는 실제 store I/O를 별도로 charge하며 real `1/1` handler와 max `16/32` post-proof transition에서 두 layer를 독립 계측함.
+- resource bounds: canonical payload `65,384 B`, typed state `256 KiB`, tree node writes `1,056`, global lookups `48`. BaseApp가 ante보다 먼저 호출하는 batch `ValidateBasic`은 bounded framing/creator만 검사하고, keeper가 cheap signed-wire/proof framing 뒤 deterministic precharge한 다음 canonical point/envelope/disclosure/audit state 검증과 proof 작업을 수행함. Cosmos KV gas는 실제 store I/O를 별도로 charge하며 real `1/1` handler와 max `16/32` post-proof transition에서 두 layer를 독립 계측함.
 - scan schema/sequence: `privacy-scan-v2` / `privacy-sequence-v1`; lexicographic query cursor `(height, global_sequence, output_index)`. Deposit/2x2/Batch가 같은 global sequence를 사용하며 ciphertext/disclosure bytes는 typed output record에 한 번만 저장함.
 - `EventBatchTransferV1`은 effect ID, count, root, version, expiry, relayer, audit identity만 emit함. Same-root path snapshot, output/record/byte limit, typed fail-closed query, genesis export/import와 모든 historical prefix root 재검증을 통과함.
 - exact audit key ID/epoch/target과 `AssetRegistryV1` mapping을 consensus state/genesis/query에서 검증함. Nullifier와 commitment는 local duplicate 및 global Deposit/2x2/Batch/genesis uniqueness를 모두 검사함.
@@ -581,12 +582,14 @@ Generation peak RSS는 `3,308,797,952 B`, role readiness peak RSS는 `1,295,482,
 | `make release-check` | PASS; `go test ./...`, command build, examples, vulnerability policy, localnet smoke, privacy E2E, bulk readiness 포함 |
 | `make release-pack` / `make release-pack-verify` | PASS |
 | `git diff --check` | PASS |
+| post-`fc391f5` closure audit | PASS; direct proof/keeper, gas/rollback, global commitment/nullifier, scan/genesis, artifact readiness targeted suite와 전체 `make release-check` 재실행 |
 
 ### Review finding과 residual risk
 
 - Independent circuit/proto review와 keeper/state/gas review에서 최종 unresolved Critical/High/Medium finding은 0건임.
 - Review 중 발견한 두 Medium은 signed raw protobuf duplicate-field wire-cap bypass 방어와 max-shape Cosmos KV gas/explicit precharge 경계 증명으로 수정했으며 follow-up review가 두 finding의 해소와 새 Critical/High/Medium 0건을 확인함.
-- Low residual: 향후 `authz`/`group`처럼 nested message를 즉시 실행하는 wrapper를 ante 밖에 추가하면 recursive raw `Any.value` cap을 다시 검토해야 함.
+- `fc391f5`는 BaseApp의 pre-ante `ValidateBasic` 때문에 발생할 수 있던 무과금 semantic validation을 keeper precharge 뒤로 이동하고, direct/governance/authz raw `Any` singleton/cap 재귀 검사를 추가했음. Exact delta 독립 재검토에서 active Critical/High/Medium/actionable security finding은 0건이었고 malformed wire 및 max-depth boundary regression도 후속 test로 고정함.
+- 현재 활성 module 구성에서 unresolved security finding은 0건임. 향후 임의 `Any`를 실행하는 새 wrapper module을 추가하면 raw recursion registry와 cap test를 함께 갱신해야 한다는 변경관리 조건은 남지만 현재 finding은 아님.
 - Formal trusted setup, external audit, production artifact signing/distribution은 미수행임. Development setup generation은 약 `3.08 GiB`, readiness는 약 `1.21 GiB` peak RSS를 사용하므로 production prover hard cancellation/resource containment에는 process isolation이 필요함.
 - Public batch Go SDK, remote prover batch HTTP route, wallet scanner/decrypt UX, one-proof payroll planner/worker/reconcile, batch CLI/tutorial은 의도적으로 미구현이며 Session 3B 범위임. Remote historical path query의 wallet-interest leakage, state pruning/governance calibration, new-asset governance도 residual operational risk임.
 - Accepted no-fixed-version Go findings `GO-2024-2584`, `GO-2026-4479`, `GO-2026-5932`와 examples npm low 1건을 기존 release policy에 따라 계속 추적함.
