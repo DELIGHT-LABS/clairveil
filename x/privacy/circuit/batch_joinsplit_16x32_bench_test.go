@@ -31,6 +31,7 @@ func BenchmarkBatchJoinSplit16x32Solve(b *testing.B) {
 		outputCount int
 	}{
 		{name: "1x1", inputCount: 1, outputCount: 1},
+		{name: "3x4", inputCount: 3, outputCount: 4},
 		{name: "16x32", inputCount: 16, outputCount: 32},
 	} {
 		b.Run(shape.name, func(b *testing.B) {

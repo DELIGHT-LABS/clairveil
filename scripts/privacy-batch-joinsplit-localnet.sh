@@ -288,19 +288,20 @@ set +e
 run tx privacy broadcast-batch-transfer "$out/exact-thirty-two-payments-prepared.json" "$out/exact-thirty-two-payments-proof.json" --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas "$batch_gas" --gas-prices "$gas_prices" --yes --output json >"$out/retry-broadcast.json" 2>"$out/retry-broadcast.stderr"
 retry_status=$?
 set -e
-if [[ "$retry_status" == "0" ]] && python3 - "$out/retry-broadcast.json" <<'PY'
+retry_query="$out/retry-broadcast-query.json"
+if [[ "$retry_status" == "0" ]]; then
+	retry_tx_hash="$(tx_hash_from_file "$out/retry-broadcast.json")"
+	wait_tx "$retry_tx_hash" "$retry_query"
+	if python3 - "$retry_query" <<'PY'
 import json,sys
-try:
-    doc = json.load(open(sys.argv[1]))
-except (OSError, json.JSONDecodeError):
-    raise SystemExit(1)
-raise SystemExit(0 if int(doc.get("code", 0)) == 0 else 1)
+raise SystemExit(0 if int(json.load(open(sys.argv[1])).get("code", 0)) == 0 else 1)
 PY
-then
-	echo "spent-nullifier retry unexpectedly succeeded" >&2
-	exit 1
+	then
+		echo "spent-nullifier retry unexpectedly succeeded on chain" >&2
+		exit 1
+	fi
 fi
-if ! grep -Eqi 'nullifier|spent' "$out/retry-broadcast.json" "$out/retry-broadcast.stderr"; then
+if ! grep -Eqi 'nullifier|spent' "$out/retry-broadcast.json" "$out/retry-broadcast.stderr" "$retry_query" 2>/dev/null; then
 	echo "retry failed without spent-nullifier evidence" >&2
 	exit 1
 fi
