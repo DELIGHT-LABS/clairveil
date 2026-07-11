@@ -4,8 +4,8 @@
 
 | 항목 | 결과 |
 | --- | --- |
-| 검토 범위 | `e427370..db79ff0bd8cbc666ba22acb12a2ba4909742527d` |
-| 검증한 implementation HEAD | `db79ff0bd8cbc666ba22acb12a2ba4909742527d` |
+| 검토 범위 | `e427370..7e27721ebdaa0a0c9591002be25f432026c64310` |
+| 검증한 implementation HEAD | `7e27721ebdaa0a0c9591002be25f432026c64310` |
 | 검토 역할 | Session 1~3B 구현에 참여하지 않은 fresh reviewer |
 | 진입 시 Gate 3B | 미커밋 integration tree 때문에 최초 차단됨. 아래 수정과 재검증을 완료한 뒤에만 closure 처리함 |
 | Session 4 공개 상태 | `PUBLICATION_READY_EXPERIMENTAL` |
@@ -42,18 +42,21 @@ Master Roadmap과 Session 1~4의 모든 plan 및 Completion Record를 처음부�
 | S4-10 | High | Deposit CLI가 완전한 NotePlaintextV1 hex를 stderr에 출력했다. | receiver key, amount, randomness, memo가 terminal capture 또는 application log에 노출될 수 있었다. | `c40c865`: helper가 message만 반환하고 note plaintext를 log하지 않도록 수정함. |
 | S4-11 | Medium | 한영 handoff/security 문서가 구현된 batch Go reference를 여전히 pending으로 표현하거나 downstream product completion과 혼동했다. | reviewer와 integrator가 code와 다른 contract 상태를 신뢰할 수 있었다. | `cee89a7`: 18개 한영 공개 문서에서 구현된 Go reference와 미완료 downstream/formal/production 작업을 분리함. |
 | S4-12 | Medium | Public low-level prover `HTTPHandler`는 batch route만 제한했고 transfer/withdraw는 admission 전에 unbounded `io.ReadAll`을 사용했다. | Handler를 직접 mount하면 공격자가 제어한 body를 permit 획득 전에 메모리에 올려 memory DoS를 만들 수 있었다. | `fc45edd`: 세 route가 같은 hard reader를 사용하고 wire/gzip overflow는 413을 반환하며 payload를 error에 포함하지 않는다. Transfer/withdraw overflow가 admission 전 거부되는 test도 추가함. |
-| S4-13 | Medium | 초기 Completion Record가 mutable `HEAD` range와 `Session 4 closure commit` placeholder를 사용했다. | 공개한 validation claim을 하나의 immutable source snapshot에서 재현할 수 없었다. | 이 record에서 report, Completion Record, master ledger가 검증한 implementation `db79ff0bd8cbc666ba22acb12a2ba4909742527d`를 고정한다. 생성한 release manifest는 publication-record commit과 archive checksum을 별도로 정확히 기록한다. |
+| S4-13 | Medium | 초기 Completion Record가 mutable `HEAD` range와 `Session 4 closure commit` placeholder를 사용했다. | 공개한 validation claim을 하나의 immutable source snapshot에서 재현할 수 없었다. | 이 record에서 report, Completion Record, master ledger가 검증한 implementation `7e27721ebdaa0a0c9591002be25f432026c64310`을 고정한다. 생성한 release manifest는 publication-record commit과 archive checksum을 별도로 정확히 기록한다. |
 | S4-14 | Medium | Release pack이 working-tree 파일을 복사하면서 `HEAD`만 기록했고 verify도 같은 dirty content를 재생성했다. | Commit에 없는 uncommitted docs/schema/fixture/source가 검증을 통과할 수 있었다. | `8b48483`: copy 전과 manifest 기록 전에 tracked/untracked non-ignored 상태를 검사한다. Dirty generation/default verify는 fail-closed하고 ignored `dist/`·`tmp/` output은 허용한다. |
 | S4-15 | Medium | Clean-worktree 검사는 ignored file을 숨기지만 recursive directory copy는 ignored `.env`, `node_modules` 등 local file을 포함했다. | Git status와 claimed commit을 바꾸지 않고 local secret 또는 development artifact가 pack에 유출될 수 있었다. | `816f627`: pinned source commit의 `git archive`에서만 선택 경로를 복사하므로 tracked blob만 들어간다. Copied example directory 안의 ignored `.env` probe가 archive에 없음을 실제 확인함. |
 | S4-16 | Medium | Working-tree copy 사이에 다른 process가 변경을 commit하면 두 status check 모두 clean이어서 새 `HEAD`를 기록할 수 있었다. | Archive가 old content를 섞으면서 더 새로운 clean `HEAD`를 provenance로 주장할 수 있었다. | `816f627`: 추출 전에 source SHA를 고정하고 모든 file을 그 Git tree에서 가져오며, manifest 전 HEAD 동일성을 검사하고 pinned SHA만 기록함. |
 | S4-17 | Low | `fc45edd` 뒤에도 한영 security/operations 문서 4쌍이 low-level prover handler에 body limit이 없다고 설명했다. | 실제보다 보수적이지만 현재 trust boundary와 달라 downstream review를 혼동시킬 수 있었다. | Publication record에서 raw handler도 hard cap을 유지하고 production wrapper가 auth, gzip wire/decompressed limit, health/readiness policy, server timeout을 추가로 담당한다고 정렬함. |
-| S4-18 | High | 최초 immutable record가 short commit `816f627`을 존재하지 않는 40-character object ID로 잘못 확장했다. | Exact validation range가 resolve되지 않아 publication claim을 재현할 수 없고 Gate 4 provenance가 무효였다. | 이 record에서 실제 object `db79ff0bd8cbc666ba22acb12a2ba4909742527d`를 모든 exact range에 고정하고 공개 전에 range를 실행함. |
+| S4-18 | High | 최초 immutable record가 short commit `816f627`을 존재하지 않는 40-character object ID로 잘못 확장했다. | Exact validation range가 resolve되지 않아 publication claim을 재현할 수 없고 Gate 4 provenance가 무효였다. | 이 record에서 실제 object `7e27721ebdaa0a0c9591002be25f432026c64310`을 모든 exact range에 고정하고 공개 전에 range를 실행함. |
 | S4-19 | Medium | Explicit external archive verify가 out-of-band expected commit과 Git-blob 비교 없이 archive 자체 manifest/checksum을 신뢰했다. | Self-consistent forged/stale archive가 임의 commit을 주장해도 handoff verify를 통과할 수 있었다. | `47bcca5`: explicit verify는 `RELEASE_PACK_EXPECTED_COMMIT`을 요구하고 local object로 resolve하며 canonical manifest commit을 확인한다. Non-regular entry를 거부하고 generated file 외 모든 packed file을 claimed Git tree와 byte-for-byte 비교함. |
 | S4-20 | Medium | Git-blob verify가 archive에 남은 file만 순회해 non-required tracked source file을 삭제하고 checksum을 다시 만들면 통과했다. | Expected commit을 주장하는 불완전 handoff pack이 승인될 수 있었다. | `3453b55`: generator/verifier가 tracked selected-path manifest를 공유하고 recursive expected Git file set과 archive file set의 exact equality를 요구한다. JS prover source 삭제 variant가 실패함. |
 | S4-21 | Medium | Generated `RELEASE-MANIFEST.txt`는 commit line만 검사했다. | Source identity, contents description, validation instruction을 수정하고 self-checksum할 수 있었다. | `3453b55`: tracked manifest template을 canonical version/commit/time으로 render하고 generated manifest 전체를 byte-for-byte 비교함. |
 | S4-22 | Medium | Tar type/duplicate 검사를 extraction 뒤 filesystem에서 수행해 뒤의 regular duplicate가 앞의 symlink entry를 숨길 수 있었다. | Tar reader마다 다른 effective content를 소비하는 archive가 승인될 수 있었다. | `3453b55`: bounded Python `tarfile` 검사로 non-canonical path, duplicate header, link/special entry, multiple root, size/member overflow를 file acceptance 전에 거부함. |
 | S4-23 | Medium | `RELEASE_PACK_EXPECTED_COMMIT`이 moving ref와 short SHA를 허용했다. | Branch/tag/`HEAD`가 이동해 immutable out-of-band trust anchor가 아니게 될 수 있었다. | `3453b55`: explicit verify는 canonical lowercase 40-character commit SHA만 허용하고 그 exact local commit을 요구함. |
 | S4-24 | Medium | Release verify가 packed Git file의 executable bit만 비교했다. `100644` file을 mode `0400`으로 바꾸고 checksum을 재생성해도 통과했다. | 사용할 수 없거나 예상보다 넓은 permission의 handoff archive가 승인되면서 보고서가 Git mode 일치를 주장할 수 있었다. | `db79ff0`: 모든 tracked file을 Git-derived exact `0644`/`0755` permission mode와 비교하고 generated manifest/checksum은 `0644`를 요구한다. `README.md`를 mode `0400`으로 바꾼 adversarial archive가 거부됨. |
+| S4-25 | Medium | Exact mode 비교가 extraction에서 raw tar mode를 `0o777`로 mask한 뒤에만 수행됐다. 따라서 raw `04644`/`04755` header가 `0644`/`0755`로 정규화되어 통과했다. | 다른 extractor가 raw header를 적용하면 setuid/setgid/sticky bit를 verifier에서 숨긴 채 exact-mode handoff 주장을 무효화할 수 있었다. | `7e27721`: raw regular file은 exact `0644`/`0755`, directory는 exact `0755`만 허용하고 모든 parent directory의 canonical explicit member를 요구한다. Special-bit/directory-mode variant를 extraction 전에 거부함. |
+| S4-26 | Medium | Release-pack mode가 caller umask를 상속했다. `umask 077`에서는 공식 generator가 `0600`/`0700` member와 `0600` metadata를 만들고 자체 verifier가 거부했다. | Secure CI/operator 환경에서 재현 가능한 공식 handoff pack을 만들 수 없었다. | `7e27721`: tracked file은 Git mode로 재설정하고 directory는 `0755`, generated metadata와 archive/checksum output은 `0644`로 고정한다. `umask 077` 전체 생성과 external verify round trip이 통과함. |
+| S4-27 | Medium | Transfer/withdraw/prover-transport/wallet writer가 `os.WriteFile(path, ..., 0600)`을 사용해 기존 `0644` file의 mode를 좁히지 못했다. | Prepared witness, note randomness/path/signature, key, amount, wallet cache가 문서화된 private-file 경계와 달리 다른 local user에게 읽힐 수 있었다. | `d5cef57`: 모든 SDK private JSON 경로가 atomic/durable fresh-inode writer를 공유하고 permissive file/symlink를 exact `0600`으로 교체한다. Direct/race regression을 추가함. |
 
 Protocol contract, public-input order, NoteV1 변경이 필요한 finding은 없었으므로 Session 2/3A 재진입은 필요하지 않았다. Unresolved Critical/High finding은 0건이고 unresolved security-relevant Medium finding도 0건이다.
 
@@ -68,7 +71,7 @@ Protocol contract, public-input order, NoteV1 변경이 필요한 finding은 없
 | E — differential/property | Count `1..16`, `1..32`, amount distribution, change/padding, disclosure mode, self-view, root, digest limb, intent, public witness serialization | 통과. Seed와 frozen fixture는 secret이 아니며 재현 가능 |
 | F — host/consensus | Proto framing/hard cap, deterministic gas precharge, invalid proof bound, state byte charge, proof-gated atomic write, 2x2+Batch 및 Batch+Batch 양방향 | Cross-message nullifier reuse 전체 rollback 포함 통과 |
 | G — event/scan | Minimal event, typed payload 1회 저장, global sequence/cursor, effect ID, limit, pagination/retry/restart, corrupt-state failure, lossy fallback 금지, one-snapshot path, genesis round trip, NoteV1 recomputation, item evidence | Unit/property/size profile/fresh localnet recovery 통과 |
-| H — prover/privacy | Lazy VK와 selected R1CS/PK, body/admission limit, 실제 prove 종료까지 permit lifetime, cancel/panic 회수, secret-free log/error, automatic failover 금지, ciphertext policy, 안전한 view-tag 기본값, development artifact label | Transport hardening과 plaintext log finding 수정 뒤 통과 |
+| H — prover/privacy | Lazy VK와 selected R1CS/PK, body/admission limit, 실제 prove 종료까지 permit lifetime, cancel/panic 회수, secret-free log/error, automatic failover 금지, ciphertext policy, 안전한 view-tag 기본값, development artifact label | Transport hardening, plaintext log, private-file replacement finding 수정 뒤 통과 |
 | I — payroll/reconcile | Atomic many-to-many persistence, 31+change/exact32, role/index/evidence, batch와 item 결과 분리, retry 전 tx/nullifier 조회, explicit re-sign, audit/manual-review metadata | Memory/durable-file/SQL/live localnet에서 통과 |
 
 ## Independent Golden Known-Answer Test
@@ -154,9 +157,10 @@ Export 전 chain은 height 47, summary 42개, output 138개, global sequence 42,
 | `make reference-payroll-live-localnet` | Fresh state에서 통과 |
 | `make release-check` | CI, vulnerability policy, 일반 localnet, privacy E2E, 2-batch bulk readiness 포함 통과 |
 | `make release-pack` | Session 4 한영 보고서를 포함해 통과 |
-| `make release-pack-verify` | 필수 파일 125개, exact selected Git file set, canonical manifest/tar/checksum list, Git blob/exact permission mode, archive checksum 검증 통과 |
-| External archive adversarial variant | missing file, modified manifest, duplicate member, moving/short expected commit, mode-`0400` Git file을 모두 거부함 |
-| `git diff --check e427370..db79ff0bd8cbc666ba22acb12a2ba4909742527d`와 publication hygiene | 통과. Tracked artifact/secret/personal-path 결과는 없고 생성된 `dist/`/`tmp/`는 ignored 유지 |
+| `make release-pack-verify` | 필수 파일 125개, exact selected Git file set, canonical manifest/tar/checksum list, Git blob/raw·extracted exact permission mode, archive checksum 검증 통과 |
+| External archive adversarial variant | missing file/directory, modified manifest, duplicate member, moving/short expected commit, mode `0400`/`04644`/`04755` Git file, mode-`0777` directory를 모두 거부함 |
+| `umask 077` release generation과 external verify | tracked file, directory, metadata, archive, checksum의 canonical mode를 유지하며 통과 |
+| `git diff --check e427370..7e27721ebdaa0a0c9591002be25f432026c64310`과 publication hygiene | 통과. Tracked artifact/secret/personal-path 결과는 없고 생성된 `dist/`/`tmp/`는 ignored 유지 |
 
 ## Accepted Residual과 Production TODO
 
