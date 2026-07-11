@@ -238,8 +238,9 @@ func (c *batchPointSubgroupCircuit) Define(api frontend.API) error {
 }
 
 // TestBatchJoinSplit16x32FullShapeResourceGate is intentionally opt-in because
-// it performs a development Groth16 setup and four real proofs. Session 2 runs
-// it explicitly and records the emitted JSON; CI still compiles this code.
+// it performs a development Groth16 setup and 15 proof samples (three for each
+// of four batch shapes plus three for JoinSplit2x2). Session 2 runs it
+// explicitly and records the emitted JSON; CI still compiles this code.
 func TestBatchJoinSplit16x32FullShapeResourceGate(t *testing.T) {
 	if os.Getenv("CLAIRVEIL_RUN_BATCH_FEASIBILITY") != "1" {
 		t.Skip("set CLAIRVEIL_RUN_BATCH_FEASIBILITY=1 to run the full resource gate")

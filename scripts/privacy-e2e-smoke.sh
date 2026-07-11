@@ -283,21 +283,25 @@ public = json.loads((out / "transfer-public-report.json").read_text())
 user = json.loads((out / "transfer-recipient-user-report.json").read_text())
 audit = json.loads((out / "transfer-recipient-audit-report.json").read_text())
 self_view = json.loads((out / "transfer-recipient-self-view-report.json").read_text())
+uclair_asset_id = "238d5f23e4d918d40b0982ce3aef16a75c4d1760193d1c3b30b9f5df681903ca"
 
 checks = [
     public["summary"]["delivery"] == "public",
     public["summary"]["amount"] == "7",
-    public["summary"]["asset_denom"] == "uclair",
+    public["summary"]["asset_id_hex"] == uclair_asset_id,
     user["verification"]["verified"] is True,
     user["summary"]["delivery"] == "recipient-encrypted",
     user["summary"]["amount"] == "10",
+    user["summary"]["asset_id_hex"] == uclair_asset_id,
     audit["verification"]["verified"] is True,
     audit["summary"]["delivery"] == "audit-encrypted",
     audit["summary"]["amount"] == "10",
+    audit["summary"]["asset_id_hex"] == uclair_asset_id,
     self_view["verification"]["verified"] is True,
     self_view["summary"]["plane"] == "self-view",
     self_view["summary"]["delivery"] == "self-view-encrypted",
     self_view["summary"]["amount"] == "10",
+    self_view["summary"]["asset_id_hex"] == uclair_asset_id,
 ]
 if not all(checks):
     raise SystemExit("disclosure verification failed")

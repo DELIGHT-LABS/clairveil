@@ -66,7 +66,7 @@ type transferDisclosureSummaryReport struct {
 	Policy              string   `json:"policy"`
 	DisclosedFields     []string `json:"disclosed_fields"`
 	Amount              string   `json:"amount,omitempty"`
-	AssetDenom          string   `json:"asset_denom,omitempty"`
+	AssetIDHex          string   `json:"asset_id_hex,omitempty"`
 	FromShieldedAddress string   `json:"from_shielded_address,omitempty"`
 	ToShieldedAddress   string   `json:"to_shielded_address,omitempty"`
 }
@@ -464,7 +464,7 @@ func buildTransferDisclosureReport(
 			Policy:              disclosureReportPolicy(payload),
 			DisclosedFields:     disclosedFieldsFromPayload(payload),
 			Amount:              payload.Amount,
-			AssetDenom:          payload.AssetDenom,
+			AssetIDHex:          payload.AssetIDHex,
 			FromShieldedAddress: payload.FromShieldedAddress,
 			ToShieldedAddress:   payload.ToShieldedAddress,
 		},

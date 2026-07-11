@@ -18,7 +18,7 @@ func TestBuildTransferDisclosureReportForPublicUserPayload(t *testing.T) {
 		Plane:      transferDisclosurePayloadPlaneUser,
 		Policy:     types.TransferPrivacyPolicyDiscloseAmount,
 		Amount:     "7",
-		AssetDenom: "uclair",
+		AssetIDHex: "01",
 	}
 	input := &transferDisclosureDecodeInput{IsPlaintextPayload: true}
 	verification := &transferDisclosureVerificationReport{Verified: true}
@@ -30,6 +30,7 @@ func TestBuildTransferDisclosureReportForPublicUserPayload(t *testing.T) {
 	require.Equal(t, "public", report.Summary.Delivery)
 	require.Equal(t, "amount", report.Summary.Policy)
 	require.Equal(t, []string{"amount"}, report.Summary.DisclosedFields)
+	require.Equal(t, "01", report.Summary.AssetIDHex)
 }
 
 func TestBuildTransferDisclosureReportForAuditPayload(t *testing.T) {
@@ -37,7 +38,7 @@ func TestBuildTransferDisclosureReportForAuditPayload(t *testing.T) {
 		Plane:               transferDisclosurePayloadPlaneAudit,
 		Policy:              types.TransferPrivacyPolicyDiscloseAmountToFrom,
 		Amount:              "10",
-		AssetDenom:          "uclair",
+		AssetIDHex:          "02",
 		FromShieldedAddress: "clairs1from",
 		ToShieldedAddress:   "clairs1to",
 	}
@@ -51,6 +52,7 @@ func TestBuildTransferDisclosureReportForAuditPayload(t *testing.T) {
 	require.Equal(t, "audit-encrypted", report.Summary.Delivery)
 	require.Equal(t, "audit-full", report.Summary.Policy)
 	require.Equal(t, []string{"amount", "from_shielded_address", "to_shielded_address"}, report.Summary.DisclosedFields)
+	require.Equal(t, "02", report.Summary.AssetIDHex)
 }
 
 func TestBuildTransferDisclosureReportForSelfViewPayload(t *testing.T) {
@@ -58,7 +60,7 @@ func TestBuildTransferDisclosureReportForSelfViewPayload(t *testing.T) {
 		Plane:               transferDisclosurePayloadPlaneSelfView,
 		Policy:              types.TransferPrivacyPolicyDiscloseAmountToFrom,
 		Amount:              "10",
-		AssetDenom:          "uclair",
+		AssetIDHex:          "03",
 		FromShieldedAddress: "clairs1from",
 		ToShieldedAddress:   "clairs1to",
 	}
@@ -72,6 +74,7 @@ func TestBuildTransferDisclosureReportForSelfViewPayload(t *testing.T) {
 	require.Equal(t, "self-view-encrypted", report.Summary.Delivery)
 	require.Equal(t, "self-view-full", report.Summary.Policy)
 	require.Equal(t, []string{"amount", "from_shielded_address", "to_shielded_address"}, report.Summary.DisclosedFields)
+	require.Equal(t, "03", report.Summary.AssetIDHex)
 }
 
 func TestNormalizeTransferDisclosurePlaneSupportsSelfViewAliases(t *testing.T) {

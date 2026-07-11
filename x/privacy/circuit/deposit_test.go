@@ -6,6 +6,7 @@ import (
 
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
+	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
@@ -115,6 +116,43 @@ func TestDepositCircuitRejectsIdentityAndNonSubgroupKeys(t *testing.T) {
 			assert.ProverFailed(&DepositCircuit{}, assignment, test.WithCurves(ecc.BN254))
 		})
 	}
+
+	t.Run("on-curve x-nonzero outside prime subgroup", func(t *testing.T) {
+		assignment := buildValidDepositAssignment(t, big.NewInt(7), big.NewInt(11))
+		point := onCurveNonSubgroupPointForTest(t)
+		x, y := pointBigInts(point)
+		assignment.ReceiverViewPubKey.X = x
+		assignment.ReceiverViewPubKey.Y = y
+		assignment.Commitment = privacytypes.ComputeNoteCommitmentV1(
+			assignment.ReceiverSpendPubKey.X.(*big.Int),
+			assignment.ReceiverSpendPubKey.Y.(*big.Int),
+			x, y,
+			assignment.Amount.(*big.Int),
+			assignment.AssetID.(*big.Int),
+			assignment.Randomness.(*big.Int),
+		)
+
+		assert := test.NewAssert(t)
+		assert.ProverFailed(&DepositCircuit{}, assignment, test.WithCurves(ecc.BN254))
+	})
+}
+
+func onCurveNonSubgroupPointForTest(t testing.TB) crypto_tedwards.PointAffine {
+	t.Helper()
+	subgroupPoint := scalarMulBase(big.NewInt(17))
+	var orderTwo crypto_tedwards.PointAffine
+	orderTwo.X.SetZero()
+	orderTwo.Y.SetBigInt(new(big.Int).Sub(fr.Modulus(), big.NewInt(1)))
+	var point crypto_tedwards.PointAffine
+	point.Add(&subgroupPoint, &orderTwo)
+	require.True(t, point.IsOnCurve())
+	require.False(t, point.IsZero())
+	require.False(t, point.X.IsZero())
+	curve := crypto_tedwards.GetEdwardsCurve()
+	var orderMultiple crypto_tedwards.PointAffine
+	orderMultiple.ScalarMultiplication(&point, &curve.Order)
+	require.False(t, orderMultiple.IsZero())
+	return point
 }
 
 func TestDepositCircuitRejectsZeroActiveCommitment(t *testing.T) {
