@@ -3,6 +3,7 @@ package types_test
 import (
 	"encoding/hex"
 	"math/big"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -72,14 +73,34 @@ func TestBatchJoinSplit16x32MaxWireStateFeasibilityGate(t *testing.T) {
 	require.Equal(t, goldenTypedScanKVBytes, result.TypedScanKVBytes)
 }
 
+func TestBatchJoinSplit16x32WireStateShapeProfile(t *testing.T) {
+	for _, shape := range [][2]int{{1, 1}, {3, 4}, {8, 16}, {16, 31}, {16, 32}} {
+		result := measureBatchWireStateV1(t, shape[0], shape[1])
+		t.Logf(
+			"BATCH_WIRE_STATE_SHAPE inputs=%d outputs=%d message=%d canonical_payload=%d tx=%d scan_summary=%d scan_outputs=%d scan_kv=%d tree_write_upper=%d total_kv_write=%d abci_event=%d query_response=%d",
+			shape[0], shape[1], result.MessageBytes, result.CanonicalPayloadBytes, result.TxBytes,
+			result.TypedScanSummaryBytes, result.TypedScanOutputBytes, result.TypedScanKVBytes,
+			result.TreeWriteBytesUpperBound, result.TotalKVWriteBytes, result.ABCIEventBytes, result.QueryResponseBytes,
+		)
+	}
+}
+
 func measureBatchMaxWireStateV1(t *testing.T) batchWireFeasibilityResult {
+	return measureBatchWireStateV1(t, int(privacytypes.BatchJoinSplitV1MaxInputs), int(privacytypes.BatchJoinSplitV1MaxOutputs))
+}
+
+func measureBatchWireStateV1(t *testing.T, inputCount, outputCount int) batchWireFeasibilityResult {
 	t.Helper()
+	require.GreaterOrEqual(t, inputCount, 1)
+	require.LessOrEqual(t, inputCount, int(privacytypes.BatchJoinSplitV1MaxInputs))
+	require.GreaterOrEqual(t, outputCount, 1)
+	require.LessOrEqual(t, outputCount, int(privacytypes.BatchJoinSplitV1MaxOutputs))
 	creator := sdk.AccAddress(make([]byte, 20)).String()
 	proof := make([]byte, privacyzk.CanonicalBN254Groth16ProofSize)
 	root := canonicalFieldBytes(1)
 	auditTarget := canonicalPointBytes(71)
 	userTarget := canonicalPointBytes(73)
-	nullifiers := make([][]byte, privacytypes.BatchJoinSplitV1MaxInputs)
+	nullifiers := make([][]byte, inputCount)
 	for i := range nullifiers {
 		nullifiers[i] = canonicalFieldBytes(uint64(i + 3))
 	}
@@ -88,7 +109,7 @@ func measureBatchMaxWireStateV1(t *testing.T) batchWireFeasibilityResult {
 	userPayload := fixedEnvelope(t, privacytypes.EnvelopeUserDisclosureV1)
 	auditPayload := fixedEnvelope(t, privacytypes.EnvelopeAuditDisclosureV1)
 	selfViewPayload := fixedEnvelope(t, privacytypes.EnvelopeSelfViewDisclosureV1)
-	outputs := make([]*privacytypes.BatchTransferOutputWirePrototypeV1, privacytypes.BatchJoinSplitV1MaxOutputs)
+	outputs := make([]*privacytypes.BatchTransferOutputWirePrototypeV1, outputCount)
 	for i := range outputs {
 		outputs[i] = &privacytypes.BatchTransferOutputWirePrototypeV1{
 			Commitment:                 canonicalFieldBytes(uint64(i + 33)),
@@ -158,7 +179,7 @@ func measureBatchMaxWireStateV1(t *testing.T) batchWireFeasibilityResult {
 		TxHash:            fixedBytes(32, 0xc2),
 		EventType:         privacytypes.EventTypeBatchTransferV1,
 		Nullifiers:        nullifiers,
-		OutputCount:       privacytypes.BatchJoinSplitV1MaxOutputs,
+		OutputCount:       uint32(outputCount),
 		CircuitSetId:      privacytypes.ActiveCircuitSetID,
 		PayloadVersion:    privacytypes.FixedPayloadVersionV1,
 		ScanSchemaVersion: privacytypes.PrivacyScanSchemaVersionV2,
@@ -209,8 +230,8 @@ func measureBatchMaxWireStateV1(t *testing.T) batchWireFeasibilityResult {
 	queryResponse := &privacytypes.QueryPrivacyScanResponse{
 		Summaries:         []*privacytypes.PrivacyScanSummaryV2{summary},
 		Outputs:           scanOutputs,
-		NextCursor:        &privacytypes.PrivacyScanCursorV1{Height: 1, GlobalSequence: 1, OutputIndex: 31},
-		OutputLimit:       privacytypes.BatchJoinSplitV1MaxOutputs,
+		NextCursor:        &privacytypes.PrivacyScanCursorV1{Height: 1, GlobalSequence: 1, OutputIndex: uint32(outputCount - 1)},
+		OutputLimit:       uint32(outputCount),
 		EventLimit:        1,
 		MaxEncodedBytes:   referenceMaxGRPCBodyBytesV1,
 		ScannedEventCount: 1,
@@ -222,8 +243,8 @@ func measureBatchMaxWireStateV1(t *testing.T) batchWireFeasibilityResult {
 	event := abci.Event{Type: "batch_transfer", Attributes: []abci.EventAttribute{
 		{Key: "effect_id", Value: hex.EncodeToString(effectID), Index: true},
 		{Key: "relayer", Value: creator, Index: true},
-		{Key: "input_count", Value: "16", Index: true},
-		{Key: "output_count", Value: "32", Index: true},
+		{Key: "input_count", Value: strconv.Itoa(inputCount), Index: true},
+		{Key: "output_count", Value: strconv.Itoa(outputCount), Index: true},
 		{Key: "nullifier_root", Value: hex.EncodeToString(canonicalFieldBytes(501)), Index: true},
 		{Key: "commitment_root", Value: hex.EncodeToString(canonicalFieldBytes(502)), Index: true},
 		{Key: "user_disclosure_root", Value: hex.EncodeToString(canonicalFieldBytes(503)), Index: false},
@@ -233,6 +254,7 @@ func measureBatchMaxWireStateV1(t *testing.T) batchWireFeasibilityResult {
 	eventBytes, err := event.Marshal()
 	require.NoError(t, err)
 
+	treeWriteUpperBound := batchTreeWriteBytesUpperBoundV1 * outputCount / int(privacytypes.BatchJoinSplitV1MaxOutputs)
 	return batchWireFeasibilityResult{
 		MessageBytes:             len(messageBytes),
 		CanonicalPayloadBytes:    len(canonicalPayload),
@@ -240,8 +262,8 @@ func measureBatchMaxWireStateV1(t *testing.T) batchWireFeasibilityResult {
 		TypedScanSummaryBytes:    len(summaryBytes),
 		TypedScanOutputBytes:     typedOutputBytes,
 		TypedScanKVBytes:         typedKVBytes,
-		TreeWriteBytesUpperBound: batchTreeWriteBytesUpperBoundV1,
-		TotalKVWriteBytes:        typedKVBytes + batchTreeWriteBytesUpperBoundV1,
+		TreeWriteBytesUpperBound: treeWriteUpperBound,
+		TotalKVWriteBytes:        typedKVBytes + treeWriteUpperBound,
 		ABCIEventBytes:           len(eventBytes),
 		QueryResponseBytes:       len(queryResponseBytes),
 	}

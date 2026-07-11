@@ -37,6 +37,27 @@ func TestBatchGasPrechargeV1MetersEveryFrozenCategory(t *testing.T) {
 	require.Positive(t, breakdown.Total)
 }
 
+func TestBatchGasShapeProfile(t *testing.T) {
+	base := testMaxBatchTransferMessage(t)
+	for _, shape := range [][2]int{{1, 1}, {3, 4}, {8, 16}, {16, 31}, {16, 32}} {
+		msg := *base
+		msg.Nullifiers = base.Nullifiers[:shape[0]]
+		msg.Outputs = base.Outputs[:shape[1]]
+		payloadBytes, err := privacytypes.CanonicalMsgBatchTransferPayloadSizeV1(&msg)
+		require.NoError(t, err)
+		typedStateBytes, err := estimateBatchTypedStateBytesV1(&msg)
+		require.NoError(t, err)
+		breakdown, err := computeBatchGasPrechargeV1(&msg)
+		require.NoError(t, err)
+		t.Logf(
+			"BATCH_GAS_SHAPE inputs=%d outputs=%d payload_bytes=%d typed_state_bytes=%d verification=%d inputs_gas=%d outputs_gas=%d payload_gas=%d typed_state_gas=%d tree_gas=%d lookup_gas=%d total=%d",
+			shape[0], shape[1], payloadBytes, typedStateBytes, breakdown.Verification, breakdown.Inputs,
+			breakdown.Outputs, breakdown.CanonicalPayload, breakdown.TypedScanState,
+			breakdown.TreeWrites, breakdown.GlobalLookups, breakdown.Total,
+		)
+	}
+}
+
 func TestBatchTransferConsumesPrechargeBeforeSemanticValidation(t *testing.T) {
 	k, ctx, _ := setupRegisteredMsgServerKeeper(t)
 	msg := testMaxBatchTransferMessage(t)

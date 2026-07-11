@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"os"
 	"runtime"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -186,13 +187,24 @@ func TestBatchJoinSplit16x32ActiveInputCommitmentMustBeNonZero(t *testing.T) {
 }
 
 type batchFeasibilityShapeResult struct {
-	Inputs                 int       `json:"inputs"`
-	Outputs                int       `json:"outputs"`
-	WitnessBuildMillis     float64   `json:"witness_build_ms"`
-	FirstProveMillis       float64   `json:"first_prove_ms"`
-	WarmProveSamplesMillis []float64 `json:"warm_prove_samples_ms"`
-	WarmProveMeanMillis    float64   `json:"warm_prove_mean_ms"`
-	VerifySamplesMillis    []float64 `json:"verify_samples_ms"`
+	Inputs                    int       `json:"inputs"`
+	Outputs                   int       `json:"outputs"`
+	WitnessBuildMillis        float64   `json:"witness_build_ms"`
+	WitnessBuildSamplesMillis []float64 `json:"witness_build_samples_ms"`
+	WitnessBuildP50Millis     float64   `json:"witness_build_p50_ms"`
+	WitnessBuildP95Millis     float64   `json:"witness_build_p95_ms"`
+	WitnessBuildMaxMillis     float64   `json:"witness_build_max_ms"`
+	ProveSamplesMillis        []float64 `json:"prove_samples_ms"`
+	ProveP50Millis            float64   `json:"prove_p50_ms"`
+	ProveP95Millis            float64   `json:"prove_p95_ms"`
+	ProveMaxMillis            float64   `json:"prove_max_ms"`
+	FirstProveMillis          float64   `json:"first_prove_ms"`
+	WarmProveSamplesMillis    []float64 `json:"warm_prove_samples_ms"`
+	WarmProveMeanMillis       float64   `json:"warm_prove_mean_ms"`
+	VerifySamplesMillis       []float64 `json:"verify_samples_ms"`
+	VerifyP50Millis           float64   `json:"verify_p50_ms"`
+	VerifyP95Millis           float64   `json:"verify_p95_ms"`
+	VerifyMaxMillis           float64   `json:"verify_max_ms"`
 }
 
 type batchFeasibilityReport struct {
@@ -262,8 +274,8 @@ func (c *batchPointSubgroupCircuit) Define(api frontend.API) error {
 
 // TestBatchJoinSplit16x32FullShapeResourceGate is intentionally opt-in and is
 // the only batch benchmark that performs a development Groth16 setup. It also
-// runs 15 proof samples (three for each of four batch shapes plus three for
-// JoinSplit2x2). Session 2 records the emitted JSON; the ordinary solve matrix
+// runs 30 proof samples (five for each of five batch shapes plus five for
+// JoinSplit2x2). Session 4 records the emitted JSON; the ordinary solve matrix
 // and solve benchmark share a compiled CCS, and no ordinary benchmark repeats
 // Groth16 setup.
 func TestBatchJoinSplit16x32FullShapeResourceGate(t *testing.T) {
@@ -279,7 +291,7 @@ func TestBatchJoinSplit16x32FullShapeResourceGate(t *testing.T) {
 		GnarkVersion:    "v0.14.0",
 		Curve:           "BN254",
 		Backend:         "Groth16",
-		SamplesPerShape: 3,
+		SamplesPerShape: 5,
 		DominantGadgetCounts: map[string]int{
 			"active_prefix_one_hot_values":    48,
 			"active_input_commitment_nonzero": 16,
@@ -328,23 +340,27 @@ func TestBatchJoinSplit16x32FullShapeResourceGate(t *testing.T) {
 	report.ProvingKeyBytes = serializedSize(t, pk)
 	report.VerifyingKeyBytes = serializedSize(t, vk)
 
-	for _, shape := range [][2]int{{1, 1}, {3, 4}, {8, 16}, {16, 32}} {
+	for _, shape := range [][2]int{{1, 1}, {3, 4}, {8, 16}, {16, 31}, {16, 32}} {
 		assignment := buildBatchFeasibilityAssignment(t, shape[0], shape[1])
-		started = time.Now()
-		fullWitness, err := frontend.NewWitness(assignment, ecc.BN254.ScalarField())
-		require.NoError(t, err)
-		witnessBuild := time.Since(started)
-
 		publicWitness, err := frontend.NewWitness(assignment, ecc.BN254.ScalarField(), frontend.PublicOnly())
 		require.NoError(t, err)
 		shapeResult := batchFeasibilityShapeResult{
-			Inputs: shape[0], Outputs: shape[1], WitnessBuildMillis: durationMillis(witnessBuild),
+			Inputs: shape[0], Outputs: shape[1],
 		}
 		for sample := 0; sample < report.SamplesPerShape; sample++ {
+			started = time.Now()
+			fullWitness, err := frontend.NewWitness(assignment, ecc.BN254.ScalarField())
+			require.NoError(t, err)
+			witnessMillis := durationMillis(time.Since(started))
+			shapeResult.WitnessBuildSamplesMillis = append(shapeResult.WitnessBuildSamplesMillis, witnessMillis)
+			if sample == 0 {
+				shapeResult.WitnessBuildMillis = witnessMillis
+			}
 			started = time.Now()
 			proof, err := groth16.Prove(ccs, pk, fullWitness)
 			require.NoError(t, err)
 			proveMillis := durationMillis(time.Since(started))
+			shapeResult.ProveSamplesMillis = append(shapeResult.ProveSamplesMillis, proveMillis)
 			if sample == 0 {
 				shapeResult.FirstProveMillis = proveMillis
 			} else {
@@ -357,7 +373,16 @@ func TestBatchJoinSplit16x32FullShapeResourceGate(t *testing.T) {
 			require.NoError(t, groth16.Verify(proof, vk, publicWitness))
 			shapeResult.VerifySamplesMillis = append(shapeResult.VerifySamplesMillis, durationMillis(time.Since(started)))
 		}
+		shapeResult.WitnessBuildP50Millis = percentileMillis(shapeResult.WitnessBuildSamplesMillis, 50)
+		shapeResult.WitnessBuildP95Millis = percentileMillis(shapeResult.WitnessBuildSamplesMillis, 95)
+		shapeResult.WitnessBuildMaxMillis = percentileMillis(shapeResult.WitnessBuildSamplesMillis, 100)
+		shapeResult.ProveP50Millis = percentileMillis(shapeResult.ProveSamplesMillis, 50)
+		shapeResult.ProveP95Millis = percentileMillis(shapeResult.ProveSamplesMillis, 95)
+		shapeResult.ProveMaxMillis = percentileMillis(shapeResult.ProveSamplesMillis, 100)
 		shapeResult.WarmProveMeanMillis = meanMillis(shapeResult.WarmProveSamplesMillis)
+		shapeResult.VerifyP50Millis = percentileMillis(shapeResult.VerifySamplesMillis, 50)
+		shapeResult.VerifyP95Millis = percentileMillis(shapeResult.VerifySamplesMillis, 95)
+		shapeResult.VerifyMaxMillis = percentileMillis(shapeResult.VerifySamplesMillis, 100)
 		report.Shapes = append(report.Shapes, shapeResult)
 	}
 
@@ -381,7 +406,7 @@ func TestBatchJoinSplit16x32FullShapeResourceGate(t *testing.T) {
 		}
 	}
 	report.JoinSplit2x2WarmMeanMS = meanMillis(report.JoinSplit2x2WarmSamplesMS)
-	require.Len(t, report.Shapes, 4)
+	require.Len(t, report.Shapes, 5)
 	maxShape := report.Shapes[len(report.Shapes)-1]
 	require.Equal(t, BatchFeasibilityMaxInputs, maxShape.Inputs)
 	require.Equal(t, BatchFeasibilityMaxOutputs, maxShape.Outputs)
@@ -779,4 +804,20 @@ func meanMillis(values []float64) float64 {
 		sum += value
 	}
 	return sum / float64(len(values))
+}
+
+func percentileMillis(values []float64, percentile int) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	ordered := append([]float64(nil), values...)
+	sort.Float64s(ordered)
+	index := (percentile*len(ordered)+99)/100 - 1
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(ordered) {
+		index = len(ordered) - 1
+	}
+	return ordered[index]
 }

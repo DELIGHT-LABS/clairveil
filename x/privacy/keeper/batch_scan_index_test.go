@@ -74,6 +74,32 @@ func TestBatchScanIndexStoresPayloadOnceAndEmitsMinimalSummary(t *testing.T) {
 	require.Equal(t, uint64(1), sequence)
 }
 
+func BenchmarkPrivacyScanMaxBatchPage(b *testing.B) {
+	k, ctx, _ := setupRegisteredMsgServerKeeper(b)
+	ctx = ctx.WithBlockHeight(77).WithTxBytes([]byte("batch-scan-throughput-benchmark"))
+	msg := testMaxBatchTransferMessage(b)
+	derived, err := deriveBatchPublicV1(ctx, msg)
+	require.NoError(b, err)
+	for _, output := range msg.Outputs {
+		require.NoError(b, k.AppendCommitment(ctx, output.Commitment))
+	}
+	require.NoError(b, k.storeBatchPrivacyEffectV1(ctx, msg, derived.effect))
+	page, err := k.GetPrivacyScanPageV2(ctx, nil, privacytypes.BatchJoinSplitV1MaxOutputs, 1, MaxPrivacyScanByteLimit, nil)
+	require.NoError(b, err)
+	encoded, err := page.Marshal()
+	require.NoError(b, err)
+	b.ReportAllocs()
+	b.ReportMetric(float64(len(encoded)), "response-bytes/op")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		page, err = k.GetPrivacyScanPageV2(ctx, nil, privacytypes.BatchJoinSplitV1MaxOutputs, 1, MaxPrivacyScanByteLimit, nil)
+		if err != nil || len(page.Outputs) != int(privacytypes.BatchJoinSplitV1MaxOutputs) {
+			b.Fatalf("scan max batch page: outputs=%d err=%v", len(page.Outputs), err)
+		}
+	}
+	b.ReportMetric(float64(b.N*int(privacytypes.BatchJoinSplitV1MaxOutputs))/b.Elapsed().Seconds(), "outputs/s")
+}
+
 func TestBatchPublicWitnessIsDerivedInFrozenOrder(t *testing.T) {
 	_, ctx, _ := setupRegisteredMsgServerKeeper(t)
 	msg := testMaxBatchTransferMessage(t)
