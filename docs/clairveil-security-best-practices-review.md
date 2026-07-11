@@ -108,7 +108,7 @@ The active identity is `privacy-note-v1`. `privacy_zk_manifest.json` schema `v2`
 | P1 | Link downstream security gates with the release checklist | External users must clearly understand that this repo is sample/reference. |
 | P1 | Maintain the remote prover production profile | The local sample is safe, but downstream teams can easily miss auth/rate-limit/TLS/queue policy for remote operations. |
 | P2 | Keep explicit timeout in the HTTP prover client example | Prevent SDK consumers from writing remote prover clients with no timeout. |
-| P2 | Document that `provertransport.HTTPHandler` must not be directly exposed | Body limits are applied in the `proverservice.Handler` wrapper. Directly attaching the raw transport handler to a public server can lose the body limit. |
+| P2 | Maintain guidance that `provertransport.HTTPHandler` must not be directly exposed | The raw handler now has the same hard body cap before admission, but the service wrapper still owns bearer auth, gzip wire/decompressed limits, health/readiness policy, and server timeouts. |
 | P2 | Emphasize wallet storage encryption requirements in JS SDK handoff | Current file permission is only for the reference CLI; web wallet security is separate. |
 | P3 | Docker image digest pinning/SBOM/vuln scan policy | The reference image is for behavior validation, and downstream must define production supply-chain policy. |
 | P3 | Health/readiness route exposure policy | Convenient for local samples, but a metadata/probing surface remotely. |
@@ -120,7 +120,7 @@ The repository currently configures `.github/workflows/security.yml` to run `mak
 The Session 1 remediation closed the known current duplicate-input/output, intent-substitution, replay, disclosure-oracle, decoder, failover-default, genesis/artifact-identity, and proof-gas issues. No unresolved Critical/High finding remains in that scope. These points can still become issues if downstream SDK/service implementers misunderstand them.
 
 - The body limit in `x/privacy/client/sdk/proverservice/service.go` applies only to proof routes. This is intentional, but downstream must separately decide whether health/readiness should be externally exposed.
-- The raw `HTTPHandler` in `x/privacy/client/sdk/provertransport/http.go` reads body with `io.ReadAll`. Public services must use `proverservice.Handler` or a separate `MaxBytesReader` wrapper.
+- The raw `HTTPHandler` in `x/privacy/client/sdk/provertransport/http.go` uses a shared bounded reader for transfer, withdraw, and batch before admission. Public services must still use `proverservice.Handler` or an equivalent wrapper for bearer auth, gzip wire/decompressed limits, health/readiness policy, and server timeouts.
 - `cmd/clairveil-proverd/main.go` runs with `auth_enabled=false` when the bearer token env is empty. This is convenient locally, but must be forbidden for remote services.
 - `build/clairveil-proverd/compose.yaml` limits host bind to `127.0.0.1`. However, the Dockerfile itself listens on `0.0.0.0:8080`, so downstream compose/k8s manifests must re-check network policy.
 - Prepared payload JSON and wallet JSON are stored with `0600`, but they are not encrypted. Production wallets need an encryption layer.

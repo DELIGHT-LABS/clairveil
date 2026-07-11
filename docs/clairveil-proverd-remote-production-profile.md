@@ -114,15 +114,15 @@ Current request/response/proof contracts are `v2` for transfer and withdraw. Tra
 
 ## 8. Do Not Expose The Raw Handler
 
-`x/privacy/client/sdk/provertransport.HTTPHandler` in the Go SDK is a low-level handler for testing and reusing the transport contract. The handler itself reads the request body with `io.ReadAll`.
+`x/privacy/client/sdk/provertransport.HTTPHandler` in the Go SDK is a low-level handler for testing and reusing the transport contract. All three proof routes apply the same positive request limit before admission, including the default 8 MiB limit, but the raw handler does not provide the production service's bearer authorization, gzip wire/decompressed dual limit, health/readiness policy, or server timeouts.
 
 When exposing a production HTTP server, use one of these options.
 
 - `x/privacy/client/sdk/proverservice.Handler`
-- a custom wrapper that applies `http.MaxBytesReader`
+- a custom wrapper that preserves the raw handler limit and adds authorization, outer `http.MaxBytesReader`, timeouts, and operational policy
 - edge proxy body limit plus app-level body limit
 
-If the raw `provertransport.HTTPHandler` is attached directly to a public server, the request body limit can be missed.
+Do not attach the raw `provertransport.HTTPHandler` directly to a public server. Its hard body limit remains active, but the rest of the production service boundary would be missing.
 
 ## 9. Artifact Profile
 

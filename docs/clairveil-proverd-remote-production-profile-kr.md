@@ -118,15 +118,15 @@ Remote prover operator는 아래 정보를 볼 수 있다고 가정해야 합니
 
 ## 8. Raw handler 사용 금지
 
-Go SDK의 `x/privacy/client/sdk/provertransport.HTTPHandler`는 transport contract를 테스트하고 재사용하기 위한 낮은 수준의 handler입니다. 이 handler 자체는 `io.ReadAll`로 request body를 읽습니다.
+Go SDK의 `x/privacy/client/sdk/provertransport.HTTPHandler`는 transport contract를 테스트하고 재사용하기 위한 낮은 수준의 handler입니다. 세 proof route 모두 admission 전에 positive request limit을 동일하게 적용하며 default는 8 MiB입니다. 다만 raw handler에는 production service의 bearer authorization, gzip wire/decompressed dual limit, health/readiness policy, server timeout이 없습니다.
 
 Production HTTP server로 노출할 때는 아래 중 하나를 사용해야 합니다.
 
 - `x/privacy/client/sdk/proverservice.Handler`
-- 자체 wrapper에서 `http.MaxBytesReader`를 적용한 handler
+- raw handler limit을 보존하면서 authorization, outer `http.MaxBytesReader`, timeout, 운영 policy를 추가한 자체 wrapper
 - edge proxy body limit + app-level body limit 조합
 
-Raw `provertransport.HTTPHandler`를 public server에 직접 붙이면 request body limit을 놓칠 수 있습니다.
+Raw `provertransport.HTTPHandler`를 public server에 직접 붙이지 않습니다. Hard body limit은 유지되지만 나머지 production service boundary가 빠집니다.
 
 ## 9. Artifact profile
 

@@ -106,7 +106,7 @@ Active identity는 `privacy-note-v1`입니다. `privacy_zk_manifest.json` schema
 | P1       | Downstream security gate 문서를 release checklist와 연결                | 이 repo가 sample/reference라는 점을 외부 사용자가 명확히 이해해야 합니다.                                                                       |
 | P1       | Remote prover production profile 유지                                   | local sample은 안전하지만 remote 운영에 필요한 auth/rate-limit/TLS/queue 정책은 downstream이 놓치기 쉽습니다.                                   |
 | P2       | HTTP prover client 사용 예제에 explicit timeout 유지                    | SDK consumer가 timeout 없는 remote prover client를 쓰지 않도록 유도해야 합니다.                                                                 |
-| P2       | `provertransport.HTTPHandler` 직접 노출 금지 문서화                     | body limit은 `proverservice.Handler` wrapper에서 적용됩니다. raw transport handler를 public server에 바로 붙이면 body limit을 잃을 수 있습니다. |
+| P2       | `provertransport.HTTPHandler` 직접 노출 금지 지침 유지                 | Raw handler도 admission 전 hard body cap을 적용하지만 bearer auth, gzip wire/decompressed limit, health/readiness policy, server timeout은 service wrapper가 담당합니다. |
 | P2       | Wallet storage encryption requirement를 JS SDK handoff에 더 강하게 표시 | 현재 파일 permission은 reference CLI 기준이고 web wallet 기준 보안은 별도입니다.                                                                |
 | P3       | Docker image digest pinning/SBOM/vuln scan policy                       | reference image는 동작 확인용이고 production supply-chain policy는 downstream에서 확정해야 합니다.                                              |
 | P3       | Health/readiness route exposure policy                                  | local sample에는 편리하지만 remote에서는 metadata exposure와 probing 표면이 됩니다.                                                             |
@@ -118,7 +118,7 @@ Active identity는 `privacy-note-v1`입니다. `privacy_zk_manifest.json` schema
 Session 1 remediation은 known current duplicate-input/output, intent substitution, replay, disclosure oracle, decoder, failover default, genesis/artifact identity, proof gas issue를 닫았습니다. 해당 범위에 미해결 Critical/High finding은 없습니다. 다만 아래는 downstream SDK/service 구현자가 혼동하면 문제가 될 수 있는 지점입니다.
 
 - `x/privacy/client/sdk/proverservice/service.go`의 body limit은 proof route에만 적용됩니다. 이는 의도적으로 맞지만, downstream이 health/readiness를 외부에 노출할지 여부는 별도로 결정해야 합니다.
-- `x/privacy/client/sdk/provertransport/http.go`의 raw `HTTPHandler`는 `io.ReadAll`로 body를 읽습니다. public service로 노출할 때는 반드시 `proverservice.Handler`나 별도 `MaxBytesReader` wrapper를 사용해야 합니다.
+- `x/privacy/client/sdk/provertransport/http.go`의 raw `HTTPHandler`는 transfer, withdraw, batch 모두 admission 전 shared bounded reader를 사용합니다. Public service는 bearer auth, gzip wire/decompressed limit, health/readiness policy, server timeout을 위해 계속 `proverservice.Handler` 또는 동등한 wrapper를 사용해야 합니다.
 - `cmd/clairveil-proverd/main.go`는 bearer token env가 비어 있으면 `auth_enabled=false`로 실행됩니다. local daemon에는 편리하지만 remote service에서는 금지해야 합니다.
 - `build/clairveil-proverd/compose.yaml`은 host bind를 `127.0.0.1`로 제한합니다. 단, Dockerfile 자체는 `0.0.0.0:8080` listen이므로 downstream compose/k8s manifest에서 network policy를 다시 확인해야 합니다.
 - prepared payload JSON과 wallet JSON은 `0600`으로 저장되지만 암호화되지는 않습니다. production wallet은 별도 encryption layer가 필요합니다.
