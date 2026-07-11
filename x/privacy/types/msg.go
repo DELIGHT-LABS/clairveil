@@ -14,6 +14,7 @@ import (
 var _ sdk.Msg = &MsgDeposit{}
 var _ sdk.Msg = &MsgWithdraw{}
 var _ sdk.Msg = &MsgTransfer{}
+var _ sdk.Msg = &MsgBatchTransfer{}
 
 const expectedJoinSplitElements = 2
 const expectedFieldElementBytes = 32
@@ -441,6 +442,32 @@ func (msg *MsgTransfer) ValidateBasic() error {
 		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "expires_at_unix must be positive for transfer")
 	}
 
+	return nil
+}
+
+func (msg *MsgBatchTransfer) Route() string {
+	return RouterKey
+}
+
+func (msg *MsgBatchTransfer) Type() string {
+	return "BatchTransfer"
+}
+
+// ValidateBasic first applies the bounded length-only framing checks used by
+// keeper gas precharge, then validates the complete frozen owner-effect
+// semantics. Matching the audit identity against active chain configuration is
+// keeper stateful validation and therefore intentionally remains outside this
+// stateless method.
+func (msg *MsgBatchTransfer) ValidateBasic() error {
+	if err := ValidateMsgBatchTransferFramingV1(msg); err != nil {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, err.Error())
+	}
+	if err := validateCreatorAddress(msg.Creator); err != nil {
+		return err
+	}
+	if err := ValidateMsgBatchTransferEffectsV1(msg); err != nil {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, err.Error())
+	}
 	return nil
 }
 

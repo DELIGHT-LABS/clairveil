@@ -11,6 +11,7 @@ func RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
 	cdc.RegisterConcrete(&MsgDeposit{}, "privacy/MsgDeposit", nil)
 	cdc.RegisterConcrete(&MsgWithdraw{}, "privacy/MsgWithdraw", nil)
 	cdc.RegisterConcrete(&MsgTransfer{}, "privacy/MsgTransfer", nil)
+	cdc.RegisterConcrete(&MsgBatchTransfer{}, "privacy/MsgBatchTransfer", nil)
 }
 
 func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
@@ -18,6 +19,7 @@ func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 		&MsgDeposit{},
 		&MsgWithdraw{},
 		&MsgTransfer{},
+		&MsgBatchTransfer{},
 	)
 
 	msgservice.RegisterMsgServiceDesc(registry, &_Msg_serviceDesc)

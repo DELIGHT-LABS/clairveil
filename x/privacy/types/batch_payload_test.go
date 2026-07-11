@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -43,6 +44,125 @@ func TestCanonicalBatchTransferPayloadV1IndependentGolden(t *testing.T) {
 	expiryDigest, err := ComputeBatchTransferPayloadDigestV1(&expiryChanged)
 	require.NoError(t, err)
 	require.NotEqual(t, digest, expiryDigest)
+}
+
+func TestCanonicalMsgBatchTransferPayloadV1MatchesFrozenPrototypeExactly(t *testing.T) {
+	prototype := batchPayloadTestMessage(t)
+	production := productionBatchPayloadTestMessage(t)
+
+	prototypeWire, err := prototype.Marshal()
+	require.NoError(t, err)
+	productionWire, err := production.Marshal()
+	require.NoError(t, err)
+	require.Equal(t, prototypeWire, productionWire, "production field numbers/order must match the frozen prototype")
+
+	prototypePayload, err := CanonicalBatchTransferPayloadBytesV1(prototype)
+	require.NoError(t, err)
+	productionPayload, err := CanonicalMsgBatchTransferPayloadBytesV1(production)
+	require.NoError(t, err)
+	require.Equal(t, prototypePayload, productionPayload)
+
+	payloadSize, err := CanonicalMsgBatchTransferPayloadSizeV1(production)
+	require.NoError(t, err)
+	require.Equal(t, uint64(len(productionPayload)), payloadSize)
+
+	prototypeDigest, err := ComputeBatchTransferPayloadDigestV1(prototype)
+	require.NoError(t, err)
+	productionDigest, err := ComputeMsgBatchTransferPayloadDigestV1(production)
+	require.NoError(t, err)
+	require.Equal(t, prototypeDigest, productionDigest)
+	require.Equal(t, "322132945931579789235567236199104333743", productionDigest.Hi.String())
+	require.Equal(t, "14314064343031468430392382204273370288", productionDigest.Lo.String())
+
+	// creator and proof are outer transaction framing, not owner-effect fields.
+	// Canonical bytes/digest/size must therefore be available before proving and
+	// remain stable across proof regeneration or relayer replacement.
+	production.Creator = "replacement-relayer"
+	production.Proof = bytes.Repeat([]byte{0x5a}, BatchTransferProofSizeV1)
+	regeneratedPayload, err := CanonicalMsgBatchTransferPayloadBytesV1(production)
+	require.NoError(t, err)
+	require.Equal(t, productionPayload, regeneratedPayload)
+	regeneratedSize, err := CanonicalMsgBatchTransferPayloadSizeV1(production)
+	require.NoError(t, err)
+	require.Equal(t, payloadSize, regeneratedSize)
+	regeneratedDigest, err := ComputeMsgBatchTransferPayloadDigestV1(production)
+	require.NoError(t, err)
+	require.Equal(t, productionDigest, regeneratedDigest)
+
+	production.Creator = string(bytes.Repeat([]byte{'x'}, MaxBatchTransferMessageBytesV1+1))
+	production.Proof = nil
+	prepareDigest, err := ComputeMsgBatchTransferPayloadDigestV1(production)
+	require.NoError(t, err)
+	require.Equal(t, productionDigest, prepareDigest)
+	require.ErrorContains(t, ValidateMsgBatchTransferFramingV1(production), "proof must be exactly 164 bytes")
+}
+
+func TestCanonicalMsgBatchTransferPayloadSizeV1IsLengthOnly(t *testing.T) {
+	msg := productionBatchPayloadTestMessage(t)
+
+	// Keep every frozen field length valid while making the semantic encodings
+	// non-canonical. The precharge helper must not decode points/envelopes or
+	// recompute disclosure digests.
+	msg.Root = bytes.Repeat([]byte{0xff}, expectedFieldElementBytes)
+	msg.Outputs[0].Ciphertext[0] ^= 0xff
+	msg.AuditDisclosureTargetPubkey = make([]byte, expectedFieldElementBytes)
+
+	require.NoError(t, ValidateMsgBatchTransferFramingV1(msg))
+	size, err := CanonicalMsgBatchTransferPayloadSizeV1(msg)
+	require.NoError(t, err)
+	require.Positive(t, size)
+	require.Error(t, ValidateMsgBatchTransferEffectsV1(msg))
+}
+
+func TestCanonicalMsgBatchTransferPayloadSizeV1MaxShapeGolden(t *testing.T) {
+	msg := maxProductionBatchPayloadTestMessage(t)
+	payload, err := CanonicalMsgBatchTransferPayloadBytesV1(msg)
+	require.NoError(t, err)
+	require.Len(t, payload, 65_384)
+
+	size, err := CanonicalMsgBatchTransferPayloadSizeV1(msg)
+	require.NoError(t, err)
+	require.Equal(t, uint64(65_384), size)
+	require.Less(t, msg.Size(), MaxBatchTransferMessageBytesV1)
+	require.NoError(t, ValidateMsgBatchTransferFramingV1(msg))
+}
+
+func TestValidateMsgBatchTransferFramingV1Bounds(t *testing.T) {
+	const expectedHardCap = 128 << 10
+	require.Equal(t, expectedHardCap, MaxBatchTransferMessageBytesV1)
+
+	tests := []struct {
+		name    string
+		mutate  func(*MsgBatchTransfer)
+		message string
+	}{
+		{"nil output", func(msg *MsgBatchTransfer) { msg.Outputs[0] = nil }, "output 0 is required"},
+		{"proof length", func(msg *MsgBatchTransfer) { msg.Proof = msg.Proof[:BatchTransferProofSizeV1-1] }, "proof must be exactly 164 bytes"},
+		{"no inputs", func(msg *MsgBatchTransfer) { msg.Nullifiers = nil }, "input count must be in 1..16"},
+		{"too many inputs", func(msg *MsgBatchTransfer) {
+			msg.Nullifiers = make([][]byte, BatchJoinSplitV1MaxInputs+1)
+		}, "input count must be in 1..16"},
+		{"no outputs", func(msg *MsgBatchTransfer) { msg.Outputs = nil }, "output count must be in 1..32"},
+		{"root length", func(msg *MsgBatchTransfer) { msg.Root = msg.Root[:31] }, "merkle root must be exactly 32 bytes"},
+		{"nullifier length", func(msg *MsgBatchTransfer) { msg.Nullifiers[0] = msg.Nullifiers[0][:31] }, "nullifier 0 must be exactly 32 bytes"},
+		{"ciphertext length", func(msg *MsgBatchTransfer) { msg.Outputs[0].Ciphertext = msg.Outputs[0].Ciphertext[:429] }, "ciphertext must be exactly 430 bytes"},
+		{"view tag length", func(msg *MsgBatchTransfer) { msg.Outputs[0].ViewTag = msg.Outputs[0].ViewTag[:1] }, "view tag must be exactly 2 bytes"},
+		{"user payload length", func(msg *MsgBatchTransfer) { msg.Outputs[1].UserDisclosurePayload = []byte{1} }, "user disclosure payload has invalid fixed length"},
+		{"full digest length", func(msg *MsgBatchTransfer) { msg.Outputs[0].FullDisclosureDigest = nil }, "full disclosure digest must be exactly 32 bytes"},
+		{"audit payload length", func(msg *MsgBatchTransfer) { msg.Outputs[0].AuditDisclosurePayload = nil }, "audit disclosure payload must be exactly 472 bytes"},
+		{"self view length", func(msg *MsgBatchTransfer) { msg.Outputs[0].SelfViewDisclosurePayload = []byte{1} }, "self-view disclosure payload must be empty or exactly 472 bytes"},
+		{"audit target length", func(msg *MsgBatchTransfer) { msg.AuditDisclosureTargetPubkey = nil }, "audit disclosure target pubkey must be exactly 32 bytes"},
+		{"hard cap", func(msg *MsgBatchTransfer) {
+			msg.Creator = string(bytes.Repeat([]byte{'a'}, MaxBatchTransferMessageBytesV1))
+		}, "exceeds 131072-byte hard cap"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			msg := productionBatchPayloadTestMessage(t)
+			test.mutate(msg)
+			require.ErrorContains(t, ValidateMsgBatchTransferFramingV1(msg), test.message)
+		})
+	}
 }
 
 func TestValidateBatchTransferWirePrototypeV1RejectsNonCanonicalEffects(t *testing.T) {
@@ -195,6 +315,81 @@ func batchPayloadTestMessage(t *testing.T) *BatchTransferWirePrototypeV1 {
 		AuditKeyId: "audit-key.production-1", AuditKeyEpoch: 9,
 		AuditDisclosureTargetPubkey: batchPayloadTestPointBytes(37), ExpiresAtUnix: 2_000_000_000,
 	}
+}
+
+func productionBatchPayloadTestMessage(t *testing.T) *MsgBatchTransfer {
+	t.Helper()
+	prototype := batchPayloadTestMessage(t)
+	outputs := make([]*BatchTransferOutput, len(prototype.Outputs))
+	for i, output := range prototype.Outputs {
+		outputs[i] = &BatchTransferOutput{
+			Commitment:                 append([]byte(nil), output.Commitment...),
+			Ciphertext:                 append([]byte(nil), output.Ciphertext...),
+			ViewTag:                    append([]byte(nil), output.ViewTag...),
+			UserPrivacyPolicy:          output.UserPrivacyPolicy,
+			UserDisclosureMode:         output.UserDisclosureMode,
+			UserDisclosureDigest:       append([]byte(nil), output.UserDisclosureDigest...),
+			UserDisclosureTargetPubkey: append([]byte(nil), output.UserDisclosureTargetPubkey...),
+			UserDisclosurePayload:      append([]byte(nil), output.UserDisclosurePayload...),
+			FullDisclosureDigest:       append([]byte(nil), output.FullDisclosureDigest...),
+			AuditDisclosurePayload:     append([]byte(nil), output.AuditDisclosurePayload...),
+			SelfViewDisclosurePayload:  append([]byte(nil), output.SelfViewDisclosurePayload...),
+		}
+	}
+	return &MsgBatchTransfer{
+		Creator:                     prototype.Creator,
+		Proof:                       append([]byte(nil), prototype.Proof...),
+		Root:                        append([]byte(nil), prototype.Root...),
+		Nullifiers:                  cloneBatchPayloadByteSlices(prototype.Nullifiers),
+		Outputs:                     outputs,
+		AuditKeyId:                  prototype.AuditKeyId,
+		AuditKeyEpoch:               prototype.AuditKeyEpoch,
+		AuditDisclosureTargetPubkey: append([]byte(nil), prototype.AuditDisclosureTargetPubkey...),
+		ExpiresAtUnix:               prototype.ExpiresAtUnix,
+	}
+}
+
+func maxProductionBatchPayloadTestMessage(t *testing.T) *MsgBatchTransfer {
+	t.Helper()
+	nullifiers := make([][]byte, BatchJoinSplitV1MaxInputs)
+	for i := range nullifiers {
+		nullifiers[i] = batchPayloadTestField(int64(i + 1))
+	}
+	outputs := make([]*BatchTransferOutput, BatchJoinSplitV1MaxOutputs)
+	for i := range outputs {
+		outputs[i] = &BatchTransferOutput{
+			Commitment:                 batchPayloadTestField(int64(100 + i)),
+			Ciphertext:                 batchPayloadTestEnvelope(t, EnvelopeTransferNoteV1),
+			ViewTag:                    []byte{byte(i), byte(i + 1)},
+			UserPrivacyPolicy:          TransferPrivacyPolicyDiscloseAmountToFrom,
+			UserDisclosureMode:         UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED,
+			UserDisclosureDigest:       batchPayloadTestField(int64(200 + i)),
+			UserDisclosureTargetPubkey: batchPayloadTestPointBytes(23),
+			UserDisclosurePayload:      batchPayloadTestEnvelope(t, EnvelopeUserDisclosureV1),
+			FullDisclosureDigest:       batchPayloadTestField(int64(300 + i)),
+			AuditDisclosurePayload:     batchPayloadTestEnvelope(t, EnvelopeAuditDisclosureV1),
+			SelfViewDisclosurePayload:  batchPayloadTestEnvelope(t, EnvelopeSelfViewDisclosureV1),
+		}
+	}
+	return &MsgBatchTransfer{
+		Creator:                     "clair1relayer",
+		Proof:                       bytes.Repeat([]byte{0xa5}, BatchTransferProofSizeV1),
+		Root:                        batchPayloadTestField(99),
+		Nullifiers:                  nullifiers,
+		Outputs:                     outputs,
+		AuditKeyId:                  strings.Repeat("a", AuditKeyIDV1MaxBytes),
+		AuditKeyEpoch:               9,
+		AuditDisclosureTargetPubkey: batchPayloadTestPointBytes(37),
+		ExpiresAtUnix:               2_000_000_000,
+	}
+}
+
+func cloneBatchPayloadByteSlices(values [][]byte) [][]byte {
+	cloned := make([][]byte, len(values))
+	for i, value := range values {
+		cloned[i] = append([]byte(nil), value...)
+	}
+	return cloned
 }
 
 func cloneBatchPayloadTestMessage(t *testing.T, msg *BatchTransferWirePrototypeV1) *BatchTransferWirePrototypeV1 {

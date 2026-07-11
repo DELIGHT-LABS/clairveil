@@ -348,3 +348,51 @@ func TestMsgTransferValidateBasicUserDisclosureModes(t *testing.T) {
 	err = missingSelfViewPayload.ValidateBasic()
 	require.ErrorContains(t, err, "self-view disclosure digest and payload must be provided together")
 }
+
+func TestMsgBatchTransferValidateBasicFrozenContract(t *testing.T) {
+	valid := productionBatchPayloadTestMessage(t)
+	valid.Creator = testCreatorAddress()
+	require.NoError(t, valid.ValidateBasic())
+
+	tests := []struct {
+		name    string
+		mutate  func(*MsgBatchTransfer)
+		message string
+	}{
+		{"creator", func(msg *MsgBatchTransfer) { msg.Creator = "invalid" }, "invalid creator address"},
+		{"proof frame", func(msg *MsgBatchTransfer) { msg.Proof = nil }, "proof must be exactly 164 bytes"},
+		{"root canonical", func(msg *MsgBatchTransfer) { msg.Root = nonCanonicalFieldBytes() }, "merkle root must be canonical"},
+		{"root active", func(msg *MsgBatchTransfer) { msg.Root = make([]byte, expectedFieldElementBytes) }, "merkle root must be non-zero"},
+		{"duplicate nullifier", func(msg *MsgBatchTransfer) {
+			msg.Nullifiers[1] = append([]byte(nil), msg.Nullifiers[0]...)
+		}, "duplicate"},
+		{"duplicate commitment", func(msg *MsgBatchTransfer) {
+			msg.Outputs[1].Commitment = append([]byte(nil), msg.Outputs[0].Commitment...)
+		}, "duplicate"},
+		{"ciphertext envelope", func(msg *MsgBatchTransfer) { msg.Outputs[0].Ciphertext[0] ^= 1 }, "canonical transfer-note envelope"},
+		{"view tag length", func(msg *MsgBatchTransfer) { msg.Outputs[0].ViewTag = nil }, "view tag must be exactly 2 bytes"},
+		{"unsupported policy", func(msg *MsgBatchTransfer) { msg.Outputs[0].UserPrivacyPolicy = 8 }, "unsupported transfer privacy policy"},
+		{"all private combination", func(msg *MsgBatchTransfer) {
+			msg.Outputs[0].UserDisclosureMode = UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC
+		}, "all-private output"},
+		{"encrypted user target", func(msg *MsgBatchTransfer) {
+			msg.Outputs[1].UserDisclosureTargetPubkey = make([]byte, expectedFieldElementBytes)
+		}, "user disclosure target pubkey is invalid"},
+		{"audit envelope", func(msg *MsgBatchTransfer) { msg.Outputs[0].AuditDisclosurePayload[0] ^= 1 }, "audit disclosure payload is not a canonical envelope"},
+		{"mixed self view", func(msg *MsgBatchTransfer) { msg.Outputs[1].SelfViewDisclosurePayload = nil }, "batch-level all-or-none"},
+		{"audit id", func(msg *MsgBatchTransfer) { msg.AuditKeyId = "Audit-Key" }, "canonical lowercase ASCII"},
+		{"audit epoch", func(msg *MsgBatchTransfer) { msg.AuditKeyEpoch = 0 }, "audit key epoch must be positive"},
+		{"audit target", func(msg *MsgBatchTransfer) {
+			msg.AuditDisclosureTargetPubkey = make([]byte, expectedFieldElementBytes)
+		}, "audit disclosure target pubkey is invalid"},
+		{"expiry", func(msg *MsgBatchTransfer) { msg.ExpiresAtUnix = 0 }, "expires_at_unix must be positive"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			msg := productionBatchPayloadTestMessage(t)
+			msg.Creator = testCreatorAddress()
+			test.mutate(msg)
+			require.ErrorContains(t, msg.ValidateBasic(), test.message)
+		})
+	}
+}
