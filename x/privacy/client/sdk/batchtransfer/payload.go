@@ -182,7 +182,21 @@ func disclosurePlaintext(index uint32, full bool, owner privacytypes.Note, outpu
 		plain.Plane, plain.Policy, plain.DisclosedFieldBitmap = privacytypes.DisclosurePlaneFullV1, privacytypes.DisclosureFullMarkerV1, privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom
 		plain.Amount, plain.AssetID, plain.SenderSpendKeyX, plain.SenderSpendKeyY, plain.SenderViewKeyX, plain.SenderViewKeyY = output.Note.Amount, output.Note.AssetID, owner.ReceiverSpendPubKeyX, owner.ReceiverSpendPubKeyY, owner.ReceiverViewPubKeyX, owner.ReceiverViewPubKeyY
 		plain.RecipientSpendKeyX, plain.RecipientSpendKeyY, plain.RecipientViewKeyX, plain.RecipientViewKeyY, plain.DisclosureBlinding = output.Note.ReceiverSpendPubKeyX, output.Note.ReceiverSpendPubKeyY, output.Note.ReceiverViewPubKeyX, output.Note.ReceiverViewPubKeyY, output.FullDisclosureBlinding
-		d, err := privacytypes.ComputeBatchFullDisclosureDigestV1(privacytypes.BatchFullDisclosureV1Input{index, commitment, output.Note.Amount, output.Note.AssetID, owner.ReceiverSpendPubKeyX, owner.ReceiverSpendPubKeyY, owner.ReceiverViewPubKeyX, owner.ReceiverViewPubKeyY, output.Note.ReceiverSpendPubKeyX, output.Note.ReceiverSpendPubKeyY, output.Note.ReceiverViewPubKeyX, output.Note.ReceiverViewPubKeyY, output.FullDisclosureBlinding})
+		d, err := privacytypes.ComputeBatchFullDisclosureDigestV1(privacytypes.BatchFullDisclosureV1Input{
+			OutputIndex:            index,
+			Commitment:             commitment,
+			Amount:                 output.Note.Amount,
+			AssetID:                output.Note.AssetID,
+			SenderSpendKeyX:        owner.ReceiverSpendPubKeyX,
+			SenderSpendKeyY:        owner.ReceiverSpendPubKeyY,
+			SenderViewKeyX:         owner.ReceiverViewPubKeyX,
+			SenderViewKeyY:         owner.ReceiverViewPubKeyY,
+			RecipientSpendKeyX:     output.Note.ReceiverSpendPubKeyX,
+			RecipientSpendKeyY:     output.Note.ReceiverSpendPubKeyY,
+			RecipientViewKeyX:      output.Note.ReceiverViewPubKeyX,
+			RecipientViewKeyY:      output.Note.ReceiverViewPubKeyY,
+			FullDisclosureBlinding: output.FullDisclosureBlinding,
+		})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -208,7 +222,23 @@ func disclosurePlaintext(index uint32, full bool, owner privacytypes.Note, outpu
 		plain.RecipientViewKeyY.Set(output.Note.ReceiverViewPubKeyY)
 	}
 	plain.AssetID.Set(output.Note.AssetID)
-	d, err := privacytypes.ComputeBatchUserDisclosureDigestV1(privacytypes.BatchUserDisclosureV1Input{index, commitment, output.PrivacyPolicy, output.PrivacyPolicy, plain.Amount, plain.SenderSpendKeyX, plain.SenderSpendKeyY, plain.SenderViewKeyX, plain.SenderViewKeyY, plain.RecipientSpendKeyX, plain.RecipientSpendKeyY, plain.RecipientViewKeyX, plain.RecipientViewKeyY, plain.AssetID, output.UserDisclosureBlinding})
+	d, err := privacytypes.ComputeBatchUserDisclosureDigestV1(privacytypes.BatchUserDisclosureV1Input{
+		OutputIndex:            index,
+		Commitment:             commitment,
+		Policy:                 output.PrivacyPolicy,
+		DisclosedFieldBitmap:   output.PrivacyPolicy,
+		SelectedAmount:         plain.Amount,
+		SelectedFromSpendKeyX:  plain.SenderSpendKeyX,
+		SelectedFromSpendKeyY:  plain.SenderSpendKeyY,
+		SelectedFromViewKeyX:   plain.SenderViewKeyX,
+		SelectedFromViewKeyY:   plain.SenderViewKeyY,
+		SelectedToSpendKeyX:    plain.RecipientSpendKeyX,
+		SelectedToSpendKeyY:    plain.RecipientSpendKeyY,
+		SelectedToViewKeyX:     plain.RecipientViewKeyX,
+		SelectedToViewKeyY:     plain.RecipientViewKeyY,
+		AssetID:                plain.AssetID,
+		UserDisclosureBlinding: output.UserDisclosureBlinding,
+	})
 	if err != nil {
 		return nil, nil, err
 	}
