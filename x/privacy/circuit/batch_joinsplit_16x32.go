@@ -10,14 +10,19 @@ import (
 )
 
 const (
-	BatchFeasibilityMaxInputs  = int(privacytypes.BatchJoinSplitV1MaxInputs)
-	BatchFeasibilityMaxOutputs = int(privacytypes.BatchJoinSplitV1MaxOutputs)
+	MaxBatchJoinSplitInputs  = int(privacytypes.BatchJoinSplitV1MaxInputs)
+	MaxBatchJoinSplitOutputs = int(privacytypes.BatchJoinSplitV1MaxOutputs)
+
+	// Compatibility aliases keep the Session 2 feasibility report and its
+	// deterministic fixtures source-compatible with the production circuit.
+	BatchFeasibilityMaxInputs  = MaxBatchJoinSplitInputs
+	BatchFeasibilityMaxOutputs = MaxBatchJoinSplitOutputs
 )
 
-// BatchJoinSplit16x32FeasibilityCircuit is a capacity prototype only. It is
-// deliberately not registered in the production circuit set and is not used
-// by a Msg service. Its shape includes every dominant Session 2 constraint.
-type BatchJoinSplit16x32FeasibilityCircuit struct {
+// BatchJoinSplit16x32 is the production one-proof circuit for one to sixteen
+// NoteV1 inputs and one to thirty-two NoteV1 outputs. Its public field order
+// is consensus-visible and frozen by BatchPublicInputOrderV1.
+type BatchJoinSplit16x32 struct {
 	MerkleRoot         frontend.Variable `gnark:",public"`
 	ChainDomainHi      frontend.Variable `gnark:",public"`
 	ChainDomainLo      frontend.Variable `gnark:",public"`
@@ -37,23 +42,27 @@ type BatchJoinSplit16x32FeasibilityCircuit struct {
 	OwnerViewPubKey  eddsa.PublicKey `gnark:",secret"`
 	OwnerSignature   eddsa.Signature `gnark:",secret"`
 
-	InputAmounts      [BatchFeasibilityMaxInputs]frontend.Variable              `gnark:",secret"`
-	InputRandomness   [BatchFeasibilityMaxInputs]frontend.Variable              `gnark:",secret"`
-	InputSpendPubKeys [BatchFeasibilityMaxInputs]eddsa.PublicKey                `gnark:",secret"`
-	InputViewPubKeys  [BatchFeasibilityMaxInputs]eddsa.PublicKey                `gnark:",secret"`
-	InputPaths        [BatchFeasibilityMaxInputs][MerkleDepth]frontend.Variable `gnark:",secret"`
-	InputPathHelpers  [BatchFeasibilityMaxInputs][MerkleDepth]frontend.Variable `gnark:",secret"`
+	InputAmounts      [MaxBatchJoinSplitInputs]frontend.Variable              `gnark:",secret"`
+	InputRandomness   [MaxBatchJoinSplitInputs]frontend.Variable              `gnark:",secret"`
+	InputSpendPubKeys [MaxBatchJoinSplitInputs]eddsa.PublicKey                `gnark:",secret"`
+	InputViewPubKeys  [MaxBatchJoinSplitInputs]eddsa.PublicKey                `gnark:",secret"`
+	InputPaths        [MaxBatchJoinSplitInputs][MerkleDepth]frontend.Variable `gnark:",secret"`
+	InputPathHelpers  [MaxBatchJoinSplitInputs][MerkleDepth]frontend.Variable `gnark:",secret"`
 
-	OutputAmounts           [BatchFeasibilityMaxOutputs]frontend.Variable `gnark:",secret"`
-	OutputRandomness        [BatchFeasibilityMaxOutputs]frontend.Variable `gnark:",secret"`
-	OutputSpendPubKeys      [BatchFeasibilityMaxOutputs]eddsa.PublicKey   `gnark:",secret"`
-	OutputViewPubKeys       [BatchFeasibilityMaxOutputs]eddsa.PublicKey   `gnark:",secret"`
-	OutputPrivacyPolicies   [BatchFeasibilityMaxOutputs]frontend.Variable `gnark:",secret"`
-	UserDisclosureBlindings [BatchFeasibilityMaxOutputs]frontend.Variable `gnark:",secret"`
-	FullDisclosureBlindings [BatchFeasibilityMaxOutputs]frontend.Variable `gnark:",secret"`
+	OutputAmounts           [MaxBatchJoinSplitOutputs]frontend.Variable `gnark:",secret"`
+	OutputRandomness        [MaxBatchJoinSplitOutputs]frontend.Variable `gnark:",secret"`
+	OutputSpendPubKeys      [MaxBatchJoinSplitOutputs]eddsa.PublicKey   `gnark:",secret"`
+	OutputViewPubKeys       [MaxBatchJoinSplitOutputs]eddsa.PublicKey   `gnark:",secret"`
+	OutputPrivacyPolicies   [MaxBatchJoinSplitOutputs]frontend.Variable `gnark:",secret"`
+	UserDisclosureBlindings [MaxBatchJoinSplitOutputs]frontend.Variable `gnark:",secret"`
+	FullDisclosureBlindings [MaxBatchJoinSplitOutputs]frontend.Variable `gnark:",secret"`
 }
 
-func (c *BatchJoinSplit16x32FeasibilityCircuit) Define(api frontend.API) error {
+// BatchJoinSplit16x32FeasibilityCircuit is retained as an exact alias so the
+// Session 2 resource gate continues measuring the production constraint set.
+type BatchJoinSplit16x32FeasibilityCircuit = BatchJoinSplit16x32
+
+func (c *BatchJoinSplit16x32) Define(api frontend.API) error {
 	h, err := mimc.NewMiMC(api)
 	if err != nil {
 		return err
@@ -71,17 +80,17 @@ func (c *BatchJoinSplit16x32FeasibilityCircuit) Define(api frontend.API) error {
 	api.AssertIsDifferent(c.ExpiresAtUnix, 0)
 	api.AssertIsDifferent(c.AssetID, 0)
 
-	inputEnabled := exactActivePrefix(api, c.InputCount, BatchFeasibilityMaxInputs)
-	outputEnabled := exactActivePrefix(api, c.OutputCount, BatchFeasibilityMaxOutputs)
+	inputEnabled := exactActivePrefix(api, c.InputCount, MaxBatchJoinSplitInputs)
+	outputEnabled := exactActivePrefix(api, c.OutputCount, MaxBatchJoinSplitOutputs)
 
 	assertPrimeSubgroupPoint(api, curve, c.OwnerSpendPubKey.A)
 	assertPrimeSubgroupPoint(api, curve, c.OwnerViewPubKey.A)
 	assertCanonicalEdDSASignature(api, curve, c.OwnerSignature)
 
-	nullifiers := make([]frontend.Variable, BatchFeasibilityMaxInputs)
-	commitments := make([]frontend.Variable, BatchFeasibilityMaxOutputs)
-	userDigests := make([]frontend.Variable, BatchFeasibilityMaxOutputs)
-	fullDigests := make([]frontend.Variable, BatchFeasibilityMaxOutputs)
+	nullifiers := make([]frontend.Variable, MaxBatchJoinSplitInputs)
+	commitments := make([]frontend.Variable, MaxBatchJoinSplitOutputs)
+	userDigests := make([]frontend.Variable, MaxBatchJoinSplitOutputs)
+	fullDigests := make([]frontend.Variable, MaxBatchJoinSplitOutputs)
 	var totalInput frontend.Variable = 0
 	var totalOutput frontend.Variable = 0
 
@@ -89,7 +98,7 @@ func (c *BatchJoinSplit16x32FeasibilityCircuit) Define(api frontend.API) error {
 	noteNullifierDomain := privacytypes.DomainFieldV1(privacytypes.NoteNullifierV1FieldDomain)
 	treeNodeDomain := privacytypes.DomainFieldV1(privacytypes.NoteTreeNodeV1FieldDomain)
 
-	for i := 0; i < BatchFeasibilityMaxInputs; i++ {
+	for i := 0; i < MaxBatchJoinSplitInputs; i++ {
 		enabled := inputEnabled[i]
 		disabled := api.Sub(1, enabled)
 		assertAmountRange(api, c.InputAmounts[i])
@@ -135,8 +144,8 @@ func (c *BatchJoinSplit16x32FeasibilityCircuit) Define(api frontend.API) error {
 		totalInput = api.Add(totalInput, api.Mul(enabled, c.InputAmounts[i]))
 	}
 
-	for i := 0; i < BatchFeasibilityMaxInputs; i++ {
-		for j := i + 1; j < BatchFeasibilityMaxInputs; j++ {
+	for i := 0; i < MaxBatchJoinSplitInputs; i++ {
+		for j := i + 1; j < MaxBatchJoinSplitInputs; j++ {
 			bothEnabled := api.Mul(inputEnabled[i], inputEnabled[j])
 			api.AssertIsEqual(api.Mul(bothEnabled, api.IsZero(api.Sub(nullifiers[i], nullifiers[j]))), 0)
 		}
@@ -145,7 +154,7 @@ func (c *BatchJoinSplit16x32FeasibilityCircuit) Define(api frontend.API) error {
 	userDisclosureDomain := privacytypes.DomainFieldV1(privacytypes.BatchUserDisclosureV2DomainLabel)
 	userDisclosureLeafDomain := privacytypes.DomainFieldV1(privacytypes.BatchUserDisclosureLeafV1DomainLabel)
 	fullDisclosureDomain := privacytypes.DomainFieldV1(privacytypes.BatchFullDisclosureV2DomainLabel)
-	for i := 0; i < BatchFeasibilityMaxOutputs; i++ {
+	for i := 0; i < MaxBatchJoinSplitOutputs; i++ {
 		enabled := outputEnabled[i]
 		disabled := api.Sub(1, enabled)
 		assertAmountRange(api, c.OutputAmounts[i])
@@ -231,8 +240,8 @@ func (c *BatchJoinSplit16x32FeasibilityCircuit) Define(api frontend.API) error {
 		fullDigests[i] = api.Select(enabled, fullDigest, 0)
 	}
 
-	for i := 0; i < BatchFeasibilityMaxOutputs; i++ {
-		for j := i + 1; j < BatchFeasibilityMaxOutputs; j++ {
+	for i := 0; i < MaxBatchJoinSplitOutputs; i++ {
+		for j := i + 1; j < MaxBatchJoinSplitOutputs; j++ {
 			bothEnabled := api.Mul(outputEnabled[i], outputEnabled[j])
 			api.AssertIsEqual(api.Mul(bothEnabled, api.IsZero(api.Sub(commitments[i], commitments[j]))), 0)
 		}
