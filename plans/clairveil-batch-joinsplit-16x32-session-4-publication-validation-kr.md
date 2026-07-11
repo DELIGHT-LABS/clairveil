@@ -478,11 +478,11 @@ finding이 없으면 억지 refactor를 만들지 않음. finding 수정 후 관
 
 ## 22. Completion Record
 
-- review scope: `e427370..816f627ec733c88c0433f40fe55bf2b5b864e754`
+- review scope: `e427370..47bcca58edb79e2e0a6a1bcdb8d655842f30898d`
 - 시작 HEAD: `b2fa95661590f681d268885c7dfdf7e9af3581ba` (`docs: record Session 3B completion`)
-- 최종 HEAD: `816f627ec733c88c0433f40fe55bf2b5b864e754` (Pass A~I, 전체 regression, pinned-tree release-pack provenance를 검증한 immutable implementation snapshot; 이후 commit은 publication record만 변경함)
+- 최종 HEAD: `47bcca58edb79e2e0a6a1bcdb8d655842f30898d` (Pass A~I, 전체 regression, pinned-tree generation과 external Git-blob verification을 검증한 immutable implementation snapshot; 이후 commit은 publication record만 변경함)
 - Gate 3B: 진입 시 dirty integration tree 때문에 최초 차단함. `d9b1780`, `8dfe80b`, `868f108`, `0b6b3ee`, `d7809e9` 수정과 targeted/full privacy/race/vet/examples, 5-case batch localnet, privacy smoke, payroll live, artifact/release 재검증 뒤 `423f73a`에서 closure 처리함.
-- findings/fixes: batch preparation (`d9b1780`), remote prover transport (`8dfe80b`), lossless typed pagination (`868f108`), durable payroll (`0b6b3ee`), localnet gate (`d7809e9`), confirmed-failure re-sign (`16900cb`), property/fuzz (`2f4d065`), 5-shape capacity (`7407007`), Deposit plaintext log (`c40c865`), 실제 restart/genesis continuation (`15e644a`), 한영 문서 정렬 (`cee89a7`), 모든 standalone proof body hard bound (`fc45edd`), immutable validation scope, dirty release-pack fail-closed (`8b48483`), pinned Git-tree pack으로 ignored/concurrent input 배제 (`816f627`), raw/service prover boundary 한영 문서 정렬. Severity, 근거와 영향은 [한글 검증 보고서](../docs/clairveil-batch-joinsplit-16x32-session-4-validation-report-kr.md)에 기록함.
+- findings/fixes: batch preparation (`d9b1780`), remote prover transport (`8dfe80b`), lossless typed pagination (`868f108`), durable payroll (`0b6b3ee`), localnet gate (`d7809e9`), confirmed-failure re-sign (`16900cb`), property/fuzz (`2f4d065`), 5-shape capacity (`7407007`), Deposit plaintext log (`c40c865`), 실제 restart/genesis continuation (`15e644a`), 한영 문서 정렬 (`cee89a7`), 모든 standalone proof body hard bound (`fc45edd`), immutable validation scope, dirty release-pack fail-closed (`8b48483`), pinned Git-tree pack으로 ignored/concurrent input 배제 (`816f627`), raw/service prover boundary 한영 문서 정렬, invalid full SHA 교정과 external archive Git binding (`47bcca5`). Severity, 근거와 영향은 [한글 검증 보고서](../docs/clairveil-batch-joinsplit-16x32-session-4-validation-report-kr.md)에 기록함.
 - unresolved findings: Critical 0, High 0, security-relevant Medium 0
 - protocol re-entry: public input/NoteV1/protocol contract 변경 finding 없음. Session 2/3A 재진입 불필요
 - accepted residual: formal setup/audit/source freeze, production artifact provenance, production chain/prover/auditor/downstream 운영, metadata leakage acceptance, in-process RSS, no-fixed-version Go 3건, example npm Low 1건. Owner·이유·production blocking 여부를 한영 보고서에 기록함.

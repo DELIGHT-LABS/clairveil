@@ -81,7 +81,14 @@ make docker-proverd-build
 
 `make release-pack`은 `dist/clairveil-handoff-<version>.tar.gz`와 `.sha256` 파일을 생성합니다. 이 pack은 전체 소스 배포본이 아니라 downstream handoff 계약 묶음입니다. 포함 대상은 license/notice, 주요 handoff/security/operation 문서, circuit/CLI/testing/maintainer 문서, Merkle restore SOP, proto, JSON Schema, conformance fixture, client/JS 예제, scan optimization 문서, bulk transfer handoff/design/plan 문서, reference payroll product 문서/예제, prover Docker sample, release pack scripts, `RELEASE-MANIFEST.txt`, `SHA256SUMS.txt`입니다. Bilingual batch contract와 independent fixture는 계속 normative입니다. Session 3A에서는 normal tx/query/genesis proto, 네 번째 circuit descriptor, gas/scan/genesis contract, direct core test도 handoff 범위입니다. `batch_feasibility.proto`는 measurement-only로 남습니다. Readiness 명령은 handoff 전에 source checkout에서 실행하고 pack은 large R1CS/PK/VK binary가 아니라 contract artifact와 검증 기대값을 기록합니다.
 
-`make release-pack-verify`는 handoff pack의 외부 `.sha256`, pack 내부 `SHA256SUMS.txt`, 필수 handoff 파일 목록, 그리고 기본 archive의 manifest commit이 현재 `HEAD`와 일치하는지 확인합니다. `RELEASE_PACK_ARCHIVE`를 지정하지 않은 기본 실행에서는 stale local archive가 누락 파일을 가리지 않도록 검증 전에 기본 pack을 다시 생성합니다. 이 검증은 “tarball이 만들어졌다”가 아니라 “넘겨도 되는 계약 묶음인지”를 확인하는 단계입니다.
+`make release-pack-verify`는 handoff pack의 외부 `.sha256`, pack 내부 `SHA256SUMS.txt`, 필수 handoff 파일 목록, 그리고 기본 archive의 manifest commit이 현재 `HEAD`와 일치하는지 확인합니다. Non-regular entry를 거부하고 generated file 외 모든 packed file을 manifest Git tree와 byte-for-byte 비교합니다. `RELEASE_PACK_ARCHIVE`를 지정하지 않은 기본 실행에서는 stale local archive가 누락 파일을 가리지 않도록 검증 전에 기본 pack을 다시 생성합니다. 외부 archive를 검증할 때는 `RELEASE_PACK_ARCHIVE`, `RELEASE_PACK_CHECKSUM`, out-of-band full SHA인 `RELEASE_PACK_EXPECTED_COMMIT`을 함께 지정하며 expected commit은 local clone에 있어야 합니다. 이 검증은 “tarball이 만들어졌다”가 아니라 “넘겨도 되는 계약 묶음인지”를 확인하는 단계입니다.
+
+```bash
+RELEASE_PACK_ARCHIVE=/path/to/clairveil-handoff.tar.gz \
+RELEASE_PACK_CHECKSUM=/path/to/clairveil-handoff.tar.gz.sha256 \
+RELEASE_PACK_EXPECTED_COMMIT=<40-character-commit-sha> \
+./scripts/release-pack-verify.sh
+```
 
 ## 3. 릴리즈 전 maintainer 체크리스트
 

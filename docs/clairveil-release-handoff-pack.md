@@ -83,7 +83,14 @@ This command validates compose config, Dockerfile build, and image inspect. It r
 
 `make release-pack` creates `dist/clairveil-handoff-<version>.tar.gz` and its `.sha256` file. This pack is a downstream handoff contract bundle, not a full source distribution. It includes license/notice, major handoff/security/operations docs, circuit/CLI/testing/maintainer docs, Merkle restore SOP, proto, JSON Schema, conformance fixtures, client/JS examples, scan optimization docs, bulk-transfer handoff/design/planning docs, reference payroll product docs/examples, prover Docker sample, release pack scripts, `RELEASE-MANIFEST.txt`, and `SHA256SUMS.txt`. The bilingual batch contract and independent fixtures remain normative; Session 3A additionally makes normal tx/query/genesis proto, the fourth circuit descriptor, gas/scan/genesis contracts, and direct core tests part of the handoff. `batch_feasibility.proto` remains measurement-only. Readiness commands are run from the source checkout before handoff; the pack records contract artifacts and validation expectations, not large R1CS/PK/VK binaries.
 
-`make release-pack-verify` verifies the handoff pack's external `.sha256`, internal `SHA256SUMS.txt`, required handoff files, and that the default archive manifest commit matches current `HEAD`. When `RELEASE_PACK_ARCHIVE` is not set, it regenerates the default pack before validation so stale local archives do not mask missing files. This step checks that the tarball is not just created, but suitable to hand off as a release contract bundle.
+`make release-pack-verify` verifies the handoff pack's external `.sha256`, internal `SHA256SUMS.txt`, required handoff files, and that the default archive manifest commit matches current `HEAD`. It also rejects non-regular entries and compares every non-generated packed file byte-for-byte with the manifest Git tree. When `RELEASE_PACK_ARCHIVE` is not set, it regenerates the default pack before validation so stale local archives do not mask missing files. For an externally supplied archive, set `RELEASE_PACK_ARCHIVE`, `RELEASE_PACK_CHECKSUM`, and the out-of-band full SHA in `RELEASE_PACK_EXPECTED_COMMIT`; the expected commit must exist in the local clone. This step checks that the tarball is not just created, but suitable to hand off as a release contract bundle.
+
+```bash
+RELEASE_PACK_ARCHIVE=/path/to/clairveil-handoff.tar.gz \
+RELEASE_PACK_CHECKSUM=/path/to/clairveil-handoff.tar.gz.sha256 \
+RELEASE_PACK_EXPECTED_COMMIT=<40-character-commit-sha> \
+./scripts/release-pack-verify.sh
+```
 
 ## 3. Pre-Release Maintainer Checklist
 

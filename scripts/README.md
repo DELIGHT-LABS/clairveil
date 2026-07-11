@@ -27,7 +27,7 @@ Korean version: [README-kr.md](README-kr.md)
 - `privacy-public-capacity-report.sh`: merges component reports into a public capacity aggregate and keeps the aggregate ineligible when any component or per-claim evidence fails the public gate. When both prover reports exist, the default input set prefers `privacy-proverd-scale` over `privacy-proverd-load` to avoid conflicting alternative `prover_rps` evidence.
 - `privacy-benchmark-report.sh`: merges family `latest.json` reports into one human-readable `benchmarks/clairveil-benchmark-results-report-kr.md` summary. `privacy-public-capacity-report.sh` calls it by default at the end; set `GENERATE_HUMAN_BENCHMARK_REPORT=0` to disable that.
 - `release-pack.sh`: creates the downstream handoff tarball and external sha256 file under `dist/`.
-- `release-pack-verify.sh`: verifies the handoff tarball checksum, internal `SHA256SUMS.txt`, required files, and manifest commit.
+- `release-pack-verify.sh`: verifies the handoff tarball checksum, internal `SHA256SUMS.txt`, required files, manifest commit, and every packed Git blob. Explicit archives require `RELEASE_PACK_EXPECTED_COMMIT`.
 - `docker-proverd-build.sh`: validates the prover compose file, builds the reference prover Docker image, and inspects the image.
 - `install-binaries.sh`: installs built Clairveil binaries into `GOBIN` or `GOPATH/bin`.
 - `init-localnet.sh`: prepares a default local chain home for manual `clairveild start` workflows.
