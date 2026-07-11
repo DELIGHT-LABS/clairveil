@@ -109,6 +109,7 @@ func (c *BatchJoinSplit16x32FeasibilityCircuit) Define(api frontend.API) error {
 			c.InputViewPubKeys[i].A.X, c.InputViewPubKeys[i].A.Y,
 			c.InputAmounts[i], c.AssetID, c.InputRandomness[i],
 		)
+		assertEnabledNonZero(api, enabled, inputCommitment)
 
 		current := inputCommitment
 		for level := 0; level < MerkleDepth; level++ {
@@ -179,6 +180,7 @@ func (c *BatchJoinSplit16x32FeasibilityCircuit) Define(api frontend.API) error {
 		activeUserEnabled := api.Mul(enabled, userEnabled)
 		api.AssertIsEqual(api.Mul(activeUserEnabled, api.IsZero(c.UserDisclosureBlindings[i])), 0)
 		api.AssertIsEqual(api.Mul(api.Sub(1, activeUserEnabled), c.UserDisclosureBlindings[i]), 0)
+		api.AssertIsEqual(api.Mul(activeUserEnabled, api.IsZero(api.Sub(c.UserDisclosureBlindings[i], c.OutputRandomness[i]))), 0)
 
 		userDigest := batchCircuitHash(&h,
 			userDisclosureDomain,
@@ -211,6 +213,8 @@ func (c *BatchJoinSplit16x32FeasibilityCircuit) Define(api frontend.API) error {
 		userDigests[i] = api.Select(enabled, userValue, 0)
 
 		api.AssertIsEqual(api.Mul(enabled, api.IsZero(c.FullDisclosureBlindings[i])), 0)
+		api.AssertIsEqual(api.Mul(enabled, api.IsZero(api.Sub(c.FullDisclosureBlindings[i], c.OutputRandomness[i]))), 0)
+		api.AssertIsEqual(api.Mul(enabled, api.IsZero(api.Sub(c.FullDisclosureBlindings[i], c.UserDisclosureBlindings[i]))), 0)
 		fullDigest := batchCircuitHash(&h,
 			fullDisclosureDomain,
 			i,
@@ -286,6 +290,10 @@ func batchCircuitHash(h *mimc.MiMC, inputs ...frontend.Variable) frontend.Variab
 	h.Reset()
 	h.Write(inputs...)
 	return h.Sum()
+}
+
+func assertEnabledNonZero(api frontend.API, enabled, value frontend.Variable) {
+	api.AssertIsEqual(api.Mul(enabled, api.IsZero(value)), 0)
 }
 
 func batchVectorRootCircuit(

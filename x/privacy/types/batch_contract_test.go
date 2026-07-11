@@ -1,6 +1,7 @@
 package types
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -157,6 +158,16 @@ func TestBatchEffectIDV1IndependentGolden(t *testing.T) {
 
 	const goldenHex = "7f76d7744607e06dc0a22e4be5464e1a420c933cff5d060cc657ccfd4ec45979"
 	require.Equal(t, goldenHex, hex.EncodeToString(got[:]))
+}
+
+func TestValidateAuditKeyIDV1BoundsAndCanonicalCharset(t *testing.T) {
+	require.NoError(t, ValidateAuditKeyIDV1("a"))
+	require.NoError(t, ValidateAuditKeyIDV1("audit-key.production_epoch-0001"))
+	require.NoError(t, ValidateAuditKeyIDV1("a"+string(bytes.Repeat([]byte{'b'}, AuditKeyIDV1MaxBytes-1))))
+
+	for _, invalid := range []string{"", "-audit", "Audit", "audit key", "audit/key", string(bytes.Repeat([]byte{'a'}, AuditKeyIDV1MaxBytes+1))} {
+		require.Error(t, ValidateAuditKeyIDV1(invalid), invalid)
+	}
 }
 
 func referenceBatchVectorRoot(t *testing.T, kind BatchVectorKindV1, count uint32, values []*big.Int) *big.Int {

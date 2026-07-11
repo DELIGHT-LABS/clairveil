@@ -75,6 +75,10 @@ type batchJoinSplitV1ContractFixture struct {
 		RootDomain  string   `json:"root_domain"`
 		RootHex     string   `json:"root_hex"`
 	} `json:"user_disclosure"`
+	AuditKeyID struct {
+		MaxBytes int    `json:"max_bytes"`
+		Charset  string `json:"charset"`
+	} `json:"audit_key_id"`
 	Effect struct {
 		ChainDomainHi      string `json:"chain_domain_hi"`
 		ChainDomainLo      string `json:"chain_domain_lo"`
@@ -161,6 +165,8 @@ func TestPrivacyBatchJoinSplitV1ContractIndependentGolden(t *testing.T) {
 	require.Equal(t, privacytypes.BatchJoinSplitV1MaxInputs, fixture.MaxInputs)
 	require.Equal(t, privacytypes.BatchJoinSplitV1MaxOutputs, fixture.MaxOutputs)
 	require.Equal(t, privacytypes.BatchPublicInputOrderV1[:], fixture.PublicInputs)
+	require.Equal(t, privacytypes.AuditKeyIDV1MaxBytes, fixture.AuditKeyID.MaxBytes)
+	require.Equal(t, "[a-z0-9][a-z0-9._-]*", fixture.AuditKeyID.Charset)
 	schemaDigest, err := privacyzk.PublicInputSchemaSHA256(fixture.CircuitID)
 	require.NoError(t, err)
 	require.Equal(t, fixture.PublicInputSchemaSHA256, schemaDigest)
@@ -226,11 +232,11 @@ func TestPrivacyBatchJoinSplitV1ContractIndependentGolden(t *testing.T) {
 
 	effectBytes := referenceBatchEffectContract(fixture)
 	require.Equal(t, fixture.Effect.IDHex, hex.EncodeToString(effectBytes[:]))
-	require.Equal(t, 65265, fixture.WireState.TxBytes)
-	require.Equal(t, 74148, fixture.WireState.TypedScanKVBytes)
-	require.Equal(t, 172452, fixture.WireState.TotalKVWriteBytes)
+	require.Equal(t, 65294, fixture.WireState.TxBytes)
+	require.Equal(t, 75105, fixture.WireState.TypedScanKVBytes)
+	require.Equal(t, 173409, fixture.WireState.TotalKVWriteBytes)
 	require.Equal(t, 584, fixture.WireState.ABCIEventBytes)
-	require.Equal(t, 73594, fixture.WireState.QueryResponseBytes)
+	require.Equal(t, 74551, fixture.WireState.QueryResponseBytes)
 }
 
 func loadSession2Fixture(t *testing.T, name string, target any) {

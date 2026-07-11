@@ -18,6 +18,7 @@ import (
 	"github.com/consensys/gnark/frontend/cs/r1cs"
 	"github.com/consensys/gnark/std/algebra/native/twistededwards"
 	"github.com/consensys/gnark/std/signature/eddsa"
+	"github.com/consensys/gnark/test"
 	"github.com/stretchr/testify/require"
 )
 
@@ -112,6 +113,53 @@ func TestBatchJoinSplit16x32FeasibilityActivePrefixAndSentinels(t *testing.T) {
 		refreshBatchFeasibilityPublicState(t, &tampered, 3, 4)
 		assertSolve(t, &tampered, false)
 	})
+	t.Run("user blinding reuses note randomness", func(t *testing.T) {
+		tampered := *buildBatchFeasibilityAssignment(t, 3, 4)
+		tampered.UserDisclosureBlindings[0] = new(big.Int).Set(tampered.OutputRandomness[0].(*big.Int))
+		refreshBatchFeasibilityPublicState(t, &tampered, 3, 4)
+		assertSolve(t, &tampered, false)
+	})
+	t.Run("full blinding reuses note randomness", func(t *testing.T) {
+		tampered := *buildBatchFeasibilityAssignment(t, 3, 4)
+		tampered.FullDisclosureBlindings[0] = new(big.Int).Set(tampered.OutputRandomness[0].(*big.Int))
+		refreshBatchFeasibilityPublicState(t, &tampered, 3, 4)
+		assertSolve(t, &tampered, false)
+	})
+	t.Run("full blinding reuses user blinding", func(t *testing.T) {
+		tampered := *buildBatchFeasibilityAssignment(t, 3, 4)
+		tampered.FullDisclosureBlindings[0] = new(big.Int).Set(tampered.UserDisclosureBlindings[0].(*big.Int))
+		refreshBatchFeasibilityPublicState(t, &tampered, 3, 4)
+		assertSolve(t, &tampered, false)
+	})
+}
+
+type batchActiveCommitmentNonZeroCircuit struct {
+	Enabled    frontend.Variable `gnark:",secret"`
+	Commitment frontend.Variable `gnark:",secret"`
+}
+
+func (c *batchActiveCommitmentNonZeroCircuit) Define(api frontend.API) error {
+	api.AssertIsBoolean(c.Enabled)
+	assertEnabledNonZero(api, c.Enabled, c.Commitment)
+	return nil
+}
+
+func TestBatchJoinSplit16x32ActiveInputCommitmentMustBeNonZero(t *testing.T) {
+	require.NoError(t, test.IsSolved(
+		&batchActiveCommitmentNonZeroCircuit{},
+		&batchActiveCommitmentNonZeroCircuit{Enabled: 1, Commitment: 1},
+		ecc.BN254.ScalarField(),
+	))
+	require.Error(t, test.IsSolved(
+		&batchActiveCommitmentNonZeroCircuit{},
+		&batchActiveCommitmentNonZeroCircuit{Enabled: 1, Commitment: 0},
+		ecc.BN254.ScalarField(),
+	))
+	require.NoError(t, test.IsSolved(
+		&batchActiveCommitmentNonZeroCircuit{},
+		&batchActiveCommitmentNonZeroCircuit{Enabled: 0, Commitment: 0},
+		ecc.BN254.ScalarField(),
+	))
 }
 
 type batchFeasibilityShapeResult struct {
@@ -208,6 +256,7 @@ func TestBatchJoinSplit16x32FullShapeResourceGate(t *testing.T) {
 		SamplesPerShape: 3,
 		DominantGadgetCounts: map[string]int{
 			"active_prefix_one_hot_values":    48,
+			"active_input_commitment_nonzero": 16,
 			"amount_range_checks":             48,
 			"note_commitment_hashes":          48,
 			"note_nullifier_hashes":           16,
@@ -217,6 +266,7 @@ func TestBatchJoinSplit16x32FullShapeResourceGate(t *testing.T) {
 			"user_disclosure_hashes":          32,
 			"user_disclosure_leaf_hashes":     32,
 			"full_disclosure_hashes":          32,
+			"blinding_inequality_checks":      96,
 			"vector_leaf_hashes":              112,
 			"vector_internal_node_hashes":     108,
 			"vector_root_hashes":              4,

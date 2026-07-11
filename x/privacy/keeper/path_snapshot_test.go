@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"testing"
@@ -94,6 +95,28 @@ func TestCommitmentPathsAtRootRejectsMixedSnapshotAndBounds(t *testing.T) {
 		RootHex:         hex.EncodeToString(firstRoot),
 	})
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+func TestMerkleRootSnapshotLookupRejectsHistoricalHeightCorruption(t *testing.T) {
+	k, ctx := setupTreeKeeper()
+	ctx = ctx.WithBlockHeight(77)
+	require.NoError(t, k.AppendCommitment(ctx, fixedFieldBytes(180)))
+	root := append([]byte(nil), k.GetMerkleNode(ctx, uint8(MerkleDepth), 0)...)
+	store := k.storeService.OpenKVStore(ctx)
+
+	require.NoError(t, store.Set(privacytypes.GetHistoricalRootKey(root), []byte{1}))
+	snapshot, found, err := k.GetMerkleRootSnapshotV1(ctx, root)
+	require.ErrorContains(t, err, "height")
+	require.False(t, found)
+	require.Nil(t, snapshot)
+
+	wrongHeight := make([]byte, 8)
+	binary.BigEndian.PutUint64(wrongHeight, 78)
+	require.NoError(t, store.Set(privacytypes.GetHistoricalRootKey(root), wrongHeight))
+	snapshot, found, err = k.GetMerkleRootSnapshotV1(ctx, root)
+	require.ErrorContains(t, err, "inconsistent")
+	require.False(t, found)
+	require.Nil(t, snapshot)
 }
 
 func TestMerkleRootSnapshotGenesisExportCoversEveryPrefix(t *testing.T) {

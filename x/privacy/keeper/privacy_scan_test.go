@@ -1,7 +1,10 @@
 package keeper
 
 import (
+	"bytes"
 	"fmt"
+	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -18,7 +21,7 @@ func indexTestDepositV2(t *testing.T, k *Keeper, ctx sdk.Context, commitment []b
 	require.NoError(t, k.AppendCommitment(ctx, commitment))
 	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeDeposit, indexedTxHashHex(marker), []sdk.Attribute{
 		sdk.NewAttribute(privacytypes.AttributeKeyCommitment, fmt.Sprintf("%x", commitment)),
-		sdk.NewAttribute(privacytypes.AttributeKeyEncryptedNote, "deadbeef"),
+		sdk.NewAttribute(privacytypes.AttributeKeyEncryptedNote, fmt.Sprintf("%x", testKeeperEnvelope(t, privacytypes.EnvelopeDepositNoteV1))),
 	}))
 }
 
@@ -31,10 +34,15 @@ func indexTestTransferV2(t *testing.T, k *Keeper, ctx sdk.Context, first, second
 		sdk.NewAttribute(privacytypes.AttributeKeyNullifier2, fmt.Sprintf("%x", fixedFieldBytes(242))),
 		sdk.NewAttribute(privacytypes.AttributeKeyCommitment1, fmt.Sprintf("%x", first)),
 		sdk.NewAttribute(privacytypes.AttributeKeyCommitment2, fmt.Sprintf("%x", second)),
-		sdk.NewAttribute(privacytypes.AttributeKeyCipherText1, "c0ffee"),
-		sdk.NewAttribute(privacytypes.AttributeKeyCipherText2, "decafbad"),
+		sdk.NewAttribute(privacytypes.AttributeKeyCipherText1, fmt.Sprintf("%x", testKeeperEnvelope(t, privacytypes.EnvelopeTransferNoteV1))),
+		sdk.NewAttribute(privacytypes.AttributeKeyCipherText2, fmt.Sprintf("%x", testKeeperEnvelope(t, privacytypes.EnvelopeTransferNoteV1))),
 		sdk.NewAttribute(privacytypes.AttributeKeyViewTag1, "0102"),
 		sdk.NewAttribute(privacytypes.AttributeKeyViewTag2, "0304"),
+		sdk.NewAttribute(privacytypes.AttributeKeyUserPrivacyPolicy, "0"),
+		sdk.NewAttribute(privacytypes.AttributeKeyUserDisclosureMode, privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE.String()),
+		sdk.NewAttribute(privacytypes.AttributeKeyAuditDisclosureDigest, fmt.Sprintf("%x", fixedFieldBytes(243))),
+		sdk.NewAttribute(privacytypes.AttributeKeyAuditDisclosureTargetPubKey, fmt.Sprintf("%x", testKeeperDisclosurePubKey())),
+		sdk.NewAttribute(privacytypes.AttributeKeyAuditDisclosurePayload, fmt.Sprintf("%x", testKeeperEnvelope(t, privacytypes.EnvelopeAuditDisclosureV1))),
 	}))
 }
 
@@ -127,6 +135,85 @@ func TestPrivacyScanV2CorruptTypedRecordFailsClosed(t *testing.T) {
 	require.Equal(t, codes.Internal, status.Code(err))
 }
 
+func TestPrivacyScanV2RejectsCorruptExactOutputContracts(t *testing.T) {
+	t.Run("wrong fixed envelope", func(t *testing.T) {
+		k, ctx, _ := setupMsgServerKeeper()
+		ctx = ctx.WithBlockHeight(61)
+		indexTestDepositV2(t, k, ctx, fixedFieldBytes(262), 0xde)
+		store := k.storeService.OpenKVStore(ctx)
+		key := privacytypes.GetPrivacyScanOutputKey(61, 1, 0)
+		encoded, err := store.Get(key)
+		require.NoError(t, err)
+		var output privacytypes.PrivacyScanOutputV2
+		require.NoError(t, output.Unmarshal(encoded))
+		output.EncryptedNote[0] ^= 0xff
+		encoded, err = output.Marshal()
+		require.NoError(t, err)
+		require.NoError(t, store.Set(key, encoded))
+
+		response, err := k.PrivacyScan(sdk.WrapSDKContext(ctx), &privacytypes.QueryPrivacyScanRequest{})
+		require.Nil(t, response)
+		require.Equal(t, codes.Internal, status.Code(err))
+	})
+
+	t.Run("stray non-adjacent output", func(t *testing.T) {
+		k, ctx, _ := setupMsgServerKeeper()
+		ctx = ctx.WithBlockHeight(62)
+		indexTestDepositV2(t, k, ctx, fixedFieldBytes(263), 0xdf)
+		store := k.storeService.OpenKVStore(ctx)
+		encoded, err := store.Get(privacytypes.GetPrivacyScanOutputKey(62, 1, 0))
+		require.NoError(t, err)
+		var output privacytypes.PrivacyScanOutputV2
+		require.NoError(t, output.Unmarshal(encoded))
+		output.OutputIndex = 2
+		encoded, err = output.Marshal()
+		require.NoError(t, err)
+		require.NoError(t, store.Set(privacytypes.GetPrivacyScanOutputKey(62, 1, 2), encoded))
+
+		response, err := k.PrivacyScan(sdk.WrapSDKContext(ctx), &privacytypes.QueryPrivacyScanRequest{})
+		require.Nil(t, response)
+		require.Equal(t, codes.Internal, status.Code(err))
+	})
+
+	t.Run("invalid audit point and digest", func(t *testing.T) {
+		k, ctx, _ := setupMsgServerKeeper()
+		ctx = ctx.WithBlockHeight(63)
+		indexTestTransferV2(t, k, ctx, fixedFieldBytes(264), fixedFieldBytes(265), 0xe0)
+		store := k.storeService.OpenKVStore(ctx)
+		summaryKey := privacytypes.GetPrivacyScanSummaryKey(63, 1)
+		encoded, err := store.Get(summaryKey)
+		require.NoError(t, err)
+		var summary privacytypes.PrivacyScanSummaryV2
+		require.NoError(t, summary.Unmarshal(encoded))
+		summary.AuditTargetPubkey = make([]byte, 32)
+		encoded, err = summary.Marshal()
+		require.NoError(t, err)
+		require.NoError(t, store.Set(summaryKey, encoded))
+
+		response, err := k.PrivacyScan(sdk.WrapSDKContext(ctx), &privacytypes.QueryPrivacyScanRequest{})
+		require.Nil(t, response)
+		require.Equal(t, codes.Internal, status.Code(err))
+
+		summary.AuditTargetPubkey = testKeeperDisclosurePubKey()
+		encoded, err = summary.Marshal()
+		require.NoError(t, err)
+		require.NoError(t, store.Set(summaryKey, encoded))
+		outputKey := privacytypes.GetPrivacyScanOutputKey(63, 1, 0)
+		encoded, err = store.Get(outputKey)
+		require.NoError(t, err)
+		var output privacytypes.PrivacyScanOutputV2
+		require.NoError(t, output.Unmarshal(encoded))
+		output.FullDisclosureDigest = make([]byte, 32)
+		encoded, err = output.Marshal()
+		require.NoError(t, err)
+		require.NoError(t, store.Set(outputKey, encoded))
+
+		response, err = k.PrivacyScan(sdk.WrapSDKContext(ctx), &privacytypes.QueryPrivacyScanRequest{})
+		require.Nil(t, response)
+		require.Equal(t, codes.Internal, status.Code(err))
+	})
+}
+
 func TestPrivacyGlobalSequenceCorruptionAndOverflowFailClosed(t *testing.T) {
 	k, ctx, _ := setupMsgServerKeeper()
 	store := k.storeService.OpenKVStore(ctx)
@@ -159,4 +246,68 @@ func TestPrivacyScanV2RejectsGlobalSequenceReuseAcrossHeights(t *testing.T) {
 	require.NoError(t, k.StorePrivacyScanV2(ctx, newSummary(1), nil))
 	err := k.StorePrivacyScanV2(ctx, newSummary(2), nil)
 	require.ErrorContains(t, err, "global sequence is already indexed")
+}
+
+func TestPrivacyScanV2AcceptsExactBatchPublicDisclosureContract(t *testing.T) {
+	k, ctx, _ := setupMsgServerKeeper()
+	ctx = ctx.WithBlockHeight(80)
+	commitment := fixedFieldBytes(401)
+	require.NoError(t, k.AppendCommitment(ctx, commitment))
+
+	senderSpendX, senderSpendY := testKeeperPointBigInts(testKeeperScalarMulBase(big.NewInt(17)))
+	senderViewX, senderViewY := testKeeperPointBigInts(testKeeperScalarMulBase(big.NewInt(19)))
+	recipientSpendX, recipientSpendY := testKeeperPointBigInts(testKeeperScalarMulBase(big.NewInt(23)))
+	recipientViewX, recipientViewY := testKeeperPointBigInts(testKeeperScalarMulBase(big.NewInt(29)))
+	policy := privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom
+	plaintext := &privacytypes.DisclosurePlaintextV1{
+		Plane: privacytypes.DisclosurePlaneUserV1, OutputIndex: 0,
+		Policy: policy, DisclosedFieldBitmap: policy,
+		Commitment: new(big.Int).SetBytes(commitment), Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair"),
+		SenderSpendKeyX: senderSpendX, SenderSpendKeyY: senderSpendY,
+		SenderViewKeyX: senderViewX, SenderViewKeyY: senderViewY,
+		RecipientSpendKeyX: recipientSpendX, RecipientSpendKeyY: recipientSpendY,
+		RecipientViewKeyX: recipientViewX, RecipientViewKeyY: recipientViewY,
+		DisclosureBlinding: big.NewInt(43),
+	}
+	publicPayload, err := privacytypes.MarshalDisclosurePlaintextV1(plaintext)
+	require.NoError(t, err)
+	userDigest, err := privacytypes.ComputeBatchUserDisclosureDigestV1(privacytypes.BatchUserDisclosureV1Input{
+		OutputIndex: 0, Commitment: plaintext.Commitment, Policy: policy, DisclosedFieldBitmap: policy,
+		SelectedAmount: plaintext.Amount, AssetID: plaintext.AssetID,
+		SelectedFromSpendKeyX: senderSpendX, SelectedFromSpendKeyY: senderSpendY,
+		SelectedFromViewKeyX: senderViewX, SelectedFromViewKeyY: senderViewY,
+		SelectedToSpendKeyX: recipientSpendX, SelectedToSpendKeyY: recipientSpendY,
+		SelectedToViewKeyX: recipientViewX, SelectedToViewKeyY: recipientViewY,
+		UserDisclosureBlinding: plaintext.DisclosureBlinding,
+	})
+	require.NoError(t, err)
+
+	auditID := strings.Repeat("a", privacytypes.AuditKeyIDV1MaxBytes)
+	auditTarget := testKeeperDisclosurePubKey()
+	effectID := bytes.Repeat([]byte{0x91}, 32)
+	summary := &privacytypes.PrivacyScanSummaryV2{
+		GlobalSequence: 1, Height: 80, EventType: privacytypes.EventTypeBatchTransferV1,
+		Nullifiers: [][]byte{fixedFieldBytes(402)}, OutputCount: 1,
+		CircuitSetId: privacytypes.ActiveCircuitSetID, PayloadVersion: privacytypes.FixedPayloadVersionV1,
+		ScanSchemaVersion: privacytypes.PrivacyScanSchemaVersionV2,
+		AuditKeyId:        auditID, AuditKeyEpoch: 1, AuditTargetPubkey: auditTarget, EffectId: effectID,
+	}
+	output := &privacytypes.PrivacyScanOutputV2{
+		GlobalSequence: 1, Height: 80, OutputIndex: 0, EffectId: effectID,
+		Commitment: commitment, Ciphertext: testKeeperEnvelope(t, privacytypes.EnvelopeTransferNoteV1),
+		ViewTag: []byte{1, 2}, LeafIndex: 0, LeafIndexFound: true,
+		UserPrivacyPolicy: policy, UserDisclosureMode: privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC.String(),
+		UserDisclosureDigest: userDigest.FillBytes(make([]byte, 32)), UserDisclosurePayload: publicPayload,
+		FullDisclosureDigest: fixedFieldBytes(403), AuditDisclosurePayload: testKeeperEnvelope(t, privacytypes.EnvelopeAuditDisclosureV1),
+		CircuitSetId: summary.CircuitSetId, PayloadVersion: summary.PayloadVersion, ScanSchemaVersion: summary.ScanSchemaVersion,
+		AuditKeyId: auditID, AuditKeyEpoch: 1, AuditTargetPubkey: auditTarget,
+		EventType: summary.EventType,
+	}
+	require.NoError(t, k.StorePrivacyScanV2(ctx, summary, []*privacytypes.PrivacyScanOutputV2{output}))
+
+	page, err := k.GetPrivacyScanPageV2(ctx, nil, 0, 0, 0, nil)
+	require.NoError(t, err)
+	require.Len(t, page.Summaries, 1)
+	require.Len(t, page.Outputs, 1)
+	require.Equal(t, auditID, page.Summaries[0].AuditKeyId)
 }

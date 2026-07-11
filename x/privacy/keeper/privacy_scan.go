@@ -14,6 +14,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/gogoproto/proto"
 
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -117,6 +118,76 @@ func scanOutputCursor(output *types.PrivacyScanOutputV2) *types.PrivacyScanCurso
 	}
 }
 
+func scanBytesAreZero(value []byte) bool {
+	for _, b := range value {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func validatePrivacyScanPointV2(name string, encoded []byte) error {
+	if _, err := privacycrypto.DecodeCanonicalPoint(encoded); err != nil {
+		return fmt.Errorf("%s must be a canonical non-identity prime-subgroup point: %w", name, err)
+	}
+	return nil
+}
+
+func validatePrivacyScanActiveFieldV2(name string, encoded []byte) error {
+	canonical, err := validateFieldElementBytesStrict(encoded)
+	if err != nil || scanBytesAreZero(canonical) {
+		return fmt.Errorf("%s must be an active canonical field element", name)
+	}
+	return nil
+}
+
+func validatePrivacyScanSummaryNoAuditV2(summary *types.PrivacyScanSummaryV2) error {
+	if summary.AuditKeyId != "" || summary.AuditKeyEpoch != 0 || len(summary.AuditTargetPubkey) != 0 {
+		return fmt.Errorf("privacy scan %s summary must use the zero audit sentinel", summary.EventType)
+	}
+	return nil
+}
+
+func validatePrivacyScanSummaryEventV2(summary *types.PrivacyScanSummaryV2) error {
+	switch summary.EventType {
+	case types.EventTypeDeposit:
+		if summary.OutputCount != 1 || len(summary.Nullifiers) != 0 || len(summary.EffectId) != 0 {
+			return fmt.Errorf("privacy scan deposit summary requires one output and no nullifier/effect id")
+		}
+		return validatePrivacyScanSummaryNoAuditV2(summary)
+	case types.EventTypeWithdraw:
+		if summary.OutputCount != 0 || len(summary.Nullifiers) != 1 || len(summary.EffectId) != 0 {
+			return fmt.Errorf("privacy scan withdraw summary requires one nullifier, no outputs, and no effect id")
+		}
+		return validatePrivacyScanSummaryNoAuditV2(summary)
+	case types.EventTypeShieldedTransfer:
+		if summary.OutputCount != 2 || len(summary.Nullifiers) != 2 || len(summary.EffectId) != 0 {
+			return fmt.Errorf("privacy scan shielded transfer summary requires two nullifiers/outputs and no effect id")
+		}
+		if summary.AuditKeyId != "" || summary.AuditKeyEpoch != 0 {
+			return fmt.Errorf("privacy scan shielded transfer summary must use the legacy zero audit id/epoch sentinel")
+		}
+		return validatePrivacyScanPointV2("privacy scan audit target", summary.AuditTargetPubkey)
+	case types.EventTypeBatchTransferV1:
+		if len(summary.Nullifiers) == 0 || len(summary.Nullifiers) > int(types.BatchJoinSplitV1MaxInputs) || summary.OutputCount == 0 || summary.OutputCount > types.BatchJoinSplitV1MaxOutputs {
+			return fmt.Errorf("privacy scan batch summary count is outside the 1..16/1..32 contract")
+		}
+		if len(summary.EffectId) != 32 || scanBytesAreZero(summary.EffectId) {
+			return fmt.Errorf("privacy scan batch summary requires a non-zero 32-byte effect id")
+		}
+		if err := types.ValidateAuditKeyIDV1(summary.AuditKeyId); err != nil {
+			return err
+		}
+		if summary.AuditKeyEpoch == 0 {
+			return fmt.Errorf("privacy scan batch summary audit key epoch must be positive")
+		}
+		return validatePrivacyScanPointV2("privacy scan audit target", summary.AuditTargetPubkey)
+	default:
+		return fmt.Errorf("unsupported privacy scan event type %q", summary.EventType)
+	}
+}
+
 func validatePrivacyScanSummaryV2(summary *types.PrivacyScanSummaryV2) error {
 	if summary == nil {
 		return fmt.Errorf("privacy scan summary is required")
@@ -156,7 +227,129 @@ func validatePrivacyScanSummaryV2(summary *types.PrivacyScanSummaryV2) error {
 	if len(summary.EffectId) != 0 && len(summary.EffectId) != 32 {
 		return fmt.Errorf("privacy scan summary effect_id must be empty or 32 bytes")
 	}
+	return validatePrivacyScanSummaryEventV2(summary)
+}
+
+func validatePrivacyScanEmptyDisclosureV2(output *types.PrivacyScanOutputV2) error {
+	if output.UserPrivacyPolicy != 0 || output.UserDisclosureMode != "" ||
+		len(output.UserDisclosureDigest) != 0 || len(output.UserDisclosureTargetPubkey) != 0 || len(output.UserDisclosurePayload) != 0 ||
+		len(output.FullDisclosureDigest) != 0 || len(output.AuditDisclosurePayload) != 0 || len(output.SelfViewDisclosurePayload) != 0 {
+		return fmt.Errorf("privacy scan output must use exact zero disclosure sentinels")
+	}
 	return nil
+}
+
+func validatePrivacyScanUserDisclosureV2(output *types.PrivacyScanOutputV2) error {
+	if output.UserPrivacyPolicy > types.TransferPrivacyPolicyDiscloseAmountToFrom {
+		return fmt.Errorf("privacy scan user disclosure policy is invalid")
+	}
+	if output.UserPrivacyPolicy == types.TransferPrivacyPolicyAllPrivate {
+		if output.UserDisclosureMode != types.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE.String() ||
+			len(output.UserDisclosureDigest) != 0 || len(output.UserDisclosureTargetPubkey) != 0 || len(output.UserDisclosurePayload) != 0 {
+			return fmt.Errorf("privacy scan all-private disclosure must use mode NONE and zero digest/target/payload")
+		}
+		return nil
+	}
+	if err := validatePrivacyScanActiveFieldV2("privacy scan user disclosure digest", output.UserDisclosureDigest); err != nil {
+		return err
+	}
+	switch output.UserDisclosureMode {
+	case types.UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC.String():
+		if len(output.UserDisclosureTargetPubkey) != 0 {
+			return fmt.Errorf("privacy scan public user disclosure target must be empty")
+		}
+		plaintext, err := types.UnmarshalDisclosurePlaintextV1(output.UserDisclosurePayload)
+		if err != nil {
+			return fmt.Errorf("privacy scan public user disclosure is not canonical: %w", err)
+		}
+		if plaintext.Plane != types.DisclosurePlaneUserV1 || plaintext.OutputIndex != output.OutputIndex || plaintext.Policy != output.UserPrivacyPolicy || !bytes.Equal(plaintext.Commitment.FillBytes(make([]byte, 32)), output.Commitment) {
+			return fmt.Errorf("privacy scan public user disclosure metadata does not match output")
+		}
+		var expected []byte
+		if output.EventType == types.EventTypeBatchTransferV1 {
+			digest, digestErr := types.ComputeBatchUserDisclosureDigestV1(types.BatchUserDisclosureV1Input{
+				OutputIndex: plaintext.OutputIndex, Commitment: plaintext.Commitment,
+				Policy: plaintext.Policy, DisclosedFieldBitmap: plaintext.DisclosedFieldBitmap,
+				SelectedAmount: plaintext.Amount, AssetID: plaintext.AssetID,
+				SelectedFromSpendKeyX: plaintext.SenderSpendKeyX, SelectedFromSpendKeyY: plaintext.SenderSpendKeyY,
+				SelectedFromViewKeyX: plaintext.SenderViewKeyX, SelectedFromViewKeyY: plaintext.SenderViewKeyY,
+				SelectedToSpendKeyX: plaintext.RecipientSpendKeyX, SelectedToSpendKeyY: plaintext.RecipientSpendKeyY,
+				SelectedToViewKeyX: plaintext.RecipientViewKeyX, SelectedToViewKeyY: plaintext.RecipientViewKeyY,
+				UserDisclosureBlinding: plaintext.DisclosureBlinding,
+			})
+			if digestErr == nil {
+				expected = digest.FillBytes(make([]byte, 32))
+			}
+			err = digestErr
+		} else {
+			expected, err = types.ComputeTransferDisclosureDigestBytes(
+				plaintext.Policy, plaintext.OutputIndex, output.Commitment,
+				plaintext.Amount, plaintext.AssetID,
+				plaintext.SenderSpendKeyX, plaintext.SenderSpendKeyY,
+				plaintext.SenderViewKeyX, plaintext.SenderViewKeyY,
+				plaintext.RecipientSpendKeyX, plaintext.RecipientSpendKeyY,
+				plaintext.RecipientViewKeyX, plaintext.RecipientViewKeyY,
+				plaintext.DisclosureBlinding,
+			)
+		}
+		if err != nil || !bytes.Equal(expected, output.UserDisclosureDigest) {
+			return fmt.Errorf("privacy scan public user disclosure digest does not match plaintext")
+		}
+	case types.UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED.String():
+		if err := validatePrivacyScanPointV2("privacy scan user disclosure target", output.UserDisclosureTargetPubkey); err != nil {
+			return err
+		}
+		if _, err := types.UnwrapEncryptedEnvelopeV1(output.UserDisclosurePayload, types.EnvelopeUserDisclosureV1); err != nil {
+			return fmt.Errorf("privacy scan user disclosure envelope is invalid: %w", err)
+		}
+	default:
+		return fmt.Errorf("privacy scan user disclosure mode is invalid")
+	}
+	return nil
+}
+
+func validatePrivacyScanFullDisclosureV2(output *types.PrivacyScanOutputV2) error {
+	if err := validatePrivacyScanActiveFieldV2("privacy scan full disclosure digest", output.FullDisclosureDigest); err != nil {
+		return err
+	}
+	if _, err := types.UnwrapEncryptedEnvelopeV1(output.AuditDisclosurePayload, types.EnvelopeAuditDisclosureV1); err != nil {
+		return fmt.Errorf("privacy scan audit disclosure envelope is invalid: %w", err)
+	}
+	if len(output.SelfViewDisclosurePayload) != 0 {
+		if _, err := types.UnwrapEncryptedEnvelopeV1(output.SelfViewDisclosurePayload, types.EnvelopeSelfViewDisclosureV1); err != nil {
+			return fmt.Errorf("privacy scan self-view disclosure envelope is invalid: %w", err)
+		}
+	}
+	return nil
+}
+
+func validatePrivacyScanOutputEventV2(output *types.PrivacyScanOutputV2) error {
+	switch output.EventType {
+	case types.EventTypeDeposit:
+		if len(output.Ciphertext) != 0 || len(output.ViewTag) != 0 {
+			return fmt.Errorf("privacy scan deposit output must use encrypted_note and an empty ciphertext/view tag")
+		}
+		if _, err := types.UnwrapEncryptedEnvelopeV1(output.EncryptedNote, types.EnvelopeDepositNoteV1); err != nil {
+			return fmt.Errorf("privacy scan deposit note envelope is invalid: %w", err)
+		}
+		return validatePrivacyScanEmptyDisclosureV2(output)
+	case types.EventTypeShieldedTransfer, types.EventTypeBatchTransferV1:
+		if len(output.EncryptedNote) != 0 || len(output.ViewTag) != types.ViewTagLength {
+			return fmt.Errorf("privacy scan transfer output must use ciphertext and an exact view tag")
+		}
+		if _, err := types.UnwrapEncryptedEnvelopeV1(output.Ciphertext, types.EnvelopeTransferNoteV1); err != nil {
+			return fmt.Errorf("privacy scan transfer note envelope is invalid: %w", err)
+		}
+		if output.EventType == types.EventTypeShieldedTransfer && output.OutputIndex == 1 {
+			return validatePrivacyScanEmptyDisclosureV2(output)
+		}
+		if err := validatePrivacyScanUserDisclosureV2(output); err != nil {
+			return err
+		}
+		return validatePrivacyScanFullDisclosureV2(output)
+	default:
+		return fmt.Errorf("privacy scan event %q cannot contain an output", output.EventType)
+	}
 }
 
 func (k Keeper) validatePrivacyScanOutputV2(summary *types.PrivacyScanSummaryV2, output *types.PrivacyScanOutputV2, expectedIndex uint32) error {
@@ -182,7 +375,7 @@ func (k Keeper) validatePrivacyScanOutputV2(summary *types.PrivacyScanSummaryV2,
 	if len(output.ViewTag) != 0 && len(output.ViewTag) != types.ViewTagLength {
 		return fmt.Errorf("privacy scan output view_tag must be empty or %d bytes", types.ViewTagLength)
 	}
-	return nil
+	return validatePrivacyScanOutputEventV2(output)
 }
 
 func (k Keeper) validatePrivacyScanOutputStateV2(ctx sdk.Context, summary *types.PrivacyScanSummaryV2, output *types.PrivacyScanOutputV2, expectedIndex uint32) error {
@@ -197,6 +390,44 @@ func (k Keeper) validatePrivacyScanOutputStateV2(ctx sdk.Context, summary *types
 		return fmt.Errorf("privacy scan output leaf index does not match commitment state")
 	}
 	return nil
+}
+
+func (k Keeper) getPrivacyScanEventOutputsV2(ctx sdk.Context, summary *types.PrivacyScanSummaryV2) ([]*types.PrivacyScanOutputV2, error) {
+	store := k.storeService.OpenKVStore(ctx)
+	prefix := types.GetPrivacyScanOutputEventPrefix(summary.Height, summary.GlobalSequence)
+	iterator, err := store.Iterator(prefix, storetypes.PrefixEndBytes(prefix))
+	if err != nil {
+		return nil, err
+	}
+	defer iterator.Close()
+
+	outputs := make([]*types.PrivacyScanOutputV2, 0, summary.OutputCount)
+	for expectedIndex := uint32(0); iterator.Valid(); iterator.Next() {
+		if expectedIndex >= summary.OutputCount {
+			return nil, fmt.Errorf("privacy scan event contains output beyond summary output_count")
+		}
+		cursor, err := decodePrivacyScanOutputKey(iterator.Key())
+		if err != nil {
+			return nil, err
+		}
+		if cursor.Height != summary.Height || cursor.GlobalSequence != summary.GlobalSequence || cursor.OutputIndex != expectedIndex {
+			return nil, fmt.Errorf("privacy scan event output keys are not an exact contiguous prefix")
+		}
+		var output types.PrivacyScanOutputV2
+		if err := output.Unmarshal(iterator.Value()); err != nil {
+			return nil, fmt.Errorf("privacy scan output is corrupt: %w", err)
+		}
+		if err := k.validatePrivacyScanOutputStateV2(ctx, summary, &output, expectedIndex); err != nil {
+			return nil, fmt.Errorf("privacy scan output %d does not match summary/state: %w", expectedIndex, err)
+		}
+		outputCopy := output
+		outputs = append(outputs, &outputCopy)
+		expectedIndex++
+	}
+	if uint32(len(outputs)) != summary.OutputCount {
+		return nil, fmt.Errorf("privacy scan summary has incomplete output records")
+	}
+	return outputs, nil
 }
 
 // StorePrivacyScanV2 is the shared typed index writer for Deposit,
@@ -236,6 +467,18 @@ func (k Keeper) StorePrivacyScanV2(ctx sdk.Context, summary *types.PrivacyScanSu
 	}
 	if exists {
 		return fmt.Errorf("privacy scan summary cursor is already indexed")
+	}
+	eventOutputPrefix := types.GetPrivacyScanOutputEventPrefix(summary.Height, summary.GlobalSequence)
+	outputIterator, err := store.Iterator(eventOutputPrefix, storetypes.PrefixEndBytes(eventOutputPrefix))
+	if err != nil {
+		return err
+	}
+	outputExists := outputIterator.Valid()
+	if err := outputIterator.Close(); err != nil {
+		return err
+	}
+	if outputExists {
+		return fmt.Errorf("privacy scan event output prefix is already indexed")
 	}
 	for _, output := range outputs {
 		key := types.GetPrivacyScanOutputKey(output.Height, output.GlobalSequence, output.OutputIndex)
@@ -573,6 +816,10 @@ func (k Keeper) GetPrivacyScanPageV2(ctx sdk.Context, after *types.PrivacyScanCu
 		if err := validatePrivacyScanSummaryV2(&summary); err != nil {
 			return nil, err
 		}
+		eventOutputs, err := k.getPrivacyScanEventOutputsV2(ctx, &summary)
+		if err != nil {
+			return nil, err
+		}
 
 		sameEventAsCursor := height == after.Height && sequence == after.GlobalSequence
 		startOutput := uint32(0)
@@ -592,23 +839,8 @@ func (k Keeper) GetPrivacyScanPageV2(ctx sdk.Context, after *types.PrivacyScanCu
 		}
 		response.ScannedEventCount++
 
-		// A summary owns exactly output_count records. This also detects stray
-		// output records for withdraw/other zero-output events.
-		extraExists, err := store.Has(types.GetPrivacyScanOutputKey(height, sequence, summary.OutputCount))
-		if err != nil {
-			return nil, err
-		}
-		if extraExists {
-			return nil, fmt.Errorf("privacy scan event contains output beyond summary output_count")
-		}
-
 		allowed := privacyEventTypeAllowed(summary.EventType, typeFilter)
 		if !allowed {
-			for outputIndex := startOutput; outputIndex < summary.OutputCount; outputIndex++ {
-				if _, err := k.getPrivacyScanOutputV2(ctx, &summary, outputIndex); err != nil {
-					return nil, err
-				}
-			}
 			cursorOutput := uint32(0)
 			if summary.OutputCount > 0 {
 				cursorOutput = summary.OutputCount - 1
@@ -639,10 +871,7 @@ func (k Keeper) GetPrivacyScanPageV2(ctx sdk.Context, after *types.PrivacyScanCu
 				response.HasMore = true
 				return response, nil
 			}
-			output, err := k.getPrivacyScanOutputV2(ctx, &summary, outputIndex)
-			if err != nil {
-				return nil, err
-			}
+			output := eventOutputs[outputIndex]
 			outputBytes := uint64(proto.Size(output))
 			if response.EncodedBytes+outputBytes > byteLimit {
 				if len(response.Outputs) == 0 {

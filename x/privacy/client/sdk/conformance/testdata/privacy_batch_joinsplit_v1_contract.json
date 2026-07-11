@@ -38,6 +38,10 @@
     "root_domain": "clairveil.batch-vector.user_disclosure.root.v1",
     "root_hex": "0e634ae9dde1d8e9cb01813dcb81d17307cafe89a9f6aec4f37c82183e4ed368"
   },
+  "audit_key_id": {
+    "max_bytes": 64,
+    "charset": "[a-z0-9][a-z0-9._-]*"
+  },
   "effect": {
     "chain_domain_hi": "1",
     "chain_domain_lo": "2",
@@ -54,10 +58,10 @@
     "id_hex": "7f76d7744607e06dc0a22e4be5464e1a420c933cff5d060cc657ccfd4ec45979"
   },
   "wire_state": {
-    "tx_bytes": 65265,
-    "typed_scan_kv_bytes": 74148,
-    "total_kv_write_bytes": 172452,
+    "tx_bytes": 65294,
+    "typed_scan_kv_bytes": 75105,
+    "total_kv_write_bytes": 173409,
     "abci_event_bytes": 584,
-    "query_response_bytes": 73594
+    "query_response_bytes": 74551
   }
 }

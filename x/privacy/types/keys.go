@@ -44,6 +44,9 @@ const (
 	EventTypeDeposit          = "deposit"
 	EventTypeWithdraw         = "withdraw"
 	EventTypeShieldedTransfer = "shielded_transfer"
+	// EventTypeBatchTransferV1 is reserved for the Session 2 typed-state/wire
+	// prototype. No production Msg or keeper handler is registered yet.
+	EventTypeBatchTransferV1 = "batch_transfer"
 
 	AttributeKeyCreator                              = "creator"
 	AttributeKeyCommitment                           = "commitment"
@@ -199,6 +202,11 @@ func GetPrivacyScanOutputKey(height int64, globalSequence uint64, outputIndex ui
 	binary.BigEndian.PutUint64(key[9:17], globalSequence)
 	binary.BigEndian.PutUint32(key[17:21], outputIndex)
 	return key
+}
+
+func GetPrivacyScanOutputEventPrefix(height int64, globalSequence uint64) []byte {
+	key := GetPrivacyScanOutputKey(height, globalSequence, 0)
+	return key[:17]
 }
 
 func GetPrivacyScanOutputPrefix() []byte {

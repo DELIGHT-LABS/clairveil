@@ -175,7 +175,7 @@ func TestPrivacyEventsQueryReturnsIndexedEvents(t *testing.T) {
 
 	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeDeposit, indexedTxHashHex(0xaa), []sdk.Attribute{
 		sdk.NewAttribute(privacytypes.AttributeKeyCommitment, fmt.Sprintf("%x", depositCommitment)),
-		sdk.NewAttribute(privacytypes.AttributeKeyEncryptedNote, "deadbeef"),
+		sdk.NewAttribute(privacytypes.AttributeKeyEncryptedNote, fmt.Sprintf("%x", testKeeperEnvelope(t, privacytypes.EnvelopeDepositNoteV1))),
 	}))
 
 	ctx = ctx.WithBlockHeight(13)
@@ -188,7 +188,15 @@ func TestPrivacyEventsQueryReturnsIndexedEvents(t *testing.T) {
 		sdk.NewAttribute(privacytypes.AttributeKeyNullifier2, fmt.Sprintf("%x", fixedFieldBytes(115))),
 		sdk.NewAttribute(privacytypes.AttributeKeyCommitment1, fmt.Sprintf("%x", transferCommitment1)),
 		sdk.NewAttribute(privacytypes.AttributeKeyCommitment2, fmt.Sprintf("%x", transferCommitment2)),
-		sdk.NewAttribute(privacytypes.AttributeKeyCipherText1, "c0ffee"),
+		sdk.NewAttribute(privacytypes.AttributeKeyCipherText1, fmt.Sprintf("%x", testKeeperEnvelope(t, privacytypes.EnvelopeTransferNoteV1))),
+		sdk.NewAttribute(privacytypes.AttributeKeyCipherText2, fmt.Sprintf("%x", testKeeperEnvelope(t, privacytypes.EnvelopeTransferNoteV1))),
+		sdk.NewAttribute(privacytypes.AttributeKeyViewTag1, "0102"),
+		sdk.NewAttribute(privacytypes.AttributeKeyViewTag2, "0304"),
+		sdk.NewAttribute(privacytypes.AttributeKeyUserPrivacyPolicy, "0"),
+		sdk.NewAttribute(privacytypes.AttributeKeyUserDisclosureMode, privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE.String()),
+		sdk.NewAttribute(privacytypes.AttributeKeyAuditDisclosureDigest, fmt.Sprintf("%x", fixedFieldBytes(118))),
+		sdk.NewAttribute(privacytypes.AttributeKeyAuditDisclosureTargetPubKey, fmt.Sprintf("%x", testKeeperDisclosurePubKey())),
+		sdk.NewAttribute(privacytypes.AttributeKeyAuditDisclosurePayload, fmt.Sprintf("%x", testKeeperEnvelope(t, privacytypes.EnvelopeAuditDisclosureV1))),
 	}))
 
 	resp, err := k.PrivacyEvents(sdk.WrapSDKContext(ctx), &privacytypes.QueryPrivacyEventsRequest{
@@ -204,8 +212,8 @@ func TestPrivacyEventsQueryReturnsIndexedEvents(t *testing.T) {
 	require.Equal(t, int64(13), resp.Events[0].Height)
 	require.Equal(t, privacytypes.EventTypeShieldedTransfer, resp.Events[0].EventType)
 	require.Equal(t, strings.ToUpper(indexedTxHashHex(0xcc)), resp.Events[0].TxHashHex)
-	require.Len(t, resp.Events[0].Attributes, 5)
-	require.Equal(t, "c0ffee", privacyEventAttributesMap(resp.Events[0].Attributes)[privacytypes.AttributeKeyCipherText1])
+	require.Len(t, resp.Events[0].Attributes, 13)
+	require.Equal(t, fmt.Sprintf("%x", testKeeperEnvelope(t, privacytypes.EnvelopeTransferNoteV1)), privacyEventAttributesMap(resp.Events[0].Attributes)[privacytypes.AttributeKeyCipherText1])
 }
 
 func TestPrivacyEventsQueryFiltersByType(t *testing.T) {
@@ -216,7 +224,7 @@ func TestPrivacyEventsQueryFiltersByType(t *testing.T) {
 
 	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeDeposit, indexedTxHashHex(0xaa), []sdk.Attribute{
 		sdk.NewAttribute(privacytypes.AttributeKeyCommitment, fmt.Sprintf("%x", depositCommitment)),
-		sdk.NewAttribute(privacytypes.AttributeKeyEncryptedNote, "01"),
+		sdk.NewAttribute(privacytypes.AttributeKeyEncryptedNote, fmt.Sprintf("%x", testKeeperEnvelope(t, privacytypes.EnvelopeDepositNoteV1))),
 	}))
 	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeWithdraw, indexedTxHashHex(0xbb), []sdk.Attribute{
 		sdk.NewAttribute(privacytypes.AttributeKeyNullifier, fmt.Sprintf("%x", fixedFieldBytes(117))),
@@ -263,7 +271,7 @@ func TestScanEventsQueryReturnsProjectionAndCursor(t *testing.T) {
 	require.NoError(t, k.AppendCommitment(ctx, depositCommitment))
 	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeDeposit, indexedTxHashHex(0xaa), []sdk.Attribute{
 		sdk.NewAttribute(privacytypes.AttributeKeyCommitment, fmt.Sprintf("%x", depositCommitment)),
-		sdk.NewAttribute(privacytypes.AttributeKeyEncryptedNote, "deadbeef"),
+		sdk.NewAttribute(privacytypes.AttributeKeyEncryptedNote, fmt.Sprintf("%x", testKeeperEnvelope(t, privacytypes.EnvelopeDepositNoteV1))),
 	}))
 
 	ctx = ctx.WithBlockHeight(11)
@@ -274,10 +282,15 @@ func TestScanEventsQueryReturnsProjectionAndCursor(t *testing.T) {
 		sdk.NewAttribute(privacytypes.AttributeKeyNullifier2, fmt.Sprintf("%x", fixedFieldBytes(45))),
 		sdk.NewAttribute(privacytypes.AttributeKeyCommitment1, fmt.Sprintf("%x", transferCommitment1)),
 		sdk.NewAttribute(privacytypes.AttributeKeyCommitment2, fmt.Sprintf("%x", transferCommitment2)),
-		sdk.NewAttribute(privacytypes.AttributeKeyCipherText1, "c0ffee"),
-		sdk.NewAttribute(privacytypes.AttributeKeyCipherText2, "decafbad"),
+		sdk.NewAttribute(privacytypes.AttributeKeyCipherText1, fmt.Sprintf("%x", testKeeperEnvelope(t, privacytypes.EnvelopeTransferNoteV1))),
+		sdk.NewAttribute(privacytypes.AttributeKeyCipherText2, fmt.Sprintf("%x", testKeeperEnvelope(t, privacytypes.EnvelopeTransferNoteV1))),
 		sdk.NewAttribute(privacytypes.AttributeKeyViewTag1, "0102"),
 		sdk.NewAttribute(privacytypes.AttributeKeyViewTag2, "0304"),
+		sdk.NewAttribute(privacytypes.AttributeKeyUserPrivacyPolicy, "0"),
+		sdk.NewAttribute(privacytypes.AttributeKeyUserDisclosureMode, privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE.String()),
+		sdk.NewAttribute(privacytypes.AttributeKeyAuditDisclosureDigest, fmt.Sprintf("%x", fixedFieldBytes(119))),
+		sdk.NewAttribute(privacytypes.AttributeKeyAuditDisclosureTargetPubKey, fmt.Sprintf("%x", testKeeperDisclosurePubKey())),
+		sdk.NewAttribute(privacytypes.AttributeKeyAuditDisclosurePayload, fmt.Sprintf("%x", testKeeperEnvelope(t, privacytypes.EnvelopeAuditDisclosureV1))),
 	}))
 
 	firstResp, err := k.ScanEvents(sdk.WrapSDKContext(ctx), &privacytypes.QueryScanEventsRequest{
@@ -293,7 +306,7 @@ func TestScanEventsQueryReturnsProjectionAndCursor(t *testing.T) {
 	require.Equal(t, uint64(1), firstResp.NextSequence)
 	require.Equal(t, privacytypes.EventTypeDeposit, firstResp.Events[0].EventType)
 	require.Len(t, firstResp.Events[0].Outputs, 1)
-	require.Equal(t, "deadbeef", firstResp.Events[0].Outputs[0].EncryptedNoteHex)
+	require.Equal(t, fmt.Sprintf("%x", testKeeperEnvelope(t, privacytypes.EnvelopeDepositNoteV1)), firstResp.Events[0].Outputs[0].EncryptedNoteHex)
 	require.True(t, firstResp.Events[0].Outputs[0].LeafIndexFound)
 	require.Equal(t, uint64(0), firstResp.Events[0].Outputs[0].LeafIndex)
 
@@ -312,12 +325,12 @@ func TestScanEventsQueryReturnsProjectionAndCursor(t *testing.T) {
 	require.Equal(t, []string{fmt.Sprintf("%x", fixedFieldBytes(44)), fmt.Sprintf("%x", fixedFieldBytes(45))}, event.NullifierHexes)
 	require.Len(t, event.Outputs, 2)
 	require.Equal(t, uint32(0), event.Outputs[0].OutputIndex)
-	require.Equal(t, "c0ffee", event.Outputs[0].CipherTextHex)
+	require.Equal(t, fmt.Sprintf("%x", testKeeperEnvelope(t, privacytypes.EnvelopeTransferNoteV1)), event.Outputs[0].CipherTextHex)
 	require.Equal(t, "0102", event.Outputs[0].ViewTagHex)
 	require.True(t, event.Outputs[0].LeafIndexFound)
 	require.Equal(t, uint64(1), event.Outputs[0].LeafIndex)
 	require.Equal(t, uint32(1), event.Outputs[1].OutputIndex)
-	require.Equal(t, "decafbad", event.Outputs[1].CipherTextHex)
+	require.Equal(t, fmt.Sprintf("%x", testKeeperEnvelope(t, privacytypes.EnvelopeTransferNoteV1)), event.Outputs[1].CipherTextHex)
 	require.Equal(t, "0304", event.Outputs[1].ViewTagHex)
 	require.True(t, event.Outputs[1].LeafIndexFound)
 	require.Equal(t, uint64(2), event.Outputs[1].LeafIndex)
@@ -368,7 +381,7 @@ func TestScanEventsQueryAdvancesCursorAcrossFilteredEvents(t *testing.T) {
 	require.NoError(t, k.AppendCommitment(ctx, depositCommitment))
 	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeDeposit, indexedTxHashHex(0xcc), []sdk.Attribute{
 		sdk.NewAttribute(privacytypes.AttributeKeyCommitment, fmt.Sprintf("%x", depositCommitment)),
-		sdk.NewAttribute(privacytypes.AttributeKeyEncryptedNote, "deadbeef"),
+		sdk.NewAttribute(privacytypes.AttributeKeyEncryptedNote, fmt.Sprintf("%x", testKeeperEnvelope(t, privacytypes.EnvelopeDepositNoteV1))),
 	}))
 
 	firstResp, err := k.ScanEvents(sdk.WrapSDKContext(ctx), &privacytypes.QueryScanEventsRequest{

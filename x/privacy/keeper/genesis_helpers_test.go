@@ -54,7 +54,7 @@ func TestSession2FoundationGenesisHelpersRoundTripLosslessly(t *testing.T) {
 	require.NoError(t, k.AppendCommitment(ctx, commitment))
 	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeDeposit, indexedTxHashHex(0xee), []sdk.Attribute{
 		sdk.NewAttribute(privacytypes.AttributeKeyCommitment, fmt.Sprintf("%x", commitment)),
-		sdk.NewAttribute(privacytypes.AttributeKeyEncryptedNote, "c0ffee"),
+		sdk.NewAttribute(privacytypes.AttributeKeyEncryptedNote, fmt.Sprintf("%x", testKeeperEnvelope(t, privacytypes.EnvelopeDepositNoteV1))),
 	}))
 	_, err := k.RegisterCanonicalAssetV1(ctx, "uclair")
 	require.NoError(t, err)

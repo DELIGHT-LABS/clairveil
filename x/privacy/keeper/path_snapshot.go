@@ -137,6 +137,17 @@ func (k Keeper) GetMerkleRootSnapshotV1(ctx sdk.Context, root []byte) (*types.Me
 	if !bytes.Equal(snapshot.Root, canonicalRoot) || snapshot.LeafCount == 0 || snapshot.LeafCount > k.GetLeafCount(ctx) || snapshot.Height < 0 {
 		return nil, false, fmt.Errorf("stored merkle root snapshot is inconsistent")
 	}
+	heightBytes, err := store.Get(types.GetHistoricalRootKey(canonicalRoot))
+	if err != nil {
+		return nil, false, err
+	}
+	if len(heightBytes) != 8 {
+		return nil, false, fmt.Errorf("stored merkle root snapshot historical height is missing or corrupt")
+	}
+	height := binary.BigEndian.Uint64(heightBytes)
+	if height > math.MaxInt64 || int64(height) != snapshot.Height {
+		return nil, false, fmt.Errorf("stored merkle root snapshot historical height is inconsistent")
+	}
 	return &snapshot, true, nil
 }
 

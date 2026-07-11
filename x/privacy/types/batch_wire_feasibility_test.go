@@ -2,9 +2,12 @@ package types_test
 
 import (
 	"encoding/hex"
+	"math/big"
+	"strings"
 	"testing"
 
 	abci "github.com/cometbft/cometbft/abci/types"
+	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	cryptotypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
@@ -61,8 +64,8 @@ func TestBatchJoinSplit16x32MaxWireStateFeasibilityGate(t *testing.T) {
 		result.QueryResponseBytes,
 	)
 
-	const goldenTxBytes = 65265
-	const goldenTypedScanKVBytes = 74148
+	const goldenTxBytes = 65294
+	const goldenTypedScanKVBytes = 75105
 	require.Equal(t, goldenTxBytes, result.TxBytes)
 	require.Equal(t, goldenTypedScanKVBytes, result.TypedScanKVBytes)
 }
@@ -71,11 +74,12 @@ func measureBatchMaxWireStateV1(t *testing.T) batchWireFeasibilityResult {
 	t.Helper()
 	creator := sdk.AccAddress(make([]byte, 20)).String()
 	proof := make([]byte, privacyzk.CanonicalBN254Groth16ProofSize)
-	root := fixedBytes(32, 1)
-	auditTarget := fixedBytes(32, 2)
+	root := canonicalFieldBytes(1)
+	auditTarget := canonicalPointBytes(71)
+	userTarget := canonicalPointBytes(73)
 	nullifiers := make([][]byte, privacytypes.BatchJoinSplitV1MaxInputs)
 	for i := range nullifiers {
-		nullifiers[i] = fixedBytes(32, byte(i+3))
+		nullifiers[i] = canonicalFieldBytes(uint64(i + 3))
 	}
 
 	noteCiphertext := fixedEnvelope(t, privacytypes.EnvelopeTransferNoteV1)
@@ -85,15 +89,15 @@ func measureBatchMaxWireStateV1(t *testing.T) batchWireFeasibilityResult {
 	outputs := make([]*privacytypes.BatchTransferOutputWirePrototypeV1, privacytypes.BatchJoinSplitV1MaxOutputs)
 	for i := range outputs {
 		outputs[i] = &privacytypes.BatchTransferOutputWirePrototypeV1{
-			Commitment:                 fixedBytes(32, byte(i+33)),
+			Commitment:                 canonicalFieldBytes(uint64(i + 33)),
 			Ciphertext:                 append([]byte(nil), noteCiphertext...),
 			ViewTag:                    []byte{byte(i), byte(i + 1)},
 			UserPrivacyPolicy:          privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom,
 			UserDisclosureMode:         privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED,
-			UserDisclosureDigest:       fixedBytes(32, byte(i+65)),
-			UserDisclosureTargetPubkey: fixedBytes(32, byte(i+97)),
+			UserDisclosureDigest:       canonicalFieldBytes(uint64(i + 65)),
+			UserDisclosureTargetPubkey: append([]byte(nil), userTarget...),
 			UserDisclosurePayload:      append([]byte(nil), userPayload...),
-			FullDisclosureDigest:       fixedBytes(32, byte(i+129)),
+			FullDisclosureDigest:       canonicalFieldBytes(uint64(i + 129)),
 			AuditDisclosurePayload:     append([]byte(nil), auditPayload...),
 			SelfViewDisclosurePayload:  append([]byte(nil), selfViewPayload...),
 		}
@@ -104,11 +108,12 @@ func measureBatchMaxWireStateV1(t *testing.T) batchWireFeasibilityResult {
 		Root:                        root,
 		Nullifiers:                  nullifiers,
 		Outputs:                     outputs,
-		AuditKeyId:                  "audit-key-production-epoch-00000001",
+		AuditKeyId:                  strings.Repeat("a", privacytypes.AuditKeyIDV1MaxBytes),
 		AuditKeyEpoch:               1,
 		AuditDisclosureTargetPubkey: auditTarget,
 		ExpiresAtUnix:               2_000_000_000,
 	}
+	require.NoError(t, privacytypes.ValidateAuditKeyIDV1(message.AuditKeyId))
 	messageBytes, err := message.Marshal()
 	require.NoError(t, err)
 
@@ -142,7 +147,7 @@ func measureBatchMaxWireStateV1(t *testing.T) batchWireFeasibilityResult {
 		GlobalSequence:    1,
 		Height:            1,
 		TxHash:            fixedBytes(32, 0xc2),
-		EventType:         "batch_transfer",
+		EventType:         privacytypes.EventTypeBatchTransferV1,
 		Nullifiers:        nullifiers,
 		OutputCount:       privacytypes.BatchJoinSplitV1MaxOutputs,
 		CircuitSetId:      privacytypes.ActiveCircuitSetID,
@@ -210,10 +215,10 @@ func measureBatchMaxWireStateV1(t *testing.T) batchWireFeasibilityResult {
 		{Key: "relayer", Value: creator, Index: true},
 		{Key: "input_count", Value: "16", Index: true},
 		{Key: "output_count", Value: "32", Index: true},
-		{Key: "nullifier_root", Value: hex.EncodeToString(fixedBytes(32, 0xd1)), Index: true},
-		{Key: "commitment_root", Value: hex.EncodeToString(fixedBytes(32, 0xd2)), Index: true},
-		{Key: "user_disclosure_root", Value: hex.EncodeToString(fixedBytes(32, 0xd3)), Index: false},
-		{Key: "full_disclosure_root", Value: hex.EncodeToString(fixedBytes(32, 0xd4)), Index: false},
+		{Key: "nullifier_root", Value: hex.EncodeToString(canonicalFieldBytes(501)), Index: true},
+		{Key: "commitment_root", Value: hex.EncodeToString(canonicalFieldBytes(502)), Index: true},
+		{Key: "user_disclosure_root", Value: hex.EncodeToString(canonicalFieldBytes(503)), Index: false},
+		{Key: "full_disclosure_root", Value: hex.EncodeToString(canonicalFieldBytes(504)), Index: false},
 		{Key: "expires_at_unix", Value: "2000000000", Index: false},
 	}}
 	eventBytes, err := event.Marshal()
@@ -248,4 +253,19 @@ func fixedBytes(size int, seed byte) []byte {
 		result[i] = seed + byte(i)
 	}
 	return result
+}
+
+func canonicalFieldBytes(value uint64) []byte {
+	return new(big.Int).SetUint64(value).FillBytes(make([]byte, 32))
+}
+
+func canonicalPointBytes(scalar int64) []byte {
+	curve := crypto_tedwards.GetEdwardsCurve()
+	var base crypto_tedwards.PointAffine
+	base.X.Set(&curve.Base.X)
+	base.Y.Set(&curve.Base.Y)
+	var point crypto_tedwards.PointAffine
+	point.ScalarMultiplication(&base, big.NewInt(scalar))
+	encoded := point.Bytes()
+	return append([]byte(nil), encoded[:]...)
 }

@@ -13,6 +13,7 @@ message BatchTransferWirePrototypeV1 {
   bytes root = 3;
   repeated bytes nullifiers = 4;
   repeated BatchTransferOutputWirePrototypeV1 outputs = 5;
+  // Canonical lowercase ASCII [a-z0-9][a-z0-9._-]*, 1..64 bytes.
   string audit_key_id = 6;
   uint64 audit_key_epoch = 7;
   bytes audit_disclosure_target_pubkey = 8;

@@ -13,6 +13,7 @@ import (
 const (
 	BatchJoinSplitV1MaxInputs  uint32 = 16
 	BatchJoinSplitV1MaxOutputs uint32 = 32
+	AuditKeyIDV1MaxBytes              = 64
 
 	BatchTransferIntentV1DomainLabel     = "clairveil.batch-transfer-intent.v1"
 	BatchEffectV1ByteDomain              = "clairveil.batch-effect.v1"
@@ -20,6 +21,25 @@ const (
 	BatchUserDisclosureLeafV1DomainLabel = "clairveil.user-disclosure-leaf.v1"
 	BatchFullDisclosureV2DomainLabel     = "clairveil.full-disclosure.v2"
 )
+
+// ValidateAuditKeyIDV1 freezes the bounded identifier carried by the future
+// batch message and duplicated into its typed scan records. IDs are canonical
+// lowercase ASCII: the first byte is [a-z0-9], and remaining bytes may also
+// contain '.', '_' or '-'.
+func ValidateAuditKeyIDV1(value string) error {
+	if len(value) == 0 || len(value) > AuditKeyIDV1MaxBytes {
+		return fmt.Errorf("audit key id must contain 1..%d bytes", AuditKeyIDV1MaxBytes)
+	}
+	for i := 0; i < len(value); i++ {
+		ch := value[i]
+		alphaNumeric := (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')
+		if alphaNumeric || (i > 0 && (ch == '.' || ch == '_' || ch == '-')) {
+			continue
+		}
+		return fmt.Errorf("audit key id must use canonical lowercase ASCII [a-z0-9][a-z0-9._-]*")
+	}
+	return nil
+}
 
 // BatchPublicInputOrderV1 is the consensus-visible order reserved for the
 // future production BatchJoinSplit16x32 circuit. Session 2 freezes the schema;

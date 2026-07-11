@@ -25,15 +25,16 @@ const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 // These messages freeze and measure the Session 2 max wire shape. They are
 // not registered with the Msg service and do not authorize a state transition.
 type BatchTransferWirePrototypeV1 struct {
-	Creator                     string                                `protobuf:"bytes,1,opt,name=creator,proto3" json:"creator,omitempty"`
-	Proof                       []byte                                `protobuf:"bytes,2,opt,name=proof,proto3" json:"proof,omitempty"`
-	Root                        []byte                                `protobuf:"bytes,3,opt,name=root,proto3" json:"root,omitempty"`
-	Nullifiers                  [][]byte                              `protobuf:"bytes,4,rep,name=nullifiers,proto3" json:"nullifiers,omitempty"`
-	Outputs                     []*BatchTransferOutputWirePrototypeV1 `protobuf:"bytes,5,rep,name=outputs,proto3" json:"outputs,omitempty"`
-	AuditKeyId                  string                                `protobuf:"bytes,6,opt,name=audit_key_id,json=auditKeyId,proto3" json:"audit_key_id,omitempty"`
-	AuditKeyEpoch               uint64                                `protobuf:"varint,7,opt,name=audit_key_epoch,json=auditKeyEpoch,proto3" json:"audit_key_epoch,omitempty"`
-	AuditDisclosureTargetPubkey []byte                                `protobuf:"bytes,8,opt,name=audit_disclosure_target_pubkey,json=auditDisclosureTargetPubkey,proto3" json:"audit_disclosure_target_pubkey,omitempty"`
-	ExpiresAtUnix               int64                                 `protobuf:"varint,9,opt,name=expires_at_unix,json=expiresAtUnix,proto3" json:"expires_at_unix,omitempty"`
+	Creator    string                                `protobuf:"bytes,1,opt,name=creator,proto3" json:"creator,omitempty"`
+	Proof      []byte                                `protobuf:"bytes,2,opt,name=proof,proto3" json:"proof,omitempty"`
+	Root       []byte                                `protobuf:"bytes,3,opt,name=root,proto3" json:"root,omitempty"`
+	Nullifiers [][]byte                              `protobuf:"bytes,4,rep,name=nullifiers,proto3" json:"nullifiers,omitempty"`
+	Outputs    []*BatchTransferOutputWirePrototypeV1 `protobuf:"bytes,5,rep,name=outputs,proto3" json:"outputs,omitempty"`
+	// Canonical lowercase ASCII [a-z0-9][a-z0-9._-]*, 1..64 bytes.
+	AuditKeyId                  string `protobuf:"bytes,6,opt,name=audit_key_id,json=auditKeyId,proto3" json:"audit_key_id,omitempty"`
+	AuditKeyEpoch               uint64 `protobuf:"varint,7,opt,name=audit_key_epoch,json=auditKeyEpoch,proto3" json:"audit_key_epoch,omitempty"`
+	AuditDisclosureTargetPubkey []byte `protobuf:"bytes,8,opt,name=audit_disclosure_target_pubkey,json=auditDisclosureTargetPubkey,proto3" json:"audit_disclosure_target_pubkey,omitempty"`
+	ExpiresAtUnix               int64  `protobuf:"varint,9,opt,name=expires_at_unix,json=expiresAtUnix,proto3" json:"expires_at_unix,omitempty"`
 }
 
 func (m *BatchTransferWirePrototypeV1) Reset()         { *m = BatchTransferWirePrototypeV1{} }
