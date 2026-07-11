@@ -471,7 +471,7 @@ func buildDepositNoteAndMsg(
 	seed []byte,
 	logWriter io.Writer,
 	latencyFlow *privacyLatencyFlow,
-) (*types.Note, *types.MsgDeposit, error) {
+) (*types.MsgDeposit, error) {
 	viewScalar, viewPubKey, _ := deriveViewKeys(seed)
 	_ = viewScalar
 
@@ -484,25 +484,25 @@ func buildDepositNoteAndMsg(
 
 	note, err := types.NewNote(spendPubKeyX, spendPubKeyY, viewPubKeyX, viewPubKeyY, amount, denom, memo)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	commitment := note.ComputeCommitment()
 	canonicalCommitment, err := canonicalFieldBytesFromBigInt(commitment)
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid note commitment: %w", err)
+		return nil, fmt.Errorf("invalid note commitment: %w", err)
 	}
 	noteBytes, err := types.MarshalNotePlaintextV1(note)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	rawEncryptedNote, err := crypto.Encrypt(noteBytes, seed)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	encryptedNote, err := types.WrapEncryptedEnvelopeV1(types.EnvelopeDepositNoteV1, rawEncryptedNote)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	proof, err := privacydeposit.BuildDepositProof(
 		*note,
@@ -510,7 +510,7 @@ func buildDepositNoteAndMsg(
 		depositProofRunner{logWriter: logWriter, latencyFlow: latencyFlow},
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	msg := types.NewMsgDeposit(
@@ -521,7 +521,7 @@ func buildDepositNoteAndMsg(
 		proof,
 	)
 
-	return note, msg, nil
+	return msg, nil
 }
 
 type depositArtifactProvider struct{}
@@ -558,7 +558,7 @@ func autoPrepareDummyNote(cmd *cobra.Command, clientCtx client.Context, denom st
 
 	amount := big.NewInt(0)
 	amountStr := fmt.Sprintf("0%s", denom)
-	_, msg, err := buildDepositNoteAndMsg(
+	msg, err := buildDepositNoteAndMsg(
 		clientCtx.GetFromAddress().String(),
 		pubKey,
 		amount,
@@ -819,7 +819,7 @@ func CmdDeposit() *cobra.Command {
 				latencyFlow.finish(runErr)
 			}()
 
-			note, msg, err := buildDepositNoteAndMsg(
+			msg, err := buildDepositNoteAndMsg(
 				clientCtx.GetFromAddress().String(),
 				pubKey,
 				amountBig,
@@ -834,13 +834,6 @@ func CmdDeposit() *cobra.Command {
 				runErr = err
 				return err
 			}
-
-			noteBytes, err := types.MarshalNotePlaintextV1(note)
-			if err != nil {
-				runErr = err
-				return err
-			}
-			privacyCommandPrintf(cmd, "Deposit NotePlaintextV1 (hex):\n%x\n", noteBytes)
 
 			submitStartedAt := time.Now()
 			runErr = privacyprovider.CosmosTxBroadcaster{
