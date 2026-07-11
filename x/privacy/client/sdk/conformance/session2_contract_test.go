@@ -79,6 +79,15 @@ type batchJoinSplitV1ContractFixture struct {
 		MaxBytes int    `json:"max_bytes"`
 		Charset  string `json:"charset"`
 	} `json:"audit_key_id"`
+	CanonicalPayload struct {
+		FormatVersion      uint32   `json:"format_version"`
+		SHA256Domain       string   `json:"sha256_domain"`
+		GoldenPayloadBytes int      `json:"golden_payload_bytes"`
+		DigestHex          string   `json:"digest_hex"`
+		DigestHi           string   `json:"digest_hi"`
+		DigestLo           string   `json:"digest_lo"`
+		ExcludedFields     []string `json:"excluded_fields"`
+	} `json:"canonical_payload"`
 	Effect struct {
 		ChainDomainHi      string `json:"chain_domain_hi"`
 		ChainDomainLo      string `json:"chain_domain_lo"`
@@ -95,11 +104,12 @@ type batchJoinSplitV1ContractFixture struct {
 		IDHex              string `json:"id_hex"`
 	} `json:"effect"`
 	WireState struct {
-		TxBytes            int `json:"tx_bytes"`
-		TypedScanKVBytes   int `json:"typed_scan_kv_bytes"`
-		TotalKVWriteBytes  int `json:"total_kv_write_bytes"`
-		ABCIEventBytes     int `json:"abci_event_bytes"`
-		QueryResponseBytes int `json:"query_response_bytes"`
+		CanonicalPayloadBytes int `json:"canonical_payload_bytes"`
+		TxBytes               int `json:"tx_bytes"`
+		TypedScanKVBytes      int `json:"typed_scan_kv_bytes"`
+		TotalKVWriteBytes     int `json:"total_kv_write_bytes"`
+		ABCIEventBytes        int `json:"abci_event_bytes"`
+		QueryResponseBytes    int `json:"query_response_bytes"`
 	} `json:"wire_state"`
 }
 
@@ -167,6 +177,13 @@ func TestPrivacyBatchJoinSplitV1ContractIndependentGolden(t *testing.T) {
 	require.Equal(t, privacytypes.BatchPublicInputOrderV1[:], fixture.PublicInputs)
 	require.Equal(t, privacytypes.AuditKeyIDV1MaxBytes, fixture.AuditKeyID.MaxBytes)
 	require.Equal(t, "[a-z0-9][a-z0-9._-]*", fixture.AuditKeyID.Charset)
+	require.Equal(t, privacytypes.CanonicalBatchTransferPayloadFormatVersionV1, fixture.CanonicalPayload.FormatVersion)
+	require.Equal(t, privacytypes.BatchTransferPayloadV1ByteDomain, fixture.CanonicalPayload.SHA256Domain)
+	require.Equal(t, 3702, fixture.CanonicalPayload.GoldenPayloadBytes)
+	require.Equal(t, "f2588c7543fb83a7822aa0043e4747af0ac4c9dc14a038c230850f1cab5e24b0", fixture.CanonicalPayload.DigestHex)
+	require.Equal(t, "322132945931579789235567236199104333743", fixture.CanonicalPayload.DigestHi)
+	require.Equal(t, "14314064343031468430392382204273370288", fixture.CanonicalPayload.DigestLo)
+	require.Equal(t, []string{"creator", "proof"}, fixture.CanonicalPayload.ExcludedFields)
 	schemaDigest, err := privacyzk.PublicInputSchemaSHA256(fixture.CircuitID)
 	require.NoError(t, err)
 	require.Equal(t, fixture.PublicInputSchemaSHA256, schemaDigest)
@@ -232,6 +249,7 @@ func TestPrivacyBatchJoinSplitV1ContractIndependentGolden(t *testing.T) {
 
 	effectBytes := referenceBatchEffectContract(fixture)
 	require.Equal(t, fixture.Effect.IDHex, hex.EncodeToString(effectBytes[:]))
+	require.Equal(t, 65384, fixture.WireState.CanonicalPayloadBytes)
 	require.Equal(t, 65294, fixture.WireState.TxBytes)
 	require.Equal(t, 75105, fixture.WireState.TypedScanKVBytes)
 	require.Equal(t, 173409, fixture.WireState.TotalKVWriteBytes)

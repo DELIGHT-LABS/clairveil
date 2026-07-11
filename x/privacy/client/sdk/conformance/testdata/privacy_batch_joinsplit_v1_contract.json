@@ -42,6 +42,15 @@
     "max_bytes": 64,
     "charset": "[a-z0-9][a-z0-9._-]*"
   },
+  "canonical_payload": {
+    "format_version": 1,
+    "sha256_domain": "clairveil.batch-transfer-payload.v1",
+    "golden_payload_bytes": 3702,
+    "digest_hex": "f2588c7543fb83a7822aa0043e4747af0ac4c9dc14a038c230850f1cab5e24b0",
+    "digest_hi": "322132945931579789235567236199104333743",
+    "digest_lo": "14314064343031468430392382204273370288",
+    "excluded_fields": ["creator", "proof"]
+  },
   "effect": {
     "chain_domain_hi": "1",
     "chain_domain_lo": "2",
@@ -58,6 +67,7 @@
     "id_hex": "7f76d7744607e06dc0a22e4be5464e1a420c933cff5d060cc657ccfd4ec45979"
   },
   "wire_state": {
+    "canonical_payload_bytes": 65384,
     "tx_bytes": 65294,
     "typed_scan_kv_bytes": 75105,
     "total_kv_write_bytes": 173409,

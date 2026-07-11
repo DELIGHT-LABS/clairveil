@@ -30,6 +30,7 @@ const (
 
 type batchWireFeasibilityResult struct {
 	MessageBytes             int
+	CanonicalPayloadBytes    int
 	TxBytes                  int
 	TypedScanSummaryBytes    int
 	TypedScanOutputBytes     int
@@ -52,8 +53,9 @@ func TestBatchJoinSplit16x32MaxWireStateFeasibilityGate(t *testing.T) {
 	require.Less(t, result.ABCIEventBytes, referenceMaxABCIEventBytesV1)
 
 	t.Logf(
-		"BATCH_WIRE_STATE_REPORT message=%d tx=%d scan_summary=%d scan_outputs=%d scan_kv=%d tree_write_upper=%d total_kv_write=%d abci_event=%d query_response=%d",
+		"BATCH_WIRE_STATE_REPORT message=%d canonical_payload=%d tx=%d scan_summary=%d scan_outputs=%d scan_kv=%d tree_write_upper=%d total_kv_write=%d abci_event=%d query_response=%d",
 		result.MessageBytes,
+		result.CanonicalPayloadBytes,
 		result.TxBytes,
 		result.TypedScanSummaryBytes,
 		result.TypedScanOutputBytes,
@@ -114,6 +116,13 @@ func measureBatchMaxWireStateV1(t *testing.T) batchWireFeasibilityResult {
 		ExpiresAtUnix:               2_000_000_000,
 	}
 	require.NoError(t, privacytypes.ValidateAuditKeyIDV1(message.AuditKeyId))
+	require.NoError(t, privacytypes.ValidateBatchTransferWirePrototypeV1(message))
+	canonicalPayload, err := privacytypes.CanonicalBatchTransferPayloadBytesV1(message)
+	require.NoError(t, err)
+	payloadDigest, err := privacytypes.ComputeBatchTransferPayloadDigestV1(message)
+	require.NoError(t, err)
+	require.NotZero(t, payloadDigest.Hi.Sign())
+	require.NotZero(t, payloadDigest.Lo.Sign())
 	messageBytes, err := message.Marshal()
 	require.NoError(t, err)
 
@@ -226,6 +235,7 @@ func measureBatchMaxWireStateV1(t *testing.T) batchWireFeasibilityResult {
 
 	return batchWireFeasibilityResult{
 		MessageBytes:             len(messageBytes),
+		CanonicalPayloadBytes:    len(canonicalPayload),
 		TxBytes:                  len(txBytes),
 		TypedScanSummaryBytes:    len(summaryBytes),
 		TypedScanOutputBytes:     typedOutputBytes,
