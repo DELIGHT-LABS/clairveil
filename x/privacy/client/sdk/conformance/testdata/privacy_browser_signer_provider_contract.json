@@ -82,6 +82,13 @@
           "filename": "",
           "checksum_env": "",
           "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        {
+          "circuit_id": "batch-joinsplit-16x32-v1",
+          "artifact_type": "verifying_key",
+          "filename": "",
+          "checksum_env": "",
+          "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
         }
       ],
       "circuit_set_identity": {
@@ -103,6 +110,11 @@
             "circuit_id": "joinsplit",
             "verifying_key_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
             "public_input_schema_sha256": "4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82"
+          },
+          {
+            "circuit_id": "batch-joinsplit-16x32-v1",
+            "verifying_key_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "public_input_schema_sha256": "5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333"
           }
         ]
       }

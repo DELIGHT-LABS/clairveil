@@ -1912,8 +1912,8 @@
                     },
                     "circuits": {
                       "type": "array",
-                      "minItems": 3,
-                      "maxItems": 3,
+                      "minItems": 4,
+                      "maxItems": 4,
                       "items": {
                         "type": "object",
                         "additionalProperties": false,
@@ -1928,7 +1928,8 @@
                             "enum": [
                               "deposit",
                               "spend",
-                              "joinsplit"
+                              "joinsplit",
+                              "batch-joinsplit-16x32-v1"
                             ]
                           },
                           "verifying_key_sha256": {
