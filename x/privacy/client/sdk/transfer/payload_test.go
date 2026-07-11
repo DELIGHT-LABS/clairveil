@@ -3,10 +3,13 @@ package transfer
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"math/big"
 	"testing"
 	"time"
 
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
+	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/stretchr/testify/require"
 
@@ -119,6 +122,94 @@ func TestValidatePreparedTransferPayloadMetadataBindsViewTagsToHash(t *testing.T
 	require.ErrorContains(t, err, "hash mismatch")
 }
 
+func TestPreparedTransferPayloadRejectsNonCanonicalPublicKeys(t *testing.T) {
+	input, merkleProvider, signer, _, _ := testBuildTransferMessageDeps(t)
+	base, err := BuildPreparedTransferPayload(context.Background(), merkleProvider, signer, input)
+	require.NoError(t, err)
+
+	identity := crypto_tedwards.PointAffine{}
+	identity.Y.SetOne()
+	identityBytes := identity.Bytes()
+
+	orderTwo := crypto_tedwards.PointAffine{}
+	orderTwo.Y.SetOne()
+	orderTwo.Y.Neg(&orderTwo.Y)
+	require.True(t, orderTwo.IsOnCurve())
+	require.False(t, orderTwo.IsZero())
+	orderTwoBytes := orderTwo.Bytes()
+
+	invalidEncodings := []struct {
+		name   string
+		mutate func(string) string
+		want   string
+	}{
+		{
+			name: "non-canonical",
+			mutate: func(value string) string {
+				return nonCanonicalPreparedTransferPointHex(t, value)
+			},
+			want: "non-canonical compressed encoding",
+		},
+		{
+			name:   "identity",
+			mutate: func(string) string { return hex.EncodeToString(identityBytes[:]) },
+			want:   "identity point is not allowed",
+		},
+		{
+			name:   "non-subgroup",
+			mutate: func(string) string { return hex.EncodeToString(orderTwoBytes[:]) },
+			want:   "point is not in the prime-order subgroup",
+		},
+		{
+			name:   "oversized",
+			mutate: func(value string) string { return value + "00" },
+			want:   "expected exactly 32 bytes",
+		},
+	}
+
+	keyLocations := []struct {
+		name string
+		get  func(*PreparedTransferPayload) string
+		set  func(*PreparedTransferPayload, string)
+	}{
+		{
+			name: "input-spend",
+			get:  func(payload *PreparedTransferPayload) string { return payload.Inputs[0].SpendPubKeyHex },
+			set:  func(payload *PreparedTransferPayload, value string) { payload.Inputs[0].SpendPubKeyHex = value },
+		},
+		{
+			name: "input-view",
+			get:  func(payload *PreparedTransferPayload) string { return payload.Inputs[0].ViewPubKeyHex },
+			set:  func(payload *PreparedTransferPayload, value string) { payload.Inputs[0].ViewPubKeyHex = value },
+		},
+		{
+			name: "output-spend",
+			get:  func(payload *PreparedTransferPayload) string { return payload.Outputs[0].SpendPubKeyHex },
+			set:  func(payload *PreparedTransferPayload, value string) { payload.Outputs[0].SpendPubKeyHex = value },
+		},
+		{
+			name: "output-view",
+			get:  func(payload *PreparedTransferPayload) string { return payload.Outputs[0].ViewPubKeyHex },
+			set:  func(payload *PreparedTransferPayload, value string) { payload.Outputs[0].ViewPubKeyHex = value },
+		},
+	}
+
+	for _, location := range keyLocations {
+		for _, invalid := range invalidEncodings {
+			t.Run(location.name+"/"+invalid.name, func(t *testing.T) {
+				payload := clonePreparedTransferPayloadForTest(*base)
+				location.set(&payload, invalid.mutate(location.get(&payload)))
+				payload.PayloadHash = ComputePreparedTransferPayloadHash(payload)
+
+				err := ValidatePreparedTransferPayloadMetadata(payload)
+				require.ErrorContains(t, err, invalid.want)
+				_, err = buildJoinSplitAssignmentFromPreparedTransferPayload(payload)
+				require.ErrorContains(t, err, invalid.want)
+			})
+		}
+	}
+}
+
 func TestBuildPreparedTransferPayloadCanDisableSelfViewDisclosure(t *testing.T) {
 	input, merkleProvider, signer, _, _ := testBuildTransferMessageDeps(t)
 	input.DisableSelfViewDisclosure = true
@@ -129,6 +220,35 @@ func TestBuildPreparedTransferPayloadCanDisableSelfViewDisclosure(t *testing.T) 
 	require.Empty(t, payload.SelfViewDisclosureDigestHex)
 	require.Empty(t, payload.SelfViewDisclosurePayloadHex)
 	require.NoError(t, ValidatePreparedTransferPayloadMetadata(*payload))
+}
+
+func clonePreparedTransferPayloadForTest(payload PreparedTransferPayload) PreparedTransferPayload {
+	payload.Inputs = append([]PreparedTransferInput(nil), payload.Inputs...)
+	payload.Outputs = append([]PreparedTransferOutput(nil), payload.Outputs...)
+	return payload
+}
+
+func nonCanonicalPreparedTransferPointHex(t *testing.T, canonicalHex string) string {
+	t.Helper()
+	canonical, err := hex.DecodeString(canonicalHex)
+	require.NoError(t, err)
+
+	var point crypto_tedwards.PointAffine
+	_, err = point.SetBytes(canonical)
+	require.NoError(t, err)
+	y := point.Y.BigInt(new(big.Int))
+	y.Add(y, fr.Modulus())
+	require.Less(t, y.BitLen(), 256)
+
+	encoded := make([]byte, fr.Bytes)
+	y.FillBytes(encoded)
+	for i, j := 0, len(encoded)-1; i < j; i, j = i+1, j-1 {
+		encoded[i], encoded[j] = encoded[j], encoded[i]
+	}
+	if point.X.LexicographicallyLargest() {
+		encoded[len(encoded)-1] |= 0x80
+	}
+	return hex.EncodeToString(encoded)
 }
 
 func TestValidatePreparedTransferPayloadMetadataRejectsLegacyV1WithoutViewTags(t *testing.T) {

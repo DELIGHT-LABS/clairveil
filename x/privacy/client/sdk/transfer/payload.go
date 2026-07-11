@@ -405,8 +405,22 @@ func ValidatePreparedTransferPayloadMetadata(payload PreparedTransferPayload) er
 		return fmt.Errorf("transfer payload requires exactly %d view tags; got %d", circuit.NumOutputs, len(payload.ViewTagHexes))
 	}
 	for i, input := range payload.Inputs {
+		if _, err := decodePublicKeyHex(input.SpendPubKeyHex, fmt.Sprintf("input spend pubkey %d", i)); err != nil {
+			return err
+		}
+		if _, err := decodePublicKeyHex(input.ViewPubKeyHex, fmt.Sprintf("input view pubkey %d", i)); err != nil {
+			return err
+		}
 		if err := validateMerklePathHelperBits(input.MerklePathHelper); err != nil {
 			return fmt.Errorf("invalid merkle path helper for input %d: %w", i, err)
+		}
+	}
+	for i, output := range payload.Outputs {
+		if _, err := decodePublicKeyHex(output.SpendPubKeyHex, fmt.Sprintf("output spend pubkey %d", i)); err != nil {
+			return err
+		}
+		if _, err := decodePublicKeyHex(output.ViewPubKeyHex, fmt.Sprintf("output view pubkey %d", i)); err != nil {
+			return err
 		}
 	}
 
@@ -1085,11 +1099,11 @@ func decodePublicKeyHex(value string, fieldName string) (*crypto_tedwards.PointA
 	if err != nil {
 		return nil, fmt.Errorf("invalid %s hex: %w", fieldName, err)
 	}
-	var point crypto_tedwards.PointAffine
-	if _, err := point.SetBytes(bz); err != nil {
+	point, err := privacycrypto.DecodeCanonicalPoint(bz)
+	if err != nil {
 		return nil, fmt.Errorf("invalid %s bytes: %w", fieldName, err)
 	}
-	return &point, nil
+	return point, nil
 }
 
 func decodeSignatureHex(value string) ([]byte, error) {
