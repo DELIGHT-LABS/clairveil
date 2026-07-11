@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | Unblocked by Session 3A (Not Started) |
+| 상태 | Complete (Gate 3B 재검증 충족, Session 4 진행 중) |
 | 선행 문서 | [Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md), [Session 3A](clairveil-batch-joinsplit-16x32-session-3-implementation-kr.md) |
 | 후속 세션 | [Session 4 Publication Validation](clairveil-batch-joinsplit-16x32-session-4-publication-validation-kr.md) |
 | 권장 모델 | `gpt-5.6-sol` |
@@ -553,7 +553,16 @@ production circuit constraint는 Session 3A와 같은 `1,111,837`이며 formal s
 - formal trusted setup: **NOT PERFORMED**.
 - external audit: **NOT PERFORMED**.
 - **Gate 3B: PASS.** prepare -> local/remote prove -> build -> broadcast -> typed scan/disclosure -> payroll item reconcile의 end-to-end가 frozen Session 2/3A contract를 낮추지 않고 통과함.
-- **Session 4: Unblocked, Not Started.** 독립 검증은 이 세션에서 시작하지 않았음.
-- worktree 상태: completion/ledger closure commit과 최종 release-pack 재검증 뒤 `git status --short --branch`가 clean임을 확인함.
+- **Session 4 (최초 closure 시점): Unblocked, Not Started.** 당시 Session 3B 구현에서는 독립 검증을 시작하지 않았음.
+- 최초 closure worktree 상태: completion/ledger commit과 release-pack 재검증 뒤 `git status --short --branch`가 clean이었음.
 
-Gate 3B가 미완료이면 Session 4를 시작하지 않는 조건은 충족됐으며, 이 작업은 Session 4를 수행하지 않고 종료함.
+### Session 4 진입 시 Gate 3B 재검증 closure
+
+- 최초 Session 4 독립 검토에서 `b2fa956` 뒤의 42개 미커밋 integration 변경 때문에 기존 Completion Record의 clean-tree 및 E2E/release 증거를 현재 tree에 적용할 수 없다고 판정하고 Gate 3B를 일시 `FAIL`로 재개방했다. Session 4 Pass A~I는 이 closure가 끝날 때까지 시작하지 않았다.
+- 현재 변경을 `d9b1780`(batch preparation), `8dfe80b`(remote prover transport), `868f108`(typed scan pagination), `0b6b3ee`(durable payroll reconcile), `d7809e9`(localnet/publication hygiene)의 독립 작업 commit으로 정리했다. Production circuit, NoteV1, 12 public input, proto/public witness, keeper consensus contract는 변경하지 않았다.
+- 현재 tree에서 targeted SDK/CLI test, `go test ./x/privacy/... -count=1`, `go test -race ./x/privacy/client/sdk/... ./x/privacy/client/cli ./cmd/clairveil-payroll -count=1`, `go vet ./...`, `make examples`를 재실행해 PASS했다.
+- `RUN_LOCALNET=1 CLAIRVEIL_BATCH_ARTIFACT_DIR=/tmp/clairveil-session3a-artifacts-381c984 make privacy-batch-joinsplit-localnet`은 5개 shape, node/prover restart, tx-hash reconcile, freshly signed spent-nullifier fail-closed smoke와 no automatic failover를 PASS했다. Artifact size/SHA-256은 이 record의 Session 3A 값과 일치했다.
+- `make privacy-e2e-smoke`와 `make reference-payroll-live-localnet`을 fresh localnet에서 재실행해 Deposit/2x2/Withdraw와 durable payroll reserve/prove/broadcast/reconcile/idempotent retry가 PASS했다.
+- `make release-check`, `make release-pack`, `make release-pack-verify`, `git diff --check`를 현재 closure tree에서 다시 실행해 PASS했다. Release check 내부의 전체 Go test/build/examples/vulnerability policy/plain localnet/privacy E2E/2-message bulk readiness도 모두 PASS했다. Closure commit 뒤 clean manifest와 status를 한 번 더 확인하고 **Gate 3B를 PASS로 재확정해 Session 4를 시작**한다.
+
+최초 Session 3B 구현은 Session 4를 수행하지 않고 종료했다. 위 진입 closure로 current tree의 Gate 3B를 다시 PASS한 뒤 별도 fresh Session 4 검증을 시작한다.
