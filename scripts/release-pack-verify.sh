@@ -46,6 +46,9 @@ fi
 [[ -f "$archive_path" ]] || fail "missing archive: $archive_path"
 [[ -f "$checksum_path" ]] || fail "missing checksum: $checksum_path"
 
+checksum_line_count="$(wc -l <"$checksum_path" | tr -d ' ')"
+checksum_format_count="$(grep -Ec '^[0-9a-f]{64}  .+$' "$checksum_path" 2>/dev/null || true)"
+[[ "$checksum_line_count" == "1" && "$checksum_format_count" == "1" ]] || fail "archive checksum file is not canonical"
 expected_checksum="$(awk '{print $1; exit}' "$checksum_path")"
 actual_checksum="$(shasum -a 256 "$archive_path" | awk '{print $1; exit}')"
 [[ -n "$expected_checksum" ]] || fail "empty checksum file: $checksum_path"
@@ -308,6 +311,15 @@ done
 	cd "$pack_root"
 	shasum -a 256 -c SHA256SUMS.txt >/dev/null
 )
+expected_sums="$work_dir/expected-SHA256SUMS.txt"
+(
+	cd "$pack_root"
+	find . -type f ! -name SHA256SUMS.txt | LC_ALL=C sort | while IFS= read -r file; do
+		shasum -a 256 "$file"
+	done
+) >"$expected_sums"
+cmp -s "$expected_sums" "$pack_root/SHA256SUMS.txt" || fail "SHA256SUMS.txt is not canonical and complete"
+[[ ! -x "$pack_root/RELEASE-MANIFEST.txt" && ! -x "$pack_root/SHA256SUMS.txt" ]] || fail "generated release metadata must not be executable"
 
 selected_paths_file="$work_dir/release-pack-paths.txt"
 git -C "$repo_root" show "${manifest_commit}:scripts/release-pack-paths.txt" >"$selected_paths_file" || fail "release path manifest is missing from manifest commit"
@@ -348,6 +360,19 @@ while IFS= read -r -d '' packed_file; do
 	if ! git -C "$repo_root" show "${manifest_commit}:${relative_path}" | cmp -s - "$packed_file"; then
 		fail "archive file differs from manifest commit: $relative_path"
 	fi
+	git_entry="$(git -C "$repo_root" ls-tree "$manifest_commit" -- "$relative_path")"
+	git_mode="${git_entry%% *}"
+	case "$git_mode" in
+	100644)
+		[[ ! -x "$packed_file" ]] || fail "archive file executable bit differs from manifest commit: $relative_path"
+		;;
+	100755)
+		[[ -x "$packed_file" ]] || fail "archive file executable bit differs from manifest commit: $relative_path"
+		;;
+	*)
+		fail "unsupported Git file mode in release pack: $relative_path ($git_mode)"
+		;;
+	esac
 done < <(find "$pack_root" -type f -print0)
 
 echo "release pack verified: $archive_path"
