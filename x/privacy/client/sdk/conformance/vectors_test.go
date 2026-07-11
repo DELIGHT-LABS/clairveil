@@ -58,18 +58,18 @@ type noteFixture struct {
 	Amount           string `json:"amount"`
 	Denom            string `json:"denom"`
 	Memo             string `json:"memo"`
-	NoteJSONHex      string `json:"note_json_hex"`
+	NotePlaintextHex string `json:"note_plaintext_hex"`
 	EncryptedNoteHex string `json:"encrypted_note_hex"`
 	CommitmentHex    string `json:"commitment_hex"`
 	NullifierHex     string `json:"nullifier_hex"`
 }
 
 type disclosureFixture struct {
-	Policy         string `json:"policy"`
-	Mode           string `json:"mode"`
-	PayloadJSONHex string `json:"payload_json_hex"`
-	CiphertextHex  string `json:"ciphertext_hex"`
-	DigestHex      string `json:"digest_hex"`
+	Policy              string `json:"policy"`
+	Mode                string `json:"mode"`
+	PayloadPlaintextHex string `json:"payload_plaintext_hex"`
+	CiphertextHex       string `json:"ciphertext_hex"`
+	DigestHex           string `json:"digest_hex"`
 }
 
 type scanFixture struct {
@@ -98,9 +98,12 @@ func TestGoldenVectorsNoteAndScanContracts(t *testing.T) {
 	spendScalar, _, _ := privacyidentity.DeriveSpendKeys(rootSeed)
 	viewScalar, viewPubKey, _ := privacyidentity.DeriveViewKeys(rootSeed)
 
-	noteBytes, err := privacycrypto.Decrypt(mustDecodeHex(t, vectors.Note.EncryptedNoteHex), rootSeed)
+	kind, encryptedNote, err := privacytypes.DecodeEncryptedEnvelopeV1(mustDecodeHex(t, vectors.Note.EncryptedNoteHex))
 	require.NoError(t, err)
-	require.Equal(t, vectors.Note.NoteJSONHex, hex.EncodeToString(noteBytes))
+	require.Equal(t, privacytypes.EnvelopeDepositNoteV1, kind)
+	noteBytes, err := privacycrypto.Decrypt(encryptedNote, rootSeed)
+	require.NoError(t, err)
+	require.Equal(t, vectors.Note.NotePlaintextHex, hex.EncodeToString(noteBytes))
 
 	note, err := privacyscan.ParseNoteBytes(noteBytes)
 	require.NoError(t, err)
@@ -137,6 +140,8 @@ func TestGoldenVectorsNoteAndScanContracts(t *testing.T) {
 
 	transferCipherText, err := privacycrypto.AsymEncrypt(noteBytes, *viewPubKey)
 	require.NoError(t, err)
+	transferEnvelope, err := privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeTransferNoteV1, transferCipherText)
+	require.NoError(t, err)
 
 	transferTx := newPrivacyTx(
 		t,
@@ -144,7 +149,7 @@ func TestGoldenVectorsNoteAndScanContracts(t *testing.T) {
 		vectors.Scan.Height,
 		privacytypes.EventTypeShieldedTransfer,
 		privacytypes.AttributeKeyCipherText1,
-		hex.EncodeToString(transferCipherText),
+		hex.EncodeToString(transferEnvelope),
 		abci.EventAttribute{Key: privacytypes.AttributeKeyCommitment1, Value: vectors.Note.CommitmentHex},
 	)
 	transferFound := privacyscan.ProcessTx(transferTx, rootSeed, spendScalar, viewScalar)
@@ -157,12 +162,13 @@ func TestGoldenVectorsNoteAndScanContracts(t *testing.T) {
 func TestGoldenVectorsDisclosureContracts(t *testing.T) {
 	vectors := loadGoldenVectors(t)
 
-	payload, err := privacydisclosure.DecodePublicPayloadHex(vectors.Disclosure.PayloadJSONHex)
+	payload, err := privacydisclosure.DecodePublicPayloadHex(vectors.Disclosure.PayloadPlaintextHex)
 	require.NoError(t, err)
 	require.Equal(t, privacydisclosure.PayloadVersion, payload.Version)
 	require.Equal(t, privacydisclosure.PlaneUser, payload.Plane)
 	require.Equal(t, vectors.Note.Amount, payload.Amount)
-	require.Equal(t, vectors.Note.Denom, payload.AssetDenom)
+	require.Empty(t, payload.AssetDenom)
+	require.Zero(t, privacytypes.ComputeAssetIDV1(vectors.Note.Denom).Cmp(new(big.Int).SetBytes(mustDecodeHex(t, payload.AssetIDHex))))
 	require.Equal(t, vectors.Sender.ShieldedAddress, payload.FromShieldedAddress)
 	require.Equal(t, vectors.Recipient.ShieldedAddress, payload.ToShieldedAddress)
 	require.Equal(t, []string{"amount", "from_shielded_address", "to_shielded_address"}, privacydisclosure.DisclosedFields(payload))
@@ -223,12 +229,14 @@ func buildGoldenVectorsFixture(t *testing.T) goldenVectors {
 		ReceiverViewPubKeyX:  pointX(senderViewPubKey),
 		ReceiverViewPubKeyY:  pointY(senderViewPubKey),
 		Amount:               big.NewInt(7),
-		AssetID:              privacycrypto.HashString("uclair"),
+		AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 		Randomness:           big.NewInt(1771001),
 		Memo:                 "golden-vector",
 	}
 	noteBytes := note.Bytes()
 	encryptedNote, err := privacycrypto.Encrypt(noteBytes, senderSeed)
+	require.NoError(t, err)
+	encryptedNote, err = privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeDepositNoteV1, encryptedNote)
 	require.NoError(t, err)
 	commitmentHex, err := privacyfield.CanonicalHexFromBigInt(note.ComputeCommitment())
 	require.NoError(t, err)
@@ -241,7 +249,7 @@ func buildGoldenVectorsFixture(t *testing.T) goldenVectors {
 		ReceiverViewPubKeyX:  pointX(recipientViewPubKey),
 		ReceiverViewPubKeyY:  pointY(recipientViewPubKey),
 		Amount:               big.NewInt(7),
-		AssetID:              privacycrypto.HashString("uclair"),
+		AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 		Randomness:           big.NewInt(1771002),
 		Memo:                 "golden-vector-recipient-output",
 	}
@@ -263,7 +271,7 @@ func buildGoldenVectorsFixture(t *testing.T) goldenVectors {
 	require.NoError(t, err)
 
 	return goldenVectors{
-		SchemaVersion:     "v1",
+		SchemaVersion:     "v2",
 		SenderRootSeed:    senderRootSeed,
 		RecipientRootSeed: recipientRootSeed,
 		Sender:            sender,
@@ -272,17 +280,17 @@ func buildGoldenVectorsFixture(t *testing.T) goldenVectors {
 			Amount:           note.Amount.String(),
 			Denom:            "uclair",
 			Memo:             note.Memo,
-			NoteJSONHex:      hex.EncodeToString(noteBytes),
+			NotePlaintextHex: hex.EncodeToString(noteBytes),
 			EncryptedNoteHex: hex.EncodeToString(encryptedNote),
 			CommitmentHex:    commitmentHex,
 			NullifierHex:     nullifierHex,
 		},
 		Disclosure: disclosureFixture{
-			Policy:         "amount-from-to",
-			Mode:           "recipient-encrypted",
-			PayloadJSONHex: hex.EncodeToString(disclosure.PayloadJSON),
-			CiphertextHex:  hex.EncodeToString(disclosure.CipherText),
-			DigestHex:      hex.EncodeToString(disclosure.Digest),
+			Policy:              "amount-from-to",
+			Mode:                "recipient-encrypted",
+			PayloadPlaintextHex: hex.EncodeToString(disclosure.PayloadJSON),
+			CiphertextHex:       hex.EncodeToString(disclosure.CipherText),
+			DigestHex:           hex.EncodeToString(disclosure.Digest),
 		},
 		Scan: scanFixture{
 			TxHashHex: "AABBCC",
@@ -348,7 +356,7 @@ func loadGoldenVectors(t *testing.T) goldenVectors {
 
 	var vectors goldenVectors
 	require.NoError(t, json.Unmarshal(bz, &vectors))
-	require.Equal(t, "v1", vectors.SchemaVersion)
+	require.Equal(t, "v2", vectors.SchemaVersion)
 	return vectors
 }
 
@@ -416,7 +424,7 @@ func assetDenomFromNote(t *testing.T, note *privacytypes.Note) string {
 
 	assetIDHex, err := privacyfield.CanonicalHexFromBigInt(note.AssetID)
 	require.NoError(t, err)
-	expectedHex, err := privacyfield.CanonicalHexFromBigInt(privacycrypto.HashString("uclair"))
+	expectedHex, err := privacyfield.CanonicalHexFromBigInt(privacytypes.ComputeAssetIDV1("uclair"))
 	require.NoError(t, err)
 	require.Equal(t, expectedHex, assetIDHex)
 	return "uclair"

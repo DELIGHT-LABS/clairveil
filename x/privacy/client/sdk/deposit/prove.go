@@ -24,20 +24,8 @@ type DepositProofRunner interface {
 }
 
 func BuildDepositAssignment(note privacytypes.Note) (*circuit.DepositCircuit, error) {
-	if err := privacytypes.ValidateShieldedAmount("deposit note amount", note.Amount); err != nil {
-		return nil, err
-	}
-	if note.ReceiverSpendPubKeyX == nil || note.ReceiverSpendPubKeyY == nil {
-		return nil, fmt.Errorf("deposit note spend public key is required")
-	}
-	if note.ReceiverViewPubKeyX == nil || note.ReceiverViewPubKeyY == nil {
-		return nil, fmt.Errorf("deposit note view public key is required")
-	}
-	if note.AssetID == nil {
-		return nil, fmt.Errorf("deposit note asset id is required")
-	}
-	if note.Randomness == nil {
-		return nil, fmt.Errorf("deposit note randomness is required")
+	if err := note.ValidateV1(); err != nil {
+		return nil, fmt.Errorf("invalid deposit NoteV1: %w", err)
 	}
 
 	assignment := &circuit.DepositCircuit{

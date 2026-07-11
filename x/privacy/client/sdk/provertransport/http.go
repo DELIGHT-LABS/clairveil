@@ -17,6 +17,8 @@ import (
 const (
 	TransferProofPath             = "/v1/prover/transfer"
 	WithdrawProofPath             = "/v1/prover/withdraw"
+	TransferProofCircuitID        = "joinsplit"
+	WithdrawProofCircuitID        = "spend"
 	ErrorResponseVersion          = "v1"
 	DefaultMaxResponseBytes int64 = 1 << 20
 )
@@ -28,12 +30,44 @@ const (
 	ErrorCodeUnauthorized     = "unauthorized"
 	ErrorCodeUnavailable      = "unavailable"
 	ErrorCodeProofFailed      = "proof_failed"
+	ErrorCodeBusy             = "busy"
 )
 
 type ErrorResponse struct {
-	Version string `json:"version"`
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Version   string `json:"version"`
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+	Retryable bool   `json:"retryable,omitempty"`
+}
+
+// HTTPError preserves retryability without performing any automatic retry or
+// failover. Callers remain responsible for an explicit privacy-aware policy.
+type HTTPError struct {
+	StatusCode int
+	Response   ErrorResponse
+}
+
+func (e *HTTPError) Error() string {
+	if e == nil {
+		return "prover transport request failed"
+	}
+	return fmt.Sprintf("prover transport request failed (%s): %s", e.Response.Code, e.Response.Message)
+}
+
+func (e *HTTPError) Retryable() bool {
+	return e != nil && e.Response.Retryable
+}
+
+// ProofPermit is acquired after cheap body/framing checks and before semantic
+// or cryptographic validation. Release must not be called until an actual
+// prover invocation has returned.
+type ProofPermit interface {
+	StartProve()
+	Release()
+}
+
+type ProofAdmission interface {
+	Acquire(ctx context.Context, circuitID string) (ProofPermit, error)
 }
 
 type TransferProver interface {
@@ -58,6 +92,7 @@ type HTTPHandler struct {
 	TransferProver TransferProver
 	WithdrawProver WithdrawProver
 	Now            func() time.Time
+	Admission      ProofAdmission
 }
 
 type HTTPDoer interface {
@@ -80,6 +115,10 @@ func (p ReferenceWithdrawProver) ProveWithdraw(request WithdrawProofRequest, now
 }
 
 func NewHTTPHandler(transferProver TransferProver, withdrawProver WithdrawProver, now func() time.Time) *HTTPHandler {
+	return NewHTTPHandlerWithAdmission(transferProver, withdrawProver, now, nil)
+}
+
+func NewHTTPHandlerWithAdmission(transferProver TransferProver, withdrawProver WithdrawProver, now func() time.Time, admission ProofAdmission) *HTTPHandler {
 	if now == nil {
 		now = time.Now
 	}
@@ -87,6 +126,7 @@ func NewHTTPHandler(transferProver TransferProver, withdrawProver WithdrawProver
 		TransferProver: transferProver,
 		WithdrawProver: withdrawProver,
 		Now:            now,
+		Admission:      admission,
 	}
 }
 
@@ -121,6 +161,20 @@ func (h *HTTPHandler) serveTransferProof(w http.ResponseWriter, r *http.Request)
 		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, fmt.Sprintf("failed to read transfer proof request body: %v", err))
 		return
 	}
+	if !json.Valid(requestBytes) {
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, "invalid transfer proof request JSON framing")
+		return
+	}
+	permit, ok := h.acquirePermit(w, r, TransferProofCircuitID)
+	if !ok {
+		return
+	}
+	permitReleased := false
+	defer func() {
+		if permit != nil && !permitReleased {
+			permit.Release()
+		}
+	}()
 	request, err := DecodeTransferProofRequestJSON(requestBytes)
 	if err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, err.Error())
@@ -132,7 +186,14 @@ func (h *HTTPHandler) serveTransferProof(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if permit != nil {
+		permit.StartProve()
+	}
 	response, err := h.TransferProver.ProveTransfer(*request, currentTime)
+	if permit != nil {
+		permit.Release()
+		permitReleased = true
+	}
 	if err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeProofFailed, err.Error())
 		return
@@ -160,13 +221,38 @@ func (h *HTTPHandler) serveWithdrawProof(w http.ResponseWriter, r *http.Request)
 		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, fmt.Sprintf("failed to read withdraw proof request body: %v", err))
 		return
 	}
+	if !json.Valid(requestBytes) {
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, "invalid withdraw proof request JSON framing")
+		return
+	}
+	permit, ok := h.acquirePermit(w, r, WithdrawProofCircuitID)
+	if !ok {
+		return
+	}
+	permitReleased := false
+	defer func() {
+		if permit != nil && !permitReleased {
+			permit.Release()
+		}
+	}()
 	request, err := DecodeWithdrawProofRequestJSON(requestBytes)
 	if err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, err.Error())
 		return
 	}
+	if err := ValidateWithdrawProofRequest(*request, h.Now()); err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, err.Error())
+		return
+	}
 
+	if permit != nil {
+		permit.StartProve()
+	}
 	response, err := h.WithdrawProver.ProveWithdraw(*request, h.Now())
+	if permit != nil {
+		permit.Release()
+		permitReleased = true
+	}
 	if err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeProofFailed, err.Error())
 		return
@@ -177,6 +263,22 @@ func (h *HTTPHandler) serveWithdrawProof(w http.ResponseWriter, r *http.Request)
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *HTTPHandler) acquirePermit(w http.ResponseWriter, r *http.Request, circuitID string) (ProofPermit, bool) {
+	if h.Admission == nil {
+		return nil, true
+	}
+	permit, err := h.Admission.Acquire(r.Context(), circuitID)
+	if err != nil {
+		writeRetryableErrorResponse(w, http.StatusTooManyRequests, ErrorCodeBusy, "prover capacity is temporarily unavailable")
+		return nil, false
+	}
+	if permit == nil {
+		writeRetryableErrorResponse(w, http.StatusTooManyRequests, ErrorCodeBusy, "prover capacity is temporarily unavailable")
+		return nil, false
+	}
+	return permit, true
 }
 
 func (c HTTPProverClient) ProveTransfer(ctx context.Context, request TransferProofRequest) (*TransferProofResponse, error) {
@@ -260,7 +362,7 @@ func (c HTTPProverClient) doJSONRequest(ctx context.Context, path string, body i
 	}
 	if resp.StatusCode != http.StatusOK {
 		if errorResponse, decodeErr := DecodeErrorResponseJSON(responseBytes); decodeErr == nil {
-			return nil, fmt.Errorf("prover transport request failed (%s): %s", errorResponse.Code, errorResponse.Message)
+			return nil, &HTTPError{StatusCode: resp.StatusCode, Response: *errorResponse}
 		}
 		return nil, fmt.Errorf("prover transport request failed with status %d", resp.StatusCode)
 	}
@@ -272,7 +374,37 @@ func DecodeErrorResponseJSON(payloadBytes []byte) (*ErrorResponse, error) {
 	if err := json.Unmarshal(payloadBytes, &response); err != nil {
 		return nil, fmt.Errorf("invalid prover transport error JSON: %w", err)
 	}
+	if err := ValidateErrorResponse(response); err != nil {
+		return nil, err
+	}
 	return &response, nil
+}
+
+func ValidateErrorResponse(response ErrorResponse) error {
+	if response.Version != ErrorResponseVersion {
+		return fmt.Errorf("invalid prover transport error version %q", response.Version)
+	}
+	switch response.Code {
+	case ErrorCodeInvalidRequest,
+		ErrorCodeMethodNotAllowed,
+		ErrorCodeNotFound,
+		ErrorCodeUnauthorized,
+		ErrorCodeUnavailable,
+		ErrorCodeProofFailed,
+		ErrorCodeBusy:
+	default:
+		return fmt.Errorf("invalid prover transport error code %q", response.Code)
+	}
+	if strings.TrimSpace(response.Message) == "" {
+		return fmt.Errorf("prover transport error message is required")
+	}
+	if response.Retryable && response.Code != ErrorCodeBusy {
+		return fmt.Errorf("only %s prover transport errors may be retryable", ErrorCodeBusy)
+	}
+	if response.Code == ErrorCodeBusy && !response.Retryable {
+		return fmt.Errorf("%s prover transport errors must be retryable", ErrorCodeBusy)
+	}
+	return nil
 }
 
 func writeErrorResponse(w http.ResponseWriter, status int, code string, message string) {
@@ -280,6 +412,15 @@ func writeErrorResponse(w http.ResponseWriter, status int, code string, message 
 		Version: ErrorResponseVersion,
 		Code:    code,
 		Message: message,
+	})
+}
+
+func writeRetryableErrorResponse(w http.ResponseWriter, status int, code string, message string) {
+	writeJSON(w, status, ErrorResponse{
+		Version:   ErrorResponseVersion,
+		Code:      code,
+		Message:   message,
+		Retryable: true,
 	})
 }
 

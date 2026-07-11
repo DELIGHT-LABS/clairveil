@@ -69,7 +69,7 @@ type sendCapableDisclosureSummary struct {
 	Verified            bool     `json:"verified"`
 	DisclosedFields     []string `json:"disclosed_fields"`
 	Amount              string   `json:"amount,omitempty"`
-	AssetDenom          string   `json:"asset_denom,omitempty"`
+	AssetIDHex          string   `json:"asset_id_hex,omitempty"`
 	FromShieldedAddress string   `json:"from_shielded_address,omitempty"`
 	ToShieldedAddress   string   `json:"to_shielded_address,omitempty"`
 }
@@ -196,7 +196,7 @@ func buildSendCapableReferenceFlowBundle(t *testing.T) sendCapableReferenceFlowB
 				Verified:            userDisclosureVerification.Verified,
 				DisclosedFields:     privacydisclosure.DisclosedFields(userDisclosurePayload),
 				Amount:              userDisclosurePayload.Amount,
-				AssetDenom:          userDisclosurePayload.AssetDenom,
+				AssetIDHex:          userDisclosurePayload.AssetIDHex,
 				FromShieldedAddress: userDisclosurePayload.FromShieldedAddress,
 				ToShieldedAddress:   userDisclosurePayload.ToShieldedAddress,
 			},
@@ -209,7 +209,7 @@ func buildSendCapableReferenceFlowBundle(t *testing.T) sendCapableReferenceFlowB
 				Verified:            auditDisclosureVerification.Verified,
 				DisclosedFields:     privacydisclosure.DisclosedFields(auditDisclosurePayload),
 				Amount:              auditDisclosurePayload.Amount,
-				AssetDenom:          auditDisclosurePayload.AssetDenom,
+				AssetIDHex:          auditDisclosurePayload.AssetIDHex,
 				FromShieldedAddress: auditDisclosurePayload.FromShieldedAddress,
 				ToShieldedAddress:   auditDisclosurePayload.ToShieldedAddress,
 			},
@@ -222,7 +222,7 @@ func buildSendCapableReferenceFlowBundle(t *testing.T) sendCapableReferenceFlowB
 				Verified:            selfViewDisclosureVerification.Verified,
 				DisclosedFields:     privacydisclosure.DisclosedFields(selfViewDisclosurePayload),
 				Amount:              selfViewDisclosurePayload.Amount,
-				AssetDenom:          selfViewDisclosurePayload.AssetDenom,
+				AssetIDHex:          selfViewDisclosurePayload.AssetIDHex,
 				FromShieldedAddress: selfViewDisclosurePayload.FromShieldedAddress,
 				ToShieldedAddress:   selfViewDisclosurePayload.ToShieldedAddress,
 			},

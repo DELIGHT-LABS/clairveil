@@ -1,8 +1,8 @@
 package keeper
 
 import (
-	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"strings"
 
 	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
@@ -33,6 +33,10 @@ func (k Keeper) indexPrivacyEvent(ctx sdk.Context, eventType string, txHashHex s
 	if err != nil {
 		return err
 	}
+	scanSummary, scanOutputs, err := k.buildLegacyPrivacyScanV2(ctx, sequence, ctx.BlockHeight(), txHashHex, eventType, attrs)
+	if err != nil {
+		return fmt.Errorf("build typed privacy scan index: %w", err)
+	}
 
 	event := &privacytypes.QueryPrivacyEvent{
 		Sequence:   sequence,
@@ -48,30 +52,17 @@ func (k Keeper) indexPrivacyEvent(ctx sdk.Context, eventType string, txHashHex s
 		})
 	}
 
+	if err := k.StorePrivacyScanV2(ctx, scanSummary, scanOutputs); err != nil {
+		return fmt.Errorf("store typed privacy scan index: %w", err)
+	}
+	if err := k.RecordCurrentMerkleRootSnapshotV1(ctx); err != nil {
+		return fmt.Errorf("record privacy merkle root snapshot: %w", err)
+	}
 	return store.Set(privacytypes.GetPrivacyEventKey(ctx.BlockHeight(), sequence), k.cdc.MustMarshal(event))
 }
 
 func (k Keeper) nextPrivacyEventSequence(ctx sdk.Context) (uint64, error) {
-	store := k.storeService.OpenKVStore(ctx)
-
-	current, err := store.Get(privacytypes.GetPrivacyEventSequenceKey())
-	if err != nil {
-		return 0, err
-	}
-
-	var sequence uint64
-	if len(current) > 0 {
-		sequence = binary.BigEndian.Uint64(current)
-	}
-	sequence++
-
-	bz := make([]byte, 8)
-	binary.BigEndian.PutUint64(bz, sequence)
-	if err := store.Set(privacytypes.GetPrivacyEventSequenceKey(), bz); err != nil {
-		return 0, err
-	}
-
-	return sequence, nil
+	return k.AllocatePrivacyGlobalSequence(ctx)
 }
 
 func (k Keeper) GetPrivacyEvents(ctx sdk.Context, afterHeight int64, page uint64, limit uint64, eventTypes []string) ([]*privacytypes.QueryPrivacyEvent, bool, error) {

@@ -28,8 +28,9 @@ type proverHTTPRouteFixture struct {
 }
 
 type proverHTTPErrorFixture struct {
-	Version string   `json:"version"`
-	Codes   []string `json:"codes"`
+	Version        string   `json:"version"`
+	Codes          []string `json:"codes"`
+	RetryableCodes []string `json:"retryable_codes"`
 }
 
 func TestProverHTTPContractFixtureMatchesSDK(t *testing.T) {
@@ -56,7 +57,9 @@ func TestProverHTTPContractFixtureMatchesSDK(t *testing.T) {
 		privacyprovertransport.ErrorCodeUnauthorized,
 		privacyprovertransport.ErrorCodeUnavailable,
 		privacyprovertransport.ErrorCodeProofFailed,
+		privacyprovertransport.ErrorCodeBusy,
 	}, fixture.ErrorResponse.Codes)
+	require.Equal(t, []string{privacyprovertransport.ErrorCodeBusy}, fixture.ErrorResponse.RetryableCodes)
 }
 
 func loadProverHTTPContractFixture(t *testing.T) proverHTTPContractFixture {

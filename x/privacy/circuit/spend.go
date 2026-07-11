@@ -50,6 +50,7 @@ func (c *SpendCircuit) Define(api frontend.API) error {
 	assertCanonicalEdDSASignature(api, curve, c.Signature)
 
 	h.Write(
+		privacytypes.DomainFieldV1(privacytypes.NoteCommitmentV1FieldDomain),
 		c.ReceiverSpendPubKey.A.X,
 		c.ReceiverSpendPubKey.A.Y,
 		c.ReceiverViewPubKey.A.X,
@@ -58,13 +59,20 @@ func (c *SpendCircuit) Define(api frontend.API) error {
 		c.AssetID,
 		c.Randomness,
 	)
-	currentHash := h.Sum()
+	noteCommitment := h.Sum()
+	api.AssertIsDifferent(noteCommitment, 0)
+	currentHash := noteCommitment
 
 	for i := 0; i < MerkleDepth; i++ {
 		left := api.Select(c.PathHelper[i], c.Path[i], currentHash)
 		right := api.Select(c.PathHelper[i], currentHash, c.Path[i])
 		h.Reset()
-		h.Write(left, right)
+		h.Write(
+			privacytypes.DomainFieldV1(privacytypes.NoteTreeNodeV1FieldDomain),
+			i,
+			left,
+			right,
+		)
 		currentHash = h.Sum()
 	}
 	api.AssertIsEqual(currentHash, c.MerkleRoot)
@@ -91,7 +99,14 @@ func (c *SpendCircuit) Define(api frontend.API) error {
 	}
 
 	h.Reset()
-	h.Write(c.Randomness, c.ReceiverSpendPubKey.A.X, c.ReceiverSpendPubKey.A.Y)
+	h.Write(
+		privacytypes.DomainFieldV1(privacytypes.NoteNullifierV1FieldDomain),
+		noteCommitment,
+		c.Randomness,
+		c.ReceiverSpendPubKey.A.X,
+		c.ReceiverSpendPubKey.A.Y,
+	)
+	api.AssertIsDifferent(c.Nullifier, 0)
 	api.AssertIsEqual(h.Sum(), c.Nullifier)
 
 	return nil

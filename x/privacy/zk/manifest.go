@@ -1,8 +1,10 @@
 package zk
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -153,8 +155,15 @@ func LoadArtifactManifest(path string) (*RuntimeArtifactManifest, error) {
 		return nil, err
 	}
 
-	var manifest RuntimeArtifactManifest
-	if err := json.Unmarshal(bz, &manifest); err == nil && len(manifest.Artifacts) != 0 {
+	var shape map[string]json.RawMessage
+	if err := json.Unmarshal(bz, &shape); err != nil {
+		return nil, fmt.Errorf("failed to decode artifact manifest: %w", err)
+	}
+	if _, structured := shape["artifacts"]; structured {
+		var manifest RuntimeArtifactManifest
+		if err := decodeRuntimeArtifactManifest(bz, &manifest); err != nil {
+			return nil, fmt.Errorf("failed to decode structured artifact manifest: %w", err)
+		}
 		if err := ValidateRuntimeArtifactManifest(&manifest); err != nil {
 			return nil, err
 		}
@@ -167,6 +176,22 @@ func LoadArtifactManifest(path string) (*RuntimeArtifactManifest, error) {
 	}
 
 	return nil, fmt.Errorf("legacy artifact manifests are not accepted for circuit set %s", ActiveCircuitSetID)
+}
+
+func decodeRuntimeArtifactManifest(bz []byte, manifest *RuntimeArtifactManifest) error {
+	decoder := json.NewDecoder(bytes.NewReader(bz))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(manifest); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("artifact manifest contains trailing JSON values")
+		}
+		return fmt.Errorf("artifact manifest trailing data: %w", err)
+	}
+	return nil
 }
 
 func ValidateRuntimeArtifactManifest(manifest *RuntimeArtifactManifest) error {
@@ -221,17 +246,11 @@ func identityFromArtifactDescriptors(descriptors []ArtifactDescriptor) (*privacy
 }
 
 func LoadLocalCircuitSetIdentity() (*privacytypes.CircuitSetIdentity, error) {
-	manifest, source, err := ResolveRuntimeArtifactManifest()
+	registry, err := DefaultArtifactRegistry()
 	if err != nil {
 		return nil, err
 	}
-	if source != ChecksumSourceManifest {
-		return nil, fmt.Errorf("structured artifact manifest %s is required", ArtifactManifestFile)
-	}
-	if err := ValidateRuntimeArtifactManifest(manifest); err != nil {
-		return nil, err
-	}
-	return privacytypes.CloneCircuitSetIdentity(manifest.CircuitSetIdentity), nil
+	return registry.LocalCircuitSetIdentity()
 }
 
 func verifyingKeyFilename(circuitID string) string {
@@ -260,6 +279,9 @@ func verifyingKeyChecksumEnv(circuitID string) string {
 	}
 }
 
+// ResolveRuntimeArtifactManifest is retained for setup/reporting compatibility.
+// RuntimeArtifactRegistry always requires the structured manifest and never
+// treats its environment-only fallback as an artifact trust root.
 func ResolveRuntimeArtifactManifest() (*RuntimeArtifactManifest, string, error) {
 	manifestPath := filepath.Join(artifactDir(), ArtifactManifestFile)
 	if _, err := os.Stat(manifestPath); err == nil {

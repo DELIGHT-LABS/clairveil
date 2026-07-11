@@ -10,8 +10,8 @@ import (
 func TestComputeChainDomainV1GoldenVector(t *testing.T) {
 	domain, err := ComputeChainDomainV1("clairveil-localnet-1", ActiveCircuitSetID)
 	require.NoError(t, err)
-	require.Equal(t, "264159934158684874548762591990728337770", domain.Hi.String())
-	require.Equal(t, "270095241217876371844524170513424412119", domain.Lo.String())
+	require.Equal(t, "339723332543403861982020927394470785758", domain.Hi.String())
+	require.Equal(t, "116103085805296647483470937063762812612", domain.Lo.String())
 }
 
 func TestCanonicalTransferPayloadDigestV1GoldenVector(t *testing.T) {
@@ -66,7 +66,7 @@ func TestOrderedSetAndTransferIntentV2GoldenVectors(t *testing.T) {
 		ExpiresAtUnix:        2_000_000_000,
 	})
 	require.NoError(t, err)
-	require.Equal(t, "21502032591532004636179220502878670510289919326746051485096026281100511527942", intent.String())
+	require.Equal(t, "20681425869715027474453730346869105137699317609179329451264526434894440857775", intent.String())
 }
 
 func TestTransferIntentV2RejectsOversizedDigestLimb(t *testing.T) {
@@ -111,7 +111,7 @@ func TestWithdrawRecipientAndSpendIntentV2GoldenVectors(t *testing.T) {
 		ExpiresAtUnix:     2_000_000_000,
 	})
 	require.NoError(t, err)
-	require.Equal(t, "13191783163059326543049206717388639829443167257927871854890138339708944197419", intent.String())
+	require.Equal(t, "19142024580523840102611153200303810794949331748277393428179000983929305141283", intent.String())
 }
 
 func intentTestTransferMessage() *MsgTransfer {

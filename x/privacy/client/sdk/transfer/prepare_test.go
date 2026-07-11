@@ -29,7 +29,7 @@ func TestPrepareJoinSplitTransferBuildsAssignmentAndOutputs(t *testing.T) {
 				ReceiverViewPubKeyX:  pointCoordinate(senderViewPubKey, true),
 				ReceiverViewPubKeyY:  pointCoordinate(senderViewPubKey, false),
 				Amount:               big.NewInt(7),
-				AssetID:              privacycrypto.HashString("uclair"),
+				AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 				Randomness:           big.NewInt(701),
 				Memo:                 "input-1",
 			},
@@ -41,7 +41,7 @@ func TestPrepareJoinSplitTransferBuildsAssignmentAndOutputs(t *testing.T) {
 				ReceiverViewPubKeyX:  pointCoordinate(senderViewPubKey, true),
 				ReceiverViewPubKeyY:  pointCoordinate(senderViewPubKey, false),
 				Amount:               big.NewInt(5),
-				AssetID:              privacycrypto.HashString("uclair"),
+				AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 				Randomness:           big.NewInt(702),
 				Memo:                 "input-2",
 			},
@@ -85,7 +85,7 @@ func TestPrepareJoinSplitTransferBuildsAssignmentAndOutputs(t *testing.T) {
 	require.Equal(t, int64(5), prepared.ChangeNote.Amount.Int64())
 	assignmentAssetID, ok := prepared.Assignment.AssetID.(*big.Int)
 	require.True(t, ok)
-	require.Equal(t, 0, assignmentAssetID.Cmp(privacycrypto.HashString("uclair")))
+	require.Equal(t, 0, assignmentAssetID.Cmp(privacytypes.ComputeAssetIDV1("uclair")))
 	require.Equal(t, 0, prepared.Assignment.OutputAmounts[0].(*big.Int).Cmp(big.NewInt(7)))
 	require.Equal(t, 0, prepared.Assignment.OutputAmounts[1].(*big.Int).Cmp(big.NewInt(5)))
 	require.Equal(t, 0, prepared.Assignment.InputPathHelpers[0][0].(int))
@@ -117,7 +117,7 @@ func TestPrepareJoinSplitTransferRejectsMerkleRootMismatch(t *testing.T) {
 			ReceiverViewPubKeyX:  pointCoordinate(senderViewPubKey, true),
 			ReceiverViewPubKeyY:  pointCoordinate(senderViewPubKey, false),
 			Amount:               big.NewInt(4),
-			AssetID:              privacycrypto.HashString("uclair"),
+			AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 			Randomness:           big.NewInt(801),
 		}},
 		{Note: privacytypes.Note{
@@ -126,7 +126,7 @@ func TestPrepareJoinSplitTransferRejectsMerkleRootMismatch(t *testing.T) {
 			ReceiverViewPubKeyX:  pointCoordinate(senderViewPubKey, true),
 			ReceiverViewPubKeyY:  pointCoordinate(senderViewPubKey, false),
 			Amount:               big.NewInt(6),
-			AssetID:              privacycrypto.HashString("uclair"),
+			AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 			Randomness:           big.NewInt(802),
 		}},
 	}
@@ -211,7 +211,8 @@ func TestPrepareJoinSplitTransferRejectsDuplicateInputBeforePathLookup(t *testin
 
 func TestPrepareJoinSplitTransferRejectsMixedOwnersBeforePathLookup(t *testing.T) {
 	fixture := newPrepareJoinSplitFixture(t, []uint32{0, 1})
-	fixture.inputs[1].Note.ReceiverSpendPubKeyX = new(big.Int).Add(fixture.inputs[1].Note.ReceiverSpendPubKeyX, big.NewInt(1))
+	fixture.inputs[1].Note.ReceiverSpendPubKeyX = pointCoordinate(fixture.recipientSpendPubKey, true)
+	fixture.inputs[1].Note.ReceiverSpendPubKeyY = pointCoordinate(fixture.recipientSpendPubKey, false)
 
 	_, err := PrepareJoinSplitTransfer(
 		context.Background(),
@@ -294,7 +295,7 @@ func newPrepareJoinSplitFixture(t *testing.T, pathHelper []uint32) prepareJoinSp
 				ReceiverViewPubKeyX:  pointCoordinate(senderViewPubKey, true),
 				ReceiverViewPubKeyY:  pointCoordinate(senderViewPubKey, false),
 				Amount:               big.NewInt(7),
-				AssetID:              privacycrypto.HashString("uclair"),
+				AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 				Randomness:           big.NewInt(701),
 			},
 		},
@@ -305,7 +306,7 @@ func newPrepareJoinSplitFixture(t *testing.T, pathHelper []uint32) prepareJoinSp
 				ReceiverViewPubKeyX:  pointCoordinate(senderViewPubKey, true),
 				ReceiverViewPubKeyY:  pointCoordinate(senderViewPubKey, false),
 				Amount:               big.NewInt(5),
-				AssetID:              privacycrypto.HashString("uclair"),
+				AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 				Randomness:           big.NewInt(702),
 			},
 		},
@@ -383,5 +384,7 @@ func mustEncryptPreparedNote(t *testing.T, note privacytypes.Note) []byte {
 
 	cipherTexts, err := EncryptOutputNotes(note, note)
 	require.NoError(t, err)
-	return cipherTexts[0]
+	raw, err := privacytypes.UnwrapEncryptedEnvelopeV1(cipherTexts[0], privacytypes.EnvelopeTransferNoteV1)
+	require.NoError(t, err)
+	return raw
 }

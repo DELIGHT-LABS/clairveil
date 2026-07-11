@@ -24,6 +24,9 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 	if err := k.SetCircuitSetIdentity(ctx, genState.CircuitSetIdentity); err != nil {
 		panic(fmt.Errorf("failed to initialize privacy circuit identity: %w", err))
 	}
+	if err := k.InitGenesisAssetRegistryV1(ctx, genState.AssetRegistry); err != nil {
+		panic(fmt.Errorf("failed to initialize privacy asset registry: %w", err))
+	}
 
 	if err := k.InitGenesisCommitments(ctx, genState.Commitments); err != nil {
 		panic(fmt.Errorf("failed to initialize privacy commitments: %w", err))
@@ -32,9 +35,18 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 	if err := k.InitGenesisHistoricalRoots(ctx, genState.HistoricalRoots); err != nil {
 		panic(fmt.Errorf("failed to initialize privacy historical roots: %w", err))
 	}
+	if err := k.InitGenesisMerkleRootSnapshotsV1(ctx, genState.MerkleRootSnapshots); err != nil {
+		panic(fmt.Errorf("failed to initialize privacy merkle root snapshots: %w", err))
+	}
 
 	if err := k.InitGenesisNullifiers(ctx, genState.Nullifiers); err != nil {
 		panic(fmt.Errorf("failed to initialize privacy nullifiers: %w", err))
+	}
+	if err := k.InitGenesisReserveBalancesV1(ctx, genState.ReserveBalances); err != nil {
+		panic(fmt.Errorf("failed to initialize privacy reserve balances: %w", err))
+	}
+	if err := k.InitGenesisPrivacyIndexV2(ctx, genState.PrivacyGlobalSequence, genState.PrivacyEvents, genState.PrivacyScanSummaries, genState.PrivacyScanOutputs); err != nil {
+		panic(fmt.Errorf("failed to initialize privacy scan index: %w", err))
 	}
 
 	if len(genState.AuditMasterPubkey) != 0 {
@@ -67,10 +79,44 @@ func ExportGenesis(ctx sdk.Context, k keeper.Keeper) *types.GenesisState {
 	if err != nil {
 		panic(fmt.Errorf("failed to export privacy nullifiers: %w", err))
 	}
+	assetRegistry, err := k.ExportGenesisAssetRegistryV1(ctx)
+	if err != nil {
+		panic(fmt.Errorf("failed to export privacy asset registry: %w", err))
+	}
+	rootSnapshots, err := k.ExportGenesisMerkleRootSnapshotsV1(ctx)
+	if err != nil {
+		panic(fmt.Errorf("failed to export privacy merkle root snapshots: %w", err))
+	}
+	reserveBalances, err := k.ExportGenesisReserveBalancesV1(ctx)
+	if err != nil {
+		panic(fmt.Errorf("failed to export privacy reserve balances: %w", err))
+	}
+	privacyEvents, err := k.ExportGenesisPrivacyEventsV1(ctx)
+	if err != nil {
+		panic(fmt.Errorf("failed to export privacy events: %w", err))
+	}
+	privacyScanSummaries, privacyScanOutputs, err := k.ExportGenesisPrivacyScanV2(ctx)
+	if err != nil {
+		panic(fmt.Errorf("failed to export privacy scan index: %w", err))
+	}
+	globalSequence, err := k.GetPrivacyGlobalSequence(ctx)
+	if err != nil {
+		panic(fmt.Errorf("failed to export privacy global sequence: %w", err))
+	}
 
 	genesis.Commitments = commitments
 	genesis.HistoricalRoots = historicalRoots
 	genesis.Nullifiers = nullifiers
 	genesis.AuditMasterPubkey = k.GetAuditMasterPubkey(ctx)
+	genesis.AssetRegistry = assetRegistry
+	genesis.MerkleRootSnapshots = rootSnapshots
+	genesis.ReserveBalances = reserveBalances
+	genesis.PrivacyEvents = privacyEvents
+	genesis.PrivacyScanSummaries = privacyScanSummaries
+	genesis.PrivacyScanOutputs = privacyScanOutputs
+	genesis.PrivacyGlobalSequence = globalSequence
+	if err := genesis.Validate(); err != nil {
+		panic(fmt.Errorf("exported privacy genesis state is invalid: %w", err))
+	}
 	return genesis
 }

@@ -18,4 +18,8 @@ func TestQueryGatewayHTTPPaths(t *testing.T) {
 	require.Equal(t, "/clairveil/privacy/v1/disclosure_config", pattern_Query_DisclosureConfig_0.String())
 	require.Equal(t, "/clairveil/privacy/v1/circuit_config", pattern_Query_CircuitConfig_0.String())
 	require.Equal(t, "/clairveil/privacy/v1/reserve/{denom=*}", pattern_Query_Reserve_0.String())
+	require.Equal(t, "/clairveil/privacy/v1/assets/by_denom/{canonical_denom=*}", pattern_Query_AssetByDenom_0.String())
+	require.Equal(t, "/clairveil/privacy/v1/assets/by_id/{asset_id_hex=*}", pattern_Query_AssetByID_0.String())
+	require.Equal(t, "/clairveil/privacy/v1/privacy_scan", pattern_Query_PrivacyScan_0.String())
+	require.Equal(t, "/clairveil/privacy/v1/commitment_paths_at_root", pattern_Query_CommitmentPathsAtRoot_0.String())
 }

@@ -7,7 +7,6 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	"github.com/stretchr/testify/require"
 
-	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -36,8 +35,8 @@ func TestResolveTransferRecipientDecodesShieldedBundle(t *testing.T) {
 
 func TestSelectInputsFiltersDifferentDenomZeroNote(t *testing.T) {
 	notes := []FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: crypto.HashString("uclair")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(0), AssetID: crypto.HashString("uatom")}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(0), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
 	}
 
 	_, total, isFinal, needZero := selectInputs(notes, "uclair", big.NewInt(10))
@@ -48,23 +47,23 @@ func TestSelectInputsFiltersDifferentDenomZeroNote(t *testing.T) {
 
 func TestSelectInputsUsesSameDenomPairOnly(t *testing.T) {
 	notes := []FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: crypto.HashString("uclair")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: crypto.HashString("uatom")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(4), AssetID: crypto.HashString("uclair")}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(4), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
 	}
 
 	inputs, total, isFinal, needZero := selectInputs(notes, "uclair", big.NewInt(10))
 	require.False(t, needZero)
 	require.True(t, isFinal)
 	require.Equal(t, int64(11), total.Int64())
-	require.Equal(t, 0, inputs[0].Note.AssetID.Cmp(crypto.HashString("uclair")))
-	require.Equal(t, 0, inputs[1].Note.AssetID.Cmp(crypto.HashString("uclair")))
+	require.Equal(t, 0, inputs[0].Note.AssetID.Cmp(privacytypes.ComputeAssetIDV1("uclair")))
+	require.Equal(t, 0, inputs[1].Note.AssetID.Cmp(privacytypes.ComputeAssetIDV1("uclair")))
 }
 
 func TestSelectInputsFallsBackToPositivePairWhenSingleNoteNeedsZero(t *testing.T) {
 	notes := []FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(11), AssetID: crypto.HashString("uclair")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: crypto.HashString("uclair")}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(11), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
 	}
 
 	inputs, total, isFinal, needZero := selectInputs(notes, "uclair", big.NewInt(8))
@@ -77,9 +76,9 @@ func TestSelectInputsFallsBackToPositivePairWhenSingleNoteNeedsZero(t *testing.T
 
 func TestSelectInputsChoosesSmallestSufficientPairDeterministically(t *testing.T) {
 	notes := []FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(11), AssetID: crypto.HashString("uclair")}, Nullifier: "c", Height: 3, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: crypto.HashString("uclair")}, Nullifier: "a", Height: 1, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: crypto.HashString("uclair")}, Nullifier: "b", Height: 2, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(11), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "c", Height: 3, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "a", Height: 1, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false},
 	}
 
 	inputs, total, isFinal, needZero := selectInputs(notes, "uclair", big.NewInt(12))
@@ -92,9 +91,9 @@ func TestSelectInputsChoosesSmallestSufficientPairDeterministically(t *testing.T
 
 func TestSelectInputsChoosesLargestMergePairWhenNoFinalPairExists(t *testing.T) {
 	notes := []FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(2), AssetID: crypto.HashString("uclair")}, Nullifier: "a", Height: 1, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: crypto.HashString("uclair")}, Nullifier: "b", Height: 2, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: crypto.HashString("uclair")}, Nullifier: "c", Height: 3, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(2), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "a", Height: 1, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "c", Height: 3, IsSpent: false},
 	}
 
 	inputs, total, isFinal, needZero := selectInputs(notes, "uclair", big.NewInt(20))

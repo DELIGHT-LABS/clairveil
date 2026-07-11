@@ -15,7 +15,6 @@ import (
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/circuit"
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
-	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -64,7 +63,7 @@ func testSpendAssignment(t *testing.T) *circuit.SpendCircuit {
 			ReceiverViewPubKeyX:  pointCoordinate(viewPubKey, true),
 			ReceiverViewPubKeyY:  pointCoordinate(viewPubKey, false),
 			Amount:               big.NewInt(7),
-			AssetID:              privacycrypto.HashString("uclair"),
+			AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 			Randomness:           big.NewInt(701),
 		},
 	}

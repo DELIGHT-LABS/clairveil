@@ -14,7 +14,6 @@ import (
 
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
-	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -199,7 +198,7 @@ func testBuildWithdrawFoundNote(amount int64, denom string, randomness int64) pr
 			ReceiverViewPubKeyX:  pointCoordinate(viewPubKey, true),
 			ReceiverViewPubKeyY:  pointCoordinate(viewPubKey, false),
 			Amount:               big.NewInt(amount),
-			AssetID:              privacycrypto.HashString(denom),
+			AssetID:              privacytypes.ComputeAssetIDV1(denom),
 			Randomness:           big.NewInt(randomness),
 		},
 	}

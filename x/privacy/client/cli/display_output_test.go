@@ -9,21 +9,20 @@ import (
 	"github.com/stretchr/testify/require"
 
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
-	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
 func TestRenderListNotesText(t *testing.T) {
-	uclairAssetIDHex, err := canonicalFieldHexFromBigInt(privacycrypto.HashString("uclair"))
+	uclairAssetIDHex, err := canonicalFieldHexFromBigInt(privacytypes.ComputeAssetIDV1("uclair"))
 	require.NoError(t, err)
-	uatomAssetIDHex, err := canonicalFieldHexFromBigInt(privacycrypto.HashString("uatom"))
+	uatomAssetIDHex, err := canonicalFieldHexFromBigInt(privacytypes.ComputeAssetIDV1("uatom"))
 	require.NoError(t, err)
 
 	foundNotes := []FoundNote{
 		{
 			Note: privacytypes.Note{
 				Amount:  math.NewInt(7).BigInt(),
-				AssetID: privacycrypto.HashString("uclair"),
+				AssetID: privacytypes.ComputeAssetIDV1("uclair"),
 			},
 			Nullifier: "abcdef1234567890",
 			IsSpent:   false,
@@ -31,7 +30,7 @@ func TestRenderListNotesText(t *testing.T) {
 		{
 			Note: privacytypes.Note{
 				Amount:  math.NewInt(2).BigInt(),
-				AssetID: privacycrypto.HashString("uatom"),
+				AssetID: privacytypes.ComputeAssetIDV1("uatom"),
 			},
 			Nullifier: "fedcba0987654321",
 			IsSpent:   false,
@@ -39,7 +38,7 @@ func TestRenderListNotesText(t *testing.T) {
 		{
 			Note: privacytypes.Note{
 				Amount:  math.NewInt(3).BigInt(),
-				AssetID: privacycrypto.HashString("uclair"),
+				AssetID: privacytypes.ComputeAssetIDV1("uclair"),
 			},
 			Nullifier: "1122334455667788",
 			IsSpent:   true,
@@ -144,35 +143,35 @@ func TestPrintLocalWalletSaveWarning(t *testing.T) {
 }
 
 func TestBuildSpendableAssetTotals(t *testing.T) {
-	uclairAssetIDHex, err := canonicalFieldHexFromBigInt(privacycrypto.HashString("uclair"))
+	uclairAssetIDHex, err := canonicalFieldHexFromBigInt(privacytypes.ComputeAssetIDV1("uclair"))
 	require.NoError(t, err)
-	uatomAssetIDHex, err := canonicalFieldHexFromBigInt(privacycrypto.HashString("uatom"))
+	uatomAssetIDHex, err := canonicalFieldHexFromBigInt(privacytypes.ComputeAssetIDV1("uatom"))
 	require.NoError(t, err)
 
 	totals := buildSpendableAssetTotals([]FoundNote{
 		{
-			Note:    privacytypes.Note{Amount: math.NewInt(7).BigInt(), AssetID: privacycrypto.HashString("uclair")},
+			Note:    privacytypes.Note{Amount: math.NewInt(7).BigInt(), AssetID: privacytypes.ComputeAssetIDV1("uclair")},
 			IsSpent: false,
 		},
 		{
-			Note:    privacytypes.Note{Amount: math.NewInt(2).BigInt(), AssetID: privacycrypto.HashString("uatom")},
+			Note:    privacytypes.Note{Amount: math.NewInt(2).BigInt(), AssetID: privacytypes.ComputeAssetIDV1("uatom")},
 			IsSpent: false,
 		},
 		{
-			Note:    privacytypes.Note{Amount: math.NewInt(5).BigInt(), AssetID: privacycrypto.HashString("uclair")},
+			Note:    privacytypes.Note{Amount: math.NewInt(5).BigInt(), AssetID: privacytypes.ComputeAssetIDV1("uclair")},
 			IsSpent: false,
 		},
 		{
-			Note:    privacytypes.Note{Amount: math.NewInt(9).BigInt(), AssetID: privacycrypto.HashString("uclair")},
+			Note:    privacytypes.Note{Amount: math.NewInt(9).BigInt(), AssetID: privacytypes.ComputeAssetIDV1("uclair")},
 			IsSpent: true,
 		},
 	})
 
 	require.Len(t, totals, 2)
-	require.Equal(t, uclairAssetIDHex, totals[0].AssetIDHex)
-	require.Equal(t, "12", totals[0].Total.String())
-	require.Equal(t, uatomAssetIDHex, totals[1].AssetIDHex)
-	require.Equal(t, "2", totals[1].Total.String())
+	require.Equal(t, uatomAssetIDHex, totals[0].AssetIDHex)
+	require.Equal(t, "2", totals[0].Total.String())
+	require.Equal(t, uclairAssetIDHex, totals[1].AssetIDHex)
+	require.Equal(t, "12", totals[1].Total.String())
 }
 
 func TestShortNullifier(t *testing.T) {

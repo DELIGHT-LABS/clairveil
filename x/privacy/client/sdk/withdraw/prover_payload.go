@@ -221,7 +221,7 @@ func ValidatePreparedWithdrawProverPayloadMetadata(payload PreparedWithdrawProve
 	if err != nil {
 		return err
 	}
-	if assetID.Cmp(privacycrypto.HashString(payload.AssetDenom)) != 0 {
+	if assetID.Cmp(privacytypes.ComputeAssetIDV1(payload.AssetDenom)) != 0 {
 		return fmt.Errorf("withdraw prover payload asset_denom %q does not match asset_id_hex %s", payload.AssetDenom, payload.AssetIDHex)
 	}
 
@@ -469,7 +469,17 @@ func buildSpendAssignmentFromPreparedWithdrawPayload(payload PreparedWithdrawPro
 		assignment.PathHelper[depth] = pathHelpers[depth]
 	}
 
-	expectedNullifier := privacycrypto.MimcHash(
+	noteCommitment := privacytypes.ComputeNoteCommitmentV1(
+		pointAffineCoordinate(spendPubKey, true),
+		pointAffineCoordinate(spendPubKey, false),
+		pointAffineCoordinate(viewPubKey, true),
+		pointAffineCoordinate(viewPubKey, false),
+		amount,
+		assetID,
+		randomness,
+	)
+	expectedNullifier := privacytypes.ComputeNoteNullifierV1(
+		noteCommitment,
 		randomness,
 		pointAffineCoordinate(spendPubKey, true),
 		pointAffineCoordinate(spendPubKey, false),

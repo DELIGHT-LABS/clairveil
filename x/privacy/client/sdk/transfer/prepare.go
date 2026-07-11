@@ -73,8 +73,8 @@ func PrepareJoinSplitTransfer(
 		return nil, err
 	}
 	for i, foundNote := range input.Inputs {
-		if err := privacytypes.ValidateShieldedAmount(fmt.Sprintf("input note %d amount", i), foundNote.Note.Amount); err != nil {
-			return nil, err
+		if err := foundNote.Note.ValidateV1(); err != nil {
+			return nil, fmt.Errorf("invalid input NoteV1 %d: %w", i, err)
 		}
 	}
 	if err := validateCommonInputOwnerAndAsset(input.Inputs); err != nil {
@@ -134,6 +134,12 @@ func PrepareJoinSplitTransfer(
 		AssetID:              input.Inputs[0].Note.AssetID,
 		Randomness:           changeNoteRandomness,
 		Memo:                 "Change",
+	}
+	if err := recipientNote.ValidateV1(); err != nil {
+		return nil, fmt.Errorf("invalid recipient NoteV1: %w", err)
+	}
+	if err := changeNote.ValidateV1(); err != nil {
+		return nil, fmt.Errorf("invalid change NoteV1: %w", err)
 	}
 
 	var assignment circuit.JoinSplitCircuit

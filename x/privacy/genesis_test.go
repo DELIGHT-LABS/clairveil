@@ -33,7 +33,7 @@ func setupPrivacyGenesisKeeper() (*keeper.Keeper, sdk.Context) {
 	tKey := storetypes.NewTransientStoreKey("transient_test")
 	ctx := testutil.DefaultContext(storeKey, tKey)
 
-	k := keeper.NewKeeper(nil, runtime.NewKVStoreService(storeKey), paramtypes.Subspace{}, nil)
+	k := keeper.NewKeeper(privacytypes.ModuleCdc, runtime.NewKVStoreService(storeKey), paramtypes.Subspace{}, nil)
 	return k, ctx
 }
 
@@ -47,6 +47,8 @@ func TestGenesisRoundTrip(t *testing.T) {
 	k, ctx := setupPrivacyGenesisKeeper()
 	identity := setupGenesisCircuitIdentity(t)
 	require.NoError(t, k.SetCircuitSetIdentity(ctx, identity))
+	_, err := k.RegisterCanonicalAssetV1(ctx, "uclair")
+	require.NoError(t, err)
 
 	commitments := [][]byte{
 		fixedFieldBytesFromUint64(1),
@@ -65,6 +67,10 @@ func TestGenesisRoundTrip(t *testing.T) {
 	for _, nullifier := range nullifiers {
 		k.SetNullifier(ctx, nullifier)
 	}
+	require.NoError(t, k.RecordReserveDeposit(ctx, sdk.NewInt64Coin("uclair", 25)))
+	require.NoError(t, k.RecordReserveWithdraw(ctx, sdk.NewInt64Coin("uclair", 4)))
+	_, err = k.AllocatePrivacyGlobalSequence(ctx)
+	require.NoError(t, err)
 
 	exported := ExportGenesis(ctx, *k)
 	require.NotNil(t, exported)
@@ -72,6 +78,11 @@ func TestGenesisRoundTrip(t *testing.T) {
 	require.Equal(t, commitments, exported.Commitments)
 	require.ElementsMatch(t, nullifiers, exported.Nullifiers)
 	require.NotEmpty(t, exported.HistoricalRoots)
+	require.Len(t, exported.AssetRegistry, 1)
+	require.Equal(t, uint64(1), exported.PrivacyGlobalSequence)
+	require.Len(t, exported.MerkleRootSnapshots, len(commitments))
+	require.Equal(t, "25", exported.ReserveBalances[0].TotalDeposited)
+	require.Equal(t, "4", exported.ReserveBalances[0].TotalWithdrawn)
 
 	restoredKeeper, restoredCtx := setupPrivacyGenesisKeeper()
 	InitGenesis(restoredCtx, *restoredKeeper, *exported)
@@ -110,11 +121,12 @@ func TestInitGenesisPanicsWithForgedHistoricalRoot(t *testing.T) {
 	k, ctx := setupPrivacyGenesisKeeper()
 	identity := setupGenesisCircuitIdentity(t)
 
-	state := privacytypes.GenesisState{
-		Commitments:        [][]byte{fixedFieldBytesFromUint64(1)},
-		HistoricalRoots:    [][]byte{fixedFieldBytesFromUint64(99)},
-		CircuitSetIdentity: identity,
-	}
+	state := *privacytypes.DefaultGenesis(identity)
+	state.Commitments = [][]byte{fixedFieldBytesFromUint64(1)}
+	state.HistoricalRoots = [][]byte{fixedFieldBytesFromUint64(99)}
+	state.MerkleRootSnapshots = []*privacytypes.MerkleRootSnapshotV1{{
+		Root: fixedFieldBytesFromUint64(99), LeafCount: 1, Height: 0,
+	}}
 
 	require.PanicsWithError(t, "failed to initialize privacy historical roots: genesis historical root at index 0 does not match any commitment prefix root", func() {
 		InitGenesis(ctx, *k, state)
@@ -125,10 +137,11 @@ func TestInitGenesisRejectsCircuitIdentityMismatchBeforeStateWrites(t *testing.T
 	k, ctx := setupPrivacyGenesisKeeper()
 	identity := setupGenesisCircuitIdentity(t)
 	identity.Circuits[0].VerifyingKeySha256 = strings.Repeat("f", 64)
-	state := privacytypes.GenesisState{
-		Commitments:        [][]byte{fixedFieldBytesFromUint64(1)},
-		CircuitSetIdentity: identity,
-	}
+	state := *privacytypes.DefaultGenesis(identity)
+	state.Commitments = [][]byte{fixedFieldBytesFromUint64(1)}
+	state.MerkleRootSnapshots = []*privacytypes.MerkleRootSnapshotV1{{
+		Root: fixedFieldBytesFromUint64(1), LeafCount: 1, Height: 0,
+	}}
 
 	require.Panics(t, func() { InitGenesis(ctx, *k, state) })
 	require.Equal(t, uint64(0), k.GetLeafCount(ctx))

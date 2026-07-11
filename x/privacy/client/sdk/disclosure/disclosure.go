@@ -2,10 +2,11 @@ package disclosure
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"math/big"
 	"strings"
+
+	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
@@ -13,7 +14,7 @@ import (
 )
 
 const (
-	PayloadVersion = "v5"
+	PayloadVersion = privacytypes.FixedPayloadVersionV1
 	PlaneUser      = "user"
 	PlaneAudit     = "audit"
 	PlaneSelfView  = "self-view"
@@ -52,12 +53,11 @@ func DecodePublicPayloadHex(payloadHex string) (*Payload, error) {
 }
 
 func DecodePublicPayloadJSON(payloadBytes []byte) (*Payload, error) {
-	var payload Payload
-	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
-		return nil, fmt.Errorf("failed to decode disclosure payload JSON: %w", err)
+	fixed, err := privacytypes.UnmarshalDisclosurePlaintextV1(payloadBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode DisclosurePlaintextV1: %w", err)
 	}
-
-	return &payload, nil
+	return payloadFromFixedV1(fixed, 0)
 }
 
 func DecryptPayloadHex(cipherTextHex string, disclosureScalar *big.Int) (*Payload, error) {
@@ -70,12 +70,24 @@ func DecryptPayloadHex(cipherTextHex string, disclosureScalar *big.Int) (*Payloa
 }
 
 func DecryptPayload(cipherText []byte, disclosureScalar *big.Int) (*Payload, error) {
-	plainText, err := privacycrypto.AsymDecrypt(cipherText, disclosureScalar)
+	kind, rawCipherText, err := privacytypes.DecodeEncryptedEnvelopeV1(cipherText)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode disclosure envelope: %w", err)
+	}
+	if kind != privacytypes.EnvelopeUserDisclosureV1 &&
+		kind != privacytypes.EnvelopeAuditDisclosureV1 &&
+		kind != privacytypes.EnvelopeSelfViewDisclosureV1 {
+		return nil, fmt.Errorf("encrypted envelope kind %d is not a disclosure payload", kind)
+	}
+	plainText, err := privacycrypto.AsymDecrypt(rawCipherText, disclosureScalar)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt disclosure payload: %w", err)
 	}
-
-	return DecodePublicPayloadJSON(plainText)
+	fixed, err := privacytypes.UnmarshalDisclosurePlaintextV1(plainText)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode DisclosurePlaintextV1: %w", err)
+	}
+	return payloadFromFixedV1(fixed, kind)
 }
 
 func VerifyPayload(payload *Payload, onChainDigestHex string) (*VerificationReport, error) {
@@ -84,7 +96,7 @@ func VerifyPayload(payload *Payload, onChainDigestHex string) (*VerificationRepo
 		return nil, err
 	}
 
-	verification.LocalDisclosureDigestMatch = strings.EqualFold(strings.TrimSpace(payload.DisclosureDigestHex), expectedDigestHex)
+	verification.LocalDisclosureDigestMatch = strings.TrimSpace(payload.DisclosureDigestHex) == "" || strings.EqualFold(strings.TrimSpace(payload.DisclosureDigestHex), expectedDigestHex)
 	if !verification.LocalDisclosureDigestMatch {
 		return nil, fmt.Errorf("disclosure digest mismatch: payload has %s, expected %s", payload.DisclosureDigestHex, expectedDigestHex)
 	}
@@ -127,7 +139,7 @@ func ComputeExpectedDisclosureDigest(payload *Payload) (string, *VerificationRep
 	if err != nil {
 		return "", nil, err
 	}
-	if amount != nil {
+	if amount != nil && strings.TrimSpace(payload.AssetDenom) != "" {
 		verification.AssetDenomVerified = true
 	}
 
@@ -199,16 +211,17 @@ func ComputeExpectedDisclosureDigest(payload *Payload) (string, *VerificationRep
 }
 
 func DisclosureAmountAndAsset(payload *Payload) (*big.Int, *big.Int, error) {
-	if strings.TrimSpace(payload.Amount) == "" && strings.TrimSpace(payload.AssetIDHex) == "" && strings.TrimSpace(payload.AssetDenom) == "" {
-		return nil, nil, nil
-	}
-	if strings.TrimSpace(payload.Amount) == "" || strings.TrimSpace(payload.AssetIDHex) == "" || strings.TrimSpace(payload.AssetDenom) == "" {
-		return nil, nil, fmt.Errorf("amount disclosure payload must include amount, asset_id_hex, and asset_denom together")
+	if strings.TrimSpace(payload.AssetIDHex) == "" {
+		return nil, nil, fmt.Errorf("disclosure payload must include asset_id_hex")
 	}
 
-	amount, err := privacytypes.ParseCanonicalShieldedAmount("disclosure amount", payload.Amount)
-	if err != nil {
-		return nil, nil, err
+	var amount *big.Int
+	if strings.TrimSpace(payload.Amount) != "" {
+		var err error
+		amount, err = privacytypes.ParseCanonicalShieldedAmount("disclosure amount", payload.Amount)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	assetIDBytes, err := privacyfield.DecodeCanonicalHex(payload.AssetIDHex, "asset id")
@@ -216,9 +229,11 @@ func DisclosureAmountAndAsset(payload *Payload) (*big.Int, *big.Int, error) {
 		return nil, nil, err
 	}
 	assetID := new(big.Int).SetBytes(assetIDBytes)
-	expectedAssetID := privacycrypto.HashString(payload.AssetDenom)
-	if assetID.Cmp(expectedAssetID) != 0 {
-		return nil, nil, fmt.Errorf("asset denom %q does not match asset_id_hex %s", payload.AssetDenom, payload.AssetIDHex)
+	if strings.TrimSpace(payload.AssetDenom) != "" {
+		expectedAssetID := privacytypes.ComputeAssetIDV1(payload.AssetDenom)
+		if assetID.Cmp(expectedAssetID) != 0 {
+			return nil, nil, fmt.Errorf("asset denom %q does not match asset_id_hex %s", payload.AssetDenom, payload.AssetIDHex)
+		}
 	}
 
 	return amount, assetID, nil
@@ -229,7 +244,8 @@ func validatePayloadSemantics(payload *Payload) error {
 		return fmt.Errorf("unsupported disclosure output_index %d (expected %d)", payload.OutputIndex, privacytypes.TransferDisclosureRecipientOutputIndex)
 	}
 
-	amountPresent := payload.Amount != "" || payload.AssetIDHex != "" || payload.AssetDenom != ""
+	amountPresent := payload.Amount != ""
+	assetPresent := payload.AssetIDHex != ""
 	fromPresent := payload.FromShieldedAddress != ""
 	toPresent := payload.ToShieldedAddress != ""
 
@@ -240,6 +256,9 @@ func validatePayloadSemantics(payload *Payload) error {
 		}
 		if err := requireDisclosureField("amount", amountPresent, payload.Policy&privacytypes.TransferPrivacyPolicyDiscloseAmount != 0); err != nil {
 			return err
+		}
+		if !assetPresent {
+			return fmt.Errorf("user disclosure payload requires asset_id_hex")
 		}
 		if err := requireDisclosureField("from_shielded_address", fromPresent, payload.Policy&privacytypes.TransferPrivacyPolicyDiscloseFrom != 0); err != nil {
 			return err
@@ -259,6 +278,82 @@ func validatePayloadSemantics(payload *Payload) error {
 	}
 
 	return nil
+}
+
+func payloadFromFixedV1(fixed *privacytypes.DisclosurePlaintextV1, envelopeKind privacytypes.EncryptedEnvelopeKindV1) (*Payload, error) {
+	if fixed == nil {
+		return nil, fmt.Errorf("DisclosurePlaintextV1 is required")
+	}
+	payload := &Payload{
+		Version:       PayloadVersion,
+		OutputIndex:   fixed.OutputIndex,
+		CommitmentHex: fixedFieldHex(fixed.Commitment),
+		BlindingHex:   fixedFieldHex(fixed.DisclosureBlinding),
+	}
+	switch fixed.Plane {
+	case privacytypes.DisclosurePlaneUserV1:
+		if envelopeKind != 0 && envelopeKind != privacytypes.EnvelopeUserDisclosureV1 {
+			return nil, fmt.Errorf("user disclosure plane does not match envelope kind %d", envelopeKind)
+		}
+		payload.Plane = PlaneUser
+		payload.Policy = fixed.Policy
+	case privacytypes.DisclosurePlaneFullV1:
+		switch envelopeKind {
+		case privacytypes.EnvelopeAuditDisclosureV1:
+			payload.Plane = PlaneAudit
+		case privacytypes.EnvelopeSelfViewDisclosureV1:
+			payload.Plane = PlaneSelfView
+		default:
+			return nil, fmt.Errorf("full disclosure plaintext requires audit or self-view envelope kind")
+		}
+		payload.Policy = privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom
+	default:
+		return nil, fmt.Errorf("unsupported disclosure plane %d", fixed.Plane)
+	}
+
+	payload.AssetIDHex = fixedFieldHex(fixed.AssetID)
+	if fixed.Plane == privacytypes.DisclosurePlaneFullV1 || fixed.Policy&privacytypes.TransferPrivacyPolicyDiscloseAmount != 0 {
+		payload.Amount = fixed.Amount.String()
+	}
+	var err error
+	if fixed.Plane == privacytypes.DisclosurePlaneFullV1 || fixed.Policy&privacytypes.TransferPrivacyPolicyDiscloseFrom != 0 {
+		payload.FromShieldedAddress, err = fixedShieldedAddress(
+			fixed.SenderSpendKeyX, fixed.SenderSpendKeyY, fixed.SenderViewKeyX, fixed.SenderViewKeyY,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("invalid sender key in DisclosurePlaintextV1: %w", err)
+		}
+	}
+	if fixed.Plane == privacytypes.DisclosurePlaneFullV1 || fixed.Policy&privacytypes.TransferPrivacyPolicyDiscloseTo != 0 {
+		payload.ToShieldedAddress, err = fixedShieldedAddress(
+			fixed.RecipientSpendKeyX, fixed.RecipientSpendKeyY, fixed.RecipientViewKeyX, fixed.RecipientViewKeyY,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("invalid recipient key in DisclosurePlaintextV1: %w", err)
+		}
+	}
+	digestHex, _, err := ComputeExpectedDisclosureDigest(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to recompute fixed disclosure digest: %w", err)
+	}
+	payload.DisclosureDigestHex = digestHex
+	return payload, nil
+}
+
+func fixedFieldHex(value *big.Int) string {
+	if value == nil {
+		return ""
+	}
+	return hex.EncodeToString(value.FillBytes(make([]byte, 32)))
+}
+
+func fixedShieldedAddress(spendX, spendY, viewX, viewY *big.Int) (string, error) {
+	var spend, view crypto_tedwards.PointAffine
+	spend.X.SetBigInt(spendX)
+	spend.Y.SetBigInt(spendY)
+	view.X.SetBigInt(viewX)
+	view.Y.SetBigInt(viewY)
+	return privacytypes.EncodeShieldedAddressWithView(&spend, &view)
 }
 
 func requireDisclosureField(name string, present, required bool) error {

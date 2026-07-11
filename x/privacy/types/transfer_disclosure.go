@@ -48,9 +48,15 @@ func ComputeTransferDisclosureDigestBytes(
 	if err := validateDisclosureBlinding(disclosureBlinding); err != nil {
 		return nil, fmt.Errorf("user disclosure blinding: %w", err)
 	}
+	if err := validateCanonicalNoteField("user disclosure asset id", assetID); err != nil {
+		return nil, err
+	}
+	if assetID.Sign() == 0 {
+		return nil, fmt.Errorf("user disclosure asset id must be non-zero")
+	}
 
 	selectedAmount := big.NewInt(0)
-	selectedAssetID := big.NewInt(0)
+	selectedAssetID := new(big.Int).Set(assetID)
 	selectedFromSpendX := big.NewInt(0)
 	selectedFromSpendY := big.NewInt(0)
 	selectedFromViewX := big.NewInt(0)
@@ -64,11 +70,7 @@ func ComputeTransferDisclosureDigestBytes(
 		if amount == nil {
 			return nil, fmt.Errorf("amount is required for amount disclosure")
 		}
-		if assetID == nil {
-			return nil, fmt.Errorf("asset id is required for amount disclosure")
-		}
 		selectedAmount = new(big.Int).Set(amount)
-		selectedAssetID = new(big.Int).Set(assetID)
 	}
 
 	if policy&TransferPrivacyPolicyDiscloseFrom != 0 {

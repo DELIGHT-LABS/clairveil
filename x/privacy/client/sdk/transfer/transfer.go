@@ -10,7 +10,6 @@ import (
 
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
-	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -465,7 +464,7 @@ func removeSelectedInputNotes(notes []privacyscan.FoundNote, inputs [2]privacysc
 }
 
 func SummarizeSpendableNotesByDenom(notes []privacyscan.FoundNote, denom string) ([]privacyscan.FoundNote, *big.Int) {
-	targetAssetID := privacycrypto.HashString(denom)
+	targetAssetID := privacytypes.ComputeAssetIDV1(denom)
 	spendable := make([]privacyscan.FoundNote, 0, len(notes))
 	total := new(big.Int)
 

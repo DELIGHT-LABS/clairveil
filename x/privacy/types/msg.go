@@ -71,6 +71,16 @@ func validateFieldElementBytesStrict(name string, bz []byte) error {
 	return nil
 }
 
+func validateActiveFieldElementBytesStrict(name string, bz []byte) error {
+	if err := validateFieldElementBytesStrict(name, bz); err != nil {
+		return err
+	}
+	if bytes.Equal(bz, make([]byte, expectedFieldElementBytes)) {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "%s must be non-zero", name)
+	}
+	return nil
+}
+
 func validateTransferPayload(root []byte, nullifiers, newCommitments, cipherTexts, viewTags [][]byte) error {
 	if len(nullifiers) != expectedJoinSplitElements {
 		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "transfer requires exactly 2 nullifiers; got %d", len(nullifiers))
@@ -90,7 +100,7 @@ func validateTransferPayload(root []byte, nullifiers, newCommitments, cipherText
 	}
 
 	for i, nullifier := range nullifiers {
-		if err := validateFieldElementBytesStrict("nullifier", nullifier); err != nil {
+		if err := validateActiveFieldElementBytesStrict("nullifier", nullifier); err != nil {
 			return errorsmod.Wrapf(err, "nullifier index %d", i)
 		}
 	}
@@ -99,7 +109,7 @@ func validateTransferPayload(root []byte, nullifiers, newCommitments, cipherText
 	}
 
 	for i, commitment := range newCommitments {
-		if err := validateFieldElementBytesStrict("commitment", commitment); err != nil {
+		if err := validateActiveFieldElementBytesStrict("commitment", commitment); err != nil {
 			return errorsmod.Wrapf(err, "commitment index %d", i)
 		}
 	}
@@ -110,6 +120,11 @@ func validateTransferPayload(root []byte, nullifiers, newCommitments, cipherText
 	for i, viewTag := range viewTags {
 		if len(viewTag) != ViewTagLength {
 			return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "view tag index %d must be exactly %d bytes", i, ViewTagLength)
+		}
+	}
+	for i, cipherText := range cipherTexts {
+		if _, err := UnwrapEncryptedEnvelopeV1(cipherText, EnvelopeTransferNoteV1); err != nil {
+			return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "ciphertext index %d is not a canonical transfer-note envelope: %v", i, err)
 		}
 	}
 
@@ -165,9 +180,19 @@ func validateUserDisclosure(
 		if len(targetPubKey) != 0 {
 			return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "public user disclosure must not include a target pubkey")
 		}
+		decoded, err := UnmarshalDisclosurePlaintextV1(payload)
+		if err != nil {
+			return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "public user disclosure payload is not canonical DisclosurePlaintextV1: %v", err)
+		}
+		if decoded.Plane != DisclosurePlaneUserV1 || decoded.OutputIndex != TransferDisclosureRecipientOutputIndex || decoded.Policy != policy {
+			return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "public user disclosure plaintext metadata does not match the transfer")
+		}
 	case UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED:
 		if err := validateDisclosureTargetPubKey("user disclosure target pubkey", targetPubKey); err != nil {
 			return err
+		}
+		if _, err := UnwrapEncryptedEnvelopeV1(payload, EnvelopeUserDisclosureV1); err != nil {
+			return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "user disclosure payload is not a canonical encrypted envelope: %v", err)
 		}
 	case UserDisclosureMode_USER_DISCLOSURE_MODE_NONE:
 		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "user disclosure mode none is only valid for all-private transfers")
@@ -188,6 +213,9 @@ func validateAuditDisclosure(digest, targetPubKey, payload []byte) error {
 	if len(payload) == 0 {
 		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "audit disclosure payload is required for transfer validation")
 	}
+	if _, err := UnwrapEncryptedEnvelopeV1(payload, EnvelopeAuditDisclosureV1); err != nil {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "audit disclosure payload is not a canonical encrypted envelope: %v", err)
+	}
 	return nil
 }
 
@@ -206,6 +234,9 @@ func validateSelfViewDisclosure(fullDigest, digest, payload []byte) error {
 	}
 	if !bytes.Equal(fullDigest, digest) {
 		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "audit and self-view disclosures must use the same full disclosure digest")
+	}
+	if _, err := UnwrapEncryptedEnvelopeV1(payload, EnvelopeSelfViewDisclosureV1); err != nil {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "self-view disclosure payload is not a canonical encrypted envelope: %v", err)
 	}
 	return nil
 }
@@ -240,11 +271,14 @@ func (msg *MsgDeposit) ValidateBasic() error {
 		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, err.Error())
 	}
 
-	if err := validateFieldElementBytesStrict("note commitment", msg.NoteCommitment); err != nil {
+	if err := validateActiveFieldElementBytesStrict("note commitment", msg.NoteCommitment); err != nil {
 		return err
 	}
 	if len(msg.Proof) == 0 {
 		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "deposit proof is required")
+	}
+	if _, err := UnwrapEncryptedEnvelopeV1(msg.EncryptedNote, EnvelopeDepositNoteV1); err != nil {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "encrypted note is not a canonical deposit-note envelope: %v", err)
 	}
 
 	return nil
@@ -290,7 +324,7 @@ func (msg *MsgWithdraw) ValidateBasic() error {
 		return err
 	}
 
-	if err := validateFieldElementBytesStrict("nullifier", msg.Nullifier); err != nil {
+	if err := validateActiveFieldElementBytesStrict("nullifier", msg.Nullifier); err != nil {
 		return err
 	}
 

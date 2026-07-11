@@ -69,6 +69,20 @@ func TestLoadArtifactManifestRejectsLegacyChecksumsJSON(t *testing.T) {
 	require.ErrorContains(t, err, "legacy artifact manifests are not accepted")
 }
 
+func TestLoadArtifactManifestRejectsUnknownStructuredFields(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ArtifactManifestFile)
+	checksums := validPlaceholderChecksums()
+	manifest := ManifestFromChecksums(dir, "", checksums)
+	bz, err := json.Marshal(manifest)
+	require.NoError(t, err)
+	bz = append(bz[:len(bz)-1], []byte(`,"unexpected":true}`)...)
+	require.NoError(t, os.WriteFile(path, bz, 0o600))
+
+	_, err = LoadArtifactManifest(path)
+	require.ErrorContains(t, err, "unknown field")
+}
+
 func TestResolveRuntimeArtifactManifestFallsBackToEnvChecksums(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv(ZKArtifactDirEnv, dir)

@@ -5,13 +5,13 @@ import (
 	"testing"
 
 	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
 	"github.com/consensys/gnark/test"
 	"github.com/stretchr/testify/require"
 
-	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -97,6 +97,34 @@ func TestDepositCircuitRejectsMalformedSpendPubKey(t *testing.T) {
 	assert.ProverFailed(&DepositCircuit{}, assignment, test.WithCurves(ecc.BN254))
 }
 
+func TestDepositCircuitRejectsIdentityAndNonSubgroupKeys(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		x    *big.Int
+		y    *big.Int
+	}{
+		{name: "identity", x: big.NewInt(0), y: big.NewInt(1)},
+		{name: "order two", x: big.NewInt(0), y: new(big.Int).Sub(fr.Modulus(), big.NewInt(1))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assignment := buildValidDepositAssignment(t, big.NewInt(7), big.NewInt(11))
+			assignment.ReceiverViewPubKey.X = tc.x
+			assignment.ReceiverViewPubKey.Y = tc.y
+
+			assert := test.NewAssert(t)
+			assert.ProverFailed(&DepositCircuit{}, assignment, test.WithCurves(ecc.BN254))
+		})
+	}
+}
+
+func TestDepositCircuitRejectsZeroActiveCommitment(t *testing.T) {
+	assignment := buildValidDepositAssignment(t, big.NewInt(7), big.NewInt(11))
+	assignment.Commitment = big.NewInt(0)
+
+	assert := test.NewAssert(t)
+	assert.ProverFailed(&DepositCircuit{}, assignment, test.WithCurves(ecc.BN254))
+}
+
 func buildValidDepositAssignment(t testing.TB, amount, assetID *big.Int) *DepositCircuit {
 	t.Helper()
 
@@ -106,7 +134,7 @@ func buildValidDepositAssignment(t testing.TB, amount, assetID *big.Int) *Deposi
 	spendPubKeyX, spendPubKeyY := pointBigInts(spendPubKey)
 	viewPubKeyX, viewPubKeyY := pointBigInts(viewPubKey)
 
-	commitment := privacycrypto.MimcHash(
+	commitment := privacytypes.ComputeNoteCommitmentV1(
 		spendPubKeyX,
 		spendPubKeyY,
 		viewPubKeyX,

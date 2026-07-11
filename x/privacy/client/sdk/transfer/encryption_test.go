@@ -1,7 +1,6 @@
 package transfer
 
 import (
-	"encoding/json"
 	"math/big"
 	"testing"
 
@@ -23,7 +22,7 @@ func TestEncryptOutputNotesDecryptsWithMatchingViewKeys(t *testing.T) {
 		ReceiverViewPubKeyX:  pointCoordinate(recipientViewPubKey, true),
 		ReceiverViewPubKeyY:  pointCoordinate(recipientViewPubKey, false),
 		Amount:               big.NewInt(7),
-		AssetID:              privacycrypto.HashString("uclair"),
+		AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 		Randomness:           big.NewInt(303),
 		Memo:                 "recipient",
 	}
@@ -33,7 +32,7 @@ func TestEncryptOutputNotesDecryptsWithMatchingViewKeys(t *testing.T) {
 		ReceiverViewPubKeyX:  pointCoordinate(changeViewPubKey, true),
 		ReceiverViewPubKeyY:  pointCoordinate(changeViewPubKey, false),
 		Amount:               big.NewInt(2),
-		AssetID:              privacycrypto.HashString("uclair"),
+		AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 		Randomness:           big.NewInt(404),
 		Memo:                 "change",
 	}
@@ -42,18 +41,22 @@ func TestEncryptOutputNotesDecryptsWithMatchingViewKeys(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, cipherTexts, 2)
 
-	recipientPlainText, err := privacycrypto.AsymDecrypt(cipherTexts[0], recipientViewScalar)
+	recipientCipherText, err := privacytypes.UnwrapEncryptedEnvelopeV1(cipherTexts[0], privacytypes.EnvelopeTransferNoteV1)
 	require.NoError(t, err)
-	changePlainText, err := privacycrypto.AsymDecrypt(cipherTexts[1], changeViewScalar)
+	changeCipherText, err := privacytypes.UnwrapEncryptedEnvelopeV1(cipherTexts[1], privacytypes.EnvelopeTransferNoteV1)
+	require.NoError(t, err)
+	recipientPlainText, err := privacycrypto.AsymDecrypt(recipientCipherText, recipientViewScalar)
+	require.NoError(t, err)
+	changePlainText, err := privacycrypto.AsymDecrypt(changeCipherText, changeViewScalar)
 	require.NoError(t, err)
 
-	recipientJSON, err := json.Marshal(recipientNote)
+	recipientBytes, err := privacytypes.MarshalNotePlaintextV1(&recipientNote)
 	require.NoError(t, err)
-	changeJSON, err := json.Marshal(changeNote)
+	changeBytes, err := privacytypes.MarshalNotePlaintextV1(&changeNote)
 	require.NoError(t, err)
 
-	require.Equal(t, recipientJSON, recipientPlainText)
-	require.Equal(t, changeJSON, changePlainText)
+	require.Equal(t, recipientBytes, recipientPlainText)
+	require.Equal(t, changeBytes, changePlainText)
 	require.NotNil(t, recipientSpendScalar)
 	require.NotNil(t, changeSpendScalar)
 }
@@ -70,7 +73,7 @@ func TestEncryptOutputNotesWithViewTags(t *testing.T) {
 		ReceiverViewPubKeyX:  pointCoordinate(recipientViewPubKey, true),
 		ReceiverViewPubKeyY:  pointCoordinate(recipientViewPubKey, false),
 		Amount:               big.NewInt(7),
-		AssetID:              privacycrypto.HashString("uclair"),
+		AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 		Randomness:           big.NewInt(303),
 		Memo:                 "recipient",
 	}
@@ -80,7 +83,7 @@ func TestEncryptOutputNotesWithViewTags(t *testing.T) {
 		ReceiverViewPubKeyX:  pointCoordinate(changeViewPubKey, true),
 		ReceiverViewPubKeyY:  pointCoordinate(changeViewPubKey, false),
 		Amount:               big.NewInt(2),
-		AssetID:              privacycrypto.HashString("uclair"),
+		AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 		Randomness:           big.NewInt(404),
 		Memo:                 "change",
 	}
@@ -98,19 +101,23 @@ func TestEncryptOutputNotesWithViewTags(t *testing.T) {
 	require.Len(t, viewTags[0], privacytypes.ViewTagLength)
 	require.Len(t, viewTags[1], privacytypes.ViewTagLength)
 
-	recipientPlainText, err := privacycrypto.AsymDecryptWithViewTag(cipherTexts[0], recipientViewScalar, commitments[0], 0, viewTags[0])
+	recipientCipherText, err := privacytypes.UnwrapEncryptedEnvelopeV1(cipherTexts[0], privacytypes.EnvelopeTransferNoteV1)
 	require.NoError(t, err)
-	changePlainText, err := privacycrypto.AsymDecryptWithViewTag(cipherTexts[1], changeViewScalar, commitments[1], 1, viewTags[1])
+	changeCipherText, err := privacytypes.UnwrapEncryptedEnvelopeV1(cipherTexts[1], privacytypes.EnvelopeTransferNoteV1)
+	require.NoError(t, err)
+	recipientPlainText, err := privacycrypto.AsymDecryptWithViewTag(recipientCipherText, recipientViewScalar, commitments[0], 0, viewTags[0])
+	require.NoError(t, err)
+	changePlainText, err := privacycrypto.AsymDecryptWithViewTag(changeCipherText, changeViewScalar, commitments[1], 1, viewTags[1])
 	require.NoError(t, err)
 
-	recipientJSON, err := json.Marshal(recipientNote)
+	recipientBytes, err := privacytypes.MarshalNotePlaintextV1(&recipientNote)
 	require.NoError(t, err)
-	changeJSON, err := json.Marshal(changeNote)
+	changeBytes, err := privacytypes.MarshalNotePlaintextV1(&changeNote)
 	require.NoError(t, err)
-	require.Equal(t, recipientJSON, recipientPlainText)
-	require.Equal(t, changeJSON, changePlainText)
+	require.Equal(t, recipientBytes, recipientPlainText)
+	require.Equal(t, changeBytes, changePlainText)
 
-	_, err = privacycrypto.AsymDecryptWithViewTag(cipherTexts[0], recipientViewScalar, commitments[0], 1, viewTags[0])
+	_, err = privacycrypto.AsymDecryptWithViewTag(recipientCipherText, recipientViewScalar, commitments[0], 1, viewTags[0])
 	require.ErrorIs(t, err, privacycrypto.ErrViewTagMismatch)
 }
 
@@ -123,7 +130,7 @@ func TestEncryptOutputNotesRejectsMissingViewKey(t *testing.T) {
 		ReceiverSpendPubKeyX: pointCoordinate(recipientSpendPubKey, true),
 		ReceiverSpendPubKeyY: pointCoordinate(recipientSpendPubKey, false),
 		Amount:               big.NewInt(1),
-		AssetID:              privacycrypto.HashString("uclair"),
+		AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 		Randomness:           big.NewInt(505),
 	}
 	changeNote := privacytypes.Note{
@@ -132,7 +139,7 @@ func TestEncryptOutputNotesRejectsMissingViewKey(t *testing.T) {
 		ReceiverViewPubKeyX:  pointCoordinate(changeViewPubKey, true),
 		ReceiverViewPubKeyY:  pointCoordinate(changeViewPubKey, false),
 		Amount:               big.NewInt(2),
-		AssetID:              privacycrypto.HashString("uclair"),
+		AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 		Randomness:           big.NewInt(606),
 	}
 

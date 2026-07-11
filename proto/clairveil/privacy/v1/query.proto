@@ -67,6 +67,33 @@ service Query {
   rpc Reserve(QueryReserveRequest) returns (QueryReserveResponse) {
     option (google.api.http).get = "/clairveil/privacy/v1/reserve/{denom}";
   }
+  // Canonical denom으로 AssetRegistryV1 entry 조회
+  rpc AssetByDenom(QueryAssetByDenomRequest)
+      returns (QueryAssetByDenomResponse) {
+    option (google.api.http).get =
+        "/clairveil/privacy/v1/assets/by_denom/{canonical_denom}";
+  }
+  // Canonical 32-byte asset ID로 AssetRegistryV1 entry 조회
+  rpc AssetByID(QueryAssetByIDRequest) returns (QueryAssetByIDResponse) {
+    option (google.api.http).get =
+        "/clairveil/privacy/v1/assets/by_id/{asset_id_hex}";
+  }
+  // Deposit/JoinSplit2x2/future batch 공통 typed scan output 조회
+  rpc PrivacyScan(QueryPrivacyScanRequest) returns (QueryPrivacyScanResponse) {
+    option (google.api.http) = {
+      post: "/clairveil/privacy/v1/privacy_scan"
+      body: "*"
+    };
+  }
+  // 최대 16개 commitment의 path를 하나의 root/height snapshot에서 조회.
+  // 원격 호출은 여러 input note의 linkage를 query provider에 노출할 수 있음.
+  rpc CommitmentPathsAtRoot(QueryCommitmentPathsAtRootRequest)
+      returns (QueryCommitmentPathsAtRootResponse) {
+    option (google.api.http) = {
+      post: "/clairveil/privacy/v1/commitment_paths_at_root"
+      body: "*"
+    };
+  }
 }
 
 // QueryCheckNullifierRequest
@@ -225,4 +252,63 @@ message QueryReserveResponse {
   string total_withdrawn = 4;
   string expected_module_balance = 5;
   bool invariant_holds = 6;
+}
+
+message QueryAssetByDenomRequest { string canonical_denom = 1; }
+
+message QueryAssetByDenomResponse {
+  AssetRegistryEntryV1 asset = 1;
+  string mapping_version = 2;
+}
+
+message QueryAssetByIDRequest { string asset_id_hex = 1; }
+
+message QueryAssetByIDResponse {
+  AssetRegistryEntryV1 asset = 1;
+  string mapping_version = 2;
+}
+
+message QueryPrivacyScanRequest {
+  PrivacyScanCursorV1 after = 1;
+  uint32 output_limit = 2;
+  uint32 event_limit = 3;
+  uint64 max_encoded_bytes = 4;
+  repeated string event_types = 5;
+}
+
+message QueryPrivacyScanResponse {
+  // Summaries are the event boundary and include zero-output events such as
+  // withdrawals. A summary may be repeated on the next page when its outputs
+  // span pages. Consumers MUST collect output_count outputs and observe
+  // has_more=false for that event before marking a multi-output item complete.
+  repeated PrivacyScanSummaryV2 summaries = 1;
+  repeated PrivacyScanOutputV2 outputs = 2;
+  PrivacyScanCursorV1 next_cursor = 3;
+  bool has_more = 4;
+  uint32 output_limit = 5;
+  uint32 event_limit = 6;
+  uint64 max_encoded_bytes = 7;
+  uint32 scanned_event_count = 8;
+  uint64 encoded_bytes = 9;
+  string scan_schema_version = 10;
+}
+
+message QueryCommitmentPathsAtRootRequest {
+  repeated string commitment_hexes = 1;
+  string root_hex = 2;
+  int64 snapshot_height = 3;
+}
+
+message QueryCommitmentPathAtRoot {
+  string commitment_hex = 1;
+  uint64 leaf_index = 2;
+  repeated string path = 3;
+  repeated uint32 path_helper = 4;
+}
+
+message QueryCommitmentPathsAtRootResponse {
+  string root_hex = 1;
+  int64 snapshot_height = 2;
+  uint64 leaf_count = 3;
+  repeated QueryCommitmentPathAtRoot paths = 4;
 }

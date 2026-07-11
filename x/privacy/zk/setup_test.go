@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"cosmossdk.io/log/v2"
@@ -22,23 +21,7 @@ import (
 )
 
 func resetZKSetupStateForTest() {
-	once = sync.Once{}
-	setupErr = nil
-	depositProvingKey = nil
-	depositVerifyingKey = nil
-	depositR1CS = nil
-	spendProvingKey = nil
-	spendVerifyingKey = nil
-	spendR1CS = nil
-	joinSplitProvingKey = nil
-	joinSplitVerifyingKey = nil
-	joinSplitR1CS = nil
-	depositVerifierOnce = sync.Once{}
-	depositVerifierErr = nil
-	spendVerifierOnce = sync.Once{}
-	spendVerifierErr = nil
-	joinVerifierOnce = sync.Once{}
-	joinVerifierErr = nil
+	resetDefaultArtifactRegistryForTest()
 }
 
 func TestArtifactPathUsesEnv(t *testing.T) {
@@ -50,6 +33,41 @@ func TestArtifactPathUsesEnv(t *testing.T) {
 	require.Equal(t, filepath.Join(dir, JoinSplitVKFile), artifactPath(JoinSplitVKFile))
 }
 
+func TestRuntimeRegistryDevelopmentOverrideRequiresDevelopmentEnvironment(t *testing.T) {
+	t.Setenv(ZKArtifactDirEnv, t.TempDir())
+	t.Setenv(ZKAllowDevelopmentArtifactOverrideEnv, "true")
+	t.Setenv(ZKRuntimeEnvironmentEnv, ZKRuntimeEnvironmentProduction)
+	_, err := NewRuntimeArtifactRegistry()
+	require.ErrorContains(t, err, "development-only")
+
+	t.Setenv(ZKRuntimeEnvironmentEnv, ZKRuntimeEnvironmentDevelopment)
+	_, err = NewRuntimeArtifactRegistry()
+	require.NoError(t, err)
+
+	t.Setenv(ZKAllowDevelopmentArtifactOverrideEnv, "1")
+	_, err = NewRuntimeArtifactRegistry()
+	require.ErrorContains(t, err, "must be \"true\" or \"false\"")
+}
+
+func TestDefaultArtifactRegistryIsolatedAcrossEnvironmentChanges(t *testing.T) {
+	resetDefaultArtifactRegistryForTest()
+	firstDir := t.TempDir()
+	secondDir := t.TempDir()
+	firstChecksums := validPlaceholderChecksums()
+	secondChecksums := validPlaceholderChecksums()
+	secondChecksums[SpendVKSHA256Env] = strings.Repeat("b", sha256.Size*2)
+	require.NoError(t, writeTestManifest(firstDir, firstChecksums))
+	require.NoError(t, writeTestManifest(secondDir, secondChecksums))
+
+	t.Setenv(ZKArtifactDirEnv, firstDir)
+	first, err := LoadLocalCircuitSetIdentity()
+	require.NoError(t, err)
+	t.Setenv(ZKArtifactDirEnv, secondDir)
+	second, err := LoadLocalCircuitSetIdentity()
+	require.NoError(t, err)
+	require.NotEqual(t, first.Circuits[1].VerifyingKeySha256, second.Circuits[1].VerifyingKeySha256)
+}
+
 func TestValidateZKSetupFailsOnMissingArtifacts(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv(ZKArtifactDirEnv, dir)
@@ -57,11 +75,11 @@ func TestValidateZKSetupFailsOnMissingArtifacts(t *testing.T) {
 
 	err := ValidateZKSetup()
 	require.Error(t, err)
-	require.Contains(t, err.Error(), DepositR1CSFile)
+	require.Contains(t, err.Error(), ArtifactManifestFile)
 
 	_, err = GetSpendR1CS()
 	require.Error(t, err)
-	require.Contains(t, err.Error(), DepositR1CSFile)
+	require.Contains(t, err.Error(), ArtifactManifestFile)
 
 	entries, readErr := os.ReadDir(dir)
 	require.NoError(t, readErr)
@@ -133,6 +151,27 @@ func TestRunPreflightStrictRejectsMissingArtifacts(t *testing.T) {
 	err := RunPreflight(log.NewNopLogger())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "privacy zk preflight failed")
+}
+
+func TestRunProverPreflightChecksOnlySelectedCircuitArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(ZKArtifactDirEnv, dir)
+	t.Setenv(ZKPreflightModeEnv, string(ZKPreflightStrict))
+	require.NoError(t, writeTestArtifacts(dir))
+	for _, filename := range []string{DepositR1CSFile, DepositPKFile, DepositVKFile, SpendVKFile, JoinSplitVKFile} {
+		require.NoError(t, os.Remove(filepath.Join(dir, filename)))
+	}
+
+	err := RunProverPreflight(log.NewNopLogger(), []CircuitID{CircuitSpend, CircuitJoinSplit})
+	require.NoError(t, err)
+	registry, err := DefaultArtifactRegistry()
+	require.NoError(t, err)
+	registry.cacheMu.Lock()
+	require.NotNil(t, registry.cache["spend:r1cs"].value)
+	require.NotNil(t, registry.cache["spend:proving_key"].value)
+	require.NotNil(t, registry.cache["joinsplit:r1cs"].value)
+	require.NotNil(t, registry.cache["joinsplit:proving_key"].value)
+	registry.cacheMu.Unlock()
 }
 
 func TestRunPreflightStrictRejectsManifestChecksumMismatch(t *testing.T) {

@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
-	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -268,7 +267,7 @@ func recursiveTransferFoundNote(amount int64, denom string, nullifier string, he
 	return privacyscan.FoundNote{
 		Note: privacytypes.Note{
 			Amount:  big.NewInt(amount),
-			AssetID: privacycrypto.HashString(denom),
+			AssetID: privacytypes.ComputeAssetIDV1(denom),
 		},
 		Nullifier: nullifier,
 		Height:    height,

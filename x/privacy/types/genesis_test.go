@@ -24,19 +24,15 @@ func TestDefaultGenesisRequiresCircuitIdentity(t *testing.T) {
 }
 
 func TestGenesisValidateRejectsMissingCircuitIdentity(t *testing.T) {
-	gs := GenesisState{
-		Commitments:     [][]byte{},
-		HistoricalRoots: [][]byte{},
-		Nullifiers:      [][]byte{},
-	}
+	gs := *DefaultGenesis(validTestCircuitSetIdentity())
+	gs.CircuitSetIdentity = nil
 
 	require.ErrorContains(t, gs.Validate(), "circuit_set_identity: is required")
 }
 
 func TestGenesisValidateRejectsInvalidLength(t *testing.T) {
-	gs := GenesisState{
-		Commitments: [][]byte{{0x01}},
-	}
+	gs := *DefaultGenesis(validTestCircuitSetIdentity())
+	gs.Commitments = [][]byte{{0x01}}
 
 	require.Error(t, gs.Validate())
 }
@@ -44,9 +40,8 @@ func TestGenesisValidateRejectsInvalidLength(t *testing.T) {
 func TestGenesisValidateRejectsNonCanonicalFieldBytes(t *testing.T) {
 	nonCanonical := fr.Modulus().Bytes()
 
-	gs := GenesisState{
-		Nullifiers: [][]byte{nonCanonical[:]},
-	}
+	gs := *DefaultGenesis(validTestCircuitSetIdentity())
+	gs.Nullifiers = [][]byte{nonCanonical[:]}
 
 	require.Error(t, gs.Validate())
 }
@@ -55,13 +50,38 @@ func TestGenesisValidateRejectsDuplicateStateElements(t *testing.T) {
 	value := make([]byte, genesisFieldElementByteSize)
 	value[len(value)-1] = 1
 
-	for _, gs := range []GenesisState{
-		{Commitments: [][]byte{value, append([]byte(nil), value...)}},
-		{HistoricalRoots: [][]byte{value, append([]byte(nil), value...)}},
-		{Nullifiers: [][]byte{value, append([]byte(nil), value...)}},
-	} {
-		require.ErrorContains(t, gs.Validate(), "duplicates index 0")
-	}
+	commitmentState := *DefaultGenesis(validTestCircuitSetIdentity())
+	commitmentState.Commitments = [][]byte{value, append([]byte(nil), value...)}
+	require.ErrorContains(t, commitmentState.Validate(), "duplicates index 0")
+
+	rootState := *DefaultGenesis(validTestCircuitSetIdentity())
+	rootState.HistoricalRoots = [][]byte{value, append([]byte(nil), value...)}
+	require.ErrorContains(t, rootState.Validate(), "duplicates index 0")
+
+	nullifierState := *DefaultGenesis(validTestCircuitSetIdentity())
+	nullifierState.Nullifiers = [][]byte{value, append([]byte(nil), value...)}
+	require.ErrorContains(t, nullifierState.Validate(), "duplicates index 0")
+}
+
+func TestGenesisValidateRejectsLegacyStateVersion(t *testing.T) {
+	gs := *DefaultGenesis(validTestCircuitSetIdentity())
+	gs.StateVersion = 1
+	require.ErrorContains(t, gs.Validate(), "fresh reset")
+}
+
+func TestGenesisValidateRejectsAssetRegistryMismatch(t *testing.T) {
+	gs := *DefaultGenesis(validTestCircuitSetIdentity())
+	gs.AssetRegistry[0].AssetId = make([]byte, genesisFieldElementByteSize)
+	gs.AssetRegistry[0].AssetId[31] = 1
+	require.ErrorContains(t, gs.Validate(), "does not match canonical denom")
+}
+
+func TestGenesisValidateRequiresRootSnapshotPerCommitment(t *testing.T) {
+	gs := *DefaultGenesis(validTestCircuitSetIdentity())
+	value := make([]byte, genesisFieldElementByteSize)
+	value[31] = 1
+	gs.Commitments = [][]byte{value}
+	require.ErrorContains(t, gs.Validate(), "must contain every commitment prefix")
 }
 
 func validTestCircuitSetIdentity() *CircuitSetIdentity {

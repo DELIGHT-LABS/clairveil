@@ -15,7 +15,6 @@ import (
 	"github.com/consensys/gnark/test"
 	"github.com/stretchr/testify/require"
 
-	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -102,6 +101,22 @@ func TestSpendCircuitRejectsMalformedSpendPubKey(t *testing.T) {
 	assert.ProverFailed(&SpendCircuit{}, assignment, test.WithCurves(ecc.BN254))
 }
 
+func TestSpendCircuitRejectsZeroActiveNullifier(t *testing.T) {
+	assignment := buildValidSpendAssignment(t, big.NewInt(424242))
+	assignment.Nullifier = big.NewInt(0)
+
+	assert := test.NewAssert(t)
+	assert.ProverFailed(&SpendCircuit{}, assignment, test.WithCurves(ecc.BN254))
+}
+
+func TestSpendCircuitRejectsLiteralZeroForHigherEmptySibling(t *testing.T) {
+	assignment := buildValidSpendAssignment(t, big.NewInt(424242))
+	assignment.Path[1] = big.NewInt(0)
+
+	assert := test.NewAssert(t)
+	assert.ProverFailed(&SpendCircuit{}, assignment, test.WithCurves(ecc.BN254))
+}
+
 func TestSpendCircuitRejectsMalformedSignaturePoint(t *testing.T) {
 	assignment := buildValidSpendAssignment(t, big.NewInt(424242))
 	x, y := invalidEdwardsPointForTest(t)
@@ -137,7 +152,7 @@ func buildValidSpendAssignmentWithAmount(t testing.TB, recipient, amount *big.In
 	spendPubKeyX, spendPubKeyY := pointBigInts(spendPubKey)
 	viewPubKeyX, viewPubKeyY := pointBigInts(viewPubKey)
 
-	commitment := privacycrypto.MimcHash(
+	commitment := privacytypes.ComputeNoteCommitmentV1(
 		spendPubKeyX,
 		spendPubKeyY,
 		viewPubKeyX,
@@ -147,7 +162,7 @@ func buildValidSpendAssignmentWithAmount(t testing.TB, recipient, amount *big.In
 		randomness,
 	)
 	root := merkleRootFromLeaf(commitment)
-	nullifier := privacycrypto.MimcHash(randomness, spendPubKeyX, spendPubKeyY)
+	nullifier := privacytypes.ComputeNoteNullifierV1(commitment, randomness, spendPubKeyX, spendPubKeyY)
 	chainDomainHi := big.NewInt(101)
 	chainDomainLo := big.NewInt(103)
 	recipientDigestLo := big.NewInt(107)
@@ -180,7 +195,7 @@ func buildValidSpendAssignmentWithAmount(t testing.TB, recipient, amount *big.In
 	}
 
 	for i := 0; i < MerkleDepth; i++ {
-		assignment.Path[i] = big.NewInt(0)
+		assignment.Path[i] = privacytypes.EmptyNoteTreeRootV1(uint32(i))
 		assignment.PathHelper[i] = 0
 	}
 
@@ -195,10 +210,8 @@ func buildValidSpendAssignmentWithAmount(t testing.TB, recipient, amount *big.In
 
 func merkleRootFromLeaf(leaf *big.Int) *big.Int {
 	current := new(big.Int).Set(leaf)
-	zero := big.NewInt(0)
-
 	for i := 0; i < MerkleDepth; i++ {
-		current = privacycrypto.MimcHash(current, zero)
+		current = privacytypes.ComputeNoteTreeNodeV1(uint32(i), current, privacytypes.EmptyNoteTreeRootV1(uint32(i)))
 	}
 
 	return current

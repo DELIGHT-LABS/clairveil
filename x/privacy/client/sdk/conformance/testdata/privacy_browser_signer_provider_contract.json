@@ -28,14 +28,14 @@
       "remaining_leaves": 4294967289
     },
     "commitment_info_request": {
-      "commitment_hex": "040ca9769b47ec70882162daa846e82dcae14d5d3a5ad2a0ae9e6453c431b204"
+      "commitment_hex": "2a1e6d82d85daa4492b715757f758a1902fe07cddfcf52ac47aee47b489a58b4"
     },
     "commitment_info_response": {
       "found": true,
       "leaf_index": 9
     },
     "disclosure_config_response": {
-      "payload_version": "v5",
+      "payload_version": "privacy-fixed-v1",
       "audit_disclosure_required": true,
       "supported_user_policies": [
         "all-private",
@@ -55,7 +55,7 @@
     },
     "circuit_config_response": {
       "schema_version": "v1",
-      "active_set_id": "privacy-intent-v2",
+      "active_set_id": "privacy-note-v1",
       "curve": "BN254",
       "manifest_file": "",
       "manifest_available": false,
@@ -86,7 +86,7 @@
       ],
       "circuit_set_identity": {
         "schema_version": "v1",
-        "circuit_set_id": "privacy-intent-v2",
+        "circuit_set_id": "privacy-note-v1",
         "curve": "BN254",
         "circuits": [
           {
@@ -131,8 +131,8 @@
           "outputs": [
             {
               "output_index": 0,
-              "commitment_hex": "040ca9769b47ec70882162daa846e82dcae14d5d3a5ad2a0ae9e6453c431b204",
-              "encrypted_note_hex": "52d37cfe19dd72aaf796b58e31994439fb2744f8a7cba3d7525e136472fea1fe3c8a5d1ceddc633059bde445596e7af8e9a4a9eafbe0402028e420c4d3e3851dd726be4879507e552747579c2be7355f10581a415acc18ec4a2b646602526cdf259b16ef4c276b01ab579b98482ebe69ac17f10e9ae508b6df43d0bf140bde224cda691c5c06f15d66aa73c44a3597bd1da49e4f5d5f7465156727ca8193430f88911b15580a7c480ed1076750bcaaee0f7c3ea1c2c07c973ecfb7166f551d62acc1f5551196a139af1e53a8835ecde013abfbec848575922506be569be5357e496b02bb60591be284a27fe30876a464b0e634dfc4050677f4ebeac7da05cb3691751d06509280af2b28be1ee80b5943b3c8ab3dc1e36026a3f5c527151d57d9b1966cc40ca594fca1471403d05afb8fe44235e4725f6e7996de31821100c324595974cb7768732da65086df0f21cbbc1f55501b981f6d003bb84c232f5c016f29a431591e60a97063c15f78e4fc41124631d381bc0d96639a4bdcb2f889c08c5c89ebd30558a3c2f72bea021f4ec60b94aa7a3465a7ed54a624373276b00480b5386243091172a57370091b79b3bdd60502961bd3d517b686129bc463f302b1c6a13dfe3880919be96d0463593136e7c23897f55f8daf425e7440d9eee96f30da1ad5d8da18",
+              "commitment_hex": "2a1e6d82d85daa4492b715757f758a1902fe07cddfcf52ac47aee47b489a58b4",
+              "encrypted_note_hex": "91450cd503ada8484ee117467a50870300010100b608412e815010d26c2dee87150e86ea2168640d4592ce01e141cc305a136502e95aba210c817019197657acaa77cc79bac61df083f97dfd445ee9e8ad305aedddec773072d77020b17c015ca4986c1da2856902ee2059f895ca126c708c62f6ab8d06fe49e82522966c858ae290fff6fa758cf2761ff518165b83ca11edb3500034d0eca2dce3a4882746f020b137a1a3599d7c35d2775f90401fe8747fde87f00a044867d56f2f7e5e9c4a74dfedeaf99dc4ca6bb9873b1236e2d59ff468f6272011d00ebf6d63a2081fbad910ad1f9548ff3d30232ab7d218d41af17148e8b59eba3b8a9d35e9c1ff58ab6c0cecd1476f5c470f819606fad6050f2ea1a5ac96f47934cac2f0571f35aff2e6cf956d523bb0a19e66f956f95cf23f0c30696e25885112af8a5d616469e74fdeccd59558fb5c4b354dbc9b1c71bf9a7acb83289d8b7be9edea81ab36f089e94468756e7154870e17a16dc41c7fcb599b24ca76cdd67ea2a00d24aa760d0acf3d3fdae36f4208395821afa555f8",
               "leaf_index_found": true
             }
           ],
@@ -162,7 +162,7 @@
             }
           ],
           "nullifier_hexes": [
-            "17de68060ab4e6225193aa9f6d7c563f1846518000b3f335a9f77fb658198628",
+            "10c686f41406a64f3132cbb11c2ce925443e220e0c48766538988500da1312eb",
             "0000000000000000000000000000000000000000000000000000000000000001"
           ]
         }
@@ -193,11 +193,11 @@
           "attributes": [
             {
               "key": "commitment",
-              "value": "040ca9769b47ec70882162daa846e82dcae14d5d3a5ad2a0ae9e6453c431b204"
+              "value": "2a1e6d82d85daa4492b715757f758a1902fe07cddfcf52ac47aee47b489a58b4"
             },
             {
               "key": "encrypted_note",
-              "value": "52d37cfe19dd72aaf796b58e31994439fb2744f8a7cba3d7525e136472fea1fe3c8a5d1ceddc633059bde445596e7af8e9a4a9eafbe0402028e420c4d3e3851dd726be4879507e552747579c2be7355f10581a415acc18ec4a2b646602526cdf259b16ef4c276b01ab579b98482ebe69ac17f10e9ae508b6df43d0bf140bde224cda691c5c06f15d66aa73c44a3597bd1da49e4f5d5f7465156727ca8193430f88911b15580a7c480ed1076750bcaaee0f7c3ea1c2c07c973ecfb7166f551d62acc1f5551196a139af1e53a8835ecde013abfbec848575922506be569be5357e496b02bb60591be284a27fe30876a464b0e634dfc4050677f4ebeac7da05cb3691751d06509280af2b28be1ee80b5943b3c8ab3dc1e36026a3f5c527151d57d9b1966cc40ca594fca1471403d05afb8fe44235e4725f6e7996de31821100c324595974cb7768732da65086df0f21cbbc1f55501b981f6d003bb84c232f5c016f29a431591e60a97063c15f78e4fc41124631d381bc0d96639a4bdcb2f889c08c5c89ebd30558a3c2f72bea021f4ec60b94aa7a3465a7ed54a624373276b00480b5386243091172a57370091b79b3bdd60502961bd3d517b686129bc463f302b1c6a13dfe3880919be96d0463593136e7c23897f55f8daf425e7440d9eee96f30da1ad5d8da18"
+              "value": "91450cd503ada8484ee117467a50870300010100b608412e815010d26c2dee87150e86ea2168640d4592ce01e141cc305a136502e95aba210c817019197657acaa77cc79bac61df083f97dfd445ee9e8ad305aedddec773072d77020b17c015ca4986c1da2856902ee2059f895ca126c708c62f6ab8d06fe49e82522966c858ae290fff6fa758cf2761ff518165b83ca11edb3500034d0eca2dce3a4882746f020b137a1a3599d7c35d2775f90401fe8747fde87f00a044867d56f2f7e5e9c4a74dfedeaf99dc4ca6bb9873b1236e2d59ff468f6272011d00ebf6d63a2081fbad910ad1f9548ff3d30232ab7d218d41af17148e8b59eba3b8a9d35e9c1ff58ab6c0cecd1476f5c470f819606fad6050f2ea1a5ac96f47934cac2f0571f35aff2e6cf956d523bb0a19e66f956f95cf23f0c30696e25885112af8a5d616469e74fdeccd59558fb5c4b354dbc9b1c71bf9a7acb83289d8b7be9edea81ab36f089e94468756e7154870e17a16dc41c7fcb599b24ca76cdd67ea2a00d24aa760d0acf3d3fdae36f4208395821afa555f8"
             }
           ]
         }
@@ -208,19 +208,19 @@
     },
     "check_nullifiers_request": {
       "nullifiers": [
-        "17de68060ab4e6225193aa9f6d7c563f1846518000b3f335a9f77fb658198628"
+        "10c686f41406a64f3132cbb11c2ce925443e220e0c48766538988500da1312eb"
       ]
     },
     "check_nullifiers_response": {
       "statuses": [
         {
-          "nullifier": "17de68060ab4e6225193aa9f6d7c563f1846518000b3f335a9f77fb658198628",
+          "nullifier": "10c686f41406a64f3132cbb11c2ce925443e220e0c48766538988500da1312eb",
           "used": false
         }
       ]
     },
     "check_nullifier_request": {
-      "nullifier_hex": "17de68060ab4e6225193aa9f6d7c563f1846518000b3f335a9f77fb658198628"
+      "nullifier_hex": "10c686f41406a64f3132cbb11c2ce925443e220e0c48766538988500da1312eb"
     },
     "check_nullifier_response": {
       "used": false
@@ -231,7 +231,7 @@
       "audit_master_pubkey_hex": "8cb0ef883bce364e0d946867ebd7a7f84ec153eeb28e5973ffe9381ec8d7940a"
     },
     "merkle_path_request": {
-      "commitment_hex": "040ca9769b47ec70882162daa846e82dcae14d5d3a5ad2a0ae9e6453c431b204"
+      "commitment_hex": "2a1e6d82d85daa4492b715757f758a1902fe07cddfcf52ac47aee47b489a58b4"
     },
     "merkle_path_response": {
       "root_hex": "0000000000000000000000000000000000000000000000000000000000000005",

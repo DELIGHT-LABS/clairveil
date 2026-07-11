@@ -35,7 +35,7 @@ func deleteMerkleNode(k *Keeper, ctx sdk.Context, level uint8, index uint64) {
 
 func naiveRootFromLeaves(leaves [][]byte) []byte {
 	if len(leaves) == 0 {
-		return zeroNodeBytes()
+		return emptyNodeBytes(MerkleDepth)
 	}
 
 	layer := make([][]byte, len(leaves))
@@ -47,11 +47,11 @@ func naiveRootFromLeaves(leaves [][]byte) []byte {
 
 		for j := 0; j < len(layer); j += 2 {
 			left := layer[j]
-			right := zeroNodeBytes()
+			right := emptyNodeBytes(uint32(i))
 			if j+1 < len(layer) {
 				right = layer[j+1]
 			}
-			nextLayer[j/2] = hashNodes(left, right)
+			nextLayer[j/2] = hashNodes(uint32(i), left, right)
 		}
 
 		layer = nextLayer
@@ -70,9 +70,9 @@ func rootFromPath(commitment []byte, path []string, helper []uint32) ([]byte, er
 		}
 
 		if helper[i] == 0 {
-			current = hashNodes(current, sibling)
+			current = hashNodes(uint32(i), current, sibling)
 		} else {
-			current = hashNodes(sibling, current)
+			current = hashNodes(uint32(i), sibling, current)
 		}
 	}
 
@@ -82,7 +82,7 @@ func rootFromPath(commitment []byte, path []string, helper []uint32) ([]byte, er
 func TestAppendCommitmentIncrementalRoot(t *testing.T) {
 	k, ctx := setupTreeKeeper()
 
-	commitments := [][]byte{{0x01}, {0x02}, {0x03}, {0x04}, {0x05}}
+	commitments := [][]byte{fixedFieldBytes(1), fixedFieldBytes(2), fixedFieldBytes(3), fixedFieldBytes(4), fixedFieldBytes(5)}
 	leaves := make([][]byte, 0, len(commitments))
 
 	for i, commitment := range commitments {
@@ -97,6 +97,42 @@ func TestAppendCommitmentIncrementalRoot(t *testing.T) {
 	}
 
 	require.Equal(t, uint64(len(commitments)), k.GetLeafCount(ctx))
+}
+
+func TestEmptyTreeAndPathUseExactDepthSpecificRoots(t *testing.T) {
+	k, ctx := setupTreeKeeper()
+
+	emptyRoot, err := k.RecalculateRoot(ctx, 0)
+	require.NoError(t, err)
+	require.Equal(t, emptyNodeBytes(MerkleDepth), emptyRoot)
+	require.NotEqual(t, zeroNodeBytes(), emptyRoot)
+
+	commitment := fixedFieldBytes(0x77)
+	require.NoError(t, k.AppendCommitment(ctx, commitment))
+	path, helper, root, err := k.GetPath(ctx, commitment)
+	require.NoError(t, err)
+	require.Len(t, path, MerkleDepth)
+	for level := 0; level < MerkleDepth; level++ {
+		require.Equal(t, hex.EncodeToString(emptyNodeBytes(uint32(level))), path[level], "empty sibling mismatch at level %d", level)
+		require.Zero(t, helper[level])
+	}
+	reconstructed, err := rootFromPath(commitment, path, helper)
+	require.NoError(t, err)
+	require.Equal(t, root, reconstructed)
+}
+
+func TestNoteTreeNodeV1SeparatesLevels(t *testing.T) {
+	left := fixedFieldBytes(1)
+	right := fixedFieldBytes(2)
+	require.NotEqual(t, hashNodes(0, left, right), hashNodes(1, left, right))
+}
+
+func TestAppendCommitmentRejectsZeroAndNonCanonicalEncoding(t *testing.T) {
+	k, ctx := setupTreeKeeper()
+
+	require.ErrorIs(t, k.AppendCommitment(ctx, zeroNodeBytes()), errMerkleZeroCommitment)
+	require.ErrorContains(t, k.AppendCommitment(ctx, []byte{1}), "exactly 32 bytes")
+	require.Zero(t, k.GetLeafCount(ctx))
 }
 
 func TestAppendCommitmentAllowsFinalLeaf(t *testing.T) {
@@ -135,7 +171,7 @@ func TestAppendCommitmentRejectsFullTree(t *testing.T) {
 func TestGetPathFromIncrementalNodes(t *testing.T) {
 	k, ctx := setupTreeKeeper()
 
-	commitments := [][]byte{{0x10}, {0x20}, {0x30}, {0x40}}
+	commitments := [][]byte{fixedFieldBytes(0x10), fixedFieldBytes(0x20), fixedFieldBytes(0x30), fixedFieldBytes(0x40)}
 	for _, commitment := range commitments {
 		require.NoError(t, k.AppendCommitment(ctx, commitment))
 	}
@@ -164,7 +200,7 @@ func TestGetPathFromIncrementalNodes(t *testing.T) {
 func TestGetPathBootstrapsLegacyLeafState(t *testing.T) {
 	k, ctx := setupTreeKeeper()
 
-	leaves := [][]byte{{0xaa}, {0xbb}, {0xcc}}
+	leaves := [][]byte{fixedFieldBytes(0xaa), fixedFieldBytes(0xbb), fixedFieldBytes(0xcc)}
 	for i, leaf := range leaves {
 		k.SetLeaf(ctx, uint64(i), leaf)
 	}
@@ -189,9 +225,9 @@ func TestGetPathBootstrapsLegacyLeafState(t *testing.T) {
 func TestAppendCommitmentRejectsDuplicateWithoutChangingState(t *testing.T) {
 	k, ctx := setupTreeKeeper()
 
-	dup := []byte{0x42}
+	dup := fixedFieldBytes(0x42)
 	require.NoError(t, k.AppendCommitment(ctx, dup))
-	require.NoError(t, k.AppendCommitment(ctx, []byte{0x99}))
+	require.NoError(t, k.AppendCommitment(ctx, fixedFieldBytes(0x99)))
 	rootBefore := append([]byte(nil), k.GetMerkleNode(ctx, uint8(MerkleDepth), 0)...)
 	countBefore := k.GetLeafCount(ctx)
 
@@ -210,8 +246,8 @@ func TestAppendCommitmentRejectsDuplicateWithoutChangingState(t *testing.T) {
 func TestGetPathNotFound(t *testing.T) {
 	k, ctx := setupTreeKeeper()
 
-	require.NoError(t, k.AppendCommitment(ctx, []byte{0x01}))
-	_, _, _, err := k.GetPath(ctx, []byte{0xff})
+	require.NoError(t, k.AppendCommitment(ctx, fixedFieldBytes(0x01)))
+	_, _, _, err := k.GetPath(ctx, fixedFieldBytes(0xff))
 	require.Error(t, err)
 }
 

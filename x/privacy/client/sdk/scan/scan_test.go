@@ -51,6 +51,29 @@ func TestParseNoteBytesAndBuildFoundNote(t *testing.T) {
 	require.False(t, found.IsSpent)
 }
 
+func TestParseNoteBytesRejectsInvalidNoteV1Key(t *testing.T) {
+	rootSeed := []byte("scan-invalid-note-v1")
+	_, spendPubKey, _ := privacyidentity.DeriveSpendKeys(rootSeed)
+	_, viewPubKey, _ := privacyidentity.DeriveViewKeys(rootSeed)
+	note, err := privacytypes.NewNote(
+		pointBigInt(&spendPubKey.X),
+		pointBigInt(&spendPubKey.Y),
+		pointBigInt(&viewPubKey.X),
+		pointBigInt(&viewPubKey.Y),
+		big.NewInt(7),
+		"uclair",
+		"invalid-key",
+	)
+	require.NoError(t, err)
+	encoded := note.Bytes()
+	copy(encoded[84:116], make([]byte, 32))
+	copy(encoded[116:148], make([]byte, 32))
+	encoded[147] = 1
+
+	_, err = ParseNoteBytes(encoded)
+	require.ErrorContains(t, err, "identity point is not allowed")
+}
+
 func TestProcessScanEventUsesViewTag(t *testing.T) {
 	rootSeed := []byte("scan-view-tag-seed")
 
@@ -71,6 +94,7 @@ func TestProcessScanEventUsesViewTag(t *testing.T) {
 	require.NoError(t, err)
 	cipherText, viewTag, err := privacycrypto.AsymEncryptWithViewTag(note.Bytes(), *viewPubKey, commitmentBytes, 0)
 	require.NoError(t, err)
+	cipherText = wrapTransferNoteCipherText(t, cipherText)
 
 	event := &privacytypes.QueryScanEvent{
 		Sequence:  1,
@@ -124,6 +148,7 @@ func TestProcessScanEventRejectsMismatchedCommitment(t *testing.T) {
 
 	encryptedNote, err := privacycrypto.Encrypt(note.Bytes(), rootSeed)
 	require.NoError(t, err)
+	encryptedNote = wrapDepositNoteCipherText(t, encryptedNote)
 	depositEvent := &privacytypes.QueryScanEvent{
 		Sequence:  1,
 		Height:    22,
@@ -144,6 +169,7 @@ func TestProcessScanEventRejectsMismatchedCommitment(t *testing.T) {
 
 	cipherText, err := privacycrypto.AsymEncrypt(note.Bytes(), *viewPubKey)
 	require.NoError(t, err)
+	cipherText = wrapTransferNoteCipherText(t, cipherText)
 	transferEvent := &privacytypes.QueryScanEvent{
 		Sequence:  2,
 		Height:    23,
@@ -179,4 +205,18 @@ func pointBigInt(value interface{ BigInt(*big.Int) *big.Int }) *big.Int {
 	v := new(big.Int)
 	value.BigInt(v)
 	return v
+}
+
+func wrapDepositNoteCipherText(t testing.TB, raw []byte) []byte {
+	t.Helper()
+	wrapped, err := privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeDepositNoteV1, raw)
+	require.NoError(t, err)
+	return wrapped
+}
+
+func wrapTransferNoteCipherText(t testing.TB, raw []byte) []byte {
+	t.Helper()
+	wrapped, err := privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeTransferNoteV1, raw)
+	require.NoError(t, err)
+	return wrapped
 }

@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
-	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -18,7 +17,7 @@ func TestResolveExactMatchSpendableNoteReturnsExistingNote(t *testing.T) {
 	source := &stubExactMatchNoteSource{
 		responses: [][]privacyscan.FoundNote{
 			{
-				{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacycrypto.HashString("uclair")}},
+				{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}},
 			},
 		},
 	}
@@ -36,10 +35,10 @@ func TestResolveExactMatchSpendableNoteAutoPlansAndRescans(t *testing.T) {
 	source := &stubExactMatchNoteSource{
 		responses: [][]privacyscan.FoundNote{
 			{
-				{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacycrypto.HashString("uclair")}},
+				{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}},
 			},
 			{
-				{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacycrypto.HashString("uclair")}},
+				{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}},
 			},
 		},
 	}
@@ -58,7 +57,7 @@ func TestResolveExactMatchSpendableNoteReturnsGuidanceWithoutAutoPlan(t *testing
 	source := &stubExactMatchNoteSource{
 		responses: [][]privacyscan.FoundNote{
 			{
-				{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacycrypto.HashString("uclair")}},
+				{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}},
 			},
 		},
 	}
@@ -73,7 +72,7 @@ func TestResolveExactMatchSpendableNoteWrapsPlannerError(t *testing.T) {
 	source := &stubExactMatchNoteSource{
 		responses: [][]privacyscan.FoundNote{
 			{
-				{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacycrypto.HashString("uclair")}},
+				{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}},
 			},
 		},
 	}

@@ -8,7 +8,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -29,14 +28,14 @@ func TestSummarizeSpendableNotes(t *testing.T) {
 
 func TestNormalizeFoundNotesDeduplicatesAndSorts(t *testing.T) {
 	duplicate := FoundNote{
-		Note:      privacytypes.Note{Amount: big.NewInt(7), AssetID: privacycrypto.HashString("uclair")},
+		Note:      privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")},
 		Nullifier: "bb",
 		Height:    7,
 		TxHash:    "B2",
 	}
 	notes := []FoundNote{
 		{
-			Note:      privacytypes.Note{Amount: big.NewInt(11), AssetID: privacycrypto.HashString("uclair")},
+			Note:      privacytypes.Note{Amount: big.NewInt(11), AssetID: privacytypes.ComputeAssetIDV1("uclair")},
 			Nullifier: "cc",
 			Height:    11,
 			TxHash:    "C3",
@@ -44,7 +43,7 @@ func TestNormalizeFoundNotesDeduplicatesAndSorts(t *testing.T) {
 		duplicate,
 		duplicate,
 		{
-			Note:      privacytypes.Note{Amount: big.NewInt(5), AssetID: privacycrypto.HashString("uclair")},
+			Note:      privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uclair")},
 			Nullifier: "aa",
 			Height:    3,
 			TxHash:    "A1",
@@ -90,7 +89,7 @@ func TestSaveLocalWalletFileRoundTrip(t *testing.T) {
 		LastHeight: 23,
 		Notes: []FoundNote{
 			{
-				Note:      privacytypes.Note{Amount: big.NewInt(9), AssetID: privacycrypto.HashString("uclair")},
+				Note:      privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uclair")},
 				Nullifier: "aa",
 				TxHash:    "ABCD",
 				Height:    23,

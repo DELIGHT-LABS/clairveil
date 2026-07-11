@@ -2,12 +2,12 @@ package types
 
 import (
 	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	"math/big"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 )
@@ -32,27 +32,41 @@ func NewNote(
 	if err := ValidateShieldedAmount("note amount", amount); err != nil {
 		return nil, err
 	}
-
-	max := new(big.Int).Set(fr.Modulus())
-	randomness, err := rand.Int(rand.Reader, max)
-	if err != nil {
-		return nil, err
+	if _, err := pointFromBigInts(spendPubKeyX, spendPubKeyY); err != nil {
+		return nil, fmt.Errorf("invalid receiver spend public key: %w", err)
+	}
+	if _, err := pointFromBigInts(viewPubKeyX, viewPubKeyY); err != nil {
+		return nil, fmt.Errorf("invalid receiver view public key: %w", err)
+	}
+	if err := sdk.ValidateDenom(assetDenom); err != nil {
+		return nil, fmt.Errorf("invalid canonical asset denom: %w", err)
 	}
 
-	return &Note{
-		ReceiverSpendPubKeyX: spendPubKeyX,
-		ReceiverSpendPubKeyY: spendPubKeyY,
-		ReceiverViewPubKeyX:  viewPubKeyX,
-		ReceiverViewPubKeyY:  viewPubKeyY,
-		Amount:               amount,
-		AssetID:              crypto.HashString(assetDenom),
-		Randomness:           randomness,
-		Memo:                 memo,
-	}, nil
+	max := new(big.Int).Set(fr.Modulus())
+	for {
+		randomness, err := rand.Int(rand.Reader, max)
+		if err != nil {
+			return nil, err
+		}
+
+		note := &Note{
+			ReceiverSpendPubKeyX: new(big.Int).Set(spendPubKeyX),
+			ReceiverSpendPubKeyY: new(big.Int).Set(spendPubKeyY),
+			ReceiverViewPubKeyX:  new(big.Int).Set(viewPubKeyX),
+			ReceiverViewPubKeyY:  new(big.Int).Set(viewPubKeyY),
+			Amount:               new(big.Int).Set(amount),
+			AssetID:              ComputeAssetIDV1(assetDenom),
+			Randomness:           randomness,
+			Memo:                 memo,
+		}
+		if note.ComputeCommitment().Sign() != 0 && note.ComputeNullifier().Sign() != 0 {
+			return note, nil
+		}
+	}
 }
 
 func (n *Note) ComputeCommitment() *big.Int {
-	return crypto.MimcHash(
+	return ComputeNoteCommitmentV1(
 		n.ReceiverSpendPubKeyX,
 		n.ReceiverSpendPubKeyY,
 		n.ReceiverViewPubKeyX,
@@ -64,11 +78,51 @@ func (n *Note) ComputeCommitment() *big.Int {
 }
 
 func (n *Note) ComputeNullifier() *big.Int {
-	return crypto.MimcHash(
+	return ComputeNoteNullifierV1(
+		n.ComputeCommitment(),
 		n.Randomness,
 		n.ReceiverSpendPubKeyX,
 		n.ReceiverSpendPubKeyY,
 	)
+}
+
+// ValidateV1 rejects malformed decrypted or externally constructed NoteV1
+// values before they are used to derive wallet state or a proving witness.
+func (n *Note) ValidateV1() error {
+	if n == nil {
+		return fmt.Errorf("note is required")
+	}
+	if err := ValidateShieldedAmount("note amount", n.Amount); err != nil {
+		return err
+	}
+	for _, field := range []struct {
+		name  string
+		value *big.Int
+	}{
+		{"receiver spend public key x", n.ReceiverSpendPubKeyX},
+		{"receiver spend public key y", n.ReceiverSpendPubKeyY},
+		{"receiver view public key x", n.ReceiverViewPubKeyX},
+		{"receiver view public key y", n.ReceiverViewPubKeyY},
+		{"asset id", n.AssetID},
+		{"randomness", n.Randomness},
+	} {
+		if err := validateCanonicalNoteField(field.name, field.value); err != nil {
+			return err
+		}
+	}
+	if _, err := pointFromBigInts(n.ReceiverSpendPubKeyX, n.ReceiverSpendPubKeyY); err != nil {
+		return fmt.Errorf("invalid receiver spend public key: %w", err)
+	}
+	if _, err := pointFromBigInts(n.ReceiverViewPubKeyX, n.ReceiverViewPubKeyY); err != nil {
+		return fmt.Errorf("invalid receiver view public key: %w", err)
+	}
+	if n.ComputeCommitment().Sign() == 0 {
+		return fmt.Errorf("active note commitment must be non-zero")
+	}
+	if n.ComputeNullifier().Sign() == 0 {
+		return fmt.Errorf("active note nullifier must be non-zero")
+	}
+	return nil
 }
 
 func (n *Note) ReceiverShieldedAddress() (string, error) {
@@ -89,14 +143,23 @@ func pointFromBigInts(x, y *big.Int) (*crypto_tedwards.PointAffine, error) {
 	if x == nil || y == nil {
 		return nil, fmt.Errorf("shielded address coordinates must not be nil")
 	}
+	if err := validateCanonicalNoteField("shielded address x coordinate", x); err != nil {
+		return nil, err
+	}
+	if err := validateCanonicalNoteField("shielded address y coordinate", y); err != nil {
+		return nil, err
+	}
 
 	var point crypto_tedwards.PointAffine
 	point.X.SetBigInt(x)
 	point.Y.SetBigInt(y)
+	if err := crypto.ValidatePrimeSubgroupPoint(&point); err != nil {
+		return nil, err
+	}
 	return &point, nil
 }
 
 func (n *Note) Bytes() []byte {
-	b, _ := json.Marshal(n)
+	b, _ := MarshalNotePlaintextV1(n)
 	return b
 }

@@ -157,6 +157,7 @@ interface ProverHTTPAPIContract {
   error_response: {
     version: string;
     codes: string[];
+    retryable_codes: string[];
   };
 }
 
@@ -719,17 +720,41 @@ function computePreparedWithdrawPayloadHashFromPayload(payload: PreparedWithdraw
 function validateWalletFacingPrefixes(): void {
   const unexpectedAddressPattern = /(?<![a-z0-9])([a-z]{2,12}1[0-9a-z]{20,})/g;
   const allowedPrefixes = ["clair1", "clairs1"];
+
+  const visit = (filename: string, value: unknown): void => {
+    if (typeof value === "string") {
+      // Canonical fixed payloads and encrypted envelopes are represented as
+      // hex in JSON fixtures. Scanning their random bytes as text creates
+      // false Bech32 matches, so only non-hex strings are address-scanned.
+      if (/^[0-9a-fA-F]+$/.test(value) && value.length % 2 === 0) {
+        return;
+      }
+      for (const match of value.matchAll(unexpectedAddressPattern)) {
+        const address = match[1];
+        if (!allowedPrefixes.some((prefix) => address.startsWith(prefix))) {
+          throw new Error(`${filename}: unexpected wallet-facing address prefix in ${address}`);
+        }
+      }
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        visit(filename, item);
+      }
+      return;
+    }
+    if (value !== null && typeof value === "object") {
+      for (const item of Object.values(value as Record<string, unknown>)) {
+        visit(filename, item);
+      }
+    }
+  };
+
   for (const filename of readdirSync(testdataDir)) {
     if (!filename.endsWith(".json")) {
       continue;
     }
-    const body = readFileSync(join(testdataDir, filename), "utf8");
-    for (const match of body.matchAll(unexpectedAddressPattern)) {
-      const address = match[1];
-      if (!allowedPrefixes.some((prefix) => address.startsWith(prefix))) {
-        throw new Error(`${filename}: unexpected wallet-facing address prefix in ${address}`);
-      }
-    }
+    visit(filename, JSON.parse(readFileSync(join(testdataDir, filename), "utf8")) as unknown);
   }
 }
 
@@ -853,6 +878,7 @@ function validateProverHTTPAPIContract(contract: ProverHTTPAPIContract): void {
     "unauthorized",
     "unavailable",
     "proof_failed",
+    "busy",
   ];
   assertEqual(contract.error_response.version, "v1", "prover HTTP error version");
   assertEqual(contract.error_response.codes.length, requiredErrorCodes.length, "prover HTTP error code count");
@@ -861,6 +887,8 @@ function validateProverHTTPAPIContract(contract: ProverHTTPAPIContract): void {
       throw new Error(`prover HTTP error codes: missing ${code}`);
     }
   }
+  assertEqual(contract.error_response.retryable_codes.length, 1, "prover HTTP retryable code count");
+  assertEqual(contract.error_response.retryable_codes[0], "busy", "prover HTTP retryable busy code");
 }
 
 function validateNoteReservationContract(contract: NoteReservationContract): void {

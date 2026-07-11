@@ -1,8 +1,12 @@
 package types
 
 const (
-	DisclosurePayloadVersion      = "v5"
+	DisclosurePayloadVersion      = FixedPayloadVersionV1
 	DisclosureConfigSchemaVersion = "v1"
+	AssetRegistryVersionV1        = "privacy-asset-registry-v1"
+	PrivacyScanSchemaVersionV2    = "privacy-scan-v2"
+	PrivacyEventSequenceVersionV1 = "privacy-sequence-v1"
+	PrivacyStateVersionV2         = uint32(2)
 )
 
 var supportedUserDisclosurePolicies = []string{

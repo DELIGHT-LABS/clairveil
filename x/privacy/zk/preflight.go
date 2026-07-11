@@ -33,11 +33,41 @@ func ParseZKPreflightMode(raw string) (ZKPreflightMode, error) {
 }
 
 func RunPreflight(logger log.Logger) error {
-	return runPreflight(logger, ValidateZKArtifacts)
+	return RunProverPreflight(logger, RequiredCircuitIDs())
+}
+
+func RunProverPreflight(logger log.Logger, circuits []CircuitID) error {
+	return runPreflight(logger, func() error {
+		registry, err := NewRuntimeArtifactRegistry()
+		if err != nil {
+			return err
+		}
+		invalidateMatchingDefaultArtifactRegistry(registry)
+		if err := registry.CheckReadiness(ArtifactRoleProver, circuits, nil); err != nil {
+			return err
+		}
+		installValidatedDefaultArtifactRegistry(registry)
+		return nil
+	})
 }
 
 func RunVerifierPreflight(logger log.Logger) error {
-	return runPreflight(logger, ValidateLocalVerifierArtifacts)
+	return runPreflight(logger, func() error {
+		registry, err := NewRuntimeArtifactRegistry()
+		if err != nil {
+			return err
+		}
+		invalidateMatchingDefaultArtifactRegistry(registry)
+		identity, err := registry.LocalCircuitSetIdentity()
+		if err != nil {
+			return err
+		}
+		if err := registry.CheckReadiness(ArtifactRoleValidator, RequiredCircuitIDs(), identity); err != nil {
+			return err
+		}
+		installValidatedDefaultArtifactRegistry(registry)
+		return nil
+	})
 }
 
 func runPreflight(logger log.Logger, validate func() error) error {

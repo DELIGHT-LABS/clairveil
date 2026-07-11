@@ -75,7 +75,7 @@ func (k Keeper) TreeState(goCtx context.Context, req *types.QueryTreeStateReques
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	root := canonicalZeroFieldHex()
+	root := hex.EncodeToString(canonicalFieldBytesFromBigInt(types.EmptyNoteTreeRootV1(MerkleDepth)))
 	if leafCount > 0 {
 		if err := k.ensureIncrementalTreeState(ctx); err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
@@ -313,6 +313,121 @@ func (k Keeper) Reserve(goCtx context.Context, req *types.QueryReserveRequest) (
 		TotalWithdrawn:        snapshot.TotalWithdrawn.String(),
 		ExpectedModuleBalance: snapshot.ExpectedModuleBalance.String(),
 		InvariantHolds:        snapshot.InvariantHolds,
+	}, nil
+}
+
+func (k Keeper) AssetByDenom(goCtx context.Context, req *types.QueryAssetByDenomRequest) (*types.QueryAssetByDenomResponse, error) {
+	if req == nil {
+		return nil, invalidQueryRequestErr()
+	}
+	if _, err := CanonicalAssetIDV1(req.CanonicalDenom); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	entry, found, err := k.GetAssetByDenomV1(ctx, req.CanonicalDenom)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if !found {
+		return nil, status.Errorf(codes.NotFound, "asset denom %q is not registered", req.CanonicalDenom)
+	}
+	return &types.QueryAssetByDenomResponse{Asset: entry, MappingVersion: types.AssetRegistryVersionV1}, nil
+}
+
+func (k Keeper) AssetByID(goCtx context.Context, req *types.QueryAssetByIDRequest) (*types.QueryAssetByIDResponse, error) {
+	if req == nil {
+		return nil, invalidQueryRequestErr()
+	}
+	assetID, err := decodeHexQueryArg(req.AssetIdHex, "asset_id_hex must be valid hex")
+	if err != nil {
+		return nil, err
+	}
+	canonicalAssetID, err := validateFieldElementBytesStrict(assetID)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "asset_id_hex must be canonical 32-byte field bytes")
+	}
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	entry, found, err := k.GetAssetByIDV1(ctx, canonicalAssetID)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if !found {
+		return nil, status.Error(codes.NotFound, "asset ID is not registered")
+	}
+	return &types.QueryAssetByIDResponse{Asset: entry, MappingVersion: types.AssetRegistryVersionV1}, nil
+}
+
+func (k Keeper) PrivacyScan(goCtx context.Context, req *types.QueryPrivacyScanRequest) (*types.QueryPrivacyScanResponse, error) {
+	if req == nil {
+		return nil, invalidQueryRequestErr()
+	}
+	if err := validatePrivacyScanCursor(req.After); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if _, _, _, err := normalizePrivacyScanLimits(req.OutputLimit, req.EventLimit, req.MaxEncodedBytes); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	response, err := k.GetPrivacyScanPageV2(ctx, req.After, req.OutputLimit, req.EventLimit, req.MaxEncodedBytes, req.EventTypes)
+	if err != nil {
+		if errors.Is(err, errPrivacyScanRecordExceedsBudget) {
+			return nil, status.Error(codes.ResourceExhausted, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return response, nil
+}
+
+func (k Keeper) CommitmentPathsAtRoot(goCtx context.Context, req *types.QueryCommitmentPathsAtRootRequest) (*types.QueryCommitmentPathsAtRootResponse, error) {
+	if req == nil {
+		return nil, invalidQueryRequestErr()
+	}
+	if req.SnapshotHeight < 0 {
+		return nil, status.Error(codes.InvalidArgument, "snapshot_height must not be negative")
+	}
+	if len(req.CommitmentHexes) == 0 || len(req.CommitmentHexes) > MaxCommitmentPathSnapshotQuery {
+		return nil, status.Errorf(codes.InvalidArgument, "commitment path snapshot requires 1..%d commitments", MaxCommitmentPathSnapshotQuery)
+	}
+	commitments := make([][]byte, 0, len(req.CommitmentHexes))
+	for _, commitmentHex := range req.CommitmentHexes {
+		commitment, err := decodeHexQueryArg(commitmentHex, "commitment_hexes must contain valid hex")
+		if err != nil {
+			return nil, err
+		}
+		canonicalCommitment, err := validateFieldElementBytesStrict(commitment)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "commitment_hexes must contain canonical 32-byte field bytes")
+		}
+		commitments = append(commitments, canonicalCommitment)
+	}
+	if err := types.ValidateDistinctCanonicalFieldElements("path commitment", commitments); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	root, err := decodeHexQueryArg(req.RootHex, "root_hex must be valid hex")
+	if err != nil {
+		return nil, err
+	}
+	canonicalRoot, err := validateFieldElementBytesStrict(root)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "root_hex must be canonical 32-byte field bytes")
+	}
+
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	paths, snapshot, err := k.GetCommitmentPathsAtRootV1(ctx, commitments, canonicalRoot, req.SnapshotHeight)
+	if err != nil {
+		if errors.Is(err, errMerkleCommitmentNotFound) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		if strings.Contains(err.Error(), "snapshot height") {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &types.QueryCommitmentPathsAtRootResponse{
+		RootHex:        hex.EncodeToString(snapshot.Root),
+		SnapshotHeight: snapshot.Height,
+		LeafCount:      snapshot.LeafCount,
+		Paths:          paths,
 	}, nil
 }
 

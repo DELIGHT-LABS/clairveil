@@ -15,12 +15,16 @@ import (
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
+func indexedTxHashHex(marker byte) string {
+	return strings.Repeat(fmt.Sprintf("%02x", marker), 32)
+}
+
 func TestTreeStateQueryReturnsZeroRootWhenEmpty(t *testing.T) {
 	k, ctx, _ := setupMsgServerKeeper()
 
 	resp, err := k.TreeState(sdk.WrapSDKContext(ctx), &privacytypes.QueryTreeStateRequest{})
 	require.NoError(t, err)
-	require.Equal(t, canonicalZeroFieldHex(), resp.Root)
+	require.Equal(t, hex.EncodeToString(canonicalFieldBytesFromBigInt(privacytypes.EmptyNoteTreeRootV1(MerkleDepth))), resp.Root)
 	require.Equal(t, uint64(0), resp.LeafCount)
 	require.Equal(t, uint32(MerkleDepth), resp.Depth)
 	require.False(t, resp.Initialized)
@@ -166,13 +170,24 @@ func TestCommitmentInfoQueryReturnsNotFoundForUnknownCommitment(t *testing.T) {
 func TestPrivacyEventsQueryReturnsIndexedEvents(t *testing.T) {
 	k, ctx, _ := setupMsgServerKeeper()
 	ctx = ctx.WithBlockHeight(12)
+	depositCommitment := fixedFieldBytes(111)
+	require.NoError(t, k.AppendCommitment(ctx, depositCommitment))
 
-	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeDeposit, "aabb", []sdk.Attribute{
+	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeDeposit, indexedTxHashHex(0xaa), []sdk.Attribute{
+		sdk.NewAttribute(privacytypes.AttributeKeyCommitment, fmt.Sprintf("%x", depositCommitment)),
 		sdk.NewAttribute(privacytypes.AttributeKeyEncryptedNote, "deadbeef"),
 	}))
 
 	ctx = ctx.WithBlockHeight(13)
-	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeShieldedTransfer, "ccdd", []sdk.Attribute{
+	transferCommitment1 := fixedFieldBytes(112)
+	transferCommitment2 := fixedFieldBytes(113)
+	require.NoError(t, k.AppendCommitment(ctx, transferCommitment1))
+	require.NoError(t, k.AppendCommitment(ctx, transferCommitment2))
+	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeShieldedTransfer, indexedTxHashHex(0xcc), []sdk.Attribute{
+		sdk.NewAttribute(privacytypes.AttributeKeyNullifier1, fmt.Sprintf("%x", fixedFieldBytes(114))),
+		sdk.NewAttribute(privacytypes.AttributeKeyNullifier2, fmt.Sprintf("%x", fixedFieldBytes(115))),
+		sdk.NewAttribute(privacytypes.AttributeKeyCommitment1, fmt.Sprintf("%x", transferCommitment1)),
+		sdk.NewAttribute(privacytypes.AttributeKeyCommitment2, fmt.Sprintf("%x", transferCommitment2)),
 		sdk.NewAttribute(privacytypes.AttributeKeyCipherText1, "c0ffee"),
 	}))
 
@@ -188,20 +203,23 @@ func TestPrivacyEventsQueryReturnsIndexedEvents(t *testing.T) {
 	require.False(t, resp.HasMore)
 	require.Equal(t, int64(13), resp.Events[0].Height)
 	require.Equal(t, privacytypes.EventTypeShieldedTransfer, resp.Events[0].EventType)
-	require.Equal(t, "CCDD", resp.Events[0].TxHashHex)
-	require.Len(t, resp.Events[0].Attributes, 1)
-	require.Equal(t, privacytypes.AttributeKeyCipherText1, resp.Events[0].Attributes[0].Key)
+	require.Equal(t, strings.ToUpper(indexedTxHashHex(0xcc)), resp.Events[0].TxHashHex)
+	require.Len(t, resp.Events[0].Attributes, 5)
+	require.Equal(t, "c0ffee", privacyEventAttributesMap(resp.Events[0].Attributes)[privacytypes.AttributeKeyCipherText1])
 }
 
 func TestPrivacyEventsQueryFiltersByType(t *testing.T) {
 	k, ctx, _ := setupMsgServerKeeper()
 	ctx = ctx.WithBlockHeight(21)
+	depositCommitment := fixedFieldBytes(116)
+	require.NoError(t, k.AppendCommitment(ctx, depositCommitment))
 
-	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeDeposit, "aa", []sdk.Attribute{
+	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeDeposit, indexedTxHashHex(0xaa), []sdk.Attribute{
+		sdk.NewAttribute(privacytypes.AttributeKeyCommitment, fmt.Sprintf("%x", depositCommitment)),
 		sdk.NewAttribute(privacytypes.AttributeKeyEncryptedNote, "01"),
 	}))
-	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeWithdraw, "bb", []sdk.Attribute{
-		sdk.NewAttribute(privacytypes.AttributeKeyNullifier, "02"),
+	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeWithdraw, indexedTxHashHex(0xbb), []sdk.Attribute{
+		sdk.NewAttribute(privacytypes.AttributeKeyNullifier, fmt.Sprintf("%x", fixedFieldBytes(117))),
 	}))
 
 	resp, err := k.PrivacyEvents(sdk.WrapSDKContext(ctx), &privacytypes.QueryPrivacyEventsRequest{
@@ -243,7 +261,7 @@ func TestScanEventsQueryReturnsProjectionAndCursor(t *testing.T) {
 
 	ctx = ctx.WithBlockHeight(10)
 	require.NoError(t, k.AppendCommitment(ctx, depositCommitment))
-	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeDeposit, "aabb", []sdk.Attribute{
+	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeDeposit, indexedTxHashHex(0xaa), []sdk.Attribute{
 		sdk.NewAttribute(privacytypes.AttributeKeyCommitment, fmt.Sprintf("%x", depositCommitment)),
 		sdk.NewAttribute(privacytypes.AttributeKeyEncryptedNote, "deadbeef"),
 	}))
@@ -251,7 +269,7 @@ func TestScanEventsQueryReturnsProjectionAndCursor(t *testing.T) {
 	ctx = ctx.WithBlockHeight(11)
 	require.NoError(t, k.AppendCommitment(ctx, transferCommitment1))
 	require.NoError(t, k.AppendCommitment(ctx, transferCommitment2))
-	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeShieldedTransfer, "ccdd", []sdk.Attribute{
+	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeShieldedTransfer, indexedTxHashHex(0xcc), []sdk.Attribute{
 		sdk.NewAttribute(privacytypes.AttributeKeyNullifier1, fmt.Sprintf("%x", fixedFieldBytes(44))),
 		sdk.NewAttribute(privacytypes.AttributeKeyNullifier2, fmt.Sprintf("%x", fixedFieldBytes(45))),
 		sdk.NewAttribute(privacytypes.AttributeKeyCommitment1, fmt.Sprintf("%x", transferCommitment1)),
@@ -309,7 +327,7 @@ func TestScanEventsQueryDefaultsToDepositAndTransfer(t *testing.T) {
 	k, ctx, _ := setupMsgServerKeeper()
 	ctx = ctx.WithBlockHeight(20)
 
-	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeWithdraw, "aa", []sdk.Attribute{
+	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeWithdraw, indexedTxHashHex(0xaa), []sdk.Attribute{
 		sdk.NewAttribute(privacytypes.AttributeKeyNullifier, fmt.Sprintf("%x", fixedFieldBytes(46))),
 	}))
 
@@ -337,18 +355,18 @@ func TestScanEventsQueryAdvancesCursorAcrossFilteredEvents(t *testing.T) {
 	depositCommitment := fixedFieldBytes(47)
 
 	ctx = ctx.WithBlockHeight(20)
-	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeWithdraw, "aa", []sdk.Attribute{
+	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeWithdraw, indexedTxHashHex(0xaa), []sdk.Attribute{
 		sdk.NewAttribute(privacytypes.AttributeKeyNullifier, fmt.Sprintf("%x", fixedFieldBytes(48))),
 	}))
 
 	ctx = ctx.WithBlockHeight(21)
-	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeWithdraw, "bb", []sdk.Attribute{
+	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeWithdraw, indexedTxHashHex(0xbb), []sdk.Attribute{
 		sdk.NewAttribute(privacytypes.AttributeKeyNullifier, fmt.Sprintf("%x", fixedFieldBytes(49))),
 	}))
 
 	ctx = ctx.WithBlockHeight(22)
 	require.NoError(t, k.AppendCommitment(ctx, depositCommitment))
-	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeDeposit, "cc", []sdk.Attribute{
+	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeDeposit, indexedTxHashHex(0xcc), []sdk.Attribute{
 		sdk.NewAttribute(privacytypes.AttributeKeyCommitment, fmt.Sprintf("%x", depositCommitment)),
 		sdk.NewAttribute(privacytypes.AttributeKeyEncryptedNote, "deadbeef"),
 	}))
@@ -514,4 +532,20 @@ func TestQueryMethodsRejectNilRequests(t *testing.T) {
 	reserveResp, reserveErr := k.Reserve(context.Background(), nil)
 	require.Nil(t, reserveResp)
 	require.Error(t, reserveErr)
+
+	assetDenomResp, assetDenomErr := k.AssetByDenom(context.Background(), nil)
+	require.Nil(t, assetDenomResp)
+	require.Error(t, assetDenomErr)
+
+	assetIDResp, assetIDErr := k.AssetByID(context.Background(), nil)
+	require.Nil(t, assetIDResp)
+	require.Error(t, assetIDErr)
+
+	privacyScanResp, privacyScanErr := k.PrivacyScan(context.Background(), nil)
+	require.Nil(t, privacyScanResp)
+	require.Error(t, privacyScanErr)
+
+	pathSnapshotResp, pathSnapshotErr := k.CommitmentPathsAtRoot(context.Background(), nil)
+	require.Nil(t, pathSnapshotResp)
+	require.Error(t, pathSnapshotErr)
 }

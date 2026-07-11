@@ -15,7 +15,6 @@ import (
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/circuit"
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
-	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -68,7 +67,7 @@ func testJoinSplitAssignment(t *testing.T) *circuit.JoinSplitCircuit {
 				ReceiverViewPubKeyX:  pointCoordinate(senderViewPubKey, true),
 				ReceiverViewPubKeyY:  pointCoordinate(senderViewPubKey, false),
 				Amount:               big.NewInt(8),
-				AssetID:              privacycrypto.HashString("uclair"),
+				AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 				Randomness:           big.NewInt(901),
 			},
 		},
@@ -79,7 +78,7 @@ func testJoinSplitAssignment(t *testing.T) *circuit.JoinSplitCircuit {
 				ReceiverViewPubKeyX:  pointCoordinate(senderViewPubKey, true),
 				ReceiverViewPubKeyY:  pointCoordinate(senderViewPubKey, false),
 				Amount:               big.NewInt(4),
-				AssetID:              privacycrypto.HashString("uclair"),
+				AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 				Randomness:           big.NewInt(902),
 			},
 		},

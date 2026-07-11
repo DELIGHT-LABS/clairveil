@@ -19,7 +19,6 @@ import (
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
 	privacywithdraw "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/withdraw"
-	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -156,7 +155,7 @@ func testPreparedTransferPayload(
 				ReceiverViewPubKeyX:  pointCoordinate(senderViewPubKey, true),
 				ReceiverViewPubKeyY:  pointCoordinate(senderViewPubKey, false),
 				Amount:               big.NewInt(7),
-				AssetID:              privacycrypto.HashString("uclair"),
+				AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 				Randomness:           big.NewInt(701),
 				Memo:                 "input-1",
 			},
@@ -168,7 +167,7 @@ func testPreparedTransferPayload(
 				ReceiverViewPubKeyX:  pointCoordinate(senderViewPubKey, true),
 				ReceiverViewPubKeyY:  pointCoordinate(senderViewPubKey, false),
 				Amount:               big.NewInt(5),
-				AssetID:              privacycrypto.HashString("uclair"),
+				AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 				Randomness:           big.NewInt(702),
 				Memo:                 "input-2",
 			},
@@ -395,7 +394,7 @@ func testWithdrawFoundNote(amount int64, denom string, randomness int64) privacy
 			ReceiverViewPubKeyX:  pointCoordinate(viewPubKey, true),
 			ReceiverViewPubKeyY:  pointCoordinate(viewPubKey, false),
 			Amount:               big.NewInt(amount),
-			AssetID:              privacycrypto.HashString(denom),
+			AssetID:              privacytypes.ComputeAssetIDV1(denom),
 			Randomness:           big.NewInt(randomness),
 		},
 	}

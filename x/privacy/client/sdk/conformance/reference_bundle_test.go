@@ -125,12 +125,15 @@ func buildReadonlyReferenceBundle(t *testing.T) readonlyReferenceBundle {
 	recipientShieldedAddress, err := privacytypes.EncodeShieldedAddressWithView(recipientSpendPubKey, recipientViewPubKey)
 	require.NoError(t, err)
 
-	payload, err := privacydisclosure.DecodePublicPayloadHex(vectors.Disclosure.PayloadJSONHex)
+	payload, err := privacydisclosure.DecodePublicPayloadHex(vectors.Disclosure.PayloadPlaintextHex)
 	require.NoError(t, err)
 	verification, err := privacydisclosure.VerifyPayload(payload, vectors.Disclosure.DigestHex)
 	require.NoError(t, err)
 
-	noteBytes, err := privacycrypto.Decrypt(mustDecodeHex(t, vectors.Note.EncryptedNoteHex), senderRootSeed)
+	kind, encryptedNote, err := privacytypes.DecodeEncryptedEnvelopeV1(mustDecodeHex(t, vectors.Note.EncryptedNoteHex))
+	require.NoError(t, err)
+	require.Equal(t, privacytypes.EnvelopeDepositNoteV1, kind)
+	noteBytes, err := privacycrypto.Decrypt(encryptedNote, senderRootSeed)
 	require.NoError(t, err)
 	note, err := privacyscan.ParseNoteBytes(noteBytes)
 	require.NoError(t, err)
@@ -156,6 +159,8 @@ func buildReadonlyReferenceBundle(t *testing.T) readonlyReferenceBundle {
 
 	transferCipherText, err := privacycrypto.AsymEncrypt(noteBytes, *senderViewPubKey)
 	require.NoError(t, err)
+	transferEnvelope, err := privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeTransferNoteV1, transferCipherText)
+	require.NoError(t, err)
 	transferFound := privacyscan.ProcessTx(
 		newPrivacyTx(
 			t,
@@ -163,7 +168,7 @@ func buildReadonlyReferenceBundle(t *testing.T) readonlyReferenceBundle {
 			vectors.Scan.Height,
 			privacytypes.EventTypeShieldedTransfer,
 			privacytypes.AttributeKeyCipherText1,
-			hex.EncodeToString(transferCipherText),
+			hex.EncodeToString(transferEnvelope),
 			abci.EventAttribute{Key: privacytypes.AttributeKeyCommitment1, Value: vectors.Note.CommitmentHex},
 		),
 		senderRootSeed,
@@ -221,7 +226,7 @@ func buildReadonlyReferenceBundle(t *testing.T) readonlyReferenceBundle {
 			Delivery:         vectors.Disclosure.Mode,
 			Policy:           vectors.Disclosure.Policy,
 			Amount:           payload.Amount,
-			AssetDenom:       payload.AssetDenom,
+			AssetDenom:       assetDenom,
 			FromShieldedAddr: payload.FromShieldedAddress,
 			ToShieldedAddr:   payload.ToShieldedAddress,
 			Verified:         verification.Verified,

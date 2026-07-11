@@ -500,7 +500,7 @@ test("note store tracks scan cursor, rollback metadata, and localStorage plainte
   assert.ok(new LocalStorageNoteStore({ storage: storageLike, key: "notes", allowPlaintext: true }));
 });
 
-test("scanNotes reads Go-compatible deposit encrypted note fixture", async () => {
+test("legacy external ClairveilJS scanner fails closed on privacy-fixed-v1 deposit fixtures", async () => {
   const fixture = JSON.parse(await readFile(
     new URL("../../../x/privacy/client/sdk/conformance/testdata/privacy_wallet_golden_vectors.json", import.meta.url),
     "utf8"
@@ -520,9 +520,12 @@ test("scanNotes reads Go-compatible deposit encrypted note fixture", async () =>
     ]
   });
 
-  assert.equal(result.notes.length, 1);
-  assert.equal(result.summary.spendable_count, 1);
-  assert.equal(result.notes[0].amount, fixture.note.amount);
+  // The npm/GitHub ClairveilJS dependency is downstream of this repository.
+  // Session 2 freezes its NoteV1 handoff but does not implement that external
+  // SDK upgrade; accepting the old JSON/raw-ciphertext contract would be an
+  // unsafe compatibility fallback.
+  assert.equal(result.notes.length, 0);
+  assert.equal(result.summary.spendable_count, 0);
 });
 
 test("ClairveilJS scanNotes sends paginated event feed query parameters", async () => {

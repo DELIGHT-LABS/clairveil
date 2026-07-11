@@ -2,7 +2,6 @@ package transfer
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"math/big"
 
@@ -84,12 +83,11 @@ func BuildUserDisclosureData(
 		CommitmentHex:       commitmentHex,
 		DisclosureDigestHex: digestHex,
 		BlindingHex:         blindingHex,
+		AssetIDHex:          assetIDHex,
 	}
 
 	if userPrivacyPolicy&privacytypes.TransferPrivacyPolicyDiscloseAmount != 0 {
 		payload.Amount = input.RecipientNote.Amount.String()
-		payload.AssetIDHex = assetIDHex
-		payload.AssetDenom = input.TransferDenom
 	}
 	if userPrivacyPolicy&privacytypes.TransferPrivacyPolicyDiscloseFrom != 0 {
 		payload.FromShieldedAddress = fromAddress
@@ -98,28 +96,32 @@ func BuildUserDisclosureData(
 		payload.ToShieldedAddress = toAddress
 	}
 
-	payloadJSON, err := json.Marshal(payload)
+	payloadPlaintext, err := marshalTransferDisclosurePlaintextV1(input, privacytypes.DisclosurePlaneUserV1, userPrivacyPolicy)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal user disclosure payload: %w", err)
+		return nil, fmt.Errorf("failed to marshal user DisclosurePlaintextV1: %w", err)
 	}
 
-	payloadBytes := payloadJSON
+	payloadBytes := payloadPlaintext
 	switch userDisclosureMode {
 	case privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC:
 	case privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED:
 		if userDisclosureTargetPubKey == nil {
 			return nil, fmt.Errorf("recipient-encrypted disclosure requires a disclosure target public key")
 		}
-		payloadBytes, err = privacycrypto.AsymEncrypt(payloadJSON, *userDisclosureTargetPubKey)
+		rawCipherText, err := privacycrypto.AsymEncrypt(payloadPlaintext, *userDisclosureTargetPubKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encrypt user disclosure payload: %w", err)
+		}
+		payloadBytes, err = privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeUserDisclosureV1, rawCipherText)
+		if err != nil {
+			return nil, err
 		}
 	default:
 		return nil, fmt.Errorf("unsupported user disclosure mode %d", userDisclosureMode)
 	}
 
 	return &DisclosureData{
-		PayloadJSON: payloadJSON,
+		PayloadJSON: payloadPlaintext,
 		CipherText:  payloadBytes,
 		Digest:      digest,
 		Payload:     payload,
@@ -179,23 +181,26 @@ func BuildAuditDisclosureData(
 		BlindingHex:         blindingHex,
 		Amount:              input.RecipientNote.Amount.String(),
 		AssetIDHex:          assetIDHex,
-		AssetDenom:          input.TransferDenom,
 		FromShieldedAddress: fromAddress,
 		ToShieldedAddress:   toAddress,
 	}
 
-	payloadJSON, err := json.Marshal(payload)
+	payloadPlaintext, err := marshalTransferDisclosurePlaintextV1(input, privacytypes.DisclosurePlaneFullV1, privacytypes.DisclosureFullMarkerV1)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal audit disclosure payload: %w", err)
+		return nil, fmt.Errorf("failed to marshal audit DisclosurePlaintextV1: %w", err)
 	}
 
-	cipherText, err := privacycrypto.AsymEncrypt(payloadJSON, *auditDisclosureTargetPubKey)
+	rawCipherText, err := privacycrypto.AsymEncrypt(payloadPlaintext, *auditDisclosureTargetPubKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt audit disclosure payload: %w", err)
 	}
+	cipherText, err := privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeAuditDisclosureV1, rawCipherText)
+	if err != nil {
+		return nil, err
+	}
 
 	return &DisclosureData{
-		PayloadJSON: payloadJSON,
+		PayloadJSON: payloadPlaintext,
 		CipherText:  cipherText,
 		Digest:      digest,
 		Payload:     payload,
@@ -255,27 +260,88 @@ func BuildSelfViewDisclosureData(
 		BlindingHex:         blindingHex,
 		Amount:              input.RecipientNote.Amount.String(),
 		AssetIDHex:          assetIDHex,
-		AssetDenom:          input.TransferDenom,
 		FromShieldedAddress: fromAddress,
 		ToShieldedAddress:   toAddress,
 	}
 
-	payloadJSON, err := json.Marshal(payload)
+	payloadPlaintext, err := marshalTransferDisclosurePlaintextV1(input, privacytypes.DisclosurePlaneFullV1, privacytypes.DisclosureFullMarkerV1)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal self-view disclosure payload: %w", err)
+		return nil, fmt.Errorf("failed to marshal self-view DisclosurePlaintextV1: %w", err)
 	}
 
-	cipherText, err := privacycrypto.AsymEncrypt(payloadJSON, *selfViewDisclosureTargetPubKey)
+	rawCipherText, err := privacycrypto.AsymEncrypt(payloadPlaintext, *selfViewDisclosureTargetPubKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt self-view disclosure payload: %w", err)
 	}
+	cipherText, err := privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeSelfViewDisclosureV1, rawCipherText)
+	if err != nil {
+		return nil, err
+	}
 
 	return &DisclosureData{
-		PayloadJSON: payloadJSON,
+		PayloadJSON: payloadPlaintext,
 		CipherText:  cipherText,
 		Digest:      digest,
 		Payload:     payload,
 	}, nil
+}
+
+func marshalTransferDisclosurePlaintextV1(
+	input DisclosureBuildInput,
+	plane privacytypes.DisclosurePlaneV1,
+	policy uint32,
+) ([]byte, error) {
+	payload := &privacytypes.DisclosurePlaintextV1{
+		Plane:                plane,
+		OutputIndex:          privacytypes.TransferDisclosureRecipientOutputIndex,
+		Policy:               policy,
+		DisclosedFieldBitmap: policy,
+		Commitment:           new(big.Int).SetBytes(input.OutputCommitment),
+		Amount:               new(big.Int),
+		AssetID:              new(big.Int).Set(input.RecipientNote.AssetID),
+		SenderSpendKeyX:      new(big.Int),
+		SenderSpendKeyY:      new(big.Int),
+		SenderViewKeyX:       new(big.Int),
+		SenderViewKeyY:       new(big.Int),
+		RecipientSpendKeyX:   new(big.Int),
+		RecipientSpendKeyY:   new(big.Int),
+		RecipientViewKeyX:    new(big.Int),
+		RecipientViewKeyY:    new(big.Int),
+	}
+
+	if plane == privacytypes.DisclosurePlaneFullV1 {
+		payload.DisclosedFieldBitmap = privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom
+		payload.Amount = new(big.Int).Set(input.RecipientNote.Amount)
+		payload.AssetID = new(big.Int).Set(input.RecipientNote.AssetID)
+		payload.SenderSpendKeyX = new(big.Int).Set(input.FromNote.ReceiverSpendPubKeyX)
+		payload.SenderSpendKeyY = new(big.Int).Set(input.FromNote.ReceiverSpendPubKeyY)
+		payload.SenderViewKeyX = new(big.Int).Set(input.FromNote.ReceiverViewPubKeyX)
+		payload.SenderViewKeyY = new(big.Int).Set(input.FromNote.ReceiverViewPubKeyY)
+		payload.RecipientSpendKeyX = new(big.Int).Set(input.RecipientNote.ReceiverSpendPubKeyX)
+		payload.RecipientSpendKeyY = new(big.Int).Set(input.RecipientNote.ReceiverSpendPubKeyY)
+		payload.RecipientViewKeyX = new(big.Int).Set(input.RecipientNote.ReceiverViewPubKeyX)
+		payload.RecipientViewKeyY = new(big.Int).Set(input.RecipientNote.ReceiverViewPubKeyY)
+		payload.DisclosureBlinding = new(big.Int).Set(input.FullDisclosureBlinding)
+		return privacytypes.MarshalDisclosurePlaintextV1(payload)
+	}
+
+	if policy&privacytypes.TransferPrivacyPolicyDiscloseAmount != 0 {
+		payload.Amount = new(big.Int).Set(input.RecipientNote.Amount)
+	}
+	if policy&privacytypes.TransferPrivacyPolicyDiscloseFrom != 0 {
+		payload.SenderSpendKeyX = new(big.Int).Set(input.FromNote.ReceiverSpendPubKeyX)
+		payload.SenderSpendKeyY = new(big.Int).Set(input.FromNote.ReceiverSpendPubKeyY)
+		payload.SenderViewKeyX = new(big.Int).Set(input.FromNote.ReceiverViewPubKeyX)
+		payload.SenderViewKeyY = new(big.Int).Set(input.FromNote.ReceiverViewPubKeyY)
+	}
+	if policy&privacytypes.TransferPrivacyPolicyDiscloseTo != 0 {
+		payload.RecipientSpendKeyX = new(big.Int).Set(input.RecipientNote.ReceiverSpendPubKeyX)
+		payload.RecipientSpendKeyY = new(big.Int).Set(input.RecipientNote.ReceiverSpendPubKeyY)
+		payload.RecipientViewKeyX = new(big.Int).Set(input.RecipientNote.ReceiverViewPubKeyX)
+		payload.RecipientViewKeyY = new(big.Int).Set(input.RecipientNote.ReceiverViewPubKeyY)
+	}
+	payload.DisclosureBlinding = new(big.Int).Set(input.UserDisclosureBlinding)
+	return privacytypes.MarshalDisclosurePlaintextV1(payload)
 }
 
 func disclosureAddresses(input DisclosureBuildInput) (string, string, error) {

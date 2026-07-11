@@ -2,13 +2,16 @@ package proverservice
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	gnarklogger "github.com/consensys/gnark/logger"
 	"github.com/stretchr/testify/require"
 
 	privacyprovertransport "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/provertransport"
@@ -89,6 +92,8 @@ func TestHandlerMetricsRoute(t *testing.T) {
 	require.Positive(t, response.SysBytes)
 	require.Positive(t, response.RSSBytes)
 	require.NotEmpty(t, response.RSSSource)
+	require.Contains(t, response.Admission.Circuits, privacyprovertransport.TransferProofCircuitID)
+	require.Contains(t, response.Admission.Circuits, privacyprovertransport.WithdrawProofCircuitID)
 }
 
 func TestHandlerMetricsRouteRejectsNonGET(t *testing.T) {
@@ -134,10 +139,56 @@ func TestHandlerLimitsProofRequestBody(t *testing.T) {
 	require.Contains(t, errorResponse.Message, "request body too large")
 }
 
+func TestHandlerReturnsRetryable429WhenCircuitAdmissionIsFull(t *testing.T) {
+	admission, err := NewAdmissionController(AdmissionConfig{Circuits: map[string]CircuitAdmissionConfig{
+		privacyprovertransport.TransferProofCircuitID: {MaxInFlight: 1, MaxQueued: 0},
+	}})
+	require.NoError(t, err)
+	occupied, err := admission.Acquire(context.Background(), privacyprovertransport.TransferProofCircuitID)
+	require.NoError(t, err)
+	defer occupied.Release()
+
+	handler := NewHandlerWithAdmission(stubTransferProver{}, nil, nil, nil, DefaultRuntimeInfo(), "", DefaultMaxRequestBz, admission)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, privacyprovertransport.TransferProofPath, bytes.NewBufferString(`{"version":"v2"}`))
+	handler.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusTooManyRequests, recorder.Code)
+	errorResponse, err := privacyprovertransport.DecodeErrorResponseJSON(recorder.Body.Bytes())
+	require.NoError(t, err)
+	require.Equal(t, privacyprovertransport.ErrorCodeBusy, errorResponse.Code)
+	require.True(t, errorResponse.Retryable)
+	require.NotContains(t, errorResponse.Message, "payload")
+}
+
 func TestDefaultServerConfigBuildsHTTPServer(t *testing.T) {
 	server, err := DefaultServerConfig().HTTPServer(http.NewServeMux())
 	require.NoError(t, err)
 	require.Equal(t, DefaultListenAddress, server.Addr)
+}
+
+func TestServerConfigRequiresHardBodyLimit(t *testing.T) {
+	config := DefaultServerConfig()
+	config.MaxRequestBytes = 0
+	require.ErrorContains(t, config.Validate(), "must be positive")
+	config.MaxRequestBytes = -1
+	require.ErrorContains(t, config.Validate(), "must be positive")
+}
+
+func TestServerConfigRequiresReadAndIdleTimeoutsAndBoundsHeaders(t *testing.T) {
+	config := DefaultServerConfig()
+	config.ReadHeaderTimeout = 0
+	require.ErrorContains(t, config.Validate(), "read header timeout must be positive")
+	config = DefaultServerConfig()
+	config.ReadTimeout = 0
+	require.ErrorContains(t, config.Validate(), "read timeout must be positive")
+	config = DefaultServerConfig()
+	config.IdleTimeout = 0
+	require.ErrorContains(t, config.Validate(), "idle timeout must be positive")
+
+	server, err := DefaultServerConfig().HTTPServer(http.NewServeMux())
+	require.NoError(t, err)
+	require.Equal(t, DefaultMaxHeaderBz, server.MaxHeaderBytes)
 }
 
 func TestHandlerRejectsUnauthorizedProofRoute(t *testing.T) {
@@ -155,4 +206,43 @@ func TestHandlerRejectsUnauthorizedProofRoute(t *testing.T) {
 	errorResponse, err := privacyprovertransport.DecodeErrorResponseJSON(recorder.Body.Bytes())
 	require.NoError(t, err)
 	require.Equal(t, privacyprovertransport.ErrorCodeUnauthorized, errorResponse.Code)
+}
+
+func TestGnarkSolverOutputNeverUsesOperatorLogWriter(t *testing.T) {
+	const sensitiveDerivedValue = "witness-derived-field-value"
+	var operatorLog bytes.Buffer
+	_, err := withGnarkLoggerOutput(&operatorLog, func() (struct{}, error) {
+		logger := gnarklogger.Logger()
+		logger.Error().Msg(sensitiveDerivedValue)
+		return struct{}{}, fmt.Errorf("unsatisfied constraint")
+	})
+	require.Error(t, err)
+	require.NotContains(t, operatorLog.String(), sensitiveDerivedValue)
+	require.Empty(t, operatorLog.String())
+}
+
+func TestGnarkLogSuppressionDoesNotSerializeProofFunctions(t *testing.T) {
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	done := make(chan struct{}, 2)
+	for range 2 {
+		go func() {
+			_, _ = withGnarkLoggerOutput(io.Discard, func() (struct{}, error) {
+				started <- struct{}{}
+				<-release
+				return struct{}{}, nil
+			})
+			done <- struct{}{}
+		}()
+	}
+	for range 2 {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("proof functions were serialized by logger suppression")
+		}
+	}
+	close(release)
+	<-done
+	<-done
 }

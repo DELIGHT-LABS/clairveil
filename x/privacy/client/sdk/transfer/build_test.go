@@ -13,7 +13,6 @@ import (
 
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
-	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -86,7 +85,7 @@ func testBuildTransferMessageDeps(
 				ReceiverViewPubKeyX:  pointCoordinate(senderViewPubKey, true),
 				ReceiverViewPubKeyY:  pointCoordinate(senderViewPubKey, false),
 				Amount:               big.NewInt(7),
-				AssetID:              privacycrypto.HashString("uclair"),
+				AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 				Randomness:           big.NewInt(701),
 				Memo:                 "input-1",
 			},
@@ -98,7 +97,7 @@ func testBuildTransferMessageDeps(
 				ReceiverViewPubKeyX:  pointCoordinate(senderViewPubKey, true),
 				ReceiverViewPubKeyY:  pointCoordinate(senderViewPubKey, false),
 				Amount:               big.NewInt(5),
-				AssetID:              privacycrypto.HashString("uclair"),
+				AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 				Randomness:           big.NewInt(702),
 				Memo:                 "input-2",
 			},

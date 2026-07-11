@@ -2,7 +2,10 @@ package keeper
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
+	sdkmath "cosmossdk.io/math"
 	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/types"
@@ -110,6 +113,84 @@ func (k Keeper) ExportGenesisHistoricalRoots(ctx sdk.Context) ([][]byte, error) 
 
 func (k Keeper) ExportGenesisNullifiers(ctx sdk.Context) ([][]byte, error) {
 	return k.exportFieldValuesByPrefix(ctx, types.KeyPrefixNullifier)
+}
+
+func (k Keeper) InitGenesisReserveBalancesV1(ctx sdk.Context, balances []*types.ReserveBalanceV1) error {
+	for i, balance := range balances {
+		if balance == nil {
+			return fmt.Errorf("genesis reserve balance %d is nil", i)
+		}
+		if err := sdk.ValidateDenom(balance.CanonicalDenom); err != nil || balance.CanonicalDenom != strings.TrimSpace(balance.CanonicalDenom) {
+			return fmt.Errorf("genesis reserve balance %d denom is invalid", i)
+		}
+		deposited, ok := sdkmath.NewIntFromString(balance.TotalDeposited)
+		if !ok || deposited.IsNegative() {
+			return fmt.Errorf("genesis reserve balance %d total_deposited is invalid", i)
+		}
+		withdrawn, ok := sdkmath.NewIntFromString(balance.TotalWithdrawn)
+		if !ok || withdrawn.IsNegative() || withdrawn.GT(deposited) {
+			return fmt.Errorf("genesis reserve balance %d total_withdrawn is invalid", i)
+		}
+		if err := k.setReserveAmount(ctx, types.GetReserveDepositKey(balance.CanonicalDenom), deposited); err != nil {
+			return err
+		}
+		if err := k.setReserveAmount(ctx, types.GetReserveWithdrawKey(balance.CanonicalDenom), withdrawn); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (k Keeper) ExportGenesisReserveBalancesV1(ctx sdk.Context) ([]*types.ReserveBalanceV1, error) {
+	denoms := make(map[string]struct{})
+	store := k.storeService.OpenKVStore(ctx)
+	for _, prefix := range []byte{types.KeyPrefixReserveDeposit, types.KeyPrefixReserveWithdraw} {
+		prefixBytes := []byte{prefix}
+		iterator, err := store.Iterator(prefixBytes, storetypes.PrefixEndBytes(prefixBytes))
+		if err != nil {
+			return nil, err
+		}
+		for ; iterator.Valid(); iterator.Next() {
+			key := iterator.Key()
+			if len(key) <= 1 {
+				iterator.Close()
+				return nil, fmt.Errorf("reserve counter contains empty denom key")
+			}
+			denom := string(key[1:])
+			if err := sdk.ValidateDenom(denom); err != nil {
+				iterator.Close()
+				return nil, fmt.Errorf("reserve counter contains invalid denom: %w", err)
+			}
+			denoms[denom] = struct{}{}
+		}
+		iterator.Close()
+	}
+
+	sortedDenoms := make([]string, 0, len(denoms))
+	for denom := range denoms {
+		sortedDenoms = append(sortedDenoms, denom)
+	}
+	sort.Strings(sortedDenoms)
+	balances := make([]*types.ReserveBalanceV1, 0, len(sortedDenoms))
+	for _, denom := range sortedDenoms {
+		deposited, err := k.getReserveAmount(ctx, types.GetReserveDepositKey(denom))
+		if err != nil {
+			return nil, err
+		}
+		withdrawn, err := k.getReserveAmount(ctx, types.GetReserveWithdrawKey(denom))
+		if err != nil {
+			return nil, err
+		}
+		if deposited.IsNegative() || withdrawn.IsNegative() || withdrawn.GT(deposited) {
+			return nil, fmt.Errorf("reserve counter for %s is inconsistent", denom)
+		}
+		balances = append(balances, &types.ReserveBalanceV1{
+			CanonicalDenom: denom,
+			TotalDeposited: deposited.String(),
+			TotalWithdrawn: withdrawn.String(),
+		})
+	}
+	return balances, nil
 }
 
 func (k Keeper) exportFieldValuesByPrefix(ctx sdk.Context, prefix byte) ([][]byte, error) {

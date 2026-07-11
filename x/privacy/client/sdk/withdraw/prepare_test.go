@@ -11,7 +11,6 @@ import (
 
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
-	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -25,7 +24,7 @@ func TestPrepareSpendWithdrawBuildsAssignment(t *testing.T) {
 			ReceiverViewPubKeyX:  pointCoordinate(viewPubKey, true),
 			ReceiverViewPubKeyY:  pointCoordinate(viewPubKey, false),
 			Amount:               big.NewInt(7),
-			AssetID:              privacycrypto.HashString("uclair"),
+			AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 			Randomness:           big.NewInt(701),
 		},
 	}
@@ -67,7 +66,7 @@ func TestPrepareSpendWithdrawBuildsAssignment(t *testing.T) {
 	require.Len(t, provider.requests, 1)
 	require.Len(t, signer.hashes, 1)
 	require.Equal(t, 0, prepared.Assignment.Amount.(*big.Int).Cmp(big.NewInt(7)))
-	require.Equal(t, 0, prepared.Assignment.AssetID.(*big.Int).Cmp(privacycrypto.HashString("uclair")))
+	require.Equal(t, 0, prepared.Assignment.AssetID.(*big.Int).Cmp(privacytypes.ComputeAssetIDV1("uclair")))
 	recipientDigest, err := privacytypes.ComputeWithdrawRecipientDigestV1(recipientBytes)
 	require.NoError(t, err)
 	require.Equal(t, 0, prepared.Assignment.RecipientDigestHi.(*big.Int).Cmp(recipientDigest.Hi))
@@ -90,14 +89,16 @@ func TestPrepareSpendWithdrawBuildsAssignment(t *testing.T) {
 }
 
 func TestPrepareSpendWithdrawPropagatesMerkleQueryError(t *testing.T) {
+	spendPubKey := testPubKey(11)
+	viewPubKey := testPubKey(13)
 	note := privacyscan.FoundNote{
 		Note: privacytypes.Note{
-			ReceiverSpendPubKeyX: big.NewInt(1),
-			ReceiverSpendPubKeyY: big.NewInt(2),
-			ReceiverViewPubKeyX:  big.NewInt(3),
-			ReceiverViewPubKeyY:  big.NewInt(4),
+			ReceiverSpendPubKeyX: pointCoordinate(spendPubKey, true),
+			ReceiverSpendPubKeyY: pointCoordinate(spendPubKey, false),
+			ReceiverViewPubKeyX:  pointCoordinate(viewPubKey, true),
+			ReceiverViewPubKeyY:  pointCoordinate(viewPubKey, false),
 			Amount:               big.NewInt(7),
-			AssetID:              privacycrypto.HashString("uclair"),
+			AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 			Randomness:           big.NewInt(701),
 		},
 	}

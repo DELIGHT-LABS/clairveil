@@ -69,6 +69,9 @@ func PrepareSpendWithdraw(
 	}
 
 	selectedNote := input.Note.Note
+	if err := selectedNote.ValidateV1(); err != nil {
+		return nil, fmt.Errorf("invalid selected NoteV1: %w", err)
+	}
 	commitment := selectedNote.ComputeCommitment()
 	commitmentHex, err := privacyfield.CanonicalHexFromBigInt(commitment)
 	if err != nil {

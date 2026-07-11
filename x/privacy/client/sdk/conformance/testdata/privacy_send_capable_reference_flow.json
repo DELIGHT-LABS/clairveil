@@ -15,8 +15,8 @@
     "request_version": "v2",
     "response_version": "v2",
     "creator": "clair1qyqszqgpqyqszqgpqyqszqgpqyqszqgpq6pe73",
-    "payload_hash": "61bb8db27cb30528e4f8f2f164acdbd30467d2bc27b893ceadf264b10796aa00",
-    "proof_payload_hash": "61bb8db27cb30528e4f8f2f164acdbd30467d2bc27b893ceadf264b10796aa00",
+    "payload_hash": "b92434782255b2976ecc6e36fdc22b76f10462bf1abc2f8a59274718f3903042",
+    "proof_payload_hash": "b92434782255b2976ecc6e36fdc22b76f10462bf1abc2f8a59274718f3903042",
     "msg_creator": "clair1qyqszqgpqyqszqgpqyqszqgpqyqszqgpq6pe73",
     "user_disclosure_mode": "recipient-encrypted",
     "user_privacy_policy": "amount-from-to",
@@ -24,8 +24,8 @@
       "plane": "user",
       "policy": "amount-from-to",
       "output_index": 0,
-      "commitment_hex": "10b62825eac8a645278d300ec077885a123170460e9ca1048f4521a3f6fb6cb2",
-      "digest_hex": "12a1636d3c1a1a0ea0a20fbc7bfc8ef7c7a5a8e00412b313c0a15be16ec7ad06",
+      "commitment_hex": "21a894b9316c90cc61728074b13c9c9065881a8ae457a04a12d258e7971b7b34",
+      "digest_hex": "05b83541a45119a4fea6fbf873209cd223ad43db2ea1d656f169eaab584e9fe4",
       "verified": true,
       "disclosed_fields": [
         "amount",
@@ -33,7 +33,7 @@
         "to_shielded_address"
       ],
       "amount": "7",
-      "asset_denom": "uclair",
+      "asset_id_hex": "238d5f23e4d918d40b0982ce3aef16a75c4d1760193d1c3b30b9f5df681903ca",
       "from_shielded_address": "clairs1gpcgt6y20tmtywltcz7cqsfcn6y26dy6ky97za29ac7perad2chwek4r6nv80ufdkyavxwzc8xda7q2ge5y773hp9xnhf9c0arenutc2vvkkw",
       "to_shielded_address": "clairs1ywk03azf5gd9q3f2l2j544eyzdmay59djqzc830sd0xsep57hq9vap4aw38tmn5kzq2mp24gpdvxecngufg68s4rt0gdzx4uqs6jdfqluyuty"
     },
@@ -41,8 +41,8 @@
       "plane": "audit",
       "policy": "amount-from-to",
       "output_index": 0,
-      "commitment_hex": "10b62825eac8a645278d300ec077885a123170460e9ca1048f4521a3f6fb6cb2",
-      "digest_hex": "2ebb6f2660eed6194f4f95163268068252838ef01fe0cc28437f149803c68d0a",
+      "commitment_hex": "21a894b9316c90cc61728074b13c9c9065881a8ae457a04a12d258e7971b7b34",
+      "digest_hex": "29bc2dd8a0a1163b83046860b472a69212598be44393414256f260e5e6d9dd15",
       "verified": true,
       "disclosed_fields": [
         "amount",
@@ -50,7 +50,7 @@
         "to_shielded_address"
       ],
       "amount": "7",
-      "asset_denom": "uclair",
+      "asset_id_hex": "238d5f23e4d918d40b0982ce3aef16a75c4d1760193d1c3b30b9f5df681903ca",
       "from_shielded_address": "clairs1gpcgt6y20tmtywltcz7cqsfcn6y26dy6ky97za29ac7perad2chwek4r6nv80ufdkyavxwzc8xda7q2ge5y773hp9xnhf9c0arenutc2vvkkw",
       "to_shielded_address": "clairs1ywk03azf5gd9q3f2l2j544eyzdmay59djqzc830sd0xsep57hq9vap4aw38tmn5kzq2mp24gpdvxecngufg68s4rt0gdzx4uqs6jdfqluyuty"
     },
@@ -58,8 +58,8 @@
       "plane": "self-view",
       "policy": "amount-from-to",
       "output_index": 0,
-      "commitment_hex": "10b62825eac8a645278d300ec077885a123170460e9ca1048f4521a3f6fb6cb2",
-      "digest_hex": "2ebb6f2660eed6194f4f95163268068252838ef01fe0cc28437f149803c68d0a",
+      "commitment_hex": "21a894b9316c90cc61728074b13c9c9065881a8ae457a04a12d258e7971b7b34",
+      "digest_hex": "29bc2dd8a0a1163b83046860b472a69212598be44393414256f260e5e6d9dd15",
       "verified": true,
       "disclosed_fields": [
         "amount",
@@ -67,7 +67,7 @@
         "to_shielded_address"
       ],
       "amount": "7",
-      "asset_denom": "uclair",
+      "asset_id_hex": "238d5f23e4d918d40b0982ce3aef16a75c4d1760193d1c3b30b9f5df681903ca",
       "from_shielded_address": "clairs1gpcgt6y20tmtywltcz7cqsfcn6y26dy6ky97za29ac7perad2chwek4r6nv80ufdkyavxwzc8xda7q2ge5y773hp9xnhf9c0arenutc2vvkkw",
       "to_shielded_address": "clairs1ywk03azf5gd9q3f2l2j544eyzdmay59djqzc830sd0xsep57hq9vap4aw38tmn5kzq2mp24gpdvxecngufg68s4rt0gdzx4uqs6jdfqluyuty"
     }
@@ -76,9 +76,9 @@
     "validation_now_unix": 4102444800,
     "request_version": "v2",
     "response_version": "v2",
-    "payload_hash": "9d417ea947b3e4a27d2368daa0ebd91b08e2ab236306014e7446f86db4e14a88",
-    "proof_payload_hash": "9d417ea947b3e4a27d2368daa0ebd91b08e2ab236306014e7446f86db4e14a88",
-    "final_payload_hash": "29faa11087a4bb2d5abd10df05816afac22434e9b13a6b7dae8d9423c55d061c",
+    "payload_hash": "b2abf5f0f7af8cf3eb2c6e4a9946807d78660283e12dde9338753f4a3d84808a",
+    "proof_payload_hash": "b2abf5f0f7af8cf3eb2c6e4a9946807d78660283e12dde9338753f4a3d84808a",
+    "final_payload_hash": "972f31750697a211cdcd8966166b3ecfa2952e6de209167e33fd179a724bd45a",
     "amount": "10uclair",
     "asset_denom": "uclair",
     "recipient": "clair1qgpqyqszqgpqyqszqgpqyqszqgpqyqsz378u48",

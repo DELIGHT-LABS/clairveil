@@ -14,7 +14,6 @@ import (
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/circuit"
-	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
 )
@@ -64,6 +63,9 @@ func wrapMerkleAppendPreconditionErr(err error, capacityMessage string) error {
 // Deposit locks transparent funds and appends the encrypted note commitment.
 func (k msgServer) Deposit(goCtx context.Context, msg *types.MsgDeposit) (*types.MsgDepositResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
+	if err := msg.ValidateBasic(); err != nil {
+		return nil, err
+	}
 
 	depositor, err := sdk.AccAddressFromBech32(msg.Creator)
 	if err != nil {
@@ -93,7 +95,11 @@ func (k msgServer) Deposit(goCtx context.Context, msg *types.MsgDeposit) (*types
 	var assignment circuit.DepositCircuit
 	assignment.Commitment = new(big.Int).SetBytes(canonicalCommitment)
 	assignment.Amount = new(big.Int).Set(coin.Amount.BigInt())
-	assignment.AssetID = privacycrypto.HashString(coin.Denom)
+	assetID, err := k.RequireRegisteredAssetV1(ctx, coin.Denom)
+	if err != nil {
+		return nil, errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "deposit asset registry validation failed: %v", err)
+	}
+	assignment.AssetID = new(big.Int).SetBytes(assetID)
 
 	if err := verifyProofBN254(ctx, msg.Proof, &assignment, DepositProofVerificationGas, "privacy deposit proof verification", zk.GetDepositVerifyingKey); err != nil {
 		return nil, errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "deposit proof verification failed; the proof, amount, asset, or commitment may not match: %v", err)
@@ -125,6 +131,9 @@ func (k msgServer) Deposit(goCtx context.Context, msg *types.MsgDeposit) (*types
 // Withdraw verifies a spend proof and releases transparent funds.
 func (k msgServer) Withdraw(goCtx context.Context, msg *types.MsgWithdraw) (*types.MsgWithdrawResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
+	if err := msg.ValidateBasic(); err != nil {
+		return nil, err
+	}
 
 	canonicalRoot, err := validateFieldElementBytesStrict(msg.Root)
 	if err != nil {
@@ -188,7 +197,11 @@ func (k msgServer) Withdraw(goCtx context.Context, msg *types.MsgWithdraw) (*typ
 	}
 	amountVal := new(big.Int).Set(coin.Amount.BigInt())
 	assignment.Amount = amountVal
-	assignment.AssetID = privacycrypto.HashString(coin.Denom)
+	assetID, err := k.RequireRegisteredAssetV1(ctx, coin.Denom)
+	if err != nil {
+		return nil, errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "withdraw asset registry validation failed: %v", err)
+	}
+	assignment.AssetID = new(big.Int).SetBytes(assetID)
 
 	if err := verifyProofBN254(ctx, msg.Proof, &assignment, SpendProofVerificationGas, "privacy spend proof verification", zk.GetSpendVerifyingKey); err != nil {
 		return nil, errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "spend proof verification failed; the proof, recipient, amount, or asset may not match: %v", err)
@@ -218,6 +231,9 @@ func (k msgServer) Withdraw(goCtx context.Context, msg *types.MsgWithdraw) (*typ
 
 func (k msgServer) Transfer(goCtx context.Context, msg *types.MsgTransfer) (*types.MsgTransferResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
+	if err := msg.ValidateBasic(); err != nil {
+		return nil, err
+	}
 	if err := k.executeShieldedTransfer(ctx, shieldedTransferRequest{
 		relayer:                     msg.Creator,
 		proof:                       msg.Proof,

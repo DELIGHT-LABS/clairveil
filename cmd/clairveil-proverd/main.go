@@ -29,7 +29,7 @@ func main() {
 	flag.DurationVar(&config.ReadTimeout, "read-timeout", config.ReadTimeout, "maximum duration for reading the full request body")
 	flag.DurationVar(&config.WriteTimeout, "write-timeout", config.WriteTimeout, "maximum duration for writing a response (0 disables the timeout)")
 	flag.DurationVar(&config.IdleTimeout, "idle-timeout", config.IdleTimeout, "maximum keep-alive idle timeout")
-	flag.Int64Var(&config.MaxRequestBytes, "max-request-bytes", config.MaxRequestBytes, "maximum accepted JSON request body size in bytes (0 disables the limit)")
+	flag.Int64Var(&config.MaxRequestBytes, "max-request-bytes", config.MaxRequestBytes, "maximum accepted JSON request body size in bytes (must be positive)")
 	flag.Parse()
 
 	if err := config.Validate(); err != nil {

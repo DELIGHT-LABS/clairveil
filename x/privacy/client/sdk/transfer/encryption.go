@@ -1,7 +1,6 @@
 package transfer
 
 import (
-	"encoding/json"
 	"fmt"
 
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
@@ -48,20 +47,28 @@ func encryptNoteForReceiver(note privacytypes.Note, label string, outputCommitme
 		return nil, nil, fmt.Errorf("invalid %s note receiver view key: %w", label, err)
 	}
 
-	noteJSON, err := json.Marshal(note)
+	noteBytes, err := privacytypes.MarshalNotePlaintextV1(&note)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to marshal %s note: %w", label, err)
+		return nil, nil, fmt.Errorf("failed to marshal %s NotePlaintextV1: %w", label, err)
 	}
 
 	if includeViewTag {
-		cipherText, viewTag, err := privacycrypto.AsymEncryptWithViewTag(noteJSON, *viewPubKey, outputCommitment, outputIndex)
+		rawCipherText, viewTag, err := privacycrypto.AsymEncryptWithViewTag(noteBytes, *viewPubKey, outputCommitment, outputIndex)
+		if err != nil {
+			return nil, nil, err
+		}
+		cipherText, err := privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeTransferNoteV1, rawCipherText)
 		if err != nil {
 			return nil, nil, err
 		}
 		return cipherText, viewTag, nil
 	}
 
-	cipherText, err := privacycrypto.AsymEncrypt(noteJSON, *viewPubKey)
+	rawCipherText, err := privacycrypto.AsymEncrypt(noteBytes, *viewPubKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	cipherText, err := privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeTransferNoteV1, rawCipherText)
 	if err != nil {
 		return nil, nil, err
 	}

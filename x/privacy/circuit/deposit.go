@@ -1,6 +1,7 @@
 package circuit
 
 import (
+	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/std/algebra/native/twistededwards"
 	"github.com/consensys/gnark/std/hash/mimc"
@@ -23,10 +24,11 @@ func (c *DepositCircuit) Define(api frontend.API) error {
 	curve, _ := twistededwards.NewEdCurve(api, ecc_twistededwards.BN254)
 
 	assertAmountRange(api, c.Amount)
-	curve.AssertIsOnCurve(c.ReceiverSpendPubKey)
-	curve.AssertIsOnCurve(c.ReceiverViewPubKey)
+	assertPrimeSubgroupPoint(api, curve, c.ReceiverSpendPubKey)
+	assertPrimeSubgroupPoint(api, curve, c.ReceiverViewPubKey)
 
 	h.Write(
+		privacytypes.DomainFieldV1(privacytypes.NoteCommitmentV1FieldDomain),
 		c.ReceiverSpendPubKey.X,
 		c.ReceiverSpendPubKey.Y,
 		c.ReceiverViewPubKey.X,
@@ -35,7 +37,9 @@ func (c *DepositCircuit) Define(api frontend.API) error {
 		c.AssetID,
 		c.Randomness,
 	)
-	api.AssertIsEqual(h.Sum(), c.Commitment)
+	calculatedCommitment := h.Sum()
+	api.AssertIsDifferent(calculatedCommitment, 0)
+	api.AssertIsEqual(calculatedCommitment, c.Commitment)
 
 	return nil
 }

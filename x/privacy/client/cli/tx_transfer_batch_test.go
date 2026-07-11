@@ -8,7 +8,6 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/stretchr/testify/require"
 
-	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -98,7 +97,7 @@ func TestRemoveTransferBatchInputsFallsBackToCommitmentKey(t *testing.T) {
 			ReceiverViewPubKeyX:  big.NewInt(3),
 			ReceiverViewPubKeyY:  big.NewInt(4),
 			Amount:               big.NewInt(5),
-			AssetID:              crypto.HashString("uclair"),
+			AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 			Randomness:           big.NewInt(1),
 		},
 	}
@@ -109,7 +108,7 @@ func TestRemoveTransferBatchInputsFallsBackToCommitmentKey(t *testing.T) {
 			ReceiverViewPubKeyX:  big.NewInt(3),
 			ReceiverViewPubKeyY:  big.NewInt(4),
 			Amount:               big.NewInt(7),
-			AssetID:              crypto.HashString("uclair"),
+			AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 			Randomness:           big.NewInt(2),
 		},
 	}
@@ -144,7 +143,7 @@ func testTransferBatchFoundNote(nullifier string, amount int64) FoundNote {
 	return FoundNote{
 		Note: privacytypes.Note{
 			Amount:  big.NewInt(amount),
-			AssetID: crypto.HashString("uclair"),
+			AssetID: privacytypes.ComputeAssetIDV1("uclair"),
 		},
 		Nullifier: nullifier,
 		IsSpent:   false,

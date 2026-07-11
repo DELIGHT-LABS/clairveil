@@ -4,7 +4,6 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	"github.com/stretchr/testify/require"
 )
@@ -25,10 +24,10 @@ func TestDecodeMerkleProof(t *testing.T) {
 
 func TestSummarizeSpendableNotesByDenom(t *testing.T) {
 	notes := []FoundNote{
-		{Note: types.Note{Amount: big.NewInt(5), AssetID: crypto.HashString("uclair")}, IsSpent: false},
-		{Note: types.Note{Amount: big.NewInt(7), AssetID: crypto.HashString("uatom")}, IsSpent: false},
-		{Note: types.Note{Amount: big.NewInt(11), AssetID: crypto.HashString("uclair")}, IsSpent: true},
-		{Note: types.Note{Amount: big.NewInt(13), AssetID: crypto.HashString("uclair")}, IsSpent: false},
+		{Note: types.Note{Amount: big.NewInt(5), AssetID: types.ComputeAssetIDV1("uclair")}, IsSpent: false},
+		{Note: types.Note{Amount: big.NewInt(7), AssetID: types.ComputeAssetIDV1("uatom")}, IsSpent: false},
+		{Note: types.Note{Amount: big.NewInt(11), AssetID: types.ComputeAssetIDV1("uclair")}, IsSpent: true},
+		{Note: types.Note{Amount: big.NewInt(13), AssetID: types.ComputeAssetIDV1("uclair")}, IsSpent: false},
 	}
 
 	spendable, total := summarizeSpendableNotesByDenom(notes, "uclair")
@@ -42,21 +41,21 @@ func TestSummarizeSpendableNotesByDenom(t *testing.T) {
 func TestBuildListNotesJSONOutput(t *testing.T) {
 	notes := []FoundNote{
 		{
-			Note:      types.Note{Amount: big.NewInt(5), AssetID: crypto.HashString("uclair")},
+			Note:      types.Note{Amount: big.NewInt(5), AssetID: types.ComputeAssetIDV1("uclair")},
 			Nullifier: "aa",
 			Height:    3,
 			TxHash:    "A1",
 			IsSpent:   false,
 		},
 		{
-			Note:      types.Note{Amount: big.NewInt(7), AssetID: crypto.HashString("uclair")},
+			Note:      types.Note{Amount: big.NewInt(7), AssetID: types.ComputeAssetIDV1("uclair")},
 			Nullifier: "bb",
 			Height:    7,
 			TxHash:    "B2",
 			IsSpent:   true,
 		},
 		{
-			Note:      types.Note{Amount: big.NewInt(11), AssetID: crypto.HashString("uclair")},
+			Note:      types.Note{Amount: big.NewInt(11), AssetID: types.ComputeAssetIDV1("uclair")},
 			Nullifier: "cc",
 			Height:    11,
 			TxHash:    "C3",
@@ -110,13 +109,13 @@ func TestConsumeOneShotBool(t *testing.T) {
 
 func TestPlannerStateFingerprintUsesSortedSameDenomSpendableNotes(t *testing.T) {
 	left := []FoundNote{
-		{Note: types.Note{Amount: big.NewInt(10), AssetID: crypto.HashString("uclair")}, Nullifier: "bb", Height: 9},
-		{Note: types.Note{Amount: big.NewInt(3), AssetID: crypto.HashString("uclair")}, Nullifier: "aa", Height: 5},
-		{Note: types.Note{Amount: big.NewInt(9), AssetID: crypto.HashString("uatom")}, Nullifier: "xx", Height: 4},
+		{Note: types.Note{Amount: big.NewInt(10), AssetID: types.ComputeAssetIDV1("uclair")}, Nullifier: "bb", Height: 9},
+		{Note: types.Note{Amount: big.NewInt(3), AssetID: types.ComputeAssetIDV1("uclair")}, Nullifier: "aa", Height: 5},
+		{Note: types.Note{Amount: big.NewInt(9), AssetID: types.ComputeAssetIDV1("uatom")}, Nullifier: "xx", Height: 4},
 	}
 	right := []FoundNote{
-		{Note: types.Note{Amount: big.NewInt(3), AssetID: crypto.HashString("uclair")}, Nullifier: "aa", Height: 5},
-		{Note: types.Note{Amount: big.NewInt(10), AssetID: crypto.HashString("uclair")}, Nullifier: "bb", Height: 9},
+		{Note: types.Note{Amount: big.NewInt(3), AssetID: types.ComputeAssetIDV1("uclair")}, Nullifier: "aa", Height: 5},
+		{Note: types.Note{Amount: big.NewInt(10), AssetID: types.ComputeAssetIDV1("uclair")}, Nullifier: "bb", Height: 9},
 	}
 
 	require.Equal(t, plannerStateFingerprint(left, "uclair", big.NewInt(7)), plannerStateFingerprint(right, "uclair", big.NewInt(7)))

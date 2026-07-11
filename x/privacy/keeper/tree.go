@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -29,6 +28,7 @@ var (
 	errMerkleTreeLeafMissing     = errors.New("merkle tree leaf is missing")
 	errMerkleTreeLeafMismatch    = errors.New("merkle tree commitment index does not match stored leaf")
 	errMerkleDuplicateCommitment = errors.New("commitment already exists in the merkle tree")
+	errMerkleZeroCommitment      = errors.New("active commitment must be non-zero")
 )
 
 func validateMerkleLeafCount(count uint64) error {
@@ -99,7 +99,7 @@ func (k Keeper) getLeafRequired(ctx sdk.Context, index uint64, leafCount uint64)
 		return nil, fmt.Errorf("%w: index=%d leaf_count=%d", errMerkleTreeLeafMissing, index, leafCount)
 	}
 
-	canonicalLeaf, err := canonicalizeFieldBytes(leaf)
+	canonicalLeaf, err := validateFieldElementBytesStrict(leaf)
 	if err != nil {
 		return nil, fmt.Errorf("merkle tree leaf at index %d is invalid: %w", index, err)
 	}
@@ -107,9 +107,9 @@ func (k Keeper) getLeafRequired(ctx sdk.Context, index uint64, leafCount uint64)
 	return canonicalLeaf, nil
 }
 
-func (k Keeper) getMerkleNodeOrZero(ctx sdk.Context, level uint8, index uint64, leafCount uint64) ([]byte, error) {
+func (k Keeper) getMerkleNodeOrEmpty(ctx sdk.Context, level uint8, index uint64, leafCount uint64) ([]byte, error) {
 	if index >= populatedNodeCountAtLevel(leafCount, int(level)) {
-		return zeroNodeBytes(), nil
+		return emptyNodeBytes(uint32(level)), nil
 	}
 	if !k.HasMerkleNode(ctx, level, index) {
 		return nil, fmt.Errorf("%w: level=%d index=%d leaf_count=%d", errMerkleTreeNodeMissing, level, index, leafCount)
@@ -122,7 +122,7 @@ func (k Keeper) validateAppendPath(ctx sdk.Context, index uint64) error {
 	currentIndex := index
 	for level := 0; level < MerkleDepth; level++ {
 		if currentIndex%2 == 1 {
-			if _, err := k.getMerkleNodeOrZero(ctx, uint8(level), currentIndex-1, index); err != nil {
+			if _, err := k.getMerkleNodeOrEmpty(ctx, uint8(level), currentIndex-1, index); err != nil {
 				return err
 			}
 		}
@@ -131,22 +131,29 @@ func (k Keeper) validateAppendPath(ctx sdk.Context, index uint64) error {
 	return nil
 }
 
-func hashNodes(left, right []byte) []byte {
+func hashNodes(level uint32, left, right []byte) []byte {
 	leftBig := new(big.Int).SetBytes(left)
 	rightBig := new(big.Int).SetBytes(right)
-	res := crypto.MimcHash(leftBig, rightBig)
-	return res.Bytes()
+	res := types.ComputeNoteTreeNodeV1(level, leftBig, rightBig)
+	return canonicalizeFieldBytesOrOriginal(res.Bytes())
 }
 
 func zeroNodeBytes() []byte {
-	return big.NewInt(0).Bytes()
+	return make([]byte, fieldElementByteSize)
+}
+
+func emptyNodeBytes(level uint32) []byte {
+	return canonicalizeFieldBytesOrOriginal(types.EmptyNoteTreeRootV1(level).Bytes())
 }
 
 // AppendCommitment appends a leaf commitment and updates the incremental tree state.
 func (k Keeper) AppendCommitment(ctx sdk.Context, commitment []byte) error {
-	canonicalCommitment, err := canonicalizeFieldBytes(commitment)
+	canonicalCommitment, err := validateFieldElementBytesStrict(commitment)
 	if err != nil {
 		return err
+	}
+	if bytes.Equal(canonicalCommitment, zeroNodeBytes()) {
+		return errMerkleZeroCommitment
 	}
 	if k.HasCommitment(ctx, canonicalCommitment) {
 		return fmt.Errorf("%w: commitment=%x", errMerkleDuplicateCommitment, canonicalCommitment)
@@ -178,16 +185,16 @@ func (k Keeper) AppendCommitment(ctx sdk.Context, commitment []byte) error {
 
 		if currentIndex%2 == 0 {
 			left = current
-			right = zeroNodeBytes()
+			right = emptyNodeBytes(uint32(level))
 		} else {
-			left, err = k.getMerkleNodeOrZero(ctx, uint8(level), currentIndex-1, index)
+			left, err = k.getMerkleNodeOrEmpty(ctx, uint8(level), currentIndex-1, index)
 			if err != nil {
 				return err
 			}
 			right = current
 		}
 
-		parent := hashNodes(left, right)
+		parent := hashNodes(uint32(level), left, right)
 		parentIndex := currentIndex / 2
 		k.SetMerkleNode(ctx, uint8(level+1), parentIndex, parent)
 
@@ -197,13 +204,20 @@ func (k Keeper) AppendCommitment(ctx sdk.Context, commitment []byte) error {
 
 	k.SetHistoricalRoot(ctx, current)
 	k.SetLeafCount(ctx, index+1)
+	if err := k.SetMerkleRootSnapshotV1(ctx, &types.MerkleRootSnapshotV1{
+		Root:      current,
+		LeafCount: index + 1,
+		Height:    ctx.BlockHeight(),
+	}); err != nil {
+		return fmt.Errorf("store merkle root snapshot: %w", err)
+	}
 	return nil
 }
 
 // RecalculateRoot rebuilds a root from the stored leaves when the cached root is missing.
 func (k Keeper) RecalculateRoot(ctx sdk.Context, count uint64) ([]byte, error) {
 	if count == 0 {
-		return zeroNodeBytes(), nil
+		return emptyNodeBytes(MerkleDepth), nil
 	}
 	if err := validateMerkleRebuildCount(count); err != nil {
 		return nil, err
@@ -228,9 +242,9 @@ func (k Keeper) RecalculateRoot(ctx sdk.Context, count uint64) ([]byte, error) {
 			if j+1 < len(layer) {
 				right = layer[j+1]
 			} else {
-				right = zeroNodeBytes()
+				right = emptyNodeBytes(uint32(i))
 			}
-			nextLayer[j/2] = hashNodes(left, right)
+			nextLayer[j/2] = hashNodes(uint32(i), left, right)
 		}
 		layer = nextLayer
 	}
@@ -270,7 +284,7 @@ func (k Keeper) GetPath(ctx sdk.Context, commitment []byte) ([]string, []uint32,
 		isRight := currentIndex % 2
 		siblingIndex := currentIndex ^ 1
 
-		sibling, err := k.getMerkleNodeOrZero(ctx, uint8(i), siblingIndex, count)
+		sibling, err := k.getMerkleNodeOrEmpty(ctx, uint8(i), siblingIndex, count)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -327,16 +341,16 @@ func (k Keeper) ensureIncrementalTreeState(ctx sdk.Context) error {
 
 			if currentIndex%2 == 0 {
 				left = current
-				right = zeroNodeBytes()
+				right = emptyNodeBytes(uint32(level))
 			} else {
-				left, err = k.getMerkleNodeOrZero(ctx, uint8(level), currentIndex-1, count)
+				left, err = k.getMerkleNodeOrEmpty(ctx, uint8(level), currentIndex-1, count)
 				if err != nil {
 					return err
 				}
 				right = current
 			}
 
-			parent := hashNodes(left, right)
+			parent := hashNodes(uint32(level), left, right)
 			parentIndex := currentIndex / 2
 			k.SetMerkleNode(ctx, uint8(level+1), parentIndex, parent)
 

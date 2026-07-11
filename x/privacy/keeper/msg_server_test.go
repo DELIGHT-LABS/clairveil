@@ -3,7 +3,10 @@ package keeper
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math/big"
@@ -82,6 +85,14 @@ func setupMsgServerKeeper() (*Keeper, sdk.Context, *mockPrivacyBankKeeper) {
 
 	bankKeeper := &mockPrivacyBankKeeper{}
 	k := NewKeeper(privacytypes.ModuleCdc, runtime.NewKVStoreService(storeKey), paramtypes.Subspace{}, bankKeeper)
+	return k, ctx, bankKeeper
+}
+
+func setupRegisteredMsgServerKeeper(t testing.TB) (*Keeper, sdk.Context, *mockPrivacyBankKeeper) {
+	t.Helper()
+	k, ctx, bankKeeper := setupMsgServerKeeper()
+	_, err := k.RegisterCanonicalAssetV1(ctx, "uclair")
+	require.NoError(t, err)
 	return k, ctx, bankKeeper
 }
 
@@ -165,6 +176,8 @@ type keeperTestArtifact struct {
 }
 
 func writeKeeperTestArtifacts(dir string, artifacts []keeperTestArtifact) error {
+	checksums := make(map[string]string, len(artifacts))
+	descriptors := privacyzk.DefaultArtifactDescriptors()
 	for _, artifact := range artifacts {
 		file, err := os.Create(filepath.Join(dir, artifact.filename))
 		if err != nil {
@@ -177,8 +190,23 @@ func writeKeeperTestArtifacts(dir string, artifacts []keeperTestArtifact) error 
 		if err := file.Close(); err != nil {
 			return err
 		}
+		artifactBytes, err := os.ReadFile(filepath.Join(dir, artifact.filename))
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(artifactBytes)
+		for _, descriptor := range descriptors {
+			if descriptor.Filename == artifact.filename {
+				checksums[descriptor.ChecksumEnv] = hex.EncodeToString(sum[:])
+				break
+			}
+		}
 	}
-	return nil
+	manifestBytes, err := json.Marshal(privacyzk.ManifestFromChecksums(dir, "", checksums))
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, privacyzk.ArtifactManifestFile), manifestBytes, 0o600)
 }
 
 type keeperDepositArtifactProvider struct{}
@@ -212,7 +240,65 @@ func testDepositMsg(t *testing.T, creator, amountStr string, amount *big.Int, de
 	require.NoError(t, err)
 
 	commitmentBytes := fixedFieldBytesFromBigInt(t, note.ComputeCommitment())
+	if _, err := privacytypes.UnwrapEncryptedEnvelopeV1(encryptedNote, privacytypes.EnvelopeDepositNoteV1); err != nil {
+		rawSize, sizeErr := privacytypes.EncryptedEnvelopeV1Size(privacytypes.EnvelopeDepositNoteV1)
+		require.NoError(t, sizeErr)
+		raw := make([]byte, rawSize-privacytypes.EncryptedEnvelopeV1HeaderSize)
+		copy(raw, encryptedNote)
+		encryptedNote, err = privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeDepositNoteV1, raw)
+		require.NoError(t, err)
+	}
 	return privacytypes.NewMsgDeposit(creator, amountStr, commitmentBytes, encryptedNote, proof)
+}
+
+func testKeeperEnvelope(t *testing.T, kind privacytypes.EncryptedEnvelopeKindV1) []byte {
+	t.Helper()
+	total, err := privacytypes.EncryptedEnvelopeV1Size(kind)
+	require.NoError(t, err)
+	raw := make([]byte, total-privacytypes.EncryptedEnvelopeV1HeaderSize)
+	wrapped, err := privacytypes.WrapEncryptedEnvelopeV1(kind, raw)
+	require.NoError(t, err)
+	return wrapped
+}
+
+func testKeeperDisclosurePubKey() []byte {
+	point := testKeeperScalarMulBase(big.NewInt(71))
+	encoded := point.Bytes()
+	return append([]byte(nil), encoded[:]...)
+}
+
+func testStructurallyValidTransferMsg(
+	t *testing.T,
+	creator string,
+	root []byte,
+	nullifiers [][]byte,
+	commitments [][]byte,
+	expiresAtUnix int64,
+) *privacytypes.MsgTransfer {
+	t.Helper()
+	return privacytypes.NewMsgTransferWithDisclosure(
+		creator,
+		[]byte{0x01},
+		root,
+		nullifiers,
+		commitments,
+		[][]byte{
+			testKeeperEnvelope(t, privacytypes.EnvelopeTransferNoteV1),
+			testKeeperEnvelope(t, privacytypes.EnvelopeTransferNoteV1),
+		},
+		[][]byte{{0x01, 0x02}, {0x03, 0x04}},
+		privacytypes.TransferPrivacyPolicyAllPrivate,
+		nil,
+		privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE,
+		nil,
+		nil,
+		fixedFieldBytes(61),
+		testKeeperDisclosurePubKey(),
+		testKeeperEnvelope(t, privacytypes.EnvelopeAuditDisclosureV1),
+		nil,
+		nil,
+		expiresAtUnix,
+	)
 }
 
 func testKeeperScalarMulBase(scalar *big.Int) crypto_tedwards.PointAffine {
@@ -243,7 +329,7 @@ func fixedFieldBytesFromBigInt(t *testing.T, value *big.Int) []byte {
 }
 
 func TestMsgServerDepositSuccess(t *testing.T) {
-	k, ctx, bankKeeper := setupMsgServerKeeper()
+	k, ctx, bankKeeper := setupRegisteredMsgServerKeeper(t)
 	server := NewMsgServerImpl(*k)
 
 	msg := testDepositMsg(t, testAddress(0x11), "1uclair", big.NewInt(1), "uclair", []byte{0x01})
@@ -278,9 +364,9 @@ func TestMsgServerDepositProofFramingAndGasFailurePathsKeepStateUnchanged(t *tes
 		{name: "framing valid invalid proof", proof: canonicalTestProofBytes},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			k, ctx, bankKeeper := setupMsgServerKeeper()
+			k, ctx, bankKeeper := setupRegisteredMsgServerKeeper(t)
 			ctx = ctx.WithGasMeter(storetypes.NewGasMeter(2 * DepositProofVerificationGas))
-			msg := privacytypes.NewMsgDeposit(testAddress(0x13), "1uclair", fixedFieldBytes(0x7d), []byte("note"), tc.proof(t))
+			msg := privacytypes.NewMsgDeposit(testAddress(0x13), "1uclair", fixedFieldBytes(0x7d), testKeeperEnvelope(t, privacytypes.EnvelopeDepositNoteV1), tc.proof(t))
 
 			_, err := NewMsgServerImpl(*k).Deposit(sdk.WrapSDKContext(ctx), msg)
 			require.Error(t, err)
@@ -293,7 +379,7 @@ func TestMsgServerDepositProofFramingAndGasFailurePathsKeepStateUnchanged(t *tes
 }
 
 func TestMsgServerDepositRejectsGlobalCommitmentCollisionBeforeBank(t *testing.T) {
-	k, ctx, bankKeeper := setupMsgServerKeeper()
+	k, ctx, bankKeeper := setupRegisteredMsgServerKeeper(t)
 	server := NewMsgServerImpl(*k)
 	msg := testDepositMsg(t, testAddress(0x12), "1uclair", big.NewInt(1), "uclair", []byte{0x01})
 
@@ -311,7 +397,7 @@ func TestMsgServerDepositRejectsGlobalCommitmentCollisionBeforeBank(t *testing.T
 }
 
 func TestMsgServerDepositEmitsExpectedEvent(t *testing.T) {
-	k, ctx, _ := setupMsgServerKeeper()
+	k, ctx, _ := setupRegisteredMsgServerKeeper(t)
 	server := NewMsgServerImpl(*k)
 
 	msg := testDepositMsg(t, testAddress(0x13), "1uclair", big.NewInt(1), "uclair", []byte{0xaa, 0xbb})
@@ -382,7 +468,11 @@ func TestMsgServerDepositRejectsProofTamperingBeforeBank(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			k, ctx, bankKeeper := setupMsgServerKeeper()
+			k, ctx, bankKeeper := setupRegisteredMsgServerKeeper(t)
+			if tc.name == "denom" {
+				_, err := k.RegisterCanonicalAssetV1(ctx, "uatom")
+				require.NoError(t, err)
+			}
 			server := NewMsgServerImpl(*k)
 			msg := testDepositMsg(t, testAddress(0x21), "1uclair", big.NewInt(1), "uclair", []byte{0x01})
 			tc.mutateMsg(t, msg)
@@ -405,24 +495,24 @@ func TestMsgServerDepositRejectsProofTamperingBeforeBank(t *testing.T) {
 }
 
 func TestMsgServerDepositRejectsInvalidCommitmentBeforeBank(t *testing.T) {
-	k, ctx, bankKeeper := setupMsgServerKeeper()
+	k, ctx, bankKeeper := setupRegisteredMsgServerKeeper(t)
 	server := NewMsgServerImpl(*k)
 
 	msg := privacytypes.NewMsgDeposit(testAddress(0x22), "1uclair", []byte{0x01}, []byte{0x01}, []byte{0x01})
 
 	_, err := server.Deposit(sdk.WrapSDKContext(ctx), msg)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "note commitment must be canonical 32-byte field bytes")
+	require.Contains(t, err.Error(), "note commitment must be exactly 32 bytes")
 	require.Equal(t, 0, bankKeeper.fromAccountToModuleCalls)
 	require.Equal(t, uint64(0), k.GetLeafCount(ctx))
 }
 
 func TestMsgServerDepositRejectsFullTreeBeforeBank(t *testing.T) {
-	k, ctx, bankKeeper := setupMsgServerKeeper()
+	k, ctx, bankKeeper := setupRegisteredMsgServerKeeper(t)
 	server := NewMsgServerImpl(*k)
 	k.SetLeafCount(ctx, MaxMerkleLeaves)
 
-	msg := privacytypes.NewMsgDeposit(testAddress(0x24), "1uclair", fixedFieldBytes(3), []byte{0x01}, []byte{0x01})
+	msg := privacytypes.NewMsgDeposit(testAddress(0x24), "1uclair", fixedFieldBytes(3), testKeeperEnvelope(t, privacytypes.EnvelopeDepositNoteV1), []byte{0x01})
 
 	_, err := server.Deposit(sdk.WrapSDKContext(ctx), msg)
 	require.Error(t, err)
@@ -432,11 +522,11 @@ func TestMsgServerDepositRejectsFullTreeBeforeBank(t *testing.T) {
 }
 
 func TestMsgServerDepositRejectsUnsafeMissingRootBeforeBank(t *testing.T) {
-	k, ctx, bankKeeper := setupMsgServerKeeper()
+	k, ctx, bankKeeper := setupRegisteredMsgServerKeeper(t)
 	server := NewMsgServerImpl(*k)
 	k.SetLeafCount(ctx, MaxMerkleRebuildLeaves+1)
 
-	msg := privacytypes.NewMsgDeposit(testAddress(0x25), "1uclair", fixedFieldBytes(4), []byte{0x01}, []byte{0x01})
+	msg := privacytypes.NewMsgDeposit(testAddress(0x25), "1uclair", fixedFieldBytes(4), testKeeperEnvelope(t, privacytypes.EnvelopeDepositNoteV1), []byte{0x01})
 
 	_, err := server.Deposit(sdk.WrapSDKContext(ctx), msg)
 	require.Error(t, err)
@@ -447,7 +537,7 @@ func TestMsgServerDepositRejectsUnsafeMissingRootBeforeBank(t *testing.T) {
 }
 
 func TestMsgServerWithdrawRejectsRootNotFoundBeforeZK(t *testing.T) {
-	k, ctx, bankKeeper := setupMsgServerKeeper()
+	k, ctx, bankKeeper := setupRegisteredMsgServerKeeper(t)
 	server := NewMsgServerImpl(*k)
 
 	msg := privacytypes.NewMsgWithdraw(
@@ -468,7 +558,7 @@ func TestMsgServerWithdrawRejectsRootNotFoundBeforeZK(t *testing.T) {
 }
 
 func TestMsgServerWithdrawRejectsUsedNullifierBeforeZK(t *testing.T) {
-	k, ctx, bankKeeper := setupMsgServerKeeper()
+	k, ctx, bankKeeper := setupRegisteredMsgServerKeeper(t)
 	server := NewMsgServerImpl(*k)
 
 	root := fixedFieldBytes(20)
@@ -494,7 +584,7 @@ func TestMsgServerWithdrawRejectsUsedNullifierBeforeZK(t *testing.T) {
 }
 
 func TestMsgServerWithdrawRejectsInvalidRecipientBeforeZK(t *testing.T) {
-	k, ctx, bankKeeper := setupMsgServerKeeper()
+	k, ctx, bankKeeper := setupRegisteredMsgServerKeeper(t)
 	server := NewMsgServerImpl(*k)
 
 	root := fixedFieldBytes(23)
@@ -520,7 +610,7 @@ func TestMsgServerWithdrawRejectsInvalidRecipientBeforeZK(t *testing.T) {
 }
 
 func TestMsgServerWithdrawRejectsChainIDMismatch(t *testing.T) {
-	k, ctx, bankKeeper := setupMsgServerKeeper()
+	k, ctx, bankKeeper := setupRegisteredMsgServerKeeper(t)
 	server := NewMsgServerImpl(*k)
 
 	root := fixedFieldBytes(26)
@@ -546,7 +636,7 @@ func TestMsgServerWithdrawRejectsChainIDMismatch(t *testing.T) {
 }
 
 func TestMsgServerWithdrawRejectsExpiredPayload(t *testing.T) {
-	k, ctx, bankKeeper := setupMsgServerKeeper()
+	k, ctx, bankKeeper := setupRegisteredMsgServerKeeper(t)
 	server := NewMsgServerImpl(*k)
 
 	root := fixedFieldBytes(29)
@@ -573,7 +663,7 @@ func TestMsgServerWithdrawRejectsExpiredPayload(t *testing.T) {
 }
 
 func TestMsgServerWithdrawTreatsExpiryBoundaryAsExpired(t *testing.T) {
-	k, ctx, bankKeeper := setupMsgServerKeeper()
+	k, ctx, bankKeeper := setupRegisteredMsgServerKeeper(t)
 	server := NewMsgServerImpl(*k)
 	root := fixedFieldBytes(0x7b)
 	nullifier := fixedFieldBytes(0x7c)
@@ -597,17 +687,15 @@ func TestMsgServerWithdrawTreatsExpiryBoundaryAsExpired(t *testing.T) {
 }
 
 func TestMsgServerTransferRejectsRootNotFoundBeforeZK(t *testing.T) {
-	k, ctx, _ := setupMsgServerKeeper()
+	k, ctx, _ := setupRegisteredMsgServerKeeper(t)
 	server := NewMsgServerImpl(*k)
 
-	msg := privacytypes.NewMsgTransfer(
+	msg := testStructurallyValidTransferMsg(
+		t,
 		testAddress(0x77),
-		[]byte{0x01},
 		fixedFieldBytes(30),
 		[][]byte{fixedFieldBytes(31), fixedFieldBytes(32)},
 		[][]byte{fixedFieldBytes(33), fixedFieldBytes(34)},
-		[][]byte{{0x01}, {0x02}},
-		[][]byte{{0x01, 0x02}, {0x03, 0x04}},
 		ctx.BlockTime().Add(time.Hour).Unix(),
 	)
 
@@ -617,16 +705,14 @@ func TestMsgServerTransferRejectsRootNotFoundBeforeZK(t *testing.T) {
 }
 
 func TestMsgServerTransferTreatsExpiryBoundaryAsExpired(t *testing.T) {
-	k, ctx, _ := setupMsgServerKeeper()
+	k, ctx, _ := setupRegisteredMsgServerKeeper(t)
 	server := NewMsgServerImpl(*k)
-	msg := privacytypes.NewMsgTransfer(
+	msg := testStructurallyValidTransferMsg(
+		t,
 		testAddress(0x78),
-		[]byte{0x01},
 		fixedFieldBytes(30),
 		[][]byte{fixedFieldBytes(31), fixedFieldBytes(32)},
 		[][]byte{fixedFieldBytes(33), fixedFieldBytes(34)},
-		[][]byte{{0x01}, {0x02}},
-		[][]byte{{0x01, 0x02}, {0x03, 0x04}},
 		ctx.BlockTime().Unix(),
 	)
 
@@ -637,7 +723,7 @@ func TestMsgServerTransferTreatsExpiryBoundaryAsExpired(t *testing.T) {
 }
 
 func TestMsgServerTransferRejectsInvalidNullifierCountBeforeZK(t *testing.T) {
-	k, ctx, _ := setupMsgServerKeeper()
+	k, ctx, _ := setupRegisteredMsgServerKeeper(t)
 	server := NewMsgServerImpl(*k)
 
 	root := fixedFieldBytes(40)
@@ -680,7 +766,7 @@ func TestMsgServerTransferRejectsLocalDuplicatesBeforeProof(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			k, ctx, _ := setupMsgServerKeeper()
+			k, ctx, _ := setupRegisteredMsgServerKeeper(t)
 			root := fixedFieldBytes(43)
 			k.SetHistoricalRoot(ctx, root)
 
@@ -730,7 +816,7 @@ func TestMsgServerTransferRejectsGlobalCommitmentCollisionBeforeProof(t *testing
 }
 
 func TestMsgServerTransferRejectsInsufficientBatchCapacityBeforeProof(t *testing.T) {
-	k, ctx, _ := setupMsgServerKeeper()
+	k, ctx, _ := setupRegisteredMsgServerKeeper(t)
 	k.SetLeafCount(ctx, MaxMerkleLeaves-1)
 
 	root := fixedFieldBytes(50)
@@ -757,7 +843,7 @@ func TestMsgServerTransferRejectsInsufficientBatchCapacityBeforeProof(t *testing
 }
 
 func TestMsgServerTransferRejectsOverflowAsTreeStateError(t *testing.T) {
-	k, ctx, _ := setupMsgServerKeeper()
+	k, ctx, _ := setupRegisteredMsgServerKeeper(t)
 	k.SetLeafCount(ctx, MaxMerkleLeaves+1)
 
 	root := fixedFieldBytes(60)

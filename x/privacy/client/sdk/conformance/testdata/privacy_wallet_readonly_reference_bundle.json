@@ -51,14 +51,14 @@
     "from_shielded_address": "clairs19x5u4mf4l4zqcpvr7d809fh4tjy5j50p2mwgky0nj38jpqpj7svndu3hqshu5e3s8w6pea5p30xek5p9flxjf7f44xh7cnfrlsd84pc7upgh3",
     "to_shielded_address": "clairs1uwnerzqjukcmg56pqwe509jmfvsvdnd8j4k657d8c839f5rthu0q6d9yk3vda5wyhmvggjgkj94axzegkchypz0h3nx577vw3th7lpq7mwjed",
     "verified": true,
-    "digest_hex": "0607abea638cc10c4ccd1c3accc1d5ac8b070d4b3740ea7cfc931d3bfc70979d"
+    "digest_hex": "304397320f57b8bb928e4f98ad95743d533a80ccb6f176af49fc7f71358f2f77"
   },
   "scan": {
     "deposit_found": [
       {
         "tx_hash": "AABBCC",
         "height": 42,
-        "nullifier": "17de68060ab4e6225193aa9f6d7c563f1846518000b3f335a9f77fb658198628",
+        "nullifier": "10c686f41406a64f3132cbb11c2ce925443e220e0c48766538988500da1312eb",
         "amount": "7",
         "asset_denom": "uclair",
         "receiver_shielded_address": "clairs19x5u4mf4l4zqcpvr7d809fh4tjy5j50p2mwgky0nj38jpqpj7svndu3hqshu5e3s8w6pea5p30xek5p9flxjf7f44xh7cnfrlsd84pc7upgh3"
@@ -68,7 +68,7 @@
       {
         "tx_hash": "AABBCC",
         "height": 42,
-        "nullifier": "17de68060ab4e6225193aa9f6d7c563f1846518000b3f335a9f77fb658198628",
+        "nullifier": "10c686f41406a64f3132cbb11c2ce925443e220e0c48766538988500da1312eb",
         "amount": "7",
         "asset_denom": "uclair",
         "receiver_shielded_address": "clairs19x5u4mf4l4zqcpvr7d809fh4tjy5j50p2mwgky0nj38jpqpj7svndu3hqshu5e3s8w6pea5p30xek5p9flxjf7f44xh7cnfrlsd84pc7upgh3"

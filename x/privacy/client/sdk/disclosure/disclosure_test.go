@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
-	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -19,7 +18,7 @@ func TestVerifyPayloadForAmountOnlyUserDisclosure(t *testing.T) {
 	commitmentHex, err := privacyfield.CanonicalHexFromBigInt(commitment)
 	require.NoError(t, err)
 
-	assetID := privacycrypto.HashString("uclair")
+	assetID := privacytypes.ComputeAssetIDV1("uclair")
 	assetIDHex, err := privacyfield.CanonicalHexFromBigInt(assetID)
 	require.NoError(t, err)
 	blinding := big.NewInt(77)
@@ -61,7 +60,7 @@ func TestVerifyPayloadForAmountOnlyUserDisclosure(t *testing.T) {
 }
 
 func TestDisclosureAmountAndAssetRejectsMismatchedDenom(t *testing.T) {
-	assetIDHex, err := privacyfield.CanonicalHexFromBigInt(privacycrypto.HashString("uclair"))
+	assetIDHex, err := privacyfield.CanonicalHexFromBigInt(privacytypes.ComputeAssetIDV1("uclair"))
 	require.NoError(t, err)
 
 	_, _, err = DisclosureAmountAndAsset(&Payload{
@@ -111,7 +110,7 @@ func amountOnlyPayload(t *testing.T) (*Payload, string) {
 	require.NoError(t, err)
 	commitmentHex, err := privacyfield.CanonicalHexFromBigInt(big.NewInt(12345))
 	require.NoError(t, err)
-	assetID := privacycrypto.HashString("uclair")
+	assetID := privacytypes.ComputeAssetIDV1("uclair")
 	assetIDHex, err := privacyfield.CanonicalHexFromBigInt(assetID)
 	require.NoError(t, err)
 	blinding := big.NewInt(77)

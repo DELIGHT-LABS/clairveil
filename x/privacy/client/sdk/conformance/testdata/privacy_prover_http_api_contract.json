@@ -21,7 +21,11 @@
       "not_found",
       "unauthorized",
       "unavailable",
-      "proof_failed"
+      "proof_failed",
+      "busy"
+    ],
+    "retryable_codes": [
+      "busy"
     ]
   }
 }

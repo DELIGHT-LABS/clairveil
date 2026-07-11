@@ -969,7 +969,17 @@ func buildJoinSplitAssignmentFromPreparedTransferPayload(payload PreparedTransfe
 			assignment.InputPathHelpers[i][depth] = pathHelpers[depth]
 		}
 
-		expectedNullifier := privacycrypto.MimcHash(
+		inputCommitment := privacytypes.ComputeNoteCommitmentV1(
+			pointAffineCoordinate(spendPubKey, true),
+			pointAffineCoordinate(spendPubKey, false),
+			pointAffineCoordinate(viewPubKey, true),
+			pointAffineCoordinate(viewPubKey, false),
+			amount,
+			new(big.Int).SetBytes(assetIDBytes),
+			randomness,
+		)
+		expectedNullifier := privacytypes.ComputeNoteNullifierV1(
+			inputCommitment,
 			randomness,
 			pointAffineCoordinate(spendPubKey, true),
 			pointAffineCoordinate(spendPubKey, false),
@@ -1007,7 +1017,7 @@ func buildJoinSplitAssignmentFromPreparedTransferPayload(payload PreparedTransfe
 		assignPubKey(&assignment.OutputSpendPubKeys[i], *spendPubKey)
 		assignPubKey(&assignment.OutputViewPubKeys[i], *viewPubKey)
 
-		expectedCommitment := privacycrypto.MimcHash(
+		expectedCommitment := privacytypes.ComputeNoteCommitmentV1(
 			pointAffineCoordinate(spendPubKey, true),
 			pointAffineCoordinate(spendPubKey, false),
 			pointAffineCoordinate(viewPubKey, true),

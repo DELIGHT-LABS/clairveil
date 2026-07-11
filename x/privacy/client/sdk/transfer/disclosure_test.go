@@ -10,7 +10,6 @@ import (
 
 	privacydisclosure "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/disclosure"
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
-	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -81,7 +80,7 @@ func TestBuildAuditDisclosureDataEncryptedPayloadDecrypts(t *testing.T) {
 	require.Equal(t, privacydisclosure.PlaneAudit, data.Payload.Plane)
 	require.NotEmpty(t, data.Payload.FromShieldedAddress)
 	require.NotEmpty(t, data.Payload.ToShieldedAddress)
-	require.Equal(t, "uclair", data.Payload.AssetDenom)
+	require.Empty(t, data.Payload.AssetDenom)
 
 	payload, err := privacydisclosure.DecryptPayload(data.CipherText, auditScalar)
 	require.NoError(t, err)
@@ -102,7 +101,7 @@ func TestBuildSelfViewDisclosureDataEncryptedPayloadDecrypts(t *testing.T) {
 	require.Equal(t, privacydisclosure.PlaneSelfView, data.Payload.Plane)
 	require.NotEmpty(t, data.Payload.FromShieldedAddress)
 	require.NotEmpty(t, data.Payload.ToShieldedAddress)
-	require.Equal(t, "uclair", data.Payload.AssetDenom)
+	require.Empty(t, data.Payload.AssetDenom)
 
 	payload, err := privacydisclosure.DecryptPayload(data.CipherText, selfViewScalar)
 	require.NoError(t, err)
@@ -166,7 +165,7 @@ func testDisclosureBuildInput(t *testing.T) DisclosureBuildInput {
 		ReceiverViewPubKeyX:  pointCoordinate(fromViewPubKey, true),
 		ReceiverViewPubKeyY:  pointCoordinate(fromViewPubKey, false),
 		Amount:               big.NewInt(9),
-		AssetID:              privacycrypto.HashString("uclair"),
+		AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 		Randomness:           big.NewInt(101),
 		Memo:                 "from",
 	}
@@ -176,7 +175,7 @@ func testDisclosureBuildInput(t *testing.T) DisclosureBuildInput {
 		ReceiverViewPubKeyX:  pointCoordinate(toViewPubKey, true),
 		ReceiverViewPubKeyY:  pointCoordinate(toViewPubKey, false),
 		Amount:               big.NewInt(7),
-		AssetID:              privacycrypto.HashString("uclair"),
+		AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 		Randomness:           big.NewInt(202),
 		Memo:                 "recipient",
 	}

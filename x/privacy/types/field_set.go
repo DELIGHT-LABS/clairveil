@@ -1,6 +1,7 @@
 package types
 
 import (
+	"bytes"
 	"fmt"
 )
 
@@ -12,6 +13,9 @@ func ValidateDistinctCanonicalFieldElements(name string, values [][]byte) error 
 	for i, value := range values {
 		if err := validateFieldElementBytesStrict(name, value); err != nil {
 			return fmt.Errorf("%s index %d: %w", name, i, err)
+		}
+		if bytes.Equal(value, make([]byte, expectedFieldElementBytes)) {
+			return fmt.Errorf("%s index %d must be non-zero", name, i)
 		}
 
 		var key [expectedFieldElementBytes]byte

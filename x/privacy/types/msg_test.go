@@ -52,6 +52,56 @@ func validDisclosurePubKeyBytes(t *testing.T) []byte {
 	return append([]byte(nil), pubKeyBytes[:]...)
 }
 
+func validEnvelopeBytes(t *testing.T, kind EncryptedEnvelopeKindV1) []byte {
+	t.Helper()
+	size, err := encryptedCiphertextSizeV1(kind)
+	require.NoError(t, err)
+	wrapped, err := WrapEncryptedEnvelopeV1(kind, make([]byte, size))
+	require.NoError(t, err)
+	return wrapped
+}
+
+func validTransferCipherTexts(t *testing.T) [][]byte {
+	return [][]byte{
+		validEnvelopeBytes(t, EnvelopeTransferNoteV1),
+		validEnvelopeBytes(t, EnvelopeTransferNoteV1),
+	}
+}
+
+func validPublicDisclosurePlaintext(t *testing.T, policy uint32) []byte {
+	t.Helper()
+	curve := crypto_tedwards.GetEdwardsCurve()
+	var point crypto_tedwards.PointAffine
+	point.ScalarMultiplication(&curve.Base, big.NewInt(7))
+	x, y := new(big.Int), new(big.Int)
+	point.X.BigInt(x)
+	point.Y.BigInt(y)
+	payload := &DisclosurePlaintextV1{
+		Plane: DisclosurePlaneUserV1, OutputIndex: TransferDisclosureRecipientOutputIndex,
+		Policy: policy, DisclosedFieldBitmap: policy,
+		Commitment: big.NewInt(1), Amount: big.NewInt(0), AssetID: ComputeAssetIDV1("uclair"),
+		SenderSpendKeyX: big.NewInt(0), SenderSpendKeyY: big.NewInt(0),
+		SenderViewKeyX: big.NewInt(0), SenderViewKeyY: big.NewInt(0),
+		RecipientSpendKeyX: big.NewInt(0), RecipientSpendKeyY: big.NewInt(0),
+		RecipientViewKeyX: big.NewInt(0), RecipientViewKeyY: big.NewInt(0),
+		DisclosureBlinding: big.NewInt(3),
+	}
+	if policy&TransferPrivacyPolicyDiscloseAmount != 0 {
+		payload.Amount = big.NewInt(1)
+	}
+	if policy&TransferPrivacyPolicyDiscloseFrom != 0 {
+		payload.SenderSpendKeyX, payload.SenderSpendKeyY = new(big.Int).Set(x), new(big.Int).Set(y)
+		payload.SenderViewKeyX, payload.SenderViewKeyY = new(big.Int).Set(x), new(big.Int).Set(y)
+	}
+	if policy&TransferPrivacyPolicyDiscloseTo != 0 {
+		payload.RecipientSpendKeyX, payload.RecipientSpendKeyY = new(big.Int).Set(x), new(big.Int).Set(y)
+		payload.RecipientViewKeyX, payload.RecipientViewKeyY = new(big.Int).Set(x), new(big.Int).Set(y)
+	}
+	encoded, err := MarshalDisclosurePlaintextV1(payload)
+	require.NoError(t, err)
+	return encoded
+}
+
 func TestValidateBasicInvalidCreator(t *testing.T) {
 	deposit := NewMsgDeposit("invalid", "1uclair", []byte{1}, []byte{2}, []byte{3})
 	withdraw := NewMsgWithdraw("invalid", []byte{1}, []byte{2}, []byte{3}, "1uclair", "clair1test", testChainID, testExpiresAtUnix)
@@ -65,7 +115,7 @@ func TestValidateBasicInvalidCreator(t *testing.T) {
 func TestMsgDepositValidateBasicFieldBytes(t *testing.T) {
 	creator := testCreatorAddress()
 
-	valid := NewMsgDeposit(creator, "1uclair", validFieldBytes(), []byte{2}, []byte{3})
+	valid := NewMsgDeposit(creator, "1uclair", validFieldBytes(), validEnvelopeBytes(t, EnvelopeDepositNoteV1), []byte{3})
 	require.NoError(t, valid.ValidateBasic())
 
 	invalidLen := NewMsgDeposit(creator, "1uclair", []byte{0x01}, []byte{2}, []byte{3})
@@ -73,6 +123,9 @@ func TestMsgDepositValidateBasicFieldBytes(t *testing.T) {
 
 	nonCanonical := NewMsgDeposit(creator, "1uclair", nonCanonicalFieldBytes(), []byte{2}, []byte{3})
 	require.Error(t, nonCanonical.ValidateBasic())
+
+	zero := NewMsgDeposit(creator, "1uclair", make([]byte, expectedFieldElementBytes), []byte{2}, []byte{3})
+	require.ErrorContains(t, zero.ValidateBasic(), "note commitment must be non-zero")
 
 	missingProof := NewMsgDeposit(creator, "1uclair", validFieldBytes(), []byte{2}, nil)
 	require.Error(t, missingProof.ValidateBasic())
@@ -93,6 +146,18 @@ func TestMsgWithdrawValidateBasicReplayGuardFields(t *testing.T) {
 		testExpiresAtUnix,
 	)
 	require.NoError(t, valid.ValidateBasic())
+
+	zeroNullifier := NewMsgWithdraw(
+		creator,
+		[]byte{1},
+		validFieldBytes(),
+		make([]byte, expectedFieldElementBytes),
+		"1uclair",
+		recipient,
+		testChainID,
+		testExpiresAtUnix,
+	)
+	require.ErrorContains(t, zeroNullifier.ValidateBasic(), "nullifier must be non-zero")
 
 	missingChainID := NewMsgWithdraw(
 		creator,
@@ -132,7 +197,7 @@ func TestMsgTransferValidateBasicLengthChecks(t *testing.T) {
 		validFieldBytes(),
 		distinctFieldBytesPair(),
 		distinctFieldBytesPair(),
-		[][]byte{{5}, {6}},
+		validTransferCipherTexts(t),
 		validViewTags(),
 		TransferPrivacyPolicyAllPrivate,
 		nil,
@@ -141,9 +206,9 @@ func TestMsgTransferValidateBasicLengthChecks(t *testing.T) {
 		nil,
 		validFieldBytes(),
 		validDisclosurePubKeyBytes(t),
-		[]byte("audit"),
+		validEnvelopeBytes(t, EnvelopeAuditDisclosureV1),
 		validFieldBytes(),
-		[]byte("self-view"),
+		validEnvelopeBytes(t, EnvelopeSelfViewDisclosureV1),
 		testExpiresAtUnix,
 	)
 	require.NoError(t, valid.ValidateBasic())
@@ -186,7 +251,7 @@ func TestMsgTransferValidateBasicRejectsDuplicateNullifiersAndCommitments(t *tes
 			fieldOne,
 			[][]byte{fieldOne, fieldTwo},
 			[][]byte{fieldOne, fieldTwo},
-			[][]byte{{5}, {6}},
+			validTransferCipherTexts(t),
 			validViewTags(),
 			TransferPrivacyPolicyAllPrivate,
 			nil,
@@ -195,9 +260,9 @@ func TestMsgTransferValidateBasicRejectsDuplicateNullifiersAndCommitments(t *tes
 			nil,
 			fieldOne,
 			auditPubKey,
-			[]byte("audit"),
+			validEnvelopeBytes(t, EnvelopeAuditDisclosureV1),
 			fieldTwo,
-			[]byte("self-view"),
+			validEnvelopeBytes(t, EnvelopeSelfViewDisclosureV1),
 			testExpiresAtUnix,
 		)
 	}
@@ -209,6 +274,14 @@ func TestMsgTransferValidateBasicRejectsDuplicateNullifiersAndCommitments(t *tes
 	duplicateCommitment := base()
 	duplicateCommitment.NewCommitments[1] = append([]byte(nil), duplicateCommitment.NewCommitments[0]...)
 	require.ErrorContains(t, duplicateCommitment.ValidateBasic(), "commitment index 1 duplicates index 0")
+
+	zeroNullifier := base()
+	zeroNullifier.Nullifiers[0] = make([]byte, expectedFieldElementBytes)
+	require.ErrorContains(t, zeroNullifier.ValidateBasic(), "nullifier must be non-zero")
+
+	zeroCommitment := base()
+	zeroCommitment.NewCommitments[0] = make([]byte, expectedFieldElementBytes)
+	require.ErrorContains(t, zeroCommitment.ValidateBasic(), "commitment must be non-zero")
 }
 
 func TestMsgTransferValidateBasicUserDisclosureModes(t *testing.T) {
@@ -223,7 +296,7 @@ func TestMsgTransferValidateBasicUserDisclosureModes(t *testing.T) {
 			validFieldBytes(),
 			distinctFieldBytesPair(),
 			distinctFieldBytesPair(),
-			[][]byte{{5}, {6}},
+			validTransferCipherTexts(t),
 			validViewTags(),
 			TransferPrivacyPolicyAllPrivate,
 			nil,
@@ -232,9 +305,9 @@ func TestMsgTransferValidateBasicUserDisclosureModes(t *testing.T) {
 			nil,
 			validFieldBytes(),
 			auditPubKey,
-			[]byte("audit"),
+			validEnvelopeBytes(t, EnvelopeAuditDisclosureV1),
 			validFieldBytes(),
-			[]byte("self-view"),
+			validEnvelopeBytes(t, EnvelopeSelfViewDisclosureV1),
 			testExpiresAtUnix,
 		)
 	}
@@ -245,7 +318,7 @@ func TestMsgTransferValidateBasicUserDisclosureModes(t *testing.T) {
 	publicMsg.UserPrivacyPolicy = TransferPrivacyPolicyDiscloseAmountTo
 	publicMsg.UserDisclosureDigest = validFieldBytes()
 	publicMsg.UserDisclosureMode = UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC
-	publicMsg.UserDisclosurePayload = []byte("public")
+	publicMsg.UserDisclosurePayload = validPublicDisclosurePlaintext(t, publicMsg.UserPrivacyPolicy)
 	require.NoError(t, publicMsg.ValidateBasic())
 
 	encryptedMsg := base()
@@ -253,7 +326,7 @@ func TestMsgTransferValidateBasicUserDisclosureModes(t *testing.T) {
 	encryptedMsg.UserDisclosureDigest = validFieldBytes()
 	encryptedMsg.UserDisclosureMode = UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED
 	encryptedMsg.UserDisclosureTargetPubkey = userPubKey
-	encryptedMsg.UserDisclosurePayload = []byte("cipher")
+	encryptedMsg.UserDisclosurePayload = validEnvelopeBytes(t, EnvelopeUserDisclosureV1)
 	require.NoError(t, encryptedMsg.ValidateBasic())
 
 	invalidTarget := base()
@@ -261,7 +334,7 @@ func TestMsgTransferValidateBasicUserDisclosureModes(t *testing.T) {
 	invalidTarget.UserDisclosureDigest = validFieldBytes()
 	invalidTarget.UserDisclosureMode = UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC
 	invalidTarget.UserDisclosureTargetPubkey = userPubKey
-	invalidTarget.UserDisclosurePayload = []byte("public")
+	invalidTarget.UserDisclosurePayload = validPublicDisclosurePlaintext(t, invalidTarget.UserPrivacyPolicy)
 	err := invalidTarget.ValidateBasic()
 	require.ErrorContains(t, err, "public user disclosure must not include a target pubkey")
 

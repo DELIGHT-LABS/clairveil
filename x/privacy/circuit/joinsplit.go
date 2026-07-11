@@ -73,6 +73,7 @@ func (c *JoinSplitCircuit) Define(api frontend.API) error {
 
 		h.Reset()
 		h.Write(
+			privacytypes.DomainFieldV1(privacytypes.NoteCommitmentV1FieldDomain),
 			c.InputSpendPubKeys[i].A.X,
 			c.InputSpendPubKeys[i].A.Y,
 			c.InputViewPubKeys[i].A.X,
@@ -82,6 +83,7 @@ func (c *JoinSplitCircuit) Define(api frontend.API) error {
 			c.InputRandomness[i],
 		)
 		inputCommitment := h.Sum()
+		api.AssertIsDifferent(inputCommitment, 0)
 
 		currentHash := inputCommitment
 		for j := 0; j < MerkleDepth; j++ {
@@ -89,13 +91,25 @@ func (c *JoinSplitCircuit) Define(api frontend.API) error {
 			right := api.Select(c.InputPathHelpers[i][j], currentHash, c.InputPaths[i][j])
 
 			h.Reset()
-			h.Write(left, right)
+			h.Write(
+				privacytypes.DomainFieldV1(privacytypes.NoteTreeNodeV1FieldDomain),
+				j,
+				left,
+				right,
+			)
 			currentHash = h.Sum()
 		}
 		api.AssertIsEqual(currentHash, c.MerkleRoot)
 
 		h.Reset()
-		h.Write(c.InputRandomness[i], c.InputSpendPubKeys[i].A.X, c.InputSpendPubKeys[i].A.Y)
+		h.Write(
+			privacytypes.DomainFieldV1(privacytypes.NoteNullifierV1FieldDomain),
+			inputCommitment,
+			c.InputRandomness[i],
+			c.InputSpendPubKeys[i].A.X,
+			c.InputSpendPubKeys[i].A.Y,
+		)
+		api.AssertIsDifferent(c.Nullifiers[i], 0)
 		api.AssertIsEqual(h.Sum(), c.Nullifiers[i])
 
 		totalInputAmount = api.Add(totalInputAmount, c.InputAmounts[i])
@@ -155,6 +169,7 @@ func (c *JoinSplitCircuit) Define(api frontend.API) error {
 
 		h.Reset()
 		h.Write(
+			privacytypes.DomainFieldV1(privacytypes.NoteCommitmentV1FieldDomain),
 			c.OutputSpendPubKeys[i].A.X,
 			c.OutputSpendPubKeys[i].A.Y,
 			c.OutputViewPubKeys[i].A.X,
@@ -165,6 +180,7 @@ func (c *JoinSplitCircuit) Define(api frontend.API) error {
 		)
 		calcCommitment := h.Sum()
 
+		api.AssertIsDifferent(calcCommitment, 0)
 		api.AssertIsEqual(calcCommitment, c.Commitments[i])
 		totalOutputAmount = api.Add(totalOutputAmount, c.OutputAmounts[i])
 	}
@@ -177,7 +193,7 @@ func (c *JoinSplitCircuit) Define(api frontend.API) error {
 	revealFrom := policyBits[2]
 
 	selectedAmount := api.Select(revealAmount, c.OutputAmounts[0], 0)
-	selectedAssetID := api.Select(revealAmount, c.AssetID, 0)
+	selectedAssetID := c.AssetID
 	selectedFromSpendX := api.Select(revealFrom, c.InputSpendPubKeys[0].A.X, 0)
 	selectedFromSpendY := api.Select(revealFrom, c.InputSpendPubKeys[0].A.Y, 0)
 	selectedFromViewX := api.Select(revealFrom, c.InputViewPubKeys[0].A.X, 0)

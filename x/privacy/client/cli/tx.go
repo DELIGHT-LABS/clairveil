@@ -488,7 +488,15 @@ func buildDepositNoteAndMsg(
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid note commitment: %w", err)
 	}
-	encryptedNote, err := crypto.Encrypt(note.Bytes(), seed)
+	noteBytes, err := types.MarshalNotePlaintextV1(note)
+	if err != nil {
+		return nil, nil, err
+	}
+	rawEncryptedNote, err := crypto.Encrypt(noteBytes, seed)
+	if err != nil {
+		return nil, nil, err
+	}
+	encryptedNote, err := types.WrapEncryptedEnvelopeV1(types.EnvelopeDepositNoteV1, rawEncryptedNote)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -823,7 +831,12 @@ func CmdDeposit() *cobra.Command {
 				return err
 			}
 
-			privacyCommandPrintf(cmd, "Deposit note (JSON):\n%s\n", string(note.Bytes()))
+			noteBytes, err := types.MarshalNotePlaintextV1(note)
+			if err != nil {
+				runErr = err
+				return err
+			}
+			privacyCommandPrintf(cmd, "Deposit NotePlaintextV1 (hex):\n%x\n", noteBytes)
 
 			submitStartedAt := time.Now()
 			runErr = privacyprovider.CosmosTxBroadcaster{

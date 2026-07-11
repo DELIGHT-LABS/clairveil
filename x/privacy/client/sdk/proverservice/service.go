@@ -34,10 +34,11 @@ const (
 	MetricsPath          = "/debug/vars"
 	DefaultListenAddress = "127.0.0.1:8080"
 	DefaultMaxRequestBz  = int64(8 << 20)
+	DefaultMaxHeaderBz   = 1 << 20
 	BearerTokenEnv       = "CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN"
 )
 
-var gnarkLoggerOutputMu sync.Mutex
+var gnarkLoggerDisableOnce sync.Once
 
 type ServerConfig struct {
 	ListenAddress     string
@@ -68,33 +69,41 @@ type StatusResponse struct {
 }
 
 type MetricsResponse struct {
-	Version           string  `json:"version"`
-	ServiceName       string  `json:"service"`
-	Timestamp         string  `json:"timestamp"`
-	Goroutines        int     `json:"goroutines"`
-	HeapAllocBytes    uint64  `json:"heap_alloc_bytes"`
-	HeapSysBytes      uint64  `json:"heap_sys_bytes"`
-	StackInUseBytes   uint64  `json:"stack_inuse_bytes"`
-	SysBytes          uint64  `json:"sys_bytes"`
-	RSSBytes          uint64  `json:"rss_bytes"`
-	MaxRSSBytes       uint64  `json:"max_rss_bytes"`
-	RSSSource         string  `json:"rss_source"`
-	ProcessCPUSeconds float64 `json:"process_cpu_seconds"`
+	Version           string                   `json:"version"`
+	ServiceName       string                   `json:"service"`
+	Timestamp         string                   `json:"timestamp"`
+	Goroutines        int                      `json:"goroutines"`
+	HeapAllocBytes    uint64                   `json:"heap_alloc_bytes"`
+	HeapSysBytes      uint64                   `json:"heap_sys_bytes"`
+	StackInUseBytes   uint64                   `json:"stack_inuse_bytes"`
+	SysBytes          uint64                   `json:"sys_bytes"`
+	RSSBytes          uint64                   `json:"rss_bytes"`
+	MaxRSSBytes       uint64                   `json:"max_rss_bytes"`
+	RSSSource         string                   `json:"rss_source"`
+	ProcessCPUSeconds float64                  `json:"process_cpu_seconds"`
+	Admission         AdmissionMetricsSnapshot `json:"admission"`
 }
 
 type ReadinessChecker func() error
 
 type Handler struct {
 	proverHandler   *privacyprovertransport.HTTPHandler
+	admission       *AdmissionController
 	readiness       ReadinessChecker
 	info            RuntimeInfo
 	bearerToken     string
 	maxRequestBytes int64
 }
 
-type referenceJoinSplitArtifactProvider struct{}
+type referenceJoinSplitArtifactProvider struct {
+	registry *privacyzk.ArtifactRegistry
+	err      error
+}
 
-type referenceSpendArtifactProvider struct{}
+type referenceSpendArtifactProvider struct {
+	registry *privacyzk.ArtifactRegistry
+	err      error
+}
 
 type referenceJoinSplitProofRunner struct {
 	logWriter io.Writer
@@ -119,20 +128,20 @@ func (c ServerConfig) Validate() error {
 	if strings.TrimSpace(c.ListenAddress) == "" {
 		return fmt.Errorf("listen address is required")
 	}
-	if c.ReadHeaderTimeout < 0 {
-		return fmt.Errorf("read header timeout cannot be negative")
+	if c.ReadHeaderTimeout <= 0 {
+		return fmt.Errorf("read header timeout must be positive")
 	}
-	if c.ReadTimeout < 0 {
-		return fmt.Errorf("read timeout cannot be negative")
+	if c.ReadTimeout <= 0 {
+		return fmt.Errorf("read timeout must be positive")
 	}
 	if c.WriteTimeout < 0 {
 		return fmt.Errorf("write timeout cannot be negative")
 	}
-	if c.IdleTimeout < 0 {
-		return fmt.Errorf("idle timeout cannot be negative")
+	if c.IdleTimeout <= 0 {
+		return fmt.Errorf("idle timeout must be positive")
 	}
-	if c.MaxRequestBytes < 0 {
-		return fmt.Errorf("max request bytes cannot be negative")
+	if c.MaxRequestBytes <= 0 {
+		return fmt.Errorf("max request bytes must be positive")
 	}
 	return nil
 }
@@ -152,6 +161,7 @@ func (c ServerConfig) HTTPServer(handler http.Handler) (*http.Server, error) {
 		ReadTimeout:       c.ReadTimeout,
 		WriteTimeout:      c.WriteTimeout,
 		IdleTimeout:       c.IdleTimeout,
+		MaxHeaderBytes:    DefaultMaxHeaderBz,
 	}, nil
 }
 
@@ -183,21 +193,31 @@ func DefaultRuntimeInfo() RuntimeInfo {
 func NewReferenceHandler(now func() time.Time, logWriter io.Writer, maxRequestBytes int64, bearerToken string) *Handler {
 	info := DefaultRuntimeInfo()
 	info.AuthEnabled = strings.TrimSpace(bearerToken) != ""
+	registry, registryErr := privacyzk.DefaultArtifactRegistry()
 
-	return NewHandler(
+	return newHandlerWithAdmission(
 		privacyprovertransport.ReferenceTransferProver{
-			Artifacts: referenceJoinSplitArtifactProvider{},
+			Artifacts: referenceJoinSplitArtifactProvider{registry: registry, err: registryErr},
 			Runner:    referenceJoinSplitProofRunner{logWriter: logWriter},
 		},
 		privacyprovertransport.ReferenceWithdrawProver{
-			Artifacts: referenceSpendArtifactProvider{},
+			Artifacts: referenceSpendArtifactProvider{registry: registry, err: registryErr},
 			Runner:    referenceSpendProofRunner{logWriter: logWriter},
 		},
 		now,
-		privacyzk.ValidateZKArtifacts,
+		func() error {
+			if registryErr != nil {
+				return registryErr
+			}
+			return registry.CheckReadiness(privacyzk.ArtifactRoleProver, []privacyzk.CircuitID{
+				privacyzk.CircuitJoinSplit,
+				privacyzk.CircuitSpend,
+			}, nil)
+		},
 		info,
 		bearerToken,
 		maxRequestBytes,
+		mustDefaultAdmissionController(),
 	)
 }
 
@@ -210,6 +230,32 @@ func NewHandler(
 	bearerToken string,
 	maxRequestBytes int64,
 ) *Handler {
+	return newHandlerWithAdmission(transferProver, withdrawProver, now, readiness, info, bearerToken, maxRequestBytes, mustDefaultAdmissionController())
+}
+
+func NewHandlerWithAdmission(
+	transferProver privacyprovertransport.TransferProver,
+	withdrawProver privacyprovertransport.WithdrawProver,
+	now func() time.Time,
+	readiness ReadinessChecker,
+	info RuntimeInfo,
+	bearerToken string,
+	maxRequestBytes int64,
+	admission *AdmissionController,
+) *Handler {
+	return newHandlerWithAdmission(transferProver, withdrawProver, now, readiness, info, bearerToken, maxRequestBytes, admission)
+}
+
+func newHandlerWithAdmission(
+	transferProver privacyprovertransport.TransferProver,
+	withdrawProver privacyprovertransport.WithdrawProver,
+	now func() time.Time,
+	readiness ReadinessChecker,
+	info RuntimeInfo,
+	bearerToken string,
+	maxRequestBytes int64,
+	admission *AdmissionController,
+) *Handler {
 	if now == nil {
 		now = time.Now
 	}
@@ -217,12 +263,16 @@ func NewHandler(
 	if strings.TrimSpace(info.ServiceName) == "" {
 		info = DefaultRuntimeInfo()
 	}
-	if maxRequestBytes == 0 {
+	if maxRequestBytes <= 0 {
 		maxRequestBytes = DefaultMaxRequestBz
+	}
+	if admission == nil {
+		admission = mustDefaultAdmissionController()
 	}
 
 	return &Handler{
-		proverHandler:   privacyprovertransport.NewHTTPHandler(transferProver, withdrawProver, now),
+		proverHandler:   privacyprovertransport.NewHTTPHandlerWithAdmission(transferProver, withdrawProver, now, admission),
+		admission:       admission,
 		readiness:       readiness,
 		info:            info,
 		bearerToken:     strings.TrimSpace(bearerToken),
@@ -259,20 +309,52 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (referenceJoinSplitArtifactProvider) JoinSplitR1CS() (constraint.ConstraintSystem, error) {
-	return privacyzk.GetJoinSplitR1CS()
+func mustDefaultAdmissionController() *AdmissionController {
+	controller, err := NewAdmissionController(DefaultAdmissionConfig())
+	if err != nil {
+		panic(err)
+	}
+	return controller
 }
 
-func (referenceJoinSplitArtifactProvider) JoinSplitProvingKey() (groth16.ProvingKey, error) {
-	return privacyzk.GetJoinSplitProvingKey()
+func (p referenceJoinSplitArtifactProvider) JoinSplitR1CS() (constraint.ConstraintSystem, error) {
+	if p.err != nil {
+		return nil, p.err
+	}
+	if p.registry == nil {
+		return nil, fmt.Errorf("zk artifact registry is unavailable")
+	}
+	return p.registry.R1CS(privacyzk.CircuitJoinSplit)
 }
 
-func (referenceSpendArtifactProvider) SpendR1CS() (constraint.ConstraintSystem, error) {
-	return privacyzk.GetSpendR1CS()
+func (p referenceJoinSplitArtifactProvider) JoinSplitProvingKey() (groth16.ProvingKey, error) {
+	if p.err != nil {
+		return nil, p.err
+	}
+	if p.registry == nil {
+		return nil, fmt.Errorf("zk artifact registry is unavailable")
+	}
+	return p.registry.ProvingKey(privacyzk.CircuitJoinSplit)
 }
 
-func (referenceSpendArtifactProvider) SpendProvingKey() (groth16.ProvingKey, error) {
-	return privacyzk.GetSpendProvingKey()
+func (p referenceSpendArtifactProvider) SpendR1CS() (constraint.ConstraintSystem, error) {
+	if p.err != nil {
+		return nil, p.err
+	}
+	if p.registry == nil {
+		return nil, fmt.Errorf("zk artifact registry is unavailable")
+	}
+	return p.registry.R1CS(privacyzk.CircuitSpend)
+}
+
+func (p referenceSpendArtifactProvider) SpendProvingKey() (groth16.ProvingKey, error) {
+	if p.err != nil {
+		return nil, p.err
+	}
+	if p.registry == nil {
+		return nil, fmt.Errorf("zk artifact registry is unavailable")
+	}
+	return p.registry.ProvingKey(privacyzk.CircuitSpend)
 }
 
 func (r referenceJoinSplitProofRunner) ProveJoinSplit(
@@ -296,21 +378,18 @@ func (r referenceSpendProofRunner) ProveSpend(
 }
 
 func RunPreflight(logger log.Logger) error {
-	return privacyzk.RunPreflight(logger)
+	return privacyzk.RunProverPreflight(logger, []privacyzk.CircuitID{privacyzk.CircuitJoinSplit, privacyzk.CircuitSpend})
 }
 
-func withGnarkLoggerOutput[T any](writer io.Writer, fn func() (T, error)) (T, error) {
-	gnarkLoggerOutputMu.Lock()
-	defer gnarkLoggerOutputMu.Unlock()
-
-	if writer == nil {
-		writer = io.Discard
-	}
-
-	prev := gnarklogger.Logger()
-	gnarklogger.Set(prev.Output(writer))
-	defer gnarklogger.Set(prev)
-
+// withGnarkLoggerOutput suppresses gnark solver output process-wide on first
+// use. Solver errors can contain field values derived from the privacy-sensitive
+// witness, so even an operator-supplied stderr writer is not a safe logging
+// sink. The one-time logger update does not serialize proof execution.
+func withGnarkLoggerOutput[T any](_ io.Writer, fn func() (T, error)) (T, error) {
+	gnarkLoggerDisableOnce.Do(func() {
+		logger := gnarklogger.Logger()
+		gnarklogger.Set(logger.Output(io.Discard))
+	})
 	return fn()
 }
 
@@ -378,6 +457,11 @@ func (h *Handler) serveMetrics(w http.ResponseWriter, r *http.Request) {
 		maxRSSBytes = value
 	}
 
+	admission := AdmissionMetricsSnapshot{Circuits: map[string]CircuitAdmissionMetrics{}}
+	if h.admission != nil {
+		admission = h.admission.Snapshot()
+	}
+
 	writeJSON(w, http.StatusOK, MetricsResponse{
 		Version:           StatusVersion,
 		ServiceName:       h.info.ServiceName,
@@ -391,6 +475,7 @@ func (h *Handler) serveMetrics(w http.ResponseWriter, r *http.Request) {
 		MaxRSSBytes:       maxRSSBytes,
 		RSSSource:         rssSource,
 		ProcessCPUSeconds: processCPUSeconds(),
+		Admission:         admission,
 	})
 }
 

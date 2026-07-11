@@ -536,6 +536,7 @@ func newScanServiceDepositTx(t *testing.T, rootSeed []byte, amount *big.Int, den
 
 	cipherBytes, err := privacycrypto.Encrypt(note.Bytes(), rootSeed)
 	require.NoError(t, err)
+	cipherBytes = wrapDepositNoteCipherText(t, cipherBytes)
 	commitmentHex, err := privacyfield.CanonicalHexFromBigInt(note.ComputeCommitment())
 	require.NoError(t, err)
 
@@ -581,6 +582,7 @@ func newScanServiceDepositScanEvent(t *testing.T, rootSeed []byte, amount *big.I
 
 	cipherBytes, err := privacycrypto.Encrypt(note.Bytes(), rootSeed)
 	require.NoError(t, err)
+	cipherBytes = wrapDepositNoteCipherText(t, cipherBytes)
 	commitmentHex, err := privacyfield.CanonicalHexFromBigInt(note.ComputeCommitment())
 	require.NoError(t, err)
 
@@ -620,6 +622,7 @@ func newScanServiceTransferScanEventWithMismatchedViewTag(t *testing.T, rootSeed
 	require.NoError(t, err)
 	cipherText, viewTag, err := privacycrypto.AsymEncryptWithViewTag(note.Bytes(), *viewPubKey, commitmentBytes, 0)
 	require.NoError(t, err)
+	cipherText = wrapTransferNoteCipherText(t, cipherText)
 	viewTag[0] ^= 0xff
 
 	return note, &privacytypes.QueryScanEvent{

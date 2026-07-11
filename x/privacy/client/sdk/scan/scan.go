@@ -2,7 +2,6 @@ package scan
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -51,7 +50,11 @@ func processTxWithOptions(txRes *cmttypes.ResultTx, rootSeed []byte, spendScalar
 				continue
 			}
 
-			noteBytes, err := privacycrypto.Decrypt(cipherBytes, rootSeed)
+			rawCipherText, err := privacytypes.UnwrapEncryptedEnvelopeV1(cipherBytes, privacytypes.EnvelopeDepositNoteV1)
+			if err != nil {
+				continue
+			}
+			noteBytes, err := privacycrypto.Decrypt(rawCipherText, rootSeed)
 			if err != nil {
 				continue
 			}
@@ -150,7 +153,11 @@ func processScanEventWithOptions(event *privacytypes.QueryScanEvent, rootSeed []
 			if err != nil {
 				continue
 			}
-			noteBytes, err := privacycrypto.Decrypt(cipherBytes, rootSeed)
+			rawCipherText, err := privacytypes.UnwrapEncryptedEnvelopeV1(cipherBytes, privacytypes.EnvelopeDepositNoteV1)
+			if err != nil {
+				continue
+			}
+			noteBytes, err := privacycrypto.Decrypt(rawCipherText, rootSeed)
 			if err != nil {
 				continue
 			}
@@ -191,9 +198,13 @@ func processScanEventWithOptions(event *privacytypes.QueryScanEvent, rootSeed []
 }
 
 func decryptTransferOutput(cipherBytes []byte, viewScalar *big.Int, spendScalar *big.Int, commitmentHex string, outputIndex uint32, viewTagHex string, skipViewTagMismatch bool) ([]byte, error) {
+	rawCipherText, err := privacytypes.UnwrapEncryptedEnvelopeV1(cipherBytes, privacytypes.EnvelopeTransferNoteV1)
+	if err != nil {
+		return nil, err
+	}
 	if viewScalar != nil {
 		if commitmentBytes, viewTagBytes, ok := decodeViewTagInputs(commitmentHex, viewTagHex); ok {
-			noteBytes, err := privacycrypto.AsymDecryptWithViewTag(cipherBytes, viewScalar, commitmentBytes, outputIndex, viewTagBytes)
+			noteBytes, err := privacycrypto.AsymDecryptWithViewTag(rawCipherText, viewScalar, commitmentBytes, outputIndex, viewTagBytes)
 			if err == nil {
 				return noteBytes, nil
 			}
@@ -202,13 +213,13 @@ func decryptTransferOutput(cipherBytes []byte, viewScalar *big.Int, spendScalar 
 			}
 		}
 
-		noteBytes, err := privacycrypto.AsymDecrypt(cipherBytes, viewScalar)
+		noteBytes, err := privacycrypto.AsymDecrypt(rawCipherText, viewScalar)
 		if err == nil {
 			return noteBytes, nil
 		}
 	}
 	if spendScalar != nil && (viewScalar == nil || spendScalar.Cmp(viewScalar) != 0) {
-		return privacycrypto.AsymDecrypt(cipherBytes, spendScalar)
+		return privacycrypto.AsymDecrypt(rawCipherText, spendScalar)
 	}
 
 	return nil, errors.New("transfer output decryption failed")
@@ -230,11 +241,11 @@ func decodeViewTagInputs(commitmentHex string, viewTagHex string) ([]byte, []byt
 }
 
 func ParseNoteBytes(data []byte) (*privacytypes.Note, error) {
-	var note privacytypes.Note
-	if err := json.Unmarshal(data, &note); err != nil {
-		return nil, err
+	note, err := privacytypes.UnmarshalNotePlaintextV1(data)
+	if err != nil {
+		return nil, fmt.Errorf("invalid NotePlaintextV1: %w", err)
 	}
-	return &note, nil
+	return note, nil
 }
 
 func noteCommitmentMatches(note *privacytypes.Note, commitmentHex string) bool {

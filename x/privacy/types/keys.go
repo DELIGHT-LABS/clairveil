@@ -31,6 +31,12 @@ const (
 	KeyPrefixReserveDeposit  = 0x08
 	KeyPrefixReserveWithdraw = 0x09
 	KeyPrefixCircuitIdentity = 0x0a
+	KeyPrefixAssetByDenom    = 0x0b
+	KeyPrefixAssetByID       = 0x0c
+	KeyPrefixScanSummary     = 0x0d
+	KeyPrefixScanOutput      = 0x0e
+	KeyPrefixRootSnapshot    = 0x0f
+	KeyPrefixScanSequence    = 0x10
 )
 
 // Event types and attribute keys emitted by the module.
@@ -149,6 +155,69 @@ func GetPrivacyEventPrefix() []byte {
 
 func GetPrivacyEventSequenceKey() []byte {
 	return append([]byte(nil), privacyEventSequenceStoreKey...)
+}
+
+// GetPrivacyGlobalSequenceKey is the consensus sequence shared by every
+// privacy operation. GetPrivacyEventSequenceKey remains as a compatibility
+// alias for callers compiled against the pre-Session-2 name.
+func GetPrivacyGlobalSequenceKey() []byte {
+	return append([]byte(nil), privacyEventSequenceStoreKey...)
+}
+
+func GetAssetByDenomKey(canonicalDenom string) []byte {
+	return append([]byte{KeyPrefixAssetByDenom}, []byte(canonicalDenom)...)
+}
+
+func GetAssetByDenomPrefix() []byte {
+	return []byte{KeyPrefixAssetByDenom}
+}
+
+func GetAssetByIDKey(assetID []byte) []byte {
+	return append([]byte{KeyPrefixAssetByID}, assetID...)
+}
+
+func GetAssetByIDPrefix() []byte {
+	return []byte{KeyPrefixAssetByID}
+}
+
+func GetPrivacyScanSummaryKey(height int64, globalSequence uint64) []byte {
+	key := make([]byte, 17)
+	key[0] = KeyPrefixScanSummary
+	binary.BigEndian.PutUint64(key[1:9], uint64(height))
+	binary.BigEndian.PutUint64(key[9:17], globalSequence)
+	return key
+}
+
+func GetPrivacyScanSummaryPrefix() []byte {
+	return []byte{KeyPrefixScanSummary}
+}
+
+func GetPrivacyScanOutputKey(height int64, globalSequence uint64, outputIndex uint32) []byte {
+	key := make([]byte, 21)
+	key[0] = KeyPrefixScanOutput
+	binary.BigEndian.PutUint64(key[1:9], uint64(height))
+	binary.BigEndian.PutUint64(key[9:17], globalSequence)
+	binary.BigEndian.PutUint32(key[17:21], outputIndex)
+	return key
+}
+
+func GetPrivacyScanOutputPrefix() []byte {
+	return []byte{KeyPrefixScanOutput}
+}
+
+func GetPrivacyScanSequenceKey(globalSequence uint64) []byte {
+	key := make([]byte, 9)
+	key[0] = KeyPrefixScanSequence
+	binary.BigEndian.PutUint64(key[1:], globalSequence)
+	return key
+}
+
+func GetMerkleRootSnapshotKey(root []byte) []byte {
+	return append([]byte{KeyPrefixRootSnapshot}, root...)
+}
+
+func GetMerkleRootSnapshotPrefix() []byte {
+	return []byte{KeyPrefixRootSnapshot}
 }
 
 func GetReserveDepositKey(denom string) []byte {

@@ -15,7 +15,6 @@ import (
 	"github.com/consensys/gnark/test"
 	"github.com/stretchr/testify/require"
 
-	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -88,6 +87,23 @@ func TestJoinSplitCircuitRejectsDuplicateOutputCommitment(t *testing.T) {
 	assert.ProverFailed(&JoinSplitCircuit{}, assignment, test.WithCurves(ecc.BN254))
 }
 
+func TestJoinSplitCircuitRejectsZeroActiveNullifierAndCommitment(t *testing.T) {
+	t.Run("nullifier", func(t *testing.T) {
+		assignment := buildValidJoinSplitAssignment(t)
+		assignment.Nullifiers[0] = big.NewInt(0)
+
+		assert := test.NewAssert(t)
+		assert.ProverFailed(&JoinSplitCircuit{}, assignment, test.WithCurves(ecc.BN254))
+	})
+	t.Run("commitment", func(t *testing.T) {
+		assignment := buildValidJoinSplitAssignment(t)
+		assignment.Commitments[0] = big.NewInt(0)
+
+		assert := test.NewAssert(t)
+		assert.ProverFailed(&JoinSplitCircuit{}, assignment, test.WithCurves(ecc.BN254))
+	})
+}
+
 func TestJoinSplitCircuitRejectsMalformedInputSpendPubKey(t *testing.T) {
 	assignment := buildValidJoinSplitAssignment(t)
 	x, y := invalidEdwardsPointForTest(t)
@@ -139,10 +155,24 @@ func buildJoinSplitAssignmentWithAmounts(
 	inputAmounts [NumInputs]*big.Int,
 	outputAmounts [NumOutputs]*big.Int,
 ) *JoinSplitCircuit {
+	return buildJoinSplitAssignmentWithNoteParameters(
+		t,
+		inputAmounts,
+		outputAmounts,
+		big.NewInt(21),
+		[NumInputs]*big.Int{big.NewInt(31), big.NewInt(37)},
+	)
+}
+
+func buildJoinSplitAssignmentWithNoteParameters(
+	t testing.TB,
+	inputAmounts [NumInputs]*big.Int,
+	outputAmounts [NumOutputs]*big.Int,
+	assetID *big.Int,
+	inputRandomness [NumInputs]*big.Int,
+) *JoinSplitCircuit {
 	t.Helper()
 
-	assetID := big.NewInt(21)
-	inputRandomness := [NumInputs]*big.Int{big.NewInt(31), big.NewInt(37)}
 	outputRandomness := [NumOutputs]*big.Int{big.NewInt(41), big.NewInt(43)}
 	userDisclosureBlinding := big.NewInt(47)
 	fullDisclosureBlinding := big.NewInt(53)
@@ -164,7 +194,7 @@ func buildJoinSplitAssignmentWithAmounts(
 
 	inputCommitments := [NumInputs]*big.Int{}
 	for i := 0; i < NumInputs; i++ {
-		inputCommitments[i] = privacycrypto.MimcHash(
+		inputCommitments[i] = privacytypes.ComputeNoteCommitmentV1(
 			inputSpendPubX,
 			inputSpendPubY,
 			inputViewPubX,
@@ -176,8 +206,8 @@ func buildJoinSplitAssignmentWithAmounts(
 	}
 
 	root := joinsplitRootFromLeaves(inputCommitments[0], inputCommitments[1])
-	outputCommitment0 := privacycrypto.MimcHash(outputSpendPubX, outputSpendPubY, outputViewPubX, outputViewPubY, outputAmounts[0], assetID, outputRandomness[0])
-	outputCommitment1 := privacycrypto.MimcHash(inputSpendPubX, inputSpendPubY, inputViewPubX, inputViewPubY, outputAmounts[1], assetID, outputRandomness[1])
+	outputCommitment0 := privacytypes.ComputeNoteCommitmentV1(outputSpendPubX, outputSpendPubY, outputViewPubX, outputViewPubY, outputAmounts[0], assetID, outputRandomness[0])
+	outputCommitment1 := privacytypes.ComputeNoteCommitmentV1(inputSpendPubX, inputSpendPubY, inputViewPubX, inputViewPubY, outputAmounts[1], assetID, outputRandomness[1])
 
 	userDigest, err := privacytypes.ComputeTransferDisclosureDigestBytes(
 		privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom,
@@ -241,7 +271,7 @@ func buildJoinSplitAssignmentWithAmounts(
 	for i := 0; i < NumInputs; i++ {
 		assignment.InputAmounts[i] = inputAmounts[i]
 		assignment.InputRandomness[i] = inputRandomness[i]
-		assignment.Nullifiers[i] = privacycrypto.MimcHash(inputRandomness[i], inputSpendPubX, inputSpendPubY)
+		assignment.Nullifiers[i] = privacytypes.ComputeNoteNullifierV1(inputCommitments[i], inputRandomness[i], inputSpendPubX, inputSpendPubY)
 
 	}
 
@@ -276,11 +306,10 @@ func buildJoinSplitAssignmentWithAmounts(
 }
 
 func joinsplitRootFromLeaves(leftLeaf, rightLeaf *big.Int) *big.Int {
-	current := privacycrypto.MimcHash(leftLeaf, rightLeaf)
-	zero := big.NewInt(0)
+	current := privacytypes.ComputeNoteTreeNodeV1(0, leftLeaf, rightLeaf)
 
 	for i := 1; i < MerkleDepth; i++ {
-		current = privacycrypto.MimcHash(current, zero)
+		current = privacytypes.ComputeNoteTreeNodeV1(uint32(i), current, privacytypes.EmptyNoteTreeRootV1(uint32(i)))
 	}
 
 	return current
@@ -291,7 +320,7 @@ func assignJoinSplitPath(path *[MerkleDepth]frontend.Variable, helpers *[MerkleD
 	helpers[0] = helper
 
 	for i := 1; i < MerkleDepth; i++ {
-		path[i] = big.NewInt(0)
+		path[i] = privacytypes.EmptyNoteTreeRootV1(uint32(i))
 		helpers[i] = 0
 	}
 }
