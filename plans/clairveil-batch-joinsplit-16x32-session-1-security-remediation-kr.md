@@ -568,7 +568,7 @@ NoteV1의 새 commitment/nullifier formula는 Session 2에서 production circuit
 ## Completion Record
 
 - 시작 commit: `e427370`
-- 완료 commit: `2c1bfb1` (`Session 1` 구현·공개 계약과 review-fix 완료 기준; 이 최종 Completion Record/Ledger bookkeeping은 후속 문서 commit)
+- 완료 commit: `14d85f5` (`Session 1` 구현·공개 계약, review-fix, prepared-transfer canonical key hardening 완료 기준; 이 최종 Completion Record/Ledger bookkeeping은 후속 문서 commit)
 - circuit set ID: `privacy-intent-v2`; consensus `CircuitSetIdentity` schema `v1`; artifact manifest schema `v2`
 - TransferIntent/SpendIntent version: `TransferIntentV2`, `SpendIntentV2`
 - prepared payload/prover versions: transfer payload `v5`, transfer proof/request/response `v2`; withdraw prover/final payload, proof, request/response, relay schema/handoff `v2`; disclosure plaintext/query `v5`
