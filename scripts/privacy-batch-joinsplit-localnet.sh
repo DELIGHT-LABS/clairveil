@@ -137,6 +137,12 @@ proverd_pid=""
 clairveild="${CLAIRVEILD_BIN:-$work_dir/clairveild-batch-localnet}"
 clairveil_setup="${CLAIRVEIL_SETUP_BIN:-$work_dir/clairveil-setup-batch-localnet}"
 clairveil_proverd="${CLAIRVEIL_PROVERD_BIN:-$work_dir/clairveil-proverd-batch-localnet}"
+grpcurl_bin="${GRPCURL_BIN:-$(command -v grpcurl || true)}"
+
+if [[ -z "$grpcurl_bin" ]]; then
+	echo "grpcurl is required for typed scan/genesis round-trip validation" >&2
+	exit 1
+fi
 
 cleanup() {
 	if [[ -n "$proverd_pid" ]]; then kill "$proverd_pid" >/dev/null 2>&1 || true; wait "$proverd_pid" >/dev/null 2>&1 || true; fi
@@ -151,7 +157,8 @@ if [[ -z "${CLAIRVEIL_PROVERD_BIN:-}" ]]; then (cd "$repo_root" && go build -o "
 run() { "$clairveild" "$@"; }
 
 patch_ports() {
-	python3 - "$home" "$rpc_port" "$p2p_port" "$abci_port" "$grpc_port" "$api_port" "$pprof_port" <<'PY'
+	local target_home="${1:-$home}"
+	python3 - "$target_home" "$rpc_port" "$p2p_port" "$abci_port" "$grpc_port" "$api_port" "$pprof_port" <<'PY'
 import sys
 from pathlib import Path
 home = Path(sys.argv[1])
@@ -173,6 +180,10 @@ PY
 
 wait_for_node() {
 	for _ in $(seq 1 60); do
+		if [[ -z "$node_pid" ]] || ! kill -0 "$node_pid" >/dev/null 2>&1; then
+			tail -200 "$node_log" >&2
+			return 1
+		fi
 		if run status --node "$node" 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); raise SystemExit(0 if int(d["sync_info"]["latest_block_height"]) >= 1 else 1)' >/dev/null 2>&1; then return 0; fi
 		sleep 1
 	done
@@ -182,6 +193,10 @@ wait_for_node() {
 
 wait_for_proverd() {
 	for _ in $(seq 1 120); do
+		if [[ -z "$proverd_pid" ]] || ! kill -0 "$proverd_pid" >/dev/null 2>&1; then
+			tail -200 "$proverd_log" >&2
+			return 1
+		fi
 		if curl --fail --silent "http://127.0.0.1:${proverd_port}/readyz" >"$out/proverd-ready.json" 2>/dev/null; then return 0; fi
 		sleep 1
 	done
@@ -204,6 +219,45 @@ tx_hash_from_file() {
 import json,sys
 print(json.load(open(sys.argv[1]))["txhash"])
 PY
+}
+
+grpc_query_file() {
+	local method="$1" request_file="$2" response_file="$3"
+	"$grpcurl_bin" -plaintext -d @ "127.0.0.1:${grpc_port}" "clairveil.privacy.v1.Query/${method}" <"$request_file" >"$response_file"
+}
+
+snapshot_public_state() {
+	local prefix="$1"
+	printf '{}\n' >"${prefix}-empty-request.json"
+	printf '{"denom":"uclair"}\n' >"${prefix}-reserve-request.json"
+	printf '{"canonicalDenom":"uclair"}\n' >"${prefix}-asset-request.json"
+	printf '{"outputLimit":512,"eventLimit":256,"maxEncodedBytes":"4194304"}\n' >"${prefix}-scan-request.json"
+	grpc_query_file TreeState "${prefix}-empty-request.json" "${prefix}-tree.json"
+	grpc_query_file Reserve "${prefix}-reserve-request.json" "${prefix}-reserve.json"
+	grpc_query_file AssetByDenom "${prefix}-asset-request.json" "${prefix}-asset.json"
+	grpc_query_file CircuitConfig "${prefix}-empty-request.json" "${prefix}-circuit.json"
+	grpc_query_file PrivacyScan "${prefix}-scan-request.json" "${prefix}-scan.json"
+	python3 - "${prefix}-tree.json" "${prefix}-scan.json" "${prefix}-paths-request.json" <<'PY'
+import base64
+import json
+import sys
+from pathlib import Path
+
+tree = json.loads(Path(sys.argv[1]).read_text())
+scan = json.loads(Path(sys.argv[2]).read_text())
+outputs = scan.get("outputs", [])
+if not outputs:
+    raise SystemExit("privacy scan snapshot contains no outputs")
+selected = [outputs[0]]
+if len(outputs) > 1:
+    selected.append(outputs[-1])
+request = {
+    "commitmentHexes": [base64.b64decode(output["commitment"]).hex() for output in selected],
+    "rootHex": tree["root"],
+}
+Path(sys.argv[3]).write_text(json.dumps(request) + "\n")
+PY
+	grpc_query_file CommitmentPathsAtRoot "${prefix}-paths-request.json" "${prefix}-paths.json"
 }
 
 if [[ -z "$artifact_override" ]]; then
@@ -250,7 +304,7 @@ source "$artifacts/privacy_zk_checksums.env"
 set +a
 export CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict
 
-run start --home "$home" --minimum-gas-prices 0uclair >"$node_log" 2>&1 & node_pid=$!
+"$clairveild" start --home "$home" --minimum-gas-prices 0uclair >"$node_log" 2>&1 & node_pid=$!
 wait_for_node
 "$clairveil_proverd" --listen "127.0.0.1:${proverd_port}" >"$proverd_log" 2>&1 & proverd_pid=$!
 wait_for_proverd
@@ -335,10 +389,12 @@ prepare_prove_broadcast explicit-zero-padding exact32 disabled 1 5 "${bob_addres
 # hash. Re-broadcasting the consumed-nullifier payload must fail closed rather
 # than create a second effect.
 kill "$proverd_pid"; wait "$proverd_pid" || true; proverd_pid=""
-"$clairveil_proverd" --listen "127.0.0.1:${proverd_port}" >"$proverd_log.restart" 2>&1 & proverd_pid=$!
+proverd_log="$work_dir/clairveil-proverd.restart.log"
+"$clairveil_proverd" --listen "127.0.0.1:${proverd_port}" >"$proverd_log" 2>&1 & proverd_pid=$!
 wait_for_proverd
 kill "$node_pid"; wait "$node_pid" || true; node_pid=""
-run start --home "$home" --minimum-gas-prices 0uclair >"$node_log.restart" 2>&1 & node_pid=$!
+node_log="$work_dir/clairveild.restart.log"
+"$clairveild" start --home "$home" --minimum-gas-prices 0uclair >"$node_log" 2>&1 & node_pid=$!
 wait_for_node
 run query tx "$(cat "$out/exact-thirty-two-payments.txhash")" --node "$node" --output json >"$out/restart-tx-hash-reconcile.json"
 set +e
@@ -364,10 +420,98 @@ if ! grep -Eqi 'nullifier|spent' "$out/retry-broadcast.json" "$out/retry-broadca
 fi
 
 run tx privacy list-notes --from bob --keyring-backend test --home "$home" --node "$node" --rescan-wallet --json >"$out/bob-notes-after.json"
+
+# Capture every consensus-facing identity required by the typed scanner, stop
+# both processes cleanly, export a non-zero-height genesis, and restore it into
+# a fresh node home. A non-zero-height export is intentional: the frozen scan
+# cursor is ordered by (height, global_sequence, output_index), so subsequent
+# blocks must remain above the imported historical records.
+snapshot_public_state "$out/pre-export"
+run tx privacy list-notes --from bob --keyring-backend test --home "$home" --node "$node" --json >"$out/pre-export-bob-wallet.json"
+kill "$proverd_pid"; wait "$proverd_pid" || true; proverd_pid=""
+kill "$node_pid"; wait "$node_pid" || true; node_pid=""
+run export --home "$home" --output-document "$out/exported-genesis.json" >"$out/export.stdout" 2>"$out/export.stderr"
+
+restored_home="$work_dir/restored-home"
+run init batch-restored --chain-id "$chain_id" --home "$restored_home" >"$out/restored-init.stdout" 2>"$out/restored-init.stderr"
+cp "$home/config/priv_validator_key.json" "$restored_home/config/priv_validator_key.json"
+cp "$out/exported-genesis.json" "$restored_home/config/genesis.json"
+chmod 600 "$restored_home/config/priv_validator_key.json" "$restored_home/config/genesis.json"
+patch_ports "$restored_home"
+run validate --home "$restored_home" >"$out/restored-validate.stdout" 2>"$out/restored-validate.stderr"
+
+node_log="$work_dir/clairveild.restored.log"
+"$clairveild" start --home "$restored_home" --minimum-gas-prices 0uclair >"$node_log" 2>&1 & node_pid=$!
+wait_for_node
+proverd_log="$work_dir/clairveil-proverd.restored.log"
+"$clairveil_proverd" --listen "127.0.0.1:${proverd_port}" >"$proverd_log" 2>&1 & proverd_pid=$!
+wait_for_proverd
+
+snapshot_public_state "$out/post-restore"
+run tx privacy list-notes --from bob --keyring-backend test --home "$home" --node "$node" --json >"$out/post-restore-bob-wallet-cached.json"
+run tx privacy list-notes --from bob --keyring-backend test --home "$home" --node "$node" --rescan-wallet --json >"$out/post-restore-bob-wallet-rescan.json"
+
 python3 - "$out" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+out = Path(sys.argv[1])
+for suffix in ["tree", "reserve", "asset", "circuit", "scan", "paths"]:
+    before = json.loads((out / f"pre-export-{suffix}.json").read_text())
+    restored = json.loads((out / f"post-restore-{suffix}.json").read_text())
+    if before != restored:
+        raise SystemExit(f"genesis round trip changed {suffix}")
+
+genesis = json.loads((out / "exported-genesis.json").read_text())
+initial_height = int(genesis["initial_height"])
+scan = json.loads((out / "pre-export-scan.json").read_text())
+summaries = scan["summaries"]
+outputs = scan["outputs"]
+if initial_height <= max(int(summary["height"]) for summary in summaries):
+    raise SystemExit("exported initial height does not preserve scan cursor ordering")
+if scan.get("hasMore", False):
+    raise SystemExit("pre-export scan snapshot was unexpectedly paginated")
+cursors = [(int(item["height"]), int(item["globalSequence"]), int(item.get("outputIndex", 0))) for item in outputs]
+if cursors != sorted(cursors) or len(cursors) != len(set(cursors)):
+    raise SystemExit("pre-export scan cursor order is unstable or duplicated")
+
+def note_identity(path):
+    notes = json.loads(path.read_text())["notes"]
+    return sorted((n["index"], n["status"], str(n["amount"]), n.get("nullifier", ""), n.get("tx_hash", ""), int(n.get("height", 0))) for n in notes)
+
+expected_notes = note_identity(out / "bob-notes-after.json")
+if note_identity(out / "pre-export-bob-wallet.json") != expected_notes:
+    raise SystemExit("cached wallet changed before export")
+if note_identity(out / "post-restore-bob-wallet-cached.json") != expected_notes:
+    raise SystemExit("cached wallet changed after genesis import")
+if note_identity(out / "post-restore-bob-wallet-rescan.json") != expected_notes:
+    raise SystemExit("wallet cursor resume duplicated or lost notes after genesis import")
+
+(out / "genesis-roundtrip-check.json").write_text(json.dumps({
+    "initial_height": initial_height,
+    "summary_count": len(summaries),
+    "output_count": len(outputs),
+    "last_global_sequence": max(int(summary["globalSequence"]) for summary in summaries),
+    "wallet_note_count": len(expected_notes),
+}, indent=2) + "\n")
+PY
+
+# Append one fresh event after the imported state. This proves that sequence,
+# reserve, asset, tree, path and wallet cursor state do not merely deserialize;
+# they continue without collision or rollback after restart.
+run tx privacy deposit 1uclair --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas 3000000 --gas-prices "$gas_prices" --yes --output json >"$out/post-restore-deposit.json"
+post_restore_tx_hash="$(tx_hash_from_file "$out/post-restore-deposit.json")"
+wait_tx "$post_restore_tx_hash" "$out/post-restore-deposit-query.json"
+snapshot_public_state "$out/post-continuation"
+run tx privacy list-notes --from alice --keyring-backend test --home "$home" --node "$node" --rescan-wallet --json >"$out/post-continuation-alice-wallet.json"
+
+python3 - "$out" "$post_restore_tx_hash" <<'PY'
 import json,sys
+import base64
 from pathlib import Path
 out = Path(sys.argv[1])
+continued_tx_hash = sys.argv[2].lower()
 labels = ["one-input-one-payment", "three-input-four-output-mixed-disclosure", "thirty-one-payments-plus-change", "exact-thirty-two-payments", "explicit-zero-padding"]
 for key_file in ["alice-key.json", "bob-key.json", "auditor-key.json"]:
     assert (out / key_file).stat().st_mode & 0o777 == 0o600
@@ -377,17 +521,58 @@ for label in labels:
     tx = json.loads((out / f"{label}-broadcast-query.json").read_text())
     assert int(tx.get("code", 0)) == 0
 assert json.loads((out / "bob-notes-after.json").read_text())["notes"]
+
+roundtrip = json.loads((out / "genesis-roundtrip-check.json").read_text())
+before_tree = json.loads((out / "pre-export-tree.json").read_text())
+after_tree = json.loads((out / "post-continuation-tree.json").read_text())
+assert int(after_tree["leafCount"]) == int(before_tree["leafCount"]) + 1
+
+before_scan = json.loads((out / "pre-export-scan.json").read_text())
+after_scan = json.loads((out / "post-continuation-scan.json").read_text())
+assert not after_scan.get("hasMore", False)
+assert len(after_scan["summaries"]) == len(before_scan["summaries"]) + 1
+assert len(after_scan["outputs"]) == len(before_scan["outputs"]) + 1
+last_summary = after_scan["summaries"][-1]
+last_output = after_scan["outputs"][-1]
+assert int(last_summary["globalSequence"]) == roundtrip["last_global_sequence"] + 1
+assert int(last_summary["height"]) >= roundtrip["initial_height"]
+assert int(last_output["globalSequence"]) == int(last_summary["globalSequence"])
+assert int(last_output.get("outputIndex", 0)) == 0
+assert last_output.get("txHash", "").lower() == continued_tx_hash or base64.b64decode(last_output["txHash"]).hex() == continued_tx_hash
+
+before_reserve = json.loads((out / "pre-export-reserve.json").read_text())
+after_reserve = json.loads((out / "post-continuation-reserve.json").read_text())
+assert int(after_reserve["totalDeposited"]) == int(before_reserve["totalDeposited"]) + 1
+assert after_reserve["invariantHolds"]
+assert json.loads((out / "post-continuation-asset.json").read_text()) == json.loads((out / "pre-export-asset.json").read_text())
+assert json.loads((out / "post-continuation-circuit.json").read_text()) == json.loads((out / "pre-export-circuit.json").read_text())
+
+paths = json.loads((out / "post-continuation-paths.json").read_text())
+assert paths["rootHex"] == after_tree["root"]
+assert int(paths["leafCount"]) == int(after_tree["leafCount"])
+assert int(paths["paths"][-1]["leafIndex"]) == int(before_tree["leafCount"])
+
+alice_wallet = json.loads((out / "post-continuation-alice-wallet.json").read_text())
+nullifiers = [n.get("nullifier", "") for n in alice_wallet["notes"] if n.get("nullifier")]
+assert len(nullifiers) == len(set(nullifiers))
+assert any(n.get("tx_hash", "").lower() == continued_tx_hash for n in alice_wallet["notes"])
 summary = {
-    "schema_version": "clairveil.batch-transfer.localnet-result.v1",
+    "schema_version": "clairveil.batch-transfer.localnet-result.v2",
     "status": "passed",
     "cases": labels,
     "prover_route": "/v1/proofs/batch-transfer",
     "restart_tx_hash_reconciled": True,
     "spent_nullifier_retry_rejected": True,
-    "restart_retry_scope": "tx-hash-reconcile-and-freshly-signed-spent-nullifier-rejection",
+    "restart_retry_scope": "tx-hash-reconcile-spent-nullifier-rejection-and-nonzero-height-genesis-resume",
+    "genesis_export_import_roundtrip": True,
+    "typed_scan_cursor_resumed": True,
+    "post_import_sequence_continued": True,
+    "post_import_path_verified": True,
+    "post_import_reserve_and_asset_verified": True,
+    "wallet_duplicate_or_missing_notes": False,
     "automatic_multi_prover_failover": False,
 }
-(out / "session3b-localnet-summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+(out / "session4-localnet-summary.json").write_text(json.dumps(summary, indent=2) + "\n")
 PY
 
-echo "Session 3B batch localnet passed: $out/session3b-localnet-summary.json"
+echo "Session 4 batch localnet passed: $out/session4-localnet-summary.json"
