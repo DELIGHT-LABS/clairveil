@@ -87,6 +87,31 @@ func TestTypedScannerFailsClosedAfterOwnedPlaintextCommitmentMismatch(t *testing
 	require.ErrorContains(t, err, "commitment mismatch")
 }
 
+func TestTypedScannerAllowsLegacy2x2SelfViewOnlyOnRealOutput(t *testing.T) {
+	outputs := []*privacytypes.PrivacyScanOutputV2{
+		{Height: 10, GlobalSequence: 7, OutputIndex: 0, EventType: privacytypes.EventTypeShieldedTransfer, SelfViewDisclosurePayload: []byte{1}},
+		{Height: 10, GlobalSequence: 7, OutputIndex: 1, EventType: privacytypes.EventTypeShieldedTransfer},
+	}
+	response := &privacytypes.QueryPrivacyScanResponse{
+		Outputs: outputs, NextCursor: &privacytypes.PrivacyScanCursorV1{Height: 10, GlobalSequence: 7, OutputIndex: 1}, ScanSchemaVersion: privacytypes.PrivacyScanSchemaVersionV2,
+	}
+	require.NoError(t, validateTypedScanResponseForSync(response, &privacytypes.PrivacyScanCursorV1{}, make(map[string]bool)))
+}
+
+func TestTypedScannerRejectsBatchSelfViewMismatchAcrossPages(t *testing.T) {
+	state := make(map[string]bool)
+	first := &privacytypes.QueryPrivacyScanResponse{
+		Outputs:    []*privacytypes.PrivacyScanOutputV2{{Height: 10, GlobalSequence: 7, OutputIndex: 0, EventType: privacytypes.EventTypeBatchTransferV1, SelfViewDisclosurePayload: []byte{1}}},
+		NextCursor: &privacytypes.PrivacyScanCursorV1{Height: 10, GlobalSequence: 7}, HasMore: true, ScanSchemaVersion: privacytypes.PrivacyScanSchemaVersionV2,
+	}
+	require.NoError(t, validateTypedScanResponseForSync(first, &privacytypes.PrivacyScanCursorV1{}, state))
+	second := &privacytypes.QueryPrivacyScanResponse{
+		Outputs:    []*privacytypes.PrivacyScanOutputV2{{Height: 10, GlobalSequence: 7, OutputIndex: 1, EventType: privacytypes.EventTypeBatchTransferV1}},
+		NextCursor: &privacytypes.PrivacyScanCursorV1{Height: 10, GlobalSequence: 7, OutputIndex: 1}, ScanSchemaVersion: privacytypes.PrivacyScanSchemaVersionV2,
+	}
+	require.ErrorContains(t, validateTypedScanResponseForSync(second, first.NextCursor, state), "batch self-view disclosure is not all-or-none")
+}
+
 func typedOwnedBatchOutputs(t *testing.T, rootSeed []byte, count int) ([]*privacytypes.PrivacyScanOutputV2, map[string]bool) {
 	t.Helper()
 	spendScalar, spendPubKey, _ := privacyidentity.DeriveSpendKeys(rootSeed)

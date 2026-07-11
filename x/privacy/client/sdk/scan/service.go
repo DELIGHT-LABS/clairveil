@@ -304,12 +304,14 @@ func validateTypedScanResponseForSync(response *privacytypes.QueryPrivacyScanRes
 		if previous != nil && (previous.Height != cursor.Height || previous.GlobalSequence != cursor.GlobalSequence) && cursor.OutputIndex != 0 {
 			return fmt.Errorf("typed event output does not start at zero")
 		}
-		event := fmt.Sprintf("%d/%d", output.Height, output.GlobalSequence)
-		selfViewPresent := len(output.SelfViewDisclosurePayload) > 0
-		if expected, exists := selfViewByEvent[event]; exists && expected != selfViewPresent {
-			return fmt.Errorf("batch self-view disclosure is not all-or-none")
+		if output.EventType == privacytypes.EventTypeBatchTransferV1 {
+			event := fmt.Sprintf("%d/%d", output.Height, output.GlobalSequence)
+			selfViewPresent := len(output.SelfViewDisclosurePayload) > 0
+			if expected, exists := selfViewByEvent[event]; exists && expected != selfViewPresent {
+				return fmt.Errorf("batch self-view disclosure is not all-or-none")
+			}
+			selfViewByEvent[event] = selfViewPresent
 		}
-		selfViewByEvent[event] = selfViewPresent
 		previous = cursor
 	}
 	if len(response.Outputs) > 0 {
