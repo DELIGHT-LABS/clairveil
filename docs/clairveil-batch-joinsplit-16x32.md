@@ -518,7 +518,7 @@ PayloadDigestLo = uint128be(payload_sha256[16:32])
 
 `creator` and `proof` are the only message fields excluded. Ordered-vector lengths are the canonical counts, so there is no second count source. Validation rejects non-canonical fields, duplicate nullifiers/commitments, unknown disclosure enums, invalid policy/mode/target/payload combinations, malformed envelopes, mixed self-view presence, invalid audit identity, and non-positive epoch/expiry before encoding. The independent 2-input/2-output golden is `3,702` canonical bytes with SHA-256 `f2588c7543fb83a7822aa0043e4747af0ac4c9dc14a038c230850f1cab5e24b0`, high limb `322132945931579789235567236199104333743`, and low limb `14314064343031468430392382204273370288`. The max `16/32` shape is `65,384` canonical bytes.
 
-The consensus per-message wire cap is `128 KiB`. `BatchTransferRawFramingDecorator` enforces it against the signed `TxBody.messages[].Any.value` bytes before `ValidateBasic`; decoded `MsgBatchTransfer.Size()` is only a secondary shape check. This rejects an oversized raw message even if duplicate singular protobuf fields decode by retaining only the final small value.
+The consensus per-message wire cap is `128 KiB`. `BatchTransferRawFramingDecorator` scans the signed raw `TxBody.messages[].Any` fields, including nested governance and authz wrappers, and requires exactly one type URL and value for every batch message. Decoded `MsgBatchTransfer.Size()` is only a secondary shape check. BaseApp calls `ValidateBasic` before ante handling, so batch `ValidateBasic` deliberately performs only bounded framing and creator validation; complete effect semantics run after the keeper's deterministic precharge. This rejects oversized or duplicate raw values without performing uncharged point/envelope validation.
 
 ### 7.2 Batch effect ID
 
@@ -573,7 +573,7 @@ Output keys for one `(height, global_sequence)` MUST form exactly the contiguous
 
 ### 8.1 Global commitment uniqueness
 
-The commitment index is global across Deposit, JoinSplit2x2, BatchJoinSplit16x32, and genesis. A commitment MUST be canonical, non-zero, and absent before proof/state execution. `MsgBatchTransfer.ValidateBasic` rejects local duplicates; the keeper checks the global index before proof verification; and `AppendCommitment` repeats the check, records one immutable leaf index, and rejects a duplicate. Index lookup propagates store errors and rejects malformed stored indices instead of treating them as absent. Genesis also requires globally distinct commitments. Batch outputs are appended only after proof success.
+The commitment index is global across Deposit, JoinSplit2x2, BatchJoinSplit16x32, and genesis. A commitment MUST be canonical, non-zero, and absent before proof/state execution. After deterministic precharge, `ValidateMsgBatchTransferEffectsV1` rejects local duplicates; the keeper checks the global index before proof verification; and `AppendCommitment` repeats the check, records one immutable leaf index, and rejects a duplicate. Index lookup propagates store errors and rejects malformed stored indices instead of treating them as absent. Genesis also requires globally distinct commitments. Batch outputs are appended only after proof success.
 
 ### 8.2 Unified sequence and cursor
 

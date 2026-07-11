@@ -240,7 +240,9 @@
   },
   "send_provider": {
     "audit_config_response": {
-      "audit_master_pubkey_hex": "8cb0ef883bce364e0d946867ebd7a7f84ec153eeb28e5973ffe9381ec8d7940a"
+      "audit_master_pubkey_hex": "8cb0ef883bce364e0d946867ebd7a7f84ec153eeb28e5973ffe9381ec8d7940a",
+      "audit_key_id": "master",
+      "audit_key_epoch": "1"
     },
     "merkle_path_request": {
       "commitment_hex": "2a1e6d82d85daa4492b715757f758a1902fe07cddfcf52ac47aee47b489a58b4"

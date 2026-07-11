@@ -199,7 +199,7 @@ Watch these points.
 
 ## 6. Genesis Audit Key
 
-The latest transfer model includes mandatory master-auditor disclosure in every shielded transfer. A production-like chain must therefore set the audit master public key in privacy genesis state.
+The latest transfer model includes mandatory master-auditor disclosure in every shielded transfer. A production-like chain must therefore set the complete audit key identity in privacy genesis state.
 
 The genesis field is:
 
@@ -207,7 +207,9 @@ The genesis field is:
 {
   "app_state": {
     "privacy": {
-      "audit_master_pubkey": "<base64-bytes>"
+      "audit_master_pubkey": "<base64-bytes>",
+      "audit_key_id": "master",
+      "audit_key_epoch": "1"
     }
   }
 }

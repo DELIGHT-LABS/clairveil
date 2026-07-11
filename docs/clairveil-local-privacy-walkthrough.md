@@ -177,6 +177,8 @@ auditor_b64 = base64.b64encode(bytes.fromhex(auditor_hex)).decode()
 
 doc = json.loads(genesis_path.read_text())
 doc['app_state']['privacy']['audit_master_pubkey'] = auditor_b64
+doc['app_state']['privacy']['audit_key_id'] = 'master'
+doc['app_state']['privacy']['audit_key_epoch'] = '1'
 genesis_path.write_text(json.dumps(doc, indent=2))
 print(auditor_b64)
 PY2

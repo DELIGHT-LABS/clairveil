@@ -6,9 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/stretchr/testify/require"
 
 	privacydisclosure "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/disclosure"
@@ -216,6 +218,8 @@ type browserSendProviderFixture struct {
 
 type browserAuditConfigFixture struct {
 	AuditMasterPubkeyHex string `json:"audit_master_pubkey_hex"`
+	AuditKeyID           string `json:"audit_key_id"`
+	AuditKeyEpoch        string `json:"audit_key_epoch"`
 }
 
 type browserMerklePathRequest struct {
@@ -329,10 +333,28 @@ func TestBrowserSignerProviderContractFixture(t *testing.T) {
 	require.False(t, contract.ScanProvider.CheckNullifierResponse.Used)
 
 	require.Equal(t, vectors.Recipient.DisclosurePubKeyHex, contract.SendProvider.AuditConfigResponse.AuditMasterPubkeyHex)
+	require.Equal(t, privacytypes.DefaultAuditKeyIDV1, contract.SendProvider.AuditConfigResponse.AuditKeyID)
+	require.Equal(t, strconv.FormatUint(privacytypes.DefaultAuditKeyEpochV1, 10), contract.SendProvider.AuditConfigResponse.AuditKeyEpoch)
 	require.Equal(t, vectors.Note.CommitmentHex, contract.SendProvider.MerklePathRequest.CommitmentHex)
 	require.NoError(t, validateCanonicalHex32(contract.SendProvider.MerklePathResponse.RootHex, "merkle path root"))
 	require.Equal(t, []string{"01", "02"}, contract.SendProvider.MerklePathResponse.Path)
 	require.Equal(t, []uint32{0, 1}, contract.SendProvider.MerklePathResponse.PathHelper)
+}
+
+func TestBrowserSignerProviderAuditConfigMatchesGatewayJSON(t *testing.T) {
+	contract := loadBrowserSignerProviderContract(t)
+	response := &privacytypes.QueryAuditConfigResponse{
+		AuditMasterPubkeyHex: contract.SendProvider.AuditConfigResponse.AuditMasterPubkeyHex,
+		AuditKeyId:           contract.SendProvider.AuditConfigResponse.AuditKeyID,
+		AuditKeyEpoch:        privacytypes.DefaultAuditKeyEpochV1,
+	}
+
+	payload, err := codec.ProtoMarshalJSON(response, nil)
+	require.NoError(t, err)
+
+	var gatewayResponse browserAuditConfigFixture
+	require.NoError(t, json.Unmarshal(payload, &gatewayResponse))
+	require.Equal(t, contract.SendProvider.AuditConfigResponse, gatewayResponse)
 }
 
 func TestBrowserSignerProviderContractFixtureDerivedShieldedAddress(t *testing.T) {
@@ -574,6 +596,8 @@ func buildBrowserSignerProviderContract(t *testing.T) browserSignerProviderContr
 		SendProvider: browserSendProviderFixture{
 			AuditConfigResponse: browserAuditConfigFixture{
 				AuditMasterPubkeyHex: vectors.Recipient.DisclosurePubKeyHex,
+				AuditKeyID:           privacytypes.DefaultAuditKeyIDV1,
+				AuditKeyEpoch:        strconv.FormatUint(privacytypes.DefaultAuditKeyEpochV1, 10),
 			},
 			MerklePathRequest: browserMerklePathRequest{
 				CommitmentHex: vectors.Note.CommitmentHex,

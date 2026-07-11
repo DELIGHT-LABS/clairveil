@@ -349,7 +349,7 @@ func TestMsgTransferValidateBasicUserDisclosureModes(t *testing.T) {
 	require.ErrorContains(t, err, "self-view disclosure digest and payload must be provided together")
 }
 
-func TestMsgBatchTransferValidateBasicFrozenContract(t *testing.T) {
+func TestMsgBatchTransferValidateBasicUsesBoundedFramingOnly(t *testing.T) {
 	valid := productionBatchPayloadTestMessage(t)
 	valid.Creator = testCreatorAddress()
 	require.NoError(t, valid.ValidateBasic())
@@ -361,6 +361,33 @@ func TestMsgBatchTransferValidateBasicFrozenContract(t *testing.T) {
 	}{
 		{"creator", func(msg *MsgBatchTransfer) { msg.Creator = "invalid" }, "invalid creator address"},
 		{"proof frame", func(msg *MsgBatchTransfer) { msg.Proof = nil }, "proof must be exactly 164 bytes"},
+		{"view tag length", func(msg *MsgBatchTransfer) { msg.Outputs[0].ViewTag = nil }, "view tag must be exactly 2 bytes"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			msg := productionBatchPayloadTestMessage(t)
+			msg.Creator = testCreatorAddress()
+			test.mutate(msg)
+			require.ErrorContains(t, msg.ValidateBasic(), test.message)
+		})
+	}
+
+	semanticInvalid := productionBatchPayloadTestMessage(t)
+	semanticInvalid.Creator = testCreatorAddress()
+	semanticInvalid.Root = nonCanonicalFieldBytes()
+	require.NoError(t, semanticInvalid.ValidateBasic())
+	require.ErrorContains(t, ValidateMsgBatchTransferEffectsV1(semanticInvalid), "merkle root must be canonical")
+}
+
+func TestValidateMsgBatchTransferEffectsV1FrozenContract(t *testing.T) {
+	valid := productionBatchPayloadTestMessage(t)
+	require.NoError(t, ValidateMsgBatchTransferEffectsV1(valid))
+
+	tests := []struct {
+		name    string
+		mutate  func(*MsgBatchTransfer)
+		message string
+	}{
 		{"root canonical", func(msg *MsgBatchTransfer) { msg.Root = nonCanonicalFieldBytes() }, "merkle root must be canonical"},
 		{"root active", func(msg *MsgBatchTransfer) { msg.Root = make([]byte, expectedFieldElementBytes) }, "merkle root must be non-zero"},
 		{"duplicate nullifier", func(msg *MsgBatchTransfer) {
@@ -370,7 +397,6 @@ func TestMsgBatchTransferValidateBasicFrozenContract(t *testing.T) {
 			msg.Outputs[1].Commitment = append([]byte(nil), msg.Outputs[0].Commitment...)
 		}, "duplicate"},
 		{"ciphertext envelope", func(msg *MsgBatchTransfer) { msg.Outputs[0].Ciphertext[0] ^= 1 }, "canonical transfer-note envelope"},
-		{"view tag length", func(msg *MsgBatchTransfer) { msg.Outputs[0].ViewTag = nil }, "view tag must be exactly 2 bytes"},
 		{"unsupported policy", func(msg *MsgBatchTransfer) { msg.Outputs[0].UserPrivacyPolicy = 8 }, "unsupported transfer privacy policy"},
 		{"all private combination", func(msg *MsgBatchTransfer) {
 			msg.Outputs[0].UserDisclosureMode = UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC
@@ -390,9 +416,8 @@ func TestMsgBatchTransferValidateBasicFrozenContract(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			msg := productionBatchPayloadTestMessage(t)
-			msg.Creator = testCreatorAddress()
 			test.mutate(msg)
-			require.ErrorContains(t, msg.ValidateBasic(), test.message)
+			require.ErrorContains(t, ValidateMsgBatchTransferEffectsV1(msg), test.message)
 		})
 	}
 }

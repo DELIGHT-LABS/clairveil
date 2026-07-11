@@ -33,8 +33,8 @@ func (k msgServer) BatchTransfer(goCtx context.Context, msg *types.MsgBatchTrans
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
 	// Only cheap bounded framing is allowed before the deterministic precharge.
-	if err := types.ValidateMsgBatchTransferFramingV1(msg); err != nil {
-		return nil, errorsmod.Wrap(sdkerrors.ErrInvalidRequest, err.Error())
+	if err := msg.ValidateBasic(); err != nil {
+		return nil, err
 	}
 	if err := validateCanonicalProofFramingBN254(msg.Proof); err != nil {
 		return nil, errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "batch proof framing is invalid: %v", err)
@@ -45,8 +45,8 @@ func (k msgServer) BatchTransfer(goCtx context.Context, msg *types.MsgBatchTrans
 
 	// Full canonical, point, envelope, disclosure, and digest validation is
 	// intentionally after precharge.
-	if err := msg.ValidateBasic(); err != nil {
-		return nil, err
+	if err := types.ValidateMsgBatchTransferEffectsV1(msg); err != nil {
+		return nil, errorsmod.Wrap(sdkerrors.ErrInvalidRequest, err.Error())
 	}
 
 	auditConfig, found, err := k.GetAuditConfigV1(ctx)

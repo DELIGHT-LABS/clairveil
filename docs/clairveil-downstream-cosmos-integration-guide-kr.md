@@ -197,7 +197,7 @@ SendCoinsFromModuleToAccount(ctx context.Context, senderModule string, recipient
 
 ## 6. Genesis audit key
 
-최신 transfer 모델은 모든 shielded transfer에 mandatory master-auditor disclosure를 포함합니다. 따라서 production-like chain은 genesis의 privacy state에 audit master public key를 설정해야 합니다.
+최신 transfer 모델은 모든 shielded transfer에 mandatory master-auditor disclosure를 포함합니다. 따라서 production-like chain은 genesis의 privacy state에 완전한 audit key identity를 설정해야 합니다.
 
 genesis 필드 이름은 아래입니다.
 
@@ -205,7 +205,9 @@ genesis 필드 이름은 아래입니다.
 {
   "app_state": {
     "privacy": {
-      "audit_master_pubkey": "<base64-bytes>"
+      "audit_master_pubkey": "<base64-bytes>",
+      "audit_key_id": "master",
+      "audit_key_epoch": "1"
     }
   }
 }

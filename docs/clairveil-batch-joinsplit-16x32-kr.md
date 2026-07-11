@@ -518,7 +518,7 @@ PayloadDigestLo = uint128be(payload_sha256[16:32])
 
 `creator`와 `proof`만 message effect에서 제외한다. ordered vector length가 canonical count이므로 별도 count source는 없다. encoder 전 validation은 non-canonical field, duplicate nullifier/commitment, unknown disclosure enum, 잘못된 policy/mode/target/payload 조합, malformed envelope, mixed self-view presence, invalid audit identity, non-positive epoch/expiry를 거부한다. independent 2-input/2-output golden은 canonical `3,702` bytes, SHA-256 `f2588c7543fb83a7822aa0043e4747af0ac4c9dc14a038c230850f1cab5e24b0`, high limb `322132945931579789235567236199104333743`, low limb `14314064343031468430392382204273370288`이다. max `16/32` shape는 canonical `65,384` bytes다.
 
-Consensus per-message wire cap은 `128 KiB`다. `BatchTransferRawFramingDecorator`가 `ValidateBasic` 전에 signed `TxBody.messages[].Any.value` raw bytes에 cap을 적용하며 decoded `MsgBatchTransfer.Size()`는 secondary shape check일 뿐이다. 따라서 duplicate singular protobuf field가 마지막 작은 값만 남기도록 decode되더라도 oversized raw message를 거부한다.
+Consensus per-message wire cap은 `128 KiB`다. `BatchTransferRawFramingDecorator`는 nested governance/authz wrapper를 포함한 signed raw `TxBody.messages[].Any` field를 scan하고 모든 batch message에 type URL과 value가 정확히 하나씩만 존재하도록 강제한다. Decoded `MsgBatchTransfer.Size()`는 secondary shape check일 뿐이다. BaseApp가 ante handling 전에 `ValidateBasic`을 호출하므로 batch `ValidateBasic`은 의도적으로 bounded framing과 creator만 검증하고, complete effect semantics는 keeper의 deterministic precharge 뒤에 실행한다. 따라서 무과금 point/envelope validation 없이 oversized 또는 duplicate raw value를 거부한다.
 
 ### 7.2 Batch effect ID
 
@@ -573,7 +573,7 @@ all-private user disclosure는 mode `NONE`이고 digest/target/payload가 empty�
 
 ### 8.1 Global commitment uniqueness
 
-commitment index는 Deposit, JoinSplit2x2, BatchJoinSplit16x32, genesis 전체에서 global이다. commitment는 canonical, non-zero이고 proof/state 실행 전에 존재하지 않아야 한다. `MsgBatchTransfer.ValidateBasic`이 local duplicate를 거부하고 keeper가 proof verification 전에 global index를 검사하며, `AppendCommitment`가 다시 검사해 immutable leaf index 하나를 기록하고 duplicate를 거부한다. index lookup은 store error를 전파하고 malformed stored index를 absent로 취급하지 않는다. genesis도 globally distinct commitment를 요구한다. Batch output은 proof 성공 후에만 append한다.
+commitment index는 Deposit, JoinSplit2x2, BatchJoinSplit16x32, genesis 전체에서 global이다. commitment는 canonical, non-zero이고 proof/state 실행 전에 존재하지 않아야 한다. Deterministic precharge 뒤 `ValidateMsgBatchTransferEffectsV1`이 local duplicate를 거부하고 keeper가 proof verification 전에 global index를 검사하며, `AppendCommitment`가 다시 검사해 immutable leaf index 하나를 기록하고 duplicate를 거부한다. index lookup은 store error를 전파하고 malformed stored index를 absent로 취급하지 않는다. genesis도 globally distinct commitment를 요구한다. Batch output은 proof 성공 후에만 append한다.
 
 ### 8.2 Unified sequence와 cursor
 

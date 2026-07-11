@@ -37,6 +37,41 @@ func TestBatchTransferRawFramingRejectsDuplicateFieldWireCapBypass(t *testing.T)
 	require.False(t, nextCalled)
 }
 
+func TestBatchTransferRawFramingRejectsDuplicateAnyValueCapBypass(t *testing.T) {
+	oversizedValue := bytes.Repeat([]byte{0x41}, privacytypes.MaxBatchTransferMessageBytesV1+1)
+	boundedValue := bytes.Repeat([]byte{0x42}, privacytypes.BatchTransferProofSizeV1)
+	rawAny := rawAnyBytes(batchTransferMsgTypeURL, oversizedValue, boundedValue)
+
+	var decoded types.Any
+	require.NoError(t, decoded.Unmarshal(rawAny))
+	require.Equal(t, boundedValue, decoded.Value)
+
+	err := validateRawBatchTransferMessageSizes(rawTxBytesWithRawAny(t, rawAny))
+	require.ErrorContains(t, err, "exactly one type_url and one raw value")
+}
+
+func TestBatchTransferRawFramingRejectsNestedWrapperCapBypass(t *testing.T) {
+	oversizedValue := bytes.Repeat([]byte{0x41}, privacytypes.MaxBatchTransferMessageBytesV1+1)
+	innerBatchAny := rawAnyBytes(batchTransferMsgTypeURL, oversizedValue)
+
+	for _, test := range []struct {
+		name           string
+		wrapperTypeURL string
+		messagesField  uint64
+	}{
+		{name: "governance proposal", wrapperTypeURL: govSubmitProposalMsgTypeURL, messagesField: 1},
+		{name: "authz exec", wrapperTypeURL: authzExecMsgTypeURL, messagesField: 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			wrapperValue := appendProtoBytesField(nil, test.messagesField, innerBatchAny)
+			wrapperAny := rawAnyBytes(test.wrapperTypeURL, wrapperValue)
+
+			err := validateRawBatchTransferMessageSizes(rawTxBytesWithRawAny(t, wrapperAny))
+			require.ErrorContains(t, err, "raw Any.value hard cap")
+		})
+	}
+}
+
 func TestBatchTransferRawFramingAllowsBoundedBatchAndIgnoresOtherTypes(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -76,6 +111,22 @@ func batchRawTxBytes(t testing.TB, messageValue []byte) []byte {
 	rawBytes, err := (&txtypes.TxRaw{BodyBytes: bodyBytes}).Marshal()
 	require.NoError(t, err)
 	return rawBytes
+}
+
+func rawTxBytesWithRawAny(t testing.TB, rawAny []byte) []byte {
+	t.Helper()
+	bodyBytes := appendProtoBytesField(nil, 1, rawAny)
+	rawBytes, err := (&txtypes.TxRaw{BodyBytes: bodyBytes}).Marshal()
+	require.NoError(t, err)
+	return rawBytes
+}
+
+func rawAnyBytes(typeURL string, values ...[]byte) []byte {
+	raw := appendProtoBytesField(nil, 1, []byte(typeURL))
+	for _, value := range values {
+		raw = appendProtoBytesField(raw, 2, value)
+	}
+	return raw
 }
 
 func appendProtoBytesField(dst []byte, fieldNumber uint64, value []byte) []byte {

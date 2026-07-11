@@ -453,20 +453,16 @@ func (msg *MsgBatchTransfer) Type() string {
 	return "BatchTransfer"
 }
 
-// ValidateBasic first applies the bounded length-only framing checks used by
-// keeper gas precharge, then validates the complete frozen owner-effect
-// semantics. Matching the audit identity against active chain configuration is
-// keeper stateful validation and therefore intentionally remains outside this
-// stateless method.
+// ValidateBasic is intentionally limited to bounded length-only framing and
+// creator validation because BaseApp invokes it before ante handling and gas
+// setup. The keeper applies complete owner-effect semantics only after the
+// deterministic batch precharge.
 func (msg *MsgBatchTransfer) ValidateBasic() error {
 	if err := ValidateMsgBatchTransferFramingV1(msg); err != nil {
 		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, err.Error())
 	}
 	if err := validateCreatorAddress(msg.Creator); err != nil {
 		return err
-	}
-	if err := ValidateMsgBatchTransferEffectsV1(msg); err != nil {
-		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, err.Error())
 	}
 	return nil
 }
