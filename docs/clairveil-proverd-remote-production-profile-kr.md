@@ -192,7 +192,7 @@ Remote prover를 production-like 환경에 올리기 전 아래를 확인합니�
 
 ## 13. Session 2 Admission And Artifact Addendum
 
-Active consensus circuit set은 `privacy-note-v1`이며 fixed note/disclosure/envelope 계약은 `privacy-fixed-v1`입니다. 이전 cached artifact와 proof job과 호환되지 않습니다. Fresh genesis에서 배포하고 old R1CS/PK/VK set과 queued/cached request를 제거하며 exact active set을 다시 생성합니다. Client도 note/scan cache를 지우고 rescan해야 합니다. Session 2의 `BatchJoinSplit16x32` circuit은 feasibility benchmark일 뿐이므로 production proving circuit으로 install, advertise, route하면 안 됩니다.
+Active consensus circuit set은 `privacy-note-v1`이며 fixed note/disclosure/envelope 계약은 `privacy-fixed-v1`입니다. 이전 cached artifact와 proof job과 호환되지 않습니다. Fresh genesis에서 배포하고 old R1CS/PK/VK set과 queued/cached request를 제거하며 exact active set을 다시 생성합니다. Client도 note/scan cache를 지우고 rescan해야 합니다. Circuit manifest에는 이제 `batch-joinsplit-16x32-v1`이 포함되지만 이 remote prover profile에는 Session 3A batch HTTP route나 public request schema가 없으므로 이를 advertise하면 안 됩니다.
 
 Artifact registry는 role-aware입니다. Validator readiness는 consensus identity를 요구하고 요청된 VK만 읽습니다. Prover readiness는 선택한 R1CS/PK pair만 읽어 lazy load하며 supplied consensus metadata가 다르면 계속 fail closed해야 합니다. Manifest에 존재한다는 이유만으로 unrelated proving key를 preload하지 않습니다.
 
@@ -200,4 +200,4 @@ Reference admission default는 circuit별 `max_in_flight=1`, `max_queued=4`입�
 
 Bounded `proverservice.Handler`만 노출합니다. `provertransport.HTTPHandler`를 public listener에 직접 mount하거나 proxy만 유일한 body bound라고 가정하면 안 됩니다. 다른 endpoint는 private-witness trust boundary를 넓히므로 automatic prover failover를 비활성화합니다. Context cancellation은 caller의 wait를 중단하지만 이미 실행 중인 in-process gnark proof는 반환할 때까지 계속되고 permit을 유지합니다. Reference service는 solver를 preempt하지 못합니다. Hard cancellation 또는 OOM containment에는 isolated, memory-limited worker process와 termination을 사용합니다.
 
-Future 16x32 public schema는 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo` 순서로 reserve됩니다. Schema reserve가 production endpoint나 artifact 생성 권한을 뜻하지는 않습니다.
+Production 16x32 public schema는 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo` 순서입니다. 이 schema가 존재해도 ad-hoc remote endpoint를 만들 수 없으며 Session 3B가 bounded route, admission, authentication, end-to-end conformance를 함께 추가해야 합니다.

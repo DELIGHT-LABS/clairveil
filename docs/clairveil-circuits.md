@@ -13,6 +13,7 @@ Korean version: [clairveil-circuits-kr.md](clairveil-circuits-kr.md)
 | `x/privacy/circuit/deposit.go` | `DepositCircuit` | Used by deposit to bind a transparent coin amount/asset to the shielded note commitment |
 | `x/privacy/circuit/spend.go` | `SpendCircuit` | Used when withdrawing a shielded note to a transparent account |
 | `x/privacy/circuit/joinsplit.go` | `JoinSplitCircuit` | Used by shielded transfer to turn 2 input notes into 2 output notes |
+| `x/privacy/circuit/batch_joinsplit_16x32.go` | `BatchJoinSplit16x32` | Used by `MsgBatchTransfer` to atomically consume 1..16 notes and create 1..32 notes |
 
 Common constant:
 
@@ -24,7 +25,7 @@ Clairveil uses a single depth-32 Merkle tree as a fixed-capacity pool.
 
 ## 2. Note Commitment Model
 
-All three circuits compute note commitments with the following meaning:
+All four circuits compute note commitments with the following meaning:
 
 ```text
 commitment = MiMC(
@@ -228,6 +229,9 @@ This means:
 | `privacy_joinsplit_r1cs.bin` | JoinSplitCircuit constraint system |
 | `privacy_joinsplit_pk.bin` | JoinSplitCircuit proving key |
 | `privacy_joinsplit_vk.bin` | JoinSplitCircuit verifying key |
+| `privacy_batch_joinsplit_16x32_r1cs.bin` | BatchJoinSplit16x32 constraint system |
+| `privacy_batch_joinsplit_16x32_pk.bin` | BatchJoinSplit16x32 proving key |
+| `privacy_batch_joinsplit_16x32_vk.bin` | BatchJoinSplit16x32 verifying key |
 | `privacy_zk_checksums.env` | runtime checksum env |
 | `privacy_zk_manifest.json` | JSON artifact manifest |
 
@@ -245,9 +249,21 @@ source artifacts/privacy/privacy_zk_checksums.env
 export CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict
 ```
 
-`privacy_zk_manifest.json` schema `v2` records the exact ordered circuit descriptors, VK SHA-256 values, and public-input schema SHA-256 values. Genesis and consensus state pin the corresponding `CircuitSetIdentity` schema `v1`; local checksum environment variables cannot override that identity. A node compares its local verifier identity with consensus before serving: validators need only the three VK files and load them lazily, while a prover loads R1CS/PK only when proving. A mismatch blocks startup/readiness. Generated R1CS/PK/VK binaries and secrets are not committed.
+`privacy_zk_manifest.json` schema `v2` records the exact ordered circuit descriptors, VK SHA-256 values, and public-input schema SHA-256 values. Genesis and consensus state pin the corresponding `CircuitSetIdentity` schema `v1`; local checksum environment variables cannot override that identity. A node compares its local verifier identity with consensus before serving: validators need only the four required VK files and load them lazily, while a prover loads R1CS/PK only when proving. A mismatch blocks startup/readiness. Generated R1CS/PK/VK binaries and secrets are not committed.
 
-The setup used here is development-only. Session 1 does not perform or claim a formal trusted setup, artifact signing ceremony, or external audit.
+The Session 3A development artifact gate recorded the following reproducible local identities for the batch circuit. These values identify the measured development artifacts; they are not a formal setup or a production artifact release.
+
+| Item | Recorded value |
+| --- | --- |
+| Constraints | `1,111,837` |
+| R1CS | `122,813,535 B`, SHA-256 `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210` |
+| Proving key | `209,218,621 B`, SHA-256 `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470` |
+| Verifying key | `716 B`, SHA-256 `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621` |
+| Public-input schema | SHA-256 `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333` |
+| Generation peak RSS | `3,308,797,952 B` |
+| Validator/prover readiness peak RSS | `1,295,482,880 B` |
+
+The setup generated here is development-only. The repository does not perform or claim a formal trusted setup, artifact signing ceremony, production artifact release, or external audit.
 
 ## 7. Reserve Accounting Query
 
@@ -272,18 +288,18 @@ When changing circuits, update these in one commit or a short commit series:
 
 ## 9. Important Limits
 
-- The circuit uses a fixed 2-input/2-output transfer model.
+- The native `JoinSplitCircuit` remains fixed at 2 inputs and 2 outputs; `BatchJoinSplit16x32` is a separate 1..16 input / 1..32 output circuit and artifact.
 - Ciphertext delivery itself is not proven directly by the circuit; it is verified with digest binding and off-chain verification.
 - Production deployment still needs artifact signing, reproducible generation, and release provenance.
 - Proof verification is precharged by the keeper after cheap canonical Groth16 framing succeeds and before decoding, VK loading, or pairing work. Deposit, spend, and joinsplit each currently charge `1,000,000` gas per verification attempt; invalid cryptographic proofs still consume the full precharge, while malformed framing does not.
 
-## 10. Session 2 NoteV1 And Batch Foundation
+## 10. NoteV1 And Session 3A Batch Core
 
-The active circuit set is now `privacy-note-v1`. `DepositCircuit`, `SpendCircuit`, native `JoinSplitCircuit` 2x2, the keeper tree, and scanners share one domain-separated NoteV1 commitment/nullifier/tree contract, canonical field/key checks, and exact depth-specific empty roots. Denoms never enter the circuit as strings: `AssetRegistryV1` is the authoritative one-to-one mapping to a 32-byte `asset_id`. This is a breaking state and artifact transition that requires fresh genesis, regenerated artifacts, deleted proof/note/scan caches, and a full rescan.
+The active circuit set is `privacy-note-v1`. Its required descriptor order is `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`. All four circuits, the keeper tree, and typed scan state share one domain-separated NoteV1 commitment/nullifier/tree contract, canonical field/key checks, and exact depth-specific empty roots. Denoms never enter a circuit as strings: `AssetRegistryV1` is the authoritative one-to-one mapping to a 32-byte `asset_id`. This is a breaking state and artifact transition that requires fresh genesis, regenerated artifacts, deleted proof/note/scan caches, and a full rescan.
 
 Canonical plaintext and encrypted payloads use `privacy-fixed-v1`: fixed 350-byte note plaintext, fixed 392-byte disclosure plaintext, and a 20-byte typed envelope header before the exact encryption payload. Raw ciphertext and cross-kind or trailing-byte decode are invalid. User and full disclosure use independent non-zero per-output blindings; all-private user disclosure alone uses the zero sentinel. This prevents low-entropy disclosed values from becoming a practical dictionary oracle.
 
-`BatchJoinSplit16x32` in Session 2 is a full-shape feasibility circuit, not a registered production circuit. It fixes capacities 16/32, exact active prefixes, zero disabled sentinels, 16 independent depth-32 paths, subgroup/key constraints, per-output NoteV1/disclosure checks, and ordered vector commitments. It freezes this 12-input order:
+`BatchJoinSplit16x32` is now the fourth production circuit. It preserves the Session 2 contract: capacities 16/32, exact active prefixes, zero disabled sentinels, 16 independent depth-32 paths, subgroup/key constraints, active-only distinctness, value conservation, per-output NoteV1/user/full-disclosure checks, and one owner signature. Its consensus public-input order is:
 
 1. `MerkleRoot`
 2. `ChainDomainHi`
@@ -298,8 +314,14 @@ Canonical plaintext and encrypted payloads use `privacy-fixed-v1`: fixed 350-byt
 11. `PayloadDigestHi`
 12. `PayloadDigestLo`
 
-For each vector kind, the fixed-capacity leaf, node, and final root are domain-separated; leaves bind `(index, enabled, value)`, nodes bind `(level, left, right)`, and the final root binds `(capacity, count, tree_root)`. These formulas and public order are reserved for future consensus work. No production batch descriptor/VK/PK, `MsgBatchTransfer`, keeper handler, prover HTTP route, scanner/payroll integration, or trusted setup is introduced in Session 2.
+For each vector kind, the fixed-capacity leaf, node, and final root are domain-separated; leaves bind `(index, enabled, value)`, nodes bind `(level, left, right)`, and the final root binds `(capacity, count, tree_root)`. The formulas and order are live consensus contracts, with schema SHA-256 `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`.
 
-The future owner-effect encoding is already exact rather than deferred: format `1` uses `u32be` counts and `u32be(length) || bytes` framing over root, ordered nullifiers, every ordered output effect field, audit ID/epoch/target, and expiry. SHA-256 domain `clairveil.batch-transfer-payload.v1` produces public inputs 11–12 as non-reduced big-endian 128-bit limbs. `creator` and `proof` alone are excluded. See the normative batch contract and conformance fixture for the byte grammar and golden.
+`MsgBatchTransfer` and structured `BatchTransferOutput` are registered production proto/types. Owner-effect format `1` uses `u32be` counts and `u32be(length) || bytes` framing over root, ordered nullifiers, every ordered output effect field, audit ID/epoch/target, and expiry. SHA-256 domain `clairveil.batch-transfer-payload.v1` produces public inputs 11–12 as non-reduced big-endian 128-bit limbs. `creator` and `proof` alone are excluded. The keeper derives all 12 public values, performs canonical and global nullifier/commitment checks, precharges deterministic gas after cheap framing and before semantic/cryptographic work, verifies the proof, then commits nullifiers, commitments, root snapshot, typed scan records, and the minimal ABCI/event-index summary through one cache-context write.
+
+`BatchGasModelV1` charges `1,000,000` verification base gas, `25,000` per input, `50,000` per output, `4` per canonical payload byte, `8` per typed-state byte, `5,000` per tree-node write, and `10,000` per global lookup. Bounds are `65,384` canonical payload bytes, `256 KiB` typed scan state, `output_count * 33` tree writes, and `input_count + output_count` global lookups. Out-of-gas stops before semantic or state work.
+
+Deposit, native 2x2 JoinSplit, and batch transfer share `privacy-sequence-v1` ordering and `privacy-scan-v2` typed state. Ciphertext and disclosure bytes are stored once in `PrivacyScanOutputV2`; the batch event carries only the effect ID, counts, roots, versions, expiry, relayer, and audit identity. `TestBatchTransferDirectCoreIntegration`, `TestBatchTransferCoreRejectionsAndAtomicScanFailure`, and `TestCrossMessageNullifierFailureRollsBackWholeCosmosTxCache` exercise the direct core success path, atomic failure, and 2x2+batch/batch+batch rollback behavior.
+
+Session 3A does not include the public batch-transfer Go SDK, a batch route in `clairveil-proverd`, wallet scanner/decrypt UX, payroll planner/worker/reconcile integration for this one-proof message, a batch CLI/tutorial, formal trusted setup, or production artifact distribution. Existing `transfer-batch`/payroll tooling is not an adapter for `MsgBatchTransfer`; those user-facing integrations remain Session 3B or later work.
 
 The artifact registry is role-aware: a validator verifies exact consensus identity and loads required VKs only, while a prover lazily loads selected R1CS/PK pairs. The reference prover bounds each current circuit to one in-flight and four queued jobs and uses a positive 8 MiB body limit. Canceling a request cannot terminate an already running in-process gnark solver; hard cancellation and memory isolation require a worker-process boundary. Automatic prover failover remains disabled.

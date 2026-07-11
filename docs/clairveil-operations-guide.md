@@ -24,8 +24,9 @@ A production-like node should satisfy at least:
 1. genesis has an audit master pubkey.
 2. ZK artifact preflight runs in `strict` mode.
 3. privacy module account is registered correctly as a bank module account.
-4. `tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `nullifier/{nullifier}`, and batch `nullifiers` queries are exposed.
+4. `tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, and batch `nullifiers` queries are exposed.
 5. snapshot/restore rehearsal is completed before release.
+6. `Msg/BatchTransfer` is enabled only with the four-circuit `privacy-note-v1` consensus identity and matching local batch VK.
 
 Reference local start example:
 
@@ -43,6 +44,10 @@ clairveild start --minimum-gas-prices 0uclair
 ```bash
 clairveil-setup --out artifacts/privacy
 ```
+
+`privacy-note-v1` requires descriptors in the exact order `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`. Validators check the consensus identity and load the four VKs only; prover-role readiness loads the selected R1CS/PK pair lazily. For the recorded Session 3A development batch artifacts, R1CS is `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK is `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, and VK is `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`. Generation peak RSS was `3,308,797,952 B`; role readiness peaked at `1,295,482,880 B`.
+
+These are development identities only. Formal trusted setup, artifact signing, reproducible production generation, custody, and distribution remain downstream release responsibilities.
 
 Production needs:
 
@@ -66,7 +71,8 @@ The privacy pool is a depth-32 single Merkle tree.
 | tx | leaf change |
 | --- | --- |
 | deposit | +1 |
-| transfer | +2 |
+| native 2x2 transfer | +2 |
+| batch transfer | +1..32 |
 | withdraw | +0 |
 
 Operators should track:
@@ -91,6 +97,8 @@ After snapshot/restore/migration, recompute sample Merkle paths according to [cl
 ## 5. Prover Operations
 
 `clairveil-proverd` does not directly receive private seeds, but it receives prepared proof payloads. Those payloads can include amount, note randomness, Merkle path, nullifier, shielded public keys, and disclosure metadata.
+
+The reference prover does not yet expose a BatchJoinSplit16x32 HTTP route. Do not route `MsgBatchTransfer` witnesses through a generic or existing JoinSplit endpoint. A reviewed batch route, public Go SDK, and wallet UX remain Session 3B work.
 
 A remote prover is a privacy-sensitive trusted component.
 
@@ -141,7 +149,8 @@ Production wallets must decide:
 
 Recommended metrics:
 
-- tx count by type: deposit/transfer/withdraw
+- tx count by type: deposit/native-transfer/batch-transfer/withdraw
+- batch input/output counts, deterministic precharge, out-of-gas rejection, and atomic rollback errors
 - transfer disclosure mode distribution
 - proof generation latency
 - prover error rate
@@ -185,6 +194,7 @@ Release notes should include at least:
 - accepted vulnerabilities
 - downstream action required
 - artifact checksum/provenance policy
+- circuit-set/public-witness/gas/scan-schema version impact (`privacy-note-v1`, `BatchGasModelV1`, `privacy-sequence-v1`, `privacy-scan-v2`)
 
 ## 10. Incident Response Criteria
 
@@ -209,3 +219,5 @@ Before attaching Clairveil core to downstream mainnet:
 6. snapshot/restore rehearsal and Merkle path sample validation are complete.
 7. `reserve/{denom}` returns `invariant_holds=true` after deposit/withdraw e2e for each supported denom.
 8. chain-specific threat model is written.
+9. `TestBatchTransferDirectCoreIntegration`, atomic scan-failure tests, and cross-message 2x2+batch/batch+batch rollback tests pass against the release commit.
+10. The release explicitly records that public batch SDK, remote batch prover route, wallet scanner/decrypt UX, one-proof payroll integration, and batch CLI/tutorial are not supplied until Session 3B; formal setup and production artifact release remain separate gates.

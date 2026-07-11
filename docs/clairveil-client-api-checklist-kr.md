@@ -184,15 +184,15 @@ Breaking 또는 migration impact가 있는 변경:
 - [Downstream integration guide](clairveil-downstream-cosmos-integration-guide-kr.md)
 - [Testing guide](clairveil-testing-guide-kr.md)
 
-## 10. Session 2 Foundation Gate
+## 10. Session 3A Core / Session 3B Client Gate
 
-이 checklist는 현재 지원하는 deposit/2x2 transfer/withdraw API와 future `BatchJoinSplit16x32` contract를 구분합니다. Session 2 batch protobuf와 circuit은 wire/resource feasibility prototype일 뿐이므로 여기서 `MsgBatchTransfer`, keeper endpoint, prover route, SDK/payroll feature를 공개하지 않습니다.
+Chain core는 production `BatchJoinSplit16x32` circuit, `MsgBatchTransfer`, keeper transition, typed scan record를 등록했습니다. 하지만 이 checklist는 public batch Go/JS SDK, remote batch prover route, wallet UX, payroll path, batch CLI 지원을 주장하지 않으며 해당 항목은 Session 3B 범위입니다.
 
-- [ ] Consensus active set `privacy-note-v1`을 pin하고 artifact identity, VK hash, public-input schema가 하나라도 다르면 거부합니다.
+- [ ] Consensus active set `privacy-note-v1`의 required Deposit/Spend/JoinSplit/BatchJoinSplit16x32 순서를 pin하고 artifact identity, VK hash, public-input schema가 하나라도 다르면 거부합니다.
 - [ ] Note/disclosure/envelope payload를 canonical `privacy-fixed-v1`으로 encode합니다. Raw ciphertext, JSON plaintext, 잘못된 envelope kind, non-zero reserved byte, trailing byte를 거부합니다.
 - [ ] `AssetRegistryV1`을 denom-to-`asset_id`와 reverse lookup의 authoritative source로 사용하며 missing, collision, inconsistent entry에서는 fail closed합니다.
 - [ ] Unified `privacy-scan-v2` state를 전체 `(height, global_sequence, output_index)` cursor로 소비하고 선택한 root와 정확히 같은 path snapshot을 요청합니다. Current-root path는 incremental node를 사용하므로 online historical-rebuild budget을 소비하지 않습니다. Non-current historical path는 persisted root/count/height metadata를 요구하며 public query는 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하고 그 이상은 `ResourceExhausted`를 반환합니다. Online bound를 넘으면 current root 또는 trusted local historical index를 사용합니다. 별도 offline recovery/export bound는 `MaxMerkleRebuildLeaves`(1,048,576)입니다. Remote historical root/path query가 wallet 관심을 누설할 수 있다는 warning을 유지합니다.
 - [ ] Note/scan/proof cache와 old artifact를 지우고 fresh genesis에서 시작하여 `privacy-note-v1` artifact를 다시 생성하고 rescan합니다. Legacy decode나 in-place migration을 제공하지 않습니다.
-- [ ] Future 12-field 순서 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`를 reserve하되 아직 advertise하지 않습니다.
+- [ ] Production batch public statement를 정확히 다음 12-field 순서로 취급합니다. `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`. Session 3B builder/prover/scanner가 core conformance fixture를 재현하기 전에는 client support를 advertise하지 않습니다.
 - [ ] Role-aware artifact readiness를 사용합니다. Validator는 VK만, prover는 선택한 R1CS/PK만 lazy load합니다. Circuit별 admission default는 `max_in_flight=1`, `max_queued=4`, positive `max_request_bytes=8388608`이며 0은 invalid입니다.
 - [ ] Bounded `proverservice.Handler`만 노출하고 raw transport handler는 절대 직접 노출하지 않습니다. Automatic prover failover를 끕니다. Cancellation은 client wait cancellation이지 solver termination 보장이 아니므로 hard resource boundary에는 process isolation을 사용합니다.

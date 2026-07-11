@@ -2,20 +2,16 @@
 
 ## 1. 상태와 범위
 
-이 문서는 향후 `BatchJoinSplit16x32` 구현을 위한 Session 2 프로토콜 기반을 동결한다. NoteV1, domain separation, 고정 인코딩, 16-input/32-output statement shape, aggregate vector root, disclosure digest, scan state, artifact identity, admission control, resource accounting에 대한 normative 문서다.
+이 문서는 Session 2 프로토콜 계약을 동결하고 Session 3A consensus/core 구현 상태를 기록한다. NoteV1, domain separation, 고정 인코딩, production 16-input/32-output statement, aggregate vector root, disclosure digest, scan state, artifact identity, resource accounting에 대한 normative 문서다.
 
 **Session 2 Gate 2: PASS.** final two-stage user-disclosure contract를 기준으로 두 feasibility gate를 재실행하거나 재확인했다.
 
 - **Full-shape circuit gate: PASS.** corrected Groth16/BN254 prototype이 compile과 development setup을 완료했고, OOM 없이 `16/32`를 포함한 모든 shape를 prove했으며, current JoinSplit2x2 baseline보다 output당 warm proving cost를 개선했다.
 - **Max wire/state gate: PASS.** 실제 protobuf message를 실제 Cosmos `TxRaw`에 넣고 typed scan KV record, tree-write allowance, minimal ABCI event, query response까지 측정한 결과 동결된 reference limit 안에 들었다.
 
-Gate 2 통과로 Session 3A 진입 조건은 충족되었지만 **Session 3A 작업은 시작하지 않았다.** 다음 항목은 이번 Session에 존재하지 않으며 prototype에서 구현되었다고 추론하면 안 된다.
+Session 3A는 production `BatchJoinSplit16x32` circuit, `MsgBatchTransfer`, deterministic gas precharge, proof-gated atomic keeper transition, typed scan state, minimal ABCI event, role-aware development artifact lifecycle을 구현한다. Public batch Go SDK, remote batch prover HTTP route, wallet scanning/decryption UX, payroll integration, batch CLI/tutorial, formal trusted setup, production artifact 배포는 구현하지 않으며 Session 3B 또는 release 범위로 남는다.
 
-- production `BatchJoinSplit16x32` circuit, proving key 또는 verifying key
-- 등록된 `MsgBatchTransfer` service 또는 keeper state transition
-- batch SDK, prover HTTP route, scanner, payroll integration 또는 formal trusted setup
-
-현재 active circuit set은 `privacy-note-v1`이며 production Deposit, Spend, JoinSplit2x2 circuit으로 구성된다. `batch-joinsplit-16x32-v1`은 reserved schema와 feasibility prototype일 뿐이다.
+Active circuit set은 계속 `privacy-note-v1`이고 이제 Deposit, Spend, JoinSplit2x2, `batch-joinsplit-16x32-v1`을 이 순서로 요구한다. Development R1CS/PK/VK identity는 Gate 3A 증거이지 production trust anchor가 아니다.
 
 이 문서의 **MUST**, **MUST NOT**, **SHOULD**, **MAY**는 일반적인 프로토콜 규범 의미를 갖는다.
 
@@ -33,8 +29,9 @@ Gate 2 통과로 Session 3A 진입 조건은 충족되었지만 **Session 3A 작
 | Audit key ID V1 | `1..64` lowercase ASCII bytes, `[a-z0-9][a-z0-9._-]*` |
 | Note tree | BN254 Fr, MiMC, depth `32` |
 | Batch capacity | input `1..16`, output `1..32` |
-| Reserved batch circuit ID | `batch-joinsplit-16x32-v1` |
-| Reserved batch public-input schema SHA-256 | `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333` |
+| Batch circuit ID | `batch-joinsplit-16x32-v1` |
+| Batch public-input schema SHA-256 | `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333` |
+| Batch proto/API | `clairveil.privacy.v1.Msg/BatchTransfer`, canonical payload format `1` |
 
 이 version 변경은 fresh reset/genesis를 요구한다. old/new note state가 섞인 상태는 거부한다. 이전 circuit/payload/state version으로 만든 wallet note cache, reservation, prepared witness, prepared proof는 반드시 폐기해야 한다.
 
@@ -161,7 +158,7 @@ wire boundary에서 받는 모든 shielded spend, view, disclosure, EdDSA `R` po
 
 EdDSA signature는 exact 64-byte `R || S`이며 `R`은 같은 point 규칙을 따르고 `0 < S < SubgroupOrder`여야 한다.
 
-circuit은 on-curve, non-identity, subgroup membership을 독립적으로 enforce한다. batch prototype은 owner spend/view point, signature `R`, 32개 output spend/view pair 전체를 검증한다. 모든 input key는 single owner key와 같고 disabled key slot은 같은 owner key sentinel을 사용한다. 성능 최적화를 이유로 이 circuit constraint를 host-only check로 낮추면 안 된다.
+circuit은 on-curve, non-identity, subgroup membership을 독립적으로 enforce한다. Production batch circuit은 owner spend/view point, signature `R`, 32개 output spend/view pair 전체를 검증한다. 모든 input key는 single owner key와 같고 disabled key slot은 같은 owner key sentinel을 사용한다. 성능 최적화를 이유로 이 circuit constraint를 host-only check로 낮추면 안 된다.
 
 ### 3.5 Independent golden NoteV1 vector
 
@@ -456,9 +453,9 @@ decoder는 allocation/use 전에 kind별 exact ciphertext length를 검증한다
 
 ## 7. Structured batch wire 및 effect 계약
 
-### 7.1 Prototype message shape
+### 7.1 Production message shape
 
-`BatchTransferWirePrototypeV1`은 다음 field set을 동결하고 측정한다.
+`MsgBatchTransfer`는 다음 field set을 사용한다. `BatchTransferWirePrototypeV1`은 independent wire/resource 측정 mirror로만 남는다.
 
 ```text
 creator
@@ -472,7 +469,7 @@ audit_disclosure_target_pubkey
 expires_at_unix
 ```
 
-각 `BatchTransferOutputWirePrototypeV1`은 다음을 포함한다.
+각 `BatchTransferOutput`은 다음을 포함한다.
 
 ```text
 commitment
@@ -492,7 +489,7 @@ self_view_disclosure_payload
 
 `audit_key_id`는 `[a-z0-9][a-z0-9._-]*`에 맞는 exact lowercase ASCII이고 길이는 `1..64` bytes다. 첫 byte에는 punctuation을 사용할 수 없다. batch audit epoch는 positive여야 하고 audit target은 canonical, non-identity, prime-subgroup compressed point여야 한다. max-wire 측정은 unbounded placeholder가 아니라 valid 64-byte ID를 사용한다.
 
-이 protobuf는 의도적으로 Msg service에 등록하지 않았으며 Session 2 prototype은 state transition을 허가하지 않는다. 그러나 owner가 인증할 canonical effect view는 Session 2에서 완전히 동결했다. `lp(x) = u32be(len(x)) || x`이며 empty optional field의 유일한 encoding은 `u32be(0)`이다. 각 output의 `output_effect_i`는 위 output field를 정확히 다음 순서로 인코딩한다.
+이 protobuf는 `clairveil.privacy.v1.Msg/BatchTransfer`로 등록된다. Keeper는 generated protobuf bytes를 hash하지 않고 아래 동결된 canonical owner-authorized effect view를 재사용한다. `lp(x) = u32be(len(x)) || x`이며 empty optional field의 유일한 encoding은 `u32be(0)`이다. 각 output의 `output_effect_i`는 위 output field를 정확히 다음 순서로 인코딩한다.
 
 ```text
 output_effect_i =
@@ -520,6 +517,8 @@ PayloadDigestLo = uint128be(payload_sha256[16:32])
 ```
 
 `creator`와 `proof`만 message effect에서 제외한다. ordered vector length가 canonical count이므로 별도 count source는 없다. encoder 전 validation은 non-canonical field, duplicate nullifier/commitment, unknown disclosure enum, 잘못된 policy/mode/target/payload 조합, malformed envelope, mixed self-view presence, invalid audit identity, non-positive epoch/expiry를 거부한다. independent 2-input/2-output golden은 canonical `3,702` bytes, SHA-256 `f2588c7543fb83a7822aa0043e4747af0ac4c9dc14a038c230850f1cab5e24b0`, high limb `322132945931579789235567236199104333743`, low limb `14314064343031468430392382204273370288`이다. max `16/32` shape는 canonical `65,384` bytes다.
+
+Consensus per-message wire cap은 `128 KiB`다. `BatchTransferRawFramingDecorator`가 `ValidateBasic` 전에 signed `TxBody.messages[].Any.value` raw bytes에 cap을 적용하며 decoded `MsgBatchTransfer.Size()`는 secondary shape check일 뿐이다. 따라서 duplicate singular protobuf field가 마지막 작은 값만 남기도록 decode되더라도 oversized raw message를 거부한다.
 
 ### 7.2 Batch effect ID
 
@@ -551,7 +550,7 @@ independent golden effect ID는 다음과 같다.
 
 ### 7.3 Minimal event와 typed state
 
-향후 batch ABCI event는 effect ID, relayer, input/output count, 네 aggregate root, expiry만 포함해야 한다. ciphertext, disclosure payload, 전체 nullifier/commitment list를 hex attribute로 반복하면 안 된다.
+Production batch ABCI event는 effect ID, relayer, input/output count, 네 aggregate root, expiry, circuit/payload/scan version, exact audit ID/epoch/target만 포함한다. ciphertext, disclosure payload, commitment, 전체 nullifier list를 hex attribute로 반복하면 안 된다.
 
 typed state는 summary 한 개와 output당 raw-byte record 한 개를 저장한다. summary/output identity에는 global cursor, effect ID, circuit-set ID, payload version, scan schema version, audit key ID/epoch/target, tx hash, event type을 포함한다. output state에는 commitment, ciphertext, view tag, leaf index, policy/mode, disclosure digest/target/payload, optional self-view payload도 포함한다.
 
@@ -564,7 +563,7 @@ typed scan state는 protobuf shape만이 아니라 event type별로 검증한다
 | Deposit | output 한 개, nullifier/effect ID 없음, audit ID/epoch/target은 zero sentinel | `encrypted_note`에 exact deposit-note envelope, empty `ciphertext`/view tag, disclosure field 전체 exact zero sentinel |
 | Withdraw | nullifier 한 개, zero output, effect ID 없음, zero audit sentinel | output record 없음, scan은 summary를 계속 반환 |
 | JoinSplit2x2 | nullifier/output 정확히 두 개, effect ID 없음, audit ID/epoch은 zero, audit target은 canonical point | exact transfer-note envelope와 2-byte view tag, change output은 exact zero disclosure sentinel, disclosed output은 아래 user/full 규칙 적용 |
-| Batch V1 prototype/future event | nullifier `1..16`, output `1..32`, non-zero 32-byte effect ID, canonical audit ID, positive epoch, canonical target point | exact transfer-note envelope와 2-byte view tag, 모든 output에 아래 user/full 규칙 적용 |
+| Batch V1 production event | nullifier `1..16`, output `1..32`, non-zero 32-byte effect ID, canonical audit ID, positive epoch, canonical target point | exact transfer-note envelope와 2-byte view tag, 모든 output에 아래 user/full 규칙 적용 |
 
 all-private user disclosure는 mode `NONE`이고 digest/target/payload가 empty다. public disclosure는 target이 empty이고 `DisclosurePlaintextV1`이 output index/policy/commitment와 일치하며 digest를 재계산한다. recipient-encrypted disclosure는 target이 canonical point이고 payload가 exact user-disclosure envelope다. disclosure가 있는 output은 non-zero canonical full digest, exact audit envelope, empty 또는 exact self-view envelope를 가진다. 모든 output commitment와 leaf index는 commitment state와 일치해야 하며 summary/output identity 및 audit field는 byte-for-byte 같아야 한다.
 
@@ -574,11 +573,11 @@ all-private user disclosure는 mode `NONE`이고 digest/target/payload가 empty�
 
 ### 8.1 Global commitment uniqueness
 
-commitment index는 Deposit, JoinSplit2x2, genesis, 향후 batch output 전체에서 global이다. commitment는 canonical, non-zero이고 proof/state 실행 전에 존재하지 않아야 한다. `AppendCommitment`가 이 조건을 다시 확인하고 immutable leaf index 하나를 기록하며 duplicate를 거부한다. index lookup은 store error를 전파하고 malformed stored index를 absent로 취급하지 않는다. genesis도 globally distinct commitment를 요구한다. Session 3A는 proof verification 전에 local output duplicate와 global index를 검사하고 proof 성공 후에만 append해야 한다.
+commitment index는 Deposit, JoinSplit2x2, BatchJoinSplit16x32, genesis 전체에서 global이다. commitment는 canonical, non-zero이고 proof/state 실행 전에 존재하지 않아야 한다. `MsgBatchTransfer.ValidateBasic`이 local duplicate를 거부하고 keeper가 proof verification 전에 global index를 검사하며, `AppendCommitment`가 다시 검사해 immutable leaf index 하나를 기록하고 duplicate를 거부한다. index lookup은 store error를 전파하고 malformed stored index를 absent로 취급하지 않는다. genesis도 globally distinct commitment를 요구한다. Batch output은 proof 성공 후에만 append한다.
 
 ### 8.2 Unified sequence와 cursor
 
-Deposit, JoinSplit2x2, 향후 batch operation은 하나의 monotonically increasing global privacy sequence를 공유한다. scan cursor는 다음 lexicographic order를 사용한다.
+Deposit, JoinSplit2x2, BatchJoinSplit16x32 operation은 하나의 monotonically increasing global privacy sequence를 공유한다. scan cursor는 다음 lexicographic order를 사용한다.
 
 ```text
 (height, global_sequence, output_index)
@@ -609,7 +608,7 @@ genesis export/import는 commitment와 index, historical root와 모든 commitme
 
 ### 9.1 Consensus artifact identity
 
-consensus는 fixed Deposit/Spend/JoinSplit 순서로 다음을 저장한다.
+consensus는 fixed Deposit/Spend/JoinSplit/BatchJoinSplit16x32 순서로 다음을 저장한다.
 
 ```text
 circuit_set_id
@@ -620,7 +619,17 @@ public_input_schema_sha256
 
 validator readiness는 complete local manifest identity가 consensus와 같아야 하며 requested verifying key만 load한다. development에서도 environment checksum으로 consensus를 override할 수 없다. prover readiness는 requested R1CS/proving-key pair만 load하고 명시적 checksum override는 development runtime에서만 허용한다. production override는 거부한다. file은 SHA-256을 검사하고 trailing bytes 없이 완전히 decode하며 verifying key는 canonical round-trip을 통과해야 한다.
 
-registry는 injectable, thread-safe, lazy이며 circuit/artifact type별로 분리해 cache한다. batch schema identity는 reserved 상태지만 Session 3A가 production circuit과 artifact를 만들기 전에는 `RequiredCircuitIDs` 또는 active artifact manifest에 들어가지 않는다.
+registry는 injectable, thread-safe, lazy이며 circuit/artifact type별로 분리해 cache한다. `batch-joinsplit-16x32-v1`은 `RequiredCircuitIDs`의 네 번째 항목이며 canonical 12-descriptor manifest에 descriptor 세 개를 추가한다. Validator는 requested VK만, prover는 selected R1CS/PK pair만 load한다.
+
+Session 3A development identity는 source commit `381c984189e823e5797104eb7cd2beb2386eaf80`에서 `2026-07-11T09:32:32Z`에 생성했다. 다음 값은 reproducibility evidence일 뿐이다.
+
+| Batch artifact | Size | SHA-256 |
+| --- | ---: | --- |
+| `privacy_batch_joinsplit_16x32_r1cs.bin` | `122,813,535 B` | `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210` |
+| `privacy_batch_joinsplit_16x32_pk.bin` | `209,218,621 B` | `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470` |
+| `privacy_batch_joinsplit_16x32_vk.bin` | `716 B` | `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621` |
+
+생성 peak RSS는 `3,308,797,952 B`였다. Opt-in role-readiness gate는 peak RSS `1,295,482,880 B`였고 validator role에서 batch VK만, prover role에서 batch R1CS/PK만 decode했으며 constraint `1,111,837`개와 public-schema SHA-256 `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`을 확인했다. Generated binary는 tracked하지 않는다.
 
 ### 9.2 Prover admission
 
@@ -650,13 +659,29 @@ batch_gas = verify_base
 
 모든 coefficient와 resource bound는 positive여야 한다. usage는 input `1..16`, output `1..32` 범위여야 하며 tree write는 output 수보다 작을 수 없고 global lookup은 input과 output의 합보다 작을 수 없다. multiplication과 sum에서 `uint64` overflow를 검사한다.
 
-공식은 verification, canonical hashing/framing, leaf/index/node/root write, nullifier와 commitment lookup, typed summary/output bytes를 포함한다. Session 3A는 보수적인 consensus coefficient를 선택하고 Cosmos KV gas와 explicit surcharge가 각각 어느 비용을 담당하는지 중복 또는 누락 없이 문서화해야 한다. production coefficient calibration은 Session 4 범위다.
+Session 3A는 다음 보수적인 V1 coefficient와 bound를 동결한다.
+
+| Component | V1 value |
+| --- | ---: |
+| verify base | `1,000,000` gas |
+| per input | `25,000` gas |
+| per output | `50,000` gas |
+| per canonical payload byte | `4` gas |
+| per typed state byte | `8` gas |
+| per tree node write | `5,000` gas |
+| per global lookup | `10,000` gas |
+| canonical payload bound | `65,384 B` |
+| typed state bound | `256 KiB` |
+| tree-write bound | `1,056` nodes |
+| global-lookup bound | `48` |
+
+Explicit surcharge는 privacy-specific proof verification, canonical hashing/encoding, state-growth amplification, Merkle computation/bookkeeping, global uniqueness check를 담당한다. Cosmos KV gas는 underlying store read/write를 계속 담당하며 explicit coefficient가 이를 대체하지 않는다. 따라서 한 logical operation이 computation과 physical I/O를 모두 일으켜도 두 meter는 서로 다른 layer를 담당한다. Exact category breakdown과 precharge-before-semantics/out-of-gas 동작은 regression test로 고정한다. 실제 `1/1` handler 성공과 max `16/32` post-proof transition이 explicit descriptor와 모든 Cosmos KV descriptor를 분리 기록하므로 어느 layer도 상대 layer의 책임을 조용히 흡수하거나 중복할 수 없다. Production coefficient calibration은 Session 4 범위다.
 
 ## 10. Full-shape circuit feasibility 결과
 
-### 10.1 Prototype 구성
+### 10.1 Production circuit 구성
 
-capacity prototype은 16개 independent depth-32 membership, exact active prefix, 16개 nullifier, active-only pairwise distinctness, owner signature 하나, 32개 output commitment, 64-bit range와 value conservation, 모든 owner/output subgroup check, 32개 raw user-disclosure digest, 32개 domain-separated user-value leaf hash, 32개 full-disclosure digest, ordered vector tree 네 개, 12개 public input을 포함한다.
+Production circuit은 feasibility circuit을 exact하게 유지하며 compatibility type은 alias다. 16개 independent depth-32 membership, exact active prefix, 16개 nullifier, active-only pairwise distinctness, owner signature 하나, 32개 output commitment, 64-bit range와 value conservation, 모든 owner/output subgroup check, 32개 raw user-disclosure digest, 32개 domain-separated user-value leaf hash, 32개 full-disclosure digest, ordered vector tree 네 개, 12개 public input을 포함한다.
 
 지배적 gadget count에는 active-prefix one-hot value 48개, amount range check 48개, independent Merkle node hash 512개, pairwise distinctness check 616개, subgroup point check 67개, note commitment 48개, active-input commitment non-zero check 16개, nullifier 16개, raw user-disclosure hash 32개, user-value leaf hash 32개, full-disclosure hash 32개, blinding inequality check 96개, generic vector leaf 112개, vector internal node 108개, vector root 네 개, EdDSA verifier 하나가 포함된다.
 
@@ -666,7 +691,7 @@ final run은 `2026-07-11T06:43:45Z`에 Apple M5 Pro, RAM 64 GiB, macOS 26.5.1 (`
 
 | Metric | 결과 |
 | --- | ---: |
-| constraint, corrected 16x32 prototype | `1,111,837` |
+| constraint, production 16x32 circuit | `1,111,837` |
 | constraint, current JoinSplit2x2 | `99,765` |
 | measured subgroup point | `67` |
 | on-curve/non-identity baseline | `335` constraints / `0.257 ms` compile |
@@ -712,85 +737,80 @@ max shape 측정에는 16개 nullifier, 32개 output, maximum valid 64-byte audi
 
 **Wire/state gate 결론: PASS. Combined Gate 2 결론: PASS.** Session 3A는 16/32 capacity와 security constraint를 유지할 수 있다. 이 수치는 feasibility limit이며 per-message hard limit, explicit gas, state-growth monitoring을 생략할 수 있다는 뜻이 아니다.
 
-## 12. Session 3A용으로 동결된 keeper 순서
+## 12. 구현된 keeper 순서
 
-향후 production handler는 다음 순서로 실행해야 한다.
+Production handler는 다음 순서로 실행한다.
 
-1. structural 및 canonical validation
-2. count, exact framing/length, total-byte limit
+1. cheap bounded count/length/message-size framing
+2. fixed-size canonical proof framing
 3. deterministic explicit gas precharge
-4. exact root, key, payload validation
-5. audit-target validation
-6. local duplicate nullifier/commitment 거부
-7. global spent-nullifier와 global commitment-uniqueness check
-8. historical-root와 Merkle-capacity check
-9. aggregate-root와 canonical payload-digest 재계산
-10. chain-domain과 expiry check
-11. proof/public-witness verification
-12. nullifier write
-13. commitment append
-14. typed scan summary/output write
-15. minimal ABCI summary event 한 개
+4. full canonical field/point/envelope/disclosure validation 및 local duplicate 거부
+5. chain audit ID/epoch/target exact match
+6. global spent-nullifier와 commitment-uniqueness check
+7. strict historical-root lookup과 whole-batch Merkle-capacity check
+8. aggregate root, canonical payload limb, chain domain, expiry, 12개 public value 전부를 message/context에서 파생
+9. proof/public-witness verification
+10. nested cache에서 nullifier, commitment, root snapshot, typed scan summary/output, minimal event write
+11. 모든 write가 성공할 때만 nested cache commit
 
 proof 성공 전에 batch state write가 발생하면 안 된다. message는 all-or-nothing이다.
 
 ## 13. Invariant traceability matrix
 
-`prototype`은 full-shape feasibility circuit에 invariant가 있지만 production batch handler에는 아직 없음을 뜻한다. `Session 3A`는 이 문서가 requirement를 동결했지만 구현은 의도적으로 범위 밖임을 뜻한다.
-
-현재 batch-specific test 범위는 정확히 기록한다. `TestBatchJoinSplit16x32FeasibilityPublicInputOrder`는 12개 서로 다른 public value를 넣고 witness index 전체를 검증한다. `TestBatchJoinSplit16x32FeasibilityActivePrefixAndSentinels`는 disabled input randomness, disabled output key, zero input count, duplicate active nullifier, duplicate active commitment, value-conservation tamper, 세 blinding reuse 관계를 모두 검사한다. tamper case는 aggregate root와 owner signature를 갱신해 의도한 constraint까지 도달한다. `TestBatchJoinSplit16x32ActiveInputCommitmentMustBeNonZero`는 active commitment 규칙을 분리해 검사한다. `TestBatchVectorRootV1RejectsNonCanonicalDisabledSlots`는 zero count, active zero outer value, non-zero disabled value를 검사한다. `TestBatchUserDisclosureVectorRootV1IndependentGolden`은 two-stage user leaf와 disabled metadata를, `TestBatchUserDisclosureV1RejectsNonZeroUnselectedFields`는 policy-selected field를, `TestBatchDisclosureV1BlindingPreventsDictionaryMatch`는 dictionary resistance를, `TestValidateAuditKeyIDV1BoundsAndCanonicalCharset`는 audit ID grammar를 검사한다. `TestCanonicalBatchTransferPayloadV1IndependentGolden`은 exact payload framing과 SHA limb를 독립 재현하고, `TestBatchTransferPayloadDigestV1BindsEveryEffectClass`는 ordered vector와 모든 effect class를 변경하면서 creator/proof 교체만 digest 불변임을 확인하며, `TestBatchTransferWirePrototypeV1PublicDisclosureRecomputesDigest`는 public plaintext와 digest를 묶는다. `TestPrivacyScanV2RejectsCorruptExactOutputContracts`는 malformed envelope, event-prefix orphan, invalid audit point/digest를 검사하고 `TestPrivacyScanV2AcceptsExactBatchPublicDisclosureContract`는 valid batch typed-state shape를 검사한다. `TestNoteV1OneVectorAcrossDepositSpendJoinSplitBatchAndScanner`는 하나의 NoteV1 vector를 이름에 적힌 여섯 경로에서 실행한다.
+Production coverage를 명시한다. `TestBatchJoinSplit16x32ProductionPositiveMatrix`는 `1/1`, `1/2`, `3/4`, `8/16`, `16/31`, `16/32`, mixed disclosure, active zero-value padding을 검사한다. `TestBatchJoinSplit16x32ProductionNegativeMatrix`의 59개 negative case는 count, disabled sentinel, path, distinctness, owner/asset/key, amount/conservation, aggregate root, domain/limb/expiry, signature, disclosure/blinding, vector domain separation을 포괄한다. `TestBatchPublicWitnessIsDerivedInFrozenOrder`, `TestBatchTransferDirectCoreIntegration`, `TestBatchTransferCoreRejectionsAndAtomicScanFailure`, `TestCrossMessageNullifierFailureRollsBackWholeCosmosTxCache`는 host/circuit boundary, 실제 development proof, atomic state, 2x2+Batch/Batch+Batch rollback을 검사한다. Scan/gas/genesis/readiness test가 나머지 state/artifact 계약을 검사한다.
 
 | ID | Invariant | Circuit constraint | Native helper | Types/Keeper | SDK guard | Negative test | Public doc |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| NOTE-COMMITMENT | 하나의 domain-separated NoteV1 공식, active input commitment non-zero | Deposit/Spend/JoinSplit/prototype | `ComputeNoteCommitmentV1` | `Note.ComputeCommitment`, keeper tree input | fixed note decode/recompute | six-path vector test, `TestBatchJoinSplit16x32ActiveInputCommitmentMustBeNonZero` | §3.2, §4.3 |
-| NOTE-NULLIFIER | commitment-bound, domain-separated, non-zero | Spend/JoinSplit/prototype | `ComputeNoteNullifierV1` | `Note.ComputeNullifier` | scanner/witness recompute | `TestNoteV1OneVectorAcrossDepositSpendJoinSplitBatchAndScanner` 및 NoteV1 zero test | §3.2 |
+| NOTE-COMMITMENT | 하나의 domain-separated NoteV1 공식, active input commitment non-zero | Deposit/Spend/JoinSplit/Batch | `ComputeNoteCommitmentV1` | `Note.ComputeCommitment`, keeper tree input | fixed note decode/recompute | six-path vector 및 production negative matrix | §3.2, §4.3 |
+| NOTE-NULLIFIER | commitment-bound, domain-separated, non-zero | Spend/JoinSplit/Batch | `ComputeNoteNullifierV1` | `Note.ComputeNullifier` | scanner/witness recompute | six-path vector 및 production negative matrix | §3.2 |
 | NOTE-KEY-SUBGROUP | canonical, curve, non-identity, prime subgroup | 관련 circuit의 `assertPrimeSubgroupPoint` | `DecodeCanonicalPoint`, `ValidatePrimeSubgroupPoint` | `Note.ValidateV1` | address/envelope decode | crypto decoder 및 circuit subgroup test | §3.4 |
-| ACTIVE-PREFIX | slot은 정확히 `[0,count)` | `exactActivePrefix` (prototype) | vector count validation | count bound | future batch builder | `TestBatchJoinSplit16x32FeasibilityActivePrefixAndSentinels`: disabled input randomness, disabled output key, input count zero | §4.3 |
-| INPUT-MEMBERSHIP | 16개 independent depth-32 path가 한 root 공유 | gated path loop (prototype) | NoteV1 tree helper | same-root path query | local/query path provider | keeper path-snapshot test만 존재; batch-circuit path-tamper negative test 아직 없음 | §4.3, §8.3 |
-| NULLIFIER-DISTINCT | active input nullifier가 pairwise distinct | active-pair check (prototype) | vector validation | current/future duplicate guard | future builder | `TestBatchJoinSplit16x32FeasibilityActivePrefixAndSentinels/duplicate_active_nullifier` | §4.3 |
-| COMMITMENT-DISTINCT | active output commitment가 pairwise distinct | active-pair check (prototype) | vector validation | `HasCommitment`/`AppendCommitment` | current transfer builder | batch `duplicate_active_commitment` 및 current Deposit/Transfer global-collision test | §4.3, §8.1 |
-| VALUE-CONSERVATION | 64-bit active sum이 같음 | range/sum constraint (prototype) | shielded amount validation | future handler는 proof 사용 | future builder | `TestBatchJoinSplit16x32FeasibilityActivePrefixAndSentinels/value_conservation` | §4.3 |
-| OWNER-INTENT | owner 한 명이 exact batch effect에 서명 | EdDSA verifier 하나 (prototype) | `ComputeBatchTransferIntentV1` | reserved public schema | future builder | batch-circuit signature-tamper negative test 아직 없음 | §4.2 |
-| CHAIN-EXPIRY | chain/circuit domain과 expiry가 proof-bound | intent input, limb/range check (prototype) | chain-domain 및 batch-intent helper | future expiry check (Session 3A) | future builder | current-circuit replay test만 존재; batch-circuit replay negative test 아직 없음 | §4.2 |
-| USER-DISCLOSURE | exact selected field, asset, policy 및 two-stage user value | raw digest 32개 + user-value constraint 32개 (prototype) | `ComputeBatchUserDisclosureDigestV1`, `ComputeBatchUserDisclosureVectorRootV1` | fixed plaintext validation | current disclosure builder/future batch | `TestBatchUserDisclosureVectorRootV1IndependentGolden`, `TestBatchUserDisclosureV1RejectsNonZeroUnselectedFields`, `TestBatchDisclosureV1BlindingPreventsDictionaryMatch` | §5.1–§5.2 |
-| FULL-DISCLOSURE | complete per-output evidence | digest constraint 32개 (prototype) | `ComputeBatchFullDisclosureDigestV1` | fixed plaintext validation | audit/self-view builder | current native disclosure test만 존재; batch-circuit digest-tamper negative test 아직 없음 | §5.3 |
-| PAYLOAD-BINDING | ciphertext/metadata substitution이 public limb 변경 | public payload limb와 signed intent (prototype) | `CanonicalBatchTransferPayloadBytesV1`, `ComputeBatchTransferPayloadDigestV1` | exact prototype validator; Session 3A handler가 그대로 재사용해야 함 | future builder | independent framing golden, every-effect mutation, public-plaintext 재계산 | §4.2, §7.1 |
-| BATCH-EFFECT-ID | proof/relayer와 무관한 stable ID | in-circuit 불필요 | `ComputeBatchEffectIDV1` | future summary key/data | conformance helper | independent golden fixture | §7.2 |
-| ATOMIC-STATE | proof 전에 write 없음, effect는 all-or-nothing | proof가 state를 authorize | — | future handler (Session 3A) | result semantics | Session 3A 필요 | §12 |
+| ACTIVE-PREFIX | slot은 정확히 `[0,count)` | `exactActivePrefix` | vector count validation | `MsgBatchTransfer` count bound | Session 3B builder 미구현 | production positive/negative matrix | §4.3 |
+| INPUT-MEMBERSHIP | 16개 independent depth-32 path가 한 root 공유 | gated path loop | NoteV1 tree helper | same-root path query | local/query path provider | `invalid_merkle_path`, non-boolean helper, same-root round-trip | §4.3, §8.3 |
+| NULLIFIER-DISTINCT | active input nullifier가 pairwise distinct | active-pair check | vector validation | local/global duplicate guard | Session 3B builder 미구현 | adjacent/non-adjacent duplicate, cross-message rollback | §4.3 |
+| COMMITMENT-DISTINCT | active output commitment가 pairwise distinct | active-pair check | vector validation | `HasCommitment`/`AppendCommitment` | 기존 preflight pattern | circuit duplicate 및 Deposit/2x2/Batch global collision | §4.3, §8.1 |
+| VALUE-CONSERVATION | 64-bit active sum이 같음 | range/sum constraint | shielded amount validation | handler는 verified proof 사용 | Session 3B builder 미구현 | overflow와 conservation negative case | §4.3 |
+| OWNER-INTENT | owner 한 명이 exact batch effect에 서명 | EdDSA verifier 하나 | `ComputeBatchTransferIntentV1` | 동결된 12-value witness | Session 3B builder 미구현 | invalid signature/intent mutation과 direct proof | §4.2 |
+| CHAIN-EXPIRY | chain/circuit domain과 expiry가 proof-bound | intent input, limb/range check | chain-domain 및 batch-intent helper | context domain과 host expiry 거부 | Session 3B builder 미구현 | domain/limb/expiry matrix와 wrong-chain/expired core case | §4.2 |
+| USER-DISCLOSURE | exact selected field, asset, policy 및 two-stage user value | raw digest 32개 + user-value constraint 32개 | `ComputeBatchUserDisclosureDigestV1`, `ComputeBatchUserDisclosureVectorRootV1` | fixed plaintext validation | Session 3B builder 미구현 | golden/helper와 production disclosure-root/blinding negative case | §5.1–§5.2 |
+| FULL-DISCLOSURE | complete per-output evidence | digest constraint 32개 | `ComputeBatchFullDisclosureDigestV1` | fixed plaintext validation | audit/self-view builder | production full-root/digest/blinding negative case | §5.3 |
+| PAYLOAD-BINDING | ciphertext/metadata substitution이 public limb 변경 | public payload limb와 signed intent | canonical production message helper | keeper가 exact encoder 재사용 | Session 3B builder 미구현 | independent golden/effect mutation, wrong-payload core rejection | §4.2, §7.1 |
+| BATCH-EFFECT-ID | proof/relayer와 무관한 stable ID | in-circuit 불필요 | `ComputeBatchEffectIDV1` | typed/minimal summary | conformance helper | independent golden과 creator/proof/order regression | §7.2 |
+| ATOMIC-STATE | proof 전에 write 없음, effect는 all-or-nothing | proof가 state를 authorize | — | nested keeper cache | result semantics | proof/scan failure와 cross-message full rollback | §12 |
 | SCAN-CURSOR | summary-driven lossless resume와 exact event-prefixed record | — | cursor comparison | `PrivacyScan`, typed state | scanner cursor | cursor/zero-output test, `TestPrivacyScanV2RejectsCorruptExactOutputContracts` | §7.4, §8.2 |
 | RESOURCE-BOUND | CPU, byte, state, queue가 bounded | fixed capacity | `ComputeBatchGasV1` | formula/bound | admission/body limit | gas overflow/bound 및 admission test | §9.2–§9.3 |
-| GLOBAL-COMMITMENT-UNIQUE | commitment 하나에 global leaf index 하나 | active distinctness (prototype) | canonical field validation | commitment index/append | current builder preflight | Deposit/Transfer collision test | §8.1 |
+| GLOBAL-COMMITMENT-UNIQUE | commitment 하나에 global leaf index 하나 | active distinctness | canonical field validation | commitment index/append | 기존 preflight pattern | Deposit/2x2/Batch/genesis collision test | §8.1 |
 | ASSET-REGISTRY | denom/ID가 authoritative 1:1 state | asset field 하나 | `ComputeAssetIDV1` | `AssetRegistryV1` query/state | registry lookup | collision/re-registration/corruption test | §3.3 |
-| DISCLOSURE-BLINDING | fresh non-zero이며 서로 재사용하지 않는 user/full/note secret | reuse inequality 96개와 per-output non-zero check (prototype) | disclosure digest helper | fixed plaintext에 blinding 포함 | CSPRNG builder | blinding-reuse subtest 세 개, `TestBatchDisclosureV1BlindingPreventsDictionaryMatch` | §5 |
-| AUDIT-IDENTITY | bounded canonical ID, positive epoch, canonical target point | future digest/intent가 payload bind | `ValidateAuditKeyIDV1`, canonical point decoder | typed summary/output exact match | future batch builder | audit ID charset test, exact scan accept/reject test | §7.1, §7.4 |
-| GLOBAL-SCAN-SEQUENCE | 모든 privacy effect가 sequence 하나 공유 | — | allocation helper | global sequence/index | cursor consumer | sequence reuse/genesis test | §8.2 |
-| ARTIFACT-CONSENSUS-IDENTITY | local artifact identity가 consensus와 같음 | public schema 동결 | schema/manifest digest helper | genesis circuit identity | role-aware registry | mismatch/override/readiness test | §9.1 |
+| DISCLOSURE-BLINDING | fresh non-zero이며 서로 재사용하지 않는 user/full/note secret | reuse inequality 96개와 per-output non-zero check | disclosure digest helper | fixed plaintext에 blinding 포함 | CSPRNG builder | production reuse/zero negative case와 dictionary-resistance helper | §5 |
+| AUDIT-IDENTITY | bounded canonical ID, positive epoch, canonical target point | digest/intent가 payload bind | `ValidateAuditKeyIDV1`, canonical point decoder | exact chain config와 typed record | Session 3B builder 미구현 | partial-state fail closed 및 ID/epoch/target mismatch | §7.1, §7.4 |
+| GLOBAL-SCAN-SEQUENCE | 모든 privacy effect가 sequence 하나 공유 | — | allocation helper | global sequence/index | cursor consumer | Deposit/2x2/Batch 및 genesis continuity | §8.2 |
+| ARTIFACT-CONSENSUS-IDENTITY | local artifact identity가 consensus와 같음 | public schema 동결 | schema/manifest digest helper | genesis circuit identity | role-aware registry | mismatch/override와 development artifact gate | §9.1 |
 
 ## 14. Residual risk와 명시적 non-goal
 
-- batch circuit과 message는 prototype이다. production audit, formal trusted setup, Session 3A/3B 구현이 남아 있다.
-- development setup artifact는 production trust anchor가 아니다. 측정에 사용한 proving key와 R1CS는 registered artifact가 아니다.
+- Session 3A circuit, message, keeper, scan state, artifact descriptor는 구현되었다. Production audit, formal trusted setup, production artifact 배포, Session 3B client/product integration이 남아 있다.
+- Development setup artifact는 production trust anchor가 아니며 commit하지 않는다. 기록된 checksum은 이 Gate 3A run만 식별한다.
 - final reference run의 peak RSS는 exact `3,339,862,016 B`, 약 3.11 GiB다. lazy loading은 불필요한 artifact 상주를 줄이지만 process-level hard isolation을 제공하지 않는다.
 - client cancellation은 gnark proving을 중단할 수 없다. production process isolation, worker recycling, memory limit, overload operation이 필요하다.
 - ciphertext decryptability는 proof하지 않는다. auditor-key compromise, key-epoch rotation, delivery failure manual review가 operational risk로 남는다.
 - public input/output count, timing, root, batch grouping, minimal summary는 public metadata다.
 - remote prover는 complete witness/payment batch를 보게 된다. 매우 민감한 서비스로 취급하고 automatic failover를 계속 비활성화해야 한다.
 - 모든 정상 append는 authoritative root/count/height metadata를 영속하지만 historical internal node는 저장하지 않는다. Current-root path는 incremental node를 사용한다. Public non-current historical query는 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하고 그 이상은 `ResourceExhausted`를 반환하므로 더 큰 online request는 current root 또는 trusted local historical index를 사용한다. Offline recovery/export는 별도 `MaxMerkleRebuildLeaves`(1,048,576) bound를 유지하며 large-tree export는 complete persisted metadata index를 요구한다.
-- current Deposit과 JoinSplit2x2는 기존 event compatibility 동작을 유지한다. minimal-event 규칙은 향후 batch path의 의무사항이며 Session 2가 모든 legacy event를 재설계했다는 의미가 아니다.
-- concrete production gas coefficient, per-chain governance limit, new-asset registration governance, long-run state-pruning policy는 미뤄졌지만 표현된 어떤 work category도 unmetered로 두면 안 된다.
+- current Deposit과 JoinSplit2x2는 기존 event compatibility 동작을 유지한다. Production batch path만 minimal-event 규칙을 사용하며 모든 legacy event를 재설계했다는 의미는 아니다.
+- Session 3A는 보수적인 gas coefficient를 제공한다. Per-chain calibration/governance limit, new-asset registration governance, long-run state-pruning policy는 남아 있지만 표현된 어떤 work category도 unmetered가 아니다.
 
-미해결 Critical 또는 High Session 2 design finding은 없다. corrected full-shape resource measurement로 Gate 2가 통과했다. 위 항목은 residual implementation/operational risk이며 동결된 security constraint를 약화하거나 16/32 capacity를 조용히 낮출 권한이 아니다.
+미해결 Critical 또는 High Session 2 design finding은 없고 Session 3A는 동결된 protocol decision을 변경하지 않았다. 위 항목은 residual operational/release risk이며 security constraint를 약화하거나 16/32 capacity를 조용히 낮출 권한이 아니다.
 
 ## 15. Authoritative code와 fixture
 
 - Note/domain/tree helper: `x/privacy/types/note_v1.go`
 - Batch statement/vector/disclosure/effect helper: `x/privacy/types/batch_contract.go`; exact effect encoding/digest: `x/privacy/types/batch_payload.go`
 - Fixed payload: `x/privacy/types/fixed_payload.go`
-- Feasibility circuit/report: `x/privacy/circuit/batch_joinsplit_16x32_feasibility.go` 및 `_test.go`
-- Wire prototype/measurement: `proto/clairveil/privacy/v1/batch_feasibility.proto` 및 `x/privacy/types/batch_wire_feasibility_test.go`
-- Asset registry, scan, path snapshot: `x/privacy/keeper/asset_registry.go`, `privacy_scan.go`, `path_snapshot.go`
-- Artifact registry와 gas model: `x/privacy/zk/registry.go`, `identity.go`, `schema.go`, `resource_model.go`
+- Production circuit/matrix: `x/privacy/circuit/batch_joinsplit_16x32.go`, `batch_joinsplit_16x32_test.go`; feasibility resource gate는 `batch_joinsplit_16x32_feasibility_test.go`
+- Production message/canonical effect: `proto/clairveil/privacy/v1/tx.proto`, `x/privacy/types/batch_payload.go`; wire measurement mirror는 `batch_feasibility.proto`
+- Keeper/gas/scan/core integration: `x/privacy/keeper/msg_server_batch_transfer.go`, `batch_gas.go`, `batch_scan_index.go`, `batch_transfer_core_integration_test.go`
+- Asset registry, common scan, path snapshot: `x/privacy/keeper/asset_registry.go`, `privacy_scan.go`, `path_snapshot.go`
+- Artifact registry/readiness: `x/privacy/zk/registry.go`, `identity.go`, `schema.go`, `resource_model.go`, `development_artifact_gate_test.go`
 - Prover admission: `x/privacy/client/sdk/proverservice/admission.go`
 - Independent fixture: `x/privacy/client/sdk/conformance/testdata/privacy_note_v1_contract.json` 및 `privacy_batch_joinsplit_v1_contract.json`
 
-이 문서와 구현이 불일치하면 integration을 중단하고 Session 3A가 protocol code를 변경하기 전에 차이를 해소해야 한다.
+이 문서와 구현이 불일치하면 integration을 중단한다. 동결된 protocol 변경에는 soundness, public input/golden, downstream API, resource 영향을 다루는 explicit decision-change proposal이 필요하다.

@@ -54,13 +54,13 @@ make test
 
 | Package | 검증 내용 |
 | --- | --- |
-| `x/privacy/circuit` | Deposit/Spend/native JoinSplit constraint, shared NoteV1 consistency, non-production BatchJoinSplit16x32 feasibility circuit |
-| `x/privacy/keeper` | deposit/transfer/withdraw state transition, global commitment uniqueness, `AssetRegistryV1`, `privacy-scan-v2`, same-root path snapshot, Merkle capacity, query error handling |
-| `x/privacy/types` | Msg validation, canonical `privacy-fixed-v1` payload, NoteV1 domain/empty root/key validation, future batch vector/public-input contract, max-shape wire/state feasibility, address, gateway path |
+| `x/privacy/circuit` | Deposit/Spend/native JoinSplit/production BatchJoinSplit16x32 constraint, shared NoteV1 consistency, batch positive/negative matrix, opt-in full-shape resource gate |
+| `x/privacy/keeper` | deposit/2x2/batch/withdraw transition, global commitment uniqueness, deterministic batch gas, atomic rollback, `AssetRegistryV1`, `privacy-scan-v2`, same-root path snapshot, Merkle capacity, query error |
+| `x/privacy/types` | `MsgBatchTransfer`와 structured output validation, canonical `privacy-fixed-v1` payload, NoteV1/vector contract, max-shape wire/state feasibility, address, gateway path |
 | `x/privacy/client/cli` | CLI parsing, output, disclosure decode helper |
 | `x/privacy/client/sdk/*` | identity, deposit, scan, transfer, withdraw, disclosure, prover transport |
 | `x/privacy/client/sdk/proverservice` | bounded request handling과 circuit별 admission(default in-flight `1`, queued `4`, positive body limit `8 MiB`) |
-| `x/privacy/client/sdk/conformance` | JS/web wallet fixture contract와 independent NoteV1/future-batch golden vector |
+| `x/privacy/client/sdk/conformance` | JS/web wallet fixture contract와 independent NoteV1/batch golden vector |
 | `x/privacy/zk` | consensus identity, public-input schema hash, role-aware lazy artifact loading, bounded batch gas/resource formula |
 
 특정 package만 볼 때:
@@ -71,9 +71,9 @@ go test ./x/privacy/keeper
 go test ./x/privacy/client/sdk/transfer
 ```
 
-### 3.1 Session 2 Foundation Gate
+### 3.1 NoteV1과 Session 3A core gate
 
-현재 active circuit set은 `privacy-note-v1`입니다. 현재 deposit, spend, native 2x2 JoinSplit path는 NoteV1을 공유하고 canonical plaintext/envelope는 `privacy-fixed-v1`을 사용합니다. Note plaintext는 정확히 350 bytes, disclosure plaintext는 정확히 392 bytes, typed envelope header는 정확히 20 bytes입니다. `AssetRegistryV1`이 denom/asset-ID mapping의 authoritative source입니다. `privacy-scan-v2`는 global lexicographic cursor `(height, global_sequence, output_index)`를 사용하고 path test는 선택한 root와 일치하는 하나의 snapshot을 강제합니다.
+Active circuit set은 `privacy-note-v1`이고 required 순서는 `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`입니다. Deposit, spend, native 2x2 JoinSplit, production BatchJoinSplit16x32는 NoteV1을 공유하고 canonical plaintext/envelope는 `privacy-fixed-v1`을 사용합니다. Note plaintext는 정확히 350 bytes, disclosure plaintext는 정확히 392 bytes, typed envelope header는 정확히 20 bytes입니다. `AssetRegistryV1`이 denom/asset-ID mapping의 authoritative source입니다. `privacy-scan-v2`는 global lexicographic cursor `(height, global_sequence, output_index)`를 사용하고 path test는 선택한 root와 일치하는 하나의 snapshot을 강제합니다.
 
 이 계약의 focused test 위치는 아래와 같습니다.
 
@@ -83,8 +83,21 @@ go test ./x/privacy/client/sdk/transfer
 - `x/privacy/keeper/privacy_scan_test.go`, `x/privacy/keeper/path_snapshot_test.go`: global scan order, event 내부 resume, record/byte bound, sequence reuse rejection, same-root path, exact event type/fixed envelope kind/digest/key/zero·disabled sentinel/orphan·non-adjacent output의 fail-closed validation.
 - `x/privacy/zk/registry_test.go`, `x/privacy/client/sdk/proverservice/admission_test.go`: role-aware lazy artifact access, exact identity behavior, queue bound, cancellation lifetime, unbounded-value rejection.
 - `x/privacy/client/sdk/conformance/session2_contract_test.go`: `privacy_note_v1_contract.json`, `privacy_batch_joinsplit_v1_contract.json`의 independent verification.
+- `x/privacy/circuit/batch_joinsplit_16x32_test.go`: production positive shape, exact sentinel/active-prefix, key/range/root/signature tamper, output/disclosure order, vector type/level separation.
+- `x/privacy/keeper/batch_gas_test.go`, `batch_scan_index_test.go`, `batch_transfer_core_integration_test.go`: deterministic precharge 순서, single-copy typed payload/minimal event, global Deposit/2x2/batch sequence, direct proof/state integration, atomic failure, cross-message rollback, batch scan genesis round-trip.
+- `app/ante_batch_transfer_test.go`: signed raw `Any.value` 128 KiB cap과 duplicate-singular-field decode overwrite 우회를 검사한다. Keeper gas test는 실제 `1/1`과 max `16/32` state path에서 explicit precharge와 Cosmos KV descriptor를 분리 계측한다.
+- `x/privacy/genesis_test.go`, `x/privacy/keeper/path_snapshot_test.go`: state write 전 circuit identity 검사, imported historical root 전체 재계산, restore 후 exported per-prefix root snapshot query.
+- `x/privacy/zk/development_artifact_gate_test.go`: 네 번째 descriptor schema identity와 generated development artifact에 대한 validator VK-only/prover R1CS·PK-only readiness.
 
-Future `BatchJoinSplit16x32` public input은 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo` 순서로 정확히 reserve됩니다. Prototype protobuf와 circuit은 production batch message, keeper handler, artifact, prover route를 만들지 않습니다.
+Production `BatchJoinSplit16x32` public input은 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo` 순서인 consensus-visible contract입니다. Schema SHA-256은 `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`입니다. `MsgBatchTransfer`, `BatchTransferOutput`, keeper handler, deterministic gas precharge, atomic state transition, typed scan state, minimal event, genesis round-trip, role-aware artifact identity가 구현되었습니다.
+
+일반 production circuit/direct core matrix는 아래처럼 실행합니다.
+
+```bash
+go test ./x/privacy/circuit -run 'TestBatchJoinSplit16x32(ProductionPositiveMatrix|SelfViewIsPayloadOnly|ProductionNegativeMatrix)' -count=1
+go test ./x/privacy/keeper -run 'Test(BatchTransferDirectCoreIntegration|BatchTransferCoreRejectionsAndAtomicScanFailure|CrossMessageNullifierFailureRollsBackWholeCosmosTxCache|BatchGasPrechargeV1MetersEveryFrozenCategory|BatchScanIndexStoresPayloadOnceAndEmitsMinimalSummary|DepositJoinSplitAndBatchShareGlobalPrivacySequence|BatchScanGenesisRoundTripPreservesCursorLeafAndSequence|MerkleRootSnapshotGenesisExportCoversEveryPrefix)' -count=1
+go test ./x/privacy -run 'Test(GenesisRoundTrip|InitGenesisPanicsWithForgedHistoricalRoot|InitGenesisRejectsCircuitIdentityMismatchBeforeStateWrites)' -count=1
+```
 
 Same-root path 동작에는 별도 online/offline resource boundary가 있습니다. Current-root request는 persisted incremental tree node만 읽으므로 online historical-rebuild budget을 소비하지 않습니다. Cached current root가 없으면 `FailedPrecondition`으로 실패하며 online rebuild나 state write를 수행하지 않으므로 explicit offline path로 복구해야 합니다. 모든 non-current historical-root request는 persisted `(root, leaf_count, height)` metadata를 요구하며 public query는 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하고 그 이상은 `ResourceExhausted`를 반환합니다. Online bound를 넘으면 current root 또는 trusted local historical-path index를 사용해야 합니다. Offline recovery/export는 별도 `MaxMerkleRebuildLeaves`(1,048,576) bound를 유지합니다. Complete per-prefix snapshot metadata index가 persisted되어 있다면 offline bound를 넘는 tree도 genesis export할 수 있습니다. 이 경우 export는 모든 historical node를 rebuild할 필요가 없습니다.
 
@@ -103,6 +116,20 @@ CLAIRVEIL_RUN_BATCH_FEASIBILITY=1 go test ./x/privacy/circuit -run TestBatchJoin
 ```
 
 Full gate는 16x32 circuit compile, development Groth16 setup, 여러 shape의 proof를 수행하며 constraint, artifact size, proving/verification timing, resource measurement를 출력하므로 opt-in입니다. 정정된 reference run은 constraint `1,111,837`, peak RSS `3,339,862,016` bytes, max-shape warm proving cost `55.892 ms/output`, 현재 native 2x2 baseline 대비 per-output `2.789x` 개선을 측정했습니다. Production artifact generation이나 trusted setup command가 아니라 feasibility measurement입니다.
+
+실제 development artifact set 생성/readiness는 별도로 검증합니다.
+
+```bash
+ARTIFACT_DIR=/tmp/clairveil-session3a-artifacts
+/usr/bin/time -l go run ./cmd/clairveil-setup --out "$ARTIFACT_DIR"
+CLAIRVEIL_RUN_BATCH_DEVELOPMENT_ARTIFACT_GATE=1 \
+CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR="$ARTIFACT_DIR" \
+go test ./x/privacy/zk -run TestBatchDevelopmentArtifactRoleReadinessGate -count=1 -v
+```
+
+기록된 batch file은 R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`입니다. Generation peak RSS는 `3,308,797,952 B`, role-readiness peak RSS는 `1,295,482,880 B`였습니다. 이는 development identity이며 formal trusted setup/production distribution artifact가 아닙니다.
+
+Session 3B는 여전히 제외됩니다. Public `MsgBatchTransfer` Go SDK/builder, reference prover batch HTTP route, wallet scanner/decrypt UX, one-proof batch payroll integration, batch CLI/tutorial은 없습니다. 기존 `transfer-batch`와 payroll test는 기존 multi-message workflow를 검증하며 새 one-proof message를 사용하지 않습니다.
 
 Prepared transfer payload `v5`는 현재 outer prepared-payload contract로 그대로 유효합니다. 이 version을 inner note/disclosure encoding과 혼동하면 안 됩니다. Inner canonical payload와 envelope는 `privacy-fixed-v1`입니다. Compatibility fallback은 금지됩니다. External ClairveilJS package는 이 handoff 시점에 아직 legacy이므로 upgrade 전까지 old decoder로 해석하지 말고 새 fixed fixture를 fail closed로 거부해야 합니다.
 

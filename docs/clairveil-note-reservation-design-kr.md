@@ -14,7 +14,7 @@ Clairveil의 shielded transfer는 input note를 소비하고, nullifier를 공�
 
 예를 들어 payroll job이 1,000건의 지급을 준비하면서 treasury note 100개를 input 후보로 배정했다고 하자. 이 상태에서 다른 wallet transfer가 같은 note를 먼저 써버리거나, background merge 작업이 그 note를 소비하면 payroll proof는 더 이상 유효하지 않음. broadcast 시점에는 nullifier가 이미 사용되었거나 Merkle root가 맞지 않아 실패할 수 있음.
 
-따라서 batch UX와 `MsgBatchTransfer`를 제대로 사용하려면 note reservation이 필요함.
+따라서 production `MsgBatchTransfer`를 사용하는 Session 3B UX에는 note reservation이 필요함.
 
 ## 핵심 결론
 
@@ -28,7 +28,7 @@ chain은 note가 실제로 spend될 때 nullifier 중복 여부를 검증할 수
 1. client/control plane note reservation 구현
 2. payroll 전용 treasury shard 운영
 3. split/merge와 payroll 실행 window 분리
-4. MsgBatchTransfer 또는 batch circuit과 reservation 연동
+4. MsgBatchTransfer client/product flow와 reservation 연동
 5. 필요할 때만 protocol-level reservation 검토
 ```
 
@@ -497,7 +497,7 @@ multi-message transaction이나 `MsgBatchTransfer`는 여러 transfer item을 �
 - reservation의 `payroll_id`, `batch_id`, `chunk_id`가 현재 batch와 일치하는가
 - broadcast 직전 chain에서 nullifier가 아직 사용되지 않았는가
 
-`MsgBatchTransfer`를 구현하면 module에서 batch-level validation을 추가할 수 있음. 예를 들어 batch 안의 nullifier 중복은 keeper에서 명시적으로 검사할 수 있음. 하지만 "이 nullifier가 off-chain에서 어떤 payroll에 예약되어 있었는지"는 기본적으로 keeper가 모름. 따라서 reservation 자체는 여전히 client/control plane의 책임임.
+`MsgBatchTransfer`는 module에서 canonical validation과 batch 내부 nullifier 중복 검사를 수행함. 하지만 "이 nullifier가 off-chain에서 어떤 payroll에 예약되어 있었는지"는 keeper가 모름. 따라서 reservation 자체는 여전히 client/control plane의 책임임.
 
 ## 실패 대응
 

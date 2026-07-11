@@ -18,6 +18,7 @@ Korean version: [clairveil-security-best-practices-review-kr.md](clairveil-secur
 | Prover service basics | Request body limit, read header/read timeout, idle timeout, optional bearer auth, and readiness preflight exist. |
 | ZK artifact verification | Consensus pins exact ordered VK and public-input schema hashes; local verifier mismatch blocks startup/readiness and env checksums cannot override it. |
 | Proof verification cost | Canonical proof framing is checked cheaply, then fixed gas is precharged before decode, VK load, or cryptographic verification. |
+| Batch chain core | `MsgBatchTransfer` re-derives the frozen 12-field witness, precharges every bounded resource category, verifies before mutation, and atomically commits globally unique nullifiers/commitments plus typed scan state. |
 | Conformance fixture | Query, payload hash, and prover HTTP contract fixtures exist for JS SDK/external wallets. |
 
 ## 2. Production Decisions Required Before Launch
@@ -98,7 +99,7 @@ Required work:
 - make strict preflight the default
 - verify release artifact checksums in CI
 
-The active identity is `privacy-note-v1`. `privacy_zk_manifest.json` schema `v2` must match the genesis/state `CircuitSetIdentity` schema `v1`, including descriptor order, exact VK SHA-256 values, and public-input schema SHA-256 values. Validators need VK files only; a prover lazily loads R1CS/PK for proving. Session 1 generated development artifacts only and did not perform a formal trusted setup or external audit.
+The active identity is `privacy-note-v1`. `privacy_zk_manifest.json` schema `v2` must match the genesis/state `CircuitSetIdentity` schema `v1`, including the required order `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`, exact VK SHA-256 values, and public-input schema SHA-256 values. Validators need VK files only; a prover lazily loads R1CS/PK for proving. Repository-generated artifacts are development-only and do not constitute a formal trusted setup, signed production release, or external audit.
 
 ## 3. Recommended Repo-Level Improvements
 
@@ -140,13 +141,19 @@ JS/TS SDK, web wallet, and downstream Cosmos SDK chain developers should receive
 9. After snapshot/restore/migration, recompute sample Merkle paths according to `docs/clairveil-merkle-restore-sop.md`.
 10. Reject legacy prepared payloads, preserve the exact `SpendIntentV2`/`TransferIntentV2` public-input order, and reset cached proof jobs/artifacts when adopting `privacy-note-v1`.
 
-## 6. Session 2 Foundation Security Addendum
+## 6. NoteV1 And Session 3A Core Security Addendum
 
 The current production circuits and state now share the `privacy-note-v1` NoteV1 commitment/nullifier/tree contract and canonical key validation. Canonical note, disclosure, and encrypted-envelope bytes are versioned `privacy-fixed-v1`; raw ciphertext, JSON plaintext, wrong envelope kind, non-canonical field/key data, non-zero reserved bytes, and trailing bytes must fail closed. `AssetRegistryV1` is the consensus-authoritative one-to-one denom/32-byte asset-ID mapping. Global commitment uniqueness is consensus state, not an SDK-only precheck.
 
 This contract is intentionally incompatible with earlier state and artifacts. Use fresh genesis, remove wallet note/scan caches and prepared/proof jobs, regenerate the exact `privacy-note-v1` artifact set, and rescan. Do not add a permissive compatibility decoder or in-place migration. Unified scan order is `(height, global_sequence, output_index)` and a spend witness must use a path snapshot for the exact public root. Current-root paths use incremental nodes and do not consume the online historical-rebuild budget. A non-current historical path requires persisted root/count/height metadata; the public query admits at most 1,024 leaves and two concurrent rebuilds per keeper, otherwise it returns `ResourceExhausted`. Use the current root or a trusted local historical index above that online bound. The separate offline recovery/export bound remains `MaxMerkleRebuildLeaves` (1,048,576). Remote historical path/root queries can disclose wallet interest, so retain that privacy warning and use privacy-preserving infrastructure when required.
 
-The Session 2 `BatchJoinSplit16x32` implementation is a full-shape feasibility prototype only. It freezes capacities 16/32, active-prefix/zero-disabled rules, vector formulas, per-output independent user/full disclosure blindings, and the public-input order `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`. It does not authorize a production batch circuit/artifact, `MsgBatchTransfer`, keeper handler, route, scanner, payroll integration, or trusted setup.
+`BatchJoinSplit16x32` is the fourth required production circuit, and `MsgBatchTransfer`/`BatchTransferOutput` plus the keeper handler are implemented. The circuit preserves capacities 16/32, active-prefix/zero-disabled rules, independent membership, owner/key constraints, active-only distinctness, value conservation, vector formulas, per-output independent user/full disclosure blindings, one owner signature, and the public-input order `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`. Its schema SHA-256 is `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`.
+
+The keeper permits only cheap bounded framing before `BatchGasModelV1` precharge. Canonical effect validation, audit-identity checks, global nullifier/commitment lookups, historical-root/capacity checks, public-witness derivation, VK load, and proof verification occur after precharge. Only a successful proof reaches the cache-context transition, and nullifiers, commitments, root snapshot, `privacy-scan-v2` records, and the minimal event commit atomically. `TestBatchTransferCoreRejectionsAndAtomicScanFailure` and `TestCrossMessageNullifierFailureRollsBackWholeCosmosTxCache` cover internal and cross-message rollback.
+
+The measured development batch artifact identity is R1CS `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, and VK `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`. These checksums do not replace artifact signing, provenance, reproducible generation, formal setup, or external review.
+
+Session 3B user-facing surfaces remain absent: no public batch Go SDK, remote batch HTTP prover route, wallet scanner/decrypt UX, one-proof payroll workflow, or batch CLI/tutorial is shipped. Do not confuse the existing multi-message `transfer-batch`/payroll workflow with `MsgBatchTransfer`, and do not expose an unreviewed witness-bearing route.
 
 Artifact access and proving must remain bounded:
 

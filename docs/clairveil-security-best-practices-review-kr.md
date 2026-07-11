@@ -16,6 +16,7 @@
 | Prover service basics      | request body limit, read header/read timeout, idle timeout, optional bearer auth, readiness preflight가 있습니다.        |
 | ZK artifact verification   | consensus가 exact ordered VK/public-input schema hash를 고정하고 local verifier mismatch는 startup/readiness를 막으며 env checksum은 override할 수 없습니다. |
 | Proof verification cost    | cheap canonical proof framing 뒤 decode/VK load/cryptographic verification 전에 fixed gas를 precharge합니다. |
+| Batch chain core           | `MsgBatchTransfer`가 frozen 12-field witness를 다시 derive하고 bounded resource category 전체를 precharge하며 proof 검증 뒤 globally unique nullifier/commitment와 typed scan state를 atomic하게 commit합니다. |
 | Conformance fixture        | JS SDK/외부 wallet이 따라야 할 query, payload hash, prover HTTP contract fixture가 있습니다.                             |
 
 ## 2. Production 전 반드시 결정할 항목
@@ -96,7 +97,7 @@ Checksum 검증은 file corruption과 단순 tamper를 잡는 데 도움이 됩�
 - strict preflight 기본화
 - release artifact checksum CI 검증
 
-Active identity는 `privacy-note-v1`입니다. `privacy_zk_manifest.json` schema `v2`는 descriptor order, exact VK SHA-256, public-input schema SHA-256까지 genesis/state `CircuitSetIdentity` schema `v1`과 일치해야 합니다. Validator는 VK만 필요하고 prover는 proving 시 R1CS/PK를 lazy load합니다. Session 1은 development artifact만 생성했으며 formal trusted setup이나 external audit는 수행하지 않았습니다.
+Active identity는 `privacy-note-v1`입니다. `privacy_zk_manifest.json` schema `v2`는 required order `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`, exact VK SHA-256, public-input schema SHA-256까지 genesis/state `CircuitSetIdentity` schema `v1`과 일치해야 합니다. Validator는 VK만 필요하고 prover는 proving 시 R1CS/PK를 lazy load합니다. Repo가 생성한 artifact는 development 전용이며 formal trusted setup, signed production release, external audit가 아닙니다.
 
 ## 3. Repo 기준 권장 개선 사항
 
@@ -138,13 +139,19 @@ JS/TS SDK, web wallet, downstream Cosmos SDK chain 개발자에게는 아래를 
 9. Snapshot/restore/migration 후에는 `docs/clairveil-merkle-restore-sop-kr.md`에 따라 샘플 Merkle path를 재계산해야 합니다.
 10. Legacy prepared payload를 거부하고 `SpendIntentV2`/`TransferIntentV2` public-input 순서를 정확히 보존하며 `privacy-note-v1` 적용 시 cached proof job/artifact를 reset해야 합니다.
 
-## 6. Session 2 Foundation Security Addendum
+## 6. NoteV1과 Session 3A core security addendum
 
 현재 production circuit과 state는 `privacy-note-v1` NoteV1 commitment/nullifier/tree contract와 canonical key validation을 공유합니다. Canonical note, disclosure, encrypted-envelope byte는 versioned `privacy-fixed-v1`입니다. Raw ciphertext, JSON plaintext, 잘못된 envelope kind, non-canonical field/key data, non-zero reserved byte, trailing byte는 fail closed해야 합니다. `AssetRegistryV1`이 consensus-authoritative one-to-one denom/32-byte asset-ID mapping입니다. Global commitment uniqueness는 SDK-only precheck가 아니라 consensus state입니다.
 
 이 계약은 이전 state와 artifact와 의도적으로 호환되지 않습니다. Fresh genesis를 사용하고 wallet note/scan cache와 prepared/proof job을 제거하며 exact `privacy-note-v1` artifact set을 다시 생성한 뒤 rescan합니다. Permissive compatibility decoder나 in-place migration을 추가하지 않습니다. Unified scan order는 `(height, global_sequence, output_index)`이고 spend witness는 exact public root의 path snapshot을 사용해야 합니다. Current-root path는 incremental node를 사용하므로 online historical-rebuild budget을 소비하지 않습니다. Non-current historical path는 persisted root/count/height metadata를 요구하며 public query는 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하고 그 이상은 `ResourceExhausted`를 반환합니다. Online bound를 넘으면 current root 또는 trusted local historical index를 사용합니다. 별도 offline recovery/export bound는 `MaxMerkleRebuildLeaves`(1,048,576)입니다. Remote historical path/root query는 wallet interest를 노출하므로 privacy warning을 유지하고 필요하면 privacy-preserving infrastructure를 사용합니다.
 
-Session 2 `BatchJoinSplit16x32` 구현은 full-shape feasibility prototype일 뿐입니다. Capacity 16/32, active-prefix/zero-disabled rule, vector formula, output별 independent user/full disclosure blinding, public-input 순서 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`를 동결합니다. Production batch circuit/artifact, `MsgBatchTransfer`, keeper handler, route, scanner, payroll integration, trusted setup을 허가하는 작업이 아닙니다.
+`BatchJoinSplit16x32`는 네 번째 required production circuit이고 `MsgBatchTransfer`/`BatchTransferOutput`과 keeper handler가 구현되었습니다. Circuit은 capacity 16/32, active-prefix/zero-disabled rule, independent membership, owner/key constraint, active-only distinctness, value conservation, vector formula, output별 independent user/full disclosure blinding, single owner signature, public-input 순서 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`를 유지합니다. Schema SHA-256은 `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`입니다.
+
+Keeper는 `BatchGasModelV1` precharge 전에 cheap bounded framing만 허용합니다. Canonical effect validation, audit identity, global nullifier/commitment lookup, historical-root/capacity, public-witness derivation, VK load, proof verification은 precharge 뒤 실행합니다. Proof가 성공해야 cache-context transition에 도달하고 nullifier, commitment, root snapshot, `privacy-scan-v2` record, minimal event가 atomic하게 commit됩니다. `TestBatchTransferCoreRejectionsAndAtomicScanFailure`와 `TestCrossMessageNullifierFailureRollsBackWholeCosmosTxCache`가 internal/cross-message rollback을 검증합니다.
+
+측정된 development batch artifact identity는 R1CS `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`입니다. 이 checksum은 artifact signing, provenance, reproducible generation, formal setup, external review를 대체하지 않습니다.
+
+Session 3B user-facing surface는 없습니다. Public batch Go SDK, remote batch HTTP prover route, wallet scanner/decrypt UX, one-proof payroll workflow, batch CLI/tutorial을 제공하지 않습니다. 기존 multi-message `transfer-batch`/payroll workflow를 `MsgBatchTransfer`와 혼동하거나 review되지 않은 witness-bearing route를 노출하면 안 됩니다.
 
 Artifact access와 proving은 계속 bounded해야 합니다.
 

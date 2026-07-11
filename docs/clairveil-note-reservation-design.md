@@ -14,7 +14,7 @@ A Clairveil shielded transfer consumes input notes, reveals nullifiers, and crea
 
 For example, suppose a payroll job prepares 1,000 payments and assigns 100 treasury notes as input candidates. If another wallet transfer spends one of those notes first, or a background merge consumes it, the payroll proof is no longer valid. At broadcast time the nullifier may already be spent or the Merkle root may no longer match.
 
-Note reservation is therefore required for a reliable batch UX and for any future `MsgBatchTransfer`-style submission flow.
+Note reservation is therefore required for a reliable Session 3B UX around the production `MsgBatchTransfer` submission flow.
 
 ## Core Conclusion
 
@@ -28,7 +28,7 @@ Recommended order:
 1. implement client/control-plane note reservation
 2. operate dedicated payroll treasury shards
 3. separate split/merge windows from payroll execution windows
-4. connect reservation to MsgBatchTransfer or batch circuit later
+4. connect reservation to the MsgBatchTransfer client/product flow
 5. consider protocol-level reservation only if needed
 ```
 
@@ -489,7 +489,7 @@ Before building a batch, check:
 - reservation `payroll_id`, `batch_id`, and `chunk_id` match the current batch
 - nullifier is still unspent on-chain immediately before broadcast
 
-`MsgBatchTransfer` could add module-level batch validation, such as explicit duplicate-nullifier checks within the batch. But the keeper does not know which off-chain payroll reserved a nullifier. Reservation remains a client/control-plane responsibility.
+`MsgBatchTransfer` performs module-level canonical and duplicate-nullifier validation. The keeper still does not know which off-chain payroll reserved a nullifier. Reservation remains a client/control-plane responsibility.
 
 ## Failure Handling
 

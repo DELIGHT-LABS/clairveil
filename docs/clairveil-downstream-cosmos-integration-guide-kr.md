@@ -10,6 +10,7 @@
 - Downstream 체인은 `x/privacy`를 import하고 자신의 `app.go`, genesis, CLI/API, 테스트넷 설정에 연결합니다.
 - EVM, policy module, precompile, fee policy, 권한 정책은 downstream 체인에서 구현합니다.
 - Clairveil reference daemon인 `clairveild`는 “모듈이 단독으로 완주되는지”를 검증하는 호스트이며, downstream app을 대체하지 않습니다.
+- Session 3A는 production `MsgBatchTransfer` chain core와 네 번째 circuit을 제공하지만 public batch Go SDK, remote prover route, wallet/payroll UX, batch CLI/tutorial은 제공하지 않습니다. Proto만 보고 Session 3B surface를 추론하면 안 됩니다.
 
 ## 2. Go module 의존성
 
@@ -58,6 +59,7 @@ Msg service는 아래 메시지를 제공합니다.
 /clairveil.privacy.v1.Msg/Deposit
 /clairveil.privacy.v1.Msg/Transfer
 /clairveil.privacy.v1.Msg/Withdraw
+/clairveil.privacy.v1.Msg/BatchTransfer
 ```
 
 Query service는 아래 HTTP gateway path를 제공합니다.
@@ -75,17 +77,25 @@ GET /clairveil/privacy/v1/circuit_config
 GET /clairveil/privacy/v1/reserve/{denom}
 GET /clairveil/privacy/v1/nullifiers
 POST /clairveil/privacy/v1/nullifiers
+GET /clairveil/privacy/v1/assets/by_denom/{canonical_denom}
+GET /clairveil/privacy/v1/assets/by_id/{asset_id_hex}
+POST /clairveil/privacy/v1/privacy_scan
+POST /clairveil/privacy/v1/commitment_paths_at_root
 ```
 
 Downstream repo가 별도 proto generation pipeline을 갖고 있다면 `proto/clairveil/privacy/v1/*.proto`를 포함시키고, stale generated file이 남지 않도록 한 commit에서 generation 결과까지 같이 갱신해야 합니다.
 
 `scan_events`는 `(height, sequence)` cursor를 사용합니다. `limit`은 scan cursor page budget을 제한하므로, filter 때문에 `events=[]`, `has_more=true`인 page가 올 수 있습니다. Wallet client는 이 경우를 sync 완료로 보지 말고 `next_height`, `next_sequence`로 cursor를 전진시켜 계속 스캔해야 합니다.
 
+`privacy_scan`은 Deposit, native 2x2 JoinSplit, BatchJoinSplit16x32, zero-output withdraw summary를 위한 typed state projection입니다. Lexicographic cursor `(height, global_sequence, output_index)`, `privacy-sequence-v1`, `privacy-scan-v2`를 사용합니다. `commitment_paths_at_root`는 exact root/height snapshot 하나에서 최대 16개 path를 반환하며 remote 사용은 query provider에게 input linkage를 노출할 수 있습니다.
+
 Downstream web/mobile client는 batch `nullifiers` check에 POST JSON body binding을 사용하되, 요청당 1000개 단위로 chunk해야 합니다. GET은 작은 compatibility call을 위해 유지하지만, 큰 nullifier batch는 일반적인 URL 길이 제한을 넘기 쉽습니다.
 
 `MsgWithdraw`에는 output note 필드가 없습니다. 이전 generated binding에서 업그레이드하는 downstream client는 legacy withdraw 값인 `new_note_commitment`, `encrypted_note`를 dummy output note bytes로 보내지 말고 제거해야 합니다.
 
 `MsgTransfer`는 encrypted output note 2개와 2-byte `view_tags` 2개를 포함합니다. 이 tag는 untrusted local-scan hint이며, server-filterable ownership tag가 아닙니다. 안전한 기본 wallet sync는 product가 recovery/rescan을 갖춘 fast mode를 명시적으로 켜지 않는 한 tag mismatch에서도 full decrypt를 수행해야 합니다. Downstream EVM precompile, binding, generated client는 `new_commitments`, `cipher_texts`, `view_tags`를 output index 기준으로 항상 맞춰야 합니다.
+
+`MsgBatchTransfer`는 proof 하나, historical root 하나, ordered nullifier 1..16개, structured `BatchTransferOutput` 1..32개, exact audit key ID/epoch/target, expiry를 포함합니다. Count는 repeated field length에서만 나옵니다. Keeper는 frozen 12 public value를 다시 derive하고 `BatchGasModelV1`을 precharge하며 batch VK를 검증한 뒤 nullifier, globally unique commitment, root snapshot, typed scan state, minimal event를 atomic하게 씁니다. Public-input schema SHA-256은 `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`입니다.
 
 ## 4. App wiring 체크리스트
 
@@ -273,6 +283,8 @@ go run ./cmd/clairveil-setup \
 source /path/to/zk_artifacts/privacy_zk_checksums.env
 ```
 
+Required `privacy-note-v1` 순서는 `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`입니다. Validator는 exact consensus identity 비교 뒤 네 required VK만 load하고 prover는 선택한 R1CS/PK pair를 lazy load합니다. 기록된 development batch artifact는 R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`입니다. 이는 development identity이며 production distribution/formal setup artifact가 아닙니다.
+
 권장 모드는 아래입니다.
 
 - `strict`: CI, release candidate, production-like node에서 사용합니다. artifact 누락이나 checksum mismatch를 시작 전에 막습니다.
@@ -303,13 +315,15 @@ tx privacy prepare-withdraw
 tx privacy relay-withdraw
 ```
 
+Session 3A에는 user-facing `MsgBatchTransfer` CLI가 없습니다. 기존 `transfer-batch`/payroll command는 별도 multi-message workflow이므로 one-proof batch message로 문서화하거나 wiring하면 안 됩니다. `clairveil-proverd`에도 batch HTTP route가 아직 없습니다.
+
 현재 query CLI로 직접 노출된 command는 아래입니다.
 
 ```text
 query privacy check-nullifier
 ```
 
-`tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `nullifier/{nullifier}`, `nullifiers`는 gRPC/HTTP gateway query로 제공됩니다. Downstream chain에서 운영자 CLI가 필요하면 이 query들을 별도 CLI wrapper로 추가하면 됩니다.
+`tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, `nullifiers`는 gRPC/HTTP gateway query로 제공됩니다. Downstream chain에서 운영자 CLI가 필요하면 이 query들을 별도 CLI wrapper로 추가하면 됩니다.
 
 ## 9. Downstream 테스트 순서
 
@@ -320,11 +334,12 @@ query privacy check-nullifier
 3. Downstream node에서 `init`, genesis account, gentx, collect-gentxs, `start`가 되는지 확인합니다.
 4. Genesis에 audit master pubkey를 넣고 첫 블록 이후 gRPC/HTTP gateway의 `audit_config`가 값을 반환하는지 확인합니다.
 5. Downstream CLI로 `show-address`, `deposit`, `list-notes`를 먼저 검증합니다.
-6. gRPC/HTTP gateway로 `tree_state`, `events`, `scan_events`, `merkle_path`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `nullifier/{nullifier}`, `nullifiers`가 정상 응답하는지 확인합니다.
+6. gRPC/HTTP gateway로 `tree_state`, `events`, `scan_events`, `merkle_path`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, `nullifiers`가 정상 응답하는지 확인합니다.
 7. `transfer`와 `decode-transfer-disclosure`로 user disclosure와 audit disclosure를 검증합니다.
 8. `withdraw`, `prepare-withdraw`, `relay-withdraw`로 direct/relayed withdraw를 검증합니다.
 9. 마지막에 EVM/policy/precompile 연동 e2e를 추가합니다.
 10. Web wallet 또는 JS SDK가 local note storage encryption, remote prover timeout/auth, disclosure verification을 자체 테스트로 검증합니다.
+11. Downstream `MsgBatchTransfer` adapter를 작성하기 전에 `TestBatchTransferDirectCoreIntegration`, `TestBatchTransferCoreRejectionsAndAtomicScanFailure`, `TestCrossMessageNullifierFailureRollsBackWholeCosmosTxCache`를 실행합니다.
 
 ## 10. 자주 깨지는 지점
 
@@ -337,6 +352,7 @@ query privacy check-nullifier
 - module account 권한 또는 blocked address 정책이 잘못되면 deposit/withdraw bank transfer가 실패합니다.
 - direct bank send 또는 manual top-up이 기록된 deposit/withdraw accounting과 맞지 않으면 `reserve/{denom}`이 `invariant_holds=false`를 반환합니다.
 - downstream denom을 바꾸면 tutorial, smoke script, JS SDK fixture, conformance vector의 denom도 같이 바꿔야 합니다.
+- Genesis/state가 아직 three-circuit descriptor만 pin하거나 local artifact에 batch VK가 없으면 startup/readiness가 실패해야 합니다. `MsgBatchTransfer`를 켜기 위해 identity check를 우회하면 안 됩니다.
 
 ## 11. 완료 기준
 
@@ -345,7 +361,9 @@ Downstream 통합은 아래가 모두 통과하면 1차 완료로 봅니다.
 - downstream daemon이 privacy store, keeper, module, query gateway, tx command를 포함해서 build됩니다.
 - genesis에 privacy state와 audit master pubkey가 들어갑니다.
 - local single-node에서 deposit, transfer, disclosure decode, withdraw가 모두 통과합니다.
-- `tree_state`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `nullifier/{nullifier}`, `nullifiers` query가 정상 응답합니다.
+- `tree_state`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, `nullifiers` query가 정상 응답합니다.
+- Four-circuit identity, batch development artifact readiness, direct core integration, deterministic gas, atomic rollback, typed scan/minimal-event test가 통과합니다.
+- Integration record에 public batch SDK/prover/wallet/payroll/CLI surface와 formal production artifact가 Session 3A에 포함되지 않음을 명시합니다.
 - audit master private key custody policy가 production 운영 문서에 반영되어 있습니다.
 - wallet storage encryption과 remote prover privacy policy가 JS/TS SDK 또는 web wallet 설계 문서에 반영되어 있습니다.
 - downstream 전용 EVM/policy/precompile 연동은 별도 테스트로 분리되어 있습니다.

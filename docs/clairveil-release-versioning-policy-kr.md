@@ -33,6 +33,8 @@ v0.MAJOR.MINOR
 - CLI command, flag, JSON output field 변경
 - shielded address prefix, transparent prefix, denom, chain-id 기본값 변경
 - ZK circuit input shape, artifact manifest, checksum policy 변경
+- required circuit-set descriptor/order, VK identity, public-input schema digest 변경
+- `MsgBatchTransfer` framing/output 의미, `BatchGasModelV1`, atomic transition, minimal event, typed scan/genesis schema 변경
 - disclosure payload version, policy, mode, digest binding 변경
 - scan projection version, cursor semantics, empty-page/`has_more` 처리 변경
 - transfer view tag 파생 방식, 길이, event field, payload-hash binding 변경
@@ -118,6 +120,9 @@ GitHub release 또는 downstream handoff message는 `docs/clairveil-release-note
 - Scan/query contract:
 - Transfer/view tags:
 - ZK artifacts:
+- Circuit set/public witness:
+- Batch gas/scan state:
+- Session 3B surface status:
 
 ## 5. 알려진 위험 / 허용 예외
 
@@ -167,3 +172,15 @@ git tag -a v0.1.0 -m "Clairveil v0.1.0"
 make release-pack
 make release-pack-verify
 ```
+
+## 8. Session 3A release baseline
+
+Session 3A chain core를 포함하는 release note는 아래를 한 묶음으로 기록해야 합니다.
+
+- circuit set `privacy-note-v1`, identity schema `v1`, manifest schema `v2`, exact required order `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`;
+- batch public-input 순서 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`와 schema SHA-256 `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`;
+- production proto/API `MsgBatchTransfer`와 `BatchTransferOutput`, gas model `BatchGasModelV1`, sequence `privacy-sequence-v1`, scan schema `privacy-scan-v2`, asset registry `privacy-asset-registry-v1`, privacy state version `2`;
+- development artifact identity: constraint `1,111,837`; R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`; PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`; VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`; generation/readiness peak RSS `3,308,797,952 B` / `1,295,482,880 B`;
+- direct core integration, atomic scan failure, cross-message 2x2+batch/batch+batch rollback 결과.
+
+같은 release note에 public batch Go SDK, remote batch prover route, wallet scanner/decrypt UX, one-proof payroll integration, batch CLI/tutorial, formal trusted setup, production artifact distribution은 Session 3A 범위가 아님을 명시해야 합니다. Development artifact hash는 검증한 binary의 identity일 뿐 production 배포를 허가하지 않습니다.

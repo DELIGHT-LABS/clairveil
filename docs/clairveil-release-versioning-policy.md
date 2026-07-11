@@ -35,6 +35,8 @@ Mark release notes with breaking or migration impact when any of these change:
 - CLI command, flag, or JSON output field
 - shielded address prefix, transparent prefix, denom, or chain-id defaults
 - ZK circuit input shape, artifact manifest, or checksum policy
+- required circuit-set descriptor/order, VK identity, or public-input schema digest
+- `MsgBatchTransfer` framing/output semantics, `BatchGasModelV1`, atomic transition, minimal event, or typed scan/genesis schema
 - disclosure payload version, policy, mode, or digest binding
 - scan projection version, cursor semantics, or empty-page/`has_more` handling
 - transfer view tag derivation, length, event field, or payload-hash binding
@@ -120,6 +122,9 @@ Use `docs/clairveil-release-note-template.md` for GitHub release or downstream h
 - Scan/query contract:
 - Transfer/view tags:
 - ZK artifacts:
+- Circuit set/public witness:
+- Batch gas/scan state:
+- Session 3B surface status:
 
 ## 5. Known Risk / Accepted Exceptions
 
@@ -169,3 +174,15 @@ git tag -a v0.1.0 -m "Clairveil v0.1.0"
 make release-pack
 make release-pack-verify
 ```
+
+## 8. Session 3A Release Baseline
+
+Release notes that include the Session 3A chain core must record all of the following together:
+
+- circuit set `privacy-note-v1`, identity schema `v1`, manifest schema `v2`, and exact required order `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`;
+- batch public-input order `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo` and schema SHA-256 `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`;
+- production proto/API `MsgBatchTransfer` and `BatchTransferOutput`, gas model `BatchGasModelV1`, sequence `privacy-sequence-v1`, scan schema `privacy-scan-v2`, asset registry `privacy-asset-registry-v1`, and privacy state version `2`;
+- development artifact identity: constraints `1,111,837`; R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`; PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`; VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`; generation/readiness peak RSS `3,308,797,952 B` / `1,295,482,880 B`;
+- direct core integration, atomic scan failure, and cross-message 2x2+batch/batch+batch rollback results.
+
+The same release note must state that public batch Go SDK, remote batch prover route, wallet scanner/decrypt UX, one-proof payroll integration, batch CLI/tutorial, formal trusted setup, and production artifact distribution are not part of Session 3A. Development artifact hashes identify the tested binaries; they do not authorize production deployment.

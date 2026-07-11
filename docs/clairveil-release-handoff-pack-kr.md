@@ -15,10 +15,11 @@ Clairveil repo는 reusable privacy core와 reference host를 제공합니다. �
 | Prover service | `cmd/clairveil-proverd`, `x/privacy/client/sdk/proverservice`, `x/privacy/client/sdk/provertransport` | Prover operations, JS SDK team | local/remote companion prover contract |
 | ZK artifact tooling | `cmd/clairveil-setup`, `cmd/clairveil-verify`, `x/privacy/zk` | Core chain team, prover operations | artifact generation, checksum, preflight |
 | Walkthrough | `docs/clairveil-local-privacy-walkthrough-kr.md` | Integrators | local end-to-end manual verification |
-| Circuit guide | `docs/clairveil-circuits-kr.md` | Core chain team, prover operations, security reviewers | Deposit/Spend/JoinSplit 회로와 artifact 영향 설명 |
-| Session 2 normative foundation | `docs/clairveil-batch-joinsplit-16x32.md`, `docs/clairveil-batch-joinsplit-16x32-kr.md` | Core chain, SDK, prover, security teams | NoteV1/fixed encoding/state contract와 reserve된 non-production 16x32 protocol |
+| Circuit guide | `docs/clairveil-circuits-kr.md` | Core chain team, prover operations, security reviewers | Deposit/Spend/JoinSplit/BatchJoinSplit16x32 회로와 artifact 영향 설명 |
+| NoteV1/batch normative contract | `docs/clairveil-batch-joinsplit-16x32.md`, `docs/clairveil-batch-joinsplit-16x32-kr.md` | Core chain, SDK, prover, security teams | Session 3A chain core가 구현한 frozen NoteV1/fixed encoding/vector/public-witness/state contract |
 | Session 2 independent fixture | `x/privacy/client/sdk/conformance/testdata/privacy_note_v1_contract.json`, `x/privacy/client/sdk/conformance/testdata/privacy_batch_joinsplit_v1_contract.json` | Core chain, SDK, security teams | independent domain/empty-root/encoding, canonical audit-key ID, vector/public-input, corrected wire-state golden |
-| Batch feasibility proto | `proto/clairveil/privacy/v1/batch_feasibility.proto` | Core chain, SDK, security teams | max-shape wire/state measurement 전용이며 production tx service나 `MsgBatchTransfer` contract가 아님 |
+| Batch tx/query proto | `proto/clairveil/privacy/v1/tx.proto`, `proto/clairveil/privacy/v1/query.proto`, `proto/clairveil/privacy/v1/genesis.proto` | Core chain, SDK, security teams | production `MsgBatchTransfer`/structured output, AssetRegistryV1, same-root path, typed scan/genesis contract |
+| Batch feasibility proto | `proto/clairveil/privacy/v1/batch_feasibility.proto` | Core chain, SDK, security teams | max-shape measurement fixture 전용이며 production contract는 normal tx/query/genesis proto에 존재 |
 | CLI reference | `docs/clairveil-cli-reference-kr.md` | Integrators, wallet/SDK teams | 사용자-facing command와 flag 설명 |
 | Testing guide | `docs/clairveil-testing-guide-kr.md` | Maintainers, integrators | test matrix와 release 검증 명령 |
 | Operations guide | `docs/clairveil-operations-guide-kr.md` | Operators, security reviewers | node/prover/artifact/Merkle/audit 운영 기준 |
@@ -77,7 +78,7 @@ make docker-proverd-build
 
 이 명령은 compose config, Dockerfile build, image inspect를 확인합니다. Docker daemon이 필요한 검증이므로 기본 `release-check`에는 포함하지 않습니다.
 
-`make release-pack`은 `dist/clairveil-handoff-<version>.tar.gz`와 `.sha256` 파일을 생성합니다. 이 pack은 전체 소스 배포본이 아니라 downstream handoff 계약 묶음입니다. 포함 대상은 license/notice, 주요 handoff/security/operation 문서, circuit/CLI/testing/maintainer 문서, Merkle restore SOP, proto, JSON Schema, conformance fixture, client/JS 예제, scan optimization 문서, bulk transfer handoff/design/plan 문서, reference payroll product 문서/예제, prover Docker sample, release pack scripts, `RELEASE-MANIFEST.txt`, `SHA256SUMS.txt`입니다. Session 2에서는 bilingual `clairveil-batch-joinsplit-16x32` contract, independent golden fixture 2개, `batch_feasibility.proto`를 normative handoff artifact로 둡니다. 이 proto는 feasibility message shape이며 production transaction service가 아닙니다. bulk transfer plan 문서는 현재 한국어 작업 기록이며, 언어 중립적인 구현 계약은 schema, conformance fixture, CLI/API reference, readiness command가 담당합니다. readiness 명령은 handoff 전에 source checkout에서 실행하고, pack은 계약 산출물과 검증 기대값을 기록합니다.
+`make release-pack`은 `dist/clairveil-handoff-<version>.tar.gz`와 `.sha256` 파일을 생성합니다. 이 pack은 전체 소스 배포본이 아니라 downstream handoff 계약 묶음입니다. 포함 대상은 license/notice, 주요 handoff/security/operation 문서, circuit/CLI/testing/maintainer 문서, Merkle restore SOP, proto, JSON Schema, conformance fixture, client/JS 예제, scan optimization 문서, bulk transfer handoff/design/plan 문서, reference payroll product 문서/예제, prover Docker sample, release pack scripts, `RELEASE-MANIFEST.txt`, `SHA256SUMS.txt`입니다. Bilingual batch contract와 independent fixture는 계속 normative입니다. Session 3A에서는 normal tx/query/genesis proto, 네 번째 circuit descriptor, gas/scan/genesis contract, direct core test도 handoff 범위입니다. `batch_feasibility.proto`는 measurement-only로 남습니다. Readiness 명령은 handoff 전에 source checkout에서 실행하고 pack은 large R1CS/PK/VK binary가 아니라 contract artifact와 검증 기대값을 기록합니다.
 
 `make release-pack-verify`는 handoff pack의 외부 `.sha256`, pack 내부 `SHA256SUMS.txt`, 필수 handoff 파일 목록, 그리고 기본 archive의 manifest commit이 현재 `HEAD`와 일치하는지 확인합니다. `RELEASE_PACK_ARCHIVE`를 지정하지 않은 기본 실행에서는 stale local archive가 누락 파일을 가리지 않도록 검증 전에 기본 pack을 다시 생성합니다. 이 검증은 “tarball이 만들어졌다”가 아니라 “넘겨도 되는 계약 묶음인지”를 확인하는 단계입니다.
 
@@ -97,8 +98,10 @@ make docker-proverd-build
 12. downstream project가 audit master private key custody, wallet storage encryption, remote prover topology를 별도 운영 문서로 소유한다는 점을 release note에 명시합니다.
 13. `docs/clairveil-release-versioning-policy-kr.md`의 release note template을 사용해 compatibility impact와 downstream action을 작성합니다.
 14. `go test ./x/privacy/types -run TestBatchJoinSplit16x32MaxWireStateFeasibilityGate -count=1 -v`를 실행하고 정정된 max-shape golden인 canonical owner-effect payload `65,384` bytes, Tx `65,294` bytes, typed scan KV `75,105` bytes, total KV write `173,409` bytes, query response `74,551` bytes를 확인합니다.
-15. Session 2 foundation release에서는 `CLAIRVEIL_RUN_BATCH_FEASIBILITY=1 go test ./x/privacy/circuit -run TestBatchJoinSplit16x32FullShapeResourceGate -count=1 -v`를 실행하고 constraint, artifact size, timing, resource report를 보존합니다. 정정된 reference result는 constraint `1,111,837`, peak RSS `3,339,862,016` bytes, max-shape warm proving `55.892 ms/output`, native 2x2 대비 per-output `2.789x` 개선입니다. 이 명령은 feasibility gate이지 trusted setup이 아닙니다.
-16. Release-pack verification이 bilingual batch contract, `batch_feasibility.proto`, independent Session 2 fixture 2개를 required artifact로 검사하는지 확인합니다.
+15. Historical feasibility result인 `CLAIRVEIL_RUN_BATCH_FEASIBILITY=1 go test ./x/privacy/circuit -run TestBatchJoinSplit16x32FullShapeResourceGate -count=1 -v`의 constraint `1,111,837`, peak RSS `3,339,862,016` bytes, `55.892 ms/output`, native 2x2 대비 per-output `2.789x` 개선을 보존합니다. 이는 feasibility gate이지 trusted setup이 아닙니다.
+16. Release-pack verification이 bilingual batch contract, normal production tx/query/genesis proto, `batch_feasibility.proto`, independent Session 2 fixture 2개를 required artifact로 검사하는지 확인합니다.
+17. Production circuit/keeper matrix인 `TestBatchJoinSplit16x32ProductionPositiveMatrix`, `TestBatchJoinSplit16x32ProductionNegativeMatrix`, `TestBatchTransferDirectCoreIntegration`, `TestBatchTransferCoreRejectionsAndAtomicScanFailure`, `TestCrossMessageNullifierFailureRollsBackWholeCosmosTxCache`를 실행합니다.
+18. Git 밖에서 development artifact를 생성하고 `TestBatchDevelopmentArtifactRoleReadinessGate`를 실행합니다. R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`, generation peak RSS `3,308,797,952 B`, readiness peak RSS `1,295,482,880 B`를 기록합니다. 이 development binary를 production artifact로 package하면 안 됩니다.
 
 ## 4. Downstream core chain 팀 수령 기준
 
@@ -113,7 +116,7 @@ Core chain 팀은 아래를 확인합니다.
 7. downstream EVM, policy module, precompile integration test는 Clairveil repo의 smoke test와 별도로 작성합니다.
 8. Active circuit set `privacy-note-v1`의 fresh genesis에서 시작합니다. Old note/tree/scan state와 artifact는 호환되지 않으며 compatibility decoder로 migrate하면 안 됩니다.
 9. `AssetRegistryV1`을 authoritative one-to-one denom/32-byte asset-ID mapping으로 취급하고 `(height, global_sequence, output_index)` cursor로 `privacy-scan-v2`를 소비하며 spend path는 선택한 root와 정확히 일치하는 snapshot에서 가져옵니다. Current-root path는 incremental node를 사용하므로 online historical-rebuild budget을 소비하지 않습니다. 모든 non-current historical path는 persisted root/count/height metadata를 요구하며 public query는 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하고 그 이상은 `ResourceExhausted`를 반환합니다. Online bound를 넘으면 current root 또는 trusted local historical index를 사용합니다. Offline recovery/export는 별도 `MaxMerkleRebuildLeaves`(1,048,576) bound를 유지합니다. Complete per-prefix snapshot metadata index가 있으면 offline bound를 넘는 genesis export도 계속 지원됩니다.
-10. Future public-input 순서 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`, 1..64 bytes와 `[a-z0-9][a-z0-9._-]*`인 canonical `audit_key_id`, exact `CanonicalBatchTransferPayloadBytesV1` grammar/domain을 reserve하되 prototype을 production batch circuit, message, artifact, handler로 등록하지 않습니다.
+10. Live public-input 순서 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`, schema SHA-256 `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`, canonical `audit_key_id`, exact `CanonicalBatchTransferPayloadBytesV1` grammar/domain을 보존합니다. `batch-joinsplit-16x32-v1`을 네 번째 required descriptor로 등록하고 three-circuit identity로 조용히 downgrade하지 않습니다.
 
 ## 5. JS/TS SDK 및 web wallet 팀 수령 기준
 
@@ -131,6 +134,7 @@ JS/TS SDK와 web wallet 팀은 아래를 확인합니다.
 10. Prepared transfer payload `v5`는 outer prepared-payload version으로 유지합니다. Note/disclosure encoding version이 아니므로 `privacy-fixed-v1`로 rename하면 안 됩니다.
 11. Asset ID는 `AssetRegistryV1`으로 resolve하고 전체 `privacy-scan-v2` cursor를 저장합니다. Wrong event type, fixed-envelope kind, digest, key, sentinel, orphan/non-adjacent output이 있는 typed scan record는 거부합니다. Same-root path snapshot을 사용하고 remote historical-root/path query의 privacy leak과 rebuild cap을 고려합니다.
 12. External ClairveilJS package는 이 handoff 시점에 아직 legacy입니다. Downstream upgrade 전까지 새 fixed fixture를 fail closed로 거부하는 것이 안전한 동작이며 old format으로 조용히 decode하는 것은 금지합니다.
+13. Session 3A는 public `MsgBatchTransfer` Go SDK, wallet scanner/decrypt UX, one-proof payroll workflow, batch CLI/tutorial을 제공하지 않습니다. 기존 multi-message `transfer-batch` flow를 암묵적으로 바꾸지 말고 명시적인 Session 3B integration으로 계획합니다.
 
 ## 6. Prover 운영 팀 수령 기준
 
@@ -143,6 +147,7 @@ Prover 운영 팀은 아래를 확인합니다.
 5. proof request/response의 `payload_hash` equality check를 SDK와 server 양쪽에서 유지합니다.
 6. Role-aware artifact registry를 사용합니다. Validator는 exact consensus identity 검증 뒤 필요한 VK를 load하고 prover는 선택한 R1CS/PK pair를 lazy load합니다.
 7. Circuit별 admission default인 in-flight 1개, queued 4개와 positive 8 MiB body limit을 강제합니다. Zero body limit은 invalid입니다. Automatic prover failover를 비활성화하고 hard cancellation 또는 memory containment가 필요하면 process isolation을 사용합니다.
+8. Session 3A reference prover에는 BatchJoinSplit16x32 route가 없으므로 batch HTTP endpoint를 노출하지 않습니다. 이후 route는 admission, payload binding, privacy, artifact-role boundary를 보존해야 합니다.
 
 ## 7. Known risk와 accepted exception
 
@@ -157,7 +162,7 @@ Prover 운영 팀은 아래를 확인합니다.
 | Wallet local storage | reference CLI는 `0600` plaintext JSON을 사용 | web wallet/production wallet은 encrypted storage와 telemetry redaction을 구현합니다. |
 | Remote prover metadata exposure | remote prover는 proof input metadata를 볼 수 있음 | user privacy UX와 deployment threat model에 remote prover를 trusted component로 포함합니다. |
 | ZK artifact provenance | repo는 checksum/preflight tooling을 제공하지만 ceremony/release signing 정책은 downstream responsibility | production release에서는 artifact signing, provenance, reproducibility policy를 별도로 둡니다. |
-| Session 2 batch prototype | 16x32 circuit/proto와 동결된 12 public input은 feasibility gate를 통과했지만 production batch transaction, verifier artifact, handler, route, scanner, payroll integration, trusted setup이 아님 | Production으로 노출하거나 등록하지 않고 이후 production-circuit/consensus-integration session을 먼저 완료합니다. |
+| Session 3A batch boundary | Circuit, `MsgBatchTransfer`, keeper, deterministic gas, typed scan/minimal event, genesis, development artifact readiness는 구현됐지만 public SDK/prover route/wallet/payroll/CLI, formal setup, production artifact delivery는 없음 | Frozen proto/identity로 chain core만 통합하고 user-facing surface는 Session 3B, artifact release는 별도 security gate로 계획합니다. |
 | External ClairveilJS compatibility | External package는 아직 legacy note/disclosure representation에 기반하며 `privacy-fixed-v1`을 구현하지 않음 | 새 fixture는 fail closed하고 downstream을 명시적으로 upgrade하며 compatibility fallback을 추가하지 않습니다. Prepared transfer payload `v5`는 별도의 outer version으로 계속 유효합니다. |
 | Prover cancellation boundary | Request cancellation은 이미 실행 중인 in-process solver를 preempt하지 못하며 반환할 때까지 permit과 memory를 사용할 수 있음 | Admission을 `1`/`4`, request를 positive `8 MiB`로 제한하고 hard cancellation/OOM containment에는 supervised worker-process isolation을 사용합니다. |
 | Historical path rebuild boundary | Current-root path는 incremental node를 사용합니다. Public non-current query는 complete root/count/height metadata를 요구하고 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하며 그 이상은 `ResourceExhausted`를 반환합니다. Offline recovery/export는 `MaxMerkleRebuildLeaves`(1,048,576)를 유지합니다. | Online bound를 넘으면 current root로 spend하거나 trusted local historical-path index를 사용합니다. Large-tree genesis export를 유지하도록 complete snapshot metadata index를 보존합니다. |
@@ -173,6 +178,7 @@ Release handoff는 아래를 만족하면 완료로 봅니다.
 5. Web wallet 팀이 wallet storage encryption과 prover topology를 설계 문서에 반영했습니다.
 6. Prover 운영 팀이 remote/local prover production profile을 선택했습니다.
 7. Security/operations 팀이 accepted vulnerability, audit key custody, ZK artifact provenance를 risk register에 올렸습니다.
-8. 모든 팀이 fresh-genesis `privacy-note-v1` / `privacy-fixed-v1` compatibility break를 수용하고 independent Session 2 fixture 2개를 검증했으며 reserve된 16x32 prototype이 production 기능이 아님을 기록했습니다.
+8. 모든 팀이 fresh-genesis `privacy-note-v1` / `privacy-fixed-v1` compatibility break를 수용하고 independent Session 2 fixture 2개를 검증했으며 `batch-joinsplit-16x32-v1`을 네 번째 required production chain-core circuit으로 기록했습니다.
+9. 모든 팀이 Session 3B user-facing batch surface, formal trusted setup, production artifact distribution이 미완료임을 기록했습니다.
 
 이 문서는 release package를 대신하는 압축 파일이 아닙니다. 대신 release commit을 넘겨받는 팀들이 같은 commit, 같은 fixture, 같은 schema, 같은 verification command를 기준으로 통합을 시작하게 만드는 handoff index입니다.

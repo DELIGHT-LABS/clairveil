@@ -2,20 +2,16 @@
 
 ## 1. Status and scope
 
-This document freezes the Session 2 protocol foundation for a future `BatchJoinSplit16x32` implementation. It is normative for NoteV1, domain separation, fixed encodings, the 16-input/32-output statement shape, aggregate vector roots, disclosure digests, scan state, artifact identity, admission control, and resource accounting.
+This document freezes the Session 2 protocol contract and records its Session 3A consensus/core implementation. It is normative for NoteV1, domain separation, fixed encodings, the production 16-input/32-output statement, aggregate vector roots, disclosure digests, scan state, artifact identity, and resource accounting.
 
 **Session 2 Gate 2: PASS.** Both feasibility gates were rerun or confirmed against the final two-stage user-disclosure contract:
 
 - **Full-shape circuit gate: PASS.** The corrected Groth16/BN254 prototype compiled, completed development setup, proved every shape including `16/32` without OOM, and improved warm proving cost per output over the current JoinSplit2x2 baseline.
 - **Max wire/state gate: PASS.** An actual protobuf message inside an actual Cosmos `TxRaw`, typed scan KV records, tree-write allowance, the minimal ABCI event, and the query response stayed within the frozen reference limits.
 
-Passing Gate 2 makes Session 3A eligible to start, but **Session 3A has not started.** The following do not exist in this session and must not be inferred from the prototypes:
+Session 3A implements the production `BatchJoinSplit16x32` circuit, `MsgBatchTransfer`, deterministic gas precharge, proof-gated atomic keeper transition, typed scan state, minimal ABCI event, and role-aware development artifact lifecycle. It does **not** implement the public batch Go SDK, remote batch prover HTTP route, wallet scanning/decryption UX, payroll integration, batch CLI/tutorial, formal trusted setup, or production artifact distribution; those remain Session 3B or release work.
 
-- a production `BatchJoinSplit16x32` circuit, proving key, or verifying key;
-- a registered `MsgBatchTransfer` service or keeper state transition;
-- batch SDK, prover HTTP route, scanner, payroll integration, or formal trusted setup.
-
-The current active circuit set is `privacy-note-v1`, containing the production Deposit, Spend, and JoinSplit2x2 circuits. `batch-joinsplit-16x32-v1` is a reserved schema and feasibility prototype only.
+The active circuit set remains `privacy-note-v1` and now requires, in order, Deposit, Spend, JoinSplit2x2, and `batch-joinsplit-16x32-v1`. Development R1CS/PK/VK identities are evidence for Gate 3A, not production trust anchors.
 
 Normative words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** have their usual protocol meaning.
 
@@ -33,8 +29,9 @@ Normative words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** have their usual
 | Audit key ID V1 | `1..64` lowercase ASCII bytes, `[a-z0-9][a-z0-9._-]*` |
 | Note tree | BN254 Fr, MiMC, depth `32` |
 | Batch capacity | inputs `1..16`, outputs `1..32` |
-| Reserved batch circuit ID | `batch-joinsplit-16x32-v1` |
-| Reserved batch public-input schema SHA-256 | `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333` |
+| Batch circuit ID | `batch-joinsplit-16x32-v1` |
+| Batch public-input schema SHA-256 | `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333` |
+| Batch proto/API | `clairveil.privacy.v1.Msg/BatchTransfer`; canonical payload format `1` |
 
 These version changes require a fresh reset/genesis. Mixed old/new note state is rejected. Wallet note caches, reservations, prepared witnesses, and prepared proofs from an older circuit/payload/state version MUST be discarded.
 
@@ -161,7 +158,7 @@ Every shielded spend, view, disclosure, and EdDSA `R` point accepted from a wire
 
 An EdDSA signature is exact 64-byte `R || S`; `R` follows the point rules and `0 < S < SubgroupOrder`.
 
-The circuits independently enforce on-curve, non-identity, and subgroup membership. The batch prototype validates the owner spend/view points, signature `R`, and all 32 output spend/view pairs. Every input key equals the single owner key; disabled key slots use the same owner key sentinel. These circuit constraints MUST NOT be weakened to host-only checks as a performance shortcut.
+The circuits independently enforce on-curve, non-identity, and subgroup membership. The production batch circuit validates the owner spend/view points, signature `R`, and all 32 output spend/view pairs. Every input key equals the single owner key; disabled key slots use the same owner key sentinel. These circuit constraints MUST NOT be weakened to host-only checks as a performance shortcut.
 
 ### 3.5 Independent golden NoteV1 vector
 
@@ -456,9 +453,9 @@ The decoder validates kind-specific exact ciphertext length before allocation/us
 
 ## 7. Structured batch wire and effect contract
 
-### 7.1 Prototype message shape
+### 7.1 Production message shape
 
-`BatchTransferWirePrototypeV1` freezes and measures this field set:
+`MsgBatchTransfer` uses this field set; `BatchTransferWirePrototypeV1` remains only the independent wire/resource measurement mirror:
 
 ```text
 creator
@@ -472,7 +469,7 @@ audit_disclosure_target_pubkey
 expires_at_unix
 ```
 
-Each `BatchTransferOutputWirePrototypeV1` contains:
+Each `BatchTransferOutput` contains:
 
 ```text
 commitment
@@ -492,7 +489,7 @@ self_view_disclosure_payload
 
 `audit_key_id` is exact lowercase ASCII matching `[a-z0-9][a-z0-9._-]*` and is `1..64` bytes. The first byte cannot be punctuation. A batch audit epoch MUST be positive, and the audit target MUST be a canonical, non-identity, prime-subgroup compressed point. The max-wire measurement uses a valid 64-byte ID, not an unbounded placeholder.
 
-This protobuf is deliberately not registered in the Msg service, and the Session 2 prototype does not authorize a state transition. Its canonical owner-authorized effect view is nevertheless fully frozen. Let `lp(x) = u32be(len(x)) || x`; empty optional fields therefore have the unique encoding `u32be(0)`. For each output, `output_effect_i` is the listed output fields in exactly this order:
+The protobuf is registered as `clairveil.privacy.v1.Msg/BatchTransfer`. The keeper never hashes generated protobuf bytes: it reuses the frozen canonical owner-authorized effect view below. Let `lp(x) = u32be(len(x)) || x`; empty optional fields therefore have the unique encoding `u32be(0)`. For each output, `output_effect_i` is the listed output fields in exactly this order:
 
 ```text
 output_effect_i =
@@ -520,6 +517,8 @@ PayloadDigestLo = uint128be(payload_sha256[16:32])
 ```
 
 `creator` and `proof` are the only message fields excluded. Ordered-vector lengths are the canonical counts, so there is no second count source. Validation rejects non-canonical fields, duplicate nullifiers/commitments, unknown disclosure enums, invalid policy/mode/target/payload combinations, malformed envelopes, mixed self-view presence, invalid audit identity, and non-positive epoch/expiry before encoding. The independent 2-input/2-output golden is `3,702` canonical bytes with SHA-256 `f2588c7543fb83a7822aa0043e4747af0ac4c9dc14a038c230850f1cab5e24b0`, high limb `322132945931579789235567236199104333743`, and low limb `14314064343031468430392382204273370288`. The max `16/32` shape is `65,384` canonical bytes.
+
+The consensus per-message wire cap is `128 KiB`. `BatchTransferRawFramingDecorator` enforces it against the signed `TxBody.messages[].Any.value` bytes before `ValidateBasic`; decoded `MsgBatchTransfer.Size()` is only a secondary shape check. This rejects an oversized raw message even if duplicate singular protobuf fields decode by retaining only the final small value.
 
 ### 7.2 Batch effect ID
 
@@ -551,7 +550,7 @@ The independent golden effect ID is:
 
 ### 7.3 Minimal event and typed state
 
-The future batch ABCI event MUST contain only effect ID, relayer, input/output counts, the four aggregate roots, and expiry. It MUST NOT repeat ciphertexts, disclosure payloads, or full nullifier/commitment lists as hex attributes.
+The production batch ABCI event contains only effect ID, relayer, input/output counts, the four aggregate roots, expiry, circuit/payload/scan versions, and exact audit ID/epoch/target. It MUST NOT repeat ciphertexts, disclosure payloads, commitments, or full nullifier lists as hex attributes.
 
 Typed state stores one summary and one raw-byte output record per output. Summary/output identity includes the global cursor, effect ID, circuit-set ID, payload version, scan schema version, audit key ID/epoch/target, tx hash, and event type. Output state additionally includes commitment, ciphertext, view tag, leaf index, policy/mode, disclosure digests/targets/payloads, and optional self-view payload.
 
@@ -564,7 +563,7 @@ Typed scan state is validated by event type, not only by protobuf shape:
 | Deposit | one output; no nullifier/effect ID; audit ID/epoch/target are zero sentinels | exact deposit-note envelope in `encrypted_note`; empty `ciphertext`/view tag; every disclosure field is the zero sentinel |
 | Withdraw | one nullifier; zero outputs; no effect ID; zero audit sentinel | no output record; its summary is still returned by scan |
 | JoinSplit2x2 | exactly two nullifiers and outputs; no effect ID; audit ID/epoch are zero, audit target is a canonical point | exact transfer-note envelope and 2-byte view tag; change output uses exact zero disclosure sentinels; disclosed output follows the user/full rules below |
-| Batch V1 prototype/future event | `1..16` nullifiers, `1..32` outputs, non-zero 32-byte effect ID, canonical audit ID, positive epoch, canonical target point | exact transfer-note envelope and 2-byte view tag; every output follows the user/full rules below |
+| Batch V1 production event | `1..16` nullifiers, `1..32` outputs, non-zero 32-byte effect ID, canonical audit ID, positive epoch, canonical target point | exact transfer-note envelope and 2-byte view tag; every output follows the user/full rules below |
 
 For all-private user disclosure, mode is `NONE` and digest/target/payload are empty. For public disclosure, target is empty, `DisclosurePlaintextV1` must match output index/policy/commitment, and its digest is recomputed. For recipient-encrypted disclosure, target is a canonical point and the payload is an exact user-disclosure envelope. A disclosure-bearing output has a non-zero canonical full digest, exact audit envelope, and either an empty or exact self-view envelope. Every output commitment and leaf index must match commitment state, and summary/output identity and audit fields must be byte-for-byte equal.
 
@@ -574,11 +573,11 @@ Output keys for one `(height, global_sequence)` MUST form exactly the contiguous
 
 ### 8.1 Global commitment uniqueness
 
-The commitment index is global across Deposit, JoinSplit2x2, genesis, and future batch outputs. A commitment MUST be canonical, non-zero, and absent before proof/state execution. `AppendCommitment` repeats the check, records one immutable leaf index, and rejects a duplicate. Index lookup propagates store errors and rejects malformed stored indices instead of treating them as absent. Genesis also requires globally distinct commitments. Session 3A MUST perform local output duplicate checks and global index checks before proof verification, then append only after proof success.
+The commitment index is global across Deposit, JoinSplit2x2, BatchJoinSplit16x32, and genesis. A commitment MUST be canonical, non-zero, and absent before proof/state execution. `MsgBatchTransfer.ValidateBasic` rejects local duplicates; the keeper checks the global index before proof verification; and `AppendCommitment` repeats the check, records one immutable leaf index, and rejects a duplicate. Index lookup propagates store errors and rejects malformed stored indices instead of treating them as absent. Genesis also requires globally distinct commitments. Batch outputs are appended only after proof success.
 
 ### 8.2 Unified sequence and cursor
 
-Deposit, JoinSplit2x2, and future batch operations share one monotonically increasing global privacy sequence. The scan cursor is lexicographically ordered by:
+Deposit, JoinSplit2x2, and BatchJoinSplit16x32 operations share one monotonically increasing global privacy sequence. The scan cursor is lexicographically ordered by:
 
 ```text
 (height, global_sequence, output_index)
@@ -609,7 +608,7 @@ Genesis export/import preserves commitments and indices, historical roots and on
 
 ### 9.1 Consensus artifact identity
 
-Consensus stores, in fixed Deposit/Spend/JoinSplit order:
+Consensus stores, in fixed Deposit/Spend/JoinSplit/BatchJoinSplit16x32 order:
 
 ```text
 circuit_set_id
@@ -620,7 +619,17 @@ public_input_schema_sha256
 
 Validator readiness requires the complete local manifest identity to equal consensus and loads only the requested verifying keys. An environment checksum cannot override consensus, even in development. Prover readiness loads only requested R1CS/proving-key pairs and may use an explicit checksum override only in a development runtime. Production override is rejected. Files are SHA-256 checked, fully decoded with no trailing bytes, and verifying keys must round-trip canonically.
 
-The registry is injectable, thread-safe, lazy, and cached separately by circuit and artifact type. Batch schema identity is reserved but is not in `RequiredCircuitIDs` or the active artifact manifest until Session 3A produces a production circuit and artifacts.
+The registry is injectable, thread-safe, lazy, and cached separately by circuit and artifact type. `batch-joinsplit-16x32-v1` is the fourth entry in `RequiredCircuitIDs` and contributes three descriptors to the canonical 12-descriptor manifest. Validators load only requested VKs; provers load only selected R1CS/PK pairs.
+
+The Session 3A development identity was generated from source commit `381c984189e823e5797104eb7cd2beb2386eaf80` at `2026-07-11T09:32:32Z`. It is reproducibility evidence only:
+
+| Batch artifact | Size | SHA-256 |
+| --- | ---: | --- |
+| `privacy_batch_joinsplit_16x32_r1cs.bin` | `122,813,535 B` | `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210` |
+| `privacy_batch_joinsplit_16x32_pk.bin` | `209,218,621 B` | `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470` |
+| `privacy_batch_joinsplit_16x32_vk.bin` | `716 B` | `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621` |
+
+Generation peaked at `3,308,797,952 B` RSS. The opt-in role-readiness gate peaked at `1,295,482,880 B`, decoded only the batch VK for the validator role, only batch R1CS/PK for the prover role, and confirmed `1,111,837` constraints plus public-schema SHA-256 `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`. No generated binary is tracked.
 
 ### 9.2 Prover admission
 
@@ -650,13 +659,29 @@ batch_gas = verify_base
 
 All coefficients and all resource bounds MUST be positive. Usage must be within `1..16` inputs and `1..32` outputs; tree writes cannot be fewer than outputs, and global lookups cannot be fewer than inputs plus outputs. Multiplication and summation are checked for `uint64` overflow.
 
-The formula covers verification, canonical hashing/framing, leaf/index/node/root writes, nullifier and commitment lookups, and typed summary/output bytes. Session 3A must select conservative consensus coefficients and document which cost is covered by Cosmos KV gas versus the explicit surcharge without double charging or omission. Production coefficient calibration remains Session 4 work.
+Session 3A freezes these conservative V1 coefficients and bounds:
+
+| Component | V1 value |
+| --- | ---: |
+| verify base | `1,000,000` gas |
+| per input | `25,000` gas |
+| per output | `50,000` gas |
+| per canonical payload byte | `4` gas |
+| per typed state byte | `8` gas |
+| per tree node write | `5,000` gas |
+| per global lookup | `10,000` gas |
+| canonical payload bound | `65,384 B` |
+| typed state bound | `256 KiB` |
+| tree-write bound | `1,056` nodes |
+| global-lookup bound | `48` |
+
+The explicit surcharge pays for privacy-specific proof verification, canonical hashing/encoding, state-growth amplification, Merkle computation/bookkeeping, and global uniqueness checks. Cosmos KV gas still pays for the underlying store reads and writes; the coefficients do not replace it. Thus the two meters cover different layers even when one logical operation causes both computation and physical I/O. The exact category breakdown and precharge-before-semantics/out-of-gas behavior are regression-tested. A real `1/1` handler success and a max `16/32` post-proof transition record the explicit descriptor separately from every Cosmos KV descriptor, preventing either layer from silently absorbing or duplicating the other's responsibility. Production coefficient calibration remains Session 4 work.
 
 ## 10. Full-shape circuit feasibility result
 
-### 10.1 Prototype content
+### 10.1 Production circuit content
 
-The capacity prototype includes 16 independent depth-32 memberships, exact active prefixes, 16 nullifiers, active-only pairwise distinctness, one owner signature, 32 output commitments, 64-bit ranges and value conservation, all owner/output subgroup checks, 32 raw user-disclosure digests, 32 domain-separated user-value leaf hashes, 32 full-disclosure digests, four ordered vector trees, and the 12 public inputs.
+The production circuit retains the feasibility circuit exactly (the compatibility type is an alias): 16 independent depth-32 memberships, exact active prefixes, 16 nullifiers, active-only pairwise distinctness, one owner signature, 32 output commitments, 64-bit ranges and value conservation, all owner/output subgroup checks, 32 raw user-disclosure digests, 32 domain-separated user-value leaf hashes, 32 full-disclosure digests, four ordered vector trees, and the 12 public inputs.
 
 Dominant gadget counts include 48 active-prefix one-hot values, 48 amount range checks, 512 independent Merkle node hashes, 616 pairwise distinctness checks, 67 subgroup point checks, 48 note commitments, 16 active-input commitment non-zero checks, 16 nullifiers, 32 raw user-disclosure hashes, 32 user-value leaf hashes, 32 full-disclosure hashes, 96 blinding inequality checks, 112 generic vector leaves, 108 vector internal nodes, four vector roots, and one EdDSA verifier.
 
@@ -666,7 +691,7 @@ Final run generated at `2026-07-11T06:43:45Z` on Apple M5 Pro, 64 GiB RAM, macOS
 
 | Metric | Result |
 | --- | ---: |
-| constraints, corrected 16x32 prototype | `1,111,837` |
+| constraints, production 16x32 circuit | `1,111,837` |
 | constraints, current JoinSplit2x2 | `99,765` |
 | subgroup points measured | `67` |
 | on-curve/non-identity baseline | `335` constraints / `0.257 ms` compile |
@@ -712,85 +737,80 @@ The measured max shape used 16 nullifiers, 32 outputs, a maximum valid 64-byte a
 
 **Wire/state gate conclusion: PASS. Combined Gate 2 conclusion: PASS.** Session 3A may retain the 16/32 capacity and security constraints. The values are feasibility limits, not a license to omit per-message hard limits, explicit gas, or state-growth monitoring.
 
-## 12. Keeper order frozen for Session 3A
+## 12. Implemented keeper order
 
-A future production handler MUST execute in this order:
+The production handler executes in this order:
 
-1. structural and canonical validation;
-2. count, exact framing/length, and total-byte limits;
+1. cheap bounded count/length/message-size framing;
+2. fixed-size canonical proof framing;
 3. deterministic explicit gas precharge;
-4. exact root, key, and payload validation;
-5. audit-target validation;
-6. local duplicate nullifier/commitment rejection;
-7. global spent-nullifier and global commitment-uniqueness checks;
-8. historical-root and Merkle-capacity checks;
-9. aggregate-root and canonical payload-digest recomputation;
-10. chain-domain and expiry checks;
-11. proof/public-witness verification;
-12. nullifier writes;
-13. commitment appends;
-14. typed scan summary/output writes;
-15. one minimal ABCI summary event.
+4. full canonical field/point/envelope/disclosure validation and local duplicate rejection;
+5. exact chain audit ID/epoch/target match;
+6. global spent-nullifier and commitment-uniqueness checks;
+7. strict historical-root lookup and whole-batch Merkle-capacity check;
+8. aggregate roots, canonical payload limbs, chain domain, expiry, and all 12 public values derived from message/context;
+9. proof/public-witness verification;
+10. a nested cache writes nullifiers, commitments, root snapshots, typed scan summary/outputs, and the minimal event;
+11. the nested cache is committed only when every write succeeds.
 
 No batch state write may occur before proof success. The message is all-or-nothing.
 
 ## 13. Invariant traceability matrix
 
-`prototype` means the invariant exists in the full-shape feasibility circuit but not yet in a production batch handler. `Session 3A` means this document freezes the requirement while implementation remains intentionally out of scope.
-
-Current batch-specific test coverage is recorded exactly. `TestBatchJoinSplit16x32FeasibilityPublicInputOrder` assigns 12 distinct public values and verifies every witness index. `TestBatchJoinSplit16x32FeasibilityActivePrefixAndSentinels` checks disabled input randomness, a disabled output key, zero input count, duplicate active nullifiers, duplicate active commitments, value-conservation tampering, and all three blinding-reuse relations; tamper cases refresh aggregate roots and the owner signature so the intended constraint is reached. `TestBatchJoinSplit16x32ActiveInputCommitmentMustBeNonZero` isolates the active commitment rule. `TestBatchVectorRootV1RejectsNonCanonicalDisabledSlots` covers zero count, an active zero outer value, and a non-zero disabled value. `TestBatchUserDisclosureVectorRootV1IndependentGolden` covers the two-stage user leaf and disabled metadata; `TestBatchUserDisclosureV1RejectsNonZeroUnselectedFields` covers policy-selected fields; `TestBatchDisclosureV1BlindingPreventsDictionaryMatch` covers dictionary resistance; and `TestValidateAuditKeyIDV1BoundsAndCanonicalCharset` covers the audit ID grammar. `TestCanonicalBatchTransferPayloadV1IndependentGolden` independently reproduces the exact payload framing and SHA limbs, `TestBatchTransferPayloadDigestV1BindsEveryEffectClass` mutates ordered vectors and every effect class while confirming that only creator/proof replacement is invariant, and `TestBatchTransferWirePrototypeV1PublicDisclosureRecomputesDigest` binds public plaintext to its digest. `TestPrivacyScanV2RejectsCorruptExactOutputContracts` covers malformed envelopes, event-prefix orphans, invalid audit points, and invalid digests; `TestPrivacyScanV2AcceptsExactBatchPublicDisclosureContract` covers the valid batch typed-state shape. `TestNoteV1OneVectorAcrossDepositSpendJoinSplitBatchAndScanner` exercises one NoteV1 vector across all six named paths.
+Production coverage is explicit. `TestBatchJoinSplit16x32ProductionPositiveMatrix` covers `1/1`, `1/2`, `3/4`, `8/16`, `16/31`, `16/32`, mixed disclosure, and active zero-value padding. `TestBatchJoinSplit16x32ProductionNegativeMatrix` contains 59 negative cases spanning counts, disabled sentinels, paths, distinctness, owner/asset/key constraints, amount/conservation, aggregate roots, domains/limbs/expiry, signature, disclosure and blinding rules, and vector domain separation. `TestBatchPublicWitnessIsDerivedInFrozenOrder`, `TestBatchTransferDirectCoreIntegration`, `TestBatchTransferCoreRejectionsAndAtomicScanFailure`, and `TestCrossMessageNullifierFailureRollsBackWholeCosmosTxCache` cover the host/circuit boundary, real development proof, atomic state, and 2x2+Batch/Batch+Batch rollback. Scan/gas/genesis/readiness tests cover the remaining state and artifact contracts.
 
 | ID | Invariant | Circuit constraint | Native helper | Types/Keeper | SDK guard | Negative test | Public doc |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| NOTE-COMMITMENT | one domain-separated NoteV1 formula; active input commitment non-zero | Deposit/Spend/JoinSplit/prototype | `ComputeNoteCommitmentV1` | `Note.ComputeCommitment`, keeper tree inputs | fixed note decode/recompute | six-path vector test; `TestBatchJoinSplit16x32ActiveInputCommitmentMustBeNonZero` | §3.2, §4.3 |
-| NOTE-NULLIFIER | commitment-bound, domain-separated, non-zero | Spend/JoinSplit/prototype | `ComputeNoteNullifierV1` | `Note.ComputeNullifier` | scanner/witness recompute | `TestNoteV1OneVectorAcrossDepositSpendJoinSplitBatchAndScanner` and NoteV1 zero tests | §3.2 |
+| NOTE-COMMITMENT | one domain-separated NoteV1 formula; active input commitment non-zero | Deposit/Spend/JoinSplit/Batch | `ComputeNoteCommitmentV1` | `Note.ComputeCommitment`, keeper tree inputs | fixed note decode/recompute | six-path vector test; production negative matrix | §3.2, §4.3 |
+| NOTE-NULLIFIER | commitment-bound, domain-separated, non-zero | Spend/JoinSplit/Batch | `ComputeNoteNullifierV1` | `Note.ComputeNullifier` | scanner/witness recompute | six-path vector and production negative matrix | §3.2 |
 | NOTE-KEY-SUBGROUP | canonical, curve, non-identity, prime subgroup | `assertPrimeSubgroupPoint` in all relevant circuits | `DecodeCanonicalPoint`, `ValidatePrimeSubgroupPoint` | `Note.ValidateV1` | address/envelope decode | crypto decoder and circuit subgroup tests | §3.4 |
-| ACTIVE-PREFIX | slots are exactly `[0,count)` | `exactActivePrefix` (prototype) | vector count validation | count bounds | future batch builder | `TestBatchJoinSplit16x32FeasibilityActivePrefixAndSentinels`: disabled input randomness, disabled output key, input count zero | §4.3 |
-| INPUT-MEMBERSHIP | 16 independent depth-32 paths share one root | gated path loop (prototype) | NoteV1 tree helper | same-root path query | local/query path provider | keeper path-snapshot tests; no batch-circuit path-tamper negative test yet | §4.3, §8.3 |
-| NULLIFIER-DISTINCT | active input nullifiers pairwise differ | active-pair checks (prototype) | vector validation | current/future duplicate guard | future builder | `TestBatchJoinSplit16x32FeasibilityActivePrefixAndSentinels/duplicate_active_nullifier` | §4.3 |
-| COMMITMENT-DISTINCT | active outputs pairwise differ | active-pair checks (prototype) | vector validation | `HasCommitment`/`AppendCommitment` | current transfer builder | batch `duplicate_active_commitment` plus current Deposit/Transfer global-collision tests | §4.3, §8.1 |
-| VALUE-CONSERVATION | 64-bit active sums equal | range/sum constraints (prototype) | shielded amount validation | future handler relies on proof | future builder | `TestBatchJoinSplit16x32FeasibilityActivePrefixAndSentinels/value_conservation` | §4.3 |
-| OWNER-INTENT | one owner signs exact batch effect | one EdDSA verifier (prototype) | `ComputeBatchTransferIntentV1` | reserved public schema | future builder | no batch-circuit signature-tamper negative test yet | §4.2 |
-| CHAIN-EXPIRY | chain/circuit domain and expiry proof-bound | intent inputs, limb/range checks (prototype) | chain-domain and batch-intent helpers | future expiry check (Session 3A) | future builder | current-circuit replay tests; no batch-circuit replay negative test yet | §4.2 |
-| USER-DISCLOSURE | exact selected fields, asset, policy, and two-stage user value | 32 raw digest + 32 user-value constraints (prototype) | `ComputeBatchUserDisclosureDigestV1`, `ComputeBatchUserDisclosureVectorRootV1` | fixed plaintext validation | current disclosure builder/future batch | `TestBatchUserDisclosureVectorRootV1IndependentGolden`, `TestBatchUserDisclosureV1RejectsNonZeroUnselectedFields`, `TestBatchDisclosureV1BlindingPreventsDictionaryMatch` | §5.1–§5.2 |
-| FULL-DISCLOSURE | complete per-output evidence | 32 digest constraints (prototype) | `ComputeBatchFullDisclosureDigestV1` | fixed plaintext validation | audit/self-view builders | current native disclosure tests; no batch-circuit digest-tamper negative test yet | §5.3 |
-| PAYLOAD-BINDING | ciphertext/metadata substitution changes public limbs | public payload limbs and signed intent (prototype) | `CanonicalBatchTransferPayloadBytesV1`, `ComputeBatchTransferPayloadDigestV1` | exact prototype validator; Session 3A handler MUST reuse it | future builder | independent framing golden, every-effect mutation, public-plaintext recomputation | §4.2, §7.1 |
-| BATCH-EFFECT-ID | stable proof/relayer-independent ID | not required in-circuit | `ComputeBatchEffectIDV1` | future summary key/data | conformance helper | independent golden fixture | §7.2 |
-| ATOMIC-STATE | no writes before proof; one all-or-nothing effect | proof authorizes state | — | future handler (Session 3A) | result semantics | Session 3A required | §12 |
+| ACTIVE-PREFIX | slots are exactly `[0,count)` | `exactActivePrefix` | vector count validation | `MsgBatchTransfer` count bounds | Session 3B builder pending | production positive/negative matrices | §4.3 |
+| INPUT-MEMBERSHIP | 16 independent depth-32 paths share one root | gated path loop | NoteV1 tree helper | same-root path query | local/query path provider | `invalid_merkle_path`, non-boolean helper, same-root round-trip | §4.3, §8.3 |
+| NULLIFIER-DISTINCT | active input nullifiers pairwise differ | active-pair checks | vector validation | local/global duplicate guards | Session 3B builder pending | adjacent/non-adjacent duplicates; cross-message rollback | §4.3 |
+| COMMITMENT-DISTINCT | active outputs pairwise differ | active-pair checks | vector validation | `HasCommitment`/`AppendCommitment` | existing preflight patterns | circuit duplicate plus Deposit/2x2/Batch global collision tests | §4.3, §8.1 |
+| VALUE-CONSERVATION | 64-bit active sums equal | range/sum constraints | shielded amount validation | handler relies on verified proof | Session 3B builder pending | overflow and conservation negative cases | §4.3 |
+| OWNER-INTENT | one owner signs exact batch effect | one EdDSA verifier | `ComputeBatchTransferIntentV1` | frozen 12-value witness | Session 3B builder pending | invalid signature and intent mutation cases; direct proof | §4.2 |
+| CHAIN-EXPIRY | chain/circuit domain and expiry proof-bound | intent inputs, limb/range checks | chain-domain and batch-intent helpers | context domain and host expiry rejection | Session 3B builder pending | domain/limb/expiry matrix and wrong-chain/expired core cases | §4.2 |
+| USER-DISCLOSURE | exact selected fields, asset, policy, and two-stage user value | 32 raw digest + 32 user-value constraints | `ComputeBatchUserDisclosureDigestV1`, `ComputeBatchUserDisclosureVectorRootV1` | fixed plaintext validation | Session 3B builder pending | golden/helper tests and production disclosure-root/blinding negative cases | §5.1–§5.2 |
+| FULL-DISCLOSURE | complete per-output evidence | 32 digest constraints | `ComputeBatchFullDisclosureDigestV1` | fixed plaintext validation | audit/self-view builders | production full-root/digest/blinding negative cases | §5.3 |
+| PAYLOAD-BINDING | ciphertext/metadata substitution changes public limbs | public payload limbs and signed intent | canonical production message helpers | keeper reuses exact encoder | Session 3B builder pending | independent golden/effect mutations; wrong-payload core rejection | §4.2, §7.1 |
+| BATCH-EFFECT-ID | stable proof/relayer-independent ID | not required in-circuit | `ComputeBatchEffectIDV1` | typed/minimal summary | conformance helper | independent golden and creator/proof/order regression | §7.2 |
+| ATOMIC-STATE | no writes before proof; one all-or-nothing effect | proof authorizes state | — | nested keeper cache | result semantics | proof/scan failure and cross-message full rollback tests | §12 |
 | SCAN-CURSOR | summary-driven lossless resume and exact event-prefixed records | — | cursor comparison | `PrivacyScan`, typed state | scanner cursor | cursor/zero-output tests; `TestPrivacyScanV2RejectsCorruptExactOutputContracts` | §7.4, §8.2 |
 | RESOURCE-BOUND | CPU, bytes, state and queue are bounded | fixed capacities | `ComputeBatchGasV1` | formula/bounds | admission/body limit | gas overflow/bound and admission tests | §9.2–§9.3 |
-| GLOBAL-COMMITMENT-UNIQUE | one commitment has one global leaf index | active distinctness (prototype) | canonical field validation | commitment index/append | current builders preflight | Deposit/Transfer collision tests | §8.1 |
+| GLOBAL-COMMITMENT-UNIQUE | one commitment has one global leaf index | active distinctness | canonical field validation | commitment index/append | existing preflight patterns | Deposit/2x2/Batch/genesis collision tests | §8.1 |
 | ASSET-REGISTRY | denom/ID is authoritative 1:1 state | one asset field | `ComputeAssetIDV1` | `AssetRegistryV1` queries/state | registry lookup | collision/re-registration/corruption tests | §3.3 |
-| DISCLOSURE-BLINDING | fresh non-zero and pairwise non-reused user/full/note secrets | 96 reuse inequalities plus per-output non-zero checks (prototype) | disclosure digest helpers | fixed plaintext carries blinding | CSPRNG builder | three blinding-reuse subtests; `TestBatchDisclosureV1BlindingPreventsDictionaryMatch` | §5 |
-| AUDIT-IDENTITY | bounded canonical ID, positive epoch, canonical target point | payload-bound by future digest/intent | `ValidateAuditKeyIDV1`, canonical point decoder | typed summary/output exact match | future batch builder | audit ID charset test; exact scan accept/reject tests | §7.1, §7.4 |
-| GLOBAL-SCAN-SEQUENCE | all privacy effects share one sequence | — | allocation helper | global sequence/index | cursor consumer | sequence reuse/genesis tests | §8.2 |
-| ARTIFACT-CONSENSUS-IDENTITY | local artifact identity equals consensus | public schema is frozen | schema/manifest digest helpers | genesis circuit identity | role-aware registry | mismatch/override/readiness tests | §9.1 |
+| DISCLOSURE-BLINDING | fresh non-zero and pairwise non-reused user/full/note secrets | 96 reuse inequalities plus per-output non-zero checks | disclosure digest helpers | fixed plaintext carries blinding | CSPRNG builder | production reuse/zero negative cases; dictionary-resistance helper test | §5 |
+| AUDIT-IDENTITY | bounded canonical ID, positive epoch, canonical target point | payload-bound by digest/intent | `ValidateAuditKeyIDV1`, canonical point decoder | exact chain config and typed records | Session 3B builder pending | partial-state fail closed and ID/epoch/target mismatch tests | §7.1, §7.4 |
+| GLOBAL-SCAN-SEQUENCE | all privacy effects share one sequence | — | allocation helper | global sequence/index | cursor consumer | Deposit/2x2/Batch and genesis continuity tests | §8.2 |
+| ARTIFACT-CONSENSUS-IDENTITY | local artifact identity equals consensus | public schema is frozen | schema/manifest digest helpers | genesis circuit identity | role-aware registry | mismatch/override tests and development artifact gate | §9.1 |
 
 ## 14. Residual risks and explicit non-goals
 
-- The batch circuit and message are prototypes. A production audit, formal trusted setup, and Session 3A/3B implementation remain outstanding.
-- Development setup artifacts are not production trust anchors. The measured proving key and R1CS are not registered artifacts.
+- The Session 3A circuit, message, keeper, scan state, and artifact descriptors are implemented. A production audit, formal trusted setup, production artifact distribution, and Session 3B client/product integration remain outstanding.
+- Development setup artifacts are not production trust anchors and are never committed. Their recorded checksums identify only this Gate 3A run.
 - Peak RSS is exactly `3,339,862,016 B` (about 3.11 GiB) on the final reference run. Lazy loading bounds unnecessary artifact residence but does not provide process-level hard isolation.
 - A client cancellation cannot stop gnark proving. Production process isolation, worker recycling, memory limits, and overload operations remain required.
 - Ciphertext decryptability is not proven. Auditor-key compromise, key-epoch rotation, and manual review of failed delivery remain operational risks.
 - Public input/output counts, timing, roots, batch grouping, and the minimal summary remain public metadata.
 - A remote prover sees the complete witness/payment batch; deployment must treat it as highly sensitive and keep automatic failover disabled.
 - Every normal append persists authoritative root/count/height metadata, but not historical internal nodes. Current-root paths use incremental nodes. The public non-current historical query admits at most 1,024 leaves and two concurrent rebuilds per keeper, then returns `ResourceExhausted`; larger online requests require the current root or a trusted local historical index. Offline recovery/export retains the separate `MaxMerkleRebuildLeaves` (1,048,576) bound, and large-tree export requires the complete persisted metadata index.
-- Current Deposit and JoinSplit2x2 still retain their existing event compatibility behavior. The minimal-event rule is mandatory for the future batch path and is not a claim that every legacy event was redesigned in Session 2.
-- Concrete production gas coefficients, per-chain governance limits, new-asset registration governance, and long-run state-pruning policy are deferred, but no represented work category may be left unmetered.
+- Current Deposit and JoinSplit2x2 still retain their existing event compatibility behavior. The production batch path alone uses the minimal-event rule; this is not a claim that every legacy event was redesigned.
+- Session 3A supplies conservative gas coefficients. Per-chain calibration/governance limits, new-asset registration governance, and long-run state-pruning policy remain deferred, but no represented work category is unmetered.
 
-There are no unresolved Critical or High Session 2 design findings. Gate 2 passed with the corrected full-shape resource measurement. The items above are residual implementation and operational risks, not permission to weaken the frozen security constraints or reduce the 16/32 capacity silently.
+There are no unresolved Critical or High Session 2 design findings, and Session 3A made no decision change to the frozen protocol. The items above are residual operational/release risks, not permission to weaken the security constraints or reduce the 16/32 capacity silently.
 
 ## 15. Authoritative code and fixtures
 
 - Note/domain/tree helpers: `x/privacy/types/note_v1.go`
 - Batch statement/vector/disclosure/effect helpers: `x/privacy/types/batch_contract.go`; exact effect encoding/digest: `x/privacy/types/batch_payload.go`
 - Fixed payloads: `x/privacy/types/fixed_payload.go`
-- Feasibility circuit/report: `x/privacy/circuit/batch_joinsplit_16x32_feasibility.go` and `_test.go`
-- Wire prototype/measurement: `proto/clairveil/privacy/v1/batch_feasibility.proto` and `x/privacy/types/batch_wire_feasibility_test.go`
-- Asset registry, scan, and path snapshot: `x/privacy/keeper/asset_registry.go`, `privacy_scan.go`, `path_snapshot.go`
-- Artifact registry and gas model: `x/privacy/zk/registry.go`, `identity.go`, `schema.go`, `resource_model.go`
+- Production circuit/matrix: `x/privacy/circuit/batch_joinsplit_16x32.go`, `batch_joinsplit_16x32_test.go`; feasibility resource gate remains in `batch_joinsplit_16x32_feasibility_test.go`
+- Production message/canonical effect: `proto/clairveil/privacy/v1/tx.proto`, `x/privacy/types/batch_payload.go`; wire measurement mirror: `batch_feasibility.proto`
+- Keeper/gas/scan/core integration: `x/privacy/keeper/msg_server_batch_transfer.go`, `batch_gas.go`, `batch_scan_index.go`, `batch_transfer_core_integration_test.go`
+- Asset registry, common scan, and path snapshot: `x/privacy/keeper/asset_registry.go`, `privacy_scan.go`, `path_snapshot.go`
+- Artifact registry/readiness: `x/privacy/zk/registry.go`, `identity.go`, `schema.go`, `resource_model.go`, `development_artifact_gate_test.go`
 - Prover admission: `x/privacy/client/sdk/proverservice/admission.go`
 - Independent fixtures: `x/privacy/client/sdk/conformance/testdata/privacy_note_v1_contract.json` and `privacy_batch_joinsplit_v1_contract.json`
 
-If this document and implementation disagree, integration MUST stop and the discrepancy MUST be resolved before Session 3A changes protocol code.
+If this document and implementation disagree, integration MUST stop. Any change to the frozen protocol requires an explicit decision-change proposal covering soundness, public inputs/goldens, downstream APIs, and resource impact.

@@ -22,8 +22,9 @@ Production-like node는 최소 아래를 만족해야 합니다.
 1. genesis에 audit master pubkey가 설정되어야 합니다.
 2. ZK artifact preflight는 `strict`로 운영해야 합니다.
 3. privacy module account가 bank module account로 올바르게 등록되어야 합니다.
-4. `tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `nullifier/{nullifier}`, batch `nullifiers` query가 노출되어야 합니다.
+4. `tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, batch `nullifiers` query가 노출되어야 합니다.
 5. snapshot/restore rehearsal을 release 전 수행해야 합니다.
+6. `Msg/BatchTransfer`는 four-circuit `privacy-note-v1` consensus identity와 일치하는 local batch VK가 있을 때만 활성화해야 합니다.
 
 Reference local start 예:
 
@@ -41,6 +42,10 @@ clairveild start --minimum-gas-prices 0uclair
 ```bash
 clairveil-setup --out artifacts/privacy
 ```
+
+`privacy-note-v1`은 `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1` exact order의 descriptor를 요구합니다. Validator는 consensus identity를 검사하고 네 VK만 load하며 prover-role readiness는 선택한 R1CS/PK pair를 lazy load합니다. 기록된 Session 3A development batch artifact에서 R1CS는 `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK는 `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK는 `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`입니다. Generation peak RSS는 `3,308,797,952 B`, role readiness peak RSS는 `1,295,482,880 B`였습니다.
+
+이는 development identity일 뿐입니다. Formal trusted setup, artifact signing, reproducible production generation, custody, distribution은 downstream release 책임입니다.
 
 Production에서는 아래 정책이 필요합니다.
 
@@ -64,7 +69,8 @@ Production에서는 아래 정책이 필요합니다.
 | tx       | leaf 변화 |
 | -------- | --------- |
 | deposit  | +1        |
-| transfer | +2        |
+| native 2x2 transfer | +2        |
+| batch transfer | +1..32 |
 | withdraw | +0        |
 
 운영자가 봐야 할 값:
@@ -89,6 +95,8 @@ Snapshot/restore/migration 후에는 [clairveil-merkle-restore-sop-kr.md](clairv
 ## 5. Prover 운영
 
 `clairveil-proverd`는 private seed를 직접 받지는 않지만 prepared proof payload를 받습니다. 이 payload에는 amount, note randomness, Merkle path, nullifier, shielded public key, disclosure metadata가 포함될 수 있습니다.
+
+Reference prover는 아직 BatchJoinSplit16x32 HTTP route를 제공하지 않습니다. `MsgBatchTransfer` witness를 generic 또는 기존 JoinSplit endpoint로 보내면 안 됩니다. Reviewed batch route, public Go SDK, wallet UX는 Session 3B 범위입니다.
 
 Remote prover는 privacy-sensitive trusted component입니다.
 
@@ -139,7 +147,8 @@ Production wallet은 아래를 결정해야 합니다.
 
 권장 metric:
 
-- tx count by type: deposit/transfer/withdraw
+- tx count by type: deposit/native-transfer/batch-transfer/withdraw
+- batch input/output count, deterministic precharge, out-of-gas rejection, atomic rollback error
 - transfer disclosure mode distribution
 - proof generation latency
 - prover error rate
@@ -183,6 +192,7 @@ Release note에는 최소 아래를 포함합니다.
 - accepted vulnerability
 - downstream action required
 - artifact checksum/provenance policy
+- circuit-set/public-witness/gas/scan-schema version 영향(`privacy-note-v1`, `BatchGasModelV1`, `privacy-sequence-v1`, `privacy-scan-v2`)
 
 ## 10. Incident 대응 기준
 
@@ -207,3 +217,5 @@ Clairveil core를 downstream mainnet에 붙이기 전 최소 gate:
 6. snapshot/restore rehearsal과 Merkle path sample 검증이 끝났습니다.
 7. 지원 denom별 deposit/withdraw e2e 이후 `reserve/{denom}`이 `invariant_holds=true`를 반환합니다.
 8. chain-specific threat model이 작성되어 있습니다.
+9. Release commit 기준 `TestBatchTransferDirectCoreIntegration`, atomic scan-failure test, cross-message 2x2+batch/batch+batch rollback test가 통과합니다.
+10. Public batch SDK, remote batch prover route, wallet scanner/decrypt UX, one-proof payroll integration, batch CLI/tutorial은 Session 3B 전까지 제공되지 않고 formal setup/production artifact release도 별도 gate임을 release에 명시합니다.

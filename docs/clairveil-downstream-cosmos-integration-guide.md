@@ -12,6 +12,7 @@ The recommended model separates responsibilities as follows.
 - The downstream chain imports `x/privacy` and wires it into its own `app.go`, genesis, CLI/API, and testnet configuration.
 - EVM, policy modules, precompiles, fee policy, and permission policy are implemented by the downstream chain.
 - The Clairveil reference daemon `clairveild` is a host for verifying that the module can run end-to-end by itself. It does not replace the downstream app.
+- Session 3A supplies the production `MsgBatchTransfer` chain core and fourth circuit, but not the public batch Go SDK, remote prover route, wallet/payroll UX, or batch CLI/tutorial. Those Session 3B surfaces must not be inferred from the proto alone.
 
 ## 2. Go Module Dependency
 
@@ -60,6 +61,7 @@ The Msg service provides:
 /clairveil.privacy.v1.Msg/Deposit
 /clairveil.privacy.v1.Msg/Transfer
 /clairveil.privacy.v1.Msg/Withdraw
+/clairveil.privacy.v1.Msg/BatchTransfer
 ```
 
 The Query service provides these HTTP gateway paths.
@@ -77,17 +79,25 @@ GET /clairveil/privacy/v1/circuit_config
 GET /clairveil/privacy/v1/reserve/{denom}
 GET /clairveil/privacy/v1/nullifiers
 POST /clairveil/privacy/v1/nullifiers
+GET /clairveil/privacy/v1/assets/by_denom/{canonical_denom}
+GET /clairveil/privacy/v1/assets/by_id/{asset_id_hex}
+POST /clairveil/privacy/v1/privacy_scan
+POST /clairveil/privacy/v1/commitment_paths_at_root
 ```
 
 If the downstream repo has its own proto generation pipeline, include `proto/clairveil/privacy/v1/*.proto` and update generated output in the same commit so stale generated files do not remain.
 
 `scan_events` uses a `(height, sequence)` cursor. Its `limit` bounds the scan cursor page budget, so filtered pages can return `events=[]` with `has_more=true`. Wallet clients must advance to `next_height` and `next_sequence` and continue instead of treating an empty page as scan completion.
 
+`privacy_scan` is the typed state projection for Deposit, native 2x2 JoinSplit, BatchJoinSplit16x32, and zero-output withdraw summaries. It uses the lexicographic cursor `(height, global_sequence, output_index)`, `privacy-sequence-v1`, and `privacy-scan-v2`. `commitment_paths_at_root` returns at most 16 paths from one exact root/height snapshot; remote use can reveal input linkage to the query provider.
+
 Downstream web and mobile clients should use the POST JSON body binding for batch `nullifiers` checks, chunking requests at 1000 nullifiers. GET is retained for small compatibility calls, but large nullifier batches are likely to exceed common URL length limits.
 
 `MsgWithdraw` does not contain output note fields. Downstream clients upgrading from older generated bindings must drop legacy `new_note_commitment` and `encrypted_note` withdraw values instead of sending dummy output-note bytes.
 
 `MsgTransfer` contains two encrypted output notes and two 2-byte `view_tags`. The tags are untrusted local-scan hints, not server-filterable ownership tags. Safe default wallet sync must full-decrypt on a tag mismatch unless the product explicitly enables a fast mode with recovery/rescan support. Downstream EVM precompiles, bindings, and generated clients must keep `new_commitments`, `cipher_texts`, and `view_tags` aligned by output index.
+
+`MsgBatchTransfer` contains one proof, one historical root, 1..16 ordered nullifiers, 1..32 structured `BatchTransferOutput` values, exact audit key ID/epoch/target, and expiry. Counts come only from repeated-field lengths. The keeper re-derives the frozen 12 public values, precharges `BatchGasModelV1`, verifies the batch VK, and atomically writes nullifiers, globally unique commitments, root snapshot, typed scan state, and a minimal event. The public-input schema SHA-256 is `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`.
 
 ## 4. App Wiring Checklist
 
@@ -275,6 +285,8 @@ go run ./cmd/clairveil-setup \
 source /path/to/zk_artifacts/privacy_zk_checksums.env
 ```
 
+The required `privacy-note-v1` order is `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`. Validators load the four required VKs only after exact consensus identity comparison; provers lazily load selected R1CS/PK pairs. The recorded development batch artifacts are R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, and VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`. These are development identities, not production-distribution or formal-setup artifacts.
+
 Recommended modes:
 
 - `strict`: Use in CI, release candidates, and production-like nodes. Missing artifacts or checksum mismatch are blocked before start.
@@ -305,13 +317,15 @@ tx privacy prepare-withdraw
 tx privacy relay-withdraw
 ```
 
+There is no user-facing `MsgBatchTransfer` CLI in Session 3A. Any existing `transfer-batch`/payroll command is a separate multi-message workflow and must not be documented or wired as the one-proof batch message. Likewise, `clairveil-proverd` has no batch HTTP route yet.
+
 The query CLI currently exposed directly is:
 
 ```text
 query privacy check-nullifier
 ```
 
-`tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `nullifier/{nullifier}`, and `nullifiers` are available through gRPC/HTTP gateway queries. If the downstream chain needs an operator CLI, add separate CLI wrappers for those queries.
+`tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, and `nullifiers` are available through gRPC/HTTP gateway queries. If the downstream chain needs an operator CLI, add separate CLI wrappers for those queries.
 
 ## 9. Downstream Test Order
 
@@ -322,11 +336,12 @@ Do not mix everything with target-chain-specific features from the start. Bring 
 3. Confirm the downstream node can `init`, add genesis accounts, gentx, collect-gentxs, and `start`.
 4. Add the audit master pubkey to genesis, then check that gRPC/HTTP gateway `audit_config` returns it after the first block.
 5. Verify `show-address`, `deposit`, and `list-notes` first through the downstream CLI.
-6. Verify `tree_state`, `events`, `scan_events`, `merkle_path`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `nullifier/{nullifier}`, and `nullifiers` through gRPC/HTTP gateway.
+6. Verify `tree_state`, `events`, `scan_events`, `merkle_path`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, and `nullifiers` through gRPC/HTTP gateway.
 7. Verify user disclosure and audit disclosure through `transfer` and `decode-transfer-disclosure`.
 8. Verify direct and relayed withdraw with `withdraw`, `prepare-withdraw`, and `relay-withdraw`.
 9. Add EVM/policy/precompile integration e2e last.
 10. Make the web wallet or JS SDK verify local note storage encryption, remote prover timeout/auth, and disclosure verification in its own tests.
+11. Run `TestBatchTransferDirectCoreIntegration`, `TestBatchTransferCoreRejectionsAndAtomicScanFailure`, and `TestCrossMessageNullifierFailureRollsBackWholeCosmosTxCache` before writing any downstream `MsgBatchTransfer` adapter.
 
 ## 10. Common Breakage Points
 
@@ -339,6 +354,7 @@ Do not mix everything with target-chain-specific features from the start. Bring 
 - If module account permissions or blocked-address policy are wrong, deposit/withdraw bank transfers fail.
 - If direct bank sends or manual top-ups do not match recorded deposit/withdraw accounting, `reserve/{denom}` returns `invariant_holds=false`.
 - If the downstream denom changes, tutorial, smoke script, JS SDK fixtures, and conformance vectors must change together.
+- If genesis/state still pins only three circuit descriptors, or local artifacts omit the batch VK, startup/readiness must fail; do not bypass identity checks to make `MsgBatchTransfer` available.
 
 ## 11. Completion Criteria
 
@@ -347,7 +363,9 @@ Downstream integration is first-pass complete when all of the following pass.
 - The downstream daemon builds with privacy store, keeper, module, query gateway, and tx command included.
 - Privacy state and audit master pubkey are present in genesis.
 - A local single-node chain passes deposit, transfer, disclosure decode, and withdraw.
-- `tree_state`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `nullifier/{nullifier}`, and `nullifiers` queries respond correctly.
+- `tree_state`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, and `nullifiers` queries respond correctly.
+- The four-circuit identity, batch development artifact readiness, direct core integration, deterministic gas, atomic rollback, and typed scan/minimal-event tests pass.
+- The integration record explicitly states that public batch SDK/prover/wallet/payroll/CLI surfaces and formal production artifacts are not supplied by Session 3A.
 - Audit master private key custody policy is reflected in production operations docs.
 - Wallet storage encryption and remote prover privacy policy are reflected in JS/TS SDK or web wallet design docs.
 - Downstream-specific EVM/policy/precompile integration is separated into separate tests.

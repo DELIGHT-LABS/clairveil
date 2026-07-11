@@ -89,7 +89,7 @@ flowchart LR
 ## 7. Residual Risk
 
 - Groth16 artifact provenance and trusted setup ceremony are outside this repo's current security boundary. Downstream production should define artifact release, signing, reproducibility, and audit process.
-- Session 1 artifact는 development 전용이며 formal trusted setup이나 external audit를 수행하지 않았습니다.
+- BatchJoinSplit16x32를 포함해 repo가 생성하는 artifact는 development 전용이며 formal trusted setup, production artifact release, external audit를 수행하지 않았습니다.
 - `clairveil-proverd` is a reference service. Remote production deployment still needs TLS termination, mandatory authentication, rate limits, abuse monitoring, and secret management.
 - Local wallet files and prepared payloads are plaintext JSON with restrictive file permissions. This is acceptable for reference CLI/development, but production wallets should encrypt at rest.
 - Health/readiness routes expose service metadata. This is low sensitivity for local samples, but remote deployments should keep them private or behind authenticated internal networks.
@@ -109,16 +109,20 @@ Before a downstream project treats Clairveil as production-ready, it should at m
 8. Add chain-specific threat model for EVM, policy module, precompile, relayer, and frontend integrations.
 9. 사용자가 같은 private witness를 추가 endpoint에 보내는 것을 명시적으로 수락하지 않는 한 prover failover를 비활성화합니다.
 
-## 9. Session 2 Foundation Threat Delta
+## 9. NoteV1과 Session 3A core threat delta
 
-Session 2는 active identity를 `privacy-note-v1`, canonical payload contract를 `privacy-fixed-v1`로 변경합니다. 이전 state, raw ciphertext, JSON note/disclosure plaintext, artifact, proof job, wallet cache는 의도적으로 호환되지 않습니다. 재사용하면 cross-version alias와 stale-root risk가 생기므로 지원하는 전환 방식은 fresh genesis, artifact/cache 삭제, full rescan입니다.
+Active identity는 required descriptor `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`을 가진 `privacy-note-v1`이고 canonical payload contract는 `privacy-fixed-v1`입니다. 이전 state, raw ciphertext, JSON note/disclosure plaintext, three-circuit artifact, proof job, wallet cache는 의도적으로 호환되지 않습니다. 재사용하면 cross-version alias와 stale-root risk가 생기므로 지원하는 전환 방식은 fresh genesis, artifact/cache 삭제, full rescan입니다.
 
 새롭거나 더 명확해진 trust-boundary threat는 아래와 같습니다.
 
 - `AssetRegistryV1`이 one-to-one denom/32-byte asset-ID mapping의 consensus-authoritative source입니다. Missing, collision, corrupt reverse entry에서는 fail closed해야 하며 client가 untrusted note byte에서 display denom을 만들면 안 됩니다.
 - Unified scan order는 `(height, global_sequence, output_index)`입니다. Partial cursor persistence는 output을 skip 또는 duplicate할 수 있고 다른 root의 path를 사용하면 witness가 invalid합니다. Current-root path는 persisted incremental node만 읽으므로 online historical-rebuild budget을 소비하지 않습니다. Cached current root가 없으면 `FailedPrecondition`으로 fail closed하고 offline repair를 요구하며 query는 cached tree state를 rebuild하거나 쓰지 않습니다. Non-current historical path는 persisted root/count/height metadata를 요구하며 public query는 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하고 그 이상은 `ResourceExhausted`를 반환합니다. Online bound를 넘으면 current root 또는 trusted local historical index를 사용합니다. 별도 offline recovery/export bound는 `MaxMerkleRebuildLeaves`(1,048,576)입니다. Remote historical root/path request는 provider에게 wallet timing과 state interest를 노출하므로 privacy warning을 유지합니다.
-- Future `BatchJoinSplit16x32`의 12-input schema와 16/32 shape는 feasibility 목적으로만 동결되었습니다. Prototype protobuf/circuit을 live message, verifier artifact, prover route, payroll flow로 취급하면 아직 없는 production review와 consensus integration을 우회하게 됩니다.
+- `BatchJoinSplit16x32`, `MsgBatchTransfer`, keeper handler는 live chain-core contract입니다. Circuit은 exact active prefix/sentinel, independent path, owner/key constraint, active-only distinctness, conservation, disclosure root, single owner signature를 enforce합니다. Keeper는 12개 public field를 다시 derive하고 global nullifier/commitment uniqueness, historical root, capacity를 검사하며 mismatch에서 fail closed합니다.
+- Ante chain은 작은 message로 decode되는 duplicate-singular-field encoding까지 포함해 signed batch `Any.value`를 128 KiB로 제한합니다. 그 뒤 cheap bounded message/proof framing과 deterministic `BatchGasModelV1` precharge를 수행하고 semantic validation, artifact load, proof verification은 charge 이후에만 실행합니다. State write는 proof 성공 뒤 하나의 nested cache-context write로 commit하므로 injected scan failure와 2x2+batch/batch+batch nullifier conflict는 effect 전체를 rollback합니다.
+- Batch ciphertext/disclosure byte는 `PrivacyScanOutputV2`에 한 번만 저장합니다. Minimal ABCI/indexed event는 payload를 중복하지 않고 effect ID, count, root, expiry, version, relayer, audit identity만 노출합니다. Corrupt/orphan/non-adjacent/version-mismatched typed record는 fail closed합니다.
 - Role-aware loader는 불필요한 key 노출을 줄이지만 exact consensus identity는 계속 mandatory입니다. Reference admission bound는 circuit별 in-flight 1개와 queued 4개, positive 8 MiB body limit이며 0은 invalid입니다. Raw transport handler를 mount하면 이 expected service boundary를 우회합니다.
 - Private witness disclosure는 operator가 늘 때 누적되므로 automatic prover failover를 끕니다. Client cancellation은 이미 실행 중인 in-process solver를 preempt하지 못해 admission과 memory가 계속 점유될 수 있습니다. Hard termination과 OOM containment에는 reference service 밖의 process isolation, limit, supervision이 필요합니다.
 
-Reserve된 future public-input 순서는 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`입니다. 이후 production design에서 바꾸려면 새 identity/schema와 security review가 필요합니다.
+Live public-input 순서는 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`이고 schema SHA-256은 `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`입니다. 변경하려면 새 identity/schema와 security review가 필요합니다.
+
+Session 3B는 이 boundary 밖입니다. Public batch Go SDK, remote batch prover route, wallet scanner/decrypt UX, one-proof payroll integration, batch CLI/tutorial은 없습니다. Formal setup과 production artifact custody/distribution도 없습니다. 이 interface를 ad hoc하게 노출하면 필요한 review 없이 private-witness/compatibility boundary를 넓히게 됩니다.
