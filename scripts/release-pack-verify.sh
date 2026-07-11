@@ -37,6 +37,16 @@ validate_release_path() {
 	esac
 }
 
+release_file_mode() {
+	python3 - "$1" <<'PY'
+import os
+import stat
+import sys
+
+print(f"{stat.S_IMODE(os.stat(sys.argv[1]).st_mode):04o}")
+PY
+}
+
 if [[ -z "${RELEASE_PACK_ARCHIVE:-}" ]]; then
 	"$repo_root/scripts/release-pack.sh" >/dev/null
 elif [[ ! -f "$archive_path" || ! -f "$checksum_path" ]]; then
@@ -319,7 +329,8 @@ expected_sums="$work_dir/expected-SHA256SUMS.txt"
 	done
 ) >"$expected_sums"
 cmp -s "$expected_sums" "$pack_root/SHA256SUMS.txt" || fail "SHA256SUMS.txt is not canonical and complete"
-[[ ! -x "$pack_root/RELEASE-MANIFEST.txt" && ! -x "$pack_root/SHA256SUMS.txt" ]] || fail "generated release metadata must not be executable"
+[[ "$(release_file_mode "$pack_root/RELEASE-MANIFEST.txt")" == "0644" ]] || fail "RELEASE-MANIFEST.txt must have mode 0644"
+[[ "$(release_file_mode "$pack_root/SHA256SUMS.txt")" == "0644" ]] || fail "SHA256SUMS.txt must have mode 0644"
 
 selected_paths_file="$work_dir/release-pack-paths.txt"
 git -C "$repo_root" show "${manifest_commit}:scripts/release-pack-paths.txt" >"$selected_paths_file" || fail "release path manifest is missing from manifest commit"
@@ -364,15 +375,17 @@ while IFS= read -r -d '' packed_file; do
 	git_mode="${git_entry%% *}"
 	case "$git_mode" in
 	100644)
-		[[ ! -x "$packed_file" ]] || fail "archive file executable bit differs from manifest commit: $relative_path"
+		expected_mode="0644"
 		;;
 	100755)
-		[[ -x "$packed_file" ]] || fail "archive file executable bit differs from manifest commit: $relative_path"
+		expected_mode="0755"
 		;;
 	*)
 		fail "unsupported Git file mode in release pack: $relative_path ($git_mode)"
 		;;
 	esac
+	actual_mode="$(release_file_mode "$packed_file")"
+	[[ "$actual_mode" == "$expected_mode" ]] || fail "archive file mode differs from manifest commit: $relative_path (expected $expected_mode, got $actual_mode)"
 done < <(find "$pack_root" -type f -print0)
 
 echo "release pack verified: $archive_path"
