@@ -11,6 +11,8 @@ import (
 )
 
 const (
+	BatchGasPrechargeDescriptorV1 = "privacy batch transfer deterministic precharge v1"
+
 	BatchVerifyBaseGasV1              uint64 = 1_000_000
 	BatchPerInputGasV1                uint64 = 25_000
 	BatchPerOutputGasV1               uint64 = 50_000
@@ -74,7 +76,7 @@ func consumeBatchGasPrechargeV1(ctx sdk.Context, msg *types.MsgBatchTransfer) (z
 	if err != nil {
 		return zk.BatchGasBreakdownV1{}, err
 	}
-	ctx.GasMeter().ConsumeGas(breakdown.Total, "privacy batch transfer deterministic precharge v1")
+	ctx.GasMeter().ConsumeGas(breakdown.Total, BatchGasPrechargeDescriptorV1)
 	return breakdown, nil
 }
 

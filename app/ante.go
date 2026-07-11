@@ -21,6 +21,7 @@ func NewAnteHandler(options ante.HandlerOptions) (sdk.AnteHandler, error) {
 
 	return sdk.ChainAnteDecorators(
 		ante.NewSetUpContextDecorator(),
+		BatchTransferRawFramingDecorator{},
 		ante.NewExtensionOptionsDecorator(options.ExtensionOptionChecker),
 		ante.NewValidateBasicDecorator(),
 		ante.NewTxTimeoutHeightDecorator(),

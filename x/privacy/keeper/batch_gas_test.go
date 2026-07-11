@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
+	privacyzk "github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
 )
 
 func TestBatchGasPrechargeV1MetersEveryFrozenCategory(t *testing.T) {
@@ -67,6 +68,87 @@ func TestBatchTransferOutOfGasStopsBeforeStateOrSemanticWork(t *testing.T) {
 	sequence, err := k.GetPrivacyGlobalSequence(queryCtx)
 	require.NoError(t, err)
 	require.Zero(t, sequence)
+}
+
+func TestBatchGasLayersRemainSeparateForMaxStateTransition(t *testing.T) {
+	k, ctx, _ := setupRegisteredMsgServerKeeper(t)
+	ctx = ctx.WithBlockHeight(79).WithTxBytes([]byte("max-batch-gas-layer-accounting"))
+	msg := testMaxBatchTransferMessage(t)
+	meter := newRecordingGasMeter()
+	ctx = ctx.WithGasMeter(meter)
+
+	breakdown, err := consumeBatchGasPrechargeV1(ctx, msg)
+	require.NoError(t, err)
+	derived, err := deriveBatchPublicV1(ctx, msg)
+	require.NoError(t, err)
+	for _, nullifier := range msg.Nullifiers {
+		require.NoError(t, k.setNullifierStrict(ctx, nullifier))
+	}
+	for _, output := range msg.Outputs {
+		require.NoError(t, k.AppendCommitment(ctx, output.Commitment))
+	}
+	require.NoError(t, k.storeBatchPrivacyEffectV1(ctx, msg, derived.effect))
+
+	assertBatchGasLayerAccounting(t, meter, breakdown)
+	require.Equal(t, uint64(32), k.GetLeafCount(ctx))
+}
+
+type recordingGasMeter struct {
+	storetypes.GasMeter
+	consumed map[string]storetypes.Gas
+	refunded map[string]storetypes.Gas
+}
+
+func newRecordingGasMeter() *recordingGasMeter {
+	return &recordingGasMeter{
+		GasMeter: storetypes.NewInfiniteGasMeter(),
+		consumed: make(map[string]storetypes.Gas),
+		refunded: make(map[string]storetypes.Gas),
+	}
+}
+
+func (m *recordingGasMeter) ConsumeGas(amount storetypes.Gas, descriptor string) {
+	m.GasMeter.ConsumeGas(amount, descriptor)
+	m.consumed[descriptor] += amount
+}
+
+func (m *recordingGasMeter) RefundGas(amount storetypes.Gas, descriptor string) {
+	m.GasMeter.RefundGas(amount, descriptor)
+	m.refunded[descriptor] += amount
+}
+
+func assertBatchGasLayerAccounting(t testing.TB, meter *recordingGasMeter, breakdown privacyzk.BatchGasBreakdownV1) {
+	t.Helper()
+	explicit := meter.consumed[BatchGasPrechargeDescriptorV1]
+	require.Equal(t, storetypes.Gas(breakdown.Total), explicit)
+	require.Zero(t, meter.refunded[BatchGasPrechargeDescriptorV1])
+
+	kvDescriptors := []string{
+		storetypes.GasHasDesc,
+		storetypes.GasDeleteDesc,
+		storetypes.GasIterNextCostFlatDesc,
+		storetypes.GasValuePerByteDesc,
+		storetypes.GasReadCostFlatDesc,
+		storetypes.GasReadPerByteDesc,
+		storetypes.GasWriteCostFlatDesc,
+		storetypes.GasWritePerByteDesc,
+	}
+	var kvGas storetypes.Gas
+	for _, descriptor := range kvDescriptors {
+		kvGas += meter.consumed[descriptor] - meter.refunded[descriptor]
+	}
+	require.Positive(t, kvGas)
+	require.Positive(t, meter.consumed[storetypes.GasReadCostFlatDesc])
+	require.Positive(t, meter.consumed[storetypes.GasWriteCostFlatDesc])
+
+	var allOtherGas storetypes.Gas
+	for descriptor, amount := range meter.consumed {
+		if descriptor != BatchGasPrechargeDescriptorV1 {
+			allOtherGas += amount - meter.refunded[descriptor]
+		}
+	}
+	require.Equal(t, kvGas, allOtherGas, "non-precharge gas must be Cosmos KV gas only: consumed=%v refunded=%v", meter.consumed, meter.refunded)
+	require.Equal(t, explicit+kvGas, meter.GasConsumed())
 }
 
 func testMaxBatchTransferMessage(t testing.TB) *privacytypes.MsgBatchTransfer {
