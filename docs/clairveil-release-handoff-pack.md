@@ -105,7 +105,7 @@ This command validates compose config, Dockerfile build, and image inspect. It r
 16. Confirm that release-pack verification requires the bilingual batch contract, normal production tx/query/genesis proto, `batch_feasibility.proto`, and both independent Session 2 fixtures.
 17. Run the production circuit and keeper matrices: `TestBatchJoinSplit16x32ProductionPositiveMatrix`, `TestBatchJoinSplit16x32ProductionNegativeMatrix`, `TestBatchTransferDirectCoreIntegration`, `TestBatchTransferCoreRejectionsAndAtomicScanFailure`, and `TestCrossMessageNullifierFailureRollsBackWholeCosmosTxCache`.
 18. Generate development artifacts outside git and run `TestBatchDevelopmentArtifactRoleReadinessGate`. Record R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`, generation peak RSS `3,308,797,952 B`, and readiness peak RSS `1,295,482,880 B`. Do not package these development binaries as production artifacts.
-19. Run `make privacy-batch-joinsplit-localnet` for fixture conformance and `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet` on a capable host for the actual 1/1, 3/4, 31+change, exact32, padding, and restart/retry workflow.
+19. Run `make privacy-batch-joinsplit-localnet` for fixture conformance and `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet` on a capable host for the actual 1/1, 3/4, 31+change, exact32, padding, restart tx-hash reconcile, and freshly signed spent-nullifier fail-closed smoke. The durable exact-signed-byte retry remains a payroll worker/store test contract.
 20. Confirm release-pack verification requires the Session 3B bilingual handoff/tutorial, conformance fixture, and localnet runner while excluding private prepared payloads, proofs, and development R1CS/PK/VK binaries.
 
 ## 4. Downstream Core Chain Team Acceptance Criteria
@@ -152,7 +152,7 @@ The prover operations team confirms:
 5. Preserve `payload_hash` equality checks on both the SDK and server sides for proof requests/responses.
 6. Use the role-aware artifact registry: validators load required VKs after exact consensus identity verification, while provers lazily load selected R1CS/PK pairs.
 7. Enforce per-circuit admission defaults of one in-flight and four queued jobs and a positive 8 MiB body limit. A zero body limit is invalid. Keep automatic prover failover disabled, and use process isolation if hard cancellation or memory containment is required.
-8. Do not expose a batch HTTP endpoint yet: the reference prover has no BatchJoinSplit16x32 route in Session 3A. A later route must preserve admission, payload binding, privacy, and artifact-role boundaries.
+8. The Session 3B reference prover exposes bounded `POST /v1/proofs/batch-transfer` and advertises `batch-joinsplit-16x32-v1`. Preserve per-circuit admission, positive body limits, payload binding, TLS/auth, privacy, and artifact-role boundaries; do not mount an ad-hoc handler.
 
 ## 7. Known Risk And Accepted Exceptions
 

@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fixture="$repo_root/x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_session3b_contract.json"
 run_localnet="${RUN_LOCALNET:-0}"
-work_dir="${CLAIRVEIL_BATCH_LOCALNET_WORK_DIR:-$repo_root/tmp/privacy-batch-joinsplit-localnet}"
+default_work_dir="$repo_root/tmp/privacy-batch-joinsplit-localnet"
+work_dir="${CLAIRVEIL_BATCH_LOCALNET_WORK_DIR:-$default_work_dir}"
 artifact_override="${CLAIRVEIL_BATCH_ARTIFACT_DIR:-}"
 chain_id="${CHAIN_ID:-clairveil-batch-local-1}"
 rpc_port="${RPC_PORT:-26657}"
@@ -20,6 +22,60 @@ batch_gas="${BATCH_GAS:-80000000}"
 expires_in="${BATCH_EXPIRES_IN:-7200}"
 tx_wait_attempts="${TX_WAIT_ATTEMPTS:-90}"
 tx_wait_sleep_seconds="${TX_WAIT_SLEEP_SECONDS:-2}"
+
+prepare_work_dir() {
+	local canonical_work_dir canonical_default_work_dir marker_name marker_value
+	marker_name=".clairveil-batch-localnet-work-dir"
+	marker_value="clairveil-batch-localnet-work-dir-v1"
+	if [[ -L "$work_dir" ]]; then
+		echo "refusing symlink CLAIRVEIL_BATCH_LOCALNET_WORK_DIR: $work_dir" >&2
+		return 1
+	fi
+	canonical_work_dir="$(python3 - "$work_dir" "$repo_root" <<'PY'
+import os
+import pwd
+import sys
+import tempfile
+from pathlib import Path
+
+candidate = Path(sys.argv[1]).expanduser().resolve(strict=False)
+repo = Path(sys.argv[2]).resolve(strict=False)
+homes = {Path.home().resolve(strict=False), Path(pwd.getpwuid(os.getuid()).pw_dir).resolve(strict=False)}
+temp_root = Path(tempfile.gettempdir()).resolve(strict=False)
+protected = homes | {Path("/"), repo, temp_root}
+if candidate in protected or candidate in repo.parents or any(candidate in home.parents for home in homes):
+    raise SystemExit(f"refusing unsafe CLAIRVEIL_BATCH_LOCALNET_WORK_DIR: {candidate}")
+print(candidate)
+PY
+)"
+	canonical_default_work_dir="$(python3 - "$default_work_dir" "$repo_root" <<'PY'
+import sys
+from pathlib import Path
+candidate = Path(sys.argv[1]).resolve(strict=False)
+repo = Path(sys.argv[2]).resolve(strict=False)
+if repo not in candidate.parents:
+    raise SystemExit(f"refusing default work directory outside repository: {candidate}")
+print(candidate)
+PY
+)"
+	if [[ -e "$canonical_work_dir" ]]; then
+		if [[ ! -d "$canonical_work_dir" ]]; then
+			echo "CLAIRVEIL_BATCH_LOCALNET_WORK_DIR is not a directory: $canonical_work_dir" >&2
+			return 1
+		fi
+		if [[ "$canonical_work_dir" == "$canonical_default_work_dir" ]] || { [[ -f "$canonical_work_dir/$marker_name" ]] && grep -Fxq "$marker_value" "$canonical_work_dir/$marker_name"; }; then
+			rm -rf -- "$canonical_work_dir"
+		elif find "$canonical_work_dir" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
+			echo "refusing to delete unmarked non-empty work directory: $canonical_work_dir" >&2
+			return 1
+		fi
+	fi
+	mkdir -p -- "$canonical_work_dir"
+	chmod 700 "$canonical_work_dir"
+	printf '%s\n' "$marker_value" >"$canonical_work_dir/$marker_name"
+	chmod 600 "$canonical_work_dir/$marker_name"
+	work_dir="$canonical_work_dir"
+}
 
 python3 - "$fixture" <<'PY'
 import json
@@ -68,7 +124,7 @@ if [[ "$run_localnet" != "1" ]]; then
 	exit 1
 fi
 
-rm -rf "$work_dir"
+prepare_work_dir
 mkdir -p "$work_dir/out" "$work_dir/home"
 home="$work_dir/home"
 out="$work_dir/out"
@@ -165,6 +221,7 @@ export CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR="$artifacts"
 run keys add alice --keyring-backend test --home "$home" --output json >"$out/alice-key.json"
 run keys add bob --keyring-backend test --home "$home" --output json >"$out/bob-key.json"
 run keys add auditor --keyring-backend test --home "$home" --output json >"$out/auditor-key.json"
+chmod 600 "$out/alice-key.json" "$out/bob-key.json" "$out/auditor-key.json"
 run keys show -a alice --keyring-backend test --home "$home" >"$out/alice-address.txt"
 run tx privacy show-disclosure-pubkey --from auditor --keyring-backend test --home "$home" --output json >"$out/auditor-disclosure.json"
 run init batch-local --chain-id "$chain_id" --home "$home" >"$out/init.stdout" 2>"$out/init.stderr"
@@ -312,6 +369,8 @@ import json,sys
 from pathlib import Path
 out = Path(sys.argv[1])
 labels = ["one-input-one-payment", "three-input-four-output-mixed-disclosure", "thirty-one-payments-plus-change", "exact-thirty-two-payments", "explicit-zero-padding"]
+for key_file in ["alice-key.json", "bob-key.json", "auditor-key.json"]:
+    assert (out / key_file).stat().st_mode & 0o777 == 0o600
 for label in labels:
     assert (out / f"{label}-prepared.json").stat().st_mode & 0o777 == 0o600
     assert (out / f"{label}-proof.json").stat().st_mode & 0o777 == 0o600
@@ -325,6 +384,7 @@ summary = {
     "prover_route": "/v1/proofs/batch-transfer",
     "restart_tx_hash_reconciled": True,
     "spent_nullifier_retry_rejected": True,
+    "restart_retry_scope": "tx-hash-reconcile-and-freshly-signed-spent-nullifier-rejection",
     "automatic_multi_prover_failover": False,
 }
 (out / "session3b-localnet-summary.json").write_text(json.dumps(summary, indent=2) + "\n")

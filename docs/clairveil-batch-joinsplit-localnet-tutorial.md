@@ -26,7 +26,7 @@ Run the actual chain and remote prover workflow explicitly:
 RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet
 ```
 
-The 16x32 setup and proof are resource intensive. Use a host with enough memory and disk. Outputs are written to `tmp/privacy-batch-joinsplit-localnet/out`; prepared witness and proof files are checked for mode `0600`.
+The 16x32 setup and proof are resource intensive. Use a host with enough memory and disk. Outputs are written to `tmp/privacy-batch-joinsplit-localnet/out`; mnemonic-bearing key JSON, prepared witness, and proof files are checked for mode `0600`.
 
 ## Cases
 
@@ -66,6 +66,10 @@ clairveild tx privacy prove-batch-transfer prepared.json \
   --prover-url http://127.0.0.1:18080 \
   --output json
 ```
+
+For a bearer-authenticated remote prover, set `CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN` in the CLI environment. The CLI sends it as the `Authorization: Bearer ...` header and deliberately has no token flag that would expose the secret in process arguments.
+
+The loopback example may use plain HTTP. Every non-loopback prover URL must use HTTPS so the bearer credential and full private proof witness are not sent in plaintext. The client does not follow redirects.
 
 There is no automatic multi-prover failover. A remote failure is returned to the caller for an explicit privacy-aware decision.
 
@@ -109,7 +113,7 @@ Downstream scanners must use typed global `(height, global_sequence, output_inde
 
 ## Restart And Retry
 
-The runner restarts both the node and prover after successful batches, then queries the exact32 transaction by its stored tx hash. It also verifies that rebroadcasting a payload whose nullifiers are already spent fails closed.
+The runner restarts both the node and prover after successful batches, then queries the exact32 transaction by its stored tx hash. It also invokes the CLI again and verifies that a freshly signed envelope for the already-spent payload fails closed. This is a spent-nullifier smoke, not the durable payroll worker's exact-signed-byte retry; that invariant is covered by the payroll worker/store tests.
 
 Production retry order is:
 
@@ -134,4 +138,5 @@ RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet
 ```
 
 `CLAIRVEIL_BATCH_ARTIFACT_DIR` reuses an already verified development artifact directory and skips the expensive setup. Prebuilt binaries can be supplied through `CLAIRVEILD_BIN`, `CLAIRVEIL_SETUP_BIN`, and `CLAIRVEIL_PROVERD_BIN`.
+`CLAIRVEIL_BATCH_LOCALNET_WORK_DIR` must be a dedicated new or empty directory. After the first run, the runner leaves a marker that authorizes resetting only that directory; it rejects symlinks, protected paths, and unmarked non-empty directories instead of deleting them.
 `BATCH_EXPIRES_IN` controls the owner-intent lifetime for resource-intensive localnet proofs and defaults to 7200 seconds; `BATCH_GAS` defaults to 80000000.

@@ -26,7 +26,7 @@ make privacy-batch-joinsplit-localnet
 RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet
 ```
 
-16x32 setup/proof는 resource 사용량이 크다. 충분한 memory와 disk가 있는 host에서 실행한다. 결과는 `tmp/privacy-batch-joinsplit-localnet/out`에 기록하며 prepared witness/proof 파일 mode가 `0600`인지 검사한다.
+16x32 setup/proof는 resource 사용량이 크다. 충분한 memory와 disk가 있는 host에서 실행한다. 결과는 `tmp/privacy-batch-joinsplit-localnet/out`에 기록하며 mnemonic이 포함된 key JSON과 prepared witness/proof 파일 mode가 `0600`인지 검사한다.
 
 ## 실행 case
 
@@ -64,6 +64,10 @@ clairveild tx privacy prove-batch-transfer prepared.json \
   --prover-url http://127.0.0.1:18080 \
   --output json
 ```
+
+bearer 인증 remote prover를 사용할 때는 CLI 환경에 `CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN`을 설정한다. CLI는 이를 `Authorization: Bearer ...` header로 보내며, process argument에 secret을 노출하는 token flag는 의도적으로 제공하지 않는다.
+
+위 loopback 예시는 plain HTTP를 사용할 수 있다. Bearer credential과 전체 private proof witness를 plaintext로 보내지 않도록 모든 non-loopback prover URL은 HTTPS를 사용해야 한다. Client는 redirect를 따라가지 않는다.
 
 automatic multi-prover failover는 없다. remote failure는 caller에게 반환하고 privacy-aware 정책으로 명시적으로 처리한다.
 
@@ -107,7 +111,7 @@ downstream scanner는 typed global `(height, global_sequence, output_index)` 순
 
 ## Restart와 retry
 
-runner는 성공한 batch 이후 node와 prover를 재시작하고 저장한 tx hash로 exact32 transaction을 조회한다. 이미 spent인 nullifier의 payload를 다시 broadcast하면 fail closed하는지도 확인한다.
+runner는 성공한 batch 이후 node와 prover를 재시작하고 저장한 tx hash로 exact32 transaction을 조회한다. 이어 CLI를 다시 호출해 이미 spent인 payload를 새 envelope로 서명했을 때 fail closed하는지도 확인한다. 이는 spent-nullifier smoke이며 durable payroll worker의 exact-signed-byte retry 검증은 아니다. 해당 불변식은 payroll worker/store 테스트가 담당한다.
 
 production retry 순서는 다음과 같다.
 
@@ -132,4 +136,5 @@ RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet
 ```
 
 `CLAIRVEIL_BATCH_ARTIFACT_DIR`를 지정하면 이미 검증한 development artifact를 재사용해 고비용 setup을 건너뛴다. `CLAIRVEILD_BIN`, `CLAIRVEIL_SETUP_BIN`, `CLAIRVEIL_PROVERD_BIN`으로 prebuilt binary를 지정할 수 있다.
+`CLAIRVEIL_BATCH_LOCALNET_WORK_DIR`는 전용 신규 또는 빈 directory여야 한다. 첫 실행 뒤 runner가 해당 directory만 초기화하도록 허용하는 marker를 남기며, symlink, 보호 경로, marker 없는 non-empty directory는 삭제하지 않고 거부한다.
 resource-intensive localnet proof의 owner-intent lifetime은 `BATCH_EXPIRES_IN`으로 조정하며 기본값은 7200초다. `BATCH_GAS` 기본값은 80000000이다.

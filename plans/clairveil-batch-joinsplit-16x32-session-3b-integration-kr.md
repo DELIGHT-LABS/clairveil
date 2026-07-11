@@ -509,8 +509,8 @@ Go reference, conformance fixture, CLI/tutorial은 repo에서 완성함.
 | explicit zero padding | 1/32 | `8B88CD2D0315C5647A9EC37E9539D392009F46AC54AED984240C0B15159CFC65` | `0` | `15,529,326` | `79,306 / 410` |
 
 - node/prover restart 뒤 stored exact-32 tx hash를 canonical query로 reconcile함.
-- 같은 signed tx 재전송은 tx `D298FC32D3DCD9658F9655FB44172A29C3C6E0D2EDEF7CC1F64FFB588C54C86F`에서 DeliverTx code `18`, `batch nullifier 0 was already used`로 거절됨을 확인함.
-- 결과 schema `clairveil.batch-transfer.localnet-result.v1`의 `status=passed`, `restart_tx_hash_reconciled=true`, `spent_nullifier_retry_rejected=true`를 확인함. 결과는 ignored test workdir `tmp/privacy-batch-joinsplit-localnet/out/`에만 생성되고 artifact/secret은 tracked되지 않음.
+- prepared payload/proof를 CLI에 다시 넘겨 새 account sequence로 서명한 tx `D298FC32D3DCD9658F9655FB44172A29C3C6E0D2EDEF7CC1F64FFB588C54C86F`이 DeliverTx code `18`, `batch nullifier 0 was already used`로 거절됨을 확인함. 이 runner는 durable worker의 exact-signed-byte ambiguous retry를 검증하지 않으며, 해당 불변식은 payroll worker/store 테스트가 담당함.
+- 결과 schema `clairveil.batch-transfer.localnet-result.v1`의 `status=passed`, `restart_tx_hash_reconciled=true`, `spent_nullifier_retry_rejected=true`, `restart_retry_scope=tx-hash-reconcile-and-freshly-signed-spent-nullifier-rejection`을 확인함. 결과는 ignored test workdir `tmp/privacy-batch-joinsplit-localnet/out/`에만 생성되고 artifact/secret은 tracked되지 않음.
 - 기존 회귀는 `make privacy-e2e-smoke`의 Deposit/2x2 세 disclosure mode/Withdraw/prepared Withdraw, `TRANSFER_BATCH_COUNT=2` multi-message localnet, `make reference-payroll-live-localnet`의 durable reservation/settlement/idempotent retry를 각각 실제 체인에서 PASS함.
 
 ### 1/1, 3/4, 16/32 resource snapshot
@@ -534,7 +534,7 @@ production circuit constraint는 Session 3A와 같은 `1,111,837`이며 formal s
 | `go test -race ./x/privacy/client/sdk/... ./x/privacy/client/cli ./cmd/clairveil-payroll -count=1` | PASS; macOS linker의 비치명적 `LC_DYSYMTAB` warning만 관찰 |
 | `go vet ./...` | PASS; unkeyed disclosure input 두 곳을 keyed literal로 수정 후 재통과 |
 | `make examples` | PASS |
-| batch 전용 actual localnet | PASS; 5 cases + restart/retry |
+| batch 전용 actual localnet | PASS; 5 cases + restart tx-hash reconcile + freshly signed spent-nullifier fail-closed smoke |
 | `make privacy-e2e-smoke` | PASS |
 | `RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check` | PASS |
 | `make reference-payroll-live-localnet` | PASS |

@@ -103,7 +103,7 @@ make docker-proverd-build
 16. Release-pack verification이 bilingual batch contract, normal production tx/query/genesis proto, `batch_feasibility.proto`, independent Session 2 fixture 2개를 required artifact로 검사하는지 확인합니다.
 17. Production circuit/keeper matrix인 `TestBatchJoinSplit16x32ProductionPositiveMatrix`, `TestBatchJoinSplit16x32ProductionNegativeMatrix`, `TestBatchTransferDirectCoreIntegration`, `TestBatchTransferCoreRejectionsAndAtomicScanFailure`, `TestCrossMessageNullifierFailureRollsBackWholeCosmosTxCache`를 실행합니다.
 18. Git 밖에서 development artifact를 생성하고 `TestBatchDevelopmentArtifactRoleReadinessGate`를 실행합니다. R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`, generation peak RSS `3,308,797,952 B`, readiness peak RSS `1,295,482,880 B`를 기록합니다. 이 development binary를 production artifact로 package하면 안 됩니다.
-19. fixture conformance는 `make privacy-batch-joinsplit-localnet`으로, 실제 1/1, 3/4, 31+change, exact32, padding, restart/retry 경로는 충분한 자원의 host에서 `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`으로 실행합니다.
+19. fixture conformance는 `make privacy-batch-joinsplit-localnet`으로, 실제 1/1, 3/4, 31+change, exact32, padding, restart tx-hash reconcile, 새로 서명된 spent-nullifier fail-closed smoke는 충분한 자원의 host에서 `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`으로 실행합니다. Durable exact-signed-byte retry는 payroll worker/store 테스트 계약으로 별도 검증합니다.
 20. release pack이 Session 3B 한영 handoff/tutorial, conformance fixture, localnet runner를 필수로 검사하고 private prepared payload/proof와 development R1CS/PK/VK binary는 제외하는지 확인합니다.
 
 ## 4. Downstream core chain 팀 수령 기준
@@ -150,7 +150,7 @@ Prover 운영 팀은 아래를 확인합니다.
 5. proof request/response의 `payload_hash` equality check를 SDK와 server 양쪽에서 유지합니다.
 6. Role-aware artifact registry를 사용합니다. Validator는 exact consensus identity 검증 뒤 필요한 VK를 load하고 prover는 선택한 R1CS/PK pair를 lazy load합니다.
 7. Circuit별 admission default인 in-flight 1개, queued 4개와 positive 8 MiB body limit을 강제합니다. Zero body limit은 invalid입니다. Automatic prover failover를 비활성화하고 hard cancellation 또는 memory containment가 필요하면 process isolation을 사용합니다.
-8. Session 3A reference prover에는 BatchJoinSplit16x32 route가 없으므로 batch HTTP endpoint를 노출하지 않습니다. 이후 route는 admission, payload binding, privacy, artifact-role boundary를 보존해야 합니다.
+8. Session 3B reference prover는 bounded `POST /v1/proofs/batch-transfer`를 노출하고 `batch-joinsplit-16x32-v1`을 advertise합니다. Circuit별 admission, positive body limit, payload binding, TLS/auth, privacy, artifact-role boundary를 보존하고 ad-hoc handler를 mount하지 않습니다.
 
 ## 7. Known risk와 accepted exception
 
