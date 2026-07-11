@@ -399,7 +399,7 @@ func TestSettleTransferBatchCommandConfirmsDurableState(t *testing.T) {
 
 	writeJSONForTest(t, txPath, settlementTxResultForItem("LIVE_TX_HASH", confirmed.Items[0], "settle-commitment", "settle-audit"))
 	writeJSONForTest(t, beforePath, listNotesFile{Notes: []listNotesFileNote{}})
-	writeJSONForTest(t, afterPath, listNotesFile{Notes: []listNotesFileNote{{Index: 1, Status: "spendable", Amount: "70", Nullifier: "recipient-note", TxHash: "LIVE_TX_HASH"}}})
+	writeJSONForTest(t, afterPath, listNotesFile{Notes: []listNotesFileNote{{Index: 1, Status: "spendable", Amount: "70", Nullifier: "recipient-note", TxHash: "live_tx_hash"}}})
 
 	require.NoError(t, runSettleTransferBatch([]string{
 		"-plan", planPath,

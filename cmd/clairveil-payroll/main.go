@@ -1133,7 +1133,9 @@ func spendableNoteCountsByAmountAndTxHash(notes listNotesFile, txHash string) ma
 		if strings.TrimSpace(note.Status) != "spendable" {
 			continue
 		}
-		if strings.TrimSpace(note.TxHash) != txHash {
+		// Cosmos RPC commonly renders tx hashes in uppercase while the typed
+		// privacy scanner stores the same hex bytes in lowercase.
+		if !strings.EqualFold(strings.TrimSpace(note.TxHash), txHash) {
 			continue
 		}
 		amount := strings.TrimSpace(note.Amount)
