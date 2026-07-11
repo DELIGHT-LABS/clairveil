@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"encoding/hex"
+	"math/big"
 	"testing"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
@@ -97,6 +98,51 @@ func TestBatchPublicWitnessIsDerivedInFrozenOrder(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, derived.effect.commitmentRoot, reordered.effect.commitmentRoot)
 	require.NotEqual(t, derived.effect.effectID, reordered.effect.effectID)
+}
+
+func TestBatchPublicWitnessShapePropertyCoversEveryOutputCount(t *testing.T) {
+	_, ctx, _ := setupRegisteredMsgServerKeeper(t)
+	base := testMaxBatchTransferMessage(t)
+	for outputCount := 1; outputCount <= int(privacytypes.BatchJoinSplitV1MaxOutputs); outputCount++ {
+		inputCount := (outputCount-1)%int(privacytypes.BatchJoinSplitV1MaxInputs) + 1
+		t.Run(big.NewInt(int64(outputCount)).String(), func(t *testing.T) {
+			msg := *base
+			msg.Nullifiers = base.Nullifiers[:inputCount]
+			msg.Outputs = base.Outputs[:outputCount]
+			derived, err := deriveBatchPublicV1(ctx, &msg)
+			require.NoError(t, err)
+
+			publicWitness, err := newPublicWitnessBN254(&derived.assignment)
+			require.NoError(t, err)
+			values := publicWitness.Vector().(fr.Vector)
+			expected := []*big.Int{
+				derived.assignment.MerkleRoot.(*big.Int),
+				derived.assignment.ChainDomainHi.(*big.Int),
+				derived.assignment.ChainDomainLo.(*big.Int),
+				derived.assignment.ExpiresAtUnix.(*big.Int),
+				derived.assignment.InputCount.(*big.Int),
+				derived.assignment.OutputCount.(*big.Int),
+				derived.assignment.NullifierRoot.(*big.Int),
+				derived.assignment.CommitmentRoot.(*big.Int),
+				derived.assignment.UserDisclosureRoot.(*big.Int),
+				derived.assignment.FullDisclosureRoot.(*big.Int),
+				derived.assignment.PayloadDigestHi.(*big.Int),
+				derived.assignment.PayloadDigestLo.(*big.Int),
+			}
+			require.Len(t, values, len(expected))
+			for i := range expected {
+				var want fr.Element
+				want.SetBigInt(expected[i])
+				require.Truef(t, values[i].Equal(&want), "public witness index %d (%s)", i, privacytypes.BatchPublicInputOrderV1[i])
+			}
+			require.Equal(t, uint64(inputCount), derived.assignment.InputCount.(*big.Int).Uint64())
+			require.Equal(t, uint64(outputCount), derived.assignment.OutputCount.(*big.Int).Uint64())
+			require.Equal(t, batchFieldBytes32(expected[6]), derived.effect.nullifierRoot)
+			require.Equal(t, batchFieldBytes32(expected[7]), derived.effect.commitmentRoot)
+			require.Equal(t, batchFieldBytes32(expected[8]), derived.effect.userDisclosureRoot)
+			require.Equal(t, batchFieldBytes32(expected[9]), derived.effect.fullDisclosureRoot)
+		})
+	}
 }
 
 func TestDepositJoinSplitAndBatchShareGlobalPrivacySequence(t *testing.T) {

@@ -290,7 +290,7 @@ func TestBatchTransferWirePrototypeV1PublicDisclosureRecomputesDigest(t *testing
 	require.ErrorContains(t, ValidateBatchTransferWirePrototypeV1(msg), "does not match plaintext")
 }
 
-func batchPayloadTestMessage(t *testing.T) *BatchTransferWirePrototypeV1 {
+func batchPayloadTestMessage(t testing.TB) *BatchTransferWirePrototypeV1 {
 	t.Helper()
 	outputs := []*BatchTransferOutputWirePrototypeV1{
 		{
@@ -317,7 +317,7 @@ func batchPayloadTestMessage(t *testing.T) *BatchTransferWirePrototypeV1 {
 	}
 }
 
-func productionBatchPayloadTestMessage(t *testing.T) *MsgBatchTransfer {
+func productionBatchPayloadTestMessage(t testing.TB) *MsgBatchTransfer {
 	t.Helper()
 	prototype := batchPayloadTestMessage(t)
 	outputs := make([]*BatchTransferOutput, len(prototype.Outputs))
@@ -349,7 +349,7 @@ func productionBatchPayloadTestMessage(t *testing.T) *MsgBatchTransfer {
 	}
 }
 
-func maxProductionBatchPayloadTestMessage(t *testing.T) *MsgBatchTransfer {
+func maxProductionBatchPayloadTestMessage(t testing.TB) *MsgBatchTransfer {
 	t.Helper()
 	nullifiers := make([][]byte, BatchJoinSplitV1MaxInputs)
 	for i := range nullifiers {
@@ -392,7 +392,7 @@ func cloneBatchPayloadByteSlices(values [][]byte) [][]byte {
 	return cloned
 }
 
-func cloneBatchPayloadTestMessage(t *testing.T, msg *BatchTransferWirePrototypeV1) *BatchTransferWirePrototypeV1 {
+func cloneBatchPayloadTestMessage(t testing.TB, msg *BatchTransferWirePrototypeV1) *BatchTransferWirePrototypeV1 {
 	t.Helper()
 	encoded, err := msg.Marshal()
 	require.NoError(t, err)
@@ -411,7 +411,7 @@ func batchPayloadTestPointBytes(scalar int64) []byte {
 	return append([]byte(nil), encoded[:]...)
 }
 
-func batchPayloadTestEnvelope(t *testing.T, kind EncryptedEnvelopeKindV1) []byte {
+func batchPayloadTestEnvelope(t testing.TB, kind EncryptedEnvelopeKindV1) []byte {
 	t.Helper()
 	size, err := EncryptedEnvelopeV1Size(kind)
 	require.NoError(t, err)

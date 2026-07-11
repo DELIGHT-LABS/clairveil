@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"testing"
@@ -45,6 +46,65 @@ func TestPlanBatchTransferShapesAndModes(t *testing.T) {
 			plan, err := PlanBatchTransfer(PlanBatchTransferInput{Inputs: ins, Payments: pays, OwnerSpendPubKey: owner, OwnerViewPubKey: view, Mode: tc.mode})
 			require.NoError(t, err)
 			require.Len(t, plan.Outputs, tc.wantOutputs)
+		})
+	}
+}
+
+func TestPlanBatchTransferSeededShapeProperty(t *testing.T) {
+	owner, view := testKey(t, 1), testKey(t, 2)
+	for outputCount := 1; outputCount <= int(privacytypes.BatchJoinSplitV1MaxOutputs); outputCount++ {
+		inputCount := (outputCount-1)%int(privacytypes.BatchJoinSplitV1MaxInputs) + 1
+		seed := int64(5_200 + outputCount)
+		rng := rand.New(rand.NewSource(seed))
+		t.Run(fmt.Sprintf("seed_%d_inputs_%d_outputs_%d", seed, inputCount, outputCount), func(t *testing.T) {
+			inputs := make([]InputNote, inputCount)
+			inputTotal := int64(0)
+			for i := range inputs {
+				amount := int64(outputCount + 1 + rng.Intn(1_000))
+				inputs[i] = InputNote{testNote(t, owner, view, amount, seed*100+int64(i)+1)}
+				inputTotal += amount
+			}
+
+			payments := make([]Payment, outputCount)
+			remaining := inputTotal
+			for i := range payments {
+				amount := remaining
+				if i < len(payments)-1 {
+					maxForThisPayment := remaining - int64(len(payments)-i-1)
+					amount = 1 + rng.Int63n(maxForThisPayment)
+				}
+				remaining -= amount
+				policy := uint32(rng.Intn(int(privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom + 1)))
+				mode := privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE
+				var target *crypto_tedwards.PointAffine
+				if policy != privacytypes.TransferPrivacyPolicyAllPrivate {
+					mode = privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC
+					if i%2 == 1 {
+						mode = privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED
+						target = testKey(t, seed*10+int64(i)+701)
+					}
+				}
+				payments[i] = Payment{
+					SpendPubKey: testKey(t, seed*10+int64(i)+101),
+					ViewPubKey:  testKey(t, seed*10+int64(i)+401),
+					Amount:      big.NewInt(amount), PrivacyPolicy: policy,
+					DisclosureMode: mode, DisclosureTargetPubKey: target,
+				}
+			}
+
+			plan, err := PlanBatchTransfer(PlanBatchTransferInput{
+				Inputs: inputs, Payments: payments, OwnerSpendPubKey: owner, OwnerViewPubKey: view, Mode: OutputModeCompact,
+			})
+			require.NoError(t, err)
+			require.Len(t, plan.Inputs, inputCount)
+			require.Len(t, plan.Outputs, outputCount)
+			require.Equal(t, inputTotal, plan.InputTotal.Int64())
+			require.Equal(t, inputTotal, plan.PaymentTotal.Int64())
+			require.Zero(t, plan.Change.Sign())
+			for i, output := range plan.Outputs {
+				require.Equal(t, OutputPayment, output.Kind, "output %d", i)
+				require.Positive(t, output.Amount.Sign(), "output %d", i)
+			}
 		})
 	}
 }

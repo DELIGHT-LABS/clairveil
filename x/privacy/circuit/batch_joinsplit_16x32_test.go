@@ -2,6 +2,7 @@ package circuit
 
 import (
 	"math/big"
+	"math/rand"
 	"reflect"
 	"strings"
 	"testing"
@@ -75,6 +76,57 @@ func TestBatchJoinSplit16x32ProductionPositiveMatrix(t *testing.T) {
 				tc.configure(assignment)
 			}
 			refreshBatchFeasibilityPublicState(t, assignment, tc.inputCount, tc.outputCount)
+			assertBatchProductionSolve(t, ccs, assignment, true)
+		})
+	}
+}
+
+func TestBatchJoinSplit16x32SeededShapeProperty(t *testing.T) {
+	if testing.Short() {
+		t.Skip("production batch property matrix is skipped in short mode")
+	}
+	ccs := compiledBatchProductionCCS(t)
+	for inputCount := 1; inputCount <= MaxBatchJoinSplitInputs; inputCount++ {
+		seed := int64(4_100 + inputCount)
+		rng := rand.New(rand.NewSource(seed))
+		outputCount := 1 + rng.Intn(MaxBatchJoinSplitOutputs)
+		t.Run(strings.Join([]string{
+			"seed", big.NewInt(seed).String(),
+			"inputs", big.NewInt(int64(inputCount)).String(),
+			"outputs", big.NewInt(int64(outputCount)).String(),
+		}, "_"), func(t *testing.T) {
+			assignment := buildBatchFeasibilityAssignment(t, inputCount, outputCount)
+			total := int64(0)
+			for i := 0; i < inputCount; i++ {
+				amount := int64(1 + rng.Intn(1_000_000))
+				assignment.InputAmounts[i] = big.NewInt(amount)
+				assignment.InputRandomness[i] = big.NewInt(seed*1_000 + int64(i) + 1)
+				total += amount
+			}
+
+			remaining := total
+			for i := 0; i < outputCount; i++ {
+				amount := remaining
+				if i < outputCount-1 && remaining > 0 {
+					amount = rng.Int63n(remaining + 1)
+				}
+				remaining -= amount
+				assignment.OutputAmounts[i] = big.NewInt(amount)
+				assignment.OutputRandomness[i] = big.NewInt(seed*10_000 + int64(i) + 1)
+				assignPubKey(&assignment.OutputSpendPubKeys[i], scalarMulBase(big.NewInt(seed*100+int64(i)+101)))
+				assignPubKey(&assignment.OutputViewPubKeys[i], scalarMulBase(big.NewInt(seed*100+int64(i)+201)))
+				policy := uint32(rng.Intn(int(privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom + 1)))
+				assignment.OutputPrivacyPolicies[i] = new(big.Int).SetUint64(uint64(policy))
+				if policy == privacytypes.TransferPrivacyPolicyAllPrivate {
+					assignment.UserDisclosureBlindings[i] = big.NewInt(0)
+				} else {
+					assignment.UserDisclosureBlindings[i] = big.NewInt(seed*20_000 + int64(i) + 1)
+				}
+				assignment.FullDisclosureBlindings[i] = big.NewInt(seed*30_000 + int64(i) + 1)
+			}
+			assignment.PayloadDigestHi = big.NewInt(rng.Int63())
+			assignment.PayloadDigestLo = big.NewInt(rng.Int63())
+			refreshBatchFeasibilityPublicState(t, assignment, inputCount, outputCount)
 			assertBatchProductionSolve(t, ccs, assignment, true)
 		})
 	}
