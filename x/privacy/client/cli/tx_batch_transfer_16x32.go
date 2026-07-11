@@ -7,6 +7,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -232,7 +233,7 @@ func addBatchTransferPrepareFlags(cmd *cobra.Command) {
 
 func addBatchTransferProveFlags(cmd *cobra.Command) {
 	cmd.Flags().String(flagBatchProofOut, defaultBatchProofPath, "Private proof output file (written mode 0600)")
-	cmd.Flags().String(flagBatchProverURL, "", "Exclusive remote prover base URL; omitted uses only the local prover")
+	cmd.Flags().String(flagBatchProverURL, "", "Exclusive remote prover base URL; omitted uses only the local prover; bearer auth reads "+privacyprovertransport.BearerTokenEnv)
 	cmd.Flags().Duration(flagBatchProverTimeout, defaultBatchProverWait, "Remote prover request timeout")
 }
 
@@ -376,8 +377,9 @@ func proveBatchTransferFromFile(cmd *cobra.Command, preparedPath string) (*priva
 			return nil, "", "", requestErr
 		}
 		response, requestErr := (privacyprovertransport.HTTPProverClient{
-			BaseURL: proverURL,
-			Client:  &http.Client{Timeout: timeout},
+			BaseURL:     proverURL,
+			Client:      &http.Client{Timeout: timeout},
+			BearerToken: strings.TrimSpace(os.Getenv(privacyprovertransport.BearerTokenEnv)),
 		}).ProveBatchTransfer(cmd.Context(), *request)
 		if requestErr != nil {
 			return nil, "", "", requestErr

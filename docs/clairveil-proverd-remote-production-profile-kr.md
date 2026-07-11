@@ -32,7 +32,7 @@ Remote production에서 최소한 아래 baseline을 만족해야 합니다.
 | Control     | Required profile                                                                                                                             |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | Network     | private network 또는 edge proxy 뒤에 둡니다. Public internet direct exposure는 피합니다.                                                     |
-| TLS         | app 내장 TLS가 아니라 edge proxy, load balancer, service mesh, 또는 mTLS로 처리해도 됩니다. Plain HTTP는 private/local network로 제한합니다. |
+| TLS         | app 내장 TLS가 아니라 edge proxy, load balancer, service mesh, 또는 mTLS로 처리해도 됩니다. Reference Go client는 loopback endpoint에만 plain HTTP를 허용하며, private network에서도 non-loopback witness traffic은 HTTPS를 사용해야 합니다. |
 | Auth        | proof route는 bearer token, mTLS identity, session-bound API token 등으로 반드시 보호합니다.                                                 |
 | Rate limit  | per user, per wallet, per IP, per API token quota를 둡니다.                                                                                  |
 | Body limit  | `-max-request-bytes`를 명시하고 edge proxy body limit도 맞춥니다.                                                                            |
@@ -190,9 +190,9 @@ Remote prover를 production-like 환경에 올리기 전 아래를 확인합니�
 - `x/privacy/client/sdk/provertransport/http.go`
 - `examples/js-sdk-prover-http-client`
 
-## 13. Session 2 Admission And Artifact Addendum
+## 13. Session 2 admission과 Session 3B route addendum
 
-Active consensus circuit set은 `privacy-note-v1`이며 fixed note/disclosure/envelope 계약은 `privacy-fixed-v1`입니다. 이전 cached artifact와 proof job과 호환되지 않습니다. Fresh genesis에서 배포하고 old R1CS/PK/VK set과 queued/cached request를 제거하며 exact active set을 다시 생성합니다. Client도 note/scan cache를 지우고 rescan해야 합니다. Circuit manifest에는 이제 `batch-joinsplit-16x32-v1`이 포함되지만 이 remote prover profile에는 Session 3A batch HTTP route나 public request schema가 없으므로 이를 advertise하면 안 됩니다.
+Active consensus circuit set은 `privacy-note-v1`이며 fixed note/disclosure/envelope 계약은 `privacy-fixed-v1`입니다. 이전 cached artifact와 proof job과 호환되지 않습니다. Fresh genesis에서 배포하고 old R1CS/PK/VK set과 queued/cached request를 제거하며 exact active set을 다시 생성합니다. Client도 note/scan cache를 지우고 rescan해야 합니다. Session 3A에는 batch HTTP route가 없었지만 Session 3B가 이 제한을 대체합니다. Bounded reference service는 이제 `POST /v1/proofs/batch-transfer`를 노출하고 runtime/readiness 계약에 `batch-joinsplit-16x32-v1`을 advertise합니다. 다른 proof route와 같은 TLS/auth, positive body limit, circuit별 admission, payload binding, artifact-role control을 유지할 때만 활성화합니다.
 
 Artifact registry는 role-aware입니다. Validator readiness는 consensus identity를 요구하고 요청된 VK만 읽습니다. Prover readiness는 선택한 R1CS/PK pair만 읽어 lazy load하며 supplied consensus metadata가 다르면 계속 fail closed해야 합니다. Manifest에 존재한다는 이유만으로 unrelated proving key를 preload하지 않습니다.
 
@@ -200,4 +200,4 @@ Reference admission default는 circuit별 `max_in_flight=1`, `max_queued=4`입�
 
 Bounded `proverservice.Handler`만 노출합니다. `provertransport.HTTPHandler`를 public listener에 직접 mount하거나 proxy만 유일한 body bound라고 가정하면 안 됩니다. 다른 endpoint는 private-witness trust boundary를 넓히므로 automatic prover failover를 비활성화합니다. Context cancellation은 caller의 wait를 중단하지만 이미 실행 중인 in-process gnark proof는 반환할 때까지 계속되고 permit을 유지합니다. Reference service는 solver를 preempt하지 못합니다. Hard cancellation 또는 OOM containment에는 isolated, memory-limited worker process와 termination을 사용합니다.
 
-Production 16x32 public schema는 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo` 순서입니다. 이 schema가 존재해도 ad-hoc remote endpoint를 만들 수 없으며 Session 3B가 bounded route, admission, authentication, end-to-end conformance를 함께 추가해야 합니다.
+Production 16x32 public schema는 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo` 순서입니다. 이 schema가 존재해도 ad-hoc remote endpoint를 만들 수 없으며 admission, authentication, end-to-end conformance가 유지된 Session 3B bounded route만 사용해야 합니다.

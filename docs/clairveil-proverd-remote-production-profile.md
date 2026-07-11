@@ -34,7 +34,7 @@ Remote production must satisfy at least the baseline below.
 | Control | Required Profile |
 | --- | --- |
 | Network | Put it behind a private network or edge proxy. Avoid direct public internet exposure. |
-| TLS | TLS can be handled by an edge proxy, load balancer, service mesh, or mTLS instead of built into the app. Plain HTTP should be limited to private/local networks. |
+| TLS | TLS can be handled by an edge proxy, load balancer, service mesh, or mTLS instead of built into the app. The reference Go client permits plain HTTP only for loopback endpoints; non-loopback witness traffic must use HTTPS even on a private network. |
 | Auth | Proof routes must be protected by bearer token, mTLS identity, session-bound API token, or equivalent. |
 | Rate limit | Apply quota per user, wallet, IP, and API token. |
 | Body limit | Set `-max-request-bytes` explicitly and align the edge proxy body limit. |
@@ -186,9 +186,9 @@ Before operating a remote prover in a production-like environment, confirm:
 - `x/privacy/client/sdk/provertransport/http.go`
 - `examples/js-sdk-prover-http-client`
 
-## 13. Session 2 Admission And Artifact Addendum
+## 13. Session 2 Admission And Session 3B Route Addendum
 
-The active consensus circuit set is `privacy-note-v1`; the fixed note/disclosure/envelope contract is `privacy-fixed-v1`. This is incompatible with earlier cached artifacts and proof jobs. Deploy from fresh genesis, remove old R1CS/PK/VK sets and queued/cached requests, regenerate the exact active set, and require clients to clear note/scan caches and rescan. The circuit manifest now includes `batch-joinsplit-16x32-v1`, but this remote prover profile has no batch HTTP route or public request schema in Session 3A and must not advertise one.
+The active consensus circuit set is `privacy-note-v1`; the fixed note/disclosure/envelope contract is `privacy-fixed-v1`. This is incompatible with earlier cached artifacts and proof jobs. Deploy from fresh genesis, remove old R1CS/PK/VK sets and queued/cached requests, regenerate the exact active set, and require clients to clear note/scan caches and rescan. Session 3A had no batch HTTP route, but Session 3B supersedes that limitation: the bounded reference service now exposes `POST /v1/proofs/batch-transfer` and advertises `batch-joinsplit-16x32-v1` in its runtime/readiness contract. Enable it only with the same TLS/auth, positive body limit, per-circuit admission, payload binding, and artifact-role controls as the other proof routes.
 
 The artifact registry is role-aware. Validator readiness requires consensus identity and reads only the requested VKs. Prover readiness reads only selected R1CS/PK pairs and loads them lazily; it must still fail closed when supplied consensus metadata does not match. Do not preload unrelated proving keys merely because they exist in the manifest.
 
@@ -196,4 +196,4 @@ Reference admission defaults are per circuit: `max_in_flight=1` and `max_queued=
 
 Only expose the bounded `proverservice.Handler`; never mount `provertransport.HTTPHandler` directly on a public listener or behind a proxy and assume the proxy is the only body bound. Keep automatic prover failover disabled, because another endpoint expands the private-witness trust boundary. Context cancellation stops the caller's wait, but an already running in-process gnark proof can continue until return and retains its permit; the reference service cannot preempt the solver. Use isolated, memory-limited worker processes and terminate them for hard cancellation or OOM containment.
 
-The production 16x32 public schema uses this exact order: `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`. Its existence does not authorize an ad-hoc remote endpoint; Session 3B must add the bounded route, admission, authentication, and end-to-end conformance together.
+The production 16x32 public schema uses this exact order: `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`. Its existence does not authorize an ad-hoc remote endpoint; use only the Session 3B bounded route with admission, authentication, and end-to-end conformance intact.

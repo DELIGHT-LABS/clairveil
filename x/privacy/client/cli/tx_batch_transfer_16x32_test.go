@@ -131,6 +131,8 @@ func TestBatchTransferCommandFlagsExposeRestartableStages(t *testing.T) {
 }
 
 func TestProveBatchTransferCommandUsesExclusiveRemoteRouteAndWritesBoundProof(t *testing.T) {
+	const bearerToken = "batch-cli-prover-token"
+	t.Setenv(privacyprovertransport.BearerTokenEnv, bearerToken)
 	payload := testCLIBatchPayload(t)
 	dir := t.TempDir()
 	preparedPath := filepath.Join(dir, "prepared.json")
@@ -142,6 +144,7 @@ func TestProveBatchTransferCommandUsesExclusiveRemoteRouteAndWritesBoundProof(t 
 		requests++
 		require.Equal(t, privacyprovertransport.BatchTransferProofPath, r.URL.Path)
 		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "Bearer "+bearerToken, r.Header.Get("Authorization"))
 		var request privacyprovertransport.BatchTransferProofRequest
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
 		require.Equal(t, payload.PayloadHash, request.Payload.PayloadHash)

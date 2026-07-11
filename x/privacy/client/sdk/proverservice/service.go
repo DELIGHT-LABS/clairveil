@@ -37,7 +37,7 @@ const (
 	DefaultListenAddress = "127.0.0.1:8080"
 	DefaultMaxRequestBz  = int64(8 << 20)
 	DefaultMaxHeaderBz   = 1 << 20
-	BearerTokenEnv       = "CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN"
+	BearerTokenEnv       = privacyprovertransport.BearerTokenEnv
 )
 
 var gnarkLoggerDisableOnce sync.Once

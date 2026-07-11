@@ -3,9 +3,11 @@ package provertransport
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	privacybatchtransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/batchtransfer"
@@ -263,16 +265,34 @@ func (r BatchTransferProofResponse) WriteJSONFile(path string) error {
 }
 
 func writePrivateFile(path string, payloadBytes []byte) error {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	if err := file.Chmod(0o600); err != nil {
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	defer tmp.Close()
+	if err := tmp.Chmod(0o600); err != nil {
 		return err
 	}
-	_, err = file.Write(payloadBytes)
-	return err
+	if _, err := tmp.Write(payloadBytes); err != nil {
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	directory, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	return errors.Join(directory.Sync(), directory.Close())
 }
 
 func NewTransferProofRequest(payload privacytransfer.PreparedTransferPayload) (*TransferProofRequest, error) {

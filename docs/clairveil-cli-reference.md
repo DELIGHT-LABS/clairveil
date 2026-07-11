@@ -222,7 +222,7 @@ Current limitations:
 
 `transfer-batch-16x32` runs one `MsgBatchTransfer` with one `BatchJoinSplit16x32` proof. Repeat `--payment 'shielded-address,coin[,policy,mode,target-key]'` for 1..32 independent payment policies, optionally pin 1..16 wallet notes with `--input-index`, and choose `--output-mode compact|exact32`. The command persists the private prepared payload and proof with mode `0600` before broadcast.
 
-The restartable commands are `prepare-batch-transfer`, `prove-batch-transfer PREPARED_FILE`, and `broadcast-batch-transfer PREPARED_FILE PROOF_FILE`. `prove-batch-transfer` uses the local prover when `--prover-url` is absent and exactly one selected `POST /v1/proofs/batch-transfer` endpoint when present; it never performs automatic prover failover. See [clairveil-batch-joinsplit-localnet-tutorial.md](clairveil-batch-joinsplit-localnet-tutorial.md) for complete commands and boundary cases.
+The restartable commands are `prepare-batch-transfer`, `prove-batch-transfer PREPARED_FILE`, and `broadcast-batch-transfer PREPARED_FILE PROOF_FILE`. `prove-batch-transfer` uses the local prover when `--prover-url` is absent and exactly one selected `POST /v1/proofs/batch-transfer` endpoint when present; it never performs automatic prover failover or follows redirects. Plain HTTP is accepted only for loopback endpoints such as `localhost`, `127.0.0.1`, and `[::1]`; every non-loopback prover URL must use HTTPS. For bearer-authenticated remote provers it reads `CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN` from the environment and never accepts the secret as a CLI flag. See [clairveil-batch-joinsplit-localnet-tutorial.md](clairveil-batch-joinsplit-localnet-tutorial.md) for complete commands and boundary cases.
 
 ## 6. Disclosure Decode
 

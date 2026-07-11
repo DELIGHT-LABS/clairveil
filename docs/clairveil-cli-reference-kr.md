@@ -220,7 +220,7 @@ clairveild tx privacy transfer-batch "$(cat out/bob-shielded-address.txt)" \
 
 `transfer-batch-16x32`는 `MsgBatchTransfer` 하나와 `BatchJoinSplit16x32` proof 하나를 실행합니다. `--payment 'shielded-address,coin[,policy,mode,target-key]'`를 1..32회 반복해 output별 독립 disclosure를 지정하고, 필요하면 `--input-index`로 wallet note 1..16개를 고정하며, `--output-mode compact|exact32`를 선택합니다. Broadcast 전에 private prepared payload와 proof를 mode `0600`으로 저장합니다.
 
-재시작 가능한 단계형 command는 `prepare-batch-transfer`, `prove-batch-transfer PREPARED_FILE`, `broadcast-batch-transfer PREPARED_FILE PROOF_FILE`입니다. `prove-batch-transfer`는 `--prover-url`이 없으면 local prover만, 있으면 선택한 `POST /v1/proofs/batch-transfer` endpoint 한 곳만 사용하며 automatic failover를 하지 않습니다. 전체 명령과 boundary case는 [clairveil-batch-joinsplit-localnet-tutorial-kr.md](clairveil-batch-joinsplit-localnet-tutorial-kr.md)를 따릅니다.
+재시작 가능한 단계형 command는 `prepare-batch-transfer`, `prove-batch-transfer PREPARED_FILE`, `broadcast-batch-transfer PREPARED_FILE PROOF_FILE`입니다. `prove-batch-transfer`는 `--prover-url`이 없으면 local prover만, 있으면 선택한 `POST /v1/proofs/batch-transfer` endpoint 한 곳만 사용하며 automatic failover나 redirect follow를 하지 않습니다. Plain HTTP는 `localhost`, `127.0.0.1`, `[::1]` 같은 loopback endpoint에서만 허용하고, 모든 non-loopback prover URL은 HTTPS를 사용해야 합니다. bearer 인증 remote prover에는 환경의 `CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN`을 전달하고 secret을 CLI flag로 받지 않습니다. 전체 명령과 boundary case는 [clairveil-batch-joinsplit-localnet-tutorial-kr.md](clairveil-batch-joinsplit-localnet-tutorial-kr.md)를 따릅니다.
 
 ## 6. Disclosure decode
 

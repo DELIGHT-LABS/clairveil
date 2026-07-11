@@ -164,12 +164,31 @@ func TestBatchTransferProofJSONDecodeIsStrict(t *testing.T) {
 }
 
 func TestBatchTransferProofFilesArePrivate(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "batch-request.json")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "batch-request.json")
 	require.NoError(t, os.WriteFile(path, []byte("old"), 0o644))
 	require.NoError(t, (BatchTransferProofRequest{Version: BatchTransferProofRequestVersion}).WriteJSONFile(path))
 	info, err := os.Stat(path)
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+
+	targetPath := filepath.Join(dir, "existing-private-artifact.json")
+	require.NoError(t, os.WriteFile(targetPath, []byte("existing artifact"), 0o600))
+	responsePath := filepath.Join(dir, "batch-response.json")
+	if err := os.Symlink(targetPath, responsePath); err != nil {
+		t.Skipf("symlink is unavailable: %v", err)
+	}
+	require.NoError(t, (BatchTransferProofResponse{Version: BatchTransferProofResponseVersion}).WriteJSONFile(responsePath))
+	targetBytes, err := os.ReadFile(targetPath)
+	require.NoError(t, err)
+	require.Equal(t, []byte("existing artifact"), targetBytes)
+	info, err = os.Lstat(responsePath)
+	require.NoError(t, err)
+	require.Zero(t, info.Mode()&os.ModeSymlink)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	tempFiles, err := filepath.Glob(filepath.Join(dir, ".batch-response.json.tmp-*"))
+	require.NoError(t, err)
+	require.Empty(t, tempFiles)
 }
 
 func TestBatchTransferProofResponseRejectsPayloadHashMismatchFirst(t *testing.T) {

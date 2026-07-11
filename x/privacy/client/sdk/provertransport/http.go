@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -22,6 +24,7 @@ const (
 	TransferProofCircuitID            = "joinsplit"
 	WithdrawProofCircuitID            = "spend"
 	BatchTransferProofCircuitID       = "batch-joinsplit-16x32-v1"
+	BearerTokenEnv                    = "CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN"
 	ErrorResponseVersion              = "v1"
 	DefaultMaxResponseBytes     int64 = 1 << 20
 	DefaultMaxRequestBytes      int64 = 8 << 20
@@ -114,9 +117,19 @@ type HTTPDoer interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
+// RedirectSafeHTTPDoer is the opt-in contract for custom HTTPDoer wrappers.
+// Returning true asserts that the implementation never follows redirects.
+// A plain *http.Client does not need this marker because the prover client
+// clones it with a fail-closed CheckRedirect policy.
+type RedirectSafeHTTPDoer interface {
+	HTTPDoer
+	ProverTransportRedirectsDisabled() bool
+}
+
 type HTTPProverClient struct {
 	BaseURL          string
 	Client           HTTPDoer
+	BearerToken      string
 	Now              func() time.Time
 	MaxResponseBytes int64
 }
@@ -456,9 +469,23 @@ func (c HTTPProverClient) doJSONRequest(ctx context.Context, path string, body i
 	if err != nil {
 		return nil, err
 	}
+	if err := validateProverRequestURL(req.URL); err != nil {
+		return nil, err
+	}
 	req.Header.Set("Content-Type", "application/json")
+	bearerToken := strings.TrimSpace(c.BearerToken)
+	if strings.ContainsAny(bearerToken, "\r\n") {
+		return nil, fmt.Errorf("prover transport bearer token contains invalid characters")
+	}
+	if bearerToken != "" {
+		req.Header.Set("Authorization", "Bearer "+bearerToken)
+	}
 
-	resp, err := c.Client.Do(req)
+	doer, err := proverHTTPDoerWithoutRedirects(c.Client)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := doer.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -482,6 +509,45 @@ func (c HTTPProverClient) doJSONRequest(ctx context.Context, path string, body i
 		return nil, fmt.Errorf("prover transport request failed with status %d", resp.StatusCode)
 	}
 	return responseBytes, nil
+}
+
+func validateProverRequestURL(endpoint *url.URL) error {
+	if endpoint == nil || strings.TrimSpace(endpoint.Host) == "" {
+		return fmt.Errorf("prover transport client requires an absolute HTTP(S) base URL")
+	}
+	switch strings.ToLower(endpoint.Scheme) {
+	case "https":
+		return nil
+	case "http":
+		host := endpoint.Hostname()
+		if strings.EqualFold(host, "localhost") {
+			return nil
+		}
+		if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+			return nil
+		}
+		return fmt.Errorf("prover transport requires HTTPS for non-loopback endpoint %q", endpoint.Host)
+	default:
+		return fmt.Errorf("prover transport client base URL must use HTTP or HTTPS")
+	}
+}
+
+func proverHTTPDoerWithoutRedirects(doer HTTPDoer) (HTTPDoer, error) {
+	if client, ok := doer.(*http.Client); ok {
+		if client == nil {
+			return nil, fmt.Errorf("prover transport client HTTP client is required")
+		}
+		copy := *client
+		copy.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+		return &copy, nil
+	}
+	redirectSafe, ok := doer.(RedirectSafeHTTPDoer)
+	if !ok || !redirectSafe.ProverTransportRedirectsDisabled() {
+		return nil, fmt.Errorf("custom prover transport HTTP doer must implement RedirectSafeHTTPDoer and disable redirects")
+	}
+	return redirectSafe, nil
 }
 
 func DecodeErrorResponseJSON(payloadBytes []byte) (*ErrorResponse, error) {

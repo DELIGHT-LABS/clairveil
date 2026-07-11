@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
+	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
 func TestHTTPHandlerTransferProofRoute(t *testing.T) {
@@ -67,26 +68,85 @@ func TestHTTPHandlerWithdrawProofRoute(t *testing.T) {
 }
 
 func TestHTTPProverClientBatchTransferRoundTrip(t *testing.T) {
+	const bearerToken = "batch-prover-test-token"
 	payload, artifacts, runner := testPreparedBatchTransferPayload(t)
 	request, err := NewBatchTransferProofRequest(payload)
 	require.NoError(t, err)
 	admission := &recordingAdmission{}
-	server := httptest.NewServer(NewHTTPHandlerWithBatchAdmission(
+	handler := NewHTTPHandlerWithBatchAdmission(
 		nil,
 		nil,
 		ReferenceBatchTransferProver{Artifacts: artifacts, Runner: runner},
 		nil,
 		admission,
-	))
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer "+bearerToken, r.Header.Get("Authorization"))
+		handler.ServeHTTP(w, r)
+	}))
 	defer server.Close()
 
-	client := HTTPProverClient{BaseURL: server.URL, Client: server.Client()}
+	client := HTTPProverClient{BaseURL: server.URL, Client: server.Client(), BearerToken: bearerToken}
 	response, err := client.ProveBatchTransfer(context.Background(), *request)
 	require.NoError(t, err)
 	require.NoError(t, ValidateBatchTransferProofResponse(*request, *response))
 	require.Equal(t, BatchTransferProofCircuitID, admission.circuitID)
 	require.Equal(t, 1, admission.permit.started)
 	require.Equal(t, 1, admission.permit.released)
+}
+
+func TestHTTPProverClientRejectsNonLoopbackPlainHTTPBeforeSend(t *testing.T) {
+	transport := &countingRoundTripper{}
+	client := HTTPProverClient{BaseURL: "http://192.0.2.10:8080", Client: &http.Client{Transport: transport}}
+
+	_, err := client.doJSONRequest(context.Background(), BatchTransferProofPath, struct{}{})
+	require.ErrorContains(t, err, "requires HTTPS for non-loopback endpoint")
+	require.Zero(t, transport.calls)
+}
+
+func TestHTTPProverClientDoesNotFollowProofRequestRedirects(t *testing.T) {
+	destinationCalls := 0
+	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		destinationCalls++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer destination.Close()
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, destination.URL, http.StatusTemporaryRedirect)
+	}))
+	defer source.Close()
+
+	client := HTTPProverClient{BaseURL: source.URL, Client: source.Client()}
+	_, err := client.doJSONRequest(context.Background(), BatchTransferProofPath, struct{}{})
+	require.ErrorContains(t, err, "status 307")
+	require.Zero(t, destinationCalls)
+}
+
+func TestHTTPProverClientRejectsUnmarkedCustomDoerBeforeSend(t *testing.T) {
+	doer := &countingHTTPDoer{}
+	client := HTTPProverClient{BaseURL: "https://prover.example", Client: doer}
+
+	_, err := client.doJSONRequest(context.Background(), BatchTransferProofPath, struct{}{})
+	require.ErrorContains(t, err, "must implement RedirectSafeHTTPDoer")
+	require.Zero(t, doer.calls)
+}
+
+func TestHTTPHandlerRejectsNullBatchMessageOutputWithoutPanicking(t *testing.T) {
+	payload, _, _ := testPreparedBatchTransferPayload(t)
+	payload.MessageOutputs = append([]*privacytypes.BatchTransferOutput(nil), payload.MessageOutputs...)
+	payload.MessageOutputs[0] = nil
+	request := BatchTransferProofRequest{Version: BatchTransferProofRequestVersion, Payload: payload}
+	requestBody, err := request.MarshalIndentedJSON()
+	require.NoError(t, err)
+	prover := &countingBatchTransferProver{}
+	handler := NewHTTPHandlerWithBatchAdmission(nil, nil, prover, nil, &recordingAdmission{})
+
+	recorder := httptest.NewRecorder()
+	httpRequest := httptest.NewRequest(http.MethodPost, BatchTransferProofPath, bytesReader(requestBody))
+	handler.ServeHTTP(recorder, httpRequest)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Zero(t, prover.calls)
 }
 
 func TestHTTPHandlerRejectsMethod(t *testing.T) {
@@ -465,15 +525,34 @@ type countingTransferProver struct {
 	calls int
 }
 
+type countingRoundTripper struct {
+	calls int
+}
+
+func (t *countingRoundTripper) RoundTrip(_ *http.Request) (*http.Response, error) {
+	t.calls++
+	return nil, errors.New("unexpected HTTP request")
+}
+
+type countingHTTPDoer struct {
+	calls int
+}
+
+func (d *countingHTTPDoer) Do(_ *http.Request) (*http.Response, error) {
+	d.calls++
+	return nil, errors.New("unexpected HTTP request")
+}
+
 type countingWithdrawProver struct{}
 
-type countingBatchTransferProver struct{}
+type countingBatchTransferProver struct{ calls int }
 
 func (*countingWithdrawProver) ProveWithdraw(WithdrawProofRequest, time.Time) (*WithdrawProofResponse, error) {
 	return nil, fmt.Errorf("unexpected withdraw proof request")
 }
 
-func (*countingBatchTransferProver) ProveBatchTransfer(BatchTransferProofRequest, time.Time) (*BatchTransferProofResponse, error) {
+func (p *countingBatchTransferProver) ProveBatchTransfer(BatchTransferProofRequest, time.Time) (*BatchTransferProofResponse, error) {
+	p.calls++
 	return nil, fmt.Errorf("unexpected batch transfer proof request")
 }
 
