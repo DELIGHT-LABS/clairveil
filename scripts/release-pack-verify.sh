@@ -25,6 +25,18 @@ fail() {
 	exit 1
 }
 
+validate_release_path() {
+	local path="$1"
+	if [[ -z "$path" || "$path" == /* || "$path" == */ || "$path" == *$'\n'* ]]; then
+		fail "invalid selected release path: $path"
+	fi
+	case "/$path/" in
+	*"/../"* | *"/./"*)
+		fail "invalid selected release path: $path"
+		;;
+	esac
+}
+
 if [[ -z "${RELEASE_PACK_ARCHIVE:-}" ]]; then
 	"$repo_root/scripts/release-pack.sh" >/dev/null
 elif [[ ! -f "$archive_path" || ! -f "$checksum_path" ]]; then
@@ -39,11 +51,81 @@ actual_checksum="$(shasum -a 256 "$archive_path" | awk '{print $1; exit}')"
 [[ -n "$expected_checksum" ]] || fail "empty checksum file: $checksum_path"
 [[ "$expected_checksum" == "$actual_checksum" ]] || fail "archive checksum mismatch"
 
-top_level_count="$(tar -tzf "$archive_path" | awk -F/ 'NF {print $1}' | LC_ALL=C sort -u | wc -l | tr -d ' ')"
-[[ "$top_level_count" == "1" ]] || fail "archive must contain exactly one top-level directory"
+if ! pack_root_name="$(python3 - "$archive_path" "$work_dir" <<'PY'
+import os
+from pathlib import Path, PurePosixPath
+import shutil
+import sys
+import tarfile
 
-pack_root_name="$(tar -tzf "$archive_path" | awk -F/ 'NF {print $1; exit}')"
-tar -xzf "$archive_path" -C "$work_dir"
+archive = Path(sys.argv[1])
+destination = Path(sys.argv[2])
+max_archive_bytes = 512 * 1024 * 1024
+max_file_bytes = 128 * 1024 * 1024
+max_total_bytes = 512 * 1024 * 1024
+max_members = 10_000
+
+try:
+    if archive.stat().st_size > max_archive_bytes:
+        raise ValueError("compressed archive exceeds the verification limit")
+    seen: set[str] = set()
+    top_level: str | None = None
+    total_bytes = 0
+    member_count = 0
+    with tarfile.open(archive, "r:gz") as tf:
+        for member in tf:
+            member_count += 1
+            if member_count > max_members:
+                raise ValueError("archive contains too many members")
+            name = member.name
+            path = PurePosixPath(name)
+            if (
+                not name
+                or path.is_absolute()
+                or str(path) != name
+                or any(part in ("", ".", "..") for part in path.parts)
+                or any(ord(char) < 32 or ord(char) == 127 for char in name)
+            ):
+                raise ValueError(f"non-canonical archive path: {name!r}")
+            if name in seen:
+                raise ValueError(f"duplicate archive member: {name}")
+            seen.add(name)
+            if not (member.isdir() or member.isreg()):
+                raise ValueError(f"non-regular archive member: {name}")
+            if len(path.parts) == 1 and not member.isdir():
+                raise ValueError("archive top level must be a directory")
+            if top_level is None:
+                top_level = path.parts[0]
+            elif path.parts[0] != top_level:
+                raise ValueError("archive must contain exactly one top-level directory")
+
+            target = destination.joinpath(*path.parts)
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+                os.chmod(target, member.mode & 0o777)
+                continue
+            if member.size > max_file_bytes:
+                raise ValueError(f"archive member exceeds the file limit: {name}")
+            total_bytes += member.size
+            if total_bytes > max_total_bytes:
+                raise ValueError("archive contents exceed the verification limit")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            source = tf.extractfile(member)
+            if source is None:
+                raise ValueError(f"failed to read archive member: {name}")
+            with source, target.open("xb") as output:
+                shutil.copyfileobj(source, output)
+            os.chmod(target, member.mode & 0o777)
+    if top_level is None:
+        raise ValueError("archive is empty")
+    print(top_level)
+except (OSError, tarfile.TarError, ValueError) as error:
+    print(f"unsafe release archive: {error}", file=sys.stderr)
+    raise SystemExit(1)
+PY
+)"; then
+	fail "archive structure validation failed"
+fi
 pack_root="$work_dir/$pack_root_name"
 [[ -d "$pack_root" ]] || fail "missing extracted pack root: $pack_root_name"
 
@@ -54,12 +136,38 @@ manifest_commit="$(sed -nE 's/^commit: ([0-9a-f]{40})$/\1/p' "$pack_root/RELEASE
 
 if [[ "$explicit_archive" == true ]]; then
 	[[ -n "${RELEASE_PACK_EXPECTED_COMMIT:-}" ]] || fail "RELEASE_PACK_EXPECTED_COMMIT is required for an explicit archive"
-	expected_commit="$(git -C "$repo_root" rev-parse --verify "${RELEASE_PACK_EXPECTED_COMMIT}^{commit}" 2>/dev/null)" || fail "expected commit is not available in the local Git repository"
+	[[ "$RELEASE_PACK_EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]] || fail "RELEASE_PACK_EXPECTED_COMMIT must be a canonical 40-character commit SHA"
+	expected_commit="$RELEASE_PACK_EXPECTED_COMMIT"
 else
 	expected_commit="$(git -C "$repo_root" rev-parse HEAD)"
 fi
 [[ "$manifest_commit" == "$expected_commit" ]] || fail "manifest commit does not match expected commit"
 git -C "$repo_root" cat-file -e "${manifest_commit}^{commit}" 2>/dev/null || fail "manifest commit is not available in the local Git repository"
+
+manifest_version_line_count="$(grep -Ec '^version:' "$pack_root/RELEASE-MANIFEST.txt" 2>/dev/null || true)"
+manifest_version_count="$(grep -Ec '^version: [0-9A-Za-z._+-]+$' "$pack_root/RELEASE-MANIFEST.txt" 2>/dev/null || true)"
+manifest_generated_line_count="$(grep -Ec '^generated_at_utc:' "$pack_root/RELEASE-MANIFEST.txt" 2>/dev/null || true)"
+manifest_generated_count="$(grep -Ec '^generated_at_utc: [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' "$pack_root/RELEASE-MANIFEST.txt" 2>/dev/null || true)"
+[[ "$manifest_version_line_count" == "1" && "$manifest_version_count" == "1" ]] || fail "manifest must contain exactly one canonical version"
+[[ "$manifest_generated_line_count" == "1" && "$manifest_generated_count" == "1" ]] || fail "manifest must contain exactly one canonical generation timestamp"
+manifest_version="$(sed -nE 's/^version: ([0-9A-Za-z._+-]+)$/\1/p' "$pack_root/RELEASE-MANIFEST.txt")"
+manifest_generated_at_utc="$(sed -nE 's/^generated_at_utc: ([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)$/\1/p' "$pack_root/RELEASE-MANIFEST.txt")"
+[[ "$pack_root_name" == "clairveil-handoff-${manifest_version}" ]] || fail "archive root does not match manifest version"
+
+manifest_template="$work_dir/release-manifest-template.txt"
+expected_manifest="$work_dir/expected-release-manifest.txt"
+git -C "$repo_root" show "${manifest_commit}:scripts/release-manifest-template.txt" >"$manifest_template" || fail "manifest template is missing from manifest commit"
+awk \
+	-v version="$manifest_version" \
+	-v commit="$manifest_commit" \
+	-v generated_at_utc="$manifest_generated_at_utc" \
+	'{
+		gsub(/@VERSION@/, version)
+		gsub(/@COMMIT@/, commit)
+		gsub(/@GENERATED_AT_UTC@/, generated_at_utc)
+		print
+	}' "$manifest_template" >"$expected_manifest"
+cmp -s "$expected_manifest" "$pack_root/RELEASE-MANIFEST.txt" || fail "release manifest differs from the canonical Git template"
 
 required_files=(
 	"RELEASE-MANIFEST.txt"
@@ -184,6 +292,8 @@ required_files=(
 	"build/clairveil-proverd/compose.yaml"
 	"scripts/release-pack.sh"
 	"scripts/release-pack-verify.sh"
+	"scripts/release-pack-paths.txt"
+	"scripts/release-manifest-template.txt"
 	"scripts/privacy-batch-joinsplit-localnet.sh"
 )
 
@@ -199,8 +309,33 @@ done
 	shasum -a 256 -c SHA256SUMS.txt >/dev/null
 )
 
-first_nonregular="$(find "$pack_root" ! -type d ! -type f -print -quit)"
-[[ -z "$first_nonregular" ]] || fail "archive contains a non-regular entry: ${first_nonregular#"$pack_root/"}"
+selected_paths_file="$work_dir/release-pack-paths.txt"
+git -C "$repo_root" show "${manifest_commit}:scripts/release-pack-paths.txt" >"$selected_paths_file" || fail "release path manifest is missing from manifest commit"
+duplicate_path="$(LC_ALL=C sort "$selected_paths_file" | uniq -d | head -1)"
+[[ -z "$duplicate_path" ]] || fail "release path manifest contains a duplicate: $duplicate_path"
+
+expected_files_unsorted="$work_dir/expected-files.unsorted"
+expected_files="$work_dir/expected-files.txt"
+actual_files="$work_dir/actual-files.txt"
+: >"$expected_files_unsorted"
+while IFS= read -r selected_path || [[ -n "$selected_path" ]]; do
+	validate_release_path "$selected_path"
+	matched_files="$(git -C "$repo_root" ls-tree -r --name-only "$manifest_commit" -- "$selected_path")"
+	[[ -n "$matched_files" ]] || fail "selected release path is missing from manifest commit: $selected_path"
+	printf '%s\n' "$matched_files" >>"$expected_files_unsorted"
+done <"$selected_paths_file"
+LC_ALL=C sort -u "$expected_files_unsorted" >"$expected_files"
+
+while IFS= read -r -d '' packed_file; do
+	relative_path="${packed_file#"$pack_root/"}"
+	case "$relative_path" in
+	"RELEASE-MANIFEST.txt" | "SHA256SUMS.txt")
+		continue
+		;;
+	esac
+	printf '%s\n' "$relative_path"
+done < <(find "$pack_root" -type f -print0) | LC_ALL=C sort -u >"$actual_files"
+cmp -s "$expected_files" "$actual_files" || fail "archive file set differs from the selected manifest Git tree"
 
 while IFS= read -r -d '' packed_file; do
 	relative_path="${packed_file#"$pack_root/"}"
