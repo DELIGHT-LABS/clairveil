@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	"unicode/utf8"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
@@ -40,6 +41,9 @@ func NewNote(
 	}
 	if err := sdk.ValidateDenom(assetDenom); err != nil {
 		return nil, fmt.Errorf("invalid canonical asset denom: %w", err)
+	}
+	if err := validateNoteMemoV1(memo); err != nil {
+		return nil, err
 	}
 
 	max := new(big.Int).Set(fr.Modulus())
@@ -116,11 +120,24 @@ func (n *Note) ValidateV1() error {
 	if _, err := pointFromBigInts(n.ReceiverViewPubKeyX, n.ReceiverViewPubKeyY); err != nil {
 		return fmt.Errorf("invalid receiver view public key: %w", err)
 	}
+	if err := validateNoteMemoV1(n.Memo); err != nil {
+		return err
+	}
 	if n.ComputeCommitment().Sign() == 0 {
 		return fmt.Errorf("active note commitment must be non-zero")
 	}
 	if n.ComputeNullifier().Sign() == 0 {
 		return fmt.Errorf("active note nullifier must be non-zero")
+	}
+	return nil
+}
+
+func validateNoteMemoV1(memo string) error {
+	if !utf8.ValidString(memo) {
+		return fmt.Errorf("note memo must be valid UTF-8")
+	}
+	if len([]byte(memo)) > NoteMemoCapacityV1 {
+		return fmt.Errorf("note memo exceeds fixed capacity %d", NoteMemoCapacityV1)
 	}
 	return nil
 }
@@ -157,9 +174,4 @@ func pointFromBigInts(x, y *big.Int) (*crypto_tedwards.PointAffine, error) {
 		return nil, err
 	}
 	return &point, nil
-}
-
-func (n *Note) Bytes() []byte {
-	b, _ := MarshalNotePlaintextV1(n)
-	return b
 }

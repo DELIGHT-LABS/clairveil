@@ -233,7 +233,8 @@ func buildGoldenVectorsFixture(t *testing.T) goldenVectors {
 		Randomness:           big.NewInt(1771001),
 		Memo:                 "golden-vector",
 	}
-	noteBytes := note.Bytes()
+	noteBytes, err := privacytypes.MarshalNotePlaintextV1(&note)
+	require.NoError(t, err)
 	encryptedNote, err := privacycrypto.Encrypt(noteBytes, senderSeed)
 	require.NoError(t, err)
 	encryptedNote, err = privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeDepositNoteV1, encryptedNote)

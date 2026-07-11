@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -95,6 +96,133 @@ func TestCommitmentPathsAtRootRejectsMixedSnapshotAndBounds(t *testing.T) {
 		RootHex:         hex.EncodeToString(firstRoot),
 	})
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+func TestCommitmentPathsAtRootRejectsOversizedHistoricalRebuildBeforeLeafRead(t *testing.T) {
+	k, ctx, _ := setupMsgServerKeeper()
+	root := fixedFieldBytes(241)
+	snapshot := &privacytypes.MerkleRootSnapshotV1{
+		Root:      root,
+		LeafCount: MaxHistoricalPathQueryRebuildLeaves + 1,
+		Height:    41,
+	}
+	k.SetLeafCount(ctx, snapshot.LeafCount+1)
+	k.SetMerkleNode(ctx, uint8(MerkleDepth), 0, fixedFieldBytes(245))
+	k.SetHistoricalRoot(ctx.WithBlockHeight(snapshot.Height), root)
+	require.NoError(t, k.SetMerkleRootSnapshotV1(ctx, snapshot))
+
+	response, err := k.CommitmentPathsAtRoot(sdk.WrapSDKContext(ctx), &privacytypes.QueryCommitmentPathsAtRootRequest{
+		CommitmentHexes: []string{hex.EncodeToString(fixedFieldBytes(242))},
+		RootHex:         hex.EncodeToString(root),
+		SnapshotHeight:  snapshot.Height,
+	})
+	require.Nil(t, response)
+	require.Equal(t, codes.ResourceExhausted, status.Code(err))
+	require.Contains(t, err.Error(), fmt.Sprintf("max_query_rebuild_leaves=%d", MaxHistoricalPathQueryRebuildLeaves))
+}
+
+func TestCommitmentPathsAtRootHonorsCanceledContextBeforeHistoricalLeafRead(t *testing.T) {
+	k, ctx, _ := setupMsgServerKeeper()
+	first := fixedFieldBytes(243)
+	second := fixedFieldBytes(244)
+	require.NoError(t, k.AppendCommitment(ctx.WithBlockHeight(50), first))
+	historicalRoot := append([]byte(nil), k.GetMerkleNode(ctx, uint8(MerkleDepth), 0)...)
+	require.NoError(t, k.AppendCommitment(ctx.WithBlockHeight(51), second))
+
+	goCtx, cancel := context.WithCancel(sdk.WrapSDKContext(ctx))
+	cancel()
+	response, err := k.CommitmentPathsAtRoot(goCtx, &privacytypes.QueryCommitmentPathsAtRootRequest{
+		CommitmentHexes: []string{hex.EncodeToString(first)},
+		RootHex:         hex.EncodeToString(historicalRoot),
+		SnapshotHeight:  50,
+	})
+	require.Nil(t, response)
+	require.Equal(t, codes.Canceled, status.Code(err))
+}
+
+func TestCommitmentPathsAtRootRejectsWhenHistoricalRebuildAdmissionIsFull(t *testing.T) {
+	k, ctx, _ := setupMsgServerKeeper()
+	first := fixedFieldBytes(246)
+	second := fixedFieldBytes(247)
+	require.NoError(t, k.AppendCommitment(ctx.WithBlockHeight(60), first))
+	historicalRoot := append([]byte(nil), k.GetMerkleNode(ctx, uint8(MerkleDepth), 0)...)
+	require.NoError(t, k.AppendCommitment(ctx.WithBlockHeight(61), second))
+	for i := 0; i < MaxConcurrentHistoricalPathQueryRebuilds; i++ {
+		k.historicalPathQueryRebuildSlots <- struct{}{}
+		defer func() { <-k.historicalPathQueryRebuildSlots }()
+	}
+
+	response, err := k.CommitmentPathsAtRoot(sdk.WrapSDKContext(ctx), &privacytypes.QueryCommitmentPathsAtRootRequest{
+		CommitmentHexes: []string{hex.EncodeToString(first)},
+		RootHex:         hex.EncodeToString(historicalRoot),
+		SnapshotHeight:  60,
+	})
+	require.Nil(t, response)
+	require.Equal(t, codes.ResourceExhausted, status.Code(err))
+	require.Contains(t, err.Error(), "admission is full")
+}
+
+func TestCommitmentPathsAtRootRequiresCachedRootWithoutOnlineRebuild(t *testing.T) {
+	k, ctx, _ := setupMsgServerKeeper()
+	first := fixedFieldBytes(248)
+	second := fixedFieldBytes(249)
+	require.NoError(t, k.AppendCommitment(ctx.WithBlockHeight(70), first))
+	historicalRoot := append([]byte(nil), k.GetMerkleNode(ctx, uint8(MerkleDepth), 0)...)
+	require.NoError(t, k.AppendCommitment(ctx.WithBlockHeight(71), second))
+	deleteMerkleNode(k, ctx, uint8(MerkleDepth), 0)
+
+	response, err := k.CommitmentPathsAtRoot(sdk.WrapSDKContext(ctx), &privacytypes.QueryCommitmentPathsAtRootRequest{
+		CommitmentHexes: []string{hex.EncodeToString(first)},
+		RootHex:         hex.EncodeToString(historicalRoot),
+		SnapshotHeight:  70,
+	})
+	require.Nil(t, response)
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	require.Contains(t, err.Error(), "offline repair")
+	require.False(t, k.HasMerkleNode(ctx, uint8(MerkleDepth), 0), "query must not rebuild or mutate cached tree state")
+}
+
+func TestCommitmentPathsAtRootChecksCancellationBeforeCachedRootState(t *testing.T) {
+	k, ctx, _ := setupMsgServerKeeper()
+	commitment := fixedFieldBytes(250)
+	require.NoError(t, k.AppendCommitment(ctx.WithBlockHeight(80), commitment))
+	root := append([]byte(nil), k.GetMerkleNode(ctx, uint8(MerkleDepth), 0)...)
+	deleteMerkleNode(k, ctx, uint8(MerkleDepth), 0)
+
+	goCtx, cancel := context.WithCancel(sdk.WrapSDKContext(ctx))
+	cancel()
+	response, err := k.CommitmentPathsAtRoot(goCtx, &privacytypes.QueryCommitmentPathsAtRootRequest{
+		CommitmentHexes: []string{hex.EncodeToString(commitment)},
+		RootHex:         hex.EncodeToString(root),
+		SnapshotHeight:  80,
+	})
+	require.Nil(t, response)
+	require.Equal(t, codes.Canceled, status.Code(err))
+	require.False(t, k.HasMerkleNode(ctx, uint8(MerkleDepth), 0))
+}
+
+func BenchmarkHistoricalPathRebuildWorkBudget(b *testing.B) {
+	base := make([][]byte, MaxHistoricalPathQueryRebuildLeaves)
+	for i := range base {
+		base[i] = fixedFieldBytes(uint64(i + 1))
+	}
+	b.ReportAllocs()
+	b.ReportMetric(float64(MaxHistoricalPathQueryRebuildLeaves-1), "hashes/op")
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		layer := append([][]byte(nil), base...)
+		for level := uint32(0); level < MerkleDepth && len(layer) > 1; level++ {
+			next := make([][]byte, (len(layer)+1)/2)
+			for i := 0; i < len(layer); i += 2 {
+				right := emptyNodeBytes(level)
+				if i+1 < len(layer) {
+					right = layer[i+1]
+				}
+				next[i/2] = hashNodes(level, layer[i], right)
+			}
+			layer = next
+		}
+	}
 }
 
 func TestMerkleRootSnapshotLookupRejectsHistoricalHeightCorruption(t *testing.T) {

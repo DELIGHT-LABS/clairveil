@@ -102,7 +102,7 @@ func (gs GenesisState) Validate() error {
 	if err := validateGenesisRootSnapshotsV1(gs.MerkleRootSnapshots, uint64(len(gs.Commitments))); err != nil {
 		return fmt.Errorf("merkle_root_snapshots: %w", err)
 	}
-	if err := validateGenesisReserveBalancesV1(gs.ReserveBalances); err != nil {
+	if err := validateGenesisReserveBalancesV1(gs.ReserveBalances, gs.AssetRegistry); err != nil {
 		return fmt.Errorf("reserve_balances: %w", err)
 	}
 
@@ -365,7 +365,13 @@ func validateGenesisRootSnapshotsV1(snapshots []*MerkleRootSnapshotV1, commitmen
 	return nil
 }
 
-func validateGenesisReserveBalancesV1(balances []*ReserveBalanceV1) error {
+func validateGenesisReserveBalancesV1(balances []*ReserveBalanceV1, assets []*AssetRegistryEntryV1) error {
+	registeredDenoms := make(map[string]struct{}, len(assets))
+	for _, asset := range assets {
+		if asset != nil {
+			registeredDenoms[asset.CanonicalDenom] = struct{}{}
+		}
+	}
 	previousDenom := ""
 	for i, balance := range balances {
 		if balance == nil || balance.CanonicalDenom != strings.TrimSpace(balance.CanonicalDenom) {
@@ -373,6 +379,9 @@ func validateGenesisReserveBalancesV1(balances []*ReserveBalanceV1) error {
 		}
 		if err := sdk.ValidateDenom(balance.CanonicalDenom); err != nil {
 			return fmt.Errorf("balance %d denom: %w", i, err)
+		}
+		if _, registered := registeredDenoms[balance.CanonicalDenom]; !registered {
+			return fmt.Errorf("balance %d denom %q is not registered in asset_registry", i, balance.CanonicalDenom)
 		}
 		if i > 0 && balance.CanonicalDenom <= previousDenom {
 			return fmt.Errorf("balances must be strictly denom-sorted")

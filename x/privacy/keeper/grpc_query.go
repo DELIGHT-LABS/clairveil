@@ -415,7 +415,7 @@ func (k Keeper) CommitmentPathsAtRoot(goCtx context.Context, req *types.QueryCom
 		return nil, status.Error(codes.InvalidArgument, "root_hex must be canonical 32-byte field bytes")
 	}
 
-	ctx := sdk.UnwrapSDKContext(goCtx)
+	ctx := sdk.UnwrapSDKContext(goCtx).WithContext(goCtx)
 	paths, snapshot, err := k.GetCommitmentPathsAtRootV1(ctx, commitments, canonicalRoot, req.SnapshotHeight)
 	if err != nil {
 		if errors.Is(err, errMerkleCommitmentNotFound) {
@@ -423,6 +423,15 @@ func (k Keeper) CommitmentPathsAtRoot(goCtx context.Context, req *types.QueryCom
 		}
 		if strings.Contains(err.Error(), "snapshot height") {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		if errors.Is(err, errHistoricalPathQueryTooLarge) || errors.Is(err, errHistoricalPathQueryBusy) {
+			return nil, status.Error(codes.ResourceExhausted, err.Error())
+		}
+		if errors.Is(err, errMerkleQueryCachedRootMissing) {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, status.FromContextError(err).Err()
 		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}

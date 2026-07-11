@@ -22,10 +22,11 @@ type BankKeeper interface {
 }
 
 type Keeper struct {
-	cdc          codec.BinaryCodec
-	storeService store.KVStoreService
-	paramstore   paramtypes.Subspace
-	bankKeeper   BankKeeper
+	cdc                             codec.BinaryCodec
+	storeService                    store.KVStoreService
+	paramstore                      paramtypes.Subspace
+	bankKeeper                      BankKeeper
+	historicalPathQueryRebuildSlots chan struct{}
 }
 
 func NewKeeper(
@@ -35,10 +36,11 @@ func NewKeeper(
 	bk BankKeeper,
 ) *Keeper {
 	return &Keeper{
-		cdc:          cdc,
-		storeService: ss,
-		paramstore:   ps,
-		bankKeeper:   bk,
+		cdc:                             cdc,
+		storeService:                    ss,
+		paramstore:                      ps,
+		bankKeeper:                      bk,
+		historicalPathQueryRebuildSlots: make(chan struct{}, MaxConcurrentHistoricalPathQueryRebuilds),
 	}
 }
 

@@ -123,6 +123,13 @@ func (k Keeper) InitGenesisReserveBalancesV1(ctx sdk.Context, balances []*types.
 		if err := sdk.ValidateDenom(balance.CanonicalDenom); err != nil || balance.CanonicalDenom != strings.TrimSpace(balance.CanonicalDenom) {
 			return fmt.Errorf("genesis reserve balance %d denom is invalid", i)
 		}
+		_, registered, err := k.GetAssetByDenomV1(ctx, balance.CanonicalDenom)
+		if err != nil {
+			return fmt.Errorf("genesis reserve balance %d asset registry lookup failed: %w", i, err)
+		}
+		if !registered {
+			return fmt.Errorf("genesis reserve balance %d denom %q is not registered", i, balance.CanonicalDenom)
+		}
 		deposited, ok := sdkmath.NewIntFromString(balance.TotalDeposited)
 		if !ok || deposited.IsNegative() {
 			return fmt.Errorf("genesis reserve balance %d total_deposited is invalid", i)

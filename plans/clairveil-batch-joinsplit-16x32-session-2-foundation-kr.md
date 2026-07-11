@@ -824,6 +824,8 @@ feasibility report에는 hardware/OS/Go/gnark, warm/cold, sample 수를 기록�
 
 - 시작 commit: `ad99ef7193fdc0683e483e4440e5cda1f0945432`. 시작 시 branch HEAD가 exact commit이고 tracked worktree가 clean임을 확인했다.
 - 완료 commit: `43d0e8d` (`Session 2` 구현, feasibility 보정, release fixture 정렬, fail-closed state hardening, exact canonical batch effect 동결 완료 기준; 이 Completion Record/Ledger와 공개 문서 bookkeeping은 후속 문서 commit).
+- 후속 `review-fix-loop` hardening: `ad99ef7193fdc0683e483e4440e5cda1f0945432..HEAD` 전체 재검토에서 slash-containing denom의 REST deep-wildcard binding, reserve/AssetRegistry genesis 교차 검증, public historical path rebuild의 resource asymmetry와 cached-root 우회, Note memo validation/직렬화 오류 은폐를 수정했다. Historical query는 persisted snapshot metadata만 사용하고 최대 1,024 leaves, keeper당 동시 rebuild 2개, context cancellation을 강제하며 초과/admission full은 `ResourceExhausted`로 fail closed한다. Current-root query는 persisted incremental node만 읽고 cached root 누락 시 `FailedPrecondition`으로 offline repair를 요구하며 query-time rebuild/state write를 수행하지 않는다. `NewNote`/`ValidateV1`/`MarshalNotePlaintextV1`은 invalid UTF-8과 128-byte 초과 memo를 동일하게 거부하고 silent `Note.Bytes()`는 제거했다. Offline recovery/export의 `MaxMerkleRebuildLeaves`(1,048,576) 계약과 16/32 capacity/security constraint는 변경하지 않았다.
+- 후속 review 결과: fresh rediscovery 6 rounds와 fix batch 4회를 수행해 P1 1건, P2 4건을 해결했다. 마지막 두 fresh rounds는 각각 독립 reviewer 2명 모두 active/unresolved finding 0건이었고 main adjudication도 clean으로 판정해 deep-mode consecutive clean `2/2`를 충족했다. `examples/clairveil-dapp`는 사용자 지시에 따라 수정 범위에서 제외했다.
 - Gate 1 재검증: Session 1 Completion Record와 Master Roadmap을 코드에 대조하고 `go test ./x/privacy/... -count=1`을 통과했다. authorization, inflation/duplicate, disclosure oracle, canonical crypto decode, global commitment uniqueness, artifact identity, prover failover 범위를 독립 검토했으며 Critical/High 또는 필수 테스트/문서 불일치가 없어 Gate 1을 PASS로 판정했다.
 - NoteV1/domain/asset version:
   - active circuit set `privacy-note-v1`, module consensus/state version `2`, Note tree depth `32`, asset registry `privacy-asset-registry-v1`.
@@ -845,7 +847,7 @@ feasibility report에는 hardware/OS/Go/gnark, warm/cold, sample 수를 기록�
 - max-shape wire/state feasibility 결과:
   - canonical owner-effect payload `65,384 B`, actual prototype message `65,060 B`, signed Cosmos `TxRaw` `65,294 B`, summary `788 B`, 32 output records `73,628 B`, key 포함 scan KV `75,105 B`, tree allowance `98,304 B`, total KV write `173,409 B`, minimal event `584 B`, max query response `74,551 B`.
   - reference limit `1 MiB` tx, `21 MiB` block bytes, `4 MiB` gRPC/query body, `256 KiB` scan/total KV, `16 KiB` event를 모두 통과했다.
-- independent path vs multiproof 결정: security constraint와 16개의 independent depth-32 path를 유지한 full-shape gate가 통과했으므로 constrained multiproof는 Gate 2 필수 대안이 아니다. current root는 cap 없는 incremental provider를 사용하고, 모든 non-current historical root는 exact persisted root/count/height snapshot과 deterministic prefix rebuild를 사용하며 `1,048,576` leaves cap을 넘으면 archival/local provider를 요구한다.
+- independent path vs multiproof 결정: security constraint와 16개의 independent depth-32 path를 유지한 full-shape gate가 통과했으므로 constrained multiproof는 Gate 2 필수 대안이 아니다. Current root는 incremental provider를 사용한다. 모든 non-current historical root는 exact persisted root/count/height snapshot과 deterministic prefix rebuild를 사용하며 public query는 최대 `1,024` leaves와 keeper당 동시 rebuild 2개만 허용하고 초과 시 `ResourceExhausted`를 반환한다. Offline recovery/export는 별도 `MaxMerkleRebuildLeaves`(`1,048,576`) bound를 유지하며 더 큰 online request는 archival/local provider를 요구한다.
 - state/scan/registry 계약:
   - Deposit, Withdraw, JoinSplit2x2와 future batch가 하나의 summary-driven global sequence/cursor를 공유하며 zero-output Withdraw, page 중간 resume, missing/extra/non-adjacent output, malformed envelope를 exact하게 처리한다.
   - commitment index는 operation 전체에서 global이며 malformed stored index/read error를 absent로 축약하지 않는다. AssetRegistryV1 export는 forward/reverse namespace를 모두 순회하여 orphan/malformed reverse entry도 fail closed한다.
@@ -857,6 +859,8 @@ feasibility report에는 hardware/OS/Go/gnark, warm/cold, sample 수를 기록�
   - opt-in full gate `/usr/bin/time -l env CLAIRVEIL_RUN_BATCH_FEASIBILITY=1 go test ./x/privacy/circuit -run TestBatchJoinSplit16x32FullShapeResourceGate -count=1 -v`: 통과; 위 corrected resource 수치를 생성했다.
   - `go test ./x/privacy/types -run TestBatchJoinSplit16x32MaxWireStateFeasibilityGate -count=1 -v`: 통과; 위 corrected wire/state 수치를 생성했다.
   - `go vet ./x/privacy/...`: 통과. prover service/transport/zk race test 통과(macOS linker의 known `LC_DYSYMTAB` warning만 관찰).
+  - `go test ./x/privacy/keeper -run '^$' -bench '^BenchmarkHistoricalPathRebuildWorkBudget$' -benchmem -count=3`: Apple M5 Pro에서 1,024-leaf online budget이 `39.47~39.90 ms/op`, `2,085,142~2,085,248 B/op`, `46,378~46,379 allocs/op`로 측정됐다. 초기 4,096-leaf 후보는 `159.81~160.92 ms/op`, `8,354,444~8,355,243 B/op`여서 공개 RPC budget으로 채택하지 않았다.
+  - 후속 review-fix 표준 검증: `examples/clairveil-dapp`를 제외한 전체 `go test -count=1`/`go vet`, keeper/types/scanner/prover-admission 핵심 `-race`, `make proto`, `git diff --check`가 통과했다. macOS linker의 known `LC_DYSYMTAB` warning만 관찰됐고 test/race failure는 없었다.
   - `make proto` 후 generated diff 없음, `make examples`, `make privacy-e2e-smoke`, `make release-check`: 통과. release-check가 full Go/CLI/examples, vuln policy, localnet, privacy E2E, 2-batch bulk readiness를 통과했다.
   - `make release-pack`, `make release-pack-verify`, `git diff --check`: 통과.
 - 미해결 finding과 residual risk:
@@ -864,7 +868,7 @@ feasibility report에는 hardware/OS/Go/gnark, warm/cold, sample 수를 기록�
   - `BatchJoinSplit16x32`와 wire proto는 feasibility prototype/reserved schema다. production circuit/artifact, `MsgBatchTransfer`, keeper handler, batch SDK/prover route/scanner/payroll, formal trusted setup과 외부 audit는 구현하지 않았다.
   - final R1CS/PK와 약 3.11 GiB peak RSS는 lazy loader와 production capacity/process isolation을 요구한다. client cancellation은 in-process gnark solver를 중단하지 못한다.
   - external ClairveilJS는 `privacy-fixed-v1`을 아직 decode하지 못하며 conformance test가 fail-closed 동작만 확인한다. downstream은 compatibility fallback 없이 새 fixture/encoder로 갱신해야 한다.
-  - historical internal node를 영속하지 않으므로 non-current root는 위 rebuild cap을 가진다. remote path query는 input-note linkage를 노출할 수 있다.
+  - historical internal node를 영속하지 않으므로 non-current root의 public query는 1,024-leaf/동시 2개 online admission bound를 가진다. Offline recovery/export의 1,048,576-leaf bound는 별도다. Remote path query는 input-note linkage를 노출할 수 있다.
   - current 2x2 SDK는 note/user/full blinding을 독립 CSPRNG로 생성하지만 batch prototype의 세 equality처럼 circuit에서 재사용을 별도로 금지하지 않는다. 정상 SDK flow의 collision은 negligible이나 future hardening 후보로 남긴다.
   - `QueryPrivacyScanResponse.encoded_bytes`는 record proto 합계이고 wrapper/tag overhead는 별도 actual-response 측정으로 보완했다. 둘 다 4 MiB gate에 충분한 margin이 있다.
   - public count/grouping/timing, ciphertext decryptability 비보장, remote prover witness exposure, audit key/epoch 운영, AssetRegistry governance message와 production gas coefficient/state pruning은 후속 risk다.

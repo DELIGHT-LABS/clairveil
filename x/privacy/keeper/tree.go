@@ -20,15 +20,18 @@ const (
 )
 
 var (
-	errMerkleCommitmentNotFound  = errors.New("commitment was not found in the merkle tree")
-	errMerkleTreeOverflow        = errors.New("merkle tree leaf count exceeds max capacity")
-	errMerkleTreeCapacity        = errors.New("merkle tree capacity exceeded")
-	errMerkleTreeRebuildTooLarge = errors.New("merkle tree cached root is required for large rebuild")
-	errMerkleTreeNodeMissing     = errors.New("merkle tree node is missing")
-	errMerkleTreeLeafMissing     = errors.New("merkle tree leaf is missing")
-	errMerkleTreeLeafMismatch    = errors.New("merkle tree commitment index does not match stored leaf")
-	errMerkleDuplicateCommitment = errors.New("commitment already exists in the merkle tree")
-	errMerkleZeroCommitment      = errors.New("active commitment must be non-zero")
+	errMerkleCommitmentNotFound     = errors.New("commitment was not found in the merkle tree")
+	errMerkleTreeOverflow           = errors.New("merkle tree leaf count exceeds max capacity")
+	errMerkleTreeCapacity           = errors.New("merkle tree capacity exceeded")
+	errMerkleTreeRebuildTooLarge    = errors.New("merkle tree cached root is required for large rebuild")
+	errMerkleTreeNodeMissing        = errors.New("merkle tree node is missing")
+	errMerkleTreeLeafMissing        = errors.New("merkle tree leaf is missing")
+	errMerkleTreeLeafMismatch       = errors.New("merkle tree commitment index does not match stored leaf")
+	errMerkleDuplicateCommitment    = errors.New("commitment already exists in the merkle tree")
+	errMerkleZeroCommitment         = errors.New("active commitment must be non-zero")
+	errHistoricalPathQueryTooLarge  = errors.New("historical path query rebuild exceeds the online resource limit")
+	errHistoricalPathQueryBusy      = errors.New("historical path query rebuild admission is full")
+	errMerkleQueryCachedRootMissing = errors.New("merkle query requires the cached current root; run offline repair")
 )
 
 func validateMerkleLeafCount(count uint64) error {

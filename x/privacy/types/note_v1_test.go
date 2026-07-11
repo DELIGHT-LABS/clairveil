@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
@@ -138,6 +139,30 @@ func TestNewNoteV1ValidatesDenomAndKeys(t *testing.T) {
 	require.ErrorContains(t, err, "identity point is not allowed")
 	_, err = NewNote(spendX, spendY, viewX, viewY, big.NewInt(7), "", "memo")
 	require.ErrorContains(t, err, "invalid canonical asset denom")
+}
+
+func TestNoteV1MemoValidationMatchesFixedEncoding(t *testing.T) {
+	spend := noteV1TestPoint(big.NewInt(17))
+	view := noteV1TestPoint(big.NewInt(19))
+	spendX, spendY := noteV1TestPointCoordinates(spend)
+	viewX, viewY := noteV1TestPointCoordinates(view)
+	validMemo := strings.Repeat("a", NoteMemoCapacityV1)
+
+	note, err := NewNote(spendX, spendY, viewX, viewY, big.NewInt(7), "uclair", validMemo)
+	require.NoError(t, err)
+	require.NoError(t, note.ValidateV1())
+	_, err = MarshalNotePlaintextV1(note)
+	require.NoError(t, err)
+
+	_, err = NewNote(spendX, spendY, viewX, viewY, big.NewInt(7), "uclair", validMemo+"a")
+	require.ErrorContains(t, err, "fixed capacity")
+	_, err = NewNote(spendX, spendY, viewX, viewY, big.NewInt(7), "uclair", string([]byte{0xff}))
+	require.ErrorContains(t, err, "valid UTF-8")
+
+	note.Memo = validMemo + "a"
+	require.ErrorContains(t, note.ValidateV1(), "fixed capacity")
+	note.Memo = string([]byte{0xff})
+	require.ErrorContains(t, note.ValidateV1(), "valid UTF-8")
 }
 
 func noteV1TestPoint(scalar *big.Int) crypto_tedwards.PointAffine {

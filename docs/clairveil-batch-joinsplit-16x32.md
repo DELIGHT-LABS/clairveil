@@ -405,7 +405,7 @@ All multibyte integers and field values are unsigned big-endian. Every field ele
 | 220 | 2 | memo byte length (`0..128`) |
 | 222 | 128 | UTF-8 memo followed by zero padding |
 
-Memo is local metadata and is not part of `note_commitment`. A decoder rejects invalid UTF-8, non-zero padding, non-canonical fields, bad keys, zero active commitment/nullifier, wrong length/version/domain/reserved bytes, and trailing data.
+Memo is local metadata and is not part of `note_commitment`. `NewNote`, `Note.ValidateV1`, and `MarshalNotePlaintextV1` all reject invalid UTF-8 and memo values above 128 bytes. Go callers must use the fallible `MarshalNotePlaintextV1`; the silent `Note.Bytes()` helper is not part of the contract. A decoder rejects invalid UTF-8, non-zero padding, non-canonical fields, bad keys, zero active commitment/nullifier, wrong length/version/domain/reserved bytes, and trailing data.
 
 ### 6.2 DisclosurePlaintextV1 — exactly 392 bytes
 
@@ -599,7 +599,7 @@ Frozen query bounds are:
 
 `CommitmentPathsAtRoot` accepts `1..16` distinct canonical commitments, an exact historical root, and optional snapshot height. It returns all 32-level paths with leaf indices from one immutable `(root, height, leaf_count)` prefix. Root, height, and leaf count MUST agree; each returned path MUST reconstruct the requested root.
 
-Every commitment append persists the resulting root together with its exact leaf count and block height. This snapshot is authoritative metadata, but historical internal tree nodes are not persisted. Current-root requests use the incremental node provider without the rebuild cap. Every non-current historical path therefore performs a deterministic prefix rebuild using the same NoteV1 node/empty-root helpers and is capped at `1,048,576` leaves even when root/count/height metadata is present. Above the cap, historical path queries fail closed and require an archival/local tree provider. A remote multi-note path query reveals input-note linkage to that provider and SHOULD be replaced by a trusted local provider where privacy requirements demand it.
+Every commitment append persists the resulting root together with its exact leaf count and block height. This snapshot is authoritative metadata, but historical internal tree nodes are not persisted. Current-root requests read only the persisted incremental nodes. If the cached current root or a required incremental node is missing, the query never rebuilds or writes state: it fails closed (`FailedPrecondition` for a missing cached root) and requires explicit offline repair. Every non-current historical path performs a deterministic prefix rebuild using the same NoteV1 node/empty-root helpers. The public query admits at most 1,024 leaves and two concurrent rebuilds per keeper, otherwise it returns `ResourceExhausted`; larger online requests require the current root or an archival/local tree provider. Offline recovery/export retains the separate `MaxMerkleRebuildLeaves` (1,048,576) bound. A remote multi-note path query reveals input-note linkage to that provider and SHOULD be replaced by a trusted local provider where privacy requirements demand it.
 
 ### 8.4 Genesis/reset
 
@@ -775,7 +775,7 @@ Current batch-specific test coverage is recorded exactly. `TestBatchJoinSplit16x
 - Ciphertext decryptability is not proven. Auditor-key compromise, key-epoch rotation, and manual review of failed delivery remain operational risks.
 - Public input/output counts, timing, roots, batch grouping, and the minimal summary remain public metadata.
 - A remote prover sees the complete witness/payment batch; deployment must treat it as highly sensitive and keep automatic failover disabled.
-- Every normal append persists authoritative root/count/height metadata, but not historical internal nodes. Every non-current historical path rebuild is bounded to 1,048,576 leaves; current-root incremental paths are uncapped, and large-tree export requires the complete persisted metadata index.
+- Every normal append persists authoritative root/count/height metadata, but not historical internal nodes. Current-root paths use incremental nodes. The public non-current historical query admits at most 1,024 leaves and two concurrent rebuilds per keeper, then returns `ResourceExhausted`; larger online requests require the current root or a trusted local historical index. Offline recovery/export retains the separate `MaxMerkleRebuildLeaves` (1,048,576) bound, and large-tree export requires the complete persisted metadata index.
 - Current Deposit and JoinSplit2x2 still retain their existing event compatibility behavior. The minimal-event rule is mandatory for the future batch path and is not a claim that every legacy event was redesigned in Session 2.
 - Concrete production gas coefficients, per-chain governance limits, new-asset registration governance, and long-run state-pruning policy are deferred, but no represented work category may be left unmetered.
 

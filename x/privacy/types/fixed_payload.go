@@ -78,13 +78,7 @@ func MarshalNotePlaintextV1(note *Note) ([]byte, error) {
 	if err := note.ValidateV1(); err != nil {
 		return nil, err
 	}
-	if !utf8.ValidString(note.Memo) {
-		return nil, fmt.Errorf("note memo must be valid UTF-8")
-	}
 	memo := []byte(note.Memo)
-	if len(memo) > NoteMemoCapacityV1 {
-		return nil, fmt.Errorf("note memo exceeds fixed capacity %d", NoteMemoCapacityV1)
-	}
 
 	result := make([]byte, NotePlaintextV1Size)
 	offset := 0

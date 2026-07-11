@@ -405,7 +405,7 @@ proof는 digest와 canonical payload bytes를 bind하지만 claimed target key�
 | 220 | 2 | memo byte length (`0..128`) |
 | 222 | 128 | UTF-8 memo 뒤에 zero padding |
 
-memo는 local metadata이며 `note_commitment`에 포함되지 않는다. decoder는 invalid UTF-8, non-zero padding, non-canonical field, invalid key, zero active commitment/nullifier, wrong length/version/domain/reserved bytes, trailing data를 거부한다.
+memo는 local metadata이며 `note_commitment`에 포함되지 않는다. `NewNote`, `Note.ValidateV1`, `MarshalNotePlaintextV1`은 모두 invalid UTF-8과 128 bytes 초과 memo를 거부한다. Go caller는 fallible `MarshalNotePlaintextV1`을 사용해야 하며 silent `Note.Bytes()` helper는 contract에 포함되지 않는다. Decoder는 invalid UTF-8, non-zero padding, non-canonical field, invalid key, zero active commitment/nullifier, wrong length/version/domain/reserved bytes, trailing data를 거부한다.
 
 ### 6.2 DisclosurePlaintextV1 — exact 392 bytes
 
@@ -599,7 +599,7 @@ Deposit, JoinSplit2x2, 향후 batch operation은 하나의 monotonically increas
 
 `CommitmentPathsAtRoot`는 `1..16`개의 distinct canonical commitment, exact historical root, optional snapshot height를 받는다. 하나의 immutable `(root, height, leaf_count)` prefix에서 모든 32-level path와 leaf index를 반환한다. root, height, leaf count는 서로 일치해야 하며 각 path는 requested root를 재구성해야 한다.
 
-모든 commitment append는 결과 root와 exact leaf count, block height를 함께 영속한다. 이 snapshot은 authoritative metadata지만 historical internal tree node는 영속하지 않는다. current-root request는 rebuild cap 없이 incremental node provider를 사용한다. 따라서 모든 non-current historical path는 root/count/height metadata가 있어도 같은 NoteV1 node/empty-root helper로 deterministic prefix rebuild를 수행하며 `1,048,576` leaves cap이 적용된다. cap을 넘는 historical path query는 fail closed하고 archival/local tree provider가 필요하다. 원격 multi-note path query는 해당 provider에 input-note linkage를 노출하므로 privacy requirement가 필요하면 trusted local provider로 대체하는 것이 좋다.
+모든 commitment append는 결과 root와 exact leaf count, block height를 함께 영속한다. 이 snapshot은 authoritative metadata지만 historical internal tree node는 영속하지 않는다. Current-root request는 persisted incremental node만 읽는다. Cached current root 또는 필요한 incremental node가 없으면 query는 state를 rebuild하거나 쓰지 않고 fail closed하며(cached root 누락은 `FailedPrecondition`) explicit offline repair를 요구한다. 모든 non-current historical path는 같은 NoteV1 node/empty-root helper로 deterministic prefix rebuild를 수행한다. Public query는 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하고 그 이상은 `ResourceExhausted`를 반환하므로 더 큰 online request는 current root 또는 archival/local tree provider가 필요하다. Offline recovery/export는 별도 `MaxMerkleRebuildLeaves`(1,048,576) bound를 유지한다. 원격 multi-note path query는 해당 provider에 input-note linkage를 노출하므로 privacy requirement가 필요하면 trusted local provider로 대체하는 것이 좋다.
 
 ### 8.4 Genesis/reset
 
@@ -775,7 +775,7 @@ proof 성공 전에 batch state write가 발생하면 안 된다. message는 all
 - ciphertext decryptability는 proof하지 않는다. auditor-key compromise, key-epoch rotation, delivery failure manual review가 operational risk로 남는다.
 - public input/output count, timing, root, batch grouping, minimal summary는 public metadata다.
 - remote prover는 complete witness/payment batch를 보게 된다. 매우 민감한 서비스로 취급하고 automatic failover를 계속 비활성화해야 한다.
-- 모든 정상 append는 authoritative root/count/height metadata를 영속하지만 historical internal node는 저장하지 않는다. 모든 non-current historical path rebuild는 1,048,576 leaves로 제한되고 current-root incremental path에는 cap이 없으며 large-tree export는 complete persisted metadata index를 요구한다.
+- 모든 정상 append는 authoritative root/count/height metadata를 영속하지만 historical internal node는 저장하지 않는다. Current-root path는 incremental node를 사용한다. Public non-current historical query는 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하고 그 이상은 `ResourceExhausted`를 반환하므로 더 큰 online request는 current root 또는 trusted local historical index를 사용한다. Offline recovery/export는 별도 `MaxMerkleRebuildLeaves`(1,048,576) bound를 유지하며 large-tree export는 complete persisted metadata index를 요구한다.
 - current Deposit과 JoinSplit2x2는 기존 event compatibility 동작을 유지한다. minimal-event 규칙은 향후 batch path의 의무사항이며 Session 2가 모든 legacy event를 재설계했다는 의미가 아니다.
 - concrete production gas coefficient, per-chain governance limit, new-asset registration governance, long-run state-pruning policy는 미뤄졌지만 표현된 어떤 work category도 unmetered로 두면 안 된다.
 

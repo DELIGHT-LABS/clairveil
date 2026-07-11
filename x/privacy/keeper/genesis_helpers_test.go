@@ -106,3 +106,13 @@ func TestSession2FoundationGenesisHelpersRoundTripLosslessly(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, sequence, restoredSequence)
 }
+
+func TestInitGenesisReserveBalancesV1RejectsUnregisteredAsset(t *testing.T) {
+	k, ctx, _ := setupMsgServerKeeper()
+	err := k.InitGenesisReserveBalancesV1(ctx, []*privacytypes.ReserveBalanceV1{{
+		CanonicalDenom: "uatom",
+		TotalDeposited: "1",
+		TotalWithdrawn: "0",
+	}})
+	require.ErrorContains(t, err, `denom "uatom" is not registered`)
+}

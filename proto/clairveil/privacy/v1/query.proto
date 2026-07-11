@@ -65,13 +65,13 @@ service Query {
   }
   // Denom별 module-account reserve/accounting invariant 조회
   rpc Reserve(QueryReserveRequest) returns (QueryReserveResponse) {
-    option (google.api.http).get = "/clairveil/privacy/v1/reserve/{denom}";
+    option (google.api.http).get = "/clairveil/privacy/v1/reserve/{denom=**}";
   }
   // Canonical denom으로 AssetRegistryV1 entry 조회
   rpc AssetByDenom(QueryAssetByDenomRequest)
       returns (QueryAssetByDenomResponse) {
     option (google.api.http).get =
-        "/clairveil/privacy/v1/assets/by_denom/{canonical_denom}";
+        "/clairveil/privacy/v1/assets/by_denom/{canonical_denom=**}";
   }
   // Canonical 32-byte asset ID로 AssetRegistryV1 entry 조회
   rpc AssetByID(QueryAssetByIDRequest) returns (QueryAssetByIDResponse) {

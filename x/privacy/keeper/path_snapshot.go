@@ -17,6 +17,84 @@ import (
 
 const MaxCommitmentPathSnapshotQuery = 16
 
+// MaxHistoricalPathQueryRebuildLeaves is deliberately much smaller than the
+// offline MaxMerkleRebuildLeaves recovery bound. A public query must not turn
+// one small request into an unbounded KV scan and MiMC rebuild.
+const MaxHistoricalPathQueryRebuildLeaves = uint64(1) << 10
+
+const MaxConcurrentHistoricalPathQueryRebuilds = 2
+
+const historicalPathCancellationCheckInterval = uint64(256)
+
+func validateHistoricalPathQueryRebuildCount(count uint64) error {
+	if err := validateMerkleLeafCount(count); err != nil {
+		return err
+	}
+	if count > MaxHistoricalPathQueryRebuildLeaves {
+		return fmt.Errorf("%w: leaf_count=%d max_query_rebuild_leaves=%d", errHistoricalPathQueryTooLarge, count, MaxHistoricalPathQueryRebuildLeaves)
+	}
+	return nil
+}
+
+func checkHistoricalPathQueryContext(ctx sdk.Context, work uint64) error {
+	if work%historicalPathCancellationCheckInterval != 0 {
+		return nil
+	}
+	return ctx.Context().Err()
+}
+
+func (k Keeper) acquireHistoricalPathQueryRebuild(ctx sdk.Context) (func(), error) {
+	if k.historicalPathQueryRebuildSlots == nil {
+		return nil, fmt.Errorf("%w: admission is not initialized", errHistoricalPathQueryBusy)
+	}
+	select {
+	case k.historicalPathQueryRebuildSlots <- struct{}{}:
+		return func() { <-k.historicalPathQueryRebuildSlots }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+		return nil, errHistoricalPathQueryBusy
+	}
+}
+
+func (k Keeper) getStoredIncrementalPathV1(ctx sdk.Context, commitment []byte, count uint64) ([]string, []uint32, uint64, error) {
+	canonicalCommitment, err := validateFieldElementBytesStrict(commitment)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	leafIndex, found, err := k.GetCommitmentIndex(ctx, canonicalCommitment)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	if !found || leafIndex >= count {
+		return nil, nil, 0, errMerkleCommitmentNotFound
+	}
+	leaf, err := k.getLeafRequired(ctx, leafIndex, count)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	if !bytes.Equal(leaf, canonicalCommitment) {
+		return nil, nil, 0, fmt.Errorf("%w: index=%d leaf_count=%d", errMerkleTreeLeafMismatch, leafIndex, count)
+	}
+
+	path := make([]string, MerkleDepth)
+	helper := make([]uint32, MerkleDepth)
+	currentIndex := leafIndex
+	for level := uint32(0); level < MerkleDepth; level++ {
+		if err := checkHistoricalPathQueryContext(ctx, uint64(level)); err != nil {
+			return nil, nil, 0, err
+		}
+		sibling, err := k.getMerkleNodeOrEmpty(ctx, uint8(level), currentIndex^1, count)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		path[level] = fmt.Sprintf("%x", sibling)
+		helper[level] = uint32(currentIndex % 2)
+		currentIndex /= 2
+	}
+	return path, helper, leafIndex, nil
+}
+
 func canonicalFieldBytesFromBigInt(value *big.Int) []byte {
 	out := make([]byte, fieldElementByteSize)
 	if value != nil {
@@ -127,7 +205,11 @@ func (k Keeper) GetMerkleRootSnapshotV1(ctx sdk.Context, root []byte) (*types.Me
 		return nil, false, err
 	}
 	if len(bz) == 0 {
-		return k.deriveMerkleRootSnapshotV1(ctx, canonicalRoot)
+		// Every accepted commitment prefix persists immutable snapshot metadata.
+		// Query-time derivation would require an attacker-controlled full prefix
+		// scan, so missing metadata fails closed and is repaired only through the
+		// explicit offline rebuild path.
+		return nil, false, nil
 	}
 
 	var snapshot types.MerkleRootSnapshotV1
@@ -149,66 +231,6 @@ func (k Keeper) GetMerkleRootSnapshotV1(ctx sdk.Context, root []byte) (*types.Me
 		return nil, false, fmt.Errorf("stored merkle root snapshot historical height is inconsistent")
 	}
 	return &snapshot, true, nil
-}
-
-// deriveMerkleRootSnapshotV1 is read-only so gRPC queries never populate
-// consensus state as a side effect. ExportGenesis may call the explicit
-// rebuild writer separately.
-func (k Keeper) deriveMerkleRootSnapshotV1(ctx sdk.Context, canonicalRoot []byte) (*types.MerkleRootSnapshotV1, bool, error) {
-	count := k.GetLeafCount(ctx)
-	if count == 0 {
-		return nil, false, nil
-	}
-	store := k.storeService.OpenKVStore(ctx)
-	readHeight := func(root []byte) (int64, error) {
-		value, err := store.Get(types.GetHistoricalRootKey(root))
-		if err != nil {
-			return 0, err
-		}
-		if len(value) == 0 {
-			return 0, errMerkleCommitmentNotFound
-		}
-		if len(value) != 8 {
-			return 0, fmt.Errorf("historical root has invalid height metadata")
-		}
-		height := binary.BigEndian.Uint64(value)
-		if height > math.MaxInt64 {
-			return 0, fmt.Errorf("historical root height overflows int64")
-		}
-		return int64(height), nil
-	}
-
-	currentRoot := k.GetMerkleNode(ctx, uint8(MerkleDepth), 0)
-	if len(currentRoot) == 0 {
-		var err error
-		currentRoot, err = k.RecalculateRoot(ctx, count)
-		if err != nil {
-			return nil, false, err
-		}
-	}
-	if bytes.Equal(currentRoot, canonicalRoot) {
-		height, err := readHeight(canonicalRoot)
-		if err != nil {
-			return nil, false, err
-		}
-		return &types.MerkleRootSnapshotV1{Root: append([]byte(nil), canonicalRoot...), LeafCount: count, Height: height}, true, nil
-	}
-
-	roots, err := k.computeCommitmentPrefixRootsV1(ctx, count)
-	if err != nil {
-		return nil, false, err
-	}
-	for i, root := range roots {
-		if !bytes.Equal(root, canonicalRoot) {
-			continue
-		}
-		height, err := readHeight(canonicalRoot)
-		if err != nil {
-			return nil, false, err
-		}
-		return &types.MerkleRootSnapshotV1{Root: append([]byte(nil), canonicalRoot...), LeafCount: uint64(i + 1), Height: height}, true, nil
-	}
-	return nil, false, nil
 }
 
 // RecordCurrentMerkleRootSnapshotV1 idempotently confirms the post-operation
@@ -414,6 +436,9 @@ func (k Keeper) GetCommitmentPathsAtRootV1(ctx sdk.Context, commitments [][]byte
 	if err != nil {
 		return nil, nil, fmt.Errorf("snapshot root is invalid: %w", err)
 	}
+	if err := checkHistoricalPathQueryContext(ctx, 0); err != nil {
+		return nil, nil, err
+	}
 	snapshot, found, err := k.GetMerkleRootSnapshotV1(ctx, canonicalRoot)
 	if err != nil {
 		return nil, nil, err
@@ -428,34 +453,17 @@ func (k Keeper) GetCommitmentPathsAtRootV1(ctx sdk.Context, commitments [][]byte
 	currentCount := k.GetLeafCount(ctx)
 	currentRoot := k.GetMerkleNode(ctx, uint8(MerkleDepth), 0)
 	if len(currentRoot) == 0 && currentCount > 0 {
-		currentRoot, err = k.RecalculateRoot(ctx, currentCount)
-		if err != nil {
-			return nil, nil, err
-		}
+		return nil, nil, fmt.Errorf("%w: leaf_count=%d", errMerkleQueryCachedRootMissing, currentCount)
 	}
 	if snapshot.LeafCount == currentCount && bytes.Equal(currentRoot, canonicalRoot) {
 		paths := make([]*types.QueryCommitmentPathAtRoot, 0, len(commitments))
 		for _, commitment := range commitments {
-			canonicalCommitment, err := validateFieldElementBytesStrict(commitment)
+			path, helper, leafIndex, err := k.getStoredIncrementalPathV1(ctx, commitment, currentCount)
 			if err != nil {
 				return nil, nil, err
-			}
-			path, helper, pathRoot, err := k.GetPath(ctx, canonicalCommitment)
-			if err != nil {
-				return nil, nil, err
-			}
-			if !bytes.Equal(pathRoot, canonicalRoot) {
-				return nil, nil, fmt.Errorf("incremental path provider returned a different root")
-			}
-			leafIndex, ok, err := k.GetCommitmentIndex(ctx, canonicalCommitment)
-			if err != nil {
-				return nil, nil, err
-			}
-			if !ok || leafIndex >= snapshot.LeafCount {
-				return nil, nil, errMerkleCommitmentNotFound
 			}
 			paths = append(paths, &types.QueryCommitmentPathAtRoot{
-				CommitmentHex: fmt.Sprintf("%x", canonicalCommitment),
+				CommitmentHex: fmt.Sprintf("%x", commitment),
 				LeafIndex:     leafIndex,
 				Path:          path,
 				PathHelper:    helper,
@@ -464,13 +472,23 @@ func (k Keeper) GetCommitmentPathsAtRootV1(ctx sdk.Context, commitments [][]byte
 		return paths, snapshot, nil
 	}
 
-	if err := validateMerkleRebuildCount(snapshot.LeafCount); err != nil {
+	// Enforce the public-query budget before allocating a leaf layer or reading
+	// any leaf. The larger MaxMerkleRebuildLeaves bound remains offline-only.
+	if err := validateHistoricalPathQueryRebuildCount(snapshot.LeafCount); err != nil {
 		return nil, nil, err
 	}
+	release, err := k.acquireHistoricalPathQueryRebuild(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer release()
 	layer := make([][]byte, snapshot.LeafCount)
 	indices := make([]uint64, len(commitments))
 	paths := make([]*types.QueryCommitmentPathAtRoot, len(commitments))
 	for i := uint64(0); i < snapshot.LeafCount; i++ {
+		if err := checkHistoricalPathQueryContext(ctx, i); err != nil {
+			return nil, nil, err
+		}
 		leaf, err := k.getLeafRequired(ctx, i, snapshot.LeafCount)
 		if err != nil {
 			return nil, nil, err
@@ -511,6 +529,9 @@ func (k Keeper) GetCommitmentPathsAtRootV1(ctx sdk.Context, commitments [][]byte
 		}
 		next := make([][]byte, (len(layer)+1)/2)
 		for i := 0; i < len(layer); i += 2 {
+			if err := checkHistoricalPathQueryContext(ctx, uint64(i)); err != nil {
+				return nil, nil, err
+			}
 			right := emptyNodeBytes(level)
 			if i+1 < len(layer) {
 				right = layer[i+1]

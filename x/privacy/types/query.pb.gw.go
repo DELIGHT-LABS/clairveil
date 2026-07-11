@@ -1400,9 +1400,9 @@ var (
 
 	pattern_Query_CircuitConfig_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"clairveil", "privacy", "v1", "circuit_config"}, "", runtime.AssumeColonVerbOpt(false)))
 
-	pattern_Query_Reserve_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 1, 0, 4, 1, 5, 4}, []string{"clairveil", "privacy", "v1", "reserve", "denom"}, "", runtime.AssumeColonVerbOpt(false)))
+	pattern_Query_Reserve_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 3, 0, 4, 1, 5, 4}, []string{"clairveil", "privacy", "v1", "reserve", "denom"}, "", runtime.AssumeColonVerbOpt(false)))
 
-	pattern_Query_AssetByDenom_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 2, 4, 1, 0, 4, 1, 5, 5}, []string{"clairveil", "privacy", "v1", "assets", "by_denom", "canonical_denom"}, "", runtime.AssumeColonVerbOpt(false)))
+	pattern_Query_AssetByDenom_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 2, 4, 3, 0, 4, 1, 5, 5}, []string{"clairveil", "privacy", "v1", "assets", "by_denom", "canonical_denom"}, "", runtime.AssumeColonVerbOpt(false)))
 
 	pattern_Query_AssetByID_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 2, 4, 1, 0, 4, 1, 5, 5}, []string{"clairveil", "privacy", "v1", "assets", "by_id", "asset_id_hex"}, "", runtime.AssumeColonVerbOpt(false)))
 

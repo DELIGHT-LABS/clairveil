@@ -15,6 +15,13 @@ import (
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
+func mustNoteBytes(t *testing.T, note *privacytypes.Note) []byte {
+	t.Helper()
+	encoded, err := privacytypes.MarshalNotePlaintextV1(note)
+	require.NoError(t, err)
+	return encoded
+}
+
 func TestParseNoteBytesAndBuildFoundNote(t *testing.T) {
 	rootSeed := []byte("scan-root-seed")
 
@@ -32,7 +39,7 @@ func TestParseNoteBytesAndBuildFoundNote(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	parsed, err := ParseNoteBytes(note.Bytes())
+	parsed, err := ParseNoteBytes(mustNoteBytes(t, note))
 	require.NoError(t, err)
 	require.Equal(t, note.Amount.String(), parsed.Amount.String())
 
@@ -65,7 +72,7 @@ func TestParseNoteBytesRejectsInvalidNoteV1Key(t *testing.T) {
 		"invalid-key",
 	)
 	require.NoError(t, err)
-	encoded := note.Bytes()
+	encoded := mustNoteBytes(t, note)
 	copy(encoded[84:116], make([]byte, 32))
 	copy(encoded[116:148], make([]byte, 32))
 	encoded[147] = 1
@@ -92,7 +99,7 @@ func TestProcessScanEventUsesViewTag(t *testing.T) {
 	require.NoError(t, err)
 	commitmentBytes, err := privacyfield.CanonicalBytesFromBigInt(note.ComputeCommitment())
 	require.NoError(t, err)
-	cipherText, viewTag, err := privacycrypto.AsymEncryptWithViewTag(note.Bytes(), *viewPubKey, commitmentBytes, 0)
+	cipherText, viewTag, err := privacycrypto.AsymEncryptWithViewTag(mustNoteBytes(t, note), *viewPubKey, commitmentBytes, 0)
 	require.NoError(t, err)
 	cipherText = wrapTransferNoteCipherText(t, cipherText)
 
@@ -146,7 +153,7 @@ func TestProcessScanEventRejectsMismatchedCommitment(t *testing.T) {
 	commitmentHex := hex.EncodeToString(commitmentBytes)
 	wrongCommitmentHex := alternateCommitmentHex(t, commitmentBytes)
 
-	encryptedNote, err := privacycrypto.Encrypt(note.Bytes(), rootSeed)
+	encryptedNote, err := privacycrypto.Encrypt(mustNoteBytes(t, note), rootSeed)
 	require.NoError(t, err)
 	encryptedNote = wrapDepositNoteCipherText(t, encryptedNote)
 	depositEvent := &privacytypes.QueryScanEvent{
@@ -167,7 +174,7 @@ func TestProcessScanEventRejectsMismatchedCommitment(t *testing.T) {
 	depositEvent.Outputs[0].CommitmentHex = wrongCommitmentHex
 	require.Empty(t, ProcessScanEvent(depositEvent, rootSeed, spendScalar, viewScalar))
 
-	cipherText, err := privacycrypto.AsymEncrypt(note.Bytes(), *viewPubKey)
+	cipherText, err := privacycrypto.AsymEncrypt(mustNoteBytes(t, note), *viewPubKey)
 	require.NoError(t, err)
 	cipherText = wrapTransferNoteCipherText(t, cipherText)
 	transferEvent := &privacytypes.QueryScanEvent{

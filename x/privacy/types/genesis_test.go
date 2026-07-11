@@ -76,6 +76,17 @@ func TestGenesisValidateRejectsAssetRegistryMismatch(t *testing.T) {
 	require.ErrorContains(t, gs.Validate(), "does not match canonical denom")
 }
 
+func TestGenesisValidateRejectsReserveBalanceForUnregisteredAsset(t *testing.T) {
+	gs := *DefaultGenesis(validTestCircuitSetIdentity())
+	gs.ReserveBalances = []*ReserveBalanceV1{{
+		CanonicalDenom: "uatom",
+		TotalDeposited: "1",
+		TotalWithdrawn: "0",
+	}}
+
+	require.ErrorContains(t, gs.Validate(), `denom "uatom" is not registered in asset_registry`)
+}
+
 func TestGenesisValidateRequiresRootSnapshotPerCommitment(t *testing.T) {
 	gs := *DefaultGenesis(validTestCircuitSetIdentity())
 	value := make([]byte, genesisFieldElementByteSize)
