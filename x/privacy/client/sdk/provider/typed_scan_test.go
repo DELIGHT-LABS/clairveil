@@ -66,6 +66,64 @@ func TestPrivacyScanV2Paginates32OutputsWithoutLoss(t *testing.T) {
 	require.Equal(t, first.NextCursor, q.requests[1].After)
 }
 
+func TestPrivacyScanV2AllowsCursorPastLastOutputForZeroOutputTail(t *testing.T) {
+	effectID := make([]byte, 32)
+	effectID[31] = 1
+	txHash := make([]byte, 32)
+	txHash[31] = 2
+	output := typedBatchOutput(effectID, txHash, 0)
+	q := &stubPrivacyScanV2Querier{responses: []*privacytypes.QueryPrivacyScanResponse{{
+		Summaries:         []*privacytypes.PrivacyScanSummaryV2{typedBatchSummary(effectID, txHash, 1), typedZeroOutputSummary(10, 8)},
+		Outputs:           []*privacytypes.PrivacyScanOutputV2{output},
+		NextCursor:        &privacytypes.PrivacyScanCursorV1{Height: 10, GlobalSequence: 8, OutputIndex: 0},
+		ScannedEventCount: 2,
+		ScanSchemaVersion: privacytypes.PrivacyScanSchemaVersionV2,
+	}}}
+
+	response, err := (ScanQueryProvider{PrivacyScanQuerier: q}).PrivacyScan(
+		context.Background(), nil, 10, 10, 0,
+		nil,
+	)
+	require.NoError(t, err)
+	require.Empty(t, q.responses)
+	require.Equal(t, int64(10), response.NextCursor.Height)
+	require.Equal(t, uint64(8), response.NextCursor.GlobalSequence)
+}
+
+func TestPrivacyScanV2RejectsCursorAdvancePastIncompleteOutputEvent(t *testing.T) {
+	effectID := make([]byte, 32)
+	effectID[31] = 1
+	txHash := make([]byte, 32)
+	txHash[31] = 2
+	q := &stubPrivacyScanV2Querier{responses: []*privacytypes.QueryPrivacyScanResponse{{
+		Summaries:         []*privacytypes.PrivacyScanSummaryV2{typedBatchSummary(effectID, txHash, 2), typedZeroOutputSummary(10, 8)},
+		Outputs:           []*privacytypes.PrivacyScanOutputV2{typedBatchOutput(effectID, txHash, 0)},
+		NextCursor:        &privacytypes.PrivacyScanCursorV1{Height: 10, GlobalSequence: 8, OutputIndex: 0},
+		ScannedEventCount: 2,
+		ScanSchemaVersion: privacytypes.PrivacyScanSchemaVersionV2,
+	}}}
+
+	_, err := (ScanQueryProvider{PrivacyScanQuerier: q}).PrivacyScan(context.Background(), nil, 10, 10, 0, nil)
+	require.ErrorContains(t, err, "incomplete output event")
+}
+
+func TestPrivacyScanV2RejectsOutputGapFromNilStartCursor(t *testing.T) {
+	effectID := make([]byte, 32)
+	effectID[31] = 1
+	txHash := make([]byte, 32)
+	txHash[31] = 2
+	q := &stubPrivacyScanV2Querier{responses: []*privacytypes.QueryPrivacyScanResponse{{
+		Summaries:         []*privacytypes.PrivacyScanSummaryV2{typedBatchSummary(effectID, txHash, 2)},
+		Outputs:           []*privacytypes.PrivacyScanOutputV2{typedBatchOutput(effectID, txHash, 1)},
+		NextCursor:        &privacytypes.PrivacyScanCursorV1{Height: 9, GlobalSequence: 7, OutputIndex: 1},
+		ScannedEventCount: 1,
+		ScanSchemaVersion: privacytypes.PrivacyScanSchemaVersionV2,
+	}}}
+
+	_, err := (ScanQueryProvider{PrivacyScanQuerier: q}).PrivacyScan(context.Background(), nil, 10, 10, 0, nil)
+	require.ErrorContains(t, err, "new event output must start at index zero")
+}
+
 func TestPrivacyScanV2RejectsEffectIDCorruption(t *testing.T) {
 	effectID := make([]byte, 32)
 	effectID[31] = 1
@@ -119,6 +177,15 @@ func typedBatchSummary(effectID, txHash []byte, count uint32) *privacytypes.Priv
 	nullifier := make([]byte, 32)
 	nullifier[31] = 7
 	return &privacytypes.PrivacyScanSummaryV2{Height: 9, GlobalSequence: 7, TxHash: txHash, EventType: privacytypes.EventTypeBatchTransferV1, Nullifiers: [][]byte{nullifier}, OutputCount: count, EffectId: effectID, CircuitSetId: privacytypes.ActiveCircuitSetID, PayloadVersion: privacytypes.FixedPayloadVersionV1, ScanSchemaVersion: privacytypes.PrivacyScanSchemaVersionV2, AuditKeyId: "audit-default", AuditKeyEpoch: 1, AuditTargetPubkey: typedScanAuditTarget()}
+}
+
+func typedZeroOutputSummary(height int64, sequence uint64) *privacytypes.PrivacyScanSummaryV2 {
+	txHash := make([]byte, 32)
+	txHash[31] = 3
+	return &privacytypes.PrivacyScanSummaryV2{
+		Height: height, GlobalSequence: sequence, TxHash: txHash, EventType: privacytypes.EventTypeWithdraw,
+		CircuitSetId: privacytypes.ActiveCircuitSetID, PayloadVersion: privacytypes.FixedPayloadVersionV1, ScanSchemaVersion: privacytypes.PrivacyScanSchemaVersionV2,
+	}
 }
 
 func typedBatchOutput(effectID, txHash []byte, index uint32) *privacytypes.PrivacyScanOutputV2 {

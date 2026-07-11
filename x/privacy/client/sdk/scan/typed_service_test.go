@@ -77,6 +77,55 @@ func TestTypedScannerRecovers32OutputsAndRetriesTransactionally(t *testing.T) {
 	}
 }
 
+func TestTypedScannerAllowsCursorPastLastOutputForZeroOutputTail(t *testing.T) {
+	rootSeed := []byte("typed-zero-output-tail-wallet")
+	outputs, used := typedOwnedBatchOutputs(t, rootSeed, 1)
+	source := &typedPrivacyScanSource{
+		latest: 11,
+		responses: []*privacytypes.QueryPrivacyScanResponse{{
+			Summaries: []*privacytypes.PrivacyScanSummaryV2{
+				{Height: 10, GlobalSequence: 7, OutputCount: 1},
+				{Height: 11, GlobalSequence: 8, OutputCount: 0},
+			},
+			Outputs:           outputs,
+			NextCursor:        &privacytypes.PrivacyScanCursorV1{Height: 11, GlobalSequence: 8, OutputIndex: 0},
+			ScannedEventCount: 2,
+			ScanSchemaVersion: privacytypes.PrivacyScanSchemaVersionV2,
+		}},
+	}
+
+	result, err := SyncNotes(context.Background(), source, &stubBatchNullifierUsageChecker{batchUsed: used}, nil, SyncInput{UserAddress: "clair1typed", RootSeed: rootSeed, Wallet: &LocalWalletData{}})
+	require.NoError(t, err)
+	require.Len(t, result.Notes, 1)
+	require.Equal(t, int64(11), result.Wallet.LastHeight)
+	require.Equal(t, uint64(8), result.Wallet.LastSequence)
+	require.Zero(t, result.Wallet.LastOutputIndex)
+}
+
+func TestTypedScannerRejectsCursorAdvancePastIncompleteOutputEvent(t *testing.T) {
+	rootSeed := []byte("typed-incomplete-event-wallet")
+	outputs, used := typedOwnedBatchOutputs(t, rootSeed, 1)
+	source := &typedPrivacyScanSource{
+		latest: 11,
+		responses: []*privacytypes.QueryPrivacyScanResponse{{
+			Summaries: []*privacytypes.PrivacyScanSummaryV2{
+				{Height: 10, GlobalSequence: 7, OutputCount: 2},
+				{Height: 11, GlobalSequence: 8, OutputCount: 0},
+			},
+			Outputs:           outputs,
+			NextCursor:        &privacytypes.PrivacyScanCursorV1{Height: 11, GlobalSequence: 8, OutputIndex: 0},
+			ScannedEventCount: 2,
+			ScanSchemaVersion: privacytypes.PrivacyScanSchemaVersionV2,
+		}},
+	}
+
+	wallet := &LocalWalletData{}
+	_, err := SyncNotes(context.Background(), source, &stubBatchNullifierUsageChecker{batchUsed: used}, nil, SyncInput{UserAddress: "clair1typed", RootSeed: rootSeed, Wallet: wallet})
+	require.ErrorContains(t, err, "incomplete output event")
+	require.Empty(t, wallet.Notes)
+	require.Zero(t, wallet.LastHeight)
+}
+
 func TestTypedScannerFailsClosedAfterOwnedPlaintextCommitmentMismatch(t *testing.T) {
 	rootSeed := []byte("typed-batch-corrupt-wallet")
 	outputs, used := typedOwnedBatchOutputs(t, rootSeed, 1)

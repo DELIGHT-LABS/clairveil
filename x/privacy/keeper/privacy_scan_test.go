@@ -109,6 +109,29 @@ func TestPrivacyScanV2ReturnsZeroOutputWithdrawSummary(t *testing.T) {
 	require.Empty(t, next.Outputs)
 }
 
+func TestPrivacyScanV2DoesNotAdvanceOutputPagePastFilteredTail(t *testing.T) {
+	k, ctx, _ := setupMsgServerKeeper()
+	ctx = ctx.WithBlockHeight(46)
+	indexTestDepositV2(t, k, ctx, fixedFieldBytes(246), 0xbd)
+	require.NoError(t, k.indexPrivacyEvent(ctx, privacytypes.EventTypeWithdraw, indexedTxHashHex(0xbe), []sdk.Attribute{
+		sdk.NewAttribute(privacytypes.AttributeKeyNullifier, fmt.Sprintf("%x", fixedFieldBytes(247))),
+	}))
+
+	filter := []string{privacytypes.EventTypeDeposit}
+	first, err := k.PrivacyScan(sdk.WrapSDKContext(ctx), &privacytypes.QueryPrivacyScanRequest{EventTypes: filter})
+	require.NoError(t, err)
+	require.Len(t, first.Outputs, 1)
+	require.True(t, first.HasMore)
+	require.Equal(t, &privacytypes.PrivacyScanCursorV1{Height: 46, GlobalSequence: 1, OutputIndex: 0}, first.NextCursor)
+
+	second, err := k.PrivacyScan(sdk.WrapSDKContext(ctx), &privacytypes.QueryPrivacyScanRequest{After: first.NextCursor, EventTypes: filter})
+	require.NoError(t, err)
+	require.Empty(t, second.Summaries)
+	require.Empty(t, second.Outputs)
+	require.False(t, second.HasMore)
+	require.Equal(t, &privacytypes.PrivacyScanCursorV1{Height: 46, GlobalSequence: 2, OutputIndex: 0}, second.NextCursor)
+}
+
 func TestPrivacyScanV2EnforcesRecordEventAndByteBounds(t *testing.T) {
 	k, ctx, _ := setupMsgServerKeeper()
 	ctx = ctx.WithBlockHeight(50)

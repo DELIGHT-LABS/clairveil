@@ -241,7 +241,9 @@ func syncNewNotesFromPrivacyScanV2(ctx context.Context, source PrivacyScanV2Sour
 		seen[foundNoteIdentityKey(note)] = struct{}{}
 	}
 	for {
-		response, err := source.PrivacyScan(ctx, cursor, uint32(pageLimit), scanOptions.EventLimit, scanOptions.MaxEncodedBytes, []string{privacytypes.EventTypeDeposit, privacytypes.EventTypeShieldedTransfer, privacytypes.EventTypeBatchTransferV1})
+		// Request every typed event so zero-output summaries can prove any cursor
+		// advance beyond the final returned output without a lossy filtered gap.
+		response, err := source.PrivacyScan(ctx, cursor, uint32(pageLimit), scanOptions.EventLimit, scanOptions.MaxEncodedBytes, nil)
 		if err != nil {
 			return 0, false, fmt.Errorf("failed typed privacy scan (ABCI fallback disabled): %w", err)
 		}
@@ -314,15 +316,66 @@ func validateTypedScanResponseForSync(response *privacytypes.QueryPrivacyScanRes
 		}
 		previous = cursor
 	}
-	if len(response.Outputs) > 0 {
-		last := response.Outputs[len(response.Outputs)-1]
-		lastCursor := &privacytypes.PrivacyScanCursorV1{Height: last.Height, GlobalSequence: last.GlobalSequence, OutputIndex: last.OutputIndex}
-		if compareScanCursor(response.NextCursor, lastCursor) != 0 {
-			return fmt.Errorf("typed next cursor does not equal the final output")
-		}
+	if err := validateTypedScanCursorBoundary(response, after); err != nil {
+		return err
 	}
 	if response.HasMore && compareScanCursor(response.NextCursor, after) <= 0 {
 		return fmt.Errorf("typed has_more response did not advance")
+	}
+	return nil
+}
+
+func validateTypedScanCursorBoundary(response *privacytypes.QueryPrivacyScanResponse, after *privacytypes.PrivacyScanCursorV1) error {
+	if after == nil {
+		after = &privacytypes.PrivacyScanCursorV1{}
+	}
+	from := after
+	if len(response.Outputs) > 0 {
+		last := response.Outputs[len(response.Outputs)-1]
+		from = &privacytypes.PrivacyScanCursorV1{Height: last.Height, GlobalSequence: last.GlobalSequence, OutputIndex: last.OutputIndex}
+		switch comparison := compareScanCursor(response.NextCursor, from); {
+		case comparison < 0:
+			return fmt.Errorf("typed next cursor precedes the final output")
+		case comparison == 0:
+			return nil
+		}
+	} else if compareScanCursor(response.NextCursor, from) <= 0 {
+		return nil
+	}
+
+	summaries := make(map[string]*privacytypes.PrivacyScanSummaryV2, len(response.Summaries))
+	for _, summary := range response.Summaries {
+		if summary == nil {
+			return fmt.Errorf("nil typed summary")
+		}
+		key := fmt.Sprintf("%d/%d", summary.Height, summary.GlobalSequence)
+		if _, duplicate := summaries[key]; duplicate {
+			return fmt.Errorf("duplicate typed summary %s", key)
+		}
+		summaries[key] = summary
+	}
+	if len(response.Outputs) > 0 {
+		last := response.Outputs[len(response.Outputs)-1]
+		lastSummary := summaries[fmt.Sprintf("%d/%d", last.Height, last.GlobalSequence)]
+		if lastSummary == nil || last.OutputIndex+1 != lastSummary.OutputCount {
+			return fmt.Errorf("typed next cursor advances past an incomplete output event")
+		}
+	}
+
+	fromEvent := &privacytypes.PrivacyScanCursorV1{Height: from.Height, GlobalSequence: from.GlobalSequence}
+	nextEvent := &privacytypes.PrivacyScanCursorV1{Height: response.NextCursor.Height, GlobalSequence: response.NextCursor.GlobalSequence}
+	if response.NextCursor.OutputIndex != 0 || compareScanCursor(nextEvent, fromEvent) <= 0 {
+		return fmt.Errorf("typed next cursor advance is not an event boundary")
+	}
+	nextSummary := summaries[fmt.Sprintf("%d/%d", response.NextCursor.Height, response.NextCursor.GlobalSequence)]
+	if nextSummary == nil || nextSummary.OutputCount != 0 {
+		return fmt.Errorf("typed next cursor advance lacks a zero-output summary")
+	}
+	for _, summary := range response.Summaries {
+		cursor := &privacytypes.PrivacyScanCursorV1{Height: summary.Height, GlobalSequence: summary.GlobalSequence}
+		if compareScanCursor(cursor, fromEvent) > 0 && compareScanCursor(cursor, nextEvent) <= 0 && summary.OutputCount != 0 {
+			return fmt.Errorf("typed next cursor skips an output-bearing summary")
+		}
 	}
 	return nil
 }

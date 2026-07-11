@@ -847,6 +847,14 @@ func (k Keeper) GetPrivacyScanPageV2(ctx sdk.Context, after *types.PrivacyScanCu
 
 		allowed := privacyEventTypeAllowed(summary.EventType, typeFilter)
 		if !allowed {
+			// Keep pages that already returned event evidence pinned to their last
+			// visible cursor. The filtered event is consumed on the next page, so a
+			// client never has to accept an unproven cursor jump past outputs.
+			if len(response.Outputs) > 0 || len(response.Summaries) > 0 {
+				response.ScannedEventCount--
+				response.HasMore = true
+				break
+			}
 			cursorOutput := uint32(0)
 			if summary.OutputCount > 0 {
 				cursorOutput = summary.OutputCount - 1

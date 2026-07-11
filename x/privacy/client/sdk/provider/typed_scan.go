@@ -73,11 +73,24 @@ func outputCursor(out *privacytypes.PrivacyScanOutputV2) *privacytypes.PrivacySc
 	return &privacytypes.PrivacyScanCursorV1{Height: out.Height, GlobalSequence: out.GlobalSequence, OutputIndex: out.OutputIndex}
 }
 
+func hasPrivacyScanEventFilter(eventTypes []string) bool {
+	for _, eventType := range eventTypes {
+		if strings.TrimSpace(eventType) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // ValidatePrivacyScanPage applies client-side order, identity and framing
 // checks. A malformed response is never partially accepted.
 func ValidatePrivacyScanPage(req *privacytypes.QueryPrivacyScanRequest, resp *privacytypes.QueryPrivacyScanResponse) error {
 	if req == nil || resp == nil {
 		return fmt.Errorf("request and response are required")
+	}
+	after := req.After
+	if after == nil {
+		after = &privacytypes.PrivacyScanCursorV1{}
 	}
 	if resp.ScanSchemaVersion != privacytypes.PrivacyScanSchemaVersionV2 {
 		return fmt.Errorf("unsupported scan schema version %q", resp.ScanSchemaVersion)
@@ -110,7 +123,7 @@ func ValidatePrivacyScanPage(req *privacytypes.QueryPrivacyScanRequest, resp *pr
 		summaries[key] = summary
 	}
 
-	previous := req.After
+	previous := after
 	seen := make(map[string]struct{}, len(resp.Outputs))
 	for _, output := range resp.Outputs {
 		if output == nil {
@@ -143,14 +156,61 @@ func ValidatePrivacyScanPage(req *privacytypes.QueryPrivacyScanRequest, resp *pr
 	if resp.NextCursor == nil {
 		return fmt.Errorf("next cursor is required")
 	}
-	if req.After != nil && compareCursor(resp.NextCursor, req.After) < 0 {
+	if compareCursor(resp.NextCursor, after) < 0 {
 		return fmt.Errorf("next cursor regressed")
 	}
-	if len(resp.Outputs) > 0 && compareCursor(resp.NextCursor, outputCursor(resp.Outputs[len(resp.Outputs)-1])) != 0 {
-		return fmt.Errorf("next cursor does not equal last output cursor")
+	if err := validatePrivacyScanNextCursor(req, resp, summaries); err != nil {
+		return err
 	}
-	if resp.HasMore && req.After != nil && compareCursor(resp.NextCursor, req.After) <= 0 {
+	if resp.HasMore && compareCursor(resp.NextCursor, after) <= 0 {
 		return fmt.Errorf("has_more page did not advance cursor")
+	}
+	return nil
+}
+
+func validatePrivacyScanNextCursor(req *privacytypes.QueryPrivacyScanRequest, resp *privacytypes.QueryPrivacyScanResponse, summaries map[string]*privacytypes.PrivacyScanSummaryV2) error {
+	after := req.After
+	if after == nil {
+		after = &privacytypes.PrivacyScanCursorV1{}
+	}
+	if len(resp.Outputs) == 0 {
+		if compareCursor(resp.NextCursor, after) > 0 && !hasPrivacyScanEventFilter(req.EventTypes) {
+			return validateZeroOutputCursorAdvance(after, resp.NextCursor, resp.Summaries, summaries)
+		}
+		return nil
+	}
+
+	last := resp.Outputs[len(resp.Outputs)-1]
+	lastCursor := outputCursor(last)
+	switch comparison := compareCursor(resp.NextCursor, lastCursor); {
+	case comparison < 0:
+		return fmt.Errorf("next cursor precedes last output cursor")
+	case comparison == 0:
+		return nil
+	}
+
+	lastSummary := summaries[eventKey(last.Height, last.GlobalSequence)]
+	if lastSummary == nil || last.OutputIndex+1 != lastSummary.OutputCount {
+		return fmt.Errorf("next cursor advances past an incomplete output event")
+	}
+	return validateZeroOutputCursorAdvance(lastCursor, resp.NextCursor, resp.Summaries, summaries)
+}
+
+func validateZeroOutputCursorAdvance(from, next *privacytypes.PrivacyScanCursorV1, orderedSummaries []*privacytypes.PrivacyScanSummaryV2, summaries map[string]*privacytypes.PrivacyScanSummaryV2) error {
+	fromEvent := &privacytypes.PrivacyScanCursorV1{Height: from.Height, GlobalSequence: from.GlobalSequence}
+	nextEvent := &privacytypes.PrivacyScanCursorV1{Height: next.Height, GlobalSequence: next.GlobalSequence}
+	if next.OutputIndex != 0 || compareCursor(nextEvent, fromEvent) <= 0 {
+		return fmt.Errorf("next cursor advance after outputs is not an event boundary")
+	}
+	nextSummary := summaries[eventKey(next.Height, next.GlobalSequence)]
+	if nextSummary == nil || nextSummary.OutputCount != 0 {
+		return fmt.Errorf("next cursor advance after outputs lacks a zero-output summary")
+	}
+	for _, summary := range orderedSummaries {
+		cursor := &privacytypes.PrivacyScanCursorV1{Height: summary.Height, GlobalSequence: summary.GlobalSequence}
+		if compareCursor(cursor, fromEvent) > 0 && compareCursor(cursor, nextEvent) <= 0 && summary.OutputCount != 0 {
+			return fmt.Errorf("next cursor skips an output-bearing summary")
+		}
 	}
 	return nil
 }
