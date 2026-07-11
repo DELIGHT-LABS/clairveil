@@ -79,12 +79,71 @@ func TestPreparedPayloadMutationExpirySignatureAndFileMode(t *testing.T) {
 	request := signingRequest(payload, canonical)
 	request.OrderedOutputs[0].Amount = new(big.Int).Add(request.OrderedOutputs[0].Amount, big.NewInt(1))
 	require.ErrorContains(t, ValidateBatchTransferSigningRequest(request), "commitment recomputation")
+	request = signingRequest(payload, canonical)
+	request.ExpectedIntent = nil
+	require.ErrorContains(t, ValidateBatchTransferSigningRequest(request), "expected intent")
 	path := filepath.Join(t.TempDir(), "prepared.json")
 	require.NoError(t, os.WriteFile(path, []byte("old"), 0o644))
 	require.NoError(t, WritePreparedBatchTransferPayload(path, payload))
 	info, err := os.Stat(path)
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+}
+
+func TestPreparedPayloadValidationRejectsNilFieldsWithoutPanicking(t *testing.T) {
+	payload := testPayload(t)
+	now := time.Unix(payload.ExpiresAtUnix-1, 0)
+
+	mutated := *payload
+	mutated.MessageOutputs = append([]*privacytypes.BatchTransferOutput(nil), payload.MessageOutputs...)
+	mutated.MessageOutputs[0] = nil
+	require.ErrorContains(t, ValidatePreparedBatchTransferPayloadMetadataAt(&mutated, now), "message output 0")
+
+	for _, tc := range []struct {
+		name   string
+		mutate func(*PreparedBatchTransferPayload)
+		want   string
+	}{
+		{"asset_id", func(p *PreparedBatchTransferPayload) { p.AssetID = nil }, "asset id"},
+		{"nullifier_root", func(p *PreparedBatchTransferPayload) { p.NullifierRoot = nil }, "nullifier root"},
+		{"payload_digest", func(p *PreparedBatchTransferPayload) { p.PayloadDigestHi = nil }, "payload digest high"},
+		{"expected_intent", func(p *PreparedBatchTransferPayload) { p.ExpectedIntent = nil }, "expected intent"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			copy := *payload
+			tc.mutate(&copy)
+			require.ErrorContains(t, ValidatePreparedBatchTransferPayloadMetadataAt(&copy, now), tc.want)
+		})
+	}
+}
+
+func TestBuildPreparedPayloadRejectsMalformedPreparedTransferWithoutPanicking(t *testing.T) {
+	payload := testPayload(t)
+	valid := &PreparedBatchTransfer{Root: payload.Root, AssetID: payload.AssetID, Inputs: payload.Inputs, Outputs: payload.Outputs}
+	input := BuildPreparedBatchTransferPayloadInput{ChainID: "clairveil-test-1", ExpiresAtUnix: time.Now().Add(time.Hour).Unix(), AuditDisclosureTargetPubKey: testKey(t, 9), DisableSelfViewDisclosure: true}
+	signer := rejectingBatchSigner{}
+
+	for _, tc := range []struct {
+		name   string
+		mutate func(*PreparedBatchTransfer)
+		want   string
+	}{
+		{"nil_asset", func(p *PreparedBatchTransfer) { p.AssetID = nil }, "asset id"},
+		{"empty_inputs", func(p *PreparedBatchTransfer) { p.Inputs = nil }, "input count"},
+		{"too_many_outputs", func(p *PreparedBatchTransfer) {
+			p.Outputs = append(p.Outputs, make([]PreparedBatchTransferOutput, 32)...)
+		}, "output count"},
+		{"nil_user_blinding", func(p *PreparedBatchTransfer) { p.Outputs[0].UserDisclosureBlinding = nil }, "user disclosure blinding"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			copy := *valid
+			copy.Inputs = append([]PreparedBatchTransferInput(nil), valid.Inputs...)
+			copy.Outputs = append([]PreparedBatchTransferOutput(nil), valid.Outputs...)
+			tc.mutate(&copy)
+			_, err := BuildPreparedBatchTransferPayload(&copy, signer, input)
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
 }
 
 func TestPrepareBatchTransferRejectsRootMismatch(t *testing.T) {
@@ -97,7 +156,45 @@ func TestPrepareBatchTransferRejectsRootMismatch(t *testing.T) {
 	require.ErrorIs(t, err, ErrWalletSyncRequired)
 }
 
+func TestPrepareBatchTransferRejectsMalformedExportedPlanWithoutPanicking(t *testing.T) {
+	owner, view := testKey(t, 1), testKey(t, 2)
+	plan, err := PlanBatchTransfer(PlanBatchTransferInput{
+		Inputs:           []InputNote{{testNote(t, owner, view, 5, 3)}},
+		Payments:         []Payment{{SpendPubKey: testKey(t, 4), ViewPubKey: testKey(t, 5), Amount: big.NewInt(5)}},
+		OwnerSpendPubKey: owner,
+		OwnerViewPubKey:  view,
+		Mode:             OutputModeCompact,
+	})
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name   string
+		mutate func(*BatchTransferPlan)
+		want   string
+	}{
+		{"nil_input_asset", func(p *BatchTransferPlan) { p.Inputs[0].Note.AssetID = nil }, "asset id"},
+		{"nil_output_spend_key", func(p *BatchTransferPlan) { p.Outputs[0].SpendPubKey = nil }, "recipient keys"},
+		{"nil_output_amount", func(p *BatchTransferPlan) { p.Outputs[0].Amount = nil }, "amount is required"},
+		{"invalid_output_kind", func(p *BatchTransferPlan) { p.Outputs[0].Kind = OutputKind("invalid") }, "unsupported planned output kind"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			copy := *plan
+			copy.Inputs = append([]InputNote(nil), plan.Inputs...)
+			copy.Outputs = append([]PlannedOutput(nil), plan.Outputs...)
+			tc.mutate(&copy)
+			_, err := PrepareBatchTransfer(context.Background(), pathProvider{}, &copy)
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
+}
+
 type structuredSigner struct{ key *cryptoeddsa.PrivateKey }
+
+type rejectingBatchSigner struct{}
+
+func (rejectingBatchSigner) SignBatchTransfer(BatchTransferSigningRequest) ([]byte, error) {
+	return nil, fmt.Errorf("unexpected signing call")
+}
 
 func (s structuredSigner) SignBatchTransfer(req BatchTransferSigningRequest) ([]byte, error) {
 	if err := ValidateBatchTransferSigningRequest(req); err != nil {

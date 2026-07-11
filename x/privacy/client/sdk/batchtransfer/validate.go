@@ -46,6 +46,23 @@ func ValidateBatchTransferSigningRequest(req BatchTransferSigningRequest) error 
 	if req.AssetID == nil || req.AssetID.Sign() <= 0 || req.InputTotal == nil || req.InputTotal.Sign() < 0 {
 		return fmt.Errorf("structured common asset/input total is invalid")
 	}
+	for _, field := range []struct {
+		name  string
+		value *big.Int
+	}{
+		{"structured asset id", req.AssetID},
+		{"structured nullifier root", req.NullifierRoot},
+		{"structured commitment root", req.CommitmentRoot},
+		{"structured user disclosure root", req.UserDisclosureRoot},
+		{"structured full disclosure root", req.FullDisclosureRoot},
+		{"structured payload digest high", req.PayloadDigestHi},
+		{"structured payload digest low", req.PayloadDigestLo},
+		{"structured expected intent", req.ExpectedIntent},
+	} {
+		if err := validateCanonicalBatchTransferField(field.name, field.value); err != nil {
+			return err
+		}
+	}
 	ownerSpend, err := privacycrypto.DecodeCanonicalPoint(req.OwnerSpendPubKey)
 	if err != nil {
 		return fmt.Errorf("structured owner spend key: %w", err)
@@ -246,8 +263,33 @@ func ValidatePreparedBatchTransferPayloadMetadataAt(p *PreparedBatchTransferPayl
 	if len(p.MessageOutputs) != len(p.Outputs) {
 		return fmt.Errorf("message output count mismatch")
 	}
+	for i, output := range p.MessageOutputs {
+		if output == nil {
+			return fmt.Errorf("message output %d is required", i)
+		}
+	}
 	if err := privacyfield.ValidateCanonicalBytes32(p.Root); err != nil {
 		return fmt.Errorf("prepared batch root: %w", err)
+	}
+	if p.AssetID == nil || p.AssetID.Sign() <= 0 {
+		return fmt.Errorf("prepared batch asset id must be positive")
+	}
+	for _, field := range []struct {
+		name  string
+		value *big.Int
+	}{
+		{"prepared batch asset id", p.AssetID},
+		{"prepared batch nullifier root", p.NullifierRoot},
+		{"prepared batch commitment root", p.CommitmentRoot},
+		{"prepared batch user disclosure root", p.UserDisclosureRoot},
+		{"prepared batch full disclosure root", p.FullDisclosureRoot},
+		{"prepared batch payload digest high", p.PayloadDigestHi},
+		{"prepared batch payload digest low", p.PayloadDigestLo},
+		{"prepared batch expected intent", p.ExpectedIntent},
+	} {
+		if err := validateCanonicalBatchTransferField(field.name, field.value); err != nil {
+			return err
+		}
 	}
 	inputTotal := new(big.Int)
 	inputRandomness := make(map[string]struct{}, len(p.Inputs))
@@ -403,6 +445,14 @@ func zeroVector(n int) []*big.Int {
 	}
 	return out
 }
+
+func validateCanonicalBatchTransferField(name string, value *big.Int) error {
+	if _, err := privacyfield.CanonicalBytesFromBigInt(value); err != nil {
+		return fmt.Errorf("%s: %w", name, err)
+	}
+	return nil
+}
+
 func sameOwner(a, b privacytypes.Note) bool {
 	return a.ReceiverSpendPubKeyX.Cmp(b.ReceiverSpendPubKeyX) == 0 && a.ReceiverSpendPubKeyY.Cmp(b.ReceiverSpendPubKeyY) == 0 && a.ReceiverViewPubKeyX.Cmp(b.ReceiverViewPubKeyX) == 0 && a.ReceiverViewPubKeyY.Cmp(b.ReceiverViewPubKeyY) == 0
 }

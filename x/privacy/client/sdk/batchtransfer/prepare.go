@@ -21,7 +21,7 @@ func PrepareBatchTransfer(ctx context.Context, provider MerklePathProvider, plan
 	if plan == nil {
 		return nil, fmt.Errorf("a batch transfer plan is required")
 	}
-	if err := privacytypes.ValidateBatchJoinSplitCountsV1(uint32(len(plan.Inputs)), uint32(len(plan.Outputs))); err != nil {
+	if err := validateBatchTransferPlanForPreparation(plan); err != nil {
 		return nil, err
 	}
 	prepared := &PreparedBatchTransfer{Inputs: make([]PreparedBatchTransferInput, len(plan.Inputs)), Outputs: make([]PreparedBatchTransferOutput, len(plan.Outputs))}
@@ -109,6 +109,120 @@ func PrepareBatchTransfer(ctx context.Context, provider MerklePathProvider, plan
 		return nil, err
 	}
 	return prepared, nil
+}
+
+func validateBatchTransferPlanForPreparation(plan *BatchTransferPlan) error {
+	if err := privacytypes.ValidateBatchJoinSplitCountsV1(uint32(len(plan.Inputs)), uint32(len(plan.Outputs))); err != nil {
+		return err
+	}
+	if plan.InputTotal == nil || plan.PaymentTotal == nil || plan.Change == nil {
+		return fmt.Errorf("batch transfer plan totals are required")
+	}
+
+	inputTotal := new(big.Int)
+	seenNullifiers := make(map[string]struct{}, len(plan.Inputs))
+	for i := range plan.Inputs {
+		note := plan.Inputs[i].Note
+		if err := note.ValidateV1(); err != nil {
+			return fmt.Errorf("invalid input NoteV1 %d: %w", i, err)
+		}
+		if i > 0 && !sameOwner(plan.Inputs[0].Note, note) {
+			return fmt.Errorf("input %d does not belong to the common owner", i)
+		}
+		if i > 0 && plan.Inputs[0].Note.AssetID.Cmp(note.AssetID) != 0 {
+			return fmt.Errorf("input asset mismatch at index %d", i)
+		}
+		nullifier := note.ComputeNullifier().String()
+		if _, duplicate := seenNullifiers[nullifier]; duplicate {
+			return fmt.Errorf("duplicate input nullifier at index %d", i)
+		}
+		seenNullifiers[nullifier] = struct{}{}
+		inputTotal.Add(inputTotal, note.Amount)
+	}
+
+	ownerSpend := pointBytesFromNote(plan.Inputs[0].Note, true)
+	ownerView := pointBytesFromNote(plan.Inputs[0].Note, false)
+	paymentTotal := new(big.Int)
+	outputTotal := new(big.Int)
+	changeTotal := new(big.Int)
+	seenPayment, seenChange, seenPadding := false, false, false
+	for i := range plan.Outputs {
+		output := plan.Outputs[i]
+		if output.SpendPubKey == nil || output.ViewPubKey == nil {
+			return fmt.Errorf("output %d recipient keys are required", i)
+		}
+		if err := privacycrypto.ValidatePrimeSubgroupPoint(output.SpendPubKey); err != nil {
+			return fmt.Errorf("output %d spend key: %w", i, err)
+		}
+		if err := privacycrypto.ValidatePrimeSubgroupPoint(output.ViewPubKey); err != nil {
+			return fmt.Errorf("output %d view key: %w", i, err)
+		}
+		if output.Amount == nil {
+			return fmt.Errorf("output %d amount is required", i)
+		}
+		if err := privacytypes.ValidateShieldedAmount(fmt.Sprintf("output %d amount", i), output.Amount); err != nil {
+			return err
+		}
+		if output.PrivacyPolicy > privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom {
+			return fmt.Errorf("output %d has unsupported disclosure policy", i)
+		}
+		switch output.DisclosureMode {
+		case privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE:
+			if output.PrivacyPolicy != 0 || output.DisclosureTargetPubKey != nil {
+				return fmt.Errorf("output %d all-private disclosure is not canonical", i)
+			}
+		case privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC:
+			if output.PrivacyPolicy == 0 || output.DisclosureTargetPubKey != nil {
+				return fmt.Errorf("output %d public disclosure is not canonical", i)
+			}
+		case privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED:
+			if output.PrivacyPolicy == 0 || output.DisclosureTargetPubKey == nil {
+				return fmt.Errorf("output %d recipient-encrypted disclosure is not canonical", i)
+			}
+			if err := privacycrypto.ValidatePrimeSubgroupPoint(output.DisclosureTargetPubKey); err != nil {
+				return fmt.Errorf("output %d disclosure target: %w", i, err)
+			}
+		default:
+			return fmt.Errorf("output %d has unsupported disclosure mode", i)
+		}
+
+		spendBytes := output.SpendPubKey.Bytes()
+		viewBytes := output.ViewPubKey.Bytes()
+		matchesOwner := bytes.Equal(spendBytes[:], ownerSpend) && bytes.Equal(viewBytes[:], ownerView)
+		switch output.Kind {
+		case OutputPayment:
+			if seenChange || seenPadding || output.Amount.Sign() <= 0 {
+				return fmt.Errorf("payment outputs must be a positive canonical prefix")
+			}
+			seenPayment = true
+			paymentTotal.Add(paymentTotal, output.Amount)
+		case OutputChange:
+			if seenChange || seenPadding || output.Amount.Sign() <= 0 || output.PrivacyPolicy != 0 || !matchesOwner {
+				return fmt.Errorf("change output %d is not canonical", i)
+			}
+			seenChange = true
+			changeTotal.Set(output.Amount)
+		case OutputPadding:
+			if output.Amount.Sign() != 0 || output.PrivacyPolicy != 0 || !matchesOwner {
+				return fmt.Errorf("padding output %d is not canonical", i)
+			}
+			seenPadding = true
+		default:
+			return fmt.Errorf("unsupported planned output kind %q", output.Kind)
+		}
+		outputTotal.Add(outputTotal, output.Amount)
+	}
+	if !seenPayment {
+		return fmt.Errorf("batch transfer plan requires at least one payment output")
+	}
+	expectedChange := new(big.Int).Sub(inputTotal, paymentTotal)
+	if expectedChange.Sign() < 0 || outputTotal.Cmp(inputTotal) != 0 {
+		return fmt.Errorf("batch transfer plan input/output conservation mismatch")
+	}
+	if plan.InputTotal.Cmp(inputTotal) != 0 || plan.PaymentTotal.Cmp(paymentTotal) != 0 || plan.Change.Cmp(expectedChange) != 0 || changeTotal.Cmp(expectedChange) != 0 || seenChange != (expectedChange.Sign() > 0) {
+		return fmt.Errorf("batch transfer plan totals are inconsistent")
+	}
+	return nil
 }
 
 func freshSecret(used map[string]struct{}) (*big.Int, error) {

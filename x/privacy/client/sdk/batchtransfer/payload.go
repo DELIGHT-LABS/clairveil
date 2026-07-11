@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"path/filepath"
 	"time"
 
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
@@ -15,8 +16,11 @@ import (
 )
 
 func BuildPreparedBatchTransferPayload(prepared *PreparedBatchTransfer, signer BatchTransferSigner, input BuildPreparedBatchTransferPayloadInput) (*PreparedBatchTransferPayload, error) {
-	if prepared == nil || signer == nil {
-		return nil, fmt.Errorf("prepared transfer and structured batch signer are required")
+	if signer == nil {
+		return nil, fmt.Errorf("a structured batch signer is required")
+	}
+	if err := validatePreparedBatchTransferForPayloadBuild(prepared); err != nil {
+		return nil, err
 	}
 	if input.ChainID == "" || input.ExpiresAtUnix <= 0 {
 		return nil, fmt.Errorf("chain id and positive expiry are required")
@@ -174,6 +178,53 @@ func BuildPreparedBatchTransferPayload(prepared *PreparedBatchTransfer, signer B
 	return p, ValidatePreparedBatchTransferPayloadMetadataAt(p, time.Now())
 }
 
+func validatePreparedBatchTransferForPayloadBuild(prepared *PreparedBatchTransfer) error {
+	if prepared == nil {
+		return fmt.Errorf("prepared transfer is required")
+	}
+	if err := privacytypes.ValidateBatchJoinSplitCountsV1(uint32(len(prepared.Inputs)), uint32(len(prepared.Outputs))); err != nil {
+		return err
+	}
+	if err := privacyfield.ValidateCanonicalBytes32(prepared.Root); err != nil {
+		return fmt.Errorf("prepared batch root: %w", err)
+	}
+	if err := validateCanonicalBatchTransferField("prepared batch asset id", prepared.AssetID); err != nil {
+		return err
+	}
+	if prepared.AssetID.Sign() == 0 {
+		return fmt.Errorf("prepared batch asset id must be positive")
+	}
+	for i := range prepared.Inputs {
+		if err := prepared.Inputs[i].Note.ValidateV1(); err != nil {
+			return fmt.Errorf("input %d: %w", i, err)
+		}
+		if prepared.Inputs[i].Note.AssetID.Cmp(prepared.AssetID) != 0 {
+			return fmt.Errorf("input %d asset mismatch", i)
+		}
+	}
+	for i := range prepared.Outputs {
+		output := &prepared.Outputs[i]
+		if err := output.Note.ValidateV1(); err != nil {
+			return fmt.Errorf("output %d: %w", i, err)
+		}
+		if output.Note.AssetID.Cmp(prepared.AssetID) != 0 {
+			return fmt.Errorf("output %d asset mismatch", i)
+		}
+		for _, field := range []struct {
+			name  string
+			value *big.Int
+		}{
+			{"user disclosure blinding", output.UserDisclosureBlinding},
+			{"full disclosure blinding", output.FullDisclosureBlinding},
+		} {
+			if err := validateCanonicalBatchTransferField(fmt.Sprintf("output %d %s", i, field.name), field.value); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func disclosurePlaintext(index uint32, full bool, owner privacytypes.Note, output PreparedBatchTransferOutput) ([]byte, *big.Int, error) {
 	commitment := output.Note.ComputeCommitment()
 	zero := func() *big.Int { return new(big.Int) }
@@ -277,19 +328,38 @@ func WritePreparedBatchTransferPayload(path string, payload *PreparedBatchTransf
 }
 
 func writePrivateBatchFile(path string, bz []byte) error {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return err
 	}
-	if err := file.Chmod(0o600); err != nil {
-		_ = file.Close()
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	defer tmp.Close()
+	if err := tmp.Chmod(0o600); err != nil {
 		return err
 	}
-	if _, err := file.Write(bz); err != nil {
-		_ = file.Close()
+	if _, err := tmp.Write(bz); err != nil {
 		return err
 	}
-	return file.Close()
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	directory, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	if err := directory.Sync(); err != nil {
+		_ = directory.Close()
+		return err
+	}
+	return directory.Close()
 }
 
 func intentInput(p *PreparedBatchTransferPayload, hi, lo *big.Int) privacytypes.BatchTransferIntentV1Input {

@@ -35,6 +35,32 @@ func TestPreparedBatchTransferFileRoundTripAndPrivateMode(t *testing.T) {
 	require.Equal(t, proof, readProof)
 }
 
+func TestPreparedBatchTransferFileAtomicallyReplacesSymlinkWithoutTruncatingTarget(t *testing.T) {
+	dir := t.TempDir()
+	targetPath := filepath.Join(dir, "existing-private-artifact.json")
+	require.NoError(t, os.WriteFile(targetPath, []byte("existing artifact"), 0o600))
+	payloadPath := filepath.Join(dir, "prepared.json")
+	if err := os.Symlink(targetPath, payloadPath); err != nil {
+		t.Skipf("symlink is unavailable: %v", err)
+	}
+
+	payload := testPayload(t)
+	require.NoError(t, WritePreparedBatchTransferPayload(payloadPath, payload))
+	targetBytes, err := os.ReadFile(targetPath)
+	require.NoError(t, err)
+	require.Equal(t, []byte("existing artifact"), targetBytes)
+	info, err := os.Lstat(payloadPath)
+	require.NoError(t, err)
+	require.Zero(t, info.Mode()&os.ModeSymlink)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	readPayload, err := ReadPreparedBatchTransferPayload(payloadPath)
+	require.NoError(t, err)
+	require.Equal(t, payload.PayloadHash, readPayload.PayloadHash)
+	tempFiles, err := filepath.Glob(filepath.Join(dir, ".prepared.json.tmp-*"))
+	require.NoError(t, err)
+	require.Empty(t, tempFiles)
+}
+
 func TestPreparedBatchTransferFileDecodeIsStrict(t *testing.T) {
 	payload := testPayload(t)
 	payloadBytes, err := json.Marshal(payload)
