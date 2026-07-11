@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"os"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	ecc_twistededwards "github.com/consensys/gnark-crypto/ecc/twistededwards"
 	"github.com/consensys/gnark/backend/groth16"
+	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
 	"github.com/consensys/gnark/std/algebra/native/twistededwards"
@@ -21,6 +23,28 @@ import (
 	"github.com/consensys/gnark/test"
 	"github.com/stretchr/testify/require"
 )
+
+var (
+	batchProductionCCSOnce sync.Once
+	batchProductionCCS     constraint.ConstraintSystem
+	batchProductionCCSErr  error
+)
+
+// compiledBatchProductionCCS keeps the million-constraint production compile
+// shared across the normal solve matrix. The opt-in Session 2 resource gate
+// deliberately compiles separately because compile time is one of its outputs.
+func compiledBatchProductionCCS(t testing.TB) constraint.ConstraintSystem {
+	t.Helper()
+	batchProductionCCSOnce.Do(func() {
+		batchProductionCCS, batchProductionCCSErr = frontend.Compile(
+			ecc.BN254.ScalarField(),
+			r1cs.NewBuilder,
+			&BatchJoinSplit16x32{},
+		)
+	})
+	require.NoError(t, batchProductionCCSErr)
+	return batchProductionCCS
+}
 
 func TestBatchJoinSplit16x32FeasibilityPublicInputOrder(t *testing.T) {
 	require.Equal(t, [12]string{
@@ -59,8 +83,7 @@ func TestBatchJoinSplit16x32FeasibilityActivePrefixAndSentinels(t *testing.T) {
 	if testing.Short() {
 		t.Skip("full prototype solve is skipped in short mode")
 	}
-	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &BatchJoinSplit16x32FeasibilityCircuit{})
-	require.NoError(t, err)
+	ccs := compiledBatchProductionCCS(t)
 	assertSolve := func(t *testing.T, assignment *BatchJoinSplit16x32FeasibilityCircuit, wantSuccess bool) {
 		t.Helper()
 		witness, err := frontend.NewWitness(assignment, ecc.BN254.ScalarField())
@@ -237,10 +260,12 @@ func (c *batchPointSubgroupCircuit) Define(api frontend.API) error {
 	return nil
 }
 
-// TestBatchJoinSplit16x32FullShapeResourceGate is intentionally opt-in because
-// it performs a development Groth16 setup and 15 proof samples (three for each
-// of four batch shapes plus three for JoinSplit2x2). Session 2 runs it
-// explicitly and records the emitted JSON; CI still compiles this code.
+// TestBatchJoinSplit16x32FullShapeResourceGate is intentionally opt-in and is
+// the only batch benchmark that performs a development Groth16 setup. It also
+// runs 15 proof samples (three for each of four batch shapes plus three for
+// JoinSplit2x2). Session 2 records the emitted JSON; the ordinary solve matrix
+// and solve benchmark share a compiled CCS, and no ordinary benchmark repeats
+// Groth16 setup.
 func TestBatchJoinSplit16x32FullShapeResourceGate(t *testing.T) {
 	if os.Getenv("CLAIRVEIL_RUN_BATCH_FEASIBILITY") != "1" {
 		t.Skip("set CLAIRVEIL_RUN_BATCH_FEASIBILITY=1 to run the full resource gate")
@@ -540,9 +565,13 @@ func refreshBatchFeasibilityPublicState(t testing.TB, assignment *BatchJoinSplit
 	for i := 0; i < inputCount; i++ {
 		amount := assignment.InputAmounts[i].(*big.Int)
 		randomness := assignment.InputRandomness[i].(*big.Int)
-		commitment := privacytypes.ComputeNoteCommitmentV1(ownerSpendX, ownerSpendY, ownerViewX, ownerViewY, amount, assetID, randomness)
+		spendX := assignment.InputSpendPubKeys[i].A.X.(*big.Int)
+		spendY := assignment.InputSpendPubKeys[i].A.Y.(*big.Int)
+		viewX := assignment.InputViewPubKeys[i].A.X.(*big.Int)
+		viewY := assignment.InputViewPubKeys[i].A.Y.(*big.Int)
+		commitment := privacytypes.ComputeNoteCommitmentV1(spendX, spendY, viewX, viewY, amount, assetID, randomness)
 		inputLeaves[i] = commitment
-		nullifierValues[i] = privacytypes.ComputeNoteNullifierV1(commitment, randomness, ownerSpendX, ownerSpendY)
+		nullifierValues[i] = privacytypes.ComputeNoteNullifierV1(commitment, randomness, spendX, spendY)
 	}
 	root, paths, helpers := batchFeasibilityTreeAndPaths(inputLeaves)
 	assignment.MerkleRoot = root
@@ -568,15 +597,18 @@ func refreshBatchFeasibilityPublicState(t testing.TB, assignment *BatchJoinSplit
 		commitment := privacytypes.ComputeNoteCommitmentV1(spendX, spendY, viewX, viewY, amount, assetID, randomness)
 		commitmentValues[i] = commitment
 		userPolicies[i] = policy
-		userDigest, err := privacytypes.ComputeBatchUserDisclosureDigestV1(privacytypes.BatchUserDisclosureV1Input{
-			OutputIndex: uint32(i), Commitment: commitment, Policy: policy, DisclosedFieldBitmap: policy,
-			SelectedAmount:        amount,
-			SelectedFromSpendKeyX: ownerSpendX, SelectedFromSpendKeyY: ownerSpendY,
-			SelectedFromViewKeyX: ownerViewX, SelectedFromViewKeyY: ownerViewY,
-			SelectedToSpendKeyX: spendX, SelectedToSpendKeyY: spendY,
-			SelectedToViewKeyX: viewX, SelectedToViewKeyY: viewY,
-			AssetID: assetID, UserDisclosureBlinding: assignment.UserDisclosureBlindings[i].(*big.Int),
-		})
+		userDigest, err := computeBatchFixtureUserDigest(
+			uint32(i),
+			commitment,
+			policy,
+			amount,
+			assetID,
+			ownerSpendX, ownerSpendY,
+			ownerViewX, ownerViewY,
+			spendX, spendY,
+			viewX, viewY,
+			assignment.UserDisclosureBlindings[i].(*big.Int),
+		)
 		require.NoError(t, err)
 		userRawDigests[i] = userDigest
 		fullDigest, err := privacytypes.ComputeBatchFullDisclosureDigestV1(privacytypes.BatchFullDisclosureV1Input{
@@ -612,6 +644,57 @@ func refreshBatchFeasibilityPublicState(t testing.TB, assignment *BatchJoinSplit
 	require.NoError(t, err)
 	ownerSpendScalar := big.NewInt(17)
 	assignment.OwnerSignature = signSpendMessage(t, intent, ownerSpendScalar, scalarMulBase(ownerSpendScalar))
+}
+
+func computeBatchFixtureUserDigest(
+	outputIndex uint32,
+	commitment *big.Int,
+	policy uint32,
+	amount *big.Int,
+	assetID *big.Int,
+	ownerSpendX, ownerSpendY, ownerViewX, ownerViewY *big.Int,
+	recipientSpendX, recipientSpendY, recipientViewX, recipientViewY *big.Int,
+	blinding *big.Int,
+) (*big.Int, error) {
+	zero := big.NewInt(0)
+	if policy == privacytypes.TransferPrivacyPolicyAllPrivate {
+		return privacytypes.ComputeBatchUserDisclosureDigestV1(privacytypes.BatchUserDisclosureV1Input{
+			OutputIndex: outputIndex, Commitment: commitment,
+			Policy: privacytypes.TransferPrivacyPolicyAllPrivate, DisclosedFieldBitmap: 0,
+			SelectedAmount:        zero,
+			SelectedFromSpendKeyX: zero, SelectedFromSpendKeyY: zero,
+			SelectedFromViewKeyX: zero, SelectedFromViewKeyY: zero,
+			SelectedToSpendKeyX: zero, SelectedToSpendKeyY: zero,
+			SelectedToViewKeyX: zero, SelectedToViewKeyY: zero,
+			AssetID: zero, UserDisclosureBlinding: zero,
+		})
+	}
+
+	selectedAmount := zero
+	if policy&privacytypes.TransferPrivacyPolicyDiscloseAmount != 0 {
+		selectedAmount = amount
+	}
+	selectedFromSpendX, selectedFromSpendY := zero, zero
+	selectedFromViewX, selectedFromViewY := zero, zero
+	if policy&privacytypes.TransferPrivacyPolicyDiscloseFrom != 0 {
+		selectedFromSpendX, selectedFromSpendY = ownerSpendX, ownerSpendY
+		selectedFromViewX, selectedFromViewY = ownerViewX, ownerViewY
+	}
+	selectedToSpendX, selectedToSpendY := zero, zero
+	selectedToViewX, selectedToViewY := zero, zero
+	if policy&privacytypes.TransferPrivacyPolicyDiscloseTo != 0 {
+		selectedToSpendX, selectedToSpendY = recipientSpendX, recipientSpendY
+		selectedToViewX, selectedToViewY = recipientViewX, recipientViewY
+	}
+	return privacytypes.ComputeBatchUserDisclosureDigestV1(privacytypes.BatchUserDisclosureV1Input{
+		OutputIndex: outputIndex, Commitment: commitment, Policy: policy, DisclosedFieldBitmap: policy,
+		SelectedAmount:        selectedAmount,
+		SelectedFromSpendKeyX: selectedFromSpendX, SelectedFromSpendKeyY: selectedFromSpendY,
+		SelectedFromViewKeyX: selectedFromViewX, SelectedFromViewKeyY: selectedFromViewY,
+		SelectedToSpendKeyX: selectedToSpendX, SelectedToSpendKeyY: selectedToSpendY,
+		SelectedToViewKeyX: selectedToViewX, SelectedToViewKeyY: selectedToViewY,
+		AssetID: assetID, UserDisclosureBlinding: blinding,
+	})
 }
 
 func batchFeasibilityTreeAndPaths(leaves []*big.Int) (*big.Int, [][MerkleDepth]*big.Int, [][MerkleDepth]*big.Int) {
