@@ -19,7 +19,6 @@ import (
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
 	privacywithdraw "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/withdraw"
-	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -57,7 +56,7 @@ func generatedTransferRequest() (requestPayload, error) {
 
 	senderSpendX, senderSpendY := pointBigInts(senderSpendPub)
 	senderViewX, senderViewY := pointBigInts(senderViewPub)
-	assetID := privacycrypto.HashString(generatedFixtureDenom)
+	assetID := privacytypes.ComputeAssetIDV1(generatedFixtureDenom)
 	inputs := [2]privacyscan.FoundNote{
 		foundNote(privacytypes.Note{
 			ReceiverSpendPubKeyX: new(big.Int).Set(senderSpendX),
@@ -135,7 +134,7 @@ func generatedWithdrawRequest(now time.Time) (requestPayload, error) {
 		ReceiverViewPubKeyX:  viewX,
 		ReceiverViewPubKeyY:  viewY,
 		Amount:               big.NewInt(10),
-		AssetID:              privacycrypto.HashString(generatedFixtureDenom),
+		AssetID:              privacytypes.ComputeAssetIDV1(generatedFixtureDenom),
 		Randomness:           big.NewInt(107),
 		Memo:                 "Generated prover load withdraw input",
 	})
@@ -191,17 +190,32 @@ func newGeneratedTransferMerklePathProvider(inputs [2]privacyscan.FoundNote) (*g
 	if err != nil {
 		return nil, err
 	}
+	leftPath := make([]string, circuit.MerkleDepth)
+	rightPath := make([]string, circuit.MerkleDepth)
+	leftHelpers := make([]uint32, circuit.MerkleDepth)
+	rightHelpers := make([]uint32, circuit.MerkleDepth)
+	leftPath[0] = rightHex
+	rightPath[0] = leftHex
+	rightHelpers[0] = 1
+	for level := 1; level < circuit.MerkleDepth; level++ {
+		emptyHex, err := privacyfield.CanonicalHexFromBigInt(privacytypes.EmptyNoteTreeRootV1(uint32(level)))
+		if err != nil {
+			return nil, err
+		}
+		leftPath[level] = emptyHex
+		rightPath[level] = emptyHex
+	}
 	return &generatedTransferMerklePathProvider{
 		paths: map[string]privacytransfer.MerklePathResult{
 			leftHex: {
 				Root:       rootBytes,
-				Path:       []string{rightHex},
-				PathHelper: []uint32{0},
+				Path:       leftPath,
+				PathHelper: leftHelpers,
 			},
 			rightHex: {
 				Root:       rootBytes,
-				Path:       []string{leftHex},
-				PathHelper: []uint32{1},
+				Path:       rightPath,
+				PathHelper: rightHelpers,
 			},
 		},
 	}, nil
@@ -230,14 +244,14 @@ func newGeneratedWithdrawMerklePathProvider(note privacyscan.FoundNote) (*genera
 	if err != nil {
 		return nil, err
 	}
-	zeroHex, err := privacyfield.CanonicalHexFromBigInt(big.NewInt(0))
-	if err != nil {
-		return nil, err
-	}
 	path := make([]string, circuit.MerkleDepth)
 	helpers := make([]uint32, circuit.MerkleDepth)
 	for i := 0; i < circuit.MerkleDepth; i++ {
-		path[i] = zeroHex
+		emptyHex, err := privacyfield.CanonicalHexFromBigInt(privacytypes.EmptyNoteTreeRootV1(uint32(i)))
+		if err != nil {
+			return nil, err
+		}
+		path[i] = emptyHex
 	}
 	return &generatedWithdrawMerklePathProvider{
 		result: privacywithdraw.MerklePathResult{
@@ -297,19 +311,17 @@ func foundNote(note privacytypes.Note) privacyscan.FoundNote {
 }
 
 func twoLeafRoot(leftLeaf, rightLeaf *big.Int) *big.Int {
-	current := privacycrypto.MimcHash(leftLeaf, rightLeaf)
-	zero := big.NewInt(0)
-	for i := 1; i < circuit.MerkleDepth; i++ {
-		current = privacycrypto.MimcHash(current, zero)
+	current := privacytypes.ComputeNoteTreeNodeV1(0, leftLeaf, rightLeaf)
+	for level := uint32(1); level < circuit.MerkleDepth; level++ {
+		current = privacytypes.ComputeNoteTreeNodeV1(level, current, privacytypes.EmptyNoteTreeRootV1(level))
 	}
 	return current
 }
 
 func singleLeafRoot(leaf *big.Int) *big.Int {
 	current := leaf
-	zero := big.NewInt(0)
-	for i := 0; i < circuit.MerkleDepth; i++ {
-		current = privacycrypto.MimcHash(current, zero)
+	for level := uint32(0); level < circuit.MerkleDepth; level++ {
+		current = privacytypes.ComputeNoteTreeNodeV1(level, current, privacytypes.EmptyNoteTreeRootV1(level))
 	}
 	return current
 }
