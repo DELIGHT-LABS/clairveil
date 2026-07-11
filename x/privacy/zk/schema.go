@@ -47,9 +47,7 @@ var publicInputSchemas = map[string][]PublicInputField{
 		{Name: "PayloadDigestHi", Encoding: "uint128"},
 		{Name: "PayloadDigestLo", Encoding: "uint128"},
 	},
-	// Reserved by Session 2 for the feasibility prototype and future production
-	// circuit. It is deliberately not part of RequiredCircuitIDs or the active
-	// artifact manifest until Session 3A implements the production circuit.
+	// BatchJoinSplit16x32 is the fourth production circuit in privacy-note-v1.
 	"batch-joinsplit-16x32-v1": {
 		{Name: "MerkleRoot", Encoding: "bn254-fr"},
 		{Name: "ChainDomainHi", Encoding: "uint128"},

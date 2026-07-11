@@ -89,17 +89,7 @@ func main() {
 
 	fmt.Println("privacy zk artifacts generated successfully")
 	fmt.Printf("artifact_dir=%s\n", outDir)
-	for _, key := range []string{
-		zk.DepositR1CSSHA256Env,
-		zk.DepositPKSHA256Env,
-		zk.DepositVKSHA256Env,
-		zk.SpendR1CSSHA256Env,
-		zk.SpendPKSHA256Env,
-		zk.SpendVKSHA256Env,
-		zk.JoinSplitR1CSSHA256Env,
-		zk.JoinSplitPKSHA256Env,
-		zk.JoinSplitVKSHA256Env,
-	} {
+	for _, key := range checksumEnvironmentOrder() {
 		fmt.Printf("%s=%s\n", key, checksums[key])
 	}
 }
@@ -128,6 +118,15 @@ func buildArtifactDefinitions() ([]artifactDefinition, error) {
 		return nil, err
 	}
 	joinSplitPK, joinSplitVK, err := groth16.Setup(joinSplitCS)
+	if err != nil {
+		return nil, err
+	}
+
+	batchJoinSplitCS, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit.BatchJoinSplit16x32{})
+	if err != nil {
+		return nil, err
+	}
+	batchJoinSplitPK, batchJoinSplitVK, err := groth16.Setup(batchJoinSplitCS)
 	if err != nil {
 		return nil, err
 	}
@@ -196,6 +195,27 @@ func buildArtifactDefinitions() ([]artifactDefinition, error) {
 				return writeArtifact(filepath.Join(outDir, zk.JoinSplitVKFile), joinSplitVK)
 			},
 		},
+		{
+			filename:    zk.BatchJoinSplit16x32R1CSFile,
+			checksumEnv: zk.BatchJoinSplit16x32R1CSSHA256Env,
+			write: func(outDir string) error {
+				return writeArtifact(filepath.Join(outDir, zk.BatchJoinSplit16x32R1CSFile), batchJoinSplitCS)
+			},
+		},
+		{
+			filename:    zk.BatchJoinSplit16x32PKFile,
+			checksumEnv: zk.BatchJoinSplit16x32PKSHA256Env,
+			write: func(outDir string) error {
+				return writeArtifact(filepath.Join(outDir, zk.BatchJoinSplit16x32PKFile), batchJoinSplitPK)
+			},
+		},
+		{
+			filename:    zk.BatchJoinSplit16x32VKFile,
+			checksumEnv: zk.BatchJoinSplit16x32VKSHA256Env,
+			write: func(outDir string) error {
+				return writeArtifact(filepath.Join(outDir, zk.BatchJoinSplit16x32VKFile), batchJoinSplitVK)
+			},
+		},
 	}, nil
 }
 
@@ -223,21 +243,29 @@ func checksumFile(path string) (string, error) {
 }
 
 func writeEnvManifest(path, outDir string, checksums map[string]string) error {
-	content := fmt.Sprintf(
-		"CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR=%s\n%s=%s\n%s=%s\n%s=%s\n%s=%s\n%s=%s\n%s=%s\n%s=%s\n%s=%s\n%s=%s\n",
-		outDir,
-		zk.DepositR1CSSHA256Env, checksums[zk.DepositR1CSSHA256Env],
-		zk.DepositPKSHA256Env, checksums[zk.DepositPKSHA256Env],
-		zk.DepositVKSHA256Env, checksums[zk.DepositVKSHA256Env],
-		zk.SpendR1CSSHA256Env, checksums[zk.SpendR1CSSHA256Env],
-		zk.SpendPKSHA256Env, checksums[zk.SpendPKSHA256Env],
-		zk.SpendVKSHA256Env, checksums[zk.SpendVKSHA256Env],
-		zk.JoinSplitR1CSSHA256Env, checksums[zk.JoinSplitR1CSSHA256Env],
-		zk.JoinSplitPKSHA256Env, checksums[zk.JoinSplitPKSHA256Env],
-		zk.JoinSplitVKSHA256Env, checksums[zk.JoinSplitVKSHA256Env],
-	)
+	content := fmt.Sprintf("%s=%s\n", zk.ZKArtifactDirEnv, outDir)
+	for _, checksumEnv := range checksumEnvironmentOrder() {
+		content += fmt.Sprintf("%s=%s\n", checksumEnv, checksums[checksumEnv])
+	}
 
 	return os.WriteFile(path, []byte(content), 0o644)
+}
+
+func checksumEnvironmentOrder() []string {
+	return []string{
+		zk.DepositR1CSSHA256Env,
+		zk.DepositPKSHA256Env,
+		zk.DepositVKSHA256Env,
+		zk.SpendR1CSSHA256Env,
+		zk.SpendPKSHA256Env,
+		zk.SpendVKSHA256Env,
+		zk.JoinSplitR1CSSHA256Env,
+		zk.JoinSplitPKSHA256Env,
+		zk.JoinSplitVKSHA256Env,
+		zk.BatchJoinSplit16x32R1CSSHA256Env,
+		zk.BatchJoinSplit16x32PKSHA256Env,
+		zk.BatchJoinSplit16x32VKSHA256Env,
+	}
 }
 
 func writeLegacyChecksumsJSON(path, outDir string, checksums map[string]string) error {

@@ -33,7 +33,7 @@ func TestPublicInputSchemasMatchCircuitDeclarationOrder(t *testing.T) {
 		{name: "deposit", circuit: &circuit.DepositCircuit{}, expected: []string{"Commitment", "Amount", "AssetID"}},
 		{name: "spend", circuit: &circuit.SpendCircuit{}, expected: []string{"MerkleRoot", "ChainDomainHi", "ChainDomainLo", "ExpiresAtUnix", "Nullifier", "Amount", "RecipientDigestHi", "RecipientDigestLo", "AssetID"}},
 		{name: "joinsplit", circuit: &circuit.JoinSplitCircuit{}, expected: []string{"MerkleRoot", "ChainDomainHi", "ChainDomainLo", "ExpiresAtUnix", "Nullifiers_0", "Nullifiers_1", "Commitments_0", "Commitments_1", "UserPrivacyPolicy", "UserDisclosureDigest", "FullDisclosureDigest", "PayloadDigestHi", "PayloadDigestLo"}},
-		{name: "batch-joinsplit-16x32-v1", circuit: &circuit.BatchJoinSplit16x32FeasibilityCircuit{}, expected: []string{"MerkleRoot", "ChainDomainHi", "ChainDomainLo", "ExpiresAtUnix", "InputCount", "OutputCount", "NullifierRoot", "CommitmentRoot", "UserDisclosureRoot", "FullDisclosureRoot", "PayloadDigestHi", "PayloadDigestLo"}},
+		{name: "batch-joinsplit-16x32-v1", circuit: &circuit.BatchJoinSplit16x32{}, expected: []string{"MerkleRoot", "ChainDomainHi", "ChainDomainLo", "ExpiresAtUnix", "InputCount", "OutputCount", "NullifierRoot", "CommitmentRoot", "UserDisclosureRoot", "FullDisclosureRoot", "PayloadDigestHi", "PayloadDigestLo"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.expected, declaredPublicFieldNames(tc.circuit))

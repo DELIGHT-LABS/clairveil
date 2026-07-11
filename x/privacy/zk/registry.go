@@ -22,9 +22,10 @@ import (
 type CircuitID string
 
 const (
-	CircuitDeposit   CircuitID = "deposit"
-	CircuitSpend     CircuitID = "spend"
-	CircuitJoinSplit CircuitID = "joinsplit"
+	CircuitDeposit               CircuitID = "deposit"
+	CircuitSpend                 CircuitID = "spend"
+	CircuitJoinSplit             CircuitID = "joinsplit"
+	CircuitBatchJoinSplit16x32V1 CircuitID = "batch-joinsplit-16x32-v1"
 )
 
 type ArtifactRole string
@@ -64,7 +65,7 @@ type ArtifactRegistry struct {
 }
 
 func RequiredCircuitIDs() []CircuitID {
-	return []CircuitID{CircuitDeposit, CircuitSpend, CircuitJoinSplit}
+	return []CircuitID{CircuitDeposit, CircuitSpend, CircuitJoinSplit, CircuitBatchJoinSplit16x32V1}
 }
 
 func NewRuntimeArtifactRegistry() (*ArtifactRegistry, error) {
@@ -381,7 +382,7 @@ func normalizeCircuitIDs(circuits []CircuitID) ([]CircuitID, error) {
 	seen := make(map[CircuitID]struct{}, len(circuits))
 	for _, circuitID := range circuits {
 		switch circuitID {
-		case CircuitDeposit, CircuitSpend, CircuitJoinSplit:
+		case CircuitDeposit, CircuitSpend, CircuitJoinSplit, CircuitBatchJoinSplit16x32V1:
 		default:
 			return nil, fmt.Errorf("unsupported circuit id %q", circuitID)
 		}

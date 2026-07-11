@@ -106,6 +106,24 @@ func DefaultArtifactDescriptors() []ArtifactDescriptor {
 			Filename:     JoinSplitVKFile,
 			ChecksumEnv:  JoinSplitVKSHA256Env,
 		},
+		{
+			CircuitID:    "batch-joinsplit-16x32-v1",
+			ArtifactType: "r1cs",
+			Filename:     BatchJoinSplit16x32R1CSFile,
+			ChecksumEnv:  BatchJoinSplit16x32R1CSSHA256Env,
+		},
+		{
+			CircuitID:    "batch-joinsplit-16x32-v1",
+			ArtifactType: "proving_key",
+			Filename:     BatchJoinSplit16x32PKFile,
+			ChecksumEnv:  BatchJoinSplit16x32PKSHA256Env,
+		},
+		{
+			CircuitID:    "batch-joinsplit-16x32-v1",
+			ArtifactType: "verifying_key",
+			Filename:     BatchJoinSplit16x32VKFile,
+			ChecksumEnv:  BatchJoinSplit16x32VKSHA256Env,
+		},
 	}
 }
 
@@ -261,6 +279,8 @@ func verifyingKeyFilename(circuitID string) string {
 		return SpendVKFile
 	case "joinsplit":
 		return JoinSplitVKFile
+	case "batch-joinsplit-16x32-v1":
+		return BatchJoinSplit16x32VKFile
 	default:
 		return ""
 	}
@@ -274,6 +294,8 @@ func verifyingKeyChecksumEnv(circuitID string) string {
 		return SpendVKSHA256Env
 	case "joinsplit":
 		return JoinSplitVKSHA256Env
+	case "batch-joinsplit-16x32-v1":
+		return BatchJoinSplit16x32VKSHA256Env
 	default:
 		return ""
 	}

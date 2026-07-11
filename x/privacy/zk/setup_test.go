@@ -31,6 +31,7 @@ func TestArtifactPathUsesEnv(t *testing.T) {
 	require.Equal(t, filepath.Join(dir, DepositR1CSFile), artifactPath(DepositR1CSFile))
 	require.Equal(t, filepath.Join(dir, SpendR1CSFile), artifactPath(SpendR1CSFile))
 	require.Equal(t, filepath.Join(dir, JoinSplitVKFile), artifactPath(JoinSplitVKFile))
+	require.Equal(t, filepath.Join(dir, BatchJoinSplit16x32VKFile), artifactPath(BatchJoinSplit16x32VKFile))
 }
 
 func TestRuntimeRegistryDevelopmentOverrideRequiresDevelopmentEnvironment(t *testing.T) {
@@ -66,6 +67,31 @@ func TestDefaultArtifactRegistryIsolatedAcrossEnvironmentChanges(t *testing.T) {
 	second, err := LoadLocalCircuitSetIdentity()
 	require.NoError(t, err)
 	require.NotEqual(t, first.Circuits[1].VerifyingKeySha256, second.Circuits[1].VerifyingKeySha256)
+}
+
+func TestRuntimeArtifactRegistryEnvironmentFingerprintIncludesBatchChecksums(t *testing.T) {
+	t.Setenv(BatchJoinSplit16x32R1CSSHA256Env, strings.Repeat("a", sha256.Size*2))
+	first := runtimeArtifactRegistryEnvironmentFingerprint()
+	t.Setenv(BatchJoinSplit16x32R1CSSHA256Env, strings.Repeat("b", sha256.Size*2))
+	second := runtimeArtifactRegistryEnvironmentFingerprint()
+	require.NotEqual(t, first, second)
+}
+
+func TestBatchCompatibilityGettersUseBatchDescriptors(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(ZKArtifactDirEnv, dir)
+	resetZKSetupStateForTest()
+	require.NoError(t, writeTestArtifacts(dir))
+	for _, filename := range []string{JoinSplitR1CSFile, JoinSplitPKFile, JoinSplitVKFile} {
+		require.NoError(t, os.Remove(filepath.Join(dir, filename)))
+	}
+
+	_, err := GetBatchJoinSplit16x32R1CS()
+	require.NoError(t, err)
+	_, err = GetBatchJoinSplit16x32ProvingKey()
+	require.NoError(t, err)
+	_, err = GetBatchJoinSplit16x32VerifyingKey()
+	require.NoError(t, err)
 }
 
 func TestValidateZKSetupFailsOnMissingArtifacts(t *testing.T) {
@@ -174,7 +200,7 @@ func TestRunProverPreflightChecksOnlySelectedCircuitArtifacts(t *testing.T) {
 	registry.cacheMu.Unlock()
 }
 
-func TestRunPreflightStrictRejectsManifestChecksumMismatch(t *testing.T) {
+func TestRunPreflightStrictRejectsBatchManifestChecksumMismatch(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv(ZKArtifactDirEnv, dir)
 	t.Setenv(ZKPreflightModeEnv, string(ZKPreflightStrict))
@@ -187,7 +213,7 @@ func TestRunPreflightStrictRejectsManifestChecksumMismatch(t *testing.T) {
 	descriptors := manifest.Artifacts
 	badChecksum := make([]byte, 32)
 	badChecksum[0] = 0x01
-	descriptors[0].SHA256 = hex.EncodeToString(badChecksum)
+	descriptors[9].SHA256 = hex.EncodeToString(badChecksum)
 	manifest.Artifacts = descriptors
 	bz, err := json.Marshal(manifest)
 	require.NoError(t, err)
@@ -210,7 +236,7 @@ func TestRunPreflightStrictRejectsIncompleteManifestChecksums(t *testing.T) {
 			updateDescriptors: func(descriptors []ArtifactDescriptor) []ArtifactDescriptor {
 				return descriptors[1:]
 			},
-			want: "artifact manifest must contain exactly 9 artifacts",
+			want: "artifact manifest must contain exactly 12 artifacts",
 		},
 		{
 			name: "empty sha256",
@@ -312,6 +338,13 @@ func writeTestArtifacts(dir string) error {
 		{JoinSplitR1CSFile, joinSplitCS},
 		{JoinSplitPKFile, joinSplitPK},
 		{JoinSplitVKFile, joinSplitVK},
+		// Registry tests exercise lifecycle semantics rather than the batch
+		// constraint set. Reusing the valid JoinSplit encoding here avoids a
+		// 1.1M-constraint setup for every test while preserving R1CS/PK/VK
+		// decoding, checksumming, role selection, and lazy loading behavior.
+		{BatchJoinSplit16x32R1CSFile, joinSplitCS},
+		{BatchJoinSplit16x32PKFile, joinSplitPK},
+		{BatchJoinSplit16x32VKFile, joinSplitVK},
 	}
 
 	for _, artifact := range artifacts {

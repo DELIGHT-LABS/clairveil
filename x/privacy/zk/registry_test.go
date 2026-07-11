@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
 func TestArtifactRegistryLoadsOnlyRequestedCircuitRole(t *testing.T) {
@@ -51,6 +53,127 @@ func TestArtifactRegistryLoadsOnlyRequestedCircuitRole(t *testing.T) {
 		SpendVKFile, JoinSplitR1CSFile, JoinSplitPKFile,
 	} {
 		require.Zero(t, reads[filename], filename)
+	}
+}
+
+func TestBatchArtifactRegistryRoleReadinessLoadsOnlyRequiredArtifacts(t *testing.T) {
+	t.Run("validator loads VK only", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, writeTestArtifacts(dir))
+		require.NoError(t, os.Remove(filepath.Join(dir, BatchJoinSplit16x32R1CSFile)))
+		require.NoError(t, os.Remove(filepath.Join(dir, BatchJoinSplit16x32PKFile)))
+
+		var mu sync.Mutex
+		reads := make(map[string]int)
+		registry, err := NewArtifactRegistry(ArtifactRegistryConfig{
+			ArtifactDir: dir,
+			ReadFile: func(path string) ([]byte, error) {
+				mu.Lock()
+				reads[filepath.Base(path)]++
+				mu.Unlock()
+				return os.ReadFile(path)
+			},
+			LookupEnv: func(string) (string, bool) { return "", false },
+		})
+		require.NoError(t, err)
+		identity, err := registry.LocalCircuitSetIdentity()
+		require.NoError(t, err)
+		require.NoError(t, registry.CheckReadiness(ArtifactRoleValidator, []CircuitID{CircuitBatchJoinSplit16x32V1}, identity))
+
+		mu.Lock()
+		defer mu.Unlock()
+		require.Equal(t, 1, reads[ArtifactManifestFile])
+		require.Equal(t, 1, reads[BatchJoinSplit16x32VKFile])
+		require.Zero(t, reads[BatchJoinSplit16x32R1CSFile])
+		require.Zero(t, reads[BatchJoinSplit16x32PKFile])
+	})
+
+	t.Run("prover loads R1CS and PK only", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, writeTestArtifacts(dir))
+		require.NoError(t, os.Remove(filepath.Join(dir, BatchJoinSplit16x32VKFile)))
+
+		var mu sync.Mutex
+		reads := make(map[string]int)
+		registry, err := NewArtifactRegistry(ArtifactRegistryConfig{
+			ArtifactDir: dir,
+			ReadFile: func(path string) ([]byte, error) {
+				mu.Lock()
+				reads[filepath.Base(path)]++
+				mu.Unlock()
+				return os.ReadFile(path)
+			},
+			LookupEnv: func(string) (string, bool) { return "", false },
+		})
+		require.NoError(t, err)
+		require.NoError(t, registry.CheckReadiness(ArtifactRoleProver, []CircuitID{CircuitBatchJoinSplit16x32V1}, nil))
+
+		mu.Lock()
+		defer mu.Unlock()
+		require.Equal(t, 1, reads[ArtifactManifestFile])
+		require.Equal(t, 1, reads[BatchJoinSplit16x32R1CSFile])
+		require.Equal(t, 1, reads[BatchJoinSplit16x32PKFile])
+		require.Zero(t, reads[BatchJoinSplit16x32VKFile])
+	})
+}
+
+func TestBatchArtifactRegistryReadinessRejectsMissingAndMismatchedArtifacts(t *testing.T) {
+	tests := []struct {
+		name     string
+		role     ArtifactRole
+		filename string
+	}{
+		{name: "validator missing VK", role: ArtifactRoleValidator, filename: BatchJoinSplit16x32VKFile},
+		{name: "prover missing R1CS", role: ArtifactRoleProver, filename: BatchJoinSplit16x32R1CSFile},
+		{name: "prover missing PK", role: ArtifactRoleProver, filename: BatchJoinSplit16x32PKFile},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			require.NoError(t, writeTestArtifacts(dir))
+			require.NoError(t, os.Remove(filepath.Join(dir, tc.filename)))
+			registry, err := NewArtifactRegistry(ArtifactRegistryConfig{
+				ArtifactDir: dir,
+				LookupEnv:   func(string) (string, bool) { return "", false },
+			})
+			require.NoError(t, err)
+			var identity *privacytypes.CircuitSetIdentity
+			if tc.role == ArtifactRoleValidator {
+				identity, err = registry.LocalCircuitSetIdentity()
+				require.NoError(t, err)
+			}
+			err = registry.CheckReadiness(tc.role, []CircuitID{CircuitBatchJoinSplit16x32V1}, identity)
+			require.ErrorContains(t, err, tc.filename)
+		})
+	}
+
+	for _, tc := range []struct {
+		name     string
+		role     ArtifactRole
+		filename string
+	}{
+		{name: "validator mismatched VK", role: ArtifactRoleValidator, filename: BatchJoinSplit16x32VKFile},
+		{name: "prover mismatched R1CS", role: ArtifactRoleProver, filename: BatchJoinSplit16x32R1CSFile},
+		{name: "prover mismatched PK", role: ArtifactRoleProver, filename: BatchJoinSplit16x32PKFile},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			require.NoError(t, writeTestArtifacts(dir))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, tc.filename), []byte("mismatch"), 0o600))
+			registry, err := NewArtifactRegistry(ArtifactRegistryConfig{
+				ArtifactDir: dir,
+				LookupEnv:   func(string) (string, bool) { return "", false },
+			})
+			require.NoError(t, err)
+			var identity *privacytypes.CircuitSetIdentity
+			if tc.role == ArtifactRoleValidator {
+				identity, err = registry.LocalCircuitSetIdentity()
+				require.NoError(t, err)
+			}
+			err = registry.CheckReadiness(tc.role, []CircuitID{CircuitBatchJoinSplit16x32V1}, identity)
+			require.ErrorContains(t, err, "checksum mismatch")
+			require.ErrorContains(t, err, tc.filename)
+		})
 	}
 }
 

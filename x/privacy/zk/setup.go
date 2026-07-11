@@ -26,6 +26,10 @@ const (
 	JoinSplitPKFile   = "privacy_joinsplit_pk.bin"
 	JoinSplitVKFile   = "privacy_joinsplit_vk.bin"
 
+	BatchJoinSplit16x32R1CSFile = "privacy_batch_joinsplit_16x32_r1cs.bin"
+	BatchJoinSplit16x32PKFile   = "privacy_batch_joinsplit_16x32_pk.bin"
+	BatchJoinSplit16x32VKFile   = "privacy_batch_joinsplit_16x32_vk.bin"
+
 	ZKArtifactDirEnv = "CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR"
 
 	// ZKRuntimeEnvironmentEnv and ZKAllowDevelopmentArtifactOverrideEnv form a
@@ -36,15 +40,18 @@ const (
 	ZKRuntimeEnvironmentProduction        = "production"
 	ZKRuntimeEnvironmentDevelopment       = "development"
 
-	DepositR1CSSHA256Env   = "CLAIRVEIL_PRIVACY_DEPOSIT_R1CS_SHA256"
-	DepositPKSHA256Env     = "CLAIRVEIL_PRIVACY_DEPOSIT_PK_SHA256"
-	DepositVKSHA256Env     = "CLAIRVEIL_PRIVACY_DEPOSIT_VK_SHA256"
-	SpendR1CSSHA256Env     = "CLAIRVEIL_PRIVACY_SPEND_R1CS_SHA256"
-	SpendPKSHA256Env       = "CLAIRVEIL_PRIVACY_SPEND_PK_SHA256"
-	SpendVKSHA256Env       = "CLAIRVEIL_PRIVACY_SPEND_VK_SHA256"
-	JoinSplitR1CSSHA256Env = "CLAIRVEIL_PRIVACY_JOINSPLIT_R1CS_SHA256"
-	JoinSplitPKSHA256Env   = "CLAIRVEIL_PRIVACY_JOINSPLIT_PK_SHA256"
-	JoinSplitVKSHA256Env   = "CLAIRVEIL_PRIVACY_JOINSPLIT_VK_SHA256"
+	DepositR1CSSHA256Env             = "CLAIRVEIL_PRIVACY_DEPOSIT_R1CS_SHA256"
+	DepositPKSHA256Env               = "CLAIRVEIL_PRIVACY_DEPOSIT_PK_SHA256"
+	DepositVKSHA256Env               = "CLAIRVEIL_PRIVACY_DEPOSIT_VK_SHA256"
+	SpendR1CSSHA256Env               = "CLAIRVEIL_PRIVACY_SPEND_R1CS_SHA256"
+	SpendPKSHA256Env                 = "CLAIRVEIL_PRIVACY_SPEND_PK_SHA256"
+	SpendVKSHA256Env                 = "CLAIRVEIL_PRIVACY_SPEND_VK_SHA256"
+	JoinSplitR1CSSHA256Env           = "CLAIRVEIL_PRIVACY_JOINSPLIT_R1CS_SHA256"
+	JoinSplitPKSHA256Env             = "CLAIRVEIL_PRIVACY_JOINSPLIT_PK_SHA256"
+	JoinSplitVKSHA256Env             = "CLAIRVEIL_PRIVACY_JOINSPLIT_VK_SHA256"
+	BatchJoinSplit16x32R1CSSHA256Env = "CLAIRVEIL_PRIVACY_BATCH_JOINSPLIT_16X32_R1CS_SHA256"
+	BatchJoinSplit16x32PKSHA256Env   = "CLAIRVEIL_PRIVACY_BATCH_JOINSPLIT_16X32_PK_SHA256"
+	BatchJoinSplit16x32VKSHA256Env   = "CLAIRVEIL_PRIVACY_BATCH_JOINSPLIT_16X32_VK_SHA256"
 )
 
 var (
@@ -128,6 +135,9 @@ func runtimeArtifactRegistryEnvironmentFingerprint() string {
 		JoinSplitR1CSSHA256Env,
 		JoinSplitPKSHA256Env,
 		JoinSplitVKSHA256Env,
+		BatchJoinSplit16x32R1CSSHA256Env,
+		BatchJoinSplit16x32PKSHA256Env,
+		BatchJoinSplit16x32VKSHA256Env,
 	}
 	var fingerprint strings.Builder
 	for _, name := range names {
@@ -182,6 +192,12 @@ func expectedChecksumFromEnv(filename string) string {
 		return os.Getenv(JoinSplitPKSHA256Env)
 	case JoinSplitVKFile:
 		return os.Getenv(JoinSplitVKSHA256Env)
+	case BatchJoinSplit16x32R1CSFile:
+		return os.Getenv(BatchJoinSplit16x32R1CSSHA256Env)
+	case BatchJoinSplit16x32PKFile:
+		return os.Getenv(BatchJoinSplit16x32PKSHA256Env)
+	case BatchJoinSplit16x32VKFile:
+		return os.Getenv(BatchJoinSplit16x32VKSHA256Env)
 	default:
 		return ""
 	}
@@ -282,6 +298,30 @@ func GetJoinSplitR1CS() (constraint.ConstraintSystem, error) {
 		return nil, err
 	}
 	return registry.R1CS(CircuitJoinSplit)
+}
+
+func GetBatchJoinSplit16x32ProvingKey() (groth16.ProvingKey, error) {
+	registry, err := DefaultArtifactRegistry()
+	if err != nil {
+		return nil, err
+	}
+	return registry.ProvingKey(CircuitBatchJoinSplit16x32V1)
+}
+
+func GetBatchJoinSplit16x32VerifyingKey() (groth16.VerifyingKey, error) {
+	registry, err := DefaultArtifactRegistry()
+	if err != nil {
+		return nil, err
+	}
+	return registry.VerifyingKey(CircuitBatchJoinSplit16x32V1)
+}
+
+func GetBatchJoinSplit16x32R1CS() (constraint.ConstraintSystem, error) {
+	registry, err := DefaultArtifactRegistry()
+	if err != nil {
+		return nil, err
+	}
+	return registry.R1CS(CircuitBatchJoinSplit16x32V1)
 }
 
 func runtimeEnvironmentFromEnv() (string, error) {

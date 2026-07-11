@@ -20,7 +20,7 @@ const (
 	CircuitCurveBN254               = "BN254"
 )
 
-var RequiredCircuitIdentityOrder = []string{"deposit", "spend", "joinsplit"}
+var RequiredCircuitIdentityOrder = []string{"deposit", "spend", "joinsplit", "batch-joinsplit-16x32-v1"}
 
 // DefaultGenesis returns the default genesis state for a specific circuit set.
 func DefaultGenesis(identity *CircuitSetIdentity) *GenesisState {
