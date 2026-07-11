@@ -4,7 +4,8 @@
 
 | Item | Result |
 | --- | --- |
-| Review range | `e427370..HEAD` |
+| Review range | `e427370..fc45eddb2f6cdac9aea5a86833279546a2c51659` |
+| Validated implementation HEAD | `fc45eddb2f6cdac9aea5a86833279546a2c51659` |
 | Review role | Fresh reviewer independent of Sessions 1–3B implementation |
 | Gate 3B on entry | Initially blocked by an uncommitted integration tree; closed only after the fixes and revalidation recorded below |
 | Session 4 publication state | `PUBLICATION_READY_EXPERIMENTAL` |
@@ -40,6 +41,8 @@ The review reconstructed:
 | S4-09 | High | The localnet restart helper backgrounded a shell function, so the tracked PID was not the node process; the old node could answer health checks after a new start failed on the DB lock. Genesis continuation was also not exercised. | Restart and recovery claims were false-positive publication evidence. | Closed by `15e644a`: direct process launch with `kill -0` lifecycle checks, real node/prover restarts, non-zero-height genesis export/import, cursor/cache/path/reserve/asset comparisons, and post-import continuation. |
 | S4-10 | High | The deposit CLI printed the complete NotePlaintextV1 hex to stderr. | Receiver keys, amount, randomness, and memo could leak to terminal capture or application logs. | Closed by `c40c865`: the helper now returns only the message and does not log note plaintext. |
 | S4-11 | Medium | English and Korean handoff/security documents still described the batch Go implementation as pending or conflated it with downstream product completion. | Reviewers and integrators could rely on a contract state different from the code. | Closed by `cee89a7`: 18 public EN/KR documents now distinguish the implemented Go reference from pending downstream/formal/production work. |
+| S4-12 | Medium | The public low-level prover `HTTPHandler` bounded only the batch route; transfer and withdraw used unbounded `io.ReadAll` before admission. | A directly mounted handler could materialize an attacker-controlled body in memory before acquiring a permit, creating a memory DoS path. | Closed by `fc45edd`: all three routes share the same hard reader, wire/gzip overflow returns 413, errors do not echo payloads, and transfer/withdraw overflow is tested before admission. |
+| S4-13 | Medium | The initial Completion Record used mutable `HEAD` ranges and a `Session 4 closure commit` placeholder. | A published validation claim could not be reproduced against one immutable source snapshot. | Closed by this record: the reports, Completion Record, and master ledger pin validated implementation `fc45eddb2f6cdac9aea5a86833279546a2c51659`; the generated release manifest separately records the exact publication-record commit and archive checksum. |
 
 No finding required a protocol contract, public-input order, or NoteV1 change. Session 2/3A re-entry was therefore not required. Unresolved Critical/High findings: 0. Unresolved security-relevant Medium findings: 0.
 
@@ -141,7 +144,7 @@ The separate privacy smoke regression covered Deposit, JoinSplit2x2, and Withdra
 | `make release-check` | Passed, including CI, vulnerability policy, general localnet, privacy E2E, and two-batch bulk readiness |
 | `make release-pack` | Passed; Session 4 EN/KR reports included |
 | `make release-pack-verify` | Passed; 123 required files plus internal and archive checksums verified |
-| `git diff --check e427370..HEAD` and publication hygiene checks | Passed; tracked artifact/secret/personal-path results were empty and generated `dist/`/`tmp/` remained ignored |
+| `git diff --check e427370..fc45eddb2f6cdac9aea5a86833279546a2c51659` and publication hygiene checks | Passed; tracked artifact/secret/personal-path results were empty and generated `dist/`/`tmp/` remained ignored |
 
 ## Accepted residual risks and Production TODO
 

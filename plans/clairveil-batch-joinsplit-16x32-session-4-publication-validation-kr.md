@@ -478,11 +478,11 @@ finding이 없으면 억지 refactor를 만들지 않음. finding 수정 후 관
 
 ## 22. Completion Record
 
-- review scope: `e427370..Session 4 closure commit`
+- review scope: `e427370..fc45eddb2f6cdac9aea5a86833279546a2c51659`
 - 시작 HEAD: `b2fa95661590f681d268885c7dfdf7e9af3581ba` (`docs: record Session 3B completion`)
-- 최종 HEAD: 이 Completion Record와 보고서를 포함하는 Session 4 closure commit
+- 최종 HEAD: `fc45eddb2f6cdac9aea5a86833279546a2c51659` (Pass A~I와 전체 regression을 검증한 immutable implementation snapshot; 이후 commit은 publication record만 변경함)
 - Gate 3B: 진입 시 dirty integration tree 때문에 최초 차단함. `d9b1780`, `8dfe80b`, `868f108`, `0b6b3ee`, `d7809e9` 수정과 targeted/full privacy/race/vet/examples, 5-case batch localnet, privacy smoke, payroll live, artifact/release 재검증 뒤 `423f73a`에서 closure 처리함.
-- findings/fixes: batch preparation (`d9b1780`), remote prover transport (`8dfe80b`), lossless typed pagination (`868f108`), durable payroll (`0b6b3ee`), localnet gate (`d7809e9`), confirmed-failure re-sign (`16900cb`), property/fuzz (`2f4d065`), 5-shape capacity (`7407007`), Deposit plaintext log (`c40c865`), 실제 restart/genesis continuation (`15e644a`), 한영 문서 정렬 (`cee89a7`). Severity, 근거와 영향은 [한글 검증 보고서](../docs/clairveil-batch-joinsplit-16x32-session-4-validation-report-kr.md)에 기록함.
+- findings/fixes: batch preparation (`d9b1780`), remote prover transport (`8dfe80b`), lossless typed pagination (`868f108`), durable payroll (`0b6b3ee`), localnet gate (`d7809e9`), confirmed-failure re-sign (`16900cb`), property/fuzz (`2f4d065`), 5-shape capacity (`7407007`), Deposit plaintext log (`c40c865`), 실제 restart/genesis continuation (`15e644a`), 한영 문서 정렬 (`cee89a7`), 모든 standalone proof body hard bound (`fc45edd`), immutable validation scope. Severity, 근거와 영향은 [한글 검증 보고서](../docs/clairveil-batch-joinsplit-16x32-session-4-validation-report-kr.md)에 기록함.
 - unresolved findings: Critical 0, High 0, security-relevant Medium 0
 - protocol re-entry: public input/NoteV1/protocol contract 변경 finding 없음. Session 2/3A 재진입 불필요
 - accepted residual: formal setup/audit/source freeze, production artifact provenance, production chain/prover/auditor/downstream 운영, metadata leakage acceptance, in-process RSS, no-fixed-version Go 3건, example npm Low 1건. Owner·이유·production blocking 여부를 한영 보고서에 기록함.
@@ -494,4 +494,5 @@ finding이 없으면 억지 refactor를 만들지 않음. finding 수정 후 관
 - formal setup: `NOT PERFORMED`
 - external audit: `NOT PERFORMED`
 - production status: `NOT PRODUCTION-READY`, `NOT AUDITED`
-- worktree 상태: closure commit과 최종 release-pack verification 뒤 clean 확인
+- publication record identity: release pack의 `RELEASE-MANIFEST.txt`가 이 문서를 포함하는 exact Git commit을 기록하고 archive checksum이 그 manifest를 고정함.
+- worktree 상태: publication record commit과 최종 release-pack verification 뒤 clean 확인

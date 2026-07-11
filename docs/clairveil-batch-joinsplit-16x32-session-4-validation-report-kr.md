@@ -4,7 +4,8 @@
 
 | 항목 | 결과 |
 | --- | --- |
-| 검토 범위 | `e427370..HEAD` |
+| 검토 범위 | `e427370..fc45eddb2f6cdac9aea5a86833279546a2c51659` |
+| 검증한 implementation HEAD | `fc45eddb2f6cdac9aea5a86833279546a2c51659` |
 | 검토 역할 | Session 1~3B 구현에 참여하지 않은 fresh reviewer |
 | 진입 시 Gate 3B | 미커밋 integration tree 때문에 최초 차단됨. 아래 수정과 재검증을 완료한 뒤에만 closure 처리함 |
 | Session 4 공개 상태 | `PUBLICATION_READY_EXPERIMENTAL` |
@@ -40,6 +41,8 @@ Master Roadmap과 Session 1~4의 모든 plan 및 Completion Record를 처음부�
 | S4-09 | High | localnet restart helper가 shell function을 background로 실행해 기록한 PID가 node process가 아니었다. 기존 node가 살아 있으면 새 start가 DB lock으로 실패해도 health check가 통과했다. Genesis continuation도 실행하지 않았다. | restart/recovery 공개 근거가 false positive였다. | `15e644a`: process 직접 실행과 `kill -0` lifecycle 검사, 실제 node/prover restart, non-zero-height genesis export/import, cursor/cache/path/reserve/asset 비교, import 뒤 continuation을 추가함. |
 | S4-10 | High | Deposit CLI가 완전한 NotePlaintextV1 hex를 stderr에 출력했다. | receiver key, amount, randomness, memo가 terminal capture 또는 application log에 노출될 수 있었다. | `c40c865`: helper가 message만 반환하고 note plaintext를 log하지 않도록 수정함. |
 | S4-11 | Medium | 한영 handoff/security 문서가 구현된 batch Go reference를 여전히 pending으로 표현하거나 downstream product completion과 혼동했다. | reviewer와 integrator가 code와 다른 contract 상태를 신뢰할 수 있었다. | `cee89a7`: 18개 한영 공개 문서에서 구현된 Go reference와 미완료 downstream/formal/production 작업을 분리함. |
+| S4-12 | Medium | Public low-level prover `HTTPHandler`는 batch route만 제한했고 transfer/withdraw는 admission 전에 unbounded `io.ReadAll`을 사용했다. | Handler를 직접 mount하면 공격자가 제어한 body를 permit 획득 전에 메모리에 올려 memory DoS를 만들 수 있었다. | `fc45edd`: 세 route가 같은 hard reader를 사용하고 wire/gzip overflow는 413을 반환하며 payload를 error에 포함하지 않는다. Transfer/withdraw overflow가 admission 전 거부되는 test도 추가함. |
+| S4-13 | Medium | 초기 Completion Record가 mutable `HEAD` range와 `Session 4 closure commit` placeholder를 사용했다. | 공개한 validation claim을 하나의 immutable source snapshot에서 재현할 수 없었다. | 이 record에서 report, Completion Record, master ledger가 검증한 implementation `fc45eddb2f6cdac9aea5a86833279546a2c51659`를 고정한다. 생성한 release manifest는 publication-record commit과 archive checksum을 별도로 정확히 기록한다. |
 
 Protocol contract, public-input order, NoteV1 변경이 필요한 finding은 없었으므로 Session 2/3A 재진입은 필요하지 않았다. Unresolved Critical/High finding은 0건이고 unresolved security-relevant Medium finding도 0건이다.
 
@@ -141,7 +144,7 @@ Export 전 chain은 height 47, summary 42개, output 138개, global sequence 42,
 | `make release-check` | CI, vulnerability policy, 일반 localnet, privacy E2E, 2-batch bulk readiness 포함 통과 |
 | `make release-pack` | Session 4 한영 보고서를 포함해 통과 |
 | `make release-pack-verify` | 필수 파일 123개와 내부/archive checksum 검증 통과 |
-| `git diff --check e427370..HEAD`와 publication hygiene | 통과. Tracked artifact/secret/personal-path 결과는 없고 생성된 `dist/`/`tmp/`는 ignored 유지 |
+| `git diff --check e427370..fc45eddb2f6cdac9aea5a86833279546a2c51659`와 publication hygiene | 통과. Tracked artifact/secret/personal-path 결과는 없고 생성된 `dist/`/`tmp/`는 ignored 유지 |
 
 ## Accepted Residual과 Production TODO
 
