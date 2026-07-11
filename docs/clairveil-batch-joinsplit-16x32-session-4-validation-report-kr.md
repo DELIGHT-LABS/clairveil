@@ -4,8 +4,8 @@
 
 | 항목 | 결과 |
 | --- | --- |
-| 검토 범위 | `e427370..3453b556f098b92301da8b9d2e7ece40e22e5e19` |
-| 검증한 implementation HEAD | `3453b556f098b92301da8b9d2e7ece40e22e5e19` |
+| 검토 범위 | `e427370..f428fb5226df2d1028daba7d43d3096057416bef` |
+| 검증한 implementation HEAD | `f428fb5226df2d1028daba7d43d3096057416bef` |
 | 검토 역할 | Session 1~3B 구현에 참여하지 않은 fresh reviewer |
 | 진입 시 Gate 3B | 미커밋 integration tree 때문에 최초 차단됨. 아래 수정과 재검증을 완료한 뒤에만 closure 처리함 |
 | Session 4 공개 상태 | `PUBLICATION_READY_EXPERIMENTAL` |
@@ -42,12 +42,12 @@ Master Roadmap과 Session 1~4의 모든 plan 및 Completion Record를 처음부�
 | S4-10 | High | Deposit CLI가 완전한 NotePlaintextV1 hex를 stderr에 출력했다. | receiver key, amount, randomness, memo가 terminal capture 또는 application log에 노출될 수 있었다. | `c40c865`: helper가 message만 반환하고 note plaintext를 log하지 않도록 수정함. |
 | S4-11 | Medium | 한영 handoff/security 문서가 구현된 batch Go reference를 여전히 pending으로 표현하거나 downstream product completion과 혼동했다. | reviewer와 integrator가 code와 다른 contract 상태를 신뢰할 수 있었다. | `cee89a7`: 18개 한영 공개 문서에서 구현된 Go reference와 미완료 downstream/formal/production 작업을 분리함. |
 | S4-12 | Medium | Public low-level prover `HTTPHandler`는 batch route만 제한했고 transfer/withdraw는 admission 전에 unbounded `io.ReadAll`을 사용했다. | Handler를 직접 mount하면 공격자가 제어한 body를 permit 획득 전에 메모리에 올려 memory DoS를 만들 수 있었다. | `fc45edd`: 세 route가 같은 hard reader를 사용하고 wire/gzip overflow는 413을 반환하며 payload를 error에 포함하지 않는다. Transfer/withdraw overflow가 admission 전 거부되는 test도 추가함. |
-| S4-13 | Medium | 초기 Completion Record가 mutable `HEAD` range와 `Session 4 closure commit` placeholder를 사용했다. | 공개한 validation claim을 하나의 immutable source snapshot에서 재현할 수 없었다. | 이 record에서 report, Completion Record, master ledger가 검증한 implementation `3453b556f098b92301da8b9d2e7ece40e22e5e19`를 고정한다. 생성한 release manifest는 publication-record commit과 archive checksum을 별도로 정확히 기록한다. |
+| S4-13 | Medium | 초기 Completion Record가 mutable `HEAD` range와 `Session 4 closure commit` placeholder를 사용했다. | 공개한 validation claim을 하나의 immutable source snapshot에서 재현할 수 없었다. | 이 record에서 report, Completion Record, master ledger가 검증한 implementation `f428fb5226df2d1028daba7d43d3096057416bef`를 고정한다. 생성한 release manifest는 publication-record commit과 archive checksum을 별도로 정확히 기록한다. |
 | S4-14 | Medium | Release pack이 working-tree 파일을 복사하면서 `HEAD`만 기록했고 verify도 같은 dirty content를 재생성했다. | Commit에 없는 uncommitted docs/schema/fixture/source가 검증을 통과할 수 있었다. | `8b48483`: copy 전과 manifest 기록 전에 tracked/untracked non-ignored 상태를 검사한다. Dirty generation/default verify는 fail-closed하고 ignored `dist/`·`tmp/` output은 허용한다. |
 | S4-15 | Medium | Clean-worktree 검사는 ignored file을 숨기지만 recursive directory copy는 ignored `.env`, `node_modules` 등 local file을 포함했다. | Git status와 claimed commit을 바꾸지 않고 local secret 또는 development artifact가 pack에 유출될 수 있었다. | `816f627`: pinned source commit의 `git archive`에서만 선택 경로를 복사하므로 tracked blob만 들어간다. Copied example directory 안의 ignored `.env` probe가 archive에 없음을 실제 확인함. |
 | S4-16 | Medium | Working-tree copy 사이에 다른 process가 변경을 commit하면 두 status check 모두 clean이어서 새 `HEAD`를 기록할 수 있었다. | Archive가 old content를 섞으면서 더 새로운 clean `HEAD`를 provenance로 주장할 수 있었다. | `816f627`: 추출 전에 source SHA를 고정하고 모든 file을 그 Git tree에서 가져오며, manifest 전 HEAD 동일성을 검사하고 pinned SHA만 기록함. |
 | S4-17 | Low | `fc45edd` 뒤에도 한영 security/operations 문서 4쌍이 low-level prover handler에 body limit이 없다고 설명했다. | 실제보다 보수적이지만 현재 trust boundary와 달라 downstream review를 혼동시킬 수 있었다. | Publication record에서 raw handler도 hard cap을 유지하고 production wrapper가 auth, gzip wire/decompressed limit, health/readiness policy, server timeout을 추가로 담당한다고 정렬함. |
-| S4-18 | High | 최초 immutable record가 short commit `816f627`을 존재하지 않는 40-character object ID로 잘못 확장했다. | Exact validation range가 resolve되지 않아 publication claim을 재현할 수 없고 Gate 4 provenance가 무효였다. | 이 record에서 실제 object `3453b556f098b92301da8b9d2e7ece40e22e5e19`를 모든 exact range에 고정하고 공개 전에 range를 실행함. |
+| S4-18 | High | 최초 immutable record가 short commit `816f627`을 존재하지 않는 40-character object ID로 잘못 확장했다. | Exact validation range가 resolve되지 않아 publication claim을 재현할 수 없고 Gate 4 provenance가 무효였다. | 이 record에서 실제 object `f428fb5226df2d1028daba7d43d3096057416bef`를 모든 exact range에 고정하고 공개 전에 range를 실행함. |
 | S4-19 | Medium | Explicit external archive verify가 out-of-band expected commit과 Git-blob 비교 없이 archive 자체 manifest/checksum을 신뢰했다. | Self-consistent forged/stale archive가 임의 commit을 주장해도 handoff verify를 통과할 수 있었다. | `47bcca5`: explicit verify는 `RELEASE_PACK_EXPECTED_COMMIT`을 요구하고 local object로 resolve하며 canonical manifest commit을 확인한다. Non-regular entry를 거부하고 generated file 외 모든 packed file을 claimed Git tree와 byte-for-byte 비교함. |
 | S4-20 | Medium | Git-blob verify가 archive에 남은 file만 순회해 non-required tracked source file을 삭제하고 checksum을 다시 만들면 통과했다. | Expected commit을 주장하는 불완전 handoff pack이 승인될 수 있었다. | `3453b55`: generator/verifier가 tracked selected-path manifest를 공유하고 recursive expected Git file set과 archive file set의 exact equality를 요구한다. JS prover source 삭제 variant가 실패함. |
 | S4-21 | Medium | Generated `RELEASE-MANIFEST.txt`는 commit line만 검사했다. | Source identity, contents description, validation instruction을 수정하고 self-checksum할 수 있었다. | `3453b55`: tracked manifest template을 canonical version/commit/time으로 render하고 generated manifest 전체를 byte-for-byte 비교함. |
@@ -153,8 +153,8 @@ Export 전 chain은 height 47, summary 42개, output 138개, global sequence 42,
 | `make reference-payroll-live-localnet` | Fresh state에서 통과 |
 | `make release-check` | CI, vulnerability policy, 일반 localnet, privacy E2E, 2-batch bulk readiness 포함 통과 |
 | `make release-pack` | Session 4 한영 보고서를 포함해 통과 |
-| `make release-pack-verify` | 필수 파일 125개, exact selected Git file set, canonical manifest/tar, Git blob, 내부/archive checksum 검증 통과 |
-| `git diff --check e427370..3453b556f098b92301da8b9d2e7ece40e22e5e19`와 publication hygiene | 통과. Tracked artifact/secret/personal-path 결과는 없고 생성된 `dist/`/`tmp/`는 ignored 유지 |
+| `make release-pack-verify` | 필수 파일 125개, exact selected Git file set, canonical manifest/tar/checksum list, Git blob/mode, archive checksum 검증 통과 |
+| `git diff --check e427370..f428fb5226df2d1028daba7d43d3096057416bef`와 publication hygiene | 통과. Tracked artifact/secret/personal-path 결과는 없고 생성된 `dist/`/`tmp/`는 ignored 유지 |
 
 ## Accepted Residual과 Production TODO
 
