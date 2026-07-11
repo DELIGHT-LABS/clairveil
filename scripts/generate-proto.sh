@@ -25,6 +25,7 @@ protoc \
 	-I "$googleapis_proto" \
 	--gocosmos_out=plugins=grpc:"$out_dir" \
 	--grpc-gateway_out=logtostderr=true,allow_colon_final_segments=true:"$out_dir" \
+	"$repo_root/proto/clairveil/privacy/v1/batch_feasibility.proto" \
 	"$repo_root/proto/clairveil/privacy/v1/genesis.proto" \
 	"$repo_root/proto/clairveil/privacy/v1/query.proto" \
 	"$repo_root/proto/clairveil/privacy/v1/tx.proto"

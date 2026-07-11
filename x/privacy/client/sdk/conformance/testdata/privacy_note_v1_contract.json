@@ -1,0 +1,35 @@
+{
+  "schema_version": "v1",
+  "domains": {
+    "field_derivation": "SHA-256(\"clairveil.field-domain.v1\" || u32be(len(label)) || label) mod Fr",
+    "labels": {
+      "note_commitment": "clairveil.note-commitment.v1",
+      "note_nullifier": "clairveil.note-nullifier.v1",
+      "tree_node": "clairveil.note-tree-node.v1"
+    },
+    "constants_hex": {
+      "note_commitment": "0927abf70e775c0f9fd7db79a93b7f8e94621f15921f6b7077407ec5210cfb1c",
+      "note_nullifier": "1a49a4bf6a216ef5dba9311200be7b1374794ba1ca759a7761e11ac6d774e0b9",
+      "tree_node": "0e7215b6529f83eaf86ae8e5ad92eb2ec9f61f1dbd7077c54ff0fdd0e7bfd620"
+    }
+  },
+  "vector": {
+    "spend_scalar": "17",
+    "view_scalar": "19",
+    "amount": "7",
+    "denom": "uclair",
+    "asset_id_hex": "238d5f23e4d918d40b0982ce3aef16a75c4d1760193d1c3b30b9f5df681903ca",
+    "randomness": "13",
+    "commitment_hex": "023aab554dcb995210888fa4e28c3d718568c1de0623578c690a2b6ca9d3610a",
+    "nullifier_hex": "13b50fceae57ce77eee3f686abc1563aadc27ff6d1e32ce2fcc599463d28585b",
+    "empty_root_1_hex": "2a9932954f9328683b24310f96581603f12544f6da3910aeefebbfa84789b296",
+    "empty_root_2_hex": "29bae378ecc69a3c6e1c861407bd57c9c8cd34d37ebc2d4fe8c205952f62793a",
+    "empty_root_32_hex": "057551a52590c07629bf07fa2b61832f852fb69ff8472bb21c30e5675ae8e8c1"
+  },
+  "encoding": {
+    "version": "privacy-fixed-v1",
+    "note_plaintext_bytes": 350,
+    "disclosure_plaintext_bytes": 392,
+    "envelope_header_bytes": 20
+  }
+}

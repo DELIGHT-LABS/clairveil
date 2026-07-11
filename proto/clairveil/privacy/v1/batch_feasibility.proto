@@ -1,0 +1,48 @@
+syntax = "proto3";
+package clairveil.privacy.v1;
+
+import "clairveil/privacy/v1/tx.proto";
+
+option go_package = "github.com/DELIGHT-LABS/clairveil/x/privacy/types";
+
+// These messages freeze and measure the Session 2 max wire shape. They are
+// not registered with the Msg service and do not authorize a state transition.
+message BatchTransferWirePrototypeV1 {
+  string creator = 1;
+  bytes proof = 2;
+  bytes root = 3;
+  repeated bytes nullifiers = 4;
+  repeated BatchTransferOutputWirePrototypeV1 outputs = 5;
+  string audit_key_id = 6;
+  uint64 audit_key_epoch = 7;
+  bytes audit_disclosure_target_pubkey = 8;
+  int64 expires_at_unix = 9;
+}
+
+message BatchTransferOutputWirePrototypeV1 {
+  bytes commitment = 1;
+  bytes ciphertext = 2;
+  bytes view_tag = 3;
+  uint32 user_privacy_policy = 4;
+  UserDisclosureMode user_disclosure_mode = 5;
+  bytes user_disclosure_digest = 6;
+  bytes user_disclosure_target_pubkey = 7;
+  bytes user_disclosure_payload = 8;
+  bytes full_disclosure_digest = 9;
+  bytes audit_disclosure_payload = 10;
+  bytes self_view_disclosure_payload = 11;
+}
+
+// BatchMinimalEventWirePrototypeV1 measures the binary form of the summary
+// attributes. No ciphertext, disclosure payload, or full value list appears.
+message BatchMinimalEventWirePrototypeV1 {
+  bytes effect_id = 1;
+  string relayer = 2;
+  uint32 input_count = 3;
+  uint32 output_count = 4;
+  bytes nullifier_root = 5;
+  bytes commitment_root = 6;
+  bytes user_disclosure_root = 7;
+  bytes full_disclosure_root = 8;
+  int64 expires_at_unix = 9;
+}

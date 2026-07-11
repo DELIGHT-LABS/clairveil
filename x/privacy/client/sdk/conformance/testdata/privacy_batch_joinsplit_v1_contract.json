@@ -1,0 +1,63 @@
+{
+  "schema_version": "v1",
+  "circuit_id": "batch-joinsplit-16x32-v1",
+  "max_inputs": 16,
+  "max_outputs": 32,
+  "public_inputs": [
+    "MerkleRoot",
+    "ChainDomainHi",
+    "ChainDomainLo",
+    "ExpiresAtUnix",
+    "InputCount",
+    "OutputCount",
+    "NullifierRoot",
+    "CommitmentRoot",
+    "UserDisclosureRoot",
+    "FullDisclosureRoot",
+    "PayloadDigestHi",
+    "PayloadDigestLo"
+  ],
+  "public_input_schema_sha256": "5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333",
+  "vector": {
+    "kind": "nullifier",
+    "capacity": 16,
+    "count": 3,
+    "active_values": ["11", "13", "17"],
+    "leaf_domain": "clairveil.batch-vector.nullifier.leaf.v1",
+    "node_domain": "clairveil.batch-vector.nullifier.node.v1",
+    "root_domain": "clairveil.batch-vector.nullifier.root.v1",
+    "root_hex": "065354bf1bf6dd8719b40b4c4dc561f437845a426cc2c086a8676a725a13e593"
+  },
+  "user_disclosure": {
+    "count": 2,
+    "policies": [0, 1],
+    "raw_digests": ["0", "101"],
+    "value_domain": "clairveil.user-disclosure-leaf.v1",
+    "leaf_domain": "clairveil.batch-vector.user_disclosure.leaf.v1",
+    "node_domain": "clairveil.batch-vector.user_disclosure.node.v1",
+    "root_domain": "clairveil.batch-vector.user_disclosure.root.v1",
+    "root_hex": "0e634ae9dde1d8e9cb01813dcb81d17307cafe89a9f6aec4f37c82183e4ed368"
+  },
+  "effect": {
+    "chain_domain_hi": "1",
+    "chain_domain_lo": "2",
+    "merkle_root": "3",
+    "input_count": 3,
+    "output_count": 4,
+    "nullifier_root": "5",
+    "commitment_root": "6",
+    "user_disclosure_root": "7",
+    "full_disclosure_root": "8",
+    "payload_digest_hi": "9",
+    "payload_digest_lo": "10",
+    "expires_at_unix": 2000000000,
+    "id_hex": "7f76d7744607e06dc0a22e4be5464e1a420c933cff5d060cc657ccfd4ec45979"
+  },
+  "wire_state": {
+    "tx_bytes": 65265,
+    "typed_scan_kv_bytes": 74148,
+    "total_kv_write_bytes": 172452,
+    "abci_event_bytes": 584,
+    "query_response_bytes": 73594
+  }
+}

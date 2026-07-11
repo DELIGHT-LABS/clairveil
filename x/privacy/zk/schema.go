@@ -47,6 +47,23 @@ var publicInputSchemas = map[string][]PublicInputField{
 		{Name: "PayloadDigestHi", Encoding: "uint128"},
 		{Name: "PayloadDigestLo", Encoding: "uint128"},
 	},
+	// Reserved by Session 2 for the feasibility prototype and future production
+	// circuit. It is deliberately not part of RequiredCircuitIDs or the active
+	// artifact manifest until Session 3A implements the production circuit.
+	"batch-joinsplit-16x32-v1": {
+		{Name: "MerkleRoot", Encoding: "bn254-fr"},
+		{Name: "ChainDomainHi", Encoding: "uint128"},
+		{Name: "ChainDomainLo", Encoding: "uint128"},
+		{Name: "ExpiresAtUnix", Encoding: "uint64"},
+		{Name: "InputCount", Encoding: "uint5"},
+		{Name: "OutputCount", Encoding: "uint6"},
+		{Name: "NullifierRoot", Encoding: "bn254-fr"},
+		{Name: "CommitmentRoot", Encoding: "bn254-fr"},
+		{Name: "UserDisclosureRoot", Encoding: "bn254-fr"},
+		{Name: "FullDisclosureRoot", Encoding: "bn254-fr"},
+		{Name: "PayloadDigestHi", Encoding: "uint128"},
+		{Name: "PayloadDigestLo", Encoding: "uint128"},
+	},
 }
 
 func PublicInputSchema(circuitID string) ([]PublicInputField, error) {
