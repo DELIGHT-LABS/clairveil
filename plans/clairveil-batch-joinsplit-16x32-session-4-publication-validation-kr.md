@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | In Progress (Gate 3B 재검증 충족) |
+| 상태 | Complete (`PUBLICATION_READY_EXPERIMENTAL`) |
 | 선행 문서 | [Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md), Session 1~3B 계획과 completion record |
 | 권장 모델 | `gpt-5.6-sol` |
 | 권장 effort | `ultra` |
@@ -423,25 +423,25 @@ finding이 없으면 억지 refactor를 만들지 않음. finding 수정 후 관
 
 ## 20. Acceptance Criteria
 
-- [ ] transfer/withdraw current authorization attacks가 실패함.
-- [ ] current disclosure dictionary, commitment collision, crypto decoder, prover failover, genesis/artifact identity 회귀가 통과함.
-- [ ] NoteV1가 all circuits/native/scanner에서 일치함.
-- [ ] 12 public input statement가 code/docs와 일치함.
-- [ ] active/duplicate/value/root/disclosure attacks가 실패함.
-- [ ] single owner signature 외 per-input conditional EdDSA가 없음.
-- [ ] differential/property/fuzz가 통과함.
-- [ ] independent reference KAT와 cross-message nullifier composition test가 통과함.
-- [ ] keeper gas/atomicity/resource bounds가 확인됨.
-- [ ] minimal event/typed scan index가 payload를 중복 저장하지 않음.
-- [ ] prover admission/privacy 경계가 확인됨.
-- [ ] payroll item evidence가 batch status와 분리됨.
-- [ ] max-shape benchmark가 재현 가능하게 기록됨.
-- [ ] independent localnet restart/retry가 통과함.
-- [ ] unresolved Critical/High/security Medium = 0
-- [ ] accepted residual이 문서화됨.
-- [ ] secret/artifact/local path가 tracked되지 않음.
-- [ ] release gate가 통과함.
-- [ ] master ledger가 `PUBLICATION_READY_EXPERIMENTAL`로 갱신됨.
+- [x] transfer/withdraw current authorization attacks가 실패함.
+- [x] current disclosure dictionary, commitment collision, crypto decoder, prover failover, genesis/artifact identity 회귀가 통과함.
+- [x] NoteV1가 all circuits/native/scanner에서 일치함.
+- [x] 12 public input statement가 code/docs와 일치함.
+- [x] active/duplicate/value/root/disclosure attacks가 실패함.
+- [x] single owner signature 외 per-input conditional EdDSA가 없음.
+- [x] differential/property/fuzz가 통과함.
+- [x] independent reference KAT와 cross-message nullifier composition test가 통과함.
+- [x] keeper gas/atomicity/resource bounds가 확인됨.
+- [x] minimal event/typed scan index가 payload를 중복 저장하지 않음.
+- [x] prover admission/privacy 경계가 확인됨.
+- [x] payroll item evidence가 batch status와 분리됨.
+- [x] max-shape benchmark가 재현 가능하게 기록됨.
+- [x] independent localnet restart/retry가 통과함.
+- [x] unresolved Critical/High/security Medium = 0
+- [x] accepted residual이 문서화됨.
+- [x] secret/artifact/local path가 tracked되지 않음.
+- [x] release gate가 통과함.
+- [x] master ledger가 `PUBLICATION_READY_EXPERIMENTAL`로 갱신됨.
 
 ## 21. Production TODO
 
@@ -478,21 +478,20 @@ finding이 없으면 억지 refactor를 만들지 않음. finding 수정 후 관
 
 ## 22. Completion Record
 
-```text
-## Completion Record
-
-- review scope:
-- 시작 HEAD:
-- 최종 HEAD:
-- findings/fixes:
-- unresolved findings:
-- accepted residual:
-- property/fuzz results:
-- benchmark report:
-- localnet/restart/retry results:
-- release gate results:
-- publication status: PUBLICATION_READY_EXPERIMENTAL / BLOCKED
-- formal setup: NOT PERFORMED
-- external audit: NOT PERFORMED
-- worktree 상태:
-```
+- review scope: `e427370..Session 4 closure commit`
+- 시작 HEAD: `b2fa95661590f681d268885c7dfdf7e9af3581ba` (`docs: record Session 3B completion`)
+- 최종 HEAD: 이 Completion Record와 보고서를 포함하는 Session 4 closure commit
+- Gate 3B: 진입 시 dirty integration tree 때문에 최초 차단함. `d9b1780`, `8dfe80b`, `868f108`, `0b6b3ee`, `d7809e9` 수정과 targeted/full privacy/race/vet/examples, 5-case batch localnet, privacy smoke, payroll live, artifact/release 재검증 뒤 `423f73a`에서 closure 처리함.
+- findings/fixes: batch preparation (`d9b1780`), remote prover transport (`8dfe80b`), lossless typed pagination (`868f108`), durable payroll (`0b6b3ee`), localnet gate (`d7809e9`), confirmed-failure re-sign (`16900cb`), property/fuzz (`2f4d065`), 5-shape capacity (`7407007`), Deposit plaintext log (`c40c865`), 실제 restart/genesis continuation (`15e644a`), 한영 문서 정렬 (`cee89a7`). Severity, 근거와 영향은 [한글 검증 보고서](../docs/clairveil-batch-joinsplit-16x32-session-4-validation-report-kr.md)에 기록함.
+- unresolved findings: Critical 0, High 0, security-relevant Medium 0
+- protocol re-entry: public input/NoteV1/protocol contract 변경 finding 없음. Session 2/3A 재진입 불필요
+- accepted residual: formal setup/audit/source freeze, production artifact provenance, production chain/prover/auditor/downstream 운영, metadata leakage acceptance, in-process RSS, no-fixed-version Go 3건, example npm Low 1건. Owner·이유·production blocking 여부를 한영 보고서에 기록함.
+- property/fuzz results: input `1..16`, output `1..32` seeded property와 independent KAT 통과. Note/disclosure/transfer/batch/vector/scan/prover/ECIES/EdDSA fuzz target 10개를 각각 3초 실행해 모두 통과함.
+- benchmark report: Apple M5 Pro, darwin/arm64, Go 1.25.12, gnark 0.14, constraints 1,111,837, setup 15,999.531ms, peak RSS 3,429,646,336 bytes. 1/1·3/4·8/16·16/31·16/32의 witness/prove/verify p50/p95/max, gas/tx/state/event/scanner를 [보고서](../docs/clairveil-batch-joinsplit-16x32-session-4-validation-report-kr.md)에 기록함.
+- localnet/restart/retry results: Deposit/2x2/Withdraw smoke, payroll live, 1/1·3/4·31+change·exact32·padding batch 통과. 실제 node/prover restart, tx hash reconcile, spent retry 거부, non-zero-height genesis export/import, cursor/cache/path/reserve/asset 보존, import 뒤 sequence/leaf continuation을 확인함.
+- release gate results: `go test ./... -count=1`, full privacy race (`-timeout=30m`; 최초 기본 timeout은 data race가 아님), `go vet`, `make ci`, `make vulncheck`, `make examples`, privacy/payroll/batch localnet, `make release-check`, release pack/verify, diff/hygiene 통과
+- publication status: `PUBLICATION_READY_EXPERIMENTAL`
+- formal setup: `NOT PERFORMED`
+- external audit: `NOT PERFORMED`
+- production status: `NOT PRODUCTION-READY`, `NOT AUDITED`
+- worktree 상태: closure commit과 최종 release-pack verification 뒤 clean 확인

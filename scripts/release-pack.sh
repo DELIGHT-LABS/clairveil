@@ -51,6 +51,8 @@ copy_path "docs/clairveil-circuits.md"
 copy_path "docs/clairveil-circuits-kr.md"
 copy_path "docs/clairveil-batch-joinsplit-16x32.md"
 copy_path "docs/clairveil-batch-joinsplit-16x32-kr.md"
+copy_path "docs/clairveil-batch-joinsplit-16x32-session-4-validation-report.md"
+copy_path "docs/clairveil-batch-joinsplit-16x32-session-4-validation-report-kr.md"
 copy_path "docs/clairveil-batch-joinsplit-localnet-tutorial.md"
 copy_path "docs/clairveil-batch-joinsplit-localnet-tutorial-kr.md"
 copy_path "docs/clairveil-session3b-batch-transfer-handoff.md"
@@ -151,6 +153,7 @@ Contents:
 - release pack generation and verification scripts
 - release, circuit, CLI, testing, operations, downstream integration, client, JS SDK, scan optimization, prover, Merkle restore, threat model, security, and reference app documents
 - NoteV1 and BatchJoinSplit16x32 foundation contracts and independent golden fixtures
+- Session 4 independent validation, benchmark, localnet, finding, and residual-risk reports
 - Korean bulk transfer planning documents and source-repo readiness commands
 - release versioning policy and release note templates
 

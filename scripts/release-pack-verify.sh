@@ -71,6 +71,8 @@ required_files=(
 	"docs/clairveil-circuits-kr.md"
 	"docs/clairveil-batch-joinsplit-16x32.md"
 	"docs/clairveil-batch-joinsplit-16x32-kr.md"
+	"docs/clairveil-batch-joinsplit-16x32-session-4-validation-report.md"
+	"docs/clairveil-batch-joinsplit-16x32-session-4-validation-report-kr.md"
 	"docs/clairveil-batch-joinsplit-localnet-tutorial.md"
 	"docs/clairveil-batch-joinsplit-localnet-tutorial-kr.md"
 	"docs/clairveil-session3b-batch-transfer-handoff.md"
