@@ -10,6 +10,7 @@
 - `govulncheck-with-policy.sh`: `govulncheck`를 실행하고 repo vulnerability exception policy를 적용합니다.
 - `localnet-smoke.sh`: `clairveild`를 build하고 임시 local validator genesis를 만든 뒤 node start와 block commit을 짧게 검증합니다.
 - `privacy-e2e-smoke.sh`: deposit, transfer, disclosure decode, direct withdraw, relayed withdraw까지 local privacy flow 전체를 검증합니다.
+- `privacy-batch-joinsplit-localnet.sh`: 기본값으로 Session 3B 16x32 fixture를 검증하고, `RUN_LOCALNET=1`이면 실제 node와 `clairveil-proverd`를 시작해 단계형 one-proof command로 1/1, mixed disclosure 3/4, 31+change, exact32, padding, restart/retry case를 실행합니다. 이미 검증한 development artifact를 재사용하려면 `CLAIRVEIL_BATCH_ARTIFACT_DIR`를 지정합니다.
 - `privacy-bench.sh`: privacy circuit benchmark를 실행하고 structured JSON/Markdown report를 생성합니다.
 - `privacy-proverd-bench.sh`: in-process prover HTTP transport benchmark를 실행합니다.
 - `privacy-proverd-load-bench.sh`: `PROVERD_URL`로 이미 실행 중인 external `clairveil-proverd` 1개를 측정하거나, `PROVERD_URLS`로 round-robin prover pool을 측정합니다. `PROVERLOAD_ALLOW_UNHEALTHY_ENDPOINTS=1`을 설정하면 preflight 실패 endpoint를 제외하고 unhealthy endpoint count를 기록합니다.

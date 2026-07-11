@@ -10,6 +10,7 @@ Korean version: [README-kr.md](README-kr.md)
 - `govulncheck-with-policy.sh`: runs `govulncheck` and applies the repository vulnerability exception policy.
 - `localnet-smoke.sh`: builds `clairveild`, creates a temporary local validator genesis, starts the node briefly, and verifies block commit.
 - `privacy-e2e-smoke.sh`: validates the full local privacy flow: deposit, transfer, disclosure decode, direct withdraw, and relayed withdraw.
+- `privacy-batch-joinsplit-localnet.sh`: validates the Session 3B 16x32 fixture by default; with `RUN_LOCALNET=1`, starts a real node and `clairveil-proverd` and executes 1/1, 3/4 mixed disclosure, 31+change, exact32, padding, and restart/retry cases through the staged one-proof commands. Set `CLAIRVEIL_BATCH_ARTIFACT_DIR` to reuse a previously verified development artifact directory instead of generating another setup.
 - `privacy-bench.sh`: runs privacy circuit benchmarks and writes structured JSON/Markdown reports.
 - `privacy-proverd-bench.sh`: runs in-process prover HTTP transport benchmarks.
 - `privacy-proverd-load-bench.sh`: summarizes external `clairveil-proverd` load against one already running prover via `PROVERD_URL`, or a round-robin prover pool via `PROVERD_URLS`. Set `PROVERLOAD_ALLOW_UNHEALTHY_ENDPOINTS=1` to exclude endpoints that fail preflight while recording unhealthy endpoint counts.

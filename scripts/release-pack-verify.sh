@@ -71,6 +71,10 @@ required_files=(
 	"docs/clairveil-circuits-kr.md"
 	"docs/clairveil-batch-joinsplit-16x32.md"
 	"docs/clairveil-batch-joinsplit-16x32-kr.md"
+	"docs/clairveil-batch-joinsplit-localnet-tutorial.md"
+	"docs/clairveil-batch-joinsplit-localnet-tutorial-kr.md"
+	"docs/clairveil-session3b-batch-transfer-handoff.md"
+	"docs/clairveil-session3b-batch-transfer-handoff-kr.md"
 	"docs/clairveil-cli-reference.md"
 	"docs/clairveil-cli-reference-kr.md"
 	"docs/clairveil-testing-guide.md"
@@ -141,6 +145,7 @@ required_files=(
 	"x/privacy/client/sdk/conformance/testdata/privacy_wallet_golden_vectors.json"
 	"x/privacy/client/sdk/conformance/testdata/privacy_note_v1_contract.json"
 	"x/privacy/client/sdk/conformance/testdata/privacy_batch_joinsplit_v1_contract.json"
+	"x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_session3b_contract.json"
 	"examples/README.md"
 	"examples/README-kr.md"
 	"examples/audit-disclosure-keys/README.md"
@@ -159,6 +164,7 @@ required_files=(
 	"build/clairveil-proverd/compose.yaml"
 	"scripts/release-pack.sh"
 	"scripts/release-pack-verify.sh"
+	"scripts/privacy-batch-joinsplit-localnet.sh"
 )
 
 for file in "${required_files[@]}"; do

@@ -218,6 +218,12 @@ Current limitations:
 - Zero-value dummy notes must already exist when a selected transfer input needs a dummy note.
 - JSON output includes `txhash`, `height`, `code`, `message_count`, requested `amounts`, and per-message `items` evidence with nullifiers, output commitment, and disclosure digests.
 
+### transfer-batch-16x32 and staged companions
+
+`transfer-batch-16x32` runs one `MsgBatchTransfer` with one `BatchJoinSplit16x32` proof. Repeat `--payment 'shielded-address,coin[,policy,mode,target-key]'` for 1..32 independent payment policies, optionally pin 1..16 wallet notes with `--input-index`, and choose `--output-mode compact|exact32`. The command persists the private prepared payload and proof with mode `0600` before broadcast.
+
+The restartable commands are `prepare-batch-transfer`, `prove-batch-transfer PREPARED_FILE`, and `broadcast-batch-transfer PREPARED_FILE PROOF_FILE`. `prove-batch-transfer` uses the local prover when `--prover-url` is absent and exactly one selected `POST /v1/proofs/batch-transfer` endpoint when present; it never performs automatic prover failover. See [clairveil-batch-joinsplit-localnet-tutorial.md](clairveil-batch-joinsplit-localnet-tutorial.md) for complete commands and boundary cases.
+
 ## 6. Disclosure Decode
 
 Decrypts a transfer disclosure payload and produces a digest verification report.
@@ -487,6 +493,6 @@ The active circuit set generated and checked by the CLI is `privacy-note-v1`. No
 
 Wallet scan state is ordered by the complete cursor `(height, global_sequence, output_index)`. Any spend path must be obtained from a snapshot for exactly the selected root. Current-root paths use incremental nodes and do not consume the online historical-rebuild budget. A non-current historical path requires persisted root/count/height metadata; the public query admits at most 1,024 leaves and two concurrent rebuilds per keeper, otherwise it returns `ResourceExhausted`. Use the current root or a trusted local historical index above that online bound. The separate offline recovery/export bound remains `MaxMerkleRebuildLeaves` (1,048,576). Remote historical root/path queries can reveal wallet interest, so retain the privacy warning and prefer local or privacy-preserving infrastructure when that matters.
 
-The chain core now implements `BatchJoinSplit16x32` and `MsgBatchTransfer`, but this CLI reference intentionally has no command that builds, proves, or submits it. In particular, `transfer-batch` still coordinates native 2x2 transfers and must not be presented as one 16x32 proof. The live core public schema is, in order, `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`; CLI product integration remains Session 3B work.
+The chain core and CLI now implement `BatchJoinSplit16x32`/`MsgBatchTransfer` through `transfer-batch-16x32` and its staged companions. The older `transfer-batch` still coordinates independent native 2x2 transfers and must not be presented as one 16x32 proof. The live core public schema remains, in order, `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`.
 
 `clairveil-proverd` uses the role-aware lazy artifact registry and per-circuit admission defaults of one in-flight and four queued requests. `-max-request-bytes` defaults to `8388608` and must be greater than zero; `0` is invalid and does not disable the limit. Expose only the bounded `proverservice.Handler`, never the raw transport handler. Automatic endpoint failover remains disabled. Cancellation may stop the caller while an in-process proof continues and retains its slot; operators needing hard cancellation or memory containment must isolate and terminate worker processes.

@@ -1,0 +1,81 @@
+{
+  "schema_version": "clairveil.batch-transfer.session3b.v1",
+  "payload_version": "batch-transfer-payload-v1",
+  "proof_version": "batch-transfer-proof-v1",
+  "circuit_set_id": "privacy-note-v1",
+  "circuit_id": "batch-joinsplit-16x32-v1",
+  "prover_route": "/v1/proofs/batch-transfer",
+  "request_version": "v1",
+  "response_version": "v1",
+  "max_inputs": 16,
+  "max_outputs": 32,
+  "cases": [
+    {
+      "id": "one-input-one-payment",
+      "input_amounts": [7],
+      "payment_amounts": [7],
+      "expected_output_roles": ["payment"],
+      "output_mode": "compact",
+      "disclosure_modes": ["none"],
+      "self_view": "enabled"
+    },
+    {
+      "id": "three-input-four-output-mixed-disclosure",
+      "input_amounts": [5, 7, 9],
+      "payment_amounts": [4, 5, 6],
+      "expected_output_roles": ["payment", "payment", "payment", "change"],
+      "output_mode": "compact",
+      "disclosure_modes": ["none", "public", "recipient-encrypted", "none"],
+      "self_view": "enabled"
+    },
+    {
+      "id": "thirty-one-payments-plus-change",
+      "input_amounts": [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
+      "payment_amounts": [50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50],
+      "expected_output_roles": ["payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "change"],
+      "output_mode": "compact",
+      "disclosure_modes": ["none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none"],
+      "self_view": "disabled"
+    },
+    {
+      "id": "exact-thirty-two-payments",
+      "input_amounts": [64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64],
+      "payment_amounts": [32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32],
+      "expected_output_roles": ["payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment", "payment"],
+      "output_mode": "compact",
+      "disclosure_modes": ["none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none"],
+      "self_view": "enabled"
+    },
+    {
+      "id": "explicit-zero-padding",
+      "input_amounts": [5],
+      "payment_amounts": [5],
+      "expected_output_roles": ["payment", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding", "padding"],
+      "output_mode": "exact32",
+      "disclosure_modes": ["none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none"],
+      "self_view": "disabled"
+    }
+  ],
+  "restart_retry": {
+    "stable_operation_id": true,
+    "reuse_signed_tx_bytes": true,
+    "reconcile_tx_hash_first": true,
+    "reconcile_nullifiers_before_resign": true,
+    "automatic_multi_prover_failover": false,
+    "item_success_requires_output_evidence": true
+  },
+  "scan": {
+    "cursor_order": ["height", "global_sequence", "output_index"],
+    "typed_query_required": true,
+    "abci_fallback_after_typed_failure": false,
+    "safe_mode_decrypts_view_tag_mismatch": true,
+    "commitment_recomputation_required": true
+  },
+  "payroll": {
+    "operation_to_proof_job": "one-to-one",
+    "operation_to_input_reservations": "one-to-many",
+    "operation_to_item_outputs": "one-to-many",
+    "batch_and_item_status_separate": true,
+    "required_output_evidence": ["output_index", "commitment", "recipient_hash", "amount", "denom_or_asset_id", "user_digest", "full_digest", "audit_key_id", "audit_key_epoch"]
+  }
+}

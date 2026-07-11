@@ -51,6 +51,10 @@ copy_path "docs/clairveil-circuits.md"
 copy_path "docs/clairveil-circuits-kr.md"
 copy_path "docs/clairveil-batch-joinsplit-16x32.md"
 copy_path "docs/clairveil-batch-joinsplit-16x32-kr.md"
+copy_path "docs/clairveil-batch-joinsplit-localnet-tutorial.md"
+copy_path "docs/clairveil-batch-joinsplit-localnet-tutorial-kr.md"
+copy_path "docs/clairveil-session3b-batch-transfer-handoff.md"
+copy_path "docs/clairveil-session3b-batch-transfer-handoff-kr.md"
 copy_path "docs/clairveil-cli-reference.md"
 copy_path "docs/clairveil-cli-reference-kr.md"
 copy_path "docs/clairveil-testing-guide.md"
@@ -123,6 +127,7 @@ copy_path "examples/reference-payroll"
 copy_path "build/clairveil-proverd"
 copy_path "scripts/release-pack.sh"
 copy_path "scripts/release-pack-verify.sh"
+copy_path "scripts/privacy-batch-joinsplit-localnet.sh"
 
 cat >"$pack_root/RELEASE-MANIFEST.txt" <<EOF
 Clairveil release handoff pack

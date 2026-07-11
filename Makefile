@@ -38,6 +38,10 @@ localnet-smoke:
 privacy-e2e-smoke:
 	./scripts/privacy-e2e-smoke.sh
 
+.PHONY: privacy-batch-joinsplit-localnet
+privacy-batch-joinsplit-localnet:
+	./scripts/privacy-batch-joinsplit-localnet.sh
+
 .PHONY: dapp-local
 dapp-local:
 	./scripts/dapp-local.sh

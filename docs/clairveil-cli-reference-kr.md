@@ -216,6 +216,12 @@ clairveild tx privacy transfer-batch "$(cat out/bob-shielded-address.txt)" \
 - 선택된 transfer input에 dummy note가 필요하면 zero-value dummy note가 미리 존재해야 합니다.
 - JSON output에는 `txhash`, `height`, `code`, `message_count`, 요청한 `amounts`, 그리고 message별 nullifier, output commitment, disclosure digest를 담은 `items` evidence가 포함됩니다.
 
+### transfer-batch-16x32와 단계형 companion command
+
+`transfer-batch-16x32`는 `MsgBatchTransfer` 하나와 `BatchJoinSplit16x32` proof 하나를 실행합니다. `--payment 'shielded-address,coin[,policy,mode,target-key]'`를 1..32회 반복해 output별 독립 disclosure를 지정하고, 필요하면 `--input-index`로 wallet note 1..16개를 고정하며, `--output-mode compact|exact32`를 선택합니다. Broadcast 전에 private prepared payload와 proof를 mode `0600`으로 저장합니다.
+
+재시작 가능한 단계형 command는 `prepare-batch-transfer`, `prove-batch-transfer PREPARED_FILE`, `broadcast-batch-transfer PREPARED_FILE PROOF_FILE`입니다. `prove-batch-transfer`는 `--prover-url`이 없으면 local prover만, 있으면 선택한 `POST /v1/proofs/batch-transfer` endpoint 한 곳만 사용하며 automatic failover를 하지 않습니다. 전체 명령과 boundary case는 [clairveil-batch-joinsplit-localnet-tutorial-kr.md](clairveil-batch-joinsplit-localnet-tutorial-kr.md)를 따릅니다.
+
 ## 6. Disclosure decode
 
 transfer disclosure payload를 복호화하고 digest 검증 report를 만듭니다.
@@ -485,6 +491,6 @@ CLI가 생성하고 검사하는 active circuit set은 `privacy-note-v1`입니�
 
 Wallet scan state는 전체 cursor `(height, global_sequence, output_index)`로 정렬됩니다. 모든 spend path는 선택한 root와 정확히 같은 snapshot에서 얻어야 합니다. Current-root path는 incremental node를 사용하므로 online historical-rebuild budget을 소비하지 않습니다. Non-current historical path는 persisted root/count/height metadata를 요구하며 public query는 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하고 그 이상은 `ResourceExhausted`를 반환합니다. Online bound를 넘으면 current root 또는 trusted local historical index를 사용합니다. 별도 offline recovery/export bound는 `MaxMerkleRebuildLeaves`(1,048,576)입니다. Remote historical root/path query는 wallet interest를 노출하므로 privacy warning을 유지하고 중요하면 local 또는 privacy-preserving infrastructure를 우선합니다.
 
-Chain core는 `BatchJoinSplit16x32`와 `MsgBatchTransfer`를 구현했지만 이 CLI reference에는 이를 build, prove, submit하는 command가 의도적으로 없습니다. 특히 `transfer-batch`는 native 2x2 transfer를 coordination하며 하나의 16x32 proof처럼 표현하면 안 됩니다. Live core public schema는 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo` 순서이며 CLI product integration은 Session 3B 범위입니다.
+Chain core와 CLI는 이제 `transfer-batch-16x32` 및 단계형 companion command로 `BatchJoinSplit16x32`/`MsgBatchTransfer`를 구현합니다. 기존 `transfer-batch`는 계속 독립적인 native 2x2 transfer를 coordination하며 하나의 16x32 proof처럼 표현하면 안 됩니다. Live core public schema 순서는 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`입니다.
 
 `clairveil-proverd`는 role-aware lazy artifact registry와 circuit별 in-flight 1개, queued 4개의 admission default를 사용합니다. `-max-request-bytes` default는 `8388608`이고 0보다 커야 합니다. `0`은 invalid이며 limit을 비활성화하지 않습니다. Bounded `proverservice.Handler`만 노출하고 raw transport handler는 절대 직접 노출하지 않습니다. Automatic endpoint failover는 계속 비활성화합니다. Cancellation으로 caller가 중단되어도 in-process proof가 계속되며 slot을 유지할 수 있습니다. Hard cancellation이나 memory containment가 필요한 operator는 worker process를 isolate하고 terminate해야 합니다.

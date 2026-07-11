@@ -98,7 +98,7 @@ After snapshot/restore/migration, recompute sample Merkle paths according to [cl
 
 `clairveil-proverd` does not directly receive private seeds, but it receives prepared proof payloads. Those payloads can include amount, note randomness, Merkle path, nullifier, shielded public keys, and disclosure metadata.
 
-The reference prover does not yet expose a BatchJoinSplit16x32 HTTP route. Do not route `MsgBatchTransfer` witnesses through a generic or existing JoinSplit endpoint. A reviewed batch route, public Go SDK, and wallet UX remain Session 3B work.
+The reference prover exposes BatchJoinSplit16x32 only through `POST /v1/proofs/batch-transfer`. Do not route `MsgBatchTransfer` witnesses through a generic or existing JoinSplit endpoint. The batch route enforces strict framing/body bounds and circuit-specific queue/in-flight admission; its permit remains held until the actual prove call returns. Automatic multi-prover failover is disabled.
 
 A remote prover is a privacy-sensitive trusted component.
 
@@ -220,4 +220,4 @@ Before attaching Clairveil core to downstream mainnet:
 7. `reserve/{denom}` returns `invariant_holds=true` after deposit/withdraw e2e for each supported denom.
 8. chain-specific threat model is written.
 9. `TestBatchTransferDirectCoreIntegration`, atomic scan-failure tests, and cross-message 2x2+batch/batch+batch rollback tests pass against the release commit.
-10. The release explicitly records that public batch SDK, remote batch prover route, wallet scanner/decrypt UX, one-proof payroll integration, and batch CLI/tutorial are not supplied until Session 3B; formal setup and production artifact release remain separate gates.
+10. The Session 3B SDK, remote batch prover route, typed scanner/decrypt path, one-proof payroll integration, CLI/tutorial, conformance fixture, and actual localnet workflow pass together; formal setup, production artifact release, external audit, and downstream wallet products remain separate gates.

@@ -17,6 +17,7 @@ Clairveil repo는 reusable privacy core와 reference host를 제공합니다. �
 | Walkthrough | `docs/clairveil-local-privacy-walkthrough-kr.md` | Integrators | local end-to-end manual verification |
 | Circuit guide | `docs/clairveil-circuits-kr.md` | Core chain team, prover operations, security reviewers | Deposit/Spend/JoinSplit/BatchJoinSplit16x32 회로와 artifact 영향 설명 |
 | NoteV1/batch normative contract | `docs/clairveil-batch-joinsplit-16x32.md`, `docs/clairveil-batch-joinsplit-16x32-kr.md` | Core chain, SDK, prover, security teams | Session 3A chain core가 구현한 frozen NoteV1/fixed encoding/vector/public-witness/state contract |
+| Session 3B client integration pack | `docs/clairveil-session3b-batch-transfer-handoff-kr.md`, `docs/clairveil-batch-joinsplit-localnet-tutorial-kr.md`, `x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_session3b_contract.json` | Go/JS SDK, wallet, payroll, prover, operations teams | One-proof prepare/prove/broadcast/typed scan/reconcile contract, boundary case, 실행 가능한 localnet handoff |
 | Session 2 independent fixture | `x/privacy/client/sdk/conformance/testdata/privacy_note_v1_contract.json`, `x/privacy/client/sdk/conformance/testdata/privacy_batch_joinsplit_v1_contract.json` | Core chain, SDK, security teams | independent domain/empty-root/encoding, canonical audit-key ID, vector/public-input, corrected wire-state golden |
 | Batch tx/query proto | `proto/clairveil/privacy/v1/tx.proto`, `proto/clairveil/privacy/v1/query.proto`, `proto/clairveil/privacy/v1/genesis.proto` | Core chain, SDK, security teams | production `MsgBatchTransfer`/structured output, AssetRegistryV1, same-root path, typed scan/genesis contract |
 | Batch feasibility proto | `proto/clairveil/privacy/v1/batch_feasibility.proto` | Core chain, SDK, security teams | max-shape measurement fixture 전용이며 production contract는 normal tx/query/genesis proto에 존재 |
@@ -102,6 +103,8 @@ make docker-proverd-build
 16. Release-pack verification이 bilingual batch contract, normal production tx/query/genesis proto, `batch_feasibility.proto`, independent Session 2 fixture 2개를 required artifact로 검사하는지 확인합니다.
 17. Production circuit/keeper matrix인 `TestBatchJoinSplit16x32ProductionPositiveMatrix`, `TestBatchJoinSplit16x32ProductionNegativeMatrix`, `TestBatchTransferDirectCoreIntegration`, `TestBatchTransferCoreRejectionsAndAtomicScanFailure`, `TestCrossMessageNullifierFailureRollsBackWholeCosmosTxCache`를 실행합니다.
 18. Git 밖에서 development artifact를 생성하고 `TestBatchDevelopmentArtifactRoleReadinessGate`를 실행합니다. R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`, generation peak RSS `3,308,797,952 B`, readiness peak RSS `1,295,482,880 B`를 기록합니다. 이 development binary를 production artifact로 package하면 안 됩니다.
+19. fixture conformance는 `make privacy-batch-joinsplit-localnet`으로, 실제 1/1, 3/4, 31+change, exact32, padding, restart/retry 경로는 충분한 자원의 host에서 `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`으로 실행합니다.
+20. release pack이 Session 3B 한영 handoff/tutorial, conformance fixture, localnet runner를 필수로 검사하고 private prepared payload/proof와 development R1CS/PK/VK binary는 제외하는지 확인합니다.
 
 ## 4. Downstream core chain 팀 수령 기준
 

@@ -96,7 +96,7 @@ Snapshot/restore/migration 후에는 [clairveil-merkle-restore-sop-kr.md](clairv
 
 `clairveil-proverd`는 private seed를 직접 받지는 않지만 prepared proof payload를 받습니다. 이 payload에는 amount, note randomness, Merkle path, nullifier, shielded public key, disclosure metadata가 포함될 수 있습니다.
 
-Reference prover는 아직 BatchJoinSplit16x32 HTTP route를 제공하지 않습니다. `MsgBatchTransfer` witness를 generic 또는 기존 JoinSplit endpoint로 보내면 안 됩니다. Reviewed batch route, public Go SDK, wallet UX는 Session 3B 범위입니다.
+Reference prover는 BatchJoinSplit16x32를 `POST /v1/proofs/batch-transfer`로만 제공합니다. `MsgBatchTransfer` witness를 generic 또는 기존 JoinSplit endpoint로 보내면 안 됩니다. Batch route는 strict framing/body bound와 circuit별 queue/in-flight admission을 적용하고 실제 prove call이 끝날 때까지 permit을 유지합니다. Automatic multi-prover failover는 비활성화되어 있습니다.
 
 Remote prover는 privacy-sensitive trusted component입니다.
 
@@ -218,4 +218,4 @@ Clairveil core를 downstream mainnet에 붙이기 전 최소 gate:
 7. 지원 denom별 deposit/withdraw e2e 이후 `reserve/{denom}`이 `invariant_holds=true`를 반환합니다.
 8. chain-specific threat model이 작성되어 있습니다.
 9. Release commit 기준 `TestBatchTransferDirectCoreIntegration`, atomic scan-failure test, cross-message 2x2+batch/batch+batch rollback test가 통과합니다.
-10. Public batch SDK, remote batch prover route, wallet scanner/decrypt UX, one-proof payroll integration, batch CLI/tutorial은 Session 3B 전까지 제공되지 않고 formal setup/production artifact release도 별도 gate임을 release에 명시합니다.
+10. Session 3B SDK, remote batch prover route, typed scanner/decrypt 경로, one-proof payroll integration, CLI/tutorial, conformance fixture, 실제 localnet workflow를 함께 통과시키고 formal setup, production artifact release, external audit, downstream wallet product는 별도 gate로 유지합니다.

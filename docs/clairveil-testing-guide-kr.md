@@ -129,7 +129,7 @@ go test ./x/privacy/zk -run TestBatchDevelopmentArtifactRoleReadinessGate -count
 
 기록된 batch file은 R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`입니다. Generation peak RSS는 `3,308,797,952 B`, role-readiness peak RSS는 `1,295,482,880 B`였습니다. 이는 development identity이며 formal trusted setup/production distribution artifact가 아닙니다.
 
-Session 3B는 여전히 제외됩니다. Public `MsgBatchTransfer` Go SDK/builder, reference prover batch HTTP route, wallet scanner/decrypt UX, one-proof batch payroll integration, batch CLI/tutorial은 없습니다. 기존 `transfer-batch`와 payroll test는 기존 multi-message workflow를 검증하며 새 one-proof message를 사용하지 않습니다.
+Session 3B는 public `MsgBatchTransfer` Go SDK/builder, `POST /v1/proofs/batch-transfer`, typed scanner/decrypt/disclosure 검증, durable one-proof payroll integration, 단계형/통합 CLI command, 한영 localnet tutorial을 추가합니다. `go test ./x/privacy/client/sdk/... -count=1`, `make privacy-batch-joinsplit-localnet`, 그리고 충분한 자원의 host에서 `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`을 실행합니다. 기존 `transfer-batch`와 reference payroll target은 독립적인 multi-message regression 경로로 유지합니다.
 
 Prepared transfer payload `v5`는 현재 outer prepared-payload contract로 그대로 유효합니다. 이 version을 inner note/disclosure encoding과 혼동하면 안 됩니다. Inner canonical payload와 envelope는 `privacy-fixed-v1`입니다. Compatibility fallback은 금지됩니다. External ClairveilJS package는 이 handoff 시점에 아직 legacy이므로 upgrade 전까지 old decoder로 해석하지 말고 새 fixed fixture를 fail closed로 거부해야 합니다.
 
