@@ -10,17 +10,21 @@ import (
 	"strings"
 	"time"
 
+	privacybatchtransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/batchtransfer"
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
 	privacywithdraw "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/withdraw"
 )
 
 const (
-	TransferProofPath             = "/v1/prover/transfer"
-	WithdrawProofPath             = "/v1/prover/withdraw"
-	TransferProofCircuitID        = "joinsplit"
-	WithdrawProofCircuitID        = "spend"
-	ErrorResponseVersion          = "v1"
-	DefaultMaxResponseBytes int64 = 1 << 20
+	TransferProofPath                 = "/v1/prover/transfer"
+	WithdrawProofPath                 = "/v1/prover/withdraw"
+	BatchTransferProofPath            = "/v1/proofs/batch-transfer"
+	TransferProofCircuitID            = "joinsplit"
+	WithdrawProofCircuitID            = "spend"
+	BatchTransferProofCircuitID       = "batch-joinsplit-16x32-v1"
+	ErrorResponseVersion              = "v1"
+	DefaultMaxResponseBytes     int64 = 1 << 20
+	DefaultMaxRequestBytes      int64 = 8 << 20
 )
 
 const (
@@ -78,6 +82,10 @@ type WithdrawProver interface {
 	ProveWithdraw(request WithdrawProofRequest, now time.Time) (*WithdrawProofResponse, error)
 }
 
+type BatchTransferProver interface {
+	ProveBatchTransfer(request BatchTransferProofRequest, now time.Time) (*BatchTransferProofResponse, error)
+}
+
 type ReferenceTransferProver struct {
 	Artifacts privacytransfer.JoinSplitArtifactProvider
 	Runner    privacytransfer.JoinSplitProofRunner
@@ -88,11 +96,18 @@ type ReferenceWithdrawProver struct {
 	Runner    privacywithdraw.SpendProofRunner
 }
 
+type ReferenceBatchTransferProver struct {
+	Artifacts privacybatchtransfer.BatchJoinSplitArtifactProvider
+	Runner    privacybatchtransfer.BatchJoinSplitProofRunner
+}
+
 type HTTPHandler struct {
-	TransferProver TransferProver
-	WithdrawProver WithdrawProver
-	Now            func() time.Time
-	Admission      ProofAdmission
+	TransferProver      TransferProver
+	WithdrawProver      WithdrawProver
+	BatchTransferProver BatchTransferProver
+	Now                 func() time.Time
+	Admission           ProofAdmission
+	MaxRequestBytes     int64
 }
 
 type HTTPDoer interface {
@@ -114,19 +129,29 @@ func (p ReferenceWithdrawProver) ProveWithdraw(request WithdrawProofRequest, now
 	return BuildWithdrawProofResponse(request, p.Artifacts, p.Runner, now)
 }
 
+func (p ReferenceBatchTransferProver) ProveBatchTransfer(request BatchTransferProofRequest, now time.Time) (*BatchTransferProofResponse, error) {
+	return BuildBatchTransferProofResponseAt(request, p.Artifacts, p.Runner, now)
+}
+
 func NewHTTPHandler(transferProver TransferProver, withdrawProver WithdrawProver, now func() time.Time) *HTTPHandler {
 	return NewHTTPHandlerWithAdmission(transferProver, withdrawProver, now, nil)
 }
 
 func NewHTTPHandlerWithAdmission(transferProver TransferProver, withdrawProver WithdrawProver, now func() time.Time, admission ProofAdmission) *HTTPHandler {
+	return NewHTTPHandlerWithBatchAdmission(transferProver, withdrawProver, nil, now, admission)
+}
+
+func NewHTTPHandlerWithBatchAdmission(transferProver TransferProver, withdrawProver WithdrawProver, batchTransferProver BatchTransferProver, now func() time.Time, admission ProofAdmission) *HTTPHandler {
 	if now == nil {
 		now = time.Now
 	}
 	return &HTTPHandler{
-		TransferProver: transferProver,
-		WithdrawProver: withdrawProver,
-		Now:            now,
-		Admission:      admission,
+		TransferProver:      transferProver,
+		WithdrawProver:      withdrawProver,
+		BatchTransferProver: batchTransferProver,
+		Now:                 now,
+		Admission:           admission,
+		MaxRequestBytes:     DefaultMaxRequestBytes,
 	}
 }
 
@@ -141,9 +166,77 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveTransferProof(w, r)
 	case WithdrawProofPath:
 		h.serveWithdrawProof(w, r)
+	case BatchTransferProofPath:
+		h.serveBatchTransferProof(w, r)
 	default:
 		writeErrorResponse(w, http.StatusNotFound, ErrorCodeNotFound, "prover transport route not found")
 	}
+}
+
+func (h *HTTPHandler) serveBatchTransferProof(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErrorResponse(w, http.StatusMethodNotAllowed, ErrorCodeMethodNotAllowed, "batch transfer proof route requires POST")
+		return
+	}
+	if h.BatchTransferProver == nil {
+		writeErrorResponse(w, http.StatusServiceUnavailable, ErrorCodeUnavailable, "batch transfer prover is unavailable")
+		return
+	}
+
+	requestLimit := h.MaxRequestBytes
+	if requestLimit <= 0 {
+		requestLimit = DefaultMaxRequestBytes
+	}
+	requestBytes, err := io.ReadAll(io.LimitReader(r.Body, requestLimit+1))
+	if err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, "failed to read batch transfer proof request body")
+		return
+	}
+	if int64(len(requestBytes)) > requestLimit {
+		writeErrorResponse(w, http.StatusRequestEntityTooLarge, ErrorCodeInvalidRequest, "batch transfer proof request body is too large")
+		return
+	}
+	if !json.Valid(requestBytes) {
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, "invalid batch transfer proof request JSON framing")
+		return
+	}
+	permit, ok := h.acquirePermit(w, r, BatchTransferProofCircuitID)
+	if !ok {
+		return
+	}
+	if permit != nil {
+		defer permit.Release()
+	}
+
+	request, err := DecodeBatchTransferProofRequestJSON(requestBytes)
+	if err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, "invalid batch transfer proof request")
+		return
+	}
+	currentTime := h.Now()
+	if err := ValidateBatchTransferProofRequestAt(*request, currentTime); err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, "batch transfer proof request validation failed")
+		return
+	}
+
+	if permit != nil {
+		permit.StartProve()
+	}
+	response, err := h.BatchTransferProver.ProveBatchTransfer(*request, currentTime)
+	if err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeProofFailed, "batch transfer proof generation failed")
+		return
+	}
+	if response == nil {
+		writeErrorResponse(w, http.StatusInternalServerError, ErrorCodeProofFailed, "batch transfer proof generation failed")
+		return
+	}
+	if err := ValidateBatchTransferProofResponseAt(*request, *response, h.Now()); err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeProofFailed, "batch transfer proof response validation failed")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (h *HTTPHandler) serveTransferProof(w http.ResponseWriter, r *http.Request) {
@@ -320,6 +413,28 @@ func (c HTTPProverClient) ProveWithdraw(ctx context.Context, request WithdrawPro
 		return nil, err
 	}
 	if err := ValidateWithdrawProofResponse(request, *response, now()); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
+func (c HTTPProverClient) ProveBatchTransfer(ctx context.Context, request BatchTransferProofRequest) (*BatchTransferProofResponse, error) {
+	now := time.Now
+	if c.Now != nil {
+		now = c.Now
+	}
+	if err := ValidateBatchTransferProofRequestAt(request, now()); err != nil {
+		return nil, err
+	}
+	responseBytes, err := c.doJSONRequest(ctx, BatchTransferProofPath, request)
+	if err != nil {
+		return nil, err
+	}
+	response, err := DecodeBatchTransferProofResponseJSON(responseBytes)
+	if err != nil {
+		return nil, err
+	}
+	if err := ValidateBatchTransferProofResponseAt(request, *response, now()); err != nil {
 		return nil, err
 	}
 	return response, nil

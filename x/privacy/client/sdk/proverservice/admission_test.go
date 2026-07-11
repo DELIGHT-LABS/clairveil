@@ -186,3 +186,10 @@ func TestAdmissionConfigurationRejectsUnboundedValues(t *testing.T) {
 	}})
 	require.Error(t, err)
 }
+
+func TestDefaultAdmissionConfigSeparatesBatchCapacity(t *testing.T) {
+	config := DefaultAdmissionConfig()
+	require.Contains(t, config.Circuits, privacyprovertransport.BatchTransferProofCircuitID)
+	require.Equal(t, DefaultMaxInFlightPerCircuit, config.Circuits[privacyprovertransport.BatchTransferProofCircuitID].MaxInFlight)
+	require.Equal(t, DefaultMaxQueuedPerCircuit, config.Circuits[privacyprovertransport.BatchTransferProofCircuitID].MaxQueued)
+}

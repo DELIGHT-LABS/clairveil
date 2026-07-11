@@ -3,22 +3,29 @@ package provertransport
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"math/big"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr/mimc"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
+	cryptoeddsa "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/stretchr/testify/require"
 
+	privacybatchtransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/batchtransfer"
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
 	privacywithdraw "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/withdraw"
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -33,6 +40,18 @@ func TestBuildTransferProofResponseRoundTrip(t *testing.T) {
 	require.NoError(t, ValidateTransferProofResponse(*request, *response))
 
 	msg, err := request.Payload.ToMsg(response.Proof)
+	require.NoError(t, err)
+	require.NoError(t, msg.ValidateBasic())
+}
+
+func TestBuildBatchTransferProofResponseRoundTrip(t *testing.T) {
+	payload, artifacts, runner := testPreparedBatchTransferPayload(t)
+	request, err := NewBatchTransferProofRequest(payload)
+	require.NoError(t, err)
+	response, err := BuildBatchTransferProofResponse(*request, artifacts, runner)
+	require.NoError(t, err)
+	require.NoError(t, ValidateBatchTransferProofResponse(*request, *response))
+	msg, err := privacybatchtransfer.BuildMsgBatchTransfer(&request.Payload, &response.Proof, testBech32AddressWithByte(0x5))
 	require.NoError(t, err)
 	require.NoError(t, msg.ValidateBasic())
 }
@@ -128,6 +147,44 @@ func TestTransferAndWithdrawProofJSONRoundTrip(t *testing.T) {
 	decodedWithdrawResponse, err := DecodeWithdrawProofResponseJSON(withdrawResponseJSON)
 	require.NoError(t, err)
 	require.Equal(t, withdrawResponse.Proof.PayloadHash, decodedWithdrawResponse.Proof.PayloadHash)
+}
+
+func TestBatchTransferProofJSONDecodeIsStrict(t *testing.T) {
+	_, err := DecodeBatchTransferProofRequestJSON([]byte(`{"version":"v1","payload":{},"unexpected":true}`))
+	require.ErrorContains(t, err, "unknown field")
+
+	_, err = DecodeBatchTransferProofResponseJSON([]byte(`{"version":"v1","proof":{},"unexpected":true}`))
+	require.ErrorContains(t, err, "unknown field")
+
+	_, err = DecodeBatchTransferProofRequestJSON([]byte(`{"version":"v1","payload":{}} {}`))
+	require.Error(t, err)
+
+	_, err = DecodeBatchTransferProofRequestJSON([]byte(`{"version":"v1","version":"v1","payload":{}}`))
+	require.ErrorContains(t, err, "duplicate JSON object key")
+}
+
+func TestBatchTransferProofFilesArePrivate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "batch-request.json")
+	require.NoError(t, os.WriteFile(path, []byte("old"), 0o644))
+	require.NoError(t, (BatchTransferProofRequest{Version: BatchTransferProofRequestVersion}).WriteJSONFile(path))
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+}
+
+func TestBatchTransferProofResponseRejectsPayloadHashMismatchFirst(t *testing.T) {
+	err := ValidateBatchTransferProofResponseAt(
+		BatchTransferProofRequest{Version: BatchTransferProofRequestVersion},
+		BatchTransferProofResponse{
+			Version: BatchTransferProofResponseVersion,
+			Proof: privacybatchtransfer.PreparedBatchTransferProof{
+				Version:            privacybatchtransfer.PreparedBatchTransferProofVersion,
+				RequestPayloadHash: "mutated",
+			},
+		},
+		time.Now(),
+	)
+	require.ErrorContains(t, err, "payload hash mismatch")
 }
 
 func testPreparedTransferPayload(
@@ -287,6 +344,89 @@ func testPreparedWithdrawProverPayload(
 	require.NoError(t, err)
 
 	return *result.Payload, artifacts, runner
+}
+
+func testPreparedBatchTransferPayload(t testing.TB) (
+	privacybatchtransfer.PreparedBatchTransferPayload,
+	*batchArtifactProvider,
+	*batchProofRunner,
+) {
+	t.Helper()
+	ownerKey, err := cryptoeddsa.GenerateKey(bytes.NewReader(bytes.Repeat([]byte{0x45}, 32)))
+	require.NoError(t, err)
+	ownerBytes := ownerKey.PublicKey.Bytes()
+	ownerSpend, err := privacycrypto.DecodeCanonicalPoint(ownerBytes)
+	require.NoError(t, err)
+	ownerView := testPoint(43)
+	note := privacytypes.Note{
+		ReceiverSpendPubKeyX: pointCoordinate(ownerSpend, true), ReceiverSpendPubKeyY: pointCoordinate(ownerSpend, false),
+		ReceiverViewPubKeyX: pointCoordinate(ownerView, true), ReceiverViewPubKeyY: pointCoordinate(ownerView, false),
+		Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair"), Randomness: big.NewInt(47),
+	}
+	plan, err := privacybatchtransfer.PlanBatchTransfer(privacybatchtransfer.PlanBatchTransferInput{
+		Inputs:           []privacybatchtransfer.InputNote{{Note: note}},
+		Payments:         []privacybatchtransfer.Payment{{SpendPubKey: testPoint(53), ViewPubKey: testPoint(59), Amount: big.NewInt(7)}},
+		OwnerSpendPubKey: ownerSpend, OwnerViewPubKey: ownerView, Mode: privacybatchtransfer.OutputModeCompact,
+	})
+	require.NoError(t, err)
+	prepared, err := privacybatchtransfer.PrepareBatchTransfer(context.Background(), batchMerklePathProvider{}, plan)
+	require.NoError(t, err)
+	payload, err := privacybatchtransfer.BuildPreparedBatchTransferPayload(prepared, batchStructuredSigner{ownerKey}, privacybatchtransfer.BuildPreparedBatchTransferPayloadInput{
+		ChainID: "clairveil-local-1", ExpiresAtUnix: time.Now().Add(time.Hour).Unix(), AuditKeyID: "audit-default", AuditKeyEpoch: 1,
+		AuditDisclosureTargetPubKey: testPoint(61), DisableSelfViewDisclosure: true,
+	})
+	require.NoError(t, err)
+	return *payload, &batchArtifactProvider{r1cs: groth16.NewCS(ecc.BN254), provingKey: groth16.NewProvingKey(ecc.BN254)}, &batchProofRunner{proof: groth16.NewProof(ecc.BN254)}
+}
+
+type batchMerklePathProvider struct{}
+
+func (batchMerklePathProvider) LookupMerklePath(_ context.Context, commitmentHex string) (*privacybatchtransfer.MerklePathResult, error) {
+	commitment, ok := new(big.Int).SetString(commitmentHex, 16)
+	if !ok {
+		return nil, fmt.Errorf("invalid commitment")
+	}
+	empty := privacytypes.EmptyNoteTreeRootsV1(32)
+	path := make([]string, 32)
+	helper := make([]uint32, 32)
+	root := new(big.Int).Set(commitment)
+	for level := 0; level < 32; level++ {
+		path[level] = fmt.Sprintf("%x", empty[level].FillBytes(make([]byte, 32)))
+		root = privacytypes.ComputeNoteTreeNodeV1(uint32(level), root, empty[level])
+	}
+	return &privacybatchtransfer.MerklePathResult{Root: root.FillBytes(make([]byte, 32)), Path: path, PathHelper: helper}, nil
+}
+
+type batchStructuredSigner struct{ key *cryptoeddsa.PrivateKey }
+
+func (s batchStructuredSigner) SignBatchTransfer(request privacybatchtransfer.BatchTransferSigningRequest) ([]byte, error) {
+	if err := privacybatchtransfer.ValidateBatchTransferSigningRequest(request); err != nil {
+		return nil, err
+	}
+	return s.key.Sign(request.ExpectedIntent.FillBytes(make([]byte, 32)), mimc.NewMiMC())
+}
+
+type batchArtifactProvider struct {
+	r1cs       constraint.ConstraintSystem
+	provingKey groth16.ProvingKey
+}
+
+func (p *batchArtifactProvider) BatchJoinSplitR1CS() (constraint.ConstraintSystem, error) {
+	return p.r1cs, nil
+}
+
+func (p *batchArtifactProvider) BatchJoinSplitProvingKey() (groth16.ProvingKey, error) {
+	return p.provingKey, nil
+}
+
+type batchProofRunner struct {
+	proof   groth16.Proof
+	witness witness.Witness
+}
+
+func (r *batchProofRunner) ProveBatchJoinSplit(_ constraint.ConstraintSystem, _ groth16.ProvingKey, batchWitness witness.Witness) (groth16.Proof, error) {
+	r.witness = batchWitness
+	return r.proof, nil
 }
 
 type transferMerklePathProvider struct {

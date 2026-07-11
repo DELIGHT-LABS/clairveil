@@ -1,6 +1,7 @@
 package proverservice
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,6 +21,7 @@ import (
 	"github.com/consensys/gnark/constraint"
 	gnarklogger "github.com/consensys/gnark/logger"
 
+	privacybatchtransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/batchtransfer"
 	privacyprovertransport "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/provertransport"
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
 	privacywithdraw "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/withdraw"
@@ -53,8 +55,10 @@ type RuntimeInfo struct {
 	ServiceName   string   `json:"service"`
 	ArtifactDir   string   `json:"artifact_dir"`
 	PreflightMode string   `json:"preflight_mode"`
+	ReadinessRole string   `json:"readiness_role"`
 	AuthEnabled   bool     `json:"auth_enabled"`
 	Routes        []string `json:"routes"`
+	Circuits      []string `json:"circuits"`
 }
 
 type StatusResponse struct {
@@ -63,8 +67,10 @@ type StatusResponse struct {
 	ServiceName   string   `json:"service"`
 	ArtifactDir   string   `json:"artifact_dir,omitempty"`
 	PreflightMode string   `json:"preflight_mode,omitempty"`
+	ReadinessRole string   `json:"readiness_role,omitempty"`
 	AuthEnabled   bool     `json:"auth_enabled,omitempty"`
 	Routes        []string `json:"routes,omitempty"`
+	Circuits      []string `json:"circuits,omitempty"`
 	Error         string   `json:"error,omitempty"`
 }
 
@@ -105,11 +111,20 @@ type referenceSpendArtifactProvider struct {
 	err      error
 }
 
+type referenceBatchJoinSplitArtifactProvider struct {
+	registry *privacyzk.ArtifactRegistry
+	err      error
+}
+
 type referenceJoinSplitProofRunner struct {
 	logWriter io.Writer
 }
 
 type referenceSpendProofRunner struct {
+	logWriter io.Writer
+}
+
+type referenceBatchJoinSplitProofRunner struct {
 	logWriter io.Writer
 }
 
@@ -180,12 +195,19 @@ func DefaultRuntimeInfo() RuntimeInfo {
 		ServiceName:   ServiceName,
 		ArtifactDir:   artifactDir,
 		PreflightMode: preflightMode,
+		ReadinessRole: "prover_r1cs_pk",
 		Routes: []string{
 			HealthPath,
 			ReadinessPath,
 			MetricsPath,
 			privacyprovertransport.TransferProofPath,
 			privacyprovertransport.WithdrawProofPath,
+			privacyprovertransport.BatchTransferProofPath,
+		},
+		Circuits: []string{
+			string(privacyzk.CircuitJoinSplit),
+			string(privacyzk.CircuitSpend),
+			string(privacyzk.CircuitBatchJoinSplit16x32V1),
 		},
 	}
 }
@@ -204,6 +226,10 @@ func NewReferenceHandler(now func() time.Time, logWriter io.Writer, maxRequestBy
 			Artifacts: referenceSpendArtifactProvider{registry: registry, err: registryErr},
 			Runner:    referenceSpendProofRunner{logWriter: logWriter},
 		},
+		privacyprovertransport.ReferenceBatchTransferProver{
+			Artifacts: referenceBatchJoinSplitArtifactProvider{registry: registry, err: registryErr},
+			Runner:    referenceBatchJoinSplitProofRunner{logWriter: logWriter},
+		},
 		now,
 		func() error {
 			if registryErr != nil {
@@ -212,6 +238,7 @@ func NewReferenceHandler(now func() time.Time, logWriter io.Writer, maxRequestBy
 			return registry.CheckReadiness(privacyzk.ArtifactRoleProver, []privacyzk.CircuitID{
 				privacyzk.CircuitJoinSplit,
 				privacyzk.CircuitSpend,
+				privacyzk.CircuitBatchJoinSplit16x32V1,
 			}, nil)
 		},
 		info,
@@ -230,7 +257,7 @@ func NewHandler(
 	bearerToken string,
 	maxRequestBytes int64,
 ) *Handler {
-	return newHandlerWithAdmission(transferProver, withdrawProver, now, readiness, info, bearerToken, maxRequestBytes, mustDefaultAdmissionController())
+	return newHandlerWithAdmission(transferProver, withdrawProver, nil, now, readiness, info, bearerToken, maxRequestBytes, mustDefaultAdmissionController())
 }
 
 func NewHandlerWithAdmission(
@@ -243,12 +270,27 @@ func NewHandlerWithAdmission(
 	maxRequestBytes int64,
 	admission *AdmissionController,
 ) *Handler {
-	return newHandlerWithAdmission(transferProver, withdrawProver, now, readiness, info, bearerToken, maxRequestBytes, admission)
+	return newHandlerWithAdmission(transferProver, withdrawProver, nil, now, readiness, info, bearerToken, maxRequestBytes, admission)
+}
+
+func NewHandlerWithBatchAdmission(
+	transferProver privacyprovertransport.TransferProver,
+	withdrawProver privacyprovertransport.WithdrawProver,
+	batchTransferProver privacyprovertransport.BatchTransferProver,
+	now func() time.Time,
+	readiness ReadinessChecker,
+	info RuntimeInfo,
+	bearerToken string,
+	maxRequestBytes int64,
+	admission *AdmissionController,
+) *Handler {
+	return newHandlerWithAdmission(transferProver, withdrawProver, batchTransferProver, now, readiness, info, bearerToken, maxRequestBytes, admission)
 }
 
 func newHandlerWithAdmission(
 	transferProver privacyprovertransport.TransferProver,
 	withdrawProver privacyprovertransport.WithdrawProver,
+	batchTransferProver privacyprovertransport.BatchTransferProver,
 	now func() time.Time,
 	readiness ReadinessChecker,
 	info RuntimeInfo,
@@ -270,8 +312,10 @@ func newHandlerWithAdmission(
 		admission = mustDefaultAdmissionController()
 	}
 
+	proverHandler := privacyprovertransport.NewHTTPHandlerWithBatchAdmission(transferProver, withdrawProver, batchTransferProver, now, admission)
+	proverHandler.MaxRequestBytes = maxRequestBytes
 	return &Handler{
-		proverHandler:   privacyprovertransport.NewHTTPHandlerWithAdmission(transferProver, withdrawProver, now, admission),
+		proverHandler:   proverHandler,
 		admission:       admission,
 		readiness:       readiness,
 		info:            info,
@@ -303,10 +347,61 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if h.maxRequestBytes > 0 && r.Body != nil && isProofRoute(r.URL.Path) {
-			r.Body = http.MaxBytesReader(w, r.Body, h.maxRequestBytes)
+			if err := limitProofRequestBody(w, r, h.maxRequestBytes); err != nil {
+				writeErrorResponse(w, http.StatusBadRequest, privacyprovertransport.ErrorCodeInvalidRequest, err.Error())
+				return
+			}
 		}
 		h.proverHandler.ServeHTTP(w, r)
 	}
+}
+
+// limitProofRequestBody applies the hard limit independently to the bytes on
+// the wire and to the decompressed bytes consumed by the JSON decoder. This
+// prevents a small compressed request from expanding past the configured
+// memory budget.
+func limitProofRequestBody(w http.ResponseWriter, r *http.Request, maxBytes int64) error {
+	rawBody := http.MaxBytesReader(w, r.Body, maxBytes)
+	encoding := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Encoding")))
+	switch encoding {
+	case "", "identity":
+		r.Body = rawBody
+		return nil
+	case "gzip":
+		compressedBody, err := gzip.NewReader(rawBody)
+		if err != nil {
+			_ = rawBody.Close()
+			return fmt.Errorf("invalid gzip proof request body")
+		}
+		r.Body = &proofRequestBody{
+			Reader: http.MaxBytesReader(w, compressedBody, maxBytes),
+			gzip:   compressedBody,
+			raw:    rawBody,
+		}
+		return nil
+	default:
+		_ = rawBody.Close()
+		return fmt.Errorf("unsupported proof request content encoding")
+	}
+}
+
+type proofRequestBody struct {
+	io.Reader
+	gzip *gzip.Reader
+	raw  io.Closer
+}
+
+func (b *proofRequestBody) Close() error {
+	if b == nil {
+		return nil
+	}
+	if b.gzip != nil {
+		_ = b.gzip.Close()
+	}
+	if b.raw != nil {
+		return b.raw.Close()
+	}
+	return nil
 }
 
 func mustDefaultAdmissionController() *AdmissionController {
@@ -357,6 +452,26 @@ func (p referenceSpendArtifactProvider) SpendProvingKey() (groth16.ProvingKey, e
 	return p.registry.ProvingKey(privacyzk.CircuitSpend)
 }
 
+func (p referenceBatchJoinSplitArtifactProvider) BatchJoinSplitR1CS() (constraint.ConstraintSystem, error) {
+	if p.err != nil {
+		return nil, p.err
+	}
+	if p.registry == nil {
+		return nil, fmt.Errorf("zk artifact registry is unavailable")
+	}
+	return p.registry.R1CS(privacyzk.CircuitBatchJoinSplit16x32V1)
+}
+
+func (p referenceBatchJoinSplitArtifactProvider) BatchJoinSplitProvingKey() (groth16.ProvingKey, error) {
+	if p.err != nil {
+		return nil, p.err
+	}
+	if p.registry == nil {
+		return nil, fmt.Errorf("zk artifact registry is unavailable")
+	}
+	return p.registry.ProvingKey(privacyzk.CircuitBatchJoinSplit16x32V1)
+}
+
 func (r referenceJoinSplitProofRunner) ProveJoinSplit(
 	r1cs constraint.ConstraintSystem,
 	provingKey groth16.ProvingKey,
@@ -377,8 +492,22 @@ func (r referenceSpendProofRunner) ProveSpend(
 	})
 }
 
+func (r referenceBatchJoinSplitProofRunner) ProveBatchJoinSplit(
+	r1cs constraint.ConstraintSystem,
+	provingKey groth16.ProvingKey,
+	batchWitness witness.Witness,
+) (groth16.Proof, error) {
+	return withGnarkLoggerOutput(r.logWriter, func() (groth16.Proof, error) {
+		return groth16.Prove(r1cs, provingKey, batchWitness)
+	})
+}
+
 func RunPreflight(logger log.Logger) error {
-	return privacyzk.RunProverPreflight(logger, []privacyzk.CircuitID{privacyzk.CircuitJoinSplit, privacyzk.CircuitSpend})
+	return privacyzk.RunProverPreflight(logger, []privacyzk.CircuitID{
+		privacyzk.CircuitJoinSplit,
+		privacyzk.CircuitSpend,
+		privacyzk.CircuitBatchJoinSplit16x32V1,
+	})
 }
 
 // withGnarkLoggerOutput suppresses gnark solver output process-wide on first
@@ -405,8 +534,10 @@ func (h *Handler) serveHealth(w http.ResponseWriter, r *http.Request) {
 		ServiceName:   h.info.ServiceName,
 		ArtifactDir:   h.info.ArtifactDir,
 		PreflightMode: h.info.PreflightMode,
+		ReadinessRole: h.info.ReadinessRole,
 		AuthEnabled:   h.info.AuthEnabled,
 		Routes:        h.info.Routes,
+		Circuits:      h.info.Circuits,
 	})
 }
 
@@ -424,8 +555,10 @@ func (h *Handler) serveReadiness(w http.ResponseWriter, r *http.Request) {
 				ServiceName:   h.info.ServiceName,
 				ArtifactDir:   h.info.ArtifactDir,
 				PreflightMode: h.info.PreflightMode,
+				ReadinessRole: h.info.ReadinessRole,
 				AuthEnabled:   h.info.AuthEnabled,
 				Routes:        h.info.Routes,
+				Circuits:      h.info.Circuits,
 				Error:         err.Error(),
 			})
 			return
@@ -438,8 +571,10 @@ func (h *Handler) serveReadiness(w http.ResponseWriter, r *http.Request) {
 		ServiceName:   h.info.ServiceName,
 		ArtifactDir:   h.info.ArtifactDir,
 		PreflightMode: h.info.PreflightMode,
+		ReadinessRole: h.info.ReadinessRole,
 		AuthEnabled:   h.info.AuthEnabled,
 		Routes:        h.info.Routes,
+		Circuits:      h.info.Circuits,
 	})
 }
 
@@ -518,7 +653,9 @@ func timevalSeconds(value syscall.Timeval) float64 {
 }
 
 func isProofRoute(path string) bool {
-	return path == privacyprovertransport.TransferProofPath || path == privacyprovertransport.WithdrawProofPath
+	return path == privacyprovertransport.TransferProofPath ||
+		path == privacyprovertransport.WithdrawProofPath ||
+		path == privacyprovertransport.BatchTransferProofPath
 }
 
 func authorized(r *http.Request, bearerToken string) bool {
@@ -556,8 +693,10 @@ func writeJSON(w http.ResponseWriter, statusCode int, payload any) {
 }
 
 var (
-	_ privacytransfer.JoinSplitArtifactProvider = referenceJoinSplitArtifactProvider{}
-	_ privacytransfer.JoinSplitProofRunner      = referenceJoinSplitProofRunner{}
-	_ privacywithdraw.SpendArtifactProvider     = referenceSpendArtifactProvider{}
-	_ privacywithdraw.SpendProofRunner          = referenceSpendProofRunner{}
+	_ privacytransfer.JoinSplitArtifactProvider           = referenceJoinSplitArtifactProvider{}
+	_ privacytransfer.JoinSplitProofRunner                = referenceJoinSplitProofRunner{}
+	_ privacywithdraw.SpendArtifactProvider               = referenceSpendArtifactProvider{}
+	_ privacywithdraw.SpendProofRunner                    = referenceSpendProofRunner{}
+	_ privacybatchtransfer.BatchJoinSplitArtifactProvider = referenceBatchJoinSplitArtifactProvider{}
+	_ privacybatchtransfer.BatchJoinSplitProofRunner      = referenceBatchJoinSplitProofRunner{}
 )

@@ -66,6 +66,29 @@ func TestHTTPHandlerWithdrawProofRoute(t *testing.T) {
 	require.NoError(t, ValidateWithdrawProofResponse(*request, *response, now))
 }
 
+func TestHTTPProverClientBatchTransferRoundTrip(t *testing.T) {
+	payload, artifacts, runner := testPreparedBatchTransferPayload(t)
+	request, err := NewBatchTransferProofRequest(payload)
+	require.NoError(t, err)
+	admission := &recordingAdmission{}
+	server := httptest.NewServer(NewHTTPHandlerWithBatchAdmission(
+		nil,
+		nil,
+		ReferenceBatchTransferProver{Artifacts: artifacts, Runner: runner},
+		nil,
+		admission,
+	))
+	defer server.Close()
+
+	client := HTTPProverClient{BaseURL: server.URL, Client: server.Client()}
+	response, err := client.ProveBatchTransfer(context.Background(), *request)
+	require.NoError(t, err)
+	require.NoError(t, ValidateBatchTransferProofResponse(*request, *response))
+	require.Equal(t, BatchTransferProofCircuitID, admission.circuitID)
+	require.Equal(t, 1, admission.permit.started)
+	require.Equal(t, 1, admission.permit.released)
+}
+
 func TestHTTPHandlerRejectsMethod(t *testing.T) {
 	handler := NewHTTPHandler(nil, nil, nil)
 
@@ -137,6 +160,59 @@ func TestHTTPHandlerUsesSpendAdmissionForWithdraw(t *testing.T) {
 	require.Equal(t, 1, admission.permit.released)
 }
 
+func TestHTTPHandlerUsesBatchSpecificAdmissionAfterFraming(t *testing.T) {
+	admission := &recordingAdmission{}
+	handler := NewHTTPHandlerWithBatchAdmission(nil, nil, &countingBatchTransferProver{}, nil, admission)
+	recorder := httptest.NewRecorder()
+	httpRequest := httptest.NewRequest(http.MethodPost, BatchTransferProofPath, strings.NewReader(`{"version":"v1"}`))
+	handler.ServeHTTP(recorder, httpRequest)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Equal(t, 1, admission.acquired)
+	require.Equal(t, BatchTransferProofCircuitID, admission.circuitID)
+	require.Equal(t, 0, admission.permit.started)
+	require.Equal(t, 1, admission.permit.released)
+	errorResponse, err := DecodeErrorResponseJSON(recorder.Body.Bytes())
+	require.NoError(t, err)
+	require.Equal(t, ErrorCodeInvalidRequest, errorResponse.Code)
+	require.NotContains(t, errorResponse.Message, "payload")
+
+	recorder = httptest.NewRecorder()
+	httpRequest = httptest.NewRequest(http.MethodPost, BatchTransferProofPath, strings.NewReader(`{"version":`))
+	handler.ServeHTTP(recorder, httpRequest)
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Equal(t, 1, admission.acquired)
+}
+
+func TestHTTPHandlerRejectsOversizedBatchBeforeAdmission(t *testing.T) {
+	admission := &recordingAdmission{}
+	handler := NewHTTPHandlerWithBatchAdmission(nil, nil, &countingBatchTransferProver{}, nil, admission)
+	handler.MaxRequestBytes = 8
+	recorder := httptest.NewRecorder()
+	httpRequest := httptest.NewRequest(http.MethodPost, BatchTransferProofPath, strings.NewReader(`{"version":"v1"}`))
+	handler.ServeHTTP(recorder, httpRequest)
+
+	require.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code)
+	require.Zero(t, admission.acquired)
+	errorResponse, err := DecodeErrorResponseJSON(recorder.Body.Bytes())
+	require.NoError(t, err)
+	require.Equal(t, ErrorCodeInvalidRequest, errorResponse.Code)
+}
+
+func TestHTTPHandlerBatchErrorsDoNotEchoPayload(t *testing.T) {
+	const canary = "secret-batch-witness-canary"
+	handler := NewHTTPHandlerWithBatchAdmission(nil, nil, &countingBatchTransferProver{}, nil, &recordingAdmission{})
+	recorder := httptest.NewRecorder()
+	httpRequest := httptest.NewRequest(http.MethodPost, BatchTransferProofPath, strings.NewReader(`{"version":"v1","payload":{},"secret":"`+canary+`"}`))
+	handler.ServeHTTP(recorder, httpRequest)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.NotContains(t, recorder.Body.String(), canary)
+	errorResponse, err := DecodeErrorResponseJSON(recorder.Body.Bytes())
+	require.NoError(t, err)
+	require.Equal(t, ErrorCodeInvalidRequest, errorResponse.Code)
+}
+
 func TestHTTPHandlerAdmissionRejectsBeforeTypedDecode(t *testing.T) {
 	handler := NewHTTPHandlerWithAdmission(&countingTransferProver{}, nil, nil, rejectingAdmission{})
 	recorder := httptest.NewRecorder()
@@ -174,6 +250,37 @@ func TestHTTPHandlerDoesNotReleasePermitWhenContextCancelsDuringProve(t *testing
 	select {
 	case <-admission.permit.releasedCh:
 		t.Fatal("permit released while prove was still running")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(prover.finish)
+	<-done
+	require.Equal(t, 1, admission.permit.started)
+	require.Equal(t, 1, admission.permit.released)
+}
+
+func TestBatchHTTPHandlerHoldsPermitUntilProveActuallyReturns(t *testing.T) {
+	payload, _, _ := testPreparedBatchTransferPayload(t)
+	request, err := NewBatchTransferProofRequest(payload)
+	require.NoError(t, err)
+	requestBody, err := request.MarshalIndentedJSON()
+	require.NoError(t, err)
+
+	prover := &blockingBatchTransferProver{started: make(chan struct{}), finish: make(chan struct{})}
+	admission := &recordingAdmission{permit: &recordingPermit{releasedCh: make(chan struct{}, 1)}}
+	handler := NewHTTPHandlerWithBatchAdmission(nil, nil, prover, nil, admission)
+	ctx, cancel := context.WithCancel(context.Background())
+	httpRequest := httptest.NewRequest(http.MethodPost, BatchTransferProofPath, bytesReader(requestBody)).WithContext(ctx)
+	recorder := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handler.ServeHTTP(recorder, httpRequest)
+	}()
+	<-prover.started
+	cancel()
+	select {
+	case <-admission.permit.releasedCh:
+		t.Fatal("batch permit released while prove was still running")
 	case <-time.After(20 * time.Millisecond):
 	}
 	close(prover.finish)
@@ -360,8 +467,14 @@ type countingTransferProver struct {
 
 type countingWithdrawProver struct{}
 
+type countingBatchTransferProver struct{}
+
 func (*countingWithdrawProver) ProveWithdraw(WithdrawProofRequest, time.Time) (*WithdrawProofResponse, error) {
 	return nil, fmt.Errorf("unexpected withdraw proof request")
+}
+
+func (*countingBatchTransferProver) ProveBatchTransfer(BatchTransferProofRequest, time.Time) (*BatchTransferProofResponse, error) {
+	return nil, fmt.Errorf("unexpected batch transfer proof request")
 }
 
 func (p *countingTransferProver) ProveTransfer(TransferProofRequest, time.Time) (*TransferProofResponse, error) {
@@ -415,6 +528,17 @@ func (p *recordingPermit) Release() {
 type blockingTransferProver struct {
 	started chan struct{}
 	finish  chan struct{}
+}
+
+type blockingBatchTransferProver struct {
+	started chan struct{}
+	finish  chan struct{}
+}
+
+func (p *blockingBatchTransferProver) ProveBatchTransfer(BatchTransferProofRequest, time.Time) (*BatchTransferProofResponse, error) {
+	close(p.started)
+	<-p.finish
+	return nil, fmt.Errorf("batch proof stopped after test release")
 }
 
 func (p *blockingTransferProver) ProveTransfer(TransferProofRequest, time.Time) (*TransferProofResponse, error) {

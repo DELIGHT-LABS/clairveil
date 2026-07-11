@@ -2,6 +2,7 @@ package proverservice
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -19,8 +20,14 @@ import (
 
 type stubTransferProver struct{}
 
+type stubBatchTransferProver struct{}
+
 func (stubTransferProver) ProveTransfer(request privacyprovertransport.TransferProofRequest, _ time.Time) (*privacyprovertransport.TransferProofResponse, error) {
 	return nil, fmt.Errorf("unexpected proof request: %s", request.Version)
+}
+
+func (stubBatchTransferProver) ProveBatchTransfer(request privacyprovertransport.BatchTransferProofRequest, _ time.Time) (*privacyprovertransport.BatchTransferProofResponse, error) {
+	return nil, fmt.Errorf("unexpected batch proof request: %s", request.Version)
 }
 
 func TestHandlerHealthRoute(t *testing.T) {
@@ -72,6 +79,9 @@ func TestHandlerReadinessRouteFailsWhenCheckerFails(t *testing.T) {
 func TestDefaultRuntimeInfoIncludesMetricsRoute(t *testing.T) {
 	info := DefaultRuntimeInfo()
 	require.Contains(t, info.Routes, MetricsPath)
+	require.Contains(t, info.Routes, privacyprovertransport.BatchTransferProofPath)
+	require.Equal(t, "prover_r1cs_pk", info.ReadinessRole)
+	require.Contains(t, info.Circuits, privacyprovertransport.BatchTransferProofCircuitID)
 }
 
 func TestHandlerMetricsRoute(t *testing.T) {
@@ -94,6 +104,7 @@ func TestHandlerMetricsRoute(t *testing.T) {
 	require.NotEmpty(t, response.RSSSource)
 	require.Contains(t, response.Admission.Circuits, privacyprovertransport.TransferProofCircuitID)
 	require.Contains(t, response.Admission.Circuits, privacyprovertransport.WithdrawProofCircuitID)
+	require.Contains(t, response.Admission.Circuits, privacyprovertransport.BatchTransferProofCircuitID)
 }
 
 func TestHandlerMetricsRouteRejectsNonGET(t *testing.T) {
@@ -139,6 +150,40 @@ func TestHandlerLimitsProofRequestBody(t *testing.T) {
 	require.Contains(t, errorResponse.Message, "request body too large")
 }
 
+func TestHandlerLimitsDecompressedProofRequestBody(t *testing.T) {
+	var compressed bytes.Buffer
+	zw := gzip.NewWriter(&compressed)
+	_, err := zw.Write([]byte(`{"padding":"` + string(bytes.Repeat([]byte("a"), 256)) + `"}`))
+	require.NoError(t, err)
+	require.NoError(t, zw.Close())
+	require.Less(t, compressed.Len(), 128)
+
+	handler := NewHandler(stubTransferProver{}, nil, nil, nil, DefaultRuntimeInfo(), "", 128)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, privacyprovertransport.TransferProofPath, bytes.NewReader(compressed.Bytes()))
+	request.Header.Set("Content-Encoding", "gzip")
+	handler.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	errorResponse, err := privacyprovertransport.DecodeErrorResponseJSON(recorder.Body.Bytes())
+	require.NoError(t, err)
+	require.Equal(t, privacyprovertransport.ErrorCodeInvalidRequest, errorResponse.Code)
+	require.NotContains(t, errorResponse.Message, "aaaa")
+}
+
+func TestHandlerRejectsUnsupportedProofRequestContentEncoding(t *testing.T) {
+	handler := NewHandler(stubTransferProver{}, nil, nil, nil, DefaultRuntimeInfo(), "", DefaultMaxRequestBz)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, privacyprovertransport.TransferProofPath, bytes.NewBufferString("{}"))
+	request.Header.Set("Content-Encoding", "br")
+	handler.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	errorResponse, err := privacyprovertransport.DecodeErrorResponseJSON(recorder.Body.Bytes())
+	require.NoError(t, err)
+	require.Equal(t, privacyprovertransport.ErrorCodeInvalidRequest, errorResponse.Code)
+}
+
 func TestHandlerReturnsRetryable429WhenCircuitAdmissionIsFull(t *testing.T) {
 	admission, err := NewAdmissionController(AdmissionConfig{Circuits: map[string]CircuitAdmissionConfig{
 		privacyprovertransport.TransferProofCircuitID: {MaxInFlight: 1, MaxQueued: 0},
@@ -151,6 +196,28 @@ func TestHandlerReturnsRetryable429WhenCircuitAdmissionIsFull(t *testing.T) {
 	handler := NewHandlerWithAdmission(stubTransferProver{}, nil, nil, nil, DefaultRuntimeInfo(), "", DefaultMaxRequestBz, admission)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, privacyprovertransport.TransferProofPath, bytes.NewBufferString(`{"version":"v2"}`))
+	handler.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusTooManyRequests, recorder.Code)
+	errorResponse, err := privacyprovertransport.DecodeErrorResponseJSON(recorder.Body.Bytes())
+	require.NoError(t, err)
+	require.Equal(t, privacyprovertransport.ErrorCodeBusy, errorResponse.Code)
+	require.True(t, errorResponse.Retryable)
+	require.NotContains(t, errorResponse.Message, "payload")
+}
+
+func TestHandlerReturnsRetryable429WhenBatchAdmissionIsFull(t *testing.T) {
+	admission, err := NewAdmissionController(AdmissionConfig{Circuits: map[string]CircuitAdmissionConfig{
+		privacyprovertransport.BatchTransferProofCircuitID: {MaxInFlight: 1, MaxQueued: 0},
+	}})
+	require.NoError(t, err)
+	occupied, err := admission.Acquire(context.Background(), privacyprovertransport.BatchTransferProofCircuitID)
+	require.NoError(t, err)
+	defer occupied.Release()
+
+	handler := NewHandlerWithBatchAdmission(nil, nil, stubBatchTransferProver{}, nil, nil, DefaultRuntimeInfo(), "", DefaultMaxRequestBz, admission)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, privacyprovertransport.BatchTransferProofPath, bytes.NewBufferString(`{"version":"v1"}`))
 	handler.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusTooManyRequests, recorder.Code)

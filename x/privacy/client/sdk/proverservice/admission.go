@@ -86,6 +86,10 @@ func DefaultAdmissionConfig() AdmissionConfig {
 				MaxInFlight: DefaultMaxInFlightPerCircuit,
 				MaxQueued:   DefaultMaxQueuedPerCircuit,
 			},
+			privacyprovertransport.BatchTransferProofCircuitID: {
+				MaxInFlight: DefaultMaxInFlightPerCircuit,
+				MaxQueued:   DefaultMaxQueuedPerCircuit,
+			},
 		},
 		Now: time.Now,
 	}
