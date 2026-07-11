@@ -259,6 +259,47 @@ func TestHTTPHandlerRejectsOversizedBatchBeforeAdmission(t *testing.T) {
 	require.Equal(t, ErrorCodeInvalidRequest, errorResponse.Code)
 }
 
+func TestHTTPHandlerRejectsOversizedTransferAndWithdrawBeforeAdmission(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		handler func(ProofAdmission) *HTTPHandler
+	}{
+		{
+			name: "transfer",
+			path: TransferProofPath,
+			handler: func(admission ProofAdmission) *HTTPHandler {
+				return NewHTTPHandlerWithAdmission(&countingTransferProver{}, nil, nil, admission)
+			},
+		},
+		{
+			name: "withdraw",
+			path: WithdrawProofPath,
+			handler: func(admission ProofAdmission) *HTTPHandler {
+				return NewHTTPHandlerWithAdmission(nil, &countingWithdrawProver{}, nil, admission)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			admission := &recordingAdmission{}
+			handler := tt.handler(admission)
+			handler.MaxRequestBytes = 8
+			recorder := httptest.NewRecorder()
+			httpRequest := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(`{"version":"v1"}`))
+			handler.ServeHTTP(recorder, httpRequest)
+
+			require.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code)
+			require.Zero(t, admission.acquired)
+			errorResponse, err := DecodeErrorResponseJSON(recorder.Body.Bytes())
+			require.NoError(t, err)
+			require.Equal(t, ErrorCodeInvalidRequest, errorResponse.Code)
+			require.NotContains(t, errorResponse.Message, "version")
+		})
+	}
+}
+
 func TestHTTPHandlerBatchErrorsDoNotEchoPayload(t *testing.T) {
 	const canary = "secret-batch-witness-canary"
 	handler := NewHTTPHandlerWithBatchAdmission(nil, nil, &countingBatchTransferProver{}, nil, &recordingAdmission{})

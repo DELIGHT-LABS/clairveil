@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -196,17 +197,8 @@ func (h *HTTPHandler) serveBatchTransferProof(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	requestLimit := h.MaxRequestBytes
-	if requestLimit <= 0 {
-		requestLimit = DefaultMaxRequestBytes
-	}
-	requestBytes, err := io.ReadAll(io.LimitReader(r.Body, requestLimit+1))
-	if err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, "failed to read batch transfer proof request body")
-		return
-	}
-	if int64(len(requestBytes)) > requestLimit {
-		writeErrorResponse(w, http.StatusRequestEntityTooLarge, ErrorCodeInvalidRequest, "batch transfer proof request body is too large")
+	requestBytes, ok := h.readProofRequestBody(w, r, "batch transfer")
+	if !ok {
 		return
 	}
 	if !json.Valid(requestBytes) {
@@ -262,9 +254,8 @@ func (h *HTTPHandler) serveTransferProof(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	requestBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, fmt.Sprintf("failed to read transfer proof request body: %v", err))
+	requestBytes, ok := h.readProofRequestBody(w, r, "transfer")
+	if !ok {
 		return
 	}
 	if !json.Valid(requestBytes) {
@@ -322,9 +313,8 @@ func (h *HTTPHandler) serveWithdrawProof(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	requestBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, fmt.Sprintf("failed to read withdraw proof request body: %v", err))
+	requestBytes, ok := h.readProofRequestBody(w, r, "withdraw")
+	if !ok {
 		return
 	}
 	if !json.Valid(requestBytes) {
@@ -385,6 +375,28 @@ func (h *HTTPHandler) acquirePermit(w http.ResponseWriter, r *http.Request, circ
 		return nil, false
 	}
 	return permit, true
+}
+
+func (h *HTTPHandler) readProofRequestBody(w http.ResponseWriter, r *http.Request, route string) ([]byte, bool) {
+	requestLimit := h.MaxRequestBytes
+	if requestLimit <= 0 {
+		requestLimit = DefaultMaxRequestBytes
+	}
+	requestBytes, err := io.ReadAll(io.LimitReader(r.Body, requestLimit+1))
+	if err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			writeErrorResponse(w, http.StatusRequestEntityTooLarge, ErrorCodeInvalidRequest, route+" proof request body too large")
+			return nil, false
+		}
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, "failed to read "+route+" proof request body")
+		return nil, false
+	}
+	if int64(len(requestBytes)) > requestLimit {
+		writeErrorResponse(w, http.StatusRequestEntityTooLarge, ErrorCodeInvalidRequest, route+" proof request body too large")
+		return nil, false
+	}
+	return requestBytes, true
 }
 
 func (c HTTPProverClient) ProveTransfer(ctx context.Context, request TransferProofRequest) (*TransferProofResponse, error) {

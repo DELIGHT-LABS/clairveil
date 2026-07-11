@@ -142,7 +142,7 @@ func TestHandlerLimitsProofRequestBody(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, privacyprovertransport.TransferProofPath, bytes.NewBufferString("{}"))
 	handler.ServeHTTP(recorder, request)
 
-	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code)
 
 	errorResponse, err := privacyprovertransport.DecodeErrorResponseJSON(recorder.Body.Bytes())
 	require.NoError(t, err)
@@ -164,7 +164,7 @@ func TestHandlerLimitsDecompressedProofRequestBody(t *testing.T) {
 	request.Header.Set("Content-Encoding", "gzip")
 	handler.ServeHTTP(recorder, request)
 
-	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code)
 	errorResponse, err := privacyprovertransport.DecodeErrorResponseJSON(recorder.Body.Bytes())
 	require.NoError(t, err)
 	require.Equal(t, privacyprovertransport.ErrorCodeInvalidRequest, errorResponse.Code)
