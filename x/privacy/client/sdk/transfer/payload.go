@@ -14,9 +14,9 @@ import (
 
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 
+	privatefile "github.com/DELIGHT-LABS/clairveil/internal/privatefile"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/circuit"
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
-	privatefile "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/internal/privatefile"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	privacyzk "github.com/DELIGHT-LABS/clairveil/x/privacy/zk"

@@ -21,7 +21,8 @@ func TestSeedLocalnetNotesWritesGenesisWalletAndNotesOut(t *testing.T) {
 	notesPath := filepath.Join(dir, "alice-notes.json")
 	reportPath := filepath.Join(dir, "seed-report.json")
 	ownerAddress := "clair1owneraddress"
-	require.NoError(t, os.WriteFile(genesisPath, []byte(`{"app_state":{"privacy":{"commitments":[]}}}`), 0o600))
+	require.NoError(t, os.WriteFile(genesisPath, []byte(`{"app_state":{"privacy":{"commitments":[]}}}`), 0o644))
+	require.NoError(t, os.Chmod(genesisPath, 0o644))
 
 	require.NoError(t, runSeedLocalnetNotes([]string{
 		"-genesis", genesisPath,
@@ -45,6 +46,9 @@ func TestSeedLocalnetNotesWritesGenesisWalletAndNotesOut(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, decoded, 32)
 	}
+	genesisInfo, err := os.Stat(genesisPath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), genesisInfo.Mode().Perm())
 
 	walletResult, err := privacyscan.LoadLocalWalletFile(walletHome, ownerAddress)
 	require.NoError(t, err)

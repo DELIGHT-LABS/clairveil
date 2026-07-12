@@ -8,8 +8,8 @@ import (
 	"math/big"
 	"time"
 
+	privatefile "github.com/DELIGHT-LABS/clairveil/internal/privatefile"
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
-	privatefile "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/internal/privatefile"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )

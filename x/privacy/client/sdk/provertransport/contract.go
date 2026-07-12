@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
+	privatefile "github.com/DELIGHT-LABS/clairveil/internal/privatefile"
 	privacybatchtransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/batchtransfer"
-	privatefile "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/internal/privatefile"
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
 	privacywithdraw "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/withdraw"
 )

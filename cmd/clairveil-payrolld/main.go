@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	privatefile "github.com/DELIGHT-LABS/clairveil/internal/privatefile"
 	privacypayroll "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/payroll"
 	privacyreservation "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/reservation"
 )
@@ -297,5 +298,5 @@ func writeJSON(path string, value any) error {
 			return err
 		}
 	}
-	return os.WriteFile(path, bz, 0o600)
+	return privatefile.Write(path, bz)
 }

@@ -15,9 +15,9 @@ import (
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
+	privatefile "github.com/DELIGHT-LABS/clairveil/internal/privatefile"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/circuit"
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
-	privatefile "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/internal/privatefile"
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"

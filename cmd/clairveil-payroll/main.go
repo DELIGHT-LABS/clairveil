@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	privatefile "github.com/DELIGHT-LABS/clairveil/internal/privatefile"
 	privacypayroll "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/payroll"
 	privacyreservation "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/reservation"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
@@ -862,7 +863,7 @@ func writeJSONOutput(path string, value any) error {
 			return err
 		}
 	}
-	return os.WriteFile(path, bz, 0o600)
+	return privatefile.Write(path, bz)
 }
 
 func loadConfirmedPlanFromState(ctx context.Context, store privacyreservation.Store, plan privacypayroll.PayrollPlan) (*privacypayroll.PayrollPlan, bool, error) {

@@ -34,6 +34,18 @@ func TestPrepareNotesCommandWritesReport(t *testing.T) {
 	require.Equal(t, 1, report.EstimatedMessageChunks)
 }
 
+func TestWriteJSONOutputReplacesPermissiveMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "payroll-private.json")
+	require.NoError(t, os.WriteFile(path, []byte("old"), 0o644))
+	require.NoError(t, os.Chmod(path, 0o644))
+
+	require.NoError(t, writeJSONOutput(path, map[string]string{"employee_id": "private"}))
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+}
+
 func TestValidateCommandWritesReport(t *testing.T) {
 	dir := t.TempDir()
 	inputPath := filepath.Join(dir, "payroll.json")

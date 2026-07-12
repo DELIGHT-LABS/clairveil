@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
+	privatefile "github.com/DELIGHT-LABS/clairveil/internal/privatefile"
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
-	privatefile "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/internal/privatefile"
 )
 
 type LocalWalletData struct {

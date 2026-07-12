@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	privatefile "github.com/DELIGHT-LABS/clairveil/internal/privatefile"
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
@@ -189,7 +190,7 @@ func appendGenesisCommitments(genesisPath string, commitments [][]byte) (int, er
 		return 0, err
 	}
 	out = append(out, '\n')
-	if err := os.WriteFile(genesisPath, out, 0o600); err != nil {
+	if err := privatefile.Write(genesisPath, out); err != nil {
 		return 0, err
 	}
 	return existingCount, nil

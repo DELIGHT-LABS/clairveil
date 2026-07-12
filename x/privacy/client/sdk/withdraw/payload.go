@@ -10,8 +10,8 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
+	privatefile "github.com/DELIGHT-LABS/clairveil/internal/privatefile"
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
-	privatefile "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/internal/privatefile"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 

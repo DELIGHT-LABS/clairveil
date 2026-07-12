@@ -19,6 +19,18 @@ const (
 	testPayrolldRecipientA = "clairs19x5u4mf4l4zqcpvr7d809fh4tjy5j50p2mwgky0nj38jpqpj7svndu3hqshu5e3s8w6pea5p30xek5p9flxjf7f44xh7cnfrlsd84pc7upgh3"
 )
 
+func TestWriteJSONReplacesPermissiveMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "payrolld-private.json")
+	require.NoError(t, os.WriteFile(path, []byte("old"), 0o644))
+	require.NoError(t, os.Chmod(path, 0o644))
+
+	require.NoError(t, writeJSON(path, map[string]string{"recipient": "private"}))
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+}
+
 func TestRunOnceCompletesDurableState(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
