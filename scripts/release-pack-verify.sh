@@ -49,8 +49,6 @@ PY
 
 if [[ -z "${RELEASE_PACK_ARCHIVE:-}" ]]; then
 	"$repo_root/scripts/release-pack.sh" >/dev/null
-elif [[ ! -f "$archive_path" || ! -f "$checksum_path" ]]; then
-	"$repo_root/scripts/release-pack.sh" >/dev/null
 fi
 
 [[ -f "$archive_path" ]] || fail "missing archive: $archive_path"
