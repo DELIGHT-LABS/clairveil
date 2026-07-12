@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
+	privacywithdraw "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/withdraw"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -182,7 +183,7 @@ func TestHTTPHandlerRejectsExpiredTransferBeforeProving(t *testing.T) {
 	errorResponse, err := DecodeErrorResponseJSON(recorder.Body.Bytes())
 	require.NoError(t, err)
 	require.Equal(t, ErrorCodeInvalidRequest, errorResponse.Code)
-	require.Contains(t, errorResponse.Message, "expired")
+	require.Equal(t, "transfer proof request validation failed", errorResponse.Message)
 }
 
 func TestHTTPHandlerAcquiresAfterFramingBeforeSemanticValidation(t *testing.T) {
@@ -300,11 +301,46 @@ func TestHTTPHandlerRejectsOversizedTransferAndWithdrawBeforeAdmission(t *testin
 	}
 }
 
-func TestHTTPHandlerBatchErrorsDoNotEchoPayload(t *testing.T) {
-	const canary = "secret-batch-witness-canary"
-	handler := NewHTTPHandlerWithBatchAdmission(nil, nil, &countingBatchTransferProver{}, nil, &recordingAdmission{})
+func TestHTTPHandlerDecodeErrorsDoNotEchoPayload(t *testing.T) {
+	const canary = "secret-witness-canary"
+	tests := []struct {
+		name    string
+		path    string
+		body    string
+		handler *HTTPHandler
+	}{
+		{name: "batch", path: BatchTransferProofPath, body: `{"version":"v1","payload":{},"secret":"` + canary + `"}`, handler: NewHTTPHandlerWithBatchAdmission(nil, nil, &countingBatchTransferProver{}, nil, &recordingAdmission{})},
+		{name: "transfer", path: TransferProofPath, body: `{"version":"v2","payload":{},"secret":"` + canary + `"}`, handler: NewHTTPHandler(&countingTransferProver{}, nil, nil)},
+		{name: "withdraw", path: WithdrawProofPath, body: `{"version":"v2","payload":{},"secret":"` + canary + `"}`, handler: NewHTTPHandler(nil, &countingWithdrawProver{}, nil)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			httpRequest := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(tt.body))
+			tt.handler.ServeHTTP(recorder, httpRequest)
+
+			require.Equal(t, http.StatusBadRequest, recorder.Code)
+			require.NotContains(t, recorder.Body.String(), canary)
+			errorResponse, err := DecodeErrorResponseJSON(recorder.Body.Bytes())
+			require.NoError(t, err)
+			require.Equal(t, ErrorCodeInvalidRequest, errorResponse.Code)
+		})
+	}
+}
+
+func TestHTTPHandlerValidationErrorsDoNotEchoPrivateWitness(t *testing.T) {
+	const canary = "secret-asset-denom-canary"
+	now := time.Now()
+	payload, _, _ := testPreparedWithdrawProverPayload(t, now)
+	payload.AssetDenom = canary
+	payload.PayloadHash = privacywithdraw.ComputePreparedWithdrawProverPayloadHash(payload)
+	request := WithdrawProofRequest{Version: WithdrawProofRequestVersion, Payload: payload}
+	requestBody, err := request.MarshalIndentedJSON()
+	require.NoError(t, err)
+
+	handler := NewHTTPHandler(nil, &countingWithdrawProver{}, func() time.Time { return now })
 	recorder := httptest.NewRecorder()
-	httpRequest := httptest.NewRequest(http.MethodPost, BatchTransferProofPath, strings.NewReader(`{"version":"v1","payload":{},"secret":"`+canary+`"}`))
+	httpRequest := httptest.NewRequest(http.MethodPost, WithdrawProofPath, bytesReader(requestBody))
 	handler.ServeHTTP(recorder, httpRequest)
 
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
@@ -312,6 +348,130 @@ func TestHTTPHandlerBatchErrorsDoNotEchoPayload(t *testing.T) {
 	errorResponse, err := DecodeErrorResponseJSON(recorder.Body.Bytes())
 	require.NoError(t, err)
 	require.Equal(t, ErrorCodeInvalidRequest, errorResponse.Code)
+	require.Equal(t, "withdraw proof request validation failed", errorResponse.Message)
+}
+
+func TestHTTPHandlerProofErrorsDoNotEchoPayload(t *testing.T) {
+	const canary = "secret-prover-error-canary"
+	now := time.Now()
+	transferPayload, _, _ := testPreparedTransferPayload(t)
+	transferRequest, err := NewTransferProofRequestAt(transferPayload, now)
+	require.NoError(t, err)
+	transferBody, err := transferRequest.MarshalIndentedJSON()
+	require.NoError(t, err)
+	withdrawPayload, _, _ := testPreparedWithdrawProverPayload(t, now)
+	withdrawRequest, err := NewWithdrawProofRequest(withdrawPayload, now)
+	require.NoError(t, err)
+	withdrawBody, err := withdrawRequest.MarshalIndentedJSON()
+	require.NoError(t, err)
+	batchPayload, _, _ := testPreparedBatchTransferPayload(t)
+	batchRequest, err := NewBatchTransferProofRequest(batchPayload)
+	require.NoError(t, err)
+	batchBody, err := batchRequest.MarshalIndentedJSON()
+	require.NoError(t, err)
+
+	tests := []struct {
+		name    string
+		path    string
+		body    []byte
+		handler *HTTPHandler
+	}{
+		{name: "batch", path: BatchTransferProofPath, body: batchBody, handler: NewHTTPHandlerWithBatchAdmission(nil, nil, &stubBatchTransferProver{err: fmt.Errorf("%s", canary)}, func() time.Time { return now }, nil)},
+		{name: "transfer", path: TransferProofPath, body: transferBody, handler: NewHTTPHandler(&stubTransferProver{err: fmt.Errorf("%s", canary)}, nil, func() time.Time { return now })},
+		{name: "withdraw", path: WithdrawProofPath, body: withdrawBody, handler: NewHTTPHandler(nil, &stubWithdrawProver{err: fmt.Errorf("%s", canary)}, func() time.Time { return now })},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			httpRequest := httptest.NewRequest(http.MethodPost, tt.path, bytesReader(tt.body))
+			tt.handler.ServeHTTP(recorder, httpRequest)
+
+			require.Equal(t, http.StatusBadRequest, recorder.Code)
+			require.NotContains(t, recorder.Body.String(), canary)
+			errorResponse, err := DecodeErrorResponseJSON(recorder.Body.Bytes())
+			require.NoError(t, err)
+			require.Equal(t, ErrorCodeProofFailed, errorResponse.Code)
+		})
+	}
+}
+
+func TestHTTPHandlerResponseValidationErrorsDoNotEchoPayload(t *testing.T) {
+	const canary = "secret-response-canary"
+	now := time.Now()
+	transferPayload, _, _ := testPreparedTransferPayload(t)
+	transferRequest, err := NewTransferProofRequestAt(transferPayload, now)
+	require.NoError(t, err)
+	transferBody, err := transferRequest.MarshalIndentedJSON()
+	require.NoError(t, err)
+	withdrawPayload, _, _ := testPreparedWithdrawProverPayload(t, now)
+	withdrawRequest, err := NewWithdrawProofRequest(withdrawPayload, now)
+	require.NoError(t, err)
+	withdrawBody, err := withdrawRequest.MarshalIndentedJSON()
+	require.NoError(t, err)
+	batchPayload, _, _ := testPreparedBatchTransferPayload(t)
+	batchRequest, err := NewBatchTransferProofRequest(batchPayload)
+	require.NoError(t, err)
+	batchBody, err := batchRequest.MarshalIndentedJSON()
+	require.NoError(t, err)
+
+	tests := []struct {
+		name    string
+		path    string
+		body    []byte
+		handler *HTTPHandler
+	}{
+		{name: "batch", path: BatchTransferProofPath, body: batchBody, handler: NewHTTPHandlerWithBatchAdmission(nil, nil, &stubBatchTransferProver{response: &BatchTransferProofResponse{Version: canary}}, func() time.Time { return now }, nil)},
+		{name: "transfer", path: TransferProofPath, body: transferBody, handler: NewHTTPHandler(&stubTransferProver{response: &TransferProofResponse{Version: canary}}, nil, func() time.Time { return now })},
+		{name: "withdraw", path: WithdrawProofPath, body: withdrawBody, handler: NewHTTPHandler(nil, &stubWithdrawProver{response: &WithdrawProofResponse{Version: canary}}, func() time.Time { return now })},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			httpRequest := httptest.NewRequest(http.MethodPost, tt.path, bytesReader(tt.body))
+			tt.handler.ServeHTTP(recorder, httpRequest)
+
+			require.Equal(t, http.StatusBadRequest, recorder.Code)
+			require.NotContains(t, recorder.Body.String(), canary)
+			errorResponse, err := DecodeErrorResponseJSON(recorder.Body.Bytes())
+			require.NoError(t, err)
+			require.Equal(t, ErrorCodeProofFailed, errorResponse.Code)
+		})
+	}
+}
+
+func TestHTTPHandlerNilProofResponsesDoNotPanic(t *testing.T) {
+	now := time.Now()
+	transferPayload, _, _ := testPreparedTransferPayload(t)
+	transferRequest, err := NewTransferProofRequestAt(transferPayload, now)
+	require.NoError(t, err)
+	transferBody, err := transferRequest.MarshalIndentedJSON()
+	require.NoError(t, err)
+	withdrawPayload, _, _ := testPreparedWithdrawProverPayload(t, now)
+	withdrawRequest, err := NewWithdrawProofRequest(withdrawPayload, now)
+	require.NoError(t, err)
+	withdrawBody, err := withdrawRequest.MarshalIndentedJSON()
+	require.NoError(t, err)
+
+	tests := []struct {
+		name    string
+		path    string
+		body    []byte
+		handler *HTTPHandler
+	}{
+		{name: "transfer", path: TransferProofPath, body: transferBody, handler: NewHTTPHandler(&stubTransferProver{}, nil, func() time.Time { return now })},
+		{name: "withdraw", path: WithdrawProofPath, body: withdrawBody, handler: NewHTTPHandler(nil, &stubWithdrawProver{}, func() time.Time { return now })},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			httpRequest := httptest.NewRequest(http.MethodPost, tt.path, bytesReader(tt.body))
+			require.NotPanics(t, func() { tt.handler.ServeHTTP(recorder, httpRequest) })
+			require.Equal(t, http.StatusInternalServerError, recorder.Code)
+			errorResponse, err := DecodeErrorResponseJSON(recorder.Body.Bytes())
+			require.NoError(t, err)
+			require.Equal(t, ErrorCodeProofFailed, errorResponse.Code)
+		})
+	}
 }
 
 func TestHTTPHandlerAdmissionRejectsBeforeTypedDecode(t *testing.T) {
@@ -587,6 +747,33 @@ func (d *countingHTTPDoer) Do(_ *http.Request) (*http.Response, error) {
 type countingWithdrawProver struct{}
 
 type countingBatchTransferProver struct{ calls int }
+
+type stubTransferProver struct {
+	response *TransferProofResponse
+	err      error
+}
+
+type stubWithdrawProver struct {
+	response *WithdrawProofResponse
+	err      error
+}
+
+type stubBatchTransferProver struct {
+	response *BatchTransferProofResponse
+	err      error
+}
+
+func (p *stubTransferProver) ProveTransfer(TransferProofRequest, time.Time) (*TransferProofResponse, error) {
+	return p.response, p.err
+}
+
+func (p *stubWithdrawProver) ProveWithdraw(WithdrawProofRequest, time.Time) (*WithdrawProofResponse, error) {
+	return p.response, p.err
+}
+
+func (p *stubBatchTransferProver) ProveBatchTransfer(BatchTransferProofRequest, time.Time) (*BatchTransferProofResponse, error) {
+	return p.response, p.err
+}
 
 func (*countingWithdrawProver) ProveWithdraw(WithdrawProofRequest, time.Time) (*WithdrawProofResponse, error) {
 	return nil, fmt.Errorf("unexpected withdraw proof request")

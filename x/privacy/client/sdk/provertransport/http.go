@@ -274,12 +274,12 @@ func (h *HTTPHandler) serveTransferProof(w http.ResponseWriter, r *http.Request)
 	}()
 	request, err := DecodeTransferProofRequestJSON(requestBytes)
 	if err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, err.Error())
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, "invalid transfer proof request")
 		return
 	}
 	currentTime := h.Now()
 	if err := ValidateTransferProofRequestAt(*request, currentTime); err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, err.Error())
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, "transfer proof request validation failed")
 		return
 	}
 
@@ -292,11 +292,15 @@ func (h *HTTPHandler) serveTransferProof(w http.ResponseWriter, r *http.Request)
 		permitReleased = true
 	}
 	if err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeProofFailed, err.Error())
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeProofFailed, "transfer proof generation failed")
+		return
+	}
+	if response == nil {
+		writeErrorResponse(w, http.StatusInternalServerError, ErrorCodeProofFailed, "transfer proof generation failed")
 		return
 	}
 	if err := ValidateTransferProofResponseAt(*request, *response, h.Now()); err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeProofFailed, err.Error())
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeProofFailed, "transfer proof response validation failed")
 		return
 	}
 
@@ -333,11 +337,11 @@ func (h *HTTPHandler) serveWithdrawProof(w http.ResponseWriter, r *http.Request)
 	}()
 	request, err := DecodeWithdrawProofRequestJSON(requestBytes)
 	if err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, err.Error())
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, "invalid withdraw proof request")
 		return
 	}
 	if err := ValidateWithdrawProofRequest(*request, h.Now()); err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, err.Error())
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, "withdraw proof request validation failed")
 		return
 	}
 
@@ -350,11 +354,15 @@ func (h *HTTPHandler) serveWithdrawProof(w http.ResponseWriter, r *http.Request)
 		permitReleased = true
 	}
 	if err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeProofFailed, err.Error())
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeProofFailed, "withdraw proof generation failed")
+		return
+	}
+	if response == nil {
+		writeErrorResponse(w, http.StatusInternalServerError, ErrorCodeProofFailed, "withdraw proof generation failed")
 		return
 	}
 	if err := ValidateWithdrawProofResponse(*request, *response, h.Now()); err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeProofFailed, err.Error())
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeProofFailed, "withdraw proof response validation failed")
 		return
 	}
 

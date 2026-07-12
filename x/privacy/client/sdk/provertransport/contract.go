@@ -341,7 +341,7 @@ func ValidateTransferProofResponseAt(request TransferProofRequest, response Tran
 
 func DecodeTransferProofRequestJSON(payloadBytes []byte) (*TransferProofRequest, error) {
 	var request TransferProofRequest
-	if err := json.Unmarshal(payloadBytes, &request); err != nil {
+	if err := decodeStrictJSON(payloadBytes, &request); err != nil {
 		return nil, fmt.Errorf("invalid transfer proof request JSON: %w", err)
 	}
 	return &request, nil
@@ -369,7 +369,7 @@ func (r TransferProofRequest) WriteJSONFile(path string) error {
 
 func DecodeTransferProofResponseJSON(payloadBytes []byte) (*TransferProofResponse, error) {
 	var response TransferProofResponse
-	if err := json.Unmarshal(payloadBytes, &response); err != nil {
+	if err := decodeStrictJSON(payloadBytes, &response); err != nil {
 		return nil, fmt.Errorf("invalid transfer proof response JSON: %w", err)
 	}
 	return &response, nil
@@ -446,7 +446,7 @@ func ValidateWithdrawProofResponse(request WithdrawProofRequest, response Withdr
 
 func DecodeWithdrawProofRequestJSON(payloadBytes []byte) (*WithdrawProofRequest, error) {
 	var request WithdrawProofRequest
-	if err := json.Unmarshal(payloadBytes, &request); err != nil {
+	if err := decodeStrictJSON(payloadBytes, &request); err != nil {
 		return nil, fmt.Errorf("invalid withdraw proof request JSON: %w", err)
 	}
 	return &request, nil
@@ -474,7 +474,7 @@ func (r WithdrawProofRequest) WriteJSONFile(path string) error {
 
 func DecodeWithdrawProofResponseJSON(payloadBytes []byte) (*WithdrawProofResponse, error) {
 	var response WithdrawProofResponse
-	if err := json.Unmarshal(payloadBytes, &response); err != nil {
+	if err := decodeStrictJSON(payloadBytes, &response); err != nil {
 		return nil, fmt.Errorf("invalid withdraw proof response JSON: %w", err)
 	}
 	return &response, nil

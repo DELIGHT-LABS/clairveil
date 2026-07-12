@@ -163,6 +163,24 @@ func TestBatchTransferProofJSONDecodeIsStrict(t *testing.T) {
 	require.ErrorContains(t, err, "duplicate JSON object key")
 }
 
+func TestTransferAndWithdrawProofJSONDecodeIsStrict(t *testing.T) {
+	tests := []struct {
+		name   string
+		decode func([]byte) error
+		body   string
+	}{
+		{name: "transfer-request", body: `{"version":"v2","payload":{},"unexpected":true}`, decode: func(bz []byte) error { _, err := DecodeTransferProofRequestJSON(bz); return err }},
+		{name: "transfer-response", body: `{"version":"v2","proof":{},"unexpected":true}`, decode: func(bz []byte) error { _, err := DecodeTransferProofResponseJSON(bz); return err }},
+		{name: "withdraw-request", body: `{"version":"v2","payload":{},"unexpected":true}`, decode: func(bz []byte) error { _, err := DecodeWithdrawProofRequestJSON(bz); return err }},
+		{name: "withdraw-response", body: `{"version":"v2","proof":{},"unexpected":true}`, decode: func(bz []byte) error { _, err := DecodeWithdrawProofResponseJSON(bz); return err }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.ErrorContains(t, tt.decode([]byte(tt.body)), "unknown field")
+		})
+	}
+}
+
 func TestProofFilesReplacePermissiveModes(t *testing.T) {
 	dir := t.TempDir()
 	writers := []struct {
