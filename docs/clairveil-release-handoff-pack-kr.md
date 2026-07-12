@@ -144,7 +144,7 @@ JS/TS SDK와 web wallet 팀은 아래를 확인합니다.
 10. Prepared transfer payload `v5`는 outer prepared-payload version으로 유지합니다. Note/disclosure encoding version이 아니므로 `privacy-fixed-v1`로 rename하면 안 됩니다.
 11. Asset ID는 `AssetRegistryV1`으로 resolve하고 전체 `privacy-scan-v2` cursor를 저장합니다. Wrong event type, fixed-envelope kind, digest, key, sentinel, orphan/non-adjacent output이 있는 typed scan record는 거부합니다. Same-root path snapshot을 사용하고 remote historical-root/path query의 privacy leak과 rebuild cap을 고려합니다.
 12. External ClairveilJS package는 이 handoff 시점에 아직 legacy입니다. Downstream upgrade 전까지 새 fixed fixture를 fail closed로 거부하는 것이 안전한 동작이며 old format으로 조용히 decode하는 것은 금지합니다.
-13. Session 3A는 public `MsgBatchTransfer` Go SDK, wallet scanner/decrypt UX, one-proof payroll workflow, batch CLI/tutorial을 제공하지 않습니다. 기존 multi-message `transfer-batch` flow를 암묵적으로 바꾸지 말고 명시적인 Session 3B integration으로 계획합니다.
+13. Session 3A가 의도적으로 제외했던 public `MsgBatchTransfer` Go SDK, wallet scanner/decrypt path, one-proof payroll workflow, batch CLI/tutorial은 Session 3B에서 제공됩니다. 이 frozen reference contract를 downstream JS/TS와 web product에 명시적으로 port합니다. Legacy multi-message `transfer-batch` flow를 암묵적 compatibility layer로 취급하거나 Go reference 구현을 production deployment 완료와 혼동하면 안 됩니다.
 
 ## 6. Prover 운영 팀 수령 기준
 
@@ -172,7 +172,7 @@ Prover 운영 팀은 아래를 확인합니다.
 | Wallet local storage | reference CLI는 `0600` plaintext JSON을 사용 | web wallet/production wallet은 encrypted storage와 telemetry redaction을 구현합니다. |
 | Remote prover metadata exposure | remote prover는 proof input metadata를 볼 수 있음 | user privacy UX와 deployment threat model에 remote prover를 trusted component로 포함합니다. |
 | ZK artifact provenance | repo는 checksum/preflight tooling을 제공하지만 ceremony/release signing 정책은 downstream responsibility | production release에서는 artifact signing, provenance, reproducibility policy를 별도로 둡니다. |
-| Session 3A batch boundary | Circuit, `MsgBatchTransfer`, keeper, deterministic gas, typed scan/minimal event, genesis, development artifact readiness는 구현됐지만 public SDK/prover route/wallet/payroll/CLI, formal setup, production artifact delivery는 없음 | Frozen proto/identity로 chain core만 통합하고 user-facing surface는 Session 3B, artifact release는 별도 security gate로 계획합니다. |
+| Session 3A/3B batch boundary | Circuit, `MsgBatchTransfer`, keeper, deterministic gas, typed scan/minimal event, genesis와 Session 3B Go SDK/prover/scanner/payroll/CLI reference surface는 구현됐지만 external JS/web product delivery, formal setup, production artifact delivery는 없음 | Frozen proto/identity와 Go reference contract에 맞춰 통합하고 downstream product 작업과 production artifact release는 별도 production gate로 추적합니다. |
 | External ClairveilJS compatibility | External package는 아직 legacy note/disclosure representation에 기반하며 `privacy-fixed-v1`을 구현하지 않음 | 새 fixture는 fail closed하고 downstream을 명시적으로 upgrade하며 compatibility fallback을 추가하지 않습니다. Prepared transfer payload `v5`는 별도의 outer version으로 계속 유효합니다. |
 | Prover cancellation boundary | Request cancellation은 이미 실행 중인 in-process solver를 preempt하지 못하며 반환할 때까지 permit과 memory를 사용할 수 있음 | Admission을 `1`/`4`, request를 positive `8 MiB`로 제한하고 hard cancellation/OOM containment에는 supervised worker-process isolation을 사용합니다. |
 | Historical path rebuild boundary | Current-root path는 incremental node를 사용합니다. Public non-current query는 complete root/count/height metadata를 요구하고 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하며 그 이상은 `ResourceExhausted`를 반환합니다. Offline recovery/export는 `MaxMerkleRebuildLeaves`(1,048,576)를 유지합니다. | Online bound를 넘으면 current root로 spend하거나 trusted local historical-path index를 사용합니다. Large-tree genesis export를 유지하도록 complete snapshot metadata index를 보존합니다. |
@@ -189,6 +189,6 @@ Release handoff는 아래를 만족하면 완료로 봅니다.
 6. Prover 운영 팀이 remote/local prover production profile을 선택했습니다.
 7. Security/operations 팀이 accepted vulnerability, audit key custody, ZK artifact provenance를 risk register에 올렸습니다.
 8. 모든 팀이 fresh-genesis `privacy-note-v1` / `privacy-fixed-v1` compatibility break를 수용하고 independent Session 2 fixture 2개를 검증했으며 `batch-joinsplit-16x32-v1`을 네 번째 required production chain-core circuit으로 기록했습니다.
-9. 모든 팀이 Session 3B user-facing batch surface, formal trusted setup, production artifact distribution이 미완료임을 기록했습니다.
+9. 모든 팀이 Session 3B Go reference user-facing batch surface는 구현됐고 downstream JS/web product delivery, formal trusted setup, production artifact distribution은 미완료임을 기록했습니다.
 
 이 문서는 release package를 대신하는 압축 파일이 아닙니다. 대신 release commit을 넘겨받는 팀들이 같은 commit, 같은 fixture, 같은 schema, 같은 verification command를 기준으로 통합을 시작하게 만드는 handoff index입니다.
