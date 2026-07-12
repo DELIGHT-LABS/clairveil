@@ -859,15 +859,17 @@ feasibility report에는 hardware/OS/Go/gnark, warm/cold, sample 수를 기록�
   - `a8697cd`: current-vs-hardened 2x2 control/feasibility circuit과 opt-in resource gate.
   - `a4ee959`: prepared/native typed error mapping과 exact canonicalization/relations conformance assertion 보강.
   - `4e75f1f`: 한영 normative circuit/SDK/security/testing/schema/traceability 문서 동결.
+  - `4e90223`: Session 2 re-entry Completion Record, Master Ledger, Session 3A handoff, Session 4 `BLOCKED` supplement 정렬.
 - frozen contract: `DISCLOSURE-BLINDING-SEPARATION` V1의 `DBS-01..03`과 enabled non-all-private, enabled all-private, disabled Batch slot의 exact sentinel/gating은 §1.1이 authoritative하다. JoinSplit2x2는 output `0`만 적용하고 output `1`을 disabled slot으로 취급하지 않는다.
 - 공유 contract: circuit/native/prepared/structured-signer는 동일한 relation과 stable secret-free `DBS_*` code를 사용해야 한다. Foundation code는 native/prepared/SDK/conformance를 구현했다. Production circuit과 독립 structured signer enforcement는 Session 3A implementation pending이다. Batch structured signer `G3B-04`는 별도 finding이며 변경하지 않았다.
 - fixture/negative evidence: `privacy_disclosure_blinding_v1_contract.json`이 canonical/non-canonical, all-private/disabled sentinel, zero requirement, `DBS-01..03` 실패를 code와 함께 고정한다. Prepared validator와 current-vs-hardened circuit test가 각 relevant negative를 거부/대조한다.
 - interface/version 영향: public input/순서, NoteV1, canonical payload/envelope, disclosure digest/domain, protobuf, transfer payload `v5`, proof/HTTP `v2`, manifest `v2`, identity `v1`, circuit set `privacy-note-v1`은 변경하지 않는다. JoinSplit R1CS/PK/VK와 manifest/consensus JoinSplit identity만 Session 3A에서 교체한다. Batch artifact delta는 없다.
 - feasibility/resource: current `99,765` constraints, test-only target `99,775`(`+10`); R1CS `+253 B`, PK `+912 B`, VK/proof size 변화 없음, peak RSS `690,438,144 B`, OOM 없음. Single cold timing은 feasibility sample이며 성능 개선 claim이 아니다. Batch production source는 unchanged `1,111,837` constraints다.
-- 검증: targeted native/prepared/conformance tests, 전체 circuit package, opt-in 2x2 resource gate가 통과했다. 최종 관련 full-suite 명령과 clean-worktree 확인은 이 record/ledger commit 직전 재실행 결과를 따른다.
+- 검증: targeted native/prepared/conformance tests와 전체 circuit package가 통과했다. Closure에서 `go test ./x/privacy/... -count=1`, `go vet ./x/privacy/...`, `make examples`, `git diff --check`가 모두 통과했다. Opt-in resource gate를 두 번째 실행해 constraint/artifact byte delta가 정확히 재현됐고 두 cold run peak RSS는 `690,438,144 B`, `690,536,448 B`였으며 OOM은 없었다. Session 3B live E2E/release publication gate는 이 범위에서 실행하지 않았다.
 - 영향 파일: `x/privacy/types/disclosure_blinding.go`, transfer prepared/generator 경로, disclosure conformance fixture/test, test-only 2x2 feasibility file, 한영 normative circuit/SDK/security/testing/schema 문서, 이 Session 2 record와 Master Ledger/Session 3A/Session 4 status record. Production `x/privacy/circuit/joinsplit.go`, tracked R1CS/PK/VK, MsgBatchTransfer/keeper, Session 3B signer/payroll/live E2E는 변경하지 않았다.
 - Session 3A re-entry: **UNBLOCKED FOR `S4-B02` IMPLEMENTATION / NOT STARTED**. Exact target을 구현하고 JoinSplit artifact identity를 교체할 수 있지만 이 세션에서는 시작하지 않았다.
 - disposition: `S4-B02`는 **IMPLEMENTATION PENDING**, **NOT RESOLVED**. Production circuit/artifact replacement와 해당 regression/identity/resource gate가 끝날 때까지 Gate 1, Gate 4, publication은 `BLOCKED`다.
+- worktree: Completion Record/Ledger closure commit 뒤 `git status --short --branch` clean을 확인하며 generated production R1CS/PK/VK와 secret은 만들거나 track하지 않는다.
 
 ### Historical Session 2 Completion
 
