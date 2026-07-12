@@ -480,6 +480,7 @@ finding이 없으면 억지 refactor를 만들지 않음. finding 수정 후 관
 
 - review scope: `e427370..d45f0753c16571743f630599776c9cd498d1e8c9`
 - 시작 HEAD: `d45f0753c16571743f630599776c9cd498d1e8c9`
+- immutable BLOCKED validation/report commit: `773e97d5dac68c485479cfe8de40c1d002cb5240` (이후 commit은 exact SHA를 ledger에 고정하는 bookkeeping만 수행함)
 - reviewer role: Session 1~3B 구현에 참여하지 않은 fresh reviewer. 여섯 계획과 모든 Completion Record/Master Gate 3B를 처음부터 끝까지 읽고 code/runner/test에서 protocol과 integration boundary를 독립 재구성함.
 - edit ordering: 아래 finding을 severity·근거·영향과 함께 확정해 사용자에게 보고하기 전 파일을 수정하지 않았음.
 - Gate 3B status: **FAIL / Session 3B integration-test 재진입 필요.** Gate 3B가 닫히지 않았으므로 Session 4 Pass A~I는 시작하지 않았고 기존 pass/benchmark/localnet/release 결과를 현재 publication evidence로 재승인하지 않음.

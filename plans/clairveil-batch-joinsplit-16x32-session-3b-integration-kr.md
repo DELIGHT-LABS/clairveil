@@ -462,6 +462,7 @@ Go reference와 conformance fixture는 repo에 있으나, 2026-07-12 재검증�
 
 - 현재 상태: **BLOCKED — Gate 3B FAIL.** 아래의 과거 PASS claim은 이 재검증 record에 의해 supersede됨.
 - review scope: `e427370..d45f0753c16571743f630599776c9cd498d1e8c9`.
+- BLOCKED validation record commit: `773e97d5dac68c485479cfe8de40c1d002cb5240`.
 - fresh reviewer가 Master Roadmap과 Session 1~4 문서를 전부 읽고 code/runner/test에서 실제 경계를 재구성했으며, finding을 확정하기 전에는 파일을 수정하지 않았음.
 - **High G3B-01:** `privacy-batch-joinsplit-localnet.sh`는 one-proof CLI shape만 실행하고 payroll operation graph, `BatchProofWorker`, `IdempotentBatchBroadcastWorker`, `BatchReconcileWorker`, item evidence/report를 연결하지 않음. `reference-payroll-live-localnet.sh`는 legacy multi-message 2x2 `transfer-batch` 경로이므로 one-proof batch payroll E2E 증거가 아님.
 - **High G3B-02:** localnet은 mixed disclosure/self-view 옵션을 생성하지만 recipient/auditor/self-view plaintext를 복호화해 blinding 기반 digest를 재계산하지 않으며, expected output count/commitment와 view-tag mismatch safe scan을 assert하지 않음.
