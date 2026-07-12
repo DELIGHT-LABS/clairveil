@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | **BLOCKED** (Gate 3B FAIL; `S4-B02` foundation frozen/implementation pending; publication 승인 철회) |
+| 상태 | **BLOCKED** (Gate 3B FAIL 및 `S4-B01`; `S4-B02` implementation resolved, Gate 1/2/3A fresh 독립 재검토 필요; publication 승인 철회) |
 | 선행 문서 | [Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md), Session 1~3B 계획과 completion record |
 | 권장 모델 | `gpt-5.6-sol` |
 | 권장 effort | `ultra` |
@@ -478,7 +478,16 @@ finding이 없으면 억지 refactor를 만들지 않음. finding 수정 후 관
 
 ## 22. Completion Record — 2026-07-12 Independent Revalidation
 
-### `S4-B02` Session 2 Foundation Re-entry Supplement
+### `S4-B02` Session 3A Implementation Supplement
+
+- clean 기준 HEAD `0fc818c`에서 latest Master Ledger와 Session 2 `2026-07-12 S4-B02 Foundation Re-entry`를 authoritative source로 사용했다. Historical publication-ready record는 현재 evidence로 사용하지 않았다.
+- `0b7d97d`, `630736f`, `25c17ef`에서 frozen `DISCLOSURE-BLINDING-SEPARATION` V1을 production `JoinSplitCircuit`, shared native/prepared validator, signature-release 전 structured 2x2 boundary와 JoinSplit artifact identity에 구현했다.
+- Production `99,775` constraints는 foundation target(`99,765 + 10`)과 exact 일치해 decision change가 없다. Public input 13개/schema hash, NoteV1, payload `v5`, proof/HTTP `v2`, disclosure digest/domain, circuit-set ID `privacy-note-v1`은 unchanged다.
+- 새 development JoinSplit R1CS/PK/VK SHA-256은 `135528343084d9395ac3b59f87eb32661471751d936424c6aa3bc369483292d4`, `b41790cd96c41b78d7f7ca30f81cb76f4bdb93371bbf0b9437642348306c16d7`, `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`다. VK hash가 consensus JoinSplit identity이며 Batch source/artifact와 나머지 9개 artifact는 unchanged다.
+- Old/new proof 및 consensus/file mismatch, fresh genesis/reset, strict preflight, 전체 2x2 regression, JoinSplit resource gate와 full Batch `1,111,837` constraint comparison을 통과했다. Formal trusted setup은 수행하지 않았고 generated binary/secret은 tracked하지 않았다.
+- `S4-B02` implementation은 **RESOLVED**다. Current unresolved count는 Critical 0, High 2, security-relevant Medium 3이다. Gate 1/2/3A는 fresh 독립 재검토가 필요하고 Gate 3B/Session 4 Pass A~I는 재개하지 않았다. Publication은 계속 `BLOCKED`이며 Session 3B 작업은 시작하지 않았다.
+
+### Historical `S4-B02` Session 2 Foundation Re-entry Supplement
 
 - 기준 HEAD/ordering: clean `42d40bd19523e263aaf1c2043bcd274a4fc1a51d`에서 Session 2 re-entry를 수행했다. 이 `BLOCKED` Completion Record와 최신 Master Ledger를 authoritative source로 사용하고 historical publication-ready record는 현재 evidence로 사용하지 않았다.
 - `S4-B03`: `02f61f3746b67d5244c160b7c0e0e42f7c0b78b8`, `42d40bd19523e263aaf1c2043bcd274a4fc1a51d`에서 **RESOLVED** 상태를 유지한다.
@@ -501,14 +510,14 @@ finding이 없으면 억지 refactor를 만들지 않음. finding 수정 후 관
 - **Security-relevant Medium G3B-03:** SQL many-to-many implementation은 실제 SQLite/PostgreSQL CRUD, transaction rollback, restart, lease/CAS로 실행 검증되지 않음.
 - **Security-relevant Medium G3B-04:** batch structured signer validator가 final prepared validator의 input/output 및 output 간 global secret-reuse 검사를 서명 전에 수행하지 않음.
 - **Security-relevant Medium S4-B01:** default no-failover/explicit opt-in 단위 테스트는 있지만 timeout/healthy endpoint 실제 접촉 횟수를 검증하는 localnet evidence가 없음.
-- **Security-relevant Medium S4-B02 — initial finding:** foundation contract는 위 supplement에서 동결했으나 production R1CS/VK 변경이 남아 implementation pending임.
+- **Security-relevant Medium S4-B02 — initial finding, now RESOLVED:** production relation/pre-sign/artifact identity 구현은 위 Session 3A supplement의 `0b7d97d`, `630736f`, `25c17ef`에서 완료됨.
 - **Security-relevant assurance Medium S4-B03 — initial finding, now RESOLVED:** exact exploit-shaped regression과 원인 분리 control은 `02f61f3`, closure record는 `42d40bd`에서 완료됨.
 - fixes in this session: implementation/protocol 수정 없음. Gate ordering을 지키기 위해 Master Ledger, Session 1/2/3A/3B/4 Completion 상태와 한영 보고서의 false-ready 또는 re-entry 상태를 `BLOCKED` 기준으로 정정함.
 - 보조 검증 결과: production helper를 재사용하지 않는 `TestPrivacyNoteV1ContractIndependentGolden`, `TestPrivacyBatchJoinSplitV1ContractIndependentGolden` PASS. Payroll default no-failover/explicit opt-in, durable reconcile, permit lifetime, memory/file store test PASS. SQL test는 schema 문자열만 다루므로 blocker를 닫지 못함.
 - artifact/hygiene: `/tmp/clairveil-session3a-artifacts-381c984`의 batch R1CS/PK/VK size와 SHA-256은 historical record와 일치함. tracked R1CS/PK/VK, `dist/`, `benchmarks/`, `tmp/`, 개인 absolute path, 명백한 secret은 발견되지 않음. `benchmarks/`, `dist/`, `tmp/`, `tmpdocs/`, local binary와 dependency output은 ignored/untracked이며 publication evidence로 취급하지 않음.
 - benchmark/localnet: fresh Session 4 benchmark와 localnet은 **NOT RUN**. Gate 3B failure 뒤 실행하면 Pass A~I를 시작한 것처럼 오해될 수 있어 중단함. 아래 historical 수치는 현재 gate evidence로 승인하지 않음.
-- full regression/race/fuzz/release: **NOT RUN**. Gate 3B 및 Session 2/3A re-entry blocker가 닫힌 뒤 관련 Pass와 전체 suite를 처음부터 재실행해야 함.
-- initial unresolved findings: Critical 0, High 2, security-relevant Medium 5. 위 supplement 이후 current count는 S4-B03 closure를 반영해 Critical 0, High 2, security-relevant Medium 4이며 accepted residual 전환은 없음.
+- full Session 4 regression/race/fuzz/release: **NOT RUN**. Session 3A는 자기 범위의 targeted/full 2x2 regression, artifact/resource/release 검증만 수행했으며 이를 Pass A~I 재개로 취급하지 않음.
+- initial unresolved findings: Critical 0, High 2, security-relevant Medium 5. S4-B03과 S4-B02 implementation closure를 반영한 current count는 Critical 0, High 2, security-relevant Medium 3이며 accepted residual 전환은 없음.
 - existing Production TODO: formal setup/audit/source freeze, artifact provenance, production chain/prover/auditor/downstream 운영, metadata leakage acceptance, in-process RSS, dependency advisories는 그대로 production-blocking 또는 재평가 대상으로 유지함. 이 TODO가 active blocker를 대체하지 않음.
 - formal setup: `NOT PERFORMED`; external audit: `NOT PERFORMED`; production status: `NOT PRODUCTION-READY`, `NOT AUDITED`.
 - publication status: **`BLOCKED`**. `PUBLICATION_READY_EXPERIMENTAL` 선언 불가.

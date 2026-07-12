@@ -181,7 +181,7 @@ The `TransferIntentV2` public-input order is consensus-critical:
 9. Audit/self-view full disclosure uses a non-zero blinding and is bound into `FullDisclosureDigest`.
 10. Ordered nullifiers, commitments, ciphertexts, view tags, all disclosure envelopes, and expiry are finalized before signing and are bound through the canonical payload digest. `creator`, proof bytes, fee, gas, memo, sequence, and tx signature are excluded so a relayer may replace only `creator`.
 
-`S4-B02` freezes the additional `DISCLOSURE-BLINDING-SEPARATION` target for recipient output `0`: enabled user blinding must differ from `OutputRandomness[0]`; full blinding must differ from `OutputRandomness[0]`; and full blinding must differ from user blinding. Policy `all-private` canonicalizes user blinding to zero and gates off only the first relation. JoinSplit2x2 has no disabled output slot, and output `1` is an active change note without a disclosure witness. The shared native/prepared validator and test-only feasibility circuit enforce/model this target, but the production `JoinSplitCircuit` still lacks these assertions. `S4-B02` therefore remains implementation pending until Session 3A changes the R1CS/VK.
+`S4-B02` freezes the additional `DISCLOSURE-BLINDING-SEPARATION` invariant for recipient output `0`: enabled user blinding differs from `OutputRandomness[0]`; full blinding differs from `OutputRandomness[0]`; and full blinding differs from user blinding. Policy `all-private` canonicalizes user blinding to zero and gates off only the first relation. JoinSplit2x2 has no disabled output slot, and output `1` is an active change note without a disclosure witness. The production `JoinSplitCircuit`, shared native/prepared validator, and structured pre-sign boundary now enforce this exact contract at `99,775` constraints. `S4-B02` implementation is resolved; fresh independent Gate 1/2/3A review remains required.
 
 Transfer view tags are not separate `JoinSplitCircuit` public inputs. They are ordered public scan hints carried by `MsgTransfer` and events and are included in the canonical payload digest, but must still not be treated as note-ownership signals.
 
@@ -244,6 +244,12 @@ go build -o clairveil-setup ./cmd/clairveil-setup
 ./clairveil-setup --out artifacts/privacy
 ```
 
+To rotate only JoinSplit in an already complete development artifact set:
+
+```bash
+./clairveil-setup --out artifacts/privacy --circuit joinsplit --overwrite
+```
+
 Runtime uses:
 
 ```bash
@@ -267,7 +273,7 @@ The Session 3A development artifact gate recorded the following reproducible loc
 
 The setup generated here is development-only. The repository does not perform or claim a formal trusted setup, artifact signing ceremony, production artifact release, or external audit.
 
-For the `S4-B02` Session 3A re-entry, the active circuit-set string remains `privacy-note-v1`, the JoinSplit 13-input order/schema hash remains `4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82`, and payload `v5` plus proof/HTTP `v2` remain unchanged. Only JoinSplit's accepted witness set changes. Regenerate `privacy_joinsplit_{r1cs,pk,vk}.bin`, replace the manifest checksums and consensus JoinSplit VK digest, invalidate old proof jobs, and use the predeployment fresh-genesis/reset path. Do not rotate the Batch artifact for this finding. The Session 2 test-only target is `99,775` constraints versus current production `99,765`; production artifacts are not generated in Session 2.
+The `S4-B02` Session 3A implementation keeps circuit set `privacy-note-v1`, the JoinSplit 13-input order/schema hash `4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82`, payload `v5`, and proof/HTTP `v2` unchanged. It rotates only `privacy_joinsplit_{r1cs,pk,vk}.bin`; their development SHA-256 values are respectively `135528343084d9395ac3b59f87eb32661471751d936424c6aa3bc369483292d4`, `b41790cd96c41b78d7f7ca30f81cb76f4bdb93371bbf0b9437642348306c16d7`, and `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`. Discard old JoinSplit proof jobs and use fresh genesis/reset. Batch artifacts remain unchanged.
 
 ## 7. Reserve Accounting Query
 

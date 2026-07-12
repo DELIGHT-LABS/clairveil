@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | Complete historical Gate 2; **S4-B02 foundation re-entry complete, Session 3A implementation pending** (2026-07-12) |
+| 상태 | Complete historical Gate 2; **S4-B02 foundation 및 Session 3A implementation complete / fresh Gate 2 독립 재검토 필요** (2026-07-12) |
 | 선행 문서 | [Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md), [Session 1](clairveil-batch-joinsplit-16x32-session-1-security-remediation-kr.md) |
 | 후속 세션 | [Session 3A Core Implementation](clairveil-batch-joinsplit-16x32-session-3-implementation-kr.md) |
 | 권장 모델 | `gpt-5.6-sol` |
@@ -53,11 +53,11 @@ DBS-03: enabled[i]      => full_disclosure_blinding[i] != user_disclosure_blindi
 - disabled Batch capacity slot: policy, output randomness, user blinding, full blinding을 모두 zero로 canonicalize하고 `DBS-01..03`을 모두 gate off한다.
 - JoinSplit2x2에는 disabled output slot이 없다. Disclosure witness는 recipient output `0`에만 대응하며 output `1`은 disclosure witness가 없는 active change note다. BatchJoinSplit16x32는 같은 의미를 32개 slot에 독립 적용해 gated inequality site 96개를 이미 가진다. Cross-output/input/transaction global freshness는 이 세 relation보다 강한 별도 SDK 정책이다.
 
-공유 enforcement/error contract는 circuit, `ValidateDisclosureBlindingSeparationV1`, prepared validator, signature release 전 structured signer에 적용한다. Stable secret-free code는 `DBS_INVALID_POLICY`, `DBS_NON_CANONICAL_FIELD`, `DBS_DISABLED_SENTINEL`, `DBS_ALL_PRIVATE_USER_SENTINEL`, `DBS_USER_BLINDING_REQUIRED`, `DBS_FULL_BLINDING_REQUIRED`, `DBS_USER_RANDOMNESS_REUSE`, `DBS_FULL_RANDOMNESS_REUSE`, `DBS_USER_FULL_BLINDING_REUSE`다. 현재 opaque 2x2 `SignOwnerIntent(*big.Int)`는 독립 검사에 필요한 구조를 전달하지 않으므로 Session 3A가 structured request를 도입하거나 검증된 trusted builder 안에 signing을 유지해야 한다. 어느 host 검증도 production circuit constraint를 대체하지 않는다.
+공유 enforcement/error contract는 circuit, `ValidateDisclosureBlindingSeparationV1`, prepared validator, signature release 전 structured signer에 적용한다. Stable secret-free code는 `DBS_INVALID_POLICY`, `DBS_NON_CANONICAL_FIELD`, `DBS_DISABLED_SENTINEL`, `DBS_ALL_PRIVATE_USER_SENTINEL`, `DBS_USER_BLINDING_REQUIRED`, `DBS_FULL_BLINDING_REQUIRED`, `DBS_USER_RANDOMNESS_REUSE`, `DBS_FULL_RANDOMNESS_REUSE`, `DBS_USER_FULL_BLINDING_REUSE`다. Session 3A는 opaque 2x2 signer를 `JoinSplitOwnerIntentSigningRequestV1` 기반 structured request로 교체하고 callback 전에 같은 semantic validator를 실행했다. 어느 host 검증도 production circuit constraint를 대체하지 않는다.
 
 Public input 순서, 13-input schema SHA-256 `4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82`, NoteV1, payload encoding/version, disclosure digest/domain, circuit-set ID `privacy-note-v1`, manifest/identity schema는 변경하지 않는다. Session 3A는 JoinSplit accepted witness set 변경으로 `privacy_joinsplit_{r1cs,pk,vk}.bin`, manifest checksum, consensus JoinSplit `verifying_key_sha256`만 교체하고 old JoinSplit proof/job을 폐기하며 exact readiness와 fresh-genesis/reset을 다시 수행한다. Batch source/artifact는 이 finding 때문에 바꾸지 않는다.
 
-Test-only hardened circuit의 exact target은 current production `99,765` 대비 `99,775` constraints(`+10`, 약 `0.0100%`)다. Cold development sample에서 R1CS `10,823,916 -> 10,824,169 B`, PK `16,765,577 -> 16,766,489 B`, VK `748 -> 748 B`, proof `164 -> 164 B`, peak RSS `690,438,144 B`였고 OOM은 없었다. Production circuit/artifact는 생성하거나 수정하지 않았다. Session 3A는 이 target을 재현하거나 decision change를 기록하고 old 2x2 baseline을 쓰는 full batch resource gate를 다시 실행해야 한다.
+Foundation 시점 test-only hardened circuit의 exact target은 당시 production `99,765` 대비 `99,775` constraints(`+10`, 약 `0.0100%`)였다. Cold development sample에서 R1CS `10,823,916 -> 10,824,169 B`, PK `16,765,577 -> 16,766,489 B`, VK `748 -> 748 B`, proof `164 -> 164 B`, peak RSS `690,438,144 B`였고 OOM은 없었다. Session 3A는 production `99,775`를 exact 재현하고 full Batch gate를 unchanged `1,111,837` constraints로 다시 실행했으므로 decision change는 없다.
 
 ## 2. 목적과 순서
 
@@ -844,11 +844,20 @@ feasibility report에는 hardware/OS/Go/gnark, warm/cold, sample 수를 기록�
 - [x] master ledger가 갱신됨.
 - [x] `S4-B02` re-entry가 `DBS-01..03`, all-private/disabled gating, shared error/layer contract, negative fixture를 TBD 없이 동결함.
 - [x] 2x2 hardened feasibility target과 JoinSplit-only artifact identity 갱신 범위를 재현 가능하게 기록함.
-- [ ] production `JoinSplitCircuit`/R1CS/VK가 frozen invariant를 강제함. Session 3A 범위이며 이 항목이 완료될 때까지 `S4-B02`는 implementation pending임.
+- [x] production `JoinSplitCircuit`/R1CS/VK와 structured pre-sign boundary가 frozen invariant를 강제함. Session 3A `0b7d97d`, `630736f`, `25c17ef`에서 target/identity/readiness/resource gate를 완료함.
 
 ## 21. Session 3A Handoff
 
 ## Completion Record
+
+### 2026-07-12 `S4-B02` Session 3A Implementation Supplement
+
+- Session 2의 `2026-07-12 S4-B02 Foundation Re-entry`를 authoritative contract로 사용했고 `DBS-01..03`, all-private/disabled gating, stable `DBS_*` code, public input/NoteV1/payload/disclosure/circuit-set 계약을 변경하지 않았다.
+- 기준 HEAD `0fc818c`; production relation commit `0b7d97d`, structured 2x2 pre-sign commit `630736f`, JoinSplit-only artifact rotation commit `25c17ef`.
+- Production count는 historical control `99,765` 대비 `99,775`(`+10`)로 frozen target과 exact 일치해 decision change가 없다. Current control acceptance와 각 hardened rejection은 완전한 digest/signature를 재계산한 production regression으로 원인 분리했다.
+- 새 development JoinSplit R1CS/PK/VK SHA-256은 각각 `135528343084d9395ac3b59f87eb32661471751d936424c6aa3bc369483292d4`, `b41790cd96c41b78d7f7ca30f81cb76f4bdb93371bbf0b9437642348306c16d7`, `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`이며 VK hash가 consensus JoinSplit identity다. `gnark v0.14.0`, Groth16/BN254 development setup에서 `clairveil-setup -circuit joinsplit -overwrite`로 생성했다.
+- Non-JoinSplit 9개 artifact와 Batch source/artifact는 byte-identical하다. Old/new proof와 consensus/file mismatch, fresh genesis/reset, strict preflight, 2x2 regression 및 full Batch `1,111,837` constraint resource gate가 통과했다. Formal trusted setup은 수행하지 않았고 binary/secret은 tracked하지 않았다.
+- 처분: `S4-B02` implementation **RESOLVED**. Foundation decision은 그대로이며 Gate 1/2/3A는 fresh 독립 재검토가 필요하다. Gate 3B와 Session 4는 재개하지 않았고 Session 3B 작업도 시작하지 않았다.
 
 ### 2026-07-12 `S4-B02` Foundation Re-entry
 

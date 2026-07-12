@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | Complete historical Gate 3A; **S4-B02 re-entry UNBLOCKED / NOT STARTED** (2026-07-12) |
+| 상태 | Complete historical Gate 3A; **S4-B02 implementation RESOLVED / fresh Gate 3A 독립 재검토 필요** (2026-07-12) |
 | 선행 문서 | [Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md), [Session 2](clairveil-batch-joinsplit-16x32-session-2-foundation-kr.md) |
 | 후속 세션 | [Session 3B Integration](clairveil-batch-joinsplit-16x32-session-3b-integration-kr.md) |
 | 권장 모델 | `gpt-5.6-sol` |
@@ -34,7 +34,7 @@ Session 2 normative contract를 바꿔야만 구현 가능한 문제가 나오�
 
 ### 1.1 `S4-B02` Session 3A 재진입 Gate
 
-Session 2 re-entry는 `DISCLOSURE-BLINDING-SEPARATION` V1을 TBD 없이 동결했으므로 `S4-B02` 구현 재진입은 **UNBLOCKED**다. 이 계획 갱신은 handoff만 기록하며 production 구현은 시작하지 않는다.
+Session 2 re-entry는 `DISCLOSURE-BLINDING-SEPARATION` V1을 TBD 없이 동결했고, 기준 HEAD `0fc818c`에서 해당 계약의 Session 3A production 구현을 완료했다. Frozen interface와 target을 바꾸는 decision change는 없었다.
 
 - JoinSplit2x2 recipient output `0`에 `DBS-01`(`policy != 0 => user != output randomness`), `DBS-02`(`full != output randomness`), `DBS-03`(`full != user`)을 추가한다.
 - All-private는 user blinding을 zero로 canonicalize하고 `DBS-01`만 gate off한다. Full blinding non-zero와 `DBS-02`/`DBS-03`은 유지한다. JoinSplit2x2 output `1`은 active change note이고 disabled slot이 아니다.
@@ -42,7 +42,7 @@ Session 2 re-entry는 `DISCLOSURE-BLINDING-SEPARATION` V1을 TBD 없이 동결�
 - Test-only target `99,775` constraints(current `99,765`, delta `+10`)을 재현하거나 decision change를 먼저 기록한다. Negative witness마다 complete digest/owner signature를 다시 계산하고 current control은 수락, hardened circuit은 실패하는 원인 분리 test를 production regression으로 승격한다.
 - Public input 13개와 순서/schema hash `4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82`, NoteV1, payload `v5`, proof/HTTP `v2`, disclosure digest/domain, manifest/identity schema, circuit-set ID `privacy-note-v1`은 변경하지 않는다.
 - JoinSplit R1CS/PK/VK만 재생성하고 manifest checksum과 consensus JoinSplit `verifying_key_sha256`를 교체한다. Old JoinSplit proof/job을 폐기하고 exact readiness, fresh-genesis/reset, 전체 2x2 regression과 full batch resource comparison을 다시 실행한다. Batch source/artifact는 이 finding 때문에 회전하지 않는다.
-- `S4-B02`는 위 production constraint/artifact identity와 regression이 완료되기 전까지 **IMPLEMENTATION PENDING**이며 Gate 1/Gate 4/publication은 blocked다.
+- `S4-B02` implementation은 **RESOLVED**다. 이는 Gate 1/2/3A 승인 또는 Session 3B/4 재개가 아니며 변경된 relation과 identity에 대한 fresh 독립 재검토 전 publication은 blocked다.
 
 ## 2. 범위
 
@@ -515,6 +515,10 @@ git diff --check
 - [x] cursor/output/byte-limited query가 동작함.
 - [x] artifact descriptor/setup/strict readiness가 동작함.
 - [x] consensus artifact identity와 local VK/schema mismatch가 startup/readiness를 막음.
+- [x] production JoinSplit output 0이 `DBS-01..03`과 all-private canonical sentinel을 exact 강제함.
+- [x] shared native/prepared validator와 2x2 structured pre-sign boundary가 동일한 `DBS_*` contract를 사용하고 invalid request에서 signature callback을 호출하지 않음.
+- [x] production `99,775` constraints(`+10`)와 원인 분리 negative regression을 재현함.
+- [x] JoinSplit-only development artifact rotation, old/new proof mismatch, fresh genesis/reset, exact readiness와 unchanged full Batch resource gate가 통과함.
 - [x] direct proof/message/keeper integration이 통과함.
 - [x] existing Deposit/Spend/2x2 regression이 없음.
 - [x] invariant matrix와 한영 docs가 code/test location을 가리킴.
@@ -525,7 +529,19 @@ git diff --check
 
 ## Completion Record
 
-### 2026-07-12 `S4-B02` Re-entry Handoff
+### 2026-07-12 `S4-B02` Session 3A Completion Record
+
+- 시작 기준: clean `0fc818c`; latest Master Ledger와 Session 2 `2026-07-12 S4-B02 Foundation Re-entry` record를 authoritative source로 사용했다. Historical publication-ready record는 사용하지 않았다.
+- 작업 단위 commit: `0b7d97d` production relation/regression, `630736f` structured 2x2 signing boundary/conformance, `25c17ef` JoinSplit-only development artifact rotation/readiness.
+- 방어적 invariant: recipient output 0의 `DBS-01..03`, all-private canonical zero user-blinding sentinel과 exact gating을 circuit/native/prepared/pre-sign에 일치시켰다. Output 1은 active change로 유지했다.
+- Constraint decision: legacy relation control `99,765`, production `99,775`, delta `+10`(`0.0100%`). Session 2 target과 exact 일치하므로 decision change가 없다. 각 negative는 commitment/digest/owner signature를 다시 계산하고 legacy control 성공과 production rejection을 함께 확인했다.
+- Development artifact: `gnark v0.14.0`, Groth16/BN254, local `groth16.Setup`, `clairveil-setup -circuit joinsplit -overwrite`. R1CS `10,824,169 B` / SHA-256 `135528343084d9395ac3b59f87eb32661471751d936424c6aa3bc369483292d4`; PK `16,766,489 B` / `b41790cd96c41b78d7f7ca30f81cb76f4bdb93371bbf0b9437642348306c16d7`; VK `748 B` / consensus identity `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`.
+- Identity/readiness: public-input 13개와 schema hash `4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82`는 unchanged다. Old/new proof 상호 mismatch, old consensus/file mismatch, fresh genesis/reset와 strict artifact preflight가 통과했다. Repository 내부에 폐기할 old JoinSplit proof/job cache는 없었으며 외부 cache는 새 identity와 함께 폐기해야 한다.
+- Resource/regression: 전체 privacy 2x2 regression, JoinSplit cold gate, old/new proof gate와 fresh-genesis gate가 통과했다. Full Batch는 unchanged `1,111,837` constraints, R1CS `122,813,535 B`, PK `209,218,621 B`, VK `716 B`, proof `164 B`, peak RSS `3,324,461,056 B`로 통과했고 OOM은 없었다. 9개 non-JoinSplit artifact와 Batch source/artifact는 byte-identical하다.
+- Final repository verification: `go test ./... -count=1`, `go vet ./x/privacy/...`, `make build`, `make examples`, `make vulncheck`, `git diff --check`가 통과했다. 명시적으로 범위 밖인 payroll/scanner/SQL/live E2E와 Session 3B/4 gate는 실행하지 않았다.
+- 범위/처분: formal trusted setup, G3B-01..04, `S4-B01`, batch structured signer, payroll/scanner/SQL/live E2E, Session 3B/4는 수행하지 않았다. Generated development R1CS/PK/VK와 secret은 repository에 commit하지 않았다. `S4-B02` implementation은 **RESOLVED**이고 Gate 1/2/3A는 fresh 독립 재검토가 필요하다. Publication은 계속 `BLOCKED`다.
+
+### Historical 2026-07-12 `S4-B02` Re-entry Handoff
 
 - 상태: **UNBLOCKED FOR IMPLEMENTATION / NOT STARTED**. Session 2 foundation commits `c7fc1be`, `a8697cd`, `a4ee959`, `4e75f1f`이 §1.1의 exact contract, negative fixture, feasibility target, artifact scope를 동결했다.
 - 시작 기준: Session 3A re-entry는 Session 2 ledger/record가 clean 상태로 commit된 뒤 그 HEAD에서 시작한다. 이 문서 갱신은 production `JoinSplitCircuit`, R1CS/PK/VK, structured signer를 변경하지 않는다.

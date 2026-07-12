@@ -179,7 +179,7 @@ outputs = 2
 9. audit/self-view full disclosure는 non-zero blinding을 사용하고 `FullDisclosureDigest`에 묶입니다.
 10. Ordered nullifier, commitment, ciphertext, view tag, 모든 disclosure envelope, expiry는 서명 전에 확정되고 canonical payload digest를 통해 묶입니다. Relayer가 `creator`만 바꿀 수 있도록 `creator`, proof bytes, fee, gas, memo, sequence, tx signature는 제외됩니다.
 
-`S4-B02`는 recipient output `0`에 대한 `DISCLOSURE-BLINDING-SEPARATION` target을 추가로 동결합니다. Enabled user blinding은 `OutputRandomness[0]`과 달라야 하고, full blinding은 `OutputRandomness[0]` 및 user blinding과 각각 달라야 합니다. Policy `all-private`는 user blinding을 zero로 canonicalize하고 첫 번째 관계만 gate off합니다. JoinSplit2x2에는 disabled output slot이 없고 output `1`은 disclosure witness가 없는 active change note입니다. Shared native/prepared validator와 test-only feasibility circuit은 이 target을 강제하거나 모델링하지만 production `JoinSplitCircuit`에는 아직 assertion이 없습니다. 따라서 Session 3A가 R1CS/VK를 바꿀 때까지 `S4-B02`는 implementation pending입니다.
+`S4-B02`는 recipient output `0`에 대한 `DISCLOSURE-BLINDING-SEPARATION` invariant를 동결합니다. Enabled user blinding은 `OutputRandomness[0]`과 달라야 하고, full blinding은 `OutputRandomness[0]` 및 user blinding과 각각 달라야 합니다. Policy `all-private`는 user blinding을 zero로 canonicalize하고 첫 번째 관계만 gate off합니다. JoinSplit2x2에는 disabled output slot이 없고 output `1`은 disclosure witness가 없는 active change note입니다. Production `JoinSplitCircuit`, shared native/prepared validator와 structured pre-sign boundary가 이 exact contract를 `99,775` constraints로 강제합니다. `S4-B02` implementation은 해결했고 Gate 1/2/3A fresh 독립 재검토가 남아 있습니다.
 
 Transfer view tag는 별도 `JoinSplitCircuit` public input은 아니지만 ordered canonical payload digest에는 포함됩니다. `MsgTransfer`와 event에 실리는 public scan hint이며 note ownership signal로 취급하면 안 됩니다.
 
@@ -242,6 +242,12 @@ go build -o clairveil-setup ./cmd/clairveil-setup
 ./clairveil-setup --out artifacts/privacy
 ```
 
+Complete development artifact set에서 JoinSplit만 회전할 때는 다음을 사용합니다.
+
+```bash
+./clairveil-setup --out artifacts/privacy --circuit joinsplit --overwrite
+```
+
 runtime에서는 아래 환경변수를 사용합니다.
 
 ```bash
@@ -265,7 +271,7 @@ Session 3A development artifact gate는 아래 batch artifact identity를 기록
 
 여기서 생성하는 setup은 development 전용입니다. 이 repo는 formal trusted setup, artifact signing ceremony, production artifact release, external audit를 수행하거나 주장하지 않습니다.
 
-`S4-B02` Session 3A 재진입에서 active circuit-set string은 `privacy-note-v1`을 유지하고 JoinSplit 13-input 순서/schema hash `4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82`, payload `v5`, proof/HTTP `v2`도 바뀌지 않습니다. JoinSplit accepted witness set만 바뀝니다. `privacy_joinsplit_{r1cs,pk,vk}.bin`을 재생성하고 manifest checksum과 consensus JoinSplit VK digest를 교체하며 old proof job을 폐기하고 predeployment fresh-genesis/reset path를 사용해야 합니다. 이 finding 때문에 Batch artifact를 회전하면 안 됩니다. Session 2 test-only target은 current production constraint `99,765` 대비 `99,775`이며 Session 2에서는 production artifact를 생성하지 않습니다.
+`S4-B02` Session 3A 구현은 active circuit set `privacy-note-v1`, JoinSplit 13-input 순서/schema hash `4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82`, payload `v5`, proof/HTTP `v2`를 유지합니다. `privacy_joinsplit_{r1cs,pk,vk}.bin`만 회전했으며 development SHA-256은 각각 `135528343084d9395ac3b59f87eb32661471751d936424c6aa3bc369483292d4`, `b41790cd96c41b78d7f7ca30f81cb76f4bdb93371bbf0b9437642348306c16d7`, `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`입니다. Old JoinSplit proof job을 폐기하고 fresh genesis/reset을 사용해야 합니다. Batch artifact는 unchanged입니다.
 
 ## 7. Reserve accounting query
 

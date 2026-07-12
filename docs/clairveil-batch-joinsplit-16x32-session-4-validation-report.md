@@ -8,15 +8,24 @@
 | Starting HEAD reviewed | `d45f0753c16571743f630599776c9cd498d1e8c9` |
 | Review role | Fresh reviewer independent of Sessions 1–3B implementation |
 | Gate 3B on entry | **FAIL — Session 3B integration/test re-entry required** |
-| `S4-B02` Session 2 re-entry | **FOUNDATION FROZEN — Session 3A UNBLOCKED / NOT STARTED** |
+| `S4-B02` Session 3A remediation | **IMPLEMENTATION RESOLVED — fresh independent Gate 1/2/3A review required** |
 | Session 4 publication state | **`BLOCKED`** (`PUBLICATION_READY_EXPERIMENTAL` withdrawn) |
 | Production release state | Not approved |
 | Formal trusted setup | Not performed |
 | External audit | Not performed |
 
-This 2026-07-12 revalidation supersedes the earlier publication claim completed on the same day and retained below. Gate 3B is not satisfied and unresolved High and security-relevant Medium findings remain, so experimental source-publication approval is not currently valid. The later Session 2 foundation re-entry freezes the `S4-B02` contract but does not change the production circuit/artifacts, so it does not change this `BLOCKED` disposition.
+This 2026-07-12 revalidation supersedes the earlier publication claim completed on the same day and retained below. Gate 3B is not satisfied and unresolved High and security-relevant Medium findings remain, so experimental source-publication approval is not currently valid. Session 3A subsequently resolves the `S4-B02` implementation, but does not perform fresh independent Gate 1/2/3A review or Session 4 Passes A–I, so this `BLOCKED` disposition does not change.
 
-### `S4-B02` foundation re-entry supplement
+### `S4-B02` Session 3A implementation supplement
+
+- The implementation starts from clean HEAD `0fc818c`; commits `0b7d97d`, `630736f`, and `25c17ef` use the latest Master Ledger and Session 2 Foundation Re-entry record as authoritative.
+- Production output 0 now enforces `DBS-01..03` and the canonical all-private sentinel/gating. The shared native/prepared validator and structured 2x2 pre-sign boundary use the same contract.
+- The production count is `99,775`, exactly `+10` over the `99,765` control and equal to the frozen target, so there is no decision change. The 13 public inputs/schema hash, NoteV1, payload `v5`, proof/HTTP `v2`, disclosure digest/domain, and circuit-set ID remain unchanged.
+- New development JoinSplit SHA-256 values are R1CS `135528343084d9395ac3b59f87eb32661471751d936424c6aa3bc369483292d4`, PK `b41790cd96c41b78d7f7ca30f81cb76f4bdb93371bbf0b9437642348306c16d7`, and VK/consensus identity `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`. This is a JoinSplit-only development rotation; Batch and the other artifacts are unchanged.
+- Old/new proof and consensus/file mismatch, fresh genesis/reset, strict artifact preflight, the complete 2x2 regression, and the full unchanged Batch `1,111,837`-constraint resource comparison pass. No formal trusted setup was performed and no generated binary or secret is tracked.
+- `S4-B02` implementation is **RESOLVED**. Current unresolved counts are Critical 0, High 2, and security-relevant Medium 3. Gates 1/2/3A require fresh independent review; Session 3B and Session 4 were not started or resumed.
+
+### Historical `S4-B02` foundation re-entry supplement
 
 - The re-entry started from clean HEAD `42d40bd19523e263aaf1c2043bcd274a4fc1a51d` and treated the latest Master Ledger plus this `BLOCKED` record as authoritative.
 - Commits `c7fc1be`, `a8697cd`, `a4ee959`, and `4e75f1f` freeze `DISCLOSURE-BLINDING-SEPARATION` V1 (`DBS-01..03`), exact all-private/disabled gating, the shared `DBS_*` error/layer contract, conformance fixtures, and the 2x2 feasibility target.
@@ -34,9 +43,8 @@ This 2026-07-12 revalidation supersedes the earlier publication claim completed 
 | G3B-03 | Medium, security-relevant | `SQLStore` exists, but tests cover schema strings, placeholders, and isolation options only. No real SQLite/PostgreSQL CRUD, rollback, reopen, or lease/CAS execution exists. | Reservation-operation-item-evidence atomicity is unproven on SQL backends, leaving orphan, duplicate-work, and incorrect-item-status risk. | Add at least real SQLite transaction, restart, rollback, and concurrency tests. |
 | G3B-04 | Medium, security-relevant | Unlike the final prepared validator, `ValidateBatchTransferSigningRequest` does not reject global input/output or cross-output secret reuse before signing. | An untrusted preparer can obtain an owner signature over a privacy-leaking intent. | Apply the same `seenSecrets` checks at the structured signer boundary and add adversarial signing tests. |
 | S4-B01 | Medium, security-relevant | Unit tests cover default no-failover and explicit opt-in, but the localnet does not measure actual timeout/healthy endpoint contact counts. Its result value is a literal, not an observation. | The publication evidence does not prove that a live transport avoids sending the witness to a second prover by default. | Exercise two live endpoints and verify default and opt-in behavior separately. |
-| S4-B02 | Medium, security-relevant | Session 2 freezes the exact `DBS-01..03` contract and native/prepared/conformance target, but the production `JoinSplitCircuit`/R1CS/VK does not enforce it yet. | A witness that bypasses host guards is not yet rejected at the production proof boundary. | Implement the frozen constraints and pre-sign boundary in Session 3A and replace the JoinSplit artifact identity. Keep the finding implementation pending until then. |
 
-Resolved supplement: `S4-B03` is closed by `02f61f3`, which adds exact 2x2/Batch regressions and cause-isolating controls, and closure record `42d40bd`; it is not included in the current finding count.
+Resolved supplements: `S4-B03` is closed by `02f61f3`/`42d40bd`, and `S4-B02` implementation is closed by `0b7d97d`/`630736f`/`25c17ef`; neither is included in the current finding count.
 
 ## Current verification disposition
 
@@ -45,7 +53,7 @@ Resolved supplement: `S4-B03` is closed by `02f61f3`, which adds exact 2x2/Batch
 - Payroll default no-failover/explicit opt-in, durable reconciliation, prove-permit lifetime, and memory/file-store tests passed. The SQL check is schema-only and does not close G3B-03.
 - Batch artifacts in `/tmp/clairveil-session3a-artifacts-381c984` match the historical sizes (R1CS `122,813,535 B`, PK `209,218,621 B`, VK `716 B`) and SHA-256 values.
 - No tracked R1CS/PK/VK, `dist/`, `benchmarks/`, `tmp/`, personal absolute path, or evident secret was found. `benchmarks/`, `dist/`, and `tmp/` are ignored.
-- Current unresolved counts are Critical 0, High 2, and security-relevant Medium 4. No security finding was converted into an accepted residual.
+- Current unresolved counts are Critical 0, High 2, and security-relevant Medium 3. No security finding was converted into an accepted residual.
 - Formal setup, external audit, production artifact/provenance, and downstream production operations remain unperformed Production TODOs and do not replace the active findings.
 
 ### Supporting verification commands run
@@ -56,10 +64,14 @@ Resolved supplement: `S4-B03` is closed by `02f61f3`, which adds exact 2x2/Batch
 | `go test ./x/privacy/client/sdk/payroll -run '^(TestProverPoolDoesNotFailOverAfterEndpointTimeoutByDefault\|TestProverPoolFallsBackAfterEndpointTimeoutWithExplicitOptIn\|TestBatchReconcileDurableRestartRetryTxHashFirstAndItemEvidenceSeparate\|TestBatchProofWorkerKeepsSharedLeaseUntilUninterruptibleProveReturns)$' -count=1 -v` | PASS. Unit boundary only; not live endpoint evidence |
 | `go test ./x/privacy/client/sdk/reservation -run '^(TestBatchOperationGraphIsAtomicAndConflictsWithOrdinaryReservation\|TestBatchOperationDurableFileRestartRoundTrip\|TestBatchOperationSQLSchemaIsVersionedAndRelational)$' -count=1 -v` | PASS. Not a real SQL transaction test, so G3B-03 remains open |
 | `go test ./x/privacy/types ./x/privacy/client/sdk/transfer ./x/privacy/client/sdk/conformance -run 'DisclosureBlinding\|AllPrivateUserBlinding' -count=1 -v` | PASS. Confirms the shared native/prepared/fixture contract; does not replace production circuit enforcement |
-| `CLAIRVEIL_RUN_JOINSPLIT_BLINDING_FEASIBILITY=1 go test ./x/privacy/circuit -run '^TestJoinSplitDisclosureBlindingSeparationResourceGate$' -count=1 -v` | PASS. Both cold runs reproduced `99,765 -> 99,775`; peak RSS `690,438,144 B` and `690,536,448 B`; test-only target with no generated artifacts |
+| `CLAIRVEIL_RUN_JOINSPLIT_BLINDING_FEASIBILITY=1 go test ./x/privacy/circuit -run '^TestJoinSplitDisclosureBlindingSeparationResourceGate$' -count=1 -v` | PASS. Legacy control `99,765`, production `99,775`; production R1CS `10,824,169 B`, PK `16,766,489 B`, VK `748 B`, proof `164 B`; peak RSS `687,423,488 B` |
+| `CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_ROTATION=1 go test ./x/privacy/zk ./x/privacy/circuit -run 'JoinSplit.*Artifact\|JoinSplit.*Proof' -count=1 -v` | PASS. JoinSplit-only rotation/readiness and mutual old/new proof-identity rejection confirmed |
+| `CLAIRVEIL_RUN_JOINSPLIT_FRESH_GENESIS=1 go test ./x/privacy -run '^TestJoinSplitDevelopmentArtifactFreshGenesisGate$' -count=1 -v` | PASS. Fresh genesis accepts the new identity and rejects the old identity before state writes |
+| `CLAIRVEIL_RUN_BATCH_FEASIBILITY=1 go test ./x/privacy/circuit -run '^TestBatchJoinSplit16x32FullShapeResourceGate$' -count=1 -v` | PASS. Batch unchanged at `1,111,837` constraints; R1CS `122,813,535 B`, PK `209,218,621 B`, VK `716 B`, proof `164 B`; peak RSS `3,324,461,056 B`, no OOM |
 | `git merge-base --is-ancestor e427370 HEAD`, `git diff --check e427370..HEAD` | PASS at starting HEAD `d45f0753c16571743f630599776c9cd498d1e8c9` |
 | Artifact `shasum -a 256` and file-size comparison | PASS. Batch R1CS/PK/VK match the historical development hashes and sizes |
 | Tracked artifact/personal-path/secret-filename scan | PASS. `benchmarks/`, `dist/`, `tmp/`, `tmpdocs/`, local binaries, and dependency outputs are ignored/untracked and are not publication evidence |
+| `go test ./... -count=1`; `go vet ./x/privacy/...`; `make build`; `make examples`; `make vulncheck`; `git diff --check` | PASS. Final repository/release-static verification for the Session 3A implementation scope; not a resumption of Session 4 Passes A–I or live E2E |
 | Passes A–I, full test/race/fuzz, benchmark, fresh localnet, release check/pack | **NOT RUN — Gate 3B FAIL** |
 
 ### Accepted residuals and Production TODO

@@ -45,6 +45,14 @@ clairveild start --minimum-gas-prices 0uclair
 clairveil-setup --out artifacts/privacy
 ```
 
+Selective development rotation requires an already complete, checksum-valid set and explicit overwrite. For the `S4-B02` JoinSplit relation change:
+
+```bash
+clairveil-setup --out artifacts/privacy --circuit joinsplit --overwrite
+```
+
+The current JoinSplit development identity is R1CS `135528343084d9395ac3b59f87eb32661471751d936424c6aa3bc369483292d4`, PK `b41790cd96c41b78d7f7ca30f81cb76f4bdb93371bbf0b9437642348306c16d7`, and VK/consensus identity `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`. After rotation, discard old JoinSplit proofs/jobs, install the exact manifest through fresh genesis/reset, and require strict preflight. Do not mix old and new consensus/file identities or rotate Batch for this change.
+
 `privacy-note-v1` requires descriptors in the exact order `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`. Validators check the consensus identity and load the four VKs only; prover-role readiness loads the selected R1CS/PK pair lazily. For the recorded Session 3A development batch artifacts, R1CS is `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK is `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, and VK is `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`. Generation peak RSS was `3,308,797,952 B`; role readiness peaked at `1,295,482,880 B`.
 
 These are development identities only. Formal trusted setup, artifact signing, reproducible production generation, custody, and distribution remain downstream release responsibilities.
