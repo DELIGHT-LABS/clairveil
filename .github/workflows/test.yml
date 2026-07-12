@@ -34,3 +34,26 @@ jobs:
 
       - name: Run CI checks
         run: make ci
+
+  release-pack-python:
+    name: release-pack-python-${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.9', '3.12']
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Show Python version
+        run: python3 --version
+
+      - name: Verify release pack
+        run: make release-pack-verify

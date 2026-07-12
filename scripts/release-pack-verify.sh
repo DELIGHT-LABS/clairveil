@@ -82,7 +82,7 @@ try:
     seen: set[str] = set()
     directory_members: set[str] = set()
     required_directories: set[str] = set()
-    top_level: str | None = None
+    top_level = None
     total_bytes = 0
     member_count = 0
     with tarfile.open(archive, "r:gz") as tf:
