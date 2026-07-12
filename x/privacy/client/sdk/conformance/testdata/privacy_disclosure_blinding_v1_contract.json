@@ -1,0 +1,216 @@
+{
+  "schema_version": "v1",
+  "invariant_id": "DISCLOSURE-BLINDING-SEPARATION",
+  "scope": {
+    "joinsplit_2x2_disclosure_output_index": 0,
+    "joinsplit_2x2_change_output_has_disclosure_witness": false,
+    "batch_semantics": "per-output-slot",
+    "cross_output_global_freshness_included": false
+  },
+  "relations": [
+    {
+      "id": "DBS-01",
+      "when": "enabled && privacy_policy != 0",
+      "left": "user_disclosure_blinding",
+      "operator": "!=",
+      "right": "output_randomness"
+    },
+    {
+      "id": "DBS-02",
+      "when": "enabled",
+      "left": "full_disclosure_blinding",
+      "operator": "!=",
+      "right": "output_randomness"
+    },
+    {
+      "id": "DBS-03",
+      "when": "enabled",
+      "left": "full_disclosure_blinding",
+      "operator": "!=",
+      "right": "user_disclosure_blinding"
+    }
+  ],
+  "canonicalization": {
+    "active_all_private": {
+      "privacy_policy": "0",
+      "user_disclosure_blinding": "0",
+      "full_disclosure_blinding": "non-zero",
+      "gated_off_relations": [
+        "DBS-01"
+      ]
+    },
+    "disabled_output_slot": {
+      "privacy_policy": "0",
+      "output_randomness": "0",
+      "user_disclosure_blinding": "0",
+      "full_disclosure_blinding": "0",
+      "gated_off_relations": [
+        "DBS-01",
+        "DBS-02",
+        "DBS-03"
+      ]
+    }
+  },
+  "required_enforcement_layers": [
+    "circuit",
+    "native_validator",
+    "prepared_validator",
+    "structured_signer"
+  ],
+  "error_codes": [
+    "DBS_INVALID_POLICY",
+    "DBS_NON_CANONICAL_FIELD",
+    "DBS_DISABLED_SENTINEL",
+    "DBS_ALL_PRIVATE_USER_SENTINEL",
+    "DBS_USER_BLINDING_REQUIRED",
+    "DBS_FULL_BLINDING_REQUIRED",
+    "DBS_USER_RANDOMNESS_REUSE",
+    "DBS_FULL_RANDOMNESS_REUSE",
+    "DBS_USER_FULL_BLINDING_REUSE"
+  ],
+  "vectors": [
+    {
+      "name": "active_disclosed_valid",
+      "output_index": 0,
+      "enabled": true,
+      "privacy_policy": 7,
+      "output_randomness": "11",
+      "user_disclosure_blinding": "13",
+      "full_disclosure_blinding": "17",
+      "valid": true,
+      "error_code": ""
+    },
+    {
+      "name": "active_all_private_valid",
+      "output_index": 0,
+      "enabled": true,
+      "privacy_policy": 0,
+      "output_randomness": "11",
+      "user_disclosure_blinding": "0",
+      "full_disclosure_blinding": "17",
+      "valid": true,
+      "error_code": ""
+    },
+    {
+      "name": "disabled_valid",
+      "output_index": 31,
+      "enabled": false,
+      "privacy_policy": 0,
+      "output_randomness": "0",
+      "user_disclosure_blinding": "0",
+      "full_disclosure_blinding": "0",
+      "valid": true,
+      "error_code": ""
+    },
+    {
+      "name": "invalid_policy",
+      "output_index": 0,
+      "enabled": true,
+      "privacy_policy": 8,
+      "output_randomness": "11",
+      "user_disclosure_blinding": "13",
+      "full_disclosure_blinding": "17",
+      "valid": false,
+      "error_code": "DBS_INVALID_POLICY"
+    },
+    {
+      "name": "non_canonical_full_blinding",
+      "output_index": 0,
+      "enabled": true,
+      "privacy_policy": 7,
+      "output_randomness": "11",
+      "user_disclosure_blinding": "13",
+      "full_disclosure_blinding": "21888242871839275222246405745257275088548364400416034343698204186575808495617",
+      "valid": false,
+      "error_code": "DBS_NON_CANONICAL_FIELD"
+    },
+    {
+      "name": "disabled_randomness_nonzero",
+      "output_index": 31,
+      "enabled": false,
+      "privacy_policy": 0,
+      "output_randomness": "1",
+      "user_disclosure_blinding": "0",
+      "full_disclosure_blinding": "0",
+      "valid": false,
+      "error_code": "DBS_DISABLED_SENTINEL"
+    },
+    {
+      "name": "all_private_user_nonzero",
+      "output_index": 0,
+      "enabled": true,
+      "privacy_policy": 0,
+      "output_randomness": "11",
+      "user_disclosure_blinding": "13",
+      "full_disclosure_blinding": "17",
+      "valid": false,
+      "error_code": "DBS_ALL_PRIVATE_USER_SENTINEL"
+    },
+    {
+      "name": "enabled_user_zero",
+      "output_index": 0,
+      "enabled": true,
+      "privacy_policy": 7,
+      "output_randomness": "11",
+      "user_disclosure_blinding": "0",
+      "full_disclosure_blinding": "17",
+      "valid": false,
+      "error_code": "DBS_USER_BLINDING_REQUIRED"
+    },
+    {
+      "name": "active_full_zero",
+      "output_index": 0,
+      "enabled": true,
+      "privacy_policy": 7,
+      "output_randomness": "11",
+      "user_disclosure_blinding": "13",
+      "full_disclosure_blinding": "0",
+      "valid": false,
+      "error_code": "DBS_FULL_BLINDING_REQUIRED"
+    },
+    {
+      "name": "user_reuses_randomness",
+      "output_index": 0,
+      "enabled": true,
+      "privacy_policy": 7,
+      "output_randomness": "11",
+      "user_disclosure_blinding": "11",
+      "full_disclosure_blinding": "17",
+      "valid": false,
+      "error_code": "DBS_USER_RANDOMNESS_REUSE"
+    },
+    {
+      "name": "full_reuses_randomness",
+      "output_index": 0,
+      "enabled": true,
+      "privacy_policy": 7,
+      "output_randomness": "11",
+      "user_disclosure_blinding": "13",
+      "full_disclosure_blinding": "11",
+      "valid": false,
+      "error_code": "DBS_FULL_RANDOMNESS_REUSE"
+    },
+    {
+      "name": "full_reuses_user",
+      "output_index": 0,
+      "enabled": true,
+      "privacy_policy": 7,
+      "output_randomness": "11",
+      "user_disclosure_blinding": "13",
+      "full_disclosure_blinding": "13",
+      "valid": false,
+      "error_code": "DBS_USER_FULL_BLINDING_REUSE"
+    },
+    {
+      "name": "all_private_full_reuses_randomness",
+      "output_index": 0,
+      "enabled": true,
+      "privacy_policy": 0,
+      "output_randomness": "11",
+      "user_disclosure_blinding": "0",
+      "full_disclosure_blinding": "11",
+      "valid": false,
+      "error_code": "DBS_FULL_RANDOMNESS_REUSE"
+    }
+  ]
+}

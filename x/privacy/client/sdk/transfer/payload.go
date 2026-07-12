@@ -114,16 +114,13 @@ func BuildPreparedTransferPayload(
 		return nil, err
 	}
 
-	fullDisclosureBlinding, err := privacycrypto.GenerateNonZeroRandomness()
+	userDisclosureBlinding, fullDisclosureBlinding, err := generateTransferDisclosureBlindingsV1(
+		prepared.RecipientNote.Randomness,
+		input.UserPrivacyPolicy,
+		privacycrypto.GenerateNonZeroRandomness,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate full disclosure blinding: %w", err)
-	}
-	userDisclosureBlinding := big.NewInt(0)
-	if input.UserPrivacyPolicy != privacytypes.TransferPrivacyPolicyAllPrivate {
-		userDisclosureBlinding, err = privacycrypto.GenerateNonZeroRandomness()
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate user disclosure blinding: %w", err)
-		}
+		return nil, fmt.Errorf("failed to generate separated disclosure blindings: %w", err)
 	}
 	disclosureInput := DisclosureBuildInput{
 		OutputCommitment:       prepared.OutputCommitments[0],
@@ -477,15 +474,42 @@ func ValidatePreparedTransferPayloadMetadata(payload PreparedTransferPayload) er
 	if err != nil {
 		return err
 	}
-	if payload.UserPrivacyPolicy == privacytypes.TransferPrivacyPolicyAllPrivate {
-		if strings.TrimSpace(payload.UserDisclosureBlindingHex) != "" {
-			return fmt.Errorf("all-private transfer payload must not include user disclosure blinding")
-		}
-	} else if _, err := decodeNonZeroCanonicalBlindingHex(payload.UserDisclosureBlindingHex, "user disclosure blinding"); err != nil {
+	outputRandomness, err := decodeCanonicalHexBigInt(payload.Outputs[privacytypes.TransferDisclosureRecipientOutputIndex].RandomnessHex, "recipient output randomness")
+	if err != nil {
 		return err
 	}
-	if _, err := decodeNonZeroCanonicalBlindingHex(payload.FullDisclosureBlindingHex, "full disclosure blinding"); err != nil {
+	userDisclosureBlinding := big.NewInt(0)
+	allPrivateUserBlindingWasEncoded := false
+	if payload.UserPrivacyPolicy == privacytypes.TransferPrivacyPolicyAllPrivate {
+		if strings.TrimSpace(payload.UserDisclosureBlindingHex) != "" {
+			allPrivateUserBlindingWasEncoded = true
+			userDisclosureBlinding, err = decodeCanonicalHexBigInt(payload.UserDisclosureBlindingHex, "user disclosure blinding")
+			if err != nil {
+				return err
+			}
+		}
+	} else {
+		userDisclosureBlinding, err = decodeCanonicalHexBigInt(payload.UserDisclosureBlindingHex, "user disclosure blinding")
+		if err != nil {
+			return err
+		}
+	}
+	fullDisclosureBlinding, err := decodeCanonicalHexBigInt(payload.FullDisclosureBlindingHex, "full disclosure blinding")
+	if err != nil {
 		return err
+	}
+	if err := privacytypes.ValidateDisclosureBlindingSeparationV1(privacytypes.DisclosureBlindingSeparationV1Input{
+		OutputIndex:            privacytypes.TransferDisclosureRecipientOutputIndex,
+		Enabled:                true,
+		PrivacyPolicy:          payload.UserPrivacyPolicy,
+		OutputRandomness:       outputRandomness,
+		UserDisclosureBlinding: userDisclosureBlinding,
+		FullDisclosureBlinding: fullDisclosureBlinding,
+	}); err != nil {
+		return fmt.Errorf("transfer disclosure blinding separation: %w", err)
+	}
+	if allPrivateUserBlindingWasEncoded {
+		return fmt.Errorf("all-private transfer payload must omit the zero user disclosure blinding sentinel")
 	}
 	ownerSignature, err := decodeSignatureHex(payload.OwnerSignatureHex)
 	if err != nil {
@@ -1103,6 +1127,60 @@ func decodeNonZeroCanonicalBlindingHex(value, fieldName string) (*big.Int, error
 		return nil, fmt.Errorf("%s must be non-zero", fieldName)
 	}
 	return blinding, nil
+}
+
+func generateTransferDisclosureBlindingsV1(
+	outputRandomness *big.Int,
+	policy uint32,
+	generate func() (*big.Int, error),
+) (*big.Int, *big.Int, error) {
+	if generate == nil {
+		return nil, nil, fmt.Errorf("a disclosure blinding generator is required")
+	}
+	if outputRandomness == nil {
+		return nil, nil, fmt.Errorf("recipient output randomness is required")
+	}
+	used := map[string]struct{}{outputRandomness.String(): {}}
+	next := func() (*big.Int, error) {
+		for {
+			value, err := generate()
+			if err != nil {
+				return nil, err
+			}
+			if value == nil || value.Sign() == 0 {
+				continue
+			}
+			key := value.String()
+			if _, duplicate := used[key]; duplicate {
+				continue
+			}
+			used[key] = struct{}{}
+			return value, nil
+		}
+	}
+
+	fullBlinding, err := next()
+	if err != nil {
+		return nil, nil, err
+	}
+	userBlinding := big.NewInt(0)
+	if policy != privacytypes.TransferPrivacyPolicyAllPrivate {
+		userBlinding, err = next()
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	if err := privacytypes.ValidateDisclosureBlindingSeparationV1(privacytypes.DisclosureBlindingSeparationV1Input{
+		OutputIndex:            privacytypes.TransferDisclosureRecipientOutputIndex,
+		Enabled:                true,
+		PrivacyPolicy:          policy,
+		OutputRandomness:       outputRandomness,
+		UserDisclosureBlinding: userBlinding,
+		FullDisclosureBlinding: fullBlinding,
+	}); err != nil {
+		return nil, nil, err
+	}
+	return userBlinding, fullBlinding, nil
 }
 
 func decodePublicKeyHex(value string, fieldName string) (*crypto_tedwards.PointAffine, error) {

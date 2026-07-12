@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"math/big"
 	"testing"
 	"time"
@@ -120,6 +121,102 @@ func TestValidatePreparedTransferPayloadMetadataBindsViewTagsToHash(t *testing.T
 	payload.ViewTagHexes[0] = "ffff"
 	err = ValidatePreparedTransferPayloadMetadata(*payload)
 	require.ErrorContains(t, err, "hash mismatch")
+}
+
+func TestGenerateTransferDisclosureBlindingsV1RetriesExactReuse(t *testing.T) {
+	outputRandomness := big.NewInt(11)
+	generated := []*big.Int{
+		big.NewInt(0),
+		big.NewInt(11),
+		big.NewInt(13),
+		big.NewInt(13),
+		big.NewInt(17),
+	}
+	generate := func() (*big.Int, error) {
+		require.NotEmpty(t, generated)
+		value := generated[0]
+		generated = generated[1:]
+		return value, nil
+	}
+
+	userBlinding, fullBlinding, err := generateTransferDisclosureBlindingsV1(
+		outputRandomness,
+		privacytypes.TransferPrivacyPolicyDiscloseAmount,
+		generate,
+	)
+	require.NoError(t, err)
+	require.Equal(t, int64(17), userBlinding.Int64())
+	require.Equal(t, int64(13), fullBlinding.Int64())
+	require.Empty(t, generated)
+}
+
+func TestValidatePreparedTransferPayloadMetadataRejectsDisclosureBlindingReuse(t *testing.T) {
+	input, merkleProvider, signer, _, _ := testBuildTransferMessageDeps(t)
+	base, err := BuildPreparedTransferPayload(context.Background(), merkleProvider, signer, input)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name string
+		code privacytypes.DisclosureBlindingErrorCodeV1
+		set  func(*PreparedTransferPayload)
+	}{
+		{
+			name: "user equals recipient output randomness",
+			code: privacytypes.DisclosureBlindingErrorUserRandomnessReuseV1,
+			set: func(payload *PreparedTransferPayload) {
+				payload.UserDisclosureBlindingHex = payload.Outputs[privacytypes.TransferDisclosureRecipientOutputIndex].RandomnessHex
+			},
+		},
+		{
+			name: "full equals recipient output randomness",
+			code: privacytypes.DisclosureBlindingErrorFullRandomnessReuseV1,
+			set: func(payload *PreparedTransferPayload) {
+				payload.FullDisclosureBlindingHex = payload.Outputs[privacytypes.TransferDisclosureRecipientOutputIndex].RandomnessHex
+			},
+		},
+		{
+			name: "full equals user",
+			code: privacytypes.DisclosureBlindingErrorUserFullBlindingReuseV1,
+			set: func(payload *PreparedTransferPayload) {
+				payload.FullDisclosureBlindingHex = payload.UserDisclosureBlindingHex
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := clonePreparedTransferPayloadForTest(*base)
+			tc.set(&payload)
+			payload.PayloadHash = ComputePreparedTransferPayloadHash(payload)
+
+			err := ValidatePreparedTransferPayloadMetadata(payload)
+			require.Error(t, err)
+			var invariantErr *privacytypes.DisclosureBlindingErrorV1
+			require.True(t, errors.As(err, &invariantErr))
+			require.Equal(t, tc.code, invariantErr.Code)
+		})
+	}
+}
+
+func TestValidatePreparedTransferPayloadMetadataCanonicalizesAllPrivateUserBlinding(t *testing.T) {
+	input, merkleProvider, signer, _, _ := testBuildTransferMessageDeps(t)
+	input.UserPrivacyPolicy = privacytypes.TransferPrivacyPolicyAllPrivate
+	input.UserDisclosureMode = privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE
+	input.UserDisclosureTargetPubKey = nil
+	input.UserDisclosureTargetPubKeyBz = nil
+
+	payload, err := BuildPreparedTransferPayload(context.Background(), merkleProvider, signer, input)
+	require.NoError(t, err)
+	require.Empty(t, payload.UserDisclosureBlindingHex)
+	require.NoError(t, ValidatePreparedTransferPayloadMetadata(*payload))
+
+	payload.UserDisclosureBlindingHex = payload.FullDisclosureBlindingHex
+	payload.PayloadHash = ComputePreparedTransferPayloadHash(*payload)
+	err = ValidatePreparedTransferPayloadMetadata(*payload)
+	require.Error(t, err)
+	var invariantErr *privacytypes.DisclosureBlindingErrorV1
+	require.True(t, errors.As(err, &invariantErr))
+	require.Equal(t, privacytypes.DisclosureBlindingErrorAllPrivateUserSentinelV1, invariantErr.Code)
 }
 
 func TestPreparedTransferPayloadRejectsNonCanonicalPublicKeys(t *testing.T) {
