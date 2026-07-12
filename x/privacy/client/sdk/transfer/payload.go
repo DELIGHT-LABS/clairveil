@@ -474,30 +474,33 @@ func ValidatePreparedTransferPayloadMetadata(payload PreparedTransferPayload) er
 	if err != nil {
 		return err
 	}
-	outputRandomness, err := decodeCanonicalHexBigInt(payload.Outputs[privacytypes.TransferDisclosureRecipientOutputIndex].RandomnessHex, "recipient output randomness")
-	if err != nil {
-		return err
+	decodeSeparationField := func(value, fieldName string) *big.Int {
+		decoded, decodeErr := decodeCanonicalHexBigInt(value, fieldName)
+		if decodeErr != nil {
+			return nil
+		}
+		return decoded
 	}
+	outputRandomness := decodeSeparationField(
+		payload.Outputs[privacytypes.TransferDisclosureRecipientOutputIndex].RandomnessHex,
+		"recipient output randomness",
+	)
 	userDisclosureBlinding := big.NewInt(0)
 	allPrivateUserBlindingWasEncoded := false
 	if payload.UserPrivacyPolicy == privacytypes.TransferPrivacyPolicyAllPrivate {
 		if strings.TrimSpace(payload.UserDisclosureBlindingHex) != "" {
 			allPrivateUserBlindingWasEncoded = true
-			userDisclosureBlinding, err = decodeCanonicalHexBigInt(payload.UserDisclosureBlindingHex, "user disclosure blinding")
-			if err != nil {
-				return err
-			}
+			userDisclosureBlinding = decodeSeparationField(payload.UserDisclosureBlindingHex, "user disclosure blinding")
 		}
-	} else {
-		userDisclosureBlinding, err = decodeCanonicalHexBigInt(payload.UserDisclosureBlindingHex, "user disclosure blinding")
-		if err != nil {
-			return err
-		}
+	} else if strings.TrimSpace(payload.UserDisclosureBlindingHex) != "" {
+		userDisclosureBlinding = decodeSeparationField(payload.UserDisclosureBlindingHex, "user disclosure blinding")
 	}
-	fullDisclosureBlinding, err := decodeCanonicalHexBigInt(payload.FullDisclosureBlindingHex, "full disclosure blinding")
-	if err != nil {
-		return err
+	fullDisclosureBlinding := big.NewInt(0)
+	if strings.TrimSpace(payload.FullDisclosureBlindingHex) != "" {
+		fullDisclosureBlinding = decodeSeparationField(payload.FullDisclosureBlindingHex, "full disclosure blinding")
 	}
+	// Pass nil through the shared validator so prepared/native/structured
+	// callers observe the same stable non-canonical-field code.
 	if err := privacytypes.ValidateDisclosureBlindingSeparationV1(privacytypes.DisclosureBlindingSeparationV1Input{
 		OutputIndex:            privacytypes.TransferDisclosureRecipientOutputIndex,
 		Enabled:                true,

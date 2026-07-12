@@ -161,6 +161,27 @@ func TestValidatePreparedTransferPayloadMetadataRejectsDisclosureBlindingReuse(t
 		set  func(*PreparedTransferPayload)
 	}{
 		{
+			name: "recipient output randomness is non-canonical",
+			code: privacytypes.DisclosureBlindingErrorNonCanonicalFieldV1,
+			set: func(payload *PreparedTransferPayload) {
+				payload.Outputs[privacytypes.TransferDisclosureRecipientOutputIndex].RandomnessHex = hex.EncodeToString(fr.Modulus().Bytes())
+			},
+		},
+		{
+			name: "enabled user blinding is missing",
+			code: privacytypes.DisclosureBlindingErrorUserBlindingRequiredV1,
+			set: func(payload *PreparedTransferPayload) {
+				payload.UserDisclosureBlindingHex = ""
+			},
+		},
+		{
+			name: "full blinding is missing",
+			code: privacytypes.DisclosureBlindingErrorFullBlindingRequiredV1,
+			set: func(payload *PreparedTransferPayload) {
+				payload.FullDisclosureBlindingHex = ""
+			},
+		},
+		{
 			name: "user equals recipient output randomness",
 			code: privacytypes.DisclosureBlindingErrorUserRandomnessReuseV1,
 			set: func(payload *PreparedTransferPayload) {
