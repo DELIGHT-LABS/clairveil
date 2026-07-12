@@ -58,6 +58,8 @@ Resolved supplements: `S4-B03`은 `02f61f3`/`42d40bd`, `S4-B02` implementation�
 
 ### 실행한 보조 검증 명령
 
+`G123A-AR01` 재검토에서 이전 artifact/fresh-genesis 명령의 opt-in 환경변수와 테스트명이 실제 코드와 달라 `SKIP` 또는 `[no tests to run]`을 성공으로 오인할 수 있음을 확인했다. 아래 표는 그 두 행을 폐기하고 exact test 세 개를 fail-closed로 실행한 `make session-3a-validation-evidence` 결과로 대체한다. 이 evidence 보정은 fresh Gate 1/2/3A 자체를 PASS 처리하지 않는다.
+
 | 명령 | 결과와 한계 |
 | --- | --- |
 | `go test ./x/privacy/client/sdk/conformance -run '^(TestPrivacyNoteV1ContractIndependentGolden\|TestPrivacyBatchJoinSplitV1ContractIndependentGolden)$' -count=1 -v` | PASS. Independent golden 계산 경로 확인. Gate 3B 대체 아님 |
@@ -65,8 +67,7 @@ Resolved supplements: `S4-B03`은 `02f61f3`/`42d40bd`, `S4-B02` implementation�
 | `go test ./x/privacy/client/sdk/reservation -run '^(TestBatchOperationGraphIsAtomicAndConflictsWithOrdinaryReservation\|TestBatchOperationDurableFileRestartRoundTrip\|TestBatchOperationSQLSchemaIsVersionedAndRelational)$' -count=1 -v` | PASS. 실제 SQL transaction test가 아니므로 G3B-03 유지 |
 | `go test ./x/privacy/types ./x/privacy/client/sdk/transfer ./x/privacy/client/sdk/conformance -run 'DisclosureBlinding\|AllPrivateUserBlinding' -count=1 -v` | PASS. Shared native/prepared/fixture contract 확인. Production circuit 대체 아님 |
 | `CLAIRVEIL_RUN_JOINSPLIT_BLINDING_FEASIBILITY=1 go test ./x/privacy/circuit -run '^TestJoinSplitDisclosureBlindingSeparationResourceGate$' -count=1 -v` | PASS. Legacy control `99,765`, production `99,775`; production R1CS `10,824,169 B`, PK `16,766,489 B`, VK `748 B`, proof `164 B`; peak RSS `687,423,488 B` |
-| `CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_ROTATION=1 go test ./x/privacy/zk ./x/privacy/circuit -run 'JoinSplit.*Artifact\|JoinSplit.*Proof' -count=1 -v` | PASS. JoinSplit-only rotation/readiness와 old/new proof identity 상호 거부 확인 |
-| `CLAIRVEIL_RUN_JOINSPLIT_FRESH_GENESIS=1 go test ./x/privacy -run '^TestJoinSplitDevelopmentArtifactFreshGenesisGate$' -count=1 -v` | PASS. 새 identity fresh genesis 성공, old identity는 state write 전에 거부 |
+| `CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR="$CURRENT_ARTIFACT_DIR" CLAIRVEIL_PRIVACY_PREVIOUS_ZK_ARTIFACT_DIR="$PREVIOUS_ARTIFACT_DIR" make session-3a-validation-evidence` | PASS. `TestJoinSplitDevelopmentArtifactRotationGate`, `TestJoinSplitOldAndNewProofIdentitiesAreMutuallyExclusive`, `TestS4B02FreshGenesisUsesRotatedJoinSplitIdentity`를 각각 정확한 `_GATE` opt-in으로 실행해 artifact role readiness, old/new proof-VK 상호 거부, fresh genesis의 old identity state-write 전 거부를 확인. Wrapper가 exact test 존재와 `--- PASS`를 요구하고 `SKIP`/`[no tests to run]`을 실패 처리함 |
 | `CLAIRVEIL_RUN_BATCH_FEASIBILITY=1 go test ./x/privacy/circuit -run '^TestBatchJoinSplit16x32FullShapeResourceGate$' -count=1 -v` | PASS. Batch unchanged `1,111,837` constraints; R1CS `122,813,535 B`, PK `209,218,621 B`, VK `716 B`, proof `164 B`; peak RSS `3,324,461,056 B`, OOM 없음 |
 | `git merge-base --is-ancestor e427370 HEAD`, `git diff --check e427370..HEAD` | PASS at starting HEAD `d45f0753c16571743f630599776c9cd498d1e8c9` |
 | artifact `shasum -a 256`과 file-size 대조 | PASS. Batch R1CS/PK/VK가 historical development hash/size와 일치 |

@@ -143,6 +143,10 @@ release-pack:
 release-pack-verify:
 	./scripts/release-pack-verify.sh
 
+.PHONY: session-3a-validation-evidence
+session-3a-validation-evidence:
+	./scripts/session-3a-validation-evidence.sh
+
 .PHONY: docker-proverd-build
 docker-proverd-build:
 	./scripts/docker-proverd-build.sh

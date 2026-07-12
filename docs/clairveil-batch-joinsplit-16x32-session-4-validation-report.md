@@ -58,6 +58,8 @@ Resolved supplements: `S4-B03` is closed by `02f61f3`/`42d40bd`, and `S4-B02` im
 
 ### Supporting verification commands run
 
+The `G123A-AR01` review found that the previous artifact and fresh-genesis commands used opt-in variables and test names that did not match the code, allowing `SKIP` or `[no tests to run]` to look successful. The table below retires those two rows and replaces them with the fail-closed `make session-3a-validation-evidence` run of all three exact tests. Correcting this evidence does not itself pass fresh Gates 1/2/3A.
+
 | Command | Result and limitation |
 | --- | --- |
 | `go test ./x/privacy/client/sdk/conformance -run '^(TestPrivacyNoteV1ContractIndependentGolden\|TestPrivacyBatchJoinSplitV1ContractIndependentGolden)$' -count=1 -v` | PASS. Confirms the independent golden calculation path; does not replace Gate 3B |
@@ -65,8 +67,7 @@ Resolved supplements: `S4-B03` is closed by `02f61f3`/`42d40bd`, and `S4-B02` im
 | `go test ./x/privacy/client/sdk/reservation -run '^(TestBatchOperationGraphIsAtomicAndConflictsWithOrdinaryReservation\|TestBatchOperationDurableFileRestartRoundTrip\|TestBatchOperationSQLSchemaIsVersionedAndRelational)$' -count=1 -v` | PASS. Not a real SQL transaction test, so G3B-03 remains open |
 | `go test ./x/privacy/types ./x/privacy/client/sdk/transfer ./x/privacy/client/sdk/conformance -run 'DisclosureBlinding\|AllPrivateUserBlinding' -count=1 -v` | PASS. Confirms the shared native/prepared/fixture contract; does not replace production circuit enforcement |
 | `CLAIRVEIL_RUN_JOINSPLIT_BLINDING_FEASIBILITY=1 go test ./x/privacy/circuit -run '^TestJoinSplitDisclosureBlindingSeparationResourceGate$' -count=1 -v` | PASS. Legacy control `99,765`, production `99,775`; production R1CS `10,824,169 B`, PK `16,766,489 B`, VK `748 B`, proof `164 B`; peak RSS `687,423,488 B` |
-| `CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_ROTATION=1 go test ./x/privacy/zk ./x/privacy/circuit -run 'JoinSplit.*Artifact\|JoinSplit.*Proof' -count=1 -v` | PASS. JoinSplit-only rotation/readiness and mutual old/new proof-identity rejection confirmed |
-| `CLAIRVEIL_RUN_JOINSPLIT_FRESH_GENESIS=1 go test ./x/privacy -run '^TestJoinSplitDevelopmentArtifactFreshGenesisGate$' -count=1 -v` | PASS. Fresh genesis accepts the new identity and rejects the old identity before state writes |
+| `CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR="$CURRENT_ARTIFACT_DIR" CLAIRVEIL_PRIVACY_PREVIOUS_ZK_ARTIFACT_DIR="$PREVIOUS_ARTIFACT_DIR" make session-3a-validation-evidence` | PASS. Runs `TestJoinSplitDevelopmentArtifactRotationGate`, `TestJoinSplitOldAndNewProofIdentitiesAreMutuallyExclusive`, and `TestS4B02FreshGenesisUsesRotatedJoinSplitIdentity` with their exact `_GATE` opt-ins, proving artifact role readiness, mutual old/new proof-VK rejection, and old-identity rejection before fresh-genesis state writes. The wrapper requires the exact test to exist and report `--- PASS`, and rejects `SKIP` or `[no tests to run]` |
 | `CLAIRVEIL_RUN_BATCH_FEASIBILITY=1 go test ./x/privacy/circuit -run '^TestBatchJoinSplit16x32FullShapeResourceGate$' -count=1 -v` | PASS. Batch unchanged at `1,111,837` constraints; R1CS `122,813,535 B`, PK `209,218,621 B`, VK `716 B`, proof `164 B`; peak RSS `3,324,461,056 B`, no OOM |
 | `git merge-base --is-ancestor e427370 HEAD`, `git diff --check e427370..HEAD` | PASS at starting HEAD `d45f0753c16571743f630599776c9cd498d1e8c9` |
 | Artifact `shasum -a 256` and file-size comparison | PASS. Batch R1CS/PK/VK match the historical development hashes and sizes |
