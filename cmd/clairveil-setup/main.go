@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/consensys/gnark-crypto/ecc"
@@ -26,10 +27,24 @@ type artifactDefinition struct {
 	write       func(outDir string) error
 }
 
+const (
+	setupCircuitAll                   = "all"
+	setupCircuitDeposit               = "deposit"
+	setupCircuitSpend                 = "spend"
+	setupCircuitJoinSplit             = "joinsplit"
+	setupCircuitBatchJoinSplit16x32V1 = "batch-joinsplit-16x32-v1"
+)
+
 func main() {
 	outDirFlag := flag.String("out", "artifacts/privacy", "output directory for generated zk artifacts")
 	overwriteFlag := flag.Bool("overwrite", false, "overwrite existing artifacts in the output directory")
+	circuitFlag := flag.String("circuit", setupCircuitAll, "artifact circuit to generate: all, deposit, spend, joinsplit, or batch-joinsplit-16x32-v1")
 	flag.Parse()
+	selectedCircuit, err := parseSetupCircuit(*circuitFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "invalid circuit selection: %v\n", err)
+		os.Exit(1)
+	}
 
 	outDir, err := filepath.Abs(*outDirFlag)
 	if err != nil {
@@ -41,14 +56,23 @@ func main() {
 		fmt.Fprintf(os.Stderr, "failed to create output directory: %v\n", err)
 		os.Exit(1)
 	}
+	if selectedCircuit != setupCircuitAll {
+		if !*overwriteFlag {
+			fmt.Fprintln(os.Stderr, "selective artifact rotation requires -overwrite")
+			os.Exit(1)
+		}
+		if err := validateExistingArtifactSet(outDir); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to validate existing artifact set before selective rotation: %v\n", err)
+			os.Exit(1)
+		}
+	}
 
-	definitions, err := buildArtifactDefinitions()
+	definitions, err := buildArtifactDefinitions(selectedCircuit)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to prepare circuits: %v\n", err)
 		os.Exit(1)
 	}
 
-	checksums := make(map[string]string, len(definitions))
 	for _, definition := range definitions {
 		path := filepath.Join(outDir, definition.filename)
 		if !*overwriteFlag {
@@ -62,14 +86,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "failed to write %s: %v\n", definition.filename, err)
 			os.Exit(1)
 		}
-
-		checksum, err := checksumFile(path)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "failed to checksum %s: %v\n", definition.filename, err)
-			os.Exit(1)
-		}
-
-		checksums[definition.checksumEnv] = checksum
+	}
+	checksums, err := checksumArtifactSet(outDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to checksum generated artifact set: %v\n", err)
+		os.Exit(1)
 	}
 
 	if err := writeEnvManifest(filepath.Join(outDir, "privacy_zk_checksums.env"), outDir, checksums); err != nil {
@@ -94,129 +115,94 @@ func main() {
 	}
 }
 
-func buildArtifactDefinitions() ([]artifactDefinition, error) {
-	depositCS, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit.DepositCircuit{})
-	if err != nil {
-		return nil, err
+func buildArtifactDefinitions(selectedCircuit string) ([]artifactDefinition, error) {
+	type circuitDefinition struct {
+		id                        string
+		circuit                   frontend.Circuit
+		r1csFile, r1csChecksumEnv string
+		pkFile, pkChecksumEnv     string
+		vkFile, vkChecksumEnv     string
 	}
-	depositPK, depositVK, err := groth16.Setup(depositCS)
-	if err != nil {
-		return nil, err
+	circuits := []circuitDefinition{
+		{setupCircuitDeposit, &circuit.DepositCircuit{}, zk.DepositR1CSFile, zk.DepositR1CSSHA256Env, zk.DepositPKFile, zk.DepositPKSHA256Env, zk.DepositVKFile, zk.DepositVKSHA256Env},
+		{setupCircuitSpend, &circuit.SpendCircuit{}, zk.SpendR1CSFile, zk.SpendR1CSSHA256Env, zk.SpendPKFile, zk.SpendPKSHA256Env, zk.SpendVKFile, zk.SpendVKSHA256Env},
+		{setupCircuitJoinSplit, &circuit.JoinSplitCircuit{}, zk.JoinSplitR1CSFile, zk.JoinSplitR1CSSHA256Env, zk.JoinSplitPKFile, zk.JoinSplitPKSHA256Env, zk.JoinSplitVKFile, zk.JoinSplitVKSHA256Env},
+		{setupCircuitBatchJoinSplit16x32V1, &circuit.BatchJoinSplit16x32{}, zk.BatchJoinSplit16x32R1CSFile, zk.BatchJoinSplit16x32R1CSSHA256Env, zk.BatchJoinSplit16x32PKFile, zk.BatchJoinSplit16x32PKSHA256Env, zk.BatchJoinSplit16x32VKFile, zk.BatchJoinSplit16x32VKSHA256Env},
 	}
+	definitions := make([]artifactDefinition, 0, len(circuits)*3)
+	for _, definition := range circuits {
+		if selectedCircuit != setupCircuitAll && selectedCircuit != definition.id {
+			continue
+		}
+		compiled, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, definition.circuit)
+		if err != nil {
+			return nil, err
+		}
+		provingKey, verifyingKey, err := groth16.Setup(compiled)
+		if err != nil {
+			return nil, err
+		}
+		compiledCopy := compiled
+		provingKeyCopy := provingKey
+		verifyingKeyCopy := verifyingKey
+		definitionCopy := definition
+		definitions = append(definitions,
+			artifactDefinition{filename: definitionCopy.r1csFile, checksumEnv: definitionCopy.r1csChecksumEnv, write: func(outDir string) error {
+				return writeArtifact(filepath.Join(outDir, definitionCopy.r1csFile), compiledCopy)
+			}},
+			artifactDefinition{filename: definitionCopy.pkFile, checksumEnv: definitionCopy.pkChecksumEnv, write: func(outDir string) error {
+				return writeArtifact(filepath.Join(outDir, definitionCopy.pkFile), provingKeyCopy)
+			}},
+			artifactDefinition{filename: definitionCopy.vkFile, checksumEnv: definitionCopy.vkChecksumEnv, write: func(outDir string) error {
+				return writeArtifact(filepath.Join(outDir, definitionCopy.vkFile), verifyingKeyCopy)
+			}},
+		)
+	}
+	return definitions, nil
+}
 
-	spendCS, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit.SpendCircuit{})
-	if err != nil {
-		return nil, err
+func parseSetupCircuit(raw string) (string, error) {
+	selected := strings.ToLower(strings.TrimSpace(raw))
+	switch selected {
+	case setupCircuitAll,
+		setupCircuitDeposit,
+		setupCircuitSpend,
+		setupCircuitJoinSplit,
+		setupCircuitBatchJoinSplit16x32V1:
+		return selected, nil
+	default:
+		return "", fmt.Errorf("unsupported circuit %q", raw)
 	}
-	spendPK, spendVK, err := groth16.Setup(spendCS)
-	if err != nil {
-		return nil, err
-	}
+}
 
-	joinSplitCS, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit.JoinSplitCircuit{})
+func validateExistingArtifactSet(outDir string) error {
+	manifest, err := zk.LoadArtifactManifest(filepath.Join(outDir, zk.ArtifactManifestFile))
 	if err != nil {
-		return nil, err
+		return err
 	}
-	joinSplitPK, joinSplitVK, err := groth16.Setup(joinSplitCS)
-	if err != nil {
-		return nil, err
+	for _, descriptor := range manifest.Artifacts {
+		actual, err := checksumFile(filepath.Join(outDir, descriptor.Filename))
+		if err != nil {
+			return fmt.Errorf("checksum %s: %w", descriptor.Filename, err)
+		}
+		if actual != descriptor.SHA256 {
+			return fmt.Errorf("artifact %s does not match the existing manifest checksum", descriptor.Filename)
+		}
 	}
+	return nil
+}
 
-	batchJoinSplitCS, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit.BatchJoinSplit16x32{})
-	if err != nil {
-		return nil, err
+func checksumArtifactSet(outDir string) (map[string]string, error) {
+	descriptors := zk.DefaultArtifactDescriptors()
+	checksums := make(map[string]string, len(descriptors))
+	for _, descriptor := range descriptors {
+		checksum, err := checksumFile(filepath.Join(outDir, descriptor.Filename))
+		if err != nil {
+			return nil, fmt.Errorf("checksum %s: %w", descriptor.Filename, err)
+		}
+		checksums[descriptor.ChecksumEnv] = checksum
 	}
-	batchJoinSplitPK, batchJoinSplitVK, err := groth16.Setup(batchJoinSplitCS)
-	if err != nil {
-		return nil, err
-	}
-
-	return []artifactDefinition{
-		{
-			filename:    zk.DepositR1CSFile,
-			checksumEnv: zk.DepositR1CSSHA256Env,
-			write: func(outDir string) error {
-				return writeArtifact(filepath.Join(outDir, zk.DepositR1CSFile), depositCS)
-			},
-		},
-		{
-			filename:    zk.DepositPKFile,
-			checksumEnv: zk.DepositPKSHA256Env,
-			write: func(outDir string) error {
-				return writeArtifact(filepath.Join(outDir, zk.DepositPKFile), depositPK)
-			},
-		},
-		{
-			filename:    zk.DepositVKFile,
-			checksumEnv: zk.DepositVKSHA256Env,
-			write: func(outDir string) error {
-				return writeArtifact(filepath.Join(outDir, zk.DepositVKFile), depositVK)
-			},
-		},
-		{
-			filename:    zk.SpendR1CSFile,
-			checksumEnv: zk.SpendR1CSSHA256Env,
-			write: func(outDir string) error {
-				return writeArtifact(filepath.Join(outDir, zk.SpendR1CSFile), spendCS)
-			},
-		},
-		{
-			filename:    zk.SpendPKFile,
-			checksumEnv: zk.SpendPKSHA256Env,
-			write: func(outDir string) error {
-				return writeArtifact(filepath.Join(outDir, zk.SpendPKFile), spendPK)
-			},
-		},
-		{
-			filename:    zk.SpendVKFile,
-			checksumEnv: zk.SpendVKSHA256Env,
-			write: func(outDir string) error {
-				return writeArtifact(filepath.Join(outDir, zk.SpendVKFile), spendVK)
-			},
-		},
-		{
-			filename:    zk.JoinSplitR1CSFile,
-			checksumEnv: zk.JoinSplitR1CSSHA256Env,
-			write: func(outDir string) error {
-				return writeArtifact(filepath.Join(outDir, zk.JoinSplitR1CSFile), joinSplitCS)
-			},
-		},
-		{
-			filename:    zk.JoinSplitPKFile,
-			checksumEnv: zk.JoinSplitPKSHA256Env,
-			write: func(outDir string) error {
-				return writeArtifact(filepath.Join(outDir, zk.JoinSplitPKFile), joinSplitPK)
-			},
-		},
-		{
-			filename:    zk.JoinSplitVKFile,
-			checksumEnv: zk.JoinSplitVKSHA256Env,
-			write: func(outDir string) error {
-				return writeArtifact(filepath.Join(outDir, zk.JoinSplitVKFile), joinSplitVK)
-			},
-		},
-		{
-			filename:    zk.BatchJoinSplit16x32R1CSFile,
-			checksumEnv: zk.BatchJoinSplit16x32R1CSSHA256Env,
-			write: func(outDir string) error {
-				return writeArtifact(filepath.Join(outDir, zk.BatchJoinSplit16x32R1CSFile), batchJoinSplitCS)
-			},
-		},
-		{
-			filename:    zk.BatchJoinSplit16x32PKFile,
-			checksumEnv: zk.BatchJoinSplit16x32PKSHA256Env,
-			write: func(outDir string) error {
-				return writeArtifact(filepath.Join(outDir, zk.BatchJoinSplit16x32PKFile), batchJoinSplitPK)
-			},
-		},
-		{
-			filename:    zk.BatchJoinSplit16x32VKFile,
-			checksumEnv: zk.BatchJoinSplit16x32VKSHA256Env,
-			write: func(outDir string) error {
-				return writeArtifact(filepath.Join(outDir, zk.BatchJoinSplit16x32VKFile), batchJoinSplitVK)
-			},
-		},
-	}, nil
+	return checksums, nil
 }
 
 func writeArtifact(path string, artifact interface {
@@ -233,13 +219,16 @@ func writeArtifact(path string, artifact interface {
 }
 
 func checksumFile(path string) (string, error) {
-	bz, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
-
-	sum := sha256.Sum256(bz)
-	return hex.EncodeToString(sum[:]), nil
+	defer file.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func writeEnvManifest(path, outDir string, checksums map[string]string) error {

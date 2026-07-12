@@ -166,6 +166,42 @@ func TestInitGenesisRejectsCircuitIdentityMismatchBeforeStateWrites(t *testing.T
 	require.False(t, found)
 }
 
+func TestS4B02FreshGenesisUsesRotatedJoinSplitIdentity(t *testing.T) {
+	if strings.TrimSpace(os.Getenv("CLAIRVEIL_RUN_JOINSPLIT_FRESH_GENESIS_GATE")) != "1" {
+		t.Skip("set CLAIRVEIL_RUN_JOINSPLIT_FRESH_GENESIS_GATE=1 with current and previous artifact directories")
+	}
+	currentDir := strings.TrimSpace(os.Getenv(privacyzk.ZKArtifactDirEnv))
+	previousDir := strings.TrimSpace(os.Getenv("CLAIRVEIL_PRIVACY_PREVIOUS_ZK_ARTIFACT_DIR"))
+	require.NotEmpty(t, currentDir)
+	require.NotEmpty(t, previousDir)
+	currentManifest, err := privacyzk.LoadArtifactManifest(filepath.Join(currentDir, privacyzk.ArtifactManifestFile))
+	require.NoError(t, err)
+	previousManifest, err := privacyzk.LoadArtifactManifest(filepath.Join(previousDir, privacyzk.ArtifactManifestFile))
+	require.NoError(t, err)
+	require.NotEqual(
+		t,
+		previousManifest.CircuitSetIdentity.Circuits[2].VerifyingKeySha256,
+		currentManifest.CircuitSetIdentity.Circuits[2].VerifyingKeySha256,
+	)
+	t.Setenv(privacyzk.ZKArtifactDirEnv, currentDir)
+
+	freshKeeper, freshCtx := setupPrivacyGenesisKeeper()
+	freshState := privacytypes.DefaultGenesis(currentManifest.CircuitSetIdentity)
+	InitGenesis(freshCtx, *freshKeeper, *freshState)
+	storedIdentity, found, err := freshKeeper.GetCircuitSetIdentity(freshCtx)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, currentManifest.CircuitSetIdentity, storedIdentity)
+
+	staleKeeper, staleCtx := setupPrivacyGenesisKeeper()
+	staleState := privacytypes.DefaultGenesis(previousManifest.CircuitSetIdentity)
+	require.Panics(t, func() { InitGenesis(staleCtx, *staleKeeper, *staleState) })
+	require.Equal(t, uint64(0), staleKeeper.GetLeafCount(staleCtx))
+	_, found, err = staleKeeper.GetCircuitSetIdentity(staleCtx)
+	require.NoError(t, err)
+	require.False(t, found)
+}
+
 func setupGenesisCircuitIdentity(t *testing.T) *privacytypes.CircuitSetIdentity {
 	t.Helper()
 	dir := t.TempDir()
