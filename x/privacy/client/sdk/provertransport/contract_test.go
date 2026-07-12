@@ -498,7 +498,10 @@ type transferNoteSigner struct {
 	signature []byte
 }
 
-func (s *transferNoteSigner) SignOwnerIntent(_ *big.Int) ([]byte, error) {
+func (s *transferNoteSigner) SignOwnerIntent(request privacytransfer.JoinSplitOwnerIntentSigningRequestV1) ([]byte, error) {
+	if err := privacytransfer.ValidateJoinSplitOwnerIntentSigningRequestV1(request); err != nil {
+		return nil, err
+	}
 	return append([]byte(nil), s.signature...), nil
 }
 

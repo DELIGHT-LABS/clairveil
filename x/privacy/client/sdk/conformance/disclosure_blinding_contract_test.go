@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -57,6 +58,7 @@ type disclosureBlindingContractFixture struct {
 		FullBlinding     string `json:"full_disclosure_blinding"`
 		Valid            bool   `json:"valid"`
 		ErrorCode        string `json:"error_code"`
+		ErrorField       string `json:"error_field"`
 	} `json:"vectors"`
 }
 
@@ -108,22 +110,48 @@ func TestPrivacyDisclosureBlindingV1Contract(t *testing.T) {
 
 	for _, vector := range fixture.Vectors {
 		t.Run(vector.Name, func(t *testing.T) {
+			outputRandomness := fixtureDecimal(t, vector.OutputRandomness)
+			userBlinding := fixtureDecimal(t, vector.UserBlinding)
+			fullBlinding := fixtureDecimal(t, vector.FullBlinding)
 			err := privacytypes.ValidateDisclosureBlindingSeparationV1(privacytypes.DisclosureBlindingSeparationV1Input{
 				OutputIndex:            vector.OutputIndex,
 				Enabled:                vector.Enabled,
 				PrivacyPolicy:          vector.PrivacyPolicy,
-				OutputRandomness:       fixtureDecimal(t, vector.OutputRandomness),
-				UserDisclosureBlinding: fixtureDecimal(t, vector.UserBlinding),
-				FullDisclosureBlinding: fixtureDecimal(t, vector.FullBlinding),
+				OutputRandomness:       outputRandomness,
+				UserDisclosureBlinding: userBlinding,
+				FullDisclosureBlinding: fullBlinding,
 			})
 			if vector.Valid {
 				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				var invariantErr *privacytypes.DisclosureBlindingErrorV1
+				require.True(t, errors.As(err, &invariantErr))
+				require.Equal(t, vector.ErrorCode, string(invariantErr.Code))
+				require.Equal(t, vector.ErrorField, invariantErr.Field)
+			}
+
+			if !vector.Enabled || vector.OutputIndex != privacytypes.TransferDisclosureRecipientOutputIndex {
 				return
 			}
-			require.Error(t, err)
-			var invariantErr *privacytypes.DisclosureBlindingErrorV1
-			require.True(t, errors.As(err, &invariantErr))
-			require.Equal(t, vector.ErrorCode, string(invariantErr.Code))
+			signerErr := privacytransfer.ValidateJoinSplitOwnerDisclosureBlindingV1(
+				privacytransfer.JoinSplitOwnerIntentSigningRequestV1{
+					UserPrivacyPolicy:         vector.PrivacyPolicy,
+					RecipientOutputRandomness: outputRandomness,
+					UserDisclosureBlinding:    userBlinding,
+					FullDisclosureBlinding:    fullBlinding,
+				},
+			)
+			if vector.Valid {
+				require.NoError(t, signerErr)
+				return
+			}
+			require.Error(t, signerErr)
+			var signerInvariantErr *privacytypes.DisclosureBlindingErrorV1
+			require.True(t, errors.As(signerErr, &signerInvariantErr))
+			require.Equal(t, vector.ErrorCode, string(signerInvariantErr.Code))
+			require.Equal(t, vector.ErrorField, signerInvariantErr.Field)
+			require.Equal(t, privacytypes.TransferDisclosureRecipientOutputIndex, signerInvariantErr.OutputIndex)
 		})
 	}
 }

@@ -418,8 +418,10 @@ type manualTransferOwnerIntentSigner struct {
 	pubKey *crypto_tedwards.PointAffine
 }
 
-func (s manualTransferOwnerIntentSigner) SignOwnerIntent(msgHash *big.Int) ([]byte, error) {
-	return manualSign(msgHash, s.scalar, s.pubKey)
+func (s manualTransferOwnerIntentSigner) SignOwnerIntent(request privacytransfer.JoinSplitOwnerIntentSigningRequestV1) ([]byte, error) {
+	return privacytransfer.SignValidatedJoinSplitOwnerIntentV1(request, func(msgHash *big.Int) ([]byte, error) {
+		return manualSign(msgHash, s.scalar, s.pubKey)
+	})
 }
 
 func waitForBlock(clientCtx client.Context, currentHeight int64) error {

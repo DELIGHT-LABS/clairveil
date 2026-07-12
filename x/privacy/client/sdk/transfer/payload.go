@@ -290,7 +290,7 @@ func BuildPreparedTransferPayload(
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute transfer chain domain: %w", err)
 	}
-	ownerIntent, err := privacytypes.ComputeTransferIntentV2(privacytypes.TransferIntentV2Input{
+	ownerIntentInput := privacytypes.TransferIntentV2Input{
 		ChainDomainHi:        chainDomain.Hi,
 		ChainDomainLo:        chainDomain.Lo,
 		MerkleRoot:           new(big.Int).SetBytes(prepared.CommonRoot),
@@ -302,11 +302,25 @@ func BuildPreparedTransferPayload(
 		PayloadDigestHi:      payloadDigest.Hi,
 		PayloadDigestLo:      payloadDigest.Lo,
 		ExpiresAtUnix:        input.ExpiresAtUnix,
-	})
+	}
+	ownerIntent, err := privacytypes.ComputeTransferIntentV2(ownerIntentInput)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute transfer owner intent: %w", err)
 	}
-	ownerSignature, err := signer.SignOwnerIntent(ownerIntent)
+	signingRequest := JoinSplitOwnerIntentSigningRequestV1{
+		Intent:                    ownerIntent,
+		ChainID:                   input.ChainID,
+		Effect:                    effectMessage,
+		AssetID:                   ownerIntentInput.AssetID,
+		UserPrivacyPolicy:         input.UserPrivacyPolicy,
+		RecipientOutputRandomness: prepared.RecipientNote.Randomness,
+		UserDisclosureBlinding:    userDisclosureBlinding,
+		FullDisclosureBlinding:    fullDisclosureBlinding,
+	}
+	if err := ValidateJoinSplitOwnerIntentSigningRequestV1(signingRequest); err != nil {
+		return nil, fmt.Errorf("invalid transfer owner signing request: %w", err)
+	}
+	ownerSignature, err := signer.SignOwnerIntent(signingRequest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign transfer owner intent: %w", err)
 	}

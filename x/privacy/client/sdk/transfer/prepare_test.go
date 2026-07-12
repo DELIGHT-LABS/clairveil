@@ -352,15 +352,20 @@ func (s *stubMerklePathProvider) LookupMerklePath(_ context.Context, commitmentH
 
 type stubNoteHashSigner struct {
 	hashes    []*big.Int
+	requests  []JoinSplitOwnerIntentSigningRequestV1
 	signature []byte
 	returnErr error
 }
 
-func (s *stubNoteHashSigner) SignOwnerIntent(msgHash *big.Int) ([]byte, error) {
+func (s *stubNoteHashSigner) SignOwnerIntent(request JoinSplitOwnerIntentSigningRequestV1) ([]byte, error) {
 	if s.returnErr != nil {
 		return nil, s.returnErr
 	}
-	s.hashes = append(s.hashes, new(big.Int).Set(msgHash))
+	if err := ValidateJoinSplitOwnerIntentSigningRequestV1(request); err != nil {
+		return nil, err
+	}
+	s.requests = append(s.requests, request)
+	s.hashes = append(s.hashes, new(big.Int).Set(request.Intent))
 	return append([]byte(nil), s.signature...), nil
 }
 

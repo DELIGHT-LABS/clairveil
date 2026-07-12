@@ -275,8 +275,10 @@ type generatedTransferSigner struct {
 	pubKey *crypto_tedwards.PointAffine
 }
 
-func (s generatedTransferSigner) SignOwnerIntent(msgHash *big.Int) ([]byte, error) {
-	return signGeneratedNoteHash(msgHash, s.scalar, s.pubKey)
+func (s generatedTransferSigner) SignOwnerIntent(request privacytransfer.JoinSplitOwnerIntentSigningRequestV1) ([]byte, error) {
+	return privacytransfer.SignValidatedJoinSplitOwnerIntentV1(request, func(msgHash *big.Int) ([]byte, error) {
+		return signGeneratedNoteHash(msgHash, s.scalar, s.pubKey)
+	})
 }
 
 type generatedWithdrawSigner struct {

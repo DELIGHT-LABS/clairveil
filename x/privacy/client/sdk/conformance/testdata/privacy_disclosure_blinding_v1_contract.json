@@ -78,7 +78,8 @@
       "user_disclosure_blinding": "13",
       "full_disclosure_blinding": "17",
       "valid": true,
-      "error_code": ""
+      "error_code": "",
+      "error_field": ""
     },
     {
       "name": "active_all_private_valid",
@@ -89,7 +90,20 @@
       "user_disclosure_blinding": "0",
       "full_disclosure_blinding": "17",
       "valid": true,
-      "error_code": ""
+      "error_code": "",
+      "error_field": ""
+    },
+    {
+      "name": "active_all_private_zero_randomness_valid",
+      "output_index": 0,
+      "enabled": true,
+      "privacy_policy": 0,
+      "output_randomness": "0",
+      "user_disclosure_blinding": "0",
+      "full_disclosure_blinding": "17",
+      "valid": true,
+      "error_code": "",
+      "error_field": ""
     },
     {
       "name": "disabled_valid",
@@ -100,7 +114,8 @@
       "user_disclosure_blinding": "0",
       "full_disclosure_blinding": "0",
       "valid": true,
-      "error_code": ""
+      "error_code": "",
+      "error_field": ""
     },
     {
       "name": "invalid_policy",
@@ -111,7 +126,8 @@
       "user_disclosure_blinding": "13",
       "full_disclosure_blinding": "17",
       "valid": false,
-      "error_code": "DBS_INVALID_POLICY"
+      "error_code": "DBS_INVALID_POLICY",
+      "error_field": "privacy_policy"
     },
     {
       "name": "non_canonical_full_blinding",
@@ -122,7 +138,8 @@
       "user_disclosure_blinding": "13",
       "full_disclosure_blinding": "21888242871839275222246405745257275088548364400416034343698204186575808495617",
       "valid": false,
-      "error_code": "DBS_NON_CANONICAL_FIELD"
+      "error_code": "DBS_NON_CANONICAL_FIELD",
+      "error_field": "full_disclosure_blinding"
     },
     {
       "name": "disabled_randomness_nonzero",
@@ -133,7 +150,8 @@
       "user_disclosure_blinding": "0",
       "full_disclosure_blinding": "0",
       "valid": false,
-      "error_code": "DBS_DISABLED_SENTINEL"
+      "error_code": "DBS_DISABLED_SENTINEL",
+      "error_field": "output_randomness"
     },
     {
       "name": "all_private_user_nonzero",
@@ -144,7 +162,8 @@
       "user_disclosure_blinding": "13",
       "full_disclosure_blinding": "17",
       "valid": false,
-      "error_code": "DBS_ALL_PRIVATE_USER_SENTINEL"
+      "error_code": "DBS_ALL_PRIVATE_USER_SENTINEL",
+      "error_field": "user_disclosure_blinding"
     },
     {
       "name": "enabled_user_zero",
@@ -155,7 +174,8 @@
       "user_disclosure_blinding": "0",
       "full_disclosure_blinding": "17",
       "valid": false,
-      "error_code": "DBS_USER_BLINDING_REQUIRED"
+      "error_code": "DBS_USER_BLINDING_REQUIRED",
+      "error_field": "user_disclosure_blinding"
     },
     {
       "name": "active_full_zero",
@@ -166,7 +186,8 @@
       "user_disclosure_blinding": "13",
       "full_disclosure_blinding": "0",
       "valid": false,
-      "error_code": "DBS_FULL_BLINDING_REQUIRED"
+      "error_code": "DBS_FULL_BLINDING_REQUIRED",
+      "error_field": "full_disclosure_blinding"
     },
     {
       "name": "user_reuses_randomness",
@@ -177,7 +198,8 @@
       "user_disclosure_blinding": "11",
       "full_disclosure_blinding": "17",
       "valid": false,
-      "error_code": "DBS_USER_RANDOMNESS_REUSE"
+      "error_code": "DBS_USER_RANDOMNESS_REUSE",
+      "error_field": "user_disclosure_blinding"
     },
     {
       "name": "full_reuses_randomness",
@@ -188,7 +210,8 @@
       "user_disclosure_blinding": "13",
       "full_disclosure_blinding": "11",
       "valid": false,
-      "error_code": "DBS_FULL_RANDOMNESS_REUSE"
+      "error_code": "DBS_FULL_RANDOMNESS_REUSE",
+      "error_field": "full_disclosure_blinding"
     },
     {
       "name": "full_reuses_user",
@@ -199,7 +222,8 @@
       "user_disclosure_blinding": "13",
       "full_disclosure_blinding": "13",
       "valid": false,
-      "error_code": "DBS_USER_FULL_BLINDING_REUSE"
+      "error_code": "DBS_USER_FULL_BLINDING_REUSE",
+      "error_field": "full_disclosure_blinding"
     },
     {
       "name": "all_private_full_reuses_randomness",
@@ -210,7 +234,8 @@
       "user_disclosure_blinding": "0",
       "full_disclosure_blinding": "11",
       "valid": false,
-      "error_code": "DBS_FULL_RANDOMNESS_REUSE"
+      "error_code": "DBS_FULL_RANDOMNESS_REUSE",
+      "error_field": "full_disclosure_blinding"
     }
   ]
 }

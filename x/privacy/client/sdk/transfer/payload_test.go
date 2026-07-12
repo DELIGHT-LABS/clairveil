@@ -31,6 +31,9 @@ func TestBuildPreparedTransferPayloadAndProofRoundTrip(t *testing.T) {
 	require.NotEmpty(t, payload.SelfViewDisclosureDigestHex)
 	require.NotEmpty(t, payload.SelfViewDisclosurePayloadHex)
 	require.NoError(t, ValidatePreparedTransferPayloadMetadata(*payload))
+	require.Len(t, signer.requests, 1)
+	require.NoError(t, ValidateJoinSplitOwnerIntentSigningRequestV1(signer.requests[0]))
+	require.Equal(t, signer.hashes[0], signer.requests[0].Intent)
 
 	proof, err := BuildPreparedTransferProof(*payload, artifacts, runner)
 	require.NoError(t, err)
@@ -47,6 +50,86 @@ func TestBuildPreparedTransferPayloadAndProofRoundTrip(t *testing.T) {
 	require.NotEmpty(t, msg.SelfViewDisclosureDigest)
 	require.NotEmpty(t, msg.SelfViewDisclosurePayload)
 	require.Len(t, msg.ViewTags, 2)
+}
+
+func TestJoinSplitStructuredSigningBoundaryRejectsDisclosureReuseBeforeRelease(t *testing.T) {
+	input, merkleProvider, signer, _, _ := testBuildTransferMessageDeps(t)
+	_, err := BuildPreparedTransferPayload(context.Background(), merkleProvider, signer, input)
+	require.NoError(t, err)
+	require.Len(t, signer.requests, 1)
+	base := signer.requests[0]
+
+	tests := []struct {
+		name string
+		code privacytypes.DisclosureBlindingErrorCodeV1
+		set  func(*JoinSplitOwnerIntentSigningRequestV1)
+	}{
+		{
+			name: "DBS-01",
+			code: privacytypes.DisclosureBlindingErrorUserRandomnessReuseV1,
+			set: func(request *JoinSplitOwnerIntentSigningRequestV1) {
+				request.UserDisclosureBlinding = new(big.Int).Set(request.RecipientOutputRandomness)
+			},
+		},
+		{
+			name: "DBS-02",
+			code: privacytypes.DisclosureBlindingErrorFullRandomnessReuseV1,
+			set: func(request *JoinSplitOwnerIntentSigningRequestV1) {
+				request.FullDisclosureBlinding = new(big.Int).Set(request.RecipientOutputRandomness)
+			},
+		},
+		{
+			name: "DBS-03",
+			code: privacytypes.DisclosureBlindingErrorUserFullBlindingReuseV1,
+			set: func(request *JoinSplitOwnerIntentSigningRequestV1) {
+				request.FullDisclosureBlinding = new(big.Int).Set(request.UserDisclosureBlinding)
+			},
+		},
+		{
+			name: "all-private user sentinel",
+			code: privacytypes.DisclosureBlindingErrorAllPrivateUserSentinelV1,
+			set: func(request *JoinSplitOwnerIntentSigningRequestV1) {
+				request.UserPrivacyPolicy = privacytypes.TransferPrivacyPolicyAllPrivate
+				request.Effect.UserPrivacyPolicy = privacytypes.TransferPrivacyPolicyAllPrivate
+				request.UserDisclosureBlinding = big.NewInt(1)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			request := cloneJoinSplitOwnerIntentSigningRequestV1(base)
+			tc.set(&request)
+			signatureReleases := 0
+			_, err := SignValidatedJoinSplitOwnerIntentV1(request, func(*big.Int) ([]byte, error) {
+				signatureReleases++
+				return testSignatureBytes(t), nil
+			})
+			require.Error(t, err)
+			require.Zero(t, signatureReleases)
+			var invariantErr *privacytypes.DisclosureBlindingErrorV1
+			require.True(t, errors.As(err, &invariantErr))
+			require.Equal(t, tc.code, invariantErr.Code)
+			require.Equal(t, privacytypes.TransferDisclosureRecipientOutputIndex, invariantErr.OutputIndex)
+		})
+	}
+}
+
+func TestJoinSplitStructuredSigningBoundaryBindsFinalEffectBeforeRelease(t *testing.T) {
+	input, merkleProvider, signer, _, _ := testBuildTransferMessageDeps(t)
+	_, err := BuildPreparedTransferPayload(context.Background(), merkleProvider, signer, input)
+	require.NoError(t, err)
+	require.Len(t, signer.requests, 1)
+
+	request := cloneJoinSplitOwnerIntentSigningRequestV1(signer.requests[0])
+	request.Intent = new(big.Int).Add(request.Intent, big.NewInt(1))
+	signatureReleases := 0
+	_, err = SignValidatedJoinSplitOwnerIntentV1(request, func(*big.Int) ([]byte, error) {
+		signatureReleases++
+		return testSignatureBytes(t), nil
+	})
+	require.ErrorContains(t, err, "does not match the final effect")
+	require.Zero(t, signatureReleases)
 }
 
 func TestValidatePreparedTransferProofRejectsEmptyProof(t *testing.T) {
@@ -230,6 +313,9 @@ func TestValidatePreparedTransferPayloadMetadataCanonicalizesAllPrivateUserBlind
 	require.NoError(t, err)
 	require.Empty(t, payload.UserDisclosureBlindingHex)
 	require.NoError(t, ValidatePreparedTransferPayloadMetadata(*payload))
+	require.Len(t, signer.requests, 1)
+	require.Zero(t, signer.requests[0].UserDisclosureBlinding.Sign())
+	require.NoError(t, ValidateJoinSplitOwnerIntentSigningRequestV1(signer.requests[0]))
 
 	payload.UserDisclosureBlindingHex = payload.FullDisclosureBlindingHex
 	payload.PayloadHash = ComputePreparedTransferPayloadHash(*payload)
@@ -238,6 +324,19 @@ func TestValidatePreparedTransferPayloadMetadataCanonicalizesAllPrivateUserBlind
 	var invariantErr *privacytypes.DisclosureBlindingErrorV1
 	require.True(t, errors.As(err, &invariantErr))
 	require.Equal(t, privacytypes.DisclosureBlindingErrorAllPrivateUserSentinelV1, invariantErr.Code)
+}
+
+func cloneJoinSplitOwnerIntentSigningRequestV1(
+	request JoinSplitOwnerIntentSigningRequestV1,
+) JoinSplitOwnerIntentSigningRequestV1 {
+	request.Intent = new(big.Int).Set(request.Intent)
+	request.AssetID = new(big.Int).Set(request.AssetID)
+	request.RecipientOutputRandomness = new(big.Int).Set(request.RecipientOutputRandomness)
+	request.UserDisclosureBlinding = new(big.Int).Set(request.UserDisclosureBlinding)
+	request.FullDisclosureBlinding = new(big.Int).Set(request.FullDisclosureBlinding)
+	effect := *request.Effect
+	request.Effect = &effect
+	return request
 }
 
 func TestPreparedTransferPayloadRejectsNonCanonicalPublicKeys(t *testing.T) {

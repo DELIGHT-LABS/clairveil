@@ -27,10 +27,6 @@ type MerklePathProvider interface {
 	LookupMerklePath(ctx context.Context, commitmentHex string) (*MerklePathResult, error)
 }
 
-type OwnerIntentSigner interface {
-	SignOwnerIntent(intent *big.Int) ([]byte, error)
-}
-
 type PrepareJoinSplitInput struct {
 	Inputs               [2]privacyscan.FoundNote
 	RecipientSpendPubKey *crypto_tedwards.PointAffine
