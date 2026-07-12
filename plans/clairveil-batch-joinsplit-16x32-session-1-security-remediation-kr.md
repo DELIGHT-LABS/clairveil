@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | Complete |
+| 상태 | Complete historical Gate 1; **2x2 disclosure constraint와 exact exploit regression 재진입 필요** (2026-07-12) |
 | 선행 문서 | [BatchJoinSplit16x32 Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md) |
 | 후속 세션 | [Session 2 Foundation](clairveil-batch-joinsplit-16x32-session-2-foundation-kr.md) |
 | 권장 모델 | `gpt-5.6-sol` |
@@ -540,7 +540,9 @@ NoteV1의 새 commitment/nullifier formula는 Session 2에서 production circuit
 
 ## 13. Acceptance Criteria
 
-- [x] duplicate input exploit witness가 circuit에서 실패함.
+2026-07-12 independent revalidation이 아래 두 acceptance 증거를 재개방했다. Pairwise distinctness 구현 자체는 존재하지만 exact exploit-shaped regression이 아니며, SDK CSPRNG independence만으로 circuit-level secret-reuse invariant가 닫히지 않는다.
+
+- [ ] same note/commitment/path/helper/nullifier와 doubled output을 사용한 exact duplicate input exploit witness가 distinctness constraint 때문에 실패함. (`S4-B03` 미검증)
 - [x] duplicate nullifier/commitment가 types/keeper에서 빠르게 실패함.
 - [x] commitment가 Deposit/2x2/genesis를 가로질러 전역으로 유일함.
 - [x] SDK/payroll이 같은 note 재사용을 거부함.
@@ -550,7 +552,7 @@ NoteV1의 새 commitment/nullifier formula는 Session 2에서 production circuit
 - [x] SpendIntentV2가 chain domain과 expiry를 proof-bound함.
 - [x] withdraw expiry extension과 cross-chain replay가 실패함.
 - [x] recipient leading-zero alias가 불가능함.
-- [x] current user/audit/self-view disclosure가 독립 blinding을 사용하고 dictionary regression test가 통과함.
+- [ ] current 2x2 user/audit/self-view disclosure가 circuit에서도 note randomness 및 서로의 exact reuse를 거부함. (`S4-B02`; SDK CSPRNG/dictionary regression만 통과)
 - [x] malformed point/signature/envelope가 panic 없이 거부됨.
 - [x] prover endpoint failover가 기본 비활성화되고 explicit opt-in만 허용됨.
 - [x] forged historical root와 artifact identity mismatch가 startup/readiness에서 실패함.

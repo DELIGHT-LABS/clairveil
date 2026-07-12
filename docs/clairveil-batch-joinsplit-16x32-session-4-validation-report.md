@@ -4,16 +4,69 @@
 
 | Item | Result |
 | --- | --- |
-| Review range | `e427370..494c72df2cad38dc1cc97d5e6e0f15b38e0c82d2` |
-| Validated implementation HEAD | `494c72df2cad38dc1cc97d5e6e0f15b38e0c82d2` |
+| Review range | `e427370..d45f0753c16571743f630599776c9cd498d1e8c9` |
+| Starting HEAD reviewed | `d45f0753c16571743f630599776c9cd498d1e8c9` |
 | Review role | Fresh reviewer independent of Sessions 1–3B implementation |
-| Gate 3B on entry | Initially blocked by an uncommitted integration tree; closed only after the fixes and revalidation recorded below |
-| Session 4 publication state | `PUBLICATION_READY_EXPERIMENTAL` |
+| Gate 3B on entry | **FAIL — Session 3B integration/test re-entry required** |
+| Session 4 publication state | **`BLOCKED`** (`PUBLICATION_READY_EXPERIMENTAL` withdrawn) |
 | Production release state | Not approved |
 | Formal trusted setup | Not performed |
 | External audit | Not performed |
 
-`PUBLICATION_READY_EXPERIMENTAL`, when recorded after the final regression gate, means that the source, tests, and documentation may be published for experimental use. It does not mean production-ready, audited, or backed by production proving artifacts.
+This 2026-07-12 revalidation supersedes the earlier publication claim completed on the same day and retained below. Gate 3B is not satisfied and unresolved High and security-relevant Medium findings remain, so experimental source-publication approval is not currently valid.
+
+## Current confirmed findings
+
+| ID | Severity | Evidence | Impact | Required action |
+| --- | --- | --- | --- | --- |
+| G3B-01 | High | The batch localnet runs one-proof transfer shapes but never the payroll operation graph/workers/reconcile/report. The reference payroll localnet is the legacy multi-message 2x2 `transfer-batch` path. | One-proof payroll reservation, proving, signed-byte retry, typed item evidence, reconciliation, and reporting have never been connected on a real chain. | Add a fresh Session 3B localnet E2E that uses the complete production payroll-worker path and covers restart/retry. |
+| G3B-02 | High | The localnet only constructs mixed-disclosure/self-view options. It does not assert recipient/auditor/self-view decryption, blinding-based digest recomputation, the complete expected output count/commitment set, or safe scanning after a view-tag mismatch. | The runner can succeed while the typed scanner or disclosure consumer omits outputs. | Add live disclosure consumers, view-tag mismatch injection, and per-output evidence checks. |
+| G3B-03 | Medium, security-relevant | `SQLStore` exists, but tests cover schema strings, placeholders, and isolation options only. No real SQLite/PostgreSQL CRUD, rollback, reopen, or lease/CAS execution exists. | Reservation-operation-item-evidence atomicity is unproven on SQL backends, leaving orphan, duplicate-work, and incorrect-item-status risk. | Add at least real SQLite transaction, restart, rollback, and concurrency tests. |
+| G3B-04 | Medium, security-relevant | Unlike the final prepared validator, `ValidateBatchTransferSigningRequest` does not reject global input/output or cross-output secret reuse before signing. | An untrusted preparer can obtain an owner signature over a privacy-leaking intent. | Apply the same `seenSecrets` checks at the structured signer boundary and add adversarial signing tests. |
+| S4-B01 | Medium, security-relevant | Unit tests cover default no-failover and explicit opt-in, but the localnet does not measure actual timeout/healthy endpoint contact counts. Its result value is a literal, not an observation. | The publication evidence does not prove that a live transport avoids sending the witness to a second prover by default. | Exercise two live endpoints and verify default and opt-in behavior separately. |
+| S4-B02 | Medium, security-relevant | The current 2x2 SDK generates independent CSPRNG values, but `JoinSplitCircuit` does not forbid exact reuse between user/full blindings and output randomness. | A custom witness/field-intent signing flow can produce a valid reuse proof and let a disclosure recipient link the later nullifier. | Re-enter Sessions 2/3A because adding the three batch-style inequalities changes the R1CS/VK. |
+| S4-B03 | Medium, security-relevant assurance | Duplicate regressions do not construct the same note/commitment/path/helper/nullifier with doubled outputs, so recomputation or membership failure can mask the distinctness check. | They are not exact regression gates for the prior nullifier-inflation exploit. | Add exploit-shaped 2x2 and batch witnesses; no protocol change is required. |
+
+## Current verification disposition
+
+- Because Gate 3B failed, Session 4 Passes A–I, a fresh max-shape benchmark, fresh localnet, full regression/race/fuzz, and release gates were **not run**. Historical results below are not re-approved as current gate evidence.
+- As supporting checks only, `TestPrivacyNoteV1ContractIndependentGolden` and `TestPrivacyBatchJoinSplitV1ContractIndependentGolden` passed. Their source independently calculates frozen domains, encodings, MiMC, and vector formulas without using the production NoteV1/root helper in the calculation path.
+- Payroll default no-failover/explicit opt-in, durable reconciliation, prove-permit lifetime, and memory/file-store tests passed. The SQL check is schema-only and does not close G3B-03.
+- Batch artifacts in `/tmp/clairveil-session3a-artifacts-381c984` match the historical sizes (R1CS `122,813,535 B`, PK `209,218,621 B`, VK `716 B`) and SHA-256 values.
+- No tracked R1CS/PK/VK, `dist/`, `benchmarks/`, `tmp/`, personal absolute path, or evident secret was found. `benchmarks/`, `dist/`, and `tmp/` are ignored.
+- Current unresolved counts are Critical 0, High 2, and security-relevant Medium 5. No security finding was converted into an accepted residual.
+- Formal setup, external audit, production artifact/provenance, and downstream production operations remain unperformed Production TODOs and do not replace the active findings.
+
+### Supporting verification commands run
+
+| Command | Result and limitation |
+| --- | --- |
+| `go test ./x/privacy/client/sdk/conformance -run '^(TestPrivacyNoteV1ContractIndependentGolden\|TestPrivacyBatchJoinSplitV1ContractIndependentGolden)$' -count=1 -v` | PASS. Confirms the independent golden calculation path; does not replace Gate 3B |
+| `go test ./x/privacy/client/sdk/payroll -run '^(TestProverPoolDoesNotFailOverAfterEndpointTimeoutByDefault\|TestProverPoolFallsBackAfterEndpointTimeoutWithExplicitOptIn\|TestBatchReconcileDurableRestartRetryTxHashFirstAndItemEvidenceSeparate\|TestBatchProofWorkerKeepsSharedLeaseUntilUninterruptibleProveReturns)$' -count=1 -v` | PASS. Unit boundary only; not live endpoint evidence |
+| `go test ./x/privacy/client/sdk/reservation -run '^(TestBatchOperationGraphIsAtomicAndConflictsWithOrdinaryReservation\|TestBatchOperationDurableFileRestartRoundTrip\|TestBatchOperationSQLSchemaIsVersionedAndRelational)$' -count=1 -v` | PASS. Not a real SQL transaction test, so G3B-03 remains open |
+| `git merge-base --is-ancestor e427370 HEAD`, `git diff --check e427370..HEAD` | PASS at starting HEAD `d45f0753c16571743f630599776c9cd498d1e8c9` |
+| Artifact `shasum -a 256` and file-size comparison | PASS. Batch R1CS/PK/VK match the historical development hashes and sizes |
+| Tracked artifact/personal-path/secret-filename scan | PASS. `benchmarks/`, `dist/`, `tmp/`, `tmpdocs/`, local binaries, and dependency outputs are ignored/untracked and are not publication evidence |
+| Passes A–I, full test/race/fuzz, benchmark, fresh localnet, release check/pack | **NOT RUN — Gate 3B FAIL** |
+
+### Accepted residuals and Production TODO
+
+No active High or Medium finding was accepted as a residual. Only the following operational items remain prior Production TODOs.
+
+| Residual/TODO | Owner | Current reason accepted | Production blocking |
+| --- | --- | --- | --- |
+| External ZK audit, source/constraint freeze, official MPC/trusted setup, and transcript | Protocol/release owner | Explicitly outside Session 4; development artifacts only | Yes |
+| Artifact signing/provenance/custody, production manifest, and SBOM/image provenance | Release/validator operator | Requires target release infrastructure | Yes |
+| Production gas/governance/upgrade/rollback, staging load/fault, monitoring, and incident response | Downstream chain owner | Requires the target chain and operations process | Yes |
+| Prover TLS/auth/ACL/quota/process isolation/retention and audit-key custody/rotation/manual review | Prover and auditor/payroll operators | Requires managed production infrastructure and procedures | Yes |
+| Downstream JS/TS wallet/product plus metadata-leakage and padding policy | Product/privacy owner | Only the Go reference and declared leakage exist; product acceptance is required | Yes for downstream production |
+| Three no-fixed-version Go advisories and one example npm Low | Dependency/security owner | Tracked under the existing exact policy rather than hidden | Reassess before production |
+
+This table neither accepts the active Gate 3B/Session 2–3A blockers nor authorizes publication.
+
+## Prior 2026-07-12 historical validation record (superseded)
+
+The content below retains the prior reviewer's historical claim for provenance. It is not the current publication state, Pass result, benchmark, or localnet evidence; the 2026-07-12 disposition above controls.
 
 ## Independent review method
 

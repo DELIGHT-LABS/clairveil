@@ -4,16 +4,69 @@
 
 | 항목 | 결과 |
 | --- | --- |
-| 검토 범위 | `e427370..494c72df2cad38dc1cc97d5e6e0f15b38e0c82d2` |
-| 검증한 implementation HEAD | `494c72df2cad38dc1cc97d5e6e0f15b38e0c82d2` |
+| 검토 범위 | `e427370..d45f0753c16571743f630599776c9cd498d1e8c9` |
+| 검증한 시작 HEAD | `d45f0753c16571743f630599776c9cd498d1e8c9` |
 | 검토 역할 | Session 1~3B 구현에 참여하지 않은 fresh reviewer |
-| 진입 시 Gate 3B | 미커밋 integration tree 때문에 최초 차단됨. 아래 수정과 재검증을 완료한 뒤에만 closure 처리함 |
-| Session 4 공개 상태 | `PUBLICATION_READY_EXPERIMENTAL` |
+| 진입 시 Gate 3B | **FAIL — Session 3B integration/test 재진입 필요** |
+| Session 4 공개 상태 | **`BLOCKED`** (`PUBLICATION_READY_EXPERIMENTAL` 철회) |
 | production release 상태 | 승인하지 않음 |
 | formal trusted setup | 수행하지 않음 |
 | external audit | 수행하지 않음 |
 
-최종 회귀 gate 뒤 기록할 수 있는 `PUBLICATION_READY_EXPERIMENTAL`은 source, test, docs를 experimental 용도로 공개할 수 있다는 뜻이다. production-ready, audited 또는 production proving artifact를 갖췄다는 뜻이 아니다.
+이 2026-07-12 재검증은 같은 날 앞서 완료된 publication claim을 supersede한다. Gate 3B가 충족되지 않았고 unresolved High/security-relevant Medium이 남아 있으므로 experimental source 공개 승인도 현재 유효하지 않다.
+
+## 현재 확정 Finding
+
+| ID | Severity | 근거 | 영향 범위 | 필요한 조치 |
+| --- | --- | --- | --- | --- |
+| G3B-01 | High | Batch localnet은 one-proof transfer shape만 실행하고 payroll operation graph/worker/reconcile/report를 사용하지 않는다. Reference payroll localnet은 legacy multi-message 2x2 `transfer-batch` 경로다. | one-proof payroll reserve, prove, signed-byte retry, typed item evidence, reconcile/report가 실제 chain에서 연결된 적이 없다. | Session 3B에서 production payroll worker 전체 경로의 fresh localnet E2E를 추가하고 restart/retry까지 검증한다. |
+| G3B-02 | High | Localnet은 mixed disclosure/self-view 옵션만 생성하고 recipient/auditor/self-view decrypt, blinding 기반 digest 재계산, expected output 전체 count/commitment, view-tag mismatch safe scan을 assert하지 않는다. | Typed scanner 또는 disclosure consumer가 output을 누락해도 runner가 성공할 수 있다. | Live disclosure consumer와 view-tag mismatch injection을 추가하고 output별 evidence를 검증한다. |
+| G3B-03 | Medium, security-relevant | `SQLStore` 구현은 있으나 test는 schema 문자열, placeholder, isolation option만 검사한다. 실제 SQLite/PostgreSQL CRUD/rollback/reopen/lease-CAS 실행은 없다. | SQL backend의 reservation-operation-item-evidence 원자성이 입증되지 않아 orphan/duplicate/wrong item status 위험이 남는다. | 최소 실제 SQLite transaction/restart/rollback/concurrency test를 추가한다. |
+| G3B-04 | Medium, security-relevant | `ValidateBatchTransferSigningRequest`는 final prepared validator와 달리 input/output 및 output 간 global secret reuse를 서명 전에 거부하지 않는다. | 비신뢰 preparer가 privacy-leaking intent에 owner signature를 먼저 얻을 수 있다. | Structured signer validator에 동일한 `seenSecrets` 검사를 넣고 adversarial signing test를 추가한다. |
+| S4-B01 | Medium, security-relevant | Default no-failover와 explicit opt-in unit test는 있지만 localnet은 timeout/healthy endpoint의 실제 접촉 횟수를 측정하지 않는다. 결과 JSON 값은 실행 관찰이 아닌 literal이다. | 실제 transport에서 witness가 두 번째 prover로 전송되지 않는 privacy default를 publication evidence로 입증하지 못한다. | 두 endpoint live harness에서 default와 opt-in을 각각 검증한다. |
+| S4-B02 | Medium, security-relevant | Current 2x2 SDK는 독립 CSPRNG를 생성하지만 `JoinSplitCircuit`은 user/full blinding과 output randomness의 exact reuse를 금지하지 않는다. | Custom witness/field-intent signing에서 valid reuse proof가 가능하며 disclosure 수신자가 이후 nullifier linkage를 얻을 수 있다. | R1CS/VK를 변경하는 Session 2/3A 재진입으로 batch와 같은 세 inequality를 강제한다. |
+| S4-B03 | Medium, security-relevant assurance | Duplicate regression은 same note/commitment/path/helper/nullifier와 doubled outputs를 만들지 않아 recomputation/membership failure가 distinctness failure를 가린다. | 과거 nullifier inflation 취약점의 exact regression gate가 아니다. | 2x2와 batch에 exploit-shaped witness를 추가한다. Protocol 변경은 필요 없다. |
+
+## 현재 검증 처분
+
+- Gate 3B FAIL 때문에 Session 4 Pass A~I, fresh max-shape benchmark, fresh localnet, full regression/race/fuzz/release gate는 **수행하지 않았다**. 아래 historical 결과는 현재 gate evidence로 재승인하지 않는다.
+- 보조 검증으로 production helper를 재사용하지 않는 `TestPrivacyNoteV1ContractIndependentGolden`과 `TestPrivacyBatchJoinSplitV1ContractIndependentGolden`을 실행해 PASS했다. 이 test source는 frozen domain/encoding/MiMC/vector 식을 독립 계산하며 production NoteV1/root helper를 계산 경로에 사용하지 않는다.
+- Payroll default no-failover/explicit opt-in, durable reconcile, prove permit lifetime, memory/file store test는 PASS했다. SQL test는 schema-only여서 G3B-03을 닫지 않는다.
+- `/tmp/clairveil-session3a-artifacts-381c984`의 batch R1CS `122,813,535 B`, PK `209,218,621 B`, VK `716 B`와 SHA-256은 historical record와 일치한다.
+- Tracked R1CS/PK/VK, `dist/`, `benchmarks/`, `tmp/`, 개인 absolute path 또는 명백한 secret은 발견되지 않았다. `benchmarks/`, `dist/`, `tmp/`는 ignored 상태다.
+- 현재 unresolved count는 Critical 0, High 2, security-relevant Medium 5다. Security finding을 accepted residual로 전환하지 않았다.
+- Formal setup, external audit, production artifact/provenance, downstream production 운영은 여전히 미수행 Production TODO이며 active finding을 대체하지 않는다.
+
+### 실행한 보조 검증 명령
+
+| 명령 | 결과와 한계 |
+| --- | --- |
+| `go test ./x/privacy/client/sdk/conformance -run '^(TestPrivacyNoteV1ContractIndependentGolden\|TestPrivacyBatchJoinSplitV1ContractIndependentGolden)$' -count=1 -v` | PASS. Independent golden 계산 경로 확인. Gate 3B 대체 아님 |
+| `go test ./x/privacy/client/sdk/payroll -run '^(TestProverPoolDoesNotFailOverAfterEndpointTimeoutByDefault\|TestProverPoolFallsBackAfterEndpointTimeoutWithExplicitOptIn\|TestBatchReconcileDurableRestartRetryTxHashFirstAndItemEvidenceSeparate\|TestBatchProofWorkerKeepsSharedLeaseUntilUninterruptibleProveReturns)$' -count=1 -v` | PASS. Unit 경계만 검증하며 live endpoint evidence 대체 아님 |
+| `go test ./x/privacy/client/sdk/reservation -run '^(TestBatchOperationGraphIsAtomicAndConflictsWithOrdinaryReservation\|TestBatchOperationDurableFileRestartRoundTrip\|TestBatchOperationSQLSchemaIsVersionedAndRelational)$' -count=1 -v` | PASS. 실제 SQL transaction test가 아니므로 G3B-03 유지 |
+| `git merge-base --is-ancestor e427370 HEAD`, `git diff --check e427370..HEAD` | PASS at starting HEAD `d45f0753c16571743f630599776c9cd498d1e8c9` |
+| artifact `shasum -a 256`과 file-size 대조 | PASS. Batch R1CS/PK/VK가 historical development hash/size와 일치 |
+| tracked artifact/personal-path/secret filename scan | PASS. `benchmarks/`, `dist/`, `tmp/`, `tmpdocs/`, local binary와 dependency output은 ignored/untracked이며 publication evidence가 아님 |
+| Pass A~I, full test/race/fuzz, benchmark, fresh localnet, release check/pack | **NOT RUN — Gate 3B FAIL** |
+
+### Accepted Residual과 Production TODO
+
+Active High/Medium은 residual로 수용하지 않았다. 아래 운영 항목만 기존 Production TODO로 유지한다.
+
+| Residual/TODO | Owner | 현재 수용 이유 | Production blocking |
+| --- | --- | --- | --- |
+| External ZK audit, source/constraint freeze, official MPC/trusted setup과 transcript | Protocol/release owner | Session 4 비목표이며 development artifact만 존재함 | Yes |
+| Artifact signing/provenance/custody, production manifest와 SBOM/image provenance | Release/validator operator | Target release infrastructure가 필요함 | Yes |
+| Production gas/governance/upgrade/rollback, staging load/fault, monitoring/incident response | Downstream chain owner | Target chain 운영 범위임 | Yes |
+| Prover TLS/auth/ACL/quota/process isolation/retention과 audit-key custody/rotation/manual review | Prover 및 auditor/payroll operator | Managed production infrastructure와 운영 절차가 필요함 | Yes |
+| Downstream JS/TS wallet/product, metadata leakage와 padding policy | Product/privacy owner | Go reference와 declared leakage만 존재하며 제품 acceptance가 필요함 | Downstream production은 Yes |
+| No-fixed-version Go advisory 3건과 example npm Low 1건 | Dependency/security owner | 기존 exact policy에서 추적 중이며 숨기지 않음 | Production 전 재평가 |
+
+이 표는 active Gate 3B/Session 2·3A blocker를 수용하거나 publication을 승인하지 않는다.
+
+## Prior 2026-07-12 Historical Validation Record (Superseded)
+
+아래 내용은 이전 reviewer가 기록한 historical claim을 provenance 목적으로 보존한다. 현재 publication 상태, Pass 결과, benchmark/localnet evidence로 사용하지 않으며 위 2026-07-12 판정이 우선한다.
 
 ## 독립 검토 방법
 

@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | Complete (Gate 3B 재검증 충족, Session 4 진행 중) |
+| 상태 | **Reopened — Gate 3B FAIL** (2026-07-12 independent revalidation; Session 3B integration/test 재진입 필요) |
 | 선행 문서 | [Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md), [Session 3A](clairveil-batch-joinsplit-16x32-session-3-implementation-kr.md) |
 | 후속 세션 | [Session 4 Publication Validation](clairveil-batch-joinsplit-16x32-session-4-publication-validation-kr.md) |
 | 권장 모델 | `gpt-5.6-sol` |
@@ -433,7 +433,7 @@ Core invariant를 낮추지 않고 blocker를 보고함.
 - downstream JS SDK/wallet 실제 제품 구현
 - production DB/scheduler/multi-tenant deployment
 
-Go reference, conformance fixture, CLI/tutorial은 repo에서 완성함.
+Go reference와 conformance fixture는 repo에 있으나, 2026-07-12 재검증에서 one-proof payroll 및 live disclosure/view-tag tutorial/E2E 공백을 확인해 CLI/tutorial 완료 claim을 철회함.
 
 ## 15. Acceptance Criteria
 
@@ -442,28 +442,42 @@ Go reference, conformance fixture, CLI/tutorial은 repo에서 완성함.
 - [x] fixed-size NoteV1/disclosure를 사용함.
 - [x] local/remote prover route가 payload-bound proof를 생성함.
 - [x] prover admission/body/error/log 경계가 안전함.
-- [x] structured signer가 roots/payload/intent를 독립 재계산하고 opaque blind-signing을 허용하지 않음.
+- [ ] structured signer가 roots/payload/intent와 global secret independence를 서명 전에 독립 재계산함. (`G3B-04` 미충족)
 - [x] broadcast retry가 idempotent하고 nullifier-first reconcile을 사용함.
 - [x] typed scanner가 32 outputs를 누락/중복 없이 복구함.
 - [x] scanner 기본값이 view-tag mismatch에서도 decrypt하며 typed-query failure를 lossy fallback하지 않음.
 - [x] user/audit/self-view disclosure가 full/user roots와 일치함.
 - [x] payroll이 31+change와 exact 32 payment를 올바르게 계획함.
-- [x] payroll durable schema가 many-input reservations -> one batch operation -> many item outputs를 atomic하게 표현함.
+- [ ] payroll durable schema가 many-input reservations -> one batch operation -> many item outputs를 실제 SQL transaction에서도 atomic하게 표현함. (`G3B-03` 미검증)
 - [x] batch status와 item evidence status가 분리됨.
-- [x] CLI/localnet tutorial을 처음부터 끝까지 따라갈 수 있음.
-- [x] existing 2x2/multi-message/payroll regression이 없음.
-- [x] schema/fixture/docs/release pack이 contract version과 일치함.
+- [ ] CLI/localnet tutorial이 one-proof payroll과 live disclosure/view-tag 검증까지 처음부터 끝까지 실행됨. (`G3B-01`, `G3B-02` 미충족)
+- [ ] existing 2x2/multi-message/payroll security regression이 exact exploit witness까지 완전함. (`S4-B02`, `S4-B03` 미충족)
+- [ ] schema/fixture/docs/release pack이 재진입 뒤 최종 contract/artifact version과 일치함.
 - [x] artifact/secret이 tracked되지 않음.
 - [x] master ledger가 갱신됨.
 
 ## 16. Session 4 Handoff
 
-## Completion Record
+## 2026-07-12 Independent Revalidation — Current Gate Record
 
-- 상태: **Complete — Gate 3B 충족. Session 4는 시작하지 않음.**
+- 현재 상태: **BLOCKED — Gate 3B FAIL.** 아래의 과거 PASS claim은 이 재검증 record에 의해 supersede됨.
+- review scope: `e427370..d45f0753c16571743f630599776c9cd498d1e8c9`.
+- fresh reviewer가 Master Roadmap과 Session 1~4 문서를 전부 읽고 code/runner/test에서 실제 경계를 재구성했으며, finding을 확정하기 전에는 파일을 수정하지 않았음.
+- **High G3B-01:** `privacy-batch-joinsplit-localnet.sh`는 one-proof CLI shape만 실행하고 payroll operation graph, `BatchProofWorker`, `IdempotentBatchBroadcastWorker`, `BatchReconcileWorker`, item evidence/report를 연결하지 않음. `reference-payroll-live-localnet.sh`는 legacy multi-message 2x2 `transfer-batch` 경로이므로 one-proof batch payroll E2E 증거가 아님.
+- **High G3B-02:** localnet은 mixed disclosure/self-view 옵션을 생성하지만 recipient/auditor/self-view plaintext를 복호화해 blinding 기반 digest를 재계산하지 않으며, expected output count/commitment와 view-tag mismatch safe scan을 assert하지 않음.
+- **Security-relevant Medium G3B-03:** `SQLStore` 구현과 dialect schema는 존재하지만 실제 SQLite/PostgreSQL graph CRUD, transaction rollback, reopen, lease/CAS test가 없음. Schema 문자열 test는 DB transaction atomicity 증거가 아님.
+- **Security-relevant Medium G3B-04:** structured batch signer validator가 final prepared validator의 global secret-reuse 검사를 수행하지 않아 비신뢰 preparer가 input/output 또는 output 간 재사용 intent에 서명을 먼저 얻을 수 있음.
+- protocol/public input/NoteV1는 이 네 Gate 3B finding을 닫기 위해 변경할 필요가 없음. Session 3B 구현/runner/test에서 수정하고 fresh localnet·SQL integration·targeted/full regression을 다시 수행해야 함.
+- 보조 검증은 independent NoteV1/batch KAT, payroll no-failover/explicit-opt-in unit test, durable reconcile/permit lifetime/file-store test까지 PASS했으나 live/SQL gap을 대체하지 않음.
+- Pass A~I, fresh max-shape benchmark, fresh localnet, full race/fuzz/release gate는 Gate 3B가 닫힐 때까지 수행하지 않음.
+
+## Historical Completion Record (Gate claim superseded)
+
+- 당시 기록 상태: **Complete — Gate 3B 충족.** 현재 gate 판정으로 사용하지 않음.
 - 작업 기준/시작 commit: `cd9b4124ee0a7d3f7faeec1e76f765ec3330a88d`
 - 완료 구현 commit: `43b49460cacc91e27ab0ae8cdb9607b44d2edce8`
-- completion/ledger closure commit: 이 record와 Master Roadmap Ledger를 함께 고정한 commit
+- 최초 completion/ledger closure commit: `b2fa95661590f681d268885c7dfdf7e9af3581ba`
+- Session 4 진입 재검증 closure claim: `423f73a59dda472cf0ca959335e4ba8d6bcc64f2` (2026-07-12 재검증으로 superseded)
 - review scope: `cd9b4124ee0a7d3f7faeec1e76f765ec3330a88d..HEAD`
 
 ### Gate 3A 선행 검증과 frozen core
@@ -565,4 +579,4 @@ production circuit constraint는 Session 3A와 같은 `1,111,837`이며 formal s
 - `make privacy-e2e-smoke`와 `make reference-payroll-live-localnet`을 fresh localnet에서 재실행해 Deposit/2x2/Withdraw와 durable payroll reserve/prove/broadcast/reconcile/idempotent retry가 PASS했다.
 - `make release-check`, `make release-pack`, `make release-pack-verify`, `git diff --check`를 현재 closure tree에서 다시 실행해 PASS했다. Release check 내부의 전체 Go test/build/examples/vulnerability policy/plain localnet/privacy E2E/2-message bulk readiness도 모두 PASS했다. Closure commit 뒤 clean manifest와 status를 한 번 더 확인하고 **Gate 3B를 PASS로 재확정해 Session 4를 시작**한다.
 
-최초 Session 3B 구현은 Session 4를 수행하지 않고 종료했다. 위 진입 closure로 current tree의 Gate 3B를 다시 PASS한 뒤 별도 fresh Session 4 검증을 시작한다.
+최초 Session 3B 구현은 Session 4를 수행하지 않고 종료했다. 위 문단은 당시 closure claim을 보존한 historical record이며, 현재 gate는 이 문서 앞의 2026-07-12 Independent Revalidation에 따라 **FAIL/BLOCKED**다.

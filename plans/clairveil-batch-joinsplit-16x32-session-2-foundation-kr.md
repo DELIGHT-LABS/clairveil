@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | Complete (Gate 2 충족, Session 3A Unblocked·미착수) |
+| 상태 | Complete historical Gate 2; **current 2x2 blinding constraint re-entry required before publication** (2026-07-12) |
 | 선행 문서 | [Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md), [Session 1](clairveil-batch-joinsplit-16x32-session-1-security-remediation-kr.md) |
 | 후속 세션 | [Session 3A Core Implementation](clairveil-batch-joinsplit-16x32-session-3-implementation-kr.md) |
 | 권장 모델 | `gpt-5.6-sol` |

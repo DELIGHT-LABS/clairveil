@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | Complete (`PUBLICATION_READY_EXPERIMENTAL`) |
+| 상태 | **BLOCKED** (2026-07-12 Gate 3B independent revalidation FAIL; publication 승인 철회) |
 | 선행 문서 | [Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md), Session 1~3B 계획과 completion record |
 | 권장 모델 | `gpt-5.6-sol` |
 | 권장 effort | `ultra` |
@@ -423,25 +423,25 @@ finding이 없으면 억지 refactor를 만들지 않음. finding 수정 후 관
 
 ## 20. Acceptance Criteria
 
-- [x] transfer/withdraw current authorization attacks가 실패함.
-- [x] current disclosure dictionary, commitment collision, crypto decoder, prover failover, genesis/artifact identity 회귀가 통과함.
-- [x] NoteV1가 all circuits/native/scanner에서 일치함.
-- [x] 12 public input statement가 code/docs와 일치함.
-- [x] active/duplicate/value/root/disclosure attacks가 실패함.
-- [x] single owner signature 외 per-input conditional EdDSA가 없음.
-- [x] differential/property/fuzz가 통과함.
-- [x] independent reference KAT와 cross-message nullifier composition test가 통과함.
-- [x] keeper gas/atomicity/resource bounds가 확인됨.
-- [x] minimal event/typed scan index가 payload를 중복 저장하지 않음.
-- [x] prover admission/privacy 경계가 확인됨.
-- [x] payroll item evidence가 batch status와 분리됨.
-- [x] max-shape benchmark가 재현 가능하게 기록됨.
-- [x] independent localnet restart/retry가 통과함.
-- [x] unresolved Critical/High/security Medium = 0
-- [x] accepted residual이 문서화됨.
-- [x] secret/artifact/local path가 tracked되지 않음.
-- [x] release gate가 통과함.
-- [x] master ledger가 `PUBLICATION_READY_EXPERIMENTAL`로 갱신됨.
+- [ ] transfer/withdraw current authorization attacks가 fresh Pass A에서 재검증됨.
+- [ ] current disclosure dictionary, commitment collision, crypto decoder, prover failover, genesis/artifact identity 회귀가 fresh Pass A에서 통과함.
+- [ ] NoteV1가 all circuits/native/scanner에서 fresh Pass B로 일치함.
+- [ ] 12 public input statement가 code/docs와 fresh Pass C로 일치함.
+- [ ] active/duplicate/value/root/disclosure attacks가 exact adversarial witness로 실패함.
+- [ ] single owner signature 외 per-input conditional EdDSA가 없음.
+- [ ] differential/property/fuzz가 fresh run에서 통과함.
+- [ ] independent reference KAT와 cross-message nullifier composition test가 전체 gate 일부로 통과함.
+- [ ] keeper gas/atomicity/resource bounds가 fresh Pass F에서 확인됨.
+- [ ] minimal event/typed scan index가 payload를 중복 저장하지 않음.
+- [ ] prover admission/privacy 경계가 live no-failover 증거를 포함해 확인됨.
+- [ ] payroll item evidence가 one-proof live batch status와 분리됨.
+- [ ] max-shape benchmark가 fresh run으로 재현 가능하게 기록됨.
+- [ ] independent localnet restart/retry와 disclosure/view-tag/payroll E2E가 통과함.
+- [ ] unresolved Critical/High/security Medium = 0.
+- [ ] accepted residual이 owner/reason/production blocking과 함께 문서화됨.
+- [x] 현재 tracked secret/artifact/personal path가 발견되지 않음.
+- [ ] release gate가 통과함.
+- [x] master ledger가 현재 `BLOCKED` 상태로 정정됨.
 
 ## 21. Production TODO
 
@@ -476,7 +476,33 @@ finding이 없으면 억지 refactor를 만들지 않음. finding 수정 후 관
 - padding/privacy/cost policy
 - payroll production deployment
 
-## 22. Completion Record
+## 22. Completion Record — 2026-07-12 Independent Revalidation
+
+- review scope: `e427370..d45f0753c16571743f630599776c9cd498d1e8c9`
+- 시작 HEAD: `d45f0753c16571743f630599776c9cd498d1e8c9`
+- reviewer role: Session 1~3B 구현에 참여하지 않은 fresh reviewer. 여섯 계획과 모든 Completion Record/Master Gate 3B를 처음부터 끝까지 읽고 code/runner/test에서 protocol과 integration boundary를 독립 재구성함.
+- edit ordering: 아래 finding을 severity·근거·영향과 함께 확정해 사용자에게 보고하기 전 파일을 수정하지 않았음.
+- Gate 3B status: **FAIL / Session 3B integration-test 재진입 필요.** Gate 3B가 닫히지 않았으므로 Session 4 Pass A~I는 시작하지 않았고 기존 pass/benchmark/localnet/release 결과를 현재 publication evidence로 재승인하지 않음.
+- **High G3B-01:** one-proof batch payroll의 reserve/operation graph/prove/broadcast/typed evidence/item reconcile/report live E2E가 없음. Batch localnet은 transfer shape만 실행하고 reference payroll localnet은 legacy multi-2x2 경로임.
+- **High G3B-02:** recipient/auditor/self-view live decrypt와 blinding 기반 digest 재계산, expected output 전체 count/commitment, view-tag mismatch safe scan assertion이 없음.
+- **Security-relevant Medium G3B-03:** SQL many-to-many implementation은 실제 SQLite/PostgreSQL CRUD, transaction rollback, restart, lease/CAS로 실행 검증되지 않음.
+- **Security-relevant Medium G3B-04:** batch structured signer validator가 final prepared validator의 input/output 및 output 간 global secret-reuse 검사를 서명 전에 수행하지 않음.
+- **Security-relevant Medium S4-B01:** default no-failover/explicit opt-in 단위 테스트는 있지만 timeout/healthy endpoint 실제 접촉 횟수를 검증하는 localnet evidence가 없음.
+- **Security-relevant Medium S4-B02 — Session 2/3A re-entry:** current 2x2 SDK는 CSPRNG 값을 생성하지만 `JoinSplitCircuit`이 user/full blinding과 output randomness의 exact reuse를 금지하지 않음. Custom witness/opaque field-intent signing에서 valid proof가 가능하고 disclosure 수신자가 이후 nullifier linkage를 얻을 수 있음. 완전한 수정은 R1CS/VK를 바꾸므로 조용히 수정하지 않음.
+- **Security-relevant assurance Medium S4-B03:** duplicate inflation test가 same note/commitment/path/helper/nullifier와 doubled output을 구성하지 않아 membership/nullifier recomputation failure가 distinctness failure를 가림. 구현의 distinctness constraint 자체는 확인했으나 과거 exploit의 exact regression evidence가 아님.
+- fixes in this session: implementation/protocol 수정 없음. Gate ordering을 지키기 위해 Master Ledger, Session 1/2/3A/3B/4 Completion 상태와 한영 보고서의 false-ready 또는 re-entry 상태를 `BLOCKED` 기준으로 정정함.
+- 보조 검증 결과: production helper를 재사용하지 않는 `TestPrivacyNoteV1ContractIndependentGolden`, `TestPrivacyBatchJoinSplitV1ContractIndependentGolden` PASS. Payroll default no-failover/explicit opt-in, durable reconcile, permit lifetime, memory/file store test PASS. SQL test는 schema 문자열만 다루므로 blocker를 닫지 못함.
+- artifact/hygiene: `/tmp/clairveil-session3a-artifacts-381c984`의 batch R1CS/PK/VK size와 SHA-256은 historical record와 일치함. tracked R1CS/PK/VK, `dist/`, `benchmarks/`, `tmp/`, 개인 absolute path, 명백한 secret은 발견되지 않음. `benchmarks/`, `dist/`, `tmp/`, `tmpdocs/`, local binary와 dependency output은 ignored/untracked이며 publication evidence로 취급하지 않음.
+- benchmark/localnet: fresh Session 4 benchmark와 localnet은 **NOT RUN**. Gate 3B failure 뒤 실행하면 Pass A~I를 시작한 것처럼 오해될 수 있어 중단함. 아래 historical 수치는 현재 gate evidence로 승인하지 않음.
+- full regression/race/fuzz/release: **NOT RUN**. Gate 3B 및 Session 2/3A re-entry blocker가 닫힌 뒤 관련 Pass와 전체 suite를 처음부터 재실행해야 함.
+- unresolved findings: Critical 0, High 2, security-relevant Medium 5. Accepted residual로 전환한 security finding 없음.
+- existing Production TODO: formal setup/audit/source freeze, artifact provenance, production chain/prover/auditor/downstream 운영, metadata leakage acceptance, in-process RSS, dependency advisories는 그대로 production-blocking 또는 재평가 대상으로 유지함. 이 TODO가 active blocker를 대체하지 않음.
+- formal setup: `NOT PERFORMED`; external audit: `NOT PERFORMED`; production status: `NOT PRODUCTION-READY`, `NOT AUDITED`.
+- publication status: **`BLOCKED`**. `PUBLICATION_READY_EXPERIMENTAL` 선언 불가.
+
+## 23. Historical Completion Record (superseded)
+
+아래 record는 2026-07-12 앞선 publication claim을 provenance 목적으로 보존한다. 현재 상태나 현재 검증 결과로 사용하지 않으며, 위의 후속 2026-07-12 Completion Record가 우선한다.
 
 - review scope: `e427370..494c72df2cad38dc1cc97d5e6e0f15b38e0c82d2`
 - 시작 HEAD: `b2fa95661590f681d268885c7dfdf7e9af3581ba` (`docs: record Session 3B completion`)

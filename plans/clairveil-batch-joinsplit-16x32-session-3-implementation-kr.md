@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | Complete (Gate 3A 충족, Session 3B Unblocked·미착수) |
+| 상태 | Complete historical Gate 3A; **2x2 R1CS/VK hardening re-entry required before publication** (2026-07-12) |
 | 선행 문서 | [Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md), [Session 2](clairveil-batch-joinsplit-16x32-session-2-foundation-kr.md) |
 | 후속 세션 | [Session 3B Integration](clairveil-batch-joinsplit-16x32-session-3b-integration-kr.md) |
 | 권장 모델 | `gpt-5.6-sol` |
@@ -518,7 +518,7 @@ git diff --check
 - 완료 core hardening commit: `fc391f5e1d69634e0b64a14735d0956302038032`
 - 공개 계약 문서 commit: `67115090d63578d3643617c866d03ef953b103f2`
 - 최초 completion/ledger commit: `838da3ca502c330cd4493212d0528b570bc2bd5f`
-- 최종 closure commit: 최신 hardening, 재검증, 이 record와 Master Roadmap 정정을 함께 고정한 commit
+- 최종 closure commit: `cd9b4124ee0a7d3f7faeec1e76f765ec3330a88d` (최신 hardening, 재검증, 이 record와 Master Roadmap 정정)
 
 ### Gate 2 재검증
 
