@@ -451,8 +451,8 @@ Go reference와 conformance fixture는 repo에 있으나, 2026-07-12 재검증�
 - [ ] payroll durable schema가 many-input reservations -> one batch operation -> many item outputs를 실제 SQL transaction에서도 atomic하게 표현함. (`G3B-03` 미검증)
 - [x] batch status와 item evidence status가 분리됨.
 - [ ] CLI/localnet tutorial이 one-proof payroll과 live disclosure/view-tag 검증까지 처음부터 끝까지 실행됨. (`G3B-01`, `G3B-02` 미충족)
-- [ ] existing 2x2/multi-message/payroll security regression이 exact exploit witness까지 완전함. (`S4-B02`, `S4-B03` 미충족)
-- [ ] schema/fixture/docs/release pack이 재진입 뒤 최종 contract/artifact version과 일치함.
+- [x] `S4-B03` exact duplicate-inflation witness와 원인 분리 control, `S4-B02` production 2x2 disclosure-blinding relation/structured pre-sign/artifact regression이 완료됨. (`02f61f3`/`42d40bd`, `0b7d97d`/`630736f`/`25c17ef`; Gate 1/2/3A fresh 독립 재검토는 필요)
+- [x] schema/fixture/docs/release pack이 현재 `S4-B02`/`S4-B03` closure contract와 artifact version에 일치함. 향후 `G3B-01..04`/`S4-B01` 보완이 contract를 바꾸면 다시 검증해야 함.
 - [x] artifact/secret이 tracked되지 않음.
 - [x] master ledger가 갱신됨.
 

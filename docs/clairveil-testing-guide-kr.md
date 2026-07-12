@@ -83,7 +83,7 @@ Active circuit set은 `privacy-note-v1`이고 required 순서는 `deposit`, `spe
 - `x/privacy/keeper/privacy_scan_test.go`, `x/privacy/keeper/path_snapshot_test.go`: global scan order, event 내부 resume, record/byte bound, sequence reuse rejection, same-root path, exact event type/fixed envelope kind/digest/key/zero·disabled sentinel/orphan·non-adjacent output의 fail-closed validation.
 - `x/privacy/zk/registry_test.go`, `x/privacy/client/sdk/proverservice/admission_test.go`: role-aware lazy artifact access, exact identity behavior, queue bound, cancellation lifetime, unbounded-value rejection.
 - `x/privacy/client/sdk/conformance/session2_contract_test.go`, `disclosure_blinding_contract_test.go`: `privacy_note_v1_contract.json`, `privacy_batch_joinsplit_v1_contract.json`, `privacy_disclosure_blinding_v1_contract.json`의 stable `DBS_*` vector를 independent verification.
-- `x/privacy/types/disclosure_blinding_test.go`, `x/privacy/client/sdk/transfer/payload_test.go`, `signing_test.go`: exact all-private/disabled sentinel semantics, secret-free typed error, collision retry, prepared-payload rejection과 valid structured request 전 signer callback 미호출.
+- `x/privacy/types/disclosure_blinding_test.go`, `x/privacy/client/sdk/transfer/payload_test.go`: exact all-private/disabled sentinel semantics, secret-free typed error, collision retry, prepared-payload rejection과 valid structured request 전 signer callback 미호출. Structured fail-before-release와 final-effect mismatch regression은 `payload_test.go`에 있습니다.
 - `x/privacy/circuit/joinsplit_disclosure_blinding_regression_test.go`: production `99,775`-constraint enforcement, 완전히 갱신한 digest/signature negative와 rejection 원인을 분리하는 legacy `99,765` relation control.
 - `x/privacy/circuit/batch_joinsplit_16x32_test.go`: production positive shape, exact sentinel/active-prefix, key/range/root/signature tamper, output/disclosure order, vector type/level separation.
 - `x/privacy/keeper/batch_gas_test.go`, `batch_scan_index_test.go`, `batch_transfer_core_integration_test.go`: deterministic precharge 순서, single-copy typed payload/minimal event, global Deposit/2x2/batch sequence, direct proof/state integration, atomic failure, cross-message rollback, batch scan genesis round-trip.
@@ -140,7 +140,15 @@ go test ./x/privacy/zk -run TestBatchDevelopmentArtifactRoleReadinessGate -count
 
 기록된 batch file은 R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`입니다. Generation peak RSS는 `3,308,797,952 B`, role-readiness peak RSS는 `1,295,482,880 B`였습니다. 이는 development identity이며 formal trusted setup/production distribution artifact가 아닙니다.
 
-`S4-B02` JoinSplit-only rotation은 complete prior development set을 복사한 뒤 `clairveil-setup --out "$ARTIFACT_DIR" --circuit joinsplit --overwrite`를 실행하고 `CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR`와 `CLAIRVEIL_PRIVACY_PREVIOUS_ZK_ARTIFACT_DIR`를 함께 지정합니다. Opt-in gate는 `TestJoinSplitDevelopmentArtifactRotationGate`(`CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_ROTATION_GATE=1`), `TestJoinSplitOldAndNewProofIdentitiesAreMutuallyExclusive`(`CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_PROOF_ROTATION_GATE=1`), `TestS4B02FreshGenesisUsesRotatedJoinSplitIdentity`(`CLAIRVEIL_RUN_JOINSPLIT_FRESH_GENESIS_GATE=1`)입니다.
+`S4-B02` JoinSplit-only rotation은 complete prior development set을 복사한 뒤 `clairveil-setup --out "$ARTIFACT_DIR" --circuit joinsplit --overwrite`를 실행합니다. 세 opt-in gate는 fail-closed target으로 검증합니다.
+
+```bash
+CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR="$ARTIFACT_DIR" \
+CLAIRVEIL_PRIVACY_PREVIOUS_ZK_ARTIFACT_DIR="$PREVIOUS_ARTIFACT_DIR" \
+make session-3a-validation-evidence
+```
+
+이 target은 `TestJoinSplitDevelopmentArtifactRotationGate`(`CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_ROTATION_GATE=1`), `TestJoinSplitOldAndNewProofIdentitiesAreMutuallyExclusive`(`CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_PROOF_ROTATION_GATE=1`), `TestS4B02FreshGenesisUsesRotatedJoinSplitIdentity`(`CLAIRVEIL_RUN_JOINSPLIT_FRESH_GENESIS_GATE=1`)을 실행하며 exact test가 없거나 skip되거나 `[no tests to run]`이면 실패합니다.
 
 Session 3B는 public `MsgBatchTransfer` Go SDK/builder, `POST /v1/proofs/batch-transfer`, typed scanner/decrypt/disclosure 검증, durable one-proof payroll integration, 단계형/통합 CLI command, 한영 localnet tutorial을 추가합니다. `go test ./x/privacy/client/sdk/... -count=1`, `make privacy-batch-joinsplit-localnet`, 그리고 충분한 자원의 host에서 `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`을 실행합니다. 기존 `transfer-batch`와 reference payroll target은 독립적인 multi-message regression 경로로 유지합니다.
 

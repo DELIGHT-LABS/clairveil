@@ -516,7 +516,7 @@ JS SDK handoff가 완료되었다고 보려면 아래가 가능해야 합니다.
 - active circuit set `privacy-note-v1`, consensus `CircuitSetIdentity` schema `v1`, manifest schema `v2`
 - prover HTTP path `/v1/prover/transfer`, `/v1/prover/withdraw`
 - conformance fixture files under `x/privacy/client/sdk/conformance/testdata`
-- `DISCLOSURE-BLINDING-SEPARATION` V1 semantics/error code, 단 production 2x2 circuit/artifact enforcement는 Session 3A pending
+- `DISCLOSURE-BLINDING-SEPARATION` V1 semantics/error code와 완료된 production 2x2 circuit/native/prepared/structured pre-sign enforcement. Downstream signer도 fail-before-release contract를 유지해야 하며 Gate 1/2/3A fresh 재검토는 아직 필요함
 - `privacy_note_reservation_contract.json`의 note reservation status와 operation evidence contract
 
 아직 JS SDK가 독자적으로 결정해야 하는 항목은 아래입니다.
