@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | Complete historical Gate 1; **2x2 disclosure constraint와 exact exploit regression 재진입 필요** (2026-07-12) |
+| 상태 | Complete historical Gate 1; **S4-B03 방어적 regression evidence 완료, S4-B02 Session 2/3A 재진입 필요** (2026-07-12) |
 | 선행 문서 | [BatchJoinSplit16x32 Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md) |
 | 후속 세션 | [Session 2 Foundation](clairveil-batch-joinsplit-16x32-session-2-foundation-kr.md) |
 | 권장 모델 | `gpt-5.6-sol` |
@@ -540,9 +540,9 @@ NoteV1의 새 commitment/nullifier formula는 Session 2에서 production circuit
 
 ## 13. Acceptance Criteria
 
-2026-07-12 independent revalidation이 아래 두 acceptance 증거를 재개방했다. Pairwise distinctness 구현 자체는 존재하지만 exact exploit-shaped regression이 아니며, SDK CSPRNG independence만으로 circuit-level secret-reuse invariant가 닫히지 않는다.
+2026-07-12 independent revalidation이 아래 두 acceptance 증거를 재개방했다. 후속 방어적 보완에서 `S4-B03`은 exact exploit-shaped circuit regression과 host 조기 거부 evidence로 닫았다. SDK CSPRNG independence만으로 circuit-level secret-reuse invariant가 닫히지 않는 `S4-B02`는 계속 active다.
 
-- [ ] same note/commitment/path/helper/nullifier와 doubled output을 사용한 exact duplicate input exploit witness가 distinctness constraint 때문에 실패함. (`S4-B03` 미검증)
+- [x] same note/commitment/path/helper/nullifier와 doubled output을 사용한 exact duplicate input exploit witness가 distinctness constraint 때문에 실패함. `TestJoinSplitCircuitRejectsExactDuplicateInputInflation`과 `TestBatchJoinSplit16x32RejectsExactDuplicateInputInflation`이 production circuit 실패와 distinctness assertion 하나만 완화한 control 성공을 함께 검증해 다른 validation failure가 원인을 가리지 않음을 확인함. (`S4-B03` 해결)
 - [x] duplicate nullifier/commitment가 types/keeper에서 빠르게 실패함.
 - [x] commitment가 Deposit/2x2/genesis를 가로질러 전역으로 유일함.
 - [x] SDK/payroll이 같은 note 재사용을 거부함.
@@ -568,6 +568,27 @@ NoteV1의 새 commitment/nullifier formula는 Session 2에서 production circuit
 ## 14. Session 2 Handoff
 
 ## Completion Record
+
+### 2026-07-12 S4-B03 방어적 regression 보완
+
+- 기준 HEAD: `6aa341eae217f6e053e11caf4d0adbfcd8abccdf`
+- test commit: `02f61f3746b67d5244c160b7c0e0e42f7c0b78b8` (`test: add exact duplicate inflation regressions`)
+- 변경 경계: production code, circuit constraint, R1CS/PK/VK는 변경하지 않고 test만 추가함.
+- `S4-B03` closure test:
+  - `TestJoinSplitCircuitRejectsExactDuplicateInputInflation`
+  - `TestBatchJoinSplit16x32RejectsExactDuplicateInputInflation`
+  - 두 test 모두 exact duplicate inflation shape를 재구성하고 production constraint 실패와 distinctness assertion 하나만 완화한 control 성공을 함께 확인함.
+- 보조 host regression:
+  - `TestMsgTransferValidateBasicRejectsExactDuplicateInputInflation`은 다른 wire validation이 유효한 상태에서 local duplicate nullifier를 거부함.
+  - `TestMsgServerTransferRejectsExactDuplicateInputInflationBeforeProof`는 proof verification 전에 거부하고 nullifier/tree/commitment/global sequence/event state가 변하지 않음을 확인함.
+- 실행한 검증:
+  - `go test ./x/privacy/circuit ./x/privacy/types ./x/privacy/keeper -run 'ExactDuplicateInputInflation' -count=1 -v`: 통과.
+  - `go test ./x/privacy/... -count=1`: 통과.
+  - 대상 test 파일의 `gofmt -d`: 차이 없음.
+- 처분: `S4-B03`은 **RESOLVED**. `S4-B02`는 active이며 전체 Gate 1 또는 publication을 완료 처리하지 않음.
+- 다음 순차 단계: `S4-B02` frozen contract/constraint 보강을 위한 Session 2 re-entry. Session 2 또는 Session 3A 구현은 이 보완에서 시작하지 않음.
+
+### Historical Session 1 Completion
 
 - 시작 commit: `e427370`
 - 완료 commit: `14d85f5` (`Session 1` 구현·공개 계약, review-fix, prepared-transfer canonical key hardening 완료 기준; 이 최종 Completion Record/Ledger bookkeeping은 후속 문서 commit)
