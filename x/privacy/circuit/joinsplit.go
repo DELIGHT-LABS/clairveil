@@ -51,6 +51,29 @@ type JoinSplitCircuit struct {
 }
 
 func (c *JoinSplitCircuit) Define(api frontend.API) error {
+	if err := c.defineBase(api); err != nil {
+		return err
+	}
+
+	// DISCLOSURE-BLINDING-SEPARATION V1 applies to the recipient output only.
+	// JoinSplit2x2 has no disabled output capacity slot: output 1 remains an
+	// active change note without a disclosure witness. This block is kept after
+	// the base relation so it exactly matches the Session 2 frozen target.
+	userEnabled := api.Sub(1, api.IsZero(c.UserPrivacyPolicy))
+	api.AssertIsEqual(api.Mul(api.Sub(1, userEnabled), c.UserDisclosureBlinding), 0)
+	api.AssertIsEqual(
+		api.Mul(userEnabled, api.IsZero(api.Sub(c.UserDisclosureBlinding, c.OutputRandomness[0]))),
+		0,
+	)
+	api.AssertIsDifferent(c.FullDisclosureBlinding, c.OutputRandomness[0])
+	api.AssertIsDifferent(c.FullDisclosureBlinding, c.UserDisclosureBlinding)
+	return nil
+}
+
+// defineBase is the pre-S4-B02 production relation. It remains separate only
+// so regression tests can prove that each newly rejected witness satisfied all
+// prior constraints; callers outside this package cannot select the old path.
+func (c *JoinSplitCircuit) defineBase(api frontend.API) error {
 	h, _ := mimc.NewMiMC(api)
 	curve, _ := twistededwards.NewEdCurve(api, ecc_twistededwards.BN254)
 	api.ToBinary(c.ChainDomainHi, 128)

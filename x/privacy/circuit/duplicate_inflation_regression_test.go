@@ -127,7 +127,7 @@ func TestJoinSplitCircuitRejectsExactDuplicateInputInflation(t *testing.T) {
 	err := test.IsSolved(&JoinSplitCircuit{}, assignment, ecc.BN254.ScalarField())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "[assertIsDifferent]")
-	require.Contains(t, err.Error(), "joinsplit.go:62")
+	require.Contains(t, err.Error(), "circuit.(*JoinSplitCircuit).defineBase")
 
 	assert := test.NewAssert(t)
 	assert.ProverFailed(&JoinSplitCircuit{}, assignment, test.WithCurves(ecc.BN254))

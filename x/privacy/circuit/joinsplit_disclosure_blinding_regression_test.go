@@ -2,6 +2,7 @@ package circuit
 
 import (
 	"encoding/json"
+	"errors"
 	"math/big"
 	"os"
 	"runtime"
@@ -19,80 +20,83 @@ import (
 
 const runJoinSplitDisclosureBlindingFeasibility = "CLAIRVEIL_RUN_JOINSPLIT_BLINDING_FEASIBILITY"
 
-// joinSplitDisclosureBlindingFeasibilityCircuit is deliberately test-only.
-// Session 2 uses it to freeze and measure the exact Session 3A constraint
-// delta without changing the production JoinSplitCircuit or its artifacts.
-type joinSplitDisclosureBlindingFeasibilityCircuit JoinSplitCircuit
+// joinSplitDisclosureBlindingLegacyControl is deliberately test-only. It
+// preserves the pre-S4-B02 relation so every hardened negative can prove that
+// no unrelated production constraint caused its rejection.
+type joinSplitDisclosureBlindingLegacyControl JoinSplitCircuit
 
-func (c *joinSplitDisclosureBlindingFeasibilityCircuit) Define(api frontend.API) error {
-	base := (*JoinSplitCircuit)(c)
-	if err := base.Define(api); err != nil {
-		return err
-	}
-
-	userEnabled := api.Sub(1, api.IsZero(base.UserPrivacyPolicy))
-	api.AssertIsEqual(api.Mul(api.Sub(1, userEnabled), base.UserDisclosureBlinding), 0)
-	api.AssertIsEqual(
-		api.Mul(userEnabled, api.IsZero(api.Sub(base.UserDisclosureBlinding, base.OutputRandomness[0]))),
-		0,
-	)
-	api.AssertIsDifferent(base.FullDisclosureBlinding, base.OutputRandomness[0])
-	api.AssertIsDifferent(base.FullDisclosureBlinding, base.UserDisclosureBlinding)
-	return nil
+func (c *joinSplitDisclosureBlindingLegacyControl) Define(api frontend.API) error {
+	return (*JoinSplitCircuit)(c).defineBase(api)
 }
 
-func TestJoinSplitDisclosureBlindingSeparationFeasibility(t *testing.T) {
-	baselineCCS := compileJoinSplitCircuitForFeasibility(t, &JoinSplitCircuit{})
-	hardenedCCS := compileJoinSplitCircuitForFeasibility(t, &joinSplitDisclosureBlindingFeasibilityCircuit{})
-	require.Equal(t, 99_765, baselineCCS.GetNbConstraints())
-	require.Equal(t, 99_775, hardenedCCS.GetNbConstraints())
-	require.Equal(t, 10, hardenedCCS.GetNbConstraints()-baselineCCS.GetNbConstraints())
+func TestJoinSplitCircuitEnforcesDisclosureBlindingSeparationV1(t *testing.T) {
+	legacyControlCCS := compileJoinSplitCircuitForFeasibility(t, &joinSplitDisclosureBlindingLegacyControl{})
+	productionCCS := compileJoinSplitCircuitForFeasibility(t, &JoinSplitCircuit{})
+	require.Equal(t, 99_765, legacyControlCCS.GetNbConstraints())
+	require.Equal(t, 99_775, productionCCS.GetNbConstraints())
+	require.Equal(t, 10, productionCCS.GetNbConstraints()-legacyControlCCS.GetNbConstraints())
 	t.Logf(
-		"JOIN_SPLIT_DISCLOSURE_CONSTRAINT_DELTA baseline=%d hardened=%d delta=%d",
-		baselineCCS.GetNbConstraints(),
-		hardenedCCS.GetNbConstraints(),
-		hardenedCCS.GetNbConstraints()-baselineCCS.GetNbConstraints(),
+		"JOIN_SPLIT_DISCLOSURE_CONSTRAINT_DELTA legacy_control=%d production=%d delta=%d",
+		legacyControlCCS.GetNbConstraints(),
+		productionCCS.GetNbConstraints(),
+		productionCCS.GetNbConstraints()-legacyControlCCS.GetNbConstraints(),
 	)
 
 	valid := buildValidJoinSplitAssignment(t)
-	requireJoinSplitSolveResult(t, baselineCCS, valid, true)
-	requireJoinSplitHardenedSolveResult(t, hardenedCCS, valid, true)
+	require.NoError(t, validateJoinSplitDisclosureBlindingAssignmentV1(valid))
+	requireJoinSplitLegacyControlSolveResult(t, legacyControlCCS, valid, true)
+	requireJoinSplitSolveResult(t, productionCCS, valid, true)
 
 	allPrivate := *buildValidJoinSplitAssignment(t)
 	allPrivate.UserPrivacyPolicy = big.NewInt(int64(privacytypes.TransferPrivacyPolicyAllPrivate))
 	allPrivate.UserDisclosureBlinding = big.NewInt(0)
 	allPrivate.OutputRandomness[0] = big.NewInt(0)
 	refreshJoinSplitDisclosureFeasibilityState(t, &allPrivate)
-	requireJoinSplitSolveResult(t, baselineCCS, &allPrivate, true)
-	requireJoinSplitHardenedSolveResult(t, hardenedCCS, &allPrivate, true)
+	require.NoError(t, validateJoinSplitDisclosureBlindingAssignmentV1(&allPrivate))
+	requireJoinSplitLegacyControlSolveResult(t, legacyControlCCS, &allPrivate, true)
+	requireJoinSplitSolveResult(t, productionCCS, &allPrivate, true)
 
 	negative := []struct {
-		name   string
-		mutate func(*JoinSplitCircuit)
+		name      string
+		errorCode privacytypes.DisclosureBlindingErrorCodeV1
+		mutate    func(*JoinSplitCircuit)
 	}{
 		{
-			name: "DBS-01 user reuses recipient output randomness",
+			name:      "DBS-01 user reuses recipient output randomness",
+			errorCode: privacytypes.DisclosureBlindingErrorUserRandomnessReuseV1,
 			mutate: func(assignment *JoinSplitCircuit) {
 				assignment.UserDisclosureBlinding = cloneBigInt(assignment.OutputRandomness[0])
 			},
 		},
 		{
-			name: "DBS-02 full reuses recipient output randomness",
+			name:      "DBS-02 full reuses recipient output randomness",
+			errorCode: privacytypes.DisclosureBlindingErrorFullRandomnessReuseV1,
 			mutate: func(assignment *JoinSplitCircuit) {
 				assignment.FullDisclosureBlinding = cloneBigInt(assignment.OutputRandomness[0])
 			},
 		},
 		{
-			name: "DBS-03 full reuses user",
+			name:      "DBS-03 full reuses user",
+			errorCode: privacytypes.DisclosureBlindingErrorUserFullBlindingReuseV1,
 			mutate: func(assignment *JoinSplitCircuit) {
 				assignment.FullDisclosureBlinding = cloneBigInt(assignment.UserDisclosureBlinding)
 			},
 		},
 		{
-			name: "all-private user sentinel is non-zero",
+			name:      "all-private user sentinel is non-zero",
+			errorCode: privacytypes.DisclosureBlindingErrorAllPrivateUserSentinelV1,
 			mutate: func(assignment *JoinSplitCircuit) {
 				assignment.UserPrivacyPolicy = big.NewInt(int64(privacytypes.TransferPrivacyPolicyAllPrivate))
 				assignment.UserDisclosureBlinding = big.NewInt(59)
+			},
+		},
+		{
+			name:      "all-private DBS-02 remains enabled",
+			errorCode: privacytypes.DisclosureBlindingErrorFullRandomnessReuseV1,
+			mutate: func(assignment *JoinSplitCircuit) {
+				assignment.UserPrivacyPolicy = big.NewInt(int64(privacytypes.TransferPrivacyPolicyAllPrivate))
+				assignment.UserDisclosureBlinding = big.NewInt(0)
+				assignment.FullDisclosureBlinding = cloneBigInt(assignment.OutputRandomness[0])
 			},
 		},
 	}
@@ -103,10 +107,17 @@ func TestJoinSplitDisclosureBlindingSeparationFeasibility(t *testing.T) {
 			tc.mutate(&assignment)
 			refreshJoinSplitDisclosureFeasibilityState(t, &assignment)
 
-			// The complete digest and owner signature are refreshed. Success
-			// here proves no pre-existing constraint masks the new invariant.
-			requireJoinSplitSolveResult(t, baselineCCS, &assignment, true)
-			requireJoinSplitHardenedSolveResult(t, hardenedCCS, &assignment, false)
+			err := validateJoinSplitDisclosureBlindingAssignmentV1(&assignment)
+			require.Error(t, err)
+			var invariantErr *privacytypes.DisclosureBlindingErrorV1
+			require.True(t, errors.As(err, &invariantErr))
+			require.Equal(t, tc.errorCode, invariantErr.Code)
+
+			// Complete disclosure digests and the owner signature are refreshed.
+			// Legacy-control success proves no pre-existing relation masks the
+			// production rejection, while the compiled production R1CS rejects it.
+			requireJoinSplitLegacyControlSolveResult(t, legacyControlCCS, &assignment, true)
+			requireJoinSplitSolveResult(t, productionCCS, &assignment, false)
 		})
 	}
 }
@@ -132,8 +143,8 @@ type joinSplitDisclosureResourceReport struct {
 	GnarkVersion     string                             `json:"gnark_version"`
 	Curve            string                             `json:"curve"`
 	Backend          string                             `json:"backend"`
-	Baseline         joinSplitDisclosureResourceMetrics `json:"baseline"`
-	Hardened         joinSplitDisclosureResourceMetrics `json:"hardened"`
+	LegacyControl    joinSplitDisclosureResourceMetrics `json:"legacy_control"`
+	Production       joinSplitDisclosureResourceMetrics `json:"production"`
 	ConstraintDelta  int                                `json:"constraint_delta"`
 	BatchConstraints int                                `json:"batch_constraints_unchanged"`
 }
@@ -144,9 +155,9 @@ func TestJoinSplitDisclosureBlindingSeparationResourceGate(t *testing.T) {
 	}
 
 	assignment := buildValidJoinSplitAssignment(t)
-	baseline := measureJoinSplitDisclosureCircuit(t, &JoinSplitCircuit{}, assignment)
-	hardenedAssignment := joinSplitDisclosureBlindingFeasibilityCircuit(*assignment)
-	hardened := measureJoinSplitDisclosureCircuit(t, &joinSplitDisclosureBlindingFeasibilityCircuit{}, &hardenedAssignment)
+	legacyAssignment := joinSplitDisclosureBlindingLegacyControl(*assignment)
+	legacyControl := measureJoinSplitDisclosureCircuit(t, &joinSplitDisclosureBlindingLegacyControl{}, &legacyAssignment)
+	production := measureJoinSplitDisclosureCircuit(t, &JoinSplitCircuit{}, assignment)
 	report := joinSplitDisclosureResourceReport{
 		GeneratedAtUTC:   time.Now().UTC().Format(time.RFC3339),
 		GOOS:             runtime.GOOS,
@@ -155,14 +166,15 @@ func TestJoinSplitDisclosureBlindingSeparationResourceGate(t *testing.T) {
 		GnarkVersion:     "v0.14.0",
 		Curve:            "BN254",
 		Backend:          "Groth16 development setup",
-		Baseline:         baseline,
-		Hardened:         hardened,
-		ConstraintDelta:  hardened.ConstraintCount - baseline.ConstraintCount,
+		LegacyControl:    legacyControl,
+		Production:       production,
+		ConstraintDelta:  production.ConstraintCount - legacyControl.ConstraintCount,
 		BatchConstraints: 1_111_837,
 	}
-	require.Positive(t, report.ConstraintDelta)
-	require.Equal(t, int64(164), report.Baseline.ProofBytes)
-	require.Equal(t, int64(164), report.Hardened.ProofBytes)
+	require.Equal(t, 10, report.ConstraintDelta)
+	require.Equal(t, 99_775, report.Production.ConstraintCount)
+	require.Equal(t, int64(164), report.LegacyControl.ProofBytes)
+	require.Equal(t, int64(164), report.Production.ProofBytes)
 
 	encoded, err := json.MarshalIndent(report, "", "  ")
 	require.NoError(t, err)
@@ -188,10 +200,10 @@ func requireJoinSplitSolveResult(t testing.TB, ccs constraint.ConstraintSystem, 
 	}
 }
 
-func requireJoinSplitHardenedSolveResult(t testing.TB, ccs constraint.ConstraintSystem, assignment *JoinSplitCircuit, wantSuccess bool) {
+func requireJoinSplitLegacyControlSolveResult(t testing.TB, ccs constraint.ConstraintSystem, assignment *JoinSplitCircuit, wantSuccess bool) {
 	t.Helper()
-	hardened := joinSplitDisclosureBlindingFeasibilityCircuit(*assignment)
-	witness, err := frontend.NewWitness(&hardened, ecc.BN254.ScalarField())
+	legacyControl := joinSplitDisclosureBlindingLegacyControl(*assignment)
+	witness, err := frontend.NewWitness(&legacyControl, ecc.BN254.ScalarField())
 	require.NoError(t, err)
 	_, err = ccs.Solve(witness)
 	if wantSuccess {
@@ -199,6 +211,19 @@ func requireJoinSplitHardenedSolveResult(t testing.TB, ccs constraint.Constraint
 	} else {
 		require.Error(t, err)
 	}
+}
+
+func validateJoinSplitDisclosureBlindingAssignmentV1(assignment *JoinSplitCircuit) error {
+	return privacytypes.ValidateDisclosureBlindingSeparationV1(
+		privacytypes.DisclosureBlindingSeparationV1Input{
+			OutputIndex:            privacytypes.TransferDisclosureRecipientOutputIndex,
+			Enabled:                true,
+			PrivacyPolicy:          uint32(assignment.UserPrivacyPolicy.(*big.Int).Uint64()),
+			OutputRandomness:       assignment.OutputRandomness[0].(*big.Int),
+			UserDisclosureBlinding: assignment.UserDisclosureBlinding.(*big.Int),
+			FullDisclosureBlinding: assignment.FullDisclosureBlinding.(*big.Int),
+		},
+	)
 }
 
 func refreshJoinSplitDisclosureFeasibilityState(t testing.TB, assignment *JoinSplitCircuit) {
