@@ -72,7 +72,8 @@ Resolved supplements: `S4-B03` is closed by `02f61f3`/`42d40bd`, and `S4-B02` im
 | Artifact `shasum -a 256` and file-size comparison | PASS. Batch R1CS/PK/VK match the historical development hashes and sizes |
 | Tracked artifact/personal-path/secret-filename scan | PASS. `benchmarks/`, `dist/`, `tmp/`, `tmpdocs/`, local binaries, and dependency outputs are ignored/untracked and are not publication evidence |
 | `go test ./... -count=1`; `go vet ./x/privacy/...`; `make build`; `make examples`; `make vulncheck`; `git diff --check` | PASS. Final repository/release-static verification for the Session 3A implementation scope; not a resumption of Session 4 Passes A–I or live E2E |
-| Passes A–I, full test/race/fuzz, benchmark, fresh localnet, release check/pack | **NOT RUN — Gate 3B FAIL** |
+| `make release-pack`; `make release-pack-verify` | PASS at clean closure `354509db54f193295d1e1a18f9e4b45de3741d4f`. Verified 125 required files and the exact manifest commit; rerun after the final bookkeeping commit |
+| Passes A–I, race/fuzz, benchmark, fresh localnet/live E2E, and complete `make release-check` | **NOT RUN — Gate 3B FAIL and outside Session 3A scope** |
 
 ### Accepted residuals and Production TODO
 

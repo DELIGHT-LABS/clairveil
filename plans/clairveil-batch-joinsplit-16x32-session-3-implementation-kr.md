@@ -539,6 +539,7 @@ git diff --check
 - Identity/readiness: public-input 13개와 schema hash `4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82`는 unchanged다. Old/new proof 상호 mismatch, old consensus/file mismatch, fresh genesis/reset와 strict artifact preflight가 통과했다. Repository 내부에 폐기할 old JoinSplit proof/job cache는 없었으며 외부 cache는 새 identity와 함께 폐기해야 한다.
 - Resource/regression: 전체 privacy 2x2 regression, JoinSplit cold gate, old/new proof gate와 fresh-genesis gate가 통과했다. Full Batch는 unchanged `1,111,837` constraints, R1CS `122,813,535 B`, PK `209,218,621 B`, VK `716 B`, proof `164 B`, peak RSS `3,324,461,056 B`로 통과했고 OOM은 없었다. 9개 non-JoinSplit artifact와 Batch source/artifact는 byte-identical하다.
 - Final repository verification: `go test ./... -count=1`, `go vet ./x/privacy/...`, `make build`, `make examples`, `make vulncheck`, `git diff --check`가 통과했다. 명시적으로 범위 밖인 payroll/scanner/SQL/live E2E와 Session 3B/4 gate는 실행하지 않았다.
+- Release/hygiene: clean documentation closure `354509db54f193295d1e1a18f9e4b45de3741d4f`에서 `make release-pack`, `make release-pack-verify`가 125개 required file과 exact manifest commit을 검증했다. 이 bookkeeping commit 뒤에도 같은 검증을 재실행하고 tracked worktree clean, generated R1CS/PK/VK·secret 미추적 상태를 확인한다.
 - 범위/처분: formal trusted setup, G3B-01..04, `S4-B01`, batch structured signer, payroll/scanner/SQL/live E2E, Session 3B/4는 수행하지 않았다. Generated development R1CS/PK/VK와 secret은 repository에 commit하지 않았다. `S4-B02` implementation은 **RESOLVED**이고 Gate 1/2/3A는 fresh 독립 재검토가 필요하다. Publication은 계속 `BLOCKED`다.
 
 ### Historical 2026-07-12 `S4-B02` Re-entry Handoff

@@ -72,7 +72,8 @@ Resolved supplements: `S4-B03`은 `02f61f3`/`42d40bd`, `S4-B02` implementation�
 | artifact `shasum -a 256`과 file-size 대조 | PASS. Batch R1CS/PK/VK가 historical development hash/size와 일치 |
 | tracked artifact/personal-path/secret filename scan | PASS. `benchmarks/`, `dist/`, `tmp/`, `tmpdocs/`, local binary와 dependency output은 ignored/untracked이며 publication evidence가 아님 |
 | `go test ./... -count=1`; `go vet ./x/privacy/...`; `make build`; `make examples`; `make vulncheck`; `git diff --check` | PASS. Session 3A implementation 범위의 final repository/release 정적 검증이며 Session 4 Pass A~I 또는 live E2E 재개가 아님 |
-| Pass A~I, full test/race/fuzz, benchmark, fresh localnet, release check/pack | **NOT RUN — Gate 3B FAIL** |
+| `make release-pack`; `make release-pack-verify` | PASS at clean closure `354509db54f193295d1e1a18f9e4b45de3741d4f`. Required file 125개와 exact manifest commit 검증; final bookkeeping commit에서도 재실행 |
+| Pass A~I, race/fuzz, benchmark, fresh localnet/live E2E와 전체 `make release-check` | **NOT RUN — Gate 3B FAIL 및 Session 3A 범위 밖** |
 
 ### Accepted Residual과 Production TODO
 
