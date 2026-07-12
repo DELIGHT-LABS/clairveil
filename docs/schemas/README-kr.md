@@ -36,14 +36,15 @@ repo의 예제 validator는 실행 부담을 줄이기 위해 dependency-free su
 
 이 schema는 field presence, basic type, version constant, address prefix, fixed-size hash, 2-byte view tag hex string, 현재 transfer payload array size, scan cursor/version field, note reservation enum/transition array, HMAC lookup-key vector, Merkle path helper bit, canonical non-negative uint64 amount string, Cosmos SDK coin string을 확인합니다.
 
-단, semantic verification을 대신하지는 않습니다. payload hash 재계산, disclosure digest 검증, sender self-view payload 복호화/검증, Merkle path 재계산, scan cursor 전진 동작, 안전한 view-tag mismatch fallback, proof verification은 SDK/test가 별도로 수행해야 합니다.
+단, semantic verification을 대신하지는 않습니다. payload hash 재계산, disclosure digest 검증, `DISCLOSURE-BLINDING-SEPARATION`, sender self-view payload 복호화/검증, Merkle path 재계산, scan cursor 전진 동작, 안전한 view-tag mismatch fallback, proof verification은 SDK/test가 별도로 수행해야 합니다.
 
 ## Session 2 Independent Contract
 
-아래 language-neutral fixture 2개가 wallet-shape schema를 보완합니다.
+아래 language-neutral fixture 3개가 wallet-shape schema를 보완합니다.
 
 - `x/privacy/client/sdk/conformance/testdata/privacy_note_v1_contract.json`은 NoteV1 domain, domain constant, asset-ID/commitment/nullifier vector, exact empty root, `privacy-fixed-v1` size를 동결합니다.
 - `x/privacy/client/sdk/conformance/testdata/privacy_batch_joinsplit_v1_contract.json`은 production 16/32 capacity, canonical 1..64-byte `audit_key_id` grammar `[a-z0-9][a-z0-9._-]*`, vector root, effect ID, exact canonical owner-effect digest, corrected max-shape wire-state value와 12개 public input을 동결합니다. 순서는 정확히 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`입니다. Independent payload SHA-256은 `f2588c...24b0`, max canonical payload는 `65,384` bytes입니다. Wire golden은 Tx `65,294` bytes, typed scan KV `75,105` bytes, total KV write `173,409` bytes, query response `74,551` bytes입니다.
+- `x/privacy/client/sdk/conformance/testdata/privacy_disclosure_blinding_v1_contract.json`은 `DBS-01..03`, active all-private/disabled sentinel, slot별 circuit separation과 더 강한 SDK global freshness의 구분, 필수 circuit/native/prepared/structured-signer enforcement layer, stable secret-free `DBS_*` error code를 동결합니다.
 
 Fixed binary contract는 exact합니다. Note plaintext는 350 bytes, disclosure plaintext는 392 bytes, typed encrypted-envelope header는 20 bytes입니다. JSON Schema는 주로 fixture shape를 검증합니다. SDK semantic test는 이 byte length, envelope kind/domain/version/reserved byte, trailing byte 금지, `AssetRegistryV1` resolve, full scan-cursor advancement, 선택한 root와 일치하는 Merkle path snapshot도 추가로 강제해야 합니다. Typed `privacy-scan-v2` record는 wrong exact event type, fixed envelope, digest, key, zero/disabled sentinel, orphan/non-adjacent output에서 fail closed합니다.
 

@@ -84,7 +84,9 @@ Focused tests for these contracts live at:
 - `x/privacy/keeper/asset_registry_test.go`: one-to-one registry, collision/corruption rejection, query bounds, and canonical genesis export.
 - `x/privacy/keeper/privacy_scan_test.go` and `x/privacy/keeper/path_snapshot_test.go`: global scan ordering, within-event resume, record/byte bounds, sequence reuse rejection, same-root paths, and fail-closed validation of exact event types, fixed envelope kinds, digests, keys, zero/disabled sentinels, and orphan or non-adjacent outputs.
 - `x/privacy/zk/registry_test.go` and `x/privacy/client/sdk/proverservice/admission_test.go`: role-aware lazy artifact access, exact identity behavior, queue bounds, cancellation lifetime, and unbounded-value rejection.
-- `x/privacy/client/sdk/conformance/session2_contract_test.go`: independent verification of `privacy_note_v1_contract.json` and `privacy_batch_joinsplit_v1_contract.json`.
+- `x/privacy/client/sdk/conformance/session2_contract_test.go` and `disclosure_blinding_contract_test.go`: independent verification of `privacy_note_v1_contract.json`, `privacy_batch_joinsplit_v1_contract.json`, and the stable `DBS_*` vectors in `privacy_disclosure_blinding_v1_contract.json`.
+- `x/privacy/types/disclosure_blinding_test.go` and `x/privacy/client/sdk/transfer/payload_test.go`: exact all-private/disabled sentinel semantics, secret-free typed errors, collision retry, and prepared-payload rejection before proving.
+- `x/privacy/circuit/joinsplit_disclosure_blinding_feasibility_test.go`: complete disclosure digest/owner-signature refresh controls that the current circuit accepts and the test-only `99,775`-constraint Session 3A target rejects. This test does not modify production R1CS/VK.
 - `x/privacy/circuit/batch_joinsplit_16x32_test.go`: production positive shapes, exact sentinel/active-prefix behavior, key/range/root/signature tampering, output/disclosure ordering, and vector type/level separation.
 - `x/privacy/keeper/batch_gas_test.go`, `batch_scan_index_test.go`, and `batch_transfer_core_integration_test.go`: deterministic precharge ordering, single-copy typed payload storage/minimal events, global Deposit/2x2/batch sequence, direct proof/state integration, atomic failure, cross-message rollback, and batch scan genesis round-trip.
 - `app/ante_batch_transfer_test.go`: signed raw `Any.value` 128 KiB enforcement, duplicate-singular-field decode overwrite, nested governance/authz wrappers, malformed wire data, and the eight-level recursion boundary; keeper gas tests separately account explicit precharge and Cosmos KV descriptors on real `1/1` and max `16/32` state paths.
@@ -118,6 +120,15 @@ CLAIRVEIL_RUN_BATCH_FEASIBILITY=1 go test ./x/privacy/circuit -run TestBatchJoin
 ```
 
 The full gate is opt-in because it compiles the 16x32 circuit, performs a development Groth16 setup, and proves multiple shapes while reporting constraints, artifact sizes, proving/verification timings, and resource measurements. The corrected reference run measured `1,111,837` constraints, peak RSS `3,339,862,016` bytes, max-shape warm proving cost `55.892 ms/output`, and `2.789x` per-output improvement over the current native 2x2 baseline. It is a feasibility measurement, not a production artifact generation or trusted setup command.
+
+Run the Session 2 `S4-B02` 2x2 contract/control test and opt-in resource comparison with:
+
+```bash
+go test ./x/privacy/circuit -run '^TestJoinSplitDisclosureBlindingSeparationFeasibility$' -count=1 -v
+CLAIRVEIL_RUN_JOINSPLIT_BLINDING_FEASIBILITY=1 go test ./x/privacy/circuit -run '^TestJoinSplitDisclosureBlindingSeparationResourceGate$' -count=1 -v
+```
+
+The frozen result is current production `99,765` versus test-only target `99,775` constraints, unchanged 164-byte proof, and no Batch circuit source/artifact delta. Session 3A must reproduce the target or record a decision change, regenerate only JoinSplit artifacts, then rerun the full batch resource gate because its historical comparison uses the old 2x2 baseline.
 
 Generate and validate the actual development artifact set separately:
 

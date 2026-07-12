@@ -9,7 +9,9 @@ This document freezes the Session 2 protocol contract and records its Session 3A
 - **Full-shape circuit gate: PASS.** The corrected Groth16/BN254 prototype compiled, completed development setup, proved every shape including `16/32` without OOM, and improved warm proving cost per output over the current JoinSplit2x2 baseline.
 - **Max wire/state gate: PASS.** An actual protobuf message inside an actual Cosmos `TxRaw`, typed scan KV records, tree-write allowance, the minimal ABCI event, and the query response stayed within the frozen reference limits.
 
-Session 3A implements the production circuit and consensus path. Session 3B adds the repository's reference Go batch planner/preparer, remote batch prover route, lossless typed scanner, durable payroll graph, staged CLI, and localnet tutorial. Session 4 independently revalidated those surfaces. A downstream JS/TS SDK or product, formal trusted setup, external audit, production artifact distribution, and production operations are still outside this repository-level completion.
+Session 3A implements the production circuit and consensus path. Session 3B adds the repository's reference Go batch planner/preparer, remote batch prover route, lossless typed scanner, durable payroll graph, staged CLI, and localnet tutorial. The latest Session 4 independent revalidation is `BLOCKED`; historical publication-ready language is superseded. A downstream JS/TS SDK or product, formal trusted setup, external audit, production artifact distribution, and production operations are still outside this repository-level completion.
+
+The 2026-07-12 Session 2 re-entry freezes `DISCLOSURE-BLINDING-SEPARATION` for `S4-B02`. The shared native validator, 2x2 prepared-payload guard, collision-retrying SDK generator, conformance fixture, and a test-only hardened feasibility circuit now implement or model the frozen contract. The production `JoinSplitCircuit` and its R1CS/PK/VK are intentionally unchanged in Session 2, so `S4-B02` remains implementation pending and Gate 1, Gate 4, and publication remain blocked until Session 3A replaces the circuit/artifact identity.
 
 The active circuit set remains `privacy-note-v1` and now requires, in order, Deposit, Spend, JoinSplit2x2, and `batch-joinsplit-16x32-v1`. Development R1CS/PK/VK identities are evidence for Gate 3A, not production trust anchors.
 
@@ -32,6 +34,8 @@ Normative words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** have their usual
 | Batch circuit ID | `batch-joinsplit-16x32-v1` |
 | Batch public-input schema SHA-256 | `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333` |
 | Batch proto/API | `clairveil.privacy.v1.Msg/BatchTransfer`; canonical payload format `1` |
+| Disclosure-blinding separation | `v1`; `DBS-01..03` plus exact all-private/disabled sentinels |
+| JoinSplit2x2 public-input schema SHA-256 | `4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82` (unchanged) |
 
 These version changes require a fresh reset/genesis. Mixed old/new note state is rejected. Wallet note caches, reservations, prepared witnesses, and prepared proofs from an older circuit/payload/state version MUST be discarded.
 
@@ -381,6 +385,38 @@ Per-output secret blindings prevent an observer from testing a small amount/addr
 
 The proof binds digests and the canonical payload bytes, but it cannot prove that a ciphertext is decryptable by the claimed target key. Auditor decryption failure therefore requires an `AuditDeliveryFailed`/manual-review path; it MUST NOT be silently treated as valid delivery.
 
+### 5.4 Disclosure-blinding separation across 2x2 and 16x32
+
+`DISCLOSURE-BLINDING-SEPARATION` is a per-disclosure-output-slot invariant. For one enabled output slot `i`:
+
+```text
+user_enabled[i] = enabled[i] && (privacy_policy[i] != 0)
+
+DBS-01: user_enabled[i] => user_disclosure_blinding[i] != output_randomness[i]
+DBS-02: enabled[i]      => full_disclosure_blinding[i] != output_randomness[i]
+DBS-03: enabled[i]      => full_disclosure_blinding[i] != user_disclosure_blinding[i]
+```
+
+An enabled non-all-private slot requires both blindings to be canonical and non-zero. An enabled all-private slot canonicalizes `privacy_policy=0` and `user_disclosure_blinding=0`; only `DBS-01` is gated off, while full blinding remains non-zero and `DBS-02`/`DBS-03` remain active. A disabled capacity slot canonicalizes policy, output randomness, user blinding, and full blinding all to zero and gates off all three inequalities. Active output randomness itself is a canonical field value and MAY be zero.
+
+BatchJoinSplit16x32 already enforces this exact contract independently for each of 32 capacity slots: 96 gated inequality sites plus sentinel/non-zero checks. JoinSplit2x2 has no disabled output capacity slot. Its disclosure witness applies only to recipient output `0`, so `i=0` and the compared note secret is exactly `OutputRandomness[0]`. Output `1` is an active change note with no user/full disclosure witness; it is not a disabled disclosure slot. Input randomness, `OutputRandomness[1]`, cross-output reuse, and cross-transaction reuse are outside `DBS-01..03`. The stronger SDK-wide `SECRET-FRESHNESS` policy is separate; in particular, the structured batch signer gap remains `G3B-04` and is not closed by this contract.
+
+The shared native/prepared/structured-signer error contract uses the following stable, secret-free codes. Go callers preserve `*DisclosureBlindingErrorV1` through wrapping; external adapters map validation failure to their existing non-retryable invalid-request response without echoing secret values.
+
+| Code | Meaning |
+| --- | --- |
+| `DBS_INVALID_POLICY` | policy is outside `0..7` |
+| `DBS_NON_CANONICAL_FIELD` | randomness or blinding is not a canonical BN254 field element |
+| `DBS_DISABLED_SENTINEL` | a disabled slot has a non-zero policy/randomness/blinding |
+| `DBS_ALL_PRIVATE_USER_SENTINEL` | an active all-private slot has non-zero user blinding |
+| `DBS_USER_BLINDING_REQUIRED` | an enabled user disclosure has zero blinding |
+| `DBS_FULL_BLINDING_REQUIRED` | an active output has zero full blinding |
+| `DBS_USER_RANDOMNESS_REUSE` | `DBS-01` failed |
+| `DBS_FULL_RANDOMNESS_REUSE` | `DBS-02` failed |
+| `DBS_USER_FULL_BLINDING_REUSE` | `DBS-03` failed |
+
+The required enforcement layers are circuit, `ValidateDisclosureBlindingSeparationV1`, prepared-payload validation, and any structured signer before signature release. The current 2x2 `OwnerIntentSigner.SignOwnerIntent(*big.Int)` is opaque and cannot perform the last check; Session 3A MUST either introduce a structured 2x2 request that carries policy/output randomness/blindings or keep signing inside a trusted builder that has run the native validator. Neither option substitutes for the production circuit constraints.
+
 ## 6. Canonical fixed-size payloads
 
 All multibyte integers and field values are unsigned big-endian. Every field element is exactly 32 canonical BN254-Fr bytes. Each 16-byte domain tag is the first 16 bytes of `SHA-256(label)`.
@@ -621,6 +657,8 @@ Validator readiness requires the complete local manifest identity to equal conse
 
 The registry is injectable, thread-safe, lazy, and cached separately by circuit and artifact type. `batch-joinsplit-16x32-v1` is the fourth entry in `RequiredCircuitIDs` and contributes three descriptors to the canonical 12-descriptor manifest. Validators load only requested VKs; provers load only selected R1CS/PK pairs.
 
+`S4-B02` narrows the accepted 2x2 witness set but does not change NoteV1, the 13 public inputs/order, the JoinSplit public-input schema digest, `TransferIntentV2`, disclosure digest formulas/domains, `privacy-fixed-v1`, canonical message payload bytes, protobuf, prepared transfer payload `v5`, proof/HTTP contract `v2`, manifest schema `v2`, identity schema `v1`, or circuit-set ID `privacy-note-v1`. No version bump is required for those contracts. Session 3A MUST regenerate only the changed JoinSplit R1CS/PK/VK, replace its manifest checksums and consensus `verifying_key_sha256`, invalidate cached JoinSplit proofs/jobs, and rerun exact identity/readiness gates. Existing prepared payloads may be re-proved only after the new semantic validator accepts them. The unchanged public-schema hash is not a substitute for the changed VK hash. BatchJoinSplit16x32 source/artifacts remain unchanged. Because this repository is predeployment and has no in-place circuit-identity migration, the new exact identity is installed through the existing fresh-genesis/reset policy.
+
 The Session 3A development identity was generated from source commit `381c984189e823e5797104eb7cd2beb2386eaf80` at `2026-07-11T09:32:32Z`. It is reproducibility evidence only:
 
 | Batch artifact | Size | SHA-256 |
@@ -716,6 +754,21 @@ The subgroup comparison isolates the 67-point on-curve/non-identity shape from t
 
 The current JoinSplit2x2 comparison used first prove `158.470 ms`, warm samples `[154.029, 157.718] ms`, and warm mean `155.8735 ms`. The corrected max-shape warm cost is `55.892422 ms/output`; versus the current per-payment baseline this is a `2.788813x` improvement. Compile, setup, all proofs, and verification completed without OOM. The approximately 209 MB proving key and 123 MB R1CS are operationally plausible with per-role lazy loading, although memory remains a production capacity concern.
 
+The Session 2 `S4-B02` re-entry additionally compared the current production 2x2 circuit with a test-only circuit that calls the production definition and appends exactly the frozen zero-sentinel assertion and `DBS-01..03`. On the same Apple M5 Pro/64 GiB/macOS 26.5.1, Go 1.25.12, gnark 0.14.0, BN254 Groth16 environment, one cold development sample produced:
+
+| Metric | Current production 2x2 | Hardened feasibility target | Delta |
+| --- | ---: | ---: | ---: |
+| constraints | `99,765` | `99,775` | `+10` (`~0.0100%`) |
+| compile | `114.924 ms` | `101.637 ms` | timing noise; not a speed claim |
+| development setup | `1,388.182 ms` | `1,423.331 ms` | `+35.149 ms` single sample |
+| R1CS | `10,823,916 B` | `10,824,169 B` | `+253 B` |
+| proving key | `16,765,577 B` | `16,766,489 B` | `+912 B` |
+| verifying key | `748 B` | `748 B` | `0 B` |
+| proof | `164 B` | `164 B` | `0 B` |
+| witness / prove / verify | `0.142 / 157.680 / 0.691 ms` | `0.119 / 161.169 / 0.674 ms` | single-sample feasibility only |
+
+The process peak RSS was `690,438,144 B`; no OOM occurred. Complete digest and owner-signature refresh controls show that the current circuit accepts each frozen negative vector while the test-only hardened circuit rejects it, so no older digest/signature constraint masks the result. Batch production source was not modified: it remains `1,111,837` constraints and requires no Batch R1CS/VK replacement for this finding. Session 3A MUST reproduce the `99,775` target or record a decision change, then rerun the full batch gate because its reported 2x2 comparison ratio uses the old baseline.
+
 **Circuit gate conclusion: PASS.** The security constraints, explicit two-stage user leaf, subgroup checks, independent paths, and 16/32 capacities were retained. A constrained multiproof is not required for Session 3A by this gate.
 
 ## 11. Max wire/state feasibility result
@@ -780,14 +833,14 @@ Production coverage is explicit. `TestBatchJoinSplit16x32ProductionPositiveMatri
 | RESOURCE-BOUND | CPU, bytes, state and queue are bounded | fixed capacities | `ComputeBatchGasV1` | formula/bounds | admission/body limit | gas overflow/bound and admission tests | §9.2–§9.3 |
 | GLOBAL-COMMITMENT-UNIQUE | one commitment has one global leaf index | active distinctness | canonical field validation | commitment index/append | existing preflight patterns | Deposit/2x2/Batch/genesis collision tests | §8.1 |
 | ASSET-REGISTRY | denom/ID is authoritative 1:1 state | one asset field | `ComputeAssetIDV1` | `AssetRegistryV1` queries/state | registry lookup | collision/re-registration/corruption tests | §3.3 |
-| DISCLOSURE-BLINDING | fresh non-zero and pairwise non-reused user/full/note secrets | 96 reuse inequalities plus per-output non-zero checks | disclosure digest helpers | fixed plaintext carries blinding | CSPRNG builder | production reuse/zero negative cases; dictionary-resistance helper test | §5 |
+| DISCLOSURE-BLINDING | per-slot `DBS-01..03`, exact all-private/disabled sentinels; broader global freshness is separate | Batch: 96 gated inequalities; 2x2 target: three inequalities + all-private sentinel, production pending | `ValidateDisclosureBlindingSeparationV1`; digest helpers | 2x2 prepared validator; keeper relies on proof because raw secrets are not on wire | collision-retrying 2x2/batch CSPRNG builders; structured signer MUST validate before signing | conformance vectors, prepared negative cases, old-circuit control vs hardened feasibility negatives; batch reuse/zero cases | §5.4 |
 | AUDIT-IDENTITY | bounded canonical ID, positive epoch, canonical target point | payload-bound by digest/intent | `ValidateAuditKeyIDV1`, canonical point decoder | exact chain config and typed records | prepared payload and payroll evidence identity | partial-state fail closed and ID/epoch/target mismatch tests | §7.1, §7.4 |
 | GLOBAL-SCAN-SEQUENCE | all privacy effects share one sequence | — | allocation helper | global sequence/index | cursor consumer | Deposit/2x2/Batch and genesis continuity tests | §8.2 |
 | ARTIFACT-CONSENSUS-IDENTITY | local artifact identity equals consensus | public schema is frozen | schema/manifest digest helpers | genesis circuit identity | role-aware registry | mismatch/override tests and development artifact gate | §9.1 |
 
 ## 14. Residual risks and explicit non-goals
 
-- The Session 3A core and Session 3B reference Go client/prover/scanner/payroll/CLI surfaces are implemented and independently revalidated. Downstream JS/TS or product integration, a production audit, formal trusted setup, and production artifact distribution remain outstanding.
+- The Session 3A core and Session 3B reference Go client/prover/scanner/payroll/CLI surfaces exist, but the latest Session 4 revalidation is blocked. `S4-B02` remains implementation pending until the production 2x2 constraints and JoinSplit artifact identity are replaced; other active Gate 3B/Session 4 findings remain separate. Downstream JS/TS or product integration, a production audit, formal trusted setup, and production artifact distribution also remain outstanding.
 - Development setup artifacts are not production trust anchors and are never committed. Their recorded checksums identify only this Gate 3A run.
 - Peak RSS was `3,429,646,336 B` (about 3.19 GiB) on the Session 4 reference run. Lazy loading bounds unnecessary artifact residence but does not provide process-level hard isolation.
 - A client cancellation cannot stop gnark proving. Production process isolation, worker recycling, memory limits, and overload operations remain required.
@@ -805,12 +858,14 @@ There are no unresolved Critical or High Session 2 design findings, and Session 
 - Note/domain/tree helpers: `x/privacy/types/note_v1.go`
 - Batch statement/vector/disclosure/effect helpers: `x/privacy/types/batch_contract.go`; exact effect encoding/digest: `x/privacy/types/batch_payload.go`
 - Fixed payloads: `x/privacy/types/fixed_payload.go`
+- Disclosure separation/error contract: `x/privacy/types/disclosure_blinding.go`; 2x2 prepared guard/generator: `x/privacy/client/sdk/transfer/payload.go`
 - Production circuit/matrix: `x/privacy/circuit/batch_joinsplit_16x32.go`, `batch_joinsplit_16x32_test.go`; feasibility resource gate remains in `batch_joinsplit_16x32_feasibility_test.go`
+- 2x2 re-entry feasibility/control circuit: `x/privacy/circuit/joinsplit_disclosure_blinding_feasibility_test.go`
 - Production message/canonical effect: `proto/clairveil/privacy/v1/tx.proto`, `x/privacy/types/batch_payload.go`; wire measurement mirror: `batch_feasibility.proto`
 - Keeper/gas/scan/core integration: `x/privacy/keeper/msg_server_batch_transfer.go`, `batch_gas.go`, `batch_scan_index.go`, `batch_transfer_core_integration_test.go`
 - Asset registry, common scan, and path snapshot: `x/privacy/keeper/asset_registry.go`, `privacy_scan.go`, `path_snapshot.go`
 - Artifact registry/readiness: `x/privacy/zk/registry.go`, `identity.go`, `schema.go`, `resource_model.go`, `development_artifact_gate_test.go`
 - Prover admission: `x/privacy/client/sdk/proverservice/admission.go`
-- Independent fixtures: `x/privacy/client/sdk/conformance/testdata/privacy_note_v1_contract.json` and `privacy_batch_joinsplit_v1_contract.json`
+- Independent fixtures: `x/privacy/client/sdk/conformance/testdata/privacy_note_v1_contract.json`, `privacy_batch_joinsplit_v1_contract.json`, and `privacy_disclosure_blinding_v1_contract.json`
 
 If this document and implementation disagree, integration MUST stop. Any change to the frozen protocol requires an explicit decision-change proposal covering soundness, public inputs/goldens, downstream APIs, and resource impact.

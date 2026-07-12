@@ -177,9 +177,11 @@ The `TransferIntentV2` public-input order is consensus-critical:
 5. Both output commitments match the secret output data.
 6. `sum(input amounts) = sum(output amounts)`.
 7. Each input and output amount fits the 64-bit shielded amount bound.
-8. When user disclosure is enabled, the fields selected by policy and a fresh non-zero blinding are bound into `UserDisclosureDigest`.
-9. Audit/self-view full disclosure uses a separate fresh non-zero blinding and is bound into `FullDisclosureDigest`.
+8. When user disclosure is enabled, the fields selected by policy and a non-zero blinding are bound into `UserDisclosureDigest`.
+9. Audit/self-view full disclosure uses a non-zero blinding and is bound into `FullDisclosureDigest`.
 10. Ordered nullifiers, commitments, ciphertexts, view tags, all disclosure envelopes, and expiry are finalized before signing and are bound through the canonical payload digest. `creator`, proof bytes, fee, gas, memo, sequence, and tx signature are excluded so a relayer may replace only `creator`.
+
+`S4-B02` freezes the additional `DISCLOSURE-BLINDING-SEPARATION` target for recipient output `0`: enabled user blinding must differ from `OutputRandomness[0]`; full blinding must differ from `OutputRandomness[0]`; and full blinding must differ from user blinding. Policy `all-private` canonicalizes user blinding to zero and gates off only the first relation. JoinSplit2x2 has no disabled output slot, and output `1` is an active change note without a disclosure witness. The shared native/prepared validator and test-only feasibility circuit enforce/model this target, but the production `JoinSplitCircuit` still lacks these assertions. `S4-B02` therefore remains implementation pending until Session 3A changes the R1CS/VK.
 
 Transfer view tags are not separate `JoinSplitCircuit` public inputs. They are ordered public scan hints carried by `MsgTransfer` and events and are included in the canonical payload digest, but must still not be treated as note-ownership signals.
 
@@ -265,6 +267,8 @@ The Session 3A development artifact gate recorded the following reproducible loc
 
 The setup generated here is development-only. The repository does not perform or claim a formal trusted setup, artifact signing ceremony, production artifact release, or external audit.
 
+For the `S4-B02` Session 3A re-entry, the active circuit-set string remains `privacy-note-v1`, the JoinSplit 13-input order/schema hash remains `4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82`, and payload `v5` plus proof/HTTP `v2` remain unchanged. Only JoinSplit's accepted witness set changes. Regenerate `privacy_joinsplit_{r1cs,pk,vk}.bin`, replace the manifest checksums and consensus JoinSplit VK digest, invalidate old proof jobs, and use the predeployment fresh-genesis/reset path. Do not rotate the Batch artifact for this finding. The Session 2 test-only target is `99,775` constraints versus current production `99,765`; production artifacts are not generated in Session 2.
+
 ## 7. Reserve Accounting Query
 
 Circuit soundness is paired with keeper-level reserve accounting. The keeper records denom-level `total_deposited` and `total_withdrawn`, then compares the expected reserve (`total_deposited - total_withdrawn`) to the actual privacy module-account balance.
@@ -283,8 +287,9 @@ When changing circuits, update these in one commit or a short commit series:
 2. Check whether prover payload builders and verifier input shape changed.
 3. Update proto, CLI JSON, fixture schema if affected.
 4. Regenerate and validate JS/web wallet conformance fixtures.
-5. Update `docs/clairveil-circuits.md`, `docs/clairveil-js-sdk-handoff.md`, and release note impact.
-6. Pass `make test`, `make ci`, `make privacy-e2e-smoke`, and `make release-pack-verify`.
+5. Run the shared native/prepared/structured-signer invariant vectors and the 2x2 old-circuit-control versus hardened-circuit feasibility test.
+6. Update `docs/clairveil-circuits.md`, `docs/clairveil-js-sdk-handoff.md`, and release note impact.
+7. Pass `make test`, `make ci`, `make privacy-e2e-smoke`, and `make release-pack-verify`.
 
 ## 9. Important Limits
 
@@ -297,7 +302,7 @@ When changing circuits, update these in one commit or a short commit series:
 
 The active circuit set is `privacy-note-v1`. Its required descriptor order is `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`. All four circuits, the keeper tree, and typed scan state share one domain-separated NoteV1 commitment/nullifier/tree contract, canonical field/key checks, and exact depth-specific empty roots. Denoms never enter a circuit as strings: `AssetRegistryV1` is the authoritative one-to-one mapping to a 32-byte `asset_id`. This is a breaking state and artifact transition that requires fresh genesis, regenerated artifacts, deleted proof/note/scan caches, and a full rescan.
 
-Canonical plaintext and encrypted payloads use `privacy-fixed-v1`: fixed 350-byte note plaintext, fixed 392-byte disclosure plaintext, and a 20-byte typed envelope header before the exact encryption payload. Raw ciphertext and cross-kind or trailing-byte decode are invalid. User and full disclosure use independent non-zero per-output blindings; all-private user disclosure alone uses the zero sentinel. This prevents low-entropy disclosed values from becoming a practical dictionary oracle.
+Canonical plaintext and encrypted payloads use `privacy-fixed-v1`: fixed 350-byte note plaintext, fixed 392-byte disclosure plaintext, and a 20-byte typed envelope header before the exact encryption payload. Raw ciphertext and cross-kind or trailing-byte decode are invalid. `DISCLOSURE-BLINDING-SEPARATION` requires, per disclosure output, user-vs-note, full-vs-note, and full-vs-user inequality with exact all-private/disabled gating. Batch enforces it in production; 2x2 native/prepared validation is present while the production circuit/artifact remains Session 3A implementation pending. This prevents low-entropy disclosed values from becoming a practical dictionary oracle without overstating cross-output global freshness.
 
 `BatchJoinSplit16x32` is now the fourth production circuit. It preserves the Session 2 contract: capacities 16/32, exact active prefixes, zero disabled sentinels, 16 independent depth-32 paths, subgroup/key constraints, active-only distinctness, value conservation, per-output NoteV1/user/full-disclosure checks, and one owner signature. Its consensus public-input order is:
 

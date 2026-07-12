@@ -36,14 +36,15 @@ The repository validator uses a dependency-free subset validator to keep the sam
 
 This schema checks field presence, basic types, version constants, address prefixes, fixed-size hashes, 2-byte view tag hex strings, current transfer payload array sizes, scan cursor/version fields, note reservation enum/transition arrays, HMAC lookup-key vectors, Merkle path helper bits, canonical non-negative uint64 amount strings, and Cosmos SDK coin strings.
 
-It does not replace semantic verification. Payload hash recomputation, disclosure digest verification, sender self-view payload decryption/verification, Merkle path recomputation, scan cursor advancement behavior, safe view-tag mismatch fallback, and proof verification must be implemented separately by SDK/tests.
+It does not replace semantic verification. Payload hash recomputation, disclosure digest verification, `DISCLOSURE-BLINDING-SEPARATION`, sender self-view payload decryption/verification, Merkle path recomputation, scan cursor advancement behavior, safe view-tag mismatch fallback, and proof verification must be implemented separately by SDK/tests.
 
 ## Session 2 Independent Contracts
 
-Two language-neutral fixtures supplement the wallet-shape schema:
+Three language-neutral fixtures supplement the wallet-shape schema:
 
 - `x/privacy/client/sdk/conformance/testdata/privacy_note_v1_contract.json` freezes the NoteV1 domains, domain constants, asset-ID/commitment/nullifier vectors, exact empty roots, and `privacy-fixed-v1` sizes.
 - `x/privacy/client/sdk/conformance/testdata/privacy_batch_joinsplit_v1_contract.json` freezes the production 16/32 capacities, canonical 1..64-byte `audit_key_id` grammar `[a-z0-9][a-z0-9._-]*`, vector roots, effect ID, exact canonical owner-effect digest, corrected max-shape wire-state values, and the 12 public inputs in this exact order: `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`. The independent payload SHA-256 is `f2588c...24b0`; the max canonical payload is `65,384` bytes. The wire goldens are Tx `65,294` bytes, typed scan KV `75,105` bytes, total KV write `173,409` bytes, and query response `74,551` bytes.
+- `x/privacy/client/sdk/conformance/testdata/privacy_disclosure_blinding_v1_contract.json` freezes `DBS-01..03`, active all-private and disabled sentinels, the distinction between per-slot circuit separation and broader SDK global freshness, required circuit/native/prepared/structured-signer enforcement layers, and stable secret-free `DBS_*` error codes.
 
 The fixed binary contract is exact: note plaintext is 350 bytes, disclosure plaintext is 392 bytes, and the typed encrypted-envelope header is 20 bytes. The JSON Schema primarily validates fixture shape; SDK semantic tests must additionally enforce those byte lengths, envelope kind/domain/version/reserved bytes, no trailing bytes, `AssetRegistryV1` resolution, full scan-cursor advancement, and a Merkle path snapshot matching the selected root. Typed `privacy-scan-v2` records fail closed on a wrong exact event type, fixed envelope, digest, key, zero/disabled sentinel, or orphan/non-adjacent output.
 

@@ -267,9 +267,13 @@ x/privacy/client/sdk/transfer/service.go
 - Canonical binary effect는 고정 field 순서와 variable byte의 `u32be(length) || bytes` encoding을 사용합니다. Format version, root, ordered nullifier/commitment/ciphertext/view tag, 모든 disclosure field, expiry를 포함하고 proof, `creator`, fee/gas/memo/sequence/tx signature, digest 자신은 제외합니다. Keeper가 `MsgTransfer`에서 다시 계산합니다.
 - 최종 `MsgTransfer`는 `new_commitments`, `cipher_texts`와 순서가 맞는 정확히 2개의 `view_tags`를 포함해야 합니다.
 - Disclosure plaintext/query version은 `privacy-fixed-v1`입니다. Enabled user disclosure와 full audit/self-view disclosure는 서로 독립적인 fresh CSPRNG blinding을 사용합니다. 복호화 후 blinding을 복원해 digest를 재계산해야 하며 decrypt 성공만으로 verified 처리하면 안 됩니다.
+- Recipient output `0`에 `DBS-01`(`policy != 0 => user_blinding != output_randomness`), `DBS-02`(`full_blinding != output_randomness`), `DBS-03`(`full_blinding != user_blinding`)를 강제합니다. All-private는 user blinding을 zero로 canonicalize하고 `DBS-01`만 gate off합니다. Output `1`은 disclosure witness가 없는 active change note이지 disabled slot이 아닙니다.
+- Prepared payload를 prover에 보내기 전과 owner signature를 release하기 전에 semantic validator를 실행합니다. `privacy_disclosure_blinding_v1_contract.json`의 stable secret-free code를 사용하고 error/telemetry에 randomness/blinding 값을 포함하지 않습니다.
 - `expires_at_unix`는 absolute 값이고 chain은 `block_time >= expires_at_unix`에서 거부합니다.
 
 정확한 `JoinSplitCircuit` public-input 순서는 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `Nullifier0`, `Nullifier1`, `Commitment0`, `Commitment1`, `UserPrivacyPolicy`, `UserDisclosureDigest`, `FullDisclosureDigest`, `PayloadDigestHi`, `PayloadDigestLo`입니다. Field를 sort하거나 rename하면 안 됩니다. SHA-256 chain/payload digest는 field reduction 없이 big-endian 128-bit limb 두 개로 나눕니다. Chain domain input은 `"clairveil.chain-domain.v1"`, length-prefixed `chain_id`, length-prefixed `circuit_set_id`(`privacy-note-v1`) 순서입니다.
+
+현재 Go 2x2 signer는 `SignOwnerIntent(*big.Int)`만 받아 `DBS-01..03`을 독립 검사할 수 없습니다. Structured wallet signer는 canonical policy, recipient output randomness, user blinding, full blinding, final effect를 받고 signing 전에 같은 semantic validator를 실행해야 합니다. Session 3A가 production circuit assertion과 이 signer boundary를 완료할 때까지 `S4-B02`는 implementation pending입니다. Transfer payload `v5`, proof/request/response `v2`, NoteV1, fixed payload encoding, disclosure digest 공식, 13-input schema는 바뀌지 않지만 JoinSplit VK identity는 교체해야 합니다.
 
 Bulk payroll 또는 다른 대량 전송 client에서 쓰는 note reservation은 on-chain protocol이 아니라 client/control-plane layer 계약입니다. Go reference implementation과 fixture는 아래에 있습니다.
 
@@ -486,6 +490,7 @@ JS SDK handoff가 완료되었다고 보려면 아래가 가능해야 합니다.
 - local node에서 `show-address`에 해당하는 shielded address를 SDK가 직접 계산합니다.
 - deposit 후 event scan으로 내 note를 찾습니다.
 - transfer prepared payload의 hash가 Go fixture와 같은 방식으로 계산됩니다.
+- `privacy_disclosure_blinding_v1_contract.json`의 positive/sentinel/negative vector가 같은 `DBS_*` result code를 만들고 structured signing이 invalid vector를 signature release 전에 모두 거부합니다.
 - prover HTTP contract에 맞춰 transfer/withdraw proof request와 response를 검증합니다.
 - bulk payroll client가 `privacy_note_reservation_contract.json`의 reservation 전이와 operation 성공 규칙을 재현합니다.
 - user disclosure, audit disclosure, sender self-view disclosure를 decode하고 `verified=true`를 확인합니다.
@@ -511,6 +516,7 @@ JS SDK handoff가 완료되었다고 보려면 아래가 가능해야 합니다.
 - active circuit set `privacy-note-v1`, consensus `CircuitSetIdentity` schema `v1`, manifest schema `v2`
 - prover HTTP path `/v1/prover/transfer`, `/v1/prover/withdraw`
 - conformance fixture files under `x/privacy/client/sdk/conformance/testdata`
+- `DISCLOSURE-BLINDING-SEPARATION` V1 semantics/error code, 단 production 2x2 circuit/artifact enforcement는 Session 3A pending
 - `privacy_note_reservation_contract.json`의 note reservation status와 operation evidence contract
 
 아직 JS SDK가 독자적으로 결정해야 하는 항목은 아래입니다.

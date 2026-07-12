@@ -269,9 +269,13 @@ Important constraints:
 - The canonical binary effect uses fixed field order and `u32be(length) || bytes` for variable bytes. It includes format version, root, ordered nullifiers/commitments/ciphertexts/view tags, every disclosure field, and expiry. It excludes proof, `creator`, fee/gas/memo/sequence/tx signature, and its own digest. The keeper recomputes it from `MsgTransfer`.
 - Final `MsgTransfer` must include exactly two `view_tags`, aligned with `new_commitments` and `cipher_texts`.
 - Disclosure plaintext/query version is `privacy-fixed-v1`. Enabled user disclosure and full audit/self-view disclosure use independent fresh CSPRNG blindings. After decrypting, recover the blinding and recompute the digest; decryption alone is not verification.
+- For recipient output `0`, enforce `DBS-01` (`policy != 0 => user_blinding != output_randomness`), `DBS-02` (`full_blinding != output_randomness`), and `DBS-03` (`full_blinding != user_blinding`). All-private canonicalizes user blinding to zero and gates off only `DBS-01`. Output `1` is an active change note without a disclosure witness, not a disabled slot.
+- Run the semantic validator before sending a prepared payload to any prover and before releasing an owner signature. Use the stable secret-free codes in `privacy_disclosure_blinding_v1_contract.json`; do not include randomness/blinding values in errors or telemetry.
 - `expires_at_unix` is absolute. The chain rejects at `block_time >= expires_at_unix`.
 
 The exact `JoinSplitCircuit` public-input order is: `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `Nullifier0`, `Nullifier1`, `Commitment0`, `Commitment1`, `UserPrivacyPolicy`, `UserDisclosureDigest`, `FullDisclosureDigest`, `PayloadDigestHi`, `PayloadDigestLo`. Do not sort or rename fields. SHA-256 chain/payload digests are split into two non-reduced big-endian 128-bit limbs. Chain domain input is `"clairveil.chain-domain.v1"`, length-prefixed `chain_id`, then length-prefixed `circuit_set_id` (`privacy-note-v1`).
+
+The current Go 2x2 signer receives only `SignOwnerIntent(*big.Int)` and cannot independently inspect `DBS-01..03`. A structured wallet signer MUST receive the canonical policy, recipient output randomness, user blinding, full blinding, and final effect, then run the same semantic validator before signing. Until Session 3A adds the production circuit assertions and completes this signer boundary, `S4-B02` remains implementation pending. This does not change transfer payload `v5`, proof/request/response `v2`, NoteV1, fixed payload encoding, disclosure digest formulas, or the 13-input schema; it does require a new JoinSplit VK identity.
 
 For bulk payroll or other high-volume transfer clients, the note reservation contract is part of the client/control-plane layer rather than the on-chain protocol. The Go reference implementation and fixture are:
 
@@ -488,6 +492,7 @@ The JS SDK handoff is complete when the following work.
 - The SDK directly computes the shielded address corresponding to `show-address` on a local node.
 - After deposit, event scanning finds the user's note.
 - Transfer prepared payload hashes are calculated in the same way as the Go fixtures.
+- `privacy_disclosure_blinding_v1_contract.json` positive/sentinel/negative vectors produce the same `DBS_*` result codes, and structured signing refuses every invalid vector before signature release.
 - Transfer/withdraw proof requests and responses are validated against the prover HTTP contract.
 - Bulk payroll clients reproduce the reservation transitions and operation success rules in `privacy_note_reservation_contract.json`.
 - User disclosure, audit disclosure, and sender self-view disclosure decode with `verified=true`.
@@ -513,6 +518,7 @@ The JS SDK can currently treat these as stable contracts.
 - active circuit set `privacy-note-v1` with consensus `CircuitSetIdentity` schema `v1` and manifest schema `v2`
 - prover HTTP paths `/v1/prover/transfer`, `/v1/prover/withdraw`
 - conformance fixture files under `x/privacy/client/sdk/conformance/testdata`
+- `DISCLOSURE-BLINDING-SEPARATION` V1 semantics/error codes; production 2x2 circuit/artifact enforcement remains Session 3A pending
 - note reservation status and operation evidence contract in `privacy_note_reservation_contract.json`
 
 The JS SDK still needs to decide these independently.

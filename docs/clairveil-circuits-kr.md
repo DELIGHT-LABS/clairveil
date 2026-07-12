@@ -175,9 +175,11 @@ outputs = 2
 5. 두 output commitment가 secret output data와 일치합니다.
 6. `sum(input amounts) = sum(output amounts)`입니다.
 7. 각 input/output amount가 64-bit shielded amount bound 안에 있습니다.
-8. user disclosure가 켜진 경우 policy로 선택한 field와 fresh non-zero blinding이 `UserDisclosureDigest`에 묶입니다.
-9. audit/self-view full disclosure는 별도의 fresh non-zero blinding을 사용하고 `FullDisclosureDigest`에 묶입니다.
+8. user disclosure가 켜진 경우 policy로 선택한 field와 non-zero blinding이 `UserDisclosureDigest`에 묶입니다.
+9. audit/self-view full disclosure는 non-zero blinding을 사용하고 `FullDisclosureDigest`에 묶입니다.
 10. Ordered nullifier, commitment, ciphertext, view tag, 모든 disclosure envelope, expiry는 서명 전에 확정되고 canonical payload digest를 통해 묶입니다. Relayer가 `creator`만 바꿀 수 있도록 `creator`, proof bytes, fee, gas, memo, sequence, tx signature는 제외됩니다.
+
+`S4-B02`는 recipient output `0`에 대한 `DISCLOSURE-BLINDING-SEPARATION` target을 추가로 동결합니다. Enabled user blinding은 `OutputRandomness[0]`과 달라야 하고, full blinding은 `OutputRandomness[0]` 및 user blinding과 각각 달라야 합니다. Policy `all-private`는 user blinding을 zero로 canonicalize하고 첫 번째 관계만 gate off합니다. JoinSplit2x2에는 disabled output slot이 없고 output `1`은 disclosure witness가 없는 active change note입니다. Shared native/prepared validator와 test-only feasibility circuit은 이 target을 강제하거나 모델링하지만 production `JoinSplitCircuit`에는 아직 assertion이 없습니다. 따라서 Session 3A가 R1CS/VK를 바꿀 때까지 `S4-B02`는 implementation pending입니다.
 
 Transfer view tag는 별도 `JoinSplitCircuit` public input은 아니지만 ordered canonical payload digest에는 포함됩니다. `MsgTransfer`와 event에 실리는 public scan hint이며 note ownership signal로 취급하면 안 됩니다.
 
@@ -263,6 +265,8 @@ Session 3A development artifact gate는 아래 batch artifact identity를 기록
 
 여기서 생성하는 setup은 development 전용입니다. 이 repo는 formal trusted setup, artifact signing ceremony, production artifact release, external audit를 수행하거나 주장하지 않습니다.
 
+`S4-B02` Session 3A 재진입에서 active circuit-set string은 `privacy-note-v1`을 유지하고 JoinSplit 13-input 순서/schema hash `4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82`, payload `v5`, proof/HTTP `v2`도 바뀌지 않습니다. JoinSplit accepted witness set만 바뀝니다. `privacy_joinsplit_{r1cs,pk,vk}.bin`을 재생성하고 manifest checksum과 consensus JoinSplit VK digest를 교체하며 old proof job을 폐기하고 predeployment fresh-genesis/reset path를 사용해야 합니다. 이 finding 때문에 Batch artifact를 회전하면 안 됩니다. Session 2 test-only target은 current production constraint `99,765` 대비 `99,775`이며 Session 2에서는 production artifact를 생성하지 않습니다.
+
 ## 7. Reserve accounting query
 
 Circuit soundness는 keeper-level reserve accounting과 함께 검증해야 합니다. Keeper는 denom별 `total_deposited`, `total_withdrawn`을 기록하고, 기대 reserve(`total_deposited - total_withdrawn`)와 실제 privacy module-account balance를 비교합니다.
@@ -281,8 +285,9 @@ GET /clairveil/privacy/v1/reserve/{denom}
 2. prover payload builder와 verifier input shape가 바뀌는지 확인합니다.
 3. `proto`, CLI JSON, fixture schema 영향이 있으면 함께 갱신합니다.
 4. JS/web wallet conformance fixture를 다시 생성하고 검증합니다.
-5. `docs/clairveil-circuits-kr.md`, `docs/clairveil-js-sdk-handoff-kr.md`, release note impact를 갱신합니다.
-6. `make ci`, `make privacy-e2e-smoke`, `make release-pack-verify`를 통과시킵니다.
+5. Shared native/prepared/structured-signer invariant vector와 2x2 old-circuit-control 대비 hardened-circuit feasibility test를 실행합니다.
+6. `docs/clairveil-circuits-kr.md`, `docs/clairveil-js-sdk-handoff-kr.md`, release note impact를 갱신합니다.
+7. `make ci`, `make privacy-e2e-smoke`, `make release-pack-verify`를 통과시킵니다.
 
 ## 9. 주의할 한계
 
@@ -295,7 +300,7 @@ GET /clairveil/privacy/v1/reserve/{denom}
 
 Active circuit set은 `privacy-note-v1`이고 required descriptor 순서는 `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`입니다. 네 회로, keeper tree, typed scan state는 하나의 domain-separated NoteV1 commitment/nullifier/tree 계약, canonical field/key 검사, exact depth-specific empty root를 공유합니다. Denom string은 circuit에 들어가지 않습니다. `AssetRegistryV1`이 32-byte `asset_id`에 대한 authoritative one-to-one mapping입니다. 이 변경은 breaking state/artifact transition이므로 fresh genesis, artifact 재생성, proof/note/scan cache 삭제, full rescan이 필요합니다.
 
-Canonical plaintext와 encrypted payload는 `privacy-fixed-v1`을 사용합니다. Note plaintext는 fixed 350 bytes, disclosure plaintext는 fixed 392 bytes이며 exact encryption payload 앞에는 20-byte typed envelope header가 붙습니다. Raw ciphertext, cross-kind decode, trailing-byte decode는 invalid입니다. User disclosure와 full disclosure는 output마다 서로 독립적인 non-zero blinding을 사용하며 all-private user disclosure만 zero sentinel을 사용합니다. 이 제약은 low-entropy disclosed value가 실용적인 dictionary oracle이 되는 것을 막습니다.
+Canonical plaintext와 encrypted payload는 `privacy-fixed-v1`을 사용합니다. Note plaintext는 fixed 350 bytes, disclosure plaintext는 fixed 392 bytes이며 exact encryption payload 앞에는 20-byte typed envelope header가 붙습니다. Raw ciphertext, cross-kind decode, trailing-byte decode는 invalid입니다. `DISCLOSURE-BLINDING-SEPARATION`은 disclosure output별 user-vs-note, full-vs-note, full-vs-user inequality와 exact all-private/disabled gating을 요구합니다. Batch는 production에서 이를 강제하고 2x2는 native/prepared validation만 구현되었으며 production circuit/artifact는 Session 3A implementation pending입니다. 이는 cross-output global freshness까지 과장하지 않으면서 low-entropy disclosed value의 실용적 dictionary oracle을 막습니다.
 
 `BatchJoinSplit16x32`는 이제 네 번째 production circuit입니다. Session 2에서 고정한 capacity 16/32, exact active prefix, zero disabled sentinel, 16개 independent depth-32 path, subgroup/key constraint, active-only distinctness, value conservation, output별 NoteV1/user/full-disclosure 검사, single owner signature를 그대로 유지합니다. Consensus public-input 순서는 아래와 같습니다.
 
