@@ -8,12 +8,22 @@
 | Starting HEAD reviewed | `d45f0753c16571743f630599776c9cd498d1e8c9` |
 | Review role | Fresh reviewer independent of Sessions 1–3B implementation |
 | Gate 3B on entry | **FAIL — Session 3B integration/test re-entry required** |
+| `S4-B02` Session 2 re-entry | **FOUNDATION FROZEN — Session 3A UNBLOCKED / NOT STARTED** |
 | Session 4 publication state | **`BLOCKED`** (`PUBLICATION_READY_EXPERIMENTAL` withdrawn) |
 | Production release state | Not approved |
 | Formal trusted setup | Not performed |
 | External audit | Not performed |
 
-This 2026-07-12 revalidation supersedes the earlier publication claim completed on the same day and retained below. Gate 3B is not satisfied and unresolved High and security-relevant Medium findings remain, so experimental source-publication approval is not currently valid.
+This 2026-07-12 revalidation supersedes the earlier publication claim completed on the same day and retained below. Gate 3B is not satisfied and unresolved High and security-relevant Medium findings remain, so experimental source-publication approval is not currently valid. The later Session 2 foundation re-entry freezes the `S4-B02` contract but does not change the production circuit/artifacts, so it does not change this `BLOCKED` disposition.
+
+### `S4-B02` foundation re-entry supplement
+
+- The re-entry started from clean HEAD `42d40bd19523e263aaf1c2043bcd274a4fc1a51d` and treated the latest Master Ledger plus this `BLOCKED` record as authoritative.
+- Commits `c7fc1be`, `a8697cd`, `a4ee959`, and `4e75f1f` freeze `DISCLOSURE-BLINDING-SEPARATION` V1 (`DBS-01..03`), exact all-private/disabled gating, the shared `DBS_*` error/layer contract, conformance fixtures, and the 2x2 feasibility target.
+- The test-only hardened circuit has `99,775` constraints versus current `99,765` (`+10`), R1CS `+253 B`, PK `+912 B`, unchanged VK/proof sizes, peak RSS `690,438,144 B`, and no OOM. Batch source/artifacts remain unchanged at `1,111,837` constraints.
+- Public inputs, NoteV1, payload encoding, disclosure digests, and circuit-set version do not change. Session 3A replaces only the JoinSplit R1CS/PK/VK plus manifest/consensus JoinSplit identity.
+- Session 3A re-entry is **UNBLOCKED / NOT STARTED**. `S4-B02` remains **IMPLEMENTATION PENDING / NOT RESOLVED** until production constraints/artifacts, pre-sign enforcement, regression, readiness, and resource gates are complete.
+- `S4-B03` is **RESOLVED** by `02f61f3746b67d5244c160b7c0e0e42f7c0b78b8` and `42d40bd19523e263aaf1c2043bcd274a4fc1a51d`.
 
 ## Current confirmed findings
 
@@ -24,8 +34,9 @@ This 2026-07-12 revalidation supersedes the earlier publication claim completed 
 | G3B-03 | Medium, security-relevant | `SQLStore` exists, but tests cover schema strings, placeholders, and isolation options only. No real SQLite/PostgreSQL CRUD, rollback, reopen, or lease/CAS execution exists. | Reservation-operation-item-evidence atomicity is unproven on SQL backends, leaving orphan, duplicate-work, and incorrect-item-status risk. | Add at least real SQLite transaction, restart, rollback, and concurrency tests. |
 | G3B-04 | Medium, security-relevant | Unlike the final prepared validator, `ValidateBatchTransferSigningRequest` does not reject global input/output or cross-output secret reuse before signing. | An untrusted preparer can obtain an owner signature over a privacy-leaking intent. | Apply the same `seenSecrets` checks at the structured signer boundary and add adversarial signing tests. |
 | S4-B01 | Medium, security-relevant | Unit tests cover default no-failover and explicit opt-in, but the localnet does not measure actual timeout/healthy endpoint contact counts. Its result value is a literal, not an observation. | The publication evidence does not prove that a live transport avoids sending the witness to a second prover by default. | Exercise two live endpoints and verify default and opt-in behavior separately. |
-| S4-B02 | Medium, security-relevant | The current 2x2 SDK generates independent CSPRNG values, but `JoinSplitCircuit` does not forbid exact reuse between user/full blindings and output randomness. | A custom witness/field-intent signing flow can produce a valid reuse proof and let a disclosure recipient link the later nullifier. | Re-enter Sessions 2/3A because adding the three batch-style inequalities changes the R1CS/VK. |
-| S4-B03 | Medium, security-relevant assurance | Duplicate regressions do not construct the same note/commitment/path/helper/nullifier with doubled outputs, so recomputation or membership failure can mask the distinctness check. | They are not exact regression gates for the prior nullifier-inflation exploit. | Add exploit-shaped 2x2 and batch witnesses; no protocol change is required. |
+| S4-B02 | Medium, security-relevant | Session 2 freezes the exact `DBS-01..03` contract and native/prepared/conformance target, but the production `JoinSplitCircuit`/R1CS/VK does not enforce it yet. | A witness that bypasses host guards is not yet rejected at the production proof boundary. | Implement the frozen constraints and pre-sign boundary in Session 3A and replace the JoinSplit artifact identity. Keep the finding implementation pending until then. |
+
+Resolved supplement: `S4-B03` is closed by `02f61f3`, which adds exact 2x2/Batch regressions and cause-isolating controls, and closure record `42d40bd`; it is not included in the current finding count.
 
 ## Current verification disposition
 
@@ -34,7 +45,7 @@ This 2026-07-12 revalidation supersedes the earlier publication claim completed 
 - Payroll default no-failover/explicit opt-in, durable reconciliation, prove-permit lifetime, and memory/file-store tests passed. The SQL check is schema-only and does not close G3B-03.
 - Batch artifacts in `/tmp/clairveil-session3a-artifacts-381c984` match the historical sizes (R1CS `122,813,535 B`, PK `209,218,621 B`, VK `716 B`) and SHA-256 values.
 - No tracked R1CS/PK/VK, `dist/`, `benchmarks/`, `tmp/`, personal absolute path, or evident secret was found. `benchmarks/`, `dist/`, and `tmp/` are ignored.
-- Current unresolved counts are Critical 0, High 2, and security-relevant Medium 5. No security finding was converted into an accepted residual.
+- Current unresolved counts are Critical 0, High 2, and security-relevant Medium 4. No security finding was converted into an accepted residual.
 - Formal setup, external audit, production artifact/provenance, and downstream production operations remain unperformed Production TODOs and do not replace the active findings.
 
 ### Supporting verification commands run
@@ -44,6 +55,8 @@ This 2026-07-12 revalidation supersedes the earlier publication claim completed 
 | `go test ./x/privacy/client/sdk/conformance -run '^(TestPrivacyNoteV1ContractIndependentGolden\|TestPrivacyBatchJoinSplitV1ContractIndependentGolden)$' -count=1 -v` | PASS. Confirms the independent golden calculation path; does not replace Gate 3B |
 | `go test ./x/privacy/client/sdk/payroll -run '^(TestProverPoolDoesNotFailOverAfterEndpointTimeoutByDefault\|TestProverPoolFallsBackAfterEndpointTimeoutWithExplicitOptIn\|TestBatchReconcileDurableRestartRetryTxHashFirstAndItemEvidenceSeparate\|TestBatchProofWorkerKeepsSharedLeaseUntilUninterruptibleProveReturns)$' -count=1 -v` | PASS. Unit boundary only; not live endpoint evidence |
 | `go test ./x/privacy/client/sdk/reservation -run '^(TestBatchOperationGraphIsAtomicAndConflictsWithOrdinaryReservation\|TestBatchOperationDurableFileRestartRoundTrip\|TestBatchOperationSQLSchemaIsVersionedAndRelational)$' -count=1 -v` | PASS. Not a real SQL transaction test, so G3B-03 remains open |
+| `go test ./x/privacy/types ./x/privacy/client/sdk/transfer ./x/privacy/client/sdk/conformance -run 'DisclosureBlinding\|AllPrivateUserBlinding' -count=1 -v` | PASS. Confirms the shared native/prepared/fixture contract; does not replace production circuit enforcement |
+| `CLAIRVEIL_RUN_JOINSPLIT_BLINDING_FEASIBILITY=1 go test ./x/privacy/circuit -run '^TestJoinSplitDisclosureBlindingSeparationResourceGate$' -count=1 -v` | PASS. `99,765 -> 99,775`, peak RSS `690,438,144 B`; test-only target with no generated artifacts |
 | `git merge-base --is-ancestor e427370 HEAD`, `git diff --check e427370..HEAD` | PASS at starting HEAD `d45f0753c16571743f630599776c9cd498d1e8c9` |
 | Artifact `shasum -a 256` and file-size comparison | PASS. Batch R1CS/PK/VK match the historical development hashes and sizes |
 | Tracked artifact/personal-path/secret-filename scan | PASS. `benchmarks/`, `dist/`, `tmp/`, `tmpdocs/`, local binaries, and dependency outputs are ignored/untracked and are not publication evidence |

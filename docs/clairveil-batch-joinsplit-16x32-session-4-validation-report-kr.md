@@ -8,12 +8,22 @@
 | 검증한 시작 HEAD | `d45f0753c16571743f630599776c9cd498d1e8c9` |
 | 검토 역할 | Session 1~3B 구현에 참여하지 않은 fresh reviewer |
 | 진입 시 Gate 3B | **FAIL — Session 3B integration/test 재진입 필요** |
+| `S4-B02` Session 2 재진입 | **FOUNDATION FROZEN — Session 3A UNBLOCKED / NOT STARTED** |
 | Session 4 공개 상태 | **`BLOCKED`** (`PUBLICATION_READY_EXPERIMENTAL` 철회) |
 | production release 상태 | 승인하지 않음 |
 | formal trusted setup | 수행하지 않음 |
 | external audit | 수행하지 않음 |
 
-이 2026-07-12 재검증은 같은 날 앞서 완료된 publication claim을 supersede한다. Gate 3B가 충족되지 않았고 unresolved High/security-relevant Medium이 남아 있으므로 experimental source 공개 승인도 현재 유효하지 않다.
+이 2026-07-12 재검증은 같은 날 앞서 완료된 publication claim을 supersede한다. Gate 3B가 충족되지 않았고 unresolved High/security-relevant Medium이 남아 있으므로 experimental source 공개 승인도 현재 유효하지 않다. 이후 Session 2 foundation 재진입은 `S4-B02` contract를 동결했지만 production circuit/artifact를 변경하지 않았으므로 이 `BLOCKED` 판정을 바꾸지 않는다.
+
+### `S4-B02` Foundation Re-entry Supplement
+
+- clean 기준 HEAD `42d40bd19523e263aaf1c2043bcd274a4fc1a51d`에서 latest Master Ledger와 이 `BLOCKED` record를 authoritative source로 사용했다.
+- `c7fc1be`, `a8697cd`, `a4ee959`, `4e75f1f`이 `DISCLOSURE-BLINDING-SEPARATION` V1의 `DBS-01..03`, all-private/disabled gating, shared `DBS_*` error/layer contract, conformance fixture, 2x2 feasibility target을 동결했다.
+- Current `99,765` 대비 test-only hardened `99,775` constraints(`+10`), R1CS `+253 B`, PK `+912 B`, VK/proof size 변화 없음, peak RSS `690,438,144 B`, OOM 없음이다. Batch source/artifact는 unchanged `1,111,837` constraints다.
+- Public input/NoteV1/payload encoding/disclosure digest/circuit-set version은 변경하지 않는다. Session 3A는 JoinSplit R1CS/PK/VK와 manifest/consensus JoinSplit identity만 교체한다.
+- Session 3A re-entry는 **UNBLOCKED / NOT STARTED**이며 `S4-B02`는 production constraint/artifact/pre-sign enforcement와 regression/readiness/resource gate 완료 전까지 **IMPLEMENTATION PENDING / NOT RESOLVED**다.
+- `S4-B03`은 `02f61f3746b67d5244c160b7c0e0e42f7c0b78b8`, `42d40bd19523e263aaf1c2043bcd274a4fc1a51d`에서 **RESOLVED**다.
 
 ## 현재 확정 Finding
 
@@ -24,8 +34,9 @@
 | G3B-03 | Medium, security-relevant | `SQLStore` 구현은 있으나 test는 schema 문자열, placeholder, isolation option만 검사한다. 실제 SQLite/PostgreSQL CRUD/rollback/reopen/lease-CAS 실행은 없다. | SQL backend의 reservation-operation-item-evidence 원자성이 입증되지 않아 orphan/duplicate/wrong item status 위험이 남는다. | 최소 실제 SQLite transaction/restart/rollback/concurrency test를 추가한다. |
 | G3B-04 | Medium, security-relevant | `ValidateBatchTransferSigningRequest`는 final prepared validator와 달리 input/output 및 output 간 global secret reuse를 서명 전에 거부하지 않는다. | 비신뢰 preparer가 privacy-leaking intent에 owner signature를 먼저 얻을 수 있다. | Structured signer validator에 동일한 `seenSecrets` 검사를 넣고 adversarial signing test를 추가한다. |
 | S4-B01 | Medium, security-relevant | Default no-failover와 explicit opt-in unit test는 있지만 localnet은 timeout/healthy endpoint의 실제 접촉 횟수를 측정하지 않는다. 결과 JSON 값은 실행 관찰이 아닌 literal이다. | 실제 transport에서 witness가 두 번째 prover로 전송되지 않는 privacy default를 publication evidence로 입증하지 못한다. | 두 endpoint live harness에서 default와 opt-in을 각각 검증한다. |
-| S4-B02 | Medium, security-relevant | Current 2x2 SDK는 독립 CSPRNG를 생성하지만 `JoinSplitCircuit`은 user/full blinding과 output randomness의 exact reuse를 금지하지 않는다. | Custom witness/field-intent signing에서 valid reuse proof가 가능하며 disclosure 수신자가 이후 nullifier linkage를 얻을 수 있다. | R1CS/VK를 변경하는 Session 2/3A 재진입으로 batch와 같은 세 inequality를 강제한다. |
-| S4-B03 | Medium, security-relevant assurance | Duplicate regression은 same note/commitment/path/helper/nullifier와 doubled outputs를 만들지 않아 recomputation/membership failure가 distinctness failure를 가린다. | 과거 nullifier inflation 취약점의 exact regression gate가 아니다. | 2x2와 batch에 exploit-shaped witness를 추가한다. Protocol 변경은 필요 없다. |
+| S4-B02 | Medium, security-relevant | Session 2가 exact `DBS-01..03` contract와 native/prepared/conformance target을 동결했지만 production `JoinSplitCircuit`/R1CS/VK는 아직 이를 강제하지 않는다. | Host guard를 우회한 witness는 production proof boundary에서 아직 거부되지 않는다. | Session 3A에서 frozen constraint와 pre-sign boundary를 구현하고 JoinSplit artifact identity를 교체한다. 완료 전 implementation pending으로 유지한다. |
+
+Resolved supplement: `S4-B03`은 exact 2x2/Batch regression과 원인 분리 control을 추가한 `02f61f3`, closure record `42d40bd`로 닫혔으며 현재 finding count에 포함하지 않는다.
 
 ## 현재 검증 처분
 
@@ -34,7 +45,7 @@
 - Payroll default no-failover/explicit opt-in, durable reconcile, prove permit lifetime, memory/file store test는 PASS했다. SQL test는 schema-only여서 G3B-03을 닫지 않는다.
 - `/tmp/clairveil-session3a-artifacts-381c984`의 batch R1CS `122,813,535 B`, PK `209,218,621 B`, VK `716 B`와 SHA-256은 historical record와 일치한다.
 - Tracked R1CS/PK/VK, `dist/`, `benchmarks/`, `tmp/`, 개인 absolute path 또는 명백한 secret은 발견되지 않았다. `benchmarks/`, `dist/`, `tmp/`는 ignored 상태다.
-- 현재 unresolved count는 Critical 0, High 2, security-relevant Medium 5다. Security finding을 accepted residual로 전환하지 않았다.
+- 현재 unresolved count는 Critical 0, High 2, security-relevant Medium 4다. Security finding을 accepted residual로 전환하지 않았다.
 - Formal setup, external audit, production artifact/provenance, downstream production 운영은 여전히 미수행 Production TODO이며 active finding을 대체하지 않는다.
 
 ### 실행한 보조 검증 명령
@@ -44,6 +55,8 @@
 | `go test ./x/privacy/client/sdk/conformance -run '^(TestPrivacyNoteV1ContractIndependentGolden\|TestPrivacyBatchJoinSplitV1ContractIndependentGolden)$' -count=1 -v` | PASS. Independent golden 계산 경로 확인. Gate 3B 대체 아님 |
 | `go test ./x/privacy/client/sdk/payroll -run '^(TestProverPoolDoesNotFailOverAfterEndpointTimeoutByDefault\|TestProverPoolFallsBackAfterEndpointTimeoutWithExplicitOptIn\|TestBatchReconcileDurableRestartRetryTxHashFirstAndItemEvidenceSeparate\|TestBatchProofWorkerKeepsSharedLeaseUntilUninterruptibleProveReturns)$' -count=1 -v` | PASS. Unit 경계만 검증하며 live endpoint evidence 대체 아님 |
 | `go test ./x/privacy/client/sdk/reservation -run '^(TestBatchOperationGraphIsAtomicAndConflictsWithOrdinaryReservation\|TestBatchOperationDurableFileRestartRoundTrip\|TestBatchOperationSQLSchemaIsVersionedAndRelational)$' -count=1 -v` | PASS. 실제 SQL transaction test가 아니므로 G3B-03 유지 |
+| `go test ./x/privacy/types ./x/privacy/client/sdk/transfer ./x/privacy/client/sdk/conformance -run 'DisclosureBlinding\|AllPrivateUserBlinding' -count=1 -v` | PASS. Shared native/prepared/fixture contract 확인. Production circuit 대체 아님 |
+| `CLAIRVEIL_RUN_JOINSPLIT_BLINDING_FEASIBILITY=1 go test ./x/privacy/circuit -run '^TestJoinSplitDisclosureBlindingSeparationResourceGate$' -count=1 -v` | PASS. `99,765 -> 99,775`, peak RSS `690,438,144 B`; test-only target이며 artifact 미생성 |
 | `git merge-base --is-ancestor e427370 HEAD`, `git diff --check e427370..HEAD` | PASS at starting HEAD `d45f0753c16571743f630599776c9cd498d1e8c9` |
 | artifact `shasum -a 256`과 file-size 대조 | PASS. Batch R1CS/PK/VK가 historical development hash/size와 일치 |
 | tracked artifact/personal-path/secret filename scan | PASS. `benchmarks/`, `dist/`, `tmp/`, `tmpdocs/`, local binary와 dependency output은 ignored/untracked이며 publication evidence가 아님 |

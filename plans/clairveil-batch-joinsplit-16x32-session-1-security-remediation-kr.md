@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | Complete historical Gate 1; **S4-B03 방어적 regression evidence 완료, S4-B02 Session 2/3A 재진입 필요** (2026-07-12) |
+| 상태 | Complete historical Gate 1; **S4-B03 resolved, S4-B02 Session 2 contract frozen / Session 3A implementation pending** (2026-07-12) |
 | 선행 문서 | [BatchJoinSplit16x32 Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md) |
 | 후속 세션 | [Session 2 Foundation](clairveil-batch-joinsplit-16x32-session-2-foundation-kr.md) |
 | 권장 모델 | `gpt-5.6-sol` |
@@ -540,7 +540,7 @@ NoteV1의 새 commitment/nullifier formula는 Session 2에서 production circuit
 
 ## 13. Acceptance Criteria
 
-2026-07-12 independent revalidation이 아래 두 acceptance 증거를 재개방했다. 후속 방어적 보완에서 `S4-B03`은 exact exploit-shaped circuit regression과 host 조기 거부 evidence로 닫았다. SDK CSPRNG independence만으로 circuit-level secret-reuse invariant가 닫히지 않는 `S4-B02`는 계속 active다.
+2026-07-12 independent revalidation이 아래 두 acceptance 증거를 재개방했다. 후속 방어적 보완에서 `S4-B03`은 exact exploit-shaped circuit regression과 host 조기 거부 evidence로 닫았다. `S4-B02`는 Session 2 re-entry가 `DISCLOSURE-BLINDING-SEPARATION` V1 contract와 feasibility target을 동결했지만 production circuit/artifact는 아직 바꾸지 않았으므로 계속 active다.
 
 - [x] same note/commitment/path/helper/nullifier와 doubled output을 사용한 exact duplicate input exploit witness가 distinctness constraint 때문에 실패함. `TestJoinSplitCircuitRejectsExactDuplicateInputInflation`과 `TestBatchJoinSplit16x32RejectsExactDuplicateInputInflation`이 production circuit 실패와 distinctness assertion 하나만 완화한 control 성공을 함께 검증해 다른 validation failure가 원인을 가리지 않음을 확인함. (`S4-B03` 해결)
 - [x] duplicate nullifier/commitment가 types/keeper에서 빠르게 실패함.
@@ -552,7 +552,7 @@ NoteV1의 새 commitment/nullifier formula는 Session 2에서 production circuit
 - [x] SpendIntentV2가 chain domain과 expiry를 proof-bound함.
 - [x] withdraw expiry extension과 cross-chain replay가 실패함.
 - [x] recipient leading-zero alias가 불가능함.
-- [ ] current 2x2 user/audit/self-view disclosure가 circuit에서도 note randomness 및 서로의 exact reuse를 거부함. (`S4-B02`; SDK CSPRNG/dictionary regression만 통과)
+- [ ] current 2x2 user/audit/self-view disclosure가 production circuit에서도 note randomness 및 서로의 exact reuse를 거부함. (`S4-B02`; Session 2 native/prepared/conformance/feasibility contract는 통과, Session 3A circuit/artifact pending)
 - [x] malformed point/signature/envelope가 panic 없이 거부됨.
 - [x] prover endpoint failover가 기본 비활성화되고 explicit opt-in만 허용됨.
 - [x] forged historical root와 artifact identity mismatch가 startup/readiness에서 실패함.
@@ -586,7 +586,7 @@ NoteV1의 새 commitment/nullifier formula는 Session 2에서 production circuit
   - `go test ./x/privacy/... -count=1`: 통과.
   - 대상 test 파일의 `gofmt -d`: 차이 없음.
 - 처분: `S4-B03`은 **RESOLVED**. `S4-B02`는 active이며 전체 Gate 1 또는 publication을 완료 처리하지 않음.
-- 다음 순차 단계: `S4-B02` frozen contract/constraint 보강을 위한 Session 2 re-entry. Session 2 또는 Session 3A 구현은 이 보완에서 시작하지 않음.
+- 다음 순차 단계: Session 2 re-entry가 동결한 `S4-B02` contract를 production circuit/artifact에 적용하는 Session 3A re-entry. Session 1 보완에서는 이를 시작하지 않음.
 
 ### Historical Session 1 Completion
 
