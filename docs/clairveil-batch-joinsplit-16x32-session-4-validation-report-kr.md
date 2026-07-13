@@ -7,14 +7,26 @@
 | 검토 범위 | `e427370..d45f0753c16571743f630599776c9cd498d1e8c9` |
 | 검증한 시작 HEAD | `d45f0753c16571743f630599776c9cd498d1e8c9` |
 | 검토 역할 | Session 1~3B 구현에 참여하지 않은 fresh reviewer |
-| 진입 시 Gate 3B | **FAIL — Session 3B integration/test 재진입 필요** |
+| 현재 Gate 3B | **PASS — `G3B-01..04` re-entry closure 완료** |
 | `S4-B02` Session 3A 보완 | **RESOLVED — Gate 1/2/3A fresh closure PASS, Session 3B re-entry UNBLOCKED** |
-| Session 4 공개 상태 | **`BLOCKED`** (`PUBLICATION_READY_EXPERIMENTAL` 철회) |
+| Session 4 실행 상태 | **`UNBLOCKED / NOT STARTED`** |
+| Session 4 공개 상태 | **`BLOCKED`** (`S4-B01` 및 독립 Pass A~I 미수행; `PUBLICATION_READY_EXPERIMENTAL` 철회 유지) |
 | production release 상태 | 승인하지 않음 |
 | formal trusted setup | 수행하지 않음 |
 | external audit | 수행하지 않음 |
 
-이 2026-07-12 재검증은 같은 날 앞서 완료된 publication claim을 supersede한다. 2026-07-13 closure가 Gate 1/2/3A fresh 재검토를 PASS하고 Session 3B re-entry를 UNBLOCK했지만 Gate 3B는 충족되지 않았고 unresolved High/security-relevant Medium이 남아 있다. Session 4 Pass A~I는 재개하지 않았으므로 experimental source 공개 승인은 계속 `BLOCKED`다.
+이 2026-07-12 재검증은 같은 날 앞서 완료된 publication claim을 supersede한다. 2026-07-13 Session 3B re-entry closure가 `G3B-01..04`를 닫아 Gate 3B를 PASS로 전환했다. Session 4 Pass A~I는 아직 시작하지 않았고 `S4-B01`이 남아 있으므로 experimental source 공개 승인은 계속 `BLOCKED`다.
+
+### 2026-07-13 Session 3B Re-entry Closure Supplement
+
+- 시작 HEAD `16d2280`; implementation commit은 `79ea24e`(`G3B-04`), `bbf168f`(`G3B-03`), `1e855cb`(`G3B-01`), `009cc36`(`G3B-02`)이다.
+- Structured signer가 final prepared validator와 동일한 global secret independence를 signature release 전에 검사한다.
+- 실제 SQLite와 PostgreSQL에서 reservation-operation-item/evidence graph CRUD, rollback, reopen, lease/heartbeat/expiry/CAS/duplicate active reservation을 실행했고 skip 없이 PASS했다.
+- 실제 localnet one-proof payroll이 production reservation/proof/broadcast/reconcile/report 경로를 사용하고 process/node restart, timeout, 동일 signed bytes retry, tx-hash-first reconcile, spent-nullifier item 결과를 검증했다.
+- Recipient note 4개, user disclosure 2개, auditor/self-view disclosure 각 4개의 plaintext를 live key로 복호화하고 commitment, recipient, amount, asset, digest를 재계산했다. View-tag mismatch를 주입해도 safe 기본 scan은 output을 누락하지 않았다.
+- Session 3B targeted/full privacy/race/vet, actual SQL, localnet, build/examples/release-check/release-pack/verify/diff를 통과했다. Public input, NoteV1, payload/schema/version, circuit contract는 변경하지 않았다.
+- **Gate 3B PASS. Session 4 UNBLOCKED / NOT STARTED.** 이 supplement는 Session 4의 독립 Pass A~I, fresh benchmark/fuzz/publication hygiene를 수행하거나 승인하지 않는다.
+- Session 4 active finding은 `S4-B01` security-relevant Medium 1건이다. Current unresolved count는 Critical 0, High 0, security-relevant Medium 1이다.
 
 ### 2026-07-13 Gate 1/2/3A Closure Supplement
 
@@ -22,7 +34,7 @@
 - `G123A-AR02`는 current/previous 모든 required artifact actual SHA-256, non-JoinSplit byte identity, canonical descriptor, missing/duplicate/unknown/tamper fail-closed, positive JoinSplit-only rotation과 exact current-source R1CS serialization identity를 검증한다. `make session-3a-validation-evidence`에 포함되며 clean commit에서는 pinned prior/current source로 두 set을 재생성할 수 있다.
 - Structured 2x2 signer는 input nullifier 두 개, output NoteV1 commitment 두 개, value conservation, change ownership, user/audit disclosure preimage를 final effect에 독립 결합한 뒤 signature를 release한다. Public input, NoteV1, wire payload/schema/version, production circuit contract는 unchanged다.
 - Targeted S4-B02/B03, artifact/proof/genesis evidence, 전체 privacy/repository test, vet/build/examples, JoinSplit/Batch resource gate, release-check, diff, 한영 문서 및 secret/artifact hygiene가 PASS했다. Exact release pack은 closure commit 뒤 Python 3.9/3.12에서 검증한다.
-- **Gate 1/2/3A PASS, Session 3B re-entry UNBLOCKED.** `G3B-01..04`와 `S4-B01` 때문에 Gate 3B, Session 4, publication은 계속 **BLOCKED**다.
+- 당시 처분은 **Gate 1/2/3A PASS, Session 3B re-entry UNBLOCKED**였다. 당시 `G3B-01..04`와 `S4-B01` 때문에 Gate 3B, Session 4, publication은 계속 **BLOCKED**였다.
 
 ### `S4-B02` Session 3A Implementation Supplement
 
@@ -31,7 +43,7 @@
 - Constraint count는 control `99,765`에서 production `99,775`로 `+10`이며 frozen target과 일치해 decision change가 없다. Public input 13개/schema hash, NoteV1, payload `v5`, proof/HTTP `v2`, disclosure digest/domain, circuit-set ID는 unchanged다.
 - 새 development JoinSplit SHA-256: R1CS `135528343084d9395ac3b59f87eb32661471751d936424c6aa3bc369483292d4`, PK `b41790cd96c41b78d7f7ca30f81cb76f4bdb93371bbf0b9437642348306c16d7`, VK/consensus identity `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`. JoinSplit-only development rotation이며 Batch와 나머지 artifact는 unchanged다.
 - Old/new proof 및 consensus/file mismatch, fresh genesis/reset, strict artifact preflight, 전체 2x2 regression과 full Batch `1,111,837` constraint resource comparison을 통과했다. Formal trusted setup은 수행하지 않았고 generated binary/secret은 tracked하지 않았다.
-- `S4-B02` implementation은 **RESOLVED**다. 후속 2026-07-13 supplement가 Gate 1/2/3A fresh closure를 PASS하고 Session 3B re-entry를 UNBLOCK했다. Current unresolved count는 Critical 0, High 2, security-relevant Medium 3이며 Session 4는 재개하지 않았다.
+- `S4-B02` implementation은 **RESOLVED**다. 후속 2026-07-13 supplement가 Gate 1/2/3A fresh closure를 PASS하고 Session 3B re-entry를 UNBLOCK했다. 당시 unresolved count는 Critical 0, High 2, security-relevant Medium 3이며 Session 4는 재개하지 않았다.
 
 ### Historical `S4-B02` Foundation Re-entry Supplement
 
@@ -42,7 +54,9 @@
 - Session 3A re-entry는 **UNBLOCKED / NOT STARTED**이며 `S4-B02`는 production constraint/artifact/pre-sign enforcement와 regression/readiness/resource gate 완료 전까지 **IMPLEMENTATION PENDING / NOT RESOLVED**다.
 - `S4-B03`은 `02f61f3746b67d5244c160b7c0e0e42f7c0b78b8`, `42d40bd19523e263aaf1c2043bcd274a4fc1a51d`에서 **RESOLVED**다.
 
-## 현재 확정 Finding
+## 2026-07-12 재검증 Finding (G3B-01..04는 2026-07-13에 RESOLVED)
+
+아래 `G3B-01..04` 행은 finding provenance를 보존한 historical entry이며 모두 위 Session 3B closure로 해결됐다. `S4-B01`만 Session 4의 active finding이다.
 
 | ID | Severity | 근거 | 영향 범위 | 필요한 조치 |
 | --- | --- | --- | --- | --- |
@@ -54,7 +68,7 @@
 
 Resolved supplements: `S4-B03`은 `02f61f3`/`42d40bd`, `S4-B02` implementation은 `0b7d97d`/`630736f`/`25c17ef`로 닫혔으며 현재 finding count에 포함하지 않는다.
 
-## 현재 검증 처분
+## 2026-07-12 Historical 검증 처분 (Superseded for Gate 3B)
 
 - Gate 3B FAIL 때문에 Session 4 Pass A~I, fresh max-shape benchmark, fresh localnet, full regression/race/fuzz/release gate는 **수행하지 않았다**. 아래 historical 결과는 현재 gate evidence로 재승인하지 않는다.
 - 보조 검증으로 production helper를 재사용하지 않는 `TestPrivacyNoteV1ContractIndependentGolden`과 `TestPrivacyBatchJoinSplitV1ContractIndependentGolden`을 실행해 PASS했다. 이 test source는 frozen domain/encoding/MiMC/vector 식을 독립 계산하며 production NoteV1/root helper를 계산 경로에 사용하지 않는다.
@@ -97,11 +111,11 @@ Active High/Medium은 residual로 수용하지 않았다. 아래 운영 항목�
 | Downstream JS/TS wallet/product, metadata leakage와 padding policy | Product/privacy owner | Go reference와 declared leakage만 존재하며 제품 acceptance가 필요함 | Downstream production은 Yes |
 | No-fixed-version Go advisory 3건과 example npm Low 1건 | Dependency/security owner | 기존 exact policy에서 추적 중이며 숨기지 않음 | Production 전 재평가 |
 
-이 표는 active Gate 3B/Session 2·3A blocker를 수용하거나 publication을 승인하지 않는다.
+이 historical 표는 당시 active Gate 3B/Session 2·3A blocker를 수용하거나 publication을 승인하지 않았다.
 
 ## Prior 2026-07-12 Historical Validation Record (Superseded)
 
-아래 내용은 이전 reviewer가 기록한 historical claim을 provenance 목적으로 보존한다. 현재 publication 상태, Pass 결과, benchmark/localnet evidence로 사용하지 않으며 위 2026-07-12 판정이 우선한다.
+아래 내용은 이전 reviewer가 기록한 historical claim을 provenance 목적으로 보존한다. 현재 publication 상태, Pass 결과, benchmark/localnet evidence로 사용하지 않으며 문서 앞의 2026-07-13 Session 3B Re-entry Closure Supplement가 우선한다.
 
 ## 독립 검토 방법
 

@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | **BLOCKED** (Gate 1/2/3A **PASS**, Session 3B re-entry **UNBLOCKED**; Gate 3B FAIL 및 `S4-B01` 때문에 Session 4/publication은 계속 `BLOCKED`, `PUBLICATION_READY_EXPERIMENTAL` 철회 유지) |
+| 상태 | **Session 4 UNBLOCKED / NOT STARTED** (Gate 1/2/3A/3B **PASS**; `S4-B01` 및 Session 4 독립 검증 미수행 때문에 publication은 계속 `BLOCKED`, `PUBLICATION_READY_EXPERIMENTAL` 철회 유지) |
 | 작성일 | 2026-07-10 |
 | 대상 브랜치 | `private/multi-circuit-b` |
 | 최종 목표 | 현재 shielded protocol의 알려진 보안·프라이버시 결함을 먼저 제거하고 안전하고 견고한 최대 16-input / 32-output shielded batch transfer를 구현함 |
@@ -269,11 +269,21 @@ Gate 4: PUBLICATION_READY_EXPERIMENTAL
 
 | 세션 | 상태 | 시작 commit | 완료 commit | 검증 요약 | 잔여 사항 |
 | --- | --- | --- | --- | --- | --- |
-| 1. 현재 보안 수정 | **Gate 1 PASS — fresh closure complete** | `e427370`; closure scope `6aa341e..HEAD` | historical `14d85f5`; S4-B03 `02f61f3`/`42d40bd`; S4-B02 `0b7d97d`, `630736f`, `25c17ef`; G123A closure commit은 이 record와 함께 생성 | Production 2x2 `DBS-01..03`, structured pre-sign private projection/final effect binding, duplicate-inflation regression, exact artifact tamper/rotation gate를 fresh multi-agent review와 full verification으로 재확인함 | Gate 1은 PASS지만 formal setup/audit/dependency risk와 Gate 3B/S4-B01은 유지 |
+| 1. 현재 보안 수정 | **Gate 1 PASS — fresh closure complete** | `e427370`; closure scope `6aa341e..HEAD` | historical `14d85f5`; S4-B03 `02f61f3`/`42d40bd`; S4-B02 `0b7d97d`, `630736f`, `25c17ef`; G123A closure commit은 이 record와 함께 생성 | Production 2x2 `DBS-01..03`, structured pre-sign private projection/final effect binding, duplicate-inflation regression, exact artifact tamper/rotation gate를 fresh multi-agent review와 full verification으로 재확인함 | Gate 1은 PASS지만 formal setup/audit/dependency risk와 Session 4 `S4-B01`은 유지 |
 | 2. 기반/설계 확정 | **Gate 2 PASS — frozen decision unchanged** | historical `ad99ef7193fdc0683e483e4440e5cda1f0945432`; re-entry `42d40bd19523e263aaf1c2043bcd274a4fc1a51d`; closure `6aa341e..HEAD` | foundation `c7fc1be`, `a8697cd`, `a4ee959`, `4e75f1f`, `4e90223`; implementation `0b7d97d`, `630736f`, `25c17ef` | `99,775` constraints와 `+10` delta, public input/NoteV1/payload/schema/version unchanged, Batch `1,111,837` unchanged를 fresh resource/contract review로 재확인함 | Foundation decision change 없음; formal setup/audit와 production artifact 배포는 미수행 |
-| 3A. Circuit/chain core | **Gate 3A PASS — Session 3B re-entry UNBLOCKED** | re-entry `0fc818c`; closure scope `6aa341e..HEAD` | `0b7d97d`, `630736f`, `25c17ef`; G123A-AR01/DOC01/RP01 및 이번 AR02 closure | Current/previous 모든 required artifact actual SHA-256, non-JoinSplit byte identity, missing/duplicate/unknown/tamper fail-closed, JoinSplit-only positive rotation, old/new proof, fresh genesis, full repository/release 검증을 통과함 | Session 3B 재진입만 승인함. Gate 3B와 Session 4/publication은 계속 BLOCKED |
-| 3B. Client/product integration | **Reopened — Gate 3B FAIL** | `cd9b4124ee0a7d3f7faeec1e76f765ec3330a88d` | implementation `d7809e917b0fb0adeb5bac4a7819cb509d54ea42`; revalidation closure claim `423f73a59dda472cf0ca959335e4ba8d6bcc64f2` superseded | SDK/prover/scanner/payroll 구현과 unit/file-store coverage는 존재하지만 fresh 검토에서 one-proof payroll worker 전체 경로, recipient/auditor/self-view live disclosure 검증, view-tag mismatch live scan, 실제 SQL transaction/restart/rollback 증거가 없음을 확인함 | High 2건, security-relevant Medium 2건. Session 3B integration/test 재진입 필요. Protocol/public input/NoteV1 변경은 이 Gate 3B finding 자체에는 필요하지 않음 |
-| 4. 독립 검증/공개 gate | **BLOCKED — Not publication-ready** | `d45f0753c16571743f630599776c9cd498d1e8c9` 재검증 시작 | BLOCKED record `773e97d5dac68c485479cfe8de40c1d002cb5240`; Gate 1/2/3A fresh closure는 이번 record | Gate 1/2/3A는 PASS하고 Session 3B re-entry는 UNBLOCKED지만 Session 4 Pass A~I와 historical publication evidence는 재승인하지 않음 | Gate 3B High 2건·security-relevant Medium 2건과 `S4-B01`로 Critical 0/High 2/security Medium 3. Gate 3B/4 closure 전 publication blocked이며 `PUBLICATION_READY_EXPERIMENTAL` 선언 불가 |
+| 3A. Circuit/chain core | **Gate 3A PASS** | re-entry `0fc818c`; closure scope `6aa341e..HEAD` | `0b7d97d`, `630736f`, `25c17ef`; G123A-AR01/DOC01/RP01 및 AR02 closure | Current/previous 모든 required artifact actual SHA-256, non-JoinSplit byte identity, missing/duplicate/unknown/tamper fail-closed, JoinSplit-only positive rotation, old/new proof, fresh genesis, full repository/release 검증을 통과함 | Frozen core를 변경하지 않고 Session 3B closure 완료 |
+| 3B. Client/product integration | **Gate 3B PASS — re-entry complete** | re-entry `16d2280` | `79ea24e`, `bbf168f`, `1e855cb`, `009cc36`; Completion Record는 Session 3B 문서 | Structured signer global secret independence, actual SQLite/PostgreSQL graph atomicity, one-proof payroll production worker localnet, live recipient/auditor/self-view disclosure와 view-tag mismatch safe scan을 targeted/full/release 검증으로 확인함 | `G3B-01..04` active finding 0. Public input/NoteV1/payload/schema/version/circuit contract unchanged |
+| 4. 독립 검증/공개 gate | **UNBLOCKED / NOT STARTED — publication blocked** | 미시작 | 미시작 | Session 3B closure는 Gate 3B까지만 판정했고 Session 4 Pass A~I, fresh independent benchmark/fuzz/publication 검증을 수행하지 않음 | `S4-B01` security-relevant Medium 1건과 독립 검증 미수행. `PUBLICATION_READY_EXPERIMENTAL` 선언 불가 |
+
+### 2026-07-13 Session 3B Re-entry Closure Ledger Note
+
+- 시작 HEAD `16d2280`에서 frozen public input, NoteV1, payload/schema/version, circuit contract와 Gate 1/2/3A closure를 유지했다.
+- `79ea24e`가 structured batch signer와 final prepared validator의 global secret-reuse 검사를 공유하고 input/output 및 output 간 reuse intent를 signature release 전에 거부한다.
+- `bbf168f`가 실제 SQLite/PostgreSQL graph CRUD/rollback/reopen와 lease acquire/heartbeat/expiry/CAS/duplicate-active-reservation을 실행한다. `make reservation-sql-integration`은 PostgreSQL 미준비나 skip을 PASS로 처리하지 않는다.
+- `1e855cb`가 one-proof payroll durable graph -> `BatchProofWorker` -> `IdempotentBatchBroadcastWorker` -> `BatchReconcileWorker` -> typed evidence/report를 실제 localnet에 연결하고 process/node restart, timeout, 동일 signed bytes retry, tx-hash-first reconcile, spent-nullifier item 결과를 검증한다.
+- `009cc36`이 같은 live E2E에서 recipient note 4개, user disclosure 2개, audit/self-view 각 4개 plaintext를 실제 키로 복호화하고 commitment/recipient/amount/asset/digest 및 view-tag mismatch safe scan을 확인한다.
+- Session 3B targeted/full privacy/race/vet, 실제 SQLite/PostgreSQL, one-proof localnet, build/examples/release-check/release-pack/verify/diff 검증을 통과해 **Gate 3B를 PASS**로 판정한다.
+- **Session 4는 UNBLOCKED / NOT STARTED**다. `S4-B01`과 독립 Pass A~I/publication hygiene는 Session 4가 확인하며, publication/formal trusted setup/production 배포는 승인하지 않았다.
 
 ### 2026-07-12 독립 재검증 Ledger Note
 
