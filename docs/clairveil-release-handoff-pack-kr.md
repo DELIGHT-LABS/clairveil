@@ -48,7 +48,7 @@ Release commit과 tag를 만들기 전 maintainer는 아래 명령을 실행합�
 make release-check
 ```
 
-날짜가 있는 paired changelog와 release note를 commit한 뒤 그 commit에 annotated exact-SemVer tag를 만듭니다. 최종 artifact를 생성·검증하는 `make release-pack`, `make release-pack-verify`는 그 tagged commit에서만 실행합니다.
+날짜가 있는 paired changelog와 그 밖의 tracked release metadata를 commit한 뒤 그 commit에 annotated exact-SemVer tag를 만듭니다. Paired external release-note draft는 tag 전에 준비하되 exact commit, archive, checksum, GitHub URL field는 tag-bound artifact 검증 뒤에만 채웁니다. 최종 artifact를 생성·검증하는 `make release-pack`, `make release-pack-verify`는 그 tagged commit에서만 실행합니다.
 
 `make release-check`는 아래 순서로 실행됩니다.
 
@@ -95,7 +95,7 @@ RELEASE_PACK_EXPECTED_COMMIT=<40-character-commit-sha> \
 
 ## 3. 릴리즈 maintainer 체크리스트
 
-1. 예정 exact-SemVer version에 맞춰 두 changelog와 authoritative paired release note를 갱신합니다.
+1. 예정 exact-SemVer version에 맞춰 두 changelog와 tracked release metadata를 갱신하고, authoritative template에서 paired external release-note draft를 준비하되 post-tag field는 비워 둡니다.
 2. `make release-check`를 통과시킵니다.
 3. remote prover image를 넘기거나 운영할 예정이면 `make docker-proverd-build`를 통과시킵니다.
 4. `docs/clairveil-release-handoff-pack-kr.md`의 산출물 목록이 현재 repo 구조와 맞는지 확인합니다.

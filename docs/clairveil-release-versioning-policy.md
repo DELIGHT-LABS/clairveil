@@ -51,7 +51,7 @@ Before the release commit and tag, release candidates must pass:
 make release-check
 ```
 
-After committing the dated changelogs and release note, create the annotated tag at that exact commit. Then generate and verify the final artifacts from the tagged commit:
+After committing the dated changelogs and other tracked release metadata, create the annotated tag at that exact commit. Prepare the public release-note draft from the authoritative templates before tagging, but keep post-tag fields such as the exact source commit, archive name, external SHA-256, and GitHub release URL outside the tagged source. Fill those fields only after generating and verifying the final artifacts from the tagged commit:
 
 ```bash
 make release-pack
@@ -99,7 +99,7 @@ Meaning:
 
 ## 5. Release Note Template
 
-[clairveil-release-note-template.md](clairveil-release-note-template.md) and its [Korean pair](clairveil-release-note-template-kr.md) are the only authoritative release-note templates. Update those files rather than copying a second template into this policy. A shortened public note may omit empty detail, but it must retain verification, immutable artifact identity, compatibility impact, known risk, and downstream action.
+[clairveil-release-note-template.md](clairveil-release-note-template.md) and its [Korean pair](clairveil-release-note-template-kr.md) are the only authoritative release-note templates. Update those generic tracked forms rather than copying a second template into this policy. For each release, copy them to an external draft; do not fill release-specific artifact identity or checksum values in the tagged source. A shortened public note may omit empty detail, but it must retain verification, immutable artifact identity, compatibility impact, known risk, and downstream action.
 
 ## 6. Handoff Pack Naming
 
@@ -120,12 +120,12 @@ On an untagged clean commit, the tooling uses the canonical `snapshot-<40-charac
 
 ## 7. Recommended Tag Flow
 
-1. Move both changelogs into the same dated release version and complete the paired release-note template.
+1. Move both changelogs into the same dated release version and prepare paired external release-note drafts from the authoritative templates, leaving post-tag identity fields blank.
 2. Pass `make docs-check`, `make release-check`, and `make docker-proverd-build` when an image is included.
 3. Create the release commit and confirm the worktree is clean.
 4. Create one annotated, exact SemVer tag at that commit.
 5. Run `make release-pack` on the tag and verify that same archive with `make release-pack-verify`. The default verifier reuses the existing default archive/checksum pair and generates it only when the pair is absent.
-6. Confirm the archive manifest commit equals the tag target and record the external SHA-256 in the release note.
+6. Confirm the archive manifest commit equals the tag target and record the exact commit, archive, and external SHA-256 in the external release-note drafts.
 7. Push the release commit and tag only after verification, then create the GitHub release and attach the verified tarball and checksum.
 8. Update supported-version/security information when the supported release line changes. Never move the published tag; issue a new patch release for corrections.
 

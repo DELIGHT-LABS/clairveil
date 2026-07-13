@@ -1,6 +1,6 @@
 # Clairveil v0.x.y Release Note Template
 
-This template is the public-facing release note draft used when creating a Clairveil release tag.
+This tracked file is the generic form for a public-facing Clairveil release note. Copy it to an external draft for each release; do not write release-specific artifact identity or checksum values back into the tagged source.
 
 Korean version: [clairveil-release-note-template-kr.md](clairveil-release-note-template-kr.md)
 

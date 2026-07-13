@@ -50,7 +50,7 @@ Before creating the release commit and tag, the maintainer runs:
 make release-check
 ```
 
-After committing the paired dated changelogs and release note, create an annotated exact-SemVer tag at that commit. Run `make release-pack` and `make release-pack-verify` only from that tagged commit to create and verify the final artifact.
+After committing the paired dated changelogs and other tracked release metadata, create an annotated exact-SemVer tag at that commit. Prepare paired external release-note drafts before tagging, but fill their exact commit, archive, checksum, and GitHub URL fields only after tag-bound artifact verification. Run `make release-pack` and `make release-pack-verify` only from that tagged commit to create and verify the final artifact.
 
 `make release-check` runs the following steps:
 
@@ -97,7 +97,7 @@ RELEASE_PACK_EXPECTED_COMMIT=<40-character-commit-sha> \
 
 ## 3. Release Maintainer Checklist
 
-1. Update both dated changelogs and the authoritative paired release note for the intended exact-SemVer version.
+1. Update both dated changelogs and tracked release metadata for the intended exact-SemVer version, and prepare paired external release-note drafts from the authoritative templates with post-tag fields left blank.
 2. Pass `make release-check`.
 3. If a remote prover image will be delivered or operated, pass `make docker-proverd-build`.
 4. Confirm the artifact list in `docs/clairveil-release-handoff-pack.md` matches the current repository structure.

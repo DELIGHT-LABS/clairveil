@@ -49,7 +49,7 @@ Release commit과 tag를 만들기 전에 release candidate는 아래를 통과�
 make release-check
 ```
 
-날짜가 있는 changelog와 release note를 commit한 뒤 그 exact commit에 annotated tag를 만듭니다. 그 다음 tagged commit에서 최종 artifact를 생성하고 검증합니다.
+날짜가 있는 changelog와 그 밖의 tracked release metadata를 commit한 뒤 그 exact commit에 annotated tag를 만듭니다. Public release-note draft는 authoritative template으로 tag 전에 준비하되, exact source commit, archive 이름, external SHA-256, GitHub release URL처럼 tag 뒤에만 확정되는 field는 tagged source 밖에 둡니다. Tagged commit에서 최종 artifact를 생성·검증한 뒤에만 그 field를 채웁니다.
 
 ```bash
 make release-pack
@@ -97,7 +97,7 @@ make docker-proverd-build
 
 ## 5. Release note template
 
-[clairveil-release-note-template-kr.md](clairveil-release-note-template-kr.md)와 [English pair](clairveil-release-note-template.md)만 authoritative release-note template입니다. 이 policy에 두 번째 template를 복사하지 말고 해당 파일을 갱신합니다. 축약된 public note는 비어 있는 detail을 생략할 수 있지만 verification, immutable artifact identity, compatibility impact, known risk, downstream action은 유지해야 합니다.
+[clairveil-release-note-template-kr.md](clairveil-release-note-template-kr.md)와 [English pair](clairveil-release-note-template.md)만 authoritative release-note template입니다. 이 generic tracked form을 갱신하고 이 policy에 두 번째 template를 복사하지 않습니다. 각 release에서는 template를 외부 draft로 복사하며 release별 artifact identity나 checksum을 tagged source 안에 채우지 않습니다. 축약된 public note는 비어 있는 detail을 생략할 수 있지만 verification, immutable artifact identity, compatibility impact, known risk, downstream action은 유지해야 합니다.
 
 ## 6. Handoff pack naming
 
@@ -118,12 +118,12 @@ Untagged clean commit에서는 packaging CI와 내부 완비성 검증을 위해
 
 ## 7. Tag 생성 권장 순서
 
-1. 두 changelog를 같은 dated release version으로 이동하고 paired release-note template를 완성합니다.
+1. 두 changelog를 같은 dated release version으로 이동하고 authoritative template에서 paired external release-note draft를 준비하되 post-tag identity field는 비워 둡니다.
 2. `make docs-check`, `make release-check`, image 포함 시 `make docker-proverd-build`를 통과합니다.
 3. Release commit을 만들고 worktree가 clean인지 확인합니다.
 4. 그 commit에 annotated exact SemVer tag 하나를 만듭니다.
 5. Tag에서 `make release-pack`을 실행하고 그 same archive를 `make release-pack-verify`로 검증합니다. 기본 verifier는 default archive/checksum pair가 이미 있으면 그대로 사용하고 pair가 없을 때만 생성합니다.
-6. Archive manifest commit이 tag target과 같은지 확인하고 external SHA-256을 release note에 기록합니다.
+6. Archive manifest commit이 tag target과 같은지 확인하고 exact commit, archive, external SHA-256을 external release-note draft에 기록합니다.
 7. 검증 후에만 release commit/tag를 push하고 GitHub release를 만든 뒤 검증한 tarball/checksum을 첨부합니다.
 8. 지원 release line이 바뀌면 supported-version/security 정보를 갱신합니다. 공개한 tag를 이동하지 말고 수정은 새 patch release로 냅니다.
 

@@ -1,6 +1,6 @@
 # Clairveil v0.x.y 릴리즈 노트 템플릿
 
-이 템플릿은 Clairveil release tag를 만들 때 사용하는 공개-facing 릴리즈 노트 초안입니다.
+이 tracked file은 public-facing Clairveil release note용 generic form입니다. Release마다 외부 draft로 복사하며 release별 artifact identity나 checksum을 tagged source에 다시 기록하지 않습니다.
 
 English version: [clairveil-release-note-template.md](clairveil-release-note-template.md)
 
