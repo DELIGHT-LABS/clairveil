@@ -8,13 +8,21 @@
 | 검증한 시작 HEAD | `d45f0753c16571743f630599776c9cd498d1e8c9` |
 | 검토 역할 | Session 1~3B 구현에 참여하지 않은 fresh reviewer |
 | 진입 시 Gate 3B | **FAIL — Session 3B integration/test 재진입 필요** |
-| `S4-B02` Session 3A 보완 | **IMPLEMENTATION RESOLVED — Gate 1/2/3A fresh 독립 재검토 필요** |
+| `S4-B02` Session 3A 보완 | **RESOLVED — Gate 1/2/3A fresh closure PASS, Session 3B re-entry UNBLOCKED** |
 | Session 4 공개 상태 | **`BLOCKED`** (`PUBLICATION_READY_EXPERIMENTAL` 철회) |
 | production release 상태 | 승인하지 않음 |
 | formal trusted setup | 수행하지 않음 |
 | external audit | 수행하지 않음 |
 
-이 2026-07-12 재검증은 같은 날 앞서 완료된 publication claim을 supersede한다. Gate 3B가 충족되지 않았고 unresolved High/security-relevant Medium이 남아 있으므로 experimental source 공개 승인도 현재 유효하지 않다. Session 3A는 이후 `S4-B02` implementation을 해결했지만 Gate 1/2/3A fresh 독립 재검토나 Session 4 Pass A~I를 수행하지 않았으므로 이 `BLOCKED` 판정은 바뀌지 않는다.
+이 2026-07-12 재검증은 같은 날 앞서 완료된 publication claim을 supersede한다. 2026-07-13 closure가 Gate 1/2/3A fresh 재검토를 PASS하고 Session 3B re-entry를 UNBLOCK했지만 Gate 3B는 충족되지 않았고 unresolved High/security-relevant Medium이 남아 있다. Session 4 Pass A~I는 재개하지 않았으므로 experimental source 공개 승인은 계속 `BLOCKED`다.
+
+### 2026-07-13 Gate 1/2/3A Closure Supplement
+
+- `6aa341e..HEAD`와 working tree를 `mode=deep`, `verify=max`, `scope=release`, pinned fresh read-only reviewer 2명/round로 재검토해 active P0/P1/P2와 unresolved 후보를 0으로 닫았다.
+- `G123A-AR02`는 current/previous 모든 required artifact actual SHA-256, non-JoinSplit byte identity, canonical descriptor, missing/duplicate/unknown/tamper fail-closed, positive JoinSplit-only rotation과 exact current-source R1CS serialization identity를 검증한다. `make session-3a-validation-evidence`에 포함되며 clean commit에서는 pinned prior/current source로 두 set을 재생성할 수 있다.
+- Structured 2x2 signer는 input nullifier 두 개, output NoteV1 commitment 두 개, value conservation, change ownership, user/audit disclosure preimage를 final effect에 독립 결합한 뒤 signature를 release한다. Public input, NoteV1, wire payload/schema/version, production circuit contract는 unchanged다.
+- Targeted S4-B02/B03, artifact/proof/genesis evidence, 전체 privacy/repository test, vet/build/examples, JoinSplit/Batch resource gate, release-check, diff, 한영 문서 및 secret/artifact hygiene가 PASS했다. Exact release pack은 closure commit 뒤 Python 3.9/3.12에서 검증한다.
+- **Gate 1/2/3A PASS, Session 3B re-entry UNBLOCKED.** `G3B-01..04`와 `S4-B01` 때문에 Gate 3B, Session 4, publication은 계속 **BLOCKED**다.
 
 ### `S4-B02` Session 3A Implementation Supplement
 
@@ -23,7 +31,7 @@
 - Constraint count는 control `99,765`에서 production `99,775`로 `+10`이며 frozen target과 일치해 decision change가 없다. Public input 13개/schema hash, NoteV1, payload `v5`, proof/HTTP `v2`, disclosure digest/domain, circuit-set ID는 unchanged다.
 - 새 development JoinSplit SHA-256: R1CS `135528343084d9395ac3b59f87eb32661471751d936424c6aa3bc369483292d4`, PK `b41790cd96c41b78d7f7ca30f81cb76f4bdb93371bbf0b9437642348306c16d7`, VK/consensus identity `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`. JoinSplit-only development rotation이며 Batch와 나머지 artifact는 unchanged다.
 - Old/new proof 및 consensus/file mismatch, fresh genesis/reset, strict artifact preflight, 전체 2x2 regression과 full Batch `1,111,837` constraint resource comparison을 통과했다. Formal trusted setup은 수행하지 않았고 generated binary/secret은 tracked하지 않았다.
-- `S4-B02` implementation은 **RESOLVED**다. Current unresolved count는 Critical 0, High 2, security-relevant Medium 3이다. Gate 1/2/3A fresh 독립 재검토가 필요하고 Session 3B/Session 4는 시작하거나 재개하지 않았다.
+- `S4-B02` implementation은 **RESOLVED**다. 후속 2026-07-13 supplement가 Gate 1/2/3A fresh closure를 PASS하고 Session 3B re-entry를 UNBLOCK했다. Current unresolved count는 Critical 0, High 2, security-relevant Medium 3이며 Session 4는 재개하지 않았다.
 
 ### Historical `S4-B02` Foundation Re-entry Supplement
 
@@ -58,16 +66,16 @@ Resolved supplements: `S4-B03`은 `02f61f3`/`42d40bd`, `S4-B02` implementation�
 
 ### 실행한 보조 검증 명령
 
-`G123A-AR01` 재검토에서 이전 artifact/fresh-genesis 명령의 opt-in 환경변수와 테스트명이 실제 코드와 달라 `SKIP` 또는 `[no tests to run]`을 성공으로 오인할 수 있음을 확인했다. 아래 표는 그 두 행을 폐기하고 exact test 세 개를 fail-closed로 실행한 `make session-3a-validation-evidence` 결과로 대체한다. 이 evidence 보정은 fresh Gate 1/2/3A 자체를 PASS 처리하지 않는다.
+`G123A-AR01` 재검토에서 이전 artifact/fresh-genesis 명령의 opt-in 환경변수와 테스트명이 실제 코드와 달라 `SKIP` 또는 `[no tests to run]`을 성공으로 오인할 수 있음을 확인했다. 아래 표는 그 두 행을 폐기하고 fail-closed `make session-3a-validation-evidence` 결과로 대체한다. 이 evidence 보정만으로 fresh Gate 1/2/3A를 PASS한 것은 아니며 후속 2026-07-13 closure supplement가 세 Gate를 닫는다.
 
 | 명령 | 결과와 한계 |
 | --- | --- |
 | `go test ./x/privacy/client/sdk/conformance -run '^(TestPrivacyNoteV1ContractIndependentGolden\|TestPrivacyBatchJoinSplitV1ContractIndependentGolden)$' -count=1 -v` | PASS. Independent golden 계산 경로 확인. Gate 3B 대체 아님 |
 | `go test ./x/privacy/client/sdk/payroll -run '^(TestProverPoolDoesNotFailOverAfterEndpointTimeoutByDefault\|TestProverPoolFallsBackAfterEndpointTimeoutWithExplicitOptIn\|TestBatchReconcileDurableRestartRetryTxHashFirstAndItemEvidenceSeparate\|TestBatchProofWorkerKeepsSharedLeaseUntilUninterruptibleProveReturns)$' -count=1 -v` | PASS. Unit 경계만 검증하며 live endpoint evidence 대체 아님 |
 | `go test ./x/privacy/client/sdk/reservation -run '^(TestBatchOperationGraphIsAtomicAndConflictsWithOrdinaryReservation\|TestBatchOperationDurableFileRestartRoundTrip\|TestBatchOperationSQLSchemaIsVersionedAndRelational)$' -count=1 -v` | PASS. 실제 SQL transaction test가 아니므로 G3B-03 유지 |
-| `go test ./x/privacy/types ./x/privacy/client/sdk/transfer ./x/privacy/client/sdk/conformance -run 'DisclosureBlinding\|AllPrivateUserBlinding' -count=1 -v` | PASS. Shared native/prepared/fixture contract 확인. Production circuit 대체 아님 |
+| `go test ./x/privacy/types ./x/privacy/client/sdk/transfer ./x/privacy/client/sdk/conformance -run 'DisclosureBlinding|AllPrivateUserBlinding' -count=1 -v` | PASS. Shared native/prepared/fixture contract 확인. Production circuit 대체 아님 |
 | `CLAIRVEIL_RUN_JOINSPLIT_BLINDING_FEASIBILITY=1 go test ./x/privacy/circuit -run '^TestJoinSplitDisclosureBlindingSeparationResourceGate$' -count=1 -v` | PASS. Legacy control `99,765`, production `99,775`; production R1CS `10,824,169 B`, PK `16,766,489 B`, VK `748 B`, proof `164 B`; peak RSS `687,423,488 B` |
-| `CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR="$CURRENT_ARTIFACT_DIR" CLAIRVEIL_PRIVACY_PREVIOUS_ZK_ARTIFACT_DIR="$PREVIOUS_ARTIFACT_DIR" make session-3a-validation-evidence` | PASS. `TestJoinSplitDevelopmentArtifactRotationGate`, `TestJoinSplitOldAndNewProofIdentitiesAreMutuallyExclusive`, `TestS4B02FreshGenesisUsesRotatedJoinSplitIdentity`를 각각 정확한 `_GATE` opt-in으로 실행해 artifact role readiness, old/new proof-VK 상호 거부, fresh genesis의 old identity state-write 전 거부를 확인. Wrapper가 exact test 존재와 `--- PASS`를 요구하고 `SKIP`/`[no tests to run]`을 실패 처리함 |
+| `make session-3a-validation-evidence`(clean commit 재생성), 또는 supplied set용 artifact directory 변수 두 개 | PASS. `TestJoinSplitArtifactRotationSnapshotValidation`, `TestJoinSplitDevelopmentArtifactRotationGate`, `TestJoinSplitOldAndNewProofIdentitiesAreMutuallyExclusive`, `TestS4B02FreshGenesisUsesRotatedJoinSplitIdentity`를 실행해 descriptor/tamper fail-closed, actual artifact readiness, exact current-source R1CS serialization identity, old/new proof-VK 상호 거부, fresh genesis의 old identity state-write 전 거부를 확인. Wrapper가 exact 실행과 `--- PASS`를 요구하고 `SKIP`/`[no tests to run]`을 실패 처리함 |
 | `CLAIRVEIL_RUN_BATCH_FEASIBILITY=1 go test ./x/privacy/circuit -run '^TestBatchJoinSplit16x32FullShapeResourceGate$' -count=1 -v` | PASS. Batch unchanged `1,111,837` constraints; R1CS `122,813,535 B`, PK `209,218,621 B`, VK `716 B`, proof `164 B`; peak RSS `3,324,461,056 B`, OOM 없음 |
 | `git merge-base --is-ancestor e427370 HEAD`, `git diff --check e427370..HEAD` | PASS at starting HEAD `d45f0753c16571743f630599776c9cd498d1e8c9` |
 | artifact `shasum -a 256`과 file-size 대조 | PASS. Batch R1CS/PK/VK가 historical development hash/size와 일치 |

@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | **BLOCKED** (Gate 3B FAIL 및 `S4-B01`; `S4-B02` implementation resolved, Gate 1/2/3A fresh 독립 재검토 필요; publication 승인 철회) |
+| 상태 | **BLOCKED** (Gate 1/2/3A PASS, Session 3B re-entry UNBLOCKED; Gate 3B FAIL 및 `S4-B01`로 Session 4/publication 승인 철회 유지) |
 | 선행 문서 | [Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md), Session 1~3B 계획과 completion record |
 | 권장 모델 | `gpt-5.6-sol` |
 | 권장 effort | `ultra` |
@@ -477,6 +477,12 @@ finding이 없으면 억지 refactor를 만들지 않음. finding 수정 후 관
 - payroll production deployment
 
 ## 22. Completion Record — 2026-07-12 Independent Revalidation
+
+### 2026-07-13 Gate 1/2/3A Closure Supplement
+
+- `6aa341e..HEAD`와 working tree를 `mode=deep`, `verify=max`, `scope=release`, pinned read-only reviewer 2명/round로 fresh 재검토하고 active P0/P1/P2와 unresolved 후보를 0으로 닫았다.
+- `S4-B03`, production `DBS-01..03`, structured 2x2 pre-sign private projection, JoinSplit-only artifact rotation 및 `G123A-AR01/DOC01/RP01/AR02` release evidence를 targeted/full/resource/release gate로 검증했다.
+- **Gate 1 PASS, Gate 2 PASS, Gate 3A PASS; Session 3B re-entry UNBLOCKED.** `G3B-01..04`와 `S4-B01`은 유지되므로 Gate 3B FAIL, Session 4 Pass A~I 미재개, publication **BLOCKED** 판정은 변하지 않는다.
 
 ### `S4-B02` Session 3A Implementation Supplement
 

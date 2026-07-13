@@ -451,7 +451,7 @@ Go reference와 conformance fixture는 repo에 있으나, 2026-07-12 재검증�
 - [ ] payroll durable schema가 many-input reservations -> one batch operation -> many item outputs를 실제 SQL transaction에서도 atomic하게 표현함. (`G3B-03` 미검증)
 - [x] batch status와 item evidence status가 분리됨.
 - [ ] CLI/localnet tutorial이 one-proof payroll과 live disclosure/view-tag 검증까지 처음부터 끝까지 실행됨. (`G3B-01`, `G3B-02` 미충족)
-- [x] `S4-B03` exact duplicate-inflation witness와 원인 분리 control, `S4-B02` production 2x2 disclosure-blinding relation/structured pre-sign/artifact regression이 완료됨. (`02f61f3`/`42d40bd`, `0b7d97d`/`630736f`/`25c17ef`; Gate 1/2/3A fresh 독립 재검토는 필요)
+- [x] `S4-B03` exact duplicate-inflation witness와 원인 분리 control, `S4-B02` production 2x2 disclosure-blinding relation/structured pre-sign/artifact regression 및 Gate 1/2/3A fresh closure가 완료됨. Session 3B re-entry는 UNBLOCKED지만 Gate 3B는 FAIL 상태임.
 - [x] schema/fixture/docs/release pack이 현재 `S4-B02`/`S4-B03` closure contract와 artifact version에 일치함. 향후 `G3B-01..04`/`S4-B01` 보완이 contract를 바꾸면 다시 검증해야 함.
 - [x] artifact/secret이 tracked되지 않음.
 - [x] master ledger가 갱신됨.
@@ -459,6 +459,12 @@ Go reference와 conformance fixture는 repo에 있으나, 2026-07-12 재검증�
 ## 16. Session 4 Handoff
 
 ## 2026-07-12 Independent Revalidation — Current Gate Record
+
+### 2026-07-13 Gate 3A Re-entry Disposition
+
+- Gate 1/2/3A fresh closure가 PASS했으므로 **Session 3B integration/test re-entry는 UNBLOCKED**다.
+- 이 판정은 아래 current Gate 3B FAIL을 닫지 않는다. `G3B-01..04`와 `S4-B01`은 이번 loop의 명시적 범위 밖이라 수정하지 않았고, Session 3B 구현도 시작하지 않았다.
+- 다음 허용 단계는 frozen public input/NoteV1/payload/circuit contract를 유지한 채 `G3B-01..04`를 구현·검증하는 Session 3B re-entry다. Gate 3B가 PASS하기 전 Session 4/publication은 계속 **BLOCKED**다.
 
 - 현재 상태: **BLOCKED — Gate 3B FAIL.** 아래의 과거 PASS claim은 이 재검증 record에 의해 supersede됨.
 - review scope: `e427370..d45f0753c16571743f630599776c9cd498d1e8c9`.

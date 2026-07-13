@@ -140,15 +140,19 @@ go test ./x/privacy/zk -run TestBatchDevelopmentArtifactRoleReadinessGate -count
 
 기록된 batch file은 R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`입니다. Generation peak RSS는 `3,308,797,952 B`, role-readiness peak RSS는 `1,295,482,880 B`였습니다. 이는 development identity이며 formal trusted setup/production distribution artifact가 아닙니다.
 
-`S4-B02` JoinSplit-only rotation은 complete prior development set을 복사한 뒤 `clairveil-setup --out "$ARTIFACT_DIR" --circuit joinsplit --overwrite`를 실행합니다. 세 opt-in gate는 fail-closed target으로 검증합니다.
+`S4-B02` JoinSplit-only rotation은 complete prior development set을 복사한 뒤 `clairveil-setup --out "$ARTIFACT_DIR" --circuit joinsplit --overwrite`를 실행합니다. Selective setup은 sibling staging directory에서 complete replacement를 생성·검증한 뒤 rollback 가능한 directory swap을 수행합니다. Artifact/manifest/install fault injection 실패 뒤에도 prior set이 valid하고 즉시 retry 가능함을 검증합니다. 설치 후 backup cleanup이 실패하면 성공으로 숨기지 않고 잔존 경로를 포함한 오류를 반환합니다.
+
+Clean committed tree에서 아래 첫 명령은 self-contained입니다. Pinned prior source `0fc818c90fe98a876c8a2531e7c70ba5efac4b90`을 archive해 repository 밖에서 complete artifact set을 생성하고, 이를 복사한 뒤 current source의 JoinSplit만 회전하며, 두 source commit을 기록하고 모든 fail-closed gate를 실행합니다. 이미 생성한 set을 쓰려면 두 번째 형식처럼 directory 변수 두 개를 모두 지정해야 하며 하나만 지정하면 실패합니다.
 
 ```bash
+make session-3a-validation-evidence
+
 CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR="$ARTIFACT_DIR" \
 CLAIRVEIL_PRIVACY_PREVIOUS_ZK_ARTIFACT_DIR="$PREVIOUS_ARTIFACT_DIR" \
 make session-3a-validation-evidence
 ```
 
-이 target은 `TestJoinSplitDevelopmentArtifactRotationGate`(`CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_ROTATION_GATE=1`), `TestJoinSplitOldAndNewProofIdentitiesAreMutuallyExclusive`(`CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_PROOF_ROTATION_GATE=1`), `TestS4B02FreshGenesisUsesRotatedJoinSplitIdentity`(`CLAIRVEIL_RUN_JOINSPLIT_FRESH_GENESIS_GATE=1`)을 실행하며 exact test가 없거나 skip되거나 `[no tests to run]`이면 실패합니다.
+이 target은 synthetic missing/duplicate/unknown/tamper regression인 `TestJoinSplitArtifactRotationSnapshotValidation`을 먼저 실행한 뒤 `TestJoinSplitDevelopmentArtifactRotationGate`(`CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_ROTATION_GATE=1`), `TestJoinSplitOldAndNewProofIdentitiesAreMutuallyExclusive`(`CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_PROOF_ROTATION_GATE=1`), `TestS4B02FreshGenesisUsesRotatedJoinSplitIdentity`(`CLAIRVEIL_RUN_JOINSPLIT_FRESH_GENESIS_GATE=1`)을 실행합니다. Proof-rotation gate는 prove 전에 actual current R1CS SHA-256을 current-source `JoinSplitCircuit`의 exact serialization과 비교하므로 constraint 수만 같은 foreign relation은 실패합니다. Exact test가 없거나 skip되거나 `[no tests to run]`이면 wrapper가 실패합니다.
 
 Session 3B는 public `MsgBatchTransfer` Go SDK/builder, `POST /v1/proofs/batch-transfer`, typed scanner/decrypt/disclosure 검증, durable one-proof payroll integration, 단계형/통합 CLI command, 한영 localnet tutorial을 추가합니다. `go test ./x/privacy/client/sdk/... -count=1`, `make privacy-batch-joinsplit-localnet`, 그리고 충분한 자원의 host에서 `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`을 실행합니다. 기존 `transfer-batch`와 reference payroll target은 독립적인 multi-message regression 경로로 유지합니다.
 

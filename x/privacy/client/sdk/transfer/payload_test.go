@@ -132,6 +132,111 @@ func TestJoinSplitStructuredSigningBoundaryBindsFinalEffectBeforeRelease(t *test
 	require.Zero(t, signatureReleases)
 }
 
+func TestJoinSplitStructuredSigningBoundaryRejectsDecoupledPrivateProjectionBeforeRelease(t *testing.T) {
+	input, merkleProvider, signer, _, _ := testBuildTransferMessageDeps(t)
+	_, err := BuildPreparedTransferPayload(context.Background(), merkleProvider, signer, input)
+	require.NoError(t, err)
+	require.Len(t, signer.requests, 1)
+	base := signer.requests[0]
+
+	tests := []struct {
+		name string
+		set  func(*JoinSplitOwnerIntentSigningRequestV1)
+		want string
+	}{
+		{
+			name: "decoy recipient randomness",
+			set: func(request *JoinSplitOwnerIntentSigningRequestV1) {
+				request.RecipientOutputRandomness = new(big.Int).Add(request.RecipientOutputRandomness, big.NewInt(1))
+				request.UserDisclosureBlinding = new(big.Int).Add(request.UserDisclosureBlinding, big.NewInt(2))
+				request.FullDisclosureBlinding = new(big.Int).Add(request.FullDisclosureBlinding, big.NewInt(3))
+			},
+			want: "randomness does not match",
+		},
+		{
+			name: "decoy recipient note",
+			set: func(request *JoinSplitOwnerIntentSigningRequestV1) {
+				request.RecipientOutputNote.Randomness = new(big.Int).Add(request.RecipientOutputNote.Randomness, big.NewInt(4))
+				request.RecipientOutputRandomness = new(big.Int).Set(request.RecipientOutputNote.Randomness)
+				request.UserDisclosureBlinding = new(big.Int).Add(request.UserDisclosureBlinding, big.NewInt(5))
+				request.FullDisclosureBlinding = new(big.Int).Add(request.FullDisclosureBlinding, big.NewInt(6))
+			},
+			want: "does not match the final effect commitment",
+		},
+		{
+			name: "decoy user blinding",
+			set: func(request *JoinSplitOwnerIntentSigningRequestV1) {
+				request.UserDisclosureBlinding = new(big.Int).Add(request.UserDisclosureBlinding, big.NewInt(7))
+			},
+			want: "user disclosure preimage does not match",
+		},
+		{
+			name: "decoy full blinding",
+			set: func(request *JoinSplitOwnerIntentSigningRequestV1) {
+				request.FullDisclosureBlinding = new(big.Int).Add(request.FullDisclosureBlinding, big.NewInt(8))
+			},
+			want: "audit disclosure preimage does not match",
+		},
+		{
+			name: "redirected change output",
+			set: func(request *JoinSplitOwnerIntentSigningRequestV1) {
+				request.ChangeOutputNote.ReceiverSpendPubKeyX = new(big.Int).Set(request.RecipientOutputNote.ReceiverSpendPubKeyX)
+				request.ChangeOutputNote.ReceiverSpendPubKeyY = new(big.Int).Set(request.RecipientOutputNote.ReceiverSpendPubKeyY)
+				request.ChangeOutputNote.ReceiverViewPubKeyX = new(big.Int).Set(request.RecipientOutputNote.ReceiverViewPubKeyX)
+				request.ChangeOutputNote.ReceiverViewPubKeyY = new(big.Int).Set(request.RecipientOutputNote.ReceiverViewPubKeyY)
+				rebuildSigningRequestEffectAndIntent(t, request)
+			},
+			want: "change output does not return to the expected owner",
+		},
+		{
+			name: "non-conserving change amount",
+			set: func(request *JoinSplitOwnerIntentSigningRequestV1) {
+				request.ChangeOutputNote.Amount = new(big.Int).Add(request.ChangeOutputNote.Amount, big.NewInt(1))
+				rebuildSigningRequestEffectAndIntent(t, request)
+			},
+			want: "amounts are not conserved",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			request := cloneJoinSplitOwnerIntentSigningRequestV1(base)
+			tc.set(&request)
+			signatureReleases := 0
+			_, err := SignValidatedJoinSplitOwnerIntentV1(request, func(*big.Int) ([]byte, error) {
+				signatureReleases++
+				return testSignatureBytes(t), nil
+			})
+			require.ErrorContains(t, err, tc.want)
+			require.Zero(t, signatureReleases)
+		})
+	}
+}
+
+func rebuildSigningRequestEffectAndIntent(t *testing.T, request *JoinSplitOwnerIntentSigningRequestV1) {
+	t.Helper()
+	request.Effect.NewCommitments[0] = request.RecipientOutputNote.ComputeCommitment().FillBytes(make([]byte, 32))
+	request.Effect.NewCommitments[1] = request.ChangeOutputNote.ComputeCommitment().FillBytes(make([]byte, 32))
+	payloadDigest, err := privacytypes.ComputeTransferPayloadDigestV1(request.Effect)
+	require.NoError(t, err)
+	chainDomain, err := privacytypes.ComputeChainDomainV1(request.ChainID, privacytypes.ActiveCircuitSetID)
+	require.NoError(t, err)
+	request.Intent, err = privacytypes.ComputeTransferIntentV2(privacytypes.TransferIntentV2Input{
+		ChainDomainHi:        chainDomain.Hi,
+		ChainDomainLo:        chainDomain.Lo,
+		MerkleRoot:           new(big.Int).SetBytes(request.Effect.Root),
+		AssetID:              request.AssetID,
+		Nullifiers:           [2]*big.Int{new(big.Int).SetBytes(request.Effect.Nullifiers[0]), new(big.Int).SetBytes(request.Effect.Nullifiers[1])},
+		Commitments:          [2]*big.Int{new(big.Int).SetBytes(request.Effect.NewCommitments[0]), new(big.Int).SetBytes(request.Effect.NewCommitments[1])},
+		UserDisclosureDigest: new(big.Int).SetBytes(request.Effect.UserDisclosureDigest),
+		FullDisclosureDigest: new(big.Int).SetBytes(request.Effect.AuditDisclosureDigest),
+		PayloadDigestHi:      payloadDigest.Hi,
+		PayloadDigestLo:      payloadDigest.Lo,
+		ExpiresAtUnix:        request.Effect.ExpiresAtUnix,
+	})
+	require.NoError(t, err)
+}
+
 func TestValidatePreparedTransferProofRejectsEmptyProof(t *testing.T) {
 	input, merkleProvider, signer, artifacts, runner := testBuildTransferMessageDeps(t)
 	payload, err := BuildPreparedTransferPayload(context.Background(), merkleProvider, signer, input)
@@ -334,9 +439,48 @@ func cloneJoinSplitOwnerIntentSigningRequestV1(
 	request.RecipientOutputRandomness = new(big.Int).Set(request.RecipientOutputRandomness)
 	request.UserDisclosureBlinding = new(big.Int).Set(request.UserDisclosureBlinding)
 	request.FullDisclosureBlinding = new(big.Int).Set(request.FullDisclosureBlinding)
+	for i, note := range request.InputNotes {
+		request.InputNotes[i] = cloneSigningRequestNote(note)
+	}
+	if request.RecipientOutputNote != nil {
+		request.RecipientOutputNote = cloneSigningRequestNote(request.RecipientOutputNote)
+	}
+	if request.ChangeOutputNote != nil {
+		request.ChangeOutputNote = cloneSigningRequestNote(request.ChangeOutputNote)
+	}
+	request.SenderSpendPubKeyX = new(big.Int).Set(request.SenderSpendPubKeyX)
+	request.SenderSpendPubKeyY = new(big.Int).Set(request.SenderSpendPubKeyY)
+	request.SenderViewPubKeyX = new(big.Int).Set(request.SenderViewPubKeyX)
+	request.SenderViewPubKeyY = new(big.Int).Set(request.SenderViewPubKeyY)
 	effect := *request.Effect
+	effect.Root = append([]byte(nil), effect.Root...)
+	effect.Nullifiers = cloneByteSlicesForSigningTest(effect.Nullifiers)
+	effect.NewCommitments = cloneByteSlicesForSigningTest(effect.NewCommitments)
 	request.Effect = &effect
 	return request
+}
+
+func cloneSigningRequestNote(note *privacytypes.Note) *privacytypes.Note {
+	if note == nil {
+		return nil
+	}
+	clone := *note
+	clone.ReceiverSpendPubKeyX = new(big.Int).Set(note.ReceiverSpendPubKeyX)
+	clone.ReceiverSpendPubKeyY = new(big.Int).Set(note.ReceiverSpendPubKeyY)
+	clone.ReceiverViewPubKeyX = new(big.Int).Set(note.ReceiverViewPubKeyX)
+	clone.ReceiverViewPubKeyY = new(big.Int).Set(note.ReceiverViewPubKeyY)
+	clone.Amount = new(big.Int).Set(note.Amount)
+	clone.AssetID = new(big.Int).Set(note.AssetID)
+	clone.Randomness = new(big.Int).Set(note.Randomness)
+	return &clone
+}
+
+func cloneByteSlicesForSigningTest(values [][]byte) [][]byte {
+	clones := make([][]byte, len(values))
+	for i := range values {
+		clones[i] = append([]byte(nil), values[i]...)
+	}
+	return clones
 }
 
 func TestPreparedTransferPayloadRejectsNonCanonicalPublicKeys(t *testing.T) {

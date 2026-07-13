@@ -142,15 +142,19 @@ go test ./x/privacy/zk -run TestBatchDevelopmentArtifactRoleReadinessGate -count
 
 The recorded batch files are R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, and VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`. Generation peak RSS was `3,308,797,952 B`; the role-readiness run peaked at `1,295,482,880 B`. These are development identities, not formal trusted-setup or production-distribution artifacts.
 
-For an `S4-B02` JoinSplit-only rotation, copy a complete prior development set and run `clairveil-setup --out "$ARTIFACT_DIR" --circuit joinsplit --overwrite`. Validate all three opt-in gates through the fail-closed target:
+For an `S4-B02` JoinSplit-only rotation, copy a complete prior development set and run `clairveil-setup --out "$ARTIFACT_DIR" --circuit joinsplit --overwrite`. Selective setup builds and validates the complete replacement in a sibling staging directory, then swaps the directory with rollback; injected artifact/manifest/install failures leave the prior set valid and immediately retryable. A post-install backup cleanup failure is returned with the exact residual path instead of being reported as success.
+
+On a clean committed tree, the following command is self-contained: it archives pinned prior source `0fc818c90fe98a876c8a2531e7c70ba5efac4b90`, generates its complete artifact set outside the repository, copies it, rotates only current-source JoinSplit, records both source commits, and runs every fail-closed gate. If already-generated sets are supplied, set both directory variables as shown in the second form; setting only one fails closed.
 
 ```bash
+make session-3a-validation-evidence
+
 CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR="$ARTIFACT_DIR" \
 CLAIRVEIL_PRIVACY_PREVIOUS_ZK_ARTIFACT_DIR="$PREVIOUS_ARTIFACT_DIR" \
 make session-3a-validation-evidence
 ```
 
-The target runs `TestJoinSplitDevelopmentArtifactRotationGate` (`CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_ROTATION_GATE=1`), `TestJoinSplitOldAndNewProofIdentitiesAreMutuallyExclusive` (`CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_PROOF_ROTATION_GATE=1`), and `TestS4B02FreshGenesisUsesRotatedJoinSplitIdentity` (`CLAIRVEIL_RUN_JOINSPLIT_FRESH_GENESIS_GATE=1`). It fails if an exact test is absent, skipped, or reports `[no tests to run]`.
+The target first runs `TestJoinSplitArtifactRotationSnapshotValidation` for synthetic missing/duplicate/unknown/tamper regressions, then runs `TestJoinSplitDevelopmentArtifactRotationGate` (`CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_ROTATION_GATE=1`), `TestJoinSplitOldAndNewProofIdentitiesAreMutuallyExclusive` (`CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_PROOF_ROTATION_GATE=1`), and `TestS4B02FreshGenesisUsesRotatedJoinSplitIdentity` (`CLAIRVEIL_RUN_JOINSPLIT_FRESH_GENESIS_GATE=1`). The proof-rotation gate compares the actual current R1CS SHA-256 with the exact serialized current-source `JoinSplitCircuit` before proving, so a same-count foreign relation fails. The wrapper fails if an exact test is absent, skipped, or reports `[no tests to run]`.
 
 Session 3B adds the public `MsgBatchTransfer` Go SDK/builder, `POST /v1/proofs/batch-transfer`, typed scanner/decrypt/disclosure validation, durable one-proof payroll integration, staged/combined CLI commands, and the bilingual localnet tutorial. Run `go test ./x/privacy/client/sdk/... -count=1`, `make privacy-batch-joinsplit-localnet`, and—on a capable host—`RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`. Existing `transfer-batch` and reference payroll targets remain independent multi-message regression paths.
 

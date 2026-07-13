@@ -1,6 +1,8 @@
 package circuit
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +14,7 @@ import (
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/frontend"
+	"github.com/consensys/gnark/frontend/cs/r1cs"
 	"github.com/stretchr/testify/require"
 
 	privacyzk "github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
@@ -50,6 +53,14 @@ func TestJoinSplitOldAndNewProofIdentitiesAreMutuallyExclusive(t *testing.T) {
 
 	currentR1CS := readJoinSplitConstraintSystem(t, currentDir)
 	require.Equal(t, 99_775, currentR1CS.GetNbConstraints())
+	compiledCurrentR1CS, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &JoinSplitCircuit{})
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		hashSerializedConstraintSystem(t, compiledCurrentR1CS),
+		hashArtifactFile(t, filepath.Join(currentDir, privacyzk.JoinSplitR1CSFile)),
+		"current JoinSplit R1CS must be the exact serialization of the source JoinSplitCircuit",
+	)
 	currentPK := readJoinSplitProvingKey(t, currentDir)
 	currentVK := readJoinSplitVerifyingKey(t, currentDir)
 	currentProof, err := groth16.Prove(currentR1CS, currentPK, fullWitness)
@@ -57,6 +68,25 @@ func TestJoinSplitOldAndNewProofIdentitiesAreMutuallyExclusive(t *testing.T) {
 	require.NoError(t, groth16.Verify(currentProof, currentVK, publicWitness))
 	require.Error(t, groth16.Verify(previousProof, currentVK, publicWitness))
 	require.Error(t, groth16.Verify(currentProof, previousVK, publicWitness))
+}
+
+func hashSerializedConstraintSystem(t testing.TB, system constraint.ConstraintSystem) string {
+	t.Helper()
+	hash := sha256.New()
+	_, err := system.WriteTo(hash)
+	require.NoError(t, err)
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+func hashArtifactFile(t testing.TB, path string) string {
+	t.Helper()
+	file, err := os.Open(path)
+	require.NoError(t, err)
+	defer file.Close()
+	hash := sha256.New()
+	_, err = io.Copy(hash, file)
+	require.NoError(t, err)
+	return hex.EncodeToString(hash.Sum(nil))
 }
 
 func readJoinSplitConstraintSystem(t testing.TB, dir string) constraint.ConstraintSystem {

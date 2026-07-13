@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,38 +74,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	for _, definition := range definitions {
-		path := filepath.Join(outDir, definition.filename)
-		if !*overwriteFlag {
-			if _, err := os.Stat(path); err == nil {
-				fmt.Fprintf(os.Stderr, "artifact already exists: %s (use -overwrite to replace)\n", path)
-				os.Exit(1)
-			}
-		}
-
-		if err := definition.write(outDir); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to write %s: %v\n", definition.filename, err)
-			os.Exit(1)
-		}
+	var checksums map[string]string
+	if selectedCircuit == setupCircuitAll {
+		checksums, err = writeArtifactSet(outDir, outDir, definitions, *overwriteFlag, defaultArtifactSetOps())
+	} else {
+		checksums, err = rotateSelectiveArtifactSet(outDir, definitions, defaultArtifactSetOps())
 	}
-	checksums, err := checksumArtifactSet(outDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to checksum generated artifact set: %v\n", err)
-		os.Exit(1)
-	}
-
-	if err := writeEnvManifest(filepath.Join(outDir, "privacy_zk_checksums.env"), outDir, checksums); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to write env manifest: %v\n", err)
-		os.Exit(1)
-	}
-
-	if err := writeLegacyChecksumsJSON(filepath.Join(outDir, zk.LegacyChecksumsJSONFile), outDir, checksums); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to write legacy json manifest: %v\n", err)
-		os.Exit(1)
-	}
-
-	if err := writeJSONManifest(filepath.Join(outDir, zk.ArtifactManifestFile), outDir, checksums); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to write json manifest: %v\n", err)
+		fmt.Fprintf(os.Stderr, "failed to generate artifact set: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -113,6 +90,192 @@ func main() {
 	for _, key := range checksumEnvironmentOrder() {
 		fmt.Printf("%s=%s\n", key, checksums[key])
 	}
+}
+
+type artifactSetOps struct {
+	copyDirectory            func(string, string) error
+	writeEnvManifest         func(string, string, map[string]string) error
+	writeLegacyChecksumsJSON func(string, string, map[string]string) error
+	writeJSONManifest        func(string, string, map[string]string) error
+	rename                   func(string, string) error
+	removeAll                func(string) error
+}
+
+func defaultArtifactSetOps() artifactSetOps {
+	return artifactSetOps{
+		copyDirectory:            copyDirectoryContents,
+		writeEnvManifest:         writeEnvManifest,
+		writeLegacyChecksumsJSON: writeLegacyChecksumsJSON,
+		writeJSONManifest:        writeJSONManifest,
+		rename:                   os.Rename,
+		removeAll:                os.RemoveAll,
+	}
+}
+
+func writeArtifactSet(
+	targetDir string,
+	manifestArtifactDir string,
+	definitions []artifactDefinition,
+	overwrite bool,
+	ops artifactSetOps,
+) (map[string]string, error) {
+	for _, definition := range definitions {
+		path := filepath.Join(targetDir, definition.filename)
+		if !overwrite {
+			if _, err := os.Stat(path); err == nil {
+				return nil, fmt.Errorf("artifact already exists: %s (use -overwrite to replace)", path)
+			}
+		}
+		if err := definition.write(targetDir); err != nil {
+			return nil, fmt.Errorf("write %s: %w", definition.filename, err)
+		}
+	}
+	checksums, err := checksumArtifactSet(targetDir)
+	if err != nil {
+		return nil, fmt.Errorf("checksum generated artifact set: %w", err)
+	}
+	if err := writeArtifactManifests(targetDir, manifestArtifactDir, checksums, ops); err != nil {
+		return nil, err
+	}
+	return checksums, nil
+}
+
+func writeArtifactManifests(targetDir, manifestArtifactDir string, checksums map[string]string, ops artifactSetOps) error {
+	if err := ops.writeEnvManifest(filepath.Join(targetDir, "privacy_zk_checksums.env"), manifestArtifactDir, checksums); err != nil {
+		return fmt.Errorf("write env manifest: %w", err)
+	}
+	if err := ops.writeLegacyChecksumsJSON(filepath.Join(targetDir, zk.LegacyChecksumsJSONFile), manifestArtifactDir, checksums); err != nil {
+		return fmt.Errorf("write legacy json manifest: %w", err)
+	}
+	if err := ops.writeJSONManifest(filepath.Join(targetDir, zk.ArtifactManifestFile), manifestArtifactDir, checksums); err != nil {
+		return fmt.Errorf("write json manifest: %w", err)
+	}
+	return nil
+}
+
+func rotateSelectiveArtifactSet(outDir string, definitions []artifactDefinition, ops artifactSetOps) (checksums map[string]string, returnErr error) {
+	parentDir := filepath.Dir(outDir)
+	baseName := filepath.Base(outDir)
+	stagingDir, err := os.MkdirTemp(parentDir, "."+baseName+".staging-*")
+	if err != nil {
+		return nil, fmt.Errorf("create staging directory: %w", err)
+	}
+	cleanupStaging := true
+	defer func() {
+		if cleanupStaging {
+			if err := ops.removeAll(stagingDir); err != nil {
+				cleanupErr := fmt.Errorf("remove staging artifact set %s: %w", stagingDir, err)
+				if returnErr == nil {
+					returnErr = cleanupErr
+				} else {
+					returnErr = fmt.Errorf("%w; additionally failed to %v", returnErr, cleanupErr)
+				}
+			}
+		}
+	}()
+	if err := ops.copyDirectory(outDir, stagingDir); err != nil {
+		return nil, fmt.Errorf("stage existing artifact set: %w", err)
+	}
+	checksums, err = writeArtifactSet(stagingDir, outDir, definitions, true, ops)
+	if err != nil {
+		return nil, fmt.Errorf("stage selective artifact rotation: %w", err)
+	}
+	if err := validateExistingArtifactSet(stagingDir); err != nil {
+		return nil, fmt.Errorf("validate staged artifact set: %w", err)
+	}
+
+	backupDir, err := os.MkdirTemp(parentDir, "."+baseName+".backup-*")
+	if err != nil {
+		return nil, fmt.Errorf("reserve backup path: %w", err)
+	}
+	if err := os.Remove(backupDir); err != nil {
+		return nil, fmt.Errorf("prepare backup path: %w", err)
+	}
+	if err := ops.rename(outDir, backupDir); err != nil {
+		return nil, fmt.Errorf("move current artifact set to backup: %w", err)
+	}
+	if err := ops.rename(stagingDir, outDir); err != nil {
+		rollbackErr := ops.rename(backupDir, outDir)
+		if rollbackErr != nil {
+			cleanupStaging = false
+			return nil, fmt.Errorf(
+				"install staged artifact set %s at %s: %v; rollback backup artifact set %s to %s failed: %v; recovery paths: staging=%s backup=%s",
+				stagingDir,
+				outDir,
+				err,
+				backupDir,
+				outDir,
+				rollbackErr,
+				stagingDir,
+				backupDir,
+			)
+		}
+		return nil, fmt.Errorf("install staged artifact set: %w", err)
+	}
+	cleanupStaging = false
+	if err := ops.removeAll(backupDir); err != nil {
+		return checksums, fmt.Errorf(
+			"installed staged artifact set but failed to remove backup artifact set %s; remove it manually: %w",
+			backupDir,
+			err,
+		)
+	}
+	return checksums, nil
+}
+
+func copyDirectoryContents(sourceDir, destinationDir string) error {
+	sourceInfo, err := os.Stat(sourceDir)
+	if err != nil {
+		return err
+	}
+	if err := os.Chmod(destinationDir, sourceInfo.Mode().Perm()); err != nil {
+		return err
+	}
+	return filepath.WalkDir(sourceDir, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(sourceDir, path)
+		if err != nil {
+			return err
+		}
+		if relative == "." {
+			return nil
+		}
+		target := filepath.Join(destinationDir, relative)
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return os.Mkdir(target, info.Mode().Perm())
+		}
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("artifact directory contains unsupported entry %s", path)
+		}
+		return copyRegularFile(path, target, info.Mode().Perm())
+	})
+}
+
+func copyRegularFile(sourcePath, destinationPath string, mode fs.FileMode) (returnErr error) {
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+	destination, err := os.OpenFile(destinationPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := destination.Close(); returnErr == nil && closeErr != nil {
+			returnErr = closeErr
+		}
+	}()
+	if _, err := io.Copy(destination, source); err != nil {
+		return err
+	}
+	return destination.Sync()
 }
 
 func buildArtifactDefinitions(selectedCircuit string) ([]artifactDefinition, error) {
@@ -207,15 +370,34 @@ func checksumArtifactSet(outDir string) (map[string]string, error) {
 
 func writeArtifact(path string, artifact interface {
 	WriteTo(w io.Writer) (int64, error)
-}) error {
-	file, err := os.Create(path)
+}) (returnErr error) {
+	temporary, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-
-	_, err = artifact.WriteTo(file)
-	return err
+	temporaryPath := temporary.Name()
+	defer func() {
+		_ = temporary.Close()
+		if returnErr != nil {
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+	if err := temporary.Chmod(0o600); err != nil {
+		return err
+	}
+	if _, err := artifact.WriteTo(temporary); err != nil {
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(temporaryPath, path); err != nil {
+		return err
+	}
+	return nil
 }
 
 func checksumFile(path string) (string, error) {
@@ -237,7 +419,7 @@ func writeEnvManifest(path, outDir string, checksums map[string]string) error {
 		content += fmt.Sprintf("%s=%s\n", checksumEnv, checksums[checksumEnv])
 	}
 
-	return os.WriteFile(path, []byte(content), 0o644)
+	return writeFileAtomic(path, []byte(content), 0o644)
 }
 
 func checksumEnvironmentOrder() []string {
@@ -271,7 +453,7 @@ func writeLegacyChecksumsJSON(path, outDir string, checksums map[string]string) 
 	}
 	bz = append(bz, '\n')
 
-	return os.WriteFile(path, bz, 0o644)
+	return writeFileAtomic(path, bz, 0o644)
 }
 
 func writeJSONManifest(path, outDir string, checksums map[string]string) error {
@@ -287,5 +469,35 @@ func writeJSONManifest(path, outDir string, checksums map[string]string) error {
 	}
 	bz = append(bz, '\n')
 
-	return os.WriteFile(path, bz, 0o644)
+	return writeFileAtomic(path, bz, 0o644)
+}
+
+func writeFileAtomic(path string, content []byte, mode fs.FileMode) (returnErr error) {
+	temporary, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer func() {
+		_ = temporary.Close()
+		if returnErr != nil {
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+	if err := temporary.Chmod(mode); err != nil {
+		return err
+	}
+	if _, err := temporary.Write(content); err != nil {
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(temporaryPath, path); err != nil {
+		return err
+	}
+	return nil
 }

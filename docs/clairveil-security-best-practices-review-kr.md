@@ -117,7 +117,7 @@ Active identity는 `privacy-note-v1`입니다. `privacy_zk_manifest.json` schema
 
 Session 1 remediation은 known current duplicate-input/output, intent substitution, replay, disclosure oracle, decoder, failover default, genesis/artifact identity, proof gas issue를 닫았습니다. 해당 범위에 미해결 Critical/High finding은 없습니다. 다만 아래는 downstream SDK/service 구현자가 혼동하면 문제가 될 수 있는 지점입니다.
 
-그럼에도 최신 Session 4 record는 `BLOCKED`입니다. Session 3A는 Session 2가 동결한 `DISCLOSURE-BLINDING-SEPARATION` V1을 production `99,775` constraints(`+10`)에 구현하고 native/prepared와 structured 2x2 pre-sign validation을 정렬했으며 JoinSplit development identity만 회전했습니다. `S4-B02` implementation은 해결됐지만 Gate 1/2/3A fresh 독립 재검토가 필요하고 별도 Gate 3B/Session 4 finding은 active입니다. Stable `DBS_*` error는 secret-free이며 proving/signature release 전에 반환합니다.
+그럼에도 최신 Session 4 record는 `BLOCKED`입니다. Session 3A는 Session 2가 동결한 `DISCLOSURE-BLINDING-SEPARATION` V1을 production `99,775` constraints(`+10`)에 구현하고 native/prepared와 structured 2x2 pre-sign validation을 정렬했으며 JoinSplit development identity만 회전했습니다. `S4-B02`와 Gate 1/2/3A fresh closure는 완료됐고 Session 3B re-entry는 UNBLOCKED지만 별도 Gate 3B와 `S4-B01` finding 때문에 Session 4/publication은 BLOCKED입니다. Stable `DBS_*` error는 secret-free이며 proving/signature release 전에 반환합니다.
 
 - `x/privacy/client/sdk/proverservice/service.go`의 body limit은 proof route에만 적용됩니다. 이는 의도적으로 맞지만, downstream이 health/readiness를 외부에 노출할지 여부는 별도로 결정해야 합니다.
 - `x/privacy/client/sdk/provertransport/http.go`의 raw `HTTPHandler`는 transfer, withdraw, batch 모두 admission 전 shared bounded reader를 사용합니다. Public service는 bearer auth, gzip wire/decompressed limit, health/readiness policy, server timeout을 위해 계속 `proverservice.Handler` 또는 동등한 wrapper를 사용해야 합니다.

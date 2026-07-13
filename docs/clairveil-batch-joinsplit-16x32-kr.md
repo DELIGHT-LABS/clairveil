@@ -11,7 +11,7 @@
 
 Session 3A는 production circuit과 consensus path를 구현한다. Session 3B는 repository의 reference Go batch planner/preparer, remote batch prover route, lossless typed scanner, durable payroll graph, staged CLI, localnet tutorial을 추가했다. 최신 Session 4 독립 재검증은 `BLOCKED`이며 historical publication-ready 서술은 superseded되었다. Downstream JS/TS SDK 또는 product, formal trusted setup, external audit, production artifact 배포와 production 운영은 repository-level 완료 범위 밖이다.
 
-2026-07-12 Session 2 재진입은 `S4-B02`의 `DISCLOSURE-BLINDING-SEPARATION`을 동결했고 Session 3A는 이를 production `JoinSplitCircuit`, shared native/prepared validation, structured 2x2 pre-sign boundary와 JoinSplit development artifact identity에 구현했다. Public contract 변경 없이 `S4-B02` implementation은 해결했지만 Gate 1/2/3A의 fresh 독립 재검토가 필요하고 별도 active finding 때문에 publication은 계속 blocked다.
+2026-07-12 Session 2 재진입은 `S4-B02`의 `DISCLOSURE-BLINDING-SEPARATION`을 동결했고 Session 3A는 이를 production `JoinSplitCircuit`, shared native/prepared validation, structured 2x2 pre-sign boundary와 JoinSplit development artifact identity에 구현했다. 2026-07-13 fresh closure는 public contract 변경 없이 Gate 1/2/3A를 PASS하고 Session 3B re-entry를 UNBLOCK했다. 별도 Gate 3B와 `S4-B01` finding 때문에 publication은 계속 blocked다.
 
 Active circuit set은 계속 `privacy-note-v1`이고 이제 Deposit, Spend, JoinSplit2x2, `batch-joinsplit-16x32-v1`을 이 순서로 요구한다. Development R1CS/PK/VK identity는 Gate 3A 증거이지 production trust anchor가 아니다.
 
@@ -415,7 +415,7 @@ Shared native/prepared/structured-signer error contract는 아래 stable secret-
 | `DBS_FULL_RANDOMNESS_REUSE` | `DBS-02` 실패 |
 | `DBS_USER_FULL_BLINDING_REUSE` | `DBS-03` 실패 |
 
-필수 enforcement layer는 circuit, `ValidateDisclosureBlindingSeparationV1`, prepared-payload validation, signature release 전 structured signer다. `JoinSplitOwnerIntentSigningRequestV1`은 final intent/effect와 output 0의 policy/randomness/blinding을 전달한다. `ValidateJoinSplitOwnerIntentSigningRequestV1`은 chain domain, payload digest와 intent를 재계산한 뒤 shared `DBS_*` relation을 적용하며 `SignValidatedJoinSplitOwnerIntentV1`은 validation 실패 시 signer callback을 호출하지 않는다. 이 host boundary는 production circuit constraint를 보완하며 대체하지 않는다.
+필수 enforcement layer는 circuit, `ValidateDisclosureBlindingSeparationV1`, prepared-payload validation, signature release 전 structured signer다. `JoinSplitOwnerIntentSigningRequestV1`은 final intent/effect, input NoteV1 두 개, output NoteV1 두 개, output 0 policy, sender public-key projection, randomness/blinding을 전달한다. `ValidateJoinSplitOwnerIntentSigningRequestV1`은 ordered input nullifier, output commitment 두 개, value conservation, change ownership과 user/audit disclosure digest를 재계산해 final effect와 대조하고 chain domain, payload digest, intent와 shared `DBS_*` relation도 검증한다. `SignValidatedJoinSplitOwnerIntentV1`은 validation 실패 시 signer callback을 호출하지 않는다. 이 host boundary는 production circuit constraint를 보완하며 대체하지 않는다.
 
 ## 6. Canonical fixed-size payload
 
@@ -843,14 +843,14 @@ Production coverage를 명시한다. `TestBatchJoinSplit16x32ProductionPositiveM
 | RESOURCE-BOUND | CPU, byte, state, queue가 bounded | fixed capacity | `ComputeBatchGasV1` | formula/bound | admission/body limit | gas overflow/bound 및 admission test | §9.2–§9.3 |
 | GLOBAL-COMMITMENT-UNIQUE | commitment 하나에 global leaf index 하나 | active distinctness | canonical field validation | commitment index/append | 기존 preflight pattern | Deposit/2x2/Batch/genesis collision test | §8.1 |
 | ASSET-REGISTRY | denom/ID가 authoritative 1:1 state | asset field 하나 | `ComputeAssetIDV1` | `AssetRegistryV1` query/state | registry lookup | collision/re-registration/corruption test | §3.3 |
-| DISCLOSURE-BLINDING | slot별 `DBS-01..03`, exact all-private/disabled sentinel, 더 넓은 global freshness는 별도 | Batch: gated inequality 96개, production 2x2: output 0 inequality 세 개 + all-private sentinel | `ValidateDisclosureBlindingSeparationV1`, digest helper | 2x2 prepared validator, keeper는 raw secret이 wire에 없어 proof에 의존 | collision-retrying builder, callback 전 `JoinSplitOwnerIntentSigningRequestV1` 검증 | conformance vector, production legacy-control/hardened negative, `TestJoinSplitStructuredSigningBoundaryRejectsDisclosureReuseBeforeRelease`, artifact identity gate와 batch reuse/zero case | §5.4 |
+| DISCLOSURE-BLINDING | slot별 `DBS-01..03`, exact all-private/disabled sentinel, 더 넓은 global freshness는 별도 | Batch: gated inequality 96개, production 2x2: output 0 inequality 세 개 + all-private sentinel | `ValidateDisclosureBlindingSeparationV1`, digest helper | 2x2 prepared validator, keeper는 raw secret이 wire에 없어 proof에 의존 | collision-retrying builder, callback 전 `JoinSplitOwnerIntentSigningRequestV1` commitment/digest projection 검증 | conformance vector, production legacy-control/hardened negative, `TestJoinSplitStructuredSigningBoundaryRejectsDisclosureReuseBeforeRelease`, `TestJoinSplitStructuredSigningBoundaryRejectsDecoupledPrivateProjectionBeforeRelease`, artifact identity gate와 batch reuse/zero case | §5.4 |
 | AUDIT-IDENTITY | bounded canonical ID, positive epoch, canonical target point | digest/intent가 payload bind | `ValidateAuditKeyIDV1`, canonical point decoder | exact chain config와 typed record | prepared payload와 payroll evidence identity | partial-state fail closed 및 ID/epoch/target mismatch | §7.1, §7.4 |
 | GLOBAL-SCAN-SEQUENCE | 모든 privacy effect가 sequence 하나 공유 | — | allocation helper | global sequence/index | cursor consumer | Deposit/2x2/Batch 및 genesis continuity | §8.2 |
 | ARTIFACT-CONSENSUS-IDENTITY | local artifact identity가 consensus와 같음 | public schema 동결 | schema/manifest digest helper | genesis circuit identity | role-aware registry | mismatch/override와 development artifact gate | §9.1 |
 
 ## 14. Residual risk와 명시적 non-goal
 
-- Session 3A core와 Session 3B reference Go client/prover/scanner/payroll/CLI surface는 존재하지만 최신 Session 4 재검증은 blocked다. `S4-B02` implementation은 해결했으며 Gate 1/2/3A fresh 독립 재검토와 별도 active Gate 3B/Session 4 finding은 남아 있다. Downstream JS/TS 또는 product integration, production audit, formal trusted setup, production artifact 배포도 남아 있다.
+- Session 3A core와 Session 3B reference Go client/prover/scanner/payroll/CLI surface는 존재하지만 최신 Session 4 재검증은 blocked다. `S4-B02` implementation과 Gate 1/2/3A fresh closure는 완료됐고 Session 3B re-entry는 unblocked다. 별도 active Gate 3B와 `S4-B01` finding, downstream JS/TS 또는 product integration, production audit, formal trusted setup, production artifact 배포는 남아 있다.
 - Development setup artifact는 production trust anchor가 아니며 commit하지 않는다. 기록된 checksum은 이 Gate 3A run만 식별한다.
 - Session 4 reference run의 peak RSS는 `3,429,646,336 B`, 약 3.19 GiB였다. lazy loading은 불필요한 artifact 상주를 줄이지만 process-level hard isolation을 제공하지 않는다.
 - client cancellation은 gnark proving을 중단할 수 없다. production process isolation, worker recycling, memory limit, overload operation이 필요하다.

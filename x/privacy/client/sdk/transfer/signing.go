@@ -1,9 +1,11 @@
 package transfer
 
 import (
+	"bytes"
 	"fmt"
 	"math/big"
 
+	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -19,6 +21,13 @@ type JoinSplitOwnerIntentSigningRequestV1 struct {
 	RecipientOutputRandomness *big.Int
 	UserDisclosureBlinding    *big.Int
 	FullDisclosureBlinding    *big.Int
+	InputNotes                [2]*privacytypes.Note
+	RecipientOutputNote       *privacytypes.Note
+	ChangeOutputNote          *privacytypes.Note
+	SenderSpendPubKeyX        *big.Int
+	SenderSpendPubKeyY        *big.Int
+	SenderViewPubKeyX         *big.Int
+	SenderViewPubKeyY         *big.Int
 }
 
 type OwnerIntentSigner interface {
@@ -43,6 +52,9 @@ func ValidateJoinSplitOwnerIntentSigningRequestV1(request JoinSplitOwnerIntentSi
 	}
 	if err := request.Effect.ValidateBasic(); err != nil {
 		return fmt.Errorf("invalid final transfer effect: %w", err)
+	}
+	if err := validateJoinSplitOwnerDisclosureProjectionV1(request); err != nil {
+		return err
 	}
 
 	chainDomain, err := privacytypes.ComputeChainDomainV1(request.ChainID, privacytypes.ActiveCircuitSetID)
@@ -73,6 +85,140 @@ func ValidateJoinSplitOwnerIntentSigningRequestV1(request JoinSplitOwnerIntentSi
 		return fmt.Errorf("transfer signing intent does not match the final effect")
 	}
 	return nil
+}
+
+func validateJoinSplitOwnerDisclosureProjectionV1(request JoinSplitOwnerIntentSigningRequestV1) error {
+	inputTotal := new(big.Int)
+	for i, note := range request.InputNotes {
+		if note == nil {
+			return fmt.Errorf("transfer signing input NoteV1 %d is required", i)
+		}
+		if err := note.ValidateV1(); err != nil {
+			return fmt.Errorf("invalid transfer signing input NoteV1 %d: %w", i, err)
+		}
+		if request.AssetID == nil || note.AssetID.Cmp(request.AssetID) != 0 {
+			return fmt.Errorf("transfer signing input NoteV1 %d asset id does not match the owner intent", i)
+		}
+		if !noteUsesSenderKeys(request, note) {
+			return fmt.Errorf("transfer signing input NoteV1 %d does not belong to the expected owner", i)
+		}
+		nullifier, err := privacyfield.CanonicalBytesFromBigInt(note.ComputeNullifier())
+		if err != nil {
+			return fmt.Errorf("invalid transfer signing input nullifier %d: %w", i, err)
+		}
+		if len(request.Effect.Nullifiers) <= i || !bytes.Equal(nullifier, request.Effect.Nullifiers[i]) {
+			return fmt.Errorf("transfer signing input NoteV1 %d does not match the final effect nullifier", i)
+		}
+		inputTotal.Add(inputTotal, note.Amount)
+	}
+
+	if request.RecipientOutputNote == nil {
+		return fmt.Errorf("transfer signing recipient output NoteV1 is required")
+	}
+	if err := request.RecipientOutputNote.ValidateV1(); err != nil {
+		return fmt.Errorf("invalid transfer signing recipient output NoteV1: %w", err)
+	}
+	if request.AssetID == nil || request.RecipientOutputNote.AssetID.Cmp(request.AssetID) != 0 {
+		return fmt.Errorf("transfer signing recipient output asset id does not match the owner intent")
+	}
+	if request.RecipientOutputRandomness == nil || request.RecipientOutputNote.Randomness.Cmp(request.RecipientOutputRandomness) != 0 {
+		return fmt.Errorf("transfer signing recipient output randomness does not match the output NoteV1")
+	}
+
+	commitment, err := privacyfield.CanonicalBytesFromBigInt(request.RecipientOutputNote.ComputeCommitment())
+	if err != nil {
+		return fmt.Errorf("invalid transfer signing recipient output commitment: %w", err)
+	}
+	if len(request.Effect.NewCommitments) <= int(privacytypes.TransferDisclosureRecipientOutputIndex) ||
+		!bytes.Equal(commitment, request.Effect.NewCommitments[privacytypes.TransferDisclosureRecipientOutputIndex]) {
+		return fmt.Errorf("transfer signing recipient output NoteV1 does not match the final effect commitment")
+	}
+	if request.ChangeOutputNote == nil {
+		return fmt.Errorf("transfer signing change output NoteV1 is required")
+	}
+	if err := request.ChangeOutputNote.ValidateV1(); err != nil {
+		return fmt.Errorf("invalid transfer signing change output NoteV1: %w", err)
+	}
+	if request.AssetID == nil || request.ChangeOutputNote.AssetID.Cmp(request.AssetID) != 0 {
+		return fmt.Errorf("transfer signing change output asset id does not match the owner intent")
+	}
+	if !noteUsesSenderKeys(request, request.ChangeOutputNote) {
+		return fmt.Errorf("transfer signing change output does not return to the expected owner")
+	}
+	changeCommitment, err := privacyfield.CanonicalBytesFromBigInt(request.ChangeOutputNote.ComputeCommitment())
+	if err != nil {
+		return fmt.Errorf("invalid transfer signing change output commitment: %w", err)
+	}
+	if len(request.Effect.NewCommitments) <= 1 || !bytes.Equal(changeCommitment, request.Effect.NewCommitments[1]) {
+		return fmt.Errorf("transfer signing change output NoteV1 does not match the final effect commitment")
+	}
+	outputTotal := new(big.Int).Add(request.RecipientOutputNote.Amount, request.ChangeOutputNote.Amount)
+	if inputTotal.Cmp(outputTotal) != 0 {
+		return fmt.Errorf("transfer signing input and output amounts are not conserved")
+	}
+
+	if request.UserPrivacyPolicy == privacytypes.TransferPrivacyPolicyAllPrivate {
+		if len(request.Effect.UserDisclosureDigest) != 0 {
+			return fmt.Errorf("transfer signing all-private effect must omit the user disclosure digest")
+		}
+	} else {
+		expectedUserDigest, err := privacytypes.ComputeTransferDisclosureDigestBytes(
+			request.UserPrivacyPolicy,
+			privacytypes.TransferDisclosureRecipientOutputIndex,
+			commitment,
+			request.RecipientOutputNote.Amount,
+			request.RecipientOutputNote.AssetID,
+			request.SenderSpendPubKeyX,
+			request.SenderSpendPubKeyY,
+			request.SenderViewPubKeyX,
+			request.SenderViewPubKeyY,
+			request.RecipientOutputNote.ReceiverSpendPubKeyX,
+			request.RecipientOutputNote.ReceiverSpendPubKeyY,
+			request.RecipientOutputNote.ReceiverViewPubKeyX,
+			request.RecipientOutputNote.ReceiverViewPubKeyY,
+			request.UserDisclosureBlinding,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to rebuild transfer signing user disclosure digest: %w", err)
+		}
+		if !bytes.Equal(expectedUserDigest, request.Effect.UserDisclosureDigest) {
+			return fmt.Errorf("transfer signing user disclosure preimage does not match the final effect")
+		}
+	}
+
+	expectedFullDigest, err := privacytypes.ComputeAuditTransferDisclosureDigestBytes(
+		privacytypes.TransferDisclosureRecipientOutputIndex,
+		commitment,
+		request.RecipientOutputNote.Amount,
+		request.RecipientOutputNote.AssetID,
+		request.SenderSpendPubKeyX,
+		request.SenderSpendPubKeyY,
+		request.SenderViewPubKeyX,
+		request.SenderViewPubKeyY,
+		request.RecipientOutputNote.ReceiverSpendPubKeyX,
+		request.RecipientOutputNote.ReceiverSpendPubKeyY,
+		request.RecipientOutputNote.ReceiverViewPubKeyX,
+		request.RecipientOutputNote.ReceiverViewPubKeyY,
+		request.FullDisclosureBlinding,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to rebuild transfer signing audit disclosure digest: %w", err)
+	}
+	if !bytes.Equal(expectedFullDigest, request.Effect.AuditDisclosureDigest) {
+		return fmt.Errorf("transfer signing audit disclosure preimage does not match the final effect")
+	}
+	return nil
+}
+
+func noteUsesSenderKeys(request JoinSplitOwnerIntentSigningRequestV1, note *privacytypes.Note) bool {
+	if note == nil || request.SenderSpendPubKeyX == nil || request.SenderSpendPubKeyY == nil ||
+		request.SenderViewPubKeyX == nil || request.SenderViewPubKeyY == nil {
+		return false
+	}
+	return note.ReceiverSpendPubKeyX.Cmp(request.SenderSpendPubKeyX) == 0 &&
+		note.ReceiverSpendPubKeyY.Cmp(request.SenderSpendPubKeyY) == 0 &&
+		note.ReceiverViewPubKeyX.Cmp(request.SenderViewPubKeyX) == 0 &&
+		note.ReceiverViewPubKeyY.Cmp(request.SenderViewPubKeyY) == 0
 }
 
 // ValidateJoinSplitOwnerDisclosureBlindingV1 exposes the exact structured

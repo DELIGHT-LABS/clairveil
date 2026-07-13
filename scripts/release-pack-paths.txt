@@ -101,4 +101,5 @@ scripts/release-pack-verify.sh
 scripts/release-pack-paths.txt
 scripts/release-manifest-template.txt
 scripts/session-3a-validation-evidence.sh
+scripts/session-3a-prepare-artifact-evidence.sh
 scripts/privacy-batch-joinsplit-localnet.sh

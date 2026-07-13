@@ -8,13 +8,21 @@
 | Starting HEAD reviewed | `d45f0753c16571743f630599776c9cd498d1e8c9` |
 | Review role | Fresh reviewer independent of Sessions 1–3B implementation |
 | Gate 3B on entry | **FAIL — Session 3B integration/test re-entry required** |
-| `S4-B02` Session 3A remediation | **IMPLEMENTATION RESOLVED — fresh independent Gate 1/2/3A review required** |
+| `S4-B02` Session 3A remediation | **RESOLVED — fresh Gate 1/2/3A closure PASS; Session 3B re-entry UNBLOCKED** |
 | Session 4 publication state | **`BLOCKED`** (`PUBLICATION_READY_EXPERIMENTAL` withdrawn) |
 | Production release state | Not approved |
 | Formal trusted setup | Not performed |
 | External audit | Not performed |
 
-This 2026-07-12 revalidation supersedes the earlier publication claim completed on the same day and retained below. Gate 3B is not satisfied and unresolved High and security-relevant Medium findings remain, so experimental source-publication approval is not currently valid. Session 3A subsequently resolves the `S4-B02` implementation, but does not perform fresh independent Gate 1/2/3A review or Session 4 Passes A–I, so this `BLOCKED` disposition does not change.
+This 2026-07-12 revalidation supersedes the earlier publication claim completed on the same day and retained below. The 2026-07-13 closure passes fresh Gates 1/2/3A and unblocks Session 3B re-entry, but Gate 3B is not satisfied and unresolved High and security-relevant Medium findings remain. Session 4 Passes A–I were not resumed, so experimental source-publication approval remains `BLOCKED`.
+
+### 2026-07-13 Gate 1/2/3A closure supplement
+
+- Scope `6aa341e..HEAD` plus the working tree was reviewed with two fresh pinned read-only reviewers per round under `mode=deep`, `verify=max`, and `scope=release`; active P0/P1/P2 and unresolved candidates reached zero.
+- `G123A-AR02` verifies actual SHA-256 for every current/previous required artifact, exact non-JoinSplit byte identity, canonical descriptors, missing/duplicate/unknown/tamper failures, a positive JoinSplit-only rotation, and exact current-source R1CS serialization identity. The regression is part of `make session-3a-validation-evidence`, which can regenerate both sets from pinned prior/current source on a clean commit.
+- The structured 2x2 signer independently binds both input nullifiers, both output NoteV1 commitments, value conservation, change ownership, and user/audit disclosure preimages to the final effect before release. Public inputs, NoteV1, wire payload/schema/version, and the production circuit contract are unchanged.
+- Targeted S4-B02/B03, artifact/proof/genesis evidence, all privacy/repository tests, vet/build/examples, JoinSplit/Batch resource gates, release-check, diff, bilingual-document, and secret/artifact hygiene checks passed. The exact release pack is generated and verified on Python 3.9/3.12 after the closure commit.
+- **Gates 1/2/3A PASS; Session 3B re-entry is UNBLOCKED.** Gate 3B, Session 4, and publication remain **BLOCKED** by `G3B-01..04` and `S4-B01`.
 
 ### `S4-B02` Session 3A implementation supplement
 
@@ -23,7 +31,7 @@ This 2026-07-12 revalidation supersedes the earlier publication claim completed 
 - The production count is `99,775`, exactly `+10` over the `99,765` control and equal to the frozen target, so there is no decision change. The 13 public inputs/schema hash, NoteV1, payload `v5`, proof/HTTP `v2`, disclosure digest/domain, and circuit-set ID remain unchanged.
 - New development JoinSplit SHA-256 values are R1CS `135528343084d9395ac3b59f87eb32661471751d936424c6aa3bc369483292d4`, PK `b41790cd96c41b78d7f7ca30f81cb76f4bdb93371bbf0b9437642348306c16d7`, and VK/consensus identity `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`. This is a JoinSplit-only development rotation; Batch and the other artifacts are unchanged.
 - Old/new proof and consensus/file mismatch, fresh genesis/reset, strict artifact preflight, the complete 2x2 regression, and the full unchanged Batch `1,111,837`-constraint resource comparison pass. No formal trusted setup was performed and no generated binary or secret is tracked.
-- `S4-B02` implementation is **RESOLVED**. Current unresolved counts are Critical 0, High 2, and security-relevant Medium 3. Gates 1/2/3A require fresh independent review; Session 3B and Session 4 were not started or resumed.
+- `S4-B02` implementation is **RESOLVED**. The later 2026-07-13 supplement passes fresh Gates 1/2/3A and unblocks Session 3B re-entry. Current unresolved counts remain Critical 0, High 2, and security-relevant Medium 3, and Session 4 was not resumed.
 
 ### Historical `S4-B02` foundation re-entry supplement
 
@@ -58,16 +66,16 @@ Resolved supplements: `S4-B03` is closed by `02f61f3`/`42d40bd`, and `S4-B02` im
 
 ### Supporting verification commands run
 
-The `G123A-AR01` review found that the previous artifact and fresh-genesis commands used opt-in variables and test names that did not match the code, allowing `SKIP` or `[no tests to run]` to look successful. The table below retires those two rows and replaces them with the fail-closed `make session-3a-validation-evidence` run of all three exact tests. Correcting this evidence does not itself pass fresh Gates 1/2/3A.
+The `G123A-AR01` review found that the previous artifact and fresh-genesis commands used opt-in variables and test names that did not match the code, allowing `SKIP` or `[no tests to run]` to look successful. The table below retires those two rows and replaces them with fail-closed `make session-3a-validation-evidence`. That evidence correction alone did not pass fresh Gates 1/2/3A; the later 2026-07-13 closure supplement does.
 
 | Command | Result and limitation |
 | --- | --- |
 | `go test ./x/privacy/client/sdk/conformance -run '^(TestPrivacyNoteV1ContractIndependentGolden\|TestPrivacyBatchJoinSplitV1ContractIndependentGolden)$' -count=1 -v` | PASS. Confirms the independent golden calculation path; does not replace Gate 3B |
 | `go test ./x/privacy/client/sdk/payroll -run '^(TestProverPoolDoesNotFailOverAfterEndpointTimeoutByDefault\|TestProverPoolFallsBackAfterEndpointTimeoutWithExplicitOptIn\|TestBatchReconcileDurableRestartRetryTxHashFirstAndItemEvidenceSeparate\|TestBatchProofWorkerKeepsSharedLeaseUntilUninterruptibleProveReturns)$' -count=1 -v` | PASS. Unit boundary only; not live endpoint evidence |
 | `go test ./x/privacy/client/sdk/reservation -run '^(TestBatchOperationGraphIsAtomicAndConflictsWithOrdinaryReservation\|TestBatchOperationDurableFileRestartRoundTrip\|TestBatchOperationSQLSchemaIsVersionedAndRelational)$' -count=1 -v` | PASS. Not a real SQL transaction test, so G3B-03 remains open |
-| `go test ./x/privacy/types ./x/privacy/client/sdk/transfer ./x/privacy/client/sdk/conformance -run 'DisclosureBlinding\|AllPrivateUserBlinding' -count=1 -v` | PASS. Confirms the shared native/prepared/fixture contract; does not replace production circuit enforcement |
+| `go test ./x/privacy/types ./x/privacy/client/sdk/transfer ./x/privacy/client/sdk/conformance -run 'DisclosureBlinding|AllPrivateUserBlinding' -count=1 -v` | PASS. Confirms the shared native/prepared/fixture contract; does not replace production circuit enforcement |
 | `CLAIRVEIL_RUN_JOINSPLIT_BLINDING_FEASIBILITY=1 go test ./x/privacy/circuit -run '^TestJoinSplitDisclosureBlindingSeparationResourceGate$' -count=1 -v` | PASS. Legacy control `99,765`, production `99,775`; production R1CS `10,824,169 B`, PK `16,766,489 B`, VK `748 B`, proof `164 B`; peak RSS `687,423,488 B` |
-| `CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR="$CURRENT_ARTIFACT_DIR" CLAIRVEIL_PRIVACY_PREVIOUS_ZK_ARTIFACT_DIR="$PREVIOUS_ARTIFACT_DIR" make session-3a-validation-evidence` | PASS. Runs `TestJoinSplitDevelopmentArtifactRotationGate`, `TestJoinSplitOldAndNewProofIdentitiesAreMutuallyExclusive`, and `TestS4B02FreshGenesisUsesRotatedJoinSplitIdentity` with their exact `_GATE` opt-ins, proving artifact role readiness, mutual old/new proof-VK rejection, and old-identity rejection before fresh-genesis state writes. The wrapper requires the exact test to exist and report `--- PASS`, and rejects `SKIP` or `[no tests to run]` |
+| `make session-3a-validation-evidence` (clean commit regeneration), or both artifact directory variables for supplied sets | PASS. Runs `TestJoinSplitArtifactRotationSnapshotValidation`, `TestJoinSplitDevelopmentArtifactRotationGate`, `TestJoinSplitOldAndNewProofIdentitiesAreMutuallyExclusive`, and `TestS4B02FreshGenesisUsesRotatedJoinSplitIdentity`, covering fail-closed descriptor/tamper regression, actual artifact readiness, exact current-source R1CS serialization identity, mutual old/new proof-VK rejection, and old-identity rejection before fresh-genesis state writes. The wrapper requires exact execution and rejects `SKIP` or `[no tests to run]` |
 | `CLAIRVEIL_RUN_BATCH_FEASIBILITY=1 go test ./x/privacy/circuit -run '^TestBatchJoinSplit16x32FullShapeResourceGate$' -count=1 -v` | PASS. Batch unchanged at `1,111,837` constraints; R1CS `122,813,535 B`, PK `209,218,621 B`, VK `716 B`, proof `164 B`; peak RSS `3,324,461,056 B`, no OOM |
 | `git merge-base --is-ancestor e427370 HEAD`, `git diff --check e427370..HEAD` | PASS at starting HEAD `d45f0753c16571743f630599776c9cd498d1e8c9` |
 | Artifact `shasum -a 256` and file-size comparison | PASS. Batch R1CS/PK/VK match the historical development hashes and sizes |

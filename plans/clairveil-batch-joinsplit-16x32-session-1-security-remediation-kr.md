@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | Complete historical Gate 1; **S4-B03 및 S4-B02 implementation resolved / fresh Gate 1 독립 재검토 필요** (2026-07-12) |
+| 상태 | **Gate 1 PASS — S4-B03/S4-B02/G123A fresh closure complete** (2026-07-13) |
 | 선행 문서 | [BatchJoinSplit16x32 Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md) |
 | 후속 세션 | [Session 2 Foundation](clairveil-batch-joinsplit-16x32-session-2-foundation-kr.md) |
 | 권장 모델 | `gpt-5.6-sol` |
@@ -569,10 +569,17 @@ NoteV1의 새 commitment/nullifier formula는 Session 2에서 production circuit
 
 ## Completion Record
 
+### 2026-07-13 Gate 1 Fresh Closure
+
+- `6aa341e..HEAD` 전체와 working tree를 pinned read-only reviewer 2명씩 fresh rediscovery했다. 첫 wave finding 확정 전에는 수정하지 않았고, 수정 뒤 이전 finding을 park한 연속 clean round 2회 및 final PR-style gate를 요구했다.
+- `S4-B03` duplicate-inflation circuit/types/keeper regression, production `DBS-01..03`, structured signer의 decoy private projection 무서명 거부, current/previous artifact actual SHA-256/tamper/JoinSplit-only rotation을 재검증했다. Public input, NoteV1, payload/schema/version, production circuit contract는 변경하지 않았다.
+- 필수 targeted/full/resource/release 검증이 PASS했다. Exact release pack은 closure commit 뒤 Python 3.9/3.12에서 재검증한다.
+- 처분: **Gate 1 PASS.** Gate 2/3A도 같은 fresh closure에서 PASS했고 Session 3B re-entry는 **UNBLOCKED**다. Gate 3B/S4-B01, Session 4/publication은 계속 **BLOCKED**다.
+
 ### 2026-07-13 `G123A-AR01`/`DOC01`/`RP01` 보완
 
 - fresh review task `019f56bb-7962-7210-a4b5-f01c7a47a4b8`, clean 기준 HEAD `def4f8405a22011eb4d73b1e1bbfba68fec82b60`에서 시작했다. 작업 단위 commit은 `G123A-AR01` `57670bbfeff9d2fcb7bcfc7ba85cf4caedfb5b90`, `G123A-DOC01` `46dbb754549d07b162935aade59ba8827b968c91`, `G123A-RP01` `0d65faa2efe45d606864251d050c0679f0109716`이다.
-- `CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR=/tmp/clairveil-g123a.T24SZF/current CLAIRVEIL_PRIVACY_PREVIOUS_ZK_ARTIFACT_DIR=/tmp/clairveil-g123a.T24SZF/previous make session-3a-validation-evidence`를 실행했다. Exact test `TestJoinSplitDevelopmentArtifactRotationGate`, `TestJoinSplitOldAndNewProofIdentitiesAreMutuallyExclusive`, `TestS4B02FreshGenesisUsesRotatedJoinSplitIdentity`가 각각 실제 실행되어 PASS했고 target은 test 미발견, `SKIP`, `[no tests to run]`을 성공으로 인정하지 않는다.
+- Historical G123A 보완에서는 ephemeral `/tmp/clairveil-g123a.T24SZF/{current,previous}` supplied set으로 `make session-3a-validation-evidence`를 실행했다. Current closure target은 이 경로에 의존하지 않으며 clean commit에서 pinned prior/current source로 complete set을 재생성한다. Exact test가 실제 실행되어야 하며 test 미발견, `SKIP`, `[no tests to run]`을 성공으로 인정하지 않는다.
 - `S4-B03` 명령 `go test ./x/privacy/circuit ./x/privacy/types ./x/privacy/keeper -run '^(TestJoinSplitCircuitRejectsExactDuplicateInputInflation|TestBatchJoinSplit16x32RejectsExactDuplicateInputInflation|TestMsgTransferValidateBasicRejectsExactDuplicateInputInflation|TestMsgServerTransferRejectsExactDuplicateInputInflationBeforeProof)$' -count=1 -v`와 `S4-B02` 명령 `go test ./x/privacy/circuit ./x/privacy/types ./x/privacy/client/sdk/transfer ./x/privacy/client/sdk/conformance -run '^(TestJoinSplitCircuitEnforcesDisclosureBlindingSeparationV1|TestValidateDisclosureBlindingSeparationV1|TestJoinSplitStructuredSigningBoundaryRejectsDisclosureReuseBeforeRelease|TestGenerateTransferDisclosureBlindingsV1RetriesExactReuse|TestValidatePreparedTransferPayloadMetadataRejectsDisclosureBlindingReuse|TestValidatePreparedTransferPayloadMetadataCanonicalizesAllPrivateUserBlinding|TestPrivacyDisclosureBlindingV1Contract)$' -count=1 -v`가 PASS했다. 한영 공개 문서는 S4-B02/B03 구현·regression 완료와 fresh Gate 재검토 필요 상태로 정렬했고 stale signer test-file 참조를 실제 `x/privacy/client/sdk/transfer/payload_test.go` 회귀로 교정했다.
 - `go test ./x/privacy/... -count=1`, `go test ./... -count=1`, `go vet ./x/privacy/...`, `make build`, `make examples`, `make release-check`, `make release-pack`, `git diff --check`, 한영 문서 pair/stale reference 검사가 모두 PASS했다.
 - 동일 archive `clairveil-handoff-v0.1.0-142-g0d65faa.tar.gz`(SHA-256 `e5dbb48638ab621acfcf396ec89d0f18e5d66827f94c148c48e8a2d4a5f04960`)를 기본 Python `3.9.6`과 `3.12.8`의 `make release-pack-verify`로 각각 검증해 required file `125`개와 exact commit `0d65faa2efe45d606864251d050c0679f0109716`을 확인했다. CI도 Python `3.9`/`3.12` matrix로 같은 target을 실행한다.

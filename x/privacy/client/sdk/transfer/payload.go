@@ -316,6 +316,13 @@ func BuildPreparedTransferPayload(
 		RecipientOutputRandomness: prepared.RecipientNote.Randomness,
 		UserDisclosureBlinding:    userDisclosureBlinding,
 		FullDisclosureBlinding:    fullDisclosureBlinding,
+		InputNotes:                [2]*privacytypes.Note{&input.Inputs[0].Note, &input.Inputs[1].Note},
+		RecipientOutputNote:       &prepared.RecipientNote,
+		ChangeOutputNote:          &prepared.ChangeNote,
+		SenderSpendPubKeyX:        prepared.FromNote.ReceiverSpendPubKeyX,
+		SenderSpendPubKeyY:        prepared.FromNote.ReceiverSpendPubKeyY,
+		SenderViewPubKeyX:         prepared.FromNote.ReceiverViewPubKeyX,
+		SenderViewPubKeyY:         prepared.FromNote.ReceiverViewPubKeyY,
 	}
 	if err := ValidateJoinSplitOwnerIntentSigningRequestV1(signingRequest); err != nil {
 		return nil, fmt.Errorf("invalid transfer owner signing request: %w", err)

@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | Complete historical Gate 3A; **S4-B02 implementation RESOLVED / fresh Gate 3A 독립 재검토 필요** (2026-07-12) |
+| 상태 | **Gate 3A PASS — Session 3B re-entry UNBLOCKED** (2026-07-13) |
 | 선행 문서 | [Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md), [Session 2](clairveil-batch-joinsplit-16x32-session-2-foundation-kr.md) |
 | 후속 세션 | [Session 3B Integration](clairveil-batch-joinsplit-16x32-session-3b-integration-kr.md) |
 | 권장 모델 | `gpt-5.6-sol` |
@@ -42,7 +42,7 @@ Session 2 re-entry는 `DISCLOSURE-BLINDING-SEPARATION` V1을 TBD 없이 동결�
 - Test-only target `99,775` constraints(current `99,765`, delta `+10`)을 재현하거나 decision change를 먼저 기록한다. Negative witness마다 complete digest/owner signature를 다시 계산하고 current control은 수락, hardened circuit은 실패하는 원인 분리 test를 production regression으로 승격한다.
 - Public input 13개와 순서/schema hash `4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82`, NoteV1, payload `v5`, proof/HTTP `v2`, disclosure digest/domain, manifest/identity schema, circuit-set ID `privacy-note-v1`은 변경하지 않는다.
 - JoinSplit R1CS/PK/VK만 재생성하고 manifest checksum과 consensus JoinSplit `verifying_key_sha256`를 교체한다. Old JoinSplit proof/job을 폐기하고 exact readiness, fresh-genesis/reset, 전체 2x2 regression과 full batch resource comparison을 다시 실행한다. Batch source/artifact는 이 finding 때문에 회전하지 않는다.
-- `S4-B02` implementation은 **RESOLVED**다. 이는 Gate 1/2/3A 승인 또는 Session 3B/4 재개가 아니며 변경된 relation과 identity에 대한 fresh 독립 재검토 전 publication은 blocked다.
+- `S4-B02` implementation은 **RESOLVED**다. 2026-07-13 fresh closure가 Gate 1/2/3A를 PASS하고 Session 3B re-entry를 UNBLOCK했지만 Gate 3B/Session 4/publication은 blocked다.
 
 ## 2. 범위
 
@@ -529,10 +529,19 @@ git diff --check
 
 ## Completion Record
 
+### 2026-07-13 Gate 3A Fresh Closure
+
+- `6aa341e..HEAD`, `mode=deep`, `verify=max`, `scope=release`에서 첫 read-only reviewer wave가 전체 scope를 검토한 뒤 P2를 확정했고 coherent batch 수정 후 새 reviewer 2명씩 fresh rediscovery했다. 관련 변경을 모두 포함한 tree에서 연속 clean round 2회와 final PR-style gate를 통과했다.
+- `G123A-AR02`: current/previous manifest canonical descriptor 12개와 actual artifact SHA-256을 모두 대조하고 non-JoinSplit 9개 actual digest가 동일함을 검증한다. Missing/duplicate/unknown descriptor, missing file, digest mismatch, manifest-backed non-JoinSplit R1CS/PK/VK 변경은 fail closed한다. JoinSplit R1CS/PK/VK만 모두 회전하는 positive gate와 current R1CS의 exact current-source serialization SHA-256 결합을 유지한다.
+- structured pre-sign boundary는 input nullifier, output NoteV1 commitment, value conservation, change ownership 및 user/audit disclosure preimage를 final effect와 재계산 대조하며 decoy/redirected fields에서 signature callback을 호출하지 않는다. Wire payload/schema/version, NoteV1, public input과 production circuit는 unchanged다.
+- selective artifact rotation의 검증된 staging install과 backup rollback rename이 모두 실패하는 경로를 닫았다. 이 경우 staging과 backup을 보존하고 오류에 두 exact 복구 경로를 반환한다. 정상 rotation, install 실패/rollback 성공, install 실패/rollback 실패, 성공 후 backup cleanup 실패 fault-injection regression이 PASS했다. 지정 함수와 테스트만 읽기 전용 검토한 새 reviewer 1명은 구체적인 추가 결함을 발견하지 않았다.
+- Pinned prior `0fc818c90fe98a876c8a2531e7c70ba5efac4b90`과 현재 closure source로 repository 밖에서 두 complete set을 생성한 supplied-set `make session-3a-validation-evidence`, JoinSplit/Batch resource gates, targeted S4-B02/B03, `go test ./x/privacy/... -count=1`, `go test ./... -count=1`, `go vet ./x/privacy/...`, `make build`, `make examples`, `make release-check`, `git diff --check`가 PASS했다. Generated development artifact/secret은 repository 밖 `/tmp`에서만 사용했고 tracked하지 않는다. Closure commit에서 Python 3.9/3.12 release-pack verification을 수행한다.
+- 처분: **Gate 3A PASS. Session 3B re-entry UNBLOCKED.** 이는 Gate 3B PASS나 Session 4/publication 재개가 아니다. `G3B-01..04`와 `S4-B01` 때문에 Session 4/publication은 계속 **BLOCKED**다.
+
 ### 2026-07-13 `G123A-AR01`/`DOC01`/`RP01` 보완
 
 - fresh review task `019f56bb-7962-7210-a4b5-f01c7a47a4b8`, clean 기준 HEAD `def4f8405a22011eb4d73b1e1bbfba68fec82b60`에서 시작했다. 작업 단위 commit은 `G123A-AR01` `57670bbfeff9d2fcb7bcfc7ba85cf4caedfb5b90`, `G123A-DOC01` `46dbb754549d07b162935aade59ba8827b968c91`, `G123A-RP01` `0d65faa2efe45d606864251d050c0679f0109716`이다.
-- `CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR=/tmp/clairveil-g123a.T24SZF/current CLAIRVEIL_PRIVACY_PREVIOUS_ZK_ARTIFACT_DIR=/tmp/clairveil-g123a.T24SZF/previous make session-3a-validation-evidence`를 실행했다. Exact test `TestJoinSplitDevelopmentArtifactRotationGate`, `TestJoinSplitOldAndNewProofIdentitiesAreMutuallyExclusive`, `TestS4B02FreshGenesisUsesRotatedJoinSplitIdentity`가 각각 실제 실행되어 PASS했고 target은 test 미발견, `SKIP`, `[no tests to run]`을 성공으로 인정하지 않는다.
+- Historical G123A 보완에서는 ephemeral `/tmp/clairveil-g123a.T24SZF/{current,previous}` supplied set으로 `make session-3a-validation-evidence`를 실행했다. Current closure target은 이 경로에 의존하지 않으며 clean commit에서 pinned prior/current source로 complete set을 재생성한다. Exact test가 실제 실행되어야 하며 test 미발견, `SKIP`, `[no tests to run]`을 성공으로 인정하지 않는다.
 - `S4-B03` 명령 `go test ./x/privacy/circuit ./x/privacy/types ./x/privacy/keeper -run '^(TestJoinSplitCircuitRejectsExactDuplicateInputInflation|TestBatchJoinSplit16x32RejectsExactDuplicateInputInflation|TestMsgTransferValidateBasicRejectsExactDuplicateInputInflation|TestMsgServerTransferRejectsExactDuplicateInputInflationBeforeProof)$' -count=1 -v`와 `S4-B02` 명령 `go test ./x/privacy/circuit ./x/privacy/types ./x/privacy/client/sdk/transfer ./x/privacy/client/sdk/conformance -run '^(TestJoinSplitCircuitEnforcesDisclosureBlindingSeparationV1|TestValidateDisclosureBlindingSeparationV1|TestJoinSplitStructuredSigningBoundaryRejectsDisclosureReuseBeforeRelease|TestGenerateTransferDisclosureBlindingsV1RetriesExactReuse|TestValidatePreparedTransferPayloadMetadataRejectsDisclosureBlindingReuse|TestValidatePreparedTransferPayloadMetadataCanonicalizesAllPrivateUserBlinding|TestPrivacyDisclosureBlindingV1Contract)$' -count=1 -v`가 PASS했다. 한영 공개 문서와 invariant traceability는 S4-B02/B03 구현·regression 완료와 fresh Gate 재검토 필요 상태로 정렬했고 stale signer test-file 참조를 실제 `x/privacy/client/sdk/transfer/payload_test.go` 회귀로 교정했다.
 - `go test ./x/privacy/... -count=1`, `go test ./... -count=1`, `go vet ./x/privacy/...`, `make build`, `make examples`, `make release-check`, `make release-pack`, `git diff --check`, 한영 문서 pair/stale reference 검사가 모두 PASS했다.
 - 동일 archive `clairveil-handoff-v0.1.0-142-g0d65faa.tar.gz`(SHA-256 `e5dbb48638ab621acfcf396ec89d0f18e5d66827f94c148c48e8a2d4a5f04960`)를 기본 Python `3.9.6`과 `3.12.8`의 `make release-pack-verify`로 각각 검증해 required file `125`개와 exact commit `0d65faa2efe45d606864251d050c0679f0109716`을 확인했다. CI도 Python `3.9`/`3.12` matrix로 같은 target을 실행한다.
