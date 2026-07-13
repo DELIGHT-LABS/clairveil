@@ -99,7 +99,15 @@ try:
             member_count += 1
             if member_count > max_members:
                 raise ValueError("archive contains too many members")
-            name = member.name
+            raw_name = member.name
+            # Python 3.9 preserves the trailing slash on GNU long directory
+            # names, while Python 3.12 removes it. Validate and track the
+            # logical directory path consistently across both versions.
+            name = (
+                raw_name[:-1]
+                if member.isdir() and raw_name.endswith("/")
+                else raw_name
+            )
             path = PurePosixPath(name)
             if (
                 not name
@@ -108,7 +116,7 @@ try:
                 or any(part in ("", ".", "..") for part in path.parts)
                 or any(ord(char) < 32 or ord(char) == 127 for char in name)
             ):
-                raise ValueError(f"non-canonical archive path: {name!r}")
+                raise ValueError(f"non-canonical archive path: {raw_name!r}")
             if name in seen:
                 raise ValueError(f"duplicate archive member: {name}")
             seen.add(name)
