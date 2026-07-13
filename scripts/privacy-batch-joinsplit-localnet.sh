@@ -133,6 +133,8 @@ node_log="$work_dir/clairveild.log"
 proverd_log="$work_dir/clairveil-proverd.log"
 node_pid=""
 proverd_pid=""
+payroll_live_test_bin="$work_dir/session3b-payroll-live.test"
+payroll_store="$out/session3b-payroll-reservations.json"
 
 clairveild="${CLAIRVEILD_BIN:-$work_dir/clairveild-batch-localnet}"
 clairveil_setup="${CLAIRVEIL_SETUP_BIN:-$work_dir/clairveil-setup-batch-localnet}"
@@ -153,6 +155,8 @@ trap cleanup EXIT
 if [[ -z "${CLAIRVEILD_BIN:-}" ]]; then (cd "$repo_root" && go build -o "$clairveild" ./cmd/clairveild); fi
 if [[ -z "$artifact_override" && -z "${CLAIRVEIL_SETUP_BIN:-}" ]]; then (cd "$repo_root" && go build -o "$clairveil_setup" ./cmd/clairveil-setup); fi
 if [[ -z "${CLAIRVEIL_PROVERD_BIN:-}" ]]; then (cd "$repo_root" && go build -o "$clairveil_proverd" ./cmd/clairveil-proverd); fi
+(cd "$repo_root" && go test -tags=session3b_localnet -c -o "$payroll_live_test_bin" ./x/privacy/client/cli)
+chmod 700 "$payroll_live_test_bin"
 
 run() { "$clairveild" "$@"; }
 
@@ -187,6 +191,31 @@ wait_for_node() {
 		if run status --node "$node" 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); raise SystemExit(0 if int(d["sync_info"]["latest_block_height"]) >= 1 else 1)' >/dev/null 2>&1; then return 0; fi
 		sleep 1
 	done
+	tail -200 "$node_log" >&2
+	return 1
+}
+
+restart_node_process() {
+	local label="$1" previous_height="0" current_height
+	if [[ -n "$node_pid" ]] && kill -0 "$node_pid" >/dev/null 2>&1; then
+		previous_height="$(run status --node "$node" 2>/dev/null | python3 -c 'import json,sys; print(int(json.load(sys.stdin)["sync_info"]["latest_block_height"]))')"
+	fi
+	if [[ -n "$node_pid" ]]; then
+		kill "$node_pid"
+		wait "$node_pid" || true
+		node_pid=""
+	fi
+	node_log="$work_dir/clairveild.${label}.log"
+	"$clairveild" start --home "$home" --minimum-gas-prices 0uclair >"$node_log" 2>&1 & node_pid=$!
+	wait_for_node
+	for _ in $(seq 1 60); do
+		current_height="$(run status --node "$node" 2>/dev/null | python3 -c 'import json,sys; print(int(json.load(sys.stdin)["sync_info"]["latest_block_height"]))' || true)"
+		if [[ "$current_height" =~ ^[0-9]+$ ]] && (( current_height > previous_height )); then
+			return 0
+		fi
+		sleep 1
+	done
+	echo "restarted node did not finalize a block above height $previous_height" >&2
 	tail -200 "$node_log" >&2
 	return 1
 }
@@ -363,14 +392,65 @@ prepare_prove_broadcast() {
 	printf '%s\n' "$tx_hash" >"$out/${label}.txhash"
 }
 
+prepare_payroll_payload() {
+	local label="$1"; shift
+	local split="$1"; shift
+	local -a input_amounts=("${@:1:split}")
+	shift "$split"
+	local -a payments=("$@") input_args=() prepare_args=()
+	while IFS= read -r input_arg; do
+		input_args+=("$input_arg")
+	done < <(select_input_args "$out/${label}-alice-notes.json" "${input_amounts[@]}")
+	for payment in "${payments[@]}"; do prepare_args+=(--payment "$payment"); done
+	prepare_args+=("${input_args[@]}" --output-mode compact --prepared-out "$out/${label}-prepared.json" --expires-in "$expires_in" --rescan-wallet)
+	run tx privacy prepare-batch-transfer "${prepare_args[@]}" --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --output json >"$out/${label}-prepare-command.json"
+}
+
+run_payroll_stage() {
+	local stage="$1"
+	CLAIRVEIL_SESSION3B_STAGE="$stage" \
+	CLAIRVEIL_SESSION3B_HOME="$home" \
+	CLAIRVEIL_SESSION3B_OUT_DIR="$out" \
+	CLAIRVEIL_SESSION3B_STORE_PATH="$payroll_store" \
+	CLAIRVEIL_SESSION3B_NODE="$node" \
+	CLAIRVEIL_SESSION3B_GRPC_ADDR="127.0.0.1:${grpc_port}" \
+	CLAIRVEIL_SESSION3B_CHAIN_ID="$chain_id" \
+	CLAIRVEIL_SESSION3B_PROVER_URL="http://127.0.0.1:${proverd_port}" \
+	CLAIRVEIL_SESSION3B_GAS="$batch_gas" \
+	CLAIRVEIL_SESSION3B_GAS_PRICES="$gas_prices" \
+	CLAIRVEIL_SESSION3B_ALICE_NOTES_PATH="$out/three-input-four-output-mixed-disclosure-alice-notes.json" \
+	CLAIRVEIL_SESSION3B_BOB_ADDRESS="$bob_address" \
+	CLAIRVEIL_SESSION3B_BOB_DISCLOSURE_PUBKEY="$bob_disclosure" \
+	CLAIRVEIL_SESSION3B_PREPARED_PATH="$out/three-input-four-output-mixed-disclosure-prepared.json" \
+	CLAIRVEIL_SESSION3B_PROOF_PATH="$out/three-input-four-output-mixed-disclosure-proof.json" \
+	"$payroll_live_test_bin" -test.run '^TestSession3BOneProofPayrollLocalnet$' -test.v | tee "$out/payroll-${stage}.log"
+}
+
 deposit_notes one-input-one-payment 7
 prepare_prove_broadcast one-input-one-payment compact enabled 1 7 "${bob_address},7uclair"
 
 deposit_notes three-input-four-output-mixed-disclosure 5 7 9
-prepare_prove_broadcast three-input-four-output-mixed-disclosure compact enabled 3 5 7 9 \
+prepare_payroll_payload three-input-four-output-mixed-disclosure 3 5 7 9 \
 	"${bob_address},4uclair" \
 	"${bob_address},5uclair,amount,public" \
-	"${bob_address},6uclair,amount-from-to,recipient-encrypted,${bob_disclosure}"
+	"${bob_address},9uclair,amount-from-to,recipient-encrypted,${bob_disclosure}"
+run_payroll_stage graph
+run_payroll_stage prove
+run_payroll_stage timeout
+payroll_node_pid_before="$node_pid"
+restart_node_process payroll-retry
+payroll_node_pid_after="$node_pid"
+if [[ "$payroll_node_pid_before" == "$payroll_node_pid_after" ]]; then
+	echo "payroll node restart did not replace the process" >&2
+	exit 1
+fi
+printf '{"before_pid":%s,"after_pid":%s}\n' "$payroll_node_pid_before" "$payroll_node_pid_after" >"$out/payroll-node-restart.json"
+run_payroll_stage retry
+payroll_tx_hash="$(cat "$out/payroll.txhash")"
+wait_tx "$payroll_tx_hash" "$out/three-input-four-output-mixed-disclosure-broadcast-query.json"
+printf '%s\n' "$payroll_tx_hash" >"$out/three-input-four-output-mixed-disclosure.txhash"
+run_payroll_stage reconcile
+run_payroll_stage conflict
 
 sixteen_hundreds=(); for _ in $(seq 1 16); do sixteen_hundreds+=(100); done
 thirty_one_payments=(); for _ in $(seq 1 31); do thirty_one_payments+=("${bob_address},50uclair"); done
@@ -392,10 +472,7 @@ kill "$proverd_pid"; wait "$proverd_pid" || true; proverd_pid=""
 proverd_log="$work_dir/clairveil-proverd.restart.log"
 "$clairveil_proverd" --listen "127.0.0.1:${proverd_port}" >"$proverd_log" 2>&1 & proverd_pid=$!
 wait_for_proverd
-kill "$node_pid"; wait "$node_pid" || true; node_pid=""
-node_log="$work_dir/clairveild.restart.log"
-"$clairveild" start --home "$home" --minimum-gas-prices 0uclair >"$node_log" 2>&1 & node_pid=$!
-wait_for_node
+restart_node_process restart
 run query tx "$(cat "$out/exact-thirty-two-payments.txhash")" --node "$node" --output json >"$out/restart-tx-hash-reconcile.json"
 set +e
 run tx privacy broadcast-batch-transfer "$out/exact-thirty-two-payments-prepared.json" "$out/exact-thirty-two-payments-proof.json" --from alice --keyring-backend test --home "$home" --node "$node" --chain-id "$chain_id" --gas "$batch_gas" --gas-prices "$gas_prices" --yes --output json >"$out/retry-broadcast.json" 2>"$out/retry-broadcast.stderr"
@@ -521,6 +598,24 @@ for label in labels:
     tx = json.loads((out / f"{label}-broadcast-query.json").read_text())
     assert int(tx.get("code", 0)) == 0
 assert json.loads((out / "bob-notes-after.json").read_text())["notes"]
+payroll = json.loads((out / "session3b-payroll-live-summary.json").read_text())
+assert payroll["schema_version"] == "clairveil.session3b.payroll-live-result.v1"
+assert payroll["status"] == "passed"
+assert payroll["process_restarted"]
+assert payroll["timeout_before_send"]
+assert payroll["exact_stored_bytes_retry"]
+assert payroll["tx_hash_first_reconcile"]
+assert payroll["spent_nullifier_conflict"]
+assert payroll["input_count"] == 3 and payroll["output_count"] == 4
+assert payroll["proof_count"] == 1 and payroll["tx_envelope_count"] == 1
+assert payroll["broadcast_attempts"] == 2
+assert payroll["succeeded_items"] == 3
+assert payroll["conflict_manual_review_items"] == 3
+assert payroll["chain_status"] == "Succeeded"
+assert payroll["conflict_chain_status"] == "ManualReview"
+assert len(payroll["stage_pids"]) == 6 and len(set(payroll["stage_pids"].values())) == 6
+node_restart = json.loads((out / "payroll-node-restart.json").read_text())
+assert node_restart["before_pid"] != node_restart["after_pid"]
 
 roundtrip = json.loads((out / "genesis-roundtrip-check.json").read_text())
 before_tree = json.loads((out / "pre-export-tree.json").read_text())
@@ -571,6 +666,8 @@ summary = {
     "post_import_reserve_and_asset_verified": True,
     "wallet_duplicate_or_missing_notes": False,
     "automatic_multi_prover_failover": False,
+    "one_proof_payroll": payroll,
+    "payroll_node_restart_observed": True,
 }
 (out / "session4-localnet-summary.json").write_text(json.dumps(summary, indent=2) + "\n")
 PY
