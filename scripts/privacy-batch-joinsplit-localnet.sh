@@ -135,6 +135,22 @@ node_pid=""
 proverd_pid=""
 payroll_live_test_bin="$work_dir/session3b-payroll-live.test"
 payroll_store="$out/session3b-payroll-reservations.json"
+failover_evidence="$out/session4-prover-failover-evidence.json"
+failover_test_log="$out/session4-prover-failover-test.log"
+
+(
+	cd "$repo_root"
+	CLAIRVEIL_S4_PROVER_FAILOVER_EVIDENCE_OUT="$failover_evidence" \
+		go test ./x/privacy/client/sdk/payroll -run '^TestProverPoolLiveHTTPFailoverPrivacyBoundary$' -count=1 -v
+) | tee "$failover_test_log"
+if ! grep -Fq -- '--- PASS: TestProverPoolLiveHTTPFailoverPrivacyBoundary' "$failover_test_log"; then
+	echo "live HTTP prover failover regression did not execute and pass" >&2
+	exit 1
+fi
+if grep -Eq -- '(--- SKIP:|\[no tests to run\])' "$failover_test_log"; then
+	echo "live HTTP prover failover regression was skipped or did not run" >&2
+	exit 1
+fi
 
 clairveild="${CLAIRVEILD_BIN:-$work_dir/clairveild-batch-localnet}"
 clairveil_setup="${CLAIRVEIL_SETUP_BIN:-$work_dir/clairveil-setup-batch-localnet}"
@@ -583,12 +599,29 @@ wait_tx "$post_restore_tx_hash" "$out/post-restore-deposit-query.json"
 snapshot_public_state "$out/post-continuation"
 run tx privacy list-notes --from alice --keyring-backend test --home "$home" --node "$node" --rescan-wallet --json >"$out/post-continuation-alice-wallet.json"
 
-python3 - "$out" "$post_restore_tx_hash" <<'PY'
+python3 - "$out" "$post_restore_tx_hash" "$failover_evidence" <<'PY'
 import json,sys
 import base64
 from pathlib import Path
 out = Path(sys.argv[1])
 continued_tx_hash = sys.argv[2].lower()
+failover = json.loads(Path(sys.argv[3]).read_text())
+assert failover["schema_version"] == "clairveil.session4.prover-failover-live-evidence.v1"
+default_failover = failover["default_no_failover"]
+assert default_failover["timeout_endpoint_contacts"] == 1
+assert default_failover["healthy_endpoint_contacts"] == 0
+assert default_failover["timeout_body_observed"]
+assert not default_failover["healthy_body_observed"]
+opt_in_failover = failover["explicit_opt_in_failover"]
+assert opt_in_failover["timeout_endpoint_contacts"] == 1
+assert opt_in_failover["healthy_endpoint_contacts"] == 1
+assert opt_in_failover["timeout_body_observed"] and opt_in_failover["healthy_body_observed"]
+assert opt_in_failover["bodies_equal"] and opt_in_failover["completed_from_healthy"]
+failure_classes = failover["failure_classes"]
+assert failure_classes["timeout_distinct"]
+assert failure_classes["malformed_response_distinct"]
+assert failure_classes["validation_failure_distinct"]
+assert failure_classes["each_endpoint_contact_count_one"]
 labels = ["one-input-one-payment", "three-input-four-output-mixed-disclosure", "thirty-one-payments-plus-change", "exact-thirty-two-payments", "explicit-zero-padding"]
 for key_file in ["alice-key.json", "bob-key.json", "auditor-key.json"]:
     assert (out / key_file).stat().st_mode & 0o777 == 0o600
@@ -671,7 +704,10 @@ summary = {
     "post_import_path_verified": True,
     "post_import_reserve_and_asset_verified": True,
     "wallet_duplicate_or_missing_notes": False,
-    "automatic_multi_prover_failover": False,
+    "default_no_failover_observed": default_failover,
+    "explicit_opt_in_failover_observed": opt_in_failover,
+    "prover_failure_classes": failure_classes,
+    "automatic_multi_prover_failover": default_failover["healthy_endpoint_contacts"] > 0,
     "one_proof_payroll": payroll,
     "payroll_node_restart_observed": True,
 }
