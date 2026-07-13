@@ -2,28 +2,72 @@
 
 Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
-이 프로젝트는 아래 문서에 정리된 릴리스 정책을 따릅니다.
-
-- `docs/clairveil-release-versioning-policy-kr.md`
-- `docs/clairveil-release-handoff-pack-kr.md`
+이 프로젝트는 [release versioning policy](docs/clairveil-release-versioning-policy-kr.md)와 [handoff-pack policy](docs/clairveil-release-handoff-pack-kr.md)를 따릅니다.
 
 ## Unreleased
 
-- standalone Clairveil privacy core, reference daemon, prover service, fixture, schema, CI, release handoff 문서를 추가했습니다.
-- Apache-2.0 오픈소스 hygiene 파일을 추가했습니다.
-- release versioning 및 release note 정책을 추가했습니다.
-- release handoff pack 검증 명령을 추가했습니다.
-- release 검증, restore SOP, security reporting, reference app 상태, portable walkthrough path 기준에 맞춰 공개 문서를 업데이트했습니다.
-- circuit, CLI, testing, operations, maintainer instructions, release notes, community templates, project README에 대한 한글 공개 문서를 확장했습니다.
-- Clairveil binary 설치와 기본 로컬 `~/.clairveil` chain home 준비를 위한 `make install`, `make init` helper를 추가했습니다.
-- 빠른 시작과 테스트 문서에서 중복 Make target 순서를 제거하고, manual walkthrough와 `make init` shortcut의 차이를 명확히 했습니다.
-- `examples/audit-disclosure-keys` 아래 dependency-free Node audit disclosure key 예제를 추가했습니다.
-- `MsgWithdraw`에서 legacy output-note field를 제거했습니다. withdraw는 exact-match로 유지되며 client는 dummy output-note 값 없이 proto binding을 다시 생성해야 합니다.
-- wallet/app product planning, UX flow, 보안 결정, API integration을 위한 general client handoff 문서 묶음을 추가했습니다.
-- bounded shielded amount, deposit binding proof, reserve accounting query, ZK artifact contract 갱신을 포함한 privacy accounting hardening update를 추가했습니다.
-- note scan 최적화 계약을 추가했습니다. 여기에는 cursor 기반 `scan_events`, batch `nullifiers`, `view_tag_hexes`를 포함한 transfer payload `v3`, `MsgTransfer.view_tags`가 포함됩니다.
-- scan cursor 저장, empty page 처리, 안전한 view-tag mismatch fallback, proto/schema/fixture 재생성 등 downstream migration 요구사항을 문서화했습니다.
-- Transfer authorization contract를 prepared payload/disclosure plaintext `v5`, prover request/response/proof `v2`로 교체하고 chain ID, absolute expiry, final owner intent, canonical signature/point decoding, disclosure blinding을 추가했습니다. Legacy payload는 다시 생성해야 합니다.
-- Consensus에 고정되는 circuit-set/verifier identity, manifest-authoritative artifact checksum, proof verification gas bound, global nullifier/commitment collision 검증, privacy boundary를 넓히는 multi-prover failover의 명시적 opt-in을 추가했습니다.
-- Session 2 `privacy-note-v1` 기반을 추가했습니다. Domain-separated NoteV1/tree primitive, canonical `privacy-fixed-v1` payload, exact batch owner-effect framing/digest, `AssetRegistryV1`, unified typed scan/path snapshot, role-aware artifact, bounded prover admission, 측정된 16x32 circuit/wire feasibility prototype을 포함합니다. Production batch message/keeper/client integration은 아직 범위 밖입니다.
-- Breaking deployment requirement: active set `privacy-note-v1`과 privacy state version `2`는 legacy chain-state migration을 포함하지 않습니다. 기존 개발 체인은 새 consensus `CircuitSetIdentity`를 포함한 fresh genesis를 사용하거나 reset/reinitialize해야 하며 cached proof job, prepared payload, wallet note/reservation/scan cache, 기존 R1CS/PK/VK/manifest artifact를 폐기해야 합니다. 별도 migration을 설계하지 않은 기존 production chain에는 in-place upgrade하지 마십시오.
+### Added
+
+- Prepared payload/disclosure plaintext `v5`, proof/prover contract `v2`, chain ID, absolute expiry, final owner intent, canonical decoding, disclosure blinding을 포함한 transfer authorization contract를 추가했습니다.
+- Domain-separated NoteV1 primitive, `privacy-fixed-v1`, `AssetRegistryV1`, typed scan/path snapshot, bounded prover admission, consensus-pinned circuit identity를 포함한 `privacy-note-v1`/state-version-2 기반을 추가했습니다.
+- Production `BatchJoinSplit16x32` chain core와 `MsgBatchTransfer`를 추가하고, 이어서 Session 3B Go SDK, `POST /v1/proofs/batch-transfer`, scanner, one-proof payroll, CLI, localnet tutorial reference surface를 추가했습니다.
+- v0.1.0 reference payroll 기반을 durable file/SQLite/PostgreSQL store, live daemon/reconciliation flow, rehearsal evidence, capacity tooling, public-claim eligibility gate로 확장했습니다.
+- English/Korean 시작 가이드, 아키텍처, 문서 index, 계획 상태 문서를 추가하고 누락된 영문 payroll/bulk handoff 문서 세 개를 복원했습니다.
+- Release-pack 문서/link/언어/tag/file 검증을 위한 `make docs-check`와 단일 required-file manifest를 추가했습니다.
+
+### Changed
+
+- 현재 호환성 기준을 `privacy-note-v1`, privacy state version 2, `privacy-fixed-v1`로 갱신했습니다. 기존 three-circuit development chain은 fresh genesis/reset이 필요하고 old artifact, proof job, prepared payload, note/reservation/scan cache를 폐기한 뒤 rescan해야 합니다.
+- Release-pack membership을 `scripts/release-pack-paths.txt`와 `scripts/release-pack-required-files.txt`로 정의하고, superseded bulk phase-1 plan과 중복 working note를 handoff pack에서 제외했습니다.
+- Release packaging에서 공개할 수 없는 full-commit CI snapshot과 공개 가능한 annotated exact-SemVer tag를 구분하고, release tag를 manifest commit 및 paired dated changelog heading에 결속하며, 이미 생성한 default archive를 교체하지 않고 검증하도록 바꿨습니다.
+- Legacy multi-message `transfer-batch`와 one-proof `transfer-batch-16x32`를 문서에서 구분하고 현재 query/prover surface 전체를 기록했습니다.
+
+### Fixed
+
+- Duplicate input/nullifier inflation, global nullifier/commitment collision, disclosure-blinding separation, structured batch-signing secret reuse, non-canonical BN254 alias, atomic rollback regression을 수정했습니다.
+- Prover cancellation/failover와 payroll localnet cleanup 경계를 수정하고 CLI/environment 예제를 실제 flag/export checksum 동작과 맞췄습니다.
+- Release identity 불일치, 불완전한 archive/checksum pair, fence/comment 안의 가짜 changelog heading, CommonMark link edge case, 존재하지 않는 fragment, 누락된 path manifest를 거부하도록 문서·handoff 검증을 강화하고 smoke port override와 rehearsal 결정을 문서 계약에 맞췄습니다.
+
+### Security
+
+- Gate 1/2/3A/3B와 Session 4 검증을 완료했고 unresolved Critical, High, security-relevant Medium은 없습니다. 처분은 production 승인이 아니라 `PUBLICATION_READY_EXPERIMENTAL`입니다.
+- Consensus verifier identity, role-aware artifact loading, bounded proof verification/admission, secret-free validation error, privacy boundary를 넓히는 multi-prover failover의 explicit opt-in을 강제하고 문서화했습니다.
+
+### Known Risk
+
+- Formal trusted setup, 외부 ZK/security audit, signed production artifact distribution, chain-specific migration, production wallet storage, audit-key custody, downstream product validation은 현재 release state 범위 밖입니다.
+- 문서화된 `govulncheck` exception은 downstream production project가 다시 평가해야 합니다. `SECURITY-kr.md`를 참고하세요.
+
+### Handoff Notes
+
+- 통합한 exact tag/commit의 문서를 읽고 `RELEASE-MANIFEST.txt`를 검증해야 합니다. 이전 code/artifact와 `HEAD` 문서를 섞으면 안 됩니다.
+- External JS/TS/web product는 frozen Go reference contract를 port하고 storage, prover, scan, disclosure, batch end-to-end gate를 자체 통과해야 합니다.
+
+## v0.1.0 - 2026-07-06
+
+### Added
+
+- Dependency-free Node audit-disclosure-key 예제를 추가했습니다.
+- Client product, UX, risk-decision, API integration handoff 문서를 추가했습니다.
+- Bounded shielded amount, deposit binding proof, reserve accounting query, 갱신된 ZK artifact contract를 추가했습니다.
+- Cursor 기반 `scan_events`, batch nullifier query, transfer view tag와 schema/fixture contract를 추가했습니다.
+- Scan optimization, sender self-view disclosure, downstream wallet/relayer용 relayed-withdraw handoff contract를 추가했습니다.
+- Benchmark reporting, prover/localnet/user-latency/bulk load runner, public-capacity planning evidence를 추가했습니다.
+- Note-reservation/reference payroll planner SDK, proof/multi-message broadcast worker, bounded prover pool, localnet transfer-batch harness, bulk benchmark, bulk-readiness gate를 추가했습니다.
+
+### Changed
+
+- `MsgWithdraw`에서 legacy output-note field를 제거했습니다. Client는 dummy output-note 값 없이 proto binding을 다시 생성해야 합니다.
+- Scan cursor 저장, empty-page 전진, safe view-tag mismatch fallback, proto/schema/fixture 재생성 요구사항을 문서화했습니다.
+
+### Fixed
+
+- Canonical prover amount/artifact checksum validation, transfer output bound, reservation ownership/rollback, persisted reconciliation error, bulk-readiness failure handling을 보강했습니다.
+
+## v0.0.0 - 2026-05-19
+
+### Added
+
+- 최초 standalone Clairveil privacy core, reference daemon, prover service, fixture, schema, CI, release handoff 문서를 공개했습니다.
+- Apache-2.0 license/notice hygiene, release versioning, release note, handoff-pack verification, restore/security guidance, Korean public documentation을 추가했습니다.
+- 기본 local reference chain을 위한 `make install`, `make init`을 추가하고 manual walkthrough와 initialization shortcut을 구분했습니다.

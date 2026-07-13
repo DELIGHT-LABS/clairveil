@@ -6,9 +6,13 @@ Korean version: [SECURITY-kr.md](SECURITY-kr.md)
 
 ## Supported Versions
 
-Until the first public release tag, security fixes target the `main` branch.
+| Line | Status |
+| --- | --- |
+| `main` | Supported development line; fixes land here first |
+| latest `v0.1.x` tag | Supported for security assessment; backports are case-by-case and announced explicitly |
+| `v0.0.x` and older commits | Unsupported |
 
-After versioned releases begin, this policy will be updated with the supported release lines.
+Clairveil is pre-v1 experimental software. A tag is not a promise of production readiness or indefinite maintenance. Pin an exact tag/commit, read the documentation at that ref, and check release notes for any explicitly supported backport.
 
 ## Reporting a Vulnerability
 
@@ -19,6 +23,8 @@ https://github.com/DELIGHT-LABS/clairveil/security/advisories/new
 ```
 
 If the private advisory form is unavailable, do not open a public issue with exploit details. Contact maintainers through a private channel first and wait for a coordinated disclosure path.
+
+There is no contractual response-time SLA for this experimental project. Maintainers will use the private advisory to coordinate triage, remediation, credit, and disclosure timing; do not publish details before that coordination is complete.
 
 Include as much detail as possible:
 
@@ -57,4 +63,4 @@ make vulncheck
 make release-check
 ```
 
-`make vulncheck` currently includes documented policy exceptions for `GO-2024-2584` and the `pion/dtls` v2 path of `GO-2026-4479` while those upstream dependency paths have no fixed versions for this reference app. Downstream production projects must reassess those exceptions in their own risk register.
+`make vulncheck` currently includes narrow documented policy exceptions for `GO-2024-2584`, the `pion/dtls` v2 path of `GO-2026-4479`, and `GO-2026-5932` (`x/crypto/openpgp`, reachable only through Cosmos SDK local ASCII key armor in this repository) while those upstream dependency paths have no fixed versions for this reference app. Clairveil does not use OpenPGP for application signing or encryption. These are not blanket vulnerability waivers: downstream production projects must reassess reachability and impact in their own risk register and remove each exception when a fixed dependency path exists.

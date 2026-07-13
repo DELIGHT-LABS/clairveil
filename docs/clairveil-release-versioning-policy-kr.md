@@ -9,7 +9,7 @@ Clairveil은 downstream chain이 import/fork할 수 있는 standalone privacy co
 첫 public stable release 전까지는 `v0.x.y`를 사용합니다.
 
 ```text
-v0.MAJOR.MINOR
+v0.MINOR.PATCH
 ```
 
 권장 의미는 아래입니다.
@@ -21,6 +21,8 @@ v0.MAJOR.MINOR
 | `v1.0.0` | downstream production integration contract를 안정화했다고 선언하는 첫 stable release |
 
 `v0` 구간에서는 API/fixture/proto/schema가 바뀔 수 있습니다. 다만 변경이 생기면 release note에서 migration impact를 명시해야 합니다.
+
+Release tag는 annotated tag여야 하고 `v` prefix를 붙인 exact SemVer를 사용합니다. 예: `v0.1.1`. Prerelease는 `v0.2.0-rc.1` 같은 SemVer suffix를 사용합니다. 공개한 tag를 이동하거나 재사용하면 안 됩니다. Tag, `CHANGELOG.md`/`CHANGELOG-kr.md` heading, handoff manifest commit, archive, checksum, GitHub release가 모두 같은 immutable source를 식별해야 합니다.
 
 ## 2. Breaking change 기준
 
@@ -39,12 +41,17 @@ v0.MAJOR.MINOR
 - scan projection version, cursor semantics, empty-page/`has_more` 처리 변경
 - transfer view tag 파생 방식, 길이, event field, payload-hash binding 변경
 
-## 3. Release 전 필수 명령
+## 3. Release 필수 명령
 
-Release candidate는 아래를 통과해야 합니다.
+Release commit과 tag를 만들기 전에 release candidate는 아래를 통과해야 합니다.
 
 ```bash
 make release-check
+```
+
+날짜가 있는 changelog와 release note를 commit한 뒤 그 exact commit에 annotated tag를 만듭니다. 그 다음 tagged commit에서 최종 artifact를 생성하고 검증합니다.
+
+```bash
 make release-pack
 make release-pack-verify
 ```
@@ -57,7 +64,7 @@ make docker-proverd-build
 
 ## 4. Changelog 작성 기준
 
-`CHANGELOG.md`의 `Unreleased` 항목을 release version으로 이동합니다.
+`CHANGELOG.md`와 `CHANGELOG-kr.md`의 대응하는 `Unreleased` 항목을 같은 release version으로 이동합니다. Development snapshot을 포함한 repository의 모든 tag는 두 파일 모두에 날짜가 있는 heading을 가져야 합니다.
 
 권장 섹션은 아래입니다.
 
@@ -90,80 +97,35 @@ make docker-proverd-build
 
 ## 5. Release note template
 
-GitHub release 또는 downstream handoff message는 `docs/clairveil-release-note-template-kr.md`를 사용합니다. 축약해서 직접 작성해야 한다면 아래 구조를 유지합니다.
-
-```markdown
-# Clairveil v0.x.y 릴리즈 노트
-
-## 1. 요약
-
-## 2. 검증
-
-- [ ] `make release-check`
-- [ ] `make release-pack`
-- [ ] `make release-pack-verify`
-- [ ] prover image를 함께 배포한다면 `make docker-proverd-build`
-- [ ] 성능 수치를 공개한다면 `make privacy-proverd-load-bench`, `make privacy-localnet-tps-bench`, `make privacy-user-latency-bench`, `make privacy-public-capacity-report` 결과의 `claim_eligible=true`와 evidence hash를 확인
-
-## 3. Handoff 산출물
-
-- handoff tarball:
-- handoff sha256:
-- commit:
-
-## 4. 호환성 영향
-
-- Proto:
-- Fixture/schema:
-- CLI:
-- Prover HTTP:
-- Scan/query contract:
-- Transfer/view tags:
-- ZK artifacts:
-- Circuit set/public witness:
-- Batch gas/scan state:
-- Session 3B surface status:
-
-## 5. 알려진 위험 / 허용 예외
-
-- `GO-2024-2584`: Cosmos SDK no-fixed-version advisory. downstream risk register에서 다시 평가해야 합니다.
-- `GO-2026-4479`: Cosmos SDK/CometBFT server stack을 통해 reachable한 pion/dtls v2 no-fixed-version advisory. downstream risk register에서 다시 평가해야 합니다.
-- `GO-2026-5932`: Cosmos SDK의 local ASCII key armor에서만 좁게 reachable한 no-fixed-version `x/crypto/openpgp` advisory이며 Clairveil은 OpenPGP signing/encryption을 사용하지 않습니다. downstream에서 재평가하고 fixed dependency path가 생기면 예외를 제거해야 합니다.
-
-## 6. Downstream Action Required
-
-- Core chain:
-- JS/TS SDK:
-- Web wallet:
-- Prover operations:
-- Security/operations:
-```
+[clairveil-release-note-template-kr.md](clairveil-release-note-template-kr.md)와 [English pair](clairveil-release-note-template.md)만 authoritative release-note template입니다. 이 policy에 두 번째 template를 복사하지 말고 해당 파일을 갱신합니다. 축약된 public note는 비어 있는 detail을 생략할 수 있지만 verification, immutable artifact identity, compatibility impact, known risk, downstream action은 유지해야 합니다.
 
 ## 6. Handoff pack naming
 
-`make release-pack`는 기본적으로 아래 이름을 생성합니다.
+공개 가능한 최종 release pack은 clean source commit에 annotated exact-SemVer tag가 있어야 하며 아래 이름을 생성합니다.
 
 ```text
-dist/clairveil-handoff-<git-describe>.tar.gz
-dist/clairveil-handoff-<git-describe>.tar.gz.sha256
+dist/clairveil-handoff-<tag>.tar.gz
+dist/clairveil-handoff-<tag>.tar.gz.sha256
 ```
 
-Release tag가 이미 있으면 `<git-describe>`는 tag 기반입니다. release candidate나 수동 override가 필요하면 아래처럼 실행합니다.
+`RELEASE_VERSION`은 packed source commit을 가리키는 기존 annotated exact-SemVer tag만 선택할 수 있습니다. Tag가 없거나 다른 commit을 가리키는 version을 임의로 지정할 수 없습니다.
 
 ```bash
-RELEASE_VERSION=v0.1.0-rc1 make release-pack
+RELEASE_VERSION=v0.2.0-rc.1 make release-pack
 ```
+
+Untagged clean commit에서는 packaging CI와 내부 완비성 검증을 위해 canonical `snapshot-<40-character-commit-sha>` version을 사용합니다. Snapshot pack은 commit-bound이지만 release artifact가 아니며 release로 공개하면 안 됩니다.
 
 ## 7. Tag 생성 권장 순서
 
-1. `CHANGELOG.md`를 release version으로 업데이트합니다.
-2. `make release-check`를 통과시킵니다.
-3. 필요한 경우 `make docker-proverd-build`를 통과시킵니다.
-4. release commit을 만듭니다.
-5. annotated tag를 생성합니다.
-6. tag 기준으로 `make release-pack`을 다시 실행합니다.
-7. `make release-pack-verify`로 tag 기준 handoff pack을 검증합니다.
-8. release note에 tarball checksum과 known risk를 포함합니다.
+1. 두 changelog를 같은 dated release version으로 이동하고 paired release-note template를 완성합니다.
+2. `make docs-check`, `make release-check`, image 포함 시 `make docker-proverd-build`를 통과합니다.
+3. Release commit을 만들고 worktree가 clean인지 확인합니다.
+4. 그 commit에 annotated exact SemVer tag 하나를 만듭니다.
+5. Tag에서 `make release-pack`을 실행하고 그 same archive를 `make release-pack-verify`로 검증합니다. 기본 verifier는 default archive/checksum pair가 이미 있으면 그대로 사용하고 pair가 없을 때만 생성합니다.
+6. Archive manifest commit이 tag target과 같은지 확인하고 external SHA-256을 release note에 기록합니다.
+7. 검증 후에만 release commit/tag를 push하고 GitHub release를 만든 뒤 검증한 tarball/checksum을 첨부합니다.
+8. 지원 release line이 바뀌면 supported-version/security 정보를 갱신합니다. 공개한 tag를 이동하지 말고 수정은 새 patch release로 냅니다.
 
 예시:
 

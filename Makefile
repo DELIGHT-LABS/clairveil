@@ -125,8 +125,12 @@ examples:
 vulncheck:
 	./scripts/govulncheck-with-policy.sh
 
+.PHONY: docs-check
+docs-check:
+	./scripts/docs-check.sh
+
 .PHONY: check
-check: test build examples
+check: docs-check test build examples
 
 .PHONY: ci
 ci: check
@@ -137,6 +141,7 @@ release-check:
 	$(MAKE) vulncheck
 	$(MAKE) localnet-smoke
 	$(MAKE) privacy-e2e-smoke
+	$(MAKE) privacy-batch-joinsplit-localnet
 	RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 $(MAKE) privacy-bulk-readiness-check
 
 .PHONY: release-pack

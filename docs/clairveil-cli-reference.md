@@ -87,7 +87,6 @@ clairveild tx privacy deposit 10uclair \
   --from alice \
   --keyring-backend test \
   --chain-id clairveil-local-1 \
-  --expires-in 1800 \
   --gas 2500000 \
   --gas-prices 8500000000uclair \
   --yes \
@@ -362,29 +361,35 @@ Current CLI handoff versions are transfer payload `v5`, transfer proof/prover co
 
 ## 9. Query
 
-Current direct CLI query wrapper:
+Current direct CLI query wrappers:
 
 ```bash
 clairveild query privacy check-nullifier <hex_nullifier> \
+  --node tcp://localhost:26657
+
+clairveild query privacy reserve uclair \
   --node tcp://localhost:26657
 ```
 
 Other queries are available through gRPC/HTTP gateway and generated clients.
 
-| Query | HTTP path |
-| --- | --- |
-| tree state | `/clairveil/privacy/v1/tree_state` |
-| nullifier | `/clairveil/privacy/v1/nullifier/{nullifier}` |
-| batch nullifiers (GET) | `/clairveil/privacy/v1/nullifiers` |
-| batch nullifiers (POST) | `/clairveil/privacy/v1/nullifiers` |
-| commitment info | `/clairveil/privacy/v1/commitment/{commitment_hex}` |
-| events | `/clairveil/privacy/v1/events` |
-| scan events | `/clairveil/privacy/v1/scan_events` |
-| Merkle path | `/clairveil/privacy/v1/merkle_path/{commitment_hex}` |
-| audit config | `/clairveil/privacy/v1/audit_config` |
-| disclosure config | `/clairveil/privacy/v1/disclosure_config` |
-| circuit config | `/clairveil/privacy/v1/circuit_config` |
-| reserve | `/clairveil/privacy/v1/reserve/{denom}` |
+| Query | Method | HTTP path |
+| --- | --- | --- |
+| tree state | GET | `/clairveil/privacy/v1/tree_state` |
+| nullifier | GET | `/clairveil/privacy/v1/nullifier/{nullifier}` |
+| batch nullifiers | GET, POST | `/clairveil/privacy/v1/nullifiers` |
+| commitment info | GET | `/clairveil/privacy/v1/commitment/{commitment_hex}` |
+| events | GET | `/clairveil/privacy/v1/events` |
+| scan events | GET | `/clairveil/privacy/v1/scan_events` |
+| Merkle path | GET | `/clairveil/privacy/v1/merkle_path/{commitment_hex}` |
+| audit config | GET | `/clairveil/privacy/v1/audit_config` |
+| disclosure config | GET | `/clairveil/privacy/v1/disclosure_config` |
+| circuit config | GET | `/clairveil/privacy/v1/circuit_config` |
+| reserve | GET | `/clairveil/privacy/v1/reserve/{denom=**}` |
+| asset by denom | GET | `/clairveil/privacy/v1/assets/by_denom/{canonical_denom=**}` |
+| asset by ID | GET | `/clairveil/privacy/v1/assets/by_id/{asset_id_hex}` |
+| typed privacy scan | POST | `/clairveil/privacy/v1/privacy_scan` |
+| commitment paths at root | POST | `/clairveil/privacy/v1/commitment_paths_at_root` |
 
 ## 10. Companion Binaries
 
@@ -396,6 +401,16 @@ Generates development ZK artifacts for active set `privacy-note-v1` and manifest
 clairveil-setup --out artifacts/privacy
 clairveil-setup --out artifacts/privacy --overwrite
 ```
+
+### clairveil-verify (legacy only)
+
+This binary exists only to inspect legacy ciphertext produced with the old SHA-256-of-address seed, raw Base64 ciphertext, and JSON `types.Note` format:
+
+```bash
+clairveil-verify -enc '<BASE64_LEGACY_CIPHERTEXT>' -secret '<LEGACY_ADDRESS_OR_SEED>'
+```
+
+It is incompatible with the current keyring-signature root seed and `privacy-fixed-v1` typed envelope. It also prints a derived scalar prefix and the decrypted plaintext, so never use it with production secrets or data. Validate current notes through `clairveild tx privacy list-notes`, the typed `privacy_scan` flow, and the conformance fixtures instead.
 
 ### clairveil-proverd
 
@@ -485,7 +500,7 @@ Run the large-scale payroll rehearsal simulation with:
 make reference-payroll-rehearsal
 ```
 
-The live localnet walkthrough is [clairveil-reference-payroll-live-localnet-tutorial.md](clairveil-reference-payroll-live-localnet-tutorial.md). The rehearsal walkthrough is currently documented in Korean at [clairveil-reference-payroll-rehearsal-kr.md](clairveil-reference-payroll-rehearsal-kr.md).
+The live localnet walkthrough is [clairveil-reference-payroll-live-localnet-tutorial.md](clairveil-reference-payroll-live-localnet-tutorial.md). The rehearsal walkthrough is [clairveil-reference-payroll-rehearsal.md](clairveil-reference-payroll-rehearsal.md).
 
 ## 11. Session 2 Foundation Compatibility
 

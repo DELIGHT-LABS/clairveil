@@ -12,9 +12,52 @@ require_clean_worktree() {
 	fi
 }
 
+validate_pack_version() {
+	local version="$1"
+	local source_commit="$2"
+	if python3 - "$version" <<'PY'
+import re
+import sys
+
+identifier = r"(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
+pattern = re.compile(
+    r"v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
+    rf"(?:-{identifier}(?:\.{identifier})*)?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+)
+raise SystemExit(0 if pattern.fullmatch(sys.argv[1]) else 1)
+PY
+	then
+		local tag_ref="refs/tags/$version"
+		local tag_type
+		tag_type="$(git -C "$repo_root" cat-file -t "$tag_ref" 2>/dev/null || true)"
+		[[ "$tag_type" == "tag" ]] || {
+			echo "release version must name an annotated Git tag: $version" >&2
+			exit 1
+		}
+		local tag_target_type
+		tag_target_type="$(git -C "$repo_root" cat-file -p "$tag_ref" 2>/dev/null | sed -n 's/^type //p' | head -1)"
+		[[ "$tag_target_type" == "commit" ]] || {
+			echo "release tag must point directly to a commit: $version" >&2
+			exit 1
+		}
+		local tag_commit
+		tag_commit="$(git -C "$repo_root" rev-parse --verify "${tag_ref}^{commit}" 2>/dev/null || true)"
+		[[ "$tag_commit" == "$source_commit" ]] || {
+			echo "release tag must point to the packed source commit: $version" >&2
+			exit 1
+		}
+		return
+	fi
+	[[ "$version" == "snapshot-$source_commit" ]] || {
+		echo "untagged pack version must be snapshot-<full-commit-sha>: $version" >&2
+		exit 1
+	}
+}
+
 validate_release_path() {
 	local path="$1"
-	if [[ -z "$path" || "$path" == /* || "$path" == */ || "$path" == *$'\n'* ]]; then
+	if [[ -z "$path" || "$path" == /* || "$path" == */ || "$path" == *\\* || "$path" == *//* || "$path" =~ [[:cntrl:]] ]]; then
 		echo "invalid release pack path: $path" >&2
 		exit 1
 	fi
@@ -28,12 +71,8 @@ validate_release_path() {
 
 require_clean_worktree
 source_commit="$(git -C "$repo_root" rev-parse HEAD)"
-commit="$(git -C "$repo_root" rev-parse --short=12 "$source_commit")"
-version="${RELEASE_VERSION:-"$(git -C "$repo_root" describe --tags --always "$source_commit" 2>/dev/null || printf '%s' "$commit")"}"
-if [[ ! "$version" =~ ^[0-9A-Za-z._+-]+$ ]]; then
-	echo "release version contains unsupported characters" >&2
-	exit 1
-fi
+version="${RELEASE_VERSION:-"$(git -C "$repo_root" describe --tags --exact-match "$source_commit" 2>/dev/null || printf 'snapshot-%s' "$source_commit")"}"
+validate_pack_version "$version" "$source_commit"
 pack_name="clairveil-handoff-${version}"
 work_dir="$(mktemp -d)"
 source_root="$work_dir/source"

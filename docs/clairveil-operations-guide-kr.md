@@ -29,7 +29,9 @@ Production-like node는 최소 아래를 만족해야 합니다.
 Reference local start 예:
 
 ```bash
+set -a
 source artifacts/privacy/privacy_zk_checksums.env
+set +a
 export CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict
 
 clairveild start --minimum-gas-prices 0uclair
@@ -179,10 +181,15 @@ Production wallet은 아래를 결정해야 합니다.
 
 ## 9. Release 운영
 
-Release 전 maintainer baseline:
+Release commit과 tag를 만들기 전:
 
 ```bash
 make release-check
+```
+
+그 commit에 annotated exact-SemVer tag를 만든 뒤:
+
+```bash
 make release-pack
 make release-pack-verify
 ```

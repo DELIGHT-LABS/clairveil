@@ -282,7 +282,9 @@ artifact checksum env 파일을 만들려면 아래 명령을 사용합니다.
 go run ./cmd/clairveil-setup \
   --out /path/to/zk_artifacts
 
+set -a
 source /path/to/zk_artifacts/privacy_zk_checksums.env
+set +a
 ```
 
 Required `privacy-note-v1` 순서는 `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`입니다. Validator는 exact consensus identity 비교 뒤 네 required VK만 load하고 prover는 선택한 R1CS/PK pair를 lazy load합니다. 기록된 development batch artifact는 R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`입니다. 이는 development identity이며 production distribution/formal setup artifact가 아닙니다.
@@ -315,17 +317,23 @@ tx privacy list-notes
 tx privacy withdraw
 tx privacy prepare-withdraw
 tx privacy relay-withdraw
+tx privacy transfer-batch
+tx privacy transfer-batch-16x32
+tx privacy prepare-batch-transfer
+tx privacy prove-batch-transfer
+tx privacy broadcast-batch-transfer
 ```
 
-Session 3A에는 user-facing `MsgBatchTransfer` CLI가 없습니다. 기존 `transfer-batch`/payroll command는 별도 multi-message workflow이므로 one-proof batch message로 문서화하거나 wiring하면 안 됩니다. `clairveil-proverd`에도 batch HTTP route가 아직 없습니다.
+현재 Session 3B surface에는 one-proof `MsgBatchTransfer` command인 `transfer-batch-16x32`, `prepare-batch-transfer`, `prove-batch-transfer`, `broadcast-batch-transfer`와 companion prover route `POST /v1/proofs/batch-transfer`가 있습니다. 이전 `transfer-batch` command는 의도적으로 다른 기능이며, 하나의 Cosmos transaction envelope에 여러 독립 `MsgTransfer`를 넣습니다. 이 legacy command를 one-proof batch protocol로 문서화하거나 wiring하면 안 됩니다.
 
 현재 query CLI로 직접 노출된 command는 아래입니다.
 
 ```text
 query privacy check-nullifier
+query privacy reserve uclair
 ```
 
-`tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, `nullifiers`는 gRPC/HTTP gateway query로 제공됩니다. Downstream chain에서 운영자 CLI가 필요하면 이 query들을 별도 CLI wrapper로 추가하면 됩니다.
+나머지 `tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, batch `nullifiers` query는 gRPC/HTTP gateway로 제공됩니다. Downstream chain에서 운영자 CLI가 필요하면 이 query들을 별도 CLI wrapper로 추가하면 됩니다.
 
 ## 9. Downstream 테스트 순서
 
@@ -365,7 +373,7 @@ Downstream 통합은 아래가 모두 통과하면 1차 완료로 봅니다.
 - local single-node에서 deposit, transfer, disclosure decode, withdraw가 모두 통과합니다.
 - `tree_state`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, `nullifiers` query가 정상 응답합니다.
 - Four-circuit identity, batch development artifact readiness, direct core integration, deterministic gas, atomic rollback, typed scan/minimal-event test가 통과합니다.
-- Integration record에 public batch SDK/prover/wallet/payroll/CLI surface와 formal production artifact가 Session 3A에 포함되지 않음을 명시합니다.
+- Integration record는 구현된 Session 3B Go SDK/prover/wallet/payroll/CLI reference surface와 downstream product가 맡을 작업을 구분하고, formal production artifact는 제공되지 않음을 명시합니다.
 - audit master private key custody policy가 production 운영 문서에 반영되어 있습니다.
 - wallet storage encryption과 remote prover privacy policy가 JS/TS SDK 또는 web wallet 설계 문서에 반영되어 있습니다.
 - downstream 전용 EVM/policy/precompile 연동은 별도 테스트로 분리되어 있습니다.

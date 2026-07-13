@@ -251,7 +251,9 @@ Complete development artifact set에서 JoinSplit만 회전할 때는 다음을 
 runtime에서는 아래 환경변수를 사용합니다.
 
 ```bash
+set -a
 source artifacts/privacy/privacy_zk_checksums.env
+set +a
 export CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict
 ```
 
@@ -293,7 +295,7 @@ GET /clairveil/privacy/v1/reserve/{denom}
 4. JS/web wallet conformance fixture를 다시 생성하고 검증합니다.
 5. Shared native/prepared/structured-signer invariant vector와 2x2 old-circuit-control 대비 hardened-circuit feasibility test를 실행합니다.
 6. `docs/clairveil-circuits-kr.md`, `docs/clairveil-js-sdk-handoff-kr.md`, release note impact를 갱신합니다.
-7. `make ci`, `make privacy-e2e-smoke`, `make release-pack-verify`를 통과시킵니다.
+7. `make ci`, `make privacy-e2e-smoke`를 통과시킵니다. Packaging 완비성은 clean committed snapshot에서 `make release-pack-verify`로 확인하고, release 때는 최종 annotated exact-SemVer tagged commit에서 다시 실행합니다.
 
 ## 9. 주의할 한계
 

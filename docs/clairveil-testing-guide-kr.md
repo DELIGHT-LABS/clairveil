@@ -11,7 +11,7 @@ make ci
 make vulncheck
 ```
 
-`make ci`와 `make vulncheck`는 실행 중인 `clairveild` 노드를 필요로 하지 않습니다. `make ci`는 Go test, Go binary build, JS 예제 검증만 수행합니다.
+`make ci`와 `make vulncheck`는 실행 중인 `clairveild` 노드를 필요로 하지 않습니다. `make ci`는 문서 검사, Go test, Go binary build, JS 예제 검증을 수행합니다.
 
 release 후보나 큰 변경은 아래까지 실행합니다.
 
@@ -26,12 +26,13 @@ make release-pack-verify
 | 명령 | 의미 |
 | --- | --- |
 | `make test` | `go test ./...` 실행 |
-| `make build` | `clairveild`, `clairveil-setup`, `clairveil-verify`, `clairveil-proverd`, `clairveil-payroll`, `clairveil-payrolld`와 benchmark/load tool(`clairveil-benchreport`, `clairveil-proverload`, `clairveil-localnetload`, `clairveil-userlatency`, `clairveil-bulktransferbench`) build |
-| `make install` | `make build` 후 Clairveil binary를 `GOBIN` 또는 `GOPATH/bin`으로 복사 |
+| `make build` | `clairveild`, `clairveil-setup`, legacy-only `clairveil-verify`, `clairveil-proverd`, `clairveil-payroll`, `clairveil-payrolld`와 benchmark/load tool(`clairveil-benchreport`, `clairveil-proverload`, `clairveil-localnetload`, `clairveil-userlatency`, `clairveil-bulktransferbench`) build |
+| `make install` | `make build` 후 나열된 project binary 여섯 개(`clairveild`, setup, legacy-only verify, proverd, payroll, payrolld)를 `GOBIN` 또는 `GOPATH/bin`에 설치. Benchmark/load tool은 build-only |
 | `make init` | `make install` 후 기본 local chain home을 초기화해 `clairveild start` 준비 |
 | `make proto` | privacy protobuf/gateway Go file 재생성 |
+| `make docs-check` | Markdown link, English/Korean knowledge pair, plan index, tag/changelog coverage, 문서 위치, release manifest 검증 |
 | `make examples` | JS audit key, fixture validator, prover HTTP client, browser DApp 예제 실행 |
-| `make ci` | `test`, `build`, `examples` 묶음 |
+| `make ci` | `docs-check`, `test`, `build`, `examples` 묶음 |
 | `make vulncheck` | govulncheck policy gate 실행 |
 | `make localnet-smoke` | reference daemon이 genesis부터 start 가능한지 짧게 검증 |
 | `make privacy-e2e-smoke` | deposit, transfer, disclosure, withdraw 전체 flow 검증 |
@@ -39,7 +40,7 @@ make release-pack-verify
 | `make reference-payroll-live-localnet` | 실제 localnet에서 payroll input, reservation, transfer-batch, recipient scan, settle, final report 흐름 검증 |
 | `make reference-payroll-rehearsal` | reference payroll capacity simulation과 선택적 live localnet smoke 검증 |
 | `make dapp-local` | 수동 테스트용 local Clairveil node, prover, browser DApp stack 실행 |
-| `make release-check` | `ci`, `vulncheck`, `localnet-smoke`, `privacy-e2e-smoke`, localnet transfer-batch smoke를 포함한 bulk readiness 묶음 |
+| `make release-check` | `ci`, `vulncheck`, `localnet-smoke`, `privacy-e2e-smoke`, 정적 BatchJoinSplit16x32 gate, localnet transfer-batch smoke를 포함한 bulk readiness 묶음 |
 | `make release-pack` | downstream handoff archive와 sha256 생성 |
 | `make release-pack-verify` | handoff archive checksum, 내부 checksum, 필수 파일, manifest commit 검증 |
 | `make docker-proverd-build` | prover Dockerfile/compose build 검증 |
@@ -378,6 +379,8 @@ PAYROLL_SEED_NOTES=1 PAYROLL_ITEM_COUNT=1000 PAYROLL_CHUNK_SIZE=20 GAS_PRICES=0u
 
 ## 8. Release pack 검증
 
+공개 가능한 release는 clean commit에 annotated exact-SemVer tag를 만든 뒤 아래 명령을 실행합니다. Untagged clean commit에서 같은 명령을 실행하면 packaging CI 전용 canonical commit-bound snapshot을 생성·검증합니다.
+
 ```bash
 make release-pack
 make release-pack-verify
@@ -389,6 +392,7 @@ make release-pack-verify
 - archive 내부 `SHA256SUMS.txt` 검증
 - 필수 handoff 파일 존재
 - 기본 archive의 manifest commit이 현재 `HEAD`와 일치
+- release version은 해당 commit을 가리키는 annotated exact-SemVer tag이고, untagged snapshot은 exact full commit을 포함하며 공개할 수 없음
 
 ## 9. Docker prover 검증
 
@@ -409,8 +413,10 @@ Docker daemon이 필요합니다. 이 검증은 release-critical하지만 일반
 문서만 바꿨더라도 아래는 가볍게 확인합니다.
 
 ```bash
+make docs-check
 git diff --check
-make release-pack-verify
 ```
+
+`make release-pack-verify`는 clean committed tree에서 실행하거나 explicit external archive를 대상으로 실행합니다. 기본 경로는 dirty worktree를 거부하고 기존 default archive/checksum pair를 바꾸지 않은 채 재사용하며, 둘 중 하나라도 없을 때만 pair를 생성합니다. 최종 annotated exact-SemVer tagged commit에서 검증한 archive만 release artifact입니다.
 
 README, release handoff, 테스트 명령, 튜토리얼 명령을 바꿨다면 `make ci` 또는 관련 smoke test까지 실행하는 편이 안전합니다.

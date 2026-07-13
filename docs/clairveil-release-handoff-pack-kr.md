@@ -13,7 +13,8 @@ Clairveil repo는 reusable privacy core와 reference host를 제공합니다. �
 | SDK fixtures | `x/privacy/client/sdk/conformance/testdata` | JS SDK team, web wallet team | wallet/prover/query contract conformance |
 | JSON Schema | `docs/schemas/clairveil-js-wallet-contract.schema.json` | JS SDK team, web wallet team | machine-readable fixture shape validation |
 | Prover service | `cmd/clairveil-proverd`, `x/privacy/client/sdk/proverservice`, `x/privacy/client/sdk/provertransport` | Prover operations, JS SDK team | local/remote companion prover contract |
-| ZK artifact tooling | `cmd/clairveil-setup`, `cmd/clairveil-verify`, `x/privacy/zk` | Core chain team, prover operations | artifact generation, checksum, preflight |
+| ZK artifact tooling | `cmd/clairveil-setup`, `x/privacy/zk` | Core chain team, prover operations | artifact generation, checksum, preflight |
+| Legacy note debug helper | `cmd/clairveil-verify` | Maintainer 전용 | legacy SHA-256/address seed, Base64, raw JSON 호환성 debug 전용이며 현행 protocol contract나 release acceptance 표면이 아님 |
 | Walkthrough | `docs/clairveil-local-privacy-walkthrough-kr.md` | Integrators | local end-to-end manual verification |
 | Circuit guide | `docs/clairveil-circuits-kr.md` | Core chain team, prover operations, security reviewers | Deposit/Spend/JoinSplit/BatchJoinSplit16x32 회로와 artifact 영향 설명 |
 | NoteV1/batch normative contract | `docs/clairveil-batch-joinsplit-16x32.md`, `docs/clairveil-batch-joinsplit-16x32-kr.md` | Core chain, SDK, prover, security teams | Session 3A chain core가 구현한 frozen NoteV1/fixed encoding/vector/public-witness/state contract |
@@ -41,13 +42,13 @@ Clairveil repo는 reusable privacy core와 reference host를 제공합니다. �
 
 ## 2. 릴리즈 전 repo maintainer 검증
 
-릴리즈 tag를 만들기 전 maintainer는 아래 명령을 실행합니다.
+Release commit과 tag를 만들기 전 maintainer는 아래 명령을 실행합니다.
 
 ```bash
 make release-check
-make release-pack
-make release-pack-verify
 ```
+
+날짜가 있는 paired changelog와 release note를 commit한 뒤 그 commit에 annotated exact-SemVer tag를 만듭니다. 최종 artifact를 생성·검증하는 `make release-pack`, `make release-pack-verify`는 그 tagged commit에서만 실행합니다.
 
 `make release-check`는 아래 순서로 실행됩니다.
 
@@ -56,6 +57,7 @@ make ci
 make vulncheck
 make localnet-smoke
 make privacy-e2e-smoke
+make privacy-batch-joinsplit-localnet
 RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check
 ```
 
@@ -63,10 +65,11 @@ RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check
 
 | 단계 | 의미 |
 | --- | --- |
-| `make ci` | Go test, Go binary build, JS/TS examples를 검증합니다. |
+| `make ci` | 문서, Go test, Go binary build, JS/TS example을 검증합니다. |
 | `make vulncheck` | govulncheck policy gate를 실행합니다. 새 actionable vulnerability가 있으면 실패합니다. |
 | `make localnet-smoke` | reference daemon이 genesis부터 init/start 가능한지 확인합니다. |
 | `make privacy-e2e-smoke` | deposit, transfer, public disclosure, recipient disclosure, sender self-view disclosure, audit disclosure, direct withdraw, relayed withdraw를 로컬 노드에서 검증합니다. |
+| `make privacy-batch-joinsplit-localnet` | 기본 `RUN_LOCALNET=0` Session 3B fixture/conformance gate를 실행합니다. Resource-heavy live node/prover mode는 별도 explicit rehearsal로 남습니다. |
 | `RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check` | bulk transfer 핵심 unit, reservation invariant, synthetic capacity estimate, multi-message transfer localnet 경로를 검증합니다. |
 
 `make release-check`는 pull request마다 자동으로 돌리기에는 무겁습니다. PR 기본 검증은 `.github/workflows/test.yml`의 `make ci`와 `.github/workflows/security.yml`의 `make vulncheck`가 담당하고, release 후보 검증은 사람이 수동으로 `make release-check`를 실행합니다.
@@ -79,9 +82,9 @@ make docker-proverd-build
 
 이 명령은 compose config, Dockerfile build, image inspect를 확인합니다. Docker daemon이 필요한 검증이므로 기본 `release-check`에는 포함하지 않습니다.
 
-`make release-pack`은 `dist/clairveil-handoff-<version>.tar.gz`와 `.sha256` 파일을 생성합니다. 이 pack은 전체 소스 배포본이 아니라 downstream handoff 계약 묶음입니다. 포함 대상은 license/notice, 주요 handoff/security/operation 문서, circuit/CLI/testing/maintainer 문서, Merkle restore SOP, proto, JSON Schema, conformance fixture, client/JS 예제, scan optimization 문서, bulk transfer handoff/design/plan 문서, reference payroll product 문서/예제, prover Docker sample, release pack scripts, `RELEASE-MANIFEST.txt`, `SHA256SUMS.txt`입니다. Bilingual batch contract와 independent fixture는 계속 normative입니다. Session 3A에서는 normal tx/query/genesis proto, 네 번째 circuit descriptor, gas/scan/genesis contract, direct core test도 handoff 범위입니다. `batch_feasibility.proto`는 measurement-only로 남습니다. Readiness 명령은 handoff 전에 source checkout에서 실행하고 pack은 large R1CS/PK/VK binary가 아니라 contract artifact와 검증 기대값을 기록합니다.
+Final release의 `make release-pack`은 해당 commit을 가리키는 annotated exact-SemVer tag와 clean worktree를 요구하며 `dist/clairveil-handoff-<tag>.tar.gz`와 `.sha256` 파일을 생성합니다. Untagged clean commit에서는 packaging CI와 내부 완비성 검증 전용으로 commit-bound `snapshot-<40-character-commit-sha>` pack을 만들며, 이 snapshot을 release로 공개하면 안 됩니다. 이 pack은 전체 소스 배포본이 아니라 downstream handoff 계약 묶음입니다. Selected path와 exact required file은 `scripts/release-pack-paths.txt`, `scripts/release-pack-required-files.txt`가 정의하며 prose 목록은 membership authority가 아닙니다. Pack에는 license/notice, 현재 문서/계획 index, 주요 handoff/security/operations/circuit/CLI/testing/maintainer 지식, proto, JSON Schema, conformance fixture, non-DApp client example, reference payroll surface, prover Docker sample, release script, `RELEASE-MANIFEST.txt`, `SHA256SUMS.txt`가 들어갑니다. Superseded plan과 ignored `tmpdocs/` archive는 제외합니다. Bilingual batch contract와 independent fixture는 계속 normative입니다. Session 3A에서는 normal tx/query/genesis proto, 네 번째 circuit descriptor, gas/scan/genesis contract, direct core test도 handoff 범위입니다. `batch_feasibility.proto`는 measurement-only로 남습니다. Readiness 명령은 handoff 전에 source checkout에서 실행하고 pack은 large R1CS/PK/VK binary가 아니라 contract artifact와 검증 기대값을 기록합니다.
 
-`make release-pack-verify`는 handoff pack의 외부 `.sha256`, canonical complete 내부 `SHA256SUMS.txt`, 필수 handoff 파일 125개, exact selected Git file set, canonical manifest, safe canonical tar member, generated file 외 모든 Git blob, raw/extracted Git-derived exact `0644`/`0755` file mode, exact `0755` directory mode를 검증합니다. Generator는 caller umask와 무관하게 이 mode를 canonicalize합니다. `RELEASE_PACK_ARCHIVE`를 지정하지 않은 기본 실행에서는 stale local archive가 누락 파일을 가리지 않도록 검증 전에 기본 pack을 다시 생성합니다. 외부 archive를 검증할 때는 `RELEASE_PACK_ARCHIVE`, `RELEASE_PACK_CHECKSUM`, out-of-band lowercase 40-character SHA인 `RELEASE_PACK_EXPECTED_COMMIT`을 함께 지정하며 exact commit은 local clone에 있어야 합니다. Explicit verify는 지정한 두 input을 재생성하거나 교체하지 않으며 archive 또는 checksum이 없으면 즉시 실패합니다. 이 검증은 “tarball이 만들어졌다”가 아니라 “넘겨도 되는 완전한 계약 묶음인지”를 확인하는 단계입니다.
+`make release-pack-verify`는 SemVer manifest version이면 annotated tag의 direct target이 manifest commit이고 두 changelog에 동일한 유효 날짜의 heading이 정확히 하나씩 있는지, untagged CI snapshot이면 version에 exact full commit이 들어 있는지 검증합니다. 이어서 handoff pack의 외부 `.sha256`, canonical complete 내부 `SHA256SUMS.txt`, required-file manifest의 모든 file, exact selected Git file set, canonical manifest, safe canonical tar member, generated file 외 모든 Git blob, raw/extracted Git-derived exact `0644`/`0755` file mode, exact `0755` directory mode를 검증합니다. Generator는 caller umask와 무관하게 이 mode를 canonicalize합니다. `RELEASE_PACK_ARCHIVE`를 지정하지 않으면 clean worktree를 요구하고 기존 default archive/checksum pair를 바꾸지 않고 검증하며 둘 중 하나라도 없을 때만 pair를 생성합니다. 외부 release archive를 검증할 때는 `RELEASE_PACK_ARCHIVE`, `RELEASE_PACK_CHECKSUM`, out-of-band lowercase 40-character SHA인 `RELEASE_PACK_EXPECTED_COMMIT`을 함께 지정하며 exact commit과 release tag가 local clone에 있어야 합니다. Explicit verify는 지정한 두 input을 재생성하거나 교체하지 않으며 archive 또는 checksum이 없으면 즉시 실패합니다. 이 검증은 “tarball이 만들어졌다”가 아니라 “넘겨도 되는 완전한 계약 묶음인지”를 확인하는 단계입니다.
 
 ```bash
 RELEASE_PACK_ARCHIVE=/path/to/clairveil-handoff.tar.gz \
@@ -90,28 +93,30 @@ RELEASE_PACK_EXPECTED_COMMIT=<40-character-commit-sha> \
 ./scripts/release-pack-verify.sh
 ```
 
-## 3. 릴리즈 전 maintainer 체크리스트
+## 3. 릴리즈 maintainer 체크리스트
 
-1. `git status --short`가 비어 있는지 확인합니다.
+1. 예정 exact-SemVer version에 맞춰 두 changelog와 authoritative paired release note를 갱신합니다.
 2. `make release-check`를 통과시킵니다.
-3. `make release-pack`을 실행해 handoff tarball과 checksum을 생성합니다.
-4. `make release-pack-verify`로 handoff tarball의 checksum, 내부 파일 checksum, 필수 파일, manifest commit을 검증합니다.
-5. remote prover image를 넘기거나 운영할 예정이면 `make docker-proverd-build`를 통과시킵니다.
-6. `docs/clairveil-release-handoff-pack-kr.md`의 산출물 목록이 현재 repo 구조와 맞는지 확인합니다.
-7. `docs/schemas/clairveil-js-wallet-contract.schema.json`이 최신 fixture와 함께 `make examples`에서 검증되는지 확인합니다.
-8. `x/privacy/client/sdk/conformance/testdata` fixture가 downstream JS SDK 팀에게 전달될 release commit과 같은 commit인지 확인합니다.
-9. ZK artifact checksum과 preflight mode 정책이 release note에 포함되어 있는지 확인합니다.
-10. Merkle snapshot/restore/migration 관련 변경이 있으면 `docs/clairveil-merkle-restore-sop-kr.md`의 샘플 path 재계산 절차가 release note에 반영되어 있는지 확인합니다.
-11. accepted vulnerability policy exception인 `GO-2024-2584`, `GO-2026-4479`, `GO-2026-5932`가 release note의 known risk에 남아 있는지 확인합니다.
-12. downstream project가 audit master private key custody, wallet storage encryption, remote prover topology를 별도 운영 문서로 소유한다는 점을 release note에 명시합니다.
-13. `docs/clairveil-release-versioning-policy-kr.md`의 release note template을 사용해 compatibility impact와 downstream action을 작성합니다.
-14. `go test ./x/privacy/types -run TestBatchJoinSplit16x32MaxWireStateFeasibilityGate -count=1 -v`를 실행하고 정정된 max-shape golden인 canonical owner-effect payload `65,384` bytes, Tx `65,294` bytes, typed scan KV `75,105` bytes, total KV write `173,409` bytes, query response `74,551` bytes를 확인합니다.
-15. Historical feasibility result인 `CLAIRVEIL_RUN_BATCH_FEASIBILITY=1 go test ./x/privacy/circuit -run TestBatchJoinSplit16x32FullShapeResourceGate -count=1 -v`의 constraint `1,111,837`, peak RSS `3,339,862,016` bytes, `55.892 ms/output`, native 2x2 대비 per-output `2.789x` 개선을 보존합니다. 이는 feasibility gate이지 trusted setup이 아닙니다.
-16. Release-pack verification이 bilingual batch contract, normal production tx/query/genesis proto, `batch_feasibility.proto`, independent Session 2 fixture 2개를 required artifact로 검사하는지 확인합니다.
-17. Production circuit/keeper matrix인 `TestBatchJoinSplit16x32ProductionPositiveMatrix`, `TestBatchJoinSplit16x32ProductionNegativeMatrix`, `TestBatchTransferDirectCoreIntegration`, `TestBatchTransferCoreRejectionsAndAtomicScanFailure`, `TestCrossMessageNullifierFailureRollsBackWholeCosmosTxCache`를 실행합니다.
-18. Git 밖에서 development artifact를 생성하고 `TestBatchDevelopmentArtifactRoleReadinessGate`를 실행합니다. R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`, generation peak RSS `3,308,797,952 B`, readiness peak RSS `1,295,482,880 B`를 기록합니다. 이 development binary를 production artifact로 package하면 안 됩니다.
-19. fixture conformance는 `make privacy-batch-joinsplit-localnet`으로, 실제 1/1, 3/4, 31+change, exact32, padding, restart tx-hash reconcile, 새로 서명된 spent-nullifier fail-closed smoke는 충분한 자원의 host에서 `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`으로 실행합니다. Durable exact-signed-byte retry는 payroll worker/store 테스트 계약으로 별도 검증합니다.
-20. release pack이 Session 3B 한영 handoff/tutorial, conformance fixture, localnet runner를 필수로 검사하고 private prepared payload/proof와 development R1CS/PK/VK binary는 제외하는지 확인합니다.
+3. remote prover image를 넘기거나 운영할 예정이면 `make docker-proverd-build`를 통과시킵니다.
+4. `docs/clairveil-release-handoff-pack-kr.md`의 산출물 목록이 현재 repo 구조와 맞는지 확인합니다.
+5. Release metadata를 commit하고 `git status --short`가 비어 있는지 확인합니다.
+6. 그 release commit에 annotated exact-SemVer tag를 만듭니다.
+7. Tagged commit에서 `make release-pack`을 실행해 최종 handoff tarball과 checksum을 생성합니다.
+8. `make release-pack-verify`로 version tag, manifest commit, archive checksum, 내부 checksum, 필수 파일이 모두 일치하는지 확인합니다.
+9. `docs/schemas/clairveil-js-wallet-contract.schema.json`이 최신 fixture와 함께 `make examples`에서 검증되는지 확인합니다.
+10. `x/privacy/client/sdk/conformance/testdata` fixture가 downstream JS SDK 팀에게 전달될 tagged release commit과 같은 commit인지 확인합니다.
+11. ZK artifact checksum과 preflight mode 정책이 release note에 포함되어 있는지 확인합니다.
+12. Merkle snapshot/restore/migration 관련 변경이 있으면 `docs/clairveil-merkle-restore-sop-kr.md`의 샘플 path 재계산 절차가 release note에 반영되어 있는지 확인합니다.
+13. accepted vulnerability policy exception인 `GO-2024-2584`, `GO-2026-4479`, `GO-2026-5932`가 release note의 known risk에 남아 있는지 확인합니다.
+14. downstream project가 audit master private key custody, wallet storage encryption, remote prover topology를 별도 운영 문서로 소유한다는 점을 release note에 명시합니다.
+15. Authoritative `docs/clairveil-release-note-template-kr.md`를 사용해 compatibility impact와 downstream action을 작성합니다.
+16. `go test ./x/privacy/types -run TestBatchJoinSplit16x32MaxWireStateFeasibilityGate -count=1 -v`를 실행하고 정정된 max-shape golden인 canonical owner-effect payload `65,384` bytes, Tx `65,294` bytes, typed scan KV `75,105` bytes, total KV write `173,409` bytes, query response `74,551` bytes를 확인합니다.
+17. Historical feasibility result인 `CLAIRVEIL_RUN_BATCH_FEASIBILITY=1 go test ./x/privacy/circuit -run TestBatchJoinSplit16x32FullShapeResourceGate -count=1 -v`의 constraint `1,111,837`, peak RSS `3,339,862,016` bytes, `55.892 ms/output`, native 2x2 대비 per-output `2.789x` 개선을 보존합니다. 이는 feasibility gate이지 trusted setup이 아닙니다.
+18. Release-pack verification이 bilingual batch contract, normal production tx/query/genesis proto, `batch_feasibility.proto`, independent Session 2 fixture 2개를 required artifact로 검사하는지 확인합니다.
+19. Production circuit/keeper matrix인 `TestBatchJoinSplit16x32ProductionPositiveMatrix`, `TestBatchJoinSplit16x32ProductionNegativeMatrix`, `TestBatchTransferDirectCoreIntegration`, `TestBatchTransferCoreRejectionsAndAtomicScanFailure`, `TestCrossMessageNullifierFailureRollsBackWholeCosmosTxCache`를 실행합니다.
+20. Git 밖에서 development artifact를 생성하고 `TestBatchDevelopmentArtifactRoleReadinessGate`를 실행합니다. R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`, generation peak RSS `3,308,797,952 B`, readiness peak RSS `1,295,482,880 B`를 기록합니다. 이 development binary를 production artifact로 package하면 안 됩니다.
+21. fixture conformance는 `make privacy-batch-joinsplit-localnet`으로, 실제 1/1, 3/4, 31+change, exact32, padding, restart tx-hash reconcile, 새로 서명된 spent-nullifier fail-closed smoke는 충분한 자원의 host에서 `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`으로 실행합니다. Durable exact-signed-byte retry는 payroll worker/store 테스트 계약으로 별도 검증합니다.
+22. release pack이 Session 3B 한영 handoff/tutorial, conformance fixture, localnet runner를 필수로 검사하고 private prepared payload/proof와 development R1CS/PK/VK binary는 제외하는지 확인합니다.
 
 ## 4. Downstream core chain 팀 수령 기준
 

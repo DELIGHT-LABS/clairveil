@@ -28,7 +28,34 @@ Clairveil은 Cosmos SDK 체인에 붙일 수 있는 auditable shielded privacy c
 | Proto package          | `clairveil.privacy.v1`              |
 | Default local chain-id | `clairveil-local-1`                 |
 
+## 현재 상태와 호환성
+
+| 항목 | 현재 기준 |
+| --- | --- |
+| 공개 상태 | `PUBLICATION_READY_EXPERIMENTAL`; source/reference 공개 가능 상태이며 production 배포 승인이 아님 |
+| Consensus circuit set | state version 2의 `privacy-note-v1` |
+| Fixed client contract | `privacy-fixed-v1`; transfer payload `v5`, proof/prover contract `v2` |
+| Batch surface | `BatchJoinSplit16x32`, `MsgBatchTransfer`, Session 3B Go SDK/prover/scanner/payroll/CLI reference 구현 |
+| Upgrade 경계 | 이전 artifact, proof job, note/scan cache, three-circuit genesis와 호환되지 않음. fresh genesis/reset 및 rescan 필요 |
+| 남은 production gate | formal trusted setup, 외부 security/circuit audit, signed production artifact, downstream chain/product 검증 |
+
+문서는 같은 checkout의 코드를 설명합니다. Tag 또는 commit을 통합할 때는 반드시 그 exact ref의 문서를 읽고 release manifest를 검증해야 하며, 이전 binary/tag와 `HEAD` 문서를 섞으면 안 됩니다.
+
 ## 빠른 시작
+
+필수 도구는 Git, Make, Go `1.25.12`, Python `3.9+`, Bash이며 repository CI/example 검증에는 Node.js `22+`와 npm도 필요합니다. Repository는 Git과 Make의 최소 version을 고정하지 않습니다. 초기화 전에 사용할 도구를 확인합니다.
+
+```bash
+git --version
+make --version
+go version
+python3 --version
+bash --version
+node --version
+npm --version
+```
+
+전체 circuit set을 생성하기 전에 [시작 가이드](docs/clairveil-getting-started-kr.md)에서 리소스 요구량, 포트, 환경변수, 정리 절차를 확인하세요.
 
 ```bash
 git clone https://github.com/DELIGHT-LABS/clairveil.git
@@ -51,7 +78,7 @@ clairveild start
 make ci
 ```
 
-`make ci`는 `go test`, binary build, JS 예제 검증만 수행하며 `clairveild start` 노드에 붙지 않습니다.
+`make ci`는 문서 검사, `go test`, binary build, JS 예제 검증을 수행하며 `clairveild start` 노드에 붙지 않습니다.
 
 로컬 노드에서 전체 privacy flow를 직접 따라가려면 [Local walkthrough](docs/clairveil-local-privacy-walkthrough-kr.md) 문서를 사용합니다.
 
@@ -61,7 +88,7 @@ make ci
 make privacy-e2e-smoke
 ```
 
-> 이미 `clairveild start`로 기본 포트 `26657`, `26656`, `9090`, `1317`을 사용 중이라면 먼저 그 노드를 멈추거나 e2e port override를 사용하세요.
+> 이미 `clairveild start`로 활성화된 기본 RPC, P2P, gRPC port(`26657`, `26656`, `9090`)를 사용 중이라면 먼저 그 node를 멈추거나 e2e port override를 사용하세요. Generated `app.toml`에서 REST는 기본 disabled이며, API를 명시적으로 활성화한 경우에만 configured address `1317`을 bind합니다.
 
 ## 빌드
 
@@ -75,7 +102,7 @@ make build
 | ------------------- | ------------------------------------- |
 | `clairveild`        | reference chain daemon                |
 | `clairveil-setup`   | ZK artifact 생성                      |
-| `clairveil-verify`  | legacy/debug note verification helper |
+| `clairveil-verify`  | 현행 typed note와 호환되지 않는 legacy-only note 복호화/debug helper |
 | `clairveil-proverd` | companion prover HTTP service         |
 | `clairveil-payroll` | reference payroll plan/reservation/reconcile/report CLI |
 | `clairveil-payrolld` | reference payroll scheduler/daemon 표면 |
@@ -108,6 +135,8 @@ make install
 ```
 
 `make install`은 `go env GOBIN`이 있으면 그 값을 사용하고, 비어 있으면 `$(go env GOPATH)/bin`을 사용합니다.
+
+설치 대상은 나열된 project binary 여섯 개(`clairveild`, `clairveil-setup`, `clairveil-verify`, `clairveil-proverd`, `clairveil-payroll`, `clairveil-payrolld`)입니다. 이 중 다섯 개가 현행 runtime/reference flow에 속하며, `clairveil-verify`는 legacy debugging 용도로만 설치되고 현행 `privacy-fixed-v1` typed note를 복호화하거나 검증할 수 없습니다. Benchmark/load 도구는 `make build`로 빌드되지만 `make install`에는 포함되지 않습니다. 필요하면 `go install ./cmd/<tool-name>`으로 개별 설치하세요.
 
 ## 로컬 체인 초기화
 
@@ -161,12 +190,17 @@ make reference-payroll-live-localnet
 make reference-payroll-rehearsal
 ```
 
-`make localnet-smoke`와 `make privacy-e2e-smoke`는 검증용 local node를 직접 띄웁니다. 이미 기본 포트를 쓰는 노드가 있으면 smoke test와 충돌할 수 있습니다.
+`make localnet-smoke`와 `make privacy-e2e-smoke`는 검증용 local node를 직접 띄웁니다. 이미 활성화된 기본 RPC, P2P, gRPC port를 쓰는 node가 있으면 smoke test와 충돌할 수 있습니다. REST를 명시적으로 활성화한 경우에만 `1317`도 충돌 확인에 포함합니다.
 
-릴리즈 후보 수준의 검증은 아래 명령을 사용합니다.
+Release commit과 tag를 만들기 전에는 아래 명령을 실행합니다.
 
 ```bash
 make release-check
+```
+
+그 commit에 annotated exact-SemVer tag를 만든 뒤 최종 artifact를 생성하고 검증합니다.
+
+```bash
 make release-pack
 make release-pack-verify
 ```
@@ -178,7 +212,7 @@ make release-pack-verify
 초기 통합 중에는 downstream app에서 로컬 `replace`를 쓰는 방식이 가장 빠릅니다.
 
 ```go
-require github.com/DELIGHT-LABS/clairveil v0.0.0
+require github.com/DELIGHT-LABS/clairveil v0.1.0
 
 replace github.com/DELIGHT-LABS/clairveil => ../clairveil
 ```
@@ -210,6 +244,10 @@ clairveild tx privacy withdraw 7uclair --from alice --keyring-backend test
 
 | 문서                                                                               | 역할                                                              |
 | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| [전체 문서 index](docs/README-kr.md)                                                | canonical 문서 지도, 수명주기, 언어 pair, release 규칙             |
+| [계획 상태 index](plans/README-kr.md)                                               | active/completed 구현 계획과 legacy archive 경계                   |
+| [시작 가이드](docs/clairveil-getting-started-kr.md)                                | 전제조건, 리소스, 초기화, 설정, troubleshooting                    |
+| [아키텍처](docs/clairveil-architecture-kr.md)                                      | component, trust boundary, state, transaction data flow           |
 | [Reference app](plans/clairveild-reference-app-plan-kr.md)                         | `clairveild` reference host의 설계 의도와 현재 상태               |
 | [Local walkthrough](docs/clairveil-local-privacy-walkthrough-kr.md)                | 로컬 노드에서 deposit, transfer, disclosure, withdraw를 직접 실행 |
 | [Circuit guide](docs/clairveil-circuits-kr.md)                                     | Spend/JoinSplit 회로가 증명하는 것과 증명하지 않는 것             |

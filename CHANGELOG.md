@@ -1,29 +1,73 @@
 # Changelog
 
-All notable changes to Clairveil will be documented in this file.
+All notable changes to Clairveil are documented in this file.
 
-This project follows the release policy documented in:
-
-- `docs/clairveil-release-versioning-policy.md`
-- `docs/clairveil-release-handoff-pack.md`
+This project follows [the release versioning policy](docs/clairveil-release-versioning-policy.md) and [handoff-pack policy](docs/clairveil-release-handoff-pack.md).
 
 ## Unreleased
 
-- Added standalone Clairveil privacy core, reference daemon, prover service, fixtures, schemas, CI, and release handoff documentation.
-- Added Apache-2.0 open-source hygiene files.
-- Added release versioning and release note policy.
-- Added release handoff pack verification command.
-- Updated public documentation for release verification, restore SOP, security reporting, reference app status, and portable walkthrough paths.
-- Expanded Korean public documentation for circuits, CLI, testing, operations, maintainer instructions, release notes, community templates, and the project README.
-- Added `make install` and `make init` helpers for installing Clairveil binaries and preparing a default local `~/.clairveil` chain home.
-- Clarified quick-start and testing docs to avoid redundant Make target sequences and document the manual walkthrough versus `make init` shortcut.
-- Added a dependency-free Node audit disclosure key example under `examples/audit-disclosure-keys`.
-- Removed legacy output-note fields from `MsgWithdraw`; withdraw remains exact-match and clients should regenerate proto bindings without dummy output-note values.
-- Added general client handoff documents for wallet/app product planning, UX flows, security decisions, and API integration.
-- Added privacy accounting hardening updates: bounded shielded amounts, deposit binding proofs, reserve accounting queries, and updated ZK artifact contracts.
-- Added note scan optimization contracts: cursor-based `scan_events`, batch `nullifiers`, transfer payload `v3` with `view_tag_hexes`, and `MsgTransfer.view_tags`.
-- Documented downstream migration requirements for scan cursor persistence, empty-page handling, safe view-tag mismatch fallback, and regenerated proto/schema/fixtures.
-- Replaced the transfer authorization contract with prepared payload/disclosure plaintext `v5` and prover request/response/proof `v2`; added chain ID, absolute expiry, final owner intent, canonical signature/point decoding, and disclosure blindings. Legacy payloads must be regenerated.
-- Added consensus-pinned circuit-set/verifier identity, manifest-authoritative artifact checksums, proof verification gas bounds, global nullifier/commitment collision checks, and explicit opt-in for privacy-expanding multi-prover failover.
-- Added the Session 2 `privacy-note-v1` foundation: domain-separated NoteV1/tree primitives, canonical `privacy-fixed-v1` payloads, exact batch owner-effect framing/digest, `AssetRegistryV1`, unified typed scan/path snapshots, role-aware artifacts, bounded prover admission, and measured 16x32 circuit/wire feasibility prototypes. Production batch message/keeper/client integration remains out of scope.
-- Breaking deployment requirement: active set `privacy-note-v1` and privacy state version `2` do not include a legacy chain-state migration. Existing development chains must use a fresh genesis or reset/reinitialize with the new consensus `CircuitSetIdentity`; discard cached proof jobs, prepared payloads, wallet note/reservation/scan caches, and old R1CS/PK/VK/manifest artifacts. Do not upgrade an existing production chain in place without a separately designed migration.
+### Added
+
+- Added the transfer authorization contract with prepared payload/disclosure plaintext `v5`, proof/prover contract `v2`, chain ID, absolute expiry, final owner intent, canonical decoding, and disclosure blindings.
+- Added the `privacy-note-v1`/state-version-2 foundation: domain-separated NoteV1 primitives, `privacy-fixed-v1`, `AssetRegistryV1`, typed scan/path snapshots, bounded prover admission, and consensus-pinned circuit identity.
+- Added the production `BatchJoinSplit16x32` chain core and `MsgBatchTransfer`, followed by the Session 3B Go SDK, `POST /v1/proofs/batch-transfer`, scanner, one-proof payroll, CLI, and localnet tutorial reference surfaces.
+- Extended the v0.1.0 reference payroll foundation with durable file/SQLite/PostgreSQL stores, live daemon and reconciliation flows, rehearsal evidence, capacity tooling, and public-claim eligibility gates.
+- Added paired getting-started, architecture, documentation-index, and plan-status documents; restored three missing English payroll/bulk handoff documents.
+- Added `make docs-check` and a single required-file manifest for release-pack documentation/link/language/tag/file validation.
+
+### Changed
+
+- Active compatibility is now `privacy-note-v1`, privacy state version 2, and `privacy-fixed-v1`. Existing three-circuit development chains require fresh genesis/reset; old artifacts, proof jobs, prepared payloads, and note/reservation/scan caches must be discarded and rescanned.
+- Release-pack membership is now defined by `scripts/release-pack-paths.txt` and `scripts/release-pack-required-files.txt`; superseded bulk phase-1 plans and duplicate working notes are excluded from the handoff pack.
+- Release packaging now distinguishes non-publishable full-commit CI snapshots from publishable annotated exact-SemVer tags, binds release tags to the manifest commit and paired dated changelog headings, and verifies the already-generated default archive without replacing it.
+- Documentation now distinguishes the legacy multi-message `transfer-batch` command from the one-proof `transfer-batch-16x32` flow and lists the complete current query/prover surface.
+
+### Fixed
+
+- Fixed duplicate input/nullifier inflation, global nullifier/commitment collision handling, disclosure-blinding separation, structured batch-signing secret reuse, non-canonical BN254 aliases, and atomic rollback regressions.
+- Fixed prover cancellation/failover and payroll localnet cleanup boundaries, and aligned CLI/environment examples with the implemented flags and exported checksum behavior.
+- Hardened documentation and handoff validation against mismatched release identities, incomplete archive/checksum pairs, fenced or commented changelog impostors, CommonMark link edge cases, missing fragments, and an omitted path manifest; aligned smoke port overrides and rehearsal decisions with their documented contracts.
+
+### Security
+
+- Completed Gate 1/2/3A/3B and Session 4 validation with no unresolved Critical, High, or security-relevant Medium finding; disposition is `PUBLICATION_READY_EXPERIMENTAL`, not production approval.
+- Consensus verifier identity, role-aware artifact loading, bounded proof verification/admission, secret-free validation errors, and explicit opt-in for privacy-expanding multi-prover failover are enforced and documented.
+
+### Known Risk
+
+- Formal trusted setup, external ZK/security audit, signed production artifact distribution, chain-specific migration, production wallet storage, audit-key custody, and downstream product validation remain outside this release state.
+- The documented `govulncheck` exceptions must be reassessed by each downstream production project; see `SECURITY.md`.
+
+### Handoff Notes
+
+- Read documentation from the exact integrated tag/commit and verify `RELEASE-MANIFEST.txt`; do not combine `HEAD` documentation with older code or artifacts.
+- External JS/TS and web products must port the frozen Go reference contracts and pass their own storage, prover, scan, disclosure, and batch end-to-end gates.
+
+## v0.1.0 - 2026-07-06
+
+### Added
+
+- Added a dependency-free Node audit-disclosure-key example.
+- Added client product, UX, risk-decision, and API integration handoff documents.
+- Added bounded shielded amounts, deposit binding proofs, reserve accounting queries, and updated ZK artifact contracts.
+- Added cursor-based `scan_events`, batch nullifier queries, transfer view tags, and their schema/fixture contracts.
+- Added scan optimization, sender self-view disclosure, and the relayed-withdraw handoff contract for downstream wallets and relayers.
+- Added benchmark reporting plus prover/localnet/user-latency/bulk load runners and public-capacity planning evidence.
+- Added note-reservation and reference payroll planner SDKs, proof and multi-message broadcast workers, a bounded prover pool, localnet transfer-batch harnesses, bulk benchmarks, and the bulk-readiness gate.
+
+### Changed
+
+- Removed legacy output-note fields from `MsgWithdraw`; clients must regenerate proto bindings without dummy output-note values.
+- Documented scan cursor persistence, empty-page advancement, safe view-tag mismatch fallback, and regenerated proto/schema/fixture requirements.
+
+### Fixed
+
+- Hardened canonical prover amount and artifact checksum validation, transfer output bounds, reservation ownership/rollback, persisted reconciliation errors, and bulk-readiness failure handling.
+
+## v0.0.0 - 2026-05-19
+
+### Added
+
+- Published the initial standalone Clairveil privacy core, reference daemon, prover service, fixtures, schemas, CI, and release handoff documentation.
+- Added Apache-2.0 license/notice hygiene, release versioning, release notes, handoff-pack verification, restore/security guidance, and Korean public documentation.
+- Added `make install` and `make init` for the default local reference chain and clarified the manual walkthrough versus initialization shortcut.

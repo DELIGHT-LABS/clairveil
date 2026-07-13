@@ -38,9 +38,6 @@ yarn-error.log*
 /benchmarks/
 *.log
 
-# Local commit notes
-docs/commit-notes/
-
 # Local temporary docs
 tmpdocs/
 

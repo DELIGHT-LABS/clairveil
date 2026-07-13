@@ -85,7 +85,6 @@ clairveild tx privacy deposit 10uclair \
   --from alice \
   --keyring-backend test \
   --chain-id clairveil-local-1 \
-  --expires-in 1800 \
   --gas 2500000 \
   --gas-prices 8500000000uclair \
   --yes \
@@ -365,24 +364,30 @@ Summary가 resolved absolute expiry와 chain ID를 출력하고 JSON도 같은 `
 ```bash
 clairveild query privacy check-nullifier <hex_nullifier> \
   --node tcp://localhost:26657
+
+clairveild query privacy reserve uclair \
+  --node tcp://localhost:26657
 ```
 
 다른 query는 gRPC/HTTP gateway와 generated client로 사용할 수 있습니다.
 
-| Query             | HTTP path                                            |
-| ----------------- | ---------------------------------------------------- |
-| tree state        | `/clairveil/privacy/v1/tree_state`                   |
-| nullifier         | `/clairveil/privacy/v1/nullifier/{nullifier}`        |
-| batch nullifiers (GET) | `/clairveil/privacy/v1/nullifiers`              |
-| batch nullifiers (POST) | `/clairveil/privacy/v1/nullifiers`             |
-| commitment info   | `/clairveil/privacy/v1/commitment/{commitment_hex}`  |
-| events            | `/clairveil/privacy/v1/events`                       |
-| scan events       | `/clairveil/privacy/v1/scan_events`                  |
-| Merkle path       | `/clairveil/privacy/v1/merkle_path/{commitment_hex}` |
-| audit config      | `/clairveil/privacy/v1/audit_config`                 |
-| disclosure config | `/clairveil/privacy/v1/disclosure_config`            |
-| circuit config    | `/clairveil/privacy/v1/circuit_config`               |
-| reserve           | `/clairveil/privacy/v1/reserve/{denom}`              |
+| Query | Method | HTTP path |
+| --- | --- | --- |
+| tree state | GET | `/clairveil/privacy/v1/tree_state` |
+| nullifier | GET | `/clairveil/privacy/v1/nullifier/{nullifier}` |
+| batch nullifiers | GET, POST | `/clairveil/privacy/v1/nullifiers` |
+| commitment info | GET | `/clairveil/privacy/v1/commitment/{commitment_hex}` |
+| events | GET | `/clairveil/privacy/v1/events` |
+| scan events | GET | `/clairveil/privacy/v1/scan_events` |
+| Merkle path | GET | `/clairveil/privacy/v1/merkle_path/{commitment_hex}` |
+| audit config | GET | `/clairveil/privacy/v1/audit_config` |
+| disclosure config | GET | `/clairveil/privacy/v1/disclosure_config` |
+| circuit config | GET | `/clairveil/privacy/v1/circuit_config` |
+| reserve | GET | `/clairveil/privacy/v1/reserve/{denom=**}` |
+| asset by denom | GET | `/clairveil/privacy/v1/assets/by_denom/{canonical_denom=**}` |
+| asset by ID | GET | `/clairveil/privacy/v1/assets/by_id/{asset_id_hex}` |
+| typed privacy scan | POST | `/clairveil/privacy/v1/privacy_scan` |
+| commitment paths at root | POST | `/clairveil/privacy/v1/commitment_paths_at_root` |
 
 ## 10. Companion binary
 
@@ -394,6 +399,16 @@ Active set `privacy-note-v1`, manifest schema `v2`의 development ZK artifact를
 clairveil-setup --out artifacts/privacy
 clairveil-setup --out artifacts/privacy --overwrite
 ```
+
+### clairveil-verify (legacy 전용)
+
+이 binary는 과거 SHA-256-of-address seed, raw Base64 ciphertext, JSON `types.Note` 형식으로 생성한 legacy ciphertext를 확인할 때만 사용합니다.
+
+```bash
+clairveil-verify -enc '<BASE64_LEGACY_CIPHERTEXT>' -secret '<LEGACY_ADDRESS_OR_SEED>'
+```
+
+현행 keyring-signature root seed 및 `privacy-fixed-v1` typed envelope와 호환되지 않습니다. Derived scalar prefix와 복호화한 plaintext도 출력하므로 production secret이나 data에 사용하지 마세요. 현행 note는 `clairveild tx privacy list-notes`, typed `privacy_scan` flow, conformance fixture로 검증합니다.
 
 ### clairveil-proverd
 

@@ -11,7 +11,7 @@ Korean version: [clairveil-release-versioning-policy-kr.md](clairveil-release-ve
 Until the first public stable release, use `v0.x.y`.
 
 ```text
-v0.MAJOR.MINOR
+v0.MINOR.PATCH
 ```
 
 Recommended meaning:
@@ -23,6 +23,8 @@ Recommended meaning:
 | `v1.0.0` | first stable release where downstream production integration contract is declared stable |
 
 During `v0`, API/fixture/proto/schema can change. If they change, release notes must state migration impact.
+
+Release tags must be annotated and use exact SemVer prefixed by `v`, for example `v0.1.1`; prereleases use a SemVer suffix such as `v0.2.0-rc.1`. Do not move or reuse a published tag. The tag, `CHANGELOG.md`/`CHANGELOG-kr.md` heading, handoff manifest commit, archive, checksum, and GitHub release must all identify the same immutable source.
 
 ## 2. Breaking Change Criteria
 
@@ -41,12 +43,17 @@ Mark release notes with breaking or migration impact when any of these change:
 - scan projection version, cursor semantics, or empty-page/`has_more` handling
 - transfer view tag derivation, length, event field, or payload-hash binding
 
-## 3. Required Pre-Release Commands
+## 3. Required Release Commands
 
-Release candidates must pass:
+Before the release commit and tag, release candidates must pass:
 
 ```bash
 make release-check
+```
+
+After committing the dated changelogs and release note, create the annotated tag at that exact commit. Then generate and verify the final artifacts from the tagged commit:
+
+```bash
 make release-pack
 make release-pack-verify
 ```
@@ -59,7 +66,7 @@ make docker-proverd-build
 
 ## 4. Changelog Rules
 
-Move `CHANGELOG.md` `Unreleased` entries into the release version.
+Move the matching `CHANGELOG.md` and `CHANGELOG-kr.md` `Unreleased` entries into the release version. Every repository tag, including development snapshot tags, must have a dated heading in both files.
 
 Recommended sections:
 
@@ -92,80 +99,35 @@ Meaning:
 
 ## 5. Release Note Template
 
-Use `docs/clairveil-release-note-template.md` for GitHub release or downstream handoff messages. If a shorter note is needed, keep the same structure.
-
-```markdown
-# Clairveil v0.x.y Release Notes
-
-## 1. Summary
-
-## 2. Verification
-
-- [ ] `make release-check`
-- [ ] `make release-pack`
-- [ ] `make release-pack-verify`
-- [ ] `make docker-proverd-build` if prover image is included
-- [ ] If publishing performance numbers, confirm `make privacy-proverd-load-bench`, `make privacy-localnet-tps-bench`, `make privacy-user-latency-bench`, and `make privacy-public-capacity-report` outputs have `claim_eligible=true` with evidence hashes
-
-## 3. Handoff Artifacts
-
-- handoff tarball:
-- handoff sha256:
-- commit:
-
-## 4. Compatibility Impact
-
-- Proto:
-- Fixture/schema:
-- CLI:
-- Prover HTTP:
-- Scan/query contract:
-- Transfer/view tags:
-- ZK artifacts:
-- Circuit set/public witness:
-- Batch gas/scan state:
-- Session 3B surface status:
-
-## 5. Known Risk / Accepted Exceptions
-
-- `GO-2024-2584`: Cosmos SDK no-fixed-version advisory. Reassess in downstream risk register.
-- `GO-2026-4479`: pion/dtls v2 no-fixed-version advisory reachable through the Cosmos SDK/CometBFT server stack. Reassess in downstream risk register.
-- `GO-2026-5932`: no-fixed-version `x/crypto/openpgp` advisory, narrowly reachable through Cosmos SDK local ASCII key armor only; Clairveil does not use OpenPGP signing or encryption. Reassess and remove the exception when a fixed dependency path exists.
-
-## 6. Downstream Action Required
-
-- Core chain:
-- JS/TS SDK:
-- Web wallet:
-- Prover operations:
-- Security/operations:
-```
+[clairveil-release-note-template.md](clairveil-release-note-template.md) and its [Korean pair](clairveil-release-note-template-kr.md) are the only authoritative release-note templates. Update those files rather than copying a second template into this policy. A shortened public note may omit empty detail, but it must retain verification, immutable artifact identity, compatibility impact, known risk, and downstream action.
 
 ## 6. Handoff Pack Naming
 
-`make release-pack` creates:
+A publishable final release pack requires the clean source commit to have an annotated exact-SemVer tag and creates:
 
 ```text
-dist/clairveil-handoff-<git-describe>.tar.gz
-dist/clairveil-handoff-<git-describe>.tar.gz.sha256
+dist/clairveil-handoff-<tag>.tar.gz
+dist/clairveil-handoff-<tag>.tar.gz.sha256
 ```
 
-If a release tag exists, `<git-describe>` is tag-based. For release candidates or manual override:
+`RELEASE_VERSION` may select an existing annotated exact-SemVer tag only when that tag points to the packed source commit. It cannot assign an untagged or unrelated version:
 
 ```bash
-RELEASE_VERSION=v0.1.0-rc1 make release-pack
+RELEASE_VERSION=v0.2.0-rc.1 make release-pack
 ```
+
+On an untagged clean commit, the tooling uses the canonical `snapshot-<40-character-commit-sha>` version for packaging CI and internal completeness checks. A snapshot pack is commit-bound but is not a release artifact and must not be published as one.
 
 ## 7. Recommended Tag Flow
 
-1. Move `CHANGELOG.md` entries into the release version.
-2. Pass `make release-check`.
-3. Pass `make docker-proverd-build` if needed.
-4. Create release commit.
-5. Create annotated tag.
-6. Run `make release-pack` again on the tag.
-7. Run `make release-pack-verify` against the tag handoff pack.
-8. Include tarball checksum and known risks in release notes.
+1. Move both changelogs into the same dated release version and complete the paired release-note template.
+2. Pass `make docs-check`, `make release-check`, and `make docker-proverd-build` when an image is included.
+3. Create the release commit and confirm the worktree is clean.
+4. Create one annotated, exact SemVer tag at that commit.
+5. Run `make release-pack` on the tag and verify that same archive with `make release-pack-verify`. The default verifier reuses the existing default archive/checksum pair and generates it only when the pair is absent.
+6. Confirm the archive manifest commit equals the tag target and record the external SHA-256 in the release note.
+7. Push the release commit and tag only after verification, then create the GitHub release and attach the verified tarball and checksum.
+8. Update supported-version/security information when the supported release line changes. Never move the published tag; issue a new patch release for corrections.
 
 Example:
 

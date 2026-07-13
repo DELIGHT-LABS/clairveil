@@ -15,7 +15,8 @@ Korean version: [clairveil-release-handoff-pack-kr.md](clairveil-release-handoff
 | SDK fixtures | `x/privacy/client/sdk/conformance/testdata` | JS SDK team, web wallet team | wallet/prover/query contract conformance |
 | JSON Schema | `docs/schemas/clairveil-js-wallet-contract.schema.json` | JS SDK team, web wallet team | machine-readable fixture shape validation |
 | Prover service | `cmd/clairveil-proverd`, `x/privacy/client/sdk/proverservice`, `x/privacy/client/sdk/provertransport` | Prover operations, JS SDK team | local/remote companion prover contract |
-| ZK artifact tooling | `cmd/clairveil-setup`, `cmd/clairveil-verify`, `x/privacy/zk` | Core chain team, prover operations | artifact generation, checksum, preflight |
+| ZK artifact tooling | `cmd/clairveil-setup`, `x/privacy/zk` | Core chain team, prover operations | artifact generation, checksum, preflight |
+| Legacy note debug helper | `cmd/clairveil-verify` | Maintainers only | legacy SHA-256/address-seed, Base64, and raw-JSON compatibility debugging; not a current protocol contract or release acceptance surface |
 | Walkthrough | `docs/clairveil-local-privacy-walkthrough.md` | Integrators | local end-to-end manual verification |
 | Circuit guide | `docs/clairveil-circuits.md` | Core chain team, prover operations, security reviewers | Deposit/Spend/JoinSplit/BatchJoinSplit16x32 circuits and artifact impact explanation |
 | NoteV1 and batch normative contract | `docs/clairveil-batch-joinsplit-16x32.md`, `docs/clairveil-batch-joinsplit-16x32-kr.md` | Core chain, SDK, prover, security teams | Frozen NoteV1/fixed encoding/vector/public-witness/state contracts implemented by the Session 3A chain core |
@@ -43,13 +44,13 @@ Korean version: [clairveil-release-handoff-pack-kr.md](clairveil-release-handoff
 
 ## 2. Pre-Release Repository Maintainer Validation
 
-Before creating a release tag, the maintainer runs:
+Before creating the release commit and tag, the maintainer runs:
 
 ```bash
 make release-check
-make release-pack
-make release-pack-verify
 ```
+
+After committing the paired dated changelogs and release note, create an annotated exact-SemVer tag at that commit. Run `make release-pack` and `make release-pack-verify` only from that tagged commit to create and verify the final artifact.
 
 `make release-check` runs the following steps:
 
@@ -58,6 +59,7 @@ make ci
 make vulncheck
 make localnet-smoke
 make privacy-e2e-smoke
+make privacy-batch-joinsplit-localnet
 RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check
 ```
 
@@ -65,10 +67,11 @@ Each step means:
 
 | Step | Meaning |
 | --- | --- |
-| `make ci` | Verifies Go tests, Go binary builds, and JS/TS examples. |
+| `make ci` | Verifies documentation, Go tests, Go binary builds, and JS/TS examples. |
 | `make vulncheck` | Runs the govulncheck policy gate. New actionable vulnerabilities fail the check. |
 | `make localnet-smoke` | Confirms the reference daemon can init and start from genesis. |
 | `make privacy-e2e-smoke` | Verifies deposit, transfer, public disclosure, recipient disclosure, sender self-view disclosure, audit disclosure, direct withdraw, and relayed withdraw on a local node. |
+| `make privacy-batch-joinsplit-localnet` | Runs the default `RUN_LOCALNET=0` Session 3B fixture/conformance gate. The resource-heavy live node/prover mode remains an explicit separate rehearsal. |
 | `RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check` | Verifies bulk-transfer critical units, reservation invariants, synthetic capacity estimate, and the multi-message transfer localnet path. |
 
 `make release-check` is intentionally heavy for every pull request. The default PR checks are `.github/workflows/test.yml` with `make ci` and `.github/workflows/security.yml` with `make vulncheck`; release-candidate validation is run manually with `make release-check`.
@@ -81,9 +84,9 @@ make docker-proverd-build
 
 This command validates compose config, Dockerfile build, and image inspect. It requires a Docker daemon, so it is not included in the default `release-check`.
 
-`make release-pack` creates `dist/clairveil-handoff-<version>.tar.gz` and its `.sha256` file. This pack is a downstream handoff contract bundle, not a full source distribution. It includes license/notice, major handoff/security/operations docs, circuit/CLI/testing/maintainer docs, Merkle restore SOP, proto, JSON Schema, conformance fixtures, client/JS examples, scan optimization docs, bulk-transfer handoff/design/planning docs, reference payroll product docs/examples, prover Docker sample, release pack scripts, `RELEASE-MANIFEST.txt`, and `SHA256SUMS.txt`. The bilingual batch contract and independent fixtures remain normative; Session 3A additionally makes normal tx/query/genesis proto, the fourth circuit descriptor, gas/scan/genesis contracts, and direct core tests part of the handoff. `batch_feasibility.proto` remains measurement-only. Readiness commands are run from the source checkout before handoff; the pack records contract artifacts and validation expectations, not large R1CS/PK/VK binaries.
+For a final release, `make release-pack` requires a clean commit with an annotated exact-SemVer tag that points to that commit, then creates `dist/clairveil-handoff-<tag>.tar.gz` and its `.sha256` file. On an untagged clean commit, it instead creates a commit-bound `snapshot-<40-character-commit-sha>` pack solely for packaging CI and internal completeness checks; that snapshot must not be published as a release. This pack is a downstream handoff contract bundle, not a full source distribution. Its selected paths and exact required files are defined by `scripts/release-pack-paths.txt` and `scripts/release-pack-required-files.txt`; prose lists are not membership authority. The pack includes license/notice, current documentation and plan indexes, major handoff/security/operations/circuit/CLI/testing/maintainer knowledge, proto, JSON Schema, conformance fixtures, non-DApp client examples, reference payroll surfaces, prover Docker samples, release scripts, `RELEASE-MANIFEST.txt`, and `SHA256SUMS.txt`. Superseded plans and ignored `tmpdocs/` archives are excluded. The bilingual batch contract and independent fixtures remain normative; Session 3A additionally makes normal tx/query/genesis proto, the fourth circuit descriptor, gas/scan/genesis contracts, and direct core tests part of the handoff. `batch_feasibility.proto` remains measurement-only. Readiness commands are run from the source checkout before handoff; the pack records contract artifacts and validation expectations, not large R1CS/PK/VK binaries.
 
-`make release-pack-verify` verifies the handoff pack's external `.sha256`, canonical complete internal `SHA256SUMS.txt`, 125 required handoff files, exact selected Git file set, canonical manifest, safe canonical tar members, every non-generated Git blob, raw and extracted Git-derived exact `0644`/`0755` file modes, and exact `0755` directory modes. Generation canonicalizes these modes independently of the caller's umask. When `RELEASE_PACK_ARCHIVE` is not set, it regenerates the default pack before validation so stale local archives do not mask missing files. For an externally supplied archive, set `RELEASE_PACK_ARCHIVE`, `RELEASE_PACK_CHECKSUM`, and the out-of-band lowercase 40-character SHA in `RELEASE_PACK_EXPECTED_COMMIT`; the exact commit must exist in the local clone. Explicit verification never regenerates or replaces either supplied input, and fails immediately if the archive or checksum is missing. This step checks that the tarball is not just created, but suitable to hand off as a complete release contract bundle.
+`make release-pack-verify` verifies that a SemVer manifest version names an annotated tag whose direct target is the manifest commit and has exactly one matching valid-date heading in both changelogs, or that an untagged CI snapshot version embeds that exact full commit. It also verifies the handoff pack's external `.sha256`, canonical complete internal `SHA256SUMS.txt`, every file in the required-file manifest, exact selected Git file set, canonical manifest, safe canonical tar members, every non-generated Git blob, raw and extracted Git-derived exact `0644`/`0755` file modes, and exact `0755` directory modes. Generation canonicalizes these modes independently of the caller's umask. When `RELEASE_PACK_ARCHIVE` is not set, the verifier requires a clean worktree and uses the existing default archive/checksum pair unchanged; it generates the pair only when either file is absent. For an externally supplied release archive, set `RELEASE_PACK_ARCHIVE`, `RELEASE_PACK_CHECKSUM`, and the out-of-band lowercase 40-character SHA in `RELEASE_PACK_EXPECTED_COMMIT`; the exact commit and release tag must exist in the local clone. Explicit verification never regenerates or replaces either supplied input, and fails immediately if the archive or checksum is missing. This step checks that the tarball is not just created, but suitable to hand off as a complete release contract bundle.
 
 ```bash
 RELEASE_PACK_ARCHIVE=/path/to/clairveil-handoff.tar.gz \
@@ -92,28 +95,30 @@ RELEASE_PACK_EXPECTED_COMMIT=<40-character-commit-sha> \
 ./scripts/release-pack-verify.sh
 ```
 
-## 3. Pre-Release Maintainer Checklist
+## 3. Release Maintainer Checklist
 
-1. Confirm `git status --short` is empty.
+1. Update both dated changelogs and the authoritative paired release note for the intended exact-SemVer version.
 2. Pass `make release-check`.
-3. Run `make release-pack` to create the handoff tarball and checksum.
-4. Run `make release-pack-verify` to verify the handoff tarball checksum, internal checksums, required files, and manifest commit.
-5. If a remote prover image will be delivered or operated, pass `make docker-proverd-build`.
-6. Confirm the artifact list in `docs/clairveil-release-handoff-pack.md` matches the current repository structure.
-7. Confirm `docs/schemas/clairveil-js-wallet-contract.schema.json` is validated against the latest fixtures by `make examples`.
-8. Confirm `x/privacy/client/sdk/conformance/testdata` fixtures come from the same release commit delivered to the downstream JS SDK team.
-9. Include ZK artifact checksums and preflight mode policy in the release note.
-10. If Merkle snapshot/restore/migration behavior changed, include the sample path recomputation procedure from `docs/clairveil-merkle-restore-sop.md` in the release note.
-11. Ensure accepted vulnerability policy exceptions `GO-2024-2584`, `GO-2026-4479`, and `GO-2026-5932` remain listed in the release note known risks.
-12. State in the release note that the downstream project owns audit master private key custody, wallet storage encryption, and remote prover topology in separate operations documents.
-13. Use the release note template in `docs/clairveil-release-versioning-policy.md` to document compatibility impact and downstream action.
-14. Run `go test ./x/privacy/types -run TestBatchJoinSplit16x32MaxWireStateFeasibilityGate -count=1 -v` and confirm the corrected max-shape goldens: canonical owner-effect payload `65,384` bytes, Tx `65,294` bytes, typed scan KV `75,105` bytes, total KV write `173,409` bytes, and query response `74,551` bytes.
-15. Retain the historical feasibility result from `CLAIRVEIL_RUN_BATCH_FEASIBILITY=1 go test ./x/privacy/circuit -run TestBatchJoinSplit16x32FullShapeResourceGate -count=1 -v`: `1,111,837` constraints, peak RSS `3,339,862,016` bytes, `55.892 ms/output`, and `2.789x` per-output improvement over native 2x2. This remains a feasibility gate, not trusted setup.
-16. Confirm that release-pack verification requires the bilingual batch contract, normal production tx/query/genesis proto, `batch_feasibility.proto`, and both independent Session 2 fixtures.
-17. Run the production circuit and keeper matrices: `TestBatchJoinSplit16x32ProductionPositiveMatrix`, `TestBatchJoinSplit16x32ProductionNegativeMatrix`, `TestBatchTransferDirectCoreIntegration`, `TestBatchTransferCoreRejectionsAndAtomicScanFailure`, and `TestCrossMessageNullifierFailureRollsBackWholeCosmosTxCache`.
-18. Generate development artifacts outside git and run `TestBatchDevelopmentArtifactRoleReadinessGate`. Record R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`, generation peak RSS `3,308,797,952 B`, and readiness peak RSS `1,295,482,880 B`. Do not package these development binaries as production artifacts.
-19. Run `make privacy-batch-joinsplit-localnet` for fixture conformance and `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet` on a capable host for the actual 1/1, 3/4, 31+change, exact32, padding, restart tx-hash reconcile, and freshly signed spent-nullifier fail-closed smoke. The durable exact-signed-byte retry remains a payroll worker/store test contract.
-20. Confirm release-pack verification requires the Session 3B bilingual handoff/tutorial, conformance fixture, and localnet runner while excluding private prepared payloads, proofs, and development R1CS/PK/VK binaries.
+3. If a remote prover image will be delivered or operated, pass `make docker-proverd-build`.
+4. Confirm the artifact list in `docs/clairveil-release-handoff-pack.md` matches the current repository structure.
+5. Commit the release metadata and confirm `git status --short` is empty.
+6. Create an annotated exact-SemVer tag at that release commit.
+7. Run `make release-pack` from the tagged commit to create the final handoff tarball and checksum.
+8. Run `make release-pack-verify` and confirm the version tag, manifest commit, archive checksum, internal checksums, and required files all agree.
+9. Confirm `docs/schemas/clairveil-js-wallet-contract.schema.json` is validated against the latest fixtures by `make examples`.
+10. Confirm `x/privacy/client/sdk/conformance/testdata` fixtures come from the same tagged release commit delivered to the downstream JS SDK team.
+11. Include ZK artifact checksums and preflight mode policy in the release note.
+12. If Merkle snapshot/restore/migration behavior changed, include the sample path recomputation procedure from `docs/clairveil-merkle-restore-sop.md` in the release note.
+13. Ensure accepted vulnerability policy exceptions `GO-2024-2584`, `GO-2026-4479`, and `GO-2026-5932` remain listed in the release note known risks.
+14. State in the release note that the downstream project owns audit master private key custody, wallet storage encryption, and remote prover topology in separate operations documents.
+15. Use the authoritative `docs/clairveil-release-note-template.md` to document compatibility impact and downstream action.
+16. Run `go test ./x/privacy/types -run TestBatchJoinSplit16x32MaxWireStateFeasibilityGate -count=1 -v` and confirm the corrected max-shape goldens: canonical owner-effect payload `65,384` bytes, Tx `65,294` bytes, typed scan KV `75,105` bytes, total KV write `173,409` bytes, and query response `74,551` bytes.
+17. Retain the historical feasibility result from `CLAIRVEIL_RUN_BATCH_FEASIBILITY=1 go test ./x/privacy/circuit -run TestBatchJoinSplit16x32FullShapeResourceGate -count=1 -v`: `1,111,837` constraints, peak RSS `3,339,862,016` bytes, `55.892 ms/output`, and `2.789x` per-output improvement over native 2x2. This remains a feasibility gate, not trusted setup.
+18. Confirm that release-pack verification requires the bilingual batch contract, normal production tx/query/genesis proto, `batch_feasibility.proto`, and both independent Session 2 fixtures.
+19. Run the production circuit and keeper matrices: `TestBatchJoinSplit16x32ProductionPositiveMatrix`, `TestBatchJoinSplit16x32ProductionNegativeMatrix`, `TestBatchTransferDirectCoreIntegration`, `TestBatchTransferCoreRejectionsAndAtomicScanFailure`, and `TestCrossMessageNullifierFailureRollsBackWholeCosmosTxCache`.
+20. Generate development artifacts outside git and run `TestBatchDevelopmentArtifactRoleReadinessGate`. Record R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`, generation peak RSS `3,308,797,952 B`, and readiness peak RSS `1,295,482,880 B`. Do not package these development binaries as production artifacts.
+21. Run `make privacy-batch-joinsplit-localnet` for fixture conformance and `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet` on a capable host for the actual 1/1, 3/4, 31+change, exact32, padding, restart tx-hash reconcile, and freshly signed spent-nullifier fail-closed smoke. The durable exact-signed-byte retry remains a payroll worker/store test contract.
+22. Confirm release-pack verification requires the Session 3B bilingual handoff/tutorial, conformance fixture, and localnet runner while excluding private prepared payloads, proofs, and development R1CS/PK/VK binaries.
 
 ## 4. Downstream Core Chain Team Acceptance Criteria
 

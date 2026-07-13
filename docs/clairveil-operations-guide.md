@@ -31,7 +31,9 @@ A production-like node should satisfy at least:
 Reference local start example:
 
 ```bash
+set -a
 source artifacts/privacy/privacy_zk_checksums.env
+set +a
 export CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict
 
 clairveild start --minimum-gas-prices 0uclair
@@ -181,10 +183,15 @@ Recommended log redaction:
 
 ## 9. Release Operations
 
-Maintainer baseline before release:
+Before the release commit and tag:
 
 ```bash
 make release-check
+```
+
+After creating the annotated exact-SemVer tag at that commit:
+
+```bash
 make release-pack
 make release-pack-verify
 ```

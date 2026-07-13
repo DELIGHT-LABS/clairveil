@@ -13,7 +13,7 @@ make ci
 make vulncheck
 ```
 
-`make ci` and `make vulncheck` do not require a running `clairveild` node. `make ci` runs Go tests, Go binary builds, and JS example validation.
+`make ci` and `make vulncheck` do not require a running `clairveild` node. `make ci` runs documentation checks, Go tests, Go binary builds, and JS example validation.
 
 For release candidates or larger changes, run:
 
@@ -28,12 +28,13 @@ make release-pack-verify
 | Command | Meaning |
 | --- | --- |
 | `make test` | run `go test ./...` |
-| `make build` | build `clairveild`, `clairveil-setup`, `clairveil-verify`, `clairveil-proverd`, `clairveil-payroll`, `clairveil-payrolld`, and benchmark/load tools (`clairveil-benchreport`, `clairveil-proverload`, `clairveil-localnetload`, `clairveil-userlatency`, `clairveil-bulktransferbench`) |
-| `make install` | run `make build`, then copy Clairveil binaries to `GOBIN` or `GOPATH/bin` |
+| `make build` | build `clairveild`, `clairveil-setup`, legacy-only `clairveil-verify`, `clairveil-proverd`, `clairveil-payroll`, `clairveil-payrolld`, and benchmark/load tools (`clairveil-benchreport`, `clairveil-proverload`, `clairveil-localnetload`, `clairveil-userlatency`, `clairveil-bulktransferbench`) |
+| `make install` | run `make build`, then install the six listed project binaries (`clairveild`, setup, legacy-only verify, proverd, payroll, payrolld) to `GOBIN` or `GOPATH/bin`; benchmark/load tools remain build-only |
 | `make init` | run `make install`, then initialize the default local chain home for `clairveild start` |
 | `make proto` | regenerate privacy protobuf/gateway Go files |
+| `make docs-check` | verify Markdown links, English/Korean knowledge pairs, plan indexes, tag/changelog coverage, document placement, and release manifests |
 | `make examples` | run JS audit key, fixture validator, prover HTTP client, and browser DApp examples |
-| `make ci` | `test`, `build`, and `examples` |
+| `make ci` | `docs-check`, `test`, `build`, and `examples` |
 | `make vulncheck` | run govulncheck policy gate |
 | `make localnet-smoke` | briefly verify that the reference daemon can start from genesis |
 | `make privacy-e2e-smoke` | validate full deposit, transfer, disclosure, and withdraw flow |
@@ -41,7 +42,7 @@ make release-pack-verify
 | `make reference-payroll-live-localnet` | validate the live localnet payroll flow: payroll input, reservation, transfer-batch, recipient scan, settle, final report |
 | `make reference-payroll-rehearsal` | generate reference payroll capacity simulations and optional live localnet smoke |
 | `make dapp-local` | start a local Clairveil node, prover, and browser DApp stack for manual testing |
-| `make release-check` | `ci`, `vulncheck`, `localnet-smoke`, `privacy-e2e-smoke`, and bulk readiness with localnet transfer-batch smoke |
+| `make release-check` | `ci`, `vulncheck`, `localnet-smoke`, `privacy-e2e-smoke`, the static BatchJoinSplit16x32 gate, and bulk readiness with localnet transfer-batch smoke |
 | `make release-pack` | create downstream handoff archive and sha256 |
 | `make release-pack-verify` | verify handoff archive checksum, internal checksum, required files, and manifest commit |
 | `make docker-proverd-build` | validate prover Dockerfile/compose build |
@@ -376,9 +377,11 @@ The repo-local 1k restart/retry rehearsal uses the actual localnet transfer path
 PAYROLL_SEED_NOTES=1 PAYROLL_ITEM_COUNT=1000 PAYROLL_CHUNK_SIZE=20 GAS_PRICES=0uclair make reference-payroll-live-localnet
 ```
 
-The Korean rehearsal guide is [clairveil-reference-payroll-rehearsal-kr.md](clairveil-reference-payroll-rehearsal-kr.md), and the recorded localnet result is [clairveil-reference-payroll-localnet-rehearsal-result-kr.md](clairveil-reference-payroll-localnet-rehearsal-result-kr.md).
+The rehearsal guide is [clairveil-reference-payroll-rehearsal.md](clairveil-reference-payroll-rehearsal.md), and the recorded localnet result is [clairveil-reference-payroll-localnet-rehearsal-result.md](clairveil-reference-payroll-localnet-rehearsal-result.md).
 
 ## 8. Release Pack Verification
+
+For a publishable release, run these commands from the clean commit after creating its annotated exact-SemVer tag. On an untagged clean commit the same commands create and validate a canonical commit-bound snapshot for packaging CI only.
 
 ```bash
 make release-pack
@@ -391,6 +394,7 @@ make release-pack-verify
 - internal `SHA256SUMS.txt` verifies
 - required handoff files exist
 - default archive manifest commit matches current `HEAD`
+- a release version is an annotated exact-SemVer tag pointing to that commit; an untagged snapshot embeds the exact full commit and is not publishable
 
 ## 9. Docker Prover Validation
 
@@ -411,8 +415,10 @@ Validation scope:
 Even for documentation-only changes, run:
 
 ```bash
+make docs-check
 git diff --check
-make release-pack-verify
 ```
+
+Run `make release-pack-verify` from a clean committed tree (or against an explicit external archive). The default path rejects a dirty worktree, reuses an existing default archive/checksum pair unchanged, and generates the pair only when either file is absent. Only the archive verified from the final annotated exact-SemVer tagged commit is a release artifact.
 
 If README, release handoff, testing commands, or tutorial commands changed, also run `make ci` or the relevant smoke test.

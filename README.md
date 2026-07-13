@@ -30,7 +30,34 @@ It packages shielded identity derived from transparent accounts, shielded deposi
 | Proto package | `clairveil.privacy.v1` |
 | Default local chain-id | `clairveil-local-1` |
 
+## Current Status And Compatibility
+
+| Item | Current baseline |
+| --- | --- |
+| Publication status | `PUBLICATION_READY_EXPERIMENTAL`; source/reference publication, not production deployment approval |
+| Consensus circuit set | `privacy-note-v1` with state version 2 |
+| Fixed client contract | `privacy-fixed-v1`; transfer payload `v5`, proof/prover contract `v2` |
+| Batch surface | `BatchJoinSplit16x32`, `MsgBatchTransfer`, Session 3B Go SDK/prover/scanner/payroll/CLI reference implementation |
+| Upgrade boundary | Earlier artifacts, proof jobs, note/scan caches, and three-circuit genesis are incompatible; use fresh genesis/reset and rescan |
+| Outstanding production gates | Formal trusted setup, external security/circuit audit, signed production artifacts, and downstream chain/product validation |
+
+Documentation describes the code at the same checkout. When integrating a tag or commit, read the docs from that exact ref and verify the release manifest; do not combine `HEAD` documentation with an older binary or tag.
+
 ## Quick Start
+
+Prerequisites are Git, Make, Go `1.25.12`, Python `3.9+`, Bash, and—when running repository CI/example checks—Node.js `22+` with npm. The repository does not pin minimum Git or Make versions. Verify the tools you will use before initialization:
+
+```bash
+git --version
+make --version
+go version
+python3 --version
+bash --version
+node --version
+npm --version
+```
+
+Read the [Getting started guide](docs/clairveil-getting-started.md) before generating the full circuit set; it also covers resource requirements, ports, environment variables, and cleanup.
 
 ```bash
 git clone https://github.com/DELIGHT-LABS/clairveil.git
@@ -53,7 +80,7 @@ Code and example validation can run without a running node.
 make ci
 ```
 
-`make ci` only runs Go tests, binary builds, and JS example checks. It does not connect to a `clairveild start` node.
+`make ci` runs documentation checks, Go tests, binary builds, and JS example checks. It does not connect to a `clairveild start` node.
 
 To follow the full privacy flow manually on a local node, use the [Local walkthrough](docs/clairveil-local-privacy-walkthrough.md).
 
@@ -63,7 +90,7 @@ To validate the same flow automatically, run:
 make privacy-e2e-smoke
 ```
 
-This target creates a separate temporary home and starts its own local node. If a `clairveild start` node is already using the default ports `26657`, `26656`, `9090`, and `1317`, stop that node first or use e2e port overrides.
+This target creates a separate temporary home and starts its own local node. If a `clairveild start` node is already using the active default RPC, P2P, or gRPC ports (`26657`, `26656`, or `9090`), stop that node first or use e2e port overrides. REST is disabled in the generated `app.toml`; its configured `1317` address binds only when the API is explicitly enabled.
 
 ## Build
 
@@ -77,7 +104,7 @@ Main binaries:
 | --- | --- |
 | `clairveild` | reference chain daemon |
 | `clairveil-setup` | ZK artifact generator |
-| `clairveil-verify` | legacy/debug note verification helper |
+| `clairveil-verify` | legacy-only note decryption/debug helper; incompatible with current typed notes |
 | `clairveil-proverd` | companion prover HTTP service |
 | `clairveil-payroll` | reference payroll planning, reservation, reconcile, and report CLI |
 | `clairveil-payrolld` | reference payroll scheduler/daemon surface |
@@ -110,6 +137,8 @@ make install
 ```
 
 `make install` uses `go env GOBIN` when set. Otherwise it uses `$(go env GOPATH)/bin`.
+
+It installs the six listed project binaries: `clairveild`, `clairveil-setup`, `clairveil-verify`, `clairveil-proverd`, `clairveil-payroll`, and `clairveil-payrolld`. Five belong to the current runtime/reference flow; `clairveil-verify` is installed only as a legacy debugging helper and cannot decrypt or validate current `privacy-fixed-v1` typed notes. Benchmark/load tools are built by `make build` but are not installed by `make install`; install one explicitly with `go install ./cmd/<tool-name>` when needed.
 
 ## Local Chain Initialization
 
@@ -163,12 +192,17 @@ make reference-payroll-live-localnet
 make reference-payroll-rehearsal
 ```
 
-`make localnet-smoke` and `make privacy-e2e-smoke` start their own validation nodes. If a node is already using the default ports, the smoke tests can collide with it.
+`make localnet-smoke` and `make privacy-e2e-smoke` start their own validation nodes. If a node is already using the active default RPC, P2P, or gRPC ports, the smoke tests can collide with it. Include `1317` in the collision check only when REST was explicitly enabled.
 
-Release-candidate validation:
+Before creating a release commit and tag:
 
 ```bash
 make release-check
+```
+
+After creating the annotated exact-SemVer tag at that commit, generate and verify the final artifact:
+
+```bash
 make release-pack
 make release-pack-verify
 ```
@@ -180,7 +214,7 @@ See the [Testing guide](docs/clairveil-testing-guide.md) for the test layers and
 During early integration, using a local `replace` is usually fastest:
 
 ```go
-require github.com/DELIGHT-LABS/clairveil v0.0.0
+require github.com/DELIGHT-LABS/clairveil v0.1.0
 
 replace github.com/DELIGHT-LABS/clairveil => ../clairveil
 ```
@@ -212,6 +246,10 @@ Command purposes, major flags, and output shapes are documented in the [CLI refe
 
 | Document | Purpose |
 | --- | --- |
+| [Complete documentation index](docs/README.md) | Canonical document map, lifecycle, language-pair, and release rules |
+| [Plan status index](plans/README.md) | Active and completed implementation plans, with legacy archive boundary |
+| [Getting started](docs/clairveil-getting-started.md) | Prerequisites, resources, initialization, configuration, and troubleshooting |
+| [Architecture](docs/clairveil-architecture.md) | Components, trust boundaries, state, and transaction data flow |
 | [Reference app](plans/clairveild-reference-app-plan.md) | Design intent and current status of the `clairveild` reference host |
 | [Local walkthrough](docs/clairveil-local-privacy-walkthrough.md) | Manually run deposit, transfer, disclosure, and withdraw on a local node |
 | [Circuit guide](docs/clairveil-circuits.md) | What the Spend/JoinSplit circuits prove and do not prove |

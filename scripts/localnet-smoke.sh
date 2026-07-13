@@ -10,6 +10,12 @@ chain_id="${CHAIN_ID:-clairveil-local-1}"
 key_name="${KEY_NAME:-alice}"
 fund_amount="${FUND_AMOUNT:-1000000000000000000000uclair}"
 stake_amount="${STAKE_AMOUNT:-1000000000000000000uclair}"
+rpc_port="${RPC_PORT:-26657}"
+p2p_port="${P2P_PORT:-26656}"
+abci_port="${ABCI_PORT:-26658}"
+grpc_port="${GRPC_PORT:-9090}"
+api_port="${API_PORT:-1317}"
+pprof_port="${PPROF_PORT:-6060}"
 
 if [[ -n "${CLAIRVEILD_BIN:-}" ]]; then
 	clairveild="$CLAIRVEILD_BIN"
@@ -43,6 +49,30 @@ run() {
 	"$clairveild" "$@"
 }
 
+patch_ports() {
+	python3 - "$home" "$rpc_port" "$p2p_port" "$abci_port" "$grpc_port" "$api_port" "$pprof_port" <<'PY'
+import sys
+from pathlib import Path
+
+home = Path(sys.argv[1])
+rpc_port, p2p_port, abci_port, grpc_port, api_port, pprof_port = sys.argv[2:]
+
+config_path = home / "config" / "config.toml"
+config = config_path.read_text()
+config = config.replace('proxy_app = "tcp://127.0.0.1:26658"', f'proxy_app = "tcp://127.0.0.1:{abci_port}"')
+config = config.replace('laddr = "tcp://127.0.0.1:26657"', f'laddr = "tcp://127.0.0.1:{rpc_port}"')
+config = config.replace('laddr = "tcp://0.0.0.0:26656"', f'laddr = "tcp://127.0.0.1:{p2p_port}"')
+config = config.replace('pprof_laddr = "localhost:6060"', f'pprof_laddr = "localhost:{pprof_port}"')
+config_path.write_text(config)
+
+app_path = home / "config" / "app.toml"
+app = app_path.read_text()
+app = app.replace('address = "tcp://localhost:1317"', f'address = "tcp://127.0.0.1:{api_port}"')
+app = app.replace('address = "localhost:9090"', f'address = "127.0.0.1:{grpc_port}"')
+app_path.write_text(app)
+PY
+}
+
 echo "smoke home: $home"
 if [[ "$generate_artifacts" == "1" ]]; then
 	"$clairveil_setup" --out "$artifacts" >"$home/setup.stdout" 2>"$home/setup.stderr"
@@ -52,6 +82,7 @@ elif [[ ! -f "$artifacts/privacy_zk_manifest.json" ]]; then
 fi
 export CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR="$artifacts"
 run init local --chain-id "$chain_id" --home "$home" >"$home/init.stdout" 2>"$home/init.stderr"
+patch_ports
 grep -q '"bond_denom": "uclair"' "$home/config/genesis.json"
 grep -q '"base": "uclair"' "$home/config/genesis.json"
 grep -q '"name": "Clairveil"' "$home/config/genesis.json"

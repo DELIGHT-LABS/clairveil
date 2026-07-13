@@ -116,21 +116,23 @@ Required work:
 1. Update operations guide.
 2. If trust boundary changed, update threat model.
 3. If production gate changed, update security best-practices review.
-4. If release artifact contents changed, update `scripts/release-pack.sh` and `scripts/release-pack-verify.sh` together.
+4. If release artifact contents changed, update `scripts/release-pack-paths.txt` and `scripts/release-pack-required-files.txt` together. Change generator/verifier code only when packaging semantics change.
 
 Validation:
 
 ```bash
 make ci
-make release-pack
-make release-pack-verify
 ```
+
+After committing, use `make release-pack-verify` to validate the canonical snapshot. For a publishable release, rerun `make release-pack` and `make release-pack-verify` only after creating the annotated exact-SemVer tag at the final commit.
 
 ## 3. Documentation Rules
 
 - Root and directory-level `README.md` keep the conventional filename; Korean versions use `README-kr.md`.
-- For new public documents, prefer writing the Korean version first and use the `docs/<name>-kr.md` format whenever possible.
-- English versions use the same path with the `docs/<name>.md` format.
+- Durable current knowledge stays in `docs/`; implementation intent and gate ledgers stay in `plans/`; duplicate, superseded, or local working documents move to ignored `tmpdocs/`. Do not keep Markdown under runtime `tmp/`.
+- New top-level knowledge documents must add `docs/<name>.md` and `docs/<name>-kr.md` in the same change and list both in `docs/README*.md`.
+- Historical plans may remain Korean-only when `plans/README*.md` records their status. Every tracked top-level plan must be linked from both plan indexes.
+- Read/update documentation at the same code ref. Do not use `HEAD` docs as compatibility guidance for an older tag or binary.
 - If a document is needed for downstream handoff, include it in the release pack.
 - Command examples should be executable whenever possible.
 - Unavoidable placeholders use `<...>` and explain where to get the value.
@@ -152,8 +154,8 @@ Include these documents in the handoff pack:
 When adding a new handoff document, update:
 
 ```text
-scripts/release-pack.sh
-scripts/release-pack-verify.sh
+scripts/release-pack-paths.txt
+scripts/release-pack-required-files.txt
 ```
 
 ## 5. Recommended Validation Order
@@ -161,9 +163,11 @@ scripts/release-pack-verify.sh
 Small doc change:
 
 ```bash
+make docs-check
 git diff --check
-make release-pack-verify
 ```
+
+Run `make release-pack-verify` from a clean committed tree (or against an explicit external archive). Its default path rejects a dirty worktree and may produce a canonical commit-bound snapshot; only a pack verified from the final annotated exact-SemVer tagged commit is a release.
 
 General code change:
 
@@ -178,10 +182,15 @@ Privacy flow change:
 make privacy-e2e-smoke
 ```
 
-Release candidate:
+Release candidate before the release commit/tag:
 
 ```bash
 make release-check
+```
+
+Final tagged release:
+
+```bash
 make release-pack
 make release-pack-verify
 ```
@@ -197,5 +206,5 @@ make docker-proverd-build
 1. Run `git status --short` and check for unintended files.
 2. Ensure public docs do not contain maintainer-local paths.
 3. Ensure CLI/output/schema/proto changes are reflected in docs.
-4. Ensure new files that belong in the release pack are also listed in the verifier.
+4. Run `make docs-check` and ensure new handoff files are selected and required by the two release manifests.
 5. If the change is security-sensitive, ensure private keys, payloads, and tokens are not logged.

@@ -114,21 +114,23 @@ go test ./x/privacy/client/sdk/conformance
 1. `docs/clairveil-operations-guide-kr.md`를 갱신합니다.
 2. trust boundary가 바뀌면 `docs/clairveil-threat-model-kr.md`를 갱신합니다.
 3. production gate가 바뀌면 `docs/clairveil-security-best-practices-review-kr.md`를 갱신합니다.
-4. release artifact 구성이 바뀌면 `scripts/release-pack.sh`와 `scripts/release-pack-verify.sh`를 함께 갱신합니다.
+4. Release artifact 구성이 바뀌면 `scripts/release-pack-paths.txt`와 `scripts/release-pack-required-files.txt`를 함께 갱신합니다. Packaging semantic이 바뀔 때만 generator/verifier code를 수정합니다.
 
 검증:
 
 ```bash
 make ci
-make release-pack
-make release-pack-verify
 ```
+
+Commit 후 canonical snapshot 검증에는 `make release-pack-verify`를 사용합니다. 공개 가능한 release는 최종 commit에 annotated exact-SemVer tag를 만든 뒤에만 `make release-pack`과 `make release-pack-verify`를 다시 실행합니다.
 
 ## 3. 문서 규칙
 
 - root `README.md`와 directory-level `README.md`는 영문 문서가 기본 파일명을 사용하고, 한글 문서는 `README-kr.md`를 사용합니다.
-- 새 공개 문서는 가능하면 한국어를 먼저 작성하고 `docs/<name>-kr.md` 형식을 사용합니다.
-- 영어 문서는 같은 경로에서 `docs/<name>.md` 형식을 사용합니다.
+- Durable current knowledge는 `docs/`, 구현 의도와 gate ledger는 `plans/`에 둡니다. Duplicate, superseded, local working document는 ignored `tmpdocs/`로 이동하고 runtime `tmp/` 아래에는 Markdown을 두지 않습니다.
+- 새 top-level knowledge document는 같은 change에서 `docs/<name>.md`, `docs/<name>-kr.md`를 함께 추가하고 `docs/README*.md` 양쪽에 모두 등록합니다.
+- Historical plan은 `plans/README*.md`가 상태를 기록하면 Korean-only로 남을 수 있습니다. 모든 tracked top-level plan은 양쪽 plan index에 link해야 합니다.
+- 코드와 같은 ref의 문서를 읽고 수정합니다. 이전 tag/binary의 compatibility 판단에 `HEAD` 문서를 사용하면 안 됩니다.
 - 문서가 downstream handoff에 필요하면 release pack에 포함합니다.
 - 명령 예시는 가능한 한 실제 실행 가능한 형태로 씁니다.
 - 어쩔 수 없는 placeholder는 `<...>`로 표시하고, 어디서 값을 가져오는지 바로 설명합니다.
@@ -150,8 +152,8 @@ make release-pack-verify
 새 handoff 문서를 추가하면 아래 두 파일을 같이 수정합니다.
 
 ```text
-scripts/release-pack.sh
-scripts/release-pack-verify.sh
+scripts/release-pack-paths.txt
+scripts/release-pack-required-files.txt
 ```
 
 ## 5. 권장 검증 순서
@@ -159,9 +161,11 @@ scripts/release-pack-verify.sh
 작은 문서 변경:
 
 ```bash
+make docs-check
 git diff --check
-make release-pack-verify
 ```
+
+`make release-pack-verify`는 clean committed tree에서 실행하거나 explicit external archive를 대상으로 실행합니다. 기본 경로는 dirty worktree를 거부하고 canonical commit-bound snapshot을 만들 수 있습니다. 최종 annotated exact-SemVer tagged commit에서 검증한 pack만 release입니다.
 
 일반 코드 변경:
 
@@ -176,10 +180,15 @@ privacy flow 변경:
 make privacy-e2e-smoke
 ```
 
-release 후보:
+Release commit/tag 전 후보:
 
 ```bash
 make release-check
+```
+
+최종 tagged release:
+
+```bash
 make release-pack
 make release-pack-verify
 ```
@@ -195,5 +204,5 @@ make docker-proverd-build
 1. `git status --short`로 의도하지 않은 파일이 있는지 확인합니다.
 2. 공개 문서에 maintainer-local path가 들어가지 않았는지 확인합니다.
 3. CLI/output/schema/proto 변경이 문서에 반영됐는지 확인합니다.
-4. release pack에 들어가야 할 새 파일이 verifier 필수 목록에도 들어갔는지 확인합니다.
+4. `make docs-check`를 실행하고 새 handoff file이 두 release manifest에서 selected/required인지 확인합니다.
 5. security-sensitive 변경이면 private key, payload, token이 log에 노출되지 않는지 확인합니다.

@@ -253,7 +253,9 @@ To rotate only JoinSplit in an already complete development artifact set:
 Runtime uses:
 
 ```bash
+set -a
 source artifacts/privacy/privacy_zk_checksums.env
+set +a
 export CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict
 ```
 
@@ -295,7 +297,7 @@ When changing circuits, update these in one commit or a short commit series:
 4. Regenerate and validate JS/web wallet conformance fixtures.
 5. Run the shared native/prepared/structured-signer invariant vectors and the 2x2 old-circuit-control versus hardened-circuit feasibility test.
 6. Update `docs/clairveil-circuits.md`, `docs/clairveil-js-sdk-handoff.md`, and release note impact.
-7. Pass `make test`, `make ci`, `make privacy-e2e-smoke`, and `make release-pack-verify`.
+7. Pass `make test`, `make ci`, and `make privacy-e2e-smoke`. Use `make release-pack-verify` on a clean committed snapshot to check packaging completeness, then rerun it from the final annotated exact-SemVer tagged commit for a release.
 
 ## 9. Important Limits
 

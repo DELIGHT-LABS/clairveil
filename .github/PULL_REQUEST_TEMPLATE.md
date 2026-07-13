@@ -12,6 +12,7 @@
 
 ## Validation
 
+- [ ] `make docs-check`
 - [ ] `make ci`
 - [ ] `make vulncheck`
 - [ ] `make release-check` if release-critical behavior changed
@@ -21,6 +22,8 @@
 - [ ] No downstream-facing contract changes
 - [ ] Proto, fixture, schema, CLI, or prover contract changed and docs were updated
 - [ ] Security/trust boundary changed and security docs were updated
+- [ ] English/Korean documentation pairs and indexes were updated together
+- [ ] User-visible/release-facing changes were recorded under `Unreleased` in both changelogs
 
 ## Notes
 

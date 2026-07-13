@@ -6,12 +6,17 @@ Korean version: [CONTRIBUTING-kr.md](CONTRIBUTING-kr.md)
 
 ## Development Baseline
 
+Use the toolchain and resource baseline in [docs/clairveil-getting-started.md](docs/clairveil-getting-started.md). Documentation must describe the same checkout being changed.
+
 Before opening a pull request, run:
 
 ```bash
+make docs-check
 make ci
 make vulncheck
 ```
+
+`make ci` already includes `docs-check`; the explicit first command gives faster feedback for documentation-only work.
 
 For release candidates or release-critical changes, run the heavier local chain gate:
 
@@ -28,26 +33,16 @@ Keep commits small and reviewable.
 - Module/runtime changes should include tests.
 - CLI or workflow changes should update docs.
 - Wallet-facing fixture changes should update JSON Schema and examples.
-- Release process changes should update the release handoff pack.
+- Release process or handoff membership changes should update the release policy and both release-pack manifests.
 - Security-sensitive changes that affect a trust boundary should update the threat model or security review document.
 
 ## Documentation
 
-Important integration documents live under `docs/`:
+Current durable knowledge lives under `docs/`; implementation intent and completion ledgers live under `plans/`; duplicate, superseded, and local working material belongs in ignored `tmpdocs/`. Start with the [complete documentation index](docs/README.md) and [plan status index](plans/README.md).
 
-- `docs/clairveil-downstream-cosmos-integration-guide.md`
-- `docs/clairveil-js-sdk-handoff.md`
-- `docs/clairveil-circuits.md`
-- `docs/clairveil-cli-reference.md`
-- `docs/clairveil-testing-guide.md`
-- `docs/clairveil-operations-guide.md`
-- `docs/clairveil-maintainer-instructions.md`
-- `docs/clairveil-release-handoff-pack.md`
-- `docs/clairveil-proverd-remote-production-profile.md`
-- `docs/clairveil-threat-model.md`
-- `docs/clairveil-security-best-practices-review.md`
+When changing behavior that downstream teams depend on, update the English/Korean document pair in the same pull request. Add every new top-level knowledge document to both documentation indexes. Do not add Markdown to runtime `tmp/` or link tracked docs to ignored `tmpdocs/`.
 
-When changing behavior that downstream teams depend on, update the relevant document in the same pull request.
+Every release tag must have matching dated headings in `CHANGELOG.md` and `CHANGELOG-kr.md`. If handoff membership changes, update `scripts/release-pack-paths.txt` and `scripts/release-pack-required-files.txt` together.
 
 ## License
 

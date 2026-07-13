@@ -4,8 +4,8 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 dist_dir="${DIST_DIR:-"$repo_root/dist"}"
-commit="$(git -C "$repo_root" rev-parse --short=12 HEAD)"
-version="${RELEASE_VERSION:-"$(git -C "$repo_root" describe --tags --always --dirty 2>/dev/null || printf '%s' "$commit")"}"
+source_commit="$(git -C "$repo_root" rev-parse HEAD)"
+version="${RELEASE_VERSION:-"$(git -C "$repo_root" describe --tags --exact-match "$source_commit" 2>/dev/null || printf 'snapshot-%s' "$source_commit")"}"
 pack_name="clairveil-handoff-${version}"
 archive_path="${RELEASE_PACK_ARCHIVE:-"$dist_dir/${pack_name}.tar.gz"}"
 checksum_path="${RELEASE_PACK_CHECKSUM:-"$archive_path.sha256"}"
@@ -13,6 +13,11 @@ work_dir="$(mktemp -d)"
 explicit_archive=false
 if [[ -n "${RELEASE_PACK_ARCHIVE:-}" ]]; then
 	explicit_archive=true
+fi
+
+if [[ "$explicit_archive" == false && -n "$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)" ]]; then
+	echo "default release pack verification requires a clean worktree" >&2
+	exit 1
 fi
 
 cleanup() {
@@ -27,12 +32,12 @@ fail() {
 
 validate_release_path() {
 	local path="$1"
-	if [[ -z "$path" || "$path" == /* || "$path" == */ || "$path" == *$'\n'* ]]; then
-		fail "invalid selected release path: $path"
+	if [[ -z "$path" || "$path" == /* || "$path" == */ || "$path" == *\\* || "$path" == *//* || "$path" =~ [[:cntrl:]] ]]; then
+		fail "invalid release manifest path: $path"
 	fi
 	case "/$path/" in
 	*"/../"* | *"/./"*)
-		fail "invalid selected release path: $path"
+		fail "invalid release manifest path: $path"
 		;;
 	esac
 }
@@ -48,7 +53,11 @@ PY
 }
 
 if [[ -z "${RELEASE_PACK_ARCHIVE:-}" ]]; then
-	"$repo_root/scripts/release-pack.sh" >/dev/null
+	if [[ ! -f "$archive_path" && ! -f "$checksum_path" ]]; then
+		"$repo_root/scripts/release-pack.sh" >/dev/null
+	elif [[ ! -f "$archive_path" || ! -f "$checksum_path" ]]; then
+		fail "default release pack archive/checksum pair is incomplete; refusing to replace an existing artifact"
+	fi
 fi
 
 [[ -f "$archive_path" ]] || fail "missing archive: $archive_path"
@@ -189,6 +198,90 @@ manifest_generated_count="$(grep -Ec '^generated_at_utc: [0-9]{4}-[0-9]{2}-[0-9]
 manifest_version="$(sed -nE 's/^version: ([0-9A-Za-z._+-]+)$/\1/p' "$pack_root/RELEASE-MANIFEST.txt")"
 manifest_generated_at_utc="$(sed -nE 's/^generated_at_utc: ([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)$/\1/p' "$pack_root/RELEASE-MANIFEST.txt")"
 [[ "$pack_root_name" == "clairveil-handoff-${manifest_version}" ]] || fail "archive root does not match manifest version"
+if [[ "$explicit_archive" == false ]]; then
+	[[ "$manifest_version" == "$version" ]] || fail "default archive version does not match the requested release version"
+fi
+manifest_is_semver=false
+if python3 - "$manifest_version" <<'PY'
+import re
+import sys
+
+identifier = r"(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
+pattern = re.compile(
+    r"v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
+    rf"(?:-{identifier}(?:\.{identifier})*)?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+)
+raise SystemExit(0 if pattern.fullmatch(sys.argv[1]) else 1)
+PY
+then
+	manifest_is_semver=true
+fi
+if [[ "$manifest_is_semver" == true ]]; then
+	manifest_tag_ref="refs/tags/$manifest_version"
+	manifest_tag_type="$(git -C "$repo_root" cat-file -t "$manifest_tag_ref" 2>/dev/null || true)"
+	[[ "$manifest_tag_type" == "tag" ]] || fail "manifest version must name an annotated Git tag"
+	manifest_tag_target_type="$(git -C "$repo_root" cat-file -p "$manifest_tag_ref" 2>/dev/null | sed -n 's/^type //p' | head -1)"
+	[[ "$manifest_tag_target_type" == "commit" ]] || fail "manifest version tag must point directly to a commit"
+	manifest_tag_commit="$(git -C "$repo_root" rev-parse --verify "${manifest_tag_ref}^{commit}" 2>/dev/null || true)"
+	[[ "$manifest_tag_commit" == "$manifest_commit" ]] || fail "manifest version tag does not point to the manifest commit"
+	changelog_ast="$work_dir/changelog-ast.json"
+	if ! go run -mod=readonly "$repo_root/scripts/markdown-ast.go" \
+		"$pack_root/CHANGELOG.md" "$pack_root/CHANGELOG-kr.md" >"$changelog_ast"; then
+		fail "cannot parse bilingual changelogs as CommonMark"
+	fi
+	if ! python3 - "$changelog_ast" "$manifest_version" <<'PY'
+from datetime import date
+import json
+from pathlib import Path
+import re
+import sys
+
+tag = sys.argv[2]
+try:
+    documents = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["documents"]
+except (OSError, UnicodeError, json.JSONDecodeError, KeyError) as error:
+    print(f"cannot read CommonMark AST: {error}", file=sys.stderr)
+    raise SystemExit(1)
+dates = {}
+for document in documents:
+    changelog_name = Path(document["path"]).name
+    pattern = re.compile(
+        rf"^{re.escape(tag)}[ \t]+-[ \t]+"
+        rf"([0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}})[ \t]*$",
+    )
+    matches = [
+        match.group(1)
+        for heading in document["headings"]
+        if int(heading["level"]) == 2
+        for match in [pattern.fullmatch(str(heading["text"]))]
+        if match is not None
+    ]
+    if len(matches) != 1:
+        print(
+            f"{changelog_name} must contain exactly one dated heading for {tag}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    try:
+        date.fromisoformat(matches[0])
+    except ValueError:
+        print(f"{changelog_name} has an invalid release date: {matches[0]}", file=sys.stderr)
+        raise SystemExit(1)
+    dates[changelog_name] = matches[0]
+if set(dates) != {"CHANGELOG.md", "CHANGELOG-kr.md"}:
+    print("both English and Korean changelogs are required", file=sys.stderr)
+    raise SystemExit(1)
+if dates["CHANGELOG.md"] != dates["CHANGELOG-kr.md"]:
+    print("English and Korean changelog dates do not match", file=sys.stderr)
+    raise SystemExit(1)
+PY
+	then
+		fail "manifest version is not bound to matching bilingual changelog headings"
+	fi
+else
+	[[ "$manifest_version" == "snapshot-$manifest_commit" ]] || fail "untagged manifest version must be snapshot-<full-commit-sha>"
+fi
 
 manifest_template="$work_dir/release-manifest-template.txt"
 expected_manifest="$work_dir/expected-release-manifest.txt"
@@ -205,133 +298,17 @@ awk \
 	}' "$manifest_template" >"$expected_manifest"
 cmp -s "$expected_manifest" "$pack_root/RELEASE-MANIFEST.txt" || fail "release manifest differs from the canonical Git template"
 
-required_files=(
-	"RELEASE-MANIFEST.txt"
-	"SHA256SUMS.txt"
-	"README.md"
-	"README-kr.md"
-	"LICENSE"
-	"NOTICE"
-	"CHANGELOG.md"
-	"CHANGELOG-kr.md"
-	"CONTRIBUTING.md"
-	"CONTRIBUTING-kr.md"
-	"SECURITY.md"
-	"SECURITY-kr.md"
-	"CODE_OF_CONDUCT.md"
-	"CODE_OF_CONDUCT-kr.md"
-	"Makefile"
-	"go.mod"
-	"go.sum"
-	"proto/clairveil/privacy/v1/genesis.proto"
-	"proto/clairveil/privacy/v1/query.proto"
-	"proto/clairveil/privacy/v1/tx.proto"
-	"proto/clairveil/privacy/v1/batch_feasibility.proto"
-	"docs/clairveil-release-handoff-pack.md"
-	"docs/clairveil-release-handoff-pack-kr.md"
-	"docs/clairveil-circuits.md"
-	"docs/clairveil-circuits-kr.md"
-	"docs/clairveil-batch-joinsplit-16x32.md"
-	"docs/clairveil-batch-joinsplit-16x32-kr.md"
-	"docs/clairveil-batch-joinsplit-16x32-session-4-validation-report.md"
-	"docs/clairveil-batch-joinsplit-16x32-session-4-validation-report-kr.md"
-	"docs/clairveil-batch-joinsplit-localnet-tutorial.md"
-	"docs/clairveil-batch-joinsplit-localnet-tutorial-kr.md"
-	"docs/clairveil-session3b-batch-transfer-handoff.md"
-	"docs/clairveil-session3b-batch-transfer-handoff-kr.md"
-	"docs/clairveil-cli-reference.md"
-	"docs/clairveil-cli-reference-kr.md"
-	"docs/clairveil-testing-guide.md"
-	"docs/clairveil-testing-guide-kr.md"
-	"docs/clairveil-operations-guide.md"
-	"docs/clairveil-operations-guide-kr.md"
-	"docs/clairveil-privacy-accounting-design-note.md"
-	"docs/clairveil-privacy-accounting-design-note-kr.md"
-	"docs/clairveil-maintainer-instructions.md"
-	"docs/clairveil-maintainer-instructions-kr.md"
-	"docs/clairveil-downstream-cosmos-integration-guide.md"
-	"docs/clairveil-downstream-cosmos-integration-guide-kr.md"
-	"docs/clairveil-client-product-brief.md"
-	"docs/clairveil-client-product-brief-kr.md"
-	"docs/clairveil-client-ux-flows.md"
-	"docs/clairveil-client-ux-flows-kr.md"
-	"docs/clairveil-client-risk-decisions.md"
-	"docs/clairveil-client-risk-decisions-kr.md"
-	"docs/clairveil-client-api-checklist.md"
-	"docs/clairveil-client-api-checklist-kr.md"
-	"docs/clairveil-js-sdk-handoff.md"
-	"docs/clairveil-js-sdk-handoff-kr.md"
-	"docs/clairveil-bulk-transfer-product-handoff-kr.md"
-	"plans/clairveil-bulk-transfer-strategy-kr.md"
-	"plans/clairveil-bulk-transfer-time-simulation-kr.md"
-	"docs/clairveil-note-reservation-design-kr.md"
-	"docs/clairveil-note-reservation-design.md"
-	"docs/clairveil-reference-payroll-product.md"
-	"docs/clairveil-reference-payroll-product-kr.md"
-	"docs/clairveil-reference-payroll-product-policy.md"
-	"docs/clairveil-reference-payroll-product-policy-kr.md"
-	"docs/clairveil-reference-payroll-js-sdk-handoff.md"
-	"docs/clairveil-reference-payroll-js-sdk-handoff-kr.md"
-	"docs/clairveil-reference-payroll-wallet-handoff.md"
-	"docs/clairveil-reference-payroll-wallet-handoff-kr.md"
-	"docs/clairveil-reference-payroll-live-localnet-tutorial.md"
-	"docs/clairveil-reference-payroll-live-localnet-tutorial-kr.md"
-	"docs/clairveil-reference-payroll-rehearsal-kr.md"
-	"docs/clairveil-reference-payroll-localnet-rehearsal-result-kr.md"
-	"plans/clairveil-scan-optimization-implementation-plan.md"
-	"plans/clairveil-scan-optimization-implementation-plan-kr.md"
-	"docs/clairveil-proverd-remote-production-profile.md"
-	"docs/clairveil-proverd-remote-production-profile-kr.md"
-	"docs/clairveil-merkle-restore-sop.md"
-	"docs/clairveil-merkle-restore-sop-kr.md"
-	"docs/clairveil-release-versioning-policy.md"
-	"docs/clairveil-release-versioning-policy-kr.md"
-	"docs/clairveil-release-note-template.md"
-	"docs/clairveil-release-note-template-kr.md"
-	"docs/clairveil-threat-model.md"
-	"docs/clairveil-threat-model-kr.md"
-	"docs/clairveil-security-best-practices-review.md"
-	"docs/clairveil-security-best-practices-review-kr.md"
-	"docs/clairveil-local-privacy-walkthrough.md"
-	"docs/clairveil-local-privacy-walkthrough-kr.md"
-	"plans/clairveild-reference-app-plan.md"
-	"plans/clairveild-reference-app-plan-kr.md"
-	"docs/schemas/clairveil-js-wallet-contract.schema.json"
-	"docs/schemas/README.md"
-	"docs/schemas/README-kr.md"
-	"plans/clairveil-bulk-transfer-implementation-plan-kr.md"
-	"plans/clairveil-public-benchmark-plan-kr.md"
-	"plans/clairveil-public-capacity-benchmark-followup-plan-kr.md"
-	"plans/clairveil-public-capacity-claim-execution-plan-kr.md"
-	"x/privacy/client/sdk/conformance/testdata/privacy_prover_example_bundle.json"
-	"x/privacy/client/sdk/conformance/testdata/privacy_note_reservation_contract.json"
-	"x/privacy/client/sdk/conformance/testdata/privacy_relay_withdraw_contract.json"
-	"x/privacy/client/sdk/conformance/testdata/privacy_wallet_golden_vectors.json"
-	"x/privacy/client/sdk/conformance/testdata/privacy_note_v1_contract.json"
-	"x/privacy/client/sdk/conformance/testdata/privacy_batch_joinsplit_v1_contract.json"
-	"x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_session3b_contract.json"
-	"examples/README.md"
-	"examples/README-kr.md"
-	"examples/audit-disclosure-keys/README.md"
-	"examples/audit-disclosure-keys/README-kr.md"
-	"examples/audit-disclosure-keys/package.json"
-	"examples/js-sdk-fixture-validator/README.md"
-	"examples/js-sdk-fixture-validator/README-kr.md"
-	"examples/js-sdk-fixture-validator/package.json"
-	"examples/js-sdk-prover-http-client/README.md"
-	"examples/js-sdk-prover-http-client/README-kr.md"
-	"examples/js-sdk-prover-http-client/package.json"
-	"examples/reference-payroll/README.md"
-	"examples/reference-payroll/README-kr.md"
-	"examples/reference-payroll/payroll-demo.json"
-	"build/clairveil-proverd/Dockerfile"
-	"build/clairveil-proverd/compose.yaml"
-	"scripts/release-pack.sh"
-	"scripts/release-pack-verify.sh"
-	"scripts/release-pack-paths.txt"
-	"scripts/release-manifest-template.txt"
-	"scripts/privacy-batch-joinsplit-localnet.sh"
-)
+required_files_manifest="$work_dir/release-pack-required-files.txt"
+git -C "$repo_root" show "${manifest_commit}:scripts/release-pack-required-files.txt" >"$required_files_manifest" || fail "required file manifest is missing from manifest commit"
+duplicate_required_file="$(LC_ALL=C sort "$required_files_manifest" | uniq -d | head -1)"
+[[ -z "$duplicate_required_file" ]] || fail "required file manifest contains a duplicate: $duplicate_required_file"
+
+required_files=()
+while IFS= read -r required_file || [[ -n "$required_file" ]]; do
+	validate_release_path "$required_file"
+	required_files+=("$required_file")
+done <"$required_files_manifest"
+[[ "${#required_files[@]}" -gt 0 ]] || fail "required file manifest is empty"
 
 for file in "${required_files[@]}"; do
 	[[ -f "$pack_root/$file" ]] || fail "missing required file in archive: $file"

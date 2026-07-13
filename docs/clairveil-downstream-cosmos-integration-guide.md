@@ -284,7 +284,9 @@ Create artifact checksum env files with:
 go run ./cmd/clairveil-setup \
   --out /path/to/zk_artifacts
 
+set -a
 source /path/to/zk_artifacts/privacy_zk_checksums.env
+set +a
 ```
 
 The required `privacy-note-v1` order is `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`. Validators load the four required VKs only after exact consensus identity comparison; provers lazily load selected R1CS/PK pairs. The recorded development batch artifacts are R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, and VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`. These are development identities, not production-distribution or formal-setup artifacts.
@@ -317,17 +319,23 @@ tx privacy list-notes
 tx privacy withdraw
 tx privacy prepare-withdraw
 tx privacy relay-withdraw
+tx privacy transfer-batch
+tx privacy transfer-batch-16x32
+tx privacy prepare-batch-transfer
+tx privacy prove-batch-transfer
+tx privacy broadcast-batch-transfer
 ```
 
-There is no user-facing `MsgBatchTransfer` CLI in Session 3A. Any existing `transfer-batch`/payroll command is a separate multi-message workflow and must not be documented or wired as the one-proof batch message. Likewise, `clairveil-proverd` has no batch HTTP route yet.
+The current Session 3B surface includes the one-proof `MsgBatchTransfer` commands `transfer-batch-16x32`, `prepare-batch-transfer`, `prove-batch-transfer`, and `broadcast-batch-transfer`, plus the companion prover route `POST /v1/proofs/batch-transfer`. The older `transfer-batch` command is intentionally different: it sends multiple independent `MsgTransfer` messages in one Cosmos transaction envelope. Do not document or wire that legacy command as the one-proof batch protocol.
 
 The query CLI currently exposed directly is:
 
 ```text
 query privacy check-nullifier
+query privacy reserve uclair
 ```
 
-`tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, and `nullifiers` are available through gRPC/HTTP gateway queries. If the downstream chain needs an operator CLI, add separate CLI wrappers for those queries.
+The remaining `tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, and batch `nullifiers` queries are available through gRPC/HTTP gateway queries. If the downstream chain needs an operator CLI, add separate CLI wrappers for those queries.
 
 ## 9. Downstream Test Order
 
@@ -367,7 +375,7 @@ Downstream integration is first-pass complete when all of the following pass.
 - A local single-node chain passes deposit, transfer, disclosure decode, and withdraw.
 - `tree_state`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, and `nullifiers` queries respond correctly.
 - The four-circuit identity, batch development artifact readiness, direct core integration, deterministic gas, atomic rollback, and typed scan/minimal-event tests pass.
-- The integration record explicitly states that public batch SDK/prover/wallet/payroll/CLI surfaces and formal production artifacts are not supplied by Session 3A.
+- The integration record distinguishes the implemented Session 3B Go SDK/prover/wallet/payroll/CLI reference surfaces from work still owned by the downstream product, and states that formal production artifacts are not supplied.
 - Audit master private key custody policy is reflected in production operations docs.
 - Wallet storage encryption and remote prover privacy policy are reflected in JS/TS SDK or web wallet design docs.
 - Downstream-specific EVM/policy/precompile integration is separated into separate tests.

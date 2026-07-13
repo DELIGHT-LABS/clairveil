@@ -35,13 +35,17 @@ GET /clairveil/privacy/v1/merkle_path/{commitment_hex}
 GET /clairveil/privacy/v1/audit_config
 GET /clairveil/privacy/v1/disclosure_config
 GET /clairveil/privacy/v1/circuit_config
-GET /clairveil/privacy/v1/reserve/{denom}
+GET /clairveil/privacy/v1/reserve/{denom=**}
+GET /clairveil/privacy/v1/assets/by_denom/{canonical_denom=**}
+GET /clairveil/privacy/v1/assets/by_id/{asset_id_hex}
 GET /clairveil/privacy/v1/nullifier/{nullifier}
 GET /clairveil/privacy/v1/nullifiers
 POST /clairveil/privacy/v1/nullifiers
+POST /clairveil/privacy/v1/privacy_scan
+POST /clairveil/privacy/v1/commitment_paths_at_root
 ```
 
-Clients should prefer `scan_events` for wallet note sync because it is a cursor-based projection of wallet-relevant event data. The raw `events` query remains useful for compatibility, debugging, and auditors. The client should implement pagination/cursor persistence and bounded retry. Endpoint failover is safe by default only for public read queries such as `tree_state`, `audit_config`, `circuit_config`, and `scan_events`. `scan_events` can return an empty `events` array with `has_more=true` when the page only contains filtered-out event types; clients must still persist/advance to `next_height` and `next_sequence` and continue scanning.
+Clients should prefer typed `privacy_scan` (`privacy-scan-v2`) for wallet note sync and persist the full `(height, global_sequence, output_index)` cursor. The reference SDK uses `scan_events` only when the source does not implement the typed query, then falls back to raw transaction search for older sources. A failure from an available typed source is terminal: silently downgrading could omit batch ciphertexts. The client should implement pagination/cursor persistence, response validation, and bounded retry. Public global projections such as `privacy_scan` and `scan_events` may use bounded endpoint failover, but a client must not change schema/cursor semantics while failing over. In the legacy fallback, `scan_events` can return an empty `events` array with `has_more=true` when a page contains only filtered-out event types; clients must still persist/advance to `next_height` and `next_sequence`. The raw `events` query remains a compatibility/debugging/auditor surface, not the preferred wallet sync contract.
 
 Use `POST /clairveil/privacy/v1/nullifiers` with a JSON body for normal batch spent refresh. Send at most 1000 nullifiers per request and chunk larger wallets. The GET binding remains available for small compatibility checks, but large query strings can exceed browser, mobile gateway, or proxy URL limits.
 
@@ -54,6 +58,7 @@ Messages the client must build or broadcast:
 ```text
 /clairveil.privacy.v1.Msg/Deposit
 /clairveil.privacy.v1.Msg/Transfer
+/clairveil.privacy.v1.Msg/BatchTransfer
 /clairveil.privacy.v1.Msg/Withdraw
 ```
 
@@ -62,6 +67,7 @@ Important:
 - `MsgTransfer` includes absolute `expires_at_unix`, user disclosure, mandatory audit disclosure, optional sender self-view disclosure fields, encrypted output notes, and exactly two 2-byte `view_tags`.
 - `MsgDeposit` requires a deposit proof binding the transparent amount/asset to the note commitment.
 - `MsgWithdraw` has no output note fields.
+- `MsgBatchTransfer` is the one-proof `BatchJoinSplit16x32` message for 1..16 inputs and 1..32 outputs. Do not confuse it with the legacy CLI `transfer-batch`, which envelopes multiple `MsgTransfer` messages.
 - Clients must not create legacy `new_note_commitment` or `encrypted_note` withdraw values.
 - Transfer `view_tags` are untrusted performance hints for local scan. They are included in the signed canonical payload digest but are not server-filterable ownership evidence. Safe default sync must still full-decrypt on a mismatch; skipping mismatch outputs requires explicit fast-mode opt-in and recovery/rescan support.
 - `creator` is intentionally replaceable for transfer and withdraw. Transfer outputs/disclosures/chain/expiry and withdraw recipient/chain/expiry are owner-intent/proof-bound.
@@ -73,7 +79,21 @@ Companion prover HTTP paths:
 ```text
 POST /v1/prover/transfer
 POST /v1/prover/withdraw
+POST /v1/proofs/batch-transfer
 ```
+
+The batch route is the Session 3B one-proof reference surface. It uses a separate path namespace from the legacy transfer/withdraw prover routes and requires the batch prepared-payload/proof contract; clients must not derive one route from the other by string substitution.
+
+Pin all four Session 3B batch wire versions independently:
+
+| Wire object | Code constant | Required value |
+| --- | --- | --- |
+| Prepared payload | `batchtransfer.PreparedBatchTransferPayloadVersion` | `batch-transfer-payload-v1` |
+| Prepared proof | `batchtransfer.PreparedBatchTransferProofVersion` | `batch-transfer-proof-v1` |
+| Prover request envelope | `provertransport.BatchTransferProofRequestVersion` | `v1` |
+| Prover response envelope | `provertransport.BatchTransferProofResponseVersion` | `v1` |
+
+The request/response envelope version does not replace the nested payload/proof version. Reject a mismatch in any layer and regenerate the prepared operation rather than guessing compatibility.
 
 The client must validate:
 
@@ -86,7 +106,7 @@ The client must validate:
 - auth failure
 - malformed response
 
-Current breaking versions are transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload and proof/request/response `v2`, relay handoff/schema `v2`, and disclosure plaintext/query `privacy-fixed-v1`. Reject and regenerate legacy payloads.
+Current breaking versions are transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload and proof/request/response `v2`, batch payload/proof/request/response `batch-transfer-payload-v1`/`batch-transfer-proof-v1`/`v1`/`v1`, relay handoff/schema `v2`, and disclosure plaintext/query `privacy-fixed-v1`. Reject and regenerate legacy payloads.
 
 When using a remote prover, request/response bodies are privacy-sensitive data.
 
@@ -98,7 +118,7 @@ Do not treat retry and endpoint failover as the same feature.
 
 | Request type | Default policy |
 | --- | --- |
-| Public read queries such as `tree_state`, `audit_config`, `circuit_config`, `scan_events` | bounded retry and endpoint failover are acceptable |
+| Public read queries such as `tree_state`, `audit_config`, `circuit_config`, `privacy_scan`, and `scan_events` | bounded retry and endpoint failover are acceptable when schema/cursor semantics remain identical |
 | Nullifier queries | retry against the same endpoint by default; cross-endpoint failover is opt-in |
 | Tx broadcast | automatic retry/failover is off by default; check tx hash and nullifier status before rebuilding or rebroadcasting |
 | Prover requests | timeout/validation and same-endpoint retry only by default; multi-prover failover requires explicit opt-in |
@@ -111,10 +131,12 @@ Client CI should validate at least:
 
 - prepared payload hashes are calculated the same way as the Go SDK;
 - transfer payload/proof/request/response use `v5`/`v2`/`v2`/`v2`; withdraw prover/final payload and proof/request/response use `v2`;
+- batch payload/proof/request/response use `batch-transfer-payload-v1`/`batch-transfer-proof-v1`/`v1`/`v1` and are validated as four distinct wire layers;
 - fixtures reproduce the exact 13-field transfer and 9-field spend public-input order and non-reduced SHA-256 128-bit limbs;
 - `CircuitConfig` returns consensus `CircuitSetIdentity` and never treats local manifest paths/env checksums as consensus authority;
 - fixture shape matches `docs/schemas/clairveil-js-wallet-contract.schema.json`;
 - fixtures load from `x/privacy/client/sdk/conformance/testdata`;
+- `privacy_batch_transfer_session3b_contract.json` passes `TestSession3BBatchTransferContract`, which checks its schema, five boundary shapes, restart/retry policy, typed scan policy, and payroll evidence graph while binding the four wire versions, circuit/route, and 16x32 limits to current Go constants;
 - semantic checks match `examples/js-sdk-fixture-validator`;
 - relay withdraw handoff fixtures validate the relayer `creator` and payload `recipient` split;
 - prover timeout/auth/response validation matches `examples/js-sdk-prover-http-client`.
@@ -124,6 +146,7 @@ Fast repo-level validation commands:
 ```bash
 make examples
 go test ./x/privacy/client/sdk/conformance
+go test ./x/privacy/client/sdk/conformance -run '^TestSession3BBatchTransferContract$' -count=1
 ```
 
 ## 7. Release Gate Checklist
@@ -131,7 +154,7 @@ go test ./x/privacy/client/sdk/conformance
 Minimum validation before client release:
 
 - deposit e2e
-- note scan/rescan through `scan_events`, including persisted `(height, sequence)` cursor and empty-page/`has_more` handling
+- note scan/rescan through preferred `privacy_scan` V2 with the full cursor and fail-closed typed response validation; legacy `scan_events` fallback retains `(height, sequence)` and empty-page/`has_more` handling
 - unsupported `scan_format_version` or `view_tag_version` does not advance the wallet cursor silently
 - forced rescan/recovery treats view tag mismatches as non-authoritative and runs full trial decrypt
 - batch spent refresh through `nullifiers` in <=1000-item chunks, with fallback behavior for individual nullifier checks if needed
