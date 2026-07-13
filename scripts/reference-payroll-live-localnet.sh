@@ -229,7 +229,7 @@ source "$artifacts/privacy_zk_checksums.env"
 set +a
 export CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE="${CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE:-strict}"
 
-run start --home "$home" --minimum-gas-prices 0uclair >"$log_file" 2>&1 &
+"$clairveild" start --home "$home" --minimum-gas-prices 0uclair >"$log_file" 2>&1 &
 node_pid=$!
 wait_for_node
 
