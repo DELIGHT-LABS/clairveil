@@ -611,6 +611,12 @@ assert payroll["proof_count"] == 1 and payroll["tx_envelope_count"] == 1
 assert payroll["broadcast_attempts"] == 2
 assert payroll["succeeded_items"] == 3
 assert payroll["conflict_manual_review_items"] == 3
+assert payroll["disclosure_live_verified"]
+assert payroll["view_tag_mismatch_safe"]
+assert payroll["recipient_notes_verified"] == 4
+assert payroll["user_disclosures_verified"] == 2
+assert payroll["audit_disclosures_verified"] == 4
+assert payroll["self_views_verified"] == 4
 assert payroll["chain_status"] == "Succeeded"
 assert payroll["conflict_chain_status"] == "ManualReview"
 assert len(payroll["stage_pids"]) == 6 and len(set(payroll["stage_pids"].values())) == 6

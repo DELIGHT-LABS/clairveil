@@ -42,6 +42,7 @@ import (
 	privacyprovertransport "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/provertransport"
 	privacyprovider "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/provider"
 	privacyreservation "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/reservation"
+	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -56,53 +57,65 @@ func init() {
 }
 
 type session3BPayrollState struct {
-	SchemaVersion          string                             `json:"schema_version"`
-	OperationID            string                             `json:"operation_id"`
-	ConflictOperationID    string                             `json:"conflict_operation_id,omitempty"`
-	PayloadHash            string                             `json:"payload_hash"`
-	TxHash                 string                             `json:"tx_hash,omitempty"`
-	TxBytesHash            string                             `json:"tx_bytes_hash,omitempty"`
-	TimeoutBytesHash       string                             `json:"timeout_bytes_hash,omitempty"`
-	RetryBytesHash         string                             `json:"retry_bytes_hash,omitempty"`
-	EffectID               string                             `json:"effect_id,omitempty"`
-	StagePIDs              map[string]int                     `json:"stage_pids"`
-	TimeoutBeforeSend      bool                               `json:"timeout_before_send"`
-	ExactStoredBytesRetry  bool                               `json:"exact_stored_bytes_retry"`
-	TxHashFirst            bool                               `json:"tx_hash_first"`
-	SpentNullifierConflict bool                               `json:"spent_nullifier_conflict"`
-	BroadcastAttempts      int                                `json:"broadcast_attempts"`
-	InputCount             int                                `json:"input_count"`
-	OutputCount            int                                `json:"output_count"`
-	SucceededItems         int                                `json:"succeeded_items"`
-	ManualReviewItems      int                                `json:"manual_review_items"`
-	ChainStatus            privacyreservation.OperationStatus `json:"chain_status"`
-	ConflictStatus         privacyreservation.OperationStatus `json:"conflict_status,omitempty"`
+	SchemaVersion            string                             `json:"schema_version"`
+	OperationID              string                             `json:"operation_id"`
+	ConflictOperationID      string                             `json:"conflict_operation_id,omitempty"`
+	PayloadHash              string                             `json:"payload_hash"`
+	TxHash                   string                             `json:"tx_hash,omitempty"`
+	TxBytesHash              string                             `json:"tx_bytes_hash,omitempty"`
+	TimeoutBytesHash         string                             `json:"timeout_bytes_hash,omitempty"`
+	RetryBytesHash           string                             `json:"retry_bytes_hash,omitempty"`
+	EffectID                 string                             `json:"effect_id,omitempty"`
+	StagePIDs                map[string]int                     `json:"stage_pids"`
+	TimeoutBeforeSend        bool                               `json:"timeout_before_send"`
+	ExactStoredBytesRetry    bool                               `json:"exact_stored_bytes_retry"`
+	TxHashFirst              bool                               `json:"tx_hash_first"`
+	SpentNullifierConflict   bool                               `json:"spent_nullifier_conflict"`
+	BroadcastAttempts        int                                `json:"broadcast_attempts"`
+	InputCount               int                                `json:"input_count"`
+	OutputCount              int                                `json:"output_count"`
+	SucceededItems           int                                `json:"succeeded_items"`
+	ManualReviewItems        int                                `json:"manual_review_items"`
+	DisclosureLiveVerified   bool                               `json:"disclosure_live_verified"`
+	ViewTagMismatchSafe      bool                               `json:"view_tag_mismatch_safe"`
+	RecipientNotesVerified   int                                `json:"recipient_notes_verified"`
+	UserDisclosuresVerified  int                                `json:"user_disclosures_verified"`
+	AuditDisclosuresVerified int                                `json:"audit_disclosures_verified"`
+	SelfViewsVerified        int                                `json:"self_views_verified"`
+	ChainStatus              privacyreservation.OperationStatus `json:"chain_status"`
+	ConflictStatus           privacyreservation.OperationStatus `json:"conflict_status,omitempty"`
 }
 
 type session3BPayrollSummary struct {
-	SchemaVersion          string                             `json:"schema_version"`
-	Status                 string                             `json:"status"`
-	OperationID            string                             `json:"operation_id"`
-	ConflictOperationID    string                             `json:"conflict_operation_id"`
-	PayloadHash            string                             `json:"payload_hash"`
-	TxHash                 string                             `json:"tx_hash"`
-	TxBytesHash            string                             `json:"tx_bytes_hash"`
-	EffectID               string                             `json:"effect_id"`
-	StagePIDs              map[string]int                     `json:"stage_pids"`
-	ProcessRestarted       bool                               `json:"process_restarted"`
-	TimeoutBeforeSend      bool                               `json:"timeout_before_send"`
-	ExactStoredBytesRetry  bool                               `json:"exact_stored_bytes_retry"`
-	TxHashFirst            bool                               `json:"tx_hash_first_reconcile"`
-	SpentNullifierConflict bool                               `json:"spent_nullifier_conflict"`
-	BroadcastAttempts      int                                `json:"broadcast_attempts"`
-	InputCount             int                                `json:"input_count"`
-	OutputCount            int                                `json:"output_count"`
-	ProofCount             int                                `json:"proof_count"`
-	TxEnvelopeCount        int                                `json:"tx_envelope_count"`
-	SucceededItems         int                                `json:"succeeded_items"`
-	ManualReviewItems      int                                `json:"conflict_manual_review_items"`
-	ChainStatus            privacyreservation.OperationStatus `json:"chain_status"`
-	ConflictStatus         privacyreservation.OperationStatus `json:"conflict_chain_status"`
+	SchemaVersion            string                             `json:"schema_version"`
+	Status                   string                             `json:"status"`
+	OperationID              string                             `json:"operation_id"`
+	ConflictOperationID      string                             `json:"conflict_operation_id"`
+	PayloadHash              string                             `json:"payload_hash"`
+	TxHash                   string                             `json:"tx_hash"`
+	TxBytesHash              string                             `json:"tx_bytes_hash"`
+	EffectID                 string                             `json:"effect_id"`
+	StagePIDs                map[string]int                     `json:"stage_pids"`
+	ProcessRestarted         bool                               `json:"process_restarted"`
+	TimeoutBeforeSend        bool                               `json:"timeout_before_send"`
+	ExactStoredBytesRetry    bool                               `json:"exact_stored_bytes_retry"`
+	TxHashFirst              bool                               `json:"tx_hash_first_reconcile"`
+	SpentNullifierConflict   bool                               `json:"spent_nullifier_conflict"`
+	BroadcastAttempts        int                                `json:"broadcast_attempts"`
+	InputCount               int                                `json:"input_count"`
+	OutputCount              int                                `json:"output_count"`
+	ProofCount               int                                `json:"proof_count"`
+	TxEnvelopeCount          int                                `json:"tx_envelope_count"`
+	SucceededItems           int                                `json:"succeeded_items"`
+	ManualReviewItems        int                                `json:"conflict_manual_review_items"`
+	DisclosureLiveVerified   bool                               `json:"disclosure_live_verified"`
+	ViewTagMismatchSafe      bool                               `json:"view_tag_mismatch_safe"`
+	RecipientNotesVerified   int                                `json:"recipient_notes_verified"`
+	UserDisclosuresVerified  int                                `json:"user_disclosures_verified"`
+	AuditDisclosuresVerified int                                `json:"audit_disclosures_verified"`
+	SelfViewsVerified        int                                `json:"self_views_verified"`
+	ChainStatus              privacyreservation.OperationStatus `json:"chain_status"`
+	ConflictStatus           privacyreservation.OperationStatus `json:"conflict_chain_status"`
 }
 
 type session3BLiveConfig struct {
@@ -341,17 +354,86 @@ func runSession3BReconcileStage(t *testing.T, cfg session3BLiveConfig) {
 	require.NoError(t, err)
 	effectID, outputs := findSession3BBatchOutputs(t, ctx, live.Scan, state.TxHash)
 	require.Len(t, outputs, len(payload.Outputs))
+	aliceKeys := session3BPrivacyKeysFor(t, live.Client, "alice")
+	bobKeys := session3BPrivacyKeysFor(t, live.Client, "bob")
+	auditorKeys := session3BPrivacyKeysFor(t, live.Client, "auditor")
+	owner := payload.Inputs[0].Note
+	ownerAddress, err := owner.ReceiverShieldedAddress()
+	require.NoError(t, err)
+	expectedAmounts := []int64{4, 5, 9, 3}
 	observed := make([]privacyreservation.ObservedOutputEvidence, len(outputs))
+	userDisclosuresVerified := 0
 	for i, output := range outputs {
 		require.Equal(t, uint32(i), output.OutputIndex)
 		require.Equal(t, payload.MessageOutputs[i].Commitment, output.Commitment)
+		require.Equal(t, privacytypes.EventTypeBatchTransferV1, output.EventType)
+		require.Equal(t, expectedAmounts[i], payload.Outputs[i].Note.Amount.Int64())
+
+		recipientKeys := bobKeys
+		expectedRecipient := cfg.BobAddress
+		if i == len(outputs)-1 {
+			recipientKeys = aliceKeys
+			expectedRecipient = ownerAddress
+		}
+		found, err := privacyscan.ProcessPrivacyScanOutput(output, recipientKeys.rootSeed, recipientKeys.spendScalar, recipientKeys.viewScalar, false)
+		require.NoError(t, err)
+		require.NotNil(t, found)
+		require.Equal(t, uint32(i), found.OutputIndex)
+		require.Equal(t, hex.EncodeToString(output.Commitment), found.Commitment)
+		require.Equal(t, payload.Outputs[i].Note, found.Note)
+		require.Zero(t, found.Note.ComputeCommitment().Cmp(new(big.Int).SetBytes(output.Commitment)))
+		require.Zero(t, found.Note.AssetID.Cmp(payload.AssetID))
+		require.Equal(t, expectedAmounts[i], found.Note.Amount.Int64())
+		recipientAddress, err := found.Note.ReceiverShieldedAddress()
+		require.NoError(t, err)
+		require.Equal(t, expectedRecipient, recipientAddress)
+
+		mismatched := *output
+		mismatched.ViewTag = append([]byte(nil), output.ViewTag...)
+		require.Len(t, mismatched.ViewTag, privacytypes.ViewTagLength)
+		mismatched.ViewTag[0] ^= 0xff
+		foundDespiteMismatch, err := privacyscan.ProcessPrivacyScanOutput(&mismatched, recipientKeys.rootSeed, recipientKeys.spendScalar, recipientKeys.viewScalar, false)
+		require.NoError(t, err)
+		require.NotNil(t, foundDespiteMismatch)
+		require.Equal(t, found.Note, foundDespiteMismatch.Note)
+		require.Equal(t, found.Commitment, foundDespiteMismatch.Commitment)
+
+		disclosures := privacyscan.VerifyPrivacyScanDisclosures(output, privacyscan.DisclosureKeySet{
+			UserRecipient: bobKeys.disclosureScalar,
+			Audit:         auditorKeys.disclosureScalar,
+			SelfView:      aliceKeys.disclosureScalar,
+		})
+		require.False(t, disclosures.ManualReview, disclosures.ManualReviewReason)
+		require.False(t, disclosures.AuditDeliveryFailed)
+		require.False(t, disclosures.SelfViewDeliveryFailed)
+		require.Equal(t, privacyscan.DisclosureVerified, disclosures.Audit.Status)
+		require.Equal(t, privacyscan.DisclosureVerified, disclosures.SelfView.Status)
+		assertSession3BFullDisclosure(t, output, disclosures.Audit.Plaintext, owner, found.Note)
+		assertSession3BFullDisclosure(t, output, disclosures.SelfView.Plaintext, owner, found.Note)
+		if output.UserPrivacyPolicy == privacytypes.TransferPrivacyPolicyAllPrivate {
+			require.Equal(t, privacyscan.DisclosureNotPresent, disclosures.User.Status)
+			require.Nil(t, disclosures.User.Plaintext)
+		} else {
+			require.Equal(t, privacyscan.DisclosureVerified, disclosures.User.Status)
+			assertSession3BUserDisclosure(t, output, disclosures.User.Plaintext, owner, found.Note)
+			userDisclosuresVerified++
+		}
+
+		recipientHash := ""
+		if i < len(outputs)-1 {
+			recipientHash = privacypayroll.HashRecipient(recipientAddress)
+		}
+		require.Equal(t, graph.Evidence[i].RecipientHash, recipientHash)
 		observed[i] = privacyreservation.ObservedOutputEvidence{
 			OutputIndex: i, Commitment: hex.EncodeToString(output.Commitment),
-			UserDisclosureDigest: hex.EncodeToString(output.UserDisclosureDigest),
-			FullDisclosureDigest: hex.EncodeToString(output.FullDisclosureDigest),
-			RecipientHash:        graph.Evidence[i].RecipientHash,
+			UserDisclosureDigest:   hex.EncodeToString(output.UserDisclosureDigest),
+			FullDisclosureDigest:   hex.EncodeToString(output.FullDisclosureDigest),
+			RecipientHash:          recipientHash,
+			AuditDeliveryFailed:    disclosures.AuditDeliveryFailed,
+			SelfViewDeliveryFailed: disclosures.SelfViewDeliveryFailed,
 		}
 	}
+	require.Equal(t, 2, userDisclosuresVerified)
 	ordered := &session3BOrderedReconciler{inner: live.Chain}
 	result, err := (privacypayroll.BatchReconcileWorker{Store: store, Reconciler: ordered}).Reconcile(ctx, privacypayroll.BatchReconcileRequest{
 		OperationID: state.OperationID, Payload: payload, ObservedOutputs: observed,
@@ -383,6 +465,12 @@ func runSession3BReconcileStage(t *testing.T, cfg session3BLiveConfig) {
 	state.BroadcastAttempts = report.BroadcastAttemptCount
 	state.InputCount = report.InputCount
 	state.OutputCount = report.OutputCount
+	state.DisclosureLiveVerified = true
+	state.ViewTagMismatchSafe = true
+	state.RecipientNotesVerified = len(outputs)
+	state.UserDisclosuresVerified = userDisclosuresVerified
+	state.AuditDisclosuresVerified = len(outputs)
+	state.SelfViewsVerified = len(outputs)
 	state.ChainStatus = report.ChainStatus
 	recordSession3BStage(t, cfg, &state, "reconcile")
 }
@@ -431,6 +519,9 @@ func runSession3BConflictStage(t *testing.T, cfg session3BLiveConfig) {
 		SpentNullifierConflict: state.SpentNullifierConflict, BroadcastAttempts: state.BroadcastAttempts,
 		InputCount: state.InputCount, OutputCount: state.OutputCount, ProofCount: 1, TxEnvelopeCount: 1,
 		SucceededItems: state.SucceededItems, ManualReviewItems: state.ManualReviewItems, ChainStatus: state.ChainStatus,
+		DisclosureLiveVerified: state.DisclosureLiveVerified, ViewTagMismatchSafe: state.ViewTagMismatchSafe,
+		RecipientNotesVerified: state.RecipientNotesVerified, UserDisclosuresVerified: state.UserDisclosuresVerified,
+		AuditDisclosuresVerified: state.AuditDisclosuresVerified, SelfViewsVerified: state.SelfViewsVerified,
 		ConflictStatus: state.ConflictStatus,
 	}
 	writeSession3BJSON(t, cfg.SummaryPath, summary)
@@ -608,6 +699,117 @@ func newSession3BLiveClients(t *testing.T, ctx context.Context, cfg session3BLiv
 
 func (c session3BLiveClients) Close() { _ = c.Conn.Close() }
 
+type session3BPrivacyKeys struct {
+	rootSeed         []byte
+	spendScalar      *big.Int
+	viewScalar       *big.Int
+	disclosureScalar *big.Int
+}
+
+func session3BPrivacyKeysFor(t *testing.T, base client.Context, name string) session3BPrivacyKeys {
+	t.Helper()
+	record, err := base.Keyring.Key(name)
+	require.NoError(t, err)
+	address, err := record.GetAddress()
+	require.NoError(t, err)
+	keyCtx := base.WithFrom(name).WithFromName(name).WithFromAddress(address)
+	spendScalar, _, rootSeed, err := getExplicitKeys(keyCtx)
+	require.NoError(t, err)
+	viewScalar, _, _ := deriveViewKeys(rootSeed)
+	disclosureScalar, _, _ := deriveDisclosureKeys(rootSeed)
+	return session3BPrivacyKeys{
+		rootSeed: append([]byte(nil), rootSeed...), spendScalar: spendScalar,
+		viewScalar: viewScalar, disclosureScalar: disclosureScalar,
+	}
+}
+
+func assertSession3BFullDisclosure(t *testing.T, output *privacytypes.PrivacyScanOutputV2, plaintext *privacytypes.DisclosurePlaintextV1, owner, recipient privacytypes.Note) {
+	t.Helper()
+	require.NotNil(t, plaintext)
+	require.Equal(t, privacytypes.DisclosurePlaneFullV1, plaintext.Plane)
+	require.Equal(t, output.OutputIndex, plaintext.OutputIndex)
+	require.Equal(t, privacytypes.DisclosureFullMarkerV1, plaintext.Policy)
+	require.Equal(t, privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom, plaintext.DisclosedFieldBitmap)
+	assertSession3BBigInt(t, "full commitment", new(big.Int).SetBytes(output.Commitment), plaintext.Commitment)
+	assertSession3BBigInt(t, "full amount", recipient.Amount, plaintext.Amount)
+	assertSession3BBigInt(t, "full asset ID", recipient.AssetID, plaintext.AssetID)
+	assertSession3BDisclosureIdentity(t, "full sender", owner, plaintext.SenderSpendKeyX, plaintext.SenderSpendKeyY, plaintext.SenderViewKeyX, plaintext.SenderViewKeyY)
+	assertSession3BDisclosureIdentity(t, "full recipient", recipient, plaintext.RecipientSpendKeyX, plaintext.RecipientSpendKeyY, plaintext.RecipientViewKeyX, plaintext.RecipientViewKeyY)
+	require.NotNil(t, plaintext.DisclosureBlinding)
+	require.NotZero(t, plaintext.DisclosureBlinding.Sign())
+	digest, err := privacytypes.ComputeBatchFullDisclosureDigestV1(privacytypes.BatchFullDisclosureV1Input{
+		OutputIndex: output.OutputIndex, Commitment: plaintext.Commitment, Amount: plaintext.Amount, AssetID: plaintext.AssetID,
+		SenderSpendKeyX: plaintext.SenderSpendKeyX, SenderSpendKeyY: plaintext.SenderSpendKeyY,
+		SenderViewKeyX: plaintext.SenderViewKeyX, SenderViewKeyY: plaintext.SenderViewKeyY,
+		RecipientSpendKeyX: plaintext.RecipientSpendKeyX, RecipientSpendKeyY: plaintext.RecipientSpendKeyY,
+		RecipientViewKeyX: plaintext.RecipientViewKeyX, RecipientViewKeyY: plaintext.RecipientViewKeyY,
+		FullDisclosureBlinding: plaintext.DisclosureBlinding,
+	})
+	require.NoError(t, err)
+	require.Equal(t, output.FullDisclosureDigest, digest.FillBytes(make([]byte, 32)))
+}
+
+func assertSession3BUserDisclosure(t *testing.T, output *privacytypes.PrivacyScanOutputV2, plaintext *privacytypes.DisclosurePlaintextV1, owner, recipient privacytypes.Note) {
+	t.Helper()
+	require.NotNil(t, plaintext)
+	require.Equal(t, privacytypes.DisclosurePlaneUserV1, plaintext.Plane)
+	require.Equal(t, output.OutputIndex, plaintext.OutputIndex)
+	require.Equal(t, output.UserPrivacyPolicy, plaintext.Policy)
+	require.Equal(t, output.UserPrivacyPolicy, plaintext.DisclosedFieldBitmap)
+	assertSession3BBigInt(t, "user commitment", new(big.Int).SetBytes(output.Commitment), plaintext.Commitment)
+	assertSession3BBigInt(t, "user asset ID", recipient.AssetID, plaintext.AssetID)
+	assertSession3BSelectedBigInt(t, "user amount", output.UserPrivacyPolicy&privacytypes.TransferPrivacyPolicyDiscloseAmount != 0, recipient.Amount, plaintext.Amount)
+	assertSession3BSelectedIdentity(t, "user sender", output.UserPrivacyPolicy&privacytypes.TransferPrivacyPolicyDiscloseFrom != 0, owner, plaintext.SenderSpendKeyX, plaintext.SenderSpendKeyY, plaintext.SenderViewKeyX, plaintext.SenderViewKeyY)
+	assertSession3BSelectedIdentity(t, "user recipient", output.UserPrivacyPolicy&privacytypes.TransferPrivacyPolicyDiscloseTo != 0, recipient, plaintext.RecipientSpendKeyX, plaintext.RecipientSpendKeyY, plaintext.RecipientViewKeyX, plaintext.RecipientViewKeyY)
+	require.NotNil(t, plaintext.DisclosureBlinding)
+	require.NotZero(t, plaintext.DisclosureBlinding.Sign())
+	digest, err := privacytypes.ComputeBatchUserDisclosureDigestV1(privacytypes.BatchUserDisclosureV1Input{
+		OutputIndex: output.OutputIndex, Commitment: plaintext.Commitment, Policy: plaintext.Policy,
+		DisclosedFieldBitmap: plaintext.DisclosedFieldBitmap, SelectedAmount: plaintext.Amount, AssetID: plaintext.AssetID,
+		SelectedFromSpendKeyX: plaintext.SenderSpendKeyX, SelectedFromSpendKeyY: plaintext.SenderSpendKeyY,
+		SelectedFromViewKeyX: plaintext.SenderViewKeyX, SelectedFromViewKeyY: plaintext.SenderViewKeyY,
+		SelectedToSpendKeyX: plaintext.RecipientSpendKeyX, SelectedToSpendKeyY: plaintext.RecipientSpendKeyY,
+		SelectedToViewKeyX: plaintext.RecipientViewKeyX, SelectedToViewKeyY: plaintext.RecipientViewKeyY,
+		UserDisclosureBlinding: plaintext.DisclosureBlinding,
+	})
+	require.NoError(t, err)
+	require.Equal(t, output.UserDisclosureDigest, digest.FillBytes(make([]byte, 32)))
+}
+
+func assertSession3BSelectedIdentity(t *testing.T, name string, selected bool, note privacytypes.Note, spendX, spendY, viewX, viewY *big.Int) {
+	t.Helper()
+	if selected {
+		assertSession3BDisclosureIdentity(t, name, note, spendX, spendY, viewX, viewY)
+		return
+	}
+	for _, field := range []*big.Int{spendX, spendY, viewX, viewY} {
+		assertSession3BBigInt(t, name, new(big.Int), field)
+	}
+}
+
+func assertSession3BDisclosureIdentity(t *testing.T, name string, note privacytypes.Note, spendX, spendY, viewX, viewY *big.Int) {
+	t.Helper()
+	assertSession3BBigInt(t, name+" spend x", note.ReceiverSpendPubKeyX, spendX)
+	assertSession3BBigInt(t, name+" spend y", note.ReceiverSpendPubKeyY, spendY)
+	assertSession3BBigInt(t, name+" view x", note.ReceiverViewPubKeyX, viewX)
+	assertSession3BBigInt(t, name+" view y", note.ReceiverViewPubKeyY, viewY)
+}
+
+func assertSession3BSelectedBigInt(t *testing.T, name string, selected bool, want, got *big.Int) {
+	t.Helper()
+	if !selected {
+		want = new(big.Int)
+	}
+	assertSession3BBigInt(t, name, want, got)
+}
+
+func assertSession3BBigInt(t *testing.T, name string, want, got *big.Int) {
+	t.Helper()
+	require.NotNil(t, want, name+" expected")
+	require.NotNil(t, got, name+" actual")
+	require.Zero(t, want.Cmp(got), name)
+}
+
 type session3BTimeoutSender struct{ calls int }
 
 func (s *session3BTimeoutSender) BroadcastSignedBatchTx(context.Context, []byte) (*privacypayroll.BatchBroadcastReceipt, error) {
@@ -763,6 +965,12 @@ func assertSession3BFinalState(t *testing.T, state session3BPayrollState) {
 	require.Equal(t, 4, state.OutputCount)
 	require.Equal(t, 3, state.SucceededItems)
 	require.Equal(t, 3, state.ManualReviewItems)
+	require.True(t, state.DisclosureLiveVerified)
+	require.True(t, state.ViewTagMismatchSafe)
+	require.Equal(t, 4, state.RecipientNotesVerified)
+	require.Equal(t, 2, state.UserDisclosuresVerified)
+	require.Equal(t, 4, state.AuditDisclosuresVerified)
+	require.Equal(t, 4, state.SelfViewsVerified)
 	require.Equal(t, privacyreservation.OperationStatusManualReview, state.ConflictStatus)
 	wantStages := []string{"graph", "prove", "timeout", "retry", "reconcile", "conflict"}
 	seen := make(map[int]string, len(wantStages))
