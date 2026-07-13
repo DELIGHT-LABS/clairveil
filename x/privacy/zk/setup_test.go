@@ -1,13 +1,16 @@
 package zk
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"cosmossdk.io/log/v2"
@@ -295,84 +298,124 @@ func TestExpectedChecksumRejectsEnvironmentOverride(t *testing.T) {
 	require.ErrorContains(t, err, "cannot override manifest checksum")
 }
 
+type testArtifactFixtureFile struct {
+	filename string
+	data     []byte
+}
+
+type testArtifactFixture struct {
+	files     []testArtifactFixtureFile
+	checksums map[string]string
+}
+
+var (
+	testArtifactFixtureOnce   sync.Once
+	cachedTestArtifactFixture *testArtifactFixture
+	cachedTestArtifactError   error
+)
+
 func writeTestArtifacts(dir string) error {
-	depositCS, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit.DepositCircuit{})
+	fixture, err := loadTestArtifactFixture()
 	if err != nil {
 		return err
 	}
+	for _, file := range fixture.files {
+		if err := os.WriteFile(filepath.Join(dir, file.filename), file.data, 0o666); err != nil {
+			return err
+		}
+	}
+	return writeTestManifest(dir, fixture.checksums)
+}
+
+func loadTestArtifactFixture() (*testArtifactFixture, error) {
+	// Artifact tests need isolated writable files, but not a fresh trusted
+	// setup. Cache immutable encodings while recreating files and manifests in
+	// every test directory.
+	testArtifactFixtureOnce.Do(func() {
+		cachedTestArtifactFixture, cachedTestArtifactError = buildTestArtifactFixture()
+	})
+	return cachedTestArtifactFixture, cachedTestArtifactError
+}
+
+func buildTestArtifactFixture() (*testArtifactFixture, error) {
+	depositCS, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit.DepositCircuit{})
+	if err != nil {
+		return nil, err
+	}
 	depositPK, depositVK, err := groth16.Setup(depositCS)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	spendCS, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit.SpendCircuit{})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	spendPK, spendVK, err := groth16.Setup(spendCS)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	joinSplitCS, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit.JoinSplitCircuit{})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	joinSplitPK, joinSplitVK, err := groth16.Setup(joinSplitCS)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	artifacts := []struct {
-		filename string
-		object   interface {
+		filenames []string
+		object    interface {
 			WriteTo(io.Writer) (int64, error)
 		}
 	}{
-		{DepositR1CSFile, depositCS},
-		{DepositPKFile, depositPK},
-		{DepositVKFile, depositVK},
-		{SpendR1CSFile, spendCS},
-		{SpendPKFile, spendPK},
-		{SpendVKFile, spendVK},
-		{JoinSplitR1CSFile, joinSplitCS},
-		{JoinSplitPKFile, joinSplitPK},
-		{JoinSplitVKFile, joinSplitVK},
+		{[]string{DepositR1CSFile}, depositCS},
+		{[]string{DepositPKFile}, depositPK},
+		{[]string{DepositVKFile}, depositVK},
+		{[]string{SpendR1CSFile}, spendCS},
+		{[]string{SpendPKFile}, spendPK},
+		{[]string{SpendVKFile}, spendVK},
 		// Registry tests exercise lifecycle semantics rather than the batch
 		// constraint set. Reusing the valid JoinSplit encoding here avoids a
 		// 1.1M-constraint setup for every test while preserving R1CS/PK/VK
 		// decoding, checksumming, role selection, and lazy loading behavior.
-		{BatchJoinSplit16x32R1CSFile, joinSplitCS},
-		{BatchJoinSplit16x32PKFile, joinSplitPK},
-		{BatchJoinSplit16x32VKFile, joinSplitVK},
+		{[]string{JoinSplitR1CSFile, BatchJoinSplit16x32R1CSFile}, joinSplitCS},
+		{[]string{JoinSplitPKFile, BatchJoinSplit16x32PKFile}, joinSplitPK},
+		{[]string{JoinSplitVKFile, BatchJoinSplit16x32VKFile}, joinSplitVK},
 	}
 
+	encodedByFilename := make(map[string][]byte, len(DefaultArtifactDescriptors()))
 	for _, artifact := range artifacts {
-		file, err := os.Create(filepath.Join(dir, artifact.filename))
-		if err != nil {
-			return err
+		var encoded bytes.Buffer
+		if _, err := artifact.object.WriteTo(&encoded); err != nil {
+			return nil, err
 		}
-
-		if _, err := artifact.object.WriteTo(file); err != nil {
-			file.Close()
-			return err
-		}
-
-		if err := file.Close(); err != nil {
-			return err
+		data := append([]byte(nil), encoded.Bytes()...)
+		for _, filename := range artifact.filenames {
+			encodedByFilename[filename] = data
 		}
 	}
 
-	checksums := make(map[string]string, len(artifacts))
-	for _, descriptor := range DefaultArtifactDescriptors() {
-		bz, err := os.ReadFile(filepath.Join(dir, descriptor.Filename))
-		if err != nil {
-			return err
-		}
-		sum := sha256.Sum256(bz)
-		checksums[descriptor.ChecksumEnv] = hex.EncodeToString(sum[:])
+	descriptors := DefaultArtifactDescriptors()
+	fixture := &testArtifactFixture{
+		files:     make([]testArtifactFixtureFile, 0, len(descriptors)),
+		checksums: make(map[string]string, len(descriptors)),
 	}
-	return writeTestManifest(dir, checksums)
+	for _, descriptor := range descriptors {
+		data, ok := encodedByFilename[descriptor.Filename]
+		if !ok {
+			return nil, fmt.Errorf("missing cached test artifact %s", descriptor.Filename)
+		}
+		fixture.files = append(fixture.files, testArtifactFixtureFile{
+			filename: descriptor.Filename,
+			data:     data,
+		})
+		sum := sha256.Sum256(data)
+		fixture.checksums[descriptor.ChecksumEnv] = hex.EncodeToString(sum[:])
+	}
+	return fixture, nil
 }
 
 func validPlaceholderChecksums() map[string]string {
