@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/mimc"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	cryptoeddsa "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
@@ -218,6 +219,26 @@ func TestBatchStructuredSigningBoundaryRejectsGlobalSecretReuseBeforeRelease(t *
 			require.Zero(t, signer.calls, "privacy-leaking intent must be rejected before signature release")
 		})
 	}
+}
+
+func TestBatchGlobalSecretReuseRejectsNonCanonicalRandomnessAlias(t *testing.T) {
+	spend := testKey(t, 17)
+	view := testKey(t, 19)
+	canonicalNote := testNote(t, spend, view, 10, 7)
+	aliasNote := canonicalNote
+	aliasNote.Randomness = new(big.Int).Add(new(big.Int).Set(canonicalNote.Randomness), fr.Modulus())
+	require.Equal(t, canonicalNote.ComputeCommitment(), aliasNote.ComputeCommitment(), "the circuit hash reduces both values to the same field element")
+
+	err := validateBatchTransferGlobalSecretReuse(
+		[]*big.Int{canonicalNote.Randomness},
+		[]batchTransferOutputSecrets{{
+			Randomness:             aliasNote.Randomness,
+			UserDisclosureBlinding: new(big.Int),
+			FullDisclosureBlinding: big.NewInt(11),
+			PrivacyPolicy:          privacytypes.TransferPrivacyPolicyAllPrivate,
+		}},
+	)
+	require.ErrorContains(t, err, "canonical BN254 field element")
 }
 
 func TestPreparedPayloadValidationRejectsNilFieldsWithoutPanicking(t *testing.T) {

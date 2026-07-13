@@ -452,13 +452,25 @@ func validateBatchTransferGlobalSecretReuse(inputRandomness []*big.Int, outputs 
 		if randomness == nil {
 			return fmt.Errorf("input %d randomness is required", i)
 		}
-		seen[randomness.String()] = fmt.Sprintf("input %d randomness", i)
+		encoded, err := privacyfield.CanonicalBytesFromBigInt(randomness)
+		if err != nil {
+			return fmt.Errorf("input %d randomness must be a canonical BN254 field element: %w", i, err)
+		}
+		key := string(encoded)
+		if previous, ok := seen[key]; ok {
+			return fmt.Errorf("input %d randomness reuses %s; input/output randomness and output disclosure blindings must be fresh and independent", i, previous)
+		}
+		seen[key] = fmt.Sprintf("input %d randomness", i)
 	}
 	register := func(outputIndex int, label string, secret *big.Int) error {
 		if secret == nil || secret.Sign() == 0 {
 			return fmt.Errorf("output %d %s must be non-zero", outputIndex, label)
 		}
-		key := secret.String()
+		encoded, err := privacyfield.CanonicalBytesFromBigInt(secret)
+		if err != nil {
+			return fmt.Errorf("output %d %s must be a canonical BN254 field element: %w", outputIndex, label, err)
+		}
+		key := string(encoded)
 		if previous, ok := seen[key]; ok {
 			return fmt.Errorf("output %d %s reuses %s; input/output randomness and output disclosure blindings must be fresh and independent", outputIndex, label, previous)
 		}
