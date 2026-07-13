@@ -150,6 +150,76 @@ func TestPreparedPayloadMutationExpirySignatureAndFileMode(t *testing.T) {
 	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 }
 
+func TestBatchStructuredSigningBoundaryRejectsGlobalSecretReuseBeforeRelease(t *testing.T) {
+	ownerKey, err := cryptoeddsa.GenerateKey(bytes.NewReader(bytes.Repeat([]byte{0x52}, 32)))
+	require.NoError(t, err)
+	ownerBytes := ownerKey.PublicKey.Bytes()
+	owner, err := pointFromBytes(ownerBytes)
+	require.NoError(t, err)
+	view := testKey(t, 2)
+	plan, err := PlanBatchTransfer(PlanBatchTransferInput{
+		Inputs: []InputNote{{testNote(t, owner, view, 10, 3)}},
+		Payments: []Payment{
+			{SpendPubKey: testKey(t, 4), ViewPubKey: testKey(t, 5), Amount: big.NewInt(4), PrivacyPolicy: privacytypes.TransferPrivacyPolicyDiscloseAmount, DisclosureMode: privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC},
+			{SpendPubKey: testKey(t, 6), ViewPubKey: testKey(t, 7), Amount: big.NewInt(6)},
+		},
+		OwnerSpendPubKey: owner,
+		OwnerViewPubKey:  view,
+		Mode:             OutputModeCompact,
+	})
+	require.NoError(t, err)
+	prepared, err := PrepareBatchTransfer(context.Background(), pathProvider{}, plan)
+	require.NoError(t, err)
+
+	cases := []struct {
+		name   string
+		mutate func(*PreparedBatchTransfer)
+	}{
+		{
+			name: "input_randomness_to_output_randomness",
+			mutate: func(p *PreparedBatchTransfer) {
+				p.Outputs[0].Note.Randomness = new(big.Int).Set(p.Inputs[0].Note.Randomness)
+			},
+		},
+		{
+			name: "input_randomness_to_output_full_blinding",
+			mutate: func(p *PreparedBatchTransfer) {
+				p.Outputs[0].FullDisclosureBlinding = new(big.Int).Set(p.Inputs[0].Note.Randomness)
+			},
+		},
+		{
+			name: "output_randomness_to_later_full_blinding",
+			mutate: func(p *PreparedBatchTransfer) {
+				p.Outputs[1].FullDisclosureBlinding = new(big.Int).Set(p.Outputs[0].Note.Randomness)
+			},
+		},
+		{
+			name: "active_user_blinding_to_later_output_randomness",
+			mutate: func(p *PreparedBatchTransfer) {
+				p.Outputs[1].Note.Randomness = new(big.Int).Set(p.Outputs[0].UserDisclosureBlinding)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			malicious := &PreparedBatchTransfer{
+				Root:    append([]byte(nil), prepared.Root...),
+				AssetID: new(big.Int).Set(prepared.AssetID),
+				Inputs:  append([]PreparedBatchTransferInput(nil), prepared.Inputs...),
+				Outputs: append([]PreparedBatchTransferOutput(nil), prepared.Outputs...),
+			}
+			tc.mutate(malicious)
+			signer := &countingRejectingBatchSigner{}
+			_, err := BuildPreparedBatchTransferPayload(malicious, signer, BuildPreparedBatchTransferPayloadInput{
+				ChainID: "clairveil-test-1", ExpiresAtUnix: time.Now().Add(time.Hour).Unix(), AuditKeyID: "audit-1", AuditKeyEpoch: 1,
+				AuditDisclosureTargetPubKey: testKey(t, 9), DisableSelfViewDisclosure: true,
+			})
+			require.ErrorContains(t, err, "fresh and independent")
+			require.Zero(t, signer.calls, "privacy-leaking intent must be rejected before signature release")
+		})
+	}
+}
+
 func TestPreparedPayloadValidationRejectsNilFieldsWithoutPanicking(t *testing.T) {
 	payload := testPayload(t)
 	now := time.Unix(payload.ExpiresAtUnix-1, 0)
@@ -251,6 +321,13 @@ func TestPrepareBatchTransferRejectsMalformedExportedPlanWithoutPanicking(t *tes
 type structuredSigner struct{ key *cryptoeddsa.PrivateKey }
 
 type rejectingBatchSigner struct{}
+
+type countingRejectingBatchSigner struct{ calls int }
+
+func (s *countingRejectingBatchSigner) SignBatchTransfer(BatchTransferSigningRequest) ([]byte, error) {
+	s.calls++
+	return nil, fmt.Errorf("unexpected signing call")
+}
 
 func (rejectingBatchSigner) SignBatchTransfer(BatchTransferSigningRequest) ([]byte, error) {
 	return nil, fmt.Errorf("unexpected signing call")

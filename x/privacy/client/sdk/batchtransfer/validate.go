@@ -74,6 +74,7 @@ func ValidateBatchTransferSigningRequest(req BatchTransferSigningRequest) error 
 	ownerSpendX, ownerSpendY := pointCoordinates(ownerSpend)
 	ownerViewX, ownerViewY := pointCoordinates(ownerView)
 	computedInputTotal := new(big.Int)
+	inputRandomness := make([]*big.Int, len(req.OrderedInputs))
 	for i := range req.OrderedInputNullifiers {
 		input := req.OrderedInputs[i]
 		if !bytes.Equal(input.Nullifier, req.OrderedInputNullifiers[i]) || !bytes.Equal(req.OrderedInputNullifiers[i], req.CanonicalEffect.Nullifiers[i]) {
@@ -93,10 +94,23 @@ func ValidateBatchTransferSigningRequest(req BatchTransferSigningRequest) error 
 		if !bytes.Equal(fieldBytes(nullifier), input.Nullifier) {
 			return fmt.Errorf("structured input %d nullifier recomputation mismatch", i)
 		}
+		inputRandomness[i] = input.Randomness
 		computedInputTotal.Add(computedInputTotal, input.Amount)
 	}
 	if computedInputTotal.Cmp(req.InputTotal) != 0 {
 		return fmt.Errorf("structured input total mismatch")
+	}
+	outputSecrets := make([]batchTransferOutputSecrets, len(req.OrderedOutputs))
+	for i := range req.OrderedOutputs {
+		outputSecrets[i] = batchTransferOutputSecrets{
+			Randomness:             req.OrderedOutputs[i].Randomness,
+			UserDisclosureBlinding: req.OrderedOutputs[i].UserDisclosureBlinding,
+			FullDisclosureBlinding: req.OrderedOutputs[i].FullDisclosureBlinding,
+			PrivacyPolicy:          req.OrderedOutputs[i].PrivacyPolicy,
+		}
+	}
+	if err := validateBatchTransferGlobalSecretReuse(inputRandomness, outputSecrets); err != nil {
+		return err
 	}
 	computedOutputTotal := new(big.Int)
 	seenPayment := false
@@ -292,7 +306,7 @@ func ValidatePreparedBatchTransferPayloadMetadataAt(p *PreparedBatchTransferPayl
 		}
 	}
 	inputTotal := new(big.Int)
-	inputRandomness := make(map[string]struct{}, len(p.Inputs))
+	inputRandomness := make([]*big.Int, len(p.Inputs))
 	for i, in := range p.Inputs {
 		if err := in.Note.ValidateV1(); err != nil {
 			return fmt.Errorf("input %d: %w", i, err)
@@ -336,9 +350,20 @@ func ValidatePreparedBatchTransferPayloadMetadataAt(p *PreparedBatchTransferPayl
 			return fmt.Errorf("input %d owner mismatch", i)
 		}
 		inputTotal.Add(inputTotal, in.Note.Amount)
-		inputRandomness[in.Note.Randomness.String()] = struct{}{}
+		inputRandomness[i] = in.Note.Randomness
 	}
-	seenSecrets := map[string]struct{}{}
+	outputSecrets := make([]batchTransferOutputSecrets, len(p.Outputs))
+	for i := range p.Outputs {
+		outputSecrets[i] = batchTransferOutputSecrets{
+			Randomness:             p.Outputs[i].Note.Randomness,
+			UserDisclosureBlinding: p.Outputs[i].UserDisclosureBlinding,
+			FullDisclosureBlinding: p.Outputs[i].FullDisclosureBlinding,
+			PrivacyPolicy:          p.Outputs[i].PrivacyPolicy,
+		}
+	}
+	if err := validateBatchTransferGlobalSecretReuse(inputRandomness, outputSecrets); err != nil {
+		return err
+	}
 	outputTotal := new(big.Int)
 	for i, out := range p.Outputs {
 		if err := out.Note.ValidateV1(); err != nil {
@@ -349,30 +374,6 @@ func ValidatePreparedBatchTransferPayloadMetadataAt(p *PreparedBatchTransferPayl
 		}
 		if out.Note.AssetID.Cmp(p.AssetID) != 0 {
 			return fmt.Errorf("output %d asset mismatch", i)
-		}
-		if _, reusedInputRandomness := inputRandomness[out.Note.Randomness.String()]; reusedInputRandomness {
-			return fmt.Errorf("output %d randomness reuses an input secret", i)
-		}
-		for label, v := range map[string]*big.Int{"randomness": out.Note.Randomness, "full blinding": out.FullDisclosureBlinding} {
-			if v == nil || v.Sign() == 0 {
-				return fmt.Errorf("output %d %s must be non-zero", i, label)
-			}
-			key := v.String()
-			if _, ok := seenSecrets[key]; ok {
-				return fmt.Errorf("output randomness and disclosure blindings must be fresh and independent")
-			}
-			seenSecrets[key] = struct{}{}
-		}
-		if out.PrivacyPolicy != 0 {
-			if out.UserDisclosureBlinding == nil || out.UserDisclosureBlinding.Sign() == 0 || out.UserDisclosureBlinding.Cmp(out.FullDisclosureBlinding) == 0 || out.UserDisclosureBlinding.Cmp(out.Note.Randomness) == 0 {
-				return fmt.Errorf("output %d user/full blinding independence violated", i)
-			}
-			if _, ok := seenSecrets[out.UserDisclosureBlinding.String()]; ok {
-				return fmt.Errorf("output disclosure blindings must be independent")
-			}
-			seenSecrets[out.UserDisclosureBlinding.String()] = struct{}{}
-		} else if out.UserDisclosureBlinding == nil || out.UserDisclosureBlinding.Sign() != 0 {
-			return fmt.Errorf("output %d all-private user blinding must use the zero sentinel", i)
 		}
 		userPlain, userDigest, err := disclosurePlaintext(uint32(i), false, p.Inputs[0].Note, out)
 		if err != nil {
@@ -434,6 +435,50 @@ func ValidatePreparedBatchTransferPayloadMetadataAt(p *PreparedBatchTransferPayl
 	}
 	if wantHash != p.PayloadHash {
 		return fmt.Errorf("prepared batch payload hash mismatch")
+	}
+	return nil
+}
+
+type batchTransferOutputSecrets struct {
+	Randomness             *big.Int
+	UserDisclosureBlinding *big.Int
+	FullDisclosureBlinding *big.Int
+	PrivacyPolicy          uint32
+}
+
+func validateBatchTransferGlobalSecretReuse(inputRandomness []*big.Int, outputs []batchTransferOutputSecrets) error {
+	seen := make(map[string]string, len(inputRandomness)+len(outputs)*3)
+	for i, randomness := range inputRandomness {
+		if randomness == nil {
+			return fmt.Errorf("input %d randomness is required", i)
+		}
+		seen[randomness.String()] = fmt.Sprintf("input %d randomness", i)
+	}
+	register := func(outputIndex int, label string, secret *big.Int) error {
+		if secret == nil || secret.Sign() == 0 {
+			return fmt.Errorf("output %d %s must be non-zero", outputIndex, label)
+		}
+		key := secret.String()
+		if previous, ok := seen[key]; ok {
+			return fmt.Errorf("output %d %s reuses %s; input/output randomness and output disclosure blindings must be fresh and independent", outputIndex, label, previous)
+		}
+		seen[key] = fmt.Sprintf("output %d %s", outputIndex, label)
+		return nil
+	}
+	for i, output := range outputs {
+		if err := register(i, "randomness", output.Randomness); err != nil {
+			return err
+		}
+		if err := register(i, "full disclosure blinding", output.FullDisclosureBlinding); err != nil {
+			return err
+		}
+		if output.PrivacyPolicy != privacytypes.TransferPrivacyPolicyAllPrivate {
+			if err := register(i, "user disclosure blinding", output.UserDisclosureBlinding); err != nil {
+				return err
+			}
+		} else if output.UserDisclosureBlinding == nil || output.UserDisclosureBlinding.Sign() != 0 {
+			return fmt.Errorf("output %d all-private user blinding must use the zero sentinel", i)
+		}
 	}
 	return nil
 }
