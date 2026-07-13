@@ -6,6 +6,8 @@ This project follows [the release versioning policy](docs/clairveil-release-vers
 
 ## Unreleased
 
+## v0.2.0 - 2026-07-13
+
 ### Added
 
 - Added the transfer authorization contract with prepared payload/disclosure plaintext `v5`, proof/prover contract `v2`, chain ID, absolute expiry, final owner intent, canonical decoding, and disclosure blindings.
@@ -19,7 +21,7 @@ This project follows [the release versioning policy](docs/clairveil-release-vers
 
 - Active compatibility is now `privacy-note-v1`, privacy state version 2, and `privacy-fixed-v1`. Existing three-circuit development chains require fresh genesis/reset; old artifacts, proof jobs, prepared payloads, and note/reservation/scan caches must be discarded and rescanned.
 - Release-pack membership is now defined by `scripts/release-pack-paths.txt` and `scripts/release-pack-required-files.txt`; superseded bulk phase-1 plans and duplicate working notes are excluded from the handoff pack.
-- Release packaging now distinguishes non-publishable full-commit CI snapshots from publishable annotated exact-SemVer tags, binds release tags to the manifest commit and paired dated changelog headings, and verifies the already-generated default archive without replacing it.
+- Release packaging now distinguishes non-publishable full-commit CI snapshots from publishable annotated exact-SemVer tags, binds release tags to the manifest commit and paired dated changelog headings, verifies the already-generated default archive without replacing it, and separates tracked release metadata from post-tag external release notes.
 - Documentation now distinguishes the legacy multi-message `transfer-batch` command from the one-proof `transfer-batch-16x32` flow and lists the complete current query/prover surface.
 
 ### Fixed

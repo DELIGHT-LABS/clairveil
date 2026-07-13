@@ -6,6 +6,8 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
 ## Unreleased
 
+## v0.2.0 - 2026-07-13
+
 ### Added
 
 - Prepared payload/disclosure plaintext `v5`, proof/prover contract `v2`, chain ID, absolute expiry, final owner intent, canonical decoding, disclosure blinding을 포함한 transfer authorization contract를 추가했습니다.
@@ -19,7 +21,7 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
 - 현재 호환성 기준을 `privacy-note-v1`, privacy state version 2, `privacy-fixed-v1`로 갱신했습니다. 기존 three-circuit development chain은 fresh genesis/reset이 필요하고 old artifact, proof job, prepared payload, note/reservation/scan cache를 폐기한 뒤 rescan해야 합니다.
 - Release-pack membership을 `scripts/release-pack-paths.txt`와 `scripts/release-pack-required-files.txt`로 정의하고, superseded bulk phase-1 plan과 중복 working note를 handoff pack에서 제외했습니다.
-- Release packaging에서 공개할 수 없는 full-commit CI snapshot과 공개 가능한 annotated exact-SemVer tag를 구분하고, release tag를 manifest commit 및 paired dated changelog heading에 결속하며, 이미 생성한 default archive를 교체하지 않고 검증하도록 바꿨습니다.
+- Release packaging에서 공개할 수 없는 full-commit CI snapshot과 공개 가능한 annotated exact-SemVer tag를 구분하고, release tag를 manifest commit 및 paired dated changelog heading에 결속하며, 이미 생성한 default archive를 교체하지 않고 검증하고, tracked release metadata와 post-tag external release note를 분리하도록 바꿨습니다.
 - Legacy multi-message `transfer-batch`와 one-proof `transfer-batch-16x32`를 문서에서 구분하고 현재 query/prover surface 전체를 기록했습니다.
 
 ### Fixed

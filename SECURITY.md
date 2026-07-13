@@ -9,8 +9,8 @@ Korean version: [SECURITY-kr.md](SECURITY-kr.md)
 | Line | Status |
 | --- | --- |
 | `main` | Supported development line; fixes land here first |
-| latest `v0.1.x` tag | Supported for security assessment; backports are case-by-case and announced explicitly |
-| `v0.0.x` and older commits | Unsupported |
+| latest `v0.2.x` tag | Supported for security assessment; backports are case-by-case and announced explicitly |
+| `v0.1.x` and older commits | Unsupported |
 
 Clairveil is pre-v1 experimental software. A tag is not a promise of production readiness or indefinite maintenance. Pin an exact tag/commit, read the documentation at that ref, and check release notes for any explicitly supported backport.
 
