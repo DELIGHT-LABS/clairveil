@@ -109,7 +109,7 @@ func (s *SQLStore) mutateBatchOperation(ctx context.Context, mutate func(*Memory
 }
 
 func (s *SQLStore) loadBatchRelationsTx(ctx context.Context, tx *sql.Tx, memory *MemoryStore) error {
-	if err := loadJSONRows(ctx, tx, "SELECT payload_json FROM batch_operations", func(payload []byte) error {
+	if err := loadJSONRows(ctx, tx, "SELECT payload_json FROM batch_operations ORDER BY operation_id", func(payload []byte) error {
 		var operation BatchOperation
 		if err := json.Unmarshal(payload, &operation); err != nil {
 			return err
@@ -125,7 +125,7 @@ func (s *SQLStore) loadBatchRelationsTx(ctx context.Context, tx *sql.Tx, memory 
 	}); err != nil {
 		return err
 	}
-	if err := loadJSONRows(ctx, tx, "SELECT payload_json FROM batch_operation_inputs", func(payload []byte) error {
+	if err := loadJSONRows(ctx, tx, "SELECT payload_json FROM batch_operation_inputs ORDER BY operation_id, input_index", func(payload []byte) error {
 		var input OperationInputReservation
 		if err := json.Unmarshal(payload, &input); err != nil {
 			return err
@@ -135,7 +135,7 @@ func (s *SQLStore) loadBatchRelationsTx(ctx context.Context, tx *sql.Tx, memory 
 	}); err != nil {
 		return err
 	}
-	if err := loadJSONRows(ctx, tx, "SELECT payload_json FROM payroll_item_outputs", func(payload []byte) error {
+	if err := loadJSONRows(ctx, tx, "SELECT payload_json FROM payroll_item_outputs ORDER BY operation_id, output_index", func(payload []byte) error {
 		var item PayrollItemOutput
 		if err := json.Unmarshal(payload, &item); err != nil {
 			return err
@@ -145,7 +145,7 @@ func (s *SQLStore) loadBatchRelationsTx(ctx context.Context, tx *sql.Tx, memory 
 	}); err != nil {
 		return err
 	}
-	if err := loadJSONRows(ctx, tx, "SELECT payload_json FROM expected_output_evidence", func(payload []byte) error {
+	if err := loadJSONRows(ctx, tx, "SELECT payload_json FROM expected_output_evidence ORDER BY operation_id, output_index", func(payload []byte) error {
 		var evidence ExpectedOutputEvidence
 		if err := json.Unmarshal(payload, &evidence); err != nil {
 			return err

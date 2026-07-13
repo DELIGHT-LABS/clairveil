@@ -94,6 +94,10 @@ reference-payroll-demo:
 reference-payroll-live-localnet:
 	./scripts/reference-payroll-live-localnet.sh
 
+.PHONY: reservation-sql-integration
+reservation-sql-integration:
+	./scripts/reservation-sql-integration.sh
+
 .PHONY: reference-payroll-rehearsal
 reference-payroll-rehearsal:
 	./scripts/reference-payroll-rehearsal.sh
