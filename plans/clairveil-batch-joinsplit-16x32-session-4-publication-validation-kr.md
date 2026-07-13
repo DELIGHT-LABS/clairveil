@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | **BLOCKED** (Gate 1/2/3A PASS, Session 3B re-entry UNBLOCKED; Gate 3B FAIL 및 `S4-B01`로 Session 4/publication 승인 철회 유지) |
+| 상태 | **Complete — Session 4 PASS / `PUBLICATION_READY_EXPERIMENTAL`** (Gate 1/2/3A/3B PASS, `S4-B01` RESOLVED, unresolved Critical/High/security-relevant Medium 0) |
 | 선행 문서 | [Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md), Session 1~3B 계획과 completion record |
 | 권장 모델 | `gpt-5.6-sol` |
 | 권장 effort | `ultra` |
@@ -423,25 +423,25 @@ finding이 없으면 억지 refactor를 만들지 않음. finding 수정 후 관
 
 ## 20. Acceptance Criteria
 
-- [ ] transfer/withdraw current authorization attacks가 fresh Pass A에서 재검증됨.
-- [ ] current disclosure dictionary, commitment collision, crypto decoder, prover failover, genesis/artifact identity 회귀가 fresh Pass A에서 통과함.
-- [ ] NoteV1가 all circuits/native/scanner에서 fresh Pass B로 일치함.
-- [ ] 12 public input statement가 code/docs와 fresh Pass C로 일치함.
-- [ ] active/duplicate/value/root/disclosure attacks가 exact adversarial witness로 실패함.
-- [ ] single owner signature 외 per-input conditional EdDSA가 없음.
-- [ ] differential/property/fuzz가 fresh run에서 통과함.
-- [ ] independent reference KAT와 cross-message nullifier composition test가 전체 gate 일부로 통과함.
-- [ ] keeper gas/atomicity/resource bounds가 fresh Pass F에서 확인됨.
-- [ ] minimal event/typed scan index가 payload를 중복 저장하지 않음.
-- [ ] prover admission/privacy 경계가 live no-failover 증거를 포함해 확인됨.
-- [ ] payroll item evidence가 one-proof live batch status와 분리됨.
-- [ ] max-shape benchmark가 fresh run으로 재현 가능하게 기록됨.
-- [ ] independent localnet restart/retry와 disclosure/view-tag/payroll E2E가 통과함.
-- [ ] unresolved Critical/High/security Medium = 0.
-- [ ] accepted residual이 owner/reason/production blocking과 함께 문서화됨.
+- [x] transfer/withdraw current authorization attacks가 fresh Pass A에서 재검증됨.
+- [x] current disclosure dictionary, commitment collision, crypto decoder, prover failover, genesis/artifact identity 회귀가 fresh Pass A에서 통과함.
+- [x] NoteV1가 all circuits/native/scanner에서 fresh Pass B로 일치함.
+- [x] 12 public input statement가 code/docs와 fresh Pass C로 일치함.
+- [x] active/duplicate/value/root/disclosure attacks가 exact adversarial witness로 실패함.
+- [x] single owner signature 외 per-input conditional EdDSA가 없음.
+- [x] differential/property/fuzz가 fresh run에서 통과함.
+- [x] independent reference KAT와 cross-message nullifier composition test가 전체 gate 일부로 통과함.
+- [x] keeper gas/atomicity/resource bounds가 fresh Pass F에서 확인됨.
+- [x] minimal event/typed scan index가 payload를 중복 저장하지 않음.
+- [x] prover admission/privacy 경계가 live no-failover 증거를 포함해 확인됨.
+- [x] payroll item evidence가 one-proof live batch status와 분리됨.
+- [x] max-shape benchmark가 fresh run으로 재현 가능하게 기록됨.
+- [x] independent localnet restart/retry와 disclosure/view-tag/payroll E2E가 통과함.
+- [x] unresolved Critical/High/security Medium = 0.
+- [x] accepted residual이 owner/reason/production blocking과 함께 문서화됨.
 - [x] 현재 tracked secret/artifact/personal path가 발견되지 않음.
-- [ ] release gate가 통과함.
-- [x] master ledger가 현재 `BLOCKED` 상태로 정정됨.
+- [x] release gate가 통과함.
+- [x] master ledger가 현재 `PUBLICATION_READY_EXPERIMENTAL` 상태로 정렬됨.
 
 ## 21. Production TODO
 
@@ -476,7 +476,47 @@ finding이 없으면 억지 refactor를 만들지 않음. finding 수정 후 관
 - padding/privacy/cost policy
 - payroll production deployment
 
-## 22. Completion Record — 2026-07-12 Independent Revalidation
+## 22. Completion Record — 2026-07-13 Session 4 Closure (Current)
+
+### 고정 범위와 독립성
+
+- Session 1 base: `e42737022b2aa87b498f57ae4d089ccb84a45968`
+- Session 4 시작 snapshot: `0df27417910f46ff714e73ce0730f5e167ece33a`
+- Immutable implementation snapshot: `a84ca1cc1cd835990243d9b3f5f064e7b538f7ae`
+- 초기 검토는 `e42737022b2aa87b498f57ae4d089ccb84a45968..0df27417910f46ff714e73ce0730f5e167ece33a`, 수정 후 검토는 같은 base부터 final `HEAD`까지 수행했다. `main..HEAD`나 mutable/historical HEAD는 기준으로 사용하지 않았다.
+- Finding 확정 전 worktree를 read-only로 유지했다. Read-only reviewer 한 번의 wave에서 reviewer 1은 Pass A~E, reviewer 2는 Pass F~I/publication hygiene를 검토했고 main reviewer가 모든 후보를 코드와 테스트로 판정했다. 반복 reviewer wave나 clean-round loop는 수행하지 않았다.
+
+### Finding과 closure
+
+| ID | Severity | 판정과 수정 | 상태 |
+| --- | --- | --- | --- |
+| `S4-B01` | Medium, security-relevant | 실제 timeout/healthy HTTP prover 두 endpoint에서 server-side counter와 수신 body를 관찰한다. Default는 `1/0`, explicit opt-in은 `1/1`이고 두 번째 응답으로 완료된다. Timeout/malformed response/validation failure는 별도 회귀하며 private body는 출력하지 않는다. `1b1dc08` | **RESOLVED** |
+| `S4-F01` | Medium, security-relevant | BN254 field의 동일 residue `r`/`r+q`가 commitment는 같지만 raw decimal 비교를 우회했다. Structured batch-signing boundary를 canonical field byte 비교로 변경하고 non-canonical alias를 signature release 전에 거부한다. `cdc7780` | **RESOLVED** |
+| `S4-L01` | Low, operational | Reference payroll localnet이 shell function을 background해 node PID 대신 subshell PID를 정리했다. Node를 직접 background하고 종료 후 orphan이 없음을 재검증했다. `a84ca1c` | **RESOLVED** |
+| `S4-DOC01` | Medium, publication hygiene | 한영 normative/handoff 문서에 Gate 3B FAIL, `S4-B01` active, Session 4 `BLOCKED`라는 current-state 문구가 남았다. Historical record는 보존하고 current authoritative 상태만 이 publication record에서 정렬했다. | **RESOLVED** |
+
+### Fresh evidence
+
+- Pass A~I targeted test는 실제 test name을 확인해 모두 PASS했고 skip 또는 `[no tests to run]`을 evidence로 인정하지 않았다.
+- `TestBatchJoinSplit16x32FullShapeResourceGate`: `1,111,837` constraints, compile `1002.828 ms`, setup `16106.399 ms`, R1CS `122,813,535 B`, PK `209,218,621 B`, VK `716 B`, proof `164 B`, peak RSS `3,354,689,536 B`. `16/32` p50/p95/max prove는 `1685.541/1712.069/1712.069 ms`, verify는 `0.673/0.686/0.686 ms`다.
+- `make reservation-sql-integration`은 Docker PostgreSQL 17과 SQLite의 actual graph atomicity/recovery test를 각각 exact PASS marker와 skip 0으로 완료했다.
+- Repository에 정의된 10개 fuzz target을 target별 `-fuzztime=3s -parallel=4`로 실행해 모두 PASS했다.
+- `make session-3a-validation-evidence`가 artifact rotation/tamper, old/new proof identity와 fresh genesis identity를 actual source regeneration으로 PASS했다.
+- `make privacy-e2e-smoke`, `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`, `make reference-payroll-live-localnet`이 disclosure/view-tag/one-proof payroll, node/prover restart, timeout/exact retry/reconcile와 process cleanup을 PASS했다.
+- `go test ./... -count=1`, `go test -race ./x/privacy/... -count=1`, `go vet ./...`, `make ci`, `make vulncheck`, `make examples`, `make release-check`, `git diff --check`가 PASS했다.
+- Final clean immutable commit에서 `make release-pack`과 `make release-pack-verify`를 실행하고 동일 archive를 Python 3.9 및 3.12로 다시 검증했다. Exact archive checksum은 archive와 함께 생성되는 `.sha256` 파일, exact source identity는 `RELEASE-MANIFEST.txt`에 기록한다. Archive 자체에 자기 checksum을 넣는 self-reference나 commit placeholder는 사용하지 않는다.
+
+### 처분
+
+- Pass A~I: PASS
+- unresolved Critical: 0
+- unresolved High: 0
+- unresolved security-relevant Medium: 0
+- publication: **`PUBLICATION_READY_EXPERIMENTAL`**
+- production: **`PRODUCTION_RELEASE_READY` 승인 안 함**
+- External ZK audit, final source/constraint freeze, official MPC/trusted setup, transcript/toxic-waste evidence, signed production artifact/provenance와 downstream production rollout은 위 Production TODO의 release-blocking 항목으로 유지한다.
+
+## 23. Historical Completion Record — 2026-07-12 Independent Revalidation (Superseded)
 
 ### 2026-07-13 Gate 1/2/3A Closure Supplement
 
@@ -528,9 +568,9 @@ finding이 없으면 억지 refactor를 만들지 않음. finding 수정 후 관
 - formal setup: `NOT PERFORMED`; external audit: `NOT PERFORMED`; production status: `NOT PRODUCTION-READY`, `NOT AUDITED`.
 - publication status: **`BLOCKED`**. `PUBLICATION_READY_EXPERIMENTAL` 선언 불가.
 
-## 23. Historical Completion Record (superseded)
+## 24. Historical Completion Record (superseded)
 
-아래 record는 2026-07-12 앞선 publication claim을 provenance 목적으로 보존한다. 현재 상태나 현재 검증 결과로 사용하지 않으며, 위의 후속 2026-07-12 Completion Record가 우선한다.
+아래 record는 2026-07-12 앞선 publication claim을 provenance 목적으로 보존한다. 현재 상태나 현재 검증 결과로 사용하지 않으며, 문서 앞의 2026-07-13 Session 4 Closure record가 우선한다.
 
 - review scope: `e427370..494c72df2cad38dc1cc97d5e6e0f15b38e0c82d2`
 - 시작 HEAD: `b2fa95661590f681d268885c7dfdf7e9af3581ba` (`docs: record Session 3B completion`)

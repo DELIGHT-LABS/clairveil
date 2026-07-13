@@ -518,7 +518,7 @@ The JS SDK can currently treat these as stable contracts.
 - active circuit set `privacy-note-v1` with consensus `CircuitSetIdentity` schema `v1` and manifest schema `v2`
 - prover HTTP paths `/v1/prover/transfer`, `/v1/prover/withdraw`
 - conformance fixture files under `x/privacy/client/sdk/conformance/testdata`
-- `DISCLOSURE-BLINDING-SEPARATION` V1 semantics/error codes and completed production 2x2 circuit/native/prepared/structured pre-sign enforcement; downstream signers must preserve the fail-before-release contract. Fresh Gates 1/2/3A pass and Session 3B re-entry is unblocked, while Gate 3B and publication remain blocked
+- `DISCLOSURE-BLINDING-SEPARATION` V1 semantics/error codes and completed production 2x2 circuit/native/prepared/structured pre-sign enforcement; downstream signers must preserve the fail-before-release contract, including SDK-wide secret reuse and non-canonical field-alias rejection. Gates 1/2/3A/3B and Session 4 pass, and the source is `PUBLICATION_READY_EXPERIMENTAL`
 - note reservation status and operation evidence contract in `privacy_note_reservation_contract.json`
 
 The JS SDK still needs to decide these independently.

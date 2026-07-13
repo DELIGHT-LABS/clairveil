@@ -9,9 +9,9 @@
 - **Full-shape circuit gate: PASS.** corrected Groth16/BN254 prototype이 compile과 development setup을 완료했고, OOM 없이 `16/32`를 포함한 모든 shape를 prove했으며, current JoinSplit2x2 baseline보다 output당 warm proving cost를 개선했다.
 - **Max wire/state gate: PASS.** 실제 protobuf message를 실제 Cosmos `TxRaw`에 넣고 typed scan KV record, tree-write allowance, minimal ABCI event, query response까지 측정한 결과 동결된 reference limit 안에 들었다.
 
-Session 3A는 production circuit과 consensus path를 구현한다. Session 3B는 repository의 reference Go batch planner/preparer, remote batch prover route, lossless typed scanner, durable payroll graph, staged CLI, localnet tutorial을 추가했다. 최신 Session 4 독립 재검증은 `BLOCKED`이며 historical publication-ready 서술은 superseded되었다. Downstream JS/TS SDK 또는 product, formal trusted setup, external audit, production artifact 배포와 production 운영은 repository-level 완료 범위 밖이다.
+Session 3A는 production circuit과 consensus path를 구현한다. Session 3B는 repository의 reference Go batch planner/preparer, remote batch prover route, lossless typed scanner, durable payroll graph, staged CLI, localnet tutorial을 추가했다. 2026-07-13 Session 4 독립 검증은 Pass A~I를 통과하고 `S4-B01`을 닫아 `PUBLICATION_READY_EXPERIMENTAL`을 승인했다. Downstream JS/TS SDK 또는 product, formal trusted setup, external audit, signed production artifact 배포와 production 운영은 repository-level 완료 범위 밖이다.
 
-2026-07-12 Session 2 재진입은 `S4-B02`의 `DISCLOSURE-BLINDING-SEPARATION`을 동결했고 Session 3A는 이를 production `JoinSplitCircuit`, shared native/prepared validation, structured 2x2 pre-sign boundary와 JoinSplit development artifact identity에 구현했다. 2026-07-13 fresh closure는 public contract 변경 없이 Gate 1/2/3A를 PASS하고 Session 3B re-entry를 UNBLOCK했다. 별도 Gate 3B와 `S4-B01` finding 때문에 publication은 계속 blocked다.
+2026-07-12 Session 2 재진입은 `S4-B02`의 `DISCLOSURE-BLINDING-SEPARATION`을 동결했고 Session 3A는 이를 production `JoinSplitCircuit`, shared native/prepared validation, structured 2x2 pre-sign boundary와 JoinSplit development artifact identity에 구현했다. 2026-07-13 fresh closure는 public contract 변경 없이 Gate 1/2/3A/3B와 Session 4를 PASS했다. `S4-B01`과 `G3B-01..04`는 해결됐으며 unresolved Critical, High, security-relevant Medium finding은 0이다.
 
 Active circuit set은 계속 `privacy-note-v1`이고 이제 Deposit, Spend, JoinSplit2x2, `batch-joinsplit-16x32-v1`을 이 순서로 요구한다. Development R1CS/PK/VK identity는 Gate 3A 증거이지 production trust anchor가 아니다.
 
@@ -399,7 +399,7 @@ DBS-03: enabled[i]      => full_disclosure_blinding[i] != user_disclosure_blindi
 
 enabled non-all-private slot은 두 blinding이 canonical non-zero여야 한다. enabled all-private slot은 `privacy_policy=0`, `user_disclosure_blinding=0`으로 canonicalize한다. 이때 `DBS-01`만 gate off하고 full blinding은 non-zero이며 `DBS-02`/`DBS-03`은 계속 적용한다. disabled capacity slot은 policy, output randomness, user blinding, full blinding을 모두 zero로 canonicalize하고 세 inequality를 모두 gate off한다. Active output randomness 자체는 canonical field value이며 zero일 수 있다.
 
-BatchJoinSplit16x32는 32개 capacity slot 각각에 이 exact 계약을 이미 적용한다. 즉 gated inequality site 96개와 sentinel/non-zero check가 있다. JoinSplit2x2에는 disabled output capacity slot이 없다. Disclosure witness는 recipient output `0`만 대상으로 하므로 `i=0`이고 비교하는 note secret도 정확히 `OutputRandomness[0]`이다. Output `1`은 disclosure witness가 없는 active change note이며 disabled disclosure slot이 아니다. Input randomness, `OutputRandomness[1]`, cross-output reuse, cross-transaction reuse는 `DBS-01..03` 범위가 아니다. 더 강한 SDK-wide `SECRET-FRESHNESS` 정책은 별개이며, 특히 batch structured signer gap `G3B-04`는 이 계약으로 해결되지 않는다.
+BatchJoinSplit16x32는 32개 capacity slot 각각에 이 exact 계약을 이미 적용한다. 즉 gated inequality site 96개와 sentinel/non-zero check가 있다. JoinSplit2x2에는 disabled output capacity slot이 없다. Disclosure witness는 recipient output `0`만 대상으로 하므로 `i=0`이고 비교하는 note secret도 정확히 `OutputRandomness[0]`이다. Output `1`은 disclosure witness가 없는 active change note이며 disabled disclosure slot이 아니다. Input randomness, `OutputRandomness[1]`, cross-output reuse, cross-transaction reuse는 `DBS-01..03` 범위가 아니다. 더 강한 SDK-wide `SECRET-FRESHNESS` 정책은 별개다. `G3B-04`는 signature release 전에 이 정책을 강제해 structured batch signer boundary를 닫았고, Session 4는 같은 boundary에서 non-canonical BN254 alias도 거부하도록 보강했다.
 
 Shared native/prepared/structured-signer error contract는 아래 stable secret-free code를 사용한다. Go caller는 wrapping해도 `*DisclosureBlindingErrorV1`을 보존한다. External adapter는 secret 값을 반향하지 않고 기존 non-retryable invalid-request response로 mapping한다.
 
@@ -723,7 +723,7 @@ Session 3A는 다음 보수적인 V1 coefficient와 bound를 동결한다.
 | tree-write bound | `1,056` nodes |
 | global-lookup bound | `48` |
 
-Explicit surcharge는 privacy-specific proof verification, canonical hashing/encoding, state-growth amplification, Merkle computation/bookkeeping, global uniqueness check를 담당한다. Cosmos KV gas는 underlying store read/write를 계속 담당하며 explicit coefficient가 이를 대체하지 않는다. 따라서 한 logical operation이 computation과 physical I/O를 모두 일으켜도 두 meter는 서로 다른 layer를 담당한다. Exact category breakdown과 precharge-before-semantics/out-of-gas 동작은 regression test로 고정한다. 실제 `1/1` handler 성공과 max `16/32` post-proof transition이 explicit descriptor와 모든 Cosmos KV descriptor를 분리 기록하므로 어느 layer도 상대 layer의 책임을 조용히 흡수하거나 중복할 수 없다. Production coefficient calibration은 Session 4 범위다.
+Explicit surcharge는 privacy-specific proof verification, canonical hashing/encoding, state-growth amplification, Merkle computation/bookkeeping, global uniqueness check를 담당한다. Cosmos KV gas는 underlying store read/write를 계속 담당하며 explicit coefficient가 이를 대체하지 않는다. 따라서 한 logical operation이 computation과 physical I/O를 모두 일으켜도 두 meter는 서로 다른 layer를 담당한다. Exact category breakdown과 precharge-before-semantics/out-of-gas 동작은 regression test로 고정한다. 실제 `1/1` handler 성공과 max `16/32` post-proof transition이 explicit descriptor와 모든 Cosmos KV descriptor를 분리 기록하므로 어느 layer도 상대 layer의 책임을 조용히 흡수하거나 중복할 수 없다. Session 4는 experimental reference bound를 독립 검증했으며 target-chain production coefficient governance/calibration은 production owner TODO로 유지한다.
 
 ## 10. Full-shape circuit feasibility 결과
 
@@ -850,9 +850,9 @@ Production coverage를 명시한다. `TestBatchJoinSplit16x32ProductionPositiveM
 
 ## 14. Residual risk와 명시적 non-goal
 
-- Session 3A core와 Session 3B reference Go client/prover/scanner/payroll/CLI surface는 존재하지만 최신 Session 4 재검증은 blocked다. `S4-B02` implementation과 Gate 1/2/3A fresh closure는 완료됐고 Session 3B re-entry는 unblocked다. 별도 active Gate 3B와 `S4-B01` finding, downstream JS/TS 또는 product integration, production audit, formal trusted setup, production artifact 배포는 남아 있다.
+- Session 3A core와 Session 3B reference Go client/prover/scanner/payroll/CLI surface는 Session 4 독립 검증을 통과해 experimental source publication이 승인됐다. `PUBLICATION_READY_EXPERIMENTAL`은 `PRODUCTION_RELEASE_READY`가 아니며 downstream JS/TS 또는 product integration, production audit, source/constraint freeze, formal trusted setup, signed production artifact provenance, production rollout은 남아 있다.
 - Development setup artifact는 production trust anchor가 아니며 commit하지 않는다. 기록된 checksum은 이 Gate 3A run만 식별한다.
-- Session 4 reference run의 peak RSS는 `3,429,646,336 B`, 약 3.19 GiB였다. lazy loading은 불필요한 artifact 상주를 줄이지만 process-level hard isolation을 제공하지 않는다.
+- Fresh Session 4 max-shape reference run의 peak RSS는 `3,354,689,536 B`, 약 3.12 GiB였다. lazy loading은 불필요한 artifact 상주를 줄이지만 process-level hard isolation을 제공하지 않는다.
 - client cancellation은 gnark proving을 중단할 수 없다. production process isolation, worker recycling, memory limit, overload operation이 필요하다.
 - ciphertext decryptability는 proof하지 않는다. auditor-key compromise, key-epoch rotation, delivery failure manual review가 operational risk로 남는다.
 - public input/output count, timing, root, batch grouping, minimal summary는 public metadata다.

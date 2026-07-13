@@ -4,12 +4,18 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 상태 | **Complete — Gate 3B PASS** (2026-07-13 re-entry closure; Session 4 `UNBLOCKED / NOT STARTED`) |
+| 상태 | **Complete — Gate 3B PASS** (2026-07-13 re-entry closure; 후속 Session 4 PASS 및 `PUBLICATION_READY_EXPERIMENTAL`) |
 | 선행 문서 | [Master Roadmap](clairveil-batch-joinsplit-16x32-roadmap-kr.md), [Session 3A](clairveil-batch-joinsplit-16x32-session-3-implementation-kr.md) |
 | 후속 세션 | [Session 4 Publication Validation](clairveil-batch-joinsplit-16x32-session-4-publication-validation-kr.md) |
 | 권장 모델 | `gpt-5.6-sol` |
 | 권장 effort | `max` |
 | 완료 목표 | SDK prepare부터 prover, broadcast, scan, payroll reconcile까지 batch transfer end-to-end를 완성함 |
+
+### 2026-07-13 Session 4 후속 상태
+
+- Session 4는 고정 시작 snapshot `0df27417910f46ff714e73ce0730f5e167ece33a`에서 독립 검증을 시작해 Pass A~I, max-shape benchmark, actual SQLite/PostgreSQL, bounded fuzz, race, independent localnet restart/retry, disclosure/view-tag/payroll E2E와 release gate를 fresh 실행했다.
+- `S4-B01`은 실제 timeout/healthy HTTP prover 두 endpoint의 server-side request counter와 수신 body 관찰로 닫았다. Default no-failover는 접촉 `1/0`, explicit opt-in은 `1/1`이며 timeout/malformed response/validation failure를 구분한다.
+- Gate 3B의 아래 historical completion disposition은 그대로 보존한다. 현재 authoritative downstream 상태는 **Session 4 PASS, unresolved Critical/High/security-relevant Medium 0, `PUBLICATION_READY_EXPERIMENTAL`**이다. `PRODUCTION_RELEASE_READY`는 승인하지 않았다.
 
 ## 1. 진입 Gate
 
@@ -490,8 +496,8 @@ Go reference와 conformance fixture는 repo에 있으나, 2026-07-12 재검증�
 ### Gate 처분
 
 - **Gate 3B: PASS.** `G3B-01..04` active finding은 0건이다.
-- **Session 4: UNBLOCKED / NOT STARTED.** 이 Session 3B closure에서는 Session 4 독립 검증, fresh publication benchmark/fuzz/Pass A~I 또는 공개 승인을 수행하지 않았다.
-- `S4-B01` live two-endpoint no-failover 검증은 Session 4가 독립적으로 확인할 active security-relevant Medium이다. 따라서 publication과 `PUBLICATION_READY_EXPERIMENTAL`은 계속 **BLOCKED**다.
+- **Session 3B closure 당시 Session 4: UNBLOCKED / NOT STARTED.** 이 Session 3B closure에서는 Session 4 독립 검증, fresh publication benchmark/fuzz/Pass A~I 또는 공개 승인을 수행하지 않았다.
+- 당시 `S4-B01` live two-endpoint no-failover 검증은 Session 4가 독립적으로 확인할 active security-relevant Medium이어서 publication이 **BLOCKED**였다. 문서 앞의 current Session 4 후속 상태가 이 historical disposition을 supersede한다.
 - Formal trusted setup, external audit, production artifact provenance/custody, production remote prover/DB/scheduler 운영은 Production TODO로 유지한다.
 
 ## 2026-07-12 Independent Revalidation — Historical Gate Record (Superseded)
@@ -622,4 +628,4 @@ production circuit constraint는 Session 3A와 같은 `1,111,837`이며 formal s
 - `make privacy-e2e-smoke`와 `make reference-payroll-live-localnet`을 fresh localnet에서 재실행해 Deposit/2x2/Withdraw와 durable payroll reserve/prove/broadcast/reconcile/idempotent retry가 PASS했다.
 - `make release-check`, `make release-pack`, `make release-pack-verify`, `git diff --check`를 현재 closure tree에서 다시 실행해 PASS했다. Release check 내부의 전체 Go test/build/examples/vulnerability policy/plain localnet/privacy E2E/2-message bulk readiness도 모두 PASS했다. Closure commit 뒤 clean manifest와 status를 한 번 더 확인하고 **Gate 3B를 PASS로 재확정해 Session 4를 시작**한다.
 
-최초 Session 3B 구현은 Session 4를 수행하지 않고 종료했다. 위 문단은 당시 closure claim을 보존한 historical record이며, 현재 gate는 이 문서 앞의 2026-07-13 re-entry Completion Record에 따라 **Gate 3B PASS, Session 4 UNBLOCKED / NOT STARTED**다.
+최초 Session 3B 구현은 Session 4를 수행하지 않고 종료했다. 위 문단은 당시 closure claim을 보존한 historical record이며, 현재 gate는 이 문서 앞의 2026-07-13 Session 4 후속 상태에 따라 **Gate 3B PASS, Session 4 PASS, `PUBLICATION_READY_EXPERIMENTAL`**이다.

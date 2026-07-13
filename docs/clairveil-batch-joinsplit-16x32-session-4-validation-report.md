@@ -1,6 +1,96 @@
 # Batch JoinSplit 16x32 Session 4 Independent Validation Report
 
-## Status
+## 2026-07-13 Session 4 Closure — Current Authoritative Record
+
+| Item | Result |
+| --- | --- |
+| Session 1 base | `e42737022b2aa87b498f57ae4d089ccb84a45968` |
+| Session 4 starting snapshot | `0df27417910f46ff714e73ce0730f5e167ece33a` |
+| Validated immutable implementation snapshot | `a84ca1cc1cd835990243d9b3f5f064e7b538f7ae` |
+| Final review range | `e42737022b2aa87b498f57ae4d089ccb84a45968..HEAD`; the starting snapshot was not changed |
+| Gate state | Gates 1/2/3A/3B **PASS**; Session 4 Passes A–I **PASS** |
+| Finding state | Unresolved Critical `0`, High `0`, security-relevant Medium `0` |
+| Publication | **`PUBLICATION_READY_EXPERIMENTAL`** |
+| Production | **`PRODUCTION_RELEASE_READY` not approved** |
+
+This is the current authoritative record. All 2026-07-12 and earlier publication-ready, Gate 3B FAIL/PASS, and Session 4 `BLOCKED` text below is retained only as historical provenance and is not current evidence. The initial range stayed read-only through one two-reviewer wave split between Passes A–E and Passes F–I/publication hygiene. The main reviewer adjudicated every candidate directly against code and tests. No repeated reviewer wave or clean-round loop was used.
+
+### Finding closure
+
+| ID | Severity | Independent decision and remediation | State |
+| --- | --- | --- | --- |
+| `S4-B01` | Medium, security-relevant | Real timeout and healthy HTTP prover endpoints expose server-side request counters and received-body observations. Default no-failover is `1/0`; explicit opt-in is `1/1` and completes from the healthy response. Timeout, malformed response, and validation failure are separate regressions. No body, witness, nullifier, path, or amount is printed. Commit `1b1dc08` | **RESOLVED** |
+| `S4-F01` | Medium, security-relevant | `r` and `r+q` have the same BN254 residue and commitment but bypassed raw decimal secret comparison. The structured batch-signing boundary now compares canonical field bytes and rejects non-canonical aliases before signature release. Commit `cdc7780` | **RESOLVED** |
+| `S4-L01` | Low, operational | The reference payroll localnet backgrounded a shell function and cleaned up its subshell PID, leaving the node orphaned. It now backgrounds the node directly; the rerun left zero node/prover processes. Commit `a84ca1c` | **RESOLVED** |
+| `S4-DOC01` | Medium, publication hygiene | Current-state Gate 3B FAIL, active `S4-B01`, and Session 4 `BLOCKED` language remained in bilingual normative/handoff documents. Historical records were retained and current authoritative text was aligned in this publication record. | **RESOLVED** |
+
+### Fresh Pass A–I results
+
+| Pass | Independent validation | Result |
+| --- | --- | --- |
+| A | Current authorization/intent, disclosure dictionary, commitment collision, crypto decoder, privacy defaults, genesis/artifact identity | **PASS** |
+| B | NoteV1 consistency across native, Deposit, Spend, 2x2, Batch, scanner, genesis, and independent KATs | **PASS** |
+| C | Independent reconstruction of all 12 Batch public inputs and circuit/native/keeper/SDK/prover witness ordering | **PASS** |
+| D | Active prefix, disabled sentinel, duplicate, value/root/path/owner/signature/disclosure adversarial witnesses | **PASS** |
+| E | Inputs `1..16`, outputs `1..32`, differential/property tests, independent vector/payload KATs, bounded fuzz | **PASS** |
+| F | Keeper framing/gas/precharge, consensus identity, atomic rollback, cross-message composition, resource bounds | **PASS** |
+| G | Minimal event, single-copy typed scan plane, sequence/cursor/restart/genesis/item evidence | **PASS** |
+| H | Role-aware artifact admission, body/queue/permit bounds, payload-free errors, live no-failover, safe view-tag default | **PASS** |
+| I | One-proof payroll graph/worker/broadcast/reconcile and separate batch/item evidence | **PASS** |
+
+Every targeted command produced the expected named `--- PASS` markers. Neither `SKIP` nor `[no tests to run]` was accepted. A first PostgreSQL skip was rejected; Docker PostgreSQL 17 was provisioned and the actual integration then passed.
+
+### `S4-B01` live evidence
+
+| Scenario | Timeout contacts | Healthy contacts | Observation |
+| --- | ---: | ---: | --- |
+| Default no-failover | 1 | 0 | Timeout body observed server-side; no healthy body |
+| Explicit opt-in failover | 1 | 1 | Both bodies equal; completion from the healthy response |
+
+Timeout, malformed response, and response-validation failure are distinct error classes, and each failure endpoint is contacted once. `automatic_multi_prover_failover=false` is derived from these actual counters rather than emitted as a literal. Evidence contains only counts and booleans; it never records the private request body.
+
+### Benchmark and resource evidence
+
+The environment was Apple M5 Pro/64 GiB, Darwin arm64, Go `1.25.12`, gnark `v0.14.0`, and Groth16/BN254. `TestBatchJoinSplit16x32FullShapeResourceGate` passed in 61.62 seconds with process peak RSS `3,354,689,536 B`.
+
+| Item | Value |
+| --- | ---: |
+| Constraints | `1,111,837` |
+| Compile / setup | `1002.828 ms` / `16106.399 ms` |
+| R1CS / PK / VK / proof | `122,813,535 B` / `209,218,621 B` / `716 B` / `164 B` |
+| `16/32` witness p50/p95/max | `0.401/0.418/0.418 ms` |
+| `16/32` prove p50/p95/max | `1685.541/1712.069/1712.069 ms` |
+| `16/32` verify p50/p95/max | `0.673/0.686/0.686 ms` |
+| JoinSplit2x2 warm-prove mean | `152.11075 ms` |
+
+### Integration, fuzz, and release evidence
+
+- `make reservation-sql-integration`: actual SQLite and Docker PostgreSQL 17 graph-atomicity/recovery tests passed with exact markers and zero skips.
+- `make session-3a-validation-evidence`: source-regenerated current/previous artifact rotation/tamper, old/new proof identity, and fresh-genesis identity passed.
+- All ten actual fuzz targets ran separately with `-fuzztime=3s -parallel=4` and passed: note/disclosure plaintext, Batch/2x2 payloads, vector root, prover JSON, scan page, EC point, EdDSA signature, and ECIES envelope.
+- `make privacy-e2e-smoke`: Deposit/disclosure/2x2/Withdraw passed.
+- `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`: five shapes, one-proof/one-envelope payroll, node/prover restart, timeout/exact retry, tx-hash-first reconciliation, spent-nullifier rejection, disclosure/view-tag safe scan, genesis export/import, and post-import continuation passed. Gas was `1,609,514` for `1/1`, `3,141,099` for `3/4`, `16,017,355` for `31+change`, `16,876,619` for exact `32`, and `15,529,326` for padding.
+- `make reference-payroll-live-localnet`: one chunk/two items, two confirmed items, four confirmed spent reservations, final `Confirmed`, and zero node/prover processes after exit.
+- `go test ./... -count=1`, `go test -race ./x/privacy/... -count=1`, `go vet ./...`, `make ci`, `make vulncheck`, `make examples`, `make release-check`, and `git diff --check` passed.
+- No tracked secret, generated R1CS/PK/VK/archive, `dist/`/`benchmarks`/`tmp`, or personal absolute path exists. Public inputs, NoteV1, payload/schema/version, and the circuit statement did not change.
+- `make release-pack` and `make release-pack-verify` run on the final clean immutable commit, and the same archive is verified with Python 3.9 and 3.12. The pack has 125 required files. `RELEASE-MANIFEST.txt` records the exact source commit and the co-located `.sha256` records the archive digest; no self-referential archive checksum or commit placeholder is embedded.
+
+### Accepted residuals and Production TODO
+
+| Residual/TODO | Owner | Reason accepted now | Production blocking |
+| --- | --- | --- | --- |
+| External ZK audit, final source/constraint freeze, official MPC/trusted setup, transcript/toxic-waste evidence | Protocol/release owner | Explicit non-goals of the experimental source gate; development setup only | Yes |
+| Signed production artifact/provenance/custody and production manifest/SBOM/image provenance | Release/validator operator | Requires target release infrastructure and signing policy | Yes |
+| Production gas governance/calibration, upgrade/rollback, staging load/fault, monitoring/incident response | Downstream chain owner | Target-chain operations scope | Yes |
+| Prover TLS/auth/ACL/quota/process isolation/retention and audit-key custody/rotation/manual review | Prover and auditor/payroll operators | Requires managed production infrastructure and procedures | Yes |
+| Downstream JS/TS wallet/product plus metadata leakage and padding policy | Product/privacy owner | Only the Go reference is publication-approved; product acceptance is separate | Yes for downstream production |
+| Three no-fixed-version Go advisories and one example npm Low | Dependency/security owner | Tracked under the existing exact policy rather than hidden | Reassess before production |
+
+These items do not convert a security finding into a residual. `PRODUCTION_RELEASE_READY` remains unapproved until the external audit/freeze/MPC/transcript/signed-provenance/downstream-rollout work is complete.
+
+## Historical status and prior validation records (superseded)
+
+Every current/blocked/finding statement below describes its historical point in time. Only the 2026-07-13 Session 4 Closure above determines current status.
 
 | Item | Result |
 | --- | --- |
@@ -42,7 +132,7 @@ This 2026-07-12 revalidation supersedes the earlier publication claim completed 
 - Session 3A re-entry is **UNBLOCKED / NOT STARTED**. `S4-B02` remains **IMPLEMENTATION PENDING / NOT RESOLVED** until production constraints/artifacts, pre-sign enforcement, regression, readiness, and resource gates are complete.
 - `S4-B03` is **RESOLVED** by `02f61f3746b67d5244c160b7c0e0e42f7c0b78b8` and `42d40bd19523e263aaf1c2043bcd274a4fc1a51d`.
 
-## Current confirmed findings
+## Historical — confirmed findings at the 2026-07-12 revalidation
 
 | ID | Severity | Evidence | Impact | Required action |
 | --- | --- | --- | --- | --- |
@@ -54,7 +144,7 @@ This 2026-07-12 revalidation supersedes the earlier publication claim completed 
 
 Resolved supplements: `S4-B03` is closed by `02f61f3`/`42d40bd`, and `S4-B02` implementation is closed by `0b7d97d`/`630736f`/`25c17ef`; neither is included in the current finding count.
 
-## Current verification disposition
+## Historical — verification disposition at the 2026-07-12 revalidation
 
 - Because Gate 3B failed, Session 4 Passes A–I, a fresh max-shape benchmark, fresh localnet, full regression/race/fuzz, and release gates were **not run**. Historical results below are not re-approved as current gate evidence.
 - As supporting checks only, `TestPrivacyNoteV1ContractIndependentGolden` and `TestPrivacyBatchJoinSplitV1ContractIndependentGolden` passed. Their source independently calculates frozen domains, encodings, MiMC, and vector formulas without using the production NoteV1/root helper in the calculation path.
@@ -99,11 +189,11 @@ No active High or Medium finding was accepted as a residual. Only the following 
 
 This table neither accepts the active Gate 3B/Session 2–3A blockers nor authorizes publication.
 
-## Prior 2026-07-12 historical validation record (superseded)
+## Historical — prior 2026-07-12 validation record (superseded)
 
 The content below retains the prior reviewer's historical claim for provenance. It is not the current publication state, Pass result, benchmark, or localnet evidence; the 2026-07-12 disposition above controls.
 
-## Independent review method
+## Historical — independent review method
 
 The reviewer read the master roadmap and every Session 1–4 plan and Completion Record from beginning to end, reconstructed the protocol from code, and then compared the implementation to the normative contracts. No file was modified until the initial findings had been reproduced and adjudicated. Gate 3B was checked before Passes A–I. Because its clean-worktree and integration-evidence requirements were not initially met, Session 4 was not treated as passed while that gate was open.
 
@@ -114,7 +204,7 @@ The review reconstructed:
 - owner authorization, membership, distinctness, conservation, disclosure, and payload binding;
 - keeper gas, resource, atomicity, cross-message composition, scan/genesis state, prover privacy, and payroll evidence boundaries.
 
-## Findings and fixes
+## Historical — findings and fixes
 
 | ID | Severity | Evidence | Impact | Resolution |
 | --- | --- | --- | --- | --- |
@@ -152,7 +242,7 @@ The review reconstructed:
 
 No finding required a protocol contract, public-input order, or NoteV1 change. Session 2/3A re-entry was therefore not required. Unresolved Critical/High findings: 0. Unresolved security-relevant Medium findings: 0.
 
-## Pass A–I result matrix
+## Historical — Pass A–I result matrix
 
 | Pass | Independent checks | Result |
 | --- | --- | --- |
@@ -166,7 +256,7 @@ No finding required a protocol contract, public-input order, or NoteV1 change. S
 | H — prover/privacy | Lazy VK vs selected R1CS/PK, body/admission limits, permit lifetime through actual prove, cancel/panic recovery, secret-free logs/errors, no automatic failover, ciphertext policy, safe view-tag default, development artifact labels. | Passed; transport hardening, strict payload-free errors, plaintext logging, and private-file replacement findings were fixed. |
 | I — payroll/reconcile | Atomic many-to-many persistence, 31+change/exact32, role/index/evidence, batch vs item outcome, tx/nullifier lookup before retry, explicit re-sign, audit/manual review metadata. | Passed in memory, durable-file, SQL, CLI/daemon private-output, and live localnet coverage. |
 
-## Independent golden known-answer tests
+## Historical — independent golden known-answer tests
 
 At least three KAT paths intentionally calculate frozen bytes without importing the production helper under test:
 
@@ -176,13 +266,13 @@ At least three KAT paths intentionally calculate frozen bytes without importing 
 
 The independent canonical batch payload is 3,702 bytes and its SHA-256 digest is `f2588c7543fb83a7822aa0043e4747af0ac4c9dc14a038c230850f1cab5e24b0`. Separate independent vector-root and effect-ID tests cover typed vector domains and exact effect identity.
 
-## Property and fuzz coverage
+## Historical — property and fuzz coverage
 
 New bounded fuzz targets cover NotePlaintextV1, DisclosurePlaintextV1, transfer and batch canonical payloads, batch vector roots including active-prefix/disabled sentinels, typed scan page/cursor round trips, and strict batch prover JSON requests. Existing bounded fuzz targets cover canonical/subgroup point, EdDSA signature, and ECIES envelope decoding. Every target is required to remain panic-free, bounded, canonical on accepted round trips, fail-closed on malformed/trailing input, and secret-free in errors.
 
 The seeded circuit property covers every input count `1..16` with randomized output counts, amounts, disclosure modes, and keys. SDK and keeper properties independently cover all input counts `1..16` and output counts `1..32`. Each new target completed a three-second bounded run; the final command table records the aggregate rerun.
 
-## Development capacity profile
+## Historical — development capacity profile
 
 Environment: Apple M5 Pro, `darwin/arm64`, Go `1.25.12`, gnark `0.14`, measured at `2026-07-11T19:55:51Z`. These are development-artifact measurements, not a production SLA. Each proof shape used five samples.
 
@@ -225,7 +315,7 @@ Warm mean proof time was 152.349 ms for 2x2 and 1,693.102 ms for 16x32, or 76.17
 
 The 32-output scanner benchmark measured 1,317,912 ns/op, 24,281 outputs/s, 214,851 B/op, and 1,393 allocs/op.
 
-## Fresh localnet and recovery result
+## Historical — fresh localnet and recovery result
 
 The batch rehearsal completed five live proof/message cases: 1/1, 3/4, 31 payments plus change, exact 32 payments, and zero-padding. It also exercised recipient, auditor, and self-view scanning; view-tag-safe full decryption; no automatic prover failover; tx-hash reconciliation; rejected spent-nullifier retry; real prover and node restarts; cursor resume; and a non-zero-height genesis export/import.
 
@@ -233,7 +323,7 @@ Before export the chain was at height 47 with 42 summaries, 138 outputs, global 
 
 The separate privacy smoke regression covered Deposit, JoinSplit2x2, and Withdraw, including expiry and chain-domain authorization negatives. The reference payroll live localnet covered reserve, prove, broadcast, reconcile, item evidence, and report generation.
 
-## Final verification commands
+## Historical — final verification commands
 
 | Command | Result |
 | --- | --- |
@@ -255,7 +345,7 @@ The separate privacy smoke regression covered Deposit, JoinSplit2x2, and Withdra
 | `umask 077` release generation and external verification | Passed; tracked files, directories, metadata, archive, and checksum retained their canonical modes |
 | `git diff --check e427370..494c72df2cad38dc1cc97d5e6e0f15b38e0c82d2` and publication hygiene checks | Passed; tracked artifact/secret/personal-path results were empty and generated `dist/`/`tmp/` remained ignored |
 
-## Accepted residual risks and Production TODO
+## Historical — accepted residual risks and Production TODO
 
 | Residual | Owner | Reason accepted for experimental publication | Production blocking |
 | --- | --- | --- | --- |
@@ -272,6 +362,6 @@ The separate privacy smoke regression covered Deposit, JoinSplit2x2, and Withdra
 
 No accepted residual permits calling this implementation production-ready or audited.
 
-## Publication hygiene
+## Historical — publication hygiene
 
 The final gate checks Git-tracked paths for R1CS/PK/VK binaries, private keys, seeds, tokens, audit secrets, personal absolute paths, scratch benchmarks, and temporary files. Generated development artifacts and `dist/` release packs remain ignored and untracked. English/Korean contracts, fixtures, schemas, examples, and the release handoff pack are checked together.
