@@ -22,8 +22,8 @@ const (
 	BatchFullDisclosureV2DomainLabel     = "clairveil.full-disclosure.v2"
 )
 
-// ValidateAuditKeyIDV1 freezes the bounded identifier carried by the future
-// batch message and duplicated into its typed scan records. IDs are canonical
+// ValidateAuditKeyIDV1 validates the bounded identifier carried by the batch
+// message and duplicated into its typed scan records. IDs are canonical
 // lowercase ASCII: the first byte is [a-z0-9], and remaining bytes may also
 // contain '.', '_' or '-'.
 func ValidateAuditKeyIDV1(value string) error {
@@ -41,9 +41,8 @@ func ValidateAuditKeyIDV1(value string) error {
 	return nil
 }
 
-// BatchPublicInputOrderV1 is the consensus-visible order reserved for the
-// future production BatchJoinSplit16x32 circuit. Session 2 freezes the schema;
-// it does not register a production batch circuit or verifier artifact.
+// BatchPublicInputOrderV1 is the consensus-visible order for the production
+// BatchJoinSplit16x32 circuit.
 var BatchPublicInputOrderV1 = [...]string{
 	"MerkleRoot",
 	"ChainDomainHi",

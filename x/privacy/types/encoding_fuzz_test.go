@@ -79,7 +79,7 @@ func FuzzDisclosurePlaintextV1DecoderCanonicalRoundTrip(f *testing.F) {
 }
 
 func FuzzMsgBatchTransferDecoderAndCanonicalPayload(f *testing.F) {
-	seed := session4BatchFramingSeed(f)
+	seed := batchFramingSeed(f)
 	valid, err := seed.Marshal()
 	if err != nil {
 		f.Fatalf("marshal MsgBatchTransfer seed: %v", err)
@@ -161,7 +161,7 @@ func FuzzMsgTransferDecoderAndCanonicalPayload(f *testing.F) {
 }
 
 func FuzzBatchVectorRootActivePrefixAndDisabledSentinel(f *testing.F) {
-	f.Add(byte(0), byte(0), []byte("session-4-vector-seed"))
+	f.Add(byte(0), byte(0), []byte("batch-vector-fuzz-seed"))
 	f.Add(byte(1), byte(15), []byte(nil))
 	f.Add(byte(2), byte(31), bytes.Repeat([]byte{0xff}, 64))
 	f.Add(byte(3), byte(7), []byte("disclosure"))
@@ -216,7 +216,7 @@ func FuzzBatchVectorRootActivePrefixAndDisabledSentinel(f *testing.F) {
 	})
 }
 
-func session4BatchFramingSeed(tb testing.TB) *MsgBatchTransfer {
+func batchFramingSeed(tb testing.TB) *MsgBatchTransfer {
 	tb.Helper()
 	msg := productionBatchPayloadTestMessage(tb)
 	msg.Creator = testCreatorAddress()

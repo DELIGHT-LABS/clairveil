@@ -607,9 +607,9 @@ production circuit constraint는 Session 3A와 같은 `1,111,837`이며 formal s
 
 ### Handoff, invariant matrix, residual risk
 
-- conformance fixture: `x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_session3b_contract.json`.
+- conformance fixture: `x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_v1_contract.json`.
 - invariant traceability matrix: [한글](../docs/clairveil-batch-joinsplit-16x32-kr.md#13-invariant-traceability-matrix), [영문](../docs/clairveil-batch-joinsplit-16x32.md#13-invariant-traceability-matrix).
-- Session 3B handoff: [한글](../docs/clairveil-session3b-batch-transfer-handoff-kr.md), [영문](../docs/clairveil-session3b-batch-transfer-handoff.md). CLI/localnet tutorial과 release pack verifier가 fixture/schema/handoff를 포함함.
+- Session 3B handoff: [한글](../docs/clairveil-batch-transfer-integration-handoff-kr.md), [영문](../docs/clairveil-batch-transfer-integration-handoff.md). CLI/localnet tutorial과 release pack verifier가 fixture/schema/handoff를 포함함.
 - review에서 expired `Proving` lease recovery, failed tx result propagation, repeated reconcile evidence 보존, plan/payload recipient·disclosure binding, nullifier lookup binding, ambiguous `Unknown` operation/reservation consistency를 보강함. 이후 실제 회귀에서 발견한 legacy 2x2 self-view framing과 tx-hash case normalization도 회귀 test와 localnet 재실행으로 닫음.
 - 최종 active Critical/High/Medium/actionable finding은 `0`건임. Formal trusted setup, production artifact, external ZK audit, managed production DB/multi-tenant SaaS, production remote prover deployment, downstream JS SDK/wallet 제품은 범위 밖이며 수행하지 않았음.
 - in-process gnark prove의 hard cancellation/resource containment에는 production process isolation이 필요함. fixed version이 없는 `GO-2024-2584`, `GO-2026-4479`, `GO-2026-5932`와 examples npm low 1건은 기존 release policy의 known dependency risk로 계속 추적함.

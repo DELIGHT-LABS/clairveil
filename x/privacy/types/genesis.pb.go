@@ -235,7 +235,7 @@ func (m *AssetRegistryEntryV1) GetAssetId() []byte {
 
 // PrivacyScanCursorV1 is ordered lexicographically by
 // (height, global_sequence, output_index). It is shared by Deposit,
-// JoinSplit2x2, and future batch operations.
+// JoinSplit2x2, and BatchJoinSplit16x32 operations.
 type PrivacyScanCursorV1 struct {
 	Height         int64  `protobuf:"varint,1,opt,name=height,proto3" json:"height,omitempty"`
 	GlobalSequence uint64 `protobuf:"varint,2,opt,name=global_sequence,json=globalSequence,proto3" json:"global_sequence,omitempty"`

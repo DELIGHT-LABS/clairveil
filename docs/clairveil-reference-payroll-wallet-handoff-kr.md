@@ -140,10 +140,10 @@ UI에서는 nullifier/commitment를 표시해야 할 때 축약값만 사용함.
 - forced rescan 후 reservation/spent 상태가 일관됨.
 - 민감정보 logging 금지 정책이 적용됨.
 
-## Session 3A Core / Session 3B Wallet Boundary
+## Batch chain core / wallet 통합 경계
 
 Wallet은 active set `privacy-note-v1`과 canonical `privacy-fixed-v1` note, disclosure, typed-envelope byte로 migrate해야 합니다. 이 변경은 cache-compatible하지 않습니다. Fresh genesis를 사용하고 old note/reservation/scan/proof state와 development artifact를 삭제한 뒤 재생성하고 full rescan합니다. Raw ciphertext나 legacy JSON note를 compatibility fallback으로 받지 않습니다. Denom label은 authoritative `AssetRegistryV1`으로만 resolve하고 unknown 또는 inconsistent asset ID는 quarantine합니다.
 
 Unified cursor `(height, global_sequence, output_index)` 전체를 atomically 저장하고 선택한 root와 정확히 같은 snapshot에서 spend path를 구합니다. Current-root path는 incremental node를 사용하므로 online historical-rebuild budget을 소비하지 않습니다. Non-current historical path는 persisted root/count/height metadata를 요구하며 public query는 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하고 그 이상은 `ResourceExhausted`를 반환합니다. Online bound를 넘으면 current root 또는 trusted local historical index를 사용합니다. 별도 offline recovery/export bound는 `MaxMerkleRebuildLeaves`(1,048,576)입니다. Remote historical lookup은 treasury timing과 관심 state를 노출하므로 provider 선택 UI에서 이 privacy warning을 유지합니다. Canceled remote proving request가 in-process solver 중단을 보장하지 않으므로 job/chain reconciliation 전까지 관련 reservation을 유지합니다. Automatic prover failover는 계속 비활성화합니다.
 
-Session 3A chain-core 지원을 wallet support로 취급하지 않습니다. 기존 batch-oriented payroll UI는 여전히 현재 2x2 operation을 submit합니다. Session 3B UI/scanner 작업은 production 12개 public input(`MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`)을 사용해야 하며 builder, prover route, decryption, submission, reconciliation flow가 end-to-end로 통과할 때까지 feature-gated 상태를 유지합니다.
+batch chain-core 지원을 wallet support로 취급하지 않습니다. 기존 batch-oriented payroll UI는 여전히 현재 2x2 operation을 submit합니다. Downstream wallet integration은 production 12개 public input(`MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`)을 사용해야 하며 reference builder, prover route, decryption, submission, reconciliation component를 통합하고 전체 flow가 end-to-end로 통과할 때까지 feature-gated 상태를 유지합니다.

@@ -35,7 +35,7 @@ Clairveil은 Cosmos SDK 체인에 붙일 수 있는 auditable shielded privacy c
 | 공개 상태 | `PUBLICATION_READY_EXPERIMENTAL`; source/reference 공개 가능 상태이며 production 배포 승인이 아님 |
 | Consensus circuit set | state version 2의 `privacy-note-v1` |
 | Fixed client contract | `privacy-fixed-v1`; transfer payload `v5`, proof/prover contract `v2` |
-| Batch surface | `BatchJoinSplit16x32`, `MsgBatchTransfer`, Session 3B Go SDK/prover/scanner/payroll/CLI reference 구현 |
+| Batch surface | `BatchJoinSplit16x32`, `MsgBatchTransfer`; batch integration용 Go SDK/prover/scanner/payroll/CLI reference 구현 |
 | Upgrade 경계 | 이전 artifact, proof job, note/scan cache, three-circuit genesis와 호환되지 않음. fresh genesis/reset 및 rescan 필요 |
 | 남은 production gate | formal trusted setup, 외부 security/circuit audit, signed production artifact, downstream chain/product 검증 |
 

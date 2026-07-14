@@ -20,9 +20,9 @@ import (
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
 )
 
-const session4FailoverEvidenceEnv = "CLAIRVEIL_S4_PROVER_FAILOVER_EVIDENCE_OUT"
+const proverFailoverEvidenceEnv = "CLAIRVEIL_PROVER_FAILOVER_EVIDENCE_OUT"
 
-type session4LiveProverFixture struct {
+type liveProverFixture struct {
 	SchemaVersion string `json:"schema_version"`
 	Transfer      struct {
 		Request  provertransport.TransferProofRequest  `json:"request"`
@@ -82,7 +82,7 @@ func (p *observedHTTPProver) snapshotBodies() [][]byte {
 }
 
 func TestProverPoolLiveHTTPFailoverPrivacyBoundary(t *testing.T) {
-	fixture := loadSession4LiveProverFixture(t)
+	fixture := loadLiveProverFixture(t)
 	now := time.Unix(4102444800, 0)
 	expectedRequestBody, err := json.Marshal(fixture.Transfer.Request)
 	require.NoError(t, err)
@@ -107,7 +107,7 @@ func TestProverPoolLiveHTTPFailoverPrivacyBoundary(t *testing.T) {
 			ValidationFailureDistinct   bool `json:"validation_failure_distinct"`
 			EachEndpointContactCountOne bool `json:"each_endpoint_contact_count_one"`
 		} `json:"failure_classes"`
-	}{SchemaVersion: "clairveil.session4.prover-failover-live-evidence.v1"}
+	}{SchemaVersion: "clairveil.prover-failover-live-evidence.v1"}
 
 	t.Run("default_no_failover", func(t *testing.T) {
 		timeoutEndpoint, timeoutServer := newObservedTimeoutServer(t)
@@ -188,14 +188,14 @@ func TestProverPoolLiveHTTPFailoverPrivacyBoundary(t *testing.T) {
 		}
 	})
 
-	writeSession4FailoverEvidence(t, evidence)
+	writeProverFailoverEvidence(t, evidence)
 }
 
-func loadSession4LiveProverFixture(t *testing.T) session4LiveProverFixture {
+func loadLiveProverFixture(t *testing.T) liveProverFixture {
 	t.Helper()
 	payload, err := os.ReadFile("../conformance/testdata/privacy_prover_example_bundle.json")
 	require.NoError(t, err)
-	var fixture session4LiveProverFixture
+	var fixture liveProverFixture
 	require.NoError(t, json.Unmarshal(payload, &fixture))
 	require.Equal(t, "v2", fixture.SchemaVersion)
 	return fixture
@@ -241,9 +241,9 @@ func containsError(err error, fragment string) bool {
 	return err != nil && bytes.Contains([]byte(err.Error()), []byte(fragment))
 }
 
-func writeSession4FailoverEvidence(t *testing.T, evidence any) {
+func writeProverFailoverEvidence(t *testing.T, evidence any) {
 	t.Helper()
-	path := os.Getenv(session4FailoverEvidenceEnv)
+	path := os.Getenv(proverFailoverEvidenceEnv)
 	if path == "" {
 		return
 	}

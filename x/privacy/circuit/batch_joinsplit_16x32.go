@@ -13,7 +13,7 @@ const (
 	MaxBatchJoinSplitInputs  = int(privacytypes.BatchJoinSplitV1MaxInputs)
 	MaxBatchJoinSplitOutputs = int(privacytypes.BatchJoinSplitV1MaxOutputs)
 
-	// Compatibility aliases keep the Session 2 feasibility report and its
+	// Compatibility aliases keep the original feasibility report and its
 	// deterministic fixtures source-compatible with the production circuit.
 	BatchFeasibilityMaxInputs  = MaxBatchJoinSplitInputs
 	BatchFeasibilityMaxOutputs = MaxBatchJoinSplitOutputs
@@ -59,7 +59,7 @@ type BatchJoinSplit16x32 struct {
 }
 
 // BatchJoinSplit16x32FeasibilityCircuit is retained as an exact alias so the
-// Session 2 resource gate continues measuring the production constraint set.
+// original resource gate continues measuring the production constraint set.
 type BatchJoinSplit16x32FeasibilityCircuit = BatchJoinSplit16x32
 
 func (c *BatchJoinSplit16x32) Define(api frontend.API) error {

@@ -115,9 +115,9 @@ Active identity는 `privacy-note-v1`입니다. `privacy_zk_manifest.json` schema
 
 ## 4. 현재 발견한 코드 레벨 주의점
 
-Session 1 remediation은 known current duplicate-input/output, intent substitution, replay, disclosure oracle, decoder, failover default, genesis/artifact identity, proof gas issue를 닫았습니다. 해당 범위에 미해결 Critical/High finding은 없습니다. 다만 아래는 downstream SDK/service 구현자가 혼동하면 문제가 될 수 있는 지점입니다.
+보안 강화 기준선 remediation은 known current duplicate-input/output, intent substitution, replay, disclosure oracle, decoder, failover default, genesis/artifact identity, proof gas issue를 닫았습니다. 해당 범위에 미해결 Critical/High finding은 없습니다. 다만 아래는 downstream SDK/service 구현자가 혼동하면 문제가 될 수 있는 지점입니다.
 
-2026-07-13 Session 4 record는 `PUBLICATION_READY_EXPERIMENTAL`입니다. Session 3A는 Session 2가 동결한 `DISCLOSURE-BLINDING-SEPARATION` V1을 production `99,775` constraints(`+10`)에 구현하고 native/prepared와 structured 2x2 pre-sign validation을 정렬했으며 JoinSplit development identity만 회전했습니다. Gate 1/2/3A/3B와 Session 4는 `S4-B01` live no-failover evidence와 structured batch-signing boundary의 non-canonical BN254 alias 거부를 포함해 closure됐습니다. Stable validation error는 secret-free이며 proving/signature release 전에 반환합니다. 이 처분은 production release 승인이 아닙니다.
+2026-07-13 독립 공개 검증 record는 `PUBLICATION_READY_EXPERIMENTAL`입니다. batch chain core는 batch protocol contract가 동결한 `DISCLOSURE-BLINDING-SEPARATION` V1을 production `99,775` constraints(`+10`)에 구현하고 native/prepared와 structured 2x2 pre-sign validation을 정렬했으며 JoinSplit development identity만 회전했습니다. security, protocol, chain-core, and client-integration gates와 독립 공개 검증은 `PROVER-FAILOVER-LIVE-EVIDENCE` live no-failover evidence와 structured batch-signing boundary의 non-canonical BN254 alias 거부를 포함해 closure됐습니다. Stable validation error는 secret-free이며 proving/signature release 전에 반환합니다. 이 처분은 production release 승인이 아닙니다.
 
 - `x/privacy/client/sdk/proverservice/service.go`의 body limit은 proof route에만 적용됩니다. 이는 의도적으로 맞지만, downstream이 health/readiness를 외부에 노출할지 여부는 별도로 결정해야 합니다.
 - `x/privacy/client/sdk/provertransport/http.go`의 raw `HTTPHandler`는 transfer, withdraw, batch 모두 admission 전 shared bounded reader를 사용합니다. Public service는 bearer auth, gzip wire/decompressed limit, health/readiness policy, server timeout을 위해 계속 `proverservice.Handler` 또는 동등한 wrapper를 사용해야 합니다.
@@ -141,7 +141,7 @@ JS/TS SDK, web wallet, downstream Cosmos SDK chain 개발자에게는 아래를 
 9. Snapshot/restore/migration 후에는 `docs/clairveil-merkle-restore-sop-kr.md`에 따라 샘플 Merkle path를 재계산해야 합니다.
 10. Legacy prepared payload를 거부하고 `SpendIntentV2`/`TransferIntentV2` public-input 순서를 정확히 보존하며 `privacy-note-v1` 적용 시 cached proof job/artifact를 reset해야 합니다.
 
-## 6. NoteV1과 Session 3A core security addendum
+## 6. NoteV1과 batch chain-core security addendum
 
 현재 production circuit과 state는 `privacy-note-v1` NoteV1 commitment/nullifier/tree contract와 canonical key validation을 공유합니다. Canonical note, disclosure, encrypted-envelope byte는 versioned `privacy-fixed-v1`입니다. Raw ciphertext, JSON plaintext, 잘못된 envelope kind, non-canonical field/key data, non-zero reserved byte, trailing byte는 fail closed해야 합니다. `AssetRegistryV1`이 consensus-authoritative one-to-one denom/32-byte asset-ID mapping입니다. Global commitment uniqueness는 SDK-only precheck가 아니라 consensus state입니다.
 
@@ -155,7 +155,7 @@ Keeper는 `BatchGasModelV1` precharge 전에 cheap bounded framing만 허용합�
 
 측정된 development batch artifact identity는 R1CS `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`입니다. 이 checksum은 artifact signing, provenance, reproducible generation, formal setup, external review를 대체하지 않습니다.
 
-Session 3B는 one-proof batch planner/preparer, bounded remote HTTP prover route, typed scanner/decrypt flow, durable payroll graph, staged CLI/tutorial의 experimental reference Go surface를 제공합니다. 이는 downstream JS/TS SDK, audited production workflow, production deployment profile이 아닙니다. One-proof `MsgBatchTransfer` path와 기존 multi-message `transfer-batch` flow를 구분하고 raw transport handler를 노출하지 않으며 모든 prover request를 매우 민감한 witness data로 취급합니다. Deposit CLI output은 `NotePlaintextV1` 또는 randomness를 출력하면 안 됩니다.
+batch reference integration은 one-proof batch planner/preparer, bounded remote HTTP prover route, typed scanner/decrypt flow, durable payroll graph, staged CLI/tutorial의 experimental reference Go surface를 제공합니다. 이는 downstream JS/TS SDK, audited production workflow, production deployment profile이 아닙니다. One-proof `MsgBatchTransfer` path와 기존 multi-message `transfer-batch` flow를 구분하고 raw transport handler를 노출하지 않으며 모든 prover request를 매우 민감한 witness data로 취급합니다. Deposit CLI output은 `NotePlaintextV1` 또는 randomness를 출력하면 안 됩니다.
 
 Artifact access와 proving은 계속 bounded해야 합니다.
 

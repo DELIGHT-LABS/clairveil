@@ -15,7 +15,7 @@ import (
 	privacyzk "github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
 )
 
-type session3BBatchContract struct {
+type batchTransferContractFixture struct {
 	SchemaVersion   string `json:"schema_version"`
 	PayloadVersion  string `json:"payload_version"`
 	ProofVersion    string `json:"proof_version"`
@@ -59,15 +59,15 @@ type session3BBatchContract struct {
 	} `json:"payroll"`
 }
 
-func TestSession3BBatchTransferContract(t *testing.T) {
-	var fixture session3BBatchContract
+func TestBatchTransferContract(t *testing.T) {
+	var fixture batchTransferContractFixture
 	_, filename, _, ok := runtime.Caller(0)
 	require.True(t, ok)
-	bz, err := os.ReadFile(filepath.Join(filepath.Dir(filename), "testdata", "privacy_batch_transfer_session3b_contract.json"))
+	bz, err := os.ReadFile(filepath.Join(filepath.Dir(filename), "testdata", "privacy_batch_transfer_v1_contract.json"))
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(bz, &fixture))
 
-	require.Equal(t, "clairveil.batch-transfer.session3b.v1", fixture.SchemaVersion)
+	require.Equal(t, "clairveil.batch-transfer.contract.v1", fixture.SchemaVersion)
 	require.Equal(t, privacybatchtransfer.PreparedBatchTransferPayloadVersion, fixture.PayloadVersion)
 	require.Equal(t, privacybatchtransfer.PreparedBatchTransferProofVersion, fixture.ProofVersion)
 	require.Equal(t, privacytypes.ActiveCircuitSetID, fixture.CircuitSetID)

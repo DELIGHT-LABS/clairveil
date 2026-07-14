@@ -10,7 +10,7 @@ import (
 )
 
 // BenchmarkBatchJoinSplit16x32Compile measures only production R1CS compile.
-// It intentionally performs no Groth16 setup; the opt-in Session 2 resource
+// It intentionally performs no Groth16 setup; the opt-in feasibility resource
 // gate remains the single setup/prove artifact-size benchmark.
 func BenchmarkBatchJoinSplit16x32Compile(b *testing.B) {
 	for i := 0; i < b.N; i++ {

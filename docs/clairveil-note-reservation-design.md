@@ -14,7 +14,7 @@ A Clairveil shielded transfer consumes input notes, reveals nullifiers, and crea
 
 For example, suppose a payroll job prepares 1,000 payments and assigns 100 treasury notes as input candidates. If another wallet transfer spends one of those notes first, or a background merge consumes it, the payroll proof is no longer valid. At broadcast time the nullifier may already be spent or the Merkle root may no longer match.
 
-Note reservation is therefore required for a reliable Session 3B UX around the production `MsgBatchTransfer` submission flow.
+Note reservation is therefore required for a reliable UX around the production `MsgBatchTransfer` submission flow provided by the batch reference integration.
 
 ## Core Conclusion
 

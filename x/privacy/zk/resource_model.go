@@ -12,8 +12,8 @@ const (
 	BatchResourceMaxOutputsV1 = uint64(privacytypes.BatchJoinSplitV1MaxOutputs)
 )
 
-// BatchGasModelV1 freezes the explicit Session 2 resource formula. Concrete
-// consensus coefficients remain a Session 3A governance/keeper decision, but
+// BatchGasModelV1 defines the explicit batch resource formula. Concrete
+// consensus coefficients are supplied by governance and keeper configuration;
 // zero coefficients are rejected so no represented work category is silently
 // unmetered.
 type BatchGasModelV1 struct {

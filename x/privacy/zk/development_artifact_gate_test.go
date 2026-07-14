@@ -22,7 +22,7 @@ const (
 	previousArtifactDirEnv                    = "CLAIRVEIL_PRIVACY_PREVIOUS_ZK_ARTIFACT_DIR"
 	batchJoinSplit16x32ConstraintCountV1      = 1_111_837
 	batchJoinSplit16x32PublicInputSchemaSHAV1 = "5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333"
-	joinSplitConstraintCountS4B02             = 99_775
+	joinSplitHardenedConstraintCount          = 99_775
 	joinSplitPublicInputSchemaSHAV2           = "4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82"
 )
 
@@ -155,7 +155,7 @@ func TestJoinSplitDevelopmentArtifactRotationGate(t *testing.T) {
 	require.Zero(t, proverReads[JoinSplitVKFile])
 	joinSplitR1CS, err := proverRegistry.R1CS(CircuitJoinSplit)
 	require.NoError(t, err)
-	require.Equal(t, joinSplitConstraintCountS4B02, joinSplitR1CS.GetNbConstraints())
+	require.Equal(t, joinSplitHardenedConstraintCount, joinSplitR1CS.GetNbConstraints())
 
 	for _, oldFilename := range []string{JoinSplitR1CSFile, JoinSplitPKFile, JoinSplitVKFile} {
 		registry := newDevelopmentArtifactRegistryForGate(t, currentDir, func(path string) ([]byte, error) {

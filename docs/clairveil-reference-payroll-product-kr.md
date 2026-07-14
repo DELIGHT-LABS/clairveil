@@ -4,7 +4,7 @@ English version: [clairveil-reference-payroll-product.md](clairveil-reference-pa
 
 ## 목적
 
-이 문서는 현재 Clairveil checkout의 Reference Payroll Product 기준을 정의함. 이 문서는 legacy 1.5차 multi-message payroll 경로에서 시작했지만, 현재 protocol/reference surface는 Session 3B one-proof `BatchJoinSplit16x32` / `MsgBatchTransfer` 구현임.
+이 문서는 현재 Clairveil checkout의 Reference Payroll Product 기준을 정의함. 이 문서는 legacy 1.5차 multi-message payroll 경로에서 시작했지만, 현재 protocol/reference surface는 batch integration이 제공하는 one-proof `BatchJoinSplit16x32` / `MsgBatchTransfer` 구현임.
 
 2026-07-13 기준 repo는 reference Go batch SDK, bounded prover route, typed scanner, many-input/one-operation/many-item payroll graph, worker, reconcile, CLI, localnet workflow를 구현하고 검증함. 이는 experimental reference implementation이며 formal trusted setup, external audit, production artifact 배포, production deployment는 별도 gate로 남아 있음.
 
@@ -32,7 +32,7 @@ Reference Payroll Product는 core protocol 필수 요소가 아님. 그러나 `c
 | reference payroll CLI | `cmd/clairveil-payroll` |
 | reference payroll daemon | `cmd/clairveil-payrolld`, `x/privacy/client/sdk/payroll/reference_daemon.go`, `x/privacy/client/sdk/payroll/live_daemon.go` |
 | repo-local demo product | `examples/reference-payroll/payroll-demo.json`, `scripts/reference-payroll-demo.sh` |
-| normative one-proof contract와 handoff | `docs/clairveil-batch-joinsplit-16x32-kr.md`, `docs/clairveil-session3b-batch-transfer-handoff-kr.md` |
+| normative one-proof contract와 handoff | `docs/clairveil-batch-joinsplit-16x32-kr.md`, `docs/clairveil-batch-transfer-integration-handoff-kr.md` |
 | one-proof batch SDK | `x/privacy/client/sdk/batchtransfer` |
 | one-proof payroll graph/worker | `x/privacy/client/sdk/payroll/batch_plan.go`, `x/privacy/client/sdk/payroll/batch_graph.go`, `x/privacy/client/sdk/payroll/batch_proof_worker.go`, `x/privacy/client/sdk/payroll/batch_broadcast.go`, `x/privacy/client/sdk/payroll/batch_reconcile.go` |
 | current one-proof localnet 검증 | `scripts/privacy-batch-joinsplit-localnet.sh`, `docs/clairveil-batch-joinsplit-localnet-tutorial-kr.md` |
@@ -66,7 +66,7 @@ legacy `transfer-batch` 경로는 독립적인 2x2 `MsgTransfer` 여러 개를 C
 
 ## 상품화 전제
 
-현재 Session 3B 경로는 input note 1..16개를 소비하고 output 1..32개를 생성하는 atomic batch operation 하나에 `BatchJoinSplit16x32` proof 하나를 사용함. Payment, change, explicit padding이 모두 output slot을 사용하므로 output 32개가 항상 payroll payment 32건을 뜻하지는 않음.
+현재 batch reference integration 경로는 input note 1..16개를 소비하고 output 1..32개를 생성하는 atomic batch operation 하나에 `BatchJoinSplit16x32` proof 하나를 사용함. Payment, change, explicit padding이 모두 output slot을 사용하므로 output 32개가 항상 payroll payment 32건을 뜻하지는 않음.
 
 이전 item별 `MsgTransfer` 구현과 recipient당 proof 1개 capacity model은 legacy comparison/regression surface로 계속 제공함. 이는 현재 proof-count model이 아님. One-proof batch 구현은 experimental이며 그 자체로 production productization 또는 production artifact 승인을 완료하지 않음.
 
@@ -74,7 +74,7 @@ legacy `transfer-batch` 경로는 독립적인 2x2 `MsgTransfer` 여러 개를 C
 
 기본 user disclosure 정책은 `all-private` / `none`으로 둠. 이 기본값은 mandatory audit disclosure를 끄는 의미가 아니라, user-facing disclosure를 기본 off로 둔다는 의미임.
 
-현재 one-proof batch SDK/CLI는 output별 disclosure를 독립 적용함. legacy `transfer-batch` CLI는 일반 `transfer`와 같은 shared disclosure flag인 `all-private`, `amount`, `to`, `amount-to`, `from`, `amount-from`, `from-to`, `amount-from-to`를 계속 지원함. 제품 integration은 output별 Session 3B contract를 보존해야 하며 legacy shared-flag 경로에서 이를 추론하면 안 됨.
+현재 one-proof batch SDK/CLI는 output별 disclosure를 독립 적용함. legacy `transfer-batch` CLI는 일반 `transfer`와 같은 shared disclosure flag인 `all-private`, `amount`, `to`, `amount-to`, `from`, `amount-from`, `from-to`, `amount-from-to`를 계속 지원함. 제품 integration은 output별 batch reference integration contract를 보존해야 하며 legacy shared-flag 경로에서 이를 추론하면 안 됨.
 
 Reference Payroll Product는 이 정책을 표현하기 위해 `PayrollDisclosurePolicy`를 제공함.
 
@@ -157,7 +157,7 @@ seed-localnet-notes
 export-report
 ```
 
-현재 Session 3B one-proof chain CLI surface는 다음과 같음.
+현재 one-proof BatchJoinSplit16x32 chain CLI surface는 다음과 같음.
 
 ```text
 transfer-batch-16x32
@@ -166,17 +166,17 @@ prove-batch-transfer
 broadcast-batch-transfer
 ```
 
-신규 one-proof integration은 [Session 3B batch transfer handoff](clairveil-session3b-batch-transfer-handoff-kr.md)와 conformance fixture를 기준으로 함.
+신규 one-proof integration은 [batch transfer integration handoff](clairveil-batch-transfer-integration-handoff-kr.md)와 conformance fixture를 기준으로 함.
 
 `run`, `scan-evidence`, `reconcile`은 durable control-plane 표면을 제공함. 즉 plan 확정, durable reservation/operation state 저장, tx event/nullifier evidence scan, evidence 기반 reconcile을 처리함.
 
 `build-input-from-notes`는 실제 chain에서 `list-notes --json`으로 scan한 treasury note를 payroll input의 `treasury_notes`로 변환함.
 
-`settle-transfer-batch`는 legacy `transfer-batch` tx 결과와 recipient note scan delta를 검증한 뒤 durable reservation state를 settle함. legacy live localnet tutorial에서 실제 chain tx와 payroll final report를 연결하는 bridge이며 Session 3B batch-item reconcile API가 아님.
+`settle-transfer-batch`는 legacy `transfer-batch` tx 결과와 recipient note scan delta를 검증한 뒤 durable reservation state를 settle함. legacy live localnet tutorial에서 실제 chain tx와 payroll final report를 연결하는 bridge이며 one-proof batch-item reconcile API가 아님.
 
 `seed-localnet-notes`는 localnet rehearsal 전용 helper임. localnet genesis commitment와 local wallet cache에 payroll용 amount note와 zero dummy note를 기록해 큰 restart/retry rehearsal에서 deposit 준비 시간을 줄임. Production note preparation 기능이 아니며 staging/testnet에서는 실제 deposit, split/merge, approval 기반 preparation flow를 검증해야 함.
 
-`clairveil-payrolld`는 같은 durable legacy state를 읽어 repo 안에서 해당 흐름을 끝까지 체험할 수 있게 하는 reference daemon임. `simulated` mode는 실제 chain proof와 broadcast 대신 deterministic simulated proof/tx/evidence를 생성해 `Reserved -> Proving -> ProofReady -> Submitted -> ConfirmedSpent` 흐름을 검증함. 현재 one-proof payroll 경로는 별도 Session 3B batch graph와 batch worker를 사용함.
+`clairveil-payrolld`는 같은 durable legacy state를 읽어 repo 안에서 해당 흐름을 끝까지 체험할 수 있게 하는 reference daemon임. `simulated` mode는 실제 chain proof와 broadcast 대신 deterministic simulated proof/tx/evidence를 생성해 `Reserved -> Proving -> ProofReady -> Submitted -> ConfirmedSpent` 흐름을 검증함. 현재 one-proof payroll 경로는 별도 one-proof batch graph와 worker를 사용함.
 
 `live` mode는 SDK `LiveDaemon` 상태머신을 사용함. proof 생성, tx broadcast, scanner evidence 수집은 `LiveOperationExecutor`로 주입할 수 있고, CLI reference 구현은 `-tx-query` 파일을 tick마다 다시 읽어 `Submitted` 또는 `Unknown` 상태를 reconcile함. production 제품은 실제 prover, tx broadcaster, tx/nullifier scanner implementation을 같은 상태머신에 연결해야 함.
 
@@ -285,7 +285,7 @@ clairveil-payroll run \
   -out payroll-confirmed-plan.json
 ```
 
-`run`은 같은 plan으로 재실행해도 이미 생성된 reservation을 읽어 confirmed plan을 다시 출력하도록 idempotent하게 동작함. 이 명령은 proof 생성과 chain broadcast를 직접 수행하지 않음. legacy live localnet tutorial은 `transfer-batch`/`settle-transfer-batch`로 그 작업을 수행하고, 현재 one-proof integration은 Session 3B batch graph와 proof/broadcast/reconcile worker를 사용함.
+`run`은 같은 plan으로 재실행해도 이미 생성된 reservation을 읽어 confirmed plan을 다시 출력하도록 idempotent하게 동작함. 이 명령은 proof 생성과 chain broadcast를 직접 수행하지 않음. legacy live localnet tutorial은 `transfer-batch`/`settle-transfer-batch`로 그 작업을 수행하고, 현재 one-proof integration은 one-proof batch graph와 proof/broadcast/reconcile worker를 사용함.
 
 ### `clairveil-payroll status`
 
@@ -447,12 +447,12 @@ clairveil-payroll export-report -state
 
 성공 기준은 `status-after-daemon.json`에 모든 reservation이 `ConfirmedSpent`, 모든 operation이 `Succeeded`로 집계되고, `final-report.json`의 payroll status가 `Confirmed`인 것임.
 
-## 현재 Session 3B One-Proof 검증
+## 현재 one-proof batch 검증
 
 static conformance gate와, 필요한 local resource/development artifact를 준비한 경우 실제 node/prover/payroll workflow를 실행함.
 
 ```bash
-go test ./x/privacy/client/sdk/conformance -run TestSession3BBatchTransferContract -count=1
+go test ./x/privacy/client/sdk/conformance -run TestBatchTransferContract -count=1
 make privacy-batch-joinsplit-localnet
 RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet
 ```
@@ -533,8 +533,8 @@ schema 문자열은 `reservation.PostgreSQLSchema()`와 `reservation.SQLiteSchem
 
 2026-07-13 기준 repo-level reference boundary는 다음을 포함함.
 
-- Session 3B `BatchJoinSplit16x32`, `MsgBatchTransfer`, Go batch SDK, bounded prover route, typed scanner, one-proof payroll graph/worker/reconcile, staged CLI가 구현됨.
-- Session 3B conformance fixture와 `make privacy-batch-joinsplit-localnet` static gate가 통과하며 resource-heavy `RUN_LOCALNET=1` mode가 현재 actual one-proof 검증 경로임.
+- BatchJoinSplit16x32 reference integration, `MsgBatchTransfer`, Go batch SDK, bounded prover route, typed scanner, one-proof payroll graph/worker/reconcile, staged CLI가 구현됨.
+- Batch reference conformance fixture와 `make privacy-batch-joinsplit-localnet` static gate가 통과하며 resource-heavy `RUN_LOCALNET=1` mode가 현재 actual one-proof 검증 경로임.
 - disclosure policy와 key registry contract가 제공됨.
 - note preparation analyzer가 제공됨.
 - file-backed reference artifact store가 제공됨.
@@ -565,4 +565,4 @@ schema 문자열은 `reservation.PostgreSQLSchema()`와 `reservation.SQLiteSchem
 
 ## Historical Legacy Phase 1 Localnet Rehearsal 기록 — 2026-07-08
 
-2026-07-08 repo-local 1천건 restart/retry rehearsal은 `PAYROLL_SEED_NOTES=1` localnet seed mode로 통과함. 이 날짜가 있는 run은 legacy item별 2x2 proof를 사용하는 `transfer-batch` 경로를 실행했으며, seed 이후 payroll plan, reservation, 실제 Groth16 proof, 실제 multi-message tx, recipient scan, settle, final report export가 모두 동작함. Restart/retry와 durable control-plane evidence로 보존하되 현재 Session 3B proof reduction 또는 production note preparation의 근거로 사용하면 안 됨. 결과는 [clairveil-reference-payroll-localnet-rehearsal-result-kr.md](clairveil-reference-payroll-localnet-rehearsal-result-kr.md)를 확인함.
+2026-07-08 repo-local 1천건 restart/retry rehearsal은 `PAYROLL_SEED_NOTES=1` localnet seed mode로 통과함. 이 날짜가 있는 run은 legacy item별 2x2 proof를 사용하는 `transfer-batch` 경로를 실행했으며, seed 이후 payroll plan, reservation, 실제 Groth16 proof, 실제 multi-message tx, recipient scan, settle, final report export가 모두 동작함. Restart/retry와 durable control-plane evidence로 보존하되 현재 batch reference integration proof reduction 또는 production note preparation의 근거로 사용하면 안 됨. 결과는 [clairveil-reference-payroll-localnet-rehearsal-result-kr.md](clairveil-reference-payroll-localnet-rehearsal-result-kr.md)를 확인함.

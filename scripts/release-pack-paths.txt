@@ -34,12 +34,12 @@ docs/clairveil-circuits.md
 docs/clairveil-circuits-kr.md
 docs/clairveil-batch-joinsplit-16x32.md
 docs/clairveil-batch-joinsplit-16x32-kr.md
-docs/clairveil-batch-joinsplit-16x32-session-4-validation-report.md
-docs/clairveil-batch-joinsplit-16x32-session-4-validation-report-kr.md
+docs/clairveil-batch-joinsplit-16x32-publication-validation-report.md
+docs/clairveil-batch-joinsplit-16x32-publication-validation-report-kr.md
 docs/clairveil-batch-joinsplit-localnet-tutorial.md
 docs/clairveil-batch-joinsplit-localnet-tutorial-kr.md
-docs/clairveil-session3b-batch-transfer-handoff.md
-docs/clairveil-session3b-batch-transfer-handoff-kr.md
+docs/clairveil-batch-transfer-integration-handoff.md
+docs/clairveil-batch-transfer-integration-handoff-kr.md
 docs/clairveil-cli-reference.md
 docs/clairveil-cli-reference-kr.md
 docs/clairveil-testing-guide.md
@@ -118,6 +118,6 @@ scripts/release-manifest-template.txt
 scripts/docs-check.sh
 scripts/markdown-ast.go
 scripts/markdown-ast_test.go
-scripts/session-3a-validation-evidence.sh
-scripts/session-3a-prepare-artifact-evidence.sh
+scripts/validate-joinsplit-artifact-rotation-evidence.sh
+scripts/prepare-joinsplit-artifact-rotation-evidence.sh
 scripts/privacy-batch-joinsplit-localnet.sh

@@ -19,7 +19,7 @@ Contents:
 - release pack generation and verification scripts
 - release, circuit, CLI, testing, operations, downstream integration, client, JS SDK, scan optimization, prover, Merkle restore, threat model, security, and reference app documents
 - NoteV1 and BatchJoinSplit16x32 foundation contracts and independent golden fixtures
-- Session 4 independent validation, benchmark, localnet, finding, and residual-risk reports
+- BatchJoinSplit16x32 independent publication validation, benchmark, localnet, finding, and residual-risk reports
 - current tracked plan ledgers and source-repo readiness commands; superseded plans excluded
 - release versioning policy and release note templates
 

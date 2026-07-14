@@ -5,7 +5,7 @@ import "clairveil/privacy/v1/tx.proto";
 
 option go_package = "github.com/DELIGHT-LABS/clairveil/x/privacy/types";
 
-// These messages freeze and measure the Session 2 max wire shape. They are
+// These messages freeze and measure the BatchJoinSplit16x32 maximum wire shape. They are
 // not registered with the Msg service and do not authorize a state transition.
 message BatchTransferWirePrototypeV1 {
   string creator = 1;

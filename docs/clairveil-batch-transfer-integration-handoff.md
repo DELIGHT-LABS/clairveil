@@ -1,8 +1,8 @@
-# Session 3B Batch Transfer Handoff
+# BatchJoinSplit16x32 Client Integration Handoff
 
-Korean version: [clairveil-session3b-batch-transfer-handoff-kr.md](clairveil-session3b-batch-transfer-handoff-kr.md)
+Korean version: [clairveil-batch-transfer-integration-handoff-kr.md](clairveil-batch-transfer-integration-handoff-kr.md)
 
-This handoff is for Go, JS/TS wallet, prover, payroll, and operations integrators consuming the Session 3B `BatchJoinSplit16x32` client contract. It is not the project Completion Record and does not change the Master Roadmap.
+This handoff is for Go, JS/TS wallet, prover, payroll, and operations integrators consuming the `BatchJoinSplit16x32` client contract and its reference integrations. It is not the project Completion Record and does not change the Master Roadmap.
 
 ## Frozen Integration Identities
 
@@ -39,19 +39,19 @@ Do not implement automatic multi-prover failover. Do not request a signature bef
 
 ## Shape Conformance
 
-Every downstream implementation should run the machine-readable fixture at `x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_session3b_contract.json`. It pins 1/1, 3-input/4-output mixed disclosure, 31 payments plus change, exact 32 payments, and explicit exact32 padding.
+Every downstream implementation should run the conformance test against the machine-readable fixture at `x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_v1_contract.json`. It pins 1/1, 3-input/4-output mixed disclosure, 31 payments plus change, exact 32 payments, and the explicit `exact32` padding shape.
 
 Run:
 
 ```bash
-go test ./x/privacy/client/sdk/conformance -run TestSession3BBatchTransferContract -count=1
+go test ./x/privacy/client/sdk/conformance -run TestBatchTransferContract -count=1
 make privacy-batch-joinsplit-localnet
 RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet
 ```
 
 ## Prover And Operations
 
-Prover readiness means valid R1CS and proving key checksums for the batch circuit; it is distinct from validator verifying-key readiness. Acquire the batch permit after bounded body/JSON framing and hold it through semantic validation and the actual gnark prove return. Request cancellation does not release capacity while an in-process proof still runs. Queue saturation returns HTTP 429 with `busy` and `retryable=true`; this flag does not authorize endpoint failover.
+Prover readiness means valid R1CS and proving key checksums for the batch circuit; it is distinct from validator verifying-key readiness. Acquire the batch permit after bounded body/JSON framing and hold it from semantic validation until the actual gnark proof call returns. Request cancellation does not release capacity while an in-process proof still runs. Queue saturation returns HTTP 429 with `busy` and `retryable=true`; this flag does not authorize endpoint failover.
 
 The 16x32 circuit has a large memory footprint. Production hard cancellation and containment require process isolation. Never log request bodies, payload hashes, note fields, paths, amounts, recipients, signatures, or witness-derived solver errors.
 

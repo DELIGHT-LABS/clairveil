@@ -166,7 +166,7 @@ func TestInitGenesisRejectsCircuitIdentityMismatchBeforeStateWrites(t *testing.T
 	require.False(t, found)
 }
 
-func TestS4B02FreshGenesisUsesRotatedJoinSplitIdentity(t *testing.T) {
+func TestFreshGenesisUsesRotatedJoinSplitIdentity(t *testing.T) {
 	if strings.TrimSpace(os.Getenv("CLAIRVEIL_RUN_JOINSPLIT_FRESH_GENESIS_GATE")) != "1" {
 		t.Skip("set CLAIRVEIL_RUN_JOINSPLIT_FRESH_GENESIS_GATE=1 with current and previous artifact directories")
 	}

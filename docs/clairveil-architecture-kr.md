@@ -67,7 +67,7 @@ Wallet은 note scan/selection, Merkle path query, chain/expiry/output/disclosure
 
 ### BatchJoinSplit16x32 transfer
 
-Session 3B flow는 1..16 input과 1..32 payment/change/padding output을 준비하고 proof 하나와 `MsgBatchTransfer` 하나를 만듭니다. `transfer-batch-16x32`가 이 flow입니다. Legacy `transfer-batch` command는 여러 독립 `MsgTransfer`를 한 Cosmos transaction에 넣으며 batch circuit protocol이 아닙니다.
+batch reference integration flow는 1..16 input과 1..32 payment/change/padding output을 준비하고 proof 하나와 `MsgBatchTransfer` 하나를 만듭니다. `transfer-batch-16x32`가 이 flow입니다. Legacy `transfer-batch` command는 여러 독립 `MsgTransfer`를 한 Cosmos transaction에 넣으며 batch circuit protocol이 아닙니다.
 
 ### Withdraw
 

@@ -8,12 +8,12 @@ This document hands off the bulk-transfer/reference-payroll implementation in th
 
 The repository includes reference implementations of note reservation, the payroll control plane, proof/broadcast/reconcile queues, the legacy multi-message transaction and one-proof `MsgBatchTransfer`, a bounded prover, benchmark/readiness harnesses, the reference payroll CLI, simulated/live reference payroll daemons, a repository-local demo product, a live localnet payroll tutorial, a rehearsal harness, a file-backed reference artifact store, a durable reservation state store, and a SQL reference store. The product and operations teams must continue by deciding how to deploy the managed production database, defining tenant operations policies, implementing a production-grade live proof/broadcast/scanner daemon and operator UI, and running an actual 100,000-item rehearsal.
 
-As of 2026-07-13, Session 3B implements the reference Go one-proof `BatchJoinSplit16x32` SDK/prover/scanner/payroll/CLI path and Session 4 validates it as `PUBLICATION_READY_EXPERIMENTAL`. `PRODUCTION_RELEASE_READY` is not approved; formal trusted setup, external audit, production artifacts, and production operations remain outside this handoff's completed boundary.
+As of 2026-07-13, the batch reference integration implements the reference Go one-proof `BatchJoinSplit16x32` SDK/prover/scanner/payroll/CLI path; independent publication validation approves it as `PUBLICATION_READY_EXPERIMENTAL`. `PRODUCTION_RELEASE_READY` is not approved; formal trusted setup, external audit, production artifacts, and production operations remain outside this handoff's completed boundary.
 
 ## What the Repository Provides
 
 - Current batch roadmap: `plans/clairveil-batch-joinsplit-16x32-roadmap-kr.md`
-- Normative batch contract/Session 3B surface: `docs/clairveil-batch-joinsplit-16x32.md`, `docs/clairveil-session3b-batch-transfer-handoff.md`
+- Normative batch contract and integration handoff: `docs/clairveil-batch-joinsplit-16x32.md`, `docs/clairveil-batch-transfer-integration-handoff.md`
 - Note reservation design: `docs/clairveil-note-reservation-design.md`
 - Accounting design: `docs/clairveil-privacy-accounting-design-note.md`
 - Go reference packages: `x/privacy/client/sdk/batchtransfer`, `x/privacy/client/sdk/reservation`, `x/privacy/client/sdk/payroll`
@@ -59,9 +59,9 @@ The completion criterion is that the selected database/adapter prevents two payr
 
 ### 2. Payroll Scheduler / Worker Wiring
 
-The current Session 3B path provides a many-input/one-operation/many-item durable graph and `BatchProofWorker`, `IdempotentBatchBroadcastWorker`, and `BatchReconcileWorker`. `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet` connects that graph to one actual `MsgBatchTransfer`, process/node restart, exact stored-byte retry, tx-hash-first reconciliation, typed item evidence, disclosure verification, and separate batch/item status.
+The current batch reference integration path provides a many-input/one-operation/many-item durable graph and `BatchProofWorker`, `IdempotentBatchBroadcastWorker`, and `BatchReconcileWorker`. `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet` connects that graph to one actual `MsgBatchTransfer`, process/node restart, exact stored-byte retry, tx-hash-first reconciliation, typed item evidence, disclosure verification, and separate batch/item status.
 
-The older `clairveil-payroll run` / `scan-evidence` / `reconcile`, `clairveil-payrolld`, and `settle-transfer-batch` surfaces remain the legacy multi-message durable-control-plane tutorial and regression path. They must not be presented as the Session 3B one-proof path. In the product environment, connect the current batch graph to long-running proof workers, broadcast workers, and typed chain scanners while preserving its atomic operation and per-item evidence contracts.
+The older `clairveil-payroll run` / `scan-evidence` / `reconcile`, `clairveil-payrolld`, and `settle-transfer-batch` surfaces remain the legacy multi-message durable-control-plane tutorial and regression path. They must not be presented as the one-proof BatchJoinSplit16x32 path. In the product environment, connect the current batch graph to long-running proof workers, broadcast workers, and typed chain scanners while preserving its atomic operation and per-item evidence contracts.
 
 The required implementation includes the following:
 
@@ -89,18 +89,18 @@ The JS SDK or wallet storage must follow the note-reservation state contract.
 The required checks are as follows:
 
 - The JS SDK state enums/transitions match the Go conformance fixture.
-- The JS/TS implementation passes `x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_session3b_contract.json` for the 1/1, 3-input/4-output, 31-payments-plus-change, exact-32-payment, and explicit-padding shapes.
+- The JS/TS implementation passes `x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_v1_contract.json` for the 1/1, 3-input/4-output, 31-payments-plus-change, exact-32-payment, and explicit-padding shapes.
 - The definitions of active reservation states match.
 - `nullifier_lookup_key_id` or `lookup_key_version` is handled.
 - Wallet note selection excludes reserved notes.
 - Ordinary transfers, split/merge operations, and payroll jobs cannot select the same note concurrently.
 - The UI displays only abbreviated values, rather than raw nullifiers/commitments.
 
-If the JS SDK is already being developed against `docs/clairveil-note-reservation-design.md`, use the Go reference implementation as a contract verification baseline rather than as a mandate for a particular production database implementation. New batch work must also follow `docs/clairveil-session3b-batch-transfer-handoff.md`; the proto alone is not the downstream client contract.
+If the JS SDK is already being developed against `docs/clairveil-note-reservation-design.md`, use the Go reference implementation as a contract verification baseline rather than as a mandate for a particular production database implementation. New batch work must also follow `docs/clairveil-batch-transfer-integration-handoff.md`; the proto alone is not the downstream client contract.
 
 ### 4. Prover Operations and Horizontal Scaling
 
-The product operations environment may operate multiple `clairveil-proverd` endpoints for capacity, but prepared proof payloads contain private note witness. Distributing distinct, previously unassigned jobs across endpoints is not failover: assign each job once, persist the endpoint identity, and pin that witness to the selected endpoint. The Session 3B `BatchPayrollProver` API represents exactly one local prover or one explicitly selected remote endpoint and includes no pool/failover behavior.
+The product operations environment may operate multiple `clairveil-proverd` endpoints for capacity, but prepared proof payloads contain private note witness. Distributing distinct, previously unassigned jobs across endpoints is not failover: assign each job once, persist the endpoint identity, and pin that witness to the selected endpoint. The batch reference integration `BatchPayrollProver` API represents exactly one local prover or one explicitly selected remote endpoint and includes no pool/failover behavior.
 
 Sending the same witness-bearing payload to a second endpoint expands the privacy boundary and is forbidden by default. The legacy `ProverPool` selects only one endpoint per request unless `MultiProverFailoverOptIn` is supplied; opt-in validation requires the complete allowed `EndpointIDs` set and `PrivacyWarningAcknowledged=true`. A new call with the same witness must not be treated as an independent job or allowed to round-robin silently. HTTP `retryable=true`, endpoint timeout, or queue saturation does not authorize cross-endpoint failover.
 
@@ -110,11 +110,11 @@ The required implementation includes the following:
 - Health-check endpoints and exclude failed endpoints.
 - Persist job-to-endpoint assignment before first witness disclosure and define separate same-endpoint retry and unassigned-job scheduling policies.
 - Keep cross-endpoint same-witness failover disabled unless product/user policy records the full allowed endpoint set and explicit privacy-warning acknowledgment.
-- Run the `PROVERD_URLS`-based scale benchmark with its controlled transfer/withdraw fixtures and record the unhealthy endpoint count. It measures legacy route distribution, not Session 3B 16x32 proof capacity, and benchmark round-robin is not production failover authorization.
+- Run the `PROVERD_URLS`-based scale benchmark with its controlled transfer/withdraw fixtures and record the unhealthy endpoint count. It measures legacy route distribution, not 16x32 proof capacity for the batch integration, and benchmark round-robin is not production failover authorization.
 - Collect per-endpoint latency, error-rate, timeout-rate, RSS, and CPU telemetry.
 - Perform warm-up and capacity checks before the peak payroll window.
 
-The completion criterion is that independent new/unassigned jobs can continue on healthy endpoints when one fails; an already disclosed witness is not sent elsewhere without validated explicit opt-in; default and opt-in endpoint contact counts are auditable; and the controlled benchmark records `unhealthy_endpoint_count`. A Session 3B capacity claim additionally requires actual 16x32 proof/sec and resource measurements at each claimed endpoint count; the existing transfer/withdraw scale benchmark is insufficient for that claim.
+The completion criterion is that independent new/unassigned jobs can continue on healthy endpoints when one fails; an already disclosed witness is not sent elsewhere without validated explicit opt-in; default and opt-in endpoint contact counts are auditable; and the controlled benchmark records `unhealthy_endpoint_count`. A capacity claim for the batch integration additionally requires actual 16x32 proof/sec and resource measurements at each claimed endpoint count; the existing transfer/withdraw scale benchmark is insufficient for that claim.
 
 ### 5. Rehearsal Runbook
 
@@ -122,7 +122,7 @@ Run rehearsals in stages before actual operations.
 
 The recommended current order is as follows:
 
-1. Session 3B conformance/static gate with `make privacy-batch-joinsplit-localnet`
+1. Batch reference integration conformance/static gate with `make privacy-batch-joinsplit-localnet`
 2. Actual one-proof restart/retry/disclosure localnet gate with `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`
 3. 1,000-item single-tenant one-proof staging dry run and restart/retry run
 4. 100-tenant x 1,000-item synthetic scheduling run
@@ -161,12 +161,12 @@ Each run must leave the following results:
 - Preserve the 2026-07-08 command `PAYROLL_SEED_NOTES=1 PAYROLL_ITEM_COUNT=1000 PAYROLL_CHUNK_SIZE=20 GAS_PRICES=0uclair make reference-payroll-live-localnet` and its successful result only as dated legacy restart/retry evidence; see `docs/clairveil-reference-payroll-localnet-rehearsal-result.md`.
 - Before a release, verify the independent legacy multi-message path with `RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check` in addition to, not instead of, the current one-proof gate.
 - To make a legacy transfer/withdraw prover-pool scaling claim, retain the result of `RUN_PROVER_SCALE=1 PROVERD_URLS=url1,url2 make privacy-bulk-readiness-check` as a separate controlled-fixture artifact. `unhealthy_endpoint_count=0` is required for that public claim. Do not relabel it as 16x32 capacity evidence or production cross-endpoint failover permission.
-- The backend team reviews both the current Session 3B batch graph/workers and the legacy durable-control-plane workflow; if a managed database is needed, it writes a migration plan preserving the applicable batch operation and `reservation.Store` contracts.
-- The JS SDK team verifies both note-reservation conformance and `privacy_batch_transfer_session3b_contract.json`.
+- The backend team reviews both the current one-proof batch graph/workers and the legacy durable-control-plane workflow; if a managed database is needed, it writes a migration plan preserving the applicable batch operation and `reservation.Store` contracts.
+- The JS SDK team verifies both note-reservation conformance and `privacy_batch_transfer_v1_contract.json`.
 - The operations team defines endpoint assignment persistence, same-endpoint retry, explicit same-witness failover opt-in, and telemetry collection.
 - The product team runs a current one-proof 1,000-item staging rehearsal before making a capacity claim.
 - Staging/production note preparation does not use `PAYROLL_SEED_NOTES=1`; validate it with the actual deposit, split/merge, and approval-based preparation flow.
-- If the current 16/32 evidence does not meet the SLA, open a separate protocol-shape decision with a roadmap, threat review, circuit/keeper/SDK contract, migration plan, and fresh validation; do not treat the implemented Session 3B work as a future phase.
+- If the current 16/32 evidence does not meet the SLA, open a separate protocol-shape decision with a roadmap, threat review, circuit/keeper/SDK contract, migration plan, and fresh validation; do not treat the implemented batch reference integration work as a future phase.
 
 ## Non-Blocking Follow-up Backlog
 

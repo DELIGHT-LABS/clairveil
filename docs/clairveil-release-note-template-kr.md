@@ -47,7 +47,7 @@ Release commit/tag 생성 전:
 | Circuit set/public witness | 없음 / 있음 |
 | Privacy state/genesis migration | 없음 / 있음 |
 | Batch gas/scan state | 없음 / 있음 |
-| Session 3B SDK/prover/scanner/payroll/CLI surface | 없음 / 있음 |
+| Batch reference SDK/prover/scanner/payroll/CLI surface | 없음 / 있음 |
 
 영향이 있으면 downstream action을 아래 7번에 반드시 적습니다.
 

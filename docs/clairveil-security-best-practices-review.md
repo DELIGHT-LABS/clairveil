@@ -117,9 +117,9 @@ The repository currently configures `.github/workflows/security.yml` to run `mak
 
 ## 4. Current Code-Level Notes
 
-The Session 1 remediation closed the known current duplicate-input/output, intent-substitution, replay, disclosure-oracle, decoder, failover-default, genesis/artifact-identity, and proof-gas issues. No unresolved Critical/High finding remains in that scope. These points can still become issues if downstream SDK/service implementers misunderstand them.
+The security-hardening work closed the known current duplicate-input/output, intent-substitution, replay, disclosure-oracle, decoder, failover-default, genesis/artifact-identity, and proof-gas issues. No unresolved Critical/High finding remains in that scope. These points can still become issues if downstream SDK/service implementers misunderstand them.
 
-The 2026-07-13 Session 4 record is `PUBLICATION_READY_EXPERIMENTAL`. Session 3A implements Session 2's frozen `DISCLOSURE-BLINDING-SEPARATION` V1 in production at exactly `99,775` constraints (`+10`), aligns native/prepared and structured 2x2 pre-sign validation, and rotates only the JoinSplit development identity. Gates 1/2/3A/3B and Session 4 are closed, including live no-failover evidence for `S4-B01` and non-canonical BN254 alias rejection at the structured batch-signing boundary. Stable validation errors are secret-free and are returned before proving/signature release. This disposition does not approve a production release.
+The 2026-07-13 independent publication validation record is `PUBLICATION_READY_EXPERIMENTAL`. The batch chain core implements the batch protocol contract's frozen `DISCLOSURE-BLINDING-SEPARATION` V1 in production at exactly `99,775` constraints (`+10`), aligns native/prepared and structured 2x2 pre-sign validation, and rotates only the JoinSplit development identity. The security, protocol, chain-core, client-integration, and independent-publication-validation gates are closed, including live no-failover evidence for `PROVER-FAILOVER-LIVE-EVIDENCE` and non-canonical BN254 alias rejection at the structured batch-signing boundary. Stable validation errors are secret-free and are returned before proving/signature release. This disposition does not approve a production release.
 
 - The body limit in `x/privacy/client/sdk/proverservice/service.go` applies only to proof routes. This is intentional, but downstream must separately decide whether health/readiness should be externally exposed.
 - The raw `HTTPHandler` in `x/privacy/client/sdk/provertransport/http.go` uses a shared bounded reader for transfer, withdraw, and batch before admission. Public services must still use `proverservice.Handler` or an equivalent wrapper for bearer auth, gzip wire/decompressed limits, health/readiness policy, and server timeouts.
@@ -143,7 +143,7 @@ JS/TS SDK, web wallet, and downstream Cosmos SDK chain developers should receive
 9. After snapshot/restore/migration, recompute sample Merkle paths according to `docs/clairveil-merkle-restore-sop.md`.
 10. Reject legacy prepared payloads, preserve the exact `SpendIntentV2`/`TransferIntentV2` public-input order, and reset cached proof jobs/artifacts when adopting `privacy-note-v1`.
 
-## 6. NoteV1 And Session 3A Core Security Addendum
+## 6. NoteV1 And Batch Chain-Core Security Addendum
 
 The current production circuits and state now share the `privacy-note-v1` NoteV1 commitment/nullifier/tree contract and canonical key validation. Canonical note, disclosure, and encrypted-envelope bytes are versioned `privacy-fixed-v1`; raw ciphertext, JSON plaintext, wrong envelope kind, non-canonical field/key data, non-zero reserved bytes, and trailing bytes must fail closed. `AssetRegistryV1` is the consensus-authoritative one-to-one denom/32-byte asset-ID mapping. Global commitment uniqueness is consensus state, not an SDK-only precheck.
 
@@ -157,7 +157,7 @@ The keeper permits only cheap bounded framing before `BatchGasModelV1` precharge
 
 The measured development batch artifact identity is R1CS `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, and VK `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`. These checksums do not replace artifact signing, provenance, reproducible generation, formal setup, or external review.
 
-Session 3B now provides experimental reference Go surfaces for the one-proof batch planner/preparer, bounded remote HTTP prover route, typed scanner/decrypt flow, durable payroll graph, and staged CLI/tutorial. They are not a downstream JS/TS SDK, audited production workflow, or production deployment profile. Keep the one-proof `MsgBatchTransfer` path distinct from the older multi-message `transfer-batch` flow, never expose the raw transport handler, and treat every prover request as highly sensitive witness data. Deposit CLI output must not print `NotePlaintextV1` or randomness.
+The batch integration now provides experimental reference Go surfaces for the one-proof batch planner/preparer, bounded remote HTTP prover route, typed scanner/decrypt flow, durable payroll graph, and staged CLI/tutorial. They are not a downstream JS/TS SDK, audited production workflow, or production deployment profile. Keep the one-proof `MsgBatchTransfer` path distinct from the older multi-message `transfer-batch` flow, never expose the raw transport handler, and treat every prover request as highly sensitive witness data. Deposit CLI output must not print `NotePlaintextV1` or randomness.
 
 Artifact access and proving must remain bounded:
 

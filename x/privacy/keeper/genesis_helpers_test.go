@@ -47,7 +47,7 @@ func TestInitGenesisHistoricalRootsAcceptsRecomputedPrefixRoot(t *testing.T) {
 	require.NoError(t, k.InitGenesisHistoricalRoots(ctx, [][]byte{root}))
 }
 
-func TestSession2FoundationGenesisHelpersRoundTripLosslessly(t *testing.T) {
+func TestBatchProtocolGenesisHelpersRoundTripLosslessly(t *testing.T) {
 	k, ctx, _ := setupMsgServerKeeper()
 	ctx = ctx.WithBlockHeight(70)
 	commitment := fixedFieldBytes(290)

@@ -74,7 +74,7 @@ go test ./x/privacy/keeper
 go test ./x/privacy/client/sdk/transfer
 ```
 
-### 3.1 NoteV1 And Session 3A Core Gates
+### 3.1 NoteV1 And Batch Chain-Core Gates
 
 The active circuit set is `privacy-note-v1`, with required order `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`. Deposit, spend, native 2x2 JoinSplit, and production BatchJoinSplit16x32 share NoteV1, while canonical plaintext/envelopes use `privacy-fixed-v1`: note plaintext is exactly 350 bytes, disclosure plaintext is exactly 392 bytes, and the typed envelope header is exactly 20 bytes. `AssetRegistryV1` is authoritative for denom/asset-ID mapping. `privacy-scan-v2` uses the global lexicographic cursor `(height, global_sequence, output_index)`, and path tests enforce a single snapshot matching the selected root.
 
@@ -85,7 +85,7 @@ Focused tests for these contracts live at:
 - `x/privacy/keeper/asset_registry_test.go`: one-to-one registry, collision/corruption rejection, query bounds, and canonical genesis export.
 - `x/privacy/keeper/privacy_scan_test.go` and `x/privacy/keeper/path_snapshot_test.go`: global scan ordering, within-event resume, record/byte bounds, sequence reuse rejection, same-root paths, and fail-closed validation of exact event types, fixed envelope kinds, digests, keys, zero/disabled sentinels, and orphan or non-adjacent outputs.
 - `x/privacy/zk/registry_test.go` and `x/privacy/client/sdk/proverservice/admission_test.go`: role-aware lazy artifact access, exact identity behavior, queue bounds, cancellation lifetime, and unbounded-value rejection.
-- `x/privacy/client/sdk/conformance/session2_contract_test.go` and `disclosure_blinding_contract_test.go`: independent verification of `privacy_note_v1_contract.json`, `privacy_batch_joinsplit_v1_contract.json`, and the stable `DBS_*` vectors in `privacy_disclosure_blinding_v1_contract.json`.
+- `x/privacy/client/sdk/conformance/privacy_protocol_contract_test.go` and `disclosure_blinding_contract_test.go`: independent verification of `privacy_note_v1_contract.json`, `privacy_batch_joinsplit_v1_contract.json`, and the stable `DBS_*` vectors in `privacy_disclosure_blinding_v1_contract.json`.
 - `x/privacy/types/disclosure_blinding_test.go` and `x/privacy/client/sdk/transfer/payload_test.go`: exact all-private/disabled sentinel semantics, secret-free typed errors, collision retry, prepared-payload rejection, and no signer callback before a valid structured request. The structured fail-before-release and final-effect mismatch regressions are in `payload_test.go`.
 - `x/privacy/circuit/joinsplit_disclosure_blinding_regression_test.go`: production `99,775`-constraint enforcement with fully refreshed digest/signature negatives and a legacy `99,765` relation control that isolates the rejection cause.
 - `x/privacy/circuit/batch_joinsplit_16x32_test.go`: production positive shapes, exact sentinel/active-prefix behavior, key/range/root/signature tampering, output/disclosure ordering, and vector type/level separation.
@@ -122,7 +122,7 @@ CLAIRVEIL_RUN_BATCH_FEASIBILITY=1 go test ./x/privacy/circuit -run TestBatchJoin
 
 The full gate is opt-in because it compiles the 16x32 circuit, performs a development Groth16 setup, and proves multiple shapes while reporting constraints, artifact sizes, proving/verification timings, and resource measurements. The corrected reference run measured `1,111,837` constraints, peak RSS `3,339,862,016` bytes, max-shape warm proving cost `55.892 ms/output`, and `2.789x` per-output improvement over the current native 2x2 baseline. It is a feasibility measurement, not a production artifact generation or trusted setup command.
 
-Run the production `S4-B02` 2x2 contract/control test and opt-in resource comparison with:
+Run the production `DISCLOSURE-BLINDING-SEPARATION` 2x2 contract/control test and opt-in resource comparison with:
 
 ```bash
 go test ./x/privacy/circuit -run '^TestJoinSplitCircuitEnforcesDisclosureBlindingSeparationV1$' -count=1 -v
@@ -134,7 +134,7 @@ The result is legacy relation control `99,765` versus production `99,775` constr
 Generate and validate the actual development artifact set separately:
 
 ```bash
-ARTIFACT_DIR=/tmp/clairveil-session3a-artifacts
+ARTIFACT_DIR=/tmp/clairveil-joinsplit-artifacts
 /usr/bin/time -l go run ./cmd/clairveil-setup --out "$ARTIFACT_DIR"
 CLAIRVEIL_RUN_BATCH_DEVELOPMENT_ARTIFACT_GATE=1 \
 CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR="$ARTIFACT_DIR" \
@@ -143,21 +143,21 @@ go test ./x/privacy/zk -run TestBatchDevelopmentArtifactRoleReadinessGate -count
 
 The recorded batch files are R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, and VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`. Generation peak RSS was `3,308,797,952 B`; the role-readiness run peaked at `1,295,482,880 B`. These are development identities, not formal trusted-setup or production-distribution artifacts.
 
-For an `S4-B02` JoinSplit-only rotation, copy a complete prior development set and run `clairveil-setup --out "$ARTIFACT_DIR" --circuit joinsplit --overwrite`. Selective setup builds and validates the complete replacement in a sibling staging directory, then swaps the directory with rollback; injected artifact/manifest/install failures leave the prior set valid and immediately retryable. A post-install backup cleanup failure is returned with the exact residual path instead of being reported as success.
+For a `DISCLOSURE-BLINDING-SEPARATION` JoinSplit-only rotation, copy a complete prior development set and run `clairveil-setup --out "$ARTIFACT_DIR" --circuit joinsplit --overwrite`. Selective setup builds and validates the complete replacement in a sibling staging directory, then swaps the directory with rollback; injected artifact/manifest/install failures leave the prior set valid and immediately retryable. A post-install backup cleanup failure is returned with the exact residual path instead of being reported as success.
 
 On a clean committed tree, the following command is self-contained: it archives pinned prior source `0fc818c90fe98a876c8a2531e7c70ba5efac4b90`, generates its complete artifact set outside the repository, copies it, rotates only current-source JoinSplit, records both source commits, and runs every fail-closed gate. If already-generated sets are supplied, set both directory variables as shown in the second form; setting only one fails closed.
 
 ```bash
-make session-3a-validation-evidence
+make validate-joinsplit-artifact-rotation-evidence
 
 CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR="$ARTIFACT_DIR" \
 CLAIRVEIL_PRIVACY_PREVIOUS_ZK_ARTIFACT_DIR="$PREVIOUS_ARTIFACT_DIR" \
-make session-3a-validation-evidence
+make validate-joinsplit-artifact-rotation-evidence
 ```
 
-The target first runs `TestJoinSplitArtifactRotationSnapshotValidation` for synthetic missing/duplicate/unknown/tamper regressions, then runs `TestJoinSplitDevelopmentArtifactRotationGate` (`CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_ROTATION_GATE=1`), `TestJoinSplitOldAndNewProofIdentitiesAreMutuallyExclusive` (`CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_PROOF_ROTATION_GATE=1`), and `TestS4B02FreshGenesisUsesRotatedJoinSplitIdentity` (`CLAIRVEIL_RUN_JOINSPLIT_FRESH_GENESIS_GATE=1`). The proof-rotation gate compares the actual current R1CS SHA-256 with the exact serialized current-source `JoinSplitCircuit` before proving, so a same-count foreign relation fails. The wrapper fails if an exact test is absent, skipped, or reports `[no tests to run]`.
+The target first runs `TestJoinSplitArtifactRotationSnapshotValidation` for synthetic missing/duplicate/unknown/tamper regressions, then runs `TestJoinSplitDevelopmentArtifactRotationGate` (`CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_ROTATION_GATE=1`), `TestJoinSplitOldAndNewProofIdentitiesAreMutuallyExclusive` (`CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_PROOF_ROTATION_GATE=1`), and `TestFreshGenesisUsesRotatedJoinSplitIdentity` (`CLAIRVEIL_RUN_JOINSPLIT_FRESH_GENESIS_GATE=1`). The proof-rotation gate compares the actual current R1CS SHA-256 with the exact serialized current-source `JoinSplitCircuit` before proving, so a same-count foreign relation fails. The wrapper fails if an exact test is absent, skipped, or reports `[no tests to run]`.
 
-Session 3B adds the public `MsgBatchTransfer` Go SDK/builder, `POST /v1/proofs/batch-transfer`, typed scanner/decrypt/disclosure validation, durable one-proof payroll integration, staged/combined CLI commands, and the bilingual localnet tutorial. Run `go test ./x/privacy/client/sdk/... -count=1`, `make privacy-batch-joinsplit-localnet`, and—on a capable host—`RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`. Existing `transfer-batch` and reference payroll targets remain independent multi-message regression paths.
+The batch integration adds the public `MsgBatchTransfer` Go SDK/builder, `POST /v1/proofs/batch-transfer`, typed scanner/decrypt/disclosure validation, durable one-proof payroll integration, staged/combined CLI commands, and the bilingual localnet tutorial. Run `go test ./x/privacy/client/sdk/... -count=1`, `make privacy-batch-joinsplit-localnet`, and—on a capable host—`RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`. Existing `transfer-batch` and reference payroll targets remain independent multi-message regression paths.
 
 Prepared transfer payload `v5` remains the current outer prepared-payload contract. Do not confuse that version with the inner note/disclosure encoding: inner canonical payloads and envelopes are `privacy-fixed-v1`. Compatibility fallback is forbidden. The external ClairveilJS package is still legacy at this handoff point; it must fail closed on the new fixed fixtures until it is upgraded, rather than interpreting them through its old decoder.
 

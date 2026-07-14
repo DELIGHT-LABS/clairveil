@@ -109,8 +109,8 @@ message MsgTransfer {
 }
 
 // MsgBatchTransfer performs one atomic 1..16 input / 1..32 output shielded
-// JoinSplit. Field numbers and meanings are frozen to the Session 2 wire
-// prototype. Counts are derived exclusively from the repeated field lengths.
+// JoinSplit. Field numbers and meanings form the version-1 batch-transfer wire
+// contract. Counts are derived exclusively from the repeated field lengths.
 message MsgBatchTransfer {
   option (cosmos.msg.v1.signer) = "creator";
 

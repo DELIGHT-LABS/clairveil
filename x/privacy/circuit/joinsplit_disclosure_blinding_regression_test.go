@@ -21,7 +21,8 @@ import (
 const runJoinSplitDisclosureBlindingFeasibility = "CLAIRVEIL_RUN_JOINSPLIT_BLINDING_FEASIBILITY"
 
 // joinSplitDisclosureBlindingLegacyControl is deliberately test-only. It
-// preserves the pre-S4-B02 relation so every hardened negative can prove that
+// preserves the legacy relation without disclosure-blinding separation so
+// every hardened negative can prove that
 // no unrelated production constraint caused its rejection.
 type joinSplitDisclosureBlindingLegacyControl JoinSplitCircuit
 

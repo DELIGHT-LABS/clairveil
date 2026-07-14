@@ -3,7 +3,7 @@ set -euo pipefail
 umask 077
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-fixture="$repo_root/x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_session3b_contract.json"
+fixture="$repo_root/x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_v1_contract.json"
 run_localnet="${RUN_LOCALNET:-0}"
 default_work_dir="$repo_root/tmp/privacy-batch-joinsplit-localnet"
 work_dir="${CLAIRVEIL_BATCH_LOCALNET_WORK_DIR:-$default_work_dir}"
@@ -83,7 +83,7 @@ import sys
 from pathlib import Path
 
 doc = json.loads(Path(sys.argv[1]).read_text())
-assert doc["schema_version"] == "clairveil.batch-transfer.session3b.v1"
+assert doc["schema_version"] == "clairveil.batch-transfer.contract.v1"
 assert doc["prover_route"] == "/v1/proofs/batch-transfer"
 assert doc["max_inputs"] == 16 and doc["max_outputs"] == 32
 want = {
@@ -110,13 +110,13 @@ retry = doc["restart_retry"]
 assert retry["reuse_signed_tx_bytes"] and retry["reconcile_tx_hash_first"]
 assert retry["reconcile_nullifiers_before_resign"]
 assert not retry["automatic_multi_prover_failover"]
-print("Session 3B batch fixture validation passed.")
+print("Batch transfer contract fixture validation passed.")
 PY
 
-(cd "$repo_root" && go test ./x/privacy/client/sdk/conformance -run TestSession3BBatchTransferContract -count=1)
+(cd "$repo_root" && go test ./x/privacy/client/sdk/conformance -run TestBatchTransferContract -count=1)
 
 if [[ "$run_localnet" == "0" ]]; then
-	echo "Static Session 3B validation passed. Set RUN_LOCALNET=1 for the actual node/prover workflow."
+	echo "Static batch transfer validation passed. Set RUN_LOCALNET=1 for the actual node/prover workflow."
 	exit 0
 fi
 if [[ "$run_localnet" != "1" ]]; then
@@ -133,14 +133,14 @@ node_log="$work_dir/clairveild.log"
 proverd_log="$work_dir/clairveil-proverd.log"
 node_pid=""
 proverd_pid=""
-payroll_live_test_bin="$work_dir/session3b-payroll-live.test"
-payroll_store="$out/session3b-payroll-reservations.json"
-failover_evidence="$out/session4-prover-failover-evidence.json"
-failover_test_log="$out/session4-prover-failover-test.log"
+payroll_live_test_bin="$work_dir/batch-payroll-live.test"
+payroll_store="$out/batch-payroll-reservations.json"
+failover_evidence="$out/prover-failover-evidence.json"
+failover_test_log="$out/prover-failover-test.log"
 
 (
 	cd "$repo_root"
-	CLAIRVEIL_S4_PROVER_FAILOVER_EVIDENCE_OUT="$failover_evidence" \
+	CLAIRVEIL_PROVER_FAILOVER_EVIDENCE_OUT="$failover_evidence" \
 		go test ./x/privacy/client/sdk/payroll -run '^TestProverPoolLiveHTTPFailoverPrivacyBoundary$' -count=1 -v
 ) | tee "$failover_test_log"
 if ! grep -Fq -- '--- PASS: TestProverPoolLiveHTTPFailoverPrivacyBoundary' "$failover_test_log"; then
@@ -171,7 +171,7 @@ trap cleanup EXIT
 if [[ -z "${CLAIRVEILD_BIN:-}" ]]; then (cd "$repo_root" && go build -o "$clairveild" ./cmd/clairveild); fi
 if [[ -z "$artifact_override" && -z "${CLAIRVEIL_SETUP_BIN:-}" ]]; then (cd "$repo_root" && go build -o "$clairveil_setup" ./cmd/clairveil-setup); fi
 if [[ -z "${CLAIRVEIL_PROVERD_BIN:-}" ]]; then (cd "$repo_root" && go build -o "$clairveil_proverd" ./cmd/clairveil-proverd); fi
-(cd "$repo_root" && go test -tags=session3b_localnet -c -o "$payroll_live_test_bin" ./x/privacy/client/cli)
+(cd "$repo_root" && go test -tags=batch_payroll_localnet -c -o "$payroll_live_test_bin" ./x/privacy/client/cli)
 chmod 700 "$payroll_live_test_bin"
 
 run() { "$clairveild" "$@"; }
@@ -424,22 +424,22 @@ prepare_payroll_payload() {
 
 run_payroll_stage() {
 	local stage="$1"
-	CLAIRVEIL_SESSION3B_STAGE="$stage" \
-	CLAIRVEIL_SESSION3B_HOME="$home" \
-	CLAIRVEIL_SESSION3B_OUT_DIR="$out" \
-	CLAIRVEIL_SESSION3B_STORE_PATH="$payroll_store" \
-	CLAIRVEIL_SESSION3B_NODE="$node" \
-	CLAIRVEIL_SESSION3B_GRPC_ADDR="127.0.0.1:${grpc_port}" \
-	CLAIRVEIL_SESSION3B_CHAIN_ID="$chain_id" \
-	CLAIRVEIL_SESSION3B_PROVER_URL="http://127.0.0.1:${proverd_port}" \
-	CLAIRVEIL_SESSION3B_GAS="$batch_gas" \
-	CLAIRVEIL_SESSION3B_GAS_PRICES="$gas_prices" \
-	CLAIRVEIL_SESSION3B_ALICE_NOTES_PATH="$out/three-input-four-output-mixed-disclosure-alice-notes.json" \
-	CLAIRVEIL_SESSION3B_BOB_ADDRESS="$bob_address" \
-	CLAIRVEIL_SESSION3B_BOB_DISCLOSURE_PUBKEY="$bob_disclosure" \
-	CLAIRVEIL_SESSION3B_PREPARED_PATH="$out/three-input-four-output-mixed-disclosure-prepared.json" \
-	CLAIRVEIL_SESSION3B_PROOF_PATH="$out/three-input-four-output-mixed-disclosure-proof.json" \
-	"$payroll_live_test_bin" -test.run '^TestSession3BOneProofPayrollLocalnet$' -test.v | tee "$out/payroll-${stage}.log"
+	CLAIRVEIL_BATCH_PAYROLL_STAGE="$stage" \
+	CLAIRVEIL_BATCH_PAYROLL_HOME="$home" \
+	CLAIRVEIL_BATCH_PAYROLL_OUT_DIR="$out" \
+	CLAIRVEIL_BATCH_PAYROLL_STORE_PATH="$payroll_store" \
+	CLAIRVEIL_BATCH_PAYROLL_NODE="$node" \
+	CLAIRVEIL_BATCH_PAYROLL_GRPC_ADDR="127.0.0.1:${grpc_port}" \
+	CLAIRVEIL_BATCH_PAYROLL_CHAIN_ID="$chain_id" \
+	CLAIRVEIL_BATCH_PAYROLL_PROVER_URL="http://127.0.0.1:${proverd_port}" \
+	CLAIRVEIL_BATCH_PAYROLL_GAS="$batch_gas" \
+	CLAIRVEIL_BATCH_PAYROLL_GAS_PRICES="$gas_prices" \
+	CLAIRVEIL_BATCH_PAYROLL_ALICE_NOTES_PATH="$out/three-input-four-output-mixed-disclosure-alice-notes.json" \
+	CLAIRVEIL_BATCH_PAYROLL_BOB_ADDRESS="$bob_address" \
+	CLAIRVEIL_BATCH_PAYROLL_BOB_DISCLOSURE_PUBKEY="$bob_disclosure" \
+	CLAIRVEIL_BATCH_PAYROLL_PREPARED_PATH="$out/three-input-four-output-mixed-disclosure-prepared.json" \
+	CLAIRVEIL_BATCH_PAYROLL_PROOF_PATH="$out/three-input-four-output-mixed-disclosure-proof.json" \
+	"$payroll_live_test_bin" -test.run '^TestOneProofBatchPayrollLocalnet$' -test.v | tee "$out/payroll-${stage}.log"
 }
 
 deposit_notes one-input-one-payment 7
@@ -606,7 +606,7 @@ from pathlib import Path
 out = Path(sys.argv[1])
 continued_tx_hash = sys.argv[2].lower()
 failover = json.loads(Path(sys.argv[3]).read_text())
-assert failover["schema_version"] == "clairveil.session4.prover-failover-live-evidence.v1"
+assert failover["schema_version"] == "clairveil.prover-failover-live-evidence.v1"
 default_failover = failover["default_no_failover"]
 assert default_failover["timeout_endpoint_contacts"] == 1
 assert default_failover["healthy_endpoint_contacts"] == 0
@@ -631,8 +631,8 @@ for label in labels:
     tx = json.loads((out / f"{label}-broadcast-query.json").read_text())
     assert int(tx.get("code", 0)) == 0
 assert json.loads((out / "bob-notes-after.json").read_text())["notes"]
-payroll = json.loads((out / "session3b-payroll-live-summary.json").read_text())
-assert payroll["schema_version"] == "clairveil.session3b.payroll-live-result.v1"
+payroll = json.loads((out / "batch-payroll-live-summary.json").read_text())
+assert payroll["schema_version"] == "clairveil.batch-payroll.live-result.v1"
 assert payroll["status"] == "passed"
 assert payroll["process_restarted"]
 assert payroll["timeout_before_send"]
@@ -711,7 +711,7 @@ summary = {
     "one_proof_payroll": payroll,
     "payroll_node_restart_observed": True,
 }
-(out / "session4-localnet-summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+(out / "batch-localnet-summary.json").write_text(json.dumps(summary, indent=2) + "\n")
 PY
 
-echo "Session 4 batch localnet passed: $out/session4-localnet-summary.json"
+echo "Batch localnet validation passed: $out/batch-localnet-summary.json"

@@ -1,4 +1,4 @@
-//go:build session3b_localnet
+//go:build batch_payroll_localnet
 
 package cli
 
@@ -47,16 +47,16 @@ import (
 )
 
 const (
-	session3BPayrollStateSchema  = "clairveil.session3b.payroll-live-state.v1"
-	session3BPayrollResultSchema = "clairveil.session3b.payroll-live-result.v1"
-	session3BLookupKeyID         = "session3b-payroll-live-v1"
+	batchLocalnetPayrollStateSchema  = "clairveil.batch-payroll.live-state.v1"
+	batchLocalnetPayrollResultSchema = "clairveil.batch-payroll.live-result.v1"
+	batchLocalnetLookupKeyID         = "batch-payroll-nullifier-lookup-v1"
 )
 
 func init() {
 	clairveiltypes.SetConfig()
 }
 
-type session3BPayrollState struct {
+type batchLocalnetPayrollState struct {
 	SchemaVersion            string                             `json:"schema_version"`
 	OperationID              string                             `json:"operation_id"`
 	ConflictOperationID      string                             `json:"conflict_operation_id,omitempty"`
@@ -86,7 +86,7 @@ type session3BPayrollState struct {
 	ConflictStatus           privacyreservation.OperationStatus `json:"conflict_status,omitempty"`
 }
 
-type session3BPayrollSummary struct {
+type batchLocalnetPayrollSummary struct {
 	SchemaVersion            string                             `json:"schema_version"`
 	Status                   string                             `json:"status"`
 	OperationID              string                             `json:"operation_id"`
@@ -118,7 +118,7 @@ type session3BPayrollSummary struct {
 	ConflictStatus           privacyreservation.OperationStatus `json:"conflict_chain_status"`
 }
 
-type session3BLiveConfig struct {
+type batchLocalnetConfig struct {
 	Stage           string
 	Home            string
 	OutDir          string
@@ -140,66 +140,66 @@ type session3BLiveConfig struct {
 	BobDisclosure   string
 }
 
-func TestSession3BOneProofPayrollLocalnet(t *testing.T) {
-	cfg := loadSession3BLiveConfig(t)
+func TestOneProofBatchPayrollLocalnet(t *testing.T) {
+	cfg := loadBatchLocalnetLiveConfig(t)
 	switch cfg.Stage {
 	case "graph":
-		runSession3BGraphStage(t, cfg)
+		runBatchLocalnetGraphStage(t, cfg)
 	case "prove":
-		runSession3BProveStage(t, cfg)
+		runBatchLocalnetProveStage(t, cfg)
 	case "timeout":
-		runSession3BTimeoutStage(t, cfg)
+		runBatchLocalnetTimeoutStage(t, cfg)
 	case "retry":
-		runSession3BRetryStage(t, cfg)
+		runBatchLocalnetRetryStage(t, cfg)
 	case "reconcile":
-		runSession3BReconcileStage(t, cfg)
+		runBatchLocalnetReconcileStage(t, cfg)
 	case "conflict":
-		runSession3BConflictStage(t, cfg)
+		runBatchLocalnetConflictStage(t, cfg)
 	default:
-		t.Fatalf("unsupported %s %q", "CLAIRVEIL_SESSION3B_STAGE", cfg.Stage)
+		t.Fatalf("unsupported %s %q", "CLAIRVEIL_BATCH_PAYROLL_STAGE", cfg.Stage)
 	}
 }
 
-func loadSession3BLiveConfig(t *testing.T) session3BLiveConfig {
+func loadBatchLocalnetLiveConfig(t *testing.T) batchLocalnetConfig {
 	t.Helper()
-	outDir := mustSession3BEnv(t, "CLAIRVEIL_SESSION3B_OUT_DIR")
-	cfg := session3BLiveConfig{
-		Stage:           mustSession3BEnv(t, "CLAIRVEIL_SESSION3B_STAGE"),
-		Home:            mustSession3BEnv(t, "CLAIRVEIL_SESSION3B_HOME"),
+	outDir := mustBatchLocalnetEnv(t, "CLAIRVEIL_BATCH_PAYROLL_OUT_DIR")
+	cfg := batchLocalnetConfig{
+		Stage:           mustBatchLocalnetEnv(t, "CLAIRVEIL_BATCH_PAYROLL_STAGE"),
+		Home:            mustBatchLocalnetEnv(t, "CLAIRVEIL_BATCH_PAYROLL_HOME"),
 		OutDir:          outDir,
-		StorePath:       mustSession3BEnv(t, "CLAIRVEIL_SESSION3B_STORE_PATH"),
-		StatePath:       filepath.Join(outDir, ".session3b-payroll-state.json"),
+		StorePath:       mustBatchLocalnetEnv(t, "CLAIRVEIL_BATCH_PAYROLL_STORE_PATH"),
+		StatePath:       filepath.Join(outDir, ".batch-payroll-state.json"),
 		PreparedPath:    filepath.Join(outDir, "payroll-prepared.json"),
 		ProofPath:       filepath.Join(outDir, "payroll-proof.json"),
 		ReportPath:      filepath.Join(outDir, "payroll-operation-report.json"),
-		SummaryPath:     filepath.Join(outDir, "session3b-payroll-live-summary.json"),
-		ArtifactKeyPath: filepath.Join(outDir, ".session3b-payroll-artifact-key"),
-		Node:            mustSession3BEnv(t, "CLAIRVEIL_SESSION3B_NODE"),
-		GRPCAddr:        mustSession3BEnv(t, "CLAIRVEIL_SESSION3B_GRPC_ADDR"),
-		ChainID:         mustSession3BEnv(t, "CLAIRVEIL_SESSION3B_CHAIN_ID"),
-		ProverURL:       mustSession3BEnv(t, "CLAIRVEIL_SESSION3B_PROVER_URL"),
-		Gas:             mustSession3BEnv(t, "CLAIRVEIL_SESSION3B_GAS"),
-		GasPrices:       mustSession3BEnv(t, "CLAIRVEIL_SESSION3B_GAS_PRICES"),
-		AliceNotesPath:  mustSession3BEnv(t, "CLAIRVEIL_SESSION3B_ALICE_NOTES_PATH"),
-		BobAddress:      mustSession3BEnv(t, "CLAIRVEIL_SESSION3B_BOB_ADDRESS"),
-		BobDisclosure:   mustSession3BEnv(t, "CLAIRVEIL_SESSION3B_BOB_DISCLOSURE_PUBKEY"),
+		SummaryPath:     filepath.Join(outDir, "batch-payroll-live-summary.json"),
+		ArtifactKeyPath: filepath.Join(outDir, ".batch-payroll-artifact-key"),
+		Node:            mustBatchLocalnetEnv(t, "CLAIRVEIL_BATCH_PAYROLL_NODE"),
+		GRPCAddr:        mustBatchLocalnetEnv(t, "CLAIRVEIL_BATCH_PAYROLL_GRPC_ADDR"),
+		ChainID:         mustBatchLocalnetEnv(t, "CLAIRVEIL_BATCH_PAYROLL_CHAIN_ID"),
+		ProverURL:       mustBatchLocalnetEnv(t, "CLAIRVEIL_BATCH_PAYROLL_PROVER_URL"),
+		Gas:             mustBatchLocalnetEnv(t, "CLAIRVEIL_BATCH_PAYROLL_GAS"),
+		GasPrices:       mustBatchLocalnetEnv(t, "CLAIRVEIL_BATCH_PAYROLL_GAS_PRICES"),
+		AliceNotesPath:  mustBatchLocalnetEnv(t, "CLAIRVEIL_BATCH_PAYROLL_ALICE_NOTES_PATH"),
+		BobAddress:      mustBatchLocalnetEnv(t, "CLAIRVEIL_BATCH_PAYROLL_BOB_ADDRESS"),
+		BobDisclosure:   mustBatchLocalnetEnv(t, "CLAIRVEIL_BATCH_PAYROLL_BOB_DISCLOSURE_PUBKEY"),
 	}
-	if value := strings.TrimSpace(os.Getenv("CLAIRVEIL_SESSION3B_PREPARED_PATH")); value != "" {
+	if value := strings.TrimSpace(os.Getenv("CLAIRVEIL_BATCH_PAYROLL_PREPARED_PATH")); value != "" {
 		cfg.PreparedPath = value
 	}
-	if value := strings.TrimSpace(os.Getenv("CLAIRVEIL_SESSION3B_PROOF_PATH")); value != "" {
+	if value := strings.TrimSpace(os.Getenv("CLAIRVEIL_BATCH_PAYROLL_PROOF_PATH")); value != "" {
 		cfg.ProofPath = value
 	}
 	for _, path := range []string{cfg.Home, cfg.OutDir, cfg.StorePath, cfg.PreparedPath, cfg.ProofPath, cfg.AliceNotesPath} {
 		if !filepath.IsAbs(path) {
-			t.Fatalf("Session 3B live paths must be absolute: %q", path)
+			t.Fatalf("batch payroll localnet paths must be absolute: %q", path)
 		}
 	}
 	require.NoError(t, os.MkdirAll(cfg.OutDir, 0o700))
 	return cfg
 }
 
-func mustSession3BEnv(t *testing.T, name string) string {
+func mustBatchLocalnetEnv(t *testing.T, name string) string {
 	t.Helper()
 	value := strings.TrimSpace(os.Getenv(name))
 	if value == "" {
@@ -208,16 +208,16 @@ func mustSession3BEnv(t *testing.T, name string) string {
 	return value
 }
 
-func runSession3BGraphStage(t *testing.T, cfg session3BLiveConfig) {
+func runBatchLocalnetGraphStage(t *testing.T, cfg batchLocalnetConfig) {
 	ctx := context.Background()
-	payload := readSession3BPayload(t, cfg.PreparedPath)
+	payload := readBatchLocalnetPayload(t, cfg.PreparedPath)
 	require.Len(t, payload.Inputs, 3)
 	require.Len(t, payload.Outputs, 4)
-	require.Equal(t, []int64{5, 7, 9}, session3BInputAmounts(payload))
-	require.Equal(t, []int64{4, 5, 9, 3}, session3BOutputAmounts(payload))
+	require.Equal(t, []int64{5, 7, 9}, batchLocalnetInputAmounts(payload))
+	require.Equal(t, []int64{4, 5, 9, 3}, batchLocalnetOutputAmounts(payload))
 
-	protector := newSession3BProtector(t, cfg.ArtifactKeyPath, true)
-	operation, notes := session3BPayrollOperation(t, cfg, payload, protector, "")
+	protector := newBatchLocalnetProtector(t, cfg.ArtifactKeyPath, true)
+	operation, notes := batchLocalnetPayrollOperation(t, cfg, payload, protector, "")
 	require.Len(t, operation.InputNotes, 3)
 	require.Equal(t, 4, operation.OutputCount)
 	require.Equal(t, int64(3), operation.Change.Int64())
@@ -234,28 +234,28 @@ func runSession3BGraphStage(t *testing.T, cfg session3BLiveConfig) {
 		require.Equal(t, notes[i].NoteID, operation.InputNotes[i].NoteID)
 		require.Equal(t, i, created.Inputs[i].InputIndex)
 	}
-	state := session3BPayrollState{
-		SchemaVersion: session3BPayrollStateSchema, OperationID: operation.OperationID,
+	state := batchLocalnetPayrollState{
+		SchemaVersion: batchLocalnetPayrollStateSchema, OperationID: operation.OperationID,
 		PayloadHash: payload.PayloadHash, StagePIDs: map[string]int{"graph": os.Getpid()},
 		InputCount: len(created.Inputs), OutputCount: len(created.Items), ChainStatus: created.Operation.Status,
 	}
-	writeSession3BJSON(t, cfg.StatePath, state)
+	writeBatchLocalnetJSON(t, cfg.StatePath, state)
 }
 
-func runSession3BProveStage(t *testing.T, cfg session3BLiveConfig) {
+func runBatchLocalnetProveStage(t *testing.T, cfg batchLocalnetConfig) {
 	ctx := context.Background()
-	state := readSession3BState(t, cfg.StatePath)
-	payload := readSession3BPayload(t, cfg.PreparedPath)
+	state := readBatchLocalnetState(t, cfg.StatePath)
+	payload := readBatchLocalnetPayload(t, cfg.PreparedPath)
 	store, err := privacyreservation.OpenDurableFileStore(cfg.StorePath)
 	require.NoError(t, err)
-	protector := newSession3BProtector(t, cfg.ArtifactKeyPath, false)
+	protector := newBatchLocalnetProtector(t, cfg.ArtifactKeyPath, false)
 	proof, err := (privacypayroll.BatchProofWorker{
 		Store: store,
 		Prover: privacypayroll.RemoteBatchPayrollProver{Client: privacyprovertransport.HTTPProverClient{
 			BaseURL: cfg.ProverURL, Client: &http.Client{Timeout: 30 * time.Minute},
 			BearerToken: strings.TrimSpace(os.Getenv(privacyprovertransport.BearerTokenEnv)),
 		}},
-		Sealer: protector, LeaseOwner: fmt.Sprintf("session3b-proof-%d", os.Getpid()), LeaseTTL: 2 * time.Minute,
+		Sealer: protector, LeaseOwner: fmt.Sprintf("batch-localnet-proof-%d", os.Getpid()), LeaseTTL: 2 * time.Minute,
 	}).Process(ctx, state.OperationID, payload)
 	require.NoError(t, err)
 	require.NoError(t, privacybatchtransfer.WritePreparedBatchTransferProof(cfg.ProofPath, proof))
@@ -264,23 +264,23 @@ func runSession3BProveStage(t *testing.T, cfg session3BLiveConfig) {
 	require.Equal(t, privacyreservation.OperationStatusProofReady, graph.Operation.Status)
 	require.NotEmpty(t, graph.Operation.ProofCiphertext)
 	require.NotEmpty(t, graph.Operation.ProofHash)
-	recordSession3BStage(t, cfg, &state, "prove")
+	recordBatchLocalnetStage(t, cfg, &state, "prove")
 }
 
-func runSession3BTimeoutStage(t *testing.T, cfg session3BLiveConfig) {
+func runBatchLocalnetTimeoutStage(t *testing.T, cfg batchLocalnetConfig) {
 	ctx := context.Background()
-	state := readSession3BState(t, cfg.StatePath)
-	payload := readSession3BPayload(t, cfg.PreparedPath)
-	proof := readSession3BProof(t, cfg.ProofPath)
+	state := readBatchLocalnetState(t, cfg.StatePath)
+	payload := readBatchLocalnetPayload(t, cfg.PreparedPath)
+	proof := readBatchLocalnetProof(t, cfg.ProofPath)
 	store, err := privacyreservation.OpenDurableFileStore(cfg.StorePath)
 	require.NoError(t, err)
-	protector := newSession3BProtector(t, cfg.ArtifactKeyPath, false)
-	live := newSession3BLiveClients(t, ctx, cfg)
+	protector := newBatchLocalnetProtector(t, cfg.ArtifactKeyPath, false)
+	live := newBatchLocalnetClients(t, ctx, cfg)
 	defer live.Close()
-	timeoutSender := &session3BTimeoutSender{}
+	timeoutSender := &batchLocalnetTimeoutSender{}
 	outcome, err := (privacypayroll.IdempotentBatchBroadcastWorker{
 		Store: store, Builder: live.Adapter, Sender: timeoutSender, Reconciler: live.Chain,
-		Cipher: protector, LeaseOwner: fmt.Sprintf("session3b-timeout-%d", os.Getpid()), LeaseTTL: 2 * time.Minute,
+		Cipher: protector, LeaseOwner: fmt.Sprintf("batch-localnet-timeout-%d", os.Getpid()), LeaseTTL: 2 * time.Minute,
 	}).Submit(ctx, state.OperationID, payload, proof, live.Client.GetFromAddress().String(), privacypayroll.BatchBroadcastOptions{})
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	require.NotNil(t, outcome)
@@ -301,24 +301,24 @@ func runSession3BTimeoutStage(t *testing.T, cfg session3BLiveConfig) {
 	state.TimeoutBeforeSend = true
 	state.BroadcastAttempts = graph.Operation.BroadcastAttemptCount
 	state.ChainStatus = graph.Operation.Status
-	recordSession3BStage(t, cfg, &state, "timeout")
+	recordBatchLocalnetStage(t, cfg, &state, "timeout")
 }
 
-func runSession3BRetryStage(t *testing.T, cfg session3BLiveConfig) {
+func runBatchLocalnetRetryStage(t *testing.T, cfg batchLocalnetConfig) {
 	ctx := context.Background()
-	state := readSession3BState(t, cfg.StatePath)
-	payload := readSession3BPayload(t, cfg.PreparedPath)
-	proof := readSession3BProof(t, cfg.ProofPath)
+	state := readBatchLocalnetState(t, cfg.StatePath)
+	payload := readBatchLocalnetPayload(t, cfg.PreparedPath)
+	proof := readBatchLocalnetProof(t, cfg.ProofPath)
 	store, err := privacyreservation.OpenDurableFileStore(cfg.StorePath)
 	require.NoError(t, err)
-	protector := newSession3BProtector(t, cfg.ArtifactKeyPath, false)
-	live := newSession3BLiveClients(t, ctx, cfg)
+	protector := newBatchLocalnetProtector(t, cfg.ArtifactKeyPath, false)
+	live := newBatchLocalnetClients(t, ctx, cfg)
 	defer live.Close()
-	builder := &session3BRejectBuilder{}
-	sender := &session3BExactBytesSender{inner: live.Adapter, expectedHash: state.TimeoutBytesHash}
+	builder := &batchLocalnetRejectBuilder{}
+	sender := &batchLocalnetExactBytesSender{inner: live.Adapter, expectedHash: state.TimeoutBytesHash}
 	outcome, err := (privacypayroll.IdempotentBatchBroadcastWorker{
 		Store: store, Builder: builder, Sender: sender, Reconciler: live.Chain,
-		Cipher: protector, LeaseOwner: fmt.Sprintf("session3b-retry-%d", os.Getpid()), LeaseTTL: 2 * time.Minute,
+		Cipher: protector, LeaseOwner: fmt.Sprintf("batch-localnet-retry-%d", os.Getpid()), LeaseTTL: 2 * time.Minute,
 	}).Submit(ctx, state.OperationID, payload, proof, live.Client.GetFromAddress().String(), privacypayroll.BatchBroadcastOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, outcome)
@@ -329,7 +329,7 @@ func runSession3BRetryStage(t *testing.T, cfg session3BLiveConfig) {
 	require.NotNil(t, outcome.Receipt)
 	require.Equal(t, uint32(0), outcome.Receipt.Code)
 	require.Equal(t, strings.ToLower(state.TxHash), strings.ToLower(outcome.Receipt.TxHash))
-	require.True(t, waitSession3BTx(t, ctx, live.TxService, state.TxHash, 2*time.Minute))
+	require.True(t, waitBatchLocalnetTx(t, ctx, live.TxService, state.TxHash, 2*time.Minute))
 	graph, err := store.GetBatchOperation(ctx, state.OperationID)
 	require.NoError(t, err)
 	require.Equal(t, 2, graph.Operation.BroadcastAttemptCount)
@@ -338,25 +338,25 @@ func runSession3BRetryStage(t *testing.T, cfg session3BLiveConfig) {
 	state.ExactStoredBytesRetry = true
 	state.BroadcastAttempts = graph.Operation.BroadcastAttemptCount
 	state.ChainStatus = graph.Operation.Status
-	recordSession3BStage(t, cfg, &state, "retry")
+	recordBatchLocalnetStage(t, cfg, &state, "retry")
 	require.NoError(t, privatefile.Write(filepath.Join(cfg.OutDir, "payroll.txhash"), []byte(state.TxHash+"\n")))
 }
 
-func runSession3BReconcileStage(t *testing.T, cfg session3BLiveConfig) {
+func runBatchLocalnetReconcileStage(t *testing.T, cfg batchLocalnetConfig) {
 	ctx := context.Background()
-	state := readSession3BState(t, cfg.StatePath)
-	payload := readSession3BPayload(t, cfg.PreparedPath)
+	state := readBatchLocalnetState(t, cfg.StatePath)
+	payload := readBatchLocalnetPayload(t, cfg.PreparedPath)
 	store, err := privacyreservation.OpenDurableFileStore(cfg.StorePath)
 	require.NoError(t, err)
-	live := newSession3BLiveClients(t, ctx, cfg)
+	live := newBatchLocalnetClients(t, ctx, cfg)
 	defer live.Close()
 	graph, err := store.GetBatchOperation(ctx, state.OperationID)
 	require.NoError(t, err)
-	effectID, outputs := findSession3BBatchOutputs(t, ctx, live.Scan, state.TxHash)
+	effectID, outputs := findBatchLocalnetBatchOutputs(t, ctx, live.Scan, state.TxHash)
 	require.Len(t, outputs, len(payload.Outputs))
-	aliceKeys := session3BPrivacyKeysFor(t, live.Client, "alice")
-	bobKeys := session3BPrivacyKeysFor(t, live.Client, "bob")
-	auditorKeys := session3BPrivacyKeysFor(t, live.Client, "auditor")
+	aliceKeys := batchLocalnetPrivacyKeysFor(t, live.Client, "alice")
+	bobKeys := batchLocalnetPrivacyKeysFor(t, live.Client, "bob")
+	auditorKeys := batchLocalnetPrivacyKeysFor(t, live.Client, "auditor")
 	owner := payload.Inputs[0].Note
 	ownerAddress, err := owner.ReceiverShieldedAddress()
 	require.NoError(t, err)
@@ -408,14 +408,14 @@ func runSession3BReconcileStage(t *testing.T, cfg session3BLiveConfig) {
 		require.False(t, disclosures.SelfViewDeliveryFailed)
 		require.Equal(t, privacyscan.DisclosureVerified, disclosures.Audit.Status)
 		require.Equal(t, privacyscan.DisclosureVerified, disclosures.SelfView.Status)
-		assertSession3BFullDisclosure(t, output, disclosures.Audit.Plaintext, owner, found.Note)
-		assertSession3BFullDisclosure(t, output, disclosures.SelfView.Plaintext, owner, found.Note)
+		assertBatchLocalnetFullDisclosure(t, output, disclosures.Audit.Plaintext, owner, found.Note)
+		assertBatchLocalnetFullDisclosure(t, output, disclosures.SelfView.Plaintext, owner, found.Note)
 		if output.UserPrivacyPolicy == privacytypes.TransferPrivacyPolicyAllPrivate {
 			require.Equal(t, privacyscan.DisclosureNotPresent, disclosures.User.Status)
 			require.Nil(t, disclosures.User.Plaintext)
 		} else {
 			require.Equal(t, privacyscan.DisclosureVerified, disclosures.User.Status)
-			assertSession3BUserDisclosure(t, output, disclosures.User.Plaintext, owner, found.Note)
+			assertBatchLocalnetUserDisclosure(t, output, disclosures.User.Plaintext, owner, found.Note)
 			userDisclosuresVerified++
 		}
 
@@ -434,7 +434,7 @@ func runSession3BReconcileStage(t *testing.T, cfg session3BLiveConfig) {
 		}
 	}
 	require.Equal(t, 2, userDisclosuresVerified)
-	ordered := &session3BOrderedReconciler{inner: live.Chain}
+	ordered := &batchLocalnetOrderedReconciler{inner: live.Chain}
 	result, err := (privacypayroll.BatchReconcileWorker{Store: store, Reconciler: ordered}).Reconcile(ctx, privacypayroll.BatchReconcileRequest{
 		OperationID: state.OperationID, Payload: payload, ObservedOutputs: observed,
 	})
@@ -458,7 +458,7 @@ func runSession3BReconcileStage(t *testing.T, cfg session3BLiveConfig) {
 	require.Equal(t, 2, report.BroadcastAttemptCount)
 	require.Equal(t, 4, report.OutputCount)
 	require.Equal(t, 3, report.SucceededItems)
-	writeSession3BJSON(t, cfg.ReportPath, report)
+	writeBatchLocalnetJSON(t, cfg.ReportPath, report)
 	state.TxHashFirst = true
 	state.EffectID = effectID
 	state.SucceededItems = report.SucceededItems
@@ -472,24 +472,24 @@ func runSession3BReconcileStage(t *testing.T, cfg session3BLiveConfig) {
 	state.AuditDisclosuresVerified = len(outputs)
 	state.SelfViewsVerified = len(outputs)
 	state.ChainStatus = report.ChainStatus
-	recordSession3BStage(t, cfg, &state, "reconcile")
+	recordBatchLocalnetStage(t, cfg, &state, "reconcile")
 }
 
-func runSession3BConflictStage(t *testing.T, cfg session3BLiveConfig) {
+func runBatchLocalnetConflictStage(t *testing.T, cfg batchLocalnetConfig) {
 	ctx := context.Background()
-	state := readSession3BState(t, cfg.StatePath)
-	payload := readSession3BPayload(t, cfg.PreparedPath)
+	state := readBatchLocalnetState(t, cfg.StatePath)
+	payload := readBatchLocalnetPayload(t, cfg.PreparedPath)
 	store, err := privacyreservation.OpenDurableFileStore(cfg.StorePath)
 	require.NoError(t, err)
-	protector := newSession3BProtector(t, cfg.ArtifactKeyPath, false)
-	operation, _ := session3BPayrollOperation(t, cfg, payload, protector, ":spent-conflict")
+	protector := newBatchLocalnetProtector(t, cfg.ArtifactKeyPath, false)
+	operation, _ := batchLocalnetPayrollOperation(t, cfg, payload, protector, ":spent-conflict")
 	reservations, graph, err := privacypayroll.BuildBatchOperationGraph(ctx, operation, payload, protector, time.Now().UTC())
 	require.NoError(t, err)
 	created, err := privacypayroll.ConfirmBatchPayrollOperation(ctx, store, reservations, graph)
 	require.NoError(t, err)
-	live := newSession3BLiveClients(t, ctx, cfg)
+	live := newBatchLocalnetClients(t, ctx, cfg)
 	defer live.Close()
-	conflictReconciler := &session3BAbsentTxReconciler{inner: live.Chain}
+	conflictReconciler := &batchLocalnetAbsentTxReconciler{inner: live.Chain}
 	result, err := (privacypayroll.BatchReconcileWorker{Store: store, Reconciler: conflictReconciler}).Reconcile(ctx, privacypayroll.BatchReconcileRequest{
 		OperationID: created.Operation.OperationID, Payload: payload, FailureReason: "live spent-nullifier conflict",
 	})
@@ -508,10 +508,10 @@ func runSession3BConflictStage(t *testing.T, cfg session3BLiveConfig) {
 	state.SpentNullifierConflict = true
 	state.ManualReviewItems = manualPayments
 	state.ConflictStatus = result.Graph.Operation.Status
-	recordSession3BStage(t, cfg, &state, "conflict")
-	assertSession3BFinalState(t, state)
-	summary := session3BPayrollSummary{
-		SchemaVersion: session3BPayrollResultSchema, Status: "passed", OperationID: state.OperationID,
+	recordBatchLocalnetStage(t, cfg, &state, "conflict")
+	assertBatchLocalnetFinalState(t, state)
+	summary := batchLocalnetPayrollSummary{
+		SchemaVersion: batchLocalnetPayrollResultSchema, Status: "passed", OperationID: state.OperationID,
 		ConflictOperationID: state.ConflictOperationID, PayloadHash: state.PayloadHash, TxHash: state.TxHash,
 		TxBytesHash: state.TxBytesHash, EffectID: state.EffectID, StagePIDs: state.StagePIDs,
 		ProcessRestarted: true, TimeoutBeforeSend: state.TimeoutBeforeSend,
@@ -524,13 +524,13 @@ func runSession3BConflictStage(t *testing.T, cfg session3BLiveConfig) {
 		AuditDisclosuresVerified: state.AuditDisclosuresVerified, SelfViewsVerified: state.SelfViewsVerified,
 		ConflictStatus: state.ConflictStatus,
 	}
-	writeSession3BJSON(t, cfg.SummaryPath, summary)
+	writeBatchLocalnetJSON(t, cfg.SummaryPath, summary)
 }
 
-func session3BPayrollOperation(t *testing.T, cfg session3BLiveConfig, payload *privacybatchtransfer.PreparedBatchTransferPayload, protector session3BProtector, operationSuffix string) (privacypayroll.BatchPayrollOperationPlan, []privacypayroll.TreasuryNote) {
+func batchLocalnetPayrollOperation(t *testing.T, cfg batchLocalnetConfig, payload *privacybatchtransfer.PreparedBatchTransferPayload, protector batchLocalnetProtector, operationSuffix string) (privacypayroll.BatchPayrollOperationPlan, []privacypayroll.TreasuryNote) {
 	t.Helper()
 	var wallet listNotesJSONOutput
-	readSession3BJSON(t, cfg.AliceNotesPath, &wallet)
+	readBatchLocalnetJSON(t, cfg.AliceNotesPath, &wallet)
 	notes := make([]privacypayroll.TreasuryNote, len(payload.Inputs))
 	for i, input := range payload.Inputs {
 		commitment := hex.EncodeToString(input.Note.ComputeCommitment().FillBytes(make([]byte, 32)))
@@ -543,11 +543,11 @@ func session3BPayrollOperation(t *testing.T, cfg session3BLiveConfig, payload *p
 			}
 		}
 		require.True(t, matched, "prepared input %d must be a live spendable wallet note", i)
-		lookup, err := protector.PayrollNullifierLookupKey(context.Background(), session3BLookupKeyID, input.Nullifier)
+		lookup, err := protector.PayrollNullifierLookupKey(context.Background(), batchLocalnetLookupKeyID, input.Nullifier)
 		require.NoError(t, err)
 		notes[i] = privacypayroll.TreasuryNote{
 			NoteID: fmt.Sprintf("%02d:%s", i, commitment), OwnerKeyID: "alice", NullifierLookupKey: lookup,
-			NullifierLookupKeyID: session3BLookupKeyID, Denom: "uclair", Amount: new(big.Int).Set(input.Note.Amount),
+			NullifierLookupKeyID: batchLocalnetLookupKeyID, Denom: "uclair", Amount: new(big.Int).Set(input.Note.Amount),
 		}
 	}
 	items := []privacypayroll.PayrollItemInput{
@@ -556,7 +556,7 @@ func session3BPayrollOperation(t *testing.T, cfg session3BLiveConfig, payload *p
 		{ItemID: "item-2", EmployeeID: "employee-2", RecipientAddress: cfg.BobAddress, Amount: big.NewInt(9), Denom: "uclair", DisclosurePolicySet: true, DisclosurePolicy: privacypayroll.PayrollDisclosurePolicy{UserPrivacyPolicy: privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom, UserDisclosureMode: privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED, UserDisclosureTargetPubKeyHex: cfg.BobDisclosure}},
 	}
 	plan, err := (privacypayroll.BatchPayrollPlanner{}).Plan(privacypayroll.PayrollInput{
-		CompanyID: "session3b-company", PayrollID: "session3b-payroll", BatchID: "session3b-batch" + operationSuffix,
+		CompanyID: "batch-localnet-company", PayrollID: "batch-localnet-payroll", BatchID: "batch-localnet-batch" + operationSuffix,
 		Denom: "uclair", Attempt: 1, Items: items, CreatedAt: time.Now().UTC(),
 	}, notes)
 	require.NoError(t, err)
@@ -571,9 +571,9 @@ func session3BPayrollOperation(t *testing.T, cfg session3BLiveConfig, payload *p
 	return operation, notes
 }
 
-type session3BNoteSource map[string]privacytypes.Note
+type batchLocalnetNoteSource map[string]privacytypes.Note
 
-func (s session3BNoteSource) LoadBatchInputNote(_ context.Context, noteID string) (privacytypes.Note, error) {
+func (s batchLocalnetNoteSource) LoadBatchInputNote(_ context.Context, noteID string) (privacytypes.Note, error) {
 	note, ok := s[noteID]
 	if !ok {
 		return privacytypes.Note{}, fmt.Errorf("note %s not found", noteID)
@@ -581,9 +581,9 @@ func (s session3BNoteSource) LoadBatchInputNote(_ context.Context, noteID string
 	return note, nil
 }
 
-type session3BProtector struct{ key []byte }
+type batchLocalnetProtector struct{ key []byte }
 
-func newSession3BProtector(t *testing.T, path string, create bool) session3BProtector {
+func newBatchLocalnetProtector(t *testing.T, path string, create bool) batchLocalnetProtector {
 	t.Helper()
 	if create {
 		key := make([]byte, 32)
@@ -596,10 +596,10 @@ func newSession3BProtector(t *testing.T, path string, create bool) session3BProt
 	key, err := hex.DecodeString(strings.TrimSpace(string(bz)))
 	require.NoError(t, err)
 	require.Len(t, key, 32)
-	return session3BProtector{key: key}
+	return batchLocalnetProtector{key: key}
 }
 
-func (p session3BProtector) SealPayrollEvidence(_ context.Context, plaintext []byte) ([]byte, error) {
+func (p batchLocalnetProtector) SealPayrollEvidence(_ context.Context, plaintext []byte) ([]byte, error) {
 	block, err := aes.NewCipher(p.key)
 	if err != nil {
 		return nil, err
@@ -612,10 +612,10 @@ func (p session3BProtector) SealPayrollEvidence(_ context.Context, plaintext []b
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, err
 	}
-	return aead.Seal(nonce, nonce, plaintext, []byte(session3BPayrollStateSchema)), nil
+	return aead.Seal(nonce, nonce, plaintext, []byte(batchLocalnetPayrollStateSchema)), nil
 }
 
-func (p session3BProtector) OpenPayrollEvidence(_ context.Context, ciphertext []byte) ([]byte, error) {
+func (p batchLocalnetProtector) OpenPayrollEvidence(_ context.Context, ciphertext []byte) ([]byte, error) {
 	block, err := aes.NewCipher(p.key)
 	if err != nil {
 		return nil, err
@@ -627,15 +627,15 @@ func (p session3BProtector) OpenPayrollEvidence(_ context.Context, ciphertext []
 	if len(ciphertext) < aead.NonceSize() {
 		return nil, fmt.Errorf("sealed payroll evidence is truncated")
 	}
-	return aead.Open(nil, ciphertext[:aead.NonceSize()], ciphertext[aead.NonceSize():], []byte(session3BPayrollStateSchema))
+	return aead.Open(nil, ciphertext[:aead.NonceSize()], ciphertext[aead.NonceSize():], []byte(batchLocalnetPayrollStateSchema))
 }
 
-func (p session3BProtector) PayrollNullifierLookupKey(_ context.Context, keyID string, nullifier []byte) (string, error) {
+func (p batchLocalnetProtector) PayrollNullifierLookupKey(_ context.Context, keyID string, nullifier []byte) (string, error) {
 	indexKey := append(append([]byte(nil), p.key...), []byte(keyID)...)
 	return privacyreservation.NullifierLookupKey(indexKey, nullifier)
 }
 
-type session3BLiveClients struct {
+type batchLocalnetClients struct {
 	Client    client.Context
 	Conn      *grpc.ClientConn
 	TxService txtypes.ServiceClient
@@ -644,7 +644,7 @@ type session3BLiveClients struct {
 	Adapter   privacypayroll.CosmosBatchTxAdapter
 }
 
-func newSession3BLiveClients(t *testing.T, ctx context.Context, cfg session3BLiveConfig) session3BLiveClients {
+func newBatchLocalnetClients(t *testing.T, ctx context.Context, cfg batchLocalnetConfig) batchLocalnetClients {
 	t.Helper()
 	encoding := moduletestutil.MakeTestEncodingConfig()
 	authtypes.RegisterLegacyAminoCodec(encoding.Amino)
@@ -691,22 +691,22 @@ func newSession3BLiveClients(t *testing.T, ctx context.Context, cfg session3BLiv
 	adapter := privacypayroll.CosmosBatchTxAdapter{Broadcaster: broadcaster}
 	scan := privacyprovider.NewScanQueryProvider(rpcClient, privacytypes.NewQueryClient(conn))
 	txService := txtypes.NewServiceClient(conn)
-	return session3BLiveClients{
+	return batchLocalnetClients{
 		Client: clientCtx, Conn: conn, TxService: txService, Scan: scan,
 		Chain: privacypayroll.CosmosBatchChainReconciler{TxService: txService, Nullifiers: scan}, Adapter: adapter,
 	}
 }
 
-func (c session3BLiveClients) Close() { _ = c.Conn.Close() }
+func (c batchLocalnetClients) Close() { _ = c.Conn.Close() }
 
-type session3BPrivacyKeys struct {
+type batchLocalnetPrivacyKeys struct {
 	rootSeed         []byte
 	spendScalar      *big.Int
 	viewScalar       *big.Int
 	disclosureScalar *big.Int
 }
 
-func session3BPrivacyKeysFor(t *testing.T, base client.Context, name string) session3BPrivacyKeys {
+func batchLocalnetPrivacyKeysFor(t *testing.T, base client.Context, name string) batchLocalnetPrivacyKeys {
 	t.Helper()
 	record, err := base.Keyring.Key(name)
 	require.NoError(t, err)
@@ -717,24 +717,24 @@ func session3BPrivacyKeysFor(t *testing.T, base client.Context, name string) ses
 	require.NoError(t, err)
 	viewScalar, _, _ := deriveViewKeys(rootSeed)
 	disclosureScalar, _, _ := deriveDisclosureKeys(rootSeed)
-	return session3BPrivacyKeys{
+	return batchLocalnetPrivacyKeys{
 		rootSeed: append([]byte(nil), rootSeed...), spendScalar: spendScalar,
 		viewScalar: viewScalar, disclosureScalar: disclosureScalar,
 	}
 }
 
-func assertSession3BFullDisclosure(t *testing.T, output *privacytypes.PrivacyScanOutputV2, plaintext *privacytypes.DisclosurePlaintextV1, owner, recipient privacytypes.Note) {
+func assertBatchLocalnetFullDisclosure(t *testing.T, output *privacytypes.PrivacyScanOutputV2, plaintext *privacytypes.DisclosurePlaintextV1, owner, recipient privacytypes.Note) {
 	t.Helper()
 	require.NotNil(t, plaintext)
 	require.Equal(t, privacytypes.DisclosurePlaneFullV1, plaintext.Plane)
 	require.Equal(t, output.OutputIndex, plaintext.OutputIndex)
 	require.Equal(t, privacytypes.DisclosureFullMarkerV1, plaintext.Policy)
 	require.Equal(t, privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom, plaintext.DisclosedFieldBitmap)
-	assertSession3BBigInt(t, "full commitment", new(big.Int).SetBytes(output.Commitment), plaintext.Commitment)
-	assertSession3BBigInt(t, "full amount", recipient.Amount, plaintext.Amount)
-	assertSession3BBigInt(t, "full asset ID", recipient.AssetID, plaintext.AssetID)
-	assertSession3BDisclosureIdentity(t, "full sender", owner, plaintext.SenderSpendKeyX, plaintext.SenderSpendKeyY, plaintext.SenderViewKeyX, plaintext.SenderViewKeyY)
-	assertSession3BDisclosureIdentity(t, "full recipient", recipient, plaintext.RecipientSpendKeyX, plaintext.RecipientSpendKeyY, plaintext.RecipientViewKeyX, plaintext.RecipientViewKeyY)
+	assertBatchLocalnetBigInt(t, "full commitment", new(big.Int).SetBytes(output.Commitment), plaintext.Commitment)
+	assertBatchLocalnetBigInt(t, "full amount", recipient.Amount, plaintext.Amount)
+	assertBatchLocalnetBigInt(t, "full asset ID", recipient.AssetID, plaintext.AssetID)
+	assertBatchLocalnetDisclosureIdentity(t, "full sender", owner, plaintext.SenderSpendKeyX, plaintext.SenderSpendKeyY, plaintext.SenderViewKeyX, plaintext.SenderViewKeyY)
+	assertBatchLocalnetDisclosureIdentity(t, "full recipient", recipient, plaintext.RecipientSpendKeyX, plaintext.RecipientSpendKeyY, plaintext.RecipientViewKeyX, plaintext.RecipientViewKeyY)
 	require.NotNil(t, plaintext.DisclosureBlinding)
 	require.NotZero(t, plaintext.DisclosureBlinding.Sign())
 	digest, err := privacytypes.ComputeBatchFullDisclosureDigestV1(privacytypes.BatchFullDisclosureV1Input{
@@ -749,18 +749,18 @@ func assertSession3BFullDisclosure(t *testing.T, output *privacytypes.PrivacySca
 	require.Equal(t, output.FullDisclosureDigest, digest.FillBytes(make([]byte, 32)))
 }
 
-func assertSession3BUserDisclosure(t *testing.T, output *privacytypes.PrivacyScanOutputV2, plaintext *privacytypes.DisclosurePlaintextV1, owner, recipient privacytypes.Note) {
+func assertBatchLocalnetUserDisclosure(t *testing.T, output *privacytypes.PrivacyScanOutputV2, plaintext *privacytypes.DisclosurePlaintextV1, owner, recipient privacytypes.Note) {
 	t.Helper()
 	require.NotNil(t, plaintext)
 	require.Equal(t, privacytypes.DisclosurePlaneUserV1, plaintext.Plane)
 	require.Equal(t, output.OutputIndex, plaintext.OutputIndex)
 	require.Equal(t, output.UserPrivacyPolicy, plaintext.Policy)
 	require.Equal(t, output.UserPrivacyPolicy, plaintext.DisclosedFieldBitmap)
-	assertSession3BBigInt(t, "user commitment", new(big.Int).SetBytes(output.Commitment), plaintext.Commitment)
-	assertSession3BBigInt(t, "user asset ID", recipient.AssetID, plaintext.AssetID)
-	assertSession3BSelectedBigInt(t, "user amount", output.UserPrivacyPolicy&privacytypes.TransferPrivacyPolicyDiscloseAmount != 0, recipient.Amount, plaintext.Amount)
-	assertSession3BSelectedIdentity(t, "user sender", output.UserPrivacyPolicy&privacytypes.TransferPrivacyPolicyDiscloseFrom != 0, owner, plaintext.SenderSpendKeyX, plaintext.SenderSpendKeyY, plaintext.SenderViewKeyX, plaintext.SenderViewKeyY)
-	assertSession3BSelectedIdentity(t, "user recipient", output.UserPrivacyPolicy&privacytypes.TransferPrivacyPolicyDiscloseTo != 0, recipient, plaintext.RecipientSpendKeyX, plaintext.RecipientSpendKeyY, plaintext.RecipientViewKeyX, plaintext.RecipientViewKeyY)
+	assertBatchLocalnetBigInt(t, "user commitment", new(big.Int).SetBytes(output.Commitment), plaintext.Commitment)
+	assertBatchLocalnetBigInt(t, "user asset ID", recipient.AssetID, plaintext.AssetID)
+	assertBatchLocalnetSelectedBigInt(t, "user amount", output.UserPrivacyPolicy&privacytypes.TransferPrivacyPolicyDiscloseAmount != 0, recipient.Amount, plaintext.Amount)
+	assertBatchLocalnetSelectedIdentity(t, "user sender", output.UserPrivacyPolicy&privacytypes.TransferPrivacyPolicyDiscloseFrom != 0, owner, plaintext.SenderSpendKeyX, plaintext.SenderSpendKeyY, plaintext.SenderViewKeyX, plaintext.SenderViewKeyY)
+	assertBatchLocalnetSelectedIdentity(t, "user recipient", output.UserPrivacyPolicy&privacytypes.TransferPrivacyPolicyDiscloseTo != 0, recipient, plaintext.RecipientSpendKeyX, plaintext.RecipientSpendKeyY, plaintext.RecipientViewKeyX, plaintext.RecipientViewKeyY)
 	require.NotNil(t, plaintext.DisclosureBlinding)
 	require.NotZero(t, plaintext.DisclosureBlinding.Sign())
 	digest, err := privacytypes.ComputeBatchUserDisclosureDigestV1(privacytypes.BatchUserDisclosureV1Input{
@@ -776,62 +776,62 @@ func assertSession3BUserDisclosure(t *testing.T, output *privacytypes.PrivacySca
 	require.Equal(t, output.UserDisclosureDigest, digest.FillBytes(make([]byte, 32)))
 }
 
-func assertSession3BSelectedIdentity(t *testing.T, name string, selected bool, note privacytypes.Note, spendX, spendY, viewX, viewY *big.Int) {
+func assertBatchLocalnetSelectedIdentity(t *testing.T, name string, selected bool, note privacytypes.Note, spendX, spendY, viewX, viewY *big.Int) {
 	t.Helper()
 	if selected {
-		assertSession3BDisclosureIdentity(t, name, note, spendX, spendY, viewX, viewY)
+		assertBatchLocalnetDisclosureIdentity(t, name, note, spendX, spendY, viewX, viewY)
 		return
 	}
 	for _, field := range []*big.Int{spendX, spendY, viewX, viewY} {
-		assertSession3BBigInt(t, name, new(big.Int), field)
+		assertBatchLocalnetBigInt(t, name, new(big.Int), field)
 	}
 }
 
-func assertSession3BDisclosureIdentity(t *testing.T, name string, note privacytypes.Note, spendX, spendY, viewX, viewY *big.Int) {
+func assertBatchLocalnetDisclosureIdentity(t *testing.T, name string, note privacytypes.Note, spendX, spendY, viewX, viewY *big.Int) {
 	t.Helper()
-	assertSession3BBigInt(t, name+" spend x", note.ReceiverSpendPubKeyX, spendX)
-	assertSession3BBigInt(t, name+" spend y", note.ReceiverSpendPubKeyY, spendY)
-	assertSession3BBigInt(t, name+" view x", note.ReceiverViewPubKeyX, viewX)
-	assertSession3BBigInt(t, name+" view y", note.ReceiverViewPubKeyY, viewY)
+	assertBatchLocalnetBigInt(t, name+" spend x", note.ReceiverSpendPubKeyX, spendX)
+	assertBatchLocalnetBigInt(t, name+" spend y", note.ReceiverSpendPubKeyY, spendY)
+	assertBatchLocalnetBigInt(t, name+" view x", note.ReceiverViewPubKeyX, viewX)
+	assertBatchLocalnetBigInt(t, name+" view y", note.ReceiverViewPubKeyY, viewY)
 }
 
-func assertSession3BSelectedBigInt(t *testing.T, name string, selected bool, want, got *big.Int) {
+func assertBatchLocalnetSelectedBigInt(t *testing.T, name string, selected bool, want, got *big.Int) {
 	t.Helper()
 	if !selected {
 		want = new(big.Int)
 	}
-	assertSession3BBigInt(t, name, want, got)
+	assertBatchLocalnetBigInt(t, name, want, got)
 }
 
-func assertSession3BBigInt(t *testing.T, name string, want, got *big.Int) {
+func assertBatchLocalnetBigInt(t *testing.T, name string, want, got *big.Int) {
 	t.Helper()
 	require.NotNil(t, want, name+" expected")
 	require.NotNil(t, got, name+" actual")
 	require.Zero(t, want.Cmp(got), name)
 }
 
-type session3BTimeoutSender struct{ calls int }
+type batchLocalnetTimeoutSender struct{ calls int }
 
-func (s *session3BTimeoutSender) BroadcastSignedBatchTx(context.Context, []byte) (*privacypayroll.BatchBroadcastReceipt, error) {
+func (s *batchLocalnetTimeoutSender) BroadcastSignedBatchTx(context.Context, []byte) (*privacypayroll.BatchBroadcastReceipt, error) {
 	s.calls++
 	return nil, context.DeadlineExceeded
 }
 
-type session3BRejectBuilder struct{ calls int }
+type batchLocalnetRejectBuilder struct{ calls int }
 
-func (b *session3BRejectBuilder) BuildSignedBatchTx(context.Context, *privacytypes.MsgBatchTransfer) (*privacypayroll.SignedBatchTx, error) {
+func (b *batchLocalnetRejectBuilder) BuildSignedBatchTx(context.Context, *privacytypes.MsgBatchTransfer) (*privacypayroll.SignedBatchTx, error) {
 	b.calls++
 	return nil, fmt.Errorf("unexpected re-sign of durable batch transaction")
 }
 
-type session3BExactBytesSender struct {
+type batchLocalnetExactBytesSender struct {
 	inner        privacypayroll.SignedBatchTxSender
 	expectedHash string
 	observedHash string
 	calls        int
 }
 
-func (s *session3BExactBytesSender) BroadcastSignedBatchTx(ctx context.Context, signedTxBytes []byte) (*privacypayroll.BatchBroadcastReceipt, error) {
+func (s *batchLocalnetExactBytesSender) BroadcastSignedBatchTx(ctx context.Context, signedTxBytes []byte) (*privacypayroll.BatchBroadcastReceipt, error) {
 	s.calls++
 	digest := sha256.Sum256(signedTxBytes)
 	s.observedHash = hex.EncodeToString(digest[:])
@@ -841,37 +841,37 @@ func (s *session3BExactBytesSender) BroadcastSignedBatchTx(ctx context.Context, 
 	return s.inner.BroadcastSignedBatchTx(ctx, signedTxBytes)
 }
 
-type session3BOrderedReconciler struct {
+type batchLocalnetOrderedReconciler struct {
 	inner privacypayroll.BatchChainReconciler
 	calls []string
 }
 
-func (r *session3BOrderedReconciler) LookupBatchTx(ctx context.Context, txHash string) (*privacypayroll.BatchTxLookupResult, error) {
+func (r *batchLocalnetOrderedReconciler) LookupBatchTx(ctx context.Context, txHash string) (*privacypayroll.BatchTxLookupResult, error) {
 	r.calls = append(r.calls, "lookup:"+strings.ToLower(txHash))
 	return r.inner.LookupBatchTx(ctx, txHash)
 }
 
-func (r *session3BOrderedReconciler) CheckBatchNullifiers(ctx context.Context, values []string) (map[string]bool, error) {
+func (r *batchLocalnetOrderedReconciler) CheckBatchNullifiers(ctx context.Context, values []string) (map[string]bool, error) {
 	r.calls = append(r.calls, "nullifiers")
 	return r.inner.CheckBatchNullifiers(ctx, values)
 }
 
-type session3BAbsentTxReconciler struct {
+type batchLocalnetAbsentTxReconciler struct {
 	inner privacypayroll.BatchChainReconciler
 	calls []string
 }
 
-func (r *session3BAbsentTxReconciler) LookupBatchTx(context.Context, string) (*privacypayroll.BatchTxLookupResult, error) {
+func (r *batchLocalnetAbsentTxReconciler) LookupBatchTx(context.Context, string) (*privacypayroll.BatchTxLookupResult, error) {
 	r.calls = append(r.calls, "lookup")
 	return &privacypayroll.BatchTxLookupResult{Found: false}, nil
 }
 
-func (r *session3BAbsentTxReconciler) CheckBatchNullifiers(ctx context.Context, values []string) (map[string]bool, error) {
+func (r *batchLocalnetAbsentTxReconciler) CheckBatchNullifiers(ctx context.Context, values []string) (map[string]bool, error) {
 	r.calls = append(r.calls, "nullifiers")
 	return r.inner.CheckBatchNullifiers(ctx, values)
 }
 
-func findSession3BBatchOutputs(t *testing.T, ctx context.Context, scan privacyprovider.ScanQueryProvider, txHash string) (string, []*privacytypes.PrivacyScanOutputV2) {
+func findBatchLocalnetBatchOutputs(t *testing.T, ctx context.Context, scan privacyprovider.ScanQueryProvider, txHash string) (string, []*privacytypes.PrivacyScanOutputV2) {
 	t.Helper()
 	wantHash, err := hex.DecodeString(strings.TrimPrefix(strings.ToLower(txHash), "0x"))
 	require.NoError(t, err)
@@ -902,7 +902,7 @@ func findSession3BBatchOutputs(t *testing.T, ctx context.Context, scan privacypr
 	return "", nil
 }
 
-func waitSession3BTx(t *testing.T, ctx context.Context, service txtypes.ServiceClient, txHash string, timeout time.Duration) bool {
+func waitBatchLocalnetTx(t *testing.T, ctx context.Context, service txtypes.ServiceClient, txHash string, timeout time.Duration) bool {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -916,7 +916,7 @@ func waitSession3BTx(t *testing.T, ctx context.Context, service txtypes.ServiceC
 	return false
 }
 
-func readSession3BPayload(t *testing.T, path string) *privacybatchtransfer.PreparedBatchTransferPayload {
+func readBatchLocalnetPayload(t *testing.T, path string) *privacybatchtransfer.PreparedBatchTransferPayload {
 	t.Helper()
 	payload, err := privacybatchtransfer.ReadPreparedBatchTransferPayload(path)
 	require.NoError(t, err)
@@ -924,18 +924,18 @@ func readSession3BPayload(t *testing.T, path string) *privacybatchtransfer.Prepa
 	return payload
 }
 
-func readSession3BProof(t *testing.T, path string) *privacybatchtransfer.PreparedBatchTransferProof {
+func readBatchLocalnetProof(t *testing.T, path string) *privacybatchtransfer.PreparedBatchTransferProof {
 	t.Helper()
 	proof, err := privacybatchtransfer.ReadPreparedBatchTransferProof(path)
 	require.NoError(t, err)
 	return proof
 }
 
-func readSession3BState(t *testing.T, path string) session3BPayrollState {
+func readBatchLocalnetState(t *testing.T, path string) batchLocalnetPayrollState {
 	t.Helper()
-	var state session3BPayrollState
-	readSession3BJSON(t, path, &state)
-	require.Equal(t, session3BPayrollStateSchema, state.SchemaVersion)
+	var state batchLocalnetPayrollState
+	readBatchLocalnetJSON(t, path, &state)
+	require.Equal(t, batchLocalnetPayrollStateSchema, state.SchemaVersion)
 	require.NotEmpty(t, state.OperationID)
 	if state.StagePIDs == nil {
 		state.StagePIDs = make(map[string]int)
@@ -943,16 +943,16 @@ func readSession3BState(t *testing.T, path string) session3BPayrollState {
 	return state
 }
 
-func recordSession3BStage(t *testing.T, cfg session3BLiveConfig, state *session3BPayrollState, stage string) {
+func recordBatchLocalnetStage(t *testing.T, cfg batchLocalnetConfig, state *batchLocalnetPayrollState, stage string) {
 	t.Helper()
 	if state.StagePIDs == nil {
 		state.StagePIDs = make(map[string]int)
 	}
 	state.StagePIDs[stage] = os.Getpid()
-	writeSession3BJSON(t, cfg.StatePath, state)
+	writeBatchLocalnetJSON(t, cfg.StatePath, state)
 }
 
-func assertSession3BFinalState(t *testing.T, state session3BPayrollState) {
+func assertBatchLocalnetFinalState(t *testing.T, state batchLocalnetPayrollState) {
 	t.Helper()
 	require.True(t, state.TimeoutBeforeSend)
 	require.True(t, state.ExactStoredBytesRetry)
@@ -984,7 +984,7 @@ func assertSession3BFinalState(t *testing.T, state session3BPayrollState) {
 	}
 }
 
-func writeSession3BJSON(t *testing.T, path string, value any) {
+func writeBatchLocalnetJSON(t *testing.T, path string, value any) {
 	t.Helper()
 	bz, err := json.MarshalIndent(value, "", "  ")
 	require.NoError(t, err)
@@ -992,7 +992,7 @@ func writeSession3BJSON(t *testing.T, path string, value any) {
 	require.NoError(t, privatefile.Write(path, bz))
 }
 
-func readSession3BJSON(t *testing.T, path string, value any) {
+func readBatchLocalnetJSON(t *testing.T, path string, value any) {
 	t.Helper()
 	bz, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -1001,7 +1001,7 @@ func readSession3BJSON(t *testing.T, path string, value any) {
 	require.NoError(t, decoder.Decode(value))
 }
 
-func session3BInputAmounts(payload *privacybatchtransfer.PreparedBatchTransferPayload) []int64 {
+func batchLocalnetInputAmounts(payload *privacybatchtransfer.PreparedBatchTransferPayload) []int64 {
 	values := make([]int64, len(payload.Inputs))
 	for i := range payload.Inputs {
 		values[i] = payload.Inputs[i].Note.Amount.Int64()
@@ -1009,7 +1009,7 @@ func session3BInputAmounts(payload *privacybatchtransfer.PreparedBatchTransferPa
 	return values
 }
 
-func session3BOutputAmounts(payload *privacybatchtransfer.PreparedBatchTransferPayload) []int64 {
+func batchLocalnetOutputAmounts(payload *privacybatchtransfer.PreparedBatchTransferPayload) []int64 {
 	values := make([]int64, len(payload.Outputs))
 	for i := range payload.Outputs {
 		values[i] = payload.Outputs[i].Note.Amount.Int64()

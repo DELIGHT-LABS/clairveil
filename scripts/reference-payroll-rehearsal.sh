@@ -97,7 +97,7 @@ report = {
     "interpretation": {
         "single_company_100k": "legacy multi-message comparison keeps proof_count at 100000; tx envelopes shrink by chunk_size",
         "hundred_companies_1k": "same total recipient count as 100k, but tenant scheduling can spread proof/broadcast peaks",
-        "next_decision": "measure the current Session 3B one-proof path; if the frozen 16x32 shape misses SLA, open a separately named circuit/protocol roadmap and security review",
+        "next_decision": "measure the current BatchJoinSplit16x32 one-proof path; if the frozen 16x32 shape misses SLA, open a separately named circuit/protocol roadmap and security review",
     },
 }
 (out_dir / "rehearsal-summary.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")

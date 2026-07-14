@@ -45,7 +45,7 @@ clairveild start --minimum-gas-prices 0uclair
 clairveil-setup --out artifacts/privacy
 ```
 
-Selective development rotation은 이미 complete하고 checksum-valid한 set과 explicit overwrite를 요구합니다. `S4-B02` JoinSplit relation 변경은 다음처럼 실행합니다.
+Selective development rotation은 이미 complete하고 checksum-valid한 set과 explicit overwrite를 요구합니다. `DISCLOSURE-BLINDING-SEPARATION` JoinSplit relation 변경은 다음처럼 실행합니다.
 
 ```bash
 clairveil-setup --out artifacts/privacy --circuit joinsplit --overwrite
@@ -53,7 +53,7 @@ clairveil-setup --out artifacts/privacy --circuit joinsplit --overwrite
 
 Current JoinSplit development identity는 R1CS `135528343084d9395ac3b59f87eb32661471751d936424c6aa3bc369483292d4`, PK `b41790cd96c41b78d7f7ca30f81cb76f4bdb93371bbf0b9437642348306c16d7`, VK/consensus identity `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`입니다. 회전 뒤 old JoinSplit proof/job을 폐기하고 exact manifest를 fresh genesis/reset으로 설치하며 strict preflight를 요구합니다. Old/new consensus/file identity를 섞거나 이 변경 때문에 Batch를 회전하면 안 됩니다.
 
-`privacy-note-v1`은 `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1` exact order의 descriptor를 요구합니다. Validator는 consensus identity를 검사하고 네 VK만 load하며 prover-role readiness는 선택한 R1CS/PK pair를 lazy load합니다. 기록된 Session 3A development batch artifact에서 R1CS는 `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK는 `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK는 `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`입니다. Generation peak RSS는 `3,308,797,952 B`, role readiness peak RSS는 `1,295,482,880 B`였습니다.
+`privacy-note-v1`은 `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1` exact order의 descriptor를 요구합니다. Validator는 consensus identity를 검사하고 네 VK만 load하며 prover-role readiness는 선택한 R1CS/PK pair를 lazy load합니다. 기록된 BatchJoinSplit16x32 development artifact에서 R1CS는 `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK는 `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK는 `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`입니다. Generation peak RSS는 `3,308,797,952 B`, role readiness peak RSS는 `1,295,482,880 B`였습니다.
 
 이는 development identity일 뿐입니다. Formal trusted setup, artifact signing, reproducible production generation, custody, distribution은 downstream release 책임입니다.
 
@@ -233,4 +233,4 @@ Clairveil core를 downstream mainnet에 붙이기 전 최소 gate:
 7. 지원 denom별 deposit/withdraw e2e 이후 `reserve/{denom}`이 `invariant_holds=true`를 반환합니다.
 8. chain-specific threat model이 작성되어 있습니다.
 9. Release commit 기준 `TestBatchTransferDirectCoreIntegration`, atomic scan-failure test, cross-message 2x2+batch/batch+batch rollback test가 통과합니다.
-10. Session 3B SDK, remote batch prover route, typed scanner/decrypt 경로, one-proof payroll integration, CLI/tutorial, conformance fixture, 실제 localnet workflow를 함께 통과시키고 formal setup, production artifact release, external audit, downstream wallet product는 별도 gate로 유지합니다.
+10. batch integration이 제공하는 SDK, remote batch prover route, typed scanner/decrypt 경로, one-proof payroll integration, CLI/tutorial, conformance fixture, 실제 localnet workflow를 함께 통과시키고 formal setup, production artifact release, external audit, downstream wallet product는 별도 gate로 유지합니다.

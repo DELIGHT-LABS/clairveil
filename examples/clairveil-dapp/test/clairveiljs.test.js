@@ -521,7 +521,7 @@ test("legacy external ClairveilJS scanner fails closed on privacy-fixed-v1 depos
   });
 
   // The npm/GitHub ClairveilJS dependency is downstream of this repository.
-  // Session 2 freezes its NoteV1 handoff but does not implement that external
+  // The NoteV1 contract freezes its downstream handoff but does not implement that external
   // SDK upgrade; accepting the old JSON/raw-ciphertext contract would be an
   // unsafe compatibility fallback.
   assert.equal(result.notes.length, 0);

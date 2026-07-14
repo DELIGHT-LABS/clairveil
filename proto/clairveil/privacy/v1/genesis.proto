@@ -31,7 +31,7 @@ message AssetRegistryEntryV1 {
 
 // PrivacyScanCursorV1 is ordered lexicographically by
 // (height, global_sequence, output_index). It is shared by Deposit,
-// JoinSplit2x2, and future batch operations.
+// JoinSplit2x2, and BatchJoinSplit16x32 operations.
 message PrivacyScanCursorV1 {
   int64 height = 1;
   uint64 global_sequence = 2;

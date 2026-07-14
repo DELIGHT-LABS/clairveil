@@ -137,15 +137,15 @@ make release-pack
 make release-pack-verify
 ```
 
-## 8. Session 3A Release Baseline
+## 8. Batch Chain-Core Release Baseline
 
-Release notes that include the Session 3A chain core must record all of the following together:
+Release notes that include the batch chain core must record all of the following together:
 
 - circuit set `privacy-note-v1`, identity schema `v1`, manifest schema `v2`, and exact required order `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`;
 - batch public-input order `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo` and schema SHA-256 `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`;
 - production proto/API `MsgBatchTransfer` and `BatchTransferOutput`, gas model `BatchGasModelV1`, sequence `privacy-sequence-v1`, scan schema `privacy-scan-v2`, asset registry `privacy-asset-registry-v1`, and privacy state version `2`;
 - development artifact identity: constraints `1,111,837`; R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`; PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`; VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`; generation/readiness peak RSS `3,308,797,952 B` / `1,295,482,880 B`;
-- when including the `S4-B02` 2x2 relation, JoinSplit constraints `99,775`, schema SHA-256 `4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82`, and development R1CS/PK/VK SHA-256 `135528343084d9395ac3b59f87eb32661471751d936424c6aa3bc369483292d4` / `b41790cd96c41b78d7f7ca30f81cb76f4bdb93371bbf0b9437642348306c16d7` / `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`, plus explicit old-proof/job invalidation and fresh-genesis/reset evidence;
+- when including the `DISCLOSURE-BLINDING-SEPARATION` 2x2 relation, JoinSplit constraints `99,775`, schema SHA-256 `4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82`, and development R1CS/PK/VK SHA-256 `135528343084d9395ac3b59f87eb32661471751d936424c6aa3bc369483292d4` / `b41790cd96c41b78d7f7ca30f81cb76f4bdb93371bbf0b9437642348306c16d7` / `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`, plus explicit old-proof/job invalidation and fresh-genesis/reset evidence;
 - direct core integration, atomic scan failure, and cross-message 2x2+batch/batch+batch rollback results.
 
-The same release note must distinguish the Session 3B experimental reference Go SDK/prover/scanner/payroll/CLI surfaces from downstream JS/product completion. Formal trusted setup, external audit, production artifact distribution, and production operations remain excluded. Development artifact hashes identify the tested binaries; they do not authorize production deployment.
+The same release note must distinguish the experimental Go reference SDK/prover/scanner/payroll/CLI surfaces provided by the batch integration from downstream JS/product completion. Formal trusted setup, external audit, production artifact distribution, and production operations remain excluded. Development artifact hashes identify the tested binaries; they do not authorize production deployment.

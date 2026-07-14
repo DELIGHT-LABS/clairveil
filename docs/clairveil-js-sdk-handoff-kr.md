@@ -273,7 +273,7 @@ x/privacy/client/sdk/transfer/service.go
 
 정확한 `JoinSplitCircuit` public-input 순서는 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `Nullifier0`, `Nullifier1`, `Commitment0`, `Commitment1`, `UserPrivacyPolicy`, `UserDisclosureDigest`, `FullDisclosureDigest`, `PayloadDigestHi`, `PayloadDigestLo`입니다. Field를 sort하거나 rename하면 안 됩니다. SHA-256 chain/payload digest는 field reduction 없이 big-endian 128-bit limb 두 개로 나눕니다. Chain domain input은 `"clairveil.chain-domain.v1"`, length-prefixed `chain_id`, length-prefixed `circuit_set_id`(`privacy-note-v1`) 순서입니다.
 
-Go 2x2 boundary는 이제 input/output NoteV1 두 개씩, canonical policy, sender public-key projection, recipient output randomness, user/full blinding과 final effect를 전달하는 `JoinSplitOwnerIntentSigningRequestV1`을 사용합니다. `ValidateJoinSplitOwnerIntentSigningRequestV1`은 ordered nullifier, commitment 두 개, value conservation, change ownership, user/audit disclosure digest를 재계산해 final effect와 대조하고 domain, payload digest, final intent, `DBS-01..03`도 검증합니다. `SignValidatedJoinSplitOwnerIntentV1`은 invalid request, redirected change, decoupled projection에서 callback을 호출하지 않습니다. Downstream structured wallet signer도 이 fail-before-sign contract를 유지해야 합니다. Transfer payload `v5`, proof/request/response `v2`, NoteV1, fixed payload encoding, disclosure digest 공식, 13-input schema 변경 없이 `S4-B02` implementation은 해결됐으며 새 JoinSplit VK identity는 `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`입니다.
+Go 2x2 boundary는 이제 input/output NoteV1 두 개씩, canonical policy, sender public-key projection, recipient output randomness, user/full blinding과 final effect를 전달하는 `JoinSplitOwnerIntentSigningRequestV1`을 사용합니다. `ValidateJoinSplitOwnerIntentSigningRequestV1`은 ordered nullifier, commitment 두 개, value conservation, change ownership, user/audit disclosure digest를 재계산해 final effect와 대조하고 domain, payload digest, final intent, `DBS-01..03`도 검증합니다. `SignValidatedJoinSplitOwnerIntentV1`은 invalid request, redirected change, decoupled projection에서 callback을 호출하지 않습니다. Downstream structured wallet signer도 이 fail-before-sign contract를 유지해야 합니다. Transfer payload `v5`, proof/request/response `v2`, NoteV1, fixed payload encoding, disclosure digest 공식, 13-input schema 변경 없이 `DISCLOSURE-BLINDING-SEPARATION` 구현을 완료했으며 새 JoinSplit VK identity는 `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`입니다.
 
 Bulk payroll 또는 다른 대량 전송 client에서 쓰는 note reservation은 on-chain protocol이 아니라 client/control-plane layer 계약입니다. Go reference implementation과 fixture는 아래에 있습니다.
 
@@ -516,7 +516,7 @@ JS SDK handoff가 완료되었다고 보려면 아래가 가능해야 합니다.
 - active circuit set `privacy-note-v1`, consensus `CircuitSetIdentity` schema `v1`, manifest schema `v2`
 - prover HTTP path `/v1/prover/transfer`, `/v1/prover/withdraw`
 - conformance fixture files under `x/privacy/client/sdk/conformance/testdata`
-- `DISCLOSURE-BLINDING-SEPARATION` V1 semantics/error code와 완료된 production 2x2 circuit/native/prepared/structured pre-sign enforcement. Downstream signer도 SDK-wide secret reuse와 non-canonical field alias 거부를 포함한 fail-before-release contract를 유지해야 함. Gate 1/2/3A/3B와 Session 4는 PASS했고 source는 `PUBLICATION_READY_EXPERIMENTAL`
+- `DISCLOSURE-BLINDING-SEPARATION` V1 semantics/error code와 완료된 production 2x2 circuit/native/prepared/structured pre-sign enforcement. Downstream signer도 SDK-wide secret reuse와 non-canonical field alias 거부를 포함한 fail-before-release contract를 유지해야 함. security, protocol, chain-core, and client-integration gates와 독립 공개 검증은 PASS했고 source는 `PUBLICATION_READY_EXPERIMENTAL`
 - `privacy_note_reservation_contract.json`의 note reservation status와 operation evidence contract
 
 아직 JS SDK가 독자적으로 결정해야 하는 항목은 아래입니다.
@@ -612,7 +612,7 @@ npm --prefix examples/js-sdk-prover-http-client run demo
 - transfer/withdraw request, response, proof version이 `v2`인지 확인합니다.
 - proof `payload_hash`가 prepared payload `payload_hash`와 같은지 확인합니다.
 
-## 17. Session 3B Reference Addendum
+## 17. Batch transfer reference addendum
 
 Repository에는 production core와 reference Go batch builder, bounded proof adapter/HTTP route, decrypting typed scanner, durable payroll integration, staged batch CLI가 포함됩니다. 이 JS SDK handoff에는 해당 contract의 downstream JS/TS 구현이 여전히 필요합니다. 기존 `transfer-batch` helper는 native 2x2 message를 orchestration하며 one-proof `MsgBatchTransfer`와 구분됩니다.
 

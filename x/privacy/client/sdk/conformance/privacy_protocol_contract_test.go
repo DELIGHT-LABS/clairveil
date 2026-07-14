@@ -115,7 +115,7 @@ type batchJoinSplitV1ContractFixture struct {
 
 func TestPrivacyNoteV1ContractIndependentGolden(t *testing.T) {
 	var fixture noteV1ContractFixture
-	loadSession2Fixture(t, "privacy_note_v1_contract.json", &fixture)
+	loadProtocolContractFixture(t, "privacy_note_v1_contract.json", &fixture)
 	require.Equal(t, "v1", fixture.SchemaVersion)
 	require.Equal(t, "SHA-256(\"clairveil.field-domain.v1\" || u32be(len(label)) || label) mod Fr", fixture.Domains.FieldDerivation)
 
@@ -170,7 +170,7 @@ func TestPrivacyNoteV1ContractIndependentGolden(t *testing.T) {
 
 func TestPrivacyBatchJoinSplitV1ContractIndependentGolden(t *testing.T) {
 	var fixture batchJoinSplitV1ContractFixture
-	loadSession2Fixture(t, "privacy_batch_joinsplit_v1_contract.json", &fixture)
+	loadProtocolContractFixture(t, "privacy_batch_joinsplit_v1_contract.json", &fixture)
 	require.Equal(t, "v1", fixture.SchemaVersion)
 	require.Equal(t, privacytypes.BatchJoinSplitV1MaxInputs, fixture.MaxInputs)
 	require.Equal(t, privacytypes.BatchJoinSplitV1MaxOutputs, fixture.MaxOutputs)
@@ -257,7 +257,7 @@ func TestPrivacyBatchJoinSplitV1ContractIndependentGolden(t *testing.T) {
 	require.Equal(t, 74551, fixture.WireState.QueryResponseBytes)
 }
 
-func loadSession2Fixture(t *testing.T, name string, target any) {
+func loadProtocolContractFixture(t *testing.T, name string, target any) {
 	t.Helper()
 	_, filename, _, ok := runtime.Caller(0)
 	require.True(t, ok)

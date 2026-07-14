@@ -196,7 +196,7 @@ batch_item_index
 - Batch nullifier queries are chunked.
 - Prepared transfer payload and prover response round-trip validation works.
 
-## Session 3B Reference Boundary
+## One-Proof Batch Payroll Reference Boundary
 
 The repository now includes a Go one-proof payroll graph that joins many input reservations to one `MsgBatchTransfer` operation and many item-evidence records, plus the batch builder, bounded prover route, broadcast/retry reconciliation, and typed scanner. The older payroll `transfer-batch` flow still coordinates native 2x2 messages and is not one 16x32 proof. This JS handoff requires a downstream JS/TS port and product UX before downstream support may be advertised.
 

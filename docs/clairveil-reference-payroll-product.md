@@ -4,7 +4,7 @@ Korean version: [clairveil-reference-payroll-product-kr.md](clairveil-reference-
 
 ## Purpose
 
-This document defines the Reference Payroll Product baseline for the current Clairveil checkout. It originated with the legacy phase 1.5 multi-message payroll path, but the current protocol/reference surface is the Session 3B one-proof `BatchJoinSplit16x32` / `MsgBatchTransfer` implementation.
+This document defines the Reference Payroll Product baseline for the current Clairveil checkout. It originated with the legacy phase 1.5 multi-message payroll path, but the current protocol/reference surface is the one-proof `BatchJoinSplit16x32` / `MsgBatchTransfer` implementation provided by the batch integration.
 
 As of 2026-07-13, the repository implements and validates the reference Go batch SDK, bounded prover route, typed scanner, many-input/one-operation/many-item payroll graph, workers, reconciliation, CLI, and localnet workflow. This is an experimental reference implementation; formal trusted setup, external audit, production artifact distribution, and production deployment remain separate gates.
 
@@ -32,7 +32,7 @@ The repository currently provides the following foundation.
 | reference payroll CLI | `cmd/clairveil-payroll` |
 | reference payroll daemon | `cmd/clairveil-payrolld`, `x/privacy/client/sdk/payroll/reference_daemon.go`, `x/privacy/client/sdk/payroll/live_daemon.go` |
 | repo-local demo product | `examples/reference-payroll/payroll-demo.json`, `scripts/reference-payroll-demo.sh` |
-| normative one-proof contract and handoff | `docs/clairveil-batch-joinsplit-16x32.md`, `docs/clairveil-session3b-batch-transfer-handoff.md` |
+| normative one-proof contract and handoff | `docs/clairveil-batch-joinsplit-16x32.md`, `docs/clairveil-batch-transfer-integration-handoff.md` |
 | one-proof batch SDK | `x/privacy/client/sdk/batchtransfer` |
 | one-proof payroll graph/workers | `x/privacy/client/sdk/payroll/batch_plan.go`, `x/privacy/client/sdk/payroll/batch_graph.go`, `x/privacy/client/sdk/payroll/batch_proof_worker.go`, `x/privacy/client/sdk/payroll/batch_broadcast.go`, `x/privacy/client/sdk/payroll/batch_reconcile.go` |
 | current one-proof localnet validation | `scripts/privacy-batch-joinsplit-localnet.sh`, `docs/clairveil-batch-joinsplit-localnet-tutorial.md` |
@@ -66,7 +66,7 @@ The legacy `transfer-batch` path still coordinates independent 2x2 `MsgTransfer`
 
 ## Product Assumptions
 
-The current Session 3B path uses one `BatchJoinSplit16x32` proof for one atomic batch operation that consumes 1..16 notes and creates 1..32 outputs. Payment, change, and explicit padding all occupy output slots, so 32 outputs do not always mean 32 payroll payments.
+The current batch reference integration path uses one `BatchJoinSplit16x32` proof for one atomic batch operation that consumes 1..16 notes and creates 1..32 outputs. Payment, change, and explicit padding all occupy output slots, so 32 outputs do not always mean 32 payroll payments.
 
 The older per-item `MsgTransfer` implementation and its one-proof-per-recipient capacity model remain available as legacy comparison and regression surfaces. They are not the current proof-count model. The one-proof batch implementation is experimental and does not by itself complete production productization or production artifact approval.
 
@@ -74,7 +74,7 @@ The older per-item `MsgTransfer` implementation and its one-proof-per-recipient 
 
 The default user disclosure policy is `all-private` / `none`. This does not disable mandatory audit disclosure; it only means user-facing disclosure is off by default.
 
-The current one-proof batch SDK/CLI applies disclosure independently per output. The legacy `transfer-batch` CLI continues to support the same shared disclosure flags as normal `transfer`: `all-private`, `amount`, `to`, `amount-to`, `from`, `amount-from`, `from-to`, and `amount-from-to`. Product integrations must preserve the per-output Session 3B contract and must not infer it from the legacy shared-flag path.
+The current one-proof batch SDK/CLI applies disclosure independently per output. The legacy `transfer-batch` CLI continues to support the same shared disclosure flags as normal `transfer`: `all-private`, `amount`, `to`, `amount-to`, `from`, `amount-from`, `from-to`, and `amount-from-to`. Product integrations must preserve the per-output batch reference integration contract and must not infer it from the legacy shared-flag path.
 
 The Reference Payroll Product exposes `PayrollDisclosurePolicy`.
 
@@ -157,7 +157,7 @@ seed-localnet-notes
 export-report
 ```
 
-The current Session 3B one-proof chain CLI surface is:
+The current one-proof BatchJoinSplit16x32 chain CLI surface is:
 
 ```text
 transfer-batch-16x32
@@ -166,17 +166,17 @@ prove-batch-transfer
 broadcast-batch-transfer
 ```
 
-Use the [Session 3B batch transfer handoff](clairveil-session3b-batch-transfer-handoff.md) and its conformance fixture for new one-proof integrations.
+Use the [batch transfer integration handoff](clairveil-batch-transfer-integration-handoff.md) and its conformance fixture for new one-proof integrations.
 
 `run`, `scan-evidence`, and `reconcile` provide the durable control-plane surface: plan confirmation, durable reservation/operation state, tx event/nullifier evidence scanning, and evidence-based reconciliation.
 
 `build-input-from-notes` converts treasury notes scanned with `list-notes --json` into `treasury_notes` in the payroll input.
 
-`settle-transfer-batch` validates the legacy `transfer-batch` tx result and recipient note-scan delta, then settles durable reservation state. In the legacy live localnet tutorial it bridges real chain tx output to the payroll final report; it is not the Session 3B batch-item reconciliation API.
+`settle-transfer-batch` validates the legacy `transfer-batch` tx result and recipient note-scan delta, then settles durable reservation state. In the legacy live localnet tutorial it bridges real chain tx output to the payroll final report; it is not the one-proof batch-item reconciliation API.
 
 `seed-localnet-notes` is a localnet rehearsal helper. It writes payroll amount notes and zero dummy notes into localnet genesis commitments and Alice's wallet cache to reduce preparation time for large restart/retry rehearsals. It is not production note preparation; staging/testnet should use real deposit, split/merge, and approval-based preparation flows.
 
-`clairveil-payrolld` reads the same durable legacy state and lets operators experience that flow end-to-end inside this repository. `simulated` mode creates deterministic simulated proof/tx/evidence instead of live chain proofs and broadcasts, validating the `Reserved -> Proving -> ProofReady -> Submitted -> ConfirmedSpent` flow. The current one-proof payroll path uses the separate Session 3B batch graph and batch workers.
+`clairveil-payrolld` reads the same durable legacy state and lets operators experience that flow end-to-end inside this repository. `simulated` mode creates deterministic simulated proof/tx/evidence instead of live chain proofs and broadcasts, validating the `Reserved -> Proving -> ProofReady -> Submitted -> ConfirmedSpent` flow. The current one-proof payroll path uses the separate one-proof batch graph and workers.
 
 `live` mode uses the SDK `LiveDaemon` state machine. Proof generation, tx broadcast, and scanner evidence collection are injected through `LiveOperationExecutor`. The CLI reference executor reads `-tx-query` on every tick and reconciles `Submitted` or `Unknown` operations. Production products should connect real prover, tx broadcaster, and tx/nullifier scanner implementations to the same state machine.
 
@@ -285,7 +285,7 @@ clairveil-payroll run \
   -out payroll-confirmed-plan.json
 ```
 
-`run` is idempotent for the same plan: rerunning it reads existing reservations and outputs the confirmed plan again. This command does not generate proofs or broadcast chain transactions. The legacy live localnet tutorial performs that work through `transfer-batch`/`settle-transfer-batch`; current one-proof integrations use the Session 3B batch graph and proof/broadcast/reconcile workers.
+`run` is idempotent for the same plan: rerunning it reads existing reservations and outputs the confirmed plan again. This command does not generate proofs or broadcast chain transactions. The legacy live localnet tutorial performs that work through `transfer-batch`/`settle-transfer-batch`; current one-proof integrations use the one-proof batch graph and proof/broadcast/reconcile workers.
 
 ### `clairveil-payroll status`
 
@@ -447,12 +447,12 @@ Key outputs:
 
 Success means `status-after-daemon.json` shows every reservation as `ConfirmedSpent` and every operation as `Succeeded`, and `final-report.json` has payroll status `Confirmed`.
 
-## Current Session 3B One-Proof Validation
+## Current One-Proof Batch Validation
 
 Run the static conformance gate and, when the required local resources and development artifacts are available, the actual node/prover/payroll workflow:
 
 ```bash
-go test ./x/privacy/client/sdk/conformance -run TestSession3BBatchTransferContract -count=1
+go test ./x/privacy/client/sdk/conformance -run TestBatchTransferContract -count=1
 make privacy-batch-joinsplit-localnet
 RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet
 ```
@@ -533,8 +533,8 @@ Schema strings are available through `reservation.PostgreSQLSchema()` and `reser
 
 As of 2026-07-13, the repository-level reference boundary includes:
 
-- Session 3B `BatchJoinSplit16x32`, `MsgBatchTransfer`, the Go batch SDK, bounded prover route, typed scanner, one-proof payroll graph/workers/reconciliation, and staged CLI are implemented.
-- The Session 3B conformance fixture and `make privacy-batch-joinsplit-localnet` static gate pass; the resource-heavy `RUN_LOCALNET=1` mode is the current actual one-proof validation path.
+- The `BatchJoinSplit16x32`/`MsgBatchTransfer` core and the Go batch SDK, bounded prover route, typed scanner, one-proof payroll graph/workers/reconciliation, and staged CLI are implemented.
+- The conformance fixture for batch integration and the `make privacy-batch-joinsplit-localnet` static gate pass; the resource-heavy `RUN_LOCALNET=1` mode is the current actual one-proof validation path.
 - Disclosure policy and key registry contracts are provided.
 - Note preparation analyzer is provided.
 - File-backed reference artifact store is provided.
@@ -565,4 +565,4 @@ This repository does not complete:
 
 ## Historical Legacy Phase 1 Localnet Rehearsal Record — 2026-07-08
 
-On 2026-07-08, the repo-local 1,000-item restart/retry rehearsal passed with `PAYROLL_SEED_NOTES=1` localnet seed mode. That dated run exercised the legacy per-item 2x2-proof `transfer-batch` path: after seeding, payroll plan, reservation, actual Groth16 proofs, actual multi-message transactions, recipient scan, settlement, and final report export all ran. Preserve it as restart/retry and durable-control-plane evidence, not as evidence for current Session 3B proof reduction or production note preparation. See [clairveil-reference-payroll-localnet-rehearsal-result.md](clairveil-reference-payroll-localnet-rehearsal-result.md).
+On 2026-07-08, the repo-local 1,000-item restart/retry rehearsal passed with `PAYROLL_SEED_NOTES=1` localnet seed mode. That dated run exercised the legacy per-item 2x2-proof `transfer-batch` path: after seeding, payroll plan, reservation, actual Groth16 proofs, actual multi-message transactions, recipient scan, settlement, and final report export all ran. Preserve it as restart/retry and durable-control-plane evidence, not as evidence for the current batch integration's reduction in proof count or for production note preparation. See [clairveil-reference-payroll-localnet-rehearsal-result.md](clairveil-reference-payroll-localnet-rehearsal-result.md).

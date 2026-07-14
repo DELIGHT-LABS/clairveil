@@ -46,8 +46,7 @@ const (
 	EventTypeDeposit          = "deposit"
 	EventTypeWithdraw         = "withdraw"
 	EventTypeShieldedTransfer = "shielded_transfer"
-	// EventTypeBatchTransferV1 is reserved for the Session 2 typed-state/wire
-	// prototype. No production Msg or keeper handler is registered yet.
+	// EventTypeBatchTransferV1 identifies typed batch-transfer state and events.
 	EventTypeBatchTransferV1 = "batch_transfer"
 
 	AttributeKeyCreator                              = "creator"
@@ -174,7 +173,7 @@ func GetPrivacyEventSequenceKey() []byte {
 
 // GetPrivacyGlobalSequenceKey is the consensus sequence shared by every
 // privacy operation. GetPrivacyEventSequenceKey remains as a compatibility
-// alias for callers compiled against the pre-Session-2 name.
+// alias for callers compiled against the legacy event-sequence name.
 func GetPrivacyGlobalSequenceKey() []byte {
 	return append([]byte(nil), privacyEventSequenceStoreKey...)
 }

@@ -10,7 +10,7 @@
 - Downstream 체인은 `x/privacy`를 import하고 자신의 `app.go`, genesis, CLI/API, 테스트넷 설정에 연결합니다.
 - EVM, policy module, precompile, fee policy, 권한 정책은 downstream 체인에서 구현합니다.
 - Clairveil reference daemon인 `clairveild`는 “모듈이 단독으로 완주되는지”를 검증하는 호스트이며, downstream app을 대체하지 않습니다.
-- Session 3A는 production `MsgBatchTransfer` chain core와 네 번째 circuit을 제공합니다. Session 3B는 reference Go SDK, bounded remote prover, typed wallet/payroll, batch CLI/tutorial surface를 추가합니다. Concrete package와 fixture를 import하고 proto만 보고 downstream JS/product contract를 추론하면 안 됩니다.
+- Batch chain core는 production `MsgBatchTransfer` 처리 경로와 네 번째 circuit을 제공합니다. Batch reference integration은 reference Go SDK, bounded remote prover, typed wallet/payroll, batch CLI/tutorial surface를 추가합니다. Concrete package와 fixture를 import하고 proto만 보고 downstream JS/product contract를 추론하면 안 됩니다.
 
 ## 2. Go module 의존성
 
@@ -324,7 +324,7 @@ tx privacy prove-batch-transfer
 tx privacy broadcast-batch-transfer
 ```
 
-현재 Session 3B surface에는 one-proof `MsgBatchTransfer` command인 `transfer-batch-16x32`, `prepare-batch-transfer`, `prove-batch-transfer`, `broadcast-batch-transfer`와 companion prover route `POST /v1/proofs/batch-transfer`가 있습니다. 이전 `transfer-batch` command는 의도적으로 다른 기능이며, 하나의 Cosmos transaction envelope에 여러 독립 `MsgTransfer`를 넣습니다. 이 legacy command를 one-proof batch protocol로 문서화하거나 wiring하면 안 됩니다.
+현재 batch reference integration surface에는 one-proof `MsgBatchTransfer` command인 `transfer-batch-16x32`, `prepare-batch-transfer`, `prove-batch-transfer`, `broadcast-batch-transfer`와 companion prover route `POST /v1/proofs/batch-transfer`가 있습니다. 이전 `transfer-batch` command는 의도적으로 다른 기능이며, 하나의 Cosmos transaction envelope에 여러 독립 `MsgTransfer`를 넣습니다. 이 legacy command를 one-proof batch protocol로 문서화하거나 wiring하면 안 됩니다.
 
 현재 query CLI로 직접 노출된 command는 아래입니다.
 
@@ -373,7 +373,7 @@ Downstream 통합은 아래가 모두 통과하면 1차 완료로 봅니다.
 - local single-node에서 deposit, transfer, disclosure decode, withdraw가 모두 통과합니다.
 - `tree_state`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, `nullifiers` query가 정상 응답합니다.
 - Four-circuit identity, batch development artifact readiness, direct core integration, deterministic gas, atomic rollback, typed scan/minimal-event test가 통과합니다.
-- Integration record는 구현된 Session 3B Go SDK/prover/wallet/payroll/CLI reference surface와 downstream product가 맡을 작업을 구분하고, formal production artifact는 제공되지 않음을 명시합니다.
+- Integration record는 구현된 batch integration용 Go SDK/prover/wallet/payroll/CLI reference surface와 downstream product가 맡을 작업을 구분하고, formal production artifact는 제공되지 않음을 명시합니다.
 - audit master private key custody policy가 production 운영 문서에 반영되어 있습니다.
 - wallet storage encryption과 remote prover privacy policy가 JS/TS SDK 또는 web wallet 설계 문서에 반영되어 있습니다.
 - downstream 전용 EVM/policy/precompile 연동은 별도 테스트로 분리되어 있습니다.

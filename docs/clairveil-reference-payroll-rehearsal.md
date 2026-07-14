@@ -4,21 +4,21 @@ Korean version: [clairveil-reference-payroll-rehearsal-kr.md](clairveil-referenc
 
 ## Purpose
 
-This document separates the current Session 3B one-proof rehearsal from the legacy phase 1 multi-message capacity model and its dated localnet evidence.
+This document separates the current one-proof BatchJoinSplit16x32 rehearsal from the legacy phase 1 multi-message capacity model and its dated localnet evidence.
 
 The current protocol/reference path is `BatchJoinSplit16x32` / `MsgBatchTransfer`: one atomic operation consumes 1..16 notes and creates 1..32 payment/change/padding outputs with one proof. The older `make reference-payroll-rehearsal` model still calculates one proof per recipient and legacy multi-message transaction envelopes. Preserve that output as comparison evidence; do not use it as the current one-proof capacity model.
 
-## Current Session 3B One-Proof Gate
+## Current One-Proof Batch Payroll Gate
 
 Run the conformance/static gate by default and opt into the actual node/prover/payroll workflow when the required local resources and development artifacts are available.
 
 ```bash
-go test ./x/privacy/client/sdk/conformance -run TestSession3BBatchTransferContract -count=1
+go test ./x/privacy/client/sdk/conformance -run TestBatchTransferContract -count=1
 make privacy-batch-joinsplit-localnet
 RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet
 ```
 
-The live path verifies one proof and one transaction envelope for the exercised payroll batch, the many-input/one-operation/many-item payroll graph, separate batch/item evidence, actual process and node restart, exact stored-byte retry, tx-hash-first reconciliation, spent-nullifier conflict handling, typed disclosure/decryption, and the default no-cross-endpoint-failover privacy boundary. See [clairveil-session3b-batch-transfer-handoff.md](clairveil-session3b-batch-transfer-handoff.md) and [clairveil-batch-joinsplit-localnet-tutorial.md](clairveil-batch-joinsplit-localnet-tutorial.md).
+The live path verifies one proof and one transaction envelope for the exercised payroll batch, the many-input/one-operation/many-item payroll graph, separate batch/item evidence, actual process and node restart, exact stored-byte retry, tx-hash-first reconciliation, spent-nullifier conflict handling, typed disclosure/decryption, and the default no-cross-endpoint-failover privacy boundary. See [clairveil-batch-transfer-integration-handoff.md](clairveil-batch-transfer-integration-handoff.md) and [clairveil-batch-joinsplit-localnet-tutorial.md](clairveil-batch-joinsplit-localnet-tutorial.md).
 
 This is an experimental reference gate, not production approval. Formal trusted setup, external audit, signed production artifact distribution, and a production-scale rehearsal remain separate work.
 
@@ -94,7 +94,7 @@ To run a small live localnet payroll flow together with the simulation, use the 
 RUN_LOCALNET=1 LOCALNET_PAYROLL_ITEM_COUNT=2 make reference-payroll-rehearsal
 ```
 
-This option runs `scripts/reference-payroll-live-localnet.sh` internally. On the localnet, it verifies the legacy path through treasury deposit, note scan, payroll planning/reservation, an actual multi-message `transfer-batch`, recipient note scan, settlement, and final report export. It is independent from the current one-proof Session 3B gate above.
+This option runs `scripts/reference-payroll-live-localnet.sh` internally. On the localnet, it verifies the legacy path through treasury deposit, note scan, payroll planning/reservation, an actual multi-message `transfer-batch`, recipient note scan, settlement, and final report export. It is independent from the current one-proof batch reference integration gate above.
 
 Increasing `LOCALNET_PAYROLL_ITEM_COUNT` lengthens the localnet run and increases proof/transaction costs. For the default rehearsal, use simulation to validate large numbers and a small smoke test to verify the chain path. For a restart/retry rehearsal of 1,000 or more items, use the seed mode described below.
 
@@ -137,7 +137,7 @@ tmp/reference-payroll-live-localnet-1k/out/payroll-settle-report-001.json ... pa
 
 As of 2026-07-08, the successful seeded 1,000-item localnet run recorded `confirmed_items=1000`, `succeeded_operations=1000`, `confirmed_spent_reservations=2000`, and `chunk_count=50`, with a wall-clock time of approximately 8 minutes 57 seconds.
 
-The purpose of this legacy 1,000-item localnet run was to verify the restart/retry invariant and durable control plane during development. For 10,000 items, 100,000 items, and concurrent peaks across multiple tenants, retain current one-proof staging/testnet evidence and a Session 3B-aware capacity report rather than extrapolating this legacy run.
+The purpose of this legacy 1,000-item localnet run was to verify the restart/retry invariant and durable control plane during development. For 10,000 items, 100,000 items, and concurrent peaks across multiple tenants, retain current one-proof staging/testnet evidence and a capacity report that covers the batch reference integration rather than extrapolating this legacy run.
 
 The successful actual 1,000-item localnet result and small multi-chunk smoke result from 2026-07-08 are recorded in [clairveil-reference-payroll-localnet-rehearsal-result.md](clairveil-reference-payroll-localnet-rehearsal-result.md).
 
@@ -174,11 +174,11 @@ The legacy `latest-rehearsal-summary.json` has the following structure.
 
 ## Current One-Proof Interpretation and Remaining Scaling Decisions
 
-`BatchJoinSplit16x32` and the Session 3B payroll SDK are already implemented and must not be described as future protocol work under an obsolete phase label. Interpret rehearsal evidence as follows:
+`BatchJoinSplit16x32` and the payroll SDK provided by the batch integration are already implemented and must not be described as future protocol work under an obsolete phase label. Interpret rehearsal evidence as follows:
 
 - The current proof count is one per atomic batch operation, not one per recipient. Each operation has 1..16 inputs and 1..32 total outputs; change and padding reduce the number of payment outputs available in that operation.
 - Legacy `proof_count`, `tx_envelope_count`, and completion estimates in this document are comparison values and cannot support a current one-proof capacity claim.
-- A current capacity claim must measure actual Session 3B shape distribution, prover latency and memory, transaction gas/inclusion, typed scan, disclosure verification, reconciliation, retry, and tenant scheduling under staging/testnet load.
+- A current capacity claim must measure the actual distribution of shapes used by the batch integration, prover latency and memory, transaction gas/inclusion, typed scan, disclosure verification, reconciliation, retry, and tenant scheduling under staging/testnet load.
 - If evidence shows that the frozen 16/32 shape is insufficient, any new circuit/protocol shape requires a separate roadmap, security review, circuit/keeper/SDK contract, and migration plan. It is not an unimplemented name already implied by this document.
 
 ## Related Commands

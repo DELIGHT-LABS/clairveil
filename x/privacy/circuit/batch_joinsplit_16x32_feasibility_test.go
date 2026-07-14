@@ -32,7 +32,7 @@ var (
 )
 
 // compiledBatchProductionCCS keeps the million-constraint production compile
-// shared across the normal solve matrix. The opt-in Session 2 resource gate
+// shared across the normal solve matrix. The opt-in feasibility resource gate
 // deliberately compiles separately because compile time is one of its outputs.
 func compiledBatchProductionCCS(t testing.TB) constraint.ConstraintSystem {
 	t.Helper()
@@ -82,7 +82,7 @@ func TestBatchJoinSplit16x32FeasibilityPublicInputOrder(t *testing.T) {
 
 func TestBatchJoinSplit16x32FeasibilityActivePrefixAndSentinels(t *testing.T) {
 	if testing.Short() {
-		t.Skip("full prototype solve is skipped in short mode")
+		t.Skip("full BatchJoinSplit16x32 solve is skipped in short mode")
 	}
 	ccs := compiledBatchProductionCCS(t)
 	assertSolve := func(t *testing.T, assignment *BatchJoinSplit16x32FeasibilityCircuit, wantSuccess bool) {
@@ -275,7 +275,7 @@ func (c *batchPointSubgroupCircuit) Define(api frontend.API) error {
 // TestBatchJoinSplit16x32FullShapeResourceGate is intentionally opt-in and is
 // the only batch benchmark that performs a development Groth16 setup. It also
 // runs 30 proof samples (five for each of five batch shapes plus five for
-// JoinSplit2x2). Session 4 records the emitted JSON; the ordinary solve matrix
+// JoinSplit2x2). Publication validation records the emitted JSON; the ordinary solve matrix
 // and solve benchmark share a compiled CCS, and no ordinary benchmark repeats
 // Groth16 setup.
 func TestBatchJoinSplit16x32FullShapeResourceGate(t *testing.T) {

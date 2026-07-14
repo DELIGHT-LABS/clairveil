@@ -434,7 +434,7 @@ func (k Keeper) getPrivacyScanEventOutputsV2(ctx sdk.Context, summary *types.Pri
 }
 
 // StorePrivacyScanV2 is the shared typed index writer for Deposit,
-// JoinSplit2x2, and future batch operations.
+// JoinSplit2x2, and BatchJoinSplit16x32 operations.
 func (k Keeper) StorePrivacyScanV2(ctx sdk.Context, summary *types.PrivacyScanSummaryV2, outputs []*types.PrivacyScanOutputV2) error {
 	if err := validatePrivacyScanSummaryV2(summary); err != nil {
 		return err

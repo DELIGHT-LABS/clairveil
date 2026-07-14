@@ -17,7 +17,7 @@ English version: [clairveil-privacy-accounting-design-note.md](clairveil-privacy
 | Transfer scan hints | `MsgTransfer.view_tags`는 off-circuit 2-byte scan hint입니다. accounting proof의 일부가 아닙니다. |
 | Signature/point hardening | gnark 표준 `eddsa.Verify`, point on-curve assertion, malformed point/scalar negative tests를 사용합니다. |
 | Reserve accounting | keeper가 denom별 deposit/withdraw totals와 module-account balance를 비교하는 `reserve/{denom}` query를 제공합니다. |
-| Artifact contract | active circuit set은 `privacy-note-v1`이며 consensus-pinned VK/schema identity와 deposit/spend/joinsplit artifact를 포함합니다. |
+| Artifact contract | active circuit set은 `privacy-note-v1`이며 consensus-pinned VK/schema identity와 `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1` artifact를 포함합니다. |
 
 ## 2. 공개 전 위험 모델
 
@@ -109,7 +109,7 @@ GET /clairveil/privacy/v1/reserve/{denom}
 
 ### Phase 6: Artifact rotation
 
-Session 2 NoteV1 foundation으로 대체되었습니다. Active set은 `privacy-note-v1`이며 deposit/spend/joinsplit descriptor와 consensus-pinned VK/public-input schema hash를 사용합니다. Generated binary는 계속 untracked이며 `clairveil-setup`으로 재생성합니다.
+NoteV1과 BatchJoinSplit16x32 protocol contract로 대체되었습니다. Active set은 `privacy-note-v1`이며 `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1` descriptor와 consensus-pinned VK/public-input schema hash를 사용합니다. Generated binary는 계속 untracked이며 `clairveil-setup`으로 재생성합니다.
 
 ## 5. Client Contract Notes
 
@@ -144,7 +144,7 @@ make release-pack-verify
 
 Artifact 검증:
 
-1. `clairveil-setup`으로 deposit/spend/joinsplit R1CS/PK/VK를 새로 생성합니다.
+1. `clairveil-setup`으로 필요한 R1CS/PK/VK artifact set 네 개를 모두 새로 생성합니다.
 2. `privacy_zk_manifest.json`의 `active_set_id=privacy-note-v1`와 consensus VK/public-input schema hash 일치를 확인합니다.
 3. checksum env를 strict preflight와 함께 사용합니다.
 4. downstream handoff 문서와 fixture schema가 새 contract를 반영하는지 확인합니다.

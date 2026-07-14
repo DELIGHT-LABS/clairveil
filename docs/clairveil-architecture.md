@@ -67,7 +67,7 @@ The wallet scans and selects notes, queries Merkle paths, fixes the chain/expiry
 
 ### BatchJoinSplit16x32 transfer
 
-The Session 3B flow prepares 1..16 inputs and 1..32 payment/change/padding outputs, then produces one proof and one `MsgBatchTransfer`. `transfer-batch-16x32` is this flow. The legacy `transfer-batch` command instead puts multiple independent `MsgTransfer` messages in one Cosmos transaction and is not the batch circuit protocol.
+The batch reference integration flow prepares 1..16 inputs and 1..32 payment/change/padding outputs, then produces one proof and one `MsgBatchTransfer`. `transfer-batch-16x32` is this flow. The legacy `transfer-batch` command instead puts multiple independent `MsgTransfer` messages in one Cosmos transaction and is not the batch circuit protocol.
 
 ### Withdraw
 

@@ -502,7 +502,7 @@ make reference-payroll-rehearsal
 
 The live localnet walkthrough is [clairveil-reference-payroll-live-localnet-tutorial.md](clairveil-reference-payroll-live-localnet-tutorial.md). The rehearsal walkthrough is [clairveil-reference-payroll-rehearsal.md](clairveil-reference-payroll-rehearsal.md).
 
-## 11. Session 2 Foundation Compatibility
+## 11. Batch Protocol Compatibility
 
 The active circuit set generated and checked by the CLI is `privacy-note-v1`. Notes, disclosures, and encrypted envelopes use canonical `privacy-fixed-v1`; commands emit/consume the typed envelope rather than raw ciphertext or legacy JSON plaintext. `AssetRegistryV1` is authoritative for resolving canonical denoms and 32-byte asset IDs. On upgrade, use fresh genesis, delete local wallet/scan/proof caches and old development artifacts, regenerate artifacts, and rescan. There is no legacy decode or in-place state migration.
 

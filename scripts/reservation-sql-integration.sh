@@ -21,16 +21,16 @@ if [[ -z "$postgres_dsn" ]]; then
     exit 1
   }
   docker info >/dev/null
-  container_name="clairveil-g3b03-postgres-$$"
+  container_name="clairveil-reservation-sql-postgres-$$"
   docker run --rm -d \
     --name "$container_name" \
     -e POSTGRES_HOST_AUTH_METHOD=trust \
-    -e POSTGRES_DB=clairveil_g3b03 \
+    -e POSTGRES_DB=clairveil_reservation_test \
     -p 127.0.0.1::5432 \
     postgres:17-alpine >/dev/null
   ready=false
   for _ in $(seq 1 60); do
-    if docker exec "$container_name" pg_isready -U postgres -d clairveil_g3b03 >/dev/null 2>&1; then
+    if docker exec "$container_name" pg_isready -U postgres -d clairveil_reservation_test >/dev/null 2>&1; then
       ready=true
       break
     fi
@@ -46,7 +46,7 @@ if [[ -z "$postgres_dsn" ]]; then
     echo "failed to resolve the PostgreSQL integration port" >&2
     exit 1
   fi
-  postgres_dsn="postgres://postgres@127.0.0.1:${host_port}/clairveil_g3b03?sslmode=disable"
+  postgres_dsn="postgres://postgres@127.0.0.1:${host_port}/clairveil_reservation_test?sslmode=disable"
 fi
 
 set +e

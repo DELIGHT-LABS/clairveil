@@ -39,12 +39,12 @@ docs/clairveil-circuits.md
 docs/clairveil-circuits-kr.md
 docs/clairveil-batch-joinsplit-16x32.md
 docs/clairveil-batch-joinsplit-16x32-kr.md
-docs/clairveil-batch-joinsplit-16x32-session-4-validation-report.md
-docs/clairveil-batch-joinsplit-16x32-session-4-validation-report-kr.md
+docs/clairveil-batch-joinsplit-16x32-publication-validation-report.md
+docs/clairveil-batch-joinsplit-16x32-publication-validation-report-kr.md
 docs/clairveil-batch-joinsplit-localnet-tutorial.md
 docs/clairveil-batch-joinsplit-localnet-tutorial-kr.md
-docs/clairveil-session3b-batch-transfer-handoff.md
-docs/clairveil-session3b-batch-transfer-handoff-kr.md
+docs/clairveil-batch-transfer-integration-handoff.md
+docs/clairveil-batch-transfer-integration-handoff-kr.md
 docs/clairveil-cli-reference.md
 docs/clairveil-cli-reference-kr.md
 docs/clairveil-testing-guide.md
@@ -115,7 +115,7 @@ x/privacy/client/sdk/conformance/testdata/privacy_relay_withdraw_contract.json
 x/privacy/client/sdk/conformance/testdata/privacy_wallet_golden_vectors.json
 x/privacy/client/sdk/conformance/testdata/privacy_note_v1_contract.json
 x/privacy/client/sdk/conformance/testdata/privacy_batch_joinsplit_v1_contract.json
-x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_session3b_contract.json
+x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_v1_contract.json
 examples/README.md
 examples/README-kr.md
 examples/audit-disclosure-keys/README.md

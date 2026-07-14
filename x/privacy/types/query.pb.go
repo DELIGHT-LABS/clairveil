@@ -2561,7 +2561,7 @@ type QueryClient interface {
 	AssetByDenom(ctx context.Context, in *QueryAssetByDenomRequest, opts ...grpc.CallOption) (*QueryAssetByDenomResponse, error)
 	// Canonical 32-byte asset ID로 AssetRegistryV1 entry 조회
 	AssetByID(ctx context.Context, in *QueryAssetByIDRequest, opts ...grpc.CallOption) (*QueryAssetByIDResponse, error)
-	// Deposit/JoinSplit2x2/future batch 공통 typed scan output 조회
+	// Deposit/JoinSplit2x2/BatchJoinSplit16x32 공통 typed scan output 조회
 	PrivacyScan(ctx context.Context, in *QueryPrivacyScanRequest, opts ...grpc.CallOption) (*QueryPrivacyScanResponse, error)
 	// 최대 16개 commitment의 path를 하나의 root/height snapshot에서 조회.
 	// 원격 호출은 여러 input note의 linkage를 query provider에 노출할 수 있음.
@@ -2739,7 +2739,7 @@ type QueryServer interface {
 	AssetByDenom(context.Context, *QueryAssetByDenomRequest) (*QueryAssetByDenomResponse, error)
 	// Canonical 32-byte asset ID로 AssetRegistryV1 entry 조회
 	AssetByID(context.Context, *QueryAssetByIDRequest) (*QueryAssetByIDResponse, error)
-	// Deposit/JoinSplit2x2/future batch 공통 typed scan output 조회
+	// Deposit/JoinSplit2x2/BatchJoinSplit16x32 공통 typed scan output 조회
 	PrivacyScan(context.Context, *QueryPrivacyScanRequest) (*QueryPrivacyScanResponse, error)
 	// 최대 16개 commitment의 path를 하나의 root/height snapshot에서 조회.
 	// 원격 호출은 여러 input note의 linkage를 query provider에 노출할 수 있음.

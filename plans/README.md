@@ -30,7 +30,7 @@ Plan status, owner/scope, and superseding document should be updated when the im
 | [Session 3B integration](clairveil-batch-joinsplit-16x32-session-3b-integration-kr.md) | Gate 3B PASS |
 | [Session 4 publication validation](clairveil-batch-joinsplit-16x32-session-4-publication-validation-kr.md) | Complete; experimental source-publication gate PASS |
 
-Current batch behavior is documented in `docs/clairveil-batch-joinsplit-16x32*.md`, `docs/clairveil-session3b-batch-transfer-handoff*.md`, and the current code. These plans are historical gate ledgers, not a competing API reference.
+Current batch behavior is documented in `docs/clairveil-batch-joinsplit-16x32*.md`, `docs/clairveil-batch-transfer-integration-handoff*.md`, and the current code. These plans are historical gate ledgers, not a competing API reference.
 
 ## Completed Benchmark Records
 

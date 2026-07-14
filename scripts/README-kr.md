@@ -12,7 +12,7 @@
 - `govulncheck-with-policy.sh`: `govulncheck`를 실행하고 repo vulnerability exception policy를 적용합니다.
 - `localnet-smoke.sh`: `clairveild`를 build하고 임시 local validator genesis를 만든 뒤 `RPC_PORT`, `P2P_PORT`, `ABCI_PORT`, `GRPC_PORT`, `API_PORT`, `PPROF_PORT` override를 적용해 node start와 block commit을 짧게 검증합니다.
 - `privacy-e2e-smoke.sh`: deposit, transfer, disclosure decode, direct withdraw, relayed withdraw까지 local privacy flow 전체를 검증합니다.
-- `privacy-batch-joinsplit-localnet.sh`: 기본값으로 Session 3B 16x32 fixture를 검증하고, `RUN_LOCALNET=1`이면 실제 node와 `clairveil-proverd`를 시작해 단계형 one-proof command로 1/1, mixed disclosure 3/4, 31+change, exact32, padding, 실제 process restart/retry, non-zero-height genesis export/import, typed cursor/path continuation, reserve/asset/wallet round trip을 실행합니다. `grpcurl`이 필요합니다. 이미 검증한 development artifact를 재사용하려면 `CLAIRVEIL_BATCH_ARTIFACT_DIR`를 지정합니다.
+- `privacy-batch-joinsplit-localnet.sh`: 기본값으로 batch reference integration 16x32 fixture를 검증하고, `RUN_LOCALNET=1`이면 실제 node와 `clairveil-proverd`를 시작해 단계형 one-proof command로 1/1, mixed disclosure 3/4, 31+change, exact32, padding, 실제 process restart/retry, non-zero-height genesis export/import, typed cursor/path continuation, reserve/asset/wallet round trip을 실행합니다. `grpcurl`이 필요합니다. 이미 검증한 development artifact를 재사용하려면 `CLAIRVEIL_BATCH_ARTIFACT_DIR`를 지정합니다.
 - `privacy-bench.sh`: privacy circuit benchmark를 실행하고 structured JSON/Markdown report를 생성합니다.
 - `privacy-proverd-bench.sh`: in-process prover HTTP transport benchmark를 실행합니다.
 - `privacy-proverd-load-bench.sh`: `PROVERD_URL`로 이미 실행 중인 external `clairveil-proverd` 1개를 측정하거나, `PROVERD_URLS`로 round-robin prover pool을 측정합니다. `PROVERLOAD_ALLOW_UNHEALTHY_ENDPOINTS=1`을 설정하면 preflight 실패 endpoint를 제외하고 unhealthy endpoint count를 기록합니다.
@@ -31,6 +31,6 @@
 - `privacy-benchmark-report.sh`: family별 `latest.json`을 합쳐 사람이 한 문서로 읽을 수 있는 `benchmarks/clairveil-benchmark-results-report-kr.md`를 생성합니다. `privacy-public-capacity-report.sh`는 기본적으로 이 script를 마지막에 호출하며, `GENERATE_HUMAN_BENCHMARK_REPORT=0`으로 끌 수 있습니다.
 - `release-pack.sh`: caller umask와 무관한 deterministic Git-derived file mode와 canonical directory/metadata mode로 downstream handoff tarball과 외부 sha256 파일을 `dist/` 아래 생성합니다. Final release는 packed commit의 annotated exact-SemVer tag를 요구하고 untagged clean commit은 CI용 non-publishable `snapshot-<full-sha>` identity를 사용합니다.
 - `release-pack-verify.sh`: tag-or-snapshot commit binding, release tag의 paired changelog heading, canonical/safe raw tar member, exact selected Git file set, canonical manifest, checksum, 필수 파일, 모든 packed Git blob과 raw/extracted Git-derived exact permission mode를 검증합니다. Default verify는 clean tree를 요구하고 기존 archive/checksum pair를 재사용합니다. Explicit input은 미리 존재해야 하고 재생성되지 않으며 exact lowercase 40-character `RELEASE_PACK_EXPECTED_COMMIT`이 필요합니다.
-- `session-3a-prepare-artifact-evidence.sh`: Clean tree에서 source-bound rotation evidence용 previous/current JoinSplit artifact directory를 repository 밖에 준비합니다.
-- `session-3a-validation-evidence.sh`: 제공하거나 새로 준비한 artifact set으로 exact Session 3A rotation, fresh-genesis, regression evidence gate를 실행합니다.
+- `prepare-joinsplit-artifact-rotation-evidence.sh`: Clean tree에서 source-bound rotation evidence용 previous/current JoinSplit artifact directory를 repository 밖에 준비합니다.
+- `validate-joinsplit-artifact-rotation-evidence.sh`: 제공하거나 새로 준비한 artifact set으로 exact JoinSplit artifact rotation, fresh-genesis, regression evidence gate를 실행합니다.
 - `docker-proverd-build.sh`: prover compose file을 검증하고 reference prover Docker image를 build/inspect합니다.

@@ -179,7 +179,7 @@ outputs = 2
 9. audit/self-view full disclosure는 non-zero blinding을 사용하고 `FullDisclosureDigest`에 묶입니다.
 10. Ordered nullifier, commitment, ciphertext, view tag, 모든 disclosure envelope, expiry는 서명 전에 확정되고 canonical payload digest를 통해 묶입니다. Relayer가 `creator`만 바꿀 수 있도록 `creator`, proof bytes, fee, gas, memo, sequence, tx signature는 제외됩니다.
 
-`S4-B02`는 recipient output `0`에 대한 `DISCLOSURE-BLINDING-SEPARATION` invariant를 동결합니다. Enabled user blinding은 `OutputRandomness[0]`과 달라야 하고, full blinding은 `OutputRandomness[0]` 및 user blinding과 각각 달라야 합니다. Policy `all-private`는 user blinding을 zero로 canonicalize하고 첫 번째 관계만 gate off합니다. JoinSplit2x2에는 disabled output slot이 없고 output `1`은 disclosure witness가 없는 active change note입니다. Production `JoinSplitCircuit`, shared native/prepared validator와 structured pre-sign boundary가 이 exact contract를 `99,775` constraints로 강제합니다. `S4-B02`, Gate 1/2/3A/3B와 Session 4는 완료됐으며 source는 `PUBLICATION_READY_EXPERIMENTAL`이지만 production-release ready는 아닙니다.
+`DISCLOSURE-BLINDING-SEPARATION` invariant는 recipient output `0`에 다음 조건을 요구합니다. Enabled user blinding은 `OutputRandomness[0]`과 달라야 하고, full blinding은 `OutputRandomness[0]` 및 user blinding과 각각 달라야 합니다. Policy `all-private`는 user blinding을 zero로 canonicalize하고 첫 번째 관계만 gate off합니다. JoinSplit2x2에는 disabled output slot이 없고 output `1`은 disclosure witness가 없는 active change note입니다. Production `JoinSplitCircuit`, shared native/prepared validator와 structured pre-sign boundary가 이 exact contract를 `99,775` constraints로 강제합니다. `DISCLOSURE-BLINDING-SEPARATION` 구현과 security, protocol, chain-core, client-integration, 독립 공개 검증 gate는 완료됐으며 source는 `PUBLICATION_READY_EXPERIMENTAL`이지만 production-release ready는 아닙니다.
 
 Transfer view tag는 별도 `JoinSplitCircuit` public input은 아니지만 ordered canonical payload digest에는 포함됩니다. `MsgTransfer`와 event에 실리는 public scan hint이며 note ownership signal로 취급하면 안 됩니다.
 
@@ -259,7 +259,7 @@ export CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict
 
 `privacy_zk_manifest.json` schema `v2`는 정확한 ordered circuit descriptor, VK SHA-256, public-input schema SHA-256을 기록합니다. Genesis/consensus state는 대응하는 `CircuitSetIdentity` schema `v1`을 고정하며 local checksum environment variable은 이를 override할 수 없습니다. Node는 serving 전에 local verifier identity와 consensus를 비교합니다. Validator는 네 required VK만 lazy load하고 prover는 proving 시 R1CS/PK를 load합니다. Mismatch는 startup/readiness를 막습니다. Generated R1CS/PK/VK binary와 secret은 commit하지 않습니다.
 
-Session 3A development artifact gate는 아래 batch artifact identity를 기록했습니다. 이는 측정한 development artifact의 identity이며 formal setup이나 production artifact release가 아닙니다.
+batch chain core development artifact gate는 아래 batch artifact identity를 기록했습니다. 이는 측정한 development artifact의 identity이며 formal setup이나 production artifact release가 아닙니다.
 
 | 항목 | 기록값 |
 | --- | --- |
@@ -273,7 +273,7 @@ Session 3A development artifact gate는 아래 batch artifact identity를 기록
 
 여기서 생성하는 setup은 development 전용입니다. 이 repo는 formal trusted setup, artifact signing ceremony, production artifact release, external audit를 수행하거나 주장하지 않습니다.
 
-`S4-B02` Session 3A 구현은 active circuit set `privacy-note-v1`, JoinSplit 13-input 순서/schema hash `4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82`, payload `v5`, proof/HTTP `v2`를 유지합니다. `privacy_joinsplit_{r1cs,pk,vk}.bin`만 회전했으며 development SHA-256은 각각 `135528343084d9395ac3b59f87eb32661471751d936424c6aa3bc369483292d4`, `b41790cd96c41b78d7f7ca30f81cb76f4bdb93371bbf0b9437642348306c16d7`, `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`입니다. Old JoinSplit proof job을 폐기하고 fresh genesis/reset을 사용해야 합니다. Batch artifact는 unchanged입니다.
+`DISCLOSURE-BLINDING-SEPARATION` batch chain core 구현은 active circuit set `privacy-note-v1`, JoinSplit 13-input 순서/schema hash `4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82`, payload `v5`, proof/HTTP `v2`를 유지합니다. `privacy_joinsplit_{r1cs,pk,vk}.bin`만 회전했으며 development SHA-256은 각각 `135528343084d9395ac3b59f87eb32661471751d936424c6aa3bc369483292d4`, `b41790cd96c41b78d7f7ca30f81cb76f4bdb93371bbf0b9437642348306c16d7`, `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`입니다. Old JoinSplit proof job을 폐기하고 fresh genesis/reset을 사용해야 합니다. Batch artifact는 unchanged입니다.
 
 ## 7. Reserve accounting query
 
@@ -304,13 +304,13 @@ GET /clairveil/privacy/v1/reserve/{denom}
 - production 배포에서는 artifact signing, reproducible generation, release provenance가 추가로 필요합니다.
 - Keeper는 cheap canonical Groth16 framing이 통과한 뒤 decode, VK load, pairing 전에 proof verification gas를 precharge합니다. Deposit/spend/joinsplit은 현재 attempt당 각각 `1,000,000` gas를 charge합니다. Cryptographically invalid proof도 full precharge를 소비하고 malformed framing은 소비하지 않습니다.
 
-## 10. NoteV1과 Session 3A batch core
+## 10. NoteV1과 batch chain core
 
 Active circuit set은 `privacy-note-v1`이고 required descriptor 순서는 `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`입니다. 네 회로, keeper tree, typed scan state는 하나의 domain-separated NoteV1 commitment/nullifier/tree 계약, canonical field/key 검사, exact depth-specific empty root를 공유합니다. Denom string은 circuit에 들어가지 않습니다. `AssetRegistryV1`이 32-byte `asset_id`에 대한 authoritative one-to-one mapping입니다. 이 변경은 breaking state/artifact transition이므로 fresh genesis, artifact 재생성, proof/note/scan cache 삭제, full rescan이 필요합니다.
 
-Canonical plaintext와 encrypted payload는 `privacy-fixed-v1`을 사용합니다. Note plaintext는 fixed 350 bytes, disclosure plaintext는 fixed 392 bytes이며 exact encryption payload 앞에는 20-byte typed envelope header가 붙습니다. Raw ciphertext, cross-kind decode, trailing-byte decode는 invalid입니다. `DISCLOSURE-BLINDING-SEPARATION`은 disclosure output별 user-vs-note, full-vs-note, full-vs-user inequality와 exact all-private/disabled gating을 요구합니다. Batch는 active output slot별로 이를 강제합니다. Production 2x2도 output 0 relation을 circuit, shared native/prepared validator와 structured pre-sign boundary에서 강제하고 JoinSplit development identity를 회전했습니다. `S4-B02`와 Gate 1/2/3A/3B fresh closure는 완료됐고 Session 4가 이 boundary를 독립 검증했습니다. 이는 cross-output global freshness까지 과장하지 않으면서 low-entropy disclosed value의 실용적 dictionary oracle을 막습니다.
+Canonical plaintext와 encrypted payload는 `privacy-fixed-v1`을 사용합니다. Note plaintext는 fixed 350 bytes, disclosure plaintext는 fixed 392 bytes이며 exact encryption payload 앞에는 20-byte typed envelope header가 붙습니다. Raw ciphertext, cross-kind decode, trailing-byte decode는 invalid입니다. `DISCLOSURE-BLINDING-SEPARATION`은 disclosure output별 user-vs-note, full-vs-note, full-vs-user inequality와 exact all-private/disabled gating을 요구합니다. Batch는 active output slot별로 이를 강제합니다. Production 2x2도 output 0 relation을 circuit, shared native/prepared validator와 structured pre-sign boundary에서 강제하고 JoinSplit development identity를 회전했습니다. `DISCLOSURE-BLINDING-SEPARATION`과 security, protocol, chain-core, client-integration gates의 fresh closure는 완료됐고 독립 공개 검증이 이 boundary를 검증했습니다. 이는 cross-output global freshness까지 과장하지 않으면서 low-entropy disclosed value의 실용적 dictionary oracle을 막습니다.
 
-`BatchJoinSplit16x32`는 이제 네 번째 production circuit입니다. Session 2에서 고정한 capacity 16/32, exact active prefix, zero disabled sentinel, 16개 independent depth-32 path, subgroup/key constraint, active-only distinctness, value conservation, output별 NoteV1/user/full-disclosure 검사, single owner signature를 그대로 유지합니다. Consensus public-input 순서는 아래와 같습니다.
+`BatchJoinSplit16x32`는 이제 네 번째 production circuit입니다. batch protocol contract에서 고정한 capacity 16/32, exact active prefix, zero disabled sentinel, 16개 independent depth-32 path, subgroup/key constraint, active-only distinctness, value conservation, output별 NoteV1/user/full-disclosure 검사, single owner signature를 그대로 유지합니다. Consensus public-input 순서는 아래와 같습니다.
 
 1. `MerkleRoot`
 2. `ChainDomainHi`
@@ -333,6 +333,6 @@ Canonical plaintext와 encrypted payload는 `privacy-fixed-v1`을 사용합니�
 
 Deposit, native 2x2 JoinSplit, batch transfer는 `privacy-sequence-v1` 순서와 `privacy-scan-v2` typed state를 공유합니다. Ciphertext/disclosure byte는 `PrivacyScanOutputV2`에 한 번만 저장하고 batch event에는 effect ID, count, root, version, expiry, relayer, audit identity만 둡니다. `TestBatchTransferDirectCoreIntegration`, `TestBatchTransferCoreRejectionsAndAtomicScanFailure`, `TestCrossMessageNullifierFailureRollsBackWholeCosmosTxCache`가 direct core success, atomic failure, 2x2+batch/batch+batch rollback을 검증합니다.
 
-Session 3A에는 public batch-transfer Go SDK, `clairveil-proverd` batch route, wallet scanner/decrypt UX, one-proof payroll planner/worker/reconcile integration, batch CLI/tutorial이 포함되지 않았습니다. 이 reference Go surface는 이후 Session 3B에서 구현하고 closure했습니다. Session 4는 live payroll/disclosure, 실제 SQLite/PostgreSQL, signer, resource, fuzz, race, release gate를 독립 재실행해 experimental source publication을 승인했습니다. Formal trusted setup, external audit, signed production artifact 배포는 수행하지 않았습니다.
+batch chain core에는 public batch-transfer Go SDK, `clairveil-proverd` batch route, wallet scanner/decrypt UX, one-proof payroll planner/worker/reconcile integration, batch CLI/tutorial이 포함되지 않았습니다. 이 reference Go surface는 이후 batch reference integration에서 구현하고 closure했습니다. 독립 공개 검증은 live payroll/disclosure, 실제 SQLite/PostgreSQL, signer, resource, fuzz, race, release gate를 독립 재실행해 experimental source publication을 승인했습니다. Formal trusted setup, external audit, signed production artifact 배포는 수행하지 않았습니다.
 
 Artifact registry는 role-aware입니다. Validator는 exact consensus identity를 검증하고 필요한 VK만 load하며 prover는 선택한 R1CS/PK pair를 lazy load합니다. Reference prover는 현재 circuit별 in-flight 1개와 queued 4개로 제한하고 positive 8 MiB body limit을 사용합니다. Request cancellation은 이미 실행 중인 in-process gnark solver를 종료하지 못합니다. Hard cancellation과 memory isolation에는 worker-process boundary가 필요합니다. Automatic prover failover는 계속 비활성화됩니다.

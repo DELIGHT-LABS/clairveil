@@ -78,7 +78,7 @@ service Query {
     option (google.api.http).get =
         "/clairveil/privacy/v1/assets/by_id/{asset_id_hex}";
   }
-  // Deposit/JoinSplit2x2/future batch 공통 typed scan output 조회
+  // Deposit/JoinSplit2x2/BatchJoinSplit16x32 공통 typed scan output 조회
   rpc PrivacyScan(QueryPrivacyScanRequest) returns (QueryPrivacyScanResponse) {
     option (google.api.http) = {
       post: "/clairveil/privacy/v1/privacy_scan"

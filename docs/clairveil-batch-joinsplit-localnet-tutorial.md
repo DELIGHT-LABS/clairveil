@@ -14,7 +14,7 @@ The implementation is experimental. Formal trusted setup and external audit have
 
 ## Quick Validation
 
-The default target validates the machine-readable Session 3B fixture and its Go conformance test without starting a node or generating large proving artifacts.
+The default target validates the machine-readable batch-integration fixture through its Go conformance test without starting a node or generating large proving artifacts.
 
 ```bash
 make privacy-batch-joinsplit-localnet
@@ -40,7 +40,7 @@ The runner executes these contracts in order:
 | `exact-thirty-two-payments` | 16 | 32 | 32 payments, no change | private, self-view enabled |
 | `explicit-zero-padding` | 1 | 1 | payment + 31 padding outputs | private, self-view disabled |
 
-The exact values and expected roles are pinned in `x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_session3b_contract.json`.
+The exact values and expected roles are pinned in `x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_v1_contract.json`.
 
 ## Companion Commands
 

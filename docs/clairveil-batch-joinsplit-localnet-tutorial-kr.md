@@ -14,7 +14,7 @@ transfer-batch-16x32  = MsgBatchTransfer 1개 / 16x32 proof 1개
 
 ## 빠른 검증
 
-기본 target은 node를 시작하거나 대형 proving artifact를 생성하지 않고 Session 3B fixture와 Go conformance test를 검증한다.
+기본 target은 node를 시작하거나 대형 proving artifact를 생성하지 않고 Go conformance test로 machine-readable batch-integration fixture를 검증한다.
 
 ```bash
 make privacy-batch-joinsplit-localnet
@@ -38,7 +38,7 @@ RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet
 | `exact-thirty-two-payments` | 16 | 32 | payment 32개, change 없음 | private, self-view enabled |
 | `explicit-zero-padding` | 1 | 1 | payment + padding 31개 | private, self-view disabled |
 
-정확한 amount, role, mode는 `x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_session3b_contract.json`에 고정되어 있다.
+정확한 amount, role, mode는 `x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_v1_contract.json`에 고정되어 있다.
 
 ## 단계형 command
 

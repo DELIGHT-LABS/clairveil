@@ -30,7 +30,7 @@
 | [Session 3B integration](clairveil-batch-joinsplit-16x32-session-3b-integration-kr.md) | Gate 3B PASS |
 | [Session 4 publication validation](clairveil-batch-joinsplit-16x32-session-4-publication-validation-kr.md) | Complete; experimental source-publication gate PASS |
 
-현재 batch 동작은 `docs/clairveil-batch-joinsplit-16x32*.md`, `docs/clairveil-session3b-batch-transfer-handoff*.md`, current code에 있습니다. 이 plan들은 historical gate ledger이며 API reference와 경쟁하지 않습니다.
+현재 batch 동작은 `docs/clairveil-batch-joinsplit-16x32*.md`, `docs/clairveil-batch-transfer-integration-handoff*.md`, current code에 있습니다. 이 plan들은 historical gate ledger이며 API reference와 경쟁하지 않습니다.
 
 ## 완료된 benchmark record
 

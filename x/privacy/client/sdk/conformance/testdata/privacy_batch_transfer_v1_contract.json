@@ -1,5 +1,5 @@
 {
-  "schema_version": "clairveil.batch-transfer.session3b.v1",
+  "schema_version": "clairveil.batch-transfer.contract.v1",
   "payload_version": "batch-transfer-payload-v1",
   "proof_version": "batch-transfer-proof-v1",
   "circuit_set_id": "privacy-note-v1",

@@ -275,7 +275,7 @@ Important constraints:
 
 The exact `JoinSplitCircuit` public-input order is: `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `Nullifier0`, `Nullifier1`, `Commitment0`, `Commitment1`, `UserPrivacyPolicy`, `UserDisclosureDigest`, `FullDisclosureDigest`, `PayloadDigestHi`, `PayloadDigestLo`. Do not sort or rename fields. SHA-256 chain/payload digests are split into two non-reduced big-endian 128-bit limbs. Chain domain input is `"clairveil.chain-domain.v1"`, length-prefixed `chain_id`, then length-prefixed `circuit_set_id` (`privacy-note-v1`).
 
-The Go 2x2 boundary now uses `JoinSplitOwnerIntentSigningRequestV1`, which carries both input and output NoteV1 values, the canonical policy, sender public-key projection, recipient output randomness, user/full blindings, and final effect. `ValidateJoinSplitOwnerIntentSigningRequestV1` rebuilds ordered nullifiers, both commitments, value conservation, change ownership, and user/audit disclosure digests, compares them with the final effect, recomputes the domain, payload digest, and final intent, and applies `DBS-01..03`; `SignValidatedJoinSplitOwnerIntentV1` never invokes the callback for an invalid, redirected, or decoupled projection. A downstream structured wallet signer MUST preserve this fail-before-sign contract. `S4-B02` implementation is resolved without changing transfer payload `v5`, proof/request/response `v2`, NoteV1, fixed payload encoding, disclosure digest formulas, or the 13-input schema; the new JoinSplit VK identity is `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`.
+The Go 2x2 boundary now uses `JoinSplitOwnerIntentSigningRequestV1`, which carries both input and output NoteV1 values, the canonical policy, sender public-key projection, recipient output randomness, user/full blindings, and final effect. `ValidateJoinSplitOwnerIntentSigningRequestV1` rebuilds ordered nullifiers, both commitments, value conservation, change ownership, and user/audit disclosure digests, compares them with the final effect, recomputes the domain, payload digest, and final intent, and applies `DBS-01..03`; `SignValidatedJoinSplitOwnerIntentV1` never invokes the callback for an invalid, redirected, or decoupled projection. A downstream structured wallet signer MUST preserve this fail-before-sign contract. Implementation of `DISCLOSURE-BLINDING-SEPARATION` is complete without changing transfer payload `v5`, proof/request/response `v2`, NoteV1, fixed payload encoding, disclosure digest formulas, or the 13-input schema; the new JoinSplit VK identity is `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`.
 
 For bulk payroll or other high-volume transfer clients, the note reservation contract is part of the client/control-plane layer rather than the on-chain protocol. The Go reference implementation and fixture are:
 
@@ -518,7 +518,7 @@ The JS SDK can currently treat these as stable contracts.
 - active circuit set `privacy-note-v1` with consensus `CircuitSetIdentity` schema `v1` and manifest schema `v2`
 - prover HTTP paths `/v1/prover/transfer`, `/v1/prover/withdraw`
 - conformance fixture files under `x/privacy/client/sdk/conformance/testdata`
-- `DISCLOSURE-BLINDING-SEPARATION` V1 semantics/error codes and completed production 2x2 circuit/native/prepared/structured pre-sign enforcement; downstream signers must preserve the fail-before-release contract, including SDK-wide secret reuse and non-canonical field-alias rejection. Gates 1/2/3A/3B and Session 4 pass, and the source is `PUBLICATION_READY_EXPERIMENTAL`
+- `DISCLOSURE-BLINDING-SEPARATION` V1 semantics/error codes and completed production 2x2 circuit/native/prepared/structured pre-sign enforcement; downstream signers must preserve the fail-before-release contract, including rejection of SDK-wide secret reuse and non-canonical field aliases. The security, protocol, chain-core, client-integration, and independent-publication-validation gates have passed, and the source is `PUBLICATION_READY_EXPERIMENTAL`
 - note reservation status and operation evidence contract in `privacy_note_reservation_contract.json`
 
 The JS SDK still needs to decide these independently.
@@ -614,7 +614,7 @@ This example runs a fixture-backed mock prover instead of a live `clairveil-prov
 - transfer/withdraw request, response, and proof versions are `v2`;
 - proof `payload_hash` equals the prepared payload `payload_hash`.
 
-## 17. Session 3B Reference Addendum
+## 17. Batch Transfer Reference Addendum
 
 The repository now includes the production core plus a reference Go batch builder, bounded proof adapter/HTTP route, decrypting typed scanner, durable payroll integration, and staged batch CLI. This JS SDK handoff still requires a downstream JS/TS implementation of those contracts. The older `transfer-batch` helper orchestrates native 2x2 messages and remains distinct from one `MsgBatchTransfer` proof.
 

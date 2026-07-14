@@ -22,7 +22,7 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
-// These messages freeze and measure the Session 2 max wire shape. They are
+// These messages freeze and measure the BatchJoinSplit16x32 maximum wire shape. They are
 // not registered with the Msg service and do not authorize a state transition.
 type BatchTransferWirePrototypeV1 struct {
 	Creator    string                                `protobuf:"bytes,1,opt,name=creator,proto3" json:"creator,omitempty"`

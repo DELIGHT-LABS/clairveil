@@ -46,8 +46,8 @@ Run `make docs-check` while editing. A release tag must use exact SemVer, be ann
 | --- | --- | --- |
 | Normative 16x32 contract | [BatchJoinSplit16x32](clairveil-batch-joinsplit-16x32.md) | [BatchJoinSplit16x32](clairveil-batch-joinsplit-16x32-kr.md) |
 | Live batch flow | [Batch localnet tutorial](clairveil-batch-joinsplit-localnet-tutorial.md) | [Batch localnet tutorial](clairveil-batch-joinsplit-localnet-tutorial-kr.md) |
-| Go SDK/prover/scanner/payroll/CLI handoff | [Session 3B handoff](clairveil-session3b-batch-transfer-handoff.md) | [Session 3B handoff](clairveil-session3b-batch-transfer-handoff-kr.md) |
-| Publication validation evidence | [Session 4 validation report](clairveil-batch-joinsplit-16x32-session-4-validation-report.md) | [Session 4 validation report](clairveil-batch-joinsplit-16x32-session-4-validation-report-kr.md) |
+| Go SDK/prover/scanner/payroll/CLI handoff | [Batch client integration handoff](clairveil-batch-transfer-integration-handoff.md) | [Batch client integration handoff](clairveil-batch-transfer-integration-handoff-kr.md) |
+| Publication validation evidence | [Independent publication validation report](clairveil-batch-joinsplit-16x32-publication-validation-report.md) | [Independent publication validation report](clairveil-batch-joinsplit-16x32-publication-validation-report-kr.md) |
 
 ## Client And Wallet
 

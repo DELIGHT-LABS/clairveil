@@ -437,8 +437,8 @@ func (m *MsgTransfer) GetExpiresAtUnix() int64 {
 }
 
 // MsgBatchTransfer performs one atomic 1..16 input / 1..32 output shielded
-// JoinSplit. Field numbers and meanings are frozen to the Session 2 wire
-// prototype. Counts are derived exclusively from the repeated field lengths.
+// JoinSplit. Field numbers and meanings form the version-1 batch-transfer wire
+// contract. Counts are derived exclusively from the repeated field lengths.
 type MsgBatchTransfer struct {
 	Creator    string                 `protobuf:"bytes,1,opt,name=creator,proto3" json:"creator,omitempty"`
 	Proof      []byte                 `protobuf:"bytes,2,opt,name=proof,proto3" json:"proof,omitempty"`

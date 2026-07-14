@@ -2,21 +2,21 @@
 
 ## 목적
 
-이 문서는 현재 Session 3B one-proof rehearsal과 legacy phase 1 multi-message capacity model 및 날짜가 있는 localnet evidence를 구분함.
+이 문서는 현재 one-proof BatchJoinSplit16x32 rehearsal과 legacy phase 1 multi-message capacity model 및 날짜가 있는 localnet evidence를 구분함.
 
 현재 protocol/reference 경로는 `BatchJoinSplit16x32` / `MsgBatchTransfer`임. Atomic operation 하나가 input note 1..16개를 소비하고 payment/change/padding output 1..32개를 proof 하나로 생성함. 기존 `make reference-payroll-rehearsal` model은 recipient당 proof 하나와 legacy multi-message tx envelope를 계속 계산함. 그 출력은 comparison evidence로 보존하되 현재 one-proof capacity model로 사용하면 안 됨.
 
-## 현재 Session 3B One-Proof Gate
+## 현재 one-proof batch payroll gate
 
 기본 conformance/static gate를 실행하고, 필요한 local resource와 development artifact가 있으면 actual node/prover/payroll workflow를 opt-in으로 실행함.
 
 ```bash
-go test ./x/privacy/client/sdk/conformance -run TestSession3BBatchTransferContract -count=1
+go test ./x/privacy/client/sdk/conformance -run TestBatchTransferContract -count=1
 make privacy-batch-joinsplit-localnet
 RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet
 ```
 
-live 경로는 실행한 payroll batch의 proof 1개와 tx envelope 1개, many-input/one-operation/many-item payroll graph, batch/item evidence 분리, 실제 process/node restart, 저장한 동일 signed bytes retry, tx-hash-first reconcile, spent-nullifier conflict 처리, typed disclosure/decryption, 기본 no-cross-endpoint-failover privacy boundary를 검증함. [clairveil-session3b-batch-transfer-handoff-kr.md](clairveil-session3b-batch-transfer-handoff-kr.md)와 [clairveil-batch-joinsplit-localnet-tutorial-kr.md](clairveil-batch-joinsplit-localnet-tutorial-kr.md)를 따름.
+live 경로는 실행한 payroll batch의 proof 1개와 tx envelope 1개, many-input/one-operation/many-item payroll graph, batch/item evidence 분리, 실제 process/node restart, 저장한 동일 signed bytes retry, tx-hash-first reconcile, spent-nullifier conflict 처리, typed disclosure/decryption, 기본 no-cross-endpoint-failover privacy boundary를 검증함. [clairveil-batch-transfer-integration-handoff-kr.md](clairveil-batch-transfer-integration-handoff-kr.md)와 [clairveil-batch-joinsplit-localnet-tutorial-kr.md](clairveil-batch-joinsplit-localnet-tutorial-kr.md)를 따름.
 
 이는 experimental reference gate이며 production 승인이 아님. Formal trusted setup, external audit, signed production artifact 배포, production-scale rehearsal은 별도 작업임.
 
@@ -92,7 +92,7 @@ simulation과 함께 작은 live localnet payroll flow도 실행하려면 다음
 RUN_LOCALNET=1 LOCALNET_PAYROLL_ITEM_COUNT=2 make reference-payroll-rehearsal
 ```
 
-이 옵션은 내부적으로 `scripts/reference-payroll-live-localnet.sh`를 실행함. localnet에서 treasury deposit, note scan, payroll plan/reservation, 실제 multi-message `transfer-batch`, recipient note scan, settle, final report export까지 legacy 경로를 확인함. 위의 현재 Session 3B one-proof gate와 독립된 경로임.
+이 옵션은 내부적으로 `scripts/reference-payroll-live-localnet.sh`를 실행함. localnet에서 treasury deposit, note scan, payroll plan/reservation, 실제 multi-message `transfer-batch`, recipient note scan, settle, final report export까지 legacy 경로를 확인함. 위의 현재 one-proof BatchJoinSplit16x32 gate와 독립된 경로임.
 
 `LOCALNET_PAYROLL_ITEM_COUNT`를 높이면 localnet 실행 시간이 길어지고 proof/tx 비용이 커짐. 기본 rehearsal에서는 큰 수치 검증을 simulation으로 하고, chain path는 작은 smoke로 확인하는 것을 권장함. 1천건 이상 restart/retry rehearsal은 아래 seed mode를 사용함.
 
@@ -135,7 +135,7 @@ tmp/reference-payroll-live-localnet-1k/out/payroll-settle-report-001.json ... pa
 
 2026-07-08 기준 성공한 1천건 seeded localnet run은 `confirmed_items=1000`, `succeeded_operations=1000`, `confirmed_spent_reservations=2000`, `chunk_count=50`을 기록했고 wall-clock은 약 8분 57초였음.
 
-이 legacy 1천건 localnet run의 목적은 개발 중 restart/retry invariant와 durable control plane을 확인하는 것이었음. 1만건, 10만건, 여러 tenant 동시 peak는 이 legacy run을 외삽하지 말고 현재 one-proof staging/testnet evidence와 Session 3B-aware capacity report를 함께 남겨야 함.
+이 legacy 1천건 localnet run의 목적은 개발 중 restart/retry invariant와 durable control plane을 확인하는 것이었음. 1만건, 10만건, 여러 tenant 동시 peak는 이 legacy run을 외삽하지 말고 현재 one-proof staging/testnet evidence와 batch reference integration을 반영한 capacity report를 함께 남겨야 함.
 
 2026-07-08 actual 1천건 localnet 성공 결과와 작은 multi-chunk smoke 성공 기록은 [clairveil-reference-payroll-localnet-rehearsal-result-kr.md](clairveil-reference-payroll-localnet-rehearsal-result-kr.md)에 남김.
 
@@ -172,11 +172,11 @@ legacy `latest-rehearsal-summary.json`은 다음 구조를 가짐.
 
 ## 현재 One-Proof 해석과 남은 Scaling 판단
 
-`BatchJoinSplit16x32`와 Session 3B payroll SDK는 이미 구현됐으며 obsolete phase label 아래의 미래 protocol 작업으로 설명하면 안 됨. Rehearsal evidence는 다음처럼 해석함.
+`BatchJoinSplit16x32`와 batch integration이 제공하는 payroll SDK는 이미 구현됐으며 obsolete phase label 아래의 미래 protocol 작업으로 설명하면 안 됨. Rehearsal evidence는 다음처럼 해석함.
 
 - 현재 proof 수는 recipient당 하나가 아니라 atomic batch operation당 하나임. Operation 하나는 input 1..16개와 전체 output 1..32개를 가지며 change와 padding이 해당 operation의 payment output 수를 줄임.
 - 이 문서의 legacy `proof_count`, `tx_envelope_count`, 완료 시간 추정값은 comparison 값이며 현재 one-proof capacity claim의 근거가 될 수 없음.
-- 현재 capacity claim에는 실제 Session 3B shape 분포, prover latency/memory, tx gas/inclusion, typed scan, disclosure 검증, reconcile, retry, tenant scheduling을 staging/testnet load에서 측정한 결과가 필요함.
+- 현재 capacity claim에는 실제 batch reference integration shape 분포, prover latency/memory, tx gas/inclusion, typed scan, disclosure 검증, reconcile, retry, tenant scheduling을 staging/testnet load에서 측정한 결과가 필요함.
 - 근거상 frozen 16/32 shape가 부족하면 새 circuit/protocol shape는 별도 roadmap, security review, circuit/keeper/SDK contract, migration plan이 필요함. 이 문서가 이미 암시한 미구현 이름으로 취급하면 안 됨.
 
 ## 관련 명령

@@ -196,7 +196,7 @@ batch_item_index
 - batch nullifier query를 chunking해서 사용할 수 있음.
 - prepared transfer payload/prover response round-trip이 검증됨.
 
-## Session 3B Reference Boundary
+## One-proof batch payroll reference 경계
 
 Repository에는 many input reservation을 one `MsgBatchTransfer` operation 및 many item-evidence record와 연결하는 Go one-proof payroll graph, batch builder, bounded prover route, broadcast/retry reconciliation, typed scanner가 포함됩니다. 기존 payroll `transfer-batch` flow는 계속 native 2x2 message를 coordination하며 one 16x32 proof가 아닙니다. 이 JS handoff는 downstream support를 advertise하기 전에 downstream JS/TS port와 product UX를 요구합니다.
 

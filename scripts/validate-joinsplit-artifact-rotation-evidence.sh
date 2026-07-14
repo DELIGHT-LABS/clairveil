@@ -13,13 +13,13 @@ cleanup() {
 trap cleanup EXIT
 
 fail() {
-	echo "session 3a validation evidence failed: $*" >&2
+	echo "JoinSplit artifact rotation validation failed: $*" >&2
 	exit 1
 }
 
 if [[ -z "$current_dir" && -z "$previous_dir" ]]; then
 	generated_root="$work_dir/generated-artifacts"
-	"$repo_root/scripts/session-3a-prepare-artifact-evidence.sh" "$generated_root"
+	"$repo_root/scripts/prepare-joinsplit-artifact-rotation-evidence.sh" "$generated_root"
 	current_dir="$generated_root/current"
 	previous_dir="$generated_root/previous"
 elif [[ -z "$current_dir" || -z "$previous_dir" ]]; then
@@ -90,7 +90,7 @@ run_exact_test \
 	CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_PROOF_ROTATION_GATE
 run_exact_test \
 	./x/privacy \
-	TestS4B02FreshGenesisUsesRotatedJoinSplitIdentity \
+	TestFreshGenesisUsesRotatedJoinSplitIdentity \
 	CLAIRVEIL_RUN_JOINSPLIT_FRESH_GENESIS_GATE
 
-echo "session 3a validation evidence verified: descriptor/tamper regression, source-bound current R1CS, actual artifact readiness, old/new proof-VK mismatch, fresh genesis"
+echo "JoinSplit artifact rotation evidence verified: descriptor/tamper regression, source-bound current R1CS, actual artifact readiness, old/new proof-VK mismatch, fresh genesis"

@@ -12,7 +12,7 @@ The recommended model separates responsibilities as follows.
 - The downstream chain imports `x/privacy` and wires it into its own `app.go`, genesis, CLI/API, and testnet configuration.
 - EVM, policy modules, precompiles, fee policy, and permission policy are implemented by the downstream chain.
 - The Clairveil reference daemon `clairveild` is a host for verifying that the module can run end-to-end by itself. It does not replace the downstream app.
-- Session 3A supplies the production `MsgBatchTransfer` chain core and fourth circuit. Session 3B adds reference Go SDK, bounded remote prover, typed wallet/payroll, and batch CLI/tutorial surfaces. Import their concrete packages and fixtures; do not infer a downstream JS/product contract from the proto alone.
+- The batch chain core supplies the production `MsgBatchTransfer` contract and fourth circuit. The batch integration adds a reference Go SDK, a bounded remote prover, typed wallet/payroll surfaces, and a batch CLI/tutorial. Import their concrete packages and fixtures; do not infer a downstream JS/product contract from the proto alone.
 
 ## 2. Go Module Dependency
 
@@ -326,7 +326,7 @@ tx privacy prove-batch-transfer
 tx privacy broadcast-batch-transfer
 ```
 
-The current Session 3B surface includes the one-proof `MsgBatchTransfer` commands `transfer-batch-16x32`, `prepare-batch-transfer`, `prove-batch-transfer`, and `broadcast-batch-transfer`, plus the companion prover route `POST /v1/proofs/batch-transfer`. The older `transfer-batch` command is intentionally different: it sends multiple independent `MsgTransfer` messages in one Cosmos transaction envelope. Do not document or wire that legacy command as the one-proof batch protocol.
+The current batch reference integration surface includes the one-proof `MsgBatchTransfer` commands `transfer-batch-16x32`, `prepare-batch-transfer`, `prove-batch-transfer`, and `broadcast-batch-transfer`, plus the companion prover route `POST /v1/proofs/batch-transfer`. The older `transfer-batch` command is intentionally different: it sends multiple independent `MsgTransfer` messages in one Cosmos transaction envelope. Do not document or wire that legacy command as the one-proof batch protocol.
 
 The query CLI currently exposed directly is:
 
@@ -375,7 +375,7 @@ Downstream integration is first-pass complete when all of the following pass.
 - A local single-node chain passes deposit, transfer, disclosure decode, and withdraw.
 - `tree_state`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, and `nullifiers` queries respond correctly.
 - The four-circuit identity, batch development artifact readiness, direct core integration, deterministic gas, atomic rollback, and typed scan/minimal-event tests pass.
-- The integration record distinguishes the implemented Session 3B Go SDK/prover/wallet/payroll/CLI reference surfaces from work still owned by the downstream product, and states that formal production artifacts are not supplied.
+- The integration record distinguishes the implemented Go SDK/prover/wallet/payroll/CLI reference surfaces for batch integration from work still owned by the downstream product, and states that formal production artifacts are not supplied.
 - Audit master private key custody policy is reflected in production operations docs.
 - Wallet storage encryption and remote prover privacy policy are reflected in JS/TS SDK or web wallet design docs.
 - Downstream-specific EVM/policy/precompile integration is separated into separate tests.

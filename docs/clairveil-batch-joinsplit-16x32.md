@@ -2,18 +2,18 @@
 
 ## 1. Status and scope
 
-This document freezes the Session 2 protocol contract and records its Session 3A consensus/core and Session 3B reference-client implementations. It is normative for NoteV1, domain separation, fixed encodings, the production 16-input/32-output statement, aggregate vector roots, disclosure digests, scan state, artifact identity, and resource accounting.
+This document freezes the batch protocol contract and records the production chain-core and reference-client implementations. It is normative for NoteV1, domain separation, fixed encodings, the production 16-input/32-output statement, aggregate vector roots, disclosure digests, scan state, artifact identity, and resource accounting.
 
-**Session 2 Gate 2: PASS.** Both feasibility gates were rerun or confirmed against the final two-stage user-disclosure contract:
+**Batch protocol feasibility: PASS.** Both feasibility gates were rerun or confirmed against the final two-stage user-disclosure contract:
 
 - **Full-shape circuit gate: PASS.** The corrected Groth16/BN254 prototype compiled, completed development setup, proved every shape including `16/32` without OOM, and improved warm proving cost per output over the current JoinSplit2x2 baseline.
 - **Max wire/state gate: PASS.** An actual protobuf message inside an actual Cosmos `TxRaw`, typed scan KV records, tree-write allowance, the minimal ABCI event, and the query response stayed within the frozen reference limits.
 
-Session 3A implements the production circuit and consensus path. Session 3B adds the repository's reference Go batch planner/preparer, remote batch prover route, lossless typed scanner, durable payroll graph, staged CLI, and localnet tutorial. The 2026-07-13 Session 4 independent validation passes Passes A–I, closes `S4-B01`, and approves `PUBLICATION_READY_EXPERIMENTAL`. A downstream JS/TS SDK or product, formal trusted setup, external audit, signed production artifact distribution, and production operations are still outside this repository-level completion.
+The batch chain core implements the production circuit and consensus path. The batch reference integration adds the repository's reference Go batch planner/preparer, remote batch prover route, lossless typed scanner, durable payroll graph, staged CLI, and localnet tutorial. The 2026-07-13 independent publication validation completed Passes A–I, closed `PROVER-FAILOVER-LIVE-EVIDENCE`, and approved `PUBLICATION_READY_EXPERIMENTAL`. A downstream JS/TS SDK or product, formal trusted setup, external audit, signed production artifact distribution, and production operations are still outside this repository-level completion.
 
-The 2026-07-12 Session 2 re-entry freezes `DISCLOSURE-BLINDING-SEPARATION` for `S4-B02`, and Session 3A implements it in the production `JoinSplitCircuit`, shared native/prepared validation, structured 2x2 pre-sign boundary, and JoinSplit development artifact identity. The 2026-07-13 fresh closures pass Gates 1/2/3A/3B and Session 4 without changing the public contract. `S4-B01` and `G3B-01..04` are resolved; unresolved Critical, High, and security-relevant Medium findings are zero.
+The 2026-07-12 batch-protocol re-entry froze `DISCLOSURE-BLINDING-SEPARATION`, and the batch chain core implements it in the production `JoinSplitCircuit`, shared native/prepared validation, structured 2x2 pre-sign boundary, and JoinSplit development artifact identity. The 2026-07-13 fresh closures pass the security, protocol, chain-core, client-integration, and independent-publication-validation gates without changing the public contract. `PROVER-FAILOVER-LIVE-EVIDENCE`, `ONE-PROOF-PAYROLL-E2E`, `LIVE-DISCLOSURE-VERIFICATION`, `SQL-GRAPH-ATOMICITY`, and `BATCH-SIGNER-SECRET-FRESHNESS` are resolved; unresolved Critical, High, and security-relevant Medium findings are zero.
 
-The active circuit set remains `privacy-note-v1` and now requires, in order, Deposit, Spend, JoinSplit2x2, and `batch-joinsplit-16x32-v1`. Development R1CS/PK/VK identities are evidence for Gate 3A, not production trust anchors.
+The active circuit set remains `privacy-note-v1` and now requires, in order, Deposit, Spend, JoinSplit2x2, and `batch-joinsplit-16x32-v1`. Development R1CS/PK/VK identities are evidence for the chain-core gate, not production trust anchors.
 
 Normative words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** have their usual protocol meaning.
 
@@ -148,7 +148,7 @@ Deposit and Withdraw require a registered denom. SDKs and UIs restore a display 
 238d5f23e4d918d40b0982ce3aef16a75c4d1760193d1c3b30b9f5df681903ca
 ```
 
-Adding a governance message for new assets remains outside Session 2.
+Adding a governance message for new assets remains outside the batch protocol contract.
 
 ### 3.4 Public-key and signature validation
 
@@ -222,7 +222,7 @@ batch_intent = MiMC(
 )
 ```
 
-`chain_domain_hi/lo` comes from the existing chain-domain contract and binds the chain ID and active circuit-set ID. The circuit constrains both chain limbs and both payload limbs to 128 bits and expiry to a non-zero 64-bit value. Session 3A keeper validation MUST also reject an expired message.
+`chain_domain_hi/lo` comes from the existing chain-domain contract and binds the chain ID and active circuit-set ID. The circuit constrains both chain limbs and both payload limbs to 128 bits and expiry to a non-zero 64-bit value. Keeper validation in the batch chain core MUST also reject an expired message.
 
 ### 4.3 Exact active prefix and disabled sentinels
 
@@ -399,7 +399,7 @@ DBS-03: enabled[i]      => full_disclosure_blinding[i] != user_disclosure_blindi
 
 An enabled non-all-private slot requires both blindings to be canonical and non-zero. An enabled all-private slot canonicalizes `privacy_policy=0` and `user_disclosure_blinding=0`; only `DBS-01` is gated off, while full blinding remains non-zero and `DBS-02`/`DBS-03` remain active. A disabled capacity slot canonicalizes policy, output randomness, user blinding, and full blinding all to zero and gates off all three inequalities. Active output randomness itself is a canonical field value and MAY be zero.
 
-BatchJoinSplit16x32 already enforces this exact contract independently for each of 32 capacity slots: 96 gated inequality sites plus sentinel/non-zero checks. JoinSplit2x2 has no disabled output capacity slot. Its disclosure witness applies only to recipient output `0`, so `i=0` and the compared note secret is exactly `OutputRandomness[0]`. Output `1` is an active change note with no user/full disclosure witness; it is not a disabled disclosure slot. Input randomness, `OutputRandomness[1]`, cross-output reuse, and cross-transaction reuse are outside `DBS-01..03`. The stronger SDK-wide `SECRET-FRESHNESS` policy is separate. `G3B-04` closed the structured batch signer boundary by enforcing that policy before signature release, and Session 4 additionally rejects non-canonical BN254 aliases before the same boundary.
+BatchJoinSplit16x32 already enforces this exact contract independently for each of 32 capacity slots: 96 gated inequality sites plus sentinel/non-zero checks. JoinSplit2x2 has no disabled output capacity slot. Its disclosure witness applies only to recipient output `0`, so `i=0` and the compared note secret is exactly `OutputRandomness[0]`. Output `1` is an active change note with no user/full disclosure witness; it is not a disabled disclosure slot. Input randomness, `OutputRandomness[1]`, cross-output reuse, and cross-transaction reuse are outside `DBS-01..03`. The stronger SDK-wide `SECRET-FRESHNESS` policy is separate. `BATCH-SIGNER-SECRET-FRESHNESS` closed the structured batch signer boundary by enforcing that policy before signature release, and the client-integration work added rejection of non-canonical BN254 aliases before the same boundary, as confirmed by independent publication validation.
 
 The shared native/prepared/structured-signer error contract uses the following stable, secret-free codes. Go callers preserve `*DisclosureBlindingErrorV1` through wrapping; external adapters map validation failure to their existing non-retryable invalid-request response without echoing secret values.
 
@@ -657,9 +657,9 @@ Validator readiness requires the complete local manifest identity to equal conse
 
 The registry is injectable, thread-safe, lazy, and cached separately by circuit and artifact type. `batch-joinsplit-16x32-v1` is the fourth entry in `RequiredCircuitIDs` and contributes three descriptors to the canonical 12-descriptor manifest. Validators load only requested VKs; provers load only selected R1CS/PK pairs.
 
-`S4-B02` narrows the accepted 2x2 witness set but does not change NoteV1, the 13 public inputs/order, the JoinSplit public-input schema digest, `TransferIntentV2`, disclosure digest formulas/domains, `privacy-fixed-v1`, canonical message payload bytes, protobuf, prepared transfer payload `v5`, proof/HTTP contract `v2`, manifest schema `v2`, identity schema `v1`, or circuit-set ID `privacy-note-v1`. Session 3A regenerated only the JoinSplit R1CS/PK/VK, replaced its manifest checksums and consensus `verifying_key_sha256`, and verified old/new proof and consensus/file mismatch plus fresh-genesis/reset readiness. Cached old JoinSplit proofs/jobs must be discarded; existing prepared payloads may be re-proved only after the new semantic validator accepts them. BatchJoinSplit16x32 source/artifacts and the other nine artifact files remain byte-identical.
+`DISCLOSURE-BLINDING-SEPARATION` narrows the accepted 2x2 witness set but does not change NoteV1, the 13 public inputs/order, the JoinSplit public-input schema digest, `TransferIntentV2`, disclosure digest formulas/domains, `privacy-fixed-v1`, canonical message payload bytes, protobuf, prepared transfer payload `v5`, proof/HTTP contract `v2`, manifest schema `v2`, identity schema `v1`, or circuit-set ID `privacy-note-v1`. The batch chain core regenerated only the JoinSplit R1CS/PK/VK, replaced its manifest checksums and consensus `verifying_key_sha256`, and verified old/new proof and consensus/file mismatch plus fresh-genesis/reset readiness. Cached old JoinSplit proofs/jobs must be discarded; existing prepared payloads may be re-proved only after the new semantic validator accepts them. BatchJoinSplit16x32 source/artifacts and the other nine artifact files remain byte-identical.
 
-The Session 3A development identity was generated from source commit `381c984189e823e5797104eb7cd2beb2386eaf80` at `2026-07-11T09:32:32Z`. It is reproducibility evidence only:
+The batch chain core development identity was generated from source commit `381c984189e823e5797104eb7cd2beb2386eaf80` at `2026-07-11T09:32:32Z`. It is reproducibility evidence only:
 
 | Batch artifact | Size | SHA-256 |
 | --- | ---: | --- |
@@ -669,7 +669,7 @@ The Session 3A development identity was generated from source commit `381c984189
 
 Generation peaked at `3,308,797,952 B` RSS. The opt-in role-readiness gate peaked at `1,295,482,880 B`, decoded only the batch VK for the validator role, only batch R1CS/PK for the prover role, and confirmed `1,111,837` constraints plus public-schema SHA-256 `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`. No generated binary is tracked.
 
-The `S4-B02` JoinSplit-only development rotation was generated from implementation commit `25c17ef5249703822455273a7c683694e70aabf4` at `2026-07-12T12:51:14Z` with gnark `v0.14.0`, Groth16/BN254 development `groth16.Setup`, and `clairveil-setup -circuit joinsplit -overwrite`:
+The `DISCLOSURE-BLINDING-SEPARATION` JoinSplit-only development rotation was generated from implementation commit `25c17ef5249703822455273a7c683694e70aabf4` at `2026-07-12T12:51:14Z` with gnark `v0.14.0`, Groth16/BN254 development `groth16.Setup`, and `clairveil-setup -circuit joinsplit -overwrite`:
 
 | JoinSplit artifact | Size | SHA-256 |
 | --- | ---: | --- |
@@ -707,7 +707,7 @@ batch_gas = verify_base
 
 All coefficients and all resource bounds MUST be positive. Usage must be within `1..16` inputs and `1..32` outputs; tree writes cannot be fewer than outputs, and global lookups cannot be fewer than inputs plus outputs. Multiplication and summation are checked for `uint64` overflow.
 
-Session 3A freezes these conservative V1 coefficients and bounds:
+The batch chain core freezes these conservative V1 coefficients and bounds:
 
 | Component | V1 value |
 | --- | ---: |
@@ -723,7 +723,7 @@ Session 3A freezes these conservative V1 coefficients and bounds:
 | tree-write bound | `1,056` nodes |
 | global-lookup bound | `48` |
 
-The explicit surcharge pays for privacy-specific proof verification, canonical hashing/encoding, state-growth amplification, Merkle computation/bookkeeping, and global uniqueness checks. Cosmos KV gas still pays for the underlying store reads and writes; the coefficients do not replace it. Thus the two meters cover different layers even when one logical operation causes both computation and physical I/O. The exact category breakdown and precharge-before-semantics/out-of-gas behavior are regression-tested. A real `1/1` handler success and a max `16/32` post-proof transition record the explicit descriptor separately from every Cosmos KV descriptor, preventing either layer from silently absorbing or duplicating the other's responsibility. Session 4 independently validated the experimental reference bounds; target-chain production coefficient governance and calibration remain a production-owner TODO.
+The explicit surcharge pays for privacy-specific proof verification, canonical hashing/encoding, state-growth amplification, Merkle computation/bookkeeping, and global uniqueness checks. Cosmos KV gas still pays for the underlying store reads and writes; the coefficients do not replace it. Thus the two meters cover different layers even when one logical operation causes both computation and physical I/O. The exact category breakdown and precharge-before-semantics/out-of-gas behavior are regression-tested. A real `1/1` handler success and a max `16/32` post-proof transition record the explicit descriptor separately from every Cosmos KV descriptor, preventing either layer from silently absorbing or duplicating the other's responsibility. Independent publication validation confirmed the experimental reference bounds; target-chain production coefficient governance and calibration remain a production-owner TODO.
 
 ## 10. Full-shape circuit feasibility result
 
@@ -762,9 +762,9 @@ The subgroup comparison isolates the 67-point on-curve/non-identity shape from t
 | `8/16` | `0.431` | `1,771.809` | `[1,816.801, 1,779.021]` | `1,797.911` | `[0.732, 0.680, 0.740]` |
 | `16/32` | `0.429` | `1,874.354` | `[1,791.545, 1,785.570]` | `1,788.5575` | `[0.699, 0.677, 0.698]` |
 
-The historical pre-`S4-B02` JoinSplit2x2 comparison used first prove `158.470 ms`, warm samples `[154.029, 157.718] ms`, and warm mean `155.8735 ms`. The corresponding historical max-shape comparison was `55.892422 ms/output` and `2.788813x`; it is retained for provenance, not as the current production ratio. Compile, setup, all proofs, and verification completed without OOM. The approximately 209 MB proving key and 123 MB R1CS are operationally plausible with per-role lazy loading, although memory remains a production capacity concern.
+The historical pre-`DISCLOSURE-BLINDING-SEPARATION` JoinSplit2x2 comparison recorded a first prove time of `158.470 ms`, warm samples `[154.029, 157.718] ms`, and a warm mean of `155.8735 ms`. The corresponding historical max-shape comparison was `55.892422 ms/output` and `2.788813x`; it is retained for provenance, not as the current production ratio. Compile, setup, all proofs, and verification completed without OOM. The approximately 209 MB proving key and 123 MB R1CS are operationally plausible with per-role lazy loading, although memory remains a production capacity concern.
 
-The historical Session 2 `S4-B02` re-entry compared the then-current production 2x2 circuit with a test-only circuit that appended exactly the frozen zero-sentinel assertion and `DBS-01..03`. On the same Apple M5 Pro/64 GiB/macOS 26.5.1, Go 1.25.12, gnark 0.14.0, BN254 Groth16 environment, one cold development sample produced:
+The historical re-entry for `DISCLOSURE-BLINDING-SEPARATION` in the batch protocol contract compared the then-current production 2x2 circuit with a test-only circuit that appended exactly the frozen zero-sentinel assertion and `DBS-01..03`. On the same Apple M5 Pro/64 GiB/macOS 26.5.1, Go 1.25.12, gnark 0.14.0, BN254 Groth16 environment, one cold development sample produced:
 
 | Metric | Current production 2x2 | Hardened feasibility target | Delta |
 | --- | ---: | ---: | ---: |
@@ -777,9 +777,9 @@ The historical Session 2 `S4-B02` re-entry compared the then-current production 
 | proof | `164 B` | `164 B` | `0 B` |
 | witness / prove / verify | `0.142 / 157.680 / 0.691 ms` | `0.119 / 161.169 / 0.674 ms` | single-sample feasibility only |
 
-The historical process peak RSS was `690,438,144 B`; no OOM occurred. Session 3A promoted the hardened relation to production and reran the cause-isolating controls: the legacy `99,765` relation accepts each fully refreshed negative while production `99,775` rejects it. The production cold gate reported R1CS `10,824,169 B`, PK `16,766,489 B`, VK `748 B`, proof `164 B`, and peak RSS `687,423,488 B`. The full Batch resource gate was rerun unchanged at `1,111,837` constraints, R1CS `122,813,535 B`, PK `209,218,621 B`, VK `716 B`, proof `164 B`, and peak RSS `3,324,461,056 B`, with no OOM. The target matched exactly, so no decision change was required.
+The historical process peak RSS was `690,438,144 B`; no OOM occurred. The batch chain core promoted the hardened relation to production and reran the cause-isolating controls: the legacy `99,765` relation accepts each fully refreshed negative while production `99,775` rejects it. The production cold gate reported R1CS `10,824,169 B`, PK `16,766,489 B`, VK `748 B`, proof `164 B`, and peak RSS `687,423,488 B`. The full Batch resource gate was rerun unchanged at `1,111,837` constraints, R1CS `122,813,535 B`, PK `209,218,621 B`, VK `716 B`, proof `164 B`, and peak RSS `3,324,461,056 B`, with no OOM. The target matched exactly, so no decision change was required.
 
-**Circuit gate conclusion: PASS.** The security constraints, explicit two-stage user leaf, subgroup checks, independent paths, and 16/32 capacities were retained. A constrained multiproof is not required for Session 3A by this gate.
+**Circuit gate conclusion: PASS.** The security constraints, explicit two-stage user leaf, subgroup checks, independent paths, and 16/32 capacities were retained. A constrained multiproof is not required for the batch chain core by this gate.
 
 ## 11. Max wire/state feasibility result
 
@@ -798,7 +798,7 @@ The measured max shape used 16 nullifiers, 32 outputs, a maximum valid 64-byte a
 | minimal ABCI event | `584 B` | `16 KiB` | PASS |
 | max query response | `74,551 B` | `4 MiB` | PASS |
 
-**Wire/state gate conclusion: PASS. Combined Gate 2 conclusion: PASS.** Session 3A may retain the 16/32 capacity and security constraints. The values are feasibility limits, not a license to omit per-message hard limits, explicit gas, or state-growth monitoring.
+**Wire/state gate conclusion: PASS. Combined protocol gate conclusion: PASS.** The batch chain core may retain the 16/32 capacity and security constraints. The values are feasibility limits, not a license to omit per-message hard limits, explicit gas, or state-growth monitoring.
 
 ## 12. Implemented keeper order
 
@@ -850,18 +850,18 @@ Production coverage is explicit. `TestBatchJoinSplit16x32ProductionPositiveMatri
 
 ## 14. Residual risks and explicit non-goals
 
-- The Session 3A core and Session 3B reference Go client/prover/scanner/payroll/CLI surfaces passed the Session 4 independent validation and are approved for experimental source publication. `PUBLICATION_READY_EXPERIMENTAL` is not `PRODUCTION_RELEASE_READY`; downstream JS/TS or product integration, a production audit, source/constraint freeze, formal trusted setup, signed production artifact provenance, and production rollout remain outstanding.
-- Development setup artifacts are not production trust anchors and are never committed. Their recorded checksums identify only this Gate 3A run.
-- Peak RSS was `3,354,689,536 B` (about 3.12 GiB) on the fresh Session 4 max-shape reference run. Lazy loading bounds unnecessary artifact residence but does not provide process-level hard isolation.
+- The batch chain core and batch reference Go client/prover/scanner/payroll/CLI surfaces passed the independent publication validation and are approved for experimental source publication. `PUBLICATION_READY_EXPERIMENTAL` is not `PRODUCTION_RELEASE_READY`; downstream JS/TS or product integration, a production audit, source/constraint freeze, formal trusted setup, signed production artifact provenance, and production rollout remain outstanding.
+- Development setup artifacts are not production trust anchors and are never committed. Their recorded checksums identify only this chain-core gate run.
+- Peak RSS was `3,354,689,536 B` (about 3.12 GiB) on the fresh max-shape reference run for independent publication validation. Lazy loading bounds unnecessary artifact residence but does not provide process-level hard isolation.
 - A client cancellation cannot stop gnark proving. Production process isolation, worker recycling, memory limits, and overload operations remain required.
 - Ciphertext decryptability is not proven. Auditor-key compromise, key-epoch rotation, and manual review of failed delivery remain operational risks.
 - Public input/output counts, timing, roots, batch grouping, and the minimal summary remain public metadata.
 - A remote prover sees the complete witness/payment batch; deployment must treat it as highly sensitive and keep automatic failover disabled.
 - Every normal append persists authoritative root/count/height metadata, but not historical internal nodes. Current-root paths use incremental nodes. The public non-current historical query admits at most 1,024 leaves and two concurrent rebuilds per keeper, then returns `ResourceExhausted`; larger online requests require the current root or a trusted local historical index. Offline recovery/export retains the separate `MaxMerkleRebuildLeaves` (1,048,576) bound, and large-tree export requires the complete persisted metadata index.
 - Current Deposit and JoinSplit2x2 still retain their existing event compatibility behavior. The production batch path alone uses the minimal-event rule; this is not a claim that every legacy event was redesigned.
-- Session 3A supplies conservative gas coefficients. Per-chain calibration/governance limits, new-asset registration governance, and long-run state-pruning policy remain deferred, but no represented work category is unmetered.
+- The batch chain core supplies conservative gas coefficients. Per-chain calibration/governance limits, new-asset registration governance, and long-run state-pruning policy remain deferred, but no represented work category is unmetered.
 
-There are no unresolved Critical or High Session 2 design findings, and Session 3A made no decision change to the frozen protocol. The items above are residual operational/release risks, not permission to weaken the security constraints or reduce the 16/32 capacity silently.
+There are no unresolved Critical or High batch protocol contract design findings, and the batch chain core made no decision change to the frozen protocol. The items above are residual operational/release risks, not permission to weaken the security constraints or reduce the 16/32 capacity silently.
 
 ## 15. Authoritative code and fixtures
 

@@ -135,15 +135,15 @@ make release-pack
 make release-pack-verify
 ```
 
-## 8. Session 3A release baseline
+## 8. Batch chain-core release baseline
 
-Session 3A chain core를 포함하는 release note는 아래를 한 묶음으로 기록해야 합니다.
+batch chain core를 포함하는 release note는 아래를 한 묶음으로 기록해야 합니다.
 
 - circuit set `privacy-note-v1`, identity schema `v1`, manifest schema `v2`, exact required order `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`;
 - batch public-input 순서 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`와 schema SHA-256 `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`;
 - production proto/API `MsgBatchTransfer`와 `BatchTransferOutput`, gas model `BatchGasModelV1`, sequence `privacy-sequence-v1`, scan schema `privacy-scan-v2`, asset registry `privacy-asset-registry-v1`, privacy state version `2`;
 - development artifact identity: constraint `1,111,837`; R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`; PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`; VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`; generation/readiness peak RSS `3,308,797,952 B` / `1,295,482,880 B`;
-- `S4-B02` 2x2 relation을 포함하면 JoinSplit constraint `99,775`, schema SHA-256 `4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82`, development R1CS/PK/VK SHA-256 `135528343084d9395ac3b59f87eb32661471751d936424c6aa3bc369483292d4` / `b41790cd96c41b78d7f7ca30f81cb76f4bdb93371bbf0b9437642348306c16d7` / `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`, old proof/job 폐기와 fresh-genesis/reset evidence;
+- `DISCLOSURE-BLINDING-SEPARATION` 2x2 relation을 포함하면 JoinSplit constraint `99,775`, schema SHA-256 `4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82`, development R1CS/PK/VK SHA-256 `135528343084d9395ac3b59f87eb32661471751d936424c6aa3bc369483292d4` / `b41790cd96c41b78d7f7ca30f81cb76f4bdb93371bbf0b9437642348306c16d7` / `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`, old proof/job 폐기와 fresh-genesis/reset evidence;
 - direct core integration, atomic scan failure, cross-message 2x2+batch/batch+batch rollback 결과.
 
-같은 release note에서 Session 3B experimental reference Go SDK/prover/scanner/payroll/CLI surface와 downstream JS/product 완료를 구분해야 합니다. Formal trusted setup, external audit, production artifact 배포, production 운영은 계속 제외합니다. Development artifact hash는 검증한 binary identity일 뿐 production 배포를 허가하지 않습니다.
+같은 release note에서 batch integration이 제공하는 experimental Go reference SDK/prover/scanner/payroll/CLI surface와 downstream JS/product 완료를 구분해야 합니다. Formal trusted setup, external audit, production artifact 배포, production 운영은 계속 제외합니다. Development artifact hash는 검증한 binary identity일 뿐 production 배포를 허가하지 않습니다.

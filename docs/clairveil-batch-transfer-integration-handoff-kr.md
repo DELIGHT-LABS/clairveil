@@ -1,8 +1,8 @@
-# Session 3B Batch Transfer Handoff
+# BatchJoinSplit16x32 클라이언트 통합 인수인계
 
-영문: [clairveil-session3b-batch-transfer-handoff.md](clairveil-session3b-batch-transfer-handoff.md)
+영문: [clairveil-batch-transfer-integration-handoff.md](clairveil-batch-transfer-integration-handoff.md)
 
-이 문서는 Session 3B `BatchJoinSplit16x32` client contract를 사용하는 Go, JS/TS wallet, prover, payroll, operations integrator용 handoff다. 프로젝트 Completion Record가 아니며 Master Roadmap을 변경하지 않는다.
+이 문서는 `BatchJoinSplit16x32` client contract와 reference integration을 사용하는 Go, JS/TS wallet, prover, payroll, operations integrator용 handoff다. 프로젝트 Completion Record가 아니며 Master Roadmap을 변경하지 않는다.
 
 ## 고정 integration identity
 
@@ -39,17 +39,17 @@ automatic multi-prover failover를 구현하지 않는다. ciphertext, roots, ca
 
 ## Shape conformance
 
-downstream 구현은 `x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_session3b_contract.json`을 실행해야 한다. fixture는 1/1, mixed disclosure 3-input/4-output, 31 payments+change, exact 32 payments, explicit exact32 padding을 고정한다.
+downstream 구현은 `x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_v1_contract.json` fixture를 사용하는 conformance test를 실행해야 한다. Fixture는 1/1, mixed disclosure 3-input/4-output, 31 payments+change, exact 32 payments, explicit exact32 padding을 고정한다.
 
 ```bash
-go test ./x/privacy/client/sdk/conformance -run TestSession3BBatchTransferContract -count=1
+go test ./x/privacy/client/sdk/conformance -run TestBatchTransferContract -count=1
 make privacy-batch-joinsplit-localnet
 RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet
 ```
 
 ## Prover와 operations
 
-prover readiness는 batch circuit의 valid R1CS/PK checksum을 뜻하며 validator VK readiness와 다르다. bounded body/JSON framing 뒤 batch permit을 획득하고 semantic validation부터 실제 gnark prove return까지 유지한다. request cancellation만으로 실행 중인 in-process proof capacity를 반환하지 않는다. queue saturation은 HTTP 429, `busy`, `retryable=true`이며 이 flag는 endpoint failover 권한이 아니다.
+prover readiness는 batch circuit의 valid R1CS/PK checksum을 뜻하며 validator VK readiness와 다르다. bounded body/JSON framing 뒤 batch permit을 획득하고 semantic validation을 시작한 때부터 실제 gnark prove가 반환될 때까지 유지한다. request cancellation만으로 실행 중인 in-process proof capacity를 반환하지 않는다. queue saturation은 HTTP 429, `busy`, `retryable=true`이며 이 flag는 endpoint failover 권한이 아니다.
 
 16x32 circuit은 memory 사용량이 크다. production hard cancellation과 containment에는 process isolation이 필요하다. request body, payload hash, note/path/amount/recipient/signature, witness-derived solver error를 log하지 않는다.
 

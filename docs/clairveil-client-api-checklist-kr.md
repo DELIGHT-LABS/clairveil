@@ -82,9 +82,9 @@ POST /v1/prover/withdraw
 POST /v1/proofs/batch-transfer
 ```
 
-Batch route는 Session 3B one-proof reference surface입니다. Legacy transfer/withdraw prover route와 path namespace가 다르고 batch prepared-payload/proof contract를 사용하므로, client가 문자열 치환으로 route를 추론하면 안 됩니다.
+Batch route는 batch integration이 제공하는 one-proof reference surface입니다. Legacy transfer/withdraw prover route와 path namespace가 다르고 batch prepared-payload/proof contract를 사용하므로, client가 문자열 치환으로 route를 추론하면 안 됩니다.
 
-Session 3B batch wire version 네 개를 서로 독립적으로 pin합니다.
+Batch-transfer wire version 네 개를 서로 독립적으로 pin합니다.
 
 | Wire object | Code constant | 필수 값 |
 | --- | --- | --- |
@@ -136,7 +136,7 @@ Client CI는 최소 아래를 검증해야 합니다.
 - `CircuitConfig`가 consensus `CircuitSetIdentity`를 반환하고 local manifest/env checksum을 consensus authority로 쓰지 않는지 검증합니다.
 - `docs/schemas/clairveil-js-wallet-contract.schema.json` fixture shape를 검증합니다.
 - `x/privacy/client/sdk/conformance/testdata` fixture를 로드합니다.
-- `privacy_batch_transfer_session3b_contract.json`이 `TestSession3BBatchTransferContract`를 통과해야 합니다. 이 test는 fixture의 schema, 다섯 boundary shape, restart/retry policy, typed scan policy, payroll evidence graph를 검사하고, 네 wire version, circuit/route, 16x32 limit를 현재 Go constant와 binding합니다.
+- `privacy_batch_transfer_v1_contract.json`이 `TestBatchTransferContract`를 통과해야 합니다. 이 test는 fixture의 schema, 다섯 boundary shape, restart/retry policy, typed scan policy, payroll evidence graph를 검사하고, 네 wire version, circuit/route, 16x32 limit를 현재 Go constant와 binding합니다.
 - `examples/js-sdk-fixture-validator`와 같은 semantic check를 수행합니다.
 - relay withdraw handoff fixture로 relayer `creator`와 payload `recipient` 분리를 검증합니다.
 - `examples/js-sdk-prover-http-client`와 같은 prover timeout/auth/response validation을 구현합니다.
@@ -146,7 +146,7 @@ Repo 기준 빠른 검증 명령:
 ```bash
 make examples
 go test ./x/privacy/client/sdk/conformance
-go test ./x/privacy/client/sdk/conformance -run '^TestSession3BBatchTransferContract$' -count=1
+go test ./x/privacy/client/sdk/conformance -run '^TestBatchTransferContract$' -count=1
 ```
 
 ## 7. Release Gate Checklist
@@ -207,9 +207,9 @@ Breaking 또는 migration impact가 있는 변경:
 - [Downstream integration guide](clairveil-downstream-cosmos-integration-guide-kr.md)
 - [Testing guide](clairveil-testing-guide-kr.md)
 
-## 10. Session 3B Reference / Downstream Client Gate
+## 10. Batch transfer reference / downstream client gate
 
-Repository에는 Session 3A core와 Session 3B reference Go batch SDK, bounded remote prover route, typed wallet scanner, durable payroll path, staged batch CLI가 포함됩니다. 이는 experimental reference surface이지 배포된 downstream JS/TS SDK나 production product가 아닙니다. Downstream client는 support를 advertise하기 전에 같은 fixture와 안전 기본값을 재현해야 합니다.
+Repository에는 batch chain core와 reference Go batch SDK, bounded remote prover route, typed wallet scanner, durable payroll path, staged batch CLI가 포함됩니다. 이는 experimental reference surface이지 배포된 downstream JS/TS SDK나 production product가 아닙니다. Downstream client는 support를 advertise하기 전에 같은 fixture와 안전 기본값을 재현해야 합니다.
 
 - [ ] Consensus active set `privacy-note-v1`의 required Deposit/Spend/JoinSplit/BatchJoinSplit16x32 순서를 pin하고 artifact identity, VK hash, public-input schema가 하나라도 다르면 거부합니다.
 - [ ] Note/disclosure/envelope payload를 canonical `privacy-fixed-v1`으로 encode합니다. Raw ciphertext, JSON plaintext, 잘못된 envelope kind, non-zero reserved byte, trailing byte를 거부합니다.

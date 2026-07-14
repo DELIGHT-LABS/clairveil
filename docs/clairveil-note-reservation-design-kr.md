@@ -14,7 +14,7 @@ Clairveil의 shielded transfer는 input note를 소비하고, nullifier를 공�
 
 예를 들어 payroll job이 1,000건의 지급을 준비하면서 treasury note 100개를 input 후보로 배정했다고 하자. 이 상태에서 다른 wallet transfer가 같은 note를 먼저 써버리거나, background merge 작업이 그 note를 소비하면 payroll proof는 더 이상 유효하지 않음. broadcast 시점에는 nullifier가 이미 사용되었거나 Merkle root가 맞지 않아 실패할 수 있음.
 
-따라서 production `MsgBatchTransfer`를 사용하는 Session 3B UX에는 note reservation이 필요함.
+따라서 production `MsgBatchTransfer`를 사용하는 batch reference integration UX에는 note reservation이 필요함.
 
 ## 핵심 결론
 

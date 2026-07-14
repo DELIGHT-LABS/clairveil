@@ -82,9 +82,9 @@ POST /v1/prover/withdraw
 POST /v1/proofs/batch-transfer
 ```
 
-The batch route is the Session 3B one-proof reference surface. It uses a separate path namespace from the legacy transfer/withdraw prover routes and requires the batch prepared-payload/proof contract; clients must not derive one route from the other by string substitution.
+The batch route is the one-proof reference surface provided by the batch integration. It uses a separate path namespace from the legacy transfer/withdraw prover routes and requires the batch prepared-payload/proof contract; clients must not derive one route from the other by string substitution.
 
-Pin all four Session 3B batch wire versions independently:
+Pin all four batch-transfer wire versions independently:
 
 | Wire object | Code constant | Required value |
 | --- | --- | --- |
@@ -136,7 +136,7 @@ Client CI should validate at least:
 - `CircuitConfig` returns consensus `CircuitSetIdentity` and never treats local manifest paths/env checksums as consensus authority;
 - fixture shape matches `docs/schemas/clairveil-js-wallet-contract.schema.json`;
 - fixtures load from `x/privacy/client/sdk/conformance/testdata`;
-- `privacy_batch_transfer_session3b_contract.json` passes `TestSession3BBatchTransferContract`, which checks its schema, five boundary shapes, restart/retry policy, typed scan policy, and payroll evidence graph while binding the four wire versions, circuit/route, and 16x32 limits to current Go constants;
+- `privacy_batch_transfer_v1_contract.json` passes `TestBatchTransferContract`, which checks its schema, five boundary shapes, restart/retry policy, typed scan policy, and payroll evidence graph while binding the four wire versions, circuit/route, and 16x32 limits to current Go constants;
 - semantic checks match `examples/js-sdk-fixture-validator`;
 - relay withdraw handoff fixtures validate the relayer `creator` and payload `recipient` split;
 - prover timeout/auth/response validation matches `examples/js-sdk-prover-http-client`.
@@ -146,7 +146,7 @@ Fast repo-level validation commands:
 ```bash
 make examples
 go test ./x/privacy/client/sdk/conformance
-go test ./x/privacy/client/sdk/conformance -run '^TestSession3BBatchTransferContract$' -count=1
+go test ./x/privacy/client/sdk/conformance -run '^TestBatchTransferContract$' -count=1
 ```
 
 ## 7. Release Gate Checklist
@@ -207,9 +207,9 @@ Adopting this contract requires clearing cached prepared payloads, proof respons
 - [Downstream integration guide](clairveil-downstream-cosmos-integration-guide.md)
 - [Testing guide](clairveil-testing-guide.md)
 
-## 10. Session 3B Reference / Downstream Client Gate
+## 10. Batch Transfer Reference / Downstream Client Gate
 
-The repository now includes the Session 3A core plus the Session 3B reference Go batch SDK, bounded remote prover route, typed wallet scanner, durable payroll path, and staged batch CLI. These are experimental reference surfaces, not a shipped downstream JS/TS SDK or production product. A downstream client must reproduce the same fixtures and safety defaults before advertising support.
+The repository now includes the batch chain core plus the reference Go batch SDK, bounded remote prover route, typed wallet scanner, durable payroll path, and staged batch CLI. These are experimental reference surfaces, not a shipped downstream JS/TS SDK or production product. A downstream client must reproduce the same fixtures and safety defaults before advertising support.
 
 - [ ] Pin consensus active set `privacy-note-v1` with the required Deposit/Spend/JoinSplit/BatchJoinSplit16x32 order, and reject any artifact identity, VK hash, or public-input schema mismatch.
 - [ ] Encode note/disclosure/envelope payloads as canonical `privacy-fixed-v1`; reject raw ciphertext, JSON plaintext, incorrect envelope kind, non-zero reserved bytes, and trailing bytes.

@@ -500,7 +500,7 @@ make reference-payroll-rehearsal
 
 live localnet 자세한 단계는 [clairveil-reference-payroll-live-localnet-tutorial-kr.md](clairveil-reference-payroll-live-localnet-tutorial-kr.md)를 따릅니다. rehearsal 자세한 단계는 [clairveil-reference-payroll-rehearsal-kr.md](clairveil-reference-payroll-rehearsal-kr.md)를 따릅니다.
 
-## 11. Session 2 Foundation Compatibility
+## 11. Batch protocol compatibility
 
 CLI가 생성하고 검사하는 active circuit set은 `privacy-note-v1`입니다. Note, disclosure, encrypted envelope는 canonical `privacy-fixed-v1`을 사용합니다. Command는 raw ciphertext나 legacy JSON plaintext가 아니라 typed envelope를 emit/consume합니다. `AssetRegistryV1`이 canonical denom과 32-byte asset ID resolve의 authoritative source입니다. Upgrade 시 fresh genesis를 사용하고 local wallet/scan/proof cache와 old development artifact를 삭제한 뒤 artifact를 다시 생성하고 rescan합니다. Legacy decode나 in-place state migration은 없습니다.
 

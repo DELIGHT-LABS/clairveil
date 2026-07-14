@@ -202,7 +202,7 @@ func CanonicalMsgBatchTransferPayloadSizeV1(msg *MsgBatchTransfer) (uint64, erro
 	return size, nil
 }
 
-// ValidateMsgBatchTransferEffectsV1 applies the frozen Session 2 effect
+// ValidateMsgBatchTransferEffectsV1 applies the frozen batch effect
 // semantics to the production message. Creator/proof framing is intentionally
 // outside this helper because neither field belongs to the owner-effect digest.
 func ValidateMsgBatchTransferEffectsV1(msg *MsgBatchTransfer) error {
@@ -213,7 +213,7 @@ func ValidateMsgBatchTransferEffectsV1(msg *MsgBatchTransfer) error {
 }
 
 // CanonicalMsgBatchTransferPayloadBytesV1 encodes the production message with
-// the exact Session 2 canonical owner-effect contract.
+// the exact canonical batch owner-effect contract.
 func CanonicalMsgBatchTransferPayloadBytesV1(msg *MsgBatchTransfer) ([]byte, error) {
 	if err := validateMsgBatchTransferEffectFramingV1(msg); err != nil {
 		return nil, err
@@ -264,7 +264,7 @@ func batchTransferPrototypeV1(msg *MsgBatchTransfer) *BatchTransferWirePrototype
 }
 
 // CanonicalBatchTransferPayloadBytesV1 freezes the exact owner-authorized
-// effect view for the Session 2 batch wire prototype. Creator and proof are
+// effect view for the batch wire compatibility mirror. Creator and proof are
 // deliberately excluded so a relayer may be replaced and a proof may be
 // regenerated without changing the logical effect. Counts are encoded once
 // as the lengths of their ordered vectors.

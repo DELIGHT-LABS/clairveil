@@ -2,18 +2,18 @@
 
 ## 1. 상태와 범위
 
-이 문서는 Session 2 프로토콜 계약을 동결하고 Session 3A consensus/core 및 Session 3B reference-client 구현 상태를 기록한다. NoteV1, domain separation, 고정 인코딩, production 16-input/32-output statement, aggregate vector root, disclosure digest, scan state, artifact identity, resource accounting에 대한 normative 문서다.
+이 문서는 batch protocol contract를 동결하고 production chain-core 및 reference-client 구현 상태를 기록한다. NoteV1, domain separation, 고정 인코딩, production 16-input/32-output statement, aggregate vector root, disclosure digest, scan state, artifact identity, resource accounting에 대한 normative 문서다.
 
-**Session 2 Gate 2: PASS.** final two-stage user-disclosure contract를 기준으로 두 feasibility gate를 재실행하거나 재확인했다.
+**Batch protocol feasibility: PASS.** final two-stage user-disclosure contract를 기준으로 두 feasibility gate를 재실행하거나 재확인했다.
 
 - **Full-shape circuit gate: PASS.** corrected Groth16/BN254 prototype이 compile과 development setup을 완료했고, OOM 없이 `16/32`를 포함한 모든 shape를 prove했으며, current JoinSplit2x2 baseline보다 output당 warm proving cost를 개선했다.
 - **Max wire/state gate: PASS.** 실제 protobuf message를 실제 Cosmos `TxRaw`에 넣고 typed scan KV record, tree-write allowance, minimal ABCI event, query response까지 측정한 결과 동결된 reference limit 안에 들었다.
 
-Session 3A는 production circuit과 consensus path를 구현한다. Session 3B는 repository의 reference Go batch planner/preparer, remote batch prover route, lossless typed scanner, durable payroll graph, staged CLI, localnet tutorial을 추가했다. 2026-07-13 Session 4 독립 검증은 Pass A~I를 통과하고 `S4-B01`을 닫아 `PUBLICATION_READY_EXPERIMENTAL`을 승인했다. Downstream JS/TS SDK 또는 product, formal trusted setup, external audit, signed production artifact 배포와 production 운영은 repository-level 완료 범위 밖이다.
+batch chain core는 production circuit과 consensus path를 구현한다. batch reference integration은 repository의 reference Go batch planner/preparer, remote batch prover route, lossless typed scanner, durable payroll graph, staged CLI, localnet tutorial을 추가했다. 2026-07-13 독립 공개 검증은 Pass A~I를 통과하고 `PROVER-FAILOVER-LIVE-EVIDENCE`을 닫아 `PUBLICATION_READY_EXPERIMENTAL`을 승인했다. Downstream JS/TS SDK 또는 product, formal trusted setup, external audit, signed production artifact 배포와 production 운영은 repository-level 완료 범위 밖이다.
 
-2026-07-12 Session 2 재진입은 `S4-B02`의 `DISCLOSURE-BLINDING-SEPARATION`을 동결했고 Session 3A는 이를 production `JoinSplitCircuit`, shared native/prepared validation, structured 2x2 pre-sign boundary와 JoinSplit development artifact identity에 구현했다. 2026-07-13 fresh closure는 public contract 변경 없이 Gate 1/2/3A/3B와 Session 4를 PASS했다. `S4-B01`과 `G3B-01..04`는 해결됐으며 unresolved Critical, High, security-relevant Medium finding은 0이다.
+2026-07-12 batch protocol contract 재진입은 `DISCLOSURE-BLINDING-SEPARATION`을 동결했고, batch chain core는 이를 production `JoinSplitCircuit`, shared native/prepared validation, structured 2x2 pre-sign boundary와 JoinSplit development artifact identity에 구현했다. 2026-07-13 fresh closure는 public contract 변경 없이 security, protocol, chain-core, client-integration, 독립 공개 검증 gate를 모두 PASS했다. `PROVER-FAILOVER-LIVE-EVIDENCE`, `ONE-PROOF-PAYROLL-E2E`, `LIVE-DISCLOSURE-VERIFICATION`, `SQL-GRAPH-ATOMICITY`, `BATCH-SIGNER-SECRET-FRESHNESS`은 해결됐으며 unresolved Critical, High, security-relevant Medium finding은 0이다.
 
-Active circuit set은 계속 `privacy-note-v1`이고 이제 Deposit, Spend, JoinSplit2x2, `batch-joinsplit-16x32-v1`을 이 순서로 요구한다. Development R1CS/PK/VK identity는 Gate 3A 증거이지 production trust anchor가 아니다.
+Active circuit set은 계속 `privacy-note-v1`이고 이제 Deposit, Spend, JoinSplit2x2, `batch-joinsplit-16x32-v1`을 이 순서로 요구한다. Development R1CS/PK/VK identity는 chain-core gate 증거이지 production trust anchor가 아니다.
 
 이 문서의 **MUST**, **MUST NOT**, **SHOULD**, **MAY**는 일반적인 프로토콜 규범 의미를 갖는다.
 
@@ -148,7 +148,7 @@ Deposit과 Withdraw는 registered denom만 허용한다. SDK와 UI는 registry q
 238d5f23e4d918d40b0982ce3aef16a75c4d1760193d1c3b30b9f5df681903ca
 ```
 
-새 asset 등록을 위한 governance message는 Session 2 범위 밖이다.
+새 asset 등록을 위한 governance message는 batch protocol contract 범위 밖이다.
 
 ### 3.4 Public-key 및 signature 검증
 
@@ -222,7 +222,7 @@ batch_intent = MiMC(
 )
 ```
 
-`chain_domain_hi/lo`는 기존 chain-domain contract에서 계산되며 chain ID와 active circuit-set ID를 bind한다. circuit은 chain limb 두 개와 payload limb 두 개를 128-bit로, expiry를 non-zero 64-bit로 constrain한다. Session 3A keeper validation은 expired message도 거부해야 한다.
+`chain_domain_hi/lo`는 기존 chain-domain contract에서 계산되며 chain ID와 active circuit-set ID를 bind한다. circuit은 chain limb 두 개와 payload limb 두 개를 128-bit로, expiry를 non-zero 64-bit로 constrain한다. batch chain core keeper validation은 expired message도 거부해야 한다.
 
 ### 4.3 Exact active prefix와 disabled sentinel
 
@@ -399,7 +399,7 @@ DBS-03: enabled[i]      => full_disclosure_blinding[i] != user_disclosure_blindi
 
 enabled non-all-private slot은 두 blinding이 canonical non-zero여야 한다. enabled all-private slot은 `privacy_policy=0`, `user_disclosure_blinding=0`으로 canonicalize한다. 이때 `DBS-01`만 gate off하고 full blinding은 non-zero이며 `DBS-02`/`DBS-03`은 계속 적용한다. disabled capacity slot은 policy, output randomness, user blinding, full blinding을 모두 zero로 canonicalize하고 세 inequality를 모두 gate off한다. Active output randomness 자체는 canonical field value이며 zero일 수 있다.
 
-BatchJoinSplit16x32는 32개 capacity slot 각각에 이 exact 계약을 이미 적용한다. 즉 gated inequality site 96개와 sentinel/non-zero check가 있다. JoinSplit2x2에는 disabled output capacity slot이 없다. Disclosure witness는 recipient output `0`만 대상으로 하므로 `i=0`이고 비교하는 note secret도 정확히 `OutputRandomness[0]`이다. Output `1`은 disclosure witness가 없는 active change note이며 disabled disclosure slot이 아니다. Input randomness, `OutputRandomness[1]`, cross-output reuse, cross-transaction reuse는 `DBS-01..03` 범위가 아니다. 더 강한 SDK-wide `SECRET-FRESHNESS` 정책은 별개다. `G3B-04`는 signature release 전에 이 정책을 강제해 structured batch signer boundary를 닫았고, Session 4는 같은 boundary에서 non-canonical BN254 alias도 거부하도록 보강했다.
+BatchJoinSplit16x32는 32개 capacity slot 각각에 이 exact 계약을 이미 적용한다. 즉 gated inequality site 96개와 sentinel/non-zero check가 있다. JoinSplit2x2에는 disabled output capacity slot이 없다. Disclosure witness는 recipient output `0`만 대상으로 하므로 `i=0`이고 비교하는 note secret도 정확히 `OutputRandomness[0]`이다. Output `1`은 disclosure witness가 없는 active change note이며 disabled disclosure slot이 아니다. Input randomness, `OutputRandomness[1]`, cross-output reuse, cross-transaction reuse는 `DBS-01..03` 범위가 아니다. 더 강한 SDK-wide `SECRET-FRESHNESS` 정책은 별개다. `BATCH-SIGNER-SECRET-FRESHNESS`은 signature release 전에 이 정책을 강제해 structured batch signer boundary를 닫았고, client-integration 구현은 같은 boundary에 non-canonical BN254 alias 거부를 추가했다. 독립 공개 검증은 이 동작을 확인했다.
 
 Shared native/prepared/structured-signer error contract는 아래 stable secret-free code를 사용한다. Go caller는 wrapping해도 `*DisclosureBlindingErrorV1`을 보존한다. External adapter는 secret 값을 반향하지 않고 기존 non-retryable invalid-request response로 mapping한다.
 
@@ -657,9 +657,9 @@ validator readiness는 complete local manifest identity가 consensus와 같아�
 
 registry는 injectable, thread-safe, lazy이며 circuit/artifact type별로 분리해 cache한다. `batch-joinsplit-16x32-v1`은 `RequiredCircuitIDs`의 네 번째 항목이며 canonical 12-descriptor manifest에 descriptor 세 개를 추가한다. Validator는 requested VK만, prover는 selected R1CS/PK pair만 load한다.
 
-`S4-B02`는 2x2 accepted witness set을 좁히지만 NoteV1, 13개 public input과 순서, JoinSplit public-input schema digest, `TransferIntentV2`, disclosure digest 공식/domain, `privacy-fixed-v1`, canonical message payload bytes, protobuf, prepared transfer payload `v5`, proof/HTTP contract `v2`, manifest schema `v2`, identity schema `v1`, circuit-set ID `privacy-note-v1`을 바꾸지 않는다. Session 3A는 JoinSplit R1CS/PK/VK만 재생성하고 manifest checksum과 consensus `verifying_key_sha256`를 교체했으며 old/new proof 및 consensus/file mismatch와 fresh-genesis/reset readiness를 검증했다. Cached old JoinSplit proof/job은 폐기해야 하고 기존 prepared payload는 새 semantic validator가 수락한 경우에만 다시 증명할 수 있다. BatchJoinSplit16x32 source/artifact와 나머지 9개 artifact file은 byte-identical하다.
+`DISCLOSURE-BLINDING-SEPARATION`은 2x2 accepted witness set을 좁히지만 NoteV1, 13개 public input과 순서, JoinSplit public-input schema digest, `TransferIntentV2`, disclosure digest 공식/domain, `privacy-fixed-v1`, canonical message payload bytes, protobuf, prepared transfer payload `v5`, proof/HTTP contract `v2`, manifest schema `v2`, identity schema `v1`, circuit-set ID `privacy-note-v1`을 바꾸지 않는다. batch chain core는 JoinSplit R1CS/PK/VK만 재생성하고 manifest checksum과 consensus `verifying_key_sha256`를 교체했으며 old/new proof 및 consensus/file mismatch와 fresh-genesis/reset readiness를 검증했다. Cached old JoinSplit proof/job은 폐기해야 하고 기존 prepared payload는 새 semantic validator가 수락한 경우에만 다시 증명할 수 있다. BatchJoinSplit16x32 source/artifact와 나머지 9개 artifact file은 byte-identical하다.
 
-Session 3A development identity는 source commit `381c984189e823e5797104eb7cd2beb2386eaf80`에서 `2026-07-11T09:32:32Z`에 생성했다. 다음 값은 reproducibility evidence일 뿐이다.
+batch chain core development identity는 source commit `381c984189e823e5797104eb7cd2beb2386eaf80`에서 `2026-07-11T09:32:32Z`에 생성했다. 다음 값은 reproducibility evidence일 뿐이다.
 
 | Batch artifact | Size | SHA-256 |
 | --- | ---: | --- |
@@ -669,7 +669,7 @@ Session 3A development identity는 source commit `381c984189e823e5797104eb7cd2be
 
 생성 peak RSS는 `3,308,797,952 B`였다. Opt-in role-readiness gate는 peak RSS `1,295,482,880 B`였고 validator role에서 batch VK만, prover role에서 batch R1CS/PK만 decode했으며 constraint `1,111,837`개와 public-schema SHA-256 `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`을 확인했다. Generated binary는 tracked하지 않는다.
 
-`S4-B02` JoinSplit-only development rotation은 implementation commit `25c17ef5249703822455273a7c683694e70aabf4`에서 `2026-07-12T12:51:14Z`에 gnark `v0.14.0`, Groth16/BN254 development `groth16.Setup`, `clairveil-setup -circuit joinsplit -overwrite`로 생성했다.
+`DISCLOSURE-BLINDING-SEPARATION` JoinSplit-only development rotation은 구현 commit `25c17ef5249703822455273a7c683694e70aabf4`에서 `2026-07-12T12:51:14Z`에 gnark `v0.14.0`, Groth16/BN254 development `groth16.Setup`, `clairveil-setup -circuit joinsplit -overwrite`로 생성했다.
 
 | JoinSplit artifact | Size | SHA-256 |
 | --- | ---: | --- |
@@ -707,7 +707,7 @@ batch_gas = verify_base
 
 모든 coefficient와 resource bound는 positive여야 한다. usage는 input `1..16`, output `1..32` 범위여야 하며 tree write는 output 수보다 작을 수 없고 global lookup은 input과 output의 합보다 작을 수 없다. multiplication과 sum에서 `uint64` overflow를 검사한다.
 
-Session 3A는 다음 보수적인 V1 coefficient와 bound를 동결한다.
+batch chain core는 다음 보수적인 V1 coefficient와 bound를 동결한다.
 
 | Component | V1 value |
 | --- | ---: |
@@ -723,7 +723,7 @@ Session 3A는 다음 보수적인 V1 coefficient와 bound를 동결한다.
 | tree-write bound | `1,056` nodes |
 | global-lookup bound | `48` |
 
-Explicit surcharge는 privacy-specific proof verification, canonical hashing/encoding, state-growth amplification, Merkle computation/bookkeeping, global uniqueness check를 담당한다. Cosmos KV gas는 underlying store read/write를 계속 담당하며 explicit coefficient가 이를 대체하지 않는다. 따라서 한 logical operation이 computation과 physical I/O를 모두 일으켜도 두 meter는 서로 다른 layer를 담당한다. Exact category breakdown과 precharge-before-semantics/out-of-gas 동작은 regression test로 고정한다. 실제 `1/1` handler 성공과 max `16/32` post-proof transition이 explicit descriptor와 모든 Cosmos KV descriptor를 분리 기록하므로 어느 layer도 상대 layer의 책임을 조용히 흡수하거나 중복할 수 없다. Session 4는 experimental reference bound를 독립 검증했으며 target-chain production coefficient governance/calibration은 production owner TODO로 유지한다.
+Explicit surcharge는 privacy-specific proof verification, canonical hashing/encoding, state-growth amplification, Merkle computation/bookkeeping, global uniqueness check를 담당한다. Cosmos KV gas는 underlying store read/write를 계속 담당하며 explicit coefficient가 이를 대체하지 않는다. 따라서 한 logical operation이 computation과 physical I/O를 모두 일으켜도 두 meter는 서로 다른 layer를 담당한다. Exact category breakdown과 precharge-before-semantics/out-of-gas 동작은 regression test로 고정한다. 실제 `1/1` handler 성공과 max `16/32` post-proof transition이 explicit descriptor와 모든 Cosmos KV descriptor를 분리 기록하므로 어느 layer도 상대 layer의 책임을 조용히 흡수하거나 중복할 수 없다. 독립 공개 검증은 experimental reference bound를 독립 검증했으며 target-chain production coefficient governance/calibration은 production owner TODO로 유지한다.
 
 ## 10. Full-shape circuit feasibility 결과
 
@@ -762,9 +762,9 @@ subgroup 비교는 67개 point의 on-curve/non-identity shape와 같은 shape에
 | `8/16` | `0.431` | `1,771.809` | `[1,816.801, 1,779.021]` | `1,797.911` | `[0.732, 0.680, 0.740]` |
 | `16/32` | `0.429` | `1,874.354` | `[1,791.545, 1,785.570]` | `1,788.5575` | `[0.699, 0.677, 0.698]` |
 
-Historical pre-`S4-B02` JoinSplit2x2 비교는 first prove `158.470 ms`, warm sample `[154.029, 157.718] ms`, warm mean `155.8735 ms`였다. 이에 대응하는 historical max-shape 비교는 `55.892422 ms/output`, `2.788813x`였으며 provenance로만 보존하고 current production ratio로 사용하지 않는다. compile, setup, 모든 proof와 verification이 OOM 없이 완료되었다. 약 209 MB proving key와 123 MB R1CS는 per-role lazy loading을 사용할 때 운영 가능성이 있지만 memory는 여전히 production capacity risk다.
+Historical pre-`DISCLOSURE-BLINDING-SEPARATION` JoinSplit2x2 비교는 first prove `158.470 ms`, warm sample `[154.029, 157.718] ms`, warm mean `155.8735 ms`였다. 이에 대응하는 historical max-shape 비교는 `55.892422 ms/output`, `2.788813x`였으며 provenance로만 보존하고 current production ratio로 사용하지 않는다. compile, setup, 모든 proof와 verification이 OOM 없이 완료되었다. 약 209 MB proving key와 123 MB R1CS는 per-role lazy loading을 사용할 때 운영 가능성이 있지만 memory는 여전히 production capacity risk다.
 
-Historical Session 2 `S4-B02` 재진입은 당시 production 2x2 circuit과, production definition을 호출한 뒤 동결된 zero-sentinel assertion과 `DBS-01..03`만 추가한 test-only circuit을 비교했다. 같은 Apple M5 Pro/64 GiB/macOS 26.5.1, Go 1.25.12, gnark 0.14.0, BN254 Groth16 환경에서 cold development sample 1회 결과는 다음과 같다.
+Historical batch protocol contract `DISCLOSURE-BLINDING-SEPARATION` 재진입은 당시 production 2x2 circuit과, production definition을 호출한 뒤 동결된 zero-sentinel assertion과 `DBS-01..03`만 추가한 test-only circuit을 비교했다. 같은 Apple M5 Pro/64 GiB/macOS 26.5.1, Go 1.25.12, gnark 0.14.0, BN254 Groth16 환경에서 cold development sample 1회 결과는 다음과 같다.
 
 | Metric | Current production 2x2 | Hardened feasibility target | Delta |
 | --- | ---: | ---: | ---: |
@@ -777,9 +777,9 @@ Historical Session 2 `S4-B02` 재진입은 당시 production 2x2 circuit과, pro
 | proof | `164 B` | `164 B` | `0 B` |
 | witness / prove / verify | `0.142 / 157.680 / 0.691 ms` | `0.119 / 161.169 / 0.674 ms` | single-sample feasibility only |
 
-Historical process peak RSS는 `690,438,144 B`였고 OOM은 없었다. Session 3A는 hardened relation을 production으로 승격하고 원인 분리 control을 다시 실행했다. Legacy `99,765` relation은 완전히 갱신한 각 negative를 수락하고 production `99,775`는 거부한다. Production cold gate는 R1CS `10,824,169 B`, PK `16,766,489 B`, VK `748 B`, proof `164 B`, peak RSS `687,423,488 B`를 기록했다. Full Batch resource gate도 unchanged `1,111,837` constraints, R1CS `122,813,535 B`, PK `209,218,621 B`, VK `716 B`, proof `164 B`, peak RSS `3,324,461,056 B`로 재실행했고 OOM은 없었다. Target과 exact 일치해 decision change는 필요하지 않았다.
+Historical process peak RSS는 `690,438,144 B`였고 OOM은 없었다. batch chain core는 hardened relation을 production으로 승격하고 원인 분리 control을 다시 실행했다. Legacy `99,765` relation은 완전히 갱신한 각 negative를 수락하고 production `99,775`는 거부한다. Production cold gate는 R1CS `10,824,169 B`, PK `16,766,489 B`, VK `748 B`, proof `164 B`, peak RSS `687,423,488 B`를 기록했다. Full Batch resource gate도 unchanged `1,111,837` constraints, R1CS `122,813,535 B`, PK `209,218,621 B`, VK `716 B`, proof `164 B`, peak RSS `3,324,461,056 B`로 재실행했고 OOM은 없었다. Target과 exact 일치해 decision change는 필요하지 않았다.
 
-**Circuit gate 결론: PASS.** security constraint, explicit two-stage user leaf, subgroup check, independent path, 16/32 capacity를 모두 유지했다. 이 gate 결과상 Session 3A에 constrained multiproof는 필수가 아니다.
+**Circuit gate 결론: PASS.** security constraint, explicit two-stage user leaf, subgroup check, independent path, 16/32 capacity를 모두 유지했다. 이 gate 결과상 batch chain core에 constrained multiproof는 필수가 아니다.
 
 ## 11. Max wire/state feasibility 결과
 
@@ -798,7 +798,7 @@ max shape 측정에는 16개 nullifier, 32개 output, maximum valid 64-byte audi
 | minimal ABCI event | `584 B` | `16 KiB` | PASS |
 | max query response | `74,551 B` | `4 MiB` | PASS |
 
-**Wire/state gate 결론: PASS. Combined Gate 2 결론: PASS.** Session 3A는 16/32 capacity와 security constraint를 유지할 수 있다. 이 수치는 feasibility limit이며 per-message hard limit, explicit gas, state-growth monitoring을 생략할 수 있다는 뜻이 아니다.
+**Wire/state gate 결론: PASS. Combined protocol gate 결론: PASS.** batch chain core는 16/32 capacity와 security constraint를 유지할 수 있다. 이 수치는 feasibility limit이며 per-message hard limit, explicit gas, state-growth monitoring을 생략할 수 있다는 뜻이 아니다.
 
 ## 12. 구현된 keeper 순서
 
@@ -850,18 +850,18 @@ Production coverage를 명시한다. `TestBatchJoinSplit16x32ProductionPositiveM
 
 ## 14. Residual risk와 명시적 non-goal
 
-- Session 3A core와 Session 3B reference Go client/prover/scanner/payroll/CLI surface는 Session 4 독립 검증을 통과해 experimental source publication이 승인됐다. `PUBLICATION_READY_EXPERIMENTAL`은 `PRODUCTION_RELEASE_READY`가 아니며 downstream JS/TS 또는 product integration, production audit, source/constraint freeze, formal trusted setup, signed production artifact provenance, production rollout은 남아 있다.
-- Development setup artifact는 production trust anchor가 아니며 commit하지 않는다. 기록된 checksum은 이 Gate 3A run만 식별한다.
-- Fresh Session 4 max-shape reference run의 peak RSS는 `3,354,689,536 B`, 약 3.12 GiB였다. lazy loading은 불필요한 artifact 상주를 줄이지만 process-level hard isolation을 제공하지 않는다.
+- batch chain core와 batch reference Go client/prover/scanner/payroll/CLI surface는 독립 공개 검증을 통과해 experimental source publication이 승인됐다. `PUBLICATION_READY_EXPERIMENTAL`은 `PRODUCTION_RELEASE_READY`가 아니며 downstream JS/TS 또는 product integration, production audit, source/constraint freeze, formal trusted setup, signed production artifact provenance, production rollout은 남아 있다.
+- Development setup artifact는 production trust anchor가 아니며 commit하지 않는다. 기록된 checksum은 이 chain-core gate run만 식별한다.
+- Fresh 독립 공개 검증 max-shape reference run의 peak RSS는 `3,354,689,536 B`, 약 3.12 GiB였다. lazy loading은 불필요한 artifact 상주를 줄이지만 process-level hard isolation을 제공하지 않는다.
 - client cancellation은 gnark proving을 중단할 수 없다. production process isolation, worker recycling, memory limit, overload operation이 필요하다.
 - ciphertext decryptability는 proof하지 않는다. auditor-key compromise, key-epoch rotation, delivery failure manual review가 operational risk로 남는다.
 - public input/output count, timing, root, batch grouping, minimal summary는 public metadata다.
 - remote prover는 complete witness/payment batch를 보게 된다. 매우 민감한 서비스로 취급하고 automatic failover를 계속 비활성화해야 한다.
 - 모든 정상 append는 authoritative root/count/height metadata를 영속하지만 historical internal node는 저장하지 않는다. Current-root path는 incremental node를 사용한다. Public non-current historical query는 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하고 그 이상은 `ResourceExhausted`를 반환하므로 더 큰 online request는 current root 또는 trusted local historical index를 사용한다. Offline recovery/export는 별도 `MaxMerkleRebuildLeaves`(1,048,576) bound를 유지하며 large-tree export는 complete persisted metadata index를 요구한다.
 - current Deposit과 JoinSplit2x2는 기존 event compatibility 동작을 유지한다. Production batch path만 minimal-event 규칙을 사용하며 모든 legacy event를 재설계했다는 의미는 아니다.
-- Session 3A는 보수적인 gas coefficient를 제공한다. Per-chain calibration/governance limit, new-asset registration governance, long-run state-pruning policy는 남아 있지만 표현된 어떤 work category도 unmetered가 아니다.
+- batch chain core는 보수적인 gas coefficient를 제공한다. Per-chain calibration/governance limit, new-asset registration governance, long-run state-pruning policy는 남아 있지만 표현된 어떤 work category도 unmetered가 아니다.
 
-미해결 Critical 또는 High Session 2 design finding은 없고 Session 3A는 동결된 protocol decision을 변경하지 않았다. 위 항목은 residual operational/release risk이며 security constraint를 약화하거나 16/32 capacity를 조용히 낮출 권한이 아니다.
+미해결 Critical 또는 High batch protocol contract design finding은 없고 batch chain core는 동결된 protocol decision을 변경하지 않았다. 위 항목은 residual operational/release risk이며 security constraint를 약화하거나 16/32 capacity를 조용히 낮출 권한이 아니다.
 
 ## 15. Authoritative code와 fixture
 

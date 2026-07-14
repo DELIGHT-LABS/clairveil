@@ -47,7 +47,7 @@ After creating the annotated exact-SemVer tag at the final commit:
 | Circuit set/public witness | none / yes |
 | Privacy state/genesis migration | none / yes |
 | Batch gas/scan state | none / yes |
-| Session 3B SDK/prover/scanner/payroll/CLI surface | none / yes |
+| Batch-reference SDK/prover/scanner/payroll/CLI surface | none / yes |
 
 If there is impact, record downstream actions in section 7.
 

@@ -7,7 +7,7 @@ previous_source_commit="0fc818c90fe98a876c8a2531e7c70ba5efac4b90"
 output_root="${1:-}"
 
 fail() {
-	echo "session 3a artifact preparation failed: $*" >&2
+	echo "JoinSplit artifact rotation preparation failed: $*" >&2
 	exit 1
 }
 
@@ -53,13 +53,13 @@ cp -R "$previous_dir" "$current_dir"
 )
 
 rm -rf "$previous_source_dir"
-cat >"$output_root/session-3a-source-provenance.env" <<EOF
-CLAIRVEIL_SESSION3A_PREVIOUS_SOURCE_COMMIT=$previous_source_commit
-CLAIRVEIL_SESSION3A_CURRENT_SOURCE_COMMIT=$current_source_commit
+cat >"$output_root/joinsplit-artifact-source-provenance.env" <<EOF
+CLAIRVEIL_JOINSPLIT_PREVIOUS_SOURCE_COMMIT=$previous_source_commit
+CLAIRVEIL_JOINSPLIT_CURRENT_SOURCE_COMMIT=$current_source_commit
 EOF
 cleanup_output=0
 
-echo "session 3a artifact evidence prepared"
+echo "JoinSplit artifact rotation evidence prepared"
 echo "previous_source_commit=$previous_source_commit"
 echo "current_source_commit=$current_source_commit"
 echo "previous_artifact_dir=$output_root/previous"

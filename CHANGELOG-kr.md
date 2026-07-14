@@ -12,7 +12,7 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
 - Prepared payload/disclosure plaintext `v5`, proof/prover contract `v2`, chain ID, absolute expiry, final owner intent, canonical decoding, disclosure blinding을 포함한 transfer authorization contract를 추가했습니다.
 - Domain-separated NoteV1 primitive, `privacy-fixed-v1`, `AssetRegistryV1`, typed scan/path snapshot, bounded prover admission, consensus-pinned circuit identity를 포함한 `privacy-note-v1`/state-version-2 기반을 추가했습니다.
-- Production `BatchJoinSplit16x32` chain core와 `MsgBatchTransfer`를 추가하고, 이어서 Session 3B Go SDK, `POST /v1/proofs/batch-transfer`, scanner, one-proof payroll, CLI, localnet tutorial reference surface를 추가했습니다.
+- Production `BatchJoinSplit16x32` chain core와 `MsgBatchTransfer`를 추가하고, 이어서 Go SDK, `POST /v1/proofs/batch-transfer`, scanner, one-proof payroll, CLI, localnet tutorial을 batch integration용 reference surface로 추가했습니다.
 - v0.1.0 reference payroll 기반을 durable file/SQLite/PostgreSQL store, live daemon/reconciliation flow, rehearsal evidence, capacity tooling, public-claim eligibility gate로 확장했습니다.
 - English/Korean 시작 가이드, 아키텍처, 문서 index, 계획 상태 문서를 추가하고 누락된 영문 payroll/bulk handoff 문서 세 개를 복원했습니다.
 - Release-pack 문서/link/언어/tag/file 검증을 위한 `make docs-check`와 단일 required-file manifest를 추가했습니다.
@@ -32,7 +32,7 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
 ### Security
 
-- Gate 1/2/3A/3B와 Session 4 검증을 완료했고 unresolved Critical, High, security-relevant Medium은 없습니다. 처분은 production 승인이 아니라 `PUBLICATION_READY_EXPERIMENTAL`입니다.
+- Security, protocol, chain-core, client-integration gates와 독립 공개 검증을 완료했고 unresolved Critical, High, security-relevant Medium은 없습니다. 처분은 production 승인이 아니라 `PUBLICATION_READY_EXPERIMENTAL`입니다.
 - Consensus verifier identity, role-aware artifact loading, bounded proof verification/admission, secret-free validation error, privacy boundary를 넓히는 multi-prover failover의 explicit opt-in을 강제하고 문서화했습니다.
 
 ### Known Risk

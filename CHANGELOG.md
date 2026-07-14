@@ -12,7 +12,7 @@ This project follows [the release versioning policy](docs/clairveil-release-vers
 
 - Added the transfer authorization contract with prepared payload/disclosure plaintext `v5`, proof/prover contract `v2`, chain ID, absolute expiry, final owner intent, canonical decoding, and disclosure blindings.
 - Added the `privacy-note-v1`/state-version-2 foundation: domain-separated NoteV1 primitives, `privacy-fixed-v1`, `AssetRegistryV1`, typed scan/path snapshots, bounded prover admission, and consensus-pinned circuit identity.
-- Added the production `BatchJoinSplit16x32` chain core and `MsgBatchTransfer`, followed by the Session 3B Go SDK, `POST /v1/proofs/batch-transfer`, scanner, one-proof payroll, CLI, and localnet tutorial reference surfaces.
+- Added the production `BatchJoinSplit16x32` chain core and `MsgBatchTransfer`, followed by reference surfaces for batch integration: the Go SDK, `POST /v1/proofs/batch-transfer`, scanner, one-proof payroll, CLI, and localnet tutorial.
 - Extended the v0.1.0 reference payroll foundation with durable file/SQLite/PostgreSQL stores, live daemon and reconciliation flows, rehearsal evidence, capacity tooling, and public-claim eligibility gates.
 - Added paired getting-started, architecture, documentation-index, and plan-status documents; restored three missing English payroll/bulk handoff documents.
 - Added `make docs-check` and a single required-file manifest for release-pack documentation/link/language/tag/file validation.
@@ -32,7 +32,7 @@ This project follows [the release versioning policy](docs/clairveil-release-vers
 
 ### Security
 
-- Completed Gate 1/2/3A/3B and Session 4 validation with no unresolved Critical, High, or security-relevant Medium finding; disposition is `PUBLICATION_READY_EXPERIMENTAL`, not production approval.
+- Completed the security, protocol, chain-core, client-integration, and independent publication validations with no unresolved Critical, High, or security-relevant Medium finding; disposition is `PUBLICATION_READY_EXPERIMENTAL`, not production approval.
 - Consensus verifier identity, role-aware artifact loading, bounded proof verification/admission, secret-free validation errors, and explicit opt-in for privacy-expanding multi-prover failover are enforced and documented.
 
 ### Known Risk
