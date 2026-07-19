@@ -18,6 +18,8 @@ docs/README.md
 docs/README-kr.md
 plans/README.md
 plans/README-kr.md
+plans/clairveil-deposit-funder-implementation-plan-kr.md
+plans/clairveil-deposit-funder-separation-handoff-kr.md
 plans/clairveil-batch-joinsplit-16x32-roadmap-kr.md
 plans/clairveil-batch-joinsplit-16x32-session-1-security-remediation-kr.md
 plans/clairveil-batch-joinsplit-16x32-session-2-foundation-kr.md

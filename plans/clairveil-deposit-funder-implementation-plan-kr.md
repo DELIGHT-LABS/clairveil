@@ -1,6 +1,6 @@
 # Clairveil Deposit Actor/Funder 분리 구현 계획
 
-> 상태: **Active**
+> 상태: **Completed record**
 >
 > 작업 branch: `features/deposit-funder`
 >
@@ -9,6 +9,8 @@
 > 기준 release: `v0.2.0`
 >
 > branch 시작 commit: `15031b7a51de1bead673117594a05e07d5af14ca`
+>
+> 구현 commit: `6f54c5bf23ffaf66d25dd34c1385e87318457a45`
 >
 > Source request: [clairveil-deposit-funder-separation-handoff-kr.md](clairveil-deposit-funder-separation-handoff-kr.md)
 
@@ -509,53 +511,53 @@ git diff --name-only 15031b7a51de1bead673117594a05e07d5af14ca -- \
 
 ### Functional
 
-- [ ] Public `MsgServer.Deposit`이 actor=funder=`msg.Creator` 의미를 유지한다.
-- [ ] `Keeper.DepositWithFunder`가 explicit funder를 bank debit에 사용한다.
-- [ ] 하나의 canonical deposit transition core만 존재한다.
-- [ ] Actor는 event/index에서 계속 `msg.Creator`다.
-- [ ] Event에 `amount` 또는 `funder`가 추가되지 않는다.
-- [ ] Zero-value deposit이 유지된다.
-- [ ] Input message와 byte slice가 mutation되지 않는다.
+- [x] Public `MsgServer.Deposit`이 actor=funder=`msg.Creator` 의미를 유지한다.
+- [x] `Keeper.DepositWithFunder`가 explicit funder를 bank debit에 사용한다.
+- [x] 하나의 canonical deposit transition core만 존재한다.
+- [x] Actor는 event/index에서 계속 `msg.Creator`다.
+- [x] Event에 `amount` 또는 `funder`가 추가되지 않는다.
+- [x] Zero-value deposit이 유지된다.
+- [x] Input message와 byte slice가 mutation되지 않는다.
 
 ### Security
 
-- [ ] GoDoc이 actor/funder authorization을 caller 책임으로 명시한다.
-- [ ] Empty/invalid funder가 `sdk.VerifyAddressFormat` 기준으로 거부된다.
-- [ ] Public protobuf/gRPC/CLI/client SDK에 funder가 노출되지 않는다.
-- [ ] Downstream integration guide가 actor derivation과 exact value/native denom/fixed escrow invariant를 명시한다.
+- [x] GoDoc이 actor/funder authorization을 caller 책임으로 명시한다.
+- [x] Empty/invalid funder가 `sdk.VerifyAddressFormat` 기준으로 거부된다.
+- [x] Public protobuf/gRPC/CLI/client SDK에 funder가 노출되지 않는다.
+- [x] Downstream integration guide가 actor derivation과 exact value/native denom/fixed escrow invariant를 명시한다.
 
 ### Atomicity
 
-- [ ] Core mutation 구간이 nested SDK cache에서 실행된다.
-- [ ] Reserve/tree/event index failure가 bank와 모든 Clairveil state/event를 rollback한다.
-- [ ] Core 성공 뒤 downstream failure를 outer SDK/EVM snapshot이 rollback한다.
-- [ ] Rollback test가 Go struct balance mock이 아닌 cache-aware bank state를 사용한다.
+- [x] Core mutation 구간이 nested SDK cache에서 실행된다.
+- [x] Reserve/tree/event index failure가 bank와 모든 Clairveil state/event를 rollback한다.
+- [x] Core 성공 뒤 downstream failure를 outer SDK cache에서 rollback한다. 실제 EVM snapshot 결합은 downstream e2e 범위로 문서화했다.
+- [x] Rollback test가 Go struct balance mock이 아닌 cache-aware bank state를 사용한다.
 
 ### Compatibility와 delivery
 
-- [ ] Actor=funder equivalence가 state/event/error/gas/index 전체에서 통과한다.
-- [ ] Existing Privacy test suite가 통과한다.
-- [ ] Full repository test가 통과한다.
-- [ ] Proto/generated/circuit/artifact diff가 없다.
-- [ ] Store migration과 module consensus version bump가 없다.
-- [ ] Downstream consumer가 참조할 immutable commit/tag가 제공된다.
+- [x] Actor=funder equivalence가 state/event/error/gas/index 전체에서 통과한다.
+- [x] Existing Privacy test suite가 통과한다.
+- [x] Full repository test가 통과한다.
+- [x] Proto/generated/circuit/artifact diff가 없다.
+- [x] Store migration과 module consensus version bump가 없다.
+- [x] Downstream consumer가 참조할 immutable implementation commit이 제공된다.
 
 ## 13. Completion ledger
 
-구현 완료 시 아래를 채운다.
+구현 완료 결과는 다음과 같다.
 
 ```text
-Implementation commit:
-Release/tag:
-Public Deposit regression:
-Actor=funder equivalence:
-Actor!=funder success:
-Core-local rollback:
-Outer snapshot rollback:
-Zero-value regression:
-go test ./x/privacy/...:
-go test ./...:
-Proto/circuit/artifact diff:
-Downstream integration result:
-Remaining risks/non-goals:
+Implementation commit: 6f54c5bf23ffaf66d25dd34c1385e87318457a45
+Release/tag: immutable implementation commit 제공; release tag는 생성하지 않음
+Public Deposit regression: PASS
+Actor=funder equivalence: PASS; bank/privacy state, event, error, ABCI code, gas, scan/index 비교
+Actor!=funder success: PASS; actor 불변, funder debit, module/reserve credit, creator attribution 확인
+Core-local rollback: PASS; insufficient/bank/reserve/tree/event-index failure 전체 KV/event 불변
+Outer snapshot rollback: PASS; nested success 뒤 outer SDK cache discard 검증
+Zero-value regression: PASS; transparent balance 불변과 commitment/event/index 생성 확인
+go test ./x/privacy/...: PASS; 2026-07-19, -count=1
+go test ./...: PASS; 2026-07-19, -count=1
+Proto/circuit/artifact diff: PASS; 변경 없음
+Downstream integration result: Go integration contract와 e2e gate 문서화 완료; 실제 EVM snapshot e2e는 downstream repository 책임
+Remaining risks/non-goals: EVM payable/balance, caller address mapping, policy lifecycle과 release tag 생성은 이 repository 변경 범위 밖
 ```

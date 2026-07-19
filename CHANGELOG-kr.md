@@ -6,6 +6,18 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
 ## Unreleased
 
+### Added
+
+- `msg.Creator` actor attribution을 유지하면서 explicit validated funder를 canonical deposit transition에서 debit하는 trusted in-process `Keeper.DepositWithFunder` integration surface를 추가했습니다.
+
+### Changed
+
+- Public `MsgDeposit` protobuf, gRPC, CLI, client wire format과 actor-as-funder 동작을 그대로 유지하고, downstream caller가 core-local rollback과 outer SDK/EVM rollback boundary를 결합할 수 있도록 deposit mutation을 nested cache에서 실행합니다.
+
+### Security
+
+- Downstream adapter가 authenticated caller에서 actor를 derive하고 fixed escrow만 funder로 사용하며 deposit amount를 EVM `msg.value` 및 runtime native denom과 정확히 bind하고 이후 policy failure를 atomic하게 rollback해야 함을 문서화했습니다.
+
 ## v0.2.0 - 2026-07-13
 
 ### Added

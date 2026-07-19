@@ -17,8 +17,14 @@
 
 | Plan | 상태 | 현재 exit boundary |
 | --- | --- | --- |
-| [Deposit actor/funder 분리 구현](clairveil-deposit-funder-implementation-plan-kr.md) | Active; Korean-only | Public Deposit 호환성을 유지하면서 trusted Keeper funder 주입, core/outer rollback과 downstream exact-value 보안 계약 검증 |
 | [Public capacity claim 실행](clairveil-public-capacity-claim-execution-plan-kr.md) | Active; Korean-only | Harness 측정을 근거 없는 production claim으로 바꾸지 않고 eligible operational prover RPS, chain TPS, user-latency evidence 생성 |
+
+## 완료된 deposit funder record
+
+| Plan | 상태 |
+| --- | --- |
+| [Deposit actor/funder 분리 구현](clairveil-deposit-funder-implementation-plan-kr.md) | Complete; Korean-only; implementation commit `6f54c5b`, core/outer SDK rollback과 full test gate PASS |
+| [Deposit actor/funder 분리 변경 요청](clairveil-deposit-funder-separation-handoff-kr.md) | Fulfilled by implementation plan; downstream EVM snapshot e2e는 downstream repository 책임 |
 
 ## 완료된 batch program record
 

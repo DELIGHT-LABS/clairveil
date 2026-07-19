@@ -195,6 +195,25 @@ SendCoinsFromModuleToAccount(ctx context.Context, senderModule string, recipient
 - withdraw recipient는 일반 account address prefix를 따라야 합니다.
 - downstream denom policy가 있다면 `uclair` 대신 실제 denom을 쓰되, CLI/tutorial/fixture도 함께 바꿔야 합니다.
 
+### 5.1 Trusted deposit funding
+
+In-process EVM precompile 또는 policy adapter는 additive Keeper API를 호출해 actor와 다른 transparent funder를 debit할 수 있습니다.
+
+```go
+resp, err := app.PrivacyKeeper.DepositWithFunder(ctx, msg, escrow)
+```
+
+이 API는 trusted Go integration surface이며 protobuf Msg service가 아닙니다. Public `MsgDeposit` protobuf, gRPC, CLI, client transaction wire는 바뀌지 않고, public `MsgServer.Deposit`은 계속 `msg.Creator`를 actor와 funder로 모두 사용합니다.
+
+`DepositWithFunder`는 address format을 검증하지만 `msg.Creator`를 인증하거나 `funder`를 authorize하지 않으며, deposit proof도 creator를 bind하지 않습니다. 따라서 downstream adapter는 아래 invariant를 모두 강제해야 합니다.
+
+- `msg.Creator`를 user-supplied calldata에서 받지 않고 authenticated EVM caller/operator로부터 canonical Cosmos address로 derive합니다.
+- `funder`에는 app wiring에 고정된 Privacy precompile escrow address만 전달하고 caller-selected funder를 노출하지 않습니다.
+- Parsed `MsgDeposit.Amount`의 amount가 EVM `msg.value`와 정확히 같고 denom이 runtime native denom과 같은지 확인합니다.
+- Keeper API 호출 전에 downstream-specific EVM-to-Cosmos address mapping과 expected address length를 검증합니다.
+
+Canonical deposit core는 bank, reserve, tree, event, index mutation을 nested SDK cache에서 실행합니다. Core failure는 이 cache를 폐기하고 success는 caller의 parent context에만 반영합니다. Downstream adapter는 EVM value transfer, `DepositWithFunder`, 이후 policy check 전체를 하나의 outer SDK/EVM rollback boundary로 감싸야 하며, 뒤늦은 policy failure에서도 escrow, module balance, 모든 Clairveil state와 event를 복구해야 합니다.
+
 ## 6. Genesis audit key
 
 최신 transfer 모델은 모든 shielded transfer에 mandatory master-auditor disclosure를 포함합니다. 따라서 production-like chain은 genesis의 privacy state에 완전한 audit key identity를 설정해야 합니다.
@@ -347,7 +366,7 @@ query privacy reserve uclair
 6. gRPC/HTTP gateway로 `tree_state`, `events`, `scan_events`, `merkle_path`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, `nullifiers`가 정상 응답하는지 확인합니다.
 7. `transfer`와 `decode-transfer-disclosure`로 user disclosure와 audit disclosure를 검증합니다.
 8. `withdraw`, `prepare-withdraw`, `relay-withdraw`로 direct/relayed withdraw를 검증합니다.
-9. 마지막에 EVM/policy/precompile 연동 e2e를 추가합니다.
+9. 마지막에 EVM/policy/precompile 연동 e2e를 추가하고 actor provenance, fixed escrow, exact `msg.value`/native-denom binding, trusted deposit 성공 뒤 outer rollback을 검증합니다.
 10. Web wallet 또는 JS SDK가 local note storage encryption, remote prover timeout/auth, disclosure verification을 자체 테스트로 검증합니다.
 11. Downstream `MsgBatchTransfer` adapter를 작성하기 전에 `TestBatchTransferDirectCoreIntegration`, `TestBatchTransferCoreRejectionsAndAtomicScanFailure`, `TestCrossMessageNullifierFailureRollsBackWholeCosmosTxCache`를 실행합니다.
 
@@ -377,3 +396,4 @@ Downstream 통합은 아래가 모두 통과하면 1차 완료로 봅니다.
 - audit master private key custody policy가 production 운영 문서에 반영되어 있습니다.
 - wallet storage encryption과 remote prover privacy policy가 JS/TS SDK 또는 web wallet 설계 문서에 반영되어 있습니다.
 - downstream 전용 EVM/policy/precompile 연동은 별도 테스트로 분리되어 있습니다.
+- Trusted deposit integration에서 fixed escrow만 debit되고 creator attribution이 authenticated operator에서 나오며 exact value/denom binding이 성립하고 core-local 및 downstream outer rollback 모두 partial state/event를 남기지 않음을 검증합니다.

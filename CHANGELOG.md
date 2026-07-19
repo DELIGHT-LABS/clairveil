@@ -6,6 +6,18 @@ This project follows [the release versioning policy](docs/clairveil-release-vers
 
 ## Unreleased
 
+### Added
+
+- Added the trusted in-process `Keeper.DepositWithFunder` integration surface, which preserves `msg.Creator` attribution while debiting an explicit validated funder through the canonical deposit transition.
+
+### Changed
+
+- Kept the public `MsgDeposit` protobuf, gRPC, CLI, client wire format, and actor-as-funder behavior unchanged; deposit mutations now use a nested cache so downstream callers can combine core-local rollback with an outer SDK/EVM rollback boundary.
+
+### Security
+
+- Documented that downstream adapters must derive the actor from the authenticated caller, use only a fixed escrow funder, bind the deposit amount exactly to EVM `msg.value` and the runtime native denom, and roll back later policy failures atomically.
+
 ## v0.2.0 - 2026-07-13
 
 ### Added
