@@ -23,7 +23,7 @@
 
 | Plan | 상태 |
 | --- | --- |
-| [Deposit actor/funder 분리 구현](clairveil-deposit-funder-implementation-plan-kr.md) | Complete; Korean-only; implementation commit `6f54c5b`, core/outer SDK rollback과 full test gate PASS |
+| [Deposit actor/funder 분리 구현](clairveil-deposit-funder-implementation-plan-kr.md) | Complete implementation record; Korean-only; 현재 reviewed checkout은 self-funding 보강을 포함하며 downstream용 immutable tag/commit 제공은 pending |
 | [Deposit actor/funder 분리 변경 요청](clairveil-deposit-funder-separation-handoff-kr.md) | Fulfilled by implementation plan; downstream EVM snapshot e2e는 downstream repository 책임 |
 
 ## 완료된 batch program record

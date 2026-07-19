@@ -72,7 +72,7 @@ func (k msgServer) Deposit(goCtx context.Context, msg *types.MsgDeposit) (*types
 		return nil, err
 	}
 
-	return k.Keeper.depositWithValidatedFunder(ctx, msg, depositor)
+	return k.Keeper.depositWithValidatedFunder(ctx, msg, depositor, false)
 }
 
 // Withdraw verifies a spend proof and releases transparent funds.

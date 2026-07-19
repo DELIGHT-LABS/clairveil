@@ -12,11 +12,11 @@ This project follows [the release versioning policy](docs/clairveil-release-vers
 
 ### Changed
 
-- Kept the public `MsgDeposit` protobuf, gRPC, CLI, client wire format, and actor-as-funder behavior unchanged; deposit mutations now use a nested cache so downstream callers can combine core-local rollback with an outer SDK/EVM rollback boundary.
+- Kept the public `MsgDeposit` protobuf, gRPC, CLI, client wire format, actor-as-funder behavior, and existing gas path unchanged; deposit mutations now use a nested cache so downstream callers can combine core-local rollback with an outer SDK/EVM rollback boundary. The trusted entry alone performs the additional module-balance reads required to verify its explicit-funder bank transfer.
 
 ### Security
 
-- Documented that downstream adapters must derive the actor from the authenticated caller, use only a fixed escrow funder, bind the deposit amount exactly to EVM `msg.value` and the runtime native denom, and roll back later policy failures atomically.
+- Documented that downstream adapters must derive the actor from the authenticated caller, use only a fixed escrow funder distinct from the `privacy` module account, bind the deposit amount exactly to EVM `msg.value` and the runtime native denom, and roll back later policy failures atomically. The trusted Keeper API rejects the `privacy` module account as a funder and verifies the exact module-balance increase after the bank send so self-transfers or redirected sends cannot mint an unbacked shielded deposit.
 
 ## v0.2.0 - 2026-07-13
 

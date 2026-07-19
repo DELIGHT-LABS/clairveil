@@ -208,7 +208,8 @@ resp, err := app.PrivacyKeeper.DepositWithFunder(ctx, msg, escrow)
 `DepositWithFunder`는 address format을 검증하지만 `msg.Creator`를 인증하거나 `funder`를 authorize하지 않으며, deposit proof도 creator를 bind하지 않습니다. 따라서 downstream adapter는 아래 invariant를 모두 강제해야 합니다.
 
 - `msg.Creator`를 user-supplied calldata에서 받지 않고 authenticated EVM caller/operator로부터 canonical Cosmos address로 derive합니다.
-- `funder`에는 app wiring에 고정된 Privacy precompile escrow address만 전달하고 caller-selected funder를 노출하지 않습니다.
+- `funder`에는 app wiring에 고정된 Privacy precompile escrow address만 전달하고 caller-selected funder를 노출하지 않으며, escrow가 Clairveil `privacy` module account와 다른 주소인지 확인합니다. Bank self-transfer는 transparent backing을 추가하지 않으므로 `DepositWithFunder`는 `privacy` module account를 거부합니다.
+- Bank send restriction이 `privacy` module account로 향하는 transfer를 다른 주소로 redirect하지 않게 합니다. Trusted `DepositWithFunder` entry는 module balance가 deposit amount만큼 정확히 증가했는지 검증하고 restriction이 transfer를 redirect하거나 suppress하면 nested cache 전체를 rollback합니다. 이 두 balance read는 trusted entry에만 적용되어 기존 public `MsgServer.Deposit` gas path는 바뀌지 않습니다.
 - Parsed `MsgDeposit.Amount`의 amount가 EVM `msg.value`와 정확히 같고 denom이 runtime native denom과 같은지 확인합니다.
 - Keeper API 호출 전에 downstream-specific EVM-to-Cosmos address mapping과 expected address length를 검증합니다.
 

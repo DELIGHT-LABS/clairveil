@@ -253,7 +253,7 @@ MsgDeposit.Amount = 0<registered-denom>
 
 ### 7.2 Trusted in-process API
 
-`DepositWithFunder`는 Go application composition에서만 호출한다. Downstream application은 user calldata에서 funder를 받지 않고 fixed Privacy precompile address를 제공한다.
+`DepositWithFunder`는 Go application composition에서만 호출한다. Downstream application은 user calldata에서 funder를 받지 않고 fixed Privacy precompile address를 제공하며, 이 escrow는 Clairveil `privacy` module account와 다른 주소여야 한다. Keeper API도 bank self-transfer로 backing 없이 deposit state가 생성되지 않도록 `privacy` module account funder를 거부하고, bank send restriction의 redirect/no-op success를 잡기 위해 module balance delta가 deposit amount와 정확히 같은지 검증한다.
 
 Clairveil은 downstream의 fixed address를 하드코딩할 필요가 없다. 어떤 funder를 신뢰할지는 downstream application의 책임이다.
 

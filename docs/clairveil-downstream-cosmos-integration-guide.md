@@ -210,7 +210,8 @@ This is a trusted Go integration surface, not a protobuf Msg service. The public
 `DepositWithFunder` validates address formats but does not authenticate `msg.Creator` or authorize `funder`; the deposit proof also does not bind the creator. The downstream adapter must therefore enforce all of these invariants:
 
 - Derive `msg.Creator` as a canonical Cosmos address from the authenticated EVM caller/operator, never from user-supplied calldata.
-- Pass only the fixed Privacy precompile escrow address as `funder`; do not expose a caller-selected funder.
+- Pass only the fixed Privacy precompile escrow address as `funder`; do not expose a caller-selected funder, and ensure the escrow is distinct from the Clairveil `privacy` module account. `DepositWithFunder` rejects the `privacy` module account because a bank self-transfer would not add transparent backing.
+- Keep bank send restrictions from redirecting transfers addressed to the `privacy` module account. The trusted `DepositWithFunder` entry verifies that the module balance increases by the exact deposit amount and rolls the nested cache back if a restriction redirects or suppresses the transfer. These two balance reads are limited to the trusted entry so the existing public `MsgServer.Deposit` gas path remains unchanged.
 - Require the parsed `MsgDeposit.Amount` amount to equal EVM `msg.value` exactly and its denom to equal the runtime native denom.
 - Verify downstream-specific EVM-to-Cosmos address mapping and expected address length before calling the Keeper API.
 

@@ -8,6 +8,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/circuit"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/types"
@@ -34,14 +35,21 @@ func (k Keeper) DepositWithFunder(
 	if err := sdk.VerifyAddressFormat(funder); err != nil {
 		return nil, errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid deposit funder: %v", err)
 	}
+	if funder.Equals(authtypes.NewModuleAddress(types.ModuleName)) {
+		return nil, errorsmod.Wrap(
+			sdkerrors.ErrInvalidAddress,
+			"deposit funder must not be the privacy module account",
+		)
+	}
 
-	return k.depositWithValidatedFunder(ctx, msg, funder)
+	return k.depositWithValidatedFunder(ctx, msg, funder, true)
 }
 
 func (k Keeper) depositWithValidatedFunder(
 	ctx sdk.Context,
 	msg *types.MsgDeposit,
 	funder sdk.AccAddress,
+	verifyModuleBalanceDelta bool,
 ) (*types.MsgDepositResponse, error) {
 	coin, err := sdk.ParseCoinNormalized(msg.Amount)
 	if err != nil {
@@ -81,8 +89,26 @@ func (k Keeper) depositWithValidatedFunder(
 	}
 
 	cacheCtx, writeCache := ctx.CacheContext()
+	var moduleBalanceBefore sdk.Coin
+	if verifyModuleBalanceDelta {
+		moduleAddress := authtypes.NewModuleAddress(types.ModuleName)
+		moduleBalanceBefore = k.bankKeeper.GetBalance(cacheCtx, moduleAddress, coin.Denom)
+	}
 	if err := k.bankKeeper.SendCoinsFromAccountToModule(cacheCtx, funder, types.ModuleName, sdk.NewCoins(coin)); err != nil {
 		return nil, errorsmod.Wrap(err, "failed to lock tokens")
+	}
+	if verifyModuleBalanceDelta {
+		moduleAddress := authtypes.NewModuleAddress(types.ModuleName)
+		moduleBalanceAfter := k.bankKeeper.GetBalance(cacheCtx, moduleAddress, coin.Denom)
+		expectedModuleBalance := moduleBalanceBefore.Amount.Add(coin.Amount)
+		if !moduleBalanceAfter.Amount.Equal(expectedModuleBalance) {
+			return nil, errorsmod.Wrapf(
+				sdkerrors.ErrLogic,
+				"privacy module balance mismatch after deposit bank transfer: got %s, expected %s",
+				moduleBalanceAfter.Amount,
+				expectedModuleBalance,
+			)
+		}
 	}
 	if err := k.RecordReserveDeposit(cacheCtx, coin); err != nil {
 		return nil, errorsmod.Wrap(err, "failed to record privacy reserve deposit")

@@ -30,11 +30,13 @@ const cacheAwareDepositBankStoreKey = "privacy_deposit_test_bank"
 
 type cacheAwareDepositBankKeeper struct {
 	storeService             corestore.KVStoreService
+	getBalanceCalls          int
 	fromAccountToModuleCalls int
 	lastAccountSender        sdk.AccAddress
 	lastAccountModule        string
 	lastAccountAmount        sdk.Coins
 	errFromAccountToModule   error
+	redirectAccountToModule  sdk.AccAddress
 }
 
 func cacheAwareDepositBalanceKey(address sdk.AccAddress, denom string) []byte {
@@ -74,6 +76,7 @@ func (b *cacheAwareDepositBankKeeper) setBalance(ctx context.Context, address sd
 }
 
 func (b *cacheAwareDepositBankKeeper) GetBalance(ctx context.Context, address sdk.AccAddress, denom string) sdk.Coin {
+	b.getBalanceCalls++
 	amount, err := b.balance(ctx, address, denom)
 	if err != nil {
 		panic(err)
@@ -132,7 +135,11 @@ func (b *cacheAwareDepositBankKeeper) SendCoinsFromAccountToModule(
 	if recipientModule != privacytypes.ModuleName {
 		return fmt.Errorf("unexpected recipient module %q", recipientModule)
 	}
-	return b.transfer(ctx, sender, authtypes.NewModuleAddress(recipientModule), amount)
+	recipient := authtypes.NewModuleAddress(recipientModule)
+	if len(b.redirectAccountToModule) != 0 {
+		recipient = b.redirectAccountToModule
+	}
+	return b.transfer(ctx, sender, recipient, amount)
 }
 
 func (b *cacheAwareDepositBankKeeper) SendCoinsFromModuleToAccount(
@@ -295,6 +302,54 @@ func TestCacheAwareDepositBankKeeperSelfTransferIsNoOp(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, sdkmath.NewInt(20), bankKeeper.testBalance(t, ctx, moduleAddress, "uclair"))
+}
+
+func TestDepositWithFunderRejectsPrivacyModuleFunder(t *testing.T) {
+	k, ctx, bankKeeper := setupCacheAwareDepositKeeper(t)
+	actorString := testAddress(0x79)
+	moduleAddress := authtypes.NewModuleAddress(privacytypes.ModuleName)
+	bankKeeper.setTestBalance(t, ctx, moduleAddress, "uclair", 20)
+	msg := testDepositMsg(t, actorString, "7uclair", big.NewInt(7), "uclair", []byte{0x79})
+	privacyBefore := collectStoreEntries(t, k.storeService, ctx)
+	bankBefore := collectStoreEntries(t, bankKeeper.storeService, ctx)
+
+	_, err := k.DepositWithFunder(ctx, msg, moduleAddress)
+	require.Error(t, err)
+	require.ErrorIs(t, err, sdkerrors.ErrInvalidAddress)
+	require.ErrorContains(t, err, "deposit funder must not be the privacy module account")
+	require.Zero(t, bankKeeper.fromAccountToModuleCalls)
+	require.Equal(t, sdkmath.NewInt(20), bankKeeper.testBalance(t, ctx, moduleAddress, "uclair"))
+	require.Zero(t, k.GetLeafCount(ctx))
+	exists, hasErr := k.HasCommitment(ctx, msg.NoteCommitment)
+	require.NoError(t, hasErr)
+	require.False(t, exists)
+	require.Empty(t, ctx.EventManager().Events())
+	require.Equal(t, privacyBefore, collectStoreEntries(t, k.storeService, ctx))
+	require.Equal(t, bankBefore, collectStoreEntries(t, bankKeeper.storeService, ctx))
+}
+
+func TestDepositWithFunderRejectsRedirectedModuleTransfer(t *testing.T) {
+	k, ctx, bankKeeper := setupCacheAwareDepositKeeper(t)
+	actorString := testAddress(0x7a)
+	actor, err := sdk.AccAddressFromBech32(actorString)
+	require.NoError(t, err)
+	funder := sdk.AccAddress(bytes.Repeat([]byte{0x7b}, 20))
+	redirectedRecipient := sdk.AccAddress(bytes.Repeat([]byte{0x7c}, 20))
+	bankKeeper.redirectAccountToModule = redirectedRecipient
+	bankKeeper.setTestBalance(t, ctx, funder, "uclair", 20)
+	msg := testDepositMsg(t, actorString, "7uclair", big.NewInt(7), "uclair", []byte{0x7a})
+	privacyBefore := collectStoreEntries(t, k.storeService, ctx)
+	bankBefore := collectStoreEntries(t, bankKeeper.storeService, ctx)
+
+	_, err = k.DepositWithFunder(ctx, msg, funder)
+	require.Error(t, err)
+	require.ErrorIs(t, err, sdkerrors.ErrLogic)
+	require.ErrorContains(t, err, "privacy module balance mismatch after deposit bank transfer")
+	require.Equal(t, 1, bankKeeper.fromAccountToModuleCalls)
+	requireNoCommittedDeposit(t, k, ctx, bankKeeper, actor, funder, 0, 20, msg.NoteCommitment)
+	require.True(t, bankKeeper.testBalance(t, ctx, redirectedRecipient, "uclair").IsZero())
+	require.Equal(t, privacyBefore, collectStoreEntries(t, k.storeService, ctx))
+	require.Equal(t, bankBefore, collectStoreEntries(t, bankKeeper.storeService, ctx))
 }
 
 func TestDepositWithFunderZeroValueKeepsTransparentBalances(t *testing.T) {

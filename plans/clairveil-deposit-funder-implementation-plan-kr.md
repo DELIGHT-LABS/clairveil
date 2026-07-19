@@ -10,7 +10,7 @@
 >
 > branch 시작 commit: `15031b7a51de1bead673117594a05e07d5af14ca`
 >
-> 구현 commit: `6f54c5bf23ffaf66d25dd34c1385e87318457a45`
+> 구현 기준: 현재 reviewed checkout. `6f54c5bf23ffaf66d25dd34c1385e87318457a45`는 초기 API 구현 commit이지만 privacy module self-funding 방어를 포함하지 않으므로 downstream immutable version으로 사용하지 않는다.
 >
 > Source request: [clairveil-deposit-funder-separation-handoff-kr.md](clairveil-deposit-funder-separation-handoff-kr.md)
 
@@ -49,9 +49,11 @@ funder = explicit sdk.AccAddress
 | Direct Keeper API가 protobuf signer 검증을 우회함 | `DepositWithFunder`는 actor를 인증하지 않는다는 점을 GoDoc과 integration 문서에 명시하고, downstream이 authenticated EVM caller에서 `msg.Creator`를 생성하도록 요구한다. |
 | Core 후반 실패의 원자성 경계가 불명확함 | Mutation 구간에 nested `CacheContext()`를 사용한다. Downstream after-policy failure는 별도의 outer cache/snapshot test로 검증한다. |
 | `len(funder) == 0`은 invalid address 전체를 검증하지 못함 | `sdk.VerifyAddressFormat(funder)`를 사용한다. EVM-specific 20-byte 검증은 downstream 책임으로 둔다. |
+| Privacy module account를 funder로 넘기면 bank self-transfer가 실제 backing을 추가하지 않음 | `DepositWithFunder`가 `privacy` module account funder를 거부하고, cache-aware 실제 Keeper 호출 회귀 테스트로 bank/reserve/tree/event 무변경을 검증한다. |
+| Bank send restriction이 Privacy module recipient를 redirect하면 nil error에도 backing이 다른 주소로 이동함 | Nested cache 안에서 bank send 전후 Privacy module balance delta가 deposit amount와 정확히 같은지 검증하고, mismatch에서는 모든 bank/Clairveil state와 event를 rollback한다. |
 | `msg.value`와 `MsgDeposit.Amount` binding이 Clairveil 밖에 있음 | Downstream security invariant로 exact amount, native denom, fixed escrow와 actor derivation을 명시하고 e2e gate에 포함한다. |
 | 현재 deposit event에는 amount가 없음 | Event의 exact 기존 attribute set인 `creator`, `commitment`, `encrypted_note`만 유지하고 `amount`와 `funder`를 추가하지 않는다. |
-| Equivalence 검증 범위가 좁음 | Balance/state/error뿐 아니라 gas, global sequence, scan output, root snapshot과 exact event attributes까지 비교한다. |
+| Equivalence 검증 범위가 좁음 | Balance/state/error, global sequence, scan output, root snapshot과 exact event attributes를 비교하고, public gas path는 baseline을 유지하며 trusted path의 두 module-balance read만 명시적 surcharge로 검증한다. |
 | 현재 bank mock은 sender/account/cache rollback을 표현하지 못함 | Lightweight sender assertion mock과 cache-aware bank integration fixture를 분리한다. |
 
 ## 3. 현재 기준 동작
@@ -390,7 +392,7 @@ DepositWithFunder(msg.Creator=A, funder=A)
 비교 항목:
 
 - response와 error type/message
-- SDK gas consumed
+- Public SDK gas baseline 유지와 trusted module-balance read surcharge
 - A와 Privacy module의 bank balance
 - reserve snapshot 전체 필드
 - commitment index와 leaf count
@@ -523,6 +525,8 @@ git diff --name-only 15031b7a51de1bead673117594a05e07d5af14ca -- \
 
 - [x] GoDoc이 actor/funder authorization을 caller 책임으로 명시한다.
 - [x] Empty/invalid funder가 `sdk.VerifyAddressFormat` 기준으로 거부된다.
+- [x] Privacy module account funder가 bank 호출 전에 거부되어 self-transfer로 unbacked deposit을 만들 수 없다.
+- [x] Bank send 후 Privacy module balance delta가 deposit amount와 정확히 같아야 하며 redirect/no-op success는 rollback된다.
 - [x] Public protobuf/gRPC/CLI/client SDK에 funder가 노출되지 않는다.
 - [x] Downstream integration guide가 actor derivation과 exact value/native denom/fixed escrow invariant를 명시한다.
 
@@ -535,22 +539,22 @@ git diff --name-only 15031b7a51de1bead673117594a05e07d5af14ca -- \
 
 ### Compatibility와 delivery
 
-- [x] Actor=funder equivalence가 state/event/error/gas/index 전체에서 통과한다.
+- [x] Actor=funder equivalence가 state/event/error/index에서 통과하고, public gas path는 추가 balance read 없이 유지되며 trusted path만 두 번의 balance read를 수행한다.
 - [x] Existing Privacy test suite가 통과한다.
 - [x] Full repository test가 통과한다.
 - [x] Proto/generated/circuit/artifact diff가 없다.
 - [x] Store migration과 module consensus version bump가 없다.
-- [x] Downstream consumer가 참조할 immutable implementation commit이 제공된다.
+- [ ] Downstream consumer가 참조할 immutable tag/commit을 현재 security-hardening 포함 revision에서 제공한다.
 
 ## 13. Completion ledger
 
 구현 완료 결과는 다음과 같다.
 
 ```text
-Implementation commit: 6f54c5bf23ffaf66d25dd34c1385e87318457a45
-Release/tag: immutable implementation commit 제공; release tag는 생성하지 않음
+Implementation revision: current reviewed checkout; initial commit 6f54c5bf23ffaf66d25dd34c1385e87318457a45 is not a safe downstream pin because it predates privacy module self-funding rejection
+Release/tag: pending; publish an immutable tag/commit only after the current security-hardening and gates are included
 Public Deposit regression: PASS
-Actor=funder equivalence: PASS; bank/privacy state, event, error, ABCI code, gas, scan/index 비교
+Actor=funder equivalence: PASS; bank/privacy state, event, error, ABCI code, scan/index 비교; public gas path는 balance read 0회, trusted path는 module balance delta 검증 2회
 Actor!=funder success: PASS; actor 불변, funder debit, module/reserve credit, creator attribution 확인
 Core-local rollback: PASS; insufficient/bank/reserve/tree/event-index failure 전체 KV/event 불변
 Outer snapshot rollback: PASS; nested success 뒤 outer SDK cache discard 검증
