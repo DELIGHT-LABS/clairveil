@@ -17,6 +17,7 @@ Plan status, owner/scope, and superseding document should be updated when the im
 
 | Plan | Status | Current exit boundary |
 | --- | --- | --- |
+| [Deposit actor/funder separation implementation](clairveil-deposit-funder-implementation-plan-kr.md) | Active; Korean-only | Preserve public Deposit compatibility while verifying trusted Keeper funder injection, core/outer rollback, and downstream exact-value security contracts |
 | [Public capacity claim execution](clairveil-public-capacity-claim-execution-plan-kr.md) | Active; Korean-only | Produce eligible operational prover RPS, chain TPS, and user-latency claim evidence without converting harness measurements into unsupported production claims |
 
 ## Completed Batch Program Records
