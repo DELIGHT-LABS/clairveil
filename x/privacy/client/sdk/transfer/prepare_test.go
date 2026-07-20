@@ -234,6 +234,7 @@ func TestPrepareJoinSplitTransferRejectsMixedOwnersBeforePathLookup(t *testing.T
 	fixture := newPrepareJoinSplitFixture(t, []uint32{0, 1})
 	fixture.inputs[1].Note.ReceiverSpendPubKeyX = pointCoordinate(fixture.recipientSpendPubKey, true)
 	fixture.inputs[1].Note.ReceiverSpendPubKeyY = pointCoordinate(fixture.recipientSpendPubKey, false)
+	markFoundNotesVerified(&fixture.inputs)
 
 	_, err := PrepareJoinSplitTransfer(
 		context.Background(),
@@ -256,6 +257,7 @@ func TestPrepareJoinSplitTransferRejectsChangeAmountAboveShieldedLimit(t *testin
 	maxAmount := privacytypes.MaxShieldedAmount()
 	fixture.inputs[0].Note.Amount = new(big.Int).Set(maxAmount)
 	fixture.inputs[1].Note.Amount = new(big.Int).Set(maxAmount)
+	markFoundNotesVerified(&fixture.inputs)
 
 	_, err := PrepareJoinSplitTransfer(
 		context.Background(),

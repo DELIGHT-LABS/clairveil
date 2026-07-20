@@ -54,6 +54,87 @@ func TestLiveDaemonRunsInjectedProofBroadcastAndScan(t *testing.T) {
 	}
 }
 
+func TestLiveDaemonCommitsSuccessfulBroadcastAfterParentContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	store := &contextAwareSubmittedStore{MemoryStore: privacyreservation.NewMemoryStore()}
+	reservationService := privacyreservation.Service{Store: store, Now: func() time.Time { return time.Now().UTC() }}
+	planner := Service{Reservation: reservationService, Now: func() time.Time { return time.Now().UTC() }}
+
+	input := testPayrollInput()
+	input.Items[0].Amount = big.NewInt(70)
+	plan, err := planner.CreatePlan(ctx, input, []TreasuryNote{
+		testTreasuryNote("large", "uclair", 100, false, ""),
+		testTreasuryNote("zero", "uclair", 0, false, ""),
+	})
+	require.NoError(t, err)
+	confirmed, err := planner.ConfirmPlan(ctx, *plan)
+	require.NoError(t, err)
+
+	report, err := (LiveDaemon{
+		Reservation: reservationService,
+		Executor: testLiveExecutor{
+			item: confirmed.Items[0],
+			beforeSubmit: func(context.Context, LiveOperationGroup) error {
+				cancel()
+				return nil
+			},
+		},
+		LeaseOwner: "live-worker-a",
+		LeaseTTL:   20 * time.Millisecond,
+		Now:        func() time.Time { return time.Now().UTC() },
+	}).RunOnce(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, report.Submitted)
+	require.True(t, store.submittedWithLiveContext)
+	for _, note := range confirmed.Items[0].InputNotes {
+		reservation, err := store.GetReservation(context.Background(), note.ReservationID)
+		require.NoError(t, err)
+		require.Equal(t, privacyreservation.StatusConfirmedSpent, reservation.Status)
+	}
+}
+
+func TestLiveDaemonRecordsSuccessfulBroadcastAsUnknownWhenSubmittedWriteFails(t *testing.T) {
+	ctx := context.Background()
+	store := &submittedWriteFailingStore{
+		MemoryStore: privacyreservation.NewMemoryStore(),
+		failOnce:    true,
+	}
+	reservationService := privacyreservation.Service{Store: store, Now: testNow}
+	planner := Service{Reservation: reservationService, Now: testNow}
+
+	input := testPayrollInput()
+	input.Items[0].Amount = big.NewInt(70)
+	plan, err := planner.CreatePlan(ctx, input, []TreasuryNote{
+		testTreasuryNote("large", "uclair", 100, false, ""),
+		testTreasuryNote("zero", "uclair", 0, false, ""),
+	})
+	require.NoError(t, err)
+	confirmed, err := planner.ConfirmPlan(ctx, *plan)
+	require.NoError(t, err)
+
+	_, err = (LiveDaemon{
+		Reservation: reservationService,
+		Executor:    testLiveExecutor{item: confirmed.Items[0]},
+		LeaseOwner:  "live-worker-a",
+		LeaseTTL:    time.Minute,
+		Now:         testNow,
+	}).RunOnce(ctx)
+	require.ErrorContains(t, err, "submitted write failed")
+
+	operation, err := store.GetOperation(ctx, confirmed.Items[0].OperationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusUnknown, operation.Status)
+	for _, note := range confirmed.Items[0].InputNotes {
+		reservation, err := store.GetReservation(ctx, note.ReservationID)
+		require.NoError(t, err)
+		require.Equal(t, privacyreservation.StatusUnknown, reservation.Status)
+		require.Equal(t, "TXHASH", reservation.TxHash)
+		require.False(t, reservation.BroadcastInFlight)
+		require.Contains(t, reservation.LastBroadcastError, "submitted bookkeeping failed")
+	}
+}
+
 func TestLiveDaemonRollsBackProvingReservationsWhenProofReadyFails(t *testing.T) {
 	ctx := context.Background()
 	store := privacyreservation.NewMemoryStore()

@@ -320,7 +320,19 @@ func (d ReferenceDaemon) submitWithRefs(ctx context.Context, operation privacyre
 	}
 	updatedReservations, updatedOperations, err := d.Reservation.MarkSubmittedBatch(ctx, refs, []string{operation.OperationID}, update)
 	if err != nil {
-		return err
+		broadcast := &BroadcastResult{
+			TxHash:          update.TxHash,
+			TxBytesHash:     update.TxBytesHash,
+			SignDocHash:     update.SignDocHash,
+			AccountSequence: update.AccountSequence,
+		}
+		if submittedStateMatches(ctx, d.Reservation.Store, refs, broadcast) {
+			updatedReservations = reservations
+			operation.Status = privacyreservation.OperationStatusSubmitted
+		} else {
+			fallbackErr := markProofResultsBroadcastUnknown(ctx, d.Reservation, refs, []string{operation.OperationID}, broadcast, fmt.Errorf("submitted bookkeeping failed: %w", err))
+			return errors.Join(err, fallbackErr)
+		}
 	}
 	if len(updatedOperations) > 0 {
 		operation = updatedOperations[0]

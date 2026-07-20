@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
-	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -53,8 +52,8 @@ func TestSummarizeSpendableNotesByDenom(t *testing.T) {
 
 func TestSummarizeSpendableNotesByDenomExcludesUnverifiedNotes(t *testing.T) {
 	notes := []privacyscan.FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacycrypto.HashString("uclair")}, VerifiedUnspent: true},
-		{Note: privacytypes.Note{Amount: big.NewInt(13), AssetID: privacycrypto.HashString("uclair")}},
+		{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(13), AssetID: privacytypes.ComputeAssetIDV1("uclair")}},
 	}
 
 	spendable, total := SummarizeSpendableNotesByDenom(notes, "uclair")

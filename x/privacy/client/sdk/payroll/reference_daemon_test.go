@@ -2,6 +2,7 @@ package payroll
 
 import (
 	"context"
+	"errors"
 	"math/big"
 	"testing"
 	"time"
@@ -52,6 +53,55 @@ func TestReferenceDaemonRunOnceCompletesSimulatedPayrollOperation(t *testing.T) 
 	require.Equal(t, privacyreservation.OperationStatusSucceeded, operation.Status)
 	require.NotEmpty(t, operation.ExpectedOutputCommitment)
 	require.NotEmpty(t, operation.ExpectedDisclosureDigest)
+}
+
+func TestReferenceDaemonRecordsSuccessfulBroadcastAsUnknownWhenSubmittedWriteFails(t *testing.T) {
+	ctx := context.Background()
+	store := &referenceSubmittedWriteFailingStore{
+		MemoryStore: privacyreservation.NewMemoryStore(),
+		failOnce:    true,
+	}
+	reservationService := privacyreservation.Service{Store: store, Now: testNow}
+	svc := Service{Reservation: reservationService, Now: testNow}
+	input := testPayrollInput()
+	input.Items[0].Amount = big.NewInt(70)
+	plan, err := svc.CreatePlan(ctx, input, []TreasuryNote{
+		testTreasuryNote("large", "uclair", 100, false, ""),
+		testTreasuryNote("zero", "uclair", 0, false, ""),
+	})
+	require.NoError(t, err)
+	confirmed, err := svc.ConfirmPlan(ctx, *plan)
+	require.NoError(t, err)
+
+	daemon := ReferenceDaemon{
+		Reservation: reservationService,
+		LeaseOwner:  "test-payrolld",
+		LeaseTTL:    time.Minute,
+		Now:         testNow,
+	}
+	_, err = daemon.RunOnce(ctx)
+	require.ErrorContains(t, err, "submitted write failed")
+
+	wantTxHash := simulatedHex("tx", confirmed.Items[0].OperationID)
+	operation, err := store.GetOperation(ctx, confirmed.Items[0].OperationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusUnknown, operation.Status)
+	for _, note := range confirmed.Items[0].InputNotes {
+		reservation, err := store.GetReservation(ctx, note.ReservationID)
+		require.NoError(t, err)
+		require.Equal(t, privacyreservation.StatusUnknown, reservation.Status)
+		require.Equal(t, wantTxHash, reservation.TxHash)
+		require.False(t, reservation.BroadcastInFlight)
+	}
+
+	report, err := daemon.RunOnce(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, report.Reconciled)
+	for _, note := range confirmed.Items[0].InputNotes {
+		reservation, err := store.GetReservation(ctx, note.ReservationID)
+		require.NoError(t, err)
+		require.Equal(t, privacyreservation.StatusConfirmedSpent, reservation.Status)
+	}
 }
 
 func TestReferenceDaemonRunOnceIsIdleAfterTerminalState(t *testing.T) {
@@ -218,4 +268,17 @@ func TestReferenceDaemonMarksExpiredProofReadyBroadcastAttemptManualReview(t *te
 		require.Empty(t, reservation.LeaseOwner)
 		require.Empty(t, reservation.LeaseToken)
 	}
+}
+
+type referenceSubmittedWriteFailingStore struct {
+	*privacyreservation.MemoryStore
+	failOnce bool
+}
+
+func (s *referenceSubmittedWriteFailingStore) MarkReservationsSubmitted(ctx context.Context, refs []privacyreservation.SubmittedReservationRef, operationIDs []string, update privacyreservation.SubmittedReservationUpdate, now time.Time) ([]privacyreservation.NoteReservation, []privacyreservation.PayrollOperation, error) {
+	if s.failOnce {
+		s.failOnce = false
+		return nil, nil, errors.New("submitted write failed")
+	}
+	return s.MemoryStore.MarkReservationsSubmitted(ctx, refs, operationIDs, update, now)
 }

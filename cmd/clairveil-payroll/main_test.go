@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -477,6 +478,47 @@ func TestSettleTransferBatchCommandConfirmsDurableState(t *testing.T) {
 	require.Equal(t, 0, settle.RequiresReview)
 }
 
+func TestSettleTransferBatchRecordsSuccessfulSubmissionAsUnknownWhenSubmittedWriteFails(t *testing.T) {
+	ctx := context.Background()
+	store := &settlementSubmittedWriteFailingStore{
+		MemoryStore: privacyreservation.NewMemoryStore(),
+		failOnce:    true,
+	}
+	reservationService := privacyreservation.Service{Store: store, Now: fixedSettlementNow}
+	input, err := validPrepareNotesPayload().toSDK()
+	require.NoError(t, err)
+	planner := privacypayroll.Service{Reservation: reservationService, Now: fixedSettlementNow}
+	plan, err := planner.CreatePlan(ctx, input.PayrollInput, input.TreasuryNotes)
+	require.NoError(t, err)
+	confirmed, err := planner.ConfirmPlan(ctx, *plan)
+	require.NoError(t, err)
+	item := confirmed.Items[0]
+	tx := settlementTxResultForItem("LIVE_TX_HASH", item, "settle-commitment", "settle-audit")
+
+	_, err = settleTransferBatchItem(ctx, reservationService, item, 0, 0, tx, "test-settlement", time.Minute)
+	require.ErrorContains(t, err, "submitted write failed")
+
+	operation, err := store.GetOperation(ctx, item.OperationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusUnknown, operation.Status)
+	for _, note := range item.InputNotes {
+		reservation, err := store.GetReservation(ctx, note.ReservationID)
+		require.NoError(t, err)
+		require.Equal(t, privacyreservation.StatusUnknown, reservation.Status)
+		require.Equal(t, tx.TxHash, reservation.TxHash)
+		require.False(t, reservation.BroadcastInFlight)
+	}
+
+	results, err := settleTransferBatchItem(ctx, reservationService, item, 0, 0, tx, "test-settlement", time.Minute)
+	require.NoError(t, err)
+	require.Len(t, results, len(item.InputNotes))
+	for _, note := range item.InputNotes {
+		reservation, err := store.GetReservation(ctx, note.ReservationID)
+		require.NoError(t, err)
+		require.Equal(t, privacyreservation.StatusConfirmedSpent, reservation.Status)
+	}
+}
+
 func TestSettleTransferBatchRejectsRecipientDeltaFromDifferentTx(t *testing.T) {
 	dir := t.TempDir()
 	inputPath := filepath.Join(dir, "payroll.json")
@@ -942,4 +984,21 @@ func markConfirmedPlanProvingForSettlement(t *testing.T, statePath string, plan 
 	}
 	_, _, err = service.BeginProvingOperation(ctx, item.OperationID, reservationIDs, "test-proof-worker", time.Minute)
 	require.NoError(t, err)
+}
+
+func fixedSettlementNow() time.Time {
+	return time.Date(2026, 7, 7, 12, 0, 0, 0, time.UTC)
+}
+
+type settlementSubmittedWriteFailingStore struct {
+	*privacyreservation.MemoryStore
+	failOnce bool
+}
+
+func (s *settlementSubmittedWriteFailingStore) MarkReservationsSubmitted(ctx context.Context, refs []privacyreservation.SubmittedReservationRef, operationIDs []string, update privacyreservation.SubmittedReservationUpdate, now time.Time) ([]privacyreservation.NoteReservation, []privacyreservation.PayrollOperation, error) {
+	if s.failOnce {
+		s.failOnce = false
+		return nil, nil, errors.New("submitted write failed")
+	}
+	return s.MemoryStore.MarkReservationsSubmitted(ctx, refs, operationIDs, update, now)
 }

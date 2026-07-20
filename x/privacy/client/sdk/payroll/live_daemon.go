@@ -263,43 +263,48 @@ func (d LiveDaemon) broadcastProofReady(ctx context.Context, group LiveOperation
 		return fmt.Errorf("live executor returned nil broadcast submission")
 	}
 	submitInvoked := false
-	broadcast, err := broadcastWithSubmissionLeaseHeartbeat(ctx, d.Reservation, refs, d.leaseTTL(), func(broadcastCtx context.Context, _ submissionLeaseCommit, _ submissionLeaseRefresh) (*BroadcastResult, error) {
+	terminalFailureRecorded := false
+	_, err = broadcastWithSubmissionLeaseHeartbeat(ctx, d.Reservation, refs, d.leaseTTL(), func(broadcastCtx context.Context, commit submissionLeaseCommit, _ submissionLeaseRefresh) (*BroadcastResult, error) {
 		if _, _, markErr := d.Reservation.MarkBroadcastAttempting(broadcastCtx, refs, []string{group.Operation.OperationID}, privacyreservation.BroadcastAttemptStart{
 			Reason: "live payroll broadcast boundary crossed",
 		}); markErr != nil {
 			return nil, markErr
 		}
 		submitInvoked = true
-		return submit(broadcastCtx)
+		broadcast, submitErr := submit(broadcastCtx)
+		if submitErr != nil {
+			if recordErr := d.recordBroadcastFailure(commit, group, refs, report, broadcast, submitErr, reason); recordErr != nil {
+				return broadcast, errors.Join(submitErr, recordErr)
+			}
+			terminalFailureRecorded = true
+			return broadcast, submitErr
+		}
+		if broadcast == nil {
+			nilResultErr := fmt.Errorf("live executor returned nil broadcast result")
+			if err := d.recordBroadcastFailure(commit, group, refs, report, nil, nilResultErr, reason); err != nil {
+				return nil, errors.Join(nilResultErr, err)
+			}
+			terminalFailureRecorded = true
+			return nil, nil
+		}
+		if broadcast.Code != 0 {
+			broadcastErr := broadcastCodeError(broadcast)
+			if err := d.recordBroadcastFailure(commit, group, refs, report, broadcast, broadcastErr, reason); err != nil {
+				return broadcast, errors.Join(broadcastErr, err)
+			}
+			terminalFailureRecorded = true
+			return broadcast, nil
+		}
+		if err := d.recordBroadcastSuccess(commit, group, refs, report, broadcast, reason); err != nil {
+			return broadcast, err
+		}
+		return broadcast, nil
 	})
 	if err != nil {
-		if !submitInvoked {
+		if !submitInvoked || !terminalFailureRecorded {
 			return err
 		}
-		return d.recordBroadcastFailure(ctx, group, refs, report, broadcast, err, reason)
 	}
-	if broadcast == nil {
-		return d.recordBroadcastFailure(ctx, group, refs, report, nil, fmt.Errorf("live executor returned nil broadcast result"), reason)
-	}
-	operationIDs := []string{group.Operation.OperationID}
-	if broadcast.Code != 0 {
-		return d.recordBroadcastFailure(ctx, group, refs, report, broadcast, broadcastCodeError(broadcast), reason)
-	}
-	reservations, operations, err := d.Reservation.MarkSubmittedBatch(ctx, refs, operationIDs, privacyreservation.SubmittedReservationUpdate{
-		TxHash:          broadcast.TxHash,
-		TxBytesHash:     broadcast.TxBytesHash,
-		SignDocHash:     broadcast.SignDocHash,
-		AccountSequence: broadcast.AccountSequence,
-	})
-	if err != nil {
-		return err
-	}
-	operationStatus := privacyreservation.OperationStatusSubmitted
-	if len(operations) > 0 {
-		operationStatus = operations[0].Status
-	}
-	report.Submitted++
-	report.Items = append(report.Items, referenceDaemonItem(referenceReservationGroup{Operation: group.Operation, Reservations: reservations}, "submitted", privacyreservation.StatusSubmitted, operationStatus, false, firstNonEmptyString(reason, "tx broadcast")))
 	return nil
 }
 
@@ -346,37 +351,67 @@ func (d LiveDaemon) proofReadyRefs(ctx context.Context, group LiveOperationGroup
 	return refs, nil
 }
 
-func (d LiveDaemon) recordBroadcastFailure(ctx context.Context, group LiveOperationGroup, refs []privacyreservation.SubmittedReservationRef, report *ReferenceDaemonRunReport, broadcast *BroadcastResult, broadcastErr error, reason string) error {
-	terminalCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), submissionTerminalCommitTimeout)
-	defer cancel()
-
-	operationIDs := []string{group.Operation.OperationID}
-	action := "broadcast-ambiguous"
-	reservationStatus := privacyreservation.StatusManualReview
-	operationStatus := privacyreservation.OperationStatusManualReview
-	var err error
-	if broadcastHasAttemptIdentity(broadcast) {
-		action = "broadcast-unknown"
-		reservationStatus = privacyreservation.StatusUnknown
-		operationStatus = privacyreservation.OperationStatusUnknown
-		_, _, err = d.Reservation.MarkBroadcastUnknownBatch(terminalCtx, refs, operationIDs, privacyreservation.BroadcastAttemptUpdate{
+func (d LiveDaemon) recordBroadcastSuccess(commit submissionLeaseCommit, group LiveOperationGroup, refs []privacyreservation.SubmittedReservationRef, report *ReferenceDaemonRunReport, broadcast *BroadcastResult, reason string) error {
+	return commit(func(terminalCtx context.Context, heartbeatErr error) error {
+		lastBroadcastError := ""
+		if heartbeatErr != nil {
+			lastBroadcastError = heartbeatErr.Error()
+		}
+		reservations, operations, err := d.Reservation.MarkSubmittedBatch(terminalCtx, refs, []string{group.Operation.OperationID}, privacyreservation.SubmittedReservationUpdate{
 			TxHash:             broadcast.TxHash,
 			TxBytesHash:        broadcast.TxBytesHash,
 			SignDocHash:        broadcast.SignDocHash,
 			AccountSequence:    broadcast.AccountSequence,
-			LastBroadcastError: broadcastErr.Error(),
+			LastBroadcastError: lastBroadcastError,
 		})
-	} else {
-		_, _, err = d.Reservation.MarkBroadcastAmbiguousBatch(terminalCtx, refs, operationIDs, privacyreservation.BroadcastAmbiguityUpdate{
-			LastBroadcastError: broadcastErr.Error(),
-		})
-	}
-	if err != nil {
-		return errors.Join(broadcastErr, err)
-	}
-	report.RequiresReview++
-	report.Items = append(report.Items, liveDaemonItem(group, action, reservationStatus, operationStatus, true, firstNonEmptyString(reason, broadcastErr.Error())))
-	return nil
+		if err != nil {
+			if submittedStateMatches(terminalCtx, d.Reservation.Store, refs, broadcast) {
+				report.Submitted++
+				report.Items = append(report.Items, liveDaemonItem(group, "submitted", privacyreservation.StatusSubmitted, privacyreservation.OperationStatusSubmitted, false, firstNonEmptyString(reason, "tx broadcast")))
+				return nil
+			}
+			fallbackErr := markProofResultsBroadcastUnknown(terminalCtx, d.Reservation, refs, []string{group.Operation.OperationID}, broadcast, errors.Join(fmt.Errorf("submitted bookkeeping failed: %w", err), heartbeatErr))
+			return errors.Join(err, fallbackErr)
+		}
+		operationStatus := privacyreservation.OperationStatusSubmitted
+		if len(operations) > 0 {
+			operationStatus = operations[0].Status
+		}
+		report.Submitted++
+		report.Items = append(report.Items, referenceDaemonItem(referenceReservationGroup{Operation: group.Operation, Reservations: reservations}, "submitted", privacyreservation.StatusSubmitted, operationStatus, false, firstNonEmptyString(reason, "tx broadcast")))
+		return nil
+	})
+}
+
+func (d LiveDaemon) recordBroadcastFailure(commit submissionLeaseCommit, group LiveOperationGroup, refs []privacyreservation.SubmittedReservationRef, report *ReferenceDaemonRunReport, broadcast *BroadcastResult, broadcastErr error, reason string) error {
+	return commit(func(terminalCtx context.Context, heartbeatErr error) error {
+		terminalErr := errors.Join(broadcastErr, heartbeatErr)
+		operationIDs := []string{group.Operation.OperationID}
+		action := "broadcast-ambiguous"
+		reservationStatus := privacyreservation.StatusManualReview
+		operationStatus := privacyreservation.OperationStatusManualReview
+		if broadcastHasAttemptIdentity(broadcast) {
+			action = "broadcast-unknown"
+			reservationStatus = privacyreservation.StatusUnknown
+			operationStatus = privacyreservation.OperationStatusUnknown
+			if _, _, err := d.Reservation.MarkBroadcastUnknownBatch(terminalCtx, refs, operationIDs, privacyreservation.BroadcastAttemptUpdate{
+				TxHash:             broadcast.TxHash,
+				TxBytesHash:        broadcast.TxBytesHash,
+				SignDocHash:        broadcast.SignDocHash,
+				AccountSequence:    broadcast.AccountSequence,
+				LastBroadcastError: terminalErr.Error(),
+			}); err != nil {
+				return err
+			}
+		} else if _, _, err := d.Reservation.MarkBroadcastAmbiguousBatch(terminalCtx, refs, operationIDs, privacyreservation.BroadcastAmbiguityUpdate{
+			LastBroadcastError: terminalErr.Error(),
+		}); err != nil {
+			return err
+		}
+		report.RequiresReview++
+		report.Items = append(report.Items, liveDaemonItem(group, action, reservationStatus, operationStatus, true, firstNonEmptyString(reason, terminalErr.Error())))
+		return nil
+	})
 }
 
 func (d LiveDaemon) reconcileSubmitted(ctx context.Context, group LiveOperationGroup, report *ReferenceDaemonRunReport) error {

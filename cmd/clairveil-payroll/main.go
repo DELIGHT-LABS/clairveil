@@ -1321,10 +1321,30 @@ func settleTransferBatchItem(ctx context.Context, service privacyreservation.Ser
 		if _, _, err := service.MarkSubmittedBatch(ctx, provingRefs, []string{item.OperationID}, privacyreservation.SubmittedReservationUpdate{
 			TxHash: tx.TxHash,
 		}); err != nil {
-			return nil, err
+			if !settlementSubmissionStateMatches(ctx, service, provingRefs, item.OperationID, tx.TxHash) {
+				_, _, fallbackErr := service.MarkBroadcastUnknownBatch(ctx, provingRefs, []string{item.OperationID}, privacyreservation.BroadcastAttemptUpdate{
+					TxHash:             tx.TxHash,
+					LastBroadcastError: fmt.Sprintf("submitted bookkeeping failed: %v", err),
+				})
+				return nil, errors.Join(err, fallbackErr)
+			}
 		}
 	}
 	return reconcileSettlementRefs(ctx, service, item.OperationID, refs, evidence)
+}
+
+func settlementSubmissionStateMatches(ctx context.Context, service privacyreservation.Service, refs []privacyreservation.SubmittedReservationRef, operationID string, txHash string) bool {
+	if service.Store == nil || strings.TrimSpace(txHash) == "" {
+		return false
+	}
+	for _, ref := range refs {
+		reservation, err := service.Store.GetReservation(ctx, ref.ReservationID)
+		if err != nil || reservation.Status != privacyreservation.StatusSubmitted || !strings.EqualFold(strings.TrimSpace(reservation.TxHash), strings.TrimSpace(txHash)) {
+			return false
+		}
+	}
+	operation, err := service.Store.GetOperation(ctx, operationID)
+	return err == nil && operation.Status == privacyreservation.OperationStatusSubmitted && strings.EqualFold(strings.TrimSpace(operation.TxHash), strings.TrimSpace(txHash))
 }
 
 func manualReviewSettlementResults(reservations []privacyreservation.NoteReservation, reason string) []reconcileItemReport {
