@@ -599,6 +599,59 @@ func TestSettleTransferBatchResumesProofReadyAndSubmittedState(t *testing.T) {
 	}
 }
 
+func TestSettleTransferBatchMarksExpiredProofReadyBroadcastAttemptManualReview(t *testing.T) {
+	dir := t.TempDir()
+	inputPath := filepath.Join(dir, "payroll.json")
+	planPath := filepath.Join(dir, "plan.json")
+	confirmedPath := filepath.Join(dir, "confirmed-plan.json")
+	statePath := filepath.Join(dir, "reservation-state.json")
+	txPath := filepath.Join(dir, "transfer-batch.json")
+	beforePath := filepath.Join(dir, "recipient-before.json")
+	afterPath := filepath.Join(dir, "recipient-after.json")
+	settlePath := filepath.Join(dir, "settle.json")
+	payload := validPrepareNotesPayload()
+	payload.TreasuryNotes[0].Amount = "70"
+	writePayrollInput(t, inputPath, payload)
+	require.NoError(t, runPlan([]string{"-input", inputPath, "-out", planPath}))
+	require.NoError(t, runRun([]string{"-plan", planPath, "-state", statePath, "-out", confirmedPath}))
+	confirmedBytes, err := os.ReadFile(confirmedPath)
+	require.NoError(t, err)
+	var confirmed privacypayroll.PayrollPlan
+	require.NoError(t, json.Unmarshal(confirmedBytes, &confirmed))
+	tx := settlementTxResultForItem("LIVE_TX_HASH", confirmed.Items[0], "settle-commitment", "settle-audit")
+	writeJSONForTest(t, txPath, tx)
+	markConfirmedPlanProofReadyBroadcastAttemptForSettlement(t, statePath, confirmed, tx)
+	writeJSONForTest(t, beforePath, listNotesFile{Notes: []listNotesFileNote{}})
+	writeJSONForTest(t, afterPath, listNotesFile{Notes: []listNotesFileNote{{Index: 1, Status: "spendable", Amount: "70", Nullifier: "recipient-note", TxHash: "LIVE_TX_HASH"}}})
+
+	require.NoError(t, runSettleTransferBatch([]string{
+		"-plan", planPath,
+		"-state", statePath,
+		"-tx", txPath,
+		"-recipient-before", beforePath,
+		"-recipient-after", afterPath,
+		"-out", settlePath,
+	}))
+	settleBytes, err := os.ReadFile(settlePath)
+	require.NoError(t, err)
+	var settle settleTransferBatchReport
+	require.NoError(t, json.Unmarshal(settleBytes, &settle))
+	require.Equal(t, len(confirmed.Items[0].InputNotes), settle.TotalReservations)
+	require.Equal(t, len(confirmed.Items[0].InputNotes), settle.RequiresReview)
+
+	store, err := privacyreservation.OpenDurableFileStore(statePath)
+	require.NoError(t, err)
+	for _, note := range confirmed.Items[0].InputNotes {
+		reservation, err := store.GetReservation(context.Background(), note.ReservationID)
+		require.NoError(t, err)
+		require.Equal(t, privacyreservation.StatusManualReview, reservation.Status)
+		require.False(t, reservation.BroadcastInFlight)
+	}
+	operation, err := store.GetOperation(context.Background(), confirmed.Items[0].OperationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusManualReview, operation.Status)
+}
+
 func TestSettleTransferBatchReclaimsExpiredProvingState(t *testing.T) {
 	dir := t.TempDir()
 	inputPath := filepath.Join(dir, "payroll.json")
@@ -842,6 +895,33 @@ func markConfirmedPlanProofReadyForSettlement(t *testing.T, statePath string, pl
 		_, _, err = svc.MarkSubmittedBatch(ctx, refs, []string{item.OperationID}, privacyreservation.SubmittedReservationUpdate{TxHash: tx.TxHash})
 		require.NoError(t, err)
 	}
+}
+
+func markConfirmedPlanProofReadyBroadcastAttemptForSettlement(t *testing.T, statePath string, plan privacypayroll.PayrollPlan, tx transferBatchResultFile) {
+	t.Helper()
+	markConfirmedPlanProofReadyForSettlement(t, statePath, plan, tx, false)
+
+	ctx := context.Background()
+	store, err := privacyreservation.OpenDurableFileStore(statePath)
+	require.NoError(t, err)
+	now := time.Date(2026, 7, 7, 12, 0, 0, 0, time.UTC)
+	svc := privacyreservation.Service{Store: store, Now: func() time.Time { return now }}
+	item := plan.Items[0]
+	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(item.InputNotes))
+	for _, note := range item.InputNotes {
+		reservation, err := store.GetReservation(ctx, note.ReservationID)
+		require.NoError(t, err)
+		refs = append(refs, privacyreservation.SubmittedReservationRef{
+			ReservationID: note.ReservationID,
+			LeaseOwner:    reservation.LeaseOwner,
+			LeaseToken:    reservation.LeaseToken,
+		})
+	}
+	_, _, err = svc.MarkBroadcastAttempting(ctx, refs, []string{item.OperationID}, privacyreservation.BroadcastAttemptStart{
+		Reason: "test interrupted broadcast",
+		TxHash: tx.TxHash,
+	})
+	require.NoError(t, err)
 }
 
 func markConfirmedPlanProvingForSettlement(t *testing.T, statePath string, plan privacypayroll.PayrollPlan) {

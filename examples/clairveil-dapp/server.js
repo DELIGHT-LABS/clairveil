@@ -1508,16 +1508,19 @@ async function handleApi(req, res, url) {
         const { txHash, receipt } = await relaySubmissionCoordinator.run(
           relayPayloadNullifierLockKey(payload),
           relaySubmissionIdempotencyKey(payload),
-          async () => {
+          async (markSubmissionStarted) => {
             const tx = await submitRelayAfterNullifierPreflight({
               payload,
               checkNullifiers: (nullifiers) => clairveil.checkNullifiers(nullifiers),
-              submit: () => wallet.sendTransaction({
-                to: built.transaction.to,
-                data: built.transaction.data,
-                value: built.transaction.value ?? "0x0",
-                gasLimit: BigInt(config.evmGasLimit)
-              }),
+              submit: () => {
+                markSubmissionStarted();
+                return wallet.sendTransaction({
+                  to: built.transaction.to,
+                  data: built.transaction.data,
+                  value: built.transaction.value ?? "0x0",
+                  gasLimit: BigInt(config.evmGasLimit)
+                });
+              },
             });
             const txHash = validateTxHashHex(tx.hash);
             const receipt = await waitForEvmReceipt(txHash);
@@ -1584,22 +1587,25 @@ async function handleApi(req, res, url) {
         const { result, txHash, tx } = await relaySubmissionCoordinator.run(
           relayPayloadNullifierLockKey(payload),
           relaySubmissionIdempotencyKey(payload),
-          async () => {
+          async (markSubmissionStarted) => {
             const result = await submitRelayAfterNullifierPreflight({
               payload,
               checkNullifiers: (nullifiers) => clairveil.checkNullifiers(nullifiers),
-              submit: () => runClairveild([
-                "tx", "privacy", "relay-withdraw", payloadPath,
-                "--from", relayer,
-                "--keyring-backend", "test",
-                "--home", config.home,
-                "--node", config.rpc,
-                "--chain-id", config.chainId,
-                "--gas", "5000000",
-                "--gas-prices", config.gasPrices,
-                "--yes",
-                "--output", "json"
-              ]),
+              submit: () => {
+                markSubmissionStarted();
+                return runClairveild([
+                  "tx", "privacy", "relay-withdraw", payloadPath,
+                  "--from", relayer,
+                  "--keyring-backend", "test",
+                  "--home", config.home,
+                  "--node", config.rpc,
+                  "--chain-id", config.chainId,
+                  "--gas", "5000000",
+                  "--gas-prices", config.gasPrices,
+                  "--yes",
+                  "--output", "json"
+                ]);
+              },
             });
             const txHash = result.json.txhash;
             const checkTxCode = confirmedCosmosTxCode(result.json);

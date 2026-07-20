@@ -124,3 +124,98 @@ func TestReferenceDaemonMarksExpiredProvingReservationsReplanRequired(t *testing
 	require.NoError(t, err)
 	require.Equal(t, privacyreservation.OperationStatusReplanRequired, operation.Status)
 }
+
+func TestReferenceDaemonResumesExpiredProofReadyOperation(t *testing.T) {
+	ctx := context.Background()
+	store := privacyreservation.NewMemoryStore()
+	reservationService := privacyreservation.Service{Store: store, Now: testNow}
+	svc := Service{Reservation: reservationService, Now: testNow}
+	input := testPayrollInput()
+	input.Items[0].Amount = big.NewInt(70)
+	plan, err := svc.CreatePlan(ctx, input, []TreasuryNote{
+		testTreasuryNote("large", "uclair", 100, false, ""),
+		testTreasuryNote("zero", "uclair", 0, false, ""),
+	})
+	require.NoError(t, err)
+	confirmed, err := svc.ConfirmPlan(ctx, *plan)
+	require.NoError(t, err)
+
+	refs := markPayrollNotesProvingForDaemonTest(t, ctx, reservationService, confirmed.Items[0].OperationID, confirmed.Items[0].InputNotes, "worker-a", time.Minute)
+	_, _, err = reservationService.MarkProofReadyBatch(ctx, refs, privacyreservation.ProofReadyOperationUpdate{
+		OperationID:                   confirmed.Items[0].OperationID,
+		PayloadHash:                   "test-proof-ready-payload",
+		ExpectedOutputCommitment:      "commitment-a",
+		ExpectedDisclosureDigest:      "digest-a",
+		ExpectedAuditDisclosureDigest: "digest-a",
+	})
+	require.NoError(t, err)
+	futureNow := func() time.Time { return testNow().Add(2 * time.Minute) }
+
+	report, err := (ReferenceDaemon{
+		Reservation: privacyreservation.Service{Store: store, Now: futureNow},
+		LeaseOwner:  "worker-b",
+		LeaseTTL:    time.Minute,
+		Now:         futureNow,
+	}).RunOnce(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, report.Submitted)
+	require.Equal(t, 2, report.Reconciled)
+
+	operation, err := store.GetOperation(ctx, confirmed.Items[0].OperationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusSucceeded, operation.Status)
+}
+
+func TestReferenceDaemonMarksExpiredProofReadyBroadcastAttemptManualReview(t *testing.T) {
+	ctx := context.Background()
+	store := privacyreservation.NewMemoryStore()
+	reservationService := privacyreservation.Service{Store: store, Now: testNow}
+	svc := Service{Reservation: reservationService, Now: testNow}
+	input := testPayrollInput()
+	input.Items[0].Amount = big.NewInt(70)
+	plan, err := svc.CreatePlan(ctx, input, []TreasuryNote{
+		testTreasuryNote("large", "uclair", 100, false, ""),
+		testTreasuryNote("zero", "uclair", 0, false, ""),
+	})
+	require.NoError(t, err)
+	confirmed, err := svc.ConfirmPlan(ctx, *plan)
+	require.NoError(t, err)
+
+	refs := markPayrollNotesProvingForDaemonTest(t, ctx, reservationService, confirmed.Items[0].OperationID, confirmed.Items[0].InputNotes, "worker-a", time.Minute)
+	_, _, err = reservationService.MarkProofReadyBatch(ctx, refs, privacyreservation.ProofReadyOperationUpdate{
+		OperationID:                   confirmed.Items[0].OperationID,
+		PayloadHash:                   "test-proof-ready-payload",
+		ExpectedOutputCommitment:      "commitment-a",
+		ExpectedDisclosureDigest:      "digest-a",
+		ExpectedAuditDisclosureDigest: "digest-a",
+	})
+	require.NoError(t, err)
+	_, _, err = reservationService.MarkBroadcastAttempting(ctx, refs, []string{confirmed.Items[0].OperationID}, privacyreservation.BroadcastAttemptStart{
+		Reason: "test interrupted broadcast",
+	})
+	require.NoError(t, err)
+	futureNow := func() time.Time { return testNow().Add(2 * time.Minute) }
+
+	report, err := (ReferenceDaemon{
+		Reservation: privacyreservation.Service{Store: store, Now: futureNow},
+		LeaseOwner:  "worker-b",
+		LeaseTTL:    time.Minute,
+		Now:         futureNow,
+	}).RunOnce(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, report.Submitted)
+	require.Equal(t, 0, report.Reconciled)
+	require.Equal(t, 1, report.RequiresReview)
+
+	operation, err := store.GetOperation(ctx, confirmed.Items[0].OperationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusManualReview, operation.Status)
+	for _, note := range confirmed.Items[0].InputNotes {
+		reservation, err := store.GetReservation(ctx, note.ReservationID)
+		require.NoError(t, err)
+		require.Equal(t, privacyreservation.StatusManualReview, reservation.Status)
+		require.False(t, reservation.BroadcastInFlight)
+		require.Empty(t, reservation.LeaseOwner)
+		require.Empty(t, reservation.LeaseToken)
+	}
+}

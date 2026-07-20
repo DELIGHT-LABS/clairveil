@@ -43,11 +43,24 @@ export function createRelaySubmissionCoordinator({ maxEntries = 256 } = {}) {
       }
       const entry = {
         idempotencyKey: normalizedIdempotencyKey,
+        submissionStarted: false,
         settled: false,
         promise: null,
       };
+      const markSubmissionStarted = () => {
+        entry.submissionStarted = true;
+      };
       entry.promise = Promise.resolve()
-        .then(submit)
+        .then(() => submit(markSubmissionStarted))
+        .catch((error) => {
+          // A callback that fails before the external boundary is safe to retry.
+          // Keep the lock once submission has started, because the transaction may
+          // have reached the network even if the caller did not receive a result.
+          if (!entry.submissionStarted && attempts.get(normalizedLockKey) === entry) {
+            attempts.delete(normalizedLockKey);
+          }
+          throw error;
+        })
         .finally(() => {
           entry.settled = true;
         });

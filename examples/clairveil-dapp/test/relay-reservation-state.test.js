@@ -55,6 +55,73 @@ test("relay submission coordinator coalesces concurrent and repeated payload att
   assert.equal(calls, 1);
 });
 
+test("relay submission coordinator releases a failed preflight for retry", async () => {
+  const coordinator = createRelaySubmissionCoordinator();
+  const payload = {
+    payload_hash: "ab".repeat(32),
+    nullifier_hex: "cd".repeat(32),
+  };
+  const lockKey = relayPayloadNullifierLockKey(payload);
+  const idempotencyKey = relaySubmissionIdempotencyKey(payload);
+  let checks = 0;
+  let submissions = 0;
+  const attempt = (checkNullifiers) => coordinator.run(
+    lockKey,
+    idempotencyKey,
+    (markSubmissionStarted) => submitRelayAfterNullifierPreflight({
+      payload,
+      checkNullifiers,
+      submit: async () => {
+        submissions += 1;
+        markSubmissionStarted();
+        return { txHash: "tx-a" };
+      },
+    }),
+  );
+
+  await assert.rejects(
+    () => attempt(async () => {
+      checks += 1;
+      throw new Error("temporary preflight outage");
+    }),
+    /nullifier status is unavailable/,
+  );
+  assert.equal(coordinator.has(lockKey), false);
+
+  assert.deepEqual(await attempt(async (nullifiers) => {
+    checks += 1;
+    return new Map(nullifiers.map((nullifier) => [nullifier, false]));
+  }), { txHash: "tx-a" });
+  assert.equal(checks, 2);
+  assert.equal(submissions, 1);
+});
+
+test("relay submission coordinator retains a lock after submission starts", async () => {
+  const coordinator = createRelaySubmissionCoordinator();
+  const lockKey = "lock-a";
+  const idempotencyKey = "aa".repeat(32);
+  let calls = 0;
+
+  await assert.rejects(
+    () => coordinator.run(lockKey, idempotencyKey, async (markSubmissionStarted) => {
+      calls += 1;
+      markSubmissionStarted();
+      throw new Error("broadcast outcome unknown");
+    }),
+    /broadcast outcome unknown/,
+  );
+  assert.equal(coordinator.has(lockKey), true);
+
+  await assert.rejects(
+    () => coordinator.run(lockKey, idempotencyKey, async () => {
+      calls += 1;
+      return "second submission";
+    }),
+    /broadcast outcome unknown/,
+  );
+  assert.equal(calls, 1);
+});
+
 test("relay submission lock key canonicalizes the complete input set", () => {
   const first = "aa".repeat(32);
   const second = "bb".repeat(32);

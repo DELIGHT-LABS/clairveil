@@ -1215,6 +1215,7 @@ func settleTransferBatchItem(ctx context.Context, service privacyreservation.Ser
 	hasReserved := false
 	provingCount := 0
 	proofReadyCount := 0
+	proofReadyBroadcastAttempt := false
 	for _, note := range item.InputNotes {
 		reservationID := note.ReservationID
 		if reservationID == "" {
@@ -1238,6 +1239,7 @@ func settleTransferBatchItem(ctx context.Context, service privacyreservation.Ser
 		}
 		if reservation.Status == privacyreservation.StatusProofReady {
 			proofReadyCount++
+			proofReadyBroadcastAttempt = proofReadyBroadcastAttempt || reservation.BroadcastInFlight || reservation.BroadcastAttemptCount != 0
 		}
 		reservationIDs = append(reservationIDs, reservationID)
 		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservationID})
@@ -1277,6 +1279,19 @@ func settleTransferBatchItem(ctx context.Context, service privacyreservation.Ser
 		if proofReadyCount != len(refs) {
 			return nil, fmt.Errorf("operation %s has mixed ProofReady and post-broadcast reservations; reconcile the recorded state", item.OperationID)
 		}
+		if proofReadyBroadcastAttempt {
+			updated, recoverErr := service.RecoverOperationAfterLeaseExpiry(
+				ctx,
+				item.OperationID,
+				reservationIDs,
+				privacyreservation.StatusProofReady,
+				privacyreservation.StatusManualReview,
+			)
+			if recoverErr != nil {
+				return nil, fmt.Errorf("recover expired proof-ready broadcast attempt %s: %w", item.OperationID, recoverErr)
+			}
+			return manualReviewSettlementResults(updated, "expired proof-ready broadcast attempt requires manual reconciliation"), nil
+		}
 		provingRefs, _, err = service.ReclaimExpiredOperation(ctx, item.OperationID, reservationIDs, privacyreservation.StatusProofReady, leaseOwner, leaseTTL)
 		if err != nil {
 			return nil, fmt.Errorf("reclaim expired proof-ready operation %s: %w", item.OperationID, err)
@@ -1310,6 +1325,20 @@ func settleTransferBatchItem(ctx context.Context, service privacyreservation.Ser
 		}
 	}
 	return reconcileSettlementRefs(ctx, service, item.OperationID, refs, evidence)
+}
+
+func manualReviewSettlementResults(reservations []privacyreservation.NoteReservation, reason string) []reconcileItemReport {
+	results := make([]reconcileItemReport, 0, len(reservations))
+	for _, reservation := range reservations {
+		results = append(results, reconcileItemReport{
+			ReservationID:     reservation.ReservationID,
+			ReservationStatus: privacyreservation.StatusManualReview,
+			OperationStatus:   privacyreservation.OperationStatusManualReview,
+			RequiresReview:    true,
+			Reason:            reason,
+		})
+	}
+	return results
 }
 
 // settlementPayloadHash binds the external transfer-batch receipt to the

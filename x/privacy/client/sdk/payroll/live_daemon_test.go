@@ -326,6 +326,193 @@ func TestLiveDaemonReportsNonzeroBroadcastAsRequiresReview(t *testing.T) {
 	}
 }
 
+func TestLiveDaemonRecordsFailedBroadcastWithIdentityAsUnknown(t *testing.T) {
+	ctx := context.Background()
+	store := privacyreservation.NewMemoryStore()
+	reservationService := privacyreservation.Service{Store: store, Now: testNow}
+	planner := Service{Reservation: reservationService, Now: testNow}
+
+	input := testPayrollInput()
+	input.Items[0].Amount = big.NewInt(70)
+	plan, err := planner.CreatePlan(ctx, input, []TreasuryNote{
+		testTreasuryNote("large", "uclair", 100, false, ""),
+		testTreasuryNote("zero", "uclair", 0, false, ""),
+	})
+	require.NoError(t, err)
+	confirmed, err := planner.ConfirmPlan(ctx, *plan)
+	require.NoError(t, err)
+
+	report, err := (LiveDaemon{
+		Reservation: reservationService,
+		Executor: failedBroadcastExecutor{
+			item:   confirmed.Items[0],
+			result: &BroadcastResult{TxHash: "MAYBE_SUBMITTED", TxBytesHash: "tx-bytes", SignDocHash: "sign-doc", AccountSequence: 7},
+			err:    fmt.Errorf("rpc response timed out"),
+		},
+		LeaseOwner: "worker-b",
+		LeaseTTL:   time.Minute,
+		Now:        testNow,
+	}).RunOnce(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, report.ProofReady)
+	require.Equal(t, 0, report.Submitted)
+	require.Equal(t, 1, report.RequiresReview)
+
+	operation, err := store.GetOperation(ctx, confirmed.Items[0].OperationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusUnknown, operation.Status)
+	for _, note := range confirmed.Items[0].InputNotes {
+		reservation, err := store.GetReservation(ctx, note.ReservationID)
+		require.NoError(t, err)
+		require.Equal(t, privacyreservation.StatusUnknown, reservation.Status)
+		require.Equal(t, "MAYBE_SUBMITTED", reservation.TxHash)
+		require.False(t, reservation.BroadcastInFlight)
+		require.Contains(t, reservation.LastBroadcastError, "timed out")
+	}
+}
+
+func TestLiveDaemonRecordsUnidentifiedBroadcastFailureForManualReview(t *testing.T) {
+	ctx := context.Background()
+	store := privacyreservation.NewMemoryStore()
+	reservationService := privacyreservation.Service{Store: store, Now: testNow}
+	planner := Service{Reservation: reservationService, Now: testNow}
+
+	input := testPayrollInput()
+	input.Items[0].Amount = big.NewInt(70)
+	plan, err := planner.CreatePlan(ctx, input, []TreasuryNote{
+		testTreasuryNote("large", "uclair", 100, false, ""),
+		testTreasuryNote("zero", "uclair", 0, false, ""),
+	})
+	require.NoError(t, err)
+	confirmed, err := planner.ConfirmPlan(ctx, *plan)
+	require.NoError(t, err)
+
+	report, err := (LiveDaemon{
+		Reservation: reservationService,
+		Executor: failedBroadcastExecutor{
+			item: confirmed.Items[0],
+			err:  fmt.Errorf("connection reset after submit"),
+		},
+		LeaseOwner: "worker-b",
+		LeaseTTL:   time.Minute,
+		Now:        testNow,
+	}).RunOnce(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, report.ProofReady)
+	require.Equal(t, 0, report.Submitted)
+	require.Equal(t, 1, report.RequiresReview)
+
+	operation, err := store.GetOperation(ctx, confirmed.Items[0].OperationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusManualReview, operation.Status)
+	for _, note := range confirmed.Items[0].InputNotes {
+		reservation, err := store.GetReservation(ctx, note.ReservationID)
+		require.NoError(t, err)
+		require.Equal(t, privacyreservation.StatusManualReview, reservation.Status)
+		require.False(t, reservation.BroadcastInFlight)
+		require.Contains(t, reservation.LastBroadcastError, "connection reset")
+	}
+}
+
+func TestLiveDaemonResumesExpiredProofReadyOperation(t *testing.T) {
+	ctx := context.Background()
+	store := privacyreservation.NewMemoryStore()
+	reservationService := privacyreservation.Service{Store: store, Now: testNow}
+	planner := Service{Reservation: reservationService, Now: testNow}
+
+	input := testPayrollInput()
+	input.Items[0].Amount = big.NewInt(70)
+	plan, err := planner.CreatePlan(ctx, input, []TreasuryNote{
+		testTreasuryNote("large", "uclair", 100, false, ""),
+		testTreasuryNote("zero", "uclair", 0, false, ""),
+	})
+	require.NoError(t, err)
+	confirmed, err := planner.ConfirmPlan(ctx, *plan)
+	require.NoError(t, err)
+
+	refs := markPayrollNotesProvingForDaemonTest(t, ctx, reservationService, confirmed.Items[0].OperationID, confirmed.Items[0].InputNotes, "worker-a", time.Minute)
+	_, _, err = reservationService.MarkProofReadyBatch(ctx, refs, privacyreservation.ProofReadyOperationUpdate{
+		OperationID:                   confirmed.Items[0].OperationID,
+		PayloadHash:                   "test-proof-ready-payload",
+		ExpectedOutputCommitment:      "commitment-a",
+		ExpectedDisclosureDigest:      "digest-a",
+		ExpectedAuditDisclosureDigest: "digest-a",
+	})
+	require.NoError(t, err)
+	futureNow := func() time.Time { return testNow().Add(2 * time.Minute) }
+
+	report, err := (LiveDaemon{
+		Reservation: privacyreservation.Service{Store: store, Now: futureNow},
+		Executor:    testLiveExecutor{item: confirmed.Items[0]},
+		LeaseOwner:  "worker-b",
+		LeaseTTL:    time.Minute,
+		Now:         futureNow,
+	}).RunOnce(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, report.Submitted)
+	require.Equal(t, 2, report.Reconciled)
+
+	operation, err := store.GetOperation(ctx, confirmed.Items[0].OperationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusSucceeded, operation.Status)
+}
+
+func TestLiveDaemonMarksExpiredProofReadyBroadcastAttemptManualReview(t *testing.T) {
+	ctx := context.Background()
+	store := privacyreservation.NewMemoryStore()
+	reservationService := privacyreservation.Service{Store: store, Now: testNow}
+	planner := Service{Reservation: reservationService, Now: testNow}
+
+	input := testPayrollInput()
+	input.Items[0].Amount = big.NewInt(70)
+	plan, err := planner.CreatePlan(ctx, input, []TreasuryNote{
+		testTreasuryNote("large", "uclair", 100, false, ""),
+		testTreasuryNote("zero", "uclair", 0, false, ""),
+	})
+	require.NoError(t, err)
+	confirmed, err := planner.ConfirmPlan(ctx, *plan)
+	require.NoError(t, err)
+
+	refs := markPayrollNotesProvingForDaemonTest(t, ctx, reservationService, confirmed.Items[0].OperationID, confirmed.Items[0].InputNotes, "worker-a", time.Minute)
+	_, _, err = reservationService.MarkProofReadyBatch(ctx, refs, privacyreservation.ProofReadyOperationUpdate{
+		OperationID:                   confirmed.Items[0].OperationID,
+		PayloadHash:                   "test-proof-ready-payload",
+		ExpectedOutputCommitment:      "commitment-a",
+		ExpectedDisclosureDigest:      "digest-a",
+		ExpectedAuditDisclosureDigest: "digest-a",
+	})
+	require.NoError(t, err)
+	_, _, err = reservationService.MarkBroadcastAttempting(ctx, refs, []string{confirmed.Items[0].OperationID}, privacyreservation.BroadcastAttemptStart{
+		Reason: "test interrupted broadcast",
+	})
+	require.NoError(t, err)
+	futureNow := func() time.Time { return testNow().Add(2 * time.Minute) }
+
+	report, err := (LiveDaemon{
+		Reservation: privacyreservation.Service{Store: store, Now: futureNow},
+		Executor:    testLiveExecutor{item: confirmed.Items[0]},
+		LeaseOwner:  "worker-b",
+		LeaseTTL:    time.Minute,
+		Now:         futureNow,
+	}).RunOnce(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, report.Submitted)
+	require.Equal(t, 0, report.Reconciled)
+	require.Equal(t, 1, report.RequiresReview)
+
+	operation, err := store.GetOperation(ctx, confirmed.Items[0].OperationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusManualReview, operation.Status)
+	for _, note := range confirmed.Items[0].InputNotes {
+		reservation, err := store.GetReservation(ctx, note.ReservationID)
+		require.NoError(t, err)
+		require.Equal(t, privacyreservation.StatusManualReview, reservation.Status)
+		require.False(t, reservation.BroadcastInFlight)
+		require.Empty(t, reservation.LeaseOwner)
+		require.Empty(t, reservation.LeaseToken)
+	}
+}
+
 func TestLiveDaemonMarksExpiredProvingReservationsReplanRequired(t *testing.T) {
 	ctx := context.Background()
 	store := privacyreservation.NewMemoryStore()
@@ -379,6 +566,12 @@ type rejectingBroadcastExecutor struct {
 	item PayrollPlanItem
 }
 
+type failedBroadcastExecutor struct {
+	item   PayrollPlanItem
+	result *BroadcastResult
+	err    error
+}
+
 func (e skippingBroadcastExecutor) BuildProofReady(context.Context, LiveOperationGroup) (privacyreservation.ProofReadyOperationUpdate, string, error) {
 	return testLiveExecutor{item: e.item}.BuildProofReady(context.Background(), LiveOperationGroup{})
 }
@@ -402,6 +595,20 @@ func (e rejectingBroadcastExecutor) PrepareBroadcastProofReady(context.Context, 
 }
 
 func (e rejectingBroadcastExecutor) ScanSubmitted(context.Context, LiveOperationGroup) (map[string]privacyreservation.OperationEvidence, string, error) {
+	return nil, "broadcast result requires operator review", ErrLiveDaemonSkip
+}
+
+func (e failedBroadcastExecutor) BuildProofReady(context.Context, LiveOperationGroup) (privacyreservation.ProofReadyOperationUpdate, string, error) {
+	return testLiveExecutor{item: e.item}.BuildProofReady(context.Background(), LiveOperationGroup{})
+}
+
+func (e failedBroadcastExecutor) PrepareBroadcastProofReady(context.Context, LiveOperationGroup) (LiveBroadcastSubmit, string, error) {
+	return func(context.Context) (*BroadcastResult, error) {
+		return e.result, e.err
+	}, "test failed broadcast", nil
+}
+
+func (e failedBroadcastExecutor) ScanSubmitted(context.Context, LiveOperationGroup) (map[string]privacyreservation.OperationEvidence, string, error) {
 	return nil, "broadcast result requires operator review", ErrLiveDaemonSkip
 }
 
