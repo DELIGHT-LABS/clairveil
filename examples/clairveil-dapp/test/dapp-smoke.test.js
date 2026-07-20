@@ -7,9 +7,14 @@ const configSource = await readFile(new URL("../public/dapp-config.js", import.m
 const readmeSource = await readFile(new URL("../README.md", import.meta.url), "utf8");
 const packageSource = await readFile(new URL("../package.json", import.meta.url), "utf8");
 const packageJson = JSON.parse(packageSource);
+const makefileSource = await readFile(new URL("../../../Makefile", import.meta.url), "utf8");
 const serverSource = await readFile(new URL("../server.js", import.meta.url), "utf8");
 const htmlSource = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../public/styles.css", import.meta.url), "utf8");
+const relayReservationStateSource = await readFile(
+  new URL("../public/relay-reservation-state.js", import.meta.url),
+  "utf8",
+);
 
 function sourceBetween(source, start, end) {
   const startIndex = source.indexOf(start);
@@ -18,6 +23,15 @@ function sourceBetween(source, start, end) {
   assert.notEqual(endIndex, -1, `missing source marker: ${end}`);
   return source.slice(startIndex, endIndex);
 }
+
+test("examples checks bundle freshness before a mutating DApp build", () => {
+  const examplesTarget = sourceBetween(makefileSource, "examples:\n", "\n.PHONY: vulncheck");
+  const freshnessIndex = examplesTarget.indexOf("run check:bundle:fresh");
+  const mutatingCheckIndex = examplesTarget.indexOf("run check:dapp");
+  assert.notEqual(freshnessIndex, -1);
+  assert.notEqual(mutatingCheckIndex, -1);
+  assert.ok(freshnessIndex < mutatingCheckIndex);
+});
 
 test("DApp keeps minimal-denom amount inputs as integer strings", () => {
   assert.match(appSource, /function amountInputValue/);
@@ -169,6 +183,7 @@ test("DApp hides local-only panels unless the server enables local test features
   assert.match(serverSource, /depositProof: localSignerMutation/);
   assert.match(serverSource, /relayer: localSignerMutation/);
   assert.match(serverSource, /auditorAdmin: localSignerAdmin/);
+  assert.match(serverSource, /proverProxy: proverProxyEnabled\(req\)/);
   assert.match(serverSource, /function localAccountsForPublicConfig\(serverFeatures\)/);
   assert.match(serverSource, /serverFeatures\.localSignerAdmin[\s\S]*return accounts/);
   assert.match(serverSource, /accounts\.filter\(account => account\.name === localRelayerName\(\)\)/);
@@ -223,7 +238,87 @@ test("DApp uses the npm ClairveilJS browser client for public wallet and privacy
     "async function preparePrivacyTransferSignDoc",
   );
   assert.match(appSource, /import \{ createClairveilBrowserDappClient \} from "clairveiljs\/browser-dapp"/);
+  assert.match(appSource, /from "clairveiljs\/reservation"/);
   assert.match(appSource, /function clairveilBrowserClient/);
+  assert.match(appSource, /function currentNoteReservationManager/);
+  assert.match(appSource, /createBrowserReservationStore/);
+  assert.match(appSource, /createNoteReservationManager/);
+  assert.match(appSource, /function refreshNoteReservationState/);
+  assert.match(appSource, /function markPreparedReservationSubmitted/);
+  assert.match(appSource, /function markPreparedReservationUnknown/);
+	assert.match(appSource, /function markPreparedReservationManualReview/);
+  assert.match(appSource, /function markReservationBatchUnknown/);
+	assert.match(appSource, /function verifyPreparedNullifiersUnspentBeforeBroadcast/);
+  assert.match(appSource, /function markPreparedReservationReplanRequired/);
+  assert.match(appSource, /function markReservationBatchReplanRequired/);
+  assert.match(appSource, /function relayWithdrawPayloadStorage/);
+  assert.match(appSource, /function persistRelayWithdrawPayloadState/);
+  assert.match(appSource, /function loadPersistedRelayWithdrawPayloadState/);
+  assert.match(appSource, /function recoverActiveRelayWithdrawSnapshots/);
+  assert.match(appSource, /function relaySnapshotFromActiveReservation/);
+  assert.match(appSource, /window\.sessionStorage/);
+  assert.match(appSource, /clairveil:relay-withdraw-payloads:v1:/);
+  assert.match(appSource, /function noBroadcastAttemptError/);
+  assert.match(appSource, /function broadcastAttemptMetadata/);
+	assert.match(appSource, /opaque_broadcast_error_without_transaction_identity/);
+	assert.match(appSource, /opaque_relay_broadcast_error_without_transaction_identity/);
+  assert.match(appSource, /function hasBroadcastAttemptMetadata/);
+  assert.match(appSource, /function reconcileFailedEvmReservation/);
+  assert.match(appSource, /function reconcileFailedCosmosReservation/);
+  assert.match(appSource, /function isDefiniteCosmosTxFailure/);
+  assert.match(appSource, /function reconcileDefiniteFailedUnknownReservations/);
+  assert.match(appSource, /definite_execution_failure: definiteExecutionFailure/);
+  assert.match(appSource, /function reconcileRecoveredActiveReservations/);
+  assert.match(appSource, /canReplanExpiredLocalReservation/);
+  assert.match(appSource, /relay_payload_expired_requires_manual_review/);
+  assert.match(appSource, /function currentReservationWorkerID/);
+  assert.match(appSource, /leaseOwner: currentReservationWorkerID\(\)/);
+  assert.match(appSource, /function reservationCanRecoverAfterWorkerExpiry/);
+  assert.match(relayReservationStateSource, /function hasDurableNoBroadcastEvidence/);
+  assert.match(appSource, /cacheReservationRecords\(active, \{ replace: true \}\)/);
+  assert.match(appSource, /reservationHasLiveLease/);
+  assert.match(appSource, /recovered_local_prepare_without_broadcast/);
+  assert.match(appSource, /recovered_proof_ready_without_durable_pre_broadcast_evidence/);
+  assert.match(appSource, /recovered_relay_proof_ready_without_durable_pre_broadcast_evidence/);
+  assert.match(appSource, /recovered_definite_tx_failure_nullifier_unspent/);
+  assert.match(appSource, /recovered_tx_not_found_manual_review/);
+  assert.match(appSource, /function recoveredReservationTxOutcome/);
+  assert.match(appSource, /String\(reservation\.tx_bytes_hash \|\| ""\)/);
+  assert.match(appSource, /const definiteFailureReasons = new Set\(/);
+  assert.match(appSource, /"cosmos_tx_code_failed"/);
+  assert.match(appSource, /"evm_receipt_failed"/);
+  assert.match(appSource, /\$\{failureReason\}_later_nullifier_reconcile/);
+  assert.match(appSource, /function isDefiniteEvmReceiptFailure/);
+  assert.match(appSource, /markPreparedReservationBroadcastAttempting/);
+  assert.match(appSource, /submitted_write_failed_after_external_broadcast/);
+  assert.match(appSource, /isEvmReceiptConfirmationPending/);
+  assert.match(appSource, /function updateRelayWithdrawReservationRecords/);
+  assert.match(appSource, /function markRelayReservationHandedOff/);
+  assert.match(appSource, /const expectedVersion = state\.keplr\.relayWithdrawPayloadVersion/);
+  assert.match(appSource, /const copySnapshot = currentPreparedRelayWithdrawSnapshot\(\)/);
+  assert.match(appSource, /relayWithdrawPayloadCopyInFlight = true/);
+  assert.match(appSource, /await markRelayReservationHandedOff\(\s*copySnapshot\.reservation,\s*copySnapshot\.payload\?\.payload_hash,[\s\S]*expectedPayloadVersion: expectedVersion/);
+  assert.match(appSource, /navigator\.clipboard\.writeText\(copySnapshot\.payloadText\)/);
+  assert.match(appSource, /relay_handed_off/);
+  assert.match(appSource, /relayReservationStatus/);
+  assert.match(appSource, /relayBroadcastTxHash/);
+  assert.match(appSource, /relaySnapshotExpiresAtUnix/);
+  assert.match(appSource, /relaySnapshotIsExpired/);
+  assert.match(appSource, /sanitizeRelayWithdrawSnapshot/);
+  assert.match(appSource, /updateReservationBatchRecords/);
+  assert.match(appSource, /\.filter\(relaySnapshotNeedsPendingRecovery\)/);
+  assert.match(appSource, /canRelaySnapshotBeSubmitted/);
+  assert.match(appSource, /isRelaySnapshotStructurallyReady/);
+  assert.match(appSource, /const relayPayloadReady = isRelayPreparedWithdrawStructurallyReady\(\)/);
+  assert.match(appSource, /function canRelayPreparedWithdrawPayload/);
+  assert.match(appSource, /receipt status/);
+  assert.match(appSource, /EVM tx failed/);
+  assert.match(appSource, /function renewReservationBatchLease/);
+  assert.match(appSource, /function extendReservationBatchLeaseToPayloadExpiry/);
+  assert.match(appSource, /function withReservationHeartbeat/);
+  assert.match(appSource, /function withPreparedReservationHeartbeat/);
+  assert.match(appSource, /function noteReservationBookkeeping/);
+  assert.match(appSource, /function warnReservationBookkeeping/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.fetchPrivacyEvents\(\)/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.fetchAuditableTransfers\(\)/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.prepareDeposit/);
@@ -235,6 +330,57 @@ test("DApp uses the npm ClairveilJS browser client for public wallet and privacy
   assert.match(appSource, /clairveilBrowserClient\(\)\.prepareTransfer/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.prepareWithdraw/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.prepareRelayWithdraw/);
+  assert.match(appSource, /reservationManager: currentNoteReservationManager\(\)/);
+  assert.match(appSource, /await manager\.markSubmitted/);
+  assert.match(appSource, /await manager\.markUnknown/);
+  assert.match(appSource, /await manager\.markReplanRequired/);
+  assert.match(appSource, /await manager\.renewLease/);
+  assert.match(appSource, /leaseToken: reservationLeaseToken\(reservation\)/);
+  assert.match(appSource, /if \(!hasBroadcastAttemptMetadata\(attempt\)\) return/);
+  assert.match(appSource, /error\?\.noBroadcastAttempt/);
+  assert.match(appSource, /markPreparedReservationReplanRequired\(data, error\)/);
+  assert.match(appSource, /no_broadcast_attempt:[\s\S]*!hasBroadcastAttemptMetadata/);
+  assert.match(appSource, /withPreparedReservationHeartbeat\(data/);
+  assert.match(appSource, /function reservationReconciliationRequiredError/);
+  assert.match(appSource, /function recordSubmittedReservation/);
+  assert.match(appSource, /await recordSubmittedReservation\([\s\S]*preparedReservation\(data\)/);
+  assert.match(appSource, /error\?\.reservationReconciliationRequired/);
+  assert.match(appSource, /noteReservationBookkeeping\(\(\) =>[\s\S]*markPreparedReservationUnknown/);
+  assert.match(appSource, /"evm_receipt_failed_nullifier_unspent"/);
+  assert.match(appSource, /"cosmos_tx_code_failed_nullifier_unspent"/);
+  assert.match(appSource, /cosmos_tx_code_failed_pending_nullifier_reconcile/);
+  assert.match(appSource, /evm_receipt_failed_pending_nullifier_reconcile/);
+  assert.match(appSource, /nullifierUnspentConfirmed: true/);
+  assert.match(appSource, /txAbsentOrFailedConfirmed: true/);
+  assert.match(appSource, /txHashChecked: attempt\.txHash \|\| attempt\.txBytesHash \|\| attempt\.signDocHash/);
+  assert.match(appSource, /reconcileFailedEvmReservation\([\s\S]*finalData,[\s\S]*reservationStatuses\.Submitted/);
+  assert.match(appSource, /reconcileFailedEvmReservation\([\s\S]*data,[\s\S]*reservationStatuses\.Submitted/);
+  assert.match(appSource, /Transfer submitted; reservation reconciliation required/);
+  assert.match(appSource, /Withdraw submitted; reservation reconciliation required/);
+  assert.match(appSource, /await manager\.reconcileSpentNotes\(state\.keplr\.notes\)/);
+  assert.match(appSource, /noteReservationByNullifier/);
+  assert.match(appSource, /if \(noteHasActiveReservation\(note\)\) return "Reserved"/);
+  assert.match(appSource, /if \(isUnverifiedNote\(note\)\) return "Unverified"/);
+  assert.match(
+    appSource,
+    /return isSpendableNote\(note\) \? "Spendable" : "Spent"/,
+  );
+  assert.match(
+    appSource,
+    /const helperCount = \(notes \|\| \[\]\)\.filter\(\s*\(note\) => isAvailableSpendableNote\(note\) && isZeroAmountNote\(note\),\s*\)\.length/,
+  );
+  assert.match(
+    appSource,
+    /const reservedHelperCount = \(notes \|\| \[\]\)\.filter\(\s*\(note\) =>\s*isSpendableNote\(note\) &&\s*isZeroAmountNote\(note\) &&\s*noteHasActiveReservation\(note\),\s*\)\.length/,
+  );
+  assert.match(appSource, /Reserved helper/);
+  assert.match(appSource, /function noteStatusClass/);
+  assert.match(
+    appSource,
+    /async function setPreparedRelayWithdrawPayload[\s\S]*await refreshNoteReservationState\(\)/,
+  );
+  assert.doesNotMatch(cssSource, /\.note-row\.reserved-note/);
+  assert.doesNotMatch(cssSource, /\.note-status-reserved/);
   assert.match(htmlSource, /class="panel account-panel relayer-panel"/);
   assert.match(htmlSource, /<h2>Relay Withdraw<\/h2>/);
   assert.match(htmlSource, /id="relayerPrepareTitle"[\s\S]*<h3 class="relayer-account-title">Relayer<\/h3>/);
@@ -252,23 +398,101 @@ test("DApp uses the npm ClairveilJS browser client for public wallet and privacy
   assert.match(htmlSource, /id="copyRelayWithdrawPayload"/);
   assert.match(htmlSource, /id="relayWithdrawPreparedChainId"/);
   assert.match(htmlSource, /id="relayWithdrawPreparedExpiresAt"/);
+  assert.match(htmlSource, /id="relayWithdrawPendingList"/);
+  assert.match(htmlSource, /Pending Handoffs/);
   assert.match(htmlSource, /prepared[\s\S]*payload\/proof JSON is privacy-sensitive/);
+  assert.match(htmlSource, /Only relay metadata[\s\S]*is kept after refresh/);
   assert.match(appSource, /input: els\.relayWithdrawRecipient,[\s\S]*list: els\.relayWithdrawRecipientSuggestions,[\s\S]*kind: "transparent"/);
   assert.match(appSource, /function setPreparedRelayWithdrawPayload/);
+  assert.match(appSource, /relayWithdrawPayloadHandedOff: false/);
+  assert.match(appSource, /relayWithdrawPendingPayloads: \[\]/);
+  assert.match(appSource, /relayWithdrawReservation/);
+  assert.match(appSource, /relayWithdrawPreparedData/);
+  assert.match(appSource, /function rememberPendingRelayWithdrawPayload/);
+  assert.match(appSource, /unsafeAllowPlaintext: true/);
+  assert.doesNotMatch(appSource, /relayWithdrawPendingPayloads = \[[\s\S]*\.slice\(0, 5\)/);
+  assert.match(appSource, /function stashHandedOffPreparedRelayWithdrawPayload/);
+  assert.match(appSource, /function restorePendingRelayWithdrawPayload/);
+  assert.match(appSource, /function renderPendingRelayWithdrawPayloads/);
+  assert.match(appSource, /function discardPreparedRelayWithdrawPayload/);
+  assert.match(appSource, /function discardAndClearPreparedRelayWithdrawPayload/);
+  assert.match(appSource, /const expectedVersion = state\.keplr\.relayWithdrawPayloadVersion/);
+  assert.match(appSource, /relayWithdrawPayloadVersion !== expectedVersion/);
+  assert.match(appSource, /local_relay_payload_discarded_before_handoff/);
+  assert.match(appSource, /local_relay_payload_overwritten_before_handoff/);
   assert.match(appSource, /const canonicalRecipient =[\s\S]*payload\?\.recipient[\s\S]*data\?\.prepared\?\.recipient[\s\S]*recipient/);
   assert.match(appSource, /relayWithdrawPayloadRecipient = canonicalRecipient \|\| ""/);
   assert.match(appSource, /relayWithdrawPayloadChainId =[\s\S]*payload\?\.chain_id[\s\S]*payload\?\.chainId/);
   assert.match(appSource, /relayWithdrawPayloadExpiresAt = formatRelayPayloadExpiry/);
+  assert.match(appSource, /extendReservationBatchLeaseToPayloadExpiry\(/);
+  assert.match(appSource, /state\.keplr\.relayWithdrawPayloadHandedOff = true/);
+  assert.match(appSource, /let relayHandoffRecorded = Boolean\(/);
+  assert.match(appSource, /relayHandoffRecorded = true/);
+  assert.match(appSource, /if \(!relayHandoffRecorded && !hasBroadcastAttemptMetadata\(attempt\)\)/);
+  assert.match(appSource, /persistRelayWithdrawPayloadState\(\)/);
+  assert.match(appSource, /loadPersistedRelayWithdrawPayloadState\(\)/);
+  assert.match(appSource, /stashHandedOffPreparedRelayWithdrawPayload\(\)/);
+  assert.match(appSource, /discardAndClearPreparedRelayWithdrawPayload\(\)[\s\S]*\.catch\(\(error\) => toast\(error\.message\)\)[\s\S]*\.finally\(\(\) => renderKeplr\(\)\)/);
+  assert.match(appSource, /relayWithdrawPendingList/);
+  assert.match(cssSource, /\.pending-relay-item\s*\{/);
   assert.match(appSource, /function renderRelayerPanel/);
   assert.match(appSource, /function localRelayerAccount\(\) \{[\s\S]*serverFeature\("relayer"\)[\s\S]*account\.name === "relayer"[\s\S]*account\.name === "dev0"/);
   assert.match(appSource, /function refreshRelayerAccount/);
   assert.match(appSource, /function relayPreparedWithdraw/);
+  assert.match(appSource, /function verifyRelayPayloadNullifierUnspentBeforeBroadcast/);
+  assert.match(appSource, /function reconcileExpiredRelayWithdrawPayloads/);
+  assert.match(appSource, /async function relaySnapshotWithFullReservationRecords/);
+  assert.match(appSource, /const recoverySnapshot = await relaySnapshotWithFullReservationRecords\(snapshot\);/);
+  assert.match(appSource, /const recoverySnapshot = await relaySnapshotWithFullReservationRecords\(synced\);/);
+  assert.match(appSource, /relay_payload_expired_requires_manual_review/);
+  assert.match(appSource, /relay_payload_expired_after_handoff/);
+  assert.match(appSource, /no_broadcast_attempt: false/);
+  assert.doesNotMatch(appSource, /relay_payload_expired_without_confirmed_broadcast_outcome/);
+  assert.match(appSource, /markReservationBatchManualReview\([\s\S]{0,700}relay payload expired and nullifiers remain unspent/);
+  assert.match(appSource, /function markReservationBatchManualReview/);
+  assert.match(appSource, /expiredProofReady[\s\S]*markReservationBatchManualReview\([\s\S]*expired_local_relay_payload_discard_requires_manual_review/);
+  assert.match(appSource, /async function refreshPendingRelayWithdrawPayloadStatus/);
+  assert.match(appSource, /\? "Resolve expired"[\s\S]*: "Refresh status"/);
+  assert.match(appSource, /async function resolveExpiredRelayManualReview/);
+  assert.match(appSource, /resolvedStatus === reservationStatuses\.ReplanRequired[\s\S]*clearPreparedRelayWithdrawPayload/);
+  assert.match(appSource, /pending verification/);
+  assert.match(appSource, /withReservationHeartbeat\([\s\S]*state\.keplr\.relayWithdrawReservation/);
+  assert.match(appSource, /async function latestRelayChainSnapshot/);
+  assert.match(appSource, /evmJsonRpc\([\s\S]*"eth_getBlockByNumber"[\s\S]*\["latest", false\]/);
+  assert.match(appSource, /chainSnapshot = await latestRelayChainSnapshot\(\)/);
+  assert.match(appSource, /await reconcileExpiredRelayWithdrawPayloads\(chainSnapshot\);[\s\S]*canRelayPreparedWithdrawPayload\(chainSnapshot\.chainNowMs\)/);
+  assert.match(appSource, /const latestChainSnapshot = await latestRelayChainSnapshot\(\);[\s\S]*canRelayPreparedWithdrawPayload\(latestChainSnapshot\.chainNowMs\)/);
+  assert.match(appSource, /relayReservationStatus\([\s\S]*state\.keplr\.relayWithdrawReservation/);
+  assert.match(appSource, /Reservation \$\{relayStatus \|\| "not ready"\}/);
+  assert.match(appSource, /relayPreparedWithdraw\.disabled =[\s\S]*!relayPayloadReady && !relayNeedsManualResolution[\s\S]*!relayerReady/);
+  assert.match(appSource, /verifyRelayPayloadNullifierUnspentBeforeBroadcast\([\s\S]*payload,[\s\S]*state\.keplr\.relayWithdrawReservation/);
+  assert.match(appSource, /markPreparedReservationBroadcastAttempting\([\s\S]*relay_withdraw[\s\S]*relayPreparedWithdrawPayload\(/);
   assert.match(appSource, /relayPreparedWithdrawPayload\([\s\S]*payload,[\s\S]*state\.keplr\.relayWithdrawPayloadRecipient[\s\S]*\)/);
-  assert.match(appSource, /clearPreparedRelayWithdrawPayload\(\{ clearPayloadHash: true \}\)/);
+  assert.match(appSource, /await setPreparedRelayWithdrawPayload\(data, \{[\s\S]*amount,[\s\S]*recipient,[\s\S]*preparation,[\s\S]*\}\)/);
+  assert.match(appSource, /await recordSubmittedReservation\([\s\S]*state\.keplr\.relayWithdrawReservation/);
+  assert.match(appSource, /reconcileFailedEvmReservation\([\s\S]*state\.keplr\.relayWithdrawPreparedData/);
+  assert.match(appSource, /const definiteEvmFailure = isDefiniteEvmReceiptFailure\(error\)/);
+  assert.match(appSource, /const definiteCosmosFailure = isDefiniteCosmosTxFailure/);
+  assert.match(appSource, /candidate\?\.txCode/);
+  assert.match(appSource, /if \(definiteEvmFailure \|\| definiteCosmosFailure\)/);
+  assert.match(appSource, /markReservationBatchUnknown\([\s\S]*state\.keplr\.relayWithdrawReservation,[\s\S]*error/);
+  assert.match(appSource, /\.then\(updateRelayWithdrawReservationRecords\)/);
+  assert.match(serverSource, /const txHash = result\.json\.txhash;[\s\S]*relay withdraw tx was broadcast but not found yet:[\s\S]*error\.txHash = txHash/);
+  assert.match(serverSource, /const checkTxCode = confirmedCosmosTxCode\(result\.json\);[\s\S]*checkTxCode !== 0[\s\S]*error\.txCode = checkTxCode;[\s\S]*const tx = await waitForTx\(txHash\)/);
+  assert.match(serverSource, /function confirmedCosmosTxCode/);
+  assert.match(serverSource, /typeof error\?\.txCode === "number" && Number\.isSafeInteger\(error\.txCode\) && error\.txCode >= 0/);
+  assert.match(serverSource, /relay withdraw tx did not include a valid result code/);
+  assert.match(serverSource, /hasSuccessfulEvmReceiptStatus/);
+  assert.match(serverSource, /async function assertRelayPayloadNotExpired/);
+  assert.match(serverSource, /await assertRelayPayloadNotExpired\(payload, provider\);[\s\S]*submitRelayAfterNullifierPreflight\(\{[\s\S]*wallet\.sendTransaction/);
+  assert.match(serverSource, /await assertRelayPayloadNotExpired\(payload\);[\s\S]*submitRelayAfterNullifierPreflight\(\{[\s\S]*runClairveild/);
+  assert.match(serverSource, /checkNullifiers: \(nullifiers\) => clairveil\.checkNullifiers\(nullifiers\)/);
+  assert.match(serverSource, /relaySubmissionCoordinator\.run\([\s\S]*relaySubmissionIdempotencyKey\(payload\)/);
+  assert.match(appSource, /clearPreparedRelayWithdrawPayload\(\{[\s\S]*clearPayloadHash: true,[\s\S]*stashHandedOff: false,[\s\S]*\}\)/);
   assert.doesNotMatch(appSource, /state\.keplr\.relayWithdrawPayloadSubmitted = true/);
   assert.doesNotMatch(appSource, /const relay = await relayPreparedWithdrawPayload\(data\.payload, recipient\)/);
   assert.match(appSource, /function localRelayerAccount/);
-  assert.match(appSource, /const relayer =[\s\S]*localRelayerAccount\(\)\?\.name \|\| \(isEvmTransparentMode\(\) \? "dev0" : "relayer"\)/);
+  assert.match(appSource, /const relayer =[\s\S]*localRelayerAccount\(\)\?\.name[\s\S]*isEvmTransparentMode\(\) \? "dev0" : "relayer"/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.scanWalletNotes/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.checkNullifier/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.decodeUserDisclosure/);
@@ -277,13 +501,25 @@ test("DApp uses the npm ClairveilJS browser client for public wallet and privacy
   assert.match(appSource, /function defaultNoteScanCursor/);
   assert.match(appSource, /function noteScanRequestOptions/);
   assert.match(appSource, /function applyNoteScanResult/);
+  assert.match(appSource, /afterSequence/);
+  assert.match(appSource, /scanSource: String\(cursor\.source \|\| "scan_events"\)/);
+  assert.match(appSource, /latestSequence/);
+  assert.match(appSource, /data\?\.nextScanOptions/);
+  assert.match(appSource, /next_sequence/);
   assert.match(appSource, /function refreshCachedNoteStatuses/);
+  assert.match(appSource, /const candidateNotes = \(state\.keplr\.notes \|\| \[\]\)\.filter\(noteNullifier\)/);
+  assert.match(appSource, /function nullifierUsedFromResponse/);
+  assert.match(appSource, /return typeof used === "boolean" \? used : null/);
+  assert.match(appSource, /function isUnverifiedNote/);
+  assert.match(appSource, /!isZeroAmountNote\(note\) && !isUnverifiedNote\(note\)/);
+  assert.match(appSource, /return "Unverified"/);
   assert.match(appSource, /status: "spent"/);
   assert.match(appSource, /await refreshCachedNoteStatuses\(\)/);
   assert.match(appSource, /scanWalletNotes\([\s\S]*privacyRequest\(\{[\s\S]*\.\.\.scanOptions,[\s\S]*includeFoundNotes: true/);
   assert.match(appSource, /more events queued/);
   assert.match(appSource, /scan: \{ limit: 200, maxPages: 1000 \}/);
   assert.match(appSource, /function browserProverUrl/);
+  assert.match(appSource, /serverFeatures\?\.proverProxy === true/);
   assert.match(appSource, /return window\.location\.origin\.replace/);
   assert.match(serverSource, /function handleProverProxy/);
   assert.match(serverSource, /function proverProxyPath/);
@@ -314,13 +550,26 @@ test("DApp uses the npm ClairveilJS browser client for public wallet and privacy
   assert.doesNotMatch(serverSource, /prepareEvmWithdraw/);
 });
 
+test("successful privacy deposits bypass input-note reservation bookkeeping", () => {
+  const depositBroadcast = sourceBetween(
+    appSource,
+    "async function broadcastPrivacyDeposit",
+    "function broadcastTxEvents",
+  );
+  const submittedReservation = sourceBetween(
+    appSource,
+    "async function recordSubmittedReservation",
+    "async function markReservationBatchUnknown",
+  );
+  assert.match(depositBroadcast, /await broadcastPreparedPrivacy\(data, label, options\)/);
+  assert.match(submittedReservation, /if \(!reservation\?\.reservation_ids\?\.length\) return \[\];/);
+});
+
 test("DApp default check does not require a clean generated bundle diff", () => {
   assert.match(packageJson.scripts["check:dapp"], /npm run build:dapp/);
   assert.doesNotMatch(packageJson.scripts["check:dapp"], /check:bundle:fresh/);
   assert.equal(packageJson.scripts["check:bundle"], "node --check public/app.bundle.js");
-  assert.match(packageJson.scripts["check:bundle:fresh"], /npm run build:dapp/);
-  assert.match(packageJson.scripts["check:bundle:fresh"], /git diff --quiet -- public\/app\.bundle\.js/);
-  assert.match(packageJson.scripts["check:bundle:fresh"], /public\/app\.bundle\.js is stale/);
+  assert.equal(packageJson.scripts["check:bundle:fresh"], "node tools/check-bundle-fresh.js");
 });
 
 test("DApp planner UX uses structured API errors instead of message parsing", () => {
@@ -412,6 +661,9 @@ test("DApp server keeps only local helper responsibilities", () => {
   assert.match(serverSource, /eth_getBalance/);
   assert.match(serverSource, /function assertSignerMutationAllowed/);
   assert.match(serverSource, /function assertLocalAdminAccessAllowed/);
+  assert.match(serverSource, /function browserRequestIsSameOrigin/);
+  assert.match(serverSource, /fetchSite !== "same-origin" && fetchSite !== "none"/);
+  assert.doesNotMatch(serverSource, /"access-control-allow-origin": "\*"/);
   assert.match(serverSource, /\/api\/local-signers\/ensure"\) \{\s*assertLocalTestBackendAllowed\("local signer setup"\);\s*assertSignerMutationAllowed\(req\);/);
   assert.match(serverSource, /\/api\/faucet"\) \{\s*assertLocalTestBackendAllowed\("faucet"\);\s*assertSignerMutationAllowed\(req\);/);
   assert.match(serverSource, /\/api\/deposit\/proof"\) \{\s*assertLocalTestBackendAllowed\("deposit proof"\);\s*assertSignerMutationAllowed\(req\);/);
@@ -421,6 +673,9 @@ test("DApp server keeps only local helper responsibilities", () => {
   assert.match(serverSource, /buildRelayWithdrawMessageFromPayload/);
   assert.match(serverSource, /createClairveilEvmClient/);
   assert.match(serverSource, /evmClient\.buildWithdrawTransaction/);
+  assert.match(serverSource, /const chainNowUnix = await relayChainNowUnix\(provider\);/);
+  assert.match(serverSource, /relayer: account\.transparentAddress,[\s\S]*chainNowUnix,[\s\S]*expectedChainId/);
+  assert.match(serverSource, /await assertRelayPayloadNotExpired\(payload, provider\);/);
   assert.match(serverSource, /"tx", "privacy", "relay-withdraw"/);
   assert.match(serverSource, /\/api\/deposit"\) \{\s*assertLocalTestBackendAllowed\("local CLI deposit"\);\s*assertSignerMutationAllowed\(req\);/);
   assert.match(serverSource, /\/api\/auditor\/test-scalar"\) \{\s*assertLocalTestBackendAllowed\("auditor test scalar"\);\s*assertLocalAdminAccessAllowed\(req\);/);
@@ -439,6 +694,19 @@ test("DApp server keeps only local helper responsibilities", () => {
   assert.match(appSource, /walletType: "evm"/);
 });
 
+test("DApp invalidates asynchronous relay preparation and pre-broadcast failures", () => {
+  assert.match(appSource, /let relayWithdrawPayloadGeneration = 0/);
+  assert.match(appSource, /function advanceRelayWithdrawPayloadGeneration/);
+  assert.match(appSource, /function beginRelayWithdrawPreparation/);
+  assert.match(appSource, /function relayWithdrawPreparationIsCurrent/);
+  assert.match(appSource, /await rejectStaleRelayWithdrawPreparation\(data\)/);
+  assert.match(appSource, /const preparation = beginRelayWithdrawPreparation\(\)/);
+  assert.match(appSource, /setPreparedRelayWithdrawPayload\(data, \{[\s\S]*preparation,/);
+  assert.match(appSource, /let externalBroadcastBoundaryCrossed = false/);
+  assert.match(appSource, /durableBroadcastAttemptRecorded = true;\s*externalBroadcastBoundaryCrossed = true/);
+  assert.match(appSource, /!externalBroadcastBoundaryCrossed &&[\s\S]*markPreparedReservationReplanRequired\(data, error\)/);
+});
+
 test("DApp shows a send result confirmation before refresh side effects", () => {
   assert.match(appSource, /function showSendResult/);
   assert.match(appSource, /title: "Send 요청됨"/);
@@ -455,6 +723,10 @@ test("DApp shows a send result confirmation before refresh side effects", () => 
 
 test("DApp submits final MetaMask transactions before waiting for receipt", () => {
   assert.match(appSource, /async function submitEvmTransaction/);
+  assert.match(appSource, /function isMetaMaskUserRejectedError/);
+  assert.match(appSource, /code === "4001"/);
+  assert.match(appSource, /MetaMask eth_sendTransaction did not return a tx hash/);
+  assert.match(appSource, /if \(isMetaMaskUserRejectedError\(error\)\) \{[\s\S]*throw noBroadcastAttemptError\(error\);[\s\S]*\}[\s\S]*throw error/);
   assert.match(appSource, /async function waitForEvmTransaction/);
   assert.match(appSource, /async function sendEvmTransaction\([\s\S]*transaction,[\s\S]*\{ waitForReceipt = false/);
   assert.match(appSource, /pending: true/);
@@ -487,7 +759,7 @@ test("DApp estimates EVM gas before opening MetaMask confirmation", () => {
   assert.match(appSource, /tx\.gas = bigIntToEvmQuantity\(existing > padded \? existing : padded\)/);
   assert.doesNotMatch(appSource, /existing > 0n && existing < padded/);
   assert.match(appSource, /delete tx\.gas/);
-  assert.match(appSource, /const tx = await withEstimatedEvmGas\(\{[\s\S]*\.\.\.transaction,[\s\S]*from: state\.wallet\.account[\s\S]*\}\)/);
+  assert.match(appSource, /let tx;[\s\S]*tx = await withEstimatedEvmGas\(\{[\s\S]*\.\.\.transaction,[\s\S]*from: state\.wallet\.account[\s\S]*\}\)[\s\S]*noBroadcastAttemptError\(error, "MetaMask gas estimation failed before broadcast"\)/);
   assert.match(appSource, /params: \[tx\]/);
 });
 

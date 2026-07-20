@@ -546,6 +546,52 @@ select {
   flex: 1;
 }
 
+.pending-relay-payloads {
+  display: grid;
+  gap: 8px;
+}
+
+.pending-relay-payloads h4 {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.pending-relay-list {
+  display: grid;
+  gap: 8px;
+}
+
+.pending-relay-item {
+  align-items: center;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 10px;
+}
+
+.pending-relay-details {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pending-relay-details strong,
+.pending-relay-details span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pending-relay-details span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .relayer-prepare-pane {
   align-content: start;
   display: grid;
@@ -825,6 +871,36 @@ select {
   padding-right: 4px;
 }
 
+.reservation-review-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.reservation-review-item {
+  align-items: center;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 10px 12px;
+}
+
+.reservation-review-details {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.reservation-review-details span,
+.reservation-review-details code {
+  color: var(--muted);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
 .note-row {
   align-items: center;
   background: var(--surface);
@@ -863,6 +939,10 @@ select {
 .note-row.helper-note strong,
 .note-row.helper-note code {
   color: var(--muted);
+}
+
+.note-status {
+  justify-self: start;
 }
 
 .block-event-row {

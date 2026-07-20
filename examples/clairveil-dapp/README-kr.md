@@ -21,7 +21,7 @@ Clairveil DApp은 브라우저에서 Keplr 또는 MetaMask를 연결해 Clairvei
 | `.env.example` | 로컬/server-backed 실행에서 사용할 수 있는 환경 변수 override 템플릿 |
 | `test/dapp-smoke.test.js` | DApp 구조와 privacy boundary smoke test |
 
-Standalone SDK는 이 repo 안에 복사하지 않습니다. DApp은 [DELIGHT-LABS/clairveiljs](https://github.com/DELIGHT-LABS/clairveiljs) GitHub repository에서 `clairveiljs`를 설치하고, 실제 resolved commit은 `package-lock.json`에 고정합니다. 더 최신 SDK와의 호환성을 확인할 때는 SDK dependency, lockfile, generated bundle을 같은 변경으로 갱신합니다. 최소 SDK 사용 흐름 예제는 ClairveilJS 쪽 `examples/minimal-keplr-flow.js`, `examples/minimal-metamask-flow.js`에 둡니다.
+DApp은 content hash를 파일명에 포함한 vendored ClairveilJS package tarball `vendor/clairveiljs-0.1.10-21a78bbd236b.tgz`를 사용하고, `package.json`에서도 같은 파일명을 참조합니다. ClairveilJS를 갱신할 때는 SDK package version을 올리고 SDK를 pack한 뒤 tarball 파일명에 content-hash prefix를 넣으며, `package.json`과 `package-lock.json`을 갱신하고 `npm ci`로 다시 설치합니다. `public/app.bundle.js`도 같은 변경에서 다시 빌드합니다. SDK의 `prepack` lifecycle은 tarball 생성 전에 syntax check, type check, test, required conformance를 실행합니다. 버전과 파일명을 함께 바꾸면 npm이 이전 local package를 재사용하는 문제를 피할 수 있습니다. 최소 SDK 사용 흐름 예제는 ClairveilJS 쪽 `examples/minimal-keplr-flow.js`, `examples/minimal-metamask-flow.js`에 둡니다.
 
 ## 주요 기능
 
@@ -114,6 +114,7 @@ DApp UI는 privacy 준비 로직을 직접 구현하지 않고 `clairveiljs/brow
 | `scanWalletNotes(...)` | privacy events/commitments/nullifiers 조회 후 wallet root seed로 note scan |
 | `prepareTransfer(...)` | note scan, planner, audit config, prover `/v1/prover/transfer`, disclosure payload, Cosmos sign doc 또는 EVM precompile tx 생성 |
 | `prepareWithdraw(...)` | note scan, planner, prover `/v1/prover/withdraw`, Cosmos sign doc 또는 EVM precompile tx 생성 |
+| `prepareRelayWithdraw(...)` | note scan, planner, prover `/v1/prover/withdraw`, relayer가 제출할 수 있는 withdraw payload와 reservation metadata 생성 |
 | `broadcastSignedTx(...)` | Cosmos signed tx broadcast/wait |
 | `waitForEvmTransaction(...)` | EVM receipt wait |
 | `fetchPrivacyEvents(...)` | REST privacy event feed 조회 |
@@ -281,7 +282,7 @@ npm start
 | `CLAIRVEIL_PUBLIC_REST` | 브라우저/Keplr에 노출할 REST |
 | `CLAIRVEIL_PROVER_URL` | prover URL |
 | `CLAIRVEIL_PUBLIC_PROVER_URL` | 브라우저에 노출할 prover URL |
-| `CLAIRVEIL_DAPP_ENABLE_PROVER_PROXY` | non-loopback client 또는 public node mode에서 same-origin `/v1/prover/*` proxy를 열 때만 명시적으로 `1`. Loopback local test 요청은 기본 허용됩니다. Public 배포에서는 origin/auth/rate limit 정책이 없으면 비활성화하세요. |
+| `CLAIRVEIL_DAPP_ENABLE_PROVER_PROXY` | non-loopback, 전달(forwarded), 또는 public node 요청에 same-origin `/v1/prover/*` proxy를 열 때만 명시적으로 `1`. Loopback peer와 loopback Host를 함께 사용하는 직접 local test 요청만 기본 허용됩니다. Public 배포에서는 origin/auth/rate limit 정책이 없으면 비활성화하세요. |
 | `CLAIRVEIL_DENOM` / `CLAIRVEIL_DISPLAY_DENOM` / `CLAIRVEIL_COIN_DECIMALS` | coin metadata |
 | `CLAIRVEIL_ACCOUNT_PREFIX` | transparent account prefix |
 | `CLAIRVEIL_SHIELDED_PREFIX` | shielded address prefix |
@@ -349,6 +350,14 @@ EVM profile은 아래 조건을 만족해야 합니다.
 3. 필요하면 helper/self transaction step을 안내합니다.
 4. prover payload와 proof를 준비합니다.
 5. Cosmos `MsgWithdraw` 또는 EVM precompile tx를 준비합니다.
+
+### Relay withdraw
+
+Relay withdraw는 ClairveilJS `prepareRelayWithdraw(...)`로 relayer에게 넘길 proof-backed withdraw payload를 만듭니다. Payload/proof JSON은 민감하므로 메모리에만 두고, refresh persistence에는 payload hash, reservation id/status, expiry 같은 reconcile metadata만 저장합니다. relay reservation metadata에도 원문 amount나 recipient을 남기지 않습니다. 따라서 페이지를 새로고침해도 payload/proof JSON, amount, recipient은 복구되지 않습니다. 시작 시에는 IndexedDB의 active reservation에서 pending relay 항목을 다시 만들므로 탭을 닫거나 handoff가 5개를 넘어도 expiry/reconcile 정보가 사라지지 않습니다. 이미 payload를 복사했거나 relayer에게 넘겼다면 expiry 전까지 relayer가 제출할 수 있습니다. `ProofReady` reservation은 단순 TTL 만료나 일반 UI cancel로 풀면 안 되며, handoff 전이면 DApp이 reservation을 replan하고, handoff 뒤에는 pending payload를 relay/refresh/reconcile 흐름으로 처리해야 합니다.
+
+이 예제는 browser reservation store에 `unsafeAllowPlaintext: true`를 명시해서 IndexedDB record를 의도적으로 demo-only 평문으로 저장합니다. Production integration은 ClairveilJS `encodeState`/`decodeState` 암호화 callback을 제공하고 raw payload material을 browser storage에 보관하지 않아야 합니다.
+
+Notes scanner도 refresh 후 이어서 스캔할 수 있도록 account/chain별 note cache와 `(height, sequence)` cursor를 평문 `localStorage`에 저장합니다. 이는 예제 편의를 위한 정책이며, production wallet은 cache를 암호화하거나 `LocalStorageNoteStore`를 보호된 persistent adapter로 교체해야 합니다.
 
 ## Disclosure mode
 
@@ -453,6 +462,7 @@ connect wallet
 ```bash
 npm run check:dapp
 npm run test:dapp
+npm run check:bundle:fresh
 npm run check:clairveiljs
 npm run test:clairveiljs
 npm run check:clairveiljs:types

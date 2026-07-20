@@ -264,6 +264,12 @@
               <strong id="myKeplrSpendable">-</strong>
             </div>
             <div id="myKeplrNotesList" class="notes-list"></div>
+            <div
+              id="reservationReviewList"
+              class="reservation-review-list"
+              aria-live="polite"
+              hidden
+            ></div>
           </section>
           <section
             class="balance-section action-section"
@@ -511,7 +517,8 @@
                 <p class="payload-warning" role="note">
                   Relayers do not need your shielded secret. The recipient
                   cannot be changed after preparation, and prepared
-                  payload/proof JSON is privacy-sensitive.
+                  payload/proof JSON is privacy-sensitive. Only relay metadata
+                  is kept after refresh.
                 </p>
                 <pre id="relayWithdrawPreparedPayloadJson" class="payload-json">
 No prepared payload</pre
@@ -523,6 +530,14 @@ No prepared payload</pre
                   <button id="relayPreparedWithdraw" type="button" disabled>
                     Relay
                   </button>
+                </div>
+                <div class="pending-relay-payloads">
+                  <h4>Pending Handoffs</h4>
+                  <div
+                    id="relayWithdrawPendingList"
+                    class="pending-relay-list"
+                    hidden
+                  ></div>
                 </div>
               </section>
             </div>

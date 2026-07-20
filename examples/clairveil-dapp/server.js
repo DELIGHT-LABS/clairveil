@@ -20,6 +20,15 @@ import {
   evmPrivacyPrecompileAddress,
   plannerStatusToErrorCode
 } from "clairveiljs";
+import { submitRelayAfterNullifierPreflight } from "./public/relay-reservation-state.js";
+import {
+  createRelaySubmissionCoordinator,
+  relaySubmissionIdempotencyKey,
+} from "./public/relay-submission-coordinator.js";
+import {
+  hasFailedEvmReceiptStatus,
+  hasSuccessfulEvmReceiptStatus,
+} from "./public/transaction-status.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = resolve(__dirname, "../..");
@@ -29,6 +38,7 @@ const defaultHome = existsSync("/tmp/clairveil-codex-home-2")
   : existsSync("/tmp/clairveil-codex-home")
   ? "/tmp/clairveil-codex-home"
   : join(homedir(), ".clairveil");
+const relaySubmissionCoordinator = createRelaySubmissionCoordinator();
 
 function readCliOptions(argv = process.argv.slice(2)) {
   const options = {};
@@ -376,12 +386,60 @@ function isLoopbackRemoteAddress(address) {
     || normalized.startsWith("127.");
 }
 
+function hasForwardedClientHeaders(req) {
+  return [
+    "forwarded",
+    "x-forwarded-for",
+    "x-forwarded-host",
+    "x-forwarded-proto",
+    "x-real-ip",
+  ].some((name) => String(req.headers[name] || "").trim() !== "");
+}
+
+function requestHostIsLoopback(req) {
+  const host = String(req.headers.host || "").trim();
+  if (!host) return false;
+  try {
+    const hostname = new URL(`http://${host}`).hostname.replace(/^\[|\]$/g, "");
+    return isLoopbackRemoteAddress(hostname);
+  } catch {
+    return false;
+  }
+}
+
+function browserRequestIsSameOrigin(req) {
+  const fetchSite = String(req.headers["sec-fetch-site"] || "").trim().toLowerCase();
+  if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") {
+    return false;
+  }
+  const originValue = String(req.headers.origin || "").trim();
+  if (!originValue) return true;
+  if (originValue.toLowerCase() === "null") return false;
+  try {
+    const origin = new URL(originValue);
+    const host = String(req.headers.host || "").trim().toLowerCase();
+    return (origin.protocol === "http:" || origin.protocol === "https:")
+      && origin.host.toLowerCase() === host;
+  } catch {
+    return false;
+  }
+}
+
+function isDirectLoopbackRequest(req) {
+  return isLoopbackRemoteAddress(req.socket?.remoteAddress)
+    && requestHostIsLoopback(req)
+    && !hasForwardedClientHeaders(req)
+    && browserRequestIsSameOrigin(req);
+}
+
 function signerMutationAllowed(req) {
-  return config.allowLanSigning || isLoopbackRemoteAddress(req.socket?.remoteAddress);
+  return browserRequestIsSameOrigin(req)
+    && (config.allowLanSigning || isDirectLoopbackRequest(req));
 }
 
 function localAdminAccessAllowed(req) {
-  return config.allowLanAdmin || isLoopbackRemoteAddress(req.socket?.remoteAddress);
+  return browserRequestIsSameOrigin(req)
+    && (config.allowLanAdmin || isDirectLoopbackRequest(req));
 }
 
 function assertSignerMutationAllowed(req) {
@@ -440,7 +498,7 @@ function requestOrigin(req) {
 }
 
 function browserProverUrl(req) {
-  if (config.localTestMode && isEvmTransport()) {
+  if (config.localTestMode && isEvmTransport() && proverProxyEnabled(req)) {
     return requestOrigin(req);
   }
   return config.publicProverUrl;
@@ -474,11 +532,25 @@ function errorPayload(error) {
   }
   return {
     error: error?.message || String(error),
-    code: error?.clairveilCode || ClairveilErrorCode.INVALID_ARGUMENT
+    code: error?.clairveilCode || ClairveilErrorCode.INVALID_ARGUMENT,
+    ...(error?.txHash ? { txHash: error.txHash } : {}),
+    ...(error?.tx_hash ? { tx_hash: error.tx_hash } : {}),
+    ...(typeof error?.receiptStatus === "string" ? { receiptStatus: error.receiptStatus } : {}),
+    ...(error?.executionFailed === true ? { executionFailed: true } : {}),
+    ...(typeof error?.txCode === "number" && Number.isSafeInteger(error.txCode) && error.txCode >= 0
+      ? { txCode: error.txCode }
+      : {})
   };
 }
 
 function readBody(req) {
+  const contentType = String(req.headers["content-type"] || "")
+    .split(";", 1)[0]
+    .trim()
+    .toLowerCase();
+  if (contentType !== "application/json" && !contentType.endsWith("+json")) {
+    return Promise.reject(httpError(415, "request content-type must be application/json"));
+  }
   return new Promise((resolveBody, reject) => {
     let raw = "";
     req.on("data", chunk => {
@@ -529,8 +601,9 @@ function proverProxyPath(pathname) {
 }
 
 function proverProxyEnabled(req) {
-  return config.enableProverProxy
-    || (config.localTestMode && isLoopbackRemoteAddress(req.socket?.remoteAddress));
+  return browserRequestIsSameOrigin(req)
+    && (config.enableProverProxy
+      || (config.localTestMode && isDirectLoopbackRequest(req)));
 }
 
 function shouldRewriteTransferProofForReferenceProver(path) {
@@ -643,12 +716,7 @@ async function handleProverProxy(req, res, url) {
     return;
   }
   if (req.method === "OPTIONS") {
-    res.writeHead(204, {
-      "access-control-allow-origin": "*",
-      "access-control-allow-methods": "POST, OPTIONS",
-      "access-control-allow-headers": "content-type, authorization",
-      "access-control-max-age": "600"
-    });
+    res.writeHead(204, { allow: "POST, OPTIONS" });
     res.end();
     return;
   }
@@ -657,6 +725,18 @@ async function handleProverProxy(req, res, url) {
       version: "v1",
       code: "method_not_allowed",
       message: "prover proxy requires POST"
+    });
+    return;
+  }
+  const contentType = String(req.headers["content-type"] || "")
+    .split(";", 1)[0]
+    .trim()
+    .toLowerCase();
+  if (contentType !== "application/json" && !contentType.endsWith("+json")) {
+    sendJson(res, 415, {
+      version: "v1",
+      code: "invalid_argument",
+      message: "prover proxy content-type must be application/json"
     });
     return;
   }
@@ -1091,6 +1171,52 @@ async function queryEvmNativeBalance(address) {
   };
 }
 
+function relayPayloadExpiryUnix(payload = {}) {
+  const raw = payload.expires_at_unix ?? payload.expiresAtUnix;
+  const expiresAtUnix = Number(raw);
+  if (!Number.isSafeInteger(expiresAtUnix) || expiresAtUnix <= 0) {
+    throw new Error("relay withdraw payload has an invalid expires_at_unix");
+  }
+  return expiresAtUnix;
+}
+
+function confirmedCosmosTxCode(tx) {
+  const value = tx?.code;
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value >= 0 ? value : null;
+  }
+  if (typeof value === "string" && /^(0|[1-9][0-9]*)$/.test(value)) {
+    return Number(value);
+  }
+  return null;
+}
+
+async function relayChainNowUnix(evmProvider = null) {
+  if (isEvmTransport()) {
+    const provider = evmProvider || new JsonRpcProvider(config.evmRpc);
+    const block = await provider.getBlock("latest");
+    const timestamp = Number(block?.timestamp);
+    if (!Number.isSafeInteger(timestamp) || timestamp < 0) {
+      throw new Error("latest EVM block time is unavailable");
+    }
+    return timestamp;
+  }
+  const status = await fetchJson(rpcHttpUrl("/status"));
+  const chainNowMs = Date.parse(status?.result?.sync_info?.latest_block_time || "");
+  if (!Number.isFinite(chainNowMs)) {
+    throw new Error("latest chain block time is unavailable");
+  }
+  return Math.floor(chainNowMs / 1000);
+}
+
+async function assertRelayPayloadNotExpired(payload, evmProvider = null) {
+  const expiresAtUnix = relayPayloadExpiryUnix(payload);
+  const chainNowUnix = await relayChainNowUnix(evmProvider);
+  if (chainNowUnix > expiresAtUnix) {
+    throw new Error("relay withdraw payload is expired at the latest chain block time");
+  }
+}
+
 function serverFeaturesForRequest(req) {
   const localTestMode = config.localTestMode;
   const localSignerAdmin = localTestMode && localAdminAccessAllowed(req);
@@ -1103,7 +1229,8 @@ function serverFeaturesForRequest(req) {
     faucet: localSignerMutation,
     depositProof: localSignerMutation,
     relayer: localSignerMutation,
-    auditorAdmin: localSignerAdmin
+    auditorAdmin: localSignerAdmin,
+    proverProxy: proverProxyEnabled(req)
   };
 }
 
@@ -1186,8 +1313,8 @@ async function sendEvmFaucet({ from, recipient, amount }) {
   if (!receipt) {
     throw new Error(`faucet tx was broadcast but not found yet: ${txHash}`);
   }
-  if (receipt.status && receipt.status !== "0x1") {
-    throw new Error(`faucet tx failed with EVM receipt status ${receipt.status}`);
+  if (!hasSuccessfulEvmReceiptStatus(receipt)) {
+    throw new Error(`faucet tx did not include an explicit successful EVM receipt status: ${String(receipt.status ?? "missing")}`);
   }
   return {
     txHash,
@@ -1357,6 +1484,8 @@ async function handleApi(req, res, url) {
       }
 
       if (isEvmTransport()) {
+        const provider = new JsonRpcProvider(config.evmRpc);
+        const chainNowUnix = await relayChainNowUnix(provider);
         const evmClient = createClairveilEvmClient({
           contractAddress: config.evmPrivacyPrecompileAddress,
           chainId: config.chainId,
@@ -1367,24 +1496,46 @@ async function handleApi(req, res, url) {
         const built = await evmClient.buildWithdrawTransaction({
           payload,
           relayer: account.transparentAddress,
+          chainNowUnix,
           expectedChainId: config.chainId,
           expectedRecipient: body.expectedRecipient ?? body.expected_recipient ?? payload?.recipient
         });
-        const provider = new JsonRpcProvider(config.evmRpc);
         const wallet = evmWalletForLocalSigner(relayer).connect(provider);
-        const tx = await wallet.sendTransaction({
-          to: built.transaction.to,
-          data: built.transaction.data,
-          value: built.transaction.value ?? "0x0",
-          gasLimit: BigInt(config.evmGasLimit)
+        await assertRelayPayloadNotExpired(payload, provider);
+        const tx = await submitRelayAfterNullifierPreflight({
+          payload,
+          checkNullifiers: (nullifiers) => clairveil.checkNullifiers(nullifiers),
+          submit: () => relaySubmissionCoordinator.run(
+            relaySubmissionIdempotencyKey(payload),
+            () => wallet.sendTransaction({
+              to: built.transaction.to,
+              data: built.transaction.data,
+              value: built.transaction.value ?? "0x0",
+              gasLimit: BigInt(config.evmGasLimit)
+            }),
+          )
         });
         const txHash = validateTxHashHex(tx.hash);
         const receipt = await waitForEvmReceipt(txHash);
         if (!receipt) {
-          throw new Error(`relay withdraw tx was broadcast but not found yet: ${txHash}`);
+          const error = new Error(`relay withdraw tx was broadcast but not found yet: ${txHash}`);
+          error.txHash = txHash;
+          throw error;
         }
-        if (receipt.status && receipt.status !== "0x1") {
-          throw new Error(`relay withdraw tx failed with EVM receipt status ${receipt.status}`);
+        if (!hasSuccessfulEvmReceiptStatus(receipt)) {
+          const failed = hasFailedEvmReceiptStatus(receipt);
+          const error = new Error(
+            failed
+              ? `relay withdraw EVM execution failed with receipt status: ${String(receipt.status)}`
+              : `relay withdraw tx did not include an explicit EVM receipt status: ${String(receipt.status ?? "missing")}`,
+          );
+          error.txHash = txHash;
+          error.receipt = receipt;
+          if (failed) {
+            error.receiptStatus = String(receipt.status);
+            error.executionFailed = true;
+          }
+          throw error;
         }
         sendJson(res, 200, {
           broadcast: { txhash: txHash },
@@ -1405,9 +1556,14 @@ async function handleApi(req, res, url) {
         return;
       }
 
+      const chainNowUnix = await relayChainNowUnix();
+      if (chainNowUnix > relayPayloadExpiryUnix(payload)) {
+        throw new Error("relay withdraw payload is expired at the latest chain block time");
+      }
       const message = clairveil.buildRelayWithdrawMessageFromPayload({
         payload,
         relayer: account.transparentAddress,
+        chainNowUnix,
         expectedChainId: config.chainId,
         expectedRecipient: body.expectedRecipient ?? body.expected_recipient ?? payload?.recipient,
         accountPrefix: config.accountPrefix
@@ -1416,25 +1572,53 @@ async function handleApi(req, res, url) {
       const workDir = await mkdtemp(join(tmpdir(), "clairveil-relay-withdraw-"));
       const payloadPath = join(workDir, "payload.json");
       try {
+        await assertRelayPayloadNotExpired(payload);
         await writeFile(payloadPath, JSON.stringify(payload, null, 2), "utf8");
-        const result = await runClairveild([
-          "tx", "privacy", "relay-withdraw", payloadPath,
-          "--from", relayer,
-          "--keyring-backend", "test",
-          "--home", config.home,
-          "--node", config.rpc,
-          "--chain-id", config.chainId,
-          "--gas", "5000000",
-          "--gas-prices", config.gasPrices,
-          "--yes",
-          "--output", "json"
-        ]);
-        const tx = await waitForTx(result.json.txhash);
-        if (!tx) {
-          throw new Error(`relay withdraw tx was broadcast but not found yet: ${result.json.txhash}`);
+        const result = await submitRelayAfterNullifierPreflight({
+          payload,
+          checkNullifiers: (nullifiers) => clairveil.checkNullifiers(nullifiers),
+          submit: () => relaySubmissionCoordinator.run(
+            relaySubmissionIdempotencyKey(payload),
+            () => runClairveild([
+              "tx", "privacy", "relay-withdraw", payloadPath,
+              "--from", relayer,
+              "--keyring-backend", "test",
+              "--home", config.home,
+              "--node", config.rpc,
+              "--chain-id", config.chainId,
+              "--gas", "5000000",
+              "--gas-prices", config.gasPrices,
+              "--yes",
+              "--output", "json"
+            ]),
+          )
+        });
+        const txHash = result.json.txhash;
+        const checkTxCode = confirmedCosmosTxCode(result.json);
+        if (checkTxCode != null && checkTxCode !== 0) {
+          const error = new Error(
+            result.json.raw_log || `relay withdraw CheckTx failed with code ${checkTxCode}`,
+          );
+          error.txHash = txHash;
+          error.txCode = checkTxCode;
+          throw error;
         }
-        if (Number(tx.code || 0) !== 0) {
-          throw new Error(tx.raw_log || `relay withdraw tx failed with code ${tx.code}`);
+        const tx = await waitForTx(txHash);
+        if (!tx) {
+          const error = new Error(`relay withdraw tx was broadcast but not found yet: ${txHash}`);
+          error.txHash = txHash;
+          throw error;
+        }
+        const txCode = confirmedCosmosTxCode(tx);
+        if (txCode !== 0) {
+          const error = new Error(
+            txCode == null
+              ? "relay withdraw tx did not include a valid result code"
+              : tx.raw_log || `relay withdraw tx failed with code ${txCode}`,
+          );
+          error.txHash = txHash;
+          error.txCode = txCode;
+          throw error;
         }
         sendJson(res, 200, {
           broadcast: result.json,

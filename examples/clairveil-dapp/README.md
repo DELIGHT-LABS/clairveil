@@ -23,7 +23,7 @@ For a public node deployment, the DApp can run with the static DApp, ClairveilJS
 | `.env.example` | Optional environment override template for local/server-backed runs |
 | `test/dapp-smoke.test.js` | Boundary and DApp smoke tests |
 
-The standalone SDK is not copied into this example. The DApp installs `clairveiljs` from the [DELIGHT-LABS/clairveiljs](https://github.com/DELIGHT-LABS/clairveiljs) GitHub repository with the resolved commit pinned in `package-lock.json`. Update the SDK dependency, lockfile, and generated bundle together when checking compatibility with a newer SDK. Minimal SDK flow examples live in ClairveilJS at `examples/minimal-keplr-flow.js` and `examples/minimal-metamask-flow.js`.
+The example uses the content-addressed vendored ClairveilJS package tarball `vendor/clairveiljs-0.1.10-21a78bbd236b.tgz`, referenced by `package.json` with the same filename. When updating ClairveilJS, increment the SDK package version, pack it, include a content-hash prefix in the tarball filename, update `package.json` and `package-lock.json`, reinstall with `npm ci`, and rebuild `public/app.bundle.js` in the same change. The SDK `prepack` lifecycle runs syntax checks, type checks, tests, and required conformance before the tarball is produced. The version and filename changes prevent npm from reusing a stale local package. Minimal SDK flow examples live in ClairveilJS at `examples/minimal-keplr-flow.js` and `examples/minimal-metamask-flow.js`.
 
 ## Main Features
 
@@ -93,6 +93,7 @@ The DApp UI does not implement privacy preparation itself. It calls the high-lev
 | `scanWalletNotes(...)` | Reads privacy events/commitments/nullifiers and scans notes with wallet root material |
 | `prepareTransfer(...)` | Scans notes, plans inputs, reads audit config, calls prover `/v1/prover/transfer`, creates disclosure payloads, then returns a Cosmos sign doc or EVM precompile tx |
 | `prepareWithdraw(...)` | Scans notes, plans inputs, calls prover `/v1/prover/withdraw`, then returns a Cosmos sign doc or EVM precompile tx |
+| `prepareRelayWithdraw(...)` | Scans notes, plans inputs, calls prover `/v1/prover/withdraw`, then returns a relayer-submit-ready withdraw payload and reservation metadata |
 | `broadcastSignedTx(...)` | Broadcasts and waits for Cosmos signed txs |
 | `waitForEvmTransaction(...)` | Waits for EVM transaction receipts |
 | `fetchPrivacyEvents(...)` | Reads the REST privacy event feed |
@@ -111,7 +112,8 @@ The active chain profile provides `rest` and `rpc`.
 | REST `/cosmos/auth/v1beta1/account_info/{address}` | Account number and sequence for sign docs |
 | REST `/cosmos/bank/v1beta1/balances/{address}` | Transparent balance |
 | REST `/clairveil/privacy/v1/tree_state` | Merkle tree state |
-| REST `/clairveil/privacy/v1/events` | Privacy event feed and note scan source |
+| REST `/clairveil/privacy/v1/scan_events` | Cursor-based wallet note scan source |
+| REST `/clairveil/privacy/v1/events` | Raw privacy event feed for compatibility, debugging, and auditors |
 | REST `/clairveil/privacy/v1/commitment/{commitment_hex}` | Commitment metadata |
 | REST `/clairveil/privacy/v1/nullifier/{nullifier_hex}` | Nullifier status |
 | REST `/clairveil/privacy/v1/audit_config` | Audit master public key |
@@ -227,7 +229,7 @@ Common values:
 | `CLAIRVEIL_RPC` / `CLAIRVEIL_REST` | Server-side Cosmos/CometBFT endpoints |
 | `CLAIRVEIL_PUBLIC_RPC` / `CLAIRVEIL_PUBLIC_REST` | Browser/Keplr-visible endpoints; empty means reuse the server endpoints |
 | `CLAIRVEIL_PROVER_URL` / `CLAIRVEIL_PUBLIC_PROVER_URL` | Server-side and browser-visible prover endpoints |
-| `CLAIRVEIL_DAPP_ENABLE_PROVER_PROXY` | Explicit opt-in for exposing the same-origin `/v1/prover/*` proxy to non-loopback clients or public-node mode. Loopback local-test requests are enabled by default. Keep disabled for public deployments unless the proxy has origin, auth, and rate-limit controls. |
+| `CLAIRVEIL_DAPP_ENABLE_PROVER_PROXY` | Explicit opt-in for exposing the same-origin `/v1/prover/*` proxy to non-loopback, forwarded, or public-node requests. Direct local-test requests with a loopback peer and loopback Host are enabled by default. Keep disabled for public deployments unless the proxy has origin, auth, and rate-limit controls. |
 | `CLAIRVEIL_ACCOUNT_PREFIX` / `CLAIRVEIL_SHIELDED_PREFIX` | Transparent and shielded address prefixes |
 | `CLAIRVEIL_DENOM` / `CLAIRVEIL_DISPLAY_DENOM` / `CLAIRVEIL_COIN_DECIMALS` | Coin metadata |
 | `CLAIRVEIL_EVM_*` | Optional EVM/MetaMask profile settings |
@@ -242,6 +244,12 @@ Common values:
 `Transfer` scans notes, plans inputs, creates any required self-transaction step, requests a transfer proof from the prover, creates disclosure payloads, and prepares the final Cosmos sign doc or EVM transaction.
 
 `Withdraw` scans spendable notes, plans the withdraw, requests a withdraw proof, and prepares the final Cosmos sign doc or EVM transaction.
+
+`Relay Withdraw` uses ClairveilJS `prepareRelayWithdraw(...)` to create a proof-backed withdraw payload for a relayer. The payload/proof JSON is privacy-sensitive and stays in memory only. Refresh persistence keeps only reconciliation metadata such as payload hash, reservation ids/status, and expiry; relay reservation metadata does not retain raw amounts or recipients. A page reload does not restore payload/proof JSON, amounts, or recipients. On startup the example rebuilds pending relay entries from active IndexedDB reservations, so closing a tab or creating more than five handoffs does not discard expiry/reconcile state. If a payload has already been copied or handed to a relayer, that relayer may still submit it until expiry. A `ProofReady` reservation should not be released by simple TTL expiry or a plain UI cancel; before handoff the DApp replans the reservation, and after handoff the user should relay, refresh, or reconcile the pending payload state.
+
+This example passes `unsafeAllowPlaintext: true` to the browser reservation store so its IndexedDB records are deliberately demo-only plaintext. Production integrations must provide ClairveilJS `encodeState`/`decodeState` encryption callbacks and should avoid storing raw payload material in browser storage.
+
+The Notes scanner also keeps its account/chain-scoped note cache and `(height, sequence)` cursor in plaintext `localStorage` so a refresh resumes from the last durable scan position. This is a demo convenience, not a production storage policy: production wallets should encrypt this cache or replace `LocalStorageNoteStore` with a protected persistent adapter.
 
 ## Disclosure Mode
 
@@ -323,6 +331,7 @@ In this mode, local signer, faucet, local CLI deposit, auditor test-secret route
 ```bash
 npm run check:dapp
 npm run test:dapp
+npm run check:bundle:fresh
 npm run check:clairveiljs
 npm run test:clairveiljs
 npm run check:clairveiljs:types

@@ -156,6 +156,7 @@ test("DApp exposes config, health, and bundled frontend assets", async () => {
     assert.equal(config.json.chainProfiles[0].wallet, "keplr");
     assert.equal(config.json.chainProfiles.find(profile => profile.id === "evm-local"), undefined);
     assert.equal(config.json.chainProfiles.find(profile => profile.id === "clairveil-local").proverUrl, "http://127.0.0.1:8080");
+    assert.equal(config.json.serverFeatures.proverProxy, true);
     assert.equal(config.json.keplrChainInfo.bech32Config.bech32PrefixAccAddr, "clair");
 
     const health = await waitForJson(`${baseUrl}/api/health`);
@@ -208,6 +209,8 @@ test("DApp exposes EVM profile only when EVM transport is active", async () => {
     const config = await waitForJson(`${baseUrl}/api/config`);
     assert.equal(config.response.status, 200);
     assert.equal(config.json.transport, "evm");
+    assert.equal(config.json.serverFeatures.proverProxy, true);
+    assert.equal(config.json.proverUrl, baseUrl);
     assert.equal(config.json.accountPrefix, "evm");
     assert.equal(config.json.evmChainId, "0x32f");
     assert.equal(config.json.activeChainProfileId, "evm-local");
@@ -290,6 +293,135 @@ test("DApp proxies same-origin prover requests for browser SDK flows", async () 
     await once(child, "exit");
     await prover.close();
     await publicProver.close();
+    assert.equal(stderr.join("").trim(), "");
+  }
+});
+
+test("DApp requires explicit prover proxy opt-in for forwarded loopback requests", async () => {
+  const port = await freePort();
+  const prover = await startDummyProver();
+  const child = spawn(process.execPath, ["server.js"], {
+    cwd: new URL("..", import.meta.url),
+    env: {
+      ...process.env,
+      PORT: String(port),
+      CLAIRVEIL_DAPP_PORT: String(port),
+      CLAIRVEIL_DAPP_LOCAL_TEST_MODE: "1",
+      CLAIRVEIL_PROVER_URL: prover.url,
+      CLAIRVEIL_PROVER_BEARER_TOKEN: "forwarded-request-token"
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  const stderr = [];
+  child.stderr.on("data", chunk => stderr.push(String(chunk)));
+
+  try {
+    const baseUrl = `http://127.0.0.1:${port}`;
+    await waitForJson(`${baseUrl}/api/config`);
+    const forwardedHeaders = {
+      host: "dapp.public.example",
+      "x-forwarded-for": "203.0.113.10",
+      "x-forwarded-proto": "https"
+    };
+    const configResponse = await fetch(`${baseUrl}/api/config`, {
+      headers: forwardedHeaders
+    });
+    assert.equal(configResponse.status, 200);
+    const config = await configResponse.json();
+    assert.equal(config.serverFeatures.proverProxy, false);
+
+    const response = await fetch(`${baseUrl}/v1/prover/transfer`, {
+      method: "POST",
+      headers: {
+        ...forwardedHeaders,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ version: "v1", payload: {} })
+    });
+    assert.equal(response.status, 404);
+    assert.equal(prover.calls.length, 0);
+
+    const signerResponse = await fetch(`${baseUrl}/api/relayer/withdraw`, {
+      method: "POST",
+      headers: {
+        ...forwardedHeaders,
+        "content-type": "application/json"
+      },
+      body: "{}"
+    });
+    assert.equal(signerResponse.status, 403);
+    const signerJson = await signerResponse.json();
+    assert.match(signerJson.error, /LAN access to signer-mutating APIs is disabled/);
+
+    const adminResponse = await fetch(`${baseUrl}/api/auditor/test-scalar`, {
+      headers: forwardedHeaders
+    });
+    assert.equal(adminResponse.status, 403);
+    const adminJson = await adminResponse.json();
+    assert.match(adminJson.error, /LAN access to local admin\/private-read APIs is disabled/);
+  } finally {
+    child.kill("SIGTERM");
+    await once(child, "exit");
+    await prover.close();
+    assert.equal(stderr.join("").trim(), "");
+  }
+});
+
+test("DApp rejects cross-origin privileged requests and non-JSON bodies", async () => {
+  const port = await freePort();
+  const prover = await startDummyProver();
+  const child = spawn(process.execPath, ["server.js"], {
+    cwd: new URL("..", import.meta.url),
+    env: {
+      ...process.env,
+      PORT: String(port),
+      CLAIRVEIL_DAPP_PORT: String(port),
+      CLAIRVEIL_DAPP_LOCAL_TEST_MODE: "1",
+      CLAIRVEIL_PROVER_URL: prover.url,
+      CLAIRVEIL_PROVER_BEARER_TOKEN: "cross-origin-test-token"
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  const stderr = [];
+  child.stderr.on("data", chunk => stderr.push(String(chunk)));
+  try {
+    const baseUrl = `http://127.0.0.1:${port}`;
+    await waitForJson(`${baseUrl}/api/config`);
+    const crossOriginHeaders = {
+      origin: "https://attacker.example",
+      "sec-fetch-site": "cross-site",
+      "content-type": "application/json"
+    };
+
+    for (const path of ["/api/relayer/withdraw", "/api/deposit/proof"]) {
+      const response = await fetch(`${baseUrl}${path}`, {
+        method: "POST",
+        headers: crossOriginHeaders,
+        body: "{}"
+      });
+      assert.equal(response.status, 403, path);
+    }
+
+    const proverResponse = await fetch(`${baseUrl}/v1/prover/transfer`, {
+      method: "POST",
+      headers: crossOriginHeaders,
+      body: JSON.stringify({ version: "v1", payload: {} })
+    });
+    assert.equal(proverResponse.status, 404);
+    assert.equal(prover.calls.length, 0);
+
+    const nonJsonResponse = await fetch(`${baseUrl}/api/deposit/proof`, {
+      method: "POST",
+      headers: { "content-type": "text/plain" },
+      body: "{}"
+    });
+    assert.equal(nonJsonResponse.status, 415);
+  } finally {
+    child.kill("SIGTERM");
+    await once(child, "exit");
+    await prover.close();
     assert.equal(stderr.join("").trim(), "");
   }
 });
@@ -452,6 +584,7 @@ test("DApp disables local-only backend routes outside local test mode", async ()
     assert.equal(config.json.serverFeatures.localSigners, false);
     assert.equal(config.json.serverFeatures.faucet, false);
     assert.equal(config.json.serverFeatures.auditorAdmin, false);
+    assert.equal(config.json.serverFeatures.proverProxy, false);
     assert.equal(config.json.localSignerHome, "");
     assert.deepEqual(config.json.accounts, []);
 
@@ -513,6 +646,48 @@ test("DApp disables local-only backend routes outside local test mode", async ()
   }
 });
 
+test("EVM LAN clients keep the public prover URL when the proxy is disabled", async (t) => {
+  const lanAddress = lanIpv4Address();
+  if (!lanAddress) {
+    t.skip("no LAN IPv4 address is available for non-loopback route coverage");
+    return;
+  }
+
+  const port = await freePort();
+  const child = spawn(process.execPath, ["server.js", "--host", "0.0.0.0"], {
+    cwd: new URL("..", import.meta.url),
+    env: {
+      ...process.env,
+      PORT: String(port),
+      CLAIRVEIL_DAPP_PORT: String(port),
+      CLAIRVEIL_DAPP_LOCAL_TEST_MODE: "1",
+      CLAIRVEIL_TRANSPORT: "evm",
+      CLAIRVEIL_PUBLIC_PROVER_URL: "https://prover.public.example"
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  const stdout = [];
+  const stderr = [];
+  child.stdout.on("data", chunk => stdout.push(String(chunk)));
+  child.stderr.on("data", chunk => stderr.push(String(chunk)));
+  const debugOutput = () => [stdout.join("").trim(), stderr.join("").trim()].join("\n");
+
+  try {
+    const baseUrl = `http://${lanAddress}:${port}`;
+    const config = await waitForJson(`${baseUrl}/api/config`, { debugOutput });
+    assert.equal(config.response.status, 200);
+    assert.equal(config.json.transport, "evm");
+    assert.equal(config.json.serverFeatures.proverProxy, false);
+    assert.equal(config.json.proverUrl, "https://prover.public.example");
+    assert.equal(config.json.chainProfiles[0].proverUrl, "https://prover.public.example");
+  } finally {
+    child.kill("SIGTERM");
+    await once(child, "exit");
+    assert.equal(stderr.join("").trim(), "");
+  }
+});
+
 test("DApp exposes only the relayer account to LAN signing clients", async (t) => {
   const lanAddress = lanIpv4Address();
   if (!lanAddress) {
@@ -558,6 +733,7 @@ test("DApp exposes only the relayer account to LAN signing clients", async (t) =
     assert.equal(config.json.serverFeatures.localSigners, false);
     assert.equal(config.json.serverFeatures.auditorAdmin, false);
     assert.equal(config.json.serverFeatures.relayer, true);
+    assert.equal(config.json.serverFeatures.proverProxy, false);
     assert.deepEqual(config.json.accounts.map(account => account.name), ["relayer"]);
     assert.deepEqual(config.json.accounts.map(account => account.transparentAddress), [
       "clair1relayer00000000000000000000000000000"

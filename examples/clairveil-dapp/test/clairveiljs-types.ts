@@ -1,6 +1,7 @@
 import {
   createClairveilClient,
   buildPreparedWithdrawProverPayload,
+  createNoteReservationManager as createRootNoteReservationManager,
   decryptWithRootSeed,
   disclosureAmountAndAsset,
   encryptWithRootSeed,
@@ -32,6 +33,13 @@ import type {
 } from "clairveiljs/payload";
 import { planTransferNotes } from "clairveiljs/planner";
 import { createStaticProverAdapter } from "clairveiljs/prover";
+import {
+  createNoteReservationManager,
+  hashRecipient,
+  MemoryReservationStore,
+  nullifierLookupKey,
+  type ReservationBatch
+} from "clairveiljs/reservation";
 
 async function typeSmoke() {
   const rootSeed = new Uint8Array(32);
@@ -45,7 +53,7 @@ async function typeSmoke() {
   const firstNote = scan.notes[0];
   if (firstNote) {
     const index: number = firstNote.index;
-    const status: "spendable" | "spent" = firstNote.status;
+    const status: "spendable" | "spent" | "unverified" = firstNote.status;
     void { index, status };
     // @ts-expect-error scan note responses do not expose denom.
     firstNote.denom;
@@ -54,6 +62,32 @@ async function typeSmoke() {
   }
   const plan = planTransferNotes({ amount: "1uclair", notes: [] });
   const prover = createStaticProverAdapter({ transferProofHex: "aa", withdrawProofHex: "bb" });
+  const checkNullifiers = async (nullifiers: readonly string[]) =>
+    new Map(nullifiers.map(nullifier => [nullifier, false]));
+  const reservationManager = createNoteReservationManager({
+    store: new MemoryReservationStore(),
+    ownerKeyId: "clairveil-local-3:clair1example",
+    indexKey: rootSeed
+  });
+  const rootReservationManager = createRootNoteReservationManager({
+    store: new MemoryReservationStore(),
+    ownerKeyId: "clairveil-local-3:clair1example",
+    indexKey: rootSeed
+  });
+  const lookupKey: string = nullifierLookupKey("index-key-v1", "nullifier-0001");
+  const availableNotes: Promise<object[]> = reservationManager.filterAvailableNotes([]);
+  const rootAvailableNotes: Promise<object[]> = rootReservationManager.filterAvailableNotes([]);
+  const renewedReservations = reservationManager.heartbeatLease([], {
+    leaseToken: "lease",
+    leaseDurationMs: 60000
+  });
+  const replanReservations = reservationManager.markReplanRequired([], {
+    txHash: "aa".repeat(32),
+    nullifierUnspentConfirmed: true,
+    txAbsentOrFailedConfirmed: true,
+    txHashChecked: "aa".repeat(32),
+    error: "receipt failed"
+  });
   const client = createClairveilClient({
     rpc: "http://127.0.0.1:26657",
     rest: "http://127.0.0.1:1317",
@@ -80,6 +114,12 @@ async function typeSmoke() {
   });
   const shielded: string = account.shielded_address;
   const coreShielded: string = deriveShieldedAddress(rootSeed);
+  const customShielded: string = deriveShieldedAddress(rootSeed, {
+    shieldedPrefix: "demos"
+  });
+  const customRecipientHash: string = hashRecipient(customShielded, {
+    shieldedPrefix: "demos"
+  });
   const cosmosClient = createCosmosClient({
     rpc: "http://127.0.0.1:26657",
     rest: "http://127.0.0.1:1317",
@@ -138,7 +178,8 @@ async function typeSmoke() {
     },
     amount: "1uclair",
     recipient: "clairs1recipient",
-    proverAdapter: prover
+    proverAdapter: prover,
+    reservationManager
   });
   const transferBuild: Promise<TransferMessageBuildResult> = client.buildTransferMessage({
     creator: "clair1example",
@@ -151,6 +192,8 @@ async function typeSmoke() {
   const transferBuildResult = await transferBuild;
   const transferPayload: PreparedTransferPayload = transferBuildResult.payload;
   const transferPayloadHash: string = transferPayload.payload_hash;
+  const transferReservation: ReservationBatch | null = null;
+  void { lookupKey, availableNotes, renewedReservations, replanReservations, transferReservation };
   const transferProofHex: string = transferBuildResult.proof.proof_hex;
   const transferNullifierBytes: Uint8Array | undefined = transferBuildResult.message.nullifiers[0];
   const withdrawProverPayload: Promise<PreparedWithdrawProverPayloadResult> = client.buildPreparedWithdrawProverPayload({
@@ -179,6 +222,7 @@ async function typeSmoke() {
     amount: "1uclair",
     rootSeed,
     proverAdapter: prover,
+    checkNullifiers,
     transactionOptions: {
       value: "0x0",
       chainId: "0x539"
@@ -190,10 +234,28 @@ async function typeSmoke() {
     recipient: "0x1111111111111111111111111111111111111111",
     rootSeed,
     proverAdapter: prover,
+    checkNullifiers,
     transactionOptions: {
       value: "0x0",
       withdrawOutputMode: "legacy-zero"
     }
+  });
+  // @ts-expect-error direct EVM transfer preparation must provide nullifier preflight.
+  evmClient.buildTransferTransaction({
+    creator: "clair1example",
+    inputs: [],
+    recipient: "clairs1recipient",
+    amount: "1uclair",
+    rootSeed,
+    proverAdapter: prover
+  });
+  // @ts-expect-error direct EVM withdraw preparation must provide nullifier preflight.
+  evmClient.buildWithdrawTransaction({
+    notes: [],
+    amount: "1uclair",
+    recipient: "0x1111111111111111111111111111111111111111",
+    rootSeed,
+    proverAdapter: prover
   });
   const builtEvmTransfer = await evmTransferTx;
   const evmTxRequest: EvmTransactionRequest = builtEvmTransfer.transaction;
@@ -256,6 +318,7 @@ async function typeSmoke() {
     restPath,
     shielded,
     coreShielded,
+    customRecipientHash,
     cosmosClient,
     evmClient,
     evmWallet,

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import {
   MemoryNoteStore,
@@ -35,17 +36,22 @@ import {
   createClairveilEvmClient,
   createEvmContractAdapter,
   createEip1193WalletAdapter,
+  evmAddressToBech32,
   functionSelector
 } from "clairveiljs/evm";
+import { createNote, deriveSpendKeys, deriveViewKeys } from "clairveiljs/core";
 import { utf8Bytes, utf8String } from "clairveiljs/browser-crypto";
+import { hashRecipient } from "clairveiljs/reservation";
 
 const assetID = hashStringToField("uclair");
+const canonicalRecipient = "clairs19x5u4mf4l4zqcpvr7d809fh4tjy5j50p2mwgky0nj38jpqpj7svndu3hqshu5e3s8w6pea5p30xek5p9flxjf7f44xh7cnfrlsd84pc7upgh3";
 
 function foundNote(amount, suffix, overrides = {}) {
   return {
     height: Number(amount) + suffix,
     txHash: `AA${String(suffix).padStart(2, "0")}`,
     isSpent: false,
+    nullifierStatus: "unspent",
     nullifier: `00${String(suffix).padStart(62, "0")}`,
     note: {
       receiverSpendPubKeyX: 1n,
@@ -112,6 +118,39 @@ test("wallet adapter derives Clairveil privacy material", async () => {
   assert.equal(material.pubKeyHex, "02".padEnd(66, "0"));
   assert.match(material.shieldedAddress, /^clairs1/);
   assert.match(material.disclosurePubKeyHex, /^[0-9a-f]{64}$/);
+});
+
+test("vendored reservation recipient hash follows Go canonical address rules", () => {
+  const expected = "8a3344bcbfdd71e8346f1fcc5d9d09d493c3345b0e94d26371f89b2574545d3c";
+  assert.equal(hashRecipient(canonicalRecipient), expected);
+  assert.equal(hashRecipient(canonicalRecipient.toUpperCase()), expected);
+  assert.throws(() => hashRecipient("clair1recipient"), /shielded address/i);
+  assert.throws(
+    () => hashRecipient("clairs1llllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllct37x5k"),
+    /valid shielded address/i,
+  );
+});
+
+test("vendored reservation recipient hash supports a custom shielded prefix", () => {
+  const material = derivePrivacyMaterial({
+    address: "demo1example0000000000000000000000000000000",
+    pubKeyHex: "02".padEnd(66, "0"),
+    signatureBase64: Buffer.from("dapp-custom-prefix").toString("base64"),
+    shieldedPrefix: "demos",
+  });
+  const expected = createHash("sha256")
+    .update(material.shieldedAddress)
+    .digest("hex");
+
+  assert.match(material.shieldedAddress, /^demos1/);
+  assert.equal(
+    hashRecipient(material.shieldedAddress, { shieldedPrefix: "demos" }),
+    expected,
+  );
+  assert.equal(
+    hashRecipient(material.shieldedAddress.toUpperCase(), { shieldedPrefix: "demos" }),
+    expected,
+  );
 });
 
 test("root privacy material retains signer fields for high-level builders", () => {
@@ -334,6 +373,130 @@ test("EVM contract adapter allows project-specific calldata encoders", () => {
   assert.equal(tx.data, "0x1234");
 });
 
+test("vendored EVM direct transfer and withdraw enforce nullifier preflight", async () => {
+  const rootSeed = new Uint8Array(32).fill(9);
+  const spendPubKey = deriveSpendKeys(rootSeed).pubKey;
+  const viewPubKey = deriveViewKeys(rootSeed).pubKey;
+  const recipientMaterial = derivePrivacyMaterial({
+    address: "0x1111111111111111111111111111111111111111",
+    pubKeyHex: "03".padEnd(66, "0"),
+    signatureBase64: Buffer.from("evm-direct-recipient").toString("base64"),
+    shieldedPrefix: "demos"
+  });
+  const makeFoundNote = randomness => ({
+    note: createNote({
+      spendPubKey,
+      viewPubKey,
+      amount: 1n,
+      assetDenom: "udemo",
+      randomness
+    }),
+    isSpent: false,
+    nullifierStatus: "unspent"
+  });
+  const merklePathProvider = {
+    async lookupMerklePath() {
+      return { root: "01".padStart(64, "0"), path: [], path_helper: [] };
+    }
+  };
+  const client = createClairveilEvmClient({
+    accountPrefix: "demo",
+    shieldedPrefix: "demos",
+    chainId: "demo-1",
+    defaultDenom: "udemo"
+  });
+  const checked = [];
+  const checkNullifiers = async nullifiers => {
+    checked.push([...nullifiers]);
+    return new Map(nullifiers.map(nullifier => [nullifier, false]));
+  };
+
+  const transfer = await client.buildTransferTransaction({
+    creator: evmAddressToBech32("0x1111111111111111111111111111111111111111", "demo"),
+    inputs: [makeFoundNote(101n), makeFoundNote(102n)],
+    recipient: recipientMaterial.shieldedAddress,
+    amount: "1udemo",
+    rootSeed,
+    merklePathProvider,
+    auditDisclosureTargetPubKeyHex: recipientMaterial.disclosurePubKeyHex,
+    checkNullifiers,
+    proverAdapter: {
+      async proveTransfer({ payload }) {
+        assert.equal(checked.length, 1);
+        return { version: "v1", payload_hash: payload.payload_hash, proof_hex: "01" };
+      }
+    }
+  });
+  const withdraw = await client.buildWithdrawTransaction({
+    notes: [makeFoundNote(103n)],
+    amount: "1udemo",
+    recipient: "0x2222222222222222222222222222222222222222",
+    rootSeed,
+    merklePathProvider,
+    chainNowUnix: 1_000,
+    expiresAtUnix: 2_000,
+    checkNullifiers,
+    proverAdapter: {
+      async proveWithdraw({ payload }) {
+        assert.equal(checked.length, 2);
+        return { version: "v1", payload_hash: payload.payload_hash, proof_hex: "01" };
+      }
+    }
+  });
+
+  assert.equal(transfer.status, "ready");
+  assert.equal(withdraw.status, "ready");
+  assert.deepEqual(checked.map(batch => batch.length), [2, 1]);
+
+  for (const failedCheck of [
+    async nullifiers => new Map(nullifiers.map(nullifier => [nullifier, true])),
+    async () => new Map()
+  ]) {
+    let proverCalled = false;
+    await assert.rejects(
+      client.buildTransferTransaction({
+        creator: evmAddressToBech32("0x1111111111111111111111111111111111111111", "demo"),
+        inputs: [makeFoundNote(201n), makeFoundNote(202n)],
+        recipient: recipientMaterial.shieldedAddress,
+        amount: "1udemo",
+        rootSeed,
+        merklePathProvider,
+        auditDisclosureTargetPubKeyHex: recipientMaterial.disclosurePubKeyHex,
+        checkNullifiers: failedCheck,
+        proverAdapter: {
+          async proveTransfer() {
+            proverCalled = true;
+            throw new Error("prover must not run");
+          }
+        }
+      }),
+      /nullifier/i
+    );
+    assert.equal(proverCalled, false);
+
+    await assert.rejects(
+      client.buildWithdrawTransaction({
+        notes: [makeFoundNote(203n)],
+        amount: "1udemo",
+        recipient: "0x2222222222222222222222222222222222222222",
+        rootSeed,
+        merklePathProvider,
+        chainNowUnix: 1_000,
+        expiresAtUnix: 2_000,
+        checkNullifiers: failedCheck,
+        proverAdapter: {
+          async proveWithdraw() {
+            proverCalled = true;
+            throw new Error("prover must not run");
+          }
+        }
+      }),
+      /nullifier/i
+    );
+    assert.equal(proverCalled, false);
+  }
+});
+
 test("withdraw planner requires exact-match notes", () => {
   const exact = planWithdrawNotes({
     amount: "5uclair",
@@ -492,21 +655,30 @@ test("note store tracks scan cursor, rollback metadata, and localStorage plainte
     foundNotes: [foundNote(5, 1), foundNote(7, 2)],
     scanCursor: {
       after_height: 0,
+      after_sequence: 78,
       page: 1,
       limit: 50,
       event_types: ["deposit", "shielded_transfer"],
+      next_height: 200,
+      next_sequence: 78,
       latest_height: 9,
       latest_tx_hash: "AA02"
     }
   });
   let loaded = await store.load();
-  assert.equal(loaded.lastScannedHeight, 9);
+  assert.equal(loaded.lastScannedHeight, 200);
+  assert.equal(loaded.lastScannedSequence, 78);
   assert.equal(loaded.lastScannedTxHash, "AA02");
   assert.deepEqual(loaded.scanCursor.event_types, ["deposit", "shielded_transfer"]);
 
   loaded = await store.rollbackToHeight(6);
-  assert.equal(loaded.notes.length, 1);
+  assert.equal(loaded.notes.length, 0);
   assert.equal(loaded.rollbackHeight, 6);
+  assert.equal(loaded.lastScannedSequence, 0);
+  assert.equal(loaded.lastScannedTxHash, "");
+  assert.equal(loaded.scanCursor.source, "scan_events");
+  assert.equal(loaded.scanCursor.after_height, 6);
+  assert.equal(loaded.scanCursor.after_sequence, 0);
 
   const storage = new Map();
   const storageLike = {
@@ -535,10 +707,11 @@ test("legacy external ClairveilJS scanner fails closed on privacy-fixed-v1 depos
         tx_hash_hex: fixture.scan.tx_hash_hex,
         attributes: [
           { key: "encrypted_note", value: fixture.note.encrypted_note_hex },
-          { key: "note_commitment", value: fixture.note.commitment_hex }
+          { key: "commitment", value: fixture.note.commitment_hex }
         ]
       }
-    ]
+    ],
+    checkNullifier: async () => ({ used: false })
   });
 
   // The npm/GitHub ClairveilJS dependency is downstream of this repository.

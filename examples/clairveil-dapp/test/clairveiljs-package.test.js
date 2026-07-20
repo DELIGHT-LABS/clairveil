@@ -12,6 +12,7 @@ test("package export map exposes public SDK entrypoints", async () => {
     "ClairveilError",
     "ClairveilErrorCode",
     "MemoryNoteStore",
+    "createNoteReservationManager",
     "buildRelayWithdrawMsgFromPayload",
     "buildRelayWithdrawPayload",
     "validateRelayWithdrawPayload"
@@ -30,6 +31,7 @@ test("package subpath exports are available", async () => {
   const planner = await import("clairveiljs/planner");
   const payload = await import("clairveiljs/payload");
   const prover = await import("clairveiljs/prover");
+  const reservation = await import("clairveiljs/reservation");
   const tx = await import("clairveiljs/generated/clairveil/privacy/v1/tx");
 
   assert.equal(typeof core.derivePrivacyMaterial, "function");
@@ -46,6 +48,10 @@ test("package subpath exports are available", async () => {
   assert.equal(typeof payload.buildRelayWithdrawPayload, "function");
   assert.equal(typeof payload.validateRelayWithdrawPayload, "function");
   assert.equal(typeof prover.createAsyncJobProverAdapter, "function");
+  assert.equal(typeof reservation.createNoteReservationManager, "function");
+  assert.equal(typeof reservation.NoteReservationManager.prototype.markBroadcastAttempting, "function");
+  assert.throws(() => reservation.hashAmount("uclair", true), /safe integer, bigint/);
+  assert.throws(() => reservation.hashAmount("uclair", [1]), /safe integer, bigint/);
   assert.equal(typeof tx.MsgDeposit.encode, "function");
   assert.equal(typeof tx.MsgTransfer.decode, "function");
   assert.equal(tx.MsgWithdraw.typeUrl, "/clairveil.privacy.v1.MsgWithdraw");
