@@ -137,6 +137,7 @@ Required UX:
 - Treat equality as expired: submission at `block_time >= expires_at_unix` fails, and neither wallet nor relayer can extend it.
 - Warn that prepared payload/proof JSON is privacy-sensitive data.
 - Warn that the prover payload still exposes private note witness even though it cannot redirect outputs.
+- After handoff, do not present local cancel as a payload revocation. Keep the reservation locked until chain expiry or transaction/nullifier reconciliation establishes a safe next state.
 
 ## 7. Disclosure Review
 

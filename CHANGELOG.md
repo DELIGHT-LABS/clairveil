@@ -6,6 +6,12 @@ This project follows [the release versioning policy](docs/clairveil-release-vers
 
 ## Unreleased
 
+### Migration Notes
+
+- Upgraded `privacy_note_reservation_contract.json` and its schema from v1 to v3. Downstream reservation implementations must fail closed for malformed or unavailable nullifier/relay chain-time evidence, keep lease heartbeats through the ProofReady transition, and durably record a leased `ProofReady` relay handoff before exposing payloads externally.
+- Replace unrestricted `UpdateReservation`/`UpdateOperation` calls with the Service-owned atomic batch, reconciliation, lease-expiry recovery, proof-discard, and relay-handoff commands. Persistent Store implementations must validate the current lease owner and token together and commit linked reservation/operation changes in one transaction.
+- Notes without an explicit successful `used: false` nullifier response are now unverified and excluded from spending. Clear or revalidate older cached `isSpent: false` entries before using them for planning.
+
 ## v0.2.0 - 2026-07-13
 
 ### Added

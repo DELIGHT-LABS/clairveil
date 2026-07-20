@@ -47,9 +47,23 @@ POST /clairveil/privacy/v1/commitment_paths_at_root
 
 Wallet note sync에는 typed `privacy_scan`(`privacy-scan-v2`)을 우선 사용하고 full `(height, global_sequence, output_index)` cursor를 저장해야 합니다. Reference SDK는 source가 typed query를 구현하지 않은 경우에만 `scan_events`를 사용하고, 더 오래된 source에서는 raw transaction search로 fallback합니다. Typed source가 존재하는데 query가 실패하면 terminal error입니다. 조용히 downgrade하면 batch ciphertext가 누락될 수 있습니다. Client는 pagination/cursor 저장, response validation, bounded retry를 구현해야 합니다. `privacy_scan`, `scan_events` 같은 public global projection은 bounded endpoint failover가 가능하지만 failover 중 schema/cursor 의미를 바꾸면 안 됩니다. Legacy fallback의 `scan_events`는 page 안에 필터링된 event type만 있을 때 빈 `events` 배열과 `has_more=true`를 반환할 수 있으므로 이 경우에도 `next_height`, `next_sequence`로 cursor를 전진시켜야 합니다. Raw `events` query는 preferred wallet sync contract가 아니라 compatibility/debugging/auditor surface입니다.
 
+Retry와 failover는 operation 종류별로 구분해야 합니다.
+
+| Operation | 기본 retry 정책 | Endpoint failover |
+| --- | --- | --- |
+| `scan_events`, tree state, module config 같은 public read query | 일시적인 network error, timeout, `408`, `429`, `502`, `503`, `504`를 retry | 제품이 설정된 read endpoint를 신뢰하는 경우 허용 |
+| `nullifier` / `nullifiers` query | 같은 endpoint에서 retry | 기본 off. 다른 운영자에게 조회 nullifier 집합을 노출하므로 명시적인 privacy opt-in 필요 |
+| Signed tx broadcast | 기본 off. 재제출을 결정하기 전에 tx hash 조회 또는 `waitForTx`로 복구 | 기본 off |
+| Prover request | finite timeout, cancellation, response validation 적용. 자동 retry 정책은 제품에서 결정 | Multi-prover failover는 기본 off이며 명시적인 privacy opt-in 필요 |
+
+Signed/broadcast tx를 idempotent read query처럼 취급하면 안 됩니다. Transaction이 이미 mempool에 들어간 뒤 timeout이 발생할 수 있습니다.
+
 일반적인 batch spent refresh에는 JSON body를 쓰는 `POST /clairveil/privacy/v1/nullifiers`를 사용해야 합니다. 요청당 nullifier는 최대 1000개로 나누고, 더 큰 wallet은 chunk 처리해야 합니다. GET binding은 작은 compatibility check 용도로 남아 있지만, 큰 query string은 browser, mobile gateway, proxy의 URL 길이 제한을 넘을 수 있습니다.
 
 Nullifier query는 privacy-sensitive합니다. Wallet이 특정 nullifier의 spent 여부를 묻는다는 것은 그 note를 추적하고 있을 가능성을 endpoint에 알리는 신호가 될 수 있습니다. 기본 정책은 같은 endpoint 안에서만 nullifier query를 retry하는 것입니다. 같은 nullifier 묶음을 다른 public endpoint로 failover하는 동작은 제품/사용자가 명시적으로 켠 경우에만 허용해야 합니다.
+명시적인 JSON boolean `used: false`만 검증된 unspent로 취급해야 합니다. 누락, malformed, query 실패 nullifier 결과는 unknown이며 성공한 refresh가 해결할 때까지 spendable balance와 planner에서 제외해야 합니다.
+
+Relay 제출은 broadcast 직전에 fresh chain block time으로 expiry를 다시 확인해야 합니다. Client가 시간을 얻거나 검증할 수 없으면 제출을 거부하고, relayer도 독립적으로 같은 검사를 수행해야 합니다. Reservation heartbeat는 proof 생성, transaction/sign-doc 생성, 최종 `Proving -> ProofReady` CAS까지 덮어야 하며, 종료 전 진행 중인 renewal을 await해야 합니다.
 
 ## 3. Tx Messages
 

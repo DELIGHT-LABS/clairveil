@@ -137,6 +137,7 @@ Disclosure plaintext를 표시할 때는 반드시 digest verification 결과를
 - `block_time >= expires_at_unix`는 expired이며 wallet/relayer 모두 연장할 수 없다는 안내
 - prepared payload/proof JSON이 privacy-sensitive data라는 경고
 - output을 redirect할 수 없더라도 prover payload가 private note witness를 노출한다는 경고
+- payload handoff 이후 local cancel을 payload revoke처럼 표시하지 않음. Chain expiry 또는 tx/nullifier reconcile로 안전한 다음 상태가 확인될 때까지 reservation을 유지
 
 ## 7. Disclosure Review
 

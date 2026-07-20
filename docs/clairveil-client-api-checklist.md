@@ -47,9 +47,23 @@ POST /clairveil/privacy/v1/commitment_paths_at_root
 
 Clients should prefer typed `privacy_scan` (`privacy-scan-v2`) for wallet note sync and persist the full `(height, global_sequence, output_index)` cursor. The reference SDK uses `scan_events` only when the source does not implement the typed query, then falls back to raw transaction search for older sources. A failure from an available typed source is terminal: silently downgrading could omit batch ciphertexts. The client should implement pagination/cursor persistence, response validation, and bounded retry. Public global projections such as `privacy_scan` and `scan_events` may use bounded endpoint failover, but a client must not change schema/cursor semantics while failing over. In the legacy fallback, `scan_events` can return an empty `events` array with `has_more=true` when a page contains only filtered-out event types; clients must still persist/advance to `next_height` and `next_sequence`. The raw `events` query remains a compatibility/debugging/auditor surface, not the preferred wallet sync contract.
 
+Retry and failover must be selected by operation type:
+
+| Operation | Default retry policy | Endpoint failover |
+| --- | --- | --- |
+| Public read queries such as `scan_events`, tree state, and module config | Retry transient network errors, timeouts, `408`, `429`, `502`, `503`, and `504` | Allowed when the product trusts the configured read endpoints |
+| `nullifier` / `nullifiers` queries | Retry on the same endpoint | Off by default; explicit privacy opt-in because failover reveals the queried nullifier set to another operator |
+| Signed tx broadcast | Off by default; recover through tx-hash lookup or `waitForTx` before deciding whether to resubmit the same tx bytes | Off by default |
+| Prover requests | Apply a finite timeout, cancellation, and response validation; automatic retry is product-defined | Multi-prover failover is off by default and requires an explicit privacy opt-in |
+
+Do not handle a signed/broadcast transaction like an idempotent read query. A timeout can occur after the transaction has already reached the mempool.
+
 Use `POST /clairveil/privacy/v1/nullifiers` with a JSON body for normal batch spent refresh. Send at most 1000 nullifiers per request and chunk larger wallets. The GET binding remains available for small compatibility checks, but large query strings can exceed browser, mobile gateway, or proxy URL limits.
 
 Nullifier queries are privacy-sensitive because a wallet asking about a nullifier reveals that it may be tracking the corresponding note. The default policy should retry nullifier queries only against the same endpoint. Failing over the same nullifier set to a different public endpoint should be an explicit product/user opt-in.
+Treat only an explicit JSON boolean `used: false` as verified unspent. Missing, malformed, or failed nullifier results are unknown and must be excluded from spendable balance and planning until a successful refresh resolves them.
+
+Relay submission requires a fresh chain block time immediately before broadcast. If the client cannot obtain or validate that time, it must reject submission; the relayer must independently perform the same expiry check. A reservation heartbeat covers proof generation, transaction/sign-doc construction, and the final `Proving -> ProofReady` CAS, and must await any in-flight renewal before stopping.
 
 ## 3. Tx Messages
 
