@@ -2,10 +2,10 @@ package payroll
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -113,8 +113,8 @@ func TestProofWorkerStoresAuditDisclosureDigestWhenMultiplePlanesExist(t *testin
 				AuditDisclosureDigestHex:    "audit-digest-a",
 				SelfViewDisclosureDigestHex: "self-view-digest-a",
 				Inputs: []privacytransfer.PreparedTransferInput{
-					{NullifierHex: "nullifier-a"},
-					{NullifierHex: "nullifier-b"},
+					{NullifierHex: testCanonicalNullifierHex("nullifier-a")},
+					{NullifierHex: testCanonicalNullifierHex("nullifier-b")},
 				},
 				Outputs: []privacytransfer.PreparedTransferOutput{
 					{CommitmentHex: "commitment-a"},
@@ -1002,7 +1002,7 @@ func TestProofWorkerBlocksSpentInputBeforeCallingProver(t *testing.T) {
 		ProofRunner:      runner,
 		Assembler:        fakeAssembler{},
 		ProofResultSink:  NewMemoryProofResultStore(),
-		NullifierChecker: fixedProofNullifierChecker{used: map[string]bool{strings.ToLower(item.OperationID) + "-a": true, strings.ToLower(item.OperationID) + "-b": false}},
+		NullifierChecker: fixedProofNullifierChecker{used: map[string]bool{testCanonicalNullifierHex(item.OperationID + "-a"): true, testCanonicalNullifierHex(item.OperationID + "-b"): false}},
 		LeaseOwner:       "proof-worker-a",
 		LeaseTTL:         time.Minute,
 	}
@@ -1077,8 +1077,8 @@ func (fakePayloadBuilder) BuildPreparedTransferPayload(_ context.Context, item P
 		Version:                  privacytransfer.PreparedTransferPayloadVersion,
 		AuditDisclosureDigestHex: "audit-digest-a",
 		Inputs: []privacytransfer.PreparedTransferInput{
-			{NullifierHex: prefix + "-a"},
-			{NullifierHex: prefix + "-b"},
+			{NullifierHex: testCanonicalNullifierHex(prefix + "-a")},
+			{NullifierHex: testCanonicalNullifierHex(prefix + "-b")},
 		},
 		Outputs: []privacytransfer.PreparedTransferOutput{
 			{CommitmentHex: "commitment-a"},
@@ -1406,7 +1406,11 @@ func (s *discardFailingProofResultStore) DiscardPublishedProofResult(context.Con
 func (fakeAssembler) BuildTransferMessage(payload privacytransfer.PreparedTransferPayload, _ privacytransfer.PreparedTransferProof) (*privacytypes.MsgTransfer, error) {
 	message := &privacytypes.MsgTransfer{Nullifiers: make([][]byte, 0, len(payload.Inputs))}
 	for _, input := range payload.Inputs {
-		message.Nullifiers = append(message.Nullifiers, []byte(input.NullifierHex))
+		nullifier, err := hex.DecodeString(input.NullifierHex)
+		if err != nil {
+			return nil, err
+		}
+		message.Nullifiers = append(message.Nullifiers, nullifier)
 	}
 	return message, nil
 }

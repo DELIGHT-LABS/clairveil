@@ -829,7 +829,7 @@ func TestBatchBroadcastWorkerRejectsProofResultWithoutInputNotes(t *testing.T) {
 func TestValidateProofResultArtifactRejectsEmptyProof(t *testing.T) {
 	payload := privacytransfer.PreparedTransferPayload{
 		Version: privacytransfer.PreparedTransferPayloadVersion,
-		Inputs:  []privacytransfer.PreparedTransferInput{{NullifierHex: "empty-proof-nullifier"}},
+		Inputs:  []privacytransfer.PreparedTransferInput{{NullifierHex: testCanonicalNullifierHex("empty-proof-nullifier")}},
 	}
 	payload.PayloadHash = privacytransfer.ComputePreparedTransferPayloadHash(payload)
 	proof := privacytransfer.PreparedTransferProof{
@@ -927,7 +927,7 @@ func proofReadyChunkWithLeaseTTLAndIdentity(t *testing.T, ctx context.Context, r
 	require.NoError(t, err)
 	payload := privacytransfer.PreparedTransferPayload{
 		Version: privacytransfer.PreparedTransferPayloadVersion,
-		Inputs:  []privacytransfer.PreparedTransferInput{{NullifierHex: "live-nullifier"}},
+		Inputs:  []privacytransfer.PreparedTransferInput{{NullifierHex: testCanonicalNullifierHex("live-nullifier")}},
 	}
 	payload.PayloadHash = privacytransfer.ComputePreparedTransferPayloadHash(payload)
 	proof := privacytransfer.PreparedTransferProof{
@@ -978,6 +978,10 @@ func testCanonicalNullifier(label string) []byte {
 	// Keep the fixture below the BN254 scalar modulus without reducing it.
 	sum[0] &= 0x1f
 	return append([]byte(nil), sum[:]...)
+}
+
+func testCanonicalNullifierHex(label string) string {
+	return hex.EncodeToString(testCanonicalNullifier(label))
 }
 
 type recordingBroadcaster struct {

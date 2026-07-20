@@ -352,8 +352,7 @@ func TestLiveDaemonSkipsReservedLeaseContention(t *testing.T) {
 	require.NoError(t, err)
 	confirmed, err := planner.ConfirmPlan(ctx, *plan)
 	require.NoError(t, err)
-	_, err = reservationService.AcquireLeaseForStatus(ctx, confirmed.Items[0].InputNotes[0].ReservationID, "external-worker", privacyreservation.StatusReserved, time.Minute)
-	require.NoError(t, err)
+	markPayrollNotesProvingForDaemonTest(t, ctx, reservationService, confirmed.Items[0].OperationID, confirmed.Items[0].InputNotes, "external-worker", time.Minute)
 
 	report, err := (LiveDaemon{
 		Reservation: reservationService,
