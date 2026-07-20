@@ -201,10 +201,10 @@ func (d ReferenceDaemon) simulateProofAndSubmit(ctx context.Context, group refer
 		if err != nil {
 			return err
 		}
-		if _, err := d.Reservation.TransitionWithLease(ctx, reservation.ReservationID, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving); err != nil {
+		if _, err := d.Reservation.TransitionWithLease(ctx, reservation.ReservationID, lease.Owner, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving); err != nil {
 			return err
 		}
-		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseToken: lease.Token})
+		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseOwner: lease.Owner, LeaseToken: lease.Token})
 	}
 	proofReadyUpdate := privacyreservation.ProofReadyOperationUpdate{
 		OperationID:                      group.Operation.OperationID,
@@ -243,10 +243,10 @@ func (d ReferenceDaemon) rollbackExpiredProving(ctx context.Context, group refer
 			}
 			return err
 		}
-		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseToken: lease.Token})
+		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseOwner: lease.Owner, LeaseToken: lease.Token})
 	}
 	for _, ref := range refs {
-		if _, err := d.Reservation.TransitionWithLease(ctx, ref.ReservationID, ref.LeaseToken, privacyreservation.StatusProving, privacyreservation.StatusReserved); err != nil {
+		if _, err := d.Reservation.TransitionWithLease(ctx, ref.ReservationID, ref.LeaseOwner, ref.LeaseToken, privacyreservation.StatusProving, privacyreservation.StatusReserved); err != nil {
 			return err
 		}
 	}
@@ -262,7 +262,7 @@ func (d ReferenceDaemon) simulateSubmit(ctx context.Context, group referenceRese
 		if err != nil {
 			return err
 		}
-		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseToken: lease.Token})
+		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseOwner: lease.Owner, LeaseToken: lease.Token})
 	}
 	return d.submitWithRefs(ctx, group.Operation, group.Reservations, refs, report)
 }

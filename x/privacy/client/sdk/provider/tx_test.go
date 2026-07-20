@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"testing"
 
 	sdkmath "cosmossdk.io/math"
@@ -81,6 +82,21 @@ func TestCosmosTxBroadcasterPrepareFactoryRequiresFromName(t *testing.T) {
 
 	_, err := broadcaster.PrepareFactory(testProviderMsg())
 	require.ErrorContains(t, err, "from name is required to sign the tx")
+}
+
+func TestCosmosTxBroadcasterRejectsMutatedPreparedBytes(t *testing.T) {
+	original := []byte("original tx bytes")
+	prepared := &PreparedCosmosTxBroadcast{
+		TxBytes: append([]byte(nil), original...),
+		Result: CosmosTxBroadcastResult{
+			TxBytesHash: sha256Hex(original),
+		},
+	}
+	prepared.TxBytes[0] ^= 0xff
+
+	result, err := (CosmosTxBroadcaster{}).BroadcastPreparedSDKMessages(context.Background(), prepared)
+	require.ErrorContains(t, err, "prepared tx bytes hash mismatch")
+	require.Equal(t, prepared.Result.TxBytesHash, result.TxBytesHash)
 }
 
 func testProviderMsg() sdk.Msg {

@@ -41,6 +41,13 @@ type CosmosSignedTx struct {
 	AccountSequence uint64
 }
 
+// PreparedCosmosTxBroadcast separates fallible account/gas/signing work from
+// the external BroadcastTx boundary while retaining a deterministic tx identity.
+type PreparedCosmosTxBroadcast struct {
+	TxBytes []byte
+	Result  CosmosTxBroadcastResult
+}
+
 func (b CosmosTxBroadcaster) PrepareFactory(msg sdk.Msg) (tx.Factory, error) {
 	return b.PrepareFactoryForMessages(msg)
 }
@@ -110,21 +117,11 @@ func (b CosmosTxBroadcaster) BroadcastSDKMessages(ctx context.Context, msgs ...s
 }
 
 func (b CosmosTxBroadcaster) BroadcastSDKMessagesWithMetadata(ctx context.Context, msgs ...sdk.Msg) (*CosmosTxBroadcastResult, error) {
-	signed, err := b.BuildSignedSDKMessages(ctx, msgs...)
+	prepared, err := b.PrepareSDKMessagesWithMetadata(ctx, msgs...)
 	if err != nil {
 		return nil, err
 	}
-	result := &CosmosTxBroadcastResult{
-		TxBytesHash:     signed.TxBytesHash,
-		SignDocHash:     signed.SignDocHash,
-		AccountSequence: signed.AccountSequence,
-	}
-	response, err := b.BroadcastSignedTxBytes(ctx, signed.Bytes)
-	if err != nil {
-		return result, err
-	}
-	result.Response = response
-	return result, nil
+	return b.BroadcastPreparedSDKMessages(ctx, prepared)
 }
 
 // BuildSignedSDKMessages signs once without broadcasting. Callers can durably
@@ -172,6 +169,21 @@ func (b CosmosTxBroadcaster) BuildSignedSDKMessages(ctx context.Context, msgs ..
 	}, nil
 }
 
+func (b CosmosTxBroadcaster) PrepareSDKMessagesWithMetadata(ctx context.Context, msgs ...sdk.Msg) (*PreparedCosmosTxBroadcast, error) {
+	signed, err := b.BuildSignedSDKMessages(ctx, msgs...)
+	if err != nil {
+		return nil, err
+	}
+	return &PreparedCosmosTxBroadcast{
+		TxBytes: append([]byte(nil), signed.Bytes...),
+		Result: CosmosTxBroadcastResult{
+			TxBytesHash:     signed.TxBytesHash,
+			SignDocHash:     signed.SignDocHash,
+			AccountSequence: signed.AccountSequence,
+		},
+	}, nil
+}
+
 // BroadcastSignedTxBytes submits the supplied immutable bytes without signing
 // or refreshing account state.
 func (b CosmosTxBroadcaster) BroadcastSignedTxBytes(ctx context.Context, txBytes []byte) (*sdk.TxResponse, error) {
@@ -183,6 +195,23 @@ func (b CosmosTxBroadcaster) BroadcastSignedTxBytes(ctx context.Context, txBytes
 	}
 	clientContext := b.ClientContext.WithCmdContext(ctx)
 	return clientContext.BroadcastTx(append([]byte(nil), txBytes...))
+}
+
+func (b CosmosTxBroadcaster) BroadcastPreparedSDKMessages(_ context.Context, prepared *PreparedCosmosTxBroadcast) (*CosmosTxBroadcastResult, error) {
+	if prepared == nil || len(prepared.TxBytes) == 0 {
+		return nil, fmt.Errorf("prepared tx bytes are required")
+	}
+	result := prepared.Result
+	txBytes := append([]byte(nil), prepared.TxBytes...)
+	if !strings.EqualFold(strings.TrimSpace(result.TxBytesHash), sha256Hex(txBytes)) {
+		return &result, fmt.Errorf("prepared tx bytes hash mismatch")
+	}
+	response, err := b.ClientContext.BroadcastTx(txBytes)
+	if err != nil {
+		return &result, err
+	}
+	result.Response = response
+	return &result, nil
 }
 
 func (b CosmosTxBroadcaster) GenerateOrBroadcast(msgs ...sdk.Msg) error {

@@ -126,13 +126,13 @@ func (d LiveDaemon) buildProofReady(ctx context.Context, group LiveOperationGrou
 			return err
 		}
 		leases[reservation.ReservationID] = lease.Token
-		if _, err := d.Reservation.TransitionWithLease(ctx, reservation.ReservationID, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving); err != nil {
+		if _, err := d.Reservation.TransitionWithLease(ctx, reservation.ReservationID, lease.Owner, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving); err != nil {
 			return err
 		}
-		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseToken: lease.Token})
+		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseOwner: lease.Owner, LeaseToken: lease.Token})
 	}
 
-	proofCtx, stopHeartbeat := (ProofWorker{Reservation: d.Reservation}).startProvingHeartbeat(ctx, leases, reservationIDsFromRefs(refs), d.leaseTTL())
+	proofCtx, stopHeartbeat := (ProofWorker{Reservation: d.Reservation}).startProvingHeartbeat(ctx, leases, reservationIDsFromRefs(refs), d.leaseTTL(), d.leaseOwner())
 	defer func() {
 		if stopHeartbeat == nil {
 			return
@@ -193,10 +193,10 @@ func (d LiveDaemon) rollbackExpiredProving(ctx context.Context, group LiveOperat
 			}
 			return err
 		}
-		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseToken: lease.Token})
+		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseOwner: lease.Owner, LeaseToken: lease.Token})
 	}
 	for _, ref := range refs {
-		if _, err := d.Reservation.TransitionWithLease(ctx, ref.ReservationID, ref.LeaseToken, privacyreservation.StatusProving, privacyreservation.StatusReserved); err != nil {
+		if _, err := d.Reservation.TransitionWithLease(ctx, ref.ReservationID, ref.LeaseOwner, ref.LeaseToken, privacyreservation.StatusProving, privacyreservation.StatusReserved); err != nil {
 			return err
 		}
 	}
@@ -208,7 +208,7 @@ func (d LiveDaemon) rollbackExpiredProving(ctx context.Context, group LiveOperat
 func rollbackProvingReservations(ctx context.Context, service privacyreservation.Service, refs []privacyreservation.SubmittedReservationRef) error {
 	var rollbackErr error
 	for _, ref := range refs {
-		_, err := service.TransitionWithLease(ctx, ref.ReservationID, ref.LeaseToken, privacyreservation.StatusProving, privacyreservation.StatusReserved)
+		_, err := service.TransitionWithLease(ctx, ref.ReservationID, ref.LeaseOwner, ref.LeaseToken, privacyreservation.StatusProving, privacyreservation.StatusReserved)
 		if err != nil {
 			if !errors.Is(err, privacyreservation.ErrCompareAndSetFailed) && !errors.Is(err, privacyreservation.ErrLeaseMismatch) {
 				rollbackErr = errors.Join(rollbackErr, err)
@@ -216,6 +216,17 @@ func rollbackProvingReservations(ctx context.Context, service privacyreservation
 		}
 	}
 	return rollbackErr
+}
+
+func clearAcquiredSubmissionLeases(ctx context.Context, service privacyreservation.Service, refs []privacyreservation.SubmittedReservationRef) error {
+	var clearErr error
+	for _, ref := range refs {
+		if _, err := service.ClearLease(ctx, ref.ReservationID, ref.LeaseOwner, ref.LeaseToken); err != nil &&
+			!errors.Is(err, privacyreservation.ErrLeaseUnavailable) && !errors.Is(err, privacyreservation.ErrLeaseMismatch) {
+			clearErr = errors.Join(clearErr, err)
+		}
+	}
+	return clearErr
 }
 
 func reservationIDsFromRefs(refs []privacyreservation.SubmittedReservationRef) []string {
@@ -244,7 +255,7 @@ func (d LiveDaemon) broadcastProofReady(ctx context.Context, group LiveOperation
 			}
 			return err
 		}
-		ref := privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseToken: lease.Token}
+		ref := privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseOwner: lease.Owner, LeaseToken: lease.Token}
 		refs = append(refs, ref)
 		if acquired || ownedProofReadyLeases[reservation.ReservationID] == lease.Token {
 			acquiredRefs = append(acquiredRefs, ref)
@@ -254,7 +265,7 @@ func (d LiveDaemon) broadcastProofReady(ctx context.Context, group LiveOperation
 		}
 	}
 	var reason string
-	broadcast, err := broadcastWithSubmissionLeaseHeartbeat(ctx, d.Reservation, refs, d.leaseTTL(), func(broadcastCtx context.Context) (*BroadcastResult, error) {
+	broadcast, err := broadcastWithSubmissionLeaseHeartbeat(ctx, d.Reservation, refs, d.leaseTTL(), func(broadcastCtx context.Context, _ submissionLeaseCommit, _ submissionLeaseRefresh) (*BroadcastResult, error) {
 		var broadcastErr error
 		var result *BroadcastResult
 		result, reason, broadcastErr = d.Executor.BroadcastProofReady(broadcastCtx, group)
@@ -310,7 +321,7 @@ func (d LiveDaemon) broadcastProofReady(ctx context.Context, group LiveOperation
 
 func (d LiveDaemon) proofReadyLease(ctx context.Context, reservation privacyreservation.NoteReservation, ownedProofReadyLeases map[string]string) (*privacyreservation.Lease, bool, error) {
 	if ownedProofReadyLeases != nil && ownedProofReadyLeases[reservation.ReservationID] != "" && ownedProofReadyLeases[reservation.ReservationID] == reservation.LeaseToken {
-		lease, err := d.Reservation.HeartbeatLeaseForStatus(ctx, reservation.ReservationID, ownedProofReadyLeases[reservation.ReservationID], privacyreservation.StatusProofReady, d.leaseTTL())
+		lease, err := d.Reservation.HeartbeatLeaseForStatus(ctx, reservation.ReservationID, reservation.LeaseOwner, ownedProofReadyLeases[reservation.ReservationID], privacyreservation.StatusProofReady, d.leaseTTL())
 		if err == nil {
 			return lease, false, nil
 		}

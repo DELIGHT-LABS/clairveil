@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"math/big"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	privacyreservation "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/reservation"
+	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -82,7 +84,6 @@ func TestBatchBroadcastWorkerSubmitsChunkOnce(t *testing.T) {
 	for _, item := range confirmed.Items {
 		result, err := proofWorker.Process(ctx, item)
 		require.NoError(t, err)
-		result.Message = &privacytypes.MsgTransfer{Nullifiers: [][]byte{testCanonicalNullifier(item.OperationID + "-a"), testCanonicalNullifier(item.OperationID + "-b")}}
 		results = append(results, *result)
 	}
 	chunks, err := ChunkProofResults(results, ChunkOptions{MaxMessagesPerTx: 10})
@@ -90,13 +91,43 @@ func TestBatchBroadcastWorkerSubmitsChunkOnce(t *testing.T) {
 	require.Len(t, chunks, 1)
 
 	broadcaster := &recordingBroadcaster{}
-	worker := BatchBroadcastWorker{Reservation: reservationService, Broadcaster: broadcaster}
+	worker := BatchBroadcastWorker{Assembler: fakeAssembler{}, Reservation: reservationService, Broadcaster: broadcaster}
 	result, err := worker.SubmitChunk(ctx, chunks[0])
 	require.NoError(t, err)
 	require.Equal(t, "TXHASH", result.TxHash)
 	require.Equal(t, 1, broadcaster.calls)
 	require.Len(t, broadcaster.messageCounts, 1)
 	require.Equal(t, 2, broadcaster.messageCounts[0])
+}
+
+func TestBatchBroadcastWorkerFallsBackToUnknownWhenSubmittedWriteFails(t *testing.T) {
+	ctx := context.Background()
+	store := &submittedWriteFailingStore{
+		MemoryStore: privacyreservation.NewMemoryStore(),
+		failOnce:    true,
+	}
+	reservationService := privacyreservation.Service{Store: store, Now: testNow}
+	chunk := prepareTestMessageChunk(t, ctx, reservationService)
+	broadcaster := &recordingBroadcaster{}
+	worker := BatchBroadcastWorker{
+		Assembler:   fakeAssembler{},
+		Reservation: reservationService,
+		Broadcaster: broadcaster,
+	}
+
+	_, err := worker.SubmitChunk(ctx, chunk)
+	require.ErrorContains(t, err, "submitted write failed")
+	require.Equal(t, 1, broadcaster.calls)
+	for _, note := range chunk.Results[0].Item.InputNotes {
+		stored, getErr := store.GetReservation(ctx, note.ReservationID)
+		require.NoError(t, getErr)
+		require.Equal(t, privacyreservation.StatusUnknown, stored.Status)
+		require.Equal(t, "TXHASH", stored.TxHash)
+	}
+
+	_, retryErr := worker.SubmitChunk(ctx, chunk)
+	require.Error(t, retryErr)
+	require.Equal(t, 1, broadcaster.calls)
 }
 
 func TestBatchBroadcastWorkerRejectsExpiredLeaseBeforeBroadcast(t *testing.T) {
@@ -108,51 +139,58 @@ func TestBatchBroadcastWorkerRejectsExpiredLeaseBeforeBroadcast(t *testing.T) {
 
 	now = now.Add(2 * time.Minute)
 	broadcaster := &recordingBroadcaster{}
-	worker := BatchBroadcastWorker{Reservation: reservationService, Broadcaster: broadcaster, LeaseTTL: time.Minute}
+	worker := BatchBroadcastWorker{Assembler: fakeAssembler{}, Reservation: reservationService, Broadcaster: broadcaster, LeaseTTL: time.Minute}
 	_, err := worker.SubmitChunk(ctx, chunk)
 	require.ErrorIs(t, err, privacyreservation.ErrLeaseUnavailable)
 	require.Equal(t, 0, broadcaster.calls)
 }
 
-func TestBatchBroadcastWorkerTakesOverExpiredProofReadyLease(t *testing.T) {
-	ctx := context.Background()
-	now := testNow()
-	store := privacyreservation.NewMemoryStore()
-	reservationService := privacyreservation.Service{Store: store, Now: func() time.Time { return now }}
-	chunk := prepareTestMessageChunk(t, ctx, reservationService)
+func TestBatchBroadcastWorkerKeepsHeartbeatUntilReservationBookkeepingCompletes(t *testing.T) {
+	for _, testCase := range []struct {
+		name        string
+		broadcaster MessageBroadcaster
+		status      privacyreservation.ReservationStatus
+		wantError   bool
+	}{
+		{name: "submitted", broadcaster: &recordingBroadcaster{}, status: privacyreservation.StatusSubmitted},
+		{name: "unknown", broadcaster: codeErrorBroadcaster{}, status: privacyreservation.StatusUnknown, wantError: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx := context.Background()
+			store := &delayedBroadcastBookkeepingStore{
+				MemoryStore: privacyreservation.NewMemoryStore(),
+				delay:       50 * time.Millisecond,
+			}
+			now := func() time.Time { return time.Now().UTC() }
+			reservationService := privacyreservation.Service{Store: store, Now: now}
+			chunk, reservationID := proofReadyChunkWithLiveLease(t, ctx, reservationService)
 
-	now = now.Add(2 * time.Minute)
-	broadcaster := &recordingBroadcaster{}
-	worker := BatchBroadcastWorker{
-		Reservation: reservationService,
-		Broadcaster: broadcaster,
-		LeaseOwner:  "broadcast-worker-a",
-		LeaseTTL:    time.Minute,
-	}
-	_, err := worker.SubmitChunk(ctx, chunk)
-	require.NoError(t, err)
-	require.Equal(t, 1, broadcaster.calls)
-	for _, result := range chunk.Results {
-		for _, note := range result.Item.InputNotes {
-			reservation, err := store.GetReservation(ctx, note.ReservationID)
+			worker := BatchBroadcastWorker{Assembler: fakeAssembler{},
+				Reservation: reservationService,
+				Broadcaster: testCase.broadcaster,
+				LeaseTTL:    20 * time.Millisecond,
+			}
+			_, err := worker.SubmitChunk(ctx, chunk)
+			if testCase.wantError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			reservation, err := store.GetReservation(ctx, reservationID)
 			require.NoError(t, err)
-			require.Equal(t, privacyreservation.StatusSubmitted, reservation.Status)
-			require.Empty(t, reservation.LeaseOwner)
-			require.Empty(t, reservation.LeaseToken)
-			require.True(t, reservation.LeaseUntil.IsZero())
-		}
+			require.Equal(t, testCase.status, reservation.Status)
+		})
 	}
 }
 
-func TestBatchBroadcastWorkerRetriesWithStaleLeaseAfterTakeoverExpires(t *testing.T) {
+func TestBatchBroadcastWorkerFailsClosedAfterBroadcastErrorWithoutIdentity(t *testing.T) {
 	ctx := context.Background()
 	now := testNow()
 	store := privacyreservation.NewMemoryStore()
 	reservationService := privacyreservation.Service{Store: store, Now: func() time.Time { return now }}
 	chunk := prepareTestMessageChunk(t, ctx, reservationService)
 
-	now = now.Add(2 * time.Minute)
-	firstWorker := BatchBroadcastWorker{
+	firstWorker := BatchBroadcastWorker{Assembler: fakeAssembler{},
 		Reservation: reservationService,
 		Broadcaster: noMetadataErrorBroadcaster{err: errors.New("rpc connection reset")},
 		LeaseOwner:  "broadcast-worker-a",
@@ -164,33 +202,261 @@ func TestBatchBroadcastWorkerRetriesWithStaleLeaseAfterTakeoverExpires(t *testin
 		for _, note := range result.Item.InputNotes {
 			reservation, err := store.GetReservation(ctx, note.ReservationID)
 			require.NoError(t, err)
-			require.Equal(t, privacyreservation.StatusProofReady, reservation.Status)
-			require.Equal(t, "broadcast-worker-a", reservation.LeaseOwner)
-			require.NotEqual(t, result.ReservationLeases[note.ReservationID], reservation.LeaseToken)
+			require.Equal(t, privacyreservation.StatusManualReview, reservation.Status)
+			require.Empty(t, reservation.LeaseOwner)
+			require.Empty(t, reservation.LeaseToken)
+			require.Equal(t, "rpc connection reset", reservation.LastBroadcastError)
+			require.Equal(t, 1, reservation.BroadcastAttemptCount)
 		}
 	}
 
 	now = now.Add(2 * time.Minute)
 	broadcaster := &recordingBroadcaster{}
-	retryWorker := BatchBroadcastWorker{
+	retryWorker := BatchBroadcastWorker{Assembler: fakeAssembler{},
 		Reservation: reservationService,
 		Broadcaster: broadcaster,
 		LeaseOwner:  "broadcast-worker-b",
 		LeaseTTL:    time.Minute,
 	}
 	_, err = retryWorker.SubmitChunk(ctx, chunk)
-	require.NoError(t, err)
-	require.Equal(t, 1, broadcaster.calls)
+	require.Error(t, err)
+	require.Equal(t, 0, broadcaster.calls)
 	for _, result := range chunk.Results {
 		for _, note := range result.Item.InputNotes {
 			reservation, err := store.GetReservation(ctx, note.ReservationID)
 			require.NoError(t, err)
-			require.Equal(t, privacyreservation.StatusSubmitted, reservation.Status)
+			require.Equal(t, privacyreservation.StatusManualReview, reservation.Status)
 			require.Empty(t, reservation.LeaseOwner)
 			require.Empty(t, reservation.LeaseToken)
 			require.True(t, reservation.LeaseUntil.IsZero())
 		}
 	}
+}
+
+func TestBatchBroadcastWorkerUsesStoredIdentityAfterOpaqueRPCError(t *testing.T) {
+	ctx := context.Background()
+	store := privacyreservation.NewMemoryStore()
+	reservationService := privacyreservation.Service{Store: store, Now: func() time.Time { return time.Now().UTC() }}
+	chunk, reservationID := proofReadyChunkWithLeaseTTLAndIdentity(t, ctx, reservationService, time.Minute, "0XCAFE")
+
+	worker := BatchBroadcastWorker{Assembler: fakeAssembler{},
+		Reservation: reservationService,
+		Broadcaster: noMetadataErrorBroadcaster{err: errors.New("rpc timeout")},
+		LeaseTTL:    time.Minute,
+	}
+	result, err := worker.SubmitChunk(ctx, chunk)
+	require.ErrorContains(t, err, "rpc timeout")
+	require.NotNil(t, result)
+	require.Equal(t, "0XCAFE", result.TxBytesHash)
+
+	stored, err := store.GetReservation(ctx, reservationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.StatusUnknown, stored.Status)
+	require.Equal(t, "0XCAFE", stored.TxBytesHash)
+	require.Empty(t, stored.LeaseToken)
+}
+
+func TestBatchBroadcastWorkerTreatsNilPreparedResultAsAmbiguous(t *testing.T) {
+	ctx := context.Background()
+	store := privacyreservation.NewMemoryStore()
+	reservationService := privacyreservation.Service{Store: store, Now: testNow}
+	chunk := prepareTestMessageChunk(t, ctx, reservationService)
+	worker := BatchBroadcastWorker{
+		Assembler:   fakeAssembler{},
+		Reservation: reservationService,
+		Broadcaster: nilPreparedResultBroadcaster{},
+	}
+
+	result, err := worker.SubmitChunk(ctx, chunk)
+	require.Nil(t, result)
+	require.ErrorContains(t, err, "message broadcaster returned nil result")
+	for _, proofResult := range chunk.Results {
+		operation, getErr := store.GetOperation(ctx, proofResult.Item.OperationID)
+		require.NoError(t, getErr)
+		require.Equal(t, privacyreservation.OperationStatusManualReview, operation.Status)
+		for _, note := range proofResult.Item.InputNotes {
+			reservation, getErr := store.GetReservation(ctx, note.ReservationID)
+			require.NoError(t, getErr)
+			require.Equal(t, privacyreservation.StatusManualReview, reservation.Status)
+		}
+	}
+}
+
+func TestBatchBroadcastWorkerFailsClosedForNonNilResultWithoutIdentity(t *testing.T) {
+	for _, testCase := range []struct {
+		name        string
+		broadcaster MessageBroadcaster
+		wantError   string
+	}{
+		{
+			name: "successful code zero",
+			broadcaster: postBoundaryResultBroadcaster{
+				result: &BroadcastResult{},
+			},
+			wantError: "missing tx_hash and tx_bytes_hash",
+		},
+		{
+			name: "nonzero code",
+			broadcaster: postBoundaryResultBroadcaster{
+				result: &BroadcastResult{Code: 17, RawLog: "out of gas"},
+			},
+			wantError: "missing durable tx identity",
+		},
+		{
+			name: "result with rpc error",
+			broadcaster: postBoundaryResultBroadcaster{
+				result: &BroadcastResult{},
+				err:    errors.New("rpc response lost"),
+			},
+			wantError: "missing durable tx identity",
+		},
+		{
+			name: "sign doc only",
+			broadcaster: postBoundaryResultBroadcaster{
+				result: &BroadcastResult{SignDocHash: "pre-broadcast-sign-doc"},
+				err:    errors.New("rpc response lost"),
+			},
+			wantError: "missing durable tx identity",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx := context.Background()
+			store := privacyreservation.NewMemoryStore()
+			reservationService := privacyreservation.Service{Store: store, Now: testNow}
+			chunk := prepareTestMessageChunk(t, ctx, reservationService)
+			worker := BatchBroadcastWorker{Assembler: fakeAssembler{}, Reservation: reservationService, Broadcaster: testCase.broadcaster}
+
+			_, err := worker.SubmitChunk(ctx, chunk)
+			require.ErrorContains(t, err, testCase.wantError)
+			for _, result := range chunk.Results {
+				for _, note := range result.Item.InputNotes {
+					reservation, getErr := store.GetReservation(ctx, note.ReservationID)
+					require.NoError(t, getErr)
+					require.Equal(t, privacyreservation.StatusManualReview, reservation.Status)
+				}
+			}
+		})
+	}
+}
+
+func TestBatchBroadcastWorkerHeartbeatsDuringNullifierPreflight(t *testing.T) {
+	ctx := context.Background()
+	store := privacyreservation.NewMemoryStore()
+	reservationService := privacyreservation.Service{Store: store, Now: func() time.Time { return time.Now().UTC() }}
+	chunk, reservationID := proofReadyChunkWithLeaseTTL(t, ctx, reservationService, 100*time.Millisecond)
+	checker := &blockingNullifierChecker{started: make(chan struct{}), release: make(chan struct{})}
+	broadcaster := &recordingBroadcaster{}
+	worker := BatchBroadcastWorker{Assembler: fakeAssembler{},
+		Reservation:      reservationService,
+		Broadcaster:      broadcaster,
+		NullifierChecker: checker,
+		LeaseTTL:         100 * time.Millisecond,
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := worker.SubmitChunk(ctx, chunk)
+		done <- err
+	}()
+	<-checker.started
+	time.Sleep(300 * time.Millisecond)
+	_, err := reservationService.AcquireLeaseForStatus(ctx, reservationID, "broadcast-worker-b", privacyreservation.StatusProofReady, 100*time.Millisecond)
+	require.ErrorIs(t, err, privacyreservation.ErrLeaseUnavailable)
+	close(checker.release)
+	require.NoError(t, <-done)
+	require.Equal(t, 1, broadcaster.calls)
+}
+
+func TestSubmissionLeaseCommitCancelsInFlightHeartbeat(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	store := &blockingSubmissionHeartbeatStore{
+		MemoryStore: privacyreservation.NewMemoryStore(),
+		started:     make(chan struct{}),
+	}
+	reservationService := privacyreservation.Service{Store: store, Now: func() time.Time { return time.Now().UTC() }}
+	done := make(chan error, 1)
+
+	go func() {
+		_, err := broadcastWithSubmissionLeaseHeartbeat(
+			ctx,
+			reservationService,
+			[]privacyreservation.SubmittedReservationRef{{
+				ReservationID: "reservation-a",
+				LeaseOwner:    "broadcast-worker-a",
+				LeaseToken:    "lease-token-a",
+			}},
+			20*time.Millisecond,
+			func(_ context.Context, commit submissionLeaseCommit, _ submissionLeaseRefresh) (*BroadcastResult, error) {
+				<-store.started
+				if err := commit(func(context.Context, error) error { return nil }); err != nil {
+					return nil, err
+				}
+				return &BroadcastResult{TxHash: "TXHASH"}, nil
+			},
+		)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		cancel()
+		<-done
+		t.Fatal("terminal commit did not cancel the in-flight scheduler heartbeat")
+	}
+}
+
+func TestSubmissionTerminalLeaseTTLIncludesHeartbeatAndCommitBudgets(t *testing.T) {
+	minimum := submissionFinalHeartbeatTimeout + submissionTerminalCommitTimeout + submissionTerminalLeaseMargin
+	require.Equal(t, minimum, submissionTerminalLeaseTTL(time.Second))
+	require.Equal(t, 2*minimum, submissionTerminalLeaseTTL(2*minimum))
+}
+
+func TestBatchBroadcastWorkerCommitsSuccessAfterParentContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	store := &contextAwareSubmittedStore{MemoryStore: privacyreservation.NewMemoryStore()}
+	reservationService := privacyreservation.Service{Store: store, Now: func() time.Time { return time.Now().UTC() }}
+	chunk, reservationID := proofReadyChunkWithLiveLease(t, ctx, reservationService)
+	worker := BatchBroadcastWorker{Assembler: fakeAssembler{},
+		Reservation: reservationService,
+		Broadcaster: cancelingSuccessBroadcaster{cancel: cancel},
+		LeaseTTL:    20 * time.Millisecond,
+	}
+
+	result, err := worker.SubmitChunk(ctx, chunk)
+	require.NoError(t, err)
+	require.Equal(t, "TXHASH", result.TxHash)
+	require.True(t, store.submittedWithLiveContext)
+	reservation, err := store.GetReservation(context.Background(), reservationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.StatusSubmitted, reservation.Status)
+}
+
+func TestBatchBroadcastWorkerUsesFreshContextAfterFinalHeartbeatTimeout(t *testing.T) {
+	ctx := context.Background()
+	afterBroadcast := &atomic.Bool{}
+	store := &finalHeartbeatTimeoutStore{
+		MemoryStore:    privacyreservation.NewMemoryStore(),
+		afterBroadcast: afterBroadcast,
+	}
+	reservationService := privacyreservation.Service{Store: store, Now: func() time.Time { return time.Now().UTC() }}
+	chunk, reservationID := proofReadyChunkWithLiveLease(t, ctx, reservationService)
+	worker := BatchBroadcastWorker{Assembler: fakeAssembler{},
+		Reservation: reservationService,
+		Broadcaster: finalHeartbeatTimeoutBroadcaster{afterBroadcast: afterBroadcast},
+		LeaseTTL:    time.Hour,
+	}
+
+	result, err := worker.SubmitChunk(ctx, chunk)
+	require.NoError(t, err)
+	require.Equal(t, "TXHASH", result.TxHash)
+	require.True(t, store.submittedWithLiveContext)
+	reservation, err := store.GetReservation(ctx, reservationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.StatusSubmitted, reservation.Status)
 }
 
 func TestBatchBroadcastWorkerHeartbeatsProofReadyLeaseDuringBroadcast(t *testing.T) {
@@ -200,7 +466,7 @@ func TestBatchBroadcastWorkerHeartbeatsProofReadyLeaseDuringBroadcast(t *testing
 	chunk := prepareTestMessageChunk(t, ctx, reservationService)
 
 	broadcaster := &delayedBroadcaster{delay: 250 * time.Millisecond}
-	worker := BatchBroadcastWorker{
+	worker := BatchBroadcastWorker{Assembler: fakeAssembler{},
 		Reservation: reservationService,
 		Broadcaster: broadcaster,
 		LeaseTTL:    100 * time.Millisecond,
@@ -219,6 +485,94 @@ func TestBatchBroadcastWorkerHeartbeatsProofReadyLeaseDuringBroadcast(t *testing
 	}
 }
 
+func TestBatchBroadcastWorkerPersistsTerminalStateAfterPostBroadcastHeartbeatFailure(t *testing.T) {
+	for _, testCase := range []struct {
+		name        string
+		broadcaster MessageBroadcaster
+		status      privacyreservation.ReservationStatus
+		wantError   string
+	}{
+		{
+			name: "submitted",
+			broadcaster: postBoundaryResultBroadcaster{
+				delay:  60 * time.Millisecond,
+				result: &BroadcastResult{TxHash: "TXHASH", TxBytesHash: "tx-bytes-hash", SignDocHash: "sign-doc-hash"},
+			},
+			status: privacyreservation.StatusSubmitted,
+		},
+		{
+			name: "unknown",
+			broadcaster: postBoundaryResultBroadcaster{
+				delay:  60 * time.Millisecond,
+				result: &BroadcastResult{TxHash: "TXHASH", TxBytesHash: "tx-bytes-hash", SignDocHash: "sign-doc-hash"},
+				err:    errors.New("rpc response lost"),
+			},
+			status:    privacyreservation.StatusUnknown,
+			wantError: "rpc response lost",
+		},
+		{
+			name: "ambiguous",
+			broadcaster: postBoundaryResultBroadcaster{
+				delay: 60 * time.Millisecond,
+			},
+			status:    privacyreservation.StatusManualReview,
+			wantError: "nil result",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx := context.Background()
+			store := &postBroadcastHeartbeatFailingStore{
+				MemoryStore: privacyreservation.NewMemoryStore(),
+				failAtCall:  3,
+			}
+			reservationService := privacyreservation.Service{Store: store, Now: func() time.Time { return time.Now().UTC() }}
+			chunk, reservationID := proofReadyChunkWithLiveLease(t, ctx, reservationService)
+			worker := BatchBroadcastWorker{Assembler: fakeAssembler{},
+				Reservation: reservationService,
+				Broadcaster: testCase.broadcaster,
+				LeaseTTL:    100 * time.Millisecond,
+			}
+
+			_, err := worker.SubmitChunk(ctx, chunk)
+			if testCase.wantError == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, testCase.wantError)
+			}
+			require.GreaterOrEqual(t, store.heartbeatCalls, 4)
+
+			reservation, err := store.GetReservation(ctx, reservationID)
+			require.NoError(t, err)
+			require.Equal(t, testCase.status, reservation.Status)
+			require.Contains(t, reservation.LastBroadcastError, "injected heartbeat failure")
+		})
+	}
+}
+
+func TestBatchBroadcastWorkerPersistsSubmittedAfterFinalHeartbeatFailure(t *testing.T) {
+	ctx := context.Background()
+	store := &postBroadcastHeartbeatFailingStore{
+		MemoryStore: privacyreservation.NewMemoryStore(),
+		failAtCall:  3,
+	}
+	reservationService := privacyreservation.Service{Store: store, Now: func() time.Time { return time.Now().UTC() }}
+	chunk, reservationID := proofReadyChunkWithLiveLease(t, ctx, reservationService)
+	worker := BatchBroadcastWorker{Assembler: fakeAssembler{},
+		Reservation: reservationService,
+		Broadcaster: &recordingBroadcaster{},
+		LeaseTTL:    time.Second,
+	}
+
+	result, err := worker.SubmitChunk(ctx, chunk)
+	require.NoError(t, err)
+	require.Equal(t, "TXHASH", result.TxHash)
+	require.Equal(t, 3, store.heartbeatCalls)
+	reservation, err := store.GetReservation(ctx, reservationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.StatusSubmitted, reservation.Status)
+	require.Contains(t, reservation.LastBroadcastError, "injected heartbeat failure")
+}
+
 func TestBatchBroadcastWorkerDoesNotPartiallySubmitChunkOnOperationFailure(t *testing.T) {
 	ctx := context.Background()
 	store := privacyreservation.NewMemoryStore()
@@ -227,7 +581,7 @@ func TestBatchBroadcastWorkerDoesNotPartiallySubmitChunkOnOperationFailure(t *te
 	chunk.Results[1].Item.OperationID = "missing-operation"
 
 	broadcaster := &recordingBroadcaster{}
-	worker := BatchBroadcastWorker{Reservation: reservationService, Broadcaster: broadcaster}
+	worker := BatchBroadcastWorker{Assembler: fakeAssembler{}, Reservation: reservationService, Broadcaster: broadcaster}
 	_, err := worker.SubmitChunk(ctx, chunk)
 	require.ErrorIs(t, err, privacyreservation.ErrOperationNotFound)
 	require.Equal(t, 0, broadcaster.calls)
@@ -249,7 +603,7 @@ func TestBatchBroadcastWorkerRejectsCrossOperationReservationBeforeBroadcast(t *
 	chunk.Results[0].Item.OperationID = chunk.Results[1].Item.OperationID
 
 	broadcaster := &recordingBroadcaster{}
-	worker := BatchBroadcastWorker{Reservation: reservationService, Broadcaster: broadcaster}
+	worker := BatchBroadcastWorker{Assembler: fakeAssembler{}, Reservation: reservationService, Broadcaster: broadcaster}
 	_, err := worker.SubmitChunk(ctx, chunk)
 	require.ErrorIs(t, err, privacyreservation.ErrInvalidReservation)
 	require.Equal(t, 0, broadcaster.calls)
@@ -263,7 +617,7 @@ func TestBatchBroadcastWorkerRejectsDuplicateReservationRefBeforeBroadcast(t *te
 	chunk.Results[0].Item.InputNotes = append(chunk.Results[0].Item.InputNotes, chunk.Results[0].Item.InputNotes[0])
 
 	broadcaster := &recordingBroadcaster{}
-	worker := BatchBroadcastWorker{Reservation: reservationService, Broadcaster: broadcaster}
+	worker := BatchBroadcastWorker{Assembler: fakeAssembler{}, Reservation: reservationService, Broadcaster: broadcaster}
 	_, err := worker.SubmitChunk(ctx, chunk)
 	require.ErrorIs(t, err, privacyreservation.ErrInvalidReservation)
 	require.Equal(t, 0, broadcaster.calls)
@@ -284,13 +638,13 @@ func TestBatchBroadcastWorkerRejectsMissingOperationReservationBeforeBroadcast(t
 	}
 
 	broadcaster := &recordingBroadcaster{}
-	worker := BatchBroadcastWorker{Reservation: reservationService, Broadcaster: broadcaster}
+	worker := BatchBroadcastWorker{Assembler: fakeAssembler{}, Reservation: reservationService, Broadcaster: broadcaster}
 	_, err := worker.SubmitChunk(ctx, chunk)
 	require.ErrorIs(t, err, privacyreservation.ErrInvalidReservation)
 	require.Equal(t, 0, broadcaster.calls)
 }
 
-func TestBatchBroadcastWorkerRejectsDuplicateNullifiersBeforeBroadcast(t *testing.T) {
+func TestBatchBroadcastWorkerRejectsMessageMutationBeforeBroadcast(t *testing.T) {
 	ctx := context.Background()
 	store := privacyreservation.NewMemoryStore()
 	reservationService := privacyreservation.Service{Store: store, Now: testNow}
@@ -298,9 +652,9 @@ func TestBatchBroadcastWorkerRejectsDuplicateNullifiersBeforeBroadcast(t *testin
 	chunk.Results[1].Message.Nullifiers[0] = append([]byte(nil), chunk.Results[0].Message.Nullifiers[0]...)
 
 	broadcaster := &recordingBroadcaster{}
-	worker := BatchBroadcastWorker{Reservation: reservationService, Broadcaster: broadcaster}
+	worker := BatchBroadcastWorker{Assembler: fakeAssembler{}, Reservation: reservationService, Broadcaster: broadcaster}
 	_, err := worker.SubmitChunk(ctx, chunk)
-	require.ErrorContains(t, err, "duplicate nullifier")
+	require.ErrorContains(t, err, "message does not match payload and proof")
 	require.Equal(t, 0, broadcaster.calls)
 
 	for _, result := range chunk.Results {
@@ -319,7 +673,7 @@ func TestBatchBroadcastWorkerRequiresNullifierCheckerBeforeBroadcast(t *testing.
 	chunk := prepareTestMessageChunk(t, ctx, reservationService)
 
 	broadcaster := &uncheckedBroadcaster{}
-	worker := BatchBroadcastWorker{Reservation: reservationService, Broadcaster: broadcaster}
+	worker := BatchBroadcastWorker{Assembler: fakeAssembler{}, Reservation: reservationService, Broadcaster: broadcaster}
 	_, err := worker.SubmitChunk(ctx, chunk)
 	require.ErrorIs(t, err, ErrInvalidPayrollInput)
 	require.Equal(t, 0, broadcaster.calls)
@@ -342,7 +696,7 @@ func TestBatchBroadcastWorkerRejectsSpentNullifierBeforeBroadcast(t *testing.T) 
 
 	broadcaster := &recordingBroadcaster{}
 	checker := &stubBroadcastNullifierChecker{used: map[string]bool{spentNullifier: true}}
-	worker := BatchBroadcastWorker{
+	worker := BatchBroadcastWorker{Assembler: fakeAssembler{},
 		Reservation:      reservationService,
 		Broadcaster:      broadcaster,
 		NullifierChecker: checker,
@@ -351,7 +705,7 @@ func TestBatchBroadcastWorkerRejectsSpentNullifierBeforeBroadcast(t *testing.T) 
 	require.ErrorContains(t, err, "already spent")
 	var spentErr SpentNullifierError
 	require.ErrorAs(t, err, &spentErr)
-	require.Equal(t, spentNullifier, spentErr.NullifierHex)
+	require.NotContains(t, err.Error(), spentNullifier)
 	require.Equal(t, 0, broadcaster.calls)
 	require.Len(t, checker.requests, 1)
 
@@ -364,41 +718,7 @@ func TestBatchBroadcastWorkerRejectsSpentNullifierBeforeBroadcast(t *testing.T) 
 	}
 }
 
-func TestBatchBroadcastWorkerClearsTakeoverLeaseOnSpentNullifierBeforeBroadcast(t *testing.T) {
-	ctx := context.Background()
-	now := testNow()
-	store := privacyreservation.NewMemoryStore()
-	reservationService := privacyreservation.Service{Store: store, Now: func() time.Time { return now }}
-	chunk := prepareTestMessageChunk(t, ctx, reservationService)
-	spentNullifier := hex.EncodeToString(chunk.Results[0].Message.Nullifiers[0])
-
-	now = now.Add(2 * time.Minute)
-	broadcaster := &recordingBroadcaster{}
-	checker := &stubBroadcastNullifierChecker{used: map[string]bool{spentNullifier: true}}
-	worker := BatchBroadcastWorker{
-		Reservation:      reservationService,
-		Broadcaster:      broadcaster,
-		NullifierChecker: checker,
-		LeaseOwner:       "broadcast-worker-a",
-		LeaseTTL:         time.Minute,
-	}
-	_, err := worker.SubmitChunk(ctx, chunk)
-	require.ErrorContains(t, err, "already spent")
-	require.Equal(t, 0, broadcaster.calls)
-
-	for _, result := range chunk.Results {
-		for _, note := range result.Item.InputNotes {
-			reservation, err := store.GetReservation(ctx, note.ReservationID)
-			require.NoError(t, err)
-			require.Equal(t, privacyreservation.StatusProofReady, reservation.Status)
-			require.Empty(t, reservation.LeaseOwner)
-			require.Empty(t, reservation.LeaseToken)
-			require.True(t, reservation.LeaseUntil.IsZero())
-		}
-	}
-}
-
-func TestBatchBroadcastWorkerClearsPartialTakeoverLeaseOnLaterAcquireFailure(t *testing.T) {
+func TestBatchBroadcastWorkerRejectsExpiredProofReadyLeaseWithoutTakeover(t *testing.T) {
 	ctx := context.Background()
 	now := testNow()
 	store := privacyreservation.NewMemoryStore()
@@ -406,14 +726,13 @@ func TestBatchBroadcastWorkerClearsPartialTakeoverLeaseOnLaterAcquireFailure(t *
 	chunk := prepareTestMessageChunk(t, ctx, reservationService)
 	require.GreaterOrEqual(t, len(chunk.Results[0].Item.InputNotes), 2)
 	firstReservationID := chunk.Results[0].Item.InputNotes[0].ReservationID
-	secondReservationID := chunk.Results[0].Item.InputNotes[1].ReservationID
-
-	now = now.Add(2 * time.Minute)
-	otherLease, err := reservationService.AcquireLeaseForStatus(ctx, secondReservationID, "other-broadcast-worker", privacyreservation.StatusProofReady, time.Minute)
+	before, err := store.GetReservation(ctx, firstReservationID)
 	require.NoError(t, err)
 
+	now = now.Add(2 * time.Minute)
+
 	broadcaster := &recordingBroadcaster{}
-	worker := BatchBroadcastWorker{
+	worker := BatchBroadcastWorker{Assembler: fakeAssembler{},
 		Reservation: reservationService,
 		Broadcaster: broadcaster,
 		LeaseOwner:  "broadcast-worker-a",
@@ -426,15 +745,9 @@ func TestBatchBroadcastWorkerClearsPartialTakeoverLeaseOnLaterAcquireFailure(t *
 	firstReservation, err := store.GetReservation(ctx, firstReservationID)
 	require.NoError(t, err)
 	require.Equal(t, privacyreservation.StatusProofReady, firstReservation.Status)
-	require.Empty(t, firstReservation.LeaseOwner)
-	require.Empty(t, firstReservation.LeaseToken)
-	require.True(t, firstReservation.LeaseUntil.IsZero())
-
-	secondReservation, err := store.GetReservation(ctx, secondReservationID)
-	require.NoError(t, err)
-	require.Equal(t, privacyreservation.StatusProofReady, secondReservation.Status)
-	require.Equal(t, "other-broadcast-worker", secondReservation.LeaseOwner)
-	require.Equal(t, otherLease.Token, secondReservation.LeaseToken)
+	require.Equal(t, before.LeaseOwner, firstReservation.LeaseOwner)
+	require.Equal(t, before.LeaseToken, firstReservation.LeaseToken)
+	require.Equal(t, before.LeaseUntil, firstReservation.LeaseUntil)
 }
 
 func TestBatchBroadcastWorkerRecordsUnknownAttemptOnBroadcastErrorWithMetadata(t *testing.T) {
@@ -443,7 +756,7 @@ func TestBatchBroadcastWorkerRecordsUnknownAttemptOnBroadcastErrorWithMetadata(t
 	reservationService := privacyreservation.Service{Store: store, Now: testNow}
 	chunk := prepareTestMessageChunk(t, ctx, reservationService)
 
-	worker := BatchBroadcastWorker{
+	worker := BatchBroadcastWorker{Assembler: fakeAssembler{},
 		Reservation: reservationService,
 		Broadcaster: metadataErrorBroadcaster{err: errors.New("rpc timeout")},
 	}
@@ -471,7 +784,7 @@ func TestBatchBroadcastWorkerRecordsUnknownAttemptOnNonzeroCode(t *testing.T) {
 	reservationService := privacyreservation.Service{Store: store, Now: testNow}
 	chunk := prepareTestMessageChunk(t, ctx, reservationService)
 
-	worker := BatchBroadcastWorker{
+	worker := BatchBroadcastWorker{Assembler: fakeAssembler{},
 		Reservation: reservationService,
 		Broadcaster: codeErrorBroadcaster{},
 	}
@@ -497,13 +810,15 @@ func TestBatchBroadcastWorkerRejectsProofResultWithoutInputNotes(t *testing.T) {
 	ctx := context.Background()
 	reservationService := privacyreservation.Service{Store: privacyreservation.NewMemoryStore(), Now: testNow}
 	broadcaster := &recordingBroadcaster{}
-	worker := BatchBroadcastWorker{Reservation: reservationService, Broadcaster: broadcaster}
+	worker := BatchBroadcastWorker{Assembler: fakeAssembler{}, Reservation: reservationService, Broadcaster: broadcaster}
 
 	_, err := worker.SubmitChunk(ctx, MessageChunk{
 		ChunkID: "chunk-1",
 		Results: []ProofResult{{
 			Item:              PayrollPlanItem{OperationID: "op-a"},
 			Message:           &privacytypes.MsgTransfer{},
+			Payload:           privacytransfer.PreparedTransferPayload{PayloadHash: "payload-a"},
+			Proof:             privacytransfer.PreparedTransferProof{PayloadHash: "payload-a"},
 			ReservationLeases: map[string]string{},
 		}},
 	})
@@ -511,11 +826,29 @@ func TestBatchBroadcastWorkerRejectsProofResultWithoutInputNotes(t *testing.T) {
 	require.Equal(t, 0, broadcaster.calls)
 }
 
+func TestValidateProofResultArtifactRejectsEmptyProof(t *testing.T) {
+	payload := privacytransfer.PreparedTransferPayload{
+		Version: privacytransfer.PreparedTransferPayloadVersion,
+		Inputs:  []privacytransfer.PreparedTransferInput{{NullifierHex: "empty-proof-nullifier"}},
+	}
+	payload.PayloadHash = privacytransfer.ComputePreparedTransferPayloadHash(payload)
+	proof := privacytransfer.PreparedTransferProof{
+		Version:     privacytransfer.PreparedTransferProofVersion,
+		PayloadHash: payload.PayloadHash,
+		ProofHex:    "",
+	}
+	message, err := fakeAssembler{}.BuildTransferMessage(payload, proof)
+	require.NoError(t, err)
+
+	err = validateProofResultArtifact(ProofResult{Payload: payload, Proof: proof, Message: message}, fakeAssembler{})
+	require.ErrorContains(t, err, "empty proof hex")
+}
+
 func TestBatchBroadcastWorkerRejectsChunkWithoutResults(t *testing.T) {
 	ctx := context.Background()
 	reservationService := privacyreservation.Service{Store: privacyreservation.NewMemoryStore(), Now: testNow}
 	broadcaster := &recordingBroadcaster{}
-	worker := BatchBroadcastWorker{Reservation: reservationService, Broadcaster: broadcaster}
+	worker := BatchBroadcastWorker{Assembler: fakeAssembler{}, Reservation: reservationService, Broadcaster: broadcaster}
 
 	_, err := worker.SubmitChunk(ctx, MessageChunk{
 		ChunkID: "chunk-1",
@@ -556,13 +889,79 @@ func prepareTestMessageChunk(t *testing.T, ctx context.Context, reservationServi
 	for _, item := range confirmed.Items {
 		result, err := proofWorker.Process(ctx, item)
 		require.NoError(t, err)
-		result.Message = &privacytypes.MsgTransfer{Nullifiers: [][]byte{testCanonicalNullifier(item.OperationID + "-a"), testCanonicalNullifier(item.OperationID + "-b")}}
 		results = append(results, *result)
 	}
 	chunks, err := ChunkProofResults(results, ChunkOptions{MaxMessagesPerTx: 10})
 	require.NoError(t, err)
 	require.Len(t, chunks, 1)
 	return chunks[0]
+}
+
+func proofReadyChunkWithLiveLease(t *testing.T, ctx context.Context, reservationService privacyreservation.Service) (MessageChunk, string) {
+	return proofReadyChunkWithLeaseTTL(t, ctx, reservationService, time.Second)
+}
+
+func proofReadyChunkWithLeaseTTL(t *testing.T, ctx context.Context, reservationService privacyreservation.Service, leaseTTL time.Duration) (MessageChunk, string) {
+	return proofReadyChunkWithLeaseTTLAndIdentity(t, ctx, reservationService, leaseTTL, "")
+}
+
+func proofReadyChunkWithLeaseTTLAndIdentity(t *testing.T, ctx context.Context, reservationService privacyreservation.Service, leaseTTL time.Duration, txBytesHash string) (MessageChunk, string) {
+	t.Helper()
+	const reservationID = "r-live"
+	const operationID = "op-live"
+	created, err := reservationService.Reserve(ctx, privacyreservation.ReserveInput{
+		Reservation: privacyreservation.NoteReservation{
+			ReservationID:      reservationID,
+			NoteID:             "note-live",
+			OwnerKeyID:         "owner-live",
+			NullifierLookupKey: "lookup-live",
+			OperationID:        operationID,
+			Status:             privacyreservation.StatusReserved,
+		},
+		Operation: &privacyreservation.PayrollOperation{OperationID: operationID, Status: privacyreservation.OperationStatusPlanned},
+	})
+	require.NoError(t, err)
+	lease, err := reservationService.AcquireLease(ctx, created.ReservationID, "broadcast-worker-a", leaseTTL)
+	require.NoError(t, err)
+	_, err = reservationService.TransitionWithLease(ctx, created.ReservationID, lease.Owner, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving)
+	require.NoError(t, err)
+	payload := privacytransfer.PreparedTransferPayload{
+		Version: privacytransfer.PreparedTransferPayloadVersion,
+		Inputs:  []privacytransfer.PreparedTransferInput{{NullifierHex: "live-nullifier"}},
+	}
+	payload.PayloadHash = privacytransfer.ComputePreparedTransferPayloadHash(payload)
+	proof := privacytransfer.PreparedTransferProof{
+		Version:     privacytransfer.PreparedTransferProofVersion,
+		PayloadHash: payload.PayloadHash,
+		ProofHex:    "aa",
+	}
+	message, err := fakeAssembler{}.BuildTransferMessage(payload, proof)
+	require.NoError(t, err)
+	_, _, err = reservationService.MarkProofReadyBatch(ctx, []privacyreservation.SubmittedReservationRef{{
+		ReservationID: created.ReservationID,
+		LeaseOwner:    lease.Owner,
+		LeaseToken:    lease.Token,
+	}}, privacyreservation.ProofReadyOperationUpdate{
+		OperationID: operationID,
+		PayloadHash: payload.PayloadHash,
+		TxBytesHash: txBytesHash,
+	})
+	require.NoError(t, err)
+
+	return MessageChunk{
+		ChunkID: "live-lease",
+		Results: []ProofResult{{
+			Item: PayrollPlanItem{
+				OperationID: operationID,
+				InputNotes:  []TreasuryNote{{ReservationID: reservationID}},
+			},
+			Message:                message,
+			Payload:                payload,
+			Proof:                  proof,
+			ReservationLeases:      map[string]string{reservationID: lease.Token},
+			ReservationLeaseOwners: map[string]string{reservationID: lease.Owner},
+		}},
+	}, reservationID
 }
 
 func testProofResult(operationID string, nullifierPrefix string) ProofResult {
@@ -586,6 +985,69 @@ type recordingBroadcaster struct {
 	messageCounts []int
 }
 
+type delayedBroadcastBookkeepingStore struct {
+	*privacyreservation.MemoryStore
+	delay time.Duration
+}
+
+type submittedWriteFailingStore struct {
+	*privacyreservation.MemoryStore
+	failOnce bool
+}
+
+func (s *submittedWriteFailingStore) MarkReservationsSubmitted(ctx context.Context, refs []privacyreservation.SubmittedReservationRef, operationIDs []string, update privacyreservation.SubmittedReservationUpdate, now time.Time) ([]privacyreservation.NoteReservation, []privacyreservation.PayrollOperation, error) {
+	if s.failOnce {
+		s.failOnce = false
+		return nil, nil, errors.New("submitted write failed")
+	}
+	return s.MemoryStore.MarkReservationsSubmitted(ctx, refs, operationIDs, update, now)
+}
+
+type contextAwareSubmittedStore struct {
+	*privacyreservation.MemoryStore
+	submittedWithLiveContext bool
+}
+
+type finalHeartbeatTimeoutStore struct {
+	*privacyreservation.MemoryStore
+	afterBroadcast           *atomic.Bool
+	submittedWithLiveContext bool
+}
+
+func (s *finalHeartbeatTimeoutStore) HeartbeatReservationLeaseForStatus(ctx context.Context, reservationID string, leaseOwner string, leaseToken string, requiredStatus privacyreservation.ReservationStatus, leaseUntil time.Time, now time.Time) (*privacyreservation.NoteReservation, error) {
+	if s.afterBroadcast.Load() {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	return s.MemoryStore.HeartbeatReservationLeaseForStatus(ctx, reservationID, leaseOwner, leaseToken, requiredStatus, leaseUntil, now)
+}
+
+func (s *finalHeartbeatTimeoutStore) MarkReservationsSubmitted(ctx context.Context, refs []privacyreservation.SubmittedReservationRef, operationIDs []string, update privacyreservation.SubmittedReservationUpdate, now time.Time) ([]privacyreservation.NoteReservation, []privacyreservation.PayrollOperation, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	s.submittedWithLiveContext = true
+	return s.MemoryStore.MarkReservationsSubmitted(ctx, refs, operationIDs, update, now)
+}
+
+func (s *contextAwareSubmittedStore) MarkReservationsSubmitted(ctx context.Context, refs []privacyreservation.SubmittedReservationRef, operationIDs []string, update privacyreservation.SubmittedReservationUpdate, now time.Time) ([]privacyreservation.NoteReservation, []privacyreservation.PayrollOperation, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	s.submittedWithLiveContext = true
+	return s.MemoryStore.MarkReservationsSubmitted(ctx, refs, operationIDs, update, now)
+}
+
+func (s *delayedBroadcastBookkeepingStore) MarkReservationsSubmitted(ctx context.Context, refs []privacyreservation.SubmittedReservationRef, operationIDs []string, update privacyreservation.SubmittedReservationUpdate, _ time.Time) ([]privacyreservation.NoteReservation, []privacyreservation.PayrollOperation, error) {
+	time.Sleep(s.delay)
+	return s.MemoryStore.MarkReservationsSubmitted(ctx, refs, operationIDs, update, time.Now().UTC())
+}
+
+func (s *delayedBroadcastBookkeepingStore) MarkReservationsBroadcastUnknown(ctx context.Context, refs []privacyreservation.SubmittedReservationRef, operationIDs []string, update privacyreservation.BroadcastAttemptUpdate, _ time.Time) ([]privacyreservation.NoteReservation, []privacyreservation.PayrollOperation, error) {
+	time.Sleep(s.delay)
+	return s.MemoryStore.MarkReservationsBroadcastUnknown(ctx, refs, operationIDs, update, time.Now().UTC())
+}
+
 func (b *recordingBroadcaster) BroadcastMessages(_ context.Context, msgs ...sdk.Msg) (*BroadcastResult, error) {
 	b.calls++
 	b.messageCounts = append(b.messageCounts, len(msgs))
@@ -602,9 +1064,54 @@ func (b *recordingBroadcaster) CheckNullifiersUsed(_ context.Context, nullifierH
 	return allNullifiersUnspent(nullifierHexes), nil
 }
 
+type finalHeartbeatTimeoutBroadcaster struct {
+	afterBroadcast *atomic.Bool
+}
+
+func (b finalHeartbeatTimeoutBroadcaster) BroadcastMessages(_ context.Context, _ ...sdk.Msg) (*BroadcastResult, error) {
+	b.afterBroadcast.Store(true)
+	return &BroadcastResult{TxHash: "TXHASH", TxBytesHash: "tx-bytes-hash"}, nil
+}
+
+func (b finalHeartbeatTimeoutBroadcaster) CheckNullifiersUsed(_ context.Context, nullifierHexes []string) (map[string]bool, error) {
+	return allNullifiersUnspent(nullifierHexes), nil
+}
+
 type delayedBroadcaster struct {
 	delay time.Duration
 	calls int
+}
+
+// postBoundaryResultBroadcaster intentionally ignores context cancellation.
+// It models a transport that has crossed the external broadcast boundary when
+// its local lease heartbeat later fails.
+type postBoundaryResultBroadcaster struct {
+	delay  time.Duration
+	result *BroadcastResult
+	err    error
+}
+
+func (b postBoundaryResultBroadcaster) BroadcastMessages(_ context.Context, _ ...sdk.Msg) (*BroadcastResult, error) {
+	time.Sleep(b.delay)
+	return b.result, b.err
+}
+
+func (b postBoundaryResultBroadcaster) CheckNullifiersUsed(_ context.Context, nullifierHexes []string) (map[string]bool, error) {
+	return allNullifiersUnspent(nullifierHexes), nil
+}
+
+type postBroadcastHeartbeatFailingStore struct {
+	*privacyreservation.MemoryStore
+	failAtCall     int
+	heartbeatCalls int
+}
+
+func (s *postBroadcastHeartbeatFailingStore) HeartbeatReservationLeaseForStatus(ctx context.Context, reservationID string, leaseOwner string, leaseToken string, requiredStatus privacyreservation.ReservationStatus, leaseUntil time.Time, now time.Time) (*privacyreservation.NoteReservation, error) {
+	s.heartbeatCalls++
+	if s.heartbeatCalls == s.failAtCall {
+		return nil, errors.New("injected heartbeat failure")
+	}
+	return s.MemoryStore.HeartbeatReservationLeaseForStatus(ctx, reservationID, leaseOwner, leaseToken, requiredStatus, leaseUntil, now)
 }
 
 func (b *delayedBroadcaster) BroadcastMessages(ctx context.Context, _ ...sdk.Msg) (*BroadcastResult, error) {
@@ -653,6 +1160,76 @@ func (b noMetadataErrorBroadcaster) BroadcastMessages(_ context.Context, _ ...sd
 }
 
 func (b noMetadataErrorBroadcaster) CheckNullifiersUsed(_ context.Context, nullifierHexes []string) (map[string]bool, error) {
+	return allNullifiersUnspent(nullifierHexes), nil
+}
+
+type nilPreparedResultBroadcaster struct{}
+
+func (nilPreparedResultBroadcaster) BroadcastMessages(context.Context, ...sdk.Msg) (*BroadcastResult, error) {
+	return nil, nil
+}
+
+func (nilPreparedResultBroadcaster) PrepareBroadcastMessages(context.Context, ...sdk.Msg) (*PreparedMessageBroadcast, error) {
+	return &PreparedMessageBroadcast{
+		Identity: BroadcastResult{
+			TxBytesHash:     "tx-bytes-hash",
+			SignDocHash:     "sign-doc-hash",
+			AccountSequence: 7,
+		},
+		Submit: func(context.Context) (*BroadcastResult, error) {
+			return nil, nil
+		},
+	}, nil
+}
+
+func (nilPreparedResultBroadcaster) CheckNullifiersUsed(_ context.Context, nullifierHexes []string) (map[string]bool, error) {
+	return allNullifiersUnspent(nullifierHexes), nil
+}
+
+type blockingSubmissionHeartbeatStore struct {
+	*privacyreservation.MemoryStore
+	started chan struct{}
+	calls   atomic.Int32
+}
+
+func (s *blockingSubmissionHeartbeatStore) HeartbeatReservationLeaseForStatus(ctx context.Context, reservationID string, _ string, _ string, requiredStatus privacyreservation.ReservationStatus, _ time.Time, _ time.Time) (*privacyreservation.NoteReservation, error) {
+	if s.calls.Add(1) == 1 {
+		close(s.started)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	return &privacyreservation.NoteReservation{
+		ReservationID: reservationID,
+		Status:        requiredStatus,
+	}, nil
+}
+
+type blockingNullifierChecker struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (c *blockingNullifierChecker) CheckNullifiersUsed(_ context.Context, nullifierHexes []string) (map[string]bool, error) {
+	close(c.started)
+	<-c.release
+	return allNullifiersUnspent(nullifierHexes), nil
+}
+
+type cancelingSuccessBroadcaster struct {
+	cancel context.CancelFunc
+}
+
+func (b cancelingSuccessBroadcaster) BroadcastMessages(_ context.Context, _ ...sdk.Msg) (*BroadcastResult, error) {
+	b.cancel()
+	return &BroadcastResult{
+		TxHash:          "TXHASH",
+		TxBytesHash:     "tx-bytes-hash",
+		SignDocHash:     "sign-doc-hash",
+		AccountSequence: 7,
+	}, nil
+}
+
+func (b cancelingSuccessBroadcaster) CheckNullifiersUsed(_ context.Context, nullifierHexes []string) (map[string]bool, error) {
 	return allNullifiersUnspent(nullifierHexes), nil
 }
 

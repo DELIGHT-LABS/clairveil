@@ -110,7 +110,14 @@ func (s *SQLStore) CompareAndSetReservationStatusWithOperation(ctx context.Conte
 	var outReservation *NoteReservation
 	var outOperation *PayrollOperation
 	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
-		updatedReservation, updatedOperation, err := memory.CompareAndSetReservationStatusWithOperation(ctx, reservationID, from, to, operation, now)
+		updatedReservation, updatedOperation, err := memory.ApplyReconciliationTransition(ctx, ReconciliationTransition{
+			ReservationID:     reservationID,
+			From:              from,
+			To:                to,
+			Operation:         operation,
+			Now:               now,
+			serviceAuthorized: true,
+		})
 		if err != nil {
 			return err
 		}
@@ -121,10 +128,65 @@ func (s *SQLStore) CompareAndSetReservationStatusWithOperation(ctx context.Conte
 	return outReservation, outOperation, err
 }
 
-func (s *SQLStore) CompareAndSetReservationStatusWithLease(ctx context.Context, reservationID string, leaseToken string, from ReservationStatus, to ReservationStatus, now time.Time) (*NoteReservation, error) {
+func (s *SQLStore) CompareAndSetReservationStatusWithLease(ctx context.Context, reservationID string, leaseOwner string, leaseToken string, from ReservationStatus, to ReservationStatus, now time.Time) (*NoteReservation, error) {
 	var out *NoteReservation
 	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
-		updated, err := memory.CompareAndSetReservationStatusWithLease(ctx, reservationID, leaseToken, from, to, now)
+		updated, err := memory.CompareAndSetReservationStatusWithLease(ctx, reservationID, leaseOwner, leaseToken, from, to, now)
+		if err != nil {
+			return err
+		}
+		out = updated
+		return nil
+	})
+	return out, err
+}
+
+func (s *SQLStore) ApplyReconciliationTransition(ctx context.Context, transition ReconciliationTransition) (*NoteReservation, *PayrollOperation, error) {
+	var outReservation *NoteReservation
+	var outOperation *PayrollOperation
+	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
+		updatedReservation, updatedOperation, err := memory.ApplyReconciliationTransition(ctx, transition)
+		if err != nil {
+			return err
+		}
+		outReservation, outOperation = updatedReservation, updatedOperation
+		return nil
+	})
+	return outReservation, outOperation, err
+}
+
+func (s *SQLStore) ApplyLeaseExpiryRecovery(ctx context.Context, transition ReconciliationTransition) (*NoteReservation, *PayrollOperation, error) {
+	var outReservation *NoteReservation
+	var outOperation *PayrollOperation
+	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
+		updatedReservation, updatedOperation, err := memory.ApplyLeaseExpiryRecovery(ctx, transition)
+		if err != nil {
+			return err
+		}
+		outReservation, outOperation = updatedReservation, updatedOperation
+		return nil
+	})
+	return outReservation, outOperation, err
+}
+
+func (s *SQLStore) ApplyProofDiscardTransition(ctx context.Context, transition ReconciliationTransition) (*NoteReservation, *PayrollOperation, error) {
+	var outReservation *NoteReservation
+	var outOperation *PayrollOperation
+	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
+		updatedReservation, updatedOperation, err := memory.ApplyProofDiscardTransition(ctx, transition)
+		if err != nil {
+			return err
+		}
+		outReservation, outOperation = updatedReservation, updatedOperation
+		return nil
+	})
+	return outReservation, outOperation, err
+}
+
+func (s *SQLStore) AcquireSingleReservationLease(ctx context.Context, reservationID string, owner string, leaseToken string, requiredStatus ReservationStatus, leaseUntil time.Time, now time.Time) (*NoteReservation, error) {
+	var out *NoteReservation
+	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
+		updated, err := memory.AcquireSingleReservationLease(ctx, reservationID, owner, leaseToken, requiredStatus, leaseUntil, now)
 		if err != nil {
 			return err
 		}
@@ -160,10 +222,38 @@ func (s *SQLStore) AcquireReservationLeaseForStatus(ctx context.Context, reserva
 	return out, err
 }
 
-func (s *SQLStore) HeartbeatReservationLease(ctx context.Context, reservationID string, leaseToken string, leaseUntil time.Time, now time.Time) (*NoteReservation, error) {
+func (s *SQLStore) BeginProvingOperation(ctx context.Context, operationID string, reservations []SubmittedReservationRef, leaseUntil time.Time, now time.Time) ([]NoteReservation, *PayrollOperation, error) {
+	var outReservations []NoteReservation
+	var outOperation *PayrollOperation
+	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
+		updatedReservations, updatedOperation, err := memory.BeginProvingOperation(ctx, operationID, reservations, leaseUntil, now)
+		if err != nil {
+			return err
+		}
+		outReservations, outOperation = updatedReservations, updatedOperation
+		return nil
+	})
+	return outReservations, outOperation, err
+}
+
+func (s *SQLStore) RollbackProvingOperation(ctx context.Context, operationID string, reservations []SubmittedReservationRef, now time.Time) ([]NoteReservation, *PayrollOperation, error) {
+	var outReservations []NoteReservation
+	var outOperation *PayrollOperation
+	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
+		updatedReservations, updatedOperation, err := memory.RollbackProvingOperation(ctx, operationID, reservations, now)
+		if err != nil {
+			return err
+		}
+		outReservations, outOperation = updatedReservations, updatedOperation
+		return nil
+	})
+	return outReservations, outOperation, err
+}
+
+func (s *SQLStore) HeartbeatReservationLease(ctx context.Context, reservationID string, leaseOwner string, leaseToken string, leaseUntil time.Time, now time.Time) (*NoteReservation, error) {
 	var out *NoteReservation
 	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
-		updated, err := memory.HeartbeatReservationLease(ctx, reservationID, leaseToken, leaseUntil, now)
+		updated, err := memory.HeartbeatReservationLease(ctx, reservationID, leaseOwner, leaseToken, leaseUntil, now)
 		if err != nil {
 			return err
 		}
@@ -173,10 +263,10 @@ func (s *SQLStore) HeartbeatReservationLease(ctx context.Context, reservationID 
 	return out, err
 }
 
-func (s *SQLStore) HeartbeatReservationLeaseForStatus(ctx context.Context, reservationID string, leaseToken string, requiredStatus ReservationStatus, leaseUntil time.Time, now time.Time) (*NoteReservation, error) {
+func (s *SQLStore) HeartbeatReservationLeaseForStatus(ctx context.Context, reservationID string, leaseOwner string, leaseToken string, requiredStatus ReservationStatus, leaseUntil time.Time, now time.Time) (*NoteReservation, error) {
 	var out *NoteReservation
 	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
-		updated, err := memory.HeartbeatReservationLeaseForStatus(ctx, reservationID, leaseToken, requiredStatus, leaseUntil, now)
+		updated, err := memory.HeartbeatReservationLeaseForStatus(ctx, reservationID, leaseOwner, leaseToken, requiredStatus, leaseUntil, now)
 		if err != nil {
 			return err
 		}
@@ -186,10 +276,10 @@ func (s *SQLStore) HeartbeatReservationLeaseForStatus(ctx context.Context, reser
 	return out, err
 }
 
-func (s *SQLStore) ClearReservationLease(ctx context.Context, reservationID string, leaseToken string, now time.Time) (*NoteReservation, error) {
+func (s *SQLStore) ClearReservationLease(ctx context.Context, reservationID string, leaseOwner string, leaseToken string, now time.Time) (*NoteReservation, error) {
 	var out *NoteReservation
 	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
-		updated, err := memory.ClearReservationLease(ctx, reservationID, leaseToken, now)
+		updated, err := memory.ClearReservationLease(ctx, reservationID, leaseOwner, leaseToken, now)
 		if err != nil {
 			return err
 		}
@@ -214,10 +304,10 @@ func (s *SQLStore) MarkReservationsProofReady(ctx context.Context, reservations 
 	return outReservations, outOperation, err
 }
 
-func (s *SQLStore) MarkReservationSubmitted(ctx context.Context, reservationID string, leaseToken string, update SubmittedReservationUpdate, now time.Time) (*NoteReservation, error) {
+func (s *SQLStore) RecordRelayHandoff(ctx context.Context, reservationID string, leaseOwner string, leaseToken string, payloadHash string, now time.Time) (*NoteReservation, error) {
 	var out *NoteReservation
 	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
-		updated, err := memory.MarkReservationSubmitted(ctx, reservationID, leaseToken, update, now)
+		updated, err := memory.RecordRelayHandoff(ctx, reservationID, leaseOwner, leaseToken, payloadHash, now)
 		if err != nil {
 			return err
 		}
@@ -225,6 +315,59 @@ func (s *SQLStore) MarkReservationSubmitted(ctx context.Context, reservationID s
 		return nil
 	})
 	return out, err
+}
+
+func (s *SQLStore) RecordRelayHandoffBatch(ctx context.Context, operationID string, refs []SubmittedReservationRef, payloadHash string, now time.Time) ([]NoteReservation, error) {
+	var out []NoteReservation
+	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
+		updated, err := memory.RecordRelayHandoffBatch(ctx, operationID, refs, payloadHash, now)
+		if err != nil {
+			return err
+		}
+		out = updated
+		return nil
+	})
+	return out, err
+}
+
+func (s *SQLStore) MarkReservationsProofDiscarding(ctx context.Context, operationID string, reservations []SubmittedReservationRef, now time.Time) ([]NoteReservation, error) {
+	var out []NoteReservation
+	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
+		updated, err := memory.MarkReservationsProofDiscarding(ctx, operationID, reservations, now)
+		if err != nil {
+			return err
+		}
+		out = updated
+		return nil
+	})
+	return out, err
+}
+
+func (s *SQLStore) MarkReservationSubmitted(ctx context.Context, reservationID string, leaseOwner string, leaseToken string, update SubmittedReservationUpdate, now time.Time) (*NoteReservation, error) {
+	var out *NoteReservation
+	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
+		updated, err := memory.MarkReservationSubmitted(ctx, reservationID, leaseOwner, leaseToken, update, now)
+		if err != nil {
+			return err
+		}
+		out = updated
+		return nil
+	})
+	return out, err
+}
+
+func (s *SQLStore) MarkReservationsBroadcastAttempting(ctx context.Context, reservations []SubmittedReservationRef, operationIDs []string, update BroadcastAttemptStart, now time.Time) ([]NoteReservation, []PayrollOperation, error) {
+	var outReservations []NoteReservation
+	var outOperations []PayrollOperation
+	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
+		updatedReservations, updatedOperations, err := memory.MarkReservationsBroadcastAttempting(ctx, reservations, operationIDs, update, now)
+		if err != nil {
+			return err
+		}
+		outReservations, outOperations = updatedReservations, updatedOperations
+		return nil
+	})
+	return outReservations, outOperations, err
 }
 
 func (s *SQLStore) MarkReservationsSubmitted(ctx context.Context, reservations []SubmittedReservationRef, operationIDs []string, update SubmittedReservationUpdate, now time.Time) ([]NoteReservation, []PayrollOperation, error) {
@@ -252,6 +395,34 @@ func (s *SQLStore) MarkReservationsBroadcastUnknown(ctx context.Context, reserva
 		}
 		outReservations = updatedReservations
 		outOperations = updatedOperations
+		return nil
+	})
+	return outReservations, outOperations, err
+}
+
+func (s *SQLStore) MarkReservationsBroadcastAmbiguous(ctx context.Context, reservations []SubmittedReservationRef, operationIDs []string, update BroadcastAmbiguityUpdate, now time.Time) ([]NoteReservation, []PayrollOperation, error) {
+	var outReservations []NoteReservation
+	var outOperations []PayrollOperation
+	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
+		updatedReservations, updatedOperations, err := memory.MarkReservationsBroadcastAmbiguous(ctx, reservations, operationIDs, update, now)
+		if err != nil {
+			return err
+		}
+		outReservations, outOperations = updatedReservations, updatedOperations
+		return nil
+	})
+	return outReservations, outOperations, err
+}
+
+func (s *SQLStore) MarkReservationsProofArtifactCleanupFailed(ctx context.Context, reservations []SubmittedReservationRef, operationIDs []string, reason string, now time.Time) ([]NoteReservation, []PayrollOperation, error) {
+	var outReservations []NoteReservation
+	var outOperations []PayrollOperation
+	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
+		updatedReservations, updatedOperations, err := memory.MarkReservationsProofArtifactCleanupFailed(ctx, reservations, operationIDs, reason, now)
+		if err != nil {
+			return err
+		}
+		outReservations, outOperations = updatedReservations, updatedOperations
 		return nil
 	})
 	return outReservations, outOperations, err

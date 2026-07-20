@@ -1,6 +1,10 @@
 package payroll
 
-import "strings"
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
 
 type RetryAction string
 
@@ -17,7 +21,12 @@ type RetryDecision struct {
 	Reason string
 }
 
-func ClassifyBroadcastError(message string) RetryDecision {
+func ClassifyBroadcastError(input any) RetryDecision {
+	var manualReview *ManualReviewBroadcastError
+	if err, ok := input.(error); ok && errors.As(err, &manualReview) {
+		return RetryDecision{Action: RetryActionManualReview, Reason: "broadcast crossed the external boundary without a reconcilable transaction identity"}
+	}
+	message := fmt.Sprint(input)
 	normalized := strings.ToLower(message)
 	switch {
 	case strings.Contains(normalized, "timeout") || strings.Contains(normalized, "mempool"):

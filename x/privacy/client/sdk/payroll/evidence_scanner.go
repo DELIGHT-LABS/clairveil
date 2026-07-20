@@ -60,7 +60,11 @@ func (s EvidenceScanner) ScanTransferBatch(ctx context.Context, plan PayrollPlan
 	if s.Store == nil {
 		return nil, fmt.Errorf("reservation store is required")
 	}
-	plan = normalizePayrollPlan(plan)
+	var err error
+	plan, err = normalizePayrollPlan(plan)
+	if err != nil {
+		return nil, err
+	}
 	tx = normalizeTxObservation(tx)
 	spentByNullifier := nullifierStatusMap(nullifiers)
 	transferEvents := shieldedTransferEvents(tx.Events)

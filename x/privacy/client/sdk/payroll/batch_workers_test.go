@@ -342,8 +342,8 @@ func TestBuildBatchOperationGraphBindsRecipientAndDisclosurePlan(t *testing.T) {
 		items[i] = PayrollPlanItem{
 			CompanyID: "company", PayrollID: "payroll", BatchID: "batch", ItemID: "item-" + string(rune('a'+i)),
 			EmployeeID: "employee", OperationID: "bound-operation", RecipientAddress: address,
-			ExpectedRecipientHash: HashRecipient(address), Amount: new(big.Int).Set(output.Note.Amount),
-			ExpectedAmountHash: HashAmount("uclair", output.Note.Amount), Denom: "uclair",
+			ExpectedRecipientHash: mustHashRecipient(t, address), Amount: new(big.Int).Set(output.Note.Amount),
+			ExpectedAmountHash: mustHashAmount(t, "uclair", output.Note.Amount), Denom: "uclair",
 			DisclosurePolicy: PayrollDisclosurePolicy{UserPrivacyPolicy: output.PrivacyPolicy, UserDisclosureMode: output.DisclosureMode, UserDisclosureTargetPubKeyHex: hex.EncodeToString(output.DisclosureTargetPubKey)},
 		}
 	}
@@ -374,7 +374,7 @@ func TestBuildBatchOperationGraphBindsRecipientAndDisclosurePlan(t *testing.T) {
 	wrongAddress, err := privacytypes.EncodeShieldedAddressWithView(wrong, wrong)
 	require.NoError(t, err)
 	plan.Items[0].RecipientAddress = wrongAddress
-	plan.Items[0].ExpectedRecipientHash = HashRecipient(wrongAddress)
+	plan.Items[0].ExpectedRecipientHash = mustHashRecipient(t, wrongAddress)
 	_, _, err = BuildBatchOperationGraph(context.Background(), plan, payload, testPayrollCipher{}, now)
 	require.ErrorContains(t, err, "recipient does not match")
 }

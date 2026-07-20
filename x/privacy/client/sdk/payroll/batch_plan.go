@@ -112,12 +112,14 @@ func buildBatchPayrollOperation(input PayrollInput, itemOffset, paymentCount, op
 	items := make([]PayrollPlanItem, paymentCount)
 	for i := 0; i < paymentCount; i++ {
 		item := input.Items[itemOffset+i]
+		recipientHash, _ := HashRecipient(item.RecipientAddress)
+		amountHash, _ := HashAmount(input.Denom, item.Amount)
 		items[i] = PayrollPlanItem{
 			CompanyID: input.CompanyID, PayrollID: input.PayrollID, BatchID: input.BatchID, Attempt: input.Attempt,
 			ChunkID: chunkID(input.CompanyID, input.BatchID, input.PayrollID, input.Attempt, operationIndex),
 			ItemID:  item.ItemID, EmployeeID: item.EmployeeID, OperationID: operationID,
-			RecipientAddress: item.RecipientAddress, ExpectedRecipientHash: HashRecipient(item.RecipientAddress),
-			Amount: cloneBigInt(item.Amount), ExpectedAmountHash: HashAmount(input.Denom, item.Amount), Denom: input.Denom,
+			RecipientAddress: item.RecipientAddress, ExpectedRecipientHash: recipientHash,
+			Amount: cloneBigInt(item.Amount), ExpectedAmountHash: amountHash, Denom: input.Denom,
 			DisclosurePolicy: item.DisclosurePolicy, ExpectedOutputCommitment: item.ExpectedOutputCommitment,
 			ExpectedDisclosureDigest: preferredExpectedDisclosureDigest(item), Status: ItemStatusPlanned,
 		}

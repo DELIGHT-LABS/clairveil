@@ -416,9 +416,9 @@ func markReservationProofReadyForScannerTest(t *testing.T, ctx context.Context, 
 	t.Helper()
 	lease, err := service.AcquireLeaseForStatus(ctx, reservationID, "scanner-test", privacyreservation.StatusReserved, time.Minute)
 	require.NoError(t, err)
-	_, err = service.TransitionWithLease(ctx, reservationID, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving)
+	_, err = service.TransitionWithLease(ctx, reservationID, lease.Owner, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving)
 	require.NoError(t, err)
-	_, err = service.TransitionWithLease(ctx, reservationID, lease.Token, privacyreservation.StatusProving, privacyreservation.StatusProofReady)
+	_, err = service.TransitionWithLease(ctx, reservationID, lease.Owner, lease.Token, privacyreservation.StatusProving, privacyreservation.StatusProofReady)
 	require.NoError(t, err)
-	return privacyreservation.SubmittedReservationRef{ReservationID: reservationID, LeaseToken: lease.Token}
+	return privacyreservation.SubmittedReservationRef{ReservationID: reservationID, LeaseOwner: lease.Owner, LeaseToken: lease.Token}
 }

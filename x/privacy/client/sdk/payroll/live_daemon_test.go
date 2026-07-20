@@ -106,9 +106,9 @@ func TestLiveDaemonDoesNotReuseAnotherWorkersProofReadyLease(t *testing.T) {
 	for _, note := range confirmed.Items[0].InputNotes {
 		lease, err := reservationService.AcquireLeaseForStatus(ctx, note.ReservationID, "worker-a", privacyreservation.StatusReserved, time.Minute)
 		require.NoError(t, err)
-		_, err = reservationService.TransitionWithLease(ctx, note.ReservationID, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving)
+		_, err = reservationService.TransitionWithLease(ctx, note.ReservationID, lease.Owner, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving)
 		require.NoError(t, err)
-		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: note.ReservationID, LeaseToken: lease.Token})
+		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: note.ReservationID, LeaseOwner: lease.Owner, LeaseToken: lease.Token})
 	}
 	_, _, err = reservationService.MarkProofReadyBatch(ctx, refs, privacyreservation.ProofReadyOperationUpdate{
 		OperationID:                   confirmed.Items[0].OperationID,
@@ -157,9 +157,9 @@ func TestLiveDaemonClearsAcquiredProofReadyLeasesWhenBroadcastSkips(t *testing.T
 	for _, note := range confirmed.Items[0].InputNotes {
 		lease, err := reservationService.AcquireLeaseForStatus(ctx, note.ReservationID, "worker-a", privacyreservation.StatusReserved, time.Minute)
 		require.NoError(t, err)
-		_, err = reservationService.TransitionWithLease(ctx, note.ReservationID, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving)
+		_, err = reservationService.TransitionWithLease(ctx, note.ReservationID, lease.Owner, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving)
 		require.NoError(t, err)
-		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: note.ReservationID, LeaseToken: lease.Token})
+		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: note.ReservationID, LeaseOwner: lease.Owner, LeaseToken: lease.Token})
 	}
 	_, _, err = reservationService.MarkProofReadyBatch(ctx, refs, privacyreservation.ProofReadyOperationUpdate{
 		OperationID:                   confirmed.Items[0].OperationID,
@@ -169,7 +169,7 @@ func TestLiveDaemonClearsAcquiredProofReadyLeasesWhenBroadcastSkips(t *testing.T
 	})
 	require.NoError(t, err)
 	for _, ref := range refs {
-		_, err = reservationService.ClearLease(ctx, ref.ReservationID, ref.LeaseToken)
+		_, err = reservationService.ClearLease(ctx, ref.ReservationID, ref.LeaseOwner, ref.LeaseToken)
 		require.NoError(t, err)
 	}
 
@@ -413,9 +413,9 @@ func markPayrollNotesProvingForDaemonTest(t *testing.T, ctx context.Context, ser
 	for _, note := range notes {
 		lease, err := service.AcquireLeaseForStatus(ctx, note.ReservationID, owner, privacyreservation.StatusReserved, ttl)
 		require.NoError(t, err)
-		_, err = service.TransitionWithLease(ctx, note.ReservationID, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving)
+		_, err = service.TransitionWithLease(ctx, note.ReservationID, lease.Owner, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving)
 		require.NoError(t, err)
-		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: note.ReservationID, LeaseToken: lease.Token})
+		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: note.ReservationID, LeaseOwner: lease.Owner, LeaseToken: lease.Token})
 	}
 	return refs
 }
