@@ -1,5 +1,10 @@
 {
-  "version": 1,
+  "version": 3,
+  "fixture_migration": {
+    "from_version": 1,
+    "to_version": 3,
+    "downstream_action": "Fail closed for malformed or unavailable nullifier/chain-time evidence, keep the lease heartbeat through ProofReady CAS, durably record leased relay handoff before external delivery, and regenerate fixture/schema validators."
+  },
   "active_reservation_statuses": [
     "Reserved",
     "Proving",
@@ -71,18 +76,199 @@
       }
     ]
   },
+  "operation_hash_test_vectors": [
+    {
+      "recipient": "clairs19x5u4mf4l4zqcpvr7d809fh4tjy5j50p2mwgky0nj38jpqpj7svndu3hqshu5e3s8w6pea5p30xek5p9flxjf7f44xh7cnfrlsd84pc7upgh3",
+      "recipient_hash": "8a3344bcbfdd71e8346f1fcc5d9d09d493c3345b0e94d26371f89b2574545d3c",
+      "denom": "uclair",
+      "amount": "42",
+      "amount_hash": "fa14b3ac3570b4f16e94c12814363549fa35cbdd04948f7246a65dbfc085e114"
+    }
+  ],
+  "operation_hash_rejection_vectors": [
+    {
+      "name": "empty recipient",
+      "recipient": "",
+      "denom": "uclair",
+      "amount": "1",
+      "reject_hash": "recipient"
+    },
+    {
+      "name": "invalid recipient",
+      "recipient": "clair1recipient",
+      "denom": "uclair",
+      "amount": "1",
+      "reject_hash": "recipient"
+    },
+    {
+      "name": "shielded recipient point outside curve",
+      "recipient": "clairs1llllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllct37x5k",
+      "denom": "uclair",
+      "amount": "1",
+      "reject_hash": "recipient"
+    },
+    {
+      "name": "shielded recipient low-order point",
+      "recipient": "clairs1qqqqpuyn7hs58ytsh9u536pn9pw43qvpkez4pwpf5qc7zujwvscqqqqq7zfltc2rj9ctj72gaqejsh2csxqmv32shq56qv0pwf8xgvqkr7743",
+      "denom": "uclair",
+      "amount": "1",
+      "reject_hash": "recipient"
+    },
+    {
+      "name": "empty denom",
+      "recipient": "clairs19x5u4mf4l4zqcpvr7d809fh4tjy5j50p2mwgky0nj38jpqpj7svndu3hqshu5e3s8w6pea5p30xek5p9flxjf7f44xh7cnfrlsd84pc7upgh3",
+      "denom": "",
+      "amount": "1",
+      "reject_hash": "amount"
+    },
+    {
+      "name": "malformed Cosmos denom",
+      "recipient": "clairs19x5u4mf4l4zqcpvr7d809fh4tjy5j50p2mwgky0nj38jpqpj7svndu3hqshu5e3s8w6pea5p30xek5p9flxjf7f44xh7cnfrlsd84pc7upgh3",
+      "denom": "bad!denom",
+      "amount": "1",
+      "reject_hash": "amount"
+    },
+    {
+      "name": "negative amount",
+      "recipient": "clairs19x5u4mf4l4zqcpvr7d809fh4tjy5j50p2mwgky0nj38jpqpj7svndu3hqshu5e3s8w6pea5p30xek5p9flxjf7f44xh7cnfrlsd84pc7upgh3",
+      "denom": "uclair",
+      "amount": "-1",
+      "reject_hash": "amount"
+    },
+    {
+      "name": "uint64 overflow amount",
+      "recipient": "clairs19x5u4mf4l4zqcpvr7d809fh4tjy5j50p2mwgky0nj38jpqpj7svndu3hqshu5e3s8w6pea5p30xek5p9flxjf7f44xh7cnfrlsd84pc7upgh3",
+      "denom": "uclair",
+      "amount": "18446744073709551616",
+      "reject_hash": "amount"
+    }
+  ],
   "lease_transition_preconditions": {
     "token_required_for": [
       ["Reserved", "Proving"],
       ["Proving", "ProofReady"],
+      ["Proving", "Reserved"],
+      ["Proving", "ReplanRequired"],
+      ["Proving", "ManualReview"],
       ["ProofReady", "Submitted"],
-      ["ProofReady", "Unknown"]
+      ["ProofReady", "Unknown"],
+      ["ProofReady", "ReplanRequired"],
+      ["ProofReady", "ManualReview"]
+    ],
+    "recovery_without_token_after_expiry_for": [
+      ["Proving", "ReplanRequired"],
+      ["Proving", "ManualReview"],
+      ["ProofReady", "ManualReview"]
     ],
     "fields": ["lease_owner", "lease_token", "lease_until", "last_heartbeat_at"],
-    "policy": "only the current non-expired lease token may advance worker-owned states"
+    "policy": "only the current non-expired lease owner and token may advance or end worker-owned states; listed recovery transitions may proceed only after lease expiry"
+  },
+  "transition_evidence_preconditions": [
+    {
+      "name": "proof discard before replan",
+      "transition": ["ProofReady", "ReplanRequired"],
+      "required_evidence": ["no_broadcast_attempt", "proof_discarded"],
+      "positive": {"no_broadcast_attempt": true, "proof_discarded": true},
+      "negative": {"no_broadcast_attempt": true, "proof_discarded": false}
+    },
+    {
+      "name": "post-broadcast replan or failure",
+      "transition": ["Submitted", "ReplanRequired"],
+      "required_evidence": ["nullifier_unspent_confirmed", "tx_absent_or_failed_confirmed"],
+      "positive": {"nullifier_unspent_confirmed": true, "tx_absent_or_failed_confirmed": true},
+      "negative": {"nullifier_unspent_confirmed": true, "tx_absent_or_failed_confirmed": false}
+    }
+  ],
+  "manual_review_resolution": {
+    "required_evidence": ["operator_approved", "operator_id", "operator_approval_reference"],
+    "positive": {"operator_approved": true, "operator_id": "operator-a", "operator_approval_reference": "case-1"},
+    "negative": {"operator_approved": true, "operator_id": "", "operator_approval_reference": "case-1"}
+  },
+  "relay_handoff": {
+    "status": "ProofReady",
+    "lease_must_remain": true,
+    "record_requires": ["ProofReady", "lease_owner", "lease_token", "payload_hash_matches"],
+    "proof_discard_after_handoff": "reject",
+    "write_once_evidence": ["payload_hash", "relay_handed_off", "relay_handed_off_at"],
+    "positive": {"relay_handed_off": true, "lease_owner_present": true, "lease_token_present": true, "payload_hash_matches": true},
+    "negative": {"relay_handed_off": true, "lease_owner_present": false, "lease_token_present": false, "payload_hash_matches": false},
+    "negative_vectors": [
+      {"name": "payload_hash_mismatch", "payload_hash_matches": false, "all_reservations_proof_ready": true, "operation_reservation_set_exact": true},
+      {"name": "mixed_reservation_status", "payload_hash_matches": true, "all_reservations_proof_ready": false, "operation_reservation_set_exact": true},
+      {"name": "partial_operation_reservation_set", "payload_hash_matches": true, "all_reservations_proof_ready": true, "operation_reservation_set_exact": false}
+    ]
+  },
+  "initial_state_preconditions": {
+    "reservation_status": "Reserved",
+    "operation_status": "Planned",
+    "forbidden_reservation_evidence": ["lease", "payload_hash", "broadcast", "relay_handoff", "manual_review"],
+    "forbidden_operation_evidence": ["payload_hash", "tx_identity"],
+    "positive": {"reservation_clean": true, "operation_clean": true},
+    "negative": {"reservation_clean": false, "operation_clean": false}
+  },
+  "fail_closed_runtime_policy": {
+    "nullifier_spent_evidence": {
+      "spent_value": true,
+      "unspent_value": false,
+      "other_values": "unknown_excluded_from_spending"
+    },
+    "relay_submission": {
+      "chain_time_source": "latest_chain_block_time",
+      "chain_time_required": true,
+      "recheck_immediately_before_broadcast": true,
+      "on_unavailable": "reject_submit"
+    },
+    "heartbeat": {
+      "coverage": ["proof_generation", "transaction_or_sign_doc_build", "proof_ready_transition"],
+      "await_in_flight_before_stop": true
+    },
+    "broadcast_boundary": {
+      "durable_attempt_before_external_call": true,
+      "retry_blocked_until_reconciled": true
+    }
+  },
+  "evidence_immutability": {
+    "write_once_fields": [
+      "payload_hash",
+      "submitted_tx_hash",
+      "tx_bytes_hash",
+      "sign_doc_hash",
+      "expected_output_commitment",
+      "expected_disclosure_digest",
+      "expected_recipient_hash",
+      "expected_amount",
+      "expected_amount_hash",
+      "expected_denom",
+      "batch_item_index",
+      "batch_item_index_known",
+      "operation_success_evidence_required"
+    ],
+    "monotonic_fields": ["broadcast_attempt_count"],
+    "negative": {"submitted_tx_hash": ""},
+    "mutation_rejection_vectors": [
+      {"field": "payload_hash", "original": "payload-a", "mutation": "payload-forged"},
+      {"field": "submitted_tx_hash", "original": "tx-a", "mutation": "tx-forged"},
+      {"field": "tx_bytes_hash", "original": "tx-bytes-a", "mutation": "tx-bytes-forged"},
+      {"field": "sign_doc_hash", "original": "sign-doc-a", "mutation": "sign-doc-forged"},
+      {"field": "expected_output_commitment", "original": "output-a", "mutation": "output-forged"},
+      {"field": "expected_disclosure_digest", "original": "disclosure-a", "mutation": "disclosure-forged"},
+      {"field": "expected_recipient_hash", "original": "recipient-a", "mutation": "recipient-forged"},
+      {"field": "expected_amount", "original": "7", "mutation": "8"},
+      {"field": "expected_amount_hash", "original": "amount-a", "mutation": "amount-forged"},
+      {"field": "expected_denom", "original": "uclair", "mutation": "uforged"},
+      {"field": "batch_item_index", "original": 0, "mutation": 1},
+      {"field": "batch_item_index_known", "original": true, "mutation": false},
+      {"field": "operation_success_evidence_required", "original": true, "mutation": false}
+    ]
+  },
+  "spent_sibling_quarantine": {
+    "match_fields": ["owner_key_id", "nullifier_lookup_key"],
+    "target_status": "ConfirmedSpent",
+    "positive": {"matching_siblings": 2, "confirmed_spent": 2},
+    "negative": {"matching_siblings": 2, "confirmed_spent": 1}
   },
   "success_evidence_required": [
-    "tx_hash_or_tx_result",
+    "matching_persisted_tx_identity",
     "expected_output_commitment",
     "expected_disclosure_digest",
     "expected_recipient_hash",
@@ -92,6 +278,67 @@
     "batch_item_index_known"
   ],
   "batch_item_index_policy": "PayrollOperation must set batch_item_index_known=true when batch_item_index is an expected success-evidence value. Payroll and batch-transfer operations set it true; direct integrations may leave it false only when batch item position is not part of the success predicate.",
+  "operation_identity_evidence": {
+    "required": "matching_persisted_tx_identity",
+    "vectors": [
+      {
+        "name": "bare successful result is insufficient",
+        "stored_tx_hash": "EXPECTED-TX",
+        "tx_result": {"code": 0},
+        "operation_status": "ConflictSpent"
+      },
+      {
+        "name": "mismatched identity is conflict",
+        "stored_tx_hash": "EXPECTED-TX",
+        "tx_result": {"code": 0, "txhash": "OTHER-TX"},
+        "operation_status": "ConflictSpent"
+      },
+      {
+        "name": "matching identity succeeds",
+        "stored_tx_hash": "EXPECTED-TX",
+        "tx_result": {"code": 0, "txhash": "EXPECTED-TX"},
+        "operation_status": "Succeeded"
+      },
+      {
+        "name": "case and prefix normalized identity succeeds",
+        "stored_tx_hash": "0xABCDEF",
+        "tx_result": {"code": 0, "txhash": "abcdef"},
+        "operation_status": "Succeeded"
+      },
+      {
+        "name": "matching tx bytes identity succeeds",
+        "stored_tx_bytes_hash": "EXPECTED-TX-BYTES",
+        "tx_result": {"code": 0, "tx_bytes_hash": "EXPECTED-TX-BYTES"},
+        "operation_status": "Succeeded"
+      },
+      {
+        "name": "unexpected tx hash conflicts with stored tx bytes identity",
+        "stored_tx_bytes_hash": "EXPECTED-TX-BYTES",
+        "tx_result": {"code": 0, "txhash": "OTHER-TX", "tx_bytes_hash": "EXPECTED-TX-BYTES"},
+        "operation_status": "ConflictSpent"
+      },
+      {
+        "name": "tx hash does not match tx bytes field",
+        "stored_tx_hash": "EXPECTED-TX",
+        "tx_result": {"code": 0, "tx_bytes_hash": "EXPECTED-TX"},
+        "operation_status": "ConflictSpent"
+      },
+      {
+        "name": "sign doc alone is not chain identity",
+        "stored_tx_hash": "EXPECTED-TX",
+        "stored_sign_doc_hash": "EXPECTED-SIGN-DOC",
+        "tx_result": {"code": 0, "sign_doc_hash": "EXPECTED-SIGN-DOC"},
+        "operation_status": "ConflictSpent"
+      },
+      {
+        "name": "sign doc mismatch conflicts with matching tx identity",
+        "stored_tx_hash": "EXPECTED-TX",
+        "stored_sign_doc_hash": "EXPECTED-SIGN-DOC",
+        "tx_result": {"code": 0, "txhash": "EXPECTED-TX", "sign_doc_hash": "OTHER-SIGN-DOC"},
+        "operation_status": "ConflictSpent"
+      }
+    ]
+  },
   "operation_success_examples": [
     {
       "name": "matching evidence marks operation succeeded",
