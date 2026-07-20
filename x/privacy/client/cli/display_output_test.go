@@ -25,7 +25,7 @@ func TestRenderListNotesText(t *testing.T) {
 				AssetID: privacytypes.ComputeAssetIDV1("uclair"),
 			},
 			Nullifier: "abcdef1234567890",
-			IsSpent:   false,
+			IsSpent:   false, VerifiedUnspent: true,
 		},
 		{
 			Note: privacytypes.Note{
@@ -33,7 +33,7 @@ func TestRenderListNotesText(t *testing.T) {
 				AssetID: privacytypes.ComputeAssetIDV1("uatom"),
 			},
 			Nullifier: "fedcba0987654321",
-			IsSpent:   false,
+			IsSpent:   false, VerifiedUnspent: true,
 		},
 		{
 			Note: privacytypes.Note{
@@ -151,15 +151,15 @@ func TestBuildSpendableAssetTotals(t *testing.T) {
 	totals := buildSpendableAssetTotals([]FoundNote{
 		{
 			Note:    privacytypes.Note{Amount: math.NewInt(7).BigInt(), AssetID: privacytypes.ComputeAssetIDV1("uclair")},
-			IsSpent: false,
+			IsSpent: false, VerifiedUnspent: true,
 		},
 		{
 			Note:    privacytypes.Note{Amount: math.NewInt(2).BigInt(), AssetID: privacytypes.ComputeAssetIDV1("uatom")},
-			IsSpent: false,
+			IsSpent: false, VerifiedUnspent: true,
 		},
 		{
 			Note:    privacytypes.Note{Amount: math.NewInt(5).BigInt(), AssetID: privacytypes.ComputeAssetIDV1("uclair")},
-			IsSpent: false,
+			IsSpent: false, VerifiedUnspent: true,
 		},
 		{
 			Note:    privacytypes.Note{Amount: math.NewInt(9).BigInt(), AssetID: privacytypes.ComputeAssetIDV1("uclair")},

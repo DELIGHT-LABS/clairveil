@@ -18,6 +18,7 @@ func TestPrepareSpendWithdrawBuildsAssignment(t *testing.T) {
 	spendPubKey := testPubKey(11)
 	viewPubKey := testPubKey(13)
 	note := privacyscan.FoundNote{
+		VerifiedUnspent: true,
 		Note: privacytypes.Note{
 			ReceiverSpendPubKeyX: pointCoordinate(spendPubKey, true),
 			ReceiverSpendPubKeyY: pointCoordinate(spendPubKey, false),
@@ -28,6 +29,9 @@ func TestPrepareSpendWithdrawBuildsAssignment(t *testing.T) {
 			Randomness:           big.NewInt(701),
 		},
 	}
+	nullifier, err := privacyfield.CanonicalHexFromBigInt(note.Note.ComputeNullifier())
+	require.NoError(t, err)
+	note.Nullifier = nullifier
 
 	rootBytes, err := privacyfield.CanonicalBytesFromBigInt(big.NewInt(909))
 	require.NoError(t, err)
@@ -92,6 +96,7 @@ func TestPrepareSpendWithdrawPropagatesMerkleQueryError(t *testing.T) {
 	spendPubKey := testPubKey(11)
 	viewPubKey := testPubKey(13)
 	note := privacyscan.FoundNote{
+		VerifiedUnspent: true,
 		Note: privacytypes.Note{
 			ReceiverSpendPubKeyX: pointCoordinate(spendPubKey, true),
 			ReceiverSpendPubKeyY: pointCoordinate(spendPubKey, false),
@@ -102,8 +107,11 @@ func TestPrepareSpendWithdrawPropagatesMerkleQueryError(t *testing.T) {
 			Randomness:           big.NewInt(701),
 		},
 	}
+	nullifier, err := privacyfield.CanonicalHexFromBigInt(note.Note.ComputeNullifier())
+	require.NoError(t, err)
+	note.Nullifier = nullifier
 
-	_, err := PrepareSpendWithdraw(
+	_, err = PrepareSpendWithdraw(
 		context.Background(),
 		&stubMerklePathProvider{returnErr: fmt.Errorf("boom")},
 		&stubSpendNoteHashSigner{signature: testSignatureBytes()},

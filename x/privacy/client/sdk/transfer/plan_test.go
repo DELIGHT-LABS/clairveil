@@ -19,8 +19,8 @@ func TestRecursivePlannerDecisionReturnsFinalTransfer(t *testing.T) {
 	runtime := NewRecursivePlannerRuntime()
 	decision, err := runtime.DecideNextStep(RecursivePlannerInput{
 		FoundNotes: []privacyscan.FoundNote{
-			{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
-			{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
+			{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
+			{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
 		},
 		TargetDenom:               "uclair",
 		TargetAmount:              big.NewInt(12),
@@ -53,9 +53,9 @@ func TestRecursivePlannerDecisionReturnsSelfMerge(t *testing.T) {
 	runtime := NewRecursivePlannerRuntime()
 	decision, err := runtime.DecideNextStep(RecursivePlannerInput{
 		FoundNotes: []privacyscan.FoundNote{
-			{Note: privacytypes.Note{Amount: big.NewInt(2), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "a", Height: 1, IsSpent: false},
-			{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false},
-			{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "c", Height: 3, IsSpent: false},
+			{Note: privacytypes.Note{Amount: big.NewInt(2), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "a", Height: 1, IsSpent: false, VerifiedUnspent: true},
+			{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false, VerifiedUnspent: true},
+			{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "c", Height: 3, IsSpent: false, VerifiedUnspent: true},
 		},
 		TargetDenom:               "uclair",
 		TargetAmount:              big.NewInt(20),
@@ -88,8 +88,8 @@ func TestRecursivePlannerDecisionRequestsDummyWhenAllowed(t *testing.T) {
 	runtime := NewRecursivePlannerRuntime()
 	decision, err := runtime.DecideNextStep(RecursivePlannerInput{
 		FoundNotes: []privacyscan.FoundNote{
-			{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
-			{Note: privacytypes.Note{Amount: big.NewInt(0), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
+			{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
+			{Note: privacytypes.Note{Amount: big.NewInt(0), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false, VerifiedUnspent: true},
 		},
 		TargetDenom:               "uclair",
 		TargetAmount:              big.NewInt(10),
@@ -118,8 +118,8 @@ func TestRecursivePlannerDecisionRejectsDummyWhenDisabled(t *testing.T) {
 	runtime := NewRecursivePlannerRuntime()
 	_, err := runtime.DecideNextStep(RecursivePlannerInput{
 		FoundNotes: []privacyscan.FoundNote{
-			{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
-			{Note: privacytypes.Note{Amount: big.NewInt(0), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
+			{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
+			{Note: privacytypes.Note{Amount: big.NewInt(0), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false, VerifiedUnspent: true},
 		},
 		TargetDenom:               "uclair",
 		TargetAmount:              big.NewInt(10),
@@ -149,7 +149,7 @@ func TestRecursivePlannerDecisionRejectsInsufficientFundsWithSummary(t *testing.
 	runtime := NewRecursivePlannerRuntime()
 	_, err := runtime.DecideNextStep(RecursivePlannerInput{
 		FoundNotes: []privacyscan.FoundNote{
-			{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
+			{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
 		},
 		TargetDenom:               "uclair",
 		TargetAmount:              big.NewInt(10),
@@ -179,7 +179,7 @@ func TestRecursivePlannerDecisionRejectsInsufficientFundsWithoutSameDenomNotes(t
 	runtime := NewRecursivePlannerRuntime()
 	_, err := runtime.DecideNextStep(RecursivePlannerInput{
 		FoundNotes: []privacyscan.FoundNote{
-			{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
+			{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false, VerifiedUnspent: true},
 		},
 		TargetDenom:               "uclair",
 		TargetAmount:              big.NewInt(10),
@@ -207,9 +207,9 @@ func TestRecursivePlannerDecisionRejectsRepeatedFingerprint(t *testing.T) {
 	selfViewScalar, selfViewPubKey := testScalarAndPubKey(233)
 
 	foundNotes := []privacyscan.FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(2), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "a", Height: 1, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "c", Height: 3, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(2), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "a", Height: 1, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "c", Height: 3, IsSpent: false, VerifiedUnspent: true},
 	}
 
 	runtime := NewRecursivePlannerRuntime()

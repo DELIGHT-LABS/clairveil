@@ -72,6 +72,15 @@ func PrepareJoinSplitTransfer(
 		if err := foundNote.Note.ValidateV1(); err != nil {
 			return nil, fmt.Errorf("invalid input NoteV1 %d: %w", i, err)
 		}
+		if !foundNote.IsVerifiedUnspent() {
+			return nil, fmt.Errorf("input note %d must be verified unspent before preparing a joinsplit transfer", i)
+		}
+		if _, err := privacyscan.CanonicalFoundNoteNullifier(foundNote); err != nil {
+			return nil, fmt.Errorf("input note %d nullifier verification is invalid: %w", i, err)
+		}
+		if err := privacytypes.ValidateShieldedAmount(fmt.Sprintf("input note %d amount", i), foundNote.Note.Amount); err != nil {
+			return nil, err
+		}
 	}
 	if err := validateCommonInputOwnerAndAsset(input.Inputs); err != nil {
 		return nil, err

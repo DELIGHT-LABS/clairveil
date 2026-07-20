@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"testing"
 
@@ -11,6 +12,8 @@ import (
 	sdkkeyring "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
+
+	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
 )
 
 func TestPrintTransferCommandSummary(t *testing.T) {
@@ -90,6 +93,36 @@ func TestScanNotesWithOptionsRequiresFromAccount(t *testing.T) {
 	_, err := scanNotesWithOptions(client.Context{}, nil, scanNotesOptions{})
 
 	require.ErrorContains(t, err, "a transparent --from account is required to scan shielded notes")
+}
+
+func TestHandleListNotesScanErrorShowsPartialUnverifiedNotes(t *testing.T) {
+	cmd := &cobra.Command{}
+	stderr := new(bytes.Buffer)
+	cmd.SetErr(stderr)
+	scanErr := errors.New("nullifier status unavailable")
+
+	err := handleListNotesScanError(cmd, []FoundNote{{VerifiedUnspent: false}}, scanErr)
+
+	require.NoError(t, err)
+	require.Contains(t, stderr.String(), "unverified notes are shown but cannot be spent")
+	require.Contains(t, stderr.String(), scanErr.Error())
+	require.ErrorIs(t, handleListNotesScanError(cmd, nil, scanErr), scanErr)
+}
+
+func TestHandleListNotesScanErrorRejectsInvalidWalletCache(t *testing.T) {
+	cmd := &cobra.Command{}
+	stderr := new(bytes.Buffer)
+	cmd.SetErr(stderr)
+
+	err := handleListNotesScanError(
+		cmd,
+		[]FoundNote{{VerifiedUnspent: false}},
+		privacyscan.ErrInvalidWalletCache,
+	)
+
+	require.ErrorIs(t, err, privacyscan.ErrInvalidWalletCache)
+	require.ErrorContains(t, err, "--rescan-wallet")
+	require.Empty(t, stderr.String())
 }
 
 func TestShowShieldedAddressOutputModes(t *testing.T) {

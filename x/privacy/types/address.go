@@ -1,6 +1,7 @@
 package types
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
@@ -72,6 +73,22 @@ func decodePublicKey(bz []byte) (*twistededwards.PointAffine, error) {
 	pubKey, err := privacycrypto.DecodeCanonicalPoint(bz)
 	if err != nil {
 		return nil, fmt.Errorf("invalid public key bytes: %w", err)
+	}
+	canonical := pubKey.Bytes()
+	if !bytes.Equal(canonical[:], bz) {
+		return nil, fmt.Errorf("invalid public key bytes: non-canonical compressed point encoding")
+	}
+	if !pubKey.IsOnCurve() {
+		return nil, fmt.Errorf("invalid public key bytes: point is not on curve")
+	}
+	if pubKey.IsZero() {
+		return nil, fmt.Errorf("invalid public key bytes: identity point is not allowed")
+	}
+	curve := twistededwards.GetEdwardsCurve()
+	var subgroupCheck twistededwards.PointAffine
+	subgroupCheck.ScalarMultiplication(pubKey, &curve.Order)
+	if !subgroupCheck.IsZero() {
+		return nil, fmt.Errorf("invalid public key bytes: point is not in the prime-order subgroup")
 	}
 
 	return pubKey, nil

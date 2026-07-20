@@ -287,6 +287,12 @@ func testPreparedTransferPayload(
 			},
 		},
 	}
+	for i := range inputs {
+		nullifier, err := privacyfield.CanonicalHexFromBigInt(inputs[i].Note.ComputeNullifier())
+		require.NoError(t, err)
+		inputs[i].Nullifier = nullifier
+		inputs[i].VerifiedUnspent = true
+	}
 
 	rootBytes, err := privacyfield.CanonicalBytesFromBigInt(big.NewInt(909))
 	require.NoError(t, err)
@@ -587,7 +593,8 @@ func (s *withdrawProofRunner) ProveSpend(_ constraint.ConstraintSystem, _ groth1
 func testWithdrawFoundNote(amount int64, denom string, randomness int64) privacyscan.FoundNote {
 	spendPubKey := testPoint(31)
 	viewPubKey := testPoint(37)
-	return privacyscan.FoundNote{
+	found := privacyscan.FoundNote{
+		VerifiedUnspent: true,
 		Note: privacytypes.Note{
 			ReceiverSpendPubKeyX: pointCoordinate(spendPubKey, true),
 			ReceiverSpendPubKeyY: pointCoordinate(spendPubKey, false),
@@ -598,6 +605,8 @@ func testWithdrawFoundNote(amount int64, denom string, randomness int64) privacy
 			Randomness:           big.NewInt(randomness),
 		},
 	}
+	found.Nullifier, _ = privacyfield.CanonicalHexFromBigInt(found.Note.ComputeNullifier())
+	return found
 }
 
 func testPoint(value int64) *crypto_tedwards.PointAffine {

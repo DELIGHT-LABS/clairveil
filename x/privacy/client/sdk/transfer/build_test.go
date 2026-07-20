@@ -79,6 +79,7 @@ func testBuildTransferMessageDeps(
 
 	inputs := [2]privacyscan.FoundNote{
 		{
+			VerifiedUnspent: true,
 			Note: privacytypes.Note{
 				ReceiverSpendPubKeyX: pointCoordinate(senderSpendPubKey, true),
 				ReceiverSpendPubKeyY: pointCoordinate(senderSpendPubKey, false),
@@ -91,6 +92,7 @@ func testBuildTransferMessageDeps(
 			},
 		},
 		{
+			VerifiedUnspent: true,
 			Note: privacytypes.Note{
 				ReceiverSpendPubKeyX: pointCoordinate(senderSpendPubKey, true),
 				ReceiverSpendPubKeyY: pointCoordinate(senderSpendPubKey, false),
@@ -103,6 +105,7 @@ func testBuildTransferMessageDeps(
 			},
 		},
 	}
+	markFoundNotesVerified(&inputs)
 
 	rootBytes, err := privacyfield.CanonicalBytesFromBigInt(big.NewInt(909))
 	require.NoError(t, err)

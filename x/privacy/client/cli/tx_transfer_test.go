@@ -35,8 +35,8 @@ func TestResolveTransferRecipientDecodesShieldedBundle(t *testing.T) {
 
 func TestSelectInputsFiltersDifferentDenomZeroNote(t *testing.T) {
 	notes := []FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(0), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(0), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false, VerifiedUnspent: true},
 	}
 
 	_, total, isFinal, needZero := selectInputs(notes, "uclair", big.NewInt(10))
@@ -47,9 +47,9 @@ func TestSelectInputsFiltersDifferentDenomZeroNote(t *testing.T) {
 
 func TestSelectInputsUsesSameDenomPairOnly(t *testing.T) {
 	notes := []FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(4), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(4), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
 	}
 
 	inputs, total, isFinal, needZero := selectInputs(notes, "uclair", big.NewInt(10))
@@ -62,8 +62,8 @@ func TestSelectInputsUsesSameDenomPairOnly(t *testing.T) {
 
 func TestSelectInputsFallsBackToPositivePairWhenSingleNoteNeedsZero(t *testing.T) {
 	notes := []FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(11), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(11), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
 	}
 
 	inputs, total, isFinal, needZero := selectInputs(notes, "uclair", big.NewInt(8))
@@ -76,9 +76,9 @@ func TestSelectInputsFallsBackToPositivePairWhenSingleNoteNeedsZero(t *testing.T
 
 func TestSelectInputsChoosesSmallestSufficientPairDeterministically(t *testing.T) {
 	notes := []FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(11), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "c", Height: 3, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "a", Height: 1, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(11), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "c", Height: 3, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "a", Height: 1, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false, VerifiedUnspent: true},
 	}
 
 	inputs, total, isFinal, needZero := selectInputs(notes, "uclair", big.NewInt(12))
@@ -91,9 +91,9 @@ func TestSelectInputsChoosesSmallestSufficientPairDeterministically(t *testing.T
 
 func TestSelectInputsChoosesLargestMergePairWhenNoFinalPairExists(t *testing.T) {
 	notes := []FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(2), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "a", Height: 1, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "c", Height: 3, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(2), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "a", Height: 1, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "c", Height: 3, IsSpent: false, VerifiedUnspent: true},
 	}
 
 	inputs, total, isFinal, needZero := selectInputs(notes, "uclair", big.NewInt(20))

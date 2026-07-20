@@ -1,12 +1,28 @@
 package cli
 
 import (
-	"math/big"
-	"testing"
-
+	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	"github.com/stretchr/testify/require"
+	"math/big"
+	"testing"
 )
+
+func TestApplySyncDiagnosticsIncludesPartialScanCounts(t *testing.T) {
+	target := &scanNotesDiagnostics{WalletPath: "/tmp/wallet.json"}
+	applySyncDiagnostics(target, privacyscan.SyncDiagnostics{
+		ScannedFromHeight: 8,
+		ScannedToHeight:   12,
+		NewNotesFound:     2,
+		FinalNoteCount:    5,
+	})
+
+	require.Equal(t, "/tmp/wallet.json", target.WalletPath)
+	require.EqualValues(t, 8, target.ScannedFromHeight)
+	require.EqualValues(t, 12, target.ScannedToHeight)
+	require.Equal(t, 2, target.NewNotesFound)
+	require.Equal(t, 5, target.FinalNoteCount)
+}
 
 func TestDecodeMerkleProof(t *testing.T) {
 	path := []string{"01", "0a"}
@@ -24,10 +40,10 @@ func TestDecodeMerkleProof(t *testing.T) {
 
 func TestSummarizeSpendableNotesByDenom(t *testing.T) {
 	notes := []FoundNote{
-		{Note: types.Note{Amount: big.NewInt(5), AssetID: types.ComputeAssetIDV1("uclair")}, IsSpent: false},
-		{Note: types.Note{Amount: big.NewInt(7), AssetID: types.ComputeAssetIDV1("uatom")}, IsSpent: false},
+		{Note: types.Note{Amount: big.NewInt(5), AssetID: types.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
+		{Note: types.Note{Amount: big.NewInt(7), AssetID: types.ComputeAssetIDV1("uatom")}, IsSpent: false, VerifiedUnspent: true},
 		{Note: types.Note{Amount: big.NewInt(11), AssetID: types.ComputeAssetIDV1("uclair")}, IsSpent: true},
-		{Note: types.Note{Amount: big.NewInt(13), AssetID: types.ComputeAssetIDV1("uclair")}, IsSpent: false},
+		{Note: types.Note{Amount: big.NewInt(13), AssetID: types.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
 	}
 
 	spendable, total := summarizeSpendableNotesByDenom(notes, "uclair")
@@ -45,7 +61,7 @@ func TestBuildListNotesJSONOutput(t *testing.T) {
 			Nullifier: "aa",
 			Height:    3,
 			TxHash:    "A1",
-			IsSpent:   false,
+			IsSpent:   false, VerifiedUnspent: true,
 		},
 		{
 			Note:      types.Note{Amount: big.NewInt(7), AssetID: types.ComputeAssetIDV1("uclair")},
@@ -59,7 +75,7 @@ func TestBuildListNotesJSONOutput(t *testing.T) {
 			Nullifier: "cc",
 			Height:    11,
 			TxHash:    "C3",
-			IsSpent:   false,
+			IsSpent:   false, VerifiedUnspent: true,
 		},
 	}
 
@@ -109,14 +125,16 @@ func TestConsumeOneShotBool(t *testing.T) {
 
 func TestPlannerStateFingerprintUsesSortedSameDenomSpendableNotes(t *testing.T) {
 	left := []FoundNote{
-		{Note: types.Note{Amount: big.NewInt(10), AssetID: types.ComputeAssetIDV1("uclair")}, Nullifier: "bb", Height: 9},
-		{Note: types.Note{Amount: big.NewInt(3), AssetID: types.ComputeAssetIDV1("uclair")}, Nullifier: "aa", Height: 5},
-		{Note: types.Note{Amount: big.NewInt(9), AssetID: types.ComputeAssetIDV1("uatom")}, Nullifier: "xx", Height: 4},
+		{Note: types.Note{Amount: big.NewInt(10), AssetID: types.ComputeAssetIDV1("uclair")}, Nullifier: "bb", Height: 9, VerifiedUnspent: true},
+		{Note: types.Note{Amount: big.NewInt(3), AssetID: types.ComputeAssetIDV1("uclair")}, Nullifier: "aa", Height: 5, VerifiedUnspent: true},
+		{Note: types.Note{Amount: big.NewInt(9), AssetID: types.ComputeAssetIDV1("uatom")}, Nullifier: "xx", Height: 4, VerifiedUnspent: true},
 	}
 	right := []FoundNote{
-		{Note: types.Note{Amount: big.NewInt(3), AssetID: types.ComputeAssetIDV1("uclair")}, Nullifier: "aa", Height: 5},
-		{Note: types.Note{Amount: big.NewInt(10), AssetID: types.ComputeAssetIDV1("uclair")}, Nullifier: "bb", Height: 9},
+		{Note: types.Note{Amount: big.NewInt(3), AssetID: types.ComputeAssetIDV1("uclair")}, Nullifier: "aa", Height: 5, VerifiedUnspent: true},
+		{Note: types.Note{Amount: big.NewInt(10), AssetID: types.ComputeAssetIDV1("uclair")}, Nullifier: "bb", Height: 9, VerifiedUnspent: true},
 	}
 
-	require.Equal(t, plannerStateFingerprint(left, "uclair", big.NewInt(7)), plannerStateFingerprint(right, "uclair", big.NewInt(7)))
+	want := "uclair|7|nullifier:aa:3|nullifier:bb:10"
+	require.Equal(t, want, plannerStateFingerprint(left, "uclair", big.NewInt(7)))
+	require.Equal(t, want, plannerStateFingerprint(right, "uclair", big.NewInt(7)))
 }
