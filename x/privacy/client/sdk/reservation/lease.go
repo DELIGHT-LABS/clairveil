@@ -103,6 +103,60 @@ func (s Service) BeginProvingOperation(ctx context.Context, operationID string, 
 	return claimed, operation, nil
 }
 
+// ReclaimExpiredOperation takes over a complete Proving or ProofReady
+// operation only after every previous worker lease has expired. It is used to
+// durably record an already-observed external transaction without racing the
+// worker that originally claimed the inputs.
+func (s Service) ReclaimExpiredOperation(ctx context.Context, operationID string, reservationIDs []string, requiredStatus ReservationStatus, owner string, ttl time.Duration) ([]SubmittedReservationRef, *PayrollOperation, error) {
+	if s.Store == nil {
+		return nil, nil, fmt.Errorf("reservation store is required")
+	}
+	operationID = strings.TrimSpace(operationID)
+	owner = strings.TrimSpace(owner)
+	if operationID == "" {
+		return nil, nil, fmt.Errorf("operation_id is required")
+	}
+	if owner == "" {
+		return nil, nil, fmt.Errorf("lease owner is required")
+	}
+	if ttl <= 0 {
+		return nil, nil, fmt.Errorf("lease ttl must be positive")
+	}
+	if len(reservationIDs) == 0 {
+		return nil, nil, fmt.Errorf("reservation ids are required")
+	}
+	if requiredStatus != StatusProving && requiredStatus != StatusProofReady {
+		return nil, nil, fmt.Errorf("reclaim requires Proving or ProofReady reservations")
+	}
+
+	refs := make([]SubmittedReservationRef, 0, len(reservationIDs))
+	for _, reservationID := range reservationIDs {
+		token, err := randomToken()
+		if err != nil {
+			return nil, nil, err
+		}
+		refs = append(refs, SubmittedReservationRef{
+			ReservationID: strings.TrimSpace(reservationID),
+			LeaseOwner:    owner,
+			LeaseToken:    token,
+		})
+	}
+	now := s.now()
+	reservations, operation, err := s.Store.ReclaimExpiredOperation(ctx, operationID, refs, requiredStatus, now.Add(ttl), now)
+	if err != nil {
+		return nil, nil, err
+	}
+	claimed := make([]SubmittedReservationRef, 0, len(reservations))
+	for _, reservation := range reservations {
+		claimed = append(claimed, SubmittedReservationRef{
+			ReservationID: reservation.ReservationID,
+			LeaseOwner:    reservation.LeaseOwner,
+			LeaseToken:    reservation.LeaseToken,
+		})
+	}
+	return claimed, operation, nil
+}
+
 // RollbackProvingOperation atomically returns every claimed input and its
 // operation to the pre-proof state while clearing the worker leases.
 func (s Service) RollbackProvingOperation(ctx context.Context, operationID string, refs []SubmittedReservationRef) ([]NoteReservation, *PayrollOperation, error) {

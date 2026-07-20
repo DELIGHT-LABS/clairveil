@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -9,6 +11,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -48,6 +51,7 @@ type treasuryNoteFile struct {
 	Denom                string `json:"denom"`
 	Amount               string `json:"amount"`
 	IsSpent              bool   `json:"is_spent,omitempty"`
+	VerifiedUnspent      bool   `json:"verified_unspent,omitempty"`
 	ReservationID        string `json:"reservation_id,omitempty"`
 }
 
@@ -1041,6 +1045,10 @@ func treasuryNotesFromListNotes(notes listNotesFile, denom string, ownerKeyID st
 			NullifierLookupKeyID: strings.TrimSpace(lookupKeyID),
 			Denom:                strings.TrimSpace(denom),
 			Amount:               amount,
+			// list-notes labels a note spendable only after its nullifier lookup
+			// has explicitly confirmed it is unspent. Preserve that provenance in
+			// the durable payroll input instead of falling back to the zero value.
+			VerifiedUnspent: true,
 		})
 	}
 	return out
@@ -1203,17 +1211,10 @@ func settleTransferBatchItem(ctx context.Context, service privacyreservation.Ser
 		return nil, err
 	}
 	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(item.InputNotes))
-	provingRefs := make([]privacyreservation.SubmittedReservationRef, 0, len(item.InputNotes))
-	submissionRefs := make([]privacyreservation.SubmittedReservationRef, 0, len(item.InputNotes))
-	rollbackRequired := true
-	defer func() {
-		if !rollbackRequired || len(provingRefs) == 0 {
-			return
-		}
-		if rollbackErr := rollbackProvingRefs(ctx, service, provingRefs); rollbackErr != nil {
-			runErr = errors.Join(runErr, rollbackErr)
-		}
-	}()
+	reservationIDs := make([]string, 0, len(item.InputNotes))
+	hasReserved := false
+	provingCount := 0
+	proofReadyCount := 0
 	for _, note := range item.InputNotes {
 		reservationID := note.ReservationID
 		if reservationID == "" {
@@ -1223,67 +1224,127 @@ func settleTransferBatchItem(ctx context.Context, service privacyreservation.Ser
 		if err != nil {
 			return nil, err
 		}
-		switch reservation.Status {
-		case privacyreservation.StatusConfirmedSpent:
-			refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservationID})
-		case privacyreservation.StatusReserved:
-			lease, err := service.AcquireLeaseForStatus(ctx, reservationID, leaseOwner, privacyreservation.StatusReserved, leaseTTL)
-			if err != nil {
-				return nil, err
-			}
-			if _, err := service.TransitionWithLease(ctx, reservationID, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving); err != nil {
-				return nil, err
-			}
-			ref := privacyreservation.SubmittedReservationRef{ReservationID: reservationID, LeaseToken: lease.Token}
-			refs = append(refs, ref)
-			provingRefs = append(provingRefs, ref)
-		case privacyreservation.StatusProving:
-			lease, err := service.AcquireLeaseForStatus(ctx, reservationID, leaseOwner, privacyreservation.StatusProving, leaseTTL)
-			if err != nil {
-				return nil, err
-			}
-			ref := privacyreservation.SubmittedReservationRef{ReservationID: reservationID, LeaseToken: lease.Token}
-			refs = append(refs, ref)
-			provingRefs = append(provingRefs, ref)
-		case privacyreservation.StatusProofReady:
-			lease, err := service.AcquireLeaseForStatus(ctx, reservationID, leaseOwner, privacyreservation.StatusProofReady, leaseTTL)
-			if err != nil {
-				return nil, err
-			}
-			ref := privacyreservation.SubmittedReservationRef{ReservationID: reservationID, LeaseToken: lease.Token}
-			refs = append(refs, ref)
-			submissionRefs = append(submissionRefs, ref)
-		case privacyreservation.StatusSubmitted, privacyreservation.StatusUnknown:
-			refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservationID})
-		default:
+		if reservation.Status != privacyreservation.StatusReserved &&
+			reservation.Status != privacyreservation.StatusProving &&
+			reservation.Status != privacyreservation.StatusProofReady &&
+			reservation.Status != privacyreservation.StatusSubmitted &&
+			reservation.Status != privacyreservation.StatusUnknown &&
+			reservation.Status != privacyreservation.StatusConfirmedSpent {
 			return nil, fmt.Errorf("reservation %s has status %s; settle-transfer-batch can only resume Reserved, Proving, ProofReady, Submitted, Unknown, or ConfirmedSpent", reservationID, reservation.Status)
 		}
+		hasReserved = hasReserved || reservation.Status == privacyreservation.StatusReserved
+		if reservation.Status == privacyreservation.StatusProving {
+			provingCount++
+		}
+		if reservation.Status == privacyreservation.StatusProofReady {
+			proofReadyCount++
+		}
+		reservationIDs = append(reservationIDs, reservationID)
+		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservationID})
 	}
 	if len(refs) == 0 {
 		return nil, nil
 	}
+	var provingRefs []privacyreservation.SubmittedReservationRef
+	rollbackRequired := false
+	if hasReserved {
+		if provingCount > 0 || proofReadyCount > 0 {
+			return nil, fmt.Errorf("operation %s has mixed Reserved and in-flight reservations; wait for the active worker or reconcile the recorded state", item.OperationID)
+		}
+		provingRefs, _, err = service.BeginProvingOperation(ctx, item.OperationID, reservationIDs, leaseOwner, leaseTTL)
+		if err != nil {
+			return nil, err
+		}
+		rollbackRequired = true
+		defer func() {
+			if !rollbackRequired {
+				return
+			}
+			if _, _, rollbackErr := service.RollbackProvingOperation(ctx, item.OperationID, provingRefs); rollbackErr != nil {
+				runErr = errors.Join(runErr, rollbackErr)
+			}
+		}()
+	} else if provingCount > 0 {
+		if provingCount != len(refs) {
+			return nil, fmt.Errorf("operation %s has mixed Proving and post-proof reservations; wait for the active proof worker or reconcile the recorded state", item.OperationID)
+		}
+		provingRefs, _, err = service.ReclaimExpiredOperation(ctx, item.OperationID, reservationIDs, privacyreservation.StatusProving, leaseOwner, leaseTTL)
+		if err != nil {
+			return nil, fmt.Errorf("reclaim expired proving operation %s: %w", item.OperationID, err)
+		}
+	}
+	if proofReadyCount > 0 && provingCount == 0 && !hasReserved {
+		if proofReadyCount != len(refs) {
+			return nil, fmt.Errorf("operation %s has mixed ProofReady and post-broadcast reservations; reconcile the recorded state", item.OperationID)
+		}
+		provingRefs, _, err = service.ReclaimExpiredOperation(ctx, item.OperationID, reservationIDs, privacyreservation.StatusProofReady, leaseOwner, leaseTTL)
+		if err != nil {
+			return nil, fmt.Errorf("reclaim expired proof-ready operation %s: %w", item.OperationID, err)
+		}
+	}
 	if len(provingRefs) > 0 {
-		if _, _, err := service.MarkProofReadyBatch(ctx, provingRefs, privacyreservation.ProofReadyOperationUpdate{
-			OperationID:                      item.OperationID,
-			ExpectedOutputCommitment:         evidence.OutputCommitment,
-			ExpectedDisclosureDigest:         evidence.AuditDisclosureDigest,
-			ExpectedUserDisclosureDigest:     evidence.UserDisclosureDigest,
-			ExpectedAuditDisclosureDigest:    evidence.AuditDisclosureDigest,
-			ExpectedSelfViewDisclosureDigest: evidence.SelfViewDisclosureDigest,
+		if proofReadyCount == 0 {
+			if _, _, err := service.MarkProofReadyBatch(ctx, provingRefs, privacyreservation.ProofReadyOperationUpdate{
+				OperationID:                      item.OperationID,
+				PayloadHash:                      settlementPayloadHash(item, evidence, txItemIndex, itemIndex, tx),
+				ExpectedOutputCommitment:         evidence.OutputCommitment,
+				ExpectedDisclosureDigest:         evidence.AuditDisclosureDigest,
+				ExpectedUserDisclosureDigest:     evidence.UserDisclosureDigest,
+				ExpectedAuditDisclosureDigest:    evidence.AuditDisclosureDigest,
+				ExpectedSelfViewDisclosureDigest: evidence.SelfViewDisclosureDigest,
+			}); err != nil {
+				return nil, err
+			}
+		}
+		rollbackRequired = false
+		if _, _, err := service.MarkBroadcastAttempting(ctx, provingRefs, []string{item.OperationID}, privacyreservation.BroadcastAttemptStart{
+			Reason: "transfer-batch settlement broadcast recorded",
+			TxHash: tx.TxHash,
 		}); err != nil {
 			return nil, err
 		}
-		submissionRefs = append(submissionRefs, provingRefs...)
-		rollbackRequired = false
-	}
-	if len(submissionRefs) > 0 {
-		if _, _, err := service.MarkSubmittedBatch(ctx, submissionRefs, []string{item.OperationID}, privacyreservation.SubmittedReservationUpdate{
+		if _, _, err := service.MarkSubmittedBatch(ctx, provingRefs, []string{item.OperationID}, privacyreservation.SubmittedReservationUpdate{
 			TxHash: tx.TxHash,
 		}); err != nil {
-			return nil, errors.Join(err, clearSettlementLeases(ctx, service, submissionRefs))
+			return nil, err
 		}
 	}
 	return reconcileSettlementRefs(ctx, service, item.OperationID, refs, evidence)
+}
+
+// settlementPayloadHash binds the external transfer-batch receipt to the
+// ProofReady record when this command is used to durably settle a transaction
+// broadcast outside the payroll worker.
+func settlementPayloadHash(item privacypayroll.PayrollPlanItem, evidence privacyreservation.OperationEvidence, txItemIndex int, itemIndex int, tx transferBatchResultFile) string {
+	reservationIDs := make([]string, 0, len(item.InputNotes))
+	for _, note := range item.InputNotes {
+		reservationID := note.ReservationID
+		if reservationID == "" {
+			reservationID = privacypayroll.ReservationIDForInputNote(item.OperationID, note.NoteID)
+		}
+		reservationIDs = append(reservationIDs, reservationID)
+	}
+	sort.Strings(reservationIDs)
+	record := struct {
+		Version        string                               `json:"version"`
+		OperationID    string                               `json:"operation_id"`
+		TxHash         string                               `json:"tx_hash"`
+		TxItemIndex    int                                  `json:"tx_item_index"`
+		ItemIndex      int                                  `json:"item_index"`
+		ReservationIDs []string                             `json:"reservation_ids"`
+		Evidence       privacyreservation.OperationEvidence `json:"evidence"`
+	}{
+		Version:        "clairveil-settlement-receipt-v1",
+		OperationID:    item.OperationID,
+		TxHash:         tx.TxHash,
+		TxItemIndex:    txItemIndex,
+		ItemIndex:      itemIndex,
+		ReservationIDs: reservationIDs,
+		Evidence:       evidence,
+	}
+	encoded, _ := json.Marshal(record)
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:])
 }
 
 func reconcileSettlementRefs(ctx context.Context, service privacyreservation.Service, operationID string, refs []privacyreservation.SubmittedReservationRef, evidence privacyreservation.OperationEvidence) ([]reconcileItemReport, error) {
@@ -1381,33 +1442,6 @@ func normalizeSettlementEvidenceHex(value string) string {
 	value = strings.TrimSpace(strings.ToLower(value))
 	value = strings.TrimPrefix(value, "0x")
 	return value
-}
-
-func rollbackProvingRefs(ctx context.Context, service privacyreservation.Service, refs []privacyreservation.SubmittedReservationRef) error {
-	var rollbackErr error
-	for _, ref := range refs {
-		if ref.ReservationID == "" || ref.LeaseToken == "" {
-			continue
-		}
-		_, err := service.TransitionWithLease(ctx, ref.ReservationID, ref.LeaseToken, privacyreservation.StatusProving, privacyreservation.StatusReserved)
-		if err != nil && !errors.Is(err, privacyreservation.ErrCompareAndSetFailed) && !errors.Is(err, privacyreservation.ErrLeaseMismatch) {
-			rollbackErr = errors.Join(rollbackErr, err)
-		}
-	}
-	return rollbackErr
-}
-
-func clearSettlementLeases(ctx context.Context, service privacyreservation.Service, refs []privacyreservation.SubmittedReservationRef) error {
-	var clearErr error
-	for _, ref := range refs {
-		if ref.ReservationID == "" || ref.LeaseToken == "" {
-			continue
-		}
-		if _, err := service.ClearLease(ctx, ref.ReservationID, ref.LeaseToken); err != nil && !errors.Is(err, privacyreservation.ErrLeaseUnavailable) && !errors.Is(err, privacyreservation.ErrLeaseMismatch) {
-			clearErr = errors.Join(clearErr, err)
-		}
-	}
-	return clearErr
 }
 
 func payrollItemCoinString(item privacypayroll.PayrollPlanItem) string {
@@ -1559,6 +1593,7 @@ func (n treasuryNoteFile) toSDK() (privacypayroll.TreasuryNote, error) {
 		Denom:                n.Denom,
 		Amount:               amount,
 		IsSpent:              n.IsSpent,
+		VerifiedUnspent:      n.VerifiedUnspent,
 		ReservationID:        n.ReservationID,
 	}, nil
 }

@@ -28,6 +28,11 @@ type Store interface {
 	AcquireReservationLease(ctx context.Context, reservationID string, owner string, leaseToken string, leaseUntil time.Time, now time.Time) (*NoteReservation, error)
 	AcquireReservationLeaseForStatus(ctx context.Context, reservationID string, owner string, leaseToken string, requiredStatus ReservationStatus, leaseUntil time.Time, now time.Time) (*NoteReservation, error)
 	BeginProvingOperation(ctx context.Context, operationID string, reservations []SubmittedReservationRef, leaseUntil time.Time, now time.Time) ([]NoteReservation, *PayrollOperation, error)
+	// ReclaimExpiredOperation atomically replaces the expired leases for the
+	// complete input set in the required pre-submission state. It must reject a
+	// live lease or a partial operation so an external receipt cannot race an
+	// active proof worker or broadcaster.
+	ReclaimExpiredOperation(ctx context.Context, operationID string, reservations []SubmittedReservationRef, requiredStatus ReservationStatus, leaseUntil time.Time, now time.Time) ([]NoteReservation, *PayrollOperation, error)
 	RollbackProvingOperation(ctx context.Context, operationID string, reservations []SubmittedReservationRef, now time.Time) ([]NoteReservation, *PayrollOperation, error)
 	HeartbeatReservationLease(ctx context.Context, reservationID string, leaseOwner string, leaseToken string, leaseUntil time.Time, now time.Time) (*NoteReservation, error)
 	HeartbeatReservationLeaseForStatus(ctx context.Context, reservationID string, leaseOwner string, leaseToken string, requiredStatus ReservationStatus, leaseUntil time.Time, now time.Time) (*NoteReservation, error)

@@ -91,6 +91,7 @@ func TestBuildInputFromNotesCommandImportsSpendableNotes(t *testing.T) {
 	require.Equal(t, "lookup-70", payload.TreasuryNotes[0].NullifierLookupKey)
 	require.Equal(t, "owner-a", payload.TreasuryNotes[0].OwnerKeyID)
 	require.Equal(t, "lookup-v1", payload.TreasuryNotes[0].NullifierLookupKeyID)
+	require.True(t, payload.TreasuryNotes[0].VerifiedUnspent)
 }
 
 func TestReadListNotesFileUsesCLITransactionHashField(t *testing.T) {
@@ -598,6 +599,60 @@ func TestSettleTransferBatchResumesProofReadyAndSubmittedState(t *testing.T) {
 	}
 }
 
+func TestSettleTransferBatchReclaimsExpiredProvingState(t *testing.T) {
+	dir := t.TempDir()
+	inputPath := filepath.Join(dir, "payroll.json")
+	planPath := filepath.Join(dir, "plan.json")
+	confirmedPath := filepath.Join(dir, "confirmed-plan.json")
+	statePath := filepath.Join(dir, "reservation-state.json")
+	txPath := filepath.Join(dir, "transfer-batch.json")
+	beforePath := filepath.Join(dir, "recipient-before.json")
+	afterPath := filepath.Join(dir, "recipient-after.json")
+	settlePath := filepath.Join(dir, "settle.json")
+	payload := validPrepareNotesPayload()
+	payload.TreasuryNotes[0].Amount = "70"
+	writePayrollInput(t, inputPath, payload)
+	require.NoError(t, runPlan([]string{"-input", inputPath, "-out", planPath}))
+	require.NoError(t, runRun([]string{"-plan", planPath, "-state", statePath, "-out", confirmedPath}))
+
+	confirmedBytes, err := os.ReadFile(confirmedPath)
+	require.NoError(t, err)
+	var confirmed privacypayroll.PayrollPlan
+	require.NoError(t, json.Unmarshal(confirmedBytes, &confirmed))
+	tx := settlementTxResultForItem("LIVE_TX_HASH", confirmed.Items[0], "settle-commitment", "settle-audit")
+	writeJSONForTest(t, txPath, tx)
+	markConfirmedPlanProvingForSettlement(t, statePath, confirmed)
+	writeJSONForTest(t, beforePath, listNotesFile{Notes: []listNotesFileNote{}})
+	writeJSONForTest(t, afterPath, listNotesFile{Notes: []listNotesFileNote{{Index: 1, Status: "spendable", Amount: "70", Nullifier: "recipient-note", TxHash: "LIVE_TX_HASH"}}})
+
+	require.NoError(t, runSettleTransferBatch([]string{
+		"-plan", planPath,
+		"-state", statePath,
+		"-tx", txPath,
+		"-recipient-before", beforePath,
+		"-recipient-after", afterPath,
+		"-out", settlePath,
+	}))
+
+	settleBytes, err := os.ReadFile(settlePath)
+	require.NoError(t, err)
+	var settle settleTransferBatchReport
+	require.NoError(t, json.Unmarshal(settleBytes, &settle))
+	require.Equal(t, 2, settle.TotalReservations)
+	require.Equal(t, 0, settle.RequiresReview)
+
+	store, err := privacyreservation.OpenDurableFileStore(statePath)
+	require.NoError(t, err)
+	for _, note := range confirmed.Items[0].InputNotes {
+		reservation, err := store.GetReservation(context.Background(), note.ReservationID)
+		require.NoError(t, err)
+		require.Equal(t, privacyreservation.StatusConfirmedSpent, reservation.Status)
+	}
+	operation, err := store.GetOperation(context.Background(), confirmed.Items[0].OperationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.OperationStatusSucceeded, operation.Status)
+}
+
 func TestSettleTransferBatchRollsBackProvingOnProofReadyFailure(t *testing.T) {
 	dir := t.TempDir()
 	inputPath := filepath.Join(dir, "payroll.json")
@@ -671,6 +726,7 @@ func validPrepareNotesPayload() prepareNotesFile {
 				NullifierLookupKey: "lookup-large",
 				Denom:              "uclair",
 				Amount:             "100",
+				VerifiedUnspent:    true,
 			},
 			{
 				NoteID:             "zero",
@@ -678,6 +734,7 @@ func validPrepareNotesPayload() prepareNotesFile {
 				NullifierLookupKey: "lookup-zero",
 				Denom:              "uclair",
 				Amount:             "0",
+				VerifiedUnspent:    true,
 			},
 		},
 	}
@@ -703,19 +760,25 @@ func markConfirmedPlanSubmitted(t *testing.T, statePath string, plan privacypayr
 	now := time.Date(2026, 7, 7, 12, 0, 0, 0, time.UTC)
 	svc := privacyreservation.Service{Store: store, Now: func() time.Time { return now }}
 
-	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(plan.Items[0].InputNotes))
+	reservationIDs := make([]string, 0, len(plan.Items[0].InputNotes))
 	for _, note := range plan.Items[0].InputNotes {
-		lease, err := svc.AcquireLeaseForStatus(ctx, note.ReservationID, "test-broadcaster", privacyreservation.StatusReserved, time.Minute)
-		require.NoError(t, err)
-		_, err = svc.TransitionWithLease(ctx, note.ReservationID, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving)
-		require.NoError(t, err)
-		_, err = svc.TransitionWithLease(ctx, note.ReservationID, lease.Token, privacyreservation.StatusProving, privacyreservation.StatusProofReady)
-		require.NoError(t, err)
-		refs = append(refs, privacyreservation.SubmittedReservationRef{
-			ReservationID: note.ReservationID,
-			LeaseToken:    lease.Token,
-		})
+		reservationIDs = append(reservationIDs, note.ReservationID)
 	}
+	refs, _, err := svc.BeginProvingOperation(ctx, plan.Items[0].OperationID, reservationIDs, "test-broadcaster", time.Minute)
+	require.NoError(t, err)
+	_, _, err = svc.MarkProofReadyBatch(ctx, refs, privacyreservation.ProofReadyOperationUpdate{
+		OperationID: plan.Items[0].OperationID,
+		PayloadHash: "test-submitted-payload",
+	})
+	require.NoError(t, err)
+	_, _, err = svc.MarkBroadcastAttempting(ctx, refs, []string{plan.Items[0].OperationID}, privacyreservation.BroadcastAttemptStart{
+		Reason:          "test broadcast",
+		TxHash:          "txhash",
+		TxBytesHash:     "tx-bytes",
+		SignDocHash:     "sign-doc",
+		AccountSequence: 7,
+	})
+	require.NoError(t, err)
 	_, _, err = svc.MarkSubmittedBatch(ctx, refs, nil, privacyreservation.SubmittedReservationUpdate{
 		TxHash:          "txhash",
 		TxBytesHash:     "tx-bytes",
@@ -755,19 +818,15 @@ func markConfirmedPlanProofReadyForSettlement(t *testing.T, statePath string, pl
 	svc := privacyreservation.Service{Store: store, Now: func() time.Time { return now }}
 	item := plan.Items[0]
 	txItem := tx.Items[0]
-	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(item.InputNotes))
+	reservationIDs := make([]string, 0, len(item.InputNotes))
 	for _, note := range item.InputNotes {
-		lease, err := svc.AcquireLeaseForStatus(ctx, note.ReservationID, "test-proof-worker", privacyreservation.StatusReserved, time.Minute)
-		require.NoError(t, err)
-		_, err = svc.TransitionWithLease(ctx, note.ReservationID, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving)
-		require.NoError(t, err)
-		refs = append(refs, privacyreservation.SubmittedReservationRef{
-			ReservationID: note.ReservationID,
-			LeaseToken:    lease.Token,
-		})
+		reservationIDs = append(reservationIDs, note.ReservationID)
 	}
+	refs, _, err := svc.BeginProvingOperation(ctx, item.OperationID, reservationIDs, "test-proof-worker", time.Minute)
+	require.NoError(t, err)
 	_, _, err = svc.MarkProofReadyBatch(ctx, refs, privacyreservation.ProofReadyOperationUpdate{
 		OperationID:                      item.OperationID,
+		PayloadHash:                      "test-settlement-payload",
 		ExpectedOutputCommitment:         txItem.OutputCommitment,
 		ExpectedDisclosureDigest:         txItem.AuditDisclosureDigest,
 		ExpectedAuditDisclosureDigest:    txItem.AuditDisclosureDigest,
@@ -775,7 +834,32 @@ func markConfirmedPlanProofReadyForSettlement(t *testing.T, statePath string, pl
 	})
 	require.NoError(t, err)
 	if submit {
+		_, _, err = svc.MarkBroadcastAttempting(ctx, refs, []string{item.OperationID}, privacyreservation.BroadcastAttemptStart{
+			Reason: "test broadcast",
+			TxHash: tx.TxHash,
+		})
+		require.NoError(t, err)
 		_, _, err = svc.MarkSubmittedBatch(ctx, refs, []string{item.OperationID}, privacyreservation.SubmittedReservationUpdate{TxHash: tx.TxHash})
 		require.NoError(t, err)
 	}
+}
+
+func markConfirmedPlanProvingForSettlement(t *testing.T, statePath string, plan privacypayroll.PayrollPlan) {
+	t.Helper()
+	ctx := context.Background()
+	store, err := privacyreservation.OpenDurableFileStore(statePath)
+	require.NoError(t, err)
+	service := privacyreservation.Service{
+		Store: store,
+		Now: func() time.Time {
+			return time.Now().UTC().Add(-2 * time.Minute)
+		},
+	}
+	item := plan.Items[0]
+	reservationIDs := make([]string, 0, len(item.InputNotes))
+	for _, note := range item.InputNotes {
+		reservationIDs = append(reservationIDs, note.ReservationID)
+	}
+	_, _, err = service.BeginProvingOperation(ctx, item.OperationID, reservationIDs, "test-proof-worker", time.Minute)
+	require.NoError(t, err)
 }

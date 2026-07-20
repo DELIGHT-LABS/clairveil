@@ -1344,6 +1344,59 @@ func TestServiceBeginAndRollbackProvingOperationAreAtomic(t *testing.T) {
 	}
 }
 
+func TestServiceReclaimExpiredOperationRequiresAllExpiredLeases(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStore()
+	now := fixedNow()
+	svc := Service{Store: store, Now: func() time.Time { return now }}
+	second := testReservation("r2", "note-b", "op-a")
+	second.NullifierLookupKey = "lookup-b"
+	if _, err := svc.ReserveBatch(ctx, []ReserveInput{
+		{
+			Reservation: testReservation("r1", "note-a", "op-a"),
+			Operation:   &PayrollOperation{OperationID: "op-a", Status: OperationStatusPlanned},
+		},
+		{Reservation: second},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	original, _, err := svc.BeginProvingOperation(ctx, "op-a", []string{"r1", "r2"}, "proof-worker", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(30 * time.Second)
+	if _, _, err := svc.ReclaimExpiredOperation(ctx, "op-a", []string{"r1", "r2"}, StatusProving, "settle-worker", time.Minute); !errors.Is(err, ErrLeaseUnavailable) {
+		t.Fatalf("expected live proving leases to reject reclamation, got %v", err)
+	}
+
+	now = now.Add(31 * time.Second)
+	reclaimed, operation, err := svc.ReclaimExpiredOperation(ctx, "op-a", []string{"r1", "r2"}, StatusProving, "settle-worker", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reclaimed) != 2 || operation.Status != OperationStatusProving {
+		t.Fatalf("unexpected reclaimed proving operation: refs=%+v operation=%+v", reclaimed, operation)
+	}
+	for i, ref := range reclaimed {
+		if ref.LeaseOwner != "settle-worker" || ref.LeaseToken == "" || ref.LeaseToken == original[i].LeaseToken {
+			t.Fatalf("expected replacement proving lease, got %+v", ref)
+		}
+	}
+
+	if _, _, err := svc.MarkProofReadyBatch(ctx, reclaimed, ProofReadyOperationUpdate{OperationID: "op-a", PayloadHash: "payload-a"}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Minute)
+	readyRefs, operation, err := svc.ReclaimExpiredOperation(ctx, "op-a", []string{"r1", "r2"}, StatusProofReady, "settle-worker", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(readyRefs) != 2 || operation.Status != OperationStatusProofReady {
+		t.Fatalf("unexpected reclaimed proof-ready operation: refs=%+v operation=%+v", readyRefs, operation)
+	}
+}
+
 func TestServiceMarkProofReadyBatchIsAtomic(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemoryStore()

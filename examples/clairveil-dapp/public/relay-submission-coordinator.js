@@ -10,28 +10,48 @@ export function createRelaySubmissionCoordinator({ maxEntries = 256 } = {}) {
   }
 
   return {
-    async run(key, submit) {
-      const normalizedKey = String(key || "").trim().toLowerCase();
-      if (!normalizedKey) {
-        throw new Error("relay submission idempotency key is required");
+    async run(lockKey, idempotencyKey, submit) {
+      // Keep the legacy two-argument form usable for callers that only need
+      // one idempotency key. Relay withdrawal uses the three-argument form:
+      // the lock is the full input-nullifier set and the idempotency key is
+      // the immutable payload hash.
+      if (typeof idempotencyKey === "function" && submit === undefined) {
+        submit = idempotencyKey;
+        idempotencyKey = lockKey;
+      }
+      const normalizedLockKey = String(lockKey || "").trim().toLowerCase();
+      const normalizedIdempotencyKey = String(idempotencyKey || "")
+        .trim()
+        .toLowerCase();
+      if (!normalizedLockKey || !normalizedIdempotencyKey) {
+        throw new Error("relay submission lock and idempotency keys are required");
       }
       if (typeof submit !== "function") {
         throw new Error("relay submission callback is required");
       }
-      const existing = attempts.get(normalizedKey);
-      if (existing) return existing.promise;
+      const existing = attempts.get(normalizedLockKey);
+      if (existing) {
+        if (existing.idempotencyKey !== normalizedIdempotencyKey) {
+          throw new Error("relay input nullifiers already have a submission attempt");
+        }
+        return existing.promise;
+      }
 
       trimCompleted();
       if (attempts.size >= limit) {
         throw new Error("relay submission coordinator capacity is exhausted by in-flight requests");
       }
-      const entry = { settled: false, promise: null };
+      const entry = {
+        idempotencyKey: normalizedIdempotencyKey,
+        settled: false,
+        promise: null,
+      };
       entry.promise = Promise.resolve()
         .then(submit)
         .finally(() => {
           entry.settled = true;
         });
-      attempts.set(normalizedKey, entry);
+      attempts.set(normalizedLockKey, entry);
       return entry.promise;
     },
     has(key) {

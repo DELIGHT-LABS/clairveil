@@ -82,7 +82,7 @@ func TestReferenceDaemonRunOnceIsIdleAfterTerminalState(t *testing.T) {
 	require.Empty(t, second.Items)
 }
 
-func TestReferenceDaemonRollsBackExpiredProvingReservations(t *testing.T) {
+func TestReferenceDaemonMarksExpiredProvingReservationsReplanRequired(t *testing.T) {
 	ctx := context.Background()
 	store := privacyreservation.NewMemoryStore()
 	reservationService := privacyreservation.Service{Store: store, Now: testNow}
@@ -99,7 +99,7 @@ func TestReferenceDaemonRollsBackExpiredProvingReservations(t *testing.T) {
 	require.NoError(t, err)
 	confirmed, err := svc.ConfirmPlan(ctx, *plan)
 	require.NoError(t, err)
-	markPayrollNotesProvingForDaemonTest(t, ctx, reservationService, confirmed.Items[0].InputNotes, "proof-worker-a", time.Minute)
+	markPayrollNotesProvingForDaemonTest(t, ctx, reservationService, confirmed.Items[0].OperationID, confirmed.Items[0].InputNotes, "proof-worker-a", time.Minute)
 	futureNow := func() time.Time { return testNow().Add(2 * time.Minute) }
 
 	daemon := ReferenceDaemon{
@@ -116,14 +116,11 @@ func TestReferenceDaemonRollsBackExpiredProvingReservations(t *testing.T) {
 	for _, note := range confirmed.Items[0].InputNotes {
 		reservation, err := store.GetReservation(ctx, note.ReservationID)
 		require.NoError(t, err)
-		require.Equal(t, privacyreservation.StatusReserved, reservation.Status)
+		require.Equal(t, privacyreservation.StatusReplanRequired, reservation.Status)
 		require.Empty(t, reservation.LeaseOwner)
 		require.Empty(t, reservation.LeaseToken)
 	}
-
-	second, err := daemon.RunOnce(ctx)
+	operation, err := store.GetOperation(ctx, confirmed.Items[0].OperationID)
 	require.NoError(t, err)
-	require.Equal(t, 1, second.ProofReady)
-	require.Equal(t, 1, second.Submitted)
-	require.Equal(t, 2, second.Reconciled)
+	require.Equal(t, privacyreservation.OperationStatusReplanRequired, operation.Status)
 }

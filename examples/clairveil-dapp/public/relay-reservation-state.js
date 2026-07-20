@@ -123,6 +123,13 @@ export function relayPayloadNullifiers(payload = {}) {
   return [...new Set(normalized)];
 }
 
+// Every payload that can spend the same notes must share one submission lock,
+// regardless of its recipient, fee, or payload hash. Sorting also makes the
+// key independent of the input ordering used by the payload producer.
+export function relayPayloadNullifierLockKey(payload = {}) {
+  return relayPayloadNullifiers(payload).sort().join(":");
+}
+
 export async function submitRelayAfterNullifierPreflight({
   payload,
   checkNullifiers,

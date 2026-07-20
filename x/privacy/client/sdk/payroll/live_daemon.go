@@ -11,9 +11,15 @@ import (
 
 var ErrLiveDaemonSkip = errors.New("live daemon operation skipped")
 
+// LiveBroadcastSubmit crosses the external submission boundary. Implementations
+// must return ErrLiveDaemonSkip from PrepareBroadcastProofReady, never from
+// this callback: the daemon records the durable attempt immediately before it
+// invokes the callback.
+type LiveBroadcastSubmit func(context.Context) (*BroadcastResult, error)
+
 type LiveOperationExecutor interface {
 	BuildProofReady(ctx context.Context, group LiveOperationGroup) (privacyreservation.ProofReadyOperationUpdate, string, error)
-	BroadcastProofReady(ctx context.Context, group LiveOperationGroup) (*BroadcastResult, string, error)
+	PrepareBroadcastProofReady(ctx context.Context, group LiveOperationGroup) (LiveBroadcastSubmit, string, error)
 	ScanSubmitted(ctx context.Context, group LiveOperationGroup) (map[string]privacyreservation.OperationEvidence, string, error)
 }
 
@@ -104,33 +110,34 @@ func (d LiveDaemon) processGroup(ctx context.Context, status privacyreservation.
 }
 
 func (d LiveDaemon) buildProofReady(ctx context.Context, group LiveOperationGroup, report *ReferenceDaemonRunReport, ownedProofReadyLeases map[string]string) (runErr error) {
-	leases := make(map[string]string, len(group.Reservations))
-	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(group.Reservations))
+	refs, _, err := d.Reservation.BeginProvingOperation(
+		ctx,
+		group.Operation.OperationID,
+		referenceReservationIDs(group.Reservations),
+		d.leaseOwner(),
+		d.leaseTTL(),
+	)
+	if err != nil {
+		if errors.Is(err, privacyreservation.ErrLeaseUnavailable) || errors.Is(err, privacyreservation.ErrLeaseMismatch) || errors.Is(err, privacyreservation.ErrCompareAndSetFailed) {
+			report.Skipped++
+			report.Items = append(report.Items, liveDaemonItem(group, "skipped", privacyreservation.StatusReserved, group.Operation.Status, false, "reserved lease is owned by another worker"))
+			return nil
+		}
+		return err
+	}
+	leases := make(map[string]string, len(refs))
+	for _, ref := range refs {
+		leases[ref.ReservationID] = ref.LeaseToken
+	}
 	rollbackRequired := true
 	defer func() {
 		if !rollbackRequired || len(refs) == 0 {
 			return
 		}
-		if rollbackErr := rollbackProvingReservations(ctx, d.Reservation, refs); rollbackErr != nil {
+		if _, _, rollbackErr := d.Reservation.RollbackProvingOperation(ctx, group.Operation.OperationID, refs); rollbackErr != nil {
 			runErr = errors.Join(runErr, rollbackErr)
 		}
 	}()
-	for _, reservation := range group.Reservations {
-		lease, err := d.Reservation.AcquireLeaseForStatus(ctx, reservation.ReservationID, d.leaseOwner(), privacyreservation.StatusReserved, d.leaseTTL())
-		if err != nil {
-			if errors.Is(err, privacyreservation.ErrLeaseUnavailable) || errors.Is(err, privacyreservation.ErrLeaseMismatch) || errors.Is(err, privacyreservation.ErrCompareAndSetFailed) {
-				report.Skipped++
-				report.Items = append(report.Items, liveDaemonItem(group, "skipped", privacyreservation.StatusReserved, group.Operation.Status, false, "reserved lease is owned by another worker"))
-				return nil
-			}
-			return err
-		}
-		leases[reservation.ReservationID] = lease.Token
-		if _, err := d.Reservation.TransitionWithLease(ctx, reservation.ReservationID, lease.Owner, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving); err != nil {
-			return err
-		}
-		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseOwner: lease.Owner, LeaseToken: lease.Token})
-	}
 
 	proofCtx, stopHeartbeat := (ProofWorker{Reservation: d.Reservation}).startProvingHeartbeat(ctx, leases, reservationIDsFromRefs(refs), d.leaseTTL(), d.leaseOwner())
 	defer func() {
@@ -179,43 +186,24 @@ func (d LiveDaemon) buildProofReady(ctx context.Context, group LiveOperationGrou
 }
 
 func (d LiveDaemon) rollbackExpiredProving(ctx context.Context, group LiveOperationGroup, report *ReferenceDaemonRunReport) error {
-	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(group.Reservations))
-	for _, reservation := range group.Reservations {
-		lease, err := d.Reservation.AcquireLeaseForStatus(ctx, reservation.ReservationID, d.leaseOwner(), privacyreservation.StatusProving, d.leaseTTL())
-		if err != nil {
-			if clearErr := clearAcquiredSubmissionLeases(ctx, d.Reservation, refs); clearErr != nil {
-				err = errors.Join(err, clearErr)
-			}
-			if errors.Is(err, privacyreservation.ErrLeaseUnavailable) || errors.Is(err, privacyreservation.ErrLeaseMismatch) || errors.Is(err, privacyreservation.ErrCompareAndSetFailed) {
-				report.Skipped++
-				report.Items = append(report.Items, liveDaemonItem(group, "skipped", privacyreservation.StatusProving, group.Operation.Status, false, "proving lease is owned by another worker"))
-				return nil
-			}
-			return err
+	updated, err := d.Reservation.RecoverOperationAfterLeaseExpiry(
+		ctx,
+		group.Operation.OperationID,
+		referenceReservationIDs(group.Reservations),
+		privacyreservation.StatusProving,
+		privacyreservation.StatusReplanRequired,
+	)
+	if err != nil {
+		if errors.Is(err, privacyreservation.ErrLeaseUnavailable) || errors.Is(err, privacyreservation.ErrLeaseMismatch) || errors.Is(err, privacyreservation.ErrCompareAndSetFailed) {
+			report.Skipped++
+			report.Items = append(report.Items, liveDaemonItem(group, "skipped", privacyreservation.StatusProving, group.Operation.Status, false, "proving lease is owned by another worker"))
+			return nil
 		}
-		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseOwner: lease.Owner, LeaseToken: lease.Token})
-	}
-	for _, ref := range refs {
-		if _, err := d.Reservation.TransitionWithLease(ctx, ref.ReservationID, ref.LeaseOwner, ref.LeaseToken, privacyreservation.StatusProving, privacyreservation.StatusReserved); err != nil {
-			return err
-		}
+		return err
 	}
 	report.Skipped++
-	report.Items = append(report.Items, liveDaemonItem(group, "rolled-back", privacyreservation.StatusReserved, group.Operation.Status, false, "expired proving reservations returned to reserved"))
+	report.Items = append(report.Items, liveDaemonItem(LiveOperationGroup{Operation: group.Operation, Reservations: updated}, "replan-required", privacyreservation.StatusReplanRequired, privacyreservation.OperationStatusReplanRequired, false, "expired proving reservations require a new plan"))
 	return nil
-}
-
-func rollbackProvingReservations(ctx context.Context, service privacyreservation.Service, refs []privacyreservation.SubmittedReservationRef) error {
-	var rollbackErr error
-	for _, ref := range refs {
-		_, err := service.TransitionWithLease(ctx, ref.ReservationID, ref.LeaseOwner, ref.LeaseToken, privacyreservation.StatusProving, privacyreservation.StatusReserved)
-		if err != nil {
-			if !errors.Is(err, privacyreservation.ErrCompareAndSetFailed) && !errors.Is(err, privacyreservation.ErrLeaseMismatch) {
-				rollbackErr = errors.Join(rollbackErr, err)
-			}
-		}
-	}
-	return rollbackErr
 }
 
 func clearAcquiredSubmissionLeases(ctx context.Context, service privacyreservation.Service, refs []privacyreservation.SubmittedReservationRef) error {
@@ -264,18 +252,28 @@ func (d LiveDaemon) broadcastProofReady(ctx context.Context, group LiveOperation
 			ownedProofReadyLeases[reservation.ReservationID] = lease.Token
 		}
 	}
-	var reason string
+	submit, reason, err := d.Executor.PrepareBroadcastProofReady(ctx, group)
+	if err != nil {
+		if errors.Is(err, ErrLiveDaemonSkip) {
+			report.Skipped++
+			report.Items = append(report.Items, liveDaemonItem(group, "skipped", privacyreservation.StatusProofReady, group.Operation.Status, false, firstNonEmptyString(reason, err.Error())))
+			return nil
+		}
+		return err
+	}
+	if submit == nil {
+		return fmt.Errorf("live executor returned nil broadcast submission")
+	}
 	broadcast, err := broadcastWithSubmissionLeaseHeartbeat(ctx, d.Reservation, refs, d.leaseTTL(), func(broadcastCtx context.Context, _ submissionLeaseCommit, _ submissionLeaseRefresh) (*BroadcastResult, error) {
-		var broadcastErr error
-		var result *BroadcastResult
-		result, reason, broadcastErr = d.Executor.BroadcastProofReady(broadcastCtx, group)
-		return result, broadcastErr
+		if _, _, markErr := d.Reservation.MarkBroadcastAttempting(broadcastCtx, refs, []string{group.Operation.OperationID}, privacyreservation.BroadcastAttemptStart{
+			Reason: "live payroll broadcast boundary crossed",
+		}); markErr != nil {
+			return nil, markErr
+		}
+		return submit(broadcastCtx)
 	})
 	if err != nil {
 		if errors.Is(err, ErrLiveDaemonSkip) {
-			if clearErr := clearAcquiredSubmissionLeases(ctx, d.Reservation, acquiredRefs); clearErr != nil {
-				return errors.Join(err, clearErr)
-			}
 			report.Skipped++
 			report.Items = append(report.Items, liveDaemonItem(group, "skipped", privacyreservation.StatusProofReady, group.Operation.Status, false, firstNonEmptyString(reason, err.Error())))
 			return nil

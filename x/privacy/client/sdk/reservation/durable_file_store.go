@@ -310,6 +310,23 @@ func (s *DurableFileStore) BeginProvingOperation(ctx context.Context, operationI
 	return updatedReservations, updatedOperation, nil
 }
 
+func (s *DurableFileStore) ReclaimExpiredOperation(ctx context.Context, operationID string, reservations []SubmittedReservationRef, requiredStatus ReservationStatus, leaseUntil time.Time, now time.Time) ([]NoteReservation, *PayrollOperation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(ctx); err != nil {
+		return nil, nil, err
+	}
+	before := s.snapshotLocked()
+	updatedReservations, updatedOperation, err := s.memory.ReclaimExpiredOperation(ctx, operationID, reservations, requiredStatus, leaseUntil, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.persistMutationLocked(ctx, before); err != nil {
+		return nil, nil, err
+	}
+	return updatedReservations, updatedOperation, nil
+}
+
 func (s *DurableFileStore) RollbackProvingOperation(ctx context.Context, operationID string, reservations []SubmittedReservationRef, now time.Time) ([]NoteReservation, *PayrollOperation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -11,6 +11,7 @@ import {
   isRelaySnapshotStructurallyReady,
   parsePersistedRelayWithdrawState,
   relayBroadcastTxHash,
+  relayPayloadNullifierLockKey,
   relayReservationStatus,
   relayPayloadNullifiers,
   relaySnapshotExpiresAtUnix,
@@ -26,8 +27,12 @@ import {
 
 test("relay submission coordinator coalesces concurrent and repeated payload attempts", async () => {
   const coordinator = createRelaySubmissionCoordinator();
-  const payload = { payload_hash: "ab".repeat(32) };
-  const key = relaySubmissionIdempotencyKey(payload);
+  const payload = {
+    payload_hash: "ab".repeat(32),
+    nullifier_hex: "cd".repeat(32),
+  };
+  const lockKey = relayPayloadNullifierLockKey(payload);
+  const idempotencyKey = relaySubmissionIdempotencyKey(payload);
   let calls = 0;
   let release;
   const gate = new Promise((resolve) => {
@@ -39,15 +44,79 @@ test("relay submission coordinator coalesces concurrent and repeated payload att
     return { txHash: "tx-a" };
   };
 
-  const first = coordinator.run(key, submit);
-  const second = coordinator.run(key, submit);
+  const first = coordinator.run(lockKey, idempotencyKey, submit);
+  const second = coordinator.run(lockKey, idempotencyKey, submit);
   await Promise.resolve();
   assert.equal(calls, 1);
   release();
   assert.deepEqual(await first, { txHash: "tx-a" });
   assert.deepEqual(await second, { txHash: "tx-a" });
-  assert.deepEqual(await coordinator.run(key, submit), { txHash: "tx-a" });
+  assert.deepEqual(await coordinator.run(lockKey, idempotencyKey, submit), { txHash: "tx-a" });
   assert.equal(calls, 1);
+});
+
+test("relay submission lock key canonicalizes the complete input set", () => {
+  const first = "aa".repeat(32);
+  const second = "bb".repeat(32);
+  const lockKey = relayPayloadNullifierLockKey({
+    inputs: [
+      { nullifier_hex: `0x${second.toUpperCase()}` },
+      { nullifier_hex: first },
+    ],
+  });
+
+  assert.equal(lockKey, `${first}:${second}`);
+});
+
+test("relay submission locks same inputs before nullifier preflight and rejects a different payload", async () => {
+  const coordinator = createRelaySubmissionCoordinator();
+  const nullifier = "cd".repeat(32);
+  const firstPayload = {
+    payload_hash: "aa".repeat(32),
+    nullifier_hex: nullifier,
+  };
+  const conflictingPayload = {
+    payload_hash: "bb".repeat(32),
+    nullifier_hex: nullifier,
+  };
+  let checks = 0;
+  let submissions = 0;
+  let release;
+  let startedSubmit;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const submitStarted = new Promise((resolve) => {
+    startedSubmit = resolve;
+  });
+  const attempt = (payload) => coordinator.run(
+    relayPayloadNullifierLockKey(payload),
+    relaySubmissionIdempotencyKey(payload),
+    () => submitRelayAfterNullifierPreflight({
+      payload,
+      checkNullifiers: async (nullifiers) => {
+        checks += 1;
+        return new Map(nullifiers.map((value) => [value, false]));
+      },
+      submit: async () => {
+        submissions += 1;
+        startedSubmit();
+        await gate;
+        return { txHash: "tx-a" };
+      },
+    }),
+  );
+
+  const first = attempt(firstPayload);
+  await submitStarted;
+  await assert.rejects(
+    () => attempt(conflictingPayload),
+    /input nullifiers already have a submission attempt/,
+  );
+  assert.equal(checks, 1);
+  assert.equal(submissions, 1);
+  release();
+  assert.deepEqual(await first, { txHash: "tx-a" });
 });
 
 test("relay submission coordinator never evicts an in-flight attempt", async () => {
@@ -56,20 +125,20 @@ test("relay submission coordinator never evicts an in-flight attempt", async () 
   const gate = new Promise((resolve) => {
     release = resolve;
   });
-  const first = coordinator.run("aa".repeat(32), async () => {
+  const first = coordinator.run("lock-a", "aa".repeat(32), async () => {
     await gate;
     return "first";
   });
   await Promise.resolve();
 
   await assert.rejects(
-    () => coordinator.run("bb".repeat(32), async () => "second"),
+    () => coordinator.run("lock-b", "bb".repeat(32), async () => "second"),
     /capacity is exhausted by in-flight requests/,
   );
-  assert.equal(coordinator.has("aa".repeat(32)), true);
+  assert.equal(coordinator.has("lock-a"), true);
   release();
   assert.equal(await first, "first");
-  assert.equal(await coordinator.run("bb".repeat(32), async () => "second"), "second");
+  assert.equal(await coordinator.run("lock-b", "bb".repeat(32), async () => "second"), "second");
 });
 
 function proofReadyReservation() {

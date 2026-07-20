@@ -349,7 +349,7 @@ func TestBuildBatchOperationGraphBindsRecipientAndDisclosurePlan(t *testing.T) {
 	}
 	plan := BatchPayrollOperationPlan{
 		OperationID: "bound-operation", Items: items,
-		InputNotes: []TreasuryNote{{NoteID: "note-a", OwnerKeyID: "owner", NullifierLookupKey: "lookup", NullifierLookupKeyID: "lookup-v1", Denom: "uclair", Amount: new(big.Int).Set(payload.Inputs[0].Note.Amount)}},
+		InputNotes: []TreasuryNote{{NoteID: "note-a", OwnerKeyID: "owner", NullifierLookupKey: "lookup", NullifierLookupKeyID: "lookup-v1", Denom: "uclair", Amount: new(big.Int).Set(payload.Inputs[0].Note.Amount), VerifiedUnspent: true}},
 		InputTotal: new(big.Int).Set(payload.Inputs[0].Note.Amount), PaymentTotal: new(big.Int).Set(payload.Inputs[0].Note.Amount),
 		Change: new(big.Int), OutputCount: len(items), HasChange: false,
 	}
@@ -369,6 +369,10 @@ func TestBuildBatchOperationGraphBindsRecipientAndDisclosurePlan(t *testing.T) {
 	_, _, err = BuildBatchOperationGraph(context.Background(), plan, payload, testPayrollCipher{}, now)
 	require.ErrorContains(t, err, "nullifier does not match")
 	plan.InputNotes[0].NullifierLookupKey = derivedLookupKey
+	plan.InputNotes[0].VerifiedUnspent = false
+	_, _, err = BuildBatchOperationGraph(context.Background(), plan, payload, testPayrollCipher{}, now)
+	require.ErrorContains(t, err, "invalid treasury input note")
+	plan.InputNotes[0].VerifiedUnspent = true
 
 	wrong := batchReconcileTestPoint(77)
 	wrongAddress, err := privacytypes.EncodeShieldedAddressWithView(wrong, wrong)

@@ -208,15 +208,19 @@ Use the [batch transfer integration handoff](clairveil-batch-transfer-integratio
       "note_id": "note-large",
       "owner_key_id": "treasury-key",
       "nullifier_lookup_key": "lookup-note-large",
+      "nullifier_lookup_key_id": "lookup-v1",
       "denom": "uclair",
-      "amount": "100"
+      "amount": "100",
+      "verified_unspent": true
     },
     {
       "note_id": "note-zero",
       "owner_key_id": "treasury-key",
       "nullifier_lookup_key": "lookup-note-zero",
+      "nullifier_lookup_key_id": "lookup-v1",
       "denom": "uclair",
-      "amount": "0"
+      "amount": "0",
+      "verified_unspent": true
     }
   ]
 }

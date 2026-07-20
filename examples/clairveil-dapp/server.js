@@ -20,7 +20,10 @@ import {
   evmPrivacyPrecompileAddress,
   plannerStatusToErrorCode
 } from "clairveiljs";
-import { submitRelayAfterNullifierPreflight } from "./public/relay-reservation-state.js";
+import {
+  relayPayloadNullifierLockKey,
+  submitRelayAfterNullifierPreflight,
+} from "./public/relay-reservation-state.js";
 import {
   createRelaySubmissionCoordinator,
   relaySubmissionIdempotencyKey,
@@ -1502,41 +1505,45 @@ async function handleApi(req, res, url) {
         });
         const wallet = evmWalletForLocalSigner(relayer).connect(provider);
         await assertRelayPayloadNotExpired(payload, provider);
-        const tx = await submitRelayAfterNullifierPreflight({
-          payload,
-          checkNullifiers: (nullifiers) => clairveil.checkNullifiers(nullifiers),
-          submit: () => relaySubmissionCoordinator.run(
-            relaySubmissionIdempotencyKey(payload),
-            () => wallet.sendTransaction({
-              to: built.transaction.to,
-              data: built.transaction.data,
-              value: built.transaction.value ?? "0x0",
-              gasLimit: BigInt(config.evmGasLimit)
-            }),
-          )
-        });
-        const txHash = validateTxHashHex(tx.hash);
-        const receipt = await waitForEvmReceipt(txHash);
-        if (!receipt) {
-          const error = new Error(`relay withdraw tx was broadcast but not found yet: ${txHash}`);
-          error.txHash = txHash;
-          throw error;
-        }
-        if (!hasSuccessfulEvmReceiptStatus(receipt)) {
-          const failed = hasFailedEvmReceiptStatus(receipt);
-          const error = new Error(
-            failed
-              ? `relay withdraw EVM execution failed with receipt status: ${String(receipt.status)}`
-              : `relay withdraw tx did not include an explicit EVM receipt status: ${String(receipt.status ?? "missing")}`,
-          );
-          error.txHash = txHash;
-          error.receipt = receipt;
-          if (failed) {
-            error.receiptStatus = String(receipt.status);
-            error.executionFailed = true;
+        const { txHash, receipt } = await relaySubmissionCoordinator.run(
+          relayPayloadNullifierLockKey(payload),
+          relaySubmissionIdempotencyKey(payload),
+          async () => {
+            const tx = await submitRelayAfterNullifierPreflight({
+              payload,
+              checkNullifiers: (nullifiers) => clairveil.checkNullifiers(nullifiers),
+              submit: () => wallet.sendTransaction({
+                to: built.transaction.to,
+                data: built.transaction.data,
+                value: built.transaction.value ?? "0x0",
+                gasLimit: BigInt(config.evmGasLimit)
+              }),
+            });
+            const txHash = validateTxHashHex(tx.hash);
+            const receipt = await waitForEvmReceipt(txHash);
+            if (!receipt) {
+              const error = new Error(`relay withdraw tx was broadcast but not found yet: ${txHash}`);
+              error.txHash = txHash;
+              throw error;
+            }
+            if (!hasSuccessfulEvmReceiptStatus(receipt)) {
+              const failed = hasFailedEvmReceiptStatus(receipt);
+              const error = new Error(
+                failed
+                  ? `relay withdraw EVM execution failed with receipt status: ${String(receipt.status)}`
+                  : `relay withdraw tx did not include an explicit EVM receipt status: ${String(receipt.status ?? "missing")}`,
+              );
+              error.txHash = txHash;
+              error.receipt = receipt;
+              if (failed) {
+                error.receiptStatus = String(receipt.status);
+                error.executionFailed = true;
+              }
+              throw error;
+            }
+            return { txHash, receipt };
           }
-          throw error;
-        }
+        );
         sendJson(res, 200, {
           broadcast: { txhash: txHash },
           receipt,
@@ -1574,52 +1581,56 @@ async function handleApi(req, res, url) {
       try {
         await assertRelayPayloadNotExpired(payload);
         await writeFile(payloadPath, JSON.stringify(payload, null, 2), "utf8");
-        const result = await submitRelayAfterNullifierPreflight({
-          payload,
-          checkNullifiers: (nullifiers) => clairveil.checkNullifiers(nullifiers),
-          submit: () => relaySubmissionCoordinator.run(
-            relaySubmissionIdempotencyKey(payload),
-            () => runClairveild([
-              "tx", "privacy", "relay-withdraw", payloadPath,
-              "--from", relayer,
-              "--keyring-backend", "test",
-              "--home", config.home,
-              "--node", config.rpc,
-              "--chain-id", config.chainId,
-              "--gas", "5000000",
-              "--gas-prices", config.gasPrices,
-              "--yes",
-              "--output", "json"
-            ]),
-          )
-        });
-        const txHash = result.json.txhash;
-        const checkTxCode = confirmedCosmosTxCode(result.json);
-        if (checkTxCode != null && checkTxCode !== 0) {
-          const error = new Error(
-            result.json.raw_log || `relay withdraw CheckTx failed with code ${checkTxCode}`,
-          );
-          error.txHash = txHash;
-          error.txCode = checkTxCode;
-          throw error;
-        }
-        const tx = await waitForTx(txHash);
-        if (!tx) {
-          const error = new Error(`relay withdraw tx was broadcast but not found yet: ${txHash}`);
-          error.txHash = txHash;
-          throw error;
-        }
-        const txCode = confirmedCosmosTxCode(tx);
-        if (txCode !== 0) {
-          const error = new Error(
-            txCode == null
-              ? "relay withdraw tx did not include a valid result code"
-              : tx.raw_log || `relay withdraw tx failed with code ${txCode}`,
-          );
-          error.txHash = txHash;
-          error.txCode = txCode;
-          throw error;
-        }
+        const { result, txHash, tx } = await relaySubmissionCoordinator.run(
+          relayPayloadNullifierLockKey(payload),
+          relaySubmissionIdempotencyKey(payload),
+          async () => {
+            const result = await submitRelayAfterNullifierPreflight({
+              payload,
+              checkNullifiers: (nullifiers) => clairveil.checkNullifiers(nullifiers),
+              submit: () => runClairveild([
+                "tx", "privacy", "relay-withdraw", payloadPath,
+                "--from", relayer,
+                "--keyring-backend", "test",
+                "--home", config.home,
+                "--node", config.rpc,
+                "--chain-id", config.chainId,
+                "--gas", "5000000",
+                "--gas-prices", config.gasPrices,
+                "--yes",
+                "--output", "json"
+              ]),
+            });
+            const txHash = result.json.txhash;
+            const checkTxCode = confirmedCosmosTxCode(result.json);
+            if (checkTxCode != null && checkTxCode !== 0) {
+              const error = new Error(
+                result.json.raw_log || `relay withdraw CheckTx failed with code ${checkTxCode}`,
+              );
+              error.txHash = txHash;
+              error.txCode = checkTxCode;
+              throw error;
+            }
+            const tx = await waitForTx(txHash);
+            if (!tx) {
+              const error = new Error(`relay withdraw tx was broadcast but not found yet: ${txHash}`);
+              error.txHash = txHash;
+              throw error;
+            }
+            const txCode = confirmedCosmosTxCode(tx);
+            if (txCode !== 0) {
+              const error = new Error(
+                txCode == null
+                  ? "relay withdraw tx did not include a valid result code"
+                  : tx.raw_log || `relay withdraw tx failed with code ${txCode}`,
+              );
+              error.txHash = txHash;
+              error.txCode = txCode;
+              throw error;
+            }
+            return { result, txHash, tx };
+          }
+        );
         sendJson(res, 200, {
           broadcast: result.json,
           tx,

@@ -925,6 +925,79 @@ func (s *MemoryStore) BeginProvingOperation(_ context.Context, operationID strin
 	return updated, &clonedOperation, nil
 }
 
+func (s *MemoryStore) ReclaimExpiredOperation(_ context.Context, operationID string, refs []SubmittedReservationRef, requiredStatus ReservationStatus, leaseUntil time.Time, now time.Time) ([]NoteReservation, *PayrollOperation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureMapsLocked()
+
+	operation, ok := s.operations[operationID]
+	if !ok {
+		return nil, nil, ErrOperationNotFound
+	}
+	var requiredOperationStatus OperationStatus
+	switch requiredStatus {
+	case StatusProving:
+		requiredOperationStatus = OperationStatusProving
+	case StatusProofReady:
+		requiredOperationStatus = OperationStatusProofReady
+	default:
+		return nil, nil, fmt.Errorf("%w: reclaim requires Proving or ProofReady reservations", ErrInvalidReservation)
+	}
+	if operation.Status != requiredOperationStatus {
+		return nil, nil, fmt.Errorf("%w: operation %s expected %s got %s", ErrCompareAndSetFailed, operationID, requiredOperationStatus, operation.Status)
+	}
+	if len(refs) == 0 || !leaseUntil.After(now) {
+		return nil, nil, fmt.Errorf("%w: valid replacement reservation leases are required", ErrLeaseUnavailable)
+	}
+
+	reservations := make([]NoteReservation, 0, len(refs))
+	seen := make(map[string]struct{}, len(refs))
+	for _, ref := range refs {
+		if ref.ReservationID == "" || strings.TrimSpace(ref.LeaseOwner) == "" || ref.LeaseToken == "" {
+			return nil, nil, fmt.Errorf("%w: reservation id, lease owner, and lease token are required", ErrLeaseUnavailable)
+		}
+		if _, exists := seen[ref.ReservationID]; exists {
+			return nil, nil, fmt.Errorf("%w: duplicate reservation_id %s", ErrInvalidReservation, ref.ReservationID)
+		}
+		seen[ref.ReservationID] = struct{}{}
+		reservation, exists := s.reservations[ref.ReservationID]
+		if !exists {
+			return nil, nil, ErrReservationNotFound
+		}
+		if reservation.Status != requiredStatus {
+			return nil, nil, fmt.Errorf("%w: expected %s got %s", ErrCompareAndSetFailed, requiredStatus, reservation.Status)
+		}
+		if reservation.OperationID != operationID {
+			return nil, nil, fmt.Errorf("%w: reservation %s belongs to operation %s", ErrInvalidReservation, reservation.ReservationID, reservation.OperationID)
+		}
+		if reservation.LeaseToken == "" || reservation.LeaseUntil.IsZero() || reservation.LeaseUntil.After(now) {
+			return nil, nil, ErrLeaseUnavailable
+		}
+		if reservation.RelayHandedOff || reservation.BroadcastInFlight || reservation.BroadcastAttemptCount != 0 {
+			return nil, nil, fmt.Errorf("%w: reservation has relay handoff or broadcast evidence", ErrInvalidReservation)
+		}
+		reservation.LeaseOwner = strings.TrimSpace(ref.LeaseOwner)
+		reservation.LeaseToken = ref.LeaseToken
+		reservation.LeaseUntil = leaseUntil
+		reservation.LastHeartbeatAt = now
+		reservation.UpdatedAt = now
+		reservations = append(reservations, reservation)
+	}
+	if err := s.validateReservationOperationLinksLocked(reservations, map[string]struct{}{operationID: {}}); err != nil {
+		return nil, nil, err
+	}
+
+	operation.UpdatedAt = now
+	s.operations[operationID] = operation
+	updated := make([]NoteReservation, 0, len(reservations))
+	for _, reservation := range reservations {
+		s.storeReservationLocked(reservation)
+		updated = append(updated, cloneReservation(reservation))
+	}
+	clonedOperation := cloneOperation(operation)
+	return updated, &clonedOperation, nil
+}
+
 func (s *MemoryStore) RollbackProvingOperation(_ context.Context, operationID string, refs []SubmittedReservationRef, now time.Time) ([]NoteReservation, *PayrollOperation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

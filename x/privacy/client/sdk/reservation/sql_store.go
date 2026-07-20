@@ -236,6 +236,20 @@ func (s *SQLStore) BeginProvingOperation(ctx context.Context, operationID string
 	return outReservations, outOperation, err
 }
 
+func (s *SQLStore) ReclaimExpiredOperation(ctx context.Context, operationID string, reservations []SubmittedReservationRef, requiredStatus ReservationStatus, leaseUntil time.Time, now time.Time) ([]NoteReservation, *PayrollOperation, error) {
+	var outReservations []NoteReservation
+	var outOperation *PayrollOperation
+	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
+		updatedReservations, updatedOperation, err := memory.ReclaimExpiredOperation(ctx, operationID, reservations, requiredStatus, leaseUntil, now)
+		if err != nil {
+			return err
+		}
+		outReservations, outOperation = updatedReservations, updatedOperation
+		return nil
+	})
+	return outReservations, outOperation, err
+}
+
 func (s *SQLStore) RollbackProvingOperation(ctx context.Context, operationID string, reservations []SubmittedReservationRef, now time.Time) ([]NoteReservation, *PayrollOperation, error) {
 	var outReservations []NoteReservation
 	var outOperation *PayrollOperation

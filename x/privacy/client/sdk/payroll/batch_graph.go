@@ -70,7 +70,7 @@ func buildBatchOperationGraph(ctx context.Context, plan BatchPayrollOperationPla
 	reservations := make([]privacyreservation.NoteReservation, len(plan.InputNotes))
 	inputs := make([]privacyreservation.OperationInputReservation, len(plan.InputNotes))
 	for i, note := range plan.InputNotes {
-		if note.NoteID == "" || note.OwnerKeyID == "" || note.NullifierLookupKey == "" || note.NullifierLookupKeyID == "" || note.IsSpent || note.ReservationID != "" {
+		if note.NoteID == "" || note.OwnerKeyID == "" || note.NullifierLookupKey == "" || note.NullifierLookupKeyID == "" || !note.IsVerifiedUnspent() || note.ReservationID != "" {
 			return nil, privacyreservation.BatchOperationGraph{}, fmt.Errorf("invalid treasury input note %d for batch reservation", i)
 		}
 		expectedLookupKey, err := protector.PayrollNullifierLookupKey(ctx, note.NullifierLookupKeyID, payload.Inputs[i].Nullifier)

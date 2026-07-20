@@ -484,10 +484,10 @@ test("DApp uses the npm ClairveilJS browser client for public wallet and privacy
   assert.match(serverSource, /relay withdraw tx did not include a valid result code/);
   assert.match(serverSource, /hasSuccessfulEvmReceiptStatus/);
   assert.match(serverSource, /async function assertRelayPayloadNotExpired/);
-  assert.match(serverSource, /await assertRelayPayloadNotExpired\(payload, provider\);[\s\S]*submitRelayAfterNullifierPreflight\(\{[\s\S]*wallet\.sendTransaction/);
-  assert.match(serverSource, /await assertRelayPayloadNotExpired\(payload\);[\s\S]*submitRelayAfterNullifierPreflight\(\{[\s\S]*runClairveild/);
+  assert.match(serverSource, /await assertRelayPayloadNotExpired\(payload, provider\);[\s\S]*relaySubmissionCoordinator\.run\([\s\S]*relayPayloadNullifierLockKey\(payload\)[\s\S]*submitRelayAfterNullifierPreflight\(\{[\s\S]*wallet\.sendTransaction/);
+  assert.match(serverSource, /await assertRelayPayloadNotExpired\(payload\);[\s\S]*relaySubmissionCoordinator\.run\([\s\S]*relayPayloadNullifierLockKey\(payload\)[\s\S]*submitRelayAfterNullifierPreflight\(\{[\s\S]*runClairveild/);
   assert.match(serverSource, /checkNullifiers: \(nullifiers\) => clairveil\.checkNullifiers\(nullifiers\)/);
-  assert.match(serverSource, /relaySubmissionCoordinator\.run\([\s\S]*relaySubmissionIdempotencyKey\(payload\)/);
+  assert.match(serverSource, /relaySubmissionCoordinator\.run\([\s\S]*relayPayloadNullifierLockKey\(payload\),[\s\S]*relaySubmissionIdempotencyKey\(payload\)/);
   assert.match(appSource, /clearPreparedRelayWithdrawPayload\(\{[\s\S]*clearPayloadHash: true,[\s\S]*stashHandedOff: false,[\s\S]*\}\)/);
   assert.doesNotMatch(appSource, /state\.keplr\.relayWithdrawPayloadSubmitted = true/);
   assert.doesNotMatch(appSource, /const relay = await relayPreparedWithdrawPayload\(data\.payload, recipient\)/);
