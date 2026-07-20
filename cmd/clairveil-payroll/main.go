@@ -94,24 +94,31 @@ type reconcileEvidenceFile struct {
 }
 
 type reconcileEvidenceItemFile struct {
-	ReservationID            string `json:"reservation_id"`
-	TxHash                   string `json:"tx_hash,omitempty"`
-	SignDocHash              string `json:"sign_doc_hash,omitempty"`
-	TxBytesHash              string `json:"tx_bytes_hash,omitempty"`
-	OutputCommitment         string `json:"output_commitment,omitempty"`
-	DisclosureDigest         string `json:"disclosure_digest,omitempty"`
-	UserDisclosureDigest     string `json:"user_disclosure_digest,omitempty"`
-	AuditDisclosureDigest    string `json:"audit_disclosure_digest,omitempty"`
-	SelfViewDisclosureDigest string `json:"self_view_disclosure_digest,omitempty"`
-	RecipientHash            string `json:"recipient_hash,omitempty"`
-	AmountHash               string `json:"amount_hash,omitempty"`
-	Denom                    string `json:"denom,omitempty"`
-	BatchItemIndex           int    `json:"batch_item_index,omitempty"`
-	BatchItemIndexKnown      bool   `json:"batch_item_index_known,omitempty"`
-	NullifierSpent           bool   `json:"nullifier_spent,omitempty"`
-	TxSucceeded              bool   `json:"tx_succeeded,omitempty"`
-	TxFailed                 bool   `json:"tx_failed,omitempty"`
-	TxKnown                  bool   `json:"tx_known,omitempty"`
+	ReservationID             string `json:"reservation_id"`
+	OperationID               string `json:"operation_id,omitempty"`
+	TxHash                    string `json:"tx_hash,omitempty"`
+	SignDocHash               string `json:"sign_doc_hash,omitempty"`
+	TxBytesHash               string `json:"tx_bytes_hash,omitempty"`
+	OutputCommitment          string `json:"output_commitment,omitempty"`
+	DisclosureDigest          string `json:"disclosure_digest,omitempty"`
+	UserDisclosureDigest      string `json:"user_disclosure_digest,omitempty"`
+	AuditDisclosureDigest     string `json:"audit_disclosure_digest,omitempty"`
+	SelfViewDisclosureDigest  string `json:"self_view_disclosure_digest,omitempty"`
+	RecipientHash             string `json:"recipient_hash,omitempty"`
+	AmountHash                string `json:"amount_hash,omitempty"`
+	Denom                     string `json:"denom,omitempty"`
+	BatchItemIndex            int    `json:"batch_item_index,omitempty"`
+	BatchItemIndexKnown       bool   `json:"batch_item_index_known,omitempty"`
+	NullifierSpent            bool   `json:"nullifier_spent,omitempty"`
+	NullifierUnspentConfirmed bool   `json:"nullifier_unspent_confirmed,omitempty"`
+	TxSucceeded               bool   `json:"tx_succeeded,omitempty"`
+	TxFailed                  bool   `json:"tx_failed,omitempty"`
+	TxKnown                   bool   `json:"tx_known,omitempty"`
+}
+
+type reconcileOperationEvidenceGroup struct {
+	OperationID string
+	Items       []reconcileEvidenceItemFile
 }
 
 type reconcileReport struct {
@@ -534,7 +541,7 @@ func runScanEvidence(args []string) error {
 		Evidence:            make([]reconcileEvidenceItemFile, 0, len(scanned.Evidence)),
 	}
 	for _, item := range scanned.Evidence {
-		report.Evidence = append(report.Evidence, reconcileEvidenceItemFromSDK(item.ReservationID, item.Evidence))
+		report.Evidence = append(report.Evidence, reconcileEvidenceItemFromSDK(item.ReservationID, item.OperationID, item.Evidence))
 	}
 	if apply {
 		reconciled, err := reconcileEvidenceItems(context.Background(), store, report.Evidence)
@@ -778,46 +785,49 @@ func readNullifierStatuses(path string) ([]privacypayroll.NullifierStatus, error
 
 func (e reconcileEvidenceItemFile) toSDK() privacyreservation.OperationEvidence {
 	return privacyreservation.OperationEvidence{
-		TxHash:                   e.TxHash,
-		SignDocHash:              e.SignDocHash,
-		TxBytesHash:              e.TxBytesHash,
-		OutputCommitment:         e.OutputCommitment,
-		DisclosureDigest:         e.DisclosureDigest,
-		UserDisclosureDigest:     e.UserDisclosureDigest,
-		AuditDisclosureDigest:    e.AuditDisclosureDigest,
-		SelfViewDisclosureDigest: e.SelfViewDisclosureDigest,
-		RecipientHash:            e.RecipientHash,
-		AmountHash:               e.AmountHash,
-		Denom:                    e.Denom,
-		BatchItemIndex:           e.BatchItemIndex,
-		BatchItemIndexKnown:      e.BatchItemIndexKnown,
-		NullifierSpent:           e.NullifierSpent,
-		TxSucceeded:              e.TxSucceeded,
-		TxFailed:                 e.TxFailed,
-		TxKnown:                  e.TxKnown,
+		TxHash:                    e.TxHash,
+		SignDocHash:               e.SignDocHash,
+		TxBytesHash:               e.TxBytesHash,
+		OutputCommitment:          e.OutputCommitment,
+		DisclosureDigest:          e.DisclosureDigest,
+		UserDisclosureDigest:      e.UserDisclosureDigest,
+		AuditDisclosureDigest:     e.AuditDisclosureDigest,
+		SelfViewDisclosureDigest:  e.SelfViewDisclosureDigest,
+		RecipientHash:             e.RecipientHash,
+		AmountHash:                e.AmountHash,
+		Denom:                     e.Denom,
+		BatchItemIndex:            e.BatchItemIndex,
+		BatchItemIndexKnown:       e.BatchItemIndexKnown,
+		NullifierSpent:            e.NullifierSpent,
+		NullifierUnspentConfirmed: e.NullifierUnspentConfirmed,
+		TxSucceeded:               e.TxSucceeded,
+		TxFailed:                  e.TxFailed,
+		TxKnown:                   e.TxKnown,
 	}
 }
 
-func reconcileEvidenceItemFromSDK(reservationID string, evidence privacyreservation.OperationEvidence) reconcileEvidenceItemFile {
+func reconcileEvidenceItemFromSDK(reservationID string, operationID string, evidence privacyreservation.OperationEvidence) reconcileEvidenceItemFile {
 	return reconcileEvidenceItemFile{
-		ReservationID:            reservationID,
-		TxHash:                   evidence.TxHash,
-		SignDocHash:              evidence.SignDocHash,
-		TxBytesHash:              evidence.TxBytesHash,
-		OutputCommitment:         evidence.OutputCommitment,
-		DisclosureDigest:         evidence.DisclosureDigest,
-		UserDisclosureDigest:     evidence.UserDisclosureDigest,
-		AuditDisclosureDigest:    evidence.AuditDisclosureDigest,
-		SelfViewDisclosureDigest: evidence.SelfViewDisclosureDigest,
-		RecipientHash:            evidence.RecipientHash,
-		AmountHash:               evidence.AmountHash,
-		Denom:                    evidence.Denom,
-		BatchItemIndex:           evidence.BatchItemIndex,
-		BatchItemIndexKnown:      evidence.BatchItemIndexKnown,
-		NullifierSpent:           evidence.NullifierSpent,
-		TxSucceeded:              evidence.TxSucceeded,
-		TxFailed:                 evidence.TxFailed,
-		TxKnown:                  evidence.TxKnown,
+		ReservationID:             reservationID,
+		OperationID:               operationID,
+		TxHash:                    evidence.TxHash,
+		SignDocHash:               evidence.SignDocHash,
+		TxBytesHash:               evidence.TxBytesHash,
+		OutputCommitment:          evidence.OutputCommitment,
+		DisclosureDigest:          evidence.DisclosureDigest,
+		UserDisclosureDigest:      evidence.UserDisclosureDigest,
+		AuditDisclosureDigest:     evidence.AuditDisclosureDigest,
+		SelfViewDisclosureDigest:  evidence.SelfViewDisclosureDigest,
+		RecipientHash:             evidence.RecipientHash,
+		AmountHash:                evidence.AmountHash,
+		Denom:                     evidence.Denom,
+		BatchItemIndex:            evidence.BatchItemIndex,
+		BatchItemIndexKnown:       evidence.BatchItemIndexKnown,
+		NullifierSpent:            evidence.NullifierSpent,
+		NullifierUnspentConfirmed: evidence.NullifierUnspentConfirmed,
+		TxSucceeded:               evidence.TxSucceeded,
+		TxFailed:                  evidence.TxFailed,
+		TxKnown:                   evidence.TxKnown,
 	}
 }
 
@@ -829,21 +839,54 @@ func reconcileEvidenceItems(ctx context.Context, store privacyreservation.Store,
 	worker := privacypayroll.ReconcileWorker{
 		Reservation: privacyreservation.Service{Store: store},
 	}
+	groups := make([]reconcileOperationEvidenceGroup, 0, len(evidence))
+	groupIndex := make(map[string]int, len(evidence))
 	for _, item := range evidence {
-		result, err := worker.ReconcileReservation(ctx, item.ReservationID, item.toSDK())
+		reservation, err := store.GetReservation(ctx, item.ReservationID)
+		if err != nil {
+			return nil, err
+		}
+		operationID := strings.TrimSpace(item.OperationID)
+		if operationID == "" {
+			operationID = reservation.OperationID
+		} else if operationID != reservation.OperationID {
+			return nil, fmt.Errorf("reconcile evidence reservation %s belongs to operation %s, not %s", item.ReservationID, reservation.OperationID, operationID)
+		}
+		if operationID == "" {
+			return nil, fmt.Errorf("reconcile evidence reservation %s has no operation_id", item.ReservationID)
+		}
+		index, ok := groupIndex[operationID]
+		if !ok {
+			index = len(groups)
+			groupIndex[operationID] = index
+			groups = append(groups, reconcileOperationEvidenceGroup{OperationID: operationID})
+		}
+		groups[index].Items = append(groups[index].Items, item)
+	}
+	for _, group := range groups {
+		evidences := make([]privacyreservation.OperationReservationEvidence, 0, len(group.Items))
+		for _, item := range group.Items {
+			evidences = append(evidences, privacyreservation.OperationReservationEvidence{
+				ReservationID: item.ReservationID,
+				Evidence:      item.toSDK(),
+			})
+		}
+		result, err := worker.ReconcileOperation(ctx, group.OperationID, evidences)
 		if err != nil {
 			return nil, err
 		}
 		if result.RequiresReview {
-			report.RequiresReview++
+			report.RequiresReview += len(group.Items)
 		}
-		report.Results = append(report.Results, reconcileItemReport{
-			ReservationID:     item.ReservationID,
-			ReservationStatus: result.ReservationStatus,
-			OperationStatus:   result.OperationStatus,
-			RequiresReview:    result.RequiresReview,
-			Reason:            result.Reason,
-		})
+		for _, item := range group.Items {
+			report.Results = append(report.Results, reconcileItemReport{
+				ReservationID:     item.ReservationID,
+				ReservationStatus: result.ReservationStatus,
+				OperationStatus:   result.OperationStatus,
+				RequiresReview:    result.RequiresReview,
+				Reason:            result.Reason,
+			})
+		}
 	}
 	return report, nil
 }
@@ -1240,17 +1283,24 @@ func settleTransferBatchItem(ctx context.Context, service privacyreservation.Ser
 			return nil, errors.Join(err, clearSettlementLeases(ctx, service, submissionRefs))
 		}
 	}
-	return reconcileSettlementRefs(ctx, service, refs, evidence)
+	return reconcileSettlementRefs(ctx, service, item.OperationID, refs, evidence)
 }
 
-func reconcileSettlementRefs(ctx context.Context, service privacyreservation.Service, refs []privacyreservation.SubmittedReservationRef, evidence privacyreservation.OperationEvidence) ([]reconcileItemReport, error) {
+func reconcileSettlementRefs(ctx context.Context, service privacyreservation.Service, operationID string, refs []privacyreservation.SubmittedReservationRef, evidence privacyreservation.OperationEvidence) ([]reconcileItemReport, error) {
 	results := make([]reconcileItemReport, 0, len(refs))
 	worker := privacypayroll.ReconcileWorker{Reservation: service}
+	evidences := make([]privacyreservation.OperationReservationEvidence, 0, len(refs))
 	for _, ref := range refs {
-		result, err := worker.ReconcileReservation(ctx, ref.ReservationID, evidence)
-		if err != nil {
-			return nil, err
-		}
+		evidences = append(evidences, privacyreservation.OperationReservationEvidence{
+			ReservationID: ref.ReservationID,
+			Evidence:      evidence,
+		})
+	}
+	result, err := worker.ReconcileOperation(ctx, operationID, evidences)
+	if err != nil {
+		return nil, err
+	}
+	for _, ref := range refs {
 		results = append(results, reconcileItemReport{
 			ReservationID:     ref.ReservationID,
 			ReservationStatus: result.ReservationStatus,

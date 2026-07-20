@@ -297,7 +297,9 @@ func TestEvidenceScannerUsesExplicitNullifierStatuses(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, report.Evidence, 2)
 	require.True(t, report.Evidence[0].Evidence.NullifierSpent)
+	require.False(t, report.Evidence[0].Evidence.NullifierUnspentConfirmed)
 	require.False(t, report.Evidence[1].Evidence.NullifierSpent)
+	require.True(t, report.Evidence[1].Evidence.NullifierUnspentConfirmed)
 }
 
 func TestEvidenceScannerEmitsFailedEvidenceWithoutEvents(t *testing.T) {
@@ -322,21 +324,30 @@ func TestEvidenceScannerEmitsFailedEvidenceWithoutEvents(t *testing.T) {
 		Height: 42,
 		Code:   7,
 		RawLog: "out of gas",
-	}, nil)
+	}, []NullifierStatus{
+		{Nullifier: "lookup-large", Used: false},
+		{Nullifier: "lookup-zero", Used: false},
+	})
 	require.NoError(t, err)
 	require.True(t, report.TxFailed)
 	require.Equal(t, 0, report.ObservedEvents)
 	require.Equal(t, 2, report.ScannedReservations)
 	require.Len(t, report.Evidence, 2)
+	evidences := make([]privacyreservation.OperationReservationEvidence, 0, len(report.Evidence))
 	for _, item := range report.Evidence {
 		require.True(t, item.Evidence.TxKnown)
 		require.True(t, item.Evidence.TxFailed)
 		require.False(t, item.Evidence.TxSucceeded)
 		require.False(t, item.Evidence.NullifierSpent)
-		result, err := reservationService.Reconcile(ctx, item.ReservationID, item.Evidence)
-		require.NoError(t, err)
-		require.Equal(t, privacyreservation.StatusFailed, result.ReservationStatus)
+		require.True(t, item.Evidence.NullifierUnspentConfirmed)
+		evidences = append(evidences, privacyreservation.OperationReservationEvidence{
+			ReservationID: item.ReservationID,
+			Evidence:      item.Evidence,
+		})
 	}
+	result, err := reservationService.ReconcileOperation(ctx, confirmed.Items[0].OperationID, evidences)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.StatusFailed, result.ReservationStatus)
 	operation, err := store.GetOperation(ctx, confirmed.Items[0].OperationID)
 	require.NoError(t, err)
 	require.Equal(t, privacyreservation.OperationStatusFailed, operation.Status)
@@ -389,6 +400,7 @@ func TestEvidenceScannerLimitsFailedEvidenceWithoutEventsToMatchingTx(t *testing
 	require.Len(t, report.Evidence, 1)
 	require.Equal(t, "reservation-1", report.Evidence[0].ReservationID)
 	require.True(t, report.Evidence[0].Evidence.TxFailed)
+	require.True(t, report.Evidence[0].Evidence.NullifierUnspentConfirmed)
 }
 
 func markPayrollPlanSubmittedForScannerTest(t *testing.T, ctx context.Context, service privacyreservation.Service, item PayrollPlanItem, txHash string) {

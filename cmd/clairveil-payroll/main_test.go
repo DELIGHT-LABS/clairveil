@@ -217,22 +217,27 @@ func TestRunStatusAndReconcileCommandsUseDurableState(t *testing.T) {
 	require.Equal(t, 2, status.ReservationsByStatus[string(privacyreservation.StatusReserved)])
 
 	markConfirmedPlanSubmitted(t, statePath, confirmed)
-	evidence := reconcileEvidenceFile{Evidence: []reconcileEvidenceItemFile{{
-		ReservationID:            confirmed.Items[0].InputNotes[0].ReservationID,
-		TxHash:                   "txhash",
-		OutputCommitment:         "commitment-a",
-		DisclosureDigest:         auditDigest,
-		UserDisclosureDigest:     userDigest,
-		AuditDisclosureDigest:    auditDigest,
-		SelfViewDisclosureDigest: selfViewDigest,
-		RecipientHash:            confirmed.Items[0].ExpectedRecipientHash,
-		AmountHash:               confirmed.Items[0].ExpectedAmountHash,
-		Denom:                    "uclair",
-		NullifierSpent:           true,
-		BatchItemIndex:           0,
-		BatchItemIndexKnown:      true,
-		TxSucceeded:              true,
-	}}}
+	evidenceItems := make([]reconcileEvidenceItemFile, 0, len(confirmed.Items[0].InputNotes))
+	for _, note := range confirmed.Items[0].InputNotes {
+		evidenceItems = append(evidenceItems, reconcileEvidenceItemFile{
+			ReservationID:            note.ReservationID,
+			OperationID:              confirmed.Items[0].OperationID,
+			TxHash:                   "txhash",
+			OutputCommitment:         "commitment-a",
+			DisclosureDigest:         auditDigest,
+			UserDisclosureDigest:     userDigest,
+			AuditDisclosureDigest:    auditDigest,
+			SelfViewDisclosureDigest: selfViewDigest,
+			RecipientHash:            confirmed.Items[0].ExpectedRecipientHash,
+			AmountHash:               confirmed.Items[0].ExpectedAmountHash,
+			Denom:                    "uclair",
+			NullifierSpent:           true,
+			BatchItemIndex:           0,
+			BatchItemIndexKnown:      true,
+			TxSucceeded:              true,
+		})
+	}
+	evidence := reconcileEvidenceFile{Evidence: evidenceItems}
 	bz, err := json.Marshal(evidence)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(evidencePath, bz, 0o600))
@@ -242,10 +247,13 @@ func TestRunStatusAndReconcileCommandsUseDurableState(t *testing.T) {
 	require.NoError(t, err)
 	var report reconcileReport
 	require.NoError(t, json.Unmarshal(reconcileBytes, &report))
-	require.Equal(t, 1, report.Total)
+	require.Equal(t, 2, report.Total)
 	require.Equal(t, 0, report.RequiresReview)
-	require.Equal(t, privacyreservation.StatusConfirmedSpent, report.Results[0].ReservationStatus)
-	require.Equal(t, privacyreservation.OperationStatusSucceeded, report.Results[0].OperationStatus)
+	require.Len(t, report.Results, 2)
+	for _, item := range report.Results {
+		require.Equal(t, privacyreservation.StatusConfirmedSpent, item.ReservationStatus)
+		require.Equal(t, privacyreservation.OperationStatusSucceeded, item.OperationStatus)
+	}
 
 	require.NoError(t, runExportReport([]string{"-plan", planPath, "-state", statePath, "-out", exportPath}))
 	exportBytes, err := os.ReadFile(exportPath)
@@ -322,6 +330,22 @@ func TestScanEvidenceCommandAppliesTxObservation(t *testing.T) {
 	operation, err := store.GetOperation(context.Background(), confirmed.Items[0].OperationID)
 	require.NoError(t, err)
 	require.Equal(t, privacyreservation.OperationStatusSucceeded, operation.Status)
+}
+
+func TestReconcileEvidenceFilePreservesConfirmedUnspentNullifier(t *testing.T) {
+	encoded, err := json.Marshal(reconcileEvidenceFile{Evidence: []reconcileEvidenceItemFile{{
+		ReservationID:             "reservation-1",
+		OperationID:               "operation-1",
+		TxFailed:                  true,
+		TxKnown:                   true,
+		NullifierUnspentConfirmed: true,
+	}}})
+	require.NoError(t, err)
+
+	var decoded reconcileEvidenceFile
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	require.Len(t, decoded.Evidence, 1)
+	require.True(t, decoded.Evidence[0].toSDK().NullifierUnspentConfirmed)
 }
 
 func TestSelectPlanItemsForSettlementSupportsChunkRanges(t *testing.T) {

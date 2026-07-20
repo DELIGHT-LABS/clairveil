@@ -287,6 +287,7 @@ func (d ReferenceDaemon) submitWithRefs(ctx context.Context, operation privacyre
 }
 
 func (d ReferenceDaemon) simulateReconcile(ctx context.Context, group referenceReservationGroup, report *ReferenceDaemonRunReport) error {
+	evidences := make([]privacyreservation.OperationReservationEvidence, 0, len(group.Reservations))
 	for _, reservation := range group.Reservations {
 		evidence := privacyreservation.OperationEvidence{
 			TxHash:                   firstNonEmpty(group.Operation.TxHash, simulatedHex("tx", group.Operation.OperationID)),
@@ -306,25 +307,20 @@ func (d ReferenceDaemon) simulateReconcile(ctx context.Context, group referenceR
 			TxSucceeded:              true,
 			TxKnown:                  true,
 		}
-		result, err := d.Reservation.Reconcile(ctx, reservation.ReservationID, evidence)
-		if err != nil {
-			return err
-		}
-		if result.RequiresReview {
-			report.RequiresReview++
-		}
-		report.Reconciled++
-		report.Items = append(report.Items, ReferenceDaemonItemRunReport{
-			OperationID:       group.Operation.OperationID,
-			ItemID:            group.Operation.ItemID,
-			Action:            "reconciled",
-			ReservationIDs:    []string{reservation.ReservationID},
-			ReservationStatus: result.ReservationStatus,
-			OperationStatus:   result.OperationStatus,
-			RequiresReview:    result.RequiresReview,
-			Reason:            result.Reason,
+		evidences = append(evidences, privacyreservation.OperationReservationEvidence{
+			ReservationID: reservation.ReservationID,
+			Evidence:      evidence,
 		})
 	}
+	result, err := d.Reservation.ReconcileOperation(ctx, group.Operation.OperationID, evidences)
+	if err != nil {
+		return err
+	}
+	if result.RequiresReview {
+		report.RequiresReview += len(group.Reservations)
+	}
+	report.Reconciled += len(group.Reservations)
+	report.Items = append(report.Items, referenceDaemonItem(group, "reconciled", result.ReservationStatus, result.OperationStatus, result.RequiresReview, result.Reason))
 	return nil
 }
 

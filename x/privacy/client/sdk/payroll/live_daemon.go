@@ -351,32 +351,28 @@ func (d LiveDaemon) reconcileSubmitted(ctx context.Context, group LiveOperationG
 		report.Items = append(report.Items, liveDaemonItem(group, "skipped", group.Reservations[0].Status, group.Operation.Status, false, firstNonEmptyString(reason, "no evidence available")))
 		return nil
 	}
-	worker := ReconcileWorker{Reservation: d.Reservation}
+	evidences := make([]privacyreservation.OperationReservationEvidence, 0, len(group.Reservations))
 	for _, reservation := range group.Reservations {
 		evidence, ok := evidenceByReservation[reservation.ReservationID]
 		if !ok {
 			report.Skipped++
-			continue
+			report.Items = append(report.Items, liveDaemonItem(group, "skipped", group.Reservations[0].Status, group.Operation.Status, false, "operation reconciliation requires evidence for every reservation"))
+			return nil
 		}
-		result, err := worker.ReconcileReservation(ctx, reservation.ReservationID, evidence)
-		if err != nil {
-			return err
-		}
-		if result.RequiresReview {
-			report.RequiresReview++
-		}
-		report.Reconciled++
-		report.Items = append(report.Items, ReferenceDaemonItemRunReport{
-			OperationID:       group.Operation.OperationID,
-			ItemID:            group.Operation.ItemID,
-			Action:            "reconciled",
-			ReservationIDs:    []string{reservation.ReservationID},
-			ReservationStatus: result.ReservationStatus,
-			OperationStatus:   result.OperationStatus,
-			RequiresReview:    result.RequiresReview,
-			Reason:            result.Reason,
+		evidences = append(evidences, privacyreservation.OperationReservationEvidence{
+			ReservationID: reservation.ReservationID,
+			Evidence:      evidence,
 		})
 	}
+	result, err := (ReconcileWorker{Reservation: d.Reservation}).ReconcileOperation(ctx, group.Operation.OperationID, evidences)
+	if err != nil {
+		return err
+	}
+	if result.RequiresReview {
+		report.RequiresReview += len(group.Reservations)
+	}
+	report.Reconciled += len(group.Reservations)
+	report.Items = append(report.Items, liveDaemonItem(group, "reconciled", result.ReservationStatus, result.OperationStatus, result.RequiresReview, result.Reason))
 	return nil
 }
 
