@@ -6,6 +6,18 @@ This project follows [the release versioning policy](docs/clairveil-release-vers
 
 ## Unreleased
 
+## v0.3.1 - 2026-07-21
+
+### Fixed
+
+- Added the missing paired dated changelog headings for the already-published `v0.3.0` tag and completed the release documentation, supported-version references, and immutable release packaging metadata. There is no Go, protobuf, runtime, state, circuit, or wire-contract change from `v0.3.0`.
+
+### Handoff Notes
+
+- Downstream codebases already pinned to `v0.3.0` may continue using it unchanged. `v0.3.1` is the documentation and release-preparation publication and is the identity used for the verified handoff pack and GitHub release; `v0.3.0` remains unmoved and unreused.
+
+## v0.3.0 - 2026-07-21
+
 ### Added
 
 - Added the trusted in-process `Keeper.DepositWithFunder` integration surface, which preserves `msg.Creator` attribution while debiting an explicit validated funder through the canonical deposit transition.
