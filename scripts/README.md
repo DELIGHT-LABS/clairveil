@@ -6,7 +6,7 @@ Korean version: [README-kr.md](README-kr.md)
 
 ## Script List
 
-- `docs-check.sh`: validates tracked and new working-tree Markdown links and fragments through the CommonMark/GFM AST, top-level documentation language pairs, complete documentation/plan indexes, exact-SemVer annotated commit tags/real changelog headings, document placement, release-pack manifests, and packed-link closure; it excludes `examples/clairveil-dapp/**`.
+- `docs-check.sh`: validates tracked and new working-tree Markdown links and fragments through the CommonMark/GFM AST, top-level documentation language pairs, complete documentation/plan indexes, HEAD-reachable exact-SemVer annotated commit tags/real changelog headings, document placement, release-pack manifests, and packed-link closure; it excludes `examples/clairveil-dapp/**`.
 - `markdown-ast.go`: provides the Goldmark CommonMark/GFM link and heading AST consumed by documentation and release checks; its unit test covers multiline references, nested parentheses, fragments, comments, and code fences.
 - `generate-proto.sh`: regenerates privacy protobuf and gRPC Gateway Go files from `proto/clairveil/privacy/v1`.
 - `govulncheck-with-policy.sh`: runs `govulncheck` and applies the repository vulnerability exception policy.

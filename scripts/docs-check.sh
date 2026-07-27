@@ -244,10 +244,17 @@ for index in plan_indexes:
 
 
 try:
-    tags = [line for line in git_output("tag", "--list").splitlines() if line]
+    # Tag refs are local repository state rather than part of a checkout.
+    # Limit this branch-local check to tags whose commits are reachable from
+    # HEAD so maintenance branches do not depend on newer or unrelated tags.
+    tags = [
+        line
+        for line in git_output("tag", "--list", "--merged", "HEAD").splitlines()
+        if line
+    ]
 except subprocess.CalledProcessError as error:
     tags = []
-    add_error(f"Git tag 목록을 읽지 못했습니다: {error.stderr.strip()}")
+    add_error(f"HEAD에서 도달 가능한 Git tag 목록을 읽지 못했습니다: {error.stderr.strip()}")
 
 semver_prerelease_identifier = (
     r"(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
@@ -490,7 +497,7 @@ if unique_errors:
 print(f"working-tree Markdown links verified: {len(working_markdown)} file(s)")
 print(f"docs EN/KR pairs and indexes verified: {len(list(docs_dir.glob('*.md')))} file(s)")
 print(f"plan indexes verified: {len(tracked_plans)} tracked plan(s)")
-print(f"changelog tag headings verified: {len(tags)} tag(s), 2 file(s)")
+print(f"changelog headings verified for HEAD-reachable tags: {len(tags)} tag(s), 2 file(s)")
 print(f"release manifests verified: {len(selected_paths)} selected path(s), {len(required_files)} required file(s)")
 print(f"release Markdown link closure verified: {len(release_selected_files)} packed source file(s)")
 PY

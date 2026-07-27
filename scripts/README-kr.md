@@ -4,7 +4,7 @@
 
 ## Script 목록
 
-- `docs-check.sh`: CommonMark/GFM AST로 tracked/new working-tree Markdown link와 fragment, top-level 문서 언어 pair, 완전한 docs/plan index, exact-SemVer annotated commit tag와 실제 changelog heading, 문서 위치, release-pack manifest, packed-link closure를 검증합니다. `examples/clairveil-dapp/**`는 제외합니다.
+- `docs-check.sh`: CommonMark/GFM AST로 tracked/new working-tree Markdown link와 fragment, top-level 문서 언어 pair, 완전한 docs/plan index, `HEAD`에서 도달 가능한 exact-SemVer annotated commit tag와 실제 changelog heading, 문서 위치, release-pack manifest, packed-link closure를 검증합니다. `examples/clairveil-dapp/**`는 제외합니다.
 - `markdown-ast.go`: 문서 및 release 검사가 사용하는 Goldmark CommonMark/GFM link/heading AST를 제공합니다. Unit test는 multiline reference, 중첩 괄호, fragment, comment, code fence를 다룹니다.
 - `generate-proto.sh`: `proto/clairveil/privacy/v1`에서 privacy protobuf와 gRPC Gateway Go file을 재생성합니다.
 - `install-binaries.sh`: `make build`로 만든 project binary 여섯 개(`clairveild`, `clairveil-setup`, legacy-only `clairveil-verify`, `clairveil-proverd`, `clairveil-payroll`, `clairveil-payrolld`)를 Go install 경로에 복사합니다. Verify helper는 현행 typed-note flow에 속하지 않습니다.
