@@ -78,7 +78,7 @@ def parse_markdown_paths(paths):
             markdown_documents[Path(document["path"]).resolve()] = document
     except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError) as error:
         detail = getattr(error, "stderr", "") or str(error)
-        add_error(f"CommonMark parser를 실행하지 못했습니다: {detail.strip()}")
+        add_error(f"failed to run CommonMark parser: {detail.strip()}")
     for path in pending:
         markdown_documents.setdefault(path, {"links": [], "headings": []})
 
@@ -119,7 +119,7 @@ def local_link_target(source, destination):
     try:
         relative = candidate.relative_to(repo)
     except ValueError:
-        return None, "repository 밖을 가리키는 상대 링크", fragment
+        return None, "relative link points outside the repository", fragment
     if is_excluded_dapp(relative):
         return None, None, None
     return candidate, None, fragment
@@ -130,7 +130,7 @@ def markdown_fragment_error(candidate, fragment):
         return None
     heading_ids = {str(heading["id"]) for heading in markdown_headings(candidate)}
     if fragment not in heading_ids:
-        return f"존재하지 않는 Markdown fragment: #{fragment}"
+        return f"Markdown fragment does not exist: #{fragment}"
     return None
 
 
@@ -152,7 +152,7 @@ try:
         if absolute.is_file():
             working_markdown.append((relative, absolute))
 except subprocess.CalledProcessError as error:
-    add_error(f"working-tree Markdown 목록을 읽지 못했습니다: {error.stderr.strip()}")
+    add_error(f"failed to read the working-tree Markdown list: {error.stderr.strip()}")
 
 parse_markdown_paths([absolute for _, absolute in working_markdown])
 
@@ -162,7 +162,7 @@ for relative, source in working_markdown:
         if link_error:
             add_error(f"{relative}:{line_number}: {link_error}: {destination}")
         elif candidate is not None and not candidate.exists():
-            add_error(f"{relative}:{line_number}: 존재하지 않는 상대 링크: {destination}")
+            add_error(f"{relative}:{line_number}: relative link does not exist: {destination}")
         elif candidate is not None:
             fragment_error = markdown_fragment_error(candidate, fragment)
             if fragment_error:
@@ -177,7 +177,7 @@ for document in sorted(docs_dir.glob("*.md")):
         counterpart = document.with_name(document.stem + "-kr.md")
     if not counterpart.is_file():
         add_error(
-            f"{document.relative_to(repo)}: EN/KR 대응 문서가 없습니다: "
+            f"{document.relative_to(repo)}: EN/KR counterpart document is missing: "
             f"{counterpart.relative_to(repo)}"
         )
 
@@ -189,7 +189,7 @@ knowledge_documents = [
 ]
 for index in docs_indexes:
     if not index.is_file():
-        add_error(f"필수 docs index가 없습니다: {index.relative_to(repo)}")
+        add_error(f"required docs index is missing: {index.relative_to(repo)}")
         continue
     indexed_targets = set()
     for line_number, destination in markdown_destinations(index):
@@ -201,7 +201,7 @@ for index in docs_indexes:
     for document in knowledge_documents:
         if document not in indexed_targets:
             add_error(
-                f"{index.relative_to(repo)}: 최상위 knowledge 문서를 열거하지 않았습니다: "
+                f"{index.relative_to(repo)}: top-level knowledge document is not indexed: "
                 f"{document.relative_to(repo)}"
             )
 
@@ -222,11 +222,11 @@ try:
         if absolute.parent == plans_dir and absolute.name not in {"README.md", "README-kr.md"} and absolute.is_file():
             tracked_plans.append(absolute.resolve())
 except subprocess.CalledProcessError as error:
-    add_error(f"tracked plan 목록을 읽지 못했습니다: {error.stderr.strip()}")
+    add_error(f"failed to read the tracked plan list: {error.stderr.strip()}")
 
 for index in plan_indexes:
     if not index.is_file():
-        add_error(f"필수 plan index가 없습니다: {index.relative_to(repo)}")
+        add_error(f"required plan index is missing: {index.relative_to(repo)}")
         continue
     indexed_targets = set()
     for line_number, destination in markdown_destinations(index):
@@ -238,7 +238,7 @@ for index in plan_indexes:
     for plan in tracked_plans:
         if plan not in indexed_targets:
             add_error(
-                f"{index.relative_to(repo)}: tracked 최상위 plan을 열거하지 않았습니다: "
+                f"{index.relative_to(repo)}: tracked top-level plan is not indexed: "
                 f"{plan.relative_to(repo)}"
             )
 
@@ -254,7 +254,7 @@ try:
     ]
 except subprocess.CalledProcessError as error:
     tags = []
-    add_error(f"HEAD에서 도달 가능한 Git tag 목록을 읽지 못했습니다: {error.stderr.strip()}")
+    add_error(f"failed to read Git tags reachable from HEAD: {error.stderr.strip()}")
 
 semver_prerelease_identifier = (
     r"(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
@@ -267,27 +267,27 @@ semver_tag = re.compile(
 )
 for tag in tags:
     if not semver_tag.fullmatch(tag):
-        add_error(f"Git tag가 exact v-prefixed SemVer가 아닙니다: {tag}")
+        add_error(f"Git tag is not exact v-prefixed SemVer: {tag}")
         continue
     try:
         tag_type = git_output("cat-file", "-t", f"refs/tags/{tag}").strip()
     except subprocess.CalledProcessError as error:
-        add_error(f"Git tag type을 읽지 못했습니다: {tag}: {error.stderr.strip()}")
+        add_error(f"failed to read Git tag type: {tag}: {error.stderr.strip()}")
         continue
     if tag_type != "tag":
-        add_error(f"Git tag가 annotated tag가 아닙니다: {tag}")
+        add_error(f"Git tag is not annotated: {tag}")
         continue
     try:
         tag_object = git_output("cat-file", "-p", f"refs/tags/{tag}")
     except subprocess.CalledProcessError as error:
-        add_error(f"Git tag target을 읽지 못했습니다: {tag}: {error.stderr.strip()}")
+        add_error(f"failed to read Git tag target: {tag}: {error.stderr.strip()}")
         continue
     target_type = next(
         (line.removeprefix("type ") for line in tag_object.splitlines() if line.startswith("type ")),
         "",
     )
     if target_type != "commit":
-        add_error(f"Git tag가 commit을 직접 가리키지 않습니다: {tag}")
+        add_error(f"Git tag does not point directly to a commit: {tag}")
 
 changelog_dates = {}
 for changelog_name in ("CHANGELOG.md", "CHANGELOG-kr.md"):
@@ -307,14 +307,14 @@ for changelog_name in ("CHANGELOG.md", "CHANGELOG-kr.md"):
             if match is not None
         ]
         if not matches:
-            add_error(f"{changelog_name}: 날짜가 있는 tag heading이 없습니다: {tag}")
+            add_error(f"{changelog_name}: tag heading with a date is missing: {tag}")
         elif len(matches) != 1:
-            add_error(f"{changelog_name}: tag heading이 정확히 하나가 아닙니다: {tag}")
+            add_error(f"{changelog_name}: expected exactly one tag heading: {tag}")
         else:
             try:
                 date.fromisoformat(matches[0])
             except ValueError:
-                add_error(f"{changelog_name}: tag heading 날짜가 유효하지 않습니다: {tag}: {matches[0]}")
+                add_error(f"{changelog_name}: tag heading date is invalid: {tag}: {matches[0]}")
             changelog_dates[(changelog_name, tag)] = matches[0]
 
 for tag in tags:
@@ -322,7 +322,7 @@ for tag in tags:
     korean_date = changelog_dates.get(("CHANGELOG-kr.md", tag))
     if english_date and korean_date and english_date != korean_date:
         add_error(
-            f"CHANGELOG.md와 CHANGELOG-kr.md의 tag 날짜가 다릅니다: "
+            f"CHANGELOG.md and CHANGELOG-kr.md have different tag dates: "
             f"{tag}: {english_date} != {korean_date}"
         )
 
@@ -332,9 +332,9 @@ if tmp_dir.is_dir():
     tmp_markdown = sorted(tmp_dir.rglob("*.md"))
     if tmp_markdown:
         preview = ", ".join(str(path.relative_to(repo)) for path in tmp_markdown[:5])
-        suffix = "" if len(tmp_markdown) <= 5 else f" 외 {len(tmp_markdown) - 5}개"
+        suffix = "" if len(tmp_markdown) <= 5 else f" and {len(tmp_markdown) - 5} more"
         add_error(
-            f"runtime tmp 아래에 Markdown 문서 {len(tmp_markdown)}개가 남아 있습니다: "
+            f"{len(tmp_markdown)} Markdown document(s) remain under runtime tmp: "
             f"{preview}{suffix}"
         )
 
@@ -343,26 +343,26 @@ if commit_notes_dir.is_dir():
     commit_notes = sorted(path for path in commit_notes_dir.rglob("*") if path.is_file())
     if commit_notes:
         preview = ", ".join(str(path.relative_to(repo)) for path in commit_notes[:5])
-        suffix = "" if len(commit_notes) <= 5 else f" 외 {len(commit_notes) - 5}개"
+        suffix = "" if len(commit_notes) <= 5 else f" and {len(commit_notes) - 5} more"
         add_error(
-            f"docs/commit-notes 아래에 문서 {len(commit_notes)}개가 남아 있습니다: "
+            f"{len(commit_notes)} document(s) remain under docs/commit-notes: "
             f"{preview}{suffix}"
         )
 
 
 def validate_manifest_path(value, manifest_name, line_number):
     if not value:
-        add_error(f"{manifest_name}:{line_number}: 빈 path는 허용되지 않습니다")
+        add_error(f"{manifest_name}:{line_number}: empty path is not allowed")
         return None
     if any(ord(character) < 32 or ord(character) == 127 for character in value):
-        add_error(f"{manifest_name}:{line_number}: control character가 포함되어 있습니다")
+        add_error(f"{manifest_name}:{line_number}: path contains a control character")
         return None
     if "\\" in value:
-        add_error(f"{manifest_name}:{line_number}: POSIX path가 아닙니다: {value}")
+        add_error(f"{manifest_name}:{line_number}: path is not POSIX: {value}")
         return None
     path = PurePosixPath(value)
     if path.is_absolute() or str(path) != value or any(part in ("", ".", "..") for part in path.parts):
-        add_error(f"{manifest_name}:{line_number}: 비정규 path입니다: {value}")
+        add_error(f"{manifest_name}:{line_number}: path is not normalized: {value}")
         return None
     return value
 
@@ -372,10 +372,10 @@ def read_path_manifest(relative_name):
     try:
         text = manifest.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as error:
-        add_error(f"{relative_name}: manifest를 읽을 수 없습니다: {error}")
+        add_error(f"{relative_name}: failed to read manifest: {error}")
         return []
     if text and not text.endswith("\n"):
-        add_error(f"{relative_name}: 마지막 줄은 newline으로 끝나야 합니다")
+        add_error(f"{relative_name}: final line must end with a newline")
     entries = []
     seen = set()
     for line_number, value in enumerate(text.splitlines(), 1):
@@ -383,12 +383,12 @@ def read_path_manifest(relative_name):
         if entry is None:
             continue
         if entry in seen:
-            add_error(f"{relative_name}:{line_number}: 중복 path입니다: {entry}")
+            add_error(f"{relative_name}:{line_number}: duplicate path: {entry}")
         else:
             seen.add(entry)
             entries.append(entry)
     if not entries:
-        add_error(f"{relative_name}: manifest가 비어 있습니다")
+        add_error(f"{relative_name}: manifest is empty")
     return entries
 
 
@@ -410,18 +410,18 @@ def selects_excluded_dapp(entry):
 for selected in selected_paths:
     selected_path = repo / selected
     if selects_excluded_dapp(selected):
-        add_error(f"{selected_manifest_name}: 제외 대상 dapp path를 선택합니다: {selected}")
+        add_error(f"{selected_manifest_name}: selects an excluded DApp path: {selected}")
     elif not selected_path.exists():
-        add_error(f"{selected_manifest_name}: 존재하지 않는 선택 path입니다: {selected}")
+        add_error(f"{selected_manifest_name}: selected path does not exist: {selected}")
 
 required_set = set(required_files)
 for required_generated in sorted(generated_release_files):
     if required_generated not in required_set:
-        add_error(f"{required_manifest_name}: generated 필수 파일이 없습니다: {required_generated}")
+        add_error(f"{required_manifest_name}: generated required file is missing: {required_generated}")
 if required_manifest_name not in required_set:
-    add_error(f"{required_manifest_name}: manifest 자신을 required로 열거해야 합니다")
+    add_error(f"{required_manifest_name}: must list itself as required")
 if selected_manifest_name not in required_set:
-    add_error(f"{required_manifest_name}: release path manifest를 required로 열거해야 합니다")
+    add_error(f"{required_manifest_name}: must list the release path manifest as required")
 
 selected_with_types = [
     (selected, (repo / selected).is_dir())
@@ -430,20 +430,20 @@ selected_with_types = [
 ]
 for required in required_files:
     if selects_excluded_dapp(required):
-        add_error(f"{required_manifest_name}: 제외 대상 dapp path가 포함되어 있습니다: {required}")
+        add_error(f"{required_manifest_name}: includes an excluded DApp path: {required}")
         continue
     if required in generated_release_files:
         continue
     required_path = repo / required
     if not required_path.is_file():
-        add_error(f"{required_manifest_name}: 존재하지 않는 필수 파일입니다: {required}")
+        add_error(f"{required_manifest_name}: required file does not exist: {required}")
     covered = any(
         required == selected
         or (is_directory and required.startswith(selected + "/"))
         for selected, is_directory in selected_with_types
     )
     if not covered:
-        add_error(f"{required_manifest_name}: release path manifest가 포함하지 않습니다: {required}")
+        add_error(f"{required_manifest_name}: release path manifest does not include: {required}")
 
 
 release_selected_files = set()
@@ -482,8 +482,8 @@ for source in sorted(
             continue
         if not release_target_is_covered(candidate):
             add_error(
-                f"{source.relative_to(repo)}:{line_number}: release pack 밖을 가리키는 "
-                f"상대 링크: {destination}"
+                f"{source.relative_to(repo)}:{line_number}: relative link points outside "
+                f"the release pack: {destination}"
             )
 
 

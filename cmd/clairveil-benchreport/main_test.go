@@ -268,7 +268,7 @@ func TestRenderHumanSummaryMarkdownKRIncludesAllInOneSections(t *testing.T) {
 		t.Fatalf("write reserve: %v", err)
 	}
 
-	out := renderHumanSummaryMarkdownKR([]humanSummaryComponent{
+	out := renderHumanSummaryMarkdown([]humanSummaryComponent{
 		{
 			Path: "benchmarks/privacy-circuits/latest.json",
 			Report: report{
@@ -438,19 +438,19 @@ func TestRenderHumanSummaryMarkdownKRIncludesAllInOneSections(t *testing.T) {
 	}, "2026-06-13T16:05:00Z")
 
 	for _, want := range []string{
-		"자동 생성된다",
+		"This file is generated",
 		"## Native Circuit",
 		"## External Proverd Load",
 		"## External Proverd Scale Load",
-		"configured endpoint 4개 중 healthy 4개, unhealthy 0개",
-		"`unhealthy_endpoint_count`가 0이어야 한다",
-		"## Localnet Fee 및 Reserve",
+		"configured 4 endpoint(s): 4 healthy and 0 unhealthy",
+		"`unhealthy_endpoint_count` must be zero",
+		"## Localnet Fees and Reserve",
 		"| module balance | 10 |",
 		"## Localnet TPS Smoke",
 		"## User Latency Smoke",
-		"## Public Capacity 판정",
+		"## Public Capacity Decision",
 		"claim_eligible=false",
-		"## 산출물",
+		"## Artifacts",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("human summary missing %q:\n%s", want, out)
