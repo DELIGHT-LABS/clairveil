@@ -47,7 +47,9 @@ export function relaySnapshotExpiresAtUnix(snapshot = {}) {
 export function relaySnapshotIsExpired(snapshot = {}, chainNowMs) {
   const seconds = strictPositiveUnixSeconds(relaySnapshotExpiresAtUnix(snapshot));
   if (seconds == null || !hasValidRelayChainTime(chainNowMs)) return false;
-  return Math.floor(chainNowMs / 1000) > seconds;
+  // The chain rejects a relay withdraw at the exact expiry second too. Keep
+  // browser handoff and local recovery fail-closed at that same boundary.
+  return Math.floor(chainNowMs / 1000) >= seconds;
 }
 
 export function hasValidRelayChainTime(chainNowMs) {
@@ -190,6 +192,14 @@ function sanitizeReservationRecord(record = {}) {
     operation_id: String(record.operation_id || record.operationId || ""),
     status: String(record.status || ""),
     payload_hash: String(record.payload_hash || record.payloadHash || ""),
+    // Transaction identities are the only broadcast evidence that relay
+    // recovery metadata may retain. They are needed to reconcile a restart,
+    // but do not expose the raw payload, proof, recipient, or amount.
+    submitted_tx_hash: String(
+      record.submitted_tx_hash || record.submittedTxHash || "",
+    ),
+    tx_bytes_hash: String(record.tx_bytes_hash || record.txBytesHash || ""),
+    sign_doc_hash: String(record.sign_doc_hash || record.signDocHash || ""),
     broadcast_in_flight:
       record.broadcast_in_flight === true || record.broadcastInFlight === true,
     broadcast_attempt_count: Number(
@@ -213,10 +223,45 @@ export function sanitizeReservationBatch(batch) {
   };
 }
 
-export function sanitizeRelayWithdrawSnapshot(snapshot, { id = "" } = {}) {
+function hasCompleteRelayReservationEvidence(reservation) {
+  const operationID = String(reservation?.operation_id || "").trim();
+  const ids = relayReservationIDs(reservation).map((id) => id.trim());
+  const records = reservation?.reservations;
+  if (
+    !operationID ||
+    !ids.length ||
+    new Set(ids).size !== ids.length ||
+    ids.some((id) => !id) ||
+    !Array.isArray(records) ||
+    records.length !== ids.length
+  ) {
+    return false;
+  }
+
+  const expectedIDs = new Set(ids);
+  const seenIDs = new Set();
+  return records.every((record) => {
+    const reservationID = String(record.reservation_id || "").trim();
+    if (!reservationID || !expectedIDs.has(reservationID) || seenIDs.has(reservationID)) {
+      return false;
+    }
+    seenIDs.add(reservationID);
+    return (
+      String(record.operation_id || "").trim() === operationID &&
+      Boolean(String(record.status || "").trim())
+    );
+  });
+}
+
+export function sanitizeRelayWithdrawSnapshot(snapshot) {
   if (!snapshot) return null;
   const reservation = sanitizeReservationBatch(snapshot.reservation);
-  if (snapshot.reservation && !reservation) return null;
+  // Recovery metadata is only useful when it can be tied back to every
+  // reservation in its operation. A payload hash alone is not enough to
+  // reconcile, replan, or present an operation safely after restart.
+  if (!reservation || !hasCompleteRelayReservationEvidence(reservation)) {
+    return null;
+  }
   const payloadHash = String(
     snapshot.payloadHash ||
       snapshot.payload_hash ||
@@ -228,26 +273,21 @@ export function sanitizeRelayWithdrawSnapshot(snapshot, { id = "" } = {}) {
   );
   const reservationIDs = relayReservationIDs(reservation);
   if (!payloadHash && !reservationIDs.length) return null;
+  // Never carry a caller-controlled persistence identifier forward.  The
+  // relay-metadata record is deliberately an allowlist, and its key must be
+  // derived only from the opaque payload hash or the reservation IDs.
+  const metadataID = payloadHash || reservationIDs.join(":");
   return {
-    id:
-      id ||
-      snapshot.id ||
-      payloadHash ||
-      reservationIDs.join(":"),
+    id: metadataID,
     reservation,
-    // Refresh snapshots retain reconciliation metadata only, not payload-adjacent values.
-    amount: "",
-    recipient: "",
-    chainId: String(snapshot.chainId || snapshot.chain_id || ""),
-    expiresAt: String(snapshot.expiresAt || snapshot.expires_at || ""),
+    // Refresh snapshots retain reconciliation metadata only, not
+    // payload-adjacent display values or arbitrary caller fields.
     expiresAtUnix: relaySnapshotExpiresAtUnix(snapshot),
     payloadHash,
     submitted: Boolean(snapshot.submitted),
     handedOff: Boolean(snapshot.handedOff || snapshot.handed_off),
     relayHash: String(snapshot.relayHash || snapshot.relay_hash || ""),
     relayHeight: String(snapshot.relayHeight || snapshot.relay_height || ""),
-    relayer: String(snapshot.relayer || ""),
-    createdAt: String(snapshot.createdAt || snapshot.created_at || ""),
   };
 }
 
@@ -269,17 +309,11 @@ export function parsePersistedRelayWithdrawState(raw) {
   }
   const pending = [];
   for (const snapshot of saved.pending || []) {
-    const sanitized = sanitizeRelayWithdrawSnapshot(snapshot, {
-      id: String(snapshot?.id || ""),
-    });
+    const sanitized = sanitizeRelayWithdrawSnapshot(snapshot);
     if (!sanitized) return { valid: false, current: null, pending: [] };
     pending.push(sanitized);
   }
-  const current = saved.current
-    ? sanitizeRelayWithdrawSnapshot(saved.current, {
-        id: String(saved.current?.id || ""),
-      })
-    : null;
+  const current = saved.current ? sanitizeRelayWithdrawSnapshot(saved.current) : null;
   if (saved.current && !current) {
     return { valid: false, current: null, pending: [] };
   }
@@ -373,7 +407,9 @@ export function isRelaySnapshotStructurallyReady(
   const reservation = snapshot.reservation;
   const operationID = String(reservation?.operation_id || reservation?.operationId || "");
   const ids = relayReservationIDs(reservation);
-  if (!operationID || !ids.length) return false;
+  if (!operationID || !ids.length || new Set(ids).size !== ids.length) {
+    return false;
+  }
   return ids.every((reservationID) => {
     const record = relayReservationRecord(
       reservation,
@@ -391,6 +427,62 @@ export function isRelaySnapshotStructurallyReady(
       record.relayHandedOff !== true &&
       record.metadata?.relay_handed_off !== true &&
       record.metadata?.relayHandedOff !== true &&
+      Number(record.broadcast_attempt_count ?? record.broadcastAttemptCount ?? 0) === 0
+    );
+  });
+}
+
+// A copied payload may be copied again after a clipboard failure, but only
+// while the durable reservation still proves that no local broadcast attempt
+// has started. Unlike submission readiness, this requires the recorded relay
+// handoff evidence and must use records freshly read from the reservation
+// store rather than the snapshot embedded in UI state.
+export function canRelayHandoffPayloadBeCopied(
+  snapshot,
+  currentRecords,
+  reservationStatuses,
+) {
+  if (
+    !snapshot?.payload ||
+    snapshot.submitted ||
+    firstNonEmptyString(snapshot.relayHash, snapshot.relay_hash) ||
+    strictPositiveUnixSeconds(relaySnapshotExpiresAtUnix(snapshot)) == null ||
+    typeof currentRecords?.get !== "function"
+  ) {
+    return false;
+  }
+  const payloadHash = relaySnapshotPayloadHash(snapshot);
+  if (!payloadHash) return false;
+  const reservation = snapshot.reservation;
+  const operationID = String(reservation?.operation_id || reservation?.operationId || "");
+  const ids = relayReservationIDs(reservation);
+  if (!operationID || !ids.length || new Set(ids).size !== ids.length) {
+    return false;
+  }
+  return ids.every((reservationID) => {
+    const record = relayReservationRecord(
+      reservation,
+      reservationID,
+      currentRecords,
+    );
+    const metadata = record?.metadata || {};
+    return (
+      record &&
+      String(record.status || "") === reservationStatuses.ProofReady &&
+      String(record.operation_id || record.operationId || "") === operationID &&
+      String(record.payload_hash || record.payloadHash || "") === payloadHash &&
+      (record.relay_handed_off === true ||
+        record.relayHandedOff === true ||
+        metadata.relay_handed_off === true ||
+        metadata.relayHandedOff === true) &&
+      !record.submitted_tx_hash &&
+      !record.submittedTxHash &&
+      !record.tx_bytes_hash &&
+      !record.txBytesHash &&
+      !record.sign_doc_hash &&
+      !record.signDocHash &&
+      record.broadcast_in_flight !== true &&
+      record.broadcastInFlight !== true &&
       Number(record.broadcast_attempt_count ?? record.broadcastAttemptCount ?? 0) === 0
     );
   });
