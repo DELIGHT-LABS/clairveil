@@ -40,9 +40,47 @@ test("package subpath exports are available", async () => {
   assert.equal(typeof evm.createClairveilEvmClient, "function");
   assert.equal(typeof crypto.sha256Hex, "function");
   assert.equal(typeof browserDapp.createClairveilBrowserDappClient, "function");
-  assert.equal(typeof browserDapp.ClairveilBrowserDappClient.prototype.prepareRelayWithdraw, "function");
-  assert.equal(typeof browserDapp.ClairveilBrowserDappClient.prototype.createRelayWithdrawSignDoc, "function");
-  assert.equal(typeof browserDapp.ClairveilBrowserDappClient.prototype.buildRelayWithdrawMessageFromPayload, "function");
+  for (const name of [
+    "broadcastSignedTx",
+    "buildBankSendSignDoc",
+    "buildRootSigningMessage",
+    "checkNullifier",
+    "checkNullifiers",
+    "decodeSelfViewDisclosure",
+    "decodeBatchSelfViewDisclosure",
+    "decodeUserDisclosure",
+    "derivePrivacyAccount",
+    "evmAccountIdentity",
+    "evmJsonRpc",
+    "evmNativeSendTransaction",
+    "fetchCircuitConfig",
+    "fetchTreeState",
+    "fetchAuditableTransfers",
+    "fetchAuditableBatchTransfers",
+    "fetchBlockEvents",
+    "fetchPrivacyEvents",
+    "getBalances",
+    "health",
+    "assertCircuitConfig",
+    "assertTransferProtocolConfig",
+    "prepareDeposit",
+    "prepareRelayWithdraw",
+    "prepareTransfer",
+    "prepareWithdraw",
+    "scanWalletNotes",
+    "queryAssetByDenom",
+    "verifySignerPubKey",
+    "waitForEvmTransaction",
+    "waitForTx",
+    "createRelayWithdrawSignDoc",
+    "buildRelayWithdrawMessageFromPayload",
+  ]) {
+    assert.equal(
+      typeof browserDapp.ClairveilBrowserDappClient.prototype[name],
+      "function",
+      `browser-dapp ${name} method`,
+    );
+  }
   assert.equal(typeof planner.planTransferNotes, "function");
   assert.equal(typeof payload.buildRelayWithdrawMsgFromPayload, "function");
   assert.equal(typeof payload.buildRelayWithdrawPayload, "function");
@@ -55,6 +93,27 @@ test("package subpath exports are available", async () => {
   assert.equal(typeof tx.MsgDeposit.encode, "function");
   assert.equal(typeof tx.MsgTransfer.decode, "function");
   assert.equal(tx.MsgWithdraw.typeUrl, "/clairveil.privacy.v1.MsgWithdraw");
+});
+
+test("HTTP prover adapter preserves a configured URL path prefix", async () => {
+  const { createHttpProverAdapter } = await import("clairveiljs/prover");
+  let requestedUrl = "";
+  const adapter = createHttpProverAdapter({
+    baseURL: "https://prover.example.com/privacy-gateway",
+    fetchImpl: async (url) => {
+      requestedUrl = String(url);
+      throw new Error("test request stopped");
+    },
+  });
+
+  await assert.rejects(
+    () => adapter.proveWithdraw({ version: "v2", payload: {} }),
+    /test request stopped/,
+  );
+  assert.equal(
+    requestedUrl,
+    "https://prover.example.com/privacy-gateway/v1/prover/withdraw",
+  );
 });
 
 test("generated pagination helper is browser friendly without Buffer", async () => {
