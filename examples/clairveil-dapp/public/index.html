@@ -253,15 +253,12 @@
               <h3 id="veiledBalanceTitle">Veiled balance (Notes)</h3>
               <div class="notes-actions">
                 <label class="toggle-control">
-                  <input id="myKeplrSpendableOnly" type="checkbox" checked />
+                  <input id="myKeplrSpendableOnly" type="checkbox" />
                   <span>Spendable only</span>
                 </label>
                 <button id="scanKeplrNotes" type="button" disabled>Scan</button>
-                <button id="resetRescanNotes" class="secondary-button" type="button" disabled>
-                  Reset &amp; Rescan
-                </button>
-                <button id="clearLegacyPrivacyData" type="button" disabled>
-                  Remove legacy 0.1 data
+                <button id="resetKeplrNotes" type="button" disabled hidden>
+                  Reset &amp; rescan notes
                 </button>
               </div>
             </div>
@@ -283,10 +280,20 @@
           >
             <div class="section-title-row">
               <h3 id="veiledTransferTitle">Transfer (Veiled Send)</h3>
-              <label class="toggle-control">
-                <input id="veiledDisclosureAdvanced" type="checkbox" />
-                <span>Advanced</span>
-              </label>
+              <div class="section-title-actions">
+                <button
+                  id="openBatchTransfer"
+                  class="secondary-button compact-button"
+                  type="button"
+                  hidden
+                >
+                  Add recipient
+                </button>
+                <label class="toggle-control">
+                  <input id="veiledDisclosureAdvanced" type="checkbox" />
+                  <span>Advanced</span>
+                </label>
+              </div>
             </div>
             <div class="amount-row">
               <label class="field amount-field">
@@ -368,6 +375,118 @@
               <div>
                 <dt>Transfer tx</dt>
                 <dd id="keplrTransferHash">-</dd>
+              </div>
+            </dl>
+          </section>
+          <section
+            id="batchTransferSection"
+            class="balance-section action-section batch-transfer-section"
+            aria-labelledby="batchTransferTitle"
+            hidden
+          >
+            <div class="section-title-row">
+              <div>
+                <h3 id="batchTransferTitle">Batch Transfer (Atomic)</h3>
+                <p class="quiet">
+                  One proof and one MsgBatchTransfer for every batch.
+                </p>
+              </div>
+              <button
+                id="closeBatchTransfer"
+                class="secondary-button compact-button"
+                type="button"
+              >
+                Use single transfer
+              </button>
+            </div>
+            <div class="batch-atomic-notice" role="note">
+              <strong>All-or-nothing</strong>
+              <span>
+                A batch never partially succeeds. Every payment is included,
+                or the entire batch fails.
+              </span>
+            </div>
+            <div class="batch-table-wrap">
+              <table class="batch-payment-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Item</th>
+                    <th scope="col">Recipient</th>
+                    <th scope="col">Amount</th>
+                    <th scope="col">Disclosure</th>
+                    <th scope="col">Evidence</th>
+                    <th scope="col"><span class="sr-only">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody id="batchTransferRows"></tbody>
+              </table>
+            </div>
+            <div class="action-buttons batch-recipient-actions">
+              <button
+                id="addBatchTransferRecipient"
+                class="secondary-button"
+                type="button"
+              >
+                Add recipient
+              </button>
+            </div>
+            <div class="batch-preview" aria-live="polite">
+              <h4>Preview</h4>
+              <dl class="facts batch-preview-facts">
+                <div>
+                  <dt>Total payment</dt>
+                  <dd id="batchTransferTotal">0uclair</dd>
+                </div>
+                <div>
+                  <dt>Estimated change</dt>
+                  <dd id="batchTransferChange">-</dd>
+                </div>
+                <div>
+                  <dt>Input notes</dt>
+                  <dd id="batchTransferInputs">0 / 16</dd>
+                </div>
+                <div>
+                  <dt>Outputs</dt>
+                  <dd id="batchTransferOutputs">0 / 32</dd>
+                </div>
+                <div>
+                  <dt>Execution</dt>
+                  <dd>1 proof / 1 transaction</dd>
+                </div>
+                <div class="batch-preview-capacity">
+                  <dt>Capacity</dt>
+                  <dd id="batchTransferCapacity">Add a payment</dd>
+                </div>
+              </dl>
+              <p id="batchTransferCapacityWarning" class="batch-capacity-warning" hidden>
+                This draft exceeds one atomic batch. It will not be split
+                automatically.
+              </p>
+              <label id="batchTransferSplitControl" class="checkbox-control" hidden>
+                <input id="batchTransferSplit" type="checkbox" />
+                <span>
+                  Split into multiple atomic batches. Completed batches remain
+                  committed if a later batch fails.
+                </span>
+              </label>
+            </div>
+            <div class="amount-row batch-submit-row">
+              <p class="quiet">
+                Review total, change, input/output capacity, and every
+                disclosure setting before opening Keplr.
+              </p>
+              <button id="prepareBatchTransfer" type="button" disabled>
+                Prepare atomic batch
+              </button>
+            </div>
+            <dl class="facts">
+              <div>
+                <dt>Batch tx</dt>
+                <dd id="keplrBatchTransferHash">-</dd>
+              </div>
+              <div>
+                <dt>Batch state</dt>
+                <dd id="batchTransferState">Draft</dd>
               </div>
             </dl>
           </section>
@@ -532,6 +651,12 @@
                   payload/proof JSON is privacy-sensitive. Only relay metadata
                   is kept after refresh.
                 </p>
+                <div
+                  id="relayWithdrawManualReviewEvidence"
+                  class="relay-review-evidence"
+                  role="note"
+                  hidden
+                ></div>
                 <pre id="relayWithdrawPreparedPayloadJson" class="payload-json">
 No prepared payload</pre
                 >
@@ -558,7 +683,12 @@ No prepared payload</pre
         <section class="events-section">
           <div class="section-heading">
             <h2>Privacy Events</h2>
-            <button id="refreshEvents" type="button">Refresh Events</button>
+            <div class="event-page-controls">
+              <span id="eventsPageState" class="quiet" aria-live="polite">Page 1</span>
+              <button id="previousEventsPage" type="button" disabled>Older</button>
+              <button id="nextEventsPage" type="button" disabled>Newer</button>
+              <button id="refreshEvents" type="button">Refresh Events</button>
+            </div>
           </div>
           <div class="events-layout">
             <div id="eventsList" class="events-list"></div>
@@ -634,6 +764,11 @@ No prepared payload</pre
                 조회
               </button>
               <p id="eventDisclosureState" class="quiet">Select an event.</p>
+              <div
+                id="eventDisclosureReports"
+                class="audit-output-reports"
+                hidden
+              ></div>
             </div>
           </div>
         </section>
@@ -685,7 +820,12 @@ No prepared payload</pre
       <section class="auditor-section">
         <div class="section-heading">
           <h2>Auditor</h2>
-          <button id="refreshAuditorTransfers" type="button">Refresh</button>
+          <div class="event-page-controls">
+            <span id="auditorPageState" class="quiet" aria-live="polite">Page 1</span>
+            <button id="previousAuditorPage" type="button" disabled>Older</button>
+            <button id="nextAuditorPage" type="button" disabled>Newer</button>
+            <button id="refreshAuditorTransfers" type="button">Refresh</button>
+          </div>
         </div>
         <div class="auditor-layout">
           <div class="audit-pane">
@@ -701,6 +841,9 @@ No prepared payload</pre
                 Decode
               </button>
             </div>
+            <p id="auditorDecodeState" class="quiet" aria-live="polite">
+              Select a transfer.
+            </p>
             <div class="admin-warning" role="note">
               <strong>DEV / ADMIN TEST ONLY</strong>
               <span
@@ -739,7 +882,7 @@ No prepared payload</pre
                 <dd id="auditorTo">-</dd>
               </div>
             </dl>
-            <p id="auditorDecodeState" class="quiet">Select a transfer.</p>
+            <div id="auditorOutputReports" class="audit-output-reports" hidden></div>
           </div>
         </div>
       </section>
@@ -772,6 +915,101 @@ No prepared payload</pre
           </button>
         </div>
         <p id="noticeMessage"></p>
+      </section>
+    </div>
+
+    <div id="reservationReviewModal" class="modal-backdrop" hidden>
+      <section
+        class="modal-dialog reservation-review-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="reservationReviewTitle"
+      >
+        <div class="modal-heading">
+          <h2 id="reservationReviewTitle">예약 검토</h2>
+          <span id="reservationReviewState" class="modal-state">확인 필요</span>
+        </div>
+        <p id="reservationReviewLead" class="modal-copy"></p>
+        <ul id="reservationReviewCauses" class="reservation-review-causes"></ul>
+        <p id="reservationReviewWarning" class="reservation-review-warning"></p>
+        <label id="reservationReviewAcknowledgement" class="reservation-review-acknowledgement">
+          <input id="reservationReviewAcknowledge" type="checkbox" />
+          <span>지갑과 탐색기에서 제출된 거래가 없음을 확인했습니다.</span>
+        </label>
+        <div class="modal-actions">
+          <button id="cancelReservationReview" class="secondary-button" type="button">
+            닫기
+          </button>
+          <button id="confirmReservationReview" type="button" disabled>
+            예약 취소 및 다시 준비
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <div id="batchTransferConfirmationModal" class="modal-backdrop" hidden>
+      <section
+        class="modal-dialog batch-confirmation-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="batchTransferConfirmationTitle"
+      >
+        <div class="modal-heading">
+          <h2 id="batchTransferConfirmationTitle">Atomic Batch 최종 확인</h2>
+          <span class="modal-state">서명 전 확인</span>
+        </div>
+        <p class="modal-copy">
+          최신 chain scan으로 준비된 실제 effect입니다. 아래 total, change,
+          input/output 수와 각 지급 항목을 확인한 뒤 Keplr 서명을 여세요.
+        </p>
+        <div class="batch-atomic-notice" role="note">
+          <strong>All-or-nothing</strong>
+          <span>
+            이 batch의 모든 지급이 함께 성공하거나 전체가 실패합니다.
+          </span>
+        </div>
+        <dl class="facts batch-confirmation-facts">
+          <div>
+            <dt>Total payment</dt>
+            <dd id="batchTransferConfirmationTotal">-</dd>
+          </div>
+          <div>
+            <dt>Exact change</dt>
+            <dd id="batchTransferConfirmationChange">-</dd>
+          </div>
+          <div>
+            <dt>Input notes</dt>
+            <dd id="batchTransferConfirmationInputs">-</dd>
+          </div>
+          <div>
+            <dt>Outputs</dt>
+            <dd id="batchTransferConfirmationOutputs">-</dd>
+          </div>
+          <div>
+            <dt>Disclosure settings</dt>
+            <dd id="batchTransferConfirmationDisclosures">-</dd>
+          </div>
+          <div>
+            <dt>Execution</dt>
+            <dd>1 proof / 1 transaction</dd>
+          </div>
+        </dl>
+        <div class="batch-confirmation-payments">
+          <strong>Prepared payments</strong>
+          <code id="batchTransferConfirmationPayments">-</code>
+        </div>
+        <div class="modal-actions">
+          <button
+            id="cancelBatchTransferConfirmation"
+            class="secondary-button"
+            type="button"
+          >
+            취소하고 proof 폐기
+          </button>
+          <button id="confirmBatchTransferConfirmation" type="button">
+            확인 후 Keplr 열기
+          </button>
+        </div>
       </section>
     </div>
 
@@ -834,6 +1072,33 @@ No prepared payload</pre
             </div>
           </li>
         </ol>
+        <dl
+          id="transferConfirmationFacts"
+          class="transfer-confirmation-facts"
+          aria-label="Prepared privacy transfer confirmation"
+          hidden
+        >
+          <div>
+            <dt>Chain ID</dt>
+            <dd id="transferConfirmationChainId">-</dd>
+          </div>
+          <div>
+            <dt>Expiry</dt>
+            <dd id="transferConfirmationExpiry">-</dd>
+          </div>
+          <div>
+            <dt>Recipient effect</dt>
+            <dd id="transferConfirmationRecipient">-</dd>
+          </div>
+          <div>
+            <dt>Change effect</dt>
+            <dd id="transferConfirmationChange">-</dd>
+          </div>
+          <div>
+            <dt>Disclosure planes</dt>
+            <dd id="transferConfirmationDisclosure">-</dd>
+          </div>
+        </dl>
         <div id="transferSuccessPanel" class="transfer-result" hidden>
           <strong id="transferSuccessTitle"
             >트랜스퍼 요청이 성공하였습니다</strong
