@@ -6,9 +6,72 @@ This project follows [the release versioning policy](docs/clairveil-release-vers
 
 ## Unreleased
 
+### Added
+
+- Added the English/Korean WebApp integration pack: explicit supported-flow
+  scope, versioned browser chain-profile schema, browser API/lifecycle guide,
+  encrypted storage/recovery contract, and browser/prover deployment controls.
+- Added a feature-gated Cosmos batch-payment editor to the example DApp. It
+  prepares one 1–16 input / 1–32 output `MsgBatchTransfer`, makes the
+  all-or-nothing boundary and capacity visible, never splits silently, and
+  verifies per-payment output evidence after inclusion.
+
+### Changed
+
+- The example DApp now emits and validates
+  `clairveil-web-client-config-v1`; server and static flattened compatibility
+  fields must agree with the active chain profile before a browser flow starts.
+  The legacy top-level EVM account prefix remains host metadata and cannot
+  override the profile privacy prefix passed to ClairveilJS.
+- ClairveilJS browser-client declarations now expose the existing typed,
+  read-only `evmJsonRpc<TResult>` recovery/query method.
+- The example DApp now consumes the ClairveilJS browser preflight surface for
+  circuit, asset, audit/disclosure, tree, reserve, and EVM chain validation.
+  It fails closed before displaying spendable inventory and again immediately
+  before every supported privacy preparation.
+- The example DApp now uses a fresh content-addressed ClairveilJS 0.2.0
+  artifact that exposes the browser circuit/asset/tree preflight and
+  experimental atomic batch-transfer methods.
+
+### Fixed
+
+- Restored reproducible example-DApp installs with a content-addressed
+  ClairveilJS archive for CI/release and a local-checkout link only for
+  `make dapp-local`. The Privacy Events panel now selects batch transfers and
+  verifies every available sender self-view disclosure from complete typed
+  `privacy-scan-v2` output evidence.
+- The example DApp now confirms the exact prepared atomic-batch effects before
+  opening Keplr, including the full recipient and per-payment disclosure,
+  blocks individually unsplittable payments, excludes already verified split
+  payments from later retries, and keeps every ambiguous post-broadcast
+  outcome in reconciliation instead of reporting it as failed.
+- Removed the example DApp's legacy 0.1 browser-data cleanup UI and
+  implementation. The v0.2 client continues to ignore legacy persistence and
+  starts from an isolated fresh scan without reading or mutating it.
+- Make `dapp-local` enable the loopback same-origin prover proxy. The local
+  browser DApp no longer attempts a cross-origin request to the reference
+  prover, which intentionally does not provide a browser CORS policy.
+- Renew the example DApp's current chain-configuration preflight when its
+  short-lived lease expires. Cached notes no longer stay hidden as
+  `Sync unavailable` solely because the previous successful preflight aged
+  out; a failed renewal still fails closed.
+- Updated the vendored ClairveilJS artifact so browser proof requests preserve
+  a configured prover URL path prefix, matching the WebApp profile and
+  deployment-gate contract. The patched `0.2.0` package manifest and
+  content-addressed filename keep that artifact independently identifiable.
+  DApp compatibility fixtures now construct valid v0.2 Merkle paths and
+  canonical asset IDs.
+
 ### Security
 
-- Updated OpenTelemetry to v1.44.0 and gRPC to v1.82.1 to resolve `GO-2026-5158` and `GO-2026-6061`.
+- Replaced the example DApp's plaintext note cache, reservation state, and
+  relay recovery metadata with namespace-separated AES-GCM IndexedDB records.
+  Privacy setup now requires IndexedDB, Web Crypto, and Web Locks; it does not
+  fall back to `localStorage`, plaintext IndexedDB, or memory.
+- Hardened the example static server: loopback is the default bind, the prover
+  proxy needs explicit direct-loopback local-test opt-in, public mode rejects
+  proxy/token/cleartext configuration, and static responses receive CSP,
+  `nosniff`, no-referrer, and cross-origin opener headers.
 
 ### Migration Notes
 
