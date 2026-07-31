@@ -208,7 +208,7 @@ Breaking 또는 migration impact가 있는 변경:
 - relay withdraw handoff payload/message mapping 변경
 - audit disclosure 필수 여부 변경
 
-이런 변경이 있으면 client product brief, UX flows, risk decisions, API checklist, JS SDK handoff, release note impact를 함께 갱신해야 합니다.
+이런 변경이 있으면 client product brief, UX flows, risk decisions, API checklist, JS SDK handoff, WebApp scope/integration/storage/deployment 문서, release note impact를 함께 갱신해야 합니다.
 
 이 계약을 적용할 때 cached prepared payload, proof response/job, old local development artifact를 지우고 `privacy-note-v1` artifact를 다시 생성하며 old circuit/disclosure version metadata를 저장한 client cache를 resync해야 합니다. Legacy prepared-payload decode path는 없습니다.
 
@@ -218,6 +218,10 @@ Breaking 또는 migration impact가 있는 변경:
 - [Client UX flows](clairveil-client-ux-flows-kr.md)
 - [Client risk decisions](clairveil-client-risk-decisions-kr.md)
 - [JS SDK handoff](clairveil-js-sdk-handoff-kr.md)
+- [WebApp scope](clairveil-web-app-scope-kr.md)
+- [WebApp integration](clairveil-web-app-integration-kr.md)
+- [WebApp storage and recovery](clairveil-web-app-storage-recovery-kr.md)
+- [WebApp deployment](clairveil-web-app-deployment-kr.md)
 - [Downstream integration guide](clairveil-downstream-cosmos-integration-guide-kr.md)
 - [Testing guide](clairveil-testing-guide-kr.md)
 

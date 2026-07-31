@@ -164,4 +164,8 @@ The Clairveil repository does not provide:
 - [Client risk decisions](clairveil-client-risk-decisions.md)
 - [Client API checklist](clairveil-client-api-checklist.md)
 - [JS SDK handoff](clairveil-js-sdk-handoff.md)
+- [WebApp scope](clairveil-web-app-scope.md)
+- [WebApp integration](clairveil-web-app-integration.md)
+- [WebApp storage and recovery](clairveil-web-app-storage-recovery.md)
+- [WebApp deployment](clairveil-web-app-deployment.md)
 - [CLI reference](clairveil-cli-reference.md)

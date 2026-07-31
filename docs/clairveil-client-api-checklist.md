@@ -208,7 +208,7 @@ Changes with breaking or migration impact:
 - relay withdraw handoff payload/message mapping changes
 - audit disclosure requiredness changes
 
-When these change, update the client product brief, UX flows, risk decisions, API checklist, JS SDK handoff, and release note impact together.
+When these change, update the client product brief, UX flows, risk decisions, API checklist, JS SDK handoff, WebApp scope/integration/storage/deployment documents, and release note impact together.
 
 Adopting this contract requires clearing cached prepared payloads, proof responses/jobs, and old local development artifacts, regenerating `privacy-note-v1` artifacts, and resyncing any client cache that persisted old circuit or disclosure-version metadata. There is no legacy prepared-payload decode path.
 
@@ -218,6 +218,10 @@ Adopting this contract requires clearing cached prepared payloads, proof respons
 - [Client UX flows](clairveil-client-ux-flows.md)
 - [Client risk decisions](clairveil-client-risk-decisions.md)
 - [JS SDK handoff](clairveil-js-sdk-handoff.md)
+- [WebApp scope](clairveil-web-app-scope.md)
+- [WebApp integration](clairveil-web-app-integration.md)
+- [WebApp storage and recovery](clairveil-web-app-storage-recovery.md)
+- [WebApp deployment](clairveil-web-app-deployment.md)
 - [Downstream integration guide](clairveil-downstream-cosmos-integration-guide.md)
 - [Testing guide](clairveil-testing-guide.md)
 
