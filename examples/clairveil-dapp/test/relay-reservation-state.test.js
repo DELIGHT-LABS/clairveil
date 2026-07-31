@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { reservationStatuses } from "clairveiljs/reservation";
 import {
+  canRelayHandoffPayloadBeCopied,
   canRelaySnapshotBeSubmitted,
   canReplanExpiredLocalReservation,
   cosmosTxExecutionOutcome,
@@ -220,6 +221,9 @@ function proofReadyReservation() {
         lease_token: "secret-lease-token",
         nullifier_lookup_key: "private-lookup",
         payload_hash: "payload-hash",
+        submitted_tx_hash: "submitted-tx-hash",
+        tx_bytes_hash: "tx-bytes-hash",
+        sign_doc_hash: "sign-doc-hash",
       },
     ],
   };
@@ -227,7 +231,7 @@ function proofReadyReservation() {
 
 test("persisted relay snapshots keep metadata but drop payload and proof JSON", () => {
   const snapshot = sanitizeRelayWithdrawSnapshot({
-    id: "payload-hash",
+    id: "sensitive-proof-json",
     payload: {
       payload_hash: "payload-hash",
       proof: "sensitive-proof-json",
@@ -239,26 +243,43 @@ test("persisted relay snapshots keep metadata but drop payload and proof JSON", 
     reservation: proofReadyReservation(),
     amount: "10",
     recipient: "clair1recipient",
+    chainId: "private-chain-id",
+    expiresAt: "4102448400 (2099-12-31T00:00:00.000Z)",
+    relayer: "clair1relayer",
+    createdAt: "sensitive-created-at",
     handedOff: false,
   });
 
+  assert.equal(snapshot.id, "payload-hash");
   assert.equal(snapshot.payloadHash, "payload-hash");
-  assert.equal(snapshot.amount, "");
-  assert.equal(snapshot.recipient, "");
   assert.equal(snapshot.expiresAtUnix, "4102448400");
   assert.equal("payload" in snapshot, false);
   assert.equal("payloadText" in snapshot, false);
   assert.equal("preparedData" in snapshot, false);
+  assert.equal("amount" in snapshot, false);
+  assert.equal("recipient" in snapshot, false);
+  assert.equal("chainId" in snapshot, false);
+  assert.equal("expiresAt" in snapshot, false);
+  assert.equal("relayer" in snapshot, false);
+  assert.equal("createdAt" in snapshot, false);
   assert.deepEqual(snapshot.reservation.reservations, [
     {
       reservation_id: "relay-op:note:1",
       operation_id: "relay-op",
       status: reservationStatuses.ProofReady,
       payload_hash: "payload-hash",
+      submitted_tx_hash: "submitted-tx-hash",
+      tx_bytes_hash: "tx-bytes-hash",
+      sign_doc_hash: "sign-doc-hash",
       broadcast_in_flight: false,
       broadcast_attempt_count: 0,
     },
   ]);
+  assert.equal("lease_token" in snapshot.reservation.reservations[0], false);
+  assert.equal(
+    "nullifier_lookup_key" in snapshot.reservation.reservations[0],
+    false,
+  );
 });
 
 test("corrupted relay persistence fails closed without throwing", () => {
@@ -281,6 +302,37 @@ test("corrupted relay persistence fails closed without throwing", () => {
         },
       }],
     })),
+    { valid: false, current: null, pending: [] },
+  );
+});
+
+test("persisted relay snapshots require complete operation reservation evidence", () => {
+  assert.equal(
+    sanitizeRelayWithdrawSnapshot({ payloadHash: "payload-hash" }),
+    null,
+  );
+  assert.equal(
+    sanitizeRelayWithdrawSnapshot({
+      payloadHash: "payload-hash",
+      reservation: {
+        operation_id: "relay-op",
+        reservation_ids: ["r1"],
+        reservations: [],
+      },
+    }),
+    null,
+  );
+  assert.deepEqual(
+    parsePersistedRelayWithdrawState({
+      current: {
+        payloadHash: "payload-hash",
+        reservation: {
+          operation_id: "relay-op",
+          reservation_ids: ["r1"],
+          reservations: [{ reservation_id: "r1", operation_id: "relay-op" }],
+        },
+      },
+    }),
     { valid: false, current: null, pending: [] },
   );
 });
@@ -350,8 +402,8 @@ test("expired relay snapshots are not submittable", () => {
 
   assert.equal(relaySnapshotExpiresAtUnix(snapshot), "100");
   assert.equal(relaySnapshotIsExpired(snapshot), false);
-  assert.equal(relaySnapshotIsExpired(snapshot, 100999), false);
-  assert.equal(relaySnapshotIsExpired(snapshot, 101000), true);
+  assert.equal(relaySnapshotIsExpired(snapshot, 99999), false);
+  assert.equal(relaySnapshotIsExpired(snapshot, 100000), true);
   assert.equal(
     canRelaySnapshotBeSubmitted(
       {
@@ -360,7 +412,7 @@ test("expired relay snapshots are not submittable", () => {
       },
       null,
       reservationStatuses,
-      101000,
+      100000,
     ),
     false,
   );
@@ -469,6 +521,64 @@ test("handed-off relay snapshots cannot be submitted by the local relayer", () =
   );
 });
 
+test("copied relay handoffs require fresh pre-broadcast reservation evidence", () => {
+  const snapshot = {
+    payloadHash: "payload-hash",
+    payload: {
+      payload_hash: "payload-hash",
+      expires_at_unix: 4102448400,
+    },
+    reservation: {
+      operation_id: "relay-op",
+      reservation_ids: ["relay-op:note:1"],
+    },
+  };
+  const current = {
+    reservation_id: "relay-op:note:1",
+    operation_id: "relay-op",
+    status: reservationStatuses.ProofReady,
+    payload_hash: "payload-hash",
+    broadcast_in_flight: false,
+    broadcast_attempt_count: 0,
+    metadata: { relay_handed_off: true },
+  };
+
+  assert.equal(
+    canRelayHandoffPayloadBeCopied(
+      snapshot,
+      new Map([[current.reservation_id, current]]),
+      reservationStatuses,
+    ),
+    true,
+  );
+  assert.equal(
+    canRelayHandoffPayloadBeCopied(snapshot, null, reservationStatuses),
+    false,
+  );
+  assert.equal(
+    canRelayHandoffPayloadBeCopied(
+      snapshot,
+      new Map([[
+        current.reservation_id,
+        { ...current, broadcast_in_flight: true, broadcast_attempt_count: 1 },
+      ]]),
+      reservationStatuses,
+    ),
+    false,
+  );
+  assert.equal(
+    canRelayHandoffPayloadBeCopied(
+      snapshot,
+      new Map([[
+        current.reservation_id,
+        { ...current, submitted_tx_hash: "already-submitted" },
+      ]]),
+      reservationStatuses,
+    ),
+    false,
+  );
+});
+
 test("relay snapshot with a durable broadcast attempt cannot be submitted again", () => {
   const snapshot = sanitizeRelayWithdrawSnapshot({
     payload: {
@@ -487,7 +597,7 @@ test("relay snapshot with a durable broadcast attempt cannot be submitted again"
   );
 });
 
-test("relay structural readiness rejects missing expiry, mixed status, and payload hash mismatch", () => {
+test("relay structural readiness rejects duplicate inputs, missing expiry, mixed status, and payload hash mismatch", () => {
   const snapshot = sanitizeRelayWithdrawSnapshot({
     payload: {
       payload_hash: "payload-hash",
@@ -507,6 +617,21 @@ test("relay structural readiness rejects missing expiry, mixed status, and paylo
   assert.equal(
     isRelaySnapshotStructurallyReady({ ...snapshot, payload }, null, reservationStatuses),
     true,
+  );
+  assert.equal(
+    isRelaySnapshotStructurallyReady(
+      {
+        ...snapshot,
+        payload,
+        reservation: {
+          ...snapshot.reservation,
+          reservation_ids: ["r1", "r1"],
+        },
+      },
+      null,
+      reservationStatuses,
+    ),
+    false,
   );
   assert.equal(
     isRelaySnapshotStructurallyReady(
