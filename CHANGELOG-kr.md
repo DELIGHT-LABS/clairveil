@@ -6,6 +6,34 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
 ## Unreleased
 
+### Security
+
+- `GO-2026-5158`과 `GO-2026-6061`을 해결하기 위해 OpenTelemetry를 v1.44.0으로, gRPC를 v1.82.1로 업데이트했습니다.
+
+## v0.3.1 - 2026-07-21
+
+### Fixed
+
+- 이미 공개된 `v0.3.0` tag에 누락된 한영 날짜 changelog heading을 추가하고 release documentation, supported-version reference, immutable release packaging metadata를 완성했습니다. `v0.3.0` 대비 Go, protobuf, runtime, state, circuit, wire-contract 변경은 없습니다.
+
+### Handoff Notes
+
+- 이미 `v0.3.0`을 pin한 downstream codebase는 변경 없이 계속 사용할 수 있습니다. `v0.3.1`은 문서화와 release preparation을 포함한 공개 배포이며 검증된 handoff pack과 GitHub release identity로 사용합니다. `v0.3.0` tag는 이동하거나 재사용하지 않습니다.
+
+## v0.3.0 - 2026-07-21
+
+### Added
+
+- `msg.Creator` actor attribution을 유지하면서 explicit validated funder를 canonical deposit transition에서 debit하는 trusted in-process `Keeper.DepositWithFunder` integration surface를 추가했습니다.
+
+### Changed
+
+- Public `MsgDeposit` protobuf, gRPC, CLI, client wire format, actor-as-funder 동작과 기존 gas path를 그대로 유지하고, downstream caller가 core-local rollback과 outer SDK/EVM rollback boundary를 결합할 수 있도록 deposit mutation을 nested cache에서 실행합니다. Explicit-funder bank transfer 검증을 위한 추가 module-balance read는 trusted entry에만 적용합니다.
+
+### Security
+
+- Downstream adapter가 authenticated caller에서 actor를 derive하고 `privacy` module account와 다른 fixed escrow만 funder로 사용하며 deposit amount를 EVM `msg.value` 및 runtime native denom과 정확히 bind하고 이후 policy failure를 atomic하게 rollback해야 함을 문서화했습니다. Trusted Keeper API는 `privacy` module account funder를 거부하고 bank send 후 module balance 증가량을 정확히 검증해 self-transfer 또는 redirected send로 unbacked shielded deposit이 생성되지 않게 합니다.
+
 ## v0.2.0 - 2026-07-13
 
 ### Added
