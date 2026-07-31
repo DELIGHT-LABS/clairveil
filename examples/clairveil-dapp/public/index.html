@@ -257,7 +257,12 @@
                   <span>Spendable only</span>
                 </label>
                 <button id="scanKeplrNotes" type="button" disabled>Scan</button>
-                <button id="resetRescanNotes" class="secondary-button" type="button" disabled>Reset &amp; Rescan</button>
+                <button id="resetRescanNotes" class="secondary-button" type="button" disabled>
+                  Reset &amp; Rescan
+                </button>
+                <button id="clearLegacyPrivacyData" type="button" disabled>
+                  Remove legacy 0.1 data
+                </button>
               </div>
             </div>
             <div class="note-summary">
@@ -320,6 +325,12 @@
                 ></div>
               </div>
             </div>
+            <p id="veiledDisclosureSummary" class="quiet">
+              Audit disclosure is always encrypted for the configured auditor.
+              Sender self-view disclosure is included by default for later
+              sent-transfer recovery. Advanced settings control only optional
+              user disclosure.
+            </p>
             <div id="veiledDisclosureOptions" class="transfer-advanced" hidden>
               <label class="field">
                 <span>Disclosure mode</span>
@@ -469,7 +480,7 @@
               </div>
             </section>
             <div class="local-signer-notes relayer-details">
-              <h3 class="relayer-account-title">Relayer</h3>
+              <h3 class="relayer-account-title">Local Relayer (optional)</h3>
               <dl class="facts relayer-account-facts">
                 <div>
                   <dt>Transparent</dt>
@@ -529,7 +540,7 @@ No prepared payload</pre
                     Copy
                   </button>
                   <button id="relayPreparedWithdraw" type="button" disabled>
-                    Relay
+                    Relay locally
                   </button>
                 </div>
                 <div class="pending-relay-payloads">

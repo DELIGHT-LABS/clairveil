@@ -1,5 +1,4 @@
 import { createClairveilBrowserDappClient } from "clairveiljs/browser-dapp";
-import { LocalStorageNoteStore } from "clairveiljs/note-store";
 import { bech32AddressToEvm } from "clairveiljs/evm";
 import {
   createBrowserReservationStore,
@@ -8,7 +7,14 @@ import {
   reservationHeartbeatIntervalMs,
   reservationStatuses,
 } from "clairveiljs/reservation";
-import { getStaticDappConfig } from "./dapp-config.js";
+import { loadStaticDappConfig } from "./dapp-config.js";
+import {
+  clearLegacyBrowserReservationState,
+  createEncryptedBrowserMetadataStore,
+  createEncryptedBrowserMigrationMarkerStore,
+  createEncryptedStateCodec,
+  EncryptedIndexedDbNoteStore,
+} from "./encrypted-browser-store.js";
 import {
   canRelaySnapshotBeSubmitted,
   expiredRelayReservationRecoveryTarget,
@@ -33,6 +39,12 @@ import {
   shouldEscalateSuccessfulTxWithUnspentNullifiers,
 } from "./transaction-status.js";
 
+const completeNoteScanMaxPages = 1_000;
+const depositProofRequestTimeoutMs = 120_000;
+const depositProofResponseMaxBytes = 1 << 20;
+const healthBootstrapRequestTimeoutMs = 30_000;
+const healthBootstrapResponseMaxBytes = 1 << 20;
+
 function defaultMetaMaskState() {
   return {
     account: "",
@@ -50,7 +62,7 @@ function defaultNoteScanCursor() {
     nextPage: 1,
     nextSequence: 0,
     limit: 200,
-    maxPages: 5,
+    maxPages: completeNoteScanMaxPages,
     hasMore: false,
     latestHeight: 0,
     latestSequence: 0,
@@ -112,8 +124,34 @@ function defaultKeplrState() {
     reservationRecordByID: {},
     manualReviewReservations: [],
     notesScanned: false,
+    scanError: "",
+    privacySetupFailed: false,
+    legacyCleanupState: "",
     noteScanCursor: defaultNoteScanCursor(),
     showSpendableOnly: true,
+  };
+}
+
+function defaultAuditorState() {
+  return {
+    events: [],
+    selectedTxHash: "",
+    decoded: null,
+    testScalar: "",
+    testScalarError: "",
+    testScalarMatchesAuditConfig: false,
+    loading: false,
+  };
+}
+
+function defaultPrivacyEventsState() {
+  return {
+    events: [],
+    selectedTxHash: "",
+    decoded: null,
+    error: "",
+    loadError: "",
+    loading: false,
   };
 }
 
@@ -135,26 +173,17 @@ const state = {
     balance: "",
     error: "",
   },
-  auditor: {
-    events: [],
-    selectedTxHash: "",
-    decoded: null,
-    testScalar: "",
-    testScalarError: "",
-    testScalarMatchesAuditConfig: false,
-    loading: false,
-  },
-  privacyEvents: {
-    events: [],
-    selectedTxHash: "",
-    decoded: null,
-    error: "",
-    loadError: "",
-    loading: false,
-  },
+  auditor: defaultAuditorState(),
+  privacyEvents: defaultPrivacyEventsState(),
   blockEvents: {
     events: [],
     error: "",
+  },
+  chainSafety: {
+    key: "",
+    status: "unknown",
+    error: "",
+    checkedAt: 0,
   },
 };
 
@@ -162,19 +191,34 @@ const $ = (selector) => document.querySelector(selector);
 let shieldedAddressBookPromise = null;
 let browserClient = null;
 let browserClientKey = "";
+let auditorSessionGeneration = 0;
+let privacyEventDisclosureGeneration = 0;
 let reservationStore = null;
 let reservationStoreKey = "";
 let relayPendingPayloadSequence = 0;
 let relayWithdrawPayloadGeneration = 0;
 let preparedRelayReservationHeartbeatTimer = null;
 let preparedRelayReservationHeartbeatInFlight = null;
+let preparedRelayReservationHeartbeatGeneration = 0;
 let relayWithdrawPayloadCopyInFlight = false;
+let relayWithdrawPayloadCopyLock = null;
+let relaySubmissionInFlight = false;
+let relaySubmissionLock = null;
+let depositInFlight = false;
+let privacyValueActionLock = null;
 let reservationManager = null;
 let reservationManagerKey = "";
 let reservationWorkerID = "";
 let serverConfigAvailable = true;
+// ClairveilJS 0.2 starts a fresh privacy-note-v1 cache/reservation epoch.
+// Never revive 0.1 notes, leases, or relay payload metadata under the new
+// fixed-envelope contract; the first scan repopulates this namespace.
+const reservationStoreNamespacePrefix = "clairveil:note-reservations:v2:";
+const walletNoteStoreNamespacePrefix = "clairveil:wallet-notes:v2:";
 const relayWithdrawPayloadStoragePrefix =
-  "clairveil:relay-withdraw-payloads:v1:";
+  "clairveil:relay-withdraw-payloads:v2:";
+const legacyMigrationMarkerNamespacePrefix = "clairveil:privacy-upgrade:v2:";
+const webClientConfigSchemaVersion = "clairveil-web-client-config-v1";
 const reservationRecoveryGraceMs = 15 * 60 * 1000;
 const unresolvedReservationManualReviewAgeMs = 24 * 60 * 60 * 1000;
 const successfulTxNullifierConflictGraceMs = 2 * 60 * 1000;
@@ -182,30 +226,15 @@ let walletNoteStore = null;
 let walletNoteStoreKey = "";
 let noteScanQueue = Promise.resolve();
 let pendingNoteScans = 0;
-let noteScanGeneration = 0;
-
-function invalidateNoteScans() {
-  noteScanGeneration += 1;
-}
-
-function currentNoteScanSession() {
-  return {
-    generation: noteScanGeneration,
-    activeWallet: state.activeWallet,
-    account: state.keplr.account,
-    chainProfileID: state.selectedChainProfileId,
-  };
-}
-
-function isCurrentNoteScanSession(session) {
-  return Boolean(
-    session &&
-      session.generation === noteScanGeneration &&
-      session.activeWallet === state.activeWallet &&
-      session.account === state.keplr.account &&
-      session.chainProfileID === state.selectedChainProfileId,
-  );
-}
+let relayMetadataStore = null;
+let relayMetadataStoreKey = "";
+let relayMetadataWrite = Promise.resolve();
+let legacyMigrationMarkerStore = null;
+let legacyMigrationMarkerStoreKey = "";
+let chainSafetyExpiryTimer = null;
+let privacySessionGeneration = 0;
+const activeReservationHeartbeatStops = new Set();
+const preparedPrivacySessionContexts = new WeakMap();
 
 function configuredChainProfile() {
   if (!state.config) return null;
@@ -226,6 +255,430 @@ function configuredChainProfile() {
     evmChainName: state.config.evmChainName,
     keplrChainInfo: state.config.keplrChainInfo,
   };
+}
+
+const webClientRootConfigFields = new Set([
+  "schemaVersion",
+  "activeChainProfileId",
+  "chainProfiles",
+  "serverBacked",
+  "modeLabel",
+  "home",
+  "localSignerHome",
+  "localSignerBin",
+  "localTestMode",
+  "chainId",
+  "rpc",
+  "rest",
+  "proverUrl",
+  "transport",
+  "denom",
+  "displayDenom",
+  "coinDecimals",
+  "accountPrefix",
+  "shieldedPrefix",
+  "keplrChainInfo",
+  "evmRpc",
+  "evmChainId",
+  "evmChainName",
+  "evmPrivacyPrecompileAddress",
+  "evmGasLimit",
+  "evmSendGasLimit",
+  "serverFeatures",
+]);
+
+const webClientProfileFields = new Set([
+  "id",
+  "label",
+  "chainName",
+  "transport",
+  "wallet",
+  "chainId",
+  "rpc",
+  "rest",
+  "restEndpoints",
+  "proverUrl",
+  "depositProofUrl",
+  "accountPrefix",
+  "shieldedPrefix",
+  "denom",
+  "displayDenom",
+  "coinDecimals",
+  "keplrCoinType",
+  "gasPriceStep",
+  "keplrChainInfo",
+  "evmRpc",
+  "evmChainId",
+  "evmChainName",
+  "evmPrivacyPrecompileAddress",
+  "evmGasLimit",
+  "evmSendGasLimit",
+]);
+
+const webClientServerFeatureFields = new Set([
+  "localTestMode",
+  "localSigners",
+  "localSignerAdmin",
+  "localSignerSetup",
+  "faucet",
+  "depositProof",
+  "relayer",
+  "auditorAdmin",
+  "proverProxy",
+]);
+
+function isPlainConfigObject(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function assertNoUnexpectedConfigFields(value, allowed, label) {
+  for (const field of Object.keys(value)) {
+    if (!allowed.has(field)) {
+      throw new Error(`Clairveil WebApp ${label} contains unsupported field ${field}`);
+    }
+  }
+}
+
+function assertConfigString(value, label, pattern, { minLength = 1, maxLength = 128 } = {}) {
+  if (
+    typeof value !== "string" ||
+    value.length < minLength ||
+    value.length > maxLength ||
+    (pattern && !pattern.test(value))
+  ) {
+    throw new Error(`Clairveil WebApp configuration ${label} is invalid`);
+  }
+}
+
+function assertConfigUrl(value, label) {
+  assertConfigString(value, label, undefined, { maxLength: 4096 });
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`Clairveil WebApp configuration ${label} must be an HTTP(S) URL`);
+  }
+  if (!url.hostname || !["http:", "https:"].includes(url.protocol)) {
+    throw new Error(`Clairveil WebApp configuration ${label} must be an HTTP(S) URL`);
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error(
+      `Clairveil WebApp configuration ${label} must not include URL credentials, queries, or fragments`,
+    );
+  }
+}
+
+function isLoopbackHostname(hostname) {
+  const normalized = String(hostname || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "");
+  return (
+    normalized === "localhost" ||
+    normalized === "::1" ||
+    /^127(?:\.\d{1,3}){3}$/.test(normalized)
+  );
+}
+
+function assertBrowserDeploymentEndpointPolicy(config) {
+  const pageLocation = globalThis.location;
+  if (!pageLocation?.protocol || !pageLocation?.hostname) return;
+  const explicitlyEnabledLocalServer =
+    config?.serverBacked !== false && config?.localTestMode === true;
+  const directLoopbackPage = isLoopbackHostname(pageLocation.hostname);
+  if (
+    directLoopbackPage ||
+    (pageLocation.protocol === "http:" && explicitlyEnabledLocalServer)
+  ) {
+    return;
+  }
+  if (pageLocation.protocol !== "https:") {
+    throw new Error(
+      "Clairveil WebApp must be served over HTTPS outside direct loopback local development",
+    );
+  }
+  for (const profile of config.chainProfiles || []) {
+    const endpoints = [
+      ["rpc", profile.rpc],
+      ["rest", profile.rest],
+      ...((profile.restEndpoints || []).map((endpoint, index) => [
+        `restEndpoints[${index}]`,
+        endpoint,
+      ])),
+      ["proverUrl", profile.proverUrl],
+      ...(profile.depositProofUrl
+        ? [["depositProofUrl", profile.depositProofUrl]]
+        : []),
+      ...(profile.transport === "evm" ? [["evmRpc", profile.evmRpc]] : []),
+      ...(profile.keplrChainInfo
+        ? [
+            ["keplrChainInfo.rpc", profile.keplrChainInfo.rpc],
+            ["keplrChainInfo.rest", profile.keplrChainInfo.rest],
+          ]
+        : []),
+    ];
+    for (const [field, value] of endpoints) {
+      const endpoint = new URL(value);
+      if (
+        endpoint.protocol !== "https:" ||
+        isLoopbackHostname(endpoint.hostname) ||
+        endpoint.username ||
+        endpoint.password ||
+        endpoint.search ||
+        endpoint.hash
+      ) {
+        throw new Error(
+          `Clairveil WebApp profile ${profile.id}.${field} must use a public HTTPS endpoint outside direct loopback local development`,
+        );
+      }
+    }
+  }
+}
+
+function sameConfigUrl(left, right) {
+  return new URL(left).toString() === new URL(right).toString();
+}
+
+function assertKeplrChainInfoMatchesProfile(profile) {
+  const chainInfo = profile.keplrChainInfo;
+  if (!isPlainConfigObject(chainInfo)) {
+    throw new Error(`Clairveil WebApp profile ${profile.id}.keplrChainInfo is invalid`);
+  }
+  assertConfigString(
+    chainInfo.chainId,
+    `profile ${profile.id}.keplrChainInfo.chainId`,
+  );
+  assertConfigUrl(chainInfo.rpc, `profile ${profile.id}.keplrChainInfo.rpc`);
+  assertConfigUrl(chainInfo.rest, `profile ${profile.id}.keplrChainInfo.rest`);
+  if (chainInfo.chainId !== profile.chainId) {
+    throw new Error(
+      `Clairveil WebApp profile ${profile.id}.keplrChainInfo.chainId must match profile chainId`,
+    );
+  }
+  if (!sameConfigUrl(chainInfo.rpc, profile.rpc)) {
+    throw new Error(
+      `Clairveil WebApp profile ${profile.id}.keplrChainInfo.rpc must match profile rpc`,
+    );
+  }
+  if (!sameConfigUrl(chainInfo.rest, profile.rest)) {
+    throw new Error(
+      `Clairveil WebApp profile ${profile.id}.keplrChainInfo.rest must match profile rest`,
+    );
+  }
+}
+
+function assertConfigInteger(value, label, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`Clairveil WebApp configuration ${label} is invalid`);
+  }
+}
+
+function assertConfigGasPriceStep(value, label) {
+  if (!isPlainConfigObject(value)) {
+    throw new Error(`Clairveil WebApp configuration ${label} is invalid`);
+  }
+  assertNoUnexpectedConfigFields(value, new Set(["low", "average", "high"]), label);
+  for (const field of ["low", "average", "high"]) {
+    if (typeof value[field] !== "number" || !Number.isFinite(value[field]) || value[field] <= 0) {
+      throw new Error(`Clairveil WebApp configuration ${label}.${field} is invalid`);
+    }
+  }
+}
+
+function assertOptionalRootConfigField(config, field, check) {
+  if (config[field] !== undefined) check(config[field], field);
+}
+
+function assertWebClientProfileSchema(profile) {
+  if (!isPlainConfigObject(profile)) {
+    throw new Error("Clairveil WebApp profile is invalid");
+  }
+  assertNoUnexpectedConfigFields(profile, webClientProfileFields, "profile");
+  assertConfigString(profile.id, "profile.id", /^[A-Za-z0-9][A-Za-z0-9._-]*$/);
+  assertConfigString(profile.label, `profile ${profile.id}.label`);
+  assertConfigString(profile.chainName, `profile ${profile.id}.chainName`);
+  if (!["cosmos", "evm"].includes(profile.transport)) {
+    throw new Error(`Clairveil WebApp profile ${profile.id} has invalid transport`);
+  }
+  if ((profile.transport === "cosmos" && profile.wallet !== "keplr") ||
+      (profile.transport === "evm" && profile.wallet !== "metamask")) {
+    throw new Error(`Clairveil WebApp profile ${profile.id} has an invalid transport/wallet pair`);
+  }
+  assertConfigString(profile.chainId, `profile ${profile.id}.chainId`);
+  assertConfigUrl(profile.rpc, `profile ${profile.id}.rpc`);
+  assertConfigUrl(profile.rest, `profile ${profile.id}.rest`);
+  assertConfigUrl(profile.proverUrl, `profile ${profile.id}.proverUrl`);
+  if (profile.depositProofUrl !== undefined) {
+    assertConfigUrl(
+      profile.depositProofUrl,
+      `profile ${profile.id}.depositProofUrl`,
+    );
+  }
+  assertConfigString(profile.accountPrefix, `profile ${profile.id}.accountPrefix`, /^[a-z][a-z0-9]*$/, { maxLength: 32 });
+  assertConfigString(profile.shieldedPrefix, `profile ${profile.id}.shieldedPrefix`, /^[a-z][a-z0-9]*$/, { maxLength: 32 });
+  assertConfigString(profile.denom, `profile ${profile.id}.denom`, /^[A-Za-z][A-Za-z0-9/:._-]*$/, {
+    minLength: 3,
+  });
+  assertConfigString(profile.displayDenom, `profile ${profile.id}.displayDenom`, undefined, { maxLength: 32 });
+  assertConfigInteger(profile.coinDecimals, `profile ${profile.id}.coinDecimals`, { min: 0, max: 255 });
+  if (profile.restEndpoints !== undefined) {
+    if (!Array.isArray(profile.restEndpoints) || !profile.restEndpoints.length) {
+      throw new Error(`Clairveil WebApp profile ${profile.id}.restEndpoints is invalid`);
+    }
+    const endpoints = new Set();
+    for (const endpoint of profile.restEndpoints) {
+      assertConfigUrl(endpoint, `profile ${profile.id}.restEndpoints`);
+      if (endpoints.has(endpoint)) {
+        throw new Error(`Clairveil WebApp profile ${profile.id}.restEndpoints has duplicates`);
+      }
+      endpoints.add(endpoint);
+    }
+  }
+  if (profile.keplrCoinType !== undefined) {
+    assertConfigInteger(profile.keplrCoinType, `profile ${profile.id}.keplrCoinType`, { min: 0, max: 4294967295 });
+  }
+  if (profile.gasPriceStep !== undefined) {
+    assertConfigGasPriceStep(profile.gasPriceStep, `profile ${profile.id}.gasPriceStep`);
+  }
+  if (profile.transport === "cosmos") {
+    if (
+      profile.keplrCoinType === undefined ||
+      profile.gasPriceStep === undefined ||
+      profile.keplrChainInfo === undefined
+    ) {
+      throw new Error(`Clairveil WebApp profile ${profile.id} is missing Cosmos wallet configuration`);
+    }
+    assertKeplrChainInfoMatchesProfile(profile);
+    return;
+  }
+  assertConfigUrl(profile.evmRpc, `profile ${profile.id}.evmRpc`);
+  assertConfigString(profile.evmChainId, `profile ${profile.id}.evmChainId`, /^0x[0-9a-fA-F]+$/);
+  assertConfigString(profile.evmChainName, `profile ${profile.id}.evmChainName`);
+  assertConfigString(profile.evmPrivacyPrecompileAddress, `profile ${profile.id}.evmPrivacyPrecompileAddress`, /^0x[0-9a-fA-F]{40}$/);
+  assertConfigString(profile.evmGasLimit, `profile ${profile.id}.evmGasLimit`, /^0x[0-9a-fA-F]+$/);
+  assertConfigString(profile.evmSendGasLimit, `profile ${profile.id}.evmSendGasLimit`, /^0x[0-9a-fA-F]+$/);
+}
+
+function assertValidatedDappConfig(config) {
+  if (!config || typeof config !== "object") {
+    throw new Error("Clairveil WebApp configuration is missing");
+  }
+  if (config.schemaVersion !== webClientConfigSchemaVersion) {
+    throw new Error(
+      `Unsupported Clairveil WebApp configuration version: ${String(config.schemaVersion || "missing")}`,
+    );
+  }
+  assertNoUnexpectedConfigFields(config, webClientRootConfigFields, "configuration");
+  assertConfigString(config.activeChainProfileId, "activeChainProfileId", /^[A-Za-z0-9][A-Za-z0-9._-]*$/);
+  if (!Array.isArray(config.chainProfiles) || !config.chainProfiles.length) {
+    throw new Error("Clairveil WebApp configuration has no chain profiles");
+  }
+  assertOptionalRootConfigField(config, "serverBacked", (value, label) => {
+    if (typeof value !== "boolean") throw new Error(`Clairveil WebApp configuration ${label} is invalid`);
+  });
+  assertOptionalRootConfigField(config, "localTestMode", (value, label) => {
+    if (typeof value !== "boolean") throw new Error(`Clairveil WebApp configuration ${label} is invalid`);
+  });
+  for (const field of ["modeLabel", "chainId", "displayDenom", "evmChainName"]) {
+    assertOptionalRootConfigField(config, field, (value, label) => assertConfigString(value, label));
+  }
+  if (config.transport !== undefined && !["cosmos", "evm"].includes(config.transport)) {
+    throw new Error("Clairveil WebApp configuration transport is invalid");
+  }
+  for (const field of ["home", "localSignerHome", "localSignerBin"]) {
+    assertOptionalRootConfigField(config, field, (value, label) => {
+      if (typeof value !== "string") {
+        throw new Error(`Clairveil WebApp configuration ${label} is invalid`);
+      }
+    });
+  }
+  for (const field of ["rpc", "rest", "proverUrl", "evmRpc"]) {
+    assertOptionalRootConfigField(config, field, (value, label) => assertConfigUrl(value, label));
+  }
+  for (const field of ["accountPrefix", "shieldedPrefix"]) {
+    assertOptionalRootConfigField(config, field, (value, label) =>
+      assertConfigString(value, label, /^[a-z][a-z0-9]*$/, { maxLength: 32 }),
+    );
+  }
+  assertOptionalRootConfigField(config, "denom", (value, label) =>
+    assertConfigString(value, label, /^[A-Za-z][A-Za-z0-9/:._-]*$/, { minLength: 3 }),
+  );
+  assertOptionalRootConfigField(config, "coinDecimals", (value, label) =>
+    assertConfigInteger(value, label, { min: 0, max: 255 }),
+  );
+  assertOptionalRootConfigField(config, "evmChainId", (value, label) =>
+    assertConfigString(value, label, /^0x[0-9a-fA-F]+$/),
+  );
+  for (const field of ["evmPrivacyPrecompileAddress"]) {
+    assertOptionalRootConfigField(config, field, (value, label) =>
+      assertConfigString(value, label, /^0x[0-9a-fA-F]{40}$/),
+    );
+  }
+  for (const field of ["evmGasLimit", "evmSendGasLimit"]) {
+    assertOptionalRootConfigField(config, field, (value, label) =>
+      assertConfigString(value, label, /^0x[0-9a-fA-F]+$/),
+    );
+  }
+  if (config.keplrChainInfo !== undefined && !isPlainConfigObject(config.keplrChainInfo)) {
+    throw new Error("Clairveil WebApp configuration keplrChainInfo is invalid");
+  }
+  if (config.serverFeatures !== undefined) {
+    if (!isPlainConfigObject(config.serverFeatures)) {
+      throw new Error("Clairveil WebApp configuration serverFeatures is invalid");
+    }
+    assertNoUnexpectedConfigFields(config.serverFeatures, webClientServerFeatureFields, "serverFeatures");
+    for (const [field, value] of Object.entries(config.serverFeatures)) {
+      if (typeof value !== "boolean") {
+        throw new Error(`Clairveil WebApp configuration serverFeatures.${field} is invalid`);
+      }
+    }
+  }
+  const profilesByID = new Map();
+  for (const profile of config.chainProfiles) {
+    assertWebClientProfileSchema(profile);
+    const id = profile.id;
+    if (!id || profilesByID.has(id)) {
+      throw new Error("Clairveil WebApp configuration has duplicate or empty profile IDs");
+    }
+    profilesByID.set(id, profile);
+  }
+  const active = profilesByID.get(String(config.activeChainProfileId || ""));
+  if (!active) {
+    throw new Error("Clairveil WebApp configuration selects an unknown active profile");
+  }
+  for (const field of [
+    "chainId",
+    "rpc",
+    "rest",
+    "proverUrl",
+    "transport",
+    "denom",
+    "displayDenom",
+    "coinDecimals",
+    "accountPrefix",
+    "shieldedPrefix",
+    "evmRpc",
+    "evmChainId",
+    "evmChainName",
+    "evmPrivacyPrecompileAddress",
+    "evmGasLimit",
+    "evmSendGasLimit",
+  ]) {
+    // The legacy top-level EVM response may describe the host account prefix.
+    // The active profile's accountPrefix is the privacy identity prefix and is
+    // the only value passed to ClairveilJS for EVM flows.
+    if (field === "accountPrefix" && active.transport === "evm") continue;
+    if (
+      config[field] !== undefined &&
+      active[field] !== undefined &&
+      String(config[field]) !== String(active[field])
+    ) {
+      throw new Error(
+        `Clairveil WebApp configuration ${field} disagrees with active profile ${active.id}`,
+      );
+    }
+  }
+  return config;
 }
 
 function activeChainProfile() {
@@ -326,9 +779,9 @@ function renderServerFeatureVisibility() {
   if (els.localSignerPanel) {
     els.localSignerPanel.hidden = !localSigners;
   }
-  if (els.relayerPanel) {
-    els.relayerPanel.hidden = !serverFeature("relayer");
-  }
+  // Relay payload preparation and copy are browser-owned handoff actions.
+  // Only the optional local submission adapter is server-feature gated.
+  if (els.relayerPanel) els.relayerPanel.hidden = false;
   if (els.faucetRow) {
     els.faucetRow.hidden = !faucet;
   }
@@ -342,6 +795,9 @@ function renderServerFeatureVisibility() {
   }
   if (els.auditorSection) {
     els.auditorSection.hidden = !auditorAdmin;
+  }
+  if (!auditorAdmin) {
+    resetAuditorSession();
   }
 }
 
@@ -361,12 +817,6 @@ function expectedEvmChainIdHex() {
 function browserEndpointUrl(configured, { trim = false } = {}) {
   try {
     const url = new URL(configured);
-    if (
-      (url.hostname === "127.0.0.1" || url.hostname === "localhost") &&
-      window.location.hostname
-    ) {
-      url.hostname = window.location.hostname;
-    }
     const text = url.toString();
     return trim ? text.replace(/\/$/, "") : text;
   } catch {
@@ -391,9 +841,18 @@ function browserRestUrl(profile = activeChainProfile()) {
   return browserEndpointUrl(configured, { trim: true });
 }
 
-function browserProverUrl(profile = activeChainProfile()) {
+function browserRestEndpoints(profile = activeChainProfile()) {
+  return (profile?.restEndpoints || []).map((configured) =>
+    browserEndpointUrl(configured, { trim: true }),
+  );
+}
+
+function browserProverUrl(
+  profile = activeChainProfile(),
+  { serverFeatures = state.config?.serverFeatures } = {},
+) {
   const configured = profile?.proverUrl || state.config?.proverUrl || "";
-  if (state.config?.serverFeatures?.proverProxy === true && configured) {
+  if (serverFeatures?.proverProxy === true && configured) {
     try {
       const url = new URL(configured);
       if (url.hostname === "127.0.0.1" || url.hostname === "localhost") {
@@ -406,18 +865,236 @@ function browserProverUrl(profile = activeChainProfile()) {
   return browserEndpointUrl(configured, { trim: true });
 }
 
-function clairveilBrowserClient(profile = activeChainProfile()) {
+function browserDepositProofUrl(profile = activeChainProfile()) {
+  return browserEndpointUrl(profile?.depositProofUrl || "", { trim: true });
+}
+
+function hasDepositProofProvider(profile = activeChainProfile()) {
+  return Boolean(browserDepositProofUrl(profile)) || serverFeature("depositProof");
+}
+
+function privacySessionInvalidatedError() {
+  const error = new Error(
+    "Privacy session changed while this operation was in progress. Reconnect the wallet and refresh Notes before retrying.",
+  );
+  error.name = "PrivacySessionInvalidatedError";
+  error.privacySessionInvalidated = true;
+  return error;
+}
+
+function beginPrivacySessionOperation({ reservationManager = null } = {}) {
+  return {
+    generation: privacySessionGeneration,
+    reservationManager,
+  };
+}
+
+function isPrivacySessionCurrent(session) {
+  return !session || session.generation === privacySessionGeneration;
+}
+
+function assertPrivacySessionCurrent(session) {
+  if (isPrivacySessionCurrent(session)) return;
+  throw privacySessionInvalidatedError();
+}
+
+async function withPrivacySessionGuard(session, task) {
+  assertPrivacySessionCurrent(session);
+  try {
+    const result = await task();
+    assertPrivacySessionCurrent(session);
+    return result;
+  } catch (error) {
+    assertPrivacySessionCurrent(session);
+    throw error;
+  }
+}
+
+function invalidatePrivacySessionOperations() {
+  stopPreparedRelayReservationHeartbeat();
+  for (const stop of [...activeReservationHeartbeatStops]) {
+    stop();
+  }
+  privacySessionGeneration += 1;
+  relayWithdrawPayloadCopyInFlight = false;
+  relayWithdrawPayloadCopyLock = null;
+  relaySubmissionInFlight = false;
+  relaySubmissionLock = null;
+  depositInFlight = false;
+  privacyValueActionLock = null;
+  resetTransferFlowForPrivacySession();
+}
+
+// A privacy flow may make more than one wallet request while it creates a
+// self-merge or exact-match note. Reserve the UI flow from the first click,
+// rather than only after the confirmation modal or preparation begins.
+function beginPrivacyValueAction(action, session = beginPrivacySessionOperation()) {
+  assertPrivacySessionCurrent(session);
+  if (privacyValueActionLock) return null;
+  const lock = Object.freeze({ action, generation: session.generation });
+  privacyValueActionLock = lock;
+  return lock;
+}
+
+function endPrivacyValueAction(lock) {
+  if (privacyValueActionLock === lock) {
+    privacyValueActionLock = null;
+  }
+}
+
+function isPrivacyValueActionInFlight() {
+  return Boolean(privacyValueActionLock);
+}
+
+function invalidateFailedPrivacySetup() {
+  // A root signature without working encrypted persistence must not be kept as
+  // a usable privacy session. In particular, Deposit creates a new note that
+  // this browser would otherwise be unable to retain or recover.
+  invalidatePrivacySessionOperations();
+  stopPreparedRelayReservationHeartbeat();
+  advanceRelayWithdrawPayloadGeneration();
+  Object.assign(state.keplr, {
+    shieldedAddress: "",
+    disclosurePubKeyHex: "",
+    rootSignatureBase64: "",
+    rootSignatureHash: "",
+    relayWithdrawPayloadHash: "",
+    relayWithdrawPayload: null,
+    relayWithdrawPreparedData: null,
+    relayWithdrawPayloadText: "",
+    relayWithdrawPayloadAmount: "",
+    relayWithdrawPayloadRecipient: "",
+    relayWithdrawPayloadChainId: "",
+    relayWithdrawPayloadExpiresAt: "",
+    relayWithdrawPayloadSubmitted: false,
+    relayWithdrawPayloadHandedOff: false,
+    relayWithdrawPayloadVersion: relayWithdrawPayloadGeneration,
+    relayWithdrawPendingPayloads: [],
+    relayWithdrawReservation: null,
+    notesSummary: "",
+    notes: [],
+    noteReservationByNullifier: {},
+    reservationRecordByID: {},
+    manualReviewReservations: [],
+    notesScanned: false,
+    scanError: "",
+    legacyCleanupState: "",
+    noteScanCursor: defaultNoteScanCursor(),
+    privacySetupFailed: true,
+  });
+  walletNoteStore = null;
+  walletNoteStoreKey = "";
+  relayMetadataStore = null;
+  relayMetadataStoreKey = "";
+  relayMetadataWrite = Promise.resolve();
+  reservationManager = null;
+  reservationManagerKey = "";
+  reservationStore = null;
+  reservationStoreKey = "";
+  reservationWorkerID = "";
+}
+
+function rememberPreparedPrivacySession(data, session) {
+  if (data && typeof data === "object") {
+    preparedPrivacySessionContexts.set(data, session);
+  }
+  return data;
+}
+
+function preparedPrivacySession(data) {
+  return preparedPrivacySessionContexts.get(data) || null;
+}
+
+async function replanInvalidatedPreparedReservation(data, session, error) {
+  const reservation = preparedReservation(data);
+  const ids = reservationIDs(reservation);
+  const manager = session?.reservationManager;
+  if (!ids.length || !manager || typeof manager.markReplanRequired !== "function") {
+    return;
+  }
+  try {
+    await manager.markReplanRequired(ids, {
+      leaseToken: reservationLeaseToken(reservation),
+      error: privacyOperationErrorMessage(error),
+      metadata: {
+        reconcile_reason: "privacy_session_changed_before_external_boundary",
+        no_broadcast_attempt: true,
+        proof_discarded: true,
+      },
+    });
+  } catch (cleanupError) {
+    error.reservationCleanupError = cleanupError;
+  }
+}
+
+async function finishPrivacyPreparation(data, session) {
+  try {
+    assertPrivacySessionCurrent(session);
+  } catch (error) {
+    await replanInvalidatedPreparedReservation(data, session, error);
+    throw error;
+  }
+  return rememberPreparedPrivacySession(data, session);
+}
+
+function profileSessionFingerprint(profile = activeChainProfile()) {
+  if (!profile) return "";
+  return JSON.stringify({
+    id: profile.id || "",
+    transport: profile.transport || "",
+    wallet: profile.wallet || "",
+    chainId: profile.chainId || "",
+    rpc: browserRpcUrl(profile),
+    rest: browserRestUrl(profile),
+    restEndpoints: browserRestEndpoints(profile),
+    proverUrl: browserProverUrl(profile),
+    depositProofUrl: browserDepositProofUrl(profile),
+    accountPrefix: profile.accountPrefix || "",
+    shieldedPrefix: profile.shieldedPrefix || "",
+    denom: profile.denom || "",
+    evmRpc: evmRpcUrlForWallet(profile),
+    evmChainId: profile.evmChainId || "",
+    evmPrivacyPrecompileAddress: profile.evmPrivacyPrecompileAddress || "",
+    keplrChainId: profile.keplrChainInfo?.chainId || "",
+    keplrRpc: profile.keplrChainInfo
+      ? browserEndpointUrl(profile.keplrChainInfo.rpc, { trim: true })
+      : "",
+    keplrRest: profile.keplrChainInfo
+      ? browserEndpointUrl(profile.keplrChainInfo.rest, { trim: true })
+      : "",
+  });
+}
+
+function profilePersistenceScope(profile = activeChainProfile()) {
+  const fields = [
+    profile?.id || "configured",
+    profile?.transport || "",
+    profile?.chainId || "",
+    profile?.accountPrefix || "",
+    profile?.shieldedPrefix || "",
+    profile?.denom || "",
+    profile?.evmChainId || "",
+    profile?.evmPrivacyPrecompileAddress || "",
+  ];
+  return fields.map((field) => encodeURIComponent(String(field))).join("~");
+}
+
+function clairveilBrowserClient(
+  profile = activeChainProfile(),
+  { config = state.config } = {},
+) {
   const resolved = profile || configuredChainProfile();
   const key = JSON.stringify({
     id: resolved?.id || "",
     rpc: browserRpcUrl(resolved),
     rest: browserRestUrl(resolved),
+    restEndpoints: browserRestEndpoints(resolved),
     chainId: resolved?.chainId || state.config?.chainId || "",
     accountPrefix: resolved?.accountPrefix || state.config?.accountPrefix || "",
     shieldedPrefix:
       resolved?.shieldedPrefix || state.config?.shieldedPrefix || "",
     denom: resolved?.denom || state.config?.denom || "",
-    proverUrl: browserProverUrl(resolved),
+    proverUrl: browserProverUrl(resolved, { serverFeatures: config?.serverFeatures }),
     evmRpc: evmRpcUrlForWallet(resolved),
     evmChainId: resolved?.evmChainId || state.config?.evmChainId || "",
     evmPrivacyPrecompileAddress:
@@ -431,12 +1108,13 @@ function clairveilBrowserClient(profile = activeChainProfile()) {
         ...resolved,
         rpc: browserRpcUrl(resolved),
         rest: browserRestUrl(resolved),
+        restEndpoints: browserRestEndpoints(resolved),
         chainId: resolved?.chainId || state.config?.chainId,
         accountPrefix: resolved?.accountPrefix || state.config?.accountPrefix,
         shieldedPrefix:
           resolved?.shieldedPrefix || state.config?.shieldedPrefix,
         denom: resolved?.denom || state.config?.denom,
-        proverUrl: browserProverUrl(resolved),
+        proverUrl: browserProverUrl(resolved, { serverFeatures: config?.serverFeatures }),
         evmRpc: evmRpcUrlForWallet(resolved),
         evmChainId: resolved?.evmChainId || state.config?.evmChainId,
         evmPrivacyPrecompileAddress:
@@ -446,10 +1124,192 @@ function clairveilBrowserClient(profile = activeChainProfile()) {
         evmSendGasLimit:
           resolved?.evmSendGasLimit || state.config?.evmSendGasLimit,
       },
+      // Keep privacy-sensitive nullifier queries on the selected endpoint even
+      // if a future ClairveilJS default changes.
+      queryTimeoutMs: 30_000,
+      nullifierFailover: false,
     });
     browserClientKey = key;
   }
   return browserClient;
+}
+
+const chainSafetyRefreshIntervalMs = 30_000;
+
+function activeChainSafetyKey(profile = activeChainProfile()) {
+  if (!profile) return "";
+  return JSON.stringify({
+    id: profile.id || "",
+    transport: profile.transport || "",
+    chainId: profile.chainId || "",
+    rpc: browserRpcUrl(profile),
+    rest: browserRestUrl(profile),
+    restEndpoints: browserRestEndpoints(profile),
+    evmRpc: evmRpcUrlForWallet(profile),
+    evmChainId: profile.evmChainId || "",
+    denom: profile.denom || "",
+    depositProofUrl: browserDepositProofUrl(profile),
+  });
+}
+
+function clearChainSafety() {
+  if (chainSafetyExpiryTimer !== null) {
+    globalThis.clearTimeout(chainSafetyExpiryTimer);
+    chainSafetyExpiryTimer = null;
+  }
+  state.chainSafety = {
+    key: activeChainSafetyKey(),
+    status: "unknown",
+    error: "",
+    checkedAt: 0,
+  };
+}
+
+function scheduleChainSafetyExpiry() {
+  if (chainSafetyExpiryTimer !== null) {
+    globalThis.clearTimeout(chainSafetyExpiryTimer);
+    chainSafetyExpiryTimer = null;
+  }
+  if (state.chainSafety.status !== "ready" || !Number.isFinite(state.chainSafety.checkedAt)) {
+    return;
+  }
+  const delayMs = Math.max(
+    0,
+    state.chainSafety.checkedAt + chainSafetyRefreshIntervalMs - Date.now(),
+  );
+  chainSafetyExpiryTimer = globalThis.setTimeout(() => {
+    chainSafetyExpiryTimer = null;
+    if (!isChainSafetyReady()) renderKeplr();
+  }, delayMs + 1);
+}
+
+function isChainSafetyReady() {
+  return state.chainSafety.status === "ready" &&
+    state.chainSafety.key === activeChainSafetyKey() &&
+    Number.isFinite(state.chainSafety.checkedAt) &&
+    Date.now() - state.chainSafety.checkedAt < chainSafetyRefreshIntervalMs;
+}
+
+function hasCompletedPrivacyNoteScan() {
+  const cursor = state.keplr.noteScanCursor || defaultNoteScanCursor();
+  return Boolean(
+    state.keplr.notesScanned &&
+      !state.keplr.scanError &&
+      cursor.completed &&
+      !cursor.hasMore,
+  );
+}
+
+function assertSpendableNotesSyncReady() {
+  if (hasCompletedPrivacyNoteScan()) return;
+  throw new Error(
+    state.keplr.scanError ||
+      "Privacy note sync is incomplete. Finish scanning notes successfully before preparing a spend.",
+  );
+}
+
+function invalidatePrivacyScanState(error) {
+  state.keplr.notes = [];
+  state.keplr.notesSummary = "";
+  state.keplr.noteReservationByNullifier = {};
+  state.keplr.notesScanned = false;
+  state.keplr.noteScanCursor = defaultNoteScanCursor();
+  state.keplr.scanError = `Privacy note sync failed: ${
+    error?.message || String(error || "unknown scan error")
+  }`;
+}
+
+function chainSafetyFailure(error) {
+  const message = error?.message || String(error || "unknown chain safety error");
+  const wrapped = new Error(
+    `Privacy flow is blocked until current chain configuration is verified: ${message}`,
+  );
+  wrapped.chainSafetyFailure = true;
+  return wrapped;
+}
+
+async function refreshChainSafety(
+  { force = false, session = beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
+  const profile = activeChainProfile();
+  const key = activeChainSafetyKey(profile);
+  if (!profile || !key) throw chainSafetyFailure(new Error("active chain profile is unavailable"));
+  if (
+    !force &&
+    state.chainSafety.status === "ready" &&
+    state.chainSafety.key === key &&
+    Date.now() - state.chainSafety.checkedAt < chainSafetyRefreshIntervalMs
+  ) {
+    return state.chainSafety;
+  }
+  state.chainSafety = { key, status: "checking", error: "", checkedAt: 0 };
+  renderKeplr();
+  try {
+    const client = clairveilBrowserClient(profile);
+    const [health, protocolConfig, reserve] = await withPrivacySessionGuard(
+      session,
+      () => Promise.all([
+        client.health(),
+        client.assertTransferProtocolConfig(profile.denom),
+        client.queryReserve(profile.denom),
+      ]),
+    );
+    if (!health?.status || !health?.tree || (health.errors || []).length) {
+      throw new Error("chain status, tree, and protocol queries must all succeed");
+    }
+    if (
+      profile.transport === "cosmos" &&
+      health.status?.node_info?.network !== profile.chainId
+    ) {
+      throw new Error("connected Cosmos network does not match the selected profile");
+    }
+    if (profile.transport === "evm") {
+      const actualChainId = await withPrivacySessionGuard(
+        session,
+        () => client.evmJsonRpc("eth_chainId"),
+      );
+      if (String(actualChainId || "").toLowerCase() !== expectedEvmChainIdHex().toLowerCase()) {
+        throw new Error("connected EVM RPC network does not match the selected profile");
+      }
+    }
+    state.chainSafety = {
+      key,
+      status: "ready",
+      error: "",
+      checkedAt: Date.now(),
+      protocolConfig,
+      reserve,
+      tree: health.tree,
+    };
+    scheduleChainSafetyExpiry();
+    renderKeplr();
+    return state.chainSafety;
+  } catch (error) {
+    if (error?.privacySessionInvalidated) throw error;
+    state.chainSafety = {
+      key,
+      status: "failed",
+      error: error?.message || String(error),
+      checkedAt: 0,
+    };
+    renderKeplr();
+    throw chainSafetyFailure(error);
+  }
+}
+
+async function assertChainSafetyBeforePrivacyFlow(
+  { session = beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
+  if (activeWalletKind() === "metamask") {
+    if (state.activeWallet !== "metamask" || !state.wallet.account) {
+      throw new Error("Connect MetaMask before preparing a privacy transaction");
+    }
+    await ensureMetaMaskChain();
+    assertPrivacySessionCurrent(session);
+  }
+  return refreshChainSafety({ force: true, session });
 }
 
 function injectedEthereumProviders() {
@@ -598,6 +1458,7 @@ const els = {
   refreshClairBalance: $("#refreshClairBalance"),
   scanKeplrNotes: $("#scanKeplrNotes"),
   resetRescanNotes: $("#resetRescanNotes"),
+  clearLegacyPrivacyData: $("#clearLegacyPrivacyData"),
   keplrTxState: $("#keplrTxState"),
   keplrSendAmount: $("#keplrSendAmount"),
   keplrSendRecipient: $("#keplrSendRecipient"),
@@ -943,6 +1804,98 @@ class ApiError extends Error {
   }
 }
 
+function privacyOperationErrorMessage(error, fallback = "Privacy operation failed") {
+  switch (String(error?.code || "")) {
+    case "PROVER_TIMEOUT":
+      return "Privacy proof service timed out. Retry with the same configured provider.";
+    case "PROVER_UNAVAILABLE":
+    case "unavailable":
+      return "Privacy proof service is unavailable. Retry with the same configured provider.";
+    case "PROVER_REJECTED":
+    case "proof_failed":
+      return "Privacy proof service rejected the request. Verify the provider configuration and retry.";
+    case "invalid_request":
+      return "Privacy proof request was rejected. Verify the provider configuration and retry.";
+    default:
+      return fallback;
+  }
+}
+
+function privacyReservationErrorCode(error, fallback = "privacy_operation_failed") {
+  switch (String(error?.code || "")) {
+    case "PROVER_TIMEOUT":
+      return "prover_timeout";
+    case "PROVER_UNAVAILABLE":
+    case "unavailable":
+      return "prover_unavailable";
+    case "PROVER_REJECTED":
+    case "proof_failed":
+    case "invalid_request":
+      return "prover_rejected";
+    default:
+      return fallback;
+  }
+}
+
+const privacySafeReservationManagers = new WeakMap();
+
+// ClairveilJS may perform reservation transitions internally around wallet and
+// RPC boundaries. Keep its durable error field to a stable code even if a
+// wallet, prover, or transport error echoes private request material.
+function createPrivacySafeReservationManager(manager) {
+  if (!manager || typeof manager !== "object") return manager;
+  const existing = privacySafeReservationManagers.get(manager);
+  if (existing) return existing;
+  const fallbackByMethod = new Map([
+    ["markBroadcastRejected", "wallet_request_rejected"],
+    ["markUnknown", "broadcast_outcome_unknown"],
+    ["markReplanRequired", "pre_broadcast_operation_cancelled"],
+    ["markManualReview", "manual_review_required"],
+  ]);
+  const proxy = new Proxy(manager, {
+    get(target, property) {
+      const value = Reflect.get(target, property, target);
+      if (typeof value !== "function") return value;
+      const fallback = fallbackByMethod.get(property);
+      if (!fallback) return value.bind(target);
+      return (reservationIDs, metadata = {}) => {
+        const source =
+          metadata && typeof metadata === "object" ? metadata : {};
+        const safeMetadata = {
+          ...source,
+          error: privacyReservationErrorCode(source.error, fallback),
+        };
+        if (property === "markBroadcastRejected") {
+          safeMetadata.providerCode = "4001";
+        }
+        return value.call(target, reservationIDs, safeMetadata);
+      };
+    },
+  });
+  privacySafeReservationManagers.set(manager, proxy);
+  return proxy;
+}
+
+function safeDepositProofProviderError(error) {
+  if (error?.privacySessionInvalidated) return error;
+  const code = String(error?.code || "");
+  const recognizedCode = new Set([
+    "PROVER_TIMEOUT",
+    "PROVER_UNAVAILABLE",
+    "PROVER_REJECTED",
+    "unavailable",
+    "proof_failed",
+    "invalid_request",
+  ]);
+  const safe = new Error(
+    recognizedCode.has(code)
+      ? privacyOperationErrorMessage(error)
+      : "Privacy proof service failed. Verify the provider configuration and retry.",
+  );
+  safe.code = recognizedCode.has(code) ? code : "proof_failed";
+  return safe;
+}
+
 function browserDataLoadErrorMessage(error) {
   const message = error?.message || String(error || "Request failed");
   if (
@@ -1070,6 +2023,25 @@ function closeTransferFlowModal(result = false) {
   }
 }
 
+function resetTransferFlowForPrivacySession() {
+  const { resolve } = transferFlowState;
+  transferFlowState.resolve = null;
+  transferFlowState.running = false;
+  transferFlowState.copy = null;
+  resetTransferPlannerFacts();
+  els.transferFlowModal.hidden = true;
+  els.transferFlowModal.classList.remove("visible", "failed");
+  els.transferSteps.hidden = false;
+  els.transferSuccessPanel.hidden = true;
+  els.transferFailurePanel.hidden = true;
+  els.transferFailureReason.textContent = "-";
+  els.transferModalLead.textContent = "Privacy session cleared.";
+  els.cancelTransferFlow.hidden = true;
+  els.confirmTransferFlow.hidden = true;
+  setTransferFlowStep("", "Privacy session cleared.");
+  if (resolve) resolve(false);
+}
+
 function setTransferFlowStep(activeKey, stateText) {
   if (stateText) {
     els.transferModalState.textContent = stateText;
@@ -1167,16 +2139,187 @@ function finishTransferFlow(message, success = true) {
   els.cancelTransferFlow.focus();
 }
 
+function responseContentLength(response) {
+  const raw = response?.headers?.get?.("content-length");
+  if (!raw || !/^(0|[1-9][0-9]*)$/.test(raw.trim())) return null;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) ? value : null;
+}
+
+function resolvedExpectedResponseUrl(value) {
+  if (!value) return null;
+  try {
+    return new URL(
+      String(value),
+      globalThis.location?.href || undefined,
+    );
+  } catch {
+    throw new Error("DApp API expected response URL is invalid");
+  }
+}
+
+function assertDirectApiResponse(response, expectedResponseUrl, label) {
+  const expected = resolvedExpectedResponseUrl(expectedResponseUrl);
+  if (!expected) return;
+  if (response?.redirected === true) {
+    throw new Error(`${label} must not redirect`);
+  }
+  const finalUrl = String(response?.url || "");
+  if (!finalUrl) return;
+  let actual;
+  try {
+    actual = new URL(finalUrl);
+  } catch {
+    throw new Error(`${label} response URL is invalid`);
+  }
+  if (actual.href !== expected.href) {
+    throw new Error(`${label} must be served directly from its configured endpoint`);
+  }
+}
+
+async function readBoundedApiResponseText(response, maxResponseBytes) {
+  if (!maxResponseBytes) return response.text();
+  const declaredLength = responseContentLength(response);
+  if (declaredLength !== null && declaredLength > maxResponseBytes) {
+    throw new Error(`DApp API response exceeds ${maxResponseBytes} byte limit`);
+  }
+  if (!response?.body || typeof response.body.getReader !== "function") {
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > maxResponseBytes) {
+      throw new Error(`DApp API response exceeds ${maxResponseBytes} byte limit`);
+    }
+    return text;
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+      total += chunk.byteLength;
+      if (total > maxResponseBytes) {
+        try {
+          await reader.cancel();
+        } catch {
+          // The oversized response is already rejected; cancellation is best effort.
+        }
+        throw new Error(`DApp API response exceeds ${maxResponseBytes} byte limit`);
+      }
+      chunks.push(chunk);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+}
+
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    ...options,
-    headers: {
-      "content-type": "application/json",
-      ...(options.headers || {}),
-    },
-  });
-  const data = await response.json();
-  if (!response.ok || data.error) {
+  const {
+    timeoutMs = 0,
+    signal: suppliedSignal,
+    expectedResponseUrl = "",
+    responseLabel = "DApp API response",
+    maxResponseBytes = 0,
+    ...fetchOptions
+  } = options;
+  const boundedTimeoutMs = Number(timeoutMs);
+  const boundedResponseBytes = Number(maxResponseBytes);
+  const timeoutEnabled =
+    Number.isSafeInteger(boundedTimeoutMs) && boundedTimeoutMs > 0;
+  if (
+    boundedResponseBytes !== 0 &&
+    (!Number.isSafeInteger(boundedResponseBytes) || boundedResponseBytes < 1)
+  ) {
+    throw new Error("DApp API maxResponseBytes must be a positive integer");
+  }
+  const controller =
+    timeoutEnabled && typeof AbortController === "function"
+      ? new AbortController()
+      : null;
+  if (timeoutEnabled && !controller) {
+    throw new Error("AbortController is required for bounded DApp API requests");
+  }
+  let timeoutID = null;
+  let timedOut = false;
+  let removeSuppliedAbortListener = null;
+  if (controller && suppliedSignal) {
+    const abort = () => controller.abort(suppliedSignal.reason);
+    if (suppliedSignal.aborted) {
+      abort();
+    } else {
+      suppliedSignal.addEventListener("abort", abort, { once: true });
+      removeSuppliedAbortListener = () =>
+        suppliedSignal.removeEventListener("abort", abort);
+    }
+  }
+  if (controller) {
+    timeoutID = globalThis.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, boundedTimeoutMs);
+  }
+  let response;
+  let body;
+  try {
+    response = await fetch(path, {
+      ...fetchOptions,
+      ...(controller ? { signal: controller.signal } : { signal: suppliedSignal }),
+      headers: {
+        "content-type": "application/json",
+        ...(options.headers || {}),
+      },
+    });
+    assertDirectApiResponse(response, expectedResponseUrl, responseLabel);
+    body = await readBoundedApiResponseText(response, boundedResponseBytes);
+  } catch (cause) {
+    if (timedOut) {
+      const error = new Error(
+        `DApp API ${path} timed out after ${boundedTimeoutMs}ms`,
+      );
+      error.code = "request_timeout";
+      error.cause = cause;
+      throw error;
+    }
+    throw cause;
+  } finally {
+    if (timeoutID !== null) globalThis.clearTimeout(timeoutID);
+    removeSuppliedAbortListener?.();
+  }
+  let data = null;
+  if (body) {
+    try {
+      data = JSON.parse(body);
+    } catch {
+      data = null;
+    }
+  }
+  if (!response.ok) {
+    throw new ApiError(
+      {
+        error: data?.error || response.statusText,
+        ...(data && typeof data === "object" ? data : {}),
+      },
+      response.status,
+    );
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    const error = new Error(`DApp API ${path} returned an invalid JSON response`);
+    error.apiInvalidJsonResponse = true;
+    error.apiPath = String(path);
+    error.apiResponseContentType = String(
+      response.headers.get("content-type") || "",
+    );
+    throw error;
+  }
+  if (data.error) {
     throw new ApiError(
       {
         error: data.error || response.statusText,
@@ -1252,6 +2395,17 @@ function requireValidSendRecipient() {
   );
 }
 
+function requireValidPrivacyWithdrawRecipient(value, label = "Withdraw recipient") {
+  const recipient = String(value || "").trim();
+  if (isSendRecipientForWallet(recipient, state.activeWallet || activeWalletKind())) {
+    return recipient;
+  }
+  if (isEvmTransparentMode(state.activeWallet || activeWalletKind())) {
+    throw new Error(`${label} must be a 0x address.`);
+  }
+  throw new Error(`${label} must be a ${accountPrefix()}1... address.`);
+}
+
 function evmQuantityToBigInt(value, label = "EVM quantity") {
   const text = String(value || "").trim();
   if (!/^0x[0-9a-fA-F]+$/.test(text)) {
@@ -1314,6 +2468,7 @@ function reservationScope() {
   const profile = activeChainProfile();
   return {
     chainId: profile?.chainId || state.config?.chainId || "clairveil",
+    profile: profilePersistenceScope(profile),
     wallet: state.activeWallet || activeWalletKind() || "wallet",
     account: state.keplr.account || "",
   };
@@ -1321,18 +2476,23 @@ function reservationScope() {
 
 function reservationOwnerKeyId() {
   const scope = reservationScope();
-  return `${scope.chainId}:${scope.wallet}:${scope.account}`;
+  return `${scope.chainId}:${scope.profile}:${scope.wallet}:${scope.account}`;
 }
 
 function reservationNamespace() {
   const scope = reservationScope();
-  return `${scope.chainId}:${scope.wallet}:${scope.account || "disconnected"}`;
+  return `${scope.chainId}:${scope.profile}:${scope.wallet}:${scope.account || "disconnected"}`;
 }
 
 function currentReservationWorkerID() {
   if (!reservationWorkerID) {
-    const suffix = globalThis.crypto?.randomUUID?.() ||
-      `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    if (!globalThis.crypto?.getRandomValues) {
+      throw new Error("Web Crypto is required for browser reservation lease ownership");
+    }
+    const suffix = globalThis.crypto.randomUUID?.() ||
+      [...globalThis.crypto.getRandomValues(new Uint8Array(16))]
+        .map((value) => value.toString(16).padStart(2, "0"))
+        .join("");
     reservationWorkerID = `browser-tab:${suffix}`;
   }
   return reservationWorkerID;
@@ -1344,12 +2504,17 @@ function currentNoteReservationManager({ optional = false } = {}) {
     throw new Error("Connect a wallet and initialize privacy keys first");
   }
 
-  const storeKey = reservationNamespace();
+  const storeKey = `${reservationStoreNamespacePrefix}${reservationNamespace()}`;
   if (!reservationStore || reservationStoreKey !== storeKey) {
+    const encryption = createEncryptedStateCodec({
+      namespace: `reservation:${storeKey}`,
+      secretBase64: state.keplr.rootSignatureBase64,
+    });
     reservationStore = createBrowserReservationStore({
       namespace: storeKey,
-      // This example intentionally demonstrates the SDK's explicit plaintext opt-in.
-      unsafeAllowPlaintext: true,
+      requireLocks: true,
+      encodeState: encryption.encodeState,
+      decodeState: encryption.decodeState,
     });
     reservationStoreKey = storeKey;
   }
@@ -1361,32 +2526,33 @@ function currentNoteReservationManager({ optional = false } = {}) {
       state.keplr.rootSignatureHash || state.keplr.rootSignatureBase64,
   });
   if (!reservationManager || reservationManagerKey !== managerKey) {
-    reservationManager = createNoteReservationManager({
-      store: reservationStore,
-      ownerKeyId: reservationOwnerKeyId(),
-      indexKey: base64ToBytes(state.keplr.rootSignatureBase64),
-      nullifierLookupKeyId: "root-signature-v1",
-      leaseOwner: currentReservationWorkerID(),
-    });
+    reservationManager = createPrivacySafeReservationManager(
+      createNoteReservationManager({
+        store: reservationStore,
+        ownerKeyId: reservationOwnerKeyId(),
+        indexKey: base64ToBytes(state.keplr.rootSignatureBase64),
+        nullifierLookupKeyId: "root-signature-v1",
+        leaseOwner: currentReservationWorkerID(),
+      }),
+    );
     reservationManagerKey = managerKey;
   }
 
   return reservationManager;
 }
 
-function currentWalletNoteStore({ optional = true } = {}) {
+function currentWalletNoteStore({ optional = false } = {}) {
   if (!state.keplr.account || !state.keplr.rootSignatureBase64) {
     if (optional) return null;
     throw new Error("Connect a wallet and initialize privacy keys first");
   }
-  const key = `clairveil:wallet-notes:v1:${reservationNamespace()}`;
+  const key = `${walletNoteStoreNamespacePrefix}${reservationNamespace()}`;
   if (walletNoteStore && walletNoteStoreKey === key) return walletNoteStore;
   try {
-    walletNoteStore = new LocalStorageNoteStore({
-      storage: window.localStorage,
-      key,
+    walletNoteStore = new EncryptedIndexedDbNoteStore({
+      namespace: key,
       owner: reservationOwnerKeyId(),
-      allowPlaintext: true,
+      secretBase64: state.keplr.rootSignatureBase64,
     });
     walletNoteStoreKey = key;
     return walletNoteStore;
@@ -1394,33 +2560,22 @@ function currentWalletNoteStore({ optional = true } = {}) {
     walletNoteStore = null;
     walletNoteStoreKey = "";
     if (!optional) throw error;
-    console.warn("Clairveil note cache persistence is unavailable", error);
-    return null;
+    throw new Error(`Encrypted Clairveil note storage is unavailable: ${error.message}`);
   }
 }
 
-async function clearCurrentWalletNoteStore(isCurrent = () => true) {
-  const store = currentWalletNoteStore();
-  if (store) await store.clear();
-  if (!isCurrent()) return false;
-  state.keplr.notes = [];
-  state.keplr.notesSummary = "";
-  state.keplr.noteScanCursor = defaultNoteScanCursor();
-  state.keplr.notesScanned = false;
-  return true;
+function hasPersistedTypedScanCursor(cached) {
+  const cursor = cached?.scanCursor;
+  return Boolean(
+    cursor &&
+      typeof cursor === "object" &&
+      (cursor.source === "scan_events" || cursor.scan_source === "scan_events"),
+  );
 }
 
 function applyPersistedWalletNoteState(cached) {
-  if (!cached) return;
-  const scanCursor = cached.scanCursor || {
-    source: "scan_events",
-    after_height: Number(cached.lastScannedHeight || 0),
-    after_sequence: Number(cached.lastScannedSequence || 0),
-    next_height: Number(cached.lastScannedHeight || 0),
-    next_sequence: Number(cached.lastScannedSequence || 0),
-    has_more: false,
-    completed: true,
-  };
+  if (!cached || !hasPersistedTypedScanCursor(cached)) return false;
+  const scanCursor = cached.scanCursor;
   applyNoteScanResult({
     notes: cached.notes || [],
     scanCursor,
@@ -1431,15 +2586,129 @@ function applyPersistedWalletNoteState(cached) {
       page: scanCursor.next_page ?? scanCursor.page ?? 1,
     },
   }, { reset: true });
+  return true;
 }
 
-async function hydratePersistedWalletNotes({ isCurrent = () => true } = {}) {
-  if (!isCurrent()) return;
-  const store = currentWalletNoteStore();
-  if (!store) return;
+async function clearCurrentWalletNoteStore({ session = null } = {}) {
+  assertPrivacySessionCurrent(session);
+  const store = currentWalletNoteStore({ optional: false });
+  await store.clear();
+  assertPrivacySessionCurrent(session);
+  state.keplr.notes = [];
+  state.keplr.notesSummary = "";
+  state.keplr.noteReservationByNullifier = {};
+  state.keplr.notesScanned = false;
+  state.keplr.noteScanCursor = defaultNoteScanCursor();
+  state.keplr.scanError = "";
+}
+
+async function hydratePersistedWalletNotes({ session = null } = {}) {
+  assertPrivacySessionCurrent(session);
+  const store = currentWalletNoteStore({ optional: false });
   const cached = await store.load();
-  if (!isCurrent()) return;
+  assertPrivacySessionCurrent(session);
+  if (!hasPersistedTypedScanCursor(cached)) {
+    await store.clear();
+    assertPrivacySessionCurrent(session);
+    return;
+  }
   applyPersistedWalletNoteState(cached);
+}
+
+function currentLegacyMigrationMarkerStore() {
+  if (!state.keplr.account || !state.keplr.rootSignatureBase64) return null;
+  const key = `${legacyMigrationMarkerNamespacePrefix}${reservationNamespace()}`;
+  if (
+    legacyMigrationMarkerStore &&
+    legacyMigrationMarkerStoreKey === key
+  ) {
+    return legacyMigrationMarkerStore;
+  }
+  legacyMigrationMarkerStore = createEncryptedBrowserMigrationMarkerStore({
+    namespace: key,
+    secretBase64: state.keplr.rootSignatureBase64,
+  });
+  legacyMigrationMarkerStoreKey = key;
+  return legacyMigrationMarkerStore;
+}
+
+async function loadLegacyMigrationCleanupMarker({ session = null } = {}) {
+  assertPrivacySessionCurrent(session);
+  const store = currentLegacyMigrationMarkerStore();
+  if (!store) return;
+  const marker = await store.load();
+  assertPrivacySessionCurrent(session);
+  state.keplr.legacyCleanupState = marker?.legacyV1CleanedAt
+    ? "Legacy 0.1 local data removed"
+    : "";
+}
+
+function legacyLocalStorageKeys() {
+  const scope = reservationNamespace();
+  return [
+    `clairveil:wallet-notes:v1:${scope}`,
+    `clairveil:relay-withdraw-payloads:v1:${scope}`,
+  ];
+}
+
+function browserStorageForLegacyCleanup(name) {
+  try {
+    const storage = globalThis[name];
+    return storage && typeof storage.removeItem === "function" ? storage : null;
+  } catch {
+    return null;
+  }
+}
+
+function removeLegacyBrowserStorageKeys(storage) {
+  if (!storage) return false;
+  for (const key of legacyLocalStorageKeys()) {
+    try {
+      storage.removeItem(key);
+    } catch {
+      // Do not mark cleanup complete when a known legacy store cannot be
+      // cleared. The next attempt must remain available to the user.
+      return false;
+    }
+  }
+  return true;
+}
+
+async function clearLegacyPrivacyData() {
+  const session = beginPrivacySessionOperation();
+  assertPrivacySessionCurrent(session);
+  if (!hasCompletedPrivacyNoteScan()) {
+    throw new Error("Finish a complete note scan before removing legacy 0.1 local data");
+  }
+  const localStorage = browserStorageForLegacyCleanup("localStorage");
+  const sessionStorage = browserStorageForLegacyCleanup("sessionStorage");
+  if (!localStorage || !sessionStorage) {
+    throw new Error("Browser storage is unavailable for legacy cleanup");
+  }
+  const markerStore = currentLegacyMigrationMarkerStore();
+  if (!markerStore) {
+    throw new Error("Privacy-session storage is unavailable for legacy cleanup");
+  }
+  const localStorageCleared = removeLegacyBrowserStorageKeys(localStorage);
+  const sessionStorageCleared = removeLegacyBrowserStorageKeys(sessionStorage);
+  if (!localStorageCleared || !sessionStorageCleared) {
+    throw new Error("Legacy browser storage could not be removed; cleanup was not marked complete");
+  }
+  await withPrivacySessionGuard(session, () =>
+    clearLegacyBrowserReservationState({
+      namespace: reservationNamespace(),
+    }),
+  );
+  await withPrivacySessionGuard(session, () =>
+    markerStore.save({
+      version: "clairveil-privacy-upgrade-marker-v1",
+      legacyV1CleanedAt: new Date().toISOString(),
+    }),
+  );
+  assertPrivacySessionCurrent(session);
+  state.keplr.legacyCleanupState = "Legacy 0.1 local data removed";
+  renderKeplr();
+  toast("Legacy Clairveil 0.1 local data removed after the completed rescan");
 }
 
 function amountInputValue(input) {
@@ -1639,7 +2908,7 @@ function mergeCachedNotes(existingNotes = [], incomingNotes = []) {
   });
 }
 
-function noteScanRequestOptions({ reset = false } = {}) {
+function noteScanRequestOptions({ reset = false, requireComplete = true } = {}) {
   const cursor = reset
     ? defaultNoteScanCursor()
     : state.keplr.noteScanCursor || defaultNoteScanCursor();
@@ -1654,7 +2923,9 @@ function noteScanRequestOptions({ reset = false } = {}) {
       : Number(cursor.latestSequence || 0),
     page: hasMore ? Number(cursor.nextPage || 1) : 1,
     limit: Number(cursor.limit || 200),
-    maxPages: Number(cursor.maxPages || 5),
+    maxPages: requireComplete
+      ? completeNoteScanMaxPages
+      : Number(cursor.maxPages || completeNoteScanMaxPages),
     eventTypes: ["deposit", "shielded_transfer"],
   };
 }
@@ -1752,7 +3023,7 @@ function applyNoteScanResult(data, { reset = false } = {}) {
       : 1,
     nextSequence: hasMore ? authoritativeAfterSequence : 0,
     limit: Number(cursor.limit || previous.limit || 200),
-    maxPages: Number(previous.maxPages || 5),
+    maxPages: completeNoteScanMaxPages,
     hasMore,
     latestHeight: completedLatestHeight,
     latestSequence: completedLatestSequence,
@@ -1763,15 +3034,13 @@ function applyNoteScanResult(data, { reset = false } = {}) {
   state.keplr.notesScanned = true;
 }
 
-async function refreshCachedNoteStatuses({
-  isCurrent = () => true,
-  noteStore = currentWalletNoteStore(),
-} = {}) {
-  if (!isCurrent()) return;
+async function refreshCachedNoteStatuses({ session = null, noteStore = null } = {}) {
+  assertPrivacySessionCurrent(session);
   const candidateNotes = (state.keplr.notes || []).filter(noteNullifier);
   if (!candidateNotes.length) return;
 
   const client = clairveilBrowserClient();
+  const persistedNoteStore = noteStore || currentWalletNoteStore({ optional: false });
   const nullifiers = [...new Set(candidateNotes.map(noteNullifier))];
   const statuses = new Map();
   const batchSize = 1000;
@@ -1788,7 +3057,6 @@ async function refreshCachedNoteStatuses({
     } catch {
       // Only this chunk falls back to individual checks below.
     }
-    if (!isCurrent()) return;
   }
 
   const missing = nullifiers.filter((nullifier) => !statuses.has(nullifier));
@@ -1803,10 +3071,9 @@ async function refreshCachedNoteStatuses({
         statuses.set(nullifier, null);
       }
     }));
-    if (!isCurrent()) return;
   }
 
-  if (!isCurrent()) return;
+  assertPrivacySessionCurrent(session);
   let changed = false;
   state.keplr.notes = state.keplr.notes.map((note) => {
     const nullifier = noteNullifier(note);
@@ -1826,29 +3093,30 @@ async function refreshCachedNoteStatuses({
     return { ...note, ...next };
   });
   if (changed) refreshNotesSummary();
-  if (
-    isCurrent() &&
-    noteStore &&
-    typeof noteStore.setNullifierStatuses === "function"
-  ) {
-    await noteStore.setNullifierStatuses(new Map(
-      [...statuses.entries()].map(([nullifier, used]) => [
-        nullifier,
-        used === true ? "spent" : used === false ? "unspent" : "unknown",
-      ]),
-    ));
-  }
+  await persistedNoteStore.setNullifierStatuses(new Map(
+    [...statuses.entries()].map(([nullifier, used]) => [
+      nullifier,
+      used === true ? "spent" : used === false ? "unspent" : "unknown",
+    ]),
+  ));
+  assertPrivacySessionCurrent(session);
 }
 
-async function reconcileReservedNotesFromScan({ isCurrent = () => true } = {}) {
-  if (!isCurrent()) return;
+async function reconcileReservedNotesFromScan(
+  { session = beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
   const manager = currentNoteReservationManager({ optional: true });
-  if (!manager || !state.keplr.notes.length) return;
-  await manager.reconcileSpentNotes(state.keplr.notes);
-  if (!isCurrent()) return;
-  await reconcileRecoveredActiveReservations(manager);
-  if (!isCurrent()) return;
-  await reconcileDefiniteFailedUnknownReservations(manager);
+  const notes = state.keplr.notes;
+  if (!manager || !notes.length) return;
+  await withPrivacySessionGuard(
+    session,
+    () => manager.reconcileSpentNotes(notes),
+  );
+  await reconcileRecoveredActiveReservations(manager, { session });
+  assertPrivacySessionCurrent(session);
+  await reconcileDefiniteFailedUnknownReservations(manager, { session });
+  assertPrivacySessionCurrent(session);
 }
 
 function reservationOperationID(reservation = {}) {
@@ -1961,7 +3229,11 @@ function successfulTxNullifierConflictIsMature(outcome, records) {
   });
 }
 
-async function reconcileRecoveredActiveReservations(manager) {
+async function reconcileRecoveredActiveReservations(
+  manager,
+  { session = beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
   if (
     typeof manager?.listActiveReservations !== "function" ||
     typeof manager?.reservationForNote !== "function" ||
@@ -1969,7 +3241,10 @@ async function reconcileRecoveredActiveReservations(manager) {
   ) {
     return [];
   }
-  const active = await manager.listActiveReservations();
+  const active = await withPrivacySessionGuard(
+    session,
+    () => manager.listActiveReservations(),
+  );
   const recoverable = active.filter((reservation) =>
     reservation.kind !== "relay_withdraw" ||
     [reservationStatuses.Submitted, reservationStatuses.Unknown].includes(
@@ -1983,7 +3258,10 @@ async function reconcileRecoveredActiveReservations(manager) {
   );
   const nullifierByReservationID = new Map();
   for (const note of state.keplr.notes || []) {
-    const reservation = await manager.reservationForNote(note);
+    const reservation = await withPrivacySessionGuard(
+      session,
+      () => manager.reservationForNote(note),
+    );
     if (!reservation || !recoverableIDs.has(reservation.reservation_id)) continue;
     const nullifier = noteNullifier(note);
     if (nullifier) nullifierByReservationID.set(reservation.reservation_id, nullifier);
@@ -2005,7 +3283,10 @@ async function reconcileRecoveredActiveReservations(manager) {
       .map((record) => nullifierByReservationID.get(record.reservation_id))
       .filter(Boolean);
     if (nullifiers.length !== records.length) continue;
-    const spent = await Promise.all(nullifiers.map(checkNullifierSpent));
+    const spent = await withPrivacySessionGuard(
+      session,
+      () => Promise.all(nullifiers.map(checkNullifierSpent)),
+    );
     if (spent.some((value) => value == null || value)) continue;
 
     const ids = records.map((record) => record.reservation_id);
@@ -2034,16 +3315,17 @@ async function reconcileRecoveredActiveReservations(manager) {
     })) {
       try {
         updated.push(
-          ...(await manager.markReplanRequired(ids, {
+          ...(await withPrivacySessionGuard(session, () => manager.markReplanRequired(ids, {
             error: "local prepared transaction was lost before broadcast",
             metadata: {
               reconcile_reason: "recovered_local_prepare_without_broadcast",
               no_broadcast_attempt: true,
             },
-          })),
+          }))),
         );
         continue;
       } catch (error) {
+        if (error?.privacySessionInvalidated) throw error;
         // Fall through to ManualReview when recovery evidence is insufficient.
         warnReservationBookkeeping(error);
       }
@@ -2057,15 +3339,16 @@ async function reconcileRecoveredActiveReservations(manager) {
     ) {
       try {
         updated.push(
-          ...(await manager.markManualReview(ids, {
+          ...(await withPrivacySessionGuard(session, () => manager.markManualReview(ids, {
             error: "prepared transaction has no durable pre-broadcast outcome",
             metadata: {
               reconcile_reason:
                 "recovered_proof_ready_without_durable_pre_broadcast_evidence",
             },
-          })),
+          }))),
         );
       } catch (error) {
+        if (error?.privacySessionInvalidated) throw error;
         warnReservationBookkeeping(error);
       }
       continue;
@@ -2077,7 +3360,10 @@ async function reconcileRecoveredActiveReservations(manager) {
     ) {
       continue;
     }
-    const outcome = await recoveredReservationTxOutcome(first);
+    const outcome = await withPrivacySessionGuard(
+      session,
+      () => recoveredReservationTxOutcome(first),
+    );
     if (!outcome.checked) continue;
     if (!outcome.found) {
       if (
@@ -2086,15 +3372,16 @@ async function reconcileRecoveredActiveReservations(manager) {
       ) {
         try {
           updated.push(
-            ...(await manager.markManualReview(ids, {
+            ...(await withPrivacySessionGuard(session, () => manager.markManualReview(ids, {
               error: "transaction could not be found before recovery deadline",
               metadata: {
                 reconcile_reason: "recovered_tx_not_found_manual_review",
                 tx_hash_checked: outcome.txHash || first.submitted_tx_hash || first.tx_bytes_hash || "",
               },
-            })),
+            }))),
           );
         } catch (error) {
+          if (error?.privacySessionInvalidated) throw error;
           warnReservationBookkeeping(error);
         }
       }
@@ -2107,7 +3394,7 @@ async function reconcileRecoveredActiveReservations(manager) {
       if (typeof manager.markManualReview === "function") {
         try {
           updated.push(
-            ...(await manager.markManualReview(ids, {
+            ...(await withPrivacySessionGuard(session, () => manager.markManualReview(ids, {
               error: outcome.ambiguous
                 ? "indexed transaction did not include a valid Cosmos result code"
                 : "transaction succeeded but input nullifiers remain unspent",
@@ -2117,9 +3404,10 @@ async function reconcileRecoveredActiveReservations(manager) {
                   : "recovered_tx_success_nullifier_unspent_conflict",
                 tx_hash_checked: outcome.txHash || first.submitted_tx_hash || first.tx_bytes_hash || "",
               },
-            })),
+            }))),
           );
         } catch (error) {
+          if (error?.privacySessionInvalidated) throw error;
           warnReservationBookkeeping(error);
         }
       }
@@ -2128,7 +3416,7 @@ async function reconcileRecoveredActiveReservations(manager) {
     if (!outcome.failed) continue;
     try {
       updated.push(
-        ...(await manager.markReplanRequired(ids, {
+        ...(await withPrivacySessionGuard(session, () => manager.markReplanRequired(ids, {
           txHash: first.submitted_tx_hash,
           txBytesHash: first.tx_bytes_hash,
           signDocHash: first.sign_doc_hash,
@@ -2140,17 +3428,23 @@ async function reconcileRecoveredActiveReservations(manager) {
             reconcile_reason: "recovered_definite_tx_failure_nullifier_unspent",
             no_broadcast_attempt: false,
           },
-        })),
+        }))),
       );
     } catch (error) {
+      if (error?.privacySessionInvalidated) throw error;
       warnReservationBookkeeping(error);
     }
   }
-  if (updated.length) await refreshNoteReservationState();
+  if (updated.length) await refreshNoteReservationState({ session });
+  assertPrivacySessionCurrent(session);
   return updated;
 }
 
-async function reconcileDefiniteFailedUnknownReservations(manager) {
+async function reconcileDefiniteFailedUnknownReservations(
+  manager,
+  { session = beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
   if (
     typeof manager?.listActiveReservations !== "function" ||
     typeof manager?.reservationForNote !== "function" ||
@@ -2158,7 +3452,10 @@ async function reconcileDefiniteFailedUnknownReservations(manager) {
   ) {
     return [];
   }
-  const active = await manager.listActiveReservations();
+  const active = await withPrivacySessionGuard(
+    session,
+    () => manager.listActiveReservations(),
+  );
   const definiteFailureReasons = new Set([
     "cosmos_tx_code_failed",
     "evm_receipt_failed",
@@ -2175,7 +3472,10 @@ async function reconcileDefiniteFailedUnknownReservations(manager) {
   const activeByID = new Map(active.map((reservation) => [reservation.reservation_id, reservation]));
   const nullifierByReservationID = new Map();
   for (const note of state.keplr.notes || []) {
-    const reservation = await manager.reservationForNote(note);
+    const reservation = await withPrivacySessionGuard(
+      session,
+      () => manager.reservationForNote(note),
+    );
     if (!reservation || !activeByID.has(reservation.reservation_id)) continue;
     const nullifier = noteNullifier(note);
     if (nullifier) nullifierByReservationID.set(reservation.reservation_id, nullifier);
@@ -2206,39 +3506,47 @@ async function reconcileDefiniteFailedUnknownReservations(manager) {
       .map((reservation) => nullifierByReservationID.get(reservation.reservation_id))
       .filter(Boolean);
     if (nullifiers.length !== operationReservations.length) continue;
-    const spentResults = await Promise.all(nullifiers.map(checkNullifierSpent));
+    const spentResults = await withPrivacySessionGuard(
+      session,
+      () => Promise.all(nullifiers.map(checkNullifierSpent)),
+    );
     if (spentResults.some((spent) => spent == null || spent)) continue;
     const first = operationReservations[0];
     try {
-      const replanned = await manager.markReplanRequired(
-        operationReservations.map((reservation) => reservation.reservation_id),
-        {
-          txHash: first.submitted_tx_hash,
-          txBytesHash: first.tx_bytes_hash,
-          signDocHash: first.sign_doc_hash,
-          nullifierUnspentConfirmed: true,
-          txAbsentOrFailedConfirmed: true,
-          txHashChecked: first.submitted_tx_hash || first.tx_bytes_hash || true,
-          error:
-            first.last_broadcast_error ||
-            `${failureReason} and nullifiers remain unspent`,
-          metadata: {
-            reconcile_reason: `${failureReason}_later_nullifier_reconcile`,
-            no_broadcast_attempt: false,
+      const replanned = await withPrivacySessionGuard(
+        session,
+        () => manager.markReplanRequired(
+          operationReservations.map((reservation) => reservation.reservation_id),
+          {
+            txHash: first.submitted_tx_hash,
+            txBytesHash: first.tx_bytes_hash,
+            signDocHash: first.sign_doc_hash,
+            nullifierUnspentConfirmed: true,
+            txAbsentOrFailedConfirmed: true,
+            txHashChecked: first.submitted_tx_hash || first.tx_bytes_hash || true,
+            error: "transaction_execution_failed",
+            metadata: {
+              reconcile_reason: `${failureReason}_later_nullifier_reconcile`,
+              no_broadcast_attempt: false,
+            },
           },
-        },
+        ),
       );
       updated.push(...replanned);
     } catch (error) {
+      if (error?.privacySessionInvalidated) throw error;
       warnReservationBookkeeping(error);
     }
   }
-  if (updated.length) await refreshNoteReservationState();
+  if (updated.length) await refreshNoteReservationState({ session });
+  assertPrivacySessionCurrent(session);
   return updated;
 }
 
-async function refreshNoteReservationState({ isCurrent = () => true } = {}) {
-  if (!isCurrent()) return;
+async function refreshNoteReservationState(
+  { session = beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
   const manager = currentNoteReservationManager({ optional: true });
   if (!manager) {
     state.keplr.noteReservationByNullifier = {};
@@ -2249,19 +3557,24 @@ async function refreshNoteReservationState({ isCurrent = () => true } = {}) {
   }
 
   const active = typeof manager.listActiveReservations === "function"
-    ? await manager.listActiveReservations()
+    ? await withPrivacySessionGuard(
+        session,
+        () => manager.listActiveReservations(),
+      )
     : [];
-  if (!isCurrent()) return;
   cacheReservationRecords(active, { replace: true });
   state.keplr.manualReviewReservations = active.filter(
     (reservation) =>
       reservation.kind !== "relay_withdraw" &&
       reservation.status === reservationStatuses.ManualReview,
   );
-  const statusByNote = state.keplr.notes.length
-    ? await manager.reservationStatusByNote(state.keplr.notes)
+  const notes = state.keplr.notes;
+  const statusByNote = notes.length
+    ? await withPrivacySessionGuard(
+        session,
+        () => manager.reservationStatusByNote(notes),
+      )
     : new Map();
-  if (!isCurrent()) return;
   const byNullifier = {};
   for (const [nullifier, reservation] of statusByNote.entries()) {
     if (isActiveReservationStatus(reservation?.status)) {
@@ -2273,6 +3586,12 @@ async function refreshNoteReservationState({ isCurrent = () => true } = {}) {
 }
 
 async function resolveGeneralManualReviewOperation(operationID) {
+  const session = beginPrivacySessionOperation();
+  assertPrivacySessionCurrent(session);
+  const operatorId = state.keplr.account;
+  if (!operatorId) {
+    throw new Error("Connect the reviewing wallet before resolving this reservation");
+  }
   const manager = currentNoteReservationManager();
   if (
     typeof manager.listActiveReservations !== "function" ||
@@ -2280,7 +3599,10 @@ async function resolveGeneralManualReviewOperation(operationID) {
   ) {
     throw new Error("This SDK does not support ManualReview resolution");
   }
-  const active = await manager.listActiveReservations();
+  const active = await withPrivacySessionGuard(
+    session,
+    () => manager.listActiveReservations(),
+  );
   const records = active.filter(
     (reservation) =>
       reservation.kind !== "relay_withdraw" &&
@@ -2296,8 +3618,12 @@ async function resolveGeneralManualReviewOperation(operationID) {
   }
 
   const nullifiers = [];
-  for (const note of state.keplr.notes || []) {
-    const reservation = await manager.reservationForNote(note);
+  const notes = [...(state.keplr.notes || [])];
+  for (const note of notes) {
+    const reservation = await withPrivacySessionGuard(
+      session,
+      () => manager.reservationForNote(note),
+    );
     if (
       reservation &&
       records.some((record) => record.reservation_id === reservation.reservation_id)
@@ -2309,7 +3635,10 @@ async function resolveGeneralManualReviewOperation(operationID) {
   if (nullifiers.length !== records.length) {
     throw new Error("Scan Notes before resolving this reservation");
   }
-  const spent = await Promise.all(nullifiers.map(checkNullifierSpent));
+  const spent = await withPrivacySessionGuard(
+    session,
+    () => Promise.all(nullifiers.map(checkNullifierSpent)),
+  );
   if (spent.some((value) => value !== false)) {
     throw new Error(
       "Every nullifier must be explicitly confirmed unspent before re-planning",
@@ -2320,7 +3649,10 @@ async function resolveGeneralManualReviewOperation(operationID) {
   const noBroadcast = records.every(reservationHasDurableNoBroadcastEvidence);
   let resolutionReason = "operator confirmed no broadcast and unspent nullifiers";
   if (!noBroadcast) {
-    const outcome = await recoveredReservationTxOutcome(first);
+    const outcome = await withPrivacySessionGuard(
+      session,
+      () => recoveredReservationTxOutcome(first),
+    );
     const previouslyAgedOut = records.every(
       (record) =>
         record.metadata?.reconcile_reason ===
@@ -2342,16 +3674,20 @@ async function resolveGeneralManualReviewOperation(operationID) {
       : "operator reconfirmed aged-out transaction absence and unspent nullifiers";
   }
 
-  await manager.resolveManualReview(
-    records.map((record) => record.reservation_id),
-    {
-      target: reservationStatuses.ReplanRequired,
-      operatorId: state.keplr.account,
-      approvalReference: `dapp-review:${operationID}:${Date.now()}`,
-      reason: resolutionReason,
-    },
+  await withPrivacySessionGuard(
+    session,
+    () => manager.resolveManualReview(
+      records.map((record) => record.reservation_id),
+      {
+        target: reservationStatuses.ReplanRequired,
+        operatorId,
+        approvalReference: `dapp-review:${operationID}:${Date.now()}`,
+        reason: resolutionReason,
+      },
+    ),
   );
-  await refreshNoteReservationState();
+  await refreshNoteReservationState({ session });
+  assertPrivacySessionCurrent(session);
   renderKeplr();
   toast("Reservation review resolved. The notes can be planned again.");
 }
@@ -2405,55 +3741,59 @@ function relayWithdrawPendingPayloadID(item = {}) {
   );
 }
 
-function relayWithdrawPayloadStorage() {
-  try {
-    return window.sessionStorage || null;
-  } catch {
-    return null;
-  }
+function currentRelayWithdrawMetadataStore() {
+  if (!state.keplr.account || !state.keplr.rootSignatureBase64) return null;
+  const key = `${relayWithdrawPayloadStoragePrefix}${reservationNamespace()}`;
+  if (relayMetadataStore && relayMetadataStoreKey === key) return relayMetadataStore;
+  relayMetadataStore = createEncryptedBrowserMetadataStore({
+    namespace: key,
+    secretBase64: state.keplr.rootSignatureBase64,
+  });
+  relayMetadataStoreKey = key;
+  return relayMetadataStore;
 }
 
-function relayWithdrawPayloadStorageKey() {
-  if (!state.keplr.account || !state.keplr.rootSignatureBase64) return "";
-  return `${relayWithdrawPayloadStoragePrefix}${reservationNamespace()}`;
-}
-
-function persistRelayWithdrawPayloadState() {
-  const storage = relayWithdrawPayloadStorage();
-  const key = relayWithdrawPayloadStorageKey();
-  if (!storage || !key) return;
-  try {
-    const currentSnapshot = currentPreparedRelayWithdrawSnapshot();
-    const current = currentSnapshot
-      ? sanitizeRelayWithdrawSnapshot(currentSnapshot, {
-          id: relayWithdrawPendingPayloadID(currentSnapshot),
-        })
-      : null;
-    const pending = (state.keplr.relayWithdrawPendingPayloads || [])
-      .map((snapshot) =>
-        sanitizeRelayWithdrawSnapshot(snapshot, {
-          id: relayWithdrawPendingPayloadID(snapshot),
-        }),
-      )
-      .filter(Boolean);
-    if (!current && !pending.length) {
-      storage.removeItem(key);
-      return;
-    }
-    storage.setItem(
-      key,
-      JSON.stringify({
+function persistRelayWithdrawPayloadState(
+  { session = beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
+  const storage = currentRelayWithdrawMetadataStore();
+  if (!storage) return Promise.resolve();
+  const currentSnapshot = currentPreparedRelayWithdrawSnapshot();
+  const current = currentSnapshot
+    ? sanitizeRelayWithdrawSnapshot(currentSnapshot)
+    : null;
+  const pending = (state.keplr.relayWithdrawPendingPayloads || [])
+    .map((snapshot) => sanitizeRelayWithdrawSnapshot(snapshot))
+    .filter(Boolean);
+  relayMetadataWrite = relayMetadataWrite
+    .catch(() => undefined)
+    .then(async () => {
+      if (!isPrivacySessionCurrent(session)) return;
+      if (!current && !pending.length) {
+        await storage.clear();
+        return;
+      }
+      await storage.save({
         current,
         pending,
         savedAt: new Date().toISOString(),
-      }),
-    );
-  } catch (error) {
-    console.warn("Clairveil relay payload session persistence failed", error);
-  }
+      });
+    })
+    .catch(() => {
+      // Do not send the original error object to the browser console. A
+      // product may forward console events to telemetry, and operation errors
+      // can carry privacy-sensitive payload or proof context.
+      console.warn("clairveil_relay_metadata_persistence_failed");
+    });
+  return relayMetadataWrite;
 }
 
-async function latestReservationRecords(reservation) {
+async function latestReservationRecords(
+  reservation,
+  { session = beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
   const ids = reservationIDs(reservation);
   const manager = currentNoteReservationManager({ optional: true });
   if (!ids.length) return [];
@@ -2461,17 +3801,26 @@ async function latestReservationRecords(reservation) {
   const records = [];
   for (const id of ids) {
     try {
-      records.push(await manager.getReservation(id));
+      records.push(
+        await withPrivacySessionGuard(session, () => manager.getReservation(id)),
+      );
     } catch (error) {
+      if (error?.privacySessionInvalidated) throw error;
       warnReservationBookkeeping(error);
     }
   }
+  assertPrivacySessionCurrent(session);
   return records;
 }
 
-async function syncRelayWithdrawSnapshotReservation(snapshot) {
+async function syncRelayWithdrawSnapshotReservation(
+  snapshot,
+  { session = beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
   if (!snapshot?.reservation) return snapshot;
-  const records = await latestReservationRecords(snapshot.reservation);
+  const records = await latestReservationRecords(snapshot.reservation, { session });
+  assertPrivacySessionCurrent(session);
   if (!records.length) return snapshot;
   const reservation = updateReservationBatchRecords(snapshot.reservation, records);
   return {
@@ -2489,10 +3838,15 @@ function relaySnapshotNeedsPendingRecovery(snapshot) {
   return records.some((record) => isActiveReservationStatus(record.status));
 }
 
-async function relaySnapshotWithFullReservationRecords(snapshot) {
+async function relaySnapshotWithFullReservationRecords(
+  snapshot,
+  { session = beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
   const ids = reservationIDs(snapshot?.reservation);
   if (!ids.length) return null;
-  const records = await latestReservationRecords(snapshot.reservation);
+  const records = await latestReservationRecords(snapshot.reservation, { session });
+  assertPrivacySessionCurrent(session);
   if (records.length !== ids.length) return null;
   return {
     ...snapshot,
@@ -2503,9 +3857,15 @@ async function relaySnapshotWithFullReservationRecords(snapshot) {
   };
 }
 
-async function replanRecoveredLocalRelayPayload(snapshot) {
+async function replanRecoveredLocalRelayPayload(
+  snapshot,
+  { session = beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
   const manager = currentNoteReservationManager({ optional: true });
-  const recoverySnapshot = await relaySnapshotWithFullReservationRecords(snapshot);
+  const recoverySnapshot = await relaySnapshotWithFullReservationRecords(snapshot, {
+    session,
+  });
   if (!recoverySnapshot) return snapshot;
   const records = recoverySnapshot.reservation.reservations || [];
   const localWorkerState = records.every((record) =>
@@ -2543,12 +3903,16 @@ async function replanRecoveredLocalRelayPayload(snapshot) {
           durableNoBroadcast
             ? "recovered_relay_proof_ready_requires_review_after_expiry"
             : "recovered_relay_proof_ready_without_durable_pre_broadcast_evidence",
+          {},
+          { session },
         )
       : await markReservationBatchReplanRequired(
           recoverySnapshot.reservation,
           new Error("local_relay_payload_lost_on_refresh"),
           "local_relay_payload_lost_on_refresh",
+          { session },
         );
+    assertPrivacySessionCurrent(session);
     return {
       ...snapshot,
       reservation: updateReservationBatchRecords(
@@ -2557,6 +3921,7 @@ async function replanRecoveredLocalRelayPayload(snapshot) {
       ),
     };
   } catch (error) {
+    if (error?.privacySessionInvalidated) throw error;
     warnReservationBookkeeping(error);
     return snapshot;
   }
@@ -2593,12 +3958,18 @@ function relaySnapshotFromActiveReservation(record = {}) {
   });
 }
 
-async function recoverActiveRelayWithdrawSnapshots() {
+async function recoverActiveRelayWithdrawSnapshots(
+  { session = beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
   const manager = currentNoteReservationManager({ optional: true });
   if (!manager || typeof manager.listActiveReservations !== "function") {
     return [];
   }
-  const active = await manager.listActiveReservations();
+  const active = await withPrivacySessionGuard(
+    session,
+    () => manager.listActiveReservations(),
+  );
   const byOperation = new Map();
   for (const record of active) {
     if (record.kind !== "relay_withdraw") continue;
@@ -2626,41 +3997,45 @@ async function recoverActiveRelayWithdrawSnapshots() {
           reservationHasBroadcastEvidence(record),
       );
     });
-    recovered.push(await replanRecoveredLocalRelayPayload(snapshot));
+    recovered.push(await replanRecoveredLocalRelayPayload(snapshot, { session }));
+    assertPrivacySessionCurrent(session);
   }
   return recovered;
 }
 
-async function loadPersistedRelayWithdrawPayloadState({
-  isCurrent = () => true,
-} = {}) {
-  if (!isCurrent()) return;
-  const storage = relayWithdrawPayloadStorage();
-  const key = relayWithdrawPayloadStorageKey();
+async function loadPersistedRelayWithdrawPayloadState({ session = null } = {}) {
+  assertPrivacySessionCurrent(session);
+  const storage = currentRelayWithdrawMetadataStore();
   let saved = { valid: true, current: null, pending: [] };
-  if (storage && key) {
-    saved = parsePersistedRelayWithdrawState(storage.getItem(key));
+  if (storage) {
+    saved = parsePersistedRelayWithdrawState(
+      await withPrivacySessionGuard(session, () => storage.load()),
+    );
+    assertPrivacySessionCurrent(session);
     if (!saved.valid) {
-      storage.removeItem(key);
+      await withPrivacySessionGuard(session, () => storage.clear());
+      assertPrivacySessionCurrent(session);
     }
   }
   const pending = [];
   for (const snapshot of saved.pending) {
-    pending.push(await syncRelayWithdrawSnapshotReservation(snapshot));
-    if (!isCurrent()) return;
+    pending.push(
+      await syncRelayWithdrawSnapshotReservation(snapshot, { session }),
+    );
+    assertPrivacySessionCurrent(session);
   }
   const current = saved.current;
   if (current && !state.keplr.relayWithdrawPayload) {
-    const synced = await syncRelayWithdrawSnapshotReservation(current);
-    if (!isCurrent()) return;
-    const replanned = await replanRecoveredLocalRelayPayload(synced);
-    if (!isCurrent()) return;
+    const synced = await syncRelayWithdrawSnapshotReservation(current, { session });
+    assertPrivacySessionCurrent(session);
+    const replanned = await replanRecoveredLocalRelayPayload(synced, { session });
+    assertPrivacySessionCurrent(session);
     if (replanned?.handedOff) {
       pending.unshift(replanned);
     }
   }
-  const recovered = await recoverActiveRelayWithdrawSnapshots();
-  if (!isCurrent()) return;
+  const recovered = await recoverActiveRelayWithdrawSnapshots({ session });
+  assertPrivacySessionCurrent(session);
   const existing = state.keplr.relayWithdrawPendingPayloads || [];
   const recoveredByID = new Map();
   for (const snapshot of [...existing, ...pending, ...recovered]) {
@@ -2669,9 +4044,10 @@ async function loadPersistedRelayWithdrawPayloadState({
   state.keplr.relayWithdrawPendingPayloads = [
     ...recoveredByID.values(),
   ].filter(relaySnapshotNeedsPendingRecovery);
-  await reconcileExpiredRelayWithdrawPayloads(null, { isCurrent });
-  if (!isCurrent()) return;
-  persistRelayWithdrawPayloadState();
+  await reconcileExpiredRelayWithdrawPayloads(null, { session });
+  assertPrivacySessionCurrent(session);
+  await persistRelayWithdrawPayloadState({ session });
+  assertPrivacySessionCurrent(session);
 }
 
 function currentPreparedRelayWithdrawSnapshot() {
@@ -2744,6 +4120,8 @@ function applyPreparedRelayWithdrawSnapshot(snapshot) {
 }
 
 async function restorePendingRelayWithdrawPayload(id) {
+  const session = beginPrivacySessionOperation();
+  assertPrivacySessionCurrent(session);
   const pending = Array.isArray(state.keplr.relayWithdrawPendingPayloads)
     ? state.keplr.relayWithdrawPendingPayloads
     : [];
@@ -2751,12 +4129,14 @@ async function restorePendingRelayWithdrawPayload(id) {
     (item) => relayWithdrawPendingPayloadID(item) === id,
   );
   if (!snapshot) return;
-  const synced = await syncRelayWithdrawSnapshotReservation(snapshot);
+  const synced = await syncRelayWithdrawSnapshotReservation(snapshot, { session });
+  assertPrivacySessionCurrent(session);
   state.keplr.relayWithdrawPendingPayloads = pending.map((item) =>
     relayWithdrawPendingPayloadID(item) === id ? synced : item,
   );
   if (!synced.payload) {
-    persistRelayWithdrawPayloadState();
+    await persistRelayWithdrawPayloadState({ session });
+    assertPrivacySessionCurrent(session);
     renderKeplr();
     toast(
       "Relay payload JSON은 refresh 후 복원되지 않습니다. Notes를 refresh해서 상태를 확인해줘.",
@@ -2767,7 +4147,8 @@ async function restorePendingRelayWithdrawPayload(id) {
     relayReservationStatus(synced.reservation) !==
     reservationStatuses.ProofReady
   ) {
-    persistRelayWithdrawPayloadState();
+    await persistRelayWithdrawPayloadState({ session });
+    assertPrivacySessionCurrent(session);
     renderKeplr();
     toast("Relay reservation이 더 이상 ProofReady가 아닙니다.");
     return;
@@ -2775,13 +4156,17 @@ async function restorePendingRelayWithdrawPayload(id) {
   state.keplr.relayWithdrawPendingPayloads = pending.filter(
     (item) => relayWithdrawPendingPayloadID(item) !== id,
   );
-  await discardAndClearPreparedRelayWithdrawPayload();
+  await discardAndClearPreparedRelayWithdrawPayload({ session });
+  assertPrivacySessionCurrent(session);
   applyPreparedRelayWithdrawSnapshot(synced);
-  persistRelayWithdrawPayloadState();
+  await persistRelayWithdrawPayloadState({ session });
+  assertPrivacySessionCurrent(session);
   renderKeplr();
 }
 
 async function refreshPendingRelayWithdrawPayloadStatus(id) {
+  const session = beginPrivacySessionOperation();
+  assertPrivacySessionCurrent(session);
   const pending = Array.isArray(state.keplr.relayWithdrawPendingPayloads)
     ? state.keplr.relayWithdrawPendingPayloads
     : [];
@@ -2789,19 +4174,21 @@ async function refreshPendingRelayWithdrawPayloadStatus(id) {
     (item) => relayWithdrawPendingPayloadID(item) === id,
   );
   if (!snapshot) return;
-  const synced = await syncRelayWithdrawSnapshotReservation(snapshot);
+  const synced = await syncRelayWithdrawSnapshotReservation(snapshot, { session });
   const status = relayReservationStatus(synced.reservation);
   const reconciled =
     status === reservationStatuses.ManualReview
-      ? await resolveExpiredRelayManualReview(synced)
-      : await reconcileExpiredRelayWithdrawSnapshot(synced);
+      ? await resolveExpiredRelayManualReview(synced, null, { session })
+      : await reconcileExpiredRelayWithdrawSnapshot(synced, null, { session });
+  assertPrivacySessionCurrent(session);
   state.keplr.relayWithdrawPendingPayloads = pending
     .map((item) =>
       relayWithdrawPendingPayloadID(item) === id ? reconciled : item,
     )
     .filter(relaySnapshotNeedsPendingRecovery);
-  await refreshNoteReservationState();
-  persistRelayWithdrawPayloadState();
+  await refreshNoteReservationState({ session });
+  await persistRelayWithdrawPayloadState({ session });
+  assertPrivacySessionCurrent(session);
   renderKeplr();
 }
 
@@ -2859,7 +4246,9 @@ async function setPreparedRelayWithdrawPayload(
 
 async function discardPreparedRelayWithdrawPayload(
   reason = "local_relay_payload_discarded_before_handoff",
+  { session = beginPrivacySessionOperation() } = {},
 ) {
+  assertPrivacySessionCurrent(session);
   if (
     !state.keplr.relayWithdrawPayload ||
     state.keplr.relayWithdrawPayloadSubmitted ||
@@ -2870,7 +4259,8 @@ async function discardPreparedRelayWithdrawPayload(
   }
   const reservation = state.keplr.relayWithdrawReservation;
   const manager = currentNoteReservationManager({ optional: true });
-  const records = await latestReservationRecords(reservation);
+  const records = await latestReservationRecords(reservation, { session });
+  assertPrivacySessionCurrent(session);
   const expiredProofReady = records.length > 0 && records.every(
     (record) =>
       record.status === reservationStatuses.ProofReady &&
@@ -2881,7 +4271,9 @@ async function discardPreparedRelayWithdrawPayload(
       reservation,
       new Error(reason),
       reason,
+      { session },
     );
+    assertPrivacySessionCurrent(session);
     return;
   }
   const updated = await markReservationBatchManualReview(
@@ -2892,7 +4284,9 @@ async function discardPreparedRelayWithdrawPayload(
       no_broadcast_attempt: true,
       proof_discarded: true,
     },
+    { session },
   );
+  assertPrivacySessionCurrent(session);
   const snapshot = currentPreparedRelayWithdrawSnapshot();
   if (!snapshot) return;
   const pendingSnapshot = sanitizeRelayWithdrawSnapshot({
@@ -2914,10 +4308,13 @@ async function discardPreparedRelayWithdrawPayload(
 async function discardAndClearPreparedRelayWithdrawPayload(options = {}) {
   const {
     discardReason = "local_relay_payload_discarded_before_handoff",
+    session = beginPrivacySessionOperation(),
     ...clearOptions
   } = options;
+  assertPrivacySessionCurrent(session);
   const expectedVersion = advanceRelayWithdrawPayloadGeneration();
-  await discardPreparedRelayWithdrawPayload(discardReason);
+  await discardPreparedRelayWithdrawPayload(discardReason, { session });
+  assertPrivacySessionCurrent(session);
   if (state.keplr.relayWithdrawPayloadVersion !== expectedVersion) {
     return false;
   }
@@ -2984,22 +4381,22 @@ function renderPendingRelayWithdrawPayloads() {
     action.type = "button";
     if (item.payload) {
       action.textContent = "Use";
-      action.addEventListener("click", () =>
-        restorePendingRelayWithdrawPayload(id).catch((error) =>
-          toast(error.message),
-        ),
-      );
+      action.addEventListener("click", () => {
+        restorePendingRelayWithdrawPayload(id).catch((error) => {
+          if (!error?.privacySessionInvalidated) toast(error.message);
+        });
+      });
     } else {
       action.textContent =
         relayReservationStatus(item.reservation) ===
         reservationStatuses.ManualReview
           ? "Resolve expired"
           : "Refresh status";
-      action.addEventListener("click", () =>
-        refreshPendingRelayWithdrawPayloadStatus(id).catch((error) =>
-          toast(error.message),
-        ),
-      );
+      action.addEventListener("click", () => {
+        refreshPendingRelayWithdrawPayloadStatus(id).catch((error) => {
+          if (!error?.privacySessionInvalidated) toast(error.message);
+        });
+      });
     }
 
     row.append(details, action);
@@ -3021,9 +4418,6 @@ function renderRelayerPanel() {
     state.keplr.relayWithdrawPendingPayloads?.length || 0;
   const relayerReady =
     Boolean(relayer?.transparentAddress) && serverFeature("relayer");
-  if (els.relayerPanel) {
-    els.relayerPanel.hidden = !serverFeature("relayer");
-  }
   els.relayerTransparentAddress.textContent =
     transparentDisplayAddressFor(relayer) || "-";
   els.relayerBalance.textContent =
@@ -3042,7 +4436,7 @@ function renderRelayerPanel() {
           }`
         : relayerReady
           ? "Waiting for payload"
-          : "Relayer unavailable";
+          : "Local relayer unavailable; copy for external handoff";
   els.keplrRelayWithdrawHash.textContent = state.keplr.relayWithdrawHash
     ? shorten(state.keplr.relayWithdrawHash, 14, 12)
     : "-";
@@ -3064,7 +4458,7 @@ function renderRelayerPanel() {
     !hasRelayedPayload || relayWithdrawPayloadCopyInFlight;
   els.relayPreparedWithdraw.textContent = relayNeedsManualResolution
     ? "Resolve expired"
-    : "Relay";
+    : "Relay locally";
   els.relayPreparedWithdraw.disabled =
     (!relayPayloadReady && !relayNeedsManualResolution) || !relayerReady;
   renderPendingRelayWithdrawPayloads();
@@ -3143,16 +4537,19 @@ function renderChainDependentUi() {
 
 async function selectDappChainProfile(profileId) {
   if (state.activeWallet) {
+    invalidatePrivacySessionOperations();
     await discardAndClearPreparedRelayWithdrawPayload();
     resetWalletSession();
   }
   state.selectedChainProfileId = profileId;
+  clearChainSafety();
   renderDappChainSelect();
   renderChainDependentUi();
   renderAccounts();
   renderWalletSession();
   renderKeplr();
   renderVisibleAddressSuggestions();
+  await refreshChainSafety({ force: true }).catch(() => {});
 }
 
 function recipientTestAccounts() {
@@ -3207,12 +4604,19 @@ function firstConfigProfile(config) {
 }
 
 async function browserHealthFromStaticConfig(config) {
-  const profile = firstConfigProfile(config);
-  state.config = config;
-  state.chainProfiles = config.chainProfiles || [];
-  state.selectedChainProfileId =
-    config.activeChainProfileId || profile?.id || "";
-  const health = await clairveilBrowserClient(profile).health();
+  assertValidatedDappConfig(config);
+  assertBrowserDeploymentEndpointPolicy(config);
+  const previousProfile = activeChainProfile();
+  const profile = selectedProfileFromConfig(config) || firstConfigProfile(config);
+  if (
+    previousProfile &&
+    profile &&
+    profileSessionFingerprint(previousProfile) !== profileSessionFingerprint(profile) &&
+    hasInMemoryPrivacySession()
+  ) {
+    invalidatePrivacySessionOperations();
+  }
+  const health = await clairveilBrowserClient(profile, { config }).health();
   return {
     config,
     status: health.status,
@@ -3226,14 +4630,47 @@ async function browserHealthFromStaticConfig(config) {
 async function loadDappHealth() {
   if (serverConfigAvailable) {
     try {
-      const data = await ensureLocalSignersIfNeeded(await api("/api/health"));
+      const data = await ensureLocalSignersIfNeeded(await api("/api/health", {
+        timeoutMs: healthBootstrapRequestTimeoutMs,
+        maxResponseBytes: healthBootstrapResponseMaxBytes,
+        expectedResponseUrl: "/api/health",
+        responseLabel: "WebApp health response",
+        redirect: "error",
+      }));
+      try {
+        assertValidatedDappConfig(data.config);
+        assertBrowserDeploymentEndpointPolicy(data.config);
+      } catch (error) {
+        error.dappConfigValidationFailure = true;
+        throw error;
+      }
       serverConfigAvailable = true;
       return data;
     } catch (error) {
+      if (error?.dappConfigValidationFailure) {
+        throw new Error(`WebApp configuration is invalid; sync is unavailable: ${error.message}`);
+      }
+      if (error?.statusCode && error.statusCode !== 404) {
+        throw new Error(`WebApp server health is unavailable: ${error.message}`);
+      }
+      const staticHealthFallback =
+        error?.apiInvalidJsonResponse === true &&
+        error?.apiPath === "/api/health" &&
+        /^text\/html(?:;|$)/i.test(error?.apiResponseContentType || "");
+      const timedOutHealth = error?.code === "request_timeout";
+      if (
+        !staticHealthFallback &&
+        !timedOutHealth &&
+        error?.statusCode === undefined &&
+        error?.name &&
+        error.name !== "TypeError"
+      ) {
+        throw error;
+      }
       serverConfigAvailable = false;
     }
   }
-  return browserHealthFromStaticConfig(getStaticDappConfig());
+  return browserHealthFromStaticConfig(await loadStaticDappConfig());
 }
 
 function addressSuggestionConfigs() {
@@ -3526,8 +4963,75 @@ function resetMetaMaskSession() {
   state.wallet = defaultMetaMaskState();
 }
 
+function resetAuditorSession() {
+  auditorSessionGeneration += 1;
+  state.auditor = defaultAuditorState();
+
+  if (els.auditorTestScalar) els.auditorTestScalar.textContent = "-";
+  if (els.auditorEventsList) els.auditorEventsList.innerHTML = "";
+  setAuditorValueTone(auditorDetailValueElements());
+  for (const element of auditorDetailValueElements()) {
+    element.textContent = "-";
+  }
+  if (els.auditorDecodeState) {
+    els.auditorDecodeState.textContent = "Local admin disclosure material cleared.";
+  }
+  if (els.decodeAuditorTransfer) els.decodeAuditorTransfer.disabled = true;
+  if (els.refreshAuditorTransfers) {
+    els.refreshAuditorTransfers.disabled = !serverFeature("auditorAdmin");
+  }
+}
+
+function clearPrivacyOperationDrafts() {
+  for (const input of [
+    els.veiledTransferAmount,
+    els.veiledTransferRecipient,
+    els.veiledDisclosurePubKey,
+    els.veiledWithdrawAmount,
+    els.veiledWithdrawRecipient,
+    els.relayWithdrawAmount,
+    els.relayWithdrawRecipient,
+  ]) {
+    if (input) input.value = "";
+  }
+  if (els.veiledDisclosureAdvanced) els.veiledDisclosureAdvanced.checked = false;
+  if (els.veiledDisclosureMode) els.veiledDisclosureMode.value = "none";
+  for (const checkbox of [
+    els.veiledDisclosureAmount,
+    els.veiledDisclosureFrom,
+    els.veiledDisclosureTo,
+  ]) {
+    if (checkbox) checkbox.checked = false;
+  }
+  renderTransferDisclosureAdvanced();
+  resetTransferPlannerFacts();
+  hideAllAddressSuggestions();
+}
+
+function resetPrivacyEventSession() {
+  privacyEventDisclosureGeneration += 1;
+  state.privacyEvents = defaultPrivacyEventsState();
+
+  if (els.eventsList) els.eventsList.innerHTML = "";
+  for (const element of [
+    els.eventDetailType,
+    els.eventDetailHeight,
+    els.eventDetailTx,
+    els.eventDetailTarget,
+    els.eventDetailUserMode,
+    els.eventDisclosurePlane,
+  ]) {
+    if (element) element.textContent = "-";
+  }
+  clearEventDisclosureResult();
+  if (els.eventDisclosureState) {
+    els.eventDisclosureState.textContent = "Privacy session cleared.";
+  }
+  if (els.decodeEventDisclosure) els.decodeEventDisclosure.disabled = true;
+}
+
 function resetKeplrSession() {
-  invalidateNoteScans();
+  invalidatePrivacySessionOperations();
   stopPreparedRelayReservationHeartbeat();
   advanceRelayWithdrawPayloadGeneration();
   const nextState = defaultKeplrState();
@@ -3537,14 +5041,24 @@ function resetKeplrSession() {
   reservationManagerKey = "";
   reservationStore = null;
   reservationStoreKey = "";
-  state.privacyEvents.decoded = null;
-  state.privacyEvents.error = "";
+  reservationWorkerID = "";
+  walletNoteStore = null;
+  walletNoteStoreKey = "";
+  relayMetadataStore = null;
+  relayMetadataStoreKey = "";
+  relayMetadataWrite = Promise.resolve();
+  legacyMigrationMarkerStore = null;
+  legacyMigrationMarkerStoreKey = "";
+  clearPrivacyOperationDrafts();
+  resetPrivacyEventSession();
 }
 
 function resetWalletSession() {
   state.activeWallet = "";
   resetMetaMaskSession();
   resetKeplrSession();
+  resetAuditorSession();
+  clearChainSafety();
 }
 
 function currentWalletAccountForCopy() {
@@ -3684,15 +5198,20 @@ function renderKeplr() {
   }
   renderMyKeplrNotes();
   els.fundKeplr.disabled = !serverFeature("faucet") || !signerReady;
-  els.setupKeplrPrivacy.disabled = !signerReady;
+  const noteScanBusy = pendingNoteScans > 0;
+  els.setupKeplrPrivacy.disabled = noteScanBusy || !signerReady;
   els.copyKeplrDisclosurePubKey.disabled = !state.keplr.disclosurePubKeyHex;
   els.refreshWalletBalance.disabled = !connected;
   els.refreshClairBalance.disabled = !connected;
-  const noteScanBusy = pendingNoteScans > 0;
   els.scanKeplrNotes.disabled =
     noteScanBusy || !signerReady || !state.keplr.rootSignatureBase64;
   els.resetRescanNotes.disabled =
     noteScanBusy || !signerReady || !state.keplr.rootSignatureBase64;
+  els.clearLegacyPrivacyData.disabled =
+    !hasCompletedPrivacyNoteScan() ||
+    state.keplr.legacyCleanupState === "Legacy 0.1 local data removed";
+  els.clearLegacyPrivacyData.textContent = state.keplr.legacyCleanupState ||
+    "Remove legacy 0.1 data";
   updateAmountActionButtons({ signerReady, veiledReady });
   renderEventDetail();
 }
@@ -3703,7 +5222,13 @@ function updateAmountActionButtons(status = {}) {
     status.signerReady ?? (connected && state.keplr.addressMatches);
   const veiledReady =
     status.veiledReady ??
-    (signerReady && Boolean(state.keplr.rootSignatureBase64));
+    (
+      signerReady &&
+      Boolean(state.keplr.rootSignatureBase64) &&
+      hasCompletedPrivacyNoteScan()
+  );
+  const chainSafetyReady = isChainSafetyReady();
+  const privacyActionBusy = isPrivacyValueActionInFlight();
   els.sendFromKeplr.disabled =
     !signerReady ||
     !hasPositiveUclairInput(els.keplrSendAmount) ||
@@ -3712,21 +5237,42 @@ function updateAmountActionButtons(status = {}) {
       state.activeWallet || activeWalletKind(),
     );
   els.depositFromKeplr.disabled =
+    privacyActionBusy ||
+    depositInFlight ||
     !signerReady ||
+    state.keplr.privacySetupFailed ||
+    !chainSafetyReady ||
     !hasPositiveUclairInput(els.keplrDepositAmount) ||
-    !serverFeature("depositProof");
+    !hasDepositProofProvider();
   els.transferFromVeiled.disabled =
-    !veiledReady || !hasPositiveUclairInput(els.veiledTransferAmount);
+    privacyActionBusy ||
+    !veiledReady || !chainSafetyReady || !hasPositiveUclairInput(els.veiledTransferAmount);
   els.withdrawFromVeiled.disabled =
-    !veiledReady || !hasPositiveUclairInput(els.veiledWithdrawAmount);
-  els.relayWithdrawFromVeiled.disabled =
+    privacyActionBusy ||
     !veiledReady ||
+    !chainSafetyReady ||
+    !hasPositiveUclairInput(els.veiledWithdrawAmount) ||
+    !isSendRecipientForWallet(
+      els.veiledWithdrawRecipient.value,
+      state.activeWallet || activeWalletKind(),
+    );
+  els.relayWithdrawFromVeiled.disabled =
+    privacyActionBusy ||
+    !veiledReady ||
+    !chainSafetyReady ||
     !hasPositiveUclairInput(els.relayWithdrawAmount) ||
-    !serverFeature("relayer");
+    !isSendRecipientForWallet(
+      els.relayWithdrawRecipient.value,
+      state.activeWallet || activeWalletKind(),
+    );
 }
 
 function renderMyKeplrNotes() {
-  els.myKeplrSpendable.textContent = state.keplr.notesSummary || "-";
+  const chainSafetyReady = isChainSafetyReady();
+  const notesSyncReady = hasCompletedPrivacyNoteScan();
+  els.myKeplrSpendable.textContent = chainSafetyReady && notesSyncReady
+    ? state.keplr.notesSummary || "-"
+    : "Sync unavailable";
   els.myKeplrSpendableOnly.checked = state.keplr.showSpendableOnly;
   els.myKeplrNotesList.innerHTML = "";
   renderReservationManualReviews();
@@ -3739,10 +5285,20 @@ function renderMyKeplrNotes() {
     return;
   }
 
-  if (!state.keplr.notesScanned) {
+  if (!chainSafetyReady) {
     const empty = document.createElement("p");
     empty.className = "empty";
-    empty.textContent = "Not scanned";
+    empty.textContent = state.chainSafety.status === "checking"
+      ? "Verifying current chain configuration"
+      : "Notes are unavailable until current chain configuration is verified";
+    els.myKeplrNotesList.append(empty);
+    return;
+  }
+
+  if (!notesSyncReady) {
+    const empty = document.createElement("p");
+    empty.className = "empty";
+    empty.textContent = state.keplr.scanError || "Not scanned";
     els.myKeplrNotesList.append(empty);
     return;
   }
@@ -3809,7 +5365,6 @@ function renderReservationManualReviews() {
     const reason = document.createElement("span");
     reason.textContent =
       first.metadata?.reconcile_reason ||
-      first.last_broadcast_error ||
       "broadcast outcome is unresolved";
     const tx = document.createElement("code");
     const txIdentity = first.submitted_tx_hash || first.tx_bytes_hash || "";
@@ -3821,7 +5376,9 @@ function renderReservationManualReviews() {
     action.addEventListener("click", () => {
       action.disabled = true;
       resolveGeneralManualReviewOperation(operationID)
-        .catch((error) => toast(error.message))
+        .catch((error) => {
+          if (!error?.privacySessionInvalidated) toast(error.message);
+        })
         .finally(() => {
           action.disabled = false;
         });
@@ -3859,7 +5416,56 @@ function renderAccounts() {
   renderVisibleAddressSuggestions();
 }
 
-function renderHealth(data) {
+function selectedProfileFromConfig(config) {
+  const profiles = config?.chainProfiles || [];
+  return (
+    profiles.find((profile) => profile.id === state.selectedChainProfileId) ||
+    profiles.find((profile) => profile.id === config?.activeChainProfileId) ||
+    profiles[0] ||
+    null
+  );
+}
+
+function hasInMemoryPrivacySession() {
+  return Boolean(
+    state.activeWallet ||
+      state.keplr.rootSignatureBase64 ||
+      state.keplr.relayWithdrawPayload ||
+      state.keplr.relayWithdrawReservation,
+  );
+}
+
+async function clearPrivacySessionForProfileChange(previousProfile, nextProfile) {
+  if (
+    !previousProfile ||
+    !nextProfile ||
+    profileSessionFingerprint(previousProfile) ===
+      profileSessionFingerprint(nextProfile) ||
+    !hasInMemoryPrivacySession()
+  ) {
+    return null;
+  }
+
+  invalidatePrivacySessionOperations();
+  let cleanupError = null;
+  try {
+    await discardAndClearPreparedRelayWithdrawPayload({
+      discardReason: "chain_profile_changed_before_reconnect",
+    });
+  } catch (error) {
+    cleanupError = error;
+  }
+  resetWalletSession();
+  return cleanupError;
+}
+
+async function renderHealth(data) {
+  const previousProfile = activeChainProfile();
+  const nextProfile = selectedProfileFromConfig(data.config);
+  const profileChangeCleanupError = await clearPrivacySessionForProfileChange(
+    previousProfile,
+    nextProfile,
+  );
   state.config = data.config;
   state.chainProfiles = data.config?.chainProfiles || [];
   if (
@@ -3901,11 +5507,17 @@ function renderHealth(data) {
     shieldedAddressBookPromise = null;
     renderVisibleAddressSuggestions();
   });
+  if (profileChangeCleanupError) {
+    throw new Error(
+      `The chain profile changed and the previous privacy session was cleared, but relay reservation cleanup needs reconciliation: ${profileChangeCleanupError.message}`,
+    );
+  }
 }
 
 async function refreshHealth() {
   const data = await loadDappHealth();
-  renderHealth(data);
+  await renderHealth(data);
+  await refreshChainSafety({ force: true }).catch(() => {});
   if (serverFeature("localSigners")) {
     try {
       await refreshSelectedAccount();
@@ -4083,6 +5695,7 @@ async function refreshEvents({ allowFailure = false } = {}) {
       (event) => event.tx_hash_hex === state.privacyEvents.selectedTxHash,
     )
   ) {
+    privacyEventDisclosureGeneration += 1;
     state.privacyEvents.selectedTxHash = "";
     state.privacyEvents.decoded = null;
     state.privacyEvents.error = "";
@@ -4308,6 +5921,7 @@ function renderBlockEvents() {
 }
 
 function selectPrivacyEvent(txHash) {
+  privacyEventDisclosureGeneration += 1;
   state.privacyEvents.selectedTxHash = txHash;
   state.privacyEvents.decoded = null;
   state.privacyEvents.error = "";
@@ -4345,6 +5959,7 @@ function renderEventDisclosureReport(report) {
       : "-";
   const verified =
     report?.verification?.verified ?? summary.verified ?? report?.verified;
+  const disclosureVerified = verified === true;
   els.eventDisclosurePlane.textContent =
     summary.plane || report?.payload?.plane || "-";
   els.eventDisclosurePolicy.textContent =
@@ -4364,6 +5979,16 @@ function renderEventDisclosureReport(report) {
     "-";
   els.eventDisclosureVerified.textContent =
     typeof verified === "boolean" ? (verified ? "true" : "false") : "-";
+  if (!disclosureVerified) {
+    els.eventDisclosureFields.textContent = "-";
+    els.eventDisclosureAmount.textContent = "-";
+    els.eventDisclosureAssetDenom.textContent = "-";
+    els.eventDisclosureFrom.textContent = "-";
+    els.eventDisclosureTo.textContent = "-";
+    els.eventDisclosureState.textContent =
+      "Disclosure verification failed. Plaintext withheld.";
+    return;
+  }
   els.eventDisclosureFields.textContent =
     (summary.disclosed_fields || []).map(prettyDisclosureField).join(", ") ||
     "-";
@@ -4371,9 +5996,8 @@ function renderEventDisclosureReport(report) {
   els.eventDisclosureAssetDenom.textContent = assetDenom || "-";
   els.eventDisclosureFrom.textContent = summary.from_shielded_address || "-";
   els.eventDisclosureTo.textContent = summary.to_shielded_address || "-";
-  els.eventDisclosureState.textContent = verified
-    ? `${summary.delivery || "recipient-encrypted"} / ${summary.policy || "unknown policy"}`
-    : "Disclosure verification failed.";
+  els.eventDisclosureState.textContent =
+    `${summary.delivery || "recipient-encrypted"} / ${summary.policy || "unknown policy"}`;
 }
 
 function renderEventDetail() {
@@ -4443,16 +6067,19 @@ function renderAuditorTestScalar() {
 
 async function refreshAuditorTestScalar() {
   if (!hasAuditorUi() || !els.auditorTestScalar) return;
+  const generation = auditorSessionGeneration;
   els.auditorTestScalar.textContent = "Loading...";
   updateAuditorDecodeButton();
   try {
     const data = await api("/api/auditor/test-scalar");
+    if (generation !== auditorSessionGeneration || !hasAuditorUi()) return;
     state.auditor.testScalar = data.disclosure_private_scalar_hex || "";
     state.auditor.testScalarError = "";
     state.auditor.testScalarMatchesAuditConfig = Boolean(
       data.matches_audit_config,
     );
   } catch (error) {
+    if (generation !== auditorSessionGeneration || !hasAuditorUi()) return;
     state.auditor.testScalar = "";
     state.auditor.testScalarError = `Unavailable: ${error.message}`;
     state.auditor.testScalarMatchesAuditConfig = false;
@@ -4473,6 +6100,10 @@ function updateAuditorDecodeButton() {
 async function decodeSelectedEventDisclosure() {
   const event = selectedPrivacyEvent();
   if (!event || !canDecodeEventDisclosure(event)) return;
+  const eventTxHash = event.tx_hash_hex;
+  const privacySession = privacySessionGeneration;
+  const disclosureGeneration = privacyEventDisclosureGeneration + 1;
+  privacyEventDisclosureGeneration = disclosureGeneration;
   state.privacyEvents.loading = true;
   state.privacyEvents.decoded = null;
   state.privacyEvents.error = "";
@@ -4486,11 +6117,32 @@ async function decodeSelectedEventDisclosure() {
       : await clairveilBrowserClient().decodeSelfViewDisclosure(
           keplrPrivacyRequest({ txHash: event.tx_hash_hex }),
         );
+    if (
+      privacySession !== privacySessionGeneration ||
+      disclosureGeneration !== privacyEventDisclosureGeneration ||
+      state.privacyEvents.selectedTxHash !== eventTxHash
+    ) {
+      return;
+    }
     state.privacyEvents.decoded = report;
     renderEventDisclosureReport(report);
   } catch (error) {
+    if (
+      privacySession !== privacySessionGeneration ||
+      disclosureGeneration !== privacyEventDisclosureGeneration ||
+      state.privacyEvents.selectedTxHash !== eventTxHash
+    ) {
+      return;
+    }
     state.privacyEvents.error = error.message;
   } finally {
+    if (
+      privacySession !== privacySessionGeneration ||
+      disclosureGeneration !== privacyEventDisclosureGeneration ||
+      state.privacyEvents.selectedTxHash !== eventTxHash
+    ) {
+      return;
+    }
     state.privacyEvents.loading = false;
     renderEventDetail();
   }
@@ -4542,7 +6194,8 @@ function renderAuditorReport(report) {
   const summary = report?.summary || {};
   const payload = report?.payload || {};
   const verification = report?.verification || {};
-  const verified = verification.verified ? "Verified" : "Failed";
+  const disclosureVerified = verification.verified === true;
+  const verified = disclosureVerified ? "Verified" : "Failed";
   const amount = summary.amount
     ? `${summary.amount}${summary.asset_denom ? ` ${summary.asset_denom}` : ""}`
     : "-";
@@ -4550,12 +6203,6 @@ function renderAuditorReport(report) {
   els.auditorTxHash.textContent =
     report?.tx_hash || state.auditor.selectedTxHash || "-";
   els.auditorVerification.textContent = verified;
-  els.auditorAmount.textContent = amount;
-  els.auditorFrom.textContent = summary.from_shielded_address || "-";
-  els.auditorTo.textContent = summary.to_shielded_address || "-";
-  els.auditorFields.textContent =
-    (summary.disclosed_fields || []).map(prettyDisclosureField).join(", ") ||
-    "-";
   els.auditorDigest.textContent =
     payload.disclosure_digest_hex ||
     eventAttribute(
@@ -4564,6 +6211,23 @@ function renderAuditorReport(report) {
       ),
       "audit_disclosure_digest",
     ) ||
+    "-";
+  if (!disclosureVerified) {
+    els.auditorAmount.textContent = "-";
+    els.auditorFrom.textContent = "-";
+    els.auditorTo.textContent = "-";
+    els.auditorFields.textContent = "-";
+    setAuditorValueTone(auditorDetailValueElements(), "encoded");
+    els.auditorDecodeState.textContent =
+      "Disclosure verification failed. Plaintext withheld.";
+    updateAuditorDecodeButton();
+    return;
+  }
+  els.auditorAmount.textContent = amount;
+  els.auditorFrom.textContent = summary.from_shielded_address || "-";
+  els.auditorTo.textContent = summary.to_shielded_address || "-";
+  els.auditorFields.textContent =
+    (summary.disclosed_fields || []).map(prettyDisclosureField).join(", ") ||
     "-";
   setAuditorValueTone(auditorDetailValueElements(), "decoded");
   els.auditorDecodeState.textContent = `${summary.delivery || report?.source || "audit"} / ${summary.policy || "unknown policy"}`;
@@ -4616,9 +6280,11 @@ function renderAuditorTransfers() {
 
 async function refreshAuditorTransfers() {
   if (!hasAuditorUi()) return;
+  const generation = auditorSessionGeneration;
   setBusy(els.refreshAuditorTransfers, true);
   try {
     const data = await clairveilBrowserClient().fetchAuditableTransfers();
+    if (generation !== auditorSessionGeneration || !hasAuditorUi()) return;
     state.auditor.events = data.events || [];
     if (
       state.auditor.selectedTxHash &&
@@ -4637,7 +6303,9 @@ async function refreshAuditorTransfers() {
       ),
     );
   } finally {
-    setBusy(els.refreshAuditorTransfers, false);
+    if (generation === auditorSessionGeneration && hasAuditorUi()) {
+      setBusy(els.refreshAuditorTransfers, false);
+    }
   }
 }
 
@@ -4669,6 +6337,7 @@ async function decodeAuditorTransfer(txHash = state.auditor.selectedTxHash) {
     return;
   }
 
+  const generation = auditorSessionGeneration;
   state.auditor.selectedTxHash = txHash;
   state.auditor.loading = true;
   state.auditor.decoded = null;
@@ -4680,11 +6349,14 @@ async function decodeAuditorTransfer(txHash = state.auditor.selectedTxHash) {
       method: "POST",
       body: JSON.stringify({ txHash, disclosurePrivKeyHex }),
     });
+    if (generation !== auditorSessionGeneration || !hasAuditorUi()) return;
     state.auditor.decoded = report;
     renderAuditorReport(report);
   } catch (error) {
+    if (generation !== auditorSessionGeneration || !hasAuditorUi()) return;
     clearAuditorReport(error.message);
   } finally {
+    if (generation !== auditorSessionGeneration || !hasAuditorUi()) return;
     state.auditor.loading = false;
     renderAuditorTransfers();
     updateAuditorDecodeButton();
@@ -4715,6 +6387,7 @@ async function connectWallet() {
     toast("MetaMask not found");
     return;
   }
+  invalidatePrivacySessionOperations();
   await ensureMetaMaskChain();
   const accounts = await requestMetaMask({ method: "eth_requestAccounts" });
   const account = accounts[0] || "";
@@ -4891,45 +6564,17 @@ async function connectKeplr() {
   const key = await window.keplr.getKey(chainInfo.chainId);
   const signer = await resolveKeplrSigner(chainInfo.chainId, key);
 
+  invalidatePrivacySessionOperations();
   await discardAndClearPreparedRelayWithdrawPayload();
-  invalidateNoteScans();
+  // The wallet may now resolve a different Keplr account. Drop every
+  // account-scoped cache and storage handle before loading its new namespace.
+  resetKeplrSession();
   resetMetaMaskSession();
   state.activeWallet = "keplr";
   state.keplr.account = signer.address || key.bech32Address || "";
   state.keplr.name = key.name || "";
   state.keplr.pubkeyHex = signer.pubKeyHex || "";
-  state.keplr.expectedAddress = "";
-  state.keplr.addressMatches = false;
   state.keplr.signerCheck = "Checking...";
-  state.keplr.signatureHash = "";
-  state.keplr.verified = false;
-  state.keplr.balance = "";
-  state.keplr.faucetHash = "";
-  state.keplr.faucetSent = "";
-  state.keplr.faucetRecipient = "";
-  state.keplr.shieldedAddress = "";
-  state.keplr.disclosurePubKeyHex = "";
-  state.keplr.rootSignatureBase64 = "";
-  state.keplr.rootSignatureHash = "";
-  state.keplr.sendHash = "";
-  state.keplr.depositHash = "";
-  state.keplr.depositHeight = "";
-  state.keplr.transferHash = "";
-  state.keplr.withdrawHash = "";
-  state.keplr.withdrawHeight = "";
-  state.keplr.relayWithdrawHash = "";
-  state.keplr.relayWithdrawHeight = "";
-  state.keplr.relayWithdrawRelayer = "";
-  state.keplr.relayWithdrawPayloadHash = "";
-  clearPreparedRelayWithdrawPayload();
-  state.keplr.notesSummary = "";
-  state.keplr.notes = [];
-  state.keplr.noteReservationByNullifier = {};
-  state.keplr.reservationRecordByID = {};
-  state.keplr.notesScanned = false;
-  state.keplr.noteScanCursor = defaultNoteScanCursor();
-  state.privacyEvents.decoded = null;
-  state.privacyEvents.error = "";
   renderKeplr();
 
   state.keplr.expectedAddress = signer.signerCheck?.expectedAddress || "";
@@ -4991,6 +6636,7 @@ async function signKeplrSession() {
 }
 
 async function disconnectWallet() {
+  invalidatePrivacySessionOperations();
   await discardAndClearPreparedRelayWithdrawPayload();
   resetWalletSession();
   renderWallet();
@@ -5038,43 +6684,54 @@ async function fundKeplr() {
   }
 }
 
-async function setupKeplrPrivacy() {
-  const setupSession = currentNoteScanSession();
-  const isCurrent = () => isCurrentNoteScanSession(setupSession);
-  if (!isCurrent() || !state.keplr.account) return;
+async function setupKeplrPrivacy({ scanNotes = true } = {}) {
+  if (!state.keplr.account) return false;
+  const session = beginPrivacySessionOperation();
   if (
     state.keplr.rootSignatureBase64 &&
     state.keplr.shieldedAddress &&
     state.keplr.disclosurePubKeyHex
   ) {
-    await loadPersistedRelayWithdrawPayloadState({ isCurrent });
-    if (!isCurrent()) return;
+    try {
+      await loadPersistedRelayWithdrawPayloadState({ session });
+      assertPrivacySessionCurrent(session);
+    } catch (error) {
+      if (error?.privacySessionInvalidated) return false;
+      invalidateFailedPrivacySetup();
+      els.keplrTxState.textContent = "Setup failed";
+      toast(error.message);
+      renderKeplr();
+      return false;
+    }
     renderKeplr();
-    return;
+    return true;
   }
 
   setBusy(els.setupKeplrPrivacy, true);
   els.keplrTxState.textContent = "Setting up";
   try {
+    const address = state.keplr.account;
+    const pubKeyHex = state.keplr.pubkeyHex;
     let account;
+    let signatureBase64;
     if (state.activeWallet === "metamask") {
       await ensureMetaMaskChain();
-      if (!isCurrent()) return;
+      assertPrivacySessionCurrent(session);
       const rootMessage = clairveilBrowserClient().buildRootSigningMessage(
-        state.keplr.account,
-        state.keplr.pubkeyHex,
+        address,
+        pubKeyHex,
       );
       const signatureHex = await requestMetaMask({
         method: "personal_sign",
         params: [rootMessage, state.wallet.account],
       });
-      if (!isCurrent()) return;
-      state.keplr.rootSignatureBase64 = bytesToBase64(hexToBytes(signatureHex));
+      assertPrivacySessionCurrent(session);
+      signatureBase64 = bytesToBase64(hexToBytes(signatureHex));
       account = clairveilBrowserClient().derivePrivacyAccount({
         walletType: "evm",
-        address: state.keplr.account,
-        pubKeyHex: state.keplr.pubkeyHex,
-        signatureBase64: state.keplr.rootSignatureBase64,
+        address,
+        pubKeyHex,
+        signatureBase64,
       });
     } else {
       if (!window.keplr) return;
@@ -5083,41 +6740,56 @@ async function setupKeplrPrivacy() {
         throw new Error("Selected chain does not include Keplr chain info");
       }
       const rootMessage = clairveilBrowserClient().buildRootSigningMessage(
-        state.keplr.account,
-        state.keplr.pubkeyHex,
+        address,
+        pubKeyHex,
       );
       const signature = await window.keplr.signArbitrary(
         chainInfo.chainId,
-        state.keplr.account,
+        address,
         rootMessage,
       );
-      if (!isCurrent()) return;
-      state.keplr.rootSignatureBase64 = signature.signature;
+      assertPrivacySessionCurrent(session);
+      signatureBase64 = signature.signature;
       account = clairveilBrowserClient().derivePrivacyAccount({
-        address: state.keplr.account,
-        pubKeyHex: state.keplr.pubkeyHex,
-        signatureBase64: signature.signature,
+        address,
+        pubKeyHex,
+        signatureBase64,
       });
     }
+    assertPrivacySessionCurrent(session);
+    state.keplr.rootSignatureBase64 = signatureBase64;
     state.keplr.shieldedAddress = account.shielded_address || "";
     state.keplr.disclosurePubKeyHex = account.disclosure_pubkey_hex || "";
     state.keplr.rootSignatureHash = account.root_signature_hash || "";
-    await hydratePersistedWalletNotes({ isCurrent });
-    if (!isCurrent()) return;
-    await loadPersistedRelayWithdrawPayloadState({ isCurrent });
-    if (!isCurrent()) return;
+    await hydratePersistedWalletNotes({ session });
+    await loadLegacyMigrationCleanupMarker({ session });
+    await loadPersistedRelayWithdrawPayloadState({ session });
+    assertPrivacySessionCurrent(session);
+    await refreshChainSafety({ force: true });
+    assertPrivacySessionCurrent(session);
+    if (scanNotes) {
+      await scanKeplrNotes({
+        quiet: true,
+        skipPrivacySetup: true,
+        throwOnError: true,
+        session,
+      });
+    }
+    assertPrivacySessionCurrent(session);
+    state.keplr.privacySetupFailed = false;
     els.keplrTxState.textContent = "Ready";
     renderKeplr();
     toast("Clairveil account ready");
+    return true;
   } catch (error) {
-    if (!isCurrent()) return;
+    if (error?.privacySessionInvalidated) return false;
+    invalidateFailedPrivacySetup();
     els.keplrTxState.textContent = "Setup failed";
     toast(error.message);
+    return false;
   } finally {
-    if (isCurrent()) {
-      setBusy(els.setupKeplrPrivacy, false);
-      renderKeplr();
-    }
+    setBusy(els.setupKeplrPrivacy, false);
+    renderKeplr();
   }
 }
 
@@ -5148,12 +6820,17 @@ async function copyRelayWithdrawPayload() {
   if (relayWithdrawPayloadCopyInFlight) {
     return;
   }
+  const session = beginPrivacySessionOperation();
   const expectedVersion = state.keplr.relayWithdrawPayloadVersion;
   const copySnapshot = currentPreparedRelayWithdrawSnapshot();
   const copyIsCurrent = () =>
+    isPrivacySessionCurrent(session) &&
     state.keplr.relayWithdrawPayloadVersion === expectedVersion;
   const assertCopyIsCurrent = () => {
     if (copyIsCurrent()) return;
+    if (!isPrivacySessionCurrent(session)) {
+      throw privacySessionInvalidatedError();
+    }
     const error = new Error(
       "Prepared relay withdraw payload changed while handoff was in progress",
     );
@@ -5163,10 +6840,18 @@ async function copyRelayWithdrawPayload() {
   let handoffRecorded = Boolean(copySnapshot?.handedOff);
   let handoffTransitioned = false;
   let clipboardAttempted = false;
+  const copyLock = Object.freeze({
+    generation: session.generation,
+    payloadVersion: expectedVersion,
+  });
   relayWithdrawPayloadCopyInFlight = true;
+  relayWithdrawPayloadCopyLock = copyLock;
   renderKeplr();
   try {
-    const chainSnapshot = await latestRelayChainSnapshot();
+    const chainSnapshot = await withPrivacySessionGuard(
+      session,
+      () => latestRelayChainSnapshot(),
+    );
     assertCopyIsCurrent();
     if (relaySnapshotIsExpired(copySnapshot, chainSnapshot.chainNowMs)) {
       throw new Error("Relay payload is expired at the latest chain block time");
@@ -5186,29 +6871,34 @@ async function copyRelayWithdrawPayload() {
       copySnapshot.payload,
       copySnapshot.reservation,
       copySnapshot.preparedData,
+      { session },
     );
     assertCopyIsCurrent();
     if (!handoffRecorded) {
       await markRelayReservationHandedOff(
         copySnapshot.reservation,
         copySnapshot.payload?.payload_hash,
-        { expectedPayloadVersion: expectedVersion },
+        { expectedPayloadVersion: expectedVersion, session },
       );
       assertCopyIsCurrent();
       handoffRecorded = true;
       handoffTransitioned = true;
       state.keplr.relayWithdrawPayloadHandedOff = true;
-      persistRelayWithdrawPayloadState();
+      await persistRelayWithdrawPayloadState({ session });
+      assertCopyIsCurrent();
     }
     stopPreparedRelayReservationHeartbeat();
     await extendReservationBatchLeaseToPayloadExpiry(
       copySnapshot.reservation,
       copySnapshot.payload,
-      { expectedPayloadVersion: expectedVersion },
+      { expectedPayloadVersion: expectedVersion, session },
     );
     assertCopyIsCurrent();
     clipboardAttempted = true;
-    await navigator.clipboard.writeText(copySnapshot.payloadText);
+    await withPrivacySessionGuard(
+      session,
+      () => navigator.clipboard.writeText(copySnapshot.payloadText),
+    );
     assertCopyIsCurrent();
   } catch (error) {
     if (!copyIsCurrent()) {
@@ -5218,7 +6908,8 @@ async function copyRelayWithdrawPayload() {
       throw error;
     }
     state.keplr.relayWithdrawPayloadHandedOff = true;
-    persistRelayWithdrawPayloadState();
+    await persistRelayWithdrawPayloadState({ session });
+    assertCopyIsCurrent();
     renderKeplr();
     const retryError = new Error(
       clipboardAttempted
@@ -5229,11 +6920,16 @@ async function copyRelayWithdrawPayload() {
     retryError.cause = error;
     throw retryError;
   } finally {
-    relayWithdrawPayloadCopyInFlight = false;
-    renderKeplr();
+    if (relayWithdrawPayloadCopyLock === copyLock) {
+      relayWithdrawPayloadCopyInFlight = false;
+      relayWithdrawPayloadCopyLock = null;
+      if (isPrivacySessionCurrent(session)) renderKeplr();
+    }
   }
+  assertCopyIsCurrent();
   state.keplr.relayWithdrawPayloadHandedOff = true;
-  persistRelayWithdrawPayloadState();
+  await persistRelayWithdrawPayloadState({ session });
+  assertCopyIsCurrent();
   renderKeplr();
   toast("Relay withdraw payload copied");
 }
@@ -5256,58 +6952,136 @@ function isMetaMaskUserRejectedError(error) {
   return code === "4001";
 }
 
-async function signDirectAndBroadcast(signDoc, { beforeBroadcast } = {}) {
+function keplrDirectSignWallet(
+  { session = beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
   if (!window.keplr?.signDirect) {
     throw noBroadcastAttemptError(new Error("Keplr signDirect not available"));
   }
-  const directSignDoc = {
-    bodyBytes: base64ToBytes(signDoc.bodyBytes),
-    authInfoBytes: base64ToBytes(signDoc.authInfoBytes),
-    chainId: signDoc.chainId,
-    accountNumber: BigInt(signDoc.accountNumber),
-  };
-  let signed;
-  try {
-    signed = await window.keplr.signDirect(
-      signDoc.chainId,
-      state.keplr.account,
-      directSignDoc,
-    );
-  } catch (error) {
-    throw noBroadcastAttemptError(error);
+  const account = state.keplr.account;
+  if (!account) {
+    throw noBroadcastAttemptError(new Error("Keplr is not connected"));
   }
-  await beforeBroadcast?.();
-  return clairveilBrowserClient().broadcastSignedTx({
-    bodyBytes: bytesToBase64(signed.signed.bodyBytes),
-    authInfoBytes: bytesToBase64(signed.signed.authInfoBytes),
-    signature: signed.signature.signature,
-  });
+  return {
+    address: account,
+    async signDirect(directSignDoc) {
+      return withPrivacySessionGuard(
+        session,
+        () => window.keplr.signDirect(
+          directSignDoc.chainId,
+          account,
+          {
+            bodyBytes: directSignDoc.bodyBytes,
+            authInfoBytes: directSignDoc.authInfoBytes,
+            chainId: directSignDoc.chainId,
+            accountNumber: BigInt(directSignDoc.accountNumber),
+          },
+        ),
+      );
+    },
+  };
 }
 
-async function submitEvmTransaction(transaction, { beforeBroadcast } = {}) {
-  if (!metaMaskProvider() || !state.wallet.account) {
+async function signDirectAndBroadcast(
+  signDoc,
+  {
+    reservation = null,
+    session = beginPrivacySessionOperation(),
+    onBroadcastStart = null,
+  } = {},
+) {
+  assertPrivacySessionCurrent(session);
+  const hasReservation = reservationIDs(reservation).length > 0;
+  const reservationManagerForBroadcast = hasReservation
+    ? currentNoteReservationManager()
+    : null;
+  const submission = {
+    wallet: keplrDirectSignWallet({ session }),
+    signDoc,
+    ...(hasReservation
+      ? {
+          reservationManager: reservationManagerForBroadcast,
+          reservation,
+        }
+      : {}),
+  };
+
+  let checkpoint;
+  try {
+    checkpoint = await withPrivacySessionGuard(
+      session,
+      () => clairveilBrowserClient().signDirect(submission),
+    );
+  } catch (error) {
+    if (hasReservation && isMetaMaskUserRejectedError(error)) {
+      error.reservationLifecycleHandled = true;
+    }
+    throw noBroadcastAttemptError(error);
+  }
+  assertPrivacySessionCurrent(session);
+  onBroadcastStart?.();
+  assertPrivacySessionCurrent(session);
+  const broadcast = await withPrivacySessionGuard(
+    session,
+    () => clairveilBrowserClient().broadcastTxRawBytes(
+      checkpoint.txRawBytes,
+      hasReservation
+        ? {
+            reservationManager: reservationManagerForBroadcast,
+            reservation,
+          }
+        : undefined,
+    ),
+  );
+  return {
+    ...broadcast,
+    sdkReservationLifecycleManaged: hasReservation,
+  };
+}
+
+async function submitEvmTransaction(
+  transaction,
+  {
+    beforeBroadcast,
+    onBroadcastStart,
+    session = beginPrivacySessionOperation(),
+  } = {},
+) {
+  assertPrivacySessionCurrent(session);
+  const account = state.wallet.account;
+  if (!metaMaskProvider() || !account) {
     throw noBroadcastAttemptError(new Error("MetaMask is not connected"));
   }
   try {
-    await ensureMetaMaskChain();
+    await withPrivacySessionGuard(session, () => ensureMetaMaskChain());
   } catch (error) {
     throw noBroadcastAttemptError(error);
   }
   let tx;
   try {
-    tx = await withEstimatedEvmGas({
-      ...transaction,
-      from: state.wallet.account,
-    });
+    tx = await withPrivacySessionGuard(
+      session,
+      () => withEstimatedEvmGas({
+        ...transaction,
+        from: account,
+      }),
+    );
   } catch (error) {
     throw noBroadcastAttemptError(error, "MetaMask gas estimation failed before broadcast");
   }
   await beforeBroadcast?.();
+  assertPrivacySessionCurrent(session);
+  onBroadcastStart?.();
+  assertPrivacySessionCurrent(session);
   try {
-    const txHash = await requestMetaMask({
-      method: "eth_sendTransaction",
-      params: [tx],
-    });
+    const txHash = await withPrivacySessionGuard(
+      session,
+      () => requestMetaMask({
+        method: "eth_sendTransaction",
+        params: [tx],
+      }),
+    );
     const normalized = normalizeEvmTxHash(txHash);
     if (!/^[0-9A-F]{64}$/.test(normalized)) {
       throw new Error("MetaMask eth_sendTransaction did not return a tx hash");
@@ -5336,9 +7110,19 @@ async function waitForEvmTransaction(txHash, label = "EVM transaction") {
 
 async function sendEvmTransaction(
   transaction,
-  { waitForReceipt = false, label = "EVM transaction", beforeBroadcast } = {},
+  {
+    waitForReceipt = false,
+    label = "EVM transaction",
+    beforeBroadcast,
+    onBroadcastStart,
+    session = beginPrivacySessionOperation(),
+  } = {},
 ) {
-  const txHash = await submitEvmTransaction(transaction, { beforeBroadcast });
+  const txHash = await submitEvmTransaction(transaction, {
+    beforeBroadcast,
+    onBroadcastStart,
+    session,
+  });
   if (waitForReceipt) {
     const broadcast = await waitForEvmTransaction(txHash, label);
     return { ...broadcast, txHash: broadcast.txHash || txHash };
@@ -5352,15 +7136,44 @@ async function sendEvmTransaction(
   };
 }
 
-function watchEvmBroadcast(broadcast, { onIncluded, onFailed } = {}) {
+function watchEvmBroadcast(
+  broadcast,
+  {
+    session = beginPrivacySessionOperation(),
+    onIncluded,
+    onFailed,
+  } = {},
+) {
   if (!broadcast?.waitPromise) return;
-  broadcast.waitPromise
-    .then((result) => {
-      onIncluded?.(result);
-    })
+  const invoke = async (callback, value) => {
+    if (typeof callback !== "function" || !isPrivacySessionCurrent(session)) {
+      return;
+    }
+    try {
+      await callback(value);
+    } catch (error) {
+      if (error?.privacySessionInvalidated || !isPrivacySessionCurrent(session)) {
+        return;
+      }
+      // Do not expose receipt callback details to console-forwarding telemetry.
+      console.warn("clairveil_evm_receipt_callback_failed");
+    }
+  };
+  void broadcast.waitPromise
+    .then(
+      (result) => invoke(onIncluded, result),
+      (error) => {
+        if (isEvmReceiptConfirmationPending(error)) return;
+        if (!isPrivacySessionCurrent(session)) return;
+        return invoke(onFailed, error);
+      },
+    )
     .catch((error) => {
-      if (isEvmReceiptConfirmationPending(error)) return;
-      onFailed?.(error);
+      if (error?.privacySessionInvalidated || !isPrivacySessionCurrent(session)) {
+        return;
+      }
+      // Do not expose receipt callback details to console-forwarding telemetry.
+      console.warn("clairveil_evm_receipt_callback_failed");
     });
 }
 
@@ -5390,22 +7203,46 @@ function privacyRequest(extra = {}) {
 }
 
 async function preparePrivacyDepositSignDoc(amount) {
+  const session = beginPrivacySessionOperation();
+  await assertChainSafetyBeforePrivacyFlow({ session });
+  assertPrivacySessionCurrent(session);
+  // The SDK invokes this callback later. Capture the reviewed endpoint now so
+  // a profile switch cannot send this operation's proof material elsewhere.
+  const depositProofEndpoint = browserDepositProofUrl();
+  const localDepositProofAvailable = serverFeature("depositProof");
   const request = privacyRequest({ amount });
   request.depositProofProvider = async ({ material }) => {
-    if (!serverFeature("depositProof")) {
+    assertPrivacySessionCurrent(session);
+    if (!depositProofEndpoint && !localDepositProofAvailable) {
       throw new Error(
-        "Deposit proof helper is unavailable. 최신 Clairveil chain은 deposit proof가 필요하므로 local DApp server/prover setup으로 다시 실행해줘.",
+        "Deposit proof provider is unavailable. Configure the active profile's depositProofUrl or use the loopback local helper.",
       );
     }
-    return api("/api/deposit/proof", {
-      method: "POST",
-      body: JSON.stringify({
-        note_json: material.note_json,
-        note_commitment_hex: material.note_commitment_hex,
-      }),
-    });
+    const proofEndpoint = depositProofEndpoint || "/api/deposit/proof";
+    try {
+      return await withPrivacySessionGuard(
+        session,
+        () => api(proofEndpoint, {
+          method: "POST",
+          timeoutMs: depositProofRequestTimeoutMs,
+          maxResponseBytes: depositProofResponseMaxBytes,
+          expectedResponseUrl: proofEndpoint,
+          responseLabel: "Deposit proof response",
+          redirect: "error",
+          body: JSON.stringify({
+            note_json: material.note_json,
+            note_commitment_hex: material.note_commitment_hex,
+          }),
+        }),
+      );
+    } catch (error) {
+      throw safeDepositProofProviderError(error);
+    }
   };
-  return clairveilBrowserClient().prepareDeposit(request);
+  return finishPrivacyPreparation(
+    await clairveilBrowserClient().prepareDeposit(request),
+    session,
+  );
 }
 
 async function preparePrivacyTransferSignDoc(
@@ -5414,40 +7251,59 @@ async function preparePrivacyTransferSignDoc(
   disclosure = {},
   options = {},
 ) {
-  return clairveilBrowserClient().prepareTransfer(
+  const session = beginPrivacySessionOperation();
+  await assertChainSafetyBeforePrivacyFlow({ session });
+  assertPrivacySessionCurrent(session);
+  assertSpendableNotesSyncReady();
+  const reservationManager = currentNoteReservationManager();
+  session.reservationManager = reservationManager;
+  return finishPrivacyPreparation(await clairveilBrowserClient().prepareTransfer(
     privacyRequest({
       amount,
       recipient,
       scan: { limit: 200, maxPages: 1000 },
-      reservationManager: currentNoteReservationManager(),
+      reservationManager,
       ...disclosure,
       allowPlanStep: Boolean(options.allowPlanStep),
     }),
-  );
+  ), session);
 }
 
 async function preparePrivacyWithdrawSignDoc(amount, recipient) {
-  return clairveilBrowserClient().prepareWithdraw(
+  const session = beginPrivacySessionOperation();
+  await assertChainSafetyBeforePrivacyFlow({ session });
+  assertPrivacySessionCurrent(session);
+  assertSpendableNotesSyncReady();
+  const reservationManager = currentNoteReservationManager();
+  session.reservationManager = reservationManager;
+  return finishPrivacyPreparation(await clairveilBrowserClient().prepareWithdraw(
     privacyRequest({
       amount,
       recipient,
       scan: { limit: 200, maxPages: 1000 },
-      reservationManager: currentNoteReservationManager(),
+      reservationManager,
     }),
-  );
+  ), session);
 }
 
 async function preparePrivacyRelayWithdrawPayload(amount, recipient) {
+  const session = beginPrivacySessionOperation();
+  await assertChainSafetyBeforePrivacyFlow({ session });
+  assertPrivacySessionCurrent(session);
+  assertSpendableNotesSyncReady();
   const chainSnapshot = await latestRelayChainSnapshot();
-  return clairveilBrowserClient().prepareRelayWithdraw(
+  assertPrivacySessionCurrent(session);
+  const reservationManager = currentNoteReservationManager();
+  session.reservationManager = reservationManager;
+  return finishPrivacyPreparation(await clairveilBrowserClient().prepareRelayWithdraw(
     privacyRequest({
       amount,
       recipient,
       chainNowUnix: Math.floor(chainSnapshot.chainNowMs / 1000),
       scan: { limit: 200, maxPages: 1000 },
-      reservationManager: currentNoteReservationManager(),
+      reservationManager,
     }),
-  );
+  ), session);
 }
 
 async function relayPreparedWithdrawPayload(payload, recipient) {
@@ -5580,7 +7436,11 @@ function cacheReservationRecords(records = [], { replace = false } = {}) {
   state.keplr.reservationRecordByID = byID;
 }
 
-function updateRelayWithdrawReservationRecords(records = []) {
+function updateRelayWithdrawReservationRecords(
+  records = [],
+  { session = beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
   if (!records.length) return;
   cacheReservationRecords(records);
   state.keplr.relayWithdrawReservation = updateReservationBatchRecords(
@@ -5593,14 +7453,18 @@ function updateRelayWithdrawReservationRecords(records = []) {
     ...item,
     reservation: updateReservationBatchRecords(item.reservation, records),
   }));
-  persistRelayWithdrawPayloadState();
+  persistRelayWithdrawPayloadState({ session });
 }
 
 async function markRelayReservationHandedOff(
   reservation,
   payloadHash,
-  { expectedPayloadVersion = null } = {},
+  {
+    expectedPayloadVersion = null,
+    session = beginPrivacySessionOperation(),
+  } = {},
 ) {
+  assertPrivacySessionCurrent(session);
   const ids = reservationIDs(reservation);
   const leaseToken = reservationLeaseToken(reservation);
   const normalizedPayloadHash = String(payloadHash || "").trim();
@@ -5608,11 +7472,14 @@ async function markRelayReservationHandedOff(
   if (!ids.length || !leaseToken || !normalizedPayloadHash || !manager?.recordRelayHandoff) {
     throw new Error("Relay payload handoff cannot be recorded without an active reservation lease");
   }
-  const updated = await manager.recordRelayHandoff(ids, {
-    lease_token: leaseToken,
-    payload_hash: normalizedPayloadHash,
-    handed_off_at: new Date().toISOString(),
-  });
+  const updated = await withPrivacySessionGuard(
+    session,
+    () => manager.recordRelayHandoff(ids, {
+      lease_token: leaseToken,
+      payload_hash: normalizedPayloadHash,
+      handed_off_at: new Date().toISOString(),
+    }),
+  );
   if (updated.length !== ids.length) {
     throw new Error("Relay payload handoff was not recorded for every reserved note");
   }
@@ -5622,8 +7489,9 @@ async function markRelayReservationHandedOff(
   ) {
     return updated;
   }
-  updateRelayWithdrawReservationRecords(updated || []);
-  await refreshNoteReservationState();
+  updateRelayWithdrawReservationRecords(updated || [], { session });
+  await refreshNoteReservationState({ session });
+  assertPrivacySessionCurrent(session);
   return updated;
 }
 
@@ -5644,8 +7512,10 @@ function isRelayPreparedWithdrawStructurallyReady() {
   );
 }
 
-function warnReservationBookkeeping(error) {
-  console.warn("Clairveil reservation bookkeeping failed", error);
+function warnReservationBookkeeping(_error) {
+  // Keep browser diagnostics safe for console-forwarding telemetry. The
+  // detailed error may include operation context and must remain in memory.
+  console.warn("clairveil_reservation_bookkeeping_failed");
 }
 
 function broadcastAttemptMetadata(source = {}) {
@@ -5672,6 +7542,7 @@ async function noteReservationBookkeeping(task) {
   try {
     return await task();
   } catch (error) {
+    if (error?.privacySessionInvalidated) throw error;
     warnReservationBookkeeping(error);
     return undefined;
   }
@@ -5688,17 +7559,26 @@ function reservationReconciliationRequiredError(label, broadcast, cause) {
   return error;
 }
 
-async function renewReservationBatchLease(reservation) {
+async function renewReservationBatchLease(
+  reservation,
+  { session = beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
   const ids = reservationIDs(reservation);
   const leaseToken = reservationLeaseToken(reservation);
   if (!ids.length || !leaseToken) return;
   const manager = currentNoteReservationManager({ optional: true });
   if (!manager || typeof manager.renewLease !== "function") return;
-  await manager.renewLease(ids, { leaseToken });
-  await refreshNoteReservationState();
+  await withPrivacySessionGuard(
+    session,
+    () => manager.renewLease(ids, { leaseToken }),
+  );
+  await refreshNoteReservationState({ session });
+  assertPrivacySessionCurrent(session);
 }
 
 function stopPreparedRelayReservationHeartbeat() {
+  preparedRelayReservationHeartbeatGeneration += 1;
   if (preparedRelayReservationHeartbeatTimer && typeof globalThis.clearInterval === "function") {
     globalThis.clearInterval(preparedRelayReservationHeartbeatTimer);
   }
@@ -5708,6 +7588,9 @@ function stopPreparedRelayReservationHeartbeat() {
 
 function startPreparedRelayReservationHeartbeat() {
   stopPreparedRelayReservationHeartbeat();
+  const session = beginPrivacySessionOperation();
+  const expectedPayloadVersion = state.keplr.relayWithdrawPayloadVersion;
+  const heartbeatGeneration = preparedRelayReservationHeartbeatGeneration;
   const reservation = state.keplr.relayWithdrawReservation;
   const ids = reservationIDs(reservation);
   const manager = currentNoteReservationManager({ optional: true });
@@ -5719,7 +7602,12 @@ function startPreparedRelayReservationHeartbeat() {
   const operationID = String(reservation?.operation_id || reservation?.operationId || "");
   preparedRelayReservationHeartbeatTimer = globalThis.setInterval(() => {
     const current = state.keplr.relayWithdrawReservation;
+    if (heartbeatGeneration !== preparedRelayReservationHeartbeatGeneration) {
+      return;
+    }
     if (
+      !isPrivacySessionCurrent(session) ||
+      state.keplr.relayWithdrawPayloadVersion !== expectedPayloadVersion ||
       state.keplr.relayWithdrawPayloadHandedOff ||
       String(current?.operation_id || current?.operationId || "") !== operationID
     ) {
@@ -5727,13 +7615,20 @@ function startPreparedRelayReservationHeartbeat() {
       return;
     }
     if (preparedRelayReservationHeartbeatInFlight) return;
-    preparedRelayReservationHeartbeatInFlight = renewReservationBatchLease(current)
+    preparedRelayReservationHeartbeatInFlight = renewReservationBatchLease(current, { session })
       .catch((error) => {
-        warnReservationBookkeeping(error);
+        if (heartbeatGeneration !== preparedRelayReservationHeartbeatGeneration) {
+          return;
+        }
+        if (!error?.privacySessionInvalidated) {
+          warnReservationBookkeeping(error);
+        }
         stopPreparedRelayReservationHeartbeat();
       })
       .finally(() => {
-        preparedRelayReservationHeartbeatInFlight = null;
+        if (heartbeatGeneration === preparedRelayReservationHeartbeatGeneration) {
+          preparedRelayReservationHeartbeatInFlight = null;
+        }
       });
   }, heartbeatIntervalMs);
 }
@@ -5741,8 +7636,12 @@ function startPreparedRelayReservationHeartbeat() {
 async function extendReservationBatchLeaseToPayloadExpiry(
   reservation,
   payload,
-  { expectedPayloadVersion = null } = {},
+  {
+    expectedPayloadVersion = null,
+    session = beginPrivacySessionOperation(),
+  } = {},
 ) {
+  assertPrivacySessionCurrent(session);
   const ids = reservationIDs(reservation);
   const leaseToken = reservationLeaseToken(reservation);
   const expiresAtUnix = relaySnapshotExpiresAtUnix({ payload });
@@ -5751,30 +7650,40 @@ async function extendReservationBatchLeaseToPayloadExpiry(
   if (expiresAtMs <= Date.now()) return;
   const manager = currentNoteReservationManager({ optional: true });
   if (!manager || typeof manager.renewLease !== "function") return;
-  const updated = await manager.renewLease(ids, {
-    leaseToken,
-    leaseUntil: new Date(expiresAtMs).toISOString(),
-  });
+  const updated = await withPrivacySessionGuard(
+    session,
+    () => manager.renewLease(ids, {
+      leaseToken,
+      leaseUntil: new Date(expiresAtMs).toISOString(),
+    }),
+  );
   if (
     expectedPayloadVersion != null &&
     state.keplr.relayWithdrawPayloadVersion !== expectedPayloadVersion
   ) {
     return updated;
   }
-  updateRelayWithdrawReservationRecords(updated || []);
-  await refreshNoteReservationState();
+  updateRelayWithdrawReservationRecords(updated || [], { session });
+  await refreshNoteReservationState({ session });
+  assertPrivacySessionCurrent(session);
   return updated;
 }
 
-async function withReservationHeartbeat(reservation, task) {
+async function withReservationHeartbeat(
+  reservation,
+  task,
+  { session = beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
   try {
-    await renewReservationBatchLease(reservation);
+    await renewReservationBatchLease(reservation, { session });
   } catch (error) {
     throw noBroadcastAttemptError(
       error,
       "Reservation lease renewal failed before broadcast",
     );
   }
+  assertPrivacySessionCurrent(session);
   const ids = reservationIDs(reservation);
   const manager = currentNoteReservationManager({ optional: true });
   const heartbeatIntervalMs = reservationHeartbeatIntervalMs({
@@ -5783,15 +7692,31 @@ async function withReservationHeartbeat(reservation, task) {
   });
   let heartbeatError = null;
   let inFlightHeartbeat = null;
+  let timer = null;
+  let stopped = false;
+  const stop = () => {
+    stopped = true;
+    if (timer && typeof globalThis.clearInterval === "function") {
+      globalThis.clearInterval(timer);
+    }
+    timer = null;
+  };
+  activeReservationHeartbeatStops.add(stop);
   const heartbeat = async () => {
-    if (heartbeatError) return;
+    if (stopped || heartbeatError) return;
     try {
-      await renewReservationBatchLease(reservation);
+      assertPrivacySessionCurrent(session);
+      await renewReservationBatchLease(reservation, { session });
+      assertPrivacySessionCurrent(session);
     } catch (error) {
-      heartbeatError = error;
+      if (!error?.privacySessionInvalidated) {
+        heartbeatError = error;
+      }
     }
   };
   const heartbeatNow = async () => {
+    assertPrivacySessionCurrent(session);
+    if (stopped) return;
     if (!inFlightHeartbeat) {
       inFlightHeartbeat = heartbeat().finally(() => {
         inFlightHeartbeat = null;
@@ -5801,6 +7726,7 @@ async function withReservationHeartbeat(reservation, task) {
     assertHeartbeatHealthy();
   };
   const assertHeartbeatHealthy = () => {
+    assertPrivacySessionCurrent(session);
     if (!heartbeatError) return;
     const error = new Error(
       "Note reservation lease renewal failed. Transaction reconciliation is required before retrying.",
@@ -5810,7 +7736,7 @@ async function withReservationHeartbeat(reservation, task) {
     error.cause = heartbeatError;
     throw error;
   };
-  const timer =
+  timer =
     ids.length && typeof globalThis.setInterval === "function"
       ? globalThis.setInterval(() => { void heartbeatNow().catch(() => {}); }, heartbeatIntervalMs)
       : null;
@@ -5824,15 +7750,14 @@ async function withReservationHeartbeat(reservation, task) {
     }
     return result;
   } finally {
-    if (timer && typeof globalThis.clearInterval === "function") {
-      globalThis.clearInterval(timer);
-    }
+    stop();
+    activeReservationHeartbeatStops.delete(stop);
     if (inFlightHeartbeat) await inFlightHeartbeat;
   }
 }
 
-async function withPreparedReservationHeartbeat(data, task) {
-  return withReservationHeartbeat(preparedReservation(data), task);
+async function withPreparedReservationHeartbeat(data, task, options = {}) {
+  return withReservationHeartbeat(preparedReservation(data), task, options);
 }
 
 function normalizedBroadcastIdentity(value) {
@@ -5867,7 +7792,12 @@ async function idempotentReservationBatchRecords(manager, ids, status, attempt) 
     : null;
 }
 
-async function markReservationBatchSubmitted(reservation, broadcast) {
+async function markReservationBatchSubmitted(
+  reservation,
+  broadcast,
+  { session = beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
   if (!reservation?.reservation_ids?.length) {
     throw new Error("submitted transaction is missing note reservation ids");
   }
@@ -5878,34 +7808,51 @@ async function markReservationBatchSubmitted(reservation, broadcast) {
   let updated = [];
   const attempt = broadcastAttemptMetadata(broadcast);
   try {
-    updated = await manager.markSubmitted(reservation.reservation_ids, {
-      leaseToken: reservationLeaseToken(reservation),
-      txHash: attempt.txHash,
-      txBytesHash: attempt.txBytesHash,
-      signDocHash: attempt.signDocHash,
-    });
+    updated = await withPrivacySessionGuard(
+      session,
+      () => manager.markSubmitted(reservation.reservation_ids, {
+        leaseToken: reservationLeaseToken(reservation),
+        txHash: attempt.txHash,
+        txBytesHash: attempt.txBytesHash,
+        signDocHash: attempt.signDocHash,
+      }),
+    );
   } catch (error) {
     const ids = reservationIDs(reservation);
     if (
       !/expected ProofReady, got Submitted/.test(error?.message || "") ||
-      !(await reservationBatchIsIdempotent(manager, ids, "Submitted", attempt))
+      !(await withPrivacySessionGuard(
+        session,
+        () => reservationBatchIsIdempotent(manager, ids, "Submitted", attempt),
+      ))
     ) {
       throw error;
     }
   }
-  await refreshNoteReservationState();
+  await refreshNoteReservationState({ session });
+  assertPrivacySessionCurrent(session);
   return updated;
 }
 
-async function markPreparedReservationSubmitted(data, broadcast) {
-  await markReservationBatchSubmitted(preparedReservation(data), broadcast);
+async function markPreparedReservationSubmitted(
+  data,
+  broadcast,
+  { session = preparedPrivacySession(data) || beginPrivacySessionOperation() } = {},
+) {
+  return markReservationBatchSubmitted(preparedReservation(data), broadcast, { session });
 }
 
-async function recordSubmittedReservation(reservation, broadcast, label) {
+async function recordSubmittedReservation(
+  reservation,
+  broadcast,
+  label,
+  { session = beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
   // Deposits create a new note and therefore have no input-note reservation to advance.
   if (!reservation?.reservation_ids?.length) return [];
   try {
-    return await markReservationBatchSubmitted(reservation, broadcast);
+    return await markReservationBatchSubmitted(reservation, broadcast, { session });
   } catch (error) {
     warnReservationBookkeeping(error);
     let fallbackError = null;
@@ -5913,7 +7860,7 @@ async function recordSubmittedReservation(reservation, broadcast, label) {
       await markReservationBatchUnknown(reservation, error, broadcast, {
         reconcile_reason: "submitted_write_failed_after_external_broadcast",
         no_broadcast_attempt: false,
-      });
+      }, { session });
     } catch (unknownError) {
       fallbackError = unknownError;
       warnReservationBookkeeping(unknownError);
@@ -5928,7 +7875,12 @@ async function recordSubmittedReservation(reservation, broadcast, label) {
   }
 }
 
-async function markPreparedReservationBroadcastAttempting(data, label) {
+async function markPreparedReservationBroadcastAttempting(
+  data,
+  label,
+  { session = preparedPrivacySession(data) || beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
   const reservation = preparedReservation(data);
   const ids = reservationIDs(reservation);
   if (!ids.length) return [];
@@ -5936,16 +7888,25 @@ async function markPreparedReservationBroadcastAttempting(data, label) {
   if (!manager || typeof manager.markBroadcastAttempting !== "function") {
     throw new Error("note reservation manager cannot durably record the broadcast attempt");
   }
-  const updated = await manager.markBroadcastAttempting(ids, {
-    leaseToken: reservationLeaseToken(reservation),
-    reason: `${label}_external_broadcast_boundary`,
-  });
+  const updated = await withPrivacySessionGuard(
+    session,
+    () => manager.markBroadcastAttempting(ids, {
+      leaseToken: reservationLeaseToken(reservation),
+      reason: `${label}_external_broadcast_boundary`,
+    }),
+  );
   cacheReservationRecords(updated || []);
-  await refreshNoteReservationState();
+  await refreshNoteReservationState({ session });
+  assertPrivacySessionCurrent(session);
   return updated;
 }
 
-async function markPreparedReservationBroadcastRejected(data, error) {
+async function markPreparedReservationBroadcastRejected(
+  data,
+  error,
+  { session = preparedPrivacySession(data) || beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
   const reservation = preparedReservation(data);
   const ids = reservationIDs(reservation);
   if (!ids.length) return [];
@@ -5953,13 +7914,17 @@ async function markPreparedReservationBroadcastRejected(data, error) {
   if (!manager || typeof manager.markBroadcastRejected !== "function") {
     throw new Error("note reservation manager cannot record the rejected wallet request");
   }
-  const updated = await manager.markBroadcastRejected(ids, {
-    leaseToken: reservationLeaseToken(reservation),
-    error: error?.message || String(error || "wallet request rejected"),
-    providerCode: error?.code ?? error?.data?.code ?? "",
-  });
+  const updated = await withPrivacySessionGuard(
+    session,
+    () => manager.markBroadcastRejected(ids, {
+      leaseToken: reservationLeaseToken(reservation),
+      error: privacyReservationErrorCode(error, "wallet_request_rejected"),
+      providerCode: "4001",
+    }),
+  );
   cacheReservationRecords(updated || []);
-  await refreshNoteReservationState();
+  await refreshNoteReservationState({ session });
+  assertPrivacySessionCurrent(session);
   return updated;
 }
 
@@ -5968,7 +7933,9 @@ async function markReservationBatchUnknown(
   error,
   attemptSource = {},
   metadata = {},
+  { session = beginPrivacySessionOperation() } = {},
 ) {
+  assertPrivacySessionCurrent(session);
   if (!reservation?.reservation_ids?.length) return;
   const attempt = broadcastAttemptMetadata(attemptSource);
   if (!hasBroadcastAttemptMetadata(attempt)) return;
@@ -5976,25 +7943,31 @@ async function markReservationBatchUnknown(
   if (!manager) return;
   let updated = [];
   try {
-    updated = await manager.markUnknown(reservation.reservation_ids, {
-      fromStatus: metadata.fromStatus || metadata.from_status,
-      leaseToken: reservationLeaseToken(reservation),
-      txHash: attempt.txHash,
-      txBytesHash: attempt.txBytesHash,
-      signDocHash: attempt.signDocHash,
-      error: error?.message || String(error || "broadcast failed"),
-      metadata,
-    });
+    updated = await withPrivacySessionGuard(
+      session,
+      () => manager.markUnknown(reservation.reservation_ids, {
+        fromStatus: metadata.fromStatus || metadata.from_status,
+        leaseToken: reservationLeaseToken(reservation),
+        txHash: attempt.txHash,
+        txBytesHash: attempt.txBytesHash,
+        signDocHash: attempt.signDocHash,
+        error: privacyReservationErrorCode(error, "broadcast_outcome_unknown"),
+        metadata,
+      }),
+    );
   } catch (transitionError) {
     const ids = reservationIDs(reservation);
     const records = /expected (ProofReady|Submitted)/.test(
       transitionError?.message || "",
     )
-      ? await idempotentReservationBatchRecords(
-          manager,
-          ids,
-          "Unknown",
-          attempt,
+      ? await withPrivacySessionGuard(
+          session,
+          () => idempotentReservationBatchRecords(
+            manager,
+            ids,
+            "Unknown",
+            attempt,
+          ),
         )
       : null;
     if (!records) {
@@ -6002,7 +7975,8 @@ async function markReservationBatchUnknown(
     }
     updated = records;
   }
-  await refreshNoteReservationState();
+  await refreshNoteReservationState({ session });
+  assertPrivacySessionCurrent(session);
   return updated;
 }
 
@@ -6011,12 +7985,14 @@ async function markPreparedReservationUnknown(
   error,
   attemptSource = {},
   metadata = {},
+  { session = preparedPrivacySession(data) || beginPrivacySessionOperation() } = {},
 ) {
-  await markReservationBatchUnknown(
+  return markReservationBatchUnknown(
     preparedReservation(data),
     error,
     attemptSource,
     metadata,
+    { session },
   );
 }
 
@@ -6025,12 +8001,14 @@ async function markPreparedReservationManualReview(
   error,
   reason,
   metadata = {},
+  { session = preparedPrivacySession(data) || beginPrivacySessionOperation() } = {},
 ) {
-  await markReservationBatchManualReview(
+  return markReservationBatchManualReview(
     preparedReservation(data),
     error,
     reason,
     metadata,
+    { session },
   );
 }
 
@@ -6038,33 +8016,44 @@ async function markReservationBatchReplanRequired(
   reservation,
   error,
   reason = "wallet_rejected_before_broadcast",
-  { evidence = {}, metadata = {} } = {},
+  {
+    evidence = {},
+    metadata = {},
+    session = beginPrivacySessionOperation(),
+  } = {},
 ) {
+  assertPrivacySessionCurrent(session);
   if (!reservation?.reservation_ids?.length) return;
   const manager = currentNoteReservationManager({ optional: true });
   if (!manager || typeof manager.markReplanRequired !== "function") return;
-  const updated = await manager.markReplanRequired(
-    reservation.reservation_ids,
-    {
-      ...evidence,
-      leaseToken: evidence.leaseToken || evidence.lease_token || reservationLeaseToken(reservation),
-      error:
-        error?.message || String(error || "wallet request was not submitted"),
-      metadata: {
-        ...metadata,
-        reconcile_reason: reason,
-        no_broadcast_attempt:
-          metadata.no_broadcast_attempt ??
-          metadata.noBroadcastAttempt ??
-          !hasBroadcastAttemptMetadata(broadcastAttemptMetadata(evidence)),
-        proof_discarded:
-          metadata.proof_discarded ??
-          metadata.proofDiscarded ??
-          !hasBroadcastAttemptMetadata(broadcastAttemptMetadata(evidence)),
+  const updated = await withPrivacySessionGuard(
+    session,
+    () => manager.markReplanRequired(
+      reservation.reservation_ids,
+      {
+        ...evidence,
+        leaseToken: evidence.leaseToken || evidence.lease_token || reservationLeaseToken(reservation),
+        error: privacyReservationErrorCode(
+          error,
+          "pre_broadcast_operation_cancelled",
+        ),
+        metadata: {
+          ...metadata,
+          reconcile_reason: reason,
+          no_broadcast_attempt:
+            metadata.no_broadcast_attempt ??
+            metadata.noBroadcastAttempt ??
+            !hasBroadcastAttemptMetadata(broadcastAttemptMetadata(evidence)),
+          proof_discarded:
+            metadata.proof_discarded ??
+            metadata.proofDiscarded ??
+            !hasBroadcastAttemptMetadata(broadcastAttemptMetadata(evidence)),
+        },
       },
-    },
+    ),
   );
-  await refreshNoteReservationState();
+  await refreshNoteReservationState({ session });
+  assertPrivacySessionCurrent(session);
   return updated;
 }
 
@@ -6073,20 +8062,27 @@ async function markReservationBatchManualReview(
   error,
   reason,
   metadata = {},
+  { session = beginPrivacySessionOperation() } = {},
 ) {
+  assertPrivacySessionCurrent(session);
   const ids = reservationIDs(reservation);
   if (!ids.length) return [];
   const manager = currentNoteReservationManager({ optional: true });
   if (!manager || typeof manager.markManualReview !== "function") return [];
-  const updated = await manager.markManualReview(ids, {
-    leaseToken: reservationLeaseToken(reservation),
-    error: error?.message || String(error || reason),
-    metadata: {
-      reconcile_reason: reason,
-      ...metadata,
+  const updated = await withPrivacySessionGuard(
+    session,
+    () => manager.markManualReview(ids, {
+      leaseToken: reservationLeaseToken(reservation),
+      error: privacyReservationErrorCode(error, "manual_review_required"),
+      metadata: {
+        reconcile_reason: reason,
+        ...metadata,
+      },
     },
-  });
-  await refreshNoteReservationState();
+  ),
+  );
+  await refreshNoteReservationState({ session });
+  assertPrivacySessionCurrent(session);
   return updated;
 }
 
@@ -6094,11 +8090,13 @@ async function markPreparedReservationReplanRequired(
   data,
   error,
   reason = "wallet_rejected_before_broadcast",
+  { session = preparedPrivacySession(data) || beginPrivacySessionOperation() } = {},
 ) {
-  await markReservationBatchReplanRequired(
+  return markReservationBatchReplanRequired(
     preparedReservation(data),
     error,
     reason,
+    { session },
   );
 }
 
@@ -6136,13 +8134,21 @@ function reservationNullifiersFromPrepared(
   return [...nullifiers];
 }
 
-async function verifyPreparedNullifiersUnspentBeforeBroadcast(data) {
+async function verifyPreparedNullifiersUnspentBeforeBroadcast(
+  data,
+  { session = preparedPrivacySession(data) || beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
   const nullifiers = reservationNullifiersFromPrepared(data);
   if (!nullifiers.length) return;
   let statuses;
   try {
-    statuses = await clairveilBrowserClient().checkNullifiers(nullifiers);
+    statuses = await withPrivacySessionGuard(
+      session,
+      () => clairveilBrowserClient().checkNullifiers(nullifiers),
+    );
   } catch (cause) {
+    if (cause?.privacySessionInvalidated) throw cause;
     const error = noBroadcastAttemptError(
       new Error(`Nullifier status could not be verified before broadcast: ${cause?.message || "query failed"}`),
     );
@@ -6166,11 +8172,15 @@ async function verifyPreparedNullifiersUnspentBeforeBroadcast(data) {
   if (!spentNullifiers.length) return;
   const manager = currentNoteReservationManager({ optional: true });
   if (manager?.reconcileSpentNotes) {
-    await manager.reconcileSpentNotes(spentNullifiers.map(nullifier => ({
-      nullifier,
-      spent: true,
-    })));
-    await refreshNoteReservationState();
+    await withPrivacySessionGuard(
+      session,
+      () => manager.reconcileSpentNotes(spentNullifiers.map(nullifier => ({
+        nullifier,
+        spent: true,
+      }))),
+    );
+    await refreshNoteReservationState({ session });
+    assertPrivacySessionCurrent(session);
   }
   const error = noBroadcastAttemptError(
     new Error("Broadcast blocked because an input nullifier is already spent"),
@@ -6274,12 +8284,17 @@ async function verifyRelayPayloadNullifierUnspentBeforeBroadcast(
   payload,
   reservation,
   preparedData = state.keplr.relayWithdrawPreparedData,
+  { session = beginPrivacySessionOperation() } = {},
 ) {
-  const statuses = await relaySnapshotNullifierStatuses({
-    payload,
-    preparedData,
-    reservation,
-  });
+  assertPrivacySessionCurrent(session);
+  const statuses = await withPrivacySessionGuard(
+    session,
+    () => relaySnapshotNullifierStatuses({
+      payload,
+      preparedData,
+      reservation,
+    }),
+  );
   if (!statuses.length) {
     throw new Error("Relay nullifier를 broadcast 직전에 확인할 수 없습니다.");
   }
@@ -6289,9 +8304,10 @@ async function verifyRelayPayloadNullifierUnspentBeforeBroadcast(
     );
   }
   if (statuses.some((entry) => entry.spent)) {
-    await refreshCachedNoteStatuses();
-    await reconcileReservedNotesFromScan();
-    await refreshNoteReservationState();
+    await refreshCachedNoteStatuses({ session });
+    await reconcileReservedNotesFromScan({ session });
+    await refreshNoteReservationState({ session });
+    assertPrivacySessionCurrent(session);
     throw new Error(
       "Relay payload의 note nullifier가 이미 사용됐습니다. Notes를 refresh 해줘.",
     );
@@ -6301,22 +8317,25 @@ async function verifyRelayPayloadNullifierUnspentBeforeBroadcast(
 async function reconcileExpiredRelayWithdrawSnapshot(
   snapshot,
   chainSnapshot = null,
-  isCurrent = () => true,
+  { session = beginPrivacySessionOperation() } = {},
 ) {
-  if (!isCurrent()) return snapshot;
+  assertPrivacySessionCurrent(session);
   if (!snapshot || snapshot.submitted || snapshot.relayHash) return snapshot;
   let resolvedChainSnapshot = chainSnapshot;
   try {
-    resolvedChainSnapshot ||= await latestRelayChainSnapshot();
-  } catch {
+    resolvedChainSnapshot ||= await withPrivacySessionGuard(
+      session,
+      () => latestRelayChainSnapshot(),
+    );
+  } catch (error) {
+    if (error?.privacySessionInvalidated) throw error;
     return snapshot;
   }
-  if (!isCurrent()) return snapshot;
   if (!relaySnapshotIsExpired(snapshot, resolvedChainSnapshot.chainNowMs)) return snapshot;
-  const synced = await syncRelayWithdrawSnapshotReservation(snapshot);
-  if (!isCurrent()) return snapshot;
-  const recoverySnapshot = await relaySnapshotWithFullReservationRecords(synced);
-  if (!isCurrent()) return snapshot;
+  const synced = await syncRelayWithdrawSnapshotReservation(snapshot, { session });
+  const recoverySnapshot = await relaySnapshotWithFullReservationRecords(synced, {
+    session,
+  });
   if (!recoverySnapshot) return synced;
   const status = relayReservationStatus(
     recoverySnapshot.reservation,
@@ -6329,19 +8348,19 @@ async function reconcileExpiredRelayWithdrawSnapshot(
   );
   if (status !== reservationStatuses.ProofReady) return synced;
 
-  const nullifierStatuses = await relaySnapshotNullifierStatuses(recoverySnapshot);
-  if (!isCurrent()) return snapshot;
+  const nullifierStatuses = await withPrivacySessionGuard(
+    session,
+    () => relaySnapshotNullifierStatuses(recoverySnapshot),
+  );
   if (!nullifierStatuses.length) return synced;
   if (nullifierStatuses.some((entry) => entry.spent == null)) return synced;
   if (nullifierStatuses.some((entry) => entry.spent)) {
-    await refreshCachedNoteStatuses({ isCurrent });
-    if (!isCurrent()) return snapshot;
-    await reconcileReservedNotesFromScan({ isCurrent });
-    if (!isCurrent()) return snapshot;
-    await refreshNoteReservationState({ isCurrent });
-    if (!isCurrent()) return snapshot;
-    const records = await latestReservationRecords(synced.reservation);
-    if (!isCurrent()) return snapshot;
+    await refreshCachedNoteStatuses({ session });
+    await reconcileReservedNotesFromScan({ session });
+    await refreshNoteReservationState({ session });
+    const records = await latestReservationRecords(synced.reservation, {
+      session,
+    });
     return {
       ...synced,
       reservation: updateReservationBatchRecords(synced.reservation, records),
@@ -6376,8 +8395,9 @@ async function reconcileExpiredRelayWithdrawSnapshot(
           }
         : { no_broadcast_attempt: true }),
     },
+    { session },
   );
-  if (!isCurrent()) return snapshot;
+  assertPrivacySessionCurrent(session);
   return {
     ...synced,
     reservation: updateReservationBatchRecords(
@@ -6387,18 +8407,29 @@ async function reconcileExpiredRelayWithdrawSnapshot(
   };
 }
 
-async function resolveExpiredRelayManualReview(snapshot, chainSnapshot = null) {
+async function resolveExpiredRelayManualReview(
+  snapshot,
+  chainSnapshot = null,
+  { session = beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
   if (!snapshot) return snapshot;
   let resolvedChainSnapshot = chainSnapshot;
   try {
-    resolvedChainSnapshot ||= await latestRelayChainSnapshot();
-  } catch {
+    resolvedChainSnapshot ||= await withPrivacySessionGuard(
+      session,
+      () => latestRelayChainSnapshot(),
+    );
+  } catch (error) {
+    if (error?.privacySessionInvalidated) throw error;
     return snapshot;
   }
   if (!relaySnapshotIsExpired(snapshot, resolvedChainSnapshot.chainNowMs)) {
     return snapshot;
   }
-  const recoverySnapshot = await relaySnapshotWithFullReservationRecords(snapshot);
+  const recoverySnapshot = await relaySnapshotWithFullReservationRecords(snapshot, {
+    session,
+  });
   if (!recoverySnapshot) return snapshot;
   const records = recoverySnapshot.reservation.reservations || [];
   if (
@@ -6409,7 +8440,10 @@ async function resolveExpiredRelayManualReview(snapshot, chainSnapshot = null) {
   ) {
     return snapshot;
   }
-  const nullifierStatuses = await relaySnapshotNullifierStatuses(recoverySnapshot);
+  const nullifierStatuses = await withPrivacySessionGuard(
+    session,
+    () => relaySnapshotNullifierStatuses(recoverySnapshot),
+  );
   if (
     !nullifierStatuses.length ||
     nullifierStatuses.some((entry) => entry.spent !== false)
@@ -6420,16 +8454,20 @@ async function resolveExpiredRelayManualReview(snapshot, chainSnapshot = null) {
   if (!manager?.resolveManualReview || !state.keplr.account) return snapshot;
   const payloadHash =
     recoverySnapshot.payloadHash || recoverySnapshot.payload?.payload_hash || "";
-  const updated = await manager.resolveManualReview(
-    reservationIDs(recoverySnapshot.reservation),
-    {
-      target: reservationStatuses.ReplanRequired,
-      operatorId: state.keplr.account,
-      approvalReference: `relay-expiry:${payloadHash || "unknown"}:${resolvedChainSnapshot.chainHeight || "unknown"}`,
-      reason: "user approved replan after authoritative relay expiry and unspent nullifier check",
-    },
+  const updated = await withPrivacySessionGuard(
+    session,
+    () => manager.resolveManualReview(
+      reservationIDs(recoverySnapshot.reservation),
+      {
+        target: reservationStatuses.ReplanRequired,
+        operatorId: state.keplr.account,
+        approvalReference: `relay-expiry:${payloadHash || "unknown"}:${resolvedChainSnapshot.chainHeight || "unknown"}`,
+        reason: "user approved replan after authoritative relay expiry and unspent nullifier check",
+      },
+    ),
   );
-  await refreshNoteReservationState();
+  await refreshNoteReservationState({ session });
+  assertPrivacySessionCurrent(session);
   return {
     ...snapshot,
     reservation: updateReservationBatchRecords(
@@ -6441,18 +8479,18 @@ async function resolveExpiredRelayManualReview(snapshot, chainSnapshot = null) {
 
 async function reconcileExpiredRelayWithdrawPayloads(
   chainSnapshot = null,
-  { isCurrent = () => true } = {},
+  { session = beginPrivacySessionOperation() } = {},
 ) {
-  if (!isCurrent()) return;
+  assertPrivacySessionCurrent(session);
   let changed = false;
   const current = currentPreparedRelayWithdrawSnapshot();
   if (current) {
     const reconciled = await reconcileExpiredRelayWithdrawSnapshot(
       current,
       chainSnapshot,
-      isCurrent,
+      { session },
     );
-    if (!isCurrent()) return;
+    assertPrivacySessionCurrent(session);
     if (reconciled !== current) {
       state.keplr.relayWithdrawReservation =
         reconciled?.reservation || state.keplr.relayWithdrawReservation;
@@ -6468,9 +8506,9 @@ async function reconcileExpiredRelayWithdrawPayloads(
       const reconciled = await reconcileExpiredRelayWithdrawSnapshot(
         snapshot,
         chainSnapshot,
-        isCurrent,
+        { session },
       );
-      if (!isCurrent()) return;
+      assertPrivacySessionCurrent(session);
       if (relaySnapshotNeedsPendingRecovery(reconciled)) {
         reconciledPending.push(reconciled);
       }
@@ -6479,7 +8517,8 @@ async function reconcileExpiredRelayWithdrawPayloads(
     changed = true;
   }
   if (changed) {
-    persistRelayWithdrawPayloadState();
+    await persistRelayWithdrawPayloadState({ session });
+    assertPrivacySessionCurrent(session);
     renderKeplr();
   }
 }
@@ -6490,7 +8529,9 @@ async function reconcileDefiniteFailedReservation(
   attemptSource = {},
   reason = "transaction_failed_nullifier_unspent",
   fromStatus = reservationStatuses.ProofReady,
+  { session = preparedPrivacySession(data) || beginPrivacySessionOperation() } = {},
 ) {
+  assertPrivacySessionCurrent(session);
   const reservation = preparedReservation(data) || attemptSource?.reservation;
   const ids = reservationIDs(reservation);
   if (!ids.length) return;
@@ -6510,22 +8551,32 @@ async function reconcileDefiniteFailedReservation(
       definite_execution_failure: definiteExecutionFailure,
       reconcile_reason: `${reason}_recorded_before_nullifier_reconcile`,
     },
+    { session },
   );
+  assertPrivacySessionCurrent(session);
   let chainSnapshot;
   try {
-    chainSnapshot = await latestRelayChainSnapshot();
-  } catch {
+    chainSnapshot = await withPrivacySessionGuard(
+      session,
+      () => latestRelayChainSnapshot(),
+    );
+  } catch (chainSnapshotError) {
+    if (chainSnapshotError?.privacySessionInvalidated) throw chainSnapshotError;
     return unknownUpdated;
   }
   const nullifiers = reservationNullifiersFromPrepared(data, reservation);
   if (!nullifiers.length) return unknownUpdated;
 
-  const spentResults = await Promise.all(nullifiers.map(checkNullifierSpent));
+  const spentResults = await withPrivacySessionGuard(
+    session,
+    () => Promise.all(nullifiers.map(checkNullifierSpent)),
+  );
   if (spentResults.some((result) => result == null)) return unknownUpdated;
   if (spentResults.some(Boolean)) {
-    await refreshCachedNoteStatuses();
-    await reconcileReservedNotesFromScan();
-    await refreshNoteReservationState();
+    await refreshCachedNoteStatuses({ session });
+    await reconcileReservedNotesFromScan({ session });
+    await refreshNoteReservationState({ session });
+    assertPrivacySessionCurrent(session);
     return [];
   }
 
@@ -6535,21 +8586,27 @@ async function reconcileDefiniteFailedReservation(
   }
   let updated = [];
   try {
-    updated = await manager.markReplanRequired(ids, {
-      fromStatus: reservationStatuses.Unknown,
-      txHash: attempt.txHash,
-      txBytesHash: attempt.txBytesHash,
-      signDocHash: attempt.signDocHash,
-      nullifierUnspentConfirmed: true,
-      txAbsentOrFailedConfirmed: true,
-      checkedHeight: chainSnapshot.chainHeight,
-      txHashChecked: attempt.txHash || attempt.txBytesHash || attempt.signDocHash,
-      error: error?.message || String(error || "transaction execution failed"),
-      metadata: {
-        reconcile_reason: reason,
-        no_broadcast_attempt: false,
-      },
-    });
+    updated = await withPrivacySessionGuard(
+      session,
+      () => manager.markReplanRequired(ids, {
+        fromStatus: reservationStatuses.Unknown,
+        txHash: attempt.txHash,
+        txBytesHash: attempt.txBytesHash,
+        signDocHash: attempt.signDocHash,
+        nullifierUnspentConfirmed: true,
+        txAbsentOrFailedConfirmed: true,
+        checkedHeight: chainSnapshot.chainHeight,
+        txHashChecked: attempt.txHash || attempt.txBytesHash || attempt.signDocHash,
+        error: privacyReservationErrorCode(
+          error,
+          "transaction_execution_failed",
+        ),
+        metadata: {
+          reconcile_reason: reason,
+          no_broadcast_attempt: false,
+        },
+      }),
+    );
   } catch (transitionError) {
     if (
       !/expected .*?, got ReplanRequired/.test(transitionError?.message || "")
@@ -6557,7 +8614,8 @@ async function reconcileDefiniteFailedReservation(
       throw transitionError;
     }
   }
-  await refreshNoteReservationState();
+  await refreshNoteReservationState({ session });
+  assertPrivacySessionCurrent(session);
   return updated;
 }
 
@@ -6566,7 +8624,9 @@ async function reconcileFailedEvmReservation(
   error,
   attemptSource = {},
   fromStatus = reservationStatuses.ProofReady,
+  { session = preparedPrivacySession(data) || beginPrivacySessionOperation() } = {},
 ) {
+  assertPrivacySessionCurrent(session);
   if (!isDefiniteEvmReceiptFailure(error)) return;
   return reconcileDefiniteFailedReservation(
     data,
@@ -6574,16 +8634,25 @@ async function reconcileFailedEvmReservation(
     attemptSource,
     "evm_receipt_failed_nullifier_unspent",
     fromStatus,
+    { session },
   );
 }
 
-async function reconcileFailedCosmosReservation(data, error, attemptSource = {}) {
+async function reconcileFailedCosmosReservation(
+  data,
+  error,
+  attemptSource = {},
+  { session = preparedPrivacySession(data) || beginPrivacySessionOperation() } = {},
+) {
+  assertPrivacySessionCurrent(session);
   if (!isDefiniteCosmosTxFailure(error, attemptSource)) return;
   return reconcileDefiniteFailedReservation(
     data,
     error,
     attemptSource,
     "cosmos_tx_code_failed_nullifier_unspent",
+    reservationStatuses.ProofReady,
+    { session },
   );
 }
 
@@ -6595,39 +8664,88 @@ async function broadcastPreparedPrivacy(
   let attemptedBroadcast = null;
   let durableBroadcastAttemptRecorded = false;
   let externalBroadcastBoundaryCrossed = false;
+  let sdkReservationLifecycleManaged = false;
+  const session = preparedPrivacySession(data) || beginPrivacySessionOperation();
   try {
+    assertPrivacySessionCurrent(session);
     const broadcast = await withPreparedReservationHeartbeat(data, async ({ assertHeartbeatHealthy }) => {
       assertHeartbeatHealthy();
       const beforeBroadcast = async () => {
-        await verifyPreparedNullifiersUnspentBeforeBroadcast(data);
-        await markPreparedReservationBroadcastAttempting(data, label);
+        await verifyPreparedNullifiersUnspentBeforeBroadcast(data, { session });
+        await markPreparedReservationBroadcastAttempting(data, label, { session });
         durableBroadcastAttemptRecorded = true;
+        assertHeartbeatHealthy();
+      };
+      const onBroadcastStart = () => {
+        assertHeartbeatHealthy();
+        assertPrivacySessionCurrent(session);
         externalBroadcastBoundaryCrossed = true;
       };
-      const result =
-        state.activeWallet === "metamask"
-          ? await sendEvmTransaction(data.transaction, {
-              label,
-              waitForReceipt: Boolean(options.waitForEvmReceipt),
-              beforeBroadcast,
-            })
-          : await signDirectAndBroadcast(data.signDoc, { beforeBroadcast });
+      let result;
+      if (state.activeWallet === "metamask") {
+        result = await sendEvmTransaction(data.transaction, {
+          label,
+          waitForReceipt: Boolean(options.waitForEvmReceipt),
+          beforeBroadcast,
+          onBroadcastStart,
+          session,
+        });
+      } else {
+        // ClairveilJS owns the complete reserved Cosmos submission lifecycle:
+        // the signed checkpoint binds the exact TxRaw bytes, then the SDK
+        // records BroadcastAttempting/Submitted/Unknown around its RPC call.
+        // Calling the local marker here would create a second attempt and lose
+        // the signed transaction identity required for recovery.
+        await verifyPreparedNullifiersUnspentBeforeBroadcast(data, { session });
+        result = await signDirectAndBroadcast(data.signDoc, {
+          reservation: preparedReservation(data),
+          session,
+          onBroadcastStart: () => {
+            assertHeartbeatHealthy();
+            assertPrivacySessionCurrent(session);
+            externalBroadcastBoundaryCrossed = true;
+          },
+        });
+        sdkReservationLifecycleManaged = Boolean(
+          result.sdkReservationLifecycleManaged,
+        );
+      }
       attemptedBroadcast = result;
       assertHeartbeatHealthy();
       assertSuccessfulBroadcast(result, label);
       return result;
-    });
-    await recordSubmittedReservation(
-      preparedReservation(data),
-      broadcast,
-      label,
-    );
+    }, { session });
+    if (sdkReservationLifecycleManaged) {
+      await refreshNoteReservationState({ session });
+    } else {
+      await recordSubmittedReservation(
+        preparedReservation(data),
+        broadcast,
+        label,
+        { session },
+      );
+    }
     return {
       ...broadcast,
       reservation: preparedReservation(data),
     };
   } catch (error) {
+    if (error?.privacySessionInvalidated) {
+      if (!externalBroadcastBoundaryCrossed) {
+        await replanInvalidatedPreparedReservation(data, session, error);
+        throw error;
+      }
+      throw reservationReconciliationRequiredError(
+        label,
+        attemptedBroadcast || error?.broadcast || error,
+        error,
+      );
+    }
     if (error?.reservationReconciliationRequired) {
+      throw error;
+    }
+    if (error?.reservationLifecycleHandled) {
+      await refreshNoteReservationState({ session });
       throw error;
     }
     const attemptSource = attemptedBroadcast || error?.broadcast || error;
@@ -6639,7 +8757,9 @@ async function broadcastPreparedPrivacy(
       !hasBroadcastAttemptMetadata(broadcastAttemptMetadata(attemptSource))
     ) {
       await noteReservationBookkeeping(() =>
-        markPreparedReservationReplanRequired(data, error),
+        markPreparedReservationReplanRequired(data, error, undefined, {
+          session,
+        }),
       );
       throw error;
     }
@@ -6649,7 +8769,7 @@ async function broadcastPreparedPrivacy(
       isMetaMaskUserRejectedError(error)
     ) {
       try {
-        await markPreparedReservationBroadcastRejected(data, error);
+        await markPreparedReservationBroadcastRejected(data, error, { session });
       } catch (bookkeepingError) {
         throw reservationReconciliationRequiredError(label, error, bookkeepingError);
       }
@@ -6661,6 +8781,8 @@ async function broadcastPreparedPrivacy(
       await noteReservationBookkeeping(() =>
         markPreparedReservationUnknown(data, error, attemptSource, {
           reconcile_reason: "reservation_lease_heartbeat_failed_after_broadcast",
+        }, {
+          session,
         }),
       );
       throw reservationReconciliationRequiredError(label, attemptSource, error);
@@ -6670,25 +8792,35 @@ async function broadcastPreparedPrivacy(
       isDefiniteEvmReceiptFailure(error)
     ) {
       const reconciled = await noteReservationBookkeeping(() =>
-        reconcileFailedEvmReservation(data, error, attemptSource),
+        reconcileFailedEvmReservation(
+          data,
+          error,
+          attemptSource,
+          reservationStatuses.ProofReady,
+          { session },
+        ),
       );
       if (reconciled === undefined) {
         await noteReservationBookkeeping(() =>
           markPreparedReservationUnknown(data, error, attemptSource, {
             definite_execution_failure: "evm_receipt_failed",
             reconcile_reason: "evm_receipt_failed_pending_nullifier_reconcile",
+          }, {
+            session,
           }),
         );
       }
     } else if (isDefiniteCosmosTxFailure(error, attemptSource)) {
       const reconciled = await noteReservationBookkeeping(() =>
-        reconcileFailedCosmosReservation(data, error, attemptSource),
+        reconcileFailedCosmosReservation(data, error, attemptSource, { session }),
       );
       if (reconciled === undefined) {
         await noteReservationBookkeeping(() =>
           markPreparedReservationUnknown(data, error, attemptSource, {
             definite_execution_failure: "cosmos_tx_code_failed",
             reconcile_reason: "cosmos_tx_code_failed_pending_nullifier_reconcile",
+          }, {
+            session,
           }),
         );
       }
@@ -6697,13 +8829,13 @@ async function broadcastPreparedPrivacy(
       !hasBroadcastAttemptMetadata(broadcastAttemptMetadata(attemptSource))
     ) {
       await noteReservationBookkeeping(() =>
-        markPreparedReservationReplanRequired(data, error),
+        markPreparedReservationReplanRequired(data, error, undefined, { session }),
       );
     } else {
       const attempt = broadcastAttemptMetadata(attemptSource);
       await noteReservationBookkeeping(() =>
         hasBroadcastAttemptMetadata(attempt)
-          ? markPreparedReservationUnknown(data, error, attemptSource)
+          ? markPreparedReservationUnknown(data, error, attemptSource, {}, { session })
           : markPreparedReservationManualReview(
               data,
               error,
@@ -6713,6 +8845,7 @@ async function broadcastPreparedPrivacy(
                 no_broadcast_attempt: false,
                 relay_handed_off: Boolean(preparedReservation(data)?.relay_handed_off),
               },
+              { session },
             ),
       );
     }
@@ -6905,25 +9038,32 @@ async function sendFromKeplr() {
 }
 
 async function depositFromKeplr() {
+  const session = beginPrivacySessionOperation();
   if (!state.keplr.account) return;
-  if (!serverFeature("depositProof")) {
+  if (!hasDepositProofProvider()) {
     showNotice({
       title: "Deposit unavailable",
       message:
-        "Deposit requires a DepositCircuit proof provider. Enable the local deposit proof helper or wire a product-specific browser/WASM proof provider before using Deposit.",
+        "Deposit requires a DepositCircuit proof provider. Configure the active profile's depositProofUrl, use a browser/WASM provider, or enable the loopback local helper before using Deposit.",
       failed: true,
     });
     return;
   }
-  await setupKeplrPrivacy();
-  if (!state.keplr.rootSignatureBase64) return;
-
+  if (depositInFlight) return;
+  const actionLock = beginPrivacyValueAction("deposit", session);
+  if (!actionLock) return;
+  depositInFlight = true;
   setBusy(els.depositFromKeplr, true);
-  els.keplrTxState.textContent = "Preparing deposit";
   try {
+    const privacySetupReady = await setupKeplrPrivacy();
+    if (!isPrivacySessionCurrent(session)) return;
+    if (!privacySetupReady || !state.keplr.rootSignatureBase64) return;
+
+    els.keplrTxState.textContent = "Preparing deposit";
     const broadcast = await broadcastPrivacyDeposit(
       amountInputValue(els.keplrDepositAmount),
     );
+    assertPrivacySessionCurrent(session);
     const isPendingEvm = Boolean(broadcast.pending);
     els.keplrTxState.textContent = isPendingEvm
       ? "Deposit submitted"
@@ -6935,42 +9075,61 @@ async function depositFromKeplr() {
     });
     if (isPendingEvm) {
       watchEvmBroadcast(broadcast, {
+        session,
         onIncluded: async (included) => {
           state.keplr.depositHash = included.txHash || state.keplr.depositHash;
           state.keplr.depositHeight =
             included.receipt?.blockNumber || state.keplr.depositHeight;
           els.keplrTxState.textContent = "Deposit included";
-          await refreshPrivacySurfaces({ balance: true });
+          await withPrivacySessionGuard(
+            session,
+            () => refreshPrivacySurfaces({ balance: true }),
+          );
+          assertPrivacySessionCurrent(session);
           renderKeplr();
         },
         onFailed: (error) => {
+          assertPrivacySessionCurrent(session);
           els.keplrTxState.textContent = "Deposit failed";
           showNotice({
             title: "Deposit 실패",
-            message: error.message,
+            message: privacyOperationErrorMessage(error),
             failed: true,
           });
         },
       });
       return;
     }
-    await refreshPrivacySurfaces({ balance: true });
+    await withPrivacySessionGuard(
+      session,
+      () => refreshPrivacySurfaces({ balance: true }),
+    );
   } catch (error) {
+    if (error?.privacySessionInvalidated || !isPrivacySessionCurrent(session)) {
+      return;
+    }
     els.keplrTxState.textContent = "Deposit failed";
-    showNotice({ title: "Deposit 실패", message: error.message, failed: true });
+    showNotice({
+      title: "Deposit 실패",
+      message: privacyOperationErrorMessage(error),
+      failed: true,
+    });
   } finally {
+    depositInFlight = false;
+    endPrivacyValueAction(actionLock);
+    if (!isPrivacySessionCurrent(session)) return;
     setBusy(els.depositFromKeplr, false);
     renderKeplr();
   }
 }
 
 function scanKeplrNotes(options = {}) {
-  const scanSession = currentNoteScanSession();
+  const session = options.session || beginPrivacySessionOperation();
   pendingNoteScans += 1;
   renderKeplr();
   const run = noteScanQueue.then(
-    () => runKeplrNoteScan(options, scanSession),
-    () => runKeplrNoteScan(options, scanSession),
+    () => runKeplrNoteScan(options, session),
+    () => runKeplrNoteScan(options, session),
   );
   noteScanQueue = run.catch(() => undefined);
   return run.finally(() => {
@@ -6979,11 +9138,15 @@ function scanKeplrNotes(options = {}) {
   });
 }
 
-async function runKeplrNoteScan(options = {}, scanSession = currentNoteScanSession()) {
-  const isCurrent = () => isCurrentNoteScanSession(scanSession);
-  if (!isCurrent() || !state.keplr.account) return;
-  await setupKeplrPrivacy();
-  if (!isCurrent() || !state.keplr.rootSignatureBase64) return;
+async function runKeplrNoteScan(options = {}, session = beginPrivacySessionOperation()) {
+  assertPrivacySessionCurrent(session);
+  if (!state.keplr.account) return;
+  if (!options.skipPrivacySetup) {
+    const setupReady = await setupKeplrPrivacy({ scanNotes: false });
+    if (!setupReady) return;
+  }
+  assertPrivacySessionCurrent(session);
+  if (!state.keplr.rootSignatureBase64) return;
 
   setBusy(els.scanKeplrNotes, true);
   if (!options.quiet) {
@@ -6991,37 +9154,39 @@ async function runKeplrNoteScan(options = {}, scanSession = currentNoteScanSessi
   }
   try {
     const reset = Boolean(options.reset);
-    const noteStore = currentWalletNoteStore();
+    const noteStore = currentWalletNoteStore({ optional: false });
     if (reset) {
-      const cleared = await clearCurrentWalletNoteStore(isCurrent);
-      if (!cleared) return;
+      await clearCurrentWalletNoteStore({ session });
     }
-    if (!isCurrent()) return;
-    const scanOptions = noteScanRequestOptions({ reset });
-    const data = await clairveilBrowserClient().scanWalletNotes(
+    const scanOptions = noteScanRequestOptions({
+      reset,
+      requireComplete: true,
+    });
+    await clairveilBrowserClient().scanWalletNotes(
       privacyRequest({
         ...scanOptions,
         noteStore,
         includeFoundNotes: true,
       }),
     );
-    if (!isCurrent()) return;
-    if (noteStore) {
-      const cached = await noteStore.load();
-      if (!isCurrent()) return;
-      applyPersistedWalletNoteState(cached);
-    } else {
-      applyNoteScanResult(data, { reset });
+    assertPrivacySessionCurrent(session);
+    const cached = await noteStore.load();
+    assertPrivacySessionCurrent(session);
+    applyPersistedWalletNoteState(cached);
+    if (!hasCompletedPrivacyNoteScan()) {
+      throw new Error(
+        `Privacy note sync did not complete within the ${completeNoteScanMaxPages}-page safety limit. Scan again to resume before preparing a spend.`,
+      );
     }
-    if (!isCurrent()) return;
-    await refreshCachedNoteStatuses({ isCurrent, noteStore });
-    if (!isCurrent()) return;
-    await reconcileReservedNotesFromScan({ isCurrent });
-    if (!isCurrent()) return;
-    await refreshNoteReservationState({ isCurrent });
-    if (!isCurrent()) return;
-    await reconcileExpiredRelayWithdrawPayloads(null, { isCurrent });
-    if (!isCurrent()) return;
+    await refreshCachedNoteStatuses({ session, noteStore });
+    assertPrivacySessionCurrent(session);
+    await reconcileReservedNotesFromScan({ session });
+    assertPrivacySessionCurrent(session);
+    await refreshNoteReservationState({ session });
+    assertPrivacySessionCurrent(session);
+    await reconcileExpiredRelayWithdrawPayloads(null, { session });
+    assertPrivacySessionCurrent(session);
+    state.keplr.scanError = "";
     if (!options.quiet) {
       const cursor = state.keplr.noteScanCursor || defaultNoteScanCursor();
       const unverifiedCount = state.keplr.notes.filter(isUnverifiedNote).length;
@@ -7029,19 +9194,15 @@ async function runKeplrNoteScan(options = {}, scanSession = currentNoteScanSessi
         ? `Scan completed with ${unverifiedCount} unverified notes`
         : "Ready";
       toast(
-        cursor.hasMore
-          ? `Keplr notes scanned (${cursor.pagesScanned} pages, more queued)${
-              unverifiedCount
-                ? `; ${unverifiedCount} notes hidden until nullifier status is verified`
-                : ""
-            }`
-          : unverifiedCount
-            ? `Keplr notes scanned; ${unverifiedCount} notes hidden until nullifier status is verified`
-            : "Keplr notes scanned",
+        unverifiedCount
+          ? `Keplr notes scanned; ${unverifiedCount} notes hidden until nullifier status is verified`
+          : `Keplr notes scanned (${cursor.pagesScanned} pages)`,
       );
     }
     renderKeplr();
   } catch (error) {
+    if (error?.privacySessionInvalidated) return;
+    invalidatePrivacyScanState(error);
     if (!options.quiet) {
       els.keplrTxState.textContent = "Scan failed";
       toast(error.message);
@@ -7075,43 +9236,48 @@ async function refreshPrivacySurfaces({ balance = false } = {}) {
 }
 
 async function transferFromVeiled() {
+  const session = beginPrivacySessionOperation();
   if (!state.keplr.account) return;
-  await setupKeplrPrivacy();
-  if (!state.keplr.rootSignatureBase64) return;
-
-  const amount = amountInputValue(els.veiledTransferAmount);
-  const recipient = els.veiledTransferRecipient.value.trim();
-  if (!recipient) {
-    toast(
-      `Enter the recipient's ${shieldedPrefix()} address in Transfer recipient.`,
-    );
-    return;
-  }
-  if (!isConfiguredShieldedAddress(recipient)) {
-    toast(
-      `Transfer recipient must be a ${shieldedPrefix()} shielded address, not a transparent account address.`,
-    );
-    return;
-  }
-  if (isSelfTransferRecipient(recipient)) {
-    toast(
-      "이 주소는 내 shielded address야. 여기로 보내면 외부 전송이 아니라 note split/change self-transfer가 돼.",
-    );
-    return;
-  }
-  let disclosure;
-  try {
-    disclosure = transferDisclosurePolicy();
-  } catch (error) {
-    toast(error.message);
-    return;
-  }
-  const confirmed = await openTransferFlowModal();
-  if (!confirmed) return;
-
+  const actionLock = beginPrivacyValueAction("transfer", session);
+  if (!actionLock) return;
   setBusy(els.transferFromVeiled, true);
-  els.keplrTxState.textContent = "Preparing veiled transfer";
   try {
+    await setupKeplrPrivacy();
+    if (!isPrivacySessionCurrent(session)) return;
+    if (!state.keplr.rootSignatureBase64) return;
+
+    const amount = amountInputValue(els.veiledTransferAmount);
+    const recipient = els.veiledTransferRecipient.value.trim();
+    if (!recipient) {
+      toast(
+        `Enter the recipient's ${shieldedPrefix()} address in Transfer recipient.`,
+      );
+      return;
+    }
+    if (!isConfiguredShieldedAddress(recipient)) {
+      toast(
+        `Transfer recipient must be a ${shieldedPrefix()} shielded address, not a transparent account address.`,
+      );
+      return;
+    }
+    if (isSelfTransferRecipient(recipient)) {
+      toast(
+        "이 주소는 내 shielded address야. 여기로 보내면 외부 전송이 아니라 note split/change self-transfer가 돼.",
+      );
+      return;
+    }
+    let disclosure;
+    try {
+      disclosure = transferDisclosurePolicy();
+    } catch (error) {
+      toast(error.message);
+      return;
+    }
+    const confirmed = await openTransferFlowModal();
+    if (!isPrivacySessionCurrent(session)) return;
+    if (!confirmed) return;
+
+    els.keplrTxState.textContent = "Preparing veiled transfer";
     const maxPlannerSteps = 20;
     let finalData = null;
 
@@ -7215,11 +9381,13 @@ async function transferFromVeiled() {
     );
     if (isPendingEvm) {
       watchEvmBroadcast(broadcast, {
+        session,
         onIncluded: async (included) => {
           state.keplr.transferHash =
             included.txHash || state.keplr.transferHash;
           els.keplrTxState.textContent = "Transfer included";
-          await refreshPrivacySurfaces();
+          await withPrivacySessionGuard(session, () => refreshPrivacySurfaces());
+          assertPrivacySessionCurrent(session);
           renderKeplr();
         },
         onFailed: async (error) => {
@@ -7229,16 +9397,21 @@ async function transferFromVeiled() {
               error,
               broadcast,
               reservationStatuses.Submitted,
+              { session },
             ),
           );
+          assertPrivacySessionCurrent(session);
           els.keplrTxState.textContent = "Transfer failed";
-          finishTransferFlow(error.message, false);
+          finishTransferFlow(privacyOperationErrorMessage(error), false);
         },
       });
       return;
     }
-    await refreshPrivacySurfaces();
+    await withPrivacySessionGuard(session, () => refreshPrivacySurfaces());
   } catch (error) {
+    if (error?.privacySessionInvalidated || !isPrivacySessionCurrent(session)) {
+      return;
+    }
     if (error?.reservationReconciliationRequired) {
       state.keplr.transferHash =
         broadcastTxHash(error.broadcast) || state.keplr.transferHash;
@@ -7250,37 +9423,49 @@ async function transferFromVeiled() {
       return;
     }
     els.keplrTxState.textContent = "Transfer failed";
-    finishTransferFlow(error.message, false);
+    finishTransferFlow(privacyOperationErrorMessage(error), false);
   } finally {
-    setBusy(els.transferFromVeiled, false);
-    renderKeplr();
+    endPrivacyValueAction(actionLock);
+    if (isPrivacySessionCurrent(session)) {
+      setBusy(els.transferFromVeiled, false);
+      renderKeplr();
+    }
   }
 }
 
 async function withdrawFromVeiled() {
+  const session = beginPrivacySessionOperation();
   if (!state.keplr.account) return;
-  let amount;
-  try {
-    amount = amountInputValue(els.veiledWithdrawAmount);
-  } catch (error) {
-    toast(error.message);
-    return;
-  }
-  const recipient = els.veiledWithdrawRecipient.value.trim();
-  if (!recipient) {
-    toast(`Withdraw recipient에 받을 ${accountPrefix()} 주소를 넣어줘.`);
-    return;
-  }
-
-  await setupKeplrPrivacy();
-  if (!state.keplr.rootSignatureBase64) return;
-
-  const confirmed = await openTransferFlowModal("withdraw");
-  if (!confirmed) return;
-
+  const actionLock = beginPrivacyValueAction("withdraw", session);
+  if (!actionLock) return;
   setBusy(els.withdrawFromVeiled, true);
-  els.keplrTxState.textContent = "Preparing withdraw";
   try {
+    let amount;
+    try {
+      amount = amountInputValue(els.veiledWithdrawAmount);
+    } catch (error) {
+      toast(error.message);
+      return;
+    }
+    let recipient;
+    try {
+      recipient = requireValidPrivacyWithdrawRecipient(
+        els.veiledWithdrawRecipient.value,
+      );
+    } catch (error) {
+      toast(error.message);
+      return;
+    }
+
+    await setupKeplrPrivacy();
+    if (!isPrivacySessionCurrent(session)) return;
+    if (!state.keplr.rootSignatureBase64) return;
+
+    const confirmed = await openTransferFlowModal("withdraw");
+    if (!isPrivacySessionCurrent(session)) return;
+    if (!confirmed) return;
+
+    els.keplrTxState.textContent = "Preparing withdraw";
     resetTransferPlannerFacts();
     updateTransferFlow(
       "zero",
@@ -7381,13 +9566,18 @@ async function withdrawFromVeiled() {
     );
     if (isPendingEvm) {
       watchEvmBroadcast(broadcast, {
+        session,
         onIncluded: async (included) => {
           state.keplr.withdrawHash =
             included.txHash || state.keplr.withdrawHash;
           state.keplr.withdrawHeight =
             included.receipt?.blockNumber || state.keplr.withdrawHeight;
           els.keplrTxState.textContent = "Withdraw included";
-          await refreshPrivacySurfaces({ balance: true });
+          await withPrivacySessionGuard(
+            session,
+            () => refreshPrivacySurfaces({ balance: true }),
+          );
+          assertPrivacySessionCurrent(session);
           renderKeplr();
         },
         onFailed: async (error) => {
@@ -7397,16 +9587,24 @@ async function withdrawFromVeiled() {
               error,
               broadcast,
               reservationStatuses.Submitted,
+              { session },
             ),
           );
+          assertPrivacySessionCurrent(session);
           els.keplrTxState.textContent = "Withdraw failed";
-          finishTransferFlow(error.message, false);
+          finishTransferFlow(privacyOperationErrorMessage(error), false);
         },
       });
       return;
     }
-    await refreshPrivacySurfaces({ balance: true });
+    await withPrivacySessionGuard(
+      session,
+      () => refreshPrivacySurfaces({ balance: true }),
+    );
   } catch (error) {
+    if (error?.privacySessionInvalidated || !isPrivacySessionCurrent(session)) {
+      return;
+    }
     if (error?.reservationReconciliationRequired) {
       state.keplr.withdrawHash =
         broadcastTxHash(error.broadcast) || state.keplr.withdrawHash;
@@ -7419,10 +9617,13 @@ async function withdrawFromVeiled() {
       return;
     }
     els.keplrTxState.textContent = "Withdraw failed";
-    finishTransferFlow(error.message, false);
+    finishTransferFlow(privacyOperationErrorMessage(error), false);
   } finally {
-    setBusy(els.withdrawFromVeiled, false);
-    renderKeplr();
+    endPrivacyValueAction(actionLock);
+    if (isPrivacySessionCurrent(session)) {
+      setBusy(els.withdrawFromVeiled, false);
+      renderKeplr();
+    }
   }
 }
 
@@ -7470,37 +9671,40 @@ async function rejectStaleRelayWithdrawPreparation(data) {
 }
 
 async function relayWithdrawFromVeiled() {
+  const session = beginPrivacySessionOperation();
   if (!state.keplr.account) return;
-  if (!serverFeature("relayer")) {
-    toast(
-      "Local relayer helper is disabled. Use loopback access or set CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING=1 for LAN testing.",
-    );
-    return;
-  }
-
-  let amount;
-  try {
-    amount = amountInputValue(els.relayWithdrawAmount);
-  } catch (error) {
-    toast(error.message);
-    return;
-  }
-  const recipient = els.relayWithdrawRecipient.value.trim();
-  if (!recipient) {
-    toast(`Withdraw recipient에 받을 ${accountPrefix()} 주소를 넣어줘.`);
-    return;
-  }
-
-  await setupKeplrPrivacy();
-  if (!state.keplr.rootSignatureBase64) return;
-
-  const confirmed = await openTransferFlowModal("relayWithdraw");
-  if (!confirmed) return;
-
-  const preparation = beginRelayWithdrawPreparation();
+  const actionLock = beginPrivacyValueAction("relay_withdraw", session);
+  if (!actionLock) return;
   setBusy(els.relayWithdrawFromVeiled, true);
-  els.keplrTxState.textContent = "Preparing relay withdraw";
   try {
+    let amount;
+    try {
+      amount = amountInputValue(els.relayWithdrawAmount);
+    } catch (error) {
+      toast(error.message);
+      return;
+    }
+    let recipient;
+    try {
+      recipient = requireValidPrivacyWithdrawRecipient(
+        els.relayWithdrawRecipient.value,
+        "Relay withdraw recipient",
+      );
+    } catch (error) {
+      toast(error.message);
+      return;
+    }
+
+    await setupKeplrPrivacy();
+    if (!isPrivacySessionCurrent(session)) return;
+    if (!state.keplr.rootSignatureBase64) return;
+
+    const confirmed = await openTransferFlowModal("relayWithdraw");
+    if (!isPrivacySessionCurrent(session)) return;
+    if (!confirmed) return;
+
+    const preparation = beginRelayWithdrawPreparation();
+    els.keplrTxState.textContent = "Preparing relay withdraw";
     resetTransferPlannerFacts();
     updateTransferFlow(
       "zero",
@@ -7586,6 +9790,7 @@ async function relayWithdrawFromVeiled() {
       recipient,
       preparation,
     });
+    assertPrivacySessionCurrent(session);
     if (!installed) {
       throw noBroadcastAttemptError(
         new Error("Relay withdraw preparation was invalidated before install"),
@@ -7595,24 +9800,65 @@ async function relayWithdrawFromVeiled() {
     renderKeplr();
     finishTransferFlow("Relay withdraw payload가 준비되었습니다");
   } catch (error) {
+    if (error?.privacySessionInvalidated || !isPrivacySessionCurrent(session)) {
+      return;
+    }
     els.keplrTxState.textContent = "Relay withdraw failed";
-    finishTransferFlow(error.message, false);
+    finishTransferFlow(privacyOperationErrorMessage(error), false);
   } finally {
-    setBusy(els.relayWithdrawFromVeiled, false);
-    renderKeplr();
+    endPrivacyValueAction(actionLock);
+    if (isPrivacySessionCurrent(session)) {
+      setBusy(els.relayWithdrawFromVeiled, false);
+      renderKeplr();
+    }
   }
 }
 
 async function relayPreparedWithdraw() {
+  const session = beginPrivacySessionOperation();
+  assertPrivacySessionCurrent(session);
+  if (relaySubmissionInFlight) return;
   const payload = state.keplr.relayWithdrawPayload;
   if (!payload) {
     toast("먼저 relay withdraw payload를 준비해줘.");
     return;
   }
+  const expectedPayloadVersion = state.keplr.relayWithdrawPayloadVersion;
+  const submissionLock = Object.freeze({
+    generation: session.generation,
+    payloadVersion: expectedPayloadVersion,
+    payload,
+  });
+  relaySubmissionInFlight = true;
+  relaySubmissionLock = submissionLock;
+  setBusy(els.relayPreparedWithdraw, true);
+  try {
+  const reservation = state.keplr.relayWithdrawReservation;
+  const recipient = state.keplr.relayWithdrawPayloadRecipient;
+  const relayIsCurrent = () =>
+    isPrivacySessionCurrent(session) &&
+    state.keplr.relayWithdrawPayloadVersion === expectedPayloadVersion &&
+    state.keplr.relayWithdrawPayload === payload;
+  const assertRelayIsCurrent = () => {
+    if (relayIsCurrent()) return;
+    if (!isPrivacySessionCurrent(session)) {
+      throw privacySessionInvalidatedError();
+    }
+    const error = new Error(
+      "Prepared relay withdraw payload changed while submission was in progress",
+    );
+    error.relayPayloadChanged = true;
+    throw error;
+  };
   let chainSnapshot;
   try {
-    chainSnapshot = await latestRelayChainSnapshot();
-  } catch {
+    chainSnapshot = await withPrivacySessionGuard(
+      session,
+      () => latestRelayChainSnapshot(),
+    );
+    assertRelayIsCurrent();
+  } catch (error) {
+    if (error?.privacySessionInvalidated) throw error;
     toast("Latest chain time is unavailable. Relay submission is blocked until it can be verified.");
     return;
   }
@@ -7621,12 +9867,15 @@ async function relayPreparedWithdraw() {
       state.keplr.relayWithdrawReservation,
       reservationRecordsByID(),
     ) === reservationStatuses.ManualReview;
-  await reconcileExpiredRelayWithdrawPayloads(chainSnapshot);
+  await reconcileExpiredRelayWithdrawPayloads(chainSnapshot, { session });
+  assertRelayIsCurrent();
   if (manualResolutionRequested) {
     const resolved = await resolveExpiredRelayManualReview(
       currentPreparedRelayWithdrawSnapshot(),
       chainSnapshot,
+      { session },
     );
+    assertRelayIsCurrent();
     state.keplr.relayWithdrawReservation =
       resolved?.reservation || state.keplr.relayWithdrawReservation;
     const resolvedStatus = relayReservationStatus(
@@ -7638,7 +9887,8 @@ async function relayPreparedWithdraw() {
         stashHandedOff: false,
       });
     } else {
-      persistRelayWithdrawPayloadState();
+      await persistRelayWithdrawPayloadState({ session });
+      assertRelayIsCurrent();
     }
     renderKeplr();
     toast(
@@ -7661,55 +9911,73 @@ async function relayPreparedWithdraw() {
     return;
   }
 
-  setBusy(els.relayPreparedWithdraw, true);
   els.keplrTxState.textContent = "Relayer broadcasting";
   let relayHandoffRecorded = Boolean(
     state.keplr.relayWithdrawPayloadHandedOff,
   );
   try {
     const relay = await withReservationHeartbeat(
-      state.keplr.relayWithdrawReservation,
+      reservation,
       async ({ assertHeartbeatHealthy }) => {
+        assertRelayIsCurrent();
         assertHeartbeatHealthy();
-        const latestChainSnapshot = await latestRelayChainSnapshot();
+        const latestChainSnapshot = await withPrivacySessionGuard(
+          session,
+          () => latestRelayChainSnapshot(),
+        );
+        assertRelayIsCurrent();
         if (!canRelayPreparedWithdrawPayload(latestChainSnapshot.chainNowMs)) {
-          await reconcileExpiredRelayWithdrawPayloads(latestChainSnapshot);
+          await reconcileExpiredRelayWithdrawPayloads(latestChainSnapshot, { session });
+          assertRelayIsCurrent();
           const error = new Error("Relay payload expiry or reservation status changed before broadcast");
           error.relayPayloadExpired = true;
           throw error;
         }
         await verifyRelayPayloadNullifierUnspentBeforeBroadcast(
           payload,
-          state.keplr.relayWithdrawReservation,
+          reservation,
+          state.keplr.relayWithdrawPreparedData,
+          { session },
         );
+        assertRelayIsCurrent();
         await markRelayReservationHandedOff(
-          state.keplr.relayWithdrawReservation,
+          reservation,
           payload?.payload_hash,
+          { expectedPayloadVersion, session },
         );
+        assertRelayIsCurrent();
         relayHandoffRecorded = true;
         state.keplr.relayWithdrawPayloadHandedOff = true;
         stopPreparedRelayReservationHeartbeat();
         await extendReservationBatchLeaseToPayloadExpiry(
-          state.keplr.relayWithdrawReservation,
+          reservation,
           payload,
+          { expectedPayloadVersion, session },
         );
-        persistRelayWithdrawPayloadState();
+        assertRelayIsCurrent();
+        await persistRelayWithdrawPayloadState({ session });
+        assertRelayIsCurrent();
         renderKeplr();
         assertHeartbeatHealthy();
         const attemptRecords = await markPreparedReservationBroadcastAttempting(
-          { reservation: state.keplr.relayWithdrawReservation },
+          { reservation },
           "relay_withdraw",
+          { session },
         );
-        updateRelayWithdrawReservationRecords(attemptRecords);
-        persistRelayWithdrawPayloadState();
+        assertRelayIsCurrent();
+        updateRelayWithdrawReservationRecords(attemptRecords, { session });
+        await persistRelayWithdrawPayloadState({ session });
+        assertRelayIsCurrent();
         renderKeplr();
         assertHeartbeatHealthy();
-        return relayPreparedWithdrawPayload(
-          payload,
-          state.keplr.relayWithdrawPayloadRecipient,
+        return withPrivacySessionGuard(
+          session,
+          () => relayPreparedWithdrawPayload(payload, recipient),
         );
       },
+      { session },
     );
+    assertRelayIsCurrent();
     state.keplr.relayWithdrawHash = broadcastTxHash(relay);
     state.keplr.relayWithdrawHeight =
       relay.tx?.height || relay.receipt?.blockNumber || "";
@@ -7721,10 +9989,12 @@ async function relayPreparedWithdraw() {
     state.keplr.relayWithdrawPayloadHash =
       relay.payloadHash || payload?.payload_hash || "";
     await recordSubmittedReservation(
-      state.keplr.relayWithdrawReservation,
+      reservation,
       relay,
       "Relay withdraw",
+      { session },
     );
+    assertRelayIsCurrent();
     clearPreparedRelayWithdrawPayload({
       clearPayloadHash: true,
       stashHandedOff: false,
@@ -7732,9 +10002,14 @@ async function relayPreparedWithdraw() {
     els.keplrTxState.textContent = "Relay withdraw included";
     renderKeplr();
     toast("Relay withdraw submitted");
-    await refreshPrivacySurfaces({ balance: true });
-    await refreshRelayerAccount();
+    await withPrivacySessionGuard(
+      session,
+      () => refreshPrivacySurfaces({ balance: true }),
+    );
+    await withPrivacySessionGuard(session, () => refreshRelayerAccount());
   } catch (error) {
+    if (error?.privacySessionInvalidated) throw error;
+    if (!relayIsCurrent()) throw error;
     if (error?.relayPayloadExpired) {
       els.keplrTxState.textContent = "Relay payload is no longer submittable";
       toast(error.message);
@@ -7758,7 +10033,8 @@ async function relayPreparedWithdraw() {
     const attempt = broadcastAttemptMetadata(attemptSource);
     if (!relayHandoffRecorded && !hasBroadcastAttemptMetadata(attempt)) {
       state.keplr.relayWithdrawPayloadHandedOff = false;
-      persistRelayWithdrawPayloadState();
+      await persistRelayWithdrawPayloadState({ session });
+      assertRelayIsCurrent();
       els.keplrTxState.textContent = "Relay validation failed before handoff";
       toast(error.message);
       return;
@@ -7768,11 +10044,12 @@ async function relayPreparedWithdraw() {
     )) {
       await noteReservationBookkeeping(() =>
         markReservationBatchUnknown(
-          state.keplr.relayWithdrawReservation,
+          reservation,
           error,
           attemptSource,
           { reconcile_reason: "reservation_lease_heartbeat_failed_after_relay" },
-        ).then(updateRelayWithdrawReservationRecords),
+          { session },
+        ).then((records) => updateRelayWithdrawReservationRecords(records, { session })),
       );
       els.keplrTxState.textContent =
         "Relay withdraw may be submitted; reservation reconciliation required";
@@ -7783,13 +10060,13 @@ async function relayPreparedWithdraw() {
     if (definiteEvmFailure || definiteCosmosFailure) {
       const reconciled = await noteReservationBookkeeping(() =>
         definiteEvmFailure
-          ? reconcileFailedEvmReservation(preparedData, error, attemptSource)
-          : reconcileFailedCosmosReservation(preparedData, error, attemptSource),
+          ? reconcileFailedEvmReservation(preparedData, error, attemptSource, reservationStatuses.ProofReady, { session })
+          : reconcileFailedCosmosReservation(preparedData, error, attemptSource, { session }),
       );
       if (reconciled === undefined) {
         await noteReservationBookkeeping(() =>
           markReservationBatchUnknown(
-            state.keplr.relayWithdrawReservation,
+            reservation,
             error,
             attemptSource,
             definiteCosmosFailure
@@ -7801,21 +10078,24 @@ async function relayPreparedWithdraw() {
                   definite_execution_failure: "evm_receipt_failed",
                   reconcile_reason: "evm_receipt_failed_pending_nullifier_reconcile",
                 },
-          ).then(updateRelayWithdrawReservationRecords),
+            { session },
+          ).then((records) => updateRelayWithdrawReservationRecords(records, { session })),
         );
       } else {
-        updateRelayWithdrawReservationRecords(reconciled);
+        updateRelayWithdrawReservationRecords(reconciled, { session });
       }
     } else {
       await noteReservationBookkeeping(() =>
         (hasBroadcastAttemptMetadata(attempt)
           ? markReservationBatchUnknown(
-              state.keplr.relayWithdrawReservation,
+              reservation,
               error,
               attemptSource,
+              {},
+              { session },
             )
           : markReservationBatchManualReview(
-              state.keplr.relayWithdrawReservation,
+              reservation,
               error,
               "opaque_relay_broadcast_error_without_transaction_identity",
               {
@@ -7823,15 +10103,23 @@ async function relayPreparedWithdraw() {
                 no_broadcast_attempt: false,
                 relay_handed_off: true,
               },
+              { session },
             )
-        ).then(updateRelayWithdrawReservationRecords),
+        ).then((records) => updateRelayWithdrawReservationRecords(records, { session })),
       );
     }
     els.keplrTxState.textContent = "Relay withdraw failed";
     toast(error.message);
+  }
   } finally {
-    setBusy(els.relayPreparedWithdraw, false);
-    renderKeplr();
+    if (relaySubmissionLock === submissionLock) {
+      relaySubmissionInFlight = false;
+      relaySubmissionLock = null;
+      if (isPrivacySessionCurrent(session)) {
+        setBusy(els.relayPreparedWithdraw, false);
+        renderKeplr();
+      }
+    }
   }
 }
 
@@ -7874,6 +10162,11 @@ els.scanKeplrNotes.addEventListener("click", () =>
 els.resetRescanNotes.addEventListener("click", () =>
   resetAndRescanNotes().catch((error) => toast(error.message)),
 );
+els.clearLegacyPrivacyData.addEventListener("click", () =>
+  clearLegacyPrivacyData().catch((error) => {
+    if (!error?.privacySessionInvalidated) toast(error.message);
+  }),
+);
 els.myKeplrSpendableOnly.addEventListener("change", (event) => {
   state.keplr.showSpendableOnly = event.target.checked;
   renderMyKeplrNotes();
@@ -7886,7 +10179,9 @@ els.depositFromKeplr.addEventListener("click", depositFromKeplr);
   els.keplrDepositAmount,
   els.veiledTransferAmount,
   els.veiledWithdrawAmount,
+  els.veiledWithdrawRecipient,
   els.relayWithdrawAmount,
+  els.relayWithdrawRecipient,
 ].forEach((input) => {
   input.addEventListener("input", updateAmountActionButtons);
 });
@@ -7909,10 +10204,14 @@ els.transferFromVeiled.addEventListener("click", transferFromVeiled);
 els.withdrawFromVeiled.addEventListener("click", withdrawFromVeiled);
 els.relayWithdrawFromVeiled.addEventListener("click", relayWithdrawFromVeiled);
 els.copyRelayWithdrawPayload.addEventListener("click", () =>
-  copyRelayWithdrawPayload().catch((error) => toast(error.message)),
+  copyRelayWithdrawPayload().catch((error) => {
+    if (!error?.privacySessionInvalidated) toast(error.message);
+  }),
 );
 els.relayPreparedWithdraw.addEventListener("click", () =>
-  relayPreparedWithdraw().catch((error) => toast(error.message)),
+  relayPreparedWithdraw().catch((error) => {
+    if (!error?.privacySessionInvalidated) toast(error.message);
+  }),
 );
 els.refreshAll.addEventListener("click", () =>
   refreshHealth().catch((error) => toast(error.message)),
@@ -7966,6 +10265,7 @@ const injectedMetaMask = metaMaskProvider();
 if (injectedMetaMask) {
   injectedMetaMask.on?.("accountsChanged", (accounts) => {
     if (state.activeWallet !== "metamask") return;
+    invalidatePrivacySessionOperations();
     discardAndClearPreparedRelayWithdrawPayload()
       .catch((error) => toast(error.message))
       .finally(() => {
@@ -7982,12 +10282,23 @@ if (injectedMetaMask) {
   });
   injectedMetaMask.on?.("chainChanged", (chainId) => {
     if (state.activeWallet !== "metamask") return;
-    state.wallet.chainId = chainId;
-    renderWallet();
+    invalidatePrivacySessionOperations();
+    discardAndClearPreparedRelayWithdrawPayload()
+      .catch((error) => toast(error.message))
+      .finally(() => {
+        resetWalletSession();
+        state.wallet.chainId = chainId;
+        renderWallet();
+        renderKeplr();
+        toast(
+          "MetaMask network changed. Reconnect wallet before preparing another privacy transaction.",
+        );
+      });
   });
 }
 
 window.addEventListener("keplr_keystorechange", () => {
+  invalidatePrivacySessionOperations();
   discardAndClearPreparedRelayWithdrawPayload()
     .catch((error) => toast(error.message))
     .finally(() => {
