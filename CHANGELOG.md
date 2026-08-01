@@ -28,6 +28,7 @@ This project follows [the release versioning policy](docs/clairveil-release-vers
 
 - Updated `google.golang.org/grpc` to `v1.82.1` and `go.opentelemetry.io/otel` core modules to `v1.44.0`, closing reachable `GO-2026-6061` and `GO-2026-5158` findings in the repository `govulncheck` gate.
 - Hardened the JSON `govulncheck` policy wrapper to reject every nonzero scanner status, so scan or usage failures cannot be accepted merely because a policy-approved finding is present in partial output.
+- Updated the example DApp's direct `esbuild` development dependency to `v0.28.1` and regenerated its committed browser bundle, closing `GHSA-g7r4-m6w7-qqqr` for the Windows development-server path and restoring a zero-finding `npm audit` result.
 
 ### Known Risk
 

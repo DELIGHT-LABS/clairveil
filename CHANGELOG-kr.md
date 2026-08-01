@@ -28,6 +28,7 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
 - Repository `govulncheck` gate의 reachable `GO-2026-6061`, `GO-2026-5158`를 해소하기 위해 `google.golang.org/grpc`를 `v1.82.1`, `go.opentelemetry.io/otel` core module을 `v1.44.0`으로 갱신했습니다.
 - Policy-approved finding이 partial output에 있어도 scan/usage failure를 통과시키지 못하도록 JSON `govulncheck` policy wrapper가 모든 nonzero scanner status를 거부하게 강화했습니다.
+- Example DApp의 direct `esbuild` development dependency를 `v0.28.1`로 갱신하고 committed browser bundle을 재생성하여 Windows development-server 경로의 `GHSA-g7r4-m6w7-qqqr`을 해소하고 `npm audit` 결과를 zero-finding으로 복원했습니다.
 
 ### Known Risk
 
