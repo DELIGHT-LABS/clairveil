@@ -203,22 +203,9 @@ last_scan_sequence
 
 ## 7. Deposit Implementation
 
-Deposit moves transparent balance into the privacy module account and appends one leaf.
+This legacy filename remains a discovery handoff, not a prover specification. Use the [general prover HTTP API](clairveil-proverd-http-api.md) and [deposit API](clairveil-proverd-deposit-api.md) for the language-neutral contract.
 
-The corresponding CLI command is:
-
-```bash
-clairveild tx privacy deposit 10uclair --from alice --keyring-backend test
-```
-
-The JS SDK must:
-
-- create a note from the recipient wallet's shielded identity;
-- compute the note commitment;
-- create the encrypted note;
-- generate a `DepositCircuit` proof locally, through WASM, or through a trusted prover adapter;
-- build `MsgDeposit` and sign/broadcast it as a normal Cosmos tx;
-- confirm the commitment and encrypted note event in the tx result.
+A client creates the note/commitment and encrypted note, obtains a proof locally or through the canonical deposit route, validates the returned commitment/proof, then builds and broadcasts `MsgDeposit`. Only the circuit witness belongs in a remote deposit request; encrypted note, creator, denom, memo, seed, and chain ID stay on the client/chain side. Do not treat a package/provider API, release state, or migration recipe as authoritative.
 
 ## 8. Transfer Implementation
 
@@ -414,56 +401,7 @@ The JS SDK must clearly show these constraints to users.
 
 ## 11. Prover Connection Model
 
-The JS SDK should define a prover adapter interface first, rather than directly embedding a proving implementation.
-
-```text
-Browser SDK
-  -> build prepared payload
-  -> ProverAdapter.proveTransfer / proveWithdraw
-  -> proof response
-  -> build MsgTransfer / MsgWithdraw
-  -> sign and broadcast with the existing Cosmos/downstream wallet stack
-```
-
-The current Go-side prover HTTP contract is:
-
-```text
-POST /v1/prover/transfer
-POST /v1/prover/withdraw
-Content-Type: application/json
-request_version: v2
-response_version: v2
-```
-
-Error codes are:
-
-```text
-invalid_request
-method_not_allowed
-not_found
-unauthorized
-unavailable
-proof_failed
-```
-
-Related fixtures are:
-
-```text
-x/privacy/client/sdk/conformance/testdata/privacy_prover_http_api_contract.json
-x/privacy/client/sdk/conformance/testdata/privacy_prover_example_bundle.json
-x/privacy/client/sdk/conformance/testdata/privacy_send_capable_reference_flow.json
-```
-
-Whether the prover is a local daemon or a remote sidecar, it should look like the same adapter from the JS SDK's perspective. A future browser/WASM proving backend should also sit behind the same interface.
-
-The prepared prover payload is authority-equivalent privacy-sensitive witness data even though its final outputs can no longer be changed. Never log or persist it unnecessarily. A prover pool must use one endpoint with no automatic failover by default. Sending the same witness to another endpoint is allowed only after explicit user/product-policy opt-in that names the additional privacy boundary; retries may target the same endpoint.
-
-When connecting a remote prover, enforce request timeout and response validation at the client boundary. The examples and operations profile are:
-
-```text
-examples/js-sdk-prover-http-client
-docs/clairveil-proverd-remote-production-profile.md
-```
+Keep a transport-neutral prover adapter. Its HTTP behavior, routes, versioning, errors, and common headers are defined only by the [general prover HTTP API](clairveil-proverd-http-api.md); deposit-specific witness/response handling is defined by the [deposit API](clairveil-proverd-deposit-api.md). Apply a finite timeout and strict response validation, never log/persist witness bodies, and require explicit user/product opt-in before sending the same witness to another endpoint.
 
 ## 12. JS SDK Implementation Units
 

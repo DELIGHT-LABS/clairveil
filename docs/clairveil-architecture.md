@@ -83,6 +83,10 @@ Prepared prover requests contain private note witness. Same-endpoint retry does 
 
 ## 6. Client And Audit Boundary
 
+### 6.1 Deposit Proving Boundary
+
+Deposit proving may be local or use `POST /v1/prover/deposit`. The client constructs the note, commitment, and encrypted note; the remote prover receives only the versioned circuit witness, recomputes the commitment, and returns a commitment-bound proof. The client then validates the response and assembles/signs `MsgDeposit`. Envelope and nested payload/proof versions are separate. The [general HTTP API](clairveil-proverd-http-api.md) owns transport policy; the [deposit API](clairveil-proverd-deposit-api.md) owns this route's wire contract.
+
 Wallet ownership is recovered by scanning typed chain data and attempting note decryption; `view_tags` are only untrusted performance hints. Clients must persist cursors, support rescan, keep prepared payloads and note caches encrypted, and treat nullifier queries as privacy-sensitive.
 
 Every transfer carries mandatory audit disclosure. User-selected disclosure and sender self-view disclosure are distinct envelopes. On-chain validation verifies the frozen digest/envelope contract; custody and authorization for the audit private key remain external operational responsibilities.

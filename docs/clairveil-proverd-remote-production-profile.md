@@ -114,7 +114,7 @@ Current request/response/proof contracts are `v2` for transfer and withdraw. Tra
 
 ## 8. Do Not Expose The Raw Handler
 
-`x/privacy/client/sdk/provertransport.HTTPHandler` in the Go SDK is a low-level handler for testing and reusing the transport contract. All three proof routes apply the same positive request limit before admission, including the default 8 MiB limit, but the raw handler does not provide the production service's bearer authorization, gzip wire/decompressed dual limit, health/readiness policy, or server timeouts.
+`x/privacy/client/sdk/provertransport.HTTPHandler` in the Go SDK is a low-level handler for testing and reusing the transport contract. All four proof routes apply the same positive request limit before admission, including the default 8 MiB limit, but the raw handler does not provide the production service's bearer authorization, gzip wire/decompressed dual limit, health/readiness policy, or server timeouts.
 
 When exposing a production HTTP server, use one of these options.
 
@@ -187,6 +187,10 @@ Before operating a remote prover in a production-like environment, confirm:
 - `examples/js-sdk-prover-http-client`
 
 ## 13. Privacy-Note-V1 Admission And Batch Prover Route Addendum
+
+### Canonical Deposit Route
+
+`POST /v1/prover/deposit` is a first-class bounded proof route. It requires the deposit artifact for readiness, participates in the per-circuit admission policy, and uses the same bearer-auth, gzip/body-limit, timeout, redacted-logging, and `Cache-Control: no-store` boundary as every proof route. It receives only the versioned deposit witness (not encrypted note, creator, denom, memo, seed, or chain ID); never log request/response bodies. Require `Content-Type: application/json`, return `415` for media-type failure, `400` for invalid witness/version, and `500` only after a validated request reaches proving. Return `Allow: POST` on `405`. The [general HTTP API](clairveil-proverd-http-api.md) and [deposit API](clairveil-proverd-deposit-api.md) are authoritative.
 
 The active consensus circuit set is `privacy-note-v1`; the fixed note/disclosure/envelope contract is `privacy-fixed-v1`. This is incompatible with earlier cached artifacts and proof jobs. Deploy from fresh genesis, remove old R1CS/PK/VK sets and queued/cached requests, regenerate the exact active set, and require clients to clear note/scan caches and rescan. The batch chain core did not include a batch HTTP route, but the batch integration removes that limitation: the bounded reference service now exposes `POST /v1/proofs/batch-transfer` and advertises `batch-joinsplit-16x32-v1` in its runtime/readiness contract. Enable it only with the same TLS/auth, positive body limit, per-circuit admission, payload binding, and artifact-role controls as the other proof routes.
 

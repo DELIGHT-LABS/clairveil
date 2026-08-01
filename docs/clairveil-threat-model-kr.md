@@ -111,6 +111,10 @@ Before a downstream project treats Clairveil as production-ready, it should at m
 
 ## 9. NoteV1과 batch chain-core threat delta
 
+### 9.1 Deposit wallet-to-prover 경계
+
+`POST /v1/prover/deposit`의 wallet-to-prover trust boundary에는 receiver public key, amount, asset ID, randomness, commitment가 포함됩니다. Encrypted note, creator, denom, memo, seed, chain ID는 밖에 남습니다. Remote prover는 이 witness metadata를 correlate할 수 있으므로 body log, telemetry, retention, authentication, admission, readiness가 security control이며 automatic failover는 보호 대상 노출을 확대합니다. Exact contract는 [deposit API](clairveil-proverd-deposit-api-kr.md), 공통 transport control은 [general HTTP API](clairveil-proverd-http-api-kr.md)에 있습니다.
+
 Active identity는 required descriptor `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`을 가진 `privacy-note-v1`이고 canonical payload contract는 `privacy-fixed-v1`입니다. 이전 state, raw ciphertext, JSON note/disclosure plaintext, three-circuit artifact, proof job, wallet cache는 의도적으로 호환되지 않습니다. 재사용하면 cross-version alias와 stale-root risk가 생기므로 지원하는 전환 방식은 fresh genesis, artifact/cache 삭제, full rescan입니다.
 
 새롭거나 더 명확해진 trust-boundary threat는 아래와 같습니다.

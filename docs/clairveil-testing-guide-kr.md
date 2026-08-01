@@ -157,7 +157,19 @@ make validate-joinsplit-artifact-rotation-evidence
 
 batch reference integration은 public `MsgBatchTransfer` Go SDK/builder, `POST /v1/proofs/batch-transfer`, typed scanner/decrypt/disclosure 검증, durable one-proof payroll integration, 단계형/통합 CLI command, 한영 localnet tutorial을 추가합니다. `go test ./x/privacy/client/sdk/... -count=1`, `make privacy-batch-joinsplit-localnet`, 그리고 충분한 자원의 host에서 `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`을 실행합니다. 기존 `transfer-batch`와 reference payroll target은 독립적인 multi-message regression 경로로 유지합니다.
 
-Prepared transfer payload `v5`는 현재 outer prepared-payload contract로 그대로 유효합니다. 이 version을 inner note/disclosure encoding과 혼동하면 안 됩니다. Inner canonical payload와 envelope는 `privacy-fixed-v1`입니다. Compatibility fallback은 금지됩니다. External ClairveilJS package는 이 handoff 시점에 아직 legacy이므로 upgrade 전까지 old decoder로 해석하지 말고 새 fixed fixture를 fail closed로 거부해야 합니다.
+Prepared transfer payload `v5`는 현재 outer prepared-payload contract로 그대로 유효합니다. 이 version을 inner note/disclosure encoding과 혼동하면 안 됩니다. Inner canonical payload와 envelope는 `privacy-fixed-v1`입니다. Compatibility fallback은 금지됩니다.
+
+Canonical deposit-prover와 common HTTP-policy regression은 아래를 실행합니다.
+
+```bash
+go test ./x/privacy/client/sdk/deposit -count=1
+go test ./x/privacy/client/sdk/provertransport -count=1
+go test ./x/privacy/client/sdk/proverservice -count=1
+go test ./x/privacy/client/sdk/conformance -count=1
+go test ./cmd/clairveil-proverd -count=1
+```
+
+이 테스트는 language-neutral deposit fixture와 공통 `Content-Type`, `405 Allow`, `Cache-Control: no-store`, proving 전 `400` 대 invocation 뒤 `500` 정책을 다룹니다. Contract detail은 [general HTTP API](clairveil-proverd-http-api-kr.md)와 [deposit API](clairveil-proverd-deposit-api-kr.md)를 참조합니다.
 
 ## 4. JS/web wallet fixture 검증
 
@@ -174,8 +186,6 @@ npm --prefix examples/js-sdk-prover-http-client run demo
 npm --prefix examples/clairveil-dapp ci
 npm --prefix examples/clairveil-dapp run check:dapp
 npm --prefix examples/clairveil-dapp run test:dapp
-npm --prefix examples/clairveil-dapp run check:clairveiljs
-npm --prefix examples/clairveil-dapp run test:clairveiljs
 ```
 
 검증 범위:
@@ -189,9 +199,8 @@ npm --prefix examples/clairveil-dapp run test:clairveiljs
 - relay withdraw handoff의 relayer `creator` / payload `recipient` mapping
 - `scan_events` request/response fixture shape, cursor field, scan/view tag version, projection output
 - batch `check_nullifiers` request/response fixture shape
-- prover HTTP request/response version
 - timeout/auth client shape
-- browser DApp boundary check, static bundle 최신성, local helper route policy, ClairveilJS package surface smoke test
+- browser DApp boundary check, static bundle 최신성, local helper route policy
 
 ## 5. Localnet smoke
 

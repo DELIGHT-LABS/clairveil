@@ -487,6 +487,34 @@ for source in sorted(
             )
 
 
+prover_schema_path = docs_dir / "schemas" / "clairveil-proverd-http-api.schema.json"
+prover_fixture_paths = [
+    repo / "x/privacy/client/sdk/conformance/testdata/privacy_prover_http_api_contract.json",
+    repo / "x/privacy/client/sdk/conformance/testdata/privacy_deposit_prover_contract.json",
+]
+try:
+    import jsonschema
+
+    with prover_schema_path.open(encoding="utf-8") as schema_file:
+        prover_schema = json.load(schema_file)
+    validator_class = jsonschema.validators.validator_for(prover_schema)
+    validator_class.check_schema(prover_schema)
+    validator = validator_class(prover_schema)
+    for fixture_path in prover_fixture_paths:
+        with fixture_path.open(encoding="utf-8") as fixture_file:
+            fixture = json.load(fixture_file)
+        validator.validate(fixture)
+except ModuleNotFoundError:
+    add_error("docs-check requires the Python jsonschema package for prover contract validation")
+except (OSError, UnicodeError, json.JSONDecodeError) as error:
+    add_error(f"failed to read the prover contract schema or fixture: {error}")
+except jsonschema.exceptions.SchemaError as error:
+    add_error(f"invalid prover contract JSON Schema: {error.message}")
+except jsonschema.exceptions.ValidationError as error:
+    relative_path = error.json_path or "$"
+    add_error(f"prover contract fixture failed JSON Schema validation at {relative_path}: {error.message}")
+
+
 unique_errors = list(dict.fromkeys(errors))
 if unique_errors:
     print(f"docs check failed ({len(unique_errors)} issue(s)):", file=sys.stderr)
@@ -500,4 +528,5 @@ print(f"plan indexes verified: {len(tracked_plans)} tracked plan(s)")
 print(f"changelog headings verified for HEAD-reachable tags: {len(tags)} tag(s), 2 file(s)")
 print(f"release manifests verified: {len(selected_paths)} selected path(s), {len(required_files)} required file(s)")
 print(f"release Markdown link closure verified: {len(release_selected_files)} packed source file(s)")
+print(f"prover contract JSON Schema verified: {len(prover_fixture_paths)} fixture(s)")
 PY

@@ -19,6 +19,12 @@ Plan status, owner/scope, and superseding document should be updated when the im
 | --- | --- | --- |
 | [Public capacity claim execution](clairveil-public-capacity-claim-execution-plan-kr.md) | Active; Korean-only | Produce eligible operational prover RPS, chain TPS, and user-latency claim evidence without converting harness measurements into unsupported production claims |
 
+## Completed Prover API Records
+
+| Plan | Status |
+| --- | --- |
+| [`clairveil-proverd` deposit API implementation](clairveil-proverd-deposit-api-implementation-plan-kr.md) | Completed record; Korean-only; language-neutral `POST /v1/prover/deposit`, common four-route HTTP policy, conformance/schema/docs, and all final gates completed without circuit, proto, artifact-contract, or DApp changes |
+
 ## Completed Deposit Funder Record
 
 | Plan | Status |

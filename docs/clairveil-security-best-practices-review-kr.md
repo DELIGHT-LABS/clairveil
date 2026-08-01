@@ -143,6 +143,10 @@ JS/TS SDK, web wallet, downstream Cosmos SDK chain 개발자에게는 아래를 
 
 ## 6. NoteV1과 batch chain-core security addendum
 
+### 6.1 Deposit prover 경계
+
+`POST /v1/prover/deposit`을 특별 client shortcut이 아닌 bounded raw-handler/auth/redaction surface로 취급합니다. Versioned circuit witness만 받고 bearer auth, gzip/body limit, admission, readiness, timeout, secret-free error, `no-store`를 위해 service wrapper를 사용합니다. Request/response body와 witness value는 log하지 않습니다. `Content-Type: application/json`, `405`의 `Allow: POST`, media failure `415`, proving 전 `400`, validated prover invocation 뒤 `500`을 강제합니다. [general HTTP API](clairveil-proverd-http-api-kr.md)와 [deposit API](clairveil-proverd-deposit-api-kr.md)를 참조합니다.
+
 현재 production circuit과 state는 `privacy-note-v1` NoteV1 commitment/nullifier/tree contract와 canonical key validation을 공유합니다. Canonical note, disclosure, encrypted-envelope byte는 versioned `privacy-fixed-v1`입니다. Raw ciphertext, JSON plaintext, 잘못된 envelope kind, non-canonical field/key data, non-zero reserved byte, trailing byte는 fail closed해야 합니다. `AssetRegistryV1`이 consensus-authoritative one-to-one denom/32-byte asset-ID mapping입니다. Global commitment uniqueness는 SDK-only precheck가 아니라 consensus state입니다.
 
 이 계약은 이전 state와 artifact와 의도적으로 호환되지 않습니다. Fresh genesis를 사용하고 wallet note/scan cache와 prepared/proof job을 제거하며 exact `privacy-note-v1` artifact set을 다시 생성한 뒤 rescan합니다. Permissive compatibility decoder나 in-place migration을 추가하지 않습니다. Unified scan order는 `(height, global_sequence, output_index)`이고 spend witness는 exact public root의 path snapshot을 사용해야 합니다. Current-root path는 incremental node를 사용하므로 online historical-rebuild budget을 소비하지 않습니다. Non-current historical path는 persisted root/count/height metadata를 요구하며 public query는 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하고 그 이상은 `ResourceExhausted`를 반환합니다. Online bound를 넘으면 current root 또는 trusted local historical index를 사용합니다. 별도 offline recovery/export bound는 `MaxMerkleRebuildLeaves`(1,048,576)입니다. Remote historical path/root query는 wallet interest를 노출하므로 privacy warning을 유지하고 필요하면 privacy-preserving infrastructure를 사용합니다.

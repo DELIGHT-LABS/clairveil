@@ -1,0 +1,380 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/DELIGHT-LABS/clairveil/docs/schemas/clairveil-proverd-http-api.schema.json",
+  "title": "Clairveil Proverd HTTP API Contract Schemas",
+  "description": "Language-neutral schemas for the Clairveil proverd HTTP API conformance fixtures.",
+  "oneOf": [
+    { "$ref": "#/$defs/fullRouteInventory" },
+    { "$ref": "#/$defs/depositConformanceFixture" }
+  ],
+  "$defs": {
+    "versionV1": { "type": "string", "const": "v1" },
+    "lowercaseHex32": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "lowercaseProofHex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{328}$"
+    },
+    "amountUint64": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|18446744073709550[0-9]{3}|18446744073709551[0-5][0-9]{2}|1844674407370955160[0-9]|1844674407370955161[0-5])$"
+    },
+    "canonicalDepositPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "receiver_spend_pubkey_hex",
+        "receiver_view_pubkey_hex",
+        "amount",
+        "asset_id_hex",
+        "randomness_hex",
+        "note_commitment_hex"
+      ],
+      "properties": {
+        "version": { "$ref": "#/$defs/versionV1" },
+        "receiver_spend_pubkey_hex": { "$ref": "#/$defs/lowercaseHex32" },
+        "receiver_view_pubkey_hex": { "$ref": "#/$defs/lowercaseHex32" },
+        "amount": { "$ref": "#/$defs/amountUint64" },
+        "asset_id_hex": { "$ref": "#/$defs/lowercaseHex32" },
+        "randomness_hex": { "$ref": "#/$defs/lowercaseHex32" },
+        "note_commitment_hex": { "$ref": "#/$defs/lowercaseHex32" }
+      }
+    },
+    "canonicalDepositRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "payload"],
+      "properties": {
+        "version": { "$ref": "#/$defs/versionV1" },
+        "payload": { "$ref": "#/$defs/canonicalDepositPayload" }
+      }
+    },
+    "canonicalDepositProof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "note_commitment_hex", "proof_hex"],
+      "properties": {
+        "version": { "$ref": "#/$defs/versionV1" },
+        "note_commitment_hex": { "$ref": "#/$defs/lowercaseHex32" },
+        "proof_hex": { "$ref": "#/$defs/lowercaseProofHex" }
+      }
+    },
+    "canonicalDepositResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "proof"],
+      "properties": {
+        "version": { "$ref": "#/$defs/versionV1" },
+        "proof": { "$ref": "#/$defs/canonicalDepositProof" }
+      }
+    },
+    "canonicalErrorResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "code", "message"],
+      "properties": {
+        "version": { "$ref": "#/$defs/versionV1" },
+        "code": {
+          "type": "string",
+          "enum": [
+            "invalid_request",
+            "method_not_allowed",
+            "not_found",
+            "unauthorized",
+            "unavailable",
+            "proof_failed",
+            "busy"
+          ]
+        },
+        "message": { "type": "string", "minLength": 1 },
+        "retryable": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "code": { "const": "busy" } }, "required": ["code"] },
+          "then": { "required": ["retryable"], "properties": { "retryable": { "const": true } } },
+          "else": { "properties": { "retryable": { "const": false } } }
+        }
+      ]
+    },
+    "routeContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "path", "request_version", "response_version"],
+      "properties": {
+        "method": { "type": "string", "const": "POST" },
+        "path": { "type": "string" },
+        "request_version": { "type": "string" },
+        "response_version": { "type": "string" }
+      }
+    },
+    "transferRoute": {
+      "allOf": [
+        { "$ref": "#/$defs/routeContract" },
+        { "properties": { "path": { "const": "/v1/prover/transfer" }, "request_version": { "const": "v2" }, "response_version": { "const": "v2" } } }
+      ]
+    },
+    "withdrawRoute": {
+      "allOf": [
+        { "$ref": "#/$defs/routeContract" },
+        { "properties": { "path": { "const": "/v1/prover/withdraw" }, "request_version": { "const": "v2" }, "response_version": { "const": "v2" } } }
+      ]
+    },
+    "batchTransferRoute": {
+      "allOf": [
+        { "$ref": "#/$defs/routeContract" },
+        { "properties": { "path": { "const": "/v1/proofs/batch-transfer" }, "request_version": { "const": "v1" }, "response_version": { "const": "v1" } } }
+      ]
+    },
+    "depositRoute": {
+      "allOf": [
+        { "$ref": "#/$defs/routeContract" },
+        { "properties": { "path": { "const": "/v1/prover/deposit" }, "request_version": { "const": "v1" }, "response_version": { "const": "v1" } } }
+      ]
+    },
+    "policyRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content_type_required", "allowed_content_types", "content_encodings", "default_max_bytes"],
+      "properties": {
+        "content_type_required": { "const": true },
+        "allowed_content_types": {
+          "type": "array",
+          "prefixItems": [
+            { "const": "application/json" },
+            { "const": "application/json; charset=utf-8" }
+          ],
+          "items": false
+        },
+        "content_encodings": {
+          "type": "array",
+          "prefixItems": [{ "const": "identity" }, { "const": "gzip" }],
+          "items": false
+        },
+        "default_max_bytes": { "type": "integer", "const": 8388608 }
+      }
+    },
+    "policyResponseHeaders": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content_type", "cache_control", "method_not_allowed_allow"],
+      "properties": {
+        "content_type": { "const": "application/json" },
+        "cache_control": { "const": "no-store" },
+        "method_not_allowed_allow": { "const": "POST" }
+      }
+    },
+    "invalidRequestMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "status_codes", "retryable"],
+      "properties": {
+        "code": { "const": "invalid_request" },
+        "status_codes": { "type": "array", "prefixItems": [{ "const": 400 }, { "const": 413 }, { "const": 415 }], "items": false },
+        "retryable": { "const": false }
+      }
+    },
+    "methodNotAllowedMapping": {
+      "type": "object", "additionalProperties": false, "required": ["code", "status_codes", "retryable"],
+      "properties": { "code": { "const": "method_not_allowed" }, "status_codes": { "type": "array", "prefixItems": [{ "const": 405 }], "items": false }, "retryable": { "const": false } }
+    },
+    "notFoundMapping": {
+      "type": "object", "additionalProperties": false, "required": ["code", "status_codes", "retryable"],
+      "properties": { "code": { "const": "not_found" }, "status_codes": { "type": "array", "prefixItems": [{ "const": 404 }], "items": false }, "retryable": { "const": false } }
+    },
+    "unauthorizedMapping": {
+      "type": "object", "additionalProperties": false, "required": ["code", "status_codes", "retryable"],
+      "properties": { "code": { "const": "unauthorized" }, "status_codes": { "type": "array", "prefixItems": [{ "const": 401 }], "items": false }, "retryable": { "const": false } }
+    },
+    "unavailableMapping": {
+      "type": "object", "additionalProperties": false, "required": ["code", "status_codes", "retryable"],
+      "properties": { "code": { "const": "unavailable" }, "status_codes": { "type": "array", "prefixItems": [{ "const": 503 }], "items": false }, "retryable": { "const": false } }
+    },
+    "proofFailedMapping": {
+      "type": "object", "additionalProperties": false, "required": ["code", "status_codes", "retryable"],
+      "properties": { "code": { "const": "proof_failed" }, "status_codes": { "type": "array", "prefixItems": [{ "const": 500 }], "items": false }, "retryable": { "const": false } }
+    },
+    "busyMapping": {
+      "type": "object", "additionalProperties": false, "required": ["code", "status_codes", "retryable"],
+      "properties": { "code": { "const": "busy" }, "status_codes": { "type": "array", "prefixItems": [{ "const": 429 }], "items": false }, "retryable": { "const": true } }
+    },
+    "commonMappings": {
+      "type": "array",
+      "prefixItems": [
+        { "$ref": "#/$defs/invalidRequestMapping" },
+        { "$ref": "#/$defs/methodNotAllowedMapping" },
+        { "$ref": "#/$defs/notFoundMapping" },
+        { "$ref": "#/$defs/unauthorizedMapping" },
+        { "$ref": "#/$defs/unavailableMapping" },
+        { "$ref": "#/$defs/proofFailedMapping" },
+        { "$ref": "#/$defs/busyMapping" }
+      ],
+      "items": false
+    },
+    "errorResponsePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "mappings"],
+      "properties": {
+        "version": { "$ref": "#/$defs/versionV1" },
+        "mappings": { "$ref": "#/$defs/commonMappings" }
+      }
+    },
+    "depositErrorResponsePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error_response_version", "mappings"],
+      "properties": {
+        "error_response_version": { "$ref": "#/$defs/versionV1" },
+        "mappings": { "$ref": "#/$defs/commonMappings" }
+      }
+    },
+    "failureStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_failure", "prover_failure"],
+      "properties": { "request_failure": { "const": 400 }, "prover_failure": { "const": 500 } }
+    },
+    "commonFailureStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deposit", "transfer", "withdraw", "batch_transfer"],
+      "properties": {
+        "deposit": { "$ref": "#/$defs/failureStatus" },
+        "transfer": { "$ref": "#/$defs/failureStatus" },
+        "withdraw": { "$ref": "#/$defs/failureStatus" },
+        "batch_transfer": { "$ref": "#/$defs/failureStatus" }
+      }
+    },
+    "retryPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timeout", "same_endpoint_retry", "automatic_failover"],
+      "properties": {
+        "timeout": { "const": "caller_context_deadline" },
+        "same_endpoint_retry": { "const": "caller_controlled" },
+        "automatic_failover": { "const": false }
+      }
+    },
+    "commonPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request", "response_headers", "error_response", "route_failure_status", "retry_policy"],
+      "properties": {
+        "request": { "$ref": "#/$defs/policyRequest" },
+        "response_headers": { "$ref": "#/$defs/policyResponseHeaders" },
+        "error_response": { "$ref": "#/$defs/errorResponsePolicy" },
+        "route_failure_status": { "$ref": "#/$defs/commonFailureStatus" },
+        "retry_policy": { "$ref": "#/$defs/retryPolicy" }
+      }
+    },
+    "fullRouteInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "content_type", "transfer_route", "withdraw_route", "batch_transfer_route", "deposit_route", "common_policy"],
+      "properties": {
+        "schema_version": { "const": "v3" },
+        "content_type": { "const": "application/json" },
+        "transfer_route": { "$ref": "#/$defs/transferRoute" },
+        "withdraw_route": { "$ref": "#/$defs/withdrawRoute" },
+        "batch_transfer_route": { "$ref": "#/$defs/batchTransferRoute" },
+        "deposit_route": { "$ref": "#/$defs/depositRoute" },
+        "common_policy": { "$ref": "#/$defs/commonPolicy" }
+      }
+    },
+    "depositTransport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "path", "content_type", "request_version", "payload_version", "response_version", "proof_version"],
+      "properties": {
+        "method": { "const": "POST" },
+        "path": { "const": "/v1/prover/deposit" },
+        "content_type": { "const": "application/json" },
+        "request_version": { "$ref": "#/$defs/versionV1" },
+        "payload_version": { "$ref": "#/$defs/versionV1" },
+        "response_version": { "$ref": "#/$defs/versionV1" },
+        "proof_version": { "$ref": "#/$defs/versionV1" }
+      }
+    },
+    "depositEncoding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "public_key", "amount"],
+      "properties": {
+        "field": {
+          "type": "object", "additionalProperties": false, "required": ["encoding", "byte_length", "hex_length", "byte_order"],
+          "properties": { "encoding": { "const": "lowercase_hex" }, "byte_length": { "const": 32 }, "hex_length": { "const": 64 }, "byte_order": { "const": "unsigned_big_endian" } }
+        },
+        "public_key": {
+          "type": "object", "additionalProperties": false, "required": ["encoding", "byte_length", "hex_length", "format"],
+          "properties": { "encoding": { "const": "lowercase_hex" }, "byte_length": { "const": 32 }, "hex_length": { "const": 64 }, "format": { "const": "canonical_compressed_bn254_twisted_edwards" } }
+        },
+        "amount": {
+          "type": "object", "additionalProperties": false, "required": ["encoding", "minimum", "maximum"],
+          "properties": { "encoding": { "const": "canonical_non_negative_decimal" }, "minimum": { "const": "0" }, "maximum": { "const": "18446744073709551615" } }
+        }
+      }
+    },
+    "responseCommitmentBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["response_field", "must_equal"],
+      "properties": {
+        "response_field": { "const": "proof.note_commitment_hex" },
+        "must_equal": { "type": "array", "prefixItems": [{ "const": "request.payload.note_commitment_hex" }, { "const": "recomputed_note_commitment" }], "items": false }
+      }
+    },
+    "proofWire": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["byte_length", "hex_length", "compressed_point_offsets", "commitment_count", "canonical_round_trip", "static_real_proof"],
+      "properties": {
+        "byte_length": { "const": 164 },
+        "hex_length": { "const": 328 },
+        "compressed_point_offsets": { "type": "array", "prefixItems": [{ "const": 0 }, { "const": 32 }, { "const": 96 }, { "const": 132 }], "items": false },
+        "commitment_count": {
+          "type": "object", "additionalProperties": false, "required": ["offset", "byte_length", "byte_order", "required_value"],
+          "properties": { "offset": { "const": 128 }, "byte_length": { "const": 4 }, "byte_order": { "const": "unsigned_big_endian" }, "required_value": { "const": 0 } }
+        },
+        "canonical_round_trip": { "const": "decode_exact_frame_then_encode_must_preserve_every_byte" },
+        "static_real_proof": { "const": "not_included" }
+      }
+    },
+    "negativeVectors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw_json_strict_decoder", "field_mutation_commitment_mismatch"],
+      "properties": {
+        "raw_json_strict_decoder": {
+          "type": "object", "additionalProperties": false, "required": ["raw_json", "expected_error_contains"],
+          "properties": { "raw_json": { "type": "string", "minLength": 1 }, "expected_error_contains": { "const": "unknown field" } }
+        },
+        "field_mutation_commitment_mismatch": {
+          "type": "object", "additionalProperties": false, "required": ["field", "mutated_value", "expected_error_contains"],
+          "properties": { "field": { "const": "payload.amount" }, "mutated_value": { "$ref": "#/$defs/amountUint64" }, "expected_error_contains": { "const": "deposit prover payload note commitment mismatch" } }
+        }
+      }
+    },
+    "depositConformanceFixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "transport", "encoding", "canonical_positive_request", "expected_note_commitment_hex", "response_commitment_binding", "proof_wire", "negative_vectors", "common_error_policy", "route_failure_status", "retry_policy"],
+      "properties": {
+        "schema_version": { "const": "clairveil.proverd.deposit-api.contract.v1" },
+        "transport": { "$ref": "#/$defs/depositTransport" },
+        "encoding": { "$ref": "#/$defs/depositEncoding" },
+        "canonical_positive_request": { "$ref": "#/$defs/canonicalDepositRequest" },
+        "expected_note_commitment_hex": { "$ref": "#/$defs/lowercaseHex32" },
+        "response_commitment_binding": { "$ref": "#/$defs/responseCommitmentBinding" },
+        "proof_wire": { "$ref": "#/$defs/proofWire" },
+        "negative_vectors": { "$ref": "#/$defs/negativeVectors" },
+        "common_error_policy": { "$ref": "#/$defs/depositErrorResponsePolicy" },
+        "route_failure_status": { "$ref": "#/$defs/commonFailureStatus" },
+        "retry_policy": { "$ref": "#/$defs/retryPolicy" }
+      }
+    }
+  }
+}

@@ -118,7 +118,7 @@ Remote prover operator는 아래 정보를 볼 수 있다고 가정해야 합니
 
 ## 8. Raw handler 사용 금지
 
-Go SDK의 `x/privacy/client/sdk/provertransport.HTTPHandler`는 transport contract를 테스트하고 재사용하기 위한 낮은 수준의 handler입니다. 세 proof route 모두 admission 전에 positive request limit을 동일하게 적용하며 default는 8 MiB입니다. 다만 raw handler에는 production service의 bearer authorization, gzip wire/decompressed dual limit, health/readiness policy, server timeout이 없습니다.
+Go SDK의 `x/privacy/client/sdk/provertransport.HTTPHandler`는 transport contract를 테스트하고 재사용하기 위한 낮은 수준의 handler입니다. 네 proof route 모두 admission 전에 positive request limit을 동일하게 적용하며 default는 8 MiB입니다. 다만 raw handler에는 production service의 bearer authorization, gzip wire/decompressed dual limit, health/readiness policy, server timeout이 없습니다.
 
 Production HTTP server로 노출할 때는 아래 중 하나를 사용해야 합니다.
 
@@ -191,6 +191,10 @@ Remote prover를 production-like 환경에 올리기 전 아래를 확인합니�
 - `examples/js-sdk-prover-http-client`
 
 ## 13. privacy-note-v1 admission과 batch prover route addendum
+
+### Canonical deposit route
+
+`POST /v1/prover/deposit`은 first-class bounded proof route입니다. Deposit artifact가 readiness에 포함되고 circuit별 admission 정책, bearer auth, gzip/body limit, timeout, redacted logging, `Cache-Control: no-store` 경계를 다른 proof route와 공유합니다. Versioned deposit witness만 받고(encrypted note, creator, denom, memo, seed, chain ID는 받지 않음) request/response body를 log하지 않습니다. `Content-Type: application/json`을 요구하고 media type 실패는 `415`, invalid witness/version은 `400`, validated request가 proving에 도달한 뒤의 실패만 `500`으로 처리합니다. `405`에는 `Allow: POST`를 반환합니다. [general HTTP API](clairveil-proverd-http-api-kr.md)와 [deposit API](clairveil-proverd-deposit-api-kr.md)가 authoritative합니다.
 
 Active consensus circuit set은 `privacy-note-v1`이며 fixed note/disclosure/envelope 계약은 `privacy-fixed-v1`입니다. 이전 cached artifact와 proof job과 호환되지 않습니다. Fresh genesis에서 배포하고 old R1CS/PK/VK set과 queued/cached request를 제거하며 exact active set을 다시 생성합니다. Client도 note/scan cache를 지우고 rescan해야 합니다. batch chain core에는 batch HTTP route가 없었지만 batch reference integration이 이 제한을 대체합니다. Bounded reference service는 이제 `POST /v1/proofs/batch-transfer`를 노출하고 runtime/readiness 계약에 `batch-joinsplit-16x32-v1`을 advertise합니다. 다른 proof route와 같은 TLS/auth, positive body limit, circuit별 admission, payload binding, artifact-role control을 유지할 때만 활성화합니다.
 

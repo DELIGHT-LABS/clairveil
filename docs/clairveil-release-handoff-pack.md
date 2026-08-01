@@ -15,6 +15,7 @@ Korean version: [clairveil-release-handoff-pack-kr.md](clairveil-release-handoff
 | SDK fixtures | `x/privacy/client/sdk/conformance/testdata` | JS SDK team, web wallet team | wallet/prover/query contract conformance |
 | JSON Schema | `docs/schemas/clairveil-js-wallet-contract.schema.json` | JS SDK team, web wallet team | machine-readable fixture shape validation |
 | Prover service | `cmd/clairveil-proverd`, `x/privacy/client/sdk/proverservice`, `x/privacy/client/sdk/provertransport` | Prover operations, JS SDK team | local/remote companion prover contract |
+| Canonical prover APIs | `docs/clairveil-proverd-http-api.md`, `docs/clairveil-proverd-deposit-api.md` | Client, prover operations, security teams | language-neutral common HTTP and deposit route contract |
 | ZK artifact tooling | `cmd/clairveil-setup`, `x/privacy/zk` | Core chain team, prover operations | artifact generation, checksum, preflight |
 | Legacy note debug helper | `cmd/clairveil-verify` | Maintainers only | legacy SHA-256/address-seed, Base64, and raw-JSON compatibility debugging; not a current protocol contract or release acceptance surface |
 | Walkthrough | `docs/clairveil-local-privacy-walkthrough.md` | Integrators | local end-to-end manual verification |
@@ -150,7 +151,7 @@ The JS/TS SDK and web wallet teams confirm:
 9. Implement `privacy-fixed-v1` exactly: 350-byte note plaintext, 392-byte disclosure plaintext, and a 20-byte typed envelope header. Reject raw ciphertext, legacy JSON plaintext, wrong kinds, and trailing bytes without a compatibility fallback.
 10. Keep prepared transfer payload `v5` as the outer prepared-payload version; it is not the note/disclosure encoding version and must not be renamed to `privacy-fixed-v1`.
 11. Resolve asset IDs through `AssetRegistryV1` and persist the full `privacy-scan-v2` cursor. Reject typed scan records with a wrong event type, fixed-envelope kind, digest, key, sentinel, or orphan/non-adjacent output. Use same-root path snapshots and account for the privacy leak and rebuild cap of remote historical-root/path queries.
-12. The external ClairveilJS package is still legacy at this handoff point. Its safe behavior is to fail closed on the new fixed fixtures until a downstream upgrade lands; silently decoding them with the old format is prohibited.
+12. For deposit proving, follow the language-neutral canonical API pair, validate the response commitment/proof before `MsgDeposit` assembly, and keep encrypted notes and transaction metadata outside the prover request.
 13. The batch integration now provides the public Go `MsgBatchTransfer` SDK, wallet scanner/decrypt path, one-proof payroll workflow, and batch CLI/tutorial that the batch chain core intentionally omitted. Port those frozen reference contracts explicitly into downstream JS/TS and web products; do not treat the legacy multi-message `transfer-batch` flow as an implicit compatibility layer or confuse the Go reference with completed production deployment.
 
 ## 6. Prover Operations Team Acceptance Criteria
@@ -165,6 +166,7 @@ The prover operations team confirms:
 6. Use the role-aware artifact registry: validators load required VKs after exact consensus identity verification, while provers lazily load selected R1CS/PK pairs.
 7. Enforce per-circuit admission defaults of one in-flight and four queued jobs and a positive 8 MiB body limit. A zero body limit is invalid. Keep automatic prover failover disabled, and use process isolation if hard cancellation or memory containment is required.
 8. The reference batch prover exposes bounded `POST /v1/proofs/batch-transfer` and advertises `batch-joinsplit-16x32-v1`. Preserve per-circuit admission, positive body limits, payload binding, TLS/auth, privacy, and artifact-role boundaries; do not mount an ad-hoc handler.
+9. Admit deposit only when its artifact is ready and preserve the common `Content-Type`, `405 Allow`, `no-store`, and `400`-versus-`500` policy for all proof routes.
 
 ## 7. Known Risk And Accepted Exceptions
 
@@ -180,7 +182,7 @@ Release recipients must know the following risks.
 | Remote prover metadata exposure | A remote prover can see proof input metadata | Include the remote prover as a trusted component in user privacy UX and the deployment threat model. |
 | ZK artifact provenance | The repository provides checksum/preflight tooling, but ceremony and release-signing policy are downstream responsibilities | Production releases should define artifact signing, provenance, and reproducibility policy separately. |
 | Batch chain-core/client-integration boundary | Circuit, `MsgBatchTransfer`, keeper, deterministic gas, typed scan/minimal event, genesis, and the batch reference Go SDK/prover/scanner/payroll/CLI surfaces are implemented; external JS/web product delivery, formal setup, and production artifact delivery are not | Integrate against the frozen proto/identity and Go reference contracts, while tracking downstream product work and production artifact release as separate production gates. |
-| External ClairveilJS compatibility | The external package is still based on the legacy note/disclosure representation and does not yet implement `privacy-fixed-v1` | Fail closed on the new fixtures, upgrade downstream explicitly, and never add a compatibility fallback. Prepared transfer payload `v5` remains valid and is a separate outer version. |
+| Canonical deposit API acceptance | `POST /v1/prover/deposit` and the common proof-route status/header policy are release inputs | Verify the language-neutral fixture and document the `400 proof_failed` to `500 proof_failed` correction for validated existing proof requests; success envelope and error-body versions remain unchanged. |
 | Prover cancellation boundary | Canceling a request does not preempt an already running in-process solver; its permit and memory may remain in use until return | Bound admission to `1`/`4` with positive `8 MiB` requests and use supervised worker-process isolation for hard cancellation or OOM containment. |
 | Historical path rebuild boundary | Current-root paths use incremental nodes. Public non-current queries require complete root/count/height metadata, admit at most 1,024 leaves and two concurrent rebuilds per keeper, and otherwise return `ResourceExhausted`; offline recovery/export retains `MaxMerkleRebuildLeaves` (1,048,576). | Above the online bound, spend against the current root or use a trusted local historical-path index. Preserve the complete snapshot metadata index so large-tree genesis export stays available. |
 

@@ -357,6 +357,10 @@ query privacy reserve uclair
 
 ## 9. Downstream 테스트 순서
 
+### 9.1 Deposit proof 획득 경계
+
+공식 remote acquisition route는 [deposit API](clairveil-proverd-deposit-api-kr.md)와 공통 [HTTP API](clairveil-proverd-http-api-kr.md)가 정의하는 `POST /v1/prover/deposit`입니다. Downstream client는 local proving 또는 이 route 호출을 선택할 수 있지만 encrypted note를 계산·보관하고 `MsgDeposit`을 조립·서명·전파해야 합니다. Prover는 versioned witness를 검증하고 proof를 반환할 뿐 denom을 선택하거나 transaction metadata를 만들거나 keeper verification을 대체하지 않습니다. Ad-hoc handler 대신 auth/admission/no-store 공통 경계를 보존합니다.
+
 처음부터 target chain의 모든 기능과 섞지 말고 아래 순서로 올리는 것을 권장합니다.
 
 1. Clairveil repo에서 `make privacy-e2e-smoke`가 통과하는지 확인합니다.

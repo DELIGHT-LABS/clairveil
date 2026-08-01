@@ -139,28 +139,6 @@ interface SendCapableReferenceFlow {
   };
 }
 
-interface ProverHTTPAPIContract {
-  schema_version: string;
-  content_type: string;
-  transfer_route: {
-    method: string;
-    path: string;
-    request_version: string;
-    response_version: string;
-  };
-  withdraw_route: {
-    method: string;
-    path: string;
-    request_version: string;
-    response_version: string;
-  };
-  error_response: {
-    version: string;
-    codes: string[];
-    retryable_codes: string[];
-  };
-}
-
 interface RelayWithdrawContract {
   schema_version: string;
   handoff_version: string;
@@ -519,7 +497,6 @@ function validateFixtureSchemas(): void {
   const fixtureSchemas: Array<[string, string]> = [
     ["privacy_browser_signer_provider_contract.json", "browserSignerProviderContract"],
     ["privacy_prover_example_bundle.json", "proverExampleBundle"],
-    ["privacy_prover_http_api_contract.json", "proverHttpApiContract"],
     ["privacy_note_reservation_contract.json", "noteReservationContract"],
     ["privacy_relay_withdraw_contract.json", "relayWithdrawContract"],
     ["privacy_send_capable_reference_flow.json", "sendCapableReferenceFlow"],
@@ -859,38 +836,6 @@ function validateRelayWithdrawContract(
   assertEqual(expectedMsg.expires_at_unix, payload.expires_at_unix, "relay-withdraw MsgWithdraw expires_at_unix");
 }
 
-function validateProverHTTPAPIContract(contract: ProverHTTPAPIContract): void {
-  assertEqual(contract.schema_version, "v2", "prover HTTP schema_version");
-  assertEqual(contract.content_type, "application/json", "prover HTTP content_type");
-  assertEqual(contract.transfer_route.method, "POST", "transfer HTTP method");
-  assertEqual(contract.transfer_route.path, "/v1/prover/transfer", "transfer HTTP path");
-  assertEqual(contract.transfer_route.request_version, "v2", "transfer HTTP request version");
-  assertEqual(contract.transfer_route.response_version, "v2", "transfer HTTP response version");
-  assertEqual(contract.withdraw_route.method, "POST", "withdraw HTTP method");
-  assertEqual(contract.withdraw_route.path, "/v1/prover/withdraw", "withdraw HTTP path");
-  assertEqual(contract.withdraw_route.request_version, "v2", "withdraw HTTP request version");
-  assertEqual(contract.withdraw_route.response_version, "v2", "withdraw HTTP response version");
-
-  const requiredErrorCodes = [
-    "invalid_request",
-    "method_not_allowed",
-    "not_found",
-    "unauthorized",
-    "unavailable",
-    "proof_failed",
-    "busy",
-  ];
-  assertEqual(contract.error_response.version, "v1", "prover HTTP error version");
-  assertEqual(contract.error_response.codes.length, requiredErrorCodes.length, "prover HTTP error code count");
-  for (const code of requiredErrorCodes) {
-    if (!contract.error_response.codes.includes(code)) {
-      throw new Error(`prover HTTP error codes: missing ${code}`);
-    }
-  }
-  assertEqual(contract.error_response.retryable_codes.length, 1, "prover HTTP retryable code count");
-  assertEqual(contract.error_response.retryable_codes[0], "busy", "prover HTTP retryable busy code");
-}
-
 function validateNoteReservationContract(contract: NoteReservationContract): void {
   assertEqual(contract.version, 1, "note reservation version");
   assertStringArrayEqual(
@@ -1009,7 +954,6 @@ function validateWalletFixtures(): void {
 function main(): void {
   const proverBundle = readFixture<ProverExampleBundle>("privacy_prover_example_bundle.json");
   const sendFlow = readFixture<SendCapableReferenceFlow>("privacy_send_capable_reference_flow.json");
-  const proverHTTPContract = readFixture<ProverHTTPAPIContract>("privacy_prover_http_api_contract.json");
   const relayWithdrawContract = readFixture<RelayWithdrawContract>("privacy_relay_withdraw_contract.json");
   const noteReservationContract = readFixture<NoteReservationContract>("privacy_note_reservation_contract.json");
 
@@ -1018,7 +962,6 @@ function main(): void {
   validateProverExampleBundle(proverBundle);
   validateSendCapableReferenceFlow(sendFlow, proverBundle);
   validateRelayWithdrawContract(relayWithdrawContract, sendFlow);
-  validateProverHTTPAPIContract(proverHTTPContract);
   validateNoteReservationContract(noteReservationContract);
   validateWalletFixtures();
 

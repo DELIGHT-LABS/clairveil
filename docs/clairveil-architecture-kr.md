@@ -83,6 +83,10 @@ Prepared prover request에는 private note witness가 들어 있습니다. Same-
 
 ## 6. Client와 audit 경계
 
+### 6.1 Deposit proving 경계
+
+Deposit proving은 local 또는 `POST /v1/prover/deposit`을 사용합니다. Client가 note, commitment, encrypted note를 구성하고 remote prover는 versioned circuit witness만 받아 commitment를 재계산하여 commitment-bound proof를 반환합니다. Client는 response를 검증한 뒤 `MsgDeposit`을 조립·서명합니다. Envelope와 nested payload/proof version은 분리됩니다. Transport policy는 [general HTTP API](clairveil-proverd-http-api-kr.md), route wire contract는 [deposit API](clairveil-proverd-deposit-api-kr.md)가 소유합니다.
+
 Wallet은 typed chain data를 scan하고 note decrypt를 시도해 ownership을 복구합니다. `view_tags`는 untrusted performance hint일 뿐입니다. Client는 cursor 저장, rescan, prepared payload/note cache 암호화가 필요하고 nullifier query를 privacy-sensitive하게 다뤄야 합니다.
 
 모든 transfer에는 mandatory audit disclosure가 있습니다. User-selected disclosure와 sender self-view disclosure는 서로 다른 envelope입니다. On-chain validation은 frozen digest/envelope contract를 검증하지만 audit private key custody와 authorization은 외부 운영 책임입니다.

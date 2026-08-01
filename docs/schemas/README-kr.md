@@ -1,22 +1,32 @@
 # Clairveil JSON Schema
 
-이 디렉터리는 Clairveil JS/TS SDK와 웹월렛 연동을 위한 machine-readable contract를 담습니다.
+이 디렉터리는 Clairveil wallet-facing 연동과 language-neutral prover HTTP API를 위한 machine-readable contract를 담습니다.
 
 English version: [README.md](README.md)
 
 ## Schema
 
 - `clairveil-js-wallet-contract.schema.json`: `x/privacy/client/sdk/conformance/testdata` 아래 wallet-facing conformance fixture의 JSON Schema입니다.
+- `clairveil-proverd-http-api.schema.json`: canonical prover HTTP route inventory, envelope, error, common HTTP policy, general/deposit conformance fixture를 위한 Draft 2020-12 schema입니다.
 
 ## 사용 방법
 
-외부 SDK는 live network integration을 시작하기 전에 CI에서 fixture를 검증하는 편이 좋습니다.
+Wallet-facing fixture는 reference validator로 검증합니다.
 
 ```bash
 npm --prefix examples/js-sdk-fixture-validator run validate
 ```
 
 repo의 예제 validator는 실행 부담을 줄이기 위해 dependency-free subset validator를 사용합니다. Production JS/TS SDK는 같은 schema 파일을 AJV 같은 full JSON Schema validator로 검증해도 됩니다.
+
+Canonical prover HTTP 및 deposit fixture는 repository가 소유하는 schema와 Go conformance test로 검증합니다.
+
+```bash
+make docs-check
+go test ./x/privacy/client/sdk/conformance -count=1
+```
+
+`make docs-check`는 Draft 2020-12 schema를 두 fixture에 적용하고, Go test는 fixture 값을 production constant와 semantic validation에 bind합니다. Prover schema는 HTTP route, envelope, payload/proof, error version layer를 분리합니다. Wallet package shape에 의존하지 않으며 root `oneOf`가 `privacy_prover_http_api_contract.json`과 `privacy_deposit_prover_contract.json`을 검증합니다.
 
 ## Schema가 다루는 것
 
@@ -26,7 +36,6 @@ repo의 예제 validator는 실행 부담을 줄이기 위해 dependency-free su
 - prepared withdraw prover payload shape
 - final prepared withdraw payload shape
 - relay withdraw handoff request와 relayer `MsgWithdraw` mapping shape
-- prover HTTP route, request, response, error contract shape
 - note reservation status, transition, active uniqueness, lease precondition, lookup-key vector, operation success evidence contract shape
 - `scan_events` request/response fixture shape, cursor field, projection output, `scan_format_version`, `view_tag_version`
 - batch `check_nullifiers` request/response fixture shape
@@ -52,4 +61,4 @@ Current-root path query는 incremental node를 사용하므로 online historical
 
 `BatchJoinSplit16x32`, `MsgBatchTransfer`, keeper handler, typed scan state, artifact descriptor는 production core contract입니다. `batch_feasibility.proto`는 measurement-only로 남습니다. batch chain core는 public SDK나 remote prover route를 추가하지 않았지만 batch reference integration이 reference Go SDK/CLI와 `POST /v1/proofs/batch-transfer`를 후속 추가했습니다. External JS/web product delivery는 계속 downstream 작업입니다. 정정된 full-shape reference gate는 constraint `1,111,837`, peak RSS `3,339,862,016` bytes, max-shape warm proving `55.892 ms/output`, native 2x2 대비 per-output `2.789x` 개선을 측정했습니다. Artifact consumer는 `privacy-note-v1`을 pin해야 합니다. Validator는 exact consensus identity와 required VK를 사용하고 prover는 선택한 R1CS/PK pair를 lazy load합니다. Reference prover admission default는 circuit/service boundary별 in-flight 1개, queued 4개, positive 8 MiB request limit입니다.
 
-Prepared transfer payload `v5`는 현재 outer prepared-payload version으로 그대로 유효합니다. Inner note/disclosure/envelope encoding `privacy-fixed-v1`과 별개이며 어느 version도 다른 version을 대체하지 않습니다. Compatibility fallback은 금지됩니다. External ClairveilJS package는 이 handoff 시점에 아직 legacy이므로 upgrade 전까지 새 fixed fixture를 fail closed로 거부해야 합니다.
+Prepared transfer payload `v5`는 현재 outer prepared-payload version으로 그대로 유효합니다. Inner note/disclosure/envelope encoding `privacy-fixed-v1`과 별개이며 어느 version도 다른 version을 대체하지 않습니다. Compatibility fallback은 금지됩니다.

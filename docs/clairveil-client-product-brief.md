@@ -142,6 +142,10 @@ Successful decryption is different from successful verification. A payload can d
 
 ## 3. Product Scope Boundaries
 
+### 3.1 Deposit Proof Provider Decision
+
+The product may obtain a deposit proof locally or from `POST /v1/prover/deposit`. A remote provider sees the deposit circuit witness and is therefore a privacy-sensitive trusted component; it must be disclosed in product trust UX. The client keeps encrypted note creation and `MsgDeposit` broadcast responsibility, validates the returned commitment/proof, and does not send creator, denom, memo, seed, or chain ID. Contract details belong to the [general HTTP API](clairveil-proverd-http-api.md) and [deposit API](clairveil-proverd-deposit-api.md).
+
 The Clairveil client documents provide:
 
 - client feature scope

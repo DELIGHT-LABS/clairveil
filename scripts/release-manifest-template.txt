@@ -12,8 +12,8 @@ Contents:
 - proto/clairveil/privacy/v1
 - getting-started, architecture, client, JS/web wallet, and scan optimization handoff documents
 - current BatchJoinSplit16x32, bulk product handoff, reference payroll, and readiness materials
-- JS/web wallet JSON schemas
-- wallet/prover conformance fixtures
+- language-neutral prover HTTP API schema and separate wallet-facing JSON schemas
+- general prover HTTP, deposit prover, and wallet conformance fixtures
 - JS audit disclosure key, fixture validator, prover HTTP client, and reference payroll examples; browser DApp excluded
 - prover Dockerfile and compose sample
 - release pack generation and verification scripts

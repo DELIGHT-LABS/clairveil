@@ -254,6 +254,7 @@ clairveild tx privacy withdraw 7uclair --from alice --keyring-backend test
 | [CLI reference](docs/clairveil-cli-reference-kr.md)                                | `clairveild tx/query privacy` 명령별 사용법                       |
 | [Testing guide](docs/clairveil-testing-guide-kr.md)                                | unit, e2e, conformance, release 검증 방법                         |
 | [Operations guide](docs/clairveil-operations-guide-kr.md)                          | node/prover/artifact/Merkle/audit 운영 기준                       |
+| [Proverd HTTP API](docs/clairveil-proverd-http-api-kr.md)                          | canonical `clairveil-proverd` proof-route API reference           |
 | [Maintainer instructions](docs/clairveil-maintainer-instructions-kr.md)            | 문서, 회로, proto, fixture, release 변경 시 유지보수 규칙         |
 | [Downstream integration](docs/clairveil-downstream-cosmos-integration-guide-kr.md) | Cosmos SDK app에 `x/privacy`를 붙이는 방법                        |
 | [Client product brief](docs/clairveil-client-product-brief-kr.md)                  | wallet/app client의 제품 기능 범위                                |

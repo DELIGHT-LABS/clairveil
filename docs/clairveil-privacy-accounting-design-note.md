@@ -105,7 +105,7 @@ Complete. `SpendCircuit` and `JoinSplitCircuit` use gnark standard `eddsa.Verify
 
 ### Phase 5: Client/Prover Contract Update
 
-Complete. Transfer/withdraw prover payload contracts keep version/hash verification and reflect the new circuit set id. Deposit currently has no separate HTTP prover endpoint; the CLI/SDK generates Groth16 proof bytes and puts them in `MsgDeposit.proof`. If downstream JS/TS clients want remote deposit proving, add a separate deposit prover endpoint or a local/WASM prover adapter.
+Complete. The canonical remote deposit path is `POST /v1/prover/deposit`; it accepts only the versioned deposit witness required by the circuit, recomputes the commitment before proving, and returns a commitment-bound proof. The client still owns encrypted-note construction and `MsgDeposit` assembly/broadcast. Use the [general prover HTTP API](clairveil-proverd-http-api.md) and [deposit API](clairveil-proverd-deposit-api.md) rather than deriving a transport contract from a CLI or SDK implementation.
 
 ### Phase 6: Artifact Rotation
 

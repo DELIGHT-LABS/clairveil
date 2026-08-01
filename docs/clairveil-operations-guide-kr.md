@@ -125,6 +125,10 @@ Remote prover는 privacy-sensitive trusted component입니다.
 
 ## 6. Audit key 운영
 
+### 6.1 Canonical deposit prover 운영
+
+Operator는 `POST /v1/prover/deposit`을 bounded service handler로만 노출하고 deposit artifact를 readiness에 포함합니다. Request는 선택한 prover에 circuit witness(receiver public key, amount, asset ID, randomness, commitment)를 공개하지만 encrypted note나 transaction metadata는 공개하지 않으며 request/response body나 secret을 log에 남기지 않습니다. [prover HTTP policy](clairveil-proverd-http-api-kr.md)의 bearer auth, positive body/gzip limit, circuit별 admission, `Content-Type: application/json`, `no-store`, `405`의 `Allow: POST`를 적용합니다. Invalid media/request input은 `415`/`400`, post-validation proof failure는 `500`입니다. [deposit API](clairveil-proverd-deposit-api-kr.md)를 참조합니다.
+
 모든 transfer에는 mandatory audit disclosure가 포함됩니다. 따라서 audit master private key는 모든 shielded transfer의 from/to/amount/asset 정보를 볼 수 있는 강한 권한입니다.
 
 Production에서는 아래가 필요합니다.

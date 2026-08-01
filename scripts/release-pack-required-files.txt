@@ -23,6 +23,7 @@ docs/README.md
 docs/README-kr.md
 plans/README.md
 plans/README-kr.md
+plans/clairveil-proverd-deposit-api-implementation-plan-kr.md
 plans/clairveil-deposit-funder-implementation-plan-kr.md
 plans/clairveil-deposit-funder-separation-handoff-kr.md
 plans/clairveil-batch-joinsplit-16x32-roadmap-kr.md
@@ -91,6 +92,10 @@ plans/clairveil-scan-optimization-implementation-plan.md
 plans/clairveil-scan-optimization-implementation-plan-kr.md
 docs/clairveil-proverd-remote-production-profile.md
 docs/clairveil-proverd-remote-production-profile-kr.md
+docs/clairveil-proverd-http-api.md
+docs/clairveil-proverd-http-api-kr.md
+docs/clairveil-proverd-deposit-api.md
+docs/clairveil-proverd-deposit-api-kr.md
 docs/clairveil-merkle-restore-sop.md
 docs/clairveil-merkle-restore-sop-kr.md
 docs/clairveil-release-versioning-policy.md
@@ -106,12 +111,15 @@ docs/clairveil-local-privacy-walkthrough-kr.md
 plans/clairveild-reference-app-plan.md
 plans/clairveild-reference-app-plan-kr.md
 docs/schemas/clairveil-js-wallet-contract.schema.json
+docs/schemas/clairveil-proverd-http-api.schema.json
 docs/schemas/README.md
 docs/schemas/README-kr.md
 plans/clairveil-public-benchmark-plan-kr.md
 plans/clairveil-public-capacity-benchmark-followup-plan-kr.md
 plans/clairveil-public-capacity-claim-execution-plan-kr.md
 x/privacy/client/sdk/conformance/testdata/privacy_prover_example_bundle.json
+x/privacy/client/sdk/conformance/testdata/privacy_prover_http_api_contract.json
+x/privacy/client/sdk/conformance/testdata/privacy_deposit_prover_contract.json
 x/privacy/client/sdk/conformance/testdata/privacy_note_reservation_contract.json
 x/privacy/client/sdk/conformance/testdata/privacy_relay_withdraw_contract.json
 x/privacy/client/sdk/conformance/testdata/privacy_wallet_golden_vectors.json

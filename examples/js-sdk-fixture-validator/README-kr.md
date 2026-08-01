@@ -8,8 +8,8 @@
 - withdraw prover payload hash가 Go SDK hash contract와 일치해야 합니다.
 - 최종 relayed withdraw payload hash가 Go SDK hash contract와 일치해야 합니다.
 - relay withdraw handoff에서 relayer address가 `MsgWithdraw.creator`가 되고 user recipient는 payload의 `recipient`로 유지되어야 합니다.
-- companion prover request/response version과 path가 안정적으로 유지되어야 합니다.
 - wallet-facing fixture가 `docs/schemas/clairveil-js-wallet-contract.schema.json`와 일치해야 합니다.
+- prover HTTP fixture는 이 wallet validator가 아니라 `docs/schemas/clairveil-proverd-http-api.schema.json`가 소유하는 language-neutral contract입니다.
 
 ## 실행
 
@@ -37,5 +37,10 @@ Clairveil local fixture contract를 위한 작은 JSON Schema subset validator�
 - fixture shape를 `docs/schemas/clairveil-js-wallet-contract.schema.json`로 검증합니다.
 - relay withdraw handoff fixture로 final payload에서 relayer 제출 메시지로 변환되는 필드를 검증합니다.
 - generated proto/type이 `clairveil.privacy.v1`과 일치하는지 검증합니다.
-- prover transport request/response version을 fixture 값에 고정합니다.
 - wallet-facing fixture에 `clair1...` 또는 `clairs1...`가 아닌 address prefix가 있으면 빠르게 실패합니다.
+
+Canonical prover HTTP 및 deposit fixture는 다음 Go conformance test로 검증합니다.
+
+```bash
+go test ./x/privacy/client/sdk/conformance -count=1
+```

@@ -127,6 +127,10 @@ Use [clairveil-proverd-remote-production-profile.md](clairveil-proverd-remote-pr
 
 ## 6. Audit Key Operations
 
+### 6.1 Canonical Deposit Prover Operations
+
+Operators expose `POST /v1/prover/deposit` only through the bounded service handler and include its artifact in readiness. The request discloses circuit witness data (receiver public keys, amount, asset ID, randomness, commitment) to the selected prover, not the encrypted note or transaction metadata; retain neither request/response bodies nor secrets in logs. Apply the shared [prover HTTP policy](clairveil-proverd-http-api.md): bearer auth, positive body/gzip limits, per-circuit admission, `Content-Type: application/json`, `no-store`, and `Allow: POST` on `405`. Invalid media/request inputs are `415`/`400`; post-validation proof failures are `500`. See the [deposit API](clairveil-proverd-deposit-api.md).
+
 Every transfer includes mandatory audit disclosure. Therefore the audit master private key can read from/to/amount/asset information for all shielded transfers.
 
 Production needs:

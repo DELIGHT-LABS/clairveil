@@ -40,6 +40,13 @@ Run `make docs-check` while editing. A release tag must use exact SemVer, be ann
 | Cosmos app integration | [Downstream integration](clairveil-downstream-cosmos-integration-guide.md) | [Downstream integration](clairveil-downstream-cosmos-integration-guide-kr.md) |
 | Test layers and gates | [Testing guide](clairveil-testing-guide.md) | [Testing guide](clairveil-testing-guide-kr.md) |
 
+## Prover HTTP API
+
+| Subject | English | 한국어 |
+| --- | --- | --- |
+| Common proof-route contract | [Proverd HTTP API](clairveil-proverd-http-api.md) | [Proverd HTTP API](clairveil-proverd-http-api-kr.md) |
+| Deposit proof route | [Proverd deposit API](clairveil-proverd-deposit-api.md) | [Proverd deposit API](clairveil-proverd-deposit-api-kr.md) |
+
 ## Batch Protocol And Evidence
 
 | Subject | English | 한국어 |

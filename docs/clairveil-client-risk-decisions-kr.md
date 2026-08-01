@@ -107,6 +107,10 @@ Client와 prover는 아래 값을 기록하면 안 됩니다.
 
 ## 8. Product Risk Decisions
 
+### 8.1 Remote deposit witness 결정
+
+`POST /v1/prover/deposit`은 receiver public key, amount, asset ID, randomness, commitment를 선택한 remote prover에 공개합니다. Encrypted note, creator, denom, memo, seed, chain ID는 필요하지 않습니다. Request와 proof response를 logging/telemetry 금지 콘텐츠로 분류하고 기본 endpoint는 하나로 유지하며, 다른 operator에게 disclosure를 확대하기 전 explicit user/product 승인을 받습니다. Exact boundary는 [deposit API](clairveil-proverd-deposit-api-kr.md), shared transport control은 [general HTTP API](clairveil-proverd-http-api-kr.md)를 따릅니다.
+
 Release 전에 제품/보안/운영팀이 최소 아래 질문에 답해야 합니다.
 
 - 사용자는 remote prover를 신뢰해야 하는가?

@@ -6,6 +6,15 @@ This project follows [the release versioning policy](docs/clairveil-release-vers
 
 ## Unreleased
 
+### Added
+
+- Added the language-neutral, versioned `POST /v1/prover/deposit` API, its canonical general/deposit HTTP documentation, dedicated JSON Schema, and Go conformance fixtures.
+
+### Changed
+
+- Enforced `Content-Type` consistently on all proof routes and corrected post-validation `proof_failed` responses from HTTP `400` to `500`. Downstream clients that classified those failures as request errors must update that classification.
+- The deposit API and common HTTP-policy correction do not change circuit artifacts, chain transaction wire contracts, success request/response versions, or `ErrorResponseVersion=v1`.
+
 ## v0.3.1 - 2026-07-21
 
 ### Fixed

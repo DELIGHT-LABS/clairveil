@@ -8,8 +8,8 @@ This example is a tiny reference consumer for JS/TS SDK developers. It does not 
 - Withdraw prover payload hashes match the Go SDK hash contract.
 - Final relayed withdraw payload hashes match the Go SDK hash contract.
 - Relay withdraw handoff keeps the relayer address as `MsgWithdraw.creator` and the user target as the payload `recipient`.
-- Companion prover request/response versions and paths are stable.
 - Wallet-facing fixtures match `docs/schemas/clairveil-js-wallet-contract.schema.json`.
+- Prover HTTP fixtures are language-neutral contracts owned by `docs/schemas/clairveil-proverd-http-api.schema.json`, not by this wallet validator.
 
 ## Run
 
@@ -37,5 +37,10 @@ This example is intentionally narrow. A production JS SDK should not copy the fi
 - Validate fixture shape against `docs/schemas/clairveil-js-wallet-contract.schema.json`.
 - Validate the relay withdraw handoff fixture from final payload fields into the relayer-submitted message.
 - Verify generated proto/types against `clairveil.privacy.v1`.
-- Keep prover transport request/response versions pinned to fixture values.
 - Fail fast if wallet-facing fixtures contain an address prefix other than `clair1...` or `clairs1...`.
+
+Validate the canonical prover HTTP and deposit fixtures with their Go conformance test instead:
+
+```bash
+go test ./x/privacy/client/sdk/conformance -count=1
+```

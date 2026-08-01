@@ -80,7 +80,10 @@ Companion prover HTTP paths:
 POST /v1/prover/transfer
 POST /v1/prover/withdraw
 POST /v1/proofs/batch-transfer
+POST /v1/prover/deposit
 ```
+
+`POST /v1/prover/deposit` has independently versioned envelope/payload/proof objects. Validate its response commitment against the submitted canonical witness before assembling `MsgDeposit`; do not send encrypted note, creator, denom, memo, seed, or chain ID to the prover. The authoritative request/response and encoding rules are in the [deposit API](clairveil-proverd-deposit-api.md), while the shared HTTP policy is in the [general prover HTTP API](clairveil-proverd-http-api.md).
 
 The batch route is the one-proof reference surface provided by the batch integration. It uses a separate path namespace from the legacy transfer/withdraw prover routes and requires the batch prepared-payload/proof contract; clients must not derive one route from the other by string substitution.
 
@@ -109,6 +112,8 @@ The client must validate:
 Current breaking versions are transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload and proof/request/response `v2`, batch payload/proof/request/response `batch-transfer-payload-v1`/`batch-transfer-proof-v1`/`v1`/`v1`, relay handoff/schema `v2`, and disclosure plaintext/query `privacy-fixed-v1`. Reject and regenerate legacy payloads.
 
 When using a remote prover, request/response bodies are privacy-sensitive data.
+
+For every proof route, send `Content-Type: application/json`; a missing or unsupported type is `415`, request decode/version/semantic errors are `400`, and a failure after prover invocation is `500`. Expect `Cache-Control: no-store` on all success/error responses and `Allow: POST` on `405`; do not cache, reinterpret, or retry malformed responses as a new request.
 
 Prover request failover must not behave like ordinary read-query failover. A prepared payload still contains private note witness even though its outputs are immutable. If prover A fails, sending it to B or C expands the privacy boundary. The safe default is a single endpoint with no failover; retry may target the same endpoint. Multi-prover failover requires explicit user/product-policy opt-in and a warning naming the additional endpoints.
 

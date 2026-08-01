@@ -63,6 +63,10 @@ English version: [clairveil-client-ux-flows.md](clairveil-client-ux-flows.md)
 - tx는 성공했지만 note scan이 아직 끝나지 않은 상태를 별도로 표시합니다.
 - deposit tx 실패와 note recovery 실패를 구분합니다.
 - local note cache가 최신이 아니면 balance를 확정값처럼 보여주지 않습니다.
+- Remote proving을 선택하면 broadcast와 분리된 proving progress를 보이고, same-endpoint timeout retry를 허용하되 다른 endpoint는 명시적 privacy opt-in이 필요함을 설명합니다.
+- Media/request validation 실패와 prover 실패(`415`/`400` 대 `500`)를 구분하고, proof response는 모두 `no-store`이므로 cache하지 않습니다.
+
+Exact deposit request/response는 [deposit API](clairveil-proverd-deposit-api-kr.md), 공통 transport 동작은 [general HTTP API](clairveil-proverd-http-api-kr.md)를 따르며 이 UX flow에는 복사하지 않습니다.
 
 ## 4. Shielded Transfer
 

@@ -142,6 +142,10 @@ Client는 public, recipient-encrypted, sender self-view, audit disclosure payloa
 
 ## 3. Product Scope Boundaries
 
+### 3.1 Deposit proof provider 결정
+
+Product는 deposit proof를 local 또는 `POST /v1/prover/deposit`에서 얻을 수 있습니다. Remote provider는 deposit circuit witness를 보므로 privacy-sensitive trusted component이며 product trust UX에 고지해야 합니다. Client는 encrypted note 생성과 `MsgDeposit` broadcast 책임을 유지하고 반환된 commitment/proof를 검증하며 creator, denom, memo, seed, chain ID를 보내지 않습니다. Contract detail은 [general HTTP API](clairveil-proverd-http-api-kr.md)와 [deposit API](clairveil-proverd-deposit-api-kr.md)에 둡니다.
+
 Clairveil client 문서는 아래를 제공합니다.
 
 - client 기능 범위

@@ -201,22 +201,9 @@ last_scan_sequence
 
 ## 7. Deposit 구현
 
-Deposit은 transparent balance를 privacy module account로 보내고 leaf 1개를 추가합니다.
+이 legacy filename은 발견을 위한 handoff이며 prover specification이 아닙니다. Language-neutral 계약은 [general prover HTTP API](clairveil-proverd-http-api-kr.md)와 [deposit API](clairveil-proverd-deposit-api-kr.md)를 사용합니다.
 
-CLI 대응 command는 아래입니다.
-
-```bash
-clairveild tx privacy deposit 10uclair --from alice --keyring-backend test
-```
-
-JS SDK는 아래를 수행해야 합니다.
-
-- recipient wallet의 shielded identity에서 note를 만듭니다.
-- note commitment를 계산합니다.
-- encrypted note를 생성합니다.
-- `DepositCircuit` proof를 local/WASM prover로 생성하거나 trusted prover adapter에서 받아옵니다.
-- `MsgDeposit`을 만들어 일반 Cosmos tx로 sign/broadcast합니다.
-- tx result에서 commitment와 encrypted note event를 확인합니다.
+Client는 note/commitment와 encrypted note를 만들고, local 또는 canonical deposit route에서 proof를 얻어 response commitment/proof를 검증한 다음 `MsgDeposit`을 조립·전파합니다. Remote deposit request에는 회로 witness만 들어가며 encrypted note, creator, denom, memo, seed, chain ID는 client/chain 쪽에 남습니다. 특정 package/provider API, release 상태, migration 절차를 source of truth로 취급하지 않습니다.
 
 ## 8. Transfer 구현
 
@@ -412,56 +399,7 @@ JS SDK가 사용자에게 분명히 보여줘야 하는 제약은 아래입니�
 
 ## 11. Prover 연결 모델
 
-JS SDK는 proving을 직접 구현하기보다 prover adapter interface를 먼저 잡는 것이 좋습니다.
-
-```text
-Browser SDK
-  -> build prepared payload
-  -> ProverAdapter.proveTransfer / proveWithdraw
-  -> proof response
-  -> build MsgTransfer / MsgWithdraw
-  -> sign and broadcast with the existing Cosmos/downstream wallet stack
-```
-
-현재 Go-side prover HTTP contract는 아래입니다.
-
-```text
-POST /v1/prover/transfer
-POST /v1/prover/withdraw
-Content-Type: application/json
-request_version: v2
-response_version: v2
-```
-
-error code는 아래입니다.
-
-```text
-invalid_request
-method_not_allowed
-not_found
-unauthorized
-unavailable
-proof_failed
-```
-
-관련 fixture는 아래입니다.
-
-```text
-x/privacy/client/sdk/conformance/testdata/privacy_prover_http_api_contract.json
-x/privacy/client/sdk/conformance/testdata/privacy_prover_example_bundle.json
-x/privacy/client/sdk/conformance/testdata/privacy_send_capable_reference_flow.json
-```
-
-Prover가 local daemon이든 remote sidecar든 JS SDK 입장에서는 같은 adapter로 보이게 해야 합니다. 브라우저에서 직접 proving을 하는 wasm backend를 나중에 붙이더라도 같은 interface 뒤에 넣는 것이 좋습니다.
-
-Final output을 더는 바꿀 수 없더라도 prepared prover payload는 authority-equivalent privacy-sensitive witness data입니다. 불필요하게 log/persist하지 않습니다. Prover pool은 기본 single endpoint/no automatic failover여야 합니다. 같은 witness를 다른 endpoint로 보내는 것은 추가 privacy boundary를 명시한 user/product-policy opt-in 후에만 허용하고 retry는 같은 endpoint에 할 수 있습니다.
-
-Remote prover를 붙일 때는 request timeout과 response validation을 client boundary에서 강제해야 합니다. 예제와 운영 profile은 아래에 있습니다.
-
-```text
-examples/js-sdk-prover-http-client
-docs/clairveil-proverd-remote-production-profile-kr.md
-```
+Transport-neutral prover adapter를 유지합니다. HTTP 동작·route·versioning·error·공통 header는 [general prover HTTP API](clairveil-proverd-http-api-kr.md), deposit witness/response 처리는 [deposit API](clairveil-proverd-deposit-api-kr.md)만을 따릅니다. Finite timeout과 strict response validation을 적용하고 witness body를 log/persist하지 않으며, 같은 witness를 다른 endpoint에 보내기 전에는 명시적 user/product opt-in을 요구합니다.
 
 ## 12. JS SDK 구현 단위
 

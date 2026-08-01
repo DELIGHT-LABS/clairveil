@@ -108,14 +108,13 @@ setup_ms
 
 대상 endpoint:
 
+- `POST /v1/prover/deposit`
 - `POST /v1/prover/transfer`
 - `POST /v1/prover/withdraw`
 
-Deposit은 현재 별도 HTTP prover endpoint가 없습니다. 공개 벤치마크에서 deposit remote proving까지 비교하려면 다음 중 하나를 먼저 정해야 합니다.
+> 2026-08-01 현재 상태: 이 계획을 처음 작성할 때는 Deposit HTTP endpoint가 없었으나, 현재 canonical route는 `POST /v1/prover/deposit`입니다. 이 상태 교정은 과거 벤치마크 실행 결과를 소급 변경하지 않습니다.
 
-- deposit proof는 CLI/SDK local proving만 측정합니다.
-- `/v1/prover/deposit` endpoint를 추가한 뒤 같은 방식으로 측정합니다.
-- browser/WASM prover adapter를 별도 범주로 둡니다.
+Deposit HTTP benchmark/load profile 구현과 public capacity claim 생성은 deposit API 구현 범위에 포함되지 않습니다. 향후 실행 시 local proving, canonical HTTP route와 browser/WASM adapter를 서로 다른 측정 범주로 유지합니다.
 
 측정 항목:
 

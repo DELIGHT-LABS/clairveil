@@ -256,6 +256,7 @@ Command purposes, major flags, and output shapes are documented in the [CLI refe
 | [CLI reference](docs/clairveil-cli-reference.md) | Usage of `clairveild tx/query privacy` commands |
 | [Testing guide](docs/clairveil-testing-guide.md) | Unit, e2e, conformance, and release validation |
 | [Operations guide](docs/clairveil-operations-guide.md) | Node, prover, artifact, Merkle, and audit operations baseline |
+| [Proverd HTTP API](docs/clairveil-proverd-http-api.md) | Canonical `clairveil-proverd` proof-route API reference |
 | [Maintainer instructions](docs/clairveil-maintainer-instructions.md) | Maintenance rules for docs, circuits, proto, fixtures, and releases |
 | [Downstream integration](docs/clairveil-downstream-cosmos-integration-guide.md) | How to attach `x/privacy` to a Cosmos SDK app |
 | [Client product brief](docs/clairveil-client-product-brief.md) | Product capability scope for wallet/app clients |

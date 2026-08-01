@@ -80,7 +80,10 @@ Companion prover HTTP paths:
 POST /v1/prover/transfer
 POST /v1/prover/withdraw
 POST /v1/proofs/batch-transfer
+POST /v1/prover/deposit
 ```
+
+`POST /v1/prover/deposit`은 envelope/payload/proof를 독립적으로 versioning합니다. `MsgDeposit`을 조립하기 전에 response commitment가 제출한 canonical witness와 같은지 검증하고, encrypted note, creator, denom, memo, seed, chain ID는 prover로 보내지 않습니다. Authoritative request/response·encoding 규칙은 [deposit API](clairveil-proverd-deposit-api-kr.md), 공통 HTTP 정책은 [general prover HTTP API](clairveil-proverd-http-api-kr.md)를 따릅니다.
 
 Batch route는 batch integration이 제공하는 one-proof reference surface입니다. Legacy transfer/withdraw prover route와 path namespace가 다르고 batch prepared-payload/proof contract를 사용하므로, client가 문자열 치환으로 route를 추론하면 안 됩니다.
 
@@ -109,6 +112,8 @@ Client가 검증해야 할 것:
 현재 breaking version은 transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload와 proof/request/response `v2`, batch payload/proof/request/response `batch-transfer-payload-v1`/`batch-transfer-proof-v1`/`v1`/`v1`, relay handoff/schema `v2`, disclosure plaintext/query `privacy-fixed-v1`입니다. Legacy payload는 거부하고 다시 생성합니다.
 
 Remote prover를 쓰는 경우 request/response body는 privacy-sensitive data로 취급해야 합니다.
+
+모든 proof route에는 `Content-Type: application/json`을 보냅니다. 누락되었거나 지원하지 않는 type은 `415`, request decode/version/semantic 오류는 `400`, prover invocation 뒤의 실패는 `500`입니다. 모든 success/error response의 `Cache-Control: no-store`와 `405`의 `Allow: POST`를 기대하며, response를 cache하거나 malformed response를 새 요청처럼 해석·재시도하지 않습니다.
 
 Prepared payload는 output이 immutable이어도 private note witness를 포함하므로 prover failover를 일반 read query처럼 처리하면 안 됩니다. Prover A 실패 후 B/C로 보내면 privacy boundary가 넓어집니다. 안전한 기본값은 single endpoint/no failover이고 같은 endpoint retry만 가능합니다. Multi-prover failover는 추가 endpoint를 명시한 경고 뒤 사용자/product-policy가 explicit opt-in해야 합니다.
 

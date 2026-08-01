@@ -40,6 +40,13 @@ Release membership의 machine-readable source는 두 개입니다.
 | Cosmos app 통합 | [Downstream integration](clairveil-downstream-cosmos-integration-guide.md) | [Downstream integration](clairveil-downstream-cosmos-integration-guide-kr.md) |
 | Test layer와 gate | [Testing guide](clairveil-testing-guide.md) | [Testing guide](clairveil-testing-guide-kr.md) |
 
+## Prover HTTP API
+
+| 주제 | English | 한국어 |
+| --- | --- | --- |
+| 공통 proof-route contract | [Proverd HTTP API](clairveil-proverd-http-api.md) | [Proverd HTTP API](clairveil-proverd-http-api-kr.md) |
+| Deposit proof route | [Proverd deposit API](clairveil-proverd-deposit-api.md) | [Proverd deposit API](clairveil-proverd-deposit-api-kr.md) |
+
 ## Batch protocol과 evidence
 
 | 주제 | English | 한국어 |

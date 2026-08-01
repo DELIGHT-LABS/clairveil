@@ -159,7 +159,19 @@ The target first runs `TestJoinSplitArtifactRotationSnapshotValidation` for synt
 
 The batch integration adds the public `MsgBatchTransfer` Go SDK/builder, `POST /v1/proofs/batch-transfer`, typed scanner/decrypt/disclosure validation, durable one-proof payroll integration, staged/combined CLI commands, and the bilingual localnet tutorial. Run `go test ./x/privacy/client/sdk/... -count=1`, `make privacy-batch-joinsplit-localnet`, and—on a capable host—`RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`. Existing `transfer-batch` and reference payroll targets remain independent multi-message regression paths.
 
-Prepared transfer payload `v5` remains the current outer prepared-payload contract. Do not confuse that version with the inner note/disclosure encoding: inner canonical payloads and envelopes are `privacy-fixed-v1`. Compatibility fallback is forbidden. The external ClairveilJS package is still legacy at this handoff point; it must fail closed on the new fixed fixtures until it is upgraded, rather than interpreting them through its old decoder.
+Prepared transfer payload `v5` remains the current outer prepared-payload contract. Do not confuse that version with the inner note/disclosure encoding: inner canonical payloads and envelopes are `privacy-fixed-v1`. Compatibility fallback is forbidden.
+
+For canonical deposit-prover and common HTTP-policy regressions, run:
+
+```bash
+go test ./x/privacy/client/sdk/deposit -count=1
+go test ./x/privacy/client/sdk/provertransport -count=1
+go test ./x/privacy/client/sdk/proverservice -count=1
+go test ./x/privacy/client/sdk/conformance -count=1
+go test ./cmd/clairveil-proverd -count=1
+```
+
+These tests cover the language-neutral deposit fixture plus the shared `Content-Type`, `405 Allow`, `Cache-Control: no-store`, and pre-proving `400` versus post-invocation `500` policy. Contract details are linked from the [general HTTP API](clairveil-proverd-http-api.md) and [deposit API](clairveil-proverd-deposit-api.md).
 
 ## 4. JS/Web Wallet Fixture Validation
 
@@ -176,8 +188,6 @@ npm --prefix examples/js-sdk-prover-http-client run demo
 npm --prefix examples/clairveil-dapp ci
 npm --prefix examples/clairveil-dapp run check:dapp
 npm --prefix examples/clairveil-dapp run test:dapp
-npm --prefix examples/clairveil-dapp run check:clairveiljs
-npm --prefix examples/clairveil-dapp run test:clairveiljs
 ```
 
 Validation scope:
@@ -191,9 +201,8 @@ Validation scope:
 - relay withdraw handoff relayer `creator` / payload `recipient` mapping
 - `scan_events` request/response fixture shape, cursor fields, scan/view tag versions, and projection outputs
 - batch `check_nullifiers` request/response fixture shape
-- prover HTTP request/response version
 - timeout/auth client shape
-- browser DApp boundary checks, static bundle freshness, local helper route policy, and ClairveilJS package surface smoke tests
+- browser DApp boundary checks, static bundle freshness, and local helper route policy
 
 ## 5. Localnet Smoke
 

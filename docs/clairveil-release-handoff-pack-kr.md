@@ -13,6 +13,7 @@ Clairveil repo는 reusable privacy core와 reference host를 제공합니다. �
 | SDK fixtures | `x/privacy/client/sdk/conformance/testdata` | JS SDK team, web wallet team | wallet/prover/query contract conformance |
 | JSON Schema | `docs/schemas/clairveil-js-wallet-contract.schema.json` | JS SDK team, web wallet team | machine-readable fixture shape validation |
 | Prover service | `cmd/clairveil-proverd`, `x/privacy/client/sdk/proverservice`, `x/privacy/client/sdk/provertransport` | Prover operations, JS SDK team | local/remote companion prover contract |
+| Canonical prover API | `docs/clairveil-proverd-http-api-kr.md`, `docs/clairveil-proverd-deposit-api-kr.md` | Client, prover operations, security team | language-neutral common HTTP 및 deposit route 계약 |
 | ZK artifact tooling | `cmd/clairveil-setup`, `x/privacy/zk` | Core chain team, prover operations | artifact generation, checksum, preflight |
 | Legacy note debug helper | `cmd/clairveil-verify` | Maintainer 전용 | legacy SHA-256/address seed, Base64, raw JSON 호환성 debug 전용이며 현행 protocol contract나 release acceptance 표면이 아님 |
 | Walkthrough | `docs/clairveil-local-privacy-walkthrough-kr.md` | Integrators | local end-to-end manual verification |
@@ -148,7 +149,7 @@ JS/TS SDK와 web wallet 팀은 아래를 확인합니다.
 9. `privacy-fixed-v1`을 exact하게 구현합니다. Note plaintext 350 bytes, disclosure plaintext 392 bytes, typed envelope header 20 bytes입니다. Raw ciphertext, legacy JSON plaintext, wrong kind, trailing byte는 compatibility fallback 없이 거부합니다.
 10. Prepared transfer payload `v5`는 outer prepared-payload version으로 유지합니다. Note/disclosure encoding version이 아니므로 `privacy-fixed-v1`로 rename하면 안 됩니다.
 11. Asset ID는 `AssetRegistryV1`으로 resolve하고 전체 `privacy-scan-v2` cursor를 저장합니다. Wrong event type, fixed-envelope kind, digest, key, sentinel, orphan/non-adjacent output이 있는 typed scan record는 거부합니다. Same-root path snapshot을 사용하고 remote historical-root/path query의 privacy leak과 rebuild cap을 고려합니다.
-12. External ClairveilJS package는 이 handoff 시점에 아직 legacy입니다. Downstream upgrade 전까지 새 fixed fixture를 fail closed로 거부하는 것이 안전한 동작이며 old format으로 조용히 decode하는 것은 금지합니다.
+12. Deposit proving은 language-neutral canonical API pair를 따르고, `MsgDeposit` 조립 전에 response commitment/proof를 검증하며 encrypted note와 transaction metadata를 prover request 밖에 둡니다.
 13. batch chain core가 의도적으로 제외했던 public `MsgBatchTransfer` Go SDK, wallet scanner/decrypt path, one-proof payroll workflow, batch CLI/tutorial은 batch reference integration에서 제공됩니다. 이 frozen reference contract를 downstream JS/TS와 web product에 명시적으로 port합니다. Legacy multi-message `transfer-batch` flow를 암묵적 compatibility layer로 취급하거나 Go reference 구현을 production deployment 완료와 혼동하면 안 됩니다.
 
 ## 6. Prover 운영 팀 수령 기준
@@ -163,6 +164,7 @@ Prover 운영 팀은 아래를 확인합니다.
 6. Role-aware artifact registry를 사용합니다. Validator는 exact consensus identity 검증 뒤 필요한 VK를 load하고 prover는 선택한 R1CS/PK pair를 lazy load합니다.
 7. Circuit별 admission default인 in-flight 1개, queued 4개와 positive 8 MiB body limit을 강제합니다. Zero body limit은 invalid입니다. Automatic prover failover를 비활성화하고 hard cancellation 또는 memory containment가 필요하면 process isolation을 사용합니다.
 8. Reference batch prover는 bounded `POST /v1/proofs/batch-transfer`를 노출하고 `batch-joinsplit-16x32-v1`을 advertise합니다. Circuit별 admission, positive body limit, payload binding, TLS/auth, privacy, artifact-role boundary를 보존하고 ad-hoc handler를 mount하지 않습니다.
+9. Deposit은 artifact readiness 뒤에만 admission하고, 모든 proof route에서 common `Content-Type`, `405 Allow`, `no-store`, `400` 대 `500` 정책을 보존합니다.
 
 ## 7. Known risk와 accepted exception
 
@@ -178,7 +180,7 @@ Prover 운영 팀은 아래를 확인합니다.
 | Remote prover metadata exposure | remote prover는 proof input metadata를 볼 수 있음 | user privacy UX와 deployment threat model에 remote prover를 trusted component로 포함합니다. |
 | ZK artifact provenance | repo는 checksum/preflight tooling을 제공하지만 ceremony/release signing 정책은 downstream responsibility | production release에서는 artifact signing, provenance, reproducibility policy를 별도로 둡니다. |
 | Batch chain-core/client-integration boundary | Circuit, `MsgBatchTransfer`, keeper, deterministic gas, typed scan/minimal event, genesis와 batch reference Go SDK/prover/scanner/payroll/CLI surface는 구현됐지만 external JS/web product delivery, formal setup, production artifact delivery는 없음 | Frozen proto/identity와 Go reference contract에 맞춰 통합하고 downstream product 작업과 production artifact release는 별도 production gate로 추적합니다. |
-| External ClairveilJS compatibility | External package는 아직 legacy note/disclosure representation에 기반하며 `privacy-fixed-v1`을 구현하지 않음 | 새 fixture는 fail closed하고 downstream을 명시적으로 upgrade하며 compatibility fallback을 추가하지 않습니다. Prepared transfer payload `v5`는 별도의 outer version으로 계속 유효합니다. |
+| Canonical deposit API acceptance | `POST /v1/prover/deposit`과 common proof-route status/header policy가 release input | Language-neutral fixture를 검증하고 validated existing proof request의 `400 proof_failed` → `500 proof_failed` 교정을 기록합니다. Success envelope와 error-body version은 변하지 않습니다. |
 | Prover cancellation boundary | Request cancellation은 이미 실행 중인 in-process solver를 preempt하지 못하며 반환할 때까지 permit과 memory를 사용할 수 있음 | Admission을 `1`/`4`, request를 positive `8 MiB`로 제한하고 hard cancellation/OOM containment에는 supervised worker-process isolation을 사용합니다. |
 | Historical path rebuild boundary | Current-root path는 incremental node를 사용합니다. Public non-current query는 complete root/count/height metadata를 요구하고 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하며 그 이상은 `ResourceExhausted`를 반환합니다. Offline recovery/export는 `MaxMerkleRebuildLeaves`(1,048,576)를 유지합니다. | Online bound를 넘으면 current root로 spend하거나 trusted local historical-path index를 사용합니다. Large-tree genesis export를 유지하도록 complete snapshot metadata index를 보존합니다. |
 

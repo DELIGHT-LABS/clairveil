@@ -107,6 +107,10 @@ When needed, keep only lower-sensitivity identifiers such as tx hash, height, or
 
 ## 8. Product Risk Decisions
 
+### 8.1 Remote Deposit Witness Decision
+
+`POST /v1/prover/deposit` discloses receiver public keys, amount, asset ID, randomness, and commitment to the chosen remote prover. It does not require encrypted note, creator, denom, memo, seed, or chain ID. Treat the request and proof response as prohibited logging/telemetry content, use one endpoint by default, and obtain explicit user/product approval before expanding that disclosure to another operator. The [deposit API](clairveil-proverd-deposit-api.md) defines the exact boundary and the [general HTTP API](clairveil-proverd-http-api.md) defines its shared transport controls.
+
 Before release, product/security/operations teams should answer at least these questions.
 
 - Must users trust a remote prover?

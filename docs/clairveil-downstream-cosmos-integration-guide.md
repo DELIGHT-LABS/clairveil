@@ -359,6 +359,10 @@ The remaining `tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_
 
 ## 9. Downstream Test Order
 
+### 9.1 Deposit Proof Acquisition Boundary
+
+The official remote acquisition route is `POST /v1/prover/deposit`, defined by the [deposit API](clairveil-proverd-deposit-api.md) and shared [HTTP API](clairveil-proverd-http-api.md). A downstream client may prove locally or call that route, but it must compute/retain the encrypted note and assemble/sign/broadcast `MsgDeposit` itself. The prover validates the versioned witness and returns a proof; it does not select denom, construct transaction metadata, or replace keeper verification. Deployments must retain the common auth/admission/no-store/error boundary rather than mount an ad-hoc handler.
+
 Do not mix everything with target-chain-specific features from the start. Bring it up in this order.
 
 1. Confirm `make privacy-e2e-smoke` passes in the Clairveil repo.

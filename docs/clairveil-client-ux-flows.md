@@ -63,6 +63,10 @@ Required UX:
 - Represent the state where the transaction succeeded but note scanning has not completed yet.
 - Distinguish deposit transaction failure from note recovery failure.
 - Do not show balance as final if the local note cache is stale.
+- If remote proving is selected, show proving progress separately from broadcast, allow same-endpoint timeout retry, and explain that another endpoint requires explicit privacy opt-in.
+- Display media/request validation failure separately from a prover failure (`415`/`400` versus `500`); do not cache proof responses because all proof responses are `no-store`.
+
+The exact deposit request/response is the [deposit API](clairveil-proverd-deposit-api.md), and common transport behavior is the [general HTTP API](clairveil-proverd-http-api.md); this flow deliberately does not duplicate either.
 
 ## 4. Shielded Transfer
 

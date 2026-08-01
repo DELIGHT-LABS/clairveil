@@ -105,7 +105,7 @@ GET /clairveil/privacy/v1/reserve/{denom}
 
 ### Phase 5: Client/prover contract 갱신
 
-완료. Transfer/withdraw prover payload contract는 version/hash 검증을 유지하며 새 circuit set id를 반영합니다. Deposit은 현재 별도 HTTP prover endpoint 없이 CLI/SDK가 Groth16 proof bytes를 생성해 `MsgDeposit.proof`에 넣는 계약입니다. Downstream JS/TS client가 remote deposit proving을 원하면 별도 deposit prover endpoint 또는 local/WASM prover adapter를 추가해야 합니다.
+완료. Canonical remote deposit path는 `POST /v1/prover/deposit`입니다. 이 route는 회로에 필요한 versioned deposit witness만 받고 proving 전에 commitment를 재계산하며 commitment-bound proof를 반환합니다. 암호화 note 구성과 `MsgDeposit` 조립/전파는 계속 client 책임입니다. CLI나 특정 SDK 구현에서 transport 계약을 추론하지 말고 [general prover HTTP API](clairveil-proverd-http-api-kr.md)와 [deposit API](clairveil-proverd-deposit-api-kr.md)를 사용합니다.
 
 ### Phase 6: Artifact rotation
 

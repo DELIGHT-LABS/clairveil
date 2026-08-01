@@ -1,22 +1,32 @@
 # Clairveil JSON Schema
 
-This directory contains machine-readable contracts for Clairveil JS/TS SDK and web wallet integration.
+This directory contains machine-readable contracts for Clairveil wallet-facing integration and language-neutral prover HTTP APIs.
 
 Korean version: [README-kr.md](README-kr.md)
 
 ## Schema
 
 - `clairveil-js-wallet-contract.schema.json`: JSON Schema for wallet-facing conformance fixtures under `x/privacy/client/sdk/conformance/testdata`.
+- `clairveil-proverd-http-api.schema.json`: Draft 2020-12 schema for the canonical prover HTTP route inventory, envelopes, errors, common HTTP policy, and the general/deposit conformance fixtures.
 
 ## Usage
 
-External SDKs should validate fixtures in CI before starting live network integration.
+Validate wallet-facing fixtures with the reference validator:
 
 ```bash
 npm --prefix examples/js-sdk-fixture-validator run validate
 ```
 
 The repository validator uses a dependency-free subset validator to keep the sample easy to run. Production JS/TS SDKs can validate the same schema with a full JSON Schema validator such as AJV.
+
+Validate the canonical prover HTTP and deposit fixtures with the repository-owned schema and Go conformance test:
+
+```bash
+make docs-check
+go test ./x/privacy/client/sdk/conformance -count=1
+```
+
+`make docs-check` applies the Draft 2020-12 schema to both fixtures; the Go test binds their values to production constants and semantic validation. The prover schema has separate HTTP route, envelope, payload/proof, and error version layers. It is independent of wallet package shape; its root `oneOf` validates `privacy_prover_http_api_contract.json` and `privacy_deposit_prover_contract.json`.
 
 ## What The Schema Covers
 
@@ -26,7 +36,6 @@ The repository validator uses a dependency-free subset validator to keep the sam
 - prepared withdraw prover payload shape
 - final prepared withdraw payload shape
 - relay withdraw handoff request and relayer `MsgWithdraw` mapping shape
-- prover HTTP route, request, response, and error contract shape
 - note reservation status, transition, active uniqueness, lease precondition, lookup-key vector, and operation success evidence contract shape
 - `scan_events` request/response fixture shape, including cursor fields, projection outputs, `scan_format_version`, and `view_tag_version`
 - batch `check_nullifiers` request/response fixture shape
@@ -52,4 +61,4 @@ Current-root path queries use incremental nodes and do not consume the online hi
 
 `BatchJoinSplit16x32`, `MsgBatchTransfer`, its keeper handler, typed scan state, and artifact descriptors are production core contracts. `batch_feasibility.proto` remains measurement-only. The batch chain core did not add the public SDK or remote prover route; the batch integration subsequently added the reference Go SDK/CLI and `POST /v1/proofs/batch-transfer`, while external JS/web product delivery remains downstream work. The corrected full-shape reference gate measured `1,111,837` constraints, peak RSS `3,339,862,016` bytes, `55.892 ms/output` max-shape warm proving, and `2.789x` per-output improvement over native 2x2. Artifact consumers must pin `privacy-note-v1`; validators use exact consensus identity and required VKs, while provers lazily load selected R1CS/PK pairs. Reference prover admission defaults are one in-flight, four queued, and a positive 8 MiB request limit per circuit/service boundary.
 
-Prepared transfer payload `v5` remains the current outer prepared-payload version. It is distinct from the inner note/disclosure/envelope encoding `privacy-fixed-v1`; neither version replaces the other. Compatibility fallback is prohibited. The external ClairveilJS package is still legacy at this handoff point and must fail closed on the new fixed fixtures until upgraded.
+Prepared transfer payload `v5` remains the current outer prepared-payload version. It is distinct from the inner note/disclosure/envelope encoding `privacy-fixed-v1`; neither version replaces the other. Compatibility fallback is prohibited.

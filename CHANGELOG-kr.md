@@ -6,6 +6,15 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
 ## Unreleased
 
+### Added
+
+- Language-neutral, versioned `POST /v1/prover/deposit` API와 canonical general/deposit HTTP 문서, 전용 JSON Schema, Go conformance fixture를 추가했습니다.
+
+### Changed
+
+- 모든 proof route에서 `Content-Type`을 일관되게 강제하고 post-validation `proof_failed` response를 HTTP `400`에서 `500`으로 교정했습니다. 해당 failure를 request error로 분류하던 downstream client는 분류를 갱신해야 합니다.
+- Deposit API와 common HTTP-policy 교정은 circuit artifact, chain transaction wire contract, success request/response version, `ErrorResponseVersion=v1`을 변경하지 않습니다.
+
 ## v0.3.1 - 2026-07-21
 
 ### Fixed
