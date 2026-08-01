@@ -3,10 +3,12 @@ package provertransport
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	privacybatchtransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/batchtransfer"
+	privacydeposit "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/deposit"
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
@@ -28,6 +31,135 @@ import (
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
+
+func TestDepositProofJSONRoundTripIsStrict(t *testing.T) {
+	request := testContractDepositProofRequest(t)
+	response := DepositProofResponse{
+		Version: DepositProofResponseVersion,
+		Proof: privacydeposit.PreparedDepositProof{
+			Version:           privacydeposit.PreparedDepositProofVersion,
+			NoteCommitmentHex: request.Payload.NoteCommitmentHex,
+			ProofHex:          strings.Repeat("00", 164),
+		},
+	}
+
+	requestJSON, err := json.Marshal(request)
+	require.NoError(t, err)
+	decodedRequest, err := DecodeDepositProofRequestJSON(requestJSON)
+	require.NoError(t, err)
+	require.Equal(t, request, *decodedRequest)
+
+	responseJSON, err := json.Marshal(response)
+	require.NoError(t, err)
+	decodedResponse, err := DecodeDepositProofResponseJSON(responseJSON)
+	require.NoError(t, err)
+	require.Equal(t, response, *decodedResponse)
+
+	tests := []struct {
+		name   string
+		decode func([]byte) error
+		body   string
+	}{
+		{name: "request unknown field", decode: func(body []byte) error { _, err := DecodeDepositProofRequestJSON(body); return err }, body: `{"version":"v1","payload":{},"unexpected":true}`},
+		{name: "response unknown field", decode: func(body []byte) error { _, err := DecodeDepositProofResponseJSON(body); return err }, body: `{"version":"v1","proof":{},"unexpected":true}`},
+		{name: "request duplicate key", decode: func(body []byte) error { _, err := DecodeDepositProofRequestJSON(body); return err }, body: `{"version":"v1","version":"v1","payload":{}}`},
+		{name: "response duplicate nested key", decode: func(body []byte) error { _, err := DecodeDepositProofResponseJSON(body); return err }, body: `{"version":"v1","proof":{"version":"v1","version":"v1"}}`},
+		{name: "request trailing value", decode: func(body []byte) error { _, err := DecodeDepositProofRequestJSON(body); return err }, body: `{"version":"v1","payload":{}} {}`},
+		{name: "response trailing value", decode: func(body []byte) error { _, err := DecodeDepositProofResponseJSON(body); return err }, body: `{"version":"v1","proof":{}} {}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Error(t, tt.decode([]byte(tt.body)))
+		})
+	}
+}
+
+func TestDepositProofContractRejectsMissingPayloadOrProofAndUnsupportedVersions(t *testing.T) {
+	request := testContractDepositProofRequest(t)
+
+	decodedRequest, err := DecodeDepositProofRequestJSON([]byte(`{"version":"v1"}`))
+	require.NoError(t, err)
+	require.Error(t, ValidateDepositProofRequest(*decodedRequest))
+
+	decodedResponse, err := DecodeDepositProofResponseJSON([]byte(`{"version":"v1"}`))
+	require.NoError(t, err)
+	require.Error(t, ValidateDepositProofResponse(request, *decodedResponse))
+
+	tests := []struct {
+		name     string
+		validate func() error
+	}{
+		{
+			name: "unsupported request envelope version",
+			validate: func() error {
+				invalid := request
+				invalid.Version = "v2"
+				return ValidateDepositProofRequest(invalid)
+			},
+		},
+		{
+			name: "unsupported request payload version",
+			validate: func() error {
+				invalid := request
+				invalid.Payload.Version = "v2"
+				return ValidateDepositProofRequest(invalid)
+			},
+		},
+		{
+			name: "unsupported response envelope version",
+			validate: func() error {
+				return ValidateDepositProofResponse(request, DepositProofResponse{Version: "v2"})
+			},
+		},
+		{
+			name: "unsupported response proof version",
+			validate: func() error {
+				return ValidateDepositProofResponse(request, DepositProofResponse{
+					Version: DepositProofResponseVersion,
+					Proof: privacydeposit.PreparedDepositProof{
+						Version:           "v2",
+						NoteCommitmentHex: request.Payload.NoteCommitmentHex,
+					},
+				})
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Error(t, tt.validate())
+		})
+	}
+}
+
+func TestDepositProofResponseBindsCommitmentAndRedactsInvalidWitness(t *testing.T) {
+	request := testContractDepositProofRequest(t)
+
+	err := ValidateDepositProofResponse(request, DepositProofResponse{
+		Version: DepositProofResponseVersion,
+		Proof: privacydeposit.PreparedDepositProof{
+			Version:           privacydeposit.PreparedDepositProofVersion,
+			NoteCommitmentHex: strings.Repeat("01", 32),
+			ProofHex:          strings.Repeat("00", 164),
+		},
+	})
+	require.ErrorContains(t, err, "note commitment mismatch")
+
+	canary := strings.Repeat("a", 64)
+	invalid := request
+	invalid.Payload.RandomnessHex = canary
+	err = ValidateDepositProofRequest(invalid)
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), canary)
+}
+
+func testContractDepositProofRequest(t testing.TB) DepositProofRequest {
+	t.Helper()
+	payload, err := privacydeposit.BuildPreparedDepositProverPayload(testWithdrawFoundNote(7, "uclair", 17).Note)
+	require.NoError(t, err)
+	request, err := NewDepositProofRequest(*payload)
+	require.NoError(t, err)
+	return *request
+}
 
 func TestBuildTransferProofResponseRoundTrip(t *testing.T) {
 	payload, artifacts, runner := testPreparedTransferPayload(t)

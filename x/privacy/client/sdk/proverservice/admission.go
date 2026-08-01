@@ -78,6 +78,10 @@ type admissionPermit struct {
 func DefaultAdmissionConfig() AdmissionConfig {
 	return AdmissionConfig{
 		Circuits: map[string]CircuitAdmissionConfig{
+			privacyprovertransport.DepositProofCircuitID: {
+				MaxInFlight: DefaultMaxInFlightPerCircuit,
+				MaxQueued:   DefaultMaxQueuedPerCircuit,
+			},
 			privacyprovertransport.TransferProofCircuitID: {
 				MaxInFlight: DefaultMaxInFlightPerCircuit,
 				MaxQueued:   DefaultMaxQueuedPerCircuit,

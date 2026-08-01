@@ -1,5 +1,5 @@
 {
-  "schema_version": "v2",
+  "schema_version": "v3",
   "content_type": "application/json",
   "transfer_route": {
     "method": "POST",
@@ -13,19 +13,52 @@
     "request_version": "v2",
     "response_version": "v2"
   },
-  "error_response": {
-    "version": "v1",
-    "codes": [
-      "invalid_request",
-      "method_not_allowed",
-      "not_found",
-      "unauthorized",
-      "unavailable",
-      "proof_failed",
-      "busy"
-    ],
-    "retryable_codes": [
-      "busy"
-    ]
+  "batch_transfer_route": {
+    "method": "POST",
+    "path": "/v1/proofs/batch-transfer",
+    "request_version": "v1",
+    "response_version": "v1"
+  },
+  "deposit_route": {
+    "method": "POST",
+    "path": "/v1/prover/deposit",
+    "request_version": "v1",
+    "response_version": "v1"
+  },
+  "common_policy": {
+    "request": {
+      "content_type_required": true,
+      "allowed_content_types": ["application/json", "application/json; charset=utf-8"],
+      "content_encodings": ["identity", "gzip"],
+      "default_max_bytes": 8388608
+    },
+    "response_headers": {
+      "content_type": "application/json",
+      "cache_control": "no-store",
+      "method_not_allowed_allow": "POST"
+    },
+    "error_response": {
+      "version": "v1",
+      "mappings": [
+        {"code": "invalid_request", "status_codes": [400, 413, 415], "retryable": false},
+        {"code": "method_not_allowed", "status_codes": [405], "retryable": false},
+        {"code": "not_found", "status_codes": [404], "retryable": false},
+        {"code": "unauthorized", "status_codes": [401], "retryable": false},
+        {"code": "unavailable", "status_codes": [503], "retryable": false},
+        {"code": "proof_failed", "status_codes": [500], "retryable": false},
+        {"code": "busy", "status_codes": [429], "retryable": true}
+      ]
+    },
+    "route_failure_status": {
+      "deposit": {"request_failure": 400, "prover_failure": 500},
+      "transfer": {"request_failure": 400, "prover_failure": 500},
+      "withdraw": {"request_failure": 400, "prover_failure": 500},
+      "batch_transfer": {"request_failure": 400, "prover_failure": 500}
+    },
+    "retry_policy": {
+      "timeout": "caller_context_deadline",
+      "same_endpoint_retry": "caller_controlled",
+      "automatic_failover": false
+    }
   }
 }

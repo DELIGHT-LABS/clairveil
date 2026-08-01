@@ -10,6 +10,7 @@ import (
 
 	privatefile "github.com/DELIGHT-LABS/clairveil/internal/privatefile"
 	privacybatchtransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/batchtransfer"
+	privacydeposit "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/deposit"
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
 	privacywithdraw "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/withdraw"
 )
@@ -21,7 +22,19 @@ const (
 	WithdrawProofResponseVersion      = "v2"
 	BatchTransferProofRequestVersion  = "v1"
 	BatchTransferProofResponseVersion = "v1"
+	DepositProofRequestVersion        = "v1"
+	DepositProofResponseVersion       = "v1"
 )
+
+type DepositProofRequest struct {
+	Version string                                      `json:"version"`
+	Payload privacydeposit.PreparedDepositProverPayload `json:"payload"`
+}
+
+type DepositProofResponse struct {
+	Version string                              `json:"version"`
+	Proof   privacydeposit.PreparedDepositProof `json:"proof"`
+}
 
 type TransferProofRequest struct {
 	Version string                                  `json:"version"`
@@ -51,6 +64,62 @@ type BatchTransferProofRequest struct {
 type BatchTransferProofResponse struct {
 	Version string                                          `json:"version"`
 	Proof   privacybatchtransfer.PreparedBatchTransferProof `json:"proof"`
+}
+
+func NewDepositProofRequest(payload privacydeposit.PreparedDepositProverPayload) (*DepositProofRequest, error) {
+	request := DepositProofRequest{Version: DepositProofRequestVersion, Payload: payload}
+	if err := ValidateDepositProofRequest(request); err != nil {
+		return nil, err
+	}
+	return &request, nil
+}
+
+func ValidateDepositProofRequest(request DepositProofRequest) error {
+	if request.Version != DepositProofRequestVersion {
+		return fmt.Errorf("unsupported deposit proof request version %q (expected %q)", request.Version, DepositProofRequestVersion)
+	}
+	return privacydeposit.ValidatePreparedDepositProverPayload(request.Payload)
+}
+
+func BuildDepositProofResponse(
+	request DepositProofRequest,
+	artifacts privacydeposit.DepositArtifactProvider,
+	runner privacydeposit.DepositProofRunner,
+) (*DepositProofResponse, error) {
+	if err := ValidateDepositProofRequest(request); err != nil {
+		return nil, err
+	}
+	proof, err := privacydeposit.BuildPreparedDepositProof(request.Payload, artifacts, runner)
+	if err != nil {
+		return nil, err
+	}
+	return &DepositProofResponse{Version: DepositProofResponseVersion, Proof: *proof}, nil
+}
+
+func ValidateDepositProofResponse(request DepositProofRequest, response DepositProofResponse) error {
+	if response.Version != DepositProofResponseVersion {
+		return fmt.Errorf("unsupported deposit proof response version %q (expected %q)", response.Version, DepositProofResponseVersion)
+	}
+	if err := ValidateDepositProofRequest(request); err != nil {
+		return err
+	}
+	return privacydeposit.ValidatePreparedDepositProof(request.Payload, response.Proof)
+}
+
+func DecodeDepositProofRequestJSON(payloadBytes []byte) (*DepositProofRequest, error) {
+	var request DepositProofRequest
+	if err := decodeStrictJSON(payloadBytes, &request); err != nil {
+		return nil, fmt.Errorf("invalid deposit proof request JSON: %w", err)
+	}
+	return &request, nil
+}
+
+func DecodeDepositProofResponseJSON(payloadBytes []byte) (*DepositProofResponse, error) {
+	var response DepositProofResponse
+	if err := decodeStrictJSON(payloadBytes, &response); err != nil {
+		return nil, fmt.Errorf("invalid deposit proof response JSON: %w", err)
+	}
+	return &response, nil
 }
 
 func NewBatchTransferProofRequest(payload privacybatchtransfer.PreparedBatchTransferPayload) (*BatchTransferProofRequest, error) {

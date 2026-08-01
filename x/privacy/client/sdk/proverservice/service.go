@@ -22,6 +22,7 @@ import (
 	gnarklogger "github.com/consensys/gnark/logger"
 
 	privacybatchtransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/batchtransfer"
+	privacydeposit "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/deposit"
 	privacyprovertransport "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/provertransport"
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
 	privacywithdraw "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/withdraw"
@@ -106,6 +107,11 @@ type referenceJoinSplitArtifactProvider struct {
 	err      error
 }
 
+type referenceDepositArtifactProvider struct {
+	registry *privacyzk.ArtifactRegistry
+	err      error
+}
+
 type referenceSpendArtifactProvider struct {
 	registry *privacyzk.ArtifactRegistry
 	err      error
@@ -117,6 +123,10 @@ type referenceBatchJoinSplitArtifactProvider struct {
 }
 
 type referenceJoinSplitProofRunner struct {
+	logWriter io.Writer
+}
+
+type referenceDepositProofRunner struct {
 	logWriter io.Writer
 }
 
@@ -200,16 +210,21 @@ func DefaultRuntimeInfo() RuntimeInfo {
 			HealthPath,
 			ReadinessPath,
 			MetricsPath,
+			privacyprovertransport.DepositProofPath,
 			privacyprovertransport.TransferProofPath,
 			privacyprovertransport.WithdrawProofPath,
 			privacyprovertransport.BatchTransferProofPath,
 		},
-		Circuits: []string{
-			string(privacyzk.CircuitJoinSplit),
-			string(privacyzk.CircuitSpend),
-			string(privacyzk.CircuitBatchJoinSplit16x32V1),
-		},
+		Circuits: circuitIDStrings(privacyzk.RequiredCircuitIDs()),
 	}
+}
+
+func circuitIDStrings(ids []privacyzk.CircuitID) []string {
+	values := make([]string, len(ids))
+	for i, id := range ids {
+		values[i] = string(id)
+	}
+	return values
 }
 
 func NewReferenceHandler(now func() time.Time, logWriter io.Writer, maxRequestBytes int64, bearerToken string) *Handler {
@@ -217,29 +232,31 @@ func NewReferenceHandler(now func() time.Time, logWriter io.Writer, maxRequestBy
 	info.AuthEnabled = strings.TrimSpace(bearerToken) != ""
 	registry, registryErr := privacyzk.DefaultArtifactRegistry()
 
-	return newHandlerWithAdmission(
-		privacyprovertransport.ReferenceTransferProver{
-			Artifacts: referenceJoinSplitArtifactProvider{registry: registry, err: registryErr},
-			Runner:    referenceJoinSplitProofRunner{logWriter: logWriter},
-		},
-		privacyprovertransport.ReferenceWithdrawProver{
-			Artifacts: referenceSpendArtifactProvider{registry: registry, err: registryErr},
-			Runner:    referenceSpendProofRunner{logWriter: logWriter},
-		},
-		privacyprovertransport.ReferenceBatchTransferProver{
-			Artifacts: referenceBatchJoinSplitArtifactProvider{registry: registry, err: registryErr},
-			Runner:    referenceBatchJoinSplitProofRunner{logWriter: logWriter},
+	return NewHandlerWithProverSet(
+		privacyprovertransport.ProverSet{
+			Deposit: privacyprovertransport.ReferenceDepositProver{
+				Artifacts: referenceDepositArtifactProvider{registry: registry, err: registryErr},
+				Runner:    referenceDepositProofRunner{logWriter: logWriter},
+			},
+			Transfer: privacyprovertransport.ReferenceTransferProver{
+				Artifacts: referenceJoinSplitArtifactProvider{registry: registry, err: registryErr},
+				Runner:    referenceJoinSplitProofRunner{logWriter: logWriter},
+			},
+			Withdraw: privacyprovertransport.ReferenceWithdrawProver{
+				Artifacts: referenceSpendArtifactProvider{registry: registry, err: registryErr},
+				Runner:    referenceSpendProofRunner{logWriter: logWriter},
+			},
+			BatchTransfer: privacyprovertransport.ReferenceBatchTransferProver{
+				Artifacts: referenceBatchJoinSplitArtifactProvider{registry: registry, err: registryErr},
+				Runner:    referenceBatchJoinSplitProofRunner{logWriter: logWriter},
+			},
 		},
 		now,
 		func() error {
 			if registryErr != nil {
 				return registryErr
 			}
-			return registry.CheckReadiness(privacyzk.ArtifactRoleProver, []privacyzk.CircuitID{
-				privacyzk.CircuitJoinSplit,
-				privacyzk.CircuitSpend,
-				privacyzk.CircuitBatchJoinSplit16x32V1,
-			}, nil)
+			return registry.CheckReadiness(privacyzk.ArtifactRoleProver, privacyzk.RequiredCircuitIDs(), nil)
 		},
 		info,
 		bearerToken,
@@ -257,7 +274,7 @@ func NewHandler(
 	bearerToken string,
 	maxRequestBytes int64,
 ) *Handler {
-	return newHandlerWithAdmission(transferProver, withdrawProver, nil, now, readiness, info, bearerToken, maxRequestBytes, mustDefaultAdmissionController())
+	return NewHandlerWithProverSet(privacyprovertransport.ProverSet{Transfer: transferProver, Withdraw: withdrawProver}, now, readiness, info, bearerToken, maxRequestBytes, mustDefaultAdmissionController())
 }
 
 func NewHandlerWithAdmission(
@@ -270,7 +287,7 @@ func NewHandlerWithAdmission(
 	maxRequestBytes int64,
 	admission *AdmissionController,
 ) *Handler {
-	return newHandlerWithAdmission(transferProver, withdrawProver, nil, now, readiness, info, bearerToken, maxRequestBytes, admission)
+	return NewHandlerWithProverSet(privacyprovertransport.ProverSet{Transfer: transferProver, Withdraw: withdrawProver}, now, readiness, info, bearerToken, maxRequestBytes, admission)
 }
 
 func NewHandlerWithBatchAdmission(
@@ -284,13 +301,11 @@ func NewHandlerWithBatchAdmission(
 	maxRequestBytes int64,
 	admission *AdmissionController,
 ) *Handler {
-	return newHandlerWithAdmission(transferProver, withdrawProver, batchTransferProver, now, readiness, info, bearerToken, maxRequestBytes, admission)
+	return NewHandlerWithProverSet(privacyprovertransport.ProverSet{Transfer: transferProver, Withdraw: withdrawProver, BatchTransfer: batchTransferProver}, now, readiness, info, bearerToken, maxRequestBytes, admission)
 }
 
-func newHandlerWithAdmission(
-	transferProver privacyprovertransport.TransferProver,
-	withdrawProver privacyprovertransport.WithdrawProver,
-	batchTransferProver privacyprovertransport.BatchTransferProver,
+func NewHandlerWithProverSet(
+	provers privacyprovertransport.ProverSet,
 	now func() time.Time,
 	readiness ReadinessChecker,
 	info RuntimeInfo,
@@ -312,7 +327,7 @@ func newHandlerWithAdmission(
 		admission = mustDefaultAdmissionController()
 	}
 
-	proverHandler := privacyprovertransport.NewHTTPHandlerWithBatchAdmission(transferProver, withdrawProver, batchTransferProver, now, admission)
+	proverHandler := privacyprovertransport.NewHTTPHandlerWithProverSet(provers, now, admission)
 	proverHandler.MaxRequestBytes = maxRequestBytes
 	return &Handler{
 		proverHandler:   proverHandler,
@@ -421,6 +436,26 @@ func mustDefaultAdmissionController() *AdmissionController {
 	return controller
 }
 
+func (p referenceDepositArtifactProvider) DepositR1CS() (constraint.ConstraintSystem, error) {
+	if p.err != nil {
+		return nil, p.err
+	}
+	if p.registry == nil {
+		return nil, fmt.Errorf("zk artifact registry is unavailable")
+	}
+	return p.registry.R1CS(privacyzk.CircuitDeposit)
+}
+
+func (p referenceDepositArtifactProvider) DepositProvingKey() (groth16.ProvingKey, error) {
+	if p.err != nil {
+		return nil, p.err
+	}
+	if p.registry == nil {
+		return nil, fmt.Errorf("zk artifact registry is unavailable")
+	}
+	return p.registry.ProvingKey(privacyzk.CircuitDeposit)
+}
+
 func (p referenceJoinSplitArtifactProvider) JoinSplitR1CS() (constraint.ConstraintSystem, error) {
 	if p.err != nil {
 		return nil, p.err
@@ -491,6 +526,16 @@ func (r referenceJoinSplitProofRunner) ProveJoinSplit(
 	})
 }
 
+func (r referenceDepositProofRunner) ProveDeposit(
+	r1cs constraint.ConstraintSystem,
+	provingKey groth16.ProvingKey,
+	depositWitness witness.Witness,
+) (groth16.Proof, error) {
+	return withGnarkLoggerOutput(r.logWriter, func() (groth16.Proof, error) {
+		return groth16.Prove(r1cs, provingKey, depositWitness)
+	})
+}
+
 func (r referenceSpendProofRunner) ProveSpend(
 	r1cs constraint.ConstraintSystem,
 	provingKey groth16.ProvingKey,
@@ -512,11 +557,7 @@ func (r referenceBatchJoinSplitProofRunner) ProveBatchJoinSplit(
 }
 
 func RunPreflight(logger log.Logger) error {
-	return privacyzk.RunProverPreflight(logger, []privacyzk.CircuitID{
-		privacyzk.CircuitJoinSplit,
-		privacyzk.CircuitSpend,
-		privacyzk.CircuitBatchJoinSplit16x32V1,
-	})
+	return privacyzk.RunProverPreflight(logger, privacyzk.RequiredCircuitIDs())
 }
 
 // withGnarkLoggerOutput suppresses gnark solver output process-wide on first
@@ -662,7 +703,8 @@ func timevalSeconds(value syscall.Timeval) float64 {
 }
 
 func isProofRoute(path string) bool {
-	return path == privacyprovertransport.TransferProofPath ||
+	return path == privacyprovertransport.DepositProofPath ||
+		path == privacyprovertransport.TransferProofPath ||
 		path == privacyprovertransport.WithdrawProofPath ||
 		path == privacyprovertransport.BatchTransferProofPath
 }
@@ -702,6 +744,8 @@ func writeJSON(w http.ResponseWriter, statusCode int, payload any) {
 }
 
 var (
+	_ privacydeposit.DepositArtifactProvider              = referenceDepositArtifactProvider{}
+	_ privacydeposit.DepositProofRunner                   = referenceDepositProofRunner{}
 	_ privacytransfer.JoinSplitArtifactProvider           = referenceJoinSplitArtifactProvider{}
 	_ privacytransfer.JoinSplitProofRunner                = referenceJoinSplitProofRunner{}
 	_ privacywithdraw.SpendArtifactProvider               = referenceSpendArtifactProvider{}

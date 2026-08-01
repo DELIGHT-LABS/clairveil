@@ -3,9 +3,11 @@ package provertransport
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	privacydeposit "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/deposit"
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
 	privacywithdraw "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/withdraw"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
@@ -28,17 +31,38 @@ func newProofHTTPRequest(method, path string, body io.Reader) *http.Request {
 	return request
 }
 
+func testDepositProofRequest(t testing.TB) (*DepositProofRequest, []byte) {
+	t.Helper()
+	spendKey := testPoint(101)
+	viewKey := testPoint(103)
+	note := privacytypes.Note{
+		ReceiverSpendPubKeyX: spendKey.X.BigInt(new(big.Int)),
+		ReceiverSpendPubKeyY: spendKey.Y.BigInt(new(big.Int)),
+		ReceiverViewPubKeyX:  viewKey.X.BigInt(new(big.Int)),
+		ReceiverViewPubKeyY:  viewKey.Y.BigInt(new(big.Int)),
+		Amount:               big.NewInt(7),
+		AssetID:              big.NewInt(11),
+		Randomness:           big.NewInt(13),
+	}
+	payload, err := privacydeposit.BuildPreparedDepositProverPayload(note)
+	require.NoError(t, err)
+	request, err := NewDepositProofRequest(*payload)
+	require.NoError(t, err)
+	requestBody, err := json.Marshal(request)
+	require.NoError(t, err)
+	return request, requestBody
+}
+
 func TestProofRoutesShareMethodMediaTypeAndResponseHeaderPolicy(t *testing.T) {
-	routes := []string{TransferProofPath, WithdrawProofPath, BatchTransferProofPath}
-	handler := NewHTTPHandlerWithBatchAdmission(nil, nil, nil, nil, nil)
+	routes := []string{DepositProofPath, TransferProofPath, WithdrawProofPath, BatchTransferProofPath}
+	handler := NewHTTPHandlerWithProverSet(ProverSet{}, nil, nil)
 	admission := &recordingAdmission{}
-	availableHandler := NewHTTPHandlerWithBatchAdmission(
-		&countingTransferProver{},
-		&countingWithdrawProver{},
-		&countingBatchTransferProver{},
-		nil,
-		admission,
-	)
+	availableHandler := NewHTTPHandlerWithProverSet(ProverSet{
+		Deposit:       &countingDepositProver{},
+		Transfer:      &countingTransferProver{},
+		Withdraw:      &countingWithdrawProver{},
+		BatchTransfer: &countingBatchTransferProver{},
+	}, nil, admission)
 
 	for _, path := range routes {
 		t.Run(path+"/method", func(t *testing.T) {
@@ -306,6 +330,22 @@ func TestHTTPHandlerUsesBatchSpecificAdmissionAfterFraming(t *testing.T) {
 	require.Equal(t, 1, admission.acquired)
 }
 
+func TestHTTPHandlerUsesDepositSpecificAdmissionAfterFraming(t *testing.T) {
+	admission := &recordingAdmission{}
+	prover := &countingDepositProver{}
+	handler := NewHTTPHandlerWithProverSet(ProverSet{Deposit: prover}, nil, admission)
+	recorder := httptest.NewRecorder()
+	httpRequest := newProofHTTPRequest(http.MethodPost, DepositProofPath, strings.NewReader(`{"version":"v1"}`))
+	handler.ServeHTTP(recorder, httpRequest)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Equal(t, 1, admission.acquired)
+	require.Equal(t, DepositProofCircuitID, admission.circuitID)
+	require.Equal(t, 0, admission.permit.started)
+	require.Equal(t, 1, admission.permit.released)
+	require.Zero(t, prover.calls)
+}
+
 func TestHTTPHandlerRejectsOversizedBatchBeforeAdmission(t *testing.T) {
 	admission := &recordingAdmission{}
 	handler := NewHTTPHandlerWithBatchAdmission(nil, nil, &countingBatchTransferProver{}, nil, admission)
@@ -321,12 +361,19 @@ func TestHTTPHandlerRejectsOversizedBatchBeforeAdmission(t *testing.T) {
 	require.Equal(t, ErrorCodeInvalidRequest, errorResponse.Code)
 }
 
-func TestHTTPHandlerRejectsOversizedTransferAndWithdrawBeforeAdmission(t *testing.T) {
+func TestHTTPHandlerRejectsOversizedDepositTransferAndWithdrawBeforeAdmission(t *testing.T) {
 	tests := []struct {
 		name    string
 		path    string
 		handler func(ProofAdmission) *HTTPHandler
 	}{
+		{
+			name: "deposit",
+			path: DepositProofPath,
+			handler: func(admission ProofAdmission) *HTTPHandler {
+				return NewHTTPHandlerWithProverSet(ProverSet{Deposit: &countingDepositProver{}}, nil, admission)
+			},
+		},
 		{
 			name: "transfer",
 			path: TransferProofPath,
@@ -371,6 +418,7 @@ func TestHTTPHandlerDecodeErrorsDoNotEchoPayload(t *testing.T) {
 		handler *HTTPHandler
 	}{
 		{name: "batch", path: BatchTransferProofPath, body: `{"version":"v1","payload":{},"secret":"` + canary + `"}`, handler: NewHTTPHandlerWithBatchAdmission(nil, nil, &countingBatchTransferProver{}, nil, &recordingAdmission{})},
+		{name: "deposit", path: DepositProofPath, body: `{"version":"v1","payload":{},"secret":"` + canary + `"}`, handler: NewHTTPHandlerWithProverSet(ProverSet{Deposit: &countingDepositProver{}}, nil, &recordingAdmission{})},
 		{name: "transfer", path: TransferProofPath, body: `{"version":"v2","payload":{},"secret":"` + canary + `"}`, handler: NewHTTPHandler(&countingTransferProver{}, nil, nil)},
 		{name: "withdraw", path: WithdrawProofPath, body: `{"version":"v2","payload":{},"secret":"` + canary + `"}`, handler: NewHTTPHandler(nil, &countingWithdrawProver{}, nil)},
 	}
@@ -430,6 +478,7 @@ func TestHTTPHandlerProofErrorsDoNotEchoPayload(t *testing.T) {
 	require.NoError(t, err)
 	batchBody, err := batchRequest.MarshalIndentedJSON()
 	require.NoError(t, err)
+	_, depositBody := testDepositProofRequest(t)
 
 	tests := []struct {
 		name    string
@@ -438,6 +487,7 @@ func TestHTTPHandlerProofErrorsDoNotEchoPayload(t *testing.T) {
 		handler *HTTPHandler
 	}{
 		{name: "batch", path: BatchTransferProofPath, body: batchBody, handler: NewHTTPHandlerWithBatchAdmission(nil, nil, &stubBatchTransferProver{err: fmt.Errorf("%s", canary)}, func() time.Time { return now }, nil)},
+		{name: "deposit", path: DepositProofPath, body: depositBody, handler: NewHTTPHandlerWithProverSet(ProverSet{Deposit: &stubDepositProver{err: fmt.Errorf("%s", canary)}}, func() time.Time { return now }, nil)},
 		{name: "transfer", path: TransferProofPath, body: transferBody, handler: NewHTTPHandler(&stubTransferProver{err: fmt.Errorf("%s", canary)}, nil, func() time.Time { return now })},
 		{name: "withdraw", path: WithdrawProofPath, body: withdrawBody, handler: NewHTTPHandler(nil, &stubWithdrawProver{err: fmt.Errorf("%s", canary)}, func() time.Time { return now })},
 	}
@@ -474,6 +524,7 @@ func TestHTTPHandlerResponseValidationErrorsDoNotEchoPayload(t *testing.T) {
 	require.NoError(t, err)
 	batchBody, err := batchRequest.MarshalIndentedJSON()
 	require.NoError(t, err)
+	_, depositBody := testDepositProofRequest(t)
 
 	tests := []struct {
 		name    string
@@ -482,6 +533,7 @@ func TestHTTPHandlerResponseValidationErrorsDoNotEchoPayload(t *testing.T) {
 		handler *HTTPHandler
 	}{
 		{name: "batch", path: BatchTransferProofPath, body: batchBody, handler: NewHTTPHandlerWithBatchAdmission(nil, nil, &stubBatchTransferProver{response: &BatchTransferProofResponse{Version: canary}}, func() time.Time { return now }, nil)},
+		{name: "deposit", path: DepositProofPath, body: depositBody, handler: NewHTTPHandlerWithProverSet(ProverSet{Deposit: &stubDepositProver{response: &DepositProofResponse{Version: canary}}}, func() time.Time { return now }, nil)},
 		{name: "transfer", path: TransferProofPath, body: transferBody, handler: NewHTTPHandler(&stubTransferProver{response: &TransferProofResponse{Version: canary}}, nil, func() time.Time { return now })},
 		{name: "withdraw", path: WithdrawProofPath, body: withdrawBody, handler: NewHTTPHandler(nil, &stubWithdrawProver{response: &WithdrawProofResponse{Version: canary}}, func() time.Time { return now })},
 	}
@@ -512,6 +564,7 @@ func TestHTTPHandlerNilProofResponsesDoNotPanic(t *testing.T) {
 	require.NoError(t, err)
 	withdrawBody, err := withdrawRequest.MarshalIndentedJSON()
 	require.NoError(t, err)
+	_, depositBody := testDepositProofRequest(t)
 
 	tests := []struct {
 		name    string
@@ -521,6 +574,7 @@ func TestHTTPHandlerNilProofResponsesDoNotPanic(t *testing.T) {
 	}{
 		{name: "transfer", path: TransferProofPath, body: transferBody, handler: NewHTTPHandler(&stubTransferProver{}, nil, func() time.Time { return now })},
 		{name: "withdraw", path: WithdrawProofPath, body: withdrawBody, handler: NewHTTPHandler(nil, &stubWithdrawProver{}, func() time.Time { return now })},
+		{name: "deposit", path: DepositProofPath, body: depositBody, handler: NewHTTPHandlerWithProverSet(ProverSet{Deposit: &stubDepositProver{}}, func() time.Time { return now }, nil)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -603,6 +657,32 @@ func TestBatchHTTPHandlerHoldsPermitUntilProveActuallyReturns(t *testing.T) {
 	select {
 	case <-admission.permit.releasedCh:
 		t.Fatal("batch permit released while prove was still running")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(prover.finish)
+	<-done
+	require.Equal(t, 1, admission.permit.started)
+	require.Equal(t, 1, admission.permit.released)
+}
+
+func TestDepositHTTPHandlerHoldsPermitUntilProveActuallyReturns(t *testing.T) {
+	_, requestBody := testDepositProofRequest(t)
+	prover := &blockingDepositProver{started: make(chan struct{}), finish: make(chan struct{})}
+	admission := &recordingAdmission{permit: &recordingPermit{releasedCh: make(chan struct{}, 1)}}
+	handler := NewHTTPHandlerWithProverSet(ProverSet{Deposit: prover}, nil, admission)
+	ctx, cancel := context.WithCancel(context.Background())
+	httpRequest := newProofHTTPRequest(http.MethodPost, DepositProofPath, bytesReader(requestBody)).WithContext(ctx)
+	recorder := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handler.ServeHTTP(recorder, httpRequest)
+	}()
+	<-prover.started
+	cancel()
+	select {
+	case <-admission.permit.releasedCh:
+		t.Fatal("deposit permit released while prove was still running")
 	case <-time.After(20 * time.Millisecond):
 	}
 	close(prover.finish)
@@ -787,6 +867,8 @@ type countingTransferProver struct {
 	calls int
 }
 
+type countingDepositProver struct{ calls int }
+
 type countingRoundTripper struct {
 	calls int
 }
@@ -824,6 +906,15 @@ type stubBatchTransferProver struct {
 	err      error
 }
 
+type stubDepositProver struct {
+	response *DepositProofResponse
+	err      error
+}
+
+func (p *stubDepositProver) ProveDeposit(DepositProofRequest) (*DepositProofResponse, error) {
+	return p.response, p.err
+}
+
 func (p *stubTransferProver) ProveTransfer(TransferProofRequest, time.Time) (*TransferProofResponse, error) {
 	return p.response, p.err
 }
@@ -848,6 +939,11 @@ func (p *countingBatchTransferProver) ProveBatchTransfer(BatchTransferProofReque
 func (p *countingTransferProver) ProveTransfer(TransferProofRequest, time.Time) (*TransferProofResponse, error) {
 	p.calls++
 	return nil, fmt.Errorf("unexpected proof request")
+}
+
+func (p *countingDepositProver) ProveDeposit(DepositProofRequest) (*DepositProofResponse, error) {
+	p.calls++
+	return nil, fmt.Errorf("unexpected deposit proof request")
 }
 
 type clockCapturingTransferProver struct {
@@ -901,6 +997,17 @@ type blockingTransferProver struct {
 type blockingBatchTransferProver struct {
 	started chan struct{}
 	finish  chan struct{}
+}
+
+type blockingDepositProver struct {
+	started chan struct{}
+	finish  chan struct{}
+}
+
+func (p *blockingDepositProver) ProveDeposit(DepositProofRequest) (*DepositProofResponse, error) {
+	close(p.started)
+	<-p.finish
+	return nil, fmt.Errorf("deposit proof stopped after test release")
 }
 
 func (p *blockingBatchTransferProver) ProveBatchTransfer(BatchTransferProofRequest, time.Time) (*BatchTransferProofResponse, error) {

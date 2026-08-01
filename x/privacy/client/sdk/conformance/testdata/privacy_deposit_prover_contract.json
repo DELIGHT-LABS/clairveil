@@ -1,0 +1,98 @@
+{
+  "schema_version": "clairveil.proverd.deposit-api.contract.v1",
+  "transport": {
+    "method": "POST",
+    "path": "/v1/prover/deposit",
+    "content_type": "application/json",
+    "request_version": "v1",
+    "payload_version": "v1",
+    "response_version": "v1",
+    "proof_version": "v1"
+  },
+  "encoding": {
+    "field": {
+      "encoding": "lowercase_hex",
+      "byte_length": 32,
+      "hex_length": 64,
+      "byte_order": "unsigned_big_endian"
+    },
+    "public_key": {
+      "encoding": "lowercase_hex",
+      "byte_length": 32,
+      "hex_length": 64,
+      "format": "canonical_compressed_bn254_twisted_edwards"
+    },
+    "amount": {
+      "encoding": "canonical_non_negative_decimal",
+      "minimum": "0",
+      "maximum": "18446744073709551615"
+    }
+  },
+  "canonical_positive_request": {
+    "version": "v1",
+    "payload": {
+      "version": "v1",
+      "receiver_spend_pubkey_hex": "3153c1da87e13085b53a042a4255416a3db2355fa64cadc79c757275eb04942a",
+      "receiver_view_pubkey_hex": "23e3b289fbe895815104c3a97bc2e205da0bdef460f5ad7297444d30a4bc1821",
+      "amount": "4242",
+      "asset_id_hex": "238d5f23e4d918d40b0982ce3aef16a75c4d1760193d1c3b30b9f5df681903ca",
+      "randomness_hex": "0000000000000000000000000000000000000000000000000000000000000017",
+      "note_commitment_hex": "13e2b840379164d2409f74121551dd22a5952e1a29857898939de91c7997118d"
+    }
+  },
+  "expected_note_commitment_hex": "13e2b840379164d2409f74121551dd22a5952e1a29857898939de91c7997118d",
+  "response_commitment_binding": {
+    "response_field": "proof.note_commitment_hex",
+    "must_equal": [
+      "request.payload.note_commitment_hex",
+      "recomputed_note_commitment"
+    ]
+  },
+  "proof_wire": {
+    "byte_length": 164,
+    "hex_length": 328,
+    "compressed_point_offsets": [0, 32, 96, 132],
+    "commitment_count": {
+      "offset": 128,
+      "byte_length": 4,
+      "byte_order": "unsigned_big_endian",
+      "required_value": 0
+    },
+    "canonical_round_trip": "decode_exact_frame_then_encode_must_preserve_every_byte",
+    "static_real_proof": "not_included"
+  },
+  "negative_vectors": {
+    "raw_json_strict_decoder": {
+      "raw_json": "{\"version\":\"v1\",\"payload\":{\"version\":\"v1\",\"receiver_spend_pubkey_hex\":\"3153c1da87e13085b53a042a4255416a3db2355fa64cadc79c757275eb04942a\",\"receiver_view_pubkey_hex\":\"23e3b289fbe895815104c3a97bc2e205da0bdef460f5ad7297444d30a4bc1821\",\"amount\":\"4242\",\"asset_id_hex\":\"238d5f23e4d918d40b0982ce3aef16a75c4d1760193d1c3b30b9f5df681903ca\",\"randomness_hex\":\"0000000000000000000000000000000000000000000000000000000000000017\",\"note_commitment_hex\":\"13e2b840379164d2409f74121551dd22a5952e1a29857898939de91c7997118d\"},\"unexpected\":true}",
+      "expected_error_contains": "unknown field"
+    },
+    "field_mutation_commitment_mismatch": {
+      "field": "payload.amount",
+      "mutated_value": "4243",
+      "expected_error_contains": "deposit prover payload note commitment mismatch"
+    }
+  },
+  "common_error_policy": {
+    "error_response_version": "v1",
+    "mappings": [
+      {"code": "invalid_request", "status_codes": [400, 413, 415], "retryable": false},
+      {"code": "method_not_allowed", "status_codes": [405], "retryable": false},
+      {"code": "not_found", "status_codes": [404], "retryable": false},
+      {"code": "unauthorized", "status_codes": [401], "retryable": false},
+      {"code": "unavailable", "status_codes": [503], "retryable": false},
+      {"code": "proof_failed", "status_codes": [500], "retryable": false},
+      {"code": "busy", "status_codes": [429], "retryable": true}
+    ]
+  },
+  "route_failure_status": {
+    "deposit": {"request_failure": 400, "prover_failure": 500},
+    "transfer": {"request_failure": 400, "prover_failure": 500},
+    "withdraw": {"request_failure": 400, "prover_failure": 500},
+    "batch_transfer": {"request_failure": 400, "prover_failure": 500}
+  },
+  "retry_policy": {
+    "timeout": "caller_context_deadline",
+    "same_endpoint_retry": "caller_controlled",
+    "automatic_failover": false
+  }
+}

@@ -16,11 +16,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	privacyprovertransport "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/provertransport"
+	privacyzk "github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
 )
 
 type stubTransferProver struct{}
 
 type stubBatchTransferProver struct{}
+
+type stubDepositProver struct{}
 
 func newServiceRequest(method, path string, body io.Reader) *http.Request {
 	request := httptest.NewRequest(method, path, body)
@@ -36,6 +39,10 @@ func (stubTransferProver) ProveTransfer(request privacyprovertransport.TransferP
 
 func (stubBatchTransferProver) ProveBatchTransfer(request privacyprovertransport.BatchTransferProofRequest, _ time.Time) (*privacyprovertransport.BatchTransferProofResponse, error) {
 	return nil, fmt.Errorf("unexpected batch proof request: %s", request.Version)
+}
+
+func (stubDepositProver) ProveDeposit(request privacyprovertransport.DepositProofRequest) (*privacyprovertransport.DepositProofResponse, error) {
+	return nil, fmt.Errorf("unexpected deposit proof request: %s", request.Version)
 }
 
 func TestHandlerHealthRoute(t *testing.T) {
@@ -88,8 +95,10 @@ func TestDefaultRuntimeInfoIncludesMetricsRoute(t *testing.T) {
 	info := DefaultRuntimeInfo()
 	require.Contains(t, info.Routes, MetricsPath)
 	require.Contains(t, info.Routes, privacyprovertransport.BatchTransferProofPath)
+	require.Contains(t, info.Routes, privacyprovertransport.DepositProofPath)
 	require.Equal(t, "prover_r1cs_pk", info.ReadinessRole)
 	require.Contains(t, info.Circuits, privacyprovertransport.BatchTransferProofCircuitID)
+	require.Equal(t, circuitIDStrings(privacyzk.RequiredCircuitIDs()), info.Circuits)
 }
 
 func TestHandlerMetricsRoute(t *testing.T) {
@@ -113,6 +122,7 @@ func TestHandlerMetricsRoute(t *testing.T) {
 	require.Contains(t, response.Admission.Circuits, privacyprovertransport.TransferProofCircuitID)
 	require.Contains(t, response.Admission.Circuits, privacyprovertransport.WithdrawProofCircuitID)
 	require.Contains(t, response.Admission.Circuits, privacyprovertransport.BatchTransferProofCircuitID)
+	require.Contains(t, response.Admission.Circuits, privacyprovertransport.DepositProofCircuitID)
 }
 
 func TestHandlerMetricsRouteRejectsNonGET(t *testing.T) {
@@ -304,6 +314,46 @@ func TestHandlerRejectsUnauthorizedProofRoute(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, privacyprovertransport.ErrorCodeUnauthorized, errorResponse.Code)
 	require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+}
+
+func TestHandlerAppliesAuthAndEncodingBoundaryToDepositRoute(t *testing.T) {
+	info := DefaultRuntimeInfo()
+	info.AuthEnabled = true
+	handler := NewHandlerWithProverSet(
+		privacyprovertransport.ProverSet{Deposit: stubDepositProver{}},
+		nil,
+		nil,
+		info,
+		"secret-token",
+		DefaultMaxRequestBz,
+		mustDefaultAdmissionController(),
+	)
+
+	t.Run("unauthorized", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		request := newServiceRequest(http.MethodPost, privacyprovertransport.DepositProofPath, bytes.NewBufferString(`{}`))
+		handler.ServeHTTP(recorder, request)
+		require.Equal(t, http.StatusUnauthorized, recorder.Code)
+		require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+	})
+
+	t.Run("unsupported encoding", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		request := newServiceRequest(http.MethodPost, privacyprovertransport.DepositProofPath, bytes.NewBufferString(`{}`))
+		request.Header.Set("Authorization", "Bearer secret-token")
+		request.Header.Set("Content-Encoding", "br")
+		handler.ServeHTTP(recorder, request)
+		require.Equal(t, http.StatusBadRequest, recorder.Code)
+		require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+	})
+}
+
+func TestReferenceHandlerWiresDepositProverAndRequiredCircuitInventory(t *testing.T) {
+	handler := NewReferenceHandler(nil, io.Discard, DefaultMaxRequestBz, "")
+	require.NotNil(t, handler)
+	require.NotNil(t, handler.proverHandler)
+	require.NotNil(t, handler.proverHandler.DepositProver)
+	require.Equal(t, circuitIDStrings(privacyzk.RequiredCircuitIDs()), handler.info.Circuits)
 }
 
 func TestGnarkSolverOutputNeverUsesOperatorLogWriter(t *testing.T) {

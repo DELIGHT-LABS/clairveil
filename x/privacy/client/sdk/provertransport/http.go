@@ -15,6 +15,7 @@ import (
 	"time"
 
 	privacybatchtransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/batchtransfer"
+	privacydeposit "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/deposit"
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
 	privacywithdraw "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/withdraw"
 )
@@ -23,9 +24,11 @@ const (
 	TransferProofPath                 = "/v1/prover/transfer"
 	WithdrawProofPath                 = "/v1/prover/withdraw"
 	BatchTransferProofPath            = "/v1/proofs/batch-transfer"
+	DepositProofPath                  = "/v1/prover/deposit"
 	TransferProofCircuitID            = "joinsplit"
 	WithdrawProofCircuitID            = "spend"
 	BatchTransferProofCircuitID       = "batch-joinsplit-16x32-v1"
+	DepositProofCircuitID             = "deposit"
 	BearerTokenEnv                    = "CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN"
 	ErrorResponseVersion              = "v1"
 	DefaultMaxResponseBytes     int64 = 1 << 20
@@ -91,6 +94,15 @@ type BatchTransferProver interface {
 	ProveBatchTransfer(request BatchTransferProofRequest, now time.Time) (*BatchTransferProofResponse, error)
 }
 
+type DepositProver interface {
+	ProveDeposit(request DepositProofRequest) (*DepositProofResponse, error)
+}
+
+type ReferenceDepositProver struct {
+	Artifacts privacydeposit.DepositArtifactProvider
+	Runner    privacydeposit.DepositProofRunner
+}
+
 type ReferenceTransferProver struct {
 	Artifacts privacytransfer.JoinSplitArtifactProvider
 	Runner    privacytransfer.JoinSplitProofRunner
@@ -107,12 +119,20 @@ type ReferenceBatchTransferProver struct {
 }
 
 type HTTPHandler struct {
+	DepositProver       DepositProver
 	TransferProver      TransferProver
 	WithdrawProver      WithdrawProver
 	BatchTransferProver BatchTransferProver
 	Now                 func() time.Time
 	Admission           ProofAdmission
 	MaxRequestBytes     int64
+}
+
+type ProverSet struct {
+	Deposit       DepositProver
+	Transfer      TransferProver
+	Withdraw      WithdrawProver
+	BatchTransfer BatchTransferProver
 }
 
 type HTTPDoer interface {
@@ -148,6 +168,10 @@ func (p ReferenceBatchTransferProver) ProveBatchTransfer(request BatchTransferPr
 	return BuildBatchTransferProofResponseAt(request, p.Artifacts, p.Runner, now)
 }
 
+func (p ReferenceDepositProver) ProveDeposit(request DepositProofRequest) (*DepositProofResponse, error) {
+	return BuildDepositProofResponse(request, p.Artifacts, p.Runner)
+}
+
 func NewHTTPHandler(transferProver TransferProver, withdrawProver WithdrawProver, now func() time.Time) *HTTPHandler {
 	return NewHTTPHandlerWithAdmission(transferProver, withdrawProver, now, nil)
 }
@@ -157,13 +181,22 @@ func NewHTTPHandlerWithAdmission(transferProver TransferProver, withdrawProver W
 }
 
 func NewHTTPHandlerWithBatchAdmission(transferProver TransferProver, withdrawProver WithdrawProver, batchTransferProver BatchTransferProver, now func() time.Time, admission ProofAdmission) *HTTPHandler {
+	return NewHTTPHandlerWithProverSet(ProverSet{
+		Transfer:      transferProver,
+		Withdraw:      withdrawProver,
+		BatchTransfer: batchTransferProver,
+	}, now, admission)
+}
+
+func NewHTTPHandlerWithProverSet(provers ProverSet, now func() time.Time, admission ProofAdmission) *HTTPHandler {
 	if now == nil {
 		now = time.Now
 	}
 	return &HTTPHandler{
-		TransferProver:      transferProver,
-		WithdrawProver:      withdrawProver,
-		BatchTransferProver: batchTransferProver,
+		DepositProver:       provers.Deposit,
+		TransferProver:      provers.Transfer,
+		WithdrawProver:      provers.Withdraw,
+		BatchTransferProver: provers.BatchTransfer,
 		Now:                 now,
 		Admission:           admission,
 		MaxRequestBytes:     DefaultMaxRequestBytes,
@@ -183,6 +216,8 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveWithdrawProof(w, r)
 	case BatchTransferProofPath:
 		h.serveBatchTransferProof(w, r)
+	case DepositProofPath:
+		h.serveDepositProof(w, r)
 	default:
 		writeErrorResponse(w, http.StatusNotFound, ErrorCodeNotFound, "prover transport route not found")
 	}
@@ -374,6 +409,68 @@ func (h *HTTPHandler) serveWithdrawProof(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, response)
 }
 
+func (h *HTTPHandler) serveDepositProof(w http.ResponseWriter, r *http.Request) {
+	if !beginProofRequest(w, r, "deposit") {
+		return
+	}
+	if h.DepositProver == nil {
+		writeErrorResponse(w, http.StatusServiceUnavailable, ErrorCodeUnavailable, "deposit prover is unavailable")
+		return
+	}
+
+	requestBytes, ok := h.readProofRequestBody(w, r, "deposit")
+	if !ok {
+		return
+	}
+	if !json.Valid(requestBytes) {
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, "invalid deposit proof request JSON framing")
+		return
+	}
+	permit, ok := h.acquirePermit(w, r, DepositProofCircuitID)
+	if !ok {
+		return
+	}
+	permitReleased := false
+	defer func() {
+		if permit != nil && !permitReleased {
+			permit.Release()
+		}
+	}()
+
+	request, err := DecodeDepositProofRequestJSON(requestBytes)
+	if err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, "invalid deposit proof request")
+		return
+	}
+	if err := ValidateDepositProofRequest(*request); err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, "deposit proof request validation failed")
+		return
+	}
+
+	if permit != nil {
+		permit.StartProve()
+	}
+	response, err := h.DepositProver.ProveDeposit(*request)
+	if permit != nil {
+		permit.Release()
+		permitReleased = true
+	}
+	if err != nil {
+		writeErrorResponse(w, http.StatusInternalServerError, ErrorCodeProofFailed, "deposit proof generation failed")
+		return
+	}
+	if response == nil {
+		writeErrorResponse(w, http.StatusInternalServerError, ErrorCodeProofFailed, "deposit proof generation failed")
+		return
+	}
+	if err := ValidateDepositProofResponse(*request, *response); err != nil {
+		writeErrorResponse(w, http.StatusInternalServerError, ErrorCodeProofFailed, "deposit proof response validation failed")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
 func beginProofRequest(w http.ResponseWriter, r *http.Request, route string) bool {
 	SetProofResponseHeaders(w)
 	if r.Method != http.MethodPost {
@@ -515,6 +612,24 @@ func (c HTTPProverClient) ProveBatchTransfer(ctx context.Context, request BatchT
 		return nil, err
 	}
 	if err := ValidateBatchTransferProofResponseAt(request, *response, now()); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
+func (c HTTPProverClient) ProveDeposit(ctx context.Context, request DepositProofRequest) (*DepositProofResponse, error) {
+	if err := ValidateDepositProofRequest(request); err != nil {
+		return nil, err
+	}
+	responseBytes, err := c.doJSONRequest(ctx, DepositProofPath, request)
+	if err != nil {
+		return nil, err
+	}
+	response, err := DecodeDepositProofResponseJSON(responseBytes)
+	if err != nil {
+		return nil, err
+	}
+	if err := ValidateDepositProofResponse(request, *response); err != nil {
 		return nil, err
 	}
 	return response, nil
