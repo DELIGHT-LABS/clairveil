@@ -17,7 +17,7 @@
 | ZK artifact verification   | consensus가 exact ordered VK/public-input schema hash를 고정하고 local verifier mismatch는 startup/readiness를 막으며 env checksum은 override할 수 없습니다. |
 | Proof verification cost    | cheap canonical proof framing 뒤 decode/VK load/cryptographic verification 전에 fixed gas를 precharge합니다. |
 | Batch chain core           | `MsgBatchTransfer`가 frozen 12-field witness를 다시 derive하고 bounded resource category 전체를 precharge하며 proof 검증 뒤 globally unique nullifier/commitment와 typed scan state를 atomic하게 commit합니다. |
-| Conformance fixture        | JS SDK/외부 wallet이 따라야 할 query, payload hash, prover HTTP contract fixture가 있습니다.                             |
+| Conformance fixture        | JS SDK/외부 wallet이 따라야 할 query, route-specific response binding, prover HTTP contract fixture가 있습니다.             |
 
 ## 2. Production 전 반드시 결정할 항목
 
@@ -111,7 +111,7 @@ Active identity는 `privacy-note-v1`입니다. `privacy_zk_manifest.json` schema
 | P3       | Docker image digest pinning/SBOM/vuln scan policy                       | reference image는 동작 확인용이고 production supply-chain policy는 downstream에서 확정해야 합니다.                                              |
 | P3       | Health/readiness route exposure policy                                  | local sample에는 편리하지만 remote에서는 metadata exposure와 probing 표면이 됩니다.                                                             |
 
-현재 repository는 `.github/workflows/security.yml`에서 `make vulncheck`를 실행합니다. 이 baseline은 Go dependency/standard library reachable path를 검사하고 patched Go `1.25.12` toolchain을 고정합니다. `GO-2024-2584`, `GO-2026-4479`의 `pion/dtls` v2, `GO-2026-5932`만 no-fixed-version 예외로 좁게 추적합니다. 마지막 항목은 Cosmos SDK가 local ASCII key armor에 `x/crypto/openpgp/armor`를 사용해서 reachable하며 Clairveil은 OpenPGP signing/encryption을 사용하지 않습니다. Fixed version이 생기면 각 예외는 즉시 무효가 됩니다. Downstream project는 이를 production risk register에서 다시 평가하고 image scan, SBOM, secret scan, artifact signing을 추가해야 합니다.
+현재 repository는 `.github/workflows/security.yml`에서 `make vulncheck`를 실행합니다. 이 baseline은 Go dependency/standard library reachable path를 검사하고 patched Go `1.25.12` toolchain을 고정하며, `GO-2026-6061`과 `GO-2026-5158`를 닫기 위해 `google.golang.org/grpc v1.82.1`과 `go.opentelemetry.io/otel v1.44.0`을 요구합니다. JSON policy wrapper는 scanner status `0`만 수용하고 모든 nonzero scan/usage status를 fail closed하여 policy-approved finding이 오류를 PASS로 바꾸지 못하게 합니다. `GO-2024-2584`, `GO-2026-4479`의 `pion/dtls` v2, `GO-2026-5932`만 no-fixed-version 예외로 좁게 추적합니다. 마지막 항목은 Cosmos SDK가 local ASCII key armor에 `x/crypto/openpgp/armor`를 사용해서 reachable하며 Clairveil은 OpenPGP signing/encryption을 사용하지 않습니다. Fixed version이 생기면 각 예외는 즉시 무효가 됩니다. Downstream project는 이를 production risk register에서 다시 평가하고 image scan, SBOM, secret scan, artifact signing을 추가해야 합니다.
 
 ## 4. 현재 발견한 코드 레벨 주의점
 
@@ -120,11 +120,11 @@ Active identity는 `privacy-note-v1`입니다. `privacy_zk_manifest.json` schema
 2026-07-13 독립 공개 검증 record는 `PUBLICATION_READY_EXPERIMENTAL`입니다. batch chain core는 batch protocol contract가 동결한 `DISCLOSURE-BLINDING-SEPARATION` V1을 production `99,775` constraints(`+10`)에 구현하고 native/prepared와 structured 2x2 pre-sign validation을 정렬했으며 JoinSplit development identity만 회전했습니다. security, protocol, chain-core, and client-integration gates와 독립 공개 검증은 `PROVER-FAILOVER-LIVE-EVIDENCE` live no-failover evidence와 structured batch-signing boundary의 non-canonical BN254 alias 거부를 포함해 closure됐습니다. Stable validation error는 secret-free이며 proving/signature release 전에 반환합니다. 이 처분은 production release 승인이 아닙니다.
 
 - `x/privacy/client/sdk/proverservice/service.go`의 body limit은 proof route에만 적용됩니다. 이는 의도적으로 맞지만, downstream이 health/readiness를 외부에 노출할지 여부는 별도로 결정해야 합니다.
-- `x/privacy/client/sdk/provertransport/http.go`의 raw `HTTPHandler`는 transfer, withdraw, batch 모두 admission 전 shared bounded reader를 사용합니다. Public service는 bearer auth, gzip wire/decompressed limit, health/readiness policy, server timeout을 위해 계속 `proverservice.Handler` 또는 동등한 wrapper를 사용해야 합니다.
+- `x/privacy/client/sdk/provertransport/http.go`의 raw `HTTPHandler`는 deposit, transfer, withdraw, batch 모두 admission 전 shared bounded reader를 사용합니다. Public service는 bearer auth, gzip wire/decompressed limit, health/readiness policy, server timeout을 위해 계속 `proverservice.Handler` 또는 동등한 wrapper를 사용해야 합니다.
 - `cmd/clairveil-proverd/main.go`는 bearer token env가 비어 있으면 `auth_enabled=false`로 실행됩니다. local daemon에는 편리하지만 remote service에서는 금지해야 합니다.
 - `build/clairveil-proverd/compose.yaml`은 host bind를 `127.0.0.1`로 제한합니다. 단, Dockerfile 자체는 `0.0.0.0:8080` listen이므로 downstream compose/k8s manifest에서 network policy를 다시 확인해야 합니다.
 - prepared payload JSON과 wallet JSON은 `0600`으로 저장되지만 암호화되지는 않습니다. production wallet은 별도 encryption layer가 필요합니다.
-- Transfer/prover contract version은 의도적인 breaking change입니다. Transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload와 proof/request/response `v2`, disclosure plaintext/query `privacy-fixed-v1`이며 legacy payload는 compatibility decode하지 말고 다시 생성해야 합니다.
+- 현재 prover contract version은 의도적인 breaking change입니다. Deposit payload/proof/request/response `v1`, transfer payload `v5`·proof/request/response `v2`, withdraw prover/final payload·proof/request/response `v2`, batch payload `batch-transfer-payload-v1`·proof `batch-transfer-proof-v1`·request/response `v1`, disclosure plaintext/query `privacy-fixed-v1`이며 legacy payload는 compatibility decode하지 말고 다시 생성해야 합니다.
 
 ## 5. Downstream 개발자에게 전달할 최소 지침
 

@@ -98,18 +98,18 @@ Batch-transfer wire version 네 개를 서로 독립적으로 pin합니다.
 
 Request/response envelope version은 nested payload/proof version을 대신하지 않습니다. 어느 layer든 mismatch가 있으면 compatibility를 추측하지 말고 prepared operation을 다시 생성합니다.
 
-Client가 검증해야 할 것:
+Client는 모든 route에서 아래를 검증해야 합니다.
 
 - request version
 - response version
-- payload hash
-- proof payload hash
 - proof hex shape
 - timeout
 - auth failure
 - malformed response
 
-현재 breaking version은 transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload와 proof/request/response `v2`, batch payload/proof/request/response `batch-transfer-payload-v1`/`batch-transfer-proof-v1`/`v1`/`v1`, relay handoff/schema `v2`, disclosure plaintext/query `privacy-fixed-v1`입니다. Legacy payload는 거부하고 다시 생성합니다.
+Transfer, withdraw, batch는 반환된 proof를 payload/proof hash에 추가로 bind합니다. Deposit은 대신 nested payload/proof `v1`을 검증하고 canonical witness commitment를 재계산하여 `MsgDeposit` 조립 전에 response commitment와 같은지 확인합니다.
+
+현재 breaking version은 deposit payload/proof/request/response `v1`, transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload와 proof/request/response `v2`, batch payload/proof/request/response `batch-transfer-payload-v1`/`batch-transfer-proof-v1`/`v1`/`v1`, relay handoff/schema `v2`, disclosure plaintext/query `privacy-fixed-v1`입니다. Legacy payload는 거부하고 다시 생성합니다.
 
 Remote prover를 쓰는 경우 request/response body는 privacy-sensitive data로 취급해야 합니다.
 

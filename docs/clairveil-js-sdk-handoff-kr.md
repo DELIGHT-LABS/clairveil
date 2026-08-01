@@ -429,7 +429,7 @@ JS SDK handoff가 완료되었다고 보려면 아래가 가능해야 합니다.
 - deposit 후 event scan으로 내 note를 찾습니다.
 - transfer prepared payload의 hash가 Go fixture와 같은 방식으로 계산됩니다.
 - `privacy_disclosure_blinding_v1_contract.json`의 positive/sentinel/negative vector가 같은 `DBS_*` result code를 만들고 structured signing이 invalid vector를 signature release 전에 모두 거부합니다.
-- prover HTTP contract에 맞춰 transfer/withdraw proof request와 response를 검증합니다.
+- deposit, transfer, withdraw, batch proof request/response를 prover HTTP contract에 맞춰 검증합니다. Route별 independent envelope·nested payload/proof version과 route-specific response binding을 포함합니다.
 - bulk payroll client가 `privacy_note_reservation_contract.json`의 reservation 전이와 operation 성공 규칙을 재현합니다.
 - user disclosure, audit disclosure, sender self-view disclosure를 decode하고 `verified=true`를 확인합니다.
 - exact-match withdraw와 relayed withdraw payload 검증이 동작합니다.
@@ -448,11 +448,13 @@ JS SDK handoff가 완료되었다고 보려면 아래가 가능해야 합니다.
 - mandatory audit disclosure
 - user disclosure policy/mode label
 - `MsgDeposit` deposit proof requirement
+- deposit payload/proof/request/response `v1`
 - transfer payload `v5`, transfer proof/request/response `v2`
 - withdraw prover/final payload와 proof/request/response `v2`
+- batch payload `batch-transfer-payload-v1`, proof `batch-transfer-proof-v1`, request/response `v1`
 - disclosure plaintext/query version `privacy-fixed-v1`
 - active circuit set `privacy-note-v1`, consensus `CircuitSetIdentity` schema `v1`, manifest schema `v2`
-- prover HTTP path `/v1/prover/transfer`, `/v1/prover/withdraw`
+- prover HTTP path `/v1/prover/deposit`, `/v1/prover/transfer`, `/v1/prover/withdraw`, `/v1/proofs/batch-transfer`
 - conformance fixture files under `x/privacy/client/sdk/conformance/testdata`
 - `DISCLOSURE-BLINDING-SEPARATION` V1 semantics/error code와 완료된 production 2x2 circuit/native/prepared/structured pre-sign enforcement. Downstream signer도 SDK-wide secret reuse와 non-canonical field alias 거부를 포함한 fail-before-release contract를 유지해야 함. security, protocol, chain-core, and client-integration gates와 독립 공개 검증은 PASS했고 source는 `PUBLICATION_READY_EXPERIMENTAL`
 - `privacy_note_reservation_contract.json`의 note reservation status와 operation evidence contract
@@ -529,7 +531,7 @@ npm --prefix examples/js-sdk-fixture-validator run validate
 - relay withdraw handoff fixture에서 relayer 주소가 `MsgWithdraw.creator`로, payload recipient가 `MsgWithdraw.recipient`로 유지되는지 확인합니다.
 - prover HTTP path가 `/v1/prover/transfer`, `/v1/prover/withdraw`인지 확인합니다.
 
-이 예제는 production JS SDK가 아니라 첫 reference consumer입니다. 실제 JS SDK는 이 예제의 파일 구조를 그대로 따르기보다, 같은 hash contract와 fixture validation을 CI에 넣는 방식으로 가져가면 됩니다.
+이 예제는 transfer/withdraw client shape만 의도적으로 실행합니다. Canonical deposit/batch contract는 이 JS 예제가 아니라 general/deposit schema와 conformance fixture에서 repository가 계속 소유합니다. 이 예제는 production JS SDK가 아니라 첫 reference consumer이며, 실제 JS SDK는 파일 구조를 그대로 복사하지 말고 route-specific binding과 fixture validation을 CI에 넣어야 합니다.
 
 Remote prover HTTP client shape은 아래 예제를 봅니다.
 

@@ -100,8 +100,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	if scannerExitCode != 0 && len(accepted) == 0 {
-		fmt.Fprintf(os.Stderr, "govulncheck exited with %d but no accepted actionable finding was detected\n", scannerExitCode)
+	if err := validateScannerResult(scannerExitCode); err != nil {
+		fmt.Fprintf(os.Stderr, "govulncheck scanner result is invalid: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -115,6 +115,13 @@ func main() {
 	if packageOnlyCount > 0 {
 		fmt.Printf("non-actionable package/module findings observed: %d\n", packageOnlyCount)
 	}
+}
+
+func validateScannerResult(scannerExitCode int) error {
+	if scannerExitCode != 0 {
+		return fmt.Errorf("exit code %d is a scan or usage failure; JSON-format scans must exit 0", scannerExitCode)
+	}
+	return nil
 }
 
 func readFindings(path string) ([]govulncheckFinding, error) {

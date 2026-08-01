@@ -23,7 +23,7 @@
 
 | Plan | 상태 |
 | --- | --- |
-| [`clairveil-proverd` deposit API 구현](clairveil-proverd-deposit-api-implementation-plan-kr.md) | Completed record; Korean-only; circuit, proto, artifact contract, DApp 변경 없이 language-neutral `POST /v1/prover/deposit`, 네 route 공통 HTTP policy, conformance/schema/docs와 모든 최종 gate 완료 |
+| [`clairveil-proverd` deposit API 구현](clairveil-proverd-deposit-api-implementation-plan-kr.md) | Completed record; Korean-only; circuit, proto, artifact contract, DApp 변경 없이 language-neutral `POST /v1/prover/deposit`, 네 route 공통 HTTP policy, conformance/schema/docs, dependency security remediation, semantic documentation audit, clean supported environment full release gate 완료 |
 
 ## 완료된 deposit funder record
 

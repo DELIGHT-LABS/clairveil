@@ -14,6 +14,16 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
 - 모든 proof route에서 `Content-Type`을 일관되게 강제하고 post-validation `proof_failed` response를 HTTP `400`에서 `500`으로 교정했습니다. 해당 failure를 request error로 분류하던 downstream client는 분류를 갱신해야 합니다.
 - Deposit API와 common HTTP-policy 교정은 circuit artifact, chain transaction wire contract, success request/response version, `ErrorResponseVersion=v1`을 변경하지 않습니다.
+- Architecture, remote prover, JS SDK handoff, client checklist, security review의 current-contract inventory를 네 proof route와 route-specific response binding에 맞게 정렬했습니다.
+
+### Fixed
+
+- 깨끗한 지원 환경에서 `make ci`와 `make release-check`를 차단하던 미선언 Python `jsonschema` 의존성을 제거했습니다. 이제 repository는 필수 Go toolchain으로 language-neutral Draft 2020-12 prover schema와 positive/negative conformance case를 검증합니다.
+
+### Security
+
+- Repository `govulncheck` gate의 reachable `GO-2026-6061`, `GO-2026-5158`를 해소하기 위해 `google.golang.org/grpc`를 `v1.82.1`, `go.opentelemetry.io/otel` core module을 `v1.44.0`으로 갱신했습니다.
+- Policy-approved finding이 partial output에 있어도 scan/usage failure를 통과시키지 못하도록 JSON `govulncheck` policy wrapper가 모든 nonzero scanner status를 거부하게 강화했습니다.
 
 ## v0.3.1 - 2026-07-21
 

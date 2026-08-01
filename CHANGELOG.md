@@ -14,6 +14,16 @@ This project follows [the release versioning policy](docs/clairveil-release-vers
 
 - Enforced `Content-Type` consistently on all proof routes and corrected post-validation `proof_failed` responses from HTTP `400` to `500`. Downstream clients that classified those failures as request errors must update that classification.
 - The deposit API and common HTTP-policy correction do not change circuit artifacts, chain transaction wire contracts, success request/response versions, or `ErrorResponseVersion=v1`.
+- Aligned the architecture, remote-prover, JS SDK handoff, client checklist, and security-review inventories with all four proof routes and their route-specific response bindings.
+
+### Fixed
+
+- Removed the undeclared Python `jsonschema` dependency that blocked `make ci` and `make release-check` in clean supported environments; the repository now validates the language-neutral Draft 2020-12 prover schema and positive/negative conformance cases with the required Go toolchain.
+
+### Security
+
+- Updated `google.golang.org/grpc` to `v1.82.1` and `go.opentelemetry.io/otel` core modules to `v1.44.0`, closing reachable `GO-2026-6061` and `GO-2026-5158` findings in the repository `govulncheck` gate.
+- Hardened the JSON `govulncheck` policy wrapper to reject every nonzero scanner status, so scan or usage failures cannot be accepted merely because a policy-approved finding is present in partial output.
 
 ## v0.3.1 - 2026-07-21
 

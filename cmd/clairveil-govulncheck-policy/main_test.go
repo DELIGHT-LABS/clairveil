@@ -118,3 +118,29 @@ func TestReadFindingsSkipsNonFindingMessages(t *testing.T) {
 		t.Fatalf("expected parsed finding to be actionable")
 	}
 }
+
+func TestValidateScannerResultFailsClosed(t *testing.T) {
+	testCases := []struct {
+		name            string
+		scannerExitCode int
+		wantError       bool
+	}{
+		{name: "clean scan", scannerExitCode: 0},
+		{name: "scan error", scannerExitCode: 1, wantError: true},
+		{name: "usage error", scannerExitCode: 2, wantError: true},
+		{name: "text-format vulnerability exit", scannerExitCode: 3, wantError: true},
+		{name: "unexpected exit", scannerExitCode: 4, wantError: true},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			err := validateScannerResult(testCase.scannerExitCode)
+			if testCase.wantError && err == nil {
+				t.Fatal("expected scanner result validation to fail")
+			}
+			if !testCase.wantError && err != nil {
+				t.Fatalf("expected scanner result validation to pass: %v", err)
+			}
+		})
+	}
+}

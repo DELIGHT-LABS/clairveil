@@ -17,7 +17,7 @@ Validate wallet-facing fixtures with the reference validator:
 npm --prefix examples/js-sdk-fixture-validator run validate
 ```
 
-The repository validator uses a dependency-free subset validator to keep the sample easy to run. Production JS/TS SDKs can validate the same schema with a full JSON Schema validator such as AJV.
+The wallet reference validator uses a dependency-free subset validator to keep the sample easy to run. Production JS/TS SDKs can validate the same schema with a full JSON Schema validator such as AJV.
 
 Validate the canonical prover HTTP and deposit fixtures with the repository-owned schema and Go conformance test:
 
@@ -26,7 +26,7 @@ make docs-check
 go test ./x/privacy/client/sdk/conformance -count=1
 ```
 
-`make docs-check` applies the Draft 2020-12 schema to both fixtures; the Go test binds their values to production constants and semantic validation. The prover schema has separate HTTP route, envelope, payload/proof, and error version layers. It is independent of wallet package shape; its root `oneOf` validates `privacy_prover_http_api_contract.json` and `privacy_deposit_prover_contract.json`.
+`make docs-check` runs the focused Go Draft 2020-12 validator against both positive fixtures and negative mutations without any third-party Python package. The remaining Go conformance tests bind fixture values to production constants and semantic validation. The prover schema has separate HTTP route, envelope, payload/proof, and error version layers. It is independent of wallet package shape; its root `oneOf` validates `privacy_prover_http_api_contract.json` and `privacy_deposit_prover_contract.json`.
 
 ## What The Schema Covers
 

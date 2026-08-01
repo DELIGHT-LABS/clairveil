@@ -487,32 +487,124 @@ for source in sorted(
             )
 
 
-prover_schema_path = docs_dir / "schemas" / "clairveil-proverd-http-api.schema.json"
+def require_current_contract_inventory(source, start_marker, end_marker, required_terms):
+    text = source.read_text(encoding="utf-8")
+    start = text.find(start_marker)
+    if start < 0:
+        add_error(f"{source.relative_to(repo)}: missing current prover contract inventory marker: {start_marker}")
+        return
+    if end_marker:
+        end = text.find(end_marker, start + len(start_marker))
+    else:
+        end = text.find("\n\n", start + len(start_marker))
+    if end < 0:
+        end = len(text)
+    inventory = text[start:end]
+    normalized_inventory = inventory.lower()
+    for term in required_terms:
+        if term.lower() not in normalized_inventory:
+            add_error(
+                f"{source.relative_to(repo)}: current prover contract inventory omits {term}"
+            )
+
+
+common_version_terms = [
+    "transfer payload `v5`",
+    "withdraw prover/final payload",
+    "`batch-transfer-payload-v1`",
+    "`batch-transfer-proof-v1`",
+    "deposit payload/proof/request/response `v1`",
+]
+inventory_checks = [
+    (docs_dir / "clairveil-architecture.md", "The current fixed client contract is", None, common_version_terms),
+    (docs_dir / "clairveil-architecture-kr.md", "현재 fixed client contract는", None, common_version_terms),
+    (docs_dir / "clairveil-proverd-remote-production-profile.md", "Current contracts are", None, common_version_terms),
+    (docs_dir / "clairveil-proverd-remote-production-profile-kr.md", "현재 contract는", None, common_version_terms),
+    (docs_dir / "clairveil-client-api-checklist.md", "Current breaking versions are", None, common_version_terms),
+    (docs_dir / "clairveil-client-api-checklist-kr.md", "현재 breaking version은", None, common_version_terms),
+    (docs_dir / "clairveil-security-best-practices-review.md", "Current prover contract versions are", None, common_version_terms),
+    (docs_dir / "clairveil-security-best-practices-review-kr.md", "현재 prover contract version은", None, common_version_terms),
+    (
+        docs_dir / "clairveil-js-sdk-handoff.md",
+        "The JS SDK can currently treat these as stable contracts.",
+        "The JS SDK still needs to decide these independently.",
+        common_version_terms
+        + [
+            "`/v1/prover/deposit`",
+            "`/v1/prover/transfer`",
+            "`/v1/prover/withdraw`",
+            "`/v1/proofs/batch-transfer`",
+        ],
+    ),
+    (
+        docs_dir / "clairveil-js-sdk-handoff-kr.md",
+        "현재 JS SDK가 안정 계약으로 삼아도 되는 항목은 아래입니다.",
+        "아직 JS SDK가 독자적으로 결정해야 하는 항목은 아래입니다.",
+        common_version_terms
+        + [
+            "`/v1/prover/deposit`",
+            "`/v1/prover/transfer`",
+            "`/v1/prover/withdraw`",
+            "`/v1/proofs/batch-transfer`",
+        ],
+    ),
+]
+for source, start_marker, end_marker, required_terms in inventory_checks:
+    require_current_contract_inventory(source, start_marker, end_marker, required_terms)
+
+binding_terms = {
+    docs_dir / "clairveil-proverd-remote-production-profile.md": "recomputed witness commitment",
+    docs_dir / "clairveil-proverd-remote-production-profile-kr.md": "재계산한 witness commitment",
+    docs_dir / "clairveil-js-sdk-handoff.md": "route-specific response binding",
+    docs_dir / "clairveil-js-sdk-handoff-kr.md": "route-specific response binding",
+    docs_dir / "clairveil-client-api-checklist.md": "response commitment to match",
+    docs_dir / "clairveil-client-api-checklist-kr.md": "response commitment와 같은지",
+    docs_dir / "clairveil-security-best-practices-review.md": "route-specific response binding",
+    docs_dir / "clairveil-security-best-practices-review-kr.md": "route-specific response binding",
+}
+for source, term in binding_terms.items():
+    if term not in source.read_text(encoding="utf-8"):
+        add_error(f"{source.relative_to(repo)}: missing route-specific response binding guidance: {term}")
+
+
 prover_fixture_paths = [
     repo / "x/privacy/client/sdk/conformance/testdata/privacy_prover_http_api_contract.json",
     repo / "x/privacy/client/sdk/conformance/testdata/privacy_deposit_prover_contract.json",
 ]
 try:
-    import jsonschema
-
-    with prover_schema_path.open(encoding="utf-8") as schema_file:
-        prover_schema = json.load(schema_file)
-    validator_class = jsonschema.validators.validator_for(prover_schema)
-    validator_class.check_schema(prover_schema)
-    validator = validator_class(prover_schema)
-    for fixture_path in prover_fixture_paths:
-        with fixture_path.open(encoding="utf-8") as fixture_file:
-            fixture = json.load(fixture_file)
-        validator.validate(fixture)
-except ModuleNotFoundError:
-    add_error("docs-check requires the Python jsonschema package for prover contract validation")
-except (OSError, UnicodeError, json.JSONDecodeError) as error:
-    add_error(f"failed to read the prover contract schema or fixture: {error}")
-except jsonschema.exceptions.SchemaError as error:
-    add_error(f"invalid prover contract JSON Schema: {error.message}")
-except jsonschema.exceptions.ValidationError as error:
-    relative_path = error.json_path or "$"
-    add_error(f"prover contract fixture failed JSON Schema validation at {relative_path}: {error.message}")
+    schema_test = subprocess.run(
+        [
+            "go",
+            "test",
+            "-json",
+            "-mod=readonly",
+            "-run",
+            "^TestProverHTTPSchemaContract$",
+            "-count=1",
+            "./x/privacy/client/sdk/conformance",
+        ],
+        cwd=repo,
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    schema_test_events = [
+        json.loads(line)
+        for line in schema_test.stdout.splitlines()
+        if line.strip()
+    ]
+    if not any(
+        event.get("Action") == "pass"
+        and event.get("Test") == "TestProverHTTPSchemaContract"
+        for event in schema_test_events
+    ):
+        add_error("prover contract JSON Schema test did not run to completion")
+except subprocess.CalledProcessError as error:
+    detail = error.stderr or error.stdout or str(error)
+    add_error(f"prover contract JSON Schema validation failed: {detail.strip()}")
+except json.JSONDecodeError as error:
+    add_error(f"failed to decode prover contract JSON Schema test output: {error}")
 
 
 unique_errors = list(dict.fromkeys(errors))

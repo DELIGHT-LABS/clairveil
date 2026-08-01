@@ -101,7 +101,7 @@ If bearer token alone is not enough for a public service, add mTLS, OAuth/OIDC g
 
 Assume a remote prover operator can see:
 
-- transfer/withdraw amount and asset metadata;
+- deposit/transfer/withdraw/batch amount and asset metadata;
 - input/output shielded public keys;
 - Merkle path and root;
 - nullifier;
@@ -110,7 +110,7 @@ Assume a remote prover operator can see:
 
 Therefore the remote prover must be a component trusted by the user. If the wallet UX requires the user not to trust a remote prover, provide local daemon or browser/WASM proving.
 
-Current request/response/proof contracts are `v2` for transfer and withdraw. Transfer prepared payload is `v5`; withdraw prover/final payloads are `v2`; disclosure plaintext/query is `privacy-fixed-v1`. Reject legacy inputs. Request bodies, bearer credentials, signatures, disclosure plaintext/blindings, and proofs must be excluded from logs, traces, crash dumps, and analytics.
+Current contracts are transfer payload `v5` with request/response/proof `v2`; withdraw prover/final payload and request/response/proof `v2`; batch payload `batch-transfer-payload-v1`, proof `batch-transfer-proof-v1`, and request/response `v1`; deposit payload/proof/request/response `v1`; and disclosure plaintext/query `privacy-fixed-v1`. Reject legacy inputs. Request bodies, bearer credentials, signatures, disclosure plaintext/blindings, and proofs must be excluded from logs, traces, crash dumps, and analytics.
 
 ## 8. Do Not Expose The Raw Handler
 
@@ -171,7 +171,7 @@ Before operating a remote prover in a production-like environment, confirm:
 6. Request/response body logging is disabled or redacted.
 7. Artifact directory is read-only and preflight is strict.
 8. Health/readiness/metrics routes are internal-only.
-9. JS SDK uses request timeout and validates response version plus payload hash.
+9. JS SDK uses a request timeout and validates response version plus route-specific binding: payload/proof hashes for transfer, withdraw, and batch; recomputed witness commitment and nested proof version for deposit.
 10. Remote prover is included in the downstream threat model as a trusted privacy-sensitive component.
 11. Automatic multi-prover failover is disabled, or every additional endpoint has explicit informed opt-in.
 12. Manifest/VK/public-input schema identity exactly matches the chain before readiness.

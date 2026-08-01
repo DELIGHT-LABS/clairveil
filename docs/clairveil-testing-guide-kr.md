@@ -30,7 +30,7 @@ make release-pack-verify
 | `make install` | `make build` 후 나열된 project binary 여섯 개(`clairveild`, setup, legacy-only verify, proverd, payroll, payrolld)를 `GOBIN` 또는 `GOPATH/bin`에 설치. Benchmark/load tool은 build-only |
 | `make init` | `make install` 후 기본 local chain home을 초기화해 `clairveild start` 준비 |
 | `make proto` | privacy protobuf/gateway Go file 재생성 |
-| `make docs-check` | Markdown link, English/Korean knowledge pair, plan index, tag/changelog coverage, 문서 위치, release manifest 검증 |
+| `make docs-check` | Markdown link, English/Korean knowledge pair, plan index, tag/changelog coverage, 문서 위치, release manifest와 third-party Python package 없는 Draft 2020-12 prover HTTP schema/fixture 검증 |
 | `make examples` | JS audit key, fixture validator, prover HTTP client, browser DApp 예제 실행 |
 | `make ci` | `docs-check`, `test`, `build`, `examples` 묶음 |
 | `make vulncheck` | govulncheck policy gate 실행 |

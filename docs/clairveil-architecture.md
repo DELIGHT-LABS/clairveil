@@ -93,7 +93,7 @@ Every transfer carries mandatory audit disclosure. User-selected disclosure and 
 
 ## 7. Compatibility And Authority
 
-The current fixed client contract is `privacy-fixed-v1`, transfer payload `v5`, and transfer/withdraw proof contracts `v2`. Earlier artifacts, queued proofs, cached prepared payloads, note/scan caches, and a three-circuit genesis are incompatible. Upgrade by regenerating the exact artifact set, using fresh genesis/reset, clearing incompatible jobs/caches, and rescanning.
+The current fixed client contract is `privacy-fixed-v1`; transfer payload `v5` with transfer request/response/proof `v2`; withdraw prover/final payload and request/response/proof `v2`; batch payload `batch-transfer-payload-v1`, proof `batch-transfer-proof-v1`, and request/response `v1`; and deposit payload/proof/request/response `v1`. Earlier artifacts, queued proofs, cached prepared payloads, note/scan caches, and a three-circuit genesis are incompatible. Upgrade by regenerating the exact artifact set, using fresh genesis/reset, clearing incompatible jobs/caches, and rescanning.
 
 When sources disagree, resolve them in this order for the affected contract:
 

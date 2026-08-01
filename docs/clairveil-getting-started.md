@@ -19,6 +19,8 @@ Required for the default repository workflow:
 
 Optional tools are task-specific: Docker is used by the PostgreSQL reservation integration when no external DSN is supplied; `grpcurl` is required by the live batch localnet gate; and `protoc`, `protoc-gen-go`, `protoc-gen-go-grpc`, `buf`, and `clang-format` are needed only when regenerating proto output.
 
+The default repository workflow requires no third-party Python packages. `make docs-check` uses the Go toolchain for full Draft 2020-12 validation of the canonical prover HTTP schema and fixtures.
+
 Check the main versions before initialization:
 
 ```bash

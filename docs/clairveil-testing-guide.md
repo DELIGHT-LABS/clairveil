@@ -32,7 +32,7 @@ make release-pack-verify
 | `make install` | run `make build`, then install the six listed project binaries (`clairveild`, setup, legacy-only verify, proverd, payroll, payrolld) to `GOBIN` or `GOPATH/bin`; benchmark/load tools remain build-only |
 | `make init` | run `make install`, then initialize the default local chain home for `clairveild start` |
 | `make proto` | regenerate privacy protobuf/gateway Go files |
-| `make docs-check` | verify Markdown links, English/Korean knowledge pairs, plan indexes, tag/changelog coverage, document placement, and release manifests |
+| `make docs-check` | verify Markdown links, English/Korean knowledge pairs, plan indexes, tag/changelog coverage, document placement, release manifests, and the Draft 2020-12 prover HTTP schema/fixtures without third-party Python packages |
 | `make examples` | run JS audit key, fixture validator, prover HTTP client, and browser DApp examples |
 | `make ci` | `docs-check`, `test`, `build`, and `examples` |
 | `make vulncheck` | run govulncheck policy gate |

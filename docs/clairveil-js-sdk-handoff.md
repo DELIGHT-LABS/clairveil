@@ -431,7 +431,7 @@ The JS SDK handoff is complete when the following work.
 - After deposit, event scanning finds the user's note.
 - Transfer prepared payload hashes are calculated in the same way as the Go fixtures.
 - `privacy_disclosure_blinding_v1_contract.json` positive/sentinel/negative vectors produce the same `DBS_*` result codes, and structured signing refuses every invalid vector before signature release.
-- Transfer/withdraw proof requests and responses are validated against the prover HTTP contract.
+- Deposit, transfer, withdraw, and batch proof requests/responses are validated against the prover HTTP contract, including each route's independent envelope and nested payload/proof versions and route-specific response binding.
 - Bulk payroll clients reproduce the reservation transitions and operation success rules in `privacy_note_reservation_contract.json`.
 - User disclosure, audit disclosure, and sender self-view disclosure decode with `verified=true`.
 - Exact-match withdraw and relayed withdraw payload validation work.
@@ -450,11 +450,13 @@ The JS SDK can currently treat these as stable contracts.
 - mandatory audit disclosure
 - user disclosure policy/mode labels
 - deposit proof requirement for `MsgDeposit`
+- deposit payload/proof/request/response `v1`
 - transfer payload `v5` and transfer proof/request/response `v2`
 - withdraw prover/final payload and proof/request/response `v2`
+- batch payload `batch-transfer-payload-v1`, proof `batch-transfer-proof-v1`, and request/response `v1`
 - disclosure plaintext/query version `privacy-fixed-v1`
 - active circuit set `privacy-note-v1` with consensus `CircuitSetIdentity` schema `v1` and manifest schema `v2`
-- prover HTTP paths `/v1/prover/transfer`, `/v1/prover/withdraw`
+- prover HTTP paths `/v1/prover/deposit`, `/v1/prover/transfer`, `/v1/prover/withdraw`, `/v1/proofs/batch-transfer`
 - conformance fixture files under `x/privacy/client/sdk/conformance/testdata`
 - `DISCLOSURE-BLINDING-SEPARATION` V1 semantics/error codes and completed production 2x2 circuit/native/prepared/structured pre-sign enforcement; downstream signers must preserve the fail-before-release contract, including rejection of SDK-wide secret reuse and non-canonical field aliases. The security, protocol, chain-core, client-integration, and independent-publication-validation gates have passed, and the source is `PUBLICATION_READY_EXPERIMENTAL`
 - note reservation status and operation evidence contract in `privacy_note_reservation_contract.json`
@@ -531,7 +533,7 @@ This example does not start a node. It only validates:
 - relay withdraw handoff keeps the relayer address as `MsgWithdraw.creator` and the payload recipient as `MsgWithdraw.recipient`;
 - prover HTTP paths are `/v1/prover/transfer` and `/v1/prover/withdraw`.
 
-This is a first reference consumer, not a production JS SDK. A real JS SDK should not copy its file layout directly. Instead, bring the same hash contract and fixture validation into CI.
+This example intentionally exercises only the transfer/withdraw client shape; the canonical deposit and batch contracts remain repository-owned in the general/deposit schemas and conformance fixtures rather than this JS example. This is a first reference consumer, not a production JS SDK. A real JS SDK should not copy its file layout directly. Instead, bring the same route-specific binding and fixture validation into CI.
 
 For the remote prover HTTP client shape, see:
 

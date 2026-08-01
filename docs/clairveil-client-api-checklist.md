@@ -98,18 +98,18 @@ Pin all four batch-transfer wire versions independently:
 
 The request/response envelope version does not replace the nested payload/proof version. Reject a mismatch in any layer and regenerate the prepared operation rather than guessing compatibility.
 
-The client must validate:
+The client must validate on every route:
 
 - request version
 - response version
-- payload hash
-- proof payload hash
 - proof hex shape
 - timeout
 - auth failure
 - malformed response
 
-Current breaking versions are transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload and proof/request/response `v2`, batch payload/proof/request/response `batch-transfer-payload-v1`/`batch-transfer-proof-v1`/`v1`/`v1`, relay handoff/schema `v2`, and disclosure plaintext/query `privacy-fixed-v1`. Reject and regenerate legacy payloads.
+Transfer, withdraw, and batch additionally bind the returned proof to their payload/proof hashes. Deposit instead validates nested payload/proof `v1`, recomputes the canonical witness commitment, and requires the response commitment to match before assembling `MsgDeposit`.
+
+Current breaking versions are deposit payload/proof/request/response `v1`, transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload and proof/request/response `v2`, batch payload/proof/request/response `batch-transfer-payload-v1`/`batch-transfer-proof-v1`/`v1`/`v1`, relay handoff/schema `v2`, and disclosure plaintext/query `privacy-fixed-v1`. Reject and regenerate legacy payloads.
 
 When using a remote prover, request/response bodies are privacy-sensitive data.
 

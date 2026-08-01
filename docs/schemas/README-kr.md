@@ -17,7 +17,7 @@ Wallet-facing fixture는 reference validator로 검증합니다.
 npm --prefix examples/js-sdk-fixture-validator run validate
 ```
 
-repo의 예제 validator는 실행 부담을 줄이기 위해 dependency-free subset validator를 사용합니다. Production JS/TS SDK는 같은 schema 파일을 AJV 같은 full JSON Schema validator로 검증해도 됩니다.
+Wallet reference validator는 실행 부담을 줄이기 위해 dependency-free subset validator를 사용합니다. Production JS/TS SDK는 같은 schema 파일을 AJV 같은 full JSON Schema validator로 검증해도 됩니다.
 
 Canonical prover HTTP 및 deposit fixture는 repository가 소유하는 schema와 Go conformance test로 검증합니다.
 
@@ -26,7 +26,7 @@ make docs-check
 go test ./x/privacy/client/sdk/conformance -count=1
 ```
 
-`make docs-check`는 Draft 2020-12 schema를 두 fixture에 적용하고, Go test는 fixture 값을 production constant와 semantic validation에 bind합니다. Prover schema는 HTTP route, envelope, payload/proof, error version layer를 분리합니다. Wallet package shape에 의존하지 않으며 root `oneOf`가 `privacy_prover_http_api_contract.json`과 `privacy_deposit_prover_contract.json`을 검증합니다.
+`make docs-check`는 third-party Python package 없이 focused Go Draft 2020-12 validator를 두 positive fixture와 negative mutation에 적용합니다. 나머지 Go conformance test는 fixture 값을 production constant와 semantic validation에 bind합니다. Prover schema는 HTTP route, envelope, payload/proof, error version layer를 분리합니다. Wallet package shape에 의존하지 않으며 root `oneOf`가 `privacy_prover_http_api_contract.json`과 `privacy_deposit_prover_contract.json`을 검증합니다.
 
 ## Schema가 다루는 것
 

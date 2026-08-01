@@ -105,7 +105,7 @@ Bearer token만으로 충분하지 않은 public service라면 mTLS, OAuth/OIDC 
 
 Remote prover operator는 아래 정보를 볼 수 있다고 가정해야 합니다.
 
-- transfer/withdraw amount와 asset metadata
+- deposit/transfer/withdraw/batch amount와 asset metadata
 - input/output shielded public key
 - merkle path와 root
 - nullifier
@@ -114,7 +114,7 @@ Remote prover operator는 아래 정보를 볼 수 있다고 가정해야 합니
 
 따라서 remote prover는 사용자가 trust하는 component여야 합니다. 사용자가 remote prover를 신뢰하지 않아야 하는 wallet UX라면 local daemon 또는 browser/WASM proving을 제공해야 합니다.
 
-현재 transfer/withdraw request/response/proof contract는 `v2`입니다. Transfer prepared payload는 `v5`, withdraw prover/final payload는 `v2`, disclosure plaintext/query는 `privacy-fixed-v1`이며 legacy input은 거부합니다. Request body, bearer credential, signature, disclosure plaintext/blinding, proof를 log, trace, crash dump, analytics에서 제외합니다.
+현재 contract는 transfer payload `v5`와 request/response/proof `v2`, withdraw prover/final payload와 request/response/proof `v2`, batch payload `batch-transfer-payload-v1`·proof `batch-transfer-proof-v1`·request/response `v1`, deposit payload/proof/request/response `v1`, disclosure plaintext/query `privacy-fixed-v1`입니다. Legacy input은 거부합니다. Request body, bearer credential, signature, disclosure plaintext/blinding, proof를 log, trace, crash dump, analytics에서 제외합니다.
 
 ## 8. Raw handler 사용 금지
 
@@ -175,7 +175,7 @@ Remote prover를 production-like 환경에 올리기 전 아래를 확인합니�
 6. Request/response body logging is disabled or redacted.
 7. Artifact directory is read-only and preflight is strict.
 8. Health/readiness/metrics routes are internal-only.
-9. JS SDK uses request timeout and validates response version plus payload hash.
+9. JS SDK는 request timeout을 사용하고 route별 binding을 response version과 함께 검증합니다. Transfer, withdraw, batch는 payload/proof hash, deposit은 재계산한 witness commitment와 nested proof version을 검증합니다.
 10. Remote prover is included in the downstream threat model as a trusted privacy-sensitive component.
 11. Automatic multi-prover failover를 비활성화하거나 모든 추가 endpoint에 informed explicit opt-in을 받습니다.
 12. Readiness 전에 manifest/VK/public-input schema identity가 chain과 정확히 일치하는지 검증합니다.

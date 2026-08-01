@@ -93,7 +93,7 @@ Wallet은 typed chain data를 scan하고 note decrypt를 시도해 ownership을 
 
 ## 7. 호환성과 authority
 
-현재 fixed client contract는 `privacy-fixed-v1`, transfer payload `v5`, transfer/withdraw proof contract `v2`입니다. 이전 artifact, queued proof, cached prepared payload, note/scan cache, three-circuit genesis와 호환되지 않습니다. Exact artifact set 재생성, fresh genesis/reset, incompatible job/cache 삭제, rescan으로 upgrade합니다.
+현재 fixed client contract는 `privacy-fixed-v1`, transfer payload `v5`와 transfer request/response/proof `v2`, withdraw prover/final payload와 request/response/proof `v2`, batch payload `batch-transfer-payload-v1`·proof `batch-transfer-proof-v1`·request/response `v1`, deposit payload/proof/request/response `v1`입니다. 이전 artifact, queued proof, cached prepared payload, note/scan cache, three-circuit genesis와 호환되지 않습니다. Exact artifact set 재생성, fresh genesis/reset, incompatible job/cache 삭제, rescan으로 upgrade합니다.
 
 자료가 충돌할 때 해당 contract의 판단 순서는 아래와 같습니다.
 

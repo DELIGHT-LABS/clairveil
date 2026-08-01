@@ -71,9 +71,11 @@ The common policy deliberately preserves existing success request/response envel
 
 ## Conformance validation
 
-The dedicated schema owns the general HTTP fixture and the deposit fixture; it does not import a wallet or SDK schema. Validate both from the repository root with a Draft 2020-12 validator:
+The dedicated schema owns the general HTTP fixture and the deposit fixture; it does not import a wallet or SDK schema. Validate both from the repository root with the repository's focused Draft 2020-12 conformance gate:
 
 ```bash
-python3 -m jsonschema -i x/privacy/client/sdk/conformance/testdata/privacy_prover_http_api_contract.json docs/schemas/clairveil-proverd-http-api.schema.json
-python3 -m jsonschema -i x/privacy/client/sdk/conformance/testdata/privacy_deposit_prover_contract.json docs/schemas/clairveil-proverd-http-api.schema.json
+make docs-check
+go test ./x/privacy/client/sdk/conformance -run '^TestProverHTTPSchemaContract$' -count=1
 ```
+
+The gate compiles the canonical schema, accepts both canonical fixtures, and rejects representative unknown-field and out-of-range-amount mutations. It uses the required Go toolchain and does not require a third-party Python package. Downstream implementations may use any conforming Draft 2020-12 validator against the same language-neutral schema.

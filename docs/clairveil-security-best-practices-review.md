@@ -19,7 +19,7 @@ Korean version: [clairveil-security-best-practices-review-kr.md](clairveil-secur
 | ZK artifact verification | Consensus pins exact ordered VK and public-input schema hashes; local verifier mismatch blocks startup/readiness and env checksums cannot override it. |
 | Proof verification cost | Canonical proof framing is checked cheaply, then fixed gas is precharged before decode, VK load, or cryptographic verification. |
 | Batch chain core | `MsgBatchTransfer` re-derives the frozen 12-field witness, precharges every bounded resource category, verifies before mutation, and atomically commits globally unique nullifiers/commitments plus typed scan state. |
-| Conformance fixture | Query, payload hash, and prover HTTP contract fixtures exist for JS SDK/external wallets. |
+| Conformance fixture | Query, route-specific response binding, and prover HTTP contract fixtures exist for JS SDK/external wallets. |
 
 ## 2. Production Decisions Required Before Launch
 
@@ -113,7 +113,7 @@ The active identity is `privacy-note-v1`. `privacy_zk_manifest.json` schema `v2`
 | P3 | Docker image digest pinning/SBOM/vuln scan policy | The reference image is for behavior validation, and downstream must define production supply-chain policy. |
 | P3 | Health/readiness route exposure policy | Convenient for local samples, but a metadata/probing surface remotely. |
 
-The repository currently configures `.github/workflows/security.yml` to run `make vulncheck`. This baseline checks Go dependency and standard-library reachable paths with `govulncheck` and pins the patched Go `1.25.12` toolchain baseline. `GO-2024-2584`, the `pion/dtls` v2 path of `GO-2026-4479`, and `GO-2026-5932` are narrowly tracked no-fixed-version exceptions. The last is reachable only because Cosmos SDK uses `x/crypto/openpgp/armor` for local ASCII key armor; Clairveil does not use OpenPGP signing or encryption. A fixed version immediately invalidates each exception. Downstream projects must re-evaluate these risks and add image scan, SBOM, secret scan, and artifact-signing checks.
+The repository currently configures `.github/workflows/security.yml` to run `make vulncheck`. This baseline checks Go dependency and standard-library reachable paths with `govulncheck`, pins the patched Go `1.25.12` toolchain baseline, and requires `google.golang.org/grpc v1.82.1` plus `go.opentelemetry.io/otel v1.44.0` to close `GO-2026-6061` and `GO-2026-5158`. Its JSON policy wrapper accepts only scanner status `0`; every nonzero scan or usage status fails closed before policy-approved findings can be reported as a pass. `GO-2024-2584`, the `pion/dtls` v2 path of `GO-2026-4479`, and `GO-2026-5932` are narrowly tracked no-fixed-version exceptions. The last is reachable only because Cosmos SDK uses `x/crypto/openpgp/armor` for local ASCII key armor; Clairveil does not use OpenPGP signing or encryption. A fixed version immediately invalidates each exception. Downstream projects must re-evaluate these risks and add image scan, SBOM, secret scan, and artifact-signing checks.
 
 ## 4. Current Code-Level Notes
 
@@ -122,11 +122,11 @@ The security-hardening work closed the known current duplicate-input/output, int
 The 2026-07-13 independent publication validation record is `PUBLICATION_READY_EXPERIMENTAL`. The batch chain core implements the batch protocol contract's frozen `DISCLOSURE-BLINDING-SEPARATION` V1 in production at exactly `99,775` constraints (`+10`), aligns native/prepared and structured 2x2 pre-sign validation, and rotates only the JoinSplit development identity. The security, protocol, chain-core, client-integration, and independent-publication-validation gates are closed, including live no-failover evidence for `PROVER-FAILOVER-LIVE-EVIDENCE` and non-canonical BN254 alias rejection at the structured batch-signing boundary. Stable validation errors are secret-free and are returned before proving/signature release. This disposition does not approve a production release.
 
 - The body limit in `x/privacy/client/sdk/proverservice/service.go` applies only to proof routes. This is intentional, but downstream must separately decide whether health/readiness should be externally exposed.
-- The raw `HTTPHandler` in `x/privacy/client/sdk/provertransport/http.go` uses a shared bounded reader for transfer, withdraw, and batch before admission. Public services must still use `proverservice.Handler` or an equivalent wrapper for bearer auth, gzip wire/decompressed limits, health/readiness policy, and server timeouts.
+- The raw `HTTPHandler` in `x/privacy/client/sdk/provertransport/http.go` uses a shared bounded reader for deposit, transfer, withdraw, and batch before admission. Public services must still use `proverservice.Handler` or an equivalent wrapper for bearer auth, gzip wire/decompressed limits, health/readiness policy, and server timeouts.
 - `cmd/clairveil-proverd/main.go` runs with `auth_enabled=false` when the bearer token env is empty. This is convenient locally, but must be forbidden for remote services.
 - `build/clairveil-proverd/compose.yaml` limits host bind to `127.0.0.1`. However, the Dockerfile itself listens on `0.0.0.0:8080`, so downstream compose/k8s manifests must re-check network policy.
 - Prepared payload JSON and wallet JSON are stored with `0600`, but they are not encrypted. Production wallets need an encryption layer.
-- Transfer/prover contract versions are intentionally breaking: transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload and proof/request/response `v2`, and disclosure plaintext/query version `privacy-fixed-v1`. Legacy payloads must be regenerated, not replayed or decoded through a compatibility path.
+- Current prover contract versions are intentionally breaking: deposit payload/proof/request/response `v1`; transfer payload `v5` and proof/request/response `v2`; withdraw prover/final payload and proof/request/response `v2`; batch payload `batch-transfer-payload-v1`, proof `batch-transfer-proof-v1`, and request/response `v1`; and disclosure plaintext/query `privacy-fixed-v1`. Legacy payloads must be regenerated, not replayed or decoded through a compatibility path.
 
 ## 5. Minimum Guidance To Downstream Developers
 

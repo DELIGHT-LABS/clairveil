@@ -19,6 +19,8 @@
 
 선택 도구는 작업별로 필요합니다. 외부 DSN 없이 PostgreSQL reservation integration을 실행할 때는 Docker, live batch localnet gate에는 `grpcurl`, proto output 재생성에만 `protoc`, `protoc-gen-go`, `protoc-gen-go-grpc`, `buf`, `clang-format`이 필요합니다.
 
+기본 repository workflow에는 third-party Python package가 필요하지 않습니다. `make docs-check`는 canonical prover HTTP schema와 fixture의 full Draft 2020-12 검증에 Go toolchain을 사용합니다.
+
 초기화 전에 주요 버전을 확인합니다.
 
 ```bash

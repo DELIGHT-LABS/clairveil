@@ -71,9 +71,11 @@ Route major version과 각 request, payload, response, proof object version은 �
 
 ## Conformance 검증
 
-전용 schema가 general HTTP fixture와 deposit fixture를 소유하며 wallet 또는 SDK schema를 import하지 않습니다. Repository root에서 Draft 2020-12 validator로 둘 다 검증합니다.
+전용 schema가 general HTTP fixture와 deposit fixture를 소유하며 wallet 또는 SDK schema를 import하지 않습니다. Repository root에서 repository의 focused Draft 2020-12 conformance gate로 둘 다 검증합니다.
 
 ```bash
-python3 -m jsonschema -i x/privacy/client/sdk/conformance/testdata/privacy_prover_http_api_contract.json docs/schemas/clairveil-proverd-http-api.schema.json
-python3 -m jsonschema -i x/privacy/client/sdk/conformance/testdata/privacy_deposit_prover_contract.json docs/schemas/clairveil-proverd-http-api.schema.json
+make docs-check
+go test ./x/privacy/client/sdk/conformance -run '^TestProverHTTPSchemaContract$' -count=1
 ```
+
+이 gate는 canonical schema를 compile하고 두 canonical fixture를 accept하며 대표적인 unknown-field 및 범위 초과 amount mutation을 reject합니다. 필수 Go toolchain을 사용하므로 third-party Python package가 필요하지 않습니다. Downstream 구현은 같은 language-neutral schema에 대해 호환되는 어떤 Draft 2020-12 validator든 사용할 수 있습니다.
