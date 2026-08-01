@@ -112,7 +112,7 @@
 | DEC-13 | 기존 public Go constructor signature는 유지한다. | Deposit 추가가 현재 downstream Go caller를 source-break하지 않아야 한다. |
 | DEC-14 | Prover는 생성 직후 proof framing을 검증하지만 VK verification을 중복 수행하지 않는다. | Ultimate verification은 chain keeper 책임이며 server-side 재검증은 proving 비용을 중복한다. |
 | DEC-15 | Common policy 정규화는 deposit 구현과 같은 branch/PR/release에 포함하되 선행 별도 commit으로 분리한다. | Deposit을 먼저 다른 정책으로 출시하거나 기존의 잘못된 분류를 복사한 뒤 다시 바꾸는 downstream churn을 피한다. |
-| DEC-16 | 모든 proof route는 missing/unsupported JSON media type을 415로, request decode/version/semantic 실패를 400으로, 실제 prover invocation 이후 실패를 500으로 반환한다. | 4xx는 caller가 수정할 수 있는 입력 오류, 5xx는 validated request 이후 server/prover 실패라는 HTTP 의미를 고정한다. |
+| DEC-16 | 기존 `v1` client 호환성을 위해 missing media type은 허용하되, 제공된 unsupported JSON media type은 모든 proof route에서 415로 반환한다. Request decode/version/semantic 실패는 400으로, 실제 prover invocation 이후 실패는 500으로 반환한다. | 공개된 `v1` omission 동작은 보존하면서 supplied media type과 request/prover failure의 HTTP 의미를 고정한다. |
 | DEC-17 | Existing transfer/withdraw/batch의 `400 proof_failed`를 `500 proof_failed`로 교정한다. | 현재 동작은 외부 관찰 가능하므로 단순 internal refactor가 아니라 compatibility-impacting contract correction으로 기록한다. |
 | DEC-18 | Common 정책 변경으로 success envelope version과 `ErrorResponseVersion=v1`은 올리지 않는다. | Error JSON shape/code/retryability는 그대로이고 HTTP status/header enforcement만 교정한다. General prover fixture schema를 `v3`로 올리고 release note에 migration impact를 기록한다. |
 
@@ -240,7 +240,7 @@ Response validation:
 
 이 subsection은 신규 deposit뿐 아니라 기존 transfer, withdraw, batch-transfer proof route에도 동일하게 적용한다.
 
-- Request `Content-Type` header는 필수다. Body read와 admission 획득 전에 검사한다.
+- Client는 Request `Content-Type: application/json`을 보내야 한다. 기존 `v1` proof-route client와의 호환성을 위해 header 누락은 허용하지만, header가 있으면 body read와 admission 획득 전에 검사한다.
 - `mime.ParseMediaType` 기준 media type이 정확히 `application/json`이어야 하고, parameter는 없거나 `charset=utf-8` 하나만 허용한다. Media type/parameter 비교는 HTTP 규칙에 맞게 case-insensitive하게 처리하되 다른 parameter와 charset은 거부한다.
 - `Accept`는 필수가 아니며 v1에서 content negotiation을 하지 않는다. Server는 항상 JSON을 반환한다.
 - `Content-Encoding`은 기존 bounded service가 지원하는 `identity` 또는 `gzip`만 허용한다.
@@ -273,7 +273,7 @@ Response validation:
 | 404 | `not_found` | false | unknown path |
 | 405 | `method_not_allowed` | false | POST가 아닌 method |
 | 413 | `invalid_request` | false | raw 또는 decompressed body limit 초과 |
-| 415 | `invalid_request` | false | missing/unsupported `Content-Type` |
+| 415 | `invalid_request` | false | 제공된 `Content-Type`이 unsupported |
 | 429 | `busy` | true | circuit admission queue 포화 |
 | 500 | `proof_failed` | false | proof runner 또는 response self-validation 실패 |
 | 503 | `unavailable` | false | 해당 route의 prover가 미구성 |
@@ -534,7 +534,7 @@ Phase 1 gate:
 Deposit/transfer/withdraw/batch를 같은 table에 넣고 다음을 고정한다.
 
 - Valid JSON `Content-Type`과 `application/json; charset=utf-8` 허용
-- Missing/unsupported media type은 body read/admission/prover call 전에 415
+- Missing media type은 기존 `v1` 호환성을 위해 허용하고, supplied unsupported media type은 body read/admission/prover call 전에 415
 - POST가 아닌 method는 405와 `Allow: POST`
 - Success, request error, auth error, encoding error, busy, unavailable, proof failure 모두 `Cache-Control: no-store`
 - Malformed/unsupported version/semantic invalid request는 `400 invalid_request`
@@ -545,7 +545,7 @@ Deposit/transfer/withdraw/batch를 같은 table에 넣고 다음을 고정한다
 - `HTTPProverClient`가 모든 route request에 `Content-Type: application/json`을 설정
 - 기존 redaction canary가 status 교정 후에도 response/log에 포함되지 않음
 
-기존 transfer/withdraw/batch의 400 assertion을 단순 치환하는 데 그치지 않고, 400과 500의 경계가 handler call 순서와 일치하는지 검증한다. Media type 자체를 검증하는 negative case 외에는 기존 valid/invalid body test helper가 모두 `Content-Type: application/json`을 설정하게 고쳐, 원래 검증하려던 body-limit, framing, semantic, admission assertion이 415에 가려지지 않게 한다.
+기존 transfer/withdraw/batch의 400 assertion을 단순 치환하는 데 그치지 않고, 400과 500의 경계가 handler call 순서와 일치하는지 검증한다. Media type negative case와 명시적인 omission compatibility case 외에는 기존 valid/invalid body test helper가 모두 `Content-Type: application/json`을 설정하게 고쳐 실제 client 동작을 고정하고 compatibility fallback에 우연히 의존하지 않게 한다.
 
 ### T-01. Deposit payload/proof unit test
 
@@ -707,8 +707,8 @@ Fixture가 고정할 내용:
 - readiness/preflight가 deposit artifact 없이 성공한다고 가정하는 test
 - “transfer and withdraw”라는 이름이 실제로 모든 non-batch proof route를 뜻하는 test
 - transfer/withdraw/batch prover error 또는 invalid response를 `400 proof_failed`로 기대하는 test
-- proof route가 missing/wrong `Content-Type`을 허용하거나 `Cache-Control`/`Allow`를 검사하지 않는 test
-- Content-Type 없이 body-limit/framing/semantic/admission 결과를 기대해 새 415 policy에 가려지는 existing test/helper
+- proof route가 wrong supplied `Content-Type`을 허용하거나 missing `Content-Type` 호환성, `Cache-Control` 또는 `Allow`를 검사하지 않는 test
+- Omission compatibility를 검증하는 경우가 아닌데도 `Content-Type` 없이 body-limit/framing/semantic/admission 결과를 기대하는 existing test/helper
 
 Phase 2 gate:
 
@@ -814,7 +814,7 @@ Deposit 문서에서 common HTTP policy를 다시 독자적으로 정의하지 �
   - “JS/web wallet JSON schemas” 표현을 language-neutral API schema와 wallet-facing schema의 분리된 소유권에 맞게 교정한다.
 - `CHANGELOG.md` / `CHANGELOG-kr.md`
   - `Unreleased`에 additive deposit prover API와 unchanged circuit/chain wire contract를 기록한다.
-  - Existing proof route의 Content-Type enforcement와 `400 proof_failed` → `500 proof_failed` 교정을 compatibility/migration impact로 명시한다.
+  - Existing proof route의 supplied Content-Type validation, omission compatibility와 `400 proof_failed` → `500 proof_failed` 교정을 compatibility/migration impact로 명시한다.
   - Success request/response version과 `ErrorResponseVersion=v1`은 unchanged임을 명시한다.
 
 ### D-04. Historical plan과 benchmark 문구
@@ -955,23 +955,24 @@ make check
 | Ownership cleanup | `examples/js-sdk-fixture-validator/src/index.ts`, README pair | Generic prover HTTP fixture validation을 Go/schema로 이관; deposit client code는 추가하지 않음 |
 | Release | `CHANGELOG*`, docs/plan index, release-pack manifests | Handoff/release inclusion |
 
-## 11. 권장 commit 경계
+## 11. Commit 경계와 히스토리 정리 결과
 
-실제 repository policy가 squash를 요구하지 않는다면 다음 순서를 권장한다.
+작업은 구현 → 테스트 → 문서화 → 최종검증 순서로 수행했다. 완료 뒤에는 테스트를 구현과, 계획 종료 기록을 문서와 결합하고 repository 재감사를 두 remediation 경계로 묶어 다음 여섯 commit으로 정리했다.
 
-1. `refactor(provertransport): normalize proof route HTTP policy`
-   - I-00과 T-00을 함께 포함해 전 route Content-Type/header와 400/500 status 분류를 교정
-   - Existing success request/response contract는 변경하지 않음
-2. `feat(proverd): add canonical versioned deposit proof endpoint`
-   - Phase 1의 deposit production code 포함
-3. `test(proverd): cover common policy deposit service and conformance`
-   - Phase 2 test와 fixture 포함
-4. `docs(proverd): publish language-neutral HTTP and deposit contracts`
-   - Phase 3 general/deposit bilingual docs/schema/index/changelog와 compatibility impact 포함
-5. `chore(plan): close deposit API implementation plan`
-   - 모든 gate 통과 뒤 plan status/completion ledger 갱신
+1. `9d4507d017a27513b38d0e8b7b5cc114956ceb15` — `refactor(provertransport): normalize proof route HTTP policy`
+   - I-00과 T-00을 함께 포함해 전 route header와 400/500 status 분류를 교정한다.
+2. `2d0dc2068bb27921ee211c076ea3517a4124e8b1` — `feat(proverd): add canonical versioned deposit proof endpoint`
+   - Phase 1 production code와 Phase 2 test/conformance fixture를 하나의 검증 가능한 기능 경계로 묶는다.
+3. `756a7fe839a71d406d4b30dab9c53baa49545b74` — `docs(proverd): publish language-neutral HTTP and deposit contracts`
+   - Phase 3 bilingual docs/schema/index/changelog, release-pack metadata와 초기 plan 종료 기록을 묶는다.
+4. `e1877258d29404817309474f94cba503f45703cf` — `fix(release): close repository audit and clean-environment gates`
+   - R-01~R-07의 dependency, contract inventory, vulnerability policy와 self-contained schema gate remediation을 묶는다.
+5. `8b9b0434d1e7f50e417db0088b1b494a0e1ab145` — `fix(proverd): align runtime and HTTP compatibility boundaries`
+   - R-08~R-11의 runtime capability, `Content-Encoding`, `Content-Type` omission compatibility와 method precedence 보완을 묶는다.
+6. `chore(plan): align completion ledger with consolidated history`
+   - Rewritten commit ID, 최종 contract와 검증 근거를 이 completed record에 맞춘다.
 
-작업 자체는 구현 → 테스트 순서로 수행하되 commit은 해당 focused test가 통과한 뒤 자른다. 특히 I-00만 적용해 기존 400 assertion이 실패하는 commit을 만들지 않고 T-00까지 완료한 뒤 첫 commit을 만든다. 각 commit 사이에서 이전 단계 gate를 통과하며, test 실패 상태나 문서가 구현보다 앞선 완료 상태를 중간 commit에 남기지 않는다.
+Common HTTP policy는 DEC-15에 따라 deposit 기능보다 선행하는 독립 경계를 유지한다. 각 기능 commit은 관련 test를 함께 가져 중간 tree가 의도한 계약을 검증할 수 있으며, 마지막 commit은 실행 동작을 바꾸지 않는 plan-only 기록이다.
 
 ## 12. 작업 체크리스트
 
@@ -1032,24 +1033,21 @@ make check
 
 ## 13. Completion ledger
 
-구현 세션은 완료 시 아래 표를 채운다.
+구현 세션과 후속 history consolidation 결과는 아래 표에 기록한다. 재작성 전 hash가 남은 release/clean-environment 항목은 당시 실제 실행·package evidence를 식별하는 historical reference다.
 
 | 항목 | 결과 |
 | --- | --- |
-| Common HTTP policy commit | `3bc69a82c5fa3a613e872fc2168d3301fa4fee22` |
-| 구현 commit | `9b50f33b9d92f947c77dccdf30af19c2c2b9b063` |
-| 테스트 commit | `75f8ce0d19a2c035855823a54c9a220988fb5d51` |
-| 문서 commit | `c2362c7bd55658e43bdee7892f123ff851fba7b2` |
-| Security dependency remediation commit | `4d9f013684ae68318bf1ce556376afe789c0c1c3` |
-| Documentation consistency audit commit | `8120bd2a4f070af710f6e9d7bce259bfe9f735c1` |
-| Security scanner fail-closed commit | `60e98ddd4ad71743570b8705960ba6ced1ffed18` |
-| Clean-environment schema gate remediation commit | `4d7ecb1612ed4570f86ef7c107738cd80f8a472e` |
-| Runtime capability/HTTP framing remediation commit | `522d2b6e82120787ff174044c02a2cc78e6d6e65` |
-| 최종 재검증 HEAD | `522d2b6e82120787ff174044c02a2cc78e6d6e65` (실제 `ProverSet` inventory, strict `Content-Encoding`, `make examples` 문서/gate 정렬을 포함한 전체 gate 검증 대상 clean HEAD; 이 completion ledger는 후속 `chore(plan)` commit) |
+| Common HTTP policy commit | `9d4507d017a27513b38d0e8b7b5cc114956ceb15` |
+| Deposit endpoint와 conformance commit | `2d0dc2068bb27921ee211c076ea3517a4124e8b1` |
+| Language-neutral contract와 초기 plan 종료 commit | `756a7fe839a71d406d4b30dab9c53baa49545b74` |
+| Repository audit와 clean-environment remediation commit | `e1877258d29404817309474f94cba503f45703cf` |
+| Runtime capability와 HTTP compatibility remediation commit | `8b9b0434d1e7f50e417db0088b1b494a0e1ab145` |
+| History consolidation record | 이 문서를 포함하는 후속 plan-only commit |
+| 최종 기능 재검증 HEAD | `8b9b0434d1e7f50e417db0088b1b494a0e1ab145` (재작성 전 최종 `HEAD`와 tree object가 같음을 확인하고 focused/race/full Go test, `go build ./cmd/clairveil-proverd`, `go mod tidy -diff`, `make docs-check`를 재실행) |
 | Focused test | PASS — provertransport, proverservice의 partial/full runtime inventory와 repeated/comma-separated/multiple/empty `Content-Encoding`, `cmd/clairveil-proverd` |
 | Race test | PASS — provertransport, proverservice (`LC_DYSYMTAB` linker warning만 발생, test exit 0) |
 | Build/privacy regression | PASS — `go build ./cmd/clairveil-proverd`, `go test ./x/privacy/... -count=1` |
-| `go test ./...` | PASS — clean `522d2b6e82120787ff174044c02a2cc78e6d6e65` HEAD에서 `-count=1` fresh 실행 |
+| `go test ./...` | PASS — consolidated functional HEAD `8b9b0434d1e7f50e417db0088b1b494a0e1ab145`에서 `-count=1` fresh 실행 |
 | Schema validation | PASS — `github.com/santhosh-tekuri/jsonschema/v6 v6.0.2` 기반 Draft 2020-12 schema compile, canonical fixture 2건 accept, unknown top-level field와 uint64 초과 amount negative mutation 2건 reject |
 | Clean supported environment regression | PASS — 기존 `629ddb34ee04ca287436a801c9b0ea0d418369e1`에서 fresh venv의 `make ci`/`make release-check`가 미선언 Python `jsonschema`로 exit 2임을 재현한 뒤, required Go toolchain gate로 교체하여 같은 조건에서 해소 |
 | `make docs-check` | PASS — third-party package가 없는 fresh Python 3.12 venv에서 link/pair/index/changelog/release closure, 두 prover fixture schema, 상위 문서 current-contract inventory/binding semantic 검증, Makefile의 `make examples` 8-command inventory와 EN/KR guide 일치 검증 |
