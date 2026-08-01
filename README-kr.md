@@ -212,7 +212,7 @@ make release-pack-verify
 초기 통합 중에는 downstream app에서 로컬 `replace`를 쓰는 방식이 가장 빠릅니다.
 
 ```go
-require github.com/DELIGHT-LABS/clairveil v0.3.1
+require github.com/DELIGHT-LABS/clairveil v0.4.0
 
 replace github.com/DELIGHT-LABS/clairveil => ../clairveil
 ```

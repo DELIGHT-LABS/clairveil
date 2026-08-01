@@ -6,6 +6,8 @@ This project follows [the release versioning policy](docs/clairveil-release-vers
 
 ## Unreleased
 
+## v0.4.0 - 2026-08-02
+
 ### Added
 
 - Added the language-neutral, versioned `POST /v1/prover/deposit` API, its canonical general/deposit HTTP documentation, dedicated JSON Schema, and Go conformance fixtures.
@@ -26,6 +28,17 @@ This project follows [the release versioning policy](docs/clairveil-release-vers
 
 - Updated `google.golang.org/grpc` to `v1.82.1` and `go.opentelemetry.io/otel` core modules to `v1.44.0`, closing reachable `GO-2026-6061` and `GO-2026-5158` findings in the repository `govulncheck` gate.
 - Hardened the JSON `govulncheck` policy wrapper to reject every nonzero scanner status, so scan or usage failures cannot be accepted merely because a policy-approved finding is present in partial output.
+
+### Known Risk
+
+- Clairveil remains `PUBLICATION_READY_EXPERIMENTAL`, not `PRODUCTION_RELEASE_READY`. Formal trusted setup, external ZK/security audit, signed production artifact distribution, chain-specific migration, production wallet storage, audit-key custody, and downstream product validation remain outside this release.
+- Deposit proof requests contain sensitive witness data. Remote deployments must preserve TLS/auth, bounded admission and body limits, timeout, redacted logging, `no-store`, and process-isolation guidance from the production profile.
+
+### Handoff Notes
+
+- Downstream clients adopting `POST /v1/prover/deposit` must validate the response version, commitment, and proof before assembling `MsgDeposit`, while retaining the encrypted note and transaction metadata outside the prover request.
+- All proof-route clients must treat supplied `Content-Type` values other than `application/json` as unsupported and classify post-validation `proof_failed` as an HTTP `500` server/proving failure. Omitted `Content-Type` remains compatible for existing `v1` clients.
+- No fresh genesis, circuit artifact rotation, state migration, protobuf regeneration, or success-envelope migration is required from `v0.3.1`.
 
 ## v0.3.1 - 2026-07-21
 

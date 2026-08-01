@@ -19,7 +19,7 @@ The recommended model separates responsibilities as follows.
 During early development, a local `replace` is fastest.
 
 ```go
-require github.com/DELIGHT-LABS/clairveil v0.3.1
+require github.com/DELIGHT-LABS/clairveil v0.4.0
 
 replace github.com/DELIGHT-LABS/clairveil => ../clairveil
 ```

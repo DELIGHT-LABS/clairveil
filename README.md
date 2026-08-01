@@ -214,7 +214,7 @@ See the [Testing guide](docs/clairveil-testing-guide.md) for the test layers and
 During early integration, using a local `replace` is usually fastest:
 
 ```go
-require github.com/DELIGHT-LABS/clairveil v0.3.1
+require github.com/DELIGHT-LABS/clairveil v0.4.0
 
 replace github.com/DELIGHT-LABS/clairveil => ../clairveil
 ```

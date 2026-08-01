@@ -6,6 +6,8 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
 ## Unreleased
 
+## v0.4.0 - 2026-08-02
+
 ### Added
 
 - Language-neutral, versioned `POST /v1/prover/deposit` API와 canonical general/deposit HTTP 문서, 전용 JSON Schema, Go conformance fixture를 추가했습니다.
@@ -26,6 +28,17 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
 - Repository `govulncheck` gate의 reachable `GO-2026-6061`, `GO-2026-5158`를 해소하기 위해 `google.golang.org/grpc`를 `v1.82.1`, `go.opentelemetry.io/otel` core module을 `v1.44.0`으로 갱신했습니다.
 - Policy-approved finding이 partial output에 있어도 scan/usage failure를 통과시키지 못하도록 JSON `govulncheck` policy wrapper가 모든 nonzero scanner status를 거부하게 강화했습니다.
+
+### Known Risk
+
+- Clairveil은 계속 `PUBLICATION_READY_EXPERIMENTAL`이며 `PRODUCTION_RELEASE_READY`가 아닙니다. Formal trusted setup, 외부 ZK/security audit, signed production artifact distribution, chain-specific migration, production wallet storage, audit-key custody, downstream product validation은 이번 release 범위 밖입니다.
+- Deposit proof request에는 민감한 witness data가 포함됩니다. Remote deployment는 production profile의 TLS/auth, bounded admission/body limit, timeout, redacted logging, `no-store`, process-isolation 지침을 유지해야 합니다.
+
+### Handoff Notes
+
+- `POST /v1/prover/deposit`을 도입하는 downstream client는 `MsgDeposit`을 조립하기 전에 response version, commitment, proof를 검증하고 encrypted note와 transaction metadata는 prover request 밖에 유지해야 합니다.
+- 모든 proof-route client는 제공된 `Content-Type`이 `application/json`이 아니면 unsupported로 처리하고 post-validation `proof_failed`를 HTTP `500` server/proving failure로 분류해야 합니다. 기존 `v1` client의 `Content-Type` 누락은 계속 호환됩니다.
+- `v0.3.1` 대비 fresh genesis, circuit artifact rotation, state migration, protobuf regeneration, success-envelope migration은 필요하지 않습니다.
 
 ## v0.3.1 - 2026-07-21
 
