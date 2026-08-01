@@ -74,7 +74,15 @@ func TestProofRoutesShareMethodMediaTypeAndResponseHeaderPolicy(t *testing.T) {
 			require.Equal(t, "application/json", recorder.Header().Get("Content-Type"))
 		})
 
-		for _, contentType := range []string{"", "text/plain", "application/json; charset=iso-8859-1", "application/json; profile=v1"} {
+		t.Run(path+"/missing-media-type", func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+			handler.ServeHTTP(recorder, request)
+			require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+			require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+		})
+
+		for _, contentType := range []string{"text/plain", "application/json; charset=iso-8859-1", "application/json; profile=v1"} {
 			t.Run(path+"/media/"+contentType, func(t *testing.T) {
 				recorder := httptest.NewRecorder()
 				request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))

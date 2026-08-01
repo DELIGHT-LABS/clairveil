@@ -113,7 +113,7 @@ Current breaking versions are deposit payload/proof/request/response `v1`, trans
 
 When using a remote prover, request/response bodies are privacy-sensitive data.
 
-For every proof route, send `Content-Type: application/json`; a missing or unsupported type is `415`, request decode/version/semantic errors are `400`, and a failure after prover invocation is `500`. Expect `Cache-Control: no-store` on all success/error responses and `Allow: POST` on `405`; do not cache, reinterpret, or retry malformed responses as a new request.
+For every proof route, send `Content-Type: application/json`; omission remains accepted for existing `v1` client compatibility, an unsupported supplied type is `415`, request decode/version/semantic errors are `400`, and a failure after prover invocation is `500`. Expect `Cache-Control: no-store` on all success/error responses and `Allow: POST` on `405`; do not cache, reinterpret, or retry malformed responses as a new request.
 
 Prover request failover must not behave like ordinary read-query failover. A prepared payload still contains private note witness even though its outputs are immutable. If prover A fails, sending it to B or C expands the privacy boundary. The safe default is a single endpoint with no failover; retry may target the same endpoint. Multi-prover failover requires explicit user/product-policy opt-in and a warning naming the additional endpoints.
 

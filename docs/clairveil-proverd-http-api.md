@@ -19,9 +19,9 @@ Every route accepts only `POST` and returns JSON.
 
 ## Common transport policy
 
-- `Content-Type` is required and must be `application/json`. Its only permitted parameter is `charset=utf-8`; media type and parameter comparisons are case-insensitive. The server checks it before reading the body or taking admission.
+- Clients should send `Content-Type: application/json`. Omission remains accepted for compatibility with existing `v1` proof-route clients; when the header is present, its only permitted value is `application/json` with an optional `charset=utf-8` parameter. Media type and parameter comparisons are case-insensitive, and the server validates a present header before reading the body or taking admission.
 - `Accept` is optional. Version 1 does not negotiate content types; the server always returns JSON.
-- Only `identity` and `gzip` `Content-Encoding` values are accepted.
+- `Content-Encoding` may be absent or contain exactly one value: `identity` or `gzip`. Repeated fields, comma-separated/multiple codings, empty values, and every other coding are rejected as `400 invalid_request` before the body is read.
 - Both the raw wire body and decompressed body are subject to a configured positive limit. The service default is 8 MiB.
 - Every proof-route success and error response, including early authentication and content-encoding failures, has `Content-Type: application/json` and `Cache-Control: no-store`.
 - A method mismatch returns `405` with `Allow: POST`.
@@ -48,7 +48,7 @@ All errors use this strict JSON envelope. `message` is a fixed, failure-class-sp
 | 404 | `not_found` | false | Unknown path |
 | 405 | `method_not_allowed` | false | Method is not `POST` |
 | 413 | `invalid_request` | false | Raw or decompressed body exceeds its limit |
-| 415 | `invalid_request` | false | Missing or unsupported `Content-Type` |
+| 415 | `invalid_request` | false | Unsupported supplied `Content-Type` |
 | 429 | `busy` | true | Circuit admission queue is full |
 | 500 | `proof_failed` | false | Proof runner or response self-validation failed after a valid request invoked proving |
 | 503 | `unavailable` | false | Route prover is not configured |

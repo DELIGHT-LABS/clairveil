@@ -486,10 +486,12 @@ func beginProofRequest(w http.ResponseWriter, r *http.Request, route string) boo
 }
 
 // ValidateProofRequestMediaType applies the common JSON media-type contract
-// before a proof-route body is read.
+// before a proof-route body is read. An omitted Content-Type remains accepted
+// for compatibility with the existing v1 proof routes; when present, the value
+// must identify the supported JSON media type.
 func ValidateProofRequestMediaType(value string) error {
 	if strings.TrimSpace(value) == "" {
-		return fmt.Errorf("content type is required")
+		return nil
 	}
 	mediaType, params, err := mime.ParseMediaType(value)
 	if err != nil || !strings.EqualFold(mediaType, "application/json") {

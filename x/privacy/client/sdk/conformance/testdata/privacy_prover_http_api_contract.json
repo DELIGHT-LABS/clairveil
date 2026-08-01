@@ -27,7 +27,7 @@
   },
   "common_policy": {
     "request": {
-      "content_type_required": true,
+      "content_type_required": false,
       "allowed_content_types": ["application/json", "application/json; charset=utf-8"],
       "content_encodings": ["identity", "gzip"],
       "default_max_bytes": 8388608

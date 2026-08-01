@@ -113,7 +113,7 @@ Transfer, withdraw, batch는 반환된 proof를 payload/proof hash에 추가로 
 
 Remote prover를 쓰는 경우 request/response body는 privacy-sensitive data로 취급해야 합니다.
 
-모든 proof route에는 `Content-Type: application/json`을 보냅니다. 누락되었거나 지원하지 않는 type은 `415`, request decode/version/semantic 오류는 `400`, prover invocation 뒤의 실패는 `500`입니다. 모든 success/error response의 `Cache-Control: no-store`와 `405`의 `Allow: POST`를 기대하며, response를 cache하거나 malformed response를 새 요청처럼 해석·재시도하지 않습니다.
+모든 proof route에는 `Content-Type: application/json`을 보냅니다. 기존 `v1` client 호환성을 위해 누락은 계속 허용하고, 제공된 type이 지원되지 않으면 `415`, request decode/version/semantic 오류는 `400`, prover invocation 뒤의 실패는 `500`입니다. 모든 success/error response의 `Cache-Control: no-store`와 `405`의 `Allow: POST`를 기대하며, response를 cache하거나 malformed response를 새 요청처럼 해석·재시도하지 않습니다.
 
 Prepared payload는 output이 immutable이어도 private note witness를 포함하므로 prover failover를 일반 read query처럼 처리하면 안 됩니다. Prover A 실패 후 B/C로 보내면 privacy boundary가 넓어집니다. 안전한 기본값은 single endpoint/no failover이고 같은 endpoint retry만 가능합니다. Multi-prover failover는 추가 endpoint를 명시한 경고 뒤 사용자/product-policy가 explicit opt-in해야 합니다.
 

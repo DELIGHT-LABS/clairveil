@@ -81,7 +81,7 @@ func TestProverHTTPContractFixtureMatchesSDK(t *testing.T) {
 	require.Equal(t, privacyprovertransport.DepositProofResponseVersion, fixture.DepositRoute.ResponseVersion)
 
 	require.Equal(t, privacyprovertransport.ErrorResponseVersion, fixture.CommonPolicy.ErrorResponse.Version)
-	require.True(t, fixture.CommonPolicy.Request.ContentTypeRequired)
+	require.False(t, fixture.CommonPolicy.Request.ContentTypeRequired)
 	require.Equal(t, []string{"application/json", "application/json; charset=utf-8"}, fixture.CommonPolicy.Request.AllowedContentTypes)
 	require.Equal(t, []string{"identity", "gzip"}, fixture.CommonPolicy.Request.ContentEncodings)
 	require.Equal(t, privacyprovertransport.DefaultMaxRequestBytes, fixture.CommonPolicy.Request.DefaultMaxBytes)

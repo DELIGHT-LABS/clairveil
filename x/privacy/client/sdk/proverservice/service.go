@@ -227,6 +227,31 @@ func circuitIDStrings(ids []privacyzk.CircuitID) []string {
 	return values
 }
 
+func runtimeInfoForProverSet(info RuntimeInfo, provers privacyprovertransport.ProverSet) RuntimeInfo {
+	info.Routes = []string{HealthPath, ReadinessPath, MetricsPath}
+	info.Circuits = nil
+
+	if provers.Deposit != nil {
+		info.Routes = append(info.Routes, privacyprovertransport.DepositProofPath)
+		info.Circuits = append(info.Circuits, privacyprovertransport.DepositProofCircuitID)
+	}
+	if provers.Transfer != nil {
+		info.Routes = append(info.Routes, privacyprovertransport.TransferProofPath)
+	}
+	if provers.Withdraw != nil {
+		info.Routes = append(info.Routes, privacyprovertransport.WithdrawProofPath)
+		info.Circuits = append(info.Circuits, privacyprovertransport.WithdrawProofCircuitID)
+	}
+	if provers.Transfer != nil {
+		info.Circuits = append(info.Circuits, privacyprovertransport.TransferProofCircuitID)
+	}
+	if provers.BatchTransfer != nil {
+		info.Routes = append(info.Routes, privacyprovertransport.BatchTransferProofPath)
+		info.Circuits = append(info.Circuits, privacyprovertransport.BatchTransferProofCircuitID)
+	}
+	return info
+}
+
 func NewReferenceHandler(now func() time.Time, logWriter io.Writer, maxRequestBytes int64, bearerToken string) *Handler {
 	info := DefaultRuntimeInfo()
 	info.AuthEnabled = strings.TrimSpace(bearerToken) != ""
@@ -320,6 +345,8 @@ func NewHandlerWithProverSet(
 	if strings.TrimSpace(info.ServiceName) == "" {
 		info = DefaultRuntimeInfo()
 	}
+	info = runtimeInfoForProverSet(info, provers)
+	info.AuthEnabled = strings.TrimSpace(bearerToken) != ""
 	if maxRequestBytes <= 0 {
 		maxRequestBytes = DefaultMaxRequestBz
 	}
@@ -370,7 +397,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if h.maxRequestBytes > 0 && r.Body != nil && isProofRoute(r.URL.Path) {
+		if h.maxRequestBytes > 0 && r.Body != nil && isProofRoute(r.URL.Path) && r.Method == http.MethodPost {
 			if err := limitProofRequestBody(w, r, h.maxRequestBytes); err != nil {
 				writeErrorResponse(w, http.StatusBadRequest, privacyprovertransport.ErrorCodeInvalidRequest, err.Error())
 				return
@@ -386,7 +413,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // memory budget.
 func limitProofRequestBody(w http.ResponseWriter, r *http.Request, maxBytes int64) error {
 	rawBody := http.MaxBytesReader(w, r.Body, maxBytes)
-	encoding := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Encoding")))
+	encoding, err := proofRequestContentEncoding(r.Header)
+	if err != nil {
+		_ = rawBody.Close()
+		return err
+	}
 	switch encoding {
 	case "", "identity":
 		r.Body = rawBody
@@ -407,6 +438,31 @@ func limitProofRequestBody(w http.ResponseWriter, r *http.Request, maxBytes int6
 		_ = rawBody.Close()
 		return fmt.Errorf("unsupported proof request content encoding")
 	}
+}
+
+func proofRequestContentEncoding(header http.Header) (string, error) {
+	values := header.Values("Content-Encoding")
+	if len(values) == 0 {
+		return "", nil
+	}
+
+	codings := make([]string, 0, len(values))
+	for _, value := range values {
+		for _, coding := range strings.Split(value, ",") {
+			coding = strings.ToLower(strings.TrimSpace(coding))
+			if coding == "" {
+				return "", fmt.Errorf("unsupported proof request content encoding")
+			}
+			codings = append(codings, coding)
+		}
+	}
+	if len(codings) != 1 {
+		return "", fmt.Errorf("unsupported proof request content encoding")
+	}
+	if codings[0] != "identity" && codings[0] != "gzip" {
+		return "", fmt.Errorf("unsupported proof request content encoding")
+	}
+	return codings[0], nil
 }
 
 type proofRequestBody struct {

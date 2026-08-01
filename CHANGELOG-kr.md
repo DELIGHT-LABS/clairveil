@@ -12,13 +12,15 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
 ### Changed
 
-- 모든 proof route에서 `Content-Type`을 일관되게 강제하고 post-validation `proof_failed` response를 HTTP `400`에서 `500`으로 교정했습니다. 해당 failure를 request error로 분류하던 downstream client는 분류를 갱신해야 합니다.
+- 모든 proof route에서 제공된 `Content-Type`을 일관되게 검증하되 기존 `v1` client를 위해 누락 호환성을 유지하고, post-validation `proof_failed` response를 HTTP `400`에서 `500`으로 교정했습니다. 해당 failure를 request error로 분류하던 downstream client는 분류를 갱신해야 합니다.
 - Deposit API와 common HTTP-policy 교정은 circuit artifact, chain transaction wire contract, success request/response version, `ErrorResponseVersion=v1`을 변경하지 않습니다.
 - Architecture, remote prover, JS SDK handoff, client checklist, security review의 current-contract inventory를 네 proof route와 route-specific response binding에 맞게 정렬했습니다.
 
 ### Fixed
 
 - 깨끗한 지원 환경에서 `make ci`와 `make release-check`를 차단하던 미선언 Python `jsonschema` 의존성을 제거했습니다. 이제 repository는 필수 Go toolchain으로 language-neutral Draft 2020-12 prover schema와 positive/negative conformance case를 검증합니다.
+- Health/readiness route 및 circuit inventory를 configured `ProverSet`에서 산출하여 compatibility constructor가 사용할 수 없는 deposit 또는 batch capability를 광고하지 않게 했습니다.
+- Proof request body를 읽기 전에 반복, comma-separated, empty 또는 그 밖의 ambiguous `Content-Encoding` field를 거부하고, 문서의 `make examples` command inventory를 Makefile과 정렬했습니다.
 
 ### Security
 

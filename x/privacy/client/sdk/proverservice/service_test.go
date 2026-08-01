@@ -21,6 +21,8 @@ import (
 
 type stubTransferProver struct{}
 
+type stubWithdrawProver struct{}
+
 type stubBatchTransferProver struct{}
 
 type stubDepositProver struct{}
@@ -35,6 +37,10 @@ func newServiceRequest(method, path string, body io.Reader) *http.Request {
 
 func (stubTransferProver) ProveTransfer(request privacyprovertransport.TransferProofRequest, _ time.Time) (*privacyprovertransport.TransferProofResponse, error) {
 	return nil, fmt.Errorf("unexpected proof request: %s", request.Version)
+}
+
+func (stubWithdrawProver) ProveWithdraw(request privacyprovertransport.WithdrawProofRequest, _ time.Time) (*privacyprovertransport.WithdrawProofResponse, error) {
+	return nil, fmt.Errorf("unexpected withdraw proof request: %s", request.Version)
 }
 
 func (stubBatchTransferProver) ProveBatchTransfer(request privacyprovertransport.BatchTransferProofRequest, _ time.Time) (*privacyprovertransport.BatchTransferProofResponse, error) {
@@ -101,6 +107,49 @@ func TestDefaultRuntimeInfoIncludesMetricsRoute(t *testing.T) {
 	require.Equal(t, circuitIDStrings(privacyzk.RequiredCircuitIDs()), info.Circuits)
 }
 
+func TestHandlerRuntimeInventoryMatchesConfiguredProvers(t *testing.T) {
+	t.Run("legacy transfer-only constructor", func(t *testing.T) {
+		handler := NewHandler(stubTransferProver{}, nil, nil, nil, RuntimeInfo{}, "secret-token", DefaultMaxRequestBz)
+
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, newServiceRequest(http.MethodGet, ReadinessPath, nil))
+		require.Equal(t, http.StatusOK, recorder.Code)
+
+		var response StatusResponse
+		require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+		require.Equal(t, []string{HealthPath, ReadinessPath, MetricsPath, privacyprovertransport.TransferProofPath}, response.Routes)
+		require.Equal(t, []string{privacyprovertransport.TransferProofCircuitID}, response.Circuits)
+		require.True(t, response.AuthEnabled)
+		require.NotContains(t, response.Routes, privacyprovertransport.DepositProofPath)
+		require.NotContains(t, response.Circuits, privacyprovertransport.DepositProofCircuitID)
+
+		unavailableRecorder := httptest.NewRecorder()
+		unavailableRequest := newServiceRequest(http.MethodPost, privacyprovertransport.DepositProofPath, bytes.NewBufferString(`{}`))
+		unavailableRequest.Header.Set("Authorization", "Bearer secret-token")
+		handler.ServeHTTP(unavailableRecorder, unavailableRequest)
+		require.Equal(t, http.StatusServiceUnavailable, unavailableRecorder.Code)
+	})
+
+	t.Run("full prover set", func(t *testing.T) {
+		handler := NewHandlerWithProverSet(
+			privacyprovertransport.ProverSet{
+				Deposit:       stubDepositProver{},
+				Transfer:      stubTransferProver{},
+				Withdraw:      stubWithdrawProver{},
+				BatchTransfer: stubBatchTransferProver{},
+			},
+			nil,
+			nil,
+			RuntimeInfo{},
+			"",
+			DefaultMaxRequestBz,
+			mustDefaultAdmissionController(),
+		)
+		require.Equal(t, DefaultRuntimeInfo().Routes, handler.info.Routes)
+		require.Equal(t, circuitIDStrings(privacyzk.RequiredCircuitIDs()), handler.info.Circuits)
+	})
+}
+
 func TestHandlerMetricsRoute(t *testing.T) {
 	handler := NewHandler(nil, nil, nil, nil, DefaultRuntimeInfo(), "", DefaultMaxRequestBz)
 
@@ -144,9 +193,11 @@ func TestHandlerDelegatesProofRouteMethodValidation(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	request := newServiceRequest(http.MethodGet, privacyprovertransport.TransferProofPath, nil)
+	request.Header.Set("Content-Encoding", "br")
 	handler.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusMethodNotAllowed, recorder.Code)
+	require.Equal(t, http.MethodPost, recorder.Header().Get("Allow"))
 
 	errorResponse, err := privacyprovertransport.DecodeErrorResponseJSON(recorder.Body.Bytes())
 	require.NoError(t, err)
@@ -202,15 +253,50 @@ func TestHandlerRejectsUnsupportedProofRequestContentEncoding(t *testing.T) {
 	require.Equal(t, privacyprovertransport.ErrorCodeInvalidRequest, errorResponse.Code)
 }
 
+func TestHandlerRejectsAmbiguousProofRequestContentEncoding(t *testing.T) {
+	tests := []struct {
+		name   string
+		values []string
+	}{
+		{name: "unsupported repeated value", values: []string{"identity", "br"}},
+		{name: "comma-separated values", values: []string{"identity, br"}},
+		{name: "multiple supported values", values: []string{"identity", "gzip"}},
+		{name: "repeated gzip", values: []string{"gzip", "gzip"}},
+		{name: "empty value", values: []string{""}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			handler := NewHandlerWithProverSet(
+				privacyprovertransport.ProverSet{Deposit: stubDepositProver{}},
+				nil,
+				nil,
+				RuntimeInfo{},
+				"",
+				DefaultMaxRequestBz,
+				mustDefaultAdmissionController(),
+			)
+			recorder := httptest.NewRecorder()
+			request := newServiceRequest(http.MethodPost, privacyprovertransport.DepositProofPath, bytes.NewBufferString(`{}`))
+			request.Header["Content-Encoding"] = append([]string(nil), test.values...)
+			handler.ServeHTTP(recorder, request)
+
+			require.Equal(t, http.StatusBadRequest, recorder.Code)
+			errorResponse, err := privacyprovertransport.DecodeErrorResponseJSON(recorder.Body.Bytes())
+			require.NoError(t, err)
+			require.Equal(t, privacyprovertransport.ErrorCodeInvalidRequest, errorResponse.Code)
+			require.Equal(t, "unsupported proof request content encoding", errorResponse.Message)
+		})
+	}
+}
+
 func TestHandlerRejectsMediaTypeBeforeReadingGzipBody(t *testing.T) {
 	handler := NewHandler(stubTransferProver{}, nil, nil, nil, DefaultRuntimeInfo(), "", DefaultMaxRequestBz)
-	for _, contentType := range []string{"", "text/plain"} {
+	for _, contentType := range []string{"text/plain"} {
 		t.Run(contentType, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			request := httptest.NewRequest(http.MethodPost, privacyprovertransport.TransferProofPath, bytes.NewBufferString("not-a-gzip-frame"))
-			if contentType != "" {
-				request.Header.Set("Content-Type", contentType)
-			}
+			request.Header.Set("Content-Type", contentType)
 			request.Header.Set("Content-Encoding", "gzip")
 			handler.ServeHTTP(recorder, request)
 

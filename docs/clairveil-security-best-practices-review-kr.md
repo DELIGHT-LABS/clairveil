@@ -145,7 +145,7 @@ JS/TS SDK, web wallet, downstream Cosmos SDK chain 개발자에게는 아래를 
 
 ### 6.1 Deposit prover 경계
 
-`POST /v1/prover/deposit`을 특별 client shortcut이 아닌 bounded raw-handler/auth/redaction surface로 취급합니다. Versioned circuit witness만 받고 bearer auth, gzip/body limit, admission, readiness, timeout, secret-free error, `no-store`를 위해 service wrapper를 사용합니다. Request/response body와 witness value는 log하지 않습니다. `Content-Type: application/json`, `405`의 `Allow: POST`, media failure `415`, proving 전 `400`, validated prover invocation 뒤 `500`을 강제합니다. [general HTTP API](clairveil-proverd-http-api-kr.md)와 [deposit API](clairveil-proverd-deposit-api-kr.md)를 참조합니다.
+`POST /v1/prover/deposit`을 특별 client shortcut이 아닌 bounded raw-handler/auth/redaction surface로 취급합니다. Versioned circuit witness만 받고 bearer auth, gzip/body limit, admission, readiness, timeout, secret-free error, `no-store`를 위해 service wrapper를 사용합니다. Request/response body와 witness value는 log하지 않습니다. `Content-Type: application/json`을 권장하되 기존 `v1` client의 누락 호환성을 유지하고, 제공된 media type이 지원되지 않으면 `415`로 거부하며, `405`의 `Allow: POST`, proving 전 `400`, validated prover invocation 뒤 `500`을 적용합니다. [general HTTP API](clairveil-proverd-http-api-kr.md)와 [deposit API](clairveil-proverd-deposit-api-kr.md)를 참조합니다.
 
 현재 production circuit과 state는 `privacy-note-v1` NoteV1 commitment/nullifier/tree contract와 canonical key validation을 공유합니다. Canonical note, disclosure, encrypted-envelope byte는 versioned `privacy-fixed-v1`입니다. Raw ciphertext, JSON plaintext, 잘못된 envelope kind, non-canonical field/key data, non-zero reserved byte, trailing byte는 fail closed해야 합니다. `AssetRegistryV1`이 consensus-authoritative one-to-one denom/32-byte asset-ID mapping입니다. Global commitment uniqueness는 SDK-only precheck가 아니라 consensus state입니다.
 

@@ -33,7 +33,7 @@ make release-pack-verify
 | `make init` | run `make install`, then initialize the default local chain home for `clairveild start` |
 | `make proto` | regenerate privacy protobuf/gateway Go files |
 | `make docs-check` | verify Markdown links, English/Korean knowledge pairs, plan indexes, tag/changelog coverage, document placement, release manifests, and the Draft 2020-12 prover HTTP schema/fixtures without third-party Python packages |
-| `make examples` | run JS audit key, fixture validator, prover HTTP client, and browser DApp examples |
+| `make examples` | run JS audit key, fixture validator, prover HTTP client, browser DApp, and packaged ClairveilJS type/export/smoke validation |
 | `make ci` | `docs-check`, `test`, `build`, and `examples` |
 | `make vulncheck` | run govulncheck policy gate |
 | `make localnet-smoke` | briefly verify that the reference daemon can start from genesis |
@@ -188,6 +188,8 @@ npm --prefix examples/js-sdk-prover-http-client run demo
 npm --prefix examples/clairveil-dapp ci
 npm --prefix examples/clairveil-dapp run check:dapp
 npm --prefix examples/clairveil-dapp run test:dapp
+npm --prefix examples/clairveil-dapp run check:clairveiljs
+npm --prefix examples/clairveil-dapp run test:clairveiljs
 ```
 
 Validation scope:
@@ -203,6 +205,7 @@ Validation scope:
 - batch `check_nullifiers` request/response fixture shape
 - timeout/auth client shape
 - browser DApp boundary checks, static bundle freshness, and local helper route policy
+- packaged ClairveilJS type checking, public export map, and SDK smoke tests
 
 ## 5. Localnet Smoke
 

@@ -140,7 +140,7 @@
       "additionalProperties": false,
       "required": ["content_type_required", "allowed_content_types", "content_encodings", "default_max_bytes"],
       "properties": {
-        "content_type_required": { "const": true },
+        "content_type_required": { "const": false },
         "allowed_content_types": {
           "type": "array",
           "prefixItems": [

@@ -19,9 +19,9 @@
 
 ## 공통 전송 정책
 
-- `Content-Type`은 필수이고 `application/json`이어야 합니다. 허용하는 유일한 parameter는 `charset=utf-8`이며, media type과 parameter 비교는 case-insensitive입니다. Server는 body를 읽거나 admission을 얻기 전에 이를 검사합니다.
+- Client는 `Content-Type: application/json`을 보내야 합니다. 기존 `v1` proof-route client와의 호환성을 위해 누락은 계속 허용하지만, header가 있으면 `application/json`과 optional `charset=utf-8` parameter만 허용합니다. Media type과 parameter 비교는 case-insensitive이며, server는 body를 읽거나 admission을 얻기 전에 제공된 header를 검사합니다.
 - `Accept`는 선택 사항입니다. Version 1은 content negotiation을 하지 않으며 server는 항상 JSON을 반환합니다.
-- `Content-Encoding`은 `identity`와 `gzip`만 허용합니다.
+- `Content-Encoding`은 생략하거나 정확히 하나의 `identity` 또는 `gzip` 값만 사용할 수 있습니다. 반복 field, comma-separated/multiple coding, empty value와 그 밖의 coding은 body를 읽기 전에 `400 invalid_request`로 거부합니다.
 - Raw wire body와 decompressed body 모두 configured positive limit를 적용합니다. Service default는 8 MiB입니다.
 - Auth/content-encoding의 조기 실패를 포함한 모든 proof-route success/error response는 `Content-Type: application/json`과 `Cache-Control: no-store`를 가집니다.
 - Method mismatch는 `Allow: POST`를 포함한 `405`를 반환합니다.
@@ -48,7 +48,7 @@
 | 404 | `not_found` | false | Unknown path |
 | 405 | `method_not_allowed` | false | `POST` 이외 method |
 | 413 | `invalid_request` | false | Raw 또는 decompressed body가 limit 초과 |
-| 415 | `invalid_request` | false | `Content-Type` 누락 또는 미지원 |
+| 415 | `invalid_request` | false | 제공된 `Content-Type`이 미지원 |
 | 429 | `busy` | true | Circuit admission queue 포화 |
 | 500 | `proof_failed` | false | Valid request가 proving을 호출한 뒤 proof runner 또는 response self-validation 실패 |
 | 503 | `unavailable` | false | Route prover 미구성 |

@@ -1025,6 +1025,10 @@ make check
 - [x] R-05 `make release-check`와 release package 검증을 clean commit state에서 재실행
 - [x] R-06 금지 경로, language-neutral ownership, completion ledger를 독립 재검토
 - [x] R-07 clean supported environment에서 드러난 미선언 Python `jsonschema` 의존성을 required Go toolchain 기반 Draft 2020-12 conformance gate로 교체하고 `make ci`/`make release-check`를 fresh venv에서 재실행
+- [x] R-08 `/healthz`와 `/readyz`의 route/circuit inventory를 configured `ProverSet`에서 산출하여 partial compatibility constructor가 미구성 deposit/batch capability를 advertise하지 않도록 교정
+- [x] R-09 모든 `Content-Encoding` field와 comma-separated coding을 검사하여 repeated, multiple, empty, unsupported encoding을 body read 전에 fail closed
+- [x] R-10 EN/KR testing guide의 `make examples` command inventory를 Makefile의 8개 실제 command와 정렬하고 `make docs-check`에 drift 방지 gate 추가
+- [x] R-11 capability-boundary remediation clean commit에서 focused/race/full test, fresh supported environment `make ci`/`make vulncheck`/`make release-check`, release package와 금지 경로를 재검증
 
 ## 13. Completion ledger
 
@@ -1040,19 +1044,20 @@ make check
 | Documentation consistency audit commit | `8120bd2a4f070af710f6e9d7bce259bfe9f735c1` |
 | Security scanner fail-closed commit | `60e98ddd4ad71743570b8705960ba6ced1ffed18` |
 | Clean-environment schema gate remediation commit | `4d7ecb1612ed4570f86ef7c107738cd80f8a472e` |
-| 최종 재검증 HEAD | `4d7ecb1612ed4570f86ef7c107738cd80f8a472e` (미선언 Python package 제거와 clean supported environment 전체 gate 검증 대상 clean HEAD; 이 completion ledger는 후속 `chore(plan)` commit) |
-| Focused test | PASS — deposit, provertransport, proverservice, conformance, `cmd/clairveil-proverd` |
+| Runtime capability/HTTP framing remediation commit | `522d2b6e82120787ff174044c02a2cc78e6d6e65` |
+| 최종 재검증 HEAD | `522d2b6e82120787ff174044c02a2cc78e6d6e65` (실제 `ProverSet` inventory, strict `Content-Encoding`, `make examples` 문서/gate 정렬을 포함한 전체 gate 검증 대상 clean HEAD; 이 completion ledger는 후속 `chore(plan)` commit) |
+| Focused test | PASS — provertransport, proverservice의 partial/full runtime inventory와 repeated/comma-separated/multiple/empty `Content-Encoding`, `cmd/clairveil-proverd` |
 | Race test | PASS — provertransport, proverservice (`LC_DYSYMTAB` linker warning만 발생, test exit 0) |
 | Build/privacy regression | PASS — `go build ./cmd/clairveil-proverd`, `go test ./x/privacy/... -count=1` |
-| `go test ./...` | PASS — clean `4d7ecb1612ed4570f86ef7c107738cd80f8a472e` HEAD에서 `-count=1` fresh 실행 |
+| `go test ./...` | PASS — clean `522d2b6e82120787ff174044c02a2cc78e6d6e65` HEAD에서 `-count=1` fresh 실행 |
 | Schema validation | PASS — `github.com/santhosh-tekuri/jsonschema/v6 v6.0.2` 기반 Draft 2020-12 schema compile, canonical fixture 2건 accept, unknown top-level field와 uint64 초과 amount negative mutation 2건 reject |
 | Clean supported environment regression | PASS — 기존 `629ddb34ee04ca287436a801c9b0ea0d418369e1`에서 fresh venv의 `make ci`/`make release-check`가 미선언 Python `jsonschema`로 exit 2임을 재현한 뒤, required Go toolchain gate로 교체하여 같은 조건에서 해소 |
-| `make docs-check` | PASS — third-party package가 없는 fresh Python 3.12 venv에서 link/pair/index/changelog/release closure, 두 prover fixture schema, 상위 문서 current-contract inventory/binding semantic 검증 |
-| `make examples` | PASS |
-| `make check` / `make ci` | PASS — fresh venv, Go `1.25.12`, Node.js `22.16.0`을 명시한 clean PATH에서 docs, full Go test/build, example 전체 gate exit 0 |
+| `make docs-check` | PASS — third-party package가 없는 fresh Python 3.12 venv에서 link/pair/index/changelog/release closure, 두 prover fixture schema, 상위 문서 current-contract inventory/binding semantic 검증, Makefile의 `make examples` 8-command inventory와 EN/KR guide 일치 검증 |
+| `make examples` | PASS — audit key, JS fixture, prover client, DApp CI/check/test와 packaged ClairveilJS type/export/smoke 8개 command 전체 실행 |
+| `make check` / `make ci` | PASS — clean `522d2b6e82120787ff174044c02a2cc78e6d6e65` HEAD, fresh venv, Go `1.25.12`, Node.js `22.16.0`, Python `3.12.8`을 명시한 clean PATH에서 docs, full Go test/build, example 전체 gate exit 0 |
 | `make vulncheck` | PASS — 새 schema validator dependency를 포함해 scanner/policy gate 통과; `go.opentelemetry.io/otel v1.44.0`으로 `GO-2026-5158`, `google.golang.org/grpc v1.82.1`으로 `GO-2026-6061` 해소; JSON scanner nonzero status fail-closed test 통과; fixed version이 없는 policy 예외 3건만 유지 |
-| `make release-check` | PASS — clean `4d7ecb1612ed4570f86ef7c107738cd80f8a472e` HEAD와 third-party package 없는 fresh Python 3.12 venv에서 `make ci`, `make vulncheck`, localnet smoke, privacy E2E, batch static contract, bulk transfer localnet required step 전체 통과; optional `grpcurl` 없이 `RPC_PORT=37657`, `P2P_PORT=37656`, `ABCI_PORT=37658`, `GRPC_PORT=19090`, `API_PORT=11317`, `PPROF_PORT=16060`, `PROVERD_PORT=18081` 격리 port 사용 |
-| Release package | PASS — `make release-pack-verify`, checksum, 153 required files, manifest commit `4d7ecb1612ed4570f86ef7c107738cd80f8a472e` 검증 |
+| `make release-check` | PASS — clean `522d2b6e82120787ff174044c02a2cc78e6d6e65` HEAD와 third-party package 없는 fresh Python 3.12 venv에서 `make ci`, `make vulncheck`, localnet smoke, privacy E2E, batch static contract, bulk transfer localnet required step 전체 통과; optional `grpcurl` 없이 `RPC_PORT=38657`, `P2P_PORT=38656`, `ABCI_PORT=38658`, `GRPC_PORT=29090`, `API_PORT=21317`, `PPROF_PORT=26060`, `PROVERD_PORT=28081` 격리 port 사용 |
+| Release package | PASS — `make release-pack-verify`, checksum, 153 required files, manifest commit `522d2b6e82120787ff174044c02a2cc78e6d6e65` 검증 |
 | Circuit/artifact/proto diff | 없음 — `proto/clairveil/privacy/v1`, `x/privacy/circuit`, `x/privacy/zk` 무변경 |
 | `examples/clairveil-dapp/**` diff | 없음 |
 | 미실행/known issue | 필수 gate 전부 실행. Bulk readiness의 external prover-pool scale는 `PROVERD_URLS`가 없어 `required=false`로 skip. `npm audit --omit=dev`는 0건; 금지 범위인 DApp의 dev-only `esbuild 0.28.0` Windows development-server low advisory는 pre-existing/out-of-scope로 무변경. Non-failing macOS linker warning은 위 Race test에 기록 |

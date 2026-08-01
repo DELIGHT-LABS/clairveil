@@ -567,6 +567,32 @@ for source, term in binding_terms.items():
         add_error(f"{source.relative_to(repo)}: missing route-specific response binding guidance: {term}")
 
 
+example_commands = []
+try:
+    makefile_text = (repo / "Makefile").read_text(encoding="utf-8")
+    examples_recipe = re.search(r"(?ms)^examples:\n((?:\t[^\n]*\n)+)", makefile_text)
+    if examples_recipe is None:
+        add_error("Makefile: examples recipe is missing or malformed")
+    else:
+        example_commands = [
+            line.strip()
+            for line in examples_recipe.group(1).splitlines()
+            if line.strip()
+        ]
+        for guide in [
+            docs_dir / "clairveil-testing-guide.md",
+            docs_dir / "clairveil-testing-guide-kr.md",
+        ]:
+            guide_text = guide.read_text(encoding="utf-8")
+            for command in example_commands:
+                if command not in guide_text:
+                    add_error(
+                        f"{guide.relative_to(repo)}: make examples command inventory omits {command}"
+                    )
+except (OSError, UnicodeError) as error:
+    add_error(f"failed to validate make examples command inventory: {error}")
+
+
 prover_fixture_paths = [
     repo / "x/privacy/client/sdk/conformance/testdata/privacy_prover_http_api_contract.json",
     repo / "x/privacy/client/sdk/conformance/testdata/privacy_deposit_prover_contract.json",
@@ -620,5 +646,6 @@ print(f"plan indexes verified: {len(tracked_plans)} tracked plan(s)")
 print(f"changelog headings verified for HEAD-reachable tags: {len(tags)} tag(s), 2 file(s)")
 print(f"release manifests verified: {len(selected_paths)} selected path(s), {len(required_files)} required file(s)")
 print(f"release Markdown link closure verified: {len(release_selected_files)} packed source file(s)")
+print(f"make examples command inventory verified: {len(example_commands)} command(s), 2 file(s)")
 print(f"prover contract JSON Schema verified: {len(prover_fixture_paths)} fixture(s)")
 PY
