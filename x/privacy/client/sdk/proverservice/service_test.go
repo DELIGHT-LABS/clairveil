@@ -22,6 +22,14 @@ type stubTransferProver struct{}
 
 type stubBatchTransferProver struct{}
 
+func newServiceRequest(method, path string, body io.Reader) *http.Request {
+	request := httptest.NewRequest(method, path, body)
+	if method == http.MethodPost {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	return request
+}
+
 func (stubTransferProver) ProveTransfer(request privacyprovertransport.TransferProofRequest, _ time.Time) (*privacyprovertransport.TransferProofResponse, error) {
 	return nil, fmt.Errorf("unexpected proof request: %s", request.Version)
 }
@@ -40,7 +48,7 @@ func TestHandlerHealthRoute(t *testing.T) {
 	}, "", DefaultMaxRequestBz)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, HealthPath, nil)
+	request := newServiceRequest(http.MethodGet, HealthPath, nil)
 	handler.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
@@ -65,7 +73,7 @@ func TestHandlerReadinessRouteFailsWhenCheckerFails(t *testing.T) {
 	}, "", DefaultMaxRequestBz)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, ReadinessPath, nil)
+	request := newServiceRequest(http.MethodGet, ReadinessPath, nil)
 	handler.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
@@ -88,7 +96,7 @@ func TestHandlerMetricsRoute(t *testing.T) {
 	handler := NewHandler(nil, nil, nil, nil, DefaultRuntimeInfo(), "", DefaultMaxRequestBz)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, MetricsPath, nil)
+	request := newServiceRequest(http.MethodGet, MetricsPath, nil)
 	handler.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
@@ -111,7 +119,7 @@ func TestHandlerMetricsRouteRejectsNonGET(t *testing.T) {
 	handler := NewHandler(nil, nil, nil, nil, DefaultRuntimeInfo(), "", DefaultMaxRequestBz)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, MetricsPath, nil)
+	request := newServiceRequest(http.MethodPost, MetricsPath, nil)
 	handler.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusMethodNotAllowed, recorder.Code)
@@ -125,7 +133,7 @@ func TestHandlerDelegatesProofRouteMethodValidation(t *testing.T) {
 	handler := NewHandler(nil, nil, nil, nil, DefaultRuntimeInfo(), "", DefaultMaxRequestBz)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, privacyprovertransport.TransferProofPath, nil)
+	request := newServiceRequest(http.MethodGet, privacyprovertransport.TransferProofPath, nil)
 	handler.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusMethodNotAllowed, recorder.Code)
@@ -139,7 +147,7 @@ func TestHandlerLimitsProofRequestBody(t *testing.T) {
 	handler := NewHandler(stubTransferProver{}, nil, nil, nil, DefaultRuntimeInfo(), "", 1)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, privacyprovertransport.TransferProofPath, bytes.NewBufferString("{}"))
+	request := newServiceRequest(http.MethodPost, privacyprovertransport.TransferProofPath, bytes.NewBufferString("{}"))
 	handler.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code)
@@ -160,7 +168,7 @@ func TestHandlerLimitsDecompressedProofRequestBody(t *testing.T) {
 
 	handler := NewHandler(stubTransferProver{}, nil, nil, nil, DefaultRuntimeInfo(), "", 128)
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, privacyprovertransport.TransferProofPath, bytes.NewReader(compressed.Bytes()))
+	request := newServiceRequest(http.MethodPost, privacyprovertransport.TransferProofPath, bytes.NewReader(compressed.Bytes()))
 	request.Header.Set("Content-Encoding", "gzip")
 	handler.ServeHTTP(recorder, request)
 
@@ -174,7 +182,7 @@ func TestHandlerLimitsDecompressedProofRequestBody(t *testing.T) {
 func TestHandlerRejectsUnsupportedProofRequestContentEncoding(t *testing.T) {
 	handler := NewHandler(stubTransferProver{}, nil, nil, nil, DefaultRuntimeInfo(), "", DefaultMaxRequestBz)
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, privacyprovertransport.TransferProofPath, bytes.NewBufferString("{}"))
+	request := newServiceRequest(http.MethodPost, privacyprovertransport.TransferProofPath, bytes.NewBufferString("{}"))
 	request.Header.Set("Content-Encoding", "br")
 	handler.ServeHTTP(recorder, request)
 
@@ -182,6 +190,28 @@ func TestHandlerRejectsUnsupportedProofRequestContentEncoding(t *testing.T) {
 	errorResponse, err := privacyprovertransport.DecodeErrorResponseJSON(recorder.Body.Bytes())
 	require.NoError(t, err)
 	require.Equal(t, privacyprovertransport.ErrorCodeInvalidRequest, errorResponse.Code)
+}
+
+func TestHandlerRejectsMediaTypeBeforeReadingGzipBody(t *testing.T) {
+	handler := NewHandler(stubTransferProver{}, nil, nil, nil, DefaultRuntimeInfo(), "", DefaultMaxRequestBz)
+	for _, contentType := range []string{"", "text/plain"} {
+		t.Run(contentType, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, privacyprovertransport.TransferProofPath, bytes.NewBufferString("not-a-gzip-frame"))
+			if contentType != "" {
+				request.Header.Set("Content-Type", contentType)
+			}
+			request.Header.Set("Content-Encoding", "gzip")
+			handler.ServeHTTP(recorder, request)
+
+			require.Equal(t, http.StatusUnsupportedMediaType, recorder.Code)
+			require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+			errorResponse, err := privacyprovertransport.DecodeErrorResponseJSON(recorder.Body.Bytes())
+			require.NoError(t, err)
+			require.Equal(t, privacyprovertransport.ErrorCodeInvalidRequest, errorResponse.Code)
+			require.Equal(t, "proof route requires application/json content type", errorResponse.Message)
+		})
+	}
 }
 
 func TestHandlerReturnsRetryable429WhenCircuitAdmissionIsFull(t *testing.T) {
@@ -195,7 +225,7 @@ func TestHandlerReturnsRetryable429WhenCircuitAdmissionIsFull(t *testing.T) {
 
 	handler := NewHandlerWithAdmission(stubTransferProver{}, nil, nil, nil, DefaultRuntimeInfo(), "", DefaultMaxRequestBz, admission)
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, privacyprovertransport.TransferProofPath, bytes.NewBufferString(`{"version":"v2"}`))
+	request := newServiceRequest(http.MethodPost, privacyprovertransport.TransferProofPath, bytes.NewBufferString(`{"version":"v2"}`))
 	handler.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusTooManyRequests, recorder.Code)
@@ -217,7 +247,7 @@ func TestHandlerReturnsRetryable429WhenBatchAdmissionIsFull(t *testing.T) {
 
 	handler := NewHandlerWithBatchAdmission(nil, nil, stubBatchTransferProver{}, nil, nil, DefaultRuntimeInfo(), "", DefaultMaxRequestBz, admission)
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, privacyprovertransport.BatchTransferProofPath, bytes.NewBufferString(`{"version":"v1"}`))
+	request := newServiceRequest(http.MethodPost, privacyprovertransport.BatchTransferProofPath, bytes.NewBufferString(`{"version":"v1"}`))
 	handler.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusTooManyRequests, recorder.Code)
@@ -265,7 +295,7 @@ func TestHandlerRejectsUnauthorizedProofRoute(t *testing.T) {
 	handler := NewHandler(stubTransferProver{}, nil, nil, nil, info, "secret-token", DefaultMaxRequestBz)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, privacyprovertransport.TransferProofPath, bytes.NewBufferString("{}"))
+	request := newServiceRequest(http.MethodPost, privacyprovertransport.TransferProofPath, bytes.NewBufferString("{}"))
 	handler.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusUnauthorized, recorder.Code)
@@ -273,6 +303,7 @@ func TestHandlerRejectsUnauthorizedProofRoute(t *testing.T) {
 	errorResponse, err := privacyprovertransport.DecodeErrorResponseJSON(recorder.Body.Bytes())
 	require.NoError(t, err)
 	require.Equal(t, privacyprovertransport.ErrorCodeUnauthorized, errorResponse.Code)
+	require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
 }
 
 func TestGnarkSolverOutputNeverUsesOperatorLogWriter(t *testing.T) {

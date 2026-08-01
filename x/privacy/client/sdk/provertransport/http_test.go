@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,6 +19,66 @@ import (
 	privacywithdraw "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/withdraw"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
+
+func newProofHTTPRequest(method, path string, body io.Reader) *http.Request {
+	request := httptest.NewRequest(method, path, body)
+	if method == http.MethodPost {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	return request
+}
+
+func TestProofRoutesShareMethodMediaTypeAndResponseHeaderPolicy(t *testing.T) {
+	routes := []string{TransferProofPath, WithdrawProofPath, BatchTransferProofPath}
+	handler := NewHTTPHandlerWithBatchAdmission(nil, nil, nil, nil, nil)
+	admission := &recordingAdmission{}
+	availableHandler := NewHTTPHandlerWithBatchAdmission(
+		&countingTransferProver{},
+		&countingWithdrawProver{},
+		&countingBatchTransferProver{},
+		nil,
+		admission,
+	)
+
+	for _, path := range routes {
+		t.Run(path+"/method", func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, newProofHTTPRequest(http.MethodGet, path, nil))
+			require.Equal(t, http.StatusMethodNotAllowed, recorder.Code)
+			require.Equal(t, http.MethodPost, recorder.Header().Get("Allow"))
+			require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+			require.Equal(t, "application/json", recorder.Header().Get("Content-Type"))
+		})
+
+		for _, contentType := range []string{"", "text/plain", "application/json; charset=iso-8859-1", "application/json; profile=v1"} {
+			t.Run(path+"/media/"+contentType, func(t *testing.T) {
+				recorder := httptest.NewRecorder()
+				request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+				if contentType != "" {
+					request.Header.Set("Content-Type", contentType)
+				}
+				availableHandler.ServeHTTP(recorder, request)
+				require.Equal(t, http.StatusUnsupportedMediaType, recorder.Code)
+				require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+				errorResponse, err := DecodeErrorResponseJSON(recorder.Body.Bytes())
+				require.NoError(t, err)
+				require.Equal(t, ErrorCodeInvalidRequest, errorResponse.Code)
+				require.Zero(t, admission.acquired)
+			})
+		}
+
+		for _, contentType := range []string{"application/json", "Application/JSON; Charset=UTF-8"} {
+			t.Run(path+"/accepted/"+contentType, func(t *testing.T) {
+				recorder := httptest.NewRecorder()
+				request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+				request.Header.Set("Content-Type", contentType)
+				handler.ServeHTTP(recorder, request)
+				require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+				require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+			})
+		}
+	}
+}
 
 func TestHTTPHandlerTransferProofRoute(t *testing.T) {
 	payload, artifacts, runner := testPreparedTransferPayload(t)
@@ -33,7 +94,7 @@ func TestHTTPHandlerTransferProofRoute(t *testing.T) {
 	)
 
 	recorder := httptest.NewRecorder()
-	httpRequest := httptest.NewRequest(http.MethodPost, TransferProofPath, bytesReader(requestBody))
+	httpRequest := newProofHTTPRequest(http.MethodPost, TransferProofPath, bytesReader(requestBody))
 	handler.ServeHTTP(recorder, httpRequest)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
@@ -58,7 +119,7 @@ func TestHTTPHandlerWithdrawProofRoute(t *testing.T) {
 	)
 
 	recorder := httptest.NewRecorder()
-	httpRequest := httptest.NewRequest(http.MethodPost, WithdrawProofPath, bytesReader(requestBody))
+	httpRequest := newProofHTTPRequest(http.MethodPost, WithdrawProofPath, bytesReader(requestBody))
 	handler.ServeHTTP(recorder, httpRequest)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
@@ -143,7 +204,7 @@ func TestHTTPHandlerRejectsNullBatchMessageOutputWithoutPanicking(t *testing.T) 
 	handler := NewHTTPHandlerWithBatchAdmission(nil, nil, prover, nil, &recordingAdmission{})
 
 	recorder := httptest.NewRecorder()
-	httpRequest := httptest.NewRequest(http.MethodPost, BatchTransferProofPath, bytesReader(requestBody))
+	httpRequest := newProofHTTPRequest(http.MethodPost, BatchTransferProofPath, bytesReader(requestBody))
 	handler.ServeHTTP(recorder, httpRequest)
 
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
@@ -154,7 +215,7 @@ func TestHTTPHandlerRejectsMethod(t *testing.T) {
 	handler := NewHTTPHandler(nil, nil, nil)
 
 	recorder := httptest.NewRecorder()
-	httpRequest := httptest.NewRequest(http.MethodGet, TransferProofPath, nil)
+	httpRequest := newProofHTTPRequest(http.MethodGet, TransferProofPath, nil)
 	handler.ServeHTTP(recorder, httpRequest)
 
 	require.Equal(t, http.StatusMethodNotAllowed, recorder.Code)
@@ -175,7 +236,7 @@ func TestHTTPHandlerRejectsExpiredTransferBeforeProving(t *testing.T) {
 	handler := NewHTTPHandler(prover, nil, func() time.Time { return now })
 
 	recorder := httptest.NewRecorder()
-	httpRequest := httptest.NewRequest(http.MethodPost, TransferProofPath, bytesReader(requestBody))
+	httpRequest := newProofHTTPRequest(http.MethodPost, TransferProofPath, bytesReader(requestBody))
 	handler.ServeHTTP(recorder, httpRequest)
 
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
@@ -190,7 +251,7 @@ func TestHTTPHandlerAcquiresAfterFramingBeforeSemanticValidation(t *testing.T) {
 	admission := &recordingAdmission{}
 	handler := NewHTTPHandlerWithAdmission(&countingTransferProver{}, nil, nil, admission)
 	recorder := httptest.NewRecorder()
-	httpRequest := httptest.NewRequest(http.MethodPost, TransferProofPath, strings.NewReader(`{"version":"v2"}`))
+	httpRequest := newProofHTTPRequest(http.MethodPost, TransferProofPath, strings.NewReader(`{"version":"v2"}`))
 	handler.ServeHTTP(recorder, httpRequest)
 
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
@@ -201,7 +262,7 @@ func TestHTTPHandlerAcquiresAfterFramingBeforeSemanticValidation(t *testing.T) {
 
 	// Malformed JSON is rejected before admission and cannot consume a permit.
 	recorder = httptest.NewRecorder()
-	httpRequest = httptest.NewRequest(http.MethodPost, TransferProofPath, strings.NewReader(`{"version":`))
+	httpRequest = newProofHTTPRequest(http.MethodPost, TransferProofPath, strings.NewReader(`{"version":`))
 	handler.ServeHTTP(recorder, httpRequest)
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
 	require.Equal(t, 1, admission.acquired)
@@ -211,7 +272,7 @@ func TestHTTPHandlerUsesSpendAdmissionForWithdraw(t *testing.T) {
 	admission := &recordingAdmission{}
 	handler := NewHTTPHandlerWithAdmission(nil, &countingWithdrawProver{}, nil, admission)
 	recorder := httptest.NewRecorder()
-	httpRequest := httptest.NewRequest(http.MethodPost, WithdrawProofPath, strings.NewReader(`{"version":"v2"}`))
+	httpRequest := newProofHTTPRequest(http.MethodPost, WithdrawProofPath, strings.NewReader(`{"version":"v2"}`))
 	handler.ServeHTTP(recorder, httpRequest)
 
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
@@ -225,7 +286,7 @@ func TestHTTPHandlerUsesBatchSpecificAdmissionAfterFraming(t *testing.T) {
 	admission := &recordingAdmission{}
 	handler := NewHTTPHandlerWithBatchAdmission(nil, nil, &countingBatchTransferProver{}, nil, admission)
 	recorder := httptest.NewRecorder()
-	httpRequest := httptest.NewRequest(http.MethodPost, BatchTransferProofPath, strings.NewReader(`{"version":"v1"}`))
+	httpRequest := newProofHTTPRequest(http.MethodPost, BatchTransferProofPath, strings.NewReader(`{"version":"v1"}`))
 	handler.ServeHTTP(recorder, httpRequest)
 
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
@@ -239,7 +300,7 @@ func TestHTTPHandlerUsesBatchSpecificAdmissionAfterFraming(t *testing.T) {
 	require.NotContains(t, errorResponse.Message, "payload")
 
 	recorder = httptest.NewRecorder()
-	httpRequest = httptest.NewRequest(http.MethodPost, BatchTransferProofPath, strings.NewReader(`{"version":`))
+	httpRequest = newProofHTTPRequest(http.MethodPost, BatchTransferProofPath, strings.NewReader(`{"version":`))
 	handler.ServeHTTP(recorder, httpRequest)
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
 	require.Equal(t, 1, admission.acquired)
@@ -250,7 +311,7 @@ func TestHTTPHandlerRejectsOversizedBatchBeforeAdmission(t *testing.T) {
 	handler := NewHTTPHandlerWithBatchAdmission(nil, nil, &countingBatchTransferProver{}, nil, admission)
 	handler.MaxRequestBytes = 8
 	recorder := httptest.NewRecorder()
-	httpRequest := httptest.NewRequest(http.MethodPost, BatchTransferProofPath, strings.NewReader(`{"version":"v1"}`))
+	httpRequest := newProofHTTPRequest(http.MethodPost, BatchTransferProofPath, strings.NewReader(`{"version":"v1"}`))
 	handler.ServeHTTP(recorder, httpRequest)
 
 	require.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code)
@@ -288,7 +349,7 @@ func TestHTTPHandlerRejectsOversizedTransferAndWithdrawBeforeAdmission(t *testin
 			handler := tt.handler(admission)
 			handler.MaxRequestBytes = 8
 			recorder := httptest.NewRecorder()
-			httpRequest := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(`{"version":"v1"}`))
+			httpRequest := newProofHTTPRequest(http.MethodPost, tt.path, strings.NewReader(`{"version":"v1"}`))
 			handler.ServeHTTP(recorder, httpRequest)
 
 			require.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code)
@@ -316,7 +377,7 @@ func TestHTTPHandlerDecodeErrorsDoNotEchoPayload(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
-			httpRequest := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(tt.body))
+			httpRequest := newProofHTTPRequest(http.MethodPost, tt.path, strings.NewReader(tt.body))
 			tt.handler.ServeHTTP(recorder, httpRequest)
 
 			require.Equal(t, http.StatusBadRequest, recorder.Code)
@@ -340,7 +401,7 @@ func TestHTTPHandlerValidationErrorsDoNotEchoPrivateWitness(t *testing.T) {
 
 	handler := NewHTTPHandler(nil, &countingWithdrawProver{}, func() time.Time { return now })
 	recorder := httptest.NewRecorder()
-	httpRequest := httptest.NewRequest(http.MethodPost, WithdrawProofPath, bytesReader(requestBody))
+	httpRequest := newProofHTTPRequest(http.MethodPost, WithdrawProofPath, bytesReader(requestBody))
 	handler.ServeHTTP(recorder, httpRequest)
 
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
@@ -383,10 +444,10 @@ func TestHTTPHandlerProofErrorsDoNotEchoPayload(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
-			httpRequest := httptest.NewRequest(http.MethodPost, tt.path, bytesReader(tt.body))
+			httpRequest := newProofHTTPRequest(http.MethodPost, tt.path, bytesReader(tt.body))
 			tt.handler.ServeHTTP(recorder, httpRequest)
 
-			require.Equal(t, http.StatusBadRequest, recorder.Code)
+			require.Equal(t, http.StatusInternalServerError, recorder.Code)
 			require.NotContains(t, recorder.Body.String(), canary)
 			errorResponse, err := DecodeErrorResponseJSON(recorder.Body.Bytes())
 			require.NoError(t, err)
@@ -427,10 +488,10 @@ func TestHTTPHandlerResponseValidationErrorsDoNotEchoPayload(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
-			httpRequest := httptest.NewRequest(http.MethodPost, tt.path, bytesReader(tt.body))
+			httpRequest := newProofHTTPRequest(http.MethodPost, tt.path, bytesReader(tt.body))
 			tt.handler.ServeHTTP(recorder, httpRequest)
 
-			require.Equal(t, http.StatusBadRequest, recorder.Code)
+			require.Equal(t, http.StatusInternalServerError, recorder.Code)
 			require.NotContains(t, recorder.Body.String(), canary)
 			errorResponse, err := DecodeErrorResponseJSON(recorder.Body.Bytes())
 			require.NoError(t, err)
@@ -464,7 +525,7 @@ func TestHTTPHandlerNilProofResponsesDoNotPanic(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
-			httpRequest := httptest.NewRequest(http.MethodPost, tt.path, bytesReader(tt.body))
+			httpRequest := newProofHTTPRequest(http.MethodPost, tt.path, bytesReader(tt.body))
 			require.NotPanics(t, func() { tt.handler.ServeHTTP(recorder, httpRequest) })
 			require.Equal(t, http.StatusInternalServerError, recorder.Code)
 			errorResponse, err := DecodeErrorResponseJSON(recorder.Body.Bytes())
@@ -479,7 +540,7 @@ func TestHTTPHandlerAdmissionRejectsBeforeTypedDecode(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	// This is valid JSON framing but cannot decode into the typed payload. A
 	// 429 proves admission runs before dynamic typed materialization.
-	httpRequest := httptest.NewRequest(http.MethodPost, TransferProofPath, strings.NewReader(`{"version":"v2","payload":{"inputs":"not-an-array"}}`))
+	httpRequest := newProofHTTPRequest(http.MethodPost, TransferProofPath, strings.NewReader(`{"version":"v2","payload":{"inputs":"not-an-array"}}`))
 	handler.ServeHTTP(recorder, httpRequest)
 	require.Equal(t, http.StatusTooManyRequests, recorder.Code)
 	errorResponse, err := DecodeErrorResponseJSON(recorder.Body.Bytes())
@@ -499,7 +560,7 @@ func TestHTTPHandlerDoesNotReleasePermitWhenContextCancelsDuringProve(t *testing
 	admission := &recordingAdmission{permit: &recordingPermit{releasedCh: make(chan struct{}, 1)}}
 	handler := NewHTTPHandlerWithAdmission(prover, nil, nil, admission)
 	ctx, cancel := context.WithCancel(context.Background())
-	httpRequest := httptest.NewRequest(http.MethodPost, TransferProofPath, bytesReader(requestBody)).WithContext(ctx)
+	httpRequest := newProofHTTPRequest(http.MethodPost, TransferProofPath, bytesReader(requestBody)).WithContext(ctx)
 	recorder := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {
@@ -530,7 +591,7 @@ func TestBatchHTTPHandlerHoldsPermitUntilProveActuallyReturns(t *testing.T) {
 	admission := &recordingAdmission{permit: &recordingPermit{releasedCh: make(chan struct{}, 1)}}
 	handler := NewHTTPHandlerWithBatchAdmission(nil, nil, prover, nil, admission)
 	ctx, cancel := context.WithCancel(context.Background())
-	httpRequest := httptest.NewRequest(http.MethodPost, BatchTransferProofPath, bytesReader(requestBody)).WithContext(ctx)
+	httpRequest := newProofHTTPRequest(http.MethodPost, BatchTransferProofPath, bytesReader(requestBody)).WithContext(ctx)
 	recorder := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {
@@ -561,10 +622,10 @@ func TestHTTPHandlerPassesInjectedClockToTransferProver(t *testing.T) {
 	handler := NewHTTPHandler(prover, nil, func() time.Time { return now })
 
 	recorder := httptest.NewRecorder()
-	httpRequest := httptest.NewRequest(http.MethodPost, TransferProofPath, bytesReader(requestBody))
+	httpRequest := newProofHTTPRequest(http.MethodPost, TransferProofPath, bytesReader(requestBody))
 	handler.ServeHTTP(recorder, httpRequest)
 
-	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Equal(t, http.StatusInternalServerError, recorder.Code)
 	require.Equal(t, now, prover.now)
 }
 

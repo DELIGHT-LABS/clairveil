@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -188,8 +189,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) serveBatchTransferProof(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeErrorResponse(w, http.StatusMethodNotAllowed, ErrorCodeMethodNotAllowed, "batch transfer proof route requires POST")
+	if !beginProofRequest(w, r, "batch transfer") {
 		return
 	}
 	if h.BatchTransferProver == nil {
@@ -209,9 +209,12 @@ func (h *HTTPHandler) serveBatchTransferProof(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	if permit != nil {
-		defer permit.Release()
-	}
+	permitReleased := false
+	defer func() {
+		if permit != nil && !permitReleased {
+			permit.Release()
+		}
+	}()
 
 	request, err := DecodeBatchTransferProofRequestJSON(requestBytes)
 	if err != nil {
@@ -228,8 +231,12 @@ func (h *HTTPHandler) serveBatchTransferProof(w http.ResponseWriter, r *http.Req
 		permit.StartProve()
 	}
 	response, err := h.BatchTransferProver.ProveBatchTransfer(*request, currentTime)
+	if permit != nil {
+		permit.Release()
+		permitReleased = true
+	}
 	if err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeProofFailed, "batch transfer proof generation failed")
+		writeErrorResponse(w, http.StatusInternalServerError, ErrorCodeProofFailed, "batch transfer proof generation failed")
 		return
 	}
 	if response == nil {
@@ -237,7 +244,7 @@ func (h *HTTPHandler) serveBatchTransferProof(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if err := ValidateBatchTransferProofResponseAt(*request, *response, h.Now()); err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeProofFailed, "batch transfer proof response validation failed")
+		writeErrorResponse(w, http.StatusInternalServerError, ErrorCodeProofFailed, "batch transfer proof response validation failed")
 		return
 	}
 
@@ -245,8 +252,7 @@ func (h *HTTPHandler) serveBatchTransferProof(w http.ResponseWriter, r *http.Req
 }
 
 func (h *HTTPHandler) serveTransferProof(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeErrorResponse(w, http.StatusMethodNotAllowed, ErrorCodeMethodNotAllowed, "transfer proof route requires POST")
+	if !beginProofRequest(w, r, "transfer") {
 		return
 	}
 	if h.TransferProver == nil {
@@ -292,7 +298,7 @@ func (h *HTTPHandler) serveTransferProof(w http.ResponseWriter, r *http.Request)
 		permitReleased = true
 	}
 	if err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeProofFailed, "transfer proof generation failed")
+		writeErrorResponse(w, http.StatusInternalServerError, ErrorCodeProofFailed, "transfer proof generation failed")
 		return
 	}
 	if response == nil {
@@ -300,7 +306,7 @@ func (h *HTTPHandler) serveTransferProof(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := ValidateTransferProofResponseAt(*request, *response, h.Now()); err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeProofFailed, "transfer proof response validation failed")
+		writeErrorResponse(w, http.StatusInternalServerError, ErrorCodeProofFailed, "transfer proof response validation failed")
 		return
 	}
 
@@ -308,8 +314,7 @@ func (h *HTTPHandler) serveTransferProof(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *HTTPHandler) serveWithdrawProof(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeErrorResponse(w, http.StatusMethodNotAllowed, ErrorCodeMethodNotAllowed, "withdraw proof route requires POST")
+	if !beginProofRequest(w, r, "withdraw") {
 		return
 	}
 	if h.WithdrawProver == nil {
@@ -354,7 +359,7 @@ func (h *HTTPHandler) serveWithdrawProof(w http.ResponseWriter, r *http.Request)
 		permitReleased = true
 	}
 	if err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeProofFailed, "withdraw proof generation failed")
+		writeErrorResponse(w, http.StatusInternalServerError, ErrorCodeProofFailed, "withdraw proof generation failed")
 		return
 	}
 	if response == nil {
@@ -362,11 +367,53 @@ func (h *HTTPHandler) serveWithdrawProof(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := ValidateWithdrawProofResponse(*request, *response, h.Now()); err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeProofFailed, "withdraw proof response validation failed")
+		writeErrorResponse(w, http.StatusInternalServerError, ErrorCodeProofFailed, "withdraw proof response validation failed")
 		return
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+func beginProofRequest(w http.ResponseWriter, r *http.Request, route string) bool {
+	SetProofResponseHeaders(w)
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeErrorResponse(w, http.StatusMethodNotAllowed, ErrorCodeMethodNotAllowed, route+" proof route requires POST")
+		return false
+	}
+	if err := ValidateProofRequestMediaType(r.Header.Get("Content-Type")); err != nil {
+		writeErrorResponse(w, http.StatusUnsupportedMediaType, ErrorCodeInvalidRequest, "proof route requires application/json content type")
+		return false
+	}
+	return true
+}
+
+// ValidateProofRequestMediaType applies the common JSON media-type contract
+// before a proof-route body is read.
+func ValidateProofRequestMediaType(value string) error {
+	if strings.TrimSpace(value) == "" {
+		return fmt.Errorf("content type is required")
+	}
+	mediaType, params, err := mime.ParseMediaType(value)
+	if err != nil || !strings.EqualFold(mediaType, "application/json") {
+		return fmt.Errorf("unsupported content type")
+	}
+	if len(params) == 0 {
+		return nil
+	}
+	if len(params) != 1 {
+		return fmt.Errorf("unsupported content type parameters")
+	}
+	for name, parameter := range params {
+		if !strings.EqualFold(name, "charset") || !strings.EqualFold(parameter, "utf-8") {
+			return fmt.Errorf("unsupported content type parameters")
+		}
+	}
+	return nil
+}
+
+func SetProofResponseHeaders(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-store")
 }
 
 func (h *HTTPHandler) acquirePermit(w http.ResponseWriter, r *http.Request, circuitID string) (ProofPermit, bool) {
@@ -572,7 +619,7 @@ func proverHTTPDoerWithoutRedirects(doer HTTPDoer) (HTTPDoer, error) {
 
 func DecodeErrorResponseJSON(payloadBytes []byte) (*ErrorResponse, error) {
 	var response ErrorResponse
-	if err := json.Unmarshal(payloadBytes, &response); err != nil {
+	if err := decodeStrictJSON(payloadBytes, &response); err != nil {
 		return nil, fmt.Errorf("invalid prover transport error JSON: %w", err)
 	}
 	if err := ValidateErrorResponse(response); err != nil {
@@ -631,6 +678,7 @@ func writeJSON(w http.ResponseWriter, status int, body interface{}) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	SetProofResponseHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_, _ = w.Write(responseBytes)

@@ -342,9 +342,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case MetricsPath:
 		h.serveMetrics(w, r)
 	default:
+		if isProofRoute(r.URL.Path) {
+			privacyprovertransport.SetProofResponseHeaders(w)
+		}
 		if isProofRoute(r.URL.Path) && h.bearerToken != "" && !authorized(r, h.bearerToken) {
 			writeErrorResponse(w, http.StatusUnauthorized, privacyprovertransport.ErrorCodeUnauthorized, "missing or invalid bearer token")
 			return
+		}
+		if isProofRoute(r.URL.Path) && r.Method == http.MethodPost {
+			if err := privacyprovertransport.ValidateProofRequestMediaType(r.Header.Get("Content-Type")); err != nil {
+				writeErrorResponse(w, http.StatusUnsupportedMediaType, privacyprovertransport.ErrorCodeInvalidRequest, "proof route requires application/json content type")
+				return
+			}
 		}
 		if h.maxRequestBytes > 0 && r.Body != nil && isProofRoute(r.URL.Path) {
 			if err := limitProofRequestBody(w, r, h.maxRequestBytes); err != nil {
