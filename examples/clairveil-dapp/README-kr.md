@@ -99,8 +99,10 @@ DApp은 사용자 wallet privacy flow를 서버로 보내지 않습니다. `depo
 | `POST /api/deposit` | local only | local CLI signer deposit 테스트 |
 | `GET /api/auditor/test-scalar` | local/admin only | 테스트 auditor scalar 조회 |
 | `POST /api/auditor/decode` | local/admin only | audit disclosure private scalar로 disclosure decode |
-| `POST /v1/prover/deposit` | configured proxy | `CLAIRVEIL_DEPOSIT_PROOF_URL`의 정확한 endpoint로 proxy; `proverUrl`에서 파생하지 않음 |
-| `POST /v1/prover/transfer` / `withdraw` | all | transfer/withdraw prover same-origin proxy |
+| `POST /v1/prover/deposit` | local only | `CLAIRVEIL_DEPOSIT_PROOF_URL`의 정확한 endpoint로 proxy; `proverUrl`에서 파생하지 않음 |
+| `POST /v1/prover/transfer` / `withdraw` | local only | transfer/withdraw prover same-origin proxy |
+
+내장 prover proxy는 public prover gateway가 아니라 제한된 로컬 개발 helper입니다. `CLAIRVEIL_DAPP_LOCAL_TEST_MODE=0`이면 비활성화되고, 기본적으로 loopback caller만 허용하며, `application/json`만 받고 cross-origin 권한을 제공하지 않습니다. Client별 요청률과 process 전체 동시 요청 수도 제한합니다. Public 배포는 `CLAIRVEIL_PUBLIC_PROVER_URL`과 `CLAIRVEIL_PUBLIC_DEPOSIT_PROOF_URL`을 별도로 검토한 인증, rate/quota, metadata-only logging, retention 정책 뒤에서 제공해야 합니다.
 
 ### Browser ClairveilJS high-level calls
 
@@ -300,6 +302,8 @@ npm start
 | `CLAIRVEIL_PROVER_URL` | prover URL |
 | `CLAIRVEIL_PUBLIC_PROVER_URL` | 브라우저에 노출할 prover URL |
 | `CLAIRVEIL_DEPOSIT_PROOF_URL` / `CLAIRVEIL_PUBLIC_DEPOSIT_PROOF_URL` | server/browser용 정확한 DepositCircuit proof endpoint |
+| `CLAIRVEIL_PROVER_PROXY_ENABLED` | local-test mode에서만 bounded proxy 활성화; public-node mode에서는 무시 |
+| `CLAIRVEIL_PROVER_PROXY_RATE_LIMIT_WINDOW_MS` / `CLAIRVEIL_PROVER_PROXY_RATE_LIMIT_MAX` / `CLAIRVEIL_PROVER_PROXY_MAX_IN_FLIGHT` | local proxy 요청률과 동시 요청 상한 |
 | `CLAIRVEIL_DENOM` / `CLAIRVEIL_DISPLAY_DENOM` / `CLAIRVEIL_COIN_DECIMALS` | coin metadata |
 | `CLAIRVEIL_ACCOUNT_PREFIX` | transparent account prefix |
 | `CLAIRVEIL_SHIELDED_PREFIX` | shielded address prefix |
@@ -307,7 +311,7 @@ npm start
 | `CLAIRVEIL_EVM_CHAIN_ID` | MetaMask chain id, hex/decimal 가능 |
 | `CLAIRVEIL_EVM_PRIVACY_PRECOMPILE` | EVM privacy precompile address |
 | `CLAIRVEIL_EVM_DEPOSIT_MODE` / `CLAIRVEIL_EVM_NATIVE_DENOM` | `nonpayable` 또는 0.3.1 `payable-exact-value` deposit binding |
-| `CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING` / `CLAIRVEIL_DAPP_ALLOW_LAN_ADMIN` | local signing/admin helper를 LAN에 노출할 때만 명시적으로 `1` |
+| `CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING` / `CLAIRVEIL_DAPP_ALLOW_LAN_ADMIN` / `CLAIRVEIL_DAPP_ALLOW_LAN_PROVER` | local signing/admin/prover helper를 LAN에 노출할 때만 명시적으로 `1` |
 
 ## 호환 조건
 
@@ -377,9 +381,9 @@ Prepared payload 이후의 최종 확인에는 authoritative chain time으로 �
 
 결과 화면은 nullifier spent evidence와 bound transparent receive evidence를 별도로 표시하며 둘 다 reconcile된 뒤에만 성공으로 표시합니다.
 
-`Relay handoff` mode는 브로드캐스트하지 않고 immutable relay payload를 JSON으로 만듭니다. 실제 전달은 product-defined trusted relayer transport가 담당해야 하며, EVM relayer는 candidate transaction을 그대로 신뢰하지 말고 payload에서 재구성하거나 byte-for-byte 검증해야 합니다. DApp은 JSON을 화면에 노출하기 전에 prepared reservation에 relay handoff를 기록합니다.
+`Relay handoff` mode는 브로드캐스트하지 않고 immutable relay payload를 JSON으로 만듭니다. 내보내는 envelope는 0.3.1의 `schema_version`, `handoff_version`, request, payload 네 layer를 모두 `v2`로 고정합니다. 실제 전달은 product-defined trusted relayer transport가 담당해야 하며, EVM relayer는 candidate transaction을 그대로 신뢰하지 말고 payload에서 재구성하거나 byte-for-byte 검증해야 합니다. DApp은 JSON을 화면에 노출하기 전에 prepared reservation에 relay handoff를 기록합니다.
 
-Transfer/withdraw prepare는 wallet privacy material에서 파생한 키로 AES-GCM 암호화한 IndexedDB + Web Locks 기반 ClairveilJS note reservation manager를 사용합니다. Cosmos/EVM submit에도 같은 manager와 prepared reservation을 전달하며, active reservation이 있으면 UI에서 새 spend 준비를 차단합니다. Receipt polling timeout은 실패가 아니라 `Unknown`으로 표시합니다. `Reconcile`은 tx hash를 먼저 확인한 뒤 nullifier status를 갱신합니다. Spent operation evidence는 authoritative 포함 height부터 event를 끝까지 pagination해 tx hash와 nullifier를 함께 확인하며, relay 결과는 포함된 Cosmos `MsgWithdraw` 전체 또는 EVM target/calldata/value/chain ID를 암호화된 handoff와 대조한 뒤에만 transparent recipient 수령을 확정합니다. 조회 실패나 binding 불일치는 reservation을 그대로 잠급니다. `tx absent/failed`와 `nullifier unspent`가 특정 height에서 모두 명시적으로 확인된 경우에만 새 plan을 허용합니다.
+Transfer/withdraw prepare는 wallet privacy material에서 파생한 키로 AES-GCM 암호화한 IndexedDB + Web Locks 기반 ClairveilJS note reservation manager를 사용합니다. Cosmos/EVM submit에도 같은 manager와 prepared reservation을 전달하며, active reservation이 있으면 UI에서 새 spend 준비를 차단합니다. Receipt polling timeout은 실패가 아니라 `Unknown`으로 표시합니다. `Reconcile`은 tx hash를 먼저 확인하고 포함된 Cosmos `MsgWithdraw` 전체 또는 EVM target/calldata/value/chain ID를 암호화된 handoff와 결합한 뒤에만 nullifier scan을 수행합니다. 성공한 bound transaction 없이 nullifier만 spent이면 operation-level `ManualReview`로 영속화해 대체 withdraw를 차단합니다. Spent transfer evidence는 authoritative 포함 height부터 event를 끝까지 pagination해 tx hash와 nullifier를 함께 확인합니다. 조회 실패나 binding 불일치는 reservation을 그대로 잠급니다. `tx absent/failed`와 `nullifier unspent`가 특정 height에서 모두 명시적으로 확인된 경우에만 새 plan을 허용합니다.
 
 EVM public send/deposit의 미확정 tx hash와 status는 reload 후에도 복원되어 reconcile 전 중복 전송을 차단합니다. EVM deposit preflight는 host-chain bank endpoint에서 대상 asset 잔액을, `eth_getBalance`에서 native gas 잔액을 따로 조회하므로 `denom`과 `evmNativeDenom`이 다른 profile은 두 잔액을 각각 충족해야 합니다. Relay handoff JSON, reservation ID, relayer tx hash, 결과 상태도 wallet-derived key로 암호화해 저장하고 `Setup Clairveil` 후 복원합니다. Authoritative block time으로 handoff 만료가 확인되고 모든 reserved nullifier가 unspent이면 wallet owner의 명시적 승인으로 `ManualReview -> ReplanRequired` 복구 후 새 payload를 준비할 수 있습니다.
 

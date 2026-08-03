@@ -82,10 +82,19 @@ function resolveLocalTestMode() {
   return envFlag("CLAIRVEIL_DAPP_LOCAL_TEST_MODE", true);
 }
 
+function positiveIntegerEnv(name, defaultValue) {
+  const value = Number(process.env[name] ?? defaultValue);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return value;
+}
+
 function envEndpointList(value) {
   return [...new Set(String(value || "").split(",").map(entry => entry.trim()).filter(Boolean))];
 }
 
+const localTestMode = resolveLocalTestMode();
 const config = {
   host: cliOptions.host ?? process.env.CLAIRVEIL_DAPP_HOST ?? "0.0.0.0",
   port: Number(cliOptions.port ?? process.env.PORT ?? process.env.CLAIRVEIL_DAPP_PORT ?? 5173),
@@ -102,6 +111,10 @@ const config = {
   publicProverUrl: process.env.CLAIRVEIL_PUBLIC_PROVER_URL ?? process.env.CLAIRVEIL_PROVER_PUBLIC_URL ?? process.env.CLAIRVEIL_PROVER_URL ?? "http://127.0.0.1:8080",
   proverBearerToken: process.env.CLAIRVEIL_PROVER_BEARER_TOKEN ?? process.env.CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN ?? "",
   proverTimeoutMs: Number(process.env.CLAIRVEIL_PROVER_TIMEOUT_MS ?? 120000),
+  proverProxyEnabled: localTestMode && envFlag("CLAIRVEIL_PROVER_PROXY_ENABLED", true),
+  proverProxyRateLimitWindowMs: positiveIntegerEnv("CLAIRVEIL_PROVER_PROXY_RATE_LIMIT_WINDOW_MS", 60000),
+  proverProxyRateLimitMax: positiveIntegerEnv("CLAIRVEIL_PROVER_PROXY_RATE_LIMIT_MAX", 30),
+  proverProxyMaxInFlight: positiveIntegerEnv("CLAIRVEIL_PROVER_PROXY_MAX_IN_FLIGHT", 2),
   depositProofUrl: process.env.CLAIRVEIL_DEPOSIT_PROOF_URL ?? "",
   publicDepositProofUrl: process.env.CLAIRVEIL_PUBLIC_DEPOSIT_PROOF_URL ?? "",
   transport: process.env.CLAIRVEIL_TRANSPORT ?? "cosmos",
@@ -120,9 +133,10 @@ const config = {
   evmNativeDenom: process.env.CLAIRVEIL_EVM_NATIVE_DENOM || configuredDenom,
   evmGasLimit: process.env.CLAIRVEIL_EVM_GAS_LIMIT ?? "0x989680",
   evmSendGasLimit: process.env.CLAIRVEIL_EVM_SEND_GAS_LIMIT ?? "0x5208",
-  localTestMode: resolveLocalTestMode(),
+  localTestMode,
   allowLanSigning: process.env.CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING === "1",
   allowLanAdmin: process.env.CLAIRVEIL_DAPP_ALLOW_LAN_ADMIN === "1",
+  allowLanProver: process.env.CLAIRVEIL_DAPP_ALLOW_LAN_PROVER === "1",
   keplrGasPriceStep: {
     low: Number(process.env.CLAIRVEIL_KEPLR_GAS_LOW ?? 1),
     average: Number(process.env.CLAIRVEIL_KEPLR_GAS_AVERAGE ?? 1),
@@ -267,7 +281,7 @@ function buildKeplrChainInfo({
 }
 
 function dappChainProfiles() {
-  const browserDepositProofUrl = config.publicDepositProofUrl || (config.depositProofUrl
+  const browserDepositProofUrl = config.publicDepositProofUrl || (config.proverProxyEnabled && config.depositProofUrl
     ? `http://127.0.0.1:${config.port}/v1/prover/deposit`
     : "");
   const clairveilProfile = {
@@ -490,7 +504,61 @@ function readRawBody(req, { maxBytes = 1024 * 1024 * 4 } = {}) {
   });
 }
 
+const proverProxyRateWindows = new Map();
+let proverProxyInFlight = 0;
+
+function proverProxyClientKey(req) {
+  return String(req.socket?.remoteAddress || "unknown").toLowerCase();
+}
+
+function proverProxyAccessAllowed(req) {
+  return isLoopbackRemoteAddress(req.socket?.remoteAddress) || config.allowLanProver;
+}
+
+function acquireProverProxyCapacity(req) {
+  const now = Date.now();
+  if (proverProxyRateWindows.size > 1024) {
+    for (const [key, value] of proverProxyRateWindows) {
+      if (value.resetAt <= now) proverProxyRateWindows.delete(key);
+    }
+  }
+  const key = proverProxyClientKey(req);
+  let window = proverProxyRateWindows.get(key);
+  if (!window || window.resetAt <= now) {
+    window = { count: 0, resetAt: now + config.proverProxyRateLimitWindowMs };
+    proverProxyRateWindows.set(key, window);
+  }
+  window.count += 1;
+  if (window.count > config.proverProxyRateLimitMax) {
+    return {
+      acquired: false,
+      code: "rate_limited",
+      message: "local prover proxy request rate exceeded",
+      retryAfterMs: Math.max(1, window.resetAt - now)
+    };
+  }
+  if (proverProxyInFlight >= config.proverProxyMaxInFlight) {
+    return {
+      acquired: false,
+      code: "capacity_exceeded",
+      message: "local prover proxy concurrency exceeded",
+      retryAfterMs: 1000
+    };
+  }
+  proverProxyInFlight += 1;
+  let released = false;
+  return {
+    acquired: true,
+    release() {
+      if (released) return;
+      released = true;
+      proverProxyInFlight = Math.max(0, proverProxyInFlight - 1);
+    }
+  };
+}
+
 function proverProxyTarget(pathname) {
+  if (!config.proverProxyEnabled) return "";
   if (pathname === "/v1/prover/deposit" && config.depositProofUrl) {
     return config.depositProofUrl;
   }
@@ -506,12 +574,18 @@ async function handleProverProxy(req, res, url) {
     sendJson(res, 404, { error: "not found" });
     return;
   }
+  if (!proverProxyAccessAllowed(req)) {
+    sendJson(res, 403, {
+      version: "v1",
+      code: "forbidden",
+      message: "LAN access to the local prover proxy is disabled"
+    });
+    return;
+  }
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
-      "access-control-allow-origin": "*",
-      "access-control-allow-methods": "POST, OPTIONS",
-      "access-control-allow-headers": "content-type, authorization",
-      "access-control-max-age": "600"
+      allow: "POST, OPTIONS",
+      "cache-control": "no-store"
     });
     res.end();
     return;
@@ -521,6 +595,26 @@ async function handleProverProxy(req, res, url) {
       version: "v1",
       code: "method_not_allowed",
       message: "prover proxy requires POST"
+    });
+    return;
+  }
+  const contentType = String(req.headers["content-type"] || "").split(";", 1)[0].trim().toLowerCase();
+  if (contentType !== "application/json") {
+    sendJson(res, 415, {
+      version: "v1",
+      code: "unsupported_media_type",
+      message: "prover proxy requires application/json"
+    });
+    return;
+  }
+
+  const capacity = acquireProverProxyCapacity(req);
+  if (!capacity.acquired) {
+    sendJson(res, 429, {
+      version: "v1",
+      code: capacity.code,
+      message: capacity.message,
+      retry_after_ms: capacity.retryAfterMs
     });
     return;
   }
@@ -557,6 +651,7 @@ async function handleProverProxy(req, res, url) {
     });
   } finally {
     clearTimeout(timeout);
+    capacity.release();
   }
 }
 
@@ -922,9 +1017,9 @@ function serverFeaturesForRequest(req) {
     localSignerAdmin,
     localSignerSetup: localSignerMutation,
     faucet: localSignerMutation,
-    depositProof: Boolean(config.depositProofUrl || config.publicDepositProofUrl),
+    depositProof: Boolean(config.publicDepositProofUrl || (config.proverProxyEnabled && config.depositProofUrl)),
     auditorAdmin: localSignerAdmin,
-    proverProxy: true,
+    proverProxy: config.proverProxyEnabled,
     batchTransfer: false
   };
 }
@@ -1248,6 +1343,10 @@ const server = createServer((req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
   if (proverProxyTarget(url.pathname)) {
     handleProverProxy(req, res, url);
+    return;
+  }
+  if (url.pathname.startsWith("/v1/prover/") || url.pathname === "/v1/proofs/batch-transfer") {
+    sendJson(res, 404, { error: "not found" });
     return;
   }
   if (url.pathname.startsWith("/api/")) {

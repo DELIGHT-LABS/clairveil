@@ -1,5 +1,41 @@
 import { MsgWithdraw, msgWithdrawTypeUrl } from "clairveiljs/cosmos-client";
 
+export const relayWithdrawHandoffVersion = "v2";
+
+export function createRelayWithdrawHandoff({ profileId, transport, payload, transaction } = {}) {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("relay withdraw payload is required");
+  }
+  if (payload.version !== relayWithdrawHandoffVersion) {
+    throw new Error("relay withdraw payload must use v2");
+  }
+  if (!["cosmos", "evm"].includes(transport)) {
+    throw new Error(`unsupported relay transaction transport ${JSON.stringify(transport)}`);
+  }
+  return {
+    schema_version: relayWithdrawHandoffVersion,
+    handoff_version: relayWithdrawHandoffVersion,
+    profile_id: String(profileId || ""),
+    transport,
+    request: {
+      version: relayWithdrawHandoffVersion,
+      payload
+    },
+    ...(transaction ? { transaction } : {})
+  };
+}
+
+export function relayWithdrawHandoffPayload(handoff) {
+  if (!handoff) return null;
+  if (handoff.schema_version !== relayWithdrawHandoffVersion ||
+      handoff.handoff_version !== relayWithdrawHandoffVersion ||
+      handoff.request?.version !== relayWithdrawHandoffVersion ||
+      handoff.request?.payload?.version !== relayWithdrawHandoffVersion) {
+    throw new Error("relay withdraw handoff must use the v2 schema, handoff, request, and payload versions");
+  }
+  return handoff.request.payload;
+}
+
 function requiredText(value, label) {
   const text = String(value ?? "").trim();
   if (!text) throw new Error(`${label} is required`);

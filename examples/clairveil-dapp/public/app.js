@@ -32,6 +32,8 @@ import {
 import {
   assertRelayReservationPayloadMatches,
   assertRelayWithdrawTransactionMatches,
+  createRelayWithdrawHandoff,
+  relayWithdrawHandoffPayload,
   relayWithdrawPayloadExpired
 } from "./relay-withdraw-reconciliation.js";
 
@@ -361,7 +363,7 @@ function activeProofSignal() {
 
 function browserProverUrl(profile = activeChainProfile()) {
   const configured = profile?.proverUrl || state.config?.proverUrl || "";
-  if (state.config?.serverBacked && configured) {
+  if (state.config?.serverBacked && serverFeature("proverProxy") && configured) {
     try {
       const url = new URL(configured);
       if (url.hostname === "127.0.0.1" || url.hostname === "localhost") {
@@ -688,9 +690,15 @@ async function hydrateRelayWithdrawRecovery() {
   if (saved.version !== "clairveil-relay-withdraw-recovery-v1"
     || saved.profileId !== identity.profileId
     || saved.owner !== identity.owner
-    || saved.relayWithdraw?.handoff?.version !== "clairveil-relay-withdraw-handoff-v1"
     || !Array.isArray(saved.relayWithdraw?.reservationIds)) {
     const error = new Error("Encrypted relay recovery state has an invalid identity or format");
+    error.code = "OPERATION_STATE_CORRUPT";
+    throw error;
+  }
+  try {
+    relayWithdrawHandoffPayload(saved.relayWithdraw?.handoff);
+  } catch (cause) {
+    const error = new Error("Encrypted relay recovery state contains a legacy or invalid relay handoff", { cause });
     error.code = "OPERATION_STATE_CORRUPT";
     throw error;
   }
@@ -2788,15 +2796,16 @@ function renderWallet() {
 function renderRelayWithdraw() {
   const relayMode = els.withdrawMode.value === "relay";
   const handoff = state.relayWithdraw.handoff;
+  const payload = relayWithdrawHandoffPayload(handoff);
   els.relayWithdrawPanel.hidden = !relayMode;
   els.withdrawFromVeiled.textContent = relayMode ? "Prepare relay payload" : "Withdraw";
-  els.relayWithdrawChain.textContent = handoff?.payload?.chain_id || handoff?.transaction?.chainId || "-";
-  els.relayWithdrawRecipient.textContent = handoff?.payload?.recipient || "-";
-  const expiry = Number(handoff?.payload?.expires_at_unix || 0);
+  els.relayWithdrawChain.textContent = payload?.chain_id || handoff?.transaction?.chainId || "-";
+  els.relayWithdrawRecipient.textContent = payload?.recipient || "-";
+  const expiry = Number(payload?.expires_at_unix || 0);
   els.relayWithdrawExpiry.textContent = expiry
     ? `${new Date(expiry * 1000).toLocaleString()} (${expiry})`
     : "-";
-  els.relayWithdrawPayloadHash.textContent = handoff?.payload?.payload_hash || "-";
+  els.relayWithdrawPayloadHash.textContent = payload?.payload_hash || "-";
   els.relayWithdrawJson.value = state.relayWithdraw.json;
   if (els.relayWithdrawTxHash.value !== state.relayWithdraw.txHash) {
     els.relayWithdrawTxHash.value = state.relayWithdraw.txHash;
@@ -2821,13 +2830,12 @@ async function setRelayWithdrawHandoff(prepared) {
       metadata: { handoff_surface: "clairveil_example_dapp" }
     })
   ));
-  const handoff = {
-    version: "clairveil-relay-withdraw-handoff-v1",
-    profile_id: activeChainProfile()?.id || "",
+  const handoff = createRelayWithdrawHandoff({
+    profileId: activeChainProfile()?.id || "",
     transport: activeChainProfile()?.transport || "cosmos",
     payload: prepared.payload,
-    ...(prepared.transaction ? { transaction: prepared.transaction } : {})
-  };
+    transaction: prepared.transaction
+  });
   const nextRelayWithdraw = {
     handoff,
     reservationIds: reservationIDs,
@@ -4833,9 +4841,11 @@ function clearedRelayWithdrawState(resultStatus, resultMessage) {
 
 async function recoverExpiredRelayWithdraw({ manager, records, chainBlock, check }) {
   const handoff = state.relayWithdraw.handoff;
-  if (!relayWithdrawPayloadExpired(handoff?.payload, chainBlock.timeUnix)) return false;
+  const payload = relayWithdrawHandoffPayload(handoff);
+  if (!relayWithdrawPayloadExpired(payload, chainBlock.timeUnix)) return false;
   const unspentIDs = await explicitlyUnspentReservationIDs(manager, records);
   if (!records.length || unspentIDs.length !== records.length) {
+    stopRelayReservationHeartbeat();
     state.relayWithdraw.resultStatus = "manual-review";
     state.relayWithdraw.resultMessage = `Payload expired at chain time ${chainBlock.timeUnix}, but every reserved nullifier is not confirmed unspent`;
     setWithdrawEvidence(
@@ -4888,7 +4898,7 @@ async function recoverExpiredRelayWithdraw({ manager, records, chainBlock, check
   await manager.resolveManualReview(unspentIDs, {
     target: reservationStatuses.ReplanRequired,
     operatorId: state.keplr.account,
-    approvalReference: `relay-expiry:${handoff.payload.payload_hash}:${chainBlock.height}`,
+    approvalReference: `relay-expiry:${payload.payload_hash}:${chainBlock.height}`,
     reason: "Wallet owner approved replan after authoritative relay expiry and unspent reconciliation",
     metadata: evidence
   });
@@ -4905,8 +4915,51 @@ async function recoverExpiredRelayWithdraw({ manager, records, chainBlock, check
   return true;
 }
 
+async function quarantineRelayWithdrawOperation({ manager, records = [], check = {}, error, reason }) {
+  const message = error?.message || String(error || reason || "relay withdraw evidence conflict");
+  const transitionable = records.filter(record => [
+    reservationStatuses.ProofReady,
+    reservationStatuses.Submitted,
+    reservationStatuses.Unknown,
+    reservationStatuses.ReplanRequired
+  ].includes(record?.status));
+  let reservationError = "";
+  if (manager && transitionable.length) {
+    const proofReady = transitionable.filter(record => record.status === reservationStatuses.ProofReady);
+    const leaseTokens = [...new Set(proofReady.map(record => record.lease_token).filter(Boolean))];
+    try {
+      if (!proofReady.length || leaseTokens.length === 1) {
+        await manager.markManualReview(transitionable.map(record => record.reservation_id), {
+          ...(leaseTokens[0] ? { leaseToken: leaseTokens[0] } : {}),
+          error: reason,
+          metadata: {
+            relay_operation_status: operationStatuses.ManualReview,
+            relay_reconcile_reason: reason,
+            relay_reconcile_error: message,
+            ...(check.txHash ? { tx_hash_checked: check.txHash } : {}),
+            ...(check.height ? { checked_height: check.height } : {})
+          }
+        });
+      } else {
+        reservationError = "relay reservations do not share one reviewable lease token";
+      }
+    } catch (transitionError) {
+      reservationError = transitionError.message;
+    }
+  }
+  stopRelayReservationHeartbeat();
+  state.relayWithdraw.resultStatus = "manual-review";
+  state.relayWithdraw.resultMessage = `Manual review required · ${message}${reservationError ? ` · ${reservationError}` : ""}`;
+  setWithdrawEvidence(
+    "Spent or binding evidence conflicts · manual review",
+    "Transparent receive is not safely attributable to this handoff",
+    { render: false }
+  );
+}
+
 async function reconcileRelayWithdrawResult() {
   const handoff = state.relayWithdraw.handoff;
+  const payload = relayWithdrawHandoffPayload(handoff);
   const txHash = state.relayWithdraw.txHash.trim();
   if (!handoff) throw new Error("Prepare and hand off a relay withdraw payload first");
   if (txHash && !/^(0x)?[0-9a-fA-F]{64}$/.test(txHash)) {
@@ -4920,24 +4973,40 @@ async function reconcileRelayWithdrawResult() {
     const check = txHash
       ? await checkReservationTransaction(txHash)
       : { checked: false, txHash: "", included: false, failed: false, absent: false, pending: false };
-    await refreshEvents({ allowFailure: true });
-    await scanKeplrNotes({ quiet: true, throwOnError: true });
     const manager = await currentReservationManager();
-    const records = manager
+    let records = manager
       ? await Promise.all(state.relayWithdraw.reservationIds.map(id => manager.getReservation(id)))
       : [];
-    assertRelayReservationPayloadMatches(records, handoff.payload);
-    const spentConfirmed = records.length > 0
-      && records.every(record => record.status === reservationStatuses.ConfirmedSpent);
-    const txBound = check.included
-      ? assertRelayWithdrawTransactionMatches({
+    try {
+      assertRelayReservationPayloadMatches(records, payload);
+      if (check.included) {
+        assertRelayWithdrawTransactionMatches({
           transport: handoff.transport,
-          payload: handoff.payload,
+          payload,
           handoffTransaction: handoff.transaction,
           transaction: check.transaction,
           expectedEvmChainId: activeChainProfile()?.evmChainId
-        })
-      : false;
+        });
+      }
+    } catch (error) {
+      await quarantineRelayWithdrawOperation({
+        manager,
+        records,
+        check,
+        error,
+        reason: "relay_transaction_binding_conflict"
+      });
+      return;
+    }
+
+    await refreshEvents({ allowFailure: true });
+    await scanKeplrNotes({ quiet: true, throwOnError: true });
+    records = manager
+      ? await Promise.all(state.relayWithdraw.reservationIds.map(id => manager.getReservation(id)))
+      : [];
+    const spentConfirmed = records.length > 0
+      && records.every(record => record.status === reservationStatuses.ConfirmedSpent);
+    const txBound = check.included;
     const receiveConfirmed = check.included && !check.failed && txBound && records.length > 0
       && records.every(record => !reservationRequiresOperationEvidence(record)
         || operationReconciliationStatus(record) === operationStatuses.Succeeded);
@@ -4947,14 +5016,25 @@ async function reconcileRelayWithdrawResult() {
       if (await recoverExpiredRelayWithdraw({ manager, records, chainBlock, check })) return;
     }
 
+    if (spentConfirmed && (!check.included || check.failed)) {
+      await quarantineRelayWithdrawOperation({
+        manager,
+        records,
+        check,
+        error: new Error(check.failed
+          ? "A failed relayer transaction cannot explain the spent nullifier"
+          : "The spent nullifier is not attributable to an included relayer transaction"),
+        reason: "relay_spent_without_successful_bound_transaction"
+      });
+      return;
+    }
+
     if (check.failed) {
       state.relayWithdraw.resultStatus = "failed";
-      state.relayWithdraw.resultMessage = spentConfirmed
-        ? "Tx failed but nullifier is spent · manual review required"
-        : "Tx failed · nullifier not confirmed spent · reservation remains locked for review";
+      state.relayWithdraw.resultMessage = "Tx failed · nullifier not confirmed spent · reservation remains locked for review";
       setWithdrawEvidence(
-        spentConfirmed ? "Spent despite failed tx · manual review" : "Unspent not confirmed · retry blocked",
-        receiveConfirmed ? "Output evidence conflicts with failed tx · manual review" : "Not received · tx failed",
+        "Unspent not confirmed · retry blocked",
+        "Not received · tx failed",
         { render: false }
       );
       return;

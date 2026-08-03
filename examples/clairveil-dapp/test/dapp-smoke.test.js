@@ -220,9 +220,16 @@ test("DApp uses the npm ClairveilJS browser client for public wallet and privacy
   assert.match(appSource, /more events queued/);
   assert.match(appSource, /scan: \{ scanSource: "privacy_scan", limit: 200, maxPages: 1000 \}/);
   assert.match(appSource, /function browserProverUrl/);
+  assert.match(appSource, /state\.config\?\.serverBacked && serverFeature\("proverProxy"\) && configured/);
   assert.match(appSource, /return window\.location\.origin\.replace/);
   assert.match(serverSource, /function handleProverProxy/);
   assert.match(serverSource, /function proverProxyTarget/);
+  assert.match(serverSource, /proverProxyEnabled: localTestMode/);
+  assert.match(serverSource, /function acquireProverProxyCapacity/);
+  assert.match(serverSource, /proverProxyMaxInFlight/);
+  assert.match(serverSource, /proverProxyRateLimitMax/);
+  assert.match(serverSource, /function proverProxyAccessAllowed/);
+  assert.doesNotMatch(serverSource, /"access-control-allow-origin": "\*"/);
   assert.match(serverSource, /proverProxyTarget\(url\.pathname\)/);
   assert.match(serverSource, /new URL\(pathname, config\.proverUrl\.replace/);
   assert.match(appSource, /function browserDepositProofUrl/);
@@ -432,7 +439,11 @@ test("DApp confirms chain-bound intent details and supports self-view opt-out", 
 
 test("DApp offers relay handoff and cancellable same-prover retries", () => {
   assert.match(appSource, /clairveilBrowserClient\(\)\.prepareRelayWithdraw/);
-  assert.match(appSource, /clairveil-relay-withdraw-handoff-v1/);
+  assert.match(relayReconciliationSource, /relayWithdrawHandoffVersion = "v2"/);
+  assert.match(relayReconciliationSource, /schema_version: relayWithdrawHandoffVersion/);
+  assert.match(relayReconciliationSource, /handoff_version: relayWithdrawHandoffVersion/);
+  assert.match(relayReconciliationSource, /request: \{[\s\S]*version: relayWithdrawHandoffVersion/);
+  assert.doesNotMatch(appSource, /clairveil-relay-withdraw-handoff-v1/);
   assert.match(appSource, /new AbortController\(\)/);
   assert.match(appSource, /signal: options\.signal/);
   assert.match(appSource, /transferFlowState\.controller\.abort\(\)/);
@@ -444,6 +455,18 @@ test("DApp offers relay handoff and cancellable same-prover retries", () => {
   assert.match(appSource, /async function reconcileRelayWithdrawResult/);
   assert.match(appSource, /recoverExpiredRelayWithdraw/);
   assert.match(appSource, /manager\.resolveManualReview/);
+  assert.match(appSource, /async function quarantineRelayWithdrawOperation/);
+  const relayReconcileSource = appSource.slice(
+    appSource.indexOf("async function reconcileRelayWithdrawResult"),
+    appSource.indexOf("async function explicitlyUnspentReservationIDs")
+  );
+  assert.ok(
+    relayReconcileSource.indexOf("assertRelayWithdrawTransactionMatches") <
+      relayReconcileSource.indexOf("scanKeplrNotes"),
+    "relay transaction binding must be checked before spent-note reconciliation"
+  );
+  assert.match(relayReconcileSource, /spentConfirmed && \(!check\.included \|\| check\.failed\)/);
+  assert.match(relayReconcileSource, /relay_spent_without_successful_bound_transaction/);
   assert.match(relayReconciliationSource, /assertRelayWithdrawTransactionMatches/);
   assert.match(relayReconciliationSource, /included Cosmos relayer transaction must contain exactly one MsgWithdraw/);
   assert.match(relayReconciliationSource, /"calldata"/);

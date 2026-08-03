@@ -210,7 +210,8 @@ test("DApp proxies same-origin prover requests for browser SDK flows", async () 
       CLAIRVEIL_PROVER_URL: prover.url,
       CLAIRVEIL_PUBLIC_PROVER_URL: publicProver.url,
       CLAIRVEIL_DEPOSIT_PROOF_URL: `${depositProof.url}/exact-deposit-proof`,
-      CLAIRVEIL_PROVER_BEARER_TOKEN: "test-token"
+      CLAIRVEIL_PROVER_BEARER_TOKEN: "test-token",
+      CLAIRVEIL_PROVER_PROXY_RATE_LIMIT_MAX: "2"
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -260,6 +261,22 @@ test("DApp proxies same-origin prover requests for browser SDK flows", async () 
     assert.equal(depositProof.calls[0].path, "/exact-deposit-proof");
     assert.equal(depositProof.calls[0].authorization, "Bearer test-token");
 
+    const rateLimited = await fetch(`${baseUrl}/v1/prover/withdraw`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ version: "v2", payload: {} })
+    });
+    assert.equal(rateLimited.status, 429);
+    assert.equal((await rateLimited.json()).code, "rate_limited");
+    assert.equal(prover.calls.length, 1);
+
+    const preflight = await fetch(`${baseUrl}/v1/prover/transfer`, {
+      method: "OPTIONS",
+      headers: { origin: "https://untrusted.example" }
+    });
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers.get("access-control-allow-origin"), null);
+
     const getResponse = await fetch(`${baseUrl}/v1/prover/transfer`);
     assert.equal(getResponse.status, 405);
     const getJson = await getResponse.json();
@@ -302,8 +319,16 @@ test("DApp disables local-only backend routes outside local test mode", async ()
     assert.equal(config.json.serverFeatures.localSigners, false);
     assert.equal(config.json.serverFeatures.faucet, false);
     assert.equal(config.json.serverFeatures.auditorAdmin, false);
+    assert.equal(config.json.serverFeatures.proverProxy, false);
     assert.equal(config.json.localSignerHome, "");
     assert.deepEqual(config.json.accounts, []);
+
+    const disabledProverProxy = await fetch(`${baseUrl}/v1/prover/transfer`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ version: "v2", payload: {} })
+    });
+    assert.equal(disabledProverProxy.status, 404);
 
     const localOnlyRoutes = [
       { path: "/api/local-signers/ensure", init: { method: "POST", body: "{}" } },

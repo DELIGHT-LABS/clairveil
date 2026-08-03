@@ -14,6 +14,8 @@ import {
 import {
   assertRelayReservationPayloadMatches,
   assertRelayWithdrawTransactionMatches,
+  createRelayWithdrawHandoff,
+  relayWithdrawHandoffPayload,
   relayWithdrawPayloadExpired
 } from "../public/relay-withdraw-reconciliation.js";
 
@@ -159,6 +161,31 @@ test("relay reconciliation binds EVM calldata, target, value, and chain", () => 
     transaction: { ...included, input: "0x1234abce" },
     expectedEvmChainId: "0x32f"
   }), /calldata does not match/);
+});
+
+test("relay handoff uses the complete v2 envelope and rejects legacy versions", () => {
+  const payload = {
+    version: "v2",
+    payload_hash: "33".repeat(32)
+  };
+  const handoff = createRelayWithdrawHandoff({
+    profileId: "evm-local",
+    transport: "evm",
+    payload,
+    transaction: { to: "0x100000000000000000000000000000000000000b" }
+  });
+  assert.equal(handoff.schema_version, "v2");
+  assert.equal(handoff.handoff_version, "v2");
+  assert.equal(handoff.request.version, "v2");
+  assert.equal(relayWithdrawHandoffPayload(handoff), payload);
+  assert.throws(
+    () => relayWithdrawHandoffPayload({ ...handoff, handoff_version: "v1" }),
+    /must use the v2 schema/
+  );
+  assert.throws(
+    () => createRelayWithdrawHandoff({ transport: "cosmos", payload: { ...payload, version: "v1" } }),
+    /payload must use v2/
+  );
 });
 
 test("relay reconciliation binds every Cosmos MsgWithdraw field except creator", () => {
