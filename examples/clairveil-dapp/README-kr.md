@@ -342,7 +342,7 @@ EVM profile은 아래 조건을 만족해야 합니다.
 2. Clairveil root message를 만듭니다.
 3. Keplr `signArbitrary` 또는 MetaMask `personal_sign`으로 root message를 서명합니다.
 4. ClairveilJS가 root signature에서 wallet privacy material을 파생합니다.
-5. shielded address와 disclosure pubkey가 계산됩니다.
+5. shielded address와 disclosure pubkey가 계산되며 둘 다 UI에서 복사할 수 있습니다. v0.3.1 protocol preflight가 성공하기 전에는 note scan과 value-moving privacy action이 비활성화됩니다.
 
 ### Deposit
 
@@ -351,7 +351,7 @@ EVM profile은 아래 조건을 만족해야 합니다.
 3. 별도 DepositCircuit provider에서 proof를 받고 protocol preflight를 실행합니다.
 4. Cosmos면 `MsgDeposit` sign doc을 만들고 Keplr가 서명합니다.
 5. EVM이면 privacy precompile calldata를 만들고 MetaMask가 tx를 보냅니다. `payable-exact-value`에서는 amount를 tx `value`에 정확히 결합합니다.
-6. Tx 포함 여부와 로컬 note 복구 상태를 따로 표시합니다. Cosmos는 prepared commitment와 encrypted note가 tx event에 정확히 있는지 먼저 검증하고, 두 transport 모두 encrypted cache에서 commitment가 발견되어야 복구 완료로 표시합니다.
+6. Wallet 승인 전에 prepared network fee 또는 wallet-side fee estimate를 표시합니다. Tx 포함 여부와 로컬 note 복구 상태는 따로 표시합니다. Cosmos는 prepared commitment와 encrypted note가 tx event에 정확히 있는지 먼저 검증하고, 두 transport 모두 encrypted cache에서 commitment가 발견되어야 복구 완료로 표시합니다.
 
 ### Transfer
 
@@ -374,7 +374,11 @@ EVM profile은 아래 조건을 만족해야 합니다.
 
 `Relay handoff` mode는 브로드캐스트하지 않고 immutable relay payload를 JSON으로 만듭니다. 실제 전달은 product-defined trusted relayer transport가 담당해야 하며, EVM relayer는 candidate transaction을 그대로 신뢰하지 말고 payload에서 재구성하거나 byte-for-byte 검증해야 합니다. DApp은 JSON을 화면에 노출하기 전에 prepared reservation에 relay handoff를 기록합니다.
 
-Transfer/withdraw prepare는 wallet privacy material에서 파생한 키로 AES-GCM 암호화한 IndexedDB + Web Locks 기반 ClairveilJS note reservation manager를 사용합니다. Cosmos/EVM submit에도 같은 manager와 prepared reservation을 전달하며, active reservation이 있으면 UI에서 새 spend 준비를 차단합니다. Receipt polling timeout은 실패가 아니라 `Unknown`으로 표시합니다. `Reconcile`은 tx hash를 먼저 확인한 뒤 nullifier status를 갱신하고, note spent가 확인되거나 `tx absent/failed`와 `nullifier unspent`가 특정 height에서 모두 명시적으로 확인된 경우에만 새 plan을 허용합니다.
+Transfer/withdraw prepare는 wallet privacy material에서 파생한 키로 AES-GCM 암호화한 IndexedDB + Web Locks 기반 ClairveilJS note reservation manager를 사용합니다. Cosmos/EVM submit에도 같은 manager와 prepared reservation을 전달하며, active reservation이 있으면 UI에서 새 spend 준비를 차단합니다. Receipt polling timeout은 실패가 아니라 `Unknown`으로 표시합니다. `Reconcile`은 tx hash를 먼저 확인한 뒤 nullifier status를 갱신합니다. Spent operation evidence는 authoritative 포함 height부터 event를 끝까지 pagination해 tx hash와 nullifier를 함께 확인하며, 조회 실패 시 reservation을 그대로 잠급니다. `tx absent/failed`와 `nullifier unspent`가 특정 height에서 모두 명시적으로 확인된 경우에만 새 plan을 허용합니다.
+
+EVM public send/deposit의 미확정 tx hash와 status는 reload 후에도 복원되어 reconcile 전 중복 전송을 차단합니다. Relay handoff JSON, reservation ID, relayer tx hash, 결과 상태도 wallet-derived key로 암호화해 저장하고 `Setup Clairveil` 후 복원합니다.
+
+Disclosure Review는 현재 event 외에도 임의 tx hash 또는 붙여넣은 `shielded_transfer` event JSON을 user/self-view/local-admin audit plane으로 decode할 수 있습니다. `verification.verified === true`가 아닌 report의 plaintext는 화면에 표시하지 않고 폐기합니다.
 
 이 DApp은 note cache를 AES-GCM envelope로 browser `localStorage`에 저장합니다. 암호화 키는 wallet root signature material에서 HKDF로 파생하며 chain profile/account별로 분리됩니다. 기존 plaintext cache는 migration하지 않고 삭제한 뒤 `Reset & Rescan`을 요구합니다. 복호화할 수 없는 cache는 fail-closed하며 reset 전에 encrypted backup을 내려받을 수 있습니다. 이 cache는 chain에서 다시 만들 수 있는 데이터이며 wallet key backup을 대신하지 않습니다.
 

@@ -89269,8 +89269,8 @@ var ClairveilJS = class {
     scanSource,
     scan_source
   } = {}) {
-    const normalizedTxHash = String(txHash || "").trim().toUpperCase();
-    if (!normalizedTxHash) {
+    const normalizedTxHash2 = String(txHash || "").trim().toUpperCase();
+    if (!normalizedTxHash2) {
       throw new Error("txHash is required");
     }
     const pageBudget = Math.max(1, Number(max_pages ?? maxPages ?? defaultPrepareScanMaxPages));
@@ -89288,7 +89288,7 @@ var ClairveilJS = class {
           eventTypes: resolvedEventTypes
         });
         const event = (data.events || []).find(
-          (item) => String(item.tx_hash_hex || "").toUpperCase() === normalizedTxHash
+          (item) => String(item.tx_hash_hex || "").toUpperCase() === normalizedTxHash2
         );
         if (event) return event;
         if (!Boolean(data.has_more ?? data.hasMore)) break;
@@ -89300,7 +89300,7 @@ var ClairveilJS = class {
         currentAfterHeight = nextHeight;
         currentAfterSequence = nextSequence;
       }
-      throw new Error(`transfer event not found for tx ${normalizedTxHash}`);
+      throw new Error(`transfer event not found for tx ${normalizedTxHash2}`);
     }
     let currentPage = Math.max(1, Number(page || 1));
     for (let pagesScanned = 0; pagesScanned < pageBudget; pagesScanned += 1) {
@@ -89311,14 +89311,14 @@ var ClairveilJS = class {
         limit: pageLimit,
         eventTypes: resolvedEventTypes
       });
-      const event = (data.events || []).find((item) => String(item.tx_hash_hex || "").toUpperCase() === normalizedTxHash);
+      const event = (data.events || []).find((item) => String(item.tx_hash_hex || "").toUpperCase() === normalizedTxHash2);
       if (event) {
         return event;
       }
       if (!data.has_more) break;
       currentPage = Number(data.page || currentPage) + 1;
     }
-    throw new Error(`transfer event not found for tx ${normalizedTxHash}`);
+    throw new Error(`transfer event not found for tx ${normalizedTxHash2}`);
   }
   derivePrivacyAccount({ address, pubKeyHex, pub_key_hex, signatureBase64, signature_base64 }) {
     const material = derivePrivacyMaterial({
@@ -89607,8 +89607,8 @@ var ClairveilJS = class {
     attempts,
     intervalMs
   } = {}) {
-    const normalizedTxHash = String(txHash ?? tx_hash ?? "").trim().toUpperCase();
-    if (!normalizedTxHash) throw new Error("txHash is required");
+    const normalizedTxHash2 = String(txHash ?? tx_hash ?? "").trim().toUpperCase();
+    if (!normalizedTxHash2) throw new Error("txHash is required");
     const expected = depositExpectedMaterial({
       prepared,
       material,
@@ -89620,12 +89620,12 @@ var ClairveilJS = class {
       expectedEncryptedNote,
       expected_encrypted_note
     });
-    const tx = await this.waitForTx(normalizedTxHash, {
+    const tx = await this.waitForTx(normalizedTxHash2, {
       ...waitOptions || {},
       ...attempts == null ? {} : { attempts },
       ...intervalMs == null ? {} : { intervalMs }
     });
-    if (!tx) throw new Error(`deposit transaction was not found: ${normalizedTxHash}`);
+    if (!tx) throw new Error(`deposit transaction was not found: ${normalizedTxHash2}`);
     const code = explicitTransactionCode(tx);
     if (code !== 0) {
       throw new Error(`deposit transaction did not succeed: ${code == null ? "missing or malformed code" : `code ${code}`}`);
@@ -89642,7 +89642,7 @@ var ClairveilJS = class {
     }
     return {
       status: "confirmed",
-      txHash: normalizedTxHash,
+      txHash: normalizedTxHash2,
       tx,
       event,
       commitment: expected.commitment,
@@ -91209,15 +91209,15 @@ var ClairveilJS = class {
     asset_denom,
     ...eventQuery
   }) {
-    const normalizedTxHash = String(txHash ?? tx_hash ?? "").trim().toUpperCase();
-    const event = await this.findPrivacyEventByTxHash(normalizedTxHash, eventQuery);
+    const normalizedTxHash2 = String(txHash ?? tx_hash ?? "").trim().toUpperCase();
+    const event = await this.findPrivacyEventByTxHash(normalizedTxHash2, eventQuery);
     const disclosureAssetDenom = resolveDisclosureAssetDenom(assetDenom, asset_denom, this.defaultDenom);
     if (eventAttribute3(event, "user_disclosure_mode") === "USER_DISCLOSURE_MODE_PUBLIC") {
       return decodeUserDisclosureFromEvent(
         event,
         1n,
         "",
-        normalizedTxHash,
+        normalizedTxHash2,
         { shieldedPrefix: this.shieldedPrefix, assetDenom: disclosureAssetDenom }
       );
     }
@@ -91236,7 +91236,7 @@ var ClairveilJS = class {
       event,
       material.disclosureScalar,
       material.disclosurePubKeyHex,
-      normalizedTxHash,
+      normalizedTxHash2,
       { shieldedPrefix: this.shieldedPrefix, assetDenom: disclosureAssetDenom }
     );
   }
@@ -91258,8 +91258,8 @@ var ClairveilJS = class {
     asset_denom,
     ...eventQuery
   }) {
-    const normalizedTxHash = String(txHash ?? tx_hash ?? "").trim().toUpperCase();
-    const event = await this.findPrivacyEventByTxHash(normalizedTxHash, eventQuery);
+    const normalizedTxHash2 = String(txHash ?? tx_hash ?? "").trim().toUpperCase();
+    const event = await this.findPrivacyEventByTxHash(normalizedTxHash2, eventQuery);
     const disclosureAssetDenom = resolveDisclosureAssetDenom(assetDenom, asset_denom, this.defaultDenom);
     const directScalar = disclosureScalar ?? disclosure_scalar;
     const directScalarHex = disclosureScalarHex ?? disclosure_scalar_hex;
@@ -91267,7 +91267,7 @@ var ClairveilJS = class {
       return decodeSelfViewDisclosureFromEvent(
         event,
         directScalar != null ? directScalar : disclosureScalarFromHex(directScalarHex),
-        normalizedTxHash,
+        normalizedTxHash2,
         { shieldedPrefix: this.shieldedPrefix, assetDenom: disclosureAssetDenom }
       );
     }
@@ -91285,7 +91285,7 @@ var ClairveilJS = class {
     return decodeSelfViewDisclosureFromEvent(
       event,
       material.disclosureScalar,
-      normalizedTxHash,
+      normalizedTxHash2,
       { shieldedPrefix: this.shieldedPrefix, assetDenom: disclosureAssetDenom }
     );
   }
@@ -91298,13 +91298,13 @@ var ClairveilJS = class {
     asset_denom,
     ...eventQuery
   }) {
-    const normalizedTxHash = String(txHash ?? tx_hash ?? "").trim().toUpperCase();
-    const event = await this.findPrivacyEventByTxHash(normalizedTxHash, eventQuery);
+    const normalizedTxHash2 = String(txHash ?? tx_hash ?? "").trim().toUpperCase();
+    const event = await this.findPrivacyEventByTxHash(normalizedTxHash2, eventQuery);
     const disclosureAssetDenom = resolveDisclosureAssetDenom(assetDenom, asset_denom, this.defaultDenom);
     return decodeAuditDisclosureFromEvent(
       event,
       disclosureScalarFromHex(disclosurePrivKeyHex ?? disclosure_privkey_hex),
-      normalizedTxHash,
+      normalizedTxHash2,
       { shieldedPrefix: this.shieldedPrefix, assetDenom: disclosureAssetDenom }
     );
   }
@@ -92871,14 +92871,14 @@ var ClairveilEvmClient = class {
       }
       throw error;
     }
-    const normalizedTxHash = String(txHash || "").trim();
-    if (!/^0x[0-9a-fA-F]{64}$/.test(normalizedTxHash)) {
+    const normalizedTxHash2 = String(txHash || "").trim();
+    if (!/^0x[0-9a-fA-F]{64}$/.test(normalizedTxHash2)) {
       const error = new Error("EVM wallet returned an invalid transaction hash");
       await markBroadcastReservationManualReview(reservationContext, error);
       throw error;
     }
-    await markBroadcastReservationSubmitted2(reservationContext, normalizedTxHash);
-    return normalizedTxHash;
+    await markBroadcastReservationSubmitted2(reservationContext, normalizedTxHash2);
+    return normalizedTxHash2;
   }
   privacyAccount(material) {
     return publicPrivacyAccount2(material);
@@ -95600,6 +95600,210 @@ async function createEncryptedBrowserReservationManager({
   });
 }
 
+// public/encrypted-operation-store.js
+var encryptedOperationStoreVersion = "clairveil-encrypted-operation-store-v1";
+var encryptionInfo2 = new TextEncoder().encode("clairveil/encrypted-operation-store/v1");
+function bytesToBase643(bytes4) {
+  let binary = "";
+  for (let offset = 0; offset < bytes4.length; offset += 32768) {
+    binary += String.fromCharCode(...bytes4.slice(offset, offset + 32768));
+  }
+  return btoa(binary);
+}
+function base64ToBytes3(value, label) {
+  const text3 = String(value || "").trim();
+  if (!text3) throw new Error(`${label} is required`);
+  try {
+    return Uint8Array.from(atob(text3), (character) => character.charCodeAt(0));
+  } catch {
+    throw new Error(`${label} must be base64`);
+  }
+}
+function operationStateError(cause) {
+  const error = new Error("Encrypted operation recovery state cannot be decrypted. Manual recovery is required.", { cause });
+  error.code = "OPERATION_STATE_CORRUPT";
+  return error;
+}
+async function deriveEncryptionKey2({ cryptoImpl, keyMaterial, namespace }) {
+  const bytes4 = keyMaterial instanceof Uint8Array ? keyMaterial : new Uint8Array(keyMaterial || []);
+  if (!bytes4.length) throw new Error("operation recovery encryption key material is required");
+  const material = await cryptoImpl.subtle.importKey("raw", bytes4, "HKDF", false, ["deriveKey"]);
+  return cryptoImpl.subtle.deriveKey({
+    name: "HKDF",
+    hash: "SHA-256",
+    salt: new TextEncoder().encode(namespace),
+    info: encryptionInfo2
+  }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+}
+var EncryptedLocalStorageOperationStore = class _EncryptedLocalStorageOperationStore {
+  static async open({
+    storage = globalThis.localStorage,
+    cryptoImpl = globalThis.crypto,
+    key,
+    keyMaterial,
+    namespace
+  } = {}) {
+    if (!storage) throw new Error("localStorage-compatible storage is required");
+    if (!cryptoImpl?.subtle || typeof cryptoImpl.getRandomValues !== "function") {
+      throw new Error("Web Crypto is required for encrypted operation recovery");
+    }
+    if (!String(key || "").trim()) throw new Error("encrypted operation recovery key is required");
+    const encryptionKey = await deriveEncryptionKey2({
+      cryptoImpl,
+      keyMaterial,
+      namespace: String(namespace || key)
+    });
+    return new _EncryptedLocalStorageOperationStore({ storage, cryptoImpl, key, encryptionKey });
+  }
+  constructor({ storage, cryptoImpl, key, encryptionKey }) {
+    this.storage = storage;
+    this.cryptoImpl = cryptoImpl;
+    this.key = key;
+    this.encryptionKey = encryptionKey;
+  }
+  async load() {
+    const raw = this.storage.getItem(this.key);
+    if (!raw) return null;
+    try {
+      const envelope = JSON.parse(raw);
+      if (envelope?.version !== encryptedOperationStoreVersion) {
+        throw new Error("unsupported encrypted operation recovery version");
+      }
+      const plaintext = await this.cryptoImpl.subtle.decrypt({
+        name: "AES-GCM",
+        iv: base64ToBytes3(envelope.iv, "operation recovery iv")
+      }, this.encryptionKey, base64ToBytes3(envelope.ciphertext, "operation recovery ciphertext"));
+      return JSON.parse(new TextDecoder().decode(plaintext));
+    } catch (error) {
+      throw operationStateError(error);
+    }
+  }
+  async save(state2) {
+    const iv = this.cryptoImpl.getRandomValues(new Uint8Array(12));
+    const plaintext = new TextEncoder().encode(JSON.stringify(state2, (_key, value) => typeof value === "bigint" ? value.toString() : value));
+    const ciphertext = await this.cryptoImpl.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      this.encryptionKey,
+      plaintext
+    );
+    this.storage.setItem(this.key, JSON.stringify({
+      version: encryptedOperationStoreVersion,
+      iv: bytesToBase643(iv),
+      ciphertext: bytesToBase643(new Uint8Array(ciphertext))
+    }));
+  }
+  clear() {
+    this.storage.removeItem(this.key);
+  }
+};
+
+// public/disclosure-view-model.js
+function disclosureViewModel(report) {
+  if (report?.verification?.verified !== true) {
+    return { verified: false, summary: null, payload: null };
+  }
+  return {
+    verified: true,
+    summary: report?.summary || {},
+    payload: report?.payload || {}
+  };
+}
+
+// public/operation-event-lookup.js
+function normalizedTxHash(value) {
+  return String(value || "").trim().replace(/^0x/i, "").toUpperCase();
+}
+function eventHeight(event) {
+  const value = Number(event?.height || 0);
+  return Number.isSafeInteger(value) && value > 0 ? value : 0;
+}
+async function findPrivacyEventByTxHash({
+  fetchPage,
+  txHash,
+  height = 0,
+  eventTypes = ["shielded_transfer"],
+  predicate = () => true,
+  limit = 200,
+  maxPages = 100
+} = {}) {
+  if (typeof fetchPage !== "function") throw new Error("privacy event page fetcher is required");
+  const targetTxHash = normalizedTxHash(txHash);
+  if (!targetTxHash) throw new Error("operation tx hash is required");
+  const targetHeight = Number(height || 0);
+  if (!Number.isSafeInteger(targetHeight) || targetHeight < 0) throw new Error("operation height is invalid");
+  let page = 1;
+  for (let pagesScanned = 0; pagesScanned < maxPages; pagesScanned += 1) {
+    const data = await fetchPage({
+      afterHeight: targetHeight > 0 ? targetHeight - 1 : 0,
+      page,
+      limit,
+      eventTypes
+    });
+    const events = data?.events || [];
+    const match = events.find((event) => normalizedTxHash(event?.tx_hash_hex) === targetTxHash && predicate(event));
+    if (match) return match;
+    if (!data?.has_more) return null;
+    if (targetHeight > 0 && events.some((event) => eventHeight(event) > targetHeight)) return null;
+    page = Number(data.page || page) + 1;
+  }
+  throw new Error(`privacy event lookup exceeded ${maxPages} pages`);
+}
+
+// public/public-pending-tx-store.js
+var publicPendingTxStateVersion = "clairveil-public-pending-tx-state-v1";
+var unresolvedStatuses = /* @__PURE__ */ new Set(["submitted", "unknown", "checking"]);
+function normalizedPendingEntry(entry) {
+  if (entry == null) return null;
+  const txHash = String(entry?.txHash || "").trim();
+  const status = String(entry?.status || "").trim();
+  if (!/^(0x)?[0-9a-fA-F]{64}$/.test(txHash) || !unresolvedStatuses.has(status)) {
+    throw new Error("pending transaction entry is invalid");
+  }
+  return {
+    txHash,
+    status: status === "checking" ? "unknown" : status,
+    ...entry?.height ? { height: String(entry.height) } : {}
+  };
+}
+function publicPendingTxKey({ profileId, owner }) {
+  const normalizedProfile = String(profileId || "").trim();
+  const normalizedOwner = String(owner || "").trim().toLowerCase();
+  return normalizedProfile && normalizedOwner ? `clairveil:v0.3.1:public-pending:${normalizedProfile}:${normalizedOwner}` : "";
+}
+function loadPublicPendingTxState(storage, key, { profileId, owner } = {}) {
+  const raw = storage?.getItem(key);
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw);
+    if (value?.version !== publicPendingTxStateVersion || value.profileId !== String(profileId || "") || value.owner !== String(owner || "").toLowerCase()) {
+      throw new Error("pending transaction identity does not match");
+    }
+    const send = normalizedPendingEntry(value.send);
+    const deposit = normalizedPendingEntry(value.deposit);
+    if (!send && !deposit) throw new Error("pending transaction state is empty");
+    return { send, deposit };
+  } catch (cause) {
+    const error = new Error("Pending public transaction state is corrupt. Clear it only after checking wallet history and tx hashes.", { cause });
+    error.code = "PUBLIC_PENDING_STATE_CORRUPT";
+    throw error;
+  }
+}
+function savePublicPendingTxState(storage, key, { profileId, owner, send, deposit } = {}) {
+  const normalizedSend = unresolvedStatuses.has(String(send?.status || "")) ? normalizedPendingEntry(send) : null;
+  const normalizedDeposit = unresolvedStatuses.has(String(deposit?.status || "")) ? normalizedPendingEntry(deposit) : null;
+  if (!normalizedSend && !normalizedDeposit) {
+    storage?.removeItem(key);
+    return;
+  }
+  storage?.setItem(key, JSON.stringify({
+    version: publicPendingTxStateVersion,
+    profileId: String(profileId || ""),
+    owner: String(owner || "").toLowerCase(),
+    send: normalizedSend,
+    deposit: normalizedDeposit
+  }));
+}
+
 // public/app.js
 function defaultMetaMaskState() {
   return {
@@ -95642,11 +95846,13 @@ function defaultKeplrState() {
     rootSignatureHash: "",
     sendHash: "",
     sendStatus: "idle",
+    publicPendingStateError: "",
     depositHash: "",
     depositHeight: "",
     depositPrepared: null,
     depositRecoveryStatus: "idle",
     depositRecoveryMessage: "Not started",
+    networkFeeEstimate: "Not estimated",
     transferHash: "",
     withdrawHash: "",
     withdrawHeight: "",
@@ -95731,8 +95937,24 @@ var noteStoreKey = "";
 var reservationManager = null;
 var reservationManagerPromise = null;
 var reservationManagerKey = "";
+var operationStore = null;
+var operationStorePromise = null;
+var operationStoreKey = "";
+var publicPendingStateKey = "";
 var relayReservationHeartbeatTimer = null;
-var reservationLeaseOwner = `browser-tab:${globalThis.crypto?.randomUUID?.() || Date.now()}`;
+var relayRecoverySaveTimer = null;
+var reservationLeaseOwner = (() => {
+  const storageKey = "clairveil:v0.3.1:reservation-lease-owner";
+  try {
+    const existing = globalThis.sessionStorage?.getItem(storageKey);
+    if (existing) return existing;
+    const value = `browser-tab:${globalThis.crypto?.randomUUID?.() || Date.now()}`;
+    globalThis.sessionStorage?.setItem(storageKey, value);
+    return value;
+  } catch {
+    return `browser-tab:${globalThis.crypto?.randomUUID?.() || Date.now()}`;
+  }
+})();
 var serverConfigAvailable = true;
 function activeChainProfile() {
   return state.chainProfiles.find((profile) => profile.id === state.selectedChainProfileId) || state.chainProfiles.find((profile) => profile.id === state.config?.activeChainProfileId) || state.config?.activeProfile || null;
@@ -95930,6 +96152,64 @@ function noteStoreKeys() {
     legacy: `clairveil:v0.3.1:notes:${profile.id}:${owner}`
   };
 }
+function publicPendingIdentity() {
+  const profileId = activeChainProfile()?.id || "";
+  const owner = String(state.keplr.account || "").trim().toLowerCase();
+  const key = publicPendingTxKey({ profileId, owner });
+  return key ? { profileId, owner, key } : null;
+}
+function hydratePublicPendingTransactions() {
+  const identity = publicPendingIdentity();
+  publicPendingStateKey = identity?.key || "";
+  state.keplr.publicPendingStateError = "";
+  if (!identity || !globalThis.localStorage) return;
+  try {
+    const saved = loadPublicPendingTxState(globalThis.localStorage, identity.key, identity);
+    if (saved?.send) {
+      state.keplr.sendHash = saved.send.txHash;
+      state.keplr.sendStatus = saved.send.status;
+    }
+    if (saved?.deposit) {
+      state.keplr.depositHash = saved.deposit.txHash;
+      state.keplr.depositHeight = saved.deposit.height || "";
+      state.keplr.depositRecoveryStatus = saved.deposit.status;
+      state.keplr.depositRecoveryMessage = "Restored unresolved tx \xB7 reconcile before retrying";
+    }
+  } catch (error) {
+    state.keplr.publicPendingStateError = error.message;
+    state.keplr.sendStatus = "unknown";
+    state.keplr.depositRecoveryStatus = "unknown";
+    state.keplr.depositRecoveryMessage = error.message;
+  }
+}
+function persistPublicPendingTransactions() {
+  const identity = publicPendingIdentity();
+  if (!identity || identity.key !== publicPendingStateKey || !globalThis.localStorage) return;
+  if (state.keplr.publicPendingStateError) return;
+  savePublicPendingTxState(globalThis.localStorage, identity.key, {
+    ...identity,
+    send: { txHash: state.keplr.sendHash, status: state.keplr.sendStatus },
+    deposit: {
+      txHash: state.keplr.depositHash,
+      status: state.keplr.depositRecoveryStatus,
+      height: state.keplr.depositHeight
+    }
+  });
+}
+function clearPublicPendingTransactions() {
+  const identity = publicPendingIdentity();
+  if (!identity || !state.keplr.publicPendingStateError) return;
+  if (!window.confirm("Only clear this state after checking wallet history and the chain for pending transactions. Continue?")) return;
+  globalThis.localStorage?.removeItem(identity.key);
+  state.keplr.publicPendingStateError = "";
+  state.keplr.sendHash = "";
+  state.keplr.sendStatus = "idle";
+  state.keplr.depositHash = "";
+  state.keplr.depositHeight = "";
+  state.keplr.depositRecoveryStatus = "idle";
+  state.keplr.depositRecoveryMessage = "Not started";
+  renderKeplr();
+}
 async function currentNoteStore() {
   const keys = noteStoreKeys();
   if (!keys || !globalThis.localStorage || !state.keplr.rootSignatureBase64) return null;
@@ -95942,7 +96222,7 @@ async function currentNoteStore() {
       key: openingKey,
       owner: keys.owner,
       namespace: keys.namespace,
-      keyMaterial: base64ToBytes3(state.keplr.rootSignatureBase64)
+      keyMaterial: base64ToBytes4(state.keplr.rootSignatureBase64)
     }).then((store) => {
       if (noteStoreKey === openingKey && noteStorePromise === opening) {
         noteStore = store;
@@ -96029,6 +96309,99 @@ async function currentReservationManager() {
   }
   return reservationManagerPromise;
 }
+function operationStoreIdentity() {
+  const profile = activeChainProfile();
+  const owner = String(state.keplr.account || "").trim().toLowerCase();
+  if (!profile?.id || !owner || !state.keplr.rootSignatureBase64) return null;
+  return {
+    profileId: profile.id,
+    owner,
+    namespace: `${profile.chainId || profile.id}:${profile.id}:${owner}`,
+    key: `clairveil:v0.3.1:operations-encrypted:${profile.id}:${owner}`
+  };
+}
+async function currentOperationStore() {
+  const identity = operationStoreIdentity();
+  if (!identity || !globalThis.localStorage) return null;
+  if (operationStore && operationStoreKey === identity.key) return operationStore;
+  if (!operationStorePromise || operationStoreKey !== identity.key) {
+    const openingKey = identity.key;
+    operationStoreKey = openingKey;
+    const opening = EncryptedLocalStorageOperationStore.open({
+      storage: globalThis.localStorage,
+      key: identity.key,
+      namespace: identity.namespace,
+      keyMaterial: base64ToBytes4(state.keplr.rootSignatureBase64)
+    }).then((store) => {
+      if (operationStoreKey === openingKey && operationStorePromise === opening) operationStore = store;
+      return store;
+    }).catch((error) => {
+      if (operationStoreKey === openingKey && operationStorePromise === opening) operationStorePromise = null;
+      throw error;
+    });
+    operationStorePromise = opening;
+  }
+  return operationStorePromise;
+}
+async function persistRelayWithdrawRecovery(next = state.relayWithdraw) {
+  const store = await currentOperationStore();
+  if (!store) throw new Error("Encrypted operation recovery store is not available");
+  if (!next?.handoff) {
+    store.clear();
+    return;
+  }
+  const identity = operationStoreIdentity();
+  await store.save({
+    version: "clairveil-relay-withdraw-recovery-v1",
+    profileId: identity.profileId,
+    owner: identity.owner,
+    relayWithdraw: next
+  });
+}
+function queueRelayWithdrawRecoverySave() {
+  globalThis.clearTimeout(relayRecoverySaveTimer);
+  relayRecoverySaveTimer = globalThis.setTimeout(() => {
+    persistRelayWithdrawRecovery().catch((error) => {
+      state.relayWithdraw.resultStatus = "manual-review";
+      state.relayWithdraw.resultMessage = error.message;
+      renderRelayWithdraw();
+    });
+  }, 200);
+}
+async function hydrateRelayWithdrawRecovery() {
+  const store = await currentOperationStore();
+  const identity = operationStoreIdentity();
+  if (!store || !identity) return;
+  const saved = await store.load();
+  if (!saved) return;
+  if (saved.version !== "clairveil-relay-withdraw-recovery-v1" || saved.profileId !== identity.profileId || saved.owner !== identity.owner || saved.relayWithdraw?.handoff?.version !== "clairveil-relay-withdraw-handoff-v1" || !Array.isArray(saved.relayWithdraw?.reservationIds)) {
+    const error = new Error("Encrypted relay recovery state has an invalid identity or format");
+    error.code = "OPERATION_STATE_CORRUPT";
+    throw error;
+  }
+  state.relayWithdraw = {
+    ...state.relayWithdraw,
+    ...saved.relayWithdraw,
+    resultStatus: saved.relayWithdraw.resultStatus === "checking" ? "unknown" : saved.relayWithdraw.resultStatus,
+    resultMessage: `Restored encrypted relay handoff \xB7 ${saved.relayWithdraw.resultMessage || "result not checked"}`
+  };
+  const manager = await currentReservationManager();
+  const records = manager ? await Promise.all(state.relayWithdraw.reservationIds.map((id) => manager.getReservation(id))) : [];
+  const activeRecords = records.filter((record) => record && [
+    reservationStatuses.Reserved,
+    reservationStatuses.Proving,
+    reservationStatuses.ProofReady
+  ].includes(record.status));
+  const leaseTokens = [...new Set(activeRecords.map((record) => record.lease_token).filter(Boolean))];
+  if (manager && activeRecords.length === state.relayWithdraw.reservationIds.length && leaseTokens.length === 1) {
+    startRelayReservationHeartbeat({
+      manager,
+      reservationIDs: state.relayWithdraw.reservationIds,
+      leaseToken: leaseTokens[0],
+      leaseUntil: activeRecords[0].lease_until
+    });
+  }
+}
 function preparedReservationIDs(data) {
   return [...new Set(data?.reservation?.reservation_ids || [])];
 }
@@ -96101,22 +96474,26 @@ function stopRelayReservationHeartbeat() {
 function startRelayReservationHeartbeat({ manager, reservationIDs, leaseToken, leaseUntil }) {
   stopRelayReservationHeartbeat();
   if (!manager || !reservationIDs.length || !leaseToken) return;
+  const heartbeat = () => manager.heartbeatLease(reservationIDs, { leaseToken }).catch(async (error) => {
+    const records = await Promise.allSettled(reservationIDs.map((id) => manager.getReservation(id)));
+    const stillProofReady = records.some((result) => result.status === "fulfilled" && result.value.status === reservationStatuses.ProofReady);
+    stopRelayReservationHeartbeat();
+    if (!stillProofReady) return;
+    state.relayWithdraw.resultStatus = "manual-review";
+    state.relayWithdraw.resultMessage = `Relay reservation heartbeat failed \xB7 ${error.message}`;
+    await persistRelayWithdrawRecovery().catch(() => {
+    });
+    await refreshReservationState(manager).catch(() => {
+    });
+    renderRelayWithdraw();
+  });
   const intervalMs = reservationHeartbeatIntervalMs({
     leaseDurationMs: manager.leaseDurationMs,
     leaseUntil
   });
+  void heartbeat();
   relayReservationHeartbeatTimer = globalThis.setInterval(() => {
-    void manager.heartbeatLease(reservationIDs, { leaseToken }).catch(async (error) => {
-      const records = await Promise.allSettled(reservationIDs.map((id) => manager.getReservation(id)));
-      const stillProofReady = records.some((result) => result.status === "fulfilled" && result.value.status === reservationStatuses.ProofReady);
-      stopRelayReservationHeartbeat();
-      if (!stillProofReady) return;
-      state.relayWithdraw.resultStatus = "manual-review";
-      state.relayWithdraw.resultMessage = `Relay reservation heartbeat failed \xB7 ${error.message}`;
-      await refreshReservationState(manager).catch(() => {
-      });
-      renderRelayWithdraw();
-    });
+    void heartbeat();
   }, intervalMs);
 }
 function reservationStatusSlug(status) {
@@ -96220,14 +96597,49 @@ function noteHasUnspentEvidence(note) {
 function privacyTransferEventNullifiers(event) {
   return ["nullifier_1", "nullifier_2"].map((key) => normalizedHex(eventAttribute4(event, key))).filter(Boolean);
 }
-function transferEventForOperation(records, notesByLookupKey) {
+function transferEventMatchesOperation(event, records, notesByLookupKey) {
   const nullifiers = records.map((record) => noteNullifier(notesByLookupKey.get(record.nullifier_lookup_key))).filter(Boolean);
-  if (nullifiers.length !== records.length) return null;
-  return state.privacyEvents.events.find((event) => {
-    if (event?.event_type !== "shielded_transfer") return false;
-    const eventNullifiers = new Set(privacyTransferEventNullifiers(event));
-    return nullifiers.every((nullifier) => eventNullifiers.has(normalizedHex(nullifier)));
-  }) || null;
+  if (nullifiers.length !== records.length || event?.event_type !== "shielded_transfer") return false;
+  const eventNullifiers = new Set(privacyTransferEventNullifiers(event));
+  return nullifiers.every((nullifier) => eventNullifiers.has(normalizedHex(nullifier)));
+}
+function transferEventForOperation(records, notesByLookupKey, txHash = "") {
+  const expectedTxHash = normalizedTxHash(txHash);
+  return state.privacyEvents.events.find((event) => (!expectedTxHash || normalizedTxHash(event?.tx_hash_hex) === expectedTxHash) && transferEventMatchesOperation(event, records, notesByLookupKey)) || null;
+}
+function authoritativeTransactionHeight(check = {}) {
+  try {
+    const value = typeof check.height === "string" && /^0x[0-9a-f]+$/i.test(check.height) ? Number(BigInt(check.height)) : Number(check.height);
+    return Number.isSafeInteger(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+async function operationEventForReservations(records, notesByLookupKey) {
+  const txHashes = /* @__PURE__ */ new Map();
+  for (const record of records) {
+    const raw = String(record.submitted_tx_hash || "").trim();
+    const normalized = normalizedTxHash(raw);
+    if (normalized) txHashes.set(normalized, raw);
+  }
+  if (txHashes.size !== 1) return { complete: true, event: null };
+  const txHash = [...txHashes.values()][0];
+  const local = transferEventForOperation(records, notesByLookupKey, txHash);
+  if (local) return { complete: true, event: local };
+  const check = await checkReservationTransaction(txHash);
+  if (check.pending || !check.included && !check.failed && !check.absent) {
+    return { complete: false, event: null };
+  }
+  if (!check.included) return { complete: true, event: null };
+  const height = authoritativeTransactionHeight(check);
+  if (!height) throw new Error(`Included transaction ${txHash} has no authoritative height`);
+  const event = await findPrivacyEventByTxHash({
+    fetchPage: (options) => clairveilBrowserClient().fetchPrivacyEvents(options),
+    txHash,
+    height,
+    predicate: (candidate) => transferEventMatchesOperation(candidate, records, notesByLookupKey)
+  });
+  return { complete: true, event };
 }
 function operationEvidenceFromEvent(records, event) {
   const first = records[0];
@@ -96276,7 +96688,9 @@ async function reconcileSpentReservations(manager, notes = state.keplr.notes) {
       spentRecords.forEach((record) => eligibleLookupKeys.add(record.nullifier_lookup_key));
       continue;
     }
-    const event = transferEventForOperation(spentRecords, notesByLookupKey);
+    const lookup = await operationEventForReservations(spentRecords, notesByLookupKey);
+    if (!lookup.complete) continue;
+    const event = lookup.event;
     const operationSuccessEvidence2 = event ? operationEvidenceFromEvent(spentRecords, event) : null;
     for (const record of spentRecords) {
       eligibleLookupKeys.add(record.nullifier_lookup_key);
@@ -96395,6 +96809,7 @@ var els = {
   keplrFaucetSent: $("#keplrFaucetSent"),
   keplrFaucetRecipient: $("#keplrFaucetRecipient"),
   keplrShieldedAddress: $("#keplrShieldedAddress"),
+  copyKeplrShieldedAddress: $("#copyKeplrShieldedAddress"),
   keplrDisclosurePubKey: $("#keplrDisclosurePubKey"),
   copyKeplrDisclosurePubKey: $("#copyKeplrDisclosurePubKey"),
   faucetHelpText: $("#faucetHelpText"),
@@ -96415,6 +96830,7 @@ var els = {
   keplrSendRecipientSuggestions: $("#keplrSendRecipientSuggestions"),
   sendFromKeplr: $("#sendFromKeplr"),
   reconcileKeplrSend: $("#reconcileKeplrSend"),
+  clearPublicPendingState: $("#clearPublicPendingState"),
   keplrDepositAmount: $("#keplrDepositAmount"),
   depositFromKeplr: $("#depositFromKeplr"),
   reconcileKeplrDeposit: $("#reconcileKeplrDeposit"),
@@ -96422,6 +96838,7 @@ var els = {
   keplrDepositHash: $("#keplrDepositHash"),
   keplrDepositHeight: $("#keplrDepositHeight"),
   keplrDepositRecovery: $("#keplrDepositRecovery"),
+  keplrDepositNetworkFee: $("#keplrDepositNetworkFee"),
   myClairBalance: $("#myClairBalance"),
   myKeplrSpendable: $("#myKeplrSpendable"),
   myKeplrSpendableOnly: $("#myKeplrSpendableOnly"),
@@ -96496,6 +96913,10 @@ var els = {
   eventDisclosureState: $("#eventDisclosureState"),
   decodeEventDisclosure: $("#decodeEventDisclosure"),
   decodeSelfViewDisclosure: $("#decodeSelfViewDisclosure"),
+  disclosureSourcePlane: $("#disclosureSourcePlane"),
+  disclosureSourceTxHash: $("#disclosureSourceTxHash"),
+  disclosureSourceEventJson: $("#disclosureSourceEventJson"),
+  decodeDisclosureSource: $("#decodeDisclosureSource"),
   refreshAuditorTransfers: $("#refreshAuditorTransfers"),
   auditorEventsList: $("#auditorEventsList"),
   auditorDecodeState: $("#auditorDecodeState"),
@@ -97028,17 +97449,47 @@ async function withEstimatedEvmGas(transaction) {
     return tx;
   }
 }
+function formatBaseUnits(value, decimals = 18) {
+  const amount = BigInt(value);
+  const places = Math.max(0, Number(decimals || 0));
+  if (!places) return amount.toString();
+  const padded = amount.toString().padStart(places + 1, "0");
+  const whole = padded.slice(0, -places);
+  const fraction = padded.slice(-places).replace(/0+$/, "").slice(0, 8);
+  return fraction ? `${whole}.${fraction}` : whole;
+}
+async function updateDepositNetworkFee(transaction) {
+  if (state.activeWallet !== "metamask") {
+    state.keplr.networkFeeEstimate = `0 ${baseDenom()} encoded \xB7 gas limit 2,500,000`;
+    renderKeplr();
+    return;
+  }
+  try {
+    const request = { ...transaction, from: state.wallet.account };
+    const [gasHex, gasPriceHex] = await Promise.all([
+      requestMetaMask({ method: "eth_estimateGas", params: [request] }),
+      requestMetaMask({ method: "eth_gasPrice" })
+    ]);
+    const gas = evmQuantityToBigInt(gasHex, "estimated gas");
+    const gasPrice = evmQuantityToBigInt(gasPriceHex, "gas price");
+    const fee = gas * gasPrice;
+    state.keplr.networkFeeEstimate = `\u2248 ${formatBaseUnits(fee, coinDecimals())} ${displayDenom()} \xB7 gas ${gas}`;
+  } catch {
+    state.keplr.networkFeeEstimate = "Wallet will show the network fee before approval";
+  }
+  renderKeplr();
+}
 function normalizeEvmTxHash(txHash) {
   return String(txHash || "").trim().replace(/^0x/i, "").toUpperCase();
 }
-function bytesToBase643(bytes4) {
+function bytesToBase644(bytes4) {
   let binary = "";
   for (let i = 0; i < bytes4.length; i += 32768) {
     binary += String.fromCharCode(...bytes4.slice(i, i + 32768));
   }
   return btoa(binary);
 }
-function base64ToBytes3(value) {
+function base64ToBytes4(value) {
   const binary = atob(value);
   const bytes4 = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) {
@@ -97532,6 +97983,7 @@ function resetMetaMaskSession() {
 }
 function resetKeplrSession() {
   stopRelayReservationHeartbeat();
+  globalThis.clearTimeout(relayRecoverySaveTimer);
   state.keplr = defaultKeplrState();
   noteStore = null;
   noteStorePromise = null;
@@ -97539,6 +97991,10 @@ function resetKeplrSession() {
   reservationManager = null;
   reservationManagerPromise = null;
   reservationManagerKey = "";
+  operationStore = null;
+  operationStorePromise = null;
+  operationStoreKey = "";
+  publicPendingStateKey = "";
   state.reservations = defaultReservationState();
   state.relayWithdraw = {
     handoff: null,
@@ -97644,18 +98100,24 @@ async function setRelayWithdrawHandoff(prepared) {
     payload: prepared.payload,
     ...prepared.transaction ? { transaction: prepared.transaction } : {}
   };
-  state.relayWithdraw.handoff = handoff;
-  state.relayWithdraw.reservationIds = reservationIDs;
-  state.relayWithdraw.txHash = "";
-  state.relayWithdraw.resultStatus = "waiting";
-  state.relayWithdraw.resultMessage = "Handoff recorded \xB7 waiting for relayer tx hash";
+  const nextRelayWithdraw = {
+    handoff,
+    reservationIds: reservationIDs,
+    txHash: "",
+    resultStatus: "waiting",
+    resultMessage: "Handoff recorded \xB7 waiting for relayer tx hash",
+    leaseToken: prepared.reservation.lease_token,
+    leaseUntil: prepared.reservation.lease_until,
+    json: JSON.stringify(handoff, (_key, value) => typeof value === "bigint" ? value.toString() : value, 2)
+  };
+  await persistRelayWithdrawRecovery(nextRelayWithdraw);
+  state.relayWithdraw = nextRelayWithdraw;
   startRelayReservationHeartbeat({
     manager: prepared.reservationManager,
     reservationIDs,
     leaseToken: prepared.reservation.lease_token,
     leaseUntil: prepared.reservation.lease_until
   });
-  state.relayWithdraw.json = JSON.stringify(handoff, (_key, value) => typeof value === "bigint" ? value.toString() : value, 2);
   await refreshReservationState(prepared.reservationManager);
   renderRelayWithdraw();
 }
@@ -97670,10 +98132,12 @@ function renderKeplr() {
   els.keplrDepositHash.textContent = state.keplr.depositHash ? shorten(state.keplr.depositHash, 14, 12) : "-";
   els.keplrDepositHeight.textContent = state.keplr.depositHeight || "-";
   els.keplrDepositRecovery.textContent = state.keplr.depositRecoveryMessage || "Not started";
+  els.keplrDepositNetworkFee.textContent = state.keplr.networkFeeEstimate || "Not estimated";
   const sendPending = ["submitted", "unknown", "checking"].includes(state.keplr.sendStatus);
   const depositPending = ["submitted", "unknown", "checking"].includes(state.keplr.depositRecoveryStatus);
   els.reconcileKeplrSend.disabled = !sendPending || !state.keplr.sendHash;
   els.reconcileKeplrDeposit.disabled = !depositPending || !state.keplr.depositHash;
+  els.clearPublicPendingState.hidden = !state.keplr.publicPendingStateError;
   els.keplrTransferHash.textContent = state.keplr.transferHash ? shorten(state.keplr.transferHash, 14, 12) : "-";
   els.keplrWithdrawHash.textContent = state.keplr.withdrawHash ? shorten(state.keplr.withdrawHash, 14, 12) : "-";
   els.keplrWithdrawHeight.textContent = state.keplr.withdrawHeight || "-";
@@ -97683,10 +98147,11 @@ function renderKeplr() {
   renderMyKeplrNotes();
   els.fundKeplr.disabled = !serverFeature("faucet") || !signerReady;
   els.setupKeplrPrivacy.disabled = !signerReady;
+  els.copyKeplrShieldedAddress.disabled = !state.keplr.shieldedAddress;
   els.copyKeplrDisclosurePubKey.disabled = !state.keplr.disclosurePubKeyHex;
   els.refreshWalletBalance.disabled = !connected;
-  els.scanKeplrNotes.disabled = !signerReady || !state.keplr.rootSignatureBase64;
-  els.resetRescanNotes.disabled = !signerReady || !state.keplr.rootSignatureBase64;
+  els.scanKeplrNotes.disabled = !signerReady || !state.keplr.rootSignatureBase64 || !state.protocol.ready;
+  els.resetRescanNotes.disabled = !signerReady || !state.keplr.rootSignatureBase64 || !state.protocol.ready;
   els.backupNoteCache.disabled = !noteStoreKeys()?.encrypted || !globalThis.localStorage?.getItem(noteStoreKeys().encrypted);
   els.noteSyncState.textContent = state.keplr.noteSyncMessage || "Not scanned";
   els.noteSyncState.dataset.status = state.keplr.noteSyncStatus;
@@ -97694,6 +98159,7 @@ function renderKeplr() {
   renderRelayWithdraw();
   updateAmountActionButtons({ signerReady, veiledReady });
   renderEventDetail();
+  persistPublicPendingTransactions();
 }
 function updateAmountActionButtons(status = {}) {
   const connected = Boolean(state.keplr.account);
@@ -97701,19 +98167,20 @@ function updateAmountActionButtons(status = {}) {
   const veiledReady = status.veiledReady ?? (signerReady && Boolean(state.keplr.rootSignatureBase64));
   const sendPending = ["submitted", "unknown", "checking"].includes(state.keplr.sendStatus);
   const depositPending = ["submitted", "unknown", "checking"].includes(state.keplr.depositRecoveryStatus);
-  const noteInventoryTrusted = state.keplr.noteSyncStatus === "synced";
-  els.sendFromKeplr.disabled = !signerReady || sendPending || !hasPositiveUclairInput(els.keplrSendAmount) || !isSendRecipientForWallet(els.keplrSendRecipient.value, state.activeWallet || activeWalletKind());
-  els.depositFromKeplr.disabled = !signerReady || depositPending || !depositProofReady() || !hasPositiveUclairInput(els.keplrDepositAmount);
-  els.depositFromKeplr.title = depositProofReady() ? "" : "Configure CLAIRVEIL_DEPOSIT_PROOF_URL or inject CLAIRVEIL_DEPOSIT_PROOF_PROVIDER.";
-  const reservationBlocked = state.reservations.retryBlocked;
-  els.transferFromVeiled.disabled = !veiledReady || !noteInventoryTrusted || reservationBlocked || !hasPositiveUclairInput(els.veiledTransferAmount);
-  els.withdrawFromVeiled.disabled = !veiledReady || !noteInventoryTrusted || reservationBlocked || !hasPositiveUclairInput(els.veiledWithdrawAmount);
-  const reservationTitle = reservationBlocked ? "Reconcile the active note reservation before preparing or retrying another spend." : !noteInventoryTrusted ? "Complete the note scan before using the displayed shielded balance." : "";
+  const protocolReady = state.protocol.ready;
+  const noteInventoryTrusted = state.keplr.noteSyncStatus === "synced" && protocolReady;
+  els.sendFromKeplr.disabled = !signerReady || Boolean(state.keplr.publicPendingStateError) || sendPending || !hasPositiveUclairInput(els.keplrSendAmount) || !isSendRecipientForWallet(els.keplrSendRecipient.value, state.activeWallet || activeWalletKind());
+  els.depositFromKeplr.disabled = !signerReady || Boolean(state.keplr.publicPendingStateError) || depositPending || !protocolReady || !depositProofReady() || !hasPositiveUclairInput(els.keplrDepositAmount);
+  els.depositFromKeplr.title = !protocolReady ? "Protocol preflight must pass before depositing." : depositProofReady() ? "" : "Configure CLAIRVEIL_DEPOSIT_PROOF_URL or inject CLAIRVEIL_DEPOSIT_PROOF_PROVIDER.";
+  const reservationBlocked = state.reservations.retryBlocked || state.relayWithdraw.resultStatus === "manual-review";
+  els.transferFromVeiled.disabled = !veiledReady || !protocolReady || !noteInventoryTrusted || reservationBlocked || !hasPositiveUclairInput(els.veiledTransferAmount);
+  els.withdrawFromVeiled.disabled = !veiledReady || !protocolReady || !noteInventoryTrusted || reservationBlocked || !hasPositiveUclairInput(els.veiledWithdrawAmount);
+  const reservationTitle = reservationBlocked ? "Reconcile the active note reservation before preparing or retrying another spend." : !protocolReady ? "Protocol preflight must pass before using shielded notes." : !noteInventoryTrusted ? "Complete the note scan before using the displayed shielded balance." : "";
   els.transferFromVeiled.title = reservationTitle;
   els.withdrawFromVeiled.title = reservationTitle;
 }
 function renderMyKeplrNotes() {
-  const noteInventoryTrusted = state.keplr.noteSyncStatus === "synced";
+  const noteInventoryTrusted = state.keplr.noteSyncStatus === "synced" && state.protocol.ready;
   els.myKeplrSpendable.textContent = noteInventoryTrusted ? state.keplr.notesSummary || "-" : state.keplr.notesSummary ? `Cached \xB7 not confirmed (${state.keplr.notesSummary})` : "Not confirmed";
   els.myKeplrSpendableOnly.checked = state.keplr.showSpendableOnly;
   els.myKeplrNotesList.innerHTML = "";
@@ -98129,13 +98596,19 @@ function clearEventDisclosureResult() {
   els.eventDisclosureTo.textContent = "-";
 }
 function renderEventDisclosureReport(report) {
-  const summary = report?.summary || {};
+  clearEventDisclosureResult();
+  const view = disclosureViewModel(report);
+  if (!view.verified) {
+    els.eventDisclosureState.textContent = "Disclosure verification failed. Plaintext was discarded.";
+    return;
+  }
+  const summary = view.summary;
   const amount = summary.amount ? `${summary.amount}${summary.asset_denom ? ` ${summary.asset_denom}` : ""}` : "-";
   els.eventDisclosureFields.textContent = (summary.disclosed_fields || []).map(prettyDisclosureField).join(", ") || "-";
   els.eventDisclosureAmount.textContent = amount;
   els.eventDisclosureFrom.textContent = summary.from_shielded_address || "-";
   els.eventDisclosureTo.textContent = summary.to_shielded_address || "-";
-  els.eventDisclosureState.textContent = report?.verification?.verified ? `${summary.delivery || "recipient-encrypted"} / ${summary.policy || "unknown policy"}` : "Disclosure verification failed.";
+  els.eventDisclosureState.textContent = `${summary.delivery || "recipient-encrypted"} / ${summary.policy || "unknown policy"}`;
 }
 function renderEventDetail() {
   const event = selectedPrivacyEvent();
@@ -98249,6 +98722,89 @@ async function decodeSelectedSelfViewDisclosure() {
     renderEventDetail();
   }
 }
+function disclosureMaterial() {
+  if (!state.keplr.rootSignatureBase64) return null;
+  return derivePrivacyMaterial({
+    address: state.keplr.account,
+    pubKeyHex: state.keplr.pubkeyHex,
+    signatureBase64: state.keplr.rootSignatureBase64,
+    shieldedPrefix: shieldedPrefix()
+  });
+}
+async function decodeDisclosureSource() {
+  const plane = els.disclosureSourcePlane.value;
+  const pasted = els.disclosureSourceEventJson.value.trim();
+  const inputTxHash = els.disclosureSourceTxHash.value.trim();
+  state.privacyEvents.loading = true;
+  state.privacyEvents.decoded = null;
+  state.privacyEvents.error = "";
+  els.decodeDisclosureSource.disabled = true;
+  clearEventDisclosureResult();
+  els.eventDisclosureState.textContent = "Decoding selected disclosure source\u2026";
+  try {
+    let report;
+    if (pasted) {
+      let event;
+      try {
+        event = JSON.parse(pasted);
+      } catch {
+        throw new Error("Pasted disclosure event must be valid JSON");
+      }
+      const txHash = inputTxHash || event?.tx_hash_hex || "";
+      const material = disclosureMaterial();
+      if (plane === "user") {
+        report = decodeUserDisclosureFromEvent(
+          event,
+          material?.disclosureScalar || 1n,
+          material?.disclosurePubKeyHex || "",
+          txHash,
+          { assetDenom: baseDenom() }
+        );
+      } else if (plane === "self-view") {
+        if (!material) throw new Error("Setup Clairveil before decoding self-view disclosure");
+        report = decodeSelfViewDisclosureFromEvent(event, material.disclosureScalar, txHash, { assetDenom: baseDenom() });
+      } else {
+        if (!/^[0-9a-fA-F]{1,64}$/.test(state.auditor.testScalar || "")) {
+          throw new Error("Local admin audit scalar is unavailable");
+        }
+        report = decodeAuditDisclosureFromEvent(
+          event,
+          disclosureScalarFromHex(state.auditor.testScalar),
+          txHash,
+          { assetDenom: baseDenom() }
+        );
+      }
+    } else {
+      if (!/^(0x)?[0-9a-fA-F]{64}$/.test(inputTxHash)) {
+        throw new Error("Enter a 32-byte transaction hash or paste disclosure event JSON");
+      }
+      const request = privacyRequest({ txHash: inputTxHash, limit: 200, maxPages: 1e3 });
+      if (plane === "user") {
+        report = await clairveilBrowserClient().decodeUserDisclosure(request);
+      } else if (plane === "self-view") {
+        if (!state.keplr.rootSignatureBase64) throw new Error("Setup Clairveil before decoding self-view disclosure");
+        report = await clairveilBrowserClient().decodeSelfViewDisclosure(request);
+      } else {
+        if (!/^[0-9a-fA-F]{1,64}$/.test(state.auditor.testScalar || "")) {
+          throw new Error("Local admin audit scalar is unavailable");
+        }
+        report = await api("/api/auditor/decode", {
+          method: "POST",
+          body: JSON.stringify({ txHash: inputTxHash, disclosurePrivKeyHex: state.auditor.testScalar })
+        });
+      }
+    }
+    state.privacyEvents.decoded = report;
+    renderEventDisclosureReport(report);
+  } catch (error) {
+    state.privacyEvents.error = error.message;
+    clearEventDisclosureResult();
+    els.eventDisclosureState.textContent = error.message;
+  } finally {
+    state.privacyEvents.loading = false;
+    els.decodeDisclosureSource.disabled = false;
+  }
+}
 function clearAuditorReport(message = "Select a transfer.") {
   if (!hasAuditorUi()) return;
   setAuditorValueTone(auditorDetailValueElements());
@@ -98287,13 +98843,17 @@ function renderAuditorEventDetail(event) {
 }
 function renderAuditorReport(report) {
   if (!hasAuditorUi()) return;
-  const summary = report?.summary || {};
-  const payload = report?.payload || {};
-  const verification = report?.verification || {};
-  const verified = verification.verified ? "Verified" : "Failed";
+  const view = disclosureViewModel(report);
+  if (!view.verified) {
+    clearAuditorReport("Disclosure verification failed. Plaintext was discarded.");
+    els.auditorVerification.textContent = "Failed";
+    return;
+  }
+  const summary = view.summary;
+  const payload = view.payload;
   const amount = summary.amount ? `${summary.amount}${summary.asset_denom ? ` ${summary.asset_denom}` : ""}` : "-";
   els.auditorTxHash.textContent = report?.tx_hash || state.auditor.selectedTxHash || "-";
-  els.auditorVerification.textContent = verified;
+  els.auditorVerification.textContent = "Verified";
   els.auditorAmount.textContent = amount;
   els.auditorFrom.textContent = summary.from_shielded_address || "-";
   els.auditorTo.textContent = summary.to_shielded_address || "-";
@@ -98439,6 +98999,7 @@ async function connectWallet() {
   state.keplr.expectedAddress = identity.address || "";
   state.keplr.addressMatches = Boolean(identity.address);
   state.keplr.signerCheck = "OK (EVM address)";
+  hydratePublicPendingTransactions();
   if (!els.veiledWithdrawRecipient.value && identity.evmAddress) {
     els.veiledWithdrawRecipient.value = identity.evmAddress;
   }
@@ -98601,6 +99162,7 @@ async function connectKeplr() {
   state.keplr.noteScanCursor = defaultNoteScanCursor();
   state.privacyEvents.decoded = null;
   state.privacyEvents.error = "";
+  hydratePublicPendingTransactions();
   renderKeplr();
   state.keplr.expectedAddress = signer.signerCheck?.expectedAddress || "";
   state.keplr.addressMatches = Boolean(signer.signerCheck?.matches);
@@ -98698,7 +99260,7 @@ async function setupKeplrPrivacy() {
         method: "personal_sign",
         params: [rootMessage, state.wallet.account]
       });
-      state.keplr.rootSignatureBase64 = bytesToBase643(hexToBytes4(signatureHex));
+      state.keplr.rootSignatureBase64 = bytesToBase644(hexToBytes4(signatureHex));
       account = clairveilBrowserClient().derivePrivacyAccount({
         walletType: "evm",
         address: state.keplr.account,
@@ -98723,6 +99285,15 @@ async function setupKeplrPrivacy() {
     state.keplr.shieldedAddress = account.shielded_address || "";
     state.keplr.disclosurePubKeyHex = account.disclosure_pubkey_hex || "";
     state.keplr.rootSignatureHash = account.root_signature_hash || "";
+    try {
+      await hydrateRelayWithdrawRecovery();
+    } catch (error) {
+      state.relayWithdraw.resultStatus = "manual-review";
+      state.relayWithdraw.resultMessage = error.message;
+      state.reservations.status = "error";
+      state.reservations.message = error.message;
+      state.reservations.retryBlocked = true;
+    }
     await refreshReservationState();
     els.keplrTxState.textContent = "Ready";
     renderKeplr();
@@ -98742,6 +99313,14 @@ async function copyKeplrDisclosurePubKey() {
   }
   await navigator.clipboard.writeText(state.keplr.disclosurePubKeyHex);
   toast("Disclosure pubkey copied");
+}
+async function copyKeplrShieldedAddress() {
+  if (!state.keplr.shieldedAddress) {
+    toast("Setup Clairveil first");
+    return;
+  }
+  await navigator.clipboard.writeText(state.keplr.shieldedAddress);
+  toast("Shielded address copied");
 }
 async function copyWalletAccount() {
   const account = currentWalletAccountForCopy();
@@ -99008,6 +99587,7 @@ async function broadcastPrivacyDeposit(amount, label = "deposit", options = {}) 
   els.keplrTxState.textContent = `Preparing ${label}`;
   const data = await preparePrivacyDepositSignDoc(amount, options);
   state.keplr.shieldedAddress = data.prepared?.shieldedAddress || state.keplr.shieldedAddress;
+  await updateDepositNetworkFee(data.transaction);
   els.keplrTxState.textContent = state.activeWallet === "metamask" ? "Waiting for MetaMask" : "Waiting for Keplr";
   const broadcast = await broadcastPreparedPrivacy(data, label, options);
   state.keplr.depositHash = broadcast.broadcast?.txhash || "";
@@ -99148,9 +99728,10 @@ function checkedReservationHeight(check = {}) {
 async function checkReservationTransaction(txHash) {
   if (!txHash) return { checked: false, txHash: "" };
   if (activeChainProfile()?.transport === "evm") {
+    const rpcTxHash = /^0x/i.test(txHash) ? txHash : `0x${txHash}`;
     const [receipt, transaction] = await Promise.all([
-      clairveilBrowserClient().evmJsonRpc("eth_getTransactionReceipt", [txHash]),
-      clairveilBrowserClient().evmJsonRpc("eth_getTransactionByHash", [txHash])
+      clairveilBrowserClient().evmJsonRpc("eth_getTransactionReceipt", [rpcTxHash]),
+      clairveilBrowserClient().evmJsonRpc("eth_getTransactionByHash", [rpcTxHash])
     ]);
     return {
       checked: true,
@@ -99184,6 +99765,7 @@ async function reconcileRelayWithdrawResult() {
   }
   state.relayWithdraw.resultStatus = "checking";
   state.relayWithdraw.resultMessage = "Checking tx result first, then nullifier spent state\u2026";
+  await persistRelayWithdrawRecovery();
   renderRelayWithdraw();
   try {
     const check = await checkReservationTransaction(txHash);
@@ -99212,6 +99794,15 @@ async function reconcileRelayWithdrawResult() {
     state.relayWithdraw.resultStatus = "unknown";
     state.relayWithdraw.resultMessage = `Unable to confirm result \xB7 ${error.message}`;
   } finally {
+    const store = await currentOperationStore().catch(() => null);
+    if (state.relayWithdraw.resultStatus === "confirmed") {
+      store?.clear();
+    } else {
+      await persistRelayWithdrawRecovery().catch((error) => {
+        state.relayWithdraw.resultStatus = "manual-review";
+        state.relayWithdraw.resultMessage = error.message;
+      });
+    }
     await refreshReservationState().catch(() => {
     });
     renderKeplr();
@@ -99992,6 +100583,7 @@ els.signSession.addEventListener("click", () => signSession().catch((error) => t
 els.copyWalletAccount.addEventListener("click", () => copyWalletAccount().catch((error) => toast(error.message)));
 els.fundKeplr.addEventListener("click", fundKeplr);
 els.setupKeplrPrivacy.addEventListener("click", () => setupKeplrPrivacy().catch((error) => toast(error.message)));
+els.copyKeplrShieldedAddress.addEventListener("click", () => copyKeplrShieldedAddress().catch((error) => toast(error.message)));
 els.copyKeplrDisclosurePubKey.addEventListener("click", () => copyKeplrDisclosurePubKey().catch((error) => toast(error.message)));
 els.refreshWalletBalance.addEventListener("click", () => refreshWalletBalance().catch((error) => toast(error.message)));
 els.scanKeplrNotes.addEventListener("click", () => scanKeplrNotes().catch((error) => toast(error.message)));
@@ -100004,6 +100596,7 @@ els.myKeplrSpendableOnly.addEventListener("change", (event) => {
 });
 els.sendFromKeplr.addEventListener("click", sendFromKeplr);
 els.reconcileKeplrSend.addEventListener("click", () => reconcilePublicEvmTransaction("send"));
+els.clearPublicPendingState.addEventListener("click", clearPublicPendingTransactions);
 els.depositFromKeplr.addEventListener("click", depositFromKeplr);
 els.reconcileKeplrDeposit.addEventListener("click", () => reconcilePublicEvmTransaction("deposit"));
 [
@@ -100026,6 +100619,7 @@ els.relayWithdrawTxHash.addEventListener("input", (event) => {
   state.relayWithdraw.resultStatus = "waiting";
   state.relayWithdraw.resultMessage = state.relayWithdraw.txHash ? "Tx hash entered \xB7 result not checked" : "Waiting for relayer tx hash";
   renderRelayWithdraw();
+  queueRelayWithdrawRecoverySave();
 });
 els.reconcileRelayWithdraw.addEventListener("click", () => reconcileRelayWithdrawResult());
 els.copyRelayWithdraw.addEventListener("click", () => copyRelayWithdraw().catch((error) => toast(error.message)));
@@ -100041,6 +100635,7 @@ els.refreshNotes.addEventListener("click", () => refreshNotes().catch((error) =>
 els.refreshEvents.addEventListener("click", () => refreshEvents().catch((error) => toast(error.message)));
 els.decodeEventDisclosure.addEventListener("click", () => decodeSelectedEventDisclosure().catch((error) => toast(error.message)));
 els.decodeSelfViewDisclosure.addEventListener("click", () => decodeSelectedSelfViewDisclosure().catch((error) => toast(error.message)));
+els.decodeDisclosureSource.addEventListener("click", () => decodeDisclosureSource().catch((error) => toast(error.message)));
 if (els.refreshAuditorTransfers) {
   els.refreshAuditorTransfers.addEventListener("click", () => refreshAuditorTransfers().catch((error) => toast(error.message)));
 }

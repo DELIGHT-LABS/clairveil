@@ -119,7 +119,10 @@
             </div>
             <div>
               <dt>Clairveil shielded</dt>
-              <dd id="keplrShieldedAddress">Not set up</dd>
+              <dd class="account-copy">
+                <span id="keplrShieldedAddress">Not set up</span>
+                <button id="copyKeplrShieldedAddress" type="button" disabled>Copy</button>
+              </dd>
             </div>
           </dl>
           <div class="split-actions">
@@ -188,6 +191,7 @@
           </dl>
           <div class="notes-actions tx-reconcile-actions">
             <button id="reconcileKeplrSend" class="secondary-button" type="button" disabled>Reconcile send tx</button>
+            <button id="clearPublicPendingState" class="secondary-button" type="button" hidden>Clear corrupt pending state</button>
           </div>
           <section class="balance-section action-section" aria-labelledby="depositVeiledTitle">
             <h3 id="depositVeiledTitle">Deposit (Move to Veiled)</h3>
@@ -213,6 +217,10 @@
               <div>
                 <dt>Note recovery</dt>
                 <dd id="keplrDepositRecovery">Not started</dd>
+              </div>
+              <div>
+                <dt>Estimated network fee</dt>
+                <dd id="keplrDepositNetworkFee">Not estimated</dd>
               </div>
             </dl>
             <div class="notes-actions tx-reconcile-actions">
@@ -447,6 +455,26 @@
                 <button id="decodeEventDisclosure" type="button" disabled>User disclosure</button>
                 <button id="decodeSelfViewDisclosure" type="button" disabled>Self-view</button>
               </div>
+              <div class="disclosure-source">
+                <label class="field">
+                  <span>Disclosure plane</span>
+                  <select id="disclosureSourcePlane">
+                    <option value="user">User</option>
+                    <option value="self-view">Self-view</option>
+                    <option value="audit">Audit (local admin only)</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Arbitrary tx hash</span>
+                  <input id="disclosureSourceTxHash" placeholder="Tx hash outside the current event page" autocomplete="off" />
+                </label>
+                <label class="field">
+                  <span>Pasted disclosure event JSON</span>
+                  <textarea id="disclosureSourceEventJson" rows="5" placeholder='{"event_type":"shielded_transfer", ...}'></textarea>
+                </label>
+                <button id="decodeDisclosureSource" type="button">Decode source</button>
+                <p class="quiet">Paste an event JSON to decode it locally, or leave it empty and enter a tx hash.</p>
+              </div>
               <p id="eventDisclosureState" class="quiet">Select an event.</p>
             </div>
           </div>
@@ -577,6 +605,9 @@
         </div>
         <p id="transferModalLead" class="modal-copy">
           입력하신 금액을 보낼 수 있도록 note 구성을 먼저 확인합니다. 필요한 경우 self transaction 서명이 먼저 요청됩니다.
+        </p>
+        <p id="proverPrivacyWarning" class="inline-warning">
+          Remote prover에는 선택된 private note witness가 전달됩니다. 설정된 동일 endpoint에서만 retry하며 자동 failover하지 않습니다.
         </p>
         <dl id="transferReviewFacts" class="review-facts">
           <div><dt>Chain ID</dt><dd id="reviewChain">-</dd></div>

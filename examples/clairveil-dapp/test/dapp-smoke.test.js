@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 const appSource = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
 const encryptedStoreSource = await readFile(new URL("../public/encrypted-note-store.js", import.meta.url), "utf8");
 const encryptedReservationSource = await readFile(new URL("../public/encrypted-reservation-manager.js", import.meta.url), "utf8");
+const encryptedOperationSource = await readFile(new URL("../public/encrypted-operation-store.js", import.meta.url), "utf8");
 const configSource = await readFile(new URL("../public/dapp-config.js", import.meta.url), "utf8");
 const readmeSource = await readFile(new URL("../README.md", import.meta.url), "utf8");
 const serverSource = await readFile(new URL("../server.js", import.meta.url), "utf8");
@@ -282,7 +283,9 @@ test("DApp reconciles spent transfers only with matching operation evidence", ()
   assert.match(appSource, /eventAttribute\(event, "audit_disclosure_digest"\)/);
   assert.match(appSource, /manager\.store\.listReservations\(\{ ownerKeyId: manager\.ownerKeyId \}\)/);
   assert.match(appSource, /operationStatuses\.ConflictSpent/);
-  assert.match(appSource, /transferEventForOperation\(spentRecords, notesByLookupKey\)/);
+  assert.match(appSource, /operationEventForReservations\(spentRecords, notesByLookupKey\)/);
+  assert.match(appSource, /findPrivacyEventByTxHash/);
+  assert.match(appSource, /if \(!lookup\.complete\) continue/);
   assert.match(appSource, /operationSuccessEvidence: evidenceByLookupKey\.get\(lookupKey\)/);
   assert.match(appSource, /operationReconciliationStatus\(record\) !== operationStatuses\.Succeeded/);
   assert.match(appSource, /OPERATION_RECONCILIATION_REQUIRED/);
@@ -309,6 +312,9 @@ test("DApp blocks unresolved public EVM retries and exposes tx reconciliation", 
   assert.match(appSource, /same request remains blocked|같은 요청은 계속 차단됩니다/);
   assert.match(htmlSource, /id="reconcileKeplrSend"/);
   assert.match(htmlSource, /id="reconcileKeplrDeposit"/);
+  assert.match(appSource, /hydratePublicPendingTransactions/);
+  assert.match(appSource, /persistPublicPendingTransactions/);
+  assert.match(htmlSource, /id="clearPublicPendingState"/);
 });
 
 test("DApp marks stale note inventory as unconfirmed and blocks private spends", () => {
@@ -412,6 +418,10 @@ test("DApp offers relay handoff and cancellable same-prover retries", () => {
   assert.match(htmlSource, /privacy-sensitive data/);
   assert.match(htmlSource, /Recipient, chain, expiry는 변경할 수 없습니다/);
   assert.match(htmlSource, /local cancel이나 reservation release는 payload를 무효화하지 않으며/);
+  assert.match(encryptedOperationSource, /AES-GCM/);
+  assert.match(encryptedOperationSource, /OPERATION_STATE_CORRUPT/);
+  assert.match(appSource, /persistRelayWithdrawRecovery/);
+  assert.match(appSource, /hydrateRelayWithdrawRecovery/);
 });
 
 test("DApp discloses mandatory audit visibility before transfer confirmation", () => {
@@ -433,6 +443,21 @@ test("DApp renders public disclosure reports without recipient-only branching", 
   assert.match(appSource, /decodeSelectedSelfViewDisclosure/);
   assert.match(htmlSource, /id="decodeSelfViewDisclosure"/);
   assert.doesNotMatch(appSource, /\/api\/keplr\/privacy\/disclosure\/decode/);
+  assert.match(appSource, /disclosureViewModel/);
+  assert.match(appSource, /Plaintext was discarded/);
+  assert.match(htmlSource, /id="disclosureSourceTxHash"/);
+  assert.match(htmlSource, /id="disclosureSourceEventJson"/);
+  assert.match(appSource, /decodeDisclosureSource/);
+});
+
+test("DApp gates privacy actions on preflight and surfaces recovery UX", () => {
+  assert.match(appSource, /noteInventoryTrusted = state\.keplr\.noteSyncStatus === "synced" && protocolReady/);
+  assert.match(appSource, /depositFromKeplr\.disabled = !signerReady[\s\S]*!protocolReady/);
+  assert.match(appSource, /scanKeplrNotes\.disabled = [^;]*!state\.protocol\.ready/);
+  assert.match(htmlSource, /id="copyKeplrShieldedAddress"/);
+  assert.match(htmlSource, /id="keplrDepositNetworkFee"/);
+  assert.match(htmlSource, /id="proverPrivacyWarning"/);
+  assert.match(appSource, /updateDepositNetworkFee/);
 });
 
 test("DApp server does not own wallet privacy preparation routes", () => {

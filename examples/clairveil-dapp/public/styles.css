@@ -918,6 +918,19 @@ select {
   margin-bottom: 12px;
 }
 
+.disclosure-source {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
+.disclosure-source textarea {
+  min-height: 108px;
+  resize: vertical;
+}
+
 #decodeEventDisclosure {
   width: 100%;
 }
