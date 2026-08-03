@@ -117,6 +117,11 @@ test("DApp exposes chain profiles and filters wallet connect buttons by chain", 
   assert.match(readmeSource, /chainProfiles: \[clairveilProfile, myEvmProfile\]/);
   assert.match(serverSource, /const chainProfiles = dappChainProfiles\(\)/);
   assert.match(appSource, /function activeChainProfile/);
+  assert.match(serverSource, /CLAIRVEIL_COSMOS_REST_ENDPOINTS/);
+  assert.match(serverSource, /CLAIRVEIL_EVM_HOST_REST_ENDPOINTS/);
+  assert.match(serverSource, /restEndpoints: config\.cosmosRestEndpoints/);
+  assert.match(appSource, /function profileRestEndpoints/);
+  assert.match(appSource, /function selectNoteScanEndpoint/);
   assert.match(appSource, /function activeWalletKind/);
   assert.match(appSource, /function selectedProfileMatchesServer/);
   assert.match(appSource, /function activeServerAccounts/);
@@ -300,7 +305,7 @@ test("DApp keeps prepared reservation leases alive across wallet and relay waits
   assert.match(appSource, /const broadcast = await withPreparedReservationHeartbeat\(data/);
   assert.match(appSource, /function startRelayReservationHeartbeat/);
   assert.match(appSource, /relayReservationHeartbeatTimer = globalThis\.setInterval/);
-  assert.match(appSource, /if \(spentConfirmed\) stopRelayReservationHeartbeat\(\)/);
+  assert.match(appSource, /if \(fullyConfirmed\) \{[\s\S]*stopRelayReservationHeartbeat\(\)/);
   assert.match(appSource, /RESERVATION_HEARTBEAT_FAILED/);
 });
 
@@ -363,7 +368,7 @@ test("DApp exposes none, public, and recipient-encrypted disclosure modes", () =
   assert.match(appSource, /disclosurePubKeyHex/);
 });
 
-test("DApp stores note recovery state encrypted and exposes full rescan recovery", () => {
+test("DApp stores note recovery state encrypted and exposes endpoint and rollback recovery", () => {
   assert.match(encryptedStoreSource, /AES-GCM/);
   assert.match(encryptedStoreSource, /HKDF/);
   assert.match(encryptedStoreSource, /NOTE_CACHE_CORRUPT/);
@@ -371,9 +376,26 @@ test("DApp stores note recovery state encrypted and exposes full rescan recovery
   assert.match(appSource, /Legacy plaintext cache removed/);
   assert.match(appSource, /function resetAndRescanNotes/);
   assert.match(appSource, /scanKeplrNotes\(\{ reset: true, throwOnError: true \}\)/);
+  assert.match(appSource, /function rollbackAndRescanNotes/);
+  assert.match(appSource, /store\.rollbackToHeight\(height\)/);
+  assert.match(appSource, /function completeInitialPrivacySetup/);
+  assert.match(appSource, /maxPages: 1000/);
   assert.match(htmlSource, /id="backupNoteCache"/);
   assert.match(htmlSource, /id="resetRescanNotes"/);
+  assert.match(htmlSource, /id="noteScanEndpoint"/);
+  assert.match(htmlSource, /id="noteRollbackHeight"/);
+  assert.match(htmlSource, /id="rollbackRescanNotes"/);
   assert.match(htmlSource, /id="noteSyncState"/);
+});
+
+test("DApp verifies transparent deposit funding and surfaces a non-zero fee budget", () => {
+  assert.match(appSource, /function estimateDepositFeeBeforeProof/);
+  assert.match(appSource, /function assertDepositFunding/);
+  assert.match(appSource, /transparentBalanceAmount/);
+  assert.match(appSource, /Insufficient transparent balance/);
+  assert.match(appSource, /preferNoSetFee: false/);
+  assert.match(appSource, /cosmosGasFeeEstimate/);
+  assert.doesNotMatch(appSource, /0 \$\{baseDenom\(\)\} encoded/);
 });
 
 test("DApp separates deposit inclusion from exact note recovery", () => {
@@ -392,9 +414,13 @@ test("DApp confirms chain-bound intent details and supports self-view opt-out", 
   assert.match(appSource, /expiresAtUnix: chainNowUnix \+ 1800/);
   assert.match(appSource, /disableSelfViewDisclosure/);
   assert.match(htmlSource, /id="includeSelfViewDisclosure"/);
-  for (const id of ["reviewChain", "reviewRecipient", "reviewAmount", "reviewDisclosure", "reviewSelfView", "reviewExpiry"]) {
+  for (const id of ["reviewChain", "reviewRecipient", "reviewAmount", "reviewChangeEffect", "reviewDisclosure", "reviewSelfView", "reviewExpiry"]) {
     assert.match(htmlSource, new RegExp(`id="${id}"`));
   }
+  assert.match(appSource, /function requestPreparedTransferConfirmation/);
+  assert.match(appSource, /function preparedTransferChangeEffect/);
+  assert.match(appSource, /withPreparedReservationHeartbeat\(finalData, \(\) => \([\s\S]*requestPreparedTransferConfirmation/);
+  assert.match(appSource, /discardPreparedReservation\(finalData/);
   assert.match(appSource, /expiresAtUnix: options\.expiresAtUnix/);
   assert.match(appSource, /chainNowUnix: options\.chainNowUnix/);
 });
@@ -448,6 +474,24 @@ test("DApp renders public disclosure reports without recipient-only branching", 
   assert.match(htmlSource, /id="disclosureSourceTxHash"/);
   assert.match(htmlSource, /id="disclosureSourceEventJson"/);
   assert.match(appSource, /decodeDisclosureSource/);
+  for (const id of [
+    "eventDisclosurePlane",
+    "eventDisclosurePolicy",
+    "eventDisclosureOutputIndex",
+    "eventDisclosureCommitment",
+    "eventDisclosureDigest",
+    "eventDisclosureVerified",
+    "auditorPlanePolicy",
+    "auditorOutputIndex",
+    "auditorCommitment"
+  ]) {
+    assert.match(htmlSource, new RegExp(`id="${id}"`));
+  }
+  assert.match(appSource, /view\.outputIndex/);
+  assert.match(appSource, /view\.commitmentHex/);
+  assert.match(appSource, /view\.digestHex/);
+  assert.match(appSource, /function renderEventDisclosureError/);
+  assert.match(appSource, /eventDisclosureVerified\.textContent = "false"/);
 });
 
 test("DApp gates privacy actions on preflight and surfaces recovery UX", () => {
@@ -458,6 +502,17 @@ test("DApp gates privacy actions on preflight and surfaces recovery UX", () => {
   assert.match(htmlSource, /id="keplrDepositNetworkFee"/);
   assert.match(htmlSource, /id="proverPrivacyWarning"/);
   assert.match(appSource, /updateDepositNetworkFee/);
+});
+
+test("DApp reports withdraw nullifier and transparent receive evidence separately", () => {
+  assert.match(htmlSource, /id="keplrWithdrawNullifier"/);
+  assert.match(htmlSource, /id="keplrWithdrawReceive"/);
+  assert.match(appSource, /function setWithdrawEvidence/);
+  assert.match(appSource, /function confirmWithdrawEvidence/);
+  assert.match(appSource, /Spent · confirmed by note reconciliation/);
+  assert.match(appSource, /Received · intended transparent output confirmed/);
+  assert.match(appSource, /Unknown · reconcile before retry/);
+  assert.match(appSource, /const fullyConfirmed = spentConfirmed && receiveConfirmed/);
 });
 
 test("DApp server does not own wallet privacy preparation routes", () => {

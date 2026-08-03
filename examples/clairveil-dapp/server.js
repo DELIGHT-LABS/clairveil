@@ -82,6 +82,10 @@ function resolveLocalTestMode() {
   return envFlag("CLAIRVEIL_DAPP_LOCAL_TEST_MODE", true);
 }
 
+function envEndpointList(value) {
+  return [...new Set(String(value || "").split(",").map(entry => entry.trim()).filter(Boolean))];
+}
+
 const config = {
   host: cliOptions.host ?? process.env.CLAIRVEIL_DAPP_HOST ?? "0.0.0.0",
   port: Number(cliOptions.port ?? process.env.PORT ?? process.env.CLAIRVEIL_DAPP_PORT ?? 5173),
@@ -92,6 +96,8 @@ const config = {
   rest: process.env.CLAIRVEIL_REST ?? "http://127.0.0.1:1317",
   publicRpc: process.env.CLAIRVEIL_PUBLIC_RPC ?? "",
   publicRest: process.env.CLAIRVEIL_PUBLIC_REST ?? "",
+  cosmosRestEndpoints: envEndpointList(process.env.CLAIRVEIL_COSMOS_REST_ENDPOINTS),
+  evmHostRestEndpoints: envEndpointList(process.env.CLAIRVEIL_EVM_HOST_REST_ENDPOINTS),
   proverUrl: process.env.CLAIRVEIL_PROVER_URL ?? "http://127.0.0.1:8080",
   publicProverUrl: process.env.CLAIRVEIL_PUBLIC_PROVER_URL ?? process.env.CLAIRVEIL_PROVER_PUBLIC_URL ?? process.env.CLAIRVEIL_PROVER_URL ?? "http://127.0.0.1:8080",
   proverBearerToken: process.env.CLAIRVEIL_PROVER_BEARER_TOKEN ?? process.env.CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN ?? "",
@@ -273,6 +279,7 @@ function dappChainProfiles() {
     chainId: process.env.CLAIRVEIL_COSMOS_CHAIN_ID ?? (isEvmTransport() ? "clairveil-local-2" : config.chainId),
     rpc: httpRpcEndpoint(process.env.CLAIRVEIL_COSMOS_RPC ?? (isEvmTransport() ? "tcp://127.0.0.1:26657" : config.rpc)),
     rest: (process.env.CLAIRVEIL_COSMOS_REST ?? (isEvmTransport() ? "http://127.0.0.1:1317" : config.rest)).replace(/\/$/, ""),
+    ...(config.cosmosRestEndpoints.length ? { restEndpoints: config.cosmosRestEndpoints } : {}),
     proverUrl: process.env.CLAIRVEIL_COSMOS_PROVER_URL ?? config.publicProverUrl,
     ...(browserDepositProofUrl ? { depositProofUrl: browserDepositProofUrl } : {}),
     accountPrefix: process.env.CLAIRVEIL_COSMOS_ACCOUNT_PREFIX ?? "clair",
@@ -305,6 +312,7 @@ function dappChainProfiles() {
     chainId: process.env.CLAIRVEIL_EVM_HOST_CHAIN_ID ?? (isEvmTransport() ? config.chainId : "evm-local-1"),
     rpc: httpRpcEndpoint(process.env.CLAIRVEIL_EVM_HOST_RPC ?? (isEvmTransport() ? config.rpc : "tcp://127.0.0.1:26657")),
     rest: (process.env.CLAIRVEIL_EVM_HOST_REST ?? (isEvmTransport() ? config.rest : "http://127.0.0.1:1317")).replace(/\/$/, ""),
+    ...(config.evmHostRestEndpoints.length ? { restEndpoints: config.evmHostRestEndpoints } : {}),
     proverUrl: process.env.CLAIRVEIL_EVM_PROVER_URL ?? config.publicProverUrl,
     ...(browserDepositProofUrl ? { depositProofUrl: browserDepositProofUrl } : {}),
     accountPrefix: process.env.CLAIRVEIL_EVM_PRIVACY_ACCOUNT_PREFIX ?? "clair",

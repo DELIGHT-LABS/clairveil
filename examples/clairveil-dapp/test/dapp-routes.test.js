@@ -81,7 +81,8 @@ test("DApp exposes config, health, and bundled frontend assets", async () => {
       PORT: String(port),
       CLAIRVEIL_DAPP_PORT: String(port),
       CLAIRVEIL_DEPOSIT_PROOF_URL: "",
-      CLAIRVEIL_PUBLIC_DEPOSIT_PROOF_URL: ""
+      CLAIRVEIL_PUBLIC_DEPOSIT_PROOF_URL: "",
+      CLAIRVEIL_COSMOS_REST_ENDPOINTS: "http://127.0.0.1:1317, http://127.0.0.1:2317"
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -101,6 +102,10 @@ test("DApp exposes config, health, and bundled frontend assets", async () => {
     assert.equal(config.json.chainProfiles[0].wallet, "keplr");
     assert.equal(config.json.chainProfiles.find(profile => profile.id === "evm-local"), undefined);
     assert.equal(config.json.chainProfiles.find(profile => profile.id === "clairveil-local").proverUrl, "http://127.0.0.1:8080");
+    assert.deepEqual(config.json.chainProfiles[0].restEndpoints, [
+      "http://127.0.0.1:1317",
+      "http://127.0.0.1:2317"
+    ]);
     assert.equal(config.json.keplrChainInfo.bech32Config.bech32PrefixAccAddr, "clair");
     assert.equal(config.json.schemaVersion, "clairveil-web-client-config-v1");
     assert.equal(config.json.serverFeatures.depositProof, false);
@@ -146,6 +151,7 @@ test("DApp exposes EVM profile only when EVM transport is active", async () => {
       CLAIRVEIL_DISPLAY_DENOM: "TOKEN",
       CLAIRVEIL_EVM_DEPOSIT_MODE: "payable-exact-value",
       CLAIRVEIL_EVM_NATIVE_DENOM: "utoken",
+      CLAIRVEIL_EVM_HOST_REST_ENDPOINTS: "http://127.0.0.1:1317, http://127.0.0.1:3317",
       CLAIRVEIL_DEPOSIT_PROOF_URL: "",
       CLAIRVEIL_PUBLIC_DEPOSIT_PROOF_URL: ""
     },
@@ -171,6 +177,10 @@ test("DApp exposes EVM profile only when EVM transport is active", async () => {
     assert.equal(evmProfile.denom, "utoken");
     assert.equal(evmProfile.evmDepositMode, "payable-exact-value");
     assert.equal(evmProfile.evmNativeDenom, "utoken");
+    assert.deepEqual(evmProfile.restEndpoints, [
+      "http://127.0.0.1:1317",
+      "http://127.0.0.1:3317"
+    ]);
     assert.equal(validatedConfig(config.json).activeProfile.id, "evm-local");
   } finally {
     child.kill("SIGTERM");

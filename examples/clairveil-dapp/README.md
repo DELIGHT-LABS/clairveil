@@ -31,7 +31,7 @@ The SDK is resolved from the sibling checkout through `"clairveiljs": "file:../.
 - One shared Wallet Session panel
 - Transparent balance and public send
 - Deposit from transparent balance into veiled notes
-- Typed `privacy_scan` note discovery with encrypted cursor/note persistence, cache backup, forced rescan recovery, batch nullifier checks, and spendable-only filtering
+- Typed `privacy_scan` note discovery with encrypted cursor/note persistence, endpoint selection, cursor rollback, cache backup, forced rescan recovery, batch nullifier checks, and spendable-only filtering
 - Veiled transfer with note planning and self-transaction guidance
 - Direct withdraw from veiled notes or a product-defined relay handoff payload
 - Disclosure modes: `none`, `public`, `recipient-encrypted`
@@ -177,6 +177,7 @@ const myEvmProfile = {
   chainId: "my-evm-host-1",
   rpc: "https://cosmos-rpc.example.com",
   rest: "https://cosmos-rest.example.com",
+  restEndpoints: ["https://cosmos-rest.example.com", "https://cosmos-rest-backup.example.com"],
   proverUrl: "https://prover.example.com",
   depositProofUrl: "https://deposit-proof.example.com/v1/prove",
   accountPrefix: "clair",
@@ -243,6 +244,7 @@ Common values:
 | `CLAIRVEIL_HOME` / `CHAIN_ID` / `CLAIRVEILD_BIN` | Local node home, chain id, and CLI binary |
 | `CLAIRVEIL_RPC` / `CLAIRVEIL_REST` | Server-side Cosmos/CometBFT endpoints |
 | `CLAIRVEIL_PUBLIC_RPC` / `CLAIRVEIL_PUBLIC_REST` | Browser/Keplr-visible endpoints; empty means reuse the server endpoints |
+| `CLAIRVEIL_COSMOS_REST_ENDPOINTS` / `CLAIRVEIL_EVM_HOST_REST_ENDPOINTS` | Optional comma-separated REST endpoint sets for bounded public-read failover and the note recovery selector |
 | `CLAIRVEIL_PROVER_URL` / `CLAIRVEIL_PUBLIC_PROVER_URL` | Server-side and browser-visible prover endpoints |
 | `CLAIRVEIL_DEPOSIT_PROOF_URL` / `CLAIRVEIL_PUBLIC_DEPOSIT_PROOF_URL` | Exact server-side/browser-visible DepositCircuit proof endpoint |
 | `CLAIRVEIL_ACCOUNT_PREFIX` / `CLAIRVEIL_SHIELDED_PREFIX` | Transparent and shielded address prefixes |
@@ -253,19 +255,19 @@ Common values:
 
 ## Privacy Flow
 
-`Setup Clairveil` signs a root message with Keplr `signArbitrary` or MetaMask `personal_sign`. ClairveilJS derives the wallet privacy material, shielded address, and disclosure public key from that signature. The UI lets the user copy both derived addresses and does not enable note scan or value-moving privacy actions until the v0.3.1 protocol preflight succeeds.
+`Setup Clairveil` signs a root message with Keplr `signArbitrary` or MetaMask `personal_sign`. ClairveilJS derives the wallet privacy material, shielded address, and disclosure public key from that signature, then requires the v0.3.1 protocol preflight and initial note sync to complete. The note recovery UI can select a configured REST endpoint, roll the encrypted cursor back to a block height, or back up and reset the cache. Value-moving privacy actions stay disabled until preflight is ready and the cache is fully synced.
 
-`Deposit` creates a new note, commitment, and encrypted note, obtains a DepositCircuit proof, and runs protocol preflight. Cosmos profiles produce a Keplr sign doc. EVM profiles produce privacy precompile calldata for MetaMask; `payable-exact-value` binds the minimal-unit amount exactly to transaction `value`. The prepared network fee or wallet-side fee estimate is shown before approval. Transaction inclusion and local note recovery are shown separately. Cosmos recovery first verifies that the tx event contains the exact prepared commitment and encrypted note; both transports then require the commitment to appear in the encrypted local cache.
+`Deposit` refreshes the transparent balance and checks the amount plus a configured gas-fee budget before proof work. It then creates a new note, commitment, and encrypted note, obtains a DepositCircuit proof, and runs protocol preflight. Cosmos profiles produce a Keplr sign doc with wallet fee editing enabled. EVM profiles produce privacy precompile calldata for MetaMask; `payable-exact-value` binds the minimal-unit amount exactly to transaction `value`. The prepared network fee or wallet-side fee estimate is shown before approval. Transaction inclusion and local note recovery are shown separately. Cosmos recovery first verifies that the tx event contains the exact prepared commitment and encrypted note; both transports then require the commitment to appear in the encrypted local cache.
 
-`Transfer` scans notes, plans inputs, creates any required self-transaction step, requests a transfer proof from the prover, creates disclosure payloads, and prepares the final Cosmos sign doc or EVM transaction. The final confirmation shows authoritative chain ID/time expiry, recipient, amount, disclosure plane, and self-view setting. Self-view is enabled by default and can be explicitly disabled with a recovery warning.
+`Transfer` scans notes, plans inputs, creates any required self-transaction step, requests a transfer proof from the prover, creates disclosure payloads, and prepares the final Cosmos sign doc or EVM transaction. The post-prepare confirmation shows authoritative chain ID/time expiry, recipient, amount, exact change returned to the sender shielded address, disclosure plane, and self-view setting before wallet submission. Canceling this final screen discards the local proof and moves its prepared reservation to replan-required. Self-view is enabled by default and can be explicitly disabled with a recovery warning.
 
-`Withdraw` scans spendable notes, plans the withdraw, requests a withdraw proof, and prepares the final Cosmos sign doc or EVM transaction. `Relay handoff` prepares the immutable payload without broadcasting it; the application must deliver the JSON over its own trusted relayer transport. Before the JSON is exposed, the DApp records the relay handoff against the prepared reservation.
+`Withdraw` scans spendable notes, plans the withdraw, requests a withdraw proof, and prepares the final Cosmos sign doc or EVM transaction. Its result UI tracks nullifier-spent evidence separately from the bound transparent-receive evidence and reports success only after both reconcile. `Relay handoff` prepares the immutable payload without broadcasting it; the application must deliver the JSON over its own trusted relayer transport. Before the JSON is exposed, the DApp records the relay handoff against the prepared reservation.
 
 Transfer and withdraw preparation use a ClairveilJS note reservation manager backed by IndexedDB, Web Locks, and AES-GCM encrypted state derived from the wallet privacy material. The same manager and prepared reservation are passed to Cosmos and EVM submission, and the DApp heartbeats the `ProofReady` lease while wallet or relay handoff confirmation is pending. Active reservations disable new spend preparation in the UI. A receipt polling timeout is shown as `Unknown`, never as proof of failure; the Reconcile action checks the tx hash first and then refreshes nullifier status. A transfer whose nullifier is spent is completed only after a paginated lookup at the authoritative included height finds the matching chain event and binds the stored tx hash, output commitment, audit disclosure digest, recipient hash, amount hash, and denom. A query failure leaves the reservation locked; missing or conflicting operation evidence remains blocked for manual review.
 
 Transparent EVM send and deposit tx hashes and unresolved status are persisted across reloads, so their actions remain disabled until the existing tx is reconciled as included or explicitly failed. Cached note balances are labelled unconfirmed, and private spend actions stay disabled until a full note scan reaches `synced` while protocol preflight is ready. Relay handoff JSON, reservation IDs, tx hash, and result state are encrypted with wallet-derived material and restored after setup; the UI displays the immutable recipient/chain/expiry and privacy warnings, then reports transaction inclusion and nullifier spent state separately.
 
-Disclosure Review accepts the current event selection, an arbitrary tx hash, or pasted `shielded_transfer` event JSON for user, self-view, and local-admin audit planes. Decoded fields are rendered only when `verification.verified === true`; unverified plaintext is discarded.
+Disclosure Review accepts the current event selection, an arbitrary tx hash, or pasted `shielded_transfer` event JSON for user, self-view, and local-admin audit planes. A verified report displays plane, policy, output index, commitment, digest, and `verified=true`. Decoded fields are rendered only when `verification.verified === true`; verification failures show `verified=false` and discard plaintext.
 
 The DApp persists the note cache in browser `localStorage` as an AES-GCM envelope. Its key is derived from wallet root-signature material with HKDF and is scoped to chain profile and account. A legacy plaintext cache is deleted instead of migrated and requires `Reset & Rescan`; a corrupt/undecryptable cache fails closed and can be backed up before reset. The cache remains recoverable chain-derived data, not a substitute for wallet key backup.
 

@@ -127,6 +127,28 @@ test("unverified disclosure reports never expose plaintext view data", () => {
     summary: { amount: "100", from_shielded_address: "secret" },
     payload: { plaintext: "secret" }
   };
-  assert.deepEqual(disclosureViewModel(report), { verified: false, summary: null, payload: null });
-  assert.equal(disclosureViewModel({ ...report, verification: { verified: true } }).summary.amount, "100");
+  assert.deepEqual(disclosureViewModel(report), {
+    verified: false,
+    plane: "",
+    policy: "",
+    outputIndex: null,
+    commitmentHex: "",
+    digestHex: "",
+    summary: null,
+    payload: null
+  });
+  const verified = disclosureViewModel({
+    ...report,
+    verification: { verified: true },
+    plane: "user",
+    policy: "public",
+    output_index: 2,
+    commitment_hex: "11".repeat(32),
+    digest_hex: "22".repeat(32)
+  });
+  assert.equal(verified.summary.amount, "100");
+  assert.deepEqual(
+    [verified.plane, verified.policy, verified.outputIndex, verified.commitmentHex, verified.digestHex],
+    ["user", "public", 2, "11".repeat(32), "22".repeat(32)]
+  );
 });

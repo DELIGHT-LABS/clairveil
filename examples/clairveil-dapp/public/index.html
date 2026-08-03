@@ -241,12 +241,23 @@
                   <input id="myKeplrSpendableOnly" type="checkbox" checked />
                   <span>Spendable only</span>
                 </label>
+                <label class="compact-field note-endpoint-field">
+                  <span>Scan endpoint</span>
+                  <select id="noteScanEndpoint" aria-label="Note scan REST endpoint"></select>
+                </label>
                 <button id="scanKeplrNotes" type="button" disabled>Scan</button>
                 <button id="backupNoteCache" class="secondary-button" type="button" disabled>Backup cache</button>
                 <button id="resetRescanNotes" class="secondary-button" type="button" disabled>Reset &amp; Rescan</button>
               </div>
             </div>
             <p id="noteSyncState" class="quiet note-sync-state">Not scanned</p>
+            <div class="scan-recovery-row">
+              <label class="field">
+                <span>Rollback scan height</span>
+                <input id="noteRollbackHeight" inputmode="numeric" placeholder="Block height to re-scan" />
+              </label>
+              <button id="rollbackRescanNotes" class="secondary-button" type="button" disabled>Rollback &amp; Scan</button>
+            </div>
             <div class="reservation-status" role="status" aria-live="polite">
               <div>
                 <span>Note reservations</span>
@@ -367,6 +378,14 @@
                 <dt>Withdraw height</dt>
                 <dd id="keplrWithdrawHeight">-</dd>
               </div>
+              <div>
+                <dt>Nullifier spent</dt>
+                <dd id="keplrWithdrawNullifier">Not checked</dd>
+              </div>
+              <div>
+                <dt>Transparent receive</dt>
+                <dd id="keplrWithdrawReceive">Not checked</dd>
+              </div>
             </dl>
             <div id="relayWithdrawPanel" class="relay-withdraw-panel" hidden>
               <p class="inline-warning">
@@ -429,6 +448,30 @@
                 <div>
                   <dt>User mode</dt>
                   <dd id="eventDetailUserMode">-</dd>
+                </div>
+                <div>
+                  <dt>Plane</dt>
+                  <dd id="eventDisclosurePlane">-</dd>
+                </div>
+                <div>
+                  <dt>Policy</dt>
+                  <dd id="eventDisclosurePolicy">-</dd>
+                </div>
+                <div>
+                  <dt>Output index</dt>
+                  <dd id="eventDisclosureOutputIndex">-</dd>
+                </div>
+                <div>
+                  <dt>Commitment</dt>
+                  <dd id="eventDisclosureCommitment">-</dd>
+                </div>
+                <div>
+                  <dt>Digest</dt>
+                  <dd id="eventDisclosureDigest">-</dd>
+                </div>
+                <div>
+                  <dt>Verified</dt>
+                  <dd id="eventDisclosureVerified">-</dd>
                 </div>
                 <div>
                   <dt>Disclosure target</dt>
@@ -561,6 +604,18 @@
                 <dd id="auditorDigest">-</dd>
               </div>
               <div>
+                <dt>Plane / policy</dt>
+                <dd id="auditorPlanePolicy">-</dd>
+              </div>
+              <div>
+                <dt>Output index</dt>
+                <dd id="auditorOutputIndex">-</dd>
+              </div>
+              <div>
+                <dt>Commitment</dt>
+                <dd id="auditorCommitment">-</dd>
+              </div>
+              <div>
                 <dt>From / payload</dt>
                 <dd id="auditorFrom">-</dd>
               </div>
@@ -615,6 +670,7 @@
           <div><dt>Amount</dt><dd id="reviewAmount">-</dd></div>
           <div><dt>Disclosure</dt><dd id="reviewDisclosure">-</dd></div>
           <div><dt>Self-view</dt><dd id="reviewSelfView">-</dd></div>
+          <div><dt>Change effect</dt><dd id="reviewChangeEffect">Pending payload preparation</dd></div>
           <div><dt>Expires</dt><dd id="reviewExpiry">-</dd></div>
         </dl>
         <ol id="transferSteps" class="transfer-steps" aria-label="Privacy transfer signing steps">

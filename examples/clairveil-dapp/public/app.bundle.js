@@ -95700,12 +95700,28 @@ var EncryptedLocalStorageOperationStore = class _EncryptedLocalStorageOperationS
 // public/disclosure-view-model.js
 function disclosureViewModel(report) {
   if (report?.verification?.verified !== true) {
-    return { verified: false, summary: null, payload: null };
+    return {
+      verified: false,
+      plane: "",
+      policy: "",
+      outputIndex: null,
+      commitmentHex: "",
+      digestHex: "",
+      summary: null,
+      payload: null
+    };
   }
+  const summary = report?.summary || {};
+  const payload = report?.payload || {};
   return {
     verified: true,
-    summary: report?.summary || {},
-    payload: report?.payload || {}
+    plane: report?.plane || summary.plane || payload.plane || "",
+    policy: report?.policy || summary.policy || payload.policy || "",
+    outputIndex: report?.output_index ?? payload.output_index ?? null,
+    commitmentHex: report?.commitment_hex || payload.commitment_hex || "",
+    digestHex: report?.digest_hex || payload.disclosure_digest_hex || "",
+    summary,
+    payload
   };
 }
 
@@ -95837,6 +95853,7 @@ function defaultKeplrState() {
     signatureHash: "",
     verified: false,
     balance: "",
+    transparentBalances: {},
     faucetHash: "",
     faucetSent: "",
     faucetRecipient: "",
@@ -95853,9 +95870,12 @@ function defaultKeplrState() {
     depositRecoveryStatus: "idle",
     depositRecoveryMessage: "Not started",
     networkFeeEstimate: "Not estimated",
+    networkFeeAmount: "0",
     transferHash: "",
     withdrawHash: "",
     withdrawHeight: "",
+    withdrawNullifierStatus: "Not checked",
+    withdrawReceiveStatus: "Not checked",
     notesSummary: "",
     notes: [],
     notesScanned: false,
@@ -95880,6 +95900,7 @@ var state = {
   config: null,
   chainProfiles: [],
   selectedChainProfileId: "",
+  selectedRestEndpointByProfile: {},
   accounts: [],
   selectedAccount: "alice",
   addressBook: {
@@ -96044,8 +96065,17 @@ function browserRpcUrl(profile = activeChainProfile()) {
   return browserEndpointUrl(profile?.rpc || state.config?.rpc || "", { trim: true });
 }
 function browserRestUrl(profile = activeChainProfile()) {
-  const configured = profile?.rest || state.config?.rest || "";
+  const endpoints = profileRestEndpoints(profile);
+  const selected = state.selectedRestEndpointByProfile[profile?.id || ""];
+  const configured = endpoints.includes(selected) ? selected : endpoints[0] || profile?.rest || state.config?.rest || "";
   return browserEndpointUrl(configured, { trim: true });
+}
+function profileRestEndpoints(profile = activeChainProfile()) {
+  const values = [
+    profile?.rest || state.config?.rest || "",
+    ...Array.isArray(profile?.restEndpoints) ? profile.restEndpoints : []
+  ];
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
 }
 async function fetchLatestChainBlockTimeUnix({ signal } = {}) {
   const endpoint = browserRestUrl();
@@ -96465,6 +96495,21 @@ async function withPreparedReservationHeartbeat(data, task) {
   }
   return result;
 }
+async function discardPreparedReservation(data, reason = "user_cancelled_before_broadcast") {
+  const manager = data?.reservationManager;
+  const reservationIDs = preparedReservationIDs(data);
+  if (!manager || !reservationIDs.length) return;
+  await manager.markReplanRequired(reservationIDs, {
+    leaseToken: data.reservation?.lease_token || data.reservation?.reservations?.[0]?.lease_token || "",
+    error: reason,
+    metadata: {
+      reconcile_reason: reason,
+      no_broadcast_attempt: true,
+      proof_discarded: true
+    }
+  });
+  await refreshReservationState(manager);
+}
 function stopRelayReservationHeartbeat() {
   if (relayReservationHeartbeatTimer !== null) {
     globalThis.clearInterval(relayReservationHeartbeatTimer);
@@ -96819,8 +96864,11 @@ var els = {
   setupKeplrPrivacy: $("#setupKeplrPrivacy"),
   refreshWalletBalance: $("#refreshKeplrBalance"),
   scanKeplrNotes: $("#scanKeplrNotes"),
+  noteScanEndpoint: $("#noteScanEndpoint"),
   backupNoteCache: $("#backupNoteCache"),
   resetRescanNotes: $("#resetRescanNotes"),
+  noteRollbackHeight: $("#noteRollbackHeight"),
+  rollbackRescanNotes: $("#rollbackRescanNotes"),
   noteSyncState: $("#noteSyncState"),
   reservationState: $("#reservationState"),
   reconcileReservations: $("#reconcileReservations"),
@@ -96875,6 +96923,8 @@ var els = {
   keplrTransferHash: $("#keplrTransferHash"),
   keplrWithdrawHash: $("#keplrWithdrawHash"),
   keplrWithdrawHeight: $("#keplrWithdrawHeight"),
+  keplrWithdrawNullifier: $("#keplrWithdrawNullifier"),
+  keplrWithdrawReceive: $("#keplrWithdrawReceive"),
   localHome: $("#localHome"),
   localHomeRow: $("#localHome")?.closest("div"),
   faucetHashRow: $("#keplrFaucetHash")?.closest("div"),
@@ -96906,6 +96956,12 @@ var els = {
   eventDetailTx: $("#eventDetailTx"),
   eventDetailTarget: $("#eventDetailTarget"),
   eventDetailUserMode: $("#eventDetailUserMode"),
+  eventDisclosurePlane: $("#eventDisclosurePlane"),
+  eventDisclosurePolicy: $("#eventDisclosurePolicy"),
+  eventDisclosureOutputIndex: $("#eventDisclosureOutputIndex"),
+  eventDisclosureCommitment: $("#eventDisclosureCommitment"),
+  eventDisclosureDigest: $("#eventDisclosureDigest"),
+  eventDisclosureVerified: $("#eventDisclosureVerified"),
   eventDisclosureFields: $("#eventDisclosureFields"),
   eventDisclosureAmount: $("#eventDisclosureAmount"),
   eventDisclosureFrom: $("#eventDisclosureFrom"),
@@ -96927,6 +96983,9 @@ var els = {
   auditorTo: $("#auditorTo"),
   auditorFields: $("#auditorFields"),
   auditorDigest: $("#auditorDigest"),
+  auditorPlanePolicy: $("#auditorPlanePolicy"),
+  auditorOutputIndex: $("#auditorOutputIndex"),
+  auditorCommitment: $("#auditorCommitment"),
   auditorTestScalar: $("#auditorTestScalar"),
   decodeAuditorTransfer: $("#decodeAuditorTransfer"),
   auditorSection: $(".auditor-section"),
@@ -96956,6 +97015,7 @@ var els = {
   reviewAmount: $("#reviewAmount"),
   reviewDisclosure: $("#reviewDisclosure"),
   reviewSelfView: $("#reviewSelfView"),
+  reviewChangeEffect: $("#reviewChangeEffect"),
   reviewExpiry: $("#reviewExpiry"),
   transferPlannerFacts: $("#transferPlannerFacts"),
   transferPlannerRequested: $("#transferPlannerRequested"),
@@ -97081,6 +97141,7 @@ Tx: ${shorten(txHash, 14, 12)}`
 var transferFlowState = {
   resolve: null,
   running: false,
+  confirmationStage: "initial",
   copy: null,
   controller: null,
   retry: null,
@@ -97191,6 +97252,16 @@ function parsePlannerAmountValue(value) {
   if (!/^\d+$/.test(raw)) return null;
   return BigInt(raw);
 }
+function preparedTransferChangeEffect(data) {
+  const selectedInputTotal = parsePlannerAmountValue(data?.prepared?.selectedInputTotal);
+  const finalAmount = parsePlannerAmountValue(data?.prepared?.finalAmount ?? data?.prepared?.amount);
+  if (selectedInputTotal === null || finalAmount === null || selectedInputTotal < finalAmount) {
+    throw new Error("Prepared transfer omitted a valid recipient/change effect");
+  }
+  const change = selectedInputTotal - finalAmount;
+  const changeRecipient = data?.prepared?.shieldedAddress || state.keplr.shieldedAddress;
+  return `${coinTextFromAmount(change.toString())} returned to ${shorten(changeRecipient, 16, 12)}`;
+}
 function plannerCurrentTransferMaxForNoteMerge(data, requested) {
   const facts = data?.plan?.facts || {};
   const requestedValue = parsePlannerAmountValue(requested);
@@ -97241,6 +97312,7 @@ function renderTransferReview(review = {}) {
   els.reviewAmount.textContent = review.amount || "-";
   els.reviewDisclosure.textContent = review.disclosure || "Not applicable";
   els.reviewSelfView.textContent = review.selfView || "Not applicable";
+  els.reviewChangeEffect.textContent = review.changeEffect || "Pending payload preparation";
   els.reviewExpiry.textContent = review.expiresAtUnix ? `${new Date(review.expiresAtUnix * 1e3).toLocaleString()} (${review.expiresAtUnix})` : "-";
 }
 function setTransferFlowStep(activeKey2, stateText) {
@@ -97259,6 +97331,7 @@ function setTransferFlowStep(activeKey2, stateText) {
 function openTransferFlowModal(kind = "transfer", review = {}) {
   applyPrivacyFlowCopy(kind);
   transferFlowState.running = false;
+  transferFlowState.confirmationStage = "initial";
   transferFlowState.controller = null;
   transferFlowState.retry = null;
   transferFlowState.review = review;
@@ -97289,12 +97362,35 @@ function confirmTransferFlowStart() {
   const resolve = transferFlowState.resolve;
   transferFlowState.resolve = null;
   transferFlowState.running = true;
-  transferFlowState.controller = new AbortController();
+  if (transferFlowState.confirmationStage === "initial") {
+    transferFlowState.controller = new AbortController();
+  }
   els.cancelTransferFlow.textContent = "Proof \uC694\uCCAD \uCDE8\uC18C";
   els.cancelTransferFlow.hidden = false;
   els.confirmTransferFlow.hidden = true;
   els.transferModalLead.textContent = transferFlowState.copy?.runningLead || privacyFlowCopies.transfer.runningLead;
   resolve(true);
+}
+function requestPreparedTransferConfirmation(review) {
+  transferFlowState.confirmationStage = "final";
+  transferFlowState.running = false;
+  transferFlowState.review = review;
+  renderTransferReview(review);
+  els.transferSteps.hidden = true;
+  els.transferSuccessPanel.hidden = true;
+  els.transferFailurePanel.hidden = true;
+  els.transferModalState.textContent = "\uCD5C\uC885 \uD655\uC778 \uD544\uC694";
+  els.transferModalLead.textContent = "Prepared payload\uC758 recipient, change, disclosure, chain, \uB9CC\uB8CC \uC2DC\uAC01\uC744 \uD655\uC778\uD55C \uB4A4 wallet \uC11C\uBA85\uC744 \uC9C4\uD589\uD558\uC138\uC694.";
+  els.cancelTransferFlow.textContent = "\uCDE8\uC18C";
+  els.cancelTransferFlow.disabled = false;
+  els.cancelTransferFlow.hidden = false;
+  els.confirmTransferFlow.textContent = "\uD655\uC778 \uD6C4 \uC11C\uBA85";
+  els.confirmTransferFlow.disabled = false;
+  els.confirmTransferFlow.hidden = false;
+  els.confirmTransferFlow.focus();
+  return new Promise((resolve) => {
+    transferFlowState.resolve = resolve;
+  });
 }
 function cancelTransferFlow() {
   if (transferFlowState.running && transferFlowState.controller) {
@@ -97460,9 +97556,11 @@ function formatBaseUnits(value, decimals = 18) {
 }
 async function updateDepositNetworkFee(transaction) {
   if (state.activeWallet !== "metamask") {
-    state.keplr.networkFeeEstimate = `0 ${baseDenom()} encoded \xB7 gas limit 2,500,000`;
+    const fee = cosmosGasFeeEstimate(25e5);
+    state.keplr.networkFeeAmount = fee.toString();
+    state.keplr.networkFeeEstimate = `\u2248 ${fee}${baseDenom()} \xB7 gas limit 2,500,000 \xB7 Keplr confirms final fee`;
     renderKeplr();
-    return;
+    return fee;
   }
   try {
     const request = { ...transaction, from: state.wallet.account };
@@ -97473,11 +97571,56 @@ async function updateDepositNetworkFee(transaction) {
     const gas = evmQuantityToBigInt(gasHex, "estimated gas");
     const gasPrice = evmQuantityToBigInt(gasPriceHex, "gas price");
     const fee = gas * gasPrice;
+    state.keplr.networkFeeAmount = fee.toString();
     state.keplr.networkFeeEstimate = `\u2248 ${formatBaseUnits(fee, coinDecimals())} ${displayDenom()} \xB7 gas ${gas}`;
+    renderKeplr();
+    return fee;
   } catch {
-    state.keplr.networkFeeEstimate = "Wallet will show the network fee before approval";
+    const fallback = BigInt(state.keplr.networkFeeAmount || "0");
+    state.keplr.networkFeeEstimate = `${state.keplr.networkFeeEstimate} \xB7 wallet confirms final fee`;
+    renderKeplr();
+    return fallback;
   }
+}
+function cosmosGasFeeEstimate(gasLimit) {
+  const gasPrice = Number(activeChainProfile()?.gasPriceStep?.average);
+  const numericGasLimit = Number(gasLimit);
+  const fee = Math.ceil(gasPrice * numericGasLimit);
+  if (!Number.isSafeInteger(fee) || fee < 0) {
+    throw new Error("Configured Cosmos gas policy cannot produce a safe fee estimate");
+  }
+  return BigInt(fee);
+}
+async function estimateDepositFeeBeforeProof() {
+  if (state.activeWallet !== "metamask") {
+    return updateDepositNetworkFee(null);
+  }
+  const configuredGas = activeChainProfile()?.evmGasLimit || state.config?.evmGasLimit;
+  const gas = evmQuantityToBigInt(configuredGas, "configured deposit gas limit");
+  const gasPrice = evmQuantityToBigInt(await requestMetaMask({ method: "eth_gasPrice" }), "gas price");
+  const fee = gas * gasPrice;
+  state.keplr.networkFeeAmount = fee.toString();
+  state.keplr.networkFeeEstimate = `\u2264 ${formatBaseUnits(fee, coinDecimals())} ${displayDenom()} budget \xB7 gas limit ${gas}`;
   renderKeplr();
+  return fee;
+}
+function transparentBalanceAmount(denom = baseDenom()) {
+  const value = state.keplr.transparentBalances?.[denom] || "0";
+  if (!/^(0|[1-9][0-9]*)$/.test(String(value))) {
+    throw new Error(`Transparent ${denom} balance is not a canonical integer`);
+  }
+  return BigInt(value);
+}
+function assertDepositFunding(amount, feeAmount) {
+  const amountValue = parsePlannerAmountValue(amount);
+  if (amountValue === null) throw new Error("Deposit amount must be a canonical integer");
+  const fee = BigInt(feeAmount || 0);
+  const balance = transparentBalanceAmount();
+  const required = amountValue + fee;
+  if (balance < required) {
+    throw new Error(`Insufficient transparent balance: need ${required}${baseDenom()} including estimated fee, available ${balance}${baseDenom()}`);
+  }
+  return { amount: amountValue, fee, balance, required };
 }
 function normalizeEvmTxHash(txHash) {
   return String(txHash || "").trim().replace(/^0x/i, "").toUpperCase();
@@ -97546,6 +97689,16 @@ function formatBalances(balances) {
     return `${coin.amount}${coin.denom}`;
   }).join(", ") || `0 ${displayDenom()} (${zeroCoinText()})`;
 }
+function balanceAmountsByDenom(balances) {
+  const amounts = {};
+  for (const coin of balances || []) {
+    const denom = String(coin?.denom || "").trim();
+    const amount = String(coin?.amount || "").trim();
+    if (!denom || !/^(0|[1-9][0-9]*)$/.test(amount)) continue;
+    amounts[denom] = (BigInt(amounts[denom] || "0") + BigInt(amount)).toString();
+  }
+  return amounts;
+}
 function noteAmountValue(note) {
   try {
     return BigInt(String(note?.amount || "0"));
@@ -97596,14 +97749,14 @@ function mergeCachedNotes(existingNotes = [], incomingNotes = []) {
     return String(left?.tx_hash || left?.txHash || "").localeCompare(String(right?.tx_hash || right?.txHash || ""));
   });
 }
-function noteScanRequestOptions({ reset = false } = {}) {
+function noteScanRequestOptions({ reset = false, maxPages = 5 } = {}) {
   const cursor = reset ? defaultNoteScanCursor() : state.keplr.noteScanCursor || defaultNoteScanCursor();
   const hasMore = !reset && Boolean(cursor.has_more ?? cursor.hasMore);
   if (hasMore && state.keplr.noteScanResumeOptions) {
     return {
       ...state.keplr.noteScanResumeOptions,
       scanSource: "privacy_scan",
-      maxPages: 5,
+      maxPages,
       includeFoundNotes: true
     };
   }
@@ -97611,7 +97764,7 @@ function noteScanRequestOptions({ reset = false } = {}) {
     scanSource: "privacy_scan",
     limit: 200,
     outputLimit: 200,
-    maxPages: 5,
+    maxPages,
     includeFoundNotes: true
   };
 }
@@ -97666,6 +97819,47 @@ function renderDappChainHint() {
   const activeText = selectedProfileMatchesServer(profile) ? "active" : `server is ${serverText}`;
   els.dappChainHint.textContent = `${profile.chainId} \xB7 ${wallet} \xB7 ${activeText}`;
 }
+function renderNoteScanEndpoint() {
+  if (!els.noteScanEndpoint) return;
+  const profile = activeChainProfile();
+  const endpoints = profileRestEndpoints(profile);
+  const profileId = profile?.id || "";
+  const selected = state.selectedRestEndpointByProfile[profileId];
+  const active = endpoints.includes(selected) ? selected : endpoints[0] || "";
+  if (profileId && active) {
+    state.selectedRestEndpointByProfile[profileId] = active;
+  }
+  els.noteScanEndpoint.innerHTML = "";
+  for (const endpoint of endpoints) {
+    const option = document.createElement("option");
+    option.value = endpoint;
+    option.textContent = endpoint;
+    els.noteScanEndpoint.append(option);
+  }
+  els.noteScanEndpoint.value = active;
+  els.noteScanEndpoint.disabled = endpoints.length < 2;
+  els.noteScanEndpoint.title = endpoints.length < 2 ? "Configure profile.restEndpoints to enable endpoint recovery." : "Choose the primary REST endpoint used for note recovery.";
+}
+function selectNoteScanEndpoint(endpoint) {
+  const profile = activeChainProfile();
+  const endpoints = profileRestEndpoints(profile);
+  if (!profile?.id || !endpoints.includes(endpoint)) {
+    throw new Error("Selected note scan endpoint is not configured for this chain profile");
+  }
+  state.selectedRestEndpointByProfile[profile.id] = endpoint;
+  browserClient = null;
+  browserClientKey = "";
+  browserClientDepositProofProvider = null;
+  state.protocol.ready = false;
+  state.protocol.error = "";
+  renderNoteScanEndpoint();
+  renderProtocolStatus();
+  updateAmountActionButtons();
+  refreshProtocolStatus().catch((error) => {
+    state.protocol.error = browserDataLoadErrorMessage(error);
+    renderProtocolStatus();
+  });
+}
 function renderChainDependentUi() {
   const walletKind = activeWalletKind();
   const transparentFormat = activeTransparentAddressFormat();
@@ -97681,6 +97875,7 @@ function renderChainDependentUi() {
   const faucetSource = activeServerAccounts()[0]?.name || "local signer";
   els.faucetHelpText.textContent = `(${displayDenom()} get from ${localSignerLabel(faucetSource)}'s wallet)`;
   renderDappChainHint();
+  renderNoteScanEndpoint();
 }
 function selectDappChainProfile(profileId) {
   if (state.activeWallet) {
@@ -98141,6 +98336,8 @@ function renderKeplr() {
   els.keplrTransferHash.textContent = state.keplr.transferHash ? shorten(state.keplr.transferHash, 14, 12) : "-";
   els.keplrWithdrawHash.textContent = state.keplr.withdrawHash ? shorten(state.keplr.withdrawHash, 14, 12) : "-";
   els.keplrWithdrawHeight.textContent = state.keplr.withdrawHeight || "-";
+  els.keplrWithdrawNullifier.textContent = state.keplr.withdrawNullifierStatus;
+  els.keplrWithdrawReceive.textContent = state.keplr.withdrawReceiveStatus;
   if (connected && !els.veiledWithdrawRecipient.value) {
     els.veiledWithdrawRecipient.value = state.keplr.account;
   }
@@ -98152,6 +98349,7 @@ function renderKeplr() {
   els.refreshWalletBalance.disabled = !connected;
   els.scanKeplrNotes.disabled = !signerReady || !state.keplr.rootSignatureBase64 || !state.protocol.ready;
   els.resetRescanNotes.disabled = !signerReady || !state.keplr.rootSignatureBase64 || !state.protocol.ready;
+  updateNoteRollbackButton({ signerReady });
   els.backupNoteCache.disabled = !noteStoreKeys()?.encrypted || !globalThis.localStorage?.getItem(noteStoreKeys().encrypted);
   els.noteSyncState.textContent = state.keplr.noteSyncMessage || "Not scanned";
   els.noteSyncState.dataset.status = state.keplr.noteSyncStatus;
@@ -98160,6 +98358,23 @@ function renderKeplr() {
   updateAmountActionButtons({ signerReady, veiledReady });
   renderEventDetail();
   persistPublicPendingTransactions();
+}
+function setWithdrawEvidence(nullifierStatus, receiveStatus, { render = true } = {}) {
+  state.keplr.withdrawNullifierStatus = nullifierStatus;
+  state.keplr.withdrawReceiveStatus = receiveStatus;
+  if (render) renderKeplr();
+}
+function confirmWithdrawEvidence({ render = true } = {}) {
+  setWithdrawEvidence(
+    "Spent \xB7 confirmed by note reconciliation",
+    "Received \xB7 intended transparent output confirmed",
+    { render }
+  );
+}
+function updateNoteRollbackButton({ signerReady = Boolean(state.keplr.account && state.keplr.addressMatches) } = {}) {
+  if (!els.rollbackRescanNotes) return;
+  const height = String(els.noteRollbackHeight?.value || "").trim();
+  els.rollbackRescanNotes.disabled = !signerReady || !state.keplr.rootSignatureBase64 || !state.protocol.ready || !/^(0|[1-9][0-9]*)$/.test(height);
 }
 function updateAmountActionButtons(status = {}) {
   const connected = Boolean(state.keplr.account);
@@ -98363,12 +98578,15 @@ async function refreshWalletBalance() {
       method: "eth_getBalance",
       params: [state.wallet.account, "latest"]
     });
-    state.keplr.balance = formatBalances([{
+    const balances = [{
       denom: baseDenom(),
       amount: BigInt(balanceHex || "0x0").toString()
-    }]);
+    }];
+    state.keplr.transparentBalances = balanceAmountsByDenom(balances);
+    state.keplr.balance = formatBalances(balances);
   } else {
     const data = await clairveilBrowserClient().getBalances(state.keplr.account);
+    state.keplr.transparentBalances = balanceAmountsByDenom(data.balances);
     state.keplr.balance = formatBalances(data.balances);
   }
   renderKeplr();
@@ -98590,6 +98808,12 @@ function selectedPrivacyEvent() {
   return state.privacyEvents.events.find((event) => event.tx_hash_hex === state.privacyEvents.selectedTxHash);
 }
 function clearEventDisclosureResult() {
+  els.eventDisclosurePlane.textContent = "-";
+  els.eventDisclosurePolicy.textContent = "-";
+  els.eventDisclosureOutputIndex.textContent = "-";
+  els.eventDisclosureCommitment.textContent = "-";
+  els.eventDisclosureDigest.textContent = "-";
+  els.eventDisclosureVerified.textContent = "-";
   els.eventDisclosureFields.textContent = "-";
   els.eventDisclosureAmount.textContent = "-";
   els.eventDisclosureFrom.textContent = "-";
@@ -98599,16 +98823,36 @@ function renderEventDisclosureReport(report) {
   clearEventDisclosureResult();
   const view = disclosureViewModel(report);
   if (!view.verified) {
+    els.eventDisclosureVerified.textContent = "false";
     els.eventDisclosureState.textContent = "Disclosure verification failed. Plaintext was discarded.";
     return;
   }
   const summary = view.summary;
   const amount = summary.amount ? `${summary.amount}${summary.asset_denom ? ` ${summary.asset_denom}` : ""}` : "-";
+  els.eventDisclosurePlane.textContent = view.plane || "-";
+  els.eventDisclosurePolicy.textContent = view.policy || "-";
+  els.eventDisclosureOutputIndex.textContent = view.outputIndex === null ? "-" : String(view.outputIndex);
+  els.eventDisclosureCommitment.textContent = view.commitmentHex || "-";
+  els.eventDisclosureDigest.textContent = view.digestHex || "-";
+  els.eventDisclosureVerified.textContent = "true";
   els.eventDisclosureFields.textContent = (summary.disclosed_fields || []).map(prettyDisclosureField).join(", ") || "-";
   els.eventDisclosureAmount.textContent = amount;
   els.eventDisclosureFrom.textContent = summary.from_shielded_address || "-";
   els.eventDisclosureTo.textContent = summary.to_shielded_address || "-";
   els.eventDisclosureState.textContent = `${summary.delivery || "recipient-encrypted"} / ${summary.policy || "unknown policy"}`;
+}
+function isDisclosureVerificationFailure(error) {
+  return /digest mismatch|verification failed|commitment mismatch|output .* mismatch/i.test(
+    String(error?.message || error || "")
+  );
+}
+function renderEventDisclosureError(error) {
+  clearEventDisclosureResult();
+  const message = String(error?.message || error || "Disclosure decode failed");
+  if (isDisclosureVerificationFailure(error)) {
+    els.eventDisclosureVerified.textContent = "false";
+  }
+  els.eventDisclosureState.textContent = message;
 }
 function renderEventDetail() {
   const event = selectedPrivacyEvent();
@@ -98621,7 +98865,7 @@ function renderEventDetail() {
   if (state.privacyEvents.decoded) {
     renderEventDisclosureReport(state.privacyEvents.decoded);
   } else if (state.privacyEvents.error) {
-    els.eventDisclosureState.textContent = state.privacyEvents.error;
+    renderEventDisclosureError(state.privacyEvents.error);
   } else {
     els.eventDisclosureState.textContent = eventDisclosureStatus(event);
   }
@@ -98637,6 +98881,9 @@ function auditorDetailValueElements() {
     els.auditorVerification,
     els.auditorAmount,
     els.auditorDigest,
+    els.auditorPlanePolicy,
+    els.auditorOutputIndex,
+    els.auditorCommitment,
     els.auditorFrom,
     els.auditorFields,
     els.auditorTo
@@ -98696,6 +98943,7 @@ async function decodeSelectedEventDisclosure() {
     renderEventDisclosureReport(report);
   } catch (error) {
     state.privacyEvents.error = error.message;
+    renderEventDisclosureError(error);
   } finally {
     state.privacyEvents.loading = false;
     renderEventDetail();
@@ -98717,6 +98965,7 @@ async function decodeSelectedSelfViewDisclosure() {
     renderEventDisclosureReport(report);
   } catch (error) {
     state.privacyEvents.error = error.message;
+    renderEventDisclosureError(error);
   } finally {
     state.privacyEvents.loading = false;
     renderEventDetail();
@@ -98798,8 +99047,7 @@ async function decodeDisclosureSource() {
     renderEventDisclosureReport(report);
   } catch (error) {
     state.privacyEvents.error = error.message;
-    clearEventDisclosureResult();
-    els.eventDisclosureState.textContent = error.message;
+    renderEventDisclosureError(error);
   } finally {
     state.privacyEvents.loading = false;
     els.decodeDisclosureSource.disabled = false;
@@ -98815,6 +99063,9 @@ function clearAuditorReport(message = "Select a transfer.") {
   els.auditorTo.textContent = "-";
   els.auditorFields.textContent = "-";
   els.auditorDigest.textContent = "-";
+  els.auditorPlanePolicy.textContent = "-";
+  els.auditorOutputIndex.textContent = "-";
+  els.auditorCommitment.textContent = "-";
   els.auditorDecodeState.textContent = message;
   updateAuditorDecodeButton();
 }
@@ -98831,13 +99082,13 @@ function renderAuditorEventDetail(event) {
   els.auditorVerification.textContent = event.height || "-";
   els.auditorAmount.textContent = target ? shorten(target, 14, 12) : "-";
   els.auditorDigest.textContent = digest ? shorten(digest, 14, 12) : "-";
+  els.auditorPlanePolicy.textContent = "audit / encrypted";
+  els.auditorOutputIndex.textContent = "-";
+  els.auditorCommitment.textContent = "-";
   els.auditorFrom.textContent = payload ? shorten(payload, 14, 12) : "-";
   els.auditorFields.textContent = "encrypted";
   els.auditorTo.textContent = "decode UI deferred";
-  setAuditorValueTone(
-    [els.auditorTxHash, els.auditorAmount, els.auditorDigest, els.auditorFrom],
-    "encoded"
-  );
+  setAuditorValueTone(auditorDetailValueElements(), "encoded");
   els.auditorDecodeState.textContent = "Audit disclosure is present. Select Decode to use the local admin test scalar.";
   updateAuditorDecodeButton();
 }
@@ -98850,7 +99101,6 @@ function renderAuditorReport(report) {
     return;
   }
   const summary = view.summary;
-  const payload = view.payload;
   const amount = summary.amount ? `${summary.amount}${summary.asset_denom ? ` ${summary.asset_denom}` : ""}` : "-";
   els.auditorTxHash.textContent = report?.tx_hash || state.auditor.selectedTxHash || "-";
   els.auditorVerification.textContent = "Verified";
@@ -98858,10 +99108,13 @@ function renderAuditorReport(report) {
   els.auditorFrom.textContent = summary.from_shielded_address || "-";
   els.auditorTo.textContent = summary.to_shielded_address || "-";
   els.auditorFields.textContent = (summary.disclosed_fields || []).map(prettyDisclosureField).join(", ") || "-";
-  els.auditorDigest.textContent = payload.disclosure_digest_hex || eventAttribute4(
+  els.auditorDigest.textContent = view.digestHex || eventAttribute4(
     state.auditor.events.find((event) => event.tx_hash_hex === state.auditor.selectedTxHash),
     "audit_disclosure_digest"
   ) || "-";
+  els.auditorPlanePolicy.textContent = `${view.plane || "audit"} / ${view.policy || "unknown policy"}`;
+  els.auditorOutputIndex.textContent = view.outputIndex === null ? "-" : String(view.outputIndex);
+  els.auditorCommitment.textContent = view.commitmentHex || "-";
   setAuditorValueTone(auditorDetailValueElements(), "decoded");
   els.auditorDecodeState.textContent = `${summary.delivery || report?.source || "audit"} / ${summary.policy || "unknown policy"}`;
   updateAuditorDecodeButton();
@@ -98951,6 +99204,9 @@ async function decodeAuditorTransfer(txHash = state.auditor.selectedTxHash) {
     renderAuditorReport(report);
   } catch (error) {
     clearAuditorReport(error.message);
+    if (isDisclosureVerificationFailure(error)) {
+      els.auditorVerification.textContent = "Failed";
+    }
   } finally {
     state.auditor.loading = false;
     renderAuditorTransfers();
@@ -99139,6 +99395,7 @@ async function connectKeplr() {
   state.keplr.signatureHash = "";
   state.keplr.verified = false;
   state.keplr.balance = "";
+  state.keplr.transparentBalances = {};
   state.keplr.faucetHash = "";
   state.keplr.faucetSent = "";
   state.keplr.faucetRecipient = "";
@@ -99153,9 +99410,13 @@ async function connectKeplr() {
   state.keplr.depositPrepared = null;
   state.keplr.depositRecoveryStatus = "idle";
   state.keplr.depositRecoveryMessage = "Not started";
+  state.keplr.networkFeeEstimate = "Not estimated";
+  state.keplr.networkFeeAmount = "0";
   state.keplr.transferHash = "";
   state.keplr.withdrawHash = "";
   state.keplr.withdrawHeight = "";
+  state.keplr.withdrawNullifierStatus = "Not checked";
+  state.keplr.withdrawReceiveStatus = "Not checked";
   state.keplr.notesSummary = "";
   state.keplr.notes = [];
   state.keplr.notesScanned = false;
@@ -99243,10 +99504,31 @@ async function fundKeplr() {
     setBusy(els.fundKeplr, false);
   }
 }
-async function setupKeplrPrivacy() {
+async function completeInitialPrivacySetup({ skipInitialSync = false } = {}) {
+  await refreshProtocolStatus();
+  if (!state.protocol.ready) {
+    throw new Error(state.protocol.error || "Consensus circuit and asset preflight failed");
+  }
+  if (!skipInitialSync && state.keplr.noteSyncStatus !== "synced") {
+    els.keplrTxState.textContent = "Initial note sync";
+    await scanKeplrNotes({
+      quiet: true,
+      throwOnError: true,
+      skipSetup: true,
+      maxPages: 1e3
+    });
+    if (state.keplr.noteSyncStatus !== "synced") {
+      throw new Error("Initial note sync did not reach the latest durable cursor");
+    }
+  }
+}
+async function setupKeplrPrivacy(options = {}) {
   if (!state.keplr.account) return;
   if (state.keplr.rootSignatureBase64 && state.keplr.shieldedAddress && state.keplr.disclosurePubKeyHex) {
     await refreshReservationState();
+    await completeInitialPrivacySetup(options);
+    els.keplrTxState.textContent = options.skipInitialSync ? "Identity ready" : "Ready \xB7 notes synced";
+    renderKeplr();
     return;
   }
   setBusy(els.setupKeplrPrivacy, true);
@@ -99295,9 +99577,10 @@ async function setupKeplrPrivacy() {
       state.reservations.retryBlocked = true;
     }
     await refreshReservationState();
-    els.keplrTxState.textContent = "Ready";
+    await completeInitialPrivacySetup(options);
+    els.keplrTxState.textContent = options.skipInitialSync ? "Identity ready" : "Ready \xB7 notes synced";
     renderKeplr();
-    toast("Clairveil account ready");
+    toast(options.skipInitialSync ? "Clairveil identity ready" : "Clairveil account ready \xB7 notes synced");
   } catch (error) {
     els.keplrTxState.textContent = "Setup failed";
     toast(error.message);
@@ -99351,7 +99634,8 @@ async function signDirectAndBroadcast(signDoc, options = {}) {
     signDirect: (directSignDoc) => window.keplr.signDirect(
       directSignDoc.chainId,
       state.keplr.account,
-      directSignDoc
+      directSignDoc,
+      { preferNoSetFee: false, preferNoSetMemo: true }
     )
   };
   return clairveilBrowserClient().signDirectAndBroadcast({
@@ -99585,9 +99869,13 @@ async function preparePrivacyRelayWithdraw(amount, recipient, options = {}) {
 }
 async function broadcastPrivacyDeposit(amount, label = "deposit", options = {}) {
   els.keplrTxState.textContent = `Preparing ${label}`;
+  await refreshWalletBalance();
+  const feeBudget = await estimateDepositFeeBeforeProof();
+  assertDepositFunding(amount, feeBudget);
   const data = await preparePrivacyDepositSignDoc(amount, options);
   state.keplr.shieldedAddress = data.prepared?.shieldedAddress || state.keplr.shieldedAddress;
-  await updateDepositNetworkFee(data.transaction);
+  const exactFee = await updateDepositNetworkFee(data.transaction);
+  assertDepositFunding(amount, exactFee);
   els.keplrTxState.textContent = state.activeWallet === "metamask" ? "Waiting for MetaMask" : "Waiting for Keplr";
   const broadcast = await broadcastPreparedPrivacy(data, label, options);
   state.keplr.depositHash = broadcast.broadcast?.txhash || "";
@@ -99774,25 +100062,51 @@ async function reconcileRelayWithdrawResult() {
     const manager = await currentReservationManager();
     const records = manager ? await Promise.all(state.relayWithdraw.reservationIds.map((id) => manager.getReservation(id))) : [];
     const spentConfirmed = records.length > 0 && records.every((record) => record.status === reservationStatuses.ConfirmedSpent);
+    const receiveConfirmed = records.length > 0 && records.every((record) => !reservationRequiresOperationEvidence(record) || operationReconciliationStatus(record) === operationStatuses.Succeeded);
     if (check.failed) {
       state.relayWithdraw.resultStatus = "failed";
       state.relayWithdraw.resultMessage = spentConfirmed ? "Tx failed but nullifier is spent \xB7 manual review required" : "Tx failed \xB7 nullifier not confirmed spent \xB7 reservation remains locked for review";
+      setWithdrawEvidence(
+        spentConfirmed ? "Spent despite failed tx \xB7 manual review" : "Unspent not confirmed \xB7 retry blocked",
+        receiveConfirmed ? "Output evidence conflicts with failed tx \xB7 manual review" : "Not received \xB7 tx failed",
+        { render: false }
+      );
       return;
     }
     if (!check.included) {
       state.relayWithdraw.resultStatus = check.pending ? "submitted" : "unknown";
       state.relayWithdraw.resultMessage = check.pending ? "Tx is pending \xB7 do not rebuild or hand off another payload" : "Tx hash is not confirmed yet \xB7 absence is not treated as failure";
+      setWithdrawEvidence(
+        check.pending ? "Submitted \xB7 not reconciled" : "Unknown \xB7 reconcile before retry",
+        check.pending ? "Pending transaction inclusion" : "Unknown \xB7 reconcile before retry",
+        { render: false }
+      );
       return;
     }
     state.keplr.withdrawHash = txHash;
     state.keplr.withdrawHeight = check.height || "included";
-    state.relayWithdraw.resultStatus = spentConfirmed ? "confirmed" : "recovering";
-    state.relayWithdraw.resultMessage = spentConfirmed ? "Tx included \xB7 bound transparent recipient confirmed \xB7 input nullifier spent" : "Tx included \xB7 transparent recipient is payload-bound \xB7 waiting for spent-state scan";
-    if (spentConfirmed) stopRelayReservationHeartbeat();
+    const fullyConfirmed = spentConfirmed && receiveConfirmed;
+    state.relayWithdraw.resultStatus = fullyConfirmed ? "confirmed" : "recovering";
+    state.relayWithdraw.resultMessage = fullyConfirmed ? "Tx included \xB7 bound transparent recipient confirmed \xB7 input nullifier spent" : "Tx included \xB7 waiting for nullifier and bound transparent output reconciliation";
+    if (fullyConfirmed) {
+      confirmWithdrawEvidence({ render: false });
+      stopRelayReservationHeartbeat();
+    } else {
+      setWithdrawEvidence(
+        spentConfirmed ? "Spent \xB7 confirmed" : "Checking spent state",
+        receiveConfirmed ? "Received \xB7 bound output confirmed" : "Checking bound transparent output",
+        { render: false }
+      );
+    }
     await Promise.allSettled([refreshWalletBalance(), refreshProtocolStatus()]);
   } catch (error) {
     state.relayWithdraw.resultStatus = "unknown";
     state.relayWithdraw.resultMessage = `Unable to confirm result \xB7 ${error.message}`;
+    setWithdrawEvidence(
+      "Unknown \xB7 reconciliation failed",
+      "Unknown \xB7 reconciliation failed",
+      { render: false }
+    );
   } finally {
     const store = await currentOperationStore().catch(() => null);
     if (state.relayWithdraw.resultStatus === "confirmed") {
@@ -100064,7 +100378,8 @@ async function depositFromKeplr() {
   setBusy(els.depositFromKeplr, true);
   els.keplrTxState.textContent = "Preparing deposit";
   try {
-    const broadcast = await broadcastPrivacyDeposit(amountInputValue(els.keplrDepositAmount));
+    const amount = amountInputValue(els.keplrDepositAmount);
+    const broadcast = await broadcastPrivacyDeposit(amount);
     state.keplr.depositPrepared = broadcast.prepared || null;
     const isPendingEvm = Boolean(broadcast.pending);
     els.keplrTxState.textContent = isPendingEvm ? "Deposit submitted" : "Deposit included";
@@ -100140,7 +100455,9 @@ Tx: ${shorten(state.keplr.depositHash, 14, 12)}` : "\uD2B8\uB79C\uC7AD\uC158\uC7
 }
 async function scanKeplrNotes(options = {}) {
   if (!state.keplr.account) return;
-  await setupKeplrPrivacy();
+  if (!options.skipSetup) {
+    await setupKeplrPrivacy({ skipInitialSync: true });
+  }
   if (!state.keplr.rootSignatureBase64) return;
   setBusy(els.scanKeplrNotes, true);
   if (!options.quiet) {
@@ -100155,7 +100472,7 @@ async function scanKeplrNotes(options = {}) {
     state.keplr.noteSyncMessage = reset ? "Full rescan in progress" : "Incremental scan in progress";
     els.noteSyncState.textContent = state.keplr.noteSyncMessage;
     els.noteSyncState.dataset.status = state.keplr.noteSyncStatus;
-    const scanOptions = noteScanRequestOptions({ reset });
+    const scanOptions = noteScanRequestOptions({ reset, maxPages: options.maxPages ?? 5 });
     const store = await currentNoteStore();
     const data = await clairveilBrowserClient().scanWalletNotes(privacyRequest({
       ...scanOptions,
@@ -100205,6 +100522,34 @@ async function backupNoteCache() {
 async function resetAndRescanNotes() {
   if (!globalThis.confirm("\uB85C\uCEEC note cache\uB97C \uC9C0\uC6B0\uACE0 \uCCB4\uC778 genesis\uBD80\uD130 \uB2E4\uC2DC \uC2A4\uCE94\uD560\uAE4C\uC694? cache\uB294 \uBCF5\uAD6C \uAC00\uB2A5\uD558\uC9C0\uB9CC \uC644\uB8CC\uAE4C\uC9C0 \uC2DC\uAC04\uC774 \uAC78\uB9B4 \uC218 \uC788\uC2B5\uB2C8\uB2E4.")) return;
   await scanKeplrNotes({ reset: true, throwOnError: true });
+}
+async function rollbackAndRescanNotes() {
+  const height = String(els.noteRollbackHeight.value || "").trim();
+  if (!/^(0|[1-9][0-9]*)$/.test(height)) {
+    throw new Error("Rollback height must be a canonical non-negative integer");
+  }
+  const store = await currentNoteStore();
+  if (!store || typeof store.rollbackToHeight !== "function") {
+    throw new Error("Encrypted note store does not support cursor rollback");
+  }
+  const current = await store.load();
+  if (BigInt(height) > BigInt(current.lastScannedHeight || 0)) {
+    throw new Error(`Rollback height cannot exceed the last scanned height ${current.lastScannedHeight || 0}`);
+  }
+  if (!globalThis.confirm(`Height ${height}\uBD80\uD130 note cache\uB97C \uB418\uAC10\uACE0 \uB2E4\uC2DC \uC2A4\uCE94\uD560\uAE4C\uC694? \uD544\uC694\uD558\uBA74 \uBA3C\uC800 Backup cache\uB97C \uC2E4\uD589\uD558\uC138\uC694.`)) return;
+  const rolledBack = await store.rollbackToHeight(height);
+  state.keplr.notes = rolledBack.notes || [];
+  state.keplr.noteScanCursor = rolledBack.scanCursor || defaultNoteScanCursor();
+  state.keplr.noteScanResumeOptions = null;
+  state.keplr.noteSyncStatus = "rollback-ready";
+  state.keplr.noteSyncMessage = `Cursor rolled back to height ${height} \xB7 rescan required`;
+  renderKeplr();
+  await scanKeplrNotes({
+    quiet: false,
+    throwOnError: true,
+    skipSetup: true,
+    maxPages: 1e3
+  });
 }
 async function refreshPrivacySurfaces({ balance = false } = {}) {
   const tasks = [
@@ -100256,6 +100601,7 @@ async function transferFromVeiled() {
     amount: coinText(amount),
     disclosure: transferDisclosureSummary(disclosure),
     selfView: disclosure.disableSelfViewDisclosure ? "Disabled (recovery limited)" : "Encrypted self-view included",
+    changeEffect: "Pending payload preparation",
     expiresAtUnix: timing.expiresAtUnix
   });
   if (!confirmed) return;
@@ -100321,6 +100667,17 @@ async function transferFromVeiled() {
     }
     if (!finalData) {
       throw new Error("\uC785\uB825\uD558\uC2E0 \uAE08\uC561\uC758 \uB178\uD2B8 \uC900\uBE44\uAC00 \uB108\uBB34 \uC624\uB798 \uAC78\uB9BD\uB2C8\uB2E4. notes\uB97C \uB2E4\uC2DC \uC2A4\uCE94\uD55C \uB4A4 \uC7AC\uC2DC\uB3C4\uD574\uC918.");
+    }
+    const finalConfirmed = await withPreparedReservationHeartbeat(finalData, () => requestPreparedTransferConfirmation({
+      ...transferFlowState.review,
+      recipient: finalData.prepared?.finalRecipient || recipient,
+      amount: coinText(finalData.prepared?.finalAmount || amount),
+      changeEffect: preparedTransferChangeEffect(finalData),
+      expiresAtUnix: timing.expiresAtUnix
+    }));
+    if (!finalConfirmed) {
+      await discardPreparedReservation(finalData);
+      return;
     }
     resetTransferPlannerFacts();
     updateTransferFlow(
@@ -100420,6 +100777,7 @@ async function withdrawFromVeiled() {
     expiresAtUnix: timing.expiresAtUnix
   });
   if (!confirmed) return;
+  setWithdrawEvidence("Preparing \xB7 no broadcast yet", "Preparing \xB7 no broadcast yet");
   setBusy(els.withdrawFromVeiled, true);
   els.keplrTxState.textContent = "Preparing withdraw";
   try {
@@ -100506,6 +100864,11 @@ async function withdrawFromVeiled() {
       );
       await setRelayWithdrawHandoff(data);
       els.keplrTxState.textContent = "Relay withdraw payload ready";
+      setWithdrawEvidence(
+        "Reserved \xB7 awaiting relayer result",
+        "Awaiting relayer submission",
+        { render: false }
+      );
       finishTransferFlow("Relay withdraw payload\uAC00 \uC900\uBE44\uB418\uC5C8\uC2B5\uB2C8\uB2E4");
       return;
     }
@@ -100520,6 +100883,11 @@ async function withdrawFromVeiled() {
     state.keplr.withdrawHeight = broadcast.tx?.height || broadcast.receipt?.blockNumber || "pending";
     const isPendingEvm = Boolean(broadcast.pending);
     els.keplrTxState.textContent = isPendingEvm ? "Withdraw submitted" : "Withdraw included";
+    setWithdrawEvidence(
+      isPendingEvm ? "Submitted \xB7 not reconciled" : "Checking spent state",
+      isPendingEvm ? "Submitted \xB7 receipt pending" : "Checking bound transparent output",
+      { render: false }
+    );
     renderKeplr();
     if (isPendingEvm) {
       finishTransferFlow("Withdraw \uC694\uCCAD\uC774 \uC81C\uCD9C\uB418\uC5C8\uC2B5\uB2C8\uB2E4");
@@ -100530,12 +100898,18 @@ async function withdrawFromVeiled() {
           els.keplrTxState.textContent = "Withdraw included";
           await refreshPrivacySurfaces({ balance: true });
           await requirePreparedReservationReconciled(data, "Privacy withdraw");
+          confirmWithdrawEvidence({ render: false });
           finishTransferFlow("Withdraw \uC694\uCCAD\uC774 \uC131\uACF5\uD558\uC600\uC2B5\uB2C8\uB2E4");
           renderKeplr();
         },
         onUnknown: async (unknown) => {
           state.keplr.withdrawHash = unknown.txHash || state.keplr.withdrawHash;
           els.keplrTxState.textContent = "Withdraw status unknown";
+          setWithdrawEvidence(
+            "Unknown \xB7 reconcile before retry",
+            "Unknown \xB7 reconcile before retry",
+            { render: false }
+          );
           await refreshReservationState(data.reservationManager).catch(() => {
           });
           finishTransferFlowUnknown(`Receipt polling\uC774 \uB05D\uB0AC\uC9C0\uB9CC \uC2E4\uD328\uAC00 \uD655\uC778\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. tx hash\uC640 nullifier\uB97C reconcile\uD558\uAE30 \uC804\uC5D0\uB294 \uB2E4\uC2DC \uC804\uC1A1\uD558\uC9C0 \uB9C8\uC138\uC694.
@@ -100546,8 +100920,18 @@ Tx: ${state.keplr.withdrawHash}`);
           const resolution = await resolvePreparedPrivacyFailure(error, data);
           els.keplrTxState.textContent = resolution.blocked ? "Withdraw reconciliation required" : "Withdraw failed";
           if (resolution.blocked) {
+            setWithdrawEvidence(
+              "Unknown \xB7 reservation remains locked",
+              "Unknown \xB7 reconcile before retry",
+              { render: false }
+            );
             finishTransferFlowUnknown(error.message);
           } else {
+            setWithdrawEvidence(
+              "Unspent \xB7 failure confirmed",
+              "Not received \xB7 transaction failed",
+              { render: false }
+            );
             finishTransferFlow(error.message, false, { retry: () => withdrawFromVeiled() });
           }
           renderKeplr();
@@ -100557,15 +100941,26 @@ Tx: ${state.keplr.withdrawHash}`);
     }
     await refreshPrivacySurfaces({ balance: true });
     await requirePreparedReservationReconciled(data, "Privacy withdraw");
+    confirmWithdrawEvidence({ render: false });
     finishTransferFlow("Withdraw \uC694\uCCAD\uC774 \uC131\uACF5\uD558\uC600\uC2B5\uB2C8\uB2E4");
   } catch (error) {
     const cancelled = error?.name === "AbortError" || activeProofSignal()?.aborted;
     const resolution = await resolvePreparedPrivacyFailure(error);
     if (resolution.blocked) {
       els.keplrTxState.textContent = "Withdraw reconciliation required";
+      setWithdrawEvidence(
+        "Unknown \xB7 reservation remains locked",
+        "Unknown \xB7 reconcile before retry",
+        { render: false }
+      );
       finishTransferFlowUnknown(error.message);
     } else {
       els.keplrTxState.textContent = cancelled ? "Withdraw cancelled" : "Withdraw failed";
+      setWithdrawEvidence(
+        cancelled ? "Not spent \xB7 cancelled before submission" : "Unspent \xB7 failure confirmed",
+        cancelled ? "Not received \xB7 no submission" : "Not received \xB7 transaction failed",
+        { render: false }
+      );
       finishTransferFlow(cancelled ? "Proof \uC694\uCCAD\uC744 \uCDE8\uC18C\uD588\uC2B5\uB2C8\uB2E4." : error.message, false, {
         retry: () => withdrawFromVeiled()
       });
@@ -100579,6 +100974,14 @@ els.connectWallet.addEventListener("click", () => connectWallet().catch((error) 
 els.connectKeplr.addEventListener("click", () => connectKeplr().catch((error) => toast(error.message)));
 els.disconnectWallet.addEventListener("click", disconnectWallet);
 els.dappChainSelect.addEventListener("change", (event) => selectDappChainProfile(event.target.value));
+els.noteScanEndpoint.addEventListener("change", (event) => {
+  try {
+    selectNoteScanEndpoint(event.target.value);
+    toast("Note scan endpoint changed. Retry Scan to continue recovery.");
+  } catch (error) {
+    toast(error.message);
+  }
+});
 els.signSession.addEventListener("click", () => signSession().catch((error) => toast(error.message)));
 els.copyWalletAccount.addEventListener("click", () => copyWalletAccount().catch((error) => toast(error.message)));
 els.fundKeplr.addEventListener("click", fundKeplr);
@@ -100589,6 +100992,8 @@ els.refreshWalletBalance.addEventListener("click", () => refreshWalletBalance().
 els.scanKeplrNotes.addEventListener("click", () => scanKeplrNotes().catch((error) => toast(error.message)));
 els.backupNoteCache.addEventListener("click", () => backupNoteCache().catch((error) => toast(error.message)));
 els.resetRescanNotes.addEventListener("click", () => resetAndRescanNotes().catch((error) => toast(error.message)));
+els.noteRollbackHeight.addEventListener("input", () => updateNoteRollbackButton());
+els.rollbackRescanNotes.addEventListener("click", () => rollbackAndRescanNotes().catch((error) => toast(error.message)));
 els.reconcileReservations.addEventListener("click", () => reconcileReservations().catch((error) => toast(error.message)));
 els.myKeplrSpendableOnly.addEventListener("change", (event) => {
   state.keplr.showSpendableOnly = event.target.checked;

@@ -602,6 +602,22 @@ select {
   margin: -8px 0 12px;
 }
 
+.note-endpoint-field select {
+  max-width: 250px;
+}
+
+.scan-recovery-row {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin: 0 0 12px;
+}
+
+.scan-recovery-row .field {
+  margin: 0;
+}
+
 .reservation-status {
   align-items: center;
   background: color-mix(in srgb, var(--surface-strong) 82%, var(--accent) 18%);
@@ -1420,6 +1436,7 @@ select {
   .split-actions,
   .copy-row,
   .note-row,
+  .scan-recovery-row,
   .block-event-row,
   .audit-row {
     grid-template-columns: 1fr;
