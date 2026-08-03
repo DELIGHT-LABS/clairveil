@@ -96,7 +96,7 @@ The DApp UI does not implement privacy preparation itself. It calls the high-lev
 | `prepareTransfer(...)` | Scans notes, plans inputs, reads audit config, calls prover `/v1/prover/transfer`, creates disclosure payloads, then returns a Cosmos sign doc or EVM precompile tx |
 | `prepareWithdraw(...)` | Scans notes, plans inputs, calls prover `/v1/prover/withdraw`, then returns a Cosmos sign doc or EVM precompile tx |
 | `prepareRelayWithdraw(...)` | Produces a chain/recipient/expiry-bound relayer payload and, for EVM, a candidate transaction that the relayer must rebuild or byte-validate |
-| `broadcastSignedTx(...)` | Broadcasts and waits for Cosmos signed txs |
+| `signDirectAndBroadcast(...)` | Signs and broadcasts Cosmos txs while preserving the prepared note reservation lifecycle |
 | `waitForEvmTransaction(...)` | Waits for EVM transaction receipts |
 | `sendEvmTransaction(...)` | Revalidates the configured and connected EVM networks and submits the prepared transaction through the SDK |
 | `assertProtocolPreflight(...)` / `queryReserve(...)` | Validates circuit/asset config and the reserve invariant |
@@ -259,7 +259,9 @@ Common values:
 
 `Transfer` scans notes, plans inputs, creates any required self-transaction step, requests a transfer proof from the prover, creates disclosure payloads, and prepares the final Cosmos sign doc or EVM transaction. The final confirmation shows authoritative chain ID/time expiry, recipient, amount, disclosure plane, and self-view setting. Self-view is enabled by default and can be explicitly disabled with a recovery warning.
 
-`Withdraw` scans spendable notes, plans the withdraw, requests a withdraw proof, and prepares the final Cosmos sign doc or EVM transaction. `Relay handoff` prepares the immutable payload without broadcasting it; the application must deliver the JSON over its own trusted relayer transport. The sample intentionally does not include note reservations because reservation lifecycle handling is outside this example's current scope.
+`Withdraw` scans spendable notes, plans the withdraw, requests a withdraw proof, and prepares the final Cosmos sign doc or EVM transaction. `Relay handoff` prepares the immutable payload without broadcasting it; the application must deliver the JSON over its own trusted relayer transport. Before the JSON is exposed, the DApp records the relay handoff against the prepared reservation.
+
+Transfer and withdraw preparation use a ClairveilJS note reservation manager backed by IndexedDB, Web Locks, and AES-GCM encrypted state derived from the wallet privacy material. The same manager and prepared reservation are passed to Cosmos and EVM submission. Active reservations disable new spend preparation in the UI. A receipt polling timeout is shown as `Unknown`, never as proof of failure; the Reconcile action checks the tx hash first and then refreshes nullifier status. A new plan is enabled only after the SDK has either observed the notes as spent or has both explicit tx absent/failed evidence and explicit unspent nullifier evidence at a recorded height.
 
 The DApp persists the note cache in browser `localStorage` as an AES-GCM envelope. Its key is derived from wallet root-signature material with HKDF and is scoped to chain profile and account. A legacy plaintext cache is deleted instead of migrated and requires `Reset & Rescan`; a corrupt/undecryptable cache fails closed and can be backed up before reset. The cache remains recoverable chain-derived data, not a substitute for wallet key backup.
 

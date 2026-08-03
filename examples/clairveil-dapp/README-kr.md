@@ -117,7 +117,7 @@ DApp UI는 privacy 준비 로직을 직접 구현하지 않고 `clairveiljs/brow
 | `prepareTransfer(...)` | note scan, planner, audit config, prover `/v1/prover/transfer`, disclosure payload, Cosmos sign doc 또는 EVM precompile tx 생성 |
 | `prepareWithdraw(...)` | note scan, planner, prover `/v1/prover/withdraw`, Cosmos sign doc 또는 EVM precompile tx 생성 |
 | `prepareRelayWithdraw(...)` | chain/recipient/expiry에 결합된 relayer payload 생성; EVM은 relayer가 재구성하거나 byte 단위로 검증할 candidate transaction도 반환 |
-| `broadcastSignedTx(...)` | Cosmos signed tx broadcast/wait |
+| `signDirectAndBroadcast(...)` | prepared note reservation lifecycle을 유지하며 Cosmos tx 서명/broadcast/wait |
 | `waitForEvmTransaction(...)` | EVM receipt wait |
 | `sendEvmTransaction(...)` | configured EVM RPC와 연결된 wallet network를 재검증한 뒤 SDK를 통해 제출 |
 | `assertProtocolPreflight(...)` / `queryReserve(...)` | circuit/asset config와 reserve invariant 검증 |
@@ -372,7 +372,9 @@ EVM profile은 아래 조건을 만족해야 합니다.
 4. prover payload와 proof를 준비합니다.
 5. Cosmos `MsgWithdraw` 또는 EVM precompile tx를 준비합니다.
 
-`Relay handoff` mode는 브로드캐스트하지 않고 immutable relay payload를 JSON으로 만듭니다. 실제 전달은 product-defined trusted relayer transport가 담당해야 하며, EVM relayer는 candidate transaction을 그대로 신뢰하지 말고 payload에서 재구성하거나 byte-for-byte 검증해야 합니다. Note reservation lifecycle은 현재 example 범위에서 제외되어 있습니다.
+`Relay handoff` mode는 브로드캐스트하지 않고 immutable relay payload를 JSON으로 만듭니다. 실제 전달은 product-defined trusted relayer transport가 담당해야 하며, EVM relayer는 candidate transaction을 그대로 신뢰하지 말고 payload에서 재구성하거나 byte-for-byte 검증해야 합니다. DApp은 JSON을 화면에 노출하기 전에 prepared reservation에 relay handoff를 기록합니다.
+
+Transfer/withdraw prepare는 wallet privacy material에서 파생한 키로 AES-GCM 암호화한 IndexedDB + Web Locks 기반 ClairveilJS note reservation manager를 사용합니다. Cosmos/EVM submit에도 같은 manager와 prepared reservation을 전달하며, active reservation이 있으면 UI에서 새 spend 준비를 차단합니다. Receipt polling timeout은 실패가 아니라 `Unknown`으로 표시합니다. `Reconcile`은 tx hash를 먼저 확인한 뒤 nullifier status를 갱신하고, note spent가 확인되거나 `tx absent/failed`와 `nullifier unspent`가 특정 height에서 모두 명시적으로 확인된 경우에만 새 plan을 허용합니다.
 
 이 DApp은 note cache를 AES-GCM envelope로 browser `localStorage`에 저장합니다. 암호화 키는 wallet root signature material에서 HKDF로 파생하며 chain profile/account별로 분리됩니다. 기존 plaintext cache는 migration하지 않고 삭제한 뒤 `Reset & Rescan`을 요구합니다. 복호화할 수 없는 cache는 fail-closed하며 reset 전에 encrypted backup을 내려받을 수 있습니다. 이 cache는 chain에서 다시 만들 수 있는 데이터이며 wallet key backup을 대신하지 않습니다.
 

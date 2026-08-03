@@ -602,6 +602,41 @@ select {
   margin: -8px 0 12px;
 }
 
+.reservation-status {
+  align-items: center;
+  background: color-mix(in srgb, var(--surface-strong) 82%, var(--accent) 18%);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+}
+
+.reservation-status > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.reservation-status span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.reservation-status strong {
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.reservation-status strong[data-status="unknown"],
+.reservation-status strong[data-status="manual-review"] {
+  color: var(--danger);
+}
+
 .toggle-control {
   align-items: center;
   color: var(--muted);

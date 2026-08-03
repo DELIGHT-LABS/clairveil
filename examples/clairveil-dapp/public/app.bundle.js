@@ -82040,7 +82040,9 @@ function assertPlanCanBuildTx(plan) {
 }
 
 // ../../../clairveiljs/src/privacy/reservation.js
+init_hmac();
 init_sha2();
+var privacyReservationStateVersionV1 = "privacy-note-v1-reservation-v1";
 var privacyReservationStateIdentityV1 = Object.freeze({
   circuit_set_id: activeCircuitSetIdV1,
   payload_version: privacyFixedV1
@@ -82081,9 +82083,100 @@ var activeReservationStatuses = Object.freeze([
 ]);
 var activeReservationStatusSet = new Set(activeReservationStatuses);
 var reservationStatusSet = new Set(Object.values(reservationStatuses));
+var allowedReservationTransitions = /* @__PURE__ */ new Set([
+  "Discovered\0Available",
+  "Discovered\0Failed",
+  "Available\0Reserved",
+  "Reserved\0Proving",
+  "Reserved\0Released",
+  "Reserved\0ReplanRequired",
+  "Reserved\0ManualReview",
+  "Proving\0ProofReady",
+  "Proving\0Reserved",
+  "Proving\0ReplanRequired",
+  "Proving\0ManualReview",
+  "ProofReady\0Submitted",
+  "ProofReady\0Unknown",
+  "ProofReady\0ConfirmedSpent",
+  "ProofReady\0ReplanRequired",
+  "ProofReady\0ManualReview",
+  "Submitted\0ConfirmedSpent",
+  "Submitted\0Failed",
+  "Submitted\0Unknown",
+  "Submitted\0ReplanRequired",
+  "Submitted\0ManualReview",
+  "Unknown\0ConfirmedSpent",
+  "Unknown\0Failed",
+  "Unknown\0ReplanRequired",
+  "Unknown\0ManualReview",
+  "ManualReview\0ConfirmedSpent",
+  "ManualReview\0Failed",
+  "ManualReview\0Released",
+  "ManualReview\0ReplanRequired",
+  "Failed\0ReplanRequired",
+  "Released\0Available",
+  "ReplanRequired\0Reserved",
+  "ReplanRequired\0Failed",
+  "ReplanRequired\0ManualReview"
+]);
+var leaseRequiredTransitions = /* @__PURE__ */ new Set([
+  "Reserved\0Proving",
+  "Proving\0Reserved",
+  "Proving\0ProofReady",
+  "Proving\0ReplanRequired",
+  "Proving\0ManualReview",
+  "ProofReady\0Submitted",
+  "ProofReady\0Unknown",
+  "ProofReady\0ReplanRequired",
+  "ProofReady\0ManualReview"
+]);
+var expiredLeaseRecoveryTransitions = /* @__PURE__ */ new Set([
+  "Proving\0ReplanRequired",
+  "Proving\0ManualReview",
+  "ProofReady\0ManualReview"
+]);
 var defaultLeaseDurationMs = 15 * 60 * 1e3;
 var defaultHeartbeatIntervalMs = 60 * 1e3;
 var reservationClaimTokenHashField = "reservation_claim_token_hash";
+var reconciledSpentTransition = /* @__PURE__ */ Symbol("reconciledSpentTransition");
+var managedReservationEvidenceMutation = /* @__PURE__ */ Symbol("managedReservationEvidenceMutation");
+var managedOperationReconciliation = /* @__PURE__ */ Symbol("managedOperationReconciliation");
+var managedReservationCreation = /* @__PURE__ */ Symbol("managedReservationCreation");
+var inProcessMutationQueues = /* @__PURE__ */ new Map();
+function withInProcessMutationLock(lockName, callback) {
+  const previous = inProcessMutationQueues.get(lockName) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => {
+    release = resolve;
+  });
+  const queueTail = previous.catch(() => {
+  }).then(() => current);
+  inProcessMutationQueues.set(lockName, queueTail);
+  return previous.catch(() => {
+  }).then(callback).finally(() => {
+    release();
+    if (inProcessMutationQueues.get(lockName) === queueTail) {
+      inProcessMutationQueues.delete(lockName);
+    }
+  });
+}
+function transitionKey(from, to) {
+  return `${from}\0${to}`;
+}
+function isActiveReservationStatus(status) {
+  return activeReservationStatusSet.has(String(status || ""));
+}
+function canTransitionReservation(from, to) {
+  return allowedReservationTransitions.has(transitionKey(String(from || ""), String(to || "")));
+}
+function canRecoverReservationAfterLeaseExpiry(from, to) {
+  return expiredLeaseRecoveryTransitions.has(
+    transitionKey(String(from || ""), String(to || ""))
+  );
+}
+function requiresReservationLeaseToken(from, to) {
+  return leaseRequiredTransitions.has(transitionKey(String(from || ""), String(to || "")));
+}
 function reservationHeartbeatIntervalMs({
   leaseDurationMs,
   lease_duration_ms,
@@ -82104,6 +82197,27 @@ function reservationHeartbeatIntervalMs({
   const interval = Math.max(1, Math.floor(budgetMs / 3));
   const safeMinimum = Math.min(requestedMin, interval);
   return Math.max(1, Math.min(requestedMax, Math.max(safeMinimum, interval)));
+}
+function nullifierLookupKey(indexKey, nullifier) {
+  const keyBytes = bytes2(indexKey);
+  if (typeof nullifier === "string" && /^(0x)?[0-9a-f]{64}$/i.test(nullifier.trim())) {
+    throw new Error("nullifier hex strings must use nullifierLookupKeyFromHex");
+  }
+  const nullifierBytes = bytes2(nullifier);
+  if (!keyBytes.length) {
+    throw new Error("index key is required");
+  }
+  if (!nullifierBytes.length) {
+    throw new Error("nullifier is required");
+  }
+  return hexFromBytes(hmac(sha256, keyBytes, nullifierBytes));
+}
+function nullifierLookupKeyFromHex(indexKey, nullifierHex) {
+  const normalized = String(nullifierHex ?? "").trim().replace(/^0x/i, "");
+  if (!/^[0-9a-fA-F]{64}$/.test(normalized)) {
+    throw new Error("nullifier must be exactly 32 bytes of hex");
+  }
+  return nullifierLookupKey(indexKey, bytesFromHex(normalized, "nullifier"));
 }
 function hashRecipient(recipient, options = {}) {
   const normalizedRecipient = String(recipient ?? "").trim();
@@ -82150,6 +82264,292 @@ function hashAmount(denom, amount) {
   }
   return hexFromBytes(sha256(utf8Bytes(`${normalizedDenom}:${normalizedAmount}`)));
 }
+function nowIso(now = /* @__PURE__ */ new Date()) {
+  return new Date(now).toISOString();
+}
+function randomHex(bytesLength = 16) {
+  return hexFromBytes(randomBytes4(bytesLength));
+}
+function futureIso(now, durationMs = defaultLeaseDurationMs) {
+  return new Date(new Date(now).getTime() + durationMs).toISOString();
+}
+function normalizedBatchItemIndex(value) {
+  const provided = value !== void 0 && value !== null && value !== "";
+  if (!provided) {
+    return { value: 0, valid: true, provided: false };
+  }
+  if (typeof value !== "number" && typeof value !== "string") {
+    return { value: 0, valid: false, provided: true };
+  }
+  if (typeof value === "string" && !/^(0|[1-9][0-9]*)$/.test(value)) {
+    return { value: 0, valid: false, provided: true };
+  }
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    return { value: 0, valid: false, provided: true };
+  }
+  return { value: parsed, valid: true, provided: true };
+}
+function normalizedBooleanAlias(input, canonicalKey, aliasKey, fallback = false) {
+  const hasCanonical = Object.prototype.hasOwnProperty.call(input, canonicalKey);
+  const hasAlias = Object.prototype.hasOwnProperty.call(input, aliasKey);
+  const canonicalValue = input[canonicalKey];
+  const aliasValue3 = input[aliasKey];
+  if (hasCanonical && typeof canonicalValue !== "boolean") {
+    throw new Error(`${canonicalKey} must be a boolean`);
+  }
+  if (hasAlias && typeof aliasValue3 !== "boolean") {
+    throw new Error(`${aliasKey} must be a boolean`);
+  }
+  if (hasCanonical && hasAlias && canonicalValue !== aliasValue3) {
+    throw new Error(`${canonicalKey} aliases conflict`);
+  }
+  if (hasCanonical) return canonicalValue;
+  if (hasAlias) return aliasValue3;
+  return fallback;
+}
+function normalizedNonNegativeSafeIntegerAlias(input, canonicalKey, aliasKey, fallback = 0) {
+  const hasCanonical = Object.prototype.hasOwnProperty.call(input, canonicalKey);
+  const hasAlias = Object.prototype.hasOwnProperty.call(input, aliasKey);
+  const parse = (value, key) => {
+    if (typeof value !== "number" && typeof value !== "string") {
+      throw new Error(`${key} must be a non-negative safe integer`);
+    }
+    if (typeof value === "string" && !/^(0|[1-9][0-9]*)$/.test(value)) {
+      throw new Error(`${key} must be a non-negative safe integer`);
+    }
+    const parsed = typeof value === "number" ? value : Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed < 0) {
+      throw new Error(`${key} must be a non-negative safe integer`);
+    }
+    return parsed;
+  };
+  const canonicalValue = hasCanonical ? parse(input[canonicalKey], canonicalKey) : null;
+  const aliasValue3 = hasAlias ? parse(input[aliasKey], aliasKey) : null;
+  if (hasCanonical && hasAlias && canonicalValue !== aliasValue3) {
+    throw new Error(`${canonicalKey} aliases conflict`);
+  }
+  if (hasCanonical) return canonicalValue;
+  if (hasAlias) return aliasValue3;
+  return fallback;
+}
+function normalizedUint64Value(value, label) {
+  if (typeof value === "number") {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new Error(`${label} must be a non-negative safe integer, bigint, or canonical uint64 string`);
+    }
+    return value;
+  }
+  let parsed;
+  if (typeof value === "bigint") {
+    parsed = value;
+  } else {
+    const text3 = String(value ?? 0).trim();
+    if (!/^(0|[1-9][0-9]*)$/.test(text3)) {
+      throw new Error(`${label} must be a canonical uint64 decimal string`);
+    }
+    parsed = BigInt(text3);
+  }
+  if (parsed < 0n || parsed > (1n << 64n) - 1n) {
+    throw new Error(`${label} must be within uint64 range`);
+  }
+  return parsed <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(parsed) : parsed.toString();
+}
+function normalizeStatus(status, fallback = reservationStatuses.Reserved) {
+  const normalized = String(status || fallback);
+  if (!reservationStatusSet.has(normalized)) {
+    throw new Error(`unsupported reservation status: ${normalized}`);
+  }
+  return normalized;
+}
+function cloneJSON(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+function assertReservationMetadataValue(value, path = "metadata", seen = /* @__PURE__ */ new Set()) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return;
+  if (typeof value === "number" && Number.isFinite(value)) return;
+  if (typeof value !== "object") {
+    throw new Error(`reservation metadata must contain only JSON values: ${path}`);
+  }
+  if (seen.has(value)) {
+    throw new Error(`reservation metadata must not contain cycles: ${path}`);
+  }
+  seen.add(value);
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertReservationMetadataValue(item, `${path}[${index}]`, seen));
+  } else {
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new Error(`reservation metadata must contain only plain JSON objects: ${path}`);
+    }
+    for (const [key, item] of Object.entries(value)) {
+      assertReservationMetadataValue(item, `${path}.${key}`, seen);
+    }
+  }
+  seen.delete(value);
+}
+function cloneReservationMetadata(value) {
+  const metadata = value ?? {};
+  if (typeof metadata !== "object" || Array.isArray(metadata)) {
+    throw new Error("reservation metadata must be a plain JSON object");
+  }
+  assertReservationMetadataValue(metadata);
+  return cloneJSON(metadata);
+}
+function noteNullifierHex(noteLike) {
+  const direct = noteLike?.nullifier_hex ?? noteLike?.nullifierHex ?? noteLike?.nullifier;
+  if (direct) {
+    return String(direct).trim().replace(/^0x/i, "").toLowerCase();
+  }
+  return String(normalizeFoundNote(noteLike).nullifier || "").trim().replace(/^0x/i, "").toLowerCase();
+}
+function noteReservationIdentity(noteLike) {
+  const found = normalizeFoundNote(noteLike);
+  const nullifierHex = noteNullifierHex(noteLike);
+  if (!nullifierHex) {
+    throw new Error("note nullifier is required for reservation");
+  }
+  const height = found.height;
+  const sequence = found.sequence;
+  const txHash = String(found.txHash || noteLike?.tx_hash || "").toUpperCase();
+  return {
+    nullifierHex,
+    noteId: String(
+      noteLike?.note_id ?? noteLike?.noteId ?? `${height}:${sequence}:${txHash}`
+    ),
+    amount: found.note.amount.toString(),
+    height,
+    sequence,
+    txHash
+  };
+}
+function selectedReservationNotesFromPlan(plan) {
+  if (!plan) return [];
+  if (Array.isArray(plan.selection?.inputs)) {
+    return plan.selection.inputs;
+  }
+  if (Array.isArray(plan.selections)) {
+    return plan.selections.flatMap((selection) => selection?.inputs || []);
+  }
+  if (plan.selectedNote) {
+    return [plan.selectedNote];
+  }
+  return [];
+}
+function operationSuccessEvidenceRequiredMetadataState(metadata = {}) {
+  const hasCanonical = Object.prototype.hasOwnProperty.call(
+    metadata,
+    "operation_success_evidence_required"
+  );
+  const hasAlias = Object.prototype.hasOwnProperty.call(
+    metadata,
+    "operationSuccessEvidenceRequired"
+  );
+  const canonicalValue = metadata.operation_success_evidence_required;
+  const aliasValue3 = metadata.operationSuccessEvidenceRequired;
+  if (hasCanonical && typeof canonicalValue !== "boolean") {
+    throw new Error("operation_success_evidence_required metadata must be a boolean");
+  }
+  if (hasAlias && typeof aliasValue3 !== "boolean") {
+    throw new Error("operationSuccessEvidenceRequired metadata must be a boolean");
+  }
+  const canonical = hasCanonical ? canonicalValue : null;
+  const alias2 = hasAlias ? aliasValue3 : null;
+  if (hasCanonical && hasAlias && canonical !== alias2) {
+    throw new Error("operation_success_evidence_required metadata aliases conflict");
+  }
+  return {
+    present: hasCanonical || hasAlias,
+    value: hasCanonical ? canonical : alias2
+  };
+}
+function operationSuccessEvidenceRequiredInputState(metadata = {}) {
+  const direct = operationSuccessEvidenceRequiredMetadataState(metadata);
+  const nested = operationSuccessEvidenceRequiredMetadataState(metadata.metadata || {});
+  if (direct.present && nested.present && direct.value !== nested.value) {
+    throw new Error("operation success evidence required aliases conflict");
+  }
+  return direct.present ? direct : nested;
+}
+function normalizeReservationMetadata(value) {
+  const metadata = cloneReservationMetadata(value);
+  const evidenceRequired = operationSuccessEvidenceRequiredMetadataState(metadata);
+  if (evidenceRequired.present) {
+    metadata.operation_success_evidence_required = evidenceRequired.value;
+    delete metadata.operationSuccessEvidenceRequired;
+  }
+  return metadata;
+}
+function normalizeReservation(input = {}) {
+  const status = normalizeStatus(input.status);
+  const createdAt = input.created_at || input.createdAt || nowIso();
+  const updatedAt = input.updated_at || input.updatedAt || createdAt;
+  const reservationID = String(input.reservation_id || input.reservationID || input.reservationId || "");
+  const operationID = String(input.operation_id || input.operationID || input.operationId || "");
+  const ownerKeyID = String(input.owner_key_id || input.ownerKeyID || input.ownerKeyId || "");
+  const nullifierLookupKeyValue = String(input.nullifier_lookup_key || input.nullifierLookupKey || "");
+  const batchItemIndex = normalizedBatchItemIndex(
+    firstDefined(input.batch_item_index, input.batchItemIndex, "")
+  );
+  const batchItemIndexKnown = normalizedBooleanAlias(
+    input,
+    "batch_item_index_known",
+    "batchItemIndexKnown"
+  );
+  const broadcastAttemptCount = normalizedNonNegativeSafeIntegerAlias(
+    input,
+    "broadcast_attempt_count",
+    "broadcastAttemptCount"
+  );
+  const broadcastInFlight = normalizedBooleanAlias(
+    input,
+    "broadcast_in_flight",
+    "broadcastInFlight"
+  );
+  if (!reservationID) throw new Error("reservation_id is required");
+  if (!ownerKeyID) throw new Error("owner_key_id is required");
+  if (!nullifierLookupKeyValue) throw new Error("nullifier_lookup_key is required");
+  if (batchItemIndexKnown && (!batchItemIndex.valid || !batchItemIndex.provided)) {
+    throw new Error("batch_item_index must be a non-negative safe integer when known");
+  }
+  return {
+    reservation_id: reservationID,
+    operation_id: operationID,
+    owner_key_id: ownerKeyID,
+    nullifier_lookup_key: nullifierLookupKeyValue,
+    nullifier_lookup_key_id: String(input.nullifier_lookup_key_id || input.nullifierLookupKeyID || input.nullifierLookupKeyId || ""),
+    status,
+    lease_owner: String(input.lease_owner || input.leaseOwner || ""),
+    lease_token: String(input.lease_token || input.leaseToken || ""),
+    lease_until: String(input.lease_until || input.leaseUntil || ""),
+    last_heartbeat_at: String(input.last_heartbeat_at || input.lastHeartbeatAt || ""),
+    kind: String(input.kind || input.operation_kind || input.operationKind || ""),
+    note_id: String(input.note_id || input.noteID || input.noteId || ""),
+    amount: String(input.amount || ""),
+    tx_hash: String(input.tx_hash || input.txHash || "").toUpperCase(),
+    height: normalizedUint64Value(input.height ?? 0, "reservation height"),
+    sequence: normalizedUint64Value(input.sequence ?? 0, "reservation sequence"),
+    payload_hash: String(input.payload_hash || input.payloadHash || ""),
+    expected_operation_evidence_hash: String(input.expected_operation_evidence_hash || input.expectedOperationEvidenceHash || ""),
+    expected_output_commitment: String(input.expected_output_commitment || input.expectedOutputCommitment || ""),
+    expected_disclosure_digest: String(input.expected_disclosure_digest || input.expectedDisclosureDigest || ""),
+    expected_recipient_hash: String(input.expected_recipient_hash || input.expectedRecipientHash || ""),
+    expected_amount: String(firstDefined(input.expected_amount, input.expectedAmount, "")),
+    expected_amount_hash: String(input.expected_amount_hash || input.expectedAmountHash || ""),
+    expected_denom: String(input.expected_denom || input.expectedDenom || ""),
+    batch_item_index: batchItemIndex.value,
+    batch_item_index_known: batchItemIndexKnown,
+    sign_doc_hash: String(input.sign_doc_hash || input.signDocHash || ""),
+    tx_bytes_hash: String(input.tx_bytes_hash || input.txBytesHash || ""),
+    submitted_tx_hash: String(input.submitted_tx_hash || input.submittedTxHash || input.txHashSubmitted || ""),
+    broadcast_attempt_count: broadcastAttemptCount,
+    broadcast_in_flight: broadcastInFlight,
+    last_broadcast_error: String(input.last_broadcast_error || input.lastBroadcastError || ""),
+    created_at: createdAt,
+    updated_at: updatedAt,
+    metadata: normalizeReservationMetadata(input.metadata)
+  };
+}
 var initialLifecycleMetadataFields = /* @__PURE__ */ new Set([
   "relay_handed_off",
   "relayHandedOff",
@@ -82184,9 +82584,256 @@ var initialLifecycleMetadataFields = /* @__PURE__ */ new Set([
   "provider_rejection_code",
   "providerRejectionCode"
 ]);
+function assertInitialReservationRecord(reservation, { allowManagedClaimTokenHash = false } = {}) {
+  if (reservation.status !== reservationStatuses.Reserved) {
+    throw new Error("new reservations must start as Reserved");
+  }
+  if (reservation.lease_owner || reservation.lease_token || reservation.lease_until || reservation.last_heartbeat_at || reservation.payload_hash || reservation.expected_operation_evidence_hash || reservation.expected_output_commitment || reservation.expected_disclosure_digest || reservation.expected_recipient_hash || reservation.expected_amount || reservation.expected_amount_hash || reservation.expected_denom || reservation.batch_item_index_known || reservation.batch_item_index !== 0 || reservation.sign_doc_hash || reservation.tx_bytes_hash || reservation.submitted_tx_hash || reservation.broadcast_attempt_count || reservation.broadcast_in_flight || reservation.last_broadcast_error) {
+    throw new Error("new reservations cannot include lifecycle, broadcast, or relay evidence");
+  }
+  const metadata = reservation.metadata || {};
+  if (!allowManagedClaimTokenHash && Object.prototype.hasOwnProperty.call(metadata, reservationClaimTokenHashField)) {
+    throw new Error("new reservations cannot include manager claim-token metadata");
+  }
+  if (Object.keys(metadata).some((key) => initialLifecycleMetadataFields.has(key))) {
+    throw new Error("new reservations cannot include lifecycle evidence metadata");
+  }
+}
+function activeKey(reservation) {
+  return `${reservation.owner_key_id}\0${reservation.nullifier_lookup_key}`;
+}
+function emptyState() {
+  return {
+    version: privacyReservationStateVersionV1,
+    circuit_set_id: privacyReservationStateIdentityV1.circuit_set_id,
+    payload_version: privacyReservationStateIdentityV1.payload_version,
+    reservations: []
+  };
+}
+function isCurrentReservationState(state2) {
+  return Boolean(state2 && typeof state2 === "object" && !Array.isArray(state2)) && state2.version === privacyReservationStateVersionV1 && state2.circuit_set_id === privacyReservationStateIdentityV1.circuit_set_id && state2.payload_version === privacyReservationStateIdentityV1.payload_version;
+}
+function isFreshGenesisIncompatibleReservationState(state2) {
+  const version = state2?.version;
+  return version === void 0 || version === 1 || version === privacyReservationStateVersionV1;
+}
+function normalizeState(state2 = {}) {
+  if (!state2 || typeof state2 !== "object" || Array.isArray(state2)) {
+    throw new Error("reservation state must be an object");
+  }
+  if (!isCurrentReservationState(state2)) {
+    if (isFreshGenesisIncompatibleReservationState(state2)) return emptyState();
+    const version = state2.version;
+    throw new Error(`unsupported reservation state version: ${version}`);
+  }
+  if (state2.reservations !== void 0 && !Array.isArray(state2.reservations)) {
+    throw new Error("reservation state reservations must be an array");
+  }
+  const reservations = (state2.reservations || []).map(normalizeReservation);
+  const reservationIDs = /* @__PURE__ */ new Set();
+  const activeKeys = /* @__PURE__ */ new Set();
+  const confirmedSpentKeys = /* @__PURE__ */ new Set();
+  for (const reservation of reservations) {
+    if (reservationIDs.has(reservation.reservation_id)) {
+      throw new Error(`duplicate reservation_id in reservation state: ${reservation.reservation_id}`);
+    }
+    reservationIDs.add(reservation.reservation_id);
+    const key = activeKey(reservation);
+    if (isActiveReservationStatus(reservation.status)) {
+      if (activeKeys.has(key)) {
+        throw new Error("duplicate active reservation in reservation state");
+      }
+      if (confirmedSpentKeys.has(key)) {
+        throw new Error("confirmed spent reservation conflicts with an active reservation in reservation state");
+      }
+      activeKeys.add(key);
+    } else if (reservation.status === reservationStatuses.ConfirmedSpent) {
+      if (activeKeys.has(key)) {
+        throw new Error("confirmed spent reservation conflicts with an active reservation in reservation state");
+      }
+      confirmedSpentKeys.add(key);
+    }
+  }
+  return {
+    version: privacyReservationStateVersionV1,
+    circuit_set_id: privacyReservationStateIdentityV1.circuit_set_id,
+    payload_version: privacyReservationStateIdentityV1.payload_version,
+    reservations
+  };
+}
+function activeConflict(reservations, candidate, excludeReservationID = "") {
+  if (!isActiveReservationStatus(candidate.status)) return false;
+  const key = activeKey(candidate);
+  return reservations.some(
+    (reservation) => reservation.reservation_id !== excludeReservationID && isActiveReservationStatus(reservation.status) && activeKey(reservation) === key
+  );
+}
+function confirmedSpentConflict(reservations, candidate, excludeReservationID = "") {
+  if (!isActiveReservationStatus(candidate.status)) return false;
+  const key = activeKey(candidate);
+  return reservations.some(
+    (reservation) => reservation.reservation_id !== excludeReservationID && reservation.status === reservationStatuses.ConfirmedSpent && activeKey(reservation) === key
+  );
+}
+function reservationBlockersByLookupKey(reservations = [], lookupKeys = /* @__PURE__ */ new Set()) {
+  const blockers = /* @__PURE__ */ new Map();
+  for (const reservation of reservations) {
+    const lookupKey = reservation.nullifier_lookup_key;
+    if (!lookupKeys.has(lookupKey)) continue;
+    const active = isActiveReservationStatus(reservation.status);
+    if (!active && reservation.status !== reservationStatuses.ConfirmedSpent) continue;
+    const existing = blockers.get(lookupKey);
+    if (!existing || active && existing.status === reservationStatuses.ConfirmedSpent) {
+      blockers.set(lookupKey, reservation);
+    }
+  }
+  return blockers;
+}
+function patchLeaseToken(patch = {}) {
+  return String(patch.lease_token || patch.leaseToken || "");
+}
+function patchLeaseOwner(patch = {}) {
+  return String(patch.lease_owner || patch.leaseOwner || "");
+}
+function leaseExpirationMs(reservation) {
+  const value = Date.parse(reservation.lease_until || "");
+  return Number.isFinite(value) ? value : 0;
+}
+function reservationClaimTokenHash(token) {
+  return hexFromBytes(sha256(utf8Bytes(
+    `clairveil-reservation-claim-v1\0${String(token || "")}`
+  )));
+}
+function assertCurrentLeaseToken(current, token, owner, now) {
+  if (!token) {
+    throw new Error("lease token is required");
+  }
+  if (!current.lease_token || token !== current.lease_token) {
+    throw new Error("reservation lease token mismatch");
+  }
+  if (!owner) {
+    throw new Error("lease owner is required");
+  }
+  if (!current.lease_owner || owner !== current.lease_owner) {
+    throw new Error("reservation lease owner mismatch");
+  }
+  if (leaseExpirationMs(current) <= new Date(now).getTime()) {
+    throw new Error("reservation lease expired");
+  }
+}
 function isLeaseExpiredError(error) {
   return /reservation lease expired/.test(error?.message || "");
 }
+function assertLeaseTransitionAllowed(current, to, patch, now) {
+  if (!requiresReservationLeaseToken(current.status, to)) return;
+  if (current.status === reservationStatuses.Reserved && to === reservationStatuses.Proving && !current.lease_token) {
+    const token2 = patchLeaseToken(patch);
+    const owner2 = String(patch.lease_owner || patch.leaseOwner || "");
+    const until = Date.parse(patch.lease_until || patch.leaseUntil || "");
+    if (!token2 || !owner2 || !Number.isFinite(until)) {
+      throw new Error("a future lease owner, token, and expiry are required to start proving");
+    }
+    const expectedClaimHash = String(
+      current.metadata?.[reservationClaimTokenHashField] || ""
+    );
+    if (!expectedClaimHash) {
+      throw new Error("reservation claim token is not bound; release and reserve the note again");
+    }
+    if (reservationClaimTokenHash(token2) !== expectedClaimHash) {
+      throw new Error("reservation claim token mismatch");
+    }
+    if (until <= new Date(now).getTime()) throw new Error("reservation lease expired");
+    return;
+  }
+  const leaseExpiresAt = leaseExpirationMs(current);
+  const recoveryAfterExpiredWorkerLease = canApplyExpiredLeaseRecovery(current, to, patch, now) && leaseExpiresAt > 0 && leaseExpiresAt <= new Date(now).getTime();
+  if (recoveryAfterExpiredWorkerLease) return;
+  const token = patchLeaseToken(patch);
+  const owner = patchLeaseOwner(patch);
+  try {
+    assertCurrentLeaseToken(current, token, owner, now);
+  } catch (error) {
+    if (/lease token is required/.test(error?.message || "")) {
+      throw new Error(`lease token is required for reservation transition: ${current.status} -> ${to}`);
+    }
+    throw error;
+  }
+}
+function canApplyExpiredLeaseRecovery(current, to, patch = {}, now) {
+  if (!canRecoverReservationAfterLeaseExpiry(current.status, to)) return false;
+  const leaseExpiresAt = leaseExpirationMs(current);
+  if (leaseExpiresAt <= 0 || leaseExpiresAt > new Date(now).getTime()) return false;
+  return true;
+}
+function isLeaseRenewalPatch(current, to, patch = {}) {
+  if (current.status !== to) return false;
+  return ["lease_owner", "leaseOwner", "lease_token", "leaseToken", "lease_until", "leaseUntil", "last_heartbeat_at", "lastHeartbeatAt"].some((key) => Object.prototype.hasOwnProperty.call(patch, key));
+}
+var sameStatusLeasePatchFields = /* @__PURE__ */ new Set([
+  "lease_owner",
+  "leaseOwner",
+  "lease_token",
+  "leaseToken",
+  "lease_until",
+  "leaseUntil",
+  "last_heartbeat_at",
+  "lastHeartbeatAt",
+  "updated_at",
+  "updatedAt"
+]);
+var writeOnceReservationEvidenceFields = [
+  ["payload_hash", "payloadHash"],
+  ["submitted_tx_hash", "submittedTxHash", "txHashSubmitted"],
+  ["tx_bytes_hash", "txBytesHash"],
+  ["sign_doc_hash", "signDocHash"]
+];
+var normalizedWriteOnceIdentityFields = /* @__PURE__ */ new Set([
+  "submitted_tx_hash",
+  "tx_bytes_hash",
+  "sign_doc_hash"
+]);
+var operationSuccessPredicateFields = [
+  ["expected_operation_evidence_hash", "expectedOperationEvidenceHash"],
+  ["expected_output_commitment", "expectedOutputCommitment"],
+  ["expected_disclosure_digest", "expectedDisclosureDigest"],
+  ["expected_recipient_hash", "expectedRecipientHash"],
+  ["expected_amount", "expectedAmount"],
+  ["expected_amount_hash", "expectedAmountHash"],
+  ["expected_denom", "expectedDenom"],
+  ["batch_item_index", "batchItemIndex"],
+  ["batch_item_index_known", "batchItemIndexKnown"]
+];
+var operationOutcomeMetadataFields = /* @__PURE__ */ new Set([
+  "operation_status",
+  "operation_success_evidence_matches",
+  "operation_success_evidence_errors"
+]);
+var protectedMetadataEvidenceFields = [
+  "relay_handed_off",
+  "relayHandedOff",
+  "relay_handed_off_at",
+  "relayHandedOffAt",
+  "broadcast_attempt_started_at",
+  "broadcastAttemptStartedAt",
+  "broadcast_attempt_reason",
+  "broadcastAttemptReason",
+  "operation_status",
+  "operationStatus",
+  "operation_success_evidence_matches",
+  "operationSuccessEvidenceMatches",
+  "operation_success_evidence_errors",
+  "operationSuccessEvidenceErrors",
+  "operation_success_evidence_required",
+  "operationSuccessEvidenceRequired",
+  "operator_approved",
+  "operatorApproved",
+  "operator_id",
+  "operatorId",
+  "operator_approval_reference",
+  "operatorApprovalReference",
+  "manual_review_resolution_reason",
+  "manualReviewResolutionReason"
+];
 var managedLifecycleMetadataAliases = /* @__PURE__ */ new Map([
   ["relayHandedOff", "relay_handed_off"],
   ["relayHandedOffAt", "relay_handed_off_at"],
@@ -82211,6 +82858,1366 @@ var managedLifecycleMetadataFields = new Set([
   "wallet_rejected_before_broadcast",
   "provider_rejection_code"
 ].filter((field2) => !managedLifecycleMetadataAliases.has(field2)));
+function metadataFieldChanged(currentMetadata, nextMetadata, field2) {
+  if (!Object.prototype.hasOwnProperty.call(nextMetadata, field2)) return false;
+  return !Object.prototype.hasOwnProperty.call(currentMetadata, field2) || JSON.stringify(nextMetadata[field2]) !== JSON.stringify(currentMetadata[field2]);
+}
+function assertManagedLifecycleMetadataMutation(current, to, patch = {}, {
+  managedRelayHandoff = false,
+  managedBroadcastAttempt = false,
+  managedBroadcastRejection = false,
+  managedOperationReconcile = false
+} = {}) {
+  const metadata = patch.metadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return;
+  const currentMetadata = current.metadata || {};
+  for (const [alias2, canonical] of managedLifecycleMetadataAliases) {
+    if (!metadataFieldChanged(currentMetadata, metadata, alias2)) continue;
+    throw new Error(`${alias2} lifecycle metadata alias cannot be introduced; use ${canonical}`);
+  }
+  const allowed = /* @__PURE__ */ new Set();
+  if (current.status === reservationStatuses.Proving && to === reservationStatuses.ProofReady) {
+    allowed.add("no_broadcast_attempt");
+    allowed.add("operation_success_evidence_required");
+  }
+  if (managedRelayHandoff) {
+    allowed.add("relay_handed_off");
+    allowed.add("relay_handed_off_at");
+    allowed.add("no_broadcast_attempt");
+  }
+  if (managedBroadcastAttempt) {
+    allowed.add("broadcast_attempt_started_at");
+    allowed.add("broadcast_attempt_reason");
+    allowed.add("no_broadcast_attempt");
+  }
+  if (managedBroadcastRejection) {
+    allowed.add("wallet_rejected_before_broadcast");
+    allowed.add("provider_rejection_code");
+    allowed.add("no_broadcast_attempt");
+    allowed.add("proof_discarded");
+  }
+  if (managedOperationReconcile) {
+    for (const field2 of operationOutcomeMetadataFields) allowed.add(field2);
+  }
+  if ([
+    reservationStatuses.Submitted,
+    reservationStatuses.Unknown,
+    reservationStatuses.ReplanRequired,
+    reservationStatuses.ManualReview,
+    reservationStatuses.Failed
+  ].includes(to)) {
+    allowed.add("no_broadcast_attempt");
+  }
+  if ([
+    reservationStatuses.ReplanRequired,
+    reservationStatuses.ManualReview,
+    reservationStatuses.Failed
+  ].includes(to)) {
+    allowed.add("proof_discarded");
+  }
+  if (current.status === reservationStatuses.ManualReview && [
+    reservationStatuses.Released,
+    reservationStatuses.ReplanRequired,
+    reservationStatuses.Failed
+  ].includes(to)) {
+    allowed.add("operator_approved");
+    allowed.add("operator_id");
+    allowed.add("operator_approval_reference");
+    allowed.add("manual_review_resolution_reason");
+  }
+  const unauthorized = [...managedLifecycleMetadataFields].find(
+    (field2) => metadataFieldChanged(currentMetadata, metadata, field2) && !allowed.has(field2)
+  );
+  if (unauthorized) {
+    throw new Error(`${unauthorized} lifecycle metadata may only be set by its managed reservation transition`);
+  }
+}
+function patchHasAnyOwnProperty(patch = {}, keys = []) {
+  return keys.some((key) => Object.prototype.hasOwnProperty.call(patch, key));
+}
+function patchValueForAliases(patch = {}, keys = []) {
+  return firstDefined(...keys.map((key) => patch[key]));
+}
+function patchWithPreservedReservationClaimHash(current, patch = {}) {
+  const claimHash = String(
+    current.metadata?.[reservationClaimTokenHashField] || ""
+  );
+  if (!claimHash || !patch.metadata || typeof patch.metadata !== "object" || Array.isArray(patch.metadata)) {
+    return patch;
+  }
+  return {
+    ...patch,
+    metadata: {
+      ...patch.metadata,
+      [reservationClaimTokenHashField]: claimHash
+    }
+  };
+}
+function assertReservationEvidencePatchMonotonic(current, patch = {}, {
+  allowOperationOutcomeMutation = false
+} = {}) {
+  for (const aliases of writeOnceReservationEvidenceFields) {
+    if (!patchHasAnyOwnProperty(patch, aliases)) continue;
+    const field2 = aliases[0];
+    const existing = String(current[field2] || "");
+    const incoming = String(patchValueForAliases(patch, aliases) || "");
+    if (!incoming) {
+      if (existing) {
+        throw new Error(`${field2} cannot be cleared through reservation mutation`);
+      }
+      continue;
+    }
+    const comparableExisting = normalizedWriteOnceIdentityFields.has(field2) ? normalizedTxIdentity(existing) : existing;
+    const comparableIncoming = normalizedWriteOnceIdentityFields.has(field2) ? normalizedTxIdentity(incoming) : incoming;
+    if (existing && comparableIncoming !== comparableExisting) {
+      throw new Error(`${field2} is write-once once broadcast evidence is recorded`);
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "broadcast_attempt_count") || Object.prototype.hasOwnProperty.call(patch, "broadcastAttemptCount")) {
+    const nextCount = Number(patch.broadcast_attempt_count ?? patch.broadcastAttemptCount);
+    const currentCount = Number(current.broadcast_attempt_count || 0);
+    if (!Number.isSafeInteger(nextCount) || nextCount < currentCount) {
+      throw new Error("broadcast_attempt_count cannot decrease through reservation mutation");
+    }
+  }
+  if (!Object.prototype.hasOwnProperty.call(patch, "metadata")) return;
+  const nextMetadata = patch.metadata;
+  if (!nextMetadata || typeof nextMetadata !== "object" || Array.isArray(nextMetadata)) {
+    throw new Error("reservation metadata evidence cannot be cleared through mutation");
+  }
+  if (!allowOperationOutcomeMutation) {
+    const unauthorizedOutcomeField = [...operationOutcomeMetadataFields].find(
+      (field2) => Object.prototype.hasOwnProperty.call(nextMetadata, field2) && JSON.stringify(nextMetadata[field2]) !== JSON.stringify(current.metadata?.[field2])
+    );
+    if (unauthorizedOutcomeField) {
+      throw new Error(`${unauthorizedOutcomeField} metadata may only be set by operation reconciliation`);
+    }
+  }
+  for (const field2 of protectedMetadataEvidenceFields) {
+    if (allowOperationOutcomeMutation && operationOutcomeMetadataFields.has(field2)) continue;
+    const existing = current.metadata?.[field2];
+    if (existing === void 0 || existing === null || existing === "") continue;
+    if (!Object.prototype.hasOwnProperty.call(nextMetadata, field2) || JSON.stringify(nextMetadata[field2]) !== JSON.stringify(existing)) {
+      throw new Error(`${field2} metadata evidence cannot be replaced or cleared through reservation mutation`);
+    }
+  }
+}
+function patchWithStableWriteOnceIdentityRepresentation(current, patch = {}) {
+  let normalized = patch;
+  for (const aliases of writeOnceReservationEvidenceFields) {
+    const field2 = aliases[0];
+    if (!normalizedWriteOnceIdentityFields.has(field2) || !patchHasAnyOwnProperty(patch, aliases)) {
+      continue;
+    }
+    const existing = String(current[field2] || "");
+    const incoming = String(patchValueForAliases(patch, aliases) || "");
+    if (!existing || normalizedTxIdentity(existing) !== normalizedTxIdentity(incoming)) {
+      continue;
+    }
+    if (normalized === patch) normalized = { ...patch };
+    for (const alias2 of aliases) delete normalized[alias2];
+    normalized[field2] = existing;
+  }
+  return normalized;
+}
+function comparablePredicateValue(field2, value) {
+  if (field2 === "batch_item_index") return Number(value || 0);
+  if (field2 === "batch_item_index_known") return value === true;
+  return String(value || "");
+}
+function assertOperationSuccessPredicateImmutable(current, to, patch = {}) {
+  const initializing = current.status === reservationStatuses.Proving && to === reservationStatuses.ProofReady;
+  for (const aliases of operationSuccessPredicateFields) {
+    if (!patchHasAnyOwnProperty(patch, aliases)) continue;
+    const field2 = aliases[0];
+    const existing2 = comparablePredicateValue(field2, current[field2]);
+    const incoming2 = comparablePredicateValue(field2, patchValueForAliases(patch, aliases));
+    if (!initializing && incoming2 !== existing2) {
+      throw new Error(`${field2} is write-once after ProofReady success evidence is established`);
+    }
+  }
+  if (!Object.prototype.hasOwnProperty.call(patch, "metadata")) return;
+  const metadata = patch.metadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return;
+  const incomingState = operationSuccessEvidenceRequiredMetadataState(metadata);
+  if (!incomingState.present) return;
+  const existing = operationSuccessEvidenceRequired(current);
+  const incoming = incomingState.value;
+  if (!initializing && incoming !== existing) {
+    throw new Error("operation_success_evidence_required is write-once after ProofReady success evidence is established");
+  }
+}
+var commonReservationPatchFields = /* @__PURE__ */ new Set([
+  "updated_at",
+  "updatedAt",
+  "metadata",
+  "lease_owner",
+  "leaseOwner",
+  "lease_token",
+  "leaseToken",
+  "lease_until",
+  "leaseUntil",
+  "last_heartbeat_at",
+  "lastHeartbeatAt"
+]);
+var broadcastReservationPatchFields = /* @__PURE__ */ new Set([
+  "submitted_tx_hash",
+  "submittedTxHash",
+  "txHashSubmitted",
+  "tx_bytes_hash",
+  "txBytesHash",
+  "sign_doc_hash",
+  "signDocHash",
+  "broadcast_attempt_count",
+  "broadcastAttemptCount",
+  "broadcast_in_flight",
+  "broadcastInFlight",
+  "last_broadcast_error",
+  "lastBroadcastError"
+]);
+var reconciliationReservationPatchFields = /* @__PURE__ */ new Set([
+  "nullifier_unspent_confirmed",
+  "nullifierUnspentConfirmed",
+  "checked_height",
+  "checkedHeight",
+  "tx_hash_checked",
+  "txHashChecked",
+  "tx_absent_or_failed_confirmed",
+  "txAbsentOrFailedConfirmed",
+  "proof_discarded",
+  "proofDiscarded",
+  "authoritative_expiry_confirmed",
+  "authoritativeExpiryConfirmed"
+]);
+var reconciliationMetadataAliases = [
+  ["nullifier_unspent_confirmed", "nullifierUnspentConfirmed", true],
+  ["checked_height", "checkedHeight", false],
+  ["tx_hash_checked", "txHashChecked", false],
+  ["tx_absent_or_failed_confirmed", "txAbsentOrFailedConfirmed", true],
+  ["proof_discarded", "proofDiscarded", true],
+  ["authoritative_expiry_confirmed", "authoritativeExpiryConfirmed", true]
+];
+function patchWithPersistedReconciliationEvidence(patch = {}) {
+  let metadata = patch.metadata;
+  let changed = false;
+  for (const [field2, alias2, isBoolean] of reconciliationMetadataAliases) {
+    if (!patchHasAnyOwnProperty(patch, [field2, alias2])) continue;
+    if (!changed) {
+      metadata = {
+        ...metadata && typeof metadata === "object" && !Array.isArray(metadata) ? metadata : {}
+      };
+      changed = true;
+    }
+    const value = patchValueForAliases(patch, [field2, alias2]);
+    metadata[field2] = isBoolean ? booleanEvidence(value) : value;
+  }
+  return changed ? { ...patch, metadata } : patch;
+}
+function allowedReservationPatchFields(current, to, {
+  managedRelayHandoff = false,
+  managedBroadcastAttempt = false,
+  managedOperationReconcile = false
+} = {}) {
+  const allowed = new Set(commonReservationPatchFields);
+  if (to === reservationStatuses.ProofReady && current.status === reservationStatuses.Proving) {
+    for (const aliases of operationSuccessPredicateFields) {
+      for (const alias2 of aliases) allowed.add(alias2);
+    }
+    allowed.add("payload_hash");
+    allowed.add("payloadHash");
+    allowed.add("sign_doc_hash");
+    allowed.add("signDocHash");
+    allowed.add("tx_bytes_hash");
+    allowed.add("txBytesHash");
+  }
+  if (managedRelayHandoff) {
+    allowed.add("payload_hash");
+    allowed.add("payloadHash");
+    allowed.add("tx_bytes_hash");
+    allowed.add("txBytesHash");
+    allowed.add("sign_doc_hash");
+    allowed.add("signDocHash");
+  }
+  if (managedBroadcastAttempt) {
+    for (const field2 of broadcastReservationPatchFields) allowed.add(field2);
+  }
+  if ([
+    reservationStatuses.Submitted,
+    reservationStatuses.Unknown,
+    reservationStatuses.ReplanRequired,
+    reservationStatuses.Failed,
+    reservationStatuses.ManualReview
+  ].includes(to)) {
+    for (const field2 of broadcastReservationPatchFields) allowed.add(field2);
+    for (const field2 of reconciliationReservationPatchFields) allowed.add(field2);
+  }
+  if (managedOperationReconcile) {
+    return /* @__PURE__ */ new Set(["updated_at", "updatedAt", "metadata"]);
+  }
+  return allowed;
+}
+function assertReservationTransitionPatchFields(current, to, patch = {}, options = {}) {
+  const allowed = allowedReservationPatchFields(current, to, options);
+  const disallowed = Object.keys(patch).find((field2) => !allowed.has(field2));
+  if (disallowed) {
+    throw new Error(`reservation patch field is not allowed for ${current.status} -> ${to}: ${disallowed}`);
+  }
+}
+function assertManagedOperationReconciliation(current, to, patch = {}) {
+  if (patch[managedOperationReconciliation] !== true) return false;
+  if (to !== current.status && to !== reservationStatuses.ConfirmedSpent) {
+    throw new Error("managed operation reconciliation may only retain status or quarantine a spent note");
+  }
+  const metadata = patch.metadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    throw new Error("managed operation reconciliation requires operation outcome metadata");
+  }
+  for (const [field2, value] of Object.entries(current.metadata || {})) {
+    if (operationOutcomeMetadataFields.has(field2)) continue;
+    if (!Object.prototype.hasOwnProperty.call(metadata, field2) || JSON.stringify(metadata[field2]) !== JSON.stringify(value)) {
+      throw new Error(`${field2} metadata cannot change during operation reconciliation`);
+    }
+  }
+  const unexpected = Object.keys(metadata).find(
+    (field2) => !operationOutcomeMetadataFields.has(field2) && !Object.prototype.hasOwnProperty.call(current.metadata || {}, field2)
+  );
+  if (unexpected) {
+    throw new Error(`${unexpected} metadata cannot be added during operation reconciliation`);
+  }
+  return true;
+}
+function assertSameStatusLeaseRenewalPatch(current, patch = {}, now) {
+  const keys = Object.keys(patch);
+  if (!keys.some((key) => sameStatusLeasePatchFields.has(key)) || keys.some((key) => !sameStatusLeasePatchFields.has(key))) {
+    throw new Error("same-status reservation mutations are limited to lease renewal fields");
+  }
+  const leaseUntil = Date.parse(String(patch.lease_until || patch.leaseUntil || ""));
+  if (!Number.isFinite(leaseUntil) || leaseUntil <= new Date(now).getTime()) {
+    throw new Error("same-status lease renewal requires a future lease_until");
+  }
+  const existingLeaseUntil = leaseExpirationMs(current);
+  if (existingLeaseUntil > leaseUntil) {
+    throw new Error("same-status lease renewal cannot shorten an existing lease");
+  }
+  assertCurrentLeaseToken(current, patchLeaseToken(patch), patchLeaseOwner(patch), now);
+}
+function isManagedRelayHandoffMutation(current, to, patch = {}) {
+  return patch[managedReservationEvidenceMutation] === "relay_handoff" && current.status === reservationStatuses.ProofReady && to === reservationStatuses.ProofReady;
+}
+function isManagedBroadcastAttemptMutation(current, to, patch = {}) {
+  return patch[managedReservationEvidenceMutation] === "broadcast_attempt" && current.status === reservationStatuses.ProofReady && to === reservationStatuses.ProofReady;
+}
+function assertManagedBroadcastAttemptMutation(current, to, patch, now) {
+  if (!isManagedBroadcastAttemptMutation(current, to, patch)) return false;
+  if (current.metadata?.relay_handed_off === true || current.metadata?.relayHandedOff === true) {
+    throw new Error("relay payload was handed off");
+  }
+  if (current.broadcast_in_flight || Number(current.broadcast_attempt_count || 0) > 0) {
+    throw new Error("broadcast attempt already started; reconcile before retry");
+  }
+  if (patch.broadcast_in_flight !== true) {
+    throw new Error("broadcast attempt must set broadcast_in_flight");
+  }
+  if (Number(patch.broadcast_attempt_count) !== Number(current.broadcast_attempt_count || 0) + 1) {
+    throw new Error("broadcast attempt count must increase exactly once");
+  }
+  if (patch.metadata?.no_broadcast_attempt !== false) {
+    throw new Error("broadcast attempt must clear no_broadcast_attempt evidence");
+  }
+  assertCurrentLeaseToken(current, patchLeaseToken(patch), patchLeaseOwner(patch), now);
+  return true;
+}
+function isManagedBroadcastRejectionMutation(current, to, patch = {}) {
+  return patch[managedReservationEvidenceMutation] === "broadcast_rejected" && current.status === reservationStatuses.ProofReady && to === reservationStatuses.ReplanRequired;
+}
+function assertManagedBroadcastRejectionMutation(current, to, patch, now) {
+  if (!isManagedBroadcastRejectionMutation(current, to, patch)) return false;
+  if (current.metadata?.relay_handed_off === true || current.metadata?.relayHandedOff === true) {
+    throw new Error("relay payload was handed off");
+  }
+  const durableBroadcastRejection = current.broadcast_in_flight && Number(current.broadcast_attempt_count || 0) >= 1;
+  const preparedSigningRejection = !current.broadcast_in_flight && Number(current.broadcast_attempt_count || 0) === 0 && Boolean(current.sign_doc_hash) && !current.tx_bytes_hash && !current.submitted_tx_hash;
+  if (!durableBroadcastRejection && !preparedSigningRejection) {
+    throw new Error("wallet rejection resolution requires a prepared sign-doc or durable in-flight broadcast attempt");
+  }
+  if (patch.metadata?.wallet_rejected_before_broadcast !== true || String(patch.metadata?.provider_rejection_code || "") !== "4001" || patch.metadata?.no_broadcast_attempt !== true || patch.metadata?.proof_discarded !== true) {
+    throw new Error("wallet rejection resolution requires definitive no-broadcast and proof-discard evidence");
+  }
+  assertCurrentLeaseToken(current, patchLeaseToken(patch), patchLeaseOwner(patch), now);
+  return true;
+}
+function assertManagedRelayHandoffMutation(current, to, patch, now) {
+  if (!isManagedRelayHandoffMutation(current, to, patch)) return false;
+  if (current.broadcast_in_flight || Number(current.broadcast_attempt_count || 0) > 0) {
+    throw new Error("broadcast attempt already started; reconcile before relay handoff");
+  }
+  const metadata = patch.metadata;
+  if (!metadata || !booleanEvidence(metadata.relay_handed_off)) {
+    throw new Error("relay handoff evidence requires relay_handed_off metadata");
+  }
+  const payloadHash = String(patch.payload_hash || patch.payloadHash || "");
+  if (!payloadHash || !current.payload_hash || payloadHash !== current.payload_hash) {
+    throw new Error("relay handoff payload hash must match the ProofReady reservation");
+  }
+  assertCurrentLeaseToken(current, patchLeaseToken(patch), patchLeaseOwner(patch), now);
+  return true;
+}
+function assertStoreLeaseMutationAllowed(current, to, patch, now) {
+  if (requiresReservationLeaseToken(current.status, to)) {
+    if (canApplyExpiredLeaseRecovery(current, to, patch, now)) {
+      return;
+    }
+    assertLeaseTransitionAllowed(current, to, patch, now);
+    return;
+  }
+  if (isLeaseRenewalPatch(current, to, patch)) {
+    assertCurrentLeaseToken(current, patchLeaseToken(patch), patchLeaseOwner(patch), now);
+  }
+}
+function clearsLeaseForStatusTransition(to) {
+  return ![
+    reservationStatuses.Proving,
+    reservationStatuses.ProofReady
+  ].includes(to);
+}
+function patchWithClearedLease(to, patch = {}) {
+  if (!clearsLeaseForStatusTransition(to)) return patch;
+  return {
+    ...patch,
+    lease_owner: "",
+    lease_token: "",
+    lease_until: "",
+    last_heartbeat_at: "",
+    broadcast_in_flight: false
+  };
+}
+function leaseUntilFromMetadata(metadata = {}, now, fallbackDurationMs) {
+  const explicitLeaseUntil = metadata.leaseUntil || metadata.lease_until;
+  const leaseUntil = explicitLeaseUntil ? nowIso(explicitLeaseUntil) : futureIso(now, Number(metadata.leaseDurationMs || metadata.lease_duration_ms || fallbackDurationMs));
+  if (Date.parse(leaseUntil) <= new Date(now).getTime()) {
+    throw new Error("reservation lease renewal must extend into the future");
+  }
+  return leaseUntil;
+}
+function broadcastAttemptMetadata(metadata = {}) {
+  return {
+    txHash: String(metadata.txHash || metadata.tx_hash || metadata.submitted_tx_hash || metadata.submittedTxHash || metadata.txHashSubmitted || ""),
+    txBytesHash: String(metadata.txBytesHash || metadata.tx_bytes_hash || ""),
+    signDocHash: String(metadata.signDocHash || metadata.sign_doc_hash || "")
+  };
+}
+function hasBroadcastAttemptMetadata(metadata = {}) {
+  const attempt = broadcastAttemptMetadata(metadata);
+  return Boolean(attempt.txHash || attempt.txBytesHash);
+}
+function hasSubmittedBroadcastAttemptMetadata(metadata = {}) {
+  const attempt = broadcastAttemptMetadata(metadata);
+  return Boolean(attempt.txHash || attempt.txBytesHash);
+}
+function assertBroadcastAttemptMetadata(metadata = {}, status = "reservation transition") {
+  if (!hasBroadcastAttemptMetadata(metadata)) {
+    throw new Error(`${status} requires broadcast attempt metadata`);
+  }
+}
+function assertSubmittedBroadcastAttemptMetadata(metadata = {}, status = "reservation transition") {
+  if (!hasSubmittedBroadcastAttemptMetadata(metadata)) {
+    throw new Error(`${status} requires submitted tx hash or tx bytes hash`);
+  }
+}
+function assertCoreTransitionEvidence(from, to, patch = {}) {
+  if (to === reservationStatuses.ConfirmedSpent) {
+    if (!patch[reconciledSpentTransition]) {
+      throw new Error("ConfirmedSpent transitions require reconcileSpentNotes chain spent evidence");
+    }
+    return;
+  }
+  if (from !== reservationStatuses.ProofReady) return;
+  if (to === reservationStatuses.Submitted) {
+    assertSubmittedBroadcastAttemptMetadata(patch, "ProofReady -> Submitted");
+  } else if (to === reservationStatuses.Unknown) {
+    assertBroadcastAttemptMetadata(patch, "ProofReady -> Unknown");
+  }
+}
+function assertStoreTransitionEvidence(current, to, patch = {}) {
+  if (current.status === reservationStatuses.ProofReady && [reservationStatuses.Submitted, reservationStatuses.Unknown].includes(to) && (!current.broadcast_in_flight || Number(current.broadcast_attempt_count || 0) < 1)) {
+    throw new Error("durable broadcast attempt is required before terminal bookkeeping");
+  }
+  assertCoreTransitionEvidence(current.status, to, patch);
+  assertInactiveTransitionEvidence(current, to, patch);
+}
+function metadataEvidenceValue(input = {}, ...keys) {
+  const nested = metadataObject(input);
+  return firstDefined(
+    ...keys.flatMap((key) => [input[key], nested[key]])
+  );
+}
+function hasStoredBroadcastEvidence(reservation = {}) {
+  return Boolean(
+    String(firstDefined(
+      reservation.submitted_tx_hash,
+      reservation.submittedTxHash,
+      reservation.tx_hash,
+      reservation.txHash
+    ) || "").trim() || Number(reservation.broadcast_attempt_count || 0) > 0 || booleanEvidence(firstDefined(
+      reservation.broadcast_in_flight,
+      reservation.broadcastInFlight
+    )) || booleanEvidence(reservation.metadata?.relay_handed_off) || booleanEvidence(reservation.metadata?.relayHandedOff)
+  );
+}
+function hasProofDiscardEvidence(reservation = {}, metadata = {}) {
+  return Boolean(
+    booleanEvidence(consistentMetadataAliasValue(
+      metadata,
+      ["no_broadcast_attempt", "noBroadcastAttempt"],
+      "no broadcast attempt evidence",
+      { boolean: true }
+    )) && booleanEvidence(consistentMetadataAliasValue(
+      metadata,
+      ["proof_discarded", "proofDiscarded"],
+      "proof discarded evidence",
+      { boolean: true }
+    )) && !hasStoredBroadcastEvidence(reservation) && !hasStoredBroadcastEvidence(metadata)
+  );
+}
+function hasManualReviewApprovalEvidence(metadata = {}) {
+  const approved = booleanEvidence(metadataEvidenceValue(
+    metadata,
+    "operator_approved",
+    "operatorApproved",
+    "manual_review_approved",
+    "manualReviewApproved"
+  ));
+  const reference = String(metadataEvidenceValue(
+    metadata,
+    "operator_approval_reference",
+    "operatorApprovalReference",
+    "manual_review_resolution",
+    "manualReviewResolution"
+  ) || "").trim();
+  const operatorID = String(metadataEvidenceValue(
+    metadata,
+    "operator_id",
+    "operatorId",
+    "operatorID"
+  ) || "").trim();
+  return approved && Boolean(operatorID) && Boolean(reference);
+}
+function assertInactiveTransitionEvidence(current, to, metadata = {}) {
+  const from = current.status;
+  if ((from === reservationStatuses.Submitted || from === reservationStatuses.Unknown) && (to === reservationStatuses.ReplanRequired || to === reservationStatuses.Failed) && !hasPostBroadcastReplanEvidence(metadata)) {
+    throw new Error(`${from} -> ${to} requires nullifier_unspent_confirmed and tx_absent_or_failed_confirmed reconcile evidence`);
+  }
+  if (from === reservationStatuses.ProofReady && to === reservationStatuses.ReplanRequired) {
+    if (!hasProofDiscardEvidence(current, metadata)) {
+      throw new Error("ProofReady -> ReplanRequired requires no_broadcast_attempt and proof_discarded evidence");
+    }
+  }
+  if (from === reservationStatuses.ManualReview && [reservationStatuses.Released, reservationStatuses.ReplanRequired, reservationStatuses.Failed].includes(to) && !hasManualReviewApprovalEvidence(metadata)) {
+    throw new Error(`${from} -> ${to} requires operator approval evidence`);
+  }
+}
+function reconciledSpentPatch(patch = {}, { operationReconcile = false } = {}) {
+  const authorized = { ...patch };
+  Object.defineProperty(authorized, reconciledSpentTransition, { value: true });
+  if (operationReconcile) {
+    Object.defineProperty(authorized, managedOperationReconciliation, { value: true });
+  }
+  return authorized;
+}
+function operationReconciliationOutcome(reservations, spentNotesByLookupKey) {
+  const requiresEvidence = reservations.some(operationSuccessEvidenceRequired);
+  if (!requiresEvidence) return { evaluated: false, matches: true, errors: [] };
+  const evaluations = [];
+  for (const reservation of reservations) {
+    const note = spentNotesByLookupKey.get(reservation.nullifier_lookup_key);
+    if (!note) {
+      return {
+        evaluated: true,
+        matches: false,
+        operationStatus: operationStatuses.ManualReview,
+        errors: ["operation input evidence incomplete"]
+      };
+    }
+    const evidence = evaluateOperationSuccessEvidence(reservation, note);
+    if (!evidence.evaluated) {
+      return {
+        evaluated: true,
+        matches: false,
+        operationStatus: operationStatuses.ManualReview,
+        errors: ["operation input evidence incomplete"]
+      };
+    }
+    evaluations.push(evidence);
+  }
+  const errors = [...new Set(evaluations.flatMap((evidence) => evidence.errors))];
+  if (evaluations.some((evidence) => !evidence.matches)) {
+    return {
+      evaluated: true,
+      matches: false,
+      operationStatus: operationStatuses.ConflictSpent,
+      errors: errors.length ? errors : ["operation input evidence conflict"]
+    };
+  }
+  return {
+    evaluated: true,
+    matches: true,
+    operationStatus: operationStatuses.Succeeded,
+    errors: []
+  };
+}
+function operationReconciliationTransitions(reservations, spentNotesByLookupKey, now) {
+  const outcome = operationReconciliationOutcome(reservations, spentNotesByLookupKey);
+  const priorSucceeded = reservations.some(
+    (reservation) => reservation.metadata?.operation_status === operationStatuses.Succeeded
+  );
+  if (priorSucceeded) {
+    const allSucceeded = reservations.every(
+      (reservation) => reservation.status === reservationStatuses.ConfirmedSpent && reservation.metadata?.operation_status === operationStatuses.Succeeded && reservation.metadata?.operation_success_evidence_matches === true
+    );
+    if (!allSucceeded) {
+      throw new Error("retry evidence conflicts with a succeeded operation reconciliation");
+    }
+    const explicitEvidenceKeys = [
+      "operationSuccessEvidence",
+      "operation_success_evidence",
+      "successEvidence",
+      "success_evidence",
+      "evidence",
+      "txResult",
+      "tx_result",
+      "transactionResult",
+      "transaction_result",
+      "broadcastResult",
+      "broadcast_result",
+      "outputCommitment",
+      "output_commitment",
+      "outputCommitmentHex",
+      "output_commitment_hex",
+      "commitmentHex",
+      "commitment_hex",
+      "auditDisclosureDigest",
+      "audit_disclosure_digest",
+      "auditDisclosureDigestHex",
+      "audit_disclosure_digest_hex",
+      "disclosureDigest",
+      "disclosure_digest",
+      "recipientHash",
+      "recipient_hash",
+      "recipientHashHex",
+      "recipient_hash_hex",
+      "amountHash",
+      "amount_hash",
+      "amountHashHex",
+      "amount_hash_hex",
+      "expectedOutputCommitment",
+      "expected_output_commitment",
+      "expectedDisclosureDigest",
+      "expected_disclosure_digest",
+      "expectedRecipientHash",
+      "expected_recipient_hash",
+      "expectedAmount",
+      "expected_amount",
+      "operationAmount",
+      "operation_amount",
+      "actualAmount",
+      "actual_amount",
+      "expectedAmountHash",
+      "expected_amount_hash",
+      "expectedDenom",
+      "expected_denom",
+      "operationDenom",
+      "operation_denom",
+      "actualDenom",
+      "actual_denom",
+      "batchItemIndex",
+      "batch_item_index",
+      "itemIndex",
+      "item_index",
+      "batchItemIndexKnown",
+      "batch_item_index_known",
+      "itemIndexKnown",
+      "item_index_known"
+    ];
+    for (const reservation of reservations) {
+      const note = spentNotesByLookupKey.get(reservation.nullifier_lookup_key);
+      if (!note) continue;
+      const hasExplicitEvidence = explicitEvidenceKeys.some(
+        (key) => Object.prototype.hasOwnProperty.call(note, key) && note[key] != null
+      );
+      if (!hasExplicitEvidence) continue;
+      const evidence = evaluateOperationSuccessEvidence(reservation, note);
+      if (!evidence.evaluated || !evidence.matches) {
+        throw new Error("retry evidence conflicts with a succeeded operation reconciliation");
+      }
+    }
+    return [];
+  }
+  const transitions = [];
+  for (const reservation of reservations) {
+    const spent = spentNotesByLookupKey.has(reservation.nullifier_lookup_key);
+    if (spent && reservation.status === reservationStatuses.ConfirmedSpent && !outcome.evaluated) {
+      continue;
+    }
+    const to = spent ? reservationStatuses.ConfirmedSpent : reservation.status;
+    if (!spent && !outcome.evaluated) continue;
+    const patch = { updated_at: now };
+    if (outcome.evaluated) {
+      patch.metadata = {
+        ...reservation.metadata || {},
+        operation_status: outcome.operationStatus,
+        operation_success_evidence_matches: outcome.matches,
+        operation_success_evidence_errors: outcome.errors
+      };
+    }
+    transitions.push({
+      reservationID: reservation.reservation_id,
+      from: reservation.status,
+      to,
+      patch: reconciledSpentPatch(patch, { operationReconcile: outcome.evaluated })
+    });
+  }
+  return transitions;
+}
+function metadataObject(metadata = {}) {
+  const nested = metadata.metadata;
+  return nested && typeof nested === "object" && !Array.isArray(nested) ? nested : {};
+}
+function firstDefined(...values) {
+  return values.find((value) => value !== void 0 && value !== null);
+}
+function consistentMetadataAliasValue(metadata = {}, keys = [], label, { boolean = false } = {}) {
+  const nested = metadataObject(metadata);
+  const values = [];
+  for (const source of [metadata, nested]) {
+    for (const key of keys) {
+      if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
+      const value = source[key];
+      if (value === void 0 || value === null) continue;
+      if (boolean && typeof value !== "boolean") {
+        throw new Error(`${label} must be a boolean`);
+      }
+      values.push(value);
+    }
+  }
+  if (!values.length) return void 0;
+  const normalized = values.map((value) => boolean ? value : String(value));
+  if (normalized.some((value) => value !== normalized[0])) {
+    throw new Error(`${label} aliases conflict`);
+  }
+  return values[0];
+}
+function aliasedStringValue(input = {}, canonicalKey, aliasKey, label) {
+  const canonical = input?.[canonicalKey];
+  const alias2 = input?.[aliasKey];
+  if (canonical !== void 0 && canonical !== null && alias2 !== void 0 && alias2 !== null && String(canonical) !== String(alias2)) {
+    throw new Error(`${label} aliases conflict`);
+  }
+  return String(firstDefined(canonical, alias2, ""));
+}
+function aliasedStringArray(input = {}, canonicalKey, aliasKey, label) {
+  const canonical = input?.[canonicalKey];
+  const alias2 = input?.[aliasKey];
+  for (const value of [canonical, alias2]) {
+    if (value !== void 0 && value !== null && !Array.isArray(value)) {
+      throw new Error(`${label} must be an array`);
+    }
+  }
+  const canonicalValues = canonical == null ? null : canonical.map(String);
+  const aliasValues = alias2 == null ? null : alias2.map(String);
+  if (canonicalValues && aliasValues && (canonicalValues.length !== aliasValues.length || canonicalValues.some((value, index) => value !== aliasValues[index]))) {
+    throw new Error(`${label} aliases conflict`);
+  }
+  return canonicalValues || aliasValues || [];
+}
+function booleanEvidence(value) {
+  return value === true;
+}
+function hasLiteralSpentEvidence(note = {}) {
+  return ["spent", "isSpent", "is_spent"].some(
+    (field2) => Object.prototype.hasOwnProperty.call(note || {}, field2) && note[field2] === true
+  );
+}
+function operationEvidenceEnvelopesEqual(left, right, seen = /* @__PURE__ */ new WeakMap()) {
+  if (Object.is(left, right)) return true;
+  if (left === null || right === null || typeof left !== "object" || typeof right !== "object") {
+    return false;
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) && left.length === right.length && left.every((value, index) => operationEvidenceEnvelopesEqual(value, right[index], seen));
+  }
+  if (ArrayBuffer.isView(left) || ArrayBuffer.isView(right)) {
+    if (!ArrayBuffer.isView(left) || !ArrayBuffer.isView(right)) return false;
+    const leftBytes = new Uint8Array(left.buffer, left.byteOffset, left.byteLength);
+    const rightBytes = new Uint8Array(right.buffer, right.byteOffset, right.byteLength);
+    return leftBytes.length === rightBytes.length && leftBytes.every((value, index) => value === rightBytes[index]);
+  }
+  const leftPrototype = Object.getPrototypeOf(left);
+  const rightPrototype = Object.getPrototypeOf(right);
+  if (leftPrototype !== rightPrototype || leftPrototype !== Object.prototype && leftPrototype !== null) {
+    return false;
+  }
+  let rightObjects = seen.get(left);
+  if (rightObjects?.has(right)) return true;
+  if (!rightObjects) {
+    rightObjects = /* @__PURE__ */ new WeakSet();
+    seen.set(left, rightObjects);
+  }
+  rightObjects.add(right);
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  return leftKeys.length === rightKeys.length && leftKeys.every((key, index) => key === rightKeys[index] && operationEvidenceEnvelopesEqual(left[key], right[key], seen));
+}
+function nestedOperationEvidence(input = {}) {
+  const candidates = [];
+  for (const key of ["operationSuccessEvidence", "operation_success_evidence", "successEvidence", "success_evidence", "evidence"]) {
+    const candidate = input?.[key];
+    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+      candidates.push(candidate);
+    }
+  }
+  if (candidates.length > 1 && candidates.slice(1).some(
+    (candidate) => !operationEvidenceEnvelopesEqual(candidates[0], candidate)
+  )) {
+    throw new Error("operation success evidence envelope aliases conflict");
+  }
+  return candidates[0] || null;
+}
+function txResultObjects(input = {}) {
+  const results = [];
+  for (const key of ["txResult", "tx_result", "transactionResult", "transaction_result", "broadcastResult", "broadcast_result"]) {
+    const candidate = input?.[key];
+    if (candidate && typeof candidate === "object" && !Array.isArray(candidate) && !results.includes(candidate)) {
+      results.push(candidate);
+    }
+  }
+  return results;
+}
+function executionResultObjects(...sources) {
+  const results = [];
+  for (const source of sources) {
+    if (!source || typeof source !== "object" || Array.isArray(source)) continue;
+    const rawEvmReceipt = [
+      "txHash",
+      "tx_hash",
+      "txhash",
+      "hash",
+      "submittedTxHash",
+      "submitted_tx_hash",
+      "txHashSubmitted",
+      "transactionHash",
+      "transaction_hash",
+      "transaction_hash_hex"
+    ].some((key) => Object.prototype.hasOwnProperty.call(source, key)) && ["status", "receiptStatus", "receipt_status"].some(
+      (key) => Object.prototype.hasOwnProperty.call(source, key)
+    );
+    for (const nestedResult of txResultObjects(source)) {
+      if (!results.includes(nestedResult)) results.push(nestedResult);
+    }
+    const topLevelResult = Object.prototype.hasOwnProperty.call(source, "code") || Object.prototype.hasOwnProperty.call(source, "receipt") || rawEvmReceipt ? source : null;
+    if (topLevelResult && !results.includes(topLevelResult)) results.push(topLevelResult);
+  }
+  return results;
+}
+var executionResultContainerKeys = [
+  "broadcast",
+  "tx",
+  "tx_response",
+  "txResponse",
+  "receipt",
+  "transactionReceipt",
+  "transaction_receipt"
+];
+function executionResultContainers(result = {}) {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return [];
+  const containers = [];
+  const queue = [result];
+  const seen = /* @__PURE__ */ new Set();
+  while (queue.length) {
+    const candidate = queue.shift();
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate) || seen.has(candidate)) {
+      continue;
+    }
+    seen.add(candidate);
+    containers.push(candidate);
+    for (const key of executionResultContainerKeys) {
+      const nested = candidate[key];
+      if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+        queue.push(nested);
+      }
+    }
+  }
+  return containers;
+}
+function identityValuesFromResult(result = {}, keys = []) {
+  return executionResultContainers(result).flatMap((container) => keys.map((key) => container[key])).filter((value) => value !== void 0 && value !== null && String(value).trim() !== "").map(String);
+}
+function uniqueIdentityValues(values = []) {
+  return [...new Set(values.filter((value) => String(value).trim() !== "").map(String))];
+}
+function operationEvidenceAliasConflict(sources = [], keys = [], {
+  caseInsensitive = false
+} = {}) {
+  const values = [];
+  for (const source of sources) {
+    if (!source || typeof source !== "object" || Array.isArray(source)) continue;
+    for (const key of keys) {
+      if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
+      const value = source[key];
+      if (value === void 0 || value === null) continue;
+      const normalized = String(value).trim();
+      values.push(caseInsensitive ? normalized.toLowerCase() : normalized);
+    }
+  }
+  return new Set(values).size > 1;
+}
+function operationSuccessEvidence(input = {}) {
+  const nested = nestedOperationEvidence(input);
+  const evidenceSource = nested || input;
+  const source = evidenceSource;
+  const aliasSources = [evidenceSource];
+  const txResults = executionResultObjects(evidenceSource);
+  const txResult = txResults[0] || null;
+  const txHashKeys = [
+    "txHash",
+    "tx_hash",
+    "txhash",
+    "hash",
+    "submittedTxHash",
+    "submitted_tx_hash",
+    "txHashSubmitted",
+    "transactionHash",
+    "transaction_hash",
+    "transaction_hash_hex"
+  ];
+  const txBytesHashKeys = ["txBytesHash", "tx_bytes_hash", "txBytes", "tx_bytes"];
+  const signDocHashKeys = ["signDocHash", "sign_doc_hash", "signDoc", "sign_doc"];
+  const txHashes = uniqueIdentityValues([
+    ...identityValuesFromResult(evidenceSource, txHashKeys),
+    ...txResults.flatMap((result) => identityValuesFromResult(result, txHashKeys))
+  ]);
+  const txBytesHashes = uniqueIdentityValues([
+    ...identityValuesFromResult(evidenceSource, txBytesHashKeys),
+    ...txResults.flatMap((result) => identityValuesFromResult(result, txBytesHashKeys))
+  ]);
+  const signDocHashes = uniqueIdentityValues([
+    ...identityValuesFromResult(evidenceSource, signDocHashKeys),
+    ...txResults.flatMap((result) => identityValuesFromResult(result, signDocHashKeys))
+  ]);
+  const batchItemIndexKeys = [
+    "batchItemIndex",
+    "batch_item_index",
+    "itemIndex",
+    "item_index"
+  ];
+  const batchItemIndexKnownKeys = [
+    "batchItemIndexKnown",
+    "batch_item_index_known",
+    "itemIndexKnown",
+    "item_index_known"
+  ];
+  const batchItemIndex = firstDefined(...batchItemIndexKeys.map((key) => source[key]));
+  const batchItemIndexKnown = firstDefined(...batchItemIndexKnownKeys.map((key) => source[key]));
+  const normalizedItemIndex = normalizedBatchItemIndex(batchItemIndex);
+  const outputCommitmentKeys = [
+    "expectedOutputCommitment",
+    "expected_output_commitment",
+    "outputCommitment",
+    "output_commitment",
+    "outputCommitmentHex",
+    "output_commitment_hex",
+    "commitmentHex",
+    "commitment_hex"
+  ];
+  const operationEvidenceHashKeys = [
+    "operationEvidenceHash",
+    "operation_evidence_hash",
+    "expectedOperationEvidenceHash",
+    "expected_operation_evidence_hash"
+  ];
+  const disclosureDigestKeys = [
+    "expectedDisclosureDigest",
+    "expected_disclosure_digest",
+    "auditDisclosureDigest",
+    "audit_disclosure_digest",
+    "auditDisclosureDigestHex",
+    "audit_disclosure_digest_hex",
+    "disclosureDigest",
+    "disclosure_digest"
+  ];
+  const recipientHashKeys = [
+    "expectedRecipientHash",
+    "expected_recipient_hash",
+    "recipientHash",
+    "recipient_hash",
+    "recipientHashHex",
+    "recipient_hash_hex"
+  ];
+  const amountKeys = [
+    "expectedAmount",
+    "expected_amount",
+    "operationAmount",
+    "operation_amount",
+    "actualAmount",
+    "actual_amount",
+    ...nested ? ["amount"] : []
+  ];
+  const amountHashKeys = [
+    "expectedAmountHash",
+    "expected_amount_hash",
+    "amountHash",
+    "amount_hash",
+    "amountHashHex",
+    "amount_hash_hex"
+  ];
+  const denomKeys = [
+    "expectedDenom",
+    "expected_denom",
+    "operationDenom",
+    "operation_denom",
+    "actualDenom",
+    "actual_denom",
+    "denom",
+    "assetDenom",
+    "asset_denom"
+  ];
+  const aliasErrors = [];
+  for (const [field2, keys, options] of [
+    ["expected_operation_evidence_hash", operationEvidenceHashKeys, { caseInsensitive: true }],
+    ["expected_output_commitment", outputCommitmentKeys, { caseInsensitive: true }],
+    ["expected_disclosure_digest", disclosureDigestKeys, { caseInsensitive: true }],
+    ["expected_recipient_hash", recipientHashKeys, { caseInsensitive: true }],
+    ["expected_amount", amountKeys, {}],
+    ["expected_amount_hash", amountHashKeys, { caseInsensitive: true }],
+    ["expected_denom", denomKeys, {}],
+    ["batch_item_index", batchItemIndexKeys, {}],
+    ["batch_item_index_known", batchItemIndexKnownKeys, {}]
+  ]) {
+    if (operationEvidenceAliasConflict(aliasSources, keys, options)) {
+      aliasErrors.push(`${field2} evidence aliases conflict`);
+    }
+  }
+  const aliasValue3 = (keys) => String(firstDefined(...keys.map((key) => source[key]), ""));
+  return {
+    txHash: txHashes[0] || "",
+    txHashes,
+    txBytesHash: txBytesHashes[0] || "",
+    txBytesHashes,
+    signDocHash: signDocHashes[0] || "",
+    signDocHashes,
+    txResult,
+    txResults,
+    operationEvidenceHash: aliasValue3(operationEvidenceHashKeys),
+    outputCommitment: aliasValue3(outputCommitmentKeys),
+    disclosureDigest: aliasValue3(disclosureDigestKeys),
+    recipientHash: aliasValue3(recipientHashKeys),
+    amount: aliasValue3(amountKeys),
+    amountHash: aliasValue3(amountHashKeys),
+    denom: aliasValue3(denomKeys),
+    aliasErrors,
+    batchItemIndex: normalizedItemIndex.value,
+    batchItemIndexValid: normalizedItemIndex.valid,
+    batchItemIndexProvided: normalizedItemIndex.provided,
+    batchItemIndexKnown: batchItemIndexKnown !== void 0 && batchItemIndexKnown !== null ? booleanEvidence(batchItemIndexKnown) : batchItemIndex !== void 0 && batchItemIndex !== null
+  };
+}
+function expectedOperationSuccessEvidence(reservation = {}) {
+  const batchItemIndex = normalizedBatchItemIndex(reservation.batch_item_index);
+  return {
+    operationEvidenceHash: String(reservation.expected_operation_evidence_hash || ""),
+    outputCommitment: String(reservation.expected_output_commitment || ""),
+    disclosureDigest: String(reservation.expected_disclosure_digest || ""),
+    recipientHash: String(reservation.expected_recipient_hash || ""),
+    amount: String(reservation.expected_amount || ""),
+    amountHash: String(reservation.expected_amount_hash || ""),
+    denom: String(reservation.expected_denom || ""),
+    batchItemIndex: batchItemIndex.value,
+    batchItemIndexValid: batchItemIndex.valid,
+    batchItemIndexProvided: batchItemIndex.provided,
+    batchItemIndexKnown: booleanEvidence(reservation.batch_item_index_known)
+  };
+}
+function operationSuccessEvidenceRequired(reservation = {}) {
+  const metadata = reservation.metadata || {};
+  return booleanEvidence(firstDefined(
+    metadata.operation_success_evidence_required,
+    metadata.operationSuccessEvidenceRequired,
+    reservation.operation_success_evidence_required,
+    reservation.operationSuccessEvidenceRequired,
+    false
+  ));
+}
+function operationEvidenceValuesEqual(expected, actual, { caseInsensitive = false } = {}) {
+  const left = String(expected || "").trim();
+  const right = String(actual || "").trim();
+  if (caseInsensitive) return left.toLowerCase() === right.toLowerCase();
+  return left === right;
+}
+function normalizedTxIdentity(value) {
+  return String(value || "").trim().toLowerCase().replace(/^0x/, "");
+}
+function normalizedIdentityValues(values = []) {
+  return [...new Set(values.map(normalizedTxIdentity).filter(Boolean))];
+}
+function evaluateOperationTxIdentity(reservation = {}, actual = {}) {
+  const expectedTxHash = normalizedTxIdentity(reservation.submitted_tx_hash);
+  const expectedTxBytesHash = normalizedTxIdentity(reservation.tx_bytes_hash);
+  const actualTxHashes = normalizedIdentityValues(actual.txHashes || [actual.txHash]);
+  const actualTxBytesHashes = normalizedIdentityValues(actual.txBytesHashes || [actual.txBytesHash]);
+  const expectedSignDoc = normalizedTxIdentity(reservation.sign_doc_hash);
+  const actualSignDocs = normalizedIdentityValues(actual.signDocHashes || [actual.signDocHash]);
+  const actualIdentitySeen = Boolean(
+    actualTxHashes.length || actualTxBytesHashes.length || actualSignDocs.length
+  );
+  const errors = [];
+  let matched = false;
+  if (!actualIdentitySeen) {
+    errors.push("tx_hash_or_tx_result identity missing");
+  }
+  if (!expectedTxHash && !expectedTxBytesHash) {
+    errors.push("persisted tx_hash_or_tx_bytes identity missing");
+  }
+  if (actualTxHashes.length > 1) {
+    errors.push("tx_hash evidence conflict");
+  }
+  if (actualTxBytesHashes.length > 1) {
+    errors.push("tx_bytes_hash evidence conflict");
+  }
+  if (actualSignDocs.length > 1) {
+    errors.push("sign_doc_hash evidence conflict");
+  }
+  for (const actualTxHash of actualTxHashes) {
+    if (!expectedTxHash || actualTxHash !== expectedTxHash) {
+      errors.push("tx_hash_or_tx_bytes mismatch");
+    } else {
+      matched = true;
+    }
+  }
+  for (const actualTxBytesHash of actualTxBytesHashes) {
+    if (!expectedTxBytesHash || actualTxBytesHash !== expectedTxBytesHash) {
+      errors.push("tx_hash_or_tx_bytes mismatch");
+    } else {
+      matched = true;
+    }
+  }
+  if (expectedSignDoc) {
+    for (const actualSignDoc of actualSignDocs) {
+      if (actualSignDoc !== expectedSignDoc) {
+        errors.push("sign_doc_hash mismatch");
+      }
+    }
+  }
+  if (!matched && !errors.length) {
+    errors.push("matching persisted tx identity missing");
+  }
+  return { matches: errors.length === 0 && matched, errors };
+}
+function executionOutcomeErrors(txResult) {
+  if (!txResult || typeof txResult !== "object") return [];
+  const errors = [];
+  const containers = executionResultContainers(txResult);
+  const cosmosCodes = containers.filter((container) => Object.prototype.hasOwnProperty.call(container, "code")).map((container) => container.code).filter((code) => code !== void 0 && code !== null && String(code).trim() !== "");
+  for (const cosmosCode of cosmosCodes) {
+    const normalized = typeof cosmosCode === "number" ? Number.isSafeInteger(cosmosCode) && cosmosCode >= 0 ? cosmosCode : null : typeof cosmosCode === "string" && /^(0|[1-9][0-9]*)$/.test(cosmosCode) ? Number(cosmosCode) : null;
+    if (!Number.isSafeInteger(normalized) || normalized !== 0) {
+      errors.push("tx_result_code indicates failure");
+    }
+  }
+  const receiptStatuses = containers.flatMap((container) => [
+    container.receiptStatus,
+    container.receipt_status,
+    container.status
+  ]).filter((status) => status !== void 0 && status !== null && String(status).trim() !== "");
+  for (const receiptStatus of receiptStatuses) {
+    const normalized = String(receiptStatus).trim().toLowerCase();
+    const succeeded = receiptStatus === true || receiptStatus === 1 || receiptStatus === 1n || normalized === "1" || normalized === "true" || normalized === "success" || /^0x0*1$/.test(normalized);
+    if (!succeeded) errors.push("evm_receipt_status indicates failure");
+  }
+  return [...new Set(errors)];
+}
+function evaluateOperationSuccessEvidence(reservation = {}, actualInput = {}) {
+  if (!operationSuccessEvidenceRequired(reservation)) {
+    return { evaluated: false, matches: true, errors: [] };
+  }
+  const expected = expectedOperationSuccessEvidence(reservation);
+  const actual = operationSuccessEvidence(actualInput);
+  const txIdentity = evaluateOperationTxIdentity(reservation, actual);
+  const errors = [.../* @__PURE__ */ new Set([
+    ...txIdentity.errors,
+    ...actual.aliasErrors,
+    ...actual.txResults.flatMap(executionOutcomeErrors)
+  ])];
+  const check = (field2, expectedValue, actualValue, options = {}) => {
+    if (!expectedValue) {
+      errors.push(`${field2} expected value missing`);
+      return;
+    }
+    if (!actualValue) {
+      errors.push(`${field2} missing`);
+      return;
+    }
+    if (!operationEvidenceValuesEqual(expectedValue, actualValue, options)) {
+      errors.push(`${field2} mismatch`);
+    }
+  };
+  if (expected.operationEvidenceHash) {
+    check("expected_operation_evidence_hash", expected.operationEvidenceHash, actual.operationEvidenceHash, { caseInsensitive: true });
+  } else {
+    check("expected_output_commitment", expected.outputCommitment, actual.outputCommitment, { caseInsensitive: true });
+    check("expected_disclosure_digest", expected.disclosureDigest, actual.disclosureDigest, { caseInsensitive: true });
+    check("expected_recipient_hash", expected.recipientHash, actual.recipientHash, { caseInsensitive: true });
+    if (expected.amount) check("expected_amount", expected.amount, actual.amount);
+    check("expected_amount_hash", expected.amountHash, actual.amountHash, { caseInsensitive: true });
+    check("expected_denom", expected.denom, actual.denom);
+    if (expected.batchItemIndexKnown && !actual.batchItemIndexProvided) {
+      errors.push("batch_item_index missing");
+    } else if (expected.batchItemIndexKnown && !actual.batchItemIndexValid) {
+      errors.push("batch_item_index invalid");
+    } else if (expected.batchItemIndexKnown && !actual.batchItemIndexKnown) {
+      errors.push("batch_item_index missing");
+    } else if (expected.batchItemIndexKnown && expected.batchItemIndex !== actual.batchItemIndex) {
+      errors.push("batch_item_index mismatch");
+    }
+  }
+  return {
+    evaluated: true,
+    matches: errors.length === 0,
+    errors
+  };
+}
+function postBroadcastReplanEvidence(metadata = {}) {
+  return {
+    nullifierUnspentConfirmed: consistentMetadataAliasValue(
+      metadata,
+      ["nullifierUnspentConfirmed", "nullifier_unspent_confirmed"],
+      "nullifier unspent evidence",
+      { boolean: true }
+    ),
+    checkedHeight: consistentMetadataAliasValue(
+      metadata,
+      ["checkedHeight", "checked_height"],
+      "checked height evidence"
+    ),
+    txHashChecked: consistentMetadataAliasValue(
+      metadata,
+      ["txHashChecked", "tx_hash_checked"],
+      "checked transaction hash evidence"
+    ),
+    txAbsentOrFailedConfirmed: consistentMetadataAliasValue(
+      metadata,
+      ["txAbsentOrFailedConfirmed", "tx_absent_or_failed_confirmed"],
+      "transaction absent or failed evidence",
+      { boolean: true }
+    )
+  };
+}
+function hasPostBroadcastReplanEvidence(metadata = {}) {
+  const evidence = postBroadcastReplanEvidence(metadata);
+  return Boolean(
+    booleanEvidence(evidence.nullifierUnspentConfirmed) && booleanEvidence(evidence.txAbsentOrFailedConfirmed)
+  );
+}
+function proofReadyTransitionPatch(metadata = {}) {
+  const evidence = operationSuccessEvidence(metadata);
+  if (evidence.aliasErrors.length) {
+    throw new Error(evidence.aliasErrors.join("; "));
+  }
+  if (!evidence.batchItemIndexValid || evidence.batchItemIndexKnown && !evidence.batchItemIndexProvided) {
+    throw new Error("batch item index must be a non-negative safe integer");
+  }
+  const operationEvidenceRequiredState = operationSuccessEvidenceRequiredInputState(metadata);
+  const operationEvidenceRequired = operationEvidenceRequiredState.present ? operationEvidenceRequiredState.value : false;
+  return {
+    lease_token: metadata.leaseToken || metadata.lease_token || "",
+    payload_hash: metadata.payloadHash || metadata.payload_hash || "",
+    expected_operation_evidence_hash: evidence.operationEvidenceHash,
+    sign_doc_hash: metadata.signDocHash || metadata.sign_doc_hash || "",
+    tx_bytes_hash: metadata.txBytesHash || metadata.tx_bytes_hash || "",
+    expected_output_commitment: evidence.outputCommitment,
+    expected_disclosure_digest: evidence.disclosureDigest,
+    expected_recipient_hash: evidence.recipientHash,
+    expected_amount: evidence.amount,
+    expected_amount_hash: evidence.amountHash,
+    expected_denom: evidence.denom,
+    batch_item_index: evidence.batchItemIndex,
+    batch_item_index_known: evidence.batchItemIndexKnown,
+    metadata: {
+      ...metadata.metadata || {},
+      no_broadcast_attempt: true,
+      ...operationEvidenceRequired ? { operation_success_evidence_required: true } : {}
+    }
+  };
+}
+function assertReplanTransitionEvidence(from, to, metadata = {}) {
+  if (to !== reservationStatuses.ReplanRequired) return;
+  if (from === reservationStatuses.ConfirmedSpent) return;
+  if (from !== reservationStatuses.Submitted && from !== reservationStatuses.Unknown) return;
+  if (!hasPostBroadcastReplanEvidence(metadata)) {
+    throw new Error(`${from} -> ReplanRequired requires nullifier_unspent_confirmed and tx_absent_or_failed_confirmed reconcile evidence`);
+  }
+}
+function patchIfPresent(patch, key, value) {
+  if (value !== void 0 && value !== null && value !== "") {
+    patch[key] = value;
+  }
+}
+var immutableReservationPatchFields = [
+  "reservation_id",
+  "reservationID",
+  "reservationId",
+  "operation_id",
+  "operationID",
+  "operationId",
+  "owner_key_id",
+  "ownerKeyId",
+  "owner_keyID",
+  "ownerKeyID",
+  "nullifier_lookup_key",
+  "nullifierLookupKey",
+  "nullifier_lookup_key_id",
+  "nullifierLookupKeyId",
+  "nullifierLookupKeyID",
+  "note_id",
+  "noteId",
+  "noteID",
+  "kind",
+  "operation_kind",
+  "operationKind",
+  "amount",
+  "tx_hash",
+  "txHash",
+  "height",
+  "sequence",
+  "created_at",
+  "createdAt"
+];
+function assertPatchKeepsReservationIdentity(patch = {}) {
+  const changed = immutableReservationPatchFields.find(
+    (key) => Object.prototype.hasOwnProperty.call(patch, key)
+  );
+  if (changed) {
+    throw new Error(`reservation identity field cannot be changed through mutation: ${changed}`);
+  }
+}
+function assertReservationIdentityUnchanged(current, next) {
+  const immutableFields = [
+    "reservation_id",
+    "operation_id",
+    "owner_key_id",
+    "nullifier_lookup_key",
+    "nullifier_lookup_key_id",
+    "note_id",
+    "kind",
+    "amount",
+    "tx_hash",
+    "height",
+    "sequence",
+    "created_at"
+  ];
+  const changed = immutableFields.find((field2) => current[field2] !== next[field2]);
+  if (changed) {
+    throw new Error(`reservation identity field cannot be changed through mutation: ${changed}`);
+  }
+}
 var exactOperationLifecycleStatuses = /* @__PURE__ */ new Set([
   reservationStatuses.Reserved,
   reservationStatuses.Proving,
@@ -82222,16 +84229,1233 @@ var exactOperationLifecycleStatuses = /* @__PURE__ */ new Set([
   reservationStatuses.Released,
   reservationStatuses.Failed
 ]);
-async function preparePlanReservation(reservationManager, {
+function operationReservationGroupKey(reservation) {
+  return `${reservation.owner_key_id}\0${reservation.operation_id}`;
+}
+function assertExactOperationLifecycleTransitionSets(reservations, transitions, currentByReservationID) {
+  const selectedByOperation = /* @__PURE__ */ new Map();
+  const targetByOperation = /* @__PURE__ */ new Map();
+  for (const transition of transitions) {
+    const current = currentByReservationID.get(transition.reservationID);
+    if (current?.status === reservationStatuses.ConfirmedSpent) continue;
+    if (!current?.operation_id || !exactOperationLifecycleStatuses.has(transition.to) && transition.patch?.[managedOperationReconciliation] !== true) continue;
+    const key = operationReservationGroupKey(current);
+    if (!selectedByOperation.has(key)) selectedByOperation.set(key, /* @__PURE__ */ new Set());
+    selectedByOperation.get(key).add(current.reservation_id);
+    if (transition.patch?.[managedOperationReconciliation] !== true) {
+      const target = targetByOperation.get(key);
+      if (target && target !== transition.to) {
+        throw new Error("operation lifecycle transition requires one target status for the linked reservation set");
+      }
+      targetByOperation.set(key, transition.to);
+    }
+  }
+  for (const [key, selected] of selectedByOperation) {
+    const linked = reservations.filter(
+      (candidate) => operationReservationGroupKey(candidate) === key && candidate.status !== reservationStatuses.ConfirmedSpent
+    );
+    if (linked.length !== selected.size || linked.some((candidate) => !selected.has(candidate.reservation_id))) {
+      throw new Error("operation lifecycle transition requires the exact linked reservation set");
+    }
+  }
+}
+var MemoryReservationStore = class {
+  constructor({ state: state2, now } = {}) {
+    this.state = normalizeState(state2);
+    this.now = now || (() => /* @__PURE__ */ new Date());
+  }
+  async load() {
+    return cloneJSON(this.state);
+  }
+  // Test/migration escape hatch. Application code must use the CAS methods below.
+  async unsafeReplaceState(state2) {
+    this.state = normalizeState(state2);
+    return this.load();
+  }
+  async listReservations(filter = {}) {
+    const statuses = new Set((filter.statuses || []).map(String));
+    const ownerKeyId = String(filter.ownerKeyId || filter.owner_key_id || "");
+    const reservations = this.state.reservations.filter((reservation) => !statuses.size || statuses.has(reservation.status)).filter((reservation) => !ownerKeyId || reservation.owner_key_id === ownerKeyId).sort((left, right) => left.created_at.localeCompare(right.created_at));
+    return cloneJSON(filter.limit > 0 ? reservations.slice(0, filter.limit) : reservations);
+  }
+  async getReservation(reservationID) {
+    const reservation = this.state.reservations.find((candidate) => candidate.reservation_id === reservationID);
+    if (!reservation) throw new Error(`reservation not found: ${reservationID}`);
+    return cloneJSON(reservation);
+  }
+  async createReservationBatch(reservations = [], options = {}) {
+    const normalized = reservations.map(normalizeReservation);
+    const allowManagedClaimTokenHash = options?.[managedReservationCreation] === true;
+    const existingIDs = new Set(this.state.reservations.map((reservation) => reservation.reservation_id));
+    const usedOperationIDs = new Set(this.state.reservations.filter((reservation) => reservation.operation_id).map(operationReservationGroupKey));
+    const pendingIDs = /* @__PURE__ */ new Set();
+    const combined = [...this.state.reservations];
+    for (const reservation of normalized) {
+      assertInitialReservationRecord(reservation, { allowManagedClaimTokenHash });
+      if (reservation.operation_id && usedOperationIDs.has(operationReservationGroupKey(reservation))) {
+        throw new Error(`operation_id has already been used: ${reservation.operation_id}`);
+      }
+      if (existingIDs.has(reservation.reservation_id) || pendingIDs.has(reservation.reservation_id)) {
+        throw new Error(`active reservation already exists: ${reservation.reservation_id}`);
+      }
+      pendingIDs.add(reservation.reservation_id);
+      if (activeConflict(combined, reservation)) {
+        throw new Error("active reservation already exists");
+      }
+      if (confirmedSpentConflict(combined, reservation)) {
+        throw new Error("confirmed spent reservation prevents note reuse");
+      }
+      combined.push(reservation);
+    }
+    this.state.reservations = combined;
+    return cloneJSON(normalized);
+  }
+  // Test/migration escape hatch. This deliberately bypasses manager ownership and lease checks.
+  async unsafeReplaceReservation(reservation) {
+    const normalized = normalizeReservation(reservation);
+    const index = this.state.reservations.findIndex((candidate) => candidate.reservation_id === normalized.reservation_id);
+    if (index < 0) throw new Error(`reservation not found: ${normalized.reservation_id}`);
+    assertReservationIdentityUnchanged(this.state.reservations[index], normalized);
+    if (this.state.reservations[index].status !== normalized.status) {
+      throw new Error("reservation status changes require compareAndSetReservationStatus");
+    }
+    if (activeConflict(this.state.reservations, normalized, normalized.reservation_id) || confirmedSpentConflict(this.state.reservations, normalized, normalized.reservation_id)) {
+      throw new Error("active reservation already exists");
+    }
+    this.state.reservations[index] = normalized;
+    return cloneJSON(normalized);
+  }
+  async compareAndSetReservationStatus(reservationID, from, to, patch = {}) {
+    const [updated] = await this.compareAndSetReservationStatusBatch([{
+      reservationID,
+      from,
+      to,
+      patch
+    }]);
+    return updated;
+  }
+  async compareAndSetReservationStatusBatch(transitions = []) {
+    const normalizedTransitions = transitions.map((transition) => ({
+      reservationID: aliasedStringValue(
+        transition,
+        "reservationID",
+        "reservation_id",
+        "reservationID"
+      ),
+      from: String(transition.from || ""),
+      to: String(transition.to || ""),
+      patch: transition.patch || {}
+    }));
+    const seen = /* @__PURE__ */ new Set();
+    const indexes = [];
+    const updated = [];
+    const currentByReservationID = /* @__PURE__ */ new Map();
+    const nextReservations = [...this.state.reservations];
+    const now = this.now();
+    for (const transition of normalizedTransitions) {
+      if (!transition.reservationID) throw new Error("reservationID is required");
+      if (seen.has(transition.reservationID)) {
+        throw new Error(`duplicate reservation transition: ${transition.reservationID}`);
+      }
+      seen.add(transition.reservationID);
+      const index = this.state.reservations.findIndex(
+        (candidate) => candidate.reservation_id === transition.reservationID
+      );
+      if (index < 0) throw new Error(`reservation not found: ${transition.reservationID}`);
+      const current = this.state.reservations[index];
+      currentByReservationID.set(transition.reservationID, current);
+      if (current.status !== transition.from) {
+        throw new Error(`reservation compare-and-set failed: expected ${transition.from}, got ${current.status}`);
+      }
+      const managedRelayHandoff = assertManagedRelayHandoffMutation(current, transition.to, transition.patch, now);
+      const managedBroadcastAttempt = assertManagedBroadcastAttemptMutation(current, transition.to, transition.patch, now);
+      const managedBroadcastRejection = assertManagedBroadcastRejectionMutation(current, transition.to, transition.patch, now);
+      const managedOperationReconcile = assertManagedOperationReconciliation(
+        current,
+        transition.to,
+        transition.patch
+      );
+      const quarantineSpent = transition.to === reservationStatuses.ConfirmedSpent && transition.patch[reconciledSpentTransition] === true;
+      if (transition.from === transition.to && !managedRelayHandoff && !managedBroadcastAttempt && !managedOperationReconcile) {
+        assertSameStatusLeaseRenewalPatch(current, transition.patch, now);
+      }
+      if (transition.from !== transition.to && !quarantineSpent && !canTransitionReservation(transition.from, transition.to)) {
+        throw new Error(`invalid reservation transition: ${transition.from} -> ${transition.to}`);
+      }
+      assertPatchKeepsReservationIdentity(transition.patch);
+      assertReservationTransitionPatchFields(current, transition.to, transition.patch, {
+        managedRelayHandoff,
+        managedBroadcastAttempt,
+        managedOperationReconcile
+      });
+      if (!managedBroadcastRejection) {
+        assertStoreTransitionEvidence(current, transition.to, transition.patch);
+      }
+      assertOperationSuccessPredicateImmutable(current, transition.to, transition.patch);
+      assertReservationEvidencePatchMonotonic(current, transition.patch, {
+        allowOperationOutcomeMutation: managedOperationReconcile
+      });
+      assertManagedLifecycleMetadataMutation(current, transition.to, transition.patch, {
+        managedRelayHandoff,
+        managedBroadcastAttempt,
+        managedBroadcastRejection,
+        managedOperationReconcile
+      });
+      assertStoreLeaseMutationAllowed(current, transition.to, transition.patch, now);
+      const stablePatch = patchWithStableWriteOnceIdentityRepresentation(
+        current,
+        transition.patch
+      );
+      const patch = patchWithClearedLease(
+        transition.to,
+        patchWithPersistedReconciliationEvidence(
+          patchWithPreservedReservationClaimHash(current, stablePatch)
+        )
+      );
+      const next = normalizeReservation({
+        ...current,
+        ...patch,
+        status: transition.to,
+        updated_at: nowIso(now)
+      });
+      indexes.push(index);
+      updated.push(next);
+    }
+    assertExactOperationLifecycleTransitionSets(
+      this.state.reservations,
+      normalizedTransitions,
+      currentByReservationID
+    );
+    for (let i = 0; i < updated.length; i += 1) {
+      nextReservations[indexes[i]] = updated[i];
+    }
+    for (const reservation of updated) {
+      if (activeConflict(nextReservations, reservation, reservation.reservation_id) || confirmedSpentConflict(nextReservations, reservation, reservation.reservation_id)) {
+        throw new Error("active reservation already exists");
+      }
+    }
+    this.state.reservations = nextReservations;
+    return cloneJSON(updated);
+  }
+  async releaseReservationBatch({
+    reservationIDs = [],
+    ownerKeyId = "",
+    leaseOwner = "",
+    leaseToken = ""
+  } = {}) {
+    const ids = [...new Set((reservationIDs || []).map(String).filter(Boolean))];
+    if (!ids.length) return [];
+    if (!ownerKeyId) throw new Error("reservation owner key id is required");
+    const now = this.now();
+    const updated = [];
+    const indexes = [];
+    const currentByReservationID = /* @__PURE__ */ new Map();
+    const transitions = [];
+    for (const reservationID of ids) {
+      const index = this.state.reservations.findIndex(
+        (candidate) => candidate.reservation_id === reservationID
+      );
+      if (index < 0) throw new Error(`reservation not found: ${reservationID}`);
+      const current = this.state.reservations[index];
+      if (current.owner_key_id !== ownerKeyId) {
+        throw new Error("reservation owner mismatch");
+      }
+      if (current.status !== reservationStatuses.Reserved && current.status !== reservationStatuses.Proving) {
+        throw new Error(`reservation release requires Reserved or Proving status: ${current.status}`);
+      }
+      if (current.status === reservationStatuses.Proving || current.lease_token) {
+        assertCurrentLeaseToken(current, leaseToken, leaseOwner, now);
+      }
+      indexes.push(index);
+      updated.push(normalizeReservation({
+        ...current,
+        status: reservationStatuses.Released,
+        lease_owner: "",
+        lease_token: "",
+        lease_until: "",
+        last_heartbeat_at: "",
+        updated_at: nowIso(now)
+      }));
+      currentByReservationID.set(reservationID, current);
+      transitions.push({
+        reservationID,
+        from: current.status,
+        to: reservationStatuses.Released,
+        patch: {}
+      });
+    }
+    assertExactOperationLifecycleTransitionSets(
+      this.state.reservations,
+      transitions,
+      currentByReservationID
+    );
+    for (let index = 0; index < updated.length; index += 1) {
+      this.state.reservations[indexes[index]] = updated[index];
+    }
+    return cloneJSON(updated);
+  }
+  async findActiveReservationByLookupKey(ownerKeyId, lookupKey) {
+    const reservation = this.state.reservations.find(
+      (candidate) => candidate.owner_key_id === ownerKeyId && candidate.nullifier_lookup_key === lookupKey && isActiveReservationStatus(candidate.status)
+    );
+    return reservation ? cloneJSON(reservation) : null;
+  }
+  async findReservationsByLookupKey(ownerKeyId, lookupKey) {
+    return cloneJSON(this.state.reservations.filter(
+      (candidate) => candidate.owner_key_id === ownerKeyId && candidate.nullifier_lookup_key === lookupKey
+    ));
+  }
+  async reconcileSpentByLookupKey(ownerKeyId, lookupKey, note, { now = nowIso(this.now()) } = {}) {
+    return this.reconcileSpentByLookupKeys(ownerKeyId, [{ lookupKey, note }], { now });
+  }
+  async reconcileSpentByLookupKeys(ownerKeyId, spentNotes = [], { now = nowIso(this.now()) } = {}) {
+    for (const { note } of spentNotes) {
+      if (!hasLiteralSpentEvidence(note)) {
+        throw new Error("spent reconciliation requires literal spent evidence");
+      }
+    }
+    const spentNotesByLookupKey = new Map(spentNotes.map(({ lookupKey, note }) => [lookupKey, note]));
+    const transitions = [];
+    const affectedGroups = /* @__PURE__ */ new Map();
+    for (const { lookupKey } of spentNotes) {
+      for (const reservation of this.state.reservations) {
+        if (reservation.owner_key_id !== ownerKeyId || reservation.nullifier_lookup_key !== lookupKey) continue;
+        const key = reservation.operation_id ? operationReservationGroupKey(reservation) : `${reservation.owner_key_id}\0reservation:${reservation.reservation_id}`;
+        affectedGroups.set(key, reservation.operation_id ? this.state.reservations.filter(
+          (candidate) => candidate.owner_key_id === ownerKeyId && candidate.operation_id === reservation.operation_id
+        ) : [reservation]);
+      }
+    }
+    for (const reservations of affectedGroups.values()) {
+      transitions.push(...operationReconciliationTransitions(reservations, spentNotesByLookupKey, now));
+    }
+    if (!transitions.length) return [];
+    return this.compareAndSetReservationStatusBatch(transitions);
+  }
+};
+function requestToPromise(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("IndexedDB request failed"));
+  });
+}
+function txDone(transaction) {
+  return new Promise((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || new Error("IndexedDB transaction failed"));
+    transaction.onabort = () => reject(transaction.error || new Error("IndexedDB transaction aborted"));
+  });
+}
+var IndexedDbReservationStore = class extends MemoryReservationStore {
+  constructor(options = {}) {
+    const {
+      dbName = "clairveil-reservations",
+      namespace = "default",
+      indexedDB: indexedDBImpl,
+      locks = globalThis.navigator?.locks,
+      requireLocks = true,
+      require_locks,
+      encodeState,
+      encode_state,
+      decodeState,
+      decode_state,
+      now
+    } = options;
+    super({ now });
+    this.dbName = dbName;
+    this.namespace = namespace;
+    this.indexedDB = indexedDBImpl || globalThis.indexedDB;
+    if (!this.indexedDB) {
+      throw new Error("IndexedDB is unavailable");
+    }
+    this.locks = locks || null;
+    this.requireLocks = Boolean(require_locks ?? requireLocks);
+    this.encodeState = encodeState || encode_state || null;
+    this.decodeState = decodeState || decode_state || null;
+    this.unsafeAllowPlaintext = normalizedBooleanAlias(
+      options,
+      "unsafeAllowPlaintext",
+      "unsafe_allow_plaintext"
+    );
+    this.lockName = `clairveil-reservations:${this.dbName}:${this.namespace}`;
+    if (this.requireLocks && typeof this.locks?.request !== "function") {
+      throw new Error("Web Locks API is required for cross-tab atomic browser note reservation storage");
+    }
+    if (Boolean(this.encodeState) !== Boolean(this.decodeState)) {
+      throw new Error("IndexedDB reservation state requires both encodeState and decodeState callbacks");
+    }
+    if (!this.encodeState && !this.unsafeAllowPlaintext) {
+      throw new Error("IndexedDB reservation store requires at-rest state encryption callbacks; pass unsafeAllowPlaintext: true only for demos/tests");
+    }
+    this.dbPromise = null;
+  }
+  async db() {
+    if (this.dbPromise) return this.dbPromise;
+    this.dbPromise = new Promise((resolve, reject) => {
+      const request = this.indexedDB.open(this.dbName, 1);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore("states");
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error("IndexedDB open failed"));
+    });
+    return this.dbPromise;
+  }
+  async load() {
+    return this.#load();
+  }
+  async #load({ migrationLocked = false } = {}) {
+    const db = await this.db();
+    const tx = db.transaction("states", "readonly");
+    const value = await requestToPromise(tx.objectStore("states").get(this.namespace));
+    await txDone(tx);
+    if (value === void 0) return normalizeState({});
+    const decoded = this.decodeState ? await this.decodeState(value) : value;
+    if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
+      throw new Error("IndexedDB reservation state decoder returned an invalid state");
+    }
+    const normalized = normalizeState(decoded);
+    if (!isCurrentReservationState(decoded)) {
+      if (!migrationLocked) {
+        return this.withMutationLock(() => this.#load({ migrationLocked: true }));
+      }
+      await this.#writeState(normalized);
+    }
+    return normalized;
+  }
+  async #writeState(state2) {
+    const normalized = normalizeState(state2);
+    const encoded = this.encodeState ? await this.encodeState(cloneJSON(normalized)) : normalized;
+    if (encoded === void 0 || encoded === null) {
+      throw new Error("IndexedDB reservation state encoder returned an invalid value");
+    }
+    const db = await this.db();
+    const tx = db.transaction("states", "readwrite");
+    tx.objectStore("states").put(encoded, this.namespace);
+    await txDone(tx);
+    return cloneJSON(normalized);
+  }
+  async mutate(mutator) {
+    return this.withMutationLock(async () => {
+      const state2 = await this.#load({ migrationLocked: true });
+      const result = await mutator(state2);
+      await this.#writeState(state2);
+      return result;
+    });
+  }
+  async withMutationLock(callback) {
+    return withInProcessMutationLock(this.lockName, () => {
+      if (typeof this.locks?.request !== "function") {
+        return callback();
+      }
+      return this.locks.request(this.lockName, { mode: "exclusive" }, callback);
+    });
+  }
+  async listReservations(filter = {}) {
+    const state2 = await this.load();
+    return new MemoryReservationStore({ state: state2, now: this.now }).listReservations(filter);
+  }
+  async getReservation(reservationID) {
+    const state2 = await this.load();
+    return new MemoryReservationStore({ state: state2, now: this.now }).getReservation(reservationID);
+  }
+  async createReservationBatch(reservations = [], options = {}) {
+    return this.mutate(async (state2) => {
+      const memory = new MemoryReservationStore({ state: state2, now: this.now });
+      const created = await memory.createReservationBatch(reservations, options);
+      Object.assign(state2, await memory.load());
+      return created;
+    });
+  }
+  async unsafeReplaceState(state2) {
+    return this.withMutationLock(() => this.#writeState(state2));
+  }
+  async unsafeReplaceReservation(reservation) {
+    return this.mutate(async (state2) => {
+      const memory = new MemoryReservationStore({ state: state2, now: this.now });
+      const updated = await memory.unsafeReplaceReservation(reservation);
+      Object.assign(state2, await memory.load());
+      return updated;
+    });
+  }
+  async compareAndSetReservationStatus(reservationID, from, to, patch = {}) {
+    return this.mutate(async (state2) => {
+      const memory = new MemoryReservationStore({ state: state2, now: this.now });
+      const updated = await memory.compareAndSetReservationStatus(reservationID, from, to, patch);
+      Object.assign(state2, await memory.load());
+      return updated;
+    });
+  }
+  async compareAndSetReservationStatusBatch(transitions = []) {
+    return this.mutate(async (state2) => {
+      const memory = new MemoryReservationStore({ state: state2, now: this.now });
+      const updated = await memory.compareAndSetReservationStatusBatch(transitions);
+      Object.assign(state2, await memory.load());
+      return updated;
+    });
+  }
+  async releaseReservationBatch(options = {}) {
+    return this.mutate(async (state2) => {
+      const memory = new MemoryReservationStore({ state: state2, now: this.now });
+      const updated = await memory.releaseReservationBatch(options);
+      Object.assign(state2, await memory.load());
+      return updated;
+    });
+  }
+  async findActiveReservationByLookupKey(ownerKeyId, lookupKey) {
+    const state2 = await this.load();
+    return new MemoryReservationStore({ state: state2, now: this.now }).findActiveReservationByLookupKey(ownerKeyId, lookupKey);
+  }
+  async findReservationsByLookupKey(ownerKeyId, lookupKey) {
+    const state2 = await this.load();
+    return new MemoryReservationStore({ state: state2, now: this.now }).findReservationsByLookupKey(ownerKeyId, lookupKey);
+  }
+  async reconcileSpentByLookupKey(ownerKeyId, lookupKey, note, options = {}) {
+    return this.reconcileSpentByLookupKeys(ownerKeyId, [{ lookupKey, note }], options);
+  }
+  async reconcileSpentByLookupKeys(ownerKeyId, spentNotes, options = {}) {
+    return this.mutate(async (state2) => {
+      const memory = new MemoryReservationStore({ state: state2, now: this.now });
+      const updated = await memory.reconcileSpentByLookupKeys(ownerKeyId, spentNotes, options);
+      Object.assign(state2, await memory.load());
+      return updated;
+    });
+  }
+};
+function createBrowserReservationStore(options = {}) {
+  const unsafeAllowMemoryFallback = normalizedBooleanAlias(
+    options,
+    "unsafeAllowMemoryFallback",
+    "unsafe_allow_memory_fallback"
+  );
+  if (options.indexedDB !== null && (options.indexedDB || globalThis.indexedDB)) {
+    return new IndexedDbReservationStore(options);
+  }
+  if (unsafeAllowMemoryFallback) {
+    return new MemoryReservationStore(options);
+  }
+  throw new Error("IndexedDB is unavailable for browser note reservations; use unsafeAllowMemoryFallback only for demos/tests");
+}
+var NoteReservationManager = class {
+  constructor(options = {}) {
+    const {
+      store,
+      ownerKeyId,
+      owner_key_id,
+      indexKey,
+      index_key,
+      nullifierLookupKeyId,
+      nullifier_lookup_key_id,
+      leaseOwner,
+      lease_owner,
+      leaseDurationMs,
+      lease_duration_ms,
+      now
+    } = options;
+    if (!store) {
+      throw new Error("reservation store is required; pass MemoryReservationStore explicitly only for demos/tests");
+    }
+    this.store = store;
+    this.ownerKeyId = String(ownerKeyId || owner_key_id || "");
+    if (!this.ownerKeyId) {
+      throw new Error("ownerKeyId is required");
+    }
+    const explicitIndexKey = indexKey ?? index_key;
+    const unsafePublicIndexKey = normalizedBooleanAlias(
+      options,
+      "unsafeAllowPublicIndexKey",
+      "unsafe_allow_public_index_key"
+    );
+    if (explicitIndexKey === void 0 || explicitIndexKey === null || explicitIndexKey === "") {
+      if (!unsafePublicIndexKey) {
+        throw new Error("indexKey is required for note reservations; pass unsafeAllowPublicIndexKey only for single-user demos");
+      }
+      this.indexKey = utf8Bytes(this.ownerKeyId);
+    } else {
+      const indexKeyBytes = bytes2(explicitIndexKey);
+      if (!indexKeyBytes.length) {
+        throw new Error("indexKey is required for note reservations");
+      }
+      this.indexKey = indexKeyBytes;
+    }
+    this.nullifierLookupKeyId = String(nullifierLookupKeyId || nullifier_lookup_key_id || "default");
+    this.leaseOwner = String(leaseOwner || lease_owner || `reservation-worker:${randomHex(16)}`);
+    this.leaseDurationMs = Number(leaseDurationMs || lease_duration_ms || defaultLeaseDurationMs);
+    this.now = now || (() => /* @__PURE__ */ new Date());
+  }
+  timestamp() {
+    return nowIso(this.now());
+  }
+  async lookupKeyForNote(noteLike) {
+    return nullifierLookupKeyFromHex(this.indexKey, noteNullifierHex(noteLike));
+  }
+  async listActiveReservations() {
+    return this.store.listReservations({
+      ownerKeyId: this.ownerKeyId,
+      statuses: activeReservationStatuses
+    });
+  }
+  async getReservation(reservationID) {
+    return this.getOwnedReservation(reservationID);
+  }
+  assertReservationOwner(reservation) {
+    if (reservation.owner_key_id !== this.ownerKeyId) {
+      throw new Error("reservation owner mismatch");
+    }
+  }
+  async getOwnedReservation(reservationID) {
+    const reservation = await this.store.getReservation(reservationID);
+    this.assertReservationOwner(reservation);
+    return reservation;
+  }
+  async _ownedReservationsByID(reservationIDs = []) {
+    const ids = [...new Set(reservationIDs || [])];
+    if (!ids.length) return /* @__PURE__ */ new Map();
+    const reservations = await this.store.listReservations();
+    const byID = new Map(
+      reservations.map((reservation) => [reservation.reservation_id, reservation])
+    );
+    const owned = /* @__PURE__ */ new Map();
+    for (const reservationID of ids) {
+      const reservation = byID.get(reservationID);
+      if (!reservation) throw new Error(`reservation not found: ${reservationID}`);
+      this.assertReservationOwner(reservation);
+      owned.set(reservationID, reservation);
+    }
+    return owned;
+  }
+  async reservationForNote(noteLike) {
+    const lookupKey = await this.lookupKeyForNote(noteLike);
+    const reservations = await this.store.findReservationsByLookupKey(this.ownerKeyId, lookupKey);
+    return reservations.find((reservation) => isActiveReservationStatus(reservation.status)) || reservations.find((reservation) => reservation.status === reservationStatuses.ConfirmedSpent) || null;
+  }
+  async reservationStatusByNote(notes = []) {
+    const keyedNotes = [];
+    for (const note of notes || []) {
+      const nullifierHex = noteNullifierHex(note);
+      if (!nullifierHex) continue;
+      keyedNotes.push([nullifierHex, await this.lookupKeyForNote(note)]);
+    }
+    const lookupKeys = new Set(keyedNotes.map(([, lookupKey]) => lookupKey));
+    const reservations = lookupKeys.size ? await this.store.listReservations({ ownerKeyId: this.ownerKeyId }) : [];
+    const blockers = reservationBlockersByLookupKey(reservations, lookupKeys);
+    return new Map(keyedNotes.map(([nullifierHex, lookupKey]) => [
+      nullifierHex,
+      blockers.get(lookupKey) || null
+    ]));
+  }
+  async filterAvailableNotes(notes = []) {
+    const keyedNotes = [];
+    for (const note of notes || []) {
+      keyedNotes.push([note, await this.lookupKeyForNote(note)]);
+    }
+    const lookupKeys = new Set(keyedNotes.map(([, lookupKey]) => lookupKey));
+    const reservations = lookupKeys.size ? await this.store.listReservations({ ownerKeyId: this.ownerKeyId }) : [];
+    const blockers = reservationBlockersByLookupKey(reservations, lookupKeys);
+    return keyedNotes.filter(([, lookupKey]) => !blockers.has(lookupKey)).map(([note]) => note);
+  }
+  async reserveNotes({
+    notes = [],
+    operationId,
+    operation_id,
+    kind = "transfer",
+    metadata = {}
+  } = {}) {
+    const selected = [...notes];
+    if (!selected.length) {
+      return {
+        operation_id: String(operationId || operation_id || ""),
+        lease_owner: this.leaseOwner,
+        lease_token: "",
+        lease_until: "",
+        reservation_ids: [],
+        reservations: []
+      };
+    }
+    const operationID = String(operationId || operation_id || `${kind}:${randomHex(12)}`);
+    const now = this.timestamp();
+    const leaseToken = randomHex(16);
+    const leaseUntil = futureIso(now, this.leaseDurationMs);
+    const reservations = [];
+    for (const note of selected) {
+      const identity = noteReservationIdentity(note);
+      const lookupKey = await this.lookupKeyForNote(note);
+      reservations.push(normalizeReservation({
+        reservation_id: `${operationID}:note:${lookupKey.slice(0, 20)}`,
+        operation_id: operationID,
+        owner_key_id: this.ownerKeyId,
+        nullifier_lookup_key: lookupKey,
+        nullifier_lookup_key_id: this.nullifierLookupKeyId,
+        status: reservationStatuses.Reserved,
+        lease_owner: "",
+        lease_token: "",
+        lease_until: "",
+        last_heartbeat_at: "",
+        kind,
+        note_id: identity.noteId,
+        amount: identity.amount,
+        tx_hash: identity.txHash,
+        height: identity.height,
+        sequence: identity.sequence,
+        created_at: now,
+        updated_at: now,
+        metadata: {
+          ...metadata,
+          [reservationClaimTokenHashField]: reservationClaimTokenHash(leaseToken)
+        }
+      }));
+    }
+    const created = await this.store.createReservationBatch(reservations, {
+      [managedReservationCreation]: true
+    });
+    return {
+      operation_id: operationID,
+      lease_owner: this.leaseOwner,
+      lease_token: leaseToken,
+      lease_until: leaseUntil,
+      reservation_ids: created.map((reservation) => reservation.reservation_id),
+      reservations: created
+    };
+  }
+  async reservePlan({
+    plan,
+    kind = "transfer",
+    operationId,
+    operation_id,
+    metadata = {}
+  } = {}) {
+    return this.reserveNotes({
+      notes: selectedReservationNotesFromPlan(plan),
+      operationId,
+      operation_id,
+      kind,
+      metadata
+    });
+  }
+  async transitionBatch(reservationIDs = [], from, to, patch = {}) {
+    return this._transitionBatchEntries([{
+      reservationIDs,
+      from,
+      to,
+      patch
+    }]);
+  }
+  async _transitionBatchEntries(entries = []) {
+    const now = this.timestamp();
+    const transitions = [];
+    const currentByID = await this._ownedReservationsByID(
+      (entries || []).flatMap((entry) => entry?.reservationIDs || [])
+    );
+    for (const entry of entries || []) {
+      const {
+        reservationIDs = [],
+        from,
+        to,
+        patch = {}
+      } = entry || {};
+      assertPatchKeepsReservationIdentity(patch);
+      assertCoreTransitionEvidence(from, to, patch);
+      const transitionPatch = {
+        ...patch,
+        updated_at: now
+      };
+      const patchCarriesLeaseCredentials = [
+        "lease_owner",
+        "leaseOwner",
+        "lease_token",
+        "leaseToken",
+        "lease_until",
+        "leaseUntil",
+        "last_heartbeat_at",
+        "lastHeartbeatAt"
+      ].some((key) => Object.prototype.hasOwnProperty.call(patch, key));
+      if (requiresReservationLeaseToken(from, to)) {
+        transitionPatch.lease_owner = this.leaseOwner;
+        transitionPatch.last_heartbeat_at = now;
+        transitionPatch.lease_until = patch.lease_until || patch.leaseUntil || futureIso(now, this.leaseDurationMs);
+      } else if (from === to && patchCarriesLeaseCredentials) {
+        transitionPatch.lease_owner = this.leaseOwner;
+      }
+      for (const reservationID of reservationIDs || []) {
+        const current = currentByID.get(reservationID);
+        assertLeaseTransitionAllowed(current, to, transitionPatch, now);
+        assertReplanTransitionEvidence(current.status, to, patch);
+        assertInactiveTransitionEvidence(current, to, patch);
+        if (current.status !== from) {
+          throw new Error(`reservation compare-and-set failed: expected ${from}, got ${current.status}`);
+        }
+        if (from !== to && !canTransitionReservation(from, to)) {
+          throw new Error(`invalid reservation transition: ${from} -> ${to}`);
+        }
+        const reservationPatch = patch.metadata && typeof patch.metadata === "object" && !Array.isArray(patch.metadata) ? {
+          ...transitionPatch,
+          metadata: {
+            ...current.metadata || {},
+            ...patch.metadata
+          }
+        } : transitionPatch;
+        transitions.push({
+          reservationID,
+          from,
+          to,
+          patch: reservationPatch
+        });
+      }
+    }
+    if (!transitions.length) return [];
+    if (typeof this.store.compareAndSetReservationStatusBatch !== "function") {
+      throw new Error("reservation store atomic batch compare-and-set is required");
+    }
+    return this.store.compareAndSetReservationStatusBatch(transitions);
+  }
+  async renewLease(reservationIDs = [], metadata = {}) {
+    const now = this.timestamp();
+    const leaseToken = metadata.leaseToken || metadata.lease_token || "";
+    const requestedLeaseUntil = leaseUntilFromMetadata(metadata, now, this.leaseDurationMs);
+    const transitions = [];
+    const currentByID = await this._ownedReservationsByID(reservationIDs);
+    for (const reservationID of reservationIDs || []) {
+      const current = currentByID.get(reservationID);
+      if (!isActiveReservationStatus(current.status)) {
+        throw new Error(`reservation lease cannot be renewed for inactive status: ${current.status}`);
+      }
+      assertCurrentLeaseToken(current, leaseToken, this.leaseOwner, now);
+      const currentLeaseUntil = Date.parse(current.lease_until || "");
+      const requestedLeaseUntilMs = Date.parse(requestedLeaseUntil);
+      const leaseUntil = Number.isFinite(currentLeaseUntil) && currentLeaseUntil > requestedLeaseUntilMs ? current.lease_until : requestedLeaseUntil;
+      transitions.push({
+        reservationID,
+        from: current.status,
+        to: current.status,
+        patch: {
+          lease_owner: this.leaseOwner,
+          lease_token: leaseToken,
+          lease_until: leaseUntil,
+          last_heartbeat_at: now,
+          updated_at: now
+        }
+      });
+    }
+    if (!transitions.length) return [];
+    if (typeof this.store.compareAndSetReservationStatusBatch !== "function") {
+      throw new Error("reservation store atomic batch compare-and-set is required");
+    }
+    return this.store.compareAndSetReservationStatusBatch(transitions);
+  }
+  async recordRelayHandoff(reservationIDs = [], metadata = {}) {
+    const now = this.timestamp();
+    const leaseToken = metadata.leaseToken || metadata.lease_token || "";
+    const payloadHash = String(metadata.payloadHash || metadata.payload_hash || "").trim();
+    const txBytesHash = String(metadata.txBytesHash || metadata.tx_bytes_hash || "").trim();
+    const signDocHash = String(metadata.signDocHash || metadata.sign_doc_hash || "").trim();
+    if (!payloadHash) {
+      throw new Error("relay handoff requires the prepared payload hash");
+    }
+    const transitions = [];
+    const currentByID = await this._ownedReservationsByID(reservationIDs);
+    for (const reservationID of reservationIDs || []) {
+      const current = currentByID.get(reservationID);
+      if (current.status !== reservationStatuses.ProofReady) {
+        throw new Error(`relay handoff requires ProofReady reservation: ${current.status}`);
+      }
+      if (current.broadcast_in_flight || Number(current.broadcast_attempt_count || 0) > 0) {
+        throw new Error("broadcast attempt already started; reconcile before relay handoff");
+      }
+      assertCurrentLeaseToken(current, leaseToken, this.leaseOwner, now);
+      if (!current.payload_hash || current.payload_hash !== payloadHash) {
+        throw new Error("relay handoff payload hash does not match the ProofReady reservation");
+      }
+      if (current.tx_bytes_hash && txBytesHash && current.tx_bytes_hash !== txBytesHash) {
+        throw new Error("relay handoff transaction hash does not match the ProofReady reservation");
+      }
+      if (current.sign_doc_hash && signDocHash && current.sign_doc_hash !== signDocHash) {
+        throw new Error("relay handoff sign-doc hash does not match the ProofReady reservation");
+      }
+      const patch = {
+        lease_owner: this.leaseOwner,
+        lease_token: leaseToken,
+        lease_until: current.lease_until,
+        last_heartbeat_at: now,
+        updated_at: now,
+        payload_hash: payloadHash,
+        ...txBytesHash ? { tx_bytes_hash: txBytesHash } : {},
+        ...signDocHash ? { sign_doc_hash: signDocHash } : {},
+        metadata: {
+          ...current.metadata || {},
+          ...metadata.metadata || {},
+          relay_handed_off: true,
+          relay_handed_off_at: String(
+            current.metadata?.relay_handed_off_at || current.metadata?.relayHandedOffAt || metadata.handedOffAt || metadata.handed_off_at || now
+          ),
+          no_broadcast_attempt: false
+        }
+      };
+      Object.defineProperty(patch, managedReservationEvidenceMutation, {
+        value: "relay_handoff",
+        enumerable: true
+      });
+      transitions.push({
+        reservationID,
+        from: reservationStatuses.ProofReady,
+        to: reservationStatuses.ProofReady,
+        patch
+      });
+    }
+    if (!transitions.length) return [];
+    if (typeof this.store.compareAndSetReservationStatusBatch !== "function") {
+      throw new Error("reservation store atomic batch compare-and-set is required");
+    }
+    return this.store.compareAndSetReservationStatusBatch(transitions);
+  }
+  async heartbeatLease(reservationIDs = [], metadata = {}) {
+    return this.renewLease(reservationIDs, metadata);
+  }
+  async markProving(reservationIDs = [], metadata = {}) {
+    return this.transitionBatch(reservationIDs, reservationStatuses.Reserved, reservationStatuses.Proving, {
+      lease_token: metadata.leaseToken || metadata.lease_token || ""
+    });
+  }
+  async markProofReady(reservationIDs = [], metadata = {}) {
+    return this.transitionBatch(
+      reservationIDs,
+      reservationStatuses.Proving,
+      reservationStatuses.ProofReady,
+      proofReadyTransitionPatch(metadata)
+    );
+  }
+  async markProofReadyBatch(entries = []) {
+    return this._transitionBatchEntries((entries || []).map((entry) => ({
+      reservationIDs: aliasedStringArray(
+        entry,
+        "reservationIDs",
+        "reservation_ids",
+        "reservationIDs"
+      ),
+      from: reservationStatuses.Proving,
+      to: reservationStatuses.ProofReady,
+      patch: proofReadyTransitionPatch(entry?.metadata || {})
+    })));
+  }
+  async markBroadcastAttempting(reservationIDs = [], metadata = {}) {
+    const now = this.timestamp();
+    const leaseToken = metadata.leaseToken || metadata.lease_token || "";
+    const attempt = broadcastAttemptMetadata(metadata);
+    const transitions = [];
+    const currentByID = await this._ownedReservationsByID(reservationIDs);
+    for (const reservationID of reservationIDs || []) {
+      const current = currentByID.get(reservationID);
+      if (current.status !== reservationStatuses.ProofReady) {
+        throw new Error(`broadcast attempt requires ProofReady reservation: ${current.status}`);
+      }
+      assertCurrentLeaseToken(current, leaseToken, this.leaseOwner, now);
+      const patch = {
+        lease_owner: this.leaseOwner,
+        lease_token: leaseToken,
+        lease_until: current.lease_until,
+        last_heartbeat_at: now,
+        updated_at: now,
+        broadcast_in_flight: true,
+        broadcast_attempt_count: Number(current.broadcast_attempt_count || 0) + 1,
+        metadata: {
+          ...current.metadata || {},
+          ...metadata.metadata || {},
+          broadcast_attempt_started_at: now,
+          broadcast_attempt_reason: String(metadata.reason || "external_broadcast_boundary_crossed"),
+          no_broadcast_attempt: false
+        }
+      };
+      patchIfPresent(patch, "submitted_tx_hash", attempt.txHash);
+      patchIfPresent(patch, "tx_bytes_hash", attempt.txBytesHash);
+      patchIfPresent(patch, "sign_doc_hash", attempt.signDocHash);
+      Object.defineProperty(patch, managedReservationEvidenceMutation, {
+        value: "broadcast_attempt",
+        enumerable: true
+      });
+      transitions.push({
+        reservationID,
+        from: reservationStatuses.ProofReady,
+        to: reservationStatuses.ProofReady,
+        patch
+      });
+    }
+    if (!transitions.length) return [];
+    if (typeof this.store.compareAndSetReservationStatusBatch !== "function") {
+      throw new Error("reservation store atomic batch compare-and-set is required");
+    }
+    return this.store.compareAndSetReservationStatusBatch(transitions);
+  }
+  async markBroadcastRejected(reservationIDs = [], metadata = {}) {
+    const now = this.timestamp();
+    const leaseToken = metadata.leaseToken || metadata.lease_token || "";
+    const transitions = [];
+    const currentByID = await this._ownedReservationsByID(reservationIDs);
+    for (const reservationID of reservationIDs || []) {
+      const current = currentByID.get(reservationID);
+      if (current.status !== reservationStatuses.ProofReady) {
+        throw new Error(`wallet rejection resolution requires ProofReady reservation: ${current.status}`);
+      }
+      assertCurrentLeaseToken(current, leaseToken, this.leaseOwner, now);
+      const patch = {
+        lease_owner: this.leaseOwner,
+        lease_token: leaseToken,
+        broadcast_in_flight: false,
+        broadcast_attempt_count: Number(current.broadcast_attempt_count || 0),
+        last_broadcast_error: String(metadata.error || metadata.lastBroadcastError || metadata.last_broadcast_error || "wallet request rejected"),
+        updated_at: now,
+        metadata: {
+          ...current.metadata || {},
+          ...metadata.metadata || {},
+          wallet_rejected_before_broadcast: true,
+          provider_rejection_code: String(metadata.providerCode || metadata.provider_code || "4001"),
+          no_broadcast_attempt: true,
+          proof_discarded: true,
+          reconcile_reason: "wallet_rejected_before_broadcast"
+        }
+      };
+      Object.defineProperty(patch, managedReservationEvidenceMutation, {
+        value: "broadcast_rejected",
+        enumerable: true
+      });
+      transitions.push({
+        reservationID,
+        from: reservationStatuses.ProofReady,
+        to: reservationStatuses.ReplanRequired,
+        patch
+      });
+    }
+    if (!transitions.length) return [];
+    if (typeof this.store.compareAndSetReservationStatusBatch !== "function") {
+      throw new Error("reservation store atomic batch compare-and-set is required");
+    }
+    return this.store.compareAndSetReservationStatusBatch(transitions);
+  }
+  async markSubmitted(reservationIDs = [], metadata = {}) {
+    assertSubmittedBroadcastAttemptMetadata(metadata, "markSubmitted");
+    const attempt = broadcastAttemptMetadata(metadata);
+    const patch = {
+      lease_token: metadata.leaseToken || metadata.lease_token || "",
+      broadcast_in_flight: false,
+      metadata: {
+        ...metadata.metadata || {},
+        no_broadcast_attempt: false
+      }
+    };
+    patchIfPresent(patch, "submitted_tx_hash", attempt.txHash);
+    patchIfPresent(patch, "tx_bytes_hash", attempt.txBytesHash);
+    patchIfPresent(patch, "sign_doc_hash", attempt.signDocHash);
+    return this.transitionBatch(reservationIDs, reservationStatuses.ProofReady, reservationStatuses.Submitted, patch);
+  }
+  async markUnknown(reservationIDs = [], metadata = {}) {
+    assertBroadcastAttemptMetadata(metadata, "markUnknown");
+    const attempt = broadcastAttemptMetadata(metadata);
+    const from = metadata.fromStatus || metadata.from_status || reservationStatuses.ProofReady;
+    if (![reservationStatuses.ProofReady, reservationStatuses.Submitted].includes(from)) {
+      throw new Error(`markUnknown requires ProofReady or Submitted status, got ${from}`);
+    }
+    const patch = {
+      lease_token: metadata.leaseToken || metadata.lease_token || "",
+      last_broadcast_error: metadata.error || metadata.lastBroadcastError || metadata.last_broadcast_error || "",
+      broadcast_in_flight: false,
+      metadata: {
+        ...metadata.metadata || {},
+        no_broadcast_attempt: false
+      }
+    };
+    patchIfPresent(patch, "submitted_tx_hash", attempt.txHash);
+    patchIfPresent(patch, "tx_bytes_hash", attempt.txBytesHash);
+    patchIfPresent(patch, "sign_doc_hash", attempt.signDocHash);
+    return this.transitionBatch(reservationIDs, from, reservationStatuses.Unknown, patch);
+  }
+  async markReplanRequired(reservationIDs = [], metadata = {}) {
+    const from = metadata.fromStatus || metadata.from_status || reservationStatuses.Submitted;
+    const patch = {};
+    const evidence = postBroadcastReplanEvidence(metadata);
+    const proofDiscarded = consistentMetadataAliasValue(
+      metadata,
+      ["proofDiscarded", "proof_discarded"],
+      "proof discarded evidence",
+      { boolean: true }
+    );
+    const authoritativeExpiryConfirmed = consistentMetadataAliasValue(
+      metadata,
+      ["authoritativeExpiryConfirmed", "authoritative_expiry_confirmed"],
+      "authoritative expiry evidence",
+      { boolean: true }
+    );
+    patchIfPresent(patch, "lease_token", metadata.leaseToken ?? metadata.lease_token);
+    patch.lease_owner = this.leaseOwner;
+    patchIfPresent(patch, "submitted_tx_hash", metadata.txHash ?? metadata.tx_hash);
+    patchIfPresent(patch, "tx_bytes_hash", metadata.txBytesHash ?? metadata.tx_bytes_hash);
+    patchIfPresent(patch, "sign_doc_hash", metadata.signDocHash ?? metadata.sign_doc_hash);
+    patchIfPresent(patch, "last_broadcast_error", metadata.error ?? metadata.lastBroadcastError ?? metadata.last_broadcast_error);
+    const nestedMetadata = metadataObject(metadata);
+    if (Object.keys(nestedMetadata).length || evidence.nullifierUnspentConfirmed !== void 0 || evidence.checkedHeight !== void 0 || evidence.txHashChecked !== void 0 || evidence.txAbsentOrFailedConfirmed !== void 0 || proofDiscarded !== void 0 || authoritativeExpiryConfirmed !== void 0) {
+      patch.metadata = { ...nestedMetadata };
+      if (booleanEvidence(evidence.nullifierUnspentConfirmed)) {
+        patch.metadata.nullifier_unspent_confirmed = true;
+      }
+      if (booleanEvidence(evidence.txAbsentOrFailedConfirmed)) {
+        patch.metadata.tx_absent_or_failed_confirmed = true;
+      }
+      if (booleanEvidence(proofDiscarded)) {
+        patch.metadata.proof_discarded = true;
+      }
+      if (booleanEvidence(authoritativeExpiryConfirmed)) {
+        patch.metadata.authoritative_expiry_confirmed = true;
+      }
+      patchIfPresent(patch.metadata, "checked_height", evidence.checkedHeight);
+      patchIfPresent(patch.metadata, "tx_hash_checked", evidence.txHashChecked);
+    }
+    if (metadata.fromStatus || metadata.from_status) {
+      return this.transitionBatch(reservationIDs, from, reservationStatuses.ReplanRequired, patch);
+    }
+    assertPatchKeepsReservationIdentity(patch);
+    const now = this.timestamp();
+    const transitionPatch = {
+      ...patch,
+      updated_at: now
+    };
+    const transitions = [];
+    const currentByID = await this._ownedReservationsByID(reservationIDs);
+    for (const reservationID of reservationIDs || []) {
+      const current = currentByID.get(reservationID);
+      assertLeaseTransitionAllowed(current, reservationStatuses.ReplanRequired, transitionPatch, now);
+      assertReplanTransitionEvidence(current.status, reservationStatuses.ReplanRequired, patch);
+      assertInactiveTransitionEvidence(current, reservationStatuses.ReplanRequired, patch);
+      if (!canTransitionReservation(current.status, reservationStatuses.ReplanRequired)) {
+        throw new Error(`invalid reservation transition: ${current.status} -> ${reservationStatuses.ReplanRequired}`);
+      }
+      transitions.push({
+        reservationID,
+        from: current.status,
+        to: reservationStatuses.ReplanRequired,
+        patch: patch.metadata && typeof patch.metadata === "object" && !Array.isArray(patch.metadata) ? {
+          ...transitionPatch,
+          metadata: {
+            ...current.metadata || {},
+            ...patch.metadata
+          }
+        } : transitionPatch
+      });
+    }
+    if (!transitions.length) return [];
+    if (typeof this.store.compareAndSetReservationStatusBatch !== "function") {
+      throw new Error("reservation store atomic batch compare-and-set is required");
+    }
+    return this.store.compareAndSetReservationStatusBatch(transitions);
+  }
+  async releaseReservedOrProving(reservationIDs = [], metadata = {}) {
+    const leaseToken = metadata.leaseToken || metadata.lease_token || "";
+    const currentByID = await this._ownedReservationsByID(reservationIDs);
+    for (const reservationID of reservationIDs || []) {
+      const current = currentByID.get(reservationID);
+      if (current.status === reservationStatuses.Proving) {
+        assertCurrentLeaseToken(current, leaseToken, this.leaseOwner, this.timestamp());
+      } else if (current.status !== reservationStatuses.Reserved) {
+        throw new Error(`reservation rollback requires Reserved or Proving status: ${current.status}`);
+      }
+    }
+    if (typeof this.store.releaseReservationBatch !== "function") {
+      throw new Error("reservation store atomic release batch is required");
+    }
+    return this.store.releaseReservationBatch({
+      reservationIDs,
+      ownerKeyId: this.ownerKeyId,
+      leaseOwner: this.leaseOwner,
+      leaseToken
+    });
+  }
+  async markManualReview(reservationIDs = [], metadata = {}) {
+    assertPatchKeepsReservationIdentity(metadata);
+    const now = this.timestamp();
+    const patch = {
+      lease_token: metadata.leaseToken || metadata.lease_token || "",
+      lease_owner: this.leaseOwner,
+      last_broadcast_error: metadata.error || metadata.lastBroadcastError || metadata.last_broadcast_error || "",
+      updated_at: now,
+      metadata: {
+        ...metadata.metadata || {}
+      }
+    };
+    const transitions = [];
+    const currentByID = await this._ownedReservationsByID(reservationIDs);
+    for (const reservationID of reservationIDs || []) {
+      const current = currentByID.get(reservationID);
+      if (!canTransitionReservation(current.status, reservationStatuses.ManualReview)) {
+        throw new Error(`invalid reservation transition: ${current.status} -> ${reservationStatuses.ManualReview}`);
+      }
+      transitions.push({
+        reservationID,
+        from: current.status,
+        to: reservationStatuses.ManualReview,
+        patch: {
+          ...patch,
+          metadata: {
+            ...current.metadata || {},
+            ...patch.metadata
+          }
+        }
+      });
+    }
+    if (typeof this.store.compareAndSetReservationStatusBatch !== "function") {
+      throw new Error("reservation store atomic batch compare-and-set is required");
+    }
+    return this.store.compareAndSetReservationStatusBatch(transitions);
+  }
+  async resolveManualReview(reservationIDs = [], resolution = {}) {
+    const target = String(resolution.target || resolution.toStatus || resolution.to_status || "");
+    if (![reservationStatuses.Released, reservationStatuses.ReplanRequired, reservationStatuses.Failed].includes(target)) {
+      throw new Error("ManualReview resolution target must be Released, ReplanRequired, or Failed");
+    }
+    const operatorId = String(resolution.operatorId || resolution.operator_id || "").trim();
+    const approvalReference = String(resolution.approvalReference || resolution.approval_reference || "").trim();
+    if (!operatorId || !approvalReference) {
+      throw new Error("ManualReview resolution requires operatorId and approvalReference");
+    }
+    return this.transitionBatch(reservationIDs, reservationStatuses.ManualReview, target, {
+      metadata: {
+        ...resolution.metadata || {},
+        operator_approved: true,
+        operator_id: operatorId,
+        operator_approval_reference: approvalReference,
+        manual_review_resolution_reason: String(resolution.reason || "")
+      }
+    });
+  }
+  async reconcileSpentNotes(notes = []) {
+    const seenLookupKeys = /* @__PURE__ */ new Set();
+    const spentNotes = [];
+    for (const note of notes || []) {
+      if (!hasLiteralSpentEvidence(note)) continue;
+      const lookupKey = await this.lookupKeyForNote(note);
+      if (seenLookupKeys.has(lookupKey)) continue;
+      seenLookupKeys.add(lookupKey);
+      spentNotes.push({ lookupKey, note });
+    }
+    if (!spentNotes.length) return [];
+    if (typeof this.store.reconcileSpentByLookupKeys !== "function") {
+      throw new Error("reservation store atomic spent reconciliation is required");
+    }
+    return this.store.reconcileSpentByLookupKeys(
+      this.ownerKeyId,
+      spentNotes,
+      { now: this.timestamp() }
+    );
+  }
+};
+function createNoteReservationManager(options = {}) {
+  return new NoteReservationManager(options);
+}
+async function preparePlanReservation(reservationManager2, {
   plan,
   kind = "transfer",
   metadata = {}
 } = {}) {
-  if (!reservationManager) return null;
-  const batch = await reservationManager.reservePlan({ plan, kind, metadata });
+  if (!reservationManager2) return null;
+  const batch = await reservationManager2.reservePlan({ plan, kind, metadata });
   if (!batch.reservation_ids.length) return null;
   try {
-    const reservations = await reservationManager.markProving(batch.reservation_ids, {
+    const reservations = await reservationManager2.markProving(batch.reservation_ids, {
       leaseToken: batch.lease_token,
       leaseUntil: batch.lease_until
     });
@@ -82243,21 +85467,21 @@ async function preparePlanReservation(reservationManager, {
       reservations
     };
   } catch (error) {
-    await rollbackPlanReservationPreservingError(reservationManager, batch, error);
+    await rollbackPlanReservationPreservingError(reservationManager2, batch, error);
     throw error;
   }
 }
-async function rollbackPlanReservation(reservationManager, batch) {
-  if (!reservationManager || !batch?.reservation_ids?.length) return;
+async function rollbackPlanReservation(reservationManager2, batch) {
+  if (!reservationManager2 || !batch?.reservation_ids?.length) return;
   try {
-    await reservationManager.releaseReservedOrProving(batch.reservation_ids, {
+    await reservationManager2.releaseReservedOrProving(batch.reservation_ids, {
       leaseToken: batch.lease_token || batch.leaseToken || batch.reservations?.[0]?.lease_token || ""
     });
   } catch (error) {
     if (!isLeaseExpiredError(error)) {
       throw error;
     }
-    await reservationManager.markManualReview(batch.reservation_ids, {
+    await reservationManager2.markManualReview(batch.reservation_ids, {
       error: "rollback_lease_expired",
       metadata: {
         reconcile_reason: "rollback_lease_expired",
@@ -82266,9 +85490,9 @@ async function rollbackPlanReservation(reservationManager, batch) {
     });
   }
 }
-async function rollbackPlanReservationPreservingError(reservationManager, batch, error) {
+async function rollbackPlanReservationPreservingError(reservationManager2, batch, error) {
   try {
-    await rollbackPlanReservation(reservationManager, batch);
+    await rollbackPlanReservation(reservationManager2, batch);
   } catch (cleanupError) {
     if (error && typeof error === "object") {
       const existing = Array.isArray(error.reservationCleanupErrors) ? error.reservationCleanupErrors : [];
@@ -83382,7 +86606,7 @@ function noteKey(foundLike) {
   if (found.commitment_hex) return `commitment:${found.commitment_hex}`;
   return `event:${found.height}:${found.txHash}:${found.note.randomness}:${found.note.amount}`;
 }
-function emptyState(owner = "") {
+function emptyState2(owner = "") {
   return {
     version: privacyNoteCacheStateVersionV1,
     circuit_set_id: privacyNoteCacheIdentityV1.circuit_set_id,
@@ -83402,9 +86626,9 @@ function isCurrentPrivacyNoteCacheState(state2) {
 }
 function freshGenesisCacheState(state2, owner = "") {
   const resolvedOwner = String(owner || state2?.owner || "");
-  if (!isCurrentPrivacyNoteCacheState(state2)) return emptyState(resolvedOwner);
+  if (!isCurrentPrivacyNoteCacheState(state2)) return emptyState2(resolvedOwner);
   return {
-    ...emptyState(resolvedOwner),
+    ...emptyState2(resolvedOwner),
     ...state2,
     version: privacyNoteCacheStateVersionV1,
     circuit_set_id: privacyNoteCacheIdentityV1.circuit_set_id,
@@ -83494,7 +86718,7 @@ var MemoryNoteStore = class {
     return this.load();
   }
   async clear() {
-    this.state = emptyState(this.state.owner);
+    this.state = emptyState2(this.state.owner);
     return this.load();
   }
   async mergeScanResult(scanResult, {
@@ -84297,7 +87521,7 @@ function directBroadcastContext(input = {}) {
     waitOptions,
     attempts,
     intervalMs,
-    reservationManager,
+    reservationManager: reservationManager2,
     reservation_manager,
     reservation,
     reservationBatch,
@@ -84317,13 +87541,13 @@ function directBroadcastContext(input = {}) {
   const resolvedReservation = reservation ?? reservationBatch ?? reservation_batch;
   const reservationContext = broadcastReservationContext({
     ...resolvedWaitOptions,
-    reservationManager: reservationManager ?? reservation_manager ?? null,
+    reservationManager: reservationManager2 ?? reservation_manager ?? null,
     reservation: resolvedReservation
   });
   const walletSignDoc = externalCosmosSignDoc(signDoc);
   const broadcastOptions = {
     ...resolvedWaitOptions,
-    reservationManager: reservationManager ?? reservation_manager ?? null,
+    reservationManager: reservationManager2 ?? reservation_manager ?? null,
     reservation: resolvedReservation,
     relayPayload: input.relayPayload ?? input.relay_payload,
     getChainNowUnix: input.getChainNowUnix ?? input.get_chain_now_unix,
@@ -84746,12 +87970,12 @@ function publicPrivacyAccount(material) {
     root_signature_hash: material.rootSignatureHash
   };
 }
-async function reservationAvailableNotes(reservationManager, notes) {
-  if (!reservationManager) return notes;
-  if (typeof reservationManager.filterAvailableNotes !== "function") {
+async function reservationAvailableNotes(reservationManager2, notes) {
+  if (!reservationManager2) return notes;
+  if (typeof reservationManager2.filterAvailableNotes !== "function") {
     throw new Error("reservationManager.filterAvailableNotes is required");
   }
-  return reservationManager.filterAvailableNotes(notes);
+  return reservationManager2.filterAvailableNotes(notes);
 }
 function reservationBatchSummary(batch) {
   if (!batch) return null;
@@ -84765,14 +87989,14 @@ function reservationBatchSummary(batch) {
   };
 }
 function broadcastReservationContext(options = {}) {
-  const reservationManager = options.reservationManager ?? options.reservation_manager ?? null;
+  const reservationManager2 = options.reservationManager ?? options.reservation_manager ?? null;
   const reservation = options.reservation ?? options.reservationBatch ?? options.reservation_batch ?? null;
   const reservationIDs = [...reservation?.reservation_ids || []].filter(Boolean).map(String);
-  if (!reservationManager && !reservation) return null;
+  if (!reservationManager2 && !reservation) return null;
   if (!reservationIDs.length) {
     throw new Error("reserved-note broadcast requires reservation ids");
   }
-  if (!reservationManager || typeof reservationManager.markBroadcastAttempting !== "function") {
+  if (!reservationManager2 || typeof reservationManager2.markBroadcastAttempting !== "function") {
     throw new Error("reservationManager.markBroadcastAttempting is required for reserved-note broadcast");
   }
   const leaseToken = String(
@@ -84781,7 +88005,7 @@ function broadcastReservationContext(options = {}) {
   if (!leaseToken) {
     throw new Error("reserved-note broadcast requires the current lease token");
   }
-  return { reservationManager, reservationIDs, leaseToken };
+  return { reservationManager: reservationManager2, reservationIDs, leaseToken };
 }
 function signedWithdrawMessage(signedTx) {
   const body = import_tx.TxBody.decode(fromBase64(signedTx?.bodyBytes, "bodyBytes"));
@@ -85017,7 +88241,7 @@ function transferProofReadyMetadata(built, context = {}) {
   const expectedAmount = output.amount || coin?.amount || "";
   const expectedAmountHash = context.expectedAmountHash ?? context.expected_amount_hash ?? "";
   const expectedDenom = context.expectedDenom ?? context.expected_denom ?? coin?.denom ?? context.denom ?? "";
-  const operationSuccessEvidenceRequired = Boolean(
+  const operationSuccessEvidenceRequired2 = Boolean(
     expectedOutputCommitment && expectedDisclosureDigest && expectedRecipientHash && expectedAmount && expectedAmountHash && expectedDenom
   );
   return {
@@ -85030,8 +88254,8 @@ function transferProofReadyMetadata(built, context = {}) {
     expectedAmountHash,
     expectedDenom,
     batchItemIndex: batchItemIndex ?? 0,
-    batchItemIndexKnown: batchItemIndexKnown ?? (operationSuccessEvidenceRequired || batchItemIndex !== void 0 && batchItemIndex !== null),
-    operationSuccessEvidenceRequired
+    batchItemIndexKnown: batchItemIndexKnown ?? (operationSuccessEvidenceRequired2 || batchItemIndex !== void 0 && batchItemIndex !== null),
+    operationSuccessEvidenceRequired: operationSuccessEvidenceRequired2
   };
 }
 function resolveDirectOperationEvidenceHashes({
@@ -85185,12 +88409,12 @@ function withdrawProofReadyMetadata(built, context = {}) {
     metadata: expiresAtUnix ? { payload_expires_at_unix: expiresAtUnix } : {}
   };
 }
-async function markReservationProofReady(reservationManager, batch, metadata) {
-  if (!reservationManager || !batch?.reservation_ids?.length) return [];
-  if (typeof reservationManager.markProofReady !== "function") {
+async function markReservationProofReady(reservationManager2, batch, metadata) {
+  if (!reservationManager2 || !batch?.reservation_ids?.length) return [];
+  if (typeof reservationManager2.markProofReady !== "function") {
     throw new Error("reservationManager.markProofReady is required");
   }
-  const reservations = await reservationManager.markProofReady(batch.reservation_ids, {
+  const reservations = await reservationManager2.markProofReady(batch.reservation_ids, {
     ...metadata,
     leaseToken: batch.lease_token || batch.reservations?.[0]?.lease_token || ""
   });
@@ -85198,14 +88422,14 @@ async function markReservationProofReady(reservationManager, batch, metadata) {
   batch.lease_until = reservations[0]?.lease_until || batch.lease_until;
   return reservations;
 }
-async function reservationIDsForNotes(reservationManager, batch, notes) {
-  if (!reservationManager || !batch?.reservation_ids?.length) return [];
-  if (typeof reservationManager.lookupKeyForNote !== "function") {
+async function reservationIDsForNotes(reservationManager2, batch, notes) {
+  if (!reservationManager2 || !batch?.reservation_ids?.length) return [];
+  if (typeof reservationManager2.lookupKeyForNote !== "function") {
     throw new Error("reservationManager.lookupKeyForNote is required");
   }
   const lookupKeys = /* @__PURE__ */ new Set();
   for (const note of notes || []) {
-    lookupKeys.add(await reservationManager.lookupKeyForNote(note));
+    lookupKeys.add(await reservationManager2.lookupKeyForNote(note));
   }
   const reservationIDs = (batch.reservations || []).filter((reservation) => lookupKeys.has(reservation.nullifier_lookup_key)).map((reservation) => reservation.reservation_id);
   return reservationIDs;
@@ -85217,14 +88441,14 @@ function mergeBatchReservations(batch, updated) {
   );
   batch.lease_until = updated[0]?.lease_until || batch.lease_until;
 }
-async function markReservationProofReadyForBatchItems(reservationManager, batch, items) {
-  if (!reservationManager || !batch?.reservation_ids?.length) return [];
-  if (typeof reservationManager.markProofReadyBatch !== "function") {
+async function markReservationProofReadyForBatchItems(reservationManager2, batch, items) {
+  if (!reservationManager2 || !batch?.reservation_ids?.length) return [];
+  if (typeof reservationManager2.markProofReadyBatch !== "function") {
     throw new Error("reservationManager.markProofReadyBatch is required for atomic batch transfer preparation");
   }
   const entries = [];
   for (const item of items || []) {
-    const reservationIDs = await reservationIDsForNotes(reservationManager, batch, item?.notes);
+    const reservationIDs = await reservationIDsForNotes(reservationManager2, batch, item?.notes);
     if (!reservationIDs.length) continue;
     entries.push({
       reservationIDs,
@@ -85235,19 +88459,19 @@ async function markReservationProofReadyForBatchItems(reservationManager, batch,
     });
   }
   if (!entries.length) return [];
-  const updated = await reservationManager.markProofReadyBatch(entries);
+  const updated = await reservationManager2.markProofReadyBatch(entries);
   mergeBatchReservations(batch, updated);
   return updated;
 }
-async function replanProofReadyReservations(reservationManager, batch, error, reason) {
-  if (!reservationManager || !batch?.reservation_ids?.length) return [];
-  if (typeof reservationManager.getReservation !== "function" || typeof reservationManager.markReplanRequired !== "function") {
+async function replanProofReadyReservations(reservationManager2, batch, error, reason) {
+  if (!reservationManager2 || !batch?.reservation_ids?.length) return [];
+  if (typeof reservationManager2.getReservation !== "function" || typeof reservationManager2.markReplanRequired !== "function") {
     return [];
   }
   const proofReadyIDs = [];
   for (const reservationID of batch.reservation_ids || []) {
     try {
-      const reservation = await reservationManager.getReservation(reservationID);
+      const reservation = await reservationManager2.getReservation(reservationID);
       if (reservation.status === reservationStatuses.ProofReady) {
         proofReadyIDs.push(reservationID);
       }
@@ -85255,7 +88479,7 @@ async function replanProofReadyReservations(reservationManager, batch, error, re
     }
   }
   if (!proofReadyIDs.length) return [];
-  return reservationManager.markReplanRequired(proofReadyIDs, {
+  return reservationManager2.markReplanRequired(proofReadyIDs, {
     leaseToken: batch.lease_token || batch.reservations?.[0]?.lease_token || "",
     error: reason,
     metadata: {
@@ -85265,18 +88489,18 @@ async function replanProofReadyReservations(reservationManager, batch, error, re
     }
   });
 }
-async function renewReservationLease(reservationManager, batch) {
-  if (!reservationManager || !batch?.reservation_ids?.length) return [];
-  if (typeof reservationManager.renewLease !== "function") return [];
-  const reservations = await reservationManager.renewLease(batch.reservation_ids, {
+async function renewReservationLease(reservationManager2, batch) {
+  if (!reservationManager2 || !batch?.reservation_ids?.length) return [];
+  if (typeof reservationManager2.renewLease !== "function") return [];
+  const reservations = await reservationManager2.renewLease(batch.reservation_ids, {
     leaseToken: batch.lease_token || batch.reservations?.[0]?.lease_token || ""
   });
   batch.reservations = reservations;
   batch.lease_until = reservations[0]?.lease_until || batch.lease_until;
   return reservations;
 }
-async function withReservationHeartbeat(reservationManager, batch, task) {
-  if (!reservationManager || !batch?.reservation_ids?.length || typeof reservationManager.renewLease !== "function") {
+async function withReservationHeartbeat(reservationManager2, batch, task) {
+  if (!reservationManager2 || !batch?.reservation_ids?.length || typeof reservationManager2.renewLease !== "function") {
     return task({
       assertHeartbeatHealthy() {
       },
@@ -85284,9 +88508,9 @@ async function withReservationHeartbeat(reservationManager, batch, task) {
       }
     });
   }
-  await renewReservationLease(reservationManager, batch);
+  await renewReservationLease(reservationManager2, batch);
   const heartbeatIntervalMs = reservationHeartbeatIntervalMs({
-    leaseDurationMs: reservationManager.leaseDurationMs,
+    leaseDurationMs: reservationManager2.leaseDurationMs,
     leaseUntil: batch.lease_until || batch.reservations?.[0]?.lease_until
   });
   let heartbeatError = null;
@@ -85294,7 +88518,7 @@ async function withReservationHeartbeat(reservationManager, batch, task) {
   const heartbeat = async () => {
     if (heartbeatError) return;
     try {
-      await renewReservationLease(reservationManager, batch);
+      await renewReservationLease(reservationManager2, batch);
     } catch (error) {
       heartbeatError = error;
     }
@@ -86463,10 +89687,10 @@ var ClairveilJS = class {
     scanSource,
     scan_source,
     gasLimit = 8e6,
-    reservationManager,
+    reservationManager: reservationManager2,
     reservation_manager
   } = {}) {
-    const resolvedReservationManager = reservationManager ?? reservation_manager ?? null;
+    const resolvedReservationManager = reservationManager2 ?? reservation_manager ?? null;
     const operationEvidence = resolveDirectOperationEvidenceHashes({
       expectedRecipientHash,
       expected_recipient_hash,
@@ -86687,7 +89911,7 @@ var ClairveilJS = class {
     disable_self_view_disclosure,
     selfViewDisclosureTargetPubKeyHex,
     self_view_disclosure_target_pubkey,
-    reservationManager,
+    reservationManager: reservationManager2,
     reservation_manager
   } = {}) {
     if (!this.enableExperimentalBatchTransfer) {
@@ -86729,10 +89953,10 @@ var ClairveilJS = class {
     if (selfViewDisclosureTargetPubKeyHex != null && self_view_disclosure_target_pubkey != null && comparableBatchHex(selfViewDisclosureTargetPubKeyHex) !== comparableBatchHex(self_view_disclosure_target_pubkey)) {
       throw new Error("selfViewDisclosureTargetPubKeyHex aliases conflict");
     }
-    if (reservationManager != null && reservation_manager != null && reservationManager !== reservation_manager) {
+    if (reservationManager2 != null && reservation_manager != null && reservationManager2 !== reservation_manager) {
       throw new Error("reservationManager aliases conflict");
     }
-    const resolvedReservationManager = reservationManager ?? reservation_manager ?? null;
+    const resolvedReservationManager = reservationManager2 ?? reservation_manager ?? null;
     const normalizedPayments = normalizeBatchTransferPayments({
       payments,
       amounts,
@@ -87315,7 +90539,7 @@ var ClairveilJS = class {
     denom,
     operationId,
     operation_id,
-    reservationManager,
+    reservationManager: reservationManager2,
     reservation_manager,
     reservation,
     reservationBatch,
@@ -87332,14 +90556,14 @@ var ClairveilJS = class {
     if (chainNowUnix != null && chain_now_unix != null && Number(chainNowUnix) !== Number(chain_now_unix)) {
       throw new Error("batch transfer chainNowUnix aliases conflict");
     }
-    if (reservationManager != null && reservation_manager != null && reservationManager !== reservation_manager) {
+    if (reservationManager2 != null && reservation_manager != null && reservationManager2 !== reservation_manager) {
       throw new Error("reservationManager aliases conflict");
     }
     const reservationAliases = [reservation, reservationBatch, reservation_batch].filter((value) => value != null);
     if (reservationAliases.length > 1 && reservationAliases.some((value) => value !== reservationAliases[0])) {
       throw new Error("reservation aliases conflict");
     }
-    const resolvedReservationManager = reservationManager ?? reservation_manager ?? null;
+    const resolvedReservationManager = reservationManager2 ?? reservation_manager ?? null;
     if (!resolvedReservationManager) {
       throw new Error("finalizePreparedBatchTransfer requires the original reservationManager");
     }
@@ -87516,10 +90740,10 @@ var ClairveilJS = class {
     chainNowUnix,
     chain_now_unix,
     gasLimit = 5e6,
-    reservationManager,
+    reservationManager: reservationManager2,
     reservation_manager
   } = {}) {
-    const resolvedReservationManager = reservationManager ?? reservation_manager ?? null;
+    const resolvedReservationManager = reservationManager2 ?? reservation_manager ?? null;
     const privacy = material || await this.deriveWalletPrivacyMaterial(wallet);
     const scanOptions = resolveScanOptions({
       scan,
@@ -87670,10 +90894,10 @@ var ClairveilJS = class {
     expiresAtUnix,
     chainNowUnix,
     chain_now_unix,
-    reservationManager,
+    reservationManager: reservationManager2,
     reservation_manager
   } = {}) {
-    const resolvedReservationManager = reservationManager ?? reservation_manager ?? null;
+    const resolvedReservationManager = reservationManager2 ?? reservation_manager ?? null;
     const privacy = material || await this.deriveWalletPrivacyMaterial(wallet);
     const scanOptions = resolveScanOptions({
       scan,
@@ -88585,14 +91809,14 @@ function evmTransactionBindingHash(transaction = {}) {
   return sha256Hex(JSON.stringify(canonical));
 }
 function broadcastReservationContext2(options = {}) {
-  const reservationManager = options.reservationManager ?? options.reservation_manager ?? null;
+  const reservationManager2 = options.reservationManager ?? options.reservation_manager ?? null;
   const reservation = options.reservation ?? options.reservationBatch ?? options.reservation_batch ?? null;
   const reservationIDs = [...reservation?.reservation_ids || []].filter(Boolean).map(String);
-  if (!reservationManager && !reservation) return null;
+  if (!reservationManager2 && !reservation) return null;
   if (!reservationIDs.length) {
     throw new Error("reserved-note broadcast requires reservation ids");
   }
-  if (!reservationManager || typeof reservationManager.markBroadcastAttempting !== "function") {
+  if (!reservationManager2 || typeof reservationManager2.markBroadcastAttempting !== "function") {
     throw new Error("reservationManager.markBroadcastAttempting is required for reserved-note broadcast");
   }
   const leaseToken = String(
@@ -88601,7 +91825,7 @@ function broadcastReservationContext2(options = {}) {
   if (!leaseToken) {
     throw new Error("reserved-note broadcast requires the current lease token");
   }
-  return { reservationManager, reservationIDs, leaseToken };
+  return { reservationManager: reservationManager2, reservationIDs, leaseToken };
 }
 function isKnownWithdrawTransaction(transaction) {
   if (evmTransactionMetadata(transaction).operation === "withdraw") return true;
@@ -90348,12 +93572,12 @@ function scanOptionsFromBody(body = {}) {
 function relayChainNowUnixFromBody(body = {}) {
   return body.chainNowUnix ?? body.chain_now_unix ?? body.nowUnix ?? body.now_unix;
 }
-async function reservationAvailableNotes2(reservationManager, notes) {
-  if (!reservationManager) return notes;
-  if (typeof reservationManager.filterAvailableNotes !== "function") {
+async function reservationAvailableNotes2(reservationManager2, notes) {
+  if (!reservationManager2) return notes;
+  if (typeof reservationManager2.filterAvailableNotes !== "function") {
     throw new Error("reservationManager.filterAvailableNotes is required");
   }
-  return reservationManager.filterAvailableNotes(notes);
+  return reservationManager2.filterAvailableNotes(notes);
 }
 function reservationBatchSummary2(batch) {
   if (!batch) return null;
@@ -90377,7 +93601,7 @@ function transferProofReadyMetadata2(built, context = {}) {
   const expectedAmount = output.amount || coin?.amount || "";
   const expectedAmountHash = context.expectedAmountHash ?? context.expected_amount_hash ?? "";
   const expectedDenom = context.expectedDenom ?? context.expected_denom ?? coin?.denom ?? context.denom ?? "";
-  const operationSuccessEvidenceRequired = Boolean(
+  const operationSuccessEvidenceRequired2 = Boolean(
     expectedOutputCommitment && expectedDisclosureDigest && expectedRecipientHash && expectedAmount && expectedAmountHash && expectedDenom
   );
   return {
@@ -90390,8 +93614,8 @@ function transferProofReadyMetadata2(built, context = {}) {
     expectedAmountHash,
     expectedDenom,
     batchItemIndex: batchItemIndex ?? 0,
-    batchItemIndexKnown: batchItemIndexKnown ?? (operationSuccessEvidenceRequired || batchItemIndex !== void 0 && batchItemIndex !== null),
-    operationSuccessEvidenceRequired
+    batchItemIndexKnown: batchItemIndexKnown ?? (operationSuccessEvidenceRequired2 || batchItemIndex !== void 0 && batchItemIndex !== null),
+    operationSuccessEvidenceRequired: operationSuccessEvidenceRequired2
   };
 }
 function resolveDirectOperationEvidenceHashes2({
@@ -90454,12 +93678,12 @@ function withdrawProofReadyMetadata2(built, context = {}) {
     metadata: expiresAtUnix ? { payload_expires_at_unix: expiresAtUnix } : {}
   };
 }
-async function markReservationProofReady2(reservationManager, batch, metadata) {
-  if (!reservationManager || !batch?.reservation_ids?.length) return [];
-  if (typeof reservationManager.markProofReady !== "function") {
+async function markReservationProofReady2(reservationManager2, batch, metadata) {
+  if (!reservationManager2 || !batch?.reservation_ids?.length) return [];
+  if (typeof reservationManager2.markProofReady !== "function") {
     throw new Error("reservationManager.markProofReady is required");
   }
-  const reservations = await reservationManager.markProofReady(batch.reservation_ids, {
+  const reservations = await reservationManager2.markProofReady(batch.reservation_ids, {
     ...metadata,
     leaseToken: batch.lease_token || batch.reservations?.[0]?.lease_token || ""
   });
@@ -90467,12 +93691,12 @@ async function markReservationProofReady2(reservationManager, batch, metadata) {
   batch.lease_until = reservations[0]?.lease_until || batch.lease_until;
   return reservations;
 }
-async function markReservationReplanRequired(reservationManager, reservation, error, reason) {
-  if (!reservationManager || !reservation?.reservation_ids?.length) return [];
-  if (typeof reservationManager.markReplanRequired !== "function") {
+async function markReservationReplanRequired(reservationManager2, reservation, error, reason) {
+  if (!reservationManager2 || !reservation?.reservation_ids?.length) return [];
+  if (typeof reservationManager2.markReplanRequired !== "function") {
     throw new Error("reservationManager.markReplanRequired is required");
   }
-  return reservationManager.markReplanRequired(reservation.reservation_ids, {
+  return reservationManager2.markReplanRequired(reservation.reservation_ids, {
     leaseToken: reservation.lease_token || reservation.reservations?.[0]?.lease_token || "",
     error: reason,
     metadata: {
@@ -90482,25 +93706,25 @@ async function markReservationReplanRequired(reservationManager, reservation, er
     }
   });
 }
-async function replanProofReadyReservationPreservingError(reservationManager, reservation, error, reason) {
+async function replanProofReadyReservationPreservingError(reservationManager2, reservation, error, reason) {
   try {
-    await markReservationReplanRequired(reservationManager, reservation, error, reason);
+    await markReservationReplanRequired(reservationManager2, reservation, error, reason);
   } catch (cleanupError) {
     appendReservationCleanupErrors2(error, [cleanupError]);
   }
 }
-async function renewReservationLease2(reservationManager, batch) {
-  if (!reservationManager || !batch?.reservation_ids?.length) return [];
-  if (typeof reservationManager.renewLease !== "function") return [];
-  const reservations = await reservationManager.renewLease(batch.reservation_ids, {
+async function renewReservationLease2(reservationManager2, batch) {
+  if (!reservationManager2 || !batch?.reservation_ids?.length) return [];
+  if (typeof reservationManager2.renewLease !== "function") return [];
+  const reservations = await reservationManager2.renewLease(batch.reservation_ids, {
     leaseToken: batch.lease_token || batch.reservations?.[0]?.lease_token || ""
   });
   batch.reservations = reservations;
   batch.lease_until = reservations[0]?.lease_until || batch.lease_until;
   return reservations;
 }
-async function withReservationHeartbeat2(reservationManager, batch, task) {
-  if (!reservationManager || !batch?.reservation_ids?.length || typeof reservationManager.renewLease !== "function") {
+async function withReservationHeartbeat2(reservationManager2, batch, task) {
+  if (!reservationManager2 || !batch?.reservation_ids?.length || typeof reservationManager2.renewLease !== "function") {
     return task({
       assertHeartbeatHealthy() {
       },
@@ -90508,9 +93732,9 @@ async function withReservationHeartbeat2(reservationManager, batch, task) {
       }
     });
   }
-  await renewReservationLease2(reservationManager, batch);
+  await renewReservationLease2(reservationManager2, batch);
   const heartbeatIntervalMs = reservationHeartbeatIntervalMs({
-    leaseDurationMs: reservationManager.leaseDurationMs,
+    leaseDurationMs: reservationManager2.leaseDurationMs,
     leaseUntil: batch.lease_until || batch.reservations?.[0]?.lease_until
   });
   let heartbeatError = null;
@@ -90518,7 +93742,7 @@ async function withReservationHeartbeat2(reservationManager, batch, task) {
   const heartbeat = async () => {
     if (heartbeatError) return;
     try {
-      await renewReservationLease2(reservationManager, batch);
+      await renewReservationLease2(reservationManager2, batch);
     } catch (error) {
       heartbeatError = error;
     }
@@ -91284,7 +94508,7 @@ var ClairveilBrowserClient = class {
     });
     const allowPlanStep = Boolean(body.allowPlanStep ?? body.allow_plan_step);
     const scanOptions = scanOptionsFromBody(body);
-    const reservationManager = body.reservationManager ?? body.reservation_manager ?? null;
+    const reservationManager2 = body.reservationManager ?? body.reservation_manager ?? null;
     if (walletType !== "evm") {
       const prepared = await this.cosmos.prepareTransfer({
         proverAdapter: body.proverAdapter ?? body.prover_adapter ?? this.proverAdapter(),
@@ -91305,7 +94529,7 @@ var ClairveilBrowserClient = class {
         allowPlanStep,
         scan: scanOptions,
         gasLimit: 8e6,
-        reservationManager
+        reservationManager: reservationManager2
       });
       if (prepared.status !== "ready") throw plannerError(prepared);
       return {
@@ -91339,7 +94563,7 @@ var ClairveilBrowserClient = class {
       maxPages: scanOptions.maxPages ?? defaultPrepareScanMaxPages2,
       includeFoundNotes: true
     });
-    const availableFoundNotes = await reservationAvailableNotes2(reservationManager, scan.foundNotes);
+    const availableFoundNotes = await reservationAvailableNotes2(reservationManager2, scan.foundNotes);
     const plan = planTransferNotes({ notes: availableFoundNotes, amount, denom: this.denom });
     if (plan.status === "self_merge_required" && !allowPlanStep) throw plannerError({ status: plan.status, plan, scan });
     if (!plan.canBuildTx) throw plannerError({ status: plan.status, plan, scan });
@@ -91354,7 +94578,7 @@ var ClairveilBrowserClient = class {
     const stepAmount = isFinal ? amount : plan.nextAmount;
     let reservationBatch = null;
     try {
-      reservationBatch = await preparePlanReservation(reservationManager, {
+      reservationBatch = await preparePlanReservation(reservationManager2, {
         plan,
         kind: isFinal ? "transfer" : "self_merge",
         metadata: {
@@ -91364,7 +94588,7 @@ var ClairveilBrowserClient = class {
           finalRecipient: recipient
         }
       });
-      const heartbeatResult = await withReservationHeartbeat2(reservationManager, reservationBatch, async ({ assertHeartbeatHealthy, heartbeatNow }) => {
+      const heartbeatResult = await withReservationHeartbeat2(reservationManager2, reservationBatch, async ({ assertHeartbeatHealthy, heartbeatNow }) => {
         const built2 = await this.cosmos.buildTransferMessage({
           proverAdapter: body.proverAdapter ?? body.prover_adapter ?? this.proverAdapter(),
           signal: body.signal,
@@ -91392,7 +94616,7 @@ var ClairveilBrowserClient = class {
         if (reservationBatch) transaction2 = markEvmTransactionReservationRequired(transaction2);
         const txBytesHash = reservationBatch ? evmTransactionBindingHash(transaction2) : "";
         await heartbeatNow();
-        await markReservationProofReady2(reservationManager, reservationBatch, transferProofReadyMetadata2(built2, {
+        await markReservationProofReady2(reservationManager2, reservationBatch, transferProofReadyMetadata2(built2, {
           amount: stepAmount,
           denom: this.denom,
           expectedRecipientHash: isFinal ? operationEvidence.expectedRecipientHash : "",
@@ -91424,7 +94648,7 @@ var ClairveilBrowserClient = class {
         plan
       };
     } catch (error) {
-      await rollbackPlanReservationPreservingError(reservationManager, reservationBatch, error);
+      await rollbackPlanReservationPreservingError(reservationManager2, reservationBatch, error);
       throw error;
     }
   }
@@ -91697,7 +94921,7 @@ var ClairveilBrowserClient = class {
     const rawRecipient = body.recipient;
     const evmRecipient = isEvmAddress(rawRecipient) ? normalizeEvmAddress(rawRecipient, "withdraw recipient") : "";
     const recipient = evmRecipient ? evmAddressToBech32(evmRecipient, this.accountPrefix) : rawRecipient;
-    const reservationManager = body.reservationManager ?? body.reservation_manager ?? null;
+    const reservationManager2 = body.reservationManager ?? body.reservation_manager ?? null;
     if (walletType !== "evm") {
       const prepared = await this.cosmos.prepareWithdraw({
         proverAdapter: body.proverAdapter ?? body.prover_adapter ?? this.proverAdapter(),
@@ -91709,7 +94933,7 @@ var ClairveilBrowserClient = class {
         expiresAtUnix: body.expiresAtUnix ?? body.expires_at_unix,
         chainNowUnix: body.chainNowUnix ?? body.chain_now_unix,
         gasLimit: 5e6,
-        reservationManager
+        reservationManager: reservationManager2
       });
       if (prepared.status !== "ready") throw plannerError(prepared);
       return {
@@ -91741,13 +94965,13 @@ var ClairveilBrowserClient = class {
       maxPages: scanOptions.maxPages ?? defaultPrepareScanMaxPages2,
       includeFoundNotes: true
     });
-    const availableFoundNotes = await reservationAvailableNotes2(reservationManager, scan.foundNotes);
+    const availableFoundNotes = await reservationAvailableNotes2(reservationManager2, scan.foundNotes);
     const plan = planWithdrawNotes({ notes: availableFoundNotes, amount, denom: this.denom });
     if (!plan.canBuildTx) throw plannerError({ status: plan.status, plan, scan });
     assertPlanCanBuildTx(plan);
     let reservationBatch = null;
     try {
-      reservationBatch = await preparePlanReservation(reservationManager, {
+      reservationBatch = await preparePlanReservation(reservationManager2, {
         plan,
         kind: "withdraw",
         metadata: {
@@ -91755,7 +94979,7 @@ var ClairveilBrowserClient = class {
           recipient
         }
       });
-      const heartbeatResult = await withReservationHeartbeat2(reservationManager, reservationBatch, async ({ assertHeartbeatHealthy, heartbeatNow }) => {
+      const heartbeatResult = await withReservationHeartbeat2(reservationManager2, reservationBatch, async ({ assertHeartbeatHealthy, heartbeatNow }) => {
         const built2 = await this.cosmos.buildWithdrawMessage({
           proverAdapter: body.proverAdapter ?? body.prover_adapter ?? this.proverAdapter(),
           signal: body.signal,
@@ -91784,7 +95008,7 @@ var ClairveilBrowserClient = class {
         if (reservationBatch) transaction2 = markEvmTransactionReservationRequired(transaction2);
         const txBytesHash = reservationBatch ? evmTransactionBindingHash(transaction2) : "";
         await heartbeatNow();
-        await markReservationProofReady2(reservationManager, reservationBatch, withdrawProofReadyMetadata2(built2, { txBytesHash }));
+        await markReservationProofReady2(reservationManager2, reservationBatch, withdrawProofReadyMetadata2(built2, { txBytesHash }));
         return { built: built2, transaction: transaction2, message: message2 };
       });
       const { built, transaction, message } = heartbeatResult;
@@ -91810,7 +95034,7 @@ var ClairveilBrowserClient = class {
         plan
       };
     } catch (error) {
-      await rollbackPlanReservationPreservingError(reservationManager, reservationBatch, error);
+      await rollbackPlanReservationPreservingError(reservationManager2, reservationBatch, error);
       throw error;
     }
   }
@@ -91822,7 +95046,7 @@ var ClairveilBrowserClient = class {
     const rawRecipient = body.recipient;
     const evmRecipient = isEvmAddress(rawRecipient) ? normalizeEvmAddress(rawRecipient, "withdraw recipient") : "";
     const recipient = evmRecipient ? evmAddressToBech32(evmRecipient, this.accountPrefix) : rawRecipient;
-    const reservationManager = body.reservationManager ?? body.reservation_manager ?? null;
+    const reservationManager2 = body.reservationManager ?? body.reservation_manager ?? null;
     const prepared = await this.cosmos.prepareRelayWithdraw({
       proverAdapter: body.proverAdapter ?? body.prover_adapter ?? this.proverAdapter(),
       material,
@@ -91832,7 +95056,7 @@ var ClairveilBrowserClient = class {
       scan: scanOptionsFromBody(body),
       expiresAtUnix: body.expiresAtUnix ?? body.expires_at_unix,
       chainNowUnix: relayChainNowUnixFromBody(body),
-      reservationManager
+      reservationManager: reservationManager2
     });
     if (prepared.status !== "ready") throw plannerError(prepared);
     if (walletType === "evm") {
@@ -91849,7 +95073,7 @@ var ClairveilBrowserClient = class {
         });
       } catch (error) {
         await replanProofReadyReservationPreservingError(
-          reservationManager,
+          reservationManager2,
           prepared.reservation,
           error,
           "evm_relay_transaction_build_failed_before_handoff"
@@ -92296,6 +95520,86 @@ var EncryptedLocalStorageNoteStore = class _EncryptedLocalStorageNoteStore exten
   }
 };
 
+// public/encrypted-reservation-manager.js
+var reservationStateVersion = "clairveil-encrypted-reservation-state-v1";
+var reservationStateInfo = new TextEncoder().encode("clairveil/reservation-state/v1");
+async function deriveReservationStateKey({ cryptoImpl, keyMaterial, namespace }) {
+  const bytes4 = keyMaterial instanceof Uint8Array ? keyMaterial : new Uint8Array(keyMaterial || []);
+  if (!bytes4.length) throw new Error("reservation encryption key material is required");
+  const material = await cryptoImpl.subtle.importKey("raw", bytes4, "HKDF", false, ["deriveKey"]);
+  return cryptoImpl.subtle.deriveKey({
+    name: "HKDF",
+    hash: "SHA-256",
+    salt: new TextEncoder().encode(namespace),
+    info: reservationStateInfo
+  }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+}
+function reservationStateError(cause) {
+  const error = new Error("Encrypted note reservation state cannot be decrypted. Manual recovery is required.", { cause });
+  error.code = "RESERVATION_STATE_CORRUPT";
+  return error;
+}
+async function createEncryptedBrowserReservationManager({
+  namespace,
+  ownerKeyId,
+  indexKey,
+  keyMaterial = indexKey,
+  leaseOwner,
+  cryptoImpl = globalThis.crypto,
+  indexedDB = globalThis.indexedDB,
+  locks = globalThis.navigator?.locks
+} = {}) {
+  if (!cryptoImpl?.subtle || typeof cryptoImpl.getRandomValues !== "function") {
+    throw new Error("Web Crypto is required for encrypted note reservations");
+  }
+  const resolvedNamespace = String(namespace || "").trim();
+  if (!resolvedNamespace) throw new Error("reservation namespace is required");
+  const encryptionKey = await deriveReservationStateKey({
+    cryptoImpl,
+    keyMaterial,
+    namespace: resolvedNamespace
+  });
+  const encodeState = async (state2) => {
+    const iv = cryptoImpl.getRandomValues(new Uint8Array(12));
+    const plaintext = new TextEncoder().encode(JSON.stringify(state2));
+    const ciphertext = await cryptoImpl.subtle.encrypt({ name: "AES-GCM", iv }, encryptionKey, plaintext);
+    return {
+      version: reservationStateVersion,
+      iv: [...iv],
+      ciphertext: [...new Uint8Array(ciphertext)]
+    };
+  };
+  const decodeState = async (value) => {
+    try {
+      if (value?.version !== reservationStateVersion || !Array.isArray(value.iv) || !Array.isArray(value.ciphertext)) {
+        throw new Error("unsupported encrypted reservation state");
+      }
+      const plaintext = await cryptoImpl.subtle.decrypt({
+        name: "AES-GCM",
+        iv: new Uint8Array(value.iv)
+      }, encryptionKey, new Uint8Array(value.ciphertext));
+      return JSON.parse(new TextDecoder().decode(plaintext));
+    } catch (error) {
+      throw reservationStateError(error);
+    }
+  };
+  const store = createBrowserReservationStore({
+    dbName: "clairveil-dapp-reservations-v1",
+    namespace: resolvedNamespace,
+    indexedDB,
+    locks,
+    requireLocks: true,
+    encodeState,
+    decodeState
+  });
+  return createNoteReservationManager({
+    store,
+    ownerKeyId,
+    indexKey,
+    leaseOwner
+  });
+}
+
 // public/app.js
 function defaultMetaMaskState() {
   return {
@@ -92354,6 +95658,15 @@ function defaultKeplrState() {
     showSpendableOnly: true
   };
 }
+function defaultReservationState() {
+  return {
+    status: "idle",
+    message: "No active note reservations",
+    active: [],
+    retryBlocked: false,
+    reconciling: false
+  };
+}
 var state = {
   config: null,
   chainProfiles: [],
@@ -92397,7 +95710,8 @@ var state = {
   relayWithdraw: {
     handoff: null,
     json: ""
-  }
+  },
+  reservations: defaultReservationState()
 };
 var $ = (selector) => document.querySelector(selector);
 var shieldedAddressBookPromise = null;
@@ -92407,6 +95721,10 @@ var browserClientDepositProofProvider = null;
 var noteStore = null;
 var noteStorePromise = null;
 var noteStoreKey = "";
+var reservationManager = null;
+var reservationManagerPromise = null;
+var reservationManagerKey = "";
+var reservationLeaseOwner = `browser-tab:${globalThis.crypto?.randomUUID?.() || Date.now()}`;
 var serverConfigAvailable = true;
 function activeChainProfile() {
   return state.chainProfiles.find((profile) => profile.id === state.selectedChainProfileId) || state.chainProfiles.find((profile) => profile.id === state.config?.activeChainProfileId) || state.config?.activeProfile || null;
@@ -92655,6 +95973,134 @@ async function clearCurrentNoteStore() {
   state.keplr.noteSyncStatus = "rescan-required";
   state.keplr.noteSyncMessage = "Local note cache reset \xB7 full rescan required";
 }
+function reservationIdentity() {
+  const profile = activeChainProfile();
+  const owner = String(state.keplr.account || "").trim().toLowerCase();
+  if (!profile?.id || !profile.chainId || !owner || !state.keplr.rootSignatureBase64) return null;
+  return {
+    owner,
+    ownerKeyId: `${profile.chainId}:${owner}`,
+    namespace: `${profile.chainId}:${profile.id}:${owner}`,
+    cacheKey: `${profile.id}:${profile.chainId}:${owner}:${state.keplr.rootSignatureHash || state.keplr.signatureHash}`
+  };
+}
+async function currentReservationManager() {
+  const identity = reservationIdentity();
+  if (!identity) return null;
+  if (reservationManager && reservationManagerKey === identity.cacheKey) return reservationManager;
+  if (!reservationManagerPromise || reservationManagerKey !== identity.cacheKey) {
+    const openingKey = identity.cacheKey;
+    reservationManagerKey = openingKey;
+    const material = derivePrivacyMaterial({
+      address: state.keplr.account,
+      pubKeyHex: state.keplr.pubkeyHex,
+      signatureBase64: state.keplr.rootSignatureBase64,
+      shieldedPrefix: shieldedPrefix()
+    });
+    const opening = createEncryptedBrowserReservationManager({
+      namespace: identity.namespace,
+      ownerKeyId: identity.ownerKeyId,
+      indexKey: material.rootSeed,
+      keyMaterial: material.rootSeed,
+      leaseOwner: reservationLeaseOwner
+    }).then((manager) => {
+      if (reservationManagerKey === openingKey && reservationManagerPromise === opening) {
+        reservationManager = manager;
+      }
+      return manager;
+    }).catch((error) => {
+      if (reservationManagerKey === openingKey && reservationManagerPromise === opening) {
+        reservationManagerPromise = null;
+        state.reservations.status = "error";
+        state.reservations.message = error.message;
+        state.reservations.retryBlocked = true;
+      }
+      throw error;
+    });
+    reservationManagerPromise = opening;
+  }
+  return reservationManagerPromise;
+}
+function preparedReservationIDs(data) {
+  return [...new Set(data?.reservation?.reservation_ids || [])];
+}
+function preparedReservationBinding(data) {
+  return data?.reservation && data?.reservationManager ? { reservationManager: data.reservationManager, reservation: data.reservation } : {};
+}
+function reservationStatusSlug(status) {
+  return String(status || "idle").replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase();
+}
+function renderReservationState() {
+  if (!els.reservationState || !els.reconcileReservations) return;
+  els.reservationState.textContent = state.reservations.message;
+  els.reservationState.dataset.status = reservationStatusSlug(state.reservations.status);
+  const canReconcile = Boolean(state.keplr.rootSignatureBase64) && state.reservations.active.length > 0 && !state.reservations.reconciling;
+  els.reconcileReservations.disabled = !canReconcile;
+  els.reconcileReservations.textContent = state.reservations.reconciling ? "Reconciling\u2026" : "Reconcile";
+}
+function summarizeReservationState(records = []) {
+  if (!records.length) return defaultReservationState();
+  const priority = [
+    reservationStatuses.ManualReview,
+    reservationStatuses.Unknown,
+    reservationStatuses.Submitted,
+    reservationStatuses.ProofReady,
+    reservationStatuses.Proving,
+    reservationStatuses.Reserved
+  ];
+  const primary = priority.find((status) => records.some((record) => record.status === status)) || records[0].status;
+  const primaryRecords = records.filter((record) => record.status === primary);
+  const txHash = primaryRecords.map((record) => record.submitted_tx_hash).find(Boolean) || "";
+  const handedOff = records.some((record) => record.metadata?.relay_handed_off === true);
+  const detail = txHash ? ` \xB7 tx ${shorten(txHash, 12, 10)}` : "";
+  const handoffDetail = handedOff ? " \xB7 relay handoff recorded" : "";
+  return {
+    status: primary,
+    message: `${records.length} active \xB7 ${primary}${detail}${handoffDetail}`,
+    active: records,
+    retryBlocked: true,
+    reconciling: false
+  };
+}
+async function refreshReservationState(manager = null) {
+  const resolvedManager = manager || await currentReservationManager();
+  if (!resolvedManager) {
+    state.reservations = defaultReservationState();
+    renderReservationState();
+    return [];
+  }
+  try {
+    const active = await resolvedManager.listActiveReservations();
+    const reconciling = state.reservations.reconciling;
+    state.reservations = summarizeReservationState(active);
+    state.reservations.reconciling = reconciling;
+    renderReservationState();
+    updateAmountActionButtons();
+    return active;
+  } catch (error) {
+    state.reservations = {
+      status: "error",
+      message: error.message,
+      active: state.reservations.active,
+      retryBlocked: true,
+      reconciling: false
+    };
+    renderReservationState();
+    updateAmountActionButtons();
+    throw error;
+  }
+}
+function noteHasSpentEvidence(note) {
+  return note?.spent === true || note?.isSpent === true || String(note?.nullifier_status || note?.nullifierStatus || "").toLowerCase() === "spent";
+}
+function noteHasUnspentEvidence(note) {
+  return note?.spent !== true && note?.isSpent !== true && String(note?.nullifier_status || note?.nullifierStatus || "").toLowerCase() === "unspent";
+}
+async function reconcileSpentReservations(manager, notes = state.keplr.notes) {
+  if (!manager) return [];
+  const spent = (notes || []).filter(noteHasSpentEvidence).map((note) => ({ ...note, spent: true, isSpent: true, nullifierStatus: "spent" }));
+  return spent.length ? manager.reconcileSpentNotes(spent) : [];
+}
 function injectedEthereumProviders() {
   const provider = window.ethereum;
   if (!provider) return [];
@@ -92768,6 +96214,8 @@ var els = {
   backupNoteCache: $("#backupNoteCache"),
   resetRescanNotes: $("#resetRescanNotes"),
   noteSyncState: $("#noteSyncState"),
+  reservationState: $("#reservationState"),
+  reconcileReservations: $("#reconcileReservations"),
   keplrTxState: $("#keplrTxState"),
   keplrSendAmount: $("#keplrSendAmount"),
   keplrSendRecipient: $("#keplrSendRecipient"),
@@ -93175,15 +96623,15 @@ function renderTransferReview(review = {}) {
   els.reviewSelfView.textContent = review.selfView || "Not applicable";
   els.reviewExpiry.textContent = review.expiresAtUnix ? `${new Date(review.expiresAtUnix * 1e3).toLocaleString()} (${review.expiresAtUnix})` : "-";
 }
-function setTransferFlowStep(activeKey, stateText) {
+function setTransferFlowStep(activeKey2, stateText) {
   if (stateText) {
     els.transferModalState.textContent = stateText;
   }
-  const activeIndex = transferFlowSteps.findIndex((step) => step.key === activeKey);
+  const activeIndex = transferFlowSteps.findIndex((step) => step.key === activeKey2);
   for (const [index, step] of transferFlowSteps.entries()) {
     const element = step.element();
-    const isActive = step.key === activeKey;
-    const isDone = activeKey === "done" || activeIndex > -1 && index < activeIndex;
+    const isActive = step.key === activeKey2;
+    const isDone = activeKey2 === "done" || activeIndex > -1 && index < activeIndex;
     element.classList.toggle("active", isActive);
     element.classList.toggle("done", isDone);
   }
@@ -93238,7 +96686,7 @@ function cancelTransferFlow() {
   }
   closeTransferFlowModal(false);
 }
-function updateTransferFlow(activeKey, stateText, leadText) {
+function updateTransferFlow(activeKey2, stateText, leadText) {
   transferFlowState.running = true;
   els.transferSteps.hidden = false;
   els.transferSuccessPanel.hidden = true;
@@ -93247,16 +96695,21 @@ function updateTransferFlow(activeKey, stateText, leadText) {
   if (leadText) {
     els.transferModalLead.textContent = leadText;
   }
-  setTransferFlowStep(activeKey, stateText);
+  setTransferFlowStep(activeKey2, stateText);
 }
-function finishTransferFlow(message, success = true, { retry = null } = {}) {
+function finishTransferFlow(message, success = true, {
+  retry = null,
+  stateText = success ? "\uC131\uACF5" : "\uC2E4\uD328",
+  failureTitle = "",
+  failureLead = ""
+} = {}) {
   const copy = transferFlowState.copy || privacyFlowCopies.transfer;
   transferFlowState.running = false;
   transferFlowState.controller = null;
   transferFlowState.retry = typeof retry === "function" ? retry : null;
-  els.transferModalLead.textContent = success ? copy.doneLead : copy.failedLead;
+  els.transferModalLead.textContent = success ? copy.doneLead : failureLead || copy.failedLead;
   els.confirmTransferFlow.hidden = true;
-  setTransferFlowStep(success ? "done" : "", success ? "\uC131\uACF5" : "\uC2E4\uD328");
+  setTransferFlowStep(success ? "done" : "", stateText);
   els.transferFlowModal.classList.toggle("failed", !success);
   if (success) {
     els.transferSuccessTitle.textContent = message || copy.successTitle;
@@ -93265,6 +96718,7 @@ function finishTransferFlow(message, success = true, { retry = null } = {}) {
     els.transferSuccessPanel.hidden = false;
     els.transferFailurePanel.hidden = true;
   } else {
+    els.transferFailureTitle.textContent = failureTitle || copy.failureTitle;
     els.transferSteps.hidden = false;
     els.transferSuccessPanel.hidden = true;
     els.transferFailureReason.textContent = message || "\uC54C \uC218 \uC5C6\uB294 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.";
@@ -93276,6 +96730,13 @@ function finishTransferFlow(message, success = true, { retry = null } = {}) {
   els.retryTransferFlow.hidden = success || !transferFlowState.retry;
   els.retryTransferFlow.disabled = false;
   els.cancelTransferFlow.focus();
+}
+function finishTransferFlowUnknown(message) {
+  finishTransferFlow(message, false, {
+    stateText: "\uACB0\uACFC \uD655\uC778 \uD544\uC694",
+    failureTitle: "\uC804\uC1A1 \uACB0\uACFC\uB97C \uD655\uC778\uD574\uC57C \uD569\uB2C8\uB2E4",
+    failureLead: "\uD2B8\uB79C\uC7AD\uC158 \uACB0\uACFC\uAC00 \uC544\uC9C1 \uD655\uC815\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uAC19\uC740 \uC694\uCCAD\uC744 \uB2E4\uC2DC \uBCF4\uB0B4\uC9C0 \uB9C8\uC138\uC694."
+  });
 }
 function retryTransferFlow() {
   const retry = transferFlowState.retry;
@@ -93516,6 +96977,9 @@ async function applyNoteScanResult(data, { reset = false } = {}) {
   state.keplr.notesScanned = true;
   state.keplr.noteSyncStatus = Boolean(cursor.has_more ?? cursor.hasMore) ? "partial" : "synced";
   state.keplr.noteSyncMessage = Boolean(cursor.has_more ?? cursor.hasMore) ? "Encrypted cache updated \xB7 more events queued" : "Encrypted cache synced";
+  const manager = await currentReservationManager();
+  await reconcileSpentReservations(manager, state.keplr.notes);
+  await refreshReservationState(manager);
 }
 function selectedLocalAccount() {
   const accounts = activeServerAccounts();
@@ -93872,6 +97336,10 @@ function resetKeplrSession() {
   noteStore = null;
   noteStorePromise = null;
   noteStoreKey = "";
+  reservationManager = null;
+  reservationManagerPromise = null;
+  reservationManagerKey = "";
+  state.reservations = defaultReservationState();
   state.relayWithdraw = { handoff: null, json: "" };
   state.privacyEvents.decoded = null;
   state.privacyEvents.error = "";
@@ -93946,7 +97414,16 @@ function renderRelayWithdraw() {
   els.copyRelayWithdraw.disabled = !state.relayWithdraw.json;
   els.downloadRelayWithdraw.disabled = !state.relayWithdraw.json;
 }
-function setRelayWithdrawHandoff(prepared) {
+async function setRelayWithdrawHandoff(prepared) {
+  const reservationIDs = preparedReservationIDs(prepared);
+  if (!prepared.reservationManager || !prepared.reservation || !reservationIDs.length) {
+    throw new Error("Relay withdraw handoff requires an active prepared reservation");
+  }
+  await prepared.reservationManager.recordRelayHandoff(reservationIDs, {
+    leaseToken: prepared.reservation.lease_token,
+    payloadHash: prepared.payload?.payload_hash || "",
+    metadata: { handoff_surface: "clairveil_example_dapp" }
+  });
   const handoff = {
     version: "clairveil-relay-withdraw-handoff-v1",
     profile_id: activeChainProfile()?.id || "",
@@ -93956,6 +97433,7 @@ function setRelayWithdrawHandoff(prepared) {
   };
   state.relayWithdraw.handoff = handoff;
   state.relayWithdraw.json = JSON.stringify(handoff, (_key, value) => typeof value === "bigint" ? value.toString() : value, 2);
+  await refreshReservationState(prepared.reservationManager);
   renderRelayWithdraw();
 }
 function renderKeplr() {
@@ -93985,6 +97463,7 @@ function renderKeplr() {
   els.backupNoteCache.disabled = !noteStoreKeys()?.encrypted || !globalThis.localStorage?.getItem(noteStoreKeys().encrypted);
   els.noteSyncState.textContent = state.keplr.noteSyncMessage || "Not scanned";
   els.noteSyncState.dataset.status = state.keplr.noteSyncStatus;
+  renderReservationState();
   renderRelayWithdraw();
   updateAmountActionButtons({ signerReady, veiledReady });
   renderEventDetail();
@@ -93996,8 +97475,12 @@ function updateAmountActionButtons(status = {}) {
   els.sendFromKeplr.disabled = !signerReady || !hasPositiveUclairInput(els.keplrSendAmount) || !isSendRecipientForWallet(els.keplrSendRecipient.value, state.activeWallet || activeWalletKind());
   els.depositFromKeplr.disabled = !signerReady || !depositProofReady() || !hasPositiveUclairInput(els.keplrDepositAmount);
   els.depositFromKeplr.title = depositProofReady() ? "" : "Configure CLAIRVEIL_DEPOSIT_PROOF_URL or inject CLAIRVEIL_DEPOSIT_PROOF_PROVIDER.";
-  els.transferFromVeiled.disabled = !veiledReady || !hasPositiveUclairInput(els.veiledTransferAmount);
-  els.withdrawFromVeiled.disabled = !veiledReady || !hasPositiveUclairInput(els.veiledWithdrawAmount);
+  const reservationBlocked = state.reservations.retryBlocked;
+  els.transferFromVeiled.disabled = !veiledReady || reservationBlocked || !hasPositiveUclairInput(els.veiledTransferAmount);
+  els.withdrawFromVeiled.disabled = !veiledReady || reservationBlocked || !hasPositiveUclairInput(els.veiledWithdrawAmount);
+  const reservationTitle = reservationBlocked ? "Reconcile the active note reservation before preparing or retrying another spend." : "";
+  els.transferFromVeiled.title = reservationTitle;
+  els.withdrawFromVeiled.title = reservationTitle;
 }
 function renderMyKeplrNotes() {
   els.myKeplrSpendable.textContent = state.keplr.notesSummary || "-";
@@ -94960,6 +98443,7 @@ async function fundKeplr() {
 async function setupKeplrPrivacy() {
   if (!state.keplr.account) return;
   if (state.keplr.rootSignatureBase64 && state.keplr.shieldedAddress && state.keplr.disclosurePubKeyHex) {
+    await refreshReservationState();
     return;
   }
   setBusy(els.setupKeplrPrivacy, true);
@@ -94998,6 +98482,7 @@ async function setupKeplrPrivacy() {
     state.keplr.shieldedAddress = account.shielded_address || "";
     state.keplr.disclosurePubKeyHex = account.disclosure_pubkey_hex || "";
     state.keplr.rootSignatureHash = account.root_signature_hash || "";
+    await refreshReservationState();
     els.keplrTxState.textContent = "Ready";
     renderKeplr();
     toast("Clairveil account ready");
@@ -95036,45 +98521,72 @@ function downloadRelayWithdraw() {
   downloadTextFile(`clairveil-relay-withdraw-${Date.now()}.json`, state.relayWithdraw.json);
   toast("Relay withdraw handoff JSON downloaded");
 }
-async function signDirectAndBroadcast(signDoc) {
+async function signDirectAndBroadcast(signDoc, options = {}) {
   if (!window.keplr?.signDirect) {
     throw new Error("Keplr signDirect not available");
   }
-  const directSignDoc = {
-    bodyBytes: base64ToBytes3(signDoc.bodyBytes),
-    authInfoBytes: base64ToBytes3(signDoc.authInfoBytes),
-    chainId: signDoc.chainId,
-    accountNumber: BigInt(signDoc.accountNumber)
+  const wallet = {
+    address: state.keplr.account,
+    pubKeyHex: state.keplr.pubkeyHex,
+    signDirect: (directSignDoc) => window.keplr.signDirect(
+      directSignDoc.chainId,
+      state.keplr.account,
+      directSignDoc
+    )
   };
-  const signed = await window.keplr.signDirect(signDoc.chainId, state.keplr.account, directSignDoc);
-  return clairveilBrowserClient().broadcastSignedTx({
-    bodyBytes: bytesToBase643(signed.signed.bodyBytes),
-    authInfoBytes: bytesToBase643(signed.signed.authInfoBytes),
-    signature: signed.signature.signature
+  return clairveilBrowserClient().signDirectAndBroadcast({
+    wallet,
+    signDoc,
+    ...options
   });
 }
-async function submitEvmTransaction(transaction) {
+async function submitEvmTransaction(transaction, options = {}) {
   if (!metaMaskProvider() || !state.wallet.account) {
     throw new Error("MetaMask is not connected");
   }
   const txHash = await clairveilBrowserClient().sendEvmTransaction({
     wallet: evmWalletAdapter(),
-    transaction
+    transaction,
+    ...options
   });
   return normalizeEvmTxHash(txHash);
 }
-async function waitForEvmTransaction(txHash, label = "EVM transaction") {
+async function waitForEvmTransaction(txHash, label = "EVM transaction", reservationBinding = {}) {
   const broadcast = await clairveilBrowserClient().waitForEvmTransaction(txHash);
-  assertSuccessfulBroadcast(broadcast, label);
-  return broadcast;
+  if (!broadcast?.receipt) {
+    const manager = reservationBinding.reservationManager;
+    const reservationIDs = preparedReservationIDs({ reservation: reservationBinding.reservation });
+    if (manager && reservationIDs.length) {
+      await manager.markUnknown(reservationIDs, {
+        fromStatus: reservationStatuses.Submitted,
+        txHash,
+        error: "evm_receipt_polling_timeout",
+        metadata: { reconcile_reason: "evm_receipt_polling_timeout" }
+      });
+      await refreshReservationState(manager);
+    }
+    return { ...broadcast, txHash: broadcast?.txHash || txHash, unknown: true };
+  }
+  try {
+    assertSuccessfulBroadcast(broadcast, label);
+  } catch (error) {
+    error.broadcast = broadcast;
+    error.txHash = broadcast.txHash || txHash;
+    throw error;
+  }
+  return { ...broadcast, txHash: broadcast.txHash || txHash };
 }
-async function sendEvmTransaction(transaction, { waitForReceipt = false, label = "EVM transaction" } = {}) {
-  const txHash = await submitEvmTransaction(transaction);
+async function sendEvmTransaction(transaction, {
+  waitForReceipt = false,
+  label = "EVM transaction",
+  reservationBinding = {}
+} = {}) {
+  const txHash = await submitEvmTransaction(transaction, reservationBinding);
   if (waitForReceipt) {
-    const broadcast = await waitForEvmTransaction(txHash, label);
+    const broadcast = await waitForEvmTransaction(txHash, label, reservationBinding);
     return { ...broadcast, txHash: broadcast.txHash || txHash };
   }
-  const waitPromise = waitForEvmTransaction(txHash, label);
+  const waitPromise = waitForEvmTransaction(txHash, label, reservationBinding);
   waitPromise.catch(() => {
   });
   return {
@@ -95083,12 +98595,12 @@ async function sendEvmTransaction(transaction, { waitForReceipt = false, label =
     waitPromise
   };
 }
-function watchEvmBroadcast(broadcast, { onIncluded, onFailed } = {}) {
+function watchEvmBroadcast(broadcast, { onIncluded, onUnknown, onFailed } = {}) {
   if (!broadcast?.waitPromise) return;
   broadcast.waitPromise.then((result) => {
-    onIncluded?.(result);
+    return result.unknown ? onUnknown?.(result) : onIncluded?.(result);
   }).catch((error) => {
-    onFailed?.(error);
+    return onFailed?.(error);
   });
 }
 function keplrPrivacyRequest(extra = {}) {
@@ -95132,36 +98644,55 @@ async function preparePrivacyDepositSignDoc(amount, options = {}) {
   }));
 }
 async function preparePrivacyTransferSignDoc(amount, recipient, disclosure = {}, options = {}) {
-  return clairveilBrowserClient().prepareTransfer(privacyRequest({
+  const manager = await currentReservationManager();
+  if (!manager) throw new Error("Encrypted note reservation manager is not available");
+  const amountValue = parsePlannerAmountValue(amount);
+  if (amountValue === null) throw new Error("Transfer amount must be a canonical integer");
+  const data = await clairveilBrowserClient().prepareTransfer(privacyRequest({
     amount,
     recipient,
     scan: { scanSource: "privacy_scan", limit: 200, maxPages: 1e3 },
     ...disclosure,
+    expectedRecipientHash: hashRecipient(recipient, { shieldedPrefix: shieldedPrefix() }),
+    expectedAmountHash: hashAmount(baseDenom(), amountValue),
+    reservationManager: manager,
     allowPlanStep: Boolean(options.allowPlanStep),
     expiresAtUnix: options.expiresAtUnix,
     chainNowUnix: options.chainNowUnix,
     signal: options.signal
   }));
+  await refreshReservationState(manager);
+  return { ...data, reservationManager: manager, reservationKind: "transfer", reservationRecipient: recipient };
 }
 async function preparePrivacyWithdrawSignDoc(amount, recipient, options = {}) {
-  return clairveilBrowserClient().prepareWithdraw(privacyRequest({
+  const manager = await currentReservationManager();
+  if (!manager) throw new Error("Encrypted note reservation manager is not available");
+  const data = await clairveilBrowserClient().prepareWithdraw(privacyRequest({
     amount,
     recipient,
     scan: { scanSource: "privacy_scan", limit: 200, maxPages: 1e3 },
+    reservationManager: manager,
     expiresAtUnix: options.expiresAtUnix,
     chainNowUnix: options.chainNowUnix,
     signal: options.signal
   }));
+  await refreshReservationState(manager);
+  return { ...data, reservationManager: manager, reservationKind: "withdraw", reservationRecipient: recipient };
 }
 async function preparePrivacyRelayWithdraw(amount, recipient, options = {}) {
-  return clairveilBrowserClient().prepareRelayWithdraw(privacyRequest({
+  const manager = await currentReservationManager();
+  if (!manager) throw new Error("Encrypted note reservation manager is not available");
+  const data = await clairveilBrowserClient().prepareRelayWithdraw(privacyRequest({
     amount,
     recipient,
     scan: { scanSource: "privacy_scan", limit: 200, maxPages: 1e3 },
+    reservationManager: manager,
     expiresAtUnix: options.expiresAtUnix,
     chainNowUnix: options.chainNowUnix,
     signal: options.signal
   }));
+  await refreshReservationState(manager);
+  return { ...data, reservationManager: manager, reservationKind: "relay", reservationRecipient: recipient };
 }
 async function broadcastPrivacyDeposit(amount, label = "deposit", options = {}) {
   els.keplrTxState.textContent = `Preparing ${label}`;
@@ -95249,12 +98780,182 @@ function assertSuccessfulBroadcast(broadcast, label = "transaction") {
   }
 }
 async function broadcastPreparedPrivacy(data, label = "privacy transaction", options = {}) {
-  const broadcast = state.activeWallet === "metamask" ? await sendEvmTransaction(data.transaction, {
-    label,
-    waitForReceipt: Boolean(options.waitForEvmReceipt)
-  }) : await signDirectAndBroadcast(data.signDoc);
-  assertSuccessfulBroadcast(broadcast, label);
-  return broadcast;
+  const reservationBinding = preparedReservationBinding(data);
+  const relayValidation = data.reservationKind === "withdraw" ? {
+    relayPayload: data.payload,
+    getChainNowUnix: () => fetchLatestChainBlockTimeUnix(),
+    expectedChainId: activeChainProfile()?.chainId,
+    expectedRecipient: data.reservationRecipient,
+    accountPrefix: accountPrefix(),
+    ...state.activeWallet === "metamask" ? { expectedEvmChainId: expectedEvmChainIdHex() } : {}
+  } : {};
+  const broadcastOptions = { ...reservationBinding, ...relayValidation };
+  try {
+    const broadcast = state.activeWallet === "metamask" ? await sendEvmTransaction(data.transaction, {
+      label,
+      waitForReceipt: Boolean(options.waitForEvmReceipt),
+      reservationBinding: broadcastOptions
+    }) : await signDirectAndBroadcast(data.signDoc, broadcastOptions);
+    await refreshReservationState(data.reservationManager);
+    if (broadcast.unknown) {
+      const error = new Error(`${label} was submitted, but its final result is unknown. Reconcile the tx hash and note nullifier before retrying.`);
+      error.code = "TX_RESULT_UNKNOWN";
+      error.txHash = broadcast.txHash || "";
+      error.broadcast = broadcast;
+      error.preparedPrivacyData = data;
+      throw error;
+    }
+    assertSuccessfulBroadcast(broadcast, label);
+    return { ...broadcast, preparedPrivacyData: data };
+  } catch (error) {
+    error.preparedPrivacyData ||= data;
+    await refreshReservationState(data.reservationManager).catch(() => {
+    });
+    throw error;
+  }
+}
+function evmReceiptHasFailed(receipt) {
+  if (!receipt || receipt.status === void 0 || receipt.status === null) return false;
+  const status = typeof receipt.status === "string" ? receipt.status.toLowerCase() : receipt.status;
+  return status === 0 || status === 0n || status === "0" || status === "0x0" || status === false;
+}
+function checkedReservationHeight(check = {}) {
+  const candidates = [
+    check.height,
+    state.keplr.noteScanCursor?.latest_height,
+    state.keplr.noteScanCursor?.latestHeight,
+    els.blockHeight?.textContent
+  ];
+  for (const candidate of candidates) {
+    try {
+      const value = typeof candidate === "string" && /^0x[0-9a-f]+$/i.test(candidate) ? Number(BigInt(candidate)) : Number(candidate);
+      if (Number.isSafeInteger(value) && value > 0) return value;
+    } catch {
+    }
+  }
+  return 0;
+}
+async function checkReservationTransaction(txHash) {
+  if (!txHash) return { checked: false, txHash: "" };
+  if (activeChainProfile()?.transport === "evm") {
+    const [receipt, transaction] = await Promise.all([
+      clairveilBrowserClient().evmJsonRpc("eth_getTransactionReceipt", [txHash]),
+      clairveilBrowserClient().evmJsonRpc("eth_getTransactionByHash", [txHash])
+    ]);
+    return {
+      checked: true,
+      txHash,
+      included: Boolean(receipt),
+      failed: evmReceiptHasFailed(receipt),
+      absent: !receipt && !transaction,
+      pending: !receipt && Boolean(transaction),
+      height: receipt?.blockNumber || 0
+    };
+  }
+  const tx = await clairveilBrowserClient().waitForTx(txHash, { attempts: 1, intervalMs: 1 });
+  const rawCode = tx?.code;
+  const code = typeof rawCode === "number" && Number.isSafeInteger(rawCode) && rawCode >= 0 ? rawCode : typeof rawCode === "string" && /^(0|[1-9]\d*)$/.test(rawCode) ? Number(rawCode) : null;
+  return {
+    checked: true,
+    txHash,
+    included: Boolean(tx),
+    failed: Boolean(tx) && code !== null && code !== 0,
+    absent: !tx,
+    pending: false,
+    height: tx?.height || 0
+  };
+}
+async function explicitlyUnspentReservationIDs(manager, records, notes = state.keplr.notes) {
+  const byLookupKey = /* @__PURE__ */ new Map();
+  for (const note of notes || []) {
+    if (!noteHasUnspentEvidence(note)) continue;
+    const lookupKey = await manager.lookupKeyForNote(note);
+    byLookupKey.set(lookupKey, note);
+  }
+  return records.filter((record) => byLookupKey.has(record.nullifier_lookup_key)).map((record) => record.reservation_id);
+}
+async function reconcileReservations({ quiet = false, manager = null } = {}) {
+  const resolvedManager = manager || await currentReservationManager();
+  if (!resolvedManager) throw new Error("Encrypted note reservation manager is not available");
+  state.reservations.reconciling = true;
+  renderReservationState();
+  try {
+    const initial = await resolvedManager.listActiveReservations();
+    const txHashes = [...new Set(initial.map((record) => record.submitted_tx_hash).filter(Boolean))];
+    const txChecks = /* @__PURE__ */ new Map();
+    for (const txHash of txHashes) {
+      txChecks.set(txHash, await checkReservationTransaction(txHash));
+    }
+    await scanKeplrNotes({ quiet: true, throwOnError: true });
+    const active = await resolvedManager.listActiveReservations();
+    for (const status of [reservationStatuses.Submitted, reservationStatuses.Unknown]) {
+      const recordsByTx = /* @__PURE__ */ new Map();
+      for (const record of active.filter((item) => item.status === status && item.submitted_tx_hash)) {
+        const grouped = recordsByTx.get(record.submitted_tx_hash) || [];
+        grouped.push(record);
+        recordsByTx.set(record.submitted_tx_hash, grouped);
+      }
+      for (const [txHash, records] of recordsByTx) {
+        const check = txChecks.get(txHash);
+        if (!check || !check.failed && !check.absent) continue;
+        const unspentIDs = await explicitlyUnspentReservationIDs(resolvedManager, records);
+        const checkedHeight = checkedReservationHeight(check);
+        if (unspentIDs.length !== records.length || !checkedHeight) continue;
+        await resolvedManager.markReplanRequired(unspentIDs, {
+          fromStatus: status,
+          txHash,
+          nullifierUnspentConfirmed: true,
+          txAbsentOrFailedConfirmed: true,
+          checkedHeight,
+          txHashChecked: txHash,
+          error: check.failed ? "checked_transaction_failed" : "checked_transaction_absent",
+          metadata: { reconcile_source: "clairveil_example_dapp" }
+        });
+      }
+    }
+    const remaining = await refreshReservationState(resolvedManager);
+    if (!quiet) {
+      toast(remaining.length ? "Reservation reconciliation is incomplete. Do not retry while it remains active." : "Note reservations reconciled. A new plan may now be prepared.");
+    }
+    return remaining;
+  } finally {
+    state.reservations.reconciling = false;
+    renderReservationState();
+  }
+}
+async function resolvePreparedPrivacyFailure(error, data = error?.preparedPrivacyData) {
+  try {
+    const manager = data?.reservationManager || await currentReservationManager();
+    if (!manager) return { blocked: false, active: [] };
+    if (error?.txHash || error?.broadcast || error?.txhash) {
+      await reconcileReservations({ quiet: true, manager }).catch(() => {
+      });
+    }
+    const active = await refreshReservationState(manager);
+    const reservationIDs = new Set(preparedReservationIDs(data));
+    const operationActive = reservationIDs.size ? active.filter((record) => reservationIDs.has(record.reservation_id)) : active;
+    return { blocked: operationActive.length > 0, active: operationActive };
+  } catch (reservationError) {
+    return {
+      blocked: true,
+      active: state.reservations.active,
+      reservationError
+    };
+  }
+}
+async function activePreparedReservations(data) {
+  const ids = new Set(preparedReservationIDs(data));
+  if (!ids.size || !data?.reservationManager) return [];
+  const active = await refreshReservationState(data.reservationManager);
+  return active.filter((record) => ids.has(record.reservation_id));
+}
+async function requirePreparedReservationReconciled(data, label) {
+  const active = await activePreparedReservations(data);
+  if (!active.length) return;
+  const error = new Error(`${label} was included, but its note nullifier has not been reconciled as spent yet. Do not retry or continue the plan.`);
+  error.code = "NULLIFIER_RECONCILIATION_PENDING";
+  error.preparedPrivacyData = data;
+  throw error;
 }
 function isExactMatchWithdrawError(error) {
   return error?.code === "EXACT_NOTE_REQUIRED" || error?.status === "exact_note_required";
@@ -95297,6 +98998,7 @@ async function createExactWithdrawNote(amount, hooks = {}, options = {}) {
       const plannerBroadcast = await broadcastPreparedPrivacy(data, "exact-note self transaction", { waitForEvmReceipt: true });
       state.keplr.transferHash = plannerBroadcast.broadcast?.txhash || plannerBroadcast.txHash || "";
       await refreshPrivacySurfaces();
+      await requirePreparedReservationReconciled(data, "Exact-note self transaction");
       continue;
     }
     hooks.onFinalExactTransfer?.(data, step, maxPlannerSteps);
@@ -95304,6 +99006,7 @@ async function createExactWithdrawNote(amount, hooks = {}, options = {}) {
     const broadcast = await broadcastPreparedPrivacy(data, "exact-note self transfer", { waitForEvmReceipt: true });
     state.keplr.transferHash = broadcast.broadcast?.txhash || broadcast.txHash || "";
     await refreshPrivacySurfaces();
+    await requirePreparedReservationReconciled(data, "Exact-note self transfer");
     return data;
   }
   throw new Error("Withdraw\uC5D0 \uD544\uC694\uD55C exact note \uC900\uBE44\uAC00 \uB108\uBB34 \uC624\uB798 \uAC78\uB9BD\uB2C8\uB2E4. notes\uB97C \uB2E4\uC2DC \uC2A4\uCE94\uD55C \uB4A4 \uC7AC\uC2DC\uB3C4\uD574\uC918.");
@@ -95335,6 +99038,16 @@ async function sendFromKeplr() {
           state.keplr.sendHash = included.txHash || state.keplr.sendHash;
           els.keplrTxState.textContent = "Send included";
           await Promise.allSettled([refreshWalletBalance(), refreshBlockEvents()]);
+          renderKeplr();
+        },
+        onUnknown: (unknown) => {
+          state.keplr.sendHash = unknown.txHash || state.keplr.sendHash;
+          els.keplrTxState.textContent = "Send status unknown";
+          showNotice({
+            title: "Send \uACB0\uACFC \uD655\uC778 \uD544\uC694",
+            message: `Receipt polling\uC774 \uB05D\uB0AC\uC9C0\uB9CC \uC2E4\uD328\uAC00 \uD655\uC778\uB41C \uAC83\uC740 \uC544\uB2D9\uB2C8\uB2E4. \uAC19\uC740 \uC804\uC1A1\uC744 \uB2E4\uC2DC \uBCF4\uB0B4\uAE30 \uC804\uC5D0 tx hash\uB97C \uD655\uC778\uD558\uC138\uC694.
+Tx: ${shorten(state.keplr.sendHash, 14, 12)}`
+          });
           renderKeplr();
         },
         onFailed: (error) => {
@@ -95404,6 +99117,18 @@ Tx: ${shorten(state.keplr.depositHash, 14, 12)}`
             title: recovered2 ? "Deposit \uBC0F note \uBCF5\uAD6C \uC644\uB8CC" : "Deposit \uD3EC\uD568 \xB7 note \uBCF5\uAD6C \uB300\uAE30",
             message: recovered2 ? `Encrypted note\uAC00 \uB85C\uCEEC cache\uC5D0 \uBCF5\uAD6C\uB418\uC5C8\uC2B5\uB2C8\uB2E4.
 Tx: ${shorten(state.keplr.depositHash, 14, 12)}` : "\uD2B8\uB79C\uC7AD\uC158\uC740 \uC131\uACF5\uD588\uC9C0\uB9CC note \uBCF5\uAD6C\uAC00 \uC544\uC9C1 \uC644\uB8CC\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. Reset & Rescan\uC73C\uB85C \uB2E4\uC2DC \uBCF5\uAD6C\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4."
+          });
+        },
+        onUnknown: (unknown) => {
+          state.keplr.depositHash = unknown.txHash || state.keplr.depositHash;
+          state.keplr.depositRecoveryStatus = "unknown";
+          state.keplr.depositRecoveryMessage = "Submitted \xB7 receipt unknown \xB7 do not retry yet";
+          els.keplrTxState.textContent = "Deposit status unknown";
+          renderKeplr();
+          showNotice({
+            title: "Deposit \uACB0\uACFC \uD655\uC778 \uD544\uC694",
+            message: `Receipt polling timeout\uC740 \uC2E4\uD328 \uC99D\uAC70\uAC00 \uC544\uB2D9\uB2C8\uB2E4. tx hash\uB97C \uD655\uC778\uD558\uAE30 \uC804 \uAC19\uC740 deposit\uC744 \uB2E4\uC2DC \uBCF4\uB0B4\uC9C0 \uB9C8\uC138\uC694.
+Tx: ${shorten(state.keplr.depositHash, 14, 12)}`
           });
         },
         onFailed: (error) => {
@@ -95600,6 +99325,7 @@ async function transferFromVeiled() {
         const plannerBroadcast = await broadcastPreparedPrivacy(data, "self transaction", { waitForEvmReceipt: true });
         state.keplr.transferHash = plannerBroadcast.broadcast?.txhash || plannerBroadcast.txHash || "";
         await refreshPrivacySurfaces();
+        await requirePreparedReservationReconciled(data, "Self transaction");
         continue;
       }
       finalData = data;
@@ -95620,29 +99346,54 @@ async function transferFromVeiled() {
     const isPendingEvm = Boolean(broadcast.pending);
     els.keplrTxState.textContent = isPendingEvm ? "Transfer submitted" : "Transfer included";
     renderKeplr();
-    finishTransferFlow(isPendingEvm ? "\uD2B8\uB79C\uC2A4\uD37C \uC694\uCCAD\uC774 \uC81C\uCD9C\uB418\uC5C8\uC2B5\uB2C8\uB2E4" : "\uD2B8\uB79C\uC2A4\uD37C \uC694\uCCAD\uC774 \uC131\uACF5\uD558\uC600\uC2B5\uB2C8\uB2E4");
     if (isPendingEvm) {
+      finishTransferFlow("\uD2B8\uB79C\uC2A4\uD37C \uC694\uCCAD\uC774 \uC81C\uCD9C\uB418\uC5C8\uC2B5\uB2C8\uB2E4");
       watchEvmBroadcast(broadcast, {
         onIncluded: async (included) => {
           state.keplr.transferHash = included.txHash || state.keplr.transferHash;
           els.keplrTxState.textContent = "Transfer included";
           await refreshPrivacySurfaces();
+          await requirePreparedReservationReconciled(finalData, "Privacy transfer");
+          finishTransferFlow("\uD2B8\uB79C\uC2A4\uD37C \uC694\uCCAD\uC774 \uC131\uACF5\uD558\uC600\uC2B5\uB2C8\uB2E4");
           renderKeplr();
         },
-        onFailed: (error) => {
-          els.keplrTxState.textContent = "Transfer failed";
-          finishTransferFlow(error.message, false, { retry: () => transferFromVeiled() });
+        onUnknown: async (unknown) => {
+          state.keplr.transferHash = unknown.txHash || state.keplr.transferHash;
+          els.keplrTxState.textContent = "Transfer status unknown";
+          await refreshReservationState(finalData.reservationManager).catch(() => {
+          });
+          finishTransferFlowUnknown(`Receipt polling\uC774 \uB05D\uB0AC\uC9C0\uB9CC \uC2E4\uD328\uAC00 \uD655\uC778\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. tx hash\uC640 nullifier\uB97C reconcile\uD558\uAE30 \uC804\uC5D0\uB294 \uB2E4\uC2DC \uC804\uC1A1\uD558\uC9C0 \uB9C8\uC138\uC694.
+Tx: ${state.keplr.transferHash}`);
+          renderKeplr();
+        },
+        onFailed: async (error) => {
+          const resolution = await resolvePreparedPrivacyFailure(error, finalData);
+          els.keplrTxState.textContent = resolution.blocked ? "Transfer reconciliation required" : "Transfer failed";
+          if (resolution.blocked) {
+            finishTransferFlowUnknown(error.message);
+          } else {
+            finishTransferFlow(error.message, false, { retry: () => transferFromVeiled() });
+          }
+          renderKeplr();
         }
       });
       return;
     }
     await refreshPrivacySurfaces();
+    await requirePreparedReservationReconciled(finalData, "Privacy transfer");
+    finishTransferFlow("\uD2B8\uB79C\uC2A4\uD37C \uC694\uCCAD\uC774 \uC131\uACF5\uD558\uC600\uC2B5\uB2C8\uB2E4");
   } catch (error) {
     const cancelled = error?.name === "AbortError" || activeProofSignal()?.aborted;
-    els.keplrTxState.textContent = cancelled ? "Transfer cancelled" : "Transfer failed";
-    finishTransferFlow(cancelled ? "Proof \uC694\uCCAD\uC744 \uCDE8\uC18C\uD588\uC2B5\uB2C8\uB2E4." : error.message, false, {
-      retry: () => transferFromVeiled()
-    });
+    const resolution = await resolvePreparedPrivacyFailure(error);
+    if (resolution.blocked) {
+      els.keplrTxState.textContent = "Transfer reconciliation required";
+      finishTransferFlowUnknown(error.message);
+    } else {
+      els.keplrTxState.textContent = cancelled ? "Transfer cancelled" : "Transfer failed";
+      finishTransferFlow(cancelled ? "Proof \uC694\uCCAD\uC744 \uCDE8\uC18C\uD588\uC2B5\uB2C8\uB2E4." : error.message, false, {
+        retry: () => transferFromVeiled()
+      });
+    }
   } finally {
     setBusy(els.transferFromVeiled, false);
     renderKeplr();
@@ -95765,7 +99516,7 @@ async function withdrawFromVeiled() {
         "Payload \uC900\uBE44 \uC644\uB8CC",
         "Relayer\uC5D0 \uC804\uB2EC\uD560 payload\uAC00 \uC0DD\uC131\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uC804\uC1A1 \uC804\uC5D0 relayer\uAC00 payload\uC640 candidate transaction\uC744 \uB3C5\uB9BD\uC801\uC73C\uB85C \uAC80\uC99D\uD574\uC57C \uD569\uB2C8\uB2E4."
       );
-      setRelayWithdrawHandoff(data);
+      await setRelayWithdrawHandoff(data);
       els.keplrTxState.textContent = "Relay withdraw payload ready";
       finishTransferFlow("Relay withdraw payload\uAC00 \uC900\uBE44\uB418\uC5C8\uC2B5\uB2C8\uB2E4");
       return;
@@ -95782,30 +99533,55 @@ async function withdrawFromVeiled() {
     const isPendingEvm = Boolean(broadcast.pending);
     els.keplrTxState.textContent = isPendingEvm ? "Withdraw submitted" : "Withdraw included";
     renderKeplr();
-    finishTransferFlow(isPendingEvm ? "Withdraw \uC694\uCCAD\uC774 \uC81C\uCD9C\uB418\uC5C8\uC2B5\uB2C8\uB2E4" : "Withdraw \uC694\uCCAD\uC774 \uC131\uACF5\uD558\uC600\uC2B5\uB2C8\uB2E4");
     if (isPendingEvm) {
+      finishTransferFlow("Withdraw \uC694\uCCAD\uC774 \uC81C\uCD9C\uB418\uC5C8\uC2B5\uB2C8\uB2E4");
       watchEvmBroadcast(broadcast, {
         onIncluded: async (included) => {
           state.keplr.withdrawHash = included.txHash || state.keplr.withdrawHash;
           state.keplr.withdrawHeight = included.receipt?.blockNumber || state.keplr.withdrawHeight;
           els.keplrTxState.textContent = "Withdraw included";
           await refreshPrivacySurfaces({ balance: true });
+          await requirePreparedReservationReconciled(data, "Privacy withdraw");
+          finishTransferFlow("Withdraw \uC694\uCCAD\uC774 \uC131\uACF5\uD558\uC600\uC2B5\uB2C8\uB2E4");
           renderKeplr();
         },
-        onFailed: (error) => {
-          els.keplrTxState.textContent = "Withdraw failed";
-          finishTransferFlow(error.message, false, { retry: () => withdrawFromVeiled() });
+        onUnknown: async (unknown) => {
+          state.keplr.withdrawHash = unknown.txHash || state.keplr.withdrawHash;
+          els.keplrTxState.textContent = "Withdraw status unknown";
+          await refreshReservationState(data.reservationManager).catch(() => {
+          });
+          finishTransferFlowUnknown(`Receipt polling\uC774 \uB05D\uB0AC\uC9C0\uB9CC \uC2E4\uD328\uAC00 \uD655\uC778\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. tx hash\uC640 nullifier\uB97C reconcile\uD558\uAE30 \uC804\uC5D0\uB294 \uB2E4\uC2DC \uC804\uC1A1\uD558\uC9C0 \uB9C8\uC138\uC694.
+Tx: ${state.keplr.withdrawHash}`);
+          renderKeplr();
+        },
+        onFailed: async (error) => {
+          const resolution = await resolvePreparedPrivacyFailure(error, data);
+          els.keplrTxState.textContent = resolution.blocked ? "Withdraw reconciliation required" : "Withdraw failed";
+          if (resolution.blocked) {
+            finishTransferFlowUnknown(error.message);
+          } else {
+            finishTransferFlow(error.message, false, { retry: () => withdrawFromVeiled() });
+          }
+          renderKeplr();
         }
       });
       return;
     }
     await refreshPrivacySurfaces({ balance: true });
+    await requirePreparedReservationReconciled(data, "Privacy withdraw");
+    finishTransferFlow("Withdraw \uC694\uCCAD\uC774 \uC131\uACF5\uD558\uC600\uC2B5\uB2C8\uB2E4");
   } catch (error) {
     const cancelled = error?.name === "AbortError" || activeProofSignal()?.aborted;
-    els.keplrTxState.textContent = cancelled ? "Withdraw cancelled" : "Withdraw failed";
-    finishTransferFlow(cancelled ? "Proof \uC694\uCCAD\uC744 \uCDE8\uC18C\uD588\uC2B5\uB2C8\uB2E4." : error.message, false, {
-      retry: () => withdrawFromVeiled()
-    });
+    const resolution = await resolvePreparedPrivacyFailure(error);
+    if (resolution.blocked) {
+      els.keplrTxState.textContent = "Withdraw reconciliation required";
+      finishTransferFlowUnknown(error.message);
+    } else {
+      els.keplrTxState.textContent = cancelled ? "Withdraw cancelled" : "Withdraw failed";
+      finishTransferFlow(cancelled ? "Proof \uC694\uCCAD\uC744 \uCDE8\uC18C\uD588\uC2B5\uB2C8\uB2E4." : error.message, false, {
+        retry: () => withdrawFromVeiled()
+      });
+    }
   } finally {
     setBusy(els.withdrawFromVeiled, false);
     renderKeplr();
@@ -95824,6 +99600,7 @@ els.refreshWalletBalance.addEventListener("click", () => refreshWalletBalance().
 els.scanKeplrNotes.addEventListener("click", () => scanKeplrNotes().catch((error) => toast(error.message)));
 els.backupNoteCache.addEventListener("click", () => backupNoteCache().catch((error) => toast(error.message)));
 els.resetRescanNotes.addEventListener("click", () => resetAndRescanNotes().catch((error) => toast(error.message)));
+els.reconcileReservations.addEventListener("click", () => reconcileReservations().catch((error) => toast(error.message)));
 els.myKeplrSpendableOnly.addEventListener("change", (event) => {
   state.keplr.showSpendableOnly = event.target.checked;
   renderMyKeplrNotes();

@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const appSource = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
 const encryptedStoreSource = await readFile(new URL("../public/encrypted-note-store.js", import.meta.url), "utf8");
+const encryptedReservationSource = await readFile(new URL("../public/encrypted-reservation-manager.js", import.meta.url), "utf8");
 const configSource = await readFile(new URL("../public/dapp-config.js", import.meta.url), "utf8");
 const readmeSource = await readFile(new URL("../README.md", import.meta.url), "utf8");
 const serverSource = await readFile(new URL("../server.js", import.meta.url), "utf8");
@@ -22,8 +23,9 @@ test("DApp disables value-moving actions for zero or invalid minimal-denom amoun
   assert.match(appSource, /function updateAmountActionButtons/);
   assert.match(appSource, /sendFromKeplr\.disabled = !signerReady[\s\S]*!hasPositiveUclairInput\(els\.keplrSendAmount\)[\s\S]*!isSendRecipientForWallet\(els\.keplrSendRecipient\.value/);
   assert.match(appSource, /depositFromKeplr\.disabled = !signerReady[\s\S]*!depositProofReady\(\)[\s\S]*!hasPositiveUclairInput\(els\.keplrDepositAmount\)/);
-  assert.match(appSource, /transferFromVeiled\.disabled = !veiledReady \|\| !hasPositiveUclairInput\(els\.veiledTransferAmount\)/);
-  assert.match(appSource, /withdrawFromVeiled\.disabled = !veiledReady \|\| !hasPositiveUclairInput\(els\.veiledWithdrawAmount\)/);
+  assert.match(appSource, /const reservationBlocked = state\.reservations\.retryBlocked/);
+  assert.match(appSource, /transferFromVeiled\.disabled = !veiledReady[\s\S]*reservationBlocked[\s\S]*!hasPositiveUclairInput\(els\.veiledTransferAmount\)/);
+  assert.match(appSource, /withdrawFromVeiled\.disabled = !veiledReady[\s\S]*reservationBlocked[\s\S]*!hasPositiveUclairInput\(els\.veiledWithdrawAmount\)/);
   assert.match(appSource, /keplrSendAmount,[\s\S]*keplrSendRecipient,[\s\S]*veiledWithdrawAmount[\s\S]*addEventListener\("input", updateAmountActionButtons\)/);
 });
 
@@ -195,7 +197,7 @@ test("DApp uses the npm ClairveilJS browser client for public wallet and privacy
   assert.match(appSource, /clairveilBrowserClient\(\)\.scanWalletNotes/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.decodeUserDisclosure/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.decodeSelfViewDisclosure/);
-  assert.match(appSource, /clairveilBrowserClient\(\)\.broadcastSignedTx/);
+  assert.match(appSource, /clairveilBrowserClient\(\)\.signDirectAndBroadcast/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.waitForEvmTransaction/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.sendEvmTransaction/);
   assert.match(appSource, /function defaultNoteScanCursor/);
@@ -243,6 +245,33 @@ test("DApp uses the npm ClairveilJS browser client for public wallet and privacy
   assert.doesNotMatch(serverSource, /planWithdrawNotes/);
   assert.doesNotMatch(serverSource, /prepareEvmTransfer/);
   assert.doesNotMatch(serverSource, /prepareEvmWithdraw/);
+});
+
+test("DApp persists encrypted reservations and keeps unknown broadcasts fail closed", () => {
+  assert.match(appSource, /createEncryptedBrowserReservationManager/);
+  assert.match(encryptedReservationSource, /createBrowserReservationStore/);
+  assert.match(encryptedReservationSource, /createNoteReservationManager/);
+  assert.match(encryptedReservationSource, /AES-GCM/);
+  assert.match(encryptedReservationSource, /requireLocks: true/);
+  assert.match(encryptedReservationSource, /RESERVATION_STATE_CORRUPT/);
+  assert.doesNotMatch(encryptedReservationSource, /unsafeAllowPlaintext/);
+
+  assert.match(appSource, /prepareTransfer\(privacyRequest\([\s\S]*reservationManager: manager/);
+  assert.match(appSource, /prepareWithdraw\(privacyRequest\([\s\S]*reservationManager: manager/);
+  assert.match(appSource, /prepareRelayWithdraw\(privacyRequest\([\s\S]*reservationManager: manager/);
+  assert.match(appSource, /preparedReservationBinding\(data\)/);
+  assert.match(appSource, /sendEvmTransaction\(data\.transaction,[\s\S]*reservationBinding: broadcastOptions/);
+  assert.match(appSource, /signDirectAndBroadcast\(data\.signDoc, broadcastOptions\)/);
+  assert.match(appSource, /recordRelayHandoff\(reservationIDs/);
+
+  assert.match(appSource, /if \(!broadcast\?\.receipt\) \{[\s\S]*markUnknown\(reservationIDs,[\s\S]*fromStatus: reservationStatuses\.Submitted[\s\S]*unknown: true/);
+  assert.match(appSource, /result\.unknown \? onUnknown/);
+  assert.match(appSource, /nullifierUnspentConfirmed: true/);
+  assert.match(appSource, /txAbsentOrFailedConfirmed: true/);
+  assert.match(appSource, /txHashChecked: txHash/);
+  assert.match(appSource, /same request|다시 전송하지 마세요/);
+  assert.match(htmlSource, /id="reservationState"/);
+  assert.match(htmlSource, /id="reconcileReservations"/);
 });
 
 test("DApp planner UX uses structured API errors instead of message parsing", () => {
@@ -408,7 +437,7 @@ test("DApp shows a send result confirmation before refresh side effects", () => 
 test("DApp submits final MetaMask transactions before waiting for receipt", () => {
   assert.match(appSource, /async function submitEvmTransaction/);
   assert.match(appSource, /async function waitForEvmTransaction/);
-  assert.match(appSource, /async function sendEvmTransaction\(transaction, \{ waitForReceipt = false/);
+  assert.match(appSource, /async function sendEvmTransaction\(transaction, \{[\s\S]*waitForReceipt = false,[\s\S]*reservationBinding = \{\}/);
   assert.match(appSource, /pending: true/);
   assert.match(appSource, /waitPromise/);
   assert.match(appSource, /broadcast\?\.pending && txHash/);
