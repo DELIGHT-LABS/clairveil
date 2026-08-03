@@ -737,6 +737,25 @@ select {
   display: none;
 }
 
+.relay-warning-list {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.82rem;
+  gap: 6px;
+  line-height: 1.45;
+  margin: 12px 0;
+  padding-left: 22px;
+}
+
+.tx-reconcile-actions {
+  margin-top: 10px;
+}
+
+.stale-note-warning {
+  color: var(--danger);
+  margin-bottom: 10px;
+}
+
 .note-summary {
   align-items: baseline;
   background: var(--surface-strong);

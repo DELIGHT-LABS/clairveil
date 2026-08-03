@@ -274,6 +274,51 @@ test("DApp persists encrypted reservations and keeps unknown broadcasts fail clo
   assert.match(htmlSource, /id="reconcileReservations"/);
 });
 
+test("DApp reconciles spent transfers only with matching operation evidence", () => {
+  assert.match(appSource, /function reservationRequiresOperationEvidence/);
+  assert.match(appSource, /function transferEventForOperation/);
+  assert.match(appSource, /event\?\.event_type !== "shielded_transfer"/);
+  assert.match(appSource, /eventAttribute\(event, "commitment_1"\)/);
+  assert.match(appSource, /eventAttribute\(event, "audit_disclosure_digest"\)/);
+  assert.match(appSource, /manager\.store\.listReservations\(\{ ownerKeyId: manager\.ownerKeyId \}\)/);
+  assert.match(appSource, /operationStatuses\.ConflictSpent/);
+  assert.match(appSource, /transferEventForOperation\(spentRecords, notesByLookupKey\)/);
+  assert.match(appSource, /operationSuccessEvidence: evidenceByLookupKey\.get\(lookupKey\)/);
+  assert.match(appSource, /operationReconciliationStatus\(record\) !== operationStatuses\.Succeeded/);
+  assert.match(appSource, /OPERATION_RECONCILIATION_REQUIRED/);
+  assert.match(appSource, /state\.reservations\.unresolved\?\.length > 0/);
+});
+
+test("DApp keeps prepared reservation leases alive across wallet and relay waits", () => {
+  assert.match(appSource, /reservationHeartbeatIntervalMs/);
+  assert.match(appSource, /async function withPreparedReservationHeartbeat/);
+  assert.match(appSource, /manager\.heartbeatLease\(reservationIDs, \{ leaseToken \}\)/);
+  assert.match(appSource, /withPreparedReservationHeartbeat\(prepared, \(\) =>/);
+  assert.match(appSource, /const broadcast = await withPreparedReservationHeartbeat\(data/);
+  assert.match(appSource, /function startRelayReservationHeartbeat/);
+  assert.match(appSource, /relayReservationHeartbeatTimer = globalThis\.setInterval/);
+  assert.match(appSource, /if \(spentConfirmed\) stopRelayReservationHeartbeat\(\)/);
+  assert.match(appSource, /RESERVATION_HEARTBEAT_FAILED/);
+});
+
+test("DApp blocks unresolved public EVM retries and exposes tx reconciliation", () => {
+  assert.match(appSource, /sendPending = \["submitted", "unknown", "checking"\]/);
+  assert.match(appSource, /depositPending = \["submitted", "unknown", "checking"\]/);
+  assert.match(appSource, /async function reconcilePublicEvmTransaction/);
+  assert.match(appSource, /failureConfirmed = evmReceiptHasFailed/);
+  assert.match(appSource, /same request remains blocked|같은 요청은 계속 차단됩니다/);
+  assert.match(htmlSource, /id="reconcileKeplrSend"/);
+  assert.match(htmlSource, /id="reconcileKeplrDeposit"/);
+});
+
+test("DApp marks stale note inventory as unconfirmed and blocks private spends", () => {
+  assert.match(appSource, /noteInventoryTrusted = state\.keplr\.noteSyncStatus === "synced"/);
+  assert.match(appSource, /Cached · not confirmed/);
+  assert.match(appSource, /Cached notes are shown for recovery only/);
+  assert.match(appSource, /transferFromVeiled\.disabled = !veiledReady[\s\S]*!noteInventoryTrusted/);
+  assert.match(appSource, /withdrawFromVeiled\.disabled = !veiledReady[\s\S]*!noteInventoryTrusted/);
+});
+
 test("DApp planner UX uses structured API errors instead of message parsing", () => {
   assert.match(appSource, /class ApiError extends Error/);
   assert.match(appSource, /error\?\.code === "EXACT_NOTE_REQUIRED"/);
@@ -359,6 +404,20 @@ test("DApp offers relay handoff and cancellable same-prover retries", () => {
   assert.match(htmlSource, /id="withdrawMode"/);
   assert.match(htmlSource, /id="relayWithdrawJson"/);
   assert.match(htmlSource, /id="retryTransferFlow"/);
+  assert.match(appSource, /async function reconcileRelayWithdrawResult/);
+  assert.match(appSource, /Checking tx result first, then nullifier spent state/);
+  assert.match(htmlSource, /id="relayWithdrawTxHash"/);
+  assert.match(htmlSource, /id="reconcileRelayWithdraw"/);
+  assert.match(htmlSource, /user shielded secret/);
+  assert.match(htmlSource, /privacy-sensitive data/);
+  assert.match(htmlSource, /Recipient, chain, expiry는 변경할 수 없습니다/);
+  assert.match(htmlSource, /local cancel이나 reservation release는 payload를 무효화하지 않으며/);
+});
+
+test("DApp discloses mandatory audit visibility before transfer confirmation", () => {
+  assert.match(appSource, /Mandatory audit: full/);
+  assert.match(htmlSource, /Audit disclosure는 모든 privacy transfer에 항상 포함/);
+  assert.match(htmlSource, /amount·sender·recipient를 복호화/);
 });
 
 test("DApp renders public disclosure reports without recipient-only branching", () => {

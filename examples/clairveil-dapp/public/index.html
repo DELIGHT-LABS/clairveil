@@ -186,6 +186,9 @@
               <dd id="keplrSendHash">-</dd>
             </div>
           </dl>
+          <div class="notes-actions tx-reconcile-actions">
+            <button id="reconcileKeplrSend" class="secondary-button" type="button" disabled>Reconcile send tx</button>
+          </div>
           <section class="balance-section action-section" aria-labelledby="depositVeiledTitle">
             <h3 id="depositVeiledTitle">Deposit (Move to Veiled)</h3>
             <div class="amount-row">
@@ -212,6 +215,9 @@
                 <dd id="keplrDepositRecovery">Not started</dd>
               </div>
             </dl>
+            <div class="notes-actions tx-reconcile-actions">
+              <button id="reconcileKeplrDeposit" class="secondary-button" type="button" disabled>Reconcile deposit tx</button>
+            </div>
           </section>
         </div>
 
@@ -306,6 +312,9 @@
             <p id="selfViewWarning" class="inline-warning" hidden>
               Self-view를 끄면 나중에 이 전송의 보낸 내역을 복구하지 못할 수 있습니다.
             </p>
+            <p class="inline-warning">
+              Audit disclosure는 모든 privacy transfer에 항상 포함되며, configured auditor가 amount·sender·recipient를 복호화할 수 있습니다.
+            </p>
             <dl class="facts">
               <div>
                 <dt>Transfer tx</dt>
@@ -355,6 +364,12 @@
               <p class="inline-warning">
                 Relayer가 수수료를 지불합니다. Relayer는 payload에서 transaction을 다시 만들거나 byte-for-byte 검증해야 합니다. 이 예제는 payload 전달까지만 수행합니다.
               </p>
+              <ul class="relay-warning-list">
+                <li>Relayer는 user shielded secret을 알 필요가 없지만, payload/proof JSON에는 private note witness가 포함된 privacy-sensitive data가 있습니다.</li>
+                <li>Recipient, chain, expiry는 변경할 수 없습니다. Creator는 fee payer relayer로 바뀔 수 있습니다.</li>
+                <li>Handoff 이후 local cancel이나 reservation release는 payload를 무효화하지 않으며, relayer는 expiry 전까지 제출할 수 있습니다.</li>
+                <li>Chain block time이 expiry 이상이면 payload는 만료되며 wallet이나 relayer가 연장할 수 없습니다.</li>
+              </ul>
               <dl class="facts">
                 <div><dt>Chain ID</dt><dd id="relayWithdrawChain">-</dd></div>
                 <div><dt>Recipient</dt><dd id="relayWithdrawRecipient">-</dd></div>
@@ -369,6 +384,14 @@
                 <button id="copyRelayWithdraw" class="secondary-button" type="button" disabled>Copy JSON</button>
                 <button id="downloadRelayWithdraw" class="secondary-button" type="button" disabled>Download JSON</button>
               </div>
+              <label class="field">
+                <span>Relayer tx hash</span>
+                <input id="relayWithdrawTxHash" placeholder="Paste the tx hash returned by the relayer" autocomplete="off" />
+              </label>
+              <div class="notes-actions">
+                <button id="reconcileRelayWithdraw" class="secondary-button" type="button" disabled>Check tx + spent state</button>
+              </div>
+              <p id="relayWithdrawResult" class="quiet" role="status">Not checked</p>
             </div>
           </section>
         </div>

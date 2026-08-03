@@ -7,6 +7,8 @@ import { derivePrivacyMaterial } from "clairveiljs/crypto";
 import {
   hashAmount,
   hashRecipient,
+  operationStatuses,
+  reservationHeartbeatIntervalMs,
   reservationStatuses
 } from "clairveiljs/reservation";
 import { getStaticDappConfig } from "./dapp-config.js";
@@ -55,8 +57,10 @@ function defaultKeplrState() {
     rootSignatureBase64: "",
     rootSignatureHash: "",
     sendHash: "",
+    sendStatus: "idle",
     depositHash: "",
     depositHeight: "",
+    depositPrepared: null,
     depositRecoveryStatus: "idle",
     depositRecoveryMessage: "Not started",
     transferHash: "",
@@ -78,6 +82,7 @@ function defaultReservationState() {
     status: "idle",
     message: "No active note reservations",
     active: [],
+    unresolved: [],
     retryBlocked: false,
     reconciling: false
   };
@@ -125,7 +130,11 @@ const state = {
   },
   relayWithdraw: {
     handoff: null,
-    json: ""
+    json: "",
+    reservationIds: [],
+    txHash: "",
+    resultStatus: "idle",
+    resultMessage: "Not checked"
   },
   reservations: defaultReservationState()
 };
@@ -141,6 +150,7 @@ let noteStoreKey = "";
 let reservationManager = null;
 let reservationManagerPromise = null;
 let reservationManagerKey = "";
+let relayReservationHeartbeatTimer = null;
 const reservationLeaseOwner = `browser-tab:${globalThis.crypto?.randomUUID?.() || Date.now()}`;
 let serverConfigAvailable = true;
 
@@ -487,6 +497,94 @@ function preparedReservationBinding(data) {
     : {};
 }
 
+async function withPreparedReservationHeartbeat(data, task) {
+  const manager = data?.reservationManager;
+  const reservation = data?.reservation;
+  const reservationIDs = preparedReservationIDs(data);
+  const leaseToken = reservation?.lease_token || reservation?.reservations?.[0]?.lease_token || "";
+  if (!manager || !reservationIDs.length || !leaseToken || typeof manager.heartbeatLease !== "function") {
+    return task();
+  }
+
+  let heartbeatError = null;
+  let heartbeatPromise = null;
+  const heartbeat = async () => {
+    if (heartbeatError) return;
+    try {
+      const renewed = await manager.heartbeatLease(reservationIDs, { leaseToken });
+      reservation.reservations = renewed;
+      reservation.lease_until = renewed[0]?.lease_until || reservation.lease_until;
+    } catch (error) {
+      heartbeatError = error;
+    }
+  };
+  const heartbeatNow = async () => {
+    if (!heartbeatPromise) {
+      heartbeatPromise = heartbeat().finally(() => {
+        heartbeatPromise = null;
+      });
+    }
+    await heartbeatPromise;
+  };
+
+  await heartbeatNow();
+  if (heartbeatError) throw heartbeatError;
+  const intervalMs = reservationHeartbeatIntervalMs({
+    leaseDurationMs: manager.leaseDurationMs,
+    leaseUntil: reservation.lease_until || reservation.reservations?.[0]?.lease_until
+  });
+  const timer = globalThis.setInterval(() => { void heartbeatNow(); }, intervalMs);
+  let result;
+  try {
+    result = await task();
+  } finally {
+    globalThis.clearInterval(timer);
+    if (heartbeatPromise) await heartbeatPromise;
+  }
+
+  if (heartbeatError) {
+    const records = await Promise.all(reservationIDs.map(id => manager.getReservation(id)));
+    if (records.some(record => [reservationStatuses.Proving, reservationStatuses.ProofReady].includes(record.status))) {
+      const error = new Error("Note reservation lease heartbeat failed while waiting for wallet or relayer confirmation.", {
+        cause: heartbeatError
+      });
+      error.code = "RESERVATION_HEARTBEAT_FAILED";
+      error.preparedPrivacyData = data;
+      throw error;
+    }
+  }
+  return result;
+}
+
+function stopRelayReservationHeartbeat() {
+  if (relayReservationHeartbeatTimer !== null) {
+    globalThis.clearInterval(relayReservationHeartbeatTimer);
+    relayReservationHeartbeatTimer = null;
+  }
+}
+
+function startRelayReservationHeartbeat({ manager, reservationIDs, leaseToken, leaseUntil }) {
+  stopRelayReservationHeartbeat();
+  if (!manager || !reservationIDs.length || !leaseToken) return;
+  const intervalMs = reservationHeartbeatIntervalMs({
+    leaseDurationMs: manager.leaseDurationMs,
+    leaseUntil
+  });
+  relayReservationHeartbeatTimer = globalThis.setInterval(() => {
+    void manager.heartbeatLease(reservationIDs, { leaseToken }).catch(async error => {
+      const records = await Promise.allSettled(reservationIDs.map(id => manager.getReservation(id)));
+      const stillProofReady = records.some(result => result.status === "fulfilled"
+        && result.value.status === reservationStatuses.ProofReady);
+      stopRelayReservationHeartbeat();
+      if (!stillProofReady) return;
+      state.relayWithdraw.resultStatus = "manual-review";
+      state.relayWithdraw.resultMessage = `Relay reservation heartbeat failed · ${error.message}`;
+      await refreshReservationState(manager).catch(() => {});
+      renderRelayWithdraw();
+    });
+  }, intervalMs);
+}
+
 function reservationStatusSlug(status) {
   return String(status || "idle").replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase();
 }
@@ -502,8 +600,37 @@ function renderReservationState() {
   els.reconcileReservations.textContent = state.reservations.reconciling ? "Reconciling…" : "Reconcile";
 }
 
-function summarizeReservationState(records = []) {
-  if (!records.length) return defaultReservationState();
+function operationReconciliationStatus(record) {
+  return record?.metadata?.operation_status || record?.metadata?.operationStatus || "";
+}
+
+function reservationRequiresOperationEvidence(record) {
+  return record?.metadata?.operation_success_evidence_required === true
+    || record?.metadata?.operationSuccessEvidenceRequired === true
+    || record?.operation_success_evidence_required === true
+    || record?.operationSuccessEvidenceRequired === true;
+}
+
+function unresolvedOperationReservations(records = []) {
+  return records.filter(record => reservationRequiresOperationEvidence(record) && [
+    operationStatuses.ManualReview,
+    operationStatuses.ConflictSpent
+  ].includes(operationReconciliationStatus(record)));
+}
+
+function summarizeReservationState(records = [], unresolved = []) {
+  if (!records.length && !unresolved.length) return defaultReservationState();
+  if (!records.length) {
+    const operationStatus = operationReconciliationStatus(unresolved[0]) || operationStatuses.ManualReview;
+    return {
+      status: reservationStatuses.ManualReview,
+      message: `${unresolved.length} spent operation · ${operationStatus} · verify tx output evidence before retrying`,
+      active: [],
+      unresolved,
+      retryBlocked: true,
+      reconciling: false
+    };
+  }
   const priority = [
     reservationStatuses.ManualReview,
     reservationStatuses.Unknown,
@@ -522,6 +649,7 @@ function summarizeReservationState(records = []) {
     status: primary,
     message: `${records.length} active · ${primary}${detail}${handoffDetail}`,
     active: records,
+    unresolved,
     retryBlocked: true,
     reconciling: false
   };
@@ -535,9 +663,13 @@ async function refreshReservationState(manager = null) {
     return [];
   }
   try {
-    const active = await resolvedManager.listActiveReservations();
+    const [active, allReservations] = await Promise.all([
+      resolvedManager.listActiveReservations(),
+      resolvedManager.store.listReservations({ ownerKeyId: resolvedManager.ownerKeyId })
+    ]);
+    const unresolved = unresolvedOperationReservations(allReservations);
     const reconciling = state.reservations.reconciling;
-    state.reservations = summarizeReservationState(active);
+    state.reservations = summarizeReservationState(active, unresolved);
     state.reservations.reconciling = reconciling;
     renderReservationState();
     updateAmountActionButtons();
@@ -547,6 +679,7 @@ async function refreshReservationState(manager = null) {
       status: "error",
       message: error.message,
       active: state.reservations.active,
+      unresolved: state.reservations.unresolved,
       retryBlocked: true,
       reconciling: false
     };
@@ -568,12 +701,94 @@ function noteHasUnspentEvidence(note) {
     && String(note?.nullifier_status || note?.nullifierStatus || "").toLowerCase() === "unspent";
 }
 
+function privacyTransferEventNullifiers(event) {
+  return ["nullifier_1", "nullifier_2"]
+    .map(key => normalizedHex(eventAttribute(event, key)))
+    .filter(Boolean);
+}
+
+function transferEventForOperation(records, notesByLookupKey) {
+  const nullifiers = records
+    .map(record => noteNullifier(notesByLookupKey.get(record.nullifier_lookup_key)))
+    .filter(Boolean);
+  if (nullifiers.length !== records.length) return null;
+  return state.privacyEvents.events.find(event => {
+    if (event?.event_type !== "shielded_transfer") return false;
+    const eventNullifiers = new Set(privacyTransferEventNullifiers(event));
+    return nullifiers.every(nullifier => eventNullifiers.has(normalizedHex(nullifier)));
+  }) || null;
+}
+
+function operationEvidenceFromEvent(records, event) {
+  const first = records[0];
+  return {
+    txHash: normalizedHex(event?.tx_hash_hex),
+    outputCommitment: normalizedHex(eventAttribute(event, "commitment_1")),
+    auditDisclosureDigest: normalizedHex(eventAttribute(event, "audit_disclosure_digest")),
+    recipientHash: first.expected_recipient_hash,
+    amount: first.expected_amount,
+    amountHash: first.expected_amount_hash,
+    denom: first.expected_denom,
+    batchItemIndex: first.batch_item_index,
+    batchItemIndexKnown: first.batch_item_index_known
+  };
+}
+
 async function reconcileSpentReservations(manager, notes = state.keplr.notes) {
   if (!manager) return [];
-  const spent = (notes || [])
-    .filter(noteHasSpentEvidence)
-    .map(note => ({ ...note, spent: true, isSpent: true, nullifierStatus: "spent" }));
-  return spent.length ? manager.reconcileSpentNotes(spent) : [];
+  const spent = (notes || []).filter(noteHasSpentEvidence);
+  if (!spent.length) return [];
+  const [active, allReservations] = await Promise.all([
+    manager.listActiveReservations(),
+    manager.store.listReservations({ ownerKeyId: manager.ownerKeyId })
+  ]);
+  const activeIDs = new Set(active.map(record => record.reservation_id));
+  const candidates = allReservations.filter(record => activeIDs.has(record.reservation_id)
+    || (reservationRequiresOperationEvidence(record) && [
+      operationStatuses.ManualReview,
+      operationStatuses.ConflictSpent
+    ].includes(operationReconciliationStatus(record))));
+  const notesByLookupKey = new Map();
+  for (const note of spent) {
+    notesByLookupKey.set(await manager.lookupKeyForNote(note), note);
+  }
+  const groups = new Map();
+  for (const record of candidates) {
+    const key = record.operation_id || record.reservation_id;
+    const group = groups.get(key) || [];
+    group.push(record);
+    groups.set(key, group);
+  }
+  const evidenceByLookupKey = new Map();
+  const eligibleLookupKeys = new Set();
+  for (const records of groups.values()) {
+    const spentRecords = records.filter(record => notesByLookupKey.has(record.nullifier_lookup_key));
+    if (!spentRecords.length) continue;
+    if (!records.some(reservationRequiresOperationEvidence)) {
+      spentRecords.forEach(record => eligibleLookupKeys.add(record.nullifier_lookup_key));
+      continue;
+    }
+    const event = transferEventForOperation(spentRecords, notesByLookupKey);
+    const operationSuccessEvidence = event ? operationEvidenceFromEvent(spentRecords, event) : null;
+    for (const record of spentRecords) {
+      eligibleLookupKeys.add(record.nullifier_lookup_key);
+      if (operationSuccessEvidence) {
+        evidenceByLookupKey.set(record.nullifier_lookup_key, operationSuccessEvidence);
+      }
+    }
+  }
+  const eligible = [...notesByLookupKey.entries()]
+    .filter(([lookupKey]) => eligibleLookupKeys.has(lookupKey))
+    .map(([lookupKey, note]) => ({
+      ...note,
+      spent: true,
+      isSpent: true,
+      nullifierStatus: "spent",
+      ...(evidenceByLookupKey.has(lookupKey)
+        ? { operationSuccessEvidence: evidenceByLookupKey.get(lookupKey) }
+        : {})
+    }));
+  return eligible.length ? manager.reconcileSpentNotes(eligible) : [];
 }
 
 function injectedEthereumProviders() {
@@ -711,8 +926,10 @@ const els = {
   keplrSendRecipient: $("#keplrSendRecipient"),
   keplrSendRecipientSuggestions: $("#keplrSendRecipientSuggestions"),
   sendFromKeplr: $("#sendFromKeplr"),
+  reconcileKeplrSend: $("#reconcileKeplrSend"),
   keplrDepositAmount: $("#keplrDepositAmount"),
   depositFromKeplr: $("#depositFromKeplr"),
+  reconcileKeplrDeposit: $("#reconcileKeplrDeposit"),
   keplrSendHash: $("#keplrSendHash"),
   keplrDepositHash: $("#keplrDepositHash"),
   keplrDepositHeight: $("#keplrDepositHeight"),
@@ -745,6 +962,9 @@ const els = {
   relayWithdrawExpiry: $("#relayWithdrawExpiry"),
   relayWithdrawPayloadHash: $("#relayWithdrawPayloadHash"),
   relayWithdrawJson: $("#relayWithdrawJson"),
+  relayWithdrawTxHash: $("#relayWithdrawTxHash"),
+  relayWithdrawResult: $("#relayWithdrawResult"),
+  reconcileRelayWithdraw: $("#reconcileRelayWithdraw"),
   copyRelayWithdraw: $("#copyRelayWithdraw"),
   downloadRelayWithdraw: $("#downloadRelayWithdraw"),
   keplrTransferHash: $("#keplrTransferHash"),
@@ -925,7 +1145,8 @@ function transferDisclosurePolicy() {
 function transferDisclosureSummary(disclosure = {}) {
   const mode = disclosure.disclosureMode || "none";
   const policy = disclosure.privacyPolicy || "all-private";
-  return mode === "none" ? "None (all private)" : `${mode} · ${policy}`;
+  const userDisclosure = mode === "none" ? "None (all private)" : `${mode} · ${policy}`;
+  return `User: ${userDisclosure} · Mandatory audit: full`;
 }
 
 function setBusy(element, busy) {
@@ -1949,6 +2170,7 @@ function resetMetaMaskSession() {
 }
 
 function resetKeplrSession() {
+  stopRelayReservationHeartbeat();
   state.keplr = defaultKeplrState();
   noteStore = null;
   noteStorePromise = null;
@@ -1957,7 +2179,14 @@ function resetKeplrSession() {
   reservationManagerPromise = null;
   reservationManagerKey = "";
   state.reservations = defaultReservationState();
-  state.relayWithdraw = { handoff: null, json: "" };
+  state.relayWithdraw = {
+    handoff: null,
+    json: "",
+    reservationIds: [],
+    txHash: "",
+    resultStatus: "idle",
+    resultMessage: "Not checked"
+  };
   state.privacyEvents.decoded = null;
   state.privacyEvents.error = "";
 }
@@ -2059,6 +2288,14 @@ function renderRelayWithdraw() {
     : "-";
   els.relayWithdrawPayloadHash.textContent = handoff?.payload?.payload_hash || "-";
   els.relayWithdrawJson.value = state.relayWithdraw.json;
+  if (els.relayWithdrawTxHash.value !== state.relayWithdraw.txHash) {
+    els.relayWithdrawTxHash.value = state.relayWithdraw.txHash;
+  }
+  els.relayWithdrawResult.textContent = state.relayWithdraw.resultMessage || "Not checked";
+  els.relayWithdrawResult.dataset.status = state.relayWithdraw.resultStatus;
+  els.reconcileRelayWithdraw.disabled = !handoff
+    || !state.relayWithdraw.txHash
+    || state.relayWithdraw.resultStatus === "checking";
   els.copyRelayWithdraw.disabled = !state.relayWithdraw.json;
   els.downloadRelayWithdraw.disabled = !state.relayWithdraw.json;
 }
@@ -2068,11 +2305,13 @@ async function setRelayWithdrawHandoff(prepared) {
   if (!prepared.reservationManager || !prepared.reservation || !reservationIDs.length) {
     throw new Error("Relay withdraw handoff requires an active prepared reservation");
   }
-  await prepared.reservationManager.recordRelayHandoff(reservationIDs, {
-    leaseToken: prepared.reservation.lease_token,
-    payloadHash: prepared.payload?.payload_hash || "",
-    metadata: { handoff_surface: "clairveil_example_dapp" }
-  });
+  await withPreparedReservationHeartbeat(prepared, () => (
+    prepared.reservationManager.recordRelayHandoff(reservationIDs, {
+      leaseToken: prepared.reservation.lease_token,
+      payloadHash: prepared.payload?.payload_hash || "",
+      metadata: { handoff_surface: "clairveil_example_dapp" }
+    })
+  ));
   const handoff = {
     version: "clairveil-relay-withdraw-handoff-v1",
     profile_id: activeChainProfile()?.id || "",
@@ -2081,6 +2320,16 @@ async function setRelayWithdrawHandoff(prepared) {
     ...(prepared.transaction ? { transaction: prepared.transaction } : {})
   };
   state.relayWithdraw.handoff = handoff;
+  state.relayWithdraw.reservationIds = reservationIDs;
+  state.relayWithdraw.txHash = "";
+  state.relayWithdraw.resultStatus = "waiting";
+  state.relayWithdraw.resultMessage = "Handoff recorded · waiting for relayer tx hash";
+  startRelayReservationHeartbeat({
+    manager: prepared.reservationManager,
+    reservationIDs,
+    leaseToken: prepared.reservation.lease_token,
+    leaseUntil: prepared.reservation.lease_until
+  });
   state.relayWithdraw.json = JSON.stringify(handoff, (_key, value) => (
     typeof value === "bigint" ? value.toString() : value
   ), 2);
@@ -2099,6 +2348,10 @@ function renderKeplr() {
   els.keplrDepositHash.textContent = state.keplr.depositHash ? shorten(state.keplr.depositHash, 14, 12) : "-";
   els.keplrDepositHeight.textContent = state.keplr.depositHeight || "-";
   els.keplrDepositRecovery.textContent = state.keplr.depositRecoveryMessage || "Not started";
+  const sendPending = ["submitted", "unknown", "checking"].includes(state.keplr.sendStatus);
+  const depositPending = ["submitted", "unknown", "checking"].includes(state.keplr.depositRecoveryStatus);
+  els.reconcileKeplrSend.disabled = !sendPending || !state.keplr.sendHash;
+  els.reconcileKeplrDeposit.disabled = !depositPending || !state.keplr.depositHash;
   els.keplrTransferHash.textContent = state.keplr.transferHash ? shorten(state.keplr.transferHash, 14, 12) : "-";
   els.keplrWithdrawHash.textContent = state.keplr.withdrawHash ? shorten(state.keplr.withdrawHash, 14, 12) : "-";
   els.keplrWithdrawHeight.textContent = state.keplr.withdrawHeight || "-";
@@ -2125,10 +2378,15 @@ function updateAmountActionButtons(status = {}) {
   const connected = Boolean(state.keplr.account);
   const signerReady = status.signerReady ?? (connected && state.keplr.addressMatches);
   const veiledReady = status.veiledReady ?? (signerReady && Boolean(state.keplr.rootSignatureBase64));
+  const sendPending = ["submitted", "unknown", "checking"].includes(state.keplr.sendStatus);
+  const depositPending = ["submitted", "unknown", "checking"].includes(state.keplr.depositRecoveryStatus);
+  const noteInventoryTrusted = state.keplr.noteSyncStatus === "synced";
   els.sendFromKeplr.disabled = !signerReady
+    || sendPending
     || !hasPositiveUclairInput(els.keplrSendAmount)
     || !isSendRecipientForWallet(els.keplrSendRecipient.value, state.activeWallet || activeWalletKind());
   els.depositFromKeplr.disabled = !signerReady
+    || depositPending
     || !depositProofReady()
     || !hasPositiveUclairInput(els.keplrDepositAmount);
   els.depositFromKeplr.title = depositProofReady()
@@ -2136,20 +2394,29 @@ function updateAmountActionButtons(status = {}) {
     : "Configure CLAIRVEIL_DEPOSIT_PROOF_URL or inject CLAIRVEIL_DEPOSIT_PROOF_PROVIDER.";
   const reservationBlocked = state.reservations.retryBlocked;
   els.transferFromVeiled.disabled = !veiledReady
+    || !noteInventoryTrusted
     || reservationBlocked
     || !hasPositiveUclairInput(els.veiledTransferAmount);
   els.withdrawFromVeiled.disabled = !veiledReady
+    || !noteInventoryTrusted
     || reservationBlocked
     || !hasPositiveUclairInput(els.veiledWithdrawAmount);
   const reservationTitle = reservationBlocked
     ? "Reconcile the active note reservation before preparing or retrying another spend."
-    : "";
+    : !noteInventoryTrusted
+      ? "Complete the note scan before using the displayed shielded balance."
+      : "";
   els.transferFromVeiled.title = reservationTitle;
   els.withdrawFromVeiled.title = reservationTitle;
 }
 
 function renderMyKeplrNotes() {
-  els.myKeplrSpendable.textContent = state.keplr.notesSummary || "-";
+  const noteInventoryTrusted = state.keplr.noteSyncStatus === "synced";
+  els.myKeplrSpendable.textContent = noteInventoryTrusted
+    ? state.keplr.notesSummary || "-"
+    : state.keplr.notesSummary
+      ? `Cached · not confirmed (${state.keplr.notesSummary})`
+      : "Not confirmed";
   els.myKeplrSpendableOnly.checked = state.keplr.showSpendableOnly;
   els.myKeplrNotesList.innerHTML = "";
 
@@ -2167,6 +2434,13 @@ function renderMyKeplrNotes() {
     empty.textContent = "Not scanned";
     els.myKeplrNotesList.append(empty);
     return;
+  }
+
+  if (!noteInventoryTrusted) {
+    const warning = document.createElement("p");
+    warning.className = "empty stale-note-warning";
+    warning.textContent = "Cached notes are shown for recovery only. Scan must complete before this balance is trusted.";
+    els.myKeplrNotesList.append(warning);
   }
 
   const valueNotes = state.keplr.notes.filter(note => !isZeroAmountNote(note));
@@ -3123,8 +3397,12 @@ async function connectKeplr() {
   state.keplr.rootSignatureBase64 = "";
   state.keplr.rootSignatureHash = "";
   state.keplr.sendHash = "";
+  state.keplr.sendStatus = "idle";
   state.keplr.depositHash = "";
   state.keplr.depositHeight = "";
+  state.keplr.depositPrepared = null;
+  state.keplr.depositRecoveryStatus = "idle";
+  state.keplr.depositRecoveryMessage = "Not started";
   state.keplr.transferHash = "";
   state.keplr.withdrawHash = "";
   state.keplr.withdrawHeight = "";
@@ -3398,6 +3676,82 @@ function watchEvmBroadcast(broadcast, { onIncluded, onUnknown, onFailed } = {}) 
   });
 }
 
+async function reconcilePublicEvmTransaction(kind) {
+  const isDeposit = kind === "deposit";
+  const txHash = isDeposit ? state.keplr.depositHash : state.keplr.sendHash;
+  const button = isDeposit ? els.reconcileKeplrDeposit : els.reconcileKeplrSend;
+  if (!txHash || activeChainProfile()?.transport !== "evm") return;
+  if (isDeposit) {
+    state.keplr.depositRecoveryStatus = "checking";
+    state.keplr.depositRecoveryMessage = "Checking the existing tx hash · retry remains blocked";
+  } else {
+    state.keplr.sendStatus = "checking";
+  }
+  setBusy(button, true);
+  renderKeplr();
+  try {
+    const result = await waitForEvmTransaction(txHash, isDeposit ? "EVM deposit" : "EVM send");
+    if (result.unknown) {
+      if (isDeposit) {
+        state.keplr.depositRecoveryStatus = "unknown";
+        state.keplr.depositRecoveryMessage = "Receipt still unknown · same deposit remains blocked";
+      } else {
+        state.keplr.sendStatus = "unknown";
+      }
+      showNotice({
+        title: `${isDeposit ? "Deposit" : "Send"} 결과 미확정`,
+        message: `기존 tx hash가 아직 포함 또는 실패로 확인되지 않았습니다. 같은 요청은 계속 차단됩니다.\nTx: ${shorten(txHash, 14, 12)}`
+      });
+      return;
+    }
+
+    if (isDeposit) {
+      state.keplr.depositHeight = result.receipt?.blockNumber || state.keplr.depositHeight;
+      if (state.keplr.depositPrepared) {
+        await recoverDepositNote({ ...result, prepared: state.keplr.depositPrepared });
+      } else {
+        await scanKeplrNotes({ quiet: true, throwOnError: true });
+        state.keplr.depositRecoveryStatus = "pending";
+        state.keplr.depositRecoveryMessage = "Included · full rescan required to verify the prepared note";
+      }
+      await refreshPrivacySurfaces({ balance: true });
+    } else {
+      state.keplr.sendStatus = "included";
+      await Promise.allSettled([refreshWalletBalance(), refreshBlockEvents()]);
+    }
+    els.keplrTxState.textContent = `${isDeposit ? "Deposit" : "Send"} included`;
+    showNotice({
+      title: `${isDeposit ? "Deposit" : "Send"} 결과 확인됨`,
+      message: `기존 tx가 포함된 것을 확인했습니다. 새 요청을 만들 수 있습니다.\nTx: ${shorten(txHash, 14, 12)}`
+    });
+  } catch (error) {
+    const failureConfirmed = evmReceiptHasFailed(error?.broadcast?.receipt);
+    if (isDeposit) {
+      state.keplr.depositRecoveryStatus = failureConfirmed ? "failed" : "unknown";
+      state.keplr.depositRecoveryMessage = failureConfirmed
+        ? `Failed on-chain · ${error.message}`
+        : `Result still unknown · ${error.message}`;
+    } else {
+      state.keplr.sendStatus = failureConfirmed ? "failed" : "unknown";
+    }
+    els.keplrTxState.textContent = failureConfirmed
+      ? `${isDeposit ? "Deposit" : "Send"} failed`
+      : `${isDeposit ? "Deposit" : "Send"} status unknown`;
+    showNotice({
+      title: failureConfirmed
+        ? `${isDeposit ? "Deposit" : "Send"} 실패 확인됨`
+        : `${isDeposit ? "Deposit" : "Send"} 결과 미확정`,
+      message: failureConfirmed
+        ? error.message
+        : `${error.message}\n실패 증거가 없으므로 같은 요청은 계속 차단됩니다.`,
+      failed: failureConfirmed
+    });
+  } finally {
+    setBusy(button, false);
+    renderKeplr();
+  }
+}
+
 function keplrPrivacyRequest(extra = {}) {
   return {
     address: state.keplr.account,
@@ -3615,13 +3969,15 @@ async function broadcastPreparedPrivacy(data, label = "privacy transaction", opt
     : {};
   const broadcastOptions = { ...reservationBinding, ...relayValidation };
   try {
-    const broadcast = state.activeWallet === "metamask"
-      ? await sendEvmTransaction(data.transaction, {
-          label,
-          waitForReceipt: Boolean(options.waitForEvmReceipt),
-          reservationBinding: broadcastOptions
-        })
-      : await signDirectAndBroadcast(data.signDoc, broadcastOptions);
+    const broadcast = await withPreparedReservationHeartbeat(data, () => (
+      state.activeWallet === "metamask"
+        ? sendEvmTransaction(data.transaction, {
+            label,
+            waitForReceipt: Boolean(options.waitForEvmReceipt),
+            reservationBinding: broadcastOptions
+          })
+        : signDirectAndBroadcast(data.signDoc, broadcastOptions)
+    ));
     await refreshReservationState(data.reservationManager);
     if (broadcast.unknown) {
       const error = new Error(`${label} was submitted, but its final result is unknown. Reconcile the tx hash and note nullifier before retrying.`);
@@ -3701,6 +4057,59 @@ async function checkReservationTransaction(txHash) {
   };
 }
 
+async function reconcileRelayWithdrawResult() {
+  const handoff = state.relayWithdraw.handoff;
+  const txHash = state.relayWithdraw.txHash.trim();
+  if (!handoff) throw new Error("Prepare and hand off a relay withdraw payload first");
+  if (!/^(0x)?[0-9a-fA-F]{64}$/.test(txHash)) {
+    throw new Error("Relayer tx hash must be a 32-byte hex value");
+  }
+  state.relayWithdraw.resultStatus = "checking";
+  state.relayWithdraw.resultMessage = "Checking tx result first, then nullifier spent state…";
+  renderRelayWithdraw();
+  try {
+    const check = await checkReservationTransaction(txHash);
+    await refreshEvents({ allowFailure: true });
+    await scanKeplrNotes({ quiet: true, throwOnError: true });
+    const manager = await currentReservationManager();
+    const records = manager
+      ? await Promise.all(state.relayWithdraw.reservationIds.map(id => manager.getReservation(id)))
+      : [];
+    const spentConfirmed = records.length > 0
+      && records.every(record => record.status === reservationStatuses.ConfirmedSpent);
+
+    if (check.failed) {
+      state.relayWithdraw.resultStatus = "failed";
+      state.relayWithdraw.resultMessage = spentConfirmed
+        ? "Tx failed but nullifier is spent · manual review required"
+        : "Tx failed · nullifier not confirmed spent · reservation remains locked for review";
+      return;
+    }
+    if (!check.included) {
+      state.relayWithdraw.resultStatus = check.pending ? "submitted" : "unknown";
+      state.relayWithdraw.resultMessage = check.pending
+        ? "Tx is pending · do not rebuild or hand off another payload"
+        : "Tx hash is not confirmed yet · absence is not treated as failure";
+      return;
+    }
+
+    state.keplr.withdrawHash = txHash;
+    state.keplr.withdrawHeight = check.height || "included";
+    state.relayWithdraw.resultStatus = spentConfirmed ? "confirmed" : "recovering";
+    state.relayWithdraw.resultMessage = spentConfirmed
+      ? "Tx included · bound transparent recipient confirmed · input nullifier spent"
+      : "Tx included · transparent recipient is payload-bound · waiting for spent-state scan";
+    if (spentConfirmed) stopRelayReservationHeartbeat();
+    await Promise.allSettled([refreshWalletBalance(), refreshProtocolStatus()]);
+  } catch (error) {
+    state.relayWithdraw.resultStatus = "unknown";
+    state.relayWithdraw.resultMessage = `Unable to confirm result · ${error.message}`;
+  } finally {
+    await refreshReservationState().catch(() => {});
+    renderKeplr();
+  }
+}
+
 async function explicitlyUnspentReservationIDs(manager, records, notes = state.keplr.notes) {
   const byLookupKey = new Map();
   for (const note of notes || []) {
@@ -3726,6 +4135,7 @@ async function reconcileReservations({ quiet = false, manager = null } = {}) {
       txChecks.set(txHash, await checkReservationTransaction(txHash));
     }
 
+    await refreshEvents({ allowFailure: true });
     await scanKeplrNotes({ quiet: true, throwOnError: true });
     const active = await resolvedManager.listActiveReservations();
     for (const status of [reservationStatuses.Submitted, reservationStatuses.Unknown]) {
@@ -3778,7 +4188,12 @@ async function resolvePreparedPrivacyFailure(error, data = error?.preparedPrivac
     const operationActive = reservationIDs.size
       ? active.filter(record => reservationIDs.has(record.reservation_id))
       : active;
-    return { blocked: operationActive.length > 0, active: operationActive };
+    return {
+      blocked: operationActive.length > 0
+        || error?.code === "OPERATION_RECONCILIATION_REQUIRED"
+        || state.reservations.unresolved?.length > 0,
+      active: operationActive
+    };
   } catch (reservationError) {
     return {
       blocked: true,
@@ -3797,9 +4212,21 @@ async function activePreparedReservations(data) {
 
 async function requirePreparedReservationReconciled(data, label) {
   const active = await activePreparedReservations(data);
-  if (!active.length) return;
-  const error = new Error(`${label} was included, but its note nullifier has not been reconciled as spent yet. Do not retry or continue the plan.`);
-  error.code = "NULLIFIER_RECONCILIATION_PENDING";
+  if (active.length) {
+    const error = new Error(`${label} was included, but its note nullifier and operation evidence have not been reconciled yet. Do not retry or continue the plan.`);
+    error.code = "NULLIFIER_RECONCILIATION_PENDING";
+    error.preparedPrivacyData = data;
+    throw error;
+  }
+  const records = await Promise.all(
+    preparedReservationIDs(data).map(id => data.reservationManager.getReservation(id))
+  );
+  const unresolved = records.filter(record => reservationRequiresOperationEvidence(record)
+    && operationReconciliationStatus(record) !== operationStatuses.Succeeded);
+  if (!unresolved.length) return;
+  await refreshReservationState(data.reservationManager);
+  const error = new Error(`${label} consumed its input note, but the tx output evidence does not prove the intended recipient and amount. Manual review is required.`);
+  error.code = "OPERATION_RECONCILIATION_REQUIRED";
   error.preparedPrivacyData = data;
   throw error;
 }
@@ -3891,6 +4318,7 @@ async function sendFromKeplr() {
       const broadcast = await sendEvmTransaction(transaction, { label: "EVM send" });
       assertSuccessfulBroadcast(broadcast, "EVM send");
       state.keplr.sendHash = broadcast.txHash || "";
+      state.keplr.sendStatus = "submitted";
       els.keplrTxState.textContent = "Send submitted";
       renderKeplr();
       showSendResult({
@@ -3901,12 +4329,14 @@ async function sendFromKeplr() {
       watchEvmBroadcast(broadcast, {
         onIncluded: async included => {
           state.keplr.sendHash = included.txHash || state.keplr.sendHash;
+          state.keplr.sendStatus = "included";
           els.keplrTxState.textContent = "Send included";
           await Promise.allSettled([refreshWalletBalance(), refreshBlockEvents()]);
           renderKeplr();
         },
         onUnknown: unknown => {
           state.keplr.sendHash = unknown.txHash || state.keplr.sendHash;
+          state.keplr.sendStatus = "unknown";
           els.keplrTxState.textContent = "Send status unknown";
           showNotice({
             title: "Send 결과 확인 필요",
@@ -3915,8 +4345,15 @@ async function sendFromKeplr() {
           renderKeplr();
         },
         onFailed: error => {
-          els.keplrTxState.textContent = "Send failed";
-          showSendResult({ success: false, error: error.message });
+          state.keplr.sendStatus = evmReceiptHasFailed(error?.broadcast?.receipt) ? "failed" : "unknown";
+          const failed = state.keplr.sendStatus === "failed";
+          els.keplrTxState.textContent = failed ? "Send failed" : "Send status unknown";
+          showNotice({
+            title: failed ? "Send 실패" : "Send 결과 확인 필요",
+            message: failed ? error.message : `${error.message}\n실패가 확인되지 않아 같은 요청은 계속 차단됩니다.`,
+            failed
+          });
+          renderKeplr();
         }
       });
       return;
@@ -3931,6 +4368,7 @@ async function sendFromKeplr() {
     els.keplrTxState.textContent = "Waiting for Keplr";
     const broadcast = await signDirectAndBroadcast(signDoc);
     state.keplr.sendHash = broadcast.broadcast?.txhash || "";
+    state.keplr.sendStatus = "included";
     els.keplrTxState.textContent = "Send included";
     renderKeplr();
     showSendResult({
@@ -3941,6 +4379,7 @@ async function sendFromKeplr() {
     await Promise.allSettled([refreshWalletBalance(), refreshBlockEvents()]);
     renderKeplr();
   } catch (error) {
+    if (!state.keplr.sendHash) state.keplr.sendStatus = "failed";
     els.keplrTxState.textContent = "Send failed";
     showSendResult({
       success: false,
@@ -3961,6 +4400,7 @@ async function depositFromKeplr() {
   els.keplrTxState.textContent = "Preparing deposit";
   try {
     const broadcast = await broadcastPrivacyDeposit(amountInputValue(els.keplrDepositAmount));
+    state.keplr.depositPrepared = broadcast.prepared || null;
     const isPendingEvm = Boolean(broadcast.pending);
     els.keplrTxState.textContent = isPendingEvm ? "Deposit submitted" : "Deposit included";
     state.keplr.depositRecoveryStatus = isPendingEvm ? "submitted" : "recovering";
@@ -4000,8 +4440,18 @@ async function depositFromKeplr() {
           });
         },
         onFailed: error => {
-          els.keplrTxState.textContent = "Deposit failed";
-          showNotice({ title: "Deposit 실패", message: error.message, failed: true });
+          state.keplr.depositRecoveryStatus = evmReceiptHasFailed(error?.broadcast?.receipt) ? "failed" : "unknown";
+          state.keplr.depositRecoveryMessage = state.keplr.depositRecoveryStatus === "failed"
+            ? `Failed on-chain · ${error.message}`
+            : `Result still unknown · ${error.message}`;
+          const failed = state.keplr.depositRecoveryStatus === "failed";
+          els.keplrTxState.textContent = failed ? "Deposit failed" : "Deposit status unknown";
+          showNotice({
+            title: failed ? "Deposit 실패" : "Deposit 결과 확인 필요",
+            message: failed ? error.message : `${error.message}\n실패가 확인되지 않아 같은 요청은 계속 차단됩니다.`,
+            failed
+          });
+          renderKeplr();
         }
       });
       return;
@@ -4015,6 +4465,10 @@ async function depositFromKeplr() {
         : "트랜잭션은 성공했지만 note 복구가 아직 완료되지 않았습니다. Reset & Rescan으로 다시 복구할 수 있습니다."
     });
   } catch (error) {
+    if (!state.keplr.depositHash) {
+      state.keplr.depositRecoveryStatus = "failed";
+      state.keplr.depositRecoveryMessage = error.message;
+    }
     els.keplrTxState.textContent = "Deposit failed";
     showNotice({ title: "Deposit 실패", message: error.message, failed: true });
   } finally {
@@ -4110,6 +4564,9 @@ async function refreshPrivacySurfaces({ balance = false } = {}) {
     tasks.unshift(refreshWalletBalance());
   }
   await Promise.allSettled(tasks);
+  const manager = await currentReservationManager();
+  await reconcileSpentReservations(manager, state.keplr.notes);
+  await refreshReservationState(manager);
 }
 
 async function transferFromVeiled() {
@@ -4497,7 +4954,9 @@ els.myKeplrSpendableOnly.addEventListener("change", event => {
   renderMyKeplrNotes();
 });
 els.sendFromKeplr.addEventListener("click", sendFromKeplr);
+els.reconcileKeplrSend.addEventListener("click", () => reconcilePublicEvmTransaction("send"));
 els.depositFromKeplr.addEventListener("click", depositFromKeplr);
+els.reconcileKeplrDeposit.addEventListener("click", () => reconcilePublicEvmTransaction("deposit"));
 [
   els.keplrSendAmount,
   els.keplrSendRecipient,
@@ -4513,6 +4972,15 @@ els.includeSelfViewDisclosure.addEventListener("change", renderTransferDisclosur
 els.transferFromVeiled.addEventListener("click", transferFromVeiled);
 els.withdrawFromVeiled.addEventListener("click", withdrawFromVeiled);
 els.withdrawMode.addEventListener("change", renderRelayWithdraw);
+els.relayWithdrawTxHash.addEventListener("input", event => {
+  state.relayWithdraw.txHash = event.target.value.trim();
+  state.relayWithdraw.resultStatus = "waiting";
+  state.relayWithdraw.resultMessage = state.relayWithdraw.txHash
+    ? "Tx hash entered · result not checked"
+    : "Waiting for relayer tx hash";
+  renderRelayWithdraw();
+});
+els.reconcileRelayWithdraw.addEventListener("click", () => reconcileRelayWithdrawResult());
 els.copyRelayWithdraw.addEventListener("click", () => copyRelayWithdraw().catch(error => toast(error.message)));
 els.downloadRelayWithdraw.addEventListener("click", () => {
   try {
