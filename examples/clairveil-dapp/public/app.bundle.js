@@ -93902,7 +93902,7 @@ var ClairveilBrowserClient = class {
     evmChainId,
     evmPrivacyPrecompileAddress: evmPrivacyPrecompileAddress2,
     evmDepositMode = defaultEvmDepositMode,
-    evmNativeDenom,
+    evmNativeDenom: evmNativeDenom2,
     evmGasLimit = "0x989680",
     evmSendGasLimit = "0x5208"
   } = {}) {
@@ -93939,7 +93939,7 @@ var ClairveilBrowserClient = class {
       hasProfile ? resolved.evmDepositMode ?? defaultEvmDepositMode : evmDepositMode
     );
     this.evmNativeDenom = String(
-      hasProfile ? resolved.evmNativeDenom || this.denom : evmNativeDenom || this.denom
+      hasProfile ? resolved.evmNativeDenom || this.denom : evmNativeDenom2 || this.denom
     ).trim();
     if (this.evmDepositMode === evmDepositModePayableExactValue && this.evmNativeDenom !== this.denom) {
       throw new Error("evmNativeDenom must match denom for payable EVM deposits");
@@ -95697,6 +95697,52 @@ var EncryptedLocalStorageOperationStore = class _EncryptedLocalStorageOperationS
   }
 };
 
+// public/deposit-funding.js
+function canonicalAmount2(value, label) {
+  const text3 = String(value ?? "").trim();
+  if (!/^(0|[1-9][0-9]*)$/.test(text3)) {
+    throw new Error(`${label} must be a canonical non-negative integer`);
+  }
+  return BigInt(text3);
+}
+function assertDepositFundingAvailable({
+  amount,
+  fee,
+  assetBalance,
+  nativeBalance,
+  assetDenom,
+  nativeDenom,
+  transport
+} = {}) {
+  const amountValue = canonicalAmount2(amount, "deposit amount");
+  const feeValue = canonicalAmount2(fee ?? "0", "deposit fee");
+  const assetValue = canonicalAmount2(assetBalance ?? "0", `${assetDenom || "asset"} balance`);
+  const nativeValue = canonicalAmount2(nativeBalance ?? assetBalance ?? "0", `${nativeDenom || assetDenom || "native"} balance`);
+  const splitEvmFunding = transport === "evm" && String(assetDenom) !== String(nativeDenom);
+  if (splitEvmFunding) {
+    if (assetValue < amountValue) {
+      throw new Error(`Insufficient transparent ${assetDenom} balance: need ${amountValue}${assetDenom}, available ${assetValue}${assetDenom}`);
+    }
+    if (nativeValue < feeValue) {
+      throw new Error(`Insufficient EVM gas balance: need ${feeValue}${nativeDenom}, available ${nativeValue}${nativeDenom}`);
+    }
+    return {
+      amount: amountValue,
+      fee: feeValue,
+      assetBalance: assetValue,
+      nativeBalance: nativeValue,
+      requiredAsset: amountValue,
+      requiredNative: feeValue
+    };
+  }
+  const required = amountValue + feeValue;
+  const balance = transport === "evm" ? nativeValue : assetValue;
+  if (balance < required) {
+    throw new Error(`Insufficient transparent balance: need ${required}${assetDenom} including estimated fee, available ${balance}${assetDenom}`);
+  }
+  return { amount: amountValue, fee: feeValue, balance, required };
+}
+
 // public/disclosure-view-model.js
 function disclosureViewModel(report) {
   if (report?.verification?.verified !== true) {
@@ -95820,6 +95866,181 @@ function savePublicPendingTxState(storage, key, { profileId, owner, send, deposi
   }));
 }
 
+// public/relay-withdraw-reconciliation.js
+function requiredText(value, label) {
+  const text3 = String(value ?? "").trim();
+  if (!text3) throw new Error(`${label} is required`);
+  return text3;
+}
+function normalizedHex(value, label) {
+  const text3 = requiredText(value, label).replace(/^0x/i, "").toLowerCase();
+  if (!/^[0-9a-f]+$/.test(text3) || text3.length % 2 !== 0) {
+    throw new Error(`${label} must be even-length hex`);
+  }
+  return text3;
+}
+function bytesHex(value) {
+  return [...value || []].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+function normalizedEvmQuantity2(value, label) {
+  const text3 = requiredText(value, label);
+  try {
+    const quantity = BigInt(text3);
+    if (quantity < 0n) throw new Error("negative");
+    return quantity;
+  } catch {
+    throw new Error(`${label} must be a non-negative EVM quantity`);
+  }
+}
+function assertEqual(actual, expected, label, { caseInsensitive = false } = {}) {
+  const left = String(actual ?? "").trim();
+  const right = String(expected ?? "").trim();
+  const matches = caseInsensitive ? left.toLowerCase() === right.toLowerCase() : left === right;
+  if (!matches) throw new Error(`relayer transaction ${label} does not match the prepared withdraw payload`);
+}
+function assertEvmRelayTransactionMatches({ transaction, handoffTransaction, expectedEvmChainId }) {
+  if (!transaction || typeof transaction !== "object") {
+    throw new Error("included EVM relayer transaction could not be loaded");
+  }
+  if (!handoffTransaction || typeof handoffTransaction !== "object") {
+    throw new Error("EVM relay handoff omitted its prepared transaction binding");
+  }
+  assertEqual(transaction.to, handoffTransaction.to, "target", { caseInsensitive: true });
+  assertEqual(
+    normalizedHex(transaction.input ?? transaction.data, "included EVM calldata"),
+    normalizedHex(handoffTransaction.data ?? handoffTransaction.input, "prepared EVM calldata"),
+    "calldata"
+  );
+  if (normalizedEvmQuantity2(transaction.value ?? "0x0", "included EVM value") !== normalizedEvmQuantity2(handoffTransaction.value ?? "0x0", "prepared EVM value")) {
+    throw new Error("relayer transaction value does not match the prepared withdraw payload");
+  }
+  const preparedChainId = handoffTransaction.chainId ?? expectedEvmChainId;
+  if (normalizedEvmQuantity2(transaction.chainId, "included EVM chainId") !== normalizedEvmQuantity2(preparedChainId, "prepared EVM chainId")) {
+    throw new Error("relayer transaction chainId does not match the prepared withdraw payload");
+  }
+  if (expectedEvmChainId != null && normalizedEvmQuantity2(transaction.chainId, "included EVM chainId") !== normalizedEvmQuantity2(expectedEvmChainId, "expected EVM chainId")) {
+    throw new Error("relayer transaction chainId does not match the active EVM profile");
+  }
+}
+function readProtobufVarint(bytes4, offset, label) {
+  let value = 0n;
+  let shift = 0n;
+  for (let index = 0; index < 10; index += 1) {
+    if (offset >= bytes4.length) throw new Error(`${label} ended inside a varint`);
+    const byte = bytes4[offset];
+    offset += 1;
+    value |= BigInt(byte & 127) << shift;
+    if ((byte & 128) === 0) return { value, offset };
+    shift += 7n;
+  }
+  throw new Error(`${label} contains an oversized varint`);
+}
+function protobufFields(input, label) {
+  const bytes4 = input instanceof Uint8Array ? input : new Uint8Array(input || []);
+  const fields = [];
+  let offset = 0;
+  while (offset < bytes4.length) {
+    const tag = readProtobufVarint(bytes4, offset, label);
+    offset = tag.offset;
+    const fieldNumber = Number(tag.value >> 3n);
+    const wireType = Number(tag.value & 7n);
+    if (!Number.isSafeInteger(fieldNumber) || fieldNumber <= 0) {
+      throw new Error(`${label} contains an invalid field number`);
+    }
+    if (wireType === 0) {
+      offset = readProtobufVarint(bytes4, offset, label).offset;
+    } else if (wireType === 1 || wireType === 5) {
+      offset += wireType === 1 ? 8 : 4;
+      if (offset > bytes4.length) throw new Error(`${label} contains a truncated fixed-width field`);
+    } else if (wireType === 2) {
+      const length = readProtobufVarint(bytes4, offset, label);
+      offset = length.offset;
+      if (length.value > BigInt(Number.MAX_SAFE_INTEGER)) {
+        throw new Error(`${label} contains an oversized field`);
+      }
+      const end = offset + Number(length.value);
+      if (end > bytes4.length) throw new Error(`${label} contains a truncated length-delimited field`);
+      fields.push({ fieldNumber, wireType, value: bytes4.slice(offset, end) });
+      offset = end;
+    } else {
+      throw new Error(`${label} uses unsupported protobuf wire type ${wireType}`);
+    }
+  }
+  return fields;
+}
+function requiredLengthDelimitedField(fields, fieldNumber, label) {
+  const matches = fields.filter((field2) => field2.fieldNumber === fieldNumber && field2.wireType === 2);
+  if (matches.length !== 1) throw new Error(`${label} must appear exactly once`);
+  return matches[0].value;
+}
+function cosmosWithdrawMessage(transaction) {
+  const raw = transaction?.tx;
+  if (!(raw instanceof Uint8Array) || raw.length === 0) {
+    throw new Error("included Cosmos relayer transaction omitted raw transaction bytes");
+  }
+  const bodyBytes = requiredLengthDelimitedField(protobufFields(raw, "Cosmos TxRaw"), 1, "TxRaw body_bytes");
+  const messages = protobufFields(bodyBytes, "Cosmos TxBody").filter((field2) => field2.fieldNumber === 1 && field2.wireType === 2).map((field2) => {
+    const anyFields = protobufFields(field2.value, "Cosmos message Any");
+    return {
+      typeUrl: new TextDecoder().decode(requiredLengthDelimitedField(anyFields, 1, "Any type_url")),
+      value: requiredLengthDelimitedField(anyFields, 2, "Any value")
+    };
+  });
+  const withdrawals = messages.filter((message) => message.typeUrl === msgWithdrawTypeUrl);
+  if (messages.length !== 1 || withdrawals.length !== 1) {
+    throw new Error("included Cosmos relayer transaction must contain exactly one MsgWithdraw");
+  }
+  return MsgWithdraw2.decode(withdrawals[0].value);
+}
+function assertCosmosRelayTransactionMatches({ transaction, payload }) {
+  const message = cosmosWithdrawMessage(transaction);
+  assertEqual(bytesHex(message.proof), normalizedHex(payload?.proof_hex, "withdraw proof"), "proof");
+  assertEqual(bytesHex(message.root), normalizedHex(payload?.root_hex, "withdraw root"), "root");
+  assertEqual(bytesHex(message.nullifier), normalizedHex(payload?.nullifier_hex, "withdraw nullifier"), "nullifier");
+  assertEqual(message.amount, payload?.amount, "amount");
+  assertEqual(message.recipient, payload?.recipient, "recipient");
+  assertEqual(message.chainId, payload?.chain_id, "chain ID");
+  if (BigInt(message.expiresAtUnix) !== BigInt(payload?.expires_at_unix)) {
+    throw new Error("relayer transaction expiry does not match the prepared withdraw payload");
+  }
+}
+function assertRelayReservationPayloadMatches(records, payload) {
+  const payloadHash = requiredText(payload?.payload_hash, "relay payload hash");
+  if (!Array.isArray(records) || records.length === 0) {
+    throw new Error("relay reservation records are required");
+  }
+  if (records.some((record) => String(record?.payload_hash || "").trim() !== payloadHash)) {
+    throw new Error("relay recovery state does not match the reserved payload hash");
+  }
+}
+function assertRelayWithdrawTransactionMatches({
+  transport,
+  payload,
+  handoffTransaction,
+  transaction,
+  expectedEvmChainId
+} = {}) {
+  if (transport === "evm") {
+    assertEvmRelayTransactionMatches({ transaction, handoffTransaction, expectedEvmChainId });
+  } else if (transport === "cosmos") {
+    assertCosmosRelayTransactionMatches({ transaction, payload });
+  } else {
+    throw new Error(`unsupported relay transaction transport ${JSON.stringify(transport)}`);
+  }
+  return true;
+}
+function relayWithdrawPayloadExpired(payload, chainNowUnix) {
+  const expiry = Number(payload?.expires_at_unix);
+  const now = Number(chainNowUnix);
+  if (!Number.isSafeInteger(expiry) || expiry < 0) {
+    throw new Error("relay payload expires_at_unix is invalid");
+  }
+  if (!Number.isSafeInteger(now) || now < 0) {
+    throw new Error("authoritative chain time is invalid");
+  }
+  return now >= expiry;
+}
+
 // public/app.js
 function defaultMetaMaskState() {
   return {
@@ -95854,6 +96075,7 @@ function defaultKeplrState() {
     verified: false,
     balance: "",
     transparentBalances: {},
+    evmNativeBalance: "0",
     faucetHash: "",
     faucetSent: "",
     faucetRecipient: "",
@@ -96009,6 +96231,9 @@ function shieldedPrefix() {
 function baseDenom() {
   return activeChainProfile()?.denom || state.config?.denom || "uclair";
 }
+function evmNativeDenom() {
+  return activeChainProfile()?.evmNativeDenom || state.config?.evmNativeDenom || baseDenom();
+}
 function displayDenom() {
   return activeChainProfile()?.displayDenom || state.config?.displayDenom || "CLAIR";
 }
@@ -96077,7 +96302,7 @@ function profileRestEndpoints(profile = activeChainProfile()) {
   ];
   return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
 }
-async function fetchLatestChainBlockTimeUnix({ signal } = {}) {
+async function fetchLatestChainBlock({ signal } = {}) {
   const endpoint = browserRestUrl();
   if (!endpoint) throw new Error("A browser-accessible chain REST endpoint is required for authoritative expiry");
   const response = await fetch(`${endpoint}/cosmos/base/tendermint/v1beta1/blocks/latest`, { signal });
@@ -96090,7 +96315,15 @@ async function fetchLatestChainBlockTimeUnix({ signal } = {}) {
   if (!Number.isFinite(milliseconds)) {
     throw new Error("Latest block response omitted a valid timestamp");
   }
-  return Math.floor(milliseconds / 1e3);
+  const rawHeight = data?.block?.header?.height ?? data?.sdk_block?.header?.height;
+  const height = Number(rawHeight);
+  if (!Number.isSafeInteger(height) || height <= 0) {
+    throw new Error("Latest block response omitted a valid height");
+  }
+  return { timeUnix: Math.floor(milliseconds / 1e3), height };
+}
+async function fetchLatestChainBlockTimeUnix(options = {}) {
+  return (await fetchLatestChainBlock(options)).timeUnix;
 }
 async function privacyOperationTiming(options = {}) {
   const chainNowUnix = await fetchLatestChainBlockTimeUnix(options);
@@ -96640,13 +96873,13 @@ function noteHasUnspentEvidence(note) {
   return note?.spent !== true && note?.isSpent !== true && String(note?.nullifier_status || note?.nullifierStatus || "").toLowerCase() === "unspent";
 }
 function privacyTransferEventNullifiers(event) {
-  return ["nullifier_1", "nullifier_2"].map((key) => normalizedHex(eventAttribute4(event, key))).filter(Boolean);
+  return ["nullifier_1", "nullifier_2"].map((key) => normalizedHex2(eventAttribute4(event, key))).filter(Boolean);
 }
 function transferEventMatchesOperation(event, records, notesByLookupKey) {
   const nullifiers = records.map((record) => noteNullifier(notesByLookupKey.get(record.nullifier_lookup_key))).filter(Boolean);
   if (nullifiers.length !== records.length || event?.event_type !== "shielded_transfer") return false;
   const eventNullifiers = new Set(privacyTransferEventNullifiers(event));
-  return nullifiers.every((nullifier) => eventNullifiers.has(normalizedHex(nullifier)));
+  return nullifiers.every((nullifier) => eventNullifiers.has(normalizedHex2(nullifier)));
 }
 function transferEventForOperation(records, notesByLookupKey, txHash = "") {
   const expectedTxHash = normalizedTxHash(txHash);
@@ -96689,9 +96922,9 @@ async function operationEventForReservations(records, notesByLookupKey) {
 function operationEvidenceFromEvent(records, event) {
   const first = records[0];
   return {
-    txHash: normalizedHex(event?.tx_hash_hex),
-    outputCommitment: normalizedHex(eventAttribute4(event, "commitment_1")),
-    auditDisclosureDigest: normalizedHex(eventAttribute4(event, "audit_disclosure_digest")),
+    txHash: normalizedHex2(event?.tx_hash_hex),
+    outputCommitment: normalizedHex2(eventAttribute4(event, "commitment_1")),
+    auditDisclosureDigest: normalizedHex2(eventAttribute4(event, "audit_disclosure_digest")),
     recipientHash: first.expected_recipient_hash,
     amount: first.expected_amount,
     amountHash: first.expected_amount_hash,
@@ -97554,6 +97787,10 @@ function formatBaseUnits(value, decimals = 18) {
   const fraction = padded.slice(-places).replace(/0+$/, "").slice(0, 8);
   return fraction ? `${whole}.${fraction}` : whole;
 }
+function formatEvmNetworkFee(value) {
+  const fee = BigInt(value);
+  return evmNativeDenom() === baseDenom() ? `${formatBaseUnits(fee, coinDecimals())} ${displayDenom()}` : `${fee}${evmNativeDenom()}`;
+}
 async function updateDepositNetworkFee(transaction) {
   if (state.activeWallet !== "metamask") {
     const fee = cosmosGasFeeEstimate(25e5);
@@ -97572,7 +97809,7 @@ async function updateDepositNetworkFee(transaction) {
     const gasPrice = evmQuantityToBigInt(gasPriceHex, "gas price");
     const fee = gas * gasPrice;
     state.keplr.networkFeeAmount = fee.toString();
-    state.keplr.networkFeeEstimate = `\u2248 ${formatBaseUnits(fee, coinDecimals())} ${displayDenom()} \xB7 gas ${gas}`;
+    state.keplr.networkFeeEstimate = `\u2248 ${formatEvmNetworkFee(fee)} \xB7 gas ${gas}`;
     renderKeplr();
     return fee;
   } catch {
@@ -97600,7 +97837,7 @@ async function estimateDepositFeeBeforeProof() {
   const gasPrice = evmQuantityToBigInt(await requestMetaMask({ method: "eth_gasPrice" }), "gas price");
   const fee = gas * gasPrice;
   state.keplr.networkFeeAmount = fee.toString();
-  state.keplr.networkFeeEstimate = `\u2264 ${formatBaseUnits(fee, coinDecimals())} ${displayDenom()} budget \xB7 gas limit ${gas}`;
+  state.keplr.networkFeeEstimate = `\u2264 ${formatEvmNetworkFee(fee)} budget \xB7 gas limit ${gas}`;
   renderKeplr();
   return fee;
 }
@@ -97614,13 +97851,15 @@ function transparentBalanceAmount(denom = baseDenom()) {
 function assertDepositFunding(amount, feeAmount) {
   const amountValue = parsePlannerAmountValue(amount);
   if (amountValue === null) throw new Error("Deposit amount must be a canonical integer");
-  const fee = BigInt(feeAmount || 0);
-  const balance = transparentBalanceAmount();
-  const required = amountValue + fee;
-  if (balance < required) {
-    throw new Error(`Insufficient transparent balance: need ${required}${baseDenom()} including estimated fee, available ${balance}${baseDenom()}`);
-  }
-  return { amount: amountValue, fee, balance, required };
+  return assertDepositFundingAvailable({
+    amount: amountValue.toString(),
+    fee: BigInt(feeAmount || 0).toString(),
+    assetBalance: transparentBalanceAmount().toString(),
+    nativeBalance: state.keplr.evmNativeBalance,
+    assetDenom: baseDenom(),
+    nativeDenom: evmNativeDenom(),
+    transport: activeChainProfile()?.transport || "cosmos"
+  });
 }
 function normalizeEvmTxHash(txHash) {
   return String(txHash || "").trim().replace(/^0x/i, "").toUpperCase();
@@ -98274,7 +98513,7 @@ function renderRelayWithdraw() {
   }
   els.relayWithdrawResult.textContent = state.relayWithdraw.resultMessage || "Not checked";
   els.relayWithdrawResult.dataset.status = state.relayWithdraw.resultStatus;
-  els.reconcileRelayWithdraw.disabled = !handoff || !state.relayWithdraw.txHash || state.relayWithdraw.resultStatus === "checking";
+  els.reconcileRelayWithdraw.disabled = !handoff || state.relayWithdraw.resultStatus === "checking";
   els.copyRelayWithdraw.disabled = !state.relayWithdraw.json;
   els.downloadRelayWithdraw.disabled = !state.relayWithdraw.json;
 }
@@ -98574,19 +98813,30 @@ async function refreshWalletBalance() {
   if (!state.keplr.account) return;
   if (isEvmTransparentMode()) {
     if (!state.wallet.account) return;
-    const balanceHex = await requestMetaMask({
-      method: "eth_getBalance",
-      params: [state.wallet.account, "latest"]
-    });
-    const balances = [{
-      denom: baseDenom(),
-      amount: BigInt(balanceHex || "0x0").toString()
-    }];
-    state.keplr.transparentBalances = balanceAmountsByDenom(balances);
-    state.keplr.balance = formatBalances(balances);
+    const [balanceHex, assetData] = await Promise.all([
+      requestMetaMask({
+        method: "eth_getBalance",
+        params: [state.wallet.account, "latest"]
+      }),
+      clairveilBrowserClient().getBalances(state.keplr.account)
+    ]);
+    const nativeAmount = BigInt(balanceHex || "0x0").toString();
+    const balances = [...assetData.balances || []];
+    const amounts = balanceAmountsByDenom(balances);
+    state.keplr.evmNativeBalance = nativeAmount;
+    if (evmNativeDenom() === baseDenom()) {
+      amounts[baseDenom()] = nativeAmount;
+      const existing = balances.find((coin) => coin.denom === baseDenom());
+      if (existing) existing.amount = nativeAmount;
+      else balances.push({ denom: baseDenom(), amount: nativeAmount });
+    }
+    state.keplr.transparentBalances = amounts;
+    const nativeGasBalance = evmNativeDenom() === baseDenom() ? "" : `${nativeAmount}${evmNativeDenom()} (EVM gas)`;
+    state.keplr.balance = [formatBalances(balances), nativeGasBalance].filter(Boolean).join(" \xB7 ");
   } else {
     const data = await clairveilBrowserClient().getBalances(state.keplr.account);
     state.keplr.transparentBalances = balanceAmountsByDenom(data.balances);
+    state.keplr.evmNativeBalance = "0";
     state.keplr.balance = formatBalances(data.balances);
   }
   renderKeplr();
@@ -99396,6 +99646,7 @@ async function connectKeplr() {
   state.keplr.verified = false;
   state.keplr.balance = "";
   state.keplr.transparentBalances = {};
+  state.keplr.evmNativeBalance = "0";
   state.keplr.faucetHash = "";
   state.keplr.faucetSent = "";
   state.keplr.faucetRecipient = "";
@@ -99883,7 +100134,7 @@ async function broadcastPrivacyDeposit(amount, label = "deposit", options = {}) 
   state.keplr.depositHeight = broadcast.tx?.height || broadcast.receipt?.blockNumber || "pending";
   return { ...broadcast, prepared: data.prepared };
 }
-function normalizedHex(value) {
+function normalizedHex2(value) {
   return String(value || "").trim().replace(/^0x/i, "").toLowerCase();
 }
 function noteCommitment(note) {
@@ -99891,7 +100142,7 @@ function noteCommitment(note) {
 }
 async function recoverDepositNote(broadcast) {
   const prepared = broadcast?.prepared || {};
-  const expectedCommitment = normalizedHex(prepared.noteCommitmentHex);
+  const expectedCommitment = normalizedHex2(prepared.noteCommitmentHex);
   state.keplr.depositRecoveryStatus = "recovering";
   state.keplr.depositRecoveryMessage = "Included \xB7 recovering encrypted note";
   renderKeplr();
@@ -99904,7 +100155,7 @@ async function recoverDepositNote(broadcast) {
       });
     }
     await scanKeplrNotes({ quiet: true, throwOnError: true });
-    const recovered = expectedCommitment && state.keplr.notes.some((note) => normalizedHex(noteCommitment(note)) === expectedCommitment);
+    const recovered = expectedCommitment && state.keplr.notes.some((note) => normalizedHex2(noteCommitment(note)) === expectedCommitment);
     if (!recovered) {
       throw new Error("Deposit was included, but its prepared note is not in the local wallet cache yet");
     }
@@ -100028,7 +100279,8 @@ async function checkReservationTransaction(txHash) {
       failed: evmReceiptHasFailed(receipt),
       absent: !receipt && !transaction,
       pending: !receipt && Boolean(transaction),
-      height: receipt?.blockNumber || 0
+      height: receipt?.blockNumber || 0,
+      transaction
     };
   }
   const tx = await clairveilBrowserClient().waitForTx(txHash, { attempts: 1, intervalMs: 1 });
@@ -100041,14 +100293,96 @@ async function checkReservationTransaction(txHash) {
     failed: Boolean(tx) && code !== null && code !== 0,
     absent: !tx,
     pending: false,
-    height: tx?.height || 0
+    height: tx?.height || 0,
+    transaction: tx
   };
+}
+function clearedRelayWithdrawState(resultStatus, resultMessage) {
+  return {
+    handoff: null,
+    json: "",
+    reservationIds: [],
+    txHash: "",
+    resultStatus,
+    resultMessage
+  };
+}
+async function recoverExpiredRelayWithdraw({ manager, records, chainBlock, check }) {
+  const handoff = state.relayWithdraw.handoff;
+  if (!relayWithdrawPayloadExpired(handoff?.payload, chainBlock.timeUnix)) return false;
+  const unspentIDs = await explicitlyUnspentReservationIDs(manager, records);
+  if (!records.length || unspentIDs.length !== records.length) {
+    state.relayWithdraw.resultStatus = "manual-review";
+    state.relayWithdraw.resultMessage = `Payload expired at chain time ${chainBlock.timeUnix}, but every reserved nullifier is not confirmed unspent`;
+    setWithdrawEvidence(
+      "Spent or unspent evidence incomplete \xB7 manual review",
+      "Payload expired \xB7 transparent receive not established",
+      { render: false }
+    );
+    return true;
+  }
+  const approved = globalThis.confirm(
+    `Relay payload\uAC00 chain height ${chainBlock.height}\uC5D0\uC11C \uB9CC\uB8CC\uB418\uC5C8\uACE0 \uBAA8\uB4E0 nullifier\uAC00 unspent\uB85C \uD655\uC778\uB418\uC5C8\uC2B5\uB2C8\uB2E4.
+
+\uC774 handoff\uB97C \uC885\uB8CC\uD558\uACE0 \uC0C8 withdraw payload\uB97C \uB9CC\uB4E4 \uC218 \uC788\uB3C4\uB85D reservation\uC744 \uC7AC\uACC4\uD68D\uD560\uAE4C\uC694?`
+  );
+  if (!approved) {
+    state.relayWithdraw.resultStatus = "expired-review";
+    state.relayWithdraw.resultMessage = "Payload expired and nullifier unspent \xB7 owner approval required to replan";
+    setWithdrawEvidence(
+      `Unspent \xB7 confirmed at height ${chainBlock.height}`,
+      "Payload expired \xB7 awaiting owner-approved replan",
+      { render: false }
+    );
+    return true;
+  }
+  const statuses = new Set(records.map((record) => record.status));
+  const evidence = {
+    relay_payload_expired: true,
+    authoritative_expiry_confirmed: true,
+    nullifier_unspent_confirmed: true,
+    checked_height: chainBlock.height,
+    checked_chain_time_unix: chainBlock.timeUnix,
+    ...check?.txHash ? { tx_hash_checked: check.txHash } : {}
+  };
+  if (statuses.size === 1 && statuses.has(reservationStatuses.ProofReady)) {
+    const leaseTokens = [...new Set(records.map((record) => record.lease_token).filter(Boolean))];
+    if (leaseTokens.length !== 1) {
+      throw new Error("Expired relay reservations do not share one recoverable lease token");
+    }
+    await manager.markManualReview(unspentIDs, {
+      leaseToken: leaseTokens[0],
+      error: "relay_payload_expired_with_unspent_nullifier",
+      metadata: evidence
+    });
+  } else if (!(statuses.size === 1 && statuses.has(reservationStatuses.ManualReview))) {
+    throw new Error(`Expired relay reservation has an unsupported recovery status: ${[...statuses].join(", ")}`);
+  }
+  stopRelayReservationHeartbeat();
+  await manager.resolveManualReview(unspentIDs, {
+    target: reservationStatuses.ReplanRequired,
+    operatorId: state.keplr.account,
+    approvalReference: `relay-expiry:${handoff.payload.payload_hash}:${chainBlock.height}`,
+    reason: "Wallet owner approved replan after authoritative relay expiry and unspent reconciliation",
+    metadata: evidence
+  });
+  await refreshReservationState(manager);
+  state.relayWithdraw = clearedRelayWithdrawState(
+    "expired-replanned",
+    `Expired at chain height ${chainBlock.height} \xB7 nullifier unspent \xB7 new payload may be prepared`
+  );
+  setWithdrawEvidence(
+    `Unspent \xB7 confirmed at height ${chainBlock.height}`,
+    "Not received \xB7 expired payload closed",
+    { render: false }
+  );
+  return true;
 }
 async function reconcileRelayWithdrawResult() {
   const handoff = state.relayWithdraw.handoff;
   const txHash = state.relayWithdraw.txHash.trim();
   if (!handoff) throw new Error("Prepare and hand off a relay withdraw payload first");
-  if (!/^(0x)?[0-9a-fA-F]{64}$/.test(txHash)) {
+  if (txHash && !/^(0x)?[0-9a-fA-F]{64}$/.test(txHash)) {
     throw new Error("Relayer tx hash must be a 32-byte hex value");
   }
   state.relayWithdraw.resultStatus = "checking";
@@ -100056,13 +100390,25 @@ async function reconcileRelayWithdrawResult() {
   await persistRelayWithdrawRecovery();
   renderRelayWithdraw();
   try {
-    const check = await checkReservationTransaction(txHash);
+    const check = txHash ? await checkReservationTransaction(txHash) : { checked: false, txHash: "", included: false, failed: false, absent: false, pending: false };
     await refreshEvents({ allowFailure: true });
     await scanKeplrNotes({ quiet: true, throwOnError: true });
     const manager = await currentReservationManager();
     const records = manager ? await Promise.all(state.relayWithdraw.reservationIds.map((id) => manager.getReservation(id))) : [];
+    assertRelayReservationPayloadMatches(records, handoff.payload);
     const spentConfirmed = records.length > 0 && records.every((record) => record.status === reservationStatuses.ConfirmedSpent);
-    const receiveConfirmed = records.length > 0 && records.every((record) => !reservationRequiresOperationEvidence(record) || operationReconciliationStatus(record) === operationStatuses.Succeeded);
+    const txBound = check.included ? assertRelayWithdrawTransactionMatches({
+      transport: handoff.transport,
+      payload: handoff.payload,
+      handoffTransaction: handoff.transaction,
+      transaction: check.transaction,
+      expectedEvmChainId: activeChainProfile()?.evmChainId
+    }) : false;
+    const receiveConfirmed = check.included && !check.failed && txBound && records.length > 0 && records.every((record) => !reservationRequiresOperationEvidence(record) || operationReconciliationStatus(record) === operationStatuses.Succeeded);
+    if (!check.included || check.failed) {
+      const chainBlock = await fetchLatestChainBlock();
+      if (await recoverExpiredRelayWithdraw({ manager, records, chainBlock, check })) return;
+    }
     if (check.failed) {
       state.relayWithdraw.resultStatus = "failed";
       state.relayWithdraw.resultMessage = spentConfirmed ? "Tx failed but nullifier is spent \xB7 manual review required" : "Tx failed \xB7 nullifier not confirmed spent \xB7 reservation remains locked for review";
@@ -100074,11 +100420,11 @@ async function reconcileRelayWithdrawResult() {
       return;
     }
     if (!check.included) {
-      state.relayWithdraw.resultStatus = check.pending ? "submitted" : "unknown";
-      state.relayWithdraw.resultMessage = check.pending ? "Tx is pending \xB7 do not rebuild or hand off another payload" : "Tx hash is not confirmed yet \xB7 absence is not treated as failure";
+      state.relayWithdraw.resultStatus = check.pending ? "submitted" : txHash ? "unknown" : "waiting";
+      state.relayWithdraw.resultMessage = check.pending ? "Tx is pending \xB7 do not rebuild or hand off another payload" : txHash ? "Tx hash is not confirmed yet \xB7 absence is not treated as failure" : "No relayer tx hash yet \xB7 payload remains active until authoritative expiry";
       setWithdrawEvidence(
-        check.pending ? "Submitted \xB7 not reconciled" : "Unknown \xB7 reconcile before retry",
-        check.pending ? "Pending transaction inclusion" : "Unknown \xB7 reconcile before retry",
+        check.pending ? "Submitted \xB7 not reconciled" : txHash ? "Unknown \xB7 reconcile before retry" : "Reserved \xB7 awaiting relayer result",
+        check.pending ? "Pending transaction inclusion" : txHash ? "Unknown \xB7 reconcile before retry" : "Awaiting relayer submission",
         { render: false }
       );
       return;
@@ -100109,7 +100455,7 @@ async function reconcileRelayWithdrawResult() {
     );
   } finally {
     const store = await currentOperationStore().catch(() => null);
-    if (state.relayWithdraw.resultStatus === "confirmed") {
+    if (!state.relayWithdraw.handoff || state.relayWithdraw.resultStatus === "confirmed") {
       store?.clear();
     } else {
       await persistRelayWithdrawRecovery().catch((error) => {

@@ -10,7 +10,7 @@
     "build:dapp": "esbuild public/app.js --bundle --format=esm --platform=browser --target=es2022 --outfile=public/app.bundle.js",
     "start": "npm run build:dapp && node server.js",
     "dev": "npm run build:dapp && node server.js",
-    "check:dapp": "npm run build:dapp && npm run check:bundle && node --check server.js && node --check public/app.js && node --check public/dapp-config.js && node --check public/encrypted-reservation-manager.js && node --check public/encrypted-operation-store.js && node --check public/operation-event-lookup.js && node --check public/public-pending-tx-store.js && node --check public/disclosure-view-model.js && node --check public/app.bundle.js",
+    "check:dapp": "npm run build:dapp && npm run check:bundle && node --check server.js && node --check public/app.js && node --check public/dapp-config.js && node --check public/deposit-funding.js && node --check public/encrypted-reservation-manager.js && node --check public/encrypted-operation-store.js && node --check public/operation-event-lookup.js && node --check public/public-pending-tx-store.js && node --check public/relay-withdraw-reconciliation.js && node --check public/disclosure-view-model.js && node --check public/app.bundle.js",
     "check:bundle": "git diff --exit-code -- public/app.bundle.js",
     "test:dapp": "node --test test/dapp-smoke.test.js test/dapp-routes.test.js test/dapp-state.test.js",
     "check:clairveiljs": "npm run check:clairveiljs:types",

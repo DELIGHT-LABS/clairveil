@@ -6,6 +6,8 @@ const appSource = await readFile(new URL("../public/app.js", import.meta.url), "
 const encryptedStoreSource = await readFile(new URL("../public/encrypted-note-store.js", import.meta.url), "utf8");
 const encryptedReservationSource = await readFile(new URL("../public/encrypted-reservation-manager.js", import.meta.url), "utf8");
 const encryptedOperationSource = await readFile(new URL("../public/encrypted-operation-store.js", import.meta.url), "utf8");
+const depositFundingSource = await readFile(new URL("../public/deposit-funding.js", import.meta.url), "utf8");
+const relayReconciliationSource = await readFile(new URL("../public/relay-withdraw-reconciliation.js", import.meta.url), "utf8");
 const configSource = await readFile(new URL("../public/dapp-config.js", import.meta.url), "utf8");
 const readmeSource = await readFile(new URL("../README.md", import.meta.url), "utf8");
 const serverSource = await readFile(new URL("../server.js", import.meta.url), "utf8");
@@ -392,7 +394,10 @@ test("DApp verifies transparent deposit funding and surfaces a non-zero fee budg
   assert.match(appSource, /function estimateDepositFeeBeforeProof/);
   assert.match(appSource, /function assertDepositFunding/);
   assert.match(appSource, /transparentBalanceAmount/);
-  assert.match(appSource, /Insufficient transparent balance/);
+  assert.match(appSource, /evmNativeBalance/);
+  assert.match(appSource, /clairveilBrowserClient\(\)\.getBalances\(state\.keplr\.account\)/);
+  assert.match(depositFundingSource, /Insufficient transparent balance/);
+  assert.match(depositFundingSource, /Insufficient EVM gas balance/);
   assert.match(appSource, /preferNoSetFee: false/);
   assert.match(appSource, /cosmosGasFeeEstimate/);
   assert.doesNotMatch(appSource, /0 \$\{baseDenom\(\)\} encoded/);
@@ -437,6 +442,11 @@ test("DApp offers relay handoff and cancellable same-prover retries", () => {
   assert.match(htmlSource, /id="relayWithdrawJson"/);
   assert.match(htmlSource, /id="retryTransferFlow"/);
   assert.match(appSource, /async function reconcileRelayWithdrawResult/);
+  assert.match(appSource, /recoverExpiredRelayWithdraw/);
+  assert.match(appSource, /manager\.resolveManualReview/);
+  assert.match(relayReconciliationSource, /assertRelayWithdrawTransactionMatches/);
+  assert.match(relayReconciliationSource, /included Cosmos relayer transaction must contain exactly one MsgWithdraw/);
+  assert.match(relayReconciliationSource, /"calldata"/);
   assert.match(appSource, /Checking tx result first, then nullifier spent state/);
   assert.match(htmlSource, /id="relayWithdrawTxHash"/);
   assert.match(htmlSource, /id="reconcileRelayWithdraw"/);

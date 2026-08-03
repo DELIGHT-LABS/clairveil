@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
+import { MsgWithdraw, msgWithdrawTypeUrl } from "clairveiljs/cosmos-client";
+import { assertDepositFundingAvailable } from "../public/deposit-funding.js";
 import { EncryptedLocalStorageOperationStore } from "../public/encrypted-operation-store.js";
 import { disclosureViewModel } from "../public/disclosure-view-model.js";
 import { findPrivacyEventByTxHash } from "../public/operation-event-lookup.js";
@@ -9,6 +11,11 @@ import {
   publicPendingTxKey,
   savePublicPendingTxState
 } from "../public/public-pending-tx-store.js";
+import {
+  assertRelayReservationPayloadMatches,
+  assertRelayWithdrawTransactionMatches,
+  relayWithdrawPayloadExpired
+} from "../public/relay-withdraw-reconciliation.js";
 
 class MemoryStorage {
   constructor() {
@@ -27,6 +34,167 @@ class MemoryStorage {
     this.values.delete(key);
   }
 }
+
+function hexBytes(value) {
+  return Uint8Array.from(String(value).match(/../g).map(byte => Number.parseInt(byte, 16)));
+}
+
+function protobufVarint(value) {
+  let remaining = BigInt(value);
+  const bytes = [];
+  while (remaining >= 0x80n) {
+    bytes.push(Number((remaining & 0x7fn) | 0x80n));
+    remaining >>= 7n;
+  }
+  bytes.push(Number(remaining));
+  return Uint8Array.from(bytes);
+}
+
+function concatBytes(...values) {
+  const result = new Uint8Array(values.reduce((sum, value) => sum + value.length, 0));
+  let offset = 0;
+  for (const value of values) {
+    result.set(value, offset);
+    offset += value.length;
+  }
+  return result;
+}
+
+function protobufBytesField(fieldNumber, value) {
+  const bytes = value instanceof Uint8Array ? value : new TextEncoder().encode(String(value));
+  return concatBytes(protobufVarint((BigInt(fieldNumber) << 3n) | 2n), protobufVarint(bytes.length), bytes);
+}
+
+function cosmosWithdrawTx(payload, overrides = {}) {
+  const message = MsgWithdraw.fromPartial({
+    creator: "clair1relayer",
+    proof: hexBytes(payload.proof_hex),
+    root: hexBytes(payload.root_hex),
+    nullifier: hexBytes(payload.nullifier_hex),
+    amount: payload.amount,
+    recipient: payload.recipient,
+    chainId: payload.chain_id,
+    expiresAtUnix: BigInt(payload.expires_at_unix),
+    ...overrides
+  });
+  const any = concatBytes(
+    protobufBytesField(1, msgWithdrawTypeUrl),
+    protobufBytesField(2, MsgWithdraw.encode(message).finish())
+  );
+  const bodyBytes = protobufBytesField(1, any);
+  return protobufBytesField(1, bodyBytes);
+}
+
+test("deposit funding separates EVM asset and native gas balances", () => {
+  assert.deepEqual(assertDepositFundingAvailable({
+    amount: "10",
+    fee: "3",
+    assetBalance: "10",
+    nativeBalance: "3",
+    assetDenom: "uusdc",
+    nativeDenom: "aphoton",
+    transport: "evm"
+  }), {
+    amount: 10n,
+    fee: 3n,
+    assetBalance: 10n,
+    nativeBalance: 3n,
+    requiredAsset: 10n,
+    requiredNative: 3n
+  });
+  assert.throws(() => assertDepositFundingAvailable({
+    amount: "10",
+    fee: "3",
+    assetBalance: "9",
+    nativeBalance: "100",
+    assetDenom: "uusdc",
+    nativeDenom: "aphoton",
+    transport: "evm"
+  }), /Insufficient transparent uusdc balance/);
+  assert.throws(() => assertDepositFundingAvailable({
+    amount: "10",
+    fee: "3",
+    assetBalance: "100",
+    nativeBalance: "2",
+    assetDenom: "uusdc",
+    nativeDenom: "aphoton",
+    transport: "evm"
+  }), /Insufficient EVM gas balance/);
+});
+
+test("deposit funding combines amount and fee when the asset is EVM native", () => {
+  assert.throws(() => assertDepositFundingAvailable({
+    amount: "10",
+    fee: "3",
+    assetBalance: "100",
+    nativeBalance: "12",
+    assetDenom: "uclair",
+    nativeDenom: "uclair",
+    transport: "evm"
+  }), /need 13uclair/);
+});
+
+test("relay reconciliation binds EVM calldata, target, value, and chain", () => {
+  const prepared = {
+    to: "0x100000000000000000000000000000000000000b",
+    data: "0x1234abcd",
+    value: "0x0",
+    chainId: "0x32f"
+  };
+  const included = {
+    to: prepared.to.toUpperCase(),
+    input: prepared.data,
+    value: "0x0",
+    chainId: "0x32f"
+  };
+  assert.equal(assertRelayWithdrawTransactionMatches({
+    transport: "evm",
+    handoffTransaction: prepared,
+    transaction: included,
+    expectedEvmChainId: "0x32f"
+  }), true);
+  assert.throws(() => assertRelayWithdrawTransactionMatches({
+    transport: "evm",
+    handoffTransaction: prepared,
+    transaction: { ...included, input: "0x1234abce" },
+    expectedEvmChainId: "0x32f"
+  }), /calldata does not match/);
+});
+
+test("relay reconciliation binds every Cosmos MsgWithdraw field except creator", () => {
+  const payload = {
+    proof_hex: "40".repeat(128),
+    root_hex: "11".repeat(32),
+    nullifier_hex: "22".repeat(32),
+    amount: "10uclair",
+    recipient: "clair1recipient",
+    chain_id: "clairveil-local-2",
+    expires_at_unix: 4_102_448_400,
+    payload_hash: "33".repeat(32)
+  };
+  const transaction = { tx: cosmosWithdrawTx(payload) };
+  assert.equal(assertRelayWithdrawTransactionMatches({
+    transport: "cosmos",
+    payload,
+    transaction
+  }), true);
+  assert.throws(() => assertRelayWithdrawTransactionMatches({
+    transport: "cosmos",
+    payload,
+    transaction: { tx: cosmosWithdrawTx(payload, { recipient: "clair1redirected" }) }
+  }), /recipient does not match/);
+  assert.equal(assertRelayReservationPayloadMatches([{ payload_hash: payload.payload_hash }], payload), undefined);
+  assert.throws(
+    () => assertRelayReservationPayloadMatches([{ payload_hash: "44".repeat(32) }], payload),
+    /does not match the reserved payload hash/
+  );
+});
+
+test("relay expiry uses the authoritative block-time boundary", () => {
+  const payload = { expires_at_unix: 100 };
+  assert.equal(relayWithdrawPayloadExpired(payload, 99), false);
+  assert.equal(relayWithdrawPayloadExpired(payload, 100), true);
+});
 
 test("public pending transactions survive reload and clear only after resolution", () => {
   const storage = new MemoryStorage();

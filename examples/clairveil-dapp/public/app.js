@@ -21,6 +21,7 @@ import { getStaticDappConfig } from "./dapp-config.js";
 import { EncryptedLocalStorageNoteStore } from "./encrypted-note-store.js";
 import { createEncryptedBrowserReservationManager } from "./encrypted-reservation-manager.js";
 import { EncryptedLocalStorageOperationStore } from "./encrypted-operation-store.js";
+import { assertDepositFundingAvailable } from "./deposit-funding.js";
 import { disclosureViewModel } from "./disclosure-view-model.js";
 import { findPrivacyEventByTxHash, normalizedTxHash } from "./operation-event-lookup.js";
 import {
@@ -28,6 +29,11 @@ import {
   publicPendingTxKey,
   savePublicPendingTxState
 } from "./public-pending-tx-store.js";
+import {
+  assertRelayReservationPayloadMatches,
+  assertRelayWithdrawTransactionMatches,
+  relayWithdrawPayloadExpired
+} from "./relay-withdraw-reconciliation.js";
 
 function defaultMetaMaskState() {
   return {
@@ -64,6 +70,7 @@ function defaultKeplrState() {
     verified: false,
     balance: "",
     transparentBalances: {},
+    evmNativeBalance: "0",
     faucetHash: "",
     faucetSent: "",
     faucetRecipient: "",
@@ -235,6 +242,10 @@ function baseDenom() {
   return activeChainProfile()?.denom || state.config?.denom || "uclair";
 }
 
+function evmNativeDenom() {
+  return activeChainProfile()?.evmNativeDenom || state.config?.evmNativeDenom || baseDenom();
+}
+
 function displayDenom() {
   return activeChainProfile()?.displayDenom || state.config?.displayDenom || "CLAIR";
 }
@@ -314,7 +325,7 @@ function profileRestEndpoints(profile = activeChainProfile()) {
   return [...new Set(values.map(value => String(value || "").trim()).filter(Boolean))];
 }
 
-async function fetchLatestChainBlockTimeUnix({ signal } = {}) {
+async function fetchLatestChainBlock({ signal } = {}) {
   const endpoint = browserRestUrl();
   if (!endpoint) throw new Error("A browser-accessible chain REST endpoint is required for authoritative expiry");
   const response = await fetch(`${endpoint}/cosmos/base/tendermint/v1beta1/blocks/latest`, { signal });
@@ -327,7 +338,16 @@ async function fetchLatestChainBlockTimeUnix({ signal } = {}) {
   if (!Number.isFinite(milliseconds)) {
     throw new Error("Latest block response omitted a valid timestamp");
   }
-  return Math.floor(milliseconds / 1000);
+  const rawHeight = data?.block?.header?.height ?? data?.sdk_block?.header?.height;
+  const height = Number(rawHeight);
+  if (!Number.isSafeInteger(height) || height <= 0) {
+    throw new Error("Latest block response omitted a valid height");
+  }
+  return { timeUnix: Math.floor(milliseconds / 1000), height };
+}
+
+async function fetchLatestChainBlockTimeUnix(options = {}) {
+  return (await fetchLatestChainBlock(options)).timeUnix;
 }
 
 async function privacyOperationTiming(options = {}) {
@@ -1944,6 +1964,13 @@ function formatBaseUnits(value, decimals = 18) {
   return fraction ? `${whole}.${fraction}` : whole;
 }
 
+function formatEvmNetworkFee(value) {
+  const fee = BigInt(value);
+  return evmNativeDenom() === baseDenom()
+    ? `${formatBaseUnits(fee, coinDecimals())} ${displayDenom()}`
+    : `${fee}${evmNativeDenom()}`;
+}
+
 async function updateDepositNetworkFee(transaction) {
   if (state.activeWallet !== "metamask") {
     const fee = cosmosGasFeeEstimate(2500000);
@@ -1962,7 +1989,7 @@ async function updateDepositNetworkFee(transaction) {
     const gasPrice = evmQuantityToBigInt(gasPriceHex, "gas price");
     const fee = gas * gasPrice;
     state.keplr.networkFeeAmount = fee.toString();
-    state.keplr.networkFeeEstimate = `≈ ${formatBaseUnits(fee, coinDecimals())} ${displayDenom()} · gas ${gas}`;
+    state.keplr.networkFeeEstimate = `≈ ${formatEvmNetworkFee(fee)} · gas ${gas}`;
     renderKeplr();
     return fee;
   } catch {
@@ -1992,7 +2019,7 @@ async function estimateDepositFeeBeforeProof() {
   const gasPrice = evmQuantityToBigInt(await requestMetaMask({ method: "eth_gasPrice" }), "gas price");
   const fee = gas * gasPrice;
   state.keplr.networkFeeAmount = fee.toString();
-  state.keplr.networkFeeEstimate = `≤ ${formatBaseUnits(fee, coinDecimals())} ${displayDenom()} budget · gas limit ${gas}`;
+  state.keplr.networkFeeEstimate = `≤ ${formatEvmNetworkFee(fee)} budget · gas limit ${gas}`;
   renderKeplr();
   return fee;
 }
@@ -2008,13 +2035,15 @@ function transparentBalanceAmount(denom = baseDenom()) {
 function assertDepositFunding(amount, feeAmount) {
   const amountValue = parsePlannerAmountValue(amount);
   if (amountValue === null) throw new Error("Deposit amount must be a canonical integer");
-  const fee = BigInt(feeAmount || 0);
-  const balance = transparentBalanceAmount();
-  const required = amountValue + fee;
-  if (balance < required) {
-    throw new Error(`Insufficient transparent balance: need ${required}${baseDenom()} including estimated fee, available ${balance}${baseDenom()}`);
-  }
-  return { amount: amountValue, fee, balance, required };
+  return assertDepositFundingAvailable({
+    amount: amountValue.toString(),
+    fee: BigInt(feeAmount || 0).toString(),
+    assetBalance: transparentBalanceAmount().toString(),
+    nativeBalance: state.keplr.evmNativeBalance,
+    assetDenom: baseDenom(),
+    nativeDenom: evmNativeDenom(),
+    transport: activeChainProfile()?.transport || "cosmos"
+  });
 }
 
 function normalizeEvmTxHash(txHash) {
@@ -2775,7 +2804,6 @@ function renderRelayWithdraw() {
   els.relayWithdrawResult.textContent = state.relayWithdraw.resultMessage || "Not checked";
   els.relayWithdrawResult.dataset.status = state.relayWithdraw.resultStatus;
   els.reconcileRelayWithdraw.disabled = !handoff
-    || !state.relayWithdraw.txHash
     || state.relayWithdraw.resultStatus === "checking";
   els.copyRelayWithdraw.disabled = !state.relayWithdraw.json;
   els.downloadRelayWithdraw.disabled = !state.relayWithdraw.json;
@@ -3149,19 +3177,32 @@ async function refreshWalletBalance() {
   if (!state.keplr.account) return;
   if (isEvmTransparentMode()) {
     if (!state.wallet.account) return;
-    const balanceHex = await requestMetaMask({
-      method: "eth_getBalance",
-      params: [state.wallet.account, "latest"]
-    });
-    const balances = [{
-      denom: baseDenom(),
-      amount: BigInt(balanceHex || "0x0").toString()
-    }];
-    state.keplr.transparentBalances = balanceAmountsByDenom(balances);
-    state.keplr.balance = formatBalances(balances);
+    const [balanceHex, assetData] = await Promise.all([
+      requestMetaMask({
+        method: "eth_getBalance",
+        params: [state.wallet.account, "latest"]
+      }),
+      clairveilBrowserClient().getBalances(state.keplr.account)
+    ]);
+    const nativeAmount = BigInt(balanceHex || "0x0").toString();
+    const balances = [...(assetData.balances || [])];
+    const amounts = balanceAmountsByDenom(balances);
+    state.keplr.evmNativeBalance = nativeAmount;
+    if (evmNativeDenom() === baseDenom()) {
+      amounts[baseDenom()] = nativeAmount;
+      const existing = balances.find(coin => coin.denom === baseDenom());
+      if (existing) existing.amount = nativeAmount;
+      else balances.push({ denom: baseDenom(), amount: nativeAmount });
+    }
+    state.keplr.transparentBalances = amounts;
+    const nativeGasBalance = evmNativeDenom() === baseDenom()
+      ? ""
+      : `${nativeAmount}${evmNativeDenom()} (EVM gas)`;
+    state.keplr.balance = [formatBalances(balances), nativeGasBalance].filter(Boolean).join(" · ");
   } else {
     const data = await clairveilBrowserClient().getBalances(state.keplr.account);
     state.keplr.transparentBalances = balanceAmountsByDenom(data.balances);
+    state.keplr.evmNativeBalance = "0";
     state.keplr.balance = formatBalances(data.balances);
   }
   renderKeplr();
@@ -4055,6 +4096,7 @@ async function connectKeplr() {
   state.keplr.verified = false;
   state.keplr.balance = "";
   state.keplr.transparentBalances = {};
+  state.keplr.evmNativeBalance = "0";
   state.keplr.faucetHash = "";
   state.keplr.faucetSent = "";
   state.keplr.faucetRecipient = "";
@@ -4755,7 +4797,8 @@ async function checkReservationTransaction(txHash) {
       failed: evmReceiptHasFailed(receipt),
       absent: !receipt && !transaction,
       pending: !receipt && Boolean(transaction),
-      height: receipt?.blockNumber || 0
+      height: receipt?.blockNumber || 0,
+      transaction
     };
   }
   const tx = await clairveilBrowserClient().waitForTx(txHash, { attempts: 1, intervalMs: 1 });
@@ -4772,15 +4815,101 @@ async function checkReservationTransaction(txHash) {
     failed: Boolean(tx) && code !== null && code !== 0,
     absent: !tx,
     pending: false,
-    height: tx?.height || 0
+    height: tx?.height || 0,
+    transaction: tx
   };
+}
+
+function clearedRelayWithdrawState(resultStatus, resultMessage) {
+  return {
+    handoff: null,
+    json: "",
+    reservationIds: [],
+    txHash: "",
+    resultStatus,
+    resultMessage
+  };
+}
+
+async function recoverExpiredRelayWithdraw({ manager, records, chainBlock, check }) {
+  const handoff = state.relayWithdraw.handoff;
+  if (!relayWithdrawPayloadExpired(handoff?.payload, chainBlock.timeUnix)) return false;
+  const unspentIDs = await explicitlyUnspentReservationIDs(manager, records);
+  if (!records.length || unspentIDs.length !== records.length) {
+    state.relayWithdraw.resultStatus = "manual-review";
+    state.relayWithdraw.resultMessage = `Payload expired at chain time ${chainBlock.timeUnix}, but every reserved nullifier is not confirmed unspent`;
+    setWithdrawEvidence(
+      "Spent or unspent evidence incomplete · manual review",
+      "Payload expired · transparent receive not established",
+      { render: false }
+    );
+    return true;
+  }
+
+  const approved = globalThis.confirm(
+    `Relay payload가 chain height ${chainBlock.height}에서 만료되었고 모든 nullifier가 unspent로 확인되었습니다.\n\n` +
+    "이 handoff를 종료하고 새 withdraw payload를 만들 수 있도록 reservation을 재계획할까요?"
+  );
+  if (!approved) {
+    state.relayWithdraw.resultStatus = "expired-review";
+    state.relayWithdraw.resultMessage = "Payload expired and nullifier unspent · owner approval required to replan";
+    setWithdrawEvidence(
+      `Unspent · confirmed at height ${chainBlock.height}`,
+      "Payload expired · awaiting owner-approved replan",
+      { render: false }
+    );
+    return true;
+  }
+
+  const statuses = new Set(records.map(record => record.status));
+  const evidence = {
+    relay_payload_expired: true,
+    authoritative_expiry_confirmed: true,
+    nullifier_unspent_confirmed: true,
+    checked_height: chainBlock.height,
+    checked_chain_time_unix: chainBlock.timeUnix,
+    ...(check?.txHash ? { tx_hash_checked: check.txHash } : {})
+  };
+  if (statuses.size === 1 && statuses.has(reservationStatuses.ProofReady)) {
+    const leaseTokens = [...new Set(records.map(record => record.lease_token).filter(Boolean))];
+    if (leaseTokens.length !== 1) {
+      throw new Error("Expired relay reservations do not share one recoverable lease token");
+    }
+    await manager.markManualReview(unspentIDs, {
+      leaseToken: leaseTokens[0],
+      error: "relay_payload_expired_with_unspent_nullifier",
+      metadata: evidence
+    });
+  } else if (!(statuses.size === 1 && statuses.has(reservationStatuses.ManualReview))) {
+    throw new Error(`Expired relay reservation has an unsupported recovery status: ${[...statuses].join(", ")}`);
+  }
+
+  stopRelayReservationHeartbeat();
+  await manager.resolveManualReview(unspentIDs, {
+    target: reservationStatuses.ReplanRequired,
+    operatorId: state.keplr.account,
+    approvalReference: `relay-expiry:${handoff.payload.payload_hash}:${chainBlock.height}`,
+    reason: "Wallet owner approved replan after authoritative relay expiry and unspent reconciliation",
+    metadata: evidence
+  });
+  await refreshReservationState(manager);
+  state.relayWithdraw = clearedRelayWithdrawState(
+    "expired-replanned",
+    `Expired at chain height ${chainBlock.height} · nullifier unspent · new payload may be prepared`
+  );
+  setWithdrawEvidence(
+    `Unspent · confirmed at height ${chainBlock.height}`,
+    "Not received · expired payload closed",
+    { render: false }
+  );
+  return true;
 }
 
 async function reconcileRelayWithdrawResult() {
   const handoff = state.relayWithdraw.handoff;
   const txHash = state.relayWithdraw.txHash.trim();
   if (!handoff) throw new Error("Prepare and hand off a relay withdraw payload first");
-  if (!/^(0x)?[0-9a-fA-F]{64}$/.test(txHash)) {
+  if (txHash && !/^(0x)?[0-9a-fA-F]{64}$/.test(txHash)) {
     throw new Error("Relayer tx hash must be a 32-byte hex value");
   }
   state.relayWithdraw.resultStatus = "checking";
@@ -4788,18 +4917,35 @@ async function reconcileRelayWithdrawResult() {
   await persistRelayWithdrawRecovery();
   renderRelayWithdraw();
   try {
-    const check = await checkReservationTransaction(txHash);
+    const check = txHash
+      ? await checkReservationTransaction(txHash)
+      : { checked: false, txHash: "", included: false, failed: false, absent: false, pending: false };
     await refreshEvents({ allowFailure: true });
     await scanKeplrNotes({ quiet: true, throwOnError: true });
     const manager = await currentReservationManager();
     const records = manager
       ? await Promise.all(state.relayWithdraw.reservationIds.map(id => manager.getReservation(id)))
       : [];
+    assertRelayReservationPayloadMatches(records, handoff.payload);
     const spentConfirmed = records.length > 0
       && records.every(record => record.status === reservationStatuses.ConfirmedSpent);
-    const receiveConfirmed = records.length > 0
+    const txBound = check.included
+      ? assertRelayWithdrawTransactionMatches({
+          transport: handoff.transport,
+          payload: handoff.payload,
+          handoffTransaction: handoff.transaction,
+          transaction: check.transaction,
+          expectedEvmChainId: activeChainProfile()?.evmChainId
+        })
+      : false;
+    const receiveConfirmed = check.included && !check.failed && txBound && records.length > 0
       && records.every(record => !reservationRequiresOperationEvidence(record)
         || operationReconciliationStatus(record) === operationStatuses.Succeeded);
+
+    if (!check.included || check.failed) {
+      const chainBlock = await fetchLatestChainBlock();
+      if (await recoverExpiredRelayWithdraw({ manager, records, chainBlock, check })) return;
+    }
 
     if (check.failed) {
       state.relayWithdraw.resultStatus = "failed";
@@ -4814,13 +4960,15 @@ async function reconcileRelayWithdrawResult() {
       return;
     }
     if (!check.included) {
-      state.relayWithdraw.resultStatus = check.pending ? "submitted" : "unknown";
+      state.relayWithdraw.resultStatus = check.pending ? "submitted" : txHash ? "unknown" : "waiting";
       state.relayWithdraw.resultMessage = check.pending
         ? "Tx is pending · do not rebuild or hand off another payload"
-        : "Tx hash is not confirmed yet · absence is not treated as failure";
+        : txHash
+          ? "Tx hash is not confirmed yet · absence is not treated as failure"
+          : "No relayer tx hash yet · payload remains active until authoritative expiry";
       setWithdrawEvidence(
-        check.pending ? "Submitted · not reconciled" : "Unknown · reconcile before retry",
-        check.pending ? "Pending transaction inclusion" : "Unknown · reconcile before retry",
+        check.pending ? "Submitted · not reconciled" : txHash ? "Unknown · reconcile before retry" : "Reserved · awaiting relayer result",
+        check.pending ? "Pending transaction inclusion" : txHash ? "Unknown · reconcile before retry" : "Awaiting relayer submission",
         { render: false }
       );
       return;
@@ -4854,7 +5002,7 @@ async function reconcileRelayWithdrawResult() {
     );
   } finally {
     const store = await currentOperationStore().catch(() => null);
-    if (state.relayWithdraw.resultStatus === "confirmed") {
+    if (!state.relayWithdraw.handoff || state.relayWithdraw.resultStatus === "confirmed") {
       store?.clear();
     } else {
       await persistRelayWithdrawRecovery().catch(error => {
