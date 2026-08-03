@@ -43,6 +43,18 @@
           <span>REST</span>
           <strong id="restState">-</strong>
         </article>
+        <article>
+          <span>Protocol</span>
+          <strong id="protocolState">-</strong>
+        </article>
+        <article>
+          <span>Reserve</span>
+          <strong id="reserveState">-</strong>
+        </article>
+        <article>
+          <span>Deposit proof</span>
+          <strong id="depositProofState">-</strong>
+        </article>
       </section>
 
       <section class="workspace">
@@ -50,9 +62,7 @@
           <div class="panel-heading">
             <h2>Wallet Session</h2>
             <div class="session-actions">
-              <button id="signSession" type="button" disabled>
-                Sign Session
-              </button>
+              <button id="signSession" type="button" disabled>Sign Session</button>
             </div>
           </div>
           <dl class="facts wallet-session-facts">
@@ -64,9 +74,7 @@
               <dt>Account</dt>
               <dd class="account-copy">
                 <span id="walletAccount">Not connected</span>
-                <button id="copyWalletAccount" type="button" disabled>
-                  Copy
-                </button>
+                <button id="copyWalletAccount" type="button" disabled>Copy</button>
               </dd>
             </div>
             <div>
@@ -115,29 +123,21 @@
             </div>
           </dl>
           <div class="split-actions">
-            <button id="setupKeplrPrivacy" type="button" disabled>
-              Setup Clairveil
-            </button>
-            <button id="refreshKeplrBalance" type="button" disabled>
-              Refresh Balance
-            </button>
+            <button id="setupKeplrPrivacy" type="button" disabled>Setup Clairveil</button>
+            <button id="refreshKeplrBalance" type="button" disabled>Refresh Balance</button>
           </div>
           <div class="copy-row">
             <div>
               <span>My disclosure pubkey</span>
               <code id="keplrDisclosurePubKey">Setup Clairveil first</code>
             </div>
-            <button id="copyKeplrDisclosurePubKey" type="button" disabled>
-              Copy
-            </button>
+            <button id="copyKeplrDisclosurePubKey" type="button" disabled>Copy</button>
           </div>
           <div class="faucet-row">
             <label class="field amount-field">
               <span>
                 Faucet amount
-                <small id="faucetHelpText"
-                  >(CLAIR get from Alice's wallet)</small
-                >
+                <small id="faucetHelpText">(CLAIR get from Alice's wallet)</small>
               </span>
               <div class="amount-control">
                 <input id="keplrFaucetAmount" inputmode="decimal" value="10" />
@@ -155,22 +155,12 @@
           </div>
           <section class="balance-section" aria-labelledby="clairBalanceTitle">
             <h3 id="clairBalanceTitle">Balance</h3>
-            <div class="note-summary clair-balance-summary">
+            <div class="note-summary">
+              <span>Balance</span>
               <strong id="myClairBalance">-</strong>
-              <button
-                id="refreshClairBalance"
-                class="secondary-button balance-refresh-button"
-                type="button"
-                disabled
-              >
-                Refresh
-              </button>
             </div>
           </section>
-          <section
-            class="balance-section action-section"
-            aria-labelledby="clairSendTitle"
-          >
+          <section class="balance-section action-section" aria-labelledby="clairSendTitle">
             <h3 id="clairSendTitle">Send</h3>
             <div class="amount-row">
               <label class="field amount-field">
@@ -183,24 +173,10 @@
               <button id="sendFromKeplr" type="button" disabled>Send</button>
             </div>
             <div class="field address-field">
-              <label for="keplrSendRecipient"
-                ><span>Send recipient</span></label
-              >
+              <label for="keplrSendRecipient"><span>Send recipient</span></label>
               <div class="address-input-wrap">
-                <input
-                  id="keplrSendRecipient"
-                  placeholder="clair1..."
-                  autocomplete="off"
-                  aria-haspopup="listbox"
-                  aria-controls="keplrSendRecipientSuggestions"
-                  aria-expanded="false"
-                />
-                <div
-                  id="keplrSendRecipientSuggestions"
-                  class="address-suggestions"
-                  role="listbox"
-                  hidden
-                ></div>
+                <input id="keplrSendRecipient" placeholder="clair1..." autocomplete="off" aria-haspopup="listbox" aria-controls="keplrSendRecipientSuggestions" aria-expanded="false" />
+                <div id="keplrSendRecipientSuggestions" class="address-suggestions" role="listbox" hidden></div>
               </div>
             </div>
           </section>
@@ -210,26 +186,17 @@
               <dd id="keplrSendHash">-</dd>
             </div>
           </dl>
-          <section
-            class="balance-section action-section"
-            aria-labelledby="depositVeiledTitle"
-          >
+          <section class="balance-section action-section" aria-labelledby="depositVeiledTitle">
             <h3 id="depositVeiledTitle">Deposit (Move to Veiled)</h3>
             <div class="amount-row">
               <label class="field amount-field">
                 <span>Deposit amount</span>
                 <div class="amount-control">
-                  <input
-                    id="keplrDepositAmount"
-                    inputmode="numeric"
-                    value="1"
-                  />
+                  <input id="keplrDepositAmount" inputmode="numeric" value="1" />
                   <span class="denom">uclair</span>
                 </div>
               </label>
-              <button id="depositFromKeplr" type="button" disabled>
-                Deposit
-              </button>
+              <button id="depositFromKeplr" type="button" disabled>Deposit</button>
             </div>
             <dl class="facts">
               <div>
@@ -239,6 +206,10 @@
               <div>
                 <dt>Deposit height</dt>
                 <dd id="keplrDepositHeight">-</dd>
+              </div>
+              <div>
+                <dt>Note recovery</dt>
+                <dd id="keplrDepositRecovery">Not started</dd>
               </div>
             </dl>
           </section>
@@ -253,108 +224,58 @@
               <h3 id="veiledBalanceTitle">Veiled balance (Notes)</h3>
               <div class="notes-actions">
                 <label class="toggle-control">
-                  <input id="myKeplrSpendableOnly" type="checkbox" />
+                  <input id="myKeplrSpendableOnly" type="checkbox" checked />
                   <span>Spendable only</span>
                 </label>
                 <button id="scanKeplrNotes" type="button" disabled>Scan</button>
-                <button id="resetKeplrNotes" type="button" disabled hidden>
-                  Reset &amp; rescan notes
-                </button>
+                <button id="backupNoteCache" class="secondary-button" type="button" disabled>Backup cache</button>
+                <button id="resetRescanNotes" class="secondary-button" type="button" disabled>Reset &amp; Rescan</button>
               </div>
             </div>
+            <p id="noteSyncState" class="quiet note-sync-state">Not scanned</p>
             <div class="note-summary">
               <span>Spendable</span>
               <strong id="myKeplrSpendable">-</strong>
             </div>
             <div id="myKeplrNotesList" class="notes-list"></div>
-            <div
-              id="reservationReviewList"
-              class="reservation-review-list"
-              aria-live="polite"
-              hidden
-            ></div>
           </section>
-          <section
-            class="balance-section action-section"
-            aria-labelledby="veiledTransferTitle"
-          >
+          <section class="balance-section action-section" aria-labelledby="veiledTransferTitle">
             <div class="section-title-row">
               <h3 id="veiledTransferTitle">Transfer (Veiled Send)</h3>
-              <div class="section-title-actions">
-                <button
-                  id="openBatchTransfer"
-                  class="secondary-button compact-button"
-                  type="button"
-                  hidden
-                >
-                  Add recipient
-                </button>
-                <label class="toggle-control">
-                  <input id="veiledDisclosureAdvanced" type="checkbox" />
-                  <span>Advanced</span>
-                </label>
-              </div>
+              <label class="toggle-control">
+                <input id="veiledDisclosureAdvanced" type="checkbox" />
+                <span>Advanced</span>
+              </label>
             </div>
             <div class="amount-row">
               <label class="field amount-field">
                 <span>Transfer amount</span>
                 <div class="amount-control">
-                  <input
-                    id="veiledTransferAmount"
-                    inputmode="numeric"
-                    value="1"
-                  />
+                  <input id="veiledTransferAmount" inputmode="numeric" value="1" />
                   <span class="denom">uclair</span>
                 </div>
               </label>
-              <button id="transferFromVeiled" type="button" disabled>
-                Transfer
-              </button>
+              <button id="transferFromVeiled" type="button" disabled>Transfer</button>
             </div>
             <div class="field address-field">
-              <label for="veiledTransferRecipient"
-                ><span>Transfer recipient</span></label
-              >
+              <label for="veiledTransferRecipient"><span>Transfer recipient</span></label>
               <div class="address-input-wrap">
-                <input
-                  id="veiledTransferRecipient"
-                  placeholder="clairs1..."
-                  autocomplete="off"
-                  aria-haspopup="listbox"
-                  aria-controls="veiledTransferRecipientSuggestions"
-                  aria-expanded="false"
-                />
-                <div
-                  id="veiledTransferRecipientSuggestions"
-                  class="address-suggestions"
-                  role="listbox"
-                  hidden
-                ></div>
+                <input id="veiledTransferRecipient" placeholder="clairs1..." autocomplete="off" aria-haspopup="listbox" aria-controls="veiledTransferRecipientSuggestions" aria-expanded="false" />
+                <div id="veiledTransferRecipientSuggestions" class="address-suggestions" role="listbox" hidden></div>
               </div>
             </div>
-            <p id="veiledDisclosureSummary" class="quiet">
-              Audit disclosure is always encrypted for the configured auditor.
-              Sender self-view disclosure is included by default for later
-              sent-transfer recovery. Advanced settings control only optional
-              user disclosure.
-            </p>
             <div id="veiledDisclosureOptions" class="transfer-advanced" hidden>
               <label class="field">
                 <span>Disclosure mode</span>
                 <select id="veiledDisclosureMode">
                   <option value="none">None</option>
-                  <option value="recipient-encrypted">
-                    Recipient encrypted
-                  </option>
+                  <option value="recipient-encrypted">Recipient encrypted</option>
                   <option value="public">Public</option>
                 </select>
               </label>
               <label class="field">
                 <span>Disclosure target</span>
-                <input
-                  id="veiledDisclosurePubKey"
-                  placeholder="disclosure pubkey hex"
-                />
+                <input id="veiledDisclosurePubKey" placeholder="disclosure pubkey hex" />
               </label>
               <div class="disclosure-checks" aria-label="Disclosure fields">
                 <label class="checkbox-control">
@@ -371,6 +292,13 @@
                 </label>
               </div>
             </div>
+            <label class="checkbox-control self-view-control">
+              <input id="includeSelfViewDisclosure" type="checkbox" checked />
+              <span>Include encrypted self-view disclosure</span>
+            </label>
+            <p id="selfViewWarning" class="inline-warning" hidden>
+              Self-view를 끄면 나중에 이 전송의 보낸 내역을 복구하지 못할 수 있습니다.
+            </p>
             <dl class="facts">
               <div>
                 <dt>Transfer tx</dt>
@@ -378,160 +306,32 @@
               </div>
             </dl>
           </section>
-          <section
-            id="batchTransferSection"
-            class="balance-section action-section batch-transfer-section"
-            aria-labelledby="batchTransferTitle"
-            hidden
-          >
+          <section class="balance-section action-section" aria-labelledby="veiledWithdrawTitle">
             <div class="section-title-row">
-              <div>
-                <h3 id="batchTransferTitle">Batch Transfer (Atomic)</h3>
-                <p class="quiet">
-                  One proof and one MsgBatchTransfer for every batch.
-                </p>
-              </div>
-              <button
-                id="closeBatchTransfer"
-                class="secondary-button compact-button"
-                type="button"
-              >
-                Use single transfer
-              </button>
-            </div>
-            <div class="batch-atomic-notice" role="note">
-              <strong>All-or-nothing</strong>
-              <span>
-                A batch never partially succeeds. Every payment is included,
-                or the entire batch fails.
-              </span>
-            </div>
-            <div class="batch-table-wrap">
-              <table class="batch-payment-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Item</th>
-                    <th scope="col">Recipient</th>
-                    <th scope="col">Amount</th>
-                    <th scope="col">Disclosure</th>
-                    <th scope="col">Evidence</th>
-                    <th scope="col"><span class="sr-only">Actions</span></th>
-                  </tr>
-                </thead>
-                <tbody id="batchTransferRows"></tbody>
-              </table>
-            </div>
-            <div class="action-buttons batch-recipient-actions">
-              <button
-                id="addBatchTransferRecipient"
-                class="secondary-button"
-                type="button"
-              >
-                Add recipient
-              </button>
-            </div>
-            <div class="batch-preview" aria-live="polite">
-              <h4>Preview</h4>
-              <dl class="facts batch-preview-facts">
-                <div>
-                  <dt>Total payment</dt>
-                  <dd id="batchTransferTotal">0uclair</dd>
-                </div>
-                <div>
-                  <dt>Estimated change</dt>
-                  <dd id="batchTransferChange">-</dd>
-                </div>
-                <div>
-                  <dt>Input notes</dt>
-                  <dd id="batchTransferInputs">0 / 16</dd>
-                </div>
-                <div>
-                  <dt>Outputs</dt>
-                  <dd id="batchTransferOutputs">0 / 32</dd>
-                </div>
-                <div>
-                  <dt>Execution</dt>
-                  <dd>1 proof / 1 transaction</dd>
-                </div>
-                <div class="batch-preview-capacity">
-                  <dt>Capacity</dt>
-                  <dd id="batchTransferCapacity">Add a payment</dd>
-                </div>
-              </dl>
-              <p id="batchTransferCapacityWarning" class="batch-capacity-warning" hidden>
-                This draft exceeds one atomic batch. It will not be split
-                automatically.
-              </p>
-              <label id="batchTransferSplitControl" class="checkbox-control" hidden>
-                <input id="batchTransferSplit" type="checkbox" />
-                <span>
-                  Split into multiple atomic batches. Completed batches remain
-                  committed if a later batch fails.
-                </span>
+              <h3 id="veiledWithdrawTitle">Withdraw (Move to Clair)</h3>
+              <label class="compact-field">
+                <span>Mode</span>
+                <select id="withdrawMode">
+                  <option value="direct">Direct</option>
+                  <option value="relay">Relay handoff</option>
+                </select>
               </label>
             </div>
-            <div class="amount-row batch-submit-row">
-              <p class="quiet">
-                Review total, change, input/output capacity, and every
-                disclosure setting before opening Keplr.
-              </p>
-              <button id="prepareBatchTransfer" type="button" disabled>
-                Prepare atomic batch
-              </button>
-            </div>
-            <dl class="facts">
-              <div>
-                <dt>Batch tx</dt>
-                <dd id="keplrBatchTransferHash">-</dd>
-              </div>
-              <div>
-                <dt>Batch state</dt>
-                <dd id="batchTransferState">Draft</dd>
-              </div>
-            </dl>
-          </section>
-          <section
-            class="balance-section action-section"
-            aria-labelledby="veiledWithdrawTitle"
-          >
-            <h3 id="veiledWithdrawTitle">Withdraw (Move to Clair)</h3>
             <div class="amount-row">
               <label class="field amount-field">
                 <span>Withdraw amount</span>
                 <div class="amount-control">
-                  <input
-                    id="veiledWithdrawAmount"
-                    inputmode="numeric"
-                    value="1"
-                  />
+                  <input id="veiledWithdrawAmount" inputmode="numeric" value="1" />
                   <span class="denom">uclair</span>
                 </div>
               </label>
-              <div class="action-buttons">
-                <button id="withdrawFromVeiled" type="button" disabled>
-                  Withdraw
-                </button>
-              </div>
+              <button id="withdrawFromVeiled" type="button" disabled>Withdraw</button>
             </div>
             <div class="field address-field">
-              <label for="veiledWithdrawRecipient"
-                ><span>Withdraw recipient</span></label
-              >
+              <label for="veiledWithdrawRecipient"><span>Withdraw recipient</span></label>
               <div class="address-input-wrap">
-                <input
-                  id="veiledWithdrawRecipient"
-                  placeholder="clair1..."
-                  autocomplete="off"
-                  aria-haspopup="listbox"
-                  aria-controls="veiledWithdrawRecipientSuggestions"
-                  aria-expanded="false"
-                />
-                <div
-                  id="veiledWithdrawRecipientSuggestions"
-                  class="address-suggestions"
-                  role="listbox"
-                  hidden
-                ></div>
+                <input id="veiledWithdrawRecipient" placeholder="clair1..." autocomplete="off" aria-haspopup="listbox" aria-controls="veiledWithdrawRecipientSuggestions" aria-expanded="false" />
+                <div id="veiledWithdrawRecipientSuggestions" class="address-suggestions" role="listbox" hidden></div>
               </div>
             </div>
             <dl class="facts">
@@ -544,151 +344,32 @@
                 <dd id="keplrWithdrawHeight">-</dd>
               </div>
             </dl>
+            <div id="relayWithdrawPanel" class="relay-withdraw-panel" hidden>
+              <p class="inline-warning">
+                Relayer가 수수료를 지불합니다. Relayer는 payload에서 transaction을 다시 만들거나 byte-for-byte 검증해야 합니다. 이 예제는 payload 전달까지만 수행합니다.
+              </p>
+              <dl class="facts">
+                <div><dt>Chain ID</dt><dd id="relayWithdrawChain">-</dd></div>
+                <div><dt>Recipient</dt><dd id="relayWithdrawRecipient">-</dd></div>
+                <div><dt>Expires</dt><dd id="relayWithdrawExpiry">-</dd></div>
+                <div><dt>Payload hash</dt><dd id="relayWithdrawPayloadHash">-</dd></div>
+              </dl>
+              <label class="field">
+                <span>Relayer handoff JSON</span>
+                <textarea id="relayWithdrawJson" rows="10" readonly></textarea>
+              </label>
+              <div class="notes-actions">
+                <button id="copyRelayWithdraw" class="secondary-button" type="button" disabled>Copy JSON</button>
+                <button id="downloadRelayWithdraw" class="secondary-button" type="button" disabled>Download JSON</button>
+              </div>
+            </div>
           </section>
         </div>
 
-        <div class="panel account-panel relayer-panel" hidden>
-          <div class="panel-heading">
-            <h2>Relay Withdraw</h2>
-            <span id="relayerState" class="quiet">Waiting for payload</span>
-          </div>
-          <div class="local-signer-layout">
-            <section
-              class="local-signer-details relayer-prepare-pane"
-              aria-labelledby="relayerPrepareTitle"
-            >
-              <div class="panel-heading">
-                <h3 id="relayerPrepareTitle">Prepare Payload</h3>
-              </div>
-              <div class="amount-row relayer-prepare-amount-row">
-                <label class="field amount-field">
-                  <span>Withdraw amount</span>
-                  <div class="amount-control">
-                    <input
-                      id="relayWithdrawAmount"
-                      inputmode="numeric"
-                      value="1"
-                    />
-                    <span class="denom">uclair</span>
-                  </div>
-                </label>
-                <button id="relayWithdrawFromVeiled" type="button" disabled>
-                  Prepare
-                </button>
-              </div>
-              <div class="field address-field">
-                <label for="relayWithdrawRecipient">
-                  <span>Withdraw recipient</span>
-                </label>
-                <div class="address-input-wrap">
-                  <input
-                    id="relayWithdrawRecipient"
-                    placeholder="clair1..."
-                    autocomplete="off"
-                    aria-haspopup="listbox"
-                    aria-controls="relayWithdrawRecipientSuggestions"
-                    aria-expanded="false"
-                  />
-                  <div
-                    id="relayWithdrawRecipientSuggestions"
-                    class="address-suggestions"
-                    role="listbox"
-                    hidden
-                  ></div>
-                </div>
-              </div>
-            </section>
-            <div class="local-signer-notes relayer-details">
-              <h3 class="relayer-account-title">Local Relayer (optional)</h3>
-              <dl class="facts relayer-account-facts">
-                <div>
-                  <dt>Transparent</dt>
-                  <dd id="relayerTransparentAddress">-</dd>
-                </div>
-                <div>
-                  <dt>Balance</dt>
-                  <dd id="relayerBalance">-</dd>
-                </div>
-              </dl>
-              <section
-                class="relayer-payload-output"
-                aria-labelledby="relayerPayloadTitle"
-              >
-                <h3 id="relayerPayloadTitle">Prepared Payload</h3>
-                <dl class="facts relayer-payload-facts">
-                  <div>
-                    <dt>Amount</dt>
-                    <dd id="relayWithdrawPreparedAmount">-</dd>
-                  </div>
-                  <div>
-                    <dt>Recipient</dt>
-                    <dd id="relayWithdrawPreparedRecipient">-</dd>
-                  </div>
-                  <div>
-                    <dt>Chain ID</dt>
-                    <dd id="relayWithdrawPreparedChainId">-</dd>
-                  </div>
-                  <div>
-                    <dt>Expires at</dt>
-                    <dd id="relayWithdrawPreparedExpiresAt">-</dd>
-                  </div>
-                  <div>
-                    <dt>Payload hash</dt>
-                    <dd id="relayWithdrawPreparedPayloadHash">-</dd>
-                  </div>
-                  <div>
-                    <dt>Relayer tx</dt>
-                    <dd id="keplrRelayWithdrawHash">-</dd>
-                  </div>
-                  <div>
-                    <dt>Relayer</dt>
-                    <dd id="keplrRelayWithdrawRelayer">-</dd>
-                  </div>
-                </dl>
-                <p class="payload-warning" role="note">
-                  Relayers do not need your shielded secret. The recipient
-                  cannot be changed after preparation, and prepared
-                  payload/proof JSON is privacy-sensitive. Only relay metadata
-                  is kept after refresh.
-                </p>
-                <div
-                  id="relayWithdrawManualReviewEvidence"
-                  class="relay-review-evidence"
-                  role="note"
-                  hidden
-                ></div>
-                <pre id="relayWithdrawPreparedPayloadJson" class="payload-json">
-No prepared payload</pre
-                >
-                <div class="action-buttons relayer-payload-actions">
-                  <button id="copyRelayWithdrawPayload" type="button" disabled>
-                    Copy
-                  </button>
-                  <button id="relayPreparedWithdraw" type="button" disabled>
-                    Relay locally
-                  </button>
-                </div>
-                <div class="pending-relay-payloads">
-                  <h4>Pending Handoffs</h4>
-                  <div
-                    id="relayWithdrawPendingList"
-                    class="pending-relay-list"
-                    hidden
-                  ></div>
-                </div>
-              </section>
-            </div>
-          </div>
-        </div>
         <section class="events-section">
           <div class="section-heading">
             <h2>Privacy Events</h2>
-            <div class="event-page-controls">
-              <span id="eventsPageState" class="quiet" aria-live="polite">Page 1</span>
-              <button id="previousEventsPage" type="button" disabled>Older</button>
-              <button id="nextEventsPage" type="button" disabled>Newer</button>
-              <button id="refreshEvents" type="button">Refresh Events</button>
-            </div>
+            <button id="refreshEvents" type="button">Refresh Events</button>
           </div>
           <div class="events-layout">
             <div id="eventsList" class="events-list"></div>
@@ -716,40 +397,12 @@ No prepared payload</pre
                   <dd id="eventDetailTarget">-</dd>
                 </div>
                 <div>
-                  <dt>Disclosure plane</dt>
-                  <dd id="eventDisclosurePlane">-</dd>
-                </div>
-                <div>
-                  <dt>Policy</dt>
-                  <dd id="eventDisclosurePolicy">-</dd>
-                </div>
-                <div>
-                  <dt>Output index</dt>
-                  <dd id="eventDisclosureOutputIndex">-</dd>
-                </div>
-                <div>
-                  <dt>Commitment</dt>
-                  <dd id="eventDisclosureCommitment">-</dd>
-                </div>
-                <div>
-                  <dt>Digest</dt>
-                  <dd id="eventDisclosureDigest">-</dd>
-                </div>
-                <div>
-                  <dt>Verified</dt>
-                  <dd id="eventDisclosureVerified">-</dd>
-                </div>
-                <div>
                   <dt>Fields</dt>
                   <dd id="eventDisclosureFields">-</dd>
                 </div>
                 <div>
                   <dt>Amount</dt>
                   <dd id="eventDisclosureAmount">-</dd>
-                </div>
-                <div>
-                  <dt>Asset denom</dt>
-                  <dd id="eventDisclosureAssetDenom">-</dd>
                 </div>
                 <div>
                   <dt>From</dt>
@@ -760,15 +413,11 @@ No prepared payload</pre
                   <dd id="eventDisclosureTo">-</dd>
                 </div>
               </dl>
-              <button id="decodeEventDisclosure" type="button" disabled>
-                조회
-              </button>
+              <div class="split-actions">
+                <button id="decodeEventDisclosure" type="button" disabled>User disclosure</button>
+                <button id="decodeSelfViewDisclosure" type="button" disabled>Self-view</button>
+              </div>
               <p id="eventDisclosureState" class="quiet">Select an event.</p>
-              <div
-                id="eventDisclosureReports"
-                class="audit-output-reports"
-                hidden
-              ></div>
             </div>
           </div>
         </section>
@@ -799,10 +448,7 @@ No prepared payload</pre
                 </div>
               </dl>
             </div>
-            <section
-              class="local-signer-notes"
-              aria-labelledby="localSignerNotesTitle"
-            >
+            <section class="local-signer-notes" aria-labelledby="localSignerNotesTitle">
               <div class="panel-heading">
                 <h3 id="localSignerNotesTitle">Notes</h3>
                 <button id="refreshNotes" type="button">Scan</button>
@@ -820,12 +466,7 @@ No prepared payload</pre
       <section class="auditor-section">
         <div class="section-heading">
           <h2>Auditor</h2>
-          <div class="event-page-controls">
-            <span id="auditorPageState" class="quiet" aria-live="polite">Page 1</span>
-            <button id="previousAuditorPage" type="button" disabled>Older</button>
-            <button id="nextAuditorPage" type="button" disabled>Newer</button>
-            <button id="refreshAuditorTransfers" type="button">Refresh</button>
-          </div>
+          <button id="refreshAuditorTransfers" type="button">Refresh</button>
         </div>
         <div class="auditor-layout">
           <div class="audit-pane">
@@ -837,19 +478,11 @@ No prepared payload</pre
             <div class="test-scalar-box">
               <span>Test Private disclosure scalar</span>
               <code id="auditorTestScalar">-</code>
-              <button id="decodeAuditorTransfer" type="button" disabled>
-                Decode
-              </button>
+              <button id="decodeAuditorTransfer" type="button" disabled>Decode</button>
             </div>
-            <p id="auditorDecodeState" class="quiet" aria-live="polite">
-              Select a transfer.
-            </p>
             <div class="admin-warning" role="note">
               <strong>DEV / ADMIN TEST ONLY</strong>
-              <span
-                >Decode with the local admin test scalar only in a trusted local
-                or admin environment.</span
-              >
+              <span>Decode with the local admin test scalar only in a trusted local or admin environment.</span>
               <span>Do not use this field in a public user-facing DApp.</span>
             </div>
             <dl class="facts audit-facts">
@@ -882,7 +515,7 @@ No prepared payload</pre
                 <dd id="auditorTo">-</dd>
               </div>
             </dl>
-            <div id="auditorOutputReports" class="audit-output-reports" hidden></div>
+            <p id="auditorDecodeState" class="quiet">Select a transfer.</p>
           </div>
         </div>
       </section>
@@ -897,155 +530,39 @@ No prepared payload</pre
     </main>
 
     <div id="noticeModal" class="modal-backdrop" hidden>
-      <section
-        class="modal-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="noticeTitle"
-      >
+      <section class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="noticeTitle">
         <div class="modal-heading">
           <h2 id="noticeTitle">Clairveil</h2>
-          <button
-            id="closeNoticeModal"
-            class="icon-button"
-            type="button"
-            aria-label="Close"
-          >
-            X
-          </button>
+          <button id="closeNoticeModal" class="icon-button" type="button" aria-label="Close">X</button>
         </div>
         <p id="noticeMessage"></p>
       </section>
     </div>
 
-    <div id="reservationReviewModal" class="modal-backdrop" hidden>
-      <section
-        class="modal-dialog reservation-review-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="reservationReviewTitle"
-      >
-        <div class="modal-heading">
-          <h2 id="reservationReviewTitle">예약 검토</h2>
-          <span id="reservationReviewState" class="modal-state">확인 필요</span>
-        </div>
-        <p id="reservationReviewLead" class="modal-copy"></p>
-        <ul id="reservationReviewCauses" class="reservation-review-causes"></ul>
-        <p id="reservationReviewWarning" class="reservation-review-warning"></p>
-        <label id="reservationReviewAcknowledgement" class="reservation-review-acknowledgement">
-          <input id="reservationReviewAcknowledge" type="checkbox" />
-          <span>지갑과 탐색기에서 제출된 거래가 없음을 확인했습니다.</span>
-        </label>
-        <div class="modal-actions">
-          <button id="cancelReservationReview" class="secondary-button" type="button">
-            닫기
-          </button>
-          <button id="confirmReservationReview" type="button" disabled>
-            예약 취소 및 다시 준비
-          </button>
-        </div>
-      </section>
-    </div>
-
-    <div id="batchTransferConfirmationModal" class="modal-backdrop" hidden>
-      <section
-        class="modal-dialog batch-confirmation-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="batchTransferConfirmationTitle"
-      >
-        <div class="modal-heading">
-          <h2 id="batchTransferConfirmationTitle">Atomic Batch 최종 확인</h2>
-          <span class="modal-state">서명 전 확인</span>
-        </div>
-        <p class="modal-copy">
-          최신 chain scan으로 준비된 실제 effect입니다. 아래 total, change,
-          input/output 수와 각 지급 항목을 확인한 뒤 Keplr 서명을 여세요.
-        </p>
-        <div class="batch-atomic-notice" role="note">
-          <strong>All-or-nothing</strong>
-          <span>
-            이 batch의 모든 지급이 함께 성공하거나 전체가 실패합니다.
-          </span>
-        </div>
-        <dl class="facts batch-confirmation-facts">
-          <div>
-            <dt>Total payment</dt>
-            <dd id="batchTransferConfirmationTotal">-</dd>
-          </div>
-          <div>
-            <dt>Exact change</dt>
-            <dd id="batchTransferConfirmationChange">-</dd>
-          </div>
-          <div>
-            <dt>Input notes</dt>
-            <dd id="batchTransferConfirmationInputs">-</dd>
-          </div>
-          <div>
-            <dt>Outputs</dt>
-            <dd id="batchTransferConfirmationOutputs">-</dd>
-          </div>
-          <div>
-            <dt>Disclosure settings</dt>
-            <dd id="batchTransferConfirmationDisclosures">-</dd>
-          </div>
-          <div>
-            <dt>Execution</dt>
-            <dd>1 proof / 1 transaction</dd>
-          </div>
-        </dl>
-        <div class="batch-confirmation-payments">
-          <strong>Prepared payments</strong>
-          <code id="batchTransferConfirmationPayments">-</code>
-        </div>
-        <div class="modal-actions">
-          <button
-            id="cancelBatchTransferConfirmation"
-            class="secondary-button"
-            type="button"
-          >
-            취소하고 proof 폐기
-          </button>
-          <button id="confirmBatchTransferConfirmation" type="button">
-            확인 후 Keplr 열기
-          </button>
-        </div>
-      </section>
-    </div>
-
     <div id="transferFlowModal" class="modal-backdrop" hidden>
-      <section
-        class="modal-dialog transfer-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="transferFlowTitle"
-      >
+      <section class="modal-dialog transfer-dialog" role="dialog" aria-modal="true" aria-labelledby="transferFlowTitle">
         <div class="modal-heading">
           <h2 id="transferFlowTitle">Privacy Transfer 확인</h2>
           <span id="transferModalState" class="modal-state">확인 필요</span>
         </div>
         <p id="transferModalLead" class="modal-copy">
-          입력하신 금액을 보낼 수 있도록 note 구성을 먼저 확인합니다. 필요한
-          경우 self transaction 서명이 먼저 요청됩니다.
+          입력하신 금액을 보낼 수 있도록 note 구성을 먼저 확인합니다. 필요한 경우 self transaction 서명이 먼저 요청됩니다.
         </p>
-        <ol
-          id="transferSteps"
-          class="transfer-steps"
-          aria-label="Privacy transfer signing steps"
-        >
+        <dl id="transferReviewFacts" class="review-facts">
+          <div><dt>Chain ID</dt><dd id="reviewChain">-</dd></div>
+          <div><dt>Recipient</dt><dd id="reviewRecipient">-</dd></div>
+          <div><dt>Amount</dt><dd id="reviewAmount">-</dd></div>
+          <div><dt>Disclosure</dt><dd id="reviewDisclosure">-</dd></div>
+          <div><dt>Self-view</dt><dd id="reviewSelfView">-</dd></div>
+          <div><dt>Expires</dt><dd id="reviewExpiry">-</dd></div>
+        </dl>
+        <ol id="transferSteps" class="transfer-steps" aria-label="Privacy transfer signing steps">
           <li id="transferStepZero" data-transfer-step="zero">
             <span class="step-index">1</span>
             <div>
               <strong id="transferStepZeroTitle">노트 준비</strong>
-              <span id="transferStepZeroCopy"
-                >입력하신 금액의 노트를 만들기 위해 self transaction이 필요한지
-                확인합니다.</span
-              >
-              <dl
-                id="transferPlannerFacts"
-                class="transfer-planner-facts"
-                hidden
-              >
+              <span id="transferStepZeroCopy">입력하신 금액의 노트를 만들기 위해 self transaction이 필요한지 확인합니다.</span>
+              <dl id="transferPlannerFacts" class="transfer-planner-facts" hidden>
                 <div>
                   <dt>요청 금액</dt>
                   <dd id="transferPlannerRequested">-</dd>
@@ -1065,66 +582,21 @@ No prepared payload</pre
             <span class="step-index">2</span>
             <div>
               <strong id="transferStepTransferTitle">트랜스퍼 서명</strong>
-              <span id="transferStepTransferCopy"
-                >준비된 note로 실제 privacy transfer를 요청합니다. Keplr에서
-                내용을 확인하고 서명합니다.</span
-              >
+              <span id="transferStepTransferCopy">준비된 note로 실제 privacy transfer를 요청합니다. Keplr에서 내용을 확인하고 서명합니다.</span>
             </div>
           </li>
         </ol>
-        <dl
-          id="transferConfirmationFacts"
-          class="transfer-confirmation-facts"
-          aria-label="Prepared privacy transfer confirmation"
-          hidden
-        >
-          <div>
-            <dt>Chain ID</dt>
-            <dd id="transferConfirmationChainId">-</dd>
-          </div>
-          <div>
-            <dt>Expiry</dt>
-            <dd id="transferConfirmationExpiry">-</dd>
-          </div>
-          <div>
-            <dt>Recipient effect</dt>
-            <dd id="transferConfirmationRecipient">-</dd>
-          </div>
-          <div>
-            <dt>Change effect</dt>
-            <dd id="transferConfirmationChange">-</dd>
-          </div>
-          <div>
-            <dt>Disclosure planes</dt>
-            <dd id="transferConfirmationDisclosure">-</dd>
-          </div>
-        </dl>
         <div id="transferSuccessPanel" class="transfer-result" hidden>
-          <strong id="transferSuccessTitle"
-            >트랜스퍼 요청이 성공하였습니다</strong
-          >
-          <span id="transferSuccessCopy"
-            >최신 notes를 다시 스캔한 상태입니다.</span
-          >
+          <strong id="transferSuccessTitle">트랜스퍼 요청이 성공하였습니다</strong>
+          <span id="transferSuccessCopy">최신 notes를 다시 스캔한 상태입니다.</span>
         </div>
-        <div
-          id="transferFailurePanel"
-          class="transfer-result transfer-result-error"
-          hidden
-        >
-          <strong id="transferFailureTitle"
-            >트랜스퍼 요청이 실패했습니다</strong
-          >
+        <div id="transferFailurePanel" class="transfer-result transfer-result-error" hidden>
+          <strong id="transferFailureTitle">트랜스퍼 요청이 실패했습니다</strong>
           <span id="transferFailureReason">-</span>
         </div>
         <div class="modal-actions">
-          <button
-            id="cancelTransferFlow"
-            class="secondary-button"
-            type="button"
-          >
-            취소
-          </button>
+          <button id="cancelTransferFlow" class="secondary-button" type="button">취소</button>
+          <button id="retryTransferFlow" class="secondary-button" type="button" hidden>같은 prover로 재시도</button>
           <button id="confirmTransferFlow" type="button">시작</button>
         </div>
       </section>

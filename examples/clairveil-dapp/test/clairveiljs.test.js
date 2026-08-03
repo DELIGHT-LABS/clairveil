@@ -1,982 +1,324 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { webcrypto } from "node:crypto";
+import { readFile, realpath } from "node:fs/promises";
 import {
-  MemoryNoteStore,
-  LocalStorageNoteStore,
-  ClairveilError,
-  ClairveilErrorCode,
-  assertDisclosurePubKeyHex,
-  canonicalFieldHex,
-  computeNoteCommitmentV1,
-  computeNoteTreeNodeV1,
-  createAsyncJobProverAdapter,
   createClairveilClient,
-  createOfflineSignerWalletAdapter,
-  createWalletAdapter,
-  buildPreparedTransferPayload,
-  buildWithdrawMsgFromPayload,
-  computePreparedWithdrawPayloadHash,
-  computeExpectedDisclosureDigestHex,
-  decodeUserDisclosureFromEvent,
-  decodeShieldedAddress,
-  derivePrivacyMaterial,
-  derivePrivacyMaterialFromWallet,
-  encryptWithRootSeed,
-  decryptWithRootSeed,
-  payloadHex,
-  planTransferNotes,
-  planWithdrawNotes,
-  scanNotes,
-  MsgWithdraw,
-  userDisclosureModePublic,
-  userDisclosureModeRecipientEncrypted
+  derivePrivacyMaterial
 } from "clairveiljs";
 import {
-  createClairveilEvmClient,
-  createEvmContractAdapter,
-  createEip1193WalletAdapter,
-  evmAddressToBech32,
-  functionSelector
-} from "clairveiljs/evm";
-import { ClairveilBrowserClient } from "clairveiljs/browser-dapp";
-import {
-  computeNoteNullifierHex,
-  createNote,
-  deriveSpendKeys,
-  deriveViewKeys,
-  packPointHex,
-} from "clairveiljs/core";
-import { utf8Bytes, utf8String } from "clairveiljs/browser-crypto";
-import { hashRecipient } from "clairveiljs/reservation";
-import { computeAssetIdV1 } from "clairveiljs/protocol-v1";
+  createClairveilBrowserDappClient,
+  validateClairveilWebClientConfig
+} from "clairveiljs/browser-dapp";
+import { createClairveilPublicClient } from "clairveiljs/browser-public";
+import { validatePrivacyScanPageV2 } from "clairveiljs/scan";
+import { EncryptedLocalStorageNoteStore } from "../public/encrypted-note-store.js";
 
-const testNoteRootSeed = new Uint8Array(32).fill(7);
-const testNoteSpendPubKey = deriveSpendKeys(testNoteRootSeed).pubKey;
-const testNoteViewPubKey = deriveViewKeys(testNoteRootSeed).pubKey;
-const assetID = computeAssetIdV1("uclair");
-const canonicalRecipient = "clairs19x5u4mf4l4zqcpvr7d809fh4tjy5j50p2mwgky0nj38jpqpj7svndu3hqshu5e3s8w6pea5p30xek5p9flxjf7f44xh7cnfrlsd84pc7upgh3";
-const validProofHex = `${"c0"}${"00".repeat(31)}${"c0"}${"00".repeat(63)}${"c0"}${"00".repeat(35)}${"c0"}${"00".repeat(31)}`;
-
-function foundNote(amount, suffix, overrides = {}) {
-  const {
-    note: noteOverrides = {},
-    rootSeed = testNoteRootSeed,
-    ...foundNoteOverrides
-  } = overrides;
-  const spendPubKey = deriveSpendKeys(rootSeed).pubKey;
-  const viewPubKey = deriveViewKeys(rootSeed).pubKey;
-  const note = createNote({
-    spendPubKey,
-    viewPubKey,
-    amount: BigInt(amount),
-    assetId: assetID,
-    randomness: BigInt(1000 + suffix),
-    memo: "test",
-  });
-  Object.assign(note, noteOverrides);
-  return {
-    height: Number(amount) + suffix,
-    sequence: suffix,
-    txHash: `AA${String(suffix).padStart(2, "0")}`,
-    isSpent: false,
-    nullifierStatus: "unspent",
-    nullifier: computeNoteNullifierHex(note),
-    note,
-    ...foundNoteOverrides,
-  };
-}
-
-function merklePathProviderForNotes(foundNotes) {
-  if (foundNotes.length < 1 || foundNotes.length > 2) {
-    throw new Error("test Merkle path provider supports one or two notes");
-  }
-  const depth = 32;
-  const zero = canonicalFieldHex(0n);
-  const commitments = foundNotes.map((found) => canonicalFieldHex(
-    computeNoteCommitmentV1(found.note),
-  ));
-  let root;
-  const paths = [];
-  const helpers = [];
-
-  if (commitments.length === 1) {
-    root = BigInt(`0x${commitments[0]}`);
-    for (let level = 0; level < depth; level += 1) {
-      root = computeNoteTreeNodeV1(level, root, 0n);
-    }
-    paths.push(Array(depth).fill(zero));
-    helpers.push(Array(depth).fill(0));
-  } else {
-    root = computeNoteTreeNodeV1(
-      0,
-      BigInt(`0x${commitments[0]}`),
-      BigInt(`0x${commitments[1]}`),
-    );
-    for (let level = 1; level < depth; level += 1) {
-      root = computeNoteTreeNodeV1(level, root, 0n);
-    }
-    paths.push([commitments[1], ...Array(depth - 1).fill(zero)]);
-    helpers.push(Array(depth).fill(0));
-    paths.push([commitments[0], ...Array(depth - 1).fill(zero)]);
-    helpers.push([1, ...Array(depth - 1).fill(0)]);
-  }
-
-  const entries = new Map(commitments.map((commitment, index) => [commitment, index]));
-  return (commitmentHex) => {
-    const index = entries.get(String(commitmentHex).toLowerCase());
-    if (index == null) throw new Error(`unknown test note commitment ${commitmentHex}`);
-    return {
-      root: canonicalFieldHex(root),
-      path: [...paths[index]],
-      path_helper: [...helpers[index]],
-    };
-  };
-}
-
-function protobufFieldNumbers(bytes) {
-  const fields = [];
-  let offset = 0;
-  const readVarint = () => {
-    let value = 0n;
-    let shift = 0n;
-    while (offset < bytes.length) {
-      const byte = BigInt(bytes[offset]);
-      offset += 1;
-      value |= (byte & 0x7fn) << shift;
-      if ((byte & 0x80n) === 0n) return value;
-      shift += 7n;
-    }
-    throw new Error("truncated varint");
-  };
-
-  while (offset < bytes.length) {
-    const tag = readVarint();
-    const fieldNumber = Number(tag >> 3n);
-    const wireType = Number(tag & 0x07n);
-    fields.push(fieldNumber);
-
-    if (wireType === 0) {
-      readVarint();
-    } else if (wireType === 2) {
-      const length = Number(readVarint());
-      offset += length;
-    } else {
-      throw new Error(`unsupported wire type ${wireType}`);
-    }
-  }
-
-  return fields;
-}
-
-test("wallet adapter derives Clairveil privacy material", async () => {
-  const wallet = createWalletAdapter({
-    address: "clair1example0000000000000000000000000000000",
-    pubKeyHex: "02".padEnd(66, "0"),
-    signPrivacyRoot: async messageBytes => {
-      assert.match(Buffer.from(messageBytes).toString("utf8"), /^clairveil-root-v1\n/);
-      return Buffer.from("test-signature-v1");
-    }
-  });
-
-  const material = await derivePrivacyMaterialFromWallet(wallet);
-  assert.equal(material.address, "clair1example0000000000000000000000000000000");
-  assert.equal(material.pubKeyHex, "02".padEnd(66, "0"));
-  assert.match(material.shieldedAddress, /^clairs1/);
-  assert.match(material.disclosurePubKeyHex, /^[0-9a-f]{64}$/);
-});
-
-test("vendored browser transfer preserves prepared effect details for confirmation", async () => {
-  const client = new ClairveilBrowserClient({
+function cosmosProfile(overrides = {}) {
+  const profile = {
+    id: "clairveil-local",
+    label: "Clairveil Localnet",
+    chainName: "Clairveil Localnet",
+    transport: "cosmos",
+    wallet: "keplr",
+    chainId: "clairveil-local-2",
     rpc: "http://127.0.0.1:26657",
     rest: "http://127.0.0.1:1317",
-    chainId: "clairveil-local-2",
+    proverUrl: "http://127.0.0.1:8080",
+    depositProofUrl: "http://127.0.0.1:5173/v1/prover/deposit",
     accountPrefix: "clair",
     shieldedPrefix: "clairs",
     denom: "uclair",
-  });
-  client.privacyMaterial = () => ({});
-  client.proverAdapter = () => ({});
-  const payload = { payload_hash: "payload-hash" };
-  const proof = { payload_hash: "payload-hash", proof_hex: validProofHex };
-  const message = { creator: "clair1sender" };
-  client.cosmos.prepareTransfer = async () => ({
-    status: "ready",
-    signDoc: { chainId: "clairveil-local-2" },
-    reservation: null,
-    prepared: {
-      planAction: "final_transfer",
-      isFinal: true,
-      amount: "1uclair",
-      recipient: canonicalRecipient,
+    displayDenom: "CLAIR",
+    coinDecimals: 18,
+    keplrCoinType: 118,
+    gasPriceStep: { low: 1, average: 1, high: 1 }
+  };
+  profile.keplrChainInfo = {
+    chainId: profile.chainId,
+    chainName: profile.chainName,
+    rpc: profile.rpc,
+    rest: profile.rest,
+    bip44: { coinType: profile.keplrCoinType },
+    bech32Config: {
+      bech32PrefixAccAddr: "clair",
+      bech32PrefixAccPub: "clairpub",
+      bech32PrefixValAddr: "clairvaloper",
+      bech32PrefixValPub: "clairvaloperpub",
+      bech32PrefixConsAddr: "clairvalcons",
+      bech32PrefixConsPub: "clairvalconspub"
     },
-    payload,
-    proof,
-    message,
-    plan: { status: "final_transfer_ready" },
-    privacyAccount: { shielded_address: canonicalRecipient },
-  });
+    currencies: [{ coinDenom: "CLAIR", coinMinimalDenom: "uclair", coinDecimals: 18 }],
+    feeCurrencies: [{
+      coinDenom: "CLAIR",
+      coinMinimalDenom: "uclair",
+      coinDecimals: 18,
+      gasPriceStep: profile.gasPriceStep
+    }],
+    stakeCurrency: { coinDenom: "CLAIR", coinMinimalDenom: "uclair", coinDecimals: 18 },
+    features: []
+  };
+  return { ...profile, ...overrides };
+}
 
-  const prepared = await client.prepareTransfer({
-    amount: "1uclair",
-    recipient: canonicalRecipient,
-  });
-
-  assert.equal(prepared.prepared.payload, payload);
-  assert.equal(prepared.prepared.proof, proof);
-  assert.equal(prepared.prepared.message, message);
-});
-
-test("vendored reservation recipient hash follows Go canonical address rules", () => {
-  const expected = "8a3344bcbfdd71e8346f1fcc5d9d09d493c3345b0e94d26371f89b2574545d3c";
-  assert.equal(hashRecipient(canonicalRecipient), expected);
-  assert.equal(hashRecipient(canonicalRecipient.toUpperCase()), expected);
-  assert.throws(() => hashRecipient("clair1recipient"), /shielded address/i);
-  assert.throws(
-    () => hashRecipient("clairs1llllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllct37x5k"),
-    /valid shielded address/i,
-  );
-});
-
-test("vendored reservation recipient hash supports a custom shielded prefix", () => {
-  const material = derivePrivacyMaterial({
-    address: "demo1example0000000000000000000000000000000",
-    pubKeyHex: "02".padEnd(66, "0"),
-    signatureBase64: Buffer.from("dapp-custom-prefix").toString("base64"),
-    shieldedPrefix: "demos",
-  });
-  const expected = createHash("sha256")
-    .update(material.shieldedAddress)
-    .digest("hex");
-
-  assert.match(material.shieldedAddress, /^demos1/);
-  assert.equal(
-    hashRecipient(material.shieldedAddress, { shieldedPrefix: "demos" }),
-    expected,
-  );
-  assert.equal(
-    hashRecipient(material.shieldedAddress.toUpperCase(), { shieldedPrefix: "demos" }),
-    expected,
-  );
-});
-
-test("root privacy material retains signer fields for high-level builders", () => {
-  const material = derivePrivacyMaterial({
-    address: "clair1example0000000000000000000000000000000",
-    pubKeyHex: "02".padEnd(66, "0").toUpperCase(),
-    signatureBase64: Buffer.from("test-signature-v1").toString("base64")
-  });
-
-  assert.equal(material.address, "clair1example0000000000000000000000000000000");
-  assert.equal(material.pubKeyHex, "02".padEnd(66, "0"));
-  assert.equal(material.signatureBase64, Buffer.from("test-signature-v1").toString("base64"));
-  assert.match(material.signingMessage, /pubkey:020000/);
-  assert.match(material.shieldedAddress, /^clairs1/);
-});
-
-test("custom account and shielded prefixes flow through client privacy material", () => {
-  const client = createClairveilClient({
-    rpc: "tcp://127.0.0.1:26657",
+function evmProfile(overrides = {}) {
+  return {
+    id: "evm-local",
+    label: "Clairveil EVM Localnet",
+    chainName: "Clairveil EVM Localnet",
+    transport: "evm",
+    wallet: "metamask",
+    chainId: "evm-privacy-local-1",
+    rpc: "http://127.0.0.1:26657",
     rest: "http://127.0.0.1:1317",
-    chainId: "downstream-1",
-    accountPrefix: "demo",
-    shieldedPrefix: "demos",
-    defaultDenom: "udemo"
-  });
-  const material = derivePrivacyMaterial({
-    address: "demo1example0000000000000000000000000000000",
-    pubKeyHex: "02".padEnd(66, "0"),
-    signatureBase64: Buffer.from("test-signature-v1").toString("base64"),
-    shieldedPrefix: "demos"
-  });
-  const account = client.derivePrivacyAccount({
-    address: "demo1example0000000000000000000000000000000",
-    pubKeyHex: "02".padEnd(66, "0"),
-    signatureBase64: Buffer.from("test-signature-v1").toString("base64")
-  });
-
-  assert.match(account.shielded_address, /^demos1/);
-  assert.doesNotThrow(() => decodeShieldedAddress(account.shielded_address, { shieldedPrefix: "demos" }));
-  assert.throws(() => decodeShieldedAddress(account.shielded_address), /expected clairs, got demos/);
-  assert.equal(client.buildDepositMaterial({
-    creator: material.address,
-    rootSeed: material.rootSeed,
-    amount: "7"
-  }).amount, "7udemo");
-});
-
-test("wallet adapter accepts browser signer fixture pubkey bytes", async () => {
-  const fixture = JSON.parse(await readFile(
-    new URL("../../../x/privacy/client/sdk/conformance/testdata/privacy_browser_signer_provider_contract.json", import.meta.url),
-    "utf8"
-  ));
-  const rootSigner = fixture.root_signer;
-  const wallet = createWalletAdapter({
-    address: rootSigner.get_account_response.transparent_address,
-    pubKeyHex: rootSigner.get_account_response.transparent_pubkey_hex,
-    signPrivacyRoot: async messageBytes => {
-      assert.equal(Buffer.from(messageBytes).toString("hex"), rootSigner.sign_request.message_hex);
-      return Buffer.from(rootSigner.sign_response.signature_hex, "hex");
-    }
-  });
-
-  assert.equal(await wallet.getPubKeyHex(), "0123456789abcdef");
-  const material = await derivePrivacyMaterialFromWallet(wallet);
-  assert.equal(material.rootSeedHex, rootSigner.expected_derived.root_seed_hex);
-  assert.equal(material.shieldedAddress, rootSigner.expected_derived.shielded_address);
-  assert.equal(material.disclosurePubKeyHex, rootSigner.expected_derived.disclosure_pubkey_hex);
-});
-
-test("offline signer adapter wraps CosmJS accounts and direct signing", async () => {
-  let signedAddress = "";
-  const adapter = createOfflineSignerWalletAdapter({
-    signer: {
-      async getAccounts() {
-        return [{
-          address: "clair1offline000000000000000000000000000000",
-          pubkey: new Uint8Array([2, ...new Uint8Array(32)])
-        }];
-      },
-      async signDirect(address, signDoc) {
-        signedAddress = address;
-        return { signed: signDoc, signature: { signature: "AQID" } };
-      }
-    },
-    signPrivacyRoot: async () => new Uint8Array([1, 2, 3])
-  });
-
-  assert.equal(await adapter.getAddress(), "clair1offline000000000000000000000000000000");
-  assert.equal((await adapter.getPubKeyHex()).length, 66);
-  await adapter.signDirect({ bodyBytes: new Uint8Array(), authInfoBytes: new Uint8Array(), chainId: "x", accountNumber: 1n });
-  assert.equal(signedAddress, "clair1offline000000000000000000000000000000");
-});
-
-test("transfer planner reports final transfer and self-merge states", () => {
-  const ready = planTransferNotes({
-    amount: "10uclair",
-    notes: [foundNote(4, 1), foundNote(7, 2), foundNote(20, 3)]
-  });
-  assert.equal(ready.status, "final_transfer_ready");
-  assert.equal(ready.canBuildTx, true);
-  assert.equal(ready.selection.total, 11n);
-
-  const merge = planTransferNotes({
-    amount: "10uclair",
-    notes: [foundNote(1, 1), foundNote(1, 2), foundNote(8, 3)]
-  });
-  assert.equal(merge.status, "self_merge_required");
-  assert.equal(merge.canBuildTx, true);
-  assert.equal(merge.nextAmount, "9uclair");
-});
-
-test("transfer payload builder rejects mixed-asset input notes before proving", async () => {
-  const mixedAssetNote = foundNote(5, 2);
-  mixedAssetNote.note.assetID = computeAssetIdV1("uatom");
-
-  await assert.rejects(
-    buildPreparedTransferPayload({
-      creator: "clair1builder000000000000000000000000000000",
-      chainId: "clairveil-test-1",
-      amount: "10uclair",
-      inputs: [
-        foundNote(5, 1),
-        mixedAssetNote
-      ]
-    }),
-    /transfer input 1 asset does not match requested denom uclair/
-  );
-});
-
-test("transfer payload builder uses configured shielded prefix in disclosure payloads", async () => {
-  const sender = derivePrivacyMaterial({
-    address: "demo1sender00000000000000000000000000000000",
-    pubKeyHex: "02".padEnd(66, "0"),
-    signatureBase64: Buffer.from("sender-signature").toString("base64"),
-    shieldedPrefix: "demos"
-  });
-  const recipient = derivePrivacyMaterial({
-    address: "demo1recipient0000000000000000000000000000",
-    pubKeyHex: "03".padEnd(66, "0"),
-    signatureBase64: Buffer.from("recipient-signature").toString("base64"),
-    shieldedPrefix: "demos"
-  });
-
-  const inputs = [
-    foundNote(4, 1, { rootSeed: sender.rootSeed }),
-    foundNote(7, 2, { rootSeed: sender.rootSeed }),
-  ];
-  const payload = await buildPreparedTransferPayload({
-    creator: sender.address,
-    chainId: "demo-1",
-    inputs,
-    recipient: recipient.shieldedAddress,
-    amount: "10uclair",
-    rootSeed: sender.rootSeed,
-    merklePathProvider: merklePathProviderForNotes(inputs),
-    userPrivacyPolicy: "from-to",
-    userDisclosureMode: "public",
-    auditDisclosureTargetPubKeyHex: sender.disclosurePubKeyHex,
-    shieldedPrefix: "demos"
-  });
-  const recipientKeys = decodeShieldedAddress(recipient.shieldedAddress, {
-    shieldedPrefix: "demos",
-  });
-  assert.equal(payload.user_privacy_policy, 6);
-  assert.equal(payload.user_disclosure_mode, 1);
-  assert.equal(payload.outputs[0].spend_pubkey_hex, packPointHex(recipientKeys.spendPubKey));
-  assert.equal(payload.outputs[0].view_pubkey_hex, packPointHex(recipientKeys.viewPubKey));
-});
-
-test("EVM adapter builds deposit transaction calldata and sends through EIP-1193", async () => {
-  const sent = [];
-  const provider = {
-    async request({ method, params }) {
-      if (method === "eth_requestAccounts") {
-        return ["0x1111111111111111111111111111111111111111"];
-      }
-      if (method === "eth_sendTransaction") {
-        sent.push(params[0]);
-        return "0x" + "ab".repeat(32);
-      }
-      throw new Error(`unexpected method ${method}`);
-    }
+    proverUrl: "http://127.0.0.1:8080",
+    depositProofUrl: "http://127.0.0.1:5173/v1/prover/deposit",
+    accountPrefix: "clair",
+    shieldedPrefix: "clairs",
+    denom: "utoken",
+    displayDenom: "TOKEN",
+    coinDecimals: 18,
+    evmRpc: "http://127.0.0.1:8545",
+    evmChainId: "0x32f",
+    evmChainName: "Clairveil EVM Localnet",
+    evmPrivacyPrecompileAddress: "0x0000000000000000000000000000000000000900",
+    evmDepositMode: "payable-exact-value",
+    evmNativeDenom: "utoken",
+    evmGasLimit: "0x989680",
+    evmSendGasLimit: "0x5208",
+    ...overrides
   };
-  const client = createClairveilEvmClient({
-    provider,
-    contractAddress: "0x2222222222222222222222222222222222222222",
-    chainId: "0x539",
-    shieldedPrefix: "demos",
-    defaultDenom: "udemo"
-  });
-  const material = derivePrivacyMaterial({
-    address: "0x1111111111111111111111111111111111111111",
+}
+
+function identity() {
+  return {
+    address: "clair1xcjufgh2jarkp2qkx68azh08w9v5gah8sx9zu2",
     pubKeyHex: "02".padEnd(66, "0"),
-    signatureBase64: Buffer.from("evm-signature").toString("base64"),
-    shieldedPrefix: "demos"
-  });
-  const prepared = client.buildDepositTransaction({
-    creator: material.address,
-    rootSeed: material.rootSeed,
-    amount: "9",
-    proofHex: "ab"
-  });
-  const wallet = createEip1193WalletAdapter({ provider });
-  const txHash = await client.sendTransaction(wallet, prepared.transaction);
-
-  assert.equal(prepared.material.amount, "9udemo");
-  assert.equal(prepared.transaction.to, "0x2222222222222222222222222222222222222222");
-  assert.equal(prepared.transaction.data.slice(2, 10), functionSelector("deposit((string,bytes,bytes,bytes))"));
-  assert.equal(txHash, "0x" + "ab".repeat(32));
-  assert.equal(sent[0].from, "0x1111111111111111111111111111111111111111");
-});
-
-test("EVM contract adapter allows project-specific calldata encoders", () => {
-  const adapter = createEvmContractAdapter({
-    contractAddress: "0x3333333333333333333333333333333333333333",
-    encodeDeposit: () => "0x1234"
-  });
-  const tx = adapter.buildDepositTransaction({
-    amount: "1uclair",
-    noteCommitment: new Uint8Array(32),
-    encryptedNote: new Uint8Array([1, 2, 3])
-  });
-
-  assert.equal(tx.to, "0x3333333333333333333333333333333333333333");
-  assert.equal(tx.data, "0x1234");
-});
-
-test("vendored EVM direct transfer and withdraw enforce nullifier preflight", async () => {
-  const rootSeed = new Uint8Array(32).fill(9);
-  const spendPubKey = deriveSpendKeys(rootSeed).pubKey;
-  const viewPubKey = deriveViewKeys(rootSeed).pubKey;
-  const recipientMaterial = derivePrivacyMaterial({
-    address: "0x1111111111111111111111111111111111111111",
-    pubKeyHex: "03".padEnd(66, "0"),
-    signatureBase64: Buffer.from("evm-direct-recipient").toString("base64"),
-    shieldedPrefix: "demos"
-  });
-  const makeFoundNote = randomness => ({
-    note: createNote({
-      spendPubKey,
-      viewPubKey,
-      amount: 1n,
-      assetDenom: "udemo",
-      randomness
-    }),
-    isSpent: false,
-    nullifierStatus: "unspent"
-  });
-  const transferInputs = [makeFoundNote(101n), makeFoundNote(102n)];
-  const transferMerklePathProvider = merklePathProviderForNotes(transferInputs);
-  const withdrawNote = makeFoundNote(103n);
-  const withdrawMerklePathProvider = merklePathProviderForNotes([withdrawNote]);
-  const client = createClairveilEvmClient({
-    accountPrefix: "demo",
-    shieldedPrefix: "demos",
-    chainId: "demo-1",
-    defaultDenom: "udemo"
-  });
-  const checked = [];
-  const checkNullifiers = async nullifiers => {
-    checked.push([...nullifiers]);
-    return new Map(nullifiers.map(nullifier => [nullifier, false]));
+    signatureBase64: Buffer.from("clairveil-dapp-v0.3.1").toString("base64")
   };
+}
 
-  const transfer = await client.buildTransferTransaction({
-    creator: evmAddressToBech32("0x1111111111111111111111111111111111111111", "demo"),
-    inputs: transferInputs,
-    recipient: recipientMaterial.shieldedAddress,
-    amount: "1udemo",
-    rootSeed,
-    merklePathProvider: transferMerklePathProvider,
-    auditDisclosureTargetPubKeyHex: recipientMaterial.disclosurePubKeyHex,
-    checkNullifiers,
-    proverAdapter: {
-      async proveTransfer({ payload }) {
-        assert.equal(checked.length, 1);
-        return { version: "v2", payload_hash: payload.payload_hash, proof_hex: validProofHex };
-      }
-    }
-  });
-  const withdraw = await client.buildWithdrawTransaction({
-    notes: [withdrawNote],
-    amount: "1udemo",
-    recipient: "0x2222222222222222222222222222222222222222",
-    rootSeed,
-    merklePathProvider: withdrawMerklePathProvider,
-    chainNowUnix: 1_000,
-    expiresAtUnix: 2_000,
-    checkNullifiers,
-    proverAdapter: {
-      async proveWithdraw({ payload }) {
-        assert.equal(checked.length, 2);
-        return { version: "v2", payload_hash: payload.payload_hash, proof_hex: validProofHex };
-      }
-    }
-  });
-
-  assert.equal(transfer.status, "ready");
-  assert.equal(withdraw.status, "ready");
-  assert.deepEqual(checked.map(batch => batch.length), [2, 1]);
-
-  for (const failedCheck of [
-    async nullifiers => new Map(nullifiers.map(nullifier => [nullifier, true])),
-    async () => new Map()
-  ]) {
-    let proverCalled = false;
-    const failedTransferInputs = [makeFoundNote(201n), makeFoundNote(202n)];
-    const failedWithdrawNote = makeFoundNote(203n);
-    await assert.rejects(
-      client.buildTransferTransaction({
-        creator: evmAddressToBech32("0x1111111111111111111111111111111111111111", "demo"),
-        inputs: failedTransferInputs,
-        recipient: recipientMaterial.shieldedAddress,
-        amount: "1udemo",
-        rootSeed,
-        merklePathProvider: merklePathProviderForNotes(failedTransferInputs),
-        auditDisclosureTargetPubKeyHex: recipientMaterial.disclosurePubKeyHex,
-        checkNullifiers: failedCheck,
-        proverAdapter: {
-          async proveTransfer() {
-            proverCalled = true;
-            throw new Error("prover must not run");
-          }
-        }
-      }),
-      /nullifier/i
-    );
-    assert.equal(proverCalled, false);
-
-    await assert.rejects(
-      client.buildWithdrawTransaction({
-        notes: [failedWithdrawNote],
-        amount: "1udemo",
-        recipient: "0x2222222222222222222222222222222222222222",
-        rootSeed,
-        merklePathProvider: merklePathProviderForNotes([failedWithdrawNote]),
-        chainNowUnix: 1_000,
-        expiresAtUnix: 2_000,
-        checkNullifiers: failedCheck,
-        proverAdapter: {
-          async proveWithdraw() {
-            proverCalled = true;
-            throw new Error("prover must not run");
-          }
-        }
-      }),
-      /nullifier/i
-    );
-    assert.equal(proverCalled, false);
-  }
-});
-
-test("withdraw planner requires exact-match notes", () => {
-  const exact = planWithdrawNotes({
-    amount: "5uclair",
-    notes: [foundNote(5, 1), foundNote(9, 2)]
-  });
-  assert.equal(exact.status, "withdraw_ready");
-  assert.equal(exact.selectedNote.note.amount, 5n);
-
-  const needsExact = planWithdrawNotes({
-    amount: "5uclair",
-    notes: [foundNote(2, 1), foundNote(9, 2)]
-  });
-  assert.equal(needsExact.status, "exact_note_required");
-});
-
-test("MsgWithdraw omits reserved legacy output note fields", () => {
-  const payload = {
-    version: "v2",
-    proof_hex: validProofHex,
-    root_hex: "11".repeat(32),
-    nullifier_hex: "22".repeat(32),
-    amount: "1uclair",
-    recipient: "clair1withdrawrecipient000000000000000000000",
-    chain_id: "clairveil-local-3",
-    expires_at_unix: Math.floor(Date.now() / 1000) + 600
+function memoryStorage() {
+  const values = new Map();
+  return {
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: key => values.delete(key)
   };
-  payload.payload_hash = computePreparedWithdrawPayloadHash(payload);
+}
 
-  const message = buildWithdrawMsgFromPayload(
-    payload,
-    "clair1creator000000000000000000000000000000"
-  );
-  assert.equal("newNoteCommitment" in message, false);
-  assert.equal("encryptedNote" in message, false);
+test("example DApp resolves the sibling local ClairveilJS v0.3.1 package", async () => {
+  const dappPackage = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  const sdkPackage = JSON.parse(await readFile(new URL("../node_modules/clairveiljs/package.json", import.meta.url), "utf8"));
+  const resolvedSdk = await realpath(new URL("../node_modules/clairveiljs", import.meta.url));
 
-  const encoded = MsgWithdraw.encode(message).finish();
-  const fields = protobufFieldNumbers(encoded);
-  assert.deepEqual([...new Set(fields)].sort((a, b) => a - b), [1, 2, 3, 4, 7, 8, 9, 10]);
-  assert.equal(fields.includes(5), false);
-  assert.equal(fields.includes(6), false);
+  assert.equal(dappPackage.dependencies.clairveiljs, "file:../../../clairveiljs");
+  assert.equal(sdkPackage.version, "0.3.1");
+  assert.match(resolvedSdk, /\/clairveiljs$/);
 });
 
-test("planner errors expose stable error codes", () => {
-  const plan = planTransferNotes({ amount: "10uclair", notes: [] });
-  assert.equal(plan.status, "insufficient_balance");
-  const error = new ClairveilError(ClairveilErrorCode.INSUFFICIENT_BALANCE, plan.message, { plan });
-  assert.equal(error.code, ClairveilErrorCode.INSUFFICIENT_BALANCE);
-});
-
-test("transfer planner explains missing zero helper notes clearly", () => {
-  const plan = planTransferNotes({ amount: "1uclair", notes: [foundNote(1, 1)] });
-  assert.equal(plan.status, "zero_dummy_required");
-  assert.equal(plan.message, "A second zero-value helper note is required before this transfer can be built.");
-});
-
-test("async job prover adapter polls completed transfer jobs", async () => {
-  const sender = derivePrivacyMaterial({
-    address: "clair1sender000000000000000000000000000000",
-    pubKeyHex: "02".padEnd(66, "0"),
-    signatureBase64: Buffer.from("sender-signature").toString("base64")
+test("v0.3.1 web config validates Cosmos and payable-exact-value EVM profiles", () => {
+  const cosmos = cosmosProfile();
+  const cosmosConfig = validateClairveilWebClientConfig({
+    schemaVersion: "clairveil-web-client-config-v1",
+    activeChainProfileId: cosmos.id,
+    chainProfiles: [cosmos],
+    serverBacked: true,
+    serverFeatures: { depositProof: true, proverProxy: true, batchTransfer: false }
   });
-  const recipient = derivePrivacyMaterial({
-    address: "clair1recipient0000000000000000000000000000",
-    pubKeyHex: "03".padEnd(66, "0"),
-    signatureBase64: Buffer.from("recipient-signature").toString("base64")
+  assert.equal(cosmosConfig.activeProfile.depositProofUrl, cosmos.depositProofUrl);
+
+  const evm = evmProfile();
+  const evmConfig = validateClairveilWebClientConfig({
+    schemaVersion: "clairveil-web-client-config-v1",
+    activeChainProfileId: evm.id,
+    chainProfiles: [evm]
   });
-  const inputs = [
-    foundNote(4, 1, { rootSeed: sender.rootSeed }),
-    foundNote(7, 2, { rootSeed: sender.rootSeed }),
-  ];
-  const payload = await buildPreparedTransferPayload({
-    creator: sender.address,
-    chainId: "clairveil-test-1",
-    inputs,
-    recipient: recipient.shieldedAddress,
-    amount: "10uclair",
-    rootSeed: sender.rootSeed,
-    merklePathProvider: merklePathProviderForNotes(inputs),
-    auditDisclosureTargetPubKeyHex: sender.disclosurePubKeyHex
-  });
-  const adapter = createAsyncJobProverAdapter({
-    submitTransferJob: async () => ({ jobId: "job-1" }),
-    submitWithdrawJob: async () => ({ jobId: "job-2" }),
-    getJob: async jobId => ({
-      status: "completed",
-      response: {
-        version: "v2",
-        proof: {
-          version: "v2",
-          payload_hash: jobId === "job-1" ? payload.payload_hash : "bb".repeat(32),
-          proof_hex: validProofHex
-        }
-      }
-    }),
-    sleepImpl: async () => {}
-  });
-
-  const result = await adapter.proveTransfer({ version: "v2", payload });
-  assert.equal(result.proof.payload_hash, payload.payload_hash);
-});
-
-test("async job prover adapter rejects unsupported versions before submit", async () => {
-  let submitted = false;
-  const adapter = createAsyncJobProverAdapter({
-    submitTransferJob: async () => {
-      submitted = true;
-      return { jobId: "job-1" };
-    },
-    submitWithdrawJob: async () => {
-      submitted = true;
-      return { jobId: "job-2" };
-    },
-    getJob: async () => ({ status: "completed", response: {} }),
-    sleepImpl: async () => {}
-  });
-
-  await assert.rejects(
-    adapter.proveTransfer({ version: "v0", payload: { payload_hash: "aa".repeat(32) } }),
-    /unsupported transfer proof request version/
-  );
-  assert.equal(submitted, false);
-});
-
-test("browser crypto AES-GCM helpers round-trip root-seed encryption", () => {
-  const rootSeed = new Uint8Array(32).fill(9);
-  const message = utf8Bytes("clairveil browser crypto");
-  const encrypted = encryptWithRootSeed(message, rootSeed);
-  const decrypted = decryptWithRootSeed(encrypted, rootSeed);
-  assert.equal(utf8String(decrypted), "clairveil browser crypto");
-});
-
-test("note store merges scans and marks spent notes", async () => {
-  const store = new MemoryNoteStore({ owner: "alice" });
-  await store.mergeScanResult({
-    foundNotes: [foundNote(5, 1), foundNote(7, 2)]
-  });
-  let loaded = await store.load();
-  assert.equal(loaded.notes.length, 2);
-  assert.equal(loaded.lastScannedHeight, 9);
-  assert.match(loaded.notes[0].commitment_hex, /^[0-9a-f]{64}$/);
-  assert.match(loaded.notes[0].asset_id_hex, /^[0-9a-f]{64}$/);
-  assert.equal(loaded.notes[0].asset_denom, "uclair");
-  assert.match(loaded.notes[0].randomness_hex, /^[0-9a-f]{64}$/);
-  assert.match(loaded.notes[0].spend_pubkey_hex, /^[0-9a-f]{64}$/);
-  assert.match(loaded.notes[0].view_pubkey_hex, /^[0-9a-f]{64}$/);
-  assert.equal(loaded.notes[0].tx_hash, loaded.notes[0].txHash);
-  assert.equal(loaded.notes[0].spent, false);
-
-  await store.markSpent(loaded.notes[0].nullifier);
-  loaded = await store.load();
-  assert.equal(loaded.notes.filter(note => note.isSpent).length, 1);
-});
-
-test("note store tracks scan cursor, rollback metadata, and localStorage plaintext opt-in", async () => {
-  const store = new MemoryNoteStore({ owner: "alice" });
-  await store.mergeScanResult({
-    foundNotes: [foundNote(5, 1), foundNote(7, 2)],
-    scanCursor: {
-      after_height: 0,
-      after_sequence: 78,
-      page: 1,
-      limit: 50,
-      event_types: ["deposit", "shielded_transfer"],
-      next_height: 200,
-      next_sequence: 78,
-      latest_height: 9,
-      latest_tx_hash: "AA02"
-    }
-  });
-  let loaded = await store.load();
-  assert.equal(loaded.lastScannedHeight, 200);
-  assert.equal(loaded.lastScannedSequence, 78);
-  assert.equal(loaded.lastScannedTxHash, "AA02");
-  assert.deepEqual(loaded.scanCursor.event_types, ["deposit", "shielded_transfer"]);
-
-  loaded = await store.rollbackToHeight(6);
-  assert.equal(loaded.notes.length, 0);
-  assert.equal(loaded.rollbackHeight, 6);
-  assert.equal(loaded.lastScannedSequence, 0);
-  assert.equal(loaded.lastScannedTxHash, "");
-  assert.equal(loaded.scanCursor.source, "scan_events");
-  assert.equal(loaded.scanCursor.after_height, 6);
-  assert.equal(loaded.scanCursor.after_sequence, 0);
-
-  const storage = new Map();
-  const storageLike = {
-    getItem: key => storage.get(key) ?? null,
-    setItem: (key, value) => storage.set(key, value),
-    removeItem: key => storage.delete(key)
-  };
+  assert.equal(evmConfig.activeProfile.evmDepositMode, "payable-exact-value");
   assert.throws(
-    () => new LocalStorageNoteStore({ storage: storageLike, key: "notes" }),
-    /plaintext/
+    () => validateClairveilWebClientConfig({
+      schemaVersion: "clairveil-web-client-config-v1",
+      activeChainProfileId: evm.id,
+      chainProfiles: [evmProfile({ evmNativeDenom: "uother" })]
+    }),
+    /must match profile\.denom/
   );
-  assert.ok(new LocalStorageNoteStore({ storage: storageLike, key: "notes", allowPlaintext: true }));
 });
 
-test("vendored ClairveilJS scans the privacy-fixed-v1 deposit fixture", async () => {
-  const fixture = JSON.parse(await readFile(
-    new URL("../../../x/privacy/client/sdk/conformance/testdata/privacy_wallet_golden_vectors.json", import.meta.url),
-    "utf8"
-  ));
-  const result = await scanNotes({
-    rootSeed: Buffer.from(fixture.sender_root_seed.root_seed_hex, "hex"),
-    events: [
-      {
-        event_type: "deposit",
-        height: fixture.scan.height,
-        tx_hash_hex: fixture.scan.tx_hash_hex,
-        attributes: [
-          { key: "encrypted_note", value: fixture.note.encrypted_note_hex },
-          { key: "commitment", value: fixture.note.commitment_hex }
-        ]
-      }
-    ],
-    checkNullifier: async () => ({ used: false })
-  });
-
-  assert.equal(result.notes.length, 1);
-  assert.equal(result.summary.spendable_count, 1);
-});
-
-test("ClairveilJS scanNotes sends scan event cursor query parameters", async () => {
-  const originalFetch = globalThis.fetch;
-  const seen = [];
-  globalThis.fetch = async url => {
-    seen.push(String(url));
+test("browser deposit preparation requires a DepositCircuit proof provider", async () => {
+  const profile = cosmosProfile();
+  delete profile.depositProofUrl;
+  const client = createClairveilBrowserDappClient({ profile });
+  let preparedInput = null;
+  client.cosmos.prepareDeposit = async input => {
+    preparedInput = input;
     return {
-      ok: true,
-      status: 200,
-      statusText: "OK",
-      async json() {
-        return {
-          events: [],
-          scan_format_version: 1,
-          view_tag_version: 1,
-          next_height: 5,
-          next_sequence: 0,
-          limit: 50,
-          has_more: false
-        };
-      }
+      signDoc: { chainId: "clairveil-local-2" },
+      privacyAccount: { shielded_address: input.material.shieldedAddress },
+      material: input.depositMaterial
     };
   };
 
-  try {
-    const client = createClairveilClient({
-      rpc: "http://127.0.0.1:26657",
-      rest: "http://example.test",
-      chainId: "clairveil-local-3"
-    });
-    const result = await client.scanNotes({
-      rootSeed: new Uint8Array(32),
-      afterHeight: 5,
-      page: 2,
-      limit: 50,
-      eventTypes: ["deposit", "shielded_transfer"]
-    });
-    const url = new URL(seen[0]);
-    assert.equal(url.pathname, "/clairveil/privacy/v1/scan_events");
-    assert.equal(url.searchParams.get("after_height"), "5");
-    assert.equal(url.searchParams.get("after_sequence"), "0");
-    assert.equal(url.searchParams.get("limit"), "50");
-    assert.deepEqual(url.searchParams.getAll("event_types"), ["deposit", "shielded_transfer"]);
-    assert.equal(result.scanCursor.after_height, 5);
-    assert.equal(result.scanCursor.after_sequence, 0);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("decodeUserDisclosureFromEvent supports public disclosure payloads", () => {
-  const digestHex = canonicalFieldHex(0n);
-  const publicPayload = {
-    version: "v4",
-    plane: "user",
-    policy: 0,
-    output_index: 0,
-    commitment_hex: canonicalFieldHex(123n),
-    disclosure_digest_hex: digestHex
-  };
-  const report = decodeUserDisclosureFromEvent({
-    event_type: "shielded_transfer",
-    tx_hash_hex: "aa",
-    attributes: [
-      { key: "user_disclosure_mode", value: userDisclosureModePublic },
-      { key: "user_disclosure_payload", value: payloadHex(publicPayload) },
-      { key: "user_disclosure_digest", value: digestHex }
-    ]
-  }, 1n, "ff".repeat(32));
-
-  assert.equal(report.source, "public");
-  assert.equal(report.summary.delivery, "public");
-  assert.equal(report.verification.verified, true);
-});
-
-test("ClairveilJS.decodeUserDisclosure decodes public payloads without signer material", async () => {
-  const publicPayload = {
-    version: "v4",
-    plane: "user",
-    policy: 1,
-    output_index: 0,
-    commitment_hex: canonicalFieldHex(456n),
-    disclosure_digest_hex: "",
-    amount: "3",
-    asset_id_hex: canonicalFieldHex(assetID),
-    asset_denom: "uclair"
-  };
-  const digestHex = computeExpectedDisclosureDigestHex(publicPayload);
-  publicPayload.disclosure_digest_hex = digestHex;
-  const client = createClairveilClient({
-    rest: "http://127.0.0.1:1",
-    rpc: "http://127.0.0.1:2",
-    chainId: "clairveil-test"
-  });
-  client.findPrivacyEventByTxHash = async txHash => ({
-    event_type: "shielded_transfer",
-    tx_hash_hex: txHash,
-    attributes: [
-      { key: "user_disclosure_mode", value: userDisclosureModePublic },
-      { key: "user_disclosure_payload", value: payloadHex(publicPayload) },
-      { key: "user_disclosure_digest", value: digestHex }
-    ]
-  });
-
-  const report = await client.decodeUserDisclosure({ txHash: "aa" });
-
-  assert.equal(report.source, "public");
-  assert.equal(report.summary.delivery, "public");
-  assert.equal(report.summary.amount, "3");
-  assert.equal(report.verification.verified, true);
-});
-
-test("ClairveilJS.decodeUserDisclosure can skip signer pubkey checks for EVM identity material", async () => {
-  const client = createClairveilClient({
-    rest: "http://127.0.0.1:1",
-    rpc: "http://127.0.0.1:2",
-    chainId: "evm-test",
-    accountPrefix: "demo"
-  });
-  client.findPrivacyEventByTxHash = async txHash => ({
-    event_type: "shielded_transfer",
-    tx_hash_hex: txHash,
-    attributes: [
-      { key: "user_disclosure_mode", value: userDisclosureModeRecipientEncrypted },
-      { key: "user_disclosure_target_pubkey", value: "ab".repeat(32) }
-    ]
-  });
-  const input = {
-    txHash: "aa",
-    address: "demo1rcrtmxgycp0vgukkvkm7v49kyed6grpn4w49lx",
-    pubKeyHex: "11".repeat(20),
-    signatureBase64: "AQID"
-  };
-
   await assert.rejects(
-    () => client.decodeUserDisclosure(input),
-    /signer address\/pubKey mismatch/
+    () => client.prepareDeposit({ ...identity(), amount: "1uclair" }),
+    /deposit proof is required/
   );
+
+  const prepared = await client.prepareDeposit({
+    ...identity(),
+    amount: "1uclair",
+    depositProofProvider: async input => ({
+      version: "v1",
+      proof_hex: "aa",
+      note_commitment_hex: input.noteCommitmentHex
+    })
+  });
+  assert.equal(prepared.prepared.amount, "1uclair");
+  assert.equal(preparedInput.proofHex, "aa");
+  assert.equal(preparedInput.depositMaterial.note_commitment_hex.length, 64);
+});
+
+test("typed privacy scan preserves its three-part cursor and forbids event filters", async () => {
+  const client = createClairveilClient({
+    rpc: "http://127.0.0.1:26657",
+    rest: "http://127.0.0.1:1317",
+    chainId: "clairveil-local-2"
+  });
+  const requests = [];
+  client.queryPrivacyScan = async request => {
+    requests.push(request);
+    return validatePrivacyScanPageV2({
+      scanSchemaVersion: "privacy-scan-v2",
+      summaries: [],
+      outputs: [],
+      nextCursor: { height: 0, globalSequence: 0, outputIndex: 0 },
+      hasMore: false,
+      scannedEventCount: 0
+    }, request);
+  };
+
+  const result = await client.scanNotes({
+    rootSeed: new Uint8Array(32),
+    scanSource: "privacy_scan",
+    after: { height: 0, globalSequence: 0, outputIndex: 0 },
+    outputLimit: 200,
+    includeFoundNotes: true
+  });
+  assert.deepEqual(requests[0].eventTypes, []);
+  assert.equal(result.scanCursor.source, "privacy_scan");
+  assert.deepEqual(result.nextScanOptions.after, { height: 0, globalSequence: 0, outputIndex: 0 });
+  assert.equal(result.nextScanOptions.scanSource, "privacy_scan");
+});
+
+test("encrypted local note store persists the full typed cursor without plaintext", async () => {
+  const storage = memoryStorage();
+  const cursor = {
+    source: "privacy_scan",
+    after: { height: 8, global_sequence: 3, output_index: 1 },
+    next_cursor: { height: 9, global_sequence: 4, output_index: 2 },
+    output_limit: 200,
+    has_more: true
+  };
+  const options = {
+    storage,
+    cryptoImpl: webcrypto,
+    key: "clairveil:v0.3.1:test",
+    owner: "clair1owner",
+    keyMaterial: new Uint8Array([1, 2, 3, 4]),
+    namespace: "clairveil-local-2:test:clair1owner"
+  };
+  const store = await EncryptedLocalStorageNoteStore.open(options);
+  await store.mergeScanResult({ foundNotes: [], scanCursor: cursor }, { owner: "clair1owner" });
+
+  const raw = storage.getItem("clairveil:v0.3.1:test");
+  assert.match(raw, /clairveil-encrypted-note-store-v1/);
+  assert.doesNotMatch(raw, /clair1owner|privacy_scan|next_cursor/);
+
+  const reloaded = await EncryptedLocalStorageNoteStore.open(options);
+  assert.deepEqual((await reloaded.load()).scanCursor, cursor);
   await assert.rejects(
-    () => client.decodeUserDisclosure({ ...input, skipSignerPubKeyCheck: true }),
-    /selected transfer has no user disclosure/
+    () => EncryptedLocalStorageNoteStore.open({ ...options, keyMaterial: new Uint8Array([9, 9, 9]) }),
+    error => error.code === "NOTE_CACHE_CORRUPT"
   );
 });
 
-test("schemas validate disclosure public keys", () => {
-  assert.equal(assertDisclosurePubKeyHex("ab".repeat(32)), "ab".repeat(32));
-  assert.throws(() => assertDisclosurePubKeyHex("ab"), /32-byte/);
+test("nullifier checks use the v0.3.1 batch POST endpoint", async () => {
+  const requests = [];
+  const client = createClairveilPublicClient({
+    rest: "http://rest.example"
+  });
+  client.fetchNullifierJson = async (path, init) => {
+    const body = JSON.parse(init.body);
+    requests.push({ path, method: init.method, body });
+    return {
+      statuses: body.nullifiers.map((nullifier, index) => ({ nullifier, used: index === 1 }))
+    };
+  };
+  const nullifiers = ["00".repeat(32), "11".repeat(32)];
+  const statuses = await client.checkNullifiers(nullifiers);
+
+  assert.equal(client.restUrl(requests[0].path), "http://rest.example/clairveil/privacy/v1/nullifiers");
+  assert.equal(requests[0].method, "POST");
+  assert.deepEqual(requests[0].body.nullifiers, nullifiers);
+  assert.equal(statuses.get(nullifiers[0]), false);
+  assert.equal(statuses.get(nullifiers[1]), true);
+});
+
+test("payable EVM deposits bind native denom before proof work and use SDK submission", async () => {
+  const client = createClairveilBrowserDappClient({ profile: evmProfile() });
+  client.evmJsonRpc = async () => "0x32f";
+  let proofCalled = false;
+  await assert.rejects(
+    () => client.prepareDeposit({
+      ...identity(),
+      amount: "1uother",
+      evmWallet: { getChainId: async () => "0x32f" },
+      depositProofProvider: async () => {
+        proofCalled = true;
+        return { proof_hex: "aa" };
+      }
+    }),
+    /does not match native denom/
+  );
+  assert.equal(proofCalled, false);
+
+  let submitted = null;
+  client.evm.sendTransaction = async (wallet, transaction) => {
+    submitted = { wallet, transaction };
+    return `0x${"ab".repeat(32)}`;
+  };
+  const wallet = {
+    getChainId: async () => "0x32f",
+    sendTransaction: async () => `0x${"cd".repeat(32)}`
+  };
+  const transaction = {
+    to: evmProfile().evmPrivacyPrecompileAddress,
+    data: "0x1234",
+    value: "0x1",
+    chainId: "0x32f"
+  };
+  const hash = await client.sendEvmTransaction({ wallet, transaction });
+  assert.equal(hash, `0x${"ab".repeat(32)}`);
+  assert.deepEqual(submitted.transaction, transaction);
+});
+
+test("browser facade exposes reserve, protocol preflight, and self-view decoding", async () => {
+  const client = createClairveilBrowserDappClient({ profile: cosmosProfile() });
+  client.cosmos.queryReserve = async denom => ({ denom, invariant_holds: true });
+  client.cosmos.assertProtocolPreflight = async denom => ({ denom });
+  client.cosmos.decodeSelfViewDisclosure = async input => ({ input, verified: true });
+
+  assert.equal((await client.queryReserve("uclair")).invariant_holds, true);
+  assert.equal((await client.assertProtocolPreflight("uclair")).denom, "uclair");
+  const disclosure = await client.decodeSelfViewDisclosure({ ...identity(), txHash: "AA" });
+  assert.equal(disclosure.verified, true);
+  assert.equal(disclosure.input.txHash, "AA");
+});
+
+test("privacy identity remains deterministic under the v0.3.1 SDK", () => {
+  const first = derivePrivacyMaterial(identity());
+  const second = derivePrivacyMaterial(identity());
+  assert.equal(first.rootSeedHex, second.rootSeedHex);
+  assert.equal(first.shieldedAddress, second.shieldedAddress);
+  assert.equal(first.disclosurePubKeyHex, second.disclosurePubKeyHex);
 });
