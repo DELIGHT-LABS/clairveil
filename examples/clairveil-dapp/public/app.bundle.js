@@ -95743,6 +95743,64 @@ function assertDepositFundingAvailable({
   return { amount: amountValue, fee: feeValue, balance, required };
 }
 
+// public/network-fee.js
+function eventAttribute4(event, key) {
+  const attributes = Array.isArray(event?.attributes) ? event.attributes : [];
+  return attributes.find((attribute) => attribute?.key === key)?.value ?? null;
+}
+function parseCoinList(value) {
+  if (String(value ?? "").trim() === "") return [];
+  const coins = [];
+  for (const entry of String(value || "").split(",")) {
+    const match = /^(0|[1-9][0-9]*)([A-Za-z][A-Za-z0-9/:._-]*)$/.exec(entry.trim());
+    if (!match) return null;
+    coins.push({ amount: BigInt(match[1]), denom: match[2] });
+  }
+  return coins;
+}
+function cosmosChargedFeeAmount(tx, denom) {
+  const events = tx?.events ?? tx?.tx_response?.events;
+  if (!Array.isArray(events)) return null;
+  const explicitFeeEvents = events.filter((event) => event?.type === "tx" && eventAttribute4(event, "fee") !== null);
+  if (explicitFeeEvents.length) {
+    let explicitTotal = 0n;
+    for (const event of explicitFeeEvents) {
+      const coins = parseCoinList(eventAttribute4(event, "fee"));
+      if (!coins) return null;
+      for (const coin of coins) {
+        if (coin.denom === denom) explicitTotal += coin.amount;
+      }
+    }
+    return explicitTotal;
+  }
+  let total = 0n;
+  for (const event of events) {
+    if (event?.type !== "coin_spent" || eventAttribute4(event, "msg_index") !== null) continue;
+    const coins = parseCoinList(eventAttribute4(event, "amount"));
+    if (!coins) return null;
+    for (const coin of coins) {
+      if (coin.denom === denom) total += coin.amount;
+    }
+  }
+  return total;
+}
+function evmQuantity(value) {
+  if (typeof value === "bigint") return value >= 0n ? value : null;
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value >= 0 ? BigInt(value) : null;
+  }
+  const text3 = String(value ?? "").trim();
+  if (!/^(?:0x[0-9a-fA-F]+|0|[1-9][0-9]*)$/.test(text3)) return null;
+  return BigInt(text3);
+}
+function evmChargedFeeAmount(receipt) {
+  const gasUsed = evmQuantity(receipt?.gasUsed ?? receipt?.gas_used);
+  const gasPrice = evmQuantity(
+    receipt?.effectiveGasPrice ?? receipt?.effective_gas_price ?? receipt?.gasPrice ?? receipt?.gas_price
+  );
+  return gasUsed === null || gasPrice === null ? null : gasUsed * gasPrice;
+}
+
 // public/browser-profile.js
 function normalizeBrowserProfileEndpoints(profile, {
   rpc,
@@ -97118,7 +97176,7 @@ function noteHasUnspentEvidence(note) {
   return note?.spent !== true && note?.isSpent !== true && String(note?.nullifier_status || note?.nullifierStatus || "").toLowerCase() === "unspent";
 }
 function privacyTransferEventNullifiers(event) {
-  return ["nullifier_1", "nullifier_2"].map((key) => normalizedHex2(eventAttribute4(event, key))).filter(Boolean);
+  return ["nullifier_1", "nullifier_2"].map((key) => normalizedHex2(eventAttribute5(event, key))).filter(Boolean);
 }
 function transferEventMatchesOperation(event, records, notesByLookupKey) {
   const nullifiers = records.map((record) => noteNullifier(notesByLookupKey.get(record.nullifier_lookup_key))).filter(Boolean);
@@ -97168,8 +97226,8 @@ function operationEvidenceFromEvent(records, event) {
   const first = records[0];
   return {
     txHash: normalizedHex2(event?.tx_hash_hex),
-    outputCommitment: normalizedHex2(eventAttribute4(event, "commitment_1")),
-    auditDisclosureDigest: normalizedHex2(eventAttribute4(event, "audit_disclosure_digest")),
+    outputCommitment: normalizedHex2(eventAttribute5(event, "commitment_1")),
+    auditDisclosureDigest: normalizedHex2(eventAttribute5(event, "audit_disclosure_digest")),
     recipientHash: first.expected_recipient_hash,
     amount: first.expected_amount,
     amountHash: first.expected_amount_hash,
@@ -97509,7 +97567,7 @@ function shorten(value, head = 10, tail = 8) {
   if (!value || value.length <= head + tail + 3) return value || "-";
   return `${value.slice(0, head)}...${value.slice(-tail)}`;
 }
-function eventAttribute4(event, key) {
+function eventAttribute5(event, key) {
   return (event?.attributes || []).find((attribute) => attribute.key === key)?.value || "";
 }
 function prettyDisclosureField(value) {
@@ -98074,6 +98132,18 @@ function cosmosGasFeeEstimate(gasLimit) {
     throw new Error("Configured Cosmos gas policy cannot produce a safe fee estimate");
   }
   return BigInt(fee);
+}
+function updateIncludedDepositNetworkFee(result) {
+  if (activeChainProfile()?.transport === "evm") {
+    const fee = evmChargedFeeAmount(result?.receipt);
+    state.keplr.networkFeeEstimate = fee === null ? "Actual fee unavailable \xB7 transaction included" : `Actual ${formatEvmNetworkFee(fee)} \xB7 transaction included`;
+    if (fee !== null) state.keplr.networkFeeAmount = fee.toString();
+  } else {
+    const fee = cosmosChargedFeeAmount(result?.tx, baseDenom());
+    state.keplr.networkFeeEstimate = fee === null ? "Actual fee unavailable \xB7 transaction included" : `Actual ${fee}${baseDenom()} \xB7 transaction included`;
+    if (fee !== null) state.keplr.networkFeeAmount = fee.toString();
+  }
+  renderKeplr();
 }
 async function estimateDepositFeeBeforeProof() {
   if (state.activeWallet !== "metamask") {
@@ -99187,12 +99257,12 @@ async function refreshBlockEvents() {
   renderBlockEvents();
 }
 function disclosureTargetMatches(event) {
-  const target = eventAttribute4(event, "user_disclosure_target_pubkey");
+  const target = eventAttribute5(event, "user_disclosure_target_pubkey");
   return Boolean(target && state.keplr.disclosurePubKeyHex && target.toLowerCase() === state.keplr.disclosurePubKeyHex.toLowerCase());
 }
 function isPublicDisclosureEvent(event) {
   return Boolean(
-    event?.event_type === "shielded_transfer" && eventAttribute4(event, "user_disclosure_mode") === "USER_DISCLOSURE_MODE_PUBLIC" && eventAttribute4(event, "user_disclosure_payload")
+    event?.event_type === "shielded_transfer" && eventAttribute5(event, "user_disclosure_mode") === "USER_DISCLOSURE_MODE_PUBLIC" && eventAttribute5(event, "user_disclosure_payload")
   );
 }
 function canDecodeEventDisclosure(event) {
@@ -99202,17 +99272,17 @@ function canDecodeEventDisclosure(event) {
 }
 function canDecodeSelfViewDisclosure(event) {
   return Boolean(
-    event?.event_type === "shielded_transfer" && eventAttribute4(event, "self_view_disclosure_payload") && state.keplr.rootSignatureBase64
+    event?.event_type === "shielded_transfer" && eventAttribute5(event, "self_view_disclosure_payload") && state.keplr.rootSignatureBase64
   );
 }
 function eventDisclosureStatus(event) {
   if (!event) return "Select an event.";
   if (event.event_type !== "shielded_transfer") return "Disclosure \uC870\uD68C\uB294 shielded transfer\uC5D0\uC11C\uB9CC \uAC00\uB2A5\uD569\uB2C8\uB2E4.";
-  const mode = eventAttribute4(event, "user_disclosure_mode");
-  const target = eventAttribute4(event, "user_disclosure_target_pubkey");
-  const payload = eventAttribute4(event, "user_disclosure_payload");
+  const mode = eventAttribute5(event, "user_disclosure_mode");
+  const target = eventAttribute5(event, "user_disclosure_target_pubkey");
+  const payload = eventAttribute5(event, "user_disclosure_payload");
   if (!payload) {
-    return eventAttribute4(event, "self_view_disclosure_payload") ? "User disclosure\uB294 \uC5C6\uC9C0\uB9CC \uC1A1\uC2E0\uC790\uB77C\uBA74 self-view\uB85C \uC870\uD68C\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4." : "\uC774 transfer\uC5D0\uB294 disclosure payload\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.";
+    return eventAttribute5(event, "self_view_disclosure_payload") ? "User disclosure\uB294 \uC5C6\uC9C0\uB9CC \uC1A1\uC2E0\uC790\uB77C\uBA74 self-view\uB85C \uC870\uD68C\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4." : "\uC774 transfer\uC5D0\uB294 disclosure payload\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.";
   }
   if (mode === "USER_DISCLOSURE_MODE_PUBLIC") {
     return "Public disclosure\uC785\uB2C8\uB2E4. \uB204\uAD6C\uB098 \uC870\uD68C\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
@@ -99374,8 +99444,8 @@ function renderEventDetail() {
   els.eventDetailType.textContent = event?.event_type || "-";
   els.eventDetailHeight.textContent = event?.height || "-";
   els.eventDetailTx.textContent = event?.tx_hash_hex || "-";
-  els.eventDetailUserMode.textContent = event ? eventAttribute4(event, "user_disclosure_mode") || "-" : "-";
-  els.eventDetailTarget.textContent = event ? eventAttribute4(event, "user_disclosure_target_pubkey") || "-" : "-";
+  els.eventDetailUserMode.textContent = event ? eventAttribute5(event, "user_disclosure_mode") || "-" : "-";
+  els.eventDetailTarget.textContent = event ? eventAttribute5(event, "user_disclosure_target_pubkey") || "-" : "-";
   clearEventDisclosureResult();
   if (state.privacyEvents.decoded) {
     renderEventDisclosureReport(state.privacyEvents.decoded);
@@ -99590,9 +99660,9 @@ function renderAuditorEventDetail(event) {
     clearAuditorReport();
     return;
   }
-  const target = eventAttribute4(event, "audit_disclosure_target_pubkey");
-  const digest = eventAttribute4(event, "audit_disclosure_digest");
-  const payload = eventAttribute4(event, "audit_disclosure_payload");
+  const target = eventAttribute5(event, "audit_disclosure_target_pubkey");
+  const digest = eventAttribute5(event, "audit_disclosure_digest");
+  const payload = eventAttribute5(event, "audit_disclosure_payload");
   els.auditorTxHash.textContent = event.tx_hash_hex || "-";
   els.auditorVerification.textContent = event.height || "-";
   els.auditorAmount.textContent = target ? shorten(target, 14, 12) : "-";
@@ -99623,7 +99693,7 @@ function renderAuditorReport(report) {
   els.auditorFrom.textContent = summary.from_shielded_address || "-";
   els.auditorTo.textContent = summary.to_shielded_address || "-";
   els.auditorFields.textContent = (summary.disclosed_fields || []).map(prettyDisclosureField).join(", ") || "-";
-  els.auditorDigest.textContent = view.digestHex || eventAttribute4(
+  els.auditorDigest.textContent = view.digestHex || eventAttribute5(
     state.auditor.events.find((event) => event.tx_hash_hex === state.auditor.selectedTxHash),
     "audit_disclosure_digest"
   ) || "-";
@@ -99652,7 +99722,7 @@ function renderAuditorTransfers() {
     const meta = document.createElement("span");
     meta.textContent = `height ${event.height}`;
     const digest = document.createElement("code");
-    digest.textContent = shorten(eventAttribute4(event, "audit_disclosure_digest"), 12, 10);
+    digest.textContent = shorten(eventAttribute5(event, "audit_disclosure_digest"), 12, 10);
     copy.append(title, meta);
     row.append(copy, digest);
     els.auditorEventsList.append(row);
@@ -100254,6 +100324,7 @@ Tx: ${shorten(txHash, 14, 12)}`
     }
     if (isDeposit) {
       state.keplr.depositHeight = result.receipt?.blockNumber || state.keplr.depositHeight;
+      updateIncludedDepositNetworkFee(result);
       if (state.keplr.depositPrepared) {
         await recoverDepositNote({ ...result, prepared: state.keplr.depositPrepared });
       } else {
@@ -100394,6 +100465,7 @@ async function broadcastPrivacyDeposit(amount, label = "deposit", options = {}) 
   assertDepositFunding(amount, exactFee);
   els.keplrTxState.textContent = state.activeWallet === "metamask" ? "Waiting for MetaMask" : "Waiting for Keplr";
   const broadcast = await broadcastPreparedPrivacy(data, label, options);
+  if (!broadcast.pending) updateIncludedDepositNetworkFee(broadcast);
   state.keplr.depositHash = broadcast.broadcast?.txhash || "";
   state.keplr.depositHash = state.keplr.depositHash || broadcast.txHash || "";
   state.keplr.depositHeight = broadcast.tx?.height || broadcast.receipt?.blockNumber || "pending";
@@ -101174,6 +101246,7 @@ Tx: ${shorten(state.keplr.depositHash, 14, 12)}`
         onIncluded: async (included) => {
           state.keplr.depositHash = included.txHash || state.keplr.depositHash;
           state.keplr.depositHeight = included.receipt?.blockNumber || state.keplr.depositHeight;
+          updateIncludedDepositNetworkFee(included);
           els.keplrTxState.textContent = "Deposit included";
           const recovered2 = await recoverDepositNote({ ...broadcast, ...included, prepared: broadcast.prepared });
           await refreshPrivacySurfaces({ balance: true });

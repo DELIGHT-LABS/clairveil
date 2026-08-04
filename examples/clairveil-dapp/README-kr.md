@@ -358,7 +358,7 @@ EVM profile은 아래 조건을 만족해야 합니다.
 3. 별도 DepositCircuit provider에서 proof를 받고 protocol preflight를 실행합니다.
 4. Cosmos면 `MsgDeposit` sign doc을 만들고 Keplr가 최종 fee를 확인·조정한 뒤 서명합니다.
 5. EVM이면 privacy precompile calldata를 만들고 MetaMask가 tx를 보냅니다. `payable-exact-value`에서는 amount를 tx `value`에 정확히 결합합니다.
-6. Wallet 승인 전에 prepared network fee 또는 wallet-side fee estimate를 표시합니다. Tx 포함 여부와 로컬 note 복구 상태는 따로 표시합니다. Cosmos는 prepared commitment와 encrypted note가 tx event에 정확히 있는지 먼저 검증하고, 두 transport 모두 encrypted cache에서 commitment가 발견되어야 복구 완료로 표시합니다.
+6. Wallet 승인 전에는 prepared network fee 또는 wallet-side fee estimate를 표시하고, 포함 후에는 체인의 실제 fee 차감 증거로 확정한 fee로 바꿉니다. Cosmos는 `AuthInfo`의 선언값이 아니라 ante-handler의 `tx.fee` 또는 fee `coin_spent` event를 사용하므로 fee를 걷지 않는 localnet은 `Actual 0uclair`로 표시합니다. Tx 포함 여부와 로컬 note 복구 상태는 따로 표시합니다. Cosmos는 prepared commitment와 encrypted note가 tx event에 정확히 있는지 먼저 검증하고, 두 transport 모두 encrypted cache에서 commitment가 발견되어야 복구 완료로 표시합니다.
 
 ### Transfer
 

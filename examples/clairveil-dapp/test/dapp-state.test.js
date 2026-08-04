@@ -11,6 +11,7 @@ import {
 } from "../public/reservation-recovery.js";
 import { getStaticDappConfig } from "../public/dapp-config.js";
 import { assertDepositFundingAvailable } from "../public/deposit-funding.js";
+import { cosmosChargedFeeAmount, evmChargedFeeAmount } from "../public/network-fee.js";
 import { EncryptedLocalStorageOperationStore } from "../public/encrypted-operation-store.js";
 import { disclosureViewModel } from "../public/disclosure-view-model.js";
 import { findPrivacyEventByTxHash } from "../public/operation-event-lookup.js";
@@ -256,6 +257,34 @@ test("deposit funding combines amount and fee when the asset is EVM native", () 
     nativeDenom: "uclair",
     transport: "evm"
   }), /need 13uclair/);
+});
+
+test("Cosmos actual fee uses ante fee-charge events instead of message spends", () => {
+  const attribute = (key, value) => ({ key, value });
+  const depositSpend = {
+    type: "coin_spent",
+    attributes: [attribute("spender", "clair1sender"), attribute("amount", "100uclair"), attribute("msg_index", "0")]
+  };
+
+  assert.equal(cosmosChargedFeeAmount({ events: [depositSpend] }, "uclair"), 0n);
+  assert.equal(cosmosChargedFeeAmount({
+    events: [
+      {
+        type: "tx",
+        attributes: [attribute("fee", "2500000uclair"), attribute("fee_payer", "clair1sender")]
+      },
+      depositSpend
+    ]
+  }, "uclair"), 2500000n);
+  assert.equal(cosmosChargedFeeAmount({
+    events: [{ type: "tx", attributes: [attribute("fee", "")] }]
+  }, "uclair"), 0n);
+  assert.equal(cosmosChargedFeeAmount({}, "uclair"), null);
+});
+
+test("EVM actual fee uses receipt gas used and effective gas price", () => {
+  assert.equal(evmChargedFeeAmount({ gasUsed: "0x5208", effectiveGasPrice: "0x3b9aca00" }), 21000000000000n);
+  assert.equal(evmChargedFeeAmount({ gasUsed: "0x5208" }), null);
 });
 
 test("relay reconciliation binds EVM calldata, target, value, and chain", () => {

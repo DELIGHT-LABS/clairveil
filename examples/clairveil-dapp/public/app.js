@@ -22,6 +22,7 @@ import { EncryptedLocalStorageNoteStore } from "./encrypted-note-store.js";
 import { createEncryptedBrowserReservationManager } from "./encrypted-reservation-manager.js";
 import { EncryptedLocalStorageOperationStore } from "./encrypted-operation-store.js";
 import { assertDepositFundingAvailable } from "./deposit-funding.js";
+import { cosmosChargedFeeAmount, evmChargedFeeAmount } from "./network-fee.js";
 import { normalizeBrowserProfileEndpoints } from "./browser-profile.js";
 import { keplrDirectSignOptions } from "./cosmos-sign-options.js";
 import { disclosureViewModel } from "./disclosure-view-model.js";
@@ -2121,6 +2122,23 @@ function cosmosGasFeeEstimate(gasLimit) {
     throw new Error("Configured Cosmos gas policy cannot produce a safe fee estimate");
   }
   return BigInt(fee);
+}
+
+function updateIncludedDepositNetworkFee(result) {
+  if (activeChainProfile()?.transport === "evm") {
+    const fee = evmChargedFeeAmount(result?.receipt);
+    state.keplr.networkFeeEstimate = fee === null
+      ? "Actual fee unavailable · transaction included"
+      : `Actual ${formatEvmNetworkFee(fee)} · transaction included`;
+    if (fee !== null) state.keplr.networkFeeAmount = fee.toString();
+  } else {
+    const fee = cosmosChargedFeeAmount(result?.tx, baseDenom());
+    state.keplr.networkFeeEstimate = fee === null
+      ? "Actual fee unavailable · transaction included"
+      : `Actual ${fee}${baseDenom()} · transaction included`;
+    if (fee !== null) state.keplr.networkFeeAmount = fee.toString();
+  }
+  renderKeplr();
 }
 
 async function estimateDepositFeeBeforeProof() {
@@ -4595,6 +4613,7 @@ async function reconcilePublicEvmTransaction(kind) {
 
     if (isDeposit) {
       state.keplr.depositHeight = result.receipt?.blockNumber || state.keplr.depositHeight;
+      updateIncludedDepositNetworkFee(result);
       if (state.keplr.depositPrepared) {
         await recoverDepositNote({ ...result, prepared: state.keplr.depositPrepared });
       } else {
@@ -4752,6 +4771,7 @@ async function broadcastPrivacyDeposit(amount, label = "deposit", options = {}) 
   assertDepositFunding(amount, exactFee);
   els.keplrTxState.textContent = state.activeWallet === "metamask" ? "Waiting for MetaMask" : "Waiting for Keplr";
   const broadcast = await broadcastPreparedPrivacy(data, label, options);
+  if (!broadcast.pending) updateIncludedDepositNetworkFee(broadcast);
   state.keplr.depositHash = broadcast.broadcast?.txhash || "";
   state.keplr.depositHash = state.keplr.depositHash || broadcast.txHash || "";
   state.keplr.depositHeight = broadcast.tx?.height || broadcast.receipt?.blockNumber || "pending";
@@ -5633,6 +5653,7 @@ async function depositFromKeplr() {
         onIncluded: async included => {
           state.keplr.depositHash = included.txHash || state.keplr.depositHash;
           state.keplr.depositHeight = included.receipt?.blockNumber || state.keplr.depositHeight;
+          updateIncludedDepositNetworkFee(included);
           els.keplrTxState.textContent = "Deposit included";
           const recovered = await recoverDepositNote({ ...broadcast, ...included, prepared: broadcast.prepared });
           await refreshPrivacySurfaces({ balance: true });
