@@ -15,6 +15,14 @@ const serverSource = await readFile(new URL("../server.js", import.meta.url), "u
 const htmlSource = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../public/styles.css", import.meta.url), "utf8");
 
+test("DApp keeps the top summary focused on core chain status", () => {
+  assert.match(htmlSource, /id="protocolState"/);
+  assert.doesNotMatch(htmlSource, /id="reserveState"/);
+  assert.doesNotMatch(htmlSource, /id="depositProofState"/);
+  assert.doesNotMatch(appSource, /els\.reserveState/);
+  assert.doesNotMatch(appSource, /els\.depositProofState/);
+});
+
 test("DApp keeps minimal-denom amount inputs as integer strings", () => {
   assert.match(appSource, /function amountInputValue/);
   assert.doesNotMatch(appSource, /Number\(input\.value/);

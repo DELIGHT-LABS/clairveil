@@ -1403,8 +1403,6 @@ const els = {
   chainId: $("#chainId"),
   restState: $("#restState"),
   protocolState: $("#protocolState"),
-  reserveState: $("#reserveState"),
-  depositProofState: $("#depositProofState"),
   accountSelect: $("#accountSelect"),
   transparentAddress: $("#transparentAddress"),
   shieldedAddress: $("#shieldedAddress"),
@@ -3243,17 +3241,11 @@ function renderHealth(data) {
 
 function renderProtocolStatus() {
   if (!els.protocolState) return;
-  els.depositProofState.textContent = depositProofReady() ? "Ready" : "Required";
   if (state.protocol.ready) {
     els.protocolState.textContent = "v0.3.1 ready";
-    const reserve = state.protocol.reserve;
-    els.reserveState.textContent = reserve
-      ? `${reserve.module_balance}/${reserve.expected_module_balance}`
-      : "-";
     return;
   }
   els.protocolState.textContent = state.protocol.error ? "Unavailable" : "Checking";
-  els.reserveState.textContent = state.protocol.error ? "Unavailable" : "Checking";
 }
 
 async function refreshProtocolStatus() {
