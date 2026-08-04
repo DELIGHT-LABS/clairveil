@@ -213,7 +213,7 @@ func TestServiceTransitionRejectsActiveDuplicate(t *testing.T) {
 	}
 	replanning := testReservation("r2", "note-b", "op-b")
 	replanning.Status = StatusReplanRequired
-	if _, err := store.UnsafeImportReservationForTesting(ctx, replanning); err != nil {
+	if _, err := store.unsafeImportReservationForTesting(ctx, replanning); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1957,7 +1957,7 @@ func TestServiceRecoversMultiInputOperationAtomically(t *testing.T) {
 		if _, _, err := svc.MarkProofReadyBatch(ctx, refs, ProofReadyOperationUpdate{OperationID: "op-a", PayloadHash: "payload-a"}); err != nil {
 			t.Fatal(err)
 		}
-		markBroadcastAttemptingForTest(t, ctx, svc, refs, []string{"op-a"}, BroadcastAttemptStart{})
+		markBroadcastAttemptingForTest(t, ctx, svc, refs, []string{"op-a"}, BroadcastAttemptStart{TxHash: "ambiguous-tx"})
 		if _, _, err := svc.MarkBroadcastAmbiguousBatch(ctx, refs, []string{"op-a"}, BroadcastAmbiguityUpdate{LastBroadcastError: "rpc response lost"}); err != nil {
 			t.Fatal(err)
 		}
@@ -1988,7 +1988,7 @@ func TestServiceRecoversMultiInputOperationAtomically(t *testing.T) {
 		if _, _, err := svc.MarkProofReadyBatch(ctx, refs, ProofReadyOperationUpdate{OperationID: "op-a", PayloadHash: "payload-a"}); err != nil {
 			t.Fatal(err)
 		}
-		markBroadcastAttemptingForTest(t, ctx, svc, refs, []string{"op-a"}, BroadcastAttemptStart{})
+		markBroadcastAttemptingForTest(t, ctx, svc, refs, []string{"op-a"}, BroadcastAttemptStart{TxHash: "ambiguous-tx"})
 		if _, _, err := svc.MarkBroadcastAmbiguousBatch(ctx, refs, []string{"op-a"}, BroadcastAmbiguityUpdate{LastBroadcastError: "rpc response lost"}); err != nil {
 			t.Fatal(err)
 		}
@@ -2221,6 +2221,9 @@ func beginProvingOperationForTest(t *testing.T, ctx context.Context, svc Service
 
 func markBroadcastAttemptingForTest(t *testing.T, ctx context.Context, svc Service, refs []SubmittedReservationRef, operationIDs []string, update BroadcastAttemptStart) {
 	t.Helper()
+	if update.TxHash == "" && update.TxBytesHash == "" {
+		update.TxHash = "test-broadcast-attempt"
+	}
 	if _, _, err := svc.MarkBroadcastAttempting(ctx, refs, operationIDs, update); err != nil {
 		t.Fatal(err)
 	}

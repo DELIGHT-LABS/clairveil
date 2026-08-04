@@ -17,9 +17,17 @@ var ErrLiveDaemonSkip = errors.New("live daemon operation skipped")
 // invokes the callback.
 type LiveBroadcastSubmit func(context.Context) (*BroadcastResult, error)
 
+// PreparedLiveBroadcast separates signing and identity derivation from the
+// external submission. Identity must be derived from the exact signed payload
+// submitted by Submit so a lost RPC response remains reconcilable.
+type PreparedLiveBroadcast struct {
+	Identity BroadcastResult
+	Submit   LiveBroadcastSubmit
+}
+
 type LiveOperationExecutor interface {
 	BuildProofReady(ctx context.Context, group LiveOperationGroup) (privacyreservation.ProofReadyOperationUpdate, string, error)
-	PrepareBroadcastProofReady(ctx context.Context, group LiveOperationGroup) (LiveBroadcastSubmit, string, error)
+	PrepareBroadcastProofReady(ctx context.Context, group LiveOperationGroup) (*PreparedLiveBroadcast, string, error)
 	ScanSubmitted(ctx context.Context, group LiveOperationGroup) (map[string]privacyreservation.OperationEvidence, string, error)
 }
 
@@ -250,7 +258,7 @@ func (d LiveDaemon) broadcastProofReady(ctx context.Context, group LiveOperation
 		}
 		return err
 	}
-	submit, reason, err := d.Executor.PrepareBroadcastProofReady(ctx, group)
+	prepared, reason, err := d.Executor.PrepareBroadcastProofReady(ctx, group)
 	if err != nil {
 		if errors.Is(err, ErrLiveDaemonSkip) {
 			report.Skipped++
@@ -259,19 +267,37 @@ func (d LiveDaemon) broadcastProofReady(ctx context.Context, group LiveOperation
 		}
 		return err
 	}
-	if submit == nil {
+	if prepared == nil || prepared.Submit == nil {
 		return fmt.Errorf("live executor returned nil broadcast submission")
+	}
+	if !broadcastHasAttemptIdentity(&prepared.Identity) {
+		return fmt.Errorf("live executor returned prepared broadcast without durable tx identity")
 	}
 	submitInvoked := false
 	terminalFailureRecorded := false
 	_, err = broadcastWithSubmissionLeaseHeartbeat(ctx, d.Reservation, refs, d.leaseTTL(), func(broadcastCtx context.Context, commit submissionLeaseCommit, _ submissionLeaseRefresh) (*BroadcastResult, error) {
-		if _, _, markErr := d.Reservation.MarkBroadcastAttempting(broadcastCtx, refs, []string{group.Operation.OperationID}, privacyreservation.BroadcastAttemptStart{
-			Reason: "live payroll broadcast boundary crossed",
-		}); markErr != nil {
+		attemptReservations, attemptOperations, markErr := d.Reservation.MarkBroadcastAttempting(broadcastCtx, refs, []string{group.Operation.OperationID}, privacyreservation.BroadcastAttemptStart{
+			Reason:          "live payroll broadcast boundary crossed",
+			TxHash:          prepared.Identity.TxHash,
+			TxBytesHash:     prepared.Identity.TxBytesHash,
+			SignDocHash:     prepared.Identity.SignDocHash,
+			AccountSequence: prepared.Identity.AccountSequence,
+		})
+		if markErr != nil {
 			return nil, markErr
 		}
 		submitInvoked = true
-		broadcast, submitErr := submit(broadcastCtx)
+		broadcast, submitErr := prepared.Submit(broadcastCtx)
+		submitReturnedNil := broadcast == nil
+		broadcast, identityErr := mergeBroadcastResultWithStoredIdentity(broadcast, attemptReservations, attemptOperations)
+		if identityErr != nil {
+			manualReviewErr := &ManualReviewBroadcastError{Cause: identityErr}
+			if recordErr := d.recordBroadcastFailure(commit, group, refs, report, nil, errors.Join(submitErr, manualReviewErr), reason); recordErr != nil {
+				return broadcast, errors.Join(submitErr, manualReviewErr, recordErr)
+			}
+			terminalFailureRecorded = true
+			return broadcast, errors.Join(submitErr, manualReviewErr)
+		}
 		if submitErr != nil {
 			if recordErr := d.recordBroadcastFailure(commit, group, refs, report, broadcast, submitErr, reason); recordErr != nil {
 				return broadcast, errors.Join(submitErr, recordErr)
@@ -279,13 +305,13 @@ func (d LiveDaemon) broadcastProofReady(ctx context.Context, group LiveOperation
 			terminalFailureRecorded = true
 			return broadcast, submitErr
 		}
-		if broadcast == nil {
+		if submitReturnedNil {
 			nilResultErr := fmt.Errorf("live executor returned nil broadcast result")
-			if err := d.recordBroadcastFailure(commit, group, refs, report, nil, nilResultErr, reason); err != nil {
-				return nil, errors.Join(nilResultErr, err)
+			if err := d.recordBroadcastFailure(commit, group, refs, report, broadcast, nilResultErr, reason); err != nil {
+				return broadcast, errors.Join(nilResultErr, err)
 			}
 			terminalFailureRecorded = true
-			return nil, nil
+			return broadcast, nil
 		}
 		if broadcast.Code != 0 {
 			broadcastErr := broadcastCodeError(broadcast)

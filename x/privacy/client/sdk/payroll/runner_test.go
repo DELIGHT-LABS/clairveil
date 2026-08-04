@@ -291,7 +291,9 @@ func TestDiscardPublishedProofResultFailureLeavesRetryBlockingMarker(t *testing.
 		require.True(t, stored.ProofDiscardInFlight)
 	}
 	_, _, err = reservationService.MarkBroadcastAttempting(ctx, refs, []string{result.Item.OperationID}, privacyreservation.BroadcastAttemptStart{})
-	require.Error(t, err)
+	require.ErrorContains(t, err, "broadcast attempt requires tx_hash or tx_bytes_hash")
+	_, _, err = store.MarkReservationsBroadcastAttempting(ctx, refs, []string{result.Item.OperationID}, privacyreservation.BroadcastAttemptStart{}, testNow())
+	require.ErrorContains(t, err, "broadcast attempt requires tx_hash or tx_bytes_hash")
 }
 
 func TestDiscardPublishedProofResultTombstonesStagedRecovery(t *testing.T) {
@@ -307,7 +309,7 @@ func TestDiscardPublishedProofResultTombstonesStagedRecovery(t *testing.T) {
 	require.ErrorContains(t, store.StageProofResult(ctx, result), "was discarded")
 }
 
-func TestBroadcastWorkerFailsClosedOnBroadcastErrorWithoutMetadata(t *testing.T) {
+func TestBroadcastWorkerRejectsUnpreparedBroadcasterBeforeBoundary(t *testing.T) {
 	ctx := context.Background()
 	now := testNow()
 	store := privacyreservation.NewMemoryStore()
@@ -345,23 +347,23 @@ func TestBroadcastWorkerFailsClosedOnBroadcastErrorWithoutMetadata(t *testing.T)
 		LeaseTTL:    time.Minute,
 	}
 	_, err = broadcastWorker.SubmitProofResult(ctx, *result)
-	require.ErrorContains(t, err, "rpc connection reset")
+	require.ErrorIs(t, err, ErrPreparedBroadcastUnsupported)
 
 	operation, err := store.GetOperation(ctx, item.OperationID)
 	require.NoError(t, err)
-	require.Equal(t, privacyreservation.OperationStatusManualReview, operation.Status)
+	require.Equal(t, privacyreservation.OperationStatusProofReady, operation.Status)
 	require.Empty(t, operation.TxHash)
 	require.Empty(t, operation.TxBytesHash)
 	for _, note := range item.InputNotes {
 		reservation, err := store.GetReservation(ctx, note.ReservationID)
 		require.NoError(t, err)
-		require.Equal(t, privacyreservation.StatusManualReview, reservation.Status)
-		require.Empty(t, reservation.LeaseOwner)
-		require.Empty(t, reservation.LeaseToken)
+		require.Equal(t, privacyreservation.StatusProofReady, reservation.Status)
+		require.NotEmpty(t, reservation.LeaseOwner)
+		require.NotEmpty(t, reservation.LeaseToken)
 		require.Empty(t, reservation.TxHash)
 		require.Empty(t, reservation.TxBytesHash)
-		require.Equal(t, "rpc connection reset", reservation.LastBroadcastError)
-		require.Equal(t, 1, reservation.BroadcastAttemptCount)
+		require.Empty(t, reservation.LastBroadcastError)
+		require.Zero(t, reservation.BroadcastAttemptCount)
 	}
 }
 
@@ -1427,6 +1429,15 @@ func (fakeBroadcaster) BroadcastMessages(_ context.Context, msgs ...sdk.Msg) (*B
 		SignDocHash:     "sign-doc-hash",
 		AccountSequence: 7,
 		Height:          11,
+	}, nil
+}
+
+func (fakeBroadcaster) PrepareBroadcastMessages(_ context.Context, msgs ...sdk.Msg) (*PreparedMessageBroadcast, error) {
+	return &PreparedMessageBroadcast{
+		Identity: BroadcastResult{TxHash: "TXHASH", TxBytesHash: "tx-bytes-hash", SignDocHash: "sign-doc-hash", AccountSequence: 7},
+		Submit: func(ctx context.Context) (*BroadcastResult, error) {
+			return fakeBroadcaster{}.BroadcastMessages(ctx, msgs...)
+		},
 	}, nil
 }
 

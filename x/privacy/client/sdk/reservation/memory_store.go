@@ -191,9 +191,9 @@ func (s *MemoryStore) validateReservationOperationCreateLinksLocked(reservations
 	return nil
 }
 
-// UnsafeImportReservationForTesting bypasses normal lifecycle creation checks.
-// It exists only for test fixtures and migrations that reconstruct past state.
-func (s *MemoryStore) UnsafeImportReservationForTesting(_ context.Context, reservation NoteReservation) (*NoteReservation, error) {
+// unsafeImportReservationForTesting bypasses normal lifecycle creation checks.
+// It is deliberately package-private and exists only for test fixtures.
+func (s *MemoryStore) unsafeImportReservationForTesting(_ context.Context, reservation NoteReservation) (*NoteReservation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ensureMapsLocked()
@@ -218,20 +218,6 @@ func (s *MemoryStore) GetReservation(_ context.Context, reservationID string) (*
 	}
 	cloned := cloneReservation(reservation)
 	return &cloned, nil
-}
-
-// UpdateReservation is retained for the SQL and durable-file adapters. Normal
-// lifecycle code should use the evidence-aware transition methods instead.
-func (s *MemoryStore) UpdateReservation(_ context.Context, reservation NoteReservation) (*NoteReservation, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.ensureMapsLocked()
-	if _, ok := s.reservations[reservation.ReservationID]; !ok {
-		return nil, ErrReservationNotFound
-	}
-	s.storeReservationLocked(reservation)
-	updated := cloneReservation(reservation)
-	return &updated, nil
 }
 
 func (s *MemoryStore) ListReservations(_ context.Context, filter ReservationFilter) ([]NoteReservation, error) {
@@ -1412,6 +1398,9 @@ func (s *MemoryStore) MarkReservationsBroadcastAttempting(_ context.Context, ref
 	if len(refs) == 0 {
 		return nil, nil, fmt.Errorf("%w: reservation refs are required", ErrInvalidReservation)
 	}
+	if strings.TrimSpace(update.TxHash) == "" && strings.TrimSpace(update.TxBytesHash) == "" {
+		return nil, nil, fmt.Errorf("%w: broadcast attempt requires tx_hash or tx_bytes_hash", ErrInvalidReservation)
+	}
 	reservations, err := s.validateLeasedReservationsForStatusLocked(refs, StatusProofReady, now)
 	if err != nil {
 		return nil, nil, err
@@ -1945,20 +1934,6 @@ func (s *MemoryStore) GetOperation(_ context.Context, operationID string) (*Payr
 	}
 	cloned := cloneOperation(operation)
 	return &cloned, nil
-}
-
-// UpdateOperation is retained for the SQL and durable-file adapters. Normal
-// lifecycle code should use the evidence-aware transition methods instead.
-func (s *MemoryStore) UpdateOperation(_ context.Context, operation PayrollOperation) (*PayrollOperation, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.ensureMapsLocked()
-	if _, ok := s.operations[operation.OperationID]; !ok {
-		return nil, ErrOperationNotFound
-	}
-	s.operations[operation.OperationID] = cloneOperation(operation)
-	updated := cloneOperation(operation)
-	return &updated, nil
 }
 
 func (s *MemoryStore) activeReservationConflictLocked(candidate NoteReservation, excludeReservationID string) bool {

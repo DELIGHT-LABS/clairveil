@@ -10,6 +10,13 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
 - `GO-2026-5158`과 `GO-2026-6061`을 해결하기 위해 OpenTelemetry를 v1.44.0으로, gRPC를 v1.82.1로 업데이트했습니다.
 
+### Migration Notes
+
+- `privacy_note_reservation_contract.json`과 schema를 v1에서 v3으로 올렸습니다. Downstream reservation 구현은 malformed 또는 unavailable nullifier/relay chain-time evidence를 fail-closed로 처리하고, `ProofReady` 전이 동안 lease heartbeat를 유지하며, payload를 외부에 노출하기 전에 lease가 있는 `ProofReady` relay handoff를 durable하게 기록해야 합니다.
+- 무제한 `UpdateReservation`/`UpdateOperation` 호출을 Service 소유의 atomic batch, reconciliation, lease-expiry recovery, proof-discard, relay-handoff command로 교체해야 합니다. Persistent Store 구현은 현재 lease owner/token을 함께 검증하고 연결된 reservation/operation 변경을 한 transaction으로 commit해야 합니다.
+- Durable reservation lifecycle storage는 JSON snapshot과 SQL metadata 모두 schema v2입니다. 이 workspace는 아직 release 전이므로 lifecycle store migration 또는 rollback 계약이 없으며, store는 현재 schema로 직접 초기화합니다.
+- `FoundNote.VerifiedUnspent`는 Go client SDK hardening이며 새로운 consensus boundary나 freshness proof가 아닙니다. Public Go/JSON shape에 `verified_unspent`가 추가되며, 해당 필드가 없는 기존 cache는 false로 decode되므로 planning 전에 성공적인 nullifier 재검증을 거쳐야 합니다. 정상 sync가 cache note를 재검증하며, 폐기되거나 손상된 cache에는 Reset & Rescan을 사용할 수 있습니다. 이 flag는 broadcast 직전 nullifier check를 대체하지 않으며, ClairveilJS/DApp은 이 Go field 자체가 아니라 동등한 fresh-query 동작을 구현해야 합니다.
+
 ## v0.3.1 - 2026-07-21
 
 ### Fixed

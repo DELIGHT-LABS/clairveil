@@ -169,6 +169,10 @@ test("successful relay submit keeps tx evidence until spent reconciliation clear
   const note = noteFixture({ nullifier: "cc".repeat(32) });
   const batch = await prepareProofReadyRelayReservation(manager, note);
 
+  await manager.markBroadcastAttempting(batch.reservation_ids, {
+    leaseToken: batch.lease_token,
+    reason: "test_external_broadcast_boundary",
+  });
   await manager.markSubmitted(batch.reservation_ids, {
     leaseToken: batch.lease_token,
     txHash: "0xrelay",

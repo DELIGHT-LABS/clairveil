@@ -519,23 +519,21 @@ func normalizeBroadcastIdentity(value string) string {
 }
 
 func prepareMessageBroadcast(ctx context.Context, broadcaster MessageBroadcaster, messages ...sdk.Msg) (*PreparedMessageBroadcast, error) {
-	if preparedBroadcaster, ok := broadcaster.(PreparedMessageBroadcaster); ok {
-		prepared, err := preparedBroadcaster.PrepareBroadcastMessages(ctx, messages...)
-		if err == nil {
-			if prepared == nil || prepared.Submit == nil {
-				return nil, fmt.Errorf("prepared broadcaster returned no submit callback")
-			}
-			return prepared, nil
-		}
-		if !errors.Is(err, ErrPreparedBroadcastUnsupported) {
-			return nil, err
-		}
+	preparedBroadcaster, ok := broadcaster.(PreparedMessageBroadcaster)
+	if !ok {
+		return nil, fmt.Errorf("%w: message broadcaster", ErrPreparedBroadcastUnsupported)
 	}
-	return &PreparedMessageBroadcast{
-		Submit: func(submitCtx context.Context) (*BroadcastResult, error) {
-			return broadcaster.BroadcastMessages(submitCtx, messages...)
-		},
-	}, nil
+	prepared, err := preparedBroadcaster.PrepareBroadcastMessages(ctx, messages...)
+	if err != nil {
+		return nil, err
+	}
+	if prepared == nil || prepared.Submit == nil {
+		return nil, fmt.Errorf("prepared broadcaster returned no submit callback")
+	}
+	if !broadcastHasAttemptIdentity(&prepared.Identity) {
+		return nil, fmt.Errorf("prepared broadcaster returned no durable tx identity")
+	}
+	return prepared, nil
 }
 
 func broadcastAttemptStart(identity BroadcastResult) privacyreservation.BroadcastAttemptStart {

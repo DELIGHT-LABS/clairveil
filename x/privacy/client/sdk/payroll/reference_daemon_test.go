@@ -242,6 +242,7 @@ func TestReferenceDaemonMarksExpiredProofReadyBroadcastAttemptManualReview(t *te
 	require.NoError(t, err)
 	_, _, err = reservationService.MarkBroadcastAttempting(ctx, refs, []string{confirmed.Items[0].OperationID}, privacyreservation.BroadcastAttemptStart{
 		Reason: "test interrupted broadcast",
+		TxHash: "interrupted-tx",
 	})
 	require.NoError(t, err)
 	futureNow := func() time.Time { return testNow().Add(2 * time.Minute) }

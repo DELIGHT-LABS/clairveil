@@ -183,7 +183,7 @@ func TestBatchBroadcastWorkerKeepsHeartbeatUntilReservationBookkeepingCompletes(
 	}
 }
 
-func TestBatchBroadcastWorkerFailsClosedAfterBroadcastErrorWithoutIdentity(t *testing.T) {
+func TestBatchBroadcastWorkerRejectsUnpreparedBroadcasterBeforeBoundary(t *testing.T) {
 	ctx := context.Background()
 	now := testNow()
 	store := privacyreservation.NewMemoryStore()
@@ -197,38 +197,14 @@ func TestBatchBroadcastWorkerFailsClosedAfterBroadcastErrorWithoutIdentity(t *te
 		LeaseTTL:    time.Minute,
 	}
 	_, err := firstWorker.SubmitChunk(ctx, chunk)
-	require.ErrorContains(t, err, "rpc connection reset")
+	require.ErrorIs(t, err, ErrPreparedBroadcastUnsupported)
 	for _, result := range chunk.Results {
 		for _, note := range result.Item.InputNotes {
 			reservation, err := store.GetReservation(ctx, note.ReservationID)
 			require.NoError(t, err)
-			require.Equal(t, privacyreservation.StatusManualReview, reservation.Status)
-			require.Empty(t, reservation.LeaseOwner)
-			require.Empty(t, reservation.LeaseToken)
-			require.Equal(t, "rpc connection reset", reservation.LastBroadcastError)
-			require.Equal(t, 1, reservation.BroadcastAttemptCount)
-		}
-	}
-
-	now = now.Add(2 * time.Minute)
-	broadcaster := &recordingBroadcaster{}
-	retryWorker := BatchBroadcastWorker{Assembler: fakeAssembler{},
-		Reservation: reservationService,
-		Broadcaster: broadcaster,
-		LeaseOwner:  "broadcast-worker-b",
-		LeaseTTL:    time.Minute,
-	}
-	_, err = retryWorker.SubmitChunk(ctx, chunk)
-	require.Error(t, err)
-	require.Equal(t, 0, broadcaster.calls)
-	for _, result := range chunk.Results {
-		for _, note := range result.Item.InputNotes {
-			reservation, err := store.GetReservation(ctx, note.ReservationID)
-			require.NoError(t, err)
-			require.Equal(t, privacyreservation.StatusManualReview, reservation.Status)
-			require.Empty(t, reservation.LeaseOwner)
-			require.Empty(t, reservation.LeaseToken)
-			require.True(t, reservation.LeaseUntil.IsZero())
+			require.Equal(t, privacyreservation.StatusProofReady, reservation.Status)
+			require.NotEmpty(t, reservation.LeaseToken)
+			require.Zero(t, reservation.BroadcastAttemptCount)
 		}
 	}
 }
@@ -241,7 +217,10 @@ func TestBatchBroadcastWorkerUsesStoredIdentityAfterOpaqueRPCError(t *testing.T)
 
 	worker := BatchBroadcastWorker{Assembler: fakeAssembler{},
 		Reservation: reservationService,
-		Broadcaster: noMetadataErrorBroadcaster{err: errors.New("rpc timeout")},
+		Broadcaster: preparedRPCErrorBroadcaster{
+			identity: BroadcastResult{TxBytesHash: "0XCAFE"},
+			err:      errors.New("rpc timeout"),
+		},
 		LeaseTTL:    time.Minute,
 	}
 	result, err := worker.SubmitChunk(ctx, chunk)
@@ -254,6 +233,53 @@ func TestBatchBroadcastWorkerUsesStoredIdentityAfterOpaqueRPCError(t *testing.T)
 	require.Equal(t, privacyreservation.StatusUnknown, stored.Status)
 	require.Equal(t, "0XCAFE", stored.TxBytesHash)
 	require.Empty(t, stored.LeaseToken)
+}
+
+func TestBatchBroadcastWorkerReconcilesAcceptedTxAfterRPCResponseLoss(t *testing.T) {
+	ctx := context.Background()
+	store := privacyreservation.NewMemoryStore()
+	reservationService := privacyreservation.Service{Store: store, Now: func() time.Time { return time.Now().UTC() }}
+	chunk, reservationID := proofReadyChunkWithLeaseTTL(t, ctx, reservationService, time.Minute)
+
+	worker := BatchBroadcastWorker{
+		Assembler:   fakeAssembler{},
+		Reservation: reservationService,
+		Broadcaster: preparedRPCErrorBroadcaster{
+			identity: BroadcastResult{
+				TxHash:          "ACCEPTED_TX_HASH",
+				TxBytesHash:     "accepted-tx-bytes-hash",
+				SignDocHash:     "accepted-sign-doc-hash",
+				AccountSequence: 19,
+			},
+			err: errors.New("rpc response lost after node acceptance"),
+		},
+		LeaseTTL: time.Minute,
+	}
+	result, err := worker.SubmitChunk(ctx, chunk)
+	require.ErrorContains(t, err, "rpc response lost")
+	require.Equal(t, "ACCEPTED_TX_HASH", result.TxHash)
+
+	stored, err := store.GetReservation(ctx, reservationID)
+	require.NoError(t, err)
+	require.Equal(t, privacyreservation.StatusUnknown, stored.Status)
+	require.Equal(t, "ACCEPTED_TX_HASH", stored.TxHash)
+
+	reconciled, err := reservationService.Reconcile(ctx, reservationID, privacyreservation.OperationEvidence{
+		TxHash:              "accepted_tx_hash",
+		TxSucceeded:         true,
+		NullifierSpent:      true,
+		OutputCommitment:    "commitment-live",
+		DisclosureDigest:    "digest-live",
+		RecipientHash:       "recipient-live",
+		AmountHash:          "amount-live",
+		Denom:               "uclair",
+		BatchItemIndex:      0,
+		BatchItemIndexKnown: true,
+	})
+	require.NoError(t, err)
+	require.False(t, reconciled.RequiresReview)
+	require.Equal(t, privacyreservation.StatusConfirmedSpent, reconciled.ReservationStatus)
+	require.Equal(t, privacyreservation.OperationStatusSucceeded, reconciled.OperationStatus)
 }
 
 func TestBatchBroadcastWorkerTreatsNilPreparedResultAsAmbiguous(t *testing.T) {
@@ -282,7 +308,7 @@ func TestBatchBroadcastWorkerTreatsNilPreparedResultAsAmbiguous(t *testing.T) {
 	}
 }
 
-func TestBatchBroadcastWorkerFailsClosedForNonNilResultWithoutIdentity(t *testing.T) {
+func TestBatchBroadcastWorkerRejectsPreparedBroadcastWithoutIdentity(t *testing.T) {
 	for _, testCase := range []struct {
 		name        string
 		broadcaster MessageBroadcaster
@@ -293,14 +319,14 @@ func TestBatchBroadcastWorkerFailsClosedForNonNilResultWithoutIdentity(t *testin
 			broadcaster: postBoundaryResultBroadcaster{
 				result: &BroadcastResult{},
 			},
-			wantError: "missing tx_hash and tx_bytes_hash",
+			wantError: "prepared broadcaster returned no durable tx identity",
 		},
 		{
 			name: "nonzero code",
 			broadcaster: postBoundaryResultBroadcaster{
 				result: &BroadcastResult{Code: 17, RawLog: "out of gas"},
 			},
-			wantError: "missing durable tx identity",
+			wantError: "prepared broadcaster returned no durable tx identity",
 		},
 		{
 			name: "result with rpc error",
@@ -308,7 +334,7 @@ func TestBatchBroadcastWorkerFailsClosedForNonNilResultWithoutIdentity(t *testin
 				result: &BroadcastResult{},
 				err:    errors.New("rpc response lost"),
 			},
-			wantError: "missing durable tx identity",
+			wantError: "prepared broadcaster returned no durable tx identity",
 		},
 		{
 			name: "sign doc only",
@@ -316,7 +342,7 @@ func TestBatchBroadcastWorkerFailsClosedForNonNilResultWithoutIdentity(t *testin
 				result: &BroadcastResult{SignDocHash: "pre-broadcast-sign-doc"},
 				err:    errors.New("rpc response lost"),
 			},
-			wantError: "missing durable tx identity",
+			wantError: "prepared broadcaster returned no durable tx identity",
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -332,7 +358,8 @@ func TestBatchBroadcastWorkerFailsClosedForNonNilResultWithoutIdentity(t *testin
 				for _, note := range result.Item.InputNotes {
 					reservation, getErr := store.GetReservation(ctx, note.ReservationID)
 					require.NoError(t, getErr)
-					require.Equal(t, privacyreservation.StatusManualReview, reservation.Status)
+					require.Equal(t, privacyreservation.StatusProofReady, reservation.Status)
+					require.Zero(t, reservation.BroadcastAttemptCount)
 				}
 			}
 		})
@@ -918,7 +945,17 @@ func proofReadyChunkWithLeaseTTLAndIdentity(t *testing.T, ctx context.Context, r
 			OperationID:        operationID,
 			Status:             privacyreservation.StatusReserved,
 		},
-		Operation: &privacyreservation.PayrollOperation{OperationID: operationID, Status: privacyreservation.OperationStatusPlanned},
+		Operation: &privacyreservation.PayrollOperation{
+			OperationID:              operationID,
+			ExpectedOutputCommitment: "commitment-live",
+			ExpectedDisclosureDigest: "digest-live",
+			ExpectedRecipientHash:    "recipient-live",
+			ExpectedAmountHash:       "amount-live",
+			ExpectedDenom:            "uclair",
+			BatchItemIndex:           0,
+			BatchItemIndexKnown:      true,
+			Status:                   privacyreservation.OperationStatusPlanned,
+		},
 	})
 	require.NoError(t, err)
 	lease, err := reservationService.AcquireLease(ctx, created.ReservationID, "broadcast-worker-a", leaseTTL)
@@ -942,9 +979,11 @@ func proofReadyChunkWithLeaseTTLAndIdentity(t *testing.T, ctx context.Context, r
 		LeaseOwner:    lease.Owner,
 		LeaseToken:    lease.Token,
 	}}, privacyreservation.ProofReadyOperationUpdate{
-		OperationID: operationID,
-		PayloadHash: payload.PayloadHash,
-		TxBytesHash: txBytesHash,
+		OperationID:              operationID,
+		PayloadHash:              payload.PayloadHash,
+		TxBytesHash:              txBytesHash,
+		ExpectedOutputCommitment: "commitment-live",
+		ExpectedDisclosureDigest: "digest-live",
 	})
 	require.NoError(t, err)
 
@@ -1064,6 +1103,15 @@ func (b *recordingBroadcaster) BroadcastMessages(_ context.Context, msgs ...sdk.
 	}, nil
 }
 
+func (b *recordingBroadcaster) PrepareBroadcastMessages(_ context.Context, msgs ...sdk.Msg) (*PreparedMessageBroadcast, error) {
+	return &PreparedMessageBroadcast{
+		Identity: BroadcastResult{TxHash: "TXHASH", TxBytesHash: "tx-bytes-hash", SignDocHash: "sign-doc-hash", AccountSequence: 7},
+		Submit: func(ctx context.Context) (*BroadcastResult, error) {
+			return b.BroadcastMessages(ctx, msgs...)
+		},
+	}, nil
+}
+
 func (b *recordingBroadcaster) CheckNullifiersUsed(_ context.Context, nullifierHexes []string) (map[string]bool, error) {
 	return allNullifiersUnspent(nullifierHexes), nil
 }
@@ -1075,6 +1123,15 @@ type finalHeartbeatTimeoutBroadcaster struct {
 func (b finalHeartbeatTimeoutBroadcaster) BroadcastMessages(_ context.Context, _ ...sdk.Msg) (*BroadcastResult, error) {
 	b.afterBroadcast.Store(true)
 	return &BroadcastResult{TxHash: "TXHASH", TxBytesHash: "tx-bytes-hash"}, nil
+}
+
+func (b finalHeartbeatTimeoutBroadcaster) PrepareBroadcastMessages(_ context.Context, msgs ...sdk.Msg) (*PreparedMessageBroadcast, error) {
+	return &PreparedMessageBroadcast{
+		Identity: BroadcastResult{TxHash: "TXHASH", TxBytesHash: "tx-bytes-hash"},
+		Submit: func(ctx context.Context) (*BroadcastResult, error) {
+			return b.BroadcastMessages(ctx, msgs...)
+		},
+	}, nil
 }
 
 func (b finalHeartbeatTimeoutBroadcaster) CheckNullifiersUsed(_ context.Context, nullifierHexes []string) (map[string]bool, error) {
@@ -1098,6 +1155,19 @@ type postBoundaryResultBroadcaster struct {
 func (b postBoundaryResultBroadcaster) BroadcastMessages(_ context.Context, _ ...sdk.Msg) (*BroadcastResult, error) {
 	time.Sleep(b.delay)
 	return b.result, b.err
+}
+
+func (b postBoundaryResultBroadcaster) PrepareBroadcastMessages(_ context.Context, msgs ...sdk.Msg) (*PreparedMessageBroadcast, error) {
+	identity := BroadcastResult{TxHash: "TXHASH", TxBytesHash: "tx-bytes-hash"}
+	if b.result != nil {
+		identity = *b.result
+	}
+	return &PreparedMessageBroadcast{
+		Identity: identity,
+		Submit: func(ctx context.Context) (*BroadcastResult, error) {
+			return b.BroadcastMessages(ctx, msgs...)
+		},
+	}, nil
 }
 
 func (b postBoundaryResultBroadcaster) CheckNullifiersUsed(_ context.Context, nullifierHexes []string) (map[string]bool, error) {
@@ -1134,6 +1204,15 @@ func (b *delayedBroadcaster) BroadcastMessages(ctx context.Context, _ ...sdk.Msg
 	}
 }
 
+func (b *delayedBroadcaster) PrepareBroadcastMessages(_ context.Context, msgs ...sdk.Msg) (*PreparedMessageBroadcast, error) {
+	return &PreparedMessageBroadcast{
+		Identity: BroadcastResult{TxHash: "TXHASH", TxBytesHash: "tx-bytes-hash", SignDocHash: "sign-doc-hash", AccountSequence: 7},
+		Submit: func(ctx context.Context) (*BroadcastResult, error) {
+			return b.BroadcastMessages(ctx, msgs...)
+		},
+	}, nil
+}
+
 func (b *delayedBroadcaster) CheckNullifiersUsed(_ context.Context, nullifierHexes []string) (map[string]bool, error) {
 	return allNullifiersUnspent(nullifierHexes), nil
 }
@@ -1151,12 +1230,43 @@ func (b metadataErrorBroadcaster) BroadcastMessages(_ context.Context, _ ...sdk.
 	}, b.err
 }
 
+func (b metadataErrorBroadcaster) PrepareBroadcastMessages(_ context.Context, msgs ...sdk.Msg) (*PreparedMessageBroadcast, error) {
+	return &PreparedMessageBroadcast{
+		Identity: BroadcastResult{TxHash: "TXHASH", TxBytesHash: "tx-bytes-hash", SignDocHash: "sign-doc-hash", AccountSequence: 7},
+		Submit: func(ctx context.Context) (*BroadcastResult, error) {
+			return b.BroadcastMessages(ctx, msgs...)
+		},
+	}, nil
+}
+
 func (b metadataErrorBroadcaster) CheckNullifiersUsed(_ context.Context, nullifierHexes []string) (map[string]bool, error) {
 	return allNullifiersUnspent(nullifierHexes), nil
 }
 
 type noMetadataErrorBroadcaster struct {
 	err error
+}
+
+type preparedRPCErrorBroadcaster struct {
+	identity BroadcastResult
+	err      error
+}
+
+func (b preparedRPCErrorBroadcaster) BroadcastMessages(context.Context, ...sdk.Msg) (*BroadcastResult, error) {
+	return nil, b.err
+}
+
+func (b preparedRPCErrorBroadcaster) PrepareBroadcastMessages(context.Context, ...sdk.Msg) (*PreparedMessageBroadcast, error) {
+	return &PreparedMessageBroadcast{
+		Identity: b.identity,
+		Submit: func(context.Context) (*BroadcastResult, error) {
+			return nil, b.err
+		},
+	}, nil
+}
+
+func (b preparedRPCErrorBroadcaster) CheckNullifiersUsed(_ context.Context, nullifierHexes []string) (map[string]bool, error) {
+	return allNullifiersUnspent(nullifierHexes), nil
 }
 
 func (b noMetadataErrorBroadcaster) BroadcastMessages(_ context.Context, _ ...sdk.Msg) (*BroadcastResult, error) {
@@ -1233,6 +1343,15 @@ func (b cancelingSuccessBroadcaster) BroadcastMessages(_ context.Context, _ ...s
 	}, nil
 }
 
+func (b cancelingSuccessBroadcaster) PrepareBroadcastMessages(_ context.Context, msgs ...sdk.Msg) (*PreparedMessageBroadcast, error) {
+	return &PreparedMessageBroadcast{
+		Identity: BroadcastResult{TxHash: "TXHASH", TxBytesHash: "tx-bytes-hash", SignDocHash: "sign-doc-hash", AccountSequence: 7},
+		Submit: func(ctx context.Context) (*BroadcastResult, error) {
+			return b.BroadcastMessages(ctx, msgs...)
+		},
+	}, nil
+}
+
 func (b cancelingSuccessBroadcaster) CheckNullifiersUsed(_ context.Context, nullifierHexes []string) (map[string]bool, error) {
 	return allNullifiersUnspent(nullifierHexes), nil
 }
@@ -1247,6 +1366,15 @@ func (codeErrorBroadcaster) BroadcastMessages(_ context.Context, _ ...sdk.Msg) (
 		AccountSequence: 7,
 		Code:            17,
 		RawLog:          "out of gas",
+	}, nil
+}
+
+func (codeErrorBroadcaster) PrepareBroadcastMessages(_ context.Context, msgs ...sdk.Msg) (*PreparedMessageBroadcast, error) {
+	return &PreparedMessageBroadcast{
+		Identity: BroadcastResult{TxHash: "TXHASH", TxBytesHash: "tx-bytes-hash", SignDocHash: "sign-doc-hash", AccountSequence: 7},
+		Submit: func(ctx context.Context) (*BroadcastResult, error) {
+			return codeErrorBroadcaster{}.BroadcastMessages(ctx, msgs...)
+		},
 	}, nil
 }
 

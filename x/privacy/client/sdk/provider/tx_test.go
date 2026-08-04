@@ -2,13 +2,17 @@ package provider
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	sdkmath "cosmossdk.io/math"
+	coretypes "github.com/cometbft/cometbft/rpc/core/types"
+	cmttypes "github.com/cometbft/cometbft/types"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
 
 	"github.com/cosmos/cosmos-sdk/client"
+	"github.com/cosmos/cosmos-sdk/client/flags"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
@@ -97,6 +101,35 @@ func TestCosmosTxBroadcasterRejectsMutatedPreparedBytes(t *testing.T) {
 	result, err := (CosmosTxBroadcaster{}).BroadcastPreparedSDKMessages(context.Background(), prepared)
 	require.ErrorContains(t, err, "prepared tx bytes hash mismatch")
 	require.Equal(t, prepared.Result.TxBytesHash, result.TxBytesHash)
+}
+
+func TestCosmosTxBroadcasterPreparedBroadcastUsesCallerContext(t *testing.T) {
+	txBytes := []byte("signed tx bytes")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	broadcaster := CosmosTxBroadcaster{ClientContext: client.Context{
+		Client:        contextAwareCometRPC{},
+		BroadcastMode: flags.BroadcastSync,
+	}}
+	prepared := &PreparedCosmosTxBroadcast{
+		TxBytes: txBytes,
+		Result: CosmosTxBroadcastResult{
+			TxBytesHash: sha256Hex(txBytes),
+			TxHash:      strings.ToUpper(sha256Hex(txBytes)),
+		},
+	}
+
+	result, err := broadcaster.BroadcastPreparedSDKMessages(ctx, prepared)
+	require.ErrorIs(t, err, context.Canceled)
+	require.Equal(t, strings.ToUpper(sha256Hex(txBytes)), result.TxHash)
+}
+
+type contextAwareCometRPC struct {
+	client.CometRPC
+}
+
+func (contextAwareCometRPC) BroadcastTxSync(ctx context.Context, _ cmttypes.Tx) (*coretypes.ResultBroadcastTx, error) {
+	return nil, ctx.Err()
 }
 
 func testProviderMsg() sdk.Msg {

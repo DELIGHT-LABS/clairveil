@@ -1167,7 +1167,7 @@ func TestServiceReconcileKnownPendingAttemptMovesProofReadyToUnknown(t *testing.
 		LeaseOwner:    lease.Owner,
 		LeaseToken:    lease.Token,
 	}
-	if _, _, err := svc.MarkBroadcastAttempting(ctx, []SubmittedReservationRef{ref}, []string{"op-a"}, BroadcastAttemptStart{Reason: "test"}); err != nil {
+	if _, _, err := svc.MarkBroadcastAttempting(ctx, []SubmittedReservationRef{ref}, []string{"op-a"}, BroadcastAttemptStart{Reason: "test", TxHash: "0xABC"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1208,7 +1208,7 @@ func TestServiceReconcileKnownPendingOperationMovesEveryInputAtomically(t *testi
 	if _, _, err := svc.MarkProofReadyBatch(ctx, refs, ProofReadyOperationUpdate{OperationID: "op-a", PayloadHash: "payload-a"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := svc.MarkBroadcastAttempting(ctx, refs, []string{"op-a"}, BroadcastAttemptStart{Reason: "test"}); err != nil {
+	if _, _, err := svc.MarkBroadcastAttempting(ctx, refs, []string{"op-a"}, BroadcastAttemptStart{Reason: "test", TxBytesHash: "cafe"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1253,7 +1253,7 @@ func TestServiceReconcileKnownPendingOperationRequiresSharedTransactionIdentity(
 	if _, _, err := svc.MarkProofReadyBatch(ctx, refs, ProofReadyOperationUpdate{OperationID: "op-a", PayloadHash: "payload-a"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := svc.MarkBroadcastAttempting(ctx, refs, []string{"op-a"}, BroadcastAttemptStart{Reason: "test"}); err != nil {
+	if _, _, err := svc.MarkBroadcastAttempting(ctx, refs, []string{"op-a"}, BroadcastAttemptStart{Reason: "test", TxHash: "tx-a"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1272,7 +1272,7 @@ func TestServiceReconcileKnownPendingOperationRequiresSharedTransactionIdentity(
 		if getErr != nil {
 			t.Fatal(getErr)
 		}
-		if stored.Status != StatusProofReady || stored.TxHash != "" || stored.TxBytesHash != "" {
+		if stored.Status != StatusProofReady || stored.TxHash != "tx-a" || stored.TxBytesHash != "" {
 			t.Fatalf("disjoint identity evidence mutated %s: %+v", id, stored)
 		}
 	}
@@ -1411,7 +1411,7 @@ func TestServiceReconcileKeepsReviewForFailedReservationWithSucceededOperation(t
 	secondary.TxHash = "txhash"
 	secondary.CreatedAt = fixedNow()
 	secondary.UpdatedAt = fixedNow()
-	if _, err := store.UnsafeImportReservationForTesting(ctx, secondary); err != nil {
+	if _, err := store.unsafeImportReservationForTesting(ctx, secondary); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1914,7 +1914,7 @@ func TestMemoryStoreInternalReconcileTransitionIsAtomic(t *testing.T) {
 	reservation.Status = StatusSubmitted
 	reservation.CreatedAt = fixedNow()
 	reservation.UpdatedAt = fixedNow()
-	if _, err := store.UnsafeImportReservationForTesting(ctx, reservation); err != nil {
+	if _, err := store.unsafeImportReservationForTesting(ctx, reservation); err != nil {
 		t.Fatal(err)
 	}
 

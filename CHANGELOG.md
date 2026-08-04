@@ -14,7 +14,8 @@ This project follows [the release versioning policy](docs/clairveil-release-vers
 
 - Upgraded `privacy_note_reservation_contract.json` and its schema from v1 to v3. Downstream reservation implementations must fail closed for malformed or unavailable nullifier/relay chain-time evidence, keep lease heartbeats through the ProofReady transition, and durably record a leased `ProofReady` relay handoff before exposing payloads externally.
 - Replace unrestricted `UpdateReservation`/`UpdateOperation` calls with the Service-owned atomic batch, reconciliation, lease-expiry recovery, proof-discard, and relay-handoff commands. Persistent Store implementations must validate the current lease owner and token together and commit linked reservation/operation changes in one transaction.
-- Notes without an explicit successful `used: false` nullifier response are now unverified and excluded from spending. Clear or revalidate older cached `isSpent: false` entries before using them for planning.
+- Durable reservation lifecycle storage is schema v2 in both JSON snapshots and SQL metadata. This unreleased workspace has no lifecycle-store migration or rollback contract; stores are initialized directly at the current schema.
+- `FoundNote.VerifiedUnspent` is Go client SDK hardening, not a new consensus boundary or a freshness proof. It is a public Go/JSON shape change (`verified_unspent`); older cached entries without the field decode as false and must complete a successful nullifier revalidation before planning. A normal sync revalidates cached notes, while Reset & Rescan is available for discarded or corrupt caches. This flag does not replace the mandatory pre-broadcast nullifier check, and ClairveilJS/DApps need equivalent fresh-query behavior rather than this Go field itself.
 
 ## v0.3.1 - 2026-07-21
 

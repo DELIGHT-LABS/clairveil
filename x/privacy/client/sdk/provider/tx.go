@@ -27,6 +27,7 @@ type CosmosTxBroadcastResult struct {
 	Response        *sdk.TxResponse
 	TxBytesHash     string
 	SignDocHash     string
+	TxHash          string
 	AccountSequence uint64
 }
 
@@ -179,6 +180,7 @@ func (b CosmosTxBroadcaster) PrepareSDKMessagesWithMetadata(ctx context.Context,
 		Result: CosmosTxBroadcastResult{
 			TxBytesHash:     signed.TxBytesHash,
 			SignDocHash:     signed.SignDocHash,
+			TxHash:          signed.TxHash,
 			AccountSequence: signed.AccountSequence,
 		},
 	}, nil
@@ -197,16 +199,26 @@ func (b CosmosTxBroadcaster) BroadcastSignedTxBytes(ctx context.Context, txBytes
 	return clientContext.BroadcastTx(append([]byte(nil), txBytes...))
 }
 
-func (b CosmosTxBroadcaster) BroadcastPreparedSDKMessages(_ context.Context, prepared *PreparedCosmosTxBroadcast) (*CosmosTxBroadcastResult, error) {
+func (b CosmosTxBroadcaster) BroadcastPreparedSDKMessages(ctx context.Context, prepared *PreparedCosmosTxBroadcast) (*CosmosTxBroadcastResult, error) {
 	if prepared == nil || len(prepared.TxBytes) == 0 {
 		return nil, fmt.Errorf("prepared tx bytes are required")
 	}
 	result := prepared.Result
 	txBytes := append([]byte(nil), prepared.TxBytes...)
-	if !strings.EqualFold(strings.TrimSpace(result.TxBytesHash), sha256Hex(txBytes)) {
+	computedTxBytesHash := sha256Hex(txBytes)
+	if !strings.EqualFold(strings.TrimSpace(result.TxBytesHash), computedTxBytesHash) {
 		return &result, fmt.Errorf("prepared tx bytes hash mismatch")
 	}
-	response, err := b.ClientContext.BroadcastTx(txBytes)
+	computedTxHash := strings.ToUpper(computedTxBytesHash)
+	if strings.TrimSpace(result.TxHash) == "" {
+		result.TxHash = computedTxHash
+	} else if !strings.EqualFold(strings.TrimSpace(result.TxHash), computedTxHash) {
+		return &result, fmt.Errorf("prepared tx hash mismatch")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	response, err := b.ClientContext.WithCmdContext(ctx).BroadcastTx(txBytes)
 	if err != nil {
 		return &result, err
 	}

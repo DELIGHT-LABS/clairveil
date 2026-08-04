@@ -81,6 +81,13 @@ func (a SDKMessageBroadcasterAdapter) PrepareBroadcastMessages(ctx context.Conte
 				}
 				return nil, fmt.Errorf("sdk tx broadcaster returned nil prepared broadcast result")
 			}
+			if result.Response == nil && submitErr == nil {
+				// Metadata proves the exact signed transaction identity, but it is
+				// not proof that the node accepted it. Return that identity with an
+				// error so the caller durably records an ambiguous attempt instead of
+				// treating the zero-valued response fields as a successful broadcast.
+				return broadcastResultFromMetadata(result), fmt.Errorf("sdk tx broadcaster returned nil prepared broadcast response")
+			}
 			return broadcastResultFromMetadata(result), submitErr
 		},
 	}, nil
@@ -88,6 +95,7 @@ func (a SDKMessageBroadcasterAdapter) PrepareBroadcastMessages(ctx context.Conte
 
 func broadcastResultFromMetadata(result *privacyprovider.CosmosTxBroadcastResult) *BroadcastResult {
 	out := &BroadcastResult{
+		TxHash:          result.TxHash,
 		TxBytesHash:     result.TxBytesHash,
 		SignDocHash:     result.SignDocHash,
 		AccountSequence: result.AccountSequence,

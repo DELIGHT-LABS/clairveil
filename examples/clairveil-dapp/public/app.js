@@ -180,6 +180,32 @@ const unresolvedReservationManualReviewAgeMs = 24 * 60 * 60 * 1000;
 const successfulTxNullifierConflictGraceMs = 2 * 60 * 1000;
 let walletNoteStore = null;
 let walletNoteStoreKey = "";
+let noteScanQueue = Promise.resolve();
+let pendingNoteScans = 0;
+let noteScanGeneration = 0;
+
+function invalidateNoteScans() {
+  noteScanGeneration += 1;
+}
+
+function currentNoteScanSession() {
+  return {
+    generation: noteScanGeneration,
+    activeWallet: state.activeWallet,
+    account: state.keplr.account,
+    chainProfileID: state.selectedChainProfileId,
+  };
+}
+
+function isCurrentNoteScanSession(session) {
+  return Boolean(
+    session &&
+      session.generation === noteScanGeneration &&
+      session.activeWallet === state.activeWallet &&
+      session.account === state.keplr.account &&
+      session.chainProfileID === state.selectedChainProfileId,
+  );
+}
 
 function configuredChainProfile() {
   if (!state.config) return null;
@@ -571,6 +597,7 @@ const els = {
   refreshWalletBalance: $("#refreshKeplrBalance"),
   refreshClairBalance: $("#refreshClairBalance"),
   scanKeplrNotes: $("#scanKeplrNotes"),
+  resetRescanNotes: $("#resetRescanNotes"),
   keplrTxState: $("#keplrTxState"),
   keplrSendAmount: $("#keplrSendAmount"),
   keplrSendRecipient: $("#keplrSendRecipient"),
@@ -1372,6 +1399,17 @@ function currentWalletNoteStore({ optional = true } = {}) {
   }
 }
 
+async function clearCurrentWalletNoteStore(isCurrent = () => true) {
+  const store = currentWalletNoteStore();
+  if (store) await store.clear();
+  if (!isCurrent()) return false;
+  state.keplr.notes = [];
+  state.keplr.notesSummary = "";
+  state.keplr.noteScanCursor = defaultNoteScanCursor();
+  state.keplr.notesScanned = false;
+  return true;
+}
+
 function applyPersistedWalletNoteState(cached) {
   if (!cached) return;
   const scanCursor = cached.scanCursor || {
@@ -1395,10 +1433,13 @@ function applyPersistedWalletNoteState(cached) {
   }, { reset: true });
 }
 
-async function hydratePersistedWalletNotes() {
+async function hydratePersistedWalletNotes({ isCurrent = () => true } = {}) {
+  if (!isCurrent()) return;
   const store = currentWalletNoteStore();
   if (!store) return;
-  applyPersistedWalletNoteState(await store.load());
+  const cached = await store.load();
+  if (!isCurrent()) return;
+  applyPersistedWalletNoteState(cached);
 }
 
 function amountInputValue(input) {
@@ -1722,7 +1763,11 @@ function applyNoteScanResult(data, { reset = false } = {}) {
   state.keplr.notesScanned = true;
 }
 
-async function refreshCachedNoteStatuses() {
+async function refreshCachedNoteStatuses({
+  isCurrent = () => true,
+  noteStore = currentWalletNoteStore(),
+} = {}) {
+  if (!isCurrent()) return;
   const candidateNotes = (state.keplr.notes || []).filter(noteNullifier);
   if (!candidateNotes.length) return;
 
@@ -1743,6 +1788,7 @@ async function refreshCachedNoteStatuses() {
     } catch {
       // Only this chunk falls back to individual checks below.
     }
+    if (!isCurrent()) return;
   }
 
   const missing = nullifiers.filter((nullifier) => !statuses.has(nullifier));
@@ -1757,8 +1803,10 @@ async function refreshCachedNoteStatuses() {
         statuses.set(nullifier, null);
       }
     }));
+    if (!isCurrent()) return;
   }
 
+  if (!isCurrent()) return;
   let changed = false;
   state.keplr.notes = state.keplr.notes.map((note) => {
     const nullifier = noteNullifier(note);
@@ -1778,8 +1826,11 @@ async function refreshCachedNoteStatuses() {
     return { ...note, ...next };
   });
   if (changed) refreshNotesSummary();
-  const noteStore = currentWalletNoteStore();
-  if (noteStore && typeof noteStore.setNullifierStatuses === "function") {
+  if (
+    isCurrent() &&
+    noteStore &&
+    typeof noteStore.setNullifierStatuses === "function"
+  ) {
     await noteStore.setNullifierStatuses(new Map(
       [...statuses.entries()].map(([nullifier, used]) => [
         nullifier,
@@ -1789,11 +1840,14 @@ async function refreshCachedNoteStatuses() {
   }
 }
 
-async function reconcileReservedNotesFromScan() {
+async function reconcileReservedNotesFromScan({ isCurrent = () => true } = {}) {
+  if (!isCurrent()) return;
   const manager = currentNoteReservationManager({ optional: true });
   if (!manager || !state.keplr.notes.length) return;
   await manager.reconcileSpentNotes(state.keplr.notes);
+  if (!isCurrent()) return;
   await reconcileRecoveredActiveReservations(manager);
+  if (!isCurrent()) return;
   await reconcileDefiniteFailedUnknownReservations(manager);
 }
 
@@ -2183,7 +2237,8 @@ async function reconcileDefiniteFailedUnknownReservations(manager) {
   return updated;
 }
 
-async function refreshNoteReservationState() {
+async function refreshNoteReservationState({ isCurrent = () => true } = {}) {
+  if (!isCurrent()) return;
   const manager = currentNoteReservationManager({ optional: true });
   if (!manager) {
     state.keplr.noteReservationByNullifier = {};
@@ -2196,6 +2251,7 @@ async function refreshNoteReservationState() {
   const active = typeof manager.listActiveReservations === "function"
     ? await manager.listActiveReservations()
     : [];
+  if (!isCurrent()) return;
   cacheReservationRecords(active, { replace: true });
   state.keplr.manualReviewReservations = active.filter(
     (reservation) =>
@@ -2205,6 +2261,7 @@ async function refreshNoteReservationState() {
   const statusByNote = state.keplr.notes.length
     ? await manager.reservationStatusByNote(state.keplr.notes)
     : new Map();
+  if (!isCurrent()) return;
   const byNullifier = {};
   for (const [nullifier, reservation] of statusByNote.entries()) {
     if (isActiveReservationStatus(reservation?.status)) {
@@ -2574,7 +2631,10 @@ async function recoverActiveRelayWithdrawSnapshots() {
   return recovered;
 }
 
-async function loadPersistedRelayWithdrawPayloadState() {
+async function loadPersistedRelayWithdrawPayloadState({
+  isCurrent = () => true,
+} = {}) {
+  if (!isCurrent()) return;
   const storage = relayWithdrawPayloadStorage();
   const key = relayWithdrawPayloadStorageKey();
   let saved = { valid: true, current: null, pending: [] };
@@ -2587,16 +2647,20 @@ async function loadPersistedRelayWithdrawPayloadState() {
   const pending = [];
   for (const snapshot of saved.pending) {
     pending.push(await syncRelayWithdrawSnapshotReservation(snapshot));
+    if (!isCurrent()) return;
   }
   const current = saved.current;
   if (current && !state.keplr.relayWithdrawPayload) {
     const synced = await syncRelayWithdrawSnapshotReservation(current);
+    if (!isCurrent()) return;
     const replanned = await replanRecoveredLocalRelayPayload(synced);
+    if (!isCurrent()) return;
     if (replanned?.handedOff) {
       pending.unshift(replanned);
     }
   }
   const recovered = await recoverActiveRelayWithdrawSnapshots();
+  if (!isCurrent()) return;
   const existing = state.keplr.relayWithdrawPendingPayloads || [];
   const recoveredByID = new Map();
   for (const snapshot of [...existing, ...pending, ...recovered]) {
@@ -2605,7 +2669,8 @@ async function loadPersistedRelayWithdrawPayloadState() {
   state.keplr.relayWithdrawPendingPayloads = [
     ...recoveredByID.values(),
   ].filter(relaySnapshotNeedsPendingRecovery);
-  await reconcileExpiredRelayWithdrawPayloads();
+  await reconcileExpiredRelayWithdrawPayloads(null, { isCurrent });
+  if (!isCurrent()) return;
   persistRelayWithdrawPayloadState();
 }
 
@@ -3462,6 +3527,7 @@ function resetMetaMaskSession() {
 }
 
 function resetKeplrSession() {
+  invalidateNoteScans();
   stopPreparedRelayReservationHeartbeat();
   advanceRelayWithdrawPayloadGeneration();
   const nextState = defaultKeplrState();
@@ -3622,8 +3688,11 @@ function renderKeplr() {
   els.copyKeplrDisclosurePubKey.disabled = !state.keplr.disclosurePubKeyHex;
   els.refreshWalletBalance.disabled = !connected;
   els.refreshClairBalance.disabled = !connected;
+  const noteScanBusy = pendingNoteScans > 0;
   els.scanKeplrNotes.disabled =
-    !signerReady || !state.keplr.rootSignatureBase64;
+    noteScanBusy || !signerReady || !state.keplr.rootSignatureBase64;
+  els.resetRescanNotes.disabled =
+    noteScanBusy || !signerReady || !state.keplr.rootSignatureBase64;
   updateAmountActionButtons({ signerReady, veiledReady });
   renderEventDetail();
 }
@@ -4823,6 +4892,7 @@ async function connectKeplr() {
   const signer = await resolveKeplrSigner(chainInfo.chainId, key);
 
   await discardAndClearPreparedRelayWithdrawPayload();
+  invalidateNoteScans();
   resetMetaMaskSession();
   state.activeWallet = "keplr";
   state.keplr.account = signer.address || key.bech32Address || "";
@@ -4969,13 +5039,16 @@ async function fundKeplr() {
 }
 
 async function setupKeplrPrivacy() {
-  if (!state.keplr.account) return;
+  const setupSession = currentNoteScanSession();
+  const isCurrent = () => isCurrentNoteScanSession(setupSession);
+  if (!isCurrent() || !state.keplr.account) return;
   if (
     state.keplr.rootSignatureBase64 &&
     state.keplr.shieldedAddress &&
     state.keplr.disclosurePubKeyHex
   ) {
-    await loadPersistedRelayWithdrawPayloadState();
+    await loadPersistedRelayWithdrawPayloadState({ isCurrent });
+    if (!isCurrent()) return;
     renderKeplr();
     return;
   }
@@ -4986,6 +5059,7 @@ async function setupKeplrPrivacy() {
     let account;
     if (state.activeWallet === "metamask") {
       await ensureMetaMaskChain();
+      if (!isCurrent()) return;
       const rootMessage = clairveilBrowserClient().buildRootSigningMessage(
         state.keplr.account,
         state.keplr.pubkeyHex,
@@ -4994,6 +5068,7 @@ async function setupKeplrPrivacy() {
         method: "personal_sign",
         params: [rootMessage, state.wallet.account],
       });
+      if (!isCurrent()) return;
       state.keplr.rootSignatureBase64 = bytesToBase64(hexToBytes(signatureHex));
       account = clairveilBrowserClient().derivePrivacyAccount({
         walletType: "evm",
@@ -5016,6 +5091,7 @@ async function setupKeplrPrivacy() {
         state.keplr.account,
         rootMessage,
       );
+      if (!isCurrent()) return;
       state.keplr.rootSignatureBase64 = signature.signature;
       account = clairveilBrowserClient().derivePrivacyAccount({
         address: state.keplr.account,
@@ -5026,17 +5102,22 @@ async function setupKeplrPrivacy() {
     state.keplr.shieldedAddress = account.shielded_address || "";
     state.keplr.disclosurePubKeyHex = account.disclosure_pubkey_hex || "";
     state.keplr.rootSignatureHash = account.root_signature_hash || "";
-    await hydratePersistedWalletNotes();
-    await loadPersistedRelayWithdrawPayloadState();
+    await hydratePersistedWalletNotes({ isCurrent });
+    if (!isCurrent()) return;
+    await loadPersistedRelayWithdrawPayloadState({ isCurrent });
+    if (!isCurrent()) return;
     els.keplrTxState.textContent = "Ready";
     renderKeplr();
     toast("Clairveil account ready");
   } catch (error) {
+    if (!isCurrent()) return;
     els.keplrTxState.textContent = "Setup failed";
     toast(error.message);
   } finally {
-    setBusy(els.setupKeplrPrivacy, false);
-    renderKeplr();
+    if (isCurrent()) {
+      setBusy(els.setupKeplrPrivacy, false);
+      renderKeplr();
+    }
   }
 }
 
@@ -6217,7 +6298,12 @@ async function verifyRelayPayloadNullifierUnspentBeforeBroadcast(
   }
 }
 
-async function reconcileExpiredRelayWithdrawSnapshot(snapshot, chainSnapshot = null) {
+async function reconcileExpiredRelayWithdrawSnapshot(
+  snapshot,
+  chainSnapshot = null,
+  isCurrent = () => true,
+) {
+  if (!isCurrent()) return snapshot;
   if (!snapshot || snapshot.submitted || snapshot.relayHash) return snapshot;
   let resolvedChainSnapshot = chainSnapshot;
   try {
@@ -6225,9 +6311,12 @@ async function reconcileExpiredRelayWithdrawSnapshot(snapshot, chainSnapshot = n
   } catch {
     return snapshot;
   }
+  if (!isCurrent()) return snapshot;
   if (!relaySnapshotIsExpired(snapshot, resolvedChainSnapshot.chainNowMs)) return snapshot;
   const synced = await syncRelayWithdrawSnapshotReservation(snapshot);
+  if (!isCurrent()) return snapshot;
   const recoverySnapshot = await relaySnapshotWithFullReservationRecords(synced);
+  if (!isCurrent()) return snapshot;
   if (!recoverySnapshot) return synced;
   const status = relayReservationStatus(
     recoverySnapshot.reservation,
@@ -6241,13 +6330,18 @@ async function reconcileExpiredRelayWithdrawSnapshot(snapshot, chainSnapshot = n
   if (status !== reservationStatuses.ProofReady) return synced;
 
   const nullifierStatuses = await relaySnapshotNullifierStatuses(recoverySnapshot);
+  if (!isCurrent()) return snapshot;
   if (!nullifierStatuses.length) return synced;
   if (nullifierStatuses.some((entry) => entry.spent == null)) return synced;
   if (nullifierStatuses.some((entry) => entry.spent)) {
-    await refreshCachedNoteStatuses();
-    await reconcileReservedNotesFromScan();
-    await refreshNoteReservationState();
+    await refreshCachedNoteStatuses({ isCurrent });
+    if (!isCurrent()) return snapshot;
+    await reconcileReservedNotesFromScan({ isCurrent });
+    if (!isCurrent()) return snapshot;
+    await refreshNoteReservationState({ isCurrent });
+    if (!isCurrent()) return snapshot;
     const records = await latestReservationRecords(synced.reservation);
+    if (!isCurrent()) return snapshot;
     return {
       ...synced,
       reservation: updateReservationBatchRecords(synced.reservation, records),
@@ -6283,6 +6377,7 @@ async function reconcileExpiredRelayWithdrawSnapshot(snapshot, chainSnapshot = n
         : { no_broadcast_attempt: true }),
     },
   );
+  if (!isCurrent()) return snapshot;
   return {
     ...synced,
     reservation: updateReservationBatchRecords(
@@ -6344,11 +6439,20 @@ async function resolveExpiredRelayManualReview(snapshot, chainSnapshot = null) {
   };
 }
 
-async function reconcileExpiredRelayWithdrawPayloads(chainSnapshot = null) {
+async function reconcileExpiredRelayWithdrawPayloads(
+  chainSnapshot = null,
+  { isCurrent = () => true } = {},
+) {
+  if (!isCurrent()) return;
   let changed = false;
   const current = currentPreparedRelayWithdrawSnapshot();
   if (current) {
-    const reconciled = await reconcileExpiredRelayWithdrawSnapshot(current, chainSnapshot);
+    const reconciled = await reconcileExpiredRelayWithdrawSnapshot(
+      current,
+      chainSnapshot,
+      isCurrent,
+    );
+    if (!isCurrent()) return;
     if (reconciled !== current) {
       state.keplr.relayWithdrawReservation =
         reconciled?.reservation || state.keplr.relayWithdrawReservation;
@@ -6364,7 +6468,9 @@ async function reconcileExpiredRelayWithdrawPayloads(chainSnapshot = null) {
       const reconciled = await reconcileExpiredRelayWithdrawSnapshot(
         snapshot,
         chainSnapshot,
+        isCurrent,
       );
+      if (!isCurrent()) return;
       if (relaySnapshotNeedsPendingRecovery(reconciled)) {
         reconciledPending.push(reconciled);
       }
@@ -6858,10 +6964,26 @@ async function depositFromKeplr() {
   }
 }
 
-async function scanKeplrNotes(options = {}) {
-  if (!state.keplr.account) return;
+function scanKeplrNotes(options = {}) {
+  const scanSession = currentNoteScanSession();
+  pendingNoteScans += 1;
+  renderKeplr();
+  const run = noteScanQueue.then(
+    () => runKeplrNoteScan(options, scanSession),
+    () => runKeplrNoteScan(options, scanSession),
+  );
+  noteScanQueue = run.catch(() => undefined);
+  return run.finally(() => {
+    pendingNoteScans -= 1;
+    renderKeplr();
+  });
+}
+
+async function runKeplrNoteScan(options = {}, scanSession = currentNoteScanSession()) {
+  const isCurrent = () => isCurrentNoteScanSession(scanSession);
+  if (!isCurrent() || !state.keplr.account) return;
   await setupKeplrPrivacy();
-  if (!state.keplr.rootSignatureBase64) return;
+  if (!isCurrent() || !state.keplr.rootSignatureBase64) return;
 
   setBusy(els.scanKeplrNotes, true);
   if (!options.quiet) {
@@ -6870,7 +6992,11 @@ async function scanKeplrNotes(options = {}) {
   try {
     const reset = Boolean(options.reset);
     const noteStore = currentWalletNoteStore();
-    if (reset && noteStore) await noteStore.clear();
+    if (reset) {
+      const cleared = await clearCurrentWalletNoteStore(isCurrent);
+      if (!cleared) return;
+    }
+    if (!isCurrent()) return;
     const scanOptions = noteScanRequestOptions({ reset });
     const data = await clairveilBrowserClient().scanWalletNotes(
       privacyRequest({
@@ -6879,15 +7005,23 @@ async function scanKeplrNotes(options = {}) {
         includeFoundNotes: true,
       }),
     );
+    if (!isCurrent()) return;
     if (noteStore) {
-      applyPersistedWalletNoteState(await noteStore.load());
+      const cached = await noteStore.load();
+      if (!isCurrent()) return;
+      applyPersistedWalletNoteState(cached);
     } else {
       applyNoteScanResult(data, { reset });
     }
-    await refreshCachedNoteStatuses();
-    await reconcileReservedNotesFromScan();
-    await refreshNoteReservationState();
-    await reconcileExpiredRelayWithdrawPayloads();
+    if (!isCurrent()) return;
+    await refreshCachedNoteStatuses({ isCurrent, noteStore });
+    if (!isCurrent()) return;
+    await reconcileReservedNotesFromScan({ isCurrent });
+    if (!isCurrent()) return;
+    await refreshNoteReservationState({ isCurrent });
+    if (!isCurrent()) return;
+    await reconcileExpiredRelayWithdrawPayloads(null, { isCurrent });
+    if (!isCurrent()) return;
     if (!options.quiet) {
       const cursor = state.keplr.noteScanCursor || defaultNoteScanCursor();
       const unverifiedCount = state.keplr.notes.filter(isUnverifiedNote).length;
@@ -6912,10 +7046,19 @@ async function scanKeplrNotes(options = {}) {
       els.keplrTxState.textContent = "Scan failed";
       toast(error.message);
     }
+    if (options.throwOnError) throw error;
   } finally {
     setBusy(els.scanKeplrNotes, false);
     renderKeplr();
   }
+}
+
+async function resetAndRescanNotes() {
+  const confirmed = globalThis.confirm(
+    "로컬 note cache를 지우고 체인 genesis부터 다시 스캔할까요? 완료까지 시간이 걸릴 수 있습니다.",
+  );
+  if (!confirmed) return;
+  await scanKeplrNotes({ reset: true, throwOnError: true });
 }
 
 async function refreshPrivacySurfaces({ balance = false } = {}) {
@@ -7727,6 +7870,9 @@ els.refreshClairBalance.addEventListener("click", () =>
 );
 els.scanKeplrNotes.addEventListener("click", () =>
   scanKeplrNotes().catch((error) => toast(error.message)),
+);
+els.resetRescanNotes.addEventListener("click", () =>
+  resetAndRescanNotes().catch((error) => toast(error.message)),
 );
 els.myKeplrSpendableOnly.addEventListener("change", (event) => {
   state.keplr.showSpendableOnly = event.target.checked;

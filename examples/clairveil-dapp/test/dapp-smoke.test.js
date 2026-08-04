@@ -430,7 +430,7 @@ test("DApp uses the npm ClairveilJS browser client for public wallet and privacy
   assert.match(appSource, /relayHandoffRecorded = true/);
   assert.match(appSource, /if \(!relayHandoffRecorded && !hasBroadcastAttemptMetadata\(attempt\)\)/);
   assert.match(appSource, /persistRelayWithdrawPayloadState\(\)/);
-  assert.match(appSource, /loadPersistedRelayWithdrawPayloadState\(\)/);
+  assert.match(appSource, /loadPersistedRelayWithdrawPayloadState\(\{ isCurrent \}\)/);
   assert.match(appSource, /stashHandedOffPreparedRelayWithdrawPayload\(\)/);
   assert.match(appSource, /discardAndClearPreparedRelayWithdrawPayload\(\)[\s\S]*\.catch\(\(error\) => toast\(error\.message\)\)[\s\S]*\.finally\(\(\) => renderKeplr\(\)\)/);
   assert.match(appSource, /relayWithdrawPendingList/);
@@ -515,6 +515,21 @@ test("DApp uses the npm ClairveilJS browser client for public wallet and privacy
   assert.match(appSource, /return "Unverified"/);
   assert.match(appSource, /status: "spent"/);
   assert.match(appSource, /await refreshCachedNoteStatuses\(\)/);
+  assert.match(htmlSource, /id="resetRescanNotes"[\s\S]*Reset &amp; Rescan/);
+  assert.match(appSource, /async function resetAndRescanNotes/);
+  assert.match(appSource, /scanKeplrNotes\(\{ reset: true, throwOnError: true \}\)/);
+  assert.match(appSource, /let noteScanQueue = Promise\.resolve\(\)/);
+  assert.match(appSource, /let noteScanGeneration = 0/);
+  assert.match(appSource, /function resetKeplrSession\(\)[\s\S]*invalidateNoteScans\(\)/);
+  assert.match(appSource, /function scanKeplrNotes\(options = \{\}\)[\s\S]*currentNoteScanSession\(\)[\s\S]*noteScanQueue\.then[\s\S]*runKeplrNoteScan\(options, scanSession\)/);
+  assert.match(appSource, /if \(!isCurrent\(\)\) return;/);
+  assert.match(appSource, /const noteScanBusy = pendingNoteScans > 0/);
+  assert.match(appSource, /const cleared = await clearCurrentWalletNoteStore\(isCurrent\)/);
+  assert.match(
+    appSource,
+    /async function clearCurrentWalletNoteStore\([^)]*isCurrent[\s\S]*await store\.clear\(\)[\s\S]*state\.keplr\.notes = \[\][\s\S]*state\.keplr\.noteScanCursor = defaultNoteScanCursor\(\)[\s\S]*state\.keplr\.notesScanned = false/,
+  );
+  assert.match(appSource, /resetRescanNotes\.addEventListener\("click"/);
   assert.match(appSource, /scanWalletNotes\([\s\S]*privacyRequest\(\{[\s\S]*\.\.\.scanOptions,[\s\S]*includeFoundNotes: true/);
   assert.match(appSource, /more events queued/);
   assert.match(appSource, /scan: \{ limit: 200, maxPages: 1000 \}/);

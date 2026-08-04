@@ -39,7 +39,10 @@ func InitSQLStore(ctx context.Context, db *sql.DB, dialect SQLDialect) error {
 	if _, err := db.ExecContext(ctx, sqlBatchSchemaSeedStatement(dialect)); err != nil {
 		return err
 	}
-	return nil
+	if _, err := db.ExecContext(ctx, sqlLifecycleSchemaSeedStatement(dialect)); err != nil {
+		return err
+	}
+	return validateSQLLifecycleSchema(ctx, db)
 }
 
 func PostgreSQLSchema() string {
@@ -52,7 +55,7 @@ func SQLiteSchema() string {
 
 func sqlSchemaWithSeeds(dialect SQLDialect) string {
 	statements := sqlSchemaStatements(dialect)
-	statements = append(statements, sqlStoreLockSeedStatement(dialect), sqlBatchSchemaSeedStatement(dialect))
+	statements = append(statements, sqlStoreLockSeedStatement(dialect), sqlBatchSchemaSeedStatement(dialect), sqlLifecycleSchemaSeedStatement(dialect))
 	return strings.Join(statements, ";\n\n") + ";\n"
 }
 
@@ -104,28 +107,6 @@ func (s *SQLStore) CompareAndSetReservationStatus(ctx context.Context, reservati
 		return nil
 	})
 	return out, err
-}
-
-func (s *SQLStore) CompareAndSetReservationStatusWithOperation(ctx context.Context, reservationID string, from ReservationStatus, to ReservationStatus, operation *PayrollOperation, now time.Time) (*NoteReservation, *PayrollOperation, error) {
-	var outReservation *NoteReservation
-	var outOperation *PayrollOperation
-	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
-		updatedReservation, updatedOperation, err := memory.ApplyReconciliationTransition(ctx, ReconciliationTransition{
-			ReservationID:     reservationID,
-			From:              from,
-			To:                to,
-			Operation:         operation,
-			Now:               now,
-			serviceAuthorized: true,
-		})
-		if err != nil {
-			return err
-		}
-		outReservation = updatedReservation
-		outOperation = updatedOperation
-		return nil
-	})
-	return outReservation, outOperation, err
 }
 
 func (s *SQLStore) CompareAndSetReservationStatusWithLease(ctx context.Context, reservationID string, leaseOwner string, leaseToken string, from ReservationStatus, to ReservationStatus, now time.Time) (*NoteReservation, error) {
@@ -442,19 +423,6 @@ func (s *SQLStore) MarkReservationsProofArtifactCleanupFailed(ctx context.Contex
 	return outReservations, outOperations, err
 }
 
-func (s *SQLStore) UpdateReservation(ctx context.Context, reservation NoteReservation) (*NoteReservation, error) {
-	var out *NoteReservation
-	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
-		updated, err := memory.UpdateReservation(ctx, reservation)
-		if err != nil {
-			return err
-		}
-		out = updated
-		return nil
-	})
-	return out, err
-}
-
 func (s *SQLStore) CreateOperation(ctx context.Context, operation PayrollOperation) (*PayrollOperation, error) {
 	var out *PayrollOperation
 	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
@@ -474,19 +442,6 @@ func (s *SQLStore) GetOperation(ctx context.Context, operationID string) (*Payro
 		return nil, err
 	}
 	return memory.GetOperation(ctx, operationID)
-}
-
-func (s *SQLStore) UpdateOperation(ctx context.Context, operation PayrollOperation) (*PayrollOperation, error) {
-	var out *PayrollOperation
-	err := s.withMemoryWrite(ctx, func(memory *MemoryStore) error {
-		updated, err := memory.UpdateOperation(ctx, operation)
-		if err != nil {
-			return err
-		}
-		out = updated
-		return nil
-	})
-	return out, err
 }
 
 func (s *SQLStore) loadMemory(ctx context.Context) (*MemoryStore, error) {
@@ -574,6 +529,13 @@ func (s *SQLStore) lockStoreTx(ctx context.Context, tx *sql.Tx) error {
 
 func (s *SQLStore) loadMemoryTx(ctx context.Context, tx *sql.Tx) (*MemoryStore, error) {
 	memory := NewMemoryStore()
+	var lifecycleSchemaVersion int
+	if err := tx.QueryRowContext(ctx, "SELECT schema_version FROM reservation_lifecycle_store_meta WHERE singleton_id = 1").Scan(&lifecycleSchemaVersion); err != nil {
+		return nil, err
+	}
+	if lifecycleSchemaVersion != currentLifecycleSchemaVersion {
+		return nil, fmt.Errorf("%w: unsupported reservation lifecycle SQL schema version %d", ErrInvalidReservation, lifecycleSchemaVersion)
+	}
 	var batchSchemaVersion string
 	if err := tx.QueryRowContext(ctx, "SELECT schema_version FROM batch_operation_store_meta WHERE singleton_id = 1").Scan(&batchSchemaVersion); err != nil {
 		return nil, err
@@ -728,6 +690,10 @@ func sqlSchemaStatements(dialect SQLDialect) []string {
   singleton_id INTEGER PRIMARY KEY,
   schema_version TEXT NOT NULL
 )`,
+		`CREATE TABLE IF NOT EXISTS reservation_lifecycle_store_meta (
+  singleton_id INTEGER PRIMARY KEY,
+  schema_version INTEGER NOT NULL
+)`,
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS payroll_operations (
   operation_id TEXT PRIMARY KEY,
   status TEXT NOT NULL,
@@ -801,4 +767,22 @@ func sqlBatchSchemaSeedStatement(dialect SQLDialect) string {
 		return "INSERT INTO batch_operation_store_meta (singleton_id, schema_version) VALUES (1, '" + BatchOperationSchemaVersionV1 + "') ON CONFLICT (singleton_id) DO NOTHING"
 	}
 	return "INSERT INTO batch_operation_store_meta (singleton_id, schema_version) VALUES (1, '" + BatchOperationSchemaVersionV1 + "') ON CONFLICT (singleton_id) DO NOTHING"
+}
+
+func sqlLifecycleSchemaSeedStatement(_ SQLDialect) string {
+	return fmt.Sprintf(
+		"INSERT INTO reservation_lifecycle_store_meta (singleton_id, schema_version) VALUES (1, %d) ON CONFLICT (singleton_id) DO NOTHING",
+		currentLifecycleSchemaVersion,
+	)
+}
+
+func validateSQLLifecycleSchema(ctx context.Context, db *sql.DB) error {
+	var version int
+	if err := db.QueryRowContext(ctx, "SELECT schema_version FROM reservation_lifecycle_store_meta WHERE singleton_id = 1").Scan(&version); err != nil {
+		return err
+	}
+	if version == currentLifecycleSchemaVersion {
+		return nil
+	}
+	return fmt.Errorf("%w: unsupported reservation lifecycle SQL schema version %d", ErrInvalidReservation, version)
 }

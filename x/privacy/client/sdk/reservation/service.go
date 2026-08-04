@@ -757,12 +757,16 @@ func (s Service) MarkProofReadyBatch(ctx context.Context, refs []SubmittedReserv
 	return s.Store.MarkReservationsProofReady(ctx, refs, update, s.now())
 }
 
-// MarkBroadcastAttempting durably closes the retry gate before an external
-// broadcaster is invoked. A ProofReady attempt left in-flight must be
-// reconciled; it cannot be submitted again.
+// MarkBroadcastAttempting durably closes the retry gate, together with the
+// signed transaction identity, before an external broadcaster is invoked. A
+// ProofReady attempt left in-flight must be reconciled; it cannot be submitted
+// again.
 func (s Service) MarkBroadcastAttempting(ctx context.Context, refs []SubmittedReservationRef, operationIDs []string, update BroadcastAttemptStart) ([]NoteReservation, []PayrollOperation, error) {
 	if s.Store == nil {
 		return nil, nil, fmt.Errorf("reservation store is required")
+	}
+	if strings.TrimSpace(update.TxHash) == "" && strings.TrimSpace(update.TxBytesHash) == "" {
+		return nil, nil, fmt.Errorf("%w: broadcast attempt requires tx_hash or tx_bytes_hash", ErrInvalidReservation)
 	}
 	return s.Store.MarkReservationsBroadcastAttempting(ctx, refs, operationIDs, update, s.now())
 }

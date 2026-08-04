@@ -206,7 +206,7 @@ func (e fileEvidenceExecutor) BuildProofReady(context.Context, privacypayroll.Li
 	return privacyreservation.ProofReadyOperationUpdate{}, "proof generation is handled by an external live worker", privacypayroll.ErrLiveDaemonSkip
 }
 
-func (e fileEvidenceExecutor) PrepareBroadcastProofReady(context.Context, privacypayroll.LiveOperationGroup) (privacypayroll.LiveBroadcastSubmit, string, error) {
+func (e fileEvidenceExecutor) PrepareBroadcastProofReady(context.Context, privacypayroll.LiveOperationGroup) (*privacypayroll.PreparedLiveBroadcast, string, error) {
 	return nil, "broadcast is handled by an external live worker", privacypayroll.ErrLiveDaemonSkip
 }
 

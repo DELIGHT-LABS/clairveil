@@ -320,7 +320,7 @@ func TestLiveDaemonMarksAttemptBeforeExternalBroadcast(t *testing.T) {
 					if err != nil {
 						return err
 					}
-					if !reservation.BroadcastInFlight || reservation.BroadcastAttemptCount != 1 {
+					if !reservation.BroadcastInFlight || reservation.BroadcastAttemptCount != 1 || reservation.TxHash != "TXHASH" || reservation.TxBytesHash != "tx-bytes" {
 						return fmt.Errorf("reservation %s was not durably marked before submit", note.ReservationID)
 					}
 				}
@@ -451,7 +451,7 @@ func TestLiveDaemonRecordsFailedBroadcastWithIdentityAsUnknown(t *testing.T) {
 	}
 }
 
-func TestLiveDaemonRecordsUnidentifiedBroadcastFailureForManualReview(t *testing.T) {
+func TestLiveDaemonUsesPreparedIdentityAfterLostBroadcastResponse(t *testing.T) {
 	ctx := context.Background()
 	store := privacyreservation.NewMemoryStore()
 	reservationService := privacyreservation.Service{Store: store, Now: testNow}
@@ -484,11 +484,12 @@ func TestLiveDaemonRecordsUnidentifiedBroadcastFailureForManualReview(t *testing
 
 	operation, err := store.GetOperation(ctx, confirmed.Items[0].OperationID)
 	require.NoError(t, err)
-	require.Equal(t, privacyreservation.OperationStatusManualReview, operation.Status)
+	require.Equal(t, privacyreservation.OperationStatusUnknown, operation.Status)
 	for _, note := range confirmed.Items[0].InputNotes {
 		reservation, err := store.GetReservation(ctx, note.ReservationID)
 		require.NoError(t, err)
-		require.Equal(t, privacyreservation.StatusManualReview, reservation.Status)
+		require.Equal(t, privacyreservation.StatusUnknown, reservation.Status)
+		require.Equal(t, "PREPARED_TX", reservation.TxHash)
 		require.False(t, reservation.BroadcastInFlight)
 		require.Contains(t, reservation.LastBroadcastError, "connection reset")
 	}
@@ -564,6 +565,7 @@ func TestLiveDaemonMarksExpiredProofReadyBroadcastAttemptManualReview(t *testing
 	require.NoError(t, err)
 	_, _, err = reservationService.MarkBroadcastAttempting(ctx, refs, []string{confirmed.Items[0].OperationID}, privacyreservation.BroadcastAttemptStart{
 		Reason: "test interrupted broadcast",
+		TxHash: "interrupted-tx",
 	})
 	require.NoError(t, err)
 	futureNow := func() time.Time { return testNow().Add(2 * time.Minute) }
@@ -656,7 +658,7 @@ func (e skippingBroadcastExecutor) BuildProofReady(context.Context, LiveOperatio
 	return testLiveExecutor{item: e.item}.BuildProofReady(context.Background(), LiveOperationGroup{})
 }
 
-func (e skippingBroadcastExecutor) PrepareBroadcastProofReady(context.Context, LiveOperationGroup) (LiveBroadcastSubmit, string, error) {
+func (e skippingBroadcastExecutor) PrepareBroadcastProofReady(context.Context, LiveOperationGroup) (*PreparedLiveBroadcast, string, error) {
 	return nil, "external broadcaster handles this operation", ErrLiveDaemonSkip
 }
 
@@ -668,10 +670,11 @@ func (e rejectingBroadcastExecutor) BuildProofReady(context.Context, LiveOperati
 	return testLiveExecutor{item: e.item}.BuildProofReady(context.Background(), LiveOperationGroup{})
 }
 
-func (e rejectingBroadcastExecutor) PrepareBroadcastProofReady(context.Context, LiveOperationGroup) (LiveBroadcastSubmit, string, error) {
-	return func(context.Context) (*BroadcastResult, error) {
-		return &BroadcastResult{TxHash: "REJECTED_TX", TxBytesHash: "tx-bytes", SignDocHash: "sign-doc", AccountSequence: 4, Code: 17, RawLog: "out of gas"}, nil
-	}, "test rejected broadcast", nil
+func (e rejectingBroadcastExecutor) PrepareBroadcastProofReady(context.Context, LiveOperationGroup) (*PreparedLiveBroadcast, string, error) {
+	identity := BroadcastResult{TxHash: "REJECTED_TX", TxBytesHash: "tx-bytes", SignDocHash: "sign-doc", AccountSequence: 4}
+	return &PreparedLiveBroadcast{Identity: identity, Submit: func(context.Context) (*BroadcastResult, error) {
+		return &BroadcastResult{TxHash: identity.TxHash, TxBytesHash: identity.TxBytesHash, SignDocHash: identity.SignDocHash, AccountSequence: identity.AccountSequence, Code: 17, RawLog: "out of gas"}, nil
+	}}, "test rejected broadcast", nil
 }
 
 func (e rejectingBroadcastExecutor) ScanSubmitted(context.Context, LiveOperationGroup) (map[string]privacyreservation.OperationEvidence, string, error) {
@@ -682,10 +685,14 @@ func (e failedBroadcastExecutor) BuildProofReady(context.Context, LiveOperationG
 	return testLiveExecutor{item: e.item}.BuildProofReady(context.Background(), LiveOperationGroup{})
 }
 
-func (e failedBroadcastExecutor) PrepareBroadcastProofReady(context.Context, LiveOperationGroup) (LiveBroadcastSubmit, string, error) {
-	return func(context.Context) (*BroadcastResult, error) {
+func (e failedBroadcastExecutor) PrepareBroadcastProofReady(context.Context, LiveOperationGroup) (*PreparedLiveBroadcast, string, error) {
+	identity := BroadcastResult{TxHash: "PREPARED_TX", TxBytesHash: "prepared-bytes", SignDocHash: "prepared-sign-doc", AccountSequence: 5}
+	if e.result != nil {
+		identity = *e.result
+	}
+	return &PreparedLiveBroadcast{Identity: identity, Submit: func(context.Context) (*BroadcastResult, error) {
 		return e.result, e.err
-	}, "test failed broadcast", nil
+	}}, "test failed broadcast", nil
 }
 
 func (e failedBroadcastExecutor) ScanSubmitted(context.Context, LiveOperationGroup) (map[string]privacyreservation.OperationEvidence, string, error) {
@@ -701,15 +708,16 @@ func (e testLiveExecutor) BuildProofReady(context.Context, LiveOperationGroup) (
 	}, "test proof", nil
 }
 
-func (e testLiveExecutor) PrepareBroadcastProofReady(_ context.Context, group LiveOperationGroup) (LiveBroadcastSubmit, string, error) {
-	return func(ctx context.Context) (*BroadcastResult, error) {
+func (e testLiveExecutor) PrepareBroadcastProofReady(_ context.Context, group LiveOperationGroup) (*PreparedLiveBroadcast, string, error) {
+	identity := BroadcastResult{TxHash: "TXHASH", TxBytesHash: "tx-bytes", SignDocHash: "sign-doc", AccountSequence: 3}
+	return &PreparedLiveBroadcast{Identity: identity, Submit: func(ctx context.Context) (*BroadcastResult, error) {
 		if e.beforeSubmit != nil {
 			if err := e.beforeSubmit(ctx, group); err != nil {
 				return nil, err
 			}
 		}
-		return &BroadcastResult{TxHash: "TXHASH", TxBytesHash: "tx-bytes", SignDocHash: "sign-doc", AccountSequence: 3}, nil
-	}, "test broadcast", nil
+		return &identity, nil
+	}}, "test broadcast", nil
 }
 
 func (e testLiveExecutor) ScanSubmitted(_ context.Context, group LiveOperationGroup) (map[string]privacyreservation.OperationEvidence, string, error) {

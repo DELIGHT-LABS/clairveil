@@ -59,6 +59,7 @@ func TestSDKMessageBroadcasterAdapterPreservesMetadataOnError(t *testing.T) {
 	adapter := SDKMessageBroadcasterAdapter{
 		Broadcaster: fakeSDKTxMetadataBroadcaster{
 			result: &privacyprovider.CosmosTxBroadcastResult{
+				TxHash:          "PRECOMPUTED_TXHASH",
 				TxBytesHash:     "tx-bytes-hash",
 				SignDocHash:     "sign-doc-hash",
 				AccountSequence: 7,
@@ -69,6 +70,7 @@ func TestSDKMessageBroadcasterAdapterPreservesMetadataOnError(t *testing.T) {
 
 	result, err := adapter.BroadcastMessages(context.Background(), &privacytypes.MsgTransfer{})
 	require.ErrorContains(t, err, "rpc timeout")
+	require.Equal(t, "PRECOMPUTED_TXHASH", result.TxHash)
 	require.Equal(t, "tx-bytes-hash", result.TxBytesHash)
 	require.Equal(t, "sign-doc-hash", result.SignDocHash)
 	require.EqualValues(t, 7, result.AccountSequence)
@@ -94,6 +96,19 @@ func TestSDKMessageBroadcasterAdapterRejectsNilPreparedBroadcastResult(t *testin
 	require.ErrorContains(t, err, "nil prepared broadcast result")
 }
 
+func TestSDKMessageBroadcasterAdapterTreatsPreparedMetadataWithoutResponseAsAmbiguous(t *testing.T) {
+	adapter := SDKMessageBroadcasterAdapter{Broadcaster: responseLessPreparedSDKTxBroadcaster{}}
+
+	prepared, err := adapter.PrepareBroadcastMessages(context.Background(), &privacytypes.MsgTransfer{})
+	require.NoError(t, err)
+
+	result, err := prepared.Submit(context.Background())
+	require.ErrorContains(t, err, "nil prepared broadcast response")
+	require.NotNil(t, result)
+	require.Equal(t, "PRECOMPUTED_TXHASH", result.TxHash)
+	require.Equal(t, "tx-bytes-hash", result.TxBytesHash)
+}
+
 type fakeSDKTxBroadcaster struct {
 	response *sdk.TxResponse
 }
@@ -110,6 +125,8 @@ type fakeSDKTxMetadataBroadcaster struct {
 type nilPreparedSDKTxBroadcaster struct{}
 
 type nilPreparedSubmitSDKTxBroadcaster struct{}
+
+type responseLessPreparedSDKTxBroadcaster struct{}
 
 func (nilPreparedSDKTxBroadcaster) BroadcastSDKMessages(context.Context, ...sdk.Msg) (*sdk.TxResponse, error) {
 	return nil, nil
@@ -135,6 +152,24 @@ func (nilPreparedSubmitSDKTxBroadcaster) PrepareSDKMessagesWithMetadata(context.
 
 func (nilPreparedSubmitSDKTxBroadcaster) BroadcastPreparedSDKMessages(context.Context, *privacyprovider.PreparedCosmosTxBroadcast) (*privacyprovider.CosmosTxBroadcastResult, error) {
 	return nil, nil
+}
+
+func (responseLessPreparedSDKTxBroadcaster) BroadcastSDKMessages(context.Context, ...sdk.Msg) (*sdk.TxResponse, error) {
+	return nil, nil
+}
+
+func (responseLessPreparedSDKTxBroadcaster) PrepareSDKMessagesWithMetadata(context.Context, ...sdk.Msg) (*privacyprovider.PreparedCosmosTxBroadcast, error) {
+	return &privacyprovider.PreparedCosmosTxBroadcast{Result: privacyprovider.CosmosTxBroadcastResult{
+		TxHash:      "PRECOMPUTED_TXHASH",
+		TxBytesHash: "tx-bytes-hash",
+	}}, nil
+}
+
+func (responseLessPreparedSDKTxBroadcaster) BroadcastPreparedSDKMessages(context.Context, *privacyprovider.PreparedCosmosTxBroadcast) (*privacyprovider.CosmosTxBroadcastResult, error) {
+	return &privacyprovider.CosmosTxBroadcastResult{
+		TxHash:      "PRECOMPUTED_TXHASH",
+		TxBytesHash: "tx-bytes-hash",
+	}, nil
 }
 
 func (b fakeSDKTxMetadataBroadcaster) BroadcastSDKMessages(_ context.Context, _ ...sdk.Msg) (*sdk.TxResponse, error) {

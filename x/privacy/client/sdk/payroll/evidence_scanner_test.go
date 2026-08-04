@@ -424,7 +424,7 @@ func markPayrollPlanSubmittedForScannerTest(t *testing.T, ctx context.Context, s
 		reservationIDs = append(reservationIDs, note.ReservationID)
 	}
 	refs := markOperationProofReadyForScannerTest(t, ctx, service, item.OperationID, reservationIDs)
-	_, _, err := service.MarkBroadcastAttempting(ctx, refs, []string{item.OperationID}, privacyreservation.BroadcastAttemptStart{Reason: "scanner test submission"})
+	_, _, err := service.MarkBroadcastAttempting(ctx, refs, []string{item.OperationID}, privacyreservation.BroadcastAttemptStart{Reason: "scanner test submission", TxHash: txHash})
 	require.NoError(t, err)
 	_, _, err = service.MarkSubmittedBatch(ctx, refs, []string{item.OperationID}, privacyreservation.SubmittedReservationUpdate{TxHash: txHash})
 	require.NoError(t, err)
@@ -433,7 +433,7 @@ func markPayrollPlanSubmittedForScannerTest(t *testing.T, ctx context.Context, s
 func markReservationSubmittedForScannerTest(t *testing.T, ctx context.Context, service privacyreservation.Service, reservationID string, operationID string, txHash string) {
 	t.Helper()
 	refs := markOperationProofReadyForScannerTest(t, ctx, service, operationID, []string{reservationID})
-	_, _, err := service.MarkBroadcastAttempting(ctx, refs, []string{operationID}, privacyreservation.BroadcastAttemptStart{Reason: "scanner test submission"})
+	_, _, err := service.MarkBroadcastAttempting(ctx, refs, []string{operationID}, privacyreservation.BroadcastAttemptStart{Reason: "scanner test submission", TxHash: txHash})
 	require.NoError(t, err)
 	_, _, err = service.MarkSubmittedBatch(ctx, refs, []string{operationID}, privacyreservation.SubmittedReservationUpdate{TxHash: txHash})
 	require.NoError(t, err)

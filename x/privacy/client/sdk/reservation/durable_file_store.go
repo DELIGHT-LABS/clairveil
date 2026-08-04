@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-const durableFileStoreVersion = 1
+const durableFileStoreVersion = currentLifecycleSchemaVersion
 
 type DurableFileStore struct {
 	mu     sync.Mutex
@@ -40,14 +40,21 @@ func OpenDurableFileStore(path string) (*DurableFileStore, error) {
 	if path == "" {
 		return nil, fmt.Errorf("%w: durable reservation store path is required", ErrInvalidReservation)
 	}
-	memory, err := loadDurableFileStoreSnapshot(path)
+	store := &DurableFileStore{path: path}
+	unlock, err := store.acquireFileLockLocked()
 	if err != nil {
 		return nil, err
 	}
-	store := &DurableFileStore{
-		path:   path,
-		memory: memory,
+	defer unlock()
+	snapshot, err := readDurableFileStoreSnapshot(path)
+	if err != nil {
+		return nil, err
 	}
+	memory, err := memoryStoreFromSnapshot(snapshot)
+	if err != nil {
+		return nil, err
+	}
+	store.memory = memory
 	return store, nil
 }
 
@@ -160,30 +167,6 @@ func (s *DurableFileStore) CompareAndSetReservationStatus(ctx context.Context, r
 		return nil, err
 	}
 	return updated, s.persistMutationLocked(ctx, before)
-}
-
-func (s *DurableFileStore) CompareAndSetReservationStatusWithOperation(ctx context.Context, reservationID string, from ReservationStatus, to ReservationStatus, operation *PayrollOperation, now time.Time) (*NoteReservation, *PayrollOperation, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(ctx); err != nil {
-		return nil, nil, err
-	}
-	before := s.snapshotLocked()
-	updatedReservation, updatedOperation, err := s.memory.ApplyReconciliationTransition(ctx, ReconciliationTransition{
-		ReservationID:     reservationID,
-		From:              from,
-		To:                to,
-		Operation:         operation,
-		Now:               now,
-		serviceAuthorized: true,
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := s.persistMutationLocked(ctx, before); err != nil {
-		return nil, nil, err
-	}
-	return updatedReservation, updatedOperation, nil
 }
 
 func (s *DurableFileStore) CompareAndSetReservationStatusWithLease(ctx context.Context, reservationID string, leaseOwner string, leaseToken string, from ReservationStatus, to ReservationStatus, now time.Time) (*NoteReservation, error) {
@@ -544,20 +527,6 @@ func (s *DurableFileStore) MarkReservationsProofArtifactCleanupFailed(ctx contex
 	return updatedReservations, updatedOperations, nil
 }
 
-func (s *DurableFileStore) UpdateReservation(ctx context.Context, reservation NoteReservation) (*NoteReservation, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(ctx); err != nil {
-		return nil, err
-	}
-	before := s.snapshotLocked()
-	updated, err := s.memory.UpdateReservation(ctx, reservation)
-	if err != nil {
-		return nil, err
-	}
-	return updated, s.persistMutationLocked(ctx, before)
-}
-
 func (s *DurableFileStore) CreateOperation(ctx context.Context, operation PayrollOperation) (*PayrollOperation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -579,20 +548,6 @@ func (s *DurableFileStore) GetOperation(ctx context.Context, operationID string)
 		return nil, err
 	}
 	return s.memory.GetOperation(ctx, operationID)
-}
-
-func (s *DurableFileStore) UpdateOperation(ctx context.Context, operation PayrollOperation) (*PayrollOperation, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(ctx); err != nil {
-		return nil, err
-	}
-	before := s.snapshotLocked()
-	updated, err := s.memory.UpdateOperation(ctx, operation)
-	if err != nil {
-		return nil, err
-	}
-	return updated, s.persistMutationLocked(ctx, before)
 }
 
 func (s *DurableFileStore) persist(ctx context.Context) error {
@@ -759,14 +714,6 @@ func (s *DurableFileStore) snapshotLocked() DurableFileStoreSnapshot {
 		BatchItems:         batchItems,
 		BatchEvidence:      batchEvidence,
 	}
-}
-
-func loadDurableFileStoreSnapshot(path string) (*MemoryStore, error) {
-	snapshot, err := readDurableFileStoreSnapshot(path)
-	if err != nil {
-		return nil, err
-	}
-	return memoryStoreFromSnapshot(snapshot)
 }
 
 func readDurableFileStoreSnapshot(path string) (DurableFileStoreSnapshot, error) {

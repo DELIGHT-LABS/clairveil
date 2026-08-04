@@ -399,7 +399,7 @@ func TestNoteReservationContractFixtureMatchesGoSDK(t *testing.T) {
 			PayloadHash: "payload-a",
 		})
 		require.NoError(t, err, vector.Name)
-		_, _, err = service.MarkBroadcastAttempting(ctx, []privacyreservation.SubmittedReservationRef{ref}, []string{"operation-a"}, privacyreservation.BroadcastAttemptStart{Reason: "fixture"})
+		_, _, err = service.MarkBroadcastAttempting(ctx, []privacyreservation.SubmittedReservationRef{ref}, []string{"operation-a"}, privacyreservation.BroadcastAttemptStart{Reason: "fixture", TxHash: vector.StoredTxHash, TxBytesHash: vector.StoredTxBytesHash, SignDocHash: vector.StoredSignDocHash})
 		require.NoError(t, err, vector.Name)
 		_, _, err = service.MarkSubmittedBatch(ctx, []privacyreservation.SubmittedReservationRef{ref}, []string{"operation-a"}, privacyreservation.SubmittedReservationUpdate{
 			TxHash:      vector.StoredTxHash,

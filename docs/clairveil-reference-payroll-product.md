@@ -533,6 +533,8 @@ This adapter is a repo-local production-style adapter for restart/rerun rehearsa
 
 Schema strings are available through `reservation.PostgreSQLSchema()` and `reservation.SQLiteSchema()`. This adapter is a reference transaction-backed store. Multi-tenant production should add tenant partitioning, field-level encryption, raw-nullifier avoidance, connection pool policy, migrations, and row-lock strategy according to product DB policy.
 
+Reservation lifecycle payloads use schema version 2. Durable JSON records it in `version`; SQL stores record it in `reservation_lifecycle_store_meta`. Upgrade SQL stores through `InitSQLStore`, which fail-closes ambiguous v1 `ProofReady` work into `ManualReview`. In-place downgrade is not supported: retain a pre-upgrade v1 backup and restore it before running an older binary. Older binaries must reject v2 state.
+
 ## Current Repository Completion Boundary
 
 As of 2026-07-13, the repository-level reference boundary includes:
