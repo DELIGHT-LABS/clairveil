@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
 import { MsgWithdraw, msgWithdrawTypeUrl } from "clairveiljs/cosmos-client";
+import { validateBrowserWalletProfile } from "clairveiljs/browser-dapp";
+import { normalizeBrowserProfileEndpoints } from "../public/browser-profile.js";
+import { getStaticDappConfig } from "../public/dapp-config.js";
 import { assertDepositFundingAvailable } from "../public/deposit-funding.js";
 import { EncryptedLocalStorageOperationStore } from "../public/encrypted-operation-store.js";
 import { disclosureViewModel } from "../public/disclosure-view-model.js";
@@ -86,6 +89,22 @@ function cosmosWithdrawTx(payload, overrides = {}) {
   const bodyBytes = protobufBytesField(1, any);
   return protobufBytesField(1, bodyBytes);
 }
+
+test("browser endpoint rewriting keeps the Keplr chain profile on one RPC and REST", () => {
+  const source = getStaticDappConfig().chainProfiles[0];
+  const profile = normalizeBrowserProfileEndpoints(source, {
+    rpc: "http://localhost:26657",
+    rest: "http://localhost:1317",
+    proverUrl: "http://localhost:8080"
+  });
+
+  assert.equal(profile.rpc, "http://localhost:26657");
+  assert.equal(profile.keplrChainInfo.rpc, profile.rpc);
+  assert.equal(profile.rest, "http://localhost:1317");
+  assert.equal(profile.keplrChainInfo.rest, profile.rest);
+  assert.equal(source.rpc, "http://127.0.0.1:26657");
+  assert.doesNotThrow(() => validateBrowserWalletProfile(profile));
+});
 
 test("deposit funding separates EVM asset and native gas balances", () => {
   assert.deepEqual(assertDepositFundingAvailable({

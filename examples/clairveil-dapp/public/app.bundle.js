@@ -95743,6 +95743,33 @@ function assertDepositFundingAvailable({
   return { amount: amountValue, fee: feeValue, balance, required };
 }
 
+// public/browser-profile.js
+function normalizeBrowserProfileEndpoints(profile, {
+  rpc,
+  rest,
+  proverUrl,
+  depositProofUrl = ""
+} = {}) {
+  if (!profile || typeof profile !== "object" || Array.isArray(profile)) {
+    throw new Error("browser profile is required");
+  }
+  const normalized = {
+    ...profile,
+    rpc,
+    rest,
+    proverUrl,
+    ...depositProofUrl ? { depositProofUrl } : {}
+  };
+  if (normalized.transport === "cosmos" && normalized.keplrChainInfo) {
+    normalized.keplrChainInfo = {
+      ...normalized.keplrChainInfo,
+      rpc,
+      rest
+    };
+  }
+  return normalized;
+}
+
 // public/disclosure-view-model.js
 function disclosureViewModel(report) {
   if (report?.verification?.verified !== true) {
@@ -96244,7 +96271,7 @@ function isEvmTransparentMode(walletKind = activeWalletKind()) {
   return activeTransparentAddressFormat() === "evm" || walletKind === "metamask" || walletKind === "evm";
 }
 function activeKeplrChainInfo() {
-  return activeChainProfile()?.keplrChainInfo || state.config?.keplrChainInfo;
+  return browserWalletProfile(activeChainProfile())?.keplrChainInfo || state.config?.keplrChainInfo;
 }
 function selectedProfileMatchesServer(profile = activeChainProfile()) {
   if (state.config?.serverBacked === false) return true;
@@ -96384,46 +96411,51 @@ function configuredDepositProofProvider() {
 function depositProofReady(profile = activeChainProfile()) {
   return Boolean(configuredDepositProofProvider() || browserDepositProofUrl(profile));
 }
+function browserWalletProfile(profile = activeChainProfile()) {
+  const resolved = profile || state.config?.activeProfile;
+  if (!resolved) return null;
+  const normalized = normalizeBrowserProfileEndpoints(resolved, {
+    rpc: browserRpcUrl(resolved),
+    rest: browserRestUrl(resolved),
+    proverUrl: browserProverUrl(resolved),
+    depositProofUrl: browserDepositProofUrl(resolved)
+  });
+  if (normalized.transport === "evm") {
+    Object.assign(normalized, {
+      evmRpc: evmRpcUrlForWallet(resolved),
+      evmChainId: resolved?.evmChainId || state.config?.evmChainId,
+      evmPrivacyPrecompileAddress: resolved?.evmPrivacyPrecompileAddress || state.config?.evmPrivacyPrecompileAddress,
+      evmDepositMode: resolved?.evmDepositMode || state.config?.evmDepositMode || "nonpayable",
+      evmNativeDenom: resolved?.evmNativeDenom || state.config?.evmNativeDenom || resolved?.denom,
+      evmGasLimit: resolved?.evmGasLimit || state.config?.evmGasLimit,
+      evmSendGasLimit: resolved?.evmSendGasLimit || state.config?.evmSendGasLimit
+    });
+  }
+  return normalized;
+}
 function clairveilBrowserClient(profile = activeChainProfile()) {
   const resolved = profile || state.config?.activeProfile;
   if (!resolved) throw new Error("A validated Clairveil chain profile is required");
   const depositProofProvider = configuredDepositProofProvider();
+  const browserProfile = browserWalletProfile(resolved);
   const key = JSON.stringify({
-    id: resolved?.id || "",
-    rpc: browserRpcUrl(resolved),
-    rest: browserRestUrl(resolved),
-    chainId: resolved?.chainId || state.config?.chainId || "",
-    accountPrefix: resolved?.accountPrefix || state.config?.accountPrefix || "",
-    shieldedPrefix: resolved?.shieldedPrefix || state.config?.shieldedPrefix || "",
-    denom: resolved?.denom || state.config?.denom || "",
-    proverUrl: browserProverUrl(resolved),
-    depositProofUrl: browserDepositProofUrl(resolved),
-    evmRpc: evmRpcUrlForWallet(resolved),
-    evmChainId: resolved?.evmChainId || state.config?.evmChainId || "",
-    evmPrivacyPrecompileAddress: resolved?.evmPrivacyPrecompileAddress || state.config?.evmPrivacyPrecompileAddress || "",
-    evmDepositMode: resolved?.evmDepositMode || state.config?.evmDepositMode || "nonpayable",
-    evmNativeDenom: resolved?.evmNativeDenom || state.config?.evmNativeDenom || resolved?.denom || state.config?.denom || "",
+    id: browserProfile?.id || "",
+    rpc: browserProfile?.rpc || "",
+    rest: browserProfile?.rest || "",
+    chainId: browserProfile?.chainId || "",
+    accountPrefix: browserProfile?.accountPrefix || "",
+    shieldedPrefix: browserProfile?.shieldedPrefix || "",
+    denom: browserProfile?.denom || "",
+    proverUrl: browserProfile?.proverUrl || "",
+    depositProofUrl: browserProfile?.depositProofUrl || "",
+    evmRpc: browserProfile?.evmRpc || "",
+    evmChainId: browserProfile?.evmChainId || "",
+    evmPrivacyPrecompileAddress: browserProfile?.evmPrivacyPrecompileAddress || "",
+    evmDepositMode: browserProfile?.evmDepositMode || "nonpayable",
+    evmNativeDenom: browserProfile?.evmNativeDenom || "",
     batchTransfer: serverFeature("batchTransfer")
   });
   if (!browserClient || browserClientKey !== key || browserClientDepositProofProvider !== depositProofProvider) {
-    const browserProfile = {
-      ...resolved,
-      rpc: browserRpcUrl(resolved),
-      rest: browserRestUrl(resolved),
-      proverUrl: browserProverUrl(resolved),
-      ...browserDepositProofUrl(resolved) ? { depositProofUrl: browserDepositProofUrl(resolved) } : {}
-    };
-    if (browserProfile.transport === "evm") {
-      Object.assign(browserProfile, {
-        evmRpc: evmRpcUrlForWallet(resolved),
-        evmChainId: resolved?.evmChainId || state.config?.evmChainId,
-        evmPrivacyPrecompileAddress: resolved?.evmPrivacyPrecompileAddress || state.config?.evmPrivacyPrecompileAddress,
-        evmDepositMode: resolved?.evmDepositMode || state.config?.evmDepositMode || "nonpayable",
-        evmNativeDenom: resolved?.evmNativeDenom || state.config?.evmNativeDenom || resolved?.denom,
-        evmGasLimit: resolved?.evmGasLimit || state.config?.evmGasLimit,
-        evmSendGasLimit: resolved?.evmSendGasLimit || state.config?.evmSendGasLimit
-      });
-    }
     browserClient = createClairveilBrowserDappClient({
       profile: browserProfile,
       depositProofProvider,

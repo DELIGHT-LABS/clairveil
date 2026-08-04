@@ -123,6 +123,9 @@ test("DApp exposes chain profiles and filters wallet connect buttons by chain", 
   assert.match(serverSource, /CLAIRVEIL_EVM_HOST_REST_ENDPOINTS/);
   assert.match(serverSource, /restEndpoints: config\.cosmosRestEndpoints/);
   assert.match(appSource, /function profileRestEndpoints/);
+  assert.match(appSource, /function browserWalletProfile/);
+  assert.match(appSource, /normalizeBrowserProfileEndpoints\(resolved/);
+  assert.match(appSource, /return browserWalletProfile\(activeChainProfile\(\)\)\?\.keplrChainInfo/);
   assert.match(appSource, /function selectNoteScanEndpoint/);
   assert.match(appSource, /function activeWalletKind/);
   assert.match(appSource, /function selectedProfileMatchesServer/);
