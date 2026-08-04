@@ -19,7 +19,10 @@ import {
 } from "clairveiljs/reservation";
 import { getStaticDappConfig } from "./dapp-config.js";
 import { EncryptedLocalStorageNoteStore } from "./encrypted-note-store.js";
-import { createEncryptedBrowserReservationManager } from "./encrypted-reservation-manager.js";
+import {
+  createEncryptedBrowserReservationManager,
+  resetEncryptedBrowserReservationState
+} from "./encrypted-reservation-manager.js";
 import { EncryptedLocalStorageOperationStore } from "./encrypted-operation-store.js";
 import { assertDepositFundingAvailable } from "./deposit-funding.js";
 import { cosmosChargedFeeAmount, evmChargedFeeAmount } from "./network-fee.js";
@@ -41,7 +44,9 @@ import {
 } from "./relay-withdraw-reconciliation.js";
 import {
   assessReservationRecovery,
-  groupReservationOperations
+  canResetStaleLocalGenesisReservations,
+  groupReservationOperations,
+  isEmptyLocalGenesisPrivacyState
 } from "./reservation-recovery.js";
 
 function defaultMetaMaskState() {
@@ -5252,6 +5257,39 @@ async function explicitlyUnspentReservationIDs(manager, records, notes = state.k
     .map(record => record.reservation_id);
 }
 
+async function maybeResetStaleLocalGenesisReservations(manager, { refreshProtocol = true } = {}) {
+  if (!localTestBackendEnabled()) return { eligible: false, reset: false };
+  const active = await manager.listActiveReservations();
+  if (!active.length) return { eligible: false, reset: false };
+
+  if (refreshProtocol) await refreshProtocolStatus();
+  const assessments = groupReservationOperations(active).map(operation => (
+    assessReservationRecovery(operation.records, { leaseOwner: reservationLeaseOwner })
+  ));
+  const cursor = state.keplr.noteScanCursor || defaultNoteScanCursor();
+  const eligible = canResetStaleLocalGenesisReservations({
+    localTestMode: true,
+    reserve: state.protocol.reserve,
+    notes: state.keplr.notes,
+    noteSyncStatus: state.keplr.noteSyncStatus,
+    scanHasMore: Boolean(cursor.has_more ?? cursor.hasMore),
+    assessments
+  });
+  if (!eligible) return { eligible: false, reset: false };
+
+  const approved = globalThis.confirm(
+    "현재 local test chain의 reserve와 deposit/withdraw history가 모두 0이고 full scan에도 note가 없습니다.\n\n"
+    + "동일한 chain ID로 localnet이 재초기화되어 이전 genesis의 ProofReady reservation만 남은 상태입니다. 이전 localnet의 encrypted reservation 기록을 모두 삭제할까요? 이 동작은 public network에서는 제공되지 않습니다."
+  );
+  if (!approved) return { eligible: true, reset: false };
+
+  await resetEncryptedBrowserReservationState(manager);
+  await refreshReservationState(manager);
+  els.keplrTxState.textContent = "Stale localnet reservations cleared";
+  toast("Previous-genesis reservations cleared. New plans can use notes from the current localnet.");
+  return { eligible: true, reset: true };
+}
+
 function activeReservationOperation(records, operationKey) {
   return groupReservationOperations(records)
     .find(operation => operation.key === operationKey)?.records || [];
@@ -5320,6 +5358,27 @@ async function recoverReservationPreparation(operationKey) {
     }
     assessment = assessReservationRecovery(records, { leaseOwner: reservationLeaseOwner });
     if (assessment.action !== "review-replan") throw new Error(assessment.reason);
+
+    if (localTestBackendEnabled()) {
+      await refreshProtocolStatus();
+      if (isEmptyLocalGenesisPrivacyState({
+        localTestMode: true,
+        reserve: state.protocol.reserve
+      })) {
+        const staleReset = await maybeResetStaleLocalGenesisReservations(manager, {
+          refreshProtocol: false
+        });
+        if (staleReset.eligible) {
+          if (!staleReset.reset) {
+            els.keplrTxState.textContent = "Fresh-genesis reservation reset cancelled";
+          }
+          return;
+        }
+        throw new Error(
+          "Fresh local genesis detected. Run Reset & Rescan to remove previous-genesis notes before resetting stale reservations."
+        );
+      }
+    }
 
     const unspentIDs = await explicitlyUnspentReservationIDs(manager, records, state.keplr.notes);
     const checkedHeight = checkedReservationHeight();
@@ -5789,6 +5848,8 @@ async function backupNoteCache() {
 async function resetAndRescanNotes() {
   if (!globalThis.confirm("로컬 note cache를 지우고 체인 genesis부터 다시 스캔할까요? cache는 복구 가능하지만 완료까지 시간이 걸릴 수 있습니다.")) return;
   await scanKeplrNotes({ reset: true, throwOnError: true });
+  const manager = await currentReservationManager();
+  if (manager) await maybeResetStaleLocalGenesisReservations(manager);
 }
 
 async function rollbackAndRescanNotes() {

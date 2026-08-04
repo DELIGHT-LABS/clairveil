@@ -7,8 +7,11 @@ import { normalizeBrowserProfileEndpoints } from "../public/browser-profile.js";
 import { keplrDirectSignOptions } from "../public/cosmos-sign-options.js";
 import {
   assessReservationRecovery,
-  groupReservationOperations
+  canResetStaleLocalGenesisReservations,
+  groupReservationOperations,
+  isEmptyLocalGenesisPrivacyState
 } from "../public/reservation-recovery.js";
+import { resetEncryptedBrowserReservationState } from "../public/encrypted-reservation-manager.js";
 import { getStaticDappConfig } from "../public/dapp-config.js";
 import { assertDepositFundingAvailable } from "../public/deposit-funding.js";
 import { cosmosChargedFeeAmount, evmChargedFeeAmount } from "../public/network-fee.js";
@@ -208,6 +211,51 @@ test("reservation recovery fails closed for broadcast, relay, and foreign live l
     kind: "relay_withdraw",
     metadata: { no_broadcast_attempt: true, relay_handed_off: true }
   }], options).action, "relay-reconcile");
+});
+
+test("fresh empty local genesis can discard only no-broadcast stale reservations", () => {
+  const input = {
+    localTestMode: true,
+    reserve: {
+      module_balance: "0",
+      expected_module_balance: "0",
+      total_deposited: "0",
+      total_withdrawn: "0",
+      invariant_holds: true
+    },
+    notes: [],
+    noteSyncStatus: "synced",
+    scanHasMore: false,
+    assessments: [{ action: "review-replan" }]
+  };
+  assert.equal(isEmptyLocalGenesisPrivacyState(input), true);
+  assert.equal(canResetStaleLocalGenesisReservations(input), true);
+  assert.equal(canResetStaleLocalGenesisReservations({ ...input, localTestMode: false }), false);
+  assert.equal(canResetStaleLocalGenesisReservations({
+    ...input,
+    reserve: { ...input.reserve, total_deposited: "100" }
+  }), false);
+  assert.equal(canResetStaleLocalGenesisReservations({ ...input, notes: [{ nullifier: "11" }] }), false);
+  assert.equal(canResetStaleLocalGenesisReservations({
+    ...input,
+    assessments: [{ action: "review-replan" }, { action: "reconcile" }]
+  }), false);
+});
+
+test("fresh-genesis reset replaces encrypted reservation state only through the store reset hook", async () => {
+  const replacements = [];
+  await resetEncryptedBrowserReservationState({
+    store: {
+      async unsafeReplaceState(state) {
+        replacements.push(state);
+      }
+    }
+  });
+  assert.deepEqual(replacements, [{}]);
+  await assert.rejects(
+    () => resetEncryptedBrowserReservationState({ store: {} }),
+    /does not support fresh-genesis reset/
+  );
 });
 
 test("deposit funding separates EVM asset and native gas balances", () => {

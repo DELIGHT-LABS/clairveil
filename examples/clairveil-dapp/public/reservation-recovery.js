@@ -114,3 +114,39 @@ export function assessReservationRecovery(records = [], {
     leaseUntil
   });
 }
+
+function isZeroReserveAmount(value) {
+  return /^(?:0+)$/.test(String(value ?? ""));
+}
+
+export function isEmptyLocalGenesisPrivacyState({
+  localTestMode = false,
+  reserve
+} = {}) {
+  return localTestMode === true
+    && reserve?.invariant_holds === true
+    && [
+      reserve.module_balance,
+      reserve.expected_module_balance,
+      reserve.total_deposited,
+      reserve.total_withdrawn
+    ].every(isZeroReserveAmount);
+}
+
+export function canResetStaleLocalGenesisReservations({
+  localTestMode = false,
+  reserve,
+  notes = [],
+  noteSyncStatus = "",
+  scanHasMore = true,
+  assessments = []
+} = {}) {
+  return isEmptyLocalGenesisPrivacyState({ localTestMode, reserve })
+    && Array.isArray(notes)
+    && notes.length === 0
+    && noteSyncStatus === "synced"
+    && scanHasMore === false
+    && Array.isArray(assessments)
+    && assessments.length > 0
+    && assessments.every(assessment => assessment?.action === "review-replan");
+}

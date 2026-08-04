@@ -85,4 +85,16 @@ export async function createEncryptedBrowserReservationManager({
   });
 }
 
+/**
+ * Destructive migration escape hatch for a confirmed fresh local genesis.
+ * Callers must gate this on an empty authoritative chain history and explicit
+ * wallet-owner approval; normal recovery must use reservation CAS methods.
+ */
+export async function resetEncryptedBrowserReservationState(manager) {
+  if (typeof manager?.store?.unsafeReplaceState !== "function") {
+    throw new Error("Encrypted reservation store does not support fresh-genesis reset");
+  }
+  await manager.store.unsafeReplaceState({});
+}
+
 export { reservationStateVersion };

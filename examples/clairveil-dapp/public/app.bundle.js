@@ -95599,6 +95599,12 @@ async function createEncryptedBrowserReservationManager({
     leaseOwner
   });
 }
+async function resetEncryptedBrowserReservationState(manager) {
+  if (typeof manager?.store?.unsafeReplaceState !== "function") {
+    throw new Error("Encrypted reservation store does not support fresh-genesis reset");
+  }
+  await manager.store.unsafeReplaceState({});
+}
 
 // public/encrypted-operation-store.js
 var encryptedOperationStoreVersion = "clairveil-encrypted-operation-store-v1";
@@ -96261,6 +96267,30 @@ function assessReservationRecovery(records = [], {
     leaseToken: liveLeaseTokens.length === 1 ? liveLeaseTokens[0] : "",
     leaseUntil
   });
+}
+function isZeroReserveAmount(value) {
+  return /^(?:0+)$/.test(String(value ?? ""));
+}
+function isEmptyLocalGenesisPrivacyState({
+  localTestMode = false,
+  reserve
+} = {}) {
+  return localTestMode === true && reserve?.invariant_holds === true && [
+    reserve.module_balance,
+    reserve.expected_module_balance,
+    reserve.total_deposited,
+    reserve.total_withdrawn
+  ].every(isZeroReserveAmount);
+}
+function canResetStaleLocalGenesisReservations({
+  localTestMode = false,
+  reserve,
+  notes = [],
+  noteSyncStatus = "",
+  scanHasMore = true,
+  assessments = []
+} = {}) {
+  return isEmptyLocalGenesisPrivacyState({ localTestMode, reserve }) && Array.isArray(notes) && notes.length === 0 && noteSyncStatus === "synced" && scanHasMore === false && Array.isArray(assessments) && assessments.length > 0 && assessments.every((assessment) => assessment?.action === "review-replan");
 }
 
 // public/app.js
@@ -100883,6 +100913,32 @@ async function explicitlyUnspentReservationIDs(manager, records, notes = state.k
   }
   return records.filter((record) => byLookupKey.has(record.nullifier_lookup_key)).map((record) => record.reservation_id);
 }
+async function maybeResetStaleLocalGenesisReservations(manager, { refreshProtocol = true } = {}) {
+  if (!localTestBackendEnabled()) return { eligible: false, reset: false };
+  const active = await manager.listActiveReservations();
+  if (!active.length) return { eligible: false, reset: false };
+  if (refreshProtocol) await refreshProtocolStatus();
+  const assessments = groupReservationOperations(active).map((operation) => assessReservationRecovery(operation.records, { leaseOwner: reservationLeaseOwner }));
+  const cursor = state.keplr.noteScanCursor || defaultNoteScanCursor();
+  const eligible = canResetStaleLocalGenesisReservations({
+    localTestMode: true,
+    reserve: state.protocol.reserve,
+    notes: state.keplr.notes,
+    noteSyncStatus: state.keplr.noteSyncStatus,
+    scanHasMore: Boolean(cursor.has_more ?? cursor.hasMore),
+    assessments
+  });
+  if (!eligible) return { eligible: false, reset: false };
+  const approved = globalThis.confirm(
+    "\uD604\uC7AC local test chain\uC758 reserve\uC640 deposit/withdraw history\uAC00 \uBAA8\uB450 0\uC774\uACE0 full scan\uC5D0\uB3C4 note\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.\n\n\uB3D9\uC77C\uD55C chain ID\uB85C localnet\uC774 \uC7AC\uCD08\uAE30\uD654\uB418\uC5B4 \uC774\uC804 genesis\uC758 ProofReady reservation\uB9CC \uB0A8\uC740 \uC0C1\uD0DC\uC785\uB2C8\uB2E4. \uC774\uC804 localnet\uC758 encrypted reservation \uAE30\uB85D\uC744 \uBAA8\uB450 \uC0AD\uC81C\uD560\uAE4C\uC694? \uC774 \uB3D9\uC791\uC740 public network\uC5D0\uC11C\uB294 \uC81C\uACF5\uB418\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
+  );
+  if (!approved) return { eligible: true, reset: false };
+  await resetEncryptedBrowserReservationState(manager);
+  await refreshReservationState(manager);
+  els.keplrTxState.textContent = "Stale localnet reservations cleared";
+  toast("Previous-genesis reservations cleared. New plans can use notes from the current localnet.");
+  return { eligible: true, reset: true };
+}
 function activeReservationOperation(records, operationKey) {
   return groupReservationOperations(records).find((operation) => operation.key === operationKey)?.records || [];
 }
@@ -100945,6 +101001,26 @@ async function recoverReservationPreparation(operationKey) {
     }
     assessment = assessReservationRecovery(records, { leaseOwner: reservationLeaseOwner });
     if (assessment.action !== "review-replan") throw new Error(assessment.reason);
+    if (localTestBackendEnabled()) {
+      await refreshProtocolStatus();
+      if (isEmptyLocalGenesisPrivacyState({
+        localTestMode: true,
+        reserve: state.protocol.reserve
+      })) {
+        const staleReset = await maybeResetStaleLocalGenesisReservations(manager, {
+          refreshProtocol: false
+        });
+        if (staleReset.eligible) {
+          if (!staleReset.reset) {
+            els.keplrTxState.textContent = "Fresh-genesis reservation reset cancelled";
+          }
+          return;
+        }
+        throw new Error(
+          "Fresh local genesis detected. Run Reset & Rescan to remove previous-genesis notes before resetting stale reservations."
+        );
+      }
+    }
     const unspentIDs = await explicitlyUnspentReservationIDs(manager, records, state.keplr.notes);
     const checkedHeight = checkedReservationHeight();
     if (unspentIDs.length !== assessment.reservationIDs.length || !checkedHeight) {
@@ -101373,6 +101449,8 @@ async function backupNoteCache() {
 async function resetAndRescanNotes() {
   if (!globalThis.confirm("\uB85C\uCEEC note cache\uB97C \uC9C0\uC6B0\uACE0 \uCCB4\uC778 genesis\uBD80\uD130 \uB2E4\uC2DC \uC2A4\uCE94\uD560\uAE4C\uC694? cache\uB294 \uBCF5\uAD6C \uAC00\uB2A5\uD558\uC9C0\uB9CC \uC644\uB8CC\uAE4C\uC9C0 \uC2DC\uAC04\uC774 \uAC78\uB9B4 \uC218 \uC788\uC2B5\uB2C8\uB2E4.")) return;
   await scanKeplrNotes({ reset: true, throwOnError: true });
+  const manager = await currentReservationManager();
+  if (manager) await maybeResetStaleLocalGenesisReservations(manager);
 }
 async function rollbackAndRescanNotes() {
   const height = String(els.noteRollbackHeight.value || "").trim();
