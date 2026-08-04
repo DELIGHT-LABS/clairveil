@@ -420,14 +420,14 @@ Transfer/withdraw proof 요청에는 `AbortSignal`이 전달됩니다. Modal에�
 
 ## 실행
 
-노드, prover, DApp을 한 번에 띄워 로컬에서 테스트:
+노드, transfer/withdraw prover, local 전용 DepositCircuit prover, DApp을 한 번에 띄워 로컬에서 테스트:
 
 ```bash
 # repository root에서 실행:
 make dapp-local
 ```
 
-이미 `26657`, `1317`, `8080`, `5173` 포트를 쓰고 있다면 기존 프로세스를 먼저 종료한 뒤 실행하세요. 종료는 이 터미널에서 `Ctrl+C`를 누르면 됩니다.
+이미 `26657`, `1317`, `8080`, `8090`, `5173` 포트를 쓰고 있다면 기존 프로세스를 먼저 종료한 뒤 실행하세요. 종료는 이 터미널에서 `Ctrl+C`를 누르면 됩니다. `make dapp-local`은 example 전용 deposit prover를 `CLAIRVEIL_HOME` 아래에 build하고 `127.0.0.1:8090`에 bind한 뒤 DApp proxy를 자동으로 설정합니다.
 
 로컬 Clairveil node:
 

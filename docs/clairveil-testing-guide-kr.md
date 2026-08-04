@@ -39,7 +39,7 @@ make release-pack-verify
 | `make reference-payroll-demo` | reference payroll product의 validate, prepare, plan, reserve, simulated daemon, final report 흐름 검증 |
 | `make reference-payroll-live-localnet` | 실제 localnet에서 payroll input, reservation, transfer-batch, recipient scan, settle, final report 흐름 검증 |
 | `make reference-payroll-rehearsal` | reference payroll capacity simulation과 선택적 live localnet smoke 검증 |
-| `make dapp-local` | 수동 테스트용 local Clairveil node, prover, browser DApp stack을 실행합니다. Reference prover는 의도적으로 browser CORS policy를 제공하지 않으므로 loopback browser proof request는 예제의 same-origin proxy를 사용합니다. |
+| `make dapp-local` | 수동 테스트용 local Clairveil node, transfer/withdraw prover, local 전용 deposit prover, browser DApp stack을 실행합니다. Reference prover는 의도적으로 browser CORS policy를 제공하지 않으므로 loopback transfer/withdraw proof request는 예제의 same-origin proxy를 사용합니다. |
 | `make release-check` | `ci`, `vulncheck`, `localnet-smoke`, `privacy-e2e-smoke`, 정적 BatchJoinSplit16x32 gate, localnet transfer-batch smoke를 포함한 bulk readiness 묶음 |
 | `make release-pack` | downstream handoff archive와 sha256 생성 |
 | `make release-pack-verify` | handoff archive checksum, 내부 checksum, 필수 파일, manifest commit 검증 |

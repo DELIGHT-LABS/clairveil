@@ -302,14 +302,14 @@ To disclose to someone else, paste that person's disclosure pubkey into `Disclos
 
 ## Run
 
-Start the local node, prover, and DApp together for a local test:
+Start the local node, transfer/withdraw prover, local-only DepositCircuit prover, and DApp together for a local test:
 
 ```bash
 # From the repository root:
 make dapp-local
 ```
 
-If `26657`, `1317`, `8080`, or `5173` is already in use, stop the existing process first. Press `Ctrl+C` in this terminal to stop all three local services.
+If `26657`, `1317`, `8080`, `8090`, or `5173` is already in use, stop the existing process first. Press `Ctrl+C` in this terminal to stop the local stack. `make dapp-local` builds the example-only deposit prover under `CLAIRVEIL_HOME`, binds it to `127.0.0.1:8090`, and configures the DApp proxy automatically.
 
 Start a local Clairveil node:
 

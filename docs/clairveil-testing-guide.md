@@ -41,7 +41,7 @@ make release-pack-verify
 | `make reference-payroll-demo` | validate the reference payroll product flow: validate, prepare, plan, reserve, simulated daemon, final report |
 | `make reference-payroll-live-localnet` | validate the live localnet payroll flow: payroll input, reservation, transfer-batch, recipient scan, settle, final report |
 | `make reference-payroll-rehearsal` | generate reference payroll capacity simulations and optional live localnet smoke |
-| `make dapp-local` | start a local Clairveil node, prover, and browser DApp stack for manual testing; loopback browser proof requests use the example's same-origin proxy because the reference prover intentionally has no browser CORS policy |
+| `make dapp-local` | start a local Clairveil node, transfer/withdraw prover, local-only deposit prover, and browser DApp stack for manual testing; loopback transfer/withdraw proof requests use the example's same-origin proxy because the reference prover intentionally has no browser CORS policy |
 | `make release-check` | `ci`, `vulncheck`, `localnet-smoke`, `privacy-e2e-smoke`, the static BatchJoinSplit16x32 gate, and bulk readiness with localnet transfer-batch smoke |
 | `make release-pack` | create downstream handoff archive and sha256 |
 | `make release-pack-verify` | verify handoff archive checksum, internal checksum, required files, and manifest commit |
