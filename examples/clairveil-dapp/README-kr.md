@@ -369,7 +369,7 @@ EVM profile은 아래 조건을 만족해야 합니다.
 5. Disclosure mode에 따라 user disclosure payload를 만듭니다.
 6. Cosmos sign doc 또는 EVM precompile tx를 준비합니다.
 
-Prepared payload 이후의 최종 확인에는 authoritative chain time으로 계산한 chain ID/만료 시각, recipient, amount, sender shielded address로 돌아오는 exact change effect, disclosure plane, self-view 설정이 표시됩니다. 이 화면에서 취소하면 local proof를 폐기하고 prepared reservation을 replan-required로 전환합니다. Self-view는 기본 활성화이며 명시적으로 끌 수 있지만, 이 경우 보낸 내역 복구가 제한될 수 있다는 경고가 표시됩니다.
+Prepared payload 이후의 최종 확인에는 authoritative chain time으로 계산한 chain ID/만료 시각, recipient, amount, sender shielded address로 돌아오는 exact change effect, disclosure plane, self-view 설정이 표시됩니다. 이 화면에서 취소하면 local proof를 폐기하고 prepared reservation을 replan-required로 전환합니다. Self-view는 기본 활성화이며 명시적으로 끌 수 있지만, 이 경우 보낸 내역 복구가 제한될 수 있다는 경고가 표시됩니다. Reservation에 묶인 Cosmos transfer/withdraw 문서는 `ProofReady`가 정확한 `TxBody + AuthInfo`를 bind하므로 DApp이 Keplr에 준비된 fee와 memo를 유지하도록 요청합니다. Input note를 reserve하지 않는 deposit은 계속 wallet fee 편집을 허용합니다.
 
 ### Withdraw
 

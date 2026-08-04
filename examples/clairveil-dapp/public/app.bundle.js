@@ -95770,6 +95770,23 @@ function normalizeBrowserProfileEndpoints(profile, {
   return normalized;
 }
 
+// public/cosmos-sign-options.js
+function keplrReservationIDs(options = {}) {
+  const reservation = options.reservation ?? options.reservationBatch ?? options.reservation_batch ?? null;
+  const ids = reservation?.reservation_ids ?? reservation?.reservationIds;
+  return Array.isArray(ids) ? ids.filter(Boolean) : [];
+}
+function keplrDirectSignOptions(options = {}) {
+  return Object.freeze({
+    // ProofReady stores a hash of TxBody + AuthInfo. Keplr may rewrite a
+    // zero-fee AuthInfo unless preferNoSetFee is set, invalidating that hash
+    // after the wallet signs. Non-reserved deposits can still use Keplr's fee
+    // editor because they have no note reservation artifact to preserve.
+    preferNoSetFee: keplrReservationIDs(options).length > 0,
+    preferNoSetMemo: true
+  });
+}
+
 // public/disclosure-view-model.js
 function disclosureViewModel(report) {
   if (report?.verification?.verified !== true) {
@@ -99955,7 +99972,7 @@ async function signDirectAndBroadcast(signDoc, options = {}) {
       directSignDoc.chainId,
       state.keplr.account,
       directSignDoc,
-      { preferNoSetFee: false, preferNoSetMemo: true }
+      keplrDirectSignOptions(options)
     )
   };
   return clairveilBrowserClient().signDirectAndBroadcast({

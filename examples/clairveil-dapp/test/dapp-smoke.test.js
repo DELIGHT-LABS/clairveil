@@ -408,7 +408,7 @@ test("DApp verifies transparent deposit funding and surfaces a non-zero fee budg
   assert.match(appSource, /clairveilBrowserClient\(\)\.getBalances\(state\.keplr\.account\)/);
   assert.match(depositFundingSource, /Insufficient transparent balance/);
   assert.match(depositFundingSource, /Insufficient EVM gas balance/);
-  assert.match(appSource, /preferNoSetFee: false/);
+  assert.match(appSource, /keplrDirectSignOptions\(options\)/);
   assert.match(appSource, /cosmosGasFeeEstimate/);
   assert.doesNotMatch(appSource, /0 \$\{baseDenom\(\)\} encoded/);
 });

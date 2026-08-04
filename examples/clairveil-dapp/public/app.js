@@ -23,6 +23,7 @@ import { createEncryptedBrowserReservationManager } from "./encrypted-reservatio
 import { EncryptedLocalStorageOperationStore } from "./encrypted-operation-store.js";
 import { assertDepositFundingAvailable } from "./deposit-funding.js";
 import { normalizeBrowserProfileEndpoints } from "./browser-profile.js";
+import { keplrDirectSignOptions } from "./cosmos-sign-options.js";
 import { disclosureViewModel } from "./disclosure-view-model.js";
 import { findPrivacyEventByTxHash, normalizedTxHash } from "./operation-event-lookup.js";
 import {
@@ -4370,7 +4371,7 @@ async function signDirectAndBroadcast(signDoc, options = {}) {
       directSignDoc.chainId,
       state.keplr.account,
       directSignDoc,
-      { preferNoSetFee: false, preferNoSetMemo: true }
+      keplrDirectSignOptions(options)
     )
   };
   return clairveilBrowserClient().signDirectAndBroadcast({

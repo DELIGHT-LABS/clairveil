@@ -4,6 +4,7 @@ import { webcrypto } from "node:crypto";
 import { MsgWithdraw, msgWithdrawTypeUrl } from "clairveiljs/cosmos-client";
 import { validateBrowserWalletProfile } from "clairveiljs/browser-dapp";
 import { normalizeBrowserProfileEndpoints } from "../public/browser-profile.js";
+import { keplrDirectSignOptions } from "../public/cosmos-sign-options.js";
 import { getStaticDappConfig } from "../public/dapp-config.js";
 import { assertDepositFundingAvailable } from "../public/deposit-funding.js";
 import { EncryptedLocalStorageOperationStore } from "../public/encrypted-operation-store.js";
@@ -104,6 +105,25 @@ test("browser endpoint rewriting keeps the Keplr chain profile on one RPC and RE
   assert.equal(profile.keplrChainInfo.rest, profile.rest);
   assert.equal(source.rpc, "http://127.0.0.1:26657");
   assert.doesNotThrow(() => validateBrowserWalletProfile(profile));
+});
+
+test("Keplr preserves ProofReady Cosmos sign docs but can price deposits", () => {
+  assert.deepEqual(keplrDirectSignOptions({}), {
+    preferNoSetFee: false,
+    preferNoSetMemo: true
+  });
+  assert.deepEqual(keplrDirectSignOptions({
+    reservation: { reservation_ids: ["reservation-1"] }
+  }), {
+    preferNoSetFee: true,
+    preferNoSetMemo: true
+  });
+  assert.deepEqual(keplrDirectSignOptions({
+    reservation_batch: { reservationIds: ["reservation-2"] }
+  }), {
+    preferNoSetFee: true,
+    preferNoSetMemo: true
+  });
 });
 
 test("deposit funding separates EVM asset and native gas balances", () => {
