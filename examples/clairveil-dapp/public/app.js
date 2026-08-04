@@ -46,7 +46,8 @@ import {
   assessReservationRecovery,
   canResetStaleLocalGenesisReservations,
   groupReservationOperations,
-  isEmptyLocalGenesisPrivacyState
+  isEmptyLocalGenesisPrivacyState,
+  succeededOperationLookupKeys
 } from "./reservation-recovery.js";
 
 function defaultMetaMaskState() {
@@ -1190,8 +1191,14 @@ async function reconcileSpentReservations(manager, notes = state.keplr.notes) {
       }
     }
   }
+  // A scan can finish after another reconciliation already persisted this
+  // operation as succeeded. Do not replay its event evidence into the SDK:
+  // success is terminal and the SDK correctly rejects altered retry evidence.
+  const latestReservations = await manager.store.listReservations({ ownerKeyId: manager.ownerKeyId });
+  const terminalSucceededLookupKeys = succeededOperationLookupKeys(latestReservations);
   const eligible = [...notesByLookupKey.entries()]
     .filter(([lookupKey]) => eligibleLookupKeys.has(lookupKey))
+    .filter(([lookupKey]) => !terminalSucceededLookupKeys.has(lookupKey))
     .map(([lookupKey, note]) => ({
       ...note,
       spent: true,

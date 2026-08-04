@@ -35,6 +35,27 @@ export function groupReservationOperations(records = []) {
       .localeCompare(String(right.records[0]?.created_at || "")));
 }
 
+/**
+ * A completed operation already has bound success evidence in the reservation
+ * store. Replaying the same spent note through a later scan must be a no-op:
+ * a differently shaped event response is not new retry evidence.
+ */
+export function succeededOperationLookupKeys(records = []) {
+  const lookupKeys = new Set();
+  for (const operation of groupReservationOperations(records)) {
+    const succeeded = operation.records.length > 0 && operation.records.every(record => (
+      record.status === "ConfirmedSpent"
+        && record.metadata?.operation_status === "Succeeded"
+        && record.metadata?.operation_success_evidence_matches === true
+    ));
+    if (!succeeded) continue;
+    for (const record of operation.records) {
+      if (record.nullifier_lookup_key) lookupKeys.add(record.nullifier_lookup_key);
+    }
+  }
+  return lookupKeys;
+}
+
 export function assessReservationRecovery(records = [], {
   leaseOwner = "",
   nowMs = Date.now()

@@ -9,7 +9,8 @@ import {
   assessReservationRecovery,
   canResetStaleLocalGenesisReservations,
   groupReservationOperations,
-  isEmptyLocalGenesisPrivacyState
+  isEmptyLocalGenesisPrivacyState,
+  succeededOperationLookupKeys
 } from "../public/reservation-recovery.js";
 import { resetEncryptedBrowserReservationState } from "../public/encrypted-reservation-manager.js";
 import { getStaticDappConfig } from "../public/dapp-config.js";
@@ -256,6 +257,34 @@ test("fresh-genesis reset replaces encrypted reservation state only through the 
     () => resetEncryptedBrowserReservationState({ store: {} }),
     /does not support fresh-genesis reset/
   );
+});
+
+test("completed operations are excluded from later spent-note reconciliation", () => {
+  const succeeded = {
+    operation_id: "transfer:done",
+    reservation_id: "done:one",
+    nullifier_lookup_key: "lookup:one",
+    status: "ConfirmedSpent",
+    metadata: {
+      operation_status: "Succeeded",
+      operation_success_evidence_matches: true
+    }
+  };
+  const completed = succeededOperationLookupKeys([succeeded, {
+    ...succeeded,
+    reservation_id: "done:two",
+    nullifier_lookup_key: "lookup:two"
+  }]);
+  assert.deepEqual([...completed], ["lookup:one", "lookup:two"]);
+  assert.deepEqual([...succeededOperationLookupKeys([succeeded, {
+    ...succeeded,
+    reservation_id: "done:two",
+    nullifier_lookup_key: "lookup:two",
+    metadata: {
+      operation_status: "ManualReview",
+      operation_success_evidence_matches: false
+    }
+  }])], []);
 });
 
 test("deposit funding separates EVM asset and native gas balances", () => {

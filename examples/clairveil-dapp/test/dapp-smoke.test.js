@@ -23,6 +23,11 @@ test("DApp keeps the top summary focused on core chain status", () => {
   assert.doesNotMatch(appSource, /els\.depositProofState/);
 });
 
+test("DApp separates the transfer prover warning from the review facts", () => {
+  assert.match(htmlSource, /id="proverPrivacyWarning"/);
+  assert.match(cssSource, /#proverPrivacyWarning\s*\{[\s\S]*margin-bottom:\s*14px;/);
+});
+
 test("DApp keeps minimal-denom amount inputs as integer strings", () => {
   assert.match(appSource, /function amountInputValue/);
   assert.doesNotMatch(appSource, /Number\(input\.value/);

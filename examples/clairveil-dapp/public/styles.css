@@ -830,6 +830,10 @@ select {
   padding: 10px 12px;
 }
 
+#proverPrivacyWarning {
+  margin-bottom: 14px;
+}
+
 .compact-field {
   align-items: center;
   color: var(--muted);

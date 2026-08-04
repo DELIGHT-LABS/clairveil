@@ -96205,6 +96205,17 @@ function groupReservationOperations(records = []) {
     records: operation.records.sort((left, right) => String(left.reservation_id || "").localeCompare(String(right.reservation_id || "")))
   })).sort((left, right) => String(left.records[0]?.created_at || "").localeCompare(String(right.records[0]?.created_at || "")));
 }
+function succeededOperationLookupKeys(records = []) {
+  const lookupKeys = /* @__PURE__ */ new Set();
+  for (const operation of groupReservationOperations(records)) {
+    const succeeded = operation.records.length > 0 && operation.records.every((record) => record.status === "ConfirmedSpent" && record.metadata?.operation_status === "Succeeded" && record.metadata?.operation_success_evidence_matches === true);
+    if (!succeeded) continue;
+    for (const record of operation.records) {
+      if (record.nullifier_lookup_key) lookupKeys.add(record.nullifier_lookup_key);
+    }
+  }
+  return lookupKeys;
+}
 function assessReservationRecovery(records = [], {
   leaseOwner = "",
   nowMs = Date.now()
@@ -97310,7 +97321,9 @@ async function reconcileSpentReservations(manager, notes = state.keplr.notes) {
       }
     }
   }
-  const eligible = [...notesByLookupKey.entries()].filter(([lookupKey]) => eligibleLookupKeys.has(lookupKey)).map(([lookupKey, note]) => ({
+  const latestReservations = await manager.store.listReservations({ ownerKeyId: manager.ownerKeyId });
+  const terminalSucceededLookupKeys = succeededOperationLookupKeys(latestReservations);
+  const eligible = [...notesByLookupKey.entries()].filter(([lookupKey]) => eligibleLookupKeys.has(lookupKey)).filter(([lookupKey]) => !terminalSucceededLookupKeys.has(lookupKey)).map(([lookupKey, note]) => ({
     ...note,
     spent: true,
     isSpent: true,
