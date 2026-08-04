@@ -653,6 +653,106 @@ select {
   color: var(--danger);
 }
 
+.reservation-recovery {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: -2px 0 12px;
+  padding: 14px;
+}
+
+.reservation-recovery[hidden] {
+  display: none;
+}
+
+.reservation-recovery-heading h4,
+.reservation-recovery-heading p {
+  margin: 0;
+}
+
+.reservation-recovery-heading h4 {
+  font-size: 0.95rem;
+}
+
+.reservation-recovery-heading p {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  margin-top: 4px;
+}
+
+.reservation-recovery-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.reservation-recovery-item {
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.reservation-recovery-item header,
+.reservation-recovery-action {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.reservation-recovery-item header strong {
+  overflow-wrap: anywhere;
+}
+
+.reservation-recovery-badge {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--accent-strong);
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 5px 8px;
+}
+
+.reservation-recovery-facts {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.reservation-recovery-facts div {
+  min-width: 0;
+}
+
+.reservation-recovery-facts dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.reservation-recovery-facts dd {
+  font-size: 0.82rem;
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.reservation-recovery-action p {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.reservation-recovery-action button {
+  flex: 0 0 auto;
+}
+
 .toggle-control {
   align-items: center;
   color: var(--muted);
@@ -880,6 +980,14 @@ select {
 .note-row.helper-note strong,
 .note-row.helper-note code {
   color: var(--muted);
+}
+
+.note-row.reserved-note {
+  background: color-mix(in srgb, var(--surface) 82%, var(--warning-bg, #fff3d6) 18%);
+}
+
+.note-row.reserved-note span {
+  color: var(--danger);
 }
 
 .block-event-row {
@@ -1466,6 +1574,15 @@ select {
 
   .review-facts {
     grid-template-columns: 1fr;
+  }
+
+  .reservation-recovery-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .reservation-recovery-action {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .wallet-session-panel .panel-heading {

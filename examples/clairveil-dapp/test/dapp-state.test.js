@@ -5,6 +5,10 @@ import { MsgWithdraw, msgWithdrawTypeUrl } from "clairveiljs/cosmos-client";
 import { validateBrowserWalletProfile } from "clairveiljs/browser-dapp";
 import { normalizeBrowserProfileEndpoints } from "../public/browser-profile.js";
 import { keplrDirectSignOptions } from "../public/cosmos-sign-options.js";
+import {
+  assessReservationRecovery,
+  groupReservationOperations
+} from "../public/reservation-recovery.js";
 import { getStaticDappConfig } from "../public/dapp-config.js";
 import { assertDepositFundingAvailable } from "../public/deposit-funding.js";
 import { EncryptedLocalStorageOperationStore } from "../public/encrypted-operation-store.js";
@@ -124,6 +128,85 @@ test("Keplr preserves ProofReady Cosmos sign docs but can price deposits", () =>
     preferNoSetFee: true,
     preferNoSetMemo: true
   });
+});
+
+test("reservation recovery groups linked inputs and only offers no-broadcast direct preparations", () => {
+  const nowMs = Date.parse("2026-08-04T04:00:00.000Z");
+  const records = [
+    {
+      reservation_id: "reservation-2",
+      operation_id: "operation-1",
+      status: "ProofReady",
+      kind: "transfer",
+      lease_owner: "browser-tab:one",
+      lease_token: "lease-token",
+      lease_until: "2026-08-04T04:05:00.000Z",
+      broadcast_attempt_count: 0,
+      metadata: { no_broadcast_attempt: true }
+    },
+    {
+      reservation_id: "reservation-1",
+      operation_id: "operation-1",
+      status: "ProofReady",
+      kind: "transfer",
+      lease_owner: "browser-tab:one",
+      lease_token: "lease-token",
+      lease_until: "2026-08-04T04:05:00.000Z",
+      broadcast_attempt_count: 0,
+      metadata: { no_broadcast_attempt: true }
+    }
+  ];
+
+  const operations = groupReservationOperations(records);
+  assert.equal(operations.length, 1);
+  assert.deepEqual(operations[0].records.map(record => record.reservation_id), [
+    "reservation-1",
+    "reservation-2"
+  ]);
+
+  const assessment = assessReservationRecovery(operations[0].records, {
+    leaseOwner: "browser-tab:one",
+    nowMs
+  });
+  assert.equal(assessment.action, "review-replan");
+  assert.equal(assessment.leaseOwnedByCurrentWorker, true);
+  assert.equal(assessment.leaseToken, "lease-token");
+});
+
+test("reservation recovery fails closed for broadcast, relay, and foreign live lease evidence", () => {
+  const base = {
+    reservation_id: "reservation-1",
+    operation_id: "operation-1",
+    status: "ProofReady",
+    kind: "transfer",
+    lease_owner: "browser-tab:one",
+    lease_token: "lease-token",
+    lease_until: "2026-08-04T04:05:00.000Z",
+    metadata: { no_broadcast_attempt: true }
+  };
+  const options = {
+    leaseOwner: "browser-tab:two",
+    nowMs: Date.parse("2026-08-04T04:00:00.000Z")
+  };
+
+  assert.equal(assessReservationRecovery([base], options).action, "wait-for-lease");
+  assert.equal(assessReservationRecovery([{
+    ...base,
+    status: "Proving"
+  }], {
+    ...options,
+    leaseOwner: "browser-tab:one"
+  }).action, "wait-for-lease");
+  assert.equal(assessReservationRecovery([{
+    ...base,
+    broadcast_attempt_count: 1,
+    metadata: { no_broadcast_attempt: false }
+  }], options).action, "reconcile");
+  assert.equal(assessReservationRecovery([{
+    ...base,
+    kind: "relay_withdraw",
+    metadata: { no_broadcast_attempt: true, relay_handed_off: true }
+  }], options).action, "relay-reconcile");
 });
 
 test("deposit funding separates EVM asset and native gas balances", () => {

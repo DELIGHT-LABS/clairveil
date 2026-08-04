@@ -96115,6 +96115,96 @@ function relayWithdrawPayloadExpired(payload, chainNowUnix) {
   return now >= expiry;
 }
 
+// public/reservation-recovery.js
+var preparationStatuses = /* @__PURE__ */ new Set(["Reserved", "Proving", "ProofReady", "ManualReview"]);
+var transactionStatuses = /* @__PURE__ */ new Set(["Submitted", "Unknown"]);
+function reservationMetadata(record) {
+  return record?.metadata && typeof record.metadata === "object" ? record.metadata : {};
+}
+function reservationOperationKey(record = {}) {
+  return String(
+    record.operation_id || record.operationId || record.reservation_id || record.reservationId || ""
+  );
+}
+function groupReservationOperations(records = []) {
+  const grouped = /* @__PURE__ */ new Map();
+  for (const record of records || []) {
+    if (!record) continue;
+    const key = reservationOperationKey(record);
+    if (!key) continue;
+    const operation = grouped.get(key) || { key, records: [] };
+    operation.records.push(record);
+    grouped.set(key, operation);
+  }
+  return [...grouped.values()].map((operation) => ({
+    ...operation,
+    records: operation.records.sort((left, right) => String(left.reservation_id || "").localeCompare(String(right.reservation_id || "")))
+  })).sort((left, right) => String(left.records[0]?.created_at || "").localeCompare(String(right.records[0]?.created_at || "")));
+}
+function assessReservationRecovery(records = [], {
+  leaseOwner = "",
+  nowMs = Date.now()
+} = {}) {
+  const reservations = [...records || []].filter(Boolean);
+  const statuses = [...new Set(reservations.map((record) => String(record.status || "")))];
+  const kinds = [...new Set(reservations.map((record) => String(record.kind || "unknown")))];
+  const metadata = reservations.map(reservationMetadata);
+  const broadcastAttempted = reservations.some((record, index) => record.broadcast_in_flight === true || Number(record.broadcast_attempt_count || 0) > 0 || metadata[index].no_broadcast_attempt === false || Boolean(String(record.submitted_tx_hash || "").trim()));
+  const relayHandedOff = reservations.some((record, index) => metadata[index].relay_handed_off === true || metadata[index].relayHandedOff === true || String(record.kind || "").toLowerCase().includes("relay"));
+  const liveLeaseRecords = reservations.filter((record) => {
+    const leaseUntil2 = Date.parse(String(record.lease_until || ""));
+    return Number.isFinite(leaseUntil2) && leaseUntil2 > nowMs;
+  });
+  const liveLeaseOwners = [...new Set(liveLeaseRecords.map((record) => String(record.lease_owner || "")).filter(Boolean))];
+  const liveLeaseTokens = [...new Set(liveLeaseRecords.map((record) => String(record.lease_token || "")).filter(Boolean))];
+  const foreignLiveLease = liveLeaseRecords.some((record) => String(record.lease_owner || "") !== String(leaseOwner || ""));
+  const malformedLiveLease = liveLeaseRecords.length > 0 && (liveLeaseOwners.length !== 1 || liveLeaseTokens.length !== 1);
+  const status = statuses.length === 1 ? statuses[0] : "Mixed";
+  const kind = kinds.length === 1 ? kinds[0] : "mixed";
+  const leaseUntil = reservations.map((record) => String(record.lease_until || "")).filter(Boolean).sort().at(-1) || "";
+  let action = "review-replan";
+  let reason = "Verify current nullifier evidence before discarding this local preparation.";
+  if (!reservations.length) {
+    action = "unavailable";
+    reason = "No reservation records are available.";
+  } else if (statuses.length !== 1) {
+    action = "unavailable";
+    reason = "Linked reservations have mixed states and require manual evidence review.";
+  } else if (relayHandedOff) {
+    action = "relay-reconcile";
+    reason = "A relay handoff can only be recovered through its expiry and transaction reconciliation flow.";
+  } else if (broadcastAttempted || transactionStatuses.has(status)) {
+    action = "reconcile";
+    reason = "A transaction may have reached the network. Reconcile its tx hash and nullifiers before retrying.";
+  } else if (!preparationStatuses.has(status)) {
+    action = "unavailable";
+    reason = `Reservation status ${status || "unknown"} is not eligible for preparation recovery.`;
+  } else if (status === "Proving" && liveLeaseRecords.length > 0) {
+    action = "wait-for-lease";
+    reason = "Proof generation is still active. Use the current transfer flow to cancel it, or wait for its lease to expire.";
+  } else if (foreignLiveLease) {
+    action = "wait-for-lease";
+    reason = "Another browser tab or worker still owns the live reservation lease.";
+  } else if (malformedLiveLease) {
+    action = "unavailable";
+    reason = "The linked reservations do not share one recoverable live lease.";
+  }
+  return Object.freeze({
+    operationKey: reservationOperationKey(reservations[0]),
+    reservationIDs: Object.freeze(reservations.map((record) => String(record.reservation_id || "")).filter(Boolean)),
+    status,
+    kind,
+    action,
+    reason,
+    broadcastAttempted,
+    relayHandedOff,
+    leaseLive: liveLeaseRecords.length > 0,
+    leaseOwnedByCurrentWorker: liveLeaseRecords.length > 0 && !foreignLiveLease && !malformedLiveLease,
+    leaseToken: liveLeaseTokens.length === 1 ? liveLeaseTokens[0] : "",
+    leaseUntil
+  });
+}
+
 // public/app.js
 function defaultMetaMaskState() {
   return {
@@ -96189,7 +96279,9 @@ function defaultReservationState() {
     active: [],
     unresolved: [],
     retryBlocked: false,
-    reconciling: false
+    reconciling: false,
+    recoveringOperationKey: "",
+    noteStatuses: /* @__PURE__ */ new Map()
   };
 }
 var state = {
@@ -96863,6 +96955,65 @@ function startRelayReservationHeartbeat({ manager, reservationIDs, leaseToken, l
 function reservationStatusSlug(status) {
   return String(status || "idle").replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase();
 }
+function reservationKindLabel(kind) {
+  return String(kind || "privacy spend").replace(/_/g, " ").replace(/\b\w/g, (value) => value.toUpperCase());
+}
+function reservationLeaseLabel(assessment) {
+  if (!assessment.leaseUntil) return "No active lease";
+  const until = new Date(assessment.leaseUntil);
+  const timestamp = Number.isNaN(until.getTime()) ? assessment.leaseUntil : until.toLocaleString();
+  if (!assessment.leaseLive) return `Expired \xB7 ${timestamp}`;
+  return assessment.leaseOwnedByCurrentWorker ? `This tab \xB7 until ${timestamp}` : `Another worker \xB7 until ${timestamp}`;
+}
+function appendReservationRecoveryFact(list, label, value) {
+  const row = document.createElement("div");
+  const term = document.createElement("dt");
+  const detail = document.createElement("dd");
+  term.textContent = label;
+  detail.textContent = value;
+  row.append(term, detail);
+  list.append(row);
+}
+function renderReservationRecovery() {
+  if (!els.reservationRecovery || !els.reservationRecoveryList) return;
+  const operations = groupReservationOperations(state.reservations.active);
+  els.reservationRecovery.hidden = operations.length === 0;
+  els.reservationRecoveryList.innerHTML = "";
+  for (const operation of operations) {
+    const assessment = assessReservationRecovery(operation.records, {
+      leaseOwner: reservationLeaseOwner
+    });
+    const item = document.createElement("article");
+    item.className = "reservation-recovery-item";
+    const header = document.createElement("header");
+    const title = document.createElement("strong");
+    const badge = document.createElement("span");
+    title.textContent = `${reservationKindLabel(assessment.kind)} \xB7 ${shorten(assessment.operationKey, 12, 10)}`;
+    badge.className = "reservation-recovery-badge";
+    badge.textContent = assessment.status;
+    header.append(title, badge);
+    const facts = document.createElement("dl");
+    facts.className = "reservation-recovery-facts";
+    appendReservationRecoveryFact(facts, "Reserved notes", String(assessment.reservationIDs.length));
+    appendReservationRecoveryFact(facts, "Broadcast", assessment.broadcastAttempted ? "Attempt recorded" : "Not attempted");
+    appendReservationRecoveryFact(facts, "Lease", reservationLeaseLabel(assessment));
+    appendReservationRecoveryFact(facts, "Recovery", assessment.action === "review-replan" ? "Evidence check available" : "Locked");
+    const action = document.createElement("div");
+    action.className = "reservation-recovery-action";
+    const reason = document.createElement("p");
+    const button = document.createElement("button");
+    reason.textContent = assessment.reason;
+    button.type = "button";
+    button.className = "secondary-button";
+    button.dataset.recoverReservationOperation = assessment.operationKey;
+    button.textContent = state.reservations.recoveringOperationKey === assessment.operationKey ? "Checking\u2026" : assessment.action === "review-replan" ? "Review & replan" : assessment.action === "reconcile" ? "Use Reconcile" : assessment.action === "relay-reconcile" ? "Use relay recovery" : assessment.action === "wait-for-lease" ? "Lease active" : "Unavailable";
+    button.disabled = assessment.action !== "review-replan" || Boolean(state.reservations.recoveringOperationKey);
+    button.title = assessment.reason;
+    action.append(reason, button);
+    item.append(header, facts, action);
+    els.reservationRecoveryList.append(item);
+  }
+}
 function renderReservationState() {
   if (!els.reservationState || !els.reconcileReservations) return;
   els.reservationState.textContent = state.reservations.message;
@@ -96870,6 +97021,7 @@ function renderReservationState() {
   const canReconcile = Boolean(state.keplr.rootSignatureBase64) && state.reservations.active.length > 0 && !state.reservations.reconciling;
   els.reconcileReservations.disabled = !canReconcile;
   els.reconcileReservations.textContent = state.reservations.reconciling ? "Reconciling\u2026" : "Reconcile";
+  renderReservationRecovery();
 }
 function operationReconciliationStatus(record) {
   return record?.metadata?.operation_status || record?.metadata?.operationStatus || "";
@@ -96927,15 +97079,20 @@ async function refreshReservationState(manager = null) {
     return [];
   }
   try {
-    const [active, allReservations] = await Promise.all([
+    const [active, allReservations, noteStatuses] = await Promise.all([
       resolvedManager.listActiveReservations(),
-      resolvedManager.store.listReservations({ ownerKeyId: resolvedManager.ownerKeyId })
+      resolvedManager.store.listReservations({ ownerKeyId: resolvedManager.ownerKeyId }),
+      resolvedManager.reservationStatusByNote(state.keplr.notes)
     ]);
     const unresolved = unresolvedOperationReservations(allReservations);
     const reconciling = state.reservations.reconciling;
+    const recoveringOperationKey = state.reservations.recoveringOperationKey;
     state.reservations = summarizeReservationState(active, unresolved);
     state.reservations.reconciling = reconciling;
+    state.reservations.recoveringOperationKey = recoveringOperationKey;
+    state.reservations.noteStatuses = noteStatuses;
     renderReservationState();
+    renderMyKeplrNotes();
     updateAmountActionButtons();
     return active;
   } catch (error) {
@@ -96945,7 +97102,9 @@ async function refreshReservationState(manager = null) {
       active: state.reservations.active,
       unresolved: state.reservations.unresolved,
       retryBlocked: true,
-      reconciling: false
+      reconciling: false,
+      recoveringOperationKey: state.reservations.recoveringOperationKey,
+      noteStatuses: state.reservations.noteStatuses
     };
     renderReservationState();
     updateAmountActionButtons();
@@ -97191,6 +97350,8 @@ var els = {
   noteSyncState: $("#noteSyncState"),
   reservationState: $("#reservationState"),
   reconcileReservations: $("#reconcileReservations"),
+  reservationRecovery: $("#reservationRecovery"),
+  reservationRecoveryList: $("#reservationRecoveryList"),
   keplrTxState: $("#keplrTxState"),
   keplrSendAmount: $("#keplrSendAmount"),
   keplrSendRecipient: $("#keplrSendRecipient"),
@@ -98059,6 +98220,22 @@ function summarizeSpendableValueNotes(notes) {
   const helperText = helperCount ? ` \xB7 ${helperCount} helper` : "";
   return `${total}${baseDenom()} / ${spendableValueNotes.length} spendable${helperText}`;
 }
+function reservationForDisplayedNote(note) {
+  const statuses = state.reservations.noteStatuses;
+  if (!(statuses instanceof Map)) return null;
+  const nullifier = noteNullifier(note);
+  return statuses.get(nullifier) || statuses.get(nullifier.replace(/^0x/, "")) || null;
+}
+function summarizeReservationAvailableNotes(notes) {
+  const spendableValueNotes = (notes || []).filter((note) => isSpendableNote(note) && !isZeroAmountNote(note));
+  const available = spendableValueNotes.filter((note) => !reservationForDisplayedNote(note));
+  const reservedCount = spendableValueNotes.length - available.length;
+  const helperCount = (notes || []).filter((note) => isHelperNote(note) && !reservationForDisplayedNote(note)).length;
+  const total = available.reduce((sum, note) => sum + noteAmountValue(note), 0n);
+  const reservedText = reservedCount ? ` \xB7 ${reservedCount} reserved` : "";
+  const helperText = helperCount ? ` \xB7 ${helperCount} helper` : "";
+  return `${total}${baseDenom()} / ${available.length} available${reservedText}${helperText}`;
+}
 function noteCacheKey(note) {
   const nullifier = noteNullifier(note);
   if (nullifier) return `nullifier:${nullifier}`;
@@ -98712,16 +98889,16 @@ function updateAmountActionButtons(status = {}) {
   els.sendFromKeplr.disabled = !signerReady || Boolean(state.keplr.publicPendingStateError) || sendPending || !hasPositiveUclairInput(els.keplrSendAmount) || !isSendRecipientForWallet(els.keplrSendRecipient.value, state.activeWallet || activeWalletKind());
   els.depositFromKeplr.disabled = !signerReady || Boolean(state.keplr.publicPendingStateError) || depositPending || !protocolReady || !depositProofReady() || !hasPositiveUclairInput(els.keplrDepositAmount);
   els.depositFromKeplr.title = !protocolReady ? "Protocol preflight must pass before depositing." : depositProofReady() ? "" : "Configure CLAIRVEIL_DEPOSIT_PROOF_URL or inject CLAIRVEIL_DEPOSIT_PROOF_PROVIDER.";
-  const reservationBlocked = state.reservations.retryBlocked || state.relayWithdraw.resultStatus === "manual-review";
-  els.transferFromVeiled.disabled = !veiledReady || !protocolReady || !noteInventoryTrusted || reservationBlocked || !hasPositiveUclairInput(els.veiledTransferAmount);
-  els.withdrawFromVeiled.disabled = !veiledReady || !protocolReady || !noteInventoryTrusted || reservationBlocked || !hasPositiveUclairInput(els.veiledWithdrawAmount);
-  const reservationTitle = reservationBlocked ? "Reconcile the active note reservation before preparing or retrying another spend." : !protocolReady ? "Protocol preflight must pass before using shielded notes." : !noteInventoryTrusted ? "Complete the note scan before using the displayed shielded balance." : "";
-  els.transferFromVeiled.title = reservationTitle;
-  els.withdrawFromVeiled.title = reservationTitle;
+  const relayRecoveryBlocked = els.withdrawMode?.value === "relay" && Boolean(state.relayWithdraw.handoff) && state.relayWithdraw.resultStatus !== "confirmed";
+  els.transferFromVeiled.disabled = !veiledReady || !protocolReady || !noteInventoryTrusted || !hasPositiveUclairInput(els.veiledTransferAmount);
+  els.withdrawFromVeiled.disabled = !veiledReady || !protocolReady || !noteInventoryTrusted || relayRecoveryBlocked || !hasPositiveUclairInput(els.veiledWithdrawAmount);
+  const privacySpendTitle = !protocolReady ? "Protocol preflight must pass before using shielded notes." : !noteInventoryTrusted ? "Complete the note scan before using the displayed shielded balance." : "";
+  els.transferFromVeiled.title = privacySpendTitle;
+  els.withdrawFromVeiled.title = relayRecoveryBlocked ? "Reconcile the existing relay handoff before preparing another relay withdraw." : privacySpendTitle;
 }
 function renderMyKeplrNotes() {
   const noteInventoryTrusted = state.keplr.noteSyncStatus === "synced" && state.protocol.ready;
-  els.myKeplrSpendable.textContent = noteInventoryTrusted ? state.keplr.notesSummary || "-" : state.keplr.notesSummary ? `Cached \xB7 not confirmed (${state.keplr.notesSummary})` : "Not confirmed";
+  els.myKeplrSpendable.textContent = noteInventoryTrusted ? summarizeReservationAvailableNotes(state.keplr.notes) : state.keplr.notesSummary ? `Cached \xB7 not confirmed (${state.keplr.notesSummary})` : "Not confirmed";
   els.myKeplrSpendableOnly.checked = state.keplr.showSpendableOnly;
   els.myKeplrNotesList.innerHTML = "";
   if (!state.keplr.account) {
@@ -98755,12 +98932,14 @@ function renderMyKeplrNotes() {
     return;
   }
   for (const note of notes) {
+    const reservation = reservationForDisplayedNote(note);
     const row = document.createElement("article");
     row.className = "note-row";
     row.classList.toggle("helper-note", isHelperNote(note));
+    row.classList.toggle("reserved-note", Boolean(reservation));
     row.innerHTML = `
       <strong>${note.amount}${baseDenom()}</strong>
-      <span>${noteStatusLabel(note)}</span>
+      <span>${reservation ? `reserved \xB7 ${reservation.status}` : noteStatusLabel(note)}</span>
       <code>${shorten(note.nullifier, 12, 10)}</code>
     `;
     els.myKeplrNotesList.append(row);
@@ -100632,6 +100811,104 @@ async function explicitlyUnspentReservationIDs(manager, records, notes = state.k
   }
   return records.filter((record) => byLookupKey.has(record.nullifier_lookup_key)).map((record) => record.reservation_id);
 }
+function activeReservationOperation(records, operationKey) {
+  return groupReservationOperations(records).find((operation) => operation.key === operationKey)?.records || [];
+}
+async function resolvePreparationRecovery(manager, assessment, evidence, approvalReference) {
+  const reservationIDs = assessment.reservationIDs;
+  const status = assessment.status;
+  if (status === reservationStatuses.Reserved) {
+    await manager.releaseReservedOrProving(reservationIDs);
+    return "Released unused reservation";
+  }
+  if (status === reservationStatuses.Proving && assessment.leaseLive) {
+    await manager.releaseReservedOrProving(reservationIDs, { leaseToken: assessment.leaseToken });
+    return "Released local proving reservation";
+  }
+  if (status === reservationStatuses.ProofReady && assessment.leaseLive) {
+    await manager.markReplanRequired(reservationIDs, {
+      fromStatus: reservationStatuses.ProofReady,
+      leaseToken: assessment.leaseToken,
+      proofDiscarded: true,
+      error: "wallet_owner_discarded_unsubmitted_proof",
+      metadata: evidence
+    });
+    return "Discarded unsubmitted proof and enabled replanning";
+  }
+  if ([reservationStatuses.Proving, reservationStatuses.ProofReady].includes(status)) {
+    await manager.markManualReview(reservationIDs, {
+      error: "expired_preparation_recovery",
+      metadata: evidence
+    });
+  } else if (status !== reservationStatuses.ManualReview) {
+    throw new Error(`Reservation status ${status} cannot enter preparation recovery`);
+  }
+  await manager.resolveManualReview(reservationIDs, {
+    target: reservationStatuses.ReplanRequired,
+    operatorId: state.keplr.account,
+    approvalReference,
+    reason: "Wallet owner approved replan after no-broadcast and unspent evidence review",
+    metadata: evidence
+  });
+  return "Approved manual review and enabled replanning";
+}
+async function recoverReservationPreparation(operationKey) {
+  const manager = await currentReservationManager();
+  if (!manager) throw new Error("Encrypted note reservation manager is not available");
+  if (state.reservations.recoveringOperationKey) return;
+  state.reservations.recoveringOperationKey = operationKey;
+  renderReservationState();
+  try {
+    let records = activeReservationOperation(await manager.listActiveReservations(), operationKey);
+    let assessment = assessReservationRecovery(records, { leaseOwner: reservationLeaseOwner });
+    if (assessment.action !== "review-replan") throw new Error(assessment.reason);
+    els.keplrTxState.textContent = "Checking reservation recovery evidence";
+    await refreshEvents({ allowFailure: true });
+    await scanKeplrNotes({ quiet: true, throwOnError: true, skipSetup: true, maxPages: 1e3 });
+    records = activeReservationOperation(await manager.listActiveReservations(), operationKey);
+    if (!records.length) {
+      await refreshReservationState(manager);
+      toast("Reservation was already reconciled by the latest note scan.");
+      return;
+    }
+    assessment = assessReservationRecovery(records, { leaseOwner: reservationLeaseOwner });
+    if (assessment.action !== "review-replan") throw new Error(assessment.reason);
+    const unspentIDs = await explicitlyUnspentReservationIDs(manager, records, state.keplr.notes);
+    const checkedHeight = checkedReservationHeight();
+    if (unspentIDs.length !== assessment.reservationIDs.length || !checkedHeight) {
+      throw new Error("Every reserved nullifier must be explicitly unspent at an authoritative scanned height before replanning");
+    }
+    const operationLabel = `${reservationKindLabel(assessment.kind)} ${shorten(operationKey, 12, 10)}`;
+    const approved = globalThis.confirm(
+      `${operationLabel}\uC758 broadcast \uC2DC\uB3C4 \uAE30\uB85D\uC774 \uC5C6\uACE0 ${assessment.reservationIDs.length}\uAC1C nullifier\uAC00 height ${checkedHeight}\uC5D0\uC11C unspent\uB85C \uD655\uC778\uB418\uC5C8\uC2B5\uB2C8\uB2E4.
+
+\uC800\uC7A5\uB418\uC9C0 \uC54A\uC740 local proof\uB97C \uD3D0\uAE30\uD558\uACE0 \uC774 note\uB97C \uC0C8 transaction \uACC4\uD68D\uC5D0 \uB2E4\uC2DC \uC0AC\uC6A9\uD560\uAE4C\uC694? \uC774 \uC791\uC5C5\uC740 \uAE30\uC874 proof\uB97C \uB2E4\uC2DC \uBCF4\uB0BC \uC218 \uC5C6\uAC8C \uB9CC\uB4DC\uB294 \uBA85\uC2DC\uC801 recovery \uC2B9\uC778\uC785\uB2C8\uB2E4.`
+    );
+    if (!approved) {
+      els.keplrTxState.textContent = "Reservation recovery cancelled";
+      return;
+    }
+    const approvalReference = `direct-recovery:${operationKey}:${checkedHeight}:${Date.now()}`;
+    const evidence = {
+      reconcile_reason: "wallet_owner_approved_unsubmitted_preparation_replan",
+      no_broadcast_attempt: true,
+      proof_discarded: true,
+      nullifier_unspent_confirmed: true,
+      checked_height: checkedHeight,
+      wallet_owner_approved_replan: true,
+      recovery_approval_reference: approvalReference
+    };
+    const result = await resolvePreparationRecovery(manager, assessment, evidence, approvalReference);
+    els.keplrTxState.textContent = "Reservation recovery complete";
+    await refreshReservationState(manager);
+    toast(`${result}. A new plan may now use the released notes.`);
+  } finally {
+    state.reservations.recoveringOperationKey = "";
+    await refreshReservationState(manager).catch(() => {
+    });
+    renderReservationState();
+  }
+}
 async function reconcileReservations({ quiet = false, manager = null } = {}) {
   const resolvedManager = manager || await currentReservationManager();
   if (!resolvedManager) throw new Error("Encrypted note reservation manager is not available");
@@ -101496,6 +101773,14 @@ els.resetRescanNotes.addEventListener("click", () => resetAndRescanNotes().catch
 els.noteRollbackHeight.addEventListener("input", () => updateNoteRollbackButton());
 els.rollbackRescanNotes.addEventListener("click", () => rollbackAndRescanNotes().catch((error) => toast(error.message)));
 els.reconcileReservations.addEventListener("click", () => reconcileReservations().catch((error) => toast(error.message)));
+els.reservationRecoveryList.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-recover-reservation-operation]");
+  if (!button || button.disabled) return;
+  recoverReservationPreparation(button.dataset.recoverReservationOperation).catch((error) => {
+    els.keplrTxState.textContent = "Reservation recovery blocked";
+    toast(error.message);
+  });
+});
 els.myKeplrSpendableOnly.addEventListener("change", (event) => {
   state.keplr.showSpendableOnly = event.target.checked;
   renderMyKeplrNotes();
@@ -101519,7 +101804,10 @@ els.veiledDisclosureMode.addEventListener("change", renderTransferDisclosureAdva
 els.includeSelfViewDisclosure.addEventListener("change", renderTransferDisclosureAdvanced);
 els.transferFromVeiled.addEventListener("click", transferFromVeiled);
 els.withdrawFromVeiled.addEventListener("click", withdrawFromVeiled);
-els.withdrawMode.addEventListener("change", renderRelayWithdraw);
+els.withdrawMode.addEventListener("change", () => {
+  renderRelayWithdraw();
+  updateAmountActionButtons();
+});
 els.relayWithdrawTxHash.addEventListener("input", (event) => {
   state.relayWithdraw.txHash = event.target.value.trim();
   state.relayWithdraw.resultStatus = "waiting";

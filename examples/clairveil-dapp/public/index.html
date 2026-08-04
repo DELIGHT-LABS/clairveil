@@ -239,7 +239,7 @@
               <div class="notes-actions">
                 <label class="toggle-control">
                   <input id="myKeplrSpendableOnly" type="checkbox" checked />
-                  <span>Spendable only</span>
+                  <span>Unspent only</span>
                 </label>
                 <label class="compact-field note-endpoint-field">
                   <span>Scan endpoint</span>
@@ -265,8 +265,17 @@
               </div>
               <button id="reconcileReservations" class="secondary-button" type="button" disabled>Reconcile</button>
             </div>
+            <section id="reservationRecovery" class="reservation-recovery" aria-labelledby="reservationRecoveryTitle" hidden>
+              <div class="reservation-recovery-heading">
+                <div>
+                  <h4 id="reservationRecoveryTitle">Reservation recovery</h4>
+                  <p>Only preparations with no broadcast or relay handoff evidence can be discarded and replanned.</p>
+                </div>
+              </div>
+              <div id="reservationRecoveryList" class="reservation-recovery-list"></div>
+            </section>
             <div class="note-summary">
-              <span>Spendable</span>
+              <span>Available to plan</span>
               <strong id="myKeplrSpendable">-</strong>
             </div>
             <div id="myKeplrNotesList" class="notes-list"></div>

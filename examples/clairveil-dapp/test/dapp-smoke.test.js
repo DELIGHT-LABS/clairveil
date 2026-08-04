@@ -8,6 +8,7 @@ const encryptedReservationSource = await readFile(new URL("../public/encrypted-r
 const encryptedOperationSource = await readFile(new URL("../public/encrypted-operation-store.js", import.meta.url), "utf8");
 const depositFundingSource = await readFile(new URL("../public/deposit-funding.js", import.meta.url), "utf8");
 const relayReconciliationSource = await readFile(new URL("../public/relay-withdraw-reconciliation.js", import.meta.url), "utf8");
+const reservationRecoverySource = await readFile(new URL("../public/reservation-recovery.js", import.meta.url), "utf8");
 const configSource = await readFile(new URL("../public/dapp-config.js", import.meta.url), "utf8");
 const readmeSource = await readFile(new URL("../README.md", import.meta.url), "utf8");
 const serverSource = await readFile(new URL("../server.js", import.meta.url), "utf8");
@@ -26,10 +27,30 @@ test("DApp disables value-moving actions for zero or invalid minimal-denom amoun
   assert.match(appSource, /function updateAmountActionButtons/);
   assert.match(appSource, /sendFromKeplr\.disabled = !signerReady[\s\S]*!hasPositiveUclairInput\(els\.keplrSendAmount\)[\s\S]*!isSendRecipientForWallet\(els\.keplrSendRecipient\.value/);
   assert.match(appSource, /depositFromKeplr\.disabled = !signerReady[\s\S]*!depositProofReady\(\)[\s\S]*!hasPositiveUclairInput\(els\.keplrDepositAmount\)/);
-  assert.match(appSource, /const reservationBlocked = state\.reservations\.retryBlocked/);
-  assert.match(appSource, /transferFromVeiled\.disabled = !veiledReady[\s\S]*reservationBlocked[\s\S]*!hasPositiveUclairInput\(els\.veiledTransferAmount\)/);
-  assert.match(appSource, /withdrawFromVeiled\.disabled = !veiledReady[\s\S]*reservationBlocked[\s\S]*!hasPositiveUclairInput\(els\.veiledWithdrawAmount\)/);
+  assert.match(appSource, /transferFromVeiled\.disabled = !veiledReady[\s\S]*!hasPositiveUclairInput\(els\.veiledTransferAmount\)/);
+  assert.match(appSource, /withdrawFromVeiled\.disabled = !veiledReady[\s\S]*relayRecoveryBlocked[\s\S]*!hasPositiveUclairInput\(els\.veiledWithdrawAmount\)/);
+  assert.doesNotMatch(appSource, /const reservationBlocked = state\.reservations\.retryBlocked/);
   assert.match(appSource, /keplrSendAmount,[\s\S]*keplrSendRecipient,[\s\S]*veiledWithdrawAmount[\s\S]*addEventListener\("input", updateAmountActionButtons\)/);
+});
+
+test("DApp exposes evidence-gated preparation recovery without globally blocking unreserved notes", () => {
+  assert.match(htmlSource, /id="reservationRecovery"/);
+  assert.match(htmlSource, /id="reservationRecoveryList"/);
+  assert.match(htmlSource, /Only preparations with no broadcast or relay handoff evidence/);
+  assert.match(cssSource, /\.reservation-recovery-item\s*\{/);
+  assert.match(appSource, /function recoverReservationPreparation/);
+  assert.match(appSource, /await scanKeplrNotes\(\{ quiet: true, throwOnError: true/);
+  assert.match(appSource, /Every reserved nullifier must be explicitly unspent/);
+  assert.match(appSource, /manager\.markManualReview/);
+  assert.match(appSource, /manager\.resolveManualReview/);
+  assert.match(appSource, /target: reservationStatuses\.ReplanRequired/);
+  assert.match(appSource, /proofDiscarded: true/);
+  assert.match(appSource, /wallet_owner_approved_replan: true/);
+  assert.match(appSource, /summarizeReservationAvailableNotes/);
+  assert.match(appSource, /reserved · \$\{reservation\.status\}/);
+  assert.match(reservationRecoverySource, /broadcast_attempt_count/);
+  assert.match(reservationRecoverySource, /relay_handed_off/);
+  assert.match(reservationRecoverySource, /foreignLiveLease/);
 });
 
 test("DApp faucet sends the requested amount without minimum top-up", () => {
