@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const appSource = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
+const browserStorageScopeSource = await readFile(new URL("../public/browser-storage-scope.js", import.meta.url), "utf8");
 const encryptedStoreSource = await readFile(new URL("../public/encrypted-note-store.js", import.meta.url), "utf8");
 const encryptedReservationSource = await readFile(new URL("../public/encrypted-reservation-manager.js", import.meta.url), "utf8");
 const encryptedOperationSource = await readFile(new URL("../public/encrypted-operation-store.js", import.meta.url), "utf8");
@@ -435,6 +436,15 @@ test("DApp stores note recovery state encrypted and exposes endpoint and rollbac
   assert.match(htmlSource, /id="noteRollbackHeight"/);
   assert.match(htmlSource, /id="rollbackRescanNotes"/);
   assert.match(htmlSource, /id="noteSyncState"/);
+});
+
+test("DApp isolates browser state when a local chain ID is reused for a new genesis", () => {
+  assert.match(browserStorageScopeSource, /earliest_block_hash/);
+  assert.match(browserStorageScopeSource, /storageEpoch/);
+  assert.match(appSource, /localChainStorageEpoch\(\{/);
+  assert.match(appSource, /storageEpoch: state\.chainStorageEpoch/);
+  assert.match(appSource, /notes-encrypted:\$\{scope\.keySuffix\}/);
+  assert.match(appSource, /operations-encrypted:\$\{scope\.keySuffix\}/);
 });
 
 test("DApp verifies transparent deposit funding and surfaces a non-zero fee budget", () => {

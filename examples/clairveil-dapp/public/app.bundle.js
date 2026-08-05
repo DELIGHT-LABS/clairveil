@@ -96064,6 +96064,37 @@ function normalizeBrowserProfileEndpoints(profile, {
   return normalized;
 }
 
+// public/browser-storage-scope.js
+var blockHashPattern = /^[0-9a-f]{64}$/i;
+function localChainStorageEpoch({ localTestMode = false, status } = {}) {
+  if (localTestMode !== true) return "";
+  const value = String(
+    status?.sync_info?.earliest_block_hash || status?.syncInfo?.earliestBlockHash || ""
+  ).trim();
+  return blockHashPattern.test(value) ? value.toLowerCase() : "";
+}
+function walletStorageScope({
+  chainId,
+  profileId,
+  owner,
+  localTestMode = false,
+  storageEpoch = ""
+} = {}) {
+  const normalizedChainID = String(chainId || "").trim();
+  const normalizedProfileID = String(profileId || "").trim();
+  const normalizedOwner = String(owner || "").trim().toLowerCase();
+  const normalizedEpoch = String(storageEpoch || "").trim().toLowerCase();
+  if (!normalizedChainID || !normalizedProfileID || !normalizedOwner) return null;
+  if (localTestMode === true && !blockHashPattern.test(normalizedEpoch)) return null;
+  const epochParts = localTestMode === true ? [normalizedEpoch] : [];
+  return Object.freeze({
+    storageEpoch: epochParts[0] || "",
+    namespace: [normalizedChainID, normalizedProfileID, ...epochParts, normalizedOwner].join(":"),
+    ownerKeyId: [normalizedChainID, ...epochParts, normalizedOwner].join(":"),
+    keySuffix: [normalizedProfileID, ...epochParts, normalizedOwner].join(":")
+  });
+}
+
 // public/cosmos-sign-options.js
 function keplrReservationIDs(options = {}) {
   const reservation = options.reservation ?? options.reservationBatch ?? options.reservation_batch ?? null;
@@ -96165,17 +96196,18 @@ function normalizedPendingEntry(entry) {
     ...entry?.height ? { height: String(entry.height) } : {}
   };
 }
-function publicPendingTxKey({ profileId, owner }) {
+function publicPendingTxKey({ profileId, owner, storageEpoch = "" }) {
   const normalizedProfile = String(profileId || "").trim();
   const normalizedOwner = String(owner || "").trim().toLowerCase();
-  return normalizedProfile && normalizedOwner ? `clairveil:v0.3.1:public-pending:${normalizedProfile}:${normalizedOwner}` : "";
+  const normalizedEpoch = String(storageEpoch || "").trim().toLowerCase();
+  return normalizedProfile && normalizedOwner ? `clairveil:v0.3.1:public-pending:${normalizedProfile}:${normalizedEpoch ? `${normalizedEpoch}:` : ""}${normalizedOwner}` : "";
 }
-function loadPublicPendingTxState(storage, key, { profileId, owner } = {}) {
+function loadPublicPendingTxState(storage, key, { profileId, owner, storageEpoch = "" } = {}) {
   const raw = storage?.getItem(key);
   if (!raw) return null;
   try {
     const value = JSON.parse(raw);
-    if (value?.version !== publicPendingTxStateVersion || value.profileId !== String(profileId || "") || value.owner !== String(owner || "").toLowerCase()) {
+    if (value?.version !== publicPendingTxStateVersion || value.profileId !== String(profileId || "") || value.owner !== String(owner || "").toLowerCase() || String(value.storageEpoch || "") !== String(storageEpoch || "").toLowerCase()) {
       throw new Error("pending transaction identity does not match");
     }
     const send = normalizedPendingEntry(value.send);
@@ -96188,7 +96220,13 @@ function loadPublicPendingTxState(storage, key, { profileId, owner } = {}) {
     throw error;
   }
 }
-function savePublicPendingTxState(storage, key, { profileId, owner, send, deposit } = {}) {
+function savePublicPendingTxState(storage, key, {
+  profileId,
+  owner,
+  storageEpoch = "",
+  send,
+  deposit
+} = {}) {
   const normalizedSend = unresolvedStatuses.has(String(send?.status || "")) ? normalizedPendingEntry(send) : null;
   const normalizedDeposit = unresolvedStatuses.has(String(deposit?.status || "")) ? normalizedPendingEntry(deposit) : null;
   if (!normalizedSend && !normalizedDeposit) {
@@ -96199,6 +96237,7 @@ function savePublicPendingTxState(storage, key, { profileId, owner, send, deposi
     version: publicPendingTxStateVersion,
     profileId: String(profileId || ""),
     owner: String(owner || "").toLowerCase(),
+    ...storageEpoch ? { storageEpoch: String(storageEpoch).toLowerCase() } : {},
     send: normalizedSend,
     deposit: normalizedDeposit
   }));
@@ -96637,6 +96676,7 @@ function defaultReservationState() {
 }
 var state = {
   config: null,
+  chainStorageEpoch: "",
   chainProfiles: [],
   selectedChainProfileId: "",
   selectedRestEndpointByProfile: {},
@@ -96929,19 +96969,39 @@ function clairveilBrowserClient(profile = activeChainProfile()) {
 function noteStoreKeys() {
   const profile = activeChainProfile();
   const owner = String(state.keplr.account || "").trim().toLowerCase();
-  if (!profile?.id || !owner) return null;
+  const scope = walletStorageScope({
+    chainId: profile?.chainId || profile?.id,
+    profileId: profile?.id,
+    owner,
+    localTestMode: Boolean(state.config?.localTestMode),
+    storageEpoch: state.chainStorageEpoch
+  });
+  if (!scope) return null;
   return {
     owner,
-    namespace: `${profile.chainId || profile.id}:${profile.id}:${owner}`,
-    encrypted: `clairveil:v0.3.1:notes-encrypted:${profile.id}:${owner}`,
-    legacy: `clairveil:v0.3.1:notes:${profile.id}:${owner}`
+    namespace: scope.namespace,
+    encrypted: `clairveil:v0.3.1:notes-encrypted:${scope.keySuffix}`,
+    legacy: `clairveil:v0.3.1:notes:${scope.keySuffix}`
   };
 }
 function publicPendingIdentity() {
-  const profileId = activeChainProfile()?.id || "";
+  const profile = activeChainProfile();
   const owner = String(state.keplr.account || "").trim().toLowerCase();
-  const key = publicPendingTxKey({ profileId, owner });
-  return key ? { profileId, owner, key } : null;
+  const scope = walletStorageScope({
+    chainId: profile?.chainId || profile?.id,
+    profileId: profile?.id,
+    owner,
+    localTestMode: Boolean(state.config?.localTestMode),
+    storageEpoch: state.chainStorageEpoch
+  });
+  if (!scope) return null;
+  const identity = {
+    profileId: profile.id,
+    owner,
+    storageEpoch: scope.storageEpoch
+  };
+  const key = publicPendingTxKey(identity);
+  return key ? { ...identity, key } : null;
 }
 function hydratePublicPendingTransactions() {
   const identity = publicPendingIdentity();
@@ -97049,12 +97109,19 @@ async function clearCurrentNoteStore() {
 function reservationIdentity() {
   const profile = activeChainProfile();
   const owner = String(state.keplr.account || "").trim().toLowerCase();
-  if (!profile?.id || !profile.chainId || !owner || !state.keplr.rootSignatureBase64) return null;
+  const scope = walletStorageScope({
+    chainId: profile?.chainId,
+    profileId: profile?.id,
+    owner,
+    localTestMode: Boolean(state.config?.localTestMode),
+    storageEpoch: state.chainStorageEpoch
+  });
+  if (!scope || !state.keplr.rootSignatureBase64) return null;
   return {
     owner,
-    ownerKeyId: `${profile.chainId}:${owner}`,
-    namespace: `${profile.chainId}:${profile.id}:${owner}`,
-    cacheKey: `${profile.id}:${profile.chainId}:${owner}:${state.keplr.rootSignatureHash || state.keplr.signatureHash}`
+    ownerKeyId: scope.ownerKeyId,
+    namespace: scope.namespace,
+    cacheKey: `${scope.keySuffix}:${state.keplr.rootSignatureHash || state.keplr.signatureHash}`
   };
 }
 async function currentReservationManager() {
@@ -97097,12 +97164,19 @@ async function currentReservationManager() {
 function operationStoreIdentity() {
   const profile = activeChainProfile();
   const owner = String(state.keplr.account || "").trim().toLowerCase();
-  if (!profile?.id || !owner || !state.keplr.rootSignatureBase64) return null;
+  const scope = walletStorageScope({
+    chainId: profile?.chainId || profile?.id,
+    profileId: profile?.id,
+    owner,
+    localTestMode: Boolean(state.config?.localTestMode),
+    storageEpoch: state.chainStorageEpoch
+  });
+  if (!scope || !state.keplr.rootSignatureBase64) return null;
   return {
     profileId: profile.id,
     owner,
-    namespace: `${profile.chainId || profile.id}:${profile.id}:${owner}`,
-    key: `clairveil:v0.3.1:operations-encrypted:${profile.id}:${owner}`
+    namespace: scope.namespace,
+    key: `clairveil:v0.3.1:operations-encrypted:${scope.keySuffix}`
   };
 }
 async function currentOperationStore() {
@@ -99340,6 +99414,15 @@ function renderAccounts() {
 }
 function renderHealth(data) {
   const validatedConfig = validateClairveilWebClientConfig(data.config);
+  const observedStorageEpoch = localChainStorageEpoch({
+    localTestMode: Boolean(validatedConfig.localTestMode),
+    status: data.status
+  });
+  const previousStorageEpoch = state.chainStorageEpoch;
+  if (previousStorageEpoch && observedStorageEpoch && previousStorageEpoch !== observedStorageEpoch) {
+    resetWalletSession();
+  }
+  state.chainStorageEpoch = observedStorageEpoch || previousStorageEpoch;
   state.config = validatedConfig;
   state.chainProfiles = [...validatedConfig.chainProfiles];
   if (!state.selectedChainProfileId || !state.chainProfiles.some((profile) => profile.id === state.selectedChainProfileId)) {

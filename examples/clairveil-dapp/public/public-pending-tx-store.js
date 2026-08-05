@@ -16,22 +16,24 @@ function normalizedPendingEntry(entry) {
   };
 }
 
-export function publicPendingTxKey({ profileId, owner }) {
+export function publicPendingTxKey({ profileId, owner, storageEpoch = "" }) {
   const normalizedProfile = String(profileId || "").trim();
   const normalizedOwner = String(owner || "").trim().toLowerCase();
+  const normalizedEpoch = String(storageEpoch || "").trim().toLowerCase();
   return normalizedProfile && normalizedOwner
-    ? `clairveil:v0.3.1:public-pending:${normalizedProfile}:${normalizedOwner}`
+    ? `clairveil:v0.3.1:public-pending:${normalizedProfile}:${normalizedEpoch ? `${normalizedEpoch}:` : ""}${normalizedOwner}`
     : "";
 }
 
-export function loadPublicPendingTxState(storage, key, { profileId, owner } = {}) {
+export function loadPublicPendingTxState(storage, key, { profileId, owner, storageEpoch = "" } = {}) {
   const raw = storage?.getItem(key);
   if (!raw) return null;
   try {
     const value = JSON.parse(raw);
     if (value?.version !== publicPendingTxStateVersion
       || value.profileId !== String(profileId || "")
-      || value.owner !== String(owner || "").toLowerCase()) {
+      || value.owner !== String(owner || "").toLowerCase()
+      || String(value.storageEpoch || "") !== String(storageEpoch || "").toLowerCase()) {
       throw new Error("pending transaction identity does not match");
     }
     const send = normalizedPendingEntry(value.send);
@@ -45,7 +47,13 @@ export function loadPublicPendingTxState(storage, key, { profileId, owner } = {}
   }
 }
 
-export function savePublicPendingTxState(storage, key, { profileId, owner, send, deposit } = {}) {
+export function savePublicPendingTxState(storage, key, {
+  profileId,
+  owner,
+  storageEpoch = "",
+  send,
+  deposit
+} = {}) {
   const normalizedSend = unresolvedStatuses.has(String(send?.status || ""))
     ? normalizedPendingEntry(send)
     : null;
@@ -60,6 +68,7 @@ export function savePublicPendingTxState(storage, key, { profileId, owner, send,
     version: publicPendingTxStateVersion,
     profileId: String(profileId || ""),
     owner: String(owner || "").toLowerCase(),
+    ...(storageEpoch ? { storageEpoch: String(storageEpoch).toLowerCase() } : {}),
     send: normalizedSend,
     deposit: normalizedDeposit
   }));

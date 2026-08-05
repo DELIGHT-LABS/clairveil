@@ -4,6 +4,7 @@ import { webcrypto } from "node:crypto";
 import { MsgWithdraw, msgWithdrawTypeUrl } from "clairveiljs/cosmos-client";
 import { validateBrowserWalletProfile } from "clairveiljs/browser-dapp";
 import { normalizeBrowserProfileEndpoints } from "../public/browser-profile.js";
+import { localChainStorageEpoch, walletStorageScope } from "../public/browser-storage-scope.js";
 import { keplrDirectSignOptions } from "../public/cosmos-sign-options.js";
 import {
   assessReservationRecovery,
@@ -116,6 +117,35 @@ test("browser endpoint rewriting keeps the Keplr chain profile on one RPC and RE
   assert.equal(profile.keplrChainInfo.rest, profile.rest);
   assert.equal(source.rpc, "http://127.0.0.1:26657");
   assert.doesNotThrow(() => validateBrowserWalletProfile(profile));
+});
+
+test("local browser state is isolated by the current genesis block hash", () => {
+  const firstEpoch = localChainStorageEpoch({
+    localTestMode: true,
+    status: { sync_info: { earliest_block_hash: "AA".repeat(32) } }
+  });
+  const secondEpoch = localChainStorageEpoch({
+    localTestMode: true,
+    status: { sync_info: { earliest_block_hash: "BB".repeat(32) } }
+  });
+  const identity = {
+    chainId: "clairveil-local-2",
+    profileId: "clairveil-local",
+    owner: "CLAIR1OWNER",
+    localTestMode: true
+  };
+
+  assert.equal(firstEpoch, "aa".repeat(32));
+  assert.notEqual(firstEpoch, secondEpoch);
+  assert.notDeepEqual(
+    walletStorageScope({ ...identity, storageEpoch: firstEpoch }),
+    walletStorageScope({ ...identity, storageEpoch: secondEpoch })
+  );
+  assert.equal(walletStorageScope({ ...identity, storageEpoch: "" }), null);
+  assert.equal(localChainStorageEpoch({
+    localTestMode: false,
+    status: { sync_info: { earliest_block_hash: "AA".repeat(32) } }
+  }), "");
 });
 
 test("Keplr preserves ProofReady Cosmos sign docs but can price deposits", () => {
@@ -506,6 +536,28 @@ test("public pending transactions survive reload and clear only after resolution
     deposit: { txHash: `0x${"02".repeat(32)}`, status: "failed" }
   });
   assert.equal(storage.getItem(key), null);
+});
+
+test("public pending transaction state is isolated by local genesis epoch", () => {
+  const storage = new MemoryStorage();
+  const first = {
+    profileId: "clairveil-local",
+    owner: "clair1owner",
+    storageEpoch: "aa".repeat(32)
+  };
+  const second = { ...first, storageEpoch: "bb".repeat(32) };
+  const firstKey = publicPendingTxKey(first);
+  const secondKey = publicPendingTxKey(second);
+  assert.notEqual(firstKey, secondKey);
+
+  savePublicPendingTxState(storage, firstKey, {
+    ...first,
+    send: { txHash: "01".repeat(32), status: "submitted" }
+  });
+  assert.throws(
+    () => loadPublicPendingTxState(storage, firstKey, second),
+    error => error.code === "PUBLIC_PENDING_STATE_CORRUPT"
+  );
 });
 
 test("corrupt public pending state fails closed", () => {

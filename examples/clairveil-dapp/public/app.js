@@ -27,6 +27,7 @@ import { EncryptedLocalStorageOperationStore } from "./encrypted-operation-store
 import { assertDepositFundingAvailable } from "./deposit-funding.js";
 import { cosmosChargedFeeAmount, evmChargedFeeAmount } from "./network-fee.js";
 import { normalizeBrowserProfileEndpoints } from "./browser-profile.js";
+import { localChainStorageEpoch, walletStorageScope } from "./browser-storage-scope.js";
 import { keplrDirectSignOptions } from "./cosmos-sign-options.js";
 import { disclosureViewModel } from "./disclosure-view-model.js";
 import { findPrivacyEventByTxHash, normalizedTxHash } from "./operation-event-lookup.js";
@@ -136,6 +137,7 @@ function defaultReservationState() {
 
 const state = {
   config: null,
+  chainStorageEpoch: "",
   chainProfiles: [],
   selectedChainProfileId: "",
   selectedRestEndpointByProfile: {},
@@ -467,20 +469,40 @@ function clairveilBrowserClient(profile = activeChainProfile()) {
 function noteStoreKeys() {
   const profile = activeChainProfile();
   const owner = String(state.keplr.account || "").trim().toLowerCase();
-  if (!profile?.id || !owner) return null;
+  const scope = walletStorageScope({
+    chainId: profile?.chainId || profile?.id,
+    profileId: profile?.id,
+    owner,
+    localTestMode: Boolean(state.config?.localTestMode),
+    storageEpoch: state.chainStorageEpoch
+  });
+  if (!scope) return null;
   return {
     owner,
-    namespace: `${profile.chainId || profile.id}:${profile.id}:${owner}`,
-    encrypted: `clairveil:v0.3.1:notes-encrypted:${profile.id}:${owner}`,
-    legacy: `clairveil:v0.3.1:notes:${profile.id}:${owner}`
+    namespace: scope.namespace,
+    encrypted: `clairveil:v0.3.1:notes-encrypted:${scope.keySuffix}`,
+    legacy: `clairveil:v0.3.1:notes:${scope.keySuffix}`
   };
 }
 
 function publicPendingIdentity() {
-  const profileId = activeChainProfile()?.id || "";
+  const profile = activeChainProfile();
   const owner = String(state.keplr.account || "").trim().toLowerCase();
-  const key = publicPendingTxKey({ profileId, owner });
-  return key ? { profileId, owner, key } : null;
+  const scope = walletStorageScope({
+    chainId: profile?.chainId || profile?.id,
+    profileId: profile?.id,
+    owner,
+    localTestMode: Boolean(state.config?.localTestMode),
+    storageEpoch: state.chainStorageEpoch
+  });
+  if (!scope) return null;
+  const identity = {
+    profileId: profile.id,
+    owner,
+    storageEpoch: scope.storageEpoch
+  };
+  const key = publicPendingTxKey(identity);
+  return key ? { ...identity, key } : null;
 }
 
 function hydratePublicPendingTransactions() {
@@ -594,12 +616,19 @@ async function clearCurrentNoteStore() {
 function reservationIdentity() {
   const profile = activeChainProfile();
   const owner = String(state.keplr.account || "").trim().toLowerCase();
-  if (!profile?.id || !profile.chainId || !owner || !state.keplr.rootSignatureBase64) return null;
+  const scope = walletStorageScope({
+    chainId: profile?.chainId,
+    profileId: profile?.id,
+    owner,
+    localTestMode: Boolean(state.config?.localTestMode),
+    storageEpoch: state.chainStorageEpoch
+  });
+  if (!scope || !state.keplr.rootSignatureBase64) return null;
   return {
     owner,
-    ownerKeyId: `${profile.chainId}:${owner}`,
-    namespace: `${profile.chainId}:${profile.id}:${owner}`,
-    cacheKey: `${profile.id}:${profile.chainId}:${owner}:${state.keplr.rootSignatureHash || state.keplr.signatureHash}`
+    ownerKeyId: scope.ownerKeyId,
+    namespace: scope.namespace,
+    cacheKey: `${scope.keySuffix}:${state.keplr.rootSignatureHash || state.keplr.signatureHash}`
   };
 }
 
@@ -644,12 +673,19 @@ async function currentReservationManager() {
 function operationStoreIdentity() {
   const profile = activeChainProfile();
   const owner = String(state.keplr.account || "").trim().toLowerCase();
-  if (!profile?.id || !owner || !state.keplr.rootSignatureBase64) return null;
+  const scope = walletStorageScope({
+    chainId: profile?.chainId || profile?.id,
+    profileId: profile?.id,
+    owner,
+    localTestMode: Boolean(state.config?.localTestMode),
+    storageEpoch: state.chainStorageEpoch
+  });
+  if (!scope || !state.keplr.rootSignatureBase64) return null;
   return {
     profileId: profile.id,
     owner,
-    namespace: `${profile.chainId || profile.id}:${profile.id}:${owner}`,
-    key: `clairveil:v0.3.1:operations-encrypted:${profile.id}:${owner}`
+    namespace: scope.namespace,
+    key: `clairveil:v0.3.1:operations-encrypted:${scope.keySuffix}`
   };
 }
 
@@ -3223,6 +3259,15 @@ function renderAccounts() {
 
 function renderHealth(data) {
   const validatedConfig = validateClairveilWebClientConfig(data.config);
+  const observedStorageEpoch = localChainStorageEpoch({
+    localTestMode: Boolean(validatedConfig.localTestMode),
+    status: data.status
+  });
+  const previousStorageEpoch = state.chainStorageEpoch;
+  if (previousStorageEpoch && observedStorageEpoch && previousStorageEpoch !== observedStorageEpoch) {
+    resetWalletSession();
+  }
+  state.chainStorageEpoch = observedStorageEpoch || previousStorageEpoch;
   state.config = validatedConfig;
   state.chainProfiles = [...validatedConfig.chainProfiles];
   if (!state.selectedChainProfileId || !state.chainProfiles.some(profile => profile.id === state.selectedChainProfileId)) {
