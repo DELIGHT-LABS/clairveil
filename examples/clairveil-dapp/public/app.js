@@ -1426,11 +1426,14 @@ const els = {
   veiledWithdrawAmount: $("#veiledWithdrawAmount"),
   veiledWithdrawRecipient: $("#veiledWithdrawRecipient"),
   veiledWithdrawRecipientSuggestions: $("#veiledWithdrawRecipientSuggestions"),
-  withdrawMode: $("#withdrawMode"),
   withdrawFromVeiled: $("#withdrawFromVeiled"),
-  relayWithdrawPanel: $("#relayWithdrawPanel"),
-  relayWithdrawChain: $("#relayWithdrawChain"),
+  relayWithdrawAmount: $("#relayWithdrawAmount"),
   relayWithdrawRecipient: $("#relayWithdrawRecipient"),
+  relayWithdrawRecipientSuggestions: $("#relayWithdrawRecipientSuggestions"),
+  relayWithdrawFromVeiled: $("#relayWithdrawFromVeiled"),
+  relayWithdrawState: $("#relayWithdrawState"),
+  relayWithdrawChain: $("#relayWithdrawChain"),
+  relayWithdrawPreparedRecipient: $("#relayWithdrawPreparedRecipient"),
   relayWithdrawExpiry: $("#relayWithdrawExpiry"),
   relayWithdrawPayloadHash: $("#relayWithdrawPayloadHash"),
   relayWithdrawJson: $("#relayWithdrawJson"),
@@ -2642,6 +2645,14 @@ function addressSuggestionConfigs() {
       label: transparentFormat === "evm" ? "EVM" : "transparent",
       format: transparentFormat,
       includeWallet: true
+    },
+    {
+      input: els.relayWithdrawRecipient,
+      list: els.relayWithdrawRecipientSuggestions,
+      kind: "transparent",
+      label: transparentFormat === "evm" ? "EVM" : "transparent",
+      format: transparentFormat,
+      includeWallet: true
     }
   ];
 }
@@ -2989,13 +3000,13 @@ function renderWallet() {
 }
 
 function renderRelayWithdraw() {
-  const relayMode = els.withdrawMode.value === "relay";
   const handoff = state.relayWithdraw.handoff;
   const payload = relayWithdrawHandoffPayload(handoff);
-  els.relayWithdrawPanel.hidden = !relayMode;
-  els.withdrawFromVeiled.textContent = relayMode ? "Prepare relay payload" : "Withdraw";
+  els.relayWithdrawState.textContent = handoff
+    ? state.relayWithdraw.resultMessage || "Payload ready"
+    : "Ready for payload preparation";
   els.relayWithdrawChain.textContent = payload?.chain_id || handoff?.transaction?.chainId || "-";
-  els.relayWithdrawRecipient.textContent = payload?.recipient || "-";
+  els.relayWithdrawPreparedRecipient.textContent = payload?.recipient || "-";
   const expiry = Number(payload?.expires_at_unix || 0);
   els.relayWithdrawExpiry.textContent = expiry
     ? `${new Date(expiry * 1000).toLocaleString()} (${expiry})`
@@ -3146,8 +3157,7 @@ function updateAmountActionButtons(status = {}) {
     : depositProofReady()
       ? ""
       : "Configure CLAIRVEIL_DEPOSIT_PROOF_URL or inject CLAIRVEIL_DEPOSIT_PROOF_PROVIDER.";
-  const relayRecoveryBlocked = els.withdrawMode?.value === "relay"
-    && Boolean(state.relayWithdraw.handoff)
+  const relayRecoveryBlocked = Boolean(state.relayWithdraw.handoff)
     && state.relayWithdraw.resultStatus !== "confirmed";
   els.transferFromVeiled.disabled = !veiledReady
     || !protocolReady
@@ -3156,15 +3166,20 @@ function updateAmountActionButtons(status = {}) {
   els.withdrawFromVeiled.disabled = !veiledReady
     || !protocolReady
     || !noteInventoryTrusted
-    || relayRecoveryBlocked
     || !hasPositiveUclairInput(els.veiledWithdrawAmount);
+  els.relayWithdrawFromVeiled.disabled = !veiledReady
+    || !protocolReady
+    || !noteInventoryTrusted
+    || relayRecoveryBlocked
+    || !hasPositiveUclairInput(els.relayWithdrawAmount);
   const privacySpendTitle = !protocolReady
     ? "Protocol preflight must pass before using shielded notes."
     : !noteInventoryTrusted
       ? "Complete the note scan before using the displayed shielded balance."
       : "";
   els.transferFromVeiled.title = privacySpendTitle;
-  els.withdrawFromVeiled.title = relayRecoveryBlocked
+  els.withdrawFromVeiled.title = privacySpendTitle;
+  els.relayWithdrawFromVeiled.title = relayRecoveryBlocked
     ? "Reconcile the existing relay handoff before preparing another relay withdraw."
     : privacySpendTitle;
 }
@@ -6154,17 +6169,19 @@ async function transferFromVeiled() {
   }
 }
 
-async function withdrawFromVeiled() {
+async function withdrawFromVeiled({ relayMode = false } = {}) {
   if (!state.keplr.account) return;
+  const amountInput = relayMode ? els.relayWithdrawAmount : els.veiledWithdrawAmount;
+  const recipientInput = relayMode ? els.relayWithdrawRecipient : els.veiledWithdrawRecipient;
+  const actionButton = relayMode ? els.relayWithdrawFromVeiled : els.withdrawFromVeiled;
   let amount;
   try {
-    amount = amountInputValue(els.veiledWithdrawAmount);
+    amount = amountInputValue(amountInput);
   } catch (error) {
     toast(error.message);
     return;
   }
-  const recipient = els.veiledWithdrawRecipient.value.trim();
-  const relayMode = els.withdrawMode.value === "relay";
+  const recipient = recipientInput.value.trim();
   if (!recipient) {
     toast(`Withdraw recipient에 받을 ${accountPrefix()} 주소를 넣어줘.`);
     return;
@@ -6190,8 +6207,11 @@ async function withdrawFromVeiled() {
   });
   if (!confirmed) return;
 
-  setWithdrawEvidence("Preparing · no broadcast yet", "Preparing · no broadcast yet");
-  setBusy(els.withdrawFromVeiled, true);
+  if (!relayMode) {
+    setWithdrawEvidence("Preparing · no broadcast yet", "Preparing · no broadcast yet");
+  }
+  setBusy(actionButton, true);
+  (relayMode ? els.withdrawFromVeiled : els.relayWithdrawFromVeiled).disabled = true;
   els.keplrTxState.textContent = "Preparing withdraw";
   try {
     const operationOptions = { ...timing, signal: activeProofSignal() };
@@ -6281,11 +6301,6 @@ async function withdrawFromVeiled() {
       );
       await setRelayWithdrawHandoff(data);
       els.keplrTxState.textContent = "Relay withdraw payload ready";
-      setWithdrawEvidence(
-        "Reserved · awaiting relayer result",
-        "Awaiting relayer submission",
-        { render: false }
-      );
       finishTransferFlow("Relay withdraw payload가 준비되었습니다");
       return;
     }
@@ -6347,7 +6362,7 @@ async function withdrawFromVeiled() {
               "Not received · transaction failed",
               { render: false }
             );
-            finishTransferFlow(error.message, false, { retry: () => withdrawFromVeiled() });
+            finishTransferFlow(error.message, false, { retry: () => withdrawFromVeiled({ relayMode }) });
           }
           renderKeplr();
         }
@@ -6362,26 +6377,34 @@ async function withdrawFromVeiled() {
     const cancelled = error?.name === "AbortError" || activeProofSignal()?.aborted;
     const resolution = await resolvePreparedPrivacyFailure(error);
     if (resolution.blocked) {
-      els.keplrTxState.textContent = "Withdraw reconciliation required";
-      setWithdrawEvidence(
-        "Unknown · reservation remains locked",
-        "Unknown · reconcile before retry",
-        { render: false }
-      );
+      els.keplrTxState.textContent = relayMode
+        ? "Relay preparation reconciliation required"
+        : "Withdraw reconciliation required";
+      if (!relayMode) {
+        setWithdrawEvidence(
+          "Unknown · reservation remains locked",
+          "Unknown · reconcile before retry",
+          { render: false }
+        );
+      }
       finishTransferFlowUnknown(error.message);
     } else {
-      els.keplrTxState.textContent = cancelled ? "Withdraw cancelled" : "Withdraw failed";
-      setWithdrawEvidence(
-        cancelled ? "Not spent · cancelled before submission" : "Unspent · failure confirmed",
-        cancelled ? "Not received · no submission" : "Not received · transaction failed",
-        { render: false }
-      );
+      els.keplrTxState.textContent = relayMode
+        ? cancelled ? "Relay preparation cancelled" : "Relay preparation failed"
+        : cancelled ? "Withdraw cancelled" : "Withdraw failed";
+      if (!relayMode) {
+        setWithdrawEvidence(
+          cancelled ? "Not spent · cancelled before submission" : "Unspent · failure confirmed",
+          cancelled ? "Not received · no submission" : "Not received · transaction failed",
+          { render: false }
+        );
+      }
       finishTransferFlow(cancelled ? "Proof 요청을 취소했습니다." : error.message, false, {
-        retry: () => withdrawFromVeiled()
+        retry: () => withdrawFromVeiled({ relayMode })
       });
     }
   } finally {
-    setBusy(els.withdrawFromVeiled, false);
+    setBusy(actionButton, false);
     renderKeplr();
   }
 }
@@ -6433,7 +6456,8 @@ els.reconcileKeplrDeposit.addEventListener("click", () => reconcilePublicEvmTran
   els.keplrSendRecipient,
   els.keplrDepositAmount,
   els.veiledTransferAmount,
-  els.veiledWithdrawAmount
+  els.veiledWithdrawAmount,
+  els.relayWithdrawAmount
 ].forEach(input => {
   input.addEventListener("input", updateAmountActionButtons);
 });
@@ -6442,10 +6466,7 @@ els.veiledDisclosureMode.addEventListener("change", renderTransferDisclosureAdva
 els.includeSelfViewDisclosure.addEventListener("change", renderTransferDisclosureAdvanced);
 els.transferFromVeiled.addEventListener("click", transferFromVeiled);
 els.withdrawFromVeiled.addEventListener("click", withdrawFromVeiled);
-els.withdrawMode.addEventListener("change", () => {
-  renderRelayWithdraw();
-  updateAmountActionButtons();
-});
+els.relayWithdrawFromVeiled.addEventListener("click", () => withdrawFromVeiled({ relayMode: true }));
 els.relayWithdrawTxHash.addEventListener("input", event => {
   state.relayWithdraw.txHash = event.target.value.trim();
   state.relayWithdraw.resultStatus = "waiting";

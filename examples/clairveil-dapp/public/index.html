@@ -343,16 +343,7 @@
             </dl>
           </section>
           <section class="balance-section action-section" aria-labelledby="veiledWithdrawTitle">
-            <div class="section-title-row">
-              <h3 id="veiledWithdrawTitle">Withdraw (Move to Clair)</h3>
-              <label class="compact-field">
-                <span>Mode</span>
-                <select id="withdrawMode">
-                  <option value="direct">Direct</option>
-                  <option value="relay">Relay handoff</option>
-                </select>
-              </label>
-            </div>
+            <h3 id="veiledWithdrawTitle">Withdraw (Move to Clair)</h3>
             <div class="amount-row">
               <label class="field amount-field">
                 <span>Withdraw amount</span>
@@ -388,7 +379,40 @@
                 <dd id="keplrWithdrawReceive">Not checked</dd>
               </div>
             </dl>
-            <div id="relayWithdrawPanel" class="relay-withdraw-panel" hidden>
+          </section>
+        </div>
+
+        <div class="panel relayer-panel">
+          <div class="panel-heading">
+            <h2>Relay Withdraw</h2>
+            <span id="relayWithdrawState" class="quiet">Ready for payload preparation</span>
+          </div>
+          <div class="local-signer-layout">
+            <section class="local-signer-details relayer-prepare-pane" aria-labelledby="relayWithdrawPrepareTitle">
+              <h3 id="relayWithdrawPrepareTitle">Prepare Payload</h3>
+              <div class="amount-row">
+                <label class="field amount-field">
+                  <span>Withdraw amount</span>
+                  <div class="amount-control">
+                    <input id="relayWithdrawAmount" inputmode="numeric" value="1" />
+                    <span class="denom">uclair</span>
+                  </div>
+                </label>
+                <button id="relayWithdrawFromVeiled" type="button" disabled>Prepare</button>
+              </div>
+              <div class="field address-field">
+                <label for="relayWithdrawRecipient"><span>Withdraw recipient</span></label>
+                <div class="address-input-wrap">
+                  <input id="relayWithdrawRecipient" placeholder="clair1..." autocomplete="off" aria-haspopup="listbox" aria-controls="relayWithdrawRecipientSuggestions" aria-expanded="false" />
+                  <div id="relayWithdrawRecipientSuggestions" class="address-suggestions" role="listbox" hidden></div>
+                </div>
+              </div>
+              <p class="quiet">
+                Payload 준비까지만 수행하며 실제 broadcast와 수수료 지불은 relayer가 담당합니다.
+              </p>
+            </section>
+            <section id="relayWithdrawPanel" class="local-signer-notes relay-withdraw-panel" aria-labelledby="relayWithdrawHandoffTitle">
+              <h3 id="relayWithdrawHandoffTitle">Relayer Handoff</h3>
               <p class="inline-warning">
                 Relayer가 수수료를 지불합니다. Relayer는 payload에서 transaction을 다시 만들거나 byte-for-byte 검증해야 합니다. 이 예제는 payload 전달까지만 수행합니다.
               </p>
@@ -400,7 +424,7 @@
               </ul>
               <dl class="facts">
                 <div><dt>Chain ID</dt><dd id="relayWithdrawChain">-</dd></div>
-                <div><dt>Recipient</dt><dd id="relayWithdrawRecipient">-</dd></div>
+                <div><dt>Recipient</dt><dd id="relayWithdrawPreparedRecipient">-</dd></div>
                 <div><dt>Expires</dt><dd id="relayWithdrawExpiry">-</dd></div>
                 <div><dt>Payload hash</dt><dd id="relayWithdrawPayloadHash">-</dd></div>
               </dl>
@@ -420,8 +444,8 @@
                 <button id="reconcileRelayWithdraw" class="secondary-button" type="button" disabled>Check tx/expiry + spent state</button>
               </div>
               <p id="relayWithdrawResult" class="quiet" role="status">Not checked</p>
-            </div>
-          </section>
+            </section>
+          </div>
         </div>
 
         <section class="events-section">

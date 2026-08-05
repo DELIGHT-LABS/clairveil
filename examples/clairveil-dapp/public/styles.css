@@ -239,6 +239,10 @@ h3 {
   grid-column: 1 / -1;
 }
 
+.relayer-panel {
+  grid-column: 1 / -1;
+}
+
 .panel,
 .events-section,
 .auditor-section,
@@ -847,14 +851,30 @@ select {
   min-width: 145px;
 }
 
-.relay-withdraw-panel {
-  border-top: 1px solid var(--line);
-  margin-top: 16px;
-  padding-top: 16px;
+.relayer-prepare-pane {
+  align-content: start;
+  display: grid;
+  gap: 16px;
 }
 
-.relay-withdraw-panel[hidden] {
-  display: none;
+.relayer-prepare-pane > h3,
+.relay-withdraw-panel > h3 {
+  margin: 0;
+}
+
+.relayer-prepare-pane .amount-row {
+  margin-bottom: 0;
+}
+
+.relay-withdraw-panel {
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.relay-withdraw-panel > .field,
+.relay-withdraw-panel > .notes-actions,
+.relay-withdraw-panel > #relayWithdrawResult {
+  margin-top: 16px;
 }
 
 .relay-warning-list {

@@ -42,7 +42,8 @@ test("DApp disables value-moving actions for zero or invalid minimal-denom amoun
   assert.match(appSource, /sendFromKeplr\.disabled = !signerReady[\s\S]*!hasPositiveUclairInput\(els\.keplrSendAmount\)[\s\S]*!isSendRecipientForWallet\(els\.keplrSendRecipient\.value/);
   assert.match(appSource, /depositFromKeplr\.disabled = !signerReady[\s\S]*!depositProofReady\(\)[\s\S]*!hasPositiveUclairInput\(els\.keplrDepositAmount\)/);
   assert.match(appSource, /transferFromVeiled\.disabled = !veiledReady[\s\S]*!hasPositiveUclairInput\(els\.veiledTransferAmount\)/);
-  assert.match(appSource, /withdrawFromVeiled\.disabled = !veiledReady[\s\S]*relayRecoveryBlocked[\s\S]*!hasPositiveUclairInput\(els\.veiledWithdrawAmount\)/);
+  assert.match(appSource, /withdrawFromVeiled\.disabled = !veiledReady[\s\S]*!hasPositiveUclairInput\(els\.veiledWithdrawAmount\)/);
+  assert.match(appSource, /relayWithdrawFromVeiled\.disabled = !veiledReady[\s\S]*relayRecoveryBlocked[\s\S]*!hasPositiveUclairInput\(els\.relayWithdrawAmount\)/);
   assert.doesNotMatch(appSource, /const reservationBlocked = state\.reservations\.retryBlocked/);
   assert.match(appSource, /keplrSendAmount,[\s\S]*keplrSendRecipient,[\s\S]*veiledWithdrawAmount[\s\S]*addEventListener\("input", updateAmountActionButtons\)/);
 });
@@ -498,8 +499,13 @@ test("DApp offers relay handoff and cancellable same-prover retries", () => {
   assert.match(appSource, /signal: options\.signal/);
   assert.match(appSource, /transferFlowState\.controller\.abort\(\)/);
   assert.match(appSource, /retry: \(\) => transferFromVeiled\(\)/);
-  assert.match(appSource, /retry: \(\) => withdrawFromVeiled\(\)/);
-  assert.match(htmlSource, /id="withdrawMode"/);
+  assert.match(appSource, /retry: \(\) => withdrawFromVeiled\(\{ relayMode \}\)/);
+  assert.doesNotMatch(htmlSource, /id="withdrawMode"/);
+  assert.match(htmlSource, /class="panel relayer-panel"/);
+  assert.match(htmlSource, /id="relayWithdrawAmount"/);
+  assert.match(htmlSource, /id="relayWithdrawRecipient"/);
+  assert.match(htmlSource, /id="relayWithdrawFromVeiled"/);
+  assert.match(appSource, /withdrawFromVeiled\(\{ relayMode: true \}\)/);
   assert.match(htmlSource, /id="relayWithdrawJson"/);
   assert.match(htmlSource, /id="retryTransferFlow"/);
   assert.match(appSource, /async function reconcileRelayWithdrawResult/);
