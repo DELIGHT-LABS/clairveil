@@ -341,6 +341,9 @@ test("DApp reconciles spent transfers only with matching operation evidence", ()
   assert.match(appSource, /operationReconciliationStatus\(record\) !== operationStatuses\.Succeeded/);
   assert.match(appSource, /OPERATION_RECONCILIATION_REQUIRED/);
   assert.match(appSource, /state\.reservations\.unresolved\?\.length > 0/);
+  assert.match(appSource, /canReconcileReservationState\(\{[\s\S]*unresolved: state\.reservations\.unresolved/);
+  assert.match(appSource, /reconciliationReservationRecords\([\s\S]*unresolvedOperationReservations\(allReservations\)/);
+  assert.match(appSource, /reconciliationIncomplete = remaining\.length > 0 \|\| unresolvedCount > 0/);
 });
 
 test("DApp keeps prepared reservation leases alive across wallet and relay waits", () => {

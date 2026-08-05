@@ -44,9 +44,11 @@ import {
 } from "./relay-withdraw-reconciliation.js";
 import {
   assessReservationRecovery,
+  canReconcileReservationState,
   canResetStaleLocalGenesisReservations,
   groupReservationOperations,
   isEmptyLocalGenesisPrivacyState,
+  reconciliationReservationRecords,
   succeededOperationLookupKeys
 } from "./reservation-recovery.js";
 
@@ -896,7 +898,10 @@ function appendReservationRecoveryFact(list, label, value) {
 
 function renderReservationRecovery() {
   if (!els.reservationRecovery || !els.reservationRecoveryList) return;
-  const operations = groupReservationOperations(state.reservations.active);
+  const operations = groupReservationOperations(reconciliationReservationRecords(
+    state.reservations.active,
+    state.reservations.unresolved
+  ));
   els.reservationRecovery.hidden = operations.length === 0;
   els.reservationRecoveryList.innerHTML = "";
   for (const operation of operations) {
@@ -953,9 +958,12 @@ function renderReservationState() {
   if (!els.reservationState || !els.reconcileReservations) return;
   els.reservationState.textContent = state.reservations.message;
   els.reservationState.dataset.status = reservationStatusSlug(state.reservations.status);
-  const canReconcile = Boolean(state.keplr.rootSignatureBase64)
-    && state.reservations.active.length > 0
-    && !state.reservations.reconciling;
+  const canReconcile = canReconcileReservationState({
+    privacyReady: Boolean(state.keplr.rootSignatureBase64),
+    active: state.reservations.active,
+    unresolved: state.reservations.unresolved,
+    reconciling: state.reservations.reconciling
+  });
   els.reconcileReservations.disabled = !canReconcile;
   els.reconcileReservations.textContent = state.reservations.reconciling ? "Reconciling…" : "Reconcile";
   renderReservationRecovery();
@@ -5419,9 +5427,17 @@ async function reconcileReservations({ quiet = false, manager = null } = {}) {
   const resolvedManager = manager || await currentReservationManager();
   if (!resolvedManager) throw new Error("Encrypted note reservation manager is not available");
   state.reservations.reconciling = true;
+  els.keplrTxState.textContent = "Reconciling note reservations";
   renderReservationState();
   try {
-    const initial = await resolvedManager.listActiveReservations();
+    const [initialActive, allReservations] = await Promise.all([
+      resolvedManager.listActiveReservations(),
+      resolvedManager.store.listReservations({ ownerKeyId: resolvedManager.ownerKeyId })
+    ]);
+    const initial = reconciliationReservationRecords(
+      initialActive,
+      unresolvedOperationReservations(allReservations)
+    );
     const txHashes = [...new Set(initial.map(record => record.submitted_tx_hash).filter(Boolean))];
     const txChecks = new Map();
     for (const txHash of txHashes) {
@@ -5457,12 +5473,20 @@ async function reconcileReservations({ quiet = false, manager = null } = {}) {
       }
     }
     const remaining = await refreshReservationState(resolvedManager);
+    const unresolvedCount = state.reservations.unresolved.length;
+    const reconciliationIncomplete = remaining.length > 0 || unresolvedCount > 0;
+    els.keplrTxState.textContent = reconciliationIncomplete
+      ? "Reservation reconciliation requires review"
+      : "Reservation reconciliation complete";
     if (!quiet) {
-      toast(remaining.length
-        ? "Reservation reconciliation is incomplete. Do not retry while it remains active."
+      toast(reconciliationIncomplete
+        ? "Reservation reconciliation is incomplete. Do not retry until the listed operation is resolved."
         : "Note reservations reconciled. A new plan may now be prepared.");
     }
     return remaining;
+  } catch (error) {
+    els.keplrTxState.textContent = "Reservation reconciliation failed";
+    throw error;
   } finally {
     state.reservations.reconciling = false;
     renderReservationState();

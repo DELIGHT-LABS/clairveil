@@ -35,6 +35,32 @@ export function groupReservationOperations(records = []) {
       .localeCompare(String(right.records[0]?.created_at || "")));
 }
 
+export function reconciliationReservationRecords(...collections) {
+  const recordsByID = new Map();
+  for (const records of collections) {
+    for (const record of records || []) {
+      if (!record) continue;
+      const reservationID = String(record.reservation_id || record.reservationId || "");
+      const operationKey = reservationOperationKey(record);
+      const lookupKey = String(record.nullifier_lookup_key || "");
+      const key = reservationID || (operationKey && lookupKey ? `${operationKey}:${lookupKey}` : "");
+      if (key) recordsByID.set(key, record);
+    }
+  }
+  return [...recordsByID.values()];
+}
+
+export function canReconcileReservationState({
+  privacyReady = false,
+  active = [],
+  unresolved = [],
+  reconciling = false
+} = {}) {
+  return privacyReady === true
+    && reconciliationReservationRecords(active, unresolved).length > 0
+    && reconciling !== true;
+}
+
 /**
  * A completed operation already has bound success evidence in the reservation
  * store. Replaying the same spent note through a later scan must be a no-op:

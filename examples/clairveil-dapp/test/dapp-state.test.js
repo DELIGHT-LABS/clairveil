@@ -7,9 +7,11 @@ import { normalizeBrowserProfileEndpoints } from "../public/browser-profile.js";
 import { keplrDirectSignOptions } from "../public/cosmos-sign-options.js";
 import {
   assessReservationRecovery,
+  canReconcileReservationState,
   canResetStaleLocalGenesisReservations,
   groupReservationOperations,
   isEmptyLocalGenesisPrivacyState,
+  reconciliationReservationRecords,
   succeededOperationLookupKeys
 } from "../public/reservation-recovery.js";
 import { resetEncryptedBrowserReservationState } from "../public/encrypted-reservation-manager.js";
@@ -285,6 +287,38 @@ test("completed operations are excluded from later spent-note reconciliation", (
       operation_success_evidence_matches: false
     }
   }])], []);
+});
+
+test("reconciliation remains available for unresolved terminal reservations", () => {
+  const unresolved = {
+    reservation_id: "reservation-unresolved",
+    operation_id: "transfer:unresolved",
+    status: "ConfirmedSpent",
+    metadata: {
+      operation_status: "ManualReview",
+      operation_success_evidence_required: true
+    }
+  };
+
+  assert.deepEqual(
+    reconciliationReservationRecords([unresolved], [unresolved]),
+    [unresolved]
+  );
+  assert.equal(canReconcileReservationState({
+    privacyReady: true,
+    active: [],
+    unresolved: [unresolved]
+  }), true);
+  assert.equal(canReconcileReservationState({
+    privacyReady: true,
+    active: [],
+    unresolved: [unresolved],
+    reconciling: true
+  }), false);
+  assert.equal(canReconcileReservationState({
+    privacyReady: false,
+    unresolved: [unresolved]
+  }), false);
 });
 
 test("deposit funding separates EVM asset and native gas balances", () => {
