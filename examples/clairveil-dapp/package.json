@@ -12,6 +12,7 @@
     "dev": "npm run build:dapp && node server.js",
     "check:dapp": "npm run build:dapp && npm run check:bundle && node --check server.js && node --check public/app.js && node --check public/browser-profile.js && node --check public/cosmos-sign-options.js && node --check public/dapp-config.js && node --check public/deposit-funding.js && node --check public/network-fee.js && node --check public/encrypted-reservation-manager.js && node --check public/encrypted-operation-store.js && node --check public/operation-event-lookup.js && node --check public/public-pending-tx-store.js && node --check public/relay-withdraw-reconciliation.js && node --check public/reservation-recovery.js && node --check public/disclosure-view-model.js && node --check public/app.bundle.js",
     "check:bundle": "git diff --exit-code -- public/app.bundle.js",
+    "check:bundle:fresh": "npm run check:bundle",
     "test:dapp": "node --test test/dapp-smoke.test.js test/dapp-routes.test.js test/dapp-state.test.js",
     "check:clairveiljs": "npm run check:clairveiljs:types",
     "check:clairveiljs:types": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --strict test/clairveiljs-types.ts",
