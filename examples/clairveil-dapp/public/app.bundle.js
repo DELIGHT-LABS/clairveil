@@ -96716,11 +96716,17 @@ var state = {
     reserve: null,
     error: ""
   },
+  relayer: {
+    balance: "",
+    error: ""
+  },
   relayWithdraw: {
     handoff: null,
     json: "",
     reservationIds: [],
     txHash: "",
+    submittedBy: "",
+    externalHandoff: false,
     resultStatus: "idle",
     resultMessage: "Not checked"
   },
@@ -96742,7 +96748,7 @@ var operationStorePromise = null;
 var operationStoreKey = "";
 var publicPendingStateKey = "";
 var relayReservationHeartbeatTimer = null;
-var relayRecoverySaveTimer = null;
+var relayHandoffInFlight = false;
 var reservationLeaseOwner = (() => {
   const storageKey = "clairveil:v0.3.1:reservation-lease-owner";
   try {
@@ -97217,16 +97223,6 @@ async function persistRelayWithdrawRecovery(next = state.relayWithdraw) {
     relayWithdraw: next
   });
 }
-function queueRelayWithdrawRecoverySave() {
-  globalThis.clearTimeout(relayRecoverySaveTimer);
-  relayRecoverySaveTimer = globalThis.setTimeout(() => {
-    persistRelayWithdrawRecovery().catch((error) => {
-      state.relayWithdraw.resultStatus = "manual-review";
-      state.relayWithdraw.resultMessage = error.message;
-      renderRelayWithdraw();
-    });
-  }, 200);
-}
 async function hydrateRelayWithdrawRecovery() {
   const store = await currentOperationStore();
   const identity = operationStoreIdentity();
@@ -97253,6 +97249,9 @@ async function hydrateRelayWithdrawRecovery() {
   };
   const manager = await currentReservationManager();
   const records = manager ? await Promise.all(state.relayWithdraw.reservationIds.map((id) => manager.getReservation(id))) : [];
+  if (saved.relayWithdraw.externalHandoff === void 0 && records.some((record) => record?.metadata?.relay_handed_off === true)) {
+    state.relayWithdraw.externalHandoff = true;
+  }
   const activeRecords = records.filter((record) => record && [
     reservationStatuses.Reserved,
     reservationStatuses.Proving,
@@ -97834,10 +97833,14 @@ var els = {
   relayWithdrawPayloadHash: $("#relayWithdrawPayloadHash"),
   relayWithdrawJson: $("#relayWithdrawJson"),
   relayWithdrawTxHash: $("#relayWithdrawTxHash"),
+  relayWithdrawSubmittedBy: $("#relayWithdrawSubmittedBy"),
   relayWithdrawResult: $("#relayWithdrawResult"),
   reconcileRelayWithdraw: $("#reconcileRelayWithdraw"),
   copyRelayWithdraw: $("#copyRelayWithdraw"),
   downloadRelayWithdraw: $("#downloadRelayWithdraw"),
+  relayPreparedWithdraw: $("#relayPreparedWithdraw"),
+  relayerTransparentAddress: $("#relayerTransparentAddress"),
+  relayerBalance: $("#relayerBalance"),
   keplrTransferHash: $("#keplrTransferHash"),
   keplrWithdrawHash: $("#keplrWithdrawHash"),
   keplrWithdrawHeight: $("#keplrWithdrawHeight"),
@@ -98741,6 +98744,29 @@ function selectedLocalAccount() {
 function activeServerAccounts() {
   return serverFeature("localSigners") && selectedProfileMatchesServer() ? state.accounts : [];
 }
+function localRelayerAccount() {
+  if (!serverFeature("relayer") || !selectedProfileMatchesServer()) return null;
+  const preferred = activeChainProfile()?.transport === "evm" ? "dev0" : "relayer";
+  return state.accounts.find((account) => account.name === preferred) || null;
+}
+async function refreshRelayerAccount() {
+  const relayer = localRelayerAccount();
+  if (!relayer?.transparentAddress) {
+    state.relayer.balance = "";
+    state.relayer.error = "";
+    renderRelayWithdraw();
+    return;
+  }
+  try {
+    const balance = await clairveilBrowserClient().getBalances(relayer.transparentAddress);
+    state.relayer.balance = (balance.balances || []).map((coin) => `${coin.amount}${coin.denom}`).join(", ") || zeroCoinText();
+    state.relayer.error = "";
+  } catch (error) {
+    state.relayer.balance = "";
+    state.relayer.error = error.message;
+  }
+  renderRelayWithdraw();
+}
 function localSignerLabel(name) {
   const value = String(name || "local signer").trim();
   return value.charAt(0).toUpperCase() + value.slice(1);
@@ -99136,7 +99162,6 @@ function resetMetaMaskSession() {
 }
 function resetKeplrSession() {
   stopRelayReservationHeartbeat();
-  globalThis.clearTimeout(relayRecoverySaveTimer);
   state.keplr = defaultKeplrState();
   noteStore = null;
   noteStorePromise = null;
@@ -99154,6 +99179,8 @@ function resetKeplrSession() {
     json: "",
     reservationIds: [],
     txHash: "",
+    submittedBy: "",
+    externalHandoff: false,
     resultStatus: "idle",
     resultMessage: "Not checked"
   };
@@ -99219,32 +99246,33 @@ function renderWallet() {
 function renderRelayWithdraw() {
   const handoff = state.relayWithdraw.handoff;
   const payload = relayWithdrawHandoffPayload(handoff);
+  const relayer = localRelayerAccount();
+  const localRelayerReady = Boolean(relayer?.transparentAddress);
   els.relayWithdrawState.textContent = handoff ? state.relayWithdraw.resultMessage || "Payload ready" : "Ready for payload preparation";
+  els.relayerTransparentAddress.textContent = relayer?.transparentAddress || "-";
+  els.relayerBalance.textContent = state.relayer.error || state.relayer.balance || (localRelayerReady ? "Loading..." : "-");
   els.relayWithdrawChain.textContent = payload?.chain_id || handoff?.transaction?.chainId || "-";
   els.relayWithdrawPreparedRecipient.textContent = payload?.recipient || "-";
   const expiry = Number(payload?.expires_at_unix || 0);
   els.relayWithdrawExpiry.textContent = expiry ? `${new Date(expiry * 1e3).toLocaleString()} (${expiry})` : "-";
   els.relayWithdrawPayloadHash.textContent = payload?.payload_hash || "-";
   els.relayWithdrawJson.value = state.relayWithdraw.json;
-  if (els.relayWithdrawTxHash.value !== state.relayWithdraw.txHash) {
-    els.relayWithdrawTxHash.value = state.relayWithdraw.txHash;
-  }
+  els.relayWithdrawTxHash.textContent = state.relayWithdraw.txHash ? shorten(state.relayWithdraw.txHash, 14, 12) : "-";
+  els.relayWithdrawSubmittedBy.textContent = state.relayWithdraw.submittedBy || "-";
   els.relayWithdrawResult.textContent = state.relayWithdraw.resultMessage || "Not checked";
   els.relayWithdrawResult.dataset.status = state.relayWithdraw.resultStatus;
-  els.reconcileRelayWithdraw.disabled = !handoff || state.relayWithdraw.resultStatus === "checking";
-  els.copyRelayWithdraw.disabled = !state.relayWithdraw.json;
-  els.downloadRelayWithdraw.disabled = !state.relayWithdraw.json;
+  els.reconcileRelayWithdraw.disabled = !handoff || state.relayWithdraw.resultStatus === "ready" && !state.relayWithdraw.txHash && !state.relayWithdraw.externalHandoff || state.relayWithdraw.resultStatus === "checking";
+  const canStartHandoff = Boolean(state.relayWithdraw.json) && !state.relayWithdraw.externalHandoff && !relayHandoffInFlight && state.relayWithdraw.resultStatus === "ready";
+  els.copyRelayWithdraw.disabled = !canStartHandoff;
+  els.downloadRelayWithdraw.disabled = !canStartHandoff;
+  els.relayPreparedWithdraw.hidden = !serverFeature("relayer");
+  els.relayPreparedWithdraw.disabled = !handoff || !localRelayerReady || state.relayWithdraw.externalHandoff || state.relayWithdraw.resultStatus !== "ready";
 }
 async function setRelayWithdrawHandoff(prepared) {
   const reservationIDs = preparedReservationIDs(prepared);
   if (!prepared.reservationManager || !prepared.reservation || !reservationIDs.length) {
     throw new Error("Relay withdraw handoff requires an active prepared reservation");
   }
-  await withPreparedReservationHeartbeat(prepared, () => prepared.reservationManager.recordRelayHandoff(reservationIDs, {
-    leaseToken: prepared.reservation.lease_token,
-    payloadHash: prepared.payload?.payload_hash || "",
-    metadata: { handoff_surface: "clairveil_example_dapp" }
-  }));
   const handoff = createRelayWithdrawHandoff({
     profileId: activeChainProfile()?.id || "",
     transport: activeChainProfile()?.transport || "cosmos",
@@ -99255,8 +99283,10 @@ async function setRelayWithdrawHandoff(prepared) {
     handoff,
     reservationIds: reservationIDs,
     txHash: "",
-    resultStatus: "waiting",
-    resultMessage: "Handoff recorded \xB7 waiting for relayer tx hash",
+    submittedBy: "",
+    externalHandoff: false,
+    resultStatus: "ready",
+    resultMessage: "Payload ready \xB7 choose local Relay or external handoff",
     leaseToken: prepared.reservation.lease_token,
     leaseUntil: prepared.reservation.lease_until,
     json: JSON.stringify(handoff, (_key, value) => typeof value === "bigint" ? value.toString() : value, 2)
@@ -99271,6 +99301,41 @@ async function setRelayWithdrawHandoff(prepared) {
   });
   await refreshReservationState(prepared.reservationManager);
   renderRelayWithdraw();
+}
+async function recordExternalRelayWithdrawHandoff(surface) {
+  if (!state.relayWithdraw.handoff) {
+    throw new Error("Prepare a relay withdraw payload first");
+  }
+  if (state.relayWithdraw.externalHandoff || relayHandoffInFlight) {
+    throw new Error("This relay payload handoff is already in progress or recorded");
+  }
+  const context = captureRelaySubmitContext();
+  relayHandoffInFlight = true;
+  renderRelayWithdraw();
+  try {
+    const manager = await currentReservationManager();
+    assertRelaySubmitContext(context);
+    if (!manager || !state.relayWithdraw.reservationIds.length) {
+      throw new Error("Relay withdraw reservation manager is unavailable");
+    }
+    await manager.recordRelayHandoff(state.relayWithdraw.reservationIds, {
+      leaseToken: state.relayWithdraw.leaseToken,
+      payloadHash: relayWithdrawHandoffPayload(state.relayWithdraw.handoff)?.payload_hash || "",
+      metadata: { handoff_surface: surface }
+    });
+    assertRelaySubmitContext(context);
+    state.relayWithdraw.externalHandoff = true;
+    state.relayWithdraw.resultStatus = "waiting";
+    state.relayWithdraw.resultMessage = "External handoff recorded \xB7 waiting for relayer result";
+    await persistRelayWithdrawRecovery();
+    assertRelaySubmitContext(context);
+    await refreshReservationState(manager);
+    assertRelaySubmitContext(context);
+    return context;
+  } finally {
+    relayHandoffInFlight = false;
+    renderRelayWithdraw();
+  }
 }
 function renderKeplr() {
   const connected = Boolean(state.keplr.account);
@@ -99505,6 +99570,9 @@ async function refreshHealth() {
     }
   }
   const tasks = [refreshEvents({ allowFailure: true }), refreshProtocolStatus()];
+  if (serverFeature("relayer")) {
+    tasks.push(refreshRelayerAccount());
+  }
   if (serverFeature("auditorAdmin")) {
     tasks.push(refreshAuditorTransfers(), refreshAuditorTestScalar());
   }
@@ -100593,11 +100661,15 @@ async function copyWalletAccount() {
 }
 async function copyRelayWithdraw() {
   if (!state.relayWithdraw.json) throw new Error("Prepare a relay withdraw payload first");
+  const context = await recordExternalRelayWithdrawHandoff("clipboard");
+  assertRelaySubmitContext(context);
   await navigator.clipboard.writeText(state.relayWithdraw.json);
   toast("Relay withdraw handoff JSON copied");
 }
-function downloadRelayWithdraw() {
+async function downloadRelayWithdraw() {
   if (!state.relayWithdraw.json) throw new Error("Prepare a relay withdraw payload first");
+  const context = await recordExternalRelayWithdrawHandoff("download");
+  assertRelaySubmitContext(context);
   downloadTextFile(`clairveil-relay-withdraw-${Date.now()}.json`, state.relayWithdraw.json);
   toast("Relay withdraw handoff JSON downloaded");
 }
@@ -101031,6 +101103,8 @@ function clearedRelayWithdrawState(resultStatus, resultMessage) {
     json: "",
     reservationIds: [],
     txHash: "",
+    submittedBy: "",
+    externalHandoff: false,
     resultStatus,
     resultMessage
   };
@@ -101148,6 +101222,141 @@ async function quarantineRelayWithdrawOperation({ manager, records = [], check =
     "Transparent receive is not safely attributable to this handoff",
     { render: false }
   );
+}
+function captureRelaySubmitContext() {
+  const handoff = state.relayWithdraw.handoff;
+  return {
+    profileId: activeChainProfile()?.id || "",
+    account: state.keplr.account,
+    rootSignatureHash: state.keplr.rootSignatureHash,
+    storageEpoch: state.chainStorageEpoch,
+    handoffVersion: [
+      handoff?.schema_version,
+      handoff?.handoff_version,
+      handoff?.request?.version
+    ].join(":"),
+    payloadHash: relayWithdrawHandoffPayload(handoff)?.payload_hash || ""
+  };
+}
+function assertRelaySubmitContext(context) {
+  const current = captureRelaySubmitContext();
+  for (const key of Object.keys(context)) {
+    if (current[key] !== context[key]) {
+      throw new Error("Wallet, chain, or prepared relay payload changed during local relayer submission");
+    }
+  }
+}
+async function relayPreparedWithdraw() {
+  const handoff = state.relayWithdraw.handoff;
+  const payload = relayWithdrawHandoffPayload(handoff);
+  const relayer = localRelayerAccount();
+  if (!handoff || !payload) throw new Error("Prepare a relay withdraw payload first");
+  if (!serverFeature("relayer") || !relayer?.transparentAddress) {
+    throw new Error("Local relayer helper is unavailable");
+  }
+  if (state.relayWithdraw.externalHandoff) {
+    throw new Error("This payload already crossed an external handoff boundary; reconcile it instead of submitting locally");
+  }
+  if (state.relayWithdraw.resultStatus !== "ready") {
+    throw new Error("This relay payload is already being submitted or requires reconciliation");
+  }
+  const context = captureRelaySubmitContext();
+  const reservationIDs = [...state.relayWithdraw.reservationIds];
+  const leaseToken = state.relayWithdraw.leaseToken;
+  state.relayWithdraw.resultStatus = "preflighting";
+  state.relayWithdraw.resultMessage = "Checking fresh chain time and reserved nullifier state\u2026";
+  setBusy(els.relayPreparedWithdraw, true);
+  renderRelayWithdraw();
+  let manager = null;
+  let attemptMarkerStarted = false;
+  try {
+    manager = await currentReservationManager();
+    if (!manager || !reservationIDs.length || !leaseToken) {
+      throw new Error("Relay withdraw reservation state is unavailable");
+    }
+    const chainBlock = await fetchLatestChainBlock();
+    assertRelaySubmitContext(context);
+    if (relayWithdrawPayloadExpired(payload, chainBlock.timeUnix)) {
+      throw new Error(`Relay payload expired at authoritative chain height ${chainBlock.height}`);
+    }
+    await scanKeplrNotes({ quiet: true, throwOnError: true, skipSetup: true, maxPages: 1e3 });
+    assertRelaySubmitContext(context);
+    const cursor = state.keplr.noteScanCursor || defaultNoteScanCursor();
+    const checkedHeight = checkedReservationHeight();
+    if (Boolean(cursor.has_more ?? cursor.hasMore) || !checkedHeight || checkedHeight < chainBlock.height) {
+      throw new Error("Reserved nullifier preflight did not reach the authoritative chain height");
+    }
+    const records = await Promise.all(reservationIDs.map((id) => manager.getReservation(id)));
+    assertRelayReservationPayloadMatches(records, payload);
+    const unspentIDs = await explicitlyUnspentReservationIDs(manager, records, state.keplr.notes);
+    if (!records.length || unspentIDs.length !== records.length) {
+      throw new Error("Every reserved nullifier must be explicitly unspent before local relay submission");
+    }
+    stopRelayReservationHeartbeat();
+    attemptMarkerStarted = true;
+    await manager.markBroadcastAttempting(reservationIDs, {
+      leaseToken,
+      reason: "same_origin_local_relayer_submit",
+      metadata: {
+        local_relayer: relayer.name,
+        payload_hash: context.payloadHash,
+        nullifier_unspent_confirmed: true,
+        checked_height: checkedHeight,
+        checked_chain_time_unix: chainBlock.timeUnix
+      }
+    });
+    assertRelaySubmitContext(context);
+    state.relayWithdraw.resultStatus = "submitting";
+    state.relayWithdraw.resultMessage = "Local relayer is paying the fee and broadcasting\u2026";
+    await persistRelayWithdrawRecovery();
+    await refreshReservationState(manager);
+    const relay = await api("/api/relayer/withdraw", {
+      method: "POST",
+      body: JSON.stringify({
+        handoff,
+        expectedRecipient: payload.recipient,
+        relayer: relayer.name
+      })
+    });
+    assertRelaySubmitContext(context);
+    const txHash = String(relay.broadcast?.txhash || "").trim();
+    if (!/^(0x)?[0-9a-fA-F]{64}$/.test(txHash)) {
+      throw new Error("Local relayer response omitted a valid transaction hash");
+    }
+    state.relayWithdraw.txHash = txHash;
+    state.relayWithdraw.submittedBy = relay.relayerAddress ? `${relay.relayer || relayer.name} \xB7 ${shorten(relay.relayerAddress, 14, 12)}` : relay.relayer || relayer.name;
+    await persistRelayWithdrawRecovery();
+    await manager.markSubmitted(reservationIDs, {
+      leaseToken,
+      txHash,
+      metadata: {
+        local_relayer: relay.relayer || relayer.name,
+        payload_hash: relay.payloadHash || context.payloadHash
+      }
+    });
+    assertRelaySubmitContext(context);
+    state.relayWithdraw.resultStatus = relay.pending ? "submitted" : "checking";
+    state.relayWithdraw.resultMessage = relay.pending ? "Relayer broadcast submitted \xB7 waiting for inclusion" : "Relayer tx included \xB7 reconciling payload and nullifier evidence";
+    await persistRelayWithdrawRecovery();
+    renderRelayWithdraw();
+    await reconcileRelayWithdrawResult();
+    await refreshRelayerAccount();
+    toast(relay.pending ? "Relay withdraw submitted" : "Relay withdraw included");
+  } catch (error) {
+    try {
+      assertRelaySubmitContext(context);
+      state.relayWithdraw.resultStatus = attemptMarkerStarted ? "unknown" : "ready";
+      state.relayWithdraw.resultMessage = attemptMarkerStarted ? `Local relayer result is unknown \xB7 ${error.message}` : `Relay preflight failed before broadcast \xB7 ${error.message}`;
+      await persistRelayWithdrawRecovery();
+      if (manager) await refreshReservationState(manager);
+      renderRelayWithdraw();
+    } catch {
+    }
+    throw error;
+  } finally {
+    setBusy(els.relayPreparedWithdraw, false);
+    renderKeplr();
+  }
 }
 async function reconcileRelayWithdrawResult() {
   const handoff = state.relayWithdraw.handoff;
@@ -102336,22 +102545,10 @@ els.includeSelfViewDisclosure.addEventListener("change", renderTransferDisclosur
 els.transferFromVeiled.addEventListener("click", transferFromVeiled);
 els.withdrawFromVeiled.addEventListener("click", withdrawFromVeiled);
 els.relayWithdrawFromVeiled.addEventListener("click", () => withdrawFromVeiled({ relayMode: true }));
-els.relayWithdrawTxHash.addEventListener("input", (event) => {
-  state.relayWithdraw.txHash = event.target.value.trim();
-  state.relayWithdraw.resultStatus = "waiting";
-  state.relayWithdraw.resultMessage = state.relayWithdraw.txHash ? "Tx hash entered \xB7 result not checked" : "Waiting for relayer tx hash";
-  renderRelayWithdraw();
-  queueRelayWithdrawRecoverySave();
-});
+els.relayPreparedWithdraw.addEventListener("click", () => relayPreparedWithdraw().catch((error) => toast(error.message)));
 els.reconcileRelayWithdraw.addEventListener("click", () => reconcileRelayWithdrawResult());
 els.copyRelayWithdraw.addEventListener("click", () => copyRelayWithdraw().catch((error) => toast(error.message)));
-els.downloadRelayWithdraw.addEventListener("click", () => {
-  try {
-    downloadRelayWithdraw();
-  } catch (error) {
-    toast(error.message);
-  }
-});
+els.downloadRelayWithdraw.addEventListener("click", () => downloadRelayWithdraw().catch((error) => toast(error.message)));
 els.refreshAll.addEventListener("click", () => refreshHealth().catch((error) => toast(error.message)));
 els.refreshNotes.addEventListener("click", () => refreshNotes().catch((error) => toast(error.message)));
 els.refreshEvents.addEventListener("click", () => refreshEvents().catch((error) => toast(error.message)));

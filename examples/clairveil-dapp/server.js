@@ -1,13 +1,14 @@
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createReadStream, existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { homedir, networkInterfaces } from "node:os";
+import { homedir, networkInterfaces, tmpdir } from "node:os";
 import { JsonRpcProvider, Wallet } from "ethers";
 import {
   createClairveilClient,
+  createClairveilEvmClient,
   ClairveilError,
   ClairveilErrorCode,
   derivePrivacyMaterial,
@@ -153,7 +154,7 @@ const clairveil = createClairveilClient({
   defaultDenom: config.denom
 });
 
-const cosmosAccountNames = new Set(["alice", "bob", "auditor"]);
+const cosmosAccountNames = new Set(["alice", "bob", "relayer", "auditor"]);
 const evmDefaultSignerAccounts = [
   {
     name: "dev0",
@@ -226,6 +227,19 @@ function localSignerNames() {
   return isEvmTransport()
     ? new Set(evmDefaultSignerAccounts.map(account => account.name))
     : cosmosAccountNames;
+}
+
+function localRelayerName() {
+  const fallback = isEvmTransport() ? "dev0" : "relayer";
+  const configured = process.env.CLAIRVEIL_LOCAL_RELAYER
+    ?? process.env.CLAIRVEIL_RELAYER_ACCOUNT
+    ?? process.env.CLAIRVEIL_EVM_RELAYER_ACCOUNT
+    ?? fallback;
+  return localSignerNames().has(configured) ? configured : fallback;
+}
+
+function evmPrivacyAccountPrefix() {
+  return process.env.CLAIRVEIL_EVM_PRIVACY_ACCOUNT_PREFIX ?? "clair";
 }
 
 function buildKeplrChainInfo({
@@ -1007,6 +1021,35 @@ async function queryEvmNativeBalance(address) {
   };
 }
 
+async function latestChainNowUnix() {
+  const block = await fetchJson(rpcHttpUrl("/block"));
+  const timestamp = block?.result?.block?.header?.time;
+  const milliseconds = Date.parse(String(timestamp || ""));
+  if (!Number.isFinite(milliseconds)) {
+    throw new Error("latest chain block omitted a valid timestamp");
+  }
+  return Math.floor(milliseconds / 1000);
+}
+
+function assertEvmRelayCandidateMatches(candidate, expected) {
+  if (!candidate || typeof candidate !== "object") {
+    throw new Error("EVM relay withdraw requires the prepared candidate transaction");
+  }
+  const actualTo = String(candidate.to || "").toLowerCase();
+  const expectedTo = String(expected?.to || "").toLowerCase();
+  const actualData = String(candidate.data || "").toLowerCase();
+  const expectedData = String(expected?.data || "").toLowerCase();
+  const actualValue = BigInt(candidate.value ?? 0);
+  const expectedValue = BigInt(expected?.value ?? 0);
+  const actualChainId = normalizeEvmChainId(candidate.chainId ?? candidate.chain_id ?? config.evmChainId);
+  if (actualTo !== expectedTo
+    || actualData !== expectedData
+    || actualValue !== expectedValue
+    || actualChainId !== config.evmChainId) {
+    throw new Error("EVM relay candidate does not match the payload-derived transaction");
+  }
+}
+
 function serverFeaturesForRequest(req) {
   const localTestMode = config.localTestMode;
   const localSignerAdmin = localTestMode && localAdminAccessAllowed(req);
@@ -1018,6 +1061,7 @@ function serverFeaturesForRequest(req) {
     localSignerSetup: localSignerMutation,
     faucet: localSignerMutation,
     depositProof: Boolean(config.publicDepositProofUrl || (config.proverProxyEnabled && config.depositProofUrl)),
+    relayer: localSignerMutation,
     auditorAdmin: localSignerAdmin,
     proverProxy: config.proverProxyEnabled,
     batchTransfer: false
@@ -1253,6 +1297,113 @@ async function handleApi(req, res, url) {
       }
       const balance = await queryBalances(recipient);
       sendJson(res, 200, { broadcast: result.json, tx, balance, beforeBalance, amount, from, recipient });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/relayer/withdraw") {
+      assertLocalTestBackendAllowed("relay withdraw");
+      assertSignerMutationAllowed(req);
+      const body = await readBody(req);
+      const payload = body.handoff?.payload ?? body.payload;
+      const candidateTransaction = body.handoff?.transaction ?? body.transaction;
+      const relayer = localRelayerName();
+      const requestedRelayer = body.relayer ?? body.from;
+      if (requestedRelayer !== undefined && validateAccount(requestedRelayer) !== relayer) {
+        throw new Error(`local relay withdraw must use the configured ${relayer} fee payer`);
+      }
+      const account = (await localAccounts()).find(entry => entry.name === relayer);
+      if (!payload || typeof payload !== "object") {
+        throw new Error("relay withdraw payload is required");
+      }
+      if (!account?.transparentAddress) {
+        throw new Error(`local relayer account ${relayer} is not initialized`);
+      }
+      const expectedRecipient = body.expectedRecipient
+        ?? body.expected_recipient
+        ?? payload.recipient;
+      const chainNowUnix = await latestChainNowUnix();
+
+      if (isEvmTransport()) {
+        const evmClient = createClairveilEvmClient({
+          contractAddress: config.evmPrivacyPrecompileAddress,
+          chainId: config.chainId,
+          accountPrefix: evmPrivacyAccountPrefix(),
+          shieldedPrefix: config.shieldedPrefix,
+          defaultDenom: config.denom
+        });
+        const built = await evmClient.buildWithdrawTransaction({
+          payload,
+          relayer: account.transparentAddress,
+          chainNowUnix,
+          expectedChainId: config.chainId,
+          expectedRecipient
+        });
+        assertEvmRelayCandidateMatches(candidateTransaction, built.transaction);
+        const provider = new JsonRpcProvider(config.evmRpc);
+        const wallet = evmWalletForLocalSigner(relayer).connect(provider);
+        const submitted = await wallet.sendTransaction({
+          to: built.transaction.to,
+          data: built.transaction.data,
+          value: built.transaction.value ?? "0x0",
+          gasLimit: BigInt(config.evmGasLimit)
+        });
+        const txHash = validateTxHashHex(submitted.hash);
+        const receipt = await waitForEvmReceipt(txHash);
+        const failed = Boolean(receipt?.status && receipt.status !== "0x1");
+        sendJson(res, 200, {
+          broadcast: { txhash: txHash },
+          receipt,
+          included: Boolean(receipt),
+          pending: !receipt,
+          failed,
+          relayer,
+          relayerAddress: account.transparentAddress,
+          relayerEvmAddress: wallet.address,
+          payloadHash: payload.payload_hash || ""
+        });
+        return;
+      }
+
+      clairveil.buildRelayWithdrawMessageFromPayload({
+        payload,
+        relayer: account.transparentAddress,
+        chainNowUnix,
+        expectedChainId: config.chainId,
+        expectedRecipient,
+        accountPrefix: config.accountPrefix
+      });
+      const workDir = await mkdtemp(join(tmpdir(), "clairveil-relay-withdraw-"));
+      const payloadPath = join(workDir, "payload.json");
+      try {
+        await writeFile(payloadPath, JSON.stringify(payload, jsonReplacer, 2), "utf8");
+        const result = await runClairveild([
+          "tx", "privacy", "relay-withdraw", payloadPath,
+          "--from", relayer,
+          "--keyring-backend", localSignerKeyring(),
+          "--home", localSignerHome(),
+          "--node", config.rpc,
+          "--chain-id", config.chainId,
+          "--gas", "5000000",
+          "--gas-prices", config.gasPrices,
+          "--yes",
+          "--output", "json"
+        ]);
+        const txHash = validateTxHashHex(result.json.txhash);
+        const tx = await waitForTx(txHash);
+        const failed = Boolean(tx && Number(tx.code || 0) !== 0);
+        sendJson(res, 200, {
+          broadcast: { ...result.json, txhash: txHash },
+          tx,
+          included: Boolean(tx),
+          pending: !tx,
+          failed,
+          relayer,
+          relayerAddress: account.transparentAddress,
+          payloadHash: payload.payload_hash || ""
+        });
+      } finally {
+        await rm(workDir, { recursive: true, force: true });
+      }
       return;
     }
 

@@ -109,6 +109,7 @@ test("DApp exposes config, health, and bundled frontend assets", async () => {
     assert.equal(config.json.keplrChainInfo.bech32Config.bech32PrefixAccAddr, "clair");
     assert.equal(config.json.schemaVersion, "clairveil-web-client-config-v1");
     assert.equal(config.json.serverFeatures.depositProof, false);
+    assert.equal(config.json.serverFeatures.relayer, true);
     assert.equal(validatedConfig(config.json).activeProfile.id, "clairveil-local");
 
     const health = await waitForJson(`${baseUrl}/api/health`);
@@ -318,6 +319,7 @@ test("DApp disables local-only backend routes outside local test mode", async ()
     assert.equal(config.json.modeLabel, "Public Node DApp");
     assert.equal(config.json.serverFeatures.localSigners, false);
     assert.equal(config.json.serverFeatures.faucet, false);
+    assert.equal(config.json.serverFeatures.relayer, false);
     assert.equal(config.json.serverFeatures.auditorAdmin, false);
     assert.equal(config.json.serverFeatures.proverProxy, false);
     assert.equal(config.json.localSignerHome, "");
@@ -333,6 +335,7 @@ test("DApp disables local-only backend routes outside local test mode", async ()
     const localOnlyRoutes = [
       { path: "/api/local-signers/ensure", init: { method: "POST", body: "{}" } },
       { path: "/api/faucet", init: { method: "POST", body: "{}" } },
+      { path: "/api/relayer/withdraw", init: { method: "POST", body: "{}" } },
       { path: "/api/auditor/test-scalar", init: { method: "GET" } },
       { path: "/api/auditor/decode", init: { method: "POST", body: "{}" } },
       { path: "/api/wallet/alice/show-address", init: { method: "GET" } },

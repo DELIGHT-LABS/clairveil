@@ -187,6 +187,7 @@ test("DApp hides local-only panels unless the server enables local test features
   assert.match(serverSource, /localSigners: localSignerAdmin/);
   assert.match(serverSource, /localSignerSetup: localSignerMutation/);
   assert.match(serverSource, /faucet: localSignerMutation/);
+  assert.match(serverSource, /relayer: localSignerMutation/);
   assert.match(serverSource, /auditorAdmin: localSignerAdmin/);
   assert.match(serverSource, /function publicConfig\(req\)/);
   assert.match(serverSource, /modeLabel: config\.localTestMode \? "Local Note Test Web" : "Public Node DApp"/);
@@ -316,7 +317,7 @@ test("DApp persists encrypted reservations and keeps unknown broadcasts fail clo
   assert.match(appSource, /preparedReservationBinding\(data\)/);
   assert.match(appSource, /sendEvmTransaction\(data\.transaction,[\s\S]*reservationBinding: broadcastOptions/);
   assert.match(appSource, /signDirectAndBroadcast\(data\.signDoc, broadcastOptions\)/);
-  assert.match(appSource, /recordRelayHandoff\(reservationIDs/);
+  assert.match(appSource, /manager\.recordRelayHandoff\(state\.relayWithdraw\.reservationIds/);
 
   assert.match(appSource, /if \(!broadcast\?\.receipt\) \{[\s\S]*markUnknown\(reservationIDs,[\s\S]*fromStatus: reservationStatuses\.Submitted[\s\S]*unknown: true/);
   assert.match(appSource, /result\.unknown \? onUnknown/);
@@ -352,7 +353,7 @@ test("DApp keeps prepared reservation leases alive across wallet and relay waits
   assert.match(appSource, /reservationHeartbeatIntervalMs/);
   assert.match(appSource, /async function withPreparedReservationHeartbeat/);
   assert.match(appSource, /manager\.heartbeatLease\(reservationIDs, \{ leaseToken \}\)/);
-  assert.match(appSource, /withPreparedReservationHeartbeat\(prepared, \(\) =>/);
+  assert.match(appSource, /withPreparedReservationHeartbeat\(finalData, \(\) =>/);
   assert.match(appSource, /const broadcast = await withPreparedReservationHeartbeat\(data/);
   assert.match(appSource, /function startRelayReservationHeartbeat/);
   assert.match(appSource, /relayReservationHeartbeatTimer = globalThis\.setInterval/);
@@ -505,6 +506,7 @@ test("DApp offers relay handoff and cancellable same-prover retries", () => {
   assert.match(htmlSource, /id="relayWithdrawAmount"/);
   assert.match(htmlSource, /id="relayWithdrawRecipient"/);
   assert.match(htmlSource, /id="relayWithdrawFromVeiled"/);
+  assert.match(htmlSource, /id="relayPreparedWithdraw"/);
   assert.match(appSource, /withdrawFromVeiled\(\{ relayMode: true \}\)/);
   assert.match(htmlSource, /id="relayWithdrawJson"/);
   assert.match(htmlSource, /id="retryTransferFlow"/);
@@ -528,6 +530,8 @@ test("DApp offers relay handoff and cancellable same-prover retries", () => {
   assert.match(relayReconciliationSource, /"calldata"/);
   assert.match(appSource, /Checking tx result first, then nullifier spent state/);
   assert.match(htmlSource, /id="relayWithdrawTxHash"/);
+  assert.doesNotMatch(htmlSource, /<input[^>]+id="relayWithdrawTxHash"/);
+  assert.match(htmlSource, /Relay \(pay fee &amp; broadcast\)/);
   assert.match(htmlSource, /id="reconcileRelayWithdraw"/);
   assert.match(htmlSource, /user shielded secret/);
   assert.match(htmlSource, /privacy-sensitive data/);
@@ -537,6 +541,26 @@ test("DApp offers relay handoff and cancellable same-prover retries", () => {
   assert.match(encryptedOperationSource, /OPERATION_STATE_CORRUPT/);
   assert.match(appSource, /persistRelayWithdrawRecovery/);
   assert.match(appSource, /hydrateRelayWithdrawRecovery/);
+  assert.match(appSource, /async function relayPreparedWithdraw/);
+  assert.match(appSource, /resultStatus = "preflighting"/);
+  assert.match(appSource, /const chainBlock = await fetchLatestChainBlock\(\)/);
+  assert.match(appSource, /scanKeplrNotes\(\{ quiet: true, throwOnError: true, skipSetup: true, maxPages: 1000 \}\)/);
+  assert.match(appSource, /explicitlyUnspentReservationIDs\(manager, records, state\.keplr\.notes\)/);
+  assert.match(appSource, /stopRelayReservationHeartbeat\(\);[\s\S]*manager\.markBroadcastAttempting/);
+  assert.match(appSource, /manager\.markBroadcastAttempting/);
+  assert.match(appSource, /api\("\/api\/relayer\/withdraw"/);
+  assert.match(appSource, /manager\.markSubmitted/);
+  assert.match(appSource, /async function recordExternalRelayWithdrawHandoff/);
+  assert.match(appSource, /const context = captureRelaySubmitContext\(\);[\s\S]*manager\.recordRelayHandoff[\s\S]*assertRelaySubmitContext\(context\)/);
+  const copyRelaySource = appSource.slice(
+    appSource.indexOf("async function copyRelayWithdraw"),
+    appSource.indexOf("async function signDirectAndBroadcast")
+  );
+  assert.ok(
+    copyRelaySource.indexOf("recordExternalRelayWithdrawHandoff") <
+      copyRelaySource.indexOf("navigator.clipboard.writeText"),
+    "external handoff evidence must be recorded before clipboard egress"
+  );
 });
 
 test("DApp discloses mandatory audit visibility before transfer confirmation", () => {
@@ -623,6 +647,11 @@ test("DApp server keeps only local helper responsibilities", () => {
   assert.match(serverSource, /allowLanSigning: process\.env\.CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING === "1"/);
   assert.match(serverSource, /allowLanAdmin: process\.env\.CLAIRVEIL_DAPP_ALLOW_LAN_ADMIN === "1"/);
   assert.match(serverSource, /accountPrefix: process\.env\.CLAIRVEIL_EVM_PRIVACY_ACCOUNT_PREFIX \?\? "clair"/);
+  assert.match(serverSource, /url\.pathname === "\/api\/relayer\/withdraw"/);
+  assert.match(serverSource, /local relay withdraw must use the configured/);
+  assert.match(serverSource, /function latestChainNowUnix/);
+  assert.match(serverSource, /buildRelayWithdrawMessageFromPayload/);
+  assert.match(serverSource, /assertEvmRelayCandidateMatches/);
   assert.doesNotMatch(serverSource, /hostAccountPrefix/);
   assert.doesNotMatch(serverSource, /CLAIRVEIL_EVM_ACCOUNT_PREFIX/);
   assert.match(serverSource, /function queryEvmNativeBalance/);

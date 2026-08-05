@@ -873,8 +873,15 @@ select {
 
 .relay-withdraw-panel > .field,
 .relay-withdraw-panel > .notes-actions,
+.relay-withdraw-panel > .relayer-account-facts,
+.relay-withdraw-panel > .relay-result-facts,
 .relay-withdraw-panel > #relayWithdrawResult {
   margin-top: 16px;
+}
+
+.relayer-account-facts,
+.relay-result-facts {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .relay-warning-list {
@@ -1601,6 +1608,11 @@ select {
   }
 
   .reservation-recovery-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .relayer-account-facts,
+  .relay-result-facts {
     grid-template-columns: 1fr;
   }
 
