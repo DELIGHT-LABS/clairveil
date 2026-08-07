@@ -2,9 +2,17 @@
 
 All notable changes to Clairveil are documented in this file.
 
-This project follows [the release versioning policy](docs/clairveil-release-versioning-policy.md) and [handoff-pack policy](docs/clairveil-release-handoff-pack.md).
+[Release versioning rules](CONTRIBUTING.md#release-versioning-rules) are maintained with the repository instructions. Release contents and verification are defined by [the selected-path manifest](scripts/release-pack-paths.txt) and [the required-file manifest](scripts/release-pack-required-files.txt).
 
 ## Unreleased
+
+### Added
+
+- Added a paired reference payroll/control-plane handoff that consolidates the current one-proof reservation, durable worker, reconciliation, policy, wallet, and downstream acceptance contract.
+
+### Changed
+
+- Added role-based documentation entry paths, expanded the JS SDK handoff with retry/failover and payroll/wallet contracts, and made static, live one-proof, legacy regression, and actual-capacity gates explicit in testing, operations, maintenance, and release-pack metadata.
 
 ## v0.4.0 - 2026-08-02
 

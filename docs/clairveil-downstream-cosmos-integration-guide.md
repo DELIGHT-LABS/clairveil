@@ -76,10 +76,10 @@ GET /clairveil/privacy/v1/merkle_path/{commitment_hex}
 GET /clairveil/privacy/v1/audit_config
 GET /clairveil/privacy/v1/disclosure_config
 GET /clairveil/privacy/v1/circuit_config
-GET /clairveil/privacy/v1/reserve/{denom}
+GET /clairveil/privacy/v1/reserve/{denom=**}
 GET /clairveil/privacy/v1/nullifiers
 POST /clairveil/privacy/v1/nullifiers
-GET /clairveil/privacy/v1/assets/by_denom/{canonical_denom}
+GET /clairveil/privacy/v1/assets/by_denom/{canonical_denom=**}
 GET /clairveil/privacy/v1/assets/by_id/{asset_id_hex}
 POST /clairveil/privacy/v1/privacy_scan
 POST /clairveil/privacy/v1/commitment_paths_at_root
@@ -215,7 +215,7 @@ This is a trusted Go integration surface, not a protobuf Msg service. The public
 - Require the parsed `MsgDeposit.Amount` amount to equal EVM `msg.value` exactly and its denom to equal the runtime native denom.
 - Verify downstream-specific EVM-to-Cosmos address mapping and expected address length before calling the Keeper API.
 
-The canonical deposit core executes bank, reserve, tree, event, and index mutations in a nested SDK cache. A core failure discards that cache, while success writes only into the caller's parent context. The downstream adapter must still place the EVM value transfer, `DepositWithFunder`, and any after-call policy checks inside one outer SDK/EVM rollback boundary so a later policy failure restores escrow, module balances, and all Clairveil state and events.
+The canonical deposit core verifies the proof before creating its nested SDK cache or mutating bank, reserve, tree, event, or index state. After verification succeeds, that cache executes bank transfer → optional module-balance delta check → reserve record → commitment and indexed-event append → atomic cache commit. A core failure discards that cache, while success writes only into the caller's parent context. The downstream adapter must still place the EVM value transfer, `DepositWithFunder`, and any after-call policy checks inside one outer SDK/EVM rollback boundary so a later policy failure restores escrow, module balances, and all Clairveil state and events.
 
 ## 6. Genesis Audit Key
 
@@ -355,13 +355,13 @@ query privacy check-nullifier
 query privacy reserve uclair
 ```
 
-The remaining `tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, and batch `nullifiers` queries are available through gRPC/HTTP gateway queries. If the downstream chain needs an operator CLI, add separate CLI wrappers for those queries.
+The remaining `tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `assets/by_denom/{canonical_denom=**}`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, and batch `nullifiers` queries are available through gRPC/HTTP gateway queries. If the downstream chain needs an operator CLI, add separate CLI wrappers for those queries.
 
 ## 9. Downstream Test Order
 
 ### 9.1 Deposit Proof Acquisition Boundary
 
-The official remote acquisition route is `POST /v1/prover/deposit`, defined by the [deposit API](clairveil-proverd-deposit-api.md) and shared [HTTP API](clairveil-proverd-http-api.md). A downstream client may prove locally or call that route, but it must compute/retain the encrypted note and assemble/sign/broadcast `MsgDeposit` itself. The prover validates the versioned witness and returns a proof; it does not select denom, construct transaction metadata, or replace keeper verification. Deployments must retain the common auth/admission/no-store/error boundary rather than mount an ad-hoc handler.
+The official remote acquisition route is `POST /v1/prover/deposit`, defined by the [deposit API](clairveil-proverd-http-api.md#deposit) and shared [HTTP API](clairveil-proverd-http-api.md). A downstream client may prove locally or call that route, but it must compute/retain the encrypted note and assemble/sign/broadcast `MsgDeposit` itself. The prover validates the versioned witness and returns a proof; it does not select denom, construct transaction metadata, or replace keeper verification. Deployments must retain the common auth/admission/no-store/error boundary rather than mount an ad-hoc handler.
 
 Do not mix everything with target-chain-specific features from the start. Bring it up in this order.
 
@@ -370,7 +370,7 @@ Do not mix everything with target-chain-specific features from the start. Bring 
 3. Confirm the downstream node can `init`, add genesis accounts, gentx, collect-gentxs, and `start`.
 4. Add the audit master pubkey to genesis, then check that gRPC/HTTP gateway `audit_config` returns it after the first block.
 5. Verify `show-address`, `deposit`, and `list-notes` first through the downstream CLI.
-6. Verify `tree_state`, `events`, `scan_events`, `merkle_path`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, and `nullifiers` through gRPC/HTTP gateway.
+6. Verify `tree_state`, `events`, `scan_events`, `merkle_path`, `disclosure_config`, `circuit_config`, `reserve/{denom=**}`, `assets/by_denom/{canonical_denom=**}`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, and `nullifiers` through gRPC/HTTP gateway.
 7. Verify user disclosure and audit disclosure through `transfer` and `decode-transfer-disclosure`.
 8. Verify direct and relayed withdraw with `withdraw`, `prepare-withdraw`, and `relay-withdraw`.
 9. Add EVM/policy/precompile integration e2e last, including actor provenance, fixed escrow, exact `msg.value`/native-denom binding, and outer rollback after a successful trusted deposit.
@@ -386,7 +386,7 @@ Do not mix everything with target-chain-specific features from the start. Bring 
 - If the audit master private key is operated as a development keyring/test mnemonic, the disclosure custody boundary collapses.
 - If a web wallet leaves note cache or prepared payload in plaintext browser storage and telemetry, the practical privacy of the shielded UX becomes much weaker.
 - If module account permissions or blocked-address policy are wrong, deposit/withdraw bank transfers fail.
-- If direct bank sends or manual top-ups do not match recorded deposit/withdraw accounting, `reserve/{denom}` returns `invariant_holds=false`.
+- If direct bank sends or manual top-ups do not match recorded deposit/withdraw accounting, `reserve/{denom=**}` returns `invariant_holds=false`.
 - If the downstream denom changes, tutorial, smoke script, JS SDK fixtures, and conformance vectors must change together.
 - If genesis/state still pins only three circuit descriptors, or local artifacts omit the batch VK, startup/readiness must fail; do not bypass identity checks to make `MsgBatchTransfer` available.
 
@@ -397,7 +397,7 @@ Downstream integration is first-pass complete when all of the following pass.
 - The downstream daemon builds with privacy store, keeper, module, query gateway, and tx command included.
 - Privacy state and audit master pubkey are present in genesis.
 - A local single-node chain passes deposit, transfer, disclosure decode, and withdraw.
-- `tree_state`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, and `nullifiers` queries respond correctly.
+- `tree_state`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom=**}`, `assets/by_denom/{canonical_denom=**}`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, and `nullifiers` queries respond correctly.
 - The four-circuit identity, batch development artifact readiness, direct core integration, deterministic gas, atomic rollback, and typed scan/minimal-event tests pass.
 - The integration record distinguishes the implemented Go SDK/prover/wallet/payroll/CLI reference surfaces for batch integration from work still owned by the downstream product, and states that formal production artifacts are not supplied.
 - Audit master private key custody policy is reflected in production operations docs.

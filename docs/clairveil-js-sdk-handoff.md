@@ -51,6 +51,7 @@ The Msg service uses:
 /clairveil.privacy.v1.Msg/Deposit
 /clairveil.privacy.v1.Msg/Transfer
 /clairveil.privacy.v1.Msg/Withdraw
+/clairveil.privacy.v1.Msg/BatchTransfer
 ```
 
 The core tx messages are:
@@ -59,6 +60,7 @@ The core tx messages are:
 MsgDeposit
 MsgTransfer
 MsgWithdraw
+MsgBatchTransfer
 ```
 
 `MsgDeposit` includes a `proof` field. Clients must build or obtain a `DepositCircuit` Groth16 proof binding `amount`, `asset_id`, and `note_commitment`; proof-less deposits are not part of the current contract.
@@ -66,6 +68,8 @@ MsgWithdraw
 `MsgTransfer` contains `expires_at_unix`, user disclosure, audit disclosure, and sender self-view disclosure fields. Audit disclosure is not optional. Sender self-view disclosure is included by default and omitted only by explicit opt-out. `creator` is the replaceable fee payer/relayer; it is deliberately excluded from the owner intent.
 
 `MsgWithdraw` is an exact-match withdraw message and does not contain output note fields. JS/TS clients must not model the legacy `new_note_commitment` or `encrypted_note` withdraw fields, and they must not send dummy output-note values.
+
+`MsgBatchTransfer` atomically consumes 1..16 input notes and creates 1..32 ordered outputs under one `BatchJoinSplit16x32` proof. JS/TS clients must preserve canonical output order, active-prefix counts, disabled-slot sentinels, and the payload/proof versions defined in the batch transfer addendum in section 17.
 
 ## 4. Query/API Contract
 
@@ -76,14 +80,18 @@ GET /clairveil/privacy/v1/tree_state
 GET /clairveil/privacy/v1/commitment/{commitment_hex}
 GET /clairveil/privacy/v1/events
 GET /clairveil/privacy/v1/merkle_path/{commitment_hex}
+POST /clairveil/privacy/v1/commitment_paths_at_root
 GET /clairveil/privacy/v1/audit_config
 GET /clairveil/privacy/v1/disclosure_config
 GET /clairveil/privacy/v1/circuit_config
-GET /clairveil/privacy/v1/reserve/{denom}
+GET /clairveil/privacy/v1/reserve/{denom=**}
+GET /clairveil/privacy/v1/assets/by_denom/{canonical_denom=**}
+GET /clairveil/privacy/v1/assets/by_id/{asset_id_hex}
 GET /clairveil/privacy/v1/nullifier/{nullifier}
 GET /clairveil/privacy/v1/nullifiers
 POST /clairveil/privacy/v1/nullifiers
 GET /clairveil/privacy/v1/scan_events
+POST /clairveil/privacy/v1/privacy_scan
 ```
 
 The Go SDK provider contract is in:
@@ -92,6 +100,7 @@ The Go SDK provider contract is in:
 x/privacy/client/sdk/provider/info.go
 x/privacy/client/sdk/provider/query.go
 x/privacy/client/sdk/provider/scan.go
+x/privacy/client/sdk/provider/typed_scan.go
 x/privacy/client/sdk/provider/tx.go
 ```
 
@@ -100,8 +109,11 @@ A web wallet needs at least these provider roles.
 - `TreeState`: read the latest root, leaf count, depth, max leaves, and remaining leaves.
 - `CommitmentInfo`: check whether a commitment is in the tree and obtain its leaf index.
 - `MerklePath`: fetch path and path helper needed for proving input.
-- `ScanEvents`: scan the cursor-based wallet projection for deposit/transfer outputs.
-- `PrivacyEvents`: read the raw deposit/transfer event feed for compatibility and diagnostics.
+- `CommitmentPathsAtRoot`: fetch up to 16 paths against one root/height snapshot for batch proving; treat the grouped lookup as a note-linkage privacy boundary.
+- `AssetRegistry`: resolve canonical denoms and 32-byte asset IDs in both directions.
+- `PrivacyScanV2`: the primary wallet-sync path. Invoke `PrivacyScan` to read typed deposit, JoinSplit2x2 transfer, and batch-transfer outputs with the global `(height, global_sequence, output_index)` cursor.
+- `ScanEvents`: legacy compatibility projection for deposit and JoinSplit2x2 transfer only; it is not a batch-capable or primary wallet-sync API.
+- `PrivacyEvents`: raw legacy event inspection for compatibility and diagnostics, not a wallet-sync projection.
 - `AuditConfig`: fetch the master auditor pubkey configured on-chain.
 - `DisclosureConfig`: display user disclosure policy/mode and payload version.
 - `CircuitConfig`: read the consensus `CircuitSetIdentity`, active set, ordered VK hashes, and public-input schema hashes. Do not infer consensus identity from a node-local manifest path or checksum environment variable.
@@ -167,20 +179,19 @@ x/privacy/client/sdk/scan/service.go
 x/privacy/client/sdk/scan/wallet.go
 ```
 
-The preferred scan flow is:
+The preferred scan flow is `PrivacyScanV2` (the typed `PrivacyScan` query), not `ScanEvents` or ABCI event search:
 
-1. Fetch deposit/transfer outputs with `ScanEvents(after_height, after_sequence, limit, event_types)`.
-2. Read `encrypted_note` from deposit projections, or output `cipher_text`, `commitment`, `output_index`, and `view_tag` from transfer projections.
-3. Validate `scan_format_version` and `view_tag_version` before consuming the projection; fall back to the raw event path or stop without advancing the cursor on unsupported versions.
-4. For transfer outputs, derive the local 2-byte view tag. The ordered tag is included in the signed canonical transfer effect but is not ownership evidence, so the safe default still runs full trial decrypt on mismatch.
-5. Treat `view_tag` as an untrusted optimization only. If it is missing or malformed, fall back to full trial decrypt. Skipping mismatch outputs should be an explicit fast-mode policy with recovery or forced-rescan support.
-6. Try to decrypt using the wallet root seed and viewing key. If view-key decryption fails, keep a spend-key compatibility/recovery fallback consistent with the Go SDK.
-7. Store only notes that decrypt successfully in the wallet DB.
-8. Track note commitment and nullifier.
-9. Refresh spent state with `CheckNullifiers` when available, chunking at 1000 nullifiers per request and falling back to `CheckNullifier`.
-10. Store event height, sequence, and tx hash for rollback/reorg handling.
+1. Persist and send the complete lexicographic cursor `(height, global_sequence, output_index)`. `global_sequence` is chain-global across privacy operations, not a transaction-local or per-height sequence.
+2. Request all event types and consume the typed deposit, JoinSplit2x2 transfer, and batch-transfer outputs. Read deposit `encrypted_note`; read transfer/batch `ciphertext`, `commitment`, `output_index`, and `view_tag`.
+3. Fail closed unless the response, every summary, and every output have the supported `scan_schema_version`. Validate strict cursor order, contiguous output indices within an event, output-to-summary identity/framing, and the response limits.
+4. Treat summaries as event boundaries, including zero-output withdrawals. Do not mark a multi-output event complete until all `output_count` outputs have been collected and that event has reached `has_more=false`; validate every `next_cursor` advance against the summaries so it cannot skip an output-bearing event.
+5. A `PrivacyScanV2` query, validation, or decoding failure is terminal: do not fall back to `ScanEvents`, `PrivacyEvents`, or ABCI transaction/event search, because those paths can silently omit batch ciphertexts. Legacy fallback is only for an environment that does not implement the typed capability at all.
+6. For transfer and batch outputs, derive the local 2-byte view tag. The ordered tag is signed but is not ownership evidence: `view_tag` is an untrusted optimization, and the safe default performs full trial decrypt even on a mismatch, missing tag, or malformed tag. Skipping mismatches requires an explicit fast-mode policy with recovery or forced-rescan support.
+7. Try decryption with the wallet root seed and viewing key; retain the Go-compatible spend-key compatibility/recovery attempt. Store only successfully decrypted notes, with their commitment and nullifier.
+8. Refresh spent state with `CheckNullifiers`, chunked to 1000 nullifiers per request; use `CheckNullifier` only when the batch path is unavailable.
+9. Atomically store the resulting full cursor with note updates, plus output height, global sequence, output index, and tx hash for rollback/reorg handling.
 
-`ScanEvents` returns the effective `limit`, `scan_format_version=1`, and `view_tag_version=1`. Treat `limit` as the scan cursor page budget: a response can contain fewer returned events than `limit`, or even zero events, while still setting `has_more=true` if the page only contained event types filtered out by the request. In that case, advance to `next_height` and `next_sequence` and continue. The legacy `PrivacyEvents(after_height, page, limit, event_types)` query is still available for raw event inspection and compatibility, but new web/mobile wallets should not build primary rescan UX around offset pagination.
+`ScanEvents(after_height, after_sequence, limit, event_types)` remains a legacy cursor projection for deposit and JoinSplit2x2 compatibility only. Its `scan_format_version=1` and `view_tag_version=1` must be validated; its effective `limit` is a page budget, so filtered pages may return fewer events (including zero) while `has_more=true`, in which case advance `next_height`/`next_sequence`. It must not be used as the primary path or as fallback after a typed-query failure. `PrivacyEvents(after_height, page, limit, event_types)` is the raw legacy event-inspection API for compatibility and diagnostics; do not build primary rescan UX around its offset pagination.
 
 The JS SDK wallet DB needs at least these fields.
 
@@ -194,16 +205,20 @@ randomness_hex
 spend_pubkey_hex
 view_pubkey_hex
 height
-sequence
+global_sequence
+output_index
 tx_hash
 spent
 last_scan_height
 last_scan_sequence
+last_scan_output_index
 ```
+
+`global_sequence` and `last_scan_sequence` both mean the chain-global privacy-operation sequence. `last_scan_height`, `last_scan_sequence`, and `last_scan_output_index` are one atomic `PrivacyScanV2` cursor; do not persist only a prefix.
 
 ## 7. Deposit Implementation
 
-This legacy filename remains a discovery handoff, not a prover specification. Use the [general prover HTTP API](clairveil-proverd-http-api.md) and [deposit API](clairveil-proverd-deposit-api.md) for the language-neutral contract.
+This legacy filename remains a discovery handoff, not a prover specification. Use the [general prover HTTP API](clairveil-proverd-http-api.md) and [deposit API](clairveil-proverd-http-api.md#deposit) for the language-neutral contract.
 
 A client creates the note/commitment and encrypted note, obtains a proof locally or through the canonical deposit route, validates the returned commitment/proof, then builds and broadcasts `MsgDeposit`. Only the circuit witness belongs in a remote deposit request; encrypted note, creator, denom, memo, seed, and chain ID stay on the client/chain side. Do not treat a package/provider API, release state, or migration recipe as authoritative.
 
@@ -270,11 +285,9 @@ For bulk payroll or other high-volume transfer clients, the note reservation con
 x/privacy/client/sdk/reservation/
 x/privacy/client/sdk/payroll/
 x/privacy/client/sdk/conformance/testdata/privacy_note_reservation_contract.json
-docs/clairveil-note-reservation-design.md
-docs/clairveil-note-reservation-design-kr.md
 ```
 
-JS/TS clients that reserve notes before proof generation should treat `privacy_note_reservation_contract.json` as the language-neutral source of truth and use [Clairveil Note Reservation Design Note](clairveil-note-reservation-design.md) for the detailed design rationale. Match the reservation status names, active-reservation definition, atomic batch-reserve rule, compare-and-set transition rules, lease token rules, HMAC lookup-key test vector, and operation success evidence model in that fixture. A spent nullifier proves that the note was consumed, but it is not enough to mark a payroll/payment operation successful unless the tx evidence also matches the expected output commitment, audit disclosure digest, recipient hash, amount, denom, and item index. The fixture field `expected_disclosure_digest` refers to the audit disclosure digest, not the user disclosure or sender self-view digest.
+JS/TS clients that reserve notes before proof generation should treat `privacy_note_reservation_contract.json` as the language-neutral source of truth. Match the reservation status names, active-reservation definition, atomic batch-reserve rule, compare-and-set transition rules, lease token rules, HMAC lookup-key test vector, and operation success evidence model in that fixture. A spent nullifier proves that the note was consumed, but it is not enough to mark a payroll/payment operation successful unless the tx evidence also matches the expected output commitment, audit disclosure digest, recipient hash, amount, denom, and item index. The fixture field `expected_disclosure_digest` refers to the audit disclosure digest, not the user disclosure or sender self-view digest.
 
 ## 9. Disclosure Implementation
 
@@ -401,7 +414,7 @@ The JS SDK must clearly show these constraints to users.
 
 ## 11. Prover Connection Model
 
-Keep a transport-neutral prover adapter. Its HTTP behavior, routes, versioning, errors, and common headers are defined only by the [general prover HTTP API](clairveil-proverd-http-api.md); deposit-specific witness/response handling is defined by the [deposit API](clairveil-proverd-deposit-api.md). Apply a finite timeout and strict response validation, never log/persist witness bodies, and require explicit user/product opt-in before sending the same witness to another endpoint.
+Keep a transport-neutral prover adapter. Its HTTP behavior, routes, versioning, errors, and common headers are defined only by the [general prover HTTP API](clairveil-proverd-http-api.md); deposit-specific witness/response handling is defined by the [deposit API](clairveil-proverd-http-api.md#deposit). Apply a finite timeout and strict response validation, never log/persist witness bodies, and require explicit user/product opt-in before sending the same witness to another endpoint.
 
 ## 12. JS SDK Implementation Units
 
@@ -442,8 +455,9 @@ The JS SDK handoff is complete when the following work.
 The JS SDK can currently treat these as stable contracts.
 
 - `clairveil.privacy.v1` proto package
-- `MsgDeposit`, `MsgTransfer`, `MsgWithdraw`
+- `MsgDeposit`, `MsgTransfer`, `MsgWithdraw`, `MsgBatchTransfer`
 - gRPC/HTTP query paths
+- typed `privacy_scan`, single-snapshot `commitment_paths_at_root`, and bidirectional asset-registry queries
 - transparent prefix `clair`, shielded prefix `clairs`
 - reference denom `uclair`
 - full shielded address-based transfer UX
@@ -476,9 +490,9 @@ The JS SDK still needs to decide these independently.
 JS SDK developers should start with these files.
 
 ```text
-docs/clairveil-local-privacy-walkthrough.md
+docs/clairveil-getting-started.md#7-first-privacy-flow
 docs/clairveil-downstream-cosmos-integration-guide.md
-docs/clairveil-proverd-remote-production-profile.md
+docs/clairveil-operations-guide.md#6-prover-operations
 proto/clairveil/privacy/v1/tx.proto
 proto/clairveil/privacy/v1/query.proto
 x/privacy/client/sdk/conformance/testdata/privacy_wallet_golden_vectors.json
@@ -497,62 +511,13 @@ make privacy-e2e-smoke
 
 ## 16. Reference Consumer Examples
 
-For audit disclosure key generation in JS, see:
+| Example | What it demonstrates |
+| --- | --- |
+| [Audit disclosure keys](../examples/audit-disclosure-keys/README.md) | Deterministic, random and privacy-root-signer key derivation with canonical genesis public-key encoding. |
+| [Fixture validator](../examples/js-sdk-fixture-validator/README.md) | Wallet addresses, prepared payload hashes and relay mapping; it does not start a node. |
+| [Prover HTTP client](../examples/js-sdk-prover-http-client/README.md) | Fixture-backed transfer/withdraw requests with finite timeout, bearer auth, version checks and payload-hash binding. |
 
-```text
-examples/audit-disclosure-keys
-```
-
-Run it from the repository root:
-
-```bash
-npm --prefix examples/audit-disclosure-keys test
-```
-
-This example derives deterministic, random, and privacy-root-signer-based audit disclosure keypairs, then checks the compressed public key encoding used in genesis.
-
-Clairveil includes a small example showing how JS/TS SDK developers can start consuming fixtures.
-
-```text
-examples/js-sdk-fixture-validator
-```
-
-Run it from the repository root:
-
-```bash
-npm --prefix examples/js-sdk-fixture-validator run validate
-```
-
-This example does not start a node. It only validates:
-
-- wallet-facing fixture addresses use `clair1...` and `clairs1...`;
-- wallet-facing fixture addresses use only the `clair1...` or `clairs1...` prefixes;
-- transfer prepared payload hash is calculated the same way as the Go SDK;
-- withdraw prover payload hash is calculated the same way as the Go SDK;
-- relayed withdraw final payload hash is calculated;
-- relay withdraw handoff keeps the relayer address as `MsgWithdraw.creator` and the payload recipient as `MsgWithdraw.recipient`;
-- prover HTTP paths are `/v1/prover/transfer` and `/v1/prover/withdraw`.
-
-This example intentionally exercises only the transfer/withdraw client shape; the canonical deposit and batch contracts remain repository-owned in the general/deposit schemas and conformance fixtures rather than this JS example. This is a first reference consumer, not a production JS SDK. A real JS SDK should not copy its file layout directly. Instead, bring the same route-specific binding and fixture validation into CI.
-
-For the remote prover HTTP client shape, see:
-
-```text
-examples/js-sdk-prover-http-client
-```
-
-Run it from the repository root:
-
-```bash
-npm --prefix examples/js-sdk-prover-http-client run demo
-```
-
-This example runs a fixture-backed mock prover instead of a live `clairveil-proverd`, and validates:
-
-- `fetch` requests use a finite timeout;
-- bearer tokens are sent as `Authorization: Bearer ...`;
-- transfer/withdraw request, response, and proof versions are `v2`;
-- proof `payload_hash` equals the prepared payload `payload_hash`.
+Run commands are maintained with each example and in the [testing guide](clairveil-testing-guide.md). These examples are reference consumers, not a production SDK. The HTTP demo uses a mock, not a live `clairveil-proverd`; the JS client examples exercise transfer/withdraw only. Deposit and batch contracts are covered by the repository schemas and Go conformance fixtures. Port route-specific binding and fixture checks into downstream CI.
 
 ## 17. Batch Transfer Reference Addendum
 
@@ -568,3 +533,40 @@ The following rules are breaking and normative for new SDK work:
 - A downstream JS/TS batch builder must reproduce the reference `CanonicalBatchTransferPayloadBytesV1` exactly: format `1`, `u32be` vector counts, `u32be(length) || bytes` for every byte field, output fields in proto declaration order, followed by audit ID/epoch/target and expiry. SHA-256 domain `clairveil.batch-transfer-payload.v1` is split into non-reduced 128-bit limbs. Only `creator` and `proof` are excluded. Do not invent protobuf-marshal, JSON, or sorted-field alternatives.
 - Artifact loading is role-aware: validators load only the required VKs after exact consensus identity verification; provers lazily load only selected R1CS/PK pairs. The reference prover admission defaults are one in-flight request and four queued requests per circuit, with a positive 8 MiB request limit. A value of zero is invalid and does not disable the body limit.
 - Never expose `provertransport.HTTPHandler` directly; use the bounded `proverservice.Handler` wrapper. Prover requests have no automatic endpoint failover. Cancellation stops waiting and discards the response, but in-process proving may continue until the solver returns and still holds admission capacity. Production operators that require hard cancellation or memory containment must add process isolation and termination outside this reference implementation.
+
+## 18. Reliability And Reference Payroll Handoff
+
+This section adds only the JS/TS control-plane boundary. It does not replace the generic SDK validation criteria above or the batch encoding, artifact, and scan requirements in the addendum. The detailed reference is the [reference payroll control plane](../examples/reference-payroll/README.md).
+
+### Retry And Endpoint Safety
+
+Keep read, nullifier, broadcast, and prover traffic in separate adapters and persist the attempt identity before a side effect. The following matrix is the minimum safe behavior.
+
+| Operation | Same-endpoint retry | Endpoint failover | Timeout handling |
+| --- | --- | --- | --- |
+| Public read query | Retry an idempotent query with a bounded backoff. | Allowed after validating chain ID and response shape; re-fetch root/path together rather than mixing snapshots. | Return an unavailable read; do not create a spend/proof side effect. |
+| Nullifier query | Retry the identical canonical request, normally the POST batch request. | Off by default. A cross-endpoint nullifier query requires explicit user/product privacy opt-in because it discloses the queried note set to another operator. | Keep the reservation active/unknown; do not infer that a note is reusable. |
+| Tx broadcast | Re-submit only the byte-identical signed transaction, keyed by its tx hash/sign-doc/tx-bytes hashes. | Allowed only for those identical signed bytes and an explicitly configured broadcast endpoint set; never rebuild merely to change endpoint. | First query the tx hash, then query every input nullifier. Re-sign/rebuild only after acceptance is excluded and nullifiers are unspent, or after a deterministic expiry/rejection requires a new intent. Otherwise retain `Unknown` or move to `ManualReview`. |
+| Prover request | Do not automatically replay a witness request after an ambiguous timeout. A caller may make a product-approved retry only when it can safely treat the original as not accepted. | Never automatic. A second endpoint, including the same witness, needs separate explicit user/product opt-in and a fresh disclosure review. | Preserve the prepared payload and reservation; canceling HTTP does not prove that remote proving stopped. |
+
+Do not use a public-read failover result to authorize a spend until the selected root/path is validated as one snapshot. Tx hash lookup is the primary ambiguity resolver; nullifier lookup is the required second check, not a substitute for matching operation evidence.
+
+### Minimum Payroll And Wallet Surface
+
+Model the following portable types; JS names may be idiomatic, but their fields and semantics must remain compatible with the Go reference.
+
+| Type/API | Minimum handoff fields or behavior |
+| --- | --- |
+| `PayrollInput` / `PayrollItem` / `PayrollPlan` | Stable company, payroll, batch, item, employee, operation, attempt, denom, amount, recipient, disclosure-policy, expected output/disclosure values, and timestamps. `PayrollItem` corresponds to Go `PayrollItemInput`; plan items retain selected input notes and retry/status separately from the plan. |
+| `TreasuryNote` | `note_id`, owner and nullifier-lookup key/ID, denom, amount, spent flag, and `reservation_id`. Exclude any spent note or non-empty `reservation_id` from allocation and preparation. |
+| `NotePreparationReport` / `NotePreparationHint` | Report ready/blocked items, spendable/reserved/spent counts and amounts, zero-dummy availability/shortage, selected note IDs, estimated message chunks, and actionable `add-funds`, `make-dummy`, `split-merge`, or `resolve-reservation-lock` hints. `NotePreparationHint` maps to Go `NotePreparationOperationHint`. It is a signal to prepare notes, not proof that notes are available. |
+| `DisclosureKeyEntry` / registry | Store `key_id`, scope (`employee`, `company`, `auditor`, or `external`), subject ID, canonical public key hex, version, and active flag. Resolve an active key by `(scope, subject_id)` before planning; do not silently fall back to a stale or inactive key. |
+| `NoteReservation` / `PayrollOperation` | Persist reservation/operation IDs, status, lease fields, input-note linkage, tx/sign-doc/tx-bytes hashes, broadcast-attempt metadata, expected output commitment, disclosure digest(s), recipient/amount hashes, denom, and batch item index plus its known flag. Use atomic batch reserve and compare-and-set, token-owned lease transitions from `privacy_note_reservation_contract.json`. |
+
+Expose at least `validatePayroll`, `prepareNotes`, `planPayroll`, atomic `reserve`, lease acquire/heartbeat, `markProofReady`, `markSubmitted`/`markBroadcastUnknown`, `reconcile`, and `rescanProjection` operations. Product-specific method names are acceptable; weakening their durable-state and compare-and-set semantics is not.
+
+The operation-success predicate requires `tx_hash_or_tx_result`, `output_index`, output `commitment`, `recipient_hash`, `amount` (or its expected hash), `denom_or_asset_id`, audit/full disclosure digest, user digest when expected, `audit_key_id`, `audit_key_epoch`, and `batch_item_index` with its known flag when the plan requires position. A spent nullifier without that matching evidence is `ConflictSpent`, not success.
+
+Wallet storage must keep the encrypted note inventory/projection and scan cursor separately from durable reservations, operations, and broadcast attempts. A normal rescan may rebuild the projection, but must first reconcile or retain active/unknown reservations; it must not erase their linkage and make notes selectable. Unsupported projection versions, ambiguous broadcast, missing evidence, or cross-endpoint inconsistency require a stopped cursor plus `ManualReview`, with a user-visible rescan/reconcile path.
+
+Payroll handoff is complete when the JS/TS implementation reproduces the reservation fixture's atomic reserve, active-note exclusion, lease/CAS transitions, and success/conflict evidence cases; resolves disclosure keys through the registry; produces and consumes preparation reports/hints; and survives a timeout by tx-hash then nullifier reconciliation without duplicate signing or note reuse.

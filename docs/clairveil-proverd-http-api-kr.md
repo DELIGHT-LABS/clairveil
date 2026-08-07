@@ -2,7 +2,7 @@
 
 > English version: [clairveil-proverd-http-api.md](clairveil-proverd-http-api.md)
 
-이 문서는 `clairveil-proverd` proof route의 authoritative한 공통 HTTP 계약입니다. Deposit의 route별 요청·응답 의미는 [Deposit Prover API](clairveil-proverd-deposit-api-kr.md)에서 정의합니다. 기계 판독 계약은 [clairveil-proverd-http-api.schema.json](schemas/clairveil-proverd-http-api.schema.json)이며, `x/privacy/client/sdk/conformance/testdata`의 conformance fixture로 검증합니다.
+이 문서는 `clairveil-proverd` proof route의 authoritative한 공통 HTTP 계약입니다. Deposit의 route별 요청·응답 의미는 [Deposit 절](#deposit)에서 정의합니다. 기계 판독 계약은 [clairveil-proverd-http-api.schema.json](schemas/clairveil-proverd-http-api.schema.json)이며, `x/privacy/client/sdk/conformance/testdata`의 conformance fixture로 검증합니다.
 
 ## Route inventory
 
@@ -68,6 +68,73 @@ Proof-route log, error message, metric label에는 request/response body, amount
 Route major version과 각 request, payload, response, proof object version은 분리된 compatibility layer입니다. Field 추가·삭제·rename, encoding 변경, validation 의미 변경은 영향받는 object의 version bump가 필요합니다. Strict decoding 때문에 기존 `v1` object에 silent optional field를 추가하지 않습니다. Unsupported version은 `400 invalid_request`로 fail closed하며 legacy auto-detection과 fallback decoding은 금지합니다.
 
 공통 정책은 기존 success request/response envelope version과 `ErrorResponseVersion=v1`을 유지합니다. 다만 기존 transfer, withdraw, batch-transfer의 post-validation failure는 `400 proof_failed`에서 `500 proof_failed`로 전송 분류가 교정됩니다. Client는 `proof_failed`에서 재시도 안전성을 추론하면 안 되며, 이는 계속 non-retryable입니다.
+
+## Deposit
+
+### Request
+
+```http
+POST /v1/prover/deposit
+Content-Type: application/json
+Accept: application/json
+```
+
+```json
+{
+  "version": "v1",
+  "payload": {
+    "version": "v1",
+    "receiver_spend_pubkey_hex": "32-byte-lowercase-hex",
+    "receiver_view_pubkey_hex": "32-byte-lowercase-hex",
+    "amount": "10",
+    "asset_id_hex": "32-byte-lowercase-hex",
+    "randomness_hex": "32-byte-lowercase-hex",
+    "note_commitment_hex": "32-byte-lowercase-hex"
+  }
+}
+```
+
+| Field | Canonical validation |
+| --- | --- |
+| Request/payload `version` | 정확히 `v1` |
+| `receiver_spend_pubkey_hex`, `receiver_view_pubkey_hex` | 정확히 64 lowercase hex; canonical 32-byte compressed BN254 twisted-Edwards point, on-curve, non-identity, prime subgroup |
+| `amount` | Canonical uint64 decimal string: `0` 또는 leading zero 없는 `18446744073709551615` 이하 십진수 |
+| `asset_id_hex`, `randomness_hex` | 정확히 64 lowercase hex; canonical 32-byte unsigned big-endian BN254 scalar-field encoding |
+| `note_commitment_hex` | 정확히 64 lowercase hex; canonical non-zero 32-byte BN254 field encoding |
+
+Hex에 `0x` prefix를 붙이지 않습니다. Unknown field, duplicate key, trailing JSON, unsupported version, legacy request shape은 `400 invalid_request`로 fail closed합니다.
+
+Service는 두 compressed public key를 복원하고 memo가 빈 note를 구성한 뒤 NoteV1 validation과 commitment 재계산을 수행합니다. 재계산한 commitment는 `note_commitment_hex`와 같아야 하며, 복원된 note의 commitment와 nullifier는 non-zero여야 합니다. Asset ID와 randomness 각각의 zero는 이 최종 invariant를 통과하는 경우에만 허용됩니다.
+
+### Response
+
+```json
+{
+  "version": "v1",
+  "proof": {
+    "version": "v1",
+    "note_commitment_hex": "32-byte-lowercase-hex",
+    "proof_hex": "164-byte-lowercase-hex"
+  }
+}
+```
+
+두 response version은 정확히 `v1`입니다. `proof.note_commitment_hex`는 제출한 commitment 및 service가 재계산한 commitment 모두와 같아야 합니다. `proof_hex`는 정확히 328 lowercase hex(164 bytes)이고 canonical BN254 Groth16 frame validation을 통과해야 합니다. Service는 생성한 frame을 반환 전에 검증하고, caller는 사용 전에 version, commitment binding, frame을 검증합니다.
+
+### Disclosure와 downstream assembly 경계
+
+Deposit prover는 receiver public key, amount, asset ID, randomness를 받으며 note commitment와 nullifier를 도출할 수 있습니다. 따라서 remote prover 선택은 일반 public RPC 선택이 아니라 trusted-prover privacy decision입니다. Request에는 memo, creator, denom string, encrypted note, seed, chain ID를 넣지 않습니다.
+
+Endpoint는 `MsgDeposit` 생성, note encryption, transaction signing/broadcast를 수행하지 않습니다. 언어와 SDK에 무관한 downstream flow는 다음과 같습니다.
+
+1. Receiver key, amount, denom-derived asset ID, randomness, 선택한 memo로 NoteV1을 구성합니다.
+2. Commitment를 계산하고 memo를 포함한 전체 note plaintext를 canonical deposit envelope로 암호화합니다.
+3. 위의 memo-free payload로 proof를 요청합니다.
+4. Response version, commitment equality, proof framing을 검증합니다.
+5. `proof_hex`, `note_commitment_hex`를 bytes로 바꾸고 같은 amount/denom 및 encrypted note와 함께 `MsgDeposit`을 구성합니다.
+6. Sign/broadcast합니다. Keeper는 denom에서 asset ID를 도출하고 amount, commitment, proof를 최종 검증합니다.
+
+Proof는 memo, encrypted note, creator, denom string 자체를 bind하지 않습니다. Amount, denom-derived asset ID, commitment를 bind하고, commitment는 두 receiver key, amount, asset ID, randomness를 bind합니다. Downstream client는 이 경계를 보존해야 하며 prover response만으로 encrypted note를 재구성했다고 가정하면 안 됩니다.
 
 ## Conformance 검증
 

@@ -221,7 +221,7 @@ Current limitations:
 
 `transfer-batch-16x32` runs one `MsgBatchTransfer` with one `BatchJoinSplit16x32` proof. Repeat `--payment 'shielded-address,coin[,policy,mode,target-key]'` for 1..32 independent payment policies, optionally pin 1..16 wallet notes with `--input-index`, and choose `--output-mode compact|exact32`. The command persists the private prepared payload and proof with mode `0600` before broadcast.
 
-The restartable commands are `prepare-batch-transfer`, `prove-batch-transfer PREPARED_FILE`, and `broadcast-batch-transfer PREPARED_FILE PROOF_FILE`. `prove-batch-transfer` uses the local prover when `--prover-url` is absent and exactly one selected `POST /v1/proofs/batch-transfer` endpoint when present; it never performs automatic prover failover or follows redirects. Plain HTTP is accepted only for loopback endpoints such as `localhost`, `127.0.0.1`, and `[::1]`; every non-loopback prover URL must use HTTPS. For bearer-authenticated remote provers it reads `CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN` from the environment and never accepts the secret as a CLI flag. See [clairveil-batch-joinsplit-localnet-tutorial.md](clairveil-batch-joinsplit-localnet-tutorial.md) for complete commands and boundary cases.
+The restartable commands are `prepare-batch-transfer`, `prove-batch-transfer PREPARED_FILE`, and `broadcast-batch-transfer PREPARED_FILE PROOF_FILE`. `prove-batch-transfer` uses the local prover when `--prover-url` is absent and exactly one selected `POST /v1/proofs/batch-transfer` endpoint when present; it never performs automatic prover failover or follows redirects. Plain HTTP is accepted only for loopback endpoints such as `localhost`, `127.0.0.1`, and `[::1]`; every non-loopback prover URL must use HTTPS. For bearer-authenticated remote provers it reads `CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN` from the environment and never accepts the secret as a CLI flag. See [clairveil-getting-started.md](clairveil-getting-started.md#8-batchjoinsplit16x32-localnet) for complete commands and boundary cases.
 
 ## 6. Disclosure Decode
 
@@ -430,7 +430,7 @@ clairveil-proverd \
   -max-request-bytes 8388608
 ```
 
-Follow the remote production profile in [clairveil-proverd-remote-production-profile.md](clairveil-proverd-remote-production-profile.md).
+Follow the remote production profile in [clairveil-operations-guide.md](clairveil-operations-guide.md#6-prover-operations).
 
 Validator startup compares the local VK hashes/public-input schema hashes to consensus `CircuitSetIdentity` schema `v1`; checksum env values cannot override it. Validators need VK only, while `clairveil-proverd` lazily loads R1CS/PK for proof generation. Prover endpoint failover is off by default and requires explicit privacy opt-in.
 
@@ -458,7 +458,7 @@ clairveil-payroll export-report -plan plan.json -state .clairveil-payroll/reserv
 
 `seed-localnet-notes` is a localnet rehearsal helper. It writes payroll amount notes and zero dummy notes into localnet genesis commitments and the local wallet cache so large restart/retry rehearsals do not spend time preparing deposit txs. It is not a production note-preparation feature.
 
-`prepare-notes` and `plan` also accept `-store-dir .clairveil-payroll` to write results into the file-backed reference artifact store. `run`, `scan-evidence`, `reconcile`, and `settle-transfer-batch` use the durable reservation state file. For the detailed workflow, see [clairveil-reference-payroll-product.md](clairveil-reference-payroll-product.md).
+`prepare-notes` and `plan` also accept `-store-dir .clairveil-payroll` to write results into the file-backed reference artifact store. `run`, `scan-evidence`, `reconcile`, and `settle-transfer-batch` use the durable reservation state file. A compact runnable example is in the [reference payroll example](../examples/reference-payroll/README.md).
 
 ### clairveil-payrolld
 
@@ -500,7 +500,7 @@ Run the large-scale payroll rehearsal simulation with:
 make reference-payroll-rehearsal
 ```
 
-The live localnet walkthrough is [clairveil-reference-payroll-live-localnet-tutorial.md](clairveil-reference-payroll-live-localnet-tutorial.md). The rehearsal walkthrough is [clairveil-reference-payroll-rehearsal.md](clairveil-reference-payroll-rehearsal.md).
+The Make targets above are the maintained runnable interfaces for the localnet and rehearsal flows.
 
 ## 11. Batch Protocol Compatibility
 

@@ -2,9 +2,17 @@
 
 Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
-이 프로젝트는 [release versioning policy](docs/clairveil-release-versioning-policy-kr.md)와 [handoff-pack policy](docs/clairveil-release-handoff-pack-kr.md)를 따릅니다.
+[Release versioning rules](CONTRIBUTING-kr.md#release-versioning-rules)는 repository maintainer instructions에서 관리합니다. Release 내용과 검증 범위는 [selected-path manifest](scripts/release-pack-paths.txt)와 [required-file manifest](scripts/release-pack-required-files.txt)가 정의합니다.
 
 ## Unreleased
+
+### Added
+
+- 현재 one-proof reservation, durable worker, reconciliation, policy, wallet, downstream acceptance contract를 통합한 영문/한글 reference payroll/control-plane handoff를 추가했습니다.
+
+### Changed
+
+- 역할별 문서 진입점을 추가하고 JS SDK handoff에 retry/failover 및 payroll/wallet contract를 보강했으며, testing/operations/maintenance/release-pack metadata에서 static, live one-proof, legacy regression, actual-capacity gate를 명시적으로 구분했습니다.
 
 ## v0.4.0 - 2026-08-02
 

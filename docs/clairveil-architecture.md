@@ -39,7 +39,7 @@ downstream Cosmos app or clairveild ---- optional HTTP ----> clairveil-proverd
 | `cmd/clairveil-payroll*` | Reference payroll control plane and daemon |
 | `proto/clairveil/privacy/v1` | Public Msg, Query, and genesis wire API |
 | `scripts/` | Setup, localnet/e2e, evidence, benchmark, and release automation |
-| `docs/`, `plans/`, `tmpdocs/` | Current knowledge, implementation plans, and ignored archives/drafts |
+| `docs/`, `tmpdocs/` | Current public knowledge and ignored plans/archives/drafts |
 
 ## 3. Consensus State
 
@@ -85,7 +85,7 @@ Prepared prover requests contain private note witness. Same-endpoint retry does 
 
 ### 6.1 Deposit Proving Boundary
 
-Deposit proving may be local or use `POST /v1/prover/deposit`. The client constructs the note, commitment, and encrypted note; the remote prover receives only the versioned circuit witness, recomputes the commitment, and returns a commitment-bound proof. The client then validates the response and assembles/signs `MsgDeposit`. Envelope and nested payload/proof versions are separate. The [general HTTP API](clairveil-proverd-http-api.md) owns transport policy; the [deposit API](clairveil-proverd-deposit-api.md) owns this route's wire contract.
+Deposit proving may be local or use `POST /v1/prover/deposit`. The client constructs the note, commitment, and encrypted note; the remote prover receives only the versioned circuit witness, recomputes the commitment, and returns a commitment-bound proof. The client then validates the response and assembles/signs `MsgDeposit`. Envelope and nested payload/proof versions are separate. The [general HTTP API](clairveil-proverd-http-api.md) owns transport policy; the [deposit API](clairveil-proverd-http-api.md#deposit) owns this route's wire contract.
 
 Wallet ownership is recovered by scanning typed chain data and attempting note decryption; `view_tags` are only untrusted performance hints. Clients must persist cursors, support rescan, keep prepared payloads and note caches encrypted, and treat nullifier queries as privacy-sensitive.
 
@@ -100,6 +100,6 @@ When sources disagree, resolve them in this order for the affected contract:
 1. compiled proto/message/query definitions and keeper validation for executable behavior;
 2. normative circuit contract, schemas, and conformance fixtures for frozen cross-language encoding;
 3. CLI help and the CLI reference for command surfaces;
-4. current guides and completed plan records for rationale and history.
+4. current guides for integration rationale and operational context.
 
-Release file membership is defined only by `scripts/release-pack-paths.txt` and `scripts/release-pack-required-files.txt`. See the [release policy](clairveil-release-versioning-policy.md) and [maintainer instructions](clairveil-maintainer-instructions.md).
+Release file membership is defined only by `scripts/release-pack-paths.txt` and `scripts/release-pack-required-files.txt`. See the [maintainer instructions](../CONTRIBUTING.md).

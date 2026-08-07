@@ -2,6 +2,8 @@
 
 Clairveil contributor는 프로젝트 논의를 집중력 있고, 존중하며, 기술적으로 근거 있는 방식으로 이어가야 합니다.
 
+English version: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+
 ## 기대하는 행동
 
 - 경험 수준과 전문 영역의 차이를 존중합니다.

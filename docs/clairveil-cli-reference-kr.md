@@ -219,7 +219,7 @@ clairveild tx privacy transfer-batch "$(cat out/bob-shielded-address.txt)" \
 
 `transfer-batch-16x32`는 `MsgBatchTransfer` 하나와 `BatchJoinSplit16x32` proof 하나를 실행합니다. `--payment 'shielded-address,coin[,policy,mode,target-key]'`를 1..32회 반복해 output별 독립 disclosure를 지정하고, 필요하면 `--input-index`로 wallet note 1..16개를 고정하며, `--output-mode compact|exact32`를 선택합니다. Broadcast 전에 private prepared payload와 proof를 mode `0600`으로 저장합니다.
 
-재시작 가능한 단계형 command는 `prepare-batch-transfer`, `prove-batch-transfer PREPARED_FILE`, `broadcast-batch-transfer PREPARED_FILE PROOF_FILE`입니다. `prove-batch-transfer`는 `--prover-url`이 없으면 local prover만, 있으면 선택한 `POST /v1/proofs/batch-transfer` endpoint 한 곳만 사용하며 automatic failover나 redirect follow를 하지 않습니다. Plain HTTP는 `localhost`, `127.0.0.1`, `[::1]` 같은 loopback endpoint에서만 허용하고, 모든 non-loopback prover URL은 HTTPS를 사용해야 합니다. bearer 인증 remote prover에는 환경의 `CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN`을 전달하고 secret을 CLI flag로 받지 않습니다. 전체 명령과 boundary case는 [clairveil-batch-joinsplit-localnet-tutorial-kr.md](clairveil-batch-joinsplit-localnet-tutorial-kr.md)를 따릅니다.
+재시작 가능한 단계형 command는 `prepare-batch-transfer`, `prove-batch-transfer PREPARED_FILE`, `broadcast-batch-transfer PREPARED_FILE PROOF_FILE`입니다. `prove-batch-transfer`는 `--prover-url`이 없으면 local prover만, 있으면 선택한 `POST /v1/proofs/batch-transfer` endpoint 한 곳만 사용하며 automatic failover나 redirect follow를 하지 않습니다. Plain HTTP는 `localhost`, `127.0.0.1`, `[::1]` 같은 loopback endpoint에서만 허용하고, 모든 non-loopback prover URL은 HTTPS를 사용해야 합니다. bearer 인증 remote prover에는 환경의 `CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN`을 전달하고 secret을 CLI flag로 받지 않습니다. 전체 명령과 boundary case는 [clairveil-getting-started-kr.md](clairveil-getting-started-kr.md#8-batchjoinsplit16x32-localnet)를 따릅니다.
 
 ## 6. Disclosure decode
 
@@ -428,7 +428,7 @@ clairveil-proverd \
   -max-request-bytes 8388608
 ```
 
-Remote production profile은 [clairveil-proverd-remote-production-profile-kr.md](clairveil-proverd-remote-production-profile-kr.md)를 따릅니다.
+Remote production profile은 [clairveil-operations-guide-kr.md](clairveil-operations-guide-kr.md#6-prover-운영)를 따릅니다.
 
 Validator startup은 local VK/public-input schema hash를 consensus `CircuitSetIdentity` schema `v1`과 비교하며 checksum env로 override할 수 없습니다. Validator는 VK만 필요하고 `clairveil-proverd`는 proof 생성 시 R1CS/PK를 lazy load합니다. Prover endpoint failover는 기본 off이며 explicit privacy opt-in이 필요합니다.
 
@@ -456,7 +456,7 @@ clairveil-payroll export-report -plan plan.json -state .clairveil-payroll/reserv
 
 `seed-localnet-notes`는 localnet rehearsal helper입니다. localnet genesis commitment와 local wallet cache에 payroll용 amount note와 zero dummy note를 기록해 큰 restart/retry rehearsal에서 deposit 준비 시간을 줄입니다. Production note preparation 기능이 아니며 staging/testnet에서는 실제 deposit, split/merge, approval 기반 preparation flow를 사용해야 합니다.
 
-`prepare-notes`와 `plan`은 `-store-dir .clairveil-payroll`을 받아 file-backed reference artifact store에도 결과를 저장할 수 있습니다. `run`, `scan-evidence`, `reconcile`, `settle-transfer-batch`는 durable reservation state 파일을 사용합니다. 상세 workflow는 [clairveil-reference-payroll-product-kr.md](clairveil-reference-payroll-product-kr.md)를 따릅니다.
+`prepare-notes`와 `plan`은 `-store-dir .clairveil-payroll`을 받아 file-backed reference artifact store에도 결과를 저장할 수 있습니다. `run`, `scan-evidence`, `reconcile`, `settle-transfer-batch`는 durable reservation state 파일을 사용합니다. 간결한 실행 예제는 [reference payroll example](../examples/reference-payroll/README-kr.md)에 있습니다.
 
 ### clairveil-payrolld
 
@@ -498,7 +498,7 @@ make reference-payroll-live-localnet
 make reference-payroll-rehearsal
 ```
 
-live localnet 자세한 단계는 [clairveil-reference-payroll-live-localnet-tutorial-kr.md](clairveil-reference-payroll-live-localnet-tutorial-kr.md)를 따릅니다. rehearsal 자세한 단계는 [clairveil-reference-payroll-rehearsal-kr.md](clairveil-reference-payroll-rehearsal-kr.md)를 따릅니다.
+위 Make target이 localnet과 rehearsal flow의 maintained runnable interface입니다.
 
 ## 11. Batch protocol compatibility
 

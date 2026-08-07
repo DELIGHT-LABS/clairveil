@@ -196,40 +196,15 @@ for index in docs_indexes:
 
 
 plans_dir = repo / "plans"
-plan_indexes = [plans_dir / "README.md", plans_dir / "README-kr.md"]
-tracked_plans = []
-try:
-    plan_paths = set(git_paths("plans/*.md"))
-    untracked_plan_raw = git_output(
-        "ls-files", "--others", "--exclude-standard", "-z", "--", "plans/*.md", text=False
+if plans_dir.is_dir():
+    public_plan_documents = sorted(
+        path for path in plans_dir.rglob("*.md") if path.is_file()
     )
-    plan_paths.update(
-        Path(os.fsdecode(item)) for item in untracked_plan_raw.split(b"\0") if item
-    )
-    for relative in sorted(plan_paths):
-        absolute = repo / relative
-        if absolute.parent == plans_dir and absolute.name not in {"README.md", "README-kr.md"} and absolute.is_file():
-            tracked_plans.append(absolute.resolve())
-except subprocess.CalledProcessError as error:
-    add_error(f"failed to read the tracked plan list: {error.stderr.strip()}")
-
-for index in plan_indexes:
-    if not index.is_file():
-        add_error(f"required plan index is missing: {index.relative_to(repo)}")
-        continue
-    indexed_targets = set()
-    for line_number, destination in markdown_destinations(index):
-        candidate, link_error, _ = local_link_target(index, destination)
-        if link_error:
-            add_error(f"{index.relative_to(repo)}:{line_number}: {link_error}: {destination}")
-        elif candidate is not None:
-            indexed_targets.add(candidate)
-    for plan in tracked_plans:
-        if plan not in indexed_targets:
-            add_error(
-                f"{index.relative_to(repo)}: tracked top-level plan is not indexed: "
-                f"{plan.relative_to(repo)}"
-            )
+    for document in public_plan_documents:
+        add_error(
+            f"{document.relative_to(repo)}: implementation plans and ledgers belong "
+            "in ignored tmpdocs, not the public plans directory"
+        )
 
 
 try:
@@ -493,12 +468,8 @@ common_version_terms = [
 inventory_checks = [
     (docs_dir / "clairveil-architecture.md", "The current fixed client contract is", None, common_version_terms),
     (docs_dir / "clairveil-architecture-kr.md", "현재 fixed client contract는", None, common_version_terms),
-    (docs_dir / "clairveil-proverd-remote-production-profile.md", "Current contracts are", None, common_version_terms),
-    (docs_dir / "clairveil-proverd-remote-production-profile-kr.md", "현재 contract는", None, common_version_terms),
-    (docs_dir / "clairveil-client-api-checklist.md", "Current breaking versions are", None, common_version_terms),
-    (docs_dir / "clairveil-client-api-checklist-kr.md", "현재 breaking version은", None, common_version_terms),
-    (docs_dir / "clairveil-security-best-practices-review.md", "Current prover contract versions are", None, common_version_terms),
-    (docs_dir / "clairveil-security-best-practices-review-kr.md", "현재 prover contract version은", None, common_version_terms),
+    (docs_dir / "clairveil-operations-guide.md", "Current contracts are", None, common_version_terms),
+    (docs_dir / "clairveil-operations-guide-kr.md", "현재 contract는", None, common_version_terms),
     (
         docs_dir / "clairveil-js-sdk-handoff.md",
         "The JS SDK can currently treat these as stable contracts.",
@@ -528,14 +499,10 @@ for source, start_marker, end_marker, required_terms in inventory_checks:
     require_current_contract_inventory(source, start_marker, end_marker, required_terms)
 
 binding_terms = {
-    docs_dir / "clairveil-proverd-remote-production-profile.md": "recomputed witness commitment",
-    docs_dir / "clairveil-proverd-remote-production-profile-kr.md": "재계산한 witness commitment",
+    docs_dir / "clairveil-operations-guide.md": "recomputed witness commitment",
+    docs_dir / "clairveil-operations-guide-kr.md": "재계산한 witness commitment",
     docs_dir / "clairveil-js-sdk-handoff.md": "route-specific response binding",
     docs_dir / "clairveil-js-sdk-handoff-kr.md": "route-specific response binding",
-    docs_dir / "clairveil-client-api-checklist.md": "response commitment to match",
-    docs_dir / "clairveil-client-api-checklist-kr.md": "response commitment와 같은지",
-    docs_dir / "clairveil-security-best-practices-review.md": "route-specific response binding",
-    docs_dir / "clairveil-security-best-practices-review-kr.md": "route-specific response binding",
 }
 for source, term in binding_terms.items():
     if term not in source.read_text(encoding="utf-8"):
@@ -617,7 +584,6 @@ if unique_errors:
 
 print(f"working-tree Markdown links verified: {len(working_markdown)} file(s)")
 print(f"docs EN/KR pairs and indexes verified: {len(list(docs_dir.glob('*.md')))} file(s)")
-print(f"plan indexes verified: {len(tracked_plans)} tracked plan(s)")
 print(f"changelog headings verified for HEAD-reachable tags: {len(tags)} tag(s), 2 file(s)")
 print(f"release manifests verified: {len(selected_paths)} selected path(s), {len(required_files)} required file(s)")
 print(f"release Markdown link closure verified: {len(release_selected_files)} packed source file(s)")

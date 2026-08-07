@@ -49,6 +49,7 @@ Msg service는 아래 메시지를 사용합니다.
 /clairveil.privacy.v1.Msg/Deposit
 /clairveil.privacy.v1.Msg/Transfer
 /clairveil.privacy.v1.Msg/Withdraw
+/clairveil.privacy.v1.Msg/BatchTransfer
 ```
 
 핵심 tx message는 아래입니다.
@@ -57,6 +58,7 @@ Msg service는 아래 메시지를 사용합니다.
 MsgDeposit
 MsgTransfer
 MsgWithdraw
+MsgBatchTransfer
 ```
 
 `MsgDeposit`에는 `proof` 필드가 있습니다. Client는 `amount`, `asset_id`, `note_commitment`를 binding하는 `DepositCircuit` Groth16 proof를 만들거나 받아와야 하며, proof 없는 deposit은 현재 계약에 포함되지 않습니다.
@@ -64,6 +66,8 @@ MsgWithdraw
 `MsgTransfer`에는 `expires_at_unix`, user disclosure, audit disclosure, sender self-view disclosure 필드가 있습니다. Audit disclosure는 필수이고 sender self-view disclosure는 기본 포함되며 명시적 opt-out에서만 빠집니다. `creator`는 replaceable fee payer/relayer이며 owner intent에서 의도적으로 제외됩니다.
 
 `MsgWithdraw`는 exact-match withdraw 메시지이며 output note 필드를 갖지 않습니다. JS/TS client는 legacy withdraw 필드인 `new_note_commitment`, `encrypted_note`를 모델링하지 말아야 하며, dummy output note 값을 보내지 않아야 합니다.
+
+`MsgBatchTransfer`는 하나의 `BatchJoinSplit16x32` proof로 input note 1..16개를 atomic하게 소비하고 ordered output 1..32개를 생성합니다. JS/TS client는 17절의 batch transfer addendum이 정의하는 canonical output 순서, active-prefix count, disabled-slot sentinel, payload/proof version을 보존해야 합니다.
 
 ## 4. Query/API 계약
 
@@ -74,14 +78,18 @@ GET /clairveil/privacy/v1/tree_state
 GET /clairveil/privacy/v1/commitment/{commitment_hex}
 GET /clairveil/privacy/v1/events
 GET /clairveil/privacy/v1/merkle_path/{commitment_hex}
+POST /clairveil/privacy/v1/commitment_paths_at_root
 GET /clairveil/privacy/v1/audit_config
 GET /clairveil/privacy/v1/disclosure_config
 GET /clairveil/privacy/v1/circuit_config
-GET /clairveil/privacy/v1/reserve/{denom}
+GET /clairveil/privacy/v1/reserve/{denom=**}
+GET /clairveil/privacy/v1/assets/by_denom/{canonical_denom=**}
+GET /clairveil/privacy/v1/assets/by_id/{asset_id_hex}
 GET /clairveil/privacy/v1/nullifier/{nullifier}
 GET /clairveil/privacy/v1/nullifiers
 POST /clairveil/privacy/v1/nullifiers
 GET /clairveil/privacy/v1/scan_events
+POST /clairveil/privacy/v1/privacy_scan
 ```
 
 Go SDK 기준 provider contract는 아래 파일에 있습니다.
@@ -90,6 +98,7 @@ Go SDK 기준 provider contract는 아래 파일에 있습니다.
 x/privacy/client/sdk/provider/info.go
 x/privacy/client/sdk/provider/query.go
 x/privacy/client/sdk/provider/scan.go
+x/privacy/client/sdk/provider/typed_scan.go
 x/privacy/client/sdk/provider/tx.go
 ```
 
@@ -98,8 +107,11 @@ x/privacy/client/sdk/provider/tx.go
 - `TreeState`: 최신 root, leaf count, depth, max leaves, remaining leaves를 읽습니다.
 - `CommitmentInfo`: commitment가 tree에 들어갔는지와 leaf index를 확인합니다.
 - `MerklePath`: proving input에 필요한 path와 path helper를 가져옵니다.
-- `ScanEvents`: cursor 기반 wallet projection으로 deposit/transfer output을 스캔합니다.
-- `PrivacyEvents`: compatibility와 diagnostics용 raw deposit/transfer event feed를 읽습니다.
+- `CommitmentPathsAtRoot`: batch proving을 위해 하나의 root/height snapshot에 대한 path를 최대 16개 가져옵니다. Grouped lookup은 note-linkage privacy boundary로 취급합니다.
+- `AssetRegistry`: canonical denom과 32-byte asset ID를 양방향으로 resolve합니다.
+- `PrivacyScanV2`: primary wallet-sync 경로입니다. `PrivacyScan`을 호출하여 global `(height, global_sequence, output_index)` cursor로 typed deposit, JoinSplit2x2 transfer, batch-transfer output을 읽습니다.
+- `ScanEvents`: deposit과 JoinSplit2x2 transfer만을 위한 legacy compatibility projection입니다. batch를 지원하지 않으며 primary wallet-sync API가 아닙니다.
+- `PrivacyEvents`: compatibility와 diagnostics를 위한 raw legacy event inspection API이며 wallet-sync projection이 아닙니다.
 - `AuditConfig`: chain에 설정된 master auditor pubkey를 가져옵니다.
 - `DisclosureConfig`: user disclosure policy/mode와 payload version을 표시합니다.
 - `CircuitConfig`: consensus `CircuitSetIdentity`, active set, ordered VK hash, public-input schema hash를 읽습니다. Node-local manifest path나 checksum environment variable에서 consensus identity를 추론하지 않습니다.
@@ -165,20 +177,19 @@ x/privacy/client/sdk/scan/service.go
 x/privacy/client/sdk/scan/wallet.go
 ```
 
-권장 scan 흐름은 아래처럼 구성합니다.
+권장 scan 흐름은 `ScanEvents`나 ABCI event search가 아니라 `PrivacyScanV2`(typed `PrivacyScan` query)입니다.
 
-1. `ScanEvents(after_height, after_sequence, limit, event_types)`로 deposit/transfer output projection을 가져옵니다.
-2. deposit projection의 `encrypted_note`, 또는 transfer projection의 `cipher_text`, `commitment`, `output_index`, `view_tag`를 읽습니다.
-3. Projection을 소비하기 전에 `scan_format_version`, `view_tag_version`을 검증합니다. 지원하지 않는 version이면 raw event path로 fallback하거나 cursor를 전진시키지 않고 중단합니다.
-4. Transfer output은 local 2-byte view tag를 파생합니다. Ordered tag는 signed canonical transfer effect에 포함되지만 ownership 증거는 아니므로 안전한 기본값은 tag mismatch에서도 full trial decrypt를 수행하는 것입니다.
-5. `view_tag`는 untrusted optimization으로만 취급합니다. 없거나 형식이 틀리면 full trial decrypt로 fallback합니다. Mismatch output을 건너뛰는 동작은 recovery 또는 forced rescan을 갖춘 명시적 fast mode 정책이어야 합니다.
-6. wallet root seed와 viewing key로 복호화를 시도합니다. view-key 복호화가 실패하면 Go SDK와 호환되는 spend-key compatibility/recovery fallback을 유지합니다.
-7. 복호화에 성공한 note만 wallet DB에 저장합니다.
-8. note commitment와 nullifier를 추적합니다.
-9. 가능하면 `CheckNullifiers`로 spent 상태를 batch 갱신하되 요청당 1000개로 chunk하고, 필요하면 `CheckNullifier`로 fallback합니다.
-10. rollback/reorg 대응을 위해 event height, sequence, tx hash를 함께 저장합니다.
+1. 완전한 lexicographic cursor `(height, global_sequence, output_index)`를 저장하고 전송합니다. `global_sequence`는 privacy operation 전체에 대해 chain-global이며 transaction-local 또는 height별 sequence가 아닙니다.
+2. 모든 event type을 요청하고 typed deposit, JoinSplit2x2 transfer, batch-transfer output을 소비합니다. deposit에서는 `encrypted_note`를, transfer/batch에서는 `ciphertext`, `commitment`, `output_index`, `view_tag`를 읽습니다.
+3. response, 모든 summary, 모든 output의 `scan_schema_version`이 지원되는 값이 아니면 fail closed합니다. Strict cursor order, 한 event 안의 contiguous output index, output-to-summary identity/framing, response limit을 검증합니다.
+4. zero-output withdrawal을 포함하여 summary를 event boundary로 취급합니다. Multi-output event는 `output_count`개의 output을 모두 모으고 그 event가 `has_more=false`에 도달하기 전에는 complete 처리하지 않습니다. `next_cursor` advance마다 summary를 검증하여 output-bearing event를 건너뛸 수 없게 합니다.
+5. `PrivacyScanV2` query, validation, decoding failure는 terminal입니다. Batch ciphertext가 조용히 누락될 수 있으므로 `ScanEvents`, `PrivacyEvents`, ABCI transaction/event search로 fallback하지 않습니다. Legacy fallback은 typed capability 자체를 구현하지 않은 환경에서만 허용됩니다.
+6. Transfer와 batch output에서는 local 2-byte view tag를 파생합니다. Ordered tag는 signed이지만 ownership 증거가 아닙니다. `view_tag`는 untrusted optimization이며, 안전한 기본값은 tag mismatch, missing tag, malformed tag에서도 full trial decrypt를 수행하는 것입니다. Mismatch를 건너뛰려면 recovery 또는 forced-rescan을 갖춘 명시적 fast-mode policy가 필요합니다.
+7. wallet root seed와 viewing key로 복호화를 시도하고 Go-compatible spend-key compatibility/recovery attempt를 유지합니다. 복호화에 성공한 note만 commitment와 nullifier를 함께 저장합니다.
+8. `CheckNullifiers`로 spent 상태를 갱신하고 요청당 1000개로 chunk합니다. Batch path를 쓸 수 없을 때만 `CheckNullifier`를 사용합니다.
+9. note update와 함께 결과 full cursor, output height, global sequence, output index, tx hash를 atomically 저장하여 rollback/reorg에 대응합니다.
 
-`ScanEvents`는 실제 적용된 `limit`, `scan_format_version=1`, `view_tag_version=1`을 반환합니다. `limit`은 scan cursor page budget으로 취급해야 합니다. 요청한 filter 밖의 event type만 page에 있으면 반환된 event 수가 `limit`보다 작거나 0이어도 `has_more=true`일 수 있습니다. 이 경우 client는 `next_height`, `next_sequence`로 cursor를 전진시키고 계속 스캔해야 합니다. Legacy `PrivacyEvents(after_height, page, limit, event_types)` query는 raw event inspection과 compatibility 용도로 유지되지만, 신규 web/mobile wallet은 offset pagination을 primary rescan UX로 삼지 않는 편이 좋습니다.
+`ScanEvents(after_height, after_sequence, limit, event_types)`는 deposit과 JoinSplit2x2 compatibility만을 위한 legacy cursor projection입니다. `scan_format_version=1`, `view_tag_version=1`을 검증해야 합니다. 실제 적용된 `limit`은 page budget이므로 filter된 page는 반환 event가 더 적거나 0이어도 `has_more=true`일 수 있으며, 이때 `next_height`/`next_sequence`로 전진합니다. 이는 primary 경로도 typed-query failure 뒤의 fallback도 될 수 없습니다. `PrivacyEvents(after_height, page, limit, event_types)`는 compatibility와 diagnostics를 위한 raw legacy event-inspection API입니다. Offset pagination을 primary rescan UX로 만들면 안 됩니다.
 
 JS SDK의 wallet DB에는 최소 아래 필드가 필요합니다.
 
@@ -192,16 +203,20 @@ randomness_hex
 spend_pubkey_hex
 view_pubkey_hex
 height
-sequence
+global_sequence
+output_index
 tx_hash
 spent
 last_scan_height
 last_scan_sequence
+last_scan_output_index
 ```
+
+`global_sequence`과 `last_scan_sequence`은 모두 chain-global privacy-operation sequence를 뜻합니다. `last_scan_height`, `last_scan_sequence`, `last_scan_output_index`는 하나의 atomic `PrivacyScanV2` cursor이므로 일부 prefix만 저장하면 안 됩니다.
 
 ## 7. Deposit 구현
 
-이 legacy filename은 발견을 위한 handoff이며 prover specification이 아닙니다. Language-neutral 계약은 [general prover HTTP API](clairveil-proverd-http-api-kr.md)와 [deposit API](clairveil-proverd-deposit-api-kr.md)를 사용합니다.
+이 legacy filename은 발견을 위한 handoff이며 prover specification이 아닙니다. Language-neutral 계약은 [general prover HTTP API](clairveil-proverd-http-api-kr.md)와 [deposit API](clairveil-proverd-http-api-kr.md#deposit)를 사용합니다.
 
 Client는 note/commitment와 encrypted note를 만들고, local 또는 canonical deposit route에서 proof를 얻어 response commitment/proof를 검증한 다음 `MsgDeposit`을 조립·전파합니다. Remote deposit request에는 회로 witness만 들어가며 encrypted note, creator, denom, memo, seed, chain ID는 client/chain 쪽에 남습니다. 특정 package/provider API, release 상태, migration 절차를 source of truth로 취급하지 않습니다.
 
@@ -268,8 +283,6 @@ Bulk payroll 또는 다른 대량 전송 client에서 쓰는 note reservation은
 x/privacy/client/sdk/reservation/
 x/privacy/client/sdk/payroll/
 x/privacy/client/sdk/conformance/testdata/privacy_note_reservation_contract.json
-docs/clairveil-note-reservation-design.md
-docs/clairveil-note-reservation-design-kr.md
 ```
 
 Proof 생성 전에 note를 예약하는 JS/TS client는 fixture에 고정된 reservation status 이름, active reservation 정의, atomic batch-reserve 규칙, compare-and-set 상태 전이, lease token 규칙, HMAC lookup-key test vector, operation 성공 증거 모델을 맞춰야 합니다. Nullifier spent는 note가 소비되었다는 증거이지만, payroll/payment operation을 성공 처리하려면 tx evidence가 expected output commitment, audit disclosure digest, recipient hash, amount, denom, item index와도 일치해야 합니다. fixture의 `expected_disclosure_digest`는 user disclosure나 sender self-view digest가 아니라 audit disclosure digest를 뜻합니다.
@@ -399,7 +412,7 @@ JS SDK가 사용자에게 분명히 보여줘야 하는 제약은 아래입니�
 
 ## 11. Prover 연결 모델
 
-Transport-neutral prover adapter를 유지합니다. HTTP 동작·route·versioning·error·공통 header는 [general prover HTTP API](clairveil-proverd-http-api-kr.md), deposit witness/response 처리는 [deposit API](clairveil-proverd-deposit-api-kr.md)만을 따릅니다. Finite timeout과 strict response validation을 적용하고 witness body를 log/persist하지 않으며, 같은 witness를 다른 endpoint에 보내기 전에는 명시적 user/product opt-in을 요구합니다.
+Transport-neutral prover adapter를 유지합니다. HTTP 동작·route·versioning·error·공통 header는 [general prover HTTP API](clairveil-proverd-http-api-kr.md), deposit witness/response 처리는 [deposit API](clairveil-proverd-http-api-kr.md#deposit)만을 따릅니다. Finite timeout과 strict response validation을 적용하고 witness body를 log/persist하지 않으며, 같은 witness를 다른 endpoint에 보내기 전에는 명시적 user/product opt-in을 요구합니다.
 
 ## 12. JS SDK 구현 단위
 
@@ -440,8 +453,9 @@ JS SDK handoff가 완료되었다고 보려면 아래가 가능해야 합니다.
 현재 JS SDK가 안정 계약으로 삼아도 되는 항목은 아래입니다.
 
 - `clairveil.privacy.v1` proto package
-- `MsgDeposit`, `MsgTransfer`, `MsgWithdraw`
+- `MsgDeposit`, `MsgTransfer`, `MsgWithdraw`, `MsgBatchTransfer`
 - gRPC/HTTP query path
+- typed `privacy_scan`, single-snapshot `commitment_paths_at_root`, bidirectional asset-registry query
 - transparent prefix `clair`, shielded prefix `clairs`
 - reference denom `uclair`
 - full shielded address 기반 transfer UX
@@ -474,9 +488,9 @@ JS SDK handoff가 완료되었다고 보려면 아래가 가능해야 합니다.
 JS SDK 개발자는 아래 파일부터 보면 됩니다.
 
 ```text
-docs/clairveil-local-privacy-walkthrough-kr.md
+docs/clairveil-getting-started-kr.md#7-첫-privacy-흐름
 docs/clairveil-downstream-cosmos-integration-guide-kr.md
-docs/clairveil-proverd-remote-production-profile-kr.md
+docs/clairveil-operations-guide-kr.md#6-prover-운영
 proto/clairveil/privacy/v1/tx.proto
 proto/clairveil/privacy/v1/query.proto
 x/privacy/client/sdk/conformance/testdata/privacy_wallet_golden_vectors.json
@@ -495,62 +509,13 @@ make privacy-e2e-smoke
 
 ## 16. Reference Consumer 예제
 
-JS에서 audit disclosure key를 만들 때는 아래 예제를 봅니다.
+| 예제 | 확인할 내용 |
+| --- | --- |
+| [Audit disclosure key](../examples/audit-disclosure-keys/README-kr.md) | Deterministic, random, privacy-root-signer key 파생과 canonical genesis public-key encoding. |
+| [Fixture validator](../examples/js-sdk-fixture-validator/README-kr.md) | Wallet 주소, prepared payload hash, relay mapping. Node를 시작하지 않습니다. |
+| [Prover HTTP client](../examples/js-sdk-prover-http-client/README-kr.md) | Fixture 기반 transfer/withdraw request의 finite timeout, bearer auth, version 검사, payload-hash binding. |
 
-```text
-examples/audit-disclosure-keys
-```
-
-실행은 repo root에서 아래처럼 합니다.
-
-```bash
-npm --prefix examples/audit-disclosure-keys test
-```
-
-이 예제는 deterministic, random, privacy-root-signer 기반 audit disclosure keypair를 만들고 genesis에서 사용하는 compressed public key encoding을 검증합니다.
-
-Clairveil repo에는 JS/TS SDK 개발자가 fixture consumer를 어떻게 시작하면 되는지 보여주는 작은 예제가 있습니다.
-
-```text
-examples/js-sdk-fixture-validator
-```
-
-실행은 repo root에서 아래처럼 합니다.
-
-```bash
-npm --prefix examples/js-sdk-fixture-validator run validate
-```
-
-이 예제는 node를 띄우지 않고 아래만 검증합니다.
-
-- fixture 안의 wallet-facing 주소가 `clair1...`, `clairs1...` 기준인지 확인합니다.
-- wallet-facing fixture 주소가 `clair1...` 또는 `clairs1...` prefix만 쓰는지 확인합니다.
-- Go SDK와 같은 방식으로 transfer prepared payload hash를 계산합니다.
-- Go SDK와 같은 방식으로 withdraw prover payload hash를 계산합니다.
-- relayed withdraw final payload hash를 계산합니다.
-- relay withdraw handoff fixture에서 relayer 주소가 `MsgWithdraw.creator`로, payload recipient가 `MsgWithdraw.recipient`로 유지되는지 확인합니다.
-- prover HTTP path가 `/v1/prover/transfer`, `/v1/prover/withdraw`인지 확인합니다.
-
-이 예제는 transfer/withdraw client shape만 의도적으로 실행합니다. Canonical deposit/batch contract는 이 JS 예제가 아니라 general/deposit schema와 conformance fixture에서 repository가 계속 소유합니다. 이 예제는 production JS SDK가 아니라 첫 reference consumer이며, 실제 JS SDK는 파일 구조를 그대로 복사하지 말고 route-specific binding과 fixture validation을 CI에 넣어야 합니다.
-
-Remote prover HTTP client shape은 아래 예제를 봅니다.
-
-```text
-examples/js-sdk-prover-http-client
-```
-
-실행은 repo root에서 아래처럼 합니다.
-
-```bash
-npm --prefix examples/js-sdk-prover-http-client run demo
-```
-
-이 예제는 live `clairveil-proverd` 대신 fixture-backed mock prover를 띄워 아래를 검증합니다.
-
-- `fetch` request에 finite timeout을 겁니다.
-- bearer token을 `Authorization: Bearer ...`로 전달합니다.
-- transfer/withdraw request, response, proof version이 `v2`인지 확인합니다.
-- proof `payload_hash`가 prepared payload `payload_hash`와 같은지 확인합니다.
+실행 명령은 각 예제와 [테스트 가이드](clairveil-testing-guide-kr.md)에서 관리합니다. 예제는 production SDK가 아닌 reference consumer입니다. HTTP demo는 live `clairveil-proverd` 대신 mock을 사용하고 JS client 예제는 transfer/withdraw만 실행합니다. Deposit/batch 계약은 repository schema와 Go conformance fixture에서 검증합니다. Downstream CI에 route-specific binding과 fixture 검증을 이식합니다.
 
 ## 17. Batch transfer reference addendum
 
@@ -566,3 +531,40 @@ Repository에는 production core와 reference Go batch builder, bounded proof ad
 - Downstream JS/TS batch builder는 reference `CanonicalBatchTransferPayloadBytesV1`을 exact하게 재현해야 합니다. Format `1`, `u32be` vector count, 모든 byte field의 `u32be(length) || bytes`, proto 선언 순서의 output field, audit ID/epoch/target, expiry 순서입니다. SHA-256 domain `clairveil.batch-transfer-payload.v1`을 non-reduced 128-bit limb 둘로 나눕니다. `creator`와 `proof`만 제외하며 protobuf marshal, JSON, sorted-field 대안을 만들면 안 됩니다.
 - Artifact loading은 role-aware입니다. Validator는 exact consensus identity를 검증한 뒤 필요한 VK만 load하고 prover는 선택한 R1CS/PK pair만 lazy load합니다. Reference prover admission default는 circuit별 in-flight 1개, queued 4개, positive 8 MiB request limit입니다. 0은 invalid이며 body limit을 비활성화하지 않습니다.
 - `provertransport.HTTPHandler`를 직접 노출하지 말고 bounded `proverservice.Handler` wrapper를 사용합니다. Prover request에는 automatic endpoint failover가 없습니다. Cancellation은 대기를 중단하고 response를 버리지만 in-process proving은 solver가 반환할 때까지 계속되면서 admission capacity를 점유할 수 있습니다. Hard cancellation 또는 memory containment가 필요한 production operator는 이 reference 구현 밖에서 process isolation과 termination을 추가해야 합니다.
+
+## 18. 신뢰성 및 reference payroll handoff
+
+이 절은 JS/TS control-plane 경계만 추가합니다. 앞선 일반 SDK 검증 기준이나 batch addendum의 encoding, artifact, scan 요구사항을 대체하지 않습니다. 상세 기준은 [reference payroll control plane](../examples/reference-payroll/README-kr.md)을 따릅니다.
+
+### 재시도와 endpoint 안전성
+
+Read, nullifier, broadcast, prover traffic은 별도 adapter로 분리하고 side effect 전에 attempt identity를 durable하게 저장합니다. 아래 matrix가 최소 안전 동작입니다.
+
+| 작업 | 동일 endpoint 재시도 | Endpoint failover | Timeout 처리 |
+| --- | --- | --- | --- |
+| Public read query | Bounded backoff로 idempotent query를 재시도합니다. | Chain ID와 response shape를 검증한 뒤 허용합니다. Root/path는 서로 다른 snapshot을 섞지 말고 함께 다시 가져옵니다. | Unavailable read로 반환하며 spend/proof side effect를 만들지 않습니다. |
+| Nullifier query | 동일한 canonical request(일반적으로 POST batch)를 재시도합니다. | 기본 off입니다. 다른 endpoint로 nullifier를 질의하려면 queried note set을 다른 operator에 드러내므로 명시적인 user/product privacy opt-in이 필요합니다. | Reservation을 active/unknown으로 유지하고 note를 재사용 가능하다고 추론하지 않습니다. |
+| Tx broadcast | Tx hash/sign-doc/tx-bytes hash로 식별되는 byte-identical signed transaction만 다시 제출합니다. | 동일한 signed bytes이고 명시적으로 구성된 broadcast endpoint set일 때만 허용합니다. Endpoint를 바꾸려고 rebuild하지 않습니다. | 먼저 tx hash를 조회하고, 이어 모든 input nullifier를 조회합니다. Accepted가 배제되고 nullifier가 unspent이거나 deterministic expiry/rejection으로 새 intent가 필요할 때만 re-sign/rebuild합니다. 그 외에는 `Unknown`을 유지하거나 `ManualReview`로 보냅니다. |
+| Prover request | Ambiguous timeout 뒤에는 witness request를 자동 replay하지 않습니다. Original이 accepted되지 않았다고 안전하게 판단할 수 있을 때만 product 승인 재시도를 할 수 있습니다. | 자동 수행 금지입니다. 같은 witness를 포함한 두 번째 endpoint는 별도의 명시적 user/product opt-in과 새 disclosure review가 필요합니다. | Prepared payload와 reservation을 보존합니다. HTTP cancellation은 remote proving이 멈췄다는 증거가 아닙니다. |
+
+Public-read failover 결과만으로 spend를 승인하지 말고 선택한 root/path가 하나의 snapshot임을 검증합니다. Tx hash 조회가 ambiguity의 첫 해결 수단이며, nullifier 조회는 필수 두 번째 확인이지 operation evidence 일치의 대체 수단이 아닙니다.
+
+### 최소 payroll 및 wallet surface
+
+아래 portable type을 모델링합니다. JS 이름은 관용적으로 정해도 되지만 field와 의미는 Go reference와 호환되어야 합니다.
+
+| Type/API | 최소 handoff field 또는 동작 |
+| --- | --- |
+| `PayrollInput` / `PayrollItem` / `PayrollPlan` | Stable company, payroll, batch, item, employee, operation, attempt, denom, amount, recipient, disclosure-policy, expected output/disclosure 값과 timestamp입니다. `PayrollItem`은 Go의 `PayrollItemInput`에 해당하며, plan item은 선택한 input note와 retry/status를 plan과 별도로 유지합니다. |
+| `TreasuryNote` | `note_id`, owner와 nullifier-lookup key/ID, denom, amount, spent flag, `reservation_id`입니다. Spent note나 비어 있지 않은 `reservation_id`가 있는 note는 allocation과 preparation에서 제외합니다. |
+| `NotePreparationReport` / `NotePreparationHint` | Ready/blocked item, spendable/reserved/spent count와 amount, zero-dummy availability/shortage, selected note ID, estimated message chunk, 실행 가능한 `add-funds`, `make-dummy`, `split-merge`, `resolve-reservation-lock` hint를 보고합니다. `NotePreparationHint`는 Go의 `NotePreparationOperationHint`에 해당합니다. 이는 note preparation signal이지 note가 사용 가능하다는 증명이 아닙니다. |
+| `DisclosureKeyEntry` / registry | `key_id`, scope (`employee`, `company`, `auditor`, `external`), subject ID, canonical public key hex, version, active flag를 저장합니다. Planning 전에 `(scope, subject_id)`로 active key를 resolve하며 stale/inactive key로 조용히 fallback하지 않습니다. |
+| `NoteReservation` / `PayrollOperation` | Reservation/operation ID, status, lease field, input-note linkage, tx/sign-doc/tx-bytes hash, broadcast-attempt metadata, expected output commitment, disclosure digest들, recipient/amount hash, denom, batch item index와 known flag를 저장합니다. `privacy_note_reservation_contract.json`의 atomic batch reserve와 compare-and-set, token-owned lease transition을 사용합니다. |
+
+최소 `validatePayroll`, `prepareNotes`, `planPayroll`, atomic `reserve`, lease acquire/heartbeat, `markProofReady`, `markSubmitted`/`markBroadcastUnknown`, `reconcile`, `rescanProjection` operation을 노출합니다. Product별 method name은 달라도 되지만 durable-state와 compare-and-set 의미를 약화하면 안 됩니다.
+
+Operation-success predicate에는 `tx_hash_or_tx_result`, `output_index`, output `commitment`, `recipient_hash`, `amount`(또는 해당 expected hash), `denom_or_asset_id`, audit/full disclosure digest, 기대될 때의 user digest, `audit_key_id`, `audit_key_epoch`, 그리고 plan이 position을 요구할 때의 `batch_item_index`와 known flag가 필요합니다. Spent nullifier만 있고 이 evidence가 일치하지 않으면 성공이 아니라 `ConflictSpent`입니다.
+
+Wallet storage는 encrypted note inventory/projection과 scan cursor를 durable reservation, operation, broadcast attempt와 분리해 보관합니다. 일반 rescan은 projection을 재구축할 수 있지만 먼저 active/unknown reservation을 reconcile하거나 유지해야 하며, 그 linkage를 지워 note가 다시 선택되게 하면 안 됩니다. Unsupported projection version, ambiguous broadcast, missing evidence, cross-endpoint inconsistency는 cursor를 멈추고 `ManualReview`로 보내며 user-visible rescan/reconcile path를 제공합니다.
+
+JS/TS 구현이 reservation fixture의 atomic reserve, active-note exclusion, lease/CAS transition, success/conflict evidence case를 재현하고, registry로 disclosure key를 resolve하며, preparation report/hint를 생성·소비하고, timeout 뒤 tx-hash 다음 nullifier reconciliation으로 duplicate signing이나 note reuse 없이 복구할 때 payroll handoff가 완료됩니다.

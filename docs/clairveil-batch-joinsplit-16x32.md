@@ -2,20 +2,11 @@
 
 ## 1. Status and scope
 
-This document freezes the batch protocol contract and records the production chain-core and reference-client implementations. It is normative for NoteV1, domain separation, fixed encodings, the production 16-input/32-output statement, aggregate vector roots, disclosure digests, scan state, artifact identity, and resource accounting.
+This document is normative for NoteV1, domain separation, fixed encodings, the 16-input/32-output statement, aggregate vector roots, disclosure digests, scan state, artifact identity, and resource accounting.
 
-**Batch protocol feasibility: PASS.** Both feasibility gates were rerun or confirmed against the final two-stage user-disclosure contract:
+The repository implements the circuit/keeper and reference Go planner, prover, scanner, payroll workers and CLI. Its status is `PUBLICATION_READY_EXPERIMENTAL`; downstream JS/TS products, formal trusted setup, external audit, signed production artifacts and production operations remain separate requirements.
 
-- **Full-shape circuit gate: PASS.** The corrected Groth16/BN254 prototype compiled, completed development setup, proved every shape including `16/32` without OOM, and improved warm proving cost per output over the current JoinSplit2x2 baseline.
-- **Max wire/state gate: PASS.** An actual protobuf message inside an actual Cosmos `TxRaw`, typed scan KV records, tree-write allowance, the minimal ABCI event, and the query response stayed within the frozen reference limits.
-
-The batch chain core implements the production circuit and consensus path. The batch reference integration adds the repository's reference Go batch planner/preparer, remote batch prover route, lossless typed scanner, durable payroll graph, staged CLI, and localnet tutorial. The 2026-07-13 independent publication validation completed Passes A–I, closed `PROVER-FAILOVER-LIVE-EVIDENCE`, and approved `PUBLICATION_READY_EXPERIMENTAL`. A downstream JS/TS SDK or product, formal trusted setup, external audit, signed production artifact distribution, and production operations are still outside this repository-level completion.
-
-The 2026-07-12 batch-protocol re-entry froze `DISCLOSURE-BLINDING-SEPARATION`, and the batch chain core implements it in the production `JoinSplitCircuit`, shared native/prepared validation, structured 2x2 pre-sign boundary, and JoinSplit development artifact identity. The 2026-07-13 fresh closures pass the security, protocol, chain-core, client-integration, and independent-publication-validation gates without changing the public contract. `PROVER-FAILOVER-LIVE-EVIDENCE`, `ONE-PROOF-PAYROLL-E2E`, `LIVE-DISCLOSURE-VERIFICATION`, `SQL-GRAPH-ATOMICITY`, and `BATCH-SIGNER-SECRET-FRESHNESS` are resolved; unresolved Critical, High, and security-relevant Medium findings are zero.
-
-The active circuit set remains `privacy-note-v1` and now requires, in order, Deposit, Spend, JoinSplit2x2, and `batch-joinsplit-16x32-v1`. Development R1CS/PK/VK identities are evidence for the chain-core gate, not production trust anchors.
-
-Normative words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** have their usual protocol meaning.
+The active circuit set is `privacy-note-v1`, in Deposit, Spend, JoinSplit2x2, `batch-joinsplit-16x32-v1` order. Development artifact identities are not production trust anchors. **MUST**, **MUST NOT**, **SHOULD**, and **MAY** carry their usual protocol meaning.
 
 ## 2. Frozen versions and capacities
 
@@ -725,63 +716,7 @@ The batch chain core freezes these conservative V1 coefficients and bounds:
 
 The explicit surcharge pays for privacy-specific proof verification, canonical hashing/encoding, state-growth amplification, Merkle computation/bookkeeping, and global uniqueness checks. Cosmos KV gas still pays for the underlying store reads and writes; the coefficients do not replace it. Thus the two meters cover different layers even when one logical operation causes both computation and physical I/O. The exact category breakdown and precharge-before-semantics/out-of-gas behavior are regression-tested. A real `1/1` handler success and a max `16/32` post-proof transition record the explicit descriptor separately from every Cosmos KV descriptor, preventing either layer from silently absorbing or duplicating the other's responsibility. Independent publication validation confirmed the experimental reference bounds; target-chain production coefficient governance and calibration remain a production-owner TODO.
 
-## 10. Full-shape circuit feasibility result
-
-### 10.1 Production circuit content
-
-The production circuit retains the feasibility circuit exactly (the compatibility type is an alias): 16 independent depth-32 memberships, exact active prefixes, 16 nullifiers, active-only pairwise distinctness, one owner signature, 32 output commitments, 64-bit ranges and value conservation, all owner/output subgroup checks, 32 raw user-disclosure digests, 32 domain-separated user-value leaf hashes, 32 full-disclosure digests, four ordered vector trees, and the 12 public inputs.
-
-Dominant gadget counts include 48 active-prefix one-hot values, 48 amount range checks, 512 independent Merkle node hashes, 616 pairwise distinctness checks, 67 subgroup point checks, 48 note commitments, 16 active-input commitment non-zero checks, 16 nullifiers, 32 raw user-disclosure hashes, 32 user-value leaf hashes, 32 full-disclosure hashes, 96 blinding inequality checks, 112 generic vector leaves, 108 vector internal nodes, four vector roots, and one EdDSA verifier.
-
-### 10.2 Measurement environment and result
-
-Final run generated at `2026-07-11T06:43:45Z` on Apple M5 Pro, 64 GiB RAM, macOS 26.5.1 (`darwin/arm64`), Go 1.25.12, gnark 0.14.0, gnark-crypto 0.19.2, BN254 Groth16. Development setup was used, not a trusted ceremony. Each shape ran three proofs: the first sample and two warm samples; peak RSS covers the full test process.
-
-| Metric | Result |
-| --- | ---: |
-| constraints, production 16x32 circuit | `1,111,837` |
-| constraints, production JoinSplit2x2 | `99,775` |
-| subgroup points measured | `67` |
-| on-curve/non-identity baseline | `335` constraints / `0.257 ms` compile |
-| with prime-subgroup checks | `161,537` constraints / `108.752 ms` compile |
-| incremental prime-subgroup cost | `161,202` constraints |
-| full prototype compile | `1,047.684 ms` |
-| development setup | `17,160.691 ms` |
-| serialized R1CS | `122,813,535 B` |
-| serialized proving key | `209,218,621 B` |
-| serialized verifying key | `716 B` |
-| proof | `164 B` |
-| peak RSS | `3,339,862,016 B` (`~3.11 GiB`) |
-
-The subgroup comparison isolates the 67-point on-curve/non-identity shape from the same shape with prime-subgroup scalar multiplication. The `161,202` incremental constraints are retained; the optimization gate did not move subgroup validation to host-only checks.
-
-| Shape | Witness ms | First prove ms | Warm prove samples ms | Warm mean ms | Verify samples ms |
-| --- | ---: | ---: | --- | ---: | --- |
-| `1/1` | `0.428` | `1,802.880` | `[1,769.221, 1,770.889]` | `1,770.055` | `[0.699, 0.708, 0.706]` |
-| `3/4` | `0.414` | `1,753.411` | `[1,781.738, 1,789.975]` | `1,785.8565` | `[0.722, 0.679, 0.799]` |
-| `8/16` | `0.431` | `1,771.809` | `[1,816.801, 1,779.021]` | `1,797.911` | `[0.732, 0.680, 0.740]` |
-| `16/32` | `0.429` | `1,874.354` | `[1,791.545, 1,785.570]` | `1,788.5575` | `[0.699, 0.677, 0.698]` |
-
-The historical pre-`DISCLOSURE-BLINDING-SEPARATION` JoinSplit2x2 comparison recorded a first prove time of `158.470 ms`, warm samples `[154.029, 157.718] ms`, and a warm mean of `155.8735 ms`. The corresponding historical max-shape comparison was `55.892422 ms/output` and `2.788813x`; it is retained for provenance, not as the current production ratio. Compile, setup, all proofs, and verification completed without OOM. The approximately 209 MB proving key and 123 MB R1CS are operationally plausible with per-role lazy loading, although memory remains a production capacity concern.
-
-The historical re-entry for `DISCLOSURE-BLINDING-SEPARATION` in the batch protocol contract compared the then-current production 2x2 circuit with a test-only circuit that appended exactly the frozen zero-sentinel assertion and `DBS-01..03`. On the same Apple M5 Pro/64 GiB/macOS 26.5.1, Go 1.25.12, gnark 0.14.0, BN254 Groth16 environment, one cold development sample produced:
-
-| Metric | Current production 2x2 | Hardened feasibility target | Delta |
-| --- | ---: | ---: | ---: |
-| constraints | `99,765` | `99,775` | `+10` (`~0.0100%`) |
-| compile | `114.924 ms` | `101.637 ms` | timing noise; not a speed claim |
-| development setup | `1,388.182 ms` | `1,423.331 ms` | `+35.149 ms` single sample |
-| R1CS | `10,823,916 B` | `10,824,169 B` | `+253 B` |
-| proving key | `16,765,577 B` | `16,766,489 B` | `+912 B` |
-| verifying key | `748 B` | `748 B` | `0 B` |
-| proof | `164 B` | `164 B` | `0 B` |
-| witness / prove / verify | `0.142 / 157.680 / 0.691 ms` | `0.119 / 161.169 / 0.674 ms` | single-sample feasibility only |
-
-The historical process peak RSS was `690,438,144 B`; no OOM occurred. The batch chain core promoted the hardened relation to production and reran the cause-isolating controls: the legacy `99,765` relation accepts each fully refreshed negative while production `99,775` rejects it. The production cold gate reported R1CS `10,824,169 B`, PK `16,766,489 B`, VK `748 B`, proof `164 B`, and peak RSS `687,423,488 B`. The full Batch resource gate was rerun unchanged at `1,111,837` constraints, R1CS `122,813,535 B`, PK `209,218,621 B`, VK `716 B`, proof `164 B`, and peak RSS `3,324,461,056 B`, with no OOM. The target matched exactly, so no decision change was required.
-
-**Circuit gate conclusion: PASS.** The security constraints, explicit two-stage user leaf, subgroup checks, independent paths, and 16/32 capacities were retained. A constrained multiproof is not required for the batch chain core by this gate.
-
-## 11. Max wire/state feasibility result
+## 10. Max wire/state feasibility result
 
 The measured max shape used 16 nullifiers, 32 outputs, a maximum valid 64-byte audit key ID and canonical target point, mandatory auditor payloads, maximum recipient disclosure and self-view envelopes, proof/root/tags/keys/digests, an actual Cosmos `TxRaw`, typed scan summary/output protobufs and KV keys, a 96 KiB tree-write allowance, and the minimal ABCI event.
 
@@ -800,7 +735,7 @@ The measured max shape used 16 nullifiers, 32 outputs, a maximum valid 64-byte a
 
 **Wire/state gate conclusion: PASS. Combined protocol gate conclusion: PASS.** The batch chain core may retain the 16/32 capacity and security constraints. The values are feasibility limits, not a license to omit per-message hard limits, explicit gas, or state-growth monitoring.
 
-## 12. Implemented keeper order
+## 11. Implemented keeper order
 
 The production handler executes in this order:
 
@@ -818,41 +753,10 @@ The production handler executes in this order:
 
 No batch state write may occur before proof success. The message is all-or-nothing.
 
-## 13. Invariant traceability matrix
-
-Production coverage is explicit. `TestBatchJoinSplit16x32ProductionPositiveMatrix` covers `1/1`, `1/2`, `3/4`, `8/16`, `16/31`, `16/32`, mixed disclosure, and active zero-value padding. `TestBatchJoinSplit16x32ProductionNegativeMatrix` contains 59 negative cases spanning counts, disabled sentinels, paths, distinctness, owner/asset/key constraints, amount/conservation, aggregate roots, domains/limbs/expiry, signature, disclosure and blinding rules, and vector domain separation. `TestBatchPublicWitnessIsDerivedInFrozenOrder`, `TestBatchTransferDirectCoreIntegration`, `TestBatchTransferCoreRejectionsAndAtomicScanFailure`, and `TestCrossMessageNullifierFailureRollsBackWholeCosmosTxCache` cover the host/circuit boundary, real development proof, atomic state, and 2x2+Batch/Batch+Batch rollback. Scan/gas/genesis/readiness tests cover the remaining state and artifact contracts.
-
-| ID | Invariant | Circuit constraint | Native helper | Types/Keeper | SDK guard | Negative test | Public doc |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| NOTE-COMMITMENT | one domain-separated NoteV1 formula; active input commitment non-zero | Deposit/Spend/JoinSplit/Batch | `ComputeNoteCommitmentV1` | `Note.ComputeCommitment`, keeper tree inputs | fixed note decode/recompute | six-path vector test; production negative matrix | §3.2, §4.3 |
-| NOTE-NULLIFIER | commitment-bound, domain-separated, non-zero | Spend/JoinSplit/Batch | `ComputeNoteNullifierV1` | `Note.ComputeNullifier` | scanner/witness recompute | six-path vector and production negative matrix | §3.2 |
-| NOTE-KEY-SUBGROUP | canonical, curve, non-identity, prime subgroup | `assertPrimeSubgroupPoint` in all relevant circuits | `DecodeCanonicalPoint`, `ValidatePrimeSubgroupPoint` | `Note.ValidateV1` | address/envelope decode | crypto decoder and circuit subgroup tests | §3.4 |
-| ACTIVE-PREFIX | slots are exactly `[0,count)` | `exactActivePrefix` | vector count validation | `MsgBatchTransfer` count bounds | `PlanBatchTransfer`, prepared-payload validation | production positive/negative/property matrices | §4.3 |
-| INPUT-MEMBERSHIP | 16 independent depth-32 paths share one root | gated path loop | NoteV1 tree helper | same-root path query | local/query path provider | `invalid_merkle_path`, non-boolean helper, same-root round-trip | §4.3, §8.3 |
-| NULLIFIER-DISTINCT | active input nullifiers pairwise differ | active-pair checks | vector validation | local/global duplicate guards | planner/preparer duplicate guards | `TestJoinSplitCircuitRejectsExactDuplicateInputInflation`, `TestBatchJoinSplit16x32RejectsExactDuplicateInputInflation`, host pre-proof rejection, and cross-message rollback | §4.3 |
-| COMMITMENT-DISTINCT | active outputs pairwise differ | active-pair checks | vector validation | `HasCommitment`/`AppendCommitment` | existing preflight patterns | circuit duplicate plus Deposit/2x2/Batch global collision tests | §4.3, §8.1 |
-| VALUE-CONSERVATION | 64-bit active sums equal | range/sum constraints | shielded amount validation | handler relies on verified proof | planner/preparer totals and roles | overflow and conservation negative cases | §4.3 |
-| OWNER-INTENT | one owner signs exact batch effect | one EdDSA verifier | `ComputeBatchTransferIntentV1` | frozen 12-value witness | structured signing-request validation | invalid signature and intent mutation cases; direct proof | §4.2 |
-| CHAIN-EXPIRY | chain/circuit domain and expiry proof-bound | intent inputs, limb/range checks | chain-domain and batch-intent helpers | context domain and host expiry rejection | prepared payload/proof expiry validation | domain/limb/expiry matrix and wrong-chain/expired core cases | §4.2 |
-| USER-DISCLOSURE | exact selected fields, asset, policy, and two-stage user value | 32 raw digest + 32 user-value constraints | `ComputeBatchUserDisclosureDigestV1`, `ComputeBatchUserDisclosureVectorRootV1` | fixed plaintext validation | per-output plaintext/encryption builder | golden/helper tests and production disclosure-root/blinding negative cases | §5.1–§5.2 |
-| FULL-DISCLOSURE | complete per-output evidence | 32 digest constraints | `ComputeBatchFullDisclosureDigestV1` | fixed plaintext validation | audit/self-view builders | production full-root/digest/blinding negative cases | §5.3 |
-| PAYLOAD-BINDING | ciphertext/metadata substitution changes public limbs | public payload limbs and signed intent | canonical production message helpers | keeper reuses exact encoder | canonical effect/signing-request checks | independent golden/effect mutations; wrong-payload core rejection | §4.2, §7.1 |
-| BATCH-EFFECT-ID | stable proof/relayer-independent ID | not required in-circuit | `ComputeBatchEffectIDV1` | typed/minimal summary | conformance helper | independent golden and creator/proof/order regression | §7.2 |
-| ATOMIC-STATE | no writes before proof; one all-or-nothing effect | proof authorizes state | — | nested keeper cache | result semantics | proof/scan failure and cross-message full rollback tests | §12 |
-| SCAN-CURSOR | summary-driven lossless resume and exact event-prefixed records | — | cursor comparison | `PrivacyScan`, typed state | scanner cursor | cursor/zero-output tests; `TestPrivacyScanV2RejectsCorruptExactOutputContracts` | §7.4, §8.2 |
-| RESOURCE-BOUND | CPU, bytes, state and queue are bounded | fixed capacities | `ComputeBatchGasV1` | formula/bounds | admission/body limit | gas overflow/bound and admission tests | §9.2–§9.3 |
-| GLOBAL-COMMITMENT-UNIQUE | one commitment has one global leaf index | active distinctness | canonical field validation | commitment index/append | existing preflight patterns | Deposit/2x2/Batch/genesis collision tests | §8.1 |
-| ASSET-REGISTRY | denom/ID is authoritative 1:1 state | one asset field | `ComputeAssetIDV1` | `AssetRegistryV1` queries/state | registry lookup | collision/re-registration/corruption tests | §3.3 |
-| DISCLOSURE-BLINDING | per-slot `DBS-01..03`, exact all-private/disabled sentinels; broader global freshness is separate | Batch: 96 gated inequalities; production 2x2: three output-0 inequalities + all-private sentinel | `ValidateDisclosureBlindingSeparationV1`; digest helpers | 2x2 prepared validator; keeper relies on proof because raw secrets are not on wire | collision-retrying builders; `JoinSplitOwnerIntentSigningRequestV1` commitment/digest projection validated before callback | conformance vectors, production legacy-control/hardened negatives, `TestJoinSplitStructuredSigningBoundaryRejectsDisclosureReuseBeforeRelease`, `TestJoinSplitStructuredSigningBoundaryRejectsDecoupledPrivateProjectionBeforeRelease`, artifact identity gates, and batch reuse/zero cases | §5.4 |
-| AUDIT-IDENTITY | bounded canonical ID, positive epoch, canonical target point | payload-bound by digest/intent | `ValidateAuditKeyIDV1`, canonical point decoder | exact chain config and typed records | prepared payload and payroll evidence identity | partial-state fail closed and ID/epoch/target mismatch tests | §7.1, §7.4 |
-| GLOBAL-SCAN-SEQUENCE | all privacy effects share one sequence | — | allocation helper | global sequence/index | cursor consumer | Deposit/2x2/Batch and genesis continuity tests | §8.2 |
-| ARTIFACT-CONSENSUS-IDENTITY | local artifact identity equals consensus | public schema is frozen | schema/manifest digest helpers | genesis circuit identity | role-aware registry | mismatch/override tests and development artifact gate | §9.1 |
-
-## 14. Residual risks and explicit non-goals
+## 12. Residual risks and explicit non-goals
 
 - The batch chain core and batch reference Go client/prover/scanner/payroll/CLI surfaces passed the independent publication validation and are approved for experimental source publication. `PUBLICATION_READY_EXPERIMENTAL` is not `PRODUCTION_RELEASE_READY`; downstream JS/TS or product integration, a production audit, source/constraint freeze, formal trusted setup, signed production artifact provenance, and production rollout remain outstanding.
 - Development setup artifacts are not production trust anchors and are never committed. Their recorded checksums identify only this chain-core gate run.
-- Peak RSS was `3,354,689,536 B` (about 3.12 GiB) on the fresh max-shape reference run for independent publication validation. Lazy loading bounds unnecessary artifact residence but does not provide process-level hard isolation.
 - A client cancellation cannot stop gnark proving. Production process isolation, worker recycling, memory limits, and overload operations remain required.
 - Ciphertext decryptability is not proven. Auditor-key compromise, key-epoch rotation, and manual review of failed delivery remain operational risks.
 - Public input/output counts, timing, roots, batch grouping, and the minimal summary remain public metadata.
@@ -861,9 +765,8 @@ Production coverage is explicit. `TestBatchJoinSplit16x32ProductionPositiveMatri
 - Current Deposit and JoinSplit2x2 still retain their existing event compatibility behavior. The production batch path alone uses the minimal-event rule; this is not a claim that every legacy event was redesigned.
 - The batch chain core supplies conservative gas coefficients. Per-chain calibration/governance limits, new-asset registration governance, and long-run state-pruning policy remain deferred, but no represented work category is unmetered.
 
-There are no unresolved Critical or High batch protocol contract design findings, and the batch chain core made no decision change to the frozen protocol. The items above are residual operational/release risks, not permission to weaken the security constraints or reduce the 16/32 capacity silently.
 
-## 15. Authoritative code and fixtures
+## 13. Authoritative code and fixtures
 
 - Note/domain/tree helpers: `x/privacy/types/note_v1.go`
 - Batch statement/vector/disclosure/effect helpers: `x/privacy/types/batch_contract.go`; exact effect encoding/digest: `x/privacy/types/batch_payload.go`

@@ -8,25 +8,23 @@ source_repo: github.com/DELIGHT-LABS/clairveil
 
 Contents:
 - root license, notice, changelog, contribution, and security files
-- English and Korean durable knowledge pairs, documentation index, and plan status index
+- English and Korean current-knowledge pairs and the documentation index
 - proto/clairveil/privacy/v1
-- getting-started, architecture, client, JS/web wallet, and scan optimization handoff documents
-- current BatchJoinSplit16x32, bulk product handoff, reference payroll, and readiness materials
+- getting-started, architecture, circuit, BatchJoinSplit16x32, CLI, testing, and localnet documents
+- downstream Cosmos integration, JS/web wallet, and reference payroll/control-plane implementation contracts
+- common/deposit prover HTTP contracts and the remote prover operations profile
+- operations, Merkle restore, threat model, and maintainer documents
 - language-neutral prover HTTP API schema and separate wallet-facing JSON schemas
-- general prover HTTP, deposit prover, and wallet conformance fixtures
+- prover HTTP, deposit prover, NoteV1, batch, reservation, relay, and wallet conformance fixtures
 - JS audit disclosure key, fixture validator, prover HTTP client, and reference payroll examples
 - prover Dockerfile and compose sample
 - release pack generation and verification scripts
-- release, circuit, CLI, testing, operations, downstream integration, client, JS SDK, scan optimization, prover, Merkle restore, threat model, security, and reference app documents
-- NoteV1 and BatchJoinSplit16x32 foundation contracts and independent golden fixtures
-- BatchJoinSplit16x32 independent publication validation, benchmark, localnet, finding, and residual-risk reports
-- current tracked plan ledgers and source-repo readiness commands; superseded plans excluded
-- release versioning policy and release note templates
 
 Validation before handoff:
 - make docs-check
-- make release-check
-- make privacy-bulk-readiness-check from the source checkout when doing extra bulk-readiness rehearsal
+- make release-check (includes the static one-proof contract gate and a live legacy multi-message regression, but not the live one-proof gate)
+- RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet before claiming live one-proof integration readiness
+- make privacy-bulk-readiness-check from the source checkout for extra synthetic/legacy bulk diagnostics, not one-proof capacity evidence
 - RUN_PROVER_SCALE=1 PROVERD_URLS=url1,url2 make privacy-bulk-readiness-check before making prover-pool scale claims
 - make release-pack
 - make release-pack-verify
@@ -40,7 +38,8 @@ Notes:
   must not be published as a release.
 - scripts/release-pack-paths.txt selects pack paths and
   scripts/release-pack-required-files.txt defines exact required membership.
-- Ignored tmpdocs archives and superseded phase-1 plans are not release inputs.
+- Ignored tmpdocs archives are not release inputs.
+- A one-proof 16x32 production-capacity claim additionally requires a tag/commit-bound actual-workload artifact recording proof/sec, tx/sec, item/sec, RSS/CPU, shape distribution, retry/replan/manual-review outcomes, and circuit/artifact/environment identity. Synthetic and legacy results cannot be relabeled as that evidence.
 - Downstream production apps must still own EVM/policy/precompile integration,
   audit private key custody, wallet storage encryption, artifact signing, and
   remote prover deployment policy.

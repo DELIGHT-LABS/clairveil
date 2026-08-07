@@ -45,232 +45,33 @@ Documentation describes the code at the same checkout. When integrating a tag or
 
 ## Quick Start
 
-Prerequisites are Git, Make, Go `1.25.12`, Python `3.9+`, Bash, and—when running repository CI/example checks—Node.js `22+` with npm. The repository does not pin minimum Git or Make versions. Verify the tools you will use before initialization:
-
-```bash
-git --version
-make --version
-go version
-python3 --version
-bash --version
-node --version
-npm --version
-```
-
-Read the [Getting started guide](docs/clairveil-getting-started.md) before generating the full circuit set; it also covers resource requirements, ports, environment variables, and cleanup.
+Use Git, Make, Go `1.25.12`, Python `3.9+`, and Bash; repository CI/example checks also need Node.js `22+` and npm. Read the [getting started guide](docs/clairveil-getting-started.md) for resource requirements before generating the full circuit set.
 
 ```bash
 git clone https://github.com/DELIGHT-LABS/clairveil.git
 cd clairveil
 make init
-```
-
-Start the node with:
-
-```bash
 source ~/.clairveil/clairveil.env
 clairveild start
 ```
+
+The [getting started guide](docs/clairveil-getting-started.md) continues through configuration, manual deposit/transfer/disclosure/withdraw, one-proof batch execution, and cleanup.
 
 ## Validation
 
-Code and example validation can run without a running node.
-
 ```bash
 make ci
 ```
 
-`make ci` runs documentation checks, Go tests, binary builds, and JS example checks. It does not connect to a `clairveild start` node.
+This runs documentation checks, Go tests, binary builds, and JS example checks without a running node. `make privacy-e2e-smoke` starts its own temporary local chain for the full privacy flow. See the [testing guide](docs/clairveil-testing-guide.md) for port overrides, live batch gates, and release/capacity evidence.
 
-To follow the full privacy flow manually on a local node, use the [Local walkthrough](docs/clairveil-local-privacy-walkthrough.md).
+## Integration And Documentation
 
-To validate the same flow automatically, run:
+Start with the [documentation index](docs/README.md) for architecture, protocol, CLI, SDK/prover contracts, and operations/security references.
 
-```bash
-make privacy-e2e-smoke
-```
-
-This target creates a separate temporary home and starts its own local node. If a `clairveild start` node is already using the active default RPC, P2P, or gRPC ports (`26657`, `26656`, or `9090`), stop that node first or use e2e port overrides. REST is disabled in the generated `app.toml`; its configured `1317` address binds only when the API is explicitly enabled.
-
-## Build
-
-```bash
-make build
-```
-
-Main binaries:
-
-| Binary | Role |
-| --- | --- |
-| `clairveild` | reference chain daemon |
-| `clairveil-setup` | ZK artifact generator |
-| `clairveil-verify` | legacy-only note decryption/debug helper; incompatible with current typed notes |
-| `clairveil-proverd` | companion prover HTTP service |
-| `clairveil-payroll` | reference payroll planning, reservation, reconcile, and report CLI |
-| `clairveil-payrolld` | reference payroll scheduler/daemon surface |
-| `clairveil-benchreport` | benchmark report renderer |
-| `clairveil-proverload` | external prover load benchmark tool |
-| `clairveil-localnetload` | localnet load metric converter |
-| `clairveil-userlatency` | wallet/user latency trace summarizer |
-| `clairveil-bulktransferbench` | synthetic bulk-transfer capacity simulator |
-
-You can also build each binary directly:
-
-```bash
-go build ./cmd/clairveild
-go build ./cmd/clairveil-setup
-go build ./cmd/clairveil-verify
-go build ./cmd/clairveil-proverd
-go build ./cmd/clairveil-payroll
-go build ./cmd/clairveil-payrolld
-go build ./cmd/clairveil-benchreport
-go build ./cmd/clairveil-proverload
-go build ./cmd/clairveil-localnetload
-go build ./cmd/clairveil-userlatency
-go build ./cmd/clairveil-bulktransferbench
-```
-
-Install built binaries into the Go install path:
-
-```bash
-make install
-```
-
-`make install` uses `go env GOBIN` when set. Otherwise it uses `$(go env GOPATH)/bin`.
-
-It installs the six listed project binaries: `clairveild`, `clairveil-setup`, `clairveil-verify`, `clairveil-proverd`, `clairveil-payroll`, and `clairveil-payrolld`. Five belong to the current runtime/reference flow; `clairveil-verify` is installed only as a legacy debugging helper and cannot decrypt or validate current `privacy-fixed-v1` typed notes. Benchmark/load tools are built by `make build` but are not installed by `make install`; install one explicitly with `go install ./cmd/<tool-name>` when needed.
-
-## Local Chain Initialization
-
-Initialize the default local home `~/.clairveil`:
-
-```bash
-make init
-```
-
-What it does:
-
-- Runs `make install` first.
-- Backs up an existing `~/.clairveil` to `~/.clairveil.backup-YYYYMMDD-HHMMSS`.
-- Runs `clairveild init`, `keys add`, `add-genesis-account`, `gentx`, `collect-gentxs`, and `validate`.
-- Creates `alice`, `bob`, `relayer`, and `auditor` test keys, then sets the auditor disclosure public key as the genesis audit master key.
-- Generates ZK artifacts under `~/.clairveil/artifacts/privacy` and writes `~/.clairveil/clairveil.env`.
-
-Start:
-
-```bash
-source ~/.clairveil/clairveil.env
-clairveild start
-```
-
-Common overrides:
-
-```bash
-CLAIRVEIL_HOME=/tmp/clairveil-home make init
-CHAIN_ID=my-local-chain make init
-CLAIRVEIL_INIT_ACCOUNTS="alice bob relayer auditor" make init
-```
-
-## Testing
-
-For the usual full development check, run:
-
-```bash
-make ci
-```
-
-`make ci` does not require a running local node.
-
-You can also run individual checks:
-
-```bash
-make test
-make localnet-smoke
-make privacy-e2e-smoke
-make reference-payroll-demo
-make reference-payroll-live-localnet
-make reference-payroll-rehearsal
-```
-
-`make localnet-smoke` and `make privacy-e2e-smoke` start their own validation nodes. If a node is already using the active default RPC, P2P, or gRPC ports, the smoke tests can collide with it. Include `1317` in the collision check only when REST was explicitly enabled.
-
-Before creating a release commit and tag:
-
-```bash
-make release-check
-```
-
-After creating the annotated exact-SemVer tag at that commit, generate and verify the final artifact:
-
-```bash
-make release-pack
-make release-pack-verify
-```
-
-See the [Testing guide](docs/clairveil-testing-guide.md) for the test layers and target meanings.
-
-## Using Clairveil From Another Project
-
-During early integration, using a local `replace` is usually fastest:
-
-```go
-require github.com/DELIGHT-LABS/clairveil v0.4.0
-
-replace github.com/DELIGHT-LABS/clairveil => ../clairveil
-```
-
-Once release tags are available, pin a tag or commit:
-
-```bash
-go get github.com/DELIGHT-LABS/clairveil@<tag-or-commit>
-go mod tidy
-```
-
-A downstream Cosmos SDK app must wire `x/privacy`, proto, keeper dependencies, module accounts, genesis audit key, and CLI/API routes into its own app. Use the [Downstream integration guide](docs/clairveil-downstream-cosmos-integration-guide.md) as the baseline.
-
-## CLI Overview
-
-Representative privacy CLI commands:
-
-```bash
-clairveild tx privacy show-address --from alice --keyring-backend test --output json
-clairveild tx privacy deposit 10uclair --from alice --keyring-backend test
-clairveild tx privacy transfer <clairs1...> 7uclair --from alice --keyring-backend test
-clairveild tx privacy list-notes --from alice --keyring-backend test --json
-clairveild tx privacy withdraw 7uclair --from alice --keyring-backend test
-```
-
-Command purposes, major flags, and output shapes are documented in the [CLI reference](docs/clairveil-cli-reference.md).
-
-## Document Map
-
-| Document | Purpose |
-| --- | --- |
-| [Complete documentation index](docs/README.md) | Canonical document map, lifecycle, language-pair, and release rules |
-| [Plan status index](plans/README.md) | Active and completed implementation plans, with legacy archive boundary |
-| [Getting started](docs/clairveil-getting-started.md) | Prerequisites, resources, initialization, configuration, and troubleshooting |
-| [Architecture](docs/clairveil-architecture.md) | Components, trust boundaries, state, and transaction data flow |
-| [Reference app](plans/clairveild-reference-app-plan.md) | Design intent and current status of the `clairveild` reference host |
-| [Local walkthrough](docs/clairveil-local-privacy-walkthrough.md) | Manually run deposit, transfer, disclosure, and withdraw on a local node |
-| [Circuit guide](docs/clairveil-circuits.md) | What the Spend/JoinSplit circuits prove and do not prove |
-| [CLI reference](docs/clairveil-cli-reference.md) | Usage of `clairveild tx/query privacy` commands |
-| [Testing guide](docs/clairveil-testing-guide.md) | Unit, e2e, conformance, and release validation |
-| [Operations guide](docs/clairveil-operations-guide.md) | Node, prover, artifact, Merkle, and audit operations baseline |
-| [Proverd HTTP API](docs/clairveil-proverd-http-api.md) | Canonical `clairveil-proverd` proof-route API reference |
-| [Maintainer instructions](docs/clairveil-maintainer-instructions.md) | Maintenance rules for docs, circuits, proto, fixtures, and releases |
-| [Downstream integration](docs/clairveil-downstream-cosmos-integration-guide.md) | How to attach `x/privacy` to a Cosmos SDK app |
-| [Client product brief](docs/clairveil-client-product-brief.md) | Product capability scope for wallet/app clients |
-| [Client UX flows](docs/clairveil-client-ux-flows.md) | Setup, scan, transfer, withdraw, disclosure, and recovery flows |
-| [Client risk decisions](docs/clairveil-client-risk-decisions.md) | Storage, prover, audit, disclosure, and telemetry decisions |
-| [Client API checklist](docs/clairveil-client-api-checklist.md) | Chain/prover APIs, fixtures, release gates, and compatibility checks |
-| [JS SDK handoff](docs/clairveil-js-sdk-handoff.md) | Contract for JS/TS SDK and web wallet implementation |
-| [Scan optimization plan](plans/clairveil-scan-optimization-implementation-plan.md) | Implemented note scan optimization scope and excluded future work |
-| [Reference payroll product](docs/clairveil-reference-payroll-product.md) | Payroll control-plane, localnet tutorial, and rehearsal reference product |
-| [Prover profile](docs/clairveil-proverd-remote-production-profile.md) | Remote operation profile for `clairveil-proverd` |
-| [Merkle restore SOP](docs/clairveil-merkle-restore-sop.md) | Tree verification after snapshot, restore, or migration |
-| [Threat model](docs/clairveil-threat-model.md) | Trust boundaries, assets, and residual risks |
-| [Security review](docs/clairveil-security-best-practices-review.md) | Pre-production security checkpoints |
-| [Release handoff](docs/clairveil-release-handoff-pack.md) | Artifacts and validation steps for downstream teams |
+- Cosmos app integration: [downstream guide](docs/clairveil-downstream-cosmos-integration-guide.md).
+- Reference payroll contracts and demo: [payroll example](examples/reference-payroll/README.md).
+- Contribution and release rules: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Security
 

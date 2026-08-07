@@ -39,7 +39,7 @@ downstream Cosmos app 또는 clairveild ---- optional HTTP ----> clairveil-prove
 | `cmd/clairveil-payroll*` | Reference payroll control plane과 daemon |
 | `proto/clairveil/privacy/v1` | Public Msg, Query, genesis wire API |
 | `scripts/` | Setup, localnet/e2e, evidence, benchmark, release automation |
-| `docs/`, `plans/`, `tmpdocs/` | 현재 지식, 구현 계획, ignored archive/draft |
+| `docs/`, `tmpdocs/` | 현재 공개 지식과 ignored plan/archive/draft |
 
 ## 3. Consensus state
 
@@ -85,7 +85,7 @@ Prepared prover request에는 private note witness가 들어 있습니다. Same-
 
 ### 6.1 Deposit proving 경계
 
-Deposit proving은 local 또는 `POST /v1/prover/deposit`을 사용합니다. Client가 note, commitment, encrypted note를 구성하고 remote prover는 versioned circuit witness만 받아 commitment를 재계산하여 commitment-bound proof를 반환합니다. Client는 response를 검증한 뒤 `MsgDeposit`을 조립·서명합니다. Envelope와 nested payload/proof version은 분리됩니다. Transport policy는 [general HTTP API](clairveil-proverd-http-api-kr.md), route wire contract는 [deposit API](clairveil-proverd-deposit-api-kr.md)가 소유합니다.
+Deposit proving은 local 또는 `POST /v1/prover/deposit`을 사용합니다. Client가 note, commitment, encrypted note를 구성하고 remote prover는 versioned circuit witness만 받아 commitment를 재계산하여 commitment-bound proof를 반환합니다. Client는 response를 검증한 뒤 `MsgDeposit`을 조립·서명합니다. Envelope와 nested payload/proof version은 분리됩니다. Transport policy는 [general HTTP API](clairveil-proverd-http-api-kr.md), route wire contract는 [deposit API](clairveil-proverd-http-api-kr.md#deposit)가 소유합니다.
 
 Wallet은 typed chain data를 scan하고 note decrypt를 시도해 ownership을 복구합니다. `view_tags`는 untrusted performance hint일 뿐입니다. Client는 cursor 저장, rescan, prepared payload/note cache 암호화가 필요하고 nullifier query를 privacy-sensitive하게 다뤄야 합니다.
 
@@ -100,6 +100,6 @@ Wallet은 typed chain data를 scan하고 note decrypt를 시도해 ownership을 
 1. 실행 동작은 compiled proto/message/query definition과 keeper validation
 2. Frozen cross-language encoding은 normative circuit contract, schema, conformance fixture
 3. Command surface는 CLI help와 CLI reference
-4. 배경과 역사는 current guide와 completed plan record
+4. Integration 배경과 운영 맥락은 current guide
 
-Release file membership은 `scripts/release-pack-paths.txt`와 `scripts/release-pack-required-files.txt`만 정의합니다. [Release policy](clairveil-release-versioning-policy-kr.md)와 [maintainer instructions](clairveil-maintainer-instructions-kr.md)를 참고하세요.
+Release file membership은 `scripts/release-pack-paths.txt`와 `scripts/release-pack-required-files.txt`만 정의합니다. [Maintainer instructions](../CONTRIBUTING-kr.md)를 참고하세요.

@@ -27,6 +27,7 @@ Clairveil은 depth 32 단일 Merkle tree를 fixed-capacity pool로 사용합니�
 
 ```text
 commitment = MiMC(
+  domain_field("clairveil.note-commitment.v1"),
   spend_pubkey_x,
   spend_pubkey_y,
   view_pubkey_x,
@@ -36,6 +37,8 @@ commitment = MiMC(
   randomness
 )
 ```
+
+Domain label 파생과 정확한 argument 순서는 [BatchJoinSplit16x32 계약](clairveil-batch-joinsplit-16x32-kr.md#32-commitment-nullifier-tree)이 authoritative하며, 이 가이드는 해당 NoteV1 계약을 그대로 따릅니다.
 
 이 commitment는 on-chain leaf로 저장됩니다. amount, asset, randomness, spend/view public key는 직접 공개되지 않고 commitment에 묶입니다.
 
@@ -63,13 +66,13 @@ commitment = MiMC(
 
 ### 증명하는 것
 
-1. `Commitment = MiMC(spend_pubkey, view_pubkey, Amount, AssetID, Randomness)`입니다.
+1. `Commitment = MiMC(domain_field("clairveil.note-commitment.v1"), spend_pubkey_x, spend_pubkey_y, view_pubkey_x, view_pubkey_y, Amount, AssetID, Randomness)`이며, 위의 canonical NoteV1 수식과 정확히 같습니다.
 2. shielded public key point가 circuit point로 유효합니다.
 3. `Amount`가 64-bit shielded amount bound 안에 있습니다.
 
 ### 증명하지 않는 것
 
-- 회로가 bank transfer를 수행하지는 않습니다. Keeper가 transparent fund를 lock하고, proof를 검증하고, reserve accounting을 기록하고, commitment를 append하는 일을 한 transaction 안에서 처리합니다.
+- 회로가 bank transfer를 수행하지는 않습니다. Keeper는 cache context를 만들거나 bank, reserve, tree, event, index state를 변경하기 전에 proof를 검증합니다. 검증 성공 뒤 cache context에서 bank transfer → optional module-balance delta check → reserve record → commitment와 indexed event append → `writeCache()` atomic commit 순서로 처리합니다.
 - 회로가 note를 암호화하지 않습니다. `encrypted_note` 전달은 SDK/CLI 책임입니다.
 
 ## 4. SpendCircuit
@@ -214,125 +217,25 @@ transfer는 mandatory audit disclosure를 항상 포함해야 합니다. 회로�
 - disclosure recipient 또는 master auditor는 자신이 가진 disclosure key로 payload를 복호화할 수 있습니다.
 - 복호화한 payload는 digest 검증을 통해 on-chain transfer output과 연결됩니다.
 
-## 6. Artifact
+## 6. Artifact와 유지보수
 
-`clairveil-setup`은 아래 development artifact를 생성합니다. Active circuit set은 `privacy-note-v1`입니다.
+`clairveil-setup`은 `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1` 각각의 R1CS, proving key, verifying key와 `privacy_zk_manifest.json`, `privacy_zk_checksums.env`를 생성합니다. Manifest의 순서 있는 identity는 consensus와 같아야 하며 checksum 환경변수로 덮어쓸 수 없습니다. Validator는 필요한 VK를, prover는 선택한 R1CS/PK pair를 lazy load합니다. 생성한 binary와 secret은 commit하지 않습니다.
 
-| 파일                         | 의미                               |
-| ---------------------------- | ---------------------------------- |
-| `privacy_deposit_r1cs.bin`   | DepositCircuit constraint system   |
-| `privacy_deposit_pk.bin`     | DepositCircuit proving key         |
-| `privacy_deposit_vk.bin`     | DepositCircuit verifying key       |
-| `privacy_spend_r1cs.bin`     | SpendCircuit constraint system     |
-| `privacy_spend_pk.bin`       | SpendCircuit proving key           |
-| `privacy_spend_vk.bin`       | SpendCircuit verifying key         |
-| `privacy_joinsplit_r1cs.bin` | JoinSplitCircuit constraint system |
-| `privacy_joinsplit_pk.bin`   | JoinSplitCircuit proving key       |
-| `privacy_joinsplit_vk.bin`   | JoinSplitCircuit verifying key     |
-| `privacy_batch_joinsplit_16x32_r1cs.bin` | BatchJoinSplit16x32 constraint system |
-| `privacy_batch_joinsplit_16x32_pk.bin` | BatchJoinSplit16x32 proving key |
-| `privacy_batch_joinsplit_16x32_vk.bin` | BatchJoinSplit16x32 verifying key |
-| `privacy_zk_checksums.env`   | runtime checksum env               |
-| `privacy_zk_manifest.json`   | JSON artifact manifest             |
+생성, strict preflight, 선택적 development rotation과 배포는 [운영 가이드](clairveil-operations-guide-kr.md)를 따릅니다. Artifact identity, compatibility, development hash는 [프로토콜 계약](clairveil-batch-joinsplit-16x32-kr.md)에 있습니다. Development artifact는 formal trusted setup이나 signed production release가 아닙니다.
 
-생성 예:
+회로 변경 시 proof builder/verifier, 영향받는 proto/CLI/schema, conformance fixture, release 영향도 함께 갱신합니다. [기여 체크리스트](../CONTRIBUTING-kr.md)와 [테스트 가이드](clairveil-testing-guide-kr.md)를 따르고 shared native/prepared/structured-signer invariant test도 실행합니다.
 
-```bash
-go build -o clairveil-setup ./cmd/clairveil-setup
-./clairveil-setup --out artifacts/privacy
-```
-
-Complete development artifact set에서 JoinSplit만 회전할 때는 다음을 사용합니다.
-
-```bash
-./clairveil-setup --out artifacts/privacy --circuit joinsplit --overwrite
-```
-
-runtime에서는 아래 환경변수를 사용합니다.
-
-```bash
-set -a
-source artifacts/privacy/privacy_zk_checksums.env
-set +a
-export CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict
-```
-
-`privacy_zk_manifest.json` schema `v2`는 정확한 ordered circuit descriptor, VK SHA-256, public-input schema SHA-256을 기록합니다. Genesis/consensus state는 대응하는 `CircuitSetIdentity` schema `v1`을 고정하며 local checksum environment variable은 이를 override할 수 없습니다. Node는 serving 전에 local verifier identity와 consensus를 비교합니다. Validator는 네 required VK만 lazy load하고 prover는 proving 시 R1CS/PK를 load합니다. Mismatch는 startup/readiness를 막습니다. Generated R1CS/PK/VK binary와 secret은 commit하지 않습니다.
-
-batch chain core development artifact gate는 아래 batch artifact identity를 기록했습니다. 이는 측정한 development artifact의 identity이며 formal setup이나 production artifact release가 아닙니다.
-
-| 항목 | 기록값 |
-| --- | --- |
-| Constraints | `1,111,837` |
-| R1CS | `122,813,535 B`, SHA-256 `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210` |
-| Proving key | `209,218,621 B`, SHA-256 `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470` |
-| Verifying key | `716 B`, SHA-256 `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621` |
-| Public-input schema | SHA-256 `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333` |
-| Generation peak RSS | `3,308,797,952 B` |
-| Validator/prover readiness peak RSS | `1,295,482,880 B` |
-
-여기서 생성하는 setup은 development 전용입니다. 이 repo는 formal trusted setup, artifact signing ceremony, production artifact release, external audit를 수행하거나 주장하지 않습니다.
-
-`DISCLOSURE-BLINDING-SEPARATION` batch chain core 구현은 active circuit set `privacy-note-v1`, JoinSplit 13-input 순서/schema hash `4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82`, payload `v5`, proof/HTTP `v2`를 유지합니다. `privacy_joinsplit_{r1cs,pk,vk}.bin`만 회전했으며 development SHA-256은 각각 `135528343084d9395ac3b59f87eb32661471751d936424c6aa3bc369483292d4`, `b41790cd96c41b78d7f7ca30f81cb76f4bdb93371bbf0b9437642348306c16d7`, `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`입니다. Old JoinSplit proof job을 폐기하고 fresh genesis/reset을 사용해야 합니다. Batch artifact는 unchanged입니다.
-
-## 7. Reserve accounting query
-
-Circuit soundness는 keeper-level reserve accounting과 함께 검증해야 합니다. Keeper는 denom별 `total_deposited`, `total_withdrawn`을 기록하고, 기대 reserve(`total_deposited - total_withdrawn`)와 실제 privacy module-account balance를 비교합니다.
-
-```text
-GET /clairveil/privacy/v1/reserve/{denom}
-```
-
-`invariant_holds=false`는 direct bank send, manual top-up, migration 작업 이후 특히 incident signal로 취급해야 합니다.
-
-## 8. 회로 변경 시 해야 할 일
-
-회로를 바꾸면 아래를 한 commit 또는 연속 commit으로 정리해야 합니다.
-
-1. `x/privacy/circuit` 테스트를 갱신합니다.
-2. prover payload builder와 verifier input shape가 바뀌는지 확인합니다.
-3. `proto`, CLI JSON, fixture schema 영향이 있으면 함께 갱신합니다.
-4. JS/web wallet conformance fixture를 다시 생성하고 검증합니다.
-5. Shared native/prepared/structured-signer invariant vector와 2x2 old-circuit-control 대비 hardened-circuit feasibility test를 실행합니다.
-6. `docs/clairveil-circuits-kr.md`, `docs/clairveil-js-sdk-handoff-kr.md`, release note impact를 갱신합니다.
-7. `make ci`, `make privacy-e2e-smoke`를 통과시킵니다. Packaging 완비성은 clean committed snapshot에서 `make release-pack-verify`로 확인하고, release 때는 최종 annotated exact-SemVer tagged commit에서 다시 실행합니다.
-
-## 9. 주의할 한계
+## 7. 주의할 한계
 
 - Native `JoinSplitCircuit`은 fixed 2-input/2-output 모델을 유지하고, `BatchJoinSplit16x32`는 별도 1..16-input/1..32-output 회로와 artifact입니다.
 - ciphertext delivery 자체는 회로가 직접 증명하지 않고 digest binding과 off-chain verification으로 검증합니다.
 - production 배포에서는 artifact signing, reproducible generation, release provenance가 추가로 필요합니다.
 - Keeper는 cheap canonical Groth16 framing이 통과한 뒤 decode, VK load, pairing 전에 proof verification gas를 precharge합니다. Deposit/spend/joinsplit은 현재 attempt당 각각 `1,000,000` gas를 charge합니다. Cryptographically invalid proof도 full precharge를 소비하고 malformed framing은 소비하지 않습니다.
 
-## 10. NoteV1과 batch chain core
+## 8. BatchJoinSplit16x32
 
-Active circuit set은 `privacy-note-v1`이고 required descriptor 순서는 `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`입니다. 네 회로, keeper tree, typed scan state는 하나의 domain-separated NoteV1 commitment/nullifier/tree 계약, canonical field/key 검사, exact depth-specific empty root를 공유합니다. Denom string은 circuit에 들어가지 않습니다. `AssetRegistryV1`이 32-byte `asset_id`에 대한 authoritative one-to-one mapping입니다. 이 변경은 breaking state/artifact transition이므로 fresh genesis, artifact 재생성, proof/note/scan cache 삭제, full rescan이 필요합니다.
+Batch 회로는 exact active prefix와 zero disabled sentinel, 독립적인 depth-32 membership path, canonical subgroup key, active input/output distinctness, 64-bit value conservation, output별 user/full disclosure digest, owner signature 하나로 input 1..16개와 output 1..32개를 증명합니다. Deposit, Spend, JoinSplit2x2와 NoteV1 relation을 공유합니다.
 
-Canonical plaintext와 encrypted payload는 `privacy-fixed-v1`을 사용합니다. Note plaintext는 fixed 350 bytes, disclosure plaintext는 fixed 392 bytes이며 exact encryption payload 앞에는 20-byte typed envelope header가 붙습니다. Raw ciphertext, cross-kind decode, trailing-byte decode는 invalid입니다. `DISCLOSURE-BLINDING-SEPARATION`은 disclosure output별 user-vs-note, full-vs-note, full-vs-user inequality와 exact all-private/disabled gating을 요구합니다. Batch는 active output slot별로 이를 강제합니다. Production 2x2도 output 0 relation을 circuit, shared native/prepared validator와 structured pre-sign boundary에서 강제하고 JoinSplit development identity를 회전했습니다. `DISCLOSURE-BLINDING-SEPARATION`과 security, protocol, chain-core, client-integration gates의 fresh closure는 완료됐고 독립 공개 검증이 이 boundary를 검증했습니다. 이는 cross-output global freshness까지 과장하지 않으면서 low-entropy disclosed value의 실용적 dictionary oracle을 막습니다.
+`DISCLOSURE-BLINDING-SEPARATION`은 output별 user-vs-note, full-vs-note, full-vs-user inequality와 exact all-private/disabled gating을 강제합니다. Production 2x2는 output-0 relation을 circuit과 shared native/prepared/structured signing validation에서 강제합니다. SDK 전체의 secret freshness는 별도의 더 강한 정책입니다.
 
-`BatchJoinSplit16x32`는 이제 네 번째 production circuit입니다. batch protocol contract에서 고정한 capacity 16/32, exact active prefix, zero disabled sentinel, 16개 independent depth-32 path, subgroup/key constraint, active-only distinctness, value conservation, output별 NoteV1/user/full-disclosure 검사, single owner signature를 그대로 유지합니다. Consensus public-input 순서는 아래와 같습니다.
-
-1. `MerkleRoot`
-2. `ChainDomainHi`
-3. `ChainDomainLo`
-4. `ExpiresAtUnix`
-5. `InputCount`
-6. `OutputCount`
-7. `NullifierRoot`
-8. `CommitmentRoot`
-9. `UserDisclosureRoot`
-10. `FullDisclosureRoot`
-11. `PayloadDigestHi`
-12. `PayloadDigestLo`
-
-각 vector kind의 fixed-capacity leaf, node, final root는 domain-separated됩니다. Leaf는 `(index, enabled, value)`, node는 `(level, left, right)`, final root는 `(capacity, count, tree_root)`를 bind합니다. 이 공식과 순서는 public-input schema SHA-256 `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`인 live consensus contract입니다.
-
-`MsgBatchTransfer`와 structured `BatchTransferOutput`은 registered production proto/type입니다. Owner-effect format `1`은 root, ordered nullifier, ordered output effect field 전체, audit ID/epoch/target, expiry에 `u32be` count와 `u32be(length) || bytes` framing을 사용합니다. SHA-256 domain `clairveil.batch-transfer-payload.v1`의 앞/뒤 non-reduced big-endian 128-bit limb가 public input 11–12입니다. `creator`와 `proof`만 제외합니다. Keeper는 12개 public value 전체를 derive하고 canonical/global nullifier·commitment 검사를 수행하며, cheap framing 뒤 semantic/cryptographic work 전에 deterministic gas를 precharge합니다. Proof 성공 뒤 nullifier, commitment, root snapshot, typed scan record, minimal ABCI/event-index summary를 하나의 cache-context write로 commit합니다.
-
-`BatchGasModelV1`은 verification base `1,000,000`, input당 `25,000`, output당 `50,000`, canonical payload byte당 `4`, typed-state byte당 `8`, tree-node write당 `5,000`, global lookup당 `10,000` gas를 부과합니다. Bound는 canonical payload `65,384` bytes, typed scan state `256 KiB`, tree write `output_count * 33`, global lookup `input_count + output_count`입니다. Out-of-gas는 semantic/state work 전에 중단합니다.
-
-Deposit, native 2x2 JoinSplit, batch transfer는 `privacy-sequence-v1` 순서와 `privacy-scan-v2` typed state를 공유합니다. Ciphertext/disclosure byte는 `PrivacyScanOutputV2`에 한 번만 저장하고 batch event에는 effect ID, count, root, version, expiry, relayer, audit identity만 둡니다. `TestBatchTransferDirectCoreIntegration`, `TestBatchTransferCoreRejectionsAndAtomicScanFailure`, `TestCrossMessageNullifierFailureRollsBackWholeCosmosTxCache`가 direct core success, atomic failure, 2x2+batch/batch+batch rollback을 검증합니다.
-
-batch chain core에는 public batch-transfer Go SDK, `clairveil-proverd` batch route, wallet scanner/decrypt UX, one-proof payroll planner/worker/reconcile integration, batch CLI/tutorial이 포함되지 않았습니다. 이 reference Go surface는 이후 batch reference integration에서 구현하고 closure했습니다. 독립 공개 검증은 live payroll/disclosure, 실제 SQLite/PostgreSQL, signer, resource, fuzz, race, release gate를 독립 재실행해 experimental source publication을 승인했습니다. Formal trusted setup, external audit, signed production artifact 배포는 수행하지 않았습니다.
-
-Artifact registry는 role-aware입니다. Validator는 exact consensus identity를 검증하고 필요한 VK만 load하며 prover는 선택한 R1CS/PK pair를 lazy load합니다. Reference prover는 현재 circuit별 in-flight 1개와 queued 4개로 제한하고 positive 8 MiB body limit을 사용합니다. Request cancellation은 이미 실행 중인 in-process gnark solver를 종료하지 못합니다. Hard cancellation과 memory isolation에는 worker-process boundary가 필요합니다. Automatic prover failover는 계속 비활성화됩니다.
+12개 public input과 그 순서, vector domain, canonical owner-effect byte, fixed payload, gas coefficient, typed scan state, atomic keeper 순서는 [프로토콜 계약](clairveil-batch-joinsplit-16x32-kr.md)을 단일 기준으로 사용합니다. 변경에는 circuit identity, golden vector, compatibility 검토 갱신이 필요합니다. 잔여 disclosure·운영 위험은 [threat model](clairveil-threat-model-kr.md)에 있습니다.

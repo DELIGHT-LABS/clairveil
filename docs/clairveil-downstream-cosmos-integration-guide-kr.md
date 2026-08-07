@@ -74,10 +74,10 @@ GET /clairveil/privacy/v1/merkle_path/{commitment_hex}
 GET /clairveil/privacy/v1/audit_config
 GET /clairveil/privacy/v1/disclosure_config
 GET /clairveil/privacy/v1/circuit_config
-GET /clairveil/privacy/v1/reserve/{denom}
+GET /clairveil/privacy/v1/reserve/{denom=**}
 GET /clairveil/privacy/v1/nullifiers
 POST /clairveil/privacy/v1/nullifiers
-GET /clairveil/privacy/v1/assets/by_denom/{canonical_denom}
+GET /clairveil/privacy/v1/assets/by_denom/{canonical_denom=**}
 GET /clairveil/privacy/v1/assets/by_id/{asset_id_hex}
 POST /clairveil/privacy/v1/privacy_scan
 POST /clairveil/privacy/v1/commitment_paths_at_root
@@ -213,7 +213,7 @@ resp, err := app.PrivacyKeeper.DepositWithFunder(ctx, msg, escrow)
 - Parsed `MsgDeposit.Amount`의 amount가 EVM `msg.value`와 정확히 같고 denom이 runtime native denom과 같은지 확인합니다.
 - Keeper API 호출 전에 downstream-specific EVM-to-Cosmos address mapping과 expected address length를 검증합니다.
 
-Canonical deposit core는 bank, reserve, tree, event, index mutation을 nested SDK cache에서 실행합니다. Core failure는 이 cache를 폐기하고 success는 caller의 parent context에만 반영합니다. Downstream adapter는 EVM value transfer, `DepositWithFunder`, 이후 policy check 전체를 하나의 outer SDK/EVM rollback boundary로 감싸야 하며, 뒤늦은 policy failure에서도 escrow, module balance, 모든 Clairveil state와 event를 복구해야 합니다.
+Canonical deposit core는 nested SDK cache를 만들거나 bank, reserve, tree, event, index state를 변경하기 전에 proof를 검증합니다. 검증 성공 뒤 해당 cache에서 bank transfer → optional module-balance delta check → reserve record → commitment와 indexed event append → atomic cache commit 순서로 처리합니다. Core failure는 이 cache를 폐기하고 success는 caller의 parent context에만 반영합니다. Downstream adapter는 EVM value transfer, `DepositWithFunder`, 이후 policy check 전체를 하나의 outer SDK/EVM rollback boundary로 감싸야 하며, 뒤늦은 policy failure에서도 escrow, module balance, 모든 Clairveil state와 event를 복구해야 합니다.
 
 ## 6. Genesis audit key
 
@@ -353,13 +353,13 @@ query privacy check-nullifier
 query privacy reserve uclair
 ```
 
-나머지 `tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, batch `nullifiers` query는 gRPC/HTTP gateway로 제공됩니다. Downstream chain에서 운영자 CLI가 필요하면 이 query들을 별도 CLI wrapper로 추가하면 됩니다.
+나머지 `tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `assets/by_denom/{canonical_denom=**}`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, batch `nullifiers` query는 gRPC/HTTP gateway로 제공됩니다. Downstream chain에서 운영자 CLI가 필요하면 이 query들을 별도 CLI wrapper로 추가하면 됩니다.
 
 ## 9. Downstream 테스트 순서
 
 ### 9.1 Deposit proof 획득 경계
 
-공식 remote acquisition route는 [deposit API](clairveil-proverd-deposit-api-kr.md)와 공통 [HTTP API](clairveil-proverd-http-api-kr.md)가 정의하는 `POST /v1/prover/deposit`입니다. Downstream client는 local proving 또는 이 route 호출을 선택할 수 있지만 encrypted note를 계산·보관하고 `MsgDeposit`을 조립·서명·전파해야 합니다. Prover는 versioned witness를 검증하고 proof를 반환할 뿐 denom을 선택하거나 transaction metadata를 만들거나 keeper verification을 대체하지 않습니다. Ad-hoc handler 대신 auth/admission/no-store 공통 경계를 보존합니다.
+공식 remote acquisition route는 [deposit API](clairveil-proverd-http-api-kr.md#deposit)와 공통 [HTTP API](clairveil-proverd-http-api-kr.md)가 정의하는 `POST /v1/prover/deposit`입니다. Downstream client는 local proving 또는 이 route 호출을 선택할 수 있지만 encrypted note를 계산·보관하고 `MsgDeposit`을 조립·서명·전파해야 합니다. Prover는 versioned witness를 검증하고 proof를 반환할 뿐 denom을 선택하거나 transaction metadata를 만들거나 keeper verification을 대체하지 않습니다. Ad-hoc handler 대신 auth/admission/no-store 공통 경계를 보존합니다.
 
 처음부터 target chain의 모든 기능과 섞지 말고 아래 순서로 올리는 것을 권장합니다.
 
@@ -368,7 +368,7 @@ query privacy reserve uclair
 3. Downstream node에서 `init`, genesis account, gentx, collect-gentxs, `start`가 되는지 확인합니다.
 4. Genesis에 audit master pubkey를 넣고 첫 블록 이후 gRPC/HTTP gateway의 `audit_config`가 값을 반환하는지 확인합니다.
 5. Downstream CLI로 `show-address`, `deposit`, `list-notes`를 먼저 검증합니다.
-6. gRPC/HTTP gateway로 `tree_state`, `events`, `scan_events`, `merkle_path`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, `nullifiers`가 정상 응답하는지 확인합니다.
+6. gRPC/HTTP gateway로 `tree_state`, `events`, `scan_events`, `merkle_path`, `disclosure_config`, `circuit_config`, `reserve/{denom=**}`, `assets/by_denom/{canonical_denom=**}`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, `nullifiers`가 정상 응답하는지 확인합니다.
 7. `transfer`와 `decode-transfer-disclosure`로 user disclosure와 audit disclosure를 검증합니다.
 8. `withdraw`, `prepare-withdraw`, `relay-withdraw`로 direct/relayed withdraw를 검증합니다.
 9. 마지막에 EVM/policy/precompile 연동 e2e를 추가하고 actor provenance, fixed escrow, exact `msg.value`/native-denom binding, trusted deposit 성공 뒤 outer rollback을 검증합니다.
@@ -384,7 +384,7 @@ query privacy reserve uclair
 - audit master private key를 개발용 keyring/test mnemonic 기준으로 운영하면 disclosure custody boundary가 무너집니다.
 - web wallet이 note cache나 prepared payload를 plaintext browser storage와 telemetry에 남기면 shielded UX의 실질 privacy가 크게 약해집니다.
 - module account 권한 또는 blocked address 정책이 잘못되면 deposit/withdraw bank transfer가 실패합니다.
-- direct bank send 또는 manual top-up이 기록된 deposit/withdraw accounting과 맞지 않으면 `reserve/{denom}`이 `invariant_holds=false`를 반환합니다.
+- direct bank send 또는 manual top-up이 기록된 deposit/withdraw accounting과 맞지 않으면 `reserve/{denom=**}`이 `invariant_holds=false`를 반환합니다.
 - downstream denom을 바꾸면 tutorial, smoke script, JS SDK fixture, conformance vector의 denom도 같이 바꿔야 합니다.
 - Genesis/state가 아직 three-circuit descriptor만 pin하거나 local artifact에 batch VK가 없으면 startup/readiness가 실패해야 합니다. `MsgBatchTransfer`를 켜기 위해 identity check를 우회하면 안 됩니다.
 
@@ -395,7 +395,7 @@ Downstream 통합은 아래가 모두 통과하면 1차 완료로 봅니다.
 - downstream daemon이 privacy store, keeper, module, query gateway, tx command를 포함해서 build됩니다.
 - genesis에 privacy state와 audit master pubkey가 들어갑니다.
 - local single-node에서 deposit, transfer, disclosure decode, withdraw가 모두 통과합니다.
-- `tree_state`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, `nullifiers` query가 정상 응답합니다.
+- `tree_state`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom=**}`, `assets/by_denom/{canonical_denom=**}`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, `nullifiers` query가 정상 응답합니다.
 - Four-circuit identity, batch development artifact readiness, direct core integration, deterministic gas, atomic rollback, typed scan/minimal-event test가 통과합니다.
 - Integration record는 구현된 batch integration용 Go SDK/prover/wallet/payroll/CLI reference surface와 downstream product가 맡을 작업을 구분하고, formal production artifact는 제공되지 않음을 명시합니다.
 - audit master private key custody policy가 production 운영 문서에 반영되어 있습니다.
