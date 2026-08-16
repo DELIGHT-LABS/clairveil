@@ -258,24 +258,28 @@ func (d LiveDaemon) broadcastProofReady(ctx context.Context, group LiveOperation
 		}
 		return err
 	}
-	prepared, reason, err := d.Executor.PrepareBroadcastProofReady(ctx, group)
-	if err != nil {
-		if errors.Is(err, ErrLiveDaemonSkip) {
-			report.Skipped++
-			report.Items = append(report.Items, liveDaemonItem(group, "skipped", privacyreservation.StatusProofReady, group.Operation.Status, false, firstNonEmptyString(reason, err.Error())))
-			return nil
-		}
-		return err
-	}
-	if prepared == nil || prepared.Submit == nil {
-		return fmt.Errorf("live executor returned nil broadcast submission")
-	}
-	if !broadcastHasAttemptIdentity(&prepared.Identity) {
-		return fmt.Errorf("live executor returned prepared broadcast without durable tx identity")
-	}
 	submitInvoked := false
 	terminalFailureRecorded := false
-	_, err = broadcastWithSubmissionLeaseHeartbeat(ctx, d.Reservation, refs, d.leaseTTL(), func(broadcastCtx context.Context, commit submissionLeaseCommit, _ submissionLeaseRefresh) (*BroadcastResult, error) {
+	reason := ""
+	_, err = broadcastWithSubmissionLeaseHeartbeat(ctx, d.Reservation, refs, d.leaseTTL(), func(broadcastCtx context.Context, commit submissionLeaseCommit, refresh submissionLeaseRefresh) (*BroadcastResult, error) {
+		// Preparation can include account lookup, gas estimation, and signing.
+		// Keep the ProofReady lease live for that whole interval: otherwise a
+		// second daemon can reclaim the operation before the durable attempt is
+		// recorded and sign a conflicting transaction sequence.
+		if err := refresh(); err != nil {
+			return nil, err
+		}
+		prepared, prepareReason, prepareErr := d.Executor.PrepareBroadcastProofReady(broadcastCtx, group)
+		reason = prepareReason
+		if prepareErr != nil {
+			return nil, prepareErr
+		}
+		if prepared == nil || prepared.Submit == nil {
+			return nil, fmt.Errorf("live executor returned nil broadcast submission")
+		}
+		if !broadcastHasAttemptIdentity(&prepared.Identity) {
+			return nil, fmt.Errorf("live executor returned prepared broadcast without durable tx identity")
+		}
 		attemptReservations, attemptOperations, markErr := d.Reservation.MarkBroadcastAttempting(broadcastCtx, refs, []string{group.Operation.OperationID}, privacyreservation.BroadcastAttemptStart{
 			Reason:          "live payroll broadcast boundary crossed",
 			TxHash:          prepared.Identity.TxHash,
@@ -327,6 +331,11 @@ func (d LiveDaemon) broadcastProofReady(ctx context.Context, group LiveOperation
 		return broadcast, nil
 	})
 	if err != nil {
+		if errors.Is(err, ErrLiveDaemonSkip) {
+			report.Skipped++
+			report.Items = append(report.Items, liveDaemonItem(group, "skipped", privacyreservation.StatusProofReady, group.Operation.Status, false, firstNonEmptyString(reason, err.Error())))
+			return nil
+		}
 		if !submitInvoked || !terminalFailureRecorded {
 			return err
 		}

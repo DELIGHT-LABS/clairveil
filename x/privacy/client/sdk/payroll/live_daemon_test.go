@@ -2,8 +2,10 @@ package payroll
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -337,6 +339,67 @@ func TestLiveDaemonMarksAttemptBeforeExternalBroadcast(t *testing.T) {
 	require.True(t, sawAttempt)
 }
 
+func TestLiveDaemonHeartbeatsLeaseWhilePreparingBroadcast(t *testing.T) {
+	ctx := context.Background()
+	preparing := &atomic.Bool{}
+	heartbeatDuringPrepare := make(chan struct{}, 1)
+	store := &livePrepareHeartbeatStore{
+		MemoryStore:            privacyreservation.NewMemoryStore(),
+		preparing:              preparing,
+		heartbeatDuringPrepare: heartbeatDuringPrepare,
+	}
+	now := func() time.Time { return time.Now().UTC() }
+	reservationService := privacyreservation.Service{Store: store, Now: now}
+	planner := Service{Reservation: reservationService, Now: now}
+
+	input := testPayrollInput()
+	input.Items[0].Amount = big.NewInt(70)
+	plan, err := planner.CreatePlan(ctx, input, []TreasuryNote{
+		testTreasuryNote("large", "uclair", 100, false, ""),
+		testTreasuryNote("zero", "uclair", 0, false, ""),
+	})
+	require.NoError(t, err)
+	confirmed, err := planner.ConfirmPlan(ctx, *plan)
+	require.NoError(t, err)
+
+	const leaseTTL = 40 * time.Millisecond
+	report, err := (LiveDaemon{
+		Reservation: reservationService,
+		Executor: testLiveExecutor{
+			item: confirmed.Items[0],
+			beforePrepare: func(ctx context.Context, group LiveOperationGroup) error {
+				preparing.Store(true)
+				defer preparing.Store(false)
+				select {
+				case <-heartbeatDuringPrepare:
+					// Stay in preparation for more than one full TTL. A broadcaster
+					// without a running heartbeat would now be reclaimable.
+					time.Sleep(2 * leaseTTL)
+					_, _, reclaimErr := reservationService.ReclaimExpiredOperation(
+						ctx,
+						group.Operation.OperationID,
+						referenceReservationIDs(group.Reservations),
+						privacyreservation.StatusProofReady,
+						"competing-live-worker",
+						leaseTTL,
+					)
+					if !errors.Is(reclaimErr, privacyreservation.ErrLeaseUnavailable) {
+						return fmt.Errorf("competing worker reclaimed a live preparing lease: %w", reclaimErr)
+					}
+					return nil
+				case <-time.After(5 * leaseTTL):
+					return fmt.Errorf("submission heartbeat did not run during broadcast preparation")
+				}
+			},
+		},
+		LeaseOwner: "live-worker-a",
+		LeaseTTL:   leaseTTL,
+		Now:        now,
+	}).RunOnce(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, report.Submitted)
+}
+
 func TestLiveDaemonSkipsReservedLeaseContention(t *testing.T) {
 	ctx := context.Background()
 	store := privacyreservation.NewMemoryStore()
@@ -636,8 +699,9 @@ func TestLiveDaemonMarksExpiredProvingReservationsReplanRequired(t *testing.T) {
 }
 
 type testLiveExecutor struct {
-	item         PayrollPlanItem
-	beforeSubmit func(context.Context, LiveOperationGroup) error
+	item          PayrollPlanItem
+	beforePrepare func(context.Context, LiveOperationGroup) error
+	beforeSubmit  func(context.Context, LiveOperationGroup) error
 }
 
 type skippingBroadcastExecutor struct {
@@ -708,7 +772,12 @@ func (e testLiveExecutor) BuildProofReady(context.Context, LiveOperationGroup) (
 	}, "test proof", nil
 }
 
-func (e testLiveExecutor) PrepareBroadcastProofReady(_ context.Context, group LiveOperationGroup) (*PreparedLiveBroadcast, string, error) {
+func (e testLiveExecutor) PrepareBroadcastProofReady(ctx context.Context, group LiveOperationGroup) (*PreparedLiveBroadcast, string, error) {
+	if e.beforePrepare != nil {
+		if err := e.beforePrepare(ctx, group); err != nil {
+			return nil, "test broadcast preparation", err
+		}
+	}
 	identity := BroadcastResult{TxHash: "TXHASH", TxBytesHash: "tx-bytes", SignDocHash: "sign-doc", AccountSequence: 3}
 	return &PreparedLiveBroadcast{Identity: identity, Submit: func(ctx context.Context) (*BroadcastResult, error) {
 		if e.beforeSubmit != nil {
@@ -718,6 +787,30 @@ func (e testLiveExecutor) PrepareBroadcastProofReady(_ context.Context, group Li
 		}
 		return &identity, nil
 	}}, "test broadcast", nil
+}
+
+type livePrepareHeartbeatStore struct {
+	*privacyreservation.MemoryStore
+	preparing              *atomic.Bool
+	heartbeatDuringPrepare chan<- struct{}
+}
+
+func (s *livePrepareHeartbeatStore) HeartbeatReservationLeaseForStatus(
+	ctx context.Context,
+	reservationID string,
+	leaseOwner string,
+	leaseToken string,
+	requiredStatus privacyreservation.ReservationStatus,
+	leaseUntil time.Time,
+	now time.Time,
+) (*privacyreservation.NoteReservation, error) {
+	if s.preparing.Load() {
+		select {
+		case s.heartbeatDuringPrepare <- struct{}{}:
+		default:
+		}
+	}
+	return s.MemoryStore.HeartbeatReservationLeaseForStatus(ctx, reservationID, leaseOwner, leaseToken, requiredStatus, leaseUntil, now)
 }
 
 func (e testLiveExecutor) ScanSubmitted(_ context.Context, group LiveOperationGroup) (map[string]privacyreservation.OperationEvidence, string, error) {
