@@ -124,12 +124,37 @@ func TestCosmosTxBroadcasterPreparedBroadcastUsesCallerContext(t *testing.T) {
 	require.Equal(t, strings.ToUpper(sha256Hex(txBytes)), result.TxHash)
 }
 
+func TestCosmosTxBroadcasterBuildSignedUsesCallerContextForAccountLookup(t *testing.T) {
+	encodingConfig := moduletestutil.MakeTestEncodingConfig()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	broadcaster := CosmosTxBroadcaster{
+		ClientContext: client.Context{}.
+			WithTxConfig(encodingConfig.TxConfig).
+			WithAccountRetriever(contextAwareAccountRetriever{}).
+			WithFromAddress(sdk.AccAddress(make([]byte, 20))).
+			WithFromName("test-account"),
+		Flags: pflag.NewFlagSet("test", pflag.ContinueOnError),
+	}
+
+	_, err := broadcaster.BuildSignedSDKMessages(ctx, testProviderMsg())
+	require.ErrorIs(t, err, context.Canceled)
+}
+
 type contextAwareCometRPC struct {
 	client.CometRPC
 }
 
 func (contextAwareCometRPC) BroadcastTxSync(ctx context.Context, _ cmttypes.Tx) (*coretypes.ResultBroadcastTx, error) {
 	return nil, ctx.Err()
+}
+
+type contextAwareAccountRetriever struct {
+	client.MockAccountRetriever
+}
+
+func (contextAwareAccountRetriever) EnsureExists(clientContext client.Context, _ sdk.AccAddress) error {
+	return clientContext.GetCmdContextWithFallback().Err()
 }
 
 func testProviderMsg() sdk.Msg {

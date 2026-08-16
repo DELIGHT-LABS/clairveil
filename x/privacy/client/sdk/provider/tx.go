@@ -54,6 +54,13 @@ func (b CosmosTxBroadcaster) PrepareFactory(msg sdk.Msg) (tx.Factory, error) {
 }
 
 func (b CosmosTxBroadcaster) PrepareFactoryForMessages(msgs ...sdk.Msg) (tx.Factory, error) {
+	return b.prepareFactoryForMessages(b.ClientContext, msgs...)
+}
+
+// prepareFactoryForMessages uses clientContext for every account and gas RPC.
+// BuildSignedSDKMessages supplies a copy carrying its caller context so
+// cancellation reaches preparation as well as the final BroadcastTx call.
+func (b CosmosTxBroadcaster) prepareFactoryForMessages(clientContext client.Context, msgs ...sdk.Msg) (tx.Factory, error) {
 	if len(msgs) == 0 {
 		return tx.Factory{}, fmt.Errorf("at least one sdk message is required to prepare a tx factory")
 	}
@@ -81,13 +88,13 @@ func (b CosmosTxBroadcaster) PrepareFactoryForMessages(msgs ...sdk.Msg) (tx.Fact
 		return tx.Factory{}, err
 	}
 
-	txf, _ := tx.NewFactoryCLI(b.ClientContext, b.Flags)
-	txf = txf.WithTxConfig(b.ClientContext.TxConfig).WithAccountRetriever(b.ClientContext.AccountRetriever)
+	txf, _ := tx.NewFactoryCLI(clientContext, b.Flags)
+	txf = txf.WithTxConfig(clientContext.TxConfig).WithAccountRetriever(clientContext.AccountRetriever)
 
-	if err := txf.AccountRetriever().EnsureExists(b.ClientContext, fromAddress); err != nil {
+	if err := txf.AccountRetriever().EnsureExists(clientContext, fromAddress); err != nil {
 		return txf, err
 	}
-	initNum, initSeq, err := txf.AccountRetriever().GetAccountNumberSequence(b.ClientContext, fromAddress)
+	initNum, initSeq, err := txf.AccountRetriever().GetAccountNumberSequence(clientContext, fromAddress)
 	if err != nil {
 		return txf, err
 	}
@@ -95,7 +102,7 @@ func (b CosmosTxBroadcaster) PrepareFactoryForMessages(msgs ...sdk.Msg) (tx.Fact
 
 	if txf.Gas() == flags.DefaultGasLimit || txf.Gas() == 0 {
 		txf = txf.WithGasAdjustment(1.5)
-		_, adjusted, err := tx.CalculateGas(b.ClientContext, txf, msgs...)
+		_, adjusted, err := tx.CalculateGas(clientContext, txf, msgs...)
 		if err != nil {
 			return txf, fmt.Errorf("failed to calculate tx gas: %w", err)
 		}
@@ -129,7 +136,11 @@ func (b CosmosTxBroadcaster) BroadcastSDKMessagesWithMetadata(ctx context.Contex
 // store Bytes before network submission and reuse them byte-for-byte after an
 // ambiguous response.
 func (b CosmosTxBroadcaster) BuildSignedSDKMessages(ctx context.Context, msgs ...sdk.Msg) (*CosmosSignedTx, error) {
-	txf, err := b.PrepareFactoryForMessages(msgs...)
+	clientContext := b.ClientContext
+	if ctx != nil {
+		clientContext = clientContext.WithCmdContext(ctx)
+	}
+	txf, err := b.prepareFactoryForMessages(clientContext, msgs...)
 	if err != nil {
 		return nil, err
 	}
