@@ -10,7 +10,7 @@ Required for the default repository workflow:
 
 | Tool | Baseline | Used by |
 | --- | --- | --- |
-| Go | `1.25.12` | Build, tests, binaries, circuit setup |
+| Go | `1.25.13` | Build, tests, binaries, circuit setup |
 | Python | `3.9+` | Init/release scripts and JSON validation |
 | Bash | `/bin/bash` | Make targets and scripts |
 | Git | No repository-pinned minimum | Clone, exact-ref docs, and release manifests |

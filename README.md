@@ -45,7 +45,7 @@ Documentation describes the code at the same checkout. When integrating a tag or
 
 ## Quick Start
 
-Prerequisites are Git, Make, Go `1.25.12`, Python `3.9+`, Bash, and—when running repository CI/example checks—Node.js `22+` with npm. The repository does not pin minimum Git or Make versions. Verify the tools you will use before initialization:
+Prerequisites are Git, Make, Go `1.25.13`, Python `3.9+`, Bash, and—when running repository CI/example checks—Node.js `22+` with npm. The repository does not pin minimum Git or Make versions. Verify the tools you will use before initialization:
 
 ```bash
 git --version

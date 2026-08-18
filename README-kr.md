@@ -43,7 +43,7 @@ Clairveil은 Cosmos SDK 체인에 붙일 수 있는 auditable shielded privacy c
 
 ## 빠른 시작
 
-필수 도구는 Git, Make, Go `1.25.12`, Python `3.9+`, Bash이며 repository CI/example 검증에는 Node.js `22+`와 npm도 필요합니다. Repository는 Git과 Make의 최소 version을 고정하지 않습니다. 초기화 전에 사용할 도구를 확인합니다.
+필수 도구는 Git, Make, Go `1.25.13`, Python `3.9+`, Bash이며 repository CI/example 검증에는 Node.js `22+`와 npm도 필요합니다. Repository는 Git과 Make의 최소 version을 고정하지 않습니다. 초기화 전에 사용할 도구를 확인합니다.
 
 ```bash
 git --version
