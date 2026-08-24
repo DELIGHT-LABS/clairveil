@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { validateClairveilWebClientConfig } from "clairveiljs/browser-dapp";
 import {
   serverBackedDappConfigPath,
   staticDappConfigPath,
@@ -142,17 +143,14 @@ function cspAllowsConnectSource(sources, source, pageOrigin) {
   );
 }
 
-function profilesFromWebAppConfig(config) {
+export function validateDeployedWebAppConfig(config) {
   const resolved = config?.config ?? config;
-  const profiles = resolved?.chainProfiles;
-  if (!Array.isArray(profiles) || !profiles.length) {
-    throw new Error("deployed WebApp config must contain a non-empty chainProfiles array");
+  try {
+    return validateClairveilWebClientConfig(resolved);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`deployed WebApp config is invalid: ${message}`);
   }
-  return profiles;
-}
-
-function resolvedWebAppConfig(config) {
-  return config?.config ?? config;
 }
 
 function assertDirectConfigResponse(response, expectedUrl) {
@@ -191,8 +189,7 @@ function addEndpoint(endpoints, seen, { profileId, label, kind, url }) {
   }
 }
 
-export function deploymentEndpoints(config) {
-  const profiles = profilesFromWebAppConfig(config);
+function deploymentEndpointsFromProfiles(profiles) {
   const endpoints = [];
   const seen = new Set();
   const ids = new Set();
@@ -278,6 +275,12 @@ export function deploymentEndpoints(config) {
     }
   }
   return endpoints;
+}
+
+export function deploymentEndpoints(config) {
+  return deploymentEndpointsFromProfiles(
+    validateDeployedWebAppConfig(config).chainProfiles,
+  );
 }
 
 function responseContentLength(response) {
@@ -509,7 +512,7 @@ export async function verifyProductionDeployment({
   } catch {
     throw new Error("WebApp config must return JSON");
   }
-  const resolvedConfig = resolvedWebAppConfig(config);
+  const resolvedConfig = validateDeployedWebAppConfig(config);
   const browserConfigPath = resolvedConfig?.serverBacked === true
     ? serverBackedDappConfigPath
     : resolvedConfig?.serverBacked === false
@@ -524,7 +527,7 @@ export async function verifyProductionDeployment({
       `WebApp verification must use the browser-loaded ${browserConfigPath} response`,
     );
   }
-  const endpoints = deploymentEndpoints(config);
+  const endpoints = deploymentEndpointsFromProfiles(resolvedConfig.chainProfiles);
   const connectSources = assertRestrictiveConnectSrc(csp);
   for (const source of new Set(endpoints.map((endpointValue) => endpointValue.url.origin))) {
     if (!cspAllowsConnectSource(connectSources, source, webAppOrigin)) {

@@ -6,37 +6,88 @@ import {
   assertRestrictiveFrameAncestors,
   assertRestrictiveScriptSrc,
   deploymentEndpoints,
+  validateDeployedWebAppConfig,
   verifyProductionDeployment,
 } from "../tools/verify-production-deployment.mjs";
 
-const deployedConfig = {
-  serverBacked: true,
-  chainProfiles: [
-    {
-      id: "cosmos-mainnet",
-      transport: "cosmos",
-      rest: "https://rest.example.com",
-      restEndpoints: [
-        "https://rest.example.com",
-        "https://rest-backup.example.com",
-      ],
-      rpc: "https://rpc.example.com",
-      proverUrl: "https://prover.example.com",
-      depositProofUrl: "https://deposit-proof.example.com/v1/prove",
-      keplrChainInfo: {
-        rest: "https://rest.example.com",
-        rpc: "https://rpc.example.com",
-      },
-    },
-    {
-      id: "evm-mainnet",
-      transport: "evm",
-      rest: "https://evm-rest.example.com",
-      rpc: "https://evm-host-rpc.example.com",
-      proverUrl: "https://evm-prover.example.com",
-      evmRpc: "https://evm-rpc.example.com",
-    },
+const cosmosProfile = {
+  id: "cosmos-mainnet",
+  label: "Cosmos Mainnet",
+  chainName: "Cosmos Mainnet",
+  transport: "cosmos",
+  wallet: "keplr",
+  chainId: "cosmos-mainnet-1",
+  rest: "https://rest.example.com",
+  restEndpoints: [
+    "https://rest.example.com",
+    "https://rest-backup.example.com",
   ],
+  rpc: "https://rpc.example.com",
+  proverUrl: "https://prover.example.com",
+  depositProofUrl: "https://deposit-proof.example.com/v1/prove",
+  accountPrefix: "clair",
+  shieldedPrefix: "clairs",
+  denom: "uclair",
+  displayDenom: "CLAIR",
+  coinDecimals: 18,
+  keplrCoinType: 118,
+  gasPriceStep: { low: 1, average: 1, high: 1 },
+  keplrChainInfo: {
+    chainId: "cosmos-mainnet-1",
+    chainName: "Cosmos Mainnet",
+    rest: "https://rest.example.com",
+    rpc: "https://rpc.example.com",
+    bip44: { coinType: 118 },
+    bech32Config: {
+      bech32PrefixAccAddr: "clair",
+      bech32PrefixAccPub: "clairpub",
+      bech32PrefixValAddr: "clairvaloper",
+      bech32PrefixValPub: "clairvaloperpub",
+      bech32PrefixConsAddr: "clairvalcons",
+      bech32PrefixConsPub: "clairvalconspub",
+    },
+    currencies: [{ coinDenom: "CLAIR", coinMinimalDenom: "uclair", coinDecimals: 18 }],
+    feeCurrencies: [{
+      coinDenom: "CLAIR",
+      coinMinimalDenom: "uclair",
+      coinDecimals: 18,
+      gasPriceStep: { low: 1, average: 1, high: 1 },
+    }],
+    stakeCurrency: { coinDenom: "CLAIR", coinMinimalDenom: "uclair", coinDecimals: 18 },
+    features: [],
+  },
+};
+
+const evmProfile = {
+  id: "evm-mainnet",
+  label: "EVM Mainnet",
+  chainName: "EVM Mainnet",
+  transport: "evm",
+  wallet: "metamask",
+  chainId: "evm-host-mainnet-1",
+  rest: "https://evm-rest.example.com",
+  rpc: "https://evm-host-rpc.example.com",
+  proverUrl: "https://evm-prover.example.com",
+  accountPrefix: "clair",
+  shieldedPrefix: "clairs",
+  denom: "aokrw",
+  displayDenom: "OKRW",
+  coinDecimals: 18,
+  evmRpc: "https://evm-rpc.example.com",
+  evmChainId: "0x539",
+  evmChainName: "EVM Mainnet",
+  evmPrivacyPrecompileAddress: "0x0000000000000000000000000000000000000808",
+  evmDepositMode: "payable-exact-value",
+  evmNativeDenom: "aokrw",
+  evmGasLimit: "0x2dc6c0",
+  evmSendGasLimit: "0x5208",
+};
+
+const deployedConfig = {
+  schemaVersion: "clairveil-web-client-config-v1",
+  serverBacked: true,
+  activeChainProfileId: cosmosProfile.id,
+  chainProfiles: [cosmosProfile, evmProfile],
 };
 
 const profileEnvironment = {
@@ -160,6 +211,27 @@ test("production gate enumerates every profile and REST failover", () => {
   );
 });
 
+test("production gate validates the complete browser configuration contract", () => {
+  const validated = validateDeployedWebAppConfig({ config: deployedConfig });
+  assert.equal(validated.activeProfile.id, cosmosProfile.id);
+
+  for (const invalidConfig of [
+    { ...deployedConfig, schemaVersion: "legacy" },
+    { ...deployedConfig, activeChainProfileId: "missing" },
+    {
+      ...deployedConfig,
+      chainProfiles: [{ ...cosmosProfile, denom: undefined }, evmProfile],
+    },
+    { ...deployedConfig, rpc: "https://different-rpc.example.com" },
+    { ...deployedConfig, unknownDeploymentField: true },
+  ]) {
+    assert.throws(
+      () => deploymentEndpoints(invalidConfig),
+      /deployed WebApp config is invalid/,
+    );
+  }
+});
+
 test("production gate rejects secret-bearing endpoint URLs", () => {
   for (const proverUrl of [
     "https://token:secret@prover.example.com",
@@ -174,7 +246,7 @@ test("production gate rejects secret-bearing endpoint URLs", () => {
     };
     assert.throws(
       () => deploymentEndpoints(invalidConfig),
-      /cosmos-mainnet\.proverUrl must be a valid HTTPS URL/,
+      /profile\.proverUrl must be an http\(s\) URL without query, fragment, or credentials/,
     );
   }
 });

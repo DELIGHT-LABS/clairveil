@@ -73,6 +73,11 @@ profile 목록이 아니라 browser가 실제로 받는 config를 검증합니�
 redirect 없이 직접 응답해야 하며 browser와 release gate는 redirect되었거나 final
 URL이 다른 configuration response를 거부합니다.
 
+Endpoint를 probe하기 전에 gate는 browser와 동일한 ClairveilJS
+`validateClairveilWebClientConfig(...)` contract를 실행합니다. 알 수 없는 schema
+version 또는 field, 찾을 수 없는 active profile, transport/wallet field 불일치,
+불완전한 profile metadata, 오래된 flattened compatibility field를 거부합니다.
+
 ```bash
 CLAIRVEIL_WEBAPP_ORIGIN=https://app.example.com \
 CLAIRVEIL_WEBAPP_CONFIG_URL=https://app.example.com/dapp-config.json \

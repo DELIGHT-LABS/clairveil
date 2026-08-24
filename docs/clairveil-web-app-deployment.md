@@ -124,6 +124,12 @@ copied profile list. The artifact must respond
 directly without a redirect; both the browser and the release gate reject a
 redirected or final-URL-mismatched configuration response.
 
+Before probing any endpoint, the gate runs the same ClairveilJS
+`validateClairveilWebClientConfig(...)` contract as the browser. It rejects an
+unknown schema version or field, an unresolved active profile, transport/wallet
+field mismatches, incomplete profile metadata, and stale flattened compatibility
+fields.
+
 ```bash
 CLAIRVEIL_WEBAPP_ORIGIN=https://app.example.com \
 CLAIRVEIL_WEBAPP_CONFIG_URL=https://app.example.com/dapp-config.json \
