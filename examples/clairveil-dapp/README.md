@@ -165,7 +165,7 @@ EVM profiles use MetaMask:
 
 ## Adding Chains
 
-Add default static chain profiles in `public/dapp-config.js`. This file does not decide whether the DApp is server-backed; it only provides the chain list the browser can use. The checked-in static default exposes the Cosmos/Keplr profile only. To show EVM/MetaMask in a static deployment, add an EVM profile to `chainProfiles` or provide it through `globalThis.CLAIRVEIL_DAPP_CONFIG`. In local server mode, the server can also return the same profile shape through `/api/config`.
+Add static chain profiles to `public/dapp-config.json`, which is the exact artifact the browser loads when `/api/health` is unavailable. The checked-in static default exposes the Cosmos/Keplr profile only. To show EVM/MetaMask in a static deployment, add a complete EVM profile to that file. In server-backed mode, the browser instead uses the config embedded in `/api/health`; `/api/config` is informational and is not the browser bootstrap source.
 
 EVM static profile example:
 

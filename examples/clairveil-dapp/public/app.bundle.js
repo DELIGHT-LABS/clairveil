@@ -4,11 +4,20 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __esm = (fn, res) => function __init() {
-  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+var __esm = (fn, res, err) => function __init() {
+  if (err) throw err[0];
+  try {
+    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+  } catch (e) {
+    throw err = [e], e;
+  }
 };
 var __commonJS = (cb, mod3) => function __require() {
-  return mod3 || (0, cb[__getOwnPropNames(cb)[0]])((mod3 = { exports: {} }).exports, mod3), mod3.exports;
+  try {
+    return mod3 || (0, cb[__getOwnPropNames(cb)[0]])((mod3 = { exports: {} }).exports, mod3), mod3.exports;
+  } catch (e) {
+    throw mod3 = 0, e;
+  }
 };
 var __export = (target, all) => {
   for (var name in all)
@@ -32,9 +41,9 @@ var __toESM = (mod3, isNodeMode, target) => (target = mod3 != null ? __create(__
 ));
 var __toCommonJS = (mod3) => __copyProps(__defProp({}, "__esModule", { value: true }), mod3);
 
-// ../../../clairveiljs/node_modules/@cosmjs/encoding/build/ascii.js
+// ../clairveiljs/node_modules/@cosmjs/encoding/build/ascii.js
 var require_ascii = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/encoding/build/ascii.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/encoding/build/ascii.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.toAscii = toAscii;
@@ -61,9 +70,9 @@ var require_ascii = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/base64-js/index.js
+// ../clairveiljs/node_modules/base64-js/index.js
 var require_base64_js = __commonJS({
-  "../../../clairveiljs/node_modules/base64-js/index.js"(exports) {
+  "../clairveiljs/node_modules/base64-js/index.js"(exports) {
     "use strict";
     exports.byteLength = byteLength;
     exports.toByteArray = toByteArray;
@@ -162,9 +171,9 @@ var require_base64_js = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/encoding/build/uint8array.js
+// ../clairveiljs/node_modules/@cosmjs/encoding/build/uint8array.js
 var require_uint8array = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/encoding/build/uint8array.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/encoding/build/uint8array.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.fixUint8Array = fixUint8Array;
@@ -182,9 +191,9 @@ var require_uint8array = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/encoding/build/base64.js
+// ../clairveiljs/node_modules/@cosmjs/encoding/build/base64.js
 var require_base64 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/encoding/build/base64.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/encoding/build/base64.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -240,7 +249,7 @@ var require_base64 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@scure/base/index.js
+// ../clairveiljs/node_modules/@scure/base/index.js
 var base_exports = {};
 __export(base_exports, {
   __TESTS: () => __TESTS,
@@ -652,7 +661,7 @@ function genBech32(encoding) {
 }
 var gcd, radix2carry, powers, utils, base16, base32, base32nopad, base32hex, base32hexnopad, base32crockford, hasBase64Builtin, ASCII_WHITESPACE, decodeBase64Builtin, base64, base64nopad, base64url, base64urlnopad, genBase58, base58, base58flickr, base58xrp, XMR_BLOCK_LEN, base58xmr, createBase58check, base58check, BECH_ALPHABET, POLYMOD_GENERATORS, bech32, bech32m, ascii, _isWellFormedShim, _isWellFormed, utf8Fallback, utf8, __TESTS, hasHexBuiltin, hexBuiltin, hex, CODERS, coderTypeError, bytesToString, str, stringToBytes, bytes;
 var init_base = __esm({
-  "../../../clairveiljs/node_modules/@scure/base/index.js"() {
+  "../clairveiljs/node_modules/@scure/base/index.js"() {
     gcd = (a, b) => b === 0 ? a : gcd(b, a % b);
     radix2carry = /* @__NO_SIDE_EFFECTS__ */ (from, to) => from + (to - gcd(from, to));
     powers = /* @__PURE__ */ (() => {
@@ -936,9 +945,9 @@ var init_base = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/encoding/build/bech32.js
+// ../clairveiljs/node_modules/@cosmjs/encoding/build/bech32.js
 var require_bech32 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/encoding/build/bech32.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/encoding/build/bech32.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.toBech32 = toBech324;
@@ -969,9 +978,9 @@ var require_bech32 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/encoding/build/hex.js
+// ../clairveiljs/node_modules/@cosmjs/encoding/build/hex.js
 var require_hex = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/encoding/build/hex.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/encoding/build/hex.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.toHex = toHex;
@@ -1001,9 +1010,9 @@ var require_hex = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/encoding/build/rfc3339.js
+// ../clairveiljs/node_modules/@cosmjs/encoding/build/rfc3339.js
 var require_rfc3339 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/encoding/build/rfc3339.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/encoding/build/rfc3339.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.fromRfc3339 = fromRfc3339;
@@ -1055,9 +1064,9 @@ var require_rfc3339 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/encoding/build/utf8.js
+// ../clairveiljs/node_modules/@cosmjs/encoding/build/utf8.js
 var require_utf8 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/encoding/build/utf8.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/encoding/build/utf8.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.toUtf8 = toUtf8;
@@ -1073,9 +1082,9 @@ var require_utf8 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/encoding/build/index.js
+// ../clairveiljs/node_modules/@cosmjs/encoding/build/index.js
 var require_build = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/encoding/build/index.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/encoding/build/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.toUtf8 = exports.fromUtf8 = exports.fixUint8Array = exports.toRfc3339 = exports.fromRfc3339 = exports.toHex = exports.fromHex = exports.toBech32 = exports.normalizeBech32 = exports.fromBech32 = exports.toBase64 = exports.fromBase64 = exports.toAscii = exports.fromAscii = void 0;
@@ -1131,9 +1140,9 @@ var require_build = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/utf8.js
+// ../clairveiljs/node_modules/cosmjs-types/utf8.js
 var require_utf82 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/utf8.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/utf8.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.utf8Length = utf8Length2;
@@ -1213,9 +1222,9 @@ var require_utf82 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/varint.js
+// ../clairveiljs/node_modules/cosmjs-types/varint.js
 var require_varint = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/varint.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/varint.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.varint64read = varint64read2;
@@ -1465,9 +1474,9 @@ var require_varint = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/binary.js
+// ../clairveiljs/node_modules/cosmjs-types/binary.js
 var require_binary = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/binary.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/binary.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BinaryWriter = exports.BinaryReader = exports.WireType = void 0;
@@ -1783,9 +1792,9 @@ var require_binary = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/helpers.js
+// ../clairveiljs/node_modules/cosmjs-types/helpers.js
 var require_helpers = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/helpers.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/helpers.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.setPaginationParams = void 0;
@@ -1917,9 +1926,9 @@ var require_helpers = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/google/protobuf/any.js
+// ../clairveiljs/node_modules/cosmjs-types/google/protobuf/any.js
 var require_any = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/google/protobuf/any.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/google/protobuf/any.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Any = exports.protobufPackage = void 0;
@@ -1987,9 +1996,9 @@ var require_any = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/google/protobuf/timestamp.js
+// ../clairveiljs/node_modules/cosmjs-types/google/protobuf/timestamp.js
 var require_timestamp = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/google/protobuf/timestamp.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/google/protobuf/timestamp.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Timestamp = exports.protobufPackage = void 0;
@@ -2059,9 +2068,9 @@ var require_timestamp = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/crypto/multisig/v1beta1/multisig.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/crypto/multisig/v1beta1/multisig.js
 var require_multisig = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/crypto/multisig/v1beta1/multisig.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/crypto/multisig/v1beta1/multisig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CompactBitArray = exports.MultiSignature = exports.protobufPackage = void 0;
@@ -2180,9 +2189,9 @@ var require_multisig = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/tx/signing/v1beta1/signing.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/tx/signing/v1beta1/signing.js
 var require_signing = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/tx/signing/v1beta1/signing.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/tx/signing/v1beta1/signing.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SignatureDescriptor_Data_Multi = exports.SignatureDescriptor_Data_Single = exports.SignatureDescriptor_Data = exports.SignatureDescriptor = exports.SignatureDescriptors = exports.SignMode = exports.protobufPackage = void 0;
@@ -2561,9 +2570,9 @@ var require_signing = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/base/v1beta1/coin.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/base/v1beta1/coin.js
 var require_coin = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/base/v1beta1/coin.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/base/v1beta1/coin.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DecProto = exports.IntProto = exports.DecCoin = exports.Coin = exports.protobufPackage = void 0;
@@ -2783,9 +2792,9 @@ var require_coin = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/tx/v1beta1/tx.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/tx/v1beta1/tx.js
 var require_tx = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/tx/v1beta1/tx.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/tx/v1beta1/tx.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AuxSignerData = exports.Tip = exports.Fee = exports.ModeInfo_Multi = exports.ModeInfo_Single = exports.ModeInfo = exports.SignerInfo = exports.AuthInfo = exports.TxBody = exports.SignDocDirectAux = exports.SignDoc = exports.TxRaw = exports.Tx = exports.protobufPackage = void 0;
@@ -3826,9 +3835,9 @@ var require_tx = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/decode.js
+// ../clairveiljs/node_modules/@cosmjs/proto-signing/build/decode.js
 var require_decode = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/decode.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/proto-signing/build/decode.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.decodeTxRaw = decodeTxRaw;
@@ -3844,9 +3853,9 @@ var require_decode = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/utils/build/arrays.js
+// ../clairveiljs/node_modules/@cosmjs/utils/build/arrays.js
 var require_arrays = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/utils/build/arrays.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/utils/build/arrays.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.arrayContentEquals = arrayContentEquals;
@@ -3872,9 +3881,9 @@ var require_arrays = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/utils/build/assert.js
+// ../clairveiljs/node_modules/@cosmjs/utils/build/assert.js
 var require_assert = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/utils/build/assert.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/utils/build/assert.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.assert = assert;
@@ -3898,9 +3907,9 @@ var require_assert = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/utils/build/sleep.js
+// ../clairveiljs/node_modules/@cosmjs/utils/build/sleep.js
 var require_sleep = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/utils/build/sleep.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/utils/build/sleep.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.sleep = sleep2;
@@ -3910,9 +3919,9 @@ var require_sleep = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/utils/build/typechecks.js
+// ../clairveiljs/node_modules/@cosmjs/utils/build/typechecks.js
 var require_typechecks = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/utils/build/typechecks.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/utils/build/typechecks.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isNonNullObject = isNonNullObject;
@@ -3938,9 +3947,9 @@ var require_typechecks = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/utils/build/index.js
+// ../clairveiljs/node_modules/@cosmjs/utils/build/index.js
 var require_build2 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/utils/build/index.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/utils/build/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isUint8Array = exports.isNonNullObject = exports.isDefined = exports.sleep = exports.assertDefinedAndNotNull = exports.assertDefined = exports.assert = exports.arrayContentStartsWith = exports.arrayContentEquals = void 0;
@@ -3978,7 +3987,7 @@ var require_build2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/hashes/_u64.js
+// ../clairveiljs/node_modules/@noble/hashes/_u64.js
 function fromBig(n, le = false) {
   if (le)
     return { h: Number(n & U32_MASK64), l: Number(n >> _32n & U32_MASK64) };
@@ -4000,7 +4009,7 @@ function add(Ah, Al, Bh, Bl) {
 }
 var U32_MASK64, _32n, shrSH, shrSL, rotrSH, rotrSL, rotrBH, rotrBL, rotr32H, rotr32L, rotlSH, rotlSL, rotlBH, rotlBL, add3L, add3H, add4L, add4H, add5L, add5H;
 var init_u64 = __esm({
-  "../../../clairveiljs/node_modules/@noble/hashes/_u64.js"() {
+  "../clairveiljs/node_modules/@noble/hashes/_u64.js"() {
     U32_MASK64 = /* @__PURE__ */ BigInt(2 ** 32 - 1);
     _32n = /* @__PURE__ */ BigInt(32);
     shrSH = (h, _l, s) => h >>> s;
@@ -4024,7 +4033,7 @@ var init_u64 = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/hashes/utils.js
+// ../clairveiljs/node_modules/@noble/hashes/utils.js
 function isBytes2(a) {
   return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array" && "BYTES_PER_ELEMENT" in a && a.BYTES_PER_ELEMENT === 1;
 }
@@ -4215,7 +4224,7 @@ function randomBytes(bytesLength = 32) {
 }
 var isLE, swap8IfBE, swap32IfBE, hasHexBuiltin2, hexes, asciis, nextTick, oidNist;
 var init_utils = __esm({
-  "../../../clairveiljs/node_modules/@noble/hashes/utils.js"() {
+  "../clairveiljs/node_modules/@noble/hashes/utils.js"() {
     isLE = /* @__PURE__ */ (() => new Uint8Array(new Uint32Array([287454020]).buffer)[0] === 68)();
     swap8IfBE = isLE ? (n) => n : (n) => byteSwap(n) >>> 0;
     swap32IfBE = isLE ? (u) => u : byteSwap32;
@@ -4235,10 +4244,10 @@ var init_utils = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/hashes/_blake.js
+// ../clairveiljs/node_modules/@noble/hashes/_blake.js
 var BSIGMA;
 var init_blake = __esm({
-  "../../../clairveiljs/node_modules/@noble/hashes/_blake.js"() {
+  "../clairveiljs/node_modules/@noble/hashes/_blake.js"() {
     BSIGMA = /* @__PURE__ */ Uint8Array.from([
       0,
       1,
@@ -4501,7 +4510,7 @@ var init_blake = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/hashes/_md.js
+// ../clairveiljs/node_modules/@noble/hashes/_md.js
 function Chi(a, b, c) {
   return a & b ^ ~a & c;
 }
@@ -4510,7 +4519,7 @@ function Maj(a, b, c) {
 }
 var HashMD, SHA256_IV, SHA224_IV, SHA384_IV, SHA512_IV;
 var init_md = __esm({
-  "../../../clairveiljs/node_modules/@noble/hashes/_md.js"() {
+  "../clairveiljs/node_modules/@noble/hashes/_md.js"() {
     init_utils();
     HashMD = class {
       blockLen;
@@ -4667,7 +4676,7 @@ var init_md = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/hashes/blake2.js
+// ../clairveiljs/node_modules/@noble/hashes/blake2.js
 function G1b(a, b, c, d, msg, x) {
   const Xl = msg[x], Xh = msg[x + 1];
   let Al = BBUF[2 * a], Ah = BBUF[2 * a + 1];
@@ -4720,7 +4729,7 @@ function checkBlake2Opts(outputLen, opts = {}, keyLen, saltLen, persLen) {
 }
 var B2B_IV, BBUF, _BLAKE2, _BLAKE2b, blake2b;
 var init_blake2 = __esm({
-  "../../../clairveiljs/node_modules/@noble/hashes/blake2.js"() {
+  "../clairveiljs/node_modules/@noble/hashes/blake2.js"() {
     init_blake();
     init_u64();
     init_utils();
@@ -4974,7 +4983,7 @@ var init_blake2 = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/hashes/argon2.js
+// ../clairveiljs/node_modules/@noble/hashes/argon2.js
 var argon2_exports = {};
 __export(argon2_exports, {
   argon2d: () => argon2d,
@@ -5297,7 +5306,7 @@ async function argon2Async(type, password, salt, opts) {
 }
 var AT, ARGON2_SYNC_POINTS, abytesOrZero, A2_BUF, maxUint32, argon2d, argon2i, argon2id, argon2dAsync, argon2iAsync, argon2idAsync;
 var init_argon2 = __esm({
-  "../../../clairveiljs/node_modules/@noble/hashes/argon2.js"() {
+  "../clairveiljs/node_modules/@noble/hashes/argon2.js"() {
     init_u64();
     init_blake2();
     init_utils();
@@ -5319,9 +5328,9 @@ var init_argon2 = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/crypto/build/argon2.js
+// ../clairveiljs/node_modules/@cosmjs/crypto/build/argon2.js
 var require_argon2 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/crypto/build/argon2.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/crypto/build/argon2.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Argon2id = void 0;
@@ -5363,10 +5372,10 @@ var require_argon2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/hashes/hmac.js
+// ../clairveiljs/node_modules/@noble/hashes/hmac.js
 var _HMAC, hmac;
 var init_hmac = __esm({
-  "../../../clairveiljs/node_modules/@noble/hashes/hmac.js"() {
+  "../clairveiljs/node_modules/@noble/hashes/hmac.js"() {
     init_utils();
     _HMAC = class {
       oHash;
@@ -5445,7 +5454,7 @@ var init_hmac = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/hashes/pbkdf2.js
+// ../clairveiljs/node_modules/@noble/hashes/pbkdf2.js
 function pbkdf2Init(hash, _password, _salt, _opts) {
   ahash(hash);
   const opts = checkOpts({ dkLen: 32, asyncTick: 10 }, _opts);
@@ -5513,13 +5522,13 @@ async function pbkdf2Async(hash, password, salt, opts) {
   return pbkdf2Output(PRF, PRFSalt, DK, prfW, u);
 }
 var init_pbkdf2 = __esm({
-  "../../../clairveiljs/node_modules/@noble/hashes/pbkdf2.js"() {
+  "../clairveiljs/node_modules/@noble/hashes/pbkdf2.js"() {
     init_hmac();
     init_utils();
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/hashes/sha2.js
+// ../clairveiljs/node_modules/@noble/hashes/sha2.js
 var sha2_exports = {};
 __export(sha2_exports, {
   _SHA224: () => _SHA224,
@@ -5537,7 +5546,7 @@ __export(sha2_exports, {
 });
 var SHA256_K, SHA256_W, SHA2_32B, _SHA256, _SHA224, K512, SHA512_Kh, SHA512_Kl, SHA512_W_H, SHA512_W_L, SHA2_64B, _SHA512, _SHA384, T224_IV, T256_IV, _SHA512_224, _SHA512_256, sha256, sha224, sha512, sha384, sha512_256, sha512_224;
 var init_sha2 = __esm({
-  "../../../clairveiljs/node_modules/@noble/hashes/sha2.js"() {
+  "../clairveiljs/node_modules/@noble/hashes/sha2.js"() {
     init_md();
     init_u64();
     init_utils();
@@ -6028,7 +6037,7 @@ var init_sha2 = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/hashes/webcrypto.js
+// ../clairveiljs/node_modules/@noble/hashes/webcrypto.js
 function _subtle() {
   const cr = typeof globalThis === "object" ? globalThis.crypto : null;
   const sb = cr?.subtle;
@@ -6074,13 +6083,13 @@ async function pbkdf22(hash, password, salt, opts) {
 }
 var sha5122;
 var init_webcrypto = __esm({
-  "../../../clairveiljs/node_modules/@noble/hashes/webcrypto.js"() {
+  "../clairveiljs/node_modules/@noble/hashes/webcrypto.js"() {
     init_utils();
     sha5122 = /* @__PURE__ */ createWebHash("SHA-512", 128, 64);
   }
 });
 
-// ../../../clairveiljs/node_modules/@scure/bip39/index.js
+// ../clairveiljs/node_modules/@scure/bip39/index.js
 var bip39_exports = {};
 __export(bip39_exports, {
   entropyToMnemonic: () => entropyToMnemonic,
@@ -6162,7 +6171,7 @@ function mnemonicToSeedWebcrypto(mnemonic, passphrase = "") {
 }
 var isJapanese, calcChecksum, psalt;
 var init_bip39 = __esm({
-  "../../../clairveiljs/node_modules/@scure/bip39/index.js"() {
+  "../clairveiljs/node_modules/@scure/bip39/index.js"() {
     init_pbkdf2();
     init_sha2();
     init_utils();
@@ -6177,14 +6186,14 @@ var init_bip39 = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@scure/bip39/wordlists/english.js
+// ../clairveiljs/node_modules/@scure/bip39/wordlists/english.js
 var english_exports = {};
 __export(english_exports, {
   wordlist: () => wordlist
 });
 var wordlist;
 var init_english = __esm({
-  "../../../clairveiljs/node_modules/@scure/bip39/wordlists/english.js"() {
+  "../clairveiljs/node_modules/@scure/bip39/wordlists/english.js"() {
     wordlist = /* @__PURE__ */ Object.freeze(`abandon
 ability
 able
@@ -8236,9 +8245,9 @@ zoo`.split("\n"));
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/crypto/build/bip39.js
+// ../clairveiljs/node_modules/@cosmjs/crypto/build/bip39.js
 var require_bip39 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/crypto/build/bip39.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/crypto/build/bip39.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Bip39 = exports.EnglishMnemonic = void 0;
@@ -8287,7 +8296,7 @@ var require_bip39 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/curves/utils.js
+// ../clairveiljs/node_modules/@noble/curves/utils.js
 function abool(value, title = "") {
   if (typeof value !== "boolean") {
     const prefix = title && `"${title}" `;
@@ -8450,7 +8459,7 @@ function validateObject(object3, fields = {}, optFields = {}) {
 }
 var abytes3, anumber3, bytesToHex2, concatBytes2, hexToBytes2, isBytes3, randomBytes2, _0n, _1n, isPosBig, bitMask, notImplemented;
 var init_utils2 = __esm({
-  "../../../clairveiljs/node_modules/@noble/curves/utils.js"() {
+  "../clairveiljs/node_modules/@noble/curves/utils.js"() {
     init_utils();
     abytes3 = (value, length, title) => abytes2(value, length, title);
     anumber3 = anumber2;
@@ -8469,7 +8478,7 @@ var init_utils2 = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/curves/abstract/modular.js
+// ../clairveiljs/node_modules/@noble/curves/abstract/modular.js
 function mod(a, b) {
   if (b <= _0n2)
     throw new Error("mod: expected positive modulus, got " + b);
@@ -8730,7 +8739,7 @@ function mapHashToField(key, fieldOrder, isLE3 = false) {
 }
 var _0n2, _1n2, _2n, _3n, _4n, _5n, _7n, _8n, _9n, _16n, isNegativeLE, FIELD_FIELDS, FIELD_SQRT, _Field;
 var init_modular = __esm({
-  "../../../clairveiljs/node_modules/@noble/curves/abstract/modular.js"() {
+  "../clairveiljs/node_modules/@noble/curves/abstract/modular.js"() {
     init_utils2();
     _0n2 = /* @__PURE__ */ BigInt(0);
     _1n2 = /* @__PURE__ */ BigInt(1);
@@ -8901,7 +8910,7 @@ var init_modular = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/curves/abstract/curve.js
+// ../clairveiljs/node_modules/@noble/curves/abstract/curve.js
 function validatePointCons(Point) {
   const pc = Point;
   if (typeof pc !== "function")
@@ -9076,7 +9085,7 @@ function createKeygen(randomSecretKey, getPublicKey) {
 }
 var _0n3, _1n3, pointPrecomputes, pointWindowSizes, wNAF;
 var init_curve = __esm({
-  "../../../clairveiljs/node_modules/@noble/curves/abstract/curve.js"() {
+  "../clairveiljs/node_modules/@noble/curves/abstract/curve.js"() {
     init_utils2();
     init_modular();
     _0n3 = /* @__PURE__ */ BigInt(0);
@@ -9218,7 +9227,7 @@ var init_curve = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/curves/abstract/edwards.js
+// ../clairveiljs/node_modules/@noble/curves/abstract/edwards.js
 function isEdValidXY(Fp2, CURVE, x, y) {
   const x2 = Fp2.sqr(x);
   const y2 = Fp2.sqr(y);
@@ -9657,7 +9666,7 @@ function eddsa(Point, cHash, eddsaOpts = {}) {
 }
 var _0n4, _1n4, _2n2, _8n2, PrimeEdwardsPoint;
 var init_edwards = __esm({
-  "../../../clairveiljs/node_modules/@noble/curves/abstract/edwards.js"() {
+  "../clairveiljs/node_modules/@noble/curves/abstract/edwards.js"() {
     init_utils2();
     init_curve();
     _0n4 = /* @__PURE__ */ BigInt(0);
@@ -9747,7 +9756,7 @@ var init_edwards = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/curves/abstract/fft.js
+// ../clairveiljs/node_modules/@noble/curves/abstract/fft.js
 function checkU32(n) {
   if (!Number.isSafeInteger(n) || n < 0 || n > 4294967295)
     throw new Error("wrong u32 integer:" + n);
@@ -9956,11 +9965,11 @@ function poly(field2, roots, create, fft, length) {
   };
 }
 var init_fft = __esm({
-  "../../../clairveiljs/node_modules/@noble/curves/abstract/fft.js"() {
+  "../clairveiljs/node_modules/@noble/curves/abstract/fft.js"() {
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/curves/abstract/hash-to-curve.js
+// ../clairveiljs/node_modules/@noble/curves/abstract/hash-to-curve.js
 function i2osp(value, length) {
   asafenumber(value);
   asafenumber(length);
@@ -10139,7 +10148,7 @@ function createHasher2(Point, mapToCurve, defaults) {
 }
 var os2ip, _DST_scalar;
 var init_hash_to_curve = __esm({
-  "../../../clairveiljs/node_modules/@noble/curves/abstract/hash-to-curve.js"() {
+  "../clairveiljs/node_modules/@noble/curves/abstract/hash-to-curve.js"() {
     init_utils2();
     init_modular();
     os2ip = bytesToNumberBE;
@@ -10147,7 +10156,7 @@ var init_hash_to_curve = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/curves/abstract/frost.js
+// ../clairveiljs/node_modules/@noble/curves/abstract/frost.js
 function createFROST(opts) {
   validateObject(opts, {
     name: "string",
@@ -10743,7 +10752,7 @@ function createFROST(opts) {
 }
 var validateSigners, validateCommitmentsNum, AggErr;
 var init_frost = __esm({
-  "../../../clairveiljs/node_modules/@noble/curves/abstract/frost.js"() {
+  "../clairveiljs/node_modules/@noble/curves/abstract/frost.js"() {
     init_utils();
     init_utils2();
     init_curve();
@@ -10770,7 +10779,7 @@ var init_frost = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/curves/abstract/montgomery.js
+// ../clairveiljs/node_modules/@noble/curves/abstract/montgomery.js
 function validateOpts(curve) {
   validateObject(curve, {
     P: "bigint",
@@ -10890,7 +10899,7 @@ function montgomery(curveDef) {
 }
 var _0n5, _1n5, _2n3;
 var init_montgomery = __esm({
-  "../../../clairveiljs/node_modules/@noble/curves/abstract/montgomery.js"() {
+  "../clairveiljs/node_modules/@noble/curves/abstract/montgomery.js"() {
     init_utils2();
     init_curve();
     init_modular();
@@ -10900,7 +10909,7 @@ var init_montgomery = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/curves/abstract/oprf.js
+// ../clairveiljs/node_modules/@noble/curves/abstract/oprf.js
 function createOPRF(opts) {
   validateObject(opts, {
     name: "string",
@@ -11161,7 +11170,7 @@ function createOPRF(opts) {
 }
 var _DST_scalarBytes;
 var init_oprf = __esm({
-  "../../../clairveiljs/node_modules/@noble/curves/abstract/oprf.js"() {
+  "../clairveiljs/node_modules/@noble/curves/abstract/oprf.js"() {
     init_utils2();
     init_curve();
     init_hash_to_curve();
@@ -11170,7 +11179,7 @@ var init_oprf = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/curves/ed25519.js
+// ../clairveiljs/node_modules/@noble/curves/ed25519.js
 var ed25519_exports = {};
 __export(ed25519_exports, {
   ED25519_TORSION_SUBGROUP: () => ED25519_TORSION_SUBGROUP,
@@ -11322,7 +11331,7 @@ function calcElligatorRistrettoMap(r0) {
 }
 var _0n6, _1n6, _2n4, _3n2, _5n2, _8n3, ed25519_CURVE_p, ed25519_CURVE, ED25519_SQRT_M1, ed25519_Point, Fp, Fn, ed25519, ed25519ctx, ed25519ph, ed25519_FROST, x25519, ELL2_C1, ELL2_C2, ELL2_C3, ELL2_C1_EDWARDS, ed25519_hasher, SQRT_M1, SQRT_AD_MINUS_ONE, INVSQRT_A_MINUS_D, ONE_MINUS_D_SQ, D_MINUS_ONE_SQ, invertSqrt, MAX_255B, bytes255ToNumberLE, _RistrettoPoint, ristretto255, ristretto255_hasher, ristretto255_oprf, ristretto255_FROST, ED25519_TORSION_SUBGROUP;
 var init_ed25519 = __esm({
-  "../../../clairveiljs/node_modules/@noble/curves/ed25519.js"() {
+  "../clairveiljs/node_modules/@noble/curves/ed25519.js"() {
     init_sha2();
     init_utils();
     init_edwards();
@@ -11591,9 +11600,9 @@ var init_ed25519 = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/crypto/build/ed25519.js
+// ../clairveiljs/node_modules/@cosmjs/crypto/build/ed25519.js
 var require_ed25519 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/crypto/build/ed25519.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/crypto/build/ed25519.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Ed25519 = exports.Ed25519Keypair = void 0;
@@ -11641,9 +11650,9 @@ var require_ed25519 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/crypto/build/hmac.js
+// ../clairveiljs/node_modules/@cosmjs/crypto/build/hmac.js
 var require_hmac = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/crypto/build/hmac.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/crypto/build/hmac.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Hmac = void 0;
@@ -11684,7 +11693,7 @@ var require_hmac = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/hashes/sha3.js
+// ../clairveiljs/node_modules/@noble/hashes/sha3.js
 var sha3_exports = {};
 __export(sha3_exports, {
   Keccak: () => Keccak,
@@ -11754,7 +11763,7 @@ function keccakP(s, rounds = 24) {
 }
 var _0n7, _1n7, _2n5, _7n2, _256n, _0x71n, SHA3_PI, SHA3_ROTL, _SHA3_IOTA, IOTAS, SHA3_IOTA_H, SHA3_IOTA_L, rotlH, rotlL, Keccak, genKeccak, sha3_224, sha3_256, sha3_384, sha3_512, keccak_224, keccak_256, keccak_384, keccak_512, genShake, shake128, shake256, shake128_32, shake256_64;
 var init_sha3 = __esm({
-  "../../../clairveiljs/node_modules/@noble/hashes/sha3.js"() {
+  "../clairveiljs/node_modules/@noble/hashes/sha3.js"() {
     init_u64();
     init_utils();
     _0n7 = BigInt(0);
@@ -11940,9 +11949,9 @@ var init_sha3 = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/crypto/build/utils.js
+// ../clairveiljs/node_modules/@cosmjs/crypto/build/utils.js
 var require_utils = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/crypto/build/utils.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/crypto/build/utils.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.toRealUint8Array = toRealUint8Array;
@@ -11955,9 +11964,9 @@ var require_utils = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/crypto/build/keccak.js
+// ../clairveiljs/node_modules/@cosmjs/crypto/build/keccak.js
 var require_keccak = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/crypto/build/keccak.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/crypto/build/keccak.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Keccak256 = void 0;
@@ -11988,9 +11997,9 @@ var require_keccak = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/crypto/build/random.js
+// ../clairveiljs/node_modules/@cosmjs/crypto/build/random.js
 var require_random = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/crypto/build/random.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/crypto/build/random.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Random = void 0;
@@ -12008,7 +12017,7 @@ var require_random = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/hashes/legacy.js
+// ../clairveiljs/node_modules/@noble/hashes/legacy.js
 var legacy_exports = {};
 __export(legacy_exports, {
   _MD5: () => _MD5,
@@ -12031,7 +12040,7 @@ function ripemd_f(group, x, y, z) {
 }
 var SHA1_IV, SHA1_W, _SHA1, sha1, p32, K, MD5_IV, MD5_W, _MD5, md5, Rho160, Id160, Pi160, idxLR, idxL, idxR, shifts160, shiftsL160, shiftsR160, Kl160, Kr160, BUF_160, _RIPEMD160, ripemd160;
 var init_legacy = __esm({
-  "../../../clairveiljs/node_modules/@noble/hashes/legacy.js"() {
+  "../clairveiljs/node_modules/@noble/hashes/legacy.js"() {
     init_md();
     init_utils();
     SHA1_IV = /* @__PURE__ */ Uint32Array.from([
@@ -12282,9 +12291,9 @@ var init_legacy = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/crypto/build/ripemd.js
+// ../clairveiljs/node_modules/@cosmjs/crypto/build/ripemd.js
 var require_ripemd = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/crypto/build/ripemd.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/crypto/build/ripemd.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Ripemd160 = void 0;
@@ -12315,7 +12324,7 @@ var require_ripemd = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/curves/abstract/weierstrass.js
+// ../clairveiljs/node_modules/@noble/curves/abstract/weierstrass.js
 function _splitEndoScalar(k, basis, n) {
   aInRange("scalar", k, _0n8, n);
   const [[a1, b1], [a2, b2]] = basis;
@@ -13211,7 +13220,7 @@ function ecdsa(Point, hash, ecdsaOpts = {}) {
 }
 var divNearest, DERErr, DER, _0n8, _1n8, _2n6, _3n3, _4n2;
 var init_weierstrass = __esm({
-  "../../../clairveiljs/node_modules/@noble/curves/abstract/weierstrass.js"() {
+  "../clairveiljs/node_modules/@noble/curves/abstract/weierstrass.js"() {
     init_hmac();
     init_utils();
     init_utils2();
@@ -13341,7 +13350,7 @@ var init_weierstrass = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/curves/secp256k1.js
+// ../clairveiljs/node_modules/@noble/curves/secp256k1.js
 var secp256k1_exports = {};
 __export(secp256k1_exports, {
   __TEST: () => __TEST,
@@ -13521,7 +13530,7 @@ function frostTweakPublic(pub, merkleRoot) {
 }
 var secp256k1_CURVE, secp256k1_ENDO, _0n9, _2n7, Fpk1, Pointk1, secp256k1, TAGGED_HASH_PREFIXES, pointToBytes, hasEven, num, __TEST, schnorr, isoMap, mapSWU, getMapSWU, secp256k1_hasher, secp256k1_FROST, schnorr_FROST;
 var init_secp256k1 = __esm({
-  "../../../clairveiljs/node_modules/@noble/curves/secp256k1.js"() {
+  "../clairveiljs/node_modules/@noble/curves/secp256k1.js"() {
     init_sha2();
     init_utils();
     init_curve();
@@ -13684,9 +13693,9 @@ var init_secp256k1 = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/crypto/build/secp256k1signature.js
+// ../clairveiljs/node_modules/@cosmjs/crypto/build/secp256k1signature.js
 var require_secp256k1signature = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/crypto/build/secp256k1signature.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/crypto/build/secp256k1signature.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ExtendedSecp256k1Signature = exports.Secp256k1Signature = void 0;
@@ -13837,9 +13846,9 @@ var require_secp256k1signature = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/crypto/build/secp256k1.js
+// ../clairveiljs/node_modules/@cosmjs/crypto/build/secp256k1.js
 var require_secp256k1 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/crypto/build/secp256k1.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/crypto/build/secp256k1.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Secp256k1 = void 0;
@@ -13966,9 +13975,9 @@ var require_secp256k1 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/crypto/build/sha.js
+// ../clairveiljs/node_modules/@cosmjs/crypto/build/sha.js
 var require_sha = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/crypto/build/sha.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/crypto/build/sha.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Sha512 = exports.Sha256 = void 0;
@@ -14020,9 +14029,9 @@ var require_sha = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/math/build/decimal.js
+// ../clairveiljs/node_modules/@cosmjs/math/build/decimal.js
 var require_decimal = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/math/build/decimal.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/math/build/decimal.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Decimal = void 0;
@@ -14290,9 +14299,9 @@ var require_decimal = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/math/build/integers.js
+// ../clairveiljs/node_modules/@cosmjs/math/build/integers.js
 var require_integers = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/math/build/integers.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/math/build/integers.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Uint64 = exports.Uint53 = exports.Int53 = exports.Uint32 = void 0;
@@ -14506,9 +14515,9 @@ var require_integers = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/math/build/index.js
+// ../clairveiljs/node_modules/@cosmjs/math/build/index.js
 var require_build3 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/math/build/index.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/math/build/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Uint64 = exports.Uint53 = exports.Uint32 = exports.Int53 = exports.Decimal = void 0;
@@ -14532,9 +14541,9 @@ var require_build3 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/crypto/build/slip10.js
+// ../clairveiljs/node_modules/@cosmjs/crypto/build/slip10.js
 var require_slip10 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/crypto/build/slip10.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/crypto/build/slip10.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Slip10 = exports.Slip10RawIndex = exports.Slip10Curve = void 0;
@@ -14703,7 +14712,7 @@ var require_slip10 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/ciphers/utils.js
+// ../clairveiljs/node_modules/@noble/ciphers/utils.js
 function isBytes4(a) {
   return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array" && "BYTES_PER_ELEMENT" in a && a.BYTES_PER_ELEMENT === 1;
 }
@@ -14820,7 +14829,7 @@ function randomBytes3(bytesLength = 32) {
 }
 var isLE2, byteSwap2, swap8IfBE2, byteSwap322, swap32IfBE2, wrapCipher;
 var init_utils3 = __esm({
-  "../../../clairveiljs/node_modules/@noble/ciphers/utils.js"() {
+  "../clairveiljs/node_modules/@noble/ciphers/utils.js"() {
     isLE2 = /* @__PURE__ */ (() => new Uint8Array(new Uint32Array([287454020]).buffer)[0] === 68)();
     byteSwap2 = (word) => word << 24 & 4278190080 | word << 8 & 16711680 | word >>> 8 & 65280 | word >>> 24 & 255;
     swap8IfBE2 = isLE2 ? (n) => n : (n) => byteSwap2(n) >>> 0;
@@ -14874,7 +14883,7 @@ var init_utils3 = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/ciphers/_arx.js
+// ../clairveiljs/node_modules/@noble/ciphers/_arx.js
 function rotl2(a, b) {
   return a << b | a >>> 32 - b;
 }
@@ -14995,7 +15004,7 @@ function createCipher(core, opts) {
 }
 var encodeStr, sigma16_32, sigma32_32, BLOCK_LEN, BLOCK_LEN32, MAX_COUNTER, U32_EMPTY, _XorStreamPRG, createPRG;
 var init_arx = __esm({
-  "../../../clairveiljs/node_modules/@noble/ciphers/_arx.js"() {
+  "../clairveiljs/node_modules/@noble/ciphers/_arx.js"() {
     init_utils3();
     encodeStr = (str2) => Uint8Array.from(str2.split(""), (c) => c.charCodeAt(0));
     sigma16_32 = /* @__PURE__ */ (() => swap32IfBE2(u322(encodeStr("expand 16-byte k"))))();
@@ -15099,13 +15108,13 @@ var init_arx = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/ciphers/_poly1305.js
+// ../clairveiljs/node_modules/@noble/ciphers/_poly1305.js
 function u8to16(a, i) {
   return a[i++] & 255 | (a[i++] & 255) << 8;
 }
 var Poly1305, poly1305;
 var init_poly1305 = __esm({
-  "../../../clairveiljs/node_modules/@noble/ciphers/_poly1305.js"() {
+  "../clairveiljs/node_modules/@noble/ciphers/_poly1305.js"() {
     init_utils3();
     Poly1305 = class {
       blockLen = 16;
@@ -15356,7 +15365,7 @@ var init_poly1305 = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@noble/ciphers/chacha.js
+// ../clairveiljs/node_modules/@noble/ciphers/chacha.js
 var chacha_exports = {};
 __export(chacha_exports, {
   __TESTS: () => __TESTS2,
@@ -15611,7 +15620,7 @@ function computeTag(fn, key, nonce, ciphertext, AAD) {
 }
 var ctmp, chachaCore_small, chacha20orig, chacha20, xchacha20, chacha8, chacha12, __TESTS2, ZEROS16, updatePadded, ZEROS32, _poly1305_aead, chacha20poly1305, xchacha20poly1305, rngChacha20, rngChacha8;
 var init_chacha = __esm({
-  "../../../clairveiljs/node_modules/@noble/ciphers/chacha.js"() {
+  "../clairveiljs/node_modules/@noble/ciphers/chacha.js"() {
     init_arx();
     init_poly1305();
     init_utils3();
@@ -15698,9 +15707,9 @@ var init_chacha = __esm({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/crypto/build/xchacha20poly1305.js
+// ../clairveiljs/node_modules/@cosmjs/crypto/build/xchacha20poly1305.js
 var require_xchacha20poly1305 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/crypto/build/xchacha20poly1305.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/crypto/build/xchacha20poly1305.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Xchacha20poly1305Ietf = exports.xchacha20NonceLength = void 0;
@@ -15722,9 +15731,9 @@ var require_xchacha20poly1305 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/crypto/build/index.js
+// ../clairveiljs/node_modules/@cosmjs/crypto/build/index.js
 var require_build4 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/crypto/build/index.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/crypto/build/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Xchacha20poly1305Ietf = exports.xchacha20NonceLength = exports.stringToPath = exports.Slip10RawIndex = exports.slip10CurveFromString = exports.Slip10Curve = exports.Slip10 = exports.pathToString = exports.sha512 = exports.Sha512 = exports.sha256 = exports.Sha256 = exports.Secp256k1Signature = exports.ExtendedSecp256k1Signature = exports.Secp256k1 = exports.ripemd160 = exports.Ripemd160 = exports.Random = exports.keccak256 = exports.Keccak256 = exports.Hmac = exports.Ed25519Keypair = exports.Ed25519 = exports.EnglishMnemonic = exports.Bip39 = exports.isArgon2idOptions = exports.Argon2id = void 0;
@@ -15824,9 +15833,9 @@ var require_build4 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/amino/build/pubkeys.js
+// ../clairveiljs/node_modules/@cosmjs/amino/build/pubkeys.js
 var require_pubkeys = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/amino/build/pubkeys.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/amino/build/pubkeys.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.pubkeyType = void 0;
@@ -15870,9 +15879,9 @@ var require_pubkeys = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/amino/build/encoding.js
+// ../clairveiljs/node_modules/@cosmjs/amino/build/encoding.js
 var require_encoding = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/amino/build/encoding.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/amino/build/encoding.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.encodeSecp256k1Pubkey = encodeSecp256k1Pubkey;
@@ -16047,9 +16056,9 @@ var require_encoding = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/amino/build/addresses.js
+// ../clairveiljs/node_modules/@cosmjs/amino/build/addresses.js
 var require_addresses = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/amino/build/addresses.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/amino/build/addresses.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.rawEd25519PubkeyToRawAddress = rawEd25519PubkeyToRawAddress;
@@ -16105,9 +16114,9 @@ var require_addresses = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/amino/build/coins.js
+// ../clairveiljs/node_modules/@cosmjs/amino/build/coins.js
 var require_coins = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/amino/build/coins.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/amino/build/coins.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.coin = coin;
@@ -16159,9 +16168,9 @@ var require_coins = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/amino/build/multisig.js
+// ../clairveiljs/node_modules/@cosmjs/amino/build/multisig.js
 var require_multisig2 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/amino/build/multisig.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/amino/build/multisig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.compareArrays = compareArrays;
@@ -16195,9 +16204,9 @@ var require_multisig2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/amino/build/omitdefault.js
+// ../clairveiljs/node_modules/@cosmjs/amino/build/omitdefault.js
 var require_omitdefault = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/amino/build/omitdefault.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/amino/build/omitdefault.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.omitDefault = omitDefault;
@@ -16218,9 +16227,9 @@ var require_omitdefault = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/amino/build/paths.js
+// ../clairveiljs/node_modules/@cosmjs/amino/build/paths.js
 var require_paths = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/amino/build/paths.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/amino/build/paths.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.makeCosmoshubPath = makeCosmoshubPath;
@@ -16237,9 +16246,9 @@ var require_paths = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/amino/build/signature.js
+// ../clairveiljs/node_modules/@cosmjs/amino/build/signature.js
 var require_signature = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/amino/build/signature.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/amino/build/signature.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.encodeSecp256k1Signature = encodeSecp256k1Signature;
@@ -16286,9 +16295,9 @@ var require_signature = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/amino/build/signdoc.js
+// ../clairveiljs/node_modules/@cosmjs/amino/build/signdoc.js
 var require_signdoc = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/amino/build/signdoc.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/amino/build/signdoc.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.sortedJsonStringify = sortedJsonStringify;
@@ -16338,9 +16347,9 @@ var require_signdoc = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/amino/build/wallet.js
+// ../clairveiljs/node_modules/@cosmjs/amino/build/wallet.js
 var require_wallet = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/amino/build/wallet.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/amino/build/wallet.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.supportedAlgorithms = exports.cosmjsSalt = void 0;
@@ -16391,9 +16400,9 @@ var require_wallet = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/amino/build/secp256k1hdwallet.js
+// ../clairveiljs/node_modules/@cosmjs/amino/build/secp256k1hdwallet.js
 var require_secp256k1hdwallet = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/amino/build/secp256k1hdwallet.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/amino/build/secp256k1hdwallet.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Secp256k1HdWallet = void 0;
@@ -16653,9 +16662,9 @@ var require_secp256k1hdwallet = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/amino/build/secp256k1wallet.js
+// ../clairveiljs/node_modules/@cosmjs/amino/build/secp256k1wallet.js
 var require_secp256k1wallet = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/amino/build/secp256k1wallet.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/amino/build/secp256k1wallet.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Secp256k1Wallet = void 0;
@@ -16712,9 +16721,9 @@ var require_secp256k1wallet = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/amino/build/signerutils.js
+// ../clairveiljs/node_modules/@cosmjs/amino/build/signerutils.js
 var require_signerutils = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/amino/build/signerutils.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/amino/build/signerutils.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isEthereumSecp256k1Account = isEthereumSecp256k1Account;
@@ -16733,9 +16742,9 @@ var require_signerutils = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/amino/build/stdtx.js
+// ../clairveiljs/node_modules/@cosmjs/amino/build/stdtx.js
 var require_stdtx = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/amino/build/stdtx.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/amino/build/stdtx.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isStdTx = isStdTx;
@@ -16755,9 +16764,9 @@ var require_stdtx = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/amino/build/index.js
+// ../clairveiljs/node_modules/@cosmjs/amino/build/index.js
 var require_build5 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/amino/build/index.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/amino/build/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.executeKdf = exports.makeStdTx = exports.isStdTx = exports.isEthereumSecp256k1Account = exports.getAminoPubkey = exports.serializeSignDoc = exports.makeSignDoc = exports.encodeSecp256k1Signature = exports.encodeEthSecp256k1Signature = exports.decodeSignature = exports.Secp256k1Wallet = exports.Secp256k1HdWallet = exports.extractKdfConfiguration = exports.pubkeyType = exports.isSinglePubkey = exports.isSecp256k1Pubkey = exports.isMultisigThresholdPubkey = exports.isEthSecp256k1Pubkey = exports.isEd25519Pubkey = exports.makeCosmoshubPath = exports.omitDefault = exports.createMultisigThresholdPubkey = exports.encodeSecp256k1Pubkey = exports.encodeEthSecp256k1Pubkey = exports.encodeEd25519Pubkey = exports.encodeBech32Pubkey = exports.encodeAminoPubkey = exports.decodeBech32Pubkey = exports.decodeAminoPubkey = exports.parseCoins = exports.coins = exports.coin = exports.addCoins = exports.rawSecp256k1PubkeyToRawAddress = exports.rawEthSecp256k1PubkeyToRawAddress = exports.rawEd25519PubkeyToRawAddress = exports.pubkeyToRawAddress = exports.pubkeyToAddress = void 0;
@@ -16892,9 +16901,9 @@ var require_build5 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/signing.js
+// ../clairveiljs/node_modules/@cosmjs/proto-signing/build/signing.js
 var require_signing2 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/signing.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/proto-signing/build/signing.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.makeAuthInfoBytes = makeAuthInfoBytes2;
@@ -16947,9 +16956,9 @@ var require_signing2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/directethsecp256k1hdwallet.js
+// ../clairveiljs/node_modules/@cosmjs/proto-signing/build/directethsecp256k1hdwallet.js
 var require_directethsecp256k1hdwallet = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/directethsecp256k1hdwallet.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/proto-signing/build/directethsecp256k1hdwallet.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DirectEthSecp256k1HdWallet = void 0;
@@ -17066,9 +17075,9 @@ var require_directethsecp256k1hdwallet = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/directethsecp256k1wallet.js
+// ../clairveiljs/node_modules/@cosmjs/proto-signing/build/directethsecp256k1wallet.js
 var require_directethsecp256k1wallet = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/directethsecp256k1wallet.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/proto-signing/build/directethsecp256k1wallet.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DirectEthSecp256k1Wallet = void 0;
@@ -17126,9 +17135,9 @@ var require_directethsecp256k1wallet = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/wallet.js
+// ../clairveiljs/node_modules/@cosmjs/proto-signing/build/wallet.js
 var require_wallet2 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/wallet.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/proto-signing/build/wallet.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.supportedAlgorithms = exports.cosmjsSalt = void 0;
@@ -17179,9 +17188,9 @@ var require_wallet2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/directsecp256k1hdwallet.js
+// ../clairveiljs/node_modules/@cosmjs/proto-signing/build/directsecp256k1hdwallet.js
 var require_directsecp256k1hdwallet = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/directsecp256k1hdwallet.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/proto-signing/build/directsecp256k1hdwallet.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DirectSecp256k1HdWallet = void 0;
@@ -17441,9 +17450,9 @@ var require_directsecp256k1hdwallet = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/directsecp256k1wallet.js
+// ../clairveiljs/node_modules/@cosmjs/proto-signing/build/directsecp256k1wallet.js
 var require_directsecp256k1wallet = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/directsecp256k1wallet.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/proto-signing/build/directsecp256k1wallet.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DirectSecp256k1Wallet = void 0;
@@ -17501,9 +17510,9 @@ var require_directsecp256k1wallet = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/paths.js
+// ../clairveiljs/node_modules/@cosmjs/proto-signing/build/paths.js
 var require_paths2 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/paths.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/proto-signing/build/paths.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.makeCosmoshubPath = makeCosmoshubPath;
@@ -17520,9 +17529,9 @@ var require_paths2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/crypto/ed25519/keys.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/crypto/ed25519/keys.js
 var require_keys = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/crypto/ed25519/keys.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/crypto/ed25519/keys.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PrivKey = exports.PubKey = exports.protobufPackage = void 0;
@@ -17626,9 +17635,9 @@ var require_keys = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/crypto/multisig/keys.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/crypto/multisig/keys.js
 var require_keys2 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/crypto/multisig/keys.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/crypto/multisig/keys.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.LegacyAminoPubKey = exports.protobufPackage = void 0;
@@ -17701,9 +17710,9 @@ var require_keys2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/crypto/secp256k1/keys.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/crypto/secp256k1/keys.js
 var require_keys3 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/crypto/secp256k1/keys.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/crypto/secp256k1/keys.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PrivKey = exports.PubKey = exports.protobufPackage = void 0;
@@ -17807,9 +17816,9 @@ var require_keys3 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/pubkey.js
+// ../clairveiljs/node_modules/@cosmjs/proto-signing/build/pubkey.js
 var require_pubkey = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/pubkey.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/proto-signing/build/pubkey.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.encodePubkey = encodePubkey2;
@@ -17921,9 +17930,9 @@ var require_pubkey = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/bank/v1beta1/bank.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/bank/v1beta1/bank.js
 var require_bank = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/bank/v1beta1/bank.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/bank/v1beta1/bank.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Metadata = exports.DenomUnit = exports.Supply = exports.Output = exports.Input = exports.SendEnabled = exports.Params = exports.protobufPackage = void 0;
@@ -18430,9 +18439,9 @@ var require_bank = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/bank/v1beta1/tx.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/bank/v1beta1/tx.js
 var require_tx2 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/bank/v1beta1/tx.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/bank/v1beta1/tx.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MsgClientImpl = exports.MsgSetSendEnabledResponse = exports.MsgSetSendEnabled = exports.MsgUpdateParamsResponse = exports.MsgUpdateParams = exports.MsgMultiSendResponse = exports.MsgMultiSend = exports.MsgSendResponse = exports.MsgSend = exports.protobufPackage = void 0;
@@ -18891,9 +18900,9 @@ var require_tx2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/registry.js
+// ../clairveiljs/node_modules/@cosmjs/proto-signing/build/registry.js
 var require_registry = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/registry.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/proto-signing/build/registry.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Registry = void 0;
@@ -19039,9 +19048,9 @@ var require_registry = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/signer.js
+// ../clairveiljs/node_modules/@cosmjs/proto-signing/build/signer.js
 var require_signer = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/signer.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/proto-signing/build/signer.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isOfflineDirectSigner = isOfflineDirectSigner;
@@ -19051,9 +19060,9 @@ var require_signer = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/index.js
+// ../clairveiljs/node_modules/@cosmjs/proto-signing/build/index.js
 var require_build6 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/proto-signing/build/index.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/proto-signing/build/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.parseCoins = exports.coins = exports.coin = exports.executeKdf = exports.makeSignDoc = exports.makeSignBytes = exports.makeAuthInfoBytes = exports.isOfflineDirectSigner = exports.Registry = exports.isTxBodyEncodeObject = exports.hasFromPartial = exports.hasCreate = exports.encodePubkey = exports.decodePubkey = exports.decodeOptionalPubkey = exports.anyToSinglePubkey = exports.makeCosmoshubPath = exports.DirectSecp256k1Wallet = exports.extractKdfConfiguration = exports.DirectSecp256k1HdWallet = exports.DirectEthSecp256k1Wallet = exports.DirectEthSecp256k1HdWallet = exports.decodeTxRaw = void 0;
@@ -19141,9 +19150,9 @@ var require_build6 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/auth/v1beta1/auth.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/auth/v1beta1/auth.js
 var require_auth = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/auth/v1beta1/auth.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/auth/v1beta1/auth.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Params = exports.ModuleCredential = exports.ModuleAccount = exports.BaseAccount = exports.protobufPackage = void 0;
@@ -19478,9 +19487,9 @@ var require_auth = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/vesting/v1beta1/vesting.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/vesting/v1beta1/vesting.js
 var require_vesting = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/vesting/v1beta1/vesting.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/vesting/v1beta1/vesting.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PermanentLockedAccount = exports.PeriodicVestingAccount = exports.Period = exports.DelayedVestingAccount = exports.ContinuousVestingAccount = exports.BaseVestingAccount = exports.protobufPackage = void 0;
@@ -19900,9 +19909,9 @@ var require_vesting = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/accounts.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/accounts.js
 var require_accounts = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/accounts.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/accounts.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.accountFromAny = accountFromAny;
@@ -19963,9 +19972,9 @@ var require_accounts = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/aminotypes.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/aminotypes.js
 var require_aminotypes = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/aminotypes.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/aminotypes.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AminoTypes = void 0;
@@ -20010,9 +20019,9 @@ var require_aminotypes = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/events.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/events.js
 var require_events = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/events.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/events.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.fromTendermintEvent = fromTendermintEvent;
@@ -20025,9 +20034,9 @@ var require_events = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/fee.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/fee.js
 var require_fee = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/fee.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/fee.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GasPrice = void 0;
@@ -20089,9 +20098,9 @@ var require_fee = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/base/query/v1beta1/pagination.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/base/query/v1beta1/pagination.js
 var require_pagination = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/base/query/v1beta1/pagination.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/base/query/v1beta1/pagination.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PageResponse = exports.PageRequest = exports.protobufPackage = void 0;
@@ -20256,9 +20265,9 @@ var require_pagination = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/queryclient/utils.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/queryclient/utils.js
 var require_utils2 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/queryclient/utils.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/queryclient/utils.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.toAccAddress = toAccAddress;
@@ -20295,9 +20304,9 @@ var require_utils2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/feemarket.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/feemarket.js
 var require_feemarket = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/feemarket.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/feemarket.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isDynamicGasPriceConfig = isDynamicGasPriceConfig;
@@ -20420,9 +20429,9 @@ var require_feemarket = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/logs.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/logs.js
 var require_logs = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/logs.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/logs.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.parseAttribute = parseAttribute;
@@ -20506,9 +20515,9 @@ var require_logs = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/auth/v1beta1/query.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/auth/v1beta1/query.js
 var require_query = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/auth/v1beta1/query.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/auth/v1beta1/query.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.QueryClientImpl = exports.QueryAccountInfoResponse = exports.QueryAccountInfoRequest = exports.QueryAccountAddressByIDResponse = exports.QueryAccountAddressByIDRequest = exports.AddressStringToBytesResponse = exports.AddressStringToBytesRequest = exports.AddressBytesToStringResponse = exports.AddressBytesToStringRequest = exports.Bech32PrefixResponse = exports.Bech32PrefixRequest = exports.QueryModuleAccountByNameResponse = exports.QueryModuleAccountByNameRequest = exports.QueryModuleAccountsResponse = exports.QueryModuleAccountsRequest = exports.QueryParamsResponse = exports.QueryParamsRequest = exports.QueryAccountResponse = exports.QueryAccountRequest = exports.QueryAccountsResponse = exports.QueryAccountsRequest = exports.protobufPackage = void 0;
@@ -21540,9 +21549,9 @@ var require_query = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/queryclient/queryclient.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/queryclient/queryclient.js
 var require_queryclient = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/queryclient/queryclient.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/queryclient/queryclient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.QueryClient = void 0;
@@ -21598,9 +21607,9 @@ var require_queryclient = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/queryclient/index.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/queryclient/index.js
 var require_queryclient2 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/queryclient/index.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/queryclient/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.longify = exports.decodeCosmosSdkDecFromProto = exports.createProtobufRpcClient = exports.createPagination = exports.QueryClient = void 0;
@@ -21624,9 +21633,9 @@ var require_queryclient2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/auth/queries.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/auth/queries.js
 var require_queries = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/auth/queries.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/auth/queries.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.setupAuthExtension = setupAuthExtension;
@@ -21647,9 +21656,9 @@ var require_queries = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/authz/aminomessages.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/authz/aminomessages.js
 var require_aminomessages = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/authz/aminomessages.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/authz/aminomessages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.createAuthzAminoConverters = createAuthzAminoConverters;
@@ -21667,9 +21676,9 @@ var require_aminomessages = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/authz/v1beta1/authz.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/authz/v1beta1/authz.js
 var require_authz = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/authz/v1beta1/authz.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/authz/v1beta1/authz.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GrantQueueItem = exports.GrantAuthorization = exports.Grant = exports.GenericAuthorization = exports.protobufPackage = void 0;
@@ -21925,9 +21934,9 @@ var require_authz = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/authz/v1beta1/tx.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/authz/v1beta1/tx.js
 var require_tx3 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/authz/v1beta1/tx.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/authz/v1beta1/tx.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MsgClientImpl = exports.MsgRevokeResponse = exports.MsgRevoke = exports.MsgExecResponse = exports.MsgExec = exports.MsgGrantResponse = exports.MsgGrant = exports.protobufPackage = void 0;
@@ -22287,9 +22296,9 @@ var require_tx3 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/authz/messages.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/authz/messages.js
 var require_messages = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/authz/messages.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/authz/messages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.authzTypes = void 0;
@@ -22302,9 +22311,9 @@ var require_messages = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/authz/v1beta1/query.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/authz/v1beta1/query.js
 var require_query2 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/authz/v1beta1/query.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/authz/v1beta1/query.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.QueryClientImpl = exports.QueryGranteeGrantsResponse = exports.QueryGranteeGrantsRequest = exports.QueryGranterGrantsResponse = exports.QueryGranterGrantsRequest = exports.QueryGrantsResponse = exports.QueryGrantsRequest = exports.protobufPackage = void 0;
@@ -22735,9 +22744,9 @@ var require_query2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/authz/queries.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/authz/queries.js
 var require_queries2 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/authz/queries.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/authz/queries.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.setupAuthzExtension = setupAuthzExtension;
@@ -22774,9 +22783,9 @@ var require_queries2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/bank/aminomessages.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/bank/aminomessages.js
 var require_aminomessages2 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/bank/aminomessages.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/bank/aminomessages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isAminoMsgSend = isAminoMsgSend;
@@ -22831,9 +22840,9 @@ var require_aminomessages2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/bank/messages.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/bank/messages.js
 var require_messages2 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/bank/messages.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/bank/messages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.bankTypes = void 0;
@@ -22849,9 +22858,9 @@ var require_messages2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/bank/v1beta1/query.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/bank/v1beta1/query.js
 var require_query3 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/bank/v1beta1/query.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/bank/v1beta1/query.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.QueryClientImpl = exports.QuerySendEnabledResponse = exports.QuerySendEnabledRequest = exports.QueryDenomOwnersByQueryResponse = exports.QueryDenomOwnersByQueryRequest = exports.QueryDenomOwnersResponse = exports.DenomOwner = exports.QueryDenomOwnersRequest = exports.QueryDenomMetadataByQueryStringResponse = exports.QueryDenomMetadataByQueryStringRequest = exports.QueryDenomMetadataResponse = exports.QueryDenomMetadataRequest = exports.QueryDenomsMetadataResponse = exports.QueryDenomsMetadataRequest = exports.QueryParamsResponse = exports.QueryParamsRequest = exports.QuerySupplyOfResponse = exports.QuerySupplyOfRequest = exports.QueryTotalSupplyResponse = exports.QueryTotalSupplyRequest = exports.QuerySpendableBalanceByDenomResponse = exports.QuerySpendableBalanceByDenomRequest = exports.QuerySpendableBalancesResponse = exports.QuerySpendableBalancesRequest = exports.QueryAllBalancesResponse = exports.QueryAllBalancesRequest = exports.QueryBalanceResponse = exports.QueryBalanceRequest = exports.protobufPackage = void 0;
@@ -24460,9 +24469,9 @@ var require_query3 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/bank/queries.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/bank/queries.js
 var require_queries3 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/bank/queries.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/bank/queries.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.setupBankExtension = setupBankExtension;
@@ -24512,9 +24521,9 @@ var require_queries3 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/crisis/aminomessages.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/crisis/aminomessages.js
 var require_aminomessages3 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/crisis/aminomessages.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/crisis/aminomessages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isAminoMsgVerifyInvariant = isAminoMsgVerifyInvariant;
@@ -24528,9 +24537,9 @@ var require_aminomessages3 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/distribution/aminomessages.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/distribution/aminomessages.js
 var require_aminomessages4 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/distribution/aminomessages.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/distribution/aminomessages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isAminoMsgSetWithdrawAddress = isAminoMsgSetWithdrawAddress;
@@ -24599,9 +24608,9 @@ var require_aminomessages4 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/distribution/v1beta1/distribution.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/distribution/v1beta1/distribution.js
 var require_distribution = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/distribution/v1beta1/distribution.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/distribution/v1beta1/distribution.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CommunityPoolSpendProposalWithDeposit = exports.DelegationDelegatorReward = exports.DelegatorStartingInfo = exports.CommunityPoolSpendProposal = exports.FeePool = exports.ValidatorSlashEvents = exports.ValidatorSlashEvent = exports.ValidatorOutstandingRewards = exports.ValidatorAccumulatedCommission = exports.ValidatorCurrentRewards = exports.ValidatorHistoricalRewards = exports.Params = exports.protobufPackage = void 0;
@@ -25392,9 +25401,9 @@ var require_distribution = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/distribution/v1beta1/tx.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/distribution/v1beta1/tx.js
 var require_tx4 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/distribution/v1beta1/tx.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/distribution/v1beta1/tx.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MsgClientImpl = exports.MsgDepositValidatorRewardsPoolResponse = exports.MsgDepositValidatorRewardsPool = exports.MsgCommunityPoolSpendResponse = exports.MsgCommunityPoolSpend = exports.MsgUpdateParamsResponse = exports.MsgUpdateParams = exports.MsgFundCommunityPoolResponse = exports.MsgFundCommunityPool = exports.MsgWithdrawValidatorCommissionResponse = exports.MsgWithdrawValidatorCommission = exports.MsgWithdrawDelegatorRewardResponse = exports.MsgWithdrawDelegatorReward = exports.MsgSetWithdrawAddressResponse = exports.MsgSetWithdrawAddress = exports.protobufPackage = void 0;
@@ -26163,9 +26172,9 @@ var require_tx4 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/distribution/messages.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/distribution/messages.js
 var require_messages3 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/distribution/messages.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/distribution/messages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.distributionTypes = void 0;
@@ -26183,9 +26192,9 @@ var require_messages3 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/distribution/v1beta1/query.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/distribution/v1beta1/query.js
 var require_query4 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/distribution/v1beta1/query.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/distribution/v1beta1/query.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.QueryClientImpl = exports.QueryCommunityPoolResponse = exports.QueryCommunityPoolRequest = exports.QueryDelegatorWithdrawAddressResponse = exports.QueryDelegatorWithdrawAddressRequest = exports.QueryDelegatorValidatorsResponse = exports.QueryDelegatorValidatorsRequest = exports.QueryDelegationTotalRewardsResponse = exports.QueryDelegationTotalRewardsRequest = exports.QueryDelegationRewardsResponse = exports.QueryDelegationRewardsRequest = exports.QueryValidatorSlashesResponse = exports.QueryValidatorSlashesRequest = exports.QueryValidatorCommissionResponse = exports.QueryValidatorCommissionRequest = exports.QueryValidatorOutstandingRewardsResponse = exports.QueryValidatorOutstandingRewardsRequest = exports.QueryValidatorDistributionInfoResponse = exports.QueryValidatorDistributionInfoRequest = exports.QueryParamsResponse = exports.QueryParamsRequest = exports.protobufPackage = void 0;
@@ -27315,9 +27324,9 @@ var require_query4 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/distribution/queries.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/distribution/queries.js
 var require_queries4 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/distribution/queries.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/distribution/queries.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.setupDistributionExtension = setupDistributionExtension;
@@ -27388,9 +27397,9 @@ var require_queries4 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/evidence/aminomessages.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/evidence/aminomessages.js
 var require_aminomessages5 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/evidence/aminomessages.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/evidence/aminomessages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isAminoMsgSubmitEvidence = isAminoMsgSubmitEvidence;
@@ -27404,9 +27413,9 @@ var require_aminomessages5 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/feegrant/aminomessages.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/feegrant/aminomessages.js
 var require_aminomessages6 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/feegrant/aminomessages.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/feegrant/aminomessages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.createFeegrantAminoConverters = createFeegrantAminoConverters;
@@ -27423,9 +27432,9 @@ var require_aminomessages6 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/feegrant/v1beta1/tx.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/feegrant/v1beta1/tx.js
 var require_tx5 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/feegrant/v1beta1/tx.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/feegrant/v1beta1/tx.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MsgClientImpl = exports.MsgPruneAllowancesResponse = exports.MsgPruneAllowances = exports.MsgRevokeAllowanceResponse = exports.MsgRevokeAllowance = exports.MsgGrantAllowanceResponse = exports.MsgGrantAllowance = exports.protobufPackage = void 0;
@@ -27742,9 +27751,9 @@ var require_tx5 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/feegrant/messages.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/feegrant/messages.js
 var require_messages4 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/feegrant/messages.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/feegrant/messages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.feegrantTypes = void 0;
@@ -27756,9 +27765,9 @@ var require_messages4 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/google/protobuf/duration.js
+// ../clairveiljs/node_modules/cosmjs-types/google/protobuf/duration.js
 var require_duration = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/google/protobuf/duration.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/google/protobuf/duration.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Duration = exports.protobufPackage = void 0;
@@ -27828,9 +27837,9 @@ var require_duration = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/feegrant/v1beta1/feegrant.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/feegrant/v1beta1/feegrant.js
 var require_feegrant = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/feegrant/v1beta1/feegrant.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/feegrant/v1beta1/feegrant.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Grant = exports.AllowedMsgAllowance = exports.PeriodicAllowance = exports.BasicAllowance = exports.protobufPackage = void 0;
@@ -28148,9 +28157,9 @@ var require_feegrant = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/feegrant/v1beta1/query.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/feegrant/v1beta1/query.js
 var require_query5 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/feegrant/v1beta1/query.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/feegrant/v1beta1/query.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.QueryClientImpl = exports.QueryAllowancesByGranterResponse = exports.QueryAllowancesByGranterRequest = exports.QueryAllowancesResponse = exports.QueryAllowancesRequest = exports.QueryAllowanceResponse = exports.QueryAllowanceRequest = exports.protobufPackage = void 0;
@@ -28542,9 +28551,9 @@ var require_query5 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/feegrant/queries.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/feegrant/queries.js
 var require_queries5 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/feegrant/queries.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/feegrant/queries.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.setupFeegrantExtension = setupFeegrantExtension;
@@ -28575,9 +28584,9 @@ var require_queries5 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/gov/v1beta1/gov.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/gov/v1beta1/gov.js
 var require_gov = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/gov/v1beta1/gov.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/gov/v1beta1/gov.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.TallyParams = exports.VotingParams = exports.DepositParams = exports.Vote = exports.TallyResult = exports.Proposal = exports.Deposit = exports.TextProposal = exports.WeightedVoteOption = exports.ProposalStatus = exports.VoteOption = exports.protobufPackage = void 0;
@@ -29391,9 +29400,9 @@ var require_gov = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/gov/aminomessages.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/gov/aminomessages.js
 var require_aminomessages7 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/gov/aminomessages.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/gov/aminomessages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isAminoMsgSubmitProposal = isAminoMsgSubmitProposal;
@@ -29538,9 +29547,9 @@ var require_aminomessages7 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/gov/v1/gov.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/gov/v1/gov.js
 var require_gov2 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/gov/v1/gov.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/gov/v1/gov.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Params = exports.TallyParams = exports.VotingParams = exports.DepositParams = exports.Vote = exports.TallyResult = exports.Proposal = exports.Deposit = exports.WeightedVoteOption = exports.ProposalStatus = exports.VoteOption = exports.protobufPackage = void 0;
@@ -30590,9 +30599,9 @@ var require_gov2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/gov/v1/tx.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/gov/v1/tx.js
 var require_tx6 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/gov/v1/tx.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/gov/v1/tx.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MsgClientImpl = exports.MsgCancelProposalResponse = exports.MsgCancelProposal = exports.MsgUpdateParamsResponse = exports.MsgUpdateParams = exports.MsgDepositResponse = exports.MsgDeposit = exports.MsgVoteWeightedResponse = exports.MsgVoteWeighted = exports.MsgVoteResponse = exports.MsgVote = exports.MsgExecLegacyContentResponse = exports.MsgExecLegacyContent = exports.MsgSubmitProposalResponse = exports.MsgSubmitProposal = exports.protobufPackage = void 0;
@@ -31498,9 +31507,9 @@ var require_tx6 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/gov/v1beta1/tx.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/gov/v1beta1/tx.js
 var require_tx7 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/gov/v1beta1/tx.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/gov/v1beta1/tx.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MsgClientImpl = exports.MsgDepositResponse = exports.MsgDeposit = exports.MsgVoteWeightedResponse = exports.MsgVoteWeighted = exports.MsgVoteResponse = exports.MsgVote = exports.MsgSubmitProposalResponse = exports.MsgSubmitProposal = exports.protobufPackage = void 0;
@@ -31994,9 +32003,9 @@ var require_tx7 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/gov/messages.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/gov/messages.js
 var require_messages5 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/gov/messages.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/gov/messages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.govTypes = void 0;
@@ -32032,9 +32041,9 @@ var require_messages5 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/gov/v1beta1/query.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/gov/v1beta1/query.js
 var require_query6 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/gov/v1beta1/query.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/gov/v1beta1/query.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.QueryClientImpl = exports.QueryTallyResultResponse = exports.QueryTallyResultRequest = exports.QueryDepositsResponse = exports.QueryDepositsRequest = exports.QueryDepositResponse = exports.QueryDepositRequest = exports.QueryParamsResponse = exports.QueryParamsRequest = exports.QueryVotesResponse = exports.QueryVotesRequest = exports.QueryVoteResponse = exports.QueryVoteRequest = exports.QueryProposalsResponse = exports.QueryProposalsRequest = exports.QueryProposalResponse = exports.QueryProposalRequest = exports.protobufPackage = void 0;
@@ -33035,9 +33044,9 @@ var require_query6 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/gov/queries.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/gov/queries.js
 var require_queries6 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/gov/queries.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/gov/queries.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.setupGovExtension = setupGovExtension;
@@ -33105,9 +33114,9 @@ var require_queries6 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/group/aminomessages.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/group/aminomessages.js
 var require_aminomessages8 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/group/aminomessages.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/group/aminomessages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.createGroupAminoConverters = createGroupAminoConverters;
@@ -33117,9 +33126,9 @@ var require_aminomessages8 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/group/v1/types.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/group/v1/types.js
 var require_types = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/group/v1/types.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/group/v1/types.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Vote = exports.TallyResult = exports.Proposal = exports.GroupPolicyInfo = exports.GroupMember = exports.GroupInfo = exports.DecisionPolicyWindows = exports.PercentageDecisionPolicy = exports.ThresholdDecisionPolicy = exports.MemberRequest = exports.Member = exports.ProposalExecutorResult = exports.ProposalStatus = exports.VoteOption = exports.protobufPackage = void 0;
@@ -34294,9 +34303,9 @@ var require_types = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/group/v1/tx.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/group/v1/tx.js
 var require_tx8 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/group/v1/tx.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/group/v1/tx.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MsgClientImpl = exports.MsgLeaveGroupResponse = exports.MsgLeaveGroup = exports.MsgExecResponse = exports.MsgExec = exports.MsgVoteResponse = exports.MsgVote = exports.MsgWithdrawProposalResponse = exports.MsgWithdrawProposal = exports.MsgSubmitProposalResponse = exports.MsgSubmitProposal = exports.MsgUpdateGroupPolicyMetadataResponse = exports.MsgUpdateGroupPolicyMetadata = exports.MsgUpdateGroupPolicyDecisionPolicyResponse = exports.MsgUpdateGroupPolicyDecisionPolicy = exports.MsgCreateGroupWithPolicyResponse = exports.MsgCreateGroupWithPolicy = exports.MsgUpdateGroupPolicyAdminResponse = exports.MsgUpdateGroupPolicyAdmin = exports.MsgCreateGroupPolicyResponse = exports.MsgCreateGroupPolicy = exports.MsgUpdateGroupMetadataResponse = exports.MsgUpdateGroupMetadata = exports.MsgUpdateGroupAdminResponse = exports.MsgUpdateGroupAdmin = exports.MsgUpdateGroupMembersResponse = exports.MsgUpdateGroupMembers = exports.MsgCreateGroupResponse = exports.MsgCreateGroup = exports.Exec = exports.protobufPackage = void 0;
@@ -36084,9 +36093,9 @@ var require_tx8 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/group/messages.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/group/messages.js
 var require_messages6 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/group/messages.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/group/messages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.groupTypes = void 0;
@@ -36110,9 +36119,9 @@ var require_messages6 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/ibc/core/client/v1/client.js
+// ../clairveiljs/node_modules/cosmjs-types/ibc/core/client/v1/client.js
 var require_client = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/ibc/core/client/v1/client.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/ibc/core/client/v1/client.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Params = exports.Height = exports.ClientConsensusStates = exports.ConsensusStateWithHeight = exports.IdentifiedClientState = exports.protobufPackage = void 0;
@@ -36420,9 +36429,9 @@ var require_client = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/ibc/applications/transfer/v1/tx.js
+// ../clairveiljs/node_modules/cosmjs-types/ibc/applications/transfer/v1/tx.js
 var require_tx9 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/ibc/applications/transfer/v1/tx.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/ibc/applications/transfer/v1/tx.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MsgClientImpl = exports.MsgUpdateParamsResponse = exports.MsgUpdateParams = exports.MsgTransferResponse = exports.MsgTransfer = exports.protobufPackage = void 0;
@@ -36738,9 +36747,9 @@ var require_tx9 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/ibc/aminomessages.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/ibc/aminomessages.js
 var require_aminomessages9 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/ibc/aminomessages.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/ibc/aminomessages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isAminoMsgTransfer = isAminoMsgTransfer;
@@ -36786,9 +36795,9 @@ var require_aminomessages9 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/ibc/core/channel/v1/channel.js
+// ../clairveiljs/node_modules/cosmjs-types/ibc/core/channel/v1/channel.js
 var require_channel = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/ibc/core/channel/v1/channel.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/ibc/core/channel/v1/channel.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Timeout = exports.Acknowledgement = exports.PacketId = exports.PacketState = exports.Packet = exports.Counterparty = exports.IdentifiedChannel = exports.Channel = exports.Order = exports.State = exports.protobufPackage = void 0;
@@ -37566,9 +37575,9 @@ var require_channel = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/ibc/core/channel/v1/tx.js
+// ../clairveiljs/node_modules/cosmjs-types/ibc/core/channel/v1/tx.js
 var require_tx10 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/ibc/core/channel/v1/tx.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/ibc/core/channel/v1/tx.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MsgClientImpl = exports.MsgAcknowledgementResponse = exports.MsgAcknowledgement = exports.MsgTimeoutOnCloseResponse = exports.MsgTimeoutOnClose = exports.MsgTimeoutResponse = exports.MsgTimeout = exports.MsgRecvPacketResponse = exports.MsgRecvPacket = exports.MsgChannelCloseConfirmResponse = exports.MsgChannelCloseConfirm = exports.MsgChannelCloseInitResponse = exports.MsgChannelCloseInit = exports.MsgChannelOpenConfirmResponse = exports.MsgChannelOpenConfirm = exports.MsgChannelOpenAckResponse = exports.MsgChannelOpenAck = exports.MsgChannelOpenTryResponse = exports.MsgChannelOpenTry = exports.MsgChannelOpenInitResponse = exports.MsgChannelOpenInit = exports.ResponseResultType = exports.protobufPackage = void 0;
@@ -39078,9 +39087,9 @@ var require_tx10 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/upgrade/v1beta1/upgrade.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/upgrade/v1beta1/upgrade.js
 var require_upgrade = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/upgrade/v1beta1/upgrade.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/upgrade/v1beta1/upgrade.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ModuleVersion = exports.CancelSoftwareUpgradeProposal = exports.SoftwareUpgradeProposal = exports.Plan = exports.protobufPackage = void 0;
@@ -39378,9 +39387,9 @@ var require_upgrade = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/ibc/core/client/v1/tx.js
+// ../clairveiljs/node_modules/cosmjs-types/ibc/core/client/v1/tx.js
 var require_tx11 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/ibc/core/client/v1/tx.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/ibc/core/client/v1/tx.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MsgClientImpl = exports.MsgDeleteClientCreatorResponse = exports.MsgDeleteClientCreator = exports.MsgUpdateParamsResponse = exports.MsgUpdateParams = exports.MsgIBCSoftwareUpgradeResponse = exports.MsgIBCSoftwareUpgrade = exports.MsgRecoverClientResponse = exports.MsgRecoverClient = exports.MsgSubmitMisbehaviourResponse = exports.MsgSubmitMisbehaviour = exports.MsgUpgradeClientResponse = exports.MsgUpgradeClient = exports.MsgUpdateClientResponse = exports.MsgUpdateClient = exports.MsgCreateClientResponse = exports.MsgCreateClient = exports.protobufPackage = void 0;
@@ -40321,9 +40330,9 @@ var require_tx11 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/ics23/v1/proofs.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/ics23/v1/proofs.js
 var require_proofs = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/ics23/v1/proofs.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/ics23/v1/proofs.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CompressedNonExistenceProof = exports.CompressedExistenceProof = exports.CompressedBatchEntry = exports.CompressedBatchProof = exports.BatchEntry = exports.BatchProof = exports.InnerSpec = exports.ProofSpec = exports.InnerOp = exports.LeafOp = exports.CommitmentProof = exports.NonExistenceProof = exports.ExistenceProof = exports.LengthOp = exports.HashOp = exports.protobufPackage = void 0;
@@ -41486,9 +41495,9 @@ var require_proofs = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/ibc/core/commitment/v1/commitment.js
+// ../clairveiljs/node_modules/cosmjs-types/ibc/core/commitment/v1/commitment.js
 var require_commitment = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/ibc/core/commitment/v1/commitment.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/ibc/core/commitment/v1/commitment.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MerkleProof = exports.MerklePrefix = exports.MerkleRoot = exports.protobufPackage = void 0;
@@ -41644,9 +41653,9 @@ var require_commitment = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/ibc/core/connection/v1/connection.js
+// ../clairveiljs/node_modules/cosmjs-types/ibc/core/connection/v1/connection.js
 var require_connection = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/ibc/core/connection/v1/connection.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/ibc/core/connection/v1/connection.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Params = exports.Version = exports.ConnectionPaths = exports.ClientPaths = exports.Counterparty = exports.IdentifiedConnection = exports.ConnectionEnd = exports.State = exports.protobufPackage = void 0;
@@ -42206,9 +42215,9 @@ var require_connection = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/ibc/core/connection/v1/tx.js
+// ../clairveiljs/node_modules/cosmjs-types/ibc/core/connection/v1/tx.js
 var require_tx12 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/ibc/core/connection/v1/tx.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/ibc/core/connection/v1/tx.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MsgClientImpl = exports.MsgUpdateParamsResponse = exports.MsgUpdateParams = exports.MsgConnectionOpenConfirmResponse = exports.MsgConnectionOpenConfirm = exports.MsgConnectionOpenAckResponse = exports.MsgConnectionOpenAck = exports.MsgConnectionOpenTryResponse = exports.MsgConnectionOpenTry = exports.MsgConnectionOpenInitResponse = exports.MsgConnectionOpenInit = exports.protobufPackage = void 0;
@@ -43030,9 +43039,9 @@ var require_tx12 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/ibc/messages.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/ibc/messages.js
 var require_messages7 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/ibc/messages.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/ibc/messages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ibcTypes = void 0;
@@ -43068,9 +43077,9 @@ var require_messages7 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/ibc/applications/transfer/v1/transfer.js
+// ../clairveiljs/node_modules/cosmjs-types/ibc/applications/transfer/v1/transfer.js
 var require_transfer = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/ibc/applications/transfer/v1/transfer.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/ibc/applications/transfer/v1/transfer.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Params = exports.protobufPackage = void 0;
@@ -43138,9 +43147,9 @@ var require_transfer = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/ibc/applications/transfer/v1/token.js
+// ../clairveiljs/node_modules/cosmjs-types/ibc/applications/transfer/v1/token.js
 var require_token = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/ibc/applications/transfer/v1/token.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/ibc/applications/transfer/v1/token.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Hop = exports.Denom = exports.Token = exports.protobufPackage = void 0;
@@ -43330,9 +43339,9 @@ var require_token = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/ibc/applications/transfer/v1/query.js
+// ../clairveiljs/node_modules/cosmjs-types/ibc/applications/transfer/v1/query.js
 var require_query7 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/ibc/applications/transfer/v1/query.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/ibc/applications/transfer/v1/query.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.QueryClientImpl = exports.QueryTotalEscrowForDenomResponse = exports.QueryTotalEscrowForDenomRequest = exports.QueryEscrowAddressResponse = exports.QueryEscrowAddressRequest = exports.QueryDenomHashResponse = exports.QueryDenomHashRequest = exports.QueryDenomsResponse = exports.QueryDenomsRequest = exports.QueryDenomResponse = exports.QueryDenomRequest = exports.QueryParamsResponse = exports.QueryParamsRequest = exports.protobufPackage = void 0;
@@ -43979,9 +43988,9 @@ var require_query7 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/ibc/core/channel/v1/query.js
+// ../clairveiljs/node_modules/cosmjs-types/ibc/core/channel/v1/query.js
 var require_query8 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/ibc/core/channel/v1/query.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/ibc/core/channel/v1/query.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.QueryClientImpl = exports.QueryNextSequenceSendResponse = exports.QueryNextSequenceSendRequest = exports.QueryNextSequenceReceiveResponse = exports.QueryNextSequenceReceiveRequest = exports.QueryUnreceivedAcksResponse = exports.QueryUnreceivedAcksRequest = exports.QueryUnreceivedPacketsResponse = exports.QueryUnreceivedPacketsRequest = exports.QueryPacketAcknowledgementsResponse = exports.QueryPacketAcknowledgementsRequest = exports.QueryPacketAcknowledgementResponse = exports.QueryPacketAcknowledgementRequest = exports.QueryPacketReceiptResponse = exports.QueryPacketReceiptRequest = exports.QueryPacketCommitmentsResponse = exports.QueryPacketCommitmentsRequest = exports.QueryPacketCommitmentResponse = exports.QueryPacketCommitmentRequest = exports.QueryChannelConsensusStateResponse = exports.QueryChannelConsensusStateRequest = exports.QueryChannelClientStateResponse = exports.QueryChannelClientStateRequest = exports.QueryConnectionChannelsResponse = exports.QueryConnectionChannelsRequest = exports.QueryChannelsResponse = exports.QueryChannelsRequest = exports.QueryChannelResponse = exports.QueryChannelRequest = exports.protobufPackage = void 0;
@@ -46099,9 +46108,9 @@ var require_query8 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/ibc/core/commitment/v2/commitment.js
+// ../clairveiljs/node_modules/cosmjs-types/ibc/core/commitment/v2/commitment.js
 var require_commitment2 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/ibc/core/commitment/v2/commitment.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/ibc/core/commitment/v2/commitment.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MerklePath = exports.protobufPackage = void 0;
@@ -46162,9 +46171,9 @@ var require_commitment2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/ibc/core/client/v1/query.js
+// ../clairveiljs/node_modules/cosmjs-types/ibc/core/client/v1/query.js
 var require_query9 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/ibc/core/client/v1/query.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/ibc/core/client/v1/query.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.QueryClientImpl = exports.QueryVerifyMembershipResponse = exports.QueryVerifyMembershipRequest = exports.QueryUpgradedConsensusStateResponse = exports.QueryUpgradedConsensusStateRequest = exports.QueryUpgradedClientStateResponse = exports.QueryUpgradedClientStateRequest = exports.QueryClientCreatorResponse = exports.QueryClientCreatorRequest = exports.QueryClientParamsResponse = exports.QueryClientParamsRequest = exports.QueryClientStatusResponse = exports.QueryClientStatusRequest = exports.QueryConsensusStateHeightsResponse = exports.QueryConsensusStateHeightsRequest = exports.QueryConsensusStatesResponse = exports.QueryConsensusStatesRequest = exports.QueryConsensusStateResponse = exports.QueryConsensusStateRequest = exports.QueryClientStatesResponse = exports.QueryClientStatesRequest = exports.QueryClientStateResponse = exports.QueryClientStateRequest = exports.protobufPackage = void 0;
@@ -47499,9 +47508,9 @@ var require_query9 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/ibc/core/connection/v1/query.js
+// ../clairveiljs/node_modules/cosmjs-types/ibc/core/connection/v1/query.js
 var require_query10 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/ibc/core/connection/v1/query.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/ibc/core/connection/v1/query.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.QueryClientImpl = exports.QueryConnectionParamsResponse = exports.QueryConnectionParamsRequest = exports.QueryConnectionConsensusStateResponse = exports.QueryConnectionConsensusStateRequest = exports.QueryConnectionClientStateResponse = exports.QueryConnectionClientStateRequest = exports.QueryClientConnectionsResponse = exports.QueryClientConnectionsRequest = exports.QueryConnectionsResponse = exports.QueryConnectionsRequest = exports.QueryConnectionResponse = exports.QueryConnectionRequest = exports.protobufPackage = void 0;
@@ -48289,9 +48298,9 @@ var require_query10 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/tendermint/crypto/proof.js
+// ../clairveiljs/node_modules/cosmjs-types/tendermint/crypto/proof.js
 var require_proof = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/tendermint/crypto/proof.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/tendermint/crypto/proof.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ProofOps = exports.ProofOp = exports.DominoOp = exports.ValueOp = exports.Proof = exports.protobufPackage = void 0;
@@ -48638,9 +48647,9 @@ var require_proof = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/tendermint/version/types.js
+// ../clairveiljs/node_modules/cosmjs-types/tendermint/version/types.js
 var require_types2 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/tendermint/version/types.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/tendermint/version/types.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Consensus = exports.App = exports.protobufPackage = void 0;
@@ -48772,9 +48781,9 @@ var require_types2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/tendermint/crypto/keys.js
+// ../clairveiljs/node_modules/cosmjs-types/tendermint/crypto/keys.js
 var require_keys4 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/tendermint/crypto/keys.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/tendermint/crypto/keys.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PublicKey = exports.protobufPackage = void 0;
@@ -48842,9 +48851,9 @@ var require_keys4 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/tendermint/types/validator.js
+// ../clairveiljs/node_modules/cosmjs-types/tendermint/types/validator.js
 var require_validator = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/tendermint/types/validator.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/tendermint/types/validator.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SimpleValidator = exports.Validator = exports.ValidatorSet = exports.BlockIDFlag = exports.protobufPackage = void 0;
@@ -49125,9 +49134,9 @@ var require_validator = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/tendermint/types/types.js
+// ../clairveiljs/node_modules/cosmjs-types/tendermint/types/types.js
 var require_types3 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/tendermint/types/types.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/tendermint/types/types.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.TxProof = exports.BlockMeta = exports.LightBlock = exports.SignedHeader = exports.Proposal = exports.ExtendedCommitSig = exports.ExtendedCommit = exports.CommitSig = exports.Commit = exports.Vote = exports.Data = exports.Header = exports.BlockID = exports.Part = exports.PartSetHeader = exports.SignedMsgType = exports.protobufPackage = void 0;
@@ -50540,9 +50549,9 @@ var require_types3 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/ibc/lightclients/tendermint/v1/tendermint.js
+// ../clairveiljs/node_modules/cosmjs-types/ibc/lightclients/tendermint/v1/tendermint.js
 var require_tendermint = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/ibc/lightclients/tendermint/v1/tendermint.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/ibc/lightclients/tendermint/v1/tendermint.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Fraction = exports.Header = exports.Misbehaviour = exports.ConsensusState = exports.ClientState = exports.protobufPackage = void 0;
@@ -51032,9 +51041,9 @@ var require_tendermint = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/ibc/queries.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/ibc/queries.js
 var require_queries7 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/ibc/queries.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/ibc/queries.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.setupIbcExtension = setupIbcExtension;
@@ -51340,9 +51349,9 @@ var require_queries7 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/mint/v1beta1/mint.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/mint/v1beta1/mint.js
 var require_mint = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/mint/v1beta1/mint.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/mint/v1beta1/mint.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Params = exports.Minter = exports.protobufPackage = void 0;
@@ -51514,9 +51523,9 @@ var require_mint = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/mint/v1beta1/query.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/mint/v1beta1/query.js
 var require_query11 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/mint/v1beta1/query.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/mint/v1beta1/query.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.QueryClientImpl = exports.QueryAnnualProvisionsResponse = exports.QueryAnnualProvisionsRequest = exports.QueryInflationResponse = exports.QueryInflationRequest = exports.QueryParamsResponse = exports.QueryParamsRequest = exports.protobufPackage = void 0;
@@ -51800,9 +51809,9 @@ var require_query11 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/mint/queries.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/mint/queries.js
 var require_queries8 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/mint/queries.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/mint/queries.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.setupMintExtension = setupMintExtension;
@@ -51840,9 +51849,9 @@ var require_queries8 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/slashing/aminomessages.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/slashing/aminomessages.js
 var require_aminomessages10 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/slashing/aminomessages.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/slashing/aminomessages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isAminoMsgUnjail = isAminoMsgUnjail;
@@ -51856,9 +51865,9 @@ var require_aminomessages10 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/slashing/v1beta1/slashing.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/slashing/v1beta1/slashing.js
 var require_slashing = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/slashing/v1beta1/slashing.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/slashing/v1beta1/slashing.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Params = exports.ValidatorSigningInfo = exports.protobufPackage = void 0;
@@ -52075,9 +52084,9 @@ var require_slashing = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/slashing/v1beta1/query.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/slashing/v1beta1/query.js
 var require_query12 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/slashing/v1beta1/query.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/slashing/v1beta1/query.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.QueryClientImpl = exports.QuerySigningInfosResponse = exports.QuerySigningInfosRequest = exports.QuerySigningInfoResponse = exports.QuerySigningInfoRequest = exports.QueryParamsResponse = exports.QueryParamsRequest = exports.protobufPackage = void 0;
@@ -52409,9 +52418,9 @@ var require_query12 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/slashing/queries.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/slashing/queries.js
 var require_queries9 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/slashing/queries.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/slashing/queries.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.setupSlashingExtension = setupSlashingExtension;
@@ -52444,9 +52453,9 @@ var require_queries9 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/staking/aminomessages.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/staking/aminomessages.js
 var require_aminomessages11 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/staking/aminomessages.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/staking/aminomessages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.protoDecimalToJson = protoDecimalToJson;
@@ -52645,9 +52654,9 @@ var require_aminomessages11 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/tendermint/types/params.js
+// ../clairveiljs/node_modules/cosmjs-types/tendermint/types/params.js
 var require_params = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/tendermint/types/params.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/tendermint/types/params.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ABCIParams = exports.HashedParams = exports.VersionParams = exports.ValidatorParams = exports.EvidenceParams = exports.BlockParams = exports.ConsensusParams = exports.protobufPackage = void 0;
@@ -53107,9 +53116,9 @@ var require_params = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/tendermint/abci/types.js
+// ../clairveiljs/node_modules/cosmjs-types/tendermint/abci/types.js
 var require_types4 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/tendermint/abci/types.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/tendermint/abci/types.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ValidatorUpdate = exports.Validator = exports.TxResult = exports.ExecTxResult = exports.EventAttribute = exports.Event = exports.ExtendedCommitInfo = exports.CommitInfo = exports.ResponseFinalizeBlock = exports.ResponseVerifyVoteExtension = exports.ResponseExtendVote = exports.ResponseProcessProposal = exports.ResponsePrepareProposal = exports.ResponseApplySnapshotChunk = exports.ResponseLoadSnapshotChunk = exports.ResponseOfferSnapshot = exports.ResponseListSnapshots = exports.ResponseCommit = exports.ResponseCheckTx = exports.ResponseQuery = exports.ResponseInitChain = exports.ResponseInfo = exports.ResponseFlush = exports.ResponseEcho = exports.ResponseException = exports.Response = exports.RequestFinalizeBlock = exports.RequestVerifyVoteExtension = exports.RequestExtendVote = exports.RequestProcessProposal = exports.RequestPrepareProposal = exports.RequestApplySnapshotChunk = exports.RequestLoadSnapshotChunk = exports.RequestOfferSnapshot = exports.RequestListSnapshots = exports.RequestCommit = exports.RequestCheckTx = exports.RequestQuery = exports.RequestInitChain = exports.RequestInfo = exports.RequestFlush = exports.RequestEcho = exports.Request = exports.MisbehaviorType = exports.ResponseVerifyVoteExtension_VerifyStatus = exports.ResponseProcessProposal_ProposalStatus = exports.ResponseApplySnapshotChunk_Result = exports.ResponseOfferSnapshot_Result = exports.CheckTxType = exports.protobufPackage = void 0;
@@ -57290,9 +57299,9 @@ var require_types4 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/staking/v1beta1/staking.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/staking/v1beta1/staking.js
 var require_staking = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/staking/v1beta1/staking.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/staking/v1beta1/staking.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ValidatorUpdates = exports.Pool = exports.RedelegationResponse = exports.RedelegationEntryResponse = exports.DelegationResponse = exports.Params = exports.Redelegation = exports.RedelegationEntry = exports.UnbondingDelegationEntry = exports.UnbondingDelegation = exports.Delegation = exports.DVVTriplets = exports.DVVTriplet = exports.DVPairs = exports.DVPair = exports.ValAddresses = exports.Validator = exports.Description = exports.Commission = exports.CommissionRates = exports.HistoricalInfo = exports.Infraction = exports.BondStatus = exports.protobufPackage = void 0;
@@ -59007,9 +59016,9 @@ var require_staking = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/staking/v1beta1/tx.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/staking/v1beta1/tx.js
 var require_tx13 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/staking/v1beta1/tx.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/staking/v1beta1/tx.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MsgClientImpl = exports.MsgUpdateParamsResponse = exports.MsgUpdateParams = exports.MsgCancelUnbondingDelegationResponse = exports.MsgCancelUnbondingDelegation = exports.MsgUndelegateResponse = exports.MsgUndelegate = exports.MsgBeginRedelegateResponse = exports.MsgBeginRedelegate = exports.MsgDelegateResponse = exports.MsgDelegate = exports.MsgEditValidatorResponse = exports.MsgEditValidator = exports.MsgCreateValidatorResponse = exports.MsgCreateValidator = exports.protobufPackage = void 0;
@@ -59929,9 +59938,9 @@ var require_tx13 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/staking/messages.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/staking/messages.js
 var require_messages8 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/staking/messages.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/staking/messages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.stakingTypes = void 0;
@@ -59971,9 +59980,9 @@ var require_messages8 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/staking/v1beta1/query.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/staking/v1beta1/query.js
 var require_query13 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/staking/v1beta1/query.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/staking/v1beta1/query.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.QueryClientImpl = exports.QueryParamsResponse = exports.QueryParamsRequest = exports.QueryPoolResponse = exports.QueryPoolRequest = exports.QueryHistoricalInfoResponse = exports.QueryHistoricalInfoRequest = exports.QueryDelegatorValidatorResponse = exports.QueryDelegatorValidatorRequest = exports.QueryDelegatorValidatorsResponse = exports.QueryDelegatorValidatorsRequest = exports.QueryRedelegationsResponse = exports.QueryRedelegationsRequest = exports.QueryDelegatorUnbondingDelegationsResponse = exports.QueryDelegatorUnbondingDelegationsRequest = exports.QueryDelegatorDelegationsResponse = exports.QueryDelegatorDelegationsRequest = exports.QueryUnbondingDelegationResponse = exports.QueryUnbondingDelegationRequest = exports.QueryDelegationResponse = exports.QueryDelegationRequest = exports.QueryValidatorUnbondingDelegationsResponse = exports.QueryValidatorUnbondingDelegationsRequest = exports.QueryValidatorDelegationsResponse = exports.QueryValidatorDelegationsRequest = exports.QueryValidatorResponse = exports.QueryValidatorRequest = exports.QueryValidatorsResponse = exports.QueryValidatorsRequest = exports.protobufPackage = void 0;
@@ -61649,9 +61658,9 @@ var require_query13 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/staking/queries.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/staking/queries.js
 var require_queries10 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/staking/queries.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/staking/queries.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.setupStakingExtension = setupStakingExtension;
@@ -61758,9 +61767,9 @@ var require_queries10 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/tendermint/types/evidence.js
+// ../clairveiljs/node_modules/cosmjs-types/tendermint/types/evidence.js
 var require_evidence = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/tendermint/types/evidence.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/tendermint/types/evidence.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EvidenceList = exports.LightClientAttackEvidence = exports.DuplicateVoteEvidence = exports.Evidence = exports.protobufPackage = void 0;
@@ -62090,9 +62099,9 @@ var require_evidence = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/tendermint/types/block.js
+// ../clairveiljs/node_modules/cosmjs-types/tendermint/types/block.js
 var require_block = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/tendermint/types/block.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/tendermint/types/block.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Block = exports.protobufPackage = void 0;
@@ -62192,9 +62201,9 @@ var require_block = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/base/abci/v1beta1/abci.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/base/abci/v1beta1/abci.js
 var require_abci = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/base/abci/v1beta1/abci.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/base/abci/v1beta1/abci.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SearchBlocksResult = exports.SearchTxsResult = exports.TxMsgData = exports.MsgData = exports.SimulationResponse = exports.Result = exports.GasInfo = exports.Attribute = exports.StringEvent = exports.ABCIMessageLog = exports.TxResponse = exports.protobufPackage = void 0;
@@ -63163,9 +63172,9 @@ var require_abci = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/tx/v1beta1/service.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/tx/v1beta1/service.js
 var require_service = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/tx/v1beta1/service.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/tx/v1beta1/service.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ServiceClientImpl = exports.TxDecodeAminoResponse = exports.TxDecodeAminoRequest = exports.TxEncodeAminoResponse = exports.TxEncodeAminoRequest = exports.TxEncodeResponse = exports.TxEncodeRequest = exports.TxDecodeResponse = exports.TxDecodeRequest = exports.GetBlockWithTxsResponse = exports.GetBlockWithTxsRequest = exports.GetTxResponse = exports.GetTxRequest = exports.SimulateResponse = exports.SimulateRequest = exports.BroadcastTxResponse = exports.BroadcastTxRequest = exports.GetTxsEventResponse = exports.GetTxsEventRequest = exports.BroadcastMode = exports.OrderBy = exports.protobufPackage = void 0;
@@ -64399,9 +64408,9 @@ var require_service = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/tx/queries.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/tx/queries.js
 var require_queries11 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/tx/queries.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/tx/queries.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.setupTxExtension = setupTxExtension;
@@ -64452,9 +64461,9 @@ var require_queries11 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/vesting/aminomessages.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/vesting/aminomessages.js
 var require_aminomessages12 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/vesting/aminomessages.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/vesting/aminomessages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isAminoMsgCreateVestingAccount = isAminoMsgCreateVestingAccount;
@@ -64486,9 +64495,9 @@ var require_aminomessages12 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/cosmjs-types/cosmos/vesting/v1beta1/tx.js
+// ../clairveiljs/node_modules/cosmjs-types/cosmos/vesting/v1beta1/tx.js
 var require_tx14 = __commonJS({
-  "../../../clairveiljs/node_modules/cosmjs-types/cosmos/vesting/v1beta1/tx.js"(exports) {
+  "../clairveiljs/node_modules/cosmjs-types/cosmos/vesting/v1beta1/tx.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MsgClientImpl = exports.MsgCreatePeriodicVestingAccountResponse = exports.MsgCreatePeriodicVestingAccount = exports.MsgCreatePermanentLockedAccountResponse = exports.MsgCreatePermanentLockedAccount = exports.MsgCreateVestingAccountResponse = exports.MsgCreateVestingAccount = exports.protobufPackage = void 0;
@@ -64886,9 +64895,9 @@ var require_tx14 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/vesting/messages.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/vesting/messages.js
 var require_messages9 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/vesting/messages.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/vesting/messages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.vestingTypes = void 0;
@@ -64899,9 +64908,9 @@ var require_messages9 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/index.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/modules/index.js
 var require_modules = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/modules/index.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/modules/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isAminoMsgCreateValidator = exports.isAminoMsgBeginRedelegate = exports.createStakingAminoConverters = exports.setupSlashingExtension = exports.isAminoMsgUnjail = exports.createSlashingAminoConverters = exports.setupMintExtension = exports.setupIbcExtension = exports.isMsgTransferEncodeObject = exports.ibcTypes = exports.isAminoMsgTransfer = exports.createIbcAminoConverters = exports.groupTypes = exports.createGroupAminoConverters = exports.setupGovExtension = exports.isMsgVoteWeightedEncodeObject = exports.isMsgVoteEncodeObject = exports.isMsgSubmitProposalEncodeObject = exports.isMsgDepositEncodeObject = exports.govTypes = exports.isAminoMsgVoteWeighted = exports.isAminoMsgVote = exports.isAminoMsgSubmitProposal = exports.isAminoMsgDeposit = exports.createGovAminoConverters = exports.setupFeegrantExtension = exports.feegrantTypes = exports.createFeegrantAminoConverters = exports.isAminoMsgSubmitEvidence = exports.createEvidenceAminoConverters = exports.setupDistributionExtension = exports.isMsgWithdrawDelegatorRewardEncodeObject = exports.distributionTypes = exports.isAminoMsgWithdrawValidatorCommission = exports.isAminoMsgWithdrawDelegatorReward = exports.isAminoMsgSetWithdrawAddress = exports.isAminoMsgFundCommunityPool = exports.createDistributionAminoConverters = exports.isAminoMsgVerifyInvariant = exports.createCrysisAminoConverters = exports.setupBankExtension = exports.isMsgSendEncodeObject = exports.bankTypes = exports.isAminoMsgSend = exports.isAminoMsgMultiSend = exports.createBankAminoConverters = exports.setupAuthzExtension = exports.authzTypes = exports.createAuthzAminoConverters = exports.setupAuthExtension = void 0;
@@ -65136,9 +65145,9 @@ var require_modules = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/multisignature.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/multisignature.js
 var require_multisignature = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/multisignature.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/multisignature.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.makeCompactBitArray = makeCompactBitArray;
@@ -65208,9 +65217,9 @@ var require_multisignature = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/search.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/search.js
 var require_search = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/search.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/search.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isSearchTxQueryArray = isSearchTxQueryArray;
@@ -65220,9 +65229,9 @@ var require_search = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/addresses.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/addresses.js
 var require_addresses2 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/addresses.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/addresses.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.rawEd25519PubkeyToRawAddress = rawEd25519PubkeyToRawAddress;
@@ -65259,9 +65268,9 @@ var require_addresses2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/json-rpc/build/id.js
+// ../clairveiljs/node_modules/@cosmjs/json-rpc/build/id.js
 var require_id = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/json-rpc/build/id.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/json-rpc/build/id.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.makeJsonRpcId = makeJsonRpcId;
@@ -65272,9 +65281,9 @@ var require_id = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/symbol-observable/lib/ponyfill.js
+// ../clairveiljs/node_modules/symbol-observable/lib/ponyfill.js
 var require_ponyfill = __commonJS({
-  "../../../clairveiljs/node_modules/symbol-observable/lib/ponyfill.js"(exports) {
+  "../clairveiljs/node_modules/symbol-observable/lib/ponyfill.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", {
       value: true
@@ -65301,16 +65310,16 @@ var require_ponyfill = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/symbol-observable/ponyfill.js
+// ../clairveiljs/node_modules/symbol-observable/ponyfill.js
 var require_ponyfill2 = __commonJS({
-  "../../../clairveiljs/node_modules/symbol-observable/ponyfill.js"(exports, module) {
+  "../clairveiljs/node_modules/symbol-observable/ponyfill.js"(exports, module) {
     module.exports = require_ponyfill();
   }
 });
 
-// ../../../clairveiljs/node_modules/object-keys/isArguments.js
+// ../clairveiljs/node_modules/object-keys/isArguments.js
 var require_isArguments = __commonJS({
-  "../../../clairveiljs/node_modules/object-keys/isArguments.js"(exports, module) {
+  "../clairveiljs/node_modules/object-keys/isArguments.js"(exports, module) {
     "use strict";
     var toStr = Object.prototype.toString;
     module.exports = function isArguments(value) {
@@ -65324,9 +65333,9 @@ var require_isArguments = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/object-keys/implementation.js
+// ../clairveiljs/node_modules/object-keys/implementation.js
 var require_implementation = __commonJS({
-  "../../../clairveiljs/node_modules/object-keys/implementation.js"(exports, module) {
+  "../clairveiljs/node_modules/object-keys/implementation.js"(exports, module) {
     "use strict";
     var keysShim;
     if (!Object.keys) {
@@ -65456,9 +65465,9 @@ var require_implementation = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/object-keys/index.js
+// ../clairveiljs/node_modules/object-keys/index.js
 var require_object_keys = __commonJS({
-  "../../../clairveiljs/node_modules/object-keys/index.js"(exports, module) {
+  "../clairveiljs/node_modules/object-keys/index.js"(exports, module) {
     "use strict";
     var slice = Array.prototype.slice;
     var isArgs = require_isArguments();
@@ -65490,9 +65499,9 @@ var require_object_keys = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/es-define-property/index.js
+// ../clairveiljs/node_modules/es-define-property/index.js
 var require_es_define_property = __commonJS({
-  "../../../clairveiljs/node_modules/es-define-property/index.js"(exports, module) {
+  "../clairveiljs/node_modules/es-define-property/index.js"(exports, module) {
     "use strict";
     var $defineProperty = Object.defineProperty || false;
     if ($defineProperty) {
@@ -65506,33 +65515,33 @@ var require_es_define_property = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/es-errors/syntax.js
+// ../clairveiljs/node_modules/es-errors/syntax.js
 var require_syntax = __commonJS({
-  "../../../clairveiljs/node_modules/es-errors/syntax.js"(exports, module) {
+  "../clairveiljs/node_modules/es-errors/syntax.js"(exports, module) {
     "use strict";
     module.exports = SyntaxError;
   }
 });
 
-// ../../../clairveiljs/node_modules/es-errors/type.js
+// ../clairveiljs/node_modules/es-errors/type.js
 var require_type = __commonJS({
-  "../../../clairveiljs/node_modules/es-errors/type.js"(exports, module) {
+  "../clairveiljs/node_modules/es-errors/type.js"(exports, module) {
     "use strict";
     module.exports = TypeError;
   }
 });
 
-// ../../../clairveiljs/node_modules/gopd/gOPD.js
+// ../clairveiljs/node_modules/gopd/gOPD.js
 var require_gOPD = __commonJS({
-  "../../../clairveiljs/node_modules/gopd/gOPD.js"(exports, module) {
+  "../clairveiljs/node_modules/gopd/gOPD.js"(exports, module) {
     "use strict";
     module.exports = Object.getOwnPropertyDescriptor;
   }
 });
 
-// ../../../clairveiljs/node_modules/gopd/index.js
+// ../clairveiljs/node_modules/gopd/index.js
 var require_gopd = __commonJS({
-  "../../../clairveiljs/node_modules/gopd/index.js"(exports, module) {
+  "../clairveiljs/node_modules/gopd/index.js"(exports, module) {
     "use strict";
     var $gOPD = require_gOPD();
     if ($gOPD) {
@@ -65546,9 +65555,9 @@ var require_gopd = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/define-data-property/index.js
+// ../clairveiljs/node_modules/define-data-property/index.js
 var require_define_data_property = __commonJS({
-  "../../../clairveiljs/node_modules/define-data-property/index.js"(exports, module) {
+  "../clairveiljs/node_modules/define-data-property/index.js"(exports, module) {
     "use strict";
     var $defineProperty = require_es_define_property();
     var $SyntaxError = require_syntax();
@@ -65594,9 +65603,9 @@ var require_define_data_property = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/has-property-descriptors/index.js
+// ../clairveiljs/node_modules/has-property-descriptors/index.js
 var require_has_property_descriptors = __commonJS({
-  "../../../clairveiljs/node_modules/has-property-descriptors/index.js"(exports, module) {
+  "../clairveiljs/node_modules/has-property-descriptors/index.js"(exports, module) {
     "use strict";
     var $defineProperty = require_es_define_property();
     var hasPropertyDescriptors = function hasPropertyDescriptors2() {
@@ -65616,9 +65625,9 @@ var require_has_property_descriptors = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/define-properties/index.js
+// ../clairveiljs/node_modules/define-properties/index.js
 var require_define_properties = __commonJS({
-  "../../../clairveiljs/node_modules/define-properties/index.js"(exports, module) {
+  "../clairveiljs/node_modules/define-properties/index.js"(exports, module) {
     "use strict";
     var keys = require_object_keys();
     var hasSymbols = typeof Symbol === "function" && typeof /* @__PURE__ */ Symbol("foo") === "symbol";
@@ -65660,9 +65669,9 @@ var require_define_properties = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/globalthis/implementation.browser.js
+// ../clairveiljs/node_modules/globalthis/implementation.browser.js
 var require_implementation_browser = __commonJS({
-  "../../../clairveiljs/node_modules/globalthis/implementation.browser.js"(exports, module) {
+  "../clairveiljs/node_modules/globalthis/implementation.browser.js"(exports, module) {
     "use strict";
     if (typeof self !== "undefined") {
       module.exports = self;
@@ -65674,9 +65683,9 @@ var require_implementation_browser = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/globalthis/polyfill.js
+// ../clairveiljs/node_modules/globalthis/polyfill.js
 var require_polyfill = __commonJS({
-  "../../../clairveiljs/node_modules/globalthis/polyfill.js"(exports, module) {
+  "../clairveiljs/node_modules/globalthis/polyfill.js"(exports, module) {
     "use strict";
     var implementation = require_implementation_browser();
     module.exports = function getPolyfill() {
@@ -65688,9 +65697,9 @@ var require_polyfill = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/globalthis/shim.js
+// ../clairveiljs/node_modules/globalthis/shim.js
 var require_shim = __commonJS({
-  "../../../clairveiljs/node_modules/globalthis/shim.js"(exports, module) {
+  "../clairveiljs/node_modules/globalthis/shim.js"(exports, module) {
     "use strict";
     var define2 = require_define_properties();
     var gOPD = require_gopd();
@@ -65715,9 +65724,9 @@ var require_shim = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/globalthis/index.js
+// ../clairveiljs/node_modules/globalthis/index.js
 var require_globalthis = __commonJS({
-  "../../../clairveiljs/node_modules/globalthis/index.js"(exports, module) {
+  "../clairveiljs/node_modules/globalthis/index.js"(exports, module) {
     "use strict";
     var defineProperties = require_define_properties();
     var implementation = require_implementation_browser();
@@ -65736,9 +65745,9 @@ var require_globalthis = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/xstream/index.js
+// ../clairveiljs/node_modules/xstream/index.js
 var require_xstream = __commonJS({
-  "../../../clairveiljs/node_modules/xstream/index.js"(exports) {
+  "../clairveiljs/node_modules/xstream/index.js"(exports) {
     "use strict";
     var __extends = exports && exports.__extends || /* @__PURE__ */ (function() {
       var extendStatics = function(d, b) {
@@ -66984,9 +66993,9 @@ var require_xstream = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stream/build/concat.js
+// ../clairveiljs/node_modules/@cosmjs/stream/build/concat.js
 var require_concat = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stream/build/concat.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stream/build/concat.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.concat = concat;
@@ -67061,9 +67070,9 @@ var require_concat = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stream/build/defaultvalueproducer.js
+// ../clairveiljs/node_modules/@cosmjs/stream/build/defaultvalueproducer.js
 var require_defaultvalueproducer = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stream/build/defaultvalueproducer.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stream/build/defaultvalueproducer.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DefaultValueProducer = void 0;
@@ -67123,9 +67132,9 @@ var require_defaultvalueproducer = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stream/build/dropduplicates.js
+// ../clairveiljs/node_modules/@cosmjs/stream/build/dropduplicates.js
 var require_dropduplicates = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stream/build/dropduplicates.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stream/build/dropduplicates.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.dropDuplicates = dropDuplicates;
@@ -67140,9 +67149,9 @@ var require_dropduplicates = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stream/build/promise.js
+// ../clairveiljs/node_modules/@cosmjs/stream/build/promise.js
 var require_promise = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stream/build/promise.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stream/build/promise.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.fromListPromise = fromListPromise;
@@ -67195,9 +67204,9 @@ var require_promise = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stream/build/reducer.js
+// ../clairveiljs/node_modules/@cosmjs/stream/build/reducer.js
 var require_reducer = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stream/build/reducer.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stream/build/reducer.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Reducer = void 0;
@@ -67262,9 +67271,9 @@ var require_reducer = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stream/build/valueandupdates.js
+// ../clairveiljs/node_modules/@cosmjs/stream/build/valueandupdates.js
 var require_valueandupdates = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stream/build/valueandupdates.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stream/build/valueandupdates.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ValueAndUpdates = void 0;
@@ -67312,9 +67321,9 @@ var require_valueandupdates = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stream/build/index.js
+// ../clairveiljs/node_modules/@cosmjs/stream/build/index.js
 var require_build7 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stream/build/index.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stream/build/index.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -67364,9 +67373,9 @@ var require_build7 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/json-rpc/build/types.js
+// ../clairveiljs/node_modules/@cosmjs/json-rpc/build/types.js
 var require_types5 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/json-rpc/build/types.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/json-rpc/build/types.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.jsonRpcCode = void 0;
@@ -67393,9 +67402,9 @@ var require_types5 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/json-rpc/build/jsonrpcclient.js
+// ../clairveiljs/node_modules/@cosmjs/json-rpc/build/jsonrpcclient.js
 var require_jsonrpcclient = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/json-rpc/build/jsonrpcclient.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/json-rpc/build/jsonrpcclient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.JsonRpcClient = void 0;
@@ -67422,9 +67431,9 @@ var require_jsonrpcclient = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/json-rpc/build/compatibility.js
+// ../clairveiljs/node_modules/@cosmjs/json-rpc/build/compatibility.js
 var require_compatibility = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/json-rpc/build/compatibility.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/json-rpc/build/compatibility.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isJsonCompatibleValue = isJsonCompatibleValue;
@@ -67462,9 +67471,9 @@ var require_compatibility = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/json-rpc/build/parse.js
+// ../clairveiljs/node_modules/@cosmjs/json-rpc/build/parse.js
 var require_parse = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/json-rpc/build/parse.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/json-rpc/build/parse.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.parseJsonRpcId = parseJsonRpcId;
@@ -67585,9 +67594,9 @@ var require_parse = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/json-rpc/build/index.js
+// ../clairveiljs/node_modules/@cosmjs/json-rpc/build/index.js
 var require_build8 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/json-rpc/build/index.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/json-rpc/build/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.jsonRpcCode = exports.isJsonRpcSuccessResponse = exports.isJsonRpcErrorResponse = exports.parseJsonRpcSuccessResponse = exports.parseJsonRpcResponse = exports.parseJsonRpcRequest = exports.parseJsonRpcId = exports.parseJsonRpcErrorResponse = exports.JsonRpcClient = exports.makeJsonRpcId = void 0;
@@ -67628,9 +67637,9 @@ var require_build8 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/http.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/http.js
 var require_http = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/http.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/http.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.http = http;
@@ -67661,9 +67670,9 @@ var require_http = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/rpcclient.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/rpcclient.js
 var require_rpcclient = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/rpcclient.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/rpcclient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.instanceOfRpcStreamingClient = instanceOfRpcStreamingClient;
@@ -67677,9 +67686,9 @@ var require_rpcclient = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/httpbatchclient.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/httpbatchclient.js
 var require_httpbatchclient = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/httpbatchclient.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/httpbatchclient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.HttpBatchClient = void 0;
@@ -67772,9 +67781,9 @@ var require_httpbatchclient = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/httpclient.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/httpclient.js
 var require_httpclient = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/httpclient.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/httpclient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.HttpClient = void 0;
@@ -67811,9 +67820,9 @@ var require_httpclient = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/isomorphic-ws/browser.js
+// ../clairveiljs/node_modules/isomorphic-ws/browser.js
 var require_browser = __commonJS({
-  "../../../clairveiljs/node_modules/isomorphic-ws/browser.js"(exports, module) {
+  "../clairveiljs/node_modules/isomorphic-ws/browser.js"(exports, module) {
     var ws = null;
     if (typeof WebSocket !== "undefined") {
       ws = WebSocket;
@@ -67830,9 +67839,9 @@ var require_browser = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/socket/build/socketwrapper.js
+// ../clairveiljs/node_modules/@cosmjs/socket/build/socketwrapper.js
 var require_socketwrapper = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/socket/build/socketwrapper.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/socket/build/socketwrapper.js"(exports) {
     "use strict";
     var __importDefault = exports && exports.__importDefault || function(mod3) {
       return mod3 && mod3.__esModule ? mod3 : { "default": mod3 };
@@ -67986,9 +67995,9 @@ var require_socketwrapper = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/socket/build/streamingsocket.js
+// ../clairveiljs/node_modules/@cosmjs/socket/build/streamingsocket.js
 var require_streamingsocket = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/socket/build/streamingsocket.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/socket/build/streamingsocket.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamingSocket = void 0;
@@ -68039,9 +68048,9 @@ var require_streamingsocket = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/socket/build/queueingstreamingsocket.js
+// ../clairveiljs/node_modules/@cosmjs/socket/build/queueingstreamingsocket.js
 var require_queueingstreamingsocket = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/socket/build/queueingstreamingsocket.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/socket/build/queueingstreamingsocket.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.QueueingStreamingSocket = exports.ConnectionStatus = void 0;
@@ -68151,9 +68160,9 @@ var require_queueingstreamingsocket = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/socket/build/reconnectingsocket.js
+// ../clairveiljs/node_modules/@cosmjs/socket/build/reconnectingsocket.js
 var require_reconnectingsocket = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/socket/build/reconnectingsocket.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/socket/build/reconnectingsocket.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ReconnectingSocket = void 0;
@@ -68237,9 +68246,9 @@ var require_reconnectingsocket = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/socket/build/index.js
+// ../clairveiljs/node_modules/@cosmjs/socket/build/index.js
 var require_build9 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/socket/build/index.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/socket/build/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamingSocket = exports.SocketWrapper = exports.ReconnectingSocket = exports.QueueingStreamingSocket = exports.ConnectionStatus = void 0;
@@ -68265,9 +68274,9 @@ var require_build9 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/websocketclient.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/websocketclient.js
 var require_websocketclient = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/websocketclient.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/websocketclient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.WebsocketClient = void 0;
@@ -68432,9 +68441,9 @@ var require_websocketclient = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/index.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/index.js
 var require_rpcclients = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/index.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/rpcclients/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.WebsocketClient = exports.instanceOfRpcStreamingClient = exports.HttpClient = exports.HttpBatchClient = void 0;
@@ -68457,9 +68466,9 @@ var require_rpcclients = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/jsonchecks.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/jsonchecks.js
 var require_jsonchecks = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/jsonchecks.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/jsonchecks.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.jCheckSet = jCheckSet;
@@ -68532,9 +68541,9 @@ var require_jsonchecks = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/inthelpers.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/inthelpers.js
 var require_inthelpers = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/inthelpers.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/inthelpers.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.apiToSmallInt = apiToSmallInt;
@@ -68559,9 +68568,9 @@ var require_inthelpers = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/jsonrpc.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/jsonrpc.js
 var require_jsonrpc = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/jsonrpc.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/jsonrpc.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.createJsonRpcRequest = createJsonRpcRequest;
@@ -68584,9 +68593,9 @@ var require_jsonrpc = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/encodings.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/encodings.js
 var require_encodings = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/encodings.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/encodings.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.may = may;
@@ -68660,9 +68669,9 @@ var require_encodings = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/requests.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/requests.js
 var require_requests = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/requests.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/requests.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SubscriptionEventType = exports.Method = void 0;
@@ -68704,9 +68713,9 @@ var require_requests = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/adaptor/requests.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/adaptor/requests.js
 var require_requests2 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/adaptor/requests.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/adaptor/requests.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -68863,9 +68872,9 @@ var require_requests2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/dates.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/dates.js
 var require_dates = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/dates.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/dates.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DateTime = void 0;
@@ -68916,9 +68925,9 @@ var require_dates = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/types.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/types.js
 var require_types6 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/types.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/types.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BlockIdFlag = void 0;
@@ -68933,9 +68942,9 @@ var require_types6 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/hasher.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/hasher.js
 var require_hasher = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/hasher.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/hasher.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.hashTx = hashTx;
@@ -69001,9 +69010,9 @@ var require_hasher = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/adaptor/responses.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/adaptor/responses.js
 var require_responses = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/adaptor/responses.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/adaptor/responses.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Responses = void 0;
@@ -69441,9 +69450,9 @@ var require_responses = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/adaptor/index.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/adaptor/index.js
 var require_adaptor = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/adaptor/index.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/adaptor/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Responses = exports.Params = void 0;
@@ -69458,9 +69467,9 @@ var require_adaptor = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/comet1client.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/comet1client.js
 var require_comet1client = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/comet1client.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/comet1client.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -69770,9 +69779,9 @@ var require_comet1client = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/responses.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/responses.js
 var require_responses2 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/responses.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/responses.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.VoteType = void 0;
@@ -69792,9 +69801,9 @@ var require_responses2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/index.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/index.js
 var require_comet1 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/index.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet1/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.VoteType = exports.broadcastTxSyncSuccess = exports.broadcastTxCommitSuccess = exports.SubscriptionEventType = exports.Method = exports.Comet1Client = void 0;
@@ -69822,9 +69831,9 @@ var require_comet1 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/encodings.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/encodings.js
 var require_encodings2 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/encodings.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/encodings.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.may = may;
@@ -69898,9 +69907,9 @@ var require_encodings2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/requests.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/requests.js
 var require_requests3 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/requests.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/requests.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SubscriptionEventType = exports.Method = void 0;
@@ -69942,9 +69951,9 @@ var require_requests3 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/adaptor/requests.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/adaptor/requests.js
 var require_requests4 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/adaptor/requests.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/adaptor/requests.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -70102,9 +70111,9 @@ var require_requests4 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/hasher.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/hasher.js
 var require_hasher2 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/hasher.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/hasher.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.hashTx = hashTx;
@@ -70170,9 +70179,9 @@ var require_hasher2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/adaptor/responses.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/adaptor/responses.js
 var require_responses3 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/adaptor/responses.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/adaptor/responses.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Responses = void 0;
@@ -70607,9 +70616,9 @@ var require_responses3 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/adaptor/index.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/adaptor/index.js
 var require_adaptor2 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/adaptor/index.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/adaptor/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Responses = exports.Params = void 0;
@@ -70624,9 +70633,9 @@ var require_adaptor2 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/comet38client.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/comet38client.js
 var require_comet38client = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/comet38client.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/comet38client.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -70936,9 +70945,9 @@ var require_comet38client = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/responses.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/responses.js
 var require_responses4 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/responses.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/responses.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.VoteType = void 0;
@@ -70958,9 +70967,9 @@ var require_responses4 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/index.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/index.js
 var require_comet38 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/index.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/comet38/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.VoteType = exports.broadcastTxSyncSuccess = exports.broadcastTxCommitSuccess = exports.SubscriptionEventType = exports.Method = exports.Comet38Client = void 0;
@@ -70988,9 +70997,9 @@ var require_comet38 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/requests.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/requests.js
 var require_requests5 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/requests.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/requests.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SubscriptionEventType = exports.Method = void 0;
@@ -71032,9 +71041,9 @@ var require_requests5 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/responses.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/responses.js
 var require_responses5 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/responses.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/responses.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.VoteType = void 0;
@@ -71054,9 +71063,9 @@ var require_responses5 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/encodings.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/encodings.js
 var require_encodings3 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/encodings.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/encodings.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.may = may;
@@ -71130,9 +71139,9 @@ var require_encodings3 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/adaptor/requests.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/adaptor/requests.js
 var require_requests6 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/adaptor/requests.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/adaptor/requests.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -71289,9 +71298,9 @@ var require_requests6 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/hasher.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/hasher.js
 var require_hasher3 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/hasher.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/hasher.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.hashTx = hashTx;
@@ -71357,9 +71366,9 @@ var require_hasher3 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/adaptor/responses.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/adaptor/responses.js
 var require_responses6 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/adaptor/responses.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/adaptor/responses.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Responses = void 0;
@@ -71792,9 +71801,9 @@ var require_responses6 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/adaptor/index.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/adaptor/index.js
 var require_adaptor3 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/adaptor/index.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/adaptor/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Responses = exports.Params = void 0;
@@ -71809,9 +71818,9 @@ var require_adaptor3 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/tendermint37client.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/tendermint37client.js
 var require_tendermint37client = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/tendermint37client.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/tendermint37client.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -72121,9 +72130,9 @@ var require_tendermint37client = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/index.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/index.js
 var require_tendermint37 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/index.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermint37/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Tendermint37Client = exports.VoteType = exports.broadcastTxSyncSuccess = exports.broadcastTxCommitSuccess = exports.SubscriptionEventType = exports.Method = void 0;
@@ -72151,9 +72160,9 @@ var require_tendermint37 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermintclient.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermintclient.js
 var require_tendermintclient = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermintclient.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/tendermintclient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isTendermint37Client = isTendermint37Client;
@@ -72192,9 +72201,9 @@ var require_tendermintclient = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/index.js
+// ../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/index.js
 var require_build10 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/index.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/tendermint-rpc/build/index.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -72309,9 +72318,9 @@ var require_build10 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/stargateclient.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/stargateclient.js
 var require_stargateclient = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/stargateclient.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/stargateclient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StargateClient = exports.BroadcastTxError = exports.TimeoutError = void 0;
@@ -72617,9 +72626,9 @@ var require_stargateclient = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/signingstargateclient.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/signingstargateclient.js
 var require_signingstargateclient = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/signingstargateclient.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/signingstargateclient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SigningStargateClient = exports.defaultRegistryTypes = void 0;
@@ -72958,9 +72967,9 @@ var require_signingstargateclient = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/@cosmjs/stargate/build/index.js
+// ../clairveiljs/node_modules/@cosmjs/stargate/build/index.js
 var require_build11 = __commonJS({
-  "../../../clairveiljs/node_modules/@cosmjs/stargate/build/index.js"(exports) {
+  "../clairveiljs/node_modules/@cosmjs/stargate/build/index.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -73276,9 +73285,9 @@ var require_build11 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/node_modules/js-sha3/src/sha3.js
+// ../clairveiljs/node_modules/js-sha3/src/sha3.js
 var require_sha3 = __commonJS({
-  "../../../clairveiljs/node_modules/js-sha3/src/sha3.js"(exports, module) {
+  "../clairveiljs/node_modules/js-sha3/src/sha3.js"(exports, module) {
     (function() {
       "use strict";
       var INPUT_ERROR = "input is invalid type";
@@ -73922,13 +73931,13 @@ var require_sha3 = __commonJS({
   }
 });
 
-// ../../../clairveiljs/src/transport/cosmos-client.js
+// ../clairveiljs/src/transport/cosmos-client.js
 var import_encoding3 = __toESM(require_build(), 1);
 var import_proto_signing = __toESM(require_build6(), 1);
 var import_stargate = __toESM(require_build11(), 1);
 var import_tx = __toESM(require_tx(), 1);
 
-// ../../../clairveiljs/src/generated/utf8.js
+// ../clairveiljs/src/generated/utf8.js
 function utf8Length(str2) {
   let len = 0, c = 0;
   for (let i = 0; i < str2.length; ++i) {
@@ -74001,7 +74010,7 @@ function utf8Write(str2, buffer, offset) {
   return offset - start;
 }
 
-// ../../../clairveiljs/src/generated/varint.js
+// ../clairveiljs/src/generated/varint.js
 function varint64read() {
   let lowBits = 0;
   let highBits = 0;
@@ -74175,7 +74184,7 @@ function writeByte(val, buf, pos) {
   buf[pos] = val & 255;
 }
 
-// ../../../clairveiljs/src/generated/binary.js
+// ../clairveiljs/src/generated/binary.js
 var WireType;
 (function(WireType2) {
   WireType2[WireType2["Varint"] = 0] = "Varint";
@@ -74482,7 +74491,7 @@ function indexOutOfRange(reader, writeLength) {
   return RangeError("index out of range: " + reader.pos + " + " + (writeLength || 1) + " > " + reader.len);
 }
 
-// ../../../clairveiljs/src/generated/clairveil/privacy/v1/tx.js
+// ../clairveiljs/src/generated/clairveil/privacy/v1/tx.js
 var UserDisclosureMode;
 (function(UserDisclosureMode2) {
   UserDisclosureMode2[UserDisclosureMode2["USER_DISCLOSURE_MODE_NONE"] = 0] = "USER_DISCLOSURE_MODE_NONE";
@@ -75039,11 +75048,11 @@ var BatchTransferOutput = {
   }
 };
 
-// ../../../clairveiljs/src/core/crypto.js
+// ../clairveiljs/src/core/crypto.js
 var import_encoding = __toESM(require_build(), 1);
 var import_js_sha3 = __toESM(require_sha3(), 1);
 
-// ../../../clairveiljs/node_modules/@noble/ciphers/_polyval.js
+// ../clairveiljs/node_modules/@noble/ciphers/_polyval.js
 init_utils3();
 var BLOCK_SIZE = 16;
 var ZEROS162 = /* @__PURE__ */ new Uint8Array(16);
@@ -75185,7 +75194,7 @@ var GHASH = class {
 };
 var ghash = /* @__PURE__ */ wrapMacConstructor(16, (key, expectedLength) => new GHASH(key, expectedLength), (msg) => [msg.length]);
 
-// ../../../clairveiljs/node_modules/@noble/ciphers/aes.js
+// ../clairveiljs/node_modules/@noble/ciphers/aes.js
 init_utils3();
 var BLOCK_SIZE2 = 16;
 var BLOCK_SIZE32 = 4;
@@ -75404,7 +75413,7 @@ var gcm = /* @__PURE__ */ wrapCipher({ blockSize: 16, nonceLength: 12, tagLength
   };
 });
 
-// ../../../clairveiljs/src/core/browser-crypto.js
+// ../clairveiljs/src/core/browser-crypto.js
 init_utils3();
 init_legacy();
 init_sha2();
@@ -75494,7 +75503,7 @@ function aesGcmDecrypt({ key, nonce, ciphertext }) {
   return gcm(bytes2(key), bytes2(nonce)).decrypt(bytes2(ciphertext));
 }
 
-// ../../../clairveiljs/src/core/crypto.js
+// ../clairveiljs/src/core/crypto.js
 var { keccak_256: keccak256 } = import_js_sha3.default;
 var FIELD_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 var CURVE_ORDER = 2736030358979909402780800718157159386076813972158567259200215660948447373041n;
@@ -75953,7 +75962,7 @@ function hashStringToField(value) {
   return toField(digest);
 }
 
-// ../../../clairveiljs/src/privacy/asset-denom.js
+// ../clairveiljs/src/privacy/asset-denom.js
 function canonicalAssetDenomV1(denom) {
   if (typeof denom !== "string") throw new Error("canonical asset denom must be a string");
   if (denom !== denom.trim()) throw new Error("canonical asset denom must not include surrounding whitespace");
@@ -75963,7 +75972,7 @@ function canonicalAssetDenomV1(denom) {
   return denom;
 }
 
-// ../../../clairveiljs/src/privacy/protocol-v1.js
+// ../clairveiljs/src/privacy/protocol-v1.js
 var privacyFixedV1 = "privacy-fixed-v1";
 var activeCircuitSetIdV1 = "privacy-note-v1";
 var notePlaintextV1Size = 350;
@@ -76993,7 +77002,7 @@ function fieldHexV1(value) {
   return canonicalFieldHex(field(value, "field"));
 }
 
-// ../../../clairveiljs/src/privacy/asset-registry.js
+// ../clairveiljs/src/privacy/asset-registry.js
 var assetRegistryVersionV1 = "privacy-asset-registry-v1";
 function text(value) {
   return String(value ?? "").trim();
@@ -77125,7 +77134,7 @@ function normalizeAssetRegistryQueryResponseV1(response, expected = {}) {
   });
 }
 
-// ../../../clairveiljs/src/core/note.js
+// ../clairveiljs/src/core/note.js
 var defaultAssetDenom = "uclair";
 var maxUint256 = 1n << 256n;
 var scalarLimit = maxUint256 - maxUint256 % CURVE_ORDER;
@@ -77421,7 +77430,7 @@ function isVerifiedUnspentFoundNote(foundNote) {
   return !found.isSpent && found.nullifierStatus === "unspent";
 }
 
-// ../../../clairveiljs/src/privacy/scan.js
+// ../clairveiljs/src/privacy/scan.js
 var privacyScanSchemaVersionV2 = "privacy-scan-v2";
 var privacyScanEventTypeV2 = Object.freeze({
   deposit: "deposit",
@@ -78338,7 +78347,7 @@ async function scanNotes({
   return result;
 }
 
-// ../../../clairveiljs/src/core/disclosure.js
+// ../clairveiljs/src/core/disclosure.js
 var planeUser = "user";
 var planeAudit = "audit";
 var planeSelfView = "self-view";
@@ -78927,10 +78936,10 @@ function publicPayloadReport(payloadHex, onChainDigestHex = "", txHash = "", opt
   );
 }
 
-// ../../../clairveiljs/src/privacy/payload.js
+// ../clairveiljs/src/privacy/payload.js
 var import_encoding2 = __toESM(require_build(), 1);
 
-// ../../../clairveiljs/src/privacy/transfer-v5.js
+// ../clairveiljs/src/privacy/transfer-v5.js
 var preparedTransferV5PayloadVersion = "v5";
 var preparedTransferV5ProofVersion = "v2";
 var joinSplitOwnerIntentSigningRequestV1Version = "joinsplit-owner-intent-signing-request-v1";
@@ -79721,7 +79730,7 @@ function buildTransferV5MsgFromPayloadAndProof(payload, proof, { nowUnix } = {})
   };
 }
 
-// ../../../clairveiljs/src/privacy/payload.js
+// ../clairveiljs/src/privacy/payload.js
 var preparedWithdrawProverPayloadVersion = "v2";
 var preparedWithdrawProofVersion = "v2";
 var preparedWithdrawPayloadVersion = "v2";
@@ -80430,7 +80439,7 @@ async function buildWithdrawMessage({ proverAdapter, creator, ...input } = {}) {
   };
 }
 
-// ../../../clairveiljs/src/privacy/batch-transfer.js
+// ../clairveiljs/src/privacy/batch-transfer.js
 var preparedBatchTransferPayloadVersion = "batch-transfer-payload-v1";
 var preparedBatchTransferProofVersion = "batch-transfer-proof-v1";
 var batchTransferCircuitSetId = "privacy-note-v1";
@@ -81445,7 +81454,7 @@ function preparedBatchTransferEffectHex(payload) {
   };
 }
 
-// ../../../clairveiljs/src/privacy/network-config.js
+// ../clairveiljs/src/privacy/network-config.js
 var maxUint643 = (1n << 64n) - 1n;
 var policyNames = /* @__PURE__ */ new Set([
   "all-private",
@@ -81557,7 +81566,7 @@ function normalizeReserveResponseV1(response, expectedDenom) {
   });
 }
 
-// ../../../clairveiljs/src/privacy/circuit-config.js
+// ../clairveiljs/src/privacy/circuit-config.js
 var circuitSetIdentitySchemaVersionV1 = "v1";
 var privacyNoteV1CircuitSetId = "privacy-note-v1";
 var privacyNoteV1CircuitCurve = "BN254";
@@ -81689,7 +81698,7 @@ function validateExpectedCircuitIdentityV1(identity) {
   return normalized;
 }
 
-// ../../../clairveiljs/src/core/errors.js
+// ../clairveiljs/src/core/errors.js
 var ClairveilErrorCode = Object.freeze({
   INVALID_ARGUMENT: "INVALID_ARGUMENT",
   INVALID_AMOUNT: "INVALID_AMOUNT",
@@ -81770,7 +81779,7 @@ function wrapProverError(error) {
   return wrapped(ClairveilErrorCode.PROVER_REJECTED);
 }
 
-// ../../../clairveiljs/src/privacy/planner.js
+// ../clairveiljs/src/privacy/planner.js
 var maxShieldedAmount3 = (1n << 64n) - 1n;
 function coinString(amount, denom) {
   return `${amount.toString()}${denom}`;
@@ -82053,7 +82062,7 @@ function assertPlanCanBuildTx(plan) {
   return plan;
 }
 
-// ../../../clairveiljs/src/privacy/reservation.js
+// ../clairveiljs/src/privacy/reservation.js
 init_hmac();
 init_sha2();
 var privacyReservationStateVersionV1 = "privacy-note-v1-reservation-v1";
@@ -85734,7 +85743,7 @@ async function rollbackPlanReservationPreservingError(reservationManager2, batch
   }
 }
 
-// ../../../clairveiljs/src/privacy/merkle-path.js
+// ../clairveiljs/src/privacy/merkle-path.js
 var commitmentPathSnapshotDepthV1 = 32;
 var commitmentPathSnapshotMaxCommitmentsV1 = 16;
 function sameValues(left, right) {
@@ -85938,7 +85947,7 @@ function createCommitmentPathSnapshotProvider(snapshot) {
   });
 }
 
-// ../../../clairveiljs/src/wallet/adapter.js
+// ../clairveiljs/src/wallet/adapter.js
 function bytesToBase64(bytes4) {
   return base64FromBytes(bytes4);
 }
@@ -86069,7 +86078,7 @@ async function derivePrivacyMaterialFromWallet(walletLike, options = {}) {
   };
 }
 
-// ../../../clairveiljs/src/privacy/prover.js
+// ../clairveiljs/src/privacy/prover.js
 var transferProofRequestVersion = "v2";
 var transferProofResponseVersion = "v2";
 var withdrawProofRequestVersion = "v2";
@@ -86682,7 +86691,7 @@ function createHttpDepositProofProvider({
   };
 }
 
-// ../../../clairveiljs/src/privacy/note-store.js
+// ../clairveiljs/src/privacy/note-store.js
 var maxUint644 = (1n << 64n) - 1n;
 var privacyNoteCacheStateVersionV1 = "privacy-note-v1-cache-v1";
 var privacyNoteCacheIdentityV1 = Object.freeze({
@@ -87077,7 +87086,7 @@ var MemoryNoteStore = class {
   }
 };
 
-// ../../../clairveiljs/src/transport/cosmos-client.js
+// ../clairveiljs/src/transport/cosmos-client.js
 function appendReservationCleanupErrors(error, cleanupErrors = []) {
   if (!cleanupErrors.length || !error || typeof error !== "object") return;
   try {
@@ -91863,7 +91872,7 @@ function createClairveilClient(options) {
   return new ClairveilJS(options);
 }
 
-// ../../../clairveiljs/src/transport/evm.js
+// ../clairveiljs/src/transport/evm.js
 var import_encoding4 = __toESM(require_build(), 1);
 var import_js_sha32 = __toESM(require_sha3(), 1);
 var { keccak_256: keccak2562 } = import_js_sha32.default;
@@ -93118,7 +93127,7 @@ function createClairveilEvmClient(options) {
   return new ClairveilEvmClient(options);
 }
 
-// ../../../clairveiljs/src/browser/wallet-client.js
+// ../clairveiljs/src/browser/wallet-client.js
 var defaultPrepareScanMaxPages2 = 1e3;
 var defaultFetchTimeoutMs2 = 3e4;
 var readOnlyEvmJsonRpcMethods = /* @__PURE__ */ new Set([
@@ -95525,7 +95534,7 @@ function createClairveilBrowserDappClient(options) {
   return createClairveilBrowserClient(options);
 }
 
-// public/dapp-config.js
+// ../../../../private/tmp/clairveil-bundle-stage.IP15M3/examples/clairveil-dapp/public/dapp-config.js
 var localRpc = "http://127.0.0.1:26657";
 var localRest = "http://127.0.0.1:1317";
 var localProver = "http://127.0.0.1:8080";
@@ -95622,21 +95631,32 @@ var defaultDappConfig = {
   chainProfiles: [clairveilProfile],
   keplrChainInfo: clairveilProfile.keplrChainInfo
 };
-function getStaticDappConfig() {
-  const override = globalThis.CLAIRVEIL_DAPP_CONFIG || {};
-  return {
-    ...defaultDappConfig,
-    ...override,
-    serverBacked: false,
-    serverFeatures: {
-      ...defaultDappConfig.serverFeatures,
-      ...override.serverFeatures || {}
-    },
-    chainProfiles: override.chainProfiles || defaultDappConfig.chainProfiles
-  };
+var staticDappConfigPath = "/dapp-config.json";
+async function loadStaticDappConfig({ fetchImpl = globalThis.fetch } = {}) {
+  if (typeof fetchImpl !== "function") {
+    throw new Error("static DApp config requires fetch support");
+  }
+  const response = await fetchImpl(staticDappConfigPath, {
+    cache: "no-store",
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+    redirect: "error"
+  });
+  if (!response.ok) {
+    throw new Error(`static DApp config returned HTTP ${response.status}`);
+  }
+  const contentType = String(response.headers.get("content-type") || "").split(";", 1)[0].trim().toLowerCase();
+  if (contentType !== "application/json") {
+    throw new Error("static DApp config must return Content-Type: application/json");
+  }
+  const config = await response.json();
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    throw new Error("static DApp config must return a JSON object");
+  }
+  return config;
 }
 
-// public/encrypted-note-store.js
+// ../../../../private/tmp/clairveil-bundle-stage.IP15M3/examples/clairveil-dapp/public/encrypted-note-store.js
 var encryptedNoteStoreVersion = "clairveil-encrypted-note-store-v1";
 var encryptionInfo = new TextEncoder().encode("clairveil/encrypted-note-store/v1");
 function bytesToBase642(bytes4) {
@@ -95750,7 +95770,7 @@ var EncryptedLocalStorageNoteStore = class _EncryptedLocalStorageNoteStore exten
   }
 };
 
-// public/encrypted-reservation-manager.js
+// ../../../../private/tmp/clairveil-bundle-stage.IP15M3/examples/clairveil-dapp/public/encrypted-reservation-manager.js
 var reservationStateVersion = "clairveil-encrypted-reservation-state-v1";
 var reservationStateInfo = new TextEncoder().encode("clairveil/reservation-state/v1");
 async function deriveReservationStateKey({ cryptoImpl, keyMaterial, namespace }) {
@@ -95836,7 +95856,7 @@ async function resetEncryptedBrowserReservationState(manager) {
   await manager.store.unsafeReplaceState({});
 }
 
-// public/encrypted-operation-store.js
+// ../../../../private/tmp/clairveil-bundle-stage.IP15M3/examples/clairveil-dapp/public/encrypted-operation-store.js
 var encryptedOperationStoreVersion = "clairveil-encrypted-operation-store-v1";
 var encryptionInfo2 = new TextEncoder().encode("clairveil/encrypted-operation-store/v1");
 function bytesToBase643(bytes4) {
@@ -95933,7 +95953,7 @@ var EncryptedLocalStorageOperationStore = class _EncryptedLocalStorageOperationS
   }
 };
 
-// public/deposit-funding.js
+// ../../../../private/tmp/clairveil-bundle-stage.IP15M3/examples/clairveil-dapp/public/deposit-funding.js
 function canonicalAmount2(value, label) {
   const text3 = String(value ?? "").trim();
   if (!/^(0|[1-9][0-9]*)$/.test(text3)) {
@@ -95979,7 +95999,7 @@ function assertDepositFundingAvailable({
   return { amount: amountValue, fee: feeValue, balance, required };
 }
 
-// public/network-fee.js
+// ../../../../private/tmp/clairveil-bundle-stage.IP15M3/examples/clairveil-dapp/public/network-fee.js
 function eventAttribute4(event, key) {
   const attributes = Array.isArray(event?.attributes) ? event.attributes : [];
   return attributes.find((attribute) => attribute?.key === key)?.value ?? null;
@@ -96037,7 +96057,7 @@ function evmChargedFeeAmount(receipt) {
   return gasUsed === null || gasPrice === null ? null : gasUsed * gasPrice;
 }
 
-// public/browser-profile.js
+// ../../../../private/tmp/clairveil-bundle-stage.IP15M3/examples/clairveil-dapp/public/browser-profile.js
 function normalizeBrowserProfileEndpoints(profile, {
   rpc,
   rest,
@@ -96064,7 +96084,7 @@ function normalizeBrowserProfileEndpoints(profile, {
   return normalized;
 }
 
-// public/browser-storage-scope.js
+// ../../../../private/tmp/clairveil-bundle-stage.IP15M3/examples/clairveil-dapp/public/browser-storage-scope.js
 var blockHashPattern = /^[0-9a-f]{64}$/i;
 function localChainStorageEpoch({ localTestMode = false, status } = {}) {
   if (localTestMode !== true) return "";
@@ -96095,7 +96115,7 @@ function walletStorageScope({
   });
 }
 
-// public/cosmos-sign-options.js
+// ../../../../private/tmp/clairveil-bundle-stage.IP15M3/examples/clairveil-dapp/public/cosmos-sign-options.js
 function keplrReservationIDs(options = {}) {
   const reservation = options.reservation ?? options.reservationBatch ?? options.reservation_batch ?? null;
   const ids = reservation?.reservation_ids ?? reservation?.reservationIds;
@@ -96112,7 +96132,7 @@ function keplrDirectSignOptions(options = {}) {
   });
 }
 
-// public/disclosure-view-model.js
+// ../../../../private/tmp/clairveil-bundle-stage.IP15M3/examples/clairveil-dapp/public/disclosure-view-model.js
 function disclosureViewModel(report) {
   if (report?.verification?.verified !== true) {
     return {
@@ -96140,7 +96160,7 @@ function disclosureViewModel(report) {
   };
 }
 
-// public/operation-event-lookup.js
+// ../../../../private/tmp/clairveil-bundle-stage.IP15M3/examples/clairveil-dapp/public/operation-event-lookup.js
 function normalizedTxHash(value) {
   return String(value || "").trim().replace(/^0x/i, "").toUpperCase();
 }
@@ -96180,7 +96200,7 @@ async function findPrivacyEventByTxHash({
   throw new Error(`privacy event lookup exceeded ${maxPages} pages`);
 }
 
-// public/public-pending-tx-store.js
+// ../../../../private/tmp/clairveil-bundle-stage.IP15M3/examples/clairveil-dapp/public/public-pending-tx-store.js
 var publicPendingTxStateVersion = "clairveil-public-pending-tx-state-v1";
 var unresolvedStatuses = /* @__PURE__ */ new Set(["submitted", "unknown", "checking"]);
 function normalizedPendingEntry(entry) {
@@ -96243,7 +96263,7 @@ function savePublicPendingTxState(storage, key, {
   }));
 }
 
-// public/relay-withdraw-reconciliation.js
+// ../../../../private/tmp/clairveil-bundle-stage.IP15M3/examples/clairveil-dapp/public/relay-withdraw-reconciliation.js
 var relayWithdrawHandoffVersion = "v2";
 function createRelayWithdrawHandoff({ profileId, transport, payload, transaction } = {}) {
   if (!payload || typeof payload !== "object") {
@@ -96448,7 +96468,7 @@ function relayWithdrawPayloadExpired(payload, chainNowUnix) {
   return now >= expiry;
 }
 
-// public/reservation-recovery.js
+// ../../../../private/tmp/clairveil-bundle-stage.IP15M3/examples/clairveil-dapp/public/reservation-recovery.js
 var preparationStatuses = /* @__PURE__ */ new Set(["Reserved", "Proving", "ProofReady", "ManualReview"]);
 var transactionStatuses = /* @__PURE__ */ new Set(["Submitted", "Unknown"]);
 function reservationMetadata(record) {
@@ -96595,7 +96615,7 @@ function canResetStaleLocalGenesisReservations({
   return isEmptyLocalGenesisPrivacyState({ localTestMode, reserve }) && Array.isArray(notes) && notes.length === 0 && noteSyncStatus === "synced" && scanHasMore === false && Array.isArray(assessments) && assessments.length > 0 && assessments.every((assessment) => assessment?.action === "review-replan");
 }
 
-// public/app.js
+// ../../../../private/tmp/clairveil-bundle-stage.IP15M3/examples/clairveil-dapp/public/app.js
 function defaultMetaMaskState() {
   return {
     account: "",
@@ -98924,7 +98944,7 @@ async function loadDappHealth() {
       serverConfigAvailable = false;
     }
   }
-  return browserHealthFromStaticConfig(getStaticDappConfig());
+  return browserHealthFromStaticConfig(await loadStaticDappConfig());
 }
 function addressSuggestionConfigs() {
   const transparentFormat = activeTransparentAddressFormat();

@@ -1,6 +1,9 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { staticDappConfigPath } from "../public/dapp-config.js";
+import {
+  serverBackedDappConfigPath,
+  staticDappConfigPath,
+} from "../public/dapp-config.js";
 
 const requiredEnvironment = [
   "CLAIRVEIL_WEBAPP_ORIGIN",
@@ -507,13 +510,19 @@ export async function verifyProductionDeployment({
     throw new Error("WebApp config must return JSON");
   }
   const resolvedConfig = resolvedWebAppConfig(config);
-  if (resolvedConfig?.serverBacked === false) {
-    const staticConfigUrl = new URL(staticDappConfigPath, webApp);
-    if (webAppConfig.href !== staticConfigUrl.href) {
-      throw new Error(
-        `Static WebApp verification must use the browser-loaded ${staticDappConfigPath} artifact`,
-      );
-    }
+  const browserConfigPath = resolvedConfig?.serverBacked === true
+    ? serverBackedDappConfigPath
+    : resolvedConfig?.serverBacked === false
+      ? staticDappConfigPath
+      : "";
+  if (!browserConfigPath) {
+    throw new Error("deployed WebApp config must declare serverBacked as true or false");
+  }
+  const browserConfigUrl = new URL(browserConfigPath, webApp);
+  if (webAppConfig.href !== browserConfigUrl.href) {
+    throw new Error(
+      `WebApp verification must use the browser-loaded ${browserConfigPath} response`,
+    );
   }
   const endpoints = deploymentEndpoints(config);
   const connectSources = assertRestrictiveConnectSrc(csp);

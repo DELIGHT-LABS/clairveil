@@ -113,15 +113,14 @@ origin, then test the final headers at that origin.
 ## Release-Origin Verification
 
 Run the repository gate against the final production values, after the TLS
-proxy/CDN configuration is live. `CLAIRVEIL_WEBAPP_CONFIG_URL` must be a
-same-origin response with `Content-Type: application/json` containing the exact deployed Web client config (or
-the `/api/health` response that contains it under `config`), including every
-public REST failover. This makes the gate validate the configuration the
-browser actually receives rather than an independently copied profile list.
-The server-backed example exposes this at `/api/config`. The checked-in static
-WebApp fetches `/dapp-config.json` directly, so a static deployment must serve
-that exact same-origin path and pass it as `CLAIRVEIL_WEBAPP_CONFIG_URL`; it
-must not inject a different runtime profile override. The artifact must respond
+proxy/CDN configuration is live. `CLAIRVEIL_WEBAPP_CONFIG_URL` must identify
+the exact same-origin JSON response from which the browser bootstraps. For the
+server-backed example this is `/api/health`, with the Web client config under
+`config`; `/api/config` is informational and is not an acceptable substitute.
+For the checked-in static WebApp this is `/dapp-config.json`. Both responses
+must include every public REST failover. This makes the gate validate the
+configuration the browser actually receives rather than an independently
+copied profile list. The artifact must respond
 directly without a redirect; both the browser and the release gate reject a
 redirected or final-URL-mismatched configuration response.
 
@@ -131,11 +130,13 @@ CLAIRVEIL_WEBAPP_CONFIG_URL=https://app.example.com/dapp-config.json \
 npm --prefix examples/clairveil-dapp run verify:production-deployment
 ```
 
+Use `https://app.example.com/api/health` instead when verifying the
+server-backed example.
+
 The gate rejects non-HTTPS values, broad `connect-src *`, external or inline
 script allowances, and a missing or wildcard `frame-ancestors` directive. It
-reads the deployed configuration under
-the same 30-second request bound and a 1 MiB response limit that the browser
-uses for its static configuration fetch, verifies the final WebApp response
+reads the deployed configuration under a 30-second request bound and a 1 MiB
+response limit, verifies the final WebApp response
 headers and restrictive CSP, and sends both allowed-origin and untrusted-origin
 CORS preflights plus non-sensitive actual requests to every configured REST
 endpoint, RPC, prover, deposit proof endpoint, Keplr endpoint, and EVM RPC.

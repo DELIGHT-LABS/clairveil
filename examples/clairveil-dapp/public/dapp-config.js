@@ -98,6 +98,36 @@ export const defaultDappConfig = {
   keplrChainInfo: clairveilProfile.keplrChainInfo
 };
 
+export const staticDappConfigPath = "/dapp-config.json";
+export const serverBackedDappConfigPath = "/api/health";
+
+export async function loadStaticDappConfig({ fetchImpl = globalThis.fetch } = {}) {
+  if (typeof fetchImpl !== "function") {
+    throw new Error("static DApp config requires fetch support");
+  }
+  const response = await fetchImpl(staticDappConfigPath, {
+    cache: "no-store",
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+    redirect: "error"
+  });
+  if (!response.ok) {
+    throw new Error(`static DApp config returned HTTP ${response.status}`);
+  }
+  const contentType = String(response.headers.get("content-type") || "")
+    .split(";", 1)[0]
+    .trim()
+    .toLowerCase();
+  if (contentType !== "application/json") {
+    throw new Error("static DApp config must return Content-Type: application/json");
+  }
+  const config = await response.json();
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    throw new Error("static DApp config must return a JSON object");
+  }
+  return config;
+}
+
 export function getStaticDappConfig() {
   const override = globalThis.CLAIRVEIL_DAPP_CONFIG || {};
   return {

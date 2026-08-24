@@ -17,7 +17,7 @@ import {
   reservationHeartbeatIntervalMs,
   reservationStatuses
 } from "clairveiljs/reservation";
-import { getStaticDappConfig } from "./dapp-config.js";
+import { loadStaticDappConfig } from "./dapp-config.js";
 import { EncryptedLocalStorageNoteStore } from "./encrypted-note-store.js";
 import {
   createEncryptedBrowserReservationManager,
@@ -2649,7 +2649,7 @@ async function loadDappHealth() {
       serverConfigAvailable = false;
     }
   }
-  return browserHealthFromStaticConfig(getStaticDappConfig());
+  return browserHealthFromStaticConfig(await loadStaticDappConfig());
 }
 
 function addressSuggestionConfigs() {

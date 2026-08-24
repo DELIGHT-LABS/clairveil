@@ -64,14 +64,14 @@ Upstream prover의 error text도 sensitive input으로 취급합니다. 이를 r
 ## Release origin 검증
 
 TLS proxy/CDN 설정을 적용한 뒤 최종 production value로 repository gate를 실행합니다.
-`CLAIRVEIL_WEBAPP_CONFIG_URL`은 public REST failover를 포함한 정확한 배포 Web
-client config(또는 `config` 아래에 이를 넣은 `/api/health` response)를
-`Content-Type: application/json`으로 반환하는 same-origin URL이어야 합니다. 따라서 gate는 별도로 복사한 profile 목록이
-아니라 browser가 실제로 받는 config를 검증합니다. Server-backed 예제는 이를
-`/api/config`으로 제공합니다. Checked-in static WebApp은 `/dapp-config.json`을
-직접 fetch하므로 static deployment는 같은 origin의 정확히 그 경로를 제공하고
-이를 `CLAIRVEIL_WEBAPP_CONFIG_URL`로 넘겨야 합니다. 다른 runtime profile override를
-주입하면 안 됩니다. Artifact는 redirect 없이 직접 응답해야 하며 browser와 release gate는 redirect되었거나 final URL이 다른 configuration response를 거부합니다.
+`CLAIRVEIL_WEBAPP_CONFIG_URL`은 browser가 bootstrap에 실제 사용하는 same-origin
+JSON response를 정확히 가리켜야 합니다. Server-backed 예제에서는 Web client
+config를 `config` 아래에 담은 `/api/health`이며, `/api/config`은 정보 제공용일 뿐
+대체할 수 없습니다. Checked-in static WebApp에서는 `/dapp-config.json`입니다.
+두 response 모두 public REST failover 전체를 포함해야 하므로 gate는 별도로 복사한
+profile 목록이 아니라 browser가 실제로 받는 config를 검증합니다. Artifact는
+redirect 없이 직접 응답해야 하며 browser와 release gate는 redirect되었거나 final
+URL이 다른 configuration response를 거부합니다.
 
 ```bash
 CLAIRVEIL_WEBAPP_ORIGIN=https://app.example.com \
@@ -79,9 +79,12 @@ CLAIRVEIL_WEBAPP_CONFIG_URL=https://app.example.com/dapp-config.json \
 npm --prefix examples/clairveil-dapp run verify:production-deployment
 ```
 
+Server-backed 예제를 검증할 때는 대신
+`https://app.example.com/api/health`를 사용합니다.
+
 이 gate는 non-HTTPS value, broad `connect-src *`, external/inline script allowance,
-누락되었거나 wildcard인 `frame-ancestors` directive를 거부합니다. 브라우저가 static
-configuration fetch에 사용하는 동일한 30초 request bound와 1 MiB response limit 아래에서 배포 configuration을 읽고, 최종 WebApp
+누락되었거나 wildcard인 `frame-ancestors` directive를 거부합니다. 30초 request
+bound와 1 MiB response limit 아래에서 배포 configuration을 읽고, 최종 WebApp
 response header/restrictive CSP를 확인하며 모든 configured REST endpoint, RPC, prover,
 deposit proof endpoint, Keplr endpoint, EVM RPC에 허용 origin과 untrusted origin CORS
 preflight 및 non-sensitive actual request를 모두 보냅니다. Preflight와 actual response

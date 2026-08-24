@@ -10,6 +10,7 @@ import {
 } from "../tools/verify-production-deployment.mjs";
 
 const deployedConfig = {
+  serverBacked: true,
   chainProfiles: [
     {
       id: "cosmos-mainnet",
@@ -40,14 +41,14 @@ const deployedConfig = {
 
 const profileEnvironment = {
   CLAIRVEIL_WEBAPP_ORIGIN: "https://app.example.com",
-  CLAIRVEIL_WEBAPP_CONFIG_URL: "https://app.example.com/api/config",
+  CLAIRVEIL_WEBAPP_CONFIG_URL: "https://app.example.com/api/health",
 };
 
 const restrictiveCsp = "default-src 'self'; frame-ancestors 'none'; script-src 'self'; connect-src 'self' https://rest.example.com https://rest-backup.example.com https://rpc.example.com https://prover.example.com https://deposit-proof.example.com https://evm-rest.example.com https://evm-host-rpc.example.com https://evm-prover.example.com https://evm-rpc.example.com";
 
 function productionGateFetch({
   config = deployedConfig,
-  configPath = "/api/config",
+  configPath = "/api/health",
   corsHeaders,
   actualCorsHeaders,
   configResponseOverride,
@@ -76,7 +77,8 @@ function productionGateFetch({
       : {};
     if (requestUrl.pathname === configPath) {
       if (configResponseOverride) return configResponseOverride;
-      return new Response(JSON.stringify(config), {
+      const body = configPath === "/api/health" ? { config } : config;
+      return new Response(JSON.stringify(body), {
         status: 200,
         headers: { "content-type": "application/json; charset=utf-8" },
       });
@@ -188,7 +190,7 @@ test("production gate verifies preflight and actual CORS for every configured en
   assert.deepEqual(result, { profileCount: 2, endpointCount: 9 });
   assert.deepEqual(calls.slice(0, 2).map((call) => [call.method, call.url]), [
     ["GET", "https://app.example.com/"],
-    ["GET", "https://app.example.com/api/config"],
+    ["GET", "https://app.example.com/api/health"],
   ]);
   const corsCalls = calls.slice(2);
   assert.equal(corsCalls.length, 36);
@@ -325,7 +327,7 @@ test("production gate requires the deployed config MIME type to be JSON", async 
       ok: true,
       status: 200,
       redirected: false,
-      url: "https://app.example.com/api/config",
+      url: "https://app.example.com/api/health",
       headers: new Headers({ "content-type": "text/html" }),
       text: async () => JSON.stringify(deployedConfig),
     },
@@ -345,7 +347,7 @@ test("production gate bounds the deployed config response before parsing it", as
       ok: true,
       status: 200,
       redirected: false,
-      url: "https://app.example.com/api/config",
+      url: "https://app.example.com/api/health",
       headers: new Headers({
         "content-type": "application/json",
         "content-length": String((1 << 20) + 1),
@@ -383,6 +385,21 @@ test("production gate requires the browser-loaded artifact for a static DApp", a
       environment: profileEnvironment,
       fetchImpl: unbound.fetchImpl,
     }),
-    /must use the browser-loaded \/dapp-config\.json artifact/,
+    /must use the browser-loaded \/dapp-config\.json response/,
+  );
+});
+
+test("production gate requires the browser-loaded health response for a server-backed DApp", async () => {
+  const unboundEnvironment = {
+    ...profileEnvironment,
+    CLAIRVEIL_WEBAPP_CONFIG_URL: "https://app.example.com/api/config",
+  };
+  const unbound = productionGateFetch({ configPath: "/api/config" });
+  await assert.rejects(
+    () => verifyProductionDeployment({
+      environment: unboundEnvironment,
+      fetchImpl: unbound.fetchImpl,
+    }),
+    /must use the browser-loaded \/api\/health response/,
   );
 });
