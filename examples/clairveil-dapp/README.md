@@ -252,7 +252,8 @@ Common values:
 | `CLAIRVEIL_PROVER_PROXY_ENABLED` | Enables the bounded proxy in local-test mode only; ignored in public-node mode |
 | `CLAIRVEIL_PROVER_PROXY_RATE_LIMIT_WINDOW_MS` / `CLAIRVEIL_PROVER_PROXY_RATE_LIMIT_MAX` / `CLAIRVEIL_PROVER_PROXY_MAX_IN_FLIGHT` | Local proxy request-rate and concurrency bounds |
 | `CLAIRVEIL_ACCOUNT_PREFIX` / `CLAIRVEIL_SHIELDED_PREFIX` | Transparent and shielded address prefixes |
-| `CLAIRVEIL_DENOM` / `CLAIRVEIL_DISPLAY_DENOM` / `CLAIRVEIL_COIN_DECIMALS` | Coin metadata |
+| `CLAIRVEIL_DENOM` / `CLAIRVEIL_DISPLAY_DENOM` / `CLAIRVEIL_COIN_DECIMALS` | Shared coin metadata fallback |
+| `CLAIRVEIL_COSMOS_DENOM` / `CLAIRVEIL_EVM_DENOM` / `CLAIRVEIL_EVM_NATIVE_DENOM` | Transport-specific minimal denom; active transport values override `CLAIRVEIL_DENOM`, and EVM falls back to its native denom before the shared value |
 | `CLAIRVEIL_EVM_DEPOSIT_MODE` / `CLAIRVEIL_EVM_NATIVE_DENOM` | `nonpayable` or v0.3.1 `payable-exact-value` deposit binding |
 | `CLAIRVEIL_EVM_*` | Other optional EVM/MetaMask profile settings |
 | `CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING` / `CLAIRVEIL_DAPP_ALLOW_LAN_ADMIN` / `CLAIRVEIL_DAPP_ALLOW_LAN_PROVER` | Explicit opt-in for exposing local signing/admin/prover helpers on LAN |

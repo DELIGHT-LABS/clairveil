@@ -304,7 +304,8 @@ npm start
 | `CLAIRVEIL_DEPOSIT_PROOF_URL` / `CLAIRVEIL_PUBLIC_DEPOSIT_PROOF_URL` | server/browser용 정확한 DepositCircuit proof endpoint |
 | `CLAIRVEIL_PROVER_PROXY_ENABLED` | local-test mode에서만 bounded proxy 활성화; public-node mode에서는 무시 |
 | `CLAIRVEIL_PROVER_PROXY_RATE_LIMIT_WINDOW_MS` / `CLAIRVEIL_PROVER_PROXY_RATE_LIMIT_MAX` / `CLAIRVEIL_PROVER_PROXY_MAX_IN_FLIGHT` | local proxy 요청률과 동시 요청 상한 |
-| `CLAIRVEIL_DENOM` / `CLAIRVEIL_DISPLAY_DENOM` / `CLAIRVEIL_COIN_DECIMALS` | coin metadata |
+| `CLAIRVEIL_DENOM` / `CLAIRVEIL_DISPLAY_DENOM` / `CLAIRVEIL_COIN_DECIMALS` | 공통 coin metadata fallback |
+| `CLAIRVEIL_COSMOS_DENOM` / `CLAIRVEIL_EVM_DENOM` / `CLAIRVEIL_EVM_NATIVE_DENOM` | Transport별 minimal denom. Active transport 값이 `CLAIRVEIL_DENOM`보다 우선하며 EVM은 공통값 전에 native denom을 fallback으로 사용 |
 | `CLAIRVEIL_ACCOUNT_PREFIX` | transparent account prefix |
 | `CLAIRVEIL_SHIELDED_PREFIX` | shielded address prefix |
 | `CLAIRVEIL_EVM_RPC` | MetaMask/EVM JSON-RPC |

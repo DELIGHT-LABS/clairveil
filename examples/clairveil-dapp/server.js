@@ -17,6 +17,10 @@ import {
   plannerStatusToErrorCode
 } from "clairveiljs";
 import { validateBrowserWalletProfile } from "clairveiljs/browser-dapp";
+import {
+  normalizeConfiguredTransport,
+  resolveProfileDenom
+} from "./server-profile-config.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = resolve(__dirname, "../..");
@@ -57,7 +61,18 @@ function readCliOptions(argv = process.argv.slice(2)) {
 }
 
 const cliOptions = readCliOptions();
-const configuredDenom = process.env.CLAIRVEIL_DENOM ?? "uclair";
+const configuredTransport = normalizeConfiguredTransport(process.env.CLAIRVEIL_TRANSPORT);
+const configuredCosmosDenom = resolveProfileDenom({
+  transport: "cosmos",
+  environment: process.env
+});
+const configuredEvmDenom = resolveProfileDenom({
+  transport: "evm",
+  environment: process.env
+});
+const configuredDenom = configuredTransport === "evm"
+  ? configuredEvmDenom
+  : configuredCosmosDenom;
 
 function normalizeEvmChainId(value) {
   const text = String(value ?? "").trim();
@@ -118,8 +133,10 @@ const config = {
   proverProxyMaxInFlight: positiveIntegerEnv("CLAIRVEIL_PROVER_PROXY_MAX_IN_FLIGHT", 2),
   depositProofUrl: process.env.CLAIRVEIL_DEPOSIT_PROOF_URL ?? "",
   publicDepositProofUrl: process.env.CLAIRVEIL_PUBLIC_DEPOSIT_PROOF_URL ?? "",
-  transport: process.env.CLAIRVEIL_TRANSPORT ?? "cosmos",
+  transport: configuredTransport,
   denom: configuredDenom,
+  cosmosDenom: configuredCosmosDenom,
+  evmDenom: configuredEvmDenom,
   displayDenom: process.env.CLAIRVEIL_DISPLAY_DENOM ?? "CLAIR",
   coinDecimals: Number(process.env.CLAIRVEIL_COIN_DECIMALS ?? 18),
   keplrCoinType: Number(process.env.CLAIRVEIL_KEPLR_COIN_TYPE ?? 118),
@@ -131,7 +148,7 @@ const config = {
   evmChainName: process.env.CLAIRVEIL_EVM_CHAIN_NAME ?? "EVM Localnet",
   evmPrivacyPrecompileAddress: process.env.CLAIRVEIL_EVM_PRIVACY_PRECOMPILE || evmPrivacyPrecompileAddress,
   evmDepositMode: process.env.CLAIRVEIL_EVM_DEPOSIT_MODE || "nonpayable",
-  evmNativeDenom: process.env.CLAIRVEIL_EVM_NATIVE_DENOM || configuredDenom,
+  evmNativeDenom: process.env.CLAIRVEIL_EVM_NATIVE_DENOM || configuredEvmDenom,
   evmGasLimit: process.env.CLAIRVEIL_EVM_GAS_LIMIT ?? "0x989680",
   evmSendGasLimit: process.env.CLAIRVEIL_EVM_SEND_GAS_LIMIT ?? "0x5208",
   localTestMode,
@@ -312,7 +329,7 @@ function dappChainProfiles() {
     ...(browserDepositProofUrl ? { depositProofUrl: browserDepositProofUrl } : {}),
     accountPrefix: process.env.CLAIRVEIL_COSMOS_ACCOUNT_PREFIX ?? "clair",
     shieldedPrefix: process.env.CLAIRVEIL_COSMOS_SHIELDED_PREFIX ?? "clairs",
-    denom: process.env.CLAIRVEIL_COSMOS_DENOM ?? "uclair",
+    denom: config.cosmosDenom,
     displayDenom: process.env.CLAIRVEIL_COSMOS_DISPLAY_DENOM ?? "CLAIR",
     coinDecimals: Number(process.env.CLAIRVEIL_COSMOS_COIN_DECIMALS ?? 18),
     keplrCoinType: Number(process.env.CLAIRVEIL_COSMOS_COIN_TYPE ?? 118),
@@ -345,7 +362,7 @@ function dappChainProfiles() {
     ...(browserDepositProofUrl ? { depositProofUrl: browserDepositProofUrl } : {}),
     accountPrefix: process.env.CLAIRVEIL_EVM_PRIVACY_ACCOUNT_PREFIX ?? "clair",
     shieldedPrefix: process.env.CLAIRVEIL_EVM_SHIELDED_PREFIX ?? (isEvmTransport() ? config.shieldedPrefix : "clairs"),
-    denom: process.env.CLAIRVEIL_EVM_DENOM ?? (isEvmTransport() ? config.denom : "utoken"),
+    denom: config.evmDenom,
     displayDenom: process.env.CLAIRVEIL_EVM_DISPLAY_DENOM ?? (isEvmTransport() ? config.displayDenom : "TOKEN"),
     coinDecimals: Number(process.env.CLAIRVEIL_EVM_COIN_DECIMALS ?? (isEvmTransport() ? config.coinDecimals : 18)),
     evmRpc: config.evmRpc,
@@ -358,7 +375,11 @@ function dappChainProfiles() {
     evmSendGasLimit: config.evmSendGasLimit
   };
 
-  return [validateBrowserWalletProfile(isEvmTransport() ? evmProfile : clairveilProfile)];
+  const activeProfile = isEvmTransport() ? evmProfile : clairveilProfile;
+  if (activeProfile.denom !== config.denom) {
+    throw new Error("active chain profile denom must match the server coin denom");
+  }
+  return [validateBrowserWalletProfile(activeProfile)];
 }
 
 function activeChainProfileId() {

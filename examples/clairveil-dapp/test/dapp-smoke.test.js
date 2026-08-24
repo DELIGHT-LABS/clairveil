@@ -146,7 +146,9 @@ test("DApp exposes chain profiles and filters wallet connect buttons by chain", 
   assert.match(serverSource, /wallet: "keplr"/);
   assert.match(serverSource, /id: "evm-local"/);
   assert.match(serverSource, /wallet: "metamask"/);
-  assert.match(serverSource, /return \[validateBrowserWalletProfile\(isEvmTransport\(\) \? evmProfile : clairveilProfile\)\]/);
+  assert.match(serverSource, /const activeProfile = isEvmTransport\(\) \? evmProfile : clairveilProfile/);
+  assert.match(serverSource, /activeProfile\.denom !== config\.denom/);
+  assert.match(serverSource, /return \[validateBrowserWalletProfile\(activeProfile\)\]/);
   assert.match(configSource, /chainProfiles: \[clairveilProfile\]/);
   assert.doesNotMatch(configSource, /^const evmProfile/m);
   assert.doesNotMatch(configSource, /^\s*evmChainId:/m);
