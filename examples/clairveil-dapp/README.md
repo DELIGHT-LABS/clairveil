@@ -165,7 +165,7 @@ EVM profiles use MetaMask:
 
 ## Adding Chains
 
-Add static chain profiles to `public/dapp-config.json`, which is the exact artifact the browser loads when `/api/health` is unavailable. The checked-in static default exposes the Cosmos/Keplr profile only. To show EVM/MetaMask in a static deployment, add a complete EVM profile to that file. In server-backed mode, the browser instead uses the config embedded in `/api/health`; `/api/config` is informational and is not the browser bootstrap source.
+Add static chain profiles to `public/dapp-config.json`, which is the exact artifact the browser loads when `/api/health` is unavailable. The checked-in static default exposes the Cosmos/Keplr profile only. To show EVM/MetaMask in a static deployment, add a complete EVM profile to that file. In server-backed mode, the browser instead uses the config embedded in `/api/health`; `/api/config` returns the same bare Web client config for diagnostics but is not the browser bootstrap source. The production verifier rejects a deployment when those two config payloads differ.
 
 EVM static profile example:
 

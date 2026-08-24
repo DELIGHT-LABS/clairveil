@@ -196,7 +196,7 @@ EVM profile에서만 사용합니다.
 
 ### Static/public DApp
 
-Static chain profile은 `/api/health`를 사용할 수 없을 때 browser가 실제로 읽는 `public/dapp-config.json`에 추가합니다. 현재 commit된 static 기본값은 Cosmos/Keplr profile만 노출합니다. Static 배포에서 EVM/MetaMask를 보이게 하려면 그 파일에 완전한 EVM profile을 추가하세요. Server-backed mode에서는 browser가 `/api/health`에 포함된 config를 사용하며, `/api/config`은 정보 제공용이고 bootstrap source가 아닙니다.
+Static chain profile은 `/api/health`를 사용할 수 없을 때 browser가 실제로 읽는 `public/dapp-config.json`에 추가합니다. 현재 commit된 static 기본값은 Cosmos/Keplr profile만 노출합니다. Static 배포에서 EVM/MetaMask를 보이게 하려면 그 파일에 완전한 EVM profile을 추가하세요. Server-backed mode에서는 browser가 `/api/health`에 포함된 config를 사용합니다. `/api/config`은 진단용으로 같은 bare Web client config를 반환하지만 bootstrap source는 아니며, production verifier는 두 config payload가 다르면 배포를 거부합니다.
 
 Cosmos 예시:
 

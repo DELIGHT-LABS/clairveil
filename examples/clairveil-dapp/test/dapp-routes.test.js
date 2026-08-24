@@ -7,8 +7,7 @@ import { createServer as createTcpServer } from "node:net";
 import { validateClairveilWebClientConfig } from "clairveiljs/browser-dapp";
 
 function validatedConfig(responseJson) {
-  const { accounts: _accounts, ...config } = responseJson;
-  return validateClairveilWebClientConfig(config);
+  return validateClairveilWebClientConfig(responseJson);
 }
 
 async function freePort() {
@@ -323,7 +322,10 @@ test("DApp disables local-only backend routes outside local test mode", async ()
     assert.equal(config.json.serverFeatures.auditorAdmin, false);
     assert.equal(config.json.serverFeatures.proverProxy, false);
     assert.equal(config.json.localSignerHome, "");
-    assert.deepEqual(config.json.accounts, []);
+    assert.equal("accounts" in config.json, false);
+
+    const health = await waitForJson(`${baseUrl}/api/health`);
+    assert.deepEqual(health.json.config, config.json);
 
     const disabledProverProxy = await fetch(`${baseUrl}/v1/prover/transfer`, {
       method: "POST",

@@ -11,6 +11,7 @@ const requiredEnvironment = [
   "CLAIRVEIL_WEBAPP_CONFIG_URL",
 ];
 const deploymentResponseMaxBytes = 1 << 20;
+const serverBackedInformationalConfigPath = "/api/config";
 
 function requiredValue(environment, name) {
   const value = String(environment[name] || "").trim();
@@ -151,6 +152,54 @@ export function validateDeployedWebAppConfig(config) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`deployed WebApp config is invalid: ${message}`);
   }
+}
+
+function canonicalJsonValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => canonicalJsonValue(item));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .filter((key) => value[key] !== undefined)
+        .map((key) => [key, canonicalJsonValue(value[key])]),
+    );
+  }
+  return value;
+}
+
+function canonicalConfigJson(config) {
+  return JSON.stringify(canonicalJsonValue(config));
+}
+
+function healthConfigPayload(payload) {
+  if (
+    !payload
+    || typeof payload !== "object"
+    || Array.isArray(payload)
+    || !Object.hasOwn(payload, "config")
+    || !payload.config
+    || typeof payload.config !== "object"
+    || Array.isArray(payload.config)
+  ) {
+    throw new Error(
+      `WebApp ${serverBackedDappConfigPath} must contain the browser config under config`,
+    );
+  }
+  return payload.config;
+}
+
+function bareConfigPayload(payload, path) {
+  if (
+    payload
+    && typeof payload === "object"
+    && !Array.isArray(payload)
+    && Object.hasOwn(payload, "config")
+  ) {
+    throw new Error(`WebApp ${path} must return the bare Web client config`);
+  }
+  return payload;
 }
 
 function assertDirectConfigResponse(response, expectedUrl) {
@@ -512,7 +561,11 @@ export async function verifyProductionDeployment({
   } catch {
     throw new Error("WebApp config must return JSON");
   }
-  const resolvedConfig = validateDeployedWebAppConfig(config);
+  const expectedHealthUrl = new URL(serverBackedDappConfigPath, webApp);
+  const requestedConfig = webAppConfig.href === expectedHealthUrl.href
+    ? healthConfigPayload(config)
+    : bareConfigPayload(config, webAppConfig.pathname);
+  const resolvedConfig = validateDeployedWebAppConfig(requestedConfig);
   const browserConfigPath = resolvedConfig?.serverBacked === true
     ? serverBackedDappConfigPath
     : resolvedConfig?.serverBacked === false
@@ -526,6 +579,45 @@ export async function verifyProductionDeployment({
     throw new Error(
       `WebApp verification must use the browser-loaded ${browserConfigPath} response`,
     );
+  }
+  if (resolvedConfig.serverBacked === true) {
+    const informationalConfigUrl = new URL(serverBackedInformationalConfigPath, webApp);
+    const informationalResult = await timedFetch(
+      fetchImpl,
+      informationalConfigUrl,
+      { redirect: "error" },
+      { readBody: true },
+    );
+    const {
+      response: informationalResponse,
+      text: informationalText,
+    } = informationalResult;
+    if (!informationalResponse.ok) {
+      throw new Error(
+        `WebApp ${serverBackedInformationalConfigPath} returned HTTP ${informationalResponse.status}`,
+      );
+    }
+    assertDirectConfigResponse(informationalResponse, informationalConfigUrl);
+    assertJsonConfigResponse(informationalResponse);
+    let informationalConfig;
+    try {
+      informationalConfig = JSON.parse(informationalText);
+    } catch {
+      throw new Error(`WebApp ${serverBackedInformationalConfigPath} must return JSON`);
+    }
+    const informationalConfigPayload = bareConfigPayload(
+      informationalConfig,
+      serverBackedInformationalConfigPath,
+    );
+    validateDeployedWebAppConfig(informationalConfigPayload);
+    if (
+      canonicalConfigJson(requestedConfig)
+      !== canonicalConfigJson(informationalConfigPayload)
+    ) {
+      throw new Error(
+        `WebApp ${serverBackedDappConfigPath}.config must match ${serverBackedInformationalConfigPath}`,
+      );
+    }
   }
   const endpoints = deploymentEndpointsFromProfiles(resolvedConfig.chainProfiles);
   const connectSources = assertRestrictiveConnectSrc(csp);

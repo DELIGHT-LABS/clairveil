@@ -97,12 +97,24 @@ const profileEnvironment = {
 
 const restrictiveCsp = "default-src 'self'; frame-ancestors 'none'; script-src 'self'; connect-src 'self' https://rest.example.com https://rest-backup.example.com https://rpc.example.com https://prover.example.com https://deposit-proof.example.com https://evm-rest.example.com https://evm-host-rpc.example.com https://evm-prover.example.com https://evm-rpc.example.com";
 
+function reverseObjectKeyOrder(value) {
+  if (Array.isArray(value)) return value.map((item) => reverseObjectKeyOrder(item));
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .reverse()
+      .map(([key, item]) => [key, reverseObjectKeyOrder(item)]),
+  );
+}
+
 function productionGateFetch({
   config = deployedConfig,
   configPath = "/api/health",
+  informationalConfig = config,
   corsHeaders,
   actualCorsHeaders,
   configResponseOverride,
+  informationalConfigResponseOverride,
   webAppCsp = restrictiveCsp,
 } = {}) {
   const calls = [];
@@ -130,6 +142,15 @@ function productionGateFetch({
       if (configResponseOverride) return configResponseOverride;
       const body = configPath === "/api/health" ? { config } : config;
       return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
+    }
+    if (requestUrl.pathname === "/api/config") {
+      if (informationalConfigResponseOverride) {
+        return informationalConfigResponseOverride;
+      }
+      return new Response(JSON.stringify(informationalConfig), {
         status: 200,
         headers: { "content-type": "application/json; charset=utf-8" },
       });
@@ -260,11 +281,12 @@ test("production gate verifies preflight and actual CORS for every configured en
   });
 
   assert.deepEqual(result, { profileCount: 2, endpointCount: 9 });
-  assert.deepEqual(calls.slice(0, 2).map((call) => [call.method, call.url]), [
+  assert.deepEqual(calls.slice(0, 3).map((call) => [call.method, call.url]), [
     ["GET", "https://app.example.com/"],
     ["GET", "https://app.example.com/api/health"],
+    ["GET", "https://app.example.com/api/config"],
   ]);
-  const corsCalls = calls.slice(2);
+  const corsCalls = calls.slice(3);
   assert.equal(corsCalls.length, 36);
   assert.equal(
     corsCalls.filter((call) => call.origin === "https://app.example.com").length,
@@ -273,6 +295,95 @@ test("production gate verifies preflight and actual CORS for every configured en
   assert.equal(
     corsCalls.filter((call) => call.origin === "https://clairveil-cors-probe.invalid").length,
     18,
+  );
+});
+
+test("server-backed gate requires exact canonical equality across health and config routes", async () => {
+  const reordered = productionGateFetch({
+    informationalConfig: reverseObjectKeyOrder(deployedConfig),
+  });
+  await verifyProductionDeployment({
+    environment: profileEnvironment,
+    fetchImpl: reordered.fetchImpl,
+  });
+
+  const mismatches = [
+    ["active profile", {
+      ...deployedConfig,
+      activeChainProfileId: evmProfile.id,
+    }],
+    ["profile metadata", {
+      ...deployedConfig,
+      chainProfiles: [
+        { ...cosmosProfile, label: "Different Cosmos Profile" },
+        evmProfile,
+      ],
+    }],
+    ["endpoint", {
+      ...deployedConfig,
+      chainProfiles: [
+        { ...cosmosProfile, proverUrl: "https://other-prover.example.com" },
+        evmProfile,
+      ],
+    }],
+    ["feature", {
+      ...deployedConfig,
+      serverFeatures: { batchTransfer: true },
+    }],
+  ];
+  for (const [label, informationalConfig] of mismatches) {
+    const mismatched = productionGateFetch({ informationalConfig });
+    await assert.rejects(
+      () => verifyProductionDeployment({
+        environment: profileEnvironment,
+        fetchImpl: mismatched.fetchImpl,
+      }),
+      /\/api\/health\.config must match \/api\/config/,
+      label,
+    );
+  }
+});
+
+test("server-backed gate validates the informational config against the complete schema", async () => {
+  const invalid = productionGateFetch({
+    informationalConfig: {
+      ...deployedConfig,
+      schemaVersion: "legacy",
+    },
+  });
+  await assert.rejects(
+    () => verifyProductionDeployment({
+      environment: profileEnvironment,
+      fetchImpl: invalid.fetchImpl,
+    }),
+    /deployed WebApp config is invalid: config\.schemaVersion/,
+  );
+});
+
+test("server-backed gate requires strict health and informational config shapes", async () => {
+  const bareHealth = productionGateFetch({
+    configResponseOverride: new Response(JSON.stringify(deployedConfig), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+  });
+  await assert.rejects(
+    () => verifyProductionDeployment({
+      environment: profileEnvironment,
+      fetchImpl: bareHealth.fetchImpl,
+    }),
+    /\/api\/health must contain the browser config under config/,
+  );
+
+  const wrappedInformationalConfig = productionGateFetch({
+    informationalConfig: { config: deployedConfig },
+  });
+  await assert.rejects(
+    () => verifyProductionDeployment({
+      environment: profileEnvironment,
+      fetchImpl: wrappedInformationalConfig.fetchImpl,
+    }),
+    /\/api\/config must return the bare Web client config/,
   );
 });
 
@@ -450,6 +561,22 @@ test("production gate requires the browser-loaded artifact for a static DApp", a
     environment: staticEnvironment,
     fetchImpl: accepted.fetchImpl,
   });
+  assert.equal(
+    accepted.calls.some((call) => new URL(call.url).pathname === "/api/config"),
+    false,
+  );
+
+  const wrappedStatic = productionGateFetch({
+    config: { config: staticConfig },
+    configPath: "/dapp-config.json",
+  });
+  await assert.rejects(
+    () => verifyProductionDeployment({
+      environment: staticEnvironment,
+      fetchImpl: wrappedStatic.fetchImpl,
+    }),
+    /\/dapp-config\.json must return the bare Web client config/,
+  );
 
   const unbound = productionGateFetch({ config: staticConfig });
   await assert.rejects(

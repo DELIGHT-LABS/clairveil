@@ -67,7 +67,13 @@ TLS proxy/CDN 설정을 적용한 뒤 최종 production value로 repository gate
 `CLAIRVEIL_WEBAPP_CONFIG_URL`은 browser가 bootstrap에 실제 사용하는 same-origin
 JSON response를 정확히 가리켜야 합니다. Server-backed 예제에서는 Web client
 config를 `config` 아래에 담은 `/api/health`이며, `/api/config`은 정보 제공용일 뿐
-대체할 수 없습니다. Checked-in static WebApp에서는 `/dapp-config.json`입니다.
+bootstrap source를 대체할 수 없습니다. Server-backed deployment에서 gate는 같은
+origin의 `/api/config`이 반환하는 bare Web client config도 별도로 가져옵니다. 두
+payload를 완전한 ClairveilJS schema로 각각 검증한 뒤 canonical equality를
+요구합니다. Object key 순서는 무시하지만 array 순서와 모든 field 값은
+일치해야 합니다. 따라서 partial rollout 또는 proxy 분리 때문에 두 route가 서로
+다른 profile을 반환하면 release gate가 실패합니다. Checked-in static WebApp에서는
+`/dapp-config.json`입니다.
 두 response 모두 public REST failover 전체를 포함해야 하므로 gate는 별도로 복사한
 profile 목록이 아니라 browser가 실제로 받는 config를 검증합니다. Artifact는
 redirect 없이 직접 응답해야 하며 browser와 release gate는 redirect되었거나 final
@@ -85,7 +91,8 @@ npm --prefix examples/clairveil-dapp run verify:production-deployment
 ```
 
 Server-backed 예제를 검증할 때는 대신
-`https://app.example.com/api/health`를 사용합니다.
+`https://app.example.com/api/health`를 사용합니다. Static 검증은
+`/dapp-config.json`만 읽고 server-backed config route는 호출하지 않습니다.
 
 이 gate는 non-HTTPS value, broad `connect-src *`, external/inline script allowance,
 누락되었거나 wildcard인 `frame-ancestors` directive를 거부합니다. 30초 request

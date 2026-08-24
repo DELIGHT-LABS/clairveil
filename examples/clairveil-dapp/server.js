@@ -1187,10 +1187,7 @@ async function handleApi(req, res, url) {
   try {
     if (req.method === "GET" && url.pathname === "/api/config") {
       const cfg = publicConfig(req);
-      sendJson(res, 200, {
-        ...cfg,
-        accounts: cfg.serverFeatures.localSignerAdmin ? await localAccounts() : []
-      });
+      sendJson(res, 200, cfg);
       return;
     }
 

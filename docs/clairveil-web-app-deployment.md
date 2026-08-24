@@ -116,7 +116,13 @@ Run the repository gate against the final production values, after the TLS
 proxy/CDN configuration is live. `CLAIRVEIL_WEBAPP_CONFIG_URL` must identify
 the exact same-origin JSON response from which the browser bootstraps. For the
 server-backed example this is `/api/health`, with the Web client config under
-`config`; `/api/config` is informational and is not an acceptable substitute.
+`config`; `/api/config` is informational and is not an acceptable bootstrap
+substitute. For a server-backed deployment, the gate also fetches the bare Web
+client config from the same-origin `/api/config` route. It validates both
+payloads against the complete ClairveilJS schema and requires exact canonical
+equality: object key order is ignored, array order and every field value are
+significant. A partial rollout or proxy split that serves different profiles
+from the two routes therefore fails the release gate.
 For the checked-in static WebApp this is `/dapp-config.json`. Both responses
 must include every public REST failover. This makes the gate validate the
 configuration the browser actually receives rather than an independently
@@ -137,7 +143,8 @@ npm --prefix examples/clairveil-dapp run verify:production-deployment
 ```
 
 Use `https://app.example.com/api/health` instead when verifying the
-server-backed example.
+server-backed example. Static verification reads only `/dapp-config.json` and
+does not probe either server-backed config route.
 
 The gate rejects non-HTTPS values, broad `connect-src *`, external or inline
 script allowances, and a missing or wildcard `frame-ancestors` directive. It
