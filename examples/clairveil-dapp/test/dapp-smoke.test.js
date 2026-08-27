@@ -10,6 +10,7 @@ const encryptedReservationSource = await readFile(new URL("../public/encrypted-r
 const encryptedOperationSource = await readFile(new URL("../public/encrypted-operation-store.js", import.meta.url), "utf8");
 const depositFundingSource = await readFile(new URL("../public/deposit-funding.js", import.meta.url), "utf8");
 const relayReconciliationSource = await readFile(new URL("../public/relay-withdraw-reconciliation.js", import.meta.url), "utf8");
+const cosmosFlowStateSource = await readFile(new URL("../public/cosmos-flow-state.js", import.meta.url), "utf8");
 const reservationRecoverySource = await readFile(new URL("../public/reservation-recovery.js", import.meta.url), "utf8");
 const reservationReconciliationSource = await readFile(new URL("../public/reservation-reconciliation.js", import.meta.url), "utf8");
 const configSource = await readFile(new URL("../public/dapp-config.js", import.meta.url), "utf8");
@@ -390,6 +391,9 @@ test("DApp persists encrypted reservations and keeps unknown broadcasts fail clo
   assert.match(encryptedReservationSource, /AES-GCM/);
   assert.match(encryptedReservationSource, /requireLocks: true/);
   assert.match(encryptedReservationSource, /RESERVATION_STATE_CORRUPT/);
+  assert.match(appSource, /const reservationSnapshot = await manager\.store\.load\(\)/);
+  assert.match(appSource, /expectedReservationState: reservationSnapshot/);
+  assert.match(encryptedReservationSource, /FRESH_GENESIS_RESERVATION_STATE_CHANGED/);
   assert.doesNotMatch(encryptedReservationSource, /unsafeAllowPlaintext/);
 
   assert.match(appSource, /prepareTransfer\(privacyRequest\([\s\S]*reservationManager: manager/);
@@ -1141,8 +1145,11 @@ test("DApp separates deposit inclusion from exact note recovery", () => {
 test("DApp confirms chain-bound intent details and supports self-view opt-out", () => {
   assert.match(appSource, /function fetchLatestChainBlockTimeUnix/);
   assert.match(appSource, /fetchBoundedJson\(`\$\{endpoint\}\/status`/);
-  assert.match(appSource, /result\?\.sync_info\?\.latest_block_time/);
-  assert.match(appSource, /result\?\.sync_info\?\.latest_block_height/);
+  assert.match(appSource, /const profile = activeChainProfile\(\)[\s\S]*browserRpcUrl\(profile\)/);
+  assert.match(appSource, /authoritativeChainBlockFromStatus\(data, profile\)/);
+  assert.match(cosmosFlowStateSource, /result\?\.node_info\?\.network/);
+  assert.match(cosmosFlowStateSource, /result\?\.sync_info\?\.latest_block_time/);
+  assert.match(cosmosFlowStateSource, /result\?\.sync_info\?\.latest_block_height/);
   assert.match(appSource, /expiresAtUnix: chainNowUnix \+ 1800/);
   assert.match(appSource, /disableSelfViewDisclosure/);
   assert.match(htmlSource, /id="includeSelfViewDisclosure"/);

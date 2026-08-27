@@ -90,6 +90,30 @@ class MemoryStorage {
   }
 }
 
+function reservationNoteFixture({
+  nullifier = "11".repeat(32),
+  sequence = 1
+} = {}) {
+  return {
+    note: {
+      receiverSpendPubKeyX: 1n,
+      receiverSpendPubKeyY: 2n,
+      receiverViewPubKeyX: 3n,
+      receiverViewPubKeyY: 4n,
+      amount: 5n,
+      assetID: 7n,
+      randomness: 8n,
+      memo: ""
+    },
+    nullifier,
+    isSpent: false,
+    nullifierStatus: "unspent",
+    txHash: "AB".repeat(32),
+    height: 10,
+    sequence
+  };
+}
+
 class MemoryLocks {
   async request(_name, _options, callback) {
     return callback();
@@ -436,10 +460,14 @@ test("fresh-genesis reset deletes only the exact encrypted SDK namespace under i
     }
   });
   const db = await manager.store.db();
+  await manager.reserveNotes({
+    notes: [reservationNoteFixture()],
+    operationId: "stale-operation"
+  });
+  const expectedReservationState = await manager.store.load();
   const adjacentNamespace = `${namespace}:keep`;
   await new Promise((resolve, reject) => {
     const transaction = db.transaction("states", "readwrite");
-    transaction.objectStore("states").put({ sentinel: "delete" }, namespace);
     transaction.objectStore("states").put({ sentinel: "keep" }, adjacentNamespace);
     transaction.oncomplete = resolve;
     transaction.onerror = () => reject(transaction.error);
@@ -451,7 +479,8 @@ test("fresh-genesis reset deletes only the exact encrypted SDK namespace under i
     /explicit local-genesis confirmation capability/
   );
   await resetEncryptedBrowserReservationState(manager, {
-    confirmedFreshLocalGenesis: true
+    confirmedFreshLocalGenesis: true,
+    expectedReservationState
   });
 
   const [deleted, preserved] = await Promise.all([namespace, adjacentNamespace].map(key => (
@@ -472,6 +501,47 @@ test("fresh-genesis reset deletes only the exact encrypted SDK namespace under i
     }),
     /does not support fresh-genesis reset/
   );
+});
+
+test("fresh-genesis reset preserves reservations changed after wallet approval", async () => {
+  const namespace = `fresh-reset-race:${webcrypto.randomUUID()}`;
+  const manager = await createEncryptedBrowserReservationManager({
+    namespace,
+    ownerKeyId: "owner",
+    indexKey: webcrypto.getRandomValues(new Uint8Array(32)),
+    leaseOwner: "fresh-reset-race-test",
+    cryptoImpl: webcrypto,
+    indexedDB,
+    locks: {
+      request(_name, _options, callback) {
+        return callback();
+      }
+    }
+  });
+  await manager.reserveNotes({
+    notes: [reservationNoteFixture()],
+    operationId: "approved-stale-operation"
+  });
+  const approvedReservationState = await manager.store.load();
+
+  await manager.reserveNotes({
+    notes: [reservationNoteFixture({ nullifier: "22".repeat(32), sequence: 2 })],
+    operationId: "concurrent-new-operation"
+  });
+  let afterResetCalled = false;
+  await assert.rejects(
+    () => resetEncryptedBrowserReservationState(manager, {
+      confirmedFreshLocalGenesis: true,
+      expectedReservationState: approvedReservationState,
+      afterReset: () => {
+        afterResetCalled = true;
+      }
+    }),
+    error => error?.code === "FRESH_GENESIS_RESERVATION_STATE_CHANGED"
+  );
+
+  assert.equal(afterResetCalled, false);
+  assert.equal((await manager.store.load()).reservations.length, 2);
 });
 
 test("reviewed fresh-state reset refuses active and terminal unresolved reservations before its final fence callback", async () => {

@@ -11,6 +11,7 @@ import {
   disclosureScalarFromHex
 } from "clairveiljs/core";
 import {
+  activeReservationStatuses,
   hashAmount,
   hashRecipient,
   operationStatuses,
@@ -49,6 +50,7 @@ import {
 } from "./cosmos-transaction-evidence.js";
 import {
   assertPreparedTransferFreshAtChainTime,
+  authoritativeChainBlockFromStatus,
   preparedTransferExpiryUnix,
   recoveredDepositNoteForTxHash,
   reservationConsumesBrowserCosmosSequence,
@@ -560,23 +562,14 @@ function profileRestEndpoints(profile = activeChainProfile()) {
 }
 
 async function fetchLatestChainBlock({ signal } = {}) {
-  const endpoint = browserRpcUrl();
+  const profile = activeChainProfile();
+  const endpoint = browserRpcUrl(profile);
   if (!endpoint) throw new Error("A browser-accessible chain RPC endpoint is required for authoritative expiry");
   const data = await fetchBoundedJson(`${endpoint}/status`, {
     signal,
     label: "Latest block time query"
   });
-  const value = data?.result?.sync_info?.latest_block_time;
-  const milliseconds = Date.parse(String(value || ""));
-  if (!Number.isFinite(milliseconds)) {
-    throw new Error("Latest status response omitted a valid block timestamp");
-  }
-  const rawHeight = data?.result?.sync_info?.latest_block_height;
-  const height = Number(rawHeight);
-  if (!Number.isSafeInteger(height) || height <= 0) {
-    throw new Error("Latest status response omitted a valid block height");
-  }
-  return { timeUnix: Math.floor(milliseconds / 1000), height };
+  return authoritativeChainBlockFromStatus(data, profile);
 }
 
 async function fetchLatestChainBlockTimeUnix(options = {}) {
@@ -8569,8 +8562,16 @@ async function maybeResetStaleLocalGenesisReservations(manager, {
   };
   assertCurrent();
   if (!localTestBackendEnabled()) return { eligible: false, reset: false };
-  const active = await manager.listActiveReservations();
+  const reservationSnapshot = await manager.store.load();
   assertCurrent();
+  const reservations = Array.isArray(reservationSnapshot?.reservations)
+    ? reservationSnapshot.reservations
+    : [];
+  const activeStatusSet = new Set(activeReservationStatuses);
+  const active = reservations.filter(record => (
+    record?.owner_key_id === manager.ownerKeyId
+      && activeStatusSet.has(record?.status)
+  ));
   if (!active.length) return { eligible: false, reset: false };
 
   if (refreshProtocol) {
@@ -8600,7 +8601,8 @@ async function maybeResetStaleLocalGenesisReservations(manager, {
 
   assertCurrent();
   await resetEncryptedBrowserReservationState(manager, {
-    confirmedFreshLocalGenesis: true
+    confirmedFreshLocalGenesis: true,
+    expectedReservationState: reservationSnapshot
   });
   assertCurrent();
   await refreshReservationState(manager, { sessionContext });

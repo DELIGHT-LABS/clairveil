@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   assertPreparedTransferFreshAtChainTime,
+  authoritativeChainBlockFromStatus,
   isSeparateSameOriginLocalRelayerReservation,
   preparedTransferExpiryUnix,
   recoveredDepositNoteForTxHash,
@@ -13,6 +14,45 @@ import {
 function preparedTransfer(expiry = 2_000) {
   return { prepared: { payload: { expires_at_unix: expiry } } };
 }
+
+function chainStatus(network = "clairveil-local-1") {
+  return {
+    result: {
+      node_info: { network },
+      sync_info: {
+        latest_block_time: "2026-08-27T01:02:03.900Z",
+        latest_block_height: "42"
+      }
+    }
+  };
+}
+
+test("authoritative block time is bound to the active Cosmos host chain", () => {
+  assert.deepEqual(
+    authoritativeChainBlockFromStatus(chainStatus(), { chainId: "clairveil-local-1" }),
+    { timeUnix: 1_787_792_523, height: 42 }
+  );
+  assert.throws(
+    () => authoritativeChainBlockFromStatus(chainStatus("other-chain-1"), {
+      chainId: "clairveil-local-1"
+    }),
+    error => error?.code === "CHAIN_STATUS_NETWORK_MISMATCH"
+  );
+
+  const evmProfile = {
+    transport: "evm",
+    chainId: "clairveil-evm-host-1",
+    evmChainId: "0x539"
+  };
+  assert.equal(
+    authoritativeChainBlockFromStatus(chainStatus("clairveil-evm-host-1"), evmProfile).height,
+    42
+  );
+  assert.throws(
+    () => authoritativeChainBlockFromStatus(chainStatus("0x539"), evmProfile),
+    error => error?.code === "CHAIN_STATUS_NETWORK_MISMATCH"
+  );
+});
 
 test("typed privacy scans always carry an explicit typed cursor", () => {
   assert.deepEqual(typedPrivacyScanAfter(), {

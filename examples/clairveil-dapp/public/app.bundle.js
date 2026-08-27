@@ -89017,6 +89017,7 @@ var msgBatchTransferTypeUrl = MsgBatchTransfer.typeUrl;
 var msgTransferTypeUrl = MsgTransfer.typeUrl;
 var msgWithdrawTypeUrl = MsgWithdraw.typeUrl;
 var defaultPrepareScanMaxPages = 1e3;
+var maxPrivacyScanEventCompletionPages = 32;
 var cosmosSignDocMetadataField = "__clairveilCosmosSignDoc";
 var cosmosReservationRequiredMemoMarker = "[clairveil-reservation-required:v1]";
 var maxBatchTransferMessageBytesV1 = 128 << 10;
@@ -91924,10 +91925,22 @@ var ClairveilJS = class {
       const requestedValidationState = validationStateSnapshot ?? validation_state_snapshot;
       const validationState = requestedValidationState == null ? createPrivacyScanValidationStateV2() : restorePrivacyScanValidationStateV2(requestedValidationState);
       try {
-        for (; pagesScanned2 < pageBudget; ) {
+        let eventCompletionPages = 0;
+        for (; ; ) {
+          const pendingEntries = [...validationState.pending_summary_by_event.values()];
+          if (pendingEntries.length > 1) {
+            throw new Error("privacy scan validation state contains multiple partial events");
+          }
+          const pendingSummary = pendingEntries[0];
+          if (pagesScanned2 >= pageBudget && !pendingSummary) break;
+          if (pagesScanned2 >= pageBudget && eventCompletionPages >= maxPrivacyScanEventCompletionPages) {
+            throw new Error("privacy scan could not complete the current event within the bounded continuation budget");
+          }
+          const configuredOutputLimit = Number(outputLimit ?? output_limit ?? pageLimit);
+          const remainingEventOutputs = pendingSummary ? pendingSummary.output_count - pendingSummary.last_output_index - 1 : 0;
           const request = {
             after: currentAfter,
-            outputLimit: outputLimit ?? output_limit ?? pageLimit,
+            outputLimit: pendingSummary ? configuredOutputLimit > 0 ? Math.min(configuredOutputLimit, remainingEventOutputs) : remainingEventOutputs : configuredOutputLimit,
             eventLimit: eventLimit ?? event_limit,
             maxEncodedBytes: maxEncodedBytes ?? max_encoded_bytes,
             // Deliberately request every event: zero-output summaries prove
@@ -91943,8 +91956,12 @@ var ClairveilJS = class {
           };
           scannedEvents += pageResult.scanned_event_count;
           pagesScanned2 += 1;
+          if (pendingSummary && pagesScanned2 > pageBudget) eventCompletionPages += 1;
           hasMore2 = pageResult.has_more;
           if (!hasMore2) break;
+        }
+        if (validationState.pending_summary_by_event.size) {
+          throw new Error("privacy scan ended before the current event was complete");
         }
       } catch (error) {
         const endpointIsAbsent = pagesScanned2 === 0 && (error?.status === 404 || error?.status === 405 || error?.status === 501);
@@ -92789,11 +92806,13 @@ var ClairveilJS = class {
     const auditPubKeyHex = transferProtocolConfig.audit_config.audit_master_pubkey_hex;
     const stepRecipient = isFinal ? recipient : privacy.shieldedAddress;
     const stepAmount = isFinal ? amount : plan.nextAmount;
-    const operationEvidence = isFinal ? finalOperationEvidence : {
-      expectedRecipientHash: "",
-      expectedAmountHash: "",
-      expectedDenom: finalOperationEvidence.expectedDenom
-    };
+    const operationEvidence = isFinal ? finalOperationEvidence : buildDirectOperationEvidenceHashes({
+      assertions: {},
+      recipient: stepRecipient,
+      amount: stepAmount,
+      denom: denom ?? this.defaultDenom,
+      shieldedPrefix: this.shieldedPrefix
+    });
     let reservationBatch = null;
     try {
       reservationBatch = await preparePlanReservation(resolvedReservationManager, {
@@ -92948,6 +92967,8 @@ var ClairveilJS = class {
     strictPrivacyScan,
     strict_privacy_scan,
     gasLimit = 25e6,
+    feeAmount,
+    fee_amount,
     expiresAtUnix,
     expires_at_unix,
     chainNowUnix,
@@ -92972,6 +92993,7 @@ var ClairveilJS = class {
     if (executionBuilder != null && typeof executionBuilder !== "function") {
       throw new Error("executionBuilder must be a function");
     }
+    const resolvedFeeAmount = resolveCosmosFeeAmount(feeAmount, fee_amount);
     if (outputMode != null && output_mode != null && normalizeBatchTransferOutputMode(outputMode) !== normalizeBatchTransferOutputMode(output_mode)) {
       throw new Error("outputMode aliases conflict");
     }
@@ -93412,6 +93434,7 @@ var ClairveilJS = class {
             signer: privacy.address,
             pubKeyHex: privacy.pubKeyHex,
             gasLimit,
+            feeAmount: resolvedFeeAmount,
             messages: [{
               typeUrl: msgBatchTransferTypeUrl,
               value: MsgBatchTransfer2.fromPartial(message2)
@@ -93643,6 +93666,8 @@ var ClairveilJS = class {
     signer,
     pubKeyHex,
     gasLimit,
+    feeAmount,
+    fee_amount,
     memo = "Clairveil batch veiled transfer",
     payments,
     amounts,
@@ -93674,6 +93699,7 @@ var ClairveilJS = class {
     if (executionBuilder != null && typeof executionBuilder !== "function") {
       throw new Error("executionBuilder must be a function");
     }
+    const resolvedFeeAmount = resolveCosmosFeeAmount(feeAmount, fee_amount);
     if (operationId != null && operation_id != null && String(operationId) !== String(operation_id)) {
       throw new Error("operationId aliases conflict");
     }
@@ -93814,6 +93840,7 @@ var ClairveilJS = class {
         signer: resolvedSigner,
         pubKeyHex,
         gasLimit,
+        feeAmount: resolvedFeeAmount,
         message,
         memo,
         expectedCircuitIdentity: transferProtocolConfig.circuit_config.circuit_set_identity,
@@ -94245,6 +94272,8 @@ var ClairveilJS = class {
     signer,
     pubKeyHex,
     gasLimit,
+    feeAmount,
+    fee_amount,
     message,
     memo = "Clairveil batch veiled transfer",
     expectedCircuitIdentity,
@@ -94257,6 +94286,7 @@ var ClairveilJS = class {
     if (!message || typeof message !== "object") {
       throw new Error("MsgBatchTransfer message is required");
     }
+    const resolvedFeeAmount = resolveCosmosFeeAmount(feeAmount, fee_amount);
     if (chainNowUnix != null && chain_now_unix != null && Number(chainNowUnix) !== Number(chain_now_unix)) {
       throw new Error("batch transfer chainNowUnix aliases conflict");
     }
@@ -94285,6 +94315,7 @@ var ClairveilJS = class {
       signer,
       pubKeyHex,
       gasLimit,
+      feeAmount: resolvedFeeAmount,
       messages: [{
         typeUrl: msgBatchTransferTypeUrl,
         value: normalizedMessage
@@ -98322,6 +98353,13 @@ function canonicalBrowserAliasBoolean(value) {
 function canonicalBrowserAliasReference(value) {
   return value;
 }
+function canonicalBrowserAliasFeeAmount(value) {
+  if (!Array.isArray(value)) return JSON.stringify(value);
+  return JSON.stringify(value.map((coin) => ({
+    denom: String(coin?.denom ?? "").trim(),
+    amount: String(coin?.amount ?? "").trim()
+  })).sort((left, right) => left.denom.localeCompare(right.denom)));
+}
 function hasEvmAuthorizationSignature(authorization) {
   const signature = authorization?.signature;
   if (signature == null) return false;
@@ -99228,11 +99266,28 @@ var ClairveilBrowserClient = class {
     }
     return this.evm.sendTransaction(wallet, transaction, reservationOptions);
   }
-  async buildBankSendSignDoc({ from, pubKeyHex, to, amount }) {
+  async buildBankSendSignDoc(body = {}) {
+    const { from, pubKeyHex, to, amount } = body;
+    const gasLimit = browserAliasedInputValue(
+      body,
+      "gasLimit",
+      "gas_limit",
+      "gasLimit",
+      canonicalBrowserAliasScalar
+    );
+    const feeAmount = browserAliasedInputValue(
+      body,
+      "feeAmount",
+      "fee_amount",
+      "feeAmount",
+      canonicalBrowserAliasFeeAmount
+    );
     const coin = positiveCoinForDenom(amount, this.denom, "send");
     return this.cosmos.buildDirectSignDoc({
       signer: from,
       pubKeyHex,
+      ...gasLimit == null ? {} : { gasLimit },
+      ...feeAmount == null ? {} : { feeAmount },
       messages: [
         {
           typeUrl: "/cosmos.bank.v1beta1.MsgSend",
@@ -99659,6 +99714,8 @@ var ClairveilBrowserClient = class {
       expected_amount_hashes: body.expected_amount_hashes,
       scan: scanOptions,
       gasLimit,
+      feeAmount: body.feeAmount,
+      fee_amount: body.fee_amount,
       expiresAtUnix,
       chainNowUnix,
       rootHex,
@@ -99813,6 +99870,8 @@ var ClairveilBrowserClient = class {
       signer: body.signer ?? body.address ?? body.payload?.creator,
       pubKeyHex,
       gasLimit,
+      feeAmount: body.feeAmount,
+      fee_amount: body.fee_amount,
       memo: body.memo,
       payments: body.payments,
       amounts: body.amounts,
@@ -100736,6 +100795,161 @@ var EncryptedLocalStorageNoteStore = class _EncryptedLocalStorageNoteStore exten
   }
 };
 
+// public/reservation-recovery.js
+var preparationStatuses = /* @__PURE__ */ new Set(["Reserved", "Proving", "ProofReady", "ManualReview"]);
+var transactionStatuses = /* @__PURE__ */ new Set(["Submitted", "Unknown"]);
+function reservationMetadata(record) {
+  return record?.metadata && typeof record.metadata === "object" ? record.metadata : {};
+}
+function reservationOperationKey(record = {}) {
+  return String(
+    record.operation_id || record.operationId || record.reservation_id || record.reservationId || ""
+  );
+}
+function groupReservationOperations(records = []) {
+  const grouped = /* @__PURE__ */ new Map();
+  for (const record of records || []) {
+    if (!record) continue;
+    const key = reservationOperationKey(record);
+    if (!key) continue;
+    const operation = grouped.get(key) || { key, records: [] };
+    operation.records.push(record);
+    grouped.set(key, operation);
+  }
+  return [...grouped.values()].map((operation) => ({
+    ...operation,
+    records: operation.records.sort((left, right) => String(left.reservation_id || "").localeCompare(String(right.reservation_id || "")))
+  })).sort((left, right) => String(left.records[0]?.created_at || "").localeCompare(String(right.records[0]?.created_at || "")));
+}
+function reconciliationReservationRecords(...collections) {
+  const recordsByID = /* @__PURE__ */ new Map();
+  for (const records of collections) {
+    for (const record of records || []) {
+      if (!record) continue;
+      const reservationID = String(record.reservation_id || record.reservationId || "");
+      const operationKey = reservationOperationKey(record);
+      const lookupKey = String(record.nullifier_lookup_key || "");
+      const key = reservationID || (operationKey && lookupKey ? `${operationKey}:${lookupKey}` : "");
+      if (key) recordsByID.set(key, record);
+    }
+  }
+  return [...recordsByID.values()];
+}
+function canReconcileReservationState({
+  privacyReady = false,
+  active = [],
+  unresolved = [],
+  privacyPending = false,
+  reconciling = false
+} = {}) {
+  return privacyReady === true && (privacyPending === true || reconciliationReservationRecords(active, unresolved).length > 0) && reconciling !== true;
+}
+function succeededOperationLookupKeys(records = []) {
+  const lookupKeys = /* @__PURE__ */ new Set();
+  for (const operation of groupReservationOperations(records)) {
+    const succeeded = operation.records.length > 0 && operation.records.every((record) => record.status === "ConfirmedSpent" && record.metadata?.operation_status === "Succeeded" && record.metadata?.operation_success_evidence_matches === true);
+    if (!succeeded) continue;
+    for (const record of operation.records) {
+      if (record.nullifier_lookup_key) lookupKeys.add(record.nullifier_lookup_key);
+    }
+  }
+  return lookupKeys;
+}
+function assessReservationRecovery(records = [], {
+  leaseOwner = "",
+  nowMs = Date.now()
+} = {}) {
+  const reservations = [...records || []].filter(Boolean);
+  const statuses = [...new Set(reservations.map((record) => String(record.status || "")))];
+  const kinds = [...new Set(reservations.map((record) => String(record.kind || "unknown")))];
+  const metadata = reservations.map(reservationMetadata);
+  const hasSignDocIdentity = reservations.some((record) => Boolean(String(record.sign_doc_hash || record.signDocHash || "").trim()));
+  const hasQueryableTransactionIdentity = reservations.some((record) => Boolean(String(record.submitted_tx_hash || record.submittedTxHash || "").trim()) || Boolean(String(record.tx_bytes_hash || record.txBytesHash || "").trim()));
+  const signDocOnly = hasSignDocIdentity && !hasQueryableTransactionIdentity;
+  const broadcastAttempted = reservations.some((record, index) => record.broadcast_in_flight === true || Number(record.broadcast_attempt_count || 0) > 0 || metadata[index].no_broadcast_attempt === false || Boolean(String(record.submitted_tx_hash || "").trim()) || Boolean(String(record.tx_bytes_hash || "").trim()));
+  const relayHandedOff = reservations.some((_record, index) => metadata[index].relay_handed_off === true || metadata[index].relayHandedOff === true);
+  const liveLeaseRecords = reservations.filter((record) => {
+    const leaseUntil2 = Date.parse(String(record.lease_until || ""));
+    return Number.isFinite(leaseUntil2) && leaseUntil2 > nowMs;
+  });
+  const liveLeaseOwners = [...new Set(liveLeaseRecords.map((record) => String(record.lease_owner || "")).filter(Boolean))];
+  const liveLeaseTokens = [...new Set(liveLeaseRecords.map((record) => String(record.lease_token || "")).filter(Boolean))];
+  const foreignLiveLease = liveLeaseRecords.some((record) => String(record.lease_owner || "") !== String(leaseOwner || ""));
+  const malformedLiveLease = liveLeaseRecords.length > 0 && (liveLeaseOwners.length !== 1 || liveLeaseTokens.length !== 1);
+  const status = statuses.length === 1 ? statuses[0] : "Mixed";
+  const kind = kinds.length === 1 ? kinds[0] : "mixed";
+  const leaseUntil = reservations.map((record) => String(record.lease_until || "")).filter(Boolean).sort().at(-1) || "";
+  let action = "review-replan";
+  let reason = "Verify current nullifier evidence before discarding this local preparation.";
+  if (!reservations.length) {
+    action = "unavailable";
+    reason = "No reservation records are available.";
+  } else if (statuses.length !== 1) {
+    action = "unavailable";
+    reason = "Linked reservations have mixed states and require manual evidence review.";
+  } else if (relayHandedOff) {
+    action = "relay-reconcile";
+    reason = "A relay handoff can only be recovered through its expiry and transaction reconciliation flow.";
+  } else if (broadcastAttempted || transactionStatuses.has(status)) {
+    action = "reconcile";
+    reason = "A transaction may have reached the network. Reconcile its tx hash and nullifiers before retrying.";
+  } else if (!preparationStatuses.has(status)) {
+    action = "unavailable";
+    reason = `Reservation status ${status || "unknown"} is not eligible for preparation recovery.`;
+  } else if (status === "Proving" && liveLeaseRecords.length > 0) {
+    action = "wait-for-lease";
+    reason = "Proof generation is still active. Use the current transfer flow to cancel it, or wait for its lease to expire.";
+  } else if (foreignLiveLease) {
+    action = "wait-for-lease";
+    reason = "Another browser tab or worker still owns the live reservation lease.";
+  } else if (malformedLiveLease) {
+    action = "unavailable";
+    reason = "The linked reservations do not share one recoverable live lease.";
+  } else if (signDocOnly) {
+    reason = "Only a sign-doc hash was saved. Quarantine the request, acknowledge wallet-history risk, and recheck every nullifier before replanning.";
+  }
+  return Object.freeze({
+    operationKey: reservationOperationKey(reservations[0]),
+    reservationIDs: Object.freeze(reservations.map((record) => String(record.reservation_id || "")).filter(Boolean)),
+    status,
+    kind,
+    action,
+    reason,
+    broadcastAttempted,
+    signDocOnly,
+    hasQueryableTransactionIdentity,
+    relayHandedOff,
+    leaseLive: liveLeaseRecords.length > 0,
+    leaseOwnedByCurrentWorker: liveLeaseRecords.length > 0 && !foreignLiveLease && !malformedLiveLease,
+    leaseToken: liveLeaseTokens.length === 1 ? liveLeaseTokens[0] : "",
+    leaseUntil
+  });
+}
+function isZeroReserveAmount(value) {
+  return /^(?:0+)$/.test(String(value ?? ""));
+}
+function isEmptyLocalGenesisPrivacyState({
+  localTestMode = false,
+  reserve
+} = {}) {
+  return localTestMode === true && reserve?.invariant_holds === true && [
+    reserve.module_balance,
+    reserve.expected_module_balance,
+    reserve.total_deposited,
+    reserve.total_withdrawn
+  ].every(isZeroReserveAmount);
+}
+function canResetStaleLocalGenesisReservations({
+  localTestMode = false,
+  reserve,
+  notes = [],
+  noteSyncStatus = "",
+  scanHasMore = true,
+  assessments = []
+} = {}) {
+  return isEmptyLocalGenesisPrivacyState({ localTestMode, reserve }) && Array.isArray(notes) && notes.length === 0 && noteSyncStatus === "synced" && scanHasMore === false && Array.isArray(assessments) && assessments.length > 0 && assessments.every((assessment) => assessment?.action === "review-replan");
+}
+
 // public/encrypted-reservation-manager.js
 var reservationStateVersion = "clairveil-encrypted-reservation-state-v1";
 var reservationStateInfo = new TextEncoder().encode("clairveil/reservation-state/v1");
@@ -100768,6 +100982,57 @@ function reservationHasUnresolvedOperationEvidence(record) {
 }
 function reservationBlocksReviewedReset(record) {
   return activeReservationStatusSet2.has(record?.status) || reservationHasUnresolvedOperationEvidence(record);
+}
+function canonicalJson(value) {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.keys(value).sort().map((key) => [key, canonicalJson(value[key])])
+  );
+}
+function canonicalReservationStateSnapshot(state2) {
+  const reservations = [...state2.reservations].sort((left, right) => String(left?.reservation_id || "").localeCompare(String(right?.reservation_id || "")));
+  return JSON.stringify(canonicalJson({ ...state2, reservations }));
+}
+function assertFreshGenesisReservations(manager, reservations) {
+  if (!Array.isArray(reservations) || !reservations.length) {
+    throw new Error("Fresh-genesis reset requires an exact non-empty reservation snapshot");
+  }
+  const ownerKeyId = String(manager?.ownerKeyId || "");
+  const reservationIDs = /* @__PURE__ */ new Set();
+  for (const record of reservations) {
+    const reservationID = String(record?.reservation_id || "");
+    if (!reservationID || reservationIDs.has(reservationID) || record?.owner_key_id !== ownerKeyId) {
+      throw new Error("Fresh-genesis reset reservation snapshot is malformed or belongs to another owner");
+    }
+    reservationIDs.add(reservationID);
+  }
+  const active = reservations.filter((record) => activeReservationStatusSet2.has(record?.status));
+  const operations = groupReservationOperations(active);
+  const groupedCount = operations.reduce((count, operation) => count + operation.records.length, 0);
+  const now = manager?.now?.();
+  const nowMs = now instanceof Date ? now.getTime() : Number.NaN;
+  if (!active.length || groupedCount !== active.length || !Number.isFinite(nowMs) || operations.some((operation) => assessReservationRecovery(operation.records, {
+    leaseOwner: manager.leaseOwner,
+    nowMs
+  }).action !== "review-replan")) {
+    throw new Error("Fresh-genesis reset requires only stale no-broadcast, no-relay reservations");
+  }
+}
+async function readEncryptedReservationState(db, store, label) {
+  const transaction = db.transaction("states", "readonly");
+  const completion = new Promise((resolve, reject) => {
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error || new Error(`${label} read failed`));
+    transaction.onabort = () => reject(transaction.error || new Error(`${label} read was aborted`));
+  });
+  const request = transaction.objectStore("states").get(store.namespace);
+  const stored = await new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error(`${label} read failed`));
+  });
+  await completion;
+  return stored === void 0 ? { reservations: [] } : store.decodeState(stored);
 }
 async function createEncryptedBrowserReservationManager({
   namespace,
@@ -100832,6 +101097,7 @@ async function createEncryptedBrowserReservationManager({
 async function resetEncryptedBrowserReservationState(manager, {
   confirmedFreshLocalGenesis = false,
   confirmedReviewedFreshStateReset = false,
+  expectedReservationState,
   afterReset
 } = {}) {
   if (confirmedFreshLocalGenesis !== true && confirmedReviewedFreshStateReset !== true) {
@@ -100844,27 +101110,35 @@ async function resetEncryptedBrowserReservationState(manager, {
   if (!store || typeof store.withMutationLock !== "function" || typeof store.db !== "function" || !String(store.namespace || "").trim()) {
     throw new Error("Encrypted reservation store does not support fresh-genesis reset");
   }
+  let expectedSnapshot = "";
+  if (confirmedFreshLocalGenesis === true) {
+    assertFreshGenesisReservations(manager, expectedReservationState?.reservations);
+    expectedSnapshot = canonicalReservationStateSnapshot(expectedReservationState);
+  }
   await store.withMutationLock(async () => {
     const db = await store.db();
     if (!db || typeof db.transaction !== "function") {
       throw new Error("Encrypted reservation store database is unavailable");
     }
-    if (confirmedReviewedFreshStateReset === true) {
-      const transaction2 = db.transaction("states", "readonly");
-      const completion2 = new Promise((resolve, reject) => {
-        transaction2.oncomplete = resolve;
-        transaction2.onerror = () => reject(transaction2.error || new Error("Reviewed fresh-state reservation read failed"));
-        transaction2.onabort = () => reject(transaction2.error || new Error("Reviewed fresh-state reservation read was aborted"));
-      });
-      const request = transaction2.objectStore("states").get(store.namespace);
-      const stored = await new Promise((resolve, reject) => {
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error || new Error("Reviewed fresh-state reservation read failed"));
-      });
-      await completion2;
-      const decoded = stored === void 0 ? { reservations: [] } : await store.decodeState(stored);
+    if (confirmedFreshLocalGenesis === true || confirmedReviewedFreshStateReset === true) {
+      const decoded = await readEncryptedReservationState(
+        db,
+        store,
+        confirmedFreshLocalGenesis ? "Fresh-genesis reservation" : "Reviewed fresh-state reservation"
+      );
       const reservations = Array.isArray(decoded?.reservations) ? decoded.reservations : null;
-      if (!reservations || reservations.some(reservationBlocksReviewedReset)) {
+      if (!reservations) {
+        throw new Error("Encrypted reservation state contains an invalid reservation list");
+      }
+      if (confirmedFreshLocalGenesis === true) {
+        if (canonicalReservationStateSnapshot(decoded) !== expectedSnapshot) {
+          const error = new Error("Reservation state changed after fresh-genesis reset approval");
+          error.code = "FRESH_GENESIS_RESERVATION_STATE_CHANGED";
+          throw error;
+        }
+        assertFreshGenesisReservations(manager, reservations);
+      }
+      if (confirmedReviewedFreshStateReset === true && reservations.some(reservationBlocksReviewedReset)) {
         throw new Error("Reviewed fresh-state reset requires zero active or unresolved reservations");
       }
     }
@@ -101398,6 +101672,27 @@ function canonicalUnixSeconds(value, label, { positive = false } = {}) {
 function canonicalTxHash(value) {
   const raw = String(value || "").trim();
   return exactTxHashPattern.test(raw) ? raw.replace(/^0x/i, "").toUpperCase() : "";
+}
+function authoritativeChainBlockFromStatus(data, { chainId } = {}) {
+  const expectedNetwork = String(chainId || "").trim();
+  const observedNetwork = String(data?.result?.node_info?.network || "").trim();
+  if (!expectedNetwork || observedNetwork !== expectedNetwork) {
+    throw codedError(
+      `Latest status network ${observedNetwork || "<missing>"} does not match active profile chain ID ${expectedNetwork || "<missing>"}`,
+      "CHAIN_STATUS_NETWORK_MISMATCH"
+    );
+  }
+  const value = data?.result?.sync_info?.latest_block_time;
+  const milliseconds = Date.parse(String(value || ""));
+  if (!Number.isFinite(milliseconds)) {
+    throw new Error("Latest status response omitted a valid block timestamp");
+  }
+  const rawHeight = data?.result?.sync_info?.latest_block_height;
+  const height = Number(rawHeight);
+  if (!Number.isSafeInteger(height) || height <= 0) {
+    throw new Error("Latest status response omitted a valid block height");
+  }
+  return { timeUnix: Math.floor(milliseconds / 1e3), height };
 }
 function typedPrivacyScanAfter(cursor = {}) {
   const candidate = cursor?.next_cursor ?? cursor?.nextCursor ?? cursor?.after ?? cursor?.afterCursor ?? null;
@@ -102105,161 +102400,6 @@ function relayWithdrawExpiryLeaseUntil(payload) {
   }
 }
 
-// public/reservation-recovery.js
-var preparationStatuses = /* @__PURE__ */ new Set(["Reserved", "Proving", "ProofReady", "ManualReview"]);
-var transactionStatuses = /* @__PURE__ */ new Set(["Submitted", "Unknown"]);
-function reservationMetadata(record) {
-  return record?.metadata && typeof record.metadata === "object" ? record.metadata : {};
-}
-function reservationOperationKey(record = {}) {
-  return String(
-    record.operation_id || record.operationId || record.reservation_id || record.reservationId || ""
-  );
-}
-function groupReservationOperations(records = []) {
-  const grouped = /* @__PURE__ */ new Map();
-  for (const record of records || []) {
-    if (!record) continue;
-    const key = reservationOperationKey(record);
-    if (!key) continue;
-    const operation = grouped.get(key) || { key, records: [] };
-    operation.records.push(record);
-    grouped.set(key, operation);
-  }
-  return [...grouped.values()].map((operation) => ({
-    ...operation,
-    records: operation.records.sort((left, right) => String(left.reservation_id || "").localeCompare(String(right.reservation_id || "")))
-  })).sort((left, right) => String(left.records[0]?.created_at || "").localeCompare(String(right.records[0]?.created_at || "")));
-}
-function reconciliationReservationRecords(...collections) {
-  const recordsByID = /* @__PURE__ */ new Map();
-  for (const records of collections) {
-    for (const record of records || []) {
-      if (!record) continue;
-      const reservationID = String(record.reservation_id || record.reservationId || "");
-      const operationKey = reservationOperationKey(record);
-      const lookupKey = String(record.nullifier_lookup_key || "");
-      const key = reservationID || (operationKey && lookupKey ? `${operationKey}:${lookupKey}` : "");
-      if (key) recordsByID.set(key, record);
-    }
-  }
-  return [...recordsByID.values()];
-}
-function canReconcileReservationState({
-  privacyReady = false,
-  active = [],
-  unresolved = [],
-  privacyPending = false,
-  reconciling = false
-} = {}) {
-  return privacyReady === true && (privacyPending === true || reconciliationReservationRecords(active, unresolved).length > 0) && reconciling !== true;
-}
-function succeededOperationLookupKeys(records = []) {
-  const lookupKeys = /* @__PURE__ */ new Set();
-  for (const operation of groupReservationOperations(records)) {
-    const succeeded = operation.records.length > 0 && operation.records.every((record) => record.status === "ConfirmedSpent" && record.metadata?.operation_status === "Succeeded" && record.metadata?.operation_success_evidence_matches === true);
-    if (!succeeded) continue;
-    for (const record of operation.records) {
-      if (record.nullifier_lookup_key) lookupKeys.add(record.nullifier_lookup_key);
-    }
-  }
-  return lookupKeys;
-}
-function assessReservationRecovery(records = [], {
-  leaseOwner = "",
-  nowMs = Date.now()
-} = {}) {
-  const reservations = [...records || []].filter(Boolean);
-  const statuses = [...new Set(reservations.map((record) => String(record.status || "")))];
-  const kinds = [...new Set(reservations.map((record) => String(record.kind || "unknown")))];
-  const metadata = reservations.map(reservationMetadata);
-  const hasSignDocIdentity = reservations.some((record) => Boolean(String(record.sign_doc_hash || record.signDocHash || "").trim()));
-  const hasQueryableTransactionIdentity = reservations.some((record) => Boolean(String(record.submitted_tx_hash || record.submittedTxHash || "").trim()) || Boolean(String(record.tx_bytes_hash || record.txBytesHash || "").trim()));
-  const signDocOnly = hasSignDocIdentity && !hasQueryableTransactionIdentity;
-  const broadcastAttempted = reservations.some((record, index) => record.broadcast_in_flight === true || Number(record.broadcast_attempt_count || 0) > 0 || metadata[index].no_broadcast_attempt === false || Boolean(String(record.submitted_tx_hash || "").trim()) || Boolean(String(record.tx_bytes_hash || "").trim()));
-  const relayHandedOff = reservations.some((_record, index) => metadata[index].relay_handed_off === true || metadata[index].relayHandedOff === true);
-  const liveLeaseRecords = reservations.filter((record) => {
-    const leaseUntil2 = Date.parse(String(record.lease_until || ""));
-    return Number.isFinite(leaseUntil2) && leaseUntil2 > nowMs;
-  });
-  const liveLeaseOwners = [...new Set(liveLeaseRecords.map((record) => String(record.lease_owner || "")).filter(Boolean))];
-  const liveLeaseTokens = [...new Set(liveLeaseRecords.map((record) => String(record.lease_token || "")).filter(Boolean))];
-  const foreignLiveLease = liveLeaseRecords.some((record) => String(record.lease_owner || "") !== String(leaseOwner || ""));
-  const malformedLiveLease = liveLeaseRecords.length > 0 && (liveLeaseOwners.length !== 1 || liveLeaseTokens.length !== 1);
-  const status = statuses.length === 1 ? statuses[0] : "Mixed";
-  const kind = kinds.length === 1 ? kinds[0] : "mixed";
-  const leaseUntil = reservations.map((record) => String(record.lease_until || "")).filter(Boolean).sort().at(-1) || "";
-  let action = "review-replan";
-  let reason = "Verify current nullifier evidence before discarding this local preparation.";
-  if (!reservations.length) {
-    action = "unavailable";
-    reason = "No reservation records are available.";
-  } else if (statuses.length !== 1) {
-    action = "unavailable";
-    reason = "Linked reservations have mixed states and require manual evidence review.";
-  } else if (relayHandedOff) {
-    action = "relay-reconcile";
-    reason = "A relay handoff can only be recovered through its expiry and transaction reconciliation flow.";
-  } else if (broadcastAttempted || transactionStatuses.has(status)) {
-    action = "reconcile";
-    reason = "A transaction may have reached the network. Reconcile its tx hash and nullifiers before retrying.";
-  } else if (!preparationStatuses.has(status)) {
-    action = "unavailable";
-    reason = `Reservation status ${status || "unknown"} is not eligible for preparation recovery.`;
-  } else if (status === "Proving" && liveLeaseRecords.length > 0) {
-    action = "wait-for-lease";
-    reason = "Proof generation is still active. Use the current transfer flow to cancel it, or wait for its lease to expire.";
-  } else if (foreignLiveLease) {
-    action = "wait-for-lease";
-    reason = "Another browser tab or worker still owns the live reservation lease.";
-  } else if (malformedLiveLease) {
-    action = "unavailable";
-    reason = "The linked reservations do not share one recoverable live lease.";
-  } else if (signDocOnly) {
-    reason = "Only a sign-doc hash was saved. Quarantine the request, acknowledge wallet-history risk, and recheck every nullifier before replanning.";
-  }
-  return Object.freeze({
-    operationKey: reservationOperationKey(reservations[0]),
-    reservationIDs: Object.freeze(reservations.map((record) => String(record.reservation_id || "")).filter(Boolean)),
-    status,
-    kind,
-    action,
-    reason,
-    broadcastAttempted,
-    signDocOnly,
-    hasQueryableTransactionIdentity,
-    relayHandedOff,
-    leaseLive: liveLeaseRecords.length > 0,
-    leaseOwnedByCurrentWorker: liveLeaseRecords.length > 0 && !foreignLiveLease && !malformedLiveLease,
-    leaseToken: liveLeaseTokens.length === 1 ? liveLeaseTokens[0] : "",
-    leaseUntil
-  });
-}
-function isZeroReserveAmount(value) {
-  return /^(?:0+)$/.test(String(value ?? ""));
-}
-function isEmptyLocalGenesisPrivacyState({
-  localTestMode = false,
-  reserve
-} = {}) {
-  return localTestMode === true && reserve?.invariant_holds === true && [
-    reserve.module_balance,
-    reserve.expected_module_balance,
-    reserve.total_deposited,
-    reserve.total_withdrawn
-  ].every(isZeroReserveAmount);
-}
-function canResetStaleLocalGenesisReservations({
-  localTestMode = false,
-  reserve,
-  notes = [],
-  noteSyncStatus = "",
-  scanHasMore = true,
-  assessments = []
-} = {}) {
-  return isEmptyLocalGenesisPrivacyState({ localTestMode, reserve }) && Array.isArray(notes) && notes.length === 0 && noteSyncStatus === "synced" && scanHasMore === false && Array.isArray(assessments) && assessments.length > 0 && assessments.every((assessment) => assessment?.action === "review-replan");
-}
-
 // public/reservation-reconciliation.js
 function normalizedTxHash3(value) {
   return String(value || "").trim().replace(/^0x/i, "").toLowerCase();
@@ -102888,23 +103028,14 @@ function profileRestEndpoints(profile = activeChainProfile()) {
   return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
 }
 async function fetchLatestChainBlock({ signal } = {}) {
-  const endpoint = browserRpcUrl();
+  const profile = activeChainProfile();
+  const endpoint = browserRpcUrl(profile);
   if (!endpoint) throw new Error("A browser-accessible chain RPC endpoint is required for authoritative expiry");
   const data = await fetchBoundedJson(`${endpoint}/status`, {
     signal,
     label: "Latest block time query"
   });
-  const value = data?.result?.sync_info?.latest_block_time;
-  const milliseconds = Date.parse(String(value || ""));
-  if (!Number.isFinite(milliseconds)) {
-    throw new Error("Latest status response omitted a valid block timestamp");
-  }
-  const rawHeight = data?.result?.sync_info?.latest_block_height;
-  const height = Number(rawHeight);
-  if (!Number.isSafeInteger(height) || height <= 0) {
-    throw new Error("Latest status response omitted a valid block height");
-  }
-  return { timeUnix: Math.floor(milliseconds / 1e3), height };
+  return authoritativeChainBlockFromStatus(data, profile);
 }
 async function fetchLatestChainBlockTimeUnix(options = {}) {
   return (await fetchLatestChainBlock(options)).timeUnix;
@@ -109950,8 +110081,11 @@ async function maybeResetStaleLocalGenesisReservations(manager, {
   };
   assertCurrent();
   if (!localTestBackendEnabled()) return { eligible: false, reset: false };
-  const active = await manager.listActiveReservations();
+  const reservationSnapshot = await manager.store.load();
   assertCurrent();
+  const reservations = Array.isArray(reservationSnapshot?.reservations) ? reservationSnapshot.reservations : [];
+  const activeStatusSet = new Set(activeReservationStatuses);
+  const active = reservations.filter((record) => record?.owner_key_id === manager.ownerKeyId && activeStatusSet.has(record?.status));
   if (!active.length) return { eligible: false, reset: false };
   if (refreshProtocol) {
     await refreshProtocolStatus();
@@ -109975,7 +110109,8 @@ async function maybeResetStaleLocalGenesisReservations(manager, {
   if (!approved) return { eligible: true, reset: false };
   assertCurrent();
   await resetEncryptedBrowserReservationState(manager, {
-    confirmedFreshLocalGenesis: true
+    confirmedFreshLocalGenesis: true,
+    expectedReservationState: reservationSnapshot
   });
   assertCurrent();
   await refreshReservationState(manager, { sessionContext });

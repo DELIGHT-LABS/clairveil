@@ -29,6 +29,28 @@ function canonicalTxHash(value) {
   return exactTxHashPattern.test(raw) ? raw.replace(/^0x/i, "").toUpperCase() : "";
 }
 
+export function authoritativeChainBlockFromStatus(data, { chainId } = {}) {
+  const expectedNetwork = String(chainId || "").trim();
+  const observedNetwork = String(data?.result?.node_info?.network || "").trim();
+  if (!expectedNetwork || observedNetwork !== expectedNetwork) {
+    throw codedError(
+      `Latest status network ${observedNetwork || "<missing>"} does not match active profile chain ID ${expectedNetwork || "<missing>"}`,
+      "CHAIN_STATUS_NETWORK_MISMATCH"
+    );
+  }
+  const value = data?.result?.sync_info?.latest_block_time;
+  const milliseconds = Date.parse(String(value || ""));
+  if (!Number.isFinite(milliseconds)) {
+    throw new Error("Latest status response omitted a valid block timestamp");
+  }
+  const rawHeight = data?.result?.sync_info?.latest_block_height;
+  const height = Number(rawHeight);
+  if (!Number.isSafeInteger(height) || height <= 0) {
+    throw new Error("Latest status response omitted a valid block height");
+  }
+  return { timeUnix: Math.floor(milliseconds / 1000), height };
+}
+
 export function typedPrivacyScanAfter(cursor = {}) {
   const candidate = cursor?.next_cursor
     ?? cursor?.nextCursor
