@@ -13,43 +13,50 @@ browser WebApp scope. It replaces the demo-only plaintext storage policy in
 | Root signature, root seed, spend/view/disclosure private material | In-memory or a wallet-controlled secure store only; never application server, URL, analytics, or crash report. |
 | Decrypted notes and scan cursor | Encrypted persistent browser store scoped to one chain/profile/account. |
 | Reservation state and operation evidence | Encrypted IndexedDB with cross-tab locking. Reservation error fields contain stable internal codes only, never wallet/prover/RPC error prose. |
-| Prepared proof/payload and raw recipient/amount | Memory only unless a product has a separately reviewed encrypted recovery design. The example batch-transfer flow uses a dedicated account/profile-scoped AES-GCM checkpoint because `prepareTransferBatch` requires durable prepared-payload and prepared-proof callbacks before broadcast. |
-| Relay recovery metadata | Encrypted store; retain only opaque payload hash, reservation IDs/status, tx identity, handoff/submission status, and expiry. Derive its persistence ID from the payload hash or reservation IDs; do not retain a caller-supplied ID or display-only fields. |
+| Account transaction boundary marker | Two durable canonical transaction-scope/account records that do not require the privacy root signature to open. The public send/deposit record may contain `attempting` plus a random attempt ID before an EVM wallet request and must be promoted to the returned tx hash immediately. The physically separate private Cosmos record contains the exact signed tx hash plus only the generic `privacy` kind. Never store recipient, amount, calldata, note/reservation IDs, or other private operation data in either record. |
+| Prepared proof/payload and raw recipient/amount | Memory only unless a product has a separately reviewed encrypted recovery design. The checked-in example does not persist a one-proof batch checkpoint or expose `prepareTransferBatch`. |
+| Relay recovery metadata | Encrypted, cross-tab locked, multi-record store; retain only opaque payload hash, reservation IDs/status, tx identity, handoff/submission status, and expiry. Derive each persistence ID from the payload hash or reservation IDs; one payload must never overwrite another and caller-supplied IDs or display-only fields must not be retained. |
 
-Browser `localStorage`, plaintext IndexedDB, an unencrypted export, and an
-in-memory fallback are demo/test-only choices. They are not production
-fallbacks when encrypted persistence or Web Locks is unavailable.
+Browser `localStorage`, plaintext IndexedDB, or an unencrypted export for
+sensitive wallet data, plus any in-memory persistence fallback, are
+demo/test-only choices. The narrowly scoped account boundary marker above may be
+plaintext because it contains no transaction intent or private material. These
+choices are not fallbacks when required encrypted persistence or Web Locks is
+unavailable.
 
 ## Namespace And Encryption Rules
 
-Use separate namespace prefixes for the current persistence epoch:
+Use separate v0.3.1 namespace prefixes for the current persistence epoch. The
+checked-in example uses scoped keys and an encrypted reservation namespace
+equivalent to:
 
 ```text
-clairveil:wallet-notes:v2:<chain-id>:<profile-scope>:<wallet-kind>:<account-scope>
-clairveil:note-reservations:v2:<chain-id>:<profile-scope>:<wallet-kind>:<account-scope>
-clairveil:relay-withdraw-payloads:v2:<chain-id>:<profile-scope>:<wallet-kind>:<account-scope>
-clairveil:batch-transfer-artifacts:v1:<chain-id>:<profile-scope>:<wallet-kind>:<account-scope>
+clairveil:v0.3.1:notes-encrypted:<privacy-scope>:<storage-epoch>:<account-scope>
+clairveil:v0.3.1:operations-encrypted:<privacy-scope>:<storage-epoch>:<account-scope>:<payload-hash>
+clairveil:v0.3.1:public-pending:<transaction-scope>:<storage-epoch>:<account-scope>
+clairveil:v0.3.1:privacy-pending:<transaction-scope>:<storage-epoch>:<account-scope>
+reservation namespace: <chain-id>:<privacy-scope>:<storage-epoch>:<account-scope>
 ```
 
-`<profile-scope>` must uniquely identify the validated profile's privacy
-identity fields and be replaced when those fields change. `<account-scope>`
-must be stable only for the selected account and must not be sent to telemetry.
-A product may use an opaque keyed identifier instead of a literal address.
-Never share a namespace across profiles, chain IDs, wallet kinds, or
-transparent accounts.
+`<privacy-scope>` must canonically identify the on-chain privacy system (Cosmos
+chain ID, or EVM chain ID plus privacy precompile), while
+`<transaction-scope>` identifies the account sequence/nonce domain. Equivalent
+UI profiles that point at the same identity must share these scopes; profile
+labels and endpoint choices are not storage identities. Replace the privacy
+scope when an identity field changes. `<account-scope>` must be stable only for
+the selected account and must not be sent to telemetry. A product may use an
+opaque keyed identifier instead of a literal address. Never share a namespace
+across different privacy systems, chain IDs, wallet kinds, or transparent
+accounts.
 
-The batch-transfer checkpoint stores only the exact canonical prepared payload
-and proof required to bind recovery to the reservation operation. Encrypt and
-authenticate the complete checkpoint, and never write it to logs, exports,
-analytics, or crash reports. Once either durable callback succeeds, a later
-failure is a recovery state: keep the reservation locked and block a new batch
-until reconciliation reaches `ConfirmedSpent` with matching operation/output
-evidence, or an authorized terminal replan/failure transition releases it.
-Clear the checkpoint only after that terminal reconciliation.
-If inclusion initially remains pending, a later typed note scan reloads this
-checkpoint, rechecks every reservation and expected payment output, and
-restores the per-item evidence states in the batch review UI. Mixed terminal
-states are an atomicity conflict and remain locked for manual review.
+There is no batch-transfer checkpoint namespace in the checked-in example. A
+future product that exposes `prepareTransferBatch` must define a separate,
+reviewed account/profile-scoped encrypted checkpoint before enabling the SDK
+feature. That checkpoint must contain only the canonical prepared payload and
+proof needed to bind recovery to one reservation operation, retain the lock
+after an ambiguous external-boundary result, and be cleared only after terminal
+reconciliation. These requirements describe a future product contract; they do
+not authorize enabling batch transfer in this example.
 
 For reservations, use `createBrowserReservationStore` with all of these
 properties:
@@ -129,6 +136,40 @@ another tab. Web Locks serialize store mutations, but they do not make stale
 worker ownership valid: only the manager holding the live lease may advance a
 `Proving` or `ProofReady` operation.
 
+Cosmos transaction preparation also needs one exclusive, cross-tab lock scoped
+to the canonical on-chain chain ID and transparent account. It must be shared
+across equivalent UI profiles and must not include the local storage epoch.
+Public send, deposit, private transfer, direct withdraw, and any
+self-merge/helper transaction must share that lock from the
+account-sequence/sign-doc read through signing and the durable broadcast
+boundary. Preparing a sign doc before acquiring the lock is not sufficient:
+another tab can consume the captured sequence while proof or wallet work is in
+progress. In local-test mode, read and compare the current genesis/storage epoch
+inside the lock before sequence preparation, so a stale tab fails closed after a
+chain restart. A durable public pending marker or reservation with
+`broadcast_in_flight`, `Submitted`, `Unknown`, or a submitted tx hash blocks a
+new Cosmos sequence until reconciliation. A relay-only payload that will be
+submitted by a different account does not consume the browser wallet's Cosmos
+sequence; any local self transaction needed to construct it still does.
+
+The encrypted reservation store alone is not a restart-safe account fence:
+after reconnect, transparent send is available before the user recreates the
+root-signature session. Therefore every private Cosmos submission also writes
+the exact signed tx hash to the non-sensitive account boundary marker
+immediately before RPC submission. Public and private sequence preparation must
+check this marker without opening the reservation store. Clear its `privacy`
+entry only after the chain result is explicitly included (success or failure)
+and the matching encrypted reservations have reached their corresponding safe
+terminal reconciliation state.
+
+The public send/deposit marker and private Cosmos marker are separate physical
+records under the same canonical account transaction lock. A guarded manual
+clear may remove only the public record after wallet-history review. It must
+never delete or rewrite the private record. If the private record itself cannot
+be authenticated or decoded, keep the account boundary fail-closed and direct
+the user to the reviewed fresh-state reset procedure; a generic corrupt-state
+clear is not proof that the private broadcast never occurred.
+
 ## Durable Operation State Machine
 
 The relevant high-level state progression is:
@@ -186,7 +227,9 @@ handoffs, which retain their separate expiry and reconciliation boundary.
 ## Relay Withdraw Recovery
 
 Before copying, downloading, QR-encoding, or uploading a relay payload,
-durably record `recordRelayHandoff` with the immutable payload hash. Do not
+first durably renew the complete reservation batch lease through the payload's
+on-chain expiry, then durably record `recordRelayHandoff` with the immutable
+payload hash. Do not
 persist the raw payload/proof merely for convenience. A copied payload remains
 valid for the relayer until its on-chain expiry; a local cancel button, tab
 close, or lease expiry does not revoke it.
@@ -199,6 +242,13 @@ the record has neither a queryable broadcast identity nor durable
 no-broadcast evidence, retain the lock and explain that the handoff may have
 reached a relayer; do not present an enabled control that silently has no
 effect.
+
+Persist every handoff recovery as an independently encrypted record keyed by
+its canonical payload hash (or an equivalently derived reservation identity).
+Enumerate and validate all such records at restart. Cross-tab save/load/clear
+uses a payload-scoped Web Lock, and terminal reconciliation clears only the
+matching payload record; two tabs preparing disjoint payloads must not overwrite
+or account-wide-clear each other's recovery evidence.
 
 Bind that handoff flow to the privacy-session generation as well as the
 immutable payload version. Recheck both after every awaited chain, nullifier,
@@ -223,34 +273,38 @@ and check each input nullifier. Release/replan only after the SDK's required
 post-broadcast reconciliation evidence. Otherwise preserve the lock for manual
 review.
 
-## ClairveilJS 0.2 Upgrade Procedure
+## ClairveilJS 0.3.1 Fresh-State Initialization
 
-ClairveilJS 0.2 uses `privacy-fixed-v1` note/disclosure envelopes and strict
-V5/V2 payload contracts. A pre-0.2 persistence record is untrusted and
-incompatible.
+ClairveilJS 0.3.1 uses `privacy-fixed-v1` note/disclosure envelopes and the
+current V5/V2 payload contracts. Because this WebApp has not been released with
+an earlier persistence contract, it supports fresh initialization only. It
+does not define a browser-cache or lifecycle-store migration and does not
+support an in-place downgrade.
 
-1. Deploy code that uses the `v2` namespace prefixes before loading a legacy
-   browser record.
-2. Do not attempt compatibility decode, reservation migration, or relay proof
-   replay.
-3. Create an empty current namespace, perform a full typed scan, and refresh
-   all nullifiers before exposing the balance or planner.
-4. Leave legacy browser records untouched. A v0.2 browser integration must
-   neither read, migrate, nor mutate them, including legacy `localStorage`,
-   `sessionStorage`, and reservation-database records. Never upload legacy
-   records for migration or support diagnostics.
+1. Deploy code with the current `clairveil:v0.3.1:*` namespaces before loading
+   wallet state.
+2. Do not compatibility-decode or migrate an earlier development cache,
+   reservation, operation, relay record, prepared payload, or proof.
+3. Initialize an empty current namespace, perform a full typed scan, and
+   refresh all nullifiers before exposing the balance or planner.
+4. Do not upload old development records for migration or support diagnostics.
+   The example deletes only its explicitly named legacy plaintext note-cache
+   key and requires Reset & Rescan; that deletion is not a migration. All other
+   earlier records remain outside the supported input contract.
 
 The checked-in DApp implements this baseline. It stores note state in
-`EncryptedIndexedDbNoteStore`, reservation state through encrypted
-`createBrowserReservationStore` callbacks with `requireLocks: true`, and relay
-recovery metadata in an encrypted IndexedDB record. Each record uses an
-AES-GCM key that Web Crypto derives from the current in-memory root signature
-and its namespace; the key is non-extractable and is never stored alongside
-the ciphertext. If IndexedDB, Web Crypto, or Web Locks is unavailable, the
-DApp disables privacy setup rather than falling back to plaintext or memory.
+`EncryptedLocalStorageNoteStore`, reservation state through encrypted
+`createBrowserReservationStore` IndexedDB callbacks with `requireLocks: true`,
+and payload-hash-keyed relay recovery metadata in the multi-record,
+Web-Locks-required `EncryptedLocalStorageOperationStore`. Each
+record uses an AES-GCM key that Web Crypto derives from current in-memory wallet
+material and its namespace; the key is non-extractable and is never stored
+alongside the ciphertext. If the required browser storage, IndexedDB, Web
+Crypto, or Web Locks is unavailable, the DApp disables privacy setup rather
+than falling back to plaintext or memory.
 
-The DApp does not read or mutate legacy `localStorage`/`sessionStorage` or
-legacy reservation records. Its `v2` namespaces are a fresh scan boundary, not
-a compatibility migration. A product using this example still needs a reviewed
-key-recovery and user-data retention policy before it treats browser
-persistence as a production wallet.
+The DApp does not decode an earlier cache or reservation record as current
+state. Its v0.3.1 namespaces are a fresh scan boundary, not a compatibility
+migration. A product using this example still needs a reviewed key-recovery and
+user-data retention policy before it treats browser persistence as a
+production wallet.

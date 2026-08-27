@@ -65,20 +65,30 @@ A production gateway is optional. If one is enabled, it must:
    bodies;
 6. separate local test-only helper routes from every public deployment.
 
-`CLAIRVEIL_DAPP_ENABLE_PROVER_PROXY` in the example is a local-test control,
+`CLAIRVEIL_PROVER_PROXY_ENABLED` in the example is a local-test control,
 not a production deployment recipe. The checked-in server permits it only
 when local-test mode, the explicit flag, and a direct loopback request are all
 true. Public mode rejects both this flag and a server-held prover bearer token;
 deploy a separately reviewed gateway when a product needs one.
+The local proxy rejects upstream redirects and final-URL changes, requires a
+versioned JSON success shape, bounds the response before parsing it, and replaces
+every upstream error body with a stable non-sensitive JSON error. The
+server-backed `/api/health` read gateway likewise uses bounded upstream JSON,
+per-request timeouts, disconnect cancellation, and a process-wide admission
+limit. The example exposes these limits as
+`CLAIRVEIL_PROVER_PROXY_MAX_RESPONSE_BYTES`,
+`CLAIRVEIL_DAPP_UPSTREAM_TIMEOUT_MS`,
+`CLAIRVEIL_DAPP_UPSTREAM_MAX_RESPONSE_BYTES`, and
+`CLAIRVEIL_DAPP_HEALTH_MAX_IN_FLIGHT`.
 
-`CLAIRVEIL_DAPP_ENABLE_BATCH_TRANSFER` is a separate product exposure gate,
-not capability discovery. Leave it off unless the active profile is Cosmos,
-the deployed ClairveilJS build supports `prepareTransferBatch`, and the pinned
-prover origin serves the exact versioned `/v1/proofs/batch-transfer` contract.
-The checked-in static configuration leaves the menu hidden. `make dapp-local`
-turns the gate on together with its loopback-only same-origin prover proxy;
-a public deployment must instead satisfy the direct HTTPS/CORS or reviewed
-gateway requirements above.
+The checked-in v0.3.1 example does not provide a batch-transfer exposure flag.
+Its server always reports `serverFeatures.batchTransfer=false`, the UI does not
+call `prepareTransferBatch`, and `make dapp-local` does not enable a batch menu.
+Do not treat the presence of ClairveilJS batch APIs or a reachable
+`/v1/proofs/batch-transfer` endpoint as capability discovery. A future product
+that exposes one-proof batch transfer must add and review its own explicit gate,
+encrypted recovery checkpoint, wallet confirmation, typed reconciliation, and
+end-to-end deployment tests before advertising or enabling the product flow.
 
 ## Browser Security Headers And Telemetry
 
@@ -153,6 +163,8 @@ response limit, verifies the final WebApp response
 headers and restrictive CSP, and sends both allowed-origin and untrusted-origin
 CORS preflights plus non-sensitive actual requests to every configured REST
 endpoint, RPC, prover, deposit proof endpoint, Keplr endpoint, and EVM RPC.
+Every endpoint probe uses redirect-error mode and requires any reported final
+response URL to equal the configured probe URL.
 It requires exact-origin CORS on both preflight and actual responses, and
 rejects unnecessary CORS methods and headers. It intentionally cannot emulate a
 real browser wallet extension.

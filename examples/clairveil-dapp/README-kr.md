@@ -23,6 +23,13 @@ Public node 환경에서는 static DApp + ClairveilJS + 공개 RPC/REST + transf
 
 SDK는 형제 checkout을 `"clairveiljs": "file:../../../clairveiljs"`로 직접 참조합니다. 두 repository를 `clairveil/`, `clairveiljs/`로 나란히 두고 SDK 변경 후 이 디렉터리에서 `npm install`을 실행하세요. Lockfile은 로컬 ClairveilJS `0.3.1`을 고정하고, SDK 코드는 `public/app.bundle.js`에 bundle됩니다.
 
+`package.json`이나 lockfile을 바꾸지 않고 다른 로컬 ClairveilJS v0.3.1 worktree를 테스트하려면 명령에 `CLAIRVEILJS_DIR`을 지정합니다. DApp script가 선택한 package를 검증하고 로컬 `node_modules/clairveiljs` symlink만 다시 연결합니다.
+
+```sh
+CLAIRVEILJS_DIR=/absolute/path/to/clairveiljs-worktree npm run build:dapp
+CLAIRVEILJS_DIR=/absolute/path/to/clairveiljs-worktree npm run test:dapp
+```
+
 ## 주요 기능
 
 - Chain profile dropdown
@@ -102,7 +109,7 @@ DApp은 사용자 wallet privacy flow를 서버로 보내지 않습니다. `depo
 | `POST /v1/prover/deposit` | local only | `CLAIRVEIL_DEPOSIT_PROOF_URL`의 정확한 endpoint로 proxy; `proverUrl`에서 파생하지 않음 |
 | `POST /v1/prover/transfer` / `withdraw` | local only | transfer/withdraw prover same-origin proxy |
 
-내장 prover proxy는 public prover gateway가 아니라 제한된 로컬 개발 helper입니다. `CLAIRVEIL_DAPP_LOCAL_TEST_MODE=0`이면 비활성화되고, 기본적으로 loopback caller만 허용하며, `application/json`만 받고 cross-origin 권한을 제공하지 않습니다. Client별 요청률과 process 전체 동시 요청 수도 제한합니다. Public 배포는 `CLAIRVEIL_PUBLIC_PROVER_URL`과 `CLAIRVEIL_PUBLIC_DEPOSIT_PROOF_URL`을 별도로 검토한 인증, rate/quota, metadata-only logging, retention 정책 뒤에서 제공해야 합니다.
+내장 prover proxy는 public prover gateway가 아니라 제한된 로컬 개발 helper입니다. Local-test mode와 명시적인 `CLAIRVEIL_PROVER_PROXY_ENABLED=1`이 모두 필요하며, 기본적으로 loopback caller만 허용하고 `application/json`만 받으며 cross-origin 권한을 제공하지 않습니다. Redirect를 거부하고 JSON response의 크기와 schema를 검증하며 client별 요청률과 process 전체 동시 요청 수도 제한합니다. Public mode는 이 proxy flag를 거부합니다. Public 배포는 `CLAIRVEIL_PUBLIC_PROVER_URL`과 `CLAIRVEIL_PUBLIC_DEPOSIT_PROOF_URL`을 별도로 검토한 인증, rate/quota, metadata-only logging, retention 정책 뒤에서 제공해야 합니다.
 
 ### Browser ClairveilJS high-level calls
 
@@ -135,11 +142,10 @@ DApp UI는 privacy 준비 로직을 직접 구현하지 않고 `clairveiljs/brow
 
 | Endpoint | 용도 |
 | --- | --- |
-| RPC `/status` | node health |
+| RPC `/status` | node health와 최종 확인 및 v0.3.1 expiry binding용 authoritative latest block time/height |
 | RPC `/tx_search` | Event Block / tx inclusion lookup |
 | REST `/cosmos/auth/v1beta1/account_info/{address}` | sign doc account number/sequence |
 | REST `/cosmos/bank/v1beta1/balances/{address}` | transparent balance |
-| REST `/cosmos/base/tendermint/v1beta1/blocks/latest` | 최종 확인 및 0.3.1 expiry binding용 authoritative chain time |
 | REST `/clairveil/privacy/v1/tree_state` | Merkle tree state |
 | REST `/clairveil/privacy/v1/privacy_scan` | `(height, global_sequence, output_index)` cursor를 사용하는 typed v2 note scan |
 | REST `/clairveil/privacy/v1/events` | event UI/disclosure lookup 및 legacy fallback |
@@ -291,20 +297,30 @@ npm start
 
 | 변수 | 용도 |
 | --- | --- |
-| `CLAIRVEIL_DAPP_HOST` / `CLAIRVEIL_DAPP_PORT` | DApp server bind 주소와 포트 |
+| `CLAIRVEIL_DAPP_HOST` / `CLAIRVEIL_DAPP_PORT` | DApp server bind 주소와 포트. 기본은 loopback이며 LAN 노출은 host를 명시적으로 override해야 함 |
 | `CLAIRVEIL_DAPP_LOCAL_TEST_MODE` | `1`이면 local helper 활성화, `0`이면 public node mode |
+| `CLAIRVEIL_DAPP_PUBLIC_ORIGIN` | Public-node mode에서 필수인 정확한 HTTPS browser origin |
 | `CLAIRVEIL_HOME` / `CHAIN_ID` / `CLAIRVEILD_BIN` | local node home, chain id, CLI binary |
 | `CLAIRVEIL_RPC` | 서버가 붙는 Cosmos/CometBFT RPC |
 | `CLAIRVEIL_REST` | 서버가 붙는 Cosmos REST |
 | `CLAIRVEIL_PUBLIC_RPC` | 브라우저/Keplr에 노출할 RPC |
 | `CLAIRVEIL_PUBLIC_REST` | 브라우저/Keplr에 노출할 REST |
-| `CLAIRVEIL_COSMOS_REST_ENDPOINTS` / `CLAIRVEIL_EVM_HOST_REST_ENDPOINTS` | Public read failover와 note 복구 selector에 사용할 comma-separated REST endpoint set |
+| `CLAIRVEIL_PUBLIC_REST_ENDPOINTS` | 공통 browser REST failover용 comma-separated endpoint set |
+| `CLAIRVEIL_COSMOS_RPC` / `CLAIRVEIL_COSMOS_REST` | 공통 public endpoint보다 우선하는 Cosmos profile browser endpoint |
+| `CLAIRVEIL_COSMOS_CHAIN_NAME` / `CLAIRVEIL_COSMOS_LABEL` | Keplr에 표시할 Cosmos chain 이름과 선택적인 DApp selector label. label이 비어 있으면 chain 이름을 상속 |
+| `CLAIRVEIL_COSMOS_CHAIN_ID` / `CLAIRVEIL_COSMOS_ACCOUNT_PREFIX` / `CLAIRVEIL_COSMOS_SHIELDED_PREFIX` | Cosmos 활성 시 browser profile과 server local signer/client가 함께 사용하는 identity override. 비어 있으면 `CHAIN_ID`와 공통 prefix를 상속 |
+| `CLAIRVEIL_COSMOS_COIN_TYPE` / `CLAIRVEIL_KEPLR_COIN_TYPE` | Cosmos BIP-44 coin type. 앞의 변수를 우선하고 `CLAIRVEIL_KEPLR_COIN_TYPE`은 호환 alias로 유지 |
+| `CLAIRVEIL_COSMOS_REST_ENDPOINTS` / `CLAIRVEIL_EVM_HOST_REST_ENDPOINTS` | 공통 failover set보다 우선하는 profile별 REST endpoint set |
 | `CLAIRVEIL_PROVER_URL` | prover URL |
 | `CLAIRVEIL_PUBLIC_PROVER_URL` | 브라우저에 노출할 prover URL |
 | `CLAIRVEIL_DEPOSIT_PROOF_URL` / `CLAIRVEIL_PUBLIC_DEPOSIT_PROOF_URL` | server/browser용 정확한 DepositCircuit proof endpoint |
-| `CLAIRVEIL_PROVER_PROXY_ENABLED` | local-test mode에서만 bounded proxy 활성화; public-node mode에서는 무시 |
-| `CLAIRVEIL_PROVER_PROXY_RATE_LIMIT_WINDOW_MS` / `CLAIRVEIL_PROVER_PROXY_RATE_LIMIT_MAX` / `CLAIRVEIL_PROVER_PROXY_MAX_IN_FLIGHT` | local proxy 요청률과 동시 요청 상한 |
+| `CLAIRVEIL_COSMOS_DEPOSIT_PROOF_URL` / `CLAIRVEIL_EVM_DEPOSIT_PROOF_URL` | Profile별 browser proof endpoint override |
+| `CLAIRVEIL_PROVER_PROXY_ENABLED` | local-test mode에서만 bounded proxy를 명시적으로 활성화하며 public-node mode에서는 거부 |
+| `CLAIRVEIL_PROVER_PROXY_RATE_LIMIT_WINDOW_MS` / `CLAIRVEIL_PROVER_PROXY_RATE_LIMIT_MAX` / `CLAIRVEIL_PROVER_PROXY_MAX_IN_FLIGHT` / `CLAIRVEIL_PROVER_PROXY_MAX_RESPONSE_BYTES` | local proxy 요청률, 동시 요청 수, response 크기 상한 |
+| `CLAIRVEIL_DAPP_UPSTREAM_TIMEOUT_MS` / `CLAIRVEIL_DAPP_UPSTREAM_MAX_RESPONSE_BYTES` | server-side health/read query의 timeout 및 JSON response 크기 상한 |
+| `CLAIRVEIL_DAPP_HEALTH_MAX_IN_FLIGHT` | process 전체 `/api/health` admission 상한이며 초과 요청에는 typed `503` 반환 |
 | `CLAIRVEIL_DENOM` / `CLAIRVEIL_DISPLAY_DENOM` / `CLAIRVEIL_COIN_DECIMALS` | 공통 coin metadata fallback |
+| `CLAIRVEIL_COSMOS_DISPLAY_DENOM` / `CLAIRVEIL_COSMOS_COIN_DECIMALS` | Cosmos display metadata override. 비어 있거나 없으면 공통 metadata를 상속 |
 | `CLAIRVEIL_COSMOS_DENOM` / `CLAIRVEIL_EVM_DENOM` / `CLAIRVEIL_EVM_NATIVE_DENOM` | Transport별 minimal denom. Active transport 값이 `CLAIRVEIL_DENOM`보다 우선하며 EVM은 공통값 전에 native denom을 fallback으로 사용 |
 | `CLAIRVEIL_ACCOUNT_PREFIX` | transparent account prefix |
 | `CLAIRVEIL_SHIELDED_PREFIX` | shielded address prefix |
@@ -313,6 +329,11 @@ npm start
 | `CLAIRVEIL_EVM_PRIVACY_PRECOMPILE` | EVM privacy precompile address |
 | `CLAIRVEIL_EVM_DEPOSIT_MODE` / `CLAIRVEIL_EVM_NATIVE_DENOM` | `nonpayable` 또는 0.3.1 `payable-exact-value` deposit binding |
 | `CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING` / `CLAIRVEIL_DAPP_ALLOW_LAN_ADMIN` / `CLAIRVEIL_DAPP_ALLOW_LAN_PROVER` | local signing/admin/prover helper를 LAN에 노출할 때만 명시적으로 `1` |
+
+Signer를 변경하는 local helper route는 DApp 요청 origin과 `Origin`이 정확히
+같은 `application/json` POST만 허용합니다. LAN signing을 켜도 이 same-origin
+조건은 완화되지 않으므로 해당 LAN origin으로 DApp을 열고 browser가 요청하게
+해야 합니다.
 
 ## 호환 조건
 
@@ -386,11 +407,15 @@ Prepared payload 이후의 최종 확인에는 authoritative chain time으로 �
 
 Transfer/withdraw prepare는 wallet privacy material에서 파생한 키로 AES-GCM 암호화한 IndexedDB + Web Locks 기반 ClairveilJS note reservation manager를 사용합니다. Cosmos/EVM submit에도 같은 manager와 prepared reservation을 전달합니다. 예약된 note는 화면에 표시하고 plan 가능 잔액에서 제외하지만, 관계없는 미예약 note는 새 plan에 계속 사용할 수 있습니다. Reservation recovery panel은 연결된 input을 operation별로 묶고 broadcast 시도나 relay handoff 기록이 없는 경우에만 `Review & replan`을 제공합니다. 최신 authoritative note scan에서 모든 reserved nullifier가 명시적으로 unspent인지 확인하고 wallet owner에게 proof 폐기 승인을 받습니다. 현재 tab이 소유한 live `ProofReady` lease는 `ReplanRequired`로 이동하고, 만료된 preparation은 먼저 `ManualReview`로 격리한 뒤 owner-approved resolution을 기록합니다. 동일 chain ID로 localnet을 fresh genesis로 다시 시작한 경우에는 이전 nullifier를 새 chain에서 조회할 수 없습니다. Local-test mode에서만 full scan이 비어 있고 reserve, total deposit, total withdraw가 모두 0이며 모든 active reservation에 broadcast/relay evidence가 없을 때 wallet owner의 별도 승인으로 이전-genesis encrypted reservation state를 초기화합니다. Receipt polling timeout은 실패가 아니라 `Unknown`으로 표시합니다. `Reconcile`은 tx hash를 먼저 확인하고 포함된 Cosmos `MsgWithdraw` 전체 또는 EVM target/calldata/value/chain ID를 암호화된 handoff와 결합한 뒤에만 nullifier scan을 수행합니다. 성공한 bound transaction 없이 nullifier만 spent이면 operation-level `ManualReview`로 영속화해 대체 withdraw를 차단합니다. Spent transfer evidence는 authoritative 포함 height부터 event를 끝까지 pagination해 tx hash와 nullifier를 함께 확인합니다. 조회 실패나 binding 불일치는 reservation을 그대로 잠급니다. `tx absent/failed`와 `nullifier unspent`가 특정 height에서 모두 명시적으로 확인된 경우에만 새 plan을 허용합니다.
 
+Same-origin local relayer도 nullifier preflight를 다시 수행하고 canonical payload nullifier 각각을 process 안에서 원자적으로 잠급니다. 같은 payload의 동시 요청이나 replay는 한 번의 제출 결과를 공유하고, 하나라도 겹치는 다른 payload는 거부합니다. 같은 signer account를 쓰는 faucet, local deposit, relay broadcast도 하나의 account-sequence/nonce queue를 공유합니다. Cosmos가 nonzero CheckTx를 명시적으로 반환한 경우에는 node 접수 거부가 확정됐으므로 이 process-local submission gate만 해제합니다. Broadcaster가 유효한 exact tx hash를 반환한 뒤 timeout, disconnect, malformed status가 발생하면 그 hash를 account fence와 함께 유지하며, 이후 signer 요청이 authoritative Cosmos tx query 또는 EVM receipt query로 해당 transaction을 찾은 경우에만 fence를 해제합니다. Indexed Cosmos tx의 execution code 또는 EVM receipt status가 canonical하지 않으면 exact hash와 함께 `included=true`, `pending=false`, `unknown=true`, `failed=null`로 반환하며 success로 cache하거나 표시하지 않습니다. CLI가 유효한 hash를 반환하기 전에 실패하면 process-local gate는 fail-closed 상태를 유지하지만 exact-hash reconciliation은 불가능하며, 이런 identifier 없는 post-boundary 결과는 자동 retry 대상이 아닙니다. Browser의 durable reservation은 기존 reconciliation 정책을 그대로 따릅니다.
+
 EVM public send/deposit의 미확정 tx hash와 status는 reload 후에도 복원되어 reconcile 전 중복 전송을 차단합니다. EVM deposit preflight는 host-chain bank endpoint에서 대상 asset 잔액을, `eth_getBalance`에서 native gas 잔액을 따로 조회하므로 `denom`과 `evmNativeDenom`이 다른 profile은 두 잔액을 각각 충족해야 합니다. Relay handoff JSON, reservation ID, relayer tx hash, 결과 상태도 wallet-derived key로 암호화해 저장하고 `Setup Clairveil` 후 복원합니다. Authoritative block time으로 handoff 만료가 확인되고 모든 reserved nullifier가 unspent이면 wallet owner의 명시적 승인으로 `ManualReview -> ReplanRequired` 복구 후 새 payload를 준비할 수 있습니다.
 
 Disclosure Review는 현재 event 외에도 임의 tx hash 또는 붙여넣은 `shielded_transfer` event JSON을 user/self-view/local-admin audit plane으로 decode할 수 있습니다. 검증된 report는 plane, policy, output index, commitment, digest, `verified=true`를 함께 표시합니다. Verification failure는 `verified=false`를 표시하고 plaintext를 화면에 노출하지 않습니다.
 
 이 DApp은 note cache를 AES-GCM envelope로 browser `localStorage`에 저장합니다. 암호화 키는 wallet root signature material에서 HKDF로 파생하며 chain profile/account별로 분리됩니다. 기존 plaintext cache는 migration하지 않고 삭제한 뒤 `Reset & Rescan`을 요구합니다. 복호화할 수 없는 cache는 fail-closed하며 reset 전에 encrypted backup을 내려받을 수 있습니다. 이 cache는 chain에서 다시 만들 수 있는 데이터이며 wallet key backup을 대신하지 않습니다.
+
+별도 private Cosmos transaction fence가 손상되면 일반 transaction action은 계속 차단되고 public pending-state clear는 이 record를 건드리지 않습니다. `Reviewed privacy reset`은 Clairveil setup과 protocol preflight가 끝난 뒤에만 사용할 수 있습니다. Wallet owner는 다른 DApp tab을 닫고 정확한 chain/account의 Keplr activity와 explorer를 확인해 pending/submitted private transaction이 없음을 확인한 뒤 화면에 표시된 `RESET <chain-id> <account>` 문구를 정확히 입력해야 합니다. DApp은 account lock을 유지한 채 full typed scan을 수행하고 active reservation과 relay recovery가 모두 0인지 확인한 다음 exact encrypted reservation namespace만 초기화하며 exact private fence를 마지막에 삭제합니다. Scan, recovery, storage 단계가 하나라도 실패하면 fence를 fail-closed 상태로 유지합니다.
 
 Transfer/withdraw proof 요청에는 `AbortSignal`이 전달됩니다. Modal에서 진행 중인 proof를 취소하고 같은 profile-pinned prover endpoint로 재시도할 수 있습니다. 만료 시각은 latest chain block time을 기준으로 계산하며 timestamp 조회에 실패하면 fail-closed합니다.
 
@@ -474,6 +499,7 @@ Public/open node에 붙일 때:
 
 ```bash
 CLAIRVEIL_DAPP_LOCAL_TEST_MODE=0 \
+CLAIRVEIL_DAPP_PUBLIC_ORIGIN=https://app.example \
 CLAIRVEIL_RPC=https://rpc.example \
 CLAIRVEIL_REST=https://rest.example \
 CLAIRVEIL_PROVER_URL=https://prover.example \
@@ -506,7 +532,7 @@ npm run check:clairveiljs:types
 npm run test:release-contracts
 ```
 
-`npm run verify:release`는 DApp static check, DApp/SDK integration test, type check, 필수 0.3.1 conformance fixture를 실행합니다. `npm run verify:release:integration`은 live local full flow와 payable EVM driver까지 요구하며 환경이 없으면 skip하지 않고 실패합니다. Required conformance suite에는 expiry, replay, payload substitution, duplicate nullifier rejection이 포함됩니다.
+`npm run verify:release`는 DApp static check, DApp/SDK integration test, type check, 필수 0.3.1 conformance fixture를 실행합니다. `test:release-contracts`는 먼저 SDK에 내장된 계약 파일 17개가 현재 Clairveil checkout과 byte 단위로 같은지 확인한 뒤 SDK 자체 manifest verifier와 bundled v3-only conformance suite를 실행하며, SDK process에 fixture를 주입하지 않습니다. `npm run verify:release:integration`은 live local full flow와 payable EVM driver까지 요구하며 환경이 없으면 skip하지 않고 실패합니다. Required conformance suite에는 expiry, replay, payload substitution, duplicate nullifier rejection이 포함됩니다.
 
 Smoke test는 다음 boundary를 확인합니다.
 

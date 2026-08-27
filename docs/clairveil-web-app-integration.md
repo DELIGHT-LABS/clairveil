@@ -31,11 +31,8 @@ const config = validateClairveilWebClientConfig(rawConfig);
 const profile = config.activeProfile;
 const client = createClairveilBrowserDappClient({
   profile,
-  // This is a product feature decision, separate from the SDK API gate.
-  enableExperimentalBatchTransfer:
-    profile.transport === "cosmos" &&
-    config.serverBacked === true &&
-    config.serverFeatures?.batchTransfer === true,
+  // The checked-in v0.3.1 WebApp does not expose one-proof batch transfer.
+  enableExperimentalBatchTransfer: false,
   queryTimeoutMs: 30_000,
   nullifierFailover: false
 });
@@ -46,7 +43,7 @@ the complete schema profile and rejects duplicate IDs, a missing active profile,
 or an incompatible flattened compatibility field. For EVM, the selected profile
 includes the schema-required `evmRpc`, `evmChainId`,
 `evmPrivacyPrecompileAddress`, and gas limits. Its precompile must implement
-the Clairveil 0.2 canonical deposit/transfer/withdraw tuples, including the
+the Clairveil 0.3.1 canonical deposit/transfer/withdraw tuples, including the
 deposit proof, transfer self-view plus expiry, and no legacy withdraw output
 fields. Compare the connected wallet network with `evmChainId` before preparing
 an EVM transaction. A raw chain-profile field is deployment input, not trusted
@@ -70,8 +67,10 @@ inventory until a fresh successful preflight.
 
 When a privacy prepare runs this preflight, bind every request and its
 success/failure UI update to that prepare's privacy-session generation. If the
-account, wallet, or profile changes while it is in flight, discard the result
-rather than setting the new session's chain-safety state from the old profile.
+account, wallet, profile, or selected REST endpoint changes while it is in
+flight, discard the result rather than setting the new session's chain-safety
+state from the old endpoint or profile. Disable endpoint selection while a note
+mutation or account transaction is queued or running.
 
 The example accepts a static config only when `/api/health` is absent or
 unreachable. In that case it fetches the same-origin `/dapp-config.json`
@@ -152,16 +151,33 @@ cursor semantics. The detailed retry and failover rules are in the
 | --- | --- | --- | --- |
 | Deposit | `prepareDeposit` with a product-provided `DepositCircuit` proof provider | If using a remote provider, pin its exact HTTPS `depositProofUrl` in the active profile and send the required proof material only to that origin. User signs the returned Cosmos sign doc or sends the EVM transaction. | Wait/lookup, then scan the output note. |
 | Transfer | `prepareTransfer` with the privacy session and encrypted stores | If status is `self_merge_required`, obtain explicit approval for that ordinary self-transfer, complete it, rescan, then replan. | Sign/broadcast one prepared transfer and reconcile reservations/nullifiers. |
-| Atomic batch transfer | Feature-gated Cosmos `prepareTransferBatch` with per-payment disclosure and encrypted payload/proof checkpoint callbacks | After the authoritative prepare scan, bind every requested row to the exact prepared recipient, amount, disclosure, total, change, 1–16 inputs, and 1–32 outputs before opening the wallet. Never silently split; reject a payment that exceeds one-batch input capacity and require explicit approval for multiple independent atomic batches. | Sign/broadcast one `MsgBatchTransfer`. Treat an ambiguous post-boundary result as pending reconciliation, then require every input nullifier and every expected payment output to match typed operation evidence before marking item success. |
 | Direct withdraw | `prepareWithdraw` | Require one exact-match note and a current chain time where required. | Sign/broadcast and reconcile the input nullifier. |
 | Relay withdraw | `prepareRelayWithdraw` | Verify fresh chain time; record durable relay handoff before copying or uploading the payload. The browser handoff must work without a local relayer helper. | The relayer may submit until expiry; reconcile rather than treating local cancel as revocation. |
 
-An authorized batch-audit UI must use the typed `privacy-scan-v2` query, group
-outputs by transaction hash, and verify/decode the mandatory audit disclosure
-for every output. A raw `batch_transfer` event contains operation roots and
-audit-key identity, not the per-output audit ciphertexts or digests. Do not
-attempt to reconstruct batch disclosure from that event or silently fall back
-to the legacy event-based auditor path after a typed-query failure.
+For Cosmos wallet submissions, acquire a cross-tab transaction lock scoped to
+the canonical on-chain chain ID and transparent account before any prepare call
+that reads the account sequence, and keep it through signing and the durable
+broadcast boundary. The lock must not include a UI profile ID or local storage
+epoch: equivalent profiles and tabs that observed different local epochs still
+control the same on-chain account. Public and private actions use the same lock;
+an unresolved public marker or private reservation broadcast blocks a new
+sequence until reconciliation. In local-test mode, re-read and compare the
+current genesis/storage epoch inside that lock before preparing the sequence;
+reject a stale tab rather than letting it submit on the restarted chain.
+Because transparent send is available before the root-signature session is
+restored, mirror each private Cosmos tx hash into a non-sensitive canonical
+account marker immediately before RPC broadcast and check it without opening
+the encrypted reservation store. Remove it only after matching chain and
+reservation reconciliation reaches a safe terminal state.
+Relay-only preparation is exempt only when a different relayer account will
+submit it and no local self transaction is needed.
+
+The checked-in example does not call `prepareTransferBatch` or provide batch
+submission or authorized batch-audit UI. Its loopback prover proxy may recognize
+the batch proof route for SDK/reference testing, but that route is not product
+capability exposure. Batch product flows remain separately reviewed integrations
+governed by the general client and batch handoff documents, not optional rows
+in this single-transfer guide.
 
 `depositProofUrl` is an optional profile field for a reviewed, product-owned
 deposit proof service. It is an exact `POST` endpoint, not a prover base URL:
@@ -208,17 +224,19 @@ perform this exact order for the *whole operation*:
    releasing, or attempting another submission.
 
 If step 4 fails, the step-2 marker remains a safety lock. Do not clear it or
-resubmit; enter recovery. For relay handoff, call `recordRelayHandoff(...)`
-before exposing the payload and retain the lock until authoritative expiry or
-reconciliation.
+resubmit; enter recovery. For relay handoff, first renew the complete reservation
+batch lease through the immutable payload expiry, then call
+`recordRelayHandoff(...)`, all before exposing the payload. Retain the lock until
+authoritative expiry or reconciliation.
 
 Do not record that external-handoff state for a same-origin local-relayer
 submit button: no raw payload has left the browser yet. After fresh
 chain/nullifier checks, stop the prepared-payload lease heartbeat, write
 `markBroadcastAttempting(...)`, then make exactly one local-relayer request.
 Treat any failure after that marker as possibly submitted and reconcile it;
-reserve `recordRelayHandoff(...)` and the expiry-length lease for Copy,
-download, QR, upload, or another actual payload egress.
+reserve the ordered expiry-length lease renewal followed by
+`recordRelayHandoff(...)` for Copy, download, QR, upload, or another actual
+payload egress.
 
 Make each value-moving action single-flight from the initial click through the
 wallet request. Disabling a button only after asynchronous privacy setup leaves
@@ -238,9 +256,18 @@ session's no-broadcast recovery path; never submit it under the replacement
 account.
 For MetaMask, `eth_sendTransaction` is the approval/submission boundary:
 recheck the captured session after chain and gas setup and immediately before
-calling it. Persist the broadcast-attempt marker before that final check, but
-mark the external boundary only when the wallet request starts. A session
-change before that call is a durable no-broadcast recovery, not `Unknown`.
+calling it. After that final check, persist an account-scoped hashless
+`attempting` marker immediately before the wallet request. Promote it to the
+returned tx hash synchronously before any later session check or receipt poll.
+Only an explicit provider rejection (`4001`) proves that the wallet did not
+submit and may clear the hashless marker automatically. A crash, timeout, or
+other provider error keeps it fail-closed; the user must inspect wallet history
+before using a guarded manual clear. That clear removes only the separately
+stored public send/deposit record under the canonical account lock; it never
+removes the private Cosmos signed-tx fence. If the private fence is corrupt,
+keep it fail-closed and offer only the reviewed fresh-state reset path. A
+session change before the marker is a
+no-broadcast failure, while a session change after it retains recovery state.
 
 ## 6. Stable User Actions For Failures
 
@@ -251,8 +278,6 @@ Map errors to actions without parsing prose:
 | Typed scan/config validation failure | Show sync unavailable; offer same-source retry or reset/rescan. | Never downgrade scan semantics. |
 | Nullifier result unknown | Show balance/input as unavailable. | Retry only the same endpoint by default. |
 | Planner self-merge requirement | Ask for explicit self-transfer approval. | Do not choose batch or multi-send as a fallback. |
-| Batch capacity exceeded | Offer an explicit multiple-atomic-batch choice and explain cross-batch partial completion. The final wallet confirmation must show the full recipient and disclosure mode for every prepared row, including a recipient-encrypted target fingerprint. | Never split, reorder, or retry individual payments silently. After one split batch is verified, lock its completed rows and exclude them from every later retry. |
-| Batch checkpoint or evidence unresolved | Show reservation recovery and keep affected inputs locked. | Do not overwrite the encrypted checkpoint or submit another batch until reconciliation reaches a terminal state. |
 | Prover timeout/transport failure | Show cancel/retry for the same prover. | Do not fail over to a second prover without explicit privacy opt-in. |
 | Broadcast timeout/terminal-write failure | Show pending reconciliation. | Query tx identity and nullifiers; block resubmission. |
 | Expired payload | Rebuild and re-sign. | Never extend an existing payload. |
@@ -317,8 +342,11 @@ The product must test its actual wallet adapters and endpoints, not only mocks:
   `ManualReview -> ReplanRequired` transition;
 - current chain/circuit/audit configuration mismatch;
 - EVM wallet-network mismatch and receipt recovery;
-- pre-0.2 persistence present at upgrade, proving it cannot be decoded or
-  selected before the required full rescan;
+- an earlier development persistence record present at startup, proving it is
+  not decoded or migrated into the current v0.3.1 namespace before the
+  required full rescan;
+- an attempted batch feature configuration, proving the current example keeps
+  `serverFeatures.batchTransfer=false` and exposes no batch submission UI;
 - the deployed-origin `verify:production-deployment` gate plus a manual
   Keplr/MetaMask connect, sign, scan, and recovery flow at the same origin.
 

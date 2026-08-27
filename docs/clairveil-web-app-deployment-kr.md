@@ -41,15 +41,17 @@ Production gateway는 optional입니다. 활성화한다면 아래를 만족해�
 5. Personalized nullifier query나 prover request/response body를 cache하지 않습니다.
 6. Local test-only helper route를 public deployment와 분리합니다.
 
-예제의 `CLAIRVEIL_DAPP_ENABLE_PROVER_PROXY`는 local-test control이지 production deployment recipe가 아닙니다. Checked-in server는 local-test mode, 명시적 flag, direct loopback request가 모두 참일 때만 이를 허용합니다. Public mode는 이 flag와 server가 보유한 prover bearer token을 모두 거부합니다. Product에 gateway가 필요하면 별도로 검토한 gateway를 배포해야 합니다.
+예제의 `CLAIRVEIL_PROVER_PROXY_ENABLED`는 local-test control이지 production deployment recipe가 아닙니다. Checked-in server는 local-test mode, 명시적 flag, direct loopback request가 모두 참일 때만 이를 허용합니다. Public mode는 이 flag와 server가 보유한 prover bearer token을 모두 거부합니다. Product에 gateway가 필요하면 별도로 검토한 gateway를 배포해야 합니다. Local proxy는 upstream redirect와 final URL 변경을 거부하고 versioned JSON success shape를 검사하며 parsing 전에 response 크기를 제한합니다. 모든 upstream error body는 stable하고 민감하지 않은 JSON error로 교체합니다. Server-backed `/api/health` read gateway도 bounded upstream JSON, request별 timeout, client disconnect cancellation, process 전체 admission 상한을 사용합니다. 예제는 이를 `CLAIRVEIL_PROVER_PROXY_MAX_RESPONSE_BYTES`, `CLAIRVEIL_DAPP_UPSTREAM_TIMEOUT_MS`, `CLAIRVEIL_DAPP_UPSTREAM_MAX_RESPONSE_BYTES`, `CLAIRVEIL_DAPP_HEALTH_MAX_IN_FLIGHT`로 설정합니다.
 
-`CLAIRVEIL_DAPP_ENABLE_BATCH_TRANSFER`는 capability discovery가 아니라 별도의 product
-exposure gate입니다. Active profile이 Cosmos이고 배포된 ClairveilJS가
-`prepareTransferBatch`를 지원하며 pinned prover origin이 정확한 versioned
-`/v1/proofs/batch-transfer` contract를 제공할 때만 켭니다. Checked-in static
-configuration에서는 메뉴를 숨깁니다. `make dapp-local`은 loopback-only same-origin
-prover proxy와 함께 이 gate를 켭니다. Public deployment는 대신 위 direct HTTPS/CORS
-또는 reviewed gateway 요구사항을 만족해야 합니다.
+Checked-in v0.3.1 example은 batch-transfer exposure flag를 제공하지 않습니다.
+Server는 항상 `serverFeatures.batchTransfer=false`를 반환하고 UI는
+`prepareTransferBatch`를 호출하지 않으며 `make dapp-local`도 batch 메뉴를
+활성화하지 않습니다. ClairveilJS batch API가 있거나
+`/v1/proofs/batch-transfer` endpoint에 접속할 수 있다는 이유로 capability
+discovery로 취급하면 안 됩니다. One-proof batch transfer를 노출할 향후
+product는 product flow를 advertise하거나 활성화하기 전에 별도의 explicit gate,
+encrypted recovery checkpoint, wallet confirmation, typed reconciliation, end-to-end deployment test를
+추가하고 검토해야 합니다.
 
 ## Browser security header와 telemetry
 
@@ -99,7 +101,9 @@ Server-backed 예제를 검증할 때는 대신
 bound와 1 MiB response limit 아래에서 배포 configuration을 읽고, 최종 WebApp
 response header/restrictive CSP를 확인하며 모든 configured REST endpoint, RPC, prover,
 deposit proof endpoint, Keplr endpoint, EVM RPC에 허용 origin과 untrusted origin CORS
-preflight 및 non-sensitive actual request를 모두 보냅니다. Preflight와 actual response
+preflight 및 non-sensitive actual request를 모두 보냅니다. 모든 endpoint probe는
+redirect-error mode를 사용하고 response가 보고하는 final URL이 configured probe URL과
+같아야 합니다. Preflight와 actual response
 모두에서 exact-origin CORS를 요구하고 불필요한 CORS method/header를 거부합니다. 실제 browser wallet
 extension을 emulation할 수는 없습니다. Release 승인 전에는 같은 origin을 대상으로 문서화된
 Keplr 또는 MetaMask connect, sign, scan, recovery flow를 수동으로 완료해야 합니다.

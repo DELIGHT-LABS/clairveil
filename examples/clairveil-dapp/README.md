@@ -25,6 +25,13 @@ For a public node deployment, the DApp needs the static assets, ClairveilJS, pub
 
 The SDK is resolved from the sibling checkout through `"clairveiljs": "file:../../../clairveiljs"`. Keep the repositories beside one another as `clairveil/` and `clairveiljs/`, then run `npm install` in this directory after changing the SDK. The lockfile records the local package as ClairveilJS `0.3.1`; the SDK is bundled into `public/app.bundle.js` and is not copied into this example by hand.
 
+To test another local ClairveilJS v0.3.1 worktree without changing `package.json` or the lockfile, set `CLAIRVEILJS_DIR` for the command. The DApp scripts validate the selected package and relink only the local `node_modules/clairveiljs` symlink:
+
+```sh
+CLAIRVEILJS_DIR=/absolute/path/to/clairveiljs-worktree npm run build:dapp
+CLAIRVEILJS_DIR=/absolute/path/to/clairveiljs-worktree npm run test:dapp
+```
+
 ## Main Features
 
 - Chain profile dropdown; the default static config exposes Cosmos/Keplr, and EVM/MetaMask profiles can be added when the target chain provides a compatible privacy precompile
@@ -81,7 +88,7 @@ These routes exist only when `server.js` is running. In a public-node deployment
 | `POST /v1/prover/deposit` | local only | Exact proxy to `CLAIRVEIL_DEPOSIT_PROOF_URL`; never derived from `proverUrl` |
 | `POST /v1/prover/transfer` / `withdraw` | local only | Same-origin proxy to the configured transfer/withdraw prover |
 
-The bundled prover proxy is a bounded local-development helper, not a public prover gateway. It is disabled whenever `CLAIRVEIL_DAPP_LOCAL_TEST_MODE=0`, accepts loopback callers by default, requires `application/json`, omits cross-origin permission, and applies per-client rate plus process-wide concurrency limits. Public deployments must use `CLAIRVEIL_PUBLIC_PROVER_URL` and `CLAIRVEIL_PUBLIC_DEPOSIT_PROOF_URL` behind independently reviewed authentication, rate/quota, metadata-only logging, and retention controls.
+The bundled prover proxy is a bounded local-development helper, not a public prover gateway. It requires both local-test mode and the explicit `CLAIRVEIL_PROVER_PROXY_ENABLED=1` flag, accepts loopback callers by default, requires `application/json`, omits cross-origin permission, rejects redirects, bounds and validates JSON responses, and applies per-client rate plus process-wide concurrency limits. Public mode rejects the proxy flag. Public deployments must use `CLAIRVEIL_PUBLIC_PROVER_URL` and `CLAIRVEIL_PUBLIC_DEPOSIT_PROOF_URL` behind independently reviewed authentication, rate/quota, metadata-only logging, and retention controls.
 
 ### Browser ClairveilJS High-Level Calls
 
@@ -114,11 +121,10 @@ The active chain profile provides `rest` and `rpc`.
 
 | Endpoint | Purpose |
 | --- | --- |
-| RPC `/status` | Node health |
+| RPC `/status` | Node health and authoritative latest block time/height for final confirmation and v0.3.1 expiry binding |
 | RPC `/tx_search` | Event Block / tx lookup |
 | REST `/cosmos/auth/v1beta1/account_info/{address}` | Account number and sequence for sign docs |
 | REST `/cosmos/bank/v1beta1/balances/{address}` | Transparent balance |
-| REST `/cosmos/base/tendermint/v1beta1/blocks/latest` | Authoritative chain time for final confirmation and v0.3.1 expiry binding |
 | REST `/clairveil/privacy/v1/tree_state` | Merkle tree state |
 | REST `/clairveil/privacy/v1/privacy_scan` | Typed v2 note scan with `(height, global_sequence, output_index)` cursor |
 | REST `/clairveil/privacy/v1/events` | Privacy event UI/disclosure lookup and legacy fallback only |
@@ -241,22 +247,37 @@ Common values:
 
 | Variable | Purpose |
 | --- | --- |
-| `CLAIRVEIL_DAPP_HOST` / `CLAIRVEIL_DAPP_PORT` | DApp server bind address and port |
+| `CLAIRVEIL_DAPP_HOST` / `CLAIRVEIL_DAPP_PORT` | DApp server bind address and port; the server defaults to loopback and LAN exposure requires an explicit host override |
 | `CLAIRVEIL_DAPP_LOCAL_TEST_MODE` | `1` enables local helpers, `0` runs public-node mode |
+| `CLAIRVEIL_DAPP_PUBLIC_ORIGIN` | Required exact HTTPS browser origin in public-node mode |
 | `CLAIRVEIL_HOME` / `CHAIN_ID` / `CLAIRVEILD_BIN` | Local node home, chain id, and CLI binary |
 | `CLAIRVEIL_RPC` / `CLAIRVEIL_REST` | Server-side Cosmos/CometBFT endpoints |
 | `CLAIRVEIL_PUBLIC_RPC` / `CLAIRVEIL_PUBLIC_REST` | Browser/Keplr-visible endpoints; empty means reuse the server endpoints |
-| `CLAIRVEIL_COSMOS_REST_ENDPOINTS` / `CLAIRVEIL_EVM_HOST_REST_ENDPOINTS` | Optional comma-separated REST endpoint sets for bounded public-read failover and the note recovery selector |
+| `CLAIRVEIL_PUBLIC_REST_ENDPOINTS` | Shared comma-separated browser REST failover set |
+| `CLAIRVEIL_COSMOS_RPC` / `CLAIRVEIL_COSMOS_REST` | Cosmos-profile browser endpoint overrides; these take precedence over the shared public endpoints |
+| `CLAIRVEIL_COSMOS_CHAIN_NAME` / `CLAIRVEIL_COSMOS_LABEL` | Cosmos chain name shown to Keplr and optional DApp selector label; a blank label inherits the chain name |
+| `CLAIRVEIL_COSMOS_CHAIN_ID` / `CLAIRVEIL_COSMOS_ACCOUNT_PREFIX` / `CLAIRVEIL_COSMOS_SHIELDED_PREFIX` | Cosmos identity overrides used by both the active browser profile and the server-side local signer/client; blank values inherit `CHAIN_ID` and the shared prefixes |
+| `CLAIRVEIL_COSMOS_COIN_TYPE` / `CLAIRVEIL_KEPLR_COIN_TYPE` | Cosmos BIP-44 coin type. The first is preferred; `CLAIRVEIL_KEPLR_COIN_TYPE` remains a compatible alias |
+| `CLAIRVEIL_COSMOS_REST_ENDPOINTS` / `CLAIRVEIL_EVM_HOST_REST_ENDPOINTS` | Optional profile-specific REST endpoint sets; these take precedence over the shared failover set |
 | `CLAIRVEIL_PROVER_URL` / `CLAIRVEIL_PUBLIC_PROVER_URL` | Server-side and browser-visible prover endpoints |
 | `CLAIRVEIL_DEPOSIT_PROOF_URL` / `CLAIRVEIL_PUBLIC_DEPOSIT_PROOF_URL` | Exact server-side/browser-visible DepositCircuit proof endpoint |
-| `CLAIRVEIL_PROVER_PROXY_ENABLED` | Enables the bounded proxy in local-test mode only; ignored in public-node mode |
-| `CLAIRVEIL_PROVER_PROXY_RATE_LIMIT_WINDOW_MS` / `CLAIRVEIL_PROVER_PROXY_RATE_LIMIT_MAX` / `CLAIRVEIL_PROVER_PROXY_MAX_IN_FLIGHT` | Local proxy request-rate and concurrency bounds |
+| `CLAIRVEIL_COSMOS_DEPOSIT_PROOF_URL` / `CLAIRVEIL_EVM_DEPOSIT_PROOF_URL` | Profile-specific browser proof endpoint override |
+| `CLAIRVEIL_PROVER_PROXY_ENABLED` | Explicitly enables the bounded proxy in local-test mode only; public-node mode rejects it |
+| `CLAIRVEIL_PROVER_PROXY_RATE_LIMIT_WINDOW_MS` / `CLAIRVEIL_PROVER_PROXY_RATE_LIMIT_MAX` / `CLAIRVEIL_PROVER_PROXY_MAX_IN_FLIGHT` / `CLAIRVEIL_PROVER_PROXY_MAX_RESPONSE_BYTES` | Local proxy request-rate, concurrency, and response-size bounds |
+| `CLAIRVEIL_DAPP_UPSTREAM_TIMEOUT_MS` / `CLAIRVEIL_DAPP_UPSTREAM_MAX_RESPONSE_BYTES` | Timeout and JSON response-size limit for server-side health/read queries |
+| `CLAIRVEIL_DAPP_HEALTH_MAX_IN_FLIGHT` | Process-wide `/api/health` admission limit; excess requests receive a typed `503` response |
 | `CLAIRVEIL_ACCOUNT_PREFIX` / `CLAIRVEIL_SHIELDED_PREFIX` | Transparent and shielded address prefixes |
 | `CLAIRVEIL_DENOM` / `CLAIRVEIL_DISPLAY_DENOM` / `CLAIRVEIL_COIN_DECIMALS` | Shared coin metadata fallback |
+| `CLAIRVEIL_COSMOS_DISPLAY_DENOM` / `CLAIRVEIL_COSMOS_COIN_DECIMALS` | Optional Cosmos display metadata overrides; blank or absent values inherit the shared metadata |
 | `CLAIRVEIL_COSMOS_DENOM` / `CLAIRVEIL_EVM_DENOM` / `CLAIRVEIL_EVM_NATIVE_DENOM` | Transport-specific minimal denom; active transport values override `CLAIRVEIL_DENOM`, and EVM falls back to its native denom before the shared value |
 | `CLAIRVEIL_EVM_DEPOSIT_MODE` / `CLAIRVEIL_EVM_NATIVE_DENOM` | `nonpayable` or v0.3.1 `payable-exact-value` deposit binding |
 | `CLAIRVEIL_EVM_*` | Other optional EVM/MetaMask profile settings |
 | `CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING` / `CLAIRVEIL_DAPP_ALLOW_LAN_ADMIN` / `CLAIRVEIL_DAPP_ALLOW_LAN_PROVER` | Explicit opt-in for exposing local signing/admin/prover helpers on LAN |
+
+Signer-mutating local helper routes accept only `application/json` POSTs whose
+`Origin` exactly matches the DApp request origin. Enabling LAN signing does not
+waive this same-origin requirement; open the DApp from that LAN origin and let
+the browser issue the request.
 
 ## Privacy Flow
 
@@ -270,11 +291,15 @@ Common values:
 
 Transfer and withdraw preparation use a ClairveilJS note reservation manager backed by IndexedDB, Web Locks, and AES-GCM encrypted state derived from the wallet privacy material. The same manager and prepared reservation are passed to Cosmos and EVM submission, and the DApp heartbeats the `ProofReady` lease while wallet or relay handoff confirmation is pending. Reserved notes are labelled and excluded from the displayed plan-available balance, while unrelated unreserved notes remain eligible for new plans. The reservation recovery panel groups linked inputs by operation and only offers `Review & replan` when no broadcast attempt or relay handoff is recorded. It refreshes the authoritative note scan, requires every reserved nullifier to be explicitly unspent, and asks the wallet owner to approve proof discard. A live owned `ProofReady` lease then moves directly to `ReplanRequired`; an expired preparation first enters `ManualReview` and records the owner-approved resolution. Restarting a localnet with a fresh genesis under the same chain ID makes old nullifiers impossible to query on the new chain. In local-test mode only, the DApp can reset previous-genesis encrypted reservation state with separate wallet-owner approval when a complete scan is empty, reserve/deposit/withdraw totals are all zero, and every active reservation has no broadcast or relay evidence. A receipt polling timeout is shown as `Unknown`, never as proof of failure; the Reconcile action checks the tx hash first and then refreshes nullifier status. A transfer whose nullifier is spent is completed only after a paginated lookup at the authoritative included height finds the matching chain event and binds the stored tx hash, output commitment, audit disclosure digest, recipient hash, amount hash, and denom. Relay reconciliation validates an included transaction against the encrypted handoff before scanning spent notes: it decodes the Cosmos `MsgWithdraw` or compares the EVM target, calldata, value, and chain ID. A spent nullifier without a successful bound transaction is persisted as operation-level manual review and blocks a replacement withdraw. A query failure leaves the reservation locked; missing or conflicting operation evidence remains blocked for manual review.
 
+The same-origin local relayer repeats nullifier preflight and atomically locks each canonical payload nullifier. Concurrent or replayed copies of the same payload share one submission, while any overlapping different payload is rejected. Faucet, local deposit, and relay broadcasts using the same signer account also share one account-sequence/nonce queue. An explicit nonzero Cosmos CheckTx response releases only this process-local submission gate because the node definitively rejected the transaction. Once the broadcaster has returned a valid exact tx hash, a later timeout, disconnect, or malformed status retains that hash with the account fence; a later signer request clears the fence only after an authoritative Cosmos tx query or EVM receipt query finds the transaction. An indexed Cosmos tx with a non-canonical execution code, or an EVM receipt with a non-canonical status, is returned as `included=true`, `pending=false`, `unknown=true`, and `failed=null` together with the exact hash; it is never cached or rendered as success. If the CLI fails before returning any valid hash, the process-local gate remains fail-closed but exact-hash reconciliation is impossible; such an identifier-less post-boundary result is never automatically retryable. The browser's durable reservation still follows its normal reconciliation policy.
+
 Transparent EVM send and deposit tx hashes and unresolved status are persisted across reloads, so their actions remain disabled until the existing tx is reconciled as included or explicitly failed. EVM deposit preflight queries the target asset through the host-chain bank endpoint and the native gas balance through `eth_getBalance`; profiles with different `denom` and `evmNativeDenom` must satisfy both independently. Cached note balances are labelled unconfirmed, and private spend actions stay disabled until a full note scan reaches `synced` while protocol preflight is ready. Relay handoff JSON, reservation IDs, tx hash, and result state are encrypted with wallet-derived material and restored after setup; the UI displays the immutable recipient/chain/expiry and privacy warnings, then reports transaction inclusion and nullifier spent state separately. If authoritative block time proves that a handoff expired and every reserved nullifier is still unspent, the wallet owner can explicitly approve `ManualReview -> ReplanRequired` recovery and prepare a new payload.
 
 Disclosure Review accepts the current event selection, an arbitrary tx hash, or pasted `shielded_transfer` event JSON for user, self-view, and local-admin audit planes. A verified report displays plane, policy, output index, commitment, digest, and `verified=true`. Decoded fields are rendered only when `verification.verified === true`; verification failures show `verified=false` and discard plaintext.
 
 The DApp persists the note cache in browser `localStorage` as an AES-GCM envelope. Its key is derived from wallet root-signature material with HKDF and is scoped to chain profile and account. A legacy plaintext cache is deleted instead of migrated and requires `Reset & Rescan`; a corrupt/undecryptable cache fails closed and can be backed up before reset. The cache remains recoverable chain-derived data, not a substitute for wallet key backup.
+
+If the separate private Cosmos transaction fence is corrupt, normal transaction actions remain blocked and the public pending-state clear does not touch it. `Reviewed privacy reset` is available only after Clairveil setup and protocol preflight. The wallet owner must close other DApp tabs, inspect Keplr activity and the explorer for the exact chain/account, confirm that no private transaction is pending or submitted, and type the displayed `RESET <chain-id> <account>` phrase. The DApp then holds the account lock, performs a full typed scan, requires zero active reservations and relay recoveries, clears only the exact encrypted reservation namespace, and removes the exact private fence last. Any scan, recovery, or storage failure leaves the fence fail-closed.
 
 Transfer/withdraw proof requests carry an `AbortSignal`. The modal can cancel an in-flight request and retry against the same profile-pinned prover endpoint. Expiry is derived from the latest chain block time and the UI fails closed if that timestamp cannot be read.
 
@@ -346,6 +371,7 @@ http://127.0.0.1:5173
 
 ```bash
 CLAIRVEIL_DAPP_LOCAL_TEST_MODE=0 \
+CLAIRVEIL_DAPP_PUBLIC_ORIGIN=https://app.example \
 CLAIRVEIL_RPC=https://rpc.example \
 CLAIRVEIL_REST=https://rest.example \
 CLAIRVEIL_PROVER_URL=https://prover.example \
@@ -365,4 +391,4 @@ npm run check:clairveiljs:types
 npm run test:release-contracts
 ```
 
-`npm run verify:release` runs the static DApp checks, DApp/SDK integration tests, type checks, and required v0.3.1 conformance fixtures. `npm run verify:release:integration` additionally requires a live local full-flow environment and the payable EVM driver; it fails instead of silently skipping when those dependencies are absent. The required conformance suite covers expiry, replay, payload substitution, and duplicate-nullifier rejection.
+`npm run verify:release` runs the static DApp checks, DApp/SDK integration tests, type checks, and required v0.3.1 conformance fixtures. `test:release-contracts` first verifies that all 17 SDK-bundled contract files match the current Clairveil checkout byte-for-byte, then runs the SDK's own manifest verifier and bundled v3-only conformance suite; it does not inject fixtures into the SDK process. `npm run verify:release:integration` additionally requires a live local full-flow environment and the payable EVM driver; it fails instead of silently skipping when those dependencies are absent. The required conformance suite covers expiry, replay, payload substitution, and duplicate-nullifier rejection.

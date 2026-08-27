@@ -24,17 +24,14 @@ const config = validateClairveilWebClientConfig(rawConfig);
 const profile = config.activeProfile;
 const client = createClairveilBrowserDappClient({
   profile,
-  // SDK API gate와 별개인 product feature 결정입니다.
-  enableExperimentalBatchTransfer:
-    profile.transport === "cosmos" &&
-    config.serverBacked === true &&
-    config.serverFeatures?.batchTransfer === true,
+  // Checked-in v0.3.1 WebApp은 one-proof batch transfer를 노출하지 않습니다.
+  enableExperimentalBatchTransfer: false,
   queryTimeoutMs: 30_000,
   nullifierFailover: false
 });
 ```
 
-선택한 field만으로 partial profile을 만들면 안 됩니다. Validator는 complete schema profile을 요구하고 duplicate ID, active profile 누락, flattened compatibility field 불일치를 거부합니다. EVM active profile에는 schema가 요구하는 `evmRpc`, `evmChainId`, `evmPrivacyPrecompileAddress`, gas limit이 포함됩니다. 이 precompile은 deposit proof, transfer self-view와 expiry, legacy withdraw output field 부재를 포함하는 Clairveil 0.2 canonical deposit/transfer/withdraw tuple을 구현해야 합니다. EVM transaction을 준비하기 전 connected wallet network와 `evmChainId`를 비교합니다. Raw chain-profile field는 deployment input일 뿐 신뢰할 수 있는 chain state가 아닙니다.
+선택한 field만으로 partial profile을 만들면 안 됩니다. Validator는 complete schema profile을 요구하고 duplicate ID, active profile 누락, flattened compatibility field 불일치를 거부합니다. EVM active profile에는 schema가 요구하는 `evmRpc`, `evmChainId`, `evmPrivacyPrecompileAddress`, gas limit이 포함됩니다. 이 precompile은 deposit proof, transfer self-view와 expiry, legacy withdraw output field 부재를 포함하는 Clairveil 0.3.1 canonical deposit/transfer/withdraw tuple을 구현해야 합니다. EVM transaction을 준비하기 전 connected wallet network와 `evmChainId`를 비교합니다. Raw chain-profile field는 deployment input일 뿐 신뢰할 수 있는 chain state가 아닙니다.
 
 Spendable note를 보여주기 전과 모든 privacy prepare 직전에 integration은 아래 preflight가 실패하면 fail closed해야 합니다.
 
@@ -48,8 +45,9 @@ await client.queryReserve(profile.denom);
 
 Privacy prepare에서 이 preflight를 실행할 때는 모든 request와 success/failure UI
 update를 해당 prepare의 privacy-session generation에 묶습니다. 진행 중 account,
-wallet, profile이 바뀌면 old profile 결과로 new session의 chain-safety state를
-설정하지 말고 결과를 버립니다.
+wallet, profile 또는 선택한 REST endpoint가 바뀌면 old endpoint/profile 결과로
+new session의 chain-safety state를 설정하지 말고 결과를 버립니다. Note mutation
+또는 account transaction이 대기/실행 중이면 endpoint 선택을 비활성화합니다.
 
 예제는 `/api/health`가 없거나 unreachable일 때만 static config를 사용합니다. 이 경우 production gate가 검증하는 same-origin `/dapp-config.json` artifact를 fetch합니다. Reachable server configuration의 schema invalid, profile mismatch, non-success response는 조용히 fallback할 이유가 아니라 sync failure입니다.
 
@@ -104,15 +102,31 @@ Complete `privacy-scan-v2` cursor를 persist합니다. 성공한 explicit nullif
 | --- | --- | --- | --- |
 | Deposit | 제품이 제공하는 `DepositCircuit` proof provider와 `prepareDeposit` | Remote provider를 쓰면 active profile의 정확한 HTTPS `depositProofUrl`을 pin하고 필요한 proof material만 그 origin에 보냅니다. 반환된 Cosmos sign doc을 user가 sign하거나 EVM transaction을 보냅니다. | Wait/lookup 후 output note를 scan합니다. |
 | Transfer | Privacy session/encrypted store로 `prepareTransfer` | status가 `self_merge_required`면 ordinary self-transfer의 명시적 승인을 받고 완료/scan 후 replan합니다. | Prepared transfer 하나를 sign/broadcast하고 reservation/nullifier를 reconcile합니다. |
-| 원자적 batch transfer | Feature gate된 Cosmos `prepareTransferBatch`, payment별 disclosure, 암호화된 payload/proof checkpoint callback | Authoritative prepare scan 뒤 요청한 각 행을 실제 recipient, amount, disclosure, total, change, 1–16 input, 1–32 output에 bind해 wallet을 열기 전에 최종 확인합니다. 한 batch의 input capacity를 넘는 payment를 차단하고, 조용히 분할하지 않으며 여러 독립 원자 batch에는 명시적 승인을 받습니다. | `MsgBatchTransfer` 하나를 sign/broadcast합니다. External boundary 뒤 결과가 불명확하면 reconcile 대기로 유지하고, 모든 input nullifier와 expected payment output이 typed operation evidence와 일치해야 항목 성공으로 표시합니다. |
 | Direct withdraw | `prepareWithdraw` | Exact-match note 하나와 필요한 경우 current chain time을 요구합니다. | Sign/broadcast 후 input nullifier를 reconcile합니다. |
 | Relay withdraw | `prepareRelayWithdraw` | Fresh chain time을 확인하고 payload copy/upload 전에 durable relay handoff를 기록합니다. Browser handoff는 local relayer helper 없이도 동작해야 합니다. | Relayer는 expiry까지 제출할 수 있으므로 local cancel을 revocation으로 취급하지 말고 reconcile합니다. |
 
-권한 있는 batch audit UI는 typed `privacy-scan-v2` query를 사용하고, output을
-transaction hash별로 묶은 뒤 각 output의 mandatory audit disclosure를 검증·복호화해야
-합니다. Raw `batch_transfer` event에는 operation root와 audit key identity만 있으며
-output별 audit ciphertext나 digest는 없습니다. 이 event에서 batch disclosure를
-재구성하거나 typed query 실패 뒤 legacy event auditor path로 조용히 fallback하면 안 됩니다.
+Cosmos wallet submission은 account sequence를 읽는 prepare call 전에 canonical
+on-chain chain ID와 transparent account로 scope한 cross-tab transaction lock을
+획득하고 signing과 durable broadcast 경계까지 유지합니다. 이 lock에는 UI profile
+ID나 local storage epoch를 넣으면 안 됩니다. 동등한 profile 및 서로 다른 local
+epoch를 관측한 tab도 같은 on-chain account를 제어하기 때문입니다. Public/private
+action은 같은 lock을 사용하며, unresolved public marker 또는 private reservation
+broadcast가 있으면 reconcile 전에는 새 sequence를 만들지 않습니다. Local-test
+mode에서는 lock 안에서 current genesis/storage epoch를 다시 조회·비교하고 stale
+tab의 sequence 준비를 거부합니다. 다른 relayer account가 submit하고 local self
+transaction도 필요 없는 relay-only preparation만 이 account lock에서 제외합니다.
+Transparent send는 root-signature session 복원 전에도 가능하므로, 각 private Cosmos
+tx hash를 RPC broadcast 직전에 non-sensitive canonical account marker에도 기록하고
+encrypted reservation store를 열지 않은 상태에서도 이를 검사합니다. Matching chain
+및 reservation reconciliation이 safe terminal state에 도달한 뒤에만 marker를
+제거합니다.
+
+Checked-in example은 `prepareTransferBatch`를 호출하거나 batch submission 또는
+authorized batch-audit UI를 제공하지 않습니다. Loopback prover proxy가
+SDK/reference test를 위해 batch proof route를 인식할 수는 있지만 그 route는
+product capability 노출이 아닙니다. Batch product flow는 이 single-transfer guide의
+optional row가 아니라 general client/batch handoff 문서를 따르는 별도로 검토된
+integration입니다.
 
 `depositProofUrl`은 검토된 product-owned deposit proof service를 위한 optional profile field입니다. Prover base URL이 아니라 정확한 `POST` endpoint이며 browser는 provider가 기대하는 `note_json`, `note_commitment_hex` material을 보내고 `Content-Type: application/json`의 versioned JSON proof response를 요구합니다. Static WebApp은 이 URL이나 browser/WASM provider가 없으면 Deposit을 unavailable로 두어야 합니다. 예제의 same-origin `/api/deposit/proof` route는 loopback local-test fallback 전용입니다. 예제는 응답을 120초 안에 끝내지 못한 deposit-proof request를 abort합니다. 이 client bound는 provider 쪽 body-size/timeout limit을 대체하지 않습니다. Redirect를 허용하지 않고 final response URL이 pin된 endpoint와 같은지 확인하며, parsing 전 deposit-proof response를 1 MiB로 제한합니다.
 
@@ -136,9 +150,9 @@ Dummy withdraw output을 만들면 안 됩니다. Browser가 broadcast response�
 4. 실제 submit 뒤에만 `markSubmitted(...)`, network 도달 가능성이 있으면 `markUnknown(...)`을 기록합니다.
 5. Replan, release, 재제출 전에 tx identity와 explicit nullifier evidence로 reconcile합니다.
 
-4단계 기록이 실패해도 2단계 marker는 safety lock으로 남습니다. 이를 지우거나 재제출하지 말고 recovery로 진입합니다. Relay handoff는 payload를 노출하기 전에 `recordRelayHandoff(...)`을 호출하고 authoritative expiry/reconciliation까지 lock을 유지합니다.
+4단계 기록이 실패해도 2단계 marker는 safety lock으로 남습니다. 이를 지우거나 재제출하지 말고 recovery로 진입합니다. Relay handoff는 payload를 노출하기 전에 reservation batch 전체 lease를 immutable payload expiry까지 먼저 연장하고 그 다음 `recordRelayHandoff(...)`을 호출합니다. Authoritative expiry/reconciliation까지 lock을 유지합니다.
 
-Same-origin local-relayer submit button에는 이 외부 handoff state를 기록하면 안 됩니다. 아직 raw payload가 browser 밖으로 나가지 않았기 때문입니다. Fresh chain/nullifier 확인 뒤 prepared-payload lease heartbeat를 멈추고 `markBroadcastAttempting(...)`을 기록한 다음 정확히 한 번 local relayer를 요청합니다. 이 marker 뒤의 실패는 제출되었을 수 있으므로 reconcile해야 합니다. `recordRelayHandoff(...)`과 expiry까지의 lease extension은 Copy, download, QR, upload 등 실제 payload egress에만 사용합니다.
+Same-origin local-relayer submit button에는 이 외부 handoff state를 기록하면 안 됩니다. 아직 raw payload가 browser 밖으로 나가지 않았기 때문입니다. Fresh chain/nullifier 확인 뒤 prepared-payload lease heartbeat를 멈추고 `markBroadcastAttempting(...)`을 기록한 다음 정확히 한 번 local relayer를 요청합니다. 이 marker 뒤의 실패는 제출되었을 수 있으므로 reconcile해야 합니다. Expiry까지의 lease 연장을 먼저 수행하고 그 다음 `recordRelayHandoff(...)`을 기록하는 순서는 Copy, download, QR, upload 등 실제 payload egress에만 사용합니다.
 
 Value-moving action은 최초 click부터 wallet request까지 single-flight로
 처리합니다. 비동기 privacy setup이 끝난 뒤에만 button을 비활성화하면 reentrancy
@@ -156,9 +170,17 @@ Wallet이 열린 동안 session이 바뀌면 signed checkpoint를 버리고 원�
 no-broadcast recovery만 수행합니다. 교체된 account에서 이를 제출하면 안 됩니다.
 MetaMask에서는 `eth_sendTransaction`이 approval/submission boundary입니다. Chain과
 gas setup 뒤 및 해당 호출 직전에 captured session을 다시 검사합니다. 최종 검사 전에
-broadcast-attempt marker를 기록하되, wallet request가 시작될 때만 external boundary로
-표시합니다. 그 호출 전에 session이 바뀌면 `Unknown`이 아니라 durable no-broadcast
-recovery로 처리합니다.
+아니라 최종 검사 직후 wallet request 바로 앞에서 account-scoped hashless
+`attempting` marker를 durable하게 기록합니다. Tx hash가 돌아오면 이후 session
+검사나 receipt polling 전에 동기적으로 해당 marker를 hash evidence로 승격합니다.
+명시적인 provider rejection(`4001`)만 wallet이 submit하지 않았음을 증명하므로
+hashless marker를 자동 삭제할 수 있습니다. Crash, timeout, 기타 provider error에서는
+fail-closed로 유지하고 사용자가 wallet history를 확인한 뒤 guarded manual clear를
+사용해야 합니다. 이 clear는 canonical account lock 아래 별도로 저장된 public
+send/deposit record만 삭제하고 private Cosmos signed-tx fence는 절대 삭제하지 않습니다.
+Private fence가 손상되면 fail-closed를 유지하고 reviewed fresh-state reset 경로만
+제공합니다. Marker 전 session 변경은 no-broadcast failure이고 marker 이후
+session 변경은 recovery state를 유지합니다.
 
 ## 6. Failure별 안정적인 사용자 action
 
@@ -169,8 +191,6 @@ recovery로 처리합니다.
 | Typed scan/config validation 실패 | Sync unavailable을 표시하고 same-source retry 또는 reset/rescan을 제안합니다. | Scan semantic을 downgrade하지 않습니다. |
 | Nullifier result unknown | Balance/input을 unavailable로 표시합니다. | 기본적으로 같은 endpoint만 retry합니다. |
 | Planner self-merge 필요 | 명시적인 self-transfer 승인을 요청합니다. | Batch/multi-send로 fallback하지 않습니다. |
-| Batch capacity 초과 | 여러 원자 batch를 명시적으로 선택하게 하고 batch 사이에는 일부 완료가 가능함을 설명합니다. 최종 wallet 확인에는 준비된 각 행의 전체 recipient, disclosure mode, recipient-encrypted target fingerprint를 표시합니다. | Payment를 조용히 분할, 재정렬, 개별 retry하지 않습니다. Split batch 하나가 검증되면 완료된 행을 잠그고 이후 모든 retry 대상에서 제외합니다. |
-| Batch checkpoint/evidence 미해결 | Reservation recovery를 표시하고 관련 input을 계속 잠급니다. | Reconciliation이 terminal 상태가 되기 전 encrypted checkpoint를 덮어쓰거나 다음 batch를 제출하지 않습니다. |
 | Prover timeout/transport 실패 | 같은 prover에 cancel/retry를 표시합니다. | 명시적 privacy opt-in 없이 두 번째 prover로 failover하지 않습니다. |
 | Broadcast timeout/terminal-write 실패 | Pending reconciliation을 표시합니다. | Tx identity/nullifier를 query하고 resubmission을 막습니다. |
 | Payload expiry | Rebuild/re-sign합니다. | 기존 payload를 extend하지 않습니다. |
@@ -205,7 +225,10 @@ Product는 mock만이 아니라 실제 wallet adapter와 endpoint를 test해야 
   nullifier check, audit 가능한 `ManualReview -> ReplanRequired` transition
 - Current chain/circuit/audit config mismatch
 - EVM wallet-network mismatch와 receipt recovery
-- Upgrade 시 pre-0.2 persistence가 있어도 required full rescan 전 decode/select되지 않음
+- Startup에 이전 development persistence record가 있어도 required full rescan 전
+  current v0.3.1 namespace로 decode/migrate되지 않음
+- Batch feature config를 시도해도 current example은
+  `serverFeatures.batchTransfer=false`를 유지하고 batch submission UI를 노출하지 않음
 - Deployed origin의 `verify:production-deployment` gate와 같은 origin에서의 수동 Keplr/MetaMask connect, sign, scan, recovery flow
 
 [Testing guide](clairveil-testing-guide-kr.md)의 DApp package check와 canonical conformance fixture를 이용한 SDK release verification을 실행합니다.

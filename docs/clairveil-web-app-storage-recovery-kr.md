@@ -11,35 +11,47 @@ English version: [clairveil-web-app-storage-recovery.md](clairveil-web-app-stora
 | Root signature, root seed, spend/view/disclosure private material | In-memory 또는 wallet-controlled secure store에만 둡니다. Application server, URL, analytics, crash report에 두면 안 됩니다. |
 | Decrypted note와 scan cursor | Chain/profile/account 하나에 scope된 encrypted persistent browser store에 둡니다. |
 | Reservation state와 operation evidence | Cross-tab locking을 가진 encrypted IndexedDB에 둡니다. Reservation error field에는 wallet/prover/RPC error prose가 아니라 stable internal code만 둡니다. |
-| Prepared proof/payload와 raw recipient/amount | 별도 검토된 encrypted recovery design이 없으면 memory에만 둡니다. Example batch-transfer flow는 `prepareTransferBatch`가 broadcast 전에 durable prepared-payload/prepared-proof callback을 요구하므로 account/profile-scoped AES-GCM checkpoint를 별도로 사용합니다. |
-| Relay recovery metadata | Encrypted store에 opaque payload hash, reservation ID/status, tx identity, handoff/submission status, expiry만 보존합니다. Persistence ID는 payload hash 또는 reservation ID에서 derive하고 caller-supplied ID나 display-only field는 보존하지 않습니다. |
+| Account transaction boundary marker | Privacy root signature 없이 열 수 있는 canonical transaction-scope/account durable record 두 개로 분리합니다. Public send/deposit record에는 EVM wallet request 전에 `attempting`과 random attempt ID를 담을 수 있고 tx hash가 돌아오면 즉시 승격합니다. 물리적으로 분리된 private Cosmos record에는 정확한 signed tx hash와 generic `privacy` kind만 기록합니다. Recipient, amount, calldata, note/reservation ID 또는 다른 private operation data는 어느 record에도 저장하지 않습니다. |
+| Prepared proof/payload와 raw recipient/amount | 별도 검토된 encrypted recovery design이 없으면 memory에만 둡니다. Checked-in example은 one-proof batch checkpoint를 persist하지 않고 `prepareTransferBatch`를 노출하지 않습니다. |
+| Relay recovery metadata | Cross-tab lock이 있는 encrypted multi-record store에 opaque payload hash, reservation ID/status, tx identity, handoff/submission status, expiry만 보존합니다. 각 persistence ID는 payload hash 또는 reservation ID에서 derive하며 payload 하나가 다른 payload를 overwrite하면 안 됩니다. Caller-supplied ID나 display-only field는 보존하지 않습니다. |
 
-Browser `localStorage`, plaintext IndexedDB, unencrypted export, in-memory fallback은 demo/test-only입니다. Encrypted persistence 또는 Web Locks가 없을 때 production fallback이 아닙니다.
+Sensitive wallet data를 위한 browser `localStorage`, plaintext IndexedDB,
+unencrypted export와 모든 in-memory persistence fallback은 demo/test-only입니다.
+위 account boundary marker는 transaction intent나 private material을 담지 않으므로
+좁게 scope된 plaintext storage를 사용할 수 있습니다. Required encrypted persistence
+또는 Web Locks가 없을 때 이를 fallback으로 사용하면 안 됩니다.
 
 ## Namespace와 암호화 규칙
 
-Current persistence epoch에는 별도의 namespace prefix를 사용합니다.
+Current persistence epoch에는 별도의 v0.3.1 namespace prefix를 사용합니다.
+Checked-in example은 아래와 동등한 scoped key와 encrypted reservation
+namespace를 사용합니다.
 
 ```text
-clairveil:wallet-notes:v2:<chain-id>:<profile-scope>:<wallet-kind>:<account-scope>
-clairveil:note-reservations:v2:<chain-id>:<profile-scope>:<wallet-kind>:<account-scope>
-clairveil:relay-withdraw-payloads:v2:<chain-id>:<profile-scope>:<wallet-kind>:<account-scope>
-clairveil:batch-transfer-artifacts:v1:<chain-id>:<profile-scope>:<wallet-kind>:<account-scope>
+clairveil:v0.3.1:notes-encrypted:<privacy-scope>:<storage-epoch>:<account-scope>
+clairveil:v0.3.1:operations-encrypted:<privacy-scope>:<storage-epoch>:<account-scope>:<payload-hash>
+clairveil:v0.3.1:public-pending:<transaction-scope>:<storage-epoch>:<account-scope>
+clairveil:v0.3.1:privacy-pending:<transaction-scope>:<storage-epoch>:<account-scope>
+reservation namespace: <chain-id>:<privacy-scope>:<storage-epoch>:<account-scope>
 ```
 
-`<profile-scope>`는 validated profile의 privacy identity field를 고유하게 식별해야 하며 해당 field가 바뀌면 교체해야 합니다. `<account-scope>`는 선택된 account에 대해서만 stable해야 하며 telemetry로 보내면 안 됩니다. Literal address 대신 opaque keyed identifier를 사용할 수 있습니다. Profile, chain ID, wallet kind, transparent account 사이에서 namespace를 공유하면 안 됩니다.
+`<privacy-scope>`는 on-chain privacy system(Cosmos chain ID 또는 EVM chain ID와
+privacy precompile)을 canonical하게 식별하고, `<transaction-scope>`는 account
+sequence/nonce domain을 식별해야 합니다. 같은 identity를 가리키는 동등한 UI
+profile은 이 scope를 공유해야 하며 profile label과 endpoint 선택은 storage
+identity가 아닙니다. Privacy identity field가 바뀌면 privacy scope를 교체합니다.
+`<account-scope>`는 선택된 account에 대해서만 stable해야 하며 telemetry로 보내면
+안 됩니다. Literal address 대신 opaque keyed identifier를 사용할 수 있습니다.
+서로 다른 privacy system, chain ID, wallet kind, transparent account 사이에서는
+namespace를 공유하면 안 됩니다.
 
-Batch-transfer checkpoint에는 reservation operation에 복구를 결합하는 데 필요한 exact
-canonical prepared payload와 proof만 저장합니다. Checkpoint 전체를 encrypt/authenticate하고
-log, export, analytics, crash report에는 절대 기록하지 않습니다. Durable callback 중 하나라도
-성공한 뒤 발생한 failure는 recovery state입니다. Matching operation/output evidence를 가진
-`ConfirmedSpent` reconciliation 또는 authorized terminal replan/failure transition이 reservation을
-해제할 때까지 reservation을 잠그고 새 batch를 막습니다. 해당 terminal reconciliation 뒤에만
-checkpoint를 삭제합니다.
-Inclusion이 처음에는 pending이면 이후 typed note scan이 이 checkpoint를 다시 load하고
-모든 reservation과 expected payment output을 재검증한 뒤 batch review UI의 항목별
-evidence 상태를 복원합니다. 서로 다른 terminal state가 섞이면 atomicity conflict로
-간주하고 manual review를 위해 잠금을 유지합니다.
+Checked-in example에는 batch-transfer checkpoint namespace가 없습니다.
+`prepareTransferBatch`를 노출하는 향후 product는 SDK feature를 켜기 전에
+account/profile-scoped encrypted checkpoint를 별도로 설계·검토해야 합니다.
+그 checkpoint는 reservation operation 하나에 복구를 bind하는 canonical prepared
+payload와 proof만 담고, external boundary 후 ambiguous result에서 lock을 유지하며,
+terminal reconciliation 후에만 삭제해야 합니다. 이 요구사항은 향후 product
+contract이지 이 example의 batch transfer를 활성화하는 근거가 아닙니다.
 
 Reservation에는 `createBrowserReservationStore`를 아래 조건으로 사용합니다.
 
@@ -105,6 +117,37 @@ resolve하여, 이전 recipient, amount, planner, failure text가 새 session의
 
 각 tab/worker는 `browser-tab:${crypto.randomUUID()}` 같은 fresh random `leaseOwner`를 사용합니다. 다른 tab과 lease token을 공유하면 안 됩니다. Web Locks는 store mutation을 serialize하지만 stale worker ownership을 valid하게 만들지는 않습니다. Live lease를 가진 manager만 `Proving`/`ProofReady` operation을 전진할 수 있습니다.
 
+Cosmos transaction 준비에는 canonical on-chain chain ID와 transparent account로
+scope된 하나의 exclusive cross-tab lock도 필요합니다. 이 lock은 동등한 UI
+profile끼리 공유해야 하며 local storage epoch를 포함하면 안 됩니다. Public send,
+deposit, private transfer, direct withdraw, self-merge/helper transaction은 account
+sequence/sign-doc을 읽는 시점부터 wallet signing과 durable broadcast 경계까지 같은
+lock을 공유해야 합니다. Lock 전에 sign doc을 만들면 proof 또는 wallet 작업 중
+다른 tab이 그 sequence를 소비할 수 있으므로 충분하지 않습니다. Local-test
+mode에서는 lock 안에서 current genesis/storage epoch를 다시 조회·비교하여 chain
+restart 뒤 stale tab이 fail closed하게 합니다. Durable public pending marker가
+있거나 reservation에 `broadcast_in_flight`, `Submitted`, `Unknown`, submitted tx
+hash가 남아 있으면 reconcile할 때까지 새 Cosmos sequence를 만들지 않습니다.
+다른 account가 submit할 relay-only payload는 browser wallet의 Cosmos sequence를
+소비하지 않지만, 그 payload를 만들기 위해 실행하는 local self transaction에는
+동일한 lock을 적용합니다.
+
+Encrypted reservation store만으로는 restart-safe account fence가 되지 않습니다.
+재접속 후 user가 root-signature session을 다시 만들기 전에도 transparent send가
+가능하기 때문입니다. 따라서 모든 private Cosmos submission은 RPC 호출 직전에
+정확한 signed tx hash를 non-sensitive account boundary marker에도 기록합니다.
+Public/private sequence 준비는 reservation store를 열지 않고도 이 marker를
+검사해야 합니다. `privacy` entry는 chain result가 명시적으로 포함(success 또는
+failure)되고 matching encrypted reservation이 그 결과에 맞는 safe terminal
+reconciliation state에 도달한 뒤에만 지웁니다.
+
+Public send/deposit marker와 private Cosmos marker는 같은 canonical account
+transaction lock 아래 서로 다른 물리 record로 저장합니다. Guarded manual clear는
+wallet history 확인 뒤 public record만 삭제할 수 있으며 private record를 삭제하거나
+rewrite하면 안 됩니다. Private record 자체를 authenticate/decode할 수 없으면 account
+boundary를 fail-closed로 유지하고 reviewed fresh-state reset 절차만 안내합니다. Generic
+corrupt-state clear는 private broadcast가 없었다는 증거가 아닙니다.
+
 ## Durable operation state machine
 
 Relevant high-level state progression은 아래와 같습니다.
@@ -139,9 +182,15 @@ Browser가 attempt marker 뒤 crash하면 startup은 active operation을 찾아 
 
 ## Relay withdraw 복구
 
-Relay payload를 copy, download, QR encode, upload하기 전에 immutable payload hash와 `recordRelayHandoff`을 durable하게 기록합니다. Convenience를 위해 raw payload/proof를 persist하지 않습니다. Copy된 payload는 on-chain expiry까지 relayer에게 유효합니다. Local cancel, tab close, lease expiry는 revocation이 아닙니다.
+Relay payload를 copy, download, QR encode, upload하기 전에 reservation batch 전체의 lease를 payload의 on-chain expiry까지 먼저 durable하게 연장하고, 그 다음 immutable payload hash와 `recordRelayHandoff`을 durable하게 기록합니다. Convenience를 위해 raw payload/proof를 persist하지 않습니다. Copy된 payload는 on-chain expiry까지 relayer에게 유효합니다. Local cancel, tab close, lease expiry는 revocation이 아닙니다.
 
 Pending handoff recovery control은 강제 해제가 아니라 evidence 확인 action이어야 합니다. Authoritative chain expiry, 모든 input nullifier의 explicit-unspent 결과, durable no-broadcast 또는 query 가능한 failed/absent broadcast evidence가 모두 일치할 때에만 만료 handoff를 `ReplanRequired`로 전이할 수 있습니다. Query 가능한 broadcast identity와 durable no-broadcast evidence가 모두 없으면 handoff가 relayer에 도달했을 수 있으므로 잠금을 유지하고 그 이유를 안내해야 합니다. 활성화된 control이 조용히 아무 효과도 내면 안 됩니다.
+
+각 handoff recovery는 canonical payload hash(또는 동등하게 derive된 reservation
+identity)를 key로 하는 독립 encrypted record로 저장합니다. Restart에서는 모든 record를
+enumerate하고 검증합니다. Cross-tab save/load/clear는 payload-scoped Web Lock을 사용하며
+terminal reconciliation은 matching payload record만 삭제합니다. 서로 다른 payload를
+준비한 두 tab이 상대 recovery evidence를 overwrite하거나 account-wide clear하면 안 됩니다.
 
 이 handoff flow도 immutable payload version뿐 아니라 privacy-session generation에
 묶습니다. Await되는 chain, nullifier, lease, persistence 작업마다 둘 다 다시
@@ -161,18 +210,35 @@ download, QR, upload처럼 실제 payload egress 전에는 계속 필수입니�
 
 Restart와 expiry 시 authoritative chain time, tx evidence, 각 input nullifier를 확인합니다. SDK가 요구하는 post-broadcast reconciliation evidence 뒤에만 release/replan합니다. 그렇지 않으면 manual review를 위해 lock을 보존합니다.
 
-## ClairveilJS 0.2 upgrade 절차
+## ClairveilJS 0.3.1 fresh-state 초기화
 
-ClairveilJS 0.2는 `privacy-fixed-v1` note/disclosure envelope과 strict V5/V2 payload contract를 사용합니다. Pre-0.2 persistence record는 신뢰할 수 없고 호환되지 않습니다.
+ClairveilJS 0.3.1은 `privacy-fixed-v1` note/disclosure envelope과 current V5/V2
+payload contract를 사용합니다. 이 WebApp은 이전 persistence contract로 release된
+적이 없으므로 fresh initialization만 지원합니다. Browser cache나 lifecycle
+store migration을 정의하지 않고 in-place downgrade도 지원하지 않습니다.
 
-1. Legacy browser record를 load하기 전에 `v2` namespace prefix를 사용하는 code를 배포합니다.
-2. Compatibility decode, reservation migration, relay proof replay를 시도하지 않습니다.
-3. Empty current namespace를 만들고 full typed scan 및 모든 nullifier refresh 뒤에만 balance/planner를 노출합니다.
-4. Legacy browser record는 그대로 둡니다. v0.2 browser integration은 legacy
-   `localStorage`, `sessionStorage`, reservation database record를 포함해 이를
-   읽거나 migrate하거나 변경하면 안 됩니다. Migration/support diagnostic을 위해
-   legacy record를 upload하면 안 됩니다.
+1. Wallet state를 load하기 전에 current `clairveil:v0.3.1:*` namespace를 사용하는
+   code를 배포합니다.
+2. 이전 development cache, reservation, operation, relay record, prepared payload, proof를
+   compatibility decode하거나 migrate하지 않습니다.
+3. Empty current namespace를 초기화하고 full typed scan과 모든 nullifier refresh
+   뒤에만 balance/planner를 노출합니다.
+4. 오래된 development record를 migration이나 support diagnostic 목적으로 upload하지
+   않습니다. Example은 명시적으로 이름 붙은 legacy plaintext note-cache key만
+   삭제하고 Reset & Rescan을 요구합니다. 이 삭제는 migration이 아니며
+   나머지 이전 record는 지원하는 input contract 밖에 둡니다.
 
-Checked-in DApp은 이 baseline을 구현합니다. Note state는 `EncryptedIndexedDbNoteStore`, reservation state는 `requireLocks: true`와 encrypted `createBrowserReservationStore` callback, relay recovery metadata는 encrypted IndexedDB record에 저장합니다. 각 record는 현재 in-memory root signature와 namespace에서 Web Crypto가 derive한 AES-GCM key를 사용합니다. Key는 non-extractable이며 ciphertext와 함께 저장하지 않습니다. IndexedDB, Web Crypto, Web Locks 중 하나라도 없으면 plaintext/memory fallback 대신 privacy setup을 막습니다.
+Checked-in DApp은 이 baseline을 구현합니다. Note state는
+`EncryptedLocalStorageNoteStore`, reservation state는 `requireLocks: true`와 encrypted
+`createBrowserReservationStore` IndexedDB callback, relay recovery metadata는 payload
+hash로 key된 multi-record이자 Web Locks가 필수인
+`EncryptedLocalStorageOperationStore`에 저장합니다. 각 record는 current in-memory
+wallet material과 namespace에서 Web Crypto가 derive한 AES-GCM key를 사용합니다.
+Key는 non-extractable이며 ciphertext와 함께 저장하지 않습니다. 필요한 browser
+storage, IndexedDB, Web Crypto, Web Locks 중 하나라도 없으면 plaintext/memory
+fallback 대신 privacy setup을 막습니다.
 
-DApp은 legacy `localStorage`/`sessionStorage`와 legacy reservation record를 읽거나 변경하지 않습니다. `v2` namespace는 compatibility migration이 아니라 fresh scan boundary입니다. 이 example을 쓰는 product는 browser persistence를 production wallet으로 취급하기 전에 key recovery와 user-data retention policy를 별도로 검토해야 합니다.
+DApp은 이전 cache나 reservation record를 current state로 decode하지 않습니다.
+v0.3.1 namespace는 compatibility migration이 아니라 fresh scan boundary입니다. 이
+example을 쓰는 product는 browser persistence를 production wallet으로 취급하기 전에
+key recovery와 user-data retention policy를 별도로 검토해야 합니다.
