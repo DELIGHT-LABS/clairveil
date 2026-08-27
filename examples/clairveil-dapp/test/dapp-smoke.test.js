@@ -708,14 +708,29 @@ test("DApp fences external relay persistence before exposing the handoff", () =>
     appSource.indexOf("function renderKeplr")
   );
   assert.match(recordSource, /const sessionContext = privacySessionSnapshot\(\)/);
+  const initialExpiryIndex = recordSource.indexOf("relayWithdrawPayloadExpired(payload, chainBlock.timeUnix)");
   const renewIndex = recordSource.indexOf("manager.renewLease(reservationIDs");
   const handoffIndex = recordSource.indexOf("manager.recordRelayHandoff(reservationIDs");
-  assert.ok(renewIndex >= 0 && handoffIndex > renewIndex);
+  const persistIndex = recordSource.indexOf("persistRelayWithdrawRecovery(handedOffState");
+  const hiddenFenceIndex = recordSource.indexOf('resultStatus: "egress-blocked"');
+  const refreshIndex = recordSource.indexOf("refreshReservationState(manager");
+  const egressFetchIndex = recordSource.indexOf("const egressChainBlock = await fetchLatestChainBlock()");
+  const egressExpiryIndex = recordSource.indexOf("relayWithdrawPayloadExpired(payload, egressChainBlock.timeUnix)");
+  const exposeIndex = recordSource.indexOf("state.relayWithdraw = handedOffState;");
+  assert.equal([...recordSource.matchAll(/await fetchLatestChainBlock\(\)/g)].length, 2);
+  assert.ok(initialExpiryIndex >= 0 && renewIndex > initialExpiryIndex);
+  assert.ok(handoffIndex > renewIndex && hiddenFenceIndex > handoffIndex);
+  assert.ok(persistIndex > hiddenFenceIndex);
+  assert.ok(refreshIndex > persistIndex && egressFetchIndex > refreshIndex);
+  assert.ok(egressExpiryIndex > egressFetchIndex && exposeIndex > egressExpiryIndex);
   assert.match(recordSource, /leaseUntil: expiryLeaseUntil/);
   assert.match(recordSource, /relayWithdrawPayloadExpired\(payload, chainBlock\.timeUnix\)/);
   assert.match(recordSource, /recordRelayHandoff\(reservationIDs[\s\S]*assertPrivacySession\(sessionContext\)/);
-  assert.match(recordSource, /persistRelayWithdrawRecovery\(state\.relayWithdraw, \{ sessionContext \}\)/);
+  assert.match(recordSource, /persistRelayWithdrawRecovery\(handedOffState, \{ sessionContext \}\)/);
+  assert.match(recordSource, /externalHandoff: true,[\s\S]*json: "",[\s\S]*resultStatus: "egress-blocked"/);
   assert.match(recordSource, /refreshReservationState\(manager, \{ sessionContext \}\)/);
+  assert.match(recordSource, /RELAY_PAYLOAD_EXPIRED_BEFORE_EGRESS/);
+  assert.match(recordSource, /handoff: null,[\s\S]*json: "",[\s\S]*payloadUnavailable: true/);
 
   const exposureSource = appSource.slice(
     appSource.indexOf("async function copyRelayWithdraw"),

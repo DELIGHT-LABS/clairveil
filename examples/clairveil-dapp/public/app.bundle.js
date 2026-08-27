@@ -84052,10 +84052,7 @@ function assertManagedRelayTransactionEvidenceMutation(current, to, patch) {
     throw new Error("relay transaction evidence conflicts with the submitted transaction hash");
   }
   const normalizedTxHash4 = normalizedTxIdentity(txHash);
-  const conflictingIdentity = normalizedIdentityValues([
-    current.submitted_tx_hash,
-    current.tx_bytes_hash
-  ]).find((identity) => identity !== normalizedTxHash4);
+  const conflictingIdentity = reservationNetworkTransactionIdentities(current).find((identity) => identity !== normalizedTxHash4);
   if (conflictingIdentity) {
     throw new Error("relay transaction evidence conflicts with persisted transaction identity");
   }
@@ -84271,8 +84268,8 @@ function hasManualReviewApprovalEvidence(metadata = {}) {
 }
 function assertInactiveTransitionEvidence(current, to, metadata = {}) {
   const from = current.status;
-  if ((from === reservationStatuses.Submitted || from === reservationStatuses.Unknown) && (to === reservationStatuses.ReplanRequired || to === reservationStatuses.Failed) && !hasPostBroadcastReplanEvidence(metadata)) {
-    throw new Error(`${from} -> ${to} requires nullifier_unspent_confirmed and tx_absent_or_failed_confirmed reconcile evidence`);
+  if ((from === reservationStatuses.Submitted || from === reservationStatuses.Unknown) && (to === reservationStatuses.ReplanRequired || to === reservationStatuses.Failed) && !hasExactPostBroadcastFailureEvidence(current, metadata)) {
+    throw new Error(`${from} -> ${to} requires exact tx_hash_checked, positive checked_height, nullifier_unspent_confirmed, and tx_absent_or_failed_confirmed reconcile evidence`);
   }
   if (from === reservationStatuses.ProofReady && to === reservationStatuses.ReplanRequired) {
     if (hasStoredBroadcastEvidence(current)) {
@@ -85150,6 +85147,11 @@ function canonicalRelayTransactionHash(value) {
 function normalizedIdentityValues(values = []) {
   return [...new Set(values.map(normalizedTxIdentity).filter(Boolean))];
 }
+function reservationNetworkTransactionIdentities(reservation = {}) {
+  return normalizedIdentityValues(
+    reservationExecutionTransport(reservation) === "evm" ? [reservation.submitted_tx_hash] : [reservation.submitted_tx_hash, reservation.tx_bytes_hash]
+  );
+}
 function operationEvidenceConflictField(sourceField) {
   if (["submitted_tx_hash", "tx_hash", "tx_bytes_hash", "sign_doc_hash", "tx_hash_or_tx_bytes"].includes(sourceField)) {
     return "tx_hash";
@@ -85642,10 +85644,7 @@ function assertPersistedRelayTransactionEvidence(reservation, evidence) {
   if (reservation.status !== reservationStatuses.Submitted || !relaySourceRecorded || reservation.payload_hash !== evidence.payloadHash || reservation.submitted_tx_hash !== evidence.txHash || reservation.broadcast_in_flight || Number(reservation.broadcast_attempt_count || 0) < 1 || reservation.lease_owner || reservation.lease_token || reservation.lease_until || reservation.last_heartbeat_at) {
     throw new Error("relay transaction evidence conflicts with the persisted Submitted operation");
   }
-  const conflictingIdentity = normalizedIdentityValues([
-    reservation.submitted_tx_hash,
-    reservation.tx_bytes_hash
-  ]).find((identity) => identity !== normalizedTxIdentity(evidence.txHash));
+  const conflictingIdentity = reservationNetworkTransactionIdentities(reservation).find((identity) => identity !== normalizedTxIdentity(evidence.txHash));
   const metadata = reservation.metadata || {};
   if (conflictingIdentity || metadata.transaction_included_confirmed !== true || metadata.payload_hash_matched !== true || String(metadata.relay_evidence_checked_height ?? "") !== evidence.checkedHeight || metadata.relay_evidence_tx_hash !== evidence.txHash || String(metadata.checked_height ?? "") !== evidence.checkedHeight || metadata.tx_hash_checked !== evidence.txHash) {
     throw new Error("relay transaction evidence conflicts with the persisted inclusion evidence");
@@ -85656,10 +85655,7 @@ function hasExactPostBroadcastFailureEvidence(reservation = {}, metadata = {}) {
   const evidence = postBroadcastReplanEvidence(metadata);
   if (!positiveCheckedHeight(evidence.checkedHeight)) return false;
   const checked = normalizedTxIdentity(evidence.txHashChecked);
-  const stored = normalizedIdentityValues([
-    reservation.submitted_tx_hash,
-    reservation.tx_bytes_hash
-  ]);
+  const stored = reservationNetworkTransactionIdentities(reservation);
   return Boolean(checked && stored.length && stored.includes(checked));
 }
 function proofReadyTransitionPatch(metadata = {}) {
@@ -86859,10 +86855,7 @@ var NoteReservationManager = class {
       if (externalHandoff && (current.broadcast_in_flight || Number(current.broadcast_attempt_count || 0) !== 0)) {
         throw new Error("external relay transaction evidence requires an unattempted handed-off ProofReady operation");
       }
-      const conflictingIdentity = normalizedIdentityValues([
-        current.submitted_tx_hash,
-        current.tx_bytes_hash
-      ]).find((identity) => identity !== evidence.txHash);
+      const conflictingIdentity = reservationNetworkTransactionIdentities(current).find((identity) => identity !== evidence.txHash);
       if (conflictingIdentity) {
         throw new Error("relay transaction evidence conflicts with persisted transaction identity");
       }
@@ -101682,6 +101675,12 @@ function authoritativeChainBlockFromStatus(data, { chainId } = {}) {
       "CHAIN_STATUS_NETWORK_MISMATCH"
     );
   }
+  if (data?.result?.sync_info?.catching_up !== false) {
+    throw codedError(
+      "Latest status is not from a fully synced Cosmos node",
+      "CHAIN_STATUS_NOT_SYNCED"
+    );
+  }
   const value = data?.result?.sync_info?.latest_block_time;
   const milliseconds = Date.parse(String(value || ""));
   if (!Number.isFinite(milliseconds)) {
@@ -106561,7 +106560,7 @@ async function recordExternalRelayWithdrawHandoff(surface) {
     })) {
       throw new Error("Relay handoff lease was not durably extended through payload expiry");
     }
-    state.relayWithdraw.leaseUntil = renewed[0]?.lease_until || expiryLeaseUntil;
+    const renewedLeaseUntil = renewed[0]?.lease_until || expiryLeaseUntil;
     await manager.recordRelayHandoff(reservationIDs, {
       leaseToken,
       payloadHash,
@@ -106569,16 +106568,43 @@ async function recordExternalRelayWithdrawHandoff(surface) {
     });
     assertPrivacySession(sessionContext);
     assertRelaySubmitContext(context);
-    state.relayWithdraw.externalHandoff = true;
-    state.relayWithdraw.durableNoBroadcast = false;
-    state.relayWithdraw.resultStatus = "waiting";
-    state.relayWithdraw.resultMessage = "External handoff recorded \xB7 waiting for relayer result";
-    await persistRelayWithdrawRecovery(state.relayWithdraw, { sessionContext });
+    const handedOffState = {
+      ...state.relayWithdraw,
+      leaseUntil: renewedLeaseUntil,
+      externalHandoff: true,
+      durableNoBroadcast: false,
+      resultStatus: "waiting",
+      resultMessage: "External handoff recorded \xB7 waiting for relayer result"
+    };
+    state.relayWithdraw = {
+      ...handedOffState,
+      json: "",
+      resultStatus: "egress-blocked",
+      resultMessage: "External handoff fence recorded \xB7 payload remains hidden until a fresh chain-time check succeeds"
+    };
+    await persistRelayWithdrawRecovery(handedOffState, { sessionContext });
     assertPrivacySession(sessionContext);
     assertRelaySubmitContext(context);
     await refreshReservationState(manager, { sessionContext });
     assertPrivacySession(sessionContext);
     assertRelaySubmitContext(context);
+    const egressChainBlock = await fetchLatestChainBlock();
+    assertPrivacySession(sessionContext);
+    assertRelaySubmitContext(context);
+    if (relayWithdrawPayloadExpired(payload, egressChainBlock.timeUnix)) {
+      state.relayWithdraw = {
+        ...handedOffState,
+        handoff: null,
+        json: "",
+        payloadUnavailable: true,
+        resultStatus: "expired-review",
+        resultMessage: `External handoff was recorded, but the payload expired before exposure at authoritative chain height ${egressChainBlock.height} \xB7 reconcile before retrying`
+      };
+      const error = new Error(`Relay payload expired before external exposure at authoritative chain height ${egressChainBlock.height}`);
+      error.code = "RELAY_PAYLOAD_EXPIRED_BEFORE_EGRESS";
+      throw error;
+    }
+    state.relayWithdraw = handedOffState;
     return { relayContext: context, sessionContext };
   } finally {
     try {

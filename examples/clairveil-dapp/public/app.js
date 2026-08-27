@@ -4437,8 +4437,7 @@ function renderRelayWithdraw() {
     : "-";
   els.relayWithdrawPayloadHash.textContent = payload?.payload_hash || state.relayWithdraw.payloadHash || "-";
   // Keep the raw payload out of the DOM until the durable external-handoff
-  // marker has been recorded. Copy/download still read the in-memory value,
-  // but only after recordExternalRelayWithdrawHandoff() completes.
+  // marker and the final authoritative chain-time check have completed.
   els.relayWithdrawJson.value = state.relayWithdraw.externalHandoff
     ? state.relayWithdraw.json
     : "";
@@ -4581,7 +4580,7 @@ async function recordExternalRelayWithdrawHandoff(surface) {
       })) {
       throw new Error("Relay handoff lease was not durably extended through payload expiry");
     }
-    state.relayWithdraw.leaseUntil = renewed[0]?.lease_until || expiryLeaseUntil;
+    const renewedLeaseUntil = renewed[0]?.lease_until || expiryLeaseUntil;
     await manager.recordRelayHandoff(reservationIDs, {
       leaseToken,
       payloadHash,
@@ -4589,16 +4588,43 @@ async function recordExternalRelayWithdrawHandoff(surface) {
     });
     assertPrivacySession(sessionContext);
     assertRelaySubmitContext(context);
-    state.relayWithdraw.externalHandoff = true;
-    state.relayWithdraw.durableNoBroadcast = false;
-    state.relayWithdraw.resultStatus = "waiting";
-    state.relayWithdraw.resultMessage = "External handoff recorded · waiting for relayer result";
-    await persistRelayWithdrawRecovery(state.relayWithdraw, { sessionContext });
+    const handedOffState = {
+      ...state.relayWithdraw,
+      leaseUntil: renewedLeaseUntil,
+      externalHandoff: true,
+      durableNoBroadcast: false,
+      resultStatus: "waiting",
+      resultMessage: "External handoff recorded · waiting for relayer result"
+    };
+    state.relayWithdraw = {
+      ...handedOffState,
+      json: "",
+      resultStatus: "egress-blocked",
+      resultMessage: "External handoff fence recorded · payload remains hidden until a fresh chain-time check succeeds"
+    };
+    await persistRelayWithdrawRecovery(handedOffState, { sessionContext });
     assertPrivacySession(sessionContext);
     assertRelaySubmitContext(context);
     await refreshReservationState(manager, { sessionContext });
     assertPrivacySession(sessionContext);
     assertRelaySubmitContext(context);
+    const egressChainBlock = await fetchLatestChainBlock();
+    assertPrivacySession(sessionContext);
+    assertRelaySubmitContext(context);
+    if (relayWithdrawPayloadExpired(payload, egressChainBlock.timeUnix)) {
+      state.relayWithdraw = {
+        ...handedOffState,
+        handoff: null,
+        json: "",
+        payloadUnavailable: true,
+        resultStatus: "expired-review",
+        resultMessage: `External handoff was recorded, but the payload expired before exposure at authoritative chain height ${egressChainBlock.height} · reconcile before retrying`
+      };
+      const error = new Error(`Relay payload expired before external exposure at authoritative chain height ${egressChainBlock.height}`);
+      error.code = "RELAY_PAYLOAD_EXPIRED_BEFORE_EGRESS";
+      throw error;
+    }
+    state.relayWithdraw = handedOffState;
     return { relayContext: context, sessionContext };
   } finally {
     try {

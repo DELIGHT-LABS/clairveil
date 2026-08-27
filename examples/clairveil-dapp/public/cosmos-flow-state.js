@@ -38,6 +38,12 @@ export function authoritativeChainBlockFromStatus(data, { chainId } = {}) {
       "CHAIN_STATUS_NETWORK_MISMATCH"
     );
   }
+  if (data?.result?.sync_info?.catching_up !== false) {
+    throw codedError(
+      "Latest status is not from a fully synced Cosmos node",
+      "CHAIN_STATUS_NOT_SYNCED"
+    );
+  }
   const value = data?.result?.sync_info?.latest_block_time;
   const milliseconds = Date.parse(String(value || ""));
   if (!Number.isFinite(milliseconds)) {

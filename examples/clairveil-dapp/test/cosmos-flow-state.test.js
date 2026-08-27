@@ -20,6 +20,7 @@ function chainStatus(network = "clairveil-local-1") {
     result: {
       node_info: { network },
       sync_info: {
+        catching_up: false,
         latest_block_time: "2026-08-27T01:02:03.900Z",
         latest_block_height: "42"
       }
@@ -51,6 +52,24 @@ test("authoritative block time is bound to the active Cosmos host chain", () => 
   assert.throws(
     () => authoritativeChainBlockFromStatus(chainStatus("0x539"), evmProfile),
     error => error?.code === "CHAIN_STATUS_NETWORK_MISMATCH"
+  );
+});
+
+test("authoritative block time rejects syncing or ambiguous Cosmos status", () => {
+  for (const catchingUp of [true, "false", null, 0]) {
+    const syncing = chainStatus();
+    syncing.result.sync_info.catching_up = catchingUp;
+    assert.throws(
+      () => authoritativeChainBlockFromStatus(syncing, { chainId: "clairveil-local-1" }),
+      error => error?.code === "CHAIN_STATUS_NOT_SYNCED"
+    );
+  }
+
+  const ambiguous = chainStatus();
+  delete ambiguous.result.sync_info.catching_up;
+  assert.throws(
+    () => authoritativeChainBlockFromStatus(ambiguous, { chainId: "clairveil-local-1" }),
+    error => error?.code === "CHAIN_STATUS_NOT_SYNCED"
   );
 });
 
