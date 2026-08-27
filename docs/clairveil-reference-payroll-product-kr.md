@@ -533,7 +533,7 @@ clairveil-payroll run \
 
 schema 문자열은 `reservation.PostgreSQLSchema()`와 `reservation.SQLiteSchema()`로 얻을 수 있음. 이 adapter는 reference 수준의 transaction-backed store이므로, multi-tenant production에서는 tenant partitioning, field-level encryption, raw nullifier 비저장 정책, connection pool, migration tool, row-level lock 전략을 제품 DB 정책에 맞게 보강해야 함.
 
-Reservation lifecycle payload는 schema version 2를 사용함. Durable JSON은 `version`에, SQL store는 `reservation_lifecycle_store_meta`에 기록함. SQL store upgrade는 `InitSQLStore`를 사용하며, v1의 모호한 `ProofReady` 작업은 `ManualReview`로 fail-close migration함. In-place downgrade는 지원하지 않음. Upgrade 전 v1 backup을 보관하고 old binary를 실행하기 전에 해당 backup을 복원해야 하며, old binary는 v2 state를 거부해야 함.
+Reservation lifecycle payload는 schema version 2를 사용함. Durable JSON은 `version`에, SQL store는 `reservation_lifecycle_store_meta`에 기록함. 아직 릴리스되지 않은 이 reference는 fresh-state 초기화만 지원함. `InitSQLStore`는 비어 있거나 현재 v2인 store만 생성·검증하고, 이미 존재하는 non-v2 lifecycle store는 거부함. v1 migration과 in-place downgrade는 지원하지 않음. 이 버전에서는 새 빈 lifecycle store를 초기화해야 하며, 이전 개발 build가 만든 lifecycle snapshot을 가져오면 안 됨.
 
 ## 현재 Repo 완료 경계
 

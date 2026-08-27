@@ -30,6 +30,43 @@ func TestSQLStoreSQLiteIntegrationGraphAtomicityAndRecovery(t *testing.T) {
 	})
 }
 
+func TestInitSQLStoreRejectsLegacyLifecycleSchemaWithoutMigratingIt(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "legacy-reservations.db")
+	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s", path))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, db.PingContext(ctx))
+
+	_, err = db.ExecContext(ctx, `
+		CREATE TABLE reservation_lifecycle_store_meta (
+			singleton_id INTEGER PRIMARY KEY,
+			schema_version INTEGER NOT NULL
+		)`)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO reservation_lifecycle_store_meta (singleton_id, schema_version)
+		VALUES (1, 1)`)
+	require.NoError(t, err)
+
+	err = InitSQLStore(ctx, db, SQLDialectSQLite)
+	require.ErrorIs(t, err, ErrInvalidReservation)
+	require.ErrorContains(t, err, "unsupported reservation lifecycle SQL schema version 1")
+
+	var version int
+	require.NoError(t, db.QueryRowContext(ctx,
+		"SELECT schema_version FROM reservation_lifecycle_store_meta WHERE singleton_id = 1",
+	).Scan(&version))
+	require.Equal(t, 1, version)
+
+	var currentSchemaTables int
+	require.NoError(t, db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM sqlite_master
+		WHERE type = 'table' AND name = 'note_reservations'`,
+	).Scan(&currentSchemaTables))
+	require.Zero(t, currentSchemaTables, "rejected v1 initialization must roll back current-schema DDL")
+}
+
 func TestSQLStorePostgreSQLIntegrationGraphAtomicityAndRecovery(t *testing.T) {
 	dsn := os.Getenv(postgresIntegrationDSNEnv)
 	if dsn == "" {

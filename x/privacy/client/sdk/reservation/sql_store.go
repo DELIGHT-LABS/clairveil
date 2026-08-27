@@ -28,21 +28,29 @@ func InitSQLStore(ctx context.Context, db *sql.DB, dialect SQLDialect) error {
 	if db == nil {
 		return fmt.Errorf("sql db is required")
 	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
 	for _, stmt := range sqlSchemaStatements(dialect) {
-		if _, err := db.ExecContext(ctx, stmt); err != nil {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
 			return err
 		}
 	}
-	if _, err := db.ExecContext(ctx, sqlStoreLockSeedStatement(dialect)); err != nil {
+	if _, err := tx.ExecContext(ctx, sqlStoreLockSeedStatement(dialect)); err != nil {
 		return err
 	}
-	if _, err := db.ExecContext(ctx, sqlBatchSchemaSeedStatement(dialect)); err != nil {
+	if _, err := tx.ExecContext(ctx, sqlBatchSchemaSeedStatement(dialect)); err != nil {
 		return err
 	}
-	if _, err := db.ExecContext(ctx, sqlLifecycleSchemaSeedStatement(dialect)); err != nil {
+	if _, err := tx.ExecContext(ctx, sqlLifecycleSchemaSeedStatement(dialect)); err != nil {
 		return err
 	}
-	return validateSQLLifecycleSchema(ctx, db)
+	if err := validateSQLLifecycleSchema(ctx, tx); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func PostgreSQLSchema() string {
@@ -776,7 +784,11 @@ func sqlLifecycleSchemaSeedStatement(_ SQLDialect) string {
 	)
 }
 
-func validateSQLLifecycleSchema(ctx context.Context, db *sql.DB) error {
+type sqlLifecycleSchemaQuerier interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func validateSQLLifecycleSchema(ctx context.Context, db sqlLifecycleSchemaQuerier) error {
 	var version int
 	if err := db.QueryRowContext(ctx, "SELECT schema_version FROM reservation_lifecycle_store_meta WHERE singleton_id = 1").Scan(&version); err != nil {
 		return err
