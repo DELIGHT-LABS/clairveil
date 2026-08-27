@@ -184,6 +184,7 @@
           <div class="notes-actions tx-reconcile-actions">
             <button id="reconcileKeplrSend" class="secondary-button" type="button" disabled>Reconcile send tx</button>
             <button id="clearPublicPendingState" class="secondary-button" type="button" hidden>Clear corrupt pending state</button>
+            <button id="resetPrivatePendingState" class="secondary-button" type="button" hidden>Reviewed privacy reset</button>
           </div>
           <section class="balance-section action-section" aria-labelledby="depositVeiledTitle">
             <h3 id="depositVeiledTitle">Deposit (Move to Veiled)</h3>
@@ -413,6 +414,10 @@
             </section>
             <section id="relayWithdrawPanel" class="local-signer-notes relay-withdraw-panel" aria-labelledby="relayWithdrawHandoffTitle">
               <h3 id="relayWithdrawHandoffTitle">Local Relayer</h3>
+              <label id="relayWithdrawRecoveryChoiceField" class="field" hidden>
+                <span>Pending relay recovery</span>
+                <select id="relayWithdrawRecoveryChoice"></select>
+              </label>
               <dl class="facts relayer-account-facts">
                 <div><dt>Fee payer</dt><dd id="relayerTransparentAddress">-</dd></div>
                 <div><dt>Balance</dt><dd id="relayerBalance">-</dd></div>
@@ -442,9 +447,13 @@
                 <button id="relayPreparedWithdraw" type="button" disabled>Relay (pay fee &amp; broadcast)</button>
               </div>
               <dl class="facts relay-result-facts">
-                <div><dt>Relayer tx</dt><dd id="relayWithdrawTxHash">-</dd></div>
+                <div><dt>Relayer tx</dt><dd id="relayWithdrawTxHashDisplay">-</dd></div>
                 <div><dt>Submitted by</dt><dd id="relayWithdrawSubmittedBy">-</dd></div>
               </dl>
+              <label class="field">
+                <span>External relayer tx hash</span>
+                <input id="relayWithdrawTxHash" placeholder="32-byte transaction hash" autocomplete="off" spellcheck="false" disabled />
+              </label>
               <div class="notes-actions">
                 <button id="reconcileRelayWithdraw" class="secondary-button" type="button" disabled>Reconcile relay result</button>
               </div>

@@ -61,12 +61,17 @@ function headerIncludesHeader(value, header) {
     .includes(header.toLowerCase());
 }
 
-export function cspDirectiveSources(csp, name) {
-  const directive = String(csp || "")
+function cspDirective(csp, name) {
+  const normalizedName = String(name || "").toLowerCase();
+  return String(csp || "")
     .split(";")
     .map((part) => part.trim())
-    .find((part) => part.startsWith(`${name} `));
-  if (!directive) return [];
+    .find((part) => part.split(/\s+/, 1)[0].toLowerCase() === normalizedName);
+}
+
+export function cspDirectiveSources(csp, name) {
+  const directive = cspDirective(csp, name);
+  if (directive === undefined) return [];
   return directive.split(/\s+/).slice(1);
 }
 
@@ -134,6 +139,16 @@ export function assertRestrictiveScriptSrc(csp) {
   if (sources.length !== 1 || sources[0] !== "'self'") {
     throw new Error("WebApp CSP script-src must allow only 'self'");
   }
+  const elementDirective = cspDirective(csp, "script-src-elem");
+  const elementSources = cspDirectiveSources(csp, "script-src-elem");
+  if (elementDirective !== undefined && (elementSources.length !== 1 || elementSources[0] !== "'self'")) {
+    throw new Error("WebApp CSP script-src-elem must allow only 'self'");
+  }
+  const attributeDirective = cspDirective(csp, "script-src-attr");
+  const attributeSources = cspDirectiveSources(csp, "script-src-attr");
+  if (attributeDirective !== undefined && (attributeSources.length !== 1 || attributeSources[0] !== "'none'")) {
+    throw new Error("WebApp CSP script-src-attr must allow only 'none'");
+  }
   return sources;
 }
 
@@ -147,7 +162,13 @@ function cspAllowsConnectSource(sources, source, pageOrigin) {
 export function validateDeployedWebAppConfig(config) {
   const resolved = config?.config ?? config;
   try {
-    return validateClairveilWebClientConfig(resolved);
+    const validated = validateClairveilWebClientConfig(resolved);
+    if (validated.serverFeatures?.batchTransfer !== false) {
+      throw new Error(
+        "Clairveil v0.3.1 WebApp requires serverFeatures.batchTransfer=false",
+      );
+    }
+    return validated;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`deployed WebApp config is invalid: ${message}`);
@@ -216,6 +237,25 @@ function assertDirectConfigResponse(response, expectedUrl) {
   }
   if (actual.href !== expectedUrl.href) {
     throw new Error("WebApp config must be served directly from its configured same-origin URL");
+  }
+}
+
+export function assertDirectEndpointResponse(response, expectedUrl, label = "deployment endpoint") {
+  if (response?.redirected === true) {
+    throw new Error(`${label} must not redirect`);
+  }
+  const finalUrl = String(response?.url || "");
+  if (!finalUrl) {
+    throw new Error(`${label} response URL is missing`);
+  }
+  let actual;
+  try {
+    actual = new URL(finalUrl);
+  } catch {
+    throw new Error(`${label} response URL is invalid`);
+  }
+  if (actual.href !== new URL(expectedUrl).href) {
+    throw new Error(`${label} must be served directly from its configured URL`);
   }
 }
 
@@ -402,6 +442,61 @@ async function timedFetch(
   }
 }
 
+function assertJsonEndpointProbe({ response, text, label, method }) {
+  const contentType = String(response?.headers?.get?.("content-type") || "")
+    .split(";", 1)[0]
+    .trim()
+    .toLowerCase();
+  if (contentType !== "application/json" && !contentType.endsWith("+json")) {
+    throw new Error(`${label} must return a bounded JSON response`);
+  }
+  if (method === "GET" && !response.ok) {
+    throw new Error(`${label} GET probe failed with HTTP ${response.status}`);
+  }
+  if (method === "POST"
+    && (response.status === 404 || response.status === 405 || response.status >= 500)) {
+    throw new Error(`${label} POST route probe failed with HTTP ${response.status}`);
+  }
+  try {
+    JSON.parse(text);
+  } catch {
+    throw new Error(`${label} must return valid JSON`);
+  }
+}
+
+async function probeActualEndpoint({
+  fetchImpl,
+  label,
+  url,
+  origin,
+  method,
+  validateRoute = true,
+}) {
+  const result = await timedFetch(fetchImpl, url, {
+    method,
+    redirect: "error",
+    headers: {
+      ...(origin ? { Origin: origin } : {}),
+      ...(method === "POST" ? { "Content-Type": "application/json" } : {}),
+    },
+    // This is intentionally an empty, non-sensitive probe. A provider may
+    // reject its schema, but the configured route itself must exist and reply
+    // with bounded JSON rather than an HTML fallback or proxy error.
+    ...(method === "POST" ? { body: "{}" } : {}),
+  }, { readBody: validateRoute });
+  const response = validateRoute ? result.response : result;
+  assertDirectEndpointResponse(response, url, label);
+  if (validateRoute) {
+    assertJsonEndpointProbe({
+      response,
+      text: result.text,
+      label,
+      method,
+    });
+  }
+  return response;
+}
+
 async function verifyActualCors({
   fetchImpl,
   label,
@@ -410,15 +505,13 @@ async function verifyActualCors({
   method,
   untrusted = false,
 }) {
-  const response = await timedFetch(fetchImpl, url, {
+  const response = await probeActualEndpoint({
+    fetchImpl,
+    label,
+    url,
+    origin,
     method,
-    headers: {
-      Origin: origin,
-      ...(method === "POST" ? { "Content-Type": "application/json" } : {}),
-    },
-    // This is intentionally an empty, non-sensitive probe. A provider may
-    // reject it, but browser CORS policy must cover error responses too.
-    ...(method === "POST" ? { body: "{}" } : {}),
+    validateRoute: !untrusted,
   });
   const allowedOrigin = String(
     response.headers.get("access-control-allow-origin") || "",
@@ -434,15 +527,27 @@ async function verifyActualCors({
   }
 }
 
+async function verifySameOriginEndpoint({ fetchImpl, label, url, origin, method }) {
+  await probeActualEndpoint({
+    fetchImpl,
+    label,
+    url,
+    origin,
+    method,
+  });
+}
+
 async function verifyCors({ fetchImpl, label, url, origin, method }) {
   const response = await timedFetch(fetchImpl, url, {
     method: "OPTIONS",
+    redirect: "error",
     headers: {
       Origin: origin,
       "Access-Control-Request-Method": method,
       "Access-Control-Request-Headers": "content-type",
     },
   });
+  assertDirectEndpointResponse(response, url, label);
   if (!response.ok) {
     throw new Error(`${label} CORS preflight failed with HTTP ${response.status}`);
   }
@@ -485,12 +590,14 @@ async function verifyCors({ fetchImpl, label, url, origin, method }) {
   const probeOrigin = "https://clairveil-cors-probe.invalid";
   const probe = await timedFetch(fetchImpl, url, {
     method: "OPTIONS",
+    redirect: "error",
     headers: {
       Origin: probeOrigin,
       "Access-Control-Request-Method": method,
       "Access-Control-Request-Headers": "content-type",
     },
   });
+  assertDirectEndpointResponse(probe, url, label);
   const probeAllowedOrigin = String(
     probe.headers.get("access-control-allow-origin") || "",
   ).trim();
@@ -507,17 +614,53 @@ async function verifyCors({ fetchImpl, label, url, origin, method }) {
   });
 }
 
-function corsTarget(endpointValue) {
+function corsTargets(endpointValue) {
   if (endpointValue.kind === "rest") {
-    return { url: endpoint(endpointValue.url, "/clairveil/privacy/v1/tree_state"), method: "GET" };
+    return [
+      {
+        label: `${endpointValue.label} tree_state`,
+        url: endpoint(endpointValue.url, "/clairveil/privacy/v1/tree_state"),
+        method: "GET",
+      },
+      {
+        label: `${endpointValue.label} privacy_scan`,
+        url: endpoint(endpointValue.url, "/clairveil/privacy/v1/privacy_scan"),
+        method: "POST",
+      },
+    ];
+  }
+  if (endpointValue.kind === "rpc") {
+    return [
+      {
+        label: `${endpointValue.label} JSON-RPC`,
+        url: endpointValue.url,
+        method: "POST",
+      },
+      {
+        label: `${endpointValue.label} status`,
+        url: endpoint(endpointValue.url, "/status"),
+        method: "GET",
+      },
+    ];
   }
   if (endpointValue.kind === "prover") {
-    return { url: endpoint(endpointValue.url, "/v1/prover/transfer"), method: "POST" };
+    return [
+      {
+        label: `${endpointValue.label} transfer`,
+        url: endpoint(endpointValue.url, "/v1/prover/transfer"),
+        method: "POST",
+      },
+      {
+        label: `${endpointValue.label} withdraw`,
+        url: endpoint(endpointValue.url, "/v1/prover/withdraw"),
+        method: "POST",
+      },
+    ];
   }
   if (endpointValue.kind === "deposit-proof") {
-    return { url: endpointValue.url, method: "POST" };
+    return [{ label: endpointValue.label, url: endpointValue.url, method: "POST" }];
   }
-  return { url: endpointValue.url, method: "POST" };
+  return [{ label: endpointValue.label, url: endpointValue.url, method: "POST" }];
 }
 
 export async function verifyProductionDeployment({
@@ -538,8 +681,9 @@ export async function verifyProductionDeployment({
     throw new Error(`WebApp origin returned HTTP ${webAppResponse.status}`);
   }
   const csp = webAppResponse.headers.get("content-security-policy");
-  if (!String(csp || "").includes("default-src 'self'")) {
-    throw new Error("WebApp response is missing restrictive default-src CSP");
+  const defaultSources = cspDirectiveSources(csp, "default-src");
+  if (defaultSources.length !== 1 || defaultSources[0] !== "'self'") {
+    throw new Error("WebApp CSP default-src must allow only 'self'");
   }
   assertRestrictiveFrameAncestors(csp);
   assertRestrictiveScriptSrc(csp);
@@ -637,14 +781,18 @@ export async function verifyProductionDeployment({
   }
 
   for (const endpointValue of endpoints) {
-    const target = corsTarget(endpointValue);
-    await verifyCors({
-      fetchImpl,
-      label: endpointValue.label,
-      url: target.url,
-      origin: webAppOrigin,
-      method: target.method,
-    });
+    for (const target of corsTargets(endpointValue)) {
+      const verifier = target.url.origin === webAppOrigin
+        ? verifySameOriginEndpoint
+        : verifyCors;
+      await verifier({
+          fetchImpl,
+          label: target.label,
+          url: target.url,
+          origin: webAppOrigin,
+          method: target.method,
+        });
+    }
   }
   return {
     profileCount: new Set(endpoints.map((endpointValue) => endpointValue.profileId)).size,

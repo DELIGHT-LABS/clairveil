@@ -7,6 +7,19 @@ function eventHeight(event) {
   return Number.isSafeInteger(value) && value > 0 ? value : 0;
 }
 
+export function reservationPrivacyEventTypes(records = []) {
+  const kinds = new Set((Array.isArray(records) ? records : [])
+    .map(record => String(record?.kind || "").trim().toLowerCase())
+    .filter(Boolean));
+  if (kinds.size !== 1) {
+    throw new Error("operation event recovery requires one reservation kind");
+  }
+  const [kind] = kinds;
+  if (kind === "withdraw" || kind === "relay_withdraw") return ["withdraw"];
+  if (kind === "transfer" || kind === "self_merge") return ["shielded_transfer"];
+  throw new Error(`unsupported reservation kind for operation event recovery: ${kind}`);
+}
+
 export async function findPrivacyEventByTxHash({
   fetchPage,
   txHash,

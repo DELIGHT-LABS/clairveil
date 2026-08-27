@@ -4,12 +4,14 @@ import { readFile } from "node:fs/promises";
 
 const appSource = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
 const browserStorageScopeSource = await readFile(new URL("../public/browser-storage-scope.js", import.meta.url), "utf8");
+const privacyBrowserStorageSource = await readFile(new URL("../public/privacy-browser-storage.js", import.meta.url), "utf8");
 const encryptedStoreSource = await readFile(new URL("../public/encrypted-note-store.js", import.meta.url), "utf8");
 const encryptedReservationSource = await readFile(new URL("../public/encrypted-reservation-manager.js", import.meta.url), "utf8");
 const encryptedOperationSource = await readFile(new URL("../public/encrypted-operation-store.js", import.meta.url), "utf8");
 const depositFundingSource = await readFile(new URL("../public/deposit-funding.js", import.meta.url), "utf8");
 const relayReconciliationSource = await readFile(new URL("../public/relay-withdraw-reconciliation.js", import.meta.url), "utf8");
 const reservationRecoverySource = await readFile(new URL("../public/reservation-recovery.js", import.meta.url), "utf8");
+const reservationReconciliationSource = await readFile(new URL("../public/reservation-reconciliation.js", import.meta.url), "utf8");
 const configSource = await readFile(new URL("../public/dapp-config.js", import.meta.url), "utf8");
 const readmeSource = await readFile(new URL("../README.md", import.meta.url), "utf8");
 const serverSource = await readFile(new URL("../server.js", import.meta.url), "utf8");
@@ -39,13 +41,77 @@ test("DApp disables value-moving actions for zero or invalid minimal-denom amoun
   assert.match(appSource, /function hasPositiveUclairInput/);
   assert.match(appSource, /amount <= 0n/);
   assert.match(appSource, /function updateAmountActionButtons/);
-  assert.match(appSource, /sendFromKeplr\.disabled = !signerReady[\s\S]*!hasPositiveUclairInput\(els\.keplrSendAmount\)[\s\S]*!isSendRecipientForWallet\(els\.keplrSendRecipient\.value/);
-  assert.match(appSource, /depositFromKeplr\.disabled = !signerReady[\s\S]*!depositProofReady\(\)[\s\S]*!hasPositiveUclairInput\(els\.keplrDepositAmount\)/);
-  assert.match(appSource, /transferFromVeiled\.disabled = !veiledReady[\s\S]*!hasPositiveUclairInput\(els\.veiledTransferAmount\)/);
-  assert.match(appSource, /withdrawFromVeiled\.disabled = !veiledReady[\s\S]*!hasPositiveUclairInput\(els\.veiledWithdrawAmount\)/);
-  assert.match(appSource, /relayWithdrawFromVeiled\.disabled = !veiledReady[\s\S]*relayRecoveryBlocked[\s\S]*!hasPositiveUclairInput\(els\.relayWithdrawAmount\)/);
+  assert.match(appSource, /sendFromKeplr\.disabled = valueMovingActionPending[\s\S]*!signerReady[\s\S]*!hasPositiveUclairInput\(els\.keplrSendAmount\)[\s\S]*!isSendRecipientForWallet\(els\.keplrSendRecipient\.value/);
+  assert.match(appSource, /depositFromKeplr\.disabled = valueMovingActionPending[\s\S]*!signerReady[\s\S]*!depositProofReady\(\)[\s\S]*!hasPositiveUclairInput\(els\.keplrDepositAmount\)/);
+  assert.match(appSource, /transferFromVeiled\.disabled = valueMovingActionPending[\s\S]*!veiledReady[\s\S]*!hasPositiveUclairInput\(els\.veiledTransferAmount\)/);
+  assert.match(appSource, /withdrawFromVeiled\.disabled = valueMovingActionPending[\s\S]*!veiledReady[\s\S]*!hasPositiveUclairInput\(els\.veiledWithdrawAmount\)/);
+  assert.match(appSource, /relayWithdrawFromVeiled\.disabled = valueMovingActionPending[\s\S]*!veiledReady[\s\S]*relayRecoveryBlocked[\s\S]*!hasPositiveUclairInput\(els\.relayWithdrawAmount\)/);
   assert.doesNotMatch(appSource, /const reservationBlocked = state\.reservations\.retryBlocked/);
   assert.match(appSource, /keplrSendAmount,[\s\S]*keplrSendRecipient,[\s\S]*veiledWithdrawAmount[\s\S]*addEventListener\("input", updateAmountActionButtons\)/);
+});
+
+test("DApp single-flights value-moving actions and invalidates pending privacy UI", () => {
+  assert.match(appSource, /function depositFromKeplr\(\) \{\s*return runValueMovingAction\("privacy-deposit", depositFromKeplrUnlocked\);\s*\}/);
+  assert.match(appSource, /function sendFromKeplr\(\) \{\s*return runValueMovingAction\("transparent-send", sendFromKeplrUnlocked\);\s*\}/);
+  assert.match(appSource, /function transferFromVeiled\(\) \{\s*return runValueMovingAction\("privacy-transfer", transferFromVeiledUnlocked\);\s*\}/);
+  assert.match(appSource, /function invalidateActivePrivacyFlow\(\) \{[\s\S]*controller\?\.abort\(\)[\s\S]*closeTransferFlowModal\(false\)[\s\S]*valueMovingActionGate\.invalidate\(\)[\s\S]*setBusy\(action, false\)/);
+  assert.match(appSource, /function invalidatePrivacySession\(\) \{[\s\S]*invalidateActivePrivacyFlow\(\)/);
+});
+
+test("DApp fails closed when encrypted browser-storage capabilities are unavailable", () => {
+  assert.match(privacyBrowserStorageSource, /localStorage is required for encrypted Clairveil browser storage/);
+  assert.match(privacyBrowserStorageSource, /IndexedDB is required for encrypted Clairveil browser storage/);
+  assert.match(privacyBrowserStorageSource, /Web Crypto is required for encrypted Clairveil browser storage/);
+  assert.match(privacyBrowserStorageSource, /Web Locks API is required for encrypted Clairveil browser storage/);
+  assert.match(appSource, /const storage = requirePrivacyBrowserStorage\(\)/);
+  assert.match(appSource, /async function setupKeplrPrivacy\(options = \{\}\) \{[\s\S]*requirePrivacyBrowserStorage\(\)/);
+  assert.match(appSource, /async function requirePrivacyPreparePreflight\(sessionContext\) \{[\s\S]*requirePrivacyBrowserStorage\(\)/);
+  assert.match(appSource, /Encrypted note storage is required before applying a privacy scan/);
+  assert.doesNotMatch(appSource, /const stored = store \? await store\.load\(\) : null/);
+  assert.match(appSource, /setupKeplrPrivacy\.disabled = valueMovingActionGate\.active \|\| !signerReady \|\| !privacyStorageReady/);
+  assert.match(appSource, /depositFromKeplr\.disabled = valueMovingActionPending[\s\S]*!privacyStorageReady/);
+  assert.match(appSource, /transferFromVeiled\.disabled = valueMovingActionPending[\s\S]*!privacyStorageReady/);
+  assert.match(appSource, /noteInventoryTrusted = privacyBrowserStorageCapability\(\)\.available/);
+});
+
+test("DApp stops deposit when asynchronous privacy setup does not reach ready state", () => {
+  const setupStart = appSource.indexOf("async function setupKeplrPrivacy");
+  const setupEnd = appSource.indexOf("async function copyKeplrDisclosurePubKey", setupStart);
+  const setupBlock = appSource.slice(setupStart, setupEnd);
+  const rootStored = setupBlock.indexOf("state.keplr.rootSignatureBase64 = rootSignatureBase64");
+  const postRootPersistence = setupBlock.indexOf("await refreshReservationState(null, { sessionContext })", rootStored);
+  const failureHandler = setupBlock.indexOf("} catch (error) {", postRootPersistence);
+
+  assert.ok(setupStart >= 0 && setupEnd > setupStart);
+  assert.ok(rootStored >= 0);
+  assert.ok(postRootPersistence > rootStored);
+  assert.ok(failureHandler > postRootPersistence);
+  assert.match(setupBlock.slice(failureHandler), /Setup failed[\s\S]*return false/);
+  const completedSetups = [...setupBlock.matchAll(/await completeInitialPrivacySetup\(/g)].map(match => match.index);
+  const successfulReturns = [...setupBlock.matchAll(/return true;/g)].map(match => match.index);
+  assert.equal(completedSetups.length, 2);
+  assert.equal(successfulReturns.length, 2);
+  assert.ok(successfulReturns[0] > completedSetups[0]);
+  assert.ok(successfulReturns[1] > completedSetups[1]);
+
+  const depositStart = appSource.indexOf("async function depositFromKeplrUnlocked");
+  const depositEnd = appSource.indexOf("function noteStoreMutationLockName", depositStart);
+  const depositBlock = appSource.slice(depositStart, depositEnd);
+  const setupAttempt = depositBlock.indexOf("const privacySetupReady = await setupKeplrPrivacy()");
+  const setupFailureExit = depositBlock.indexOf("if (!privacySetupReady) return", setupAttempt);
+  const broadcastBoundary = depositBlock.indexOf("await broadcastPrivacyDeposit", setupFailureExit);
+
+  assert.ok(depositStart >= 0 && depositEnd > depositStart);
+  assert.ok(setupAttempt >= 0);
+  assert.ok(setupFailureExit > setupAttempt);
+  assert.ok(broadcastBoundary > setupFailureExit);
+});
+
+test("DApp injects exact deterministic Cosmos fees into private preparations", () => {
+  assert.match(appSource, /function cosmosFeeRequestOptions\(gasLimit\)[\s\S]*deterministicCosmosFeeAmount/);
+  assert.match(appSource, /buildBankSendSignDoc\(\{[\s\S]*cosmosFeeRequestOptions\(cosmosGasLimits\.send\)/);
+  assert.match(appSource, /prepareTransfer\(privacyRequest\([\s\S]*cosmosFeeRequestOptions\(cosmosGasLimits\.transfer\)/);
+  assert.match(appSource, /prepareWithdraw\(privacyRequest\([\s\S]*cosmosFeeRequestOptions\(cosmosGasLimits\.withdraw\)/);
 });
 
 test("DApp exposes evidence-gated preparation recovery without globally blocking unreserved notes", () => {
@@ -54,7 +120,7 @@ test("DApp exposes evidence-gated preparation recovery without globally blocking
   assert.match(htmlSource, /Only preparations with no broadcast or relay handoff evidence/);
   assert.match(cssSource, /\.reservation-recovery-item\s*\{/);
   assert.match(appSource, /function recoverReservationPreparation/);
-  assert.match(appSource, /await scanKeplrNotes\(\{ quiet: true, throwOnError: true/);
+  assert.match(appSource, /await scanKeplrNotes\(\{[\s\S]*quiet: true,[\s\S]*throwOnError: true/);
   assert.match(appSource, /Every reserved nullifier must be explicitly unspent/);
   assert.match(appSource, /manager\.markManualReview/);
   assert.match(appSource, /manager\.resolveManualReview/);
@@ -81,7 +147,7 @@ test("DApp faucet sends the requested amount without minimum top-up", () => {
   assert.doesNotMatch(htmlSource, /Fund amount/);
   assert.doesNotMatch(htmlSource, /Fund Wallet/);
   assert.match(htmlSource, /<button id="fundKeplr" type="button" disabled>Faucet<\/button>/);
-  assert.match(appSource, /fundKeplr\.disabled = !serverFeature\("faucet"\) \|\| !signerReady/);
+  assert.match(appSource, /fundKeplr\.disabled = valueMovingActionGate\.active \|\| !serverFeature\("faucet"\) \|\| !signerReady/);
   assert.doesNotMatch(appSource, /fundKeplr\.disabled = !signerReady \|\| state\.activeWallet === "metamask"/);
   assert.match(serverSource, /function normalizeFaucetAmount/);
   assert.match(serverSource, /function sendEvmFaucet/);
@@ -159,7 +225,9 @@ test("DApp exposes chain profiles and filters wallet connect buttons by chain", 
   assert.match(appSource, /function activeChainProfile/);
   assert.match(serverSource, /CLAIRVEIL_COSMOS_REST_ENDPOINTS/);
   assert.match(serverSource, /CLAIRVEIL_EVM_HOST_REST_ENDPOINTS/);
-  assert.match(serverSource, /restEndpoints: config\.cosmosRestEndpoints/);
+  assert.match(serverSource, /const cosmosRestEndpoints = configuredRestEndpoints\(/);
+  assert.match(serverSource, /config\.cosmosRestEndpoints\.length[\s\S]*config\.publicRestEndpoints/);
+  assert.match(serverSource, /restEndpoints: cosmosRestEndpoints/);
   assert.match(appSource, /function profileRestEndpoints/);
   assert.match(appSource, /function browserWalletProfile/);
   assert.match(appSource, /normalizeBrowserProfileEndpoints\(resolved/);
@@ -239,7 +307,7 @@ test("DApp uses the npm ClairveilJS browser client for public wallet and privacy
   assert.match(appSource, /import \{ EncryptedLocalStorageNoteStore \} from "\.\/encrypted-note-store\.js"/);
   assert.doesNotMatch(appSource, /allowPlaintext: true/);
   assert.match(appSource, /function clairveilBrowserClient/);
-  assert.match(appSource, /clairveilBrowserClient\(\)\.fetchPrivacyEvents\(\)/);
+  assert.match(appSource, /const client = clairveilBrowserClient\(\);[\s\S]*client\.fetchPrivacyEvents\(\)/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.fetchAuditableTransfers\(\)/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.prepareDeposit/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.prepareTransfer/);
@@ -247,22 +315,27 @@ test("DApp uses the npm ClairveilJS browser client for public wallet and privacy
   assert.match(appSource, /clairveilBrowserClient\(\)\.scanWalletNotes/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.decodeUserDisclosure/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.decodeSelfViewDisclosure/);
-  assert.match(appSource, /clairveilBrowserClient\(\)\.signDirectAndBroadcast/);
+  assert.match(appSource, /const checkpoint = await client\.signDirect/);
+  assert.match(appSource, /client\.broadcastTxRawBytes\(checkpoint\.txRawBytes/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.waitForEvmTransaction/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.sendEvmTransaction/);
   assert.match(appSource, /function defaultNoteScanCursor/);
   assert.match(appSource, /function noteScanRequestOptions/);
+  assert.match(appSource, /const freshTypedScan = reset \|\|/);
+  assert.match(appSource, /freshTypedScan \? \{ after: typedPrivacyScanAfter\(cursor\) \} : \{\}/);
   assert.match(appSource, /function applyNoteScanResult/);
   assert.match(appSource, /scanSource: "privacy_scan"/);
+  assert.match(appSource, /strictPrivacyScan: true/);
+  assert.match(appSource, /Typed privacy-scan-v2 is required; legacy scan results are not accepted/);
   assert.match(appSource, /state\.keplr\.noteScanResumeOptions/);
   assert.match(appSource, /const store = await currentNoteStore\(\)/);
   assert.match(appSource, /await clearCurrentNoteStore\(\)/);
   assert.doesNotMatch(appSource, /eventTypes: \["deposit", "shielded_transfer"\]/);
   assert.match(appSource, /scanWalletNotes\(privacyRequest\(\{\s*\.\.\.scanOptions,[\s\S]*noteStore: store,[\s\S]*includeFoundNotes: true/);
   assert.match(appSource, /more events queued/);
-  assert.match(appSource, /scan: \{ scanSource: "privacy_scan", limit: 200, maxPages: 1000 \}/);
+  assert.match(appSource, /scan:\s*\{\s*after: typedPrivacyScanAfter\(\),\s*scanSource: "privacy_scan",\s*strictPrivacyScan: true,\s*limit: 200,\s*maxPages: 1000/);
   assert.match(appSource, /function browserProverUrl/);
-  assert.match(appSource, /state\.config\?\.serverBacked && serverFeature\("proverProxy"\) && configured/);
+  assert.match(appSource, /browserLoopbackRewriteEnabled\(state\.config\)[\s\S]*serverFeature\("proverProxy"\)[\s\S]*configured/);
   assert.match(appSource, /return window\.location\.origin\.replace/);
   assert.match(serverSource, /function handleProverProxy/);
   assert.match(serverSource, /function proverProxyTarget/);
@@ -273,14 +346,20 @@ test("DApp uses the npm ClairveilJS browser client for public wallet and privacy
   assert.match(serverSource, /function proverProxyAccessAllowed/);
   assert.doesNotMatch(serverSource, /"access-control-allow-origin": "\*"/);
   assert.match(serverSource, /proverProxyTarget\(url\.pathname\)/);
-  assert.match(serverSource, /new URL\(pathname, config\.proverUrl\.replace/);
+  assert.match(serverSource, /new URL\(pathname\.replace/);
   assert.match(appSource, /function browserDepositProofUrl/);
   assert.match(appSource, /function configuredDepositProofProvider/);
   assert.match(appSource, /const depositProofProvider = configuredDepositProofProvider\(\)/);
   assert.match(appSource, /depositProofProvider,/);
-  assert.match(appSource, /client\.assertProtocolPreflight\(baseDenom\(\)\)/);
+  assert.match(appSource, /async function fullPrivacyProtocolPreflight/);
+  assert.match(appSource, /client\.health\(\)/);
+  assert.match(appSource, /client\.assertTransferProtocolConfig\(baseDenom\(\)\)/);
   assert.match(appSource, /client\.queryReserve\(baseDenom\(\)\)/);
-  assert.match(appSource, /refreshEvents\(\{ allowFailure: true \}\)/);
+  assert.match(appSource, /client\.evmJsonRpc\("eth_chainId", \[\]\)/);
+  assert.match(appSource, /await requirePrivacyPreparePreflight\(sessionContext\)/);
+  assert.match(appSource, /enableExperimentalBatchTransfer: false/);
+  assert.doesNotMatch(appSource, /enableExperimentalBatchTransfer:\s*Boolean/);
+  assert.match(appSource, /refreshEvents\(\{ allowFailure: true, sessionContext \}\)/);
   assert.match(appSource, /Browser cannot reach the selected chain REST\/RPC endpoint/);
   assert.match(appSource, /state\.privacyEvents\.loadError/);
   assert.doesNotMatch(appSource, /\/api\/tx\//);
@@ -318,31 +397,142 @@ test("DApp persists encrypted reservations and keeps unknown broadcasts fail clo
   assert.match(appSource, /prepareRelayWithdraw\(privacyRequest\([\s\S]*reservationManager: manager/);
   assert.match(appSource, /preparedReservationBinding\(data\)/);
   assert.match(appSource, /sendEvmTransaction\(data\.transaction,[\s\S]*reservationBinding: broadcastOptions/);
-  assert.match(appSource, /signDirectAndBroadcast\(data\.signDoc, broadcastOptions\)/);
-  assert.match(appSource, /manager\.recordRelayHandoff\(state\.relayWithdraw\.reservationIds/);
+  assert.match(appSource, /signDirectAndBroadcast\(data\.signDoc, \{[\s\S]*sessionContext/);
+  assert.match(appSource, /beforeBroadcast: identity => \{[\s\S]*persistCapturedPublicPendingTransaction/);
+  const signStart = appSource.indexOf("async function signDirectAndBroadcast");
+  const signEnd = appSource.indexOf("async function submitEvmTransaction", signStart);
+  const signBlock = appSource.slice(signStart, signEnd);
+  const validationIndex = signBlock.indexOf("await afterSigningBeforeBroadcast");
+  const directMarkerIndex = signBlock.indexOf("if (publicPendingKind) {", validationIndex);
+  const transportIndex = signBlock.indexOf("client.broadcastTxRawBytes", directMarkerIndex);
+  assert.ok(validationIndex >= 0 && validationIndex < directMarkerIndex);
+  assert.ok(directMarkerIndex < transportIndex);
+  assert.match(signBlock.slice(directMarkerIndex, transportIndex), /persistCapturedPublicPendingTransaction\(sessionContext, publicPendingKind, signedTxHash\)/);
+  assert.match(appSource, /withPublicTransactionLock\(sessionContext/);
+  assert.match(appSource, /function withCosmosAccountTransactionLock/);
+  assert.match(appSource, /assertNoUnresolvedCosmosAccountBroadcast/);
+  assert.match(appSource, /record\?\.broadcast_in_flight === true/);
+  assert.match(appSource, /await withCosmosAccountTransactionLock\(sessionContext, executeTransfer\)/);
+  assert.match(appSource, /await withCosmosAccountTransactionLock\(sessionContext, executeWithdraw\)/);
+  assert.match(appSource, /publicTransactionLockHeld[\s\S]*preparePrivacyTransferSignDoc/);
+  assert.match(appSource, /clearCapturedPublicPendingTransaction/);
+  assert.match(appSource, /const reservationIDs = \[\.\.\.state\.relayWithdraw\.reservationIds\][\s\S]*manager\.recordRelayHandoff\(reservationIDs/);
 
   assert.match(appSource, /if \(!broadcast\?\.receipt\) \{[\s\S]*markUnknown\(reservationIDs,[\s\S]*fromStatus: reservationStatuses\.Submitted[\s\S]*unknown: true/);
   assert.match(appSource, /result\.unknown \? onUnknown/);
-  assert.match(appSource, /nullifierUnspentConfirmed: true/);
-  assert.match(appSource, /txAbsentOrFailedConfirmed: true/);
-  assert.match(appSource, /txHashChecked: txHash/);
+  assert.match(reservationReconciliationSource, /nullifierUnspentConfirmed: true/);
+  assert.match(reservationReconciliationSource, /txAbsentOrFailedConfirmed: true/);
+  assert.match(reservationReconciliationSource, /txHashChecked: txHash/);
   assert.match(appSource, /same request|다시 전송하지 마세요/);
   assert.match(htmlSource, /id="reservationState"/);
   assert.match(htmlSource, /id="reconcileReservations"/);
 });
 
-test("DApp reconciles spent transfers only with matching operation evidence", () => {
+test("DApp binds prepare and broadcast reservation refreshes to the originating privacy session", () => {
+  const prepareStart = appSource.indexOf("async function preparePrivacyTransferSignDoc");
+  const prepareEnd = appSource.indexOf("async function broadcastPrivacyDeposit", prepareStart);
+  const prepareSource = appSource.slice(prepareStart, prepareEnd);
+  assert.equal(
+    [...prepareSource.matchAll(/await refreshReservationState\(manager, \{ sessionContext \}\)/g)].length,
+    3
+  );
+
+  const broadcastStart = appSource.indexOf("async function broadcastPreparedPrivacy");
+  const broadcastEnd = appSource.indexOf("function evmReceiptHasFailed", broadcastStart);
+  const broadcastSource = appSource.slice(broadcastStart, broadcastEnd);
+  assert.equal(
+    [...broadcastSource.matchAll(/refreshReservationState\(data\.reservationManager, \{ sessionContext \}\)/g)].length,
+    2
+  );
+});
+
+test("DApp shares the Cosmos account fence across equivalent profiles and fences endpoint or local-genesis changes", () => {
+  assert.match(appSource, /function accountTransactionScopeId[\s\S]*`cosmos:\$\{String\(profile\.chainId/);
+  assert.match(appSource, /profileId: accountTransactionScopeId\(profile\)/);
+  assert.match(appSource, /profileId: privacyStorageProfileId\(profile\)/);
+  assert.match(appSource, /transactionScope: accountTransactionScopeId\(\)/);
+  assert.match(appSource, /storageEpoch: String\(state\.chainStorageEpoch \|\| ""\)/);
+
+  const lockStart = appSource.indexOf("function publicTransactionLockName");
+  const lockEnd = appSource.indexOf("function capturedPublicPendingState", lockStart);
+  const lockBlock = appSource.slice(lockStart, lockEnd);
+  assert.match(lockBlock, /context\?\.transactionScope/);
+  assert.match(lockBlock, /context\?\.account/);
+  assert.doesNotMatch(lockBlock, /publicPendingKey|storageEpoch|profileId/);
+
+  const epochStart = appSource.indexOf("async function assertCurrentLocalChainStorageEpoch");
+  const epochEnd = appSource.indexOf("async function assertNoUnresolvedCosmosAccountBroadcast", epochStart);
+  const epochBlock = appSource.slice(epochStart, epochEnd);
+  assert.match(epochBlock, /await clairveilBrowserClient\(\)\.health\(\)/);
+  assert.match(epochBlock, /observed !== context\.storageEpoch/);
+  assert.match(epochBlock, /CHAIN_STORAGE_EPOCH_CHANGED/);
+  assert.match(appSource, /async function assertNoUnresolvedCosmosAccountBroadcast[\s\S]*await assertCurrentLocalChainStorageEpoch\(context\)/);
+
+  const endpointStart = appSource.indexOf("function selectNoteScanEndpoint");
+  const endpointEnd = appSource.indexOf("function renderChainDependentUi", endpointStart);
+  const endpointBlock = appSource.slice(endpointStart, endpointEnd);
+  assert.match(appSource, /selectedRestEndpoint: state\.selectedRestEndpointByProfile/);
+  assert.match(endpointBlock, /publicTransactionCoordinator\.pending > 0/);
+  assert.match(endpointBlock, /valueMovingActionGate\.active/);
+  assert.match(endpointBlock, /invalidatePrivacySession\(\)[\s\S]*state\.selectedRestEndpointByProfile/);
+  assert.match(appSource, /els\.noteScanEndpoint\.disabled = endpoints\.length < 2[\s\S]*publicTransactionCoordinator\.pending > 0[\s\S]*valueMovingActionGate\.active/);
+  assert.match(appSource, /els\.noteScanEndpoint\.disabled = noteMutationPending[\s\S]*accountTransactionPending[\s\S]*valueMovingActionGate\.active/);
+});
+
+test("DApp keeps a private Cosmos fence when the SDK reports the broadcast boundary", () => {
+  const signStart = appSource.indexOf("async function signDirectAndBroadcast");
+  const signEnd = appSource.indexOf("async function submitEvmTransaction", signStart);
+  const signBlock = appSource.slice(signStart, signEnd);
+  assert.match(signBlock, /privateReservationBroadcast = !publicPendingKind/);
+  assert.doesNotMatch(signBlock, /else if \(privateReservationBroadcast\) \{\s*persistCapturedPublicPendingTransaction\(sessionContext, "privacy", signedTxHash\)/);
+  assert.match(signBlock, /beforeBroadcast: identity => \{[\s\S]*persistCapturedPublicPendingTransaction\([\s\S]*"privacy"/);
+  assert.match(signBlock, /cosmosPrivatePendingMarkerCanClear\(\{[\s\S]*clearCapturedPublicPendingTransaction\(sessionContext, "privacy", txHash\)/);
+  assert.doesNotMatch(signBlock, /clearCapturedPrivacyPending/);
+  assert.match(reservationReconciliationSource, /function reservationHasExplicitBroadcastRejection\(record\)[\s\S]*checkTxRejected && rpcInvoked === true[\s\S]*abortedBeforeRpc && rpcInvoked === false/);
+  assert.match(appSource, /explicitRejectionReconciled = check\?\.included !== true[\s\S]*linked\.every\(record => \([\s\S]*reservationStatuses\.ReplanRequired[\s\S]*reservationHasExplicitBroadcastRejection\(record\)/);
+
+  const fenceStart = appSource.indexOf("async function assertNoUnresolvedCosmosAccountBroadcast");
+  const fenceEnd = appSource.indexOf("function withCosmosAccountTransactionLock", fenceStart);
+  const fenceBlock = appSource.slice(fenceStart, fenceEnd);
+  const durableMarkerIndex = fenceBlock.indexOf("capturedPrivacyPendingState(context)");
+  const managerIndex = fenceBlock.indexOf("currentReservationManager()");
+  assert.ok(durableMarkerIndex >= 0 && durableMarkerIndex < managerIndex);
+  assert.match(fenceBlock, /COSMOS_ACCOUNT_TX_PENDING/);
+  assert.match(fenceBlock, /reservationConsumesBrowserCosmosSequence/);
+
+  assert.match(appSource, /async function clearReconciledCosmosPrivacyPending[\s\S]*reservationStatuses\.ConfirmedSpent[\s\S]*operationStatuses\.Succeeded[\s\S]*reservationStatuses\.ReplanRequired/);
+  assert.match(appSource, /matchingOperations = groupReservationOperations\(records\)[\s\S]*commonCosmosReservationTransactionHash\(operation\.records\) === markerHash/);
+  assert.match(appSource, /clearCapturedPublicPendingTransaction\(sessionContext, "privacy", latest\.txHash\)/);
+  assert.match(appSource, /cosmosPrivacyPendingHash[\s\S]*Setup Clairveil and Reconcile/);
+  assert.match(appSource, /canReconcileReservationState\(\{[\s\S]*privacyPending,/);
+
+  const reconcileStart = appSource.indexOf("async function reconcileReservations");
+  const reconcileEnd = appSource.indexOf("async function resolvePreparedPrivacyFailure", reconcileStart);
+  const reconcileBlock = appSource.slice(reconcileStart, reconcileEnd);
+  assert.match(reconcileBlock, /activeChainProfile\(\)\?\.transport === "cosmos"[\s\S]*withPublicTransactionLock\(sessionContext[\s\S]*accountTransactionLockHeld: true/);
+  const markerClearIndex = reconcileBlock.indexOf("if (privacyMarkerHasReservation)");
+  const unrelatedStateIndex = reconcileBlock.indexOf("const reconciliationIncomplete");
+  assert.ok(markerClearIndex >= 0 && markerClearIndex < unrelatedStateIndex);
+  assert.doesNotMatch(reconcileBlock, /if \(!reconciliationIncomplete && privacyMarkerHasReservation\)/);
+});
+
+test("DApp reconciles spent transfers and Cosmos withdraws only with matching operation evidence", () => {
   assert.match(appSource, /function reservationRequiresOperationEvidence/);
-  assert.match(appSource, /function transferEventForOperation/);
+  assert.match(appSource, /function operationEventForOperation/);
   assert.match(appSource, /event\?\.event_type !== "shielded_transfer"/);
+  assert.match(appSource, /event\?\.event_type !== "withdraw"/);
   assert.match(appSource, /eventAttribute\(event, "commitment_1"\)/);
   assert.match(appSource, /eventAttribute\(event, "audit_disclosure_digest"\)/);
+  assert.match(appSource, /cosmosWithdrawOperationEvidence\(\{[\s\S]*transaction: check\.transaction[\s\S]*expectedNullifiers/);
   assert.match(appSource, /manager\.store\.listReservations\(\{ ownerKeyId: manager\.ownerKeyId \}\)/);
   assert.match(appSource, /operationStatuses\.ConflictSpent/);
-  assert.match(appSource, /operationEventForReservations\(spentRecords, notesByLookupKey\)/);
+  assert.match(appSource, /spentRecords\.length !== records\.length[\s\S]*operationEventForReservations\(records, notesByLookupKey\)/);
   assert.match(appSource, /findPrivacyEventByTxHash/);
+  assert.match(appSource, /eventTypes: reservationPrivacyEventTypes\(records\)/);
   assert.match(appSource, /if \(!lookup\.complete\) continue/);
   assert.match(appSource, /operationSuccessEvidence: evidenceByLookupKey\.get\(lookupKey\)/);
+  assert.match(appSource, /function operationEvidenceWithReservationTransactionIdentity[\s\S]*transactionIdentity = \{ txHash: normalized \}[\s\S]*transactionIdentity = \{ txBytesHash: normalized \}/);
+  assert.match(appSource, /commonCosmosReservationTransactionHash\(records\) === normalized/);
   assert.match(appSource, /operationReconciliationStatus\(record\) !== operationStatuses\.Succeeded/);
   assert.match(appSource, /OPERATION_RECONCILIATION_REQUIRED/);
   assert.match(appSource, /state\.reservations\.unresolved\?\.length > 0/);
@@ -359,29 +549,466 @@ test("DApp keeps prepared reservation leases alive across wallet and relay waits
   assert.match(appSource, /const broadcast = await withPreparedReservationHeartbeat\(data/);
   assert.match(appSource, /function startRelayReservationHeartbeat/);
   assert.match(appSource, /relayReservationHeartbeatTimer = globalThis\.setInterval/);
-  assert.match(appSource, /if \(fullyConfirmed\) \{[\s\S]*stopRelayReservationHeartbeat\(\)/);
+  assert.match(appSource, /if \(fullyConfirmed\) \{[\s\S]*stopRelayReservationHeartbeat\(reconciliationContext\.heartbeatGeneration\)/);
   assert.match(appSource, /RESERVATION_HEARTBEAT_FAILED/);
 });
 
-test("DApp blocks unresolved public EVM retries and exposes tx reconciliation", () => {
-  assert.match(appSource, /sendPending = \["submitted", "unknown", "checking"\]/);
-  assert.match(appSource, /depositPending = \["submitted", "unknown", "checking"\]/);
-  assert.match(appSource, /async function reconcilePublicEvmTransaction/);
-  assert.match(appSource, /failureConfirmed = evmReceiptHasFailed/);
+test("DApp fences scan result application to the originating privacy session", () => {
+  const scanApplySource = appSource.slice(
+    appSource.indexOf("async function applyNoteScanResult"),
+    appSource.indexOf("function selectedLocalAccount")
+  );
+  const scanRunSource = appSource.slice(
+    appSource.indexOf("async function scanKeplrNotesUnlocked"),
+    appSource.indexOf("async function scanKeplrNotes(options")
+  );
+  assert.match(scanApplySource, /sessionContext = privacySessionSnapshot\(\)/);
+  assert.match(scanApplySource, /const store = scanNoteStore === undefined \? await currentNoteStore\(\) : scanNoteStore;\s*assertPrivacySession\(sessionContext\);/);
+  assert.match(scanApplySource, /Encrypted note storage is required before applying a privacy scan[\s\S]*const stored = await store\.load\(\);\s*assertPrivacySession\(sessionContext\);/);
+  assert.match(scanApplySource, /const manager = scanReservationManager \|\| await currentReservationManager\(\);\s*assertPrivacySession\(sessionContext\);/);
+  assert.match(scanApplySource, /await reconcileSpentReservations\(manager, scannedNotes, \{ sessionContext \}\);\s*assertPrivacySession\(sessionContext\);/);
+  assert.match(scanApplySource, /refreshReservationState\(manager, \{ sessionContext, notes: scannedNotes \}\)/);
+  assert.match(scanRunSource, /applyNoteScanResult\(data, \{[\s\S]*reset,[\s\S]*sessionContext,[\s\S]*reservationManager: options\.reservationManager \|\| null,[\s\S]*noteStore: store/);
+
+  const scanWrapperSource = appSource.slice(
+    appSource.indexOf("async function scanKeplrNotes(options"),
+    appSource.indexOf("function downloadTextFile")
+  );
+  assert.ok(scanWrapperSource.indexOf("await withNoteStoreMutation")
+    < scanWrapperSource.indexOf("await finalizePendingDepositRecoveryFromTypedNotes"));
+  assert.match(appSource, /async function finalizePendingDepositRecoveryFromTypedNotes[\s\S]*accountTransactionLockHeld[\s\S]*withPublicTransactionLock\(sessionContext, finalize\)/);
+});
+
+test("DApp fences reservation reconciliation and recovery transitions to the originating privacy session", () => {
+  const spentSource = appSource.slice(
+    appSource.indexOf("async function reconcileSpentReservations"),
+    appSource.indexOf("function injectedEthereumProviders")
+  );
+  assert.match(spentSource, /sessionContext = null,[\s\S]*const assertFresh/);
+  assert.match(spentSource, /manager\.store\.listReservations[\s\S]*assertFresh\(\)/);
+  assert.match(spentSource, /await manager\.lookupKeyForNote\(note\)[\s\S]*assertFresh\(\)/);
+  assert.match(spentSource, /await operationEventForReservations[\s\S]*assertFresh\(\)/);
+  assert.match(spentSource, /await manager\.reconcileSpentNotes\(eligible\);\s*assertFresh\(\);/);
+
+  const reconcileSource = appSource.slice(
+    appSource.indexOf("async function reconcileReservations"),
+    appSource.indexOf("async function resolvePreparedPrivacyFailure")
+  );
+  assert.match(reconcileSource, /refreshEvents\(\{ allowFailure: true, sessionContext \}\)/);
+  assert.match(reconcileSource, /scanKeplrNotes\(\{[\s\S]*sessionContext,[\s\S]*reservationManager: resolvedManager/);
+  assert.match(reconcileSource, /explicitlyUnspentReservationIDs\([\s\S]*\(\) => assertPrivacySession\(sessionContext\)/);
+  assert.match(reconcileSource, /refreshReservationState\(resolvedManager, \{ sessionContext \}\)/);
+  assert.match(reconcileSource, /if \(isStalePrivacySessionError\(error\)\) throw error/);
+
+  const recoverySource = appSource.slice(
+    appSource.indexOf("async function recoverReservationPreparation"),
+    appSource.indexOf("async function reconcileReservations")
+  );
+  assert.match(recoverySource, /const sessionContext = privacySessionSnapshot\(\)/);
+  assert.match(recoverySource, /refreshEvents\(\{ allowFailure: true, sessionContext \}\)/);
+  assert.match(recoverySource, /reservationManager: manager/);
+  assert.match(recoverySource, /resolvePreparationRecovery\([\s\S]*sessionContext,[\s\S]*operatorId: sessionContext\.account/);
+});
+
+test("DApp quarantines sign-doc-only recovery before acknowledgement and rechecks after approval", () => {
+  assert.match(reservationRecoverySource, /tx_bytes_hash[\s\S]*broadcastAttempted/);
+  assert.match(reservationRecoverySource, /const signDocOnly = hasSignDocIdentity && !hasQueryableTransactionIdentity/);
+  const recoverySource = appSource.slice(
+    appSource.indexOf("async function recoverReservationPreparation"),
+    appSource.indexOf("async function reconcileReservations")
+  );
+  const quarantine = recoverySource.indexOf('error: "untracked_sign_doc_only_request"');
+  const approval = recoverySource.indexOf("const approved = globalThis.confirm", quarantine);
+  const postApprovalScan = recoverySource.indexOf("await scanKeplrNotes({", approval);
+  const reservationRequery = recoverySource.indexOf("await manager.listActiveReservations()", postApprovalScan);
+  const nullifierRequery = recoverySource.indexOf("explicitlyUnspentReservationIDs(", reservationRequery);
+  const resolution = recoverySource.indexOf("resolvePreparationRecovery(", nullifierRequery);
+  assert.ok(quarantine >= 0 && quarantine < approval);
+  assert.ok(approval < postApprovalScan && postApprovalScan < reservationRequery);
+  assert.ok(reservationRequery < nullifierRequery && nullifierRequery < resolution);
+  assert.match(recoverySource, /sign_doc_only_request: true,[\s\S]*queryable_transaction_identity_absent: true,[\s\S]*broadcast_outcome_untracked: true,[\s\S]*untracked_wallet_request_acknowledged: true,[\s\S]*post_approval_chain_recheck: true/);
+  assert.match(recoverySource, /signDocOnlyRecovery \? \{[\s\S]*broadcast_outcome_untracked: true,[\s\S]*\} : \{\s*no_broadcast_attempt: true\s*\}/);
+  assert.match(appSource, /reason: "explicit_untracked_sign_doc_request_cancelled"/);
+});
+
+test("DApp scopes address suggestions and reservation leases to the active document session", () => {
+  const leaseSource = appSource.slice(
+    appSource.indexOf("function createDocumentReservationLeaseOwner"),
+    appSource.indexOf("function activeChainProfile")
+  );
+  assert.match(leaseSource, /browser-document:/);
+  assert.match(leaseSource, /cryptoImpl\?\.randomUUID|cryptoImpl\.getRandomValues/);
+  assert.doesNotMatch(leaseSource, /sessionStorage\?\.\w|sessionStorage\.(?:getItem|setItem)|localStorage\?\.\w|localStorage\.(?:getItem|setItem)/);
+
+  const addressSource = appSource.slice(
+    appSource.indexOf("function addressBookScopeIdentity"),
+    appSource.indexOf("async function ensureLocalSignersIfNeeded")
+  ) + appSource.slice(
+    appSource.indexOf("async function ensureShieldedAddressBook"),
+    appSource.indexOf("function showAddressSuggestions")
+  );
+  assert.match(addressSource, /profile: activeProfileSessionIdentity\(\)/);
+  assert.match(addressSource, /storageEpoch: String\(state\.chainStorageEpoch/);
+  assert.match(addressSource, /shieldedAddressBookPromiseScope === scopeIdentity/);
+  assert.match(addressSource, /state\.addressBook\.scopeIdentity !== scopeIdentity[\s\S]*shieldedAddressBookPromise !== lookup/);
+  assert.match(appSource, /selectDappChainProfile[\s\S]*resetProfileScopedAddressBook\(addressBookScopeIdentity\(\)\)/);
+});
+
+test("DApp suppresses stale scan, public action, confirmation, and local-helper UI", () => {
+  const heartbeatSource = appSource.slice(
+    appSource.indexOf("async function withPreparedReservationHeartbeat"),
+    appSource.indexOf("async function discardPreparedReservation")
+  );
+  assert.match(heartbeatSource, /const sessionContext = data\?\.privacySessionContext/);
+  assert.match(heartbeatSource, /await task\(\);\s*assertPrivacySession\(sessionContext\)/);
+
+  const discardSource = appSource.slice(
+    appSource.indexOf("async function discardPreparedReservation"),
+    appSource.indexOf("function stopRelayReservationHeartbeat")
+  );
+  assert.match(discardSource, /currentManager !== manager/);
+  assert.match(discardSource, /refreshReservationState\(manager, \{ sessionContext \}\)/);
+
+  const sendSource = appSource.slice(
+    appSource.indexOf("async function sendFromKeplrUnlocked"),
+    appSource.indexOf("function depositFromKeplr")
+  );
+  const depositSource = appSource.slice(
+    appSource.indexOf("async function depositFromKeplrUnlocked"),
+    appSource.indexOf("function noteStoreMutationLockName")
+  );
+  assert.match(sendSource, /isStalePrivacySessionError\(error\) \|\| !privacySessionIsCurrent\(sessionContext\)/);
+  assert.match(sendSource, /finally \{[\s\S]*privacySessionIsCurrent\(sessionContext\)/);
+  assert.match(depositSource, /isStalePrivacySessionError\(error\) \|\| !privacySessionIsCurrent\(sessionContext\)/);
+  assert.match(depositSource, /refreshPrivacySurfaces\(\{ balance: true, sessionContext \}\)/);
+
+  const helperSource = appSource.slice(
+    appSource.indexOf("function localAccountRequestIdentity"),
+    appSource.indexOf("function localSignerLabel")
+  ) + appSource.slice(
+    appSource.indexOf("async function fundKeplrUnlocked"),
+    appSource.indexOf("async function completeInitialPrivacySetup")
+  );
+  assert.match(helperSource, /assertLocalAccountRequestCurrent/);
+  assert.match(helperSource, /data\.unknown === true[\s\S]*Faucet result unknown/);
+});
+
+test("DApp fences external relay persistence before exposing the handoff", () => {
+  const renderSource = appSource.slice(
+    appSource.indexOf("function renderRelayWithdraw"),
+    appSource.indexOf("async function setRelayWithdrawHandoff")
+  );
+  assert.match(renderSource, /relayWithdrawJson\.value = state\.relayWithdraw\.externalHandoff\s*\? state\.relayWithdraw\.json\s*:\s*""/);
+  const recordSource = appSource.slice(
+    appSource.indexOf("async function recordExternalRelayWithdrawHandoff"),
+    appSource.indexOf("function renderKeplr")
+  );
+  assert.match(recordSource, /const sessionContext = privacySessionSnapshot\(\)/);
+  const renewIndex = recordSource.indexOf("manager.renewLease(reservationIDs");
+  const handoffIndex = recordSource.indexOf("manager.recordRelayHandoff(reservationIDs");
+  assert.ok(renewIndex >= 0 && handoffIndex > renewIndex);
+  assert.match(recordSource, /leaseUntil: expiryLeaseUntil/);
+  assert.match(recordSource, /relayWithdrawPayloadExpired\(payload, chainBlock\.timeUnix\)/);
+  assert.match(recordSource, /recordRelayHandoff\(reservationIDs[\s\S]*assertPrivacySession\(sessionContext\)/);
+  assert.match(recordSource, /persistRelayWithdrawRecovery\(state\.relayWithdraw, \{ sessionContext \}\)/);
+  assert.match(recordSource, /refreshReservationState\(manager, \{ sessionContext \}\)/);
+
+  const exposureSource = appSource.slice(
+    appSource.indexOf("async function copyRelayWithdraw"),
+    appSource.indexOf("async function signDirectAndBroadcast")
+  );
+  assert.match(exposureSource, /recordExternalRelayWithdrawHandoff\("clipboard"\);\s*assertPrivacySession\(sessionContext\);\s*assertRelaySubmitContext\(relayContext\);\s*await navigator\.clipboard\.writeText/);
+  assert.match(exposureSource, /recordExternalRelayWithdrawHandoff\("download"\);\s*assertPrivacySession\(sessionContext\);\s*assertRelaySubmitContext\(relayContext\);\s*downloadTextFile/);
+});
+
+test("DApp serializes relay payload egress and same-origin submission", () => {
+  const renderSource = appSource.slice(
+    appSource.indexOf("function renderRelayWithdraw"),
+    appSource.indexOf("async function setRelayWithdrawHandoff")
+  );
+  assert.match(renderSource, /const canStartHandoff = Boolean\(state\.relayWithdraw\.json\)[\s\S]*!relayHandoffInFlight[\s\S]*!valueMovingActionGate\.active/);
+  assert.match(renderSource, /relayPreparedWithdraw\.disabled =[\s\S]*valueMovingActionGate\.active[\s\S]*relayHandoffInFlight[\s\S]*state\.relayWithdraw\.externalHandoff/);
+
+  const externalHandoffSource = appSource.slice(
+    appSource.indexOf("function copyRelayWithdraw"),
+    appSource.indexOf("async function signDirectAndBroadcast")
+  );
+  assert.match(externalHandoffSource, /function copyRelayWithdraw\(\) \{\s*return runValueMovingAction\("relay-external-handoff", copyRelayWithdrawUnlocked\);\s*\}/);
+  assert.match(externalHandoffSource, /function downloadRelayWithdraw\(\) \{\s*return runValueMovingAction\("relay-external-handoff", downloadRelayWithdrawUnlocked\);\s*\}/);
+
+  const localRelaySource = appSource.slice(
+    appSource.indexOf("function assertLocalRelaySubmissionAvailable"),
+    appSource.indexOf("async function reconcileRelayWithdrawResult")
+  );
+  assert.match(localRelaySource, /relayHandoffInFlight \|\| state\.relayWithdraw\.externalHandoff/);
+  assert.equal(
+    [...localRelaySource.matchAll(/assertLocalRelaySubmissionAvailable\(\);/g)].length,
+    2,
+    "local relay must check the handoff boundary both before preflight and immediately before its attempt marker"
+  );
+  assert.ok(
+    localRelaySource.lastIndexOf("assertLocalRelaySubmissionAvailable();") <
+      localRelaySource.indexOf("manager.markBroadcastAttempting"),
+    "the final handoff check must precede the durable local broadcast marker"
+  );
+});
+
+test("DApp relay heartbeat callbacks cannot stop or mutate a newer generation", () => {
+  const heartbeatSource = appSource.slice(
+    appSource.indexOf("function stopRelayReservationHeartbeat"),
+    appSource.indexOf("function reservationStatusSlug")
+  );
+  assert.match(heartbeatSource, /expectedGeneration !== relayReservationHeartbeatGeneration/);
+  assert.match(heartbeatSource, /relayReservationHeartbeatGeneration \+= 1/);
+  assert.ok(
+    heartbeatSource.indexOf("manager !== reservationManager") <
+      heartbeatSource.indexOf("stopRelayReservationHeartbeat();"),
+    "a stale heartbeat starter must be rejected before it can stop the active timer"
+  );
+  assert.match(heartbeatSource, /generation !== relayReservationHeartbeatGeneration/);
+  assert.match(heartbeatSource, /state\.relayWithdraw\.leaseToken === leaseToken/);
+  assert.match(heartbeatSource, /stopRelayReservationHeartbeat\(generation\)/);
+  assert.match(heartbeatSource, /failureGeneration !== relayReservationHeartbeatGeneration/);
+});
+
+test("DApp relay reconciliation pins its session, manager, store, and reservation set", () => {
+  const reconcileSource = appSource.slice(
+    appSource.indexOf("async function reconcileRelayWithdrawResult"),
+    appSource.indexOf("async function explicitlyUnspentReservationIDs")
+  );
+  assert.match(reconcileSource, /const reconciliationContext = captureRelayReconciliationContext\(\{ candidateTxHash \}\)/);
+  assert.match(reconcileSource, /manager = await currentReservationManager\(\);\s*assertRelayReconciliationContext\(reconciliationContext\);/);
+  assert.match(reconcileSource, /store = await currentOperationStore\(\);\s*assertRelayReconciliationContext\(reconciliationContext\);/);
+  assert.match(reconcileSource, /Promise\.all\(reservationIDs\.map\(id => manager\.getReservation\(id\)\)\)/);
+  assert.doesNotMatch(reconcileSource, /state\.relayWithdraw\.reservationIds\.map/);
+  assert.match(reconcileSource, /metadataOnly && transport === "cosmos"[\s\S]*assertCosmosRelayWithdrawTransactionPayloadHash/);
+  assert.match(reconcileSource, /payloadHash: reconciliationContext\.payloadHash/);
+  assert.match(reconcileSource, /\/api\/relayer\/withdraw\/reconcile/);
+  assert.match(reconcileSource, /localSubmissionAttempted[\s\S]*manager\.recordRelayTransactionEvidence/);
+  assert.match(reconcileSource, /metadata-only EVM relay recovery requires every reservation to bind the same submitted transaction hash/);
+  const transactionCheckIndex = reconcileSource.indexOf("await checkReservationTransaction(txHash)");
+  const payloadBindingIndex = reconcileSource.indexOf("assertRelayWithdrawTransactionMatches");
+  const recoveryPersistIndex = reconcileSource.indexOf("await persistRelayWithdrawRecovery(state.relayWithdraw", payloadBindingIndex);
+  const evidenceCapabilityIndex = reconcileSource.indexOf(
+    "typeof manager.recordRelayTransactionEvidence",
+    payloadBindingIndex
+  );
+  const evidenceBindingIndex = reconcileSource.indexOf("await manager.recordRelayTransactionEvidence", payloadBindingIndex);
+  const scanIndex = reconcileSource.indexOf("await scanKeplrNotes", payloadBindingIndex);
+  assert.ok(transactionCheckIndex >= 0
+    && payloadBindingIndex > transactionCheckIndex
+    && recoveryPersistIndex > payloadBindingIndex
+    && evidenceCapabilityIndex > recoveryPersistIndex
+    && evidenceBindingIndex > evidenceCapabilityIndex
+    && scanIndex > evidenceBindingIndex,
+  "external relay evidence must be queried, payload-bound, durably saved, reservation-bound, then scanned");
+  assert.match(reconcileSource, /left unchanged for manual review.*must not be resubmitted/);
+  assert.match(reconcileSource, /refreshEvents\(\{ allowFailure: true, sessionContext \}\)/);
+  assert.match(reconcileSource, /scanKeplrNotes\(\{[\s\S]*sessionContext,[\s\S]*reservationManager: manager[\s\S]*\}\)/);
+  assert.match(reconcileSource, /persistRelayWithdrawRecovery\(state\.relayWithdraw, \{\s*store,\s*identity: operationIdentity,\s*sessionContext/);
+  assert.match(reconcileSource, /refreshReservationState\(manager, \{ sessionContext \}\)/);
+});
+
+test("DApp installs a relay handoff only after its originating store write remains current", () => {
+  const handoffSource = appSource.slice(
+    appSource.indexOf("async function setRelayWithdrawHandoff"),
+    appSource.indexOf("async function recordExternalRelayWithdrawHandoff")
+  );
+  const persistIndex = handoffSource.indexOf("await persistRelayWithdrawRecovery(nextRelayWithdraw");
+  const fenceIndex = handoffSource.indexOf("assertPrivacySession(sessionContext);", persistIndex);
+  const installIndex = handoffSource.indexOf("state.relayWithdraw = nextRelayWithdraw;");
+  assert.ok(persistIndex >= 0 && fenceIndex > persistIndex && installIndex > fenceIndex);
+  assert.match(handoffSource, /persistRelayWithdrawRecovery\(nextRelayWithdraw, \{ store, identity, sessionContext \}\)/);
+  assert.match(handoffSource, /startRelayReservationHeartbeat\(\{[\s\S]*sessionContext/);
+});
+
+test("DApp fences encrypted relay recovery immediately before committing it", () => {
+  const persistSource = appSource.slice(
+    appSource.indexOf("async function persistRelayWithdrawRecovery"),
+    appSource.indexOf("async function hydrateRelayWithdrawRecovery")
+  );
+  assert.match(persistSource, /beforeCommit:\s*sessionContext[\s\S]*assertPrivacySession\(sessionContext\)/);
+  assert.match(encryptedOperationSource, /beforeCommit\?\.\(\);\s*this\.storage\.setItem/);
+});
+
+test("DApp installs encrypted relay recovery only into its originating privacy session", () => {
+  const hydrateSource = appSource.slice(
+    appSource.indexOf("async function hydrateRelayWithdrawRecovery"),
+    appSource.indexOf("function preparedReservationIDs")
+  );
+  const setupSource = appSource.slice(
+    appSource.indexOf("async function completeInitialPrivacySetup"),
+    appSource.indexOf("async function copyKeplrDisclosurePubKey")
+  );
+  const loadIndex = hydrateSource.indexOf("const savedRecords = await store.loadAll();");
+  const loadFenceIndex = hydrateSource.indexOf("assertPrivacySession(sessionContext);", loadIndex);
+  const installIndex = hydrateSource.indexOf("state.relayWithdraw = nextRelayWithdraw;");
+  assert.ok(loadIndex >= 0 && loadFenceIndex > loadIndex && installIndex > loadFenceIndex);
+  assert.match(hydrateSource, /Promise\.all\(nextRelayWithdraw\.reservationIds\.map[\s\S]*assertPrivacySession\(sessionContext\);/);
+  assert.match(hydrateSource, /savedRecords\.map\(saved => \{[\s\S]*restoreRelayWithdrawRecoveryMetadata\(saved\.relayWithdraw\)/);
+  assert.match(hydrateSource, /!savedRecords\.length[\s\S]*state\.relayWithdraw = clearedRelayWithdrawState\("idle", "Not checked"\)/);
+  assert.match(hydrateSource, /commonReservationTxHashes\.length === 1[\s\S]*nextRelayWithdraw\.txHash = commonReservationTxHashes\[0\]/);
+  assert.match(hydrateSource, /conflicting or partial submitted transaction identities/);
+  assert.match(hydrateSource, /manager && records\.some\(record => !record\)[\s\S]*missing reservation record/);
+  assert.match(hydrateSource, /record\?\.metadata\?\.relay_handed_off === true/);
+  assert.doesNotMatch(hydrateSource, /startRelayReservationHeartbeat/);
+  assert.match(setupSource, /hydrateRelayWithdrawRecovery\(\{ sessionContext \}\)/);
+  assert.match(setupSource, /if \(isStalePrivacySessionError\(error\)\) throw error;/);
+  assert.match(setupSource, /refreshReservationState\(null, \{ sessionContext \}\)/);
+  assert.match(setupSource, /completeInitialPrivacySetup\(\{ \.\.\.options, sessionContext \}\)/);
+  assert.match(setupSource, /scanKeplrNotes\(\{[\s\S]*sessionContext[\s\S]*\}\)/);
+});
+
+test("DApp blocks unresolved public retries and exposes Cosmos and EVM tx reconciliation", () => {
+  assert.match(appSource, /sendPending = \["attempting", "submitted", "unknown", "checking"\]/);
+  assert.match(appSource, /depositPending = \["attempting", "submitted", "unknown", "checking", "recovery-pending"\]/);
+  assert.match(appSource, /async function reconcilePublicTransaction/);
+  assert.match(appSource, /const check = await checkReservationTransaction\(txHash\)/);
+  assert.match(appSource, /failureConfirmed = error\?\.code === "TX_FAILED_ON_CHAIN"[\s\S]*evmReceiptHasFailed/);
   assert.match(appSource, /same request remains blocked|같은 요청은 계속 차단됩니다/);
   assert.match(htmlSource, /id="reconcileKeplrSend"/);
   assert.match(htmlSource, /id="reconcileKeplrDeposit"/);
   assert.match(appSource, /hydratePublicPendingTransactions/);
-  assert.match(appSource, /persistPublicPendingTransactions/);
+  assert.doesNotMatch(appSource, /persistPublicPendingTransactions/);
+  assert.match(appSource, /assertNoCapturedPublicPendingTransaction/);
   assert.match(htmlSource, /id="clearPublicPendingState"/);
+});
+
+test("DApp clears corrupt public pending state under the account lock without deleting replacement state", () => {
+  const clearStart = appSource.indexOf("async function clearPublicPendingTransactions");
+  const clearEnd = appSource.indexOf("async function resetCorruptPrivateRecoveryStateUnlocked", clearStart);
+  const clearBlock = appSource.slice(clearStart, clearEnd);
+  const snapshotIndex = clearBlock.indexOf("const confirmedRawState = storage.getItem(identity.key)");
+  const lockIndex = clearBlock.indexOf("await withPublicTransactionLock(sessionContext");
+  const compareIndex = clearBlock.indexOf("storage.getItem(identity.key) !== confirmedRawState", lockIndex);
+  const removeIndex = clearBlock.indexOf("storage.removeItem(identity.key)", compareIndex);
+
+  assert.ok(clearStart >= 0 && clearEnd > clearStart);
+  assert.ok(snapshotIndex >= 0);
+  assert.ok(lockIndex > snapshotIndex);
+  assert.ok(compareIndex > lockIndex);
+  assert.ok(removeIndex > compareIndex);
+  assert.match(clearBlock, /separate private Cosmos transaction fence is never removed/);
+  assert.doesNotMatch(clearBlock, /removeItem\(identity\.privacyKey\)/);
+  assert.match(clearBlock, /error\.code = "PUBLIC_PENDING_STATE_CHANGED"/);
+  assert.match(clearBlock, /clearingHashlessAttempt/);
+  assert.match(clearBlock, /wallet request may have submitted a transaction without returning its hash/);
+  assert.match(clearBlock, /catch \(error\) \{[\s\S]*hydratePublicPendingTransactions\(\)/);
+  assert.match(appSource, /clearPublicPendingState\.addEventListener\("click", \(\) => clearPublicPendingTransactions\(\)\.catch\(reportAsyncError\)\)/);
+});
+
+test("DApp offers a reviewed full-state recovery path for a corrupt private Cosmos fence", () => {
+  const resetStart = appSource.indexOf("async function resetCorruptPrivateRecoveryStateUnlocked");
+  const resetEnd = appSource.indexOf("async function currentNoteStore", resetStart);
+  const resetBlock = appSource.slice(resetStart, resetEnd);
+  const accountLock = resetBlock.indexOf("await withPublicTransactionLock(sessionContext");
+  const fullScan = resetBlock.indexOf("await scanKeplrNotes({", accountLock);
+  const reservationReset = resetBlock.indexOf("await resetEncryptedBrowserReservationState(manager", fullScan);
+  const privateFenceClear = resetBlock.indexOf("storage.removeItem(identity.privacyKey)", reservationReset);
+
+  assert.ok(resetStart >= 0 && resetEnd > resetStart);
+  assert.match(htmlSource, /id="resetPrivatePendingState"/);
+  assert.match(appSource, /privateRecoveryResetVisible = activeChainProfile\(\)\?\.transport === "cosmos"[\s\S]*privacyPendingStateError/);
+  assert.match(resetBlock, /RESET \$\{chainId\} \$\{account\}/);
+  assert.match(resetBlock, /does not cancel a transaction that was already approved or propagated/);
+  assert.match(resetBlock, /inspect Keplr activity and the explorer/);
+  assert.match(resetBlock, /relayRecoveriesBeforeScan\.length/);
+  assert.match(resetBlock, /relayRecoveriesAfterScan\.length/);
+  assert.match(resetBlock, /state\.keplr\.noteSyncStatus !== "synced"/);
+  assert.match(resetBlock, /manager\.store\.listReservations\(\{\s*ownerKeyId: manager\.ownerKeyId\s*\}\)/);
+  assert.match(resetBlock, /reservations\.some\(reservationBlocksReviewedReset\)/);
+  assert.ok(accountLock >= 0);
+  assert.ok(fullScan > accountLock);
+  assert.ok(reservationReset > fullScan);
+  assert.ok(privateFenceClear > reservationReset);
+  assert.doesNotMatch(resetBlock, /removeItem\(identity\.key\)/);
+  assert.match(encryptedReservationSource, /confirmedReviewedFreshStateReset/);
+  assert.match(encryptedReservationSource, /activeReservationStatuses/);
+  assert.match(encryptedReservationSource, /await afterReset\?\.\(\)/);
+  assert.match(appSource, /resetPrivatePendingState\.addEventListener\("click", \(\) => resetCorruptPrivateRecoveryState\(\)\.catch\(reportAsyncError\)\)/);
+});
+
+test("DApp stores private Cosmos fences separately and keeps relay recoveries payload-bound", () => {
+  assert.match(appSource, /privacyPendingTxKey\(identity\)/);
+  assert.match(appSource, /savePrivacyPendingTxState\(globalThis\.localStorage, identity\.privacyKey/);
+  assert.match(appSource, /loadPrivacyPendingTxState\(globalThis\.localStorage, identity\.privacyKey/);
+  assert.match(encryptedOperationSource, /relayWithdrawRecoveryPersistenceId/);
+  assert.match(encryptedOperationSource, /recordKey\(persistenceId\)/);
+  assert.match(encryptedOperationSource, /async loadAll\(\)/);
+  assert.match(encryptedOperationSource, /Web Locks API is required for encrypted operation recovery/);
+  assert.match(appSource, /store\.clear\(reconciliationContext\.payloadHash/);
+});
+
+test("DApp treats only canonical positive Cosmos tx codes as confirmed public failures", () => {
+  assert.match(appSource, /function canonicalCosmosTxCode\(value\) \{[\s\S]*Number\.isSafeInteger\(value\) && value >= 0[\s\S]*\/\^\(0\|\[1-9\]\[0-9\]\*\)\$\/[\s\S]*Number\.isSafeInteger\(parsed\)/);
+  assert.match(appSource, /import \{[\s\S]*cosmosTxEvidenceConfirmsFailure[\s\S]*\} from "\.\/cosmos-transaction-evidence\.js"/);
+
+  const signStart = appSource.indexOf("async function signDirectAndBroadcast");
+  const signEnd = appSource.indexOf("async function submitEvmTransaction", signStart);
+  const signBlock = appSource.slice(signStart, signEnd);
+  assert.match(signBlock, /cosmosTxEvidenceConfirmsFailure\(error\)/);
+  assert.match(signBlock, /failure\.txHash \|\|= txHash/);
+  assert.doesNotMatch(signBlock, /Number\.isSafeInteger\(Number\(txCode\)\)/);
+
+  const assertionStart = appSource.indexOf("function assertSuccessfulBroadcast");
+  const assertionEnd = appSource.indexOf("async function broadcastPreparedPrivacy", assertionStart);
+  const assertionBlock = appSource.slice(assertionStart, assertionEnd);
+  assert.match(assertionBlock, /const txCode = canonicalCosmosTxCode\(broadcast\.tx\.code\)/);
+  assert.match(assertionBlock, /if \(txCode == null\)[\s\S]*error\.code = "TX_RESULT_UNKNOWN"/);
+  assert.match(assertionBlock, /if \(txCode > 0\)[\s\S]*error\.code = "TX_FAILED_ON_CHAIN"/);
+  assert.doesNotMatch(assertionBlock, /Number\(broadcast\.tx\.code \|\| 0\)/);
+
+  const sendStart = appSource.indexOf("async function sendFromKeplrUnlocked");
+  const sendEnd = appSource.indexOf("async function depositFromKeplrUnlocked", sendStart);
+  const sendBlock = appSource.slice(sendStart, sendEnd);
+  const depositEnd = appSource.indexOf("function selectedAuditMode", sendEnd);
+  const depositBlock = appSource.slice(sendEnd, depositEnd);
+  for (const block of [sendBlock, depositBlock]) {
+    assert.match(block, /activeChainProfile\(\)\?\.transport === "evm"[\s\S]*evmReceiptHasFailed\(error\?\.broadcast\?\.receipt\)[\s\S]*cosmosTxEvidenceConfirmsFailure\(error\)/);
+    assert.doesNotMatch(block, /Number\(error\.(?:tx|broadcast\.tx)\.code\) !== 0/);
+  }
+});
+
+test("DApp does not reuse a private Cosmos pending hash as public send or deposit state", () => {
+  const sendStart = appSource.indexOf("async function sendFromKeplrUnlocked");
+  const sendEnd = appSource.indexOf("async function depositFromKeplrUnlocked", sendStart);
+  const depositEnd = appSource.indexOf("function selectedAuditMode", sendEnd);
+  for (const block of [appSource.slice(sendStart, sendEnd), appSource.slice(sendEnd, depositEnd)]) {
+    assert.match(block, /if \(error\?\.code === "COSMOS_ACCOUNT_TX_PENDING"\) \{[\s\S]*Note reservations에서 Reconcile[\s\S]*return;[\s\S]*const txHash = transactionHashFromEvidence\(error\)/);
+  }
 });
 
 test("DApp marks stale note inventory as unconfirmed and blocks private spends", () => {
   assert.match(appSource, /noteInventoryTrusted = state\.keplr\.noteSyncStatus === "synced"/);
   assert.match(appSource, /Cached · not confirmed/);
   assert.match(appSource, /Cached notes are shown for recovery only/);
-  assert.match(appSource, /transferFromVeiled\.disabled = !veiledReady[\s\S]*!noteInventoryTrusted/);
-  assert.match(appSource, /withdrawFromVeiled\.disabled = !veiledReady[\s\S]*!noteInventoryTrusted/);
+  assert.match(appSource, /transferFromVeiled\.disabled = valueMovingActionPending[\s\S]*!veiledReady[\s\S]*!noteInventoryTrusted/);
+  assert.match(appSource, /withdrawFromVeiled\.disabled = valueMovingActionPending[\s\S]*!veiledReady[\s\S]*!noteInventoryTrusted/);
+});
+
+test("DApp hides spendable inventory throughout protocol preflight failure and refresh", () => {
+  const renderStart = appSource.indexOf("function renderMyKeplrNotes");
+  const renderEnd = appSource.indexOf("function renderAccounts", renderStart);
+  const renderBlock = appSource.slice(renderStart, renderEnd);
+  const hiddenGuard = renderBlock.indexOf("if (!protocolReady)");
+  const noteEnumeration = renderBlock.indexOf("const valueNotes = state.keplr.notes.filter");
+
+  assert.ok(hiddenGuard >= 0);
+  assert.ok(noteEnumeration > hiddenGuard);
+  assert.match(renderBlock.slice(hiddenGuard, noteEnumeration), /Spendable note inventory is hidden until protocol preflight succeeds\.[\s\S]*return;/);
+  assert.match(renderBlock, /Unavailable · protocol preflight failed/);
+  assert.match(renderBlock, /Checking protocol compatibility/);
+
+  for (const [name, nextName] of [
+    ["async function requirePrivacyPreparePreflight", "async function refreshProtocolStatus"],
+    ["async function refreshProtocolStatus", "async function refreshHealth"]
+  ]) {
+    const start = appSource.indexOf(name);
+    const end = appSource.indexOf(nextName, start);
+    const block = appSource.slice(start, end);
+    assert.match(block, /state\.protocol\.ready = false;[\s\S]*renderMyKeplrNotes\(\)/);
+    assert.match(block, /renderProtocolStatus\(\);\s*renderMyKeplrNotes\(\)/);
+  }
 });
 
 test("DApp planner UX uses structured API errors instead of message parsing", () => {
@@ -411,6 +1038,36 @@ test("DApp shows current transferable max planner fact only for note merge steps
   assert.doesNotMatch(appSource, /currentMax: amount/);
 });
 
+test("DApp requires prepared self-merge approval before transfer and exact-note planner broadcasts", () => {
+  assert.match(appSource, /function preparedSelfMergeReview/);
+  assert.match(appSource, /prepared\.selectedInputTotal/);
+  assert.match(appSource, /data\?\.plan\?\.selection\?\.inputs/);
+  assert.match(appSource, /the final recipient is not paid in this step/);
+
+  const confirmationStart = appSource.indexOf("async function confirmPreparedSelfMerge");
+  const confirmationEnd = appSource.indexOf("function cancelTransferFlow", confirmationStart);
+  const confirmationBlock = appSource.slice(confirmationStart, confirmationEnd);
+  assert.match(confirmationBlock, /withPreparedReservationHeartbeat\(data, async \(\) =>/);
+  assert.match(confirmationBlock, /await requestPreparedSelfMergeConfirmation\(review\)/);
+  assert.match(confirmationBlock, /if \(!approved\) \{[\s\S]*discardPreparedReservation\(data, "user_cancelled_self_merge_before_broadcast"\)/);
+
+  const exactNoteStart = appSource.indexOf("async function createExactWithdrawNote");
+  const exactNoteEnd = appSource.indexOf("function sendFromKeplr", exactNoteStart);
+  const exactNoteBlock = appSource.slice(exactNoteStart, exactNoteEnd);
+  const exactApproval = exactNoteBlock.indexOf("await confirmPreparedSelfMerge");
+  const exactBroadcast = exactNoteBlock.indexOf("broadcastPreparedPrivacy(data, \"exact-note self transaction\"");
+  assert.ok(exactApproval >= 0 && exactApproval < exactBroadcast);
+  assert.match(exactNoteBlock, /if \(!selfMergeConfirmed\) \{[\s\S]*return null;/);
+
+  const transferStart = appSource.indexOf("async function transferFromVeiledUnlocked");
+  const transferEnd = appSource.indexOf("function withdrawFromVeiled", transferStart);
+  const transferBlock = appSource.slice(transferStart, transferEnd);
+  const transferApproval = transferBlock.indexOf("await confirmPreparedSelfMerge");
+  const transferBroadcast = transferBlock.indexOf("broadcastPreparedPrivacy(data, \"self transaction\"");
+  assert.ok(transferApproval >= 0 && transferApproval < transferBroadcast);
+  assert.match(transferBlock, /if \(!selfMergeConfirmed\) \{[\s\S]*Self transaction cancelled[\s\S]*return;/);
+});
+
 test("DApp exposes none, public, and recipient-encrypted disclosure modes", () => {
   assert.match(htmlSource, /id="veiledDisclosureMode"/);
   assert.match(htmlSource, /value="none"/);
@@ -429,7 +1086,7 @@ test("DApp stores note recovery state encrypted and exposes endpoint and rollbac
   assert.match(appSource, /notes-encrypted/);
   assert.match(appSource, /Legacy plaintext cache removed/);
   assert.match(appSource, /function resetAndRescanNotes/);
-  assert.match(appSource, /scanKeplrNotes\(\{ reset: true, throwOnError: true \}\)/);
+  assert.match(appSource, /function resetAndRescanNotes[\s\S]*scanKeplrNotes\(\{[\s\S]*reset: true,[\s\S]*throwOnError: true,[\s\S]*maxPages: 1000,[\s\S]*sessionContext/);
   assert.match(appSource, /function rollbackAndRescanNotes/);
   assert.match(appSource, /store\.rollbackToHeight\(height\)/);
   assert.match(appSource, /function completeInitialPrivacySetup/);
@@ -456,10 +1113,10 @@ test("DApp verifies transparent deposit funding and surfaces a non-zero fee budg
   assert.match(appSource, /function assertDepositFunding/);
   assert.match(appSource, /transparentBalanceAmount/);
   assert.match(appSource, /evmNativeBalance/);
-  assert.match(appSource, /clairveilBrowserClient\(\)\.getBalances\(state\.keplr\.account\)/);
+  assert.match(appSource, /const privacyAccount = state\.keplr\.account[\s\S]*client\.getBalances\(privacyAccount\)/);
   assert.match(depositFundingSource, /Insufficient transparent balance/);
   assert.match(depositFundingSource, /Insufficient EVM gas balance/);
-  assert.match(appSource, /keplrDirectSignOptions\(options\)/);
+  assert.match(appSource, /keplrDirectSignOptions\(broadcastOptions\)/);
   assert.match(appSource, /cosmosGasFeeEstimate/);
   assert.doesNotMatch(appSource, /0 \$\{baseDenom\(\)\} encoded/);
 });
@@ -470,13 +1127,22 @@ test("DApp separates deposit inclusion from exact note recovery", () => {
   assert.match(appSource, /expectedCommitment: prepared\.noteCommitmentHex/);
   assert.match(appSource, /expectedEncryptedNote: prepared\.encryptedNoteHex/);
   assert.match(appSource, /Included · recovery pending/);
+  assert.match(appSource, /recoveredDepositNoteForTxHash\(state\.keplr\.notes, txHash\)/);
+  assert.match(appSource, /function reconcilePendingDepositRecoveryFromTypedNotes[\s\S]*recoveredDepositNoteForTxHash/);
+  assert.match(appSource, /state\.keplr\.notes = scannedNotes;[\s\S]*reconcilePendingDepositRecoveryFromTypedNotes\(\)/);
+  assert.match(appSource, /Recovered · encrypted note matched the exact included tx hash/);
+  assert.match(appSource, /persistCapturedDepositRecoveryPending/);
+  assert.match(appSource, /status: "recovery-pending"/);
+  assert.match(appSource, /clearCapturedPublicPendingTransaction\([\s\S]*"deposit"[\s\S]*state\.keplr\.depositHash/);
   assert.match(appSource, /Deposit 및 note 복구 완료/);
   assert.match(htmlSource, /id="keplrDepositRecovery"/);
 });
 
 test("DApp confirms chain-bound intent details and supports self-view opt-out", () => {
   assert.match(appSource, /function fetchLatestChainBlockTimeUnix/);
-  assert.match(appSource, /cosmos\/base\/tendermint\/v1beta1\/blocks\/latest/);
+  assert.match(appSource, /fetchBoundedJson\(`\$\{endpoint\}\/status`/);
+  assert.match(appSource, /result\?\.sync_info\?\.latest_block_time/);
+  assert.match(appSource, /result\?\.sync_info\?\.latest_block_height/);
   assert.match(appSource, /expiresAtUnix: chainNowUnix \+ 1800/);
   assert.match(appSource, /disableSelfViewDisclosure/);
   assert.match(htmlSource, /id="includeSelfViewDisclosure"/);
@@ -487,6 +1153,22 @@ test("DApp confirms chain-bound intent details and supports self-view opt-out", 
   assert.match(appSource, /function preparedTransferChangeEffect/);
   assert.match(appSource, /withPreparedReservationHeartbeat\(finalData, \(\) => \([\s\S]*requestPreparedTransferConfirmation/);
   assert.match(appSource, /discardPreparedReservation\(finalData/);
+  assert.match(appSource, /const finalPreparedExpiresAtUnix = preparedTransferExpiryUnix\(finalData/);
+  assert.match(appSource, /expiresAtUnix: finalPreparedExpiresAtUnix/);
+  assert.match(appSource, /afterSigningBeforeBroadcast: async \(\) => \{[\s\S]*fetchLatestChainBlock\(\)[\s\S]*assertPreparedTransferFreshAtChainTime/);
+  assert.match(appSource, /const cosmosTransferValidation[\s\S]*getChainNowUnix: \(\) => fetchLatestChainBlockTimeUnix\(\)/);
+  assert.match(appSource, /prepared_transfer_expired_before_broadcast/);
+  assert.match(appSource, /discardPreparedReservation\(preparedData, "invalid_prepared_transfer_expiry"\)/);
+  assert.match(appSource, /prepared_transfer_prebroadcast_validation_failed[\s\S]*discardPreparedReservation\(data, reason\)/);
+  const signStart = appSource.indexOf("async function signDirectAndBroadcast");
+  const signEnd = appSource.indexOf("async function submitEvmTransaction", signStart);
+  const signBlock = appSource.slice(signStart, signEnd);
+  assert.ok(signBlock.indexOf("const checkpoint = await client.signDirect")
+    < signBlock.indexOf("await afterSigningBeforeBroadcast"));
+  assert.ok(signBlock.indexOf("await afterSigningBeforeBroadcast")
+    < signBlock.indexOf("persistCapturedPublicPendingTransaction(sessionContext, publicPendingKind, signedTxHash)"));
+  assert.ok(signBlock.indexOf("persistCapturedPublicPendingTransaction(sessionContext, publicPendingKind, signedTxHash)")
+    < signBlock.indexOf("client.broadcastTxRawBytes"));
   assert.match(appSource, /expiresAtUnix: options\.expiresAtUnix/);
   assert.match(appSource, /chainNowUnix: options\.chainNowUnix/);
 });
@@ -525,14 +1207,18 @@ test("DApp offers relay handoff and cancellable same-prover retries", () => {
       relayReconcileSource.indexOf("scanKeplrNotes"),
     "relay transaction binding must be checked before spent-note reconciliation"
   );
-  assert.match(relayReconcileSource, /spentConfirmed && \(!check\.included \|\| check\.failed\)/);
+  assert.match(relayReconcileSource, /receiveConfirmed = check\.included && check\.successful === true/);
+  assert.match(relayReconcileSource, /spentConfirmed && check\.successful !== true/);
+  assert.match(relayReconcileSource, /check\.successful !== true[\s\S]*Tx was included with an unknown execution status/);
   assert.match(relayReconcileSource, /relay_spent_without_successful_bound_transaction/);
   assert.match(relayReconciliationSource, /assertRelayWithdrawTransactionMatches/);
-  assert.match(relayReconciliationSource, /included Cosmos relayer transaction must contain exactly one MsgWithdraw/);
+  assert.match(relayReconciliationSource, /included Cosmos transaction must contain exactly one MsgWithdraw/);
   assert.match(relayReconciliationSource, /"calldata"/);
   assert.match(appSource, /Checking tx result first, then nullifier spent state/);
   assert.match(htmlSource, /id="relayWithdrawTxHash"/);
-  assert.doesNotMatch(htmlSource, /<input[^>]+id="relayWithdrawTxHash"/);
+  assert.match(htmlSource, /<input[^>]+id="relayWithdrawTxHash"/);
+  assert.match(htmlSource, /id="relayWithdrawRecoveryChoice"/);
+  assert.match(appSource, /metadataOnlyCosmosRecovery/);
   assert.match(htmlSource, /Relay \(pay fee &amp; broadcast\)/);
   assert.match(htmlSource, /id="reconcileRelayWithdraw"/);
   assert.match(htmlSource, /user shielded secret/);
@@ -543,15 +1229,34 @@ test("DApp offers relay handoff and cancellable same-prover retries", () => {
   assert.match(encryptedOperationSource, /OPERATION_STATE_CORRUPT/);
   assert.match(appSource, /persistRelayWithdrawRecovery/);
   assert.match(appSource, /hydrateRelayWithdrawRecovery/);
-  assert.match(appSource, /async function relayPreparedWithdraw/);
+  assert.match(appSource, /async function relayPreparedWithdrawUnlocked/);
   assert.match(appSource, /resultStatus = "preflighting"/);
   assert.match(appSource, /const chainBlock = await fetchLatestChainBlock\(\)/);
-  assert.match(appSource, /scanKeplrNotes\(\{ quiet: true, throwOnError: true, skipSetup: true, maxPages: 1000 \}\)/);
-  assert.match(appSource, /explicitlyUnspentReservationIDs\(manager, records, state\.keplr\.notes\)/);
+  assert.match(appSource, /scanKeplrNotes\(\{[\s\S]*quiet: true,[\s\S]*throwOnError: true,[\s\S]*skipSetup: true,[\s\S]*maxPages: 1000,[\s\S]*sessionContext,[\s\S]*reservationManager: manager/);
+  assert.match(appSource, /explicitlyUnspentReservationIDs\([\s\S]*manager,[\s\S]*records,[\s\S]*state\.keplr\.notes,[\s\S]*assertRelaySubmitContext\(context\)/);
   assert.match(appSource, /stopRelayReservationHeartbeat\(\);[\s\S]*manager\.markBroadcastAttempting/);
   assert.match(appSource, /manager\.markBroadcastAttempting/);
-  assert.match(appSource, /api\("\/api\/relayer\/withdraw"/);
+  assert.match(appSource, /reason: "same_origin_local_relayer_submit"[\s\S]*local_relayer_address: relayer\.transparentAddress/);
+  assert.match(appSource, /built-in local relayer must use a separate server-side account/);
+  assert.match(appSource, /relayEndpoint: new URL\("\/api\/relayer\/withdraw", document\.baseURI\)\.href/);
+  assert.match(appSource, /refreshReservationState\(manager, \{ sessionContext \}\);\s*assertRelaySubmitContext\(context\);\s*const relay = await api\(context\.relayEndpoint/);
+  assert.match(appSource, /if \(relay\.unknown === true\) \{[\s\S]*manager\.markUnknown\([\s\S]*local_relayer_included_status_unknown/);
+  assert.match(appSource, /relay\.unknown === true[\s\S]*Relayer result unknown · reconcile the saved tx hash and do not retry/);
   assert.match(appSource, /manager\.markSubmitted/);
+  assert.doesNotMatch(appSource, /manager\.markBroadcastRejected\(/);
+  assert.match(appSource, /error\?\.checkTxRejected === true[\s\S]*manager\.markUnknown\(reservationIDs,[\s\S]*error: "local_relayer_check_tx_rejected"[\s\S]*check_tx_rejected: true[\s\S]*manager\.markManualReview\(reservationIDs,[\s\S]*automatic_replan_blocked: true/);
+  const rejectedRelayStart = appSource.indexOf("if (attemptMarkerStarted");
+  const rejectedRelayEnd = appSource.indexOf(
+    'state.relayWithdraw.resultStatus = "manual-review"',
+    rejectedRelayStart
+  );
+  assert.ok(rejectedRelayStart >= 0 && rejectedRelayEnd > rejectedRelayStart);
+  const rejectedRelayBlock = appSource.slice(rejectedRelayStart, rejectedRelayEnd);
+  assert.equal(
+    [...rejectedRelayBlock.matchAll(/error:\s*"local_relayer_check_tx_rejected"/g)].length,
+    2
+  );
+  assert.doesNotMatch(rejectedRelayBlock, /error:\s*error\.message/);
   assert.match(appSource, /async function recordExternalRelayWithdrawHandoff/);
   assert.match(appSource, /const context = captureRelaySubmitContext\(\);[\s\S]*manager\.recordRelayHandoff[\s\S]*assertRelaySubmitContext\(context\)/);
   const copyRelaySource = appSource.slice(
@@ -609,9 +1314,48 @@ test("DApp renders public disclosure reports without recipient-only branching", 
   assert.match(appSource, /eventDisclosureVerified\.textContent = "false"/);
 });
 
+test("DApp binds disclosure decode completion and disclosure UI to the privacy session", () => {
+  assert.match(appSource, /serverBinding:[\s\S]*auditorAdmin: Boolean\(state\.config\?\.serverFeatures\?\.auditorAdmin\)/);
+  const decodeFunctions = [
+    ["async function decodeSelectedEventDisclosure", "async function decodeSelectedSelfViewDisclosure", "state.privacyEvents.decoded = report"],
+    ["async function decodeSelectedSelfViewDisclosure", "function disclosureMaterial", "state.privacyEvents.decoded = report"],
+    ["async function decodeDisclosureSource", "function clearAuditorReport", "state.privacyEvents.decoded = report"],
+    ["async function decodeAuditorTransfer", "function canConnectWallet", "state.auditor.decoded = report"]
+  ];
+
+  for (const [name, nextName, commit] of decodeFunctions) {
+    const start = appSource.indexOf(name);
+    const end = appSource.indexOf(nextName, start);
+    const block = appSource.slice(start, end);
+    const commitIndex = block.indexOf(commit);
+    const fenceIndex = block.lastIndexOf("assertPrivacySession(sessionContext)", commitIndex);
+
+    assert.ok(start >= 0 && end > start, `${name} must remain inspectable`);
+    assert.match(block, /const sessionContext = privacySessionSnapshot\(\);/);
+    assert.ok(fenceIndex >= 0 && fenceIndex < commitIndex, `${name} must fence its result before committing it`);
+    assert.match(block, /isStalePrivacySessionError\(error\) \|\| !privacySessionIsCurrent\(sessionContext\)/);
+    assert.match(block, /finally \{\s*if \(!privacySessionIsCurrent\(sessionContext\)\) return;/);
+  }
+
+  const invalidateStart = appSource.indexOf("function invalidatePrivacySession");
+  const invalidateEnd = appSource.indexOf("function stalePrivacySessionError", invalidateStart);
+  assert.match(appSource.slice(invalidateStart, invalidateEnd), /resetDisclosureSessionState\(\)/);
+
+  const resetStart = appSource.indexOf("function resetDisclosureSessionState");
+  const resetEnd = appSource.indexOf("function resetKeplrSession", resetStart);
+  const resetBlock = appSource.slice(resetStart, resetEnd);
+  assert.match(resetBlock, /state\.privacyEvents = defaultPrivacyEventsState\(\)/);
+  assert.match(resetBlock, /state\.blockEvents = defaultBlockEventsState\(\)/);
+  assert.match(resetBlock, /state\.auditor = defaultAuditorState\(\)/);
+  assert.match(resetBlock, /disclosureSourceTxHash\.value = ""/);
+  assert.match(resetBlock, /disclosureSourceEventJson\.value = ""/);
+  assert.match(resetBlock, /renderEventDetail\(\)/);
+  assert.match(resetBlock, /clearAuditorReport\(\)/);
+});
+
 test("DApp gates privacy actions on preflight and surfaces recovery UX", () => {
   assert.match(appSource, /noteInventoryTrusted = state\.keplr\.noteSyncStatus === "synced" && protocolReady/);
-  assert.match(appSource, /depositFromKeplr\.disabled = !signerReady[\s\S]*!protocolReady/);
+  assert.match(appSource, /depositFromKeplr\.disabled = valueMovingActionPending[\s\S]*!signerReady[\s\S]*!protocolReady/);
   assert.match(appSource, /scanKeplrNotes\.disabled = [^;]*!state\.protocol\.ready/);
   assert.match(htmlSource, /id="copyKeplrShieldedAddress"/);
   assert.match(htmlSource, /id="keplrDepositNetworkFee"/);
@@ -628,6 +1372,20 @@ test("DApp reports withdraw nullifier and transparent receive evidence separatel
   assert.match(appSource, /Received · intended transparent output confirmed/);
   assert.match(appSource, /Unknown · reconcile before retry/);
   assert.match(appSource, /const fullyConfirmed = spentConfirmed && receiveConfirmed/);
+});
+
+test("DApp never promotes malformed Cosmos or EVM transaction status to relay success", () => {
+  assert.match(appSource, /hasFailedEvmReceiptStatus,[\s\S]*hasSuccessfulEvmReceiptStatus[\s\S]*from "\.\/transaction-status\.js"/);
+  const checkSource = appSource.slice(
+    appSource.indexOf("async function checkReservationTransaction"),
+    appSource.indexOf("async function clearReconciledCosmosPrivacyPending")
+  );
+  assert.match(checkSource, /successful: hasSuccessfulEvmReceiptStatus\(receipt\)/);
+  assert.match(checkSource, /failed: hasFailedEvmReceiptStatus\(receipt\)/);
+  assert.match(checkSource, /const code = typeof rawCode === "number"[\s\S]*:\s*null/);
+  assert.match(checkSource, /successful: Boolean\(tx\) && code === 0/);
+  assert.match(checkSource, /failed: Boolean\(tx\) && code !== null && code !== 0/);
+  assert.doesNotMatch(checkSource, /successful: Boolean\(receipt\) && !/);
 });
 
 test("DApp server does not own wallet privacy preparation routes", () => {
@@ -650,7 +1408,28 @@ test("DApp server keeps only local helper responsibilities", () => {
   assert.match(serverSource, /allowLanAdmin: process\.env\.CLAIRVEIL_DAPP_ALLOW_LAN_ADMIN === "1"/);
   assert.match(serverSource, /accountPrefix: process\.env\.CLAIRVEIL_EVM_PRIVACY_ACCOUNT_PREFIX \?\? "clair"/);
   assert.match(serverSource, /url\.pathname === "\/api\/relayer\/withdraw"/);
+  assert.match(serverSource, /url\.pathname === "\/api\/relayer\/withdraw\/reconcile"/);
+  assert.match(serverSource, /relayWithdrawSubmissionGate\.reconcileByPayloadHash\([\s\S]*reconcile: reconcileRelaySubmissionAttempt/);
+  const relayReconcileRoute = serverSource.slice(
+    serverSource.indexOf('url.pathname === "/api/relayer/withdraw/reconcile"'),
+    serverSource.indexOf('url.pathname === "/api/relayer/withdraw"', serverSource.indexOf('url.pathname === "/api/relayer/withdraw/reconcile"') + 1)
+  );
+  assert.doesNotMatch(relayReconcileRoute, /sendJson\(res, 200, recovered\)/);
+  assert.match(relayReconcileRoute, /result: \/\^\(0x\)\?\[0-9a-fA-F\]\{64\}\$\//);
   assert.match(serverSource, /local relay withdraw must use the configured/);
+  assert.match(serverSource, /createRelayWithdrawSubmissionGate\(\)/);
+  assert.match(serverSource, /createRelayAccountSubmissionSerializer\(\)/);
+  assert.match(serverSource, /function runLocalSignerSubmission\(signer, submit\)[\s\S]*relayAccountSubmissionSerializer\.run\(relaySubmissionAccountKey\(signer\)/);
+  assert.match(serverSource, /const faucet = await runLocalSignerSubmission\([\s\S]*const \{ result, tx, txHash, outcome \} = await runLocalSignerSubmission/);
+  assert.match(serverSource, /const response = await runLocalSignerSubmission\(\s*relayer,[\s\S]*=> relayWithdrawSubmissionGate\.run\(payload, \{[\s\S]*checkNullifiers: nullifiers => clairveil\.checkNullifiers\(nullifiers\)[\s\S]*submit: async/);
+  assert.match(serverSource, /markExternalSubmissionStarted\(\);\s*const submitted = await wallet\.sendTransaction/);
+  assert.match(serverSource, /markExternalSubmissionStarted\(\);\s*const result = await runClairveild/);
+  assert.match(serverSource, /submit: async \(\s*markSubmissionStarted,\s*markSubmissionRejected,\s*markIncludedExecutionFailed/);
+  assert.match(serverSource, /markAccountSubmissionOutcomeUnknown/);
+  assert.match(serverSource, /assertCosmosCheckTxAccepted\(result\.json, \{\s*markSubmissionRejected: markExternalSubmissionRejected/);
+  assert.match(serverSource, /const outcome = trackedEvmSubmissionOutcome\([\s\S]*if \(outcome\.failed === true\) markIncludedExecutionFailed\(\)/);
+  assert.match(serverSource, /const outcome = trackedCosmosSubmissionOutcome\([\s\S]*if \(outcome\.failed === true\) markIncludedExecutionFailed\(\)/);
+  assert.match(serverSource, /recordReturnedCosmosSubmissionEvidence\([\s\S]*recordAccountSubmissionEvidence,[\s\S]*recordSubmissionEvidence/);
   assert.match(serverSource, /function latestChainNowUnix/);
   assert.match(serverSource, /buildRelayWithdrawMessageFromPayload/);
   assert.match(serverSource, /assertEvmRelayCandidateMatches/);
@@ -659,6 +1438,9 @@ test("DApp server keeps only local helper responsibilities", () => {
   assert.match(serverSource, /function queryEvmNativeBalance/);
   assert.match(serverSource, /eth_getBalance/);
   assert.match(serverSource, /function assertSignerMutationAllowed/);
+  assert.match(serverSource, /signer-mutating APIs require application\/json/);
+  assert.match(serverSource, /signer-mutating APIs require an exact same-origin browser request/);
+  assert.match(serverSource, /reconcileUnknown: reconcileLocalSignerSubmission/);
   assert.match(serverSource, /function assertLocalAdminAccessAllowed/);
   assert.match(serverSource, /\/api\/local-signers\/ensure"\) \{\s*assertLocalTestBackendAllowed\("local signer setup"\);\s*assertSignerMutationAllowed\(req\);/);
   assert.match(serverSource, /\/api\/faucet"\) \{\s*assertLocalTestBackendAllowed\("faucet"\);\s*assertSignerMutationAllowed\(req\);/);
@@ -677,6 +1459,17 @@ test("DApp server keeps only local helper responsibilities", () => {
   assert.match(appSource, /evmNativeSendTransaction/);
   assert.match(appSource, /eth_sendTransaction/);
   assert.match(appSource, /walletType: "evm"/);
+});
+
+test("DApp server restores the documented production security boundary", () => {
+  assert.match(serverSource, /CLAIRVEIL_DAPP_HOST \?\? "127\.0\.0\.1"/);
+  assert.match(serverSource, /assertProductionDeploymentConfig\(\)/);
+  assert.match(serverSource, /assertProductionHttpsUrl\(config\.publicOrigin/);
+  assert.match(serverSource, /"content-security-policy"/);
+  assert.match(serverSource, /"script-src 'self'"/);
+  assert.match(serverSource, /res\.setHeader\("x-content-type-options", "nosniff"\)/);
+  assert.match(serverSource, /res\.setHeader\("referrer-policy", "no-referrer"\)/);
+  assert.match(serverSource, /res\.setHeader\("cross-origin-opener-policy", "same-origin"\)/);
 });
 
 test("DApp shows a send result confirmation before refresh side effects", () => {
@@ -706,7 +1499,59 @@ test("DApp submits final MetaMask transactions before waiting for receipt", () =
   assert.match(appSource, /Withdraw submitted/);
   assert.match(appSource, /Withdraw 요청이 제출되었습니다/);
   assert.match(appSource, /zero helper note", \{[\s\S]*waitForEvmReceipt: true/);
-  assert.match(appSource, /self transaction", \{ waitForEvmReceipt: true \}/);
+  assert.match(appSource, /self transaction", \{[\s\S]*?waitForEvmReceipt: true/);
+});
+
+test("DApp durably fences public EVM submission before the wallet boundary and then captures its hash", () => {
+  const adapterStart = appSource.indexOf("function evmWalletAdapter");
+  const adapterEnd = appSource.indexOf("function evmPrivacyRequest", adapterStart);
+  const adapterBlock = appSource.slice(adapterStart, adapterEnd);
+  const durableAttempt = adapterBlock.indexOf('"onTransactionAttempt"');
+  const providerReturn = adapterBlock.indexOf('method: "eth_sendTransaction"');
+  const durableCapture = adapterBlock.indexOf('"onTransactionHash"', providerReturn);
+  const sessionFence = adapterBlock.indexOf("assertPrivacySession(sessionContext)", durableCapture);
+
+  assert.ok(adapterStart >= 0 && adapterEnd > adapterStart);
+  assert.ok(durableAttempt >= 0 && durableAttempt < providerReturn);
+  assert.ok(providerReturn >= 0);
+  assert.ok(durableCapture > providerReturn);
+  assert.ok(sessionFence > durableCapture);
+  assert.match(adapterBlock, /isExplicitWalletRejection\(error\)[\s\S]*"onTransactionRejected"/);
+  assert.match(adapterBlock, /EVM_SUBMISSION_RESULT_UNKNOWN/);
+  assert.match(adapterBlock, /attachSubmittedEvmTransactionEvidence\(error, submittedTxHash\)/);
+  assert.match(appSource, /assertPrivacySessionAfterEvmSubmission\(sessionContext, normalizedTxHash\)/);
+  assert.match(appSource, /function publicEvmTransactionBoundaryCallbacks[\s\S]*persistCapturedPublicTransactionAttempt/);
+  assert.match(appSource, /publicEvmTransactionBoundaryCallbacks\(sessionContext, options\.publicPendingKind\)/);
+
+  const sendStart = appSource.indexOf("async function sendFromKeplrUnlocked");
+  const sendEnd = appSource.indexOf("async function depositFromKeplrUnlocked", sendStart);
+  const sendBlock = appSource.slice(sendStart, sendEnd);
+  assert.match(sendBlock, /publicEvmTransactionBoundaryCallbacks\(sessionContext, "send"\)/);
+});
+
+test("DApp retains the early EVM deposit marker through receipt polling", () => {
+  const depositStart = appSource.indexOf("async function broadcastPrivacyDeposit");
+  const depositEnd = appSource.indexOf("function normalizedHex", depositStart);
+  const depositBlock = appSource.slice(depositStart, depositEnd);
+
+  assert.match(depositBlock, /publicPendingKind: "deposit"/);
+  assert.match(depositBlock, /submitted\.pending \|\| submitted\.unknown[\s\S]*persistCapturedPublicPendingTransaction/);
+  assert.match(depositBlock, /else if \(txHash\) \{\s*clearCapturedPublicPendingTransaction/);
+  assert.match(depositBlock, /evmReceiptHasFailed\(error\?\.broadcast\?\.receipt\)[\s\S]*clearCapturedPublicPendingTransaction/);
+});
+
+test("Keplr connection refreshes balance with the replacement privacy session", () => {
+  const connectStart = appSource.indexOf("async function connectKeplr");
+  const connectEnd = appSource.indexOf("async function signKeplrSession", connectStart);
+  const connectBlock = appSource.slice(connectStart, connectEnd);
+  const resetIndex = connectBlock.indexOf("resetMetaMaskSession()");
+  const replacementContextIndex = connectBlock.indexOf("const connectedSessionContext = privacySessionSnapshot()");
+  const refreshIndex = connectBlock.indexOf("refreshWalletBalance({ sessionContext: connectedSessionContext })");
+
+  assert.ok(resetIndex >= 0);
+  assert.ok(replacementContextIndex > resetIndex);
+  assert.ok(refreshIndex > replacementContextIndex);
+  assert.doesNotMatch(connectBlock, /refreshWalletBalance\(\{ sessionContext \}\)/);
 });
 
 test("DApp forces MetaMask onto the configured EVM chain", () => {
@@ -727,7 +1572,7 @@ test("DApp estimates EVM gas before opening MetaMask confirmation", () => {
   assert.match(appSource, /tx\.gas = bigIntToEvmQuantity\(existing > padded \? existing : padded\)/);
   assert.doesNotMatch(appSource, /existing > 0n && existing < padded/);
   assert.match(appSource, /delete tx\.gas/);
-  assert.match(appSource, /const tx = await withEstimatedEvmGas\(\{ \.\.\.transaction, from: state\.wallet\.account \}\)/);
+  assert.match(appSource, /const tx = await withEstimatedEvmGas\(\{ \.\.\.transaction, from: walletAccount \}\)/);
   assert.match(appSource, /params: \[tx\]/);
 });
 

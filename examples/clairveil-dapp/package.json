@@ -7,20 +7,22 @@
     "node": ">=20"
   },
   "scripts": {
-    "build:dapp": "esbuild public/app.js --bundle --format=esm --platform=browser --target=es2022 --outfile=public/app.bundle.js",
+    "link:clairveiljs": "node tools/clairveiljs-worktree.mjs link",
+    "build:dapp": "npm run link:clairveiljs && esbuild public/app.js --bundle --format=esm --platform=browser --target=es2022 --preserve-symlinks --outfile=public/app.bundle.js",
     "start": "npm run build:dapp && node server.js",
     "dev": "npm run build:dapp && node server.js",
-    "check:dapp": "npm run build:dapp && npm run check:bundle && node --check server.js && node --check server-profile-config.js && node --check public/app.js && node --check public/browser-profile.js && node --check public/browser-storage-scope.js && node --check public/cosmos-sign-options.js && node --check public/dapp-config.js && node --check public/deposit-funding.js && node --check public/network-fee.js && node --check public/encrypted-reservation-manager.js && node --check public/encrypted-operation-store.js && node --check public/operation-event-lookup.js && node --check public/public-pending-tx-store.js && node --check public/relay-withdraw-reconciliation.js && node --check public/reservation-recovery.js && node --check public/disclosure-view-model.js && node --check tools/verify-production-deployment.mjs && node --check public/app.bundle.js",
+    "check:dapp": "npm run link:clairveiljs && npm run check:bundle:fresh && node --check server.js && node --check server-profile-config.js && node --check server-relay-submission.js && node --check public/app.js && node --check public/bounded-json-fetch.js && node --check public/browser-profile.js && node --check public/browser-storage-scope.js && node --check public/browser-task-coordinator.js && node --check public/privacy-browser-storage.js && node --check public/cosmos-fee.js && node --check public/cosmos-flow-state.js && node --check public/cosmos-sign-options.js && node --check public/cosmos-transaction-evidence.js && node --check public/dapp-config.js && node --check public/deposit-funding.js && node --check public/network-fee.js && node --check public/encrypted-reservation-manager.js && node --check public/encrypted-operation-store.js && node --check public/operation-event-lookup.js && node --check public/public-pending-tx-store.js && node --check public/relay-reservation-state.js && node --check public/relay-submission-coordinator.js && node --check public/relay-withdraw-reconciliation.js && node --check public/reservation-reconciliation.js && node --check public/reservation-recovery.js && node --check public/value-moving-action.js && node --check public/withdraw-operation-evidence.js && node --check public/disclosure-view-model.js && node --check tools/verify-production-deployment.mjs && node --check tools/clairveiljs-worktree.mjs && node --check public/app.bundle.js",
     "check:bundle": "git diff --exit-code -- public/app.bundle.js",
-    "check:bundle:fresh": "npm run check:bundle",
-    "test:dapp": "node --test test/dapp-smoke.test.js test/dapp-routes.test.js test/dapp-state.test.js test/dapp-config.test.js test/server-profile-config.test.js test/server-profile-denom-route.test.js test/production-deployment.test.js",
+    "check:bundle:fresh": "npm run link:clairveiljs && node tools/check-bundle-fresh.js",
+    "test:dapp": "npm run link:clairveiljs && node --test test/*.test.js",
     "check:clairveiljs": "npm run check:clairveiljs:types",
-    "check:clairveiljs:types": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --strict test/clairveiljs-types.ts",
-    "test:clairveiljs": "node --test test/clairveiljs.test.js test/clairveiljs-package.test.js",
-    "test:release-contracts": "cd ../../../clairveiljs && CLAIRVEIL_CONFORMANCE_FIXTURE_DIR=../clairveil/x/privacy/client/sdk/conformance/testdata npm run test:conformance:required",
-    "test:e2e:local": "cd ../../../clairveiljs && CLAIRVEIL_E2E_LOCAL=1 CLAIRVEIL_E2E_FULL_FLOW=1 CLAIRVEIL_E2E_REQUIRED=1 npm run test:e2e:local",
-    "test:e2e:evm-payable": "cd ../../../clairveiljs && CLAIRVEIL_EVM_PAYABLE_E2E_REQUIRED=1 npm run test:e2e:evm-payable",
-    "verify:production-deployment": "node tools/verify-production-deployment.mjs",
+    "check:clairveiljs:types": "npm run link:clairveiljs && tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --strict test/clairveiljs-types.ts",
+    "test:clairveiljs": "npm run link:clairveiljs && node --test test/clairveiljs.test.js test/clairveiljs-package.test.js",
+    "verify:clairveiljs-contract-sync": "node tools/clairveiljs-worktree.mjs verify-contract-sync",
+    "test:release-contracts": "npm run verify:clairveiljs-contract-sync && node tools/clairveiljs-worktree.mjs run verify:clairveil-source && node tools/clairveiljs-worktree.mjs run test:conformance:required",
+    "test:e2e:local": "CLAIRVEIL_E2E_LOCAL=1 CLAIRVEIL_E2E_FULL_FLOW=1 CLAIRVEIL_E2E_REQUIRED=1 node tools/clairveiljs-worktree.mjs run test:e2e:local",
+    "test:e2e:evm-payable": "CLAIRVEIL_EVM_PAYABLE_E2E_REQUIRED=1 node tools/clairveiljs-worktree.mjs run test:e2e:evm-payable",
+    "verify:production-deployment": "npm run link:clairveiljs && node tools/verify-production-deployment.mjs",
     "verify:release": "npm run check:dapp && npm run test:dapp && npm run check:clairveiljs && npm run test:clairveiljs && npm run test:release-contracts",
     "verify:release:integration": "npm run verify:release && npm run test:e2e:local && npm run test:e2e:evm-payable"
   },
@@ -33,6 +35,7 @@
   },
   "devDependencies": {
     "esbuild": "^0.28.0",
+    "fake-indexeddb": "^6.2.5",
     "typescript": "^5.8.3"
   }
 }

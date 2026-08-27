@@ -20,7 +20,10 @@
     "localTestMode": false,
     "localSigners": false,
     "faucet": false,
-    "auditorAdmin": false
+    "depositProof": false,
+    "auditorAdmin": false,
+    "proverProxy": false,
+    "batchTransfer": false
   },
   "activeChainProfileId": "clairveil-local",
   "chainProfiles": [

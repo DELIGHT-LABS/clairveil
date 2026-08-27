@@ -54,10 +54,12 @@ export function canReconcileReservationState({
   privacyReady = false,
   active = [],
   unresolved = [],
+  privacyPending = false,
   reconciling = false
 } = {}) {
   return privacyReady === true
-    && reconciliationReservationRecords(active, unresolved).length > 0
+    && (privacyPending === true
+      || reconciliationReservationRecords(active, unresolved).length > 0)
     && reconciling !== true;
 }
 
@@ -90,16 +92,24 @@ export function assessReservationRecovery(records = [], {
   const statuses = [...new Set(reservations.map(record => String(record.status || "")))];
   const kinds = [...new Set(reservations.map(record => String(record.kind || "unknown")))];
   const metadata = reservations.map(reservationMetadata);
+  const hasSignDocIdentity = reservations.some(record => (
+    Boolean(String(record.sign_doc_hash || record.signDocHash || "").trim())
+  ));
+  const hasQueryableTransactionIdentity = reservations.some(record => (
+    Boolean(String(record.submitted_tx_hash || record.submittedTxHash || "").trim())
+      || Boolean(String(record.tx_bytes_hash || record.txBytesHash || "").trim())
+  ));
+  const signDocOnly = hasSignDocIdentity && !hasQueryableTransactionIdentity;
   const broadcastAttempted = reservations.some((record, index) => (
     record.broadcast_in_flight === true
       || Number(record.broadcast_attempt_count || 0) > 0
       || metadata[index].no_broadcast_attempt === false
       || Boolean(String(record.submitted_tx_hash || "").trim())
+      || Boolean(String(record.tx_bytes_hash || "").trim())
   ));
-  const relayHandedOff = reservations.some((record, index) => (
+  const relayHandedOff = reservations.some((_record, index) => (
     metadata[index].relay_handed_off === true
       || metadata[index].relayHandedOff === true
-      || String(record.kind || "").toLowerCase().includes("relay")
   ));
   const liveLeaseRecords = reservations.filter(record => {
     const leaseUntil = Date.parse(String(record.lease_until || ""));
@@ -144,6 +154,8 @@ export function assessReservationRecovery(records = [], {
   } else if (malformedLiveLease) {
     action = "unavailable";
     reason = "The linked reservations do not share one recoverable live lease.";
+  } else if (signDocOnly) {
+    reason = "Only a sign-doc hash was saved. Quarantine the request, acknowledge wallet-history risk, and recheck every nullifier before replanning.";
   }
 
   return Object.freeze({
@@ -154,6 +166,8 @@ export function assessReservationRecovery(records = [], {
     action,
     reason,
     broadcastAttempted,
+    signDocOnly,
+    hasQueryableTransactionIdentity,
     relayHandedOff,
     leaseLive: liveLeaseRecords.length > 0,
     leaseOwnedByCurrentWorker: liveLeaseRecords.length > 0 && !foreignLiveLease && !malformedLiveLease,

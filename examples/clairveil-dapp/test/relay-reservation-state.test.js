@@ -123,17 +123,87 @@ test("relay submission coordinator retains a lock after submission starts", asyn
   assert.equal(calls, 1);
 });
 
-test("relay submission lock key canonicalizes the complete input set", () => {
-  const first = "aa".repeat(32);
-  const second = "bb".repeat(32);
+test("relay submission coordinator releases only an explicit post-boundary rejection", async () => {
+  const coordinator = createRelaySubmissionCoordinator();
+  const lockKey = "lock-rejected";
+  const idempotencyKey = "bb".repeat(32);
+  let calls = 0;
+
+  await assert.rejects(
+    () => coordinator.run(
+      lockKey,
+      idempotencyKey,
+      async (markSubmissionStarted, markSubmissionRejected) => {
+        calls += 1;
+        markSubmissionStarted();
+        markSubmissionRejected();
+        throw new Error("node explicitly rejected submission");
+      },
+    ),
+    /explicitly rejected/,
+  );
+  assert.equal(coordinator.has(lockKey), false);
+  assert.equal(
+    await coordinator.run(lockKey, idempotencyKey, async () => {
+      calls += 1;
+      return "retried";
+    }),
+    "retried",
+  );
+  assert.equal(calls, 2);
+});
+
+test("relay submission lock uses only the canonical withdraw nullifier", () => {
+  const nullifier = "aa".repeat(32);
   const lockKey = relayPayloadNullifierLockKey({
+    nullifier_hex: `0x${nullifier.toUpperCase()}`,
     inputs: [
-      { nullifier_hex: `0x${second.toUpperCase()}` },
-      { nullifier_hex: first },
+      { nullifier_hex: "bb".repeat(32) },
     ],
   });
 
-  assert.equal(lockKey, `${first}:${second}`);
+  assert.equal(lockKey, nullifier);
+  assert.throws(
+    () => relayPayloadNullifiers({
+      nullifier_hex: nullifier,
+      nullifierHex: "cc".repeat(32),
+    }),
+    /conflicting nullifier aliases/,
+  );
+});
+
+test("relay submission coordinator atomically rejects partially overlapping nullifier sets", async () => {
+  const coordinator = createRelaySubmissionCoordinator();
+  const first = "aa".repeat(32);
+  const shared = "bb".repeat(32);
+  const third = "cc".repeat(32);
+  let release;
+  const pending = new Promise(resolve => {
+    release = resolve;
+  });
+  const attempt = coordinator.runMany(
+    [first, shared],
+    "11".repeat(32),
+    async () => {
+      await pending;
+      return "submitted";
+    },
+  );
+  await Promise.resolve();
+
+  await assert.rejects(
+    () => coordinator.runMany(
+      [shared, third],
+      "22".repeat(32),
+      async () => "unsafe overlap",
+    ),
+    /input nullifiers already have a submission attempt/,
+  );
+  assert.equal(coordinator.has(first), true);
+  assert.equal(coordinator.has(shared), true);
+  assert.equal(coordinator.has(third), false);
+  release();
+  assert.equal(await attempt, "submitted");
 });
 
 test("relay submission locks same inputs before nullifier preflight and rejects a different payload", async () => {

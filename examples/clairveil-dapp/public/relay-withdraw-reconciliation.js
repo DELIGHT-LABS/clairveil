@@ -1,4 +1,5 @@
 import { MsgWithdraw, msgWithdrawTypeUrl } from "clairveiljs/cosmos-client";
+import { computePreparedWithdrawPayloadHash } from "clairveiljs/payload";
 
 export const relayWithdrawHandoffVersion = "v2";
 
@@ -159,10 +160,10 @@ function requiredLengthDelimitedField(fields, fieldNumber, label) {
   return matches[0].value;
 }
 
-function cosmosWithdrawMessage(transaction) {
+export function cosmosWithdrawMessage(transaction) {
   const raw = transaction?.tx;
   if (!(raw instanceof Uint8Array) || raw.length === 0) {
-    throw new Error("included Cosmos relayer transaction omitted raw transaction bytes");
+    throw new Error("included Cosmos transaction omitted raw transaction bytes");
   }
   const bodyBytes = requiredLengthDelimitedField(protobufFields(raw, "Cosmos TxRaw"), 1, "TxRaw body_bytes");
   const messages = protobufFields(bodyBytes, "Cosmos TxBody")
@@ -176,7 +177,7 @@ function cosmosWithdrawMessage(transaction) {
     });
   const withdrawals = messages.filter(message => message.typeUrl === msgWithdrawTypeUrl);
   if (messages.length !== 1 || withdrawals.length !== 1) {
-    throw new Error("included Cosmos relayer transaction must contain exactly one MsgWithdraw");
+    throw new Error("included Cosmos transaction must contain exactly one MsgWithdraw");
   }
   return MsgWithdraw.decode(withdrawals[0].value);
 }
@@ -192,6 +193,31 @@ function assertCosmosRelayTransactionMatches({ transaction, payload }) {
   if (BigInt(message.expiresAtUnix) !== BigInt(payload?.expires_at_unix)) {
     throw new Error("relayer transaction expiry does not match the prepared withdraw payload");
   }
+}
+
+export function assertCosmosRelayWithdrawTransactionPayloadHash({
+  transaction,
+  payloadHash
+} = {}) {
+  const expectedPayloadHash = normalizedHex(payloadHash, "reserved relay payload hash");
+  if (expectedPayloadHash.length !== 64) {
+    throw new Error("reserved relay payload hash must be 32 bytes");
+  }
+  const message = cosmosWithdrawMessage(transaction);
+  const includedPayloadHash = computePreparedWithdrawPayloadHash({
+    version: relayWithdrawHandoffVersion,
+    proof_hex: bytesHex(message.proof),
+    root_hex: bytesHex(message.root),
+    nullifier_hex: bytesHex(message.nullifier),
+    amount: message.amount,
+    recipient: message.recipient,
+    chain_id: message.chainId,
+    expires_at_unix: message.expiresAtUnix
+  });
+  if (includedPayloadHash !== expectedPayloadHash) {
+    throw new Error("included Cosmos relayer transaction does not match the reserved payload hash");
+  }
+  return true;
 }
 
 export function assertRelayReservationPayloadMatches(records, payload) {
@@ -231,4 +257,20 @@ export function relayWithdrawPayloadExpired(payload, chainNowUnix) {
     throw new Error("authoritative chain time is invalid");
   }
   return now >= expiry;
+}
+
+export function relayWithdrawExpiryLeaseUntil(payload) {
+  const expiry = Number(payload?.expires_at_unix);
+  if (!Number.isSafeInteger(expiry) || expiry <= 0) {
+    throw new Error("relay payload expires_at_unix is invalid");
+  }
+  const expiryMilliseconds = expiry * 1000;
+  if (!Number.isSafeInteger(expiryMilliseconds)) {
+    throw new Error("relay payload expiry is outside the supported timestamp range");
+  }
+  try {
+    return new Date(expiryMilliseconds).toISOString();
+  } catch {
+    throw new Error("relay payload expiry is outside the supported timestamp range");
+  }
 }

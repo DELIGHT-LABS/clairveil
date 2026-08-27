@@ -13,6 +13,7 @@ import {
 import { createClairveilPublicClient } from "clairveiljs/browser-public";
 import { validatePrivacyScanPageV2 } from "clairveiljs/scan";
 import { EncryptedLocalStorageNoteStore } from "../public/encrypted-note-store.js";
+import { resolveClairveilJSDirectory } from "../tools/clairveiljs-worktree.mjs";
 
 function cosmosProfile(overrides = {}) {
   const profile = {
@@ -111,10 +112,12 @@ test("example DApp resolves the sibling local ClairveilJS v0.3.1 package", async
   const dappPackage = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
   const sdkPackage = JSON.parse(await readFile(new URL("../node_modules/clairveiljs/package.json", import.meta.url), "utf8"));
   const resolvedSdk = await realpath(new URL("../node_modules/clairveiljs", import.meta.url));
+  const expectedSdk = await realpath(resolveClairveilJSDirectory());
 
   assert.equal(dappPackage.dependencies.clairveiljs, "file:../../../clairveiljs");
+  assert.equal(sdkPackage.name, "clairveiljs");
   assert.equal(sdkPackage.version, "0.3.1");
-  assert.match(resolvedSdk, /\/clairveiljs$/);
+  assert.equal(resolvedSdk, expectedSdk);
 });
 
 test("v0.3.1 web config validates Cosmos and payable-exact-value EVM profiles", () => {

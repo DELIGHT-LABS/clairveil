@@ -1,6 +1,8 @@
 import {
+  activeReservationStatuses,
   createBrowserReservationStore,
-  createNoteReservationManager
+  createNoteReservationManager,
+  operationStatuses
 } from "clairveiljs/reservation";
 
 const reservationStateVersion = "clairveil-encrypted-reservation-state-v1";
@@ -22,6 +24,31 @@ function reservationStateError(cause) {
   const error = new Error("Encrypted note reservation state cannot be decrypted. Manual recovery is required.", { cause });
   error.code = "RESERVATION_STATE_CORRUPT";
   return error;
+}
+
+const unresolvedOperationStatuses = new Set([
+  operationStatuses.ManualReview,
+  operationStatuses.ConflictSpent
+]);
+const activeReservationStatusSet = new Set(activeReservationStatuses);
+
+export function reservationHasUnresolvedOperationEvidence(record) {
+  const metadata = record?.metadata || {};
+  const evidenceRequired = metadata.operation_success_evidence_required === true
+    || metadata.operationSuccessEvidenceRequired === true
+    || record?.operation_success_evidence_required === true
+    || record?.operationSuccessEvidenceRequired === true;
+  const operationStatus = metadata.operation_status
+    || metadata.operationStatus
+    || record?.operation_status
+    || record?.operationStatus
+    || "";
+  return evidenceRequired && unresolvedOperationStatuses.has(operationStatus);
+}
+
+export function reservationBlocksReviewedReset(record) {
+  return activeReservationStatusSet.has(record?.status)
+    || reservationHasUnresolvedOperationEvidence(record);
 }
 
 export async function createEncryptedBrowserReservationManager({
@@ -86,15 +113,67 @@ export async function createEncryptedBrowserReservationManager({
 }
 
 /**
- * Destructive migration escape hatch for a confirmed fresh local genesis.
- * Callers must gate this on an empty authoritative chain history and explicit
- * wallet-owner approval; normal recovery must use reservation CAS methods.
+ * Destructive escape hatch for a confirmed fresh local genesis or a reviewed
+ * account fresh-state reset. Callers must establish the corresponding chain
+ * evidence and explicit wallet-owner approval; normal recovery must use
+ * reservation CAS methods.
  */
-export async function resetEncryptedBrowserReservationState(manager) {
-  if (typeof manager?.store?.unsafeReplaceState !== "function") {
+export async function resetEncryptedBrowserReservationState(manager, {
+  confirmedFreshLocalGenesis = false,
+  confirmedReviewedFreshStateReset = false,
+  afterReset
+} = {}) {
+  if (confirmedFreshLocalGenesis !== true && confirmedReviewedFreshStateReset !== true) {
+    throw new Error("Fresh-genesis reservation reset requires an explicit local-genesis confirmation capability");
+  }
+  if (afterReset !== undefined && typeof afterReset !== "function") {
+    throw new Error("Reservation reset afterReset must be a function");
+  }
+  const store = manager?.store;
+  if (!store
+    || typeof store.withMutationLock !== "function"
+    || typeof store.db !== "function"
+    || !String(store.namespace || "").trim()) {
     throw new Error("Encrypted reservation store does not support fresh-genesis reset");
   }
-  await manager.store.unsafeReplaceState({});
+  await store.withMutationLock(async () => {
+    const db = await store.db();
+    if (!db || typeof db.transaction !== "function") {
+      throw new Error("Encrypted reservation store database is unavailable");
+    }
+    if (confirmedReviewedFreshStateReset === true) {
+      const transaction = db.transaction("states", "readonly");
+      const completion = new Promise((resolve, reject) => {
+        transaction.oncomplete = resolve;
+        transaction.onerror = () => reject(transaction.error || new Error("Reviewed fresh-state reservation read failed"));
+        transaction.onabort = () => reject(transaction.error || new Error("Reviewed fresh-state reservation read was aborted"));
+      });
+      const request = transaction.objectStore("states").get(store.namespace);
+      const stored = await new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error("Reviewed fresh-state reservation read failed"));
+      });
+      await completion;
+      const decoded = stored === undefined
+        ? { reservations: [] }
+        : await store.decodeState(stored);
+      const reservations = Array.isArray(decoded?.reservations)
+        ? decoded.reservations
+        : null;
+      if (!reservations || reservations.some(reservationBlocksReviewedReset)) {
+        throw new Error("Reviewed fresh-state reset requires zero active or unresolved reservations");
+      }
+    }
+    const transaction = db.transaction("states", "readwrite");
+    const completion = new Promise((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || new Error("Fresh-genesis reservation reset failed"));
+      transaction.onabort = () => reject(transaction.error || new Error("Fresh-genesis reservation reset was aborted"));
+    });
+    transaction.objectStore("states").delete(store.namespace);
+    await completion;
+    await afterReset?.();
+  });
 }
 
 export { reservationStateVersion };

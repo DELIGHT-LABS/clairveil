@@ -108,28 +108,23 @@ function strictNullifierHex(value) {
 }
 
 export function relayPayloadNullifiers(payload = {}) {
-  const candidates = [
-    payload.nullifier_hex,
-    payload.nullifierHex,
-    ...(Array.isArray(payload.inputs)
-      ? payload.inputs.flatMap((input) => [input?.nullifier_hex, input?.nullifierHex])
-      : []),
-  ].filter((value) => value !== undefined && value !== null && value !== "");
-  if (!candidates.length) {
+  const canonical = strictNullifierHex(payload.nullifier_hex);
+  if (!canonical) {
     throw new Error("relay withdraw payload is missing input nullifiers");
   }
-  const normalized = candidates.map(strictNullifierHex);
-  if (normalized.some((value) => !value)) {
-    throw new Error("relay withdraw payload contains an invalid input nullifier");
+  if (payload.nullifierHex !== undefined) {
+    const alias = strictNullifierHex(payload.nullifierHex);
+    if (!alias || alias !== canonical) {
+      throw new Error("relay withdraw payload contains conflicting nullifier aliases");
+    }
   }
-  return [...new Set(normalized)];
+  return [canonical];
 }
 
-// Every payload that can spend the same notes must share one submission lock,
-// regardless of its recipient, fee, or payload hash. Sorting also makes the
-// key independent of the input ordering used by the payload producer.
+// Withdraw v2 has exactly one canonical nullifier_hex. Do not allow unrelated
+// `inputs` metadata to alter its lock identity.
 export function relayPayloadNullifierLockKey(payload = {}) {
-  return relayPayloadNullifiers(payload).sort().join(":");
+  return relayPayloadNullifiers(payload)[0];
 }
 
 export async function submitRelayAfterNullifierPreflight({

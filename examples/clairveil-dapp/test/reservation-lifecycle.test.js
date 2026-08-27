@@ -140,6 +140,43 @@ test("durable broadcast attempt can fall back to Unknown with transaction eviden
   assert.equal(unknown.broadcast_in_flight, false);
 });
 
+test("same-origin local relay submission durably identifies its separate submitter account", async () => {
+  const store = new MemoryReservationStore();
+  const manager = createTestManager(store);
+  const note = noteFixture({ nullifier: "be".repeat(32) });
+  const batch = await prepareProofReadyRelayReservation(manager, note);
+
+  await manager.markBroadcastAttempting(batch.reservation_ids, {
+    leaseToken: batch.lease_token,
+    reason: "same_origin_local_relayer_submit",
+    metadata: {
+      local_relayer: "relayer",
+      local_relayer_address: "clair1serverrelayer"
+    }
+  });
+  const attempting = await store.getReservation(batch.reservation_ids[0]);
+  assert.equal(attempting.kind, "relay_withdraw");
+  assert.equal(attempting.metadata.broadcast_attempt_reason, "same_origin_local_relayer_submit");
+  assert.equal(attempting.metadata.local_relayer, "relayer");
+  assert.equal(attempting.metadata.local_relayer_address, "clair1serverrelayer");
+  assert.equal(attempting.broadcast_in_flight, true);
+
+  await manager.markSubmitted(batch.reservation_ids, {
+    leaseToken: batch.lease_token,
+    txHash: "ab".repeat(32),
+    metadata: {
+      local_relayer: "relayer",
+      local_relayer_address: "clair1serverrelayer"
+    }
+  });
+  const submitted = await store.getReservation(batch.reservation_ids[0]);
+  assert.equal(submitted.status, reservationStatuses.Submitted);
+  assert.equal(submitted.metadata.broadcast_attempt_reason, "same_origin_local_relayer_submit");
+  assert.equal(submitted.metadata.local_relayer, "relayer");
+  assert.equal(submitted.metadata.local_relayer_address, "clair1serverrelayer");
+  assert.equal(submitted.broadcast_in_flight, false);
+});
+
 test("relay handoff metadata keeps the current ProofReady lease owner", async () => {
   const store = new MemoryReservationStore();
   const manager = createTestManager(store);

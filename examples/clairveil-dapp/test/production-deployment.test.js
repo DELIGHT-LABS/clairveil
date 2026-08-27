@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  assertDirectEndpointResponse,
   assertRestrictiveConnectSrc,
   assertRestrictiveFrameAncestors,
   assertRestrictiveScriptSrc,
@@ -86,6 +87,7 @@ const evmProfile = {
 const deployedConfig = {
   schemaVersion: "clairveil-web-client-config-v1",
   serverBacked: true,
+  serverFeatures: { batchTransfer: false },
   activeChainProfileId: cosmosProfile.id,
   chainProfiles: [cosmosProfile, evmProfile],
 };
@@ -107,12 +109,21 @@ function reverseObjectKeyOrder(value) {
   );
 }
 
+function responseAt(response, url) {
+  Object.defineProperty(response, "url", {
+    configurable: true,
+    value: new URL(url).href,
+  });
+  return response;
+}
+
 function productionGateFetch({
   config = deployedConfig,
   configPath = "/api/health",
   informationalConfig = config,
   corsHeaders,
   actualCorsHeaders,
+  endpointResponse,
   configResponseOverride,
   informationalConfigResponseOverride,
   webAppCsp = restrictiveCsp,
@@ -122,19 +133,31 @@ function productionGateFetch({
     const requestUrl = new URL(url);
     const method = options.method || "GET";
     const headers = options.headers || {};
-    calls.push({ url: requestUrl.toString(), method, origin: headers.Origin || "" });
+    const requestedMethod = headers["Access-Control-Request-Method"]
+      || headers.get?.("Access-Control-Request-Method")
+      || "";
+    calls.push({
+      url: requestUrl.toString(),
+      method,
+      origin: headers.Origin || "",
+      requestedMethod,
+      redirect: options.redirect || "follow",
+    });
     if (method === "OPTIONS") {
-      return new Response(null, {
+      return responseAt(new Response(null, {
         status: 204,
-        headers: corsHeaders?.(headers.Origin || "") || {
+        headers: corsHeaders?.(headers.Origin || "", {
+          requestUrl,
+          requestedMethod,
+        }) || {
           "access-control-allow-origin": "https://app.example.com",
           "access-control-allow-methods": "GET, POST, OPTIONS",
           "access-control-allow-headers": "Content-Type",
         },
-      });
+      }), requestUrl);
     }
     const responseCorsHeaders = headers.Origin
-      ? actualCorsHeaders?.(headers.Origin || "") || {
+      ? actualCorsHeaders?.(headers.Origin || "", { requestUrl, method }) || {
           "access-control-allow-origin": "https://app.example.com",
         }
       : {};
@@ -155,16 +178,21 @@ function productionGateFetch({
         headers: { "content-type": "application/json; charset=utf-8" },
       });
     }
-    return new Response("ok", {
+    const overriddenEndpointResponse = endpointResponse?.({ requestUrl, method, headers });
+    if (overriddenEndpointResponse) {
+      return responseAt(overriddenEndpointResponse, requestUrl);
+    }
+    return responseAt(new Response(JSON.stringify({ ok: true }), {
       status: 200,
       headers: {
+        "content-type": "application/json; charset=utf-8",
         "content-security-policy": webAppCsp,
         "x-content-type-options": "nosniff",
         "referrer-policy": "no-referrer",
         "cross-origin-opener-policy": "same-origin",
         ...responseCorsHeaders,
       },
-    });
+    }), requestUrl);
   };
   return { calls, fetchImpl };
 }
@@ -211,6 +239,20 @@ test("production gate requires same-origin scripts only", () => {
   assert.throws(
     () => assertRestrictiveScriptSrc("default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self'"),
     /script-src must allow only 'self'/,
+  );
+});
+
+test("production gate rejects an external script-src-elem override", () => {
+  assert.throws(
+    () => assertRestrictiveScriptSrc("default-src 'self'; script-src 'self'; script-src-elem https://cdn.example.com; connect-src 'self'"),
+    /script-src-elem must allow only 'self'/,
+  );
+});
+
+test("production gate rejects an inline script-src-attr override", () => {
+  assert.throws(
+    () => assertRestrictiveScriptSrc("default-src 'self'; script-src 'self'; script-src-attr 'unsafe-inline'; connect-src 'self'"),
+    /script-src-attr must allow only 'none'/,
   );
 });
 
@@ -287,14 +329,217 @@ test("production gate verifies preflight and actual CORS for every configured en
     ["GET", "https://app.example.com/api/config"],
   ]);
   const corsCalls = calls.slice(3);
-  assert.equal(corsCalls.length, 36);
+  assert.equal(corsCalls.length, 64);
+  assert.equal(corsCalls.every((call) => call.redirect === "error"), true);
   assert.equal(
     corsCalls.filter((call) => call.origin === "https://app.example.com").length,
-    18,
+    32,
   );
   assert.equal(
     corsCalls.filter((call) => call.origin === "https://clairveil-cors-probe.invalid").length,
-    18,
+    32,
+  );
+  const trustedPreflights = corsCalls
+    .filter((call) => call.method === "OPTIONS" && call.origin === "https://app.example.com")
+    .map((call) => [new URL(call.url).host, new URL(call.url).pathname, call.requestedMethod]);
+  assert.ok(trustedPreflights.some((call) => call[0] === "rest.example.com"
+    && call[1] === "/clairveil/privacy/v1/tree_state" && call[2] === "GET"));
+  assert.ok(trustedPreflights.some((call) => call[0] === "rest.example.com"
+    && call[1] === "/clairveil/privacy/v1/privacy_scan" && call[2] === "POST"));
+  assert.ok(trustedPreflights.some((call) => call[0] === "rpc.example.com"
+    && call[1] === "/" && call[2] === "POST"));
+  assert.ok(trustedPreflights.some((call) => call[0] === "rpc.example.com"
+    && call[1] === "/status" && call[2] === "GET"));
+  assert.ok(trustedPreflights.some((call) => call[0] === "prover.example.com"
+    && call[1] === "/v1/prover/transfer" && call[2] === "POST"));
+  assert.ok(trustedPreflights.some((call) => call[0] === "prover.example.com"
+    && call[1] === "/v1/prover/withdraw" && call[2] === "POST"));
+});
+
+test("production gate probes same-origin gateways without requiring CORS", async () => {
+  const sameOriginProfile = {
+    ...cosmosProfile,
+    id: "same-origin-cosmos",
+    rest: "https://app.example.com/cosmos-rest",
+    restEndpoints: ["https://app.example.com/cosmos-rest"],
+    rpc: "https://app.example.com/cosmos-rpc",
+    proverUrl: "https://app.example.com/prover",
+    depositProofUrl: "https://app.example.com/deposit-proof",
+    keplrChainInfo: {
+      ...cosmosProfile.keplrChainInfo,
+      rest: "https://app.example.com/cosmos-rest",
+      rpc: "https://app.example.com/cosmos-rpc",
+    },
+  };
+  const config = {
+    ...deployedConfig,
+    activeChainProfileId: sameOriginProfile.id,
+    chainProfiles: [sameOriginProfile],
+  };
+  const sameOrigin = productionGateFetch({
+    config,
+    informationalConfig: config,
+    actualCorsHeaders: () => ({}),
+    webAppCsp: "default-src 'self'; frame-ancestors 'none'; script-src 'self'; connect-src 'self'",
+  });
+
+  const result = await verifyProductionDeployment({
+    environment: profileEnvironment,
+    fetchImpl: sameOrigin.fetchImpl,
+  });
+
+  assert.deepEqual(result, { profileCount: 1, endpointCount: 4 });
+  const endpointCalls = sameOrigin.calls.slice(3);
+  assert.equal(endpointCalls.length, 7);
+  assert.equal(endpointCalls.some((call) => call.method === "OPTIONS"), false);
+  assert.equal(endpointCalls.every((call) => new URL(call.url).origin === profileEnvironment.CLAIRVEIL_WEBAPP_ORIGIN), true);
+});
+
+test("production gate rejects missing or non-JSON endpoint routes", async () => {
+  const missingRoute = productionGateFetch({
+    endpointResponse: ({ requestUrl, method }) => (
+      requestUrl.hostname === "rest.example.com"
+        && requestUrl.pathname.endsWith("/tree_state")
+        && method === "GET"
+        ? new Response(JSON.stringify({ error: "missing" }), {
+            status: 404,
+            headers: {
+              "content-type": "application/json",
+              "access-control-allow-origin": profileEnvironment.CLAIRVEIL_WEBAPP_ORIGIN,
+            },
+          })
+        : null
+    ),
+  });
+  await assert.rejects(
+    () => verifyProductionDeployment({
+      environment: profileEnvironment,
+      fetchImpl: missingRoute.fetchImpl,
+    }),
+    /tree_state GET probe failed with HTTP 404/,
+  );
+
+  const htmlFallback = productionGateFetch({
+    endpointResponse: ({ requestUrl, method }) => (
+      requestUrl.hostname === "rest.example.com"
+        && requestUrl.pathname.endsWith("/privacy_scan")
+        && method === "POST"
+        ? new Response("<!doctype html><title>fallback</title>", {
+            status: 200,
+            headers: {
+              "content-type": "text/html",
+              "access-control-allow-origin": profileEnvironment.CLAIRVEIL_WEBAPP_ORIGIN,
+            },
+          })
+        : null
+    ),
+  });
+  await assert.rejects(
+    () => verifyProductionDeployment({
+      environment: profileEnvironment,
+      fetchImpl: htmlFallback.fetchImpl,
+    }),
+    /privacy_scan must return a bounded JSON response/,
+  );
+
+  const missingWithdrawRoute = productionGateFetch({
+    endpointResponse: ({ requestUrl, method }) => (
+      requestUrl.hostname === "prover.example.com"
+        && requestUrl.pathname === "/v1/prover/withdraw"
+        && method === "POST"
+        ? new Response(JSON.stringify({ error: "missing" }), {
+            status: 404,
+            headers: {
+              "content-type": "application/json",
+              "access-control-allow-origin": profileEnvironment.CLAIRVEIL_WEBAPP_ORIGIN,
+            },
+          })
+        : null
+    ),
+  });
+  await assert.rejects(
+    () => verifyProductionDeployment({
+      environment: profileEnvironment,
+      fetchImpl: missingWithdrawRoute.fetchImpl,
+    }),
+    /cosmos-mainnet\.proverUrl withdraw POST route probe failed with HTTP 404/,
+  );
+});
+
+test("production gate rejects CORS policies that omit required REST POST or RPC methods", async () => {
+  const missingRestPost = productionGateFetch({
+    corsHeaders: (origin, { requestUrl }) => ({
+      "access-control-allow-origin": origin === "https://app.example.com" ? origin : "",
+      "access-control-allow-methods": requestUrl.pathname.endsWith("/privacy_scan")
+        ? "GET, OPTIONS"
+        : "GET, POST, OPTIONS",
+      "access-control-allow-headers": "Content-Type",
+    }),
+  });
+  await assert.rejects(
+    () => verifyProductionDeployment({
+      environment: profileEnvironment,
+      fetchImpl: missingRestPost.fetchImpl,
+    }),
+    /privacy_scan CORS preflight does not allow POST/,
+  );
+
+  const missingRpcGet = productionGateFetch({
+    corsHeaders: (origin, { requestUrl }) => ({
+      "access-control-allow-origin": origin === "https://app.example.com" ? origin : "",
+      "access-control-allow-methods": requestUrl.pathname === "/status"
+        ? "POST, OPTIONS"
+        : "GET, POST, OPTIONS",
+      "access-control-allow-headers": "Content-Type",
+    }),
+  });
+  await assert.rejects(
+    () => verifyProductionDeployment({
+      environment: profileEnvironment,
+      fetchImpl: missingRpcGet.fetchImpl,
+    }),
+    /status CORS preflight does not allow GET/,
+  );
+
+  const missingRpcPost = productionGateFetch({
+    corsHeaders: (origin, { requestUrl, requestedMethod }) => ({
+      "access-control-allow-origin": origin === "https://app.example.com" ? origin : "",
+      "access-control-allow-methods": requestUrl.hostname === "rpc.example.com"
+        && requestUrl.pathname === "/"
+        && requestedMethod === "POST"
+        ? "GET, OPTIONS"
+        : "GET, POST, OPTIONS",
+      "access-control-allow-headers": "Content-Type",
+    }),
+  });
+  await assert.rejects(
+    () => verifyProductionDeployment({
+      environment: profileEnvironment,
+      fetchImpl: missingRpcPost.fetchImpl,
+    }),
+    /JSON-RPC CORS preflight does not allow POST/,
+  );
+});
+
+test("production gate rejects redirected or rewritten profile endpoint probes", () => {
+  const endpoint = new URL("https://prover.example.com/v1/prover/transfer");
+  assert.throws(
+    () => assertDirectEndpointResponse({ redirected: false, url: "" }, endpoint, "cosmos-mainnet.proverUrl"),
+    /response URL is missing/,
+  );
+  assert.throws(
+    () => assertDirectEndpointResponse({
+      redirected: true,
+      url: "https://other.example/v1/prover/transfer",
+    }, endpoint, "cosmos-mainnet.proverUrl"),
+    /must not redirect/,
+  );
+  assert.throws(
+    () => assertDirectEndpointResponse({
+      redirected: false,
+      url: "https://prover.example.com/rewritten",
+    }, endpoint, "cosmos-mainnet.proverUrl"),
+    /must be served directly from its configured URL/,
   );
 });
 
@@ -328,7 +573,7 @@ test("server-backed gate requires exact canonical equality across health and con
     }],
     ["feature", {
       ...deployedConfig,
-      serverFeatures: { batchTransfer: true },
+      serverFeatures: { batchTransfer: false, proverProxy: true },
     }],
   ];
   for (const [label, informationalConfig] of mismatches) {
@@ -466,6 +711,35 @@ test("production gate rejects a final WebApp response that allows external scrip
   );
 });
 
+test("production gate does not accept a lookalike default-src directive", async () => {
+  const unchecked = productionGateFetch({
+    webAppCsp: restrictiveCsp.replace("default-src", "x-default-src"),
+  });
+  await assert.rejects(
+    () => verifyProductionDeployment({
+      environment: profileEnvironment,
+      fetchImpl: unchecked.fetchImpl,
+    }),
+    /default-src must allow only 'self'/,
+  );
+});
+
+test("production gate rejects a widened default-src directive", async () => {
+  const unchecked = productionGateFetch({
+    webAppCsp: restrictiveCsp.replace(
+      "default-src 'self'",
+      "default-src 'self' https://cdn.example.com",
+    ),
+  });
+  await assert.rejects(
+    () => verifyProductionDeployment({
+      environment: profileEnvironment,
+      fetchImpl: unchecked.fetchImpl,
+    }),
+    /default-src must allow only 'self'/,
+  );
+});
+
 test("production gate rejects redirected configuration artifacts", async () => {
   const redirected = productionGateFetch({
     configResponseOverride: {
@@ -586,6 +860,48 @@ test("production gate requires the browser-loaded artifact for a static DApp", a
     }),
     /must use the browser-loaded \/dapp-config\.json response/,
   );
+});
+
+test("production gate enforces the checked-in batch feature boundary for server-backed and static deployments", async () => {
+  const staticEnvironment = {
+    ...profileEnvironment,
+    CLAIRVEIL_WEBAPP_CONFIG_URL: "https://app.example.com/dapp-config.json",
+  };
+  const invalidFeatures = [
+    undefined,
+    { batchTransfer: true },
+  ];
+
+  for (const serverFeatures of invalidFeatures) {
+    const serverBackedConfig = {
+      ...deployedConfig,
+      serverFeatures,
+    };
+    const serverBacked = productionGateFetch({ config: serverBackedConfig });
+    await assert.rejects(
+      () => verifyProductionDeployment({
+        environment: profileEnvironment,
+        fetchImpl: serverBacked.fetchImpl,
+      }),
+      /requires serverFeatures\.batchTransfer=false/,
+    );
+
+    const staticConfig = {
+      ...serverBackedConfig,
+      serverBacked: false,
+    };
+    const staticDeployment = productionGateFetch({
+      config: staticConfig,
+      configPath: "/dapp-config.json",
+    });
+    await assert.rejects(
+      () => verifyProductionDeployment({
+        environment: staticEnvironment,
+        fetchImpl: staticDeployment.fetchImpl,
+      }),
+      /requires serverFeatures\.batchTransfer=false/,
+    );
+  }
 });
 
 test("production gate requires the browser-loaded health response for a server-backed DApp", async () => {
