@@ -3903,8 +3903,8 @@ var require_sleep = __commonJS({
   "node_modules/clairveiljs/node_modules/@cosmjs/utils/build/sleep.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
-    exports.sleep = sleep4;
-    async function sleep4(ms) {
+    exports.sleep = sleep2;
+    async function sleep2(ms) {
       return new Promise((resolve) => setTimeout(resolve, ms));
     }
   }
@@ -14069,8 +14069,8 @@ var require_decimal = __commonJS({
         if (fractional.length > fractionalDigits) {
           throw new Error("Got more fractional digits than supported");
         }
-        const quantity2 = BigInt(`${whole}${fractional.padEnd(fractionalDigits, "0")}`);
-        return new _Decimal(quantity2, fractionalDigits);
+        const quantity = BigInt(`${whole}${fractional.padEnd(fractionalDigits, "0")}`);
+        return new _Decimal(quantity, fractionalDigits);
       }
       /**
        * Constructs a decimal given the atomic units and the fractional digits.
@@ -77432,44 +77432,6 @@ var privacyScanEventTypeV2 = Object.freeze({
 var privacyScanValidationStateVersionV2 = "privacy-scan-validation-v2";
 var validatedPrivacyScanOutputBrandV2 = /* @__PURE__ */ Symbol("validatedPrivacyScanOutputV2");
 var validatedPrivacyScanPageBrandV2 = /* @__PURE__ */ Symbol("validatedPrivacyScanPageV2");
-var validatedPrivacyScanOutputIntegrityV2 = /* @__PURE__ */ new WeakMap();
-var validatedPrivacyScanPageIntegrityV2 = /* @__PURE__ */ new WeakMap();
-function scanIntegrityValue(value, seen = /* @__PURE__ */ new Set()) {
-  if (value instanceof Uint8Array) return ["bytes", hexFromBytes(value)];
-  if (Array.isArray(value)) {
-    if (seen.has(value)) throw new Error("privacy scan value contains a cycle");
-    seen.add(value);
-    const normalized = ["array", value.map((entry) => scanIntegrityValue(entry, seen))];
-    seen.delete(value);
-    return normalized;
-  }
-  if (value && typeof value === "object") {
-    if (seen.has(value)) throw new Error("privacy scan value contains a cycle");
-    seen.add(value);
-    const normalized = ["object", Object.keys(value).sort().map((key) => [
-      key,
-      scanIntegrityValue(value[key], seen)
-    ])];
-    seen.delete(value);
-    return normalized;
-  }
-  if (typeof value === "bigint") return ["bigint", value.toString()];
-  if (value === void 0) return ["undefined"];
-  return [typeof value, value];
-}
-function scanIntegrityFingerprint(value) {
-  return JSON.stringify(scanIntegrityValue(value));
-}
-function hasCurrentScanIntegrity(value, brand, registry) {
-  if (!value || typeof value !== "object" || !Object.prototype.hasOwnProperty.call(value, brand) || value[brand] !== true || !registry.has(value)) {
-    return false;
-  }
-  try {
-    return registry.get(value) === scanIntegrityFingerprint(value);
-  } catch {
-    return false;
-  }
-}
 var maxUint642 = (1n << 64n) - 1n;
 function parseNullifierUsage(value) {
   if (typeof value === "boolean") return value;
@@ -77934,6 +77896,8 @@ function scanOutput(input, index, summaries) {
     tx_hash: txHash,
     event_type: eventType
   };
+  Object.defineProperty(output, validatedPrivacyScanOutputBrandV2, { value: true });
+  Object.freeze(output);
   if (output.audit_key_id !== summary.audit_key_id || String(output.audit_key_epoch) !== String(summary.audit_key_epoch) || !equalScanBytes(output.audit_target_pubkey, summary.audit_target_pubkey)) {
     throw new Error(`privacy scan output ${index} does not match its summary audit identity`);
   }
@@ -77952,17 +77916,10 @@ function scanOutput(input, index, summaries) {
   } else {
     throw new Error(`privacy scan output ${index} has unsupported event type ${JSON.stringify(eventType)}`);
   }
-  Object.defineProperty(output, validatedPrivacyScanOutputBrandV2, { value: true });
-  Object.freeze(output);
-  validatedPrivacyScanOutputIntegrityV2.set(output, scanIntegrityFingerprint(output));
   return output;
 }
 function isValidatedPrivacyScanOutputV2(value) {
-  return hasCurrentScanIntegrity(
-    value,
-    validatedPrivacyScanOutputBrandV2,
-    validatedPrivacyScanOutputIntegrityV2
-  );
+  return Boolean(value && typeof value === "object" && value[validatedPrivacyScanOutputBrandV2] === true);
 }
 function scanRequest(input = {}) {
   const after = scanCursor(input.after, "privacy scan request after", { required: false });
@@ -78170,17 +78127,13 @@ function validatePendingPrivacyScanSummaries(request, page, state2) {
     global_sequence: lastOutput.global_sequence,
     output_index: lastOutput.output_index
   }) === 0 ? page.summaries.find((value) => scanEventKey(value) === scanEventKey(lastOutput)) : null;
-  const requestEventKey = scanEventKey(request.after);
-  const resumedSummary = page.summaries.find((value) => scanEventKey(value) === requestEventKey);
-  if (resumedSummary && !pendingByEvent.has(requestEventKey)) {
-    throw new Error("privacy scan mid-event resume requires pending summary validation state");
-  }
   if (!state2) {
     if (partialSummary && lastOutput.output_index < partialSummary.output_count - 1) {
       throw new Error("privacy scan partial page requires validation state");
     }
     return pendingByEvent;
   }
+  const requestEventKey = scanEventKey(request.after);
   for (const [key, expected] of pendingByEvent) {
     if (key !== requestEventKey || request.after.output_index !== expected.last_output_index) {
       throw new Error("privacy scan pending summary does not match the request cursor");
@@ -78360,15 +78313,7 @@ function validatePrivacyScanPageV2(response, request = {}) {
   validatePrivacyScanValidationStateMaps(nextBatchSelfViewState, nextPendingSummaryState);
   commitBatchSelfViewValidationState(validationState, nextBatchSelfViewState);
   commitPendingPrivacyScanSummaryState(validationState, nextPendingSummaryState);
-  validatedPrivacyScanPageIntegrityV2.set(page, scanIntegrityFingerprint(page));
   return page;
-}
-function isValidatedPrivacyScanPageV2(value) {
-  return hasCurrentScanIntegrity(
-    value,
-    validatedPrivacyScanPageBrandV2,
-    validatedPrivacyScanPageIntegrityV2
-  );
 }
 function processPrivacyScanOutputV2(output, { rootSeed, spendScalar, viewScalar } = {}) {
   if (!isValidatedPrivacyScanOutputV2(output)) throw new Error("privacy scan output must be issued by validatePrivacyScanPageV2");
@@ -78414,7 +78359,7 @@ function processPrivacyScanOutputV2(output, { rootSeed, spendScalar, viewScalar 
   });
 }
 function processPrivacyScanPageV2(page, { rootSeed, spendScalar, viewScalar } = {}) {
-  if (!isValidatedPrivacyScanPageV2(page) || !Array.isArray(page.outputs)) {
+  if (!page || typeof page !== "object" || page[validatedPrivacyScanPageBrandV2] !== true || !Array.isArray(page.outputs)) {
     throw new Error("privacy scan page must be issued by validatePrivacyScanPageV2");
   }
   const spend = spendScalar ?? deriveSpendKeys(rootSeed).scalar;
@@ -78791,21 +78736,92 @@ function typedScanUserDisclosureMode(output) {
   return mode;
 }
 function typedScanTxHash(output, txHash) {
-  const value = typedScanAliasedValue(output, "txHash", "tx_hash", "privacy scan transaction hash");
-  const outputHash = value == null ? "" : hexFromBytes2(typedScanBytes(value, "privacy scan transaction hash"));
-  const asserted = String(txHash ?? "").trim();
-  if (!asserted) return outputHash;
-  const comparableAsserted = asserted.toLowerCase().replace(/^0x/, "");
-  if (!/^[0-9a-f]{64}$/.test(comparableAsserted)) {
-    throw new Error("privacy scan asserted transaction hash must be exactly 32 bytes of hex");
+  const value = typedScanAliasedValue(output, "txHash", "tx_hash", "privacy scan batch transaction hash");
+  const embedded = value == null ? "" : hexFromBytes2(typedScanBytes(value, "privacy scan batch transaction hash"));
+  const requested = String(txHash ?? "").trim().replace(/^0x/i, "");
+  if (requested && embedded && requested.toLowerCase() !== embedded.toLowerCase()) {
+    throw new Error("transaction hash does not match the validated PrivacyScanOutputV2 record");
   }
-  if (!outputHash) {
-    throw new Error("privacy scan selected output does not carry a transaction hash");
+  return requested || embedded;
+}
+function transferDisclosureEventFromScanOutput(output) {
+  if (!isValidatedPrivacyScanOutputV2(output)) {
+    throw new Error("transfer disclosure output must come from validatePrivacyScanPageV2");
   }
-  if (outputHash && outputHash.toLowerCase() !== comparableAsserted) {
-    throw new Error("privacy scan disclosure transaction hash does not match the selected output");
+  const eventType = String(typedScanAliasedValue(
+    output,
+    "eventType",
+    "event_type",
+    "privacy scan transfer event type"
+  ) || "").trim();
+  if (eventType !== shieldedTransferScanEventType) {
+    throw new Error("selected PrivacyScanOutputV2 is not a shielded transfer output");
   }
-  return asserted;
+  const outputIndex = typedScanOutputIndex(output);
+  if (outputIndex !== 0) {
+    throw new Error("selected PrivacyScanOutputV2 is not the shielded transfer recipient output");
+  }
+  const bytesAttribute = (camel, snake, label) => {
+    const bytes4 = typedScanOptionalBytes(output, camel, snake, label);
+    return bytes4.length ? hexFromBytes2(bytes4) : "";
+  };
+  const fullDigest = bytesAttribute(
+    "fullDisclosureDigest",
+    "full_disclosure_digest",
+    "privacy scan transfer full disclosure digest"
+  );
+  return {
+    event_type: shieldedTransferScanEventType,
+    tx_hash_hex: typedScanTxHash(output),
+    attributes: [
+      {
+        key: "user_disclosure_mode",
+        value: typedScanUserDisclosureMode(output)
+      },
+      {
+        key: "user_disclosure_target_pubkey",
+        value: bytesAttribute(
+          "userDisclosureTargetPubkey",
+          "user_disclosure_target_pubkey",
+          "privacy scan transfer user disclosure target"
+        )
+      },
+      {
+        key: "user_disclosure_payload",
+        value: bytesAttribute(
+          "userDisclosurePayload",
+          "user_disclosure_payload",
+          "privacy scan transfer user disclosure payload"
+        )
+      },
+      {
+        key: "user_disclosure_digest",
+        value: bytesAttribute(
+          "userDisclosureDigest",
+          "user_disclosure_digest",
+          "privacy scan transfer user disclosure digest"
+        )
+      },
+      {
+        key: "audit_disclosure_payload",
+        value: bytesAttribute(
+          "auditDisclosurePayload",
+          "audit_disclosure_payload",
+          "privacy scan transfer audit disclosure payload"
+        )
+      },
+      { key: "audit_disclosure_digest", value: fullDigest },
+      {
+        key: "self_view_disclosure_payload",
+        value: bytesAttribute(
+          "selfViewDisclosurePayload",
+          "self_view_disclosure_payload",
+          "privacy scan transfer self-view disclosure payload"
+        )
+      },
+      { key: "self_view_disclosure_digest", value: fullDigest }
+    ]
+  };
 }
 function normalizedBatchScanDisclosureOutput(output) {
   if (!isValidatedPrivacyScanOutputV2(output)) {
@@ -79078,155 +79094,33 @@ function decodeBatchSelfViewDisclosureFromScanOutput(output, options = {}) {
     delivery: "self-view-encrypted"
   });
 }
-function normalizedTransferScanDisclosureOutput(output) {
-  if (!isValidatedPrivacyScanOutputV2(output)) {
-    throw new Error("transfer disclosure output must come from validatePrivacyScanPageV2");
-  }
-  const eventType = String(typedScanAliasedValue(
-    output,
-    "eventType",
-    "event_type",
-    "privacy scan transfer event type"
-  ) || "").trim();
-  if (eventType !== shieldedTransferScanEventType) {
-    throw new Error("selected PrivacyScanOutputV2 is not a shielded transfer output");
-  }
-  const outputIndex = typedScanOutputIndex(output);
-  if (outputIndex !== 0) {
-    throw new Error("shielded transfer disclosure is only carried by recipient output 0");
-  }
-  return {
-    outputIndex,
-    commitment: typedScanField(
-      typedScanRequiredBytes(output, "commitment", "commitment", "privacy scan transfer commitment", 32),
-      "privacy scan transfer commitment",
-      { nonZero: true }
-    ),
-    policy: typedScanPolicy(output),
-    mode: typedScanUserDisclosureMode(output),
-    userDigest: typedScanOptionalBytes(
-      output,
-      "userDisclosureDigest",
-      "user_disclosure_digest",
-      "privacy scan transfer user disclosure digest"
-    ),
-    userTarget: typedScanOptionalBytes(
-      output,
-      "userDisclosureTargetPubkey",
-      "user_disclosure_target_pubkey",
-      "privacy scan transfer user disclosure target"
-    ),
-    userPayload: typedScanOptionalBytes(
-      output,
-      "userDisclosurePayload",
-      "user_disclosure_payload",
-      "privacy scan transfer user disclosure payload"
-    ),
-    fullDigest: typedScanRequiredBytes(
-      output,
-      "fullDisclosureDigest",
-      "full_disclosure_digest",
-      "privacy scan transfer full disclosure digest",
-      32
-    ),
-    auditPayload: typedScanRequiredBytes(
-      output,
-      "auditDisclosurePayload",
-      "audit_disclosure_payload",
-      "privacy scan transfer audit disclosure payload"
-    ),
-    selfViewPayload: typedScanOptionalBytes(
-      output,
-      "selfViewDisclosurePayload",
-      "self_view_disclosure_payload",
-      "privacy scan transfer self-view disclosure payload"
-    )
-  };
-}
-function transferScanDisclosureEvent(record, output) {
-  return {
-    event_type: shieldedTransferScanEventType,
-    tx_hash_hex: typedScanTxHash(output),
-    attributes: [
-      { key: "user_disclosure_mode", value: record.mode },
-      { key: "user_disclosure_target_pubkey", value: hexFromBytes2(record.userTarget) },
-      { key: "user_disclosure_digest", value: hexFromBytes2(record.userDigest) },
-      { key: "user_disclosure_payload", value: hexFromBytes2(record.userPayload) },
-      { key: "audit_disclosure_digest", value: hexFromBytes2(record.fullDigest) },
-      { key: "audit_disclosure_payload", value: hexFromBytes2(record.auditPayload) },
-      { key: "self_view_disclosure_digest", value: record.selfViewPayload.length ? hexFromBytes2(record.fullDigest) : "" },
-      { key: "self_view_disclosure_payload", value: hexFromBytes2(record.selfViewPayload) }
-    ]
-  };
-}
-function transferTypedScanReport(report, record) {
-  const commitment = fieldHexV1(record.commitment);
-  if (report.output_index !== record.outputIndex || report.commitment_hex !== commitment) {
-    throw new Error("transfer disclosure plaintext does not match the typed scan output");
-  }
-  if (report.plane === planeUser && Number(report.payload?.policy) !== record.policy) {
-    throw new Error("transfer user disclosure policy does not match the typed scan output");
-  }
-  return {
-    ...report,
-    verification: {
-      ...report.verification,
-      typed_scan_output: true,
-      output_index_match: true,
-      output_commitment_match: true,
-      output_policy_match: true,
-      plaintext_blinding_bound: true,
-      typed_scan_disclosure_digest_match: true
-    }
-  };
-}
-function decodeUserDisclosureFromScanOutput(output, {
-  disclosureScalar,
-  disclosurePubKeyHex,
-  txHash,
-  shieldedPrefix: shieldedPrefix2,
-  assetDenom = ""
-} = {}) {
-  const record = normalizedTransferScanDisclosureOutput(output);
-  if (record.policy === 0) throw new Error("selected transfer output has no user disclosure");
-  const report = decodeUserDisclosureFromEvent(
-    transferScanDisclosureEvent(record, output),
+function decodeUserDisclosureFromScanOutput(output, disclosureScalar, disclosurePubKeyHex, txHash, options = {}) {
+  const event = transferDisclosureEventFromScanOutput(output);
+  return decodeUserDisclosureFromEvent(
+    event,
     disclosureScalar,
     disclosurePubKeyHex,
     typedScanTxHash(output, txHash),
-    { shieldedPrefix: shieldedPrefix2, assetDenom }
+    options
   );
-  return transferTypedScanReport(report, record);
 }
-function decodeSelfViewDisclosureFromScanOutput(output, {
-  disclosureScalar,
-  txHash,
-  shieldedPrefix: shieldedPrefix2,
-  assetDenom = ""
-} = {}) {
-  const record = normalizedTransferScanDisclosureOutput(output);
-  const report = decodeSelfViewDisclosureFromEvent(
-    transferScanDisclosureEvent(record, output),
+function decodeSelfViewDisclosureFromScanOutput(output, disclosureScalar, txHash, options = {}) {
+  const event = transferDisclosureEventFromScanOutput(output);
+  return decodeSelfViewDisclosureFromEvent(
+    event,
     disclosureScalar,
     typedScanTxHash(output, txHash),
-    { shieldedPrefix: shieldedPrefix2, assetDenom }
+    options
   );
-  return transferTypedScanReport(report, record);
 }
-function decodeAuditDisclosureFromScanOutput(output, {
-  disclosureScalar,
-  txHash,
-  shieldedPrefix: shieldedPrefix2,
-  assetDenom = ""
-} = {}) {
-  const record = normalizedTransferScanDisclosureOutput(output);
-  const report = decodeAuditDisclosureFromEvent(
-    transferScanDisclosureEvent(record, output),
+function decodeAuditDisclosureFromScanOutput(output, disclosureScalar, txHash, options = {}) {
+  const event = transferDisclosureEventFromScanOutput(output);
+  return decodeAuditDisclosureFromEvent(
+    event,
     disclosureScalar,
     typedScanTxHash(output, txHash),
-    { shieldedPrefix: shieldedPrefix2, assetDenom }
+    options
   );
-  return transferTypedScanReport(report, record);
 }
 function eventAttribute2(event, key) {
   return (event?.attributes || []).find((attribute) => attribute.key === key)?.value || "";
@@ -79378,9 +79272,12 @@ function randomNonZeroField(excluded = /* @__PURE__ */ new Set()) {
   }
 }
 function canonicalExpiryFromInput(expiresAtUnix, chainNowUnix) {
-  const now = chainNowUnix == null ? Math.floor(Date.now() / 1e3) : Number(chainNowUnix);
+  if (chainNowUnix == null) {
+    throw new Error("transfer chainNowUnix is required from authoritative chain time");
+  }
+  const now = chainNowUnix;
   if (!Number.isSafeInteger(now) || now < 0) throw new Error("transfer chainNowUnix must be a non-negative safe integer");
-  const expiry = expiresAtUnix == null ? now + 1800 : Number(expiresAtUnix);
+  const expiry = expiresAtUnix == null ? now + 1800 : expiresAtUnix;
   if (!Number.isSafeInteger(expiry) || expiry <= now) throw new Error("transfer expires_at_unix must be a future safe integer");
   return expiry;
 }
@@ -80079,26 +79976,14 @@ function validatePreparedTransferV5Proof(payload, proof, { nowUnix } = {}) {
   if (proofBytes.slice(128, 132).some((byte) => byte !== 0)) throw new Error("transfer v5 proof commitments are not supported");
   return true;
 }
-function buildTransferV5MsgFromPayloadAndProof(payload, proof, {
-  nowUnix,
-  creator,
-  expectedChainId,
-  expected_chain_id
-} = {}) {
+function buildTransferV5MsgFromPayloadAndProof(payload, proof, { nowUnix, creator } = {}) {
   validatePreparedTransferV5Proof(payload, proof, { nowUnix });
-  if (expectedChainId != null && expected_chain_id != null && String(expectedChainId) !== String(expected_chain_id)) {
-    throw new Error("expected transfer chain ID aliases conflict");
-  }
-  const expectedChain = String(expectedChainId ?? expected_chain_id ?? "").trim();
-  if (expectedChain && payload.chain_id !== expectedChain) {
-    throw new Error(`prepared transfer chain ID mismatch: expected ${expectedChain}, got ${payload.chain_id}`);
-  }
-  const sender = String(creator ?? payload.creator ?? "").trim();
-  if (!sender) throw new Error("transfer creator is required");
+  const messageCreator = String(creator ?? payload.creator ?? "").trim();
+  if (!messageCreator) throw new Error("transfer message creator is required");
   return {
-    // The proof binds owner intent, chain, expiry, outputs, and disclosures;
-    // creator is deliberately replaceable as the Cosmos fee payer/relayer.
-    creator: sender,
+    // Creator is deliberately outside the canonical proof effect. A relayer
+    // may replace it without rebuilding the payload or proof.
+    creator: messageCreator,
     proof: bytesFromHex2(proof.proof_hex, "transfer v5 proof"),
     root: bytesFromHex2(payload.root_hex, "transfer v5 root"),
     nullifiers: payload.inputs.map((input, index) => bytesFromHex2(input.nullifier_hex, `transfer v5 nullifier ${index}`)),
@@ -80471,7 +80356,33 @@ async function buildTransferMessage({ proverAdapter, ...input } = {}) {
   if (!proverAdapter?.proveTransfer) {
     throw new Error("proverAdapter.proveTransfer is required");
   }
-  const payload = await buildPreparedTransferPayload(input);
+  const hasChainNowCamel = input.chainNowUnix !== void 0 && input.chainNowUnix !== null;
+  const hasChainNowSnake = input.chain_now_unix !== void 0 && input.chain_now_unix !== null;
+  const chainNowCamel = hasChainNowCamel ? input.chainNowUnix : void 0;
+  const chainNowSnake = hasChainNowSnake ? input.chain_now_unix : void 0;
+  if (hasChainNowCamel && (!Number.isSafeInteger(chainNowCamel) || chainNowCamel < 0) || hasChainNowSnake && (!Number.isSafeInteger(chainNowSnake) || chainNowSnake < 0) || !hasChainNowCamel && !hasChainNowSnake) {
+    throw new Error("transfer chainNowUnix is required from authoritative chain time");
+  }
+  if (hasChainNowCamel && hasChainNowSnake && chainNowCamel !== chainNowSnake) {
+    throw new Error("chainNowUnix aliases conflict");
+  }
+  const hasExpiryCamel = input.expiresAtUnix !== void 0 && input.expiresAtUnix !== null;
+  const hasExpirySnake = input.expires_at_unix !== void 0 && input.expires_at_unix !== null;
+  const expiryCamel = hasExpiryCamel ? input.expiresAtUnix : void 0;
+  const expirySnake = hasExpirySnake ? input.expires_at_unix : void 0;
+  if (hasExpiryCamel && (!Number.isSafeInteger(expiryCamel) || expiryCamel < 0) || hasExpirySnake && (!Number.isSafeInteger(expirySnake) || expirySnake < 0)) {
+    throw new Error("transfer expiresAtUnix must be a non-negative safe integer");
+  }
+  if (hasExpiryCamel && hasExpirySnake && expiryCamel !== expirySnake) {
+    throw new Error("expiresAtUnix aliases conflict");
+  }
+  const chainNowUnix = hasChainNowCamel ? chainNowCamel : chainNowSnake;
+  const expiresAtUnix = hasExpiryCamel ? expiryCamel : expirySnake;
+  const payload = await buildPreparedTransferPayload({
+    ...input,
+    chainNowUnix,
+    ...expiresAtUnix === void 0 ? {} : { expiresAtUnix }
+  });
   await assertProverNullifiersUnspent(
     payload.inputs.map((inputNote) => inputNote.nullifier_hex),
     input.checkNullifiers
@@ -80479,14 +80390,12 @@ async function buildTransferMessage({ proverAdapter, ...input } = {}) {
   const response = await proverAdapter.proveTransfer({
     version: "v2",
     payload
-  }, { signal: input.signal });
+  }, { signal: input.signal, nowUnix: chainNowUnix });
   const proof = response?.proof || response;
   return {
     payload,
     proof,
-    message: buildTransferMsgFromPayloadAndProof(payload, proof, {
-      expectedChainId: input.chainId
-    })
+    message: buildTransferMsgFromPayloadAndProof(payload, proof, { nowUnix: chainNowUnix })
   };
 }
 function selectExactMatchNote(notes, denom, targetAmount) {
@@ -82496,151 +82405,6 @@ var activeReservationStatuses = Object.freeze([
   reservationStatuses.Unknown,
   reservationStatuses.ManualReview
 ]);
-async function getBroadcastReservationRecords(context) {
-  if (!context) return [];
-  if (typeof context.reservationManager?.getReservation !== "function") {
-    throw new Error("reservationManager.getReservation is required for reserved-note broadcast validation");
-  }
-  const records = await Promise.all(
-    context.reservationIDs.map((id) => context.reservationManager.getReservation(id))
-  );
-  for (const [index, reservationID] of context.reservationIDs.entries()) {
-    if (!records[index] || String(records[index].reservation_id || "") !== String(reservationID)) {
-      throw new Error(`reserved-note broadcast reservation ${reservationID} is missing or has the wrong identity`);
-    }
-  }
-  return records;
-}
-function normalizedReservationNullifier(value, label) {
-  const normalized = String(value ?? "").trim().replace(/^0x/i, "").toLowerCase();
-  if (!/^[0-9a-f]{64}$/.test(normalized)) {
-    throw new Error(`${label} must be exactly 32 bytes of hex`);
-  }
-  return normalized;
-}
-function normalizedReservationNullifiers(values, label) {
-  if (!Array.isArray(values) || values.length === 0) {
-    throw new Error(`${label} must contain at least one nullifier`);
-  }
-  const normalized = values.map(
-    (value, index) => normalizedReservationNullifier(value, `${label} at index ${index}`)
-  );
-  if (new Set(normalized).size !== normalized.length) {
-    throw new Error(`${label} contains duplicate nullifiers`);
-  }
-  return normalized;
-}
-function normalizedNullifierStatusMap(result) {
-  const statuses = /* @__PURE__ */ new Map();
-  const invalid = /* @__PURE__ */ new Set();
-  const add2 = (rawNullifier, value) => {
-    let nullifier;
-    try {
-      nullifier = normalizedReservationNullifier(rawNullifier, "nullifier status key");
-    } catch {
-      return;
-    }
-    if (invalid.has(nullifier)) return;
-    const used = parseNullifierUsage(value);
-    if (used === null || statuses.has(nullifier) && statuses.get(nullifier) !== used) {
-      statuses.delete(nullifier);
-      invalid.add(nullifier);
-      return;
-    }
-    statuses.set(nullifier, used);
-  };
-  if (result instanceof Map) {
-    for (const [nullifier, value] of result) add2(nullifier, value);
-  } else if (Array.isArray(result?.statuses) || Array.isArray(result?.Statuses)) {
-    for (const status of [
-      ...Array.isArray(result.statuses) ? result.statuses : [],
-      ...Array.isArray(result.Statuses) ? result.Statuses : []
-    ]) {
-      const canonical = status?.nullifier;
-      const alias2 = status?.Nullifier;
-      if (canonical != null && alias2 != null) {
-        let canonicalNullifier = "";
-        let aliasNullifier = "";
-        try {
-          canonicalNullifier = normalizedReservationNullifier(canonical, "nullifier status key");
-          aliasNullifier = normalizedReservationNullifier(alias2, "nullifier status key");
-        } catch {
-          add2(canonical, null);
-          add2(alias2, null);
-          continue;
-        }
-        if (canonicalNullifier !== aliasNullifier) {
-          add2(canonical, null);
-          add2(alias2, null);
-          continue;
-        }
-      }
-      add2(canonical ?? alias2, status);
-    }
-  } else if (result && typeof result === "object" && !Array.isArray(result)) {
-    for (const [nullifier, value] of Object.entries(result)) add2(nullifier, value);
-  }
-  return statuses;
-}
-function assertReservedInputNullifiersUnspent(statuses, nullifiers) {
-  const normalizedNullifiers = normalizedReservationNullifiers(
-    [...nullifiers],
-    "reserved spend input nullifiers"
-  );
-  const normalizedStatuses = normalizedNullifierStatusMap(statuses);
-  for (const [index, nullifier] of normalizedNullifiers.entries()) {
-    if (normalizedStatuses.get(nullifier) !== false) {
-      throw new Error(`reserved spend input nullifier at index ${index} is spent, missing, or has an invalid status`);
-    }
-  }
-}
-function assertBatchTransferNullifiersUnspent(statuses, nullifiers) {
-  return assertReservedInputNullifiersUnspent(statuses, nullifiers);
-}
-function inputNullifiersFromReservationRecords(records) {
-  if (!records.length) return [];
-  const normalized = records.map((record) => {
-    const candidates = [
-      record?.metadata?.input_nullifier_hexes,
-      record?.metadata?.inputNullifierHexes,
-      record?.metadata?.batch_transfer_nullifier_hexes,
-      record?.metadata?.batchTransferNullifierHexes
-    ].filter((value) => value != null);
-    if (!candidates.length || candidates.some((value) => !Array.isArray(value))) {
-      throw new Error("reserved spend is missing its persisted input nullifiers");
-    }
-    const aliases = candidates.map((value) => normalizedReservationNullifiers(
-      value,
-      "reserved spend persisted input nullifiers"
-    ));
-    if (aliases.some(
-      (value) => value.length !== aliases[0].length || value.some((nullifier, index) => nullifier !== aliases[0][index])
-    )) {
-      throw new Error("reserved spend input nullifier metadata aliases conflict");
-    }
-    return aliases[0];
-  });
-  if (normalized.some(
-    (value) => value.length !== normalized[0].length || value.some((nullifier, index) => nullifier !== normalized[0][index])
-  )) {
-    throw new Error("reserved spend reservations disagree on their persisted input nullifiers");
-  }
-  return normalized[0];
-}
-async function recheckReservedInputNullifiers(context, checkNullifiers, fallbackNullifiers = []) {
-  const persisted = context ? inputNullifiersFromReservationRecords(await getBroadcastReservationRecords(context)) : [];
-  const fallback = fallbackNullifiers.length ? normalizedReservationNullifiers([...fallbackNullifiers], "relay payload input nullifiers") : [];
-  if (persisted.length && fallback.length && (persisted.length !== fallback.length || persisted.some((nullifier, index) => nullifier !== fallback[index]))) {
-    throw new Error("relay payload input nullifiers do not match the reserved spend");
-  }
-  const nullifiers = persisted.length ? persisted : fallback;
-  if (!nullifiers.length) return [];
-  if (typeof checkNullifiers !== "function") {
-    throw new Error("reserved spend broadcast requires checkNullifiers before submission");
-  }
-  assertReservedInputNullifiersUnspent(await checkNullifiers([...nullifiers]), nullifiers);
-  return Object.freeze([...nullifiers]);
-}
 var activeReservationStatusSet = new Set(activeReservationStatuses);
 var reservationStatusSet = new Set(Object.values(reservationStatuses));
 function operationStateDetails(reservations = []) {
@@ -82740,9 +82504,21 @@ var reconciledSpentTransition = /* @__PURE__ */ Symbol("reconciledSpentTransitio
 var managedReservationEvidenceMutation = /* @__PURE__ */ Symbol("managedReservationEvidenceMutation");
 var managedOperationReconciliation = /* @__PURE__ */ Symbol("managedOperationReconciliation");
 var managedAuthoritativeBroadcastFailure = /* @__PURE__ */ Symbol("managedAuthoritativeBroadcastFailure");
+var managedExpiredProofReadyBroadcastFailure = /* @__PURE__ */ Symbol("managedExpiredProofReadyBroadcastFailure");
 var managedRelayTransactionEvidence = /* @__PURE__ */ Symbol("managedRelayTransactionEvidence");
 var sameOriginLocalRelayBroadcastReason = "same_origin_local_relayer_submit";
 var managedReservationCreation = /* @__PURE__ */ Symbol("managedReservationCreation");
+function markManagedPatch(patch, marker, value) {
+  Object.defineProperty(patch, marker, { value, enumerable: true });
+  return patch;
+}
+function commitReservationTransitions(store, transitions) {
+  if (!transitions.length) return [];
+  if (typeof store.compareAndSetReservationStatusBatch !== "function") {
+    throw new Error("reservation store atomic batch compare-and-set is required");
+  }
+  return store.compareAndSetReservationStatusBatch(transitions);
+}
 var inProcessMutationQueues = /* @__PURE__ */ new Map();
 function withInProcessMutationLock(lockName, callback) {
   const previous = inProcessMutationQueues.get(lockName) || Promise.resolve();
@@ -82898,8 +82674,8 @@ function futureIso(now, durationMs = defaultLeaseDurationMs) {
   return new Date(new Date(now).getTime() + durationMs).toISOString();
 }
 function normalizedBatchItemIndex(value) {
-  const provided = value !== void 0 && value !== null && value !== "";
-  if (!provided) {
+  const provided2 = value !== void 0 && value !== null && value !== "";
+  if (!provided2) {
     return { value: 0, valid: true, provided: false };
   }
   if (typeof value !== "number" && typeof value !== "string") {
@@ -83095,62 +82871,12 @@ function operationSuccessEvidenceRequiredInputState(metadata = {}) {
   }
   return direct.present ? direct : nested;
 }
-var reservationExecutionTransports = /* @__PURE__ */ new Set(["cosmos", "evm", "external"]);
-function executionTransportMetadataState(metadata = {}) {
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
-    return { present: false, value: "" };
-  }
-  const hasCanonical = Object.prototype.hasOwnProperty.call(metadata, "execution_transport");
-  const hasAlias = Object.prototype.hasOwnProperty.call(metadata, "executionTransport");
-  const normalize3 = (value, label) => {
-    const transport = String(value ?? "").trim().toLowerCase();
-    if (!reservationExecutionTransports.has(transport)) {
-      throw new Error(`${label} must be cosmos, evm, or external`);
-    }
-    return transport;
-  };
-  const canonical = hasCanonical ? normalize3(metadata.execution_transport, "execution_transport metadata") : "";
-  const alias2 = hasAlias ? normalize3(metadata.executionTransport, "executionTransport metadata") : "";
-  if (hasCanonical && hasAlias && canonical !== alias2) {
-    throw new Error("execution transport metadata aliases conflict");
-  }
-  return {
-    present: hasCanonical || hasAlias,
-    value: hasCanonical ? canonical : alias2
-  };
-}
-function executionTransportInputState(metadata = {}) {
-  const direct = executionTransportMetadataState(metadata);
-  const nested = executionTransportMetadataState(metadata.metadata || {});
-  if (direct.present && nested.present && direct.value !== nested.value) {
-    throw new Error("execution transport aliases conflict");
-  }
-  return direct.present ? direct : nested;
-}
-function reservationExecutionTransport(reservation = {}) {
-  return executionTransportMetadataState(reservation.metadata || {}).value;
-}
 function normalizeReservationMetadata(value) {
   const metadata = cloneReservationMetadata(value);
-  for (const field2 of [
-    "provider_rejection_log",
-    "providerRejectionLog",
-    "provider_log",
-    "providerLog",
-    "raw_log",
-    "rawLog"
-  ]) {
-    delete metadata[field2];
-  }
   const evidenceRequired = operationSuccessEvidenceRequiredMetadataState(metadata);
   if (evidenceRequired.present) {
     metadata.operation_success_evidence_required = evidenceRequired.value;
     delete metadata.operationSuccessEvidenceRequired;
-  }
-  const executionTransport = executionTransportMetadataState(metadata);
-  if (executionTransport.present) {
-    metadata.execution_transport = executionTransport.value;
-    delete metadata.executionTransport;
   }
   return metadata;
 }
@@ -83229,6 +82955,14 @@ var initialLifecycleMetadataFields = /* @__PURE__ */ new Set([
   "relayHandedOff",
   "relay_handed_off_at",
   "relayHandedOffAt",
+  "transaction_included_confirmed",
+  "transactionIncludedConfirmed",
+  "payload_hash_matched",
+  "payloadHashMatched",
+  "relay_evidence_checked_height",
+  "relayEvidenceCheckedHeight",
+  "relay_evidence_tx_hash",
+  "relayEvidenceTxHash",
   "broadcast_attempt_started_at",
   "broadcastAttemptStartedAt",
   "broadcast_attempt_reason",
@@ -83253,8 +82987,6 @@ var initialLifecycleMetadataFields = /* @__PURE__ */ new Set([
   "operationSuccessEvidenceConflicts",
   "operation_success_evidence_required",
   "operationSuccessEvidenceRequired",
-  "execution_transport",
-  "executionTransport",
   "manual_review_resolution_reason",
   "manualReviewResolutionReason",
   "wallet_rejected_before_broadcast",
@@ -83262,7 +82994,13 @@ var initialLifecycleMetadataFields = /* @__PURE__ */ new Set([
   "provider_rejection_code",
   "providerRejectionCode",
   "provider_rejection_codespace",
-  "providerRejectionCodespace"
+  "provider_rejection_log",
+  "rpc_invoked",
+  "check_tx_rejected",
+  "broadcast_aborted_before_rpc",
+  "authoritative_execution_failure",
+  "execution_failed_confirmed",
+  "input_nullifier_count"
 ]);
 function assertInitialReservationRecord(reservation, { allowManagedClaimTokenHash = false } = {}) {
   if (reservation.status !== reservationStatuses.Reserved) {
@@ -83310,14 +83048,14 @@ function normalizeState(state2 = {}) {
     throw new Error("reservation state reservations must be an array");
   }
   const reservations = (state2.reservations || []).map(normalizeReservation);
-  const reservationIDs = /* @__PURE__ */ new Set();
+  const reservationIDs2 = /* @__PURE__ */ new Set();
   const activeKeys = /* @__PURE__ */ new Set();
   const confirmedSpentKeys = /* @__PURE__ */ new Set();
   for (const reservation of reservations) {
-    if (reservationIDs.has(reservation.reservation_id)) {
+    if (reservationIDs2.has(reservation.reservation_id)) {
       throw new Error(`duplicate reservation_id in reservation state: ${reservation.reservation_id}`);
     }
-    reservationIDs.add(reservation.reservation_id);
+    reservationIDs2.add(reservation.reservation_id);
     const key = activeKey(reservation);
     if (isActiveReservationStatus(reservation.status)) {
       if (activeKeys.has(key)) {
@@ -83403,13 +83141,12 @@ function assertCurrentLeaseToken(current, token, owner, now) {
 }
 function assertLeaseTransitionAllowed(current, to, patch, now) {
   if (!requiresReservationLeaseToken(current.status, to)) return;
-  const startsProving = current.status === reservationStatuses.Reserved && to === reservationStatuses.Proving;
-  if (startsProving && !current.lease_token) {
+  if (current.status === reservationStatuses.Reserved && to === reservationStatuses.Proving && !current.lease_token) {
     const token2 = patchLeaseToken(patch);
     const owner2 = String(patch.lease_owner || patch.leaseOwner || "");
     const until = Date.parse(patch.lease_until || patch.leaseUntil || "");
     if (!token2 || !owner2 || !Number.isFinite(until)) {
-      throw new Error("a future lease owner, token, and expiry are required to claim the reservation");
+      throw new Error("a future lease owner, token, and expiry are required to start proving");
     }
     const expectedClaimHash = String(
       current.metadata?.[reservationClaimTokenHashField] || ""
@@ -83492,6 +83229,14 @@ var protectedMetadataEvidenceFields = [
   "relayHandedOff",
   "relay_handed_off_at",
   "relayHandedOffAt",
+  "transaction_included_confirmed",
+  "transactionIncludedConfirmed",
+  "payload_hash_matched",
+  "payloadHashMatched",
+  "relay_evidence_checked_height",
+  "relayEvidenceCheckedHeight",
+  "relay_evidence_tx_hash",
+  "relayEvidenceTxHash",
   "broadcast_attempt_started_at",
   "broadcastAttemptStartedAt",
   "broadcast_attempt_reason",
@@ -83506,8 +83251,6 @@ var protectedMetadataEvidenceFields = [
   "operationSuccessEvidenceConflicts",
   "operation_success_evidence_required",
   "operationSuccessEvidenceRequired",
-  "execution_transport",
-  "executionTransport",
   "operator_approved",
   "operatorApproved",
   "operator_id",
@@ -83516,14 +83259,17 @@ var protectedMetadataEvidenceFields = [
   "operatorApprovalReference",
   "manual_review_resolution_reason",
   "manualReviewResolutionReason",
-  "input_nullifier_hexes",
-  "inputNullifierHexes",
-  "batch_transfer_nullifier_hexes",
-  "batchTransferNullifierHexes"
+  "authoritative_execution_failure",
+  "execution_failed_confirmed",
+  "input_nullifier_count"
 ];
 var managedLifecycleMetadataAliases = /* @__PURE__ */ new Map([
   ["relayHandedOff", "relay_handed_off"],
   ["relayHandedOffAt", "relay_handed_off_at"],
+  ["transactionIncludedConfirmed", "transaction_included_confirmed"],
+  ["payloadHashMatched", "payload_hash_matched"],
+  ["relayEvidenceCheckedHeight", "relay_evidence_checked_height"],
+  ["relayEvidenceTxHash", "relay_evidence_tx_hash"],
   ["broadcastAttemptStartedAt", "broadcast_attempt_started_at"],
   ["broadcastAttemptReason", "broadcast_attempt_reason"],
   ["noBroadcastAttempt", "no_broadcast_attempt"],
@@ -83536,18 +83282,15 @@ var managedLifecycleMetadataAliases = /* @__PURE__ */ new Map([
   ["operationSuccessEvidenceErrors", "operation_success_evidence_errors"],
   ["operationSuccessEvidenceConflicts", "operation_success_evidence_conflicts"],
   ["operationSuccessEvidenceRequired", "operation_success_evidence_required"],
-  ["executionTransport", "execution_transport"],
   ["manualReviewResolutionReason", "manual_review_resolution_reason"],
   ["walletRejectedBeforeBroadcast", "wallet_rejected_before_broadcast"],
-  ["providerRejectionCode", "provider_rejection_code"],
-  ["providerRejectionCodespace", "provider_rejection_codespace"]
+  ["providerRejectionCode", "provider_rejection_code"]
 ]);
 var managedLifecycleMetadataFields = new Set([
   reservationClaimTokenHashField,
   ...initialLifecycleMetadataFields,
   "wallet_rejected_before_broadcast",
-  "provider_rejection_code",
-  "provider_rejection_codespace"
+  "provider_rejection_code"
 ].filter((field2) => !managedLifecycleMetadataAliases.has(field2)));
 function metadataFieldChanged(currentMetadata, nextMetadata, field2) {
   if (!Object.prototype.hasOwnProperty.call(nextMetadata, field2)) return false;
@@ -83555,9 +83298,10 @@ function metadataFieldChanged(currentMetadata, nextMetadata, field2) {
 }
 function assertManagedLifecycleMetadataMutation(current, to, patch = {}, {
   managedRelayHandoff = false,
-  managedRelaySubmission = false,
+  managedRelayEvidence = false,
   managedBroadcastAttempt = false,
   managedBroadcastRejection = false,
+  managedExpiredProofReadyBroadcastFailure: managedExpiredProofReadyBroadcastFailure2 = false,
   managedOperationReconcile = false
 } = {}) {
   const metadata = patch.metadata;
@@ -83571,14 +83315,17 @@ function assertManagedLifecycleMetadataMutation(current, to, patch = {}, {
   if (current.status === reservationStatuses.Proving && to === reservationStatuses.ProofReady) {
     allowed.add("no_broadcast_attempt");
     allowed.add("operation_success_evidence_required");
-    allowed.add("execution_transport");
   }
   if (managedRelayHandoff) {
     allowed.add("relay_handed_off");
     allowed.add("relay_handed_off_at");
     allowed.add("no_broadcast_attempt");
   }
-  if (managedRelaySubmission) {
+  if (managedRelayEvidence) {
+    allowed.add("transaction_included_confirmed");
+    allowed.add("payload_hash_matched");
+    allowed.add("relay_evidence_checked_height");
+    allowed.add("relay_evidence_tx_hash");
     allowed.add("no_broadcast_attempt");
   }
   if (managedBroadcastAttempt) {
@@ -83590,8 +83337,19 @@ function assertManagedLifecycleMetadataMutation(current, to, patch = {}, {
     allowed.add("wallet_rejected_before_broadcast");
     allowed.add("provider_rejection_code");
     allowed.add("provider_rejection_codespace");
+    allowed.add("provider_rejection_log");
+    allowed.add("rpc_invoked");
+    allowed.add("check_tx_rejected");
+    allowed.add("broadcast_aborted_before_rpc");
     allowed.add("no_broadcast_attempt");
     allowed.add("proof_discarded");
+  }
+  if (managedExpiredProofReadyBroadcastFailure2) {
+    allowed.add("authoritative_execution_failure");
+    allowed.add("execution_failed_confirmed");
+    allowed.add("input_nullifier_count");
+    allowed.add("proof_discarded");
+    allowed.add("no_broadcast_attempt");
   }
   if (managedOperationReconcile) {
     for (const field2 of operationOutcomeMetadataFields) allowed.add(field2);
@@ -83812,10 +83570,26 @@ function patchWithPersistedReconciliationEvidence(patch = {}) {
 }
 function allowedReservationPatchFields(current, to, {
   managedRelayHandoff = false,
-  managedRelaySubmission = false,
+  managedRelayEvidence = false,
   managedBroadcastAttempt = false,
   managedOperationReconcile = false
 } = {}) {
+  if (managedRelayEvidence) {
+    return /* @__PURE__ */ new Set([
+      "updated_at",
+      "updatedAt",
+      "metadata",
+      "payload_hash",
+      "payloadHash",
+      "submitted_tx_hash",
+      "submittedTxHash",
+      "txHashSubmitted",
+      "broadcast_attempt_count",
+      "broadcastAttemptCount",
+      "broadcast_in_flight",
+      "broadcastInFlight"
+    ]);
+  }
   const allowed = new Set(commonReservationPatchFields);
   if (to === reservationStatuses.ProofReady && current.status === reservationStatuses.Proving) {
     for (const aliases of operationSuccessPredicateFields) {
@@ -83835,10 +83609,6 @@ function allowedReservationPatchFields(current, to, {
     allowed.add("txBytesHash");
     allowed.add("sign_doc_hash");
     allowed.add("signDocHash");
-  }
-  if (managedRelaySubmission) {
-    allowed.add("payload_hash");
-    allowed.add("payloadHash");
   }
   if (managedBroadcastAttempt) {
     for (const field2 of broadcastReservationPatchFields) allowed.add(field2);
@@ -83905,42 +83675,6 @@ function assertSameStatusLeaseRenewalPatch(current, patch = {}, now) {
 }
 function isManagedRelayHandoffMutation(current, to, patch = {}) {
   return patch[managedReservationEvidenceMutation] === "relay_handoff" && current.status === reservationStatuses.ProofReady && to === reservationStatuses.ProofReady;
-}
-function isManagedRelaySubmissionMutation(current, to, patch = {}) {
-  return patch[managedReservationEvidenceMutation] === "relay_submission" && current.status === reservationStatuses.ProofReady && to === reservationStatuses.Submitted;
-}
-function assertManagedRelaySubmissionMutation(current, to, patch, now) {
-  const tagged = patch[managedReservationEvidenceMutation] === "relay_submission";
-  if (!tagged) return false;
-  if (!isManagedRelaySubmissionMutation(current, to, patch)) {
-    throw new Error("relay submission evidence is only valid for ProofReady -> Submitted");
-  }
-  if (!booleanEvidence(
-    current.metadata?.relay_handed_off ?? current.metadata?.relayHandedOff
-  )) {
-    throw new Error("relay submission requires a previously recorded relay handoff");
-  }
-  if (current.broadcast_in_flight || Number(current.broadcast_attempt_count || 0) > 0) {
-    throw new Error("relay submission cannot replace a local broadcast attempt");
-  }
-  const payloadHash = String(patch.payload_hash || patch.payloadHash || "").trim();
-  if (!payloadHash || !current.payload_hash || payloadHash !== current.payload_hash) {
-    throw new Error("relay submission payload hash must match the handed-off reservation");
-  }
-  const txHash = String(
-    patch.submitted_tx_hash || patch.submittedTxHash || patch.txHashSubmitted || ""
-  ).trim();
-  if (!txHash) {
-    throw new Error("relay submission requires the network tx hash");
-  }
-  if (patch.metadata?.no_broadcast_attempt !== false) {
-    throw new Error("relay submission must record the external broadcast boundary");
-  }
-  if (Number(patch.broadcast_attempt_count) !== Number(current.broadcast_attempt_count || 0) + 1) {
-    throw new Error("relay submission must increase broadcast_attempt_count exactly once");
-  }
-  assertCurrentLeaseToken(current, patchLeaseToken(patch), patchLeaseOwner(patch), now);
-  return true;
 }
 function isManagedBroadcastAttemptMutation(current, to, patch = {}) {
   return patch[managedReservationEvidenceMutation] === "broadcast_attempt" && current.status === reservationStatuses.ProofReady && to === reservationStatuses.ProofReady;
@@ -84022,6 +83756,51 @@ function assertManagedAuthoritativeBroadcastFailureMutation(current, to, patch) 
   }
   return true;
 }
+function assertManagedExpiredProofReadyBroadcastFailureMutation(current, to, patch, now) {
+  if (patch[managedExpiredProofReadyBroadcastFailure] !== true) return false;
+  if (current.status !== reservationStatuses.ProofReady || to !== reservationStatuses.ReplanRequired) {
+    throw new Error("expired ProofReady recovery requires ProofReady -> ReplanRequired");
+  }
+  const leaseUntil = leaseExpirationMs(current);
+  if (!current.lease_owner || !current.lease_token || leaseUntil <= 0 || leaseUntil > new Date(now).getTime()) {
+    throw new Error("expired ProofReady recovery requires an expired worker lease");
+  }
+  if (!current.broadcast_in_flight || Number(current.broadcast_attempt_count || 0) < 1) {
+    throw new Error("expired ProofReady recovery requires a durable in-flight broadcast attempt");
+  }
+  const currentSubmitted = normalizedTxIdentity(current.submitted_tx_hash);
+  const currentTxBytes = normalizedTxIdentity(current.tx_bytes_hash);
+  const currentSignDoc = normalizedTxIdentity(current.sign_doc_hash);
+  if (!currentSubmitted || !currentTxBytes || !currentSignDoc || normalizedTxIdentity(patch.submitted_tx_hash) !== currentSubmitted || normalizedTxIdentity(patch.tx_bytes_hash) !== currentTxBytes || normalizedTxIdentity(patch.sign_doc_hash) !== currentSignDoc || normalizedTxIdentity(patch.metadata?.tx_hash_checked) !== currentSubmitted) {
+    throw new Error("expired ProofReady recovery requires the complete exact stored transaction identity");
+  }
+  if (!hasExactPostBroadcastFailureEvidence(current, patch)) {
+    throw new Error("expired ProofReady recovery requires exact failed transaction and nullifier-unspent evidence");
+  }
+  if (patch.metadata?.proof_discarded !== true || patch.metadata?.authoritative_execution_failure !== true || patch.metadata?.execution_failed_confirmed !== true || patch.metadata?.reconcile_reason !== "expired_proof_ready_authoritative_exact_broadcast_failure" || !Number.isSafeInteger(patch.metadata?.input_nullifier_count) || patch.metadata.input_nullifier_count < 1 || patch.broadcast_in_flight !== false) {
+    throw new Error("expired ProofReady recovery requires complete authoritative failure evidence");
+  }
+  if (Number(patch.broadcast_attempt_count) !== Number(current.broadcast_attempt_count || 0)) {
+    throw new Error("expired ProofReady recovery cannot rewrite broadcast attempt count");
+  }
+  return true;
+}
+function assertManagedRelayHandoffMutation(current, to, patch, now) {
+  if (!isManagedRelayHandoffMutation(current, to, patch)) return false;
+  if (current.broadcast_in_flight || Number(current.broadcast_attempt_count || 0) > 0) {
+    throw new Error("broadcast attempt already started; reconcile before relay handoff");
+  }
+  const metadata = patch.metadata;
+  if (!metadata || !booleanEvidence(metadata.relay_handed_off)) {
+    throw new Error("relay handoff evidence requires relay_handed_off metadata");
+  }
+  const payloadHash = String(patch.payload_hash || patch.payloadHash || "");
+  if (!payloadHash || !current.payload_hash || payloadHash !== current.payload_hash) {
+    throw new Error("relay handoff payload hash must match the ProofReady reservation");
+  }
+  assertCurrentLeaseToken(current, patchLeaseToken(patch), patchLeaseOwner(patch), now);
+  return true;
+}
 function assertManagedRelayTransactionEvidenceMutation(current, to, patch) {
   if (patch[managedRelayTransactionEvidence] !== true) return false;
   if (current.status === reservationStatuses.Submitted && to === reservationStatuses.Submitted) {
@@ -84067,7 +83846,10 @@ function assertManagedRelayTransactionEvidenceMutation(current, to, patch) {
     throw new Error("relay transaction evidence conflicts with the submitted transaction hash");
   }
   const normalizedTxHash4 = normalizedTxIdentity(txHash);
-  const conflictingIdentity = reservationNetworkTransactionIdentities(current).find((identity) => identity !== normalizedTxHash4);
+  const conflictingIdentity = normalizedIdentityValues([
+    current.submitted_tx_hash,
+    current.tx_bytes_hash
+  ]).find((identity) => identity !== normalizedTxHash4);
   if (conflictingIdentity) {
     throw new Error("relay transaction evidence conflicts with persisted transaction identity");
   }
@@ -84122,22 +83904,6 @@ function isDurableSameOriginLocalRelayAttempt(reservation = {}) {
 function isPersistedSameOriginLocalRelayEvidence(reservation = {}) {
   const metadata = reservation.metadata || {};
   return metadata.relay_handed_off !== true && String(metadata.broadcast_attempt_reason || "") === sameOriginLocalRelayBroadcastReason && Boolean(String(metadata.local_relayer || "").trim());
-}
-function assertManagedRelayHandoffMutation(current, to, patch, now) {
-  if (!isManagedRelayHandoffMutation(current, to, patch)) return false;
-  if (current.broadcast_in_flight || Number(current.broadcast_attempt_count || 0) > 0) {
-    throw new Error("broadcast attempt already started; reconcile before relay handoff");
-  }
-  const metadata = patch.metadata;
-  if (!metadata || !booleanEvidence(metadata.relay_handed_off)) {
-    throw new Error("relay handoff evidence requires relay_handed_off metadata");
-  }
-  const payloadHash = String(patch.payload_hash || patch.payloadHash || "");
-  if (!payloadHash || !current.payload_hash || payloadHash !== current.payload_hash) {
-    throw new Error("relay handoff payload hash must match the ProofReady reservation");
-  }
-  assertCurrentLeaseToken(current, patchLeaseToken(patch), patchLeaseOwner(patch), now);
-  return true;
 }
 function assertStoreLeaseMutationAllowed(current, to, patch, now) {
   if (requiresReservationLeaseToken(current.status, to)) {
@@ -84215,10 +83981,8 @@ function assertCoreTransitionEvidence(from, to, patch = {}) {
     assertBroadcastAttemptMetadata(patch, "ProofReady -> Unknown");
   }
 }
-function assertStoreTransitionEvidence(current, to, patch = {}, {
-  managedRelaySubmission = false
-} = {}) {
-  if (current.status === reservationStatuses.ProofReady && [reservationStatuses.Submitted, reservationStatuses.Unknown].includes(to) && !managedRelaySubmission && (!current.broadcast_in_flight || Number(current.broadcast_attempt_count || 0) < 1)) {
+function assertStoreTransitionEvidence(current, to, patch = {}) {
+  if (current.status === reservationStatuses.ProofReady && [reservationStatuses.Submitted, reservationStatuses.Unknown].includes(to) && (!current.broadcast_in_flight || Number(current.broadcast_attempt_count || 0) < 1)) {
     throw new Error("durable broadcast attempt is required before terminal bookkeeping");
   }
   assertCoreTransitionEvidence(current.status, to, patch);
@@ -84283,8 +84047,8 @@ function hasManualReviewApprovalEvidence(metadata = {}) {
 }
 function assertInactiveTransitionEvidence(current, to, metadata = {}) {
   const from = current.status;
-  if ((from === reservationStatuses.Submitted || from === reservationStatuses.Unknown) && (to === reservationStatuses.ReplanRequired || to === reservationStatuses.Failed) && !hasExactPostBroadcastFailureEvidence(current, metadata)) {
-    throw new Error(`${from} -> ${to} requires exact tx_hash_checked, positive checked_height, nullifier_unspent_confirmed, and tx_absent_or_failed_confirmed reconcile evidence`);
+  if ((from === reservationStatuses.Submitted || from === reservationStatuses.Unknown) && (to === reservationStatuses.ReplanRequired || to === reservationStatuses.Failed) && !hasPostBroadcastReplanEvidence(metadata)) {
+    throw new Error(`${from} -> ${to} requires nullifier_unspent_confirmed and tx_absent_or_failed_confirmed reconcile evidence`);
   }
   if (from === reservationStatuses.ProofReady && to === reservationStatuses.ReplanRequired) {
     if (hasStoredBroadcastEvidence(current)) {
@@ -84306,257 +84070,6 @@ function reconciledSpentPatch(patch = {}, { operationReconcile = false } = {}) {
     Object.defineProperty(authorized, managedOperationReconciliation, { value: true });
   }
   return authorized;
-}
-var mergedOperationSuccessEvidence = /* @__PURE__ */ Symbol("clairveil.merged-operation-success-evidence");
-function hasExplicitOperationEvidence(input = {}) {
-  return operationSuccessEvidence(input).provided;
-}
-function duplicateOperationEvidence(input = {}) {
-  const evidence = operationSuccessEvidence(input);
-  return evidence.provided ? evidence : null;
-}
-function sameNormalizedIdentitySet(left = [], right = []) {
-  const leftValues = normalizedIdentityValues(left).sort();
-  const rightValues = normalizedIdentityValues(right).sort();
-  return leftValues.length === rightValues.length && leftValues.every((value, index) => value === rightValues[index]);
-}
-function duplicateOperationEvidenceLinkValues(evidence) {
-  if (!evidence) return /* @__PURE__ */ new Set();
-  const values = [];
-  for (const [kind, identities] of [
-    ["tx_hash", evidence.txHashes],
-    ["tx_bytes_hash", evidence.txBytesHashes],
-    ["sign_doc_hash", evidence.signDocHashes]
-  ]) {
-    values.push(...normalizedIdentityValues(identities || []).map((value) => `${kind}:${value}`));
-  }
-  const operationEvidenceHash = normalizedTxIdentity(evidence.operationEvidenceHash);
-  if (operationEvidenceHash) {
-    values.push(`operation_evidence_hash:${operationEvidenceHash}`);
-  }
-  return new Set(values);
-}
-function duplicateOperationEvidenceLinkConflicts(reservations, evidences = []) {
-  const present = evidences.filter(Boolean);
-  if (present.length < 2) return [];
-  let shared = duplicateOperationEvidenceLinkValues(present[0]);
-  for (const evidence of present.slice(1)) {
-    const links = duplicateOperationEvidenceLinkValues(evidence);
-    shared = new Set([...shared].filter((value) => links.has(value)));
-  }
-  if (shared.size) return [];
-  return reservations.map((reservation) => operationEvidenceConflict(
-    reservation,
-    "tx_hash_or_tx_bytes",
-    "duplicate_unlinked",
-    {
-      expected: "a shared transaction identity on every evidence fragment",
-      actual: "missing or disjoint transaction identities"
-    }
-  ));
-}
-function duplicateOperationEvidenceConflicts(reservations, leftInput, rightInput) {
-  const left = duplicateOperationEvidence(leftInput);
-  const right = duplicateOperationEvidence(rightInput);
-  if (!left || !right) return [];
-  const differing = [];
-  const compareIdentities = (sourceField, leftValues, rightValues) => {
-    if (!leftValues.length || !rightValues.length) return;
-    if (!sameNormalizedIdentitySet(leftValues, rightValues)) {
-      differing.push({
-        sourceField,
-        expected: normalizedIdentityValues(leftValues).join(","),
-        actual: normalizedIdentityValues(rightValues).join(",")
-      });
-    }
-  };
-  const compare = (sourceField, leftValue, rightValue, options = {}) => {
-    if (leftValue === "" || leftValue == null || rightValue === "" || rightValue == null) return;
-    if (!operationEvidenceValuesEqual(leftValue, rightValue, options)) {
-      differing.push({
-        sourceField,
-        expected: String(leftValue),
-        actual: String(rightValue)
-      });
-    }
-  };
-  const compareVerification = (sourceField, leftProvided, leftVerified, rightProvided, rightVerified) => {
-    if (!leftProvided || !rightProvided || leftVerified === rightVerified) return;
-    differing.push({
-      sourceField,
-      expected: String(leftVerified),
-      actual: String(rightVerified)
-    });
-  };
-  for (const aliasError of /* @__PURE__ */ new Set([...left.aliasErrors, ...right.aliasErrors])) {
-    differing.push({
-      sourceField: aliasError.split(" ")[0] || "operation_input",
-      expected: "consistent aliases",
-      actual: aliasError
-    });
-  }
-  compareIdentities("tx_hash", left.txHashes, right.txHashes);
-  compareIdentities("tx_bytes_hash", left.txBytesHashes, right.txBytesHashes);
-  compareIdentities("sign_doc_hash", left.signDocHashes, right.signDocHashes);
-  const leftOutcomes = executionOutcomeValues(left.txResults);
-  const rightOutcomes = executionOutcomeValues(right.txResults);
-  if (leftOutcomes.length && rightOutcomes.length && !sameNormalizedIdentitySet(leftOutcomes, rightOutcomes)) {
-    differing.push({
-      sourceField: "transaction_outcome",
-      expected: leftOutcomes.join(","),
-      actual: rightOutcomes.join(",")
-    });
-  }
-  compare("expected_operation_evidence_hash", left.operationEvidenceHash, right.operationEvidenceHash, { caseInsensitive: true });
-  compare("expected_output_commitment", left.outputCommitment, right.outputCommitment, { caseInsensitive: true });
-  compare("expected_disclosure_digest", left.disclosureDigest, right.disclosureDigest, { caseInsensitive: true });
-  compare("expected_recipient_hash", left.recipientHash, right.recipientHash, { caseInsensitive: true });
-  compare("expected_amount", left.amount, right.amount);
-  compare("expected_amount_hash", left.amountHash, right.amountHash, { caseInsensitive: true });
-  compare("expected_denom", left.denom, right.denom);
-  if (left.batchItemIndexProvided && right.batchItemIndexProvided) {
-    compare("batch_item_index", left.batchItemIndex, right.batchItemIndex);
-  }
-  compareVerification(
-    "evm_transaction_verification",
-    left.evmTransactionVerificationProvided,
-    left.evmTransactionVerified,
-    right.evmTransactionVerificationProvided,
-    right.evmTransactionVerified
-  );
-  compareVerification(
-    "evm_privacy_receipt_verification",
-    left.evmPrivacyReceiptVerificationProvided,
-    left.evmPrivacyReceiptVerified,
-    right.evmPrivacyReceiptVerificationProvided,
-    right.evmPrivacyReceiptVerified
-  );
-  compareVerification(
-    "evm_finality_verification",
-    left.evmFinalityVerificationProvided,
-    left.evmFinalityVerified,
-    right.evmFinalityVerificationProvided,
-    right.evmFinalityVerified
-  );
-  if (left.batchItemIndexKnownProvided && right.batchItemIndexKnownProvided) {
-    compare(
-      "batch_item_index_known",
-      left.batchItemIndexKnown,
-      right.batchItemIndexKnown
-    );
-  }
-  return reservations.flatMap((reservation) => differing.map(
-    ({ sourceField, expected, actual }) => operationEvidenceConflict(reservation, sourceField, "duplicate_conflict", { expected, actual })
-  ));
-}
-function mergedDuplicateOperationEvidence(evidences = []) {
-  const present = evidences.filter(Boolean);
-  if (!present.length) return null;
-  const firstValue = (field2) => present.find((evidence) => evidence[field2] !== "")?.[field2] ?? "";
-  const identityValues = (field2) => uniqueIdentityValues(present.flatMap((evidence) => evidence[field2]));
-  const txHashes = identityValues("txHashes");
-  const txBytesHashes = identityValues("txBytesHashes");
-  const signDocHashes = identityValues("signDocHashes");
-  const txResults = [...new Set(present.flatMap((evidence) => evidence.txResults))];
-  const verification = (prefix) => {
-    const providedField = `${prefix}Provided`;
-    const verifiedField = prefix.replace(/Verification$/, "Verified");
-    const provided = present.some((evidence) => evidence[providedField]);
-    return {
-      [providedField]: provided,
-      [verifiedField]: provided && present.some(
-        (evidence) => evidence[providedField] && evidence[verifiedField]
-      )
-    };
-  };
-  const itemIndexEvidence = present.find((evidence) => evidence.batchItemIndexProvided) ?? present[0];
-  const itemIndexKnownEvidence = present.find((evidence) => evidence.batchItemIndexKnownProvided);
-  return {
-    provided: true,
-    txHash: txHashes[0] || "",
-    txHashes,
-    txBytesHash: txBytesHashes[0] || "",
-    txBytesHashes,
-    signDocHash: signDocHashes[0] || "",
-    signDocHashes,
-    txResult: txResults[0] || null,
-    txResults,
-    operationEvidenceHash: firstValue("operationEvidenceHash"),
-    outputCommitment: firstValue("outputCommitment"),
-    disclosureDigest: firstValue("disclosureDigest"),
-    recipientHash: firstValue("recipientHash"),
-    amount: firstValue("amount"),
-    amountHash: firstValue("amountHash"),
-    denom: firstValue("denom"),
-    ...verification("evmTransactionVerification"),
-    ...verification("evmPrivacyReceiptVerification"),
-    ...verification("evmFinalityVerification"),
-    aliasErrors: [...new Set(present.flatMap((evidence) => evidence.aliasErrors))],
-    batchItemIndexRaw: itemIndexEvidence.batchItemIndexRaw,
-    batchItemIndex: itemIndexEvidence.batchItemIndex,
-    batchItemIndexValid: present.every((evidence) => evidence.batchItemIndexValid),
-    batchItemIndexProvided: present.some((evidence) => evidence.batchItemIndexProvided),
-    batchItemIndexKnownProvided: Boolean(itemIndexKnownEvidence),
-    batchItemIndexKnown: itemIndexKnownEvidence ? itemIndexKnownEvidence.batchItemIndexKnown : itemIndexEvidence.batchItemIndexKnown
-  };
-}
-function coalesceSpentNotesByLookupKey(spentNotes = [], reservationsForLookupKey = () => []) {
-  const grouped = /* @__PURE__ */ new Map();
-  for (const entry of spentNotes) {
-    if (!grouped.has(entry.lookupKey)) grouped.set(entry.lookupKey, []);
-    grouped.get(entry.lookupKey).push(entry.note);
-  }
-  const coalesced = [];
-  for (const [lookupKey, notes] of grouped) {
-    const reservations = reservationsForLookupKey(lookupKey);
-    const parsed = notes.map(duplicateOperationEvidence);
-    const envelopeConflicts = parsed.flatMap(
-      (evidence) => (evidence?.aliasErrors || []).filter((error) => error.startsWith("operation_evidence_envelope ")).map((error) => ({ sourceField: "operation_evidence_envelope", error }))
-    );
-    if (envelopeConflicts.length) {
-      throw evidenceConflictError(
-        reservations,
-        reservations.flatMap((reservation) => envelopeConflicts.map(
-          ({ sourceField, error }) => operationEvidenceConflict(reservation, sourceField, "alias_conflict", {
-            expected: "consistent aliases",
-            actual: error
-          })
-        )),
-        "operation success evidence envelope aliases conflict"
-      );
-    }
-    const compared = [notes[0]];
-    for (const note of notes.slice(1)) {
-      const conflicts = compared.flatMap(
-        (previous) => duplicateOperationEvidenceConflicts(reservations, previous, note)
-      );
-      if (conflicts.length) {
-        throw evidenceConflictError(
-          reservations,
-          conflicts,
-          "duplicate spent evidence conflicts for one reservation input"
-        );
-      }
-      compared.push(note);
-    }
-    const linkConflicts = duplicateOperationEvidenceLinkConflicts(reservations, parsed);
-    if (linkConflicts.length) {
-      throw evidenceConflictError(
-        reservations,
-        linkConflicts,
-        "duplicate spent evidence fragments are not linked to one transaction"
-      );
-    }
-    const selected = { ...notes[0] };
-    const mergedEvidence = mergedDuplicateOperationEvidence(parsed);
-    if (mergedEvidence) {
-      Object.defineProperty(selected, mergedOperationSuccessEvidence, {
-        value: mergedEvidence
-      });
-    }
-    coalesced.push({ lookupKey, note: selected });
-  }
-  return coalesced;
 }
 function operationReconciliationOutcome(reservations, spentNotesByLookupKey) {
   const requiresEvidence = reservations.some(operationSuccessEvidenceRequired);
@@ -84627,11 +84140,75 @@ function operationReconciliationTransitions(reservations, spentNotesByLookupKey,
         "retry found mixed reservation state after a succeeded operation reconciliation"
       );
     }
+    const explicitEvidenceKeys = [
+      "operationSuccessEvidence",
+      "operation_success_evidence",
+      "successEvidence",
+      "success_evidence",
+      "evidence",
+      "txResult",
+      "tx_result",
+      "transactionResult",
+      "transaction_result",
+      "broadcastResult",
+      "broadcast_result",
+      "outputCommitment",
+      "output_commitment",
+      "outputCommitmentHex",
+      "output_commitment_hex",
+      "commitmentHex",
+      "commitment_hex",
+      "auditDisclosureDigest",
+      "audit_disclosure_digest",
+      "auditDisclosureDigestHex",
+      "audit_disclosure_digest_hex",
+      "disclosureDigest",
+      "disclosure_digest",
+      "recipientHash",
+      "recipient_hash",
+      "recipientHashHex",
+      "recipient_hash_hex",
+      "amountHash",
+      "amount_hash",
+      "amountHashHex",
+      "amount_hash_hex",
+      "expectedOutputCommitment",
+      "expected_output_commitment",
+      "expectedDisclosureDigest",
+      "expected_disclosure_digest",
+      "expectedRecipientHash",
+      "expected_recipient_hash",
+      "expectedAmount",
+      "expected_amount",
+      "operationAmount",
+      "operation_amount",
+      "actualAmount",
+      "actual_amount",
+      "expectedAmountHash",
+      "expected_amount_hash",
+      "expectedDenom",
+      "expected_denom",
+      "operationDenom",
+      "operation_denom",
+      "actualDenom",
+      "actual_denom",
+      "batchItemIndex",
+      "batch_item_index",
+      "itemIndex",
+      "item_index",
+      "batchItemIndexKnown",
+      "batch_item_index_known",
+      "itemIndexKnown",
+      "item_index_known"
+    ];
     const conflicts = [];
     for (const reservation of reservations) {
       const note = spentNotesByLookupKey.get(reservation.nullifier_lookup_key);
       if (!note) continue;
-      if (!hasExplicitOperationEvidence(note)) continue;
+      const hasExplicitEvidence = explicitEvidenceKeys.some(
+        (key) => Object.prototype.hasOwnProperty.call(note, key) && note[key] != null
+      );
+      if (!hasExplicitEvidence) continue;
       const evidence = evaluateOperationSuccessEvidence(reservation, note);
       if (!evidence.evaluated || !evidence.matches) {
         conflicts.push(...evidence.conflicts.length ? evidence.conflicts : [operationEvidenceConflict(reservation, "operation_input", "conflict")]);
@@ -84709,13 +84286,6 @@ function aliasedStringValue(input = {}, canonicalKey, aliasKey, label) {
   }
   return String(firstDefined(canonical, alias2, ""));
 }
-function aliasedStringValueForKeys(input = {}, keys = [], label) {
-  const values = keys.filter((key) => Object.prototype.hasOwnProperty.call(input, key)).map((key) => input[key]).filter((value) => value !== void 0 && value !== null).map(String);
-  if (values.some((value) => value !== values[0])) {
-    throw new Error(`${label} aliases conflict`);
-  }
-  return values[0] || "";
-}
 function aliasedStringArray(input = {}, canonicalKey, aliasKey, label) {
   const canonical = input?.[canonicalKey];
   const alias2 = input?.[aliasKey];
@@ -84769,22 +84339,20 @@ function operationEvidenceEnvelopesEqual(left, right, seen = /* @__PURE__ */ new
   const rightKeys = Object.keys(right).sort();
   return leftKeys.length === rightKeys.length && leftKeys.every((key, index) => key === rightKeys[index] && operationEvidenceEnvelopesEqual(left[key], right[key], seen));
 }
-function nestedOperationEvidenceState(input = {}) {
+function nestedOperationEvidence(input = {}) {
   const candidates = [];
   for (const key of ["operationSuccessEvidence", "operation_success_evidence", "successEvidence", "success_evidence", "evidence"]) {
     const candidate = input?.[key];
     if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
-      candidates.push({ key, value: candidate });
+      candidates.push(candidate);
     }
   }
-  const conflictingKeys = candidates.length > 1 ? candidates.slice(1).filter((candidate) => !operationEvidenceEnvelopesEqual(candidates[0].value, candidate.value)).map((candidate) => candidate.key) : [];
-  return {
-    evidence: candidates[0]?.value || null,
-    provided: candidates.length > 0,
-    conflict: conflictingKeys.length > 0,
-    keys: candidates.map((candidate) => candidate.key),
-    conflictingKeys
-  };
+  if (candidates.length > 1 && candidates.slice(1).some(
+    (candidate) => !operationEvidenceEnvelopesEqual(candidates[0], candidate)
+  )) {
+    throw new Error("operation success evidence envelope aliases conflict");
+  }
+  return candidates[0] || null;
 }
 function txResultObjects(input = {}) {
   const results = [];
@@ -84874,75 +84442,13 @@ function operationEvidenceAliasConflict(sources = [], keys = [], {
   }
   return new Set(values).size > 1;
 }
-function operationVerificationEvidence(sources = [], directKeys = [], nestedKeys = []) {
-  const values = [];
-  for (const source of sources) {
-    if (!source || typeof source !== "object" || Array.isArray(source)) continue;
-    for (const key of directKeys) {
-      if (Object.prototype.hasOwnProperty.call(source, key) && source[key] != null) {
-        values.push(source[key]);
-      }
-    }
-    for (const key of nestedKeys) {
-      const nested = source[key];
-      if (nested && typeof nested === "object" && !Array.isArray(nested) && Object.prototype.hasOwnProperty.call(nested, "verified") && nested.verified != null) {
-        values.push(nested.verified);
-      }
-    }
-  }
-  const normalized = values.map(booleanEvidence);
-  return {
-    provided: values.length > 0,
-    verified: normalized.includes(true),
-    conflict: new Set(normalized).size > 1
-  };
-}
 function operationSuccessEvidence(input = {}) {
-  if (input?.[mergedOperationSuccessEvidence]) {
-    return input[mergedOperationSuccessEvidence];
-  }
-  const nestedState = nestedOperationEvidenceState(input);
-  const nested = nestedState.evidence;
+  const nested = nestedOperationEvidence(input);
   const evidenceSource = nested || input;
   const source = evidenceSource;
   const aliasSources = [evidenceSource];
   const txResults = executionResultObjects(evidenceSource);
   const txResult = txResults[0] || null;
-  const verificationSources = [.../* @__PURE__ */ new Set([
-    evidenceSource,
-    ...txResults,
-    ...txResults.flatMap(executionResultContainers)
-  ])];
-  const evmTransactionVerification = operationVerificationEvidence(
-    verificationSources,
-    [
-      "evmTransactionVerified",
-      "evm_transaction_verified",
-      "transactionVerified",
-      "transaction_verified"
-    ],
-    ["transactionVerification", "transaction_verification"]
-  );
-  const evmPrivacyReceiptVerification = operationVerificationEvidence(
-    verificationSources,
-    [
-      "evmPrivacyReceiptVerified",
-      "evm_privacy_receipt_verified",
-      "privacyReceiptVerified",
-      "privacy_receipt_verified"
-    ],
-    ["privacyReceipt", "privacy_receipt"]
-  );
-  const evmFinalityVerification = operationVerificationEvidence(
-    verificationSources,
-    [
-      "evmFinalityVerified",
-      "evm_finality_verified",
-      "finalityVerified",
-      "finality_verified"
-    ],
-    ["finality", "evmFinality", "evm_finality"]
-  );
   const txHashKeys = [
     "txHash",
     "tx_hash",
@@ -85047,20 +84553,6 @@ function operationSuccessEvidence(input = {}) {
     "asset_denom"
   ];
   const aliasErrors = [];
-  if (nestedState.conflict) {
-    aliasErrors.push(
-      `operation_evidence_envelope evidence aliases conflict: ${nestedState.keys.join(", ")}`
-    );
-  }
-  if (evmTransactionVerification.conflict) {
-    aliasErrors.push("evm_transaction_verification evidence aliases conflict");
-  }
-  if (evmPrivacyReceiptVerification.conflict) {
-    aliasErrors.push("evm_privacy_receipt_verification evidence aliases conflict");
-  }
-  if (evmFinalityVerification.conflict) {
-    aliasErrors.push("evm_finality_verification evidence aliases conflict");
-  }
   for (const [field2, keys, options] of [
     ["expected_operation_evidence_hash", operationEvidenceHashKeys, { caseInsensitive: true }],
     ["expected_output_commitment", outputCommitmentKeys, { caseInsensitive: true }],
@@ -85077,18 +84569,7 @@ function operationSuccessEvidence(input = {}) {
     }
   }
   const aliasValue3 = (keys) => String(firstDefined(...keys.map((key) => source[key]), ""));
-  const unambiguousOperationEvidenceValues = [
-    ...txBytesHashes,
-    ...signDocHashes,
-    aliasValue3(operationEvidenceHashKeys),
-    aliasValue3(outputCommitmentKeys),
-    aliasValue3(disclosureDigestKeys),
-    aliasValue3(recipientHashKeys),
-    aliasValue3(amountHashKeys)
-  ];
-  const unambiguousOperationEvidenceProvided = txResults.length > 0 || unambiguousOperationEvidenceValues.some((value) => value !== "" && value != null) || evmTransactionVerification.provided || evmPrivacyReceiptVerification.provided || evmFinalityVerification.provided || normalizedItemIndex.provided || batchItemIndexKnown !== void 0 && batchItemIndexKnown !== null || aliasErrors.length > 0;
   return {
-    provided: nestedState.provided || unambiguousOperationEvidenceProvided || txHashes.length > 0 && (!input?.note || unambiguousOperationEvidenceProvided),
     txHash: txHashes[0] || "",
     txHashes,
     txBytesHash: txBytesHashes[0] || "",
@@ -85104,18 +84585,11 @@ function operationSuccessEvidence(input = {}) {
     amount: aliasValue3(amountKeys),
     amountHash: aliasValue3(amountHashKeys),
     denom: aliasValue3(denomKeys),
-    evmTransactionVerificationProvided: evmTransactionVerification.provided,
-    evmTransactionVerified: evmTransactionVerification.provided && evmTransactionVerification.verified,
-    evmPrivacyReceiptVerificationProvided: evmPrivacyReceiptVerification.provided,
-    evmPrivacyReceiptVerified: evmPrivacyReceiptVerification.provided && evmPrivacyReceiptVerification.verified,
-    evmFinalityVerificationProvided: evmFinalityVerification.provided,
-    evmFinalityVerified: evmFinalityVerification.provided && evmFinalityVerification.verified,
     aliasErrors,
     batchItemIndexRaw: batchItemIndex,
     batchItemIndex: normalizedItemIndex.value,
     batchItemIndexValid: normalizedItemIndex.valid,
     batchItemIndexProvided: normalizedItemIndex.provided,
-    batchItemIndexKnownProvided: batchItemIndexKnown !== void 0 && batchItemIndexKnown !== null,
     batchItemIndexKnown: batchItemIndexKnown !== void 0 && batchItemIndexKnown !== null ? booleanEvidence(batchItemIndexKnown) : batchItemIndex !== void 0 && batchItemIndex !== null
   };
 }
@@ -85162,11 +84636,6 @@ function canonicalRelayTransactionHash(value) {
 function normalizedIdentityValues(values = []) {
   return [...new Set(values.map(normalizedTxIdentity).filter(Boolean))];
 }
-function reservationNetworkTransactionIdentities(reservation = {}) {
-  return normalizedIdentityValues(
-    reservationExecutionTransport(reservation) === "evm" ? [reservation.submitted_tx_hash] : [reservation.submitted_tx_hash, reservation.tx_bytes_hash]
-  );
-}
 function operationEvidenceConflictField(sourceField) {
   if (["submitted_tx_hash", "tx_hash", "tx_bytes_hash", "sign_doc_hash", "tx_hash_or_tx_bytes"].includes(sourceField)) {
     return "tx_hash";
@@ -85177,11 +84646,6 @@ function operationEvidenceConflictField(sourceField) {
   if (sourceField === "expected_recipient_hash") return "recipient_hash";
   if (sourceField === "expected_denom") return "denom";
   if (sourceField === "batch_item_index") return "batch_item_index";
-  if (sourceField === "batch_item_index_known") return "batch_item_index";
-  if (sourceField === "operation_evidence_envelope") return "operation_evidence";
-  if (sourceField === "evm_transaction_verification") return "tx_hash";
-  if (sourceField === "evm_privacy_receipt_verification") return "transaction_outcome";
-  if (sourceField === "evm_finality_verification") return "transaction_outcome";
   if (sourceField === "transaction_outcome") return "transaction_outcome";
   return sourceField || "operation_input";
 }
@@ -85211,7 +84675,6 @@ function evidenceConflictError(reservations, conflicts, message = "operation evi
   }, fields ? `${message}: ${fields}` : message);
 }
 function evaluateOperationTxIdentity(reservation = {}, actual = {}) {
-  const executionTransport = reservationExecutionTransport(reservation);
   const expectedTxHash = normalizedTxIdentity(reservation.submitted_tx_hash);
   const expectedTxBytesHash = normalizedTxIdentity(reservation.tx_bytes_hash);
   const actualTxHashes = normalizedIdentityValues(actual.txHashes || [actual.txHash]);
@@ -85224,90 +84687,6 @@ function evaluateOperationTxIdentity(reservation = {}, actual = {}) {
   const errors = [];
   const conflicts = [];
   let matched = false;
-  if (executionTransport === "evm") {
-    let txHashMatched = false;
-    let txBytesHashMatched = false;
-    if (!expectedTxHash) {
-      errors.push("persisted EVM network tx_hash identity missing");
-      conflicts.push(operationEvidenceConflict(reservation, "tx_hash", "expected_missing", {
-        expected: "",
-        actual: actualTxHashes
-      }));
-    }
-    if (!expectedTxBytesHash) {
-      errors.push("persisted EVM tx_bytes_hash artifact binding missing");
-      conflicts.push(operationEvidenceConflict(reservation, "tx_bytes_hash", "expected_missing", {
-        expected: "",
-        actual: actualTxBytesHashes
-      }));
-    }
-    if (!actualTxHashes.length) {
-      errors.push("EVM network tx_hash evidence missing");
-      conflicts.push(operationEvidenceConflict(reservation, "tx_hash", "missing", {
-        expected: expectedTxHash,
-        actual: ""
-      }));
-    }
-    if (!actualTxBytesHashes.length) {
-      errors.push("EVM tx_bytes_hash artifact evidence missing");
-      conflicts.push(operationEvidenceConflict(reservation, "tx_bytes_hash", "missing", {
-        expected: expectedTxBytesHash,
-        actual: ""
-      }));
-    }
-    if (actualTxHashes.length > 1) {
-      errors.push("tx_hash evidence conflict");
-      conflicts.push(operationEvidenceConflict(reservation, "tx_hash", "conflict", {
-        expected: expectedTxHash,
-        actual: actualTxHashes
-      }));
-    }
-    if (actualTxBytesHashes.length > 1) {
-      errors.push("tx_bytes_hash evidence conflict");
-      conflicts.push(operationEvidenceConflict(reservation, "tx_bytes_hash", "conflict", {
-        expected: expectedTxBytesHash,
-        actual: actualTxBytesHashes
-      }));
-    }
-    for (const actualTxHash of actualTxHashes) {
-      if (!expectedTxHash || actualTxHash !== expectedTxHash) {
-        errors.push("EVM network tx_hash mismatch");
-        conflicts.push(operationEvidenceConflict(reservation, "tx_hash", "mismatch", {
-          expected: expectedTxHash,
-          actual: actualTxHash
-        }));
-      } else {
-        txHashMatched = true;
-      }
-    }
-    for (const actualTxBytesHash of actualTxBytesHashes) {
-      if (!expectedTxBytesHash || actualTxBytesHash !== expectedTxBytesHash) {
-        errors.push("EVM tx_bytes_hash artifact mismatch");
-        conflicts.push(operationEvidenceConflict(reservation, "tx_bytes_hash", "mismatch", {
-          expected: expectedTxBytesHash,
-          actual: actualTxBytesHash
-        }));
-      } else {
-        txBytesHashMatched = true;
-      }
-    }
-    if (expectedSignDoc) {
-      for (const actualSignDoc of actualSignDocs) {
-        if (actualSignDoc !== expectedSignDoc) {
-          errors.push("sign_doc_hash mismatch");
-          conflicts.push(operationEvidenceConflict(reservation, "sign_doc_hash", "mismatch", {
-            expected: expectedSignDoc,
-            actual: actualSignDoc
-          }));
-        }
-      }
-    }
-    return {
-      matches: errors.length === 0 && txHashMatched && txBytesHashMatched,
-      errors: [...new Set(errors)],
-      conflicts: uniqueOperationEvidenceConflicts(conflicts)
-    };
-  }
   if (!actualIdentitySeen) {
     errors.push("tx_hash_or_tx_result identity missing");
     conflicts.push(operationEvidenceConflict(reservation, "tx_hash_or_tx_bytes", "missing", {
@@ -85389,33 +84768,6 @@ function evaluateOperationTxIdentity(reservation = {}, actual = {}) {
     conflicts: uniqueOperationEvidenceConflicts(conflicts)
   };
 }
-function evmReceiptStatusSucceeded(receiptStatus) {
-  const normalized = String(receiptStatus).trim().toLowerCase();
-  return receiptStatus === true || receiptStatus === 1 || receiptStatus === 1n || normalized === "1" || normalized === "true" || normalized === "success" || /^0x0*1$/.test(normalized);
-}
-function executionOutcomeValues(txResults = []) {
-  const values = [];
-  for (const txResult of txResults) {
-    for (const container of executionResultContainers(txResult)) {
-      if (Object.prototype.hasOwnProperty.call(container, "code") && container.code !== void 0 && container.code !== null && String(container.code).trim() !== "") {
-        const rawCode = String(container.code).trim();
-        const normalizedCode = /^(0|[1-9][0-9]*)$/.test(rawCode) ? String(Number(rawCode)) : `invalid:${rawCode.toLowerCase()}`;
-        values.push(`cosmos-code:${normalizedCode}`);
-      }
-      for (const status of [
-        container.receiptStatus,
-        container.receipt_status,
-        container.status
-      ]) {
-        if (status === void 0 || status === null || String(status).trim() === "") continue;
-        values.push(
-          evmReceiptStatusSucceeded(status) ? "evm-status:success" : `evm-status:failure:${String(status).trim().toLowerCase()}`
-        );
-      }
-    }
-  }
-  return [...new Set(values)].sort();
-}
 function executionOutcomeErrors(txResult) {
   if (!txResult || typeof txResult !== "object") return [];
   const errors = [];
@@ -85433,28 +84785,11 @@ function executionOutcomeErrors(txResult) {
     container.status
   ]).filter((status) => status !== void 0 && status !== null && String(status).trim() !== "");
   for (const receiptStatus of receiptStatuses) {
-    if (!evmReceiptStatusSucceeded(receiptStatus)) {
-      errors.push("evm_receipt_status indicates failure");
-    }
+    const normalized = String(receiptStatus).trim().toLowerCase();
+    const succeeded = receiptStatus === true || receiptStatus === 1 || receiptStatus === 1n || normalized === "1" || normalized === "true" || normalized === "success" || /^0x0*1$/.test(normalized);
+    if (!succeeded) errors.push("evm_receipt_status indicates failure");
   }
   return [...new Set(errors)];
-}
-function hasExplicitSuccessfulEvmReceipt(txResults = []) {
-  const receipts = [];
-  for (const result of txResults) {
-    if (!result || typeof result !== "object" || Array.isArray(result)) continue;
-    for (const key of ["receipt", "transactionReceipt", "transaction_receipt"]) {
-      const receipt = result[key];
-      if (receipt && typeof receipt === "object" && !Array.isArray(receipt) && !receipts.includes(receipt)) {
-        receipts.push(receipt);
-      }
-    }
-    const looksLikeReceipt = Object.prototype.hasOwnProperty.call(result, "status") && ["transactionHash", "transaction_hash", "txHash", "tx_hash", "logs"].some((key) => Object.prototype.hasOwnProperty.call(result, key));
-    if (looksLikeReceipt && !receipts.includes(result)) receipts.push(result);
-  }
-  return receipts.some(
-    (receipt) => Object.prototype.hasOwnProperty.call(receipt, "status") && receipt.status != null && String(receipt.status).trim() !== "" && evmReceiptStatusSucceeded(receipt.status)
-  );
 }
 function evaluateOperationSuccessEvidence(reservation = {}, actualInput = {}) {
   if (!operationSuccessEvidenceRequired(reservation)) {
@@ -85477,44 +84812,6 @@ function evaluateOperationSuccessEvidence(reservation = {}, actualInput = {}) {
     conflicts.push(operationEvidenceConflict(reservation, "transaction_outcome", "failure", {
       actual: outcomeError
     }));
-  }
-  if (reservationExecutionTransport(reservation) === "evm") {
-    if (!hasExplicitSuccessfulEvmReceipt(actual.txResults)) {
-      errors.push("explicit successful EVM receipt evidence missing");
-      conflicts.push(operationEvidenceConflict(
-        reservation,
-        "transaction_outcome",
-        "missing",
-        { expected: "successful EVM receipt", actual: "" }
-      ));
-    }
-    if (!actual.evmTransactionVerified) {
-      errors.push("EVM transaction identity verification missing");
-      conflicts.push(operationEvidenceConflict(
-        reservation,
-        "evm_transaction_verification",
-        "missing",
-        { expected: true, actual: false }
-      ));
-    }
-    if (!actual.evmPrivacyReceiptVerified) {
-      errors.push("EVM privacy receipt verification missing");
-      conflicts.push(operationEvidenceConflict(
-        reservation,
-        "evm_privacy_receipt_verification",
-        "missing",
-        { expected: true, actual: false }
-      ));
-    }
-    if (!actual.evmFinalityVerified) {
-      errors.push("EVM finality verification missing");
-      conflicts.push(operationEvidenceConflict(
-        reservation,
-        "evm_finality_verification",
-        "missing",
-        { expected: true, actual: false }
-      ));
-    }
   }
   const check = (field2, expectedValue, actualValue, options = {}) => {
     if (!expectedValue) {
@@ -85544,8 +84841,7 @@ function evaluateOperationSuccessEvidence(reservation = {}, actualInput = {}) {
   if (expected.operationEvidenceHash) {
     check("expected_operation_evidence_hash", expected.operationEvidenceHash, actual.operationEvidenceHash, { caseInsensitive: true });
   } else {
-    const withdrawPredicate = (/* @__PURE__ */ new Set(["withdraw", "relay_withdraw"])).has(String(reservation.kind || ""));
-    if (!withdrawPredicate) {
+    if (expected.outputCommitment || expected.disclosureDigest) {
       check("expected_output_commitment", expected.outputCommitment, actual.outputCommitment, { caseInsensitive: true });
       check("expected_disclosure_digest", expected.disclosureDigest, actual.disclosureDigest, { caseInsensitive: true });
     }
@@ -85582,7 +84878,7 @@ function evaluateOperationSuccessEvidence(reservation = {}, actualInput = {}) {
   return {
     evaluated: true,
     matches: errors.length === 0,
-    errors: [...new Set(errors)],
+    errors,
     conflicts: uniqueOperationEvidenceConflicts(conflicts)
   };
 }
@@ -85652,14 +84948,22 @@ function externalRelayTransactionEvidence(input = {}) {
   if (transactionIncludedConfirmed !== true || payloadHashMatched !== true) {
     throw new Error("external relay transaction evidence requires literal transactionIncludedConfirmed and payloadHashMatched evidence");
   }
-  return { operationID, payloadHash, txHash, checkedHeight };
+  return {
+    operationID,
+    payloadHash,
+    txHash,
+    checkedHeight
+  };
 }
 function assertPersistedRelayTransactionEvidence(reservation, evidence) {
   const relaySourceRecorded = reservation.metadata?.relay_handed_off === true || isPersistedSameOriginLocalRelayEvidence(reservation);
   if (reservation.status !== reservationStatuses.Submitted || !relaySourceRecorded || reservation.payload_hash !== evidence.payloadHash || reservation.submitted_tx_hash !== evidence.txHash || reservation.broadcast_in_flight || Number(reservation.broadcast_attempt_count || 0) < 1 || reservation.lease_owner || reservation.lease_token || reservation.lease_until || reservation.last_heartbeat_at) {
     throw new Error("relay transaction evidence conflicts with the persisted Submitted operation");
   }
-  const conflictingIdentity = reservationNetworkTransactionIdentities(reservation).find((identity) => identity !== normalizedTxIdentity(evidence.txHash));
+  const conflictingIdentity = normalizedIdentityValues([
+    reservation.submitted_tx_hash,
+    reservation.tx_bytes_hash
+  ]).find((identity) => identity !== normalizedTxIdentity(evidence.txHash));
   const metadata = reservation.metadata || {};
   if (conflictingIdentity || metadata.transaction_included_confirmed !== true || metadata.payload_hash_matched !== true || String(metadata.relay_evidence_checked_height ?? "") !== evidence.checkedHeight || metadata.relay_evidence_tx_hash !== evidence.txHash || String(metadata.checked_height ?? "") !== evidence.checkedHeight || metadata.tx_hash_checked !== evidence.txHash) {
     throw new Error("relay transaction evidence conflicts with the persisted inclusion evidence");
@@ -85670,8 +84974,130 @@ function hasExactPostBroadcastFailureEvidence(reservation = {}, metadata = {}) {
   const evidence = postBroadcastReplanEvidence(metadata);
   if (!positiveCheckedHeight(evidence.checkedHeight)) return false;
   const checked = normalizedTxIdentity(evidence.txHashChecked);
-  const stored = reservationNetworkTransactionIdentities(reservation);
+  const stored = normalizedIdentityValues([
+    reservation.submitted_tx_hash,
+    reservation.tx_bytes_hash
+  ]);
   return Boolean(checked && stored.length && stored.includes(checked));
+}
+function normalizedExpiredRecoveryNullifiers(input = {}) {
+  const values = aliasedStringArray(
+    input,
+    "inputNullifiers",
+    "input_nullifiers",
+    "input nullifiers"
+  ).map((value, index) => {
+    const normalized = String(value || "").trim().replace(/^0x/i, "").toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(normalized)) {
+      throw new Error(`expired ProofReady recovery input nullifier at index ${index} must be exactly 32-byte hex`);
+    }
+    return normalized;
+  });
+  if (!values.length || new Set(values).size !== values.length) {
+    throw new Error("expired ProofReady recovery requires distinct input nullifiers");
+  }
+  return values;
+}
+function normalizedExpiredRecoveryHash(value, label) {
+  const normalized = String(value ?? "").trim().replace(/^0x/i, "").toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(normalized)) {
+    throw new Error(`expired ProofReady recovery ${label} must be canonical 32-byte hex`);
+  }
+  return normalized;
+}
+function aliasedExpiredRecoveryHash(input, camelName, snakeName, label) {
+  const camelProvided = input?.[camelName] !== void 0 && input?.[camelName] !== null;
+  const snakeProvided = input?.[snakeName] !== void 0 && input?.[snakeName] !== null;
+  if (!camelProvided && !snakeProvided) {
+    throw new Error(`expired ProofReady recovery requires ${label}`);
+  }
+  const camel = camelProvided ? normalizedExpiredRecoveryHash(input[camelName], label) : void 0;
+  const snake = snakeProvided ? normalizedExpiredRecoveryHash(input[snakeName], label) : void 0;
+  if (camelProvided && snakeProvided && camel !== snake) {
+    throw new Error(`expired ProofReady recovery ${label} aliases conflict`);
+  }
+  return camelProvided ? camel : snake;
+}
+function expiredRecoveryTransactionIdentity(input = {}) {
+  return {
+    txHash: aliasedExpiredRecoveryHash(
+      input,
+      "txHashChecked",
+      "tx_hash_checked",
+      "txHashChecked"
+    ),
+    txBytesHash: aliasedExpiredRecoveryHash(
+      input,
+      "txBytesHash",
+      "tx_bytes_hash",
+      "txBytesHash"
+    ),
+    signDocHash: aliasedExpiredRecoveryHash(
+      input,
+      "signDocHash",
+      "sign_doc_hash",
+      "signDocHash"
+    )
+  };
+}
+function recoveryNullifierUsage(value) {
+  if (typeof value === "boolean") return value;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const hasCanonical = Object.prototype.hasOwnProperty.call(value, "used");
+  const hasAlias = Object.prototype.hasOwnProperty.call(value, "Used");
+  if (!hasCanonical && !hasAlias) return null;
+  if (hasCanonical && typeof value.used !== "boolean") return null;
+  if (hasAlias && typeof value.Used !== "boolean") return null;
+  if (hasCanonical && hasAlias && value.used !== value.Used) return null;
+  return hasCanonical ? value.used : value.Used;
+}
+function assertExpiredRecoveryNullifiersUnspent(result, nullifiers) {
+  const statuses = /* @__PURE__ */ new Map();
+  const invalid = /* @__PURE__ */ new Set();
+  const add2 = (rawNullifier, value) => {
+    const nullifier = String(rawNullifier || "").trim().replace(/^0x/i, "").toLowerCase();
+    if (!nullifier || invalid.has(nullifier)) return;
+    const used = recoveryNullifierUsage(value);
+    if (used === null || statuses.has(nullifier) && statuses.get(nullifier) !== used) {
+      statuses.delete(nullifier);
+      invalid.add(nullifier);
+      return;
+    }
+    statuses.set(nullifier, used);
+  };
+  if (result instanceof Map) {
+    for (const [nullifier, value] of result) add2(nullifier, value);
+  } else if (Array.isArray(result?.statuses)) {
+    for (const status of result.statuses) {
+      const canonical = status?.nullifier;
+      const alias2 = status?.Nullifier;
+      if (canonical != null && alias2 != null && String(canonical).trim().replace(/^0x/i, "").toLowerCase() !== String(alias2).trim().replace(/^0x/i, "").toLowerCase()) {
+        add2(canonical, null);
+        add2(alias2, null);
+      } else {
+        add2(canonical ?? alias2, status);
+      }
+    }
+  } else if (result && typeof result === "object") {
+    for (const [nullifier, value] of Object.entries(result)) add2(nullifier, value);
+  }
+  for (const [index, nullifier] of nullifiers.entries()) {
+    if (!statuses.has(nullifier) || statuses.get(nullifier) !== false) {
+      throw new Error(`expired ProofReady recovery input nullifier at index ${index} is spent, missing, or malformed`);
+    }
+  }
+}
+function assertExpiredRecoveryStoredIdentity(reservation, identity) {
+  const submitted = normalizedTxIdentity(reservation.submitted_tx_hash);
+  const txBytes = normalizedTxIdentity(reservation.tx_bytes_hash);
+  const signDoc = normalizedTxIdentity(reservation.sign_doc_hash);
+  if (!submitted || !txBytes || !signDoc || submitted !== identity.txHash || txBytes !== identity.txBytesHash || signDoc !== identity.signDocHash) {
+    throw new Error("expired ProofReady recovery does not match the complete stored transaction identity");
+  }
+}
+function isPersistedExpiredProofReadyRecovery(reservation, evidence, identity, inputCount) {
+  const metadata = reservation.metadata || {};
+  return reservation.status === reservationStatuses.ReplanRequired && !reservation.broadcast_in_flight && !reservation.lease_owner && !reservation.lease_token && !reservation.lease_until && hasExactPostBroadcastFailureEvidence(reservation, evidence) && String(metadata.checked_height || "") === String(evidence.checkedHeight) && normalizedTxIdentity(metadata.tx_hash_checked) === normalizedTxIdentity(evidence.txHashChecked) && metadata.nullifier_unspent_confirmed === true && metadata.tx_absent_or_failed_confirmed === true && metadata.authoritative_execution_failure === true && metadata.execution_failed_confirmed === true && metadata.proof_discarded === true && metadata.reconcile_reason === "expired_proof_ready_authoritative_exact_broadcast_failure" && metadata.input_nullifier_count === inputCount && normalizedTxIdentity(reservation.submitted_tx_hash) === identity.txHash && normalizedTxIdentity(reservation.tx_bytes_hash) === identity.txBytesHash && normalizedTxIdentity(reservation.sign_doc_hash) === identity.signDocHash;
 }
 function proofReadyTransitionPatch(metadata = {}) {
   const evidence = operationSuccessEvidence(metadata);
@@ -85683,12 +85109,6 @@ function proofReadyTransitionPatch(metadata = {}) {
   }
   const operationEvidenceRequiredState = operationSuccessEvidenceRequiredInputState(metadata);
   const operationEvidenceRequired = operationEvidenceRequiredState.present ? operationEvidenceRequiredState.value : false;
-  const executionTransportState = executionTransportInputState(metadata);
-  const nestedMetadata = {
-    ...metadata.metadata || {}
-  };
-  delete nestedMetadata.executionTransport;
-  delete nestedMetadata.execution_transport;
   return {
     lease_token: metadata.leaseToken || metadata.lease_token || "",
     payload_hash: metadata.payloadHash || metadata.payload_hash || "",
@@ -85704,10 +85124,9 @@ function proofReadyTransitionPatch(metadata = {}) {
     batch_item_index: evidence.batchItemIndex,
     batch_item_index_known: evidence.batchItemIndexKnown,
     metadata: {
-      ...nestedMetadata,
+      ...metadata.metadata || {},
       no_broadcast_attempt: true,
-      ...operationEvidenceRequired ? { operation_success_evidence_required: true } : {},
-      ...executionTransportState.present ? { execution_transport: executionTransportState.value } : {}
+      ...operationEvidenceRequired ? { operation_success_evidence_required: true } : {}
     }
   };
 }
@@ -85758,26 +85177,6 @@ function assertPatchKeepsReservationIdentity(patch = {}) {
   const changed = immutableReservationPatchFields.find(
     (key) => Object.prototype.hasOwnProperty.call(patch, key)
   );
-  if (changed) {
-    throw new Error(`reservation identity field cannot be changed through mutation: ${changed}`);
-  }
-}
-function assertReservationIdentityUnchanged(current, next) {
-  const immutableFields = [
-    "reservation_id",
-    "operation_id",
-    "owner_key_id",
-    "nullifier_lookup_key",
-    "nullifier_lookup_key_id",
-    "note_id",
-    "kind",
-    "amount",
-    "tx_hash",
-    "height",
-    "sequence",
-    "created_at"
-  ];
-  const changed = immutableFields.find((field2) => current[field2] !== next[field2]);
   if (changed) {
     throw new Error(`reservation identity field cannot be changed through mutation: ${changed}`);
   }
@@ -85835,11 +85234,6 @@ var MemoryReservationStore = class {
   async load() {
     return cloneJSON(this.state);
   }
-  // Test/migration escape hatch. Application code must use the CAS methods below.
-  async unsafeReplaceState(state2) {
-    this.state = normalizeState(state2);
-    return this.load();
-  }
   async listReservations(filter = {}) {
     const statuses = new Set((filter.statuses || []).map(String));
     const ownerKeyId = String(filter.ownerKeyId || filter.owner_key_id || "");
@@ -85876,21 +85270,6 @@ var MemoryReservationStore = class {
       combined.push(reservation);
     }
     this.state.reservations = combined;
-    return cloneJSON(normalized);
-  }
-  // Test/migration escape hatch. This deliberately bypasses manager ownership and lease checks.
-  async unsafeReplaceReservation(reservation) {
-    const normalized = normalizeReservation(reservation);
-    const index = this.state.reservations.findIndex((candidate) => candidate.reservation_id === normalized.reservation_id);
-    if (index < 0) throw new Error(`reservation not found: ${normalized.reservation_id}`);
-    assertReservationIdentityUnchanged(this.state.reservations[index], normalized);
-    if (this.state.reservations[index].status !== normalized.status) {
-      throw new Error("reservation status changes require compareAndSetReservationStatus");
-    }
-    if (activeConflict(this.state.reservations, normalized, normalized.reservation_id) || confirmedSpentConflict(this.state.reservations, normalized, normalized.reservation_id)) {
-      throw new Error("active reservation already exists");
-    }
-    this.state.reservations[index] = normalized;
     return cloneJSON(normalized);
   }
   async compareAndSetReservationStatus(reservationID, from, to, patch = {}) {
@@ -85953,18 +85332,18 @@ var MemoryReservationStore = class {
         throw new Error(`reservation compare-and-set failed: expected ${transition.from}, got ${current.status}`);
       }
       const managedRelayHandoff = assertManagedRelayHandoffMutation(current, transition.to, transition.patch, now);
-      const managedRelaySubmission = assertManagedRelaySubmissionMutation(
-        current,
-        transition.to,
-        transition.patch,
-        now
-      );
       const managedBroadcastAttempt = assertManagedBroadcastAttemptMutation(current, transition.to, transition.patch, now);
       const managedBroadcastRejection = assertManagedBroadcastRejectionMutation(current, transition.to, transition.patch, now);
       const managedBroadcastFailure = assertManagedAuthoritativeBroadcastFailureMutation(
         current,
         transition.to,
         transition.patch
+      );
+      const managedExpiredProofReadyBroadcastFailure2 = assertManagedExpiredProofReadyBroadcastFailureMutation(
+        current,
+        transition.to,
+        transition.patch,
+        now
       );
       const managedRelayEvidence = assertManagedRelayTransactionEvidenceMutation(
         current,
@@ -85986,14 +85365,12 @@ var MemoryReservationStore = class {
       assertPatchKeepsReservationIdentity(transition.patch);
       assertReservationTransitionPatchFields(current, transition.to, transition.patch, {
         managedRelayHandoff,
-        managedRelaySubmission: managedRelaySubmission || managedRelayEvidence,
+        managedRelayEvidence,
         managedBroadcastAttempt,
         managedOperationReconcile
       });
       if (!managedBroadcastRejection && !managedRelayEvidence) {
-        assertStoreTransitionEvidence(current, transition.to, transition.patch, {
-          managedRelaySubmission
-        });
+        assertStoreTransitionEvidence(current, transition.to, transition.patch);
       }
       assertOperationSuccessPredicateImmutable(current, transition.to, transition.patch);
       assertReservationEvidencePatchMonotonic(current, transition.patch, {
@@ -86001,12 +85378,13 @@ var MemoryReservationStore = class {
       });
       assertManagedLifecycleMetadataMutation(current, transition.to, transition.patch, {
         managedRelayHandoff,
-        managedRelaySubmission: managedRelaySubmission || managedRelayEvidence,
+        managedRelayEvidence,
         managedBroadcastAttempt,
         managedBroadcastRejection,
+        managedExpiredProofReadyBroadcastFailure: managedExpiredProofReadyBroadcastFailure2,
         managedOperationReconcile
       });
-      if ((!managedBroadcastFailure || current.status === reservationStatuses.ProofReady) && !managedRelayEvidence) {
+      if ((!managedBroadcastFailure || current.status === reservationStatuses.ProofReady) && !managedExpiredProofReadyBroadcastFailure2 && !managedRelayEvidence) {
         assertStoreLeaseMutationAllowed(current, transition.to, transition.patch, now);
       }
       const stablePatch = managedRelayEvidence ? transition.patch : patchWithStableWriteOnceIdentityRepresentation(current, transition.patch);
@@ -86042,12 +85420,12 @@ var MemoryReservationStore = class {
     return cloneJSON(updated);
   }
   async releaseReservationBatch({
-    reservationIDs = [],
+    reservationIDs: reservationIDs2 = [],
     ownerKeyId = "",
     leaseOwner = "",
-    leaseToken = ""
+    leaseToken: leaseToken2 = ""
   } = {}) {
-    const ids = [...new Set((reservationIDs || []).map(String).filter(Boolean))];
+    const ids = [...new Set((reservationIDs2 || []).map(String).filter(Boolean))];
     if (!ids.length) return [];
     if (!ownerKeyId) throw new Error("reservation owner key id is required");
     const now = this.now();
@@ -86115,18 +85493,10 @@ var MemoryReservationStore = class {
         throw new Error("spent reconciliation requires literal spent evidence");
       }
     }
-    const coalescedSpentNotes = coalesceSpentNotesByLookupKey(
-      spentNotes,
-      (lookupKey) => this.state.reservations.filter(
-        (reservation) => reservation.owner_key_id === ownerKeyId && reservation.nullifier_lookup_key === lookupKey
-      )
-    );
-    const spentNotesByLookupKey = new Map(
-      coalescedSpentNotes.map(({ lookupKey, note }) => [lookupKey, note])
-    );
+    const spentNotesByLookupKey = new Map(spentNotes.map(({ lookupKey, note }) => [lookupKey, note]));
     const transitions = [];
     const affectedGroups = /* @__PURE__ */ new Map();
-    for (const { lookupKey } of coalescedSpentNotes) {
+    for (const { lookupKey } of spentNotes) {
       for (const reservation of this.state.reservations) {
         if (reservation.owner_key_id !== ownerKeyId || reservation.nullifier_lookup_key !== lookupKey) continue;
         const key = reservation.operation_id ? operationReservationGroupKey(reservation) : `${reservation.owner_key_id}\0reservation:${reservation.reservation_id}`;
@@ -86276,17 +85646,6 @@ var IndexedDbReservationStore = class extends MemoryReservationStore {
       return created;
     });
   }
-  async unsafeReplaceState(state2) {
-    return this.withMutationLock(() => this.#writeState(state2));
-  }
-  async unsafeReplaceReservation(reservation) {
-    return this.mutate(async (state2) => {
-      const memory = new MemoryReservationStore({ state: state2, now: this.now });
-      const updated = await memory.unsafeReplaceReservation(reservation);
-      Object.assign(state2, await memory.load());
-      return updated;
-    });
-  }
   async compareAndSetReservationStatus(reservationID, from, to, patch = {}) {
     return this.mutate(async (state2) => {
       const memory = new MemoryReservationStore({ state: state2, now: this.now });
@@ -86417,8 +85776,8 @@ var NoteReservationManager = class {
     this.assertReservationOwner(reservation);
     return reservation;
   }
-  async _ownedReservationsByID(reservationIDs = [], { allowMixedOperationState = false } = {}) {
-    const ids = [...new Set(reservationIDs || [])];
+  async _ownedReservationsByID(reservationIDs2 = [], { allowMixedOperationState = false } = {}) {
+    const ids = [...new Set(reservationIDs2 || [])];
     if (!ids.length) return /* @__PURE__ */ new Map();
     const reservations = await this.store.listReservations();
     const byID = new Map(
@@ -86436,8 +85795,8 @@ var NoteReservationManager = class {
     }
     return owned;
   }
-  async getReservations(reservationIDs = []) {
-    const currentByID = await this._ownedReservationsByID(reservationIDs, {
+  async getReservations(reservationIDs2 = []) {
+    const currentByID = await this._ownedReservationsByID(reservationIDs2, {
       allowMixedOperationState: true
     });
     return [...currentByID.values()];
@@ -86492,7 +85851,7 @@ var NoteReservationManager = class {
     }
     const operationID = String(operationId || operation_id || `${kind}:${randomHex(12)}`);
     const now = this.timestamp();
-    const leaseToken = randomHex(16);
+    const leaseToken2 = randomHex(16);
     const leaseUntil = futureIso(now, this.leaseDurationMs);
     const reservations = [];
     for (const note of selected) {
@@ -86519,7 +85878,7 @@ var NoteReservationManager = class {
         updated_at: now,
         metadata: {
           ...metadata,
-          [reservationClaimTokenHashField]: reservationClaimTokenHash(leaseToken)
+          [reservationClaimTokenHashField]: reservationClaimTokenHash(leaseToken2)
         }
       }));
     }
@@ -86529,7 +85888,7 @@ var NoteReservationManager = class {
     return {
       operation_id: operationID,
       lease_owner: this.leaseOwner,
-      lease_token: leaseToken,
+      lease_token: leaseToken2,
       lease_until: leaseUntil,
       reservation_ids: created.map((reservation) => reservation.reservation_id),
       reservations: created
@@ -86550,9 +85909,9 @@ var NoteReservationManager = class {
       metadata
     });
   }
-  async transitionBatch(reservationIDs = [], from, to, patch = {}) {
+  async transitionBatch(reservationIDs2 = [], from, to, patch = {}) {
     return this._transitionBatchEntries([{
-      reservationIDs,
+      reservationIDs: reservationIDs2,
       from,
       to,
       patch
@@ -86566,7 +85925,7 @@ var NoteReservationManager = class {
     );
     for (const entry of entries || []) {
       const {
-        reservationIDs = [],
+        reservationIDs: reservationIDs2 = [],
         from,
         to,
         patch = {}
@@ -86594,7 +85953,7 @@ var NoteReservationManager = class {
       } else if (from === to && patchCarriesLeaseCredentials) {
         transitionPatch.lease_owner = this.leaseOwner;
       }
-      for (const reservationID of reservationIDs || []) {
+      for (const reservationID of reservationIDs2 || []) {
         const current = currentByID.get(reservationID);
         assertLeaseTransitionAllowed(current, to, transitionPatch, now);
         assertReplanTransitionEvidence(current.status, to, patch);
@@ -86620,24 +85979,20 @@ var NoteReservationManager = class {
         });
       }
     }
-    if (!transitions.length) return [];
-    if (typeof this.store.compareAndSetReservationStatusBatch !== "function") {
-      throw new Error("reservation store atomic batch compare-and-set is required");
-    }
-    return this.store.compareAndSetReservationStatusBatch(transitions);
+    return commitReservationTransitions(this.store, transitions);
   }
-  async renewLease(reservationIDs = [], metadata = {}) {
+  async renewLease(reservationIDs2 = [], metadata = {}) {
     const now = this.timestamp();
-    const leaseToken = metadata.leaseToken || metadata.lease_token || "";
+    const leaseToken2 = metadata.leaseToken || metadata.lease_token || "";
     const requestedLeaseUntil = leaseUntilFromMetadata(metadata, now, this.leaseDurationMs);
     const transitions = [];
-    const currentByID = await this._ownedReservationsByID(reservationIDs);
-    for (const reservationID of reservationIDs || []) {
+    const currentByID = await this._ownedReservationsByID(reservationIDs2);
+    for (const reservationID of reservationIDs2 || []) {
       const current = currentByID.get(reservationID);
       if (!isActiveReservationStatus(current.status)) {
         throw new Error(`reservation lease cannot be renewed for inactive status: ${current.status}`);
       }
-      assertCurrentLeaseToken(current, leaseToken, this.leaseOwner, now);
+      assertCurrentLeaseToken(current, leaseToken2, this.leaseOwner, now);
       const currentLeaseUntil = Date.parse(current.lease_until || "");
       const requestedLeaseUntilMs = Date.parse(requestedLeaseUntil);
       const leaseUntil = Number.isFinite(currentLeaseUntil) && currentLeaseUntil > requestedLeaseUntilMs ? current.lease_until : requestedLeaseUntil;
@@ -86647,22 +86002,18 @@ var NoteReservationManager = class {
         to: current.status,
         patch: {
           lease_owner: this.leaseOwner,
-          lease_token: leaseToken,
+          lease_token: leaseToken2,
           lease_until: leaseUntil,
           last_heartbeat_at: now,
           updated_at: now
         }
       });
     }
-    if (!transitions.length) return [];
-    if (typeof this.store.compareAndSetReservationStatusBatch !== "function") {
-      throw new Error("reservation store atomic batch compare-and-set is required");
-    }
-    return this.store.compareAndSetReservationStatusBatch(transitions);
+    return commitReservationTransitions(this.store, transitions);
   }
-  async recordRelayHandoff(reservationIDs = [], metadata = {}) {
+  async recordRelayHandoff(reservationIDs2 = [], metadata = {}) {
     const now = this.timestamp();
-    const leaseToken = metadata.leaseToken || metadata.lease_token || "";
+    const leaseToken2 = metadata.leaseToken || metadata.lease_token || "";
     const payloadHash = String(metadata.payloadHash || metadata.payload_hash || "").trim();
     const txBytesHash = String(metadata.txBytesHash || metadata.tx_bytes_hash || "").trim();
     const signDocHash = String(metadata.signDocHash || metadata.sign_doc_hash || "").trim();
@@ -86670,8 +86021,8 @@ var NoteReservationManager = class {
       throw new Error("relay handoff requires the prepared payload hash");
     }
     const transitions = [];
-    const currentByID = await this._ownedReservationsByID(reservationIDs);
-    for (const reservationID of reservationIDs || []) {
+    const currentByID = await this._ownedReservationsByID(reservationIDs2);
+    for (const reservationID of reservationIDs2 || []) {
       const current = currentByID.get(reservationID);
       if (current.status !== reservationStatuses.ProofReady) {
         throw new Error(`relay handoff requires ProofReady reservation: ${current.status}`);
@@ -86679,7 +86030,7 @@ var NoteReservationManager = class {
       if (current.broadcast_in_flight || Number(current.broadcast_attempt_count || 0) > 0) {
         throw new Error("broadcast attempt already started; reconcile before relay handoff");
       }
-      assertCurrentLeaseToken(current, leaseToken, this.leaseOwner, now);
+      assertCurrentLeaseToken(current, leaseToken2, this.leaseOwner, now);
       if (!current.payload_hash || current.payload_hash !== payloadHash) {
         throw new Error("relay handoff payload hash does not match the ProofReady reservation");
       }
@@ -86691,7 +86042,7 @@ var NoteReservationManager = class {
       }
       const patch = {
         lease_owner: this.leaseOwner,
-        lease_token: leaseToken,
+        lease_token: leaseToken2,
         lease_until: current.lease_until,
         last_heartbeat_at: now,
         updated_at: now,
@@ -86708,10 +86059,7 @@ var NoteReservationManager = class {
           no_broadcast_attempt: false
         }
       };
-      Object.defineProperty(patch, managedReservationEvidenceMutation, {
-        value: "relay_handoff",
-        enumerable: true
-      });
+      markManagedPatch(patch, managedReservationEvidenceMutation, "relay_handoff");
       transitions.push({
         reservationID,
         from: reservationStatuses.ProofReady,
@@ -86719,98 +86067,14 @@ var NoteReservationManager = class {
         patch
       });
     }
-    if (!transitions.length) return [];
-    if (typeof this.store.compareAndSetReservationStatusBatch !== "function") {
-      throw new Error("reservation store atomic batch compare-and-set is required");
-    }
-    return this.store.compareAndSetReservationStatusBatch(transitions);
-  }
-  async recordRelaySubmission(reservationIDs = [], metadata = {}) {
-    const now = this.timestamp();
-    const leaseToken = metadata.leaseToken || metadata.lease_token || "";
-    const payloadHash = aliasedStringValueForKeys(
-      metadata,
-      ["payloadHash", "payload_hash"],
-      "relay submission payload hash"
-    ).trim();
-    const attempt = {
-      txHash: aliasedStringValueForKeys(
-        metadata,
-        ["txHash", "tx_hash", "submittedTxHash", "submitted_tx_hash", "txHashSubmitted"],
-        "relay submission network tx hash"
-      ),
-      txBytesHash: aliasedStringValueForKeys(
-        metadata,
-        ["txBytesHash", "tx_bytes_hash"],
-        "relay submission tx bytes hash"
-      ),
-      signDocHash: aliasedStringValueForKeys(
-        metadata,
-        ["signDocHash", "sign_doc_hash"],
-        "relay submission sign doc hash"
-      )
-    };
-    if (!payloadHash) {
-      throw new Error("relay submission requires the handed-off payload hash");
-    }
-    if (!attempt.txHash) {
-      throw new Error("relay submission requires the network tx hash");
-    }
-    const transitions = [];
-    const currentByID = await this._ownedReservationsByID(reservationIDs);
-    for (const reservationID of reservationIDs || []) {
-      const current = currentByID.get(reservationID);
-      if (current.status !== reservationStatuses.ProofReady) {
-        throw new Error(`relay submission requires ProofReady reservation: ${current.status}`);
-      }
-      if (!booleanEvidence(
-        current.metadata?.relay_handed_off ?? current.metadata?.relayHandedOff
-      )) {
-        throw new Error("relay submission requires a previously recorded relay handoff");
-      }
-      if (current.broadcast_in_flight || Number(current.broadcast_attempt_count || 0) > 0) {
-        throw new Error("relay submission cannot replace a local broadcast attempt");
-      }
-      assertCurrentLeaseToken(current, leaseToken, this.leaseOwner, now);
-      if (!current.payload_hash || current.payload_hash !== payloadHash) {
-        throw new Error("relay submission payload hash must match the handed-off reservation");
-      }
-      const patch = {
-        lease_owner: this.leaseOwner,
-        lease_token: leaseToken,
-        payload_hash: payloadHash,
-        submitted_tx_hash: attempt.txHash,
-        broadcast_in_flight: false,
-        broadcast_attempt_count: Number(current.broadcast_attempt_count || 0) + 1,
-        metadata: {
-          ...current.metadata || {},
-          ...metadata.metadata || {},
-          no_broadcast_attempt: false
-        }
-      };
-      patchIfPresent(patch, "tx_bytes_hash", attempt.txBytesHash);
-      patchIfPresent(patch, "sign_doc_hash", attempt.signDocHash);
-      Object.defineProperty(patch, managedReservationEvidenceMutation, {
-        value: "relay_submission",
-        enumerable: true
-      });
-      transitions.push({
-        reservationID,
-        from: reservationStatuses.ProofReady,
-        to: reservationStatuses.Submitted,
-        patch
-      });
-    }
-    if (!transitions.length) return [];
-    if (typeof this.store.compareAndSetReservationStatusBatch !== "function") {
-      throw new Error("reservation store atomic batch compare-and-set is required");
-    }
-    return this.store.compareAndSetReservationStatusBatch(transitions);
+    return commitReservationTransitions(this.store, transitions);
   }
   /**
    * Bind a relay transaction only after an authoritative chain lookup proves
    * inclusion of the exact payload. This supports an unattempted external
-   * handoff and a durably marked same-origin local-relay attempt.
+   * handoff and a durably marked same-origin local-relay attempt. It is
+   * intentionally operation-scoped and lease-independent for restart recovery;
+   * the store revalidates every condition inside the atomic CAS.
    */
   async recordRelayTransactionEvidence(input = {}) {
     const evidence = externalRelayTransactionEvidence(input);
@@ -86848,10 +86112,7 @@ var NoteReservationManager = class {
           updated_at: this.timestamp(),
           metadata: { ...current.metadata || {} }
         };
-        Object.defineProperty(patch2, managedRelayTransactionEvidence, {
-          value: true,
-          enumerable: true
-        });
+        markManagedPatch(patch2, managedRelayTransactionEvidence, true);
         return {
           reservationID: current.reservation_id,
           from: reservationStatuses.Submitted,
@@ -86870,7 +86131,10 @@ var NoteReservationManager = class {
       if (externalHandoff && (current.broadcast_in_flight || Number(current.broadcast_attempt_count || 0) !== 0)) {
         throw new Error("external relay transaction evidence requires an unattempted handed-off ProofReady operation");
       }
-      const conflictingIdentity = reservationNetworkTransactionIdentities(current).find((identity) => identity !== evidence.txHash);
+      const conflictingIdentity = normalizedIdentityValues([
+        current.submitted_tx_hash,
+        current.tx_bytes_hash
+      ]).find((identity) => identity !== normalizedTxIdentity(evidence.txHash));
       if (conflictingIdentity) {
         throw new Error("relay transaction evidence conflicts with persisted transaction identity");
       }
@@ -86891,10 +86155,7 @@ var NoteReservationManager = class {
           no_broadcast_attempt: false
         }
       };
-      Object.defineProperty(patch, managedRelayTransactionEvidence, {
-        value: true,
-        enumerable: true
-      });
+      markManagedPatch(patch, managedRelayTransactionEvidence, true);
       return {
         reservationID: current.reservation_id,
         from: reservationStatuses.ProofReady,
@@ -86907,17 +86168,17 @@ var NoteReservationManager = class {
     }
     return this.store.compareAndSetReservationStatusBatch(transitions);
   }
-  async heartbeatLease(reservationIDs = [], metadata = {}) {
-    return this.renewLease(reservationIDs, metadata);
+  async heartbeatLease(reservationIDs2 = [], metadata = {}) {
+    return this.renewLease(reservationIDs2, metadata);
   }
-  async markProving(reservationIDs = [], metadata = {}) {
-    return this.transitionBatch(reservationIDs, reservationStatuses.Reserved, reservationStatuses.Proving, {
+  async markProving(reservationIDs2 = [], metadata = {}) {
+    return this.transitionBatch(reservationIDs2, reservationStatuses.Reserved, reservationStatuses.Proving, {
       lease_token: metadata.leaseToken || metadata.lease_token || ""
     });
   }
-  async markProofReady(reservationIDs = [], metadata = {}) {
+  async markProofReady(reservationIDs2 = [], metadata = {}) {
     return this.transitionBatch(
-      reservationIDs,
+      reservationIDs2,
       reservationStatuses.Proving,
       reservationStatuses.ProofReady,
       proofReadyTransitionPatch(metadata)
@@ -86936,21 +86197,21 @@ var NoteReservationManager = class {
       patch: proofReadyTransitionPatch(entry?.metadata || {})
     })));
   }
-  async markBroadcastAttempting(reservationIDs = [], metadata = {}) {
+  async markBroadcastAttempting(reservationIDs2 = [], metadata = {}) {
     const now = this.timestamp();
-    const leaseToken = metadata.leaseToken || metadata.lease_token || "";
+    const leaseToken2 = metadata.leaseToken || metadata.lease_token || "";
     const attempt = broadcastAttemptMetadata(metadata);
     const transitions = [];
-    const currentByID = await this._ownedReservationsByID(reservationIDs);
-    for (const reservationID of reservationIDs || []) {
+    const currentByID = await this._ownedReservationsByID(reservationIDs2);
+    for (const reservationID of reservationIDs2 || []) {
       const current = currentByID.get(reservationID);
       if (current.status !== reservationStatuses.ProofReady) {
         throw new Error(`broadcast attempt requires ProofReady reservation: ${current.status}`);
       }
-      assertCurrentLeaseToken(current, leaseToken, this.leaseOwner, now);
+      assertCurrentLeaseToken(current, leaseToken2, this.leaseOwner, now);
       const patch = {
         lease_owner: this.leaseOwner,
-        lease_token: leaseToken,
+        lease_token: leaseToken2,
         lease_until: current.lease_until,
         last_heartbeat_at: now,
         updated_at: now,
@@ -86967,10 +86228,7 @@ var NoteReservationManager = class {
       patchIfPresent(patch, "submitted_tx_hash", attempt.txHash);
       patchIfPresent(patch, "tx_bytes_hash", attempt.txBytesHash);
       patchIfPresent(patch, "sign_doc_hash", attempt.signDocHash);
-      Object.defineProperty(patch, managedReservationEvidenceMutation, {
-        value: "broadcast_attempt",
-        enumerable: true
-      });
+      markManagedPatch(patch, managedReservationEvidenceMutation, "broadcast_attempt");
       transitions.push({
         reservationID,
         from: reservationStatuses.ProofReady,
@@ -86978,23 +86236,20 @@ var NoteReservationManager = class {
         patch
       });
     }
-    if (!transitions.length) return [];
-    if (typeof this.store.compareAndSetReservationStatusBatch !== "function") {
-      throw new Error("reservation store atomic batch compare-and-set is required");
-    }
-    return this.store.compareAndSetReservationStatusBatch(transitions);
+    return commitReservationTransitions(this.store, transitions);
   }
-  async markBroadcastRejected(reservationIDs = [], metadata = {}) {
+  async markBroadcastRejected(reservationIDs2 = [], metadata = {}) {
     const now = this.timestamp();
-    const leaseToken = metadata.leaseToken || metadata.lease_token || "";
+    const leaseToken2 = metadata.leaseToken || metadata.lease_token || "";
     const transitions = [];
-    const currentByID = await this._ownedReservationsByID(reservationIDs);
-    for (const reservationID of reservationIDs || []) {
+    const currentByID = await this._ownedReservationsByID(reservationIDs2);
+    for (const reservationID of reservationIDs2 || []) {
       const current = currentByID.get(reservationID);
       if (current.status !== reservationStatuses.ProofReady) {
         throw new Error(`broadcast rejection resolution requires ProofReady reservation: ${current.status}`);
       }
-      assertCurrentLeaseToken(current, leaseToken, this.leaseOwner, now);
+      assertCurrentLeaseToken(current, leaseToken2, this.leaseOwner, now);
+      const durableAttempt = current.broadcast_in_flight && Number(current.broadcast_attempt_count || 0) >= 1;
       const checkTxRejected = metadata.checkTxRejected ?? metadata.check_tx_rejected;
       const abortedBeforeRpc = metadata.broadcastAbortedBeforeRpc ?? metadata.broadcast_aborted_before_rpc;
       const walletRejected = metadata.walletRejectedBeforeBroadcast ?? metadata.wallet_rejected_before_broadcast ?? String(metadata.providerCode ?? metadata.provider_code ?? "4001") === "4001";
@@ -87002,37 +86257,31 @@ var NoteReservationManager = class {
       if (typeof rpcInvoked !== "boolean") {
         throw new Error("broadcast rejection resolution requires rpcInvoked boolean evidence");
       }
-      const stableErrorCode = walletRejected === true ? "wallet_rejected_before_broadcast" : abortedBeforeRpc === true ? "broadcast_aborted_before_rpc" : "check_tx_rejected";
-      const durableMetadata = normalizeReservationMetadata({
-        ...current.metadata || {},
-        ...metadata.metadata || {}
-      });
       const patch = {
         lease_owner: this.leaseOwner,
-        lease_token: leaseToken,
+        lease_token: leaseToken2,
         broadcast_in_flight: false,
         broadcast_attempt_count: Number(current.broadcast_attempt_count || 0),
-        last_broadcast_error: stableErrorCode,
+        last_broadcast_error: String(metadata.error || metadata.lastBroadcastError || metadata.last_broadcast_error || "broadcast rejected"),
         updated_at: now,
         metadata: {
-          ...durableMetadata,
+          ...current.metadata || {},
+          ...metadata.metadata || {},
           wallet_rejected_before_broadcast: walletRejected === true,
           provider_rejection_code: String(
             metadata.providerCode ?? metadata.provider_code ?? (walletRejected === true ? "4001" : "")
           ),
           ...metadata.providerCodespace != null || metadata.provider_codespace != null ? { provider_rejection_codespace: String(metadata.providerCodespace ?? metadata.provider_codespace) } : {},
+          ...metadata.providerLog != null || metadata.provider_log != null ? { provider_rejection_log: String(metadata.providerLog ?? metadata.provider_log) } : {},
           rpc_invoked: rpcInvoked,
           check_tx_rejected: checkTxRejected === true,
           broadcast_aborted_before_rpc: abortedBeforeRpc === true,
           no_broadcast_attempt: !rpcInvoked,
           proof_discarded: true,
-          reconcile_reason: stableErrorCode
+          reconcile_reason: walletRejected === true ? "wallet_rejected_before_broadcast" : abortedBeforeRpc === true ? "broadcast_aborted_before_rpc" : "check_tx_rejected"
         }
       };
-      Object.defineProperty(patch, managedReservationEvidenceMutation, {
-        value: "broadcast_rejected",
-        enumerable: true
-      });
+      markManagedPatch(patch, managedReservationEvidenceMutation, "broadcast_rejected");
       transitions.push({
         reservationID,
         from: reservationStatuses.ProofReady,
@@ -87040,22 +86289,11 @@ var NoteReservationManager = class {
         patch
       });
     }
-    if (!transitions.length) return [];
-    if (typeof this.store.compareAndSetReservationStatusBatch !== "function") {
-      throw new Error("reservation store atomic batch compare-and-set is required");
-    }
-    return this.store.compareAndSetReservationStatusBatch(transitions);
+    return commitReservationTransitions(this.store, transitions);
   }
-  async markSubmitted(reservationIDs = [], metadata = {}) {
+  async markSubmitted(reservationIDs2 = [], metadata = {}) {
     assertSubmittedBroadcastAttemptMetadata(metadata, "markSubmitted");
     const attempt = broadcastAttemptMetadata(metadata);
-    const currentByID = await this._ownedReservationsByID(reservationIDs);
-    const evmReservation = [...currentByID.values()].find(
-      (reservation) => reservationExecutionTransport(reservation) === "evm"
-    );
-    if (evmReservation && !attempt.txHash) {
-      throw new Error("markSubmitted requires the network tx hash for EVM reservations");
-    }
     const patch = {
       lease_token: metadata.leaseToken || metadata.lease_token || "",
       broadcast_in_flight: false,
@@ -87067,9 +86305,9 @@ var NoteReservationManager = class {
     patchIfPresent(patch, "submitted_tx_hash", attempt.txHash);
     patchIfPresent(patch, "tx_bytes_hash", attempt.txBytesHash);
     patchIfPresent(patch, "sign_doc_hash", attempt.signDocHash);
-    return this.transitionBatch(reservationIDs, reservationStatuses.ProofReady, reservationStatuses.Submitted, patch);
+    return this.transitionBatch(reservationIDs2, reservationStatuses.ProofReady, reservationStatuses.Submitted, patch);
   }
-  async markUnknown(reservationIDs = [], metadata = {}) {
+  async markUnknown(reservationIDs2 = [], metadata = {}) {
     assertBroadcastAttemptMetadata(metadata, "markUnknown");
     const attempt = broadcastAttemptMetadata(metadata);
     const from = metadata.fromStatus || metadata.from_status || reservationStatuses.ProofReady;
@@ -87088,12 +86326,16 @@ var NoteReservationManager = class {
     patchIfPresent(patch, "submitted_tx_hash", attempt.txHash);
     patchIfPresent(patch, "tx_bytes_hash", attempt.txBytesHash);
     patchIfPresent(patch, "sign_doc_hash", attempt.signDocHash);
-    return this.transitionBatch(reservationIDs, from, reservationStatuses.Unknown, patch);
+    return this.transitionBatch(reservationIDs2, from, reservationStatuses.Unknown, patch);
   }
-  /** Resolve an exact failed/absent transaction after authoritative lookup. */
-  async markBroadcastFailed(reservationIDs = [], metadata = {}) {
-    const currentByID = await this._ownedReservationsByID(reservationIDs);
-    const statuses = [...new Set((reservationIDs || []).map((id) => currentByID.get(id).status))];
+  /**
+   * Resolve a durable broadcast marker without operator approval only after an
+   * authoritative lookup binds the exact failed/absent transaction and all
+   * linked input nullifiers are confirmed unspent.
+   */
+  async markBroadcastFailed(reservationIDs2 = [], metadata = {}) {
+    const currentByID = await this._ownedReservationsByID(reservationIDs2);
+    const statuses = [...new Set((reservationIDs2 || []).map((id) => currentByID.get(id).status))];
     if (statuses.length !== 1 || ![
       reservationStatuses.ProofReady,
       reservationStatuses.Submitted,
@@ -87103,18 +86345,18 @@ var NoteReservationManager = class {
     }
     const currentStatus = statuses[0];
     const now = this.timestamp();
-    const leaseToken = currentStatus === reservationStatuses.ProofReady ? aliasedStringValue(metadata, "leaseToken", "lease_token", "lease token") : "";
+    const leaseToken2 = currentStatus === reservationStatuses.ProofReady ? aliasedStringValue(metadata, "leaseToken", "lease_token", "lease token") : "";
     const evidence = postBroadcastReplanEvidence(metadata);
-    for (const reservationID of reservationIDs || []) {
+    for (const reservationID of reservationIDs2 || []) {
       const current = currentByID.get(reservationID);
       if (currentStatus === reservationStatuses.ProofReady) {
-        assertCurrentLeaseToken(current, leaseToken, this.leaseOwner, now);
+        assertCurrentLeaseToken(current, leaseToken2, this.leaseOwner, now);
       }
       if (!hasExactPostBroadcastFailureEvidence(current, metadata)) {
         throw new Error("markBroadcastFailed requires exact tx_hash_checked, positive checked_height, nullifier_unspent_confirmed, and tx_absent_or_failed_confirmed evidence");
       }
     }
-    const transitions = (reservationIDs || []).map((reservationID) => {
+    const transitions = (reservationIDs2 || []).map((reservationID) => {
       const current = currentByID.get(reservationID);
       const patch = {
         broadcast_in_flight: false,
@@ -87137,12 +86379,9 @@ var NoteReservationManager = class {
       };
       if (currentStatus === reservationStatuses.ProofReady) {
         patch.lease_owner = this.leaseOwner;
-        patch.lease_token = leaseToken;
+        patch.lease_token = leaseToken2;
       }
-      Object.defineProperty(patch, managedAuthoritativeBroadcastFailure, {
-        value: true,
-        enumerable: true
-      });
+      markManagedPatch(patch, managedAuthoritativeBroadcastFailure, true);
       return {
         reservationID,
         from: current.status,
@@ -87150,13 +86389,156 @@ var NoteReservationManager = class {
         patch
       };
     });
-    if (!transitions.length) return [];
-    if (typeof this.store.compareAndSetReservationStatusBatch !== "function") {
-      throw new Error("reservation store atomic batch compare-and-set is required");
-    }
-    return this.store.compareAndSetReservationStatusBatch(transitions);
+    return commitReservationTransitions(this.store, transitions);
   }
-  async markReplanRequired(reservationIDs = [], metadata = {}) {
+  /**
+   * Recover an exact, durably attempted ProofReady operation after its worker
+   * lease expired. Unlike the generic transition APIs this is operation-scoped
+   * and requires a fresh authoritative nullifier query before its atomic CAS.
+   */
+  async recoverExpiredProofReadyBroadcastFailure(input = {}) {
+    const operationID = aliasedStringValue(
+      input,
+      "operationId",
+      "operation_id",
+      "operation id"
+    ).trim();
+    if (!operationID) {
+      throw new Error("expired ProofReady recovery requires operationId");
+    }
+    const nullifiers = normalizedExpiredRecoveryNullifiers(input);
+    const identity = expiredRecoveryTransactionIdentity(input);
+    const executionFailedConfirmed = consistentMetadataAliasValue(
+      input,
+      ["executionFailedConfirmed", "execution_failed_confirmed"],
+      "execution failed evidence",
+      { boolean: true }
+    );
+    if (executionFailedConfirmed !== true) {
+      throw new Error("expired ProofReady recovery requires literal authoritative executionFailedConfirmed evidence");
+    }
+    const checkedHeight = consistentMetadataAliasValue(
+      input,
+      ["checkedHeight", "checked_height"],
+      "checked height evidence"
+    );
+    const evidence = postBroadcastReplanEvidence({
+      txHashChecked: identity.txHash,
+      checkedHeight,
+      nullifierUnspentConfirmed: true,
+      txAbsentOrFailedConfirmed: true
+    });
+    if (!positiveCheckedHeight(evidence.checkedHeight) || normalizedTxIdentity(evidence.txHashChecked) !== identity.txHash) {
+      throw new Error("expired ProofReady recovery requires exact txHashChecked and positive checkedHeight");
+    }
+    const canonicalChecker = input.checkNullifiers;
+    const aliasChecker = input.check_nullifiers;
+    if (canonicalChecker != null && aliasChecker != null && canonicalChecker !== aliasChecker) {
+      throw new Error("checkNullifiers aliases conflict");
+    }
+    const checkNullifiers = canonicalChecker ?? aliasChecker;
+    if (typeof checkNullifiers !== "function") {
+      throw new Error("expired ProofReady recovery requires checkNullifiers");
+    }
+    const readLinked = async () => (await this.store.listReservations({ ownerKeyId: this.ownerKeyId })).filter((reservation) => reservation.operation_id === operationID);
+    const linked = await readLinked();
+    if (!linked.length) {
+      throw new Error(`expired ProofReady recovery operation not found: ${operationID}`);
+    }
+    const persistedLookupKeys = linked.map((reservation) => String(reservation.nullifier_lookup_key || ""));
+    const suppliedLookupKeys = await Promise.all(nullifiers.map(
+      (nullifier) => this.lookupKeyForNote({ nullifier })
+    ));
+    const persistedSet = new Set(persistedLookupKeys);
+    if (persistedLookupKeys.some((value) => !value) || persistedSet.size !== persistedLookupKeys.length || suppliedLookupKeys.length !== persistedLookupKeys.length || new Set(suppliedLookupKeys).size !== suppliedLookupKeys.length || suppliedLookupKeys.some((value) => !persistedSet.has(value))) {
+      throw new Error("expired ProofReady recovery requires the exact operation input nullifier set");
+    }
+    const statuses = new Set(linked.map((reservation) => reservation.status));
+    if (statuses.size !== 1) {
+      throw mixedOperationStateError(
+        linked,
+        "expired ProofReady recovery requires one exact ProofReady operation"
+      );
+    }
+    for (const reservation of linked) {
+      assertExpiredRecoveryStoredIdentity(reservation, identity);
+    }
+    if (statuses.size === 1 && statuses.has(reservationStatuses.ReplanRequired)) {
+      if (linked.every(
+        (reservation) => isPersistedExpiredProofReadyRecovery(reservation, evidence, identity, nullifiers.length)
+      )) {
+        return linked;
+      }
+      throw new Error("expired ProofReady recovery conflicts with persisted ReplanRequired evidence");
+    }
+    if (!statuses.has(reservationStatuses.ProofReady)) {
+      throw new Error(
+        `expired ProofReady recovery requires ProofReady state, got ${[...statuses][0]}`
+      );
+    }
+    const now = this.now();
+    for (const reservation of linked) {
+      const leaseUntil = leaseExpirationMs(reservation);
+      if (!reservation.lease_owner || !reservation.lease_token || leaseUntil <= 0 || leaseUntil > new Date(now).getTime()) {
+        throw new Error("expired ProofReady recovery requires every worker lease to be expired");
+      }
+      if (!reservation.broadcast_in_flight || Number(reservation.broadcast_attempt_count || 0) < 1) {
+        throw new Error("expired ProofReady recovery requires a durable in-flight broadcast attempt");
+      }
+    }
+    let nullifierResult;
+    try {
+      nullifierResult = await checkNullifiers([...nullifiers]);
+    } catch (error) {
+      throw new Error("expired ProofReady recovery authoritative nullifier query failed", { cause: error });
+    }
+    assertExpiredRecoveryNullifiersUnspent(nullifierResult, nullifiers);
+    const transitions = linked.map((current) => {
+      const patch = {
+        submitted_tx_hash: identity.txHash,
+        tx_bytes_hash: identity.txBytesHash,
+        sign_doc_hash: identity.signDocHash,
+        broadcast_in_flight: false,
+        broadcast_attempt_count: Number(current.broadcast_attempt_count || 0),
+        last_broadcast_error: String(
+          input.error || input.lastBroadcastError || input.last_broadcast_error || "authoritative exact broadcast failure recovered after worker restart"
+        ),
+        metadata: {
+          ...current.metadata || {},
+          ...input.metadata || {},
+          nullifier_unspent_confirmed: true,
+          checked_height: String(evidence.checkedHeight),
+          tx_hash_checked: String(evidence.txHashChecked),
+          tx_absent_or_failed_confirmed: true,
+          authoritative_execution_failure: true,
+          execution_failed_confirmed: true,
+          input_nullifier_count: nullifiers.length,
+          proof_discarded: true,
+          no_broadcast_attempt: false,
+          reconcile_reason: "expired_proof_ready_authoritative_exact_broadcast_failure"
+        }
+      };
+      markManagedPatch(patch, managedExpiredProofReadyBroadcastFailure, true);
+      return {
+        reservationID: current.reservation_id,
+        from: reservationStatuses.ProofReady,
+        to: reservationStatuses.ReplanRequired,
+        patch
+      };
+    });
+    try {
+      return await this.store.compareAndSetReservationStatusBatch(transitions);
+    } catch (error) {
+      const current = await readLinked();
+      if (current.length === linked.length && current.every(
+        (reservation) => isPersistedExpiredProofReadyRecovery(reservation, evidence, identity, nullifiers.length)
+      )) {
+        return current;
+      }
+      throw error;
+    }
+  }
+  async markReplanRequired(reservationIDs2 = [], metadata = {}) {
     const from = metadata.fromStatus || metadata.from_status || reservationStatuses.Submitted;
     const patch = {};
     const evidence = postBroadcastReplanEvidence(metadata);
@@ -87197,7 +86579,7 @@ var NoteReservationManager = class {
       patchIfPresent(patch.metadata, "tx_hash_checked", evidence.txHashChecked);
     }
     if (metadata.fromStatus || metadata.from_status) {
-      return this.transitionBatch(reservationIDs, from, reservationStatuses.ReplanRequired, patch);
+      return this.transitionBatch(reservationIDs2, from, reservationStatuses.ReplanRequired, patch);
     }
     assertPatchKeepsReservationIdentity(patch);
     const now = this.timestamp();
@@ -87206,8 +86588,8 @@ var NoteReservationManager = class {
       updated_at: now
     };
     const transitions = [];
-    const currentByID = await this._ownedReservationsByID(reservationIDs);
-    for (const reservationID of reservationIDs || []) {
+    const currentByID = await this._ownedReservationsByID(reservationIDs2);
+    for (const reservationID of reservationIDs2 || []) {
       const current = currentByID.get(reservationID);
       assertLeaseTransitionAllowed(current, reservationStatuses.ReplanRequired, transitionPatch, now);
       assertReplanTransitionEvidence(current.status, reservationStatuses.ReplanRequired, patch);
@@ -87228,17 +86610,13 @@ var NoteReservationManager = class {
         } : transitionPatch
       });
     }
-    if (!transitions.length) return [];
-    if (typeof this.store.compareAndSetReservationStatusBatch !== "function") {
-      throw new Error("reservation store atomic batch compare-and-set is required");
-    }
-    return this.store.compareAndSetReservationStatusBatch(transitions);
+    return commitReservationTransitions(this.store, transitions);
   }
-  async releaseReservedOrProving(reservationIDs = [], metadata = {}) {
-    const currentByID = await this._ownedReservationsByID(reservationIDs, {
+  async releaseReservedOrProving(reservationIDs2 = [], metadata = {}) {
+    const currentByID = await this._ownedReservationsByID(reservationIDs2, {
       allowMixedOperationState: true
     });
-    for (const reservationID of reservationIDs || []) {
+    for (const reservationID of reservationIDs2 || []) {
       const current = currentByID.get(reservationID);
       if (current.status !== reservationStatuses.Reserved) {
         throw new Error(`automatic reservation release requires Reserved status: ${current.status}`);
@@ -87248,13 +86626,13 @@ var NoteReservationManager = class {
       throw new Error("reservation store atomic release batch is required");
     }
     return this.store.releaseReservationBatch({
-      reservationIDs,
+      reservationIDs: reservationIDs2,
       ownerKeyId: this.ownerKeyId,
       leaseOwner: this.leaseOwner,
       leaseToken: ""
     });
   }
-  async markManualReview(reservationIDs = [], metadata = {}) {
+  async markManualReview(reservationIDs2 = [], metadata = {}) {
     assertPatchKeepsReservationIdentity(metadata);
     const now = this.timestamp();
     const patch = {
@@ -87267,8 +86645,8 @@ var NoteReservationManager = class {
       }
     };
     const transitions = [];
-    const currentByID = await this._ownedReservationsByID(reservationIDs);
-    for (const reservationID of reservationIDs || []) {
+    const currentByID = await this._ownedReservationsByID(reservationIDs2);
+    for (const reservationID of reservationIDs2 || []) {
       const current = currentByID.get(reservationID);
       assertLeaseTransitionAllowed(current, reservationStatuses.ManualReview, patch, now);
       if (!canTransitionReservation(current.status, reservationStatuses.ManualReview)) {
@@ -87292,7 +86670,7 @@ var NoteReservationManager = class {
     }
     return this.store.compareAndSetReservationStatusBatch(transitions);
   }
-  async resolveManualReview(reservationIDs = [], resolution = {}) {
+  async resolveManualReview(reservationIDs2 = [], resolution = {}) {
     const target = String(resolution.target || resolution.toStatus || resolution.to_status || "");
     if (![reservationStatuses.Released, reservationStatuses.ReplanRequired, reservationStatuses.Failed].includes(target)) {
       throw new Error("ManualReview resolution target must be Released, ReplanRequired, or Failed");
@@ -87302,7 +86680,7 @@ var NoteReservationManager = class {
     if (!operatorId || !approvalReference) {
       throw new Error("ManualReview resolution requires operatorId and approvalReference");
     }
-    return this.transitionBatch(reservationIDs, reservationStatuses.ManualReview, target, {
+    return this.transitionBatch(reservationIDs2, reservationStatuses.ManualReview, target, {
       metadata: {
         ...resolution.metadata || {},
         operator_approved: true,
@@ -87313,26 +86691,22 @@ var NoteReservationManager = class {
     });
   }
   async reconcileSpentNotes(notes = []) {
+    const seenLookupKeys = /* @__PURE__ */ new Set();
     const spentNotes = [];
     for (const note of notes || []) {
       if (!hasLiteralSpentEvidence(note)) continue;
       const lookupKey = await this.lookupKeyForNote(note);
+      if (seenLookupKeys.has(lookupKey)) continue;
+      seenLookupKeys.add(lookupKey);
       spentNotes.push({ lookupKey, note });
     }
     if (!spentNotes.length) return [];
     if (typeof this.store.reconcileSpentByLookupKeys !== "function") {
       throw new Error("reservation store atomic spent reconciliation is required");
     }
-    const reservations = await this.store.listReservations({ ownerKeyId: this.ownerKeyId });
-    const coalescedSpentNotes = coalesceSpentNotesByLookupKey(
-      spentNotes,
-      (lookupKey) => reservations.filter(
-        (reservation) => reservation.nullifier_lookup_key === lookupKey
-      )
-    );
     return this.store.reconcileSpentByLookupKeys(
       this.ownerKeyId,
-      coalescedSpentNotes,
+      spentNotes,
       { now: this.timestamp() }
     );
   }
@@ -87394,9 +86768,9 @@ async function rollbackPlanReservation(reservationManager2, batch) {
   if (typeof reservationManager2.markManualReview !== "function") {
     throw new Error("reservationManager.markManualReview is required after proving starts");
   }
-  const leaseToken = batch.lease_token || batch.leaseToken || batch.reservations?.[0]?.lease_token || "";
+  const leaseToken2 = batch.lease_token || batch.leaseToken || batch.reservations?.[0]?.lease_token || "";
   await reservationManager2.markManualReview(batch.reservation_ids, {
-    leaseToken,
+    leaseToken: leaseToken2,
     error: "preparation_outcome_unknown_after_proving",
     metadata: {
       reconcile_reason: "preparation_outcome_unknown_after_proving",
@@ -87416,6 +86790,260 @@ async function rollbackPlanReservationPreservingError(reservationManager2, batch
       }
     }
   }
+}
+
+// node_modules/clairveiljs/src/privacy/reservation-workflow.js
+var reservationIDs = (batch) => [...batch?.reservation_ids || []].filter(Boolean).map(String);
+var leaseToken = (batch) => batch?.lease_token || batch?.reservations?.[0]?.lease_token || "";
+function appendReservationCleanupErrors(error, cleanupErrors = []) {
+  if (!cleanupErrors.length || !error || typeof error !== "object") return;
+  try {
+    error.reservationCleanupErrors = [
+      ...Array.isArray(error.reservationCleanupErrors) ? error.reservationCleanupErrors : [],
+      ...cleanupErrors
+    ];
+  } catch {
+  }
+}
+async function reservationAvailableNotes(reservationManager2, notes) {
+  if (!reservationManager2) return notes;
+  if (typeof reservationManager2.filterAvailableNotes !== "function") {
+    throw new Error("reservationManager.filterAvailableNotes is required");
+  }
+  return reservationManager2.filterAvailableNotes(notes);
+}
+function reservationBatchSummary(batch) {
+  if (!batch) return null;
+  return {
+    operation_id: batch.operation_id,
+    lease_owner: batch.lease_owner || batch.reservations?.[0]?.lease_owner || "",
+    lease_token: leaseToken(batch),
+    lease_until: batch.lease_until || batch.reservations?.[0]?.lease_until || "",
+    reservation_ids: [...batch.reservation_ids || []],
+    reservations: [...batch.reservations || []]
+  };
+}
+async function markReservationProofReady(reservationManager2, batch, metadata) {
+  if (!reservationManager2 || !batch?.reservation_ids?.length) return [];
+  if (typeof reservationManager2.markProofReady !== "function") {
+    throw new Error("reservationManager.markProofReady is required");
+  }
+  const reservations = await reservationManager2.markProofReady(batch.reservation_ids, {
+    ...metadata,
+    leaseToken: leaseToken(batch)
+  });
+  batch.reservations = reservations;
+  batch.lease_until = reservations[0]?.lease_until || batch.lease_until;
+  return reservations;
+}
+async function renewReservationLease(reservationManager2, batch) {
+  if (!reservationManager2 || !batch?.reservation_ids?.length || typeof reservationManager2.renewLease !== "function") return [];
+  const reservations = await reservationManager2.renewLease(batch.reservation_ids, {
+    leaseToken: leaseToken(batch)
+  });
+  batch.reservations = reservations;
+  batch.lease_until = reservations[0]?.lease_until || batch.lease_until;
+  return reservations;
+}
+async function reachedBroadcastTerminal(reservationManager2, batch) {
+  const ids = reservationIDs(batch);
+  if (!ids.length || typeof reservationManager2?.getReservation !== "function") return false;
+  try {
+    const records = await Promise.all(ids.map((id) => reservationManager2.getReservation(id)));
+    return records.length === ids.length && records.every(
+      (record) => record?.status === reservationStatuses.Submitted || record?.status === reservationStatuses.Unknown
+    );
+  } catch {
+    return false;
+  }
+}
+async function withReservationHeartbeat(reservationManager2, batch, task, {
+  acceptBroadcastTerminal = false,
+  phase = "proof generation"
+} = {}) {
+  if (!reservationManager2 || !batch?.reservation_ids?.length || typeof reservationManager2.renewLease !== "function") {
+    return task({ assertHeartbeatHealthy() {
+    }, async heartbeatNow() {
+    } });
+  }
+  await renewReservationLease(reservationManager2, batch);
+  const intervalMs = reservationHeartbeatIntervalMs({
+    leaseDurationMs: reservationManager2.leaseDurationMs,
+    leaseUntil: batch.lease_until || batch.reservations?.[0]?.lease_until
+  });
+  let heartbeatError = null;
+  let inFlight = null;
+  const assertHeartbeatHealthy = () => {
+    if (!heartbeatError) return;
+    const error = new Error(`note reservation lease heartbeat failed during ${phase}`);
+    error.name = "ReservationHeartbeatError";
+    error.cause = heartbeatError;
+    throw error;
+  };
+  const heartbeat = async () => {
+    if (heartbeatError) return;
+    try {
+      await renewReservationLease(reservationManager2, batch);
+    } catch (error) {
+      heartbeatError = error;
+    }
+  };
+  const heartbeatNow = async () => {
+    inFlight ||= heartbeat().finally(() => {
+      inFlight = null;
+    });
+    await inFlight;
+    assertHeartbeatHealthy();
+  };
+  const timer = typeof globalThis.setInterval === "function" ? globalThis.setInterval(() => {
+    void heartbeatNow().catch(() => {
+    });
+  }, intervalMs) : null;
+  let result;
+  let completed = false;
+  try {
+    result = await task({ assertHeartbeatHealthy, heartbeatNow });
+    completed = true;
+  } finally {
+    if (timer && typeof globalThis.clearInterval === "function") globalThis.clearInterval(timer);
+    if (inFlight) await inFlight;
+  }
+  if (!completed || !heartbeatError) return result;
+  if (acceptBroadcastTerminal && await reachedBroadcastTerminal(reservationManager2, batch)) return result;
+  return {
+    ...result,
+    reservationReconciliationRequired: true,
+    reservationReconciliationWarning: {
+      code: "reservation_heartbeat_failed_after_proof_ready",
+      message: "The prepared artifact is durable, but reservation reconciliation is required before broadcast.",
+      cause: heartbeatError?.message || String(heartbeatError)
+    }
+  };
+}
+function reservationReconciliationFields(result = {}) {
+  return result.reservationReconciliationRequired === true ? {
+    reservationReconciliationRequired: true,
+    reservationReconciliationWarning: result.reservationReconciliationWarning
+  } : {};
+}
+
+// node_modules/clairveiljs/src/transport/cosmos-options.js
+var provided = (value) => value !== void 0 && value !== null;
+var aliasedValueProvided = (camelValue, snakeValue) => provided(camelValue) || provided(snakeValue);
+function resolveAliasedString(camelValue, snakeValue, name) {
+  const hasCamel = provided(camelValue);
+  const hasSnake = provided(snakeValue);
+  if (hasCamel && hasSnake && String(camelValue) !== String(snakeValue)) {
+    throw new Error(`${name} aliases conflict`);
+  }
+  return String(hasCamel ? camelValue : hasSnake ? snakeValue : "");
+}
+function resolveDirectOperationEvidenceHashes({
+  expectedRecipientHash,
+  expected_recipient_hash,
+  expectedAmountHash,
+  expected_amount_hash
+} = {}) {
+  const recipientProvided = aliasedValueProvided(expectedRecipientHash, expected_recipient_hash);
+  const amountProvided = aliasedValueProvided(expectedAmountHash, expected_amount_hash);
+  const recipientHash = resolveAliasedString(
+    expectedRecipientHash,
+    expected_recipient_hash,
+    "expectedRecipientHash"
+  );
+  const amountHash = resolveAliasedString(
+    expectedAmountHash,
+    expected_amount_hash,
+    "expectedAmountHash"
+  );
+  if (recipientProvided !== amountProvided) {
+    throw new Error("expected recipient hash and expected amount hash must be provided together");
+  }
+  if (recipientProvided && !recipientHash.trim()) {
+    throw new Error("expectedRecipientHash must not be empty");
+  }
+  if (amountProvided && !amountHash.trim()) {
+    throw new Error("expectedAmountHash must not be empty");
+  }
+  return {
+    provided: recipientProvided,
+    expectedRecipientHash: recipientHash,
+    expectedAmountHash: amountHash
+  };
+}
+function normalizeCosmosFeeCoins(value, label = "feeAmount") {
+  if (value == null) return Object.freeze([]);
+  if (!Array.isArray(value)) throw new Error(`${label} must be an array`);
+  const coins = value.map((coin, index) => {
+    if (!coin || typeof coin !== "object" || Array.isArray(coin)) {
+      throw new Error(`${label}[${index}] must be a Cosmos coin`);
+    }
+    const denom = String(coin.denom ?? "").trim();
+    const amount = String(coin.amount ?? "").trim();
+    if (!/^[A-Za-z][A-Za-z0-9/:._-]{2,127}$/.test(denom)) {
+      throw new Error(`${label}[${index}].denom must be a valid Cosmos SDK denomination`);
+    }
+    if (!/^(0|[1-9][0-9]*)$/.test(amount)) {
+      throw new Error(`${label}[${index}].amount must be a canonical non-negative integer string`);
+    }
+    return Object.freeze({ denom, amount });
+  }).sort((left, right) => left.denom < right.denom ? -1 : left.denom > right.denom ? 1 : 0);
+  if (coins.some((coin, index) => index > 0 && coin.denom === coins[index - 1].denom)) {
+    throw new Error(`${label} must not contain duplicate denominations`);
+  }
+  return Object.freeze(coins);
+}
+function resolveCosmosFeeAmount(feeAmount, fee_amount) {
+  const camel = provided(feeAmount) ? normalizeCosmosFeeCoins(feeAmount, "feeAmount") : null;
+  const snake = provided(fee_amount) ? normalizeCosmosFeeCoins(fee_amount, "fee_amount") : null;
+  if (camel && snake && JSON.stringify(camel) !== JSON.stringify(snake)) {
+    throw new Error("feeAmount aliases conflict");
+  }
+  return camel || snake || Object.freeze([]);
+}
+function normalizeCosmosGasLimit2(value, label) {
+  const normalized = typeof value === "bigint" ? value > 0n && value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : NaN : value;
+  if (typeof normalized !== "number" || !Number.isSafeInteger(normalized) || normalized <= 0) {
+    throw new Error(`${label} must be a positive safe integer`);
+  }
+  return normalized;
+}
+function resolveCosmosGasLimit(gasLimit, gas_limit, fallback) {
+  const camel = provided(gasLimit) ? normalizeCosmosGasLimit2(gasLimit, "gasLimit") : null;
+  const snake = provided(gas_limit) ? normalizeCosmosGasLimit2(gas_limit, "gas_limit") : null;
+  if (camel !== null && snake !== null && camel !== snake) {
+    throw new Error("gasLimit aliases conflict");
+  }
+  return camel ?? snake ?? normalizeCosmosGasLimit2(fallback, "default gasLimit");
+}
+function transferProofReadyMetadata(built, context = {}, bindingField) {
+  const output = built?.payload?.outputs?.[0] || {};
+  const coin = context.amount ? parseCoin(context.amount, context.denom || "") : null;
+  const itemIndex = context.batchItemIndex ?? context.batch_item_index;
+  const itemIndexKnown = context.batchItemIndexKnown ?? context.batch_item_index_known;
+  const expectedOutputCommitment = output.commitment_hex || "";
+  const expectedDisclosureDigest = built?.payload?.audit_disclosure_digest_hex || "";
+  const expectedRecipientHash = context.expectedRecipientHash ?? context.expected_recipient_hash ?? "";
+  const expectedAmount = output.amount || coin?.amount || "";
+  const expectedAmountHash = context.expectedAmountHash ?? context.expected_amount_hash ?? "";
+  const expectedDenom = context.expectedDenom ?? context.expected_denom ?? coin?.denom ?? context.denom ?? "";
+  const operationSuccessEvidenceRequired2 = Boolean(
+    expectedOutputCommitment && expectedDisclosureDigest && expectedRecipientHash && expectedAmount && expectedAmountHash && expectedDenom
+  );
+  const snakeBindingField = bindingField === "signDocHash" ? "sign_doc_hash" : "tx_bytes_hash";
+  return {
+    payloadHash: built?.payload?.payload_hash || "",
+    [bindingField]: context[bindingField] ?? context[snakeBindingField] ?? "",
+    expectedOutputCommitment,
+    expectedDisclosureDigest,
+    expectedRecipientHash,
+    expectedAmount,
+    expectedAmountHash,
+    expectedDenom,
+    batchItemIndex: itemIndex ?? 0,
+    batchItemIndexKnown: itemIndexKnown ?? (operationSuccessEvidenceRequired2 || itemIndex !== void 0 && itemIndex !== null),
+    operationSuccessEvidenceRequired: operationSuccessEvidenceRequired2
+  };
 }
 
 // node_modules/clairveiljs/src/privacy/merkle-path.js
@@ -87753,259 +87381,6 @@ async function derivePrivacyMaterialFromWallet(walletLike, options = {}) {
   };
 }
 
-// node_modules/clairveiljs/src/transport/privacy-state.js
-function privacyStateAdapterTimeoutMs(value) {
-  const timeoutMs = Number(value);
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    throw new Error("PrivacyStateAdapter timeoutMs must be positive");
-  }
-  return timeoutMs;
-}
-function privacyStateAdapterRetry(value = {}) {
-  const retry = value || {};
-  const retries = Number(retry.retries ?? 0);
-  const baseDelayMs = Number(retry.baseDelayMs ?? 0);
-  const maxDelayMs = Number(retry.maxDelayMs ?? baseDelayMs);
-  if (!Number.isSafeInteger(retries) || retries < 0) {
-    throw new Error("PrivacyStateAdapter retries must be a non-negative integer");
-  }
-  if (!Number.isFinite(baseDelayMs) || baseDelayMs < 0 || !Number.isFinite(maxDelayMs) || maxDelayMs < 0) {
-    throw new Error("PrivacyStateAdapter retry delays must be non-negative");
-  }
-  return {
-    retries,
-    baseDelayMs,
-    maxDelayMs,
-    jitter: retry.jitter === true,
-    retryStatuses: retry.retryStatuses instanceof Set ? retry.retryStatuses : new Set(retry.retryStatuses || [])
-  };
-}
-function privacyStateAdapterRetryDelayMs(attemptNumber, retry) {
-  const base = retry.baseDelayMs * (attemptNumber <= 1 ? 1 : 3 ** (attemptNumber - 1));
-  const capped = Math.min(retry.maxDelayMs, base);
-  if (!retry.jitter || capped <= 0) return capped;
-  return Math.round(capped + Math.random() * capped * 0.2);
-}
-function privacyStateAdapterErrorIsRetryable(error, retry) {
-  if (error?.code === "PRIVACY_STATE_ADAPTER_TIMEOUT") return true;
-  if (error?.status != null) {
-    return retry.retryStatuses.has(Number(error.status));
-  }
-  return true;
-}
-function sleep(ms) {
-  return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
-}
-function clonePrivacyStateAdapterValue(value, seen = /* @__PURE__ */ new Map()) {
-  if (value == null || typeof value !== "object") return value;
-  if (seen.has(value)) return seen.get(value);
-  if (value instanceof Uint8Array) return new Uint8Array(value);
-  if (value instanceof ArrayBuffer) return value.slice(0);
-  if (ArrayBuffer.isView(value)) {
-    return new value.constructor(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength));
-  }
-  if (value instanceof Date) return new Date(value.getTime());
-  if (value instanceof Map) {
-    const cloned2 = /* @__PURE__ */ new Map();
-    seen.set(value, cloned2);
-    for (const [key, item] of value) {
-      cloned2.set(
-        clonePrivacyStateAdapterValue(key, seen),
-        clonePrivacyStateAdapterValue(item, seen)
-      );
-    }
-    return cloned2;
-  }
-  if (value instanceof Set) {
-    const cloned2 = /* @__PURE__ */ new Set();
-    seen.set(value, cloned2);
-    for (const item of value) cloned2.add(clonePrivacyStateAdapterValue(item, seen));
-    return cloned2;
-  }
-  if (Array.isArray(value)) {
-    const cloned2 = [];
-    seen.set(value, cloned2);
-    for (const item of value) cloned2.push(clonePrivacyStateAdapterValue(item, seen));
-    return cloned2;
-  }
-  const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) return value;
-  const cloned = {};
-  seen.set(value, cloned);
-  for (const [key, item] of Object.entries(value)) {
-    cloned[key] = clonePrivacyStateAdapterValue(item, seen);
-  }
-  return cloned;
-}
-function clonePrivacyStateAdapterArguments(args) {
-  return (args || []).map((value) => clonePrivacyStateAdapterValue(value));
-}
-function invokeWithTimeout(method, invoke, timeoutMs) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      const error = new Error(`PrivacyStateAdapter.${method} timed out after ${timeoutMs}ms`);
-      error.code = "PRIVACY_STATE_ADAPTER_TIMEOUT";
-      reject(error);
-    }, timeoutMs);
-    Promise.resolve().then(invoke).then(
-      (value) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        reject(error);
-      }
-    );
-  });
-}
-var privacyStateAdapterRequiredMethods = Object.freeze([
-  "fetchPrivacyScan",
-  "fetchTreeState",
-  "fetchCommitmentInfo",
-  "lookupMerklePath",
-  "fetchAuditConfig",
-  "fetchDisclosureConfig",
-  "fetchCircuitConfig",
-  "fetchReserve",
-  "fetchAssetByDenom",
-  "fetchAssetByID",
-  "fetchCommitmentPathsAtRoot",
-  "checkNullifiers"
-]);
-var privacyStateAdapterOptionalMethods = Object.freeze([
-  "fetchPrivacyEvents",
-  "fetchScanEvents",
-  "checkNullifier"
-]);
-var privacyStateAdapterMethods = Object.freeze([
-  ...privacyStateAdapterRequiredMethods,
-  ...privacyStateAdapterOptionalMethods
-]);
-function createPrivacyStateAdapter(adapter) {
-  if (!adapter || typeof adapter !== "object" && typeof adapter !== "function") {
-    throw new TypeError("privacyStateAdapter must be an object");
-  }
-  const missing = privacyStateAdapterRequiredMethods.filter(
-    (method) => typeof adapter[method] !== "function"
-  );
-  if (missing.length) {
-    throw new TypeError(`privacyStateAdapter is missing required methods: ${missing.join(", ")}`);
-  }
-  const normalized = {};
-  for (const method of privacyStateAdapterMethods) {
-    if (adapter[method] == null) continue;
-    if (typeof adapter[method] !== "function") {
-      throw new TypeError(`privacyStateAdapter.${method} must be a function`);
-    }
-    normalized[method] = adapter[method].bind(adapter);
-  }
-  return Object.freeze(normalized);
-}
-async function invokePrivacyStateAdapter(adapter, method, args = [], {
-  timeoutMs,
-  retry
-} = {}) {
-  const adapterMethod = adapter?.[method];
-  if (typeof adapterMethod !== "function") {
-    throw new TypeError(`PrivacyStateAdapter.${method} must be a function`);
-  }
-  const resolvedTimeoutMs = privacyStateAdapterTimeoutMs(timeoutMs);
-  const resolvedRetry = privacyStateAdapterRetry(retry);
-  let lastError = null;
-  for (let attempt = 0; attempt <= resolvedRetry.retries; attempt += 1) {
-    try {
-      return await invokeWithTimeout(
-        method,
-        // Adapter implementations are transport code, not owners of the SDK's
-        // cursor, validation state, or expected-nullifier collections. Give
-        // every attempt an isolated snapshot so response validation cannot be
-        // weakened by argument mutation and retries cannot share mutations.
-        () => adapterMethod(...clonePrivacyStateAdapterArguments(args)),
-        resolvedTimeoutMs
-      );
-    } catch (error) {
-      lastError = error;
-      const canRetry = attempt < resolvedRetry.retries && privacyStateAdapterErrorIsRetryable(error, resolvedRetry);
-      if (!canRetry) throw error;
-      await sleep(privacyStateAdapterRetryDelayMs(attempt + 1, resolvedRetry));
-    }
-  }
-  throw lastError;
-}
-function normalizePrivacyNullifierStatuses(response, requestedNullifiers) {
-  const normalizedRequested = [...new Set((requestedNullifiers || []).map((value) => String(value || "").trim().toLowerCase()).filter(Boolean))];
-  if (normalizedRequested.length === 0) return /* @__PURE__ */ new Map();
-  const requested = new Set(normalizedRequested);
-  const statuses = /* @__PURE__ */ new Map();
-  const invalid = /* @__PURE__ */ new Set();
-  const addStatus = (nullifier, value) => {
-    const key = String(nullifier || "").trim().toLowerCase();
-    if (!requested.has(key) || invalid.has(key)) return;
-    const used = parseNullifierUsage(value);
-    if (used === null || statuses.has(key) && statuses.get(key) !== used) {
-      statuses.delete(key);
-      invalid.add(key);
-      return;
-    }
-    statuses.set(key, used);
-  };
-  if (response instanceof Map) {
-    for (const [nullifier, value] of response) addStatus(nullifier, value);
-  } else if (response && typeof response === "object" && (Array.isArray(response.statuses) || Array.isArray(response.Statuses))) {
-    for (const status of [
-      ...Array.isArray(response.statuses) ? response.statuses : [],
-      ...Array.isArray(response.Statuses) ? response.Statuses : []
-    ]) {
-      const canonical = status?.nullifier;
-      const alias2 = status?.Nullifier;
-      if (canonical != null && alias2 != null && String(canonical).trim().toLowerCase() !== String(alias2).trim().toLowerCase()) {
-        addStatus(canonical, null);
-        addStatus(alias2, null);
-      } else {
-        addStatus(canonical ?? alias2, status);
-      }
-    }
-  } else if (response && typeof response === "object" && !Array.isArray(response)) {
-    for (const [nullifier, value] of Object.entries(response)) addStatus(nullifier, value);
-  } else {
-    throw new Error("privacyStateAdapter.checkNullifiers returned an unsupported status shape");
-  }
-  const unresolved = normalizedRequested.filter(
-    (nullifier) => invalid.has(nullifier) || !statuses.has(nullifier)
-  );
-  if (unresolved.length) {
-    throw new Error(`privacyStateAdapter.checkNullifiers did not return one unambiguous status for: ${unresolved.join(", ")}`);
-  }
-  return new Map(normalizedRequested.map((nullifier) => [nullifier, statuses.get(nullifier)]));
-}
-var privacyNullifierBatchLimit = 1e3;
-async function checkPrivacyStateAdapterNullifiers(adapter, nullifierHexes, options) {
-  const normalized = [...new Set((nullifierHexes || []).map((value) => String(value || "").trim().toLowerCase()).filter(Boolean))];
-  if (normalized.length === 0) return /* @__PURE__ */ new Map();
-  const statuses = /* @__PURE__ */ new Map();
-  for (let start = 0; start < normalized.length; start += privacyNullifierBatchLimit) {
-    const chunk = normalized.slice(start, start + privacyNullifierBatchLimit);
-    const response = await invokePrivacyStateAdapter(
-      adapter,
-      "checkNullifiers",
-      [chunk],
-      options
-    );
-    for (const [nullifier, used] of normalizePrivacyNullifierStatuses(response, chunk)) {
-      statuses.set(nullifier, used);
-    }
-  }
-  return new Map(normalized.map((nullifier) => [nullifier, statuses.get(nullifier)]));
-}
-
 // node_modules/clairveiljs/src/privacy/prover.js
 var transferProofRequestVersion = "v2";
 var transferProofResponseVersion = "v2";
@@ -88042,7 +87417,9 @@ function normalizeDepositProofURL(urlValue) {
   return url;
 }
 function proverRequestURL(baseURL, path) {
-  const url = new URL(path, baseURL);
+  const url = new URL(baseURL);
+  const prefix = url.pathname.endsWith("/") ? url.pathname : `${url.pathname}/`;
+  url.pathname = `${prefix}${String(path || "").replace(/^\/+/, "")}`;
   url.search = "";
   url.hash = "";
   return url;
@@ -88410,7 +87787,7 @@ function normalizeProofResponseShape(response, kind, expectedResponseVersion, ex
     proof: normalizeProofShape(response.proof, kind, expectedProofVersion)
   };
 }
-function unwrapTransferProof(request, response) {
+function unwrapTransferProof(request, response, { nowUnix } = {}) {
   const normalized = normalizeProofResponseShape(
     response,
     "transfer",
@@ -88418,7 +87795,7 @@ function unwrapTransferProof(request, response) {
     preparedTransferV5ProofVersion
   );
   const proof = normalized.proof;
-  validatePreparedTransferV5Proof(request.payload, proof);
+  validatePreparedTransferV5Proof(request.payload, proof, { nowUnix });
   return {
     version: normalized.version,
     proof
@@ -88476,7 +87853,7 @@ function createHttpProverAdapter({
   }
   const normalizedBaseURL = normalizeBaseURL(baseURL);
   return {
-    async proveTransfer(request, { signal } = {}) {
+    async proveTransfer(request, { signal, nowUnix } = {}) {
       const normalizedRequest = {
         version: request?.version || transferProofRequestVersion,
         payload: request?.payload || request
@@ -88498,7 +87875,7 @@ function createHttpProverAdapter({
           fetchImpl,
           signal
         });
-        return unwrapTransferProof(normalizedRequest, response);
+        return unwrapTransferProof(normalizedRequest, response, { nowUnix });
       } catch (error) {
         throw wrapProverError(error);
       }
@@ -89015,20 +88392,11 @@ var MemoryNoteStore = class {
 };
 
 // node_modules/clairveiljs/src/transport/cosmos-client.js
-function appendReservationCleanupErrors(error, cleanupErrors = []) {
-  if (!cleanupErrors.length || !error || typeof error !== "object") return;
-  try {
-    const existing = Array.isArray(error.reservationCleanupErrors) ? error.reservationCleanupErrors : [];
-    error.reservationCleanupErrors = [...existing, ...cleanupErrors];
-  } catch {
-  }
-}
 var msgDepositTypeUrl = MsgDeposit.typeUrl;
 var msgBatchTransferTypeUrl = MsgBatchTransfer.typeUrl;
 var msgTransferTypeUrl = MsgTransfer.typeUrl;
 var msgWithdrawTypeUrl = MsgWithdraw.typeUrl;
 var defaultPrepareScanMaxPages = 1e3;
-var maxPrivacyScanEventCompletionPages = 32;
 var cosmosSignDocMetadataField = "__clairveilCosmosSignDoc";
 var cosmosReservationRequiredMemoMarker = "[clairveil-reservation-required:v1]";
 var maxBatchTransferMessageBytesV1 = 128 << 10;
@@ -89109,20 +88477,35 @@ function normalizedBatchNowUnix(value) {
   }
   return nowUnix;
 }
-function resolveUnixTimestampAlias(camelValue, snakeValue, name) {
-  const normalize3 = (value, label) => {
-    const unixTimestamp = Number(value);
-    if (!Number.isSafeInteger(unixTimestamp) || unixTimestamp < 0) {
-      throw new Error(`${label} must be a non-negative safe integer unix timestamp`);
-    }
-    return unixTimestamp;
-  };
-  const camel = camelValue == null ? null : normalize3(camelValue, name);
-  const snake = snakeValue == null ? null : normalize3(snakeValue, name.replace(/[A-Z]/g, (match) => `_${match.toLowerCase()}`));
-  if (camel !== null && snake !== null && camel !== snake) {
-    throw new Error(`${name} aliases conflict`);
+function normalizedTransferUnix(value, label) {
+  const unix = value;
+  if (!Number.isSafeInteger(unix) || unix < 0) {
+    throw new Error(`transfer ${label} must be a non-negative safe integer`);
   }
-  return camel ?? snake ?? void 0;
+  return unix;
+}
+function aliasedTransferUnix(camelValue, snakeValue, label) {
+  const hasCamel = camelValue !== void 0 && camelValue !== null;
+  const hasSnake = snakeValue !== void 0 && snakeValue !== null;
+  const camel = hasCamel ? normalizedTransferUnix(camelValue, label) : void 0;
+  const snake = hasSnake ? normalizedTransferUnix(snakeValue, label) : void 0;
+  if (hasCamel && hasSnake && camel !== snake) {
+    throw new Error(`${label} aliases conflict`);
+  }
+  return hasCamel ? camel : snake;
+}
+function requiredTransferPreparationTime(chainNowUnix, expiresAtUnix) {
+  if (chainNowUnix === void 0) {
+    throw new Error("transfer chainNowUnix is required from authoritative chain time");
+  }
+  const expiry = expiresAtUnix ?? chainNowUnix + 1800;
+  if (!Number.isSafeInteger(expiry)) {
+    throw new Error("transfer expiresAtUnix must be a non-negative safe integer");
+  }
+  if (expiry <= chainNowUnix) {
+    throw new Error("transfer expiresAtUnix must be later than chainNowUnix");
+  }
+  return { chainNowUnix, expiresAtUnix: expiry };
 }
 function normalizeBatchTransferOutputMode(value) {
   const mode = String(value ?? "compact").trim() || "compact";
@@ -89132,30 +88515,6 @@ function normalizeBatchTransferOutputMode(value) {
 }
 function comparableBatchHex(value) {
   return String(value ?? "").trim().toLowerCase().replace(/^0x/, "");
-}
-function normalizeBatchTransferInputCommitments(inputCommitmentHexes, input_commitment_hexes) {
-  const normalize3 = (value, label) => {
-    if (!Array.isArray(value) || value.length < 1 || value.length > 16) {
-      throw new Error(`${label} must contain 1..16 input commitments`);
-    }
-    const commitments = value.map((item, index) => {
-      const commitment = comparableBatchHex(item);
-      if (!/^[0-9a-f]{64}$/.test(commitment) || BigInt(`0x${commitment}`) >= FIELD_MODULUS) {
-        throw new Error(`${label}[${index}] must be a canonical BN254 field commitment`);
-      }
-      return commitment;
-    });
-    if (new Set(commitments).size !== commitments.length) {
-      throw new Error(`${label} must not contain duplicate commitments`);
-    }
-    return commitments;
-  };
-  const camel = inputCommitmentHexes == null ? null : normalize3(inputCommitmentHexes, "inputCommitmentHexes");
-  const snake = input_commitment_hexes == null ? null : normalize3(input_commitment_hexes, "input_commitment_hexes");
-  if (camel && snake && (camel.length !== snake.length || camel.some((value, index) => value !== snake[index]))) {
-    throw new Error("inputCommitmentHexes aliases conflict");
-  }
-  return camel ?? snake;
 }
 function batchPaymentValue(payment, names, fallback) {
   const values = names.filter((name) => payment?.[name] !== void 0 && payment?.[name] !== null).map((name) => payment[name]);
@@ -89391,6 +88750,14 @@ function assertPreparedBatchTransferMatchesActiveConfig(payload, transferProtoco
     }
   }
 }
+function batchTransferNullifiersUnspent(statuses, nullifiers) {
+  const statusFor = (nullifier) => statuses instanceof Map ? statuses.get(nullifier) ?? statuses.get(`0x${nullifier}`) : statuses?.[nullifier] ?? statuses?.[`0x${nullifier}`];
+  for (const [index, nullifier] of nullifiers.entries()) {
+    if (statusFor(nullifier) !== false) {
+      throw new Error(`batch transfer input nullifier at index ${index} is spent, missing, or has an invalid status`);
+    }
+  }
+}
 function assertTransferDisclosureCapabilities(disclosureConfig, {
   userPrivacyPolicy,
   userDisclosureMode
@@ -89518,7 +88885,7 @@ function retryDelayMs(attemptNumber, retry) {
   if (!retry.jitter || capped <= 0) return capped;
   return Math.round(capped + Math.random() * capped * 0.2);
 }
-function sleep2(ms) {
+function sleep(ms) {
   return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 }
 function isRetryableFetchError(error, retry) {
@@ -89526,7 +88893,7 @@ function isRetryableFetchError(error, retry) {
   if (error?.status != null) return retry.retryStatuses.has(Number(error.status));
   return true;
 }
-function normalizeRestEndpoints(primary, restEndpoints = [], { allowEmpty = false } = {}) {
+function normalizeRestEndpoints(primary, restEndpoints = []) {
   const endpoints = [];
   for (const endpoint of [primary, ...Array.isArray(restEndpoints) ? restEndpoints : []]) {
     const normalized = normalizeRestEndpoint(String(endpoint || ""));
@@ -89534,7 +88901,7 @@ function normalizeRestEndpoints(primary, restEndpoints = [], { allowEmpty = fals
       endpoints.push(normalized);
     }
   }
-  if (!endpoints.length && !allowEmpty) {
+  if (!endpoints.length) {
     throw new Error("rest endpoint is required");
   }
   return endpoints;
@@ -89566,7 +88933,7 @@ function createClairveilRegistry(extraTypes = []) {
   ]);
 }
 function normalizeRpcEndpoint(rpc) {
-  return String(rpc || "").replace(/^tcp:\/\//, "http://").replace(/\/$/, "");
+  return rpc.replace(/^tcp:\/\//, "http://").replace(/\/$/, "");
 }
 function normalizeRestEndpoint(rest) {
   return rest.replace(/\/$/, "");
@@ -89697,7 +89064,7 @@ function isExplicitCheckTxRejection(error) {
   if (error instanceof import_stargate.BroadcastTxError) return true;
   return error?.name === "BroadcastTxError" && Number.isSafeInteger(error?.code) && Number(error.code) !== 0 && typeof error?.codespace === "string";
 }
-function normalizedBroadcastTxHash(value) {
+function normalizedCosmosTxHash(value) {
   const normalized = String(value || "").trim().replace(/^0x/i, "");
   return /^[0-9a-fA-F]{64}$/.test(normalized) ? normalized.toUpperCase() : "";
 }
@@ -89747,7 +89114,11 @@ function cosmosSignDocMetadata(signDoc) {
   return signDoc?.[cosmosSignDocMetadataField] || {};
 }
 function reservationRequiredCosmosMemo(memo = "") {
-  return [String(memo || "").trim(), cosmosReservationRequiredMemoMarker].filter(Boolean).join("\n");
+  const lines = String(memo || "").trim().split("\n").map((line) => line.trim()).filter(Boolean);
+  if (!lines.includes(cosmosReservationRequiredMemoMarker)) {
+    lines.push(cosmosReservationRequiredMemoMarker);
+  }
+  return lines.join("\n");
 }
 function cosmosTxBodyRequiresReservation(signDoc) {
   try {
@@ -89806,12 +89177,13 @@ function directBroadcastContext(input = {}) {
     expectedChainId: input.expectedChainId ?? input.expected_chain_id,
     expectedRecipient: input.expectedRecipient ?? input.expected_recipient,
     accountPrefix: input.accountPrefix ?? input.account_prefix,
-    beforeBroadcast: input.beforeBroadcast ?? resolvedWaitOptions.beforeBroadcast
+    beforeBroadcast: input.beforeBroadcast
   };
   return {
     wallet,
     signDoc,
     walletSignDoc,
+    reservation: resolvedReservation,
     reservationContext,
     signDocHash: cosmosSignDocBindingHash(signDoc),
     broadcastOptions
@@ -89851,7 +89223,7 @@ async function fetchJson(url, {
     return response.json();
   } catch (error) {
     if (error?.name === "AbortError") {
-      const timeoutError = new Error(`fetch request timed out after ${resolvedTimeoutMs}ms: ${url}`);
+      const timeoutError = new Error(`fetch request timed out after ${resolvedTimeoutMs}ms`);
       timeoutError.code = "FETCH_TIMEOUT";
       throw timeoutError;
     }
@@ -89860,21 +89232,10 @@ async function fetchJson(url, {
     clearTimeout(timeout);
   }
 }
-async function fetchJsonWithRetry(urlForEndpoint, endpoints, {
-  timeoutMs,
-  retry,
-  fetchImpl,
-  method,
-  body,
-  headers,
-  failoverStatuses = []
-} = {}) {
+async function fetchJsonWithRetry(urlForEndpoint, endpoints, { timeoutMs, retry, fetchImpl, method, body, headers } = {}) {
   const normalizedRetry = normalizeQueryRetry(retry);
-  const normalizedFailoverStatuses = new Set(failoverStatuses || []);
   let lastError = null;
-  let lastNonCapabilityError = null;
-  for (let endpointIndex = 0; endpointIndex < endpoints.length; endpointIndex += 1) {
-    const endpoint = endpoints[endpointIndex];
+  for (const endpoint of endpoints) {
     for (let attempt = 0; attempt <= normalizedRetry.retries; attempt += 1) {
       try {
         return {
@@ -89883,22 +89244,17 @@ async function fetchJsonWithRetry(urlForEndpoint, endpoints, {
         };
       } catch (error) {
         lastError = error;
-        if (normalizedFailoverStatuses.has(Number(error?.status))) {
-          if (endpointIndex < endpoints.length - 1) break;
-          throw lastNonCapabilityError || error;
-        }
         const retryable = isRetryableFetchError(error, normalizedRetry);
         if (!retryable) {
           throw error;
         }
-        lastNonCapabilityError = error;
         const canRetry = attempt < normalizedRetry.retries && retryable;
         if (!canRetry) break;
-        await sleep2(retryDelayMs(attempt + 1, normalizedRetry));
+        await sleep(retryDelayMs(attempt + 1, normalizedRetry));
       }
     }
   }
-  throw lastNonCapabilityError || lastError;
+  throw lastError;
 }
 function unwrapBaseAccount(value) {
   let current = value;
@@ -90025,14 +89381,6 @@ function commitmentPathsAtRootRequestBody({
     ...height == null || String(height).trim() === "" ? {} : { snapshotHeight: height }
   };
 }
-function comparableCosmosTxHash(value) {
-  return String(value ?? "").trim().replace(/^0x/i, "").toUpperCase();
-}
-function normalizedCosmosTxHash(value, label = "txHash") {
-  const normalized = comparableCosmosTxHash(value);
-  if (!normalized) throw new Error(`${label} is required`);
-  return normalized;
-}
 function privacyEventsCursor(data, request = {}) {
   const events = data?.events || [];
   let latestHeight = 0;
@@ -90100,115 +89448,6 @@ function assertScanEventsVersions(data) {
     throw error;
   }
 }
-function requiredScanEventsField(value, field2, label) {
-  if (!value || typeof value !== "object" || Array.isArray(value) || !(field2 in value)) {
-    throw new Error(`${label}.${field2} is required`);
-  }
-  return value[field2];
-}
-function scanEventsHex(value, label, length) {
-  if (typeof value !== "string" || !/^[0-9a-fA-F]+$/.test(value) || length != null && value.length !== length) {
-    throw new Error(`${label} must be ${length == null ? "a non-empty hex string" : `${length} hex characters`}`);
-  }
-  return value;
-}
-function scanEventsNonNegativeInteger(value, label) {
-  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return value;
-  if (typeof value === "string" && /^(0|[1-9][0-9]*)$/.test(value)) return value;
-  throw new Error(`${label} must be a non-negative integer`);
-}
-function compareScanEventsPosition(leftHeight, leftSequence, rightHeight, rightSequence) {
-  const heightComparison = compareUint64Cursor(leftHeight, rightHeight, "scan events height");
-  return heightComparison === 0 ? compareUint64Cursor(leftSequence, rightSequence, "scan events sequence") : heightComparison;
-}
-function validateScanEventsResponse(data, request = {}) {
-  if (!data || typeof data !== "object" || Array.isArray(data)) {
-    throw new Error("scan_events response must be an object");
-  }
-  assertScanEventsVersions(data);
-  const events = requiredScanEventsField(data, "events", "scan_events response");
-  if (!Array.isArray(events)) throw new Error("scan_events response.events must be an array");
-  const nextHeight = scanEventsNonNegativeInteger(
-    requiredScanEventsField(data, "next_height", "scan_events response"),
-    "scan_events response.next_height"
-  );
-  const nextSequence = scanEventsNonNegativeInteger(
-    requiredScanEventsField(data, "next_sequence", "scan_events response"),
-    "scan_events response.next_sequence"
-  );
-  const responseLimit = scanEventsNonNegativeInteger(
-    requiredScanEventsField(data, "limit", "scan_events response"),
-    "scan_events response.limit"
-  );
-  if (compareUint64Cursor(responseLimit, 0, "scan_events response limit") <= 0) {
-    throw new Error("scan_events response.limit must be a positive integer");
-  }
-  const hasMore = requiredScanEventsField(data, "has_more", "scan_events response");
-  if (typeof hasMore !== "boolean") throw new Error("scan_events response.has_more must be a boolean");
-  const afterHeight = scanEventsNonNegativeInteger(
-    request.afterHeight ?? request.after_height ?? 0,
-    "scan_events request.after_height"
-  );
-  const afterSequence = scanEventsNonNegativeInteger(
-    request.afterSequence ?? request.after_sequence ?? 0,
-    "scan_events request.after_sequence"
-  );
-  const requestedEventTypes = new Set((request.eventTypes ?? request.event_types ?? []).map((value) => String(value || "").trim()).filter(Boolean));
-  let previousHeight = afterHeight;
-  let previousSequence = afterSequence;
-  for (let eventIndex = 0; eventIndex < events.length; eventIndex += 1) {
-    const event = events[eventIndex];
-    const label = `scan_events response.events[${eventIndex}]`;
-    const height = scanEventsNonNegativeInteger(requiredScanEventsField(event, "height", label), `${label}.height`);
-    const sequence = scanEventsNonNegativeInteger(requiredScanEventsField(event, "sequence", label), `${label}.sequence`);
-    if (compareScanEventsPosition(height, sequence, previousHeight, previousSequence) <= 0) {
-      throw new Error(`${label} is not strictly after the preceding scan cursor`);
-    }
-    previousHeight = height;
-    previousSequence = sequence;
-    scanEventsHex(requiredScanEventsField(event, "tx_hash_hex", label), `${label}.tx_hash_hex`);
-    const eventType = requiredScanEventsField(event, "event_type", label);
-    if (typeof eventType !== "string" || !eventType.trim()) throw new Error(`${label}.event_type must be a non-empty string`);
-    if (requestedEventTypes.size && !requestedEventTypes.has(eventType)) {
-      throw new Error(`${label}.event_type was not requested`);
-    }
-    const nullifiers = requiredScanEventsField(event, "nullifier_hexes", label);
-    if (!Array.isArray(nullifiers)) throw new Error(`${label}.nullifier_hexes must be an array`);
-    nullifiers.forEach((nullifier, index) => scanEventsHex(nullifier, `${label}.nullifier_hexes[${index}]`, 64));
-    const outputs = requiredScanEventsField(event, "outputs", label);
-    if (!Array.isArray(outputs)) throw new Error(`${label}.outputs must be an array`);
-    if (eventType === "deposit" && outputs.length !== 1) throw new Error(`${label}.outputs must contain exactly one deposit output`);
-    if (eventType === "shielded_transfer" && outputs.length !== 2) throw new Error(`${label}.outputs must contain exactly two transfer outputs`);
-    const outputIndexes = /* @__PURE__ */ new Set();
-    for (let outputIndex = 0; outputIndex < outputs.length; outputIndex += 1) {
-      const output = outputs[outputIndex];
-      const outputLabel = `${label}.outputs[${outputIndex}]`;
-      const index = requiredScanEventsField(output, "output_index", outputLabel);
-      if (!Number.isSafeInteger(index) || index < 0) throw new Error(`${outputLabel}.output_index must be a non-negative integer`);
-      if (outputIndexes.has(index)) throw new Error(`${label}.outputs contains duplicate output_index ${index}`);
-      outputIndexes.add(index);
-      if (eventType === "deposit") {
-        scanEventsHex(requiredScanEventsField(output, "commitment_hex", outputLabel), `${outputLabel}.commitment_hex`, 64);
-        scanEventsHex(requiredScanEventsField(output, "encrypted_note_hex", outputLabel), `${outputLabel}.encrypted_note_hex`);
-      } else if (eventType === "shielded_transfer") {
-        scanEventsHex(requiredScanEventsField(output, "commitment_hex", outputLabel), `${outputLabel}.commitment_hex`, 64);
-        scanEventsHex(requiredScanEventsField(output, "cipher_text_hex", outputLabel), `${outputLabel}.cipher_text_hex`);
-        scanEventsHex(requiredScanEventsField(output, "view_tag_hex", outputLabel), `${outputLabel}.view_tag_hex`, 4);
-      }
-      if ("leaf_index_found" in output && typeof output.leaf_index_found !== "boolean") {
-        throw new Error(`${outputLabel}.leaf_index_found must be a boolean`);
-      }
-      if ("leaf_index" in output) scanEventsNonNegativeInteger(output.leaf_index, `${outputLabel}.leaf_index`);
-    }
-  }
-  if (compareScanEventsPosition(nextHeight, nextSequence, previousHeight, previousSequence) < 0) {
-    throw new Error("scan_events next cursor precedes the final event");
-  }
-  if (hasMore && compareScanEventsPosition(nextHeight, nextSequence, afterHeight, afterSequence) <= 0) {
-    throw new Error("scan_events next cursor did not advance");
-  }
-  return data;
-}
 function nextPrivacyScanOptions(scanOrCursor = {}, defaults = {}) {
   const cursor = scanOrCursor?.scanCursor || scanOrCursor || {};
   if (cursor.source === "privacy_scan" || cursor.next_cursor != null || cursor.nextCursor != null) {
@@ -90246,7 +89485,7 @@ function nextPrivacyScanOptions(scanOrCursor = {}, defaults = {}) {
         restorePrivacyScanValidationStateV2(validationState)
       );
     }
-    const maxPages2 = resolveScanMaxPagesAlias(defaults.maxPages, defaults.max_pages);
+    const maxPages2 = defaults.maxPages ?? defaults.max_pages;
     if (maxPages2 != null) next2.maxPages = maxPages2;
     const includeFoundNotes2 = defaults.includeFoundNotes ?? defaults.include_found_notes;
     if (includeFoundNotes2 != null) next2.includeFoundNotes = Boolean(includeFoundNotes2);
@@ -90269,7 +89508,7 @@ function nextPrivacyScanOptions(scanOrCursor = {}, defaults = {}) {
       completed: !hasMore2
     };
     next2.scanSource = "scan_events";
-    const maxPages2 = resolveScanMaxPagesAlias(defaults.maxPages, defaults.max_pages);
+    const maxPages2 = defaults.maxPages ?? defaults.max_pages;
     if (maxPages2 != null) next2.maxPages = maxPages2;
     const includeFoundNotes2 = defaults.includeFoundNotes ?? defaults.include_found_notes;
     if (includeFoundNotes2 != null) next2.includeFoundNotes = Boolean(includeFoundNotes2);
@@ -90287,30 +89526,13 @@ function nextPrivacyScanOptions(scanOrCursor = {}, defaults = {}) {
     eventTypes: cursor.event_types ?? cursor.eventTypes ?? defaults.eventTypes ?? defaults.event_types ?? [],
     scanSource: cursor.source === "privacy_events" ? "privacy_events" : defaults.scanSource ?? defaults.scan_source ?? "privacy_events"
   };
-  const maxPages = resolveScanMaxPagesAlias(defaults.maxPages, defaults.max_pages);
+  const maxPages = defaults.maxPages ?? defaults.max_pages;
   if (maxPages != null) next.maxPages = maxPages;
   const includeFoundNotes = defaults.includeFoundNotes ?? defaults.include_found_notes;
   if (includeFoundNotes != null) next.includeFoundNotes = Boolean(includeFoundNotes);
   next.hasMore = hasMore;
   next.completed = !hasMore;
   return next;
-}
-function normalizeScanMaxPages(value, label) {
-  const normalized = Number(value);
-  if (!Number.isSafeInteger(normalized) || normalized <= 0) {
-    throw new Error(`${label} must be a positive safe integer`);
-  }
-  return normalized;
-}
-function resolveScanMaxPagesAlias(maxPages, max_pages) {
-  const camelProvided = maxPages !== void 0 && maxPages !== null;
-  const snakeProvided = max_pages !== void 0 && max_pages !== null;
-  const camel = camelProvided ? normalizeScanMaxPages(maxPages, "maxPages") : null;
-  const snake = snakeProvided ? normalizeScanMaxPages(max_pages, "max_pages") : null;
-  if (camel !== null && snake !== null && camel !== snake) {
-    throw new Error("maxPages aliases conflict");
-  }
-  return camel ?? snake;
 }
 function resolveScanOptions({
   scan,
@@ -90338,49 +89560,34 @@ function resolveScanOptions({
   strictPrivacyScan,
   strict_privacy_scan
 } = {}) {
-  const nestedMaxPages = resolveScanMaxPagesAlias(scan?.maxPages, scan?.max_pages);
-  const topLevelMaxPages = resolveScanMaxPagesAlias(maxPages, max_pages);
+  const resolvedEventTypes = scan?.eventTypes ?? scan?.event_types ?? eventTypes ?? event_types;
+  if (resolvedEventTypes != null) {
+    if (!Array.isArray(resolvedEventTypes)) {
+      throw new Error("wallet and spend scan eventTypes must be an array");
+    }
+    if (resolvedEventTypes.some((value) => String(value || "").trim())) {
+      throw new Error("wallet and spend scans must not filter event types; typed privacy_scan summaries are required");
+    }
+  }
+  const resolvedScanSource = scan?.scanSource ?? scan?.scan_source ?? scanSource ?? scan_source;
+  if (resolvedScanSource != null && resolvedScanSource !== "privacy_scan") {
+    throw new Error("wallet and spend scans only support the typed privacy_scan source");
+  }
   return {
     after: scan?.after ?? after,
     afterHeight: scan?.afterHeight ?? scan?.after_height ?? afterHeight ?? after_height,
     afterSequence: scan?.afterSequence ?? scan?.after_sequence ?? afterSequence ?? after_sequence,
     page: scan?.page ?? page,
     limit: scan?.limit ?? limit,
-    maxPages: nestedMaxPages ?? topLevelMaxPages,
-    eventTypes: scan?.eventTypes ?? scan?.event_types ?? eventTypes ?? event_types,
+    maxPages: scan?.maxPages ?? scan?.max_pages ?? maxPages ?? max_pages,
+    eventTypes: [],
     outputLimit: scan?.outputLimit ?? scan?.output_limit ?? outputLimit ?? output_limit,
     eventLimit: scan?.eventLimit ?? scan?.event_limit ?? eventLimit ?? event_limit,
     maxEncodedBytes: scan?.maxEncodedBytes ?? scan?.max_encoded_bytes ?? maxEncodedBytes ?? max_encoded_bytes,
     validationStateSnapshot: scan?.validationStateSnapshot ?? scan?.validation_state_snapshot ?? validationStateSnapshot ?? validation_state_snapshot,
-    scanSource: scan?.scanSource ?? scan?.scan_source ?? scanSource ?? scan_source,
-    strictPrivacyScan: scan?.strictPrivacyScan ?? scan?.strict_privacy_scan ?? strictPrivacyScan ?? strict_privacy_scan
-  };
-}
-function resolveWalletScanOptions(options = {}) {
-  const resolved = resolveScanOptions(options);
-  const requestedEventTypes = resolved.eventTypes;
-  if (requestedEventTypes != null && !Array.isArray(requestedEventTypes)) {
-    throw new Error("wallet note sync eventTypes must be an array when provided");
-  }
-  if (requestedEventTypes?.some((value) => String(value || "").trim())) {
-    throw new Error("wallet note sync requires unfiltered typed privacy_scan; use scanNotes or fetchScanEvents for diagnostic event filters");
-  }
-  if (resolved.scanSource != null && String(resolved.scanSource).trim() !== "privacy_scan") {
-    throw new Error("wallet note sync only supports typed privacy_scan; use scanNotes or fetchScanEvents for diagnostic legacy scans");
-  }
-  const strictAliases = [
-    options.scan?.strictPrivacyScan,
-    options.scan?.strict_privacy_scan,
-    options.strictPrivacyScan,
-    options.strict_privacy_scan
-  ].filter((value) => value !== void 0 && value !== null);
-  if (strictAliases.some((value) => value !== true)) {
-    throw new Error("wallet note sync requires strictPrivacyScan=true");
-  }
-  return {
-    ...resolved,
-    eventTypes: [],
     scanSource: "privacy_scan",
+    // High-level wallet and spend selection must never turn an unavailable or
+    // malformed typed endpoint into a cursor-bearing legacy scan.
     strictPrivacyScan: true
   };
 }
@@ -90405,91 +89612,24 @@ function publicPrivacyAccount(material) {
     root_signature_hash: material.rootSignatureHash
   };
 }
-async function reservationAvailableNotes(reservationManager2, notes) {
-  if (!reservationManager2) return notes;
-  if (typeof reservationManager2.filterAvailableNotes !== "function") {
-    throw new Error("reservationManager.filterAvailableNotes is required");
-  }
-  return reservationManager2.filterAvailableNotes(notes);
-}
-function reservationBatchSummary(batch) {
-  if (!batch) return null;
-  return {
-    operation_id: batch.operation_id,
-    lease_owner: batch.lease_owner || batch.reservations?.[0]?.lease_owner || "",
-    lease_token: batch.lease_token || batch.reservations?.[0]?.lease_token || "",
-    lease_until: batch.lease_until || batch.reservations?.[0]?.lease_until || "",
-    reservation_ids: [...batch.reservation_ids || []],
-    reservations: [...batch.reservations || []]
-  };
-}
-function preparedExecutionTransport(execution = {}) {
-  const camel = execution?.executionTransport;
-  const snake = execution?.execution_transport;
-  if (camel == null && snake == null) {
-    throw new Error("executionBuilder must return an explicit execution transport");
-  }
-  const normalize3 = (value) => String(value ?? "").trim().toLowerCase();
-  if (camel != null && snake != null && normalize3(camel) !== normalize3(snake)) {
-    throw new Error("execution transport aliases conflict");
-  }
-  const transport = normalize3(camel ?? snake);
-  if (!(/* @__PURE__ */ new Set(["evm", "external"])).has(transport)) {
-    throw new Error("executionBuilder execution transport must be evm or external");
-  }
-  return transport;
-}
-async function buildPreparedExecutionArtifact({
-  executionBuilder,
-  executionInput,
-  buildSignDoc
-}) {
-  if (executionBuilder) {
-    const execution = await executionBuilder(executionInput);
-    const camelTxBytesHash = execution?.txBytesHash;
-    const snakeTxBytesHash = execution?.tx_bytes_hash;
-    if (camelTxBytesHash != null && snakeTxBytesHash != null && String(camelTxBytesHash).trim() !== String(snakeTxBytesHash).trim()) {
-      throw new Error("execution transaction binding hash aliases conflict");
-    }
-    const txBytesHash = String(camelTxBytesHash ?? snakeTxBytesHash ?? "").trim();
-    if (!txBytesHash) {
-      throw new Error("executionBuilder must return the prepared transaction binding hash");
-    }
-    return {
-      execution,
-      executionBinding: {
-        txBytesHash,
-        executionTransport: preparedExecutionTransport(execution)
-      }
-    };
-  }
-  const signDoc = await buildSignDoc();
-  return {
-    signDoc,
-    executionBinding: {
-      signDocHash: cosmosSignDocBindingHash(signDoc),
-      executionTransport: "cosmos"
-    }
-  };
-}
 function broadcastReservationContext(options = {}) {
   const reservationManager2 = options.reservationManager ?? options.reservation_manager ?? null;
   const reservation = options.reservation ?? options.reservationBatch ?? options.reservation_batch ?? null;
-  const reservationIDs = [...reservation?.reservation_ids || []].filter(Boolean).map(String);
+  const reservationIDs2 = [...reservation?.reservation_ids || []].filter(Boolean).map(String);
   if (!reservationManager2 && !reservation) return null;
-  if (!reservationIDs.length) {
+  if (!reservationIDs2.length) {
     throw new Error("reserved-note broadcast requires reservation ids");
   }
   if (!reservationManager2 || typeof reservationManager2.markBroadcastAttempting !== "function") {
     throw new Error("reservationManager.markBroadcastAttempting is required for reserved-note broadcast");
   }
-  const leaseToken = String(
+  const leaseToken2 = String(
     reservation?.lease_token || reservation?.reservations?.[0]?.lease_token || ""
   );
-  if (!leaseToken) {
+  if (!leaseToken2) {
     throw new Error("reserved-note broadcast requires the current lease token");
   }
-  return { reservationManager: reservationManager2, reservationIDs, leaseToken };
+  return { reservationManager: reservationManager2, reservationIDs: reservationIDs2, leaseToken: leaseToken2 };
 }
 function signedWithdrawMessage(signedTx) {
   const body = import_tx.TxBody.decode(fromBase64(signedTx?.bodyBytes, "bodyBytes"));
@@ -90555,10 +89695,11 @@ async function authoritativeBroadcastChainNowUnix(options = {}, label = "signed 
   } catch (error) {
     throw new Error(`${label} authoritative chain time query failed`, { cause: error });
   }
-  if (!Number.isSafeInteger(value) || value < 0) {
+  const chainNowUnix = value;
+  if (!Number.isSafeInteger(chainNowUnix) || chainNowUnix < 0) {
     throw new Error(`${label} authoritative chain time must be a non-negative safe integer`);
   }
-  return value;
+  return chainNowUnix;
 }
 function signedDirectPrivacyInputNullifiers(signedTx) {
   const body = import_tx.TxBody.decode(fromBase64(signedTx?.bodyBytes, "bodyBytes"));
@@ -90575,79 +89716,6 @@ function signedDirectPrivacyInputNullifiers(signedTx) {
     }
     return hexFromBytes(nullifier);
   });
-}
-function batchTransferNullifierHexesFromReservationRecords(records) {
-  const values = records.map((record) => record?.metadata?.batch_transfer_nullifier_hexes);
-  if (!values.some((value) => value != null)) return [];
-  if (values.some((value) => !Array.isArray(value))) {
-    throw new Error("batch transfer reservation is missing its persisted input nullifiers");
-  }
-  const normalized = values.map((value) => value.map((nullifier, index) => {
-    const hex2 = String(nullifier ?? "").trim().replace(/^0x/i, "").toLowerCase();
-    if (!/^[0-9a-f]{64}$/.test(hex2)) {
-      throw new Error(`batch transfer reservation nullifier at index ${index} is invalid`);
-    }
-    return hex2;
-  }));
-  if (!normalized[0]?.length || normalized.some(
-    (value) => value.length !== normalized[0].length || value.some((nullifier, index) => nullifier !== normalized[0][index])
-  )) {
-    throw new Error("batch transfer reservations disagree on their persisted input nullifiers");
-  }
-  return normalized[0];
-}
-async function recheckReservedBatchTransferSignedNullifiers(context, signedTx, checkNullifiers) {
-  const signed = signedBatchTransferMessage(signedTx);
-  if (!signed) return null;
-  if (!context) {
-    throw new Error("signed MsgBatchTransfer broadcast requires reservationManager and reservation");
-  }
-  if (typeof context.reservationManager.lookupKeyForNote !== "function") {
-    throw new Error("reservationManager.lookupKeyForNote is required for batch transfer broadcast validation");
-  }
-  const records = await getBroadcastReservationRecords(context);
-  const persistedNullifiers = batchTransferNullifierHexesFromReservationRecords(records);
-  const signedNullifiers = signed.effects.nullifiers.map(hexFromBytes);
-  if (persistedNullifiers.length && (signedNullifiers.length !== persistedNullifiers.length || signedNullifiers.some((nullifier, index) => nullifier !== persistedNullifiers[index]))) {
-    throw new Error("batch transfer reservations do not match the signed transaction nullifiers");
-  }
-  const persistedLookupKeys = records.map((record) => String(record?.nullifier_lookup_key || ""));
-  const signedLookupKeys = (await Promise.all(signedNullifiers.map(
-    (nullifier) => context.reservationManager.lookupKeyForNote({ nullifier })
-  ))).map((value) => String(value || ""));
-  if (records.length !== signedNullifiers.length || persistedLookupKeys.some((value) => !value) || signedLookupKeys.some((value) => !value) || new Set(persistedLookupKeys).size !== persistedLookupKeys.length || new Set(signedLookupKeys).size !== signedLookupKeys.length || signedLookupKeys.some((value, index) => value !== persistedLookupKeys[index])) {
-    throw new Error("batch transfer reservations do not match the signed transaction inputs");
-  }
-  assertBatchTransferNullifiersUnspent(await checkNullifiers(signedNullifiers), signedNullifiers);
-  return signed;
-}
-async function recheckReservedDirectPrivacySignedNullifiers(context, signedTx, checkNullifiers) {
-  const candidates = signedDirectPrivacyInputNullifiers(signedTx);
-  if (candidates == null) return;
-  if (context) {
-    if (typeof context.reservationManager.lookupKeyForNote !== "function") {
-      throw new Error("reservationManager.lookupKeyForNote is required for reserved direct privacy broadcast validation");
-    }
-    const records = await getBroadcastReservationRecords(context);
-    const persistedLookupKeys = records.map((record) => String(record?.nullifier_lookup_key || ""));
-    if (!persistedLookupKeys.length || persistedLookupKeys.some((key) => !key) || new Set(persistedLookupKeys).size !== persistedLookupKeys.length) {
-      throw new Error("reserved direct privacy inputs have invalid persisted nullifier lookup keys");
-    }
-    const candidateLookupKeys = (await Promise.all(candidates.map(
-      (nullifier) => context.reservationManager.lookupKeyForNote({ nullifier })
-    ))).map((key) => String(key || ""));
-    const persistedLookupKeySet = new Set(persistedLookupKeys);
-    if (candidates.length !== persistedLookupKeys.length || candidateLookupKeys.some((key) => !key || !persistedLookupKeySet.has(key)) || new Set(candidateLookupKeys).size !== candidateLookupKeys.length || new Set(candidates).size !== candidates.length) {
-      throw new Error("reserved direct privacy inputs do not match the signed transaction nullifiers");
-    }
-  }
-  const statuses = await checkNullifiers(candidates);
-  const statusFor = (nullifier) => statuses instanceof Map ? statuses.get(nullifier) ?? statuses.get(`0x${nullifier}`) : statuses?.[nullifier] ?? statuses?.[`0x${nullifier}`];
-  for (const [index, nullifier] of candidates.entries()) {
-    if (statusFor(nullifier) !== false) {
-      throw new Error(`reserved direct privacy input nullifier at index ${index} is spent, missing, or has an invalid status`);
-    }
-  }
 }
 function normalizedTxRawBytes(value) {
   if (!(value instanceof Uint8Array)) {
@@ -90681,6 +89749,86 @@ function cosmosSignDocBindingHash({ bodyBytes, authInfoBytes } = {}) {
     signatures: []
   });
   return sha256Hex(import_tx.TxRaw.encode(txRaw).finish());
+}
+async function authoritativeReservationRecords(context) {
+  if (!context) return [];
+  if (typeof context.reservationManager.getReservation !== "function") {
+    throw new Error("reservationManager.getReservation is required for reserved-note broadcast validation");
+  }
+  return Promise.all(context.reservationIDs.map((id) => context.reservationManager.getReservation(id)));
+}
+function batchTransferNullifierHexesFromReservationRecords(records) {
+  const values = records.map((record) => record?.metadata?.batch_transfer_nullifier_hexes);
+  if (!values.some((value) => value != null)) return [];
+  if (values.some((value) => !Array.isArray(value))) {
+    throw new Error("batch transfer reservation is missing its persisted input nullifiers");
+  }
+  const normalized = values.map((value) => value.map((nullifier, index) => {
+    const hex2 = String(nullifier ?? "").trim().replace(/^0x/i, "").toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(hex2)) {
+      throw new Error(`batch transfer reservation nullifier at index ${index} is invalid`);
+    }
+    return hex2;
+  }));
+  if (!normalized[0]?.length || normalized.some(
+    (value) => value.length !== normalized[0].length || value.some((nullifier, index) => nullifier !== normalized[0][index])
+  )) {
+    throw new Error("batch transfer reservations disagree on their persisted input nullifiers");
+  }
+  return normalized[0];
+}
+async function recheckReservedBatchTransferNullifiers(context, signedTx, checkNullifiers) {
+  const signed = signedBatchTransferMessage(signedTx);
+  if (!signed) return null;
+  if (!context) {
+    throw new Error("signed MsgBatchTransfer broadcast requires reservationManager and reservation");
+  }
+  if (typeof context.reservationManager.lookupKeyForNote !== "function") {
+    throw new Error("reservationManager.lookupKeyForNote is required for batch transfer broadcast validation");
+  }
+  const records = await authoritativeReservationRecords(context);
+  const persistedNullifiers = batchTransferNullifierHexesFromReservationRecords(records);
+  const signedNullifiers = signed.effects.nullifiers.map(hexFromBytes);
+  if (persistedNullifiers.length && (signedNullifiers.length !== persistedNullifiers.length || signedNullifiers.some((nullifier, index) => nullifier !== persistedNullifiers[index]))) {
+    throw new Error("batch transfer reservations do not match the signed transaction nullifiers");
+  }
+  const persistedLookupKeys = records.map((record) => String(record?.nullifier_lookup_key || ""));
+  const signedLookupKeys = (await Promise.all(signedNullifiers.map(
+    (nullifier) => context.reservationManager.lookupKeyForNote({ nullifier })
+  ))).map((value) => String(value || ""));
+  if (records.length !== signedNullifiers.length || persistedLookupKeys.some((value) => !value) || signedLookupKeys.some((value) => !value) || new Set(persistedLookupKeys).size !== persistedLookupKeys.length || new Set(signedLookupKeys).size !== signedLookupKeys.length || signedLookupKeys.some((value, index) => value !== persistedLookupKeys[index])) {
+    throw new Error("batch transfer reservations do not match the signed transaction inputs");
+  }
+  batchTransferNullifiersUnspent(await checkNullifiers(signedNullifiers), signedNullifiers);
+  return signed;
+}
+async function recheckReservedDirectPrivacyNullifiers(context, signedTx, checkNullifiers) {
+  const candidates = signedDirectPrivacyInputNullifiers(signedTx);
+  if (candidates == null) return;
+  if (context) {
+    if (typeof context.reservationManager.lookupKeyForNote !== "function") {
+      throw new Error("reservationManager.lookupKeyForNote is required for reserved direct privacy broadcast validation");
+    }
+    const records = await authoritativeReservationRecords(context);
+    const persistedLookupKeys = records.map((record) => String(record?.nullifier_lookup_key || ""));
+    if (!persistedLookupKeys.length || persistedLookupKeys.some((key) => !key) || new Set(persistedLookupKeys).size !== persistedLookupKeys.length) {
+      throw new Error("reserved direct privacy inputs have invalid persisted nullifier lookup keys");
+    }
+    const candidateLookupKeys = (await Promise.all(candidates.map(
+      (nullifier) => context.reservationManager.lookupKeyForNote({ nullifier })
+    ))).map((key) => String(key || ""));
+    const persistedLookupKeySet = new Set(persistedLookupKeys);
+    if (candidates.length !== persistedLookupKeys.length || candidateLookupKeys.some((key) => !key || !persistedLookupKeySet.has(key)) || new Set(candidateLookupKeys).size !== candidateLookupKeys.length || new Set(candidates).size !== candidates.length) {
+      throw new Error("reserved direct privacy inputs do not match the signed transaction nullifiers");
+    }
+  }
+  const statuses = await checkNullifiers(candidates);
+  const statusFor = (nullifier) => statuses instanceof Map ? statuses.get(nullifier) ?? statuses.get(`0x${nullifier}`) : statuses?.[nullifier] ?? statuses?.[`0x${nullifier}`];
+  for (const [index, nullifier] of candidates.entries()) {
+    if (statusFor(nullifier) !== false) {
+      throw new Error(`reserved direct privacy input nullifier at index ${index} is spent, missing, or has an invalid status`);
+    }
+  }
 }
 function assertReservationPayloadMatches(records, payload) {
   if (!records.length) return;
@@ -90716,7 +89864,7 @@ async function validateRelayBroadcastContext(options, {
   signDocHash
 } = {}) {
   const payload = options?.relayPayload ?? options?.relay_payload ?? null;
-  const reservationRecords = await getBroadcastReservationRecords(reservationContext);
+  const reservationRecords = await authoritativeReservationRecords(reservationContext);
   assertReservationSignDocMatches(reservationRecords, signDocHash, { allowPayloadBinding: Boolean(payload) });
   const withdrawMessage = signedWithdrawMessage(signedTx);
   if (options?.chainNowUnix != null || options?.chain_now_unix != null) {
@@ -90826,7 +89974,8 @@ async function markBroadcastReservationSubmitted(context, evidence = {}) {
 async function markBroadcastReservationRejected(context, error, {
   kind,
   providerCode = "",
-  providerCodespace = ""
+  providerCodespace = "",
+  providerLog = ""
 } = {}) {
   if (!context) return;
   try {
@@ -90837,8 +89986,10 @@ async function markBroadcastReservationRejected(context, error, {
     const checkTx = kind === "check_tx";
     await context.reservationManager.markBroadcastRejected(context.reservationIDs, {
       leaseToken: context.leaseToken,
+      error: beforeRpc ? "broadcast_aborted_before_rpc" : "check_tx_rejected",
       providerCode,
       providerCodespace,
+      providerLog,
       rpcInvoked: checkTx,
       checkTxRejected: checkTx,
       broadcastAbortedBeforeRpc: beforeRpc,
@@ -90876,197 +90027,8 @@ async function markSigningReservationRejected(context, error) {
     throw attachReservationBookkeepingError(error, bookkeepingError);
   }
 }
-function proofReadyInputNullifiers(values, operation) {
-  if (!Array.isArray(values) || values.length === 0) {
-    throw new Error(`${operation} ProofReady metadata requires input nullifiers`);
-  }
-  const normalized = values.map((value, index) => {
-    const nullifier = String(value ?? "").trim().replace(/^0x/i, "").toLowerCase();
-    if (!/^[0-9a-f]{64}$/.test(nullifier)) {
-      throw new Error(`${operation} input nullifier at index ${index} is invalid`);
-    }
-    return nullifier;
-  });
-  if (new Set(normalized).size !== normalized.length) {
-    throw new Error(`${operation} ProofReady metadata contains duplicate input nullifiers`);
-  }
-  return normalized;
-}
-function transferProofReadyMetadata(built, context = {}) {
-  const output = built?.payload?.outputs?.[0] || {};
-  const inputNullifiers = proofReadyInputNullifiers(
-    (built?.payload?.inputs || []).map((input) => input?.nullifier_hex),
-    "transfer"
-  );
-  const coin = context.amount ? parseCoin(context.amount, context.denom || "") : null;
-  const batchItemIndex = context.batchItemIndex ?? context.batch_item_index;
-  const batchItemIndexKnown = context.batchItemIndexKnown ?? context.batch_item_index_known;
-  const expectedOutputCommitment = built?.payload?.outputs?.[0]?.commitment_hex || "";
-  const expectedDisclosureDigest = built?.payload?.audit_disclosure_digest_hex || "";
-  const expectedRecipientHash = context.expectedRecipientHash ?? context.expected_recipient_hash ?? "";
-  const expectedAmount = output.amount || coin?.amount || "";
-  const expectedAmountHash = context.expectedAmountHash ?? context.expected_amount_hash ?? "";
-  const expectedDenom = context.expectedDenom ?? context.expected_denom ?? coin?.denom ?? context.denom ?? "";
-  const operationSuccessEvidenceRequired2 = Boolean(
-    expectedOutputCommitment && expectedDisclosureDigest && expectedRecipientHash && expectedAmount && expectedAmountHash && expectedDenom
-  );
-  const executionTransport = context.executionTransport ?? context.execution_transport;
-  return {
-    payloadHash: built?.payload?.payload_hash || "",
-    signDocHash: context.signDocHash ?? context.sign_doc_hash ?? "",
-    txBytesHash: context.txBytesHash ?? context.tx_bytes_hash ?? "",
-    ...executionTransport ? { executionTransport } : {},
-    expectedOutputCommitment,
-    expectedDisclosureDigest,
-    expectedRecipientHash,
-    expectedAmount,
-    expectedAmountHash,
-    expectedDenom,
-    batchItemIndex: batchItemIndex ?? 0,
-    // A direct transfer has one recipient output, but it is not a batch item.
-    // Only batch preparation may opt into item-index evidence explicitly.
-    batchItemIndexKnown: batchItemIndexKnown ?? (batchItemIndex !== void 0 && batchItemIndex !== null),
-    operationSuccessEvidenceRequired: operationSuccessEvidenceRequired2,
-    metadata: {
-      input_nullifier_hexes: inputNullifiers
-    }
-  };
-}
-function resolveDirectOperationEvidenceAssertions({
-  expectedRecipientHash,
-  expected_recipient_hash,
-  expectedAmountHash,
-  expected_amount_hash
-} = {}) {
-  const recipientProvided = operationEvidenceAliasProvided(
-    expectedRecipientHash,
-    expected_recipient_hash
-  );
-  const amountProvided = operationEvidenceAliasProvided(
-    expectedAmountHash,
-    expected_amount_hash
-  );
-  const recipientHash = resolveOperationEvidenceAlias(
-    expectedRecipientHash,
-    expected_recipient_hash,
-    "expectedRecipientHash"
-  );
-  const amountHash = resolveOperationEvidenceAlias(
-    expectedAmountHash,
-    expected_amount_hash,
-    "expectedAmountHash"
-  );
-  if (recipientProvided && !recipientHash.trim()) {
-    throw new Error("expectedRecipientHash must not be empty");
-  }
-  if (amountProvided && !amountHash.trim()) {
-    throw new Error("expectedAmountHash must not be empty");
-  }
-  return {
-    expectedRecipientHash: recipientHash.trim(),
-    expectedAmountHash: amountHash.trim()
-  };
-}
-function buildDirectOperationEvidenceHashes({
-  assertions,
-  recipient,
-  amount,
-  denom,
-  shieldedPrefix: shieldedPrefix2
-}) {
-  const coin = parseCoin(amount, denom);
-  const expectedRecipientHash = hashRecipient(recipient, { shieldedPrefix: shieldedPrefix2 });
-  const expectedAmountHash = hashAmount(coin.denom, coin.amount);
-  const assertedRecipientHash = canonicalBatchEvidenceDigest(
-    assertions?.expectedRecipientHash,
-    "expectedRecipientHash",
-    { optional: true }
-  );
-  const assertedAmountHash = canonicalBatchEvidenceDigest(
-    assertions?.expectedAmountHash,
-    "expectedAmountHash",
-    { optional: true }
-  );
-  if (assertedRecipientHash && assertedRecipientHash !== expectedRecipientHash) {
-    throw new Error("expectedRecipientHash does not match the transfer recipient");
-  }
-  if (assertedAmountHash && assertedAmountHash !== expectedAmountHash) {
-    throw new Error("expectedAmountHash does not match the transfer amount");
-  }
-  return {
-    expectedRecipientHash,
-    expectedAmountHash,
-    expectedDenom: coin.denom
-  };
-}
-function operationEvidenceAliasProvided(camelValue, snakeValue) {
-  return camelValue !== void 0 && camelValue !== null || snakeValue !== void 0 && snakeValue !== null;
-}
-function resolveOperationEvidenceAlias(camelValue, snakeValue, name) {
-  const camelProvided = camelValue !== void 0 && camelValue !== null;
-  const snakeProvided = snakeValue !== void 0 && snakeValue !== null;
-  if (camelProvided && snakeProvided && String(camelValue) !== String(snakeValue)) {
-    throw new Error(`${name} aliases conflict`);
-  }
-  return String(camelProvided ? camelValue : snakeProvided ? snakeValue : "");
-}
-function normalizeCosmosFeeCoins(value, label = "feeAmount") {
-  if (value == null) return [];
-  if (!Array.isArray(value)) throw new Error(`${label} must be an array`);
-  const normalized = value.map((coin, index) => {
-    if (!coin || typeof coin !== "object" || Array.isArray(coin)) {
-      throw new Error(`${label}[${index}] must be a Cosmos coin`);
-    }
-    const denom = String(coin.denom ?? "").trim();
-    const amount = String(coin.amount ?? "").trim();
-    if (!/^[A-Za-z][A-Za-z0-9/:._-]{2,127}$/.test(denom)) {
-      throw new Error(`${label}[${index}].denom must be a valid Cosmos SDK denomination`);
-    }
-    if (!/^(0|[1-9][0-9]*)$/.test(amount)) {
-      throw new Error(`${label}[${index}].amount must be a canonical non-negative integer string`);
-    }
-    return Object.freeze({ denom, amount });
-  }).sort((left, right) => left.denom < right.denom ? -1 : left.denom > right.denom ? 1 : 0);
-  if (normalized.some((coin, index) => index > 0 && coin.denom === normalized[index - 1].denom)) {
-    throw new Error(`${label} must not contain duplicate denominations`);
-  }
-  return Object.freeze(normalized);
-}
-function resolveCosmosFeeAmount(feeAmount, fee_amount) {
-  const camelProvided = feeAmount !== void 0 && feeAmount !== null;
-  const snakeProvided = fee_amount !== void 0 && fee_amount !== null;
-  const camel = camelProvided ? normalizeCosmosFeeCoins(feeAmount, "feeAmount") : null;
-  const snake = snakeProvided ? normalizeCosmosFeeCoins(fee_amount, "fee_amount") : null;
-  if (camel && snake && JSON.stringify(camel) !== JSON.stringify(snake)) {
-    throw new Error("feeAmount aliases conflict");
-  }
-  return camel || snake || Object.freeze([]);
-}
-function normalizeCosmosGasLimit(value, label = "gasLimit") {
-  const normalized = typeof value === "bigint" ? value > 0n && value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : NaN : value;
-  if (typeof normalized !== "number" || !Number.isSafeInteger(normalized) || normalized <= 0) {
-    throw new Error(`${label} must be a positive safe integer`);
-  }
-  return normalized;
-}
-function resolveCosmosGasLimit(gasLimit, gas_limit, fallback) {
-  const camelProvided = gasLimit !== void 0 && gasLimit !== null;
-  const snakeProvided = gas_limit !== void 0 && gas_limit !== null;
-  const camel = camelProvided ? normalizeCosmosGasLimit(gasLimit, "gasLimit") : null;
-  const snake = snakeProvided ? normalizeCosmosGasLimit(gas_limit, "gas_limit") : null;
-  if (camel !== null && snake !== null && camel !== snake) {
-    throw new Error("gasLimit aliases conflict");
-  }
-  return camel ?? snake ?? normalizeCosmosGasLimit(fallback, "default gasLimit");
-}
 function resolveDisclosureAssetDenom(assetDenom, asset_denom, defaultDenom) {
-  return resolveOperationEvidenceAlias(assetDenom, asset_denom, "assetDenom") || defaultDenom;
-}
-function resolveDisclosureOutputAlias(output, scanOutput2, label) {
-  if (output != null && scanOutput2 != null && output !== scanOutput2) {
-    throw new Error(`${label} aliases conflict`);
-  }
-  return output ?? scanOutput2;
+  return resolveAliasedString(assetDenom, asset_denom, "assetDenom") || defaultDenom;
 }
 function resolveOperationEvidenceArrayAlias(camelValue, snakeValue, name) {
   const camelProvided = camelValue !== void 0 && camelValue !== null;
@@ -91095,19 +90057,19 @@ function resolveBatchOperationEvidence({
   expectedAmountHashes,
   expected_amount_hashes
 } = {}) {
-  const recipientHashScalarProvided = operationEvidenceAliasProvided(
+  const recipientHashScalarProvided = aliasedValueProvided(
     expectedRecipientHash,
     expected_recipient_hash
   );
-  const recipientHashArrayProvided = operationEvidenceAliasProvided(
+  const recipientHashArrayProvided = aliasedValueProvided(
     expectedRecipientHashes,
     expected_recipient_hashes
   );
-  const amountHashArrayProvided = operationEvidenceAliasProvided(
+  const amountHashArrayProvided = aliasedValueProvided(
     expectedAmountHashes,
     expected_amount_hashes
   );
-  const recipientHashScalar = resolveOperationEvidenceAlias(
+  const recipientHashScalar = resolveAliasedString(
     expectedRecipientHash,
     expected_recipient_hash,
     "expectedRecipientHash"
@@ -91156,24 +90118,20 @@ function resolveBatchOperationEvidence({
 }
 function withdrawProofReadyMetadata(built, context = {}) {
   const payload = built?.payload || built?.proverPayload || {};
-  const expiresAtUnix = String(payload.expires_at_unix || payload.expiresAtUnix || "");
-  const executionTransport = context.executionTransport ?? context.execution_transport;
+  const expiresAtUnix = String(
+    payload.expires_at_unix || payload.expiresAtUnix || ""
+  );
   const bindOperationSuccess = context.bindOperationSuccess === true || context.bind_operation_success === true;
   const coin = bindOperationSuccess && payload.amount ? parseCoin(payload.amount, payload.asset_denom || payload.assetDenom || context.denom || "") : null;
   const amount = coin?.amount || "";
   const denom = coin?.denom || "";
   const recipient = bindOperationSuccess ? String(payload.recipient || "") : "";
   if (bindOperationSuccess && (!amount || !denom || !recipient)) {
-    throw new Error("direct withdraw success binding requires recipient, amount, and denom");
+    throw new Error("withdraw success binding requires recipient, amount, and denom");
   }
-  const inputNullifiers = proofReadyInputNullifiers([
-    payload.nullifier_hex || ""
-  ], "withdraw");
   return {
     payloadHash: payload.payload_hash || "",
     signDocHash: context.signDocHash ?? context.sign_doc_hash ?? "",
-    txBytesHash: context.txBytesHash ?? context.tx_bytes_hash ?? "",
-    ...executionTransport ? { executionTransport } : {},
     expectedOutputCommitment: "",
     expectedDisclosureDigest: "",
     expectedRecipientHash: bindOperationSuccess ? hashTransparentRecipient(recipient, { accountPrefix: context.accountPrefix }) : "",
@@ -91181,28 +90139,66 @@ function withdrawProofReadyMetadata(built, context = {}) {
     expectedAmountHash: bindOperationSuccess ? hashAmount(denom, amount) : "",
     expectedDenom: denom,
     operationSuccessEvidenceRequired: bindOperationSuccess,
-    metadata: {
-      ...expiresAtUnix ? { payload_expires_at_unix: expiresAtUnix } : {},
-      input_nullifier_hexes: inputNullifiers
-    }
+    metadata: expiresAtUnix ? { payload_expires_at_unix: expiresAtUnix } : {}
   };
 }
-async function markReservationProofReady(reservationManager2, batch, metadata) {
-  if (!reservationManager2 || !batch?.reservation_ids?.length) return [];
-  const currentReservations = typeof reservationManager2.getReservations === "function" ? await reservationManager2.getReservations(batch.reservation_ids) : batch.reservations || [];
-  if (currentReservations.some((reservation) => reservation.status === reservationStatuses.ManualReview)) {
-    throw new Error("ManualReview reservations require operator resolution before a new batch proof can be finalized");
+async function authoritativeBatchRecoveryReservation(reservationManager2, batch, { operationId, nullifierHexes } = {}) {
+  if (typeof reservationManager2?.getReservations !== "function" || typeof reservationManager2?.lookupKeyForNote !== "function") {
+    throw new Error("finalizePreparedBatchTransfer requires authoritative reservation-set lookup support");
   }
-  if (typeof reservationManager2.markProofReady !== "function") {
-    throw new Error("reservationManager.markProofReady is required");
+  const reservationIDs2 = [...batch?.reservation_ids || []].map((value) => String(value || "").trim());
+  if (!reservationIDs2.length || reservationIDs2.some((id) => !id) || new Set(reservationIDs2).size !== reservationIDs2.length) {
+    throw new Error("prepared batch transfer recovery requires unique reservation IDs");
   }
-  const reservations = await reservationManager2.markProofReady(batch.reservation_ids, {
-    ...metadata,
-    leaseToken: batch.lease_token || batch.reservations?.[0]?.lease_token || ""
-  });
-  batch.reservations = reservations;
-  batch.lease_until = reservations[0]?.lease_until || batch.lease_until;
-  return reservations;
+  const normalizedNullifiers = [...nullifierHexes || []].map((value) => String(value || "").trim().toLowerCase());
+  if (reservationIDs2.length !== normalizedNullifiers.length || new Set(normalizedNullifiers).size !== normalizedNullifiers.length) {
+    throw new Error("prepared batch transfer reservation set does not match its input nullifiers");
+  }
+  const leaseToken2 = String(batch?.lease_token || batch?.leaseToken || "").trim();
+  const leaseOwner = String(
+    batch?.lease_owner || batch?.leaseOwner || batch?.reservations?.[0]?.lease_owner || ""
+  ).trim();
+  if (!leaseToken2 || !leaseOwner) {
+    throw new Error("prepared batch transfer recovery requires the original lease owner and token");
+  }
+  if (String(reservationManager2.leaseOwner || "") !== leaseOwner) {
+    throw new Error("prepared batch transfer reservation lease owner does not match the recovery manager");
+  }
+  const loaded = await reservationManager2.getReservations(reservationIDs2);
+  if (!Array.isArray(loaded)) {
+    throw new Error("prepared batch transfer recovery did not load the exact reservation set");
+  }
+  const byID = new Map(loaded.map((record) => [String(record?.reservation_id || ""), record]));
+  if (loaded.length !== reservationIDs2.length || byID.size !== reservationIDs2.length || reservationIDs2.some((id) => !byID.has(id))) {
+    throw new Error("prepared batch transfer recovery did not load the exact reservation set");
+  }
+  const reservations = reservationIDs2.map((id) => byID.get(id));
+  const normalizedOperationID = String(operationId || "").trim();
+  if (reservations.some(
+    (record) => String(record.operation_id || "") !== normalizedOperationID || String(record.kind || "") !== "batch_transfer"
+  )) {
+    throw new Error("prepared batch transfer reservations do not belong to the recovered operation");
+  }
+  if (reservations.some(
+    (record) => String(record.status || "") !== reservationStatuses.Proving || String(record.lease_owner || "") !== leaseOwner || String(record.lease_token || "") !== leaseToken2
+  )) {
+    throw new Error("prepared batch transfer reservations do not have the recovered Proving lease");
+  }
+  const expectedLookupKeys = await Promise.all(normalizedNullifiers.map(
+    (nullifier) => reservationManager2.lookupKeyForNote({ nullifier })
+  ));
+  const actualLookupKeys = reservations.map((record) => String(record.nullifier_lookup_key || ""));
+  if (new Set(expectedLookupKeys).size !== expectedLookupKeys.length || new Set(actualLookupKeys).size !== actualLookupKeys.length || expectedLookupKeys.some((key) => !actualLookupKeys.includes(key))) {
+    throw new Error("prepared batch transfer reservation inputs do not match the payload nullifiers");
+  }
+  return {
+    ...batch,
+    operation_id: normalizedOperationID,
+    lease_owner: leaseOwner,
+    lease_token: leaseToken2,
+    reservation_ids: reservationIDs2,
+    reservations
+  };
 }
 async function reservationIDsForNotes(reservationManager2, batch, notes) {
   if (!reservationManager2 || !batch?.reservation_ids?.length) return [];
@@ -91213,8 +90209,8 @@ async function reservationIDsForNotes(reservationManager2, batch, notes) {
   for (const note of notes || []) {
     lookupKeys.add(await reservationManager2.lookupKeyForNote(note));
   }
-  const reservationIDs = (batch.reservations || []).filter((reservation) => lookupKeys.has(reservation.nullifier_lookup_key)).map((reservation) => reservation.reservation_id);
-  return reservationIDs;
+  const reservationIDs2 = (batch.reservations || []).filter((reservation) => lookupKeys.has(reservation.nullifier_lookup_key)).map((reservation) => reservation.reservation_id);
+  return reservationIDs2;
 }
 function mergeBatchReservations(batch, updated) {
   const updatedByID = new Map(updated.map((reservation) => [reservation.reservation_id, reservation]));
@@ -91230,10 +90226,10 @@ async function markReservationProofReadyForBatchItems(reservationManager2, batch
   }
   const entries = [];
   for (const item of items || []) {
-    const reservationIDs = await reservationIDsForNotes(reservationManager2, batch, item?.notes);
-    if (!reservationIDs.length) continue;
+    const reservationIDs2 = await reservationIDsForNotes(reservationManager2, batch, item?.notes);
+    if (!reservationIDs2.length) continue;
     entries.push({
-      reservationIDs,
+      reservationIDs: reservationIDs2,
       metadata: {
         ...item?.metadata || {},
         leaseToken: batch.lease_token || batch.reservations?.[0]?.lease_token || ""
@@ -91271,90 +90267,6 @@ async function replanProofReadyReservations(reservationManager2, batch, error, r
     }
   });
 }
-async function renewReservationLease(reservationManager2, batch) {
-  if (!reservationManager2 || !batch?.reservation_ids?.length) return [];
-  if (typeof reservationManager2.renewLease !== "function") return [];
-  const reservations = await reservationManager2.renewLease(batch.reservation_ids, {
-    leaseToken: batch.lease_token || batch.reservations?.[0]?.lease_token || ""
-  });
-  batch.reservations = reservations;
-  batch.lease_until = reservations[0]?.lease_until || batch.lease_until;
-  return reservations;
-}
-async function withReservationHeartbeat(reservationManager2, batch, task) {
-  if (!reservationManager2 || !batch?.reservation_ids?.length || typeof reservationManager2.renewLease !== "function") {
-    return task({
-      assertHeartbeatHealthy() {
-      },
-      async heartbeatNow() {
-      }
-    });
-  }
-  await renewReservationLease(reservationManager2, batch);
-  const heartbeatIntervalMs = reservationHeartbeatIntervalMs({
-    leaseDurationMs: reservationManager2.leaseDurationMs,
-    leaseUntil: batch.lease_until || batch.reservations?.[0]?.lease_until
-  });
-  let heartbeatError = null;
-  let inFlightHeartbeat = null;
-  const heartbeat = async () => {
-    if (heartbeatError) return;
-    try {
-      await renewReservationLease(reservationManager2, batch);
-    } catch (error) {
-      heartbeatError = error;
-    }
-  };
-  const heartbeatNow = async () => {
-    if (!inFlightHeartbeat) {
-      inFlightHeartbeat = heartbeat().finally(() => {
-        inFlightHeartbeat = null;
-      });
-    }
-    await inFlightHeartbeat;
-    assertHeartbeatHealthy();
-  };
-  const assertHeartbeatHealthy = () => {
-    if (!heartbeatError) return;
-    const error = new Error("note reservation lease heartbeat failed during proof generation");
-    error.name = "ReservationHeartbeatError";
-    error.cause = heartbeatError;
-    throw error;
-  };
-  const timer = typeof globalThis.setInterval === "function" ? globalThis.setInterval(() => {
-    void heartbeatNow().catch(() => {
-    });
-  }, heartbeatIntervalMs) : null;
-  let taskCompleted = false;
-  let result;
-  try {
-    result = await task({ assertHeartbeatHealthy, heartbeatNow });
-    taskCompleted = true;
-  } finally {
-    if (timer && typeof globalThis.clearInterval === "function") {
-      globalThis.clearInterval(timer);
-    }
-    if (inFlightHeartbeat) await inFlightHeartbeat;
-  }
-  if (taskCompleted && heartbeatError) {
-    return {
-      ...result,
-      reservationReconciliationRequired: true,
-      reservationReconciliationWarning: {
-        code: "reservation_heartbeat_failed_after_proof_ready",
-        message: "The prepared artifact is durable, but reservation reconciliation is required before broadcast.",
-        cause: heartbeatError?.message || String(heartbeatError)
-      }
-    };
-  }
-  return result;
-}
-function reservationReconciliationFields(result = {}) {
-  return result.reservationReconciliationRequired === true ? {
-    reservationReconciliationRequired: true,
-    reservationReconciliationWarning: result.reservationReconciliationWarning
-  } : {};
-}
 var ClairveilJS = class {
   constructor({
     rpc,
@@ -91372,20 +90284,13 @@ var ClairveilJS = class {
     queryRetry,
     nullifierFailover = false,
     merklePathFailover = false,
-    privacyStateAdapter,
     expectedCircuitIdentity,
     enableExperimentalBatchTransfer = false,
     enable_experimental_batch_transfer
   } = {}) {
-    this.privacyStateAdapter = privacyStateAdapter == null ? null : createPrivacyStateAdapter(privacyStateAdapter);
     this.rpc = normalizeRpcEndpoint(rpc);
-    if (!this.rpc && !this.privacyStateAdapter) {
-      throw new Error("rpc endpoint is required unless privacyStateAdapter is configured");
-    }
-    this.restEndpoints = normalizeRestEndpoints(rest, restEndpoints, {
-      allowEmpty: Boolean(this.privacyStateAdapter)
-    });
-    this.rest = this.restEndpoints[0] || "";
+    this.restEndpoints = normalizeRestEndpoints(rest, restEndpoints);
+    this.rest = this.restEndpoints[0];
     this.activeRestEndpoint = this.rest;
     this.chainId = chainId;
     this.accountPrefix = normalizeBech32Prefix(accountPrefix2 ?? bech32Prefix ?? defaultAccountPrefix, "accountPrefix");
@@ -91404,9 +90309,6 @@ var ClairveilJS = class {
     this.clientPromise = null;
   }
   async connect() {
-    if (!this.rpc) {
-      throw new Error("rpc endpoint is required for Cosmos transaction and balance queries");
-    }
     if (!this.clientPromise) {
       this.clientPromise = import_stargate.StargateClient.connect(this.rpc);
     }
@@ -91419,23 +90321,7 @@ var ClairveilJS = class {
     this.clientPromise = null;
   }
   restUrl(path, endpoint = this.activeRestEndpoint) {
-    if (!endpoint) {
-      throw new Error("rest endpoint is required for this query; implement the corresponding PrivacyStateAdapter method");
-    }
     return `${endpoint}${path}`;
-  }
-  async queryPrivacyStateAdapter(method, args, restQuery) {
-    const adapterMethod = this.privacyStateAdapter?.[method];
-    if (typeof adapterMethod === "function") {
-      return invokePrivacyStateAdapter(this.privacyStateAdapter, method, args, {
-        timeoutMs: this.queryTimeoutMs,
-        retry: this.queryRetry
-      });
-    }
-    if (!this.restEndpoints.length) {
-      throw new Error(`PrivacyStateAdapter.${method} is required because no REST endpoint is configured`);
-    }
-    return restQuery();
   }
   async fetchJson(pathOrUrl, {
     failover = false,
@@ -91444,8 +90330,7 @@ var ClairveilJS = class {
     body,
     headers,
     endpoint,
-    updateActiveEndpoint = endpoint == null,
-    failoverStatuses
+    updateActiveEndpoint = endpoint == null
   } = {}) {
     const text3 = String(pathOrUrl || "");
     const isAbsolute = /^https?:\/\//i.test(text3);
@@ -91458,17 +90343,13 @@ var ClairveilJS = class {
           retry,
           method,
           body,
-          headers,
-          failoverStatuses
+          headers
         }
       );
       return result2.data;
     }
     const path = text3;
     const initialEndpoint = endpoint || this.activeRestEndpoint;
-    if (!initialEndpoint) {
-      throw new Error("rest endpoint is required for this query");
-    }
     const endpoints = failover ? [initialEndpoint, ...this.restEndpoints.filter((candidate) => candidate !== initialEndpoint)] : [initialEndpoint];
     const result = await fetchJsonWithRetry(
       (endpoint2) => this.restUrl(path, endpoint2),
@@ -91478,8 +90359,7 @@ var ClairveilJS = class {
         retry,
         method,
         body,
-        headers,
-        failoverStatuses
+        headers
       }
     );
     if (updateActiveEndpoint) this.activeRestEndpoint = result.endpoint;
@@ -91542,32 +90422,20 @@ var ClairveilJS = class {
     return null;
   }
   async fetchPrivacyEvents(options = {}) {
-    return this.queryPrivacyStateAdapter(
-      "fetchPrivacyEvents",
-      [options],
-      () => this.fetchJson(`/clairveil/privacy/v1/events${privacyEventsQuery(options)}`, { failover: true })
-    );
+    return this.fetchJson(`/clairveil/privacy/v1/events${privacyEventsQuery(options)}`, { failover: true });
   }
   async fetchScanEvents(options = {}) {
-    const data = await this.queryPrivacyStateAdapter(
-      "fetchScanEvents",
-      [options],
-      () => this.fetchJson(`/clairveil/privacy/v1/scan_events${scanEventsQuery(options)}`, { failover: true })
-    );
-    return validateScanEventsResponse(data, options);
+    const data = await this.fetchJson(`/clairveil/privacy/v1/scan_events${scanEventsQuery(options)}`, { failover: true });
+    assertScanEventsVersions(data);
+    return data;
   }
   async fetchPrivacyScan(options = {}) {
-    return this.queryPrivacyStateAdapter(
-      "fetchPrivacyScan",
-      [options],
-      () => this.fetchJson("/clairveil/privacy/v1/privacy_scan", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: jsonRequestBody(privacyScanRequestBody(options)),
-        failover: true,
-        failoverStatuses: [404, 405, 501]
-      })
-    );
+    return this.fetchJson("/clairveil/privacy/v1/privacy_scan", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: jsonRequestBody(privacyScanRequestBody(options)),
+      failover: true
+    });
   }
   /** Fetch a typed privacy-scan-v2 page and fail closed before it is consumed. */
   async queryPrivacyScan(options = {}) {
@@ -91585,39 +90453,19 @@ var ClairveilJS = class {
     );
   }
   async fetchTreeState() {
-    return this.queryPrivacyStateAdapter(
-      "fetchTreeState",
-      [],
-      () => this.fetchJson("/clairveil/privacy/v1/tree_state", { failover: true })
-    );
+    return this.fetchJson("/clairveil/privacy/v1/tree_state", { failover: true });
   }
   async fetchCommitmentInfo(commitmentHex) {
-    return this.queryPrivacyStateAdapter(
-      "fetchCommitmentInfo",
-      [commitmentHex],
-      () => this.fetchJson(`/clairveil/privacy/v1/commitment/${commitmentHex}`, { failover: true })
-    );
+    return this.fetchJson(`/clairveil/privacy/v1/commitment/${commitmentHex}`, { failover: true });
   }
   async lookupMerklePath(commitmentHex) {
-    return this.queryPrivacyStateAdapter(
-      "lookupMerklePath",
-      [commitmentHex],
-      () => this.fetchMerklePathJson(`/clairveil/privacy/v1/merkle_path/${commitmentHex}`)
-    );
+    return this.fetchMerklePathJson(`/clairveil/privacy/v1/merkle_path/${commitmentHex}`);
   }
   async fetchAuditConfig() {
-    return this.queryPrivacyStateAdapter(
-      "fetchAuditConfig",
-      [],
-      () => this.fetchJson("/clairveil/privacy/v1/audit_config", { failover: true })
-    );
+    return this.fetchJson("/clairveil/privacy/v1/audit_config", { failover: true });
   }
   async fetchDisclosureConfig() {
-    return this.queryPrivacyStateAdapter(
-      "fetchDisclosureConfig",
-      [],
-      () => this.fetchJson("/clairveil/privacy/v1/disclosure_config", { failover: true })
-    );
+    return this.fetchJson("/clairveil/privacy/v1/disclosure_config", { failover: true });
   }
   /** Fetch and fail-closed validate the active audit recipient identity. */
   async queryAuditConfig() {
@@ -91629,11 +90477,7 @@ var ClairveilJS = class {
   }
   async fetchCircuitConfig({ expectedCircuitIdentity } = {}) {
     return validateCircuitConfigV1(
-      await this.queryPrivacyStateAdapter(
-        "fetchCircuitConfig",
-        [],
-        () => this.fetchJson("/clairveil/privacy/v1/circuit_config", { failover: true })
-      ),
+      await this.fetchJson("/clairveil/privacy/v1/circuit_config", { failover: true }),
       { expectedCircuitIdentity: expectedCircuitIdentity ?? this.expectedCircuitIdentity ?? void 0 }
     );
   }
@@ -91646,11 +90490,7 @@ var ClairveilJS = class {
     if (!normalizedDenom) {
       throw new Error("reserve denom is required");
     }
-    return this.queryPrivacyStateAdapter(
-      "fetchReserve",
-      [normalizedDenom],
-      () => this.fetchJson(`/clairveil/privacy/v1/reserve/${encodeURIComponent(normalizedDenom)}`, { failover: true })
-    );
+    return this.fetchJson(`/clairveil/privacy/v1/reserve/${encodeURIComponent(normalizedDenom)}`, { failover: true });
   }
   /** Fetch and independently check reserve accounting before relying on it. */
   async queryReserve(denom) {
@@ -91660,25 +90500,17 @@ var ClairveilJS = class {
   async fetchAssetByDenom(denom) {
     const canonicalDenom = String(denom || "").trim();
     if (!canonicalDenom) throw new Error("asset denom is required");
-    return this.queryPrivacyStateAdapter(
-      "fetchAssetByDenom",
-      [canonicalDenom],
-      () => this.fetchJson(
-        `/clairveil/privacy/v1/assets/by_denom/${encodeURIComponent(canonicalDenom)}`,
-        { failover: true }
-      )
+    return this.fetchJson(
+      `/clairveil/privacy/v1/assets/by_denom/${encodeURIComponent(canonicalDenom)}`,
+      { failover: true }
     );
   }
   async fetchAssetByID(assetIdHex) {
     const canonicalAssetID = String(assetIdHex || "").trim();
     if (!canonicalAssetID) throw new Error("asset ID is required");
-    return this.queryPrivacyStateAdapter(
-      "fetchAssetByID",
-      [canonicalAssetID],
-      () => this.fetchJson(
-        `/clairveil/privacy/v1/assets/by_id/${encodeURIComponent(canonicalAssetID)}`,
-        { failover: true }
-      )
+    return this.fetchJson(
+      `/clairveil/privacy/v1/assets/by_id/${encodeURIComponent(canonicalAssetID)}`,
+      { failover: true }
     );
   }
   /** Fetch and fail-closed validate an AssetRegistryV1 denom lookup. */
@@ -91717,6 +90549,10 @@ var ClairveilJS = class {
       this.assertCircuitConfig(),
       this.resolveAsset(canonicalDenom)
     ]);
+    const reverseAsset = await this.resolveAssetByID(asset.asset_id_hex);
+    if (reverseAsset.canonical_denom !== asset.canonical_denom || reverseAsset.asset_id_hex !== asset.asset_id_hex) {
+      throw new Error("AssetRegistryV1 forward and reverse mappings do not agree");
+    }
     return Object.freeze({ circuit_config: circuitConfig, asset });
   }
   /**
@@ -91738,15 +90574,11 @@ var ClairveilJS = class {
     });
   }
   async fetchCommitmentPathsAtRoot(options = {}) {
-    return this.queryPrivacyStateAdapter(
-      "fetchCommitmentPathsAtRoot",
-      [options],
-      () => this.fetchMerklePathJson("/clairveil/privacy/v1/commitment_paths_at_root", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: jsonRequestBody(commitmentPathsAtRootRequestBody(options))
-      })
-    );
+    return this.fetchMerklePathJson("/clairveil/privacy/v1/commitment_paths_at_root", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: jsonRequestBody(commitmentPathsAtRootRequestBody(options))
+    });
   }
   /** Fetch, validate, and root-recompute a single exact-root, optionally height-pinned Merkle snapshot. */
   async queryCommitmentPathsAtRoot(options = {}) {
@@ -91772,51 +90604,10 @@ var ClairveilJS = class {
     return this.createCommitmentPathSnapshotProvider({ commitmentHexes, rootHex });
   }
   async checkNullifier(nullifierHex) {
-    const normalized = String(nullifierHex || "").trim().toLowerCase();
-    if (this.privacyStateAdapter) {
-      if (typeof this.privacyStateAdapter.checkNullifier === "function") {
-        const result2 = await invokePrivacyStateAdapter(
-          this.privacyStateAdapter,
-          "checkNullifier",
-          [normalized],
-          { timeoutMs: this.queryTimeoutMs, retry: this.queryRetry }
-        );
-        const used2 = parseNullifierUsage(result2);
-        if (used2 === null) {
-          throw new Error("privacyStateAdapter.checkNullifier returned an ambiguous status");
-        }
-        return { nullifier: normalized, used: used2 };
-      }
-      const statuses = normalizePrivacyNullifierStatuses(
-        await invokePrivacyStateAdapter(
-          this.privacyStateAdapter,
-          "checkNullifiers",
-          [[normalized]],
-          { timeoutMs: this.queryTimeoutMs, retry: this.queryRetry }
-        ),
-        [normalized]
-      );
-      return { nullifier: normalized, used: statuses.get(normalized) };
-    }
-    const result = await this.fetchNullifierJson(
-      `/clairveil/privacy/v1/nullifier/${encodeURIComponent(normalized)}`
-    );
-    const used = parseNullifierUsage(result);
-    if (used === null) {
-      throw new Error("nullifier response returned an ambiguous status");
-    }
-    return { nullifier: normalized, used };
+    return this.fetchNullifierJson(`/clairveil/privacy/v1/nullifier/${nullifierHex}`);
   }
   async checkNullifiers(nullifierHexes = []) {
     const normalized = [...new Set((nullifierHexes || []).map((value) => String(value || "").trim().toLowerCase()).filter(Boolean))];
-    if (normalized.length === 0) return /* @__PURE__ */ new Map();
-    if (this.privacyStateAdapter) {
-      return checkPrivacyStateAdapterNullifiers(
-        this.privacyStateAdapter,
-        normalized,
-        { timeoutMs: this.queryTimeoutMs, retry: this.queryRetry }
-      );
-    }
     const usedByNullifier = /* @__PURE__ */ new Map();
     const invalidNullifiers = /* @__PURE__ */ new Set();
     const addStatus = (nullifier, value) => {
@@ -91837,10 +90628,7 @@ var ClairveilJS = class {
         method: "POST",
         body: JSON.stringify({ nullifiers: chunk })
       });
-      for (const status of [
-        ...Array.isArray(response?.statuses) ? response.statuses : [],
-        ...Array.isArray(response?.Statuses) ? response.Statuses : []
-      ]) {
+      for (const status of response?.statuses || response?.Statuses || []) {
         const canonical = status?.nullifier;
         const alias2 = status?.Nullifier;
         if (canonical != null && alias2 != null && String(canonical).trim().toLowerCase() !== String(alias2).trim().toLowerCase()) {
@@ -91867,8 +90655,7 @@ var ClairveilJS = class {
     after_sequence,
     page = 1,
     limit = 200,
-    maxPages,
-    max_pages,
+    maxPages = 1,
     outputLimit,
     output_limit,
     eventLimit,
@@ -91882,29 +90669,14 @@ var ClairveilJS = class {
     includeFoundNotes = false,
     scanSource,
     scan_source,
-    strictPrivacyScan,
-    strict_privacy_scan,
-    requireTypedScan = false,
-    allowInitialPrivacyScanFallback = false
+    strictPrivacyScan = false,
+    strict_privacy_scan
   } = {}) {
-    for (const [value, label] of [
-      [strictPrivacyScan, "strictPrivacyScan"],
-      [strict_privacy_scan, "strict_privacy_scan"]
-    ]) {
-      if (value != null && typeof value !== "boolean") {
-        throw new Error(`${label} must be a boolean`);
-      }
-    }
-    if (strictPrivacyScan != null && strict_privacy_scan != null && strictPrivacyScan !== strict_privacy_scan) {
-      throw new Error("strictPrivacyScan aliases conflict");
-    }
-    const strictTypedScan = Boolean(strictPrivacyScan ?? strict_privacy_scan ?? false);
-    const resolvedMaxPages = resolveScanMaxPagesAlias(maxPages, max_pages) ?? 1;
     const requestedEventTypes = event_types ?? eventTypes;
     const resolvedEventTypes = requestedEventTypes ?? ["deposit", "shielded_transfer"];
     const pageLimit = Math.max(1, Number(limit || 200));
-    const pageBudget = resolvedMaxPages;
-    const source = scan_source ?? scanSource ?? (Array.isArray(requestedEventTypes) && requestedEventTypes.some((value) => String(value || "").trim()) ? "scan_events" : "privacy_scan");
+    const pageBudget = Math.max(1, Number(maxPages || 1));
+    const source = scan_source ?? scanSource ?? "privacy_scan";
     if (source !== "privacy_scan" && resolvedEventTypes.some((value) => String(value || "").trim() === "batch_transfer")) {
       throw new Error("batch_transfer outputs require the typed privacy-scan-v2 source");
     }
@@ -91933,22 +90705,10 @@ var ClairveilJS = class {
       const requestedValidationState = validationStateSnapshot ?? validation_state_snapshot;
       const validationState = requestedValidationState == null ? createPrivacyScanValidationStateV2() : restorePrivacyScanValidationStateV2(requestedValidationState);
       try {
-        let eventCompletionPages = 0;
-        for (; ; ) {
-          const pendingEntries = [...validationState.pending_summary_by_event.values()];
-          if (pendingEntries.length > 1) {
-            throw new Error("privacy scan validation state contains multiple partial events");
-          }
-          const pendingSummary = pendingEntries[0];
-          if (pagesScanned2 >= pageBudget && !pendingSummary) break;
-          if (pagesScanned2 >= pageBudget && eventCompletionPages >= maxPrivacyScanEventCompletionPages) {
-            throw new Error("privacy scan could not complete the current event within the bounded continuation budget");
-          }
-          const configuredOutputLimit = Number(outputLimit ?? output_limit ?? pageLimit);
-          const remainingEventOutputs = pendingSummary ? pendingSummary.output_count - pendingSummary.last_output_index - 1 : 0;
+        for (; pagesScanned2 < pageBudget; ) {
           const request = {
             after: currentAfter,
-            outputLimit: pendingSummary ? configuredOutputLimit > 0 ? Math.min(configuredOutputLimit, remainingEventOutputs) : remainingEventOutputs : configuredOutputLimit,
+            outputLimit: outputLimit ?? output_limit ?? pageLimit,
             eventLimit: eventLimit ?? event_limit,
             maxEncodedBytes: maxEncodedBytes ?? max_encoded_bytes,
             // Deliberately request every event: zero-output summaries prove
@@ -91964,34 +90724,19 @@ var ClairveilJS = class {
           };
           scannedEvents += pageResult.scanned_event_count;
           pagesScanned2 += 1;
-          if (pendingSummary && pagesScanned2 > pageBudget) eventCompletionPages += 1;
           hasMore2 = pageResult.has_more;
           if (!hasMore2) break;
         }
-        if (validationState.pending_summary_by_event.size) {
-          throw new Error("privacy scan ended before the current event was complete");
-        }
       } catch (error) {
-        const endpointIsAbsent = pagesScanned2 === 0 && (error?.status === 404 || error?.status === 405 || error?.status === 501);
-        if (!endpointIsAbsent) throw error;
-        if (requireTypedScan) throw error;
-        if (this.enableExperimentalBatchTransfer) {
-          throw new Error(
-            "typed privacy-scan-v2 is required while one-proof batch transfer support is enabled",
-            { cause: error }
-          );
+        const canFallback = error?.status === 404 || error?.status === 405 || error?.status === 501;
+        if (!canFallback) throw error;
+        if (Boolean(strict_privacy_scan ?? strictPrivacyScan) || this.enableExperimentalBatchTransfer) {
+          throw new Error("typed privacy-scan-v2 is required; legacy scan fallback is disabled", { cause: error });
         }
-        const hasTypedResumeState = after != null || requestedValidationState != null;
-        if (strictTypedScan && (!allowInitialPrivacyScanFallback || hasTypedResumeState)) {
-          throw error;
-        }
-        const fallbackFromLegacyCursor = after == null && legacyHeight != null;
-        const fallbackAfterHeight = fallbackFromLegacyCursor ? uint64CursorValue2(legacyHeight, "unified scan legacy fallback height") : decrementUint64Cursor(initialAfter.height ?? 0, "unified scan fallback height");
-        const fallbackAfterSequence = fallbackFromLegacyCursor ? uint64CursorValue2(afterSequence ?? after_sequence ?? 0, "unified scan legacy fallback sequence") : 0;
         return this.scanNotes({
           rootSeed,
-          afterHeight: fallbackAfterHeight,
-          afterSequence: fallbackAfterSequence,
+          afterHeight: decrementUint64Cursor(initialAfter.height ?? 0, "unified scan fallback height"),
+          afterSequence: 0,
           page: 1,
           limit: pageLimit,
           maxPages: pageBudget,
@@ -92025,7 +90770,7 @@ var ClairveilJS = class {
         latest_output_index: currentAfter.outputIndex,
         pages_scanned: pagesScanned2,
         completed: !hasMore2,
-        ...validationState.batch_self_view_by_event.size || validationState.pending_summary_by_event.size ? { validation_state: serializePrivacyScanValidationStateV2(validationState) } : {}
+        ...validationState.batch_self_view_by_event.size || validationState.pending_summary_by_event?.size ? { validation_state: serializePrivacyScanValidationStateV2(validationState) } : {}
       };
       return {
         ...result2,
@@ -92062,7 +90807,7 @@ var ClairveilJS = class {
             limit: pageLimit,
             eventTypes: resolvedEventTypes
           };
-          const data = validateScanEventsResponse(await this.fetchScanEvents(request), request);
+          const data = await this.fetchScanEvents(request);
           lastData2 = data;
           events2.push(...data.events || []);
           pagesScanned2 += 1;
@@ -92120,7 +90865,7 @@ var ClairveilJS = class {
           })
         };
       } catch (error) {
-        const canFallback = pagesScanned2 === 0 && (error?.status === 404 || error?.status === 405 || error?.status === 501);
+        const canFallback = error?.status === 404 || error?.status === 501 || error?.status === 503 || error?.code === "UNSUPPORTED_SCAN_EVENTS_VERSION";
         if (!canFallback) throw error;
         const rewindHeight = decrementUint64Cursor(startAfterHeight, "scan fallback height");
         legacyAfterHeight = rewindHeight;
@@ -92199,19 +90944,11 @@ var ClairveilJS = class {
     if (requestedTypes != null && (!Array.isArray(requestedTypes) || requestedTypes.some((value) => String(value || "").trim() !== "batch_transfer"))) {
       throw new Error("auditable batch transfer query only accepts the batch_transfer event type");
     }
-    const {
-      validationState,
-      validation_state,
-      ...transportOptions
-    } = options || {};
-    const request = { ...transportOptions, eventTypes: ["batch_transfer"] };
+    const request = { ...options, eventTypes: ["batch_transfer"] };
     delete request.event_types;
     const page = validatePrivacyScanPageV2(
       await this.fetchPrivacyScan(request),
-      {
-        ...request,
-        ...validationState ?? validation_state ? { validationState: validationState ?? validation_state } : {}
-      }
+      request
     );
     if (page.summaries.some((summary) => summary.event_type !== "batch_transfer") || page.outputs.some((output) => output.event_type !== "batch_transfer")) {
       throw new Error("auditable batch transfer response contains a non-batch event");
@@ -92225,15 +90962,18 @@ var ClairveilJS = class {
     after_sequence,
     page = 1,
     limit = 200,
-    maxPages,
+    maxPages = defaultPrepareScanMaxPages,
     max_pages,
     eventTypes = ["shielded_transfer"],
     event_types,
     scanSource,
     scan_source
   } = {}) {
-    const normalizedTxHash4 = normalizedCosmosTxHash(txHash);
-    const pageBudget = resolveScanMaxPagesAlias(maxPages, max_pages) ?? defaultPrepareScanMaxPages;
+    const normalizedTxHash4 = String(txHash || "").trim().toUpperCase();
+    if (!normalizedTxHash4) {
+      throw new Error("txHash is required");
+    }
+    const pageBudget = Math.max(1, Number(max_pages ?? maxPages ?? defaultPrepareScanMaxPages));
     const pageLimit = Math.max(1, Number(limit || 200));
     const resolvedEventTypes = event_types ?? eventTypes;
     const source = scan_source ?? scanSource ?? "privacy_events";
@@ -92241,15 +90981,14 @@ var ClairveilJS = class {
       let currentAfterHeight = uint64CursorValue2(afterHeight ?? after_height ?? 0, "event lookup after height");
       let currentAfterSequence = uint64CursorValue2(afterSequence ?? after_sequence ?? 0, "event lookup after sequence");
       for (let pagesScanned = 0; pagesScanned < pageBudget; pagesScanned += 1) {
-        const request = {
+        const data = await this.fetchScanEvents({
           afterHeight: currentAfterHeight,
           afterSequence: currentAfterSequence,
           limit: pageLimit,
           eventTypes: resolvedEventTypes
-        };
-        const data = validateScanEventsResponse(await this.fetchScanEvents(request), request);
+        });
         const event = (data.events || []).find(
-          (item) => comparableCosmosTxHash(item.tx_hash_hex ?? item.txHashHex) === normalizedTxHash4
+          (item) => String(item.tx_hash_hex || "").toUpperCase() === normalizedTxHash4
         );
         if (event) return event;
         if (!Boolean(data.has_more ?? data.hasMore)) break;
@@ -92272,9 +91011,7 @@ var ClairveilJS = class {
         limit: pageLimit,
         eventTypes: resolvedEventTypes
       });
-      const event = (data.events || []).find(
-        (item) => comparableCosmosTxHash(item.tx_hash_hex ?? item.txHashHex) === normalizedTxHash4
-      );
+      const event = (data.events || []).find((item) => String(item.tx_hash_hex || "").toUpperCase() === normalizedTxHash4);
       if (event) {
         return event;
       }
@@ -92335,7 +91072,7 @@ var ClairveilJS = class {
     material,
     after,
     limit = 200,
-    maxPages,
+    maxPages = 1,
     max_pages,
     noteStore: noteStore2,
     includeFoundNotes = false,
@@ -92356,80 +91093,87 @@ var ClairveilJS = class {
     validation_state_snapshot,
     scanSource,
     scan_source,
-    strictPrivacyScan,
+    strictPrivacyScan = false,
     strict_privacy_scan
   } = {}) {
     const privacy = material || await this.deriveWalletPrivacyMaterial(wallet);
-    const walletScanOptions = resolveWalletScanOptions({
-      after,
-      afterHeight,
-      after_height,
-      afterSequence,
-      after_sequence,
-      page,
-      limit,
-      maxPages,
-      max_pages,
-      eventTypes,
-      event_types,
-      outputLimit,
-      output_limit,
-      eventLimit,
-      event_limit,
-      maxEncodedBytes,
-      max_encoded_bytes,
-      validationStateSnapshot,
-      validation_state_snapshot,
-      scanSource,
-      scan_source,
-      strictPrivacyScan,
-      strict_privacy_scan
-    });
-    const resolvedMaxPages = walletScanOptions.maxPages ?? 1;
-    let resolvedAfter = walletScanOptions.after;
-    let resolvedAfterHeight = walletScanOptions.afterHeight;
-    let resolvedAfterSequence = walletScanOptions.afterSequence;
-    let resolvedPage = walletScanOptions.page;
-    let resolvedValidationStateSnapshot = walletScanOptions.validationStateSnapshot;
+    const requestedEventTypes = event_types ?? eventTypes;
+    if (requestedEventTypes != null) {
+      if (!Array.isArray(requestedEventTypes)) {
+        throw new Error("wallet scan eventTypes must be an array");
+      }
+      if (requestedEventTypes.some((value) => String(value || "").trim())) {
+        throw new Error("wallet scans must not filter event types; typed privacy_scan summaries are required");
+      }
+    }
+    const requestedScanSource = scan_source ?? scanSource;
+    if (requestedScanSource != null && requestedScanSource !== "privacy_scan") {
+      throw new Error("wallet scans only support the typed privacy_scan source");
+    }
+    let resolvedAfter = after;
+    let resolvedAfterHeight = afterHeight ?? after_height;
+    let resolvedAfterSequence = afterSequence ?? after_sequence;
+    let resolvedPage = page;
+    let resolvedScanSource = "privacy_scan";
+    let resolvedValidationStateSnapshot = validationStateSnapshot ?? validation_state_snapshot;
     if (resolvedAfter == null && resolvedAfterHeight == null && noteStore2) {
       const cached = await noteStore2.load();
       const cachedCursor = cached.scanCursor || {};
       if (cachedCursor.source === "privacy_scan") {
-        const next = nextPrivacyScanOptions(cachedCursor, { limit, maxPages: resolvedMaxPages });
+        const next = nextPrivacyScanOptions(cachedCursor, { limit, maxPages });
         resolvedAfter = next.after;
         resolvedValidationStateSnapshot = resolvedValidationStateSnapshot ?? next.validationStateSnapshot;
       } else if (cachedCursor.source === "scan_events" || cachedCursor.source === "privacy_events") {
-        const next = nextPrivacyScanOptions(cachedCursor, { limit, maxPages: resolvedMaxPages });
-        resolvedAfterHeight = next.afterHeight;
-        resolvedAfterSequence = next.afterSequence ?? 0;
-        resolvedPage = 1;
+        const next = nextPrivacyScanOptions(cachedCursor, { limit, maxPages });
+        resolvedAfter = {
+          height: decrementUint64Cursor(next.afterHeight ?? cached.lastScannedHeight ?? 0, "typed wallet scan migration height"),
+          globalSequence: 0,
+          outputIndex: 0
+        };
+        resolvedAfterHeight = void 0;
+        resolvedAfterSequence = void 0;
+        resolvedPage = void 0;
       } else if (cachedCursor.has_more && (cachedCursor.next_sequence != null || cachedCursor.nextSequence != null)) {
-        resolvedAfterHeight = cachedCursor.next_height ?? cachedCursor.nextHeight ?? cached.lastScannedHeight ?? 0;
-        resolvedAfterSequence = cachedCursor.next_sequence ?? cachedCursor.nextSequence ?? cached.lastScannedSequence ?? 0;
+        resolvedAfter = {
+          height: decrementUint64Cursor(
+            cachedCursor.next_height ?? cachedCursor.nextHeight ?? cached.lastScannedHeight ?? 0,
+            "typed wallet scan migration height"
+          ),
+          globalSequence: 0,
+          outputIndex: 0
+        };
       } else if (cachedCursor.has_more && (cachedCursor.next_page || cachedCursor.nextPage)) {
-        resolvedAfterHeight = cachedCursor.after_height ?? cachedCursor.afterHeight ?? cached.lastScannedHeight ?? 0;
-        resolvedAfterSequence = cachedCursor.after_sequence ?? cachedCursor.afterSequence ?? cached.lastScannedSequence ?? 0;
-        resolvedPage = resolvedPage ?? cachedCursor.next_page ?? cachedCursor.nextPage;
+        resolvedAfter = {
+          height: decrementUint64Cursor(
+            cachedCursor.after_height ?? cachedCursor.afterHeight ?? cached.lastScannedHeight ?? 0,
+            "typed wallet scan migration height"
+          ),
+          globalSequence: 0,
+          outputIndex: 0
+        };
       } else {
-        resolvedAfterHeight = cached.lastScannedHeight || 0;
-        resolvedAfterSequence = cached.lastScannedSequence || 0;
+        resolvedAfter = {
+          height: decrementUint64Cursor(cached.lastScannedHeight || 0, "typed wallet scan migration height"),
+          globalSequence: 0,
+          outputIndex: 0
+        };
       }
     }
     const scan = await this.scanNotes({
       rootSeed: privacy.rootSeed,
       after: resolvedAfter,
       limit,
-      maxPages: resolvedMaxPages,
+      maxPages: max_pages ?? maxPages,
       afterHeight: resolvedAfterHeight,
       afterSequence: resolvedAfterSequence,
       page: resolvedPage,
-      scanSource: "privacy_scan",
-      outputLimit: walletScanOptions.outputLimit,
-      eventLimit: walletScanOptions.eventLimit,
-      maxEncodedBytes: walletScanOptions.maxEncodedBytes,
+      scanSource: resolvedScanSource,
+      eventTypes: [],
+      outputLimit: output_limit ?? outputLimit,
+      eventLimit: event_limit ?? eventLimit,
+      maxEncodedBytes: max_encoded_bytes ?? maxEncodedBytes,
       validationStateSnapshot: resolvedValidationStateSnapshot,
       strictPrivacyScan: true,
-      allowInitialPrivacyScanFallback: true,
       includeFoundNotes: true
     });
     if (noteStore2) {
@@ -92489,7 +91233,7 @@ var ClairveilJS = class {
     return typeof noteStore2.setNullifierStatuses === "function" ? noteStore2.setNullifierStatuses(nullifierStatuses) : current;
   }
   async planWalletTransfer({ wallet, material, amount, denom, limit = 200, maxPages = defaultPrepareScanMaxPages, scan: scanOptions, scanSource, scan_source, strictPrivacyScan, strict_privacy_scan } = {}) {
-    const resolvedScanOptions = resolveWalletScanOptions({ scan: scanOptions, limit, maxPages, scanSource, scan_source, strictPrivacyScan, strict_privacy_scan });
+    const resolvedScanOptions = resolveScanOptions({ scan: scanOptions, limit, maxPages, scanSource, scan_source, strictPrivacyScan, strict_privacy_scan });
     const scan = await this.scanWalletNotes({
       wallet,
       material,
@@ -92508,7 +91252,7 @@ var ClairveilJS = class {
     };
   }
   async planWalletWithdraw({ wallet, material, amount, denom, limit = 200, maxPages = defaultPrepareScanMaxPages, scan: scanOptions, scanSource, scan_source, strictPrivacyScan, strict_privacy_scan } = {}) {
-    const resolvedScanOptions = resolveWalletScanOptions({ scan: scanOptions, limit, maxPages, scanSource, scan_source, strictPrivacyScan, strict_privacy_scan });
+    const resolvedScanOptions = resolveScanOptions({ scan: scanOptions, limit, maxPages, scanSource, scan_source, strictPrivacyScan, strict_privacy_scan });
     const scan = await this.scanWalletNotes({
       wallet,
       material,
@@ -92599,7 +91343,8 @@ var ClairveilJS = class {
     attempts,
     intervalMs
   } = {}) {
-    const normalizedTxHash4 = normalizedCosmosTxHash(txHash ?? tx_hash);
+    const normalizedTxHash4 = String(txHash ?? tx_hash ?? "").trim().toUpperCase();
+    if (!normalizedTxHash4) throw new Error("txHash is required");
     const expected = depositExpectedMaterial({
       prepared,
       material,
@@ -92660,6 +91405,10 @@ var ClairveilJS = class {
     expectedAmountHash,
     expected_amount_hash,
     denom,
+    expiresAtUnix,
+    expires_at_unix,
+    chainNowUnix,
+    chain_now_unix,
     allowPlanStep = false,
     scan,
     after,
@@ -92669,7 +91418,7 @@ var ClairveilJS = class {
     after_sequence,
     page,
     limit = 200,
-    maxPages,
+    maxPages = defaultPrepareScanMaxPages,
     max_pages,
     eventTypes,
     event_types,
@@ -92687,28 +91436,21 @@ var ClairveilJS = class {
     gas_limit,
     feeAmount,
     fee_amount,
-    expiresAtUnix,
-    expires_at_unix,
-    chainNowUnix,
-    chain_now_unix,
     reservationManager: reservationManager2,
-    reservation_manager,
-    executionBuilder
+    reservation_manager
   } = {}) {
-    if (executionBuilder != null && typeof executionBuilder !== "function") {
-      throw new Error("executionBuilder must be a function");
-    }
+    const resolvedReservationManager = reservationManager2 ?? reservation_manager ?? null;
     const resolvedGasLimit = resolveCosmosGasLimit(gasLimit, gas_limit, 8e6);
     const resolvedFeeAmount = resolveCosmosFeeAmount(feeAmount, fee_amount);
-    const resolvedExpiresAtUnix = resolveOperationEvidenceAlias(
-      expiresAtUnix,
-      expires_at_unix,
-      "expiresAtUnix"
-    );
-    const resolvedChainNowUnix = resolveOperationEvidenceAlias(
+    const requestedChainNowUnix = aliasedTransferUnix(
       chainNowUnix,
       chain_now_unix,
       "chainNowUnix"
+    );
+    const requestedExpiresAtUnix = aliasedTransferUnix(
+      expiresAtUnix,
+      expires_at_unix,
+      "expiresAtUnix"
     );
     for (const [value, label] of [
       [disableSelfViewDisclosure, "disableSelfViewDisclosure"],
@@ -92724,24 +91466,16 @@ var ClairveilJS = class {
     if (selfViewDisclosureTargetPubKeyHex != null && self_view_disclosure_target_pubkey != null && comparableBatchHex(selfViewDisclosureTargetPubKeyHex) !== comparableBatchHex(self_view_disclosure_target_pubkey)) {
       throw new Error("selfViewDisclosureTargetPubKeyHex aliases conflict");
     }
-    const resolvedReservationManager = reservationManager2 ?? reservation_manager ?? null;
-    const resolvedDisableSelfViewDisclosure = disableSelfViewDisclosure ?? disable_self_view_disclosure;
+    const resolvedDisableSelfViewDisclosure = disableSelfViewDisclosure ?? disable_self_view_disclosure ?? false;
     const resolvedSelfViewDisclosureTargetPubKeyHex = selfViewDisclosureTargetPubKeyHex ?? self_view_disclosure_target_pubkey;
-    const operationEvidenceAssertions = resolveDirectOperationEvidenceAssertions({
+    const operationEvidence = resolveDirectOperationEvidenceHashes({
       expectedRecipientHash,
       expected_recipient_hash,
       expectedAmountHash,
       expected_amount_hash
     });
-    const finalOperationEvidence = buildDirectOperationEvidenceHashes({
-      assertions: operationEvidenceAssertions,
-      recipient,
-      amount,
-      denom: denom ?? this.defaultDenom,
-      shieldedPrefix: this.shieldedPrefix
-    });
     const privacy = material || await this.deriveWalletPrivacyMaterial(wallet);
-    const scanOptions = resolveWalletScanOptions({
+    const scanOptions = resolveScanOptions({
       scan,
       after,
       afterHeight,
@@ -92765,15 +91499,11 @@ var ClairveilJS = class {
       strictPrivacyScan,
       strict_privacy_scan
     });
-    const transferProtocolConfig = await this.assertTransferProtocolConfig(
-      denom ?? this.defaultDenom
-    );
     const scanResult = await this.scanNotes({
       rootSeed: privacy.rootSeed,
       ...scanOptions,
       limit: scanOptions.limit ?? 200,
       maxPages: scanOptions.maxPages ?? defaultPrepareScanMaxPages,
-      allowInitialPrivacyScanFallback: true,
       includeFoundNotes: true
     });
     const availableFoundNotes = await reservationAvailableNotes(resolvedReservationManager, scanResult.foundNotes);
@@ -92800,6 +91530,11 @@ var ClairveilJS = class {
     }
     const isFinal = plan.status === "final_transfer_ready";
     assertPlanCanBuildTx(plan);
+    const transferTime = requiredTransferPreparationTime(
+      requestedChainNowUnix,
+      requestedExpiresAtUnix
+    );
+    const transferProtocolConfig = await this.assertTransferProtocolConfig(denom ?? this.defaultDenom);
     assertTransferDisclosureCapabilities(transferProtocolConfig.disclosure_config, {
       userPrivacyPolicy: isFinal ? userPrivacyPolicy : "all-private",
       userDisclosureMode: isFinal ? userDisclosureMode : "none"
@@ -92814,13 +91549,6 @@ var ClairveilJS = class {
     const auditPubKeyHex = transferProtocolConfig.audit_config.audit_master_pubkey_hex;
     const stepRecipient = isFinal ? recipient : privacy.shieldedAddress;
     const stepAmount = isFinal ? amount : plan.nextAmount;
-    const operationEvidence = isFinal ? finalOperationEvidence : buildDirectOperationEvidenceHashes({
-      assertions: {},
-      recipient: stepRecipient,
-      amount: stepAmount,
-      denom: denom ?? this.defaultDenom,
-      shieldedPrefix: this.shieldedPrefix
-    });
     let reservationBatch = null;
     try {
       reservationBatch = await preparePlanReservation(resolvedReservationManager, {
@@ -92846,65 +91574,51 @@ var ClairveilJS = class {
           userPrivacyPolicy: isFinal ? userPrivacyPolicy : "all-private",
           userDisclosureMode: isFinal ? userDisclosureMode : "none",
           userDisclosureTargetPubKeyHex: isFinal ? userDisclosureTargetPubKeyHex : "",
-          auditDisclosureTargetPubKeyHex: auditPubKeyHex,
           disableSelfViewDisclosure: resolvedDisableSelfViewDisclosure,
           selfViewDisclosureTargetPubKeyHex: resolvedSelfViewDisclosureTargetPubKeyHex,
-          expiresAtUnix: resolvedExpiresAtUnix || void 0,
-          chainNowUnix: resolvedChainNowUnix || void 0,
+          auditDisclosureTargetPubKeyHex: auditPubKeyHex,
+          expiresAtUnix: transferTime.expiresAtUnix,
+          chainNowUnix: transferTime.chainNowUnix,
           signal
         });
         assertHeartbeatHealthy();
-        const artifact = await buildPreparedExecutionArtifact({
-          executionBuilder,
-          executionInput: {
-            payload: built2.payload,
-            proof: built2.proof,
-            message: built2.message,
-            plan,
-            isFinal,
-            reservation: reservationBatchSummary(reservationBatch)
-          },
-          buildSignDoc: () => this.buildDirectSignDoc({
-            signer: privacy.address,
-            pubKeyHex: privacy.pubKeyHex,
-            gasLimit: resolvedGasLimit,
-            feeAmount: resolvedFeeAmount,
-            messages: [
-              {
-                typeUrl: msgTransferTypeUrl,
-                value: built2.message
-              }
-            ],
-            memo: reservationBatch ? reservationRequiredCosmosMemo("Clairveil veiled transfer") : "Clairveil veiled transfer"
-          })
+        const signDoc2 = await this.buildDirectSignDoc({
+          signer: privacy.address,
+          pubKeyHex: privacy.pubKeyHex,
+          gasLimit: resolvedGasLimit,
+          feeAmount: resolvedFeeAmount,
+          messages: [
+            {
+              typeUrl: msgTransferTypeUrl,
+              value: built2.message
+            }
+          ],
+          memo: reservationBatch ? reservationRequiredCosmosMemo("Clairveil veiled transfer") : "Clairveil veiled transfer"
         });
+        const signDocHash = cosmosSignDocBindingHash(signDoc2);
         await heartbeatNow();
         await markReservationProofReady(resolvedReservationManager, reservationBatch, transferProofReadyMetadata(built2, {
           amount: stepAmount,
-          denom: operationEvidence.expectedDenom,
-          expectedRecipientHash: operationEvidence.expectedRecipientHash,
-          expectedAmountHash: operationEvidence.expectedAmountHash,
-          ...artifact.executionBinding
-        }));
+          denom: denom ?? this.defaultDenom,
+          expectedRecipientHash: isFinal ? operationEvidence.expectedRecipientHash : "",
+          expectedAmountHash: isFinal ? operationEvidence.expectedAmountHash : "",
+          signDocHash
+        }, "signDocHash"));
         return {
           built: built2,
-          ...artifact.signDoc ? {
-            signDoc: markCosmosSignDocReservationRequired(
-              artifact.signDoc,
-              reservationBatch
-            )
-          } : {},
-          ...artifact.execution ? { execution: artifact.execution } : {}
+          signDoc: markCosmosSignDocReservationRequired(
+            signDoc2,
+            reservationBatch
+          )
         };
       });
-      const { built, signDoc, execution } = heartbeatResult;
+      const { built, signDoc } = heartbeatResult;
       return {
         ...reservationReconciliationFields(heartbeatResult),
         status: "ready",
         plan,
         scan: scanResult,
-        ...signDoc ? { signDoc } : {},
-        ...execution ? { execution } : {},
+        signDoc,
         payload: built.payload,
         proof: built.proof,
         message: built.message,
@@ -92917,6 +91631,8 @@ var ClairveilJS = class {
           finalAmount: amount,
           finalRecipient: recipient,
           selectedInputTotal: plan.selection.total.toString(),
+          expiresAtUnix: transferTime.expiresAtUnix,
+          chainNowUnix: transferTime.chainNowUnix,
           reservation: reservationBatchSummary(reservationBatch)
         },
         privacyAccount: publicPrivacyAccount(privacy)
@@ -92960,7 +91676,7 @@ var ClairveilJS = class {
     after_sequence,
     page,
     limit = 200,
-    maxPages,
+    maxPages = defaultPrepareScanMaxPages,
     max_pages,
     eventTypes,
     event_types,
@@ -92974,7 +91690,8 @@ var ClairveilJS = class {
     scan_source,
     strictPrivacyScan,
     strict_privacy_scan,
-    gasLimit = 25e6,
+    gasLimit,
+    gas_limit,
     feeAmount,
     fee_amount,
     expiresAtUnix,
@@ -92985,22 +91702,17 @@ var ClairveilJS = class {
     root_hex,
     snapshotHeight,
     snapshot_height,
-    inputCommitmentHexes,
-    input_commitment_hexes,
     disableSelfViewDisclosure,
     disable_self_view_disclosure,
     selfViewDisclosureTargetPubKeyHex,
     self_view_disclosure_target_pubkey,
     reservationManager: reservationManager2,
-    reservation_manager,
-    executionBuilder
+    reservation_manager
   } = {}) {
     if (!this.enableExperimentalBatchTransfer) {
       throw new Error("one-proof batch transfer is feature-gated; construct the client with enableExperimentalBatchTransfer: true after completing downstream conformance and localnet validation");
     }
-    if (executionBuilder != null && typeof executionBuilder !== "function") {
-      throw new Error("executionBuilder must be a function");
-    }
+    const resolvedGasLimit = resolveCosmosGasLimit(gasLimit, gas_limit, 25e6);
     const resolvedFeeAmount = resolveCosmosFeeAmount(feeAmount, fee_amount);
     if (outputMode != null && output_mode != null && normalizeBatchTransferOutputMode(outputMode) !== normalizeBatchTransferOutputMode(output_mode)) {
       throw new Error("outputMode aliases conflict");
@@ -93024,10 +91736,6 @@ var ClairveilJS = class {
     if (hasPinnedRoot !== hasPinnedSnapshotHeight) {
       throw new Error("rootHex and snapshotHeight must be supplied together for an exact Merkle snapshot");
     }
-    const resolvedInputCommitments = normalizeBatchTransferInputCommitments(
-      inputCommitmentHexes,
-      input_commitment_hexes
-    );
     for (const [value, label] of [
       [disableSelfViewDisclosure, "disableSelfViewDisclosure"],
       [disable_self_view_disclosure, "disable_self_view_disclosure"]
@@ -93104,7 +91812,7 @@ var ClairveilJS = class {
       throw new Error("one-proof batch transfer requires onPreparedProof to durably persist the private proof before signing");
     }
     const privacy = material || await this.deriveWalletPrivacyMaterial(wallet);
-    const scanOptions = resolveWalletScanOptions({
+    const scanOptions = resolveScanOptions({
       scan,
       after,
       afterHeight,
@@ -93137,29 +91845,14 @@ var ClairveilJS = class {
       scanSource: "privacy_scan",
       limit: scanOptions.limit ?? 200,
       maxPages: scanOptions.maxPages ?? defaultPrepareScanMaxPages,
-      requireTypedScan: true,
       includeFoundNotes: true
     });
     if (scanResult.scanCursor?.source !== "privacy_scan") {
       throw new Error("one-proof batch transfer requires the typed privacy-scan-v2 source; legacy scan fallback cannot recover batch outputs safely");
     }
     const availableFoundNotes = await reservationAvailableNotes(resolvedReservationManager, scanResult.foundNotes);
-    let planNotes = availableFoundNotes;
-    if (resolvedInputCommitments) {
-      const availableByCommitment = new Map(availableFoundNotes.map((found) => [
-        fieldHexV1(computeNoteCommitmentV1(found.note)),
-        found
-      ]));
-      const missingIndex = resolvedInputCommitments.findIndex(
-        (commitment) => !availableByCommitment.has(commitment)
-      );
-      if (missingIndex !== -1) {
-        throw new Error(`inputCommitmentHexes[${missingIndex}] is unavailable or unverified`);
-      }
-      planNotes = resolvedInputCommitments.map((commitment) => availableByCommitment.get(commitment));
-    }
-    let plan = planTransferBatchNotes({
-      notes: planNotes,
+    const plan = planTransferBatchNotes({
+      notes: availableFoundNotes,
       amounts: normalizedAmounts,
       denom: denom ?? this.defaultDenom
     });
@@ -93172,38 +91865,6 @@ var ClairveilJS = class {
       };
     }
     assertPlanCanBuildTx(plan);
-    const batchDenom = denom ?? this.defaultDenom;
-    if (resolvedInputCommitments) {
-      const selectedTotal2 = planNotes.reduce((sum, found) => sum + found.note.amount, 0n);
-      const requestedTotal2 = BigInt(plan.facts.requestedAmountValue);
-      const change2 = selectedTotal2 - requestedTotal2;
-      const outputCount2 = normalizedAmounts.length + (change2 > 0n ? 1 : 0);
-      if (change2 < 0n) {
-        throw new Error("inputCommitmentHexes total is insufficient for the requested payments");
-      }
-      if (change2 > maxUint645) {
-        throw new Error("inputCommitmentHexes would create change above the uint64 NoteV1 range");
-      }
-      if (outputCount2 > 32) {
-        throw new Error("inputCommitmentHexes would exceed the 32-output batch capacity");
-      }
-      const selection = Object.freeze({
-        inputs: Object.freeze([...planNotes]),
-        total: selectedTotal2,
-        isFinal: true,
-        needsZeroDummy: false
-      });
-      plan = {
-        ...plan,
-        facts: {
-          ...plan.facts,
-          selectedInputTotal: `${selectedTotal2}${batchDenom}`,
-          selectedInputTotalValue: selectedTotal2.toString()
-        },
-        selection,
-        selections: [selection]
-      };
-    }
     const transferProtocolConfig = await this.assertTransferProtocolConfig(denom ?? this.defaultDenom);
     const paymentPolicies = resolvedPayments.map((payment, index) => {
       const capabilities = assertTransferDisclosureCapabilities(transferProtocolConfig.disclosure_config, {
@@ -93220,6 +91881,7 @@ var ClairveilJS = class {
     if (!proverAdapter || typeof proverAdapter.proveBatchTransfer !== "function") {
       throw new Error("prepareTransferBatch requires a proverAdapter with proveBatchTransfer(payload)");
     }
+    const batchDenom = denom ?? this.defaultDenom;
     const resolvedDisableSelfViewDisclosure = disableSelfViewDisclosure ?? disable_self_view_disclosure ?? false;
     const coins = paymentPolicies.map((payment, index) => {
       const coin = parseCoin(payment.amount, batchDenom);
@@ -93418,6 +92080,18 @@ var ClairveilJS = class {
           } : void 0
         });
         assertHeartbeatHealthy();
+        const signDoc2 = await this.buildDirectSignDoc({
+          signer: privacy.address,
+          pubKeyHex: privacy.pubKeyHex,
+          gasLimit: resolvedGasLimit,
+          feeAmount: resolvedFeeAmount,
+          messages: [{
+            typeUrl: msgBatchTransferTypeUrl,
+            value: MsgBatchTransfer2.fromPartial(message2)
+          }],
+          memo: reservationBatch ? reservationRequiredCosmosMemo("Clairveil batch veiled transfer") : "Clairveil batch veiled transfer"
+        });
+        const signDocHash = cosmosSignDocBindingHash(signDoc2);
         const operationEvidence2 = buildBatchTransferOperationEvidence({
           payload: payload2,
           proof: proof2,
@@ -93428,34 +92102,12 @@ var ClairveilJS = class {
           shieldedPrefix: this.shieldedPrefix,
           nowUnix: resolvedNowUnix
         });
-        const artifact = await buildPreparedExecutionArtifact({
-          executionBuilder,
-          executionInput: {
-            payload: payload2,
-            proof: proof2,
-            message: message2,
-            operationEvidence: operationEvidence2.evidence,
-            operationEvidenceHash: operationEvidence2.evidenceHash,
-            reservation: reservationBatchSummary(reservationBatch)
-          },
-          buildSignDoc: () => this.buildDirectSignDoc({
-            signer: privacy.address,
-            pubKeyHex: privacy.pubKeyHex,
-            gasLimit,
-            feeAmount: resolvedFeeAmount,
-            messages: [{
-              typeUrl: msgBatchTransferTypeUrl,
-              value: MsgBatchTransfer2.fromPartial(message2)
-            }],
-            memo: reservationBatch ? reservationRequiredCosmosMemo("Clairveil batch veiled transfer") : "Clairveil batch veiled transfer"
-          })
-        });
         await heartbeatNow();
         await markReservationProofReadyForBatchItems(resolvedReservationManager, reservationBatch, [{
           notes: selectedInputs,
           metadata: {
             payloadHash: payload2.payload_hash,
-            ...artifact.executionBinding,
+            signDocHash,
             expectedOperationEvidenceHash: operationEvidence2.evidenceHash,
             operationSuccessEvidenceRequired: true,
             metadata: {
@@ -93463,7 +92115,6 @@ var ClairveilJS = class {
               batch_transfer_input_count: selectedInputs.length,
               batch_transfer_output_count: payload2.outputs.length,
               batch_transfer_output_mode: resolvedOutputMode,
-              input_nullifier_hexes: effects.nullifier_hexes,
               batch_transfer_nullifier_hexes: effects.nullifier_hexes,
               batch_transfer_output_commitment_hexes: effects.output_commitment_hexes,
               batch_transfer_operation_evidence: operationEvidence2.evidence,
@@ -93477,10 +92128,10 @@ var ClairveilJS = class {
           message: message2,
           operationEvidence: operationEvidence2.evidence,
           operationEvidenceHash: operationEvidence2.evidenceHash,
-          ...artifact.signDoc ? {
-            signDoc: markCosmosSignDocReservationRequired(artifact.signDoc, reservationBatch)
-          } : {},
-          ...artifact.execution ? { execution: artifact.execution } : {}
+          signDoc: markCosmosSignDocReservationRequired(
+            signDoc2,
+            reservationBatch
+          )
         };
       });
       const {
@@ -93488,7 +92139,6 @@ var ClairveilJS = class {
         proof,
         message,
         signDoc,
-        execution,
         operationEvidence,
         operationEvidenceHash
       } = heartbeatResult;
@@ -93497,8 +92147,7 @@ var ClairveilJS = class {
         status: "ready",
         plan,
         scan: scanResult,
-        ...signDoc ? { signDoc } : {},
-        ...execution ? { execution } : {},
+        signDoc,
         payload,
         proof,
         message,
@@ -93626,7 +92275,7 @@ var ClairveilJS = class {
     const transferProtocolConfig = await this.assertTransferProtocolConfig(resolvedDenom);
     assertPreparedBatchTransferMatchesActiveConfig(payload, transferProtocolConfig, resolvedDenom);
     const effects = preparedBatchTransferEffectHex(payload);
-    assertBatchTransferNullifiersUnspent(
+    batchTransferNullifiersUnspent(
       await this.checkNullifiers(effects.nullifier_hexes),
       effects.nullifier_hexes
     );
@@ -93644,7 +92293,7 @@ var ClairveilJS = class {
       operationId: resolvedOperationID,
       reservation: resolvedReservation
     });
-    assertBatchTransferNullifiersUnspent(
+    batchTransferNullifiersUnspent(
       await this.checkNullifiers(effects.nullifier_hexes),
       effects.nullifier_hexes
     );
@@ -93664,9 +92313,9 @@ var ClairveilJS = class {
   /**
    * Complete the local stage after a checkpointed batch proof has been
    * restored. This derives the message and operation evidence from the exact
-   * payload/proof, creates either the reservation-bound Cosmos sign doc or a
-   * caller-supplied execution artifact, and atomically advances every reserved
-   * input to ProofReady. It performs no broadcast request.
+   * payload/proof, creates the reservation-bound sign doc, and atomically
+   * advances every reserved input to ProofReady. It performs no wallet or
+   * broadcast request.
    */
   async finalizePreparedBatchTransfer({
     payload,
@@ -93674,6 +92323,7 @@ var ClairveilJS = class {
     signer,
     pubKeyHex,
     gasLimit,
+    gas_limit,
     feeAmount,
     fee_amount,
     memo = "Clairveil batch veiled transfer",
@@ -93698,15 +92348,12 @@ var ClairveilJS = class {
     reservationBatch,
     reservation_batch,
     chainNowUnix,
-    chain_now_unix,
-    executionBuilder
+    chain_now_unix
   } = {}) {
     if (!this.enableExperimentalBatchTransfer) {
       throw new Error("one-proof batch transfer is feature-gated; construct the client with enableExperimentalBatchTransfer: true after completing downstream conformance and localnet validation");
     }
-    if (executionBuilder != null && typeof executionBuilder !== "function") {
-      throw new Error("executionBuilder must be a function");
-    }
+    const resolvedGasLimit = resolveCosmosGasLimit(gasLimit, gas_limit, 25e6);
     const resolvedFeeAmount = resolveCosmosFeeAmount(feeAmount, fee_amount);
     if (operationId != null && operation_id != null && String(operationId) !== String(operation_id)) {
       throw new Error("operationId aliases conflict");
@@ -93739,16 +92386,8 @@ var ClairveilJS = class {
     if (reservationOperationID && reservationOperationID !== resolvedOperationID) {
       throw new Error("prepared batch transfer operationId does not match the reservation batch");
     }
-    const currentReservations = typeof resolvedReservationManager.getReservations === "function" ? await resolvedReservationManager.getReservations(resolvedReservation.reservation_ids) : resolvedReservation.reservations || [];
-    if (currentReservations.some((item) => item.status === reservationStatuses.ManualReview)) {
-      throw new Error("ManualReview reservations require operator resolution before a new batch proof can be finalized");
-    }
     const resolvedSigner = String(signer || "").trim();
-    if (!resolvedSigner) {
-      throw new Error(
-        executionBuilder ? "finalizePreparedBatchTransfer requires the original batch creator" : "finalizePreparedBatchTransfer requires the original Cosmos signer"
-      );
-    }
+    if (!resolvedSigner) throw new Error("finalizePreparedBatchTransfer requires the original Cosmos signer");
     const resolvedNowUnix = normalizedBatchNowUnix(
       chainNowUnix ?? chain_now_unix ?? Math.floor(Date.now() / 1e3)
     );
@@ -93826,41 +92465,35 @@ var ClairveilJS = class {
       shieldedPrefix: this.shieldedPrefix,
       nowUnix: resolvedNowUnix
     });
+    const signDoc = await this.createBatchTransferSignDoc({
+      signer: resolvedSigner,
+      pubKeyHex,
+      gasLimit: resolvedGasLimit,
+      feeAmount: resolvedFeeAmount,
+      message,
+      memo,
+      expectedCircuitIdentity: transferProtocolConfig.circuit_config.circuit_set_identity,
+      chainNowUnix: resolvedNowUnix
+    });
     const effects = preparedBatchTransferEffectHex(payload);
-    if (resolvedReservation.reservation_ids.length !== effects.nullifier_hexes.length) {
-      throw new Error("prepared batch transfer reservation count does not match its input nullifiers");
-    }
-    assertBatchTransferNullifiersUnspent(
+    const authoritativeReservation = await authoritativeBatchRecoveryReservation(
+      resolvedReservationManager,
+      resolvedReservation,
+      {
+        operationId: resolvedOperationID,
+        nullifierHexes: effects.nullifier_hexes
+      }
+    );
+    batchTransferNullifiersUnspent(
       await this.checkNullifiers(effects.nullifier_hexes),
       effects.nullifier_hexes
     );
-    const artifact = await buildPreparedExecutionArtifact({
-      executionBuilder,
-      executionInput: {
-        payload,
-        proof: normalizedProof,
-        message,
-        operationEvidence: operationEvidence.evidence,
-        operationEvidenceHash: operationEvidence.evidenceHash,
-        reservation: reservationBatchSummary(resolvedReservation)
-      },
-      buildSignDoc: () => this.createBatchTransferSignDoc({
-        signer: resolvedSigner,
-        pubKeyHex,
-        gasLimit,
-        feeAmount: resolvedFeeAmount,
-        message,
-        memo,
-        expectedCircuitIdentity: transferProtocolConfig.circuit_config.circuit_set_identity,
-        chainNowUnix: resolvedNowUnix
-      })
-    });
     const persistedOutputMode = String(
-      resolvedReservation.reservations?.[0]?.metadata?.batch_transfer_output_mode || (payload.outputs.length === 32 ? "exact32" : "compact")
+      authoritativeReservation.reservations?.[0]?.metadata?.batch_transfer_output_mode || (payload.outputs.length === 32 ? "exact32" : "compact")
     );
-    await markReservationProofReady(resolvedReservationManager, resolvedReservation, {
+    await markReservationProofReady(resolvedReservationManager, authoritativeReservation, {
       payloadHash: payload.payload_hash,
-      ...artifact.executionBinding,
+      signDocHash: cosmosSignDocBindingHash(signDoc),
       expectedOperationEvidenceHash: operationEvidence.evidenceHash,
       operationSuccessEvidenceRequired: true,
       metadata: {
@@ -93868,7 +92501,6 @@ var ClairveilJS = class {
         batch_transfer_input_count: effects.nullifier_hexes.length,
         batch_transfer_output_count: payload.outputs.length,
         batch_transfer_output_mode: persistedOutputMode,
-        input_nullifier_hexes: effects.nullifier_hexes,
         batch_transfer_nullifier_hexes: effects.nullifier_hexes,
         batch_transfer_output_commitment_hexes: effects.output_commitment_hexes,
         batch_transfer_operation_evidence: operationEvidence.evidence,
@@ -93882,11 +92514,8 @@ var ClairveilJS = class {
       effects,
       operationEvidence: operationEvidence.evidence,
       operationEvidenceHash: operationEvidence.evidenceHash,
-      ...artifact.signDoc ? {
-        signDoc: markCosmosSignDocReservationRequired(artifact.signDoc, resolvedReservation)
-      } : {},
-      ...artifact.execution ? { execution: artifact.execution } : {},
-      reservation: reservationBatchSummary(resolvedReservation)
+      signDoc: markCosmosSignDocReservationRequired(signDoc, authoritativeReservation),
+      reservation: reservationBatchSummary(authoritativeReservation)
     };
   }
   async prepareWithdraw({
@@ -93906,7 +92535,7 @@ var ClairveilJS = class {
     after_sequence,
     page,
     limit = 200,
-    maxPages,
+    maxPages = defaultPrepareScanMaxPages,
     max_pages,
     eventTypes,
     event_types,
@@ -93921,7 +92550,6 @@ var ClairveilJS = class {
     strictPrivacyScan,
     strict_privacy_scan,
     expiresAtUnix,
-    expires_at_unix,
     chainNowUnix,
     chain_now_unix,
     gasLimit,
@@ -93929,27 +92557,13 @@ var ClairveilJS = class {
     feeAmount,
     fee_amount,
     reservationManager: reservationManager2,
-    reservation_manager,
-    executionBuilder
+    reservation_manager
   } = {}) {
-    if (executionBuilder != null && typeof executionBuilder !== "function") {
-      throw new Error("executionBuilder must be a function");
-    }
+    const resolvedReservationManager = reservationManager2 ?? reservation_manager ?? null;
     const resolvedGasLimit = resolveCosmosGasLimit(gasLimit, gas_limit, 5e6);
     const resolvedFeeAmount = resolveCosmosFeeAmount(feeAmount, fee_amount);
-    const resolvedExpiresAtUnix = resolveUnixTimestampAlias(
-      expiresAtUnix,
-      expires_at_unix,
-      "expiresAtUnix"
-    );
-    const resolvedChainNowUnix = resolveUnixTimestampAlias(
-      chainNowUnix,
-      chain_now_unix,
-      "chainNowUnix"
-    );
-    const resolvedReservationManager = reservationManager2 ?? reservation_manager ?? null;
     const privacy = material || await this.deriveWalletPrivacyMaterial(wallet);
-    const scanOptions = resolveWalletScanOptions({
+    const scanOptions = resolveScanOptions({
       scan,
       after,
       afterHeight,
@@ -93978,7 +92592,6 @@ var ClairveilJS = class {
       ...scanOptions,
       limit: scanOptions.limit ?? 200,
       maxPages: scanOptions.maxPages ?? defaultPrepareScanMaxPages,
-      allowInitialPrivacyScanFallback: true,
       includeFoundNotes: true
     });
     const availableFoundNotes = await reservationAvailableNotes(resolvedReservationManager, scanResult.foundNotes);
@@ -94017,65 +92630,50 @@ var ClairveilJS = class {
           recipient,
           rootSeed: privacy.rootSeed,
           chainId: this.chainId,
-          expiresAtUnix: resolvedExpiresAtUnix,
-          chainNowUnix: resolvedChainNowUnix,
+          expiresAtUnix,
+          chainNowUnix: chainNowUnix ?? chain_now_unix,
           signal
         });
         assertHeartbeatHealthy();
-        const artifact = await buildPreparedExecutionArtifact({
-          executionBuilder,
-          executionInput: {
-            payload: built2.payload,
-            proof: built2.proof,
-            proverPayload: built2.proverPayload,
-            selectedNote: built2.selectedNote,
-            message: built2.message,
-            plan,
-            reservation: reservationBatchSummary(reservationBatch)
-          },
-          buildSignDoc: () => this.buildDirectSignDoc({
-            signer: privacy.address,
-            pubKeyHex: privacy.pubKeyHex,
-            gasLimit: resolvedGasLimit,
-            feeAmount: resolvedFeeAmount,
-            messages: [
-              {
-                typeUrl: msgWithdrawTypeUrl,
-                value: built2.message
-              }
-            ],
-            memo: reservationBatch ? reservationRequiredCosmosMemo("Clairveil veiled withdraw") : "Clairveil veiled withdraw"
-          })
+        const signDoc2 = await this.buildDirectSignDoc({
+          signer: privacy.address,
+          pubKeyHex: privacy.pubKeyHex,
+          gasLimit: resolvedGasLimit,
+          feeAmount: resolvedFeeAmount,
+          messages: [
+            {
+              typeUrl: msgWithdrawTypeUrl,
+              value: built2.message
+            }
+          ],
+          memo: reservationBatch ? reservationRequiredCosmosMemo("Clairveil veiled withdraw") : "Clairveil veiled withdraw"
         });
+        const signDocHash = cosmosSignDocBindingHash(signDoc2);
         await heartbeatNow();
         await markReservationProofReady(
           resolvedReservationManager,
           reservationBatch,
           withdrawProofReadyMetadata(built2, {
-            ...artifact.executionBinding,
+            signDocHash,
             accountPrefix: this.accountPrefix,
             bindOperationSuccess: Boolean(reservationBatch)
           })
         );
         return {
           built: built2,
-          ...artifact.signDoc ? {
-            signDoc: markCosmosSignDocReservationRequired(
-              artifact.signDoc,
-              reservationBatch
-            )
-          } : {},
-          ...artifact.execution ? { execution: artifact.execution } : {}
+          signDoc: markCosmosSignDocReservationRequired(
+            signDoc2,
+            reservationBatch
+          )
         };
       });
-      const { built, signDoc, execution } = heartbeatResult;
+      const { built, signDoc } = heartbeatResult;
       return {
         ...reservationReconciliationFields(heartbeatResult),
         status: "ready",
         plan,
         scan: scanResult,
-        ...signDoc ? { signDoc } : {},
-        ...execution ? { execution } : {},
+        signDoc,
         proverPayload: built.proverPayload,
         proof: built.proof,
         payload: built.payload,
@@ -94106,7 +92704,7 @@ var ClairveilJS = class {
     after_sequence,
     page,
     limit = 200,
-    maxPages,
+    maxPages = defaultPrepareScanMaxPages,
     max_pages,
     eventTypes,
     event_types,
@@ -94121,26 +92719,14 @@ var ClairveilJS = class {
     strictPrivacyScan,
     strict_privacy_scan,
     expiresAtUnix,
-    expires_at_unix,
     chainNowUnix,
     chain_now_unix,
     reservationManager: reservationManager2,
-    reservation_manager,
-    executionBuilder
+    reservation_manager
   } = {}) {
-    const resolvedExpiresAtUnix = resolveUnixTimestampAlias(
-      expiresAtUnix,
-      expires_at_unix,
-      "expiresAtUnix"
-    );
-    const resolvedChainNowUnix = resolveUnixTimestampAlias(
-      chainNowUnix,
-      chain_now_unix,
-      "chainNowUnix"
-    );
     const resolvedReservationManager = reservationManager2 ?? reservation_manager ?? null;
     const privacy = material || await this.deriveWalletPrivacyMaterial(wallet);
-    const scanOptions = resolveWalletScanOptions({
+    const scanOptions = resolveScanOptions({
       scan,
       after,
       afterHeight,
@@ -94169,7 +92755,6 @@ var ClairveilJS = class {
       ...scanOptions,
       limit: scanOptions.limit ?? 200,
       maxPages: scanOptions.maxPages ?? defaultPrepareScanMaxPages,
-      allowInitialPrivacyScanFallback: true,
       includeFoundNotes: true
     });
     const availableFoundNotes = await reservationAvailableNotes(resolvedReservationManager, scanResult.foundNotes);
@@ -94203,47 +92788,23 @@ var ClairveilJS = class {
           recipient,
           rootSeed: privacy.rootSeed,
           chainId: this.chainId,
-          expiresAtUnix: resolvedExpiresAtUnix,
-          chainNowUnix: resolvedChainNowUnix,
+          expiresAtUnix,
+          chainNowUnix: chainNowUnix ?? chain_now_unix,
           signal
         });
         assertHeartbeatHealthy();
-        let artifact = null;
-        if (executionBuilder) {
-          artifact = await buildPreparedExecutionArtifact({
-            executionBuilder,
-            executionInput: {
-              payload: built2.payload,
-              proof: built2.proof,
-              proverPayload: built2.proverPayload,
-              selectedNote: built2.selectedNote,
-              plan,
-              reservation: reservationBatchSummary(reservationBatch)
-            },
-            // A relayed Cosmos withdrawal remains a payload handoff until the
-            // relayer is known. This callback is unreachable when the optional
-            // execution builder is present and documents that boundary.
-            buildSignDoc: () => {
-              throw new Error("relay withdraw execution preparation requires executionBuilder");
-            }
-          });
-        }
         await heartbeatNow();
         await markReservationProofReady(
           resolvedReservationManager,
           reservationBatch,
           withdrawProofReadyMetadata(built2, {
-            ...artifact?.executionBinding || {},
             accountPrefix: this.accountPrefix,
             bindOperationSuccess: Boolean(reservationBatch)
           })
         );
-        return {
-          built: built2,
-          ...artifact?.execution ? { execution: artifact.execution } : {}
-        };
+        return { built: built2 };
       });
-      const { built, execution } = heartbeatResult;
+      const { built } = heartbeatResult;
       return {
         ...reservationReconciliationFields(heartbeatResult),
         status: "ready",
@@ -94253,7 +92814,6 @@ var ClairveilJS = class {
         proof: built.proof,
         payload: built.payload,
         selectedNote: built.selectedNote,
-        ...execution ? { execution } : {},
         reservation: reservationBatchSummary(reservationBatch),
         privacyAccount: publicPrivacyAccount(privacy)
       };
@@ -94266,31 +92826,24 @@ var ClairveilJS = class {
     return this.prepareDeposit(input);
   }
   async createTransferSignDoc(input) {
-    if (input?.executionBuilder != null) {
-      throw new Error("createTransferSignDoc does not accept executionBuilder");
-    }
     const result = await this.prepareTransfer(input);
     if (result.status !== "ready") {
       throw new Error(result.plan?.message || `transfer is not ready: ${result.status}`);
     }
-    if (!result.signDoc) throw new Error("transfer preparation did not produce a Cosmos sign doc");
     return result;
   }
   async createTransferBatchSignDoc(input) {
-    if (input?.executionBuilder != null) {
-      throw new Error("createTransferBatchSignDoc does not accept executionBuilder");
-    }
     const result = await this.prepareTransferBatch(input);
     if (result.status !== "ready") {
       throw new Error(result.plan?.message || `transfer batch is not ready: ${result.status}`);
     }
-    if (!result.signDoc) throw new Error("transfer batch preparation did not produce a Cosmos sign doc");
     return result;
   }
   async createBatchTransferSignDoc({
     signer,
     pubKeyHex,
     gasLimit,
+    gas_limit,
     feeAmount,
     fee_amount,
     message,
@@ -94302,10 +92855,11 @@ var ClairveilJS = class {
     if (!this.enableExperimentalBatchTransfer) {
       throw new Error("one-proof batch transfer is feature-gated; construct the client with enableExperimentalBatchTransfer: true after completing downstream conformance and localnet validation");
     }
+    const resolvedGasLimit = resolveCosmosGasLimit(gasLimit, gas_limit, 25e6);
+    const resolvedFeeAmount = resolveCosmosFeeAmount(feeAmount, fee_amount);
     if (!message || typeof message !== "object") {
       throw new Error("MsgBatchTransfer message is required");
     }
-    const resolvedFeeAmount = resolveCosmosFeeAmount(feeAmount, fee_amount);
     if (chainNowUnix != null && chain_now_unix != null && Number(chainNowUnix) !== Number(chain_now_unix)) {
       throw new Error("batch transfer chainNowUnix aliases conflict");
     }
@@ -94333,7 +92887,7 @@ var ClairveilJS = class {
     return this.buildDirectSignDoc({
       signer,
       pubKeyHex,
-      gasLimit,
+      gasLimit: resolvedGasLimit,
       feeAmount: resolvedFeeAmount,
       messages: [{
         typeUrl: msgBatchTransferTypeUrl,
@@ -94343,14 +92897,10 @@ var ClairveilJS = class {
     });
   }
   async createWithdrawSignDoc(input) {
-    if (input?.executionBuilder != null) {
-      throw new Error("createWithdrawSignDoc does not accept executionBuilder");
-    }
     const result = await this.prepareWithdraw(input);
     if (result.status !== "ready") {
       throw new Error(result.plan?.message || `withdraw is not ready: ${result.status}`);
     }
-    if (!result.signDoc) throw new Error("withdraw preparation did not produce a Cosmos sign doc");
     return result;
   }
   async createRelayWithdrawPayload(input) {
@@ -94499,62 +93049,19 @@ var ClairveilJS = class {
     signature_base64,
     skipSignerPubKeyCheck,
     skip_signer_pubkey_check,
-    disclosureScalar,
-    disclosure_scalar,
-    disclosureScalarHex,
-    disclosure_scalar_hex,
-    disclosurePubKeyHex,
-    disclosure_pubkey_hex,
     assetDenom,
     asset_denom,
     ...eventQuery
   }) {
+    const selectedOutput = output ?? scanOutput2;
+    const normalizedTxHash4 = String(txHash ?? tx_hash ?? "").trim().toUpperCase();
+    const event = selectedOutput ? null : await this.findPrivacyEventByTxHash(normalizedTxHash4, eventQuery);
     const disclosureAssetDenom = resolveDisclosureAssetDenom(assetDenom, asset_denom, this.defaultDenom);
-    const selectedOutput = resolveDisclosureOutputAlias(output, scanOutput2, "disclosure output");
-    const normalizedTxHash4 = selectedOutput && txHash == null && tx_hash == null ? void 0 : normalizedCosmosTxHash(txHash ?? tx_hash);
-    if (selectedOutput) {
-      const mode = selectedOutput.userDisclosureMode ?? selectedOutput.user_disclosure_mode;
-      const isPublic = mode === 1 || mode === "1" || mode === "USER_DISCLOSURE_MODE_PUBLIC";
-      if (isPublic) {
-        return decodeUserDisclosureFromScanOutput(selectedOutput, {
-          txHash: normalizedTxHash4,
-          shieldedPrefix: this.shieldedPrefix,
-          assetDenom: disclosureAssetDenom
-        });
-      }
-      const directScalar = disclosureScalar ?? disclosure_scalar;
-      const directScalarHex = disclosureScalarHex ?? disclosure_scalar_hex;
-      const directPubKey = disclosurePubKeyHex ?? disclosure_pubkey_hex;
-      if (directScalar != null || directScalarHex != null || directPubKey != null) {
-        return decodeUserDisclosureFromScanOutput(selectedOutput, {
-          disclosureScalar: directScalar != null ? directScalar : disclosureScalarFromHex(directScalarHex),
-          disclosurePubKeyHex: directPubKey,
-          txHash: normalizedTxHash4,
-          shieldedPrefix: this.shieldedPrefix,
-          assetDenom: disclosureAssetDenom
-        });
-      }
-      const signerPubKeyHex2 = pubKeyHex ?? pub_key_hex;
-      const skipSignerCheck2 = Boolean(skipSignerPubKeyCheck ?? skip_signer_pubkey_check);
-      if (!skipSignerCheck2) assertSignerPubKey(address, signerPubKeyHex2, this.bech32Prefix);
-      const material2 = derivePrivacyMaterial({
-        address,
-        pubKeyHex: signerPubKeyHex2,
-        signatureBase64: signatureBase64 ?? signature_base64,
-        shieldedPrefix: this.shieldedPrefix
-      });
-      return decodeUserDisclosureFromScanOutput(selectedOutput, {
-        disclosureScalar: material2.disclosureScalar,
-        disclosurePubKeyHex: material2.disclosurePubKeyHex,
-        txHash: normalizedTxHash4,
-        shieldedPrefix: this.shieldedPrefix,
-        assetDenom: disclosureAssetDenom
-      });
-    }
-    const event = await this.findPrivacyEventByTxHash(normalizedTxHash4, eventQuery);
-    if (eventAttribute3(event, "user_disclosure_mode") === "USER_DISCLOSURE_MODE_PUBLIC") {
-      return decodeUserDisclosureFromEvent(
-        event,
+    const publicMode = selectedOutput ? (selectedOutput.userDisclosureMode ?? selectedOutput.user_disclosure_mode) === "USER_DISCLOSURE_MODE_PUBLIC" : eventAttribute3(event, "user_disclosure_mode") === "USER_DISCLOSURE_MODE_PUBLIC";
+    if (publicMode) {
+      const decode2 = selectedOutput ? decodeUserDisclosureFromScanOutput : decodeUserDisclosureFromEvent;
+      return decode2(
+        selectedOutput ?? event,
         1n,
         "",
         normalizedTxHash4,
@@ -94572,8 +93079,9 @@ var ClairveilJS = class {
       signatureBase64: signatureBase64 ?? signature_base64,
       shieldedPrefix: this.shieldedPrefix
     });
-    return decodeUserDisclosureFromEvent(
-      event,
+    const decode = selectedOutput ? decodeUserDisclosureFromScanOutput : decodeUserDisclosureFromEvent;
+    return decode(
+      selectedOutput ?? event,
       material.disclosureScalar,
       material.disclosurePubKeyHex,
       normalizedTxHash4,
@@ -94600,23 +93108,16 @@ var ClairveilJS = class {
     asset_denom,
     ...eventQuery
   }) {
+    const selectedOutput = output ?? scanOutput2;
+    const normalizedTxHash4 = String(txHash ?? tx_hash ?? "").trim().toUpperCase();
+    const event = selectedOutput ? null : await this.findPrivacyEventByTxHash(normalizedTxHash4, eventQuery);
     const disclosureAssetDenom = resolveDisclosureAssetDenom(assetDenom, asset_denom, this.defaultDenom);
     const directScalar = disclosureScalar ?? disclosure_scalar;
     const directScalarHex = disclosureScalarHex ?? disclosure_scalar_hex;
-    const selectedOutput = resolveDisclosureOutputAlias(output, scanOutput2, "disclosure output");
-    const normalizedTxHash4 = selectedOutput && txHash == null && tx_hash == null ? void 0 : normalizedCosmosTxHash(txHash ?? tx_hash);
-    if (selectedOutput && (directScalar != null || directScalarHex != null)) {
-      return decodeSelfViewDisclosureFromScanOutput(selectedOutput, {
-        disclosureScalar: directScalar != null ? directScalar : disclosureScalarFromHex(directScalarHex),
-        txHash: normalizedTxHash4,
-        shieldedPrefix: this.shieldedPrefix,
-        assetDenom: disclosureAssetDenom
-      });
-    }
     if (directScalar != null || directScalarHex != null) {
-      const event2 = await this.findPrivacyEventByTxHash(normalizedTxHash4, eventQuery);
-      return decodeSelfViewDisclosureFromEvent(
-        event2,
+      const decode2 = selectedOutput ? decodeSelfViewDisclosureFromScanOutput : decodeSelfViewDisclosureFromEvent;
+      return decode2(
+        selectedOutput ?? event,
         directScalar != null ? directScalar : disclosureScalarFromHex(directScalarHex),
         normalizedTxHash4,
         { shieldedPrefix: this.shieldedPrefix, assetDenom: disclosureAssetDenom }
@@ -94633,17 +93134,9 @@ var ClairveilJS = class {
       signatureBase64: signatureBase64 ?? signature_base64,
       shieldedPrefix: this.shieldedPrefix
     });
-    if (selectedOutput) {
-      return decodeSelfViewDisclosureFromScanOutput(selectedOutput, {
-        disclosureScalar: material.disclosureScalar,
-        txHash: normalizedTxHash4,
-        shieldedPrefix: this.shieldedPrefix,
-        assetDenom: disclosureAssetDenom
-      });
-    }
-    const event = await this.findPrivacyEventByTxHash(normalizedTxHash4, eventQuery);
-    return decodeSelfViewDisclosureFromEvent(
-      event,
+    const decode = selectedOutput ? decodeSelfViewDisclosureFromScanOutput : decodeSelfViewDisclosureFromEvent;
+    return decode(
+      selectedOutput ?? event,
       material.disclosureScalar,
       normalizedTxHash4,
       { shieldedPrefix: this.shieldedPrefix, assetDenom: disclosureAssetDenom }
@@ -94660,20 +93153,13 @@ var ClairveilJS = class {
     asset_denom,
     ...eventQuery
   }) {
+    const selectedOutput = output ?? scanOutput2;
+    const normalizedTxHash4 = String(txHash ?? tx_hash ?? "").trim().toUpperCase();
+    const event = selectedOutput ? null : await this.findPrivacyEventByTxHash(normalizedTxHash4, eventQuery);
     const disclosureAssetDenom = resolveDisclosureAssetDenom(assetDenom, asset_denom, this.defaultDenom);
-    const selectedOutput = resolveDisclosureOutputAlias(output, scanOutput2, "disclosure output");
-    const normalizedTxHash4 = selectedOutput && txHash == null && tx_hash == null ? void 0 : normalizedCosmosTxHash(txHash ?? tx_hash);
-    if (selectedOutput) {
-      return decodeAuditDisclosureFromScanOutput(selectedOutput, {
-        disclosureScalar: disclosureScalarFromHex(disclosurePrivKeyHex ?? disclosure_privkey_hex),
-        txHash: normalizedTxHash4,
-        shieldedPrefix: this.shieldedPrefix,
-        assetDenom: disclosureAssetDenom
-      });
-    }
-    const event = await this.findPrivacyEventByTxHash(normalizedTxHash4, eventQuery);
-    return decodeAuditDisclosureFromEvent(
-      event,
+    const decode = selectedOutput ? decodeAuditDisclosureFromScanOutput : decodeAuditDisclosureFromEvent;
+    return decode(
+      selectedOutput ?? event,
       disclosureScalarFromHex(disclosurePrivKeyHex ?? disclosure_privkey_hex),
       normalizedTxHash4,
       { shieldedPrefix: this.shieldedPrefix, assetDenom: disclosureAssetDenom }
@@ -94706,7 +93192,7 @@ var ClairveilJS = class {
     assetDenom,
     asset_denom
   } = {}) {
-    const selectedOutput = resolveDisclosureOutputAlias(output, scanOutput2, "batch disclosure output");
+    const selectedOutput = output ?? scanOutput2;
     if (!selectedOutput) throw new Error("Batch user disclosure requires a PrivacyScanOutputV2 output");
     const mode = selectedOutput.userDisclosureMode ?? selectedOutput.user_disclosure_mode;
     const isPublic = mode === 1 || mode === "1" || mode === "USER_DISCLOSURE_MODE_PUBLIC";
@@ -94761,7 +93247,7 @@ var ClairveilJS = class {
     assetDenom,
     asset_denom
   } = {}) {
-    const selectedOutput = resolveDisclosureOutputAlias(output, scanOutput2, "batch disclosure output");
+    const selectedOutput = output ?? scanOutput2;
     if (!selectedOutput) throw new Error("Batch self-view disclosure requires a PrivacyScanOutputV2 output");
     const common = {
       txHash: txHash ?? tx_hash,
@@ -94805,7 +93291,7 @@ var ClairveilJS = class {
     assetDenom,
     asset_denom
   } = {}) {
-    const selectedOutput = resolveDisclosureOutputAlias(output, scanOutput2, "batch disclosure output");
+    const selectedOutput = output ?? scanOutput2;
     if (!selectedOutput) throw new Error("Batch audit disclosure requires a PrivacyScanOutputV2 output");
     const directScalar = disclosureScalar ?? disclosure_scalar;
     const directScalarHex = disclosureScalarHex ?? disclosure_scalar_hex;
@@ -94875,12 +93361,12 @@ var ClairveilJS = class {
       signDocHash
     });
     const client = await this.connect();
-    await recheckReservedBatchTransferSignedNullifiers(
+    await recheckReservedBatchTransferNullifiers(
       reservationContext,
       signedTx,
       (nullifiers) => this.checkNullifiers(nullifiers)
     );
-    await recheckReservedDirectPrivacySignedNullifiers(
+    await recheckReservedDirectPrivacyNullifiers(
       reservationContext,
       signedTx,
       (nullifiers) => this.checkNullifiers(nullifiers)
@@ -94922,7 +93408,8 @@ var ClairveilJS = class {
         await markBroadcastReservationRejected(reservationContext, wrapped2, {
           kind: "check_tx",
           providerCode: error.code,
-          providerCodespace: error.codespace
+          providerCodespace: error.codespace,
+          providerLog: error.log || ""
         });
         throw wrapped2;
       }
@@ -94934,7 +93421,7 @@ var ClairveilJS = class {
       throw wrapped;
     }
     try {
-      const normalizedRpcTxHash = normalizedBroadcastTxHash(rpcTxHash);
+      const normalizedRpcTxHash = normalizedCosmosTxHash(rpcTxHash);
       if (rpcTxHash && normalizedRpcTxHash !== signedTxHash) {
         const error = new Error("Cosmos broadcast returned a transaction hash that does not match the signed TxRaw bytes");
         error.code = "COSMOS_TX_HASH_MISMATCH";
@@ -94944,7 +93431,7 @@ var ClairveilJS = class {
       txhash = signedTxHash;
       tx = await this.waitForTx(txhash, waitOptions);
       if (tx) {
-        const indexedTxHash = normalizedBroadcastTxHash(tx.txhash);
+        const indexedTxHash = normalizedCosmosTxHash(tx.txhash);
         if (!indexedTxHash || indexedTxHash !== signedTxHash) {
           const error = new Error("Indexed Cosmos transaction hash does not match the signed TxRaw bytes");
           error.code = "COSMOS_TX_HASH_MISMATCH";
@@ -95064,18 +93551,47 @@ var ClairveilJS = class {
       signDocHash: signedTxSignDocHash
     });
     const txRawBytes = this.buildTxRawBytes(signedTx);
+    const txBytesHash = sha256Hex(txRawBytes);
     return Object.freeze({
       signedTx: Object.freeze({ ...signedTx }),
       txRawBytes: Uint8Array.from(txRawBytes),
-      txHash: sha256Hex(txRawBytes).toUpperCase(),
-      txBytesHash: sha256Hex(txRawBytes),
+      txHash: txBytesHash.toUpperCase(),
+      txBytesHash,
       signDocHash: signedTxSignDocHash
     });
   }
   async signDirectAndBroadcast(input = {}) {
-    const checkpoint = await this.signDirect(input);
-    const { broadcastOptions } = directBroadcastContext(input);
-    return this.broadcastTxRawBytes(checkpoint.txRawBytes, broadcastOptions);
+    const {
+      reservation,
+      reservationContext,
+      broadcastOptions
+    } = directBroadcastContext(input);
+    const signAndBroadcast = async ({ assertHeartbeatHealthy, heartbeatNow }) => {
+      const checkpoint = await this.signDirect(input);
+      await heartbeatNow();
+      assertHeartbeatHealthy();
+      return this.broadcastTxRawBytes(checkpoint.txRawBytes, broadcastOptions);
+    };
+    if (!reservationContext) {
+      return signAndBroadcast({
+        assertHeartbeatHealthy() {
+        },
+        async heartbeatNow() {
+        }
+      });
+    }
+    if (typeof reservationContext.reservationManager.renewLease !== "function") {
+      throw new Error("reservationManager.renewLease is required to keep the Cosmos reservation lease alive through wallet signing and broadcast");
+    }
+    return withReservationHeartbeat(
+      reservationContext.reservationManager,
+      reservation,
+      signAndBroadcast,
+      {
+        acceptBroadcastTerminal: true,
+        phase: "wallet signing and broadcast"
+      }
+    );
   }
 };
 function createClairveilClient(options) {
@@ -95085,302 +93601,31 @@ function createClairveilClient(options) {
 // node_modules/clairveiljs/src/transport/evm.js
 var import_encoding5 = __toESM(require_build(), 1);
 var import_js_sha32 = __toESM(require_sha3(), 1);
-
-// node_modules/clairveiljs/src/transport/evm-finality.js
-var transactionHashPattern = /^0x[0-9a-fA-F]{64}$/;
-var blockHashPattern = /^0x[0-9a-fA-F]{64}$/;
-var quantityPattern = /^0x[0-9a-fA-F]+$/;
-var terminalCanonicalConflict = /* @__PURE__ */ Symbol("clairveil.evm-finality-terminal-canonical-conflict");
-var evmFinalityModes = Object.freeze([
-  "receipt",
-  "confirmations",
-  "safe",
-  "finalized",
-  "custom"
-]);
-function transactionHash(value, label = "EVM transaction hash") {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (!transactionHashPattern.test(normalized)) {
-    throw new Error(`${label} must be a 32-byte 0x-prefixed hash`);
-  }
-  return normalized;
-}
-function blockHash(value, label = "EVM block hash") {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (!blockHashPattern.test(normalized)) {
-    throw new Error(`${label} must be a 32-byte 0x-prefixed hash`);
-  }
-  return normalized;
-}
-function quantity(value, label) {
-  const normalized = String(value ?? "").trim();
-  if (!quantityPattern.test(normalized)) {
-    throw new Error(`${label} must be an EVM quantity`);
-  }
-  return BigInt(normalized);
-}
-function canonicalQuantity(value) {
-  return `0x${value.toString(16)}`;
-}
-function positiveInteger(value, label) {
-  const normalized = Number(value);
-  if (!Number.isSafeInteger(normalized) || normalized < 1) {
-    throw new Error(`${label} must be a positive safe integer`);
-  }
-  return normalized;
-}
-function receiptSucceeded(status) {
-  try {
-    return quantity(status, "EVM receipt status") === 1n;
-  } catch {
-    return false;
-  }
-}
-function sleep3(ms) {
-  return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
-}
-function canonicalConflict(message) {
-  const error = new Error(message);
-  Object.defineProperty(error, terminalCanonicalConflict, { value: true });
-  return error;
-}
-function createEvmFinalityPolicy(input) {
-  const policy = typeof input === "string" ? { mode: input } : input;
-  if (!policy || typeof policy !== "object") {
-    throw new TypeError("evmFinalityPolicy must be a policy object or mode string");
-  }
-  const customWait = policy.waitForFinality ?? policy.wait_for_finality;
-  const mode = String(policy.mode ?? (typeof customWait === "function" ? "custom" : "")).trim();
-  if (!mode) {
-    throw new TypeError("evmFinalityPolicy.mode is required");
-  }
-  if (!evmFinalityModes.includes(mode)) {
-    throw new Error(`unsupported EVM finality mode ${JSON.stringify(mode)}`);
-  }
-  if (mode === "custom") {
-    if (typeof customWait !== "function") {
-      throw new TypeError("custom EVM finality policy requires waitForFinality");
-    }
-    return Object.freeze({ mode, waitForFinality: customWait.bind(policy) });
-  }
-  if (customWait != null) {
-    throw new TypeError("waitForFinality is only permitted for custom EVM finality policies");
-  }
-  if (mode === "confirmations") {
-    return Object.freeze({
-      mode,
-      confirmations: positiveInteger(policy.confirmations, "evmFinalityPolicy.confirmations")
-    });
-  }
-  if (policy.confirmations != null) {
-    throw new TypeError("confirmations is only permitted for confirmations finality mode");
-  }
-  return Object.freeze({ mode });
-}
-function failure(policy, txHashValue, error, fields = {}) {
-  return Object.freeze({
-    verified: false,
-    mode: policy.mode,
-    txHash: txHashValue,
-    ...fields,
-    error: String(error?.message || error || "EVM finality verification failed")
-  });
-}
-function receiptBlockIdentity(receipt) {
-  return {
-    blockNumber: quantity(receipt?.blockNumber, "EVM receipt blockNumber"),
-    blockHash: blockHash(receipt?.blockHash, "EVM receipt blockHash")
-  };
-}
-async function verifyCanonicalInclusion({ rpc, txHash: txHashValue, receipt, expectedBlock }) {
-  const [currentReceipt, canonicalBlock] = await Promise.all([
-    rpc("eth_getTransactionReceipt", [txHashValue]),
-    rpc("eth_getBlockByNumber", [canonicalQuantity(expectedBlock.blockNumber), false])
-  ]);
-  if (!currentReceipt) throw new Error("EVM receipt disappeared before finality");
-  if (transactionHash(currentReceipt.transactionHash, "refetched EVM receipt transactionHash") !== txHashValue) {
-    throw canonicalConflict("refetched EVM receipt transaction hash changed before finality");
-  }
-  if (!receiptSucceeded(currentReceipt.status)) {
-    throw canonicalConflict("refetched EVM receipt is not successful");
-  }
-  const currentBlock = receiptBlockIdentity(currentReceipt);
-  if (currentBlock.blockNumber !== expectedBlock.blockNumber || currentBlock.blockHash !== expectedBlock.blockHash) {
-    throw canonicalConflict("EVM receipt block identity changed before finality (possible reorg)");
-  }
-  if (!canonicalBlock) throw new Error("canonical EVM inclusion block is unavailable");
-  if (blockHash(canonicalBlock.hash, "canonical EVM block hash") !== expectedBlock.blockHash) {
-    throw canonicalConflict("EVM receipt block is no longer canonical (reorg detected)");
-  }
-  if (quantity(canonicalBlock.number, "canonical EVM block number") !== expectedBlock.blockNumber) {
-    throw canonicalConflict("canonical EVM block number does not match the receipt");
-  }
-  const originalBlock = receiptBlockIdentity(receipt);
-  if (originalBlock.blockNumber !== currentBlock.blockNumber || originalBlock.blockHash !== currentBlock.blockHash) {
-    throw canonicalConflict("original EVM receipt block identity changed before finality");
-  }
-  return currentReceipt;
-}
-async function waitForEvmFinality({
-  txHash: txHashInput,
-  receipt,
-  rpc,
-  policy,
-  attempts = 30,
-  intervalMs = 1e3
-} = {}) {
-  const normalizedPolicy = createEvmFinalityPolicy(policy);
-  const txHashValue = transactionHash(txHashInput);
-  if (typeof rpc !== "function") throw new TypeError("EVM finality requires an RPC query function");
-  if (!receipt || typeof receipt !== "object") {
-    return failure(normalizedPolicy, txHashValue, "EVM receipt is required for finality verification");
-  }
-  try {
-    if (transactionHash(receipt.transactionHash, "EVM receipt transactionHash") !== txHashValue) {
-      throw new Error("EVM receipt transaction hash does not match the requested transaction");
-    }
-    if (!receiptSucceeded(receipt.status)) {
-      throw new Error("EVM receipt must contain an explicit successful status before finality");
-    }
-  } catch (error) {
-    return failure(normalizedPolicy, txHashValue, error);
-  }
-  if (normalizedPolicy.mode === "receipt") {
-    let identity;
-    try {
-      identity = receiptBlockIdentity(receipt);
-    } catch (error) {
-      return failure(normalizedPolicy, txHashValue, error);
-    }
-    return Object.freeze({
-      verified: true,
-      mode: normalizedPolicy.mode,
-      txHash: txHashValue,
-      blockNumber: canonicalQuantity(identity.blockNumber),
-      blockHash: identity.blockHash
-    });
-  }
-  if (normalizedPolicy.mode === "custom") {
-    try {
-      const result = await normalizedPolicy.waitForFinality(Object.freeze({
-        txHash: txHashValue,
-        receipt,
-        rpc,
-        attempts,
-        intervalMs
-      }));
-      if (!result || typeof result !== "object" || result.verified !== true) {
-        throw new Error(result?.error || "custom EVM finality policy did not verify the transaction");
-      }
-      if (result.txHash != null && transactionHash(result.txHash, "custom finality txHash") !== txHashValue) {
-        throw new Error("custom EVM finality evidence references a different transaction");
-      }
-      if (result.blockHash != null && receipt.blockHash != null && blockHash(result.blockHash, "custom finality blockHash") !== blockHash(receipt.blockHash, "EVM receipt blockHash")) {
-        throw new Error("custom EVM finality evidence references a different inclusion block");
-      }
-      return Object.freeze({ ...result, verified: true, mode: "custom", txHash: txHashValue });
-    } catch (error) {
-      return failure(normalizedPolicy, txHashValue, error);
-    }
-  }
-  let expectedBlock;
-  try {
-    expectedBlock = receiptBlockIdentity(receipt);
-  } catch (error) {
-    return failure(normalizedPolicy, txHashValue, error);
-  }
-  const maxAttempts = positiveInteger(attempts, "finality attempts");
-  const delay = Number(intervalMs);
-  if (!Number.isFinite(delay) || delay < 0) {
-    throw new Error("finality intervalMs must be a non-negative finite number");
-  }
-  let lastError = null;
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    try {
-      let finalityBlock;
-      if (normalizedPolicy.mode === "confirmations") {
-        const head = quantity(await rpc("eth_blockNumber", []), "EVM latest block number");
-        const requiredHead = expectedBlock.blockNumber + BigInt(normalizedPolicy.confirmations - 1);
-        if (head >= requiredHead) finalityBlock = head;
-      } else {
-        const taggedBlock = await rpc("eth_getBlockByNumber", [normalizedPolicy.mode, false]);
-        if (taggedBlock) {
-          const taggedNumber = quantity(taggedBlock.number, `${normalizedPolicy.mode} EVM block number`);
-          if (taggedNumber >= expectedBlock.blockNumber) finalityBlock = taggedNumber;
-        }
-      }
-      if (finalityBlock != null) {
-        await verifyCanonicalInclusion({
-          rpc,
-          txHash: txHashValue,
-          receipt,
-          expectedBlock
-        });
-        return Object.freeze({
-          verified: true,
-          mode: normalizedPolicy.mode,
-          txHash: txHashValue,
-          blockNumber: canonicalQuantity(expectedBlock.blockNumber),
-          blockHash: expectedBlock.blockHash,
-          finalityBlockNumber: canonicalQuantity(finalityBlock),
-          ...normalizedPolicy.mode === "confirmations" ? { confirmations: normalizedPolicy.confirmations } : { blockTag: normalizedPolicy.mode }
-        });
-      }
-    } catch (error) {
-      lastError = error;
-      if (error?.[terminalCanonicalConflict]) {
-        return failure(normalizedPolicy, txHashValue, error, {
-          blockNumber: canonicalQuantity(expectedBlock.blockNumber),
-          blockHash: expectedBlock.blockHash
-        });
-      }
-    }
-    if (attempt + 1 < maxAttempts) await sleep3(delay);
-  }
-  return failure(
-    normalizedPolicy,
-    txHashValue,
-    lastError ? `EVM ${normalizedPolicy.mode} finality verification failed after ${maxAttempts} attempts: ${lastError.message}` : `EVM transaction did not reach ${normalizedPolicy.mode} finality within ${maxAttempts} attempts`,
-    {
-      blockNumber: canonicalQuantity(expectedBlock.blockNumber),
-      blockHash: expectedBlock.blockHash
-    }
-  );
-}
-
-// node_modules/clairveiljs/src/transport/evm.js
 var { keccak_256: keccak2562 } = import_js_sha32.default;
 var zeroWord = "0".repeat(64);
 var emptyBytes = new Uint8Array();
-var evmPrivacyDepositSignature = "deposit((bytes,bytes,bytes))";
+var evmPrivacyDepositSignature = "deposit((string,bytes,bytes,bytes))";
 var evmPrivacyTransferSignature = "transfer((bytes,bytes,bytes[],bytes[],bytes[],bytes[],uint32,bytes,uint8,bytes,bytes,bytes,bytes,bytes,bytes,bytes,uint64))";
 var evmPrivacyWithdrawSignature = "withdraw((bytes,bytes,bytes,string,address,string,uint64))";
-var evmPrivacyTransferWithAuthorizationSignature = "transferWithAuthorization((bytes,bytes,bytes[],bytes[],bytes[],bytes[],uint32,bytes,uint8,bytes,bytes,bytes,bytes,bytes,bytes,bytes,uint64),(address,address,uint256,uint64,uint8,bytes))";
-var evmPrivacyWithdrawWithAuthorizationSignature = "withdrawWithAuthorization((bytes,bytes,bytes,string,address,string,uint64),(address,address,uint256,uint64,uint8,bytes))";
-var evmPrivacyBatchTransferSignature = "batchTransfer(bytes32,(bytes,bytes,bytes[],bytes[],bytes[],bytes[],uint32,bytes,uint8,bytes,bytes,bytes,bytes,bytes,bytes,bytes,uint64)[])";
-var evmPrivacyBatchTransferWithAuthorizationSignature = "batchTransferWithAuthorization(bytes32,((bytes,bytes,bytes[],bytes[],bytes[],bytes[],uint32,bytes,uint8,bytes,bytes,bytes,bytes,bytes,bytes,bytes,uint64),(address,address,uint256,uint64,uint8,bytes))[])";
-var evmPrivacySingleProofBatchTransferSignature = "singleProofBatchTransfer((bytes,bytes,bytes[],(bytes,bytes,bytes,uint32,uint8,bytes,bytes,bytes,bytes,bytes,bytes)[],string,uint64,bytes,uint64))";
-var evmPrivacySingleProofBatchTransferWithAuthorizationSignature = "singleProofBatchTransferWithAuthorization((bytes,bytes,bytes[],(bytes,bytes,bytes,uint32,uint8,bytes,bytes,bytes,bytes,bytes,bytes)[],string,uint64,bytes,uint64),(address,address,uint256,uint64,uint8,bytes))";
 var evmTransactionMarker = /* @__PURE__ */ Symbol("clairveil.evm-transaction");
 var evmTransactionMetadataField = "__clairveilEvmTransaction";
-var evmAuthorizationProfileMetadata = /* @__PURE__ */ Symbol("clairveil.evm-authorization-profile-metadata");
 var evmDepositModeNonpayable = "nonpayable";
 var evmDepositModePayableExactValue = "payable-exact-value";
-var defaultEvmDepositMode = evmDepositModePayableExactValue;
+var defaultEvmDepositMode = evmDepositModeNonpayable;
 var evmDepositModes = Object.freeze([
   evmDepositModeNonpayable,
   evmDepositModePayableExactValue
 ]);
 function normalizedEvmQuantity(value, label) {
   if (value == null || String(value).trim() === "") return "";
-  let quantity2;
+  let quantity;
   try {
-    quantity2 = BigInt(value);
+    quantity = BigInt(value);
   } catch {
     throw new Error(`${label} must be an EVM quantity`);
   }
-  if (quantity2 < 0n) throw new Error(`${label} must be non-negative`);
-  return `0x${quantity2.toString(16)}`;
+  if (quantity < 0n) throw new Error(`${label} must be non-negative`);
+  return `0x${quantity.toString(16)}`;
 }
 function normalizeEvmDepositMode(value = defaultEvmDepositMode) {
   const mode = String(value ?? defaultEvmDepositMode).trim();
@@ -95531,54 +93776,38 @@ function evmTransactionBindingHash(transaction = {}) {
 function broadcastReservationContext2(options = {}) {
   const reservationManager2 = options.reservationManager ?? options.reservation_manager ?? null;
   const reservation = options.reservation ?? options.reservationBatch ?? options.reservation_batch ?? null;
-  const reservationIDs = [...reservation?.reservation_ids || []].filter(Boolean).map(String);
+  const reservationIDs2 = [...reservation?.reservation_ids || []].filter(Boolean).map(String);
   if (!reservationManager2 && !reservation) return null;
-  if (!reservationIDs.length) {
+  if (!reservationIDs2.length) {
     throw new Error("reserved-note broadcast requires reservation ids");
   }
   if (!reservationManager2 || typeof reservationManager2.markBroadcastAttempting !== "function") {
     throw new Error("reservationManager.markBroadcastAttempting is required for reserved-note broadcast");
   }
-  const leaseToken = String(
+  const leaseToken2 = String(
     reservation?.lease_token || reservation?.reservations?.[0]?.lease_token || ""
   );
-  if (!leaseToken) {
+  if (!leaseToken2) {
     throw new Error("reserved-note broadcast requires the current lease token");
   }
-  return { reservationManager: reservationManager2, reservationIDs, leaseToken };
+  return { reservationManager: reservationManager2, reservationIDs: reservationIDs2, leaseToken: leaseToken2 };
 }
 function isKnownWithdrawTransaction(transaction) {
-  if (["withdraw", "withdrawWithAuthorization"].includes(evmTransactionMetadata(transaction).operation)) return true;
+  if (evmTransactionMetadata(transaction).operation === "withdraw") return true;
   const data = String(transaction?.data || "").trim().replace(/^0x/i, "").toLowerCase();
-  return [evmPrivacyWithdrawSignature, evmPrivacyWithdrawWithAuthorizationSignature].some((signature) => data.startsWith(functionSelector(signature).toLowerCase()));
+  return data.startsWith(functionSelector(evmPrivacyWithdrawSignature).toLowerCase());
 }
 function knownPrivacyTransactionOperation(transaction) {
   const data = String(transaction?.data || "").trim().replace(/^0x/i, "").toLowerCase();
   for (const [operation2, signature] of [
     ["deposit", evmPrivacyDepositSignature],
     ["transfer", evmPrivacyTransferSignature],
-    ["withdraw", evmPrivacyWithdrawSignature],
-    ["transferWithAuthorization", evmPrivacyTransferWithAuthorizationSignature],
-    ["withdrawWithAuthorization", evmPrivacyWithdrawWithAuthorizationSignature],
-    ["batchTransfer", evmPrivacyBatchTransferSignature],
-    ["batchTransferWithAuthorization", evmPrivacyBatchTransferWithAuthorizationSignature],
-    ["singleProofBatchTransfer", evmPrivacySingleProofBatchTransferSignature],
-    ["singleProofBatchTransferWithAuthorization", evmPrivacySingleProofBatchTransferWithAuthorizationSignature]
+    ["withdraw", evmPrivacyWithdrawSignature]
   ]) {
     if (data.startsWith(functionSelector(signature).toLowerCase())) return operation2;
   }
   const operation = evmTransactionMetadata(transaction).operation;
-  if ([
-    "deposit",
-    "transfer",
-    "withdraw",
-    "transferWithAuthorization",
-    "withdrawWithAuthorization",
-    "batchTransfer",
-    "batchTransferWithAuthorization",
-    "singleProofBatchTransfer",
-    "singleProofBatchTransferWithAuthorization"
-  ].includes(operation)) return operation;
+  if (["deposit", "transfer", "withdraw"].includes(operation)) return operation;
   return "";
 }
 function assertPrivacyTransactionBinding(transaction, depositMode, contractAddress) {
@@ -95633,6 +93862,13 @@ function assertPrivacyTransactionBinding(transaction, depositMode, contractAddre
     throw new Error("payable EVM deposit transaction binding was modified after preparation");
   }
 }
+async function authoritativeReservationRecords2(context) {
+  if (!context) return [];
+  if (typeof context.reservationManager.getReservation !== "function") {
+    throw new Error("reservationManager.getReservation is required for reserved-note broadcast validation");
+  }
+  return Promise.all(context.reservationIDs.map((id) => context.reservationManager.getReservation(id)));
+}
 function assertReservationPayloadMatches2(records, payload) {
   if (!records.length) return;
   const payloadHash = String(payload?.payload_hash || "").trim();
@@ -95641,14 +93877,14 @@ function assertReservationPayloadMatches2(records, payload) {
     throw new Error("relay payload does not match the reserved payload hash");
   }
 }
-function assertReservationTransactionMatches(records, transactionHash2, { allowPayloadBinding = false } = {}) {
+function assertReservationTransactionMatches(records, transactionHash, { allowPayloadBinding = false } = {}) {
   if (!records.length) return;
   const mismatched = records.some((record) => {
     const storedHash = String(record?.tx_bytes_hash ?? record?.txBytesHash ?? "").trim();
-    if (storedHash) return storedHash !== transactionHash2;
+    if (storedHash) return storedHash !== transactionHash;
     return !(allowPayloadBinding && String(record?.payload_hash ?? record?.payloadHash ?? "").trim());
   });
-  if (!transactionHash2 || mismatched) {
+  if (!transactionHash || mismatched) {
     throw new Error("EVM transaction does not match the reservation ProofReady artifact");
   }
 }
@@ -95658,11 +93894,11 @@ async function validateRelayBroadcastContext2(options, {
   transaction,
   contract,
   reservationContext,
-  transactionHash: transactionHash2
+  transactionHash
 } = {}) {
   const payload = options?.relayPayload ?? options?.relay_payload ?? null;
-  const reservationRecords = await getBroadcastReservationRecords(reservationContext);
-  assertReservationTransactionMatches(reservationRecords, transactionHash2, { allowPayloadBinding: Boolean(payload) });
+  const reservationRecords = await authoritativeReservationRecords2(reservationContext);
+  assertReservationTransactionMatches(reservationRecords, transactionHash, { allowPayloadBinding: Boolean(payload) });
   const reservationHasTransactionBinding = reservationRecords.some(
     (record) => Boolean(String(record?.tx_bytes_hash ?? record?.txBytesHash ?? "").trim())
   );
@@ -95772,7 +94008,8 @@ async function markBroadcastReservationRejected2(context, error) {
   try {
     await context.reservationManager.markBroadcastRejected(context.reservationIDs, {
       leaseToken: context.leaseToken,
-      providerCode: "4001"
+      providerCode: "4001",
+      error: "wallet_rejected_before_broadcast"
     });
   } catch (bookkeepingError) {
     throw attachReservationBookkeepingError2(error, bookkeepingError);
@@ -95791,162 +94028,115 @@ async function markBroadcastReservationSubmitted2(context, txHash) {
     throw attachReservationBookkeepingError2(error, bookkeepingError);
   }
 }
-var evmPrivacyDepositTuple = {
-  name: "request",
-  type: "tuple",
-  components: [
-    { name: "noteCommitment", type: "bytes" },
-    { name: "encryptedNote", type: "bytes" },
-    { name: "proof", type: "bytes" }
-  ]
-};
-var evmPrivacyTransferTuple = {
-  name: "request",
-  type: "tuple",
-  components: [
-    { name: "proof", type: "bytes" },
-    { name: "root", type: "bytes" },
-    { name: "nullifiers", type: "bytes[]" },
-    { name: "newCommitments", type: "bytes[]" },
-    { name: "cipherTexts", type: "bytes[]" },
-    { name: "viewTags", type: "bytes[]" },
-    { name: "userPrivacyPolicy", type: "uint32" },
-    { name: "userDisclosureDigest", type: "bytes" },
-    { name: "userDisclosureMode", type: "uint8" },
-    { name: "userDisclosureTargetPubkey", type: "bytes" },
-    { name: "userDisclosurePayload", type: "bytes" },
-    { name: "auditDisclosureDigest", type: "bytes" },
-    { name: "auditDisclosureTargetPubkey", type: "bytes" },
-    { name: "auditDisclosurePayload", type: "bytes" },
-    { name: "selfViewDisclosureDigest", type: "bytes" },
-    { name: "selfViewDisclosurePayload", type: "bytes" },
-    { name: "expiresAtUnix", type: "uint64" }
-  ]
-};
-var evmPrivacyWithdrawTuple = {
-  name: "request",
-  type: "tuple",
-  components: [
-    { name: "proof", type: "bytes" },
-    { name: "root", type: "bytes" },
-    { name: "nullifier", type: "bytes" },
-    { name: "amount", type: "string" },
-    { name: "recipient", type: "address" },
-    { name: "chainId", type: "string" },
-    { name: "expiresAtUnix", type: "uint64" }
-  ]
-};
-var evmPrivacyAuthorizationTuple = {
-  name: "authorization",
-  type: "tuple",
-  components: [
-    { name: "effectiveSender", type: "address" },
-    { name: "executor", type: "address" },
-    { name: "nonce", type: "uint256" },
-    { name: "deadline", type: "uint64" },
-    { name: "authorizationKind", type: "uint8" },
-    { name: "signature", type: "bytes" }
-  ]
-};
-var evmPrivacySingleProofBatchOutputTuple = {
-  name: "output",
-  type: "tuple",
-  components: [
-    { name: "commitment", type: "bytes" },
-    { name: "ciphertext", type: "bytes" },
-    { name: "viewTag", type: "bytes" },
-    { name: "userPrivacyPolicy", type: "uint32" },
-    { name: "userDisclosureMode", type: "uint8" },
-    { name: "userDisclosureDigest", type: "bytes" },
-    { name: "userDisclosureTargetPubkey", type: "bytes" },
-    { name: "userDisclosurePayload", type: "bytes" },
-    { name: "fullDisclosureDigest", type: "bytes" },
-    { name: "auditDisclosurePayload", type: "bytes" },
-    { name: "selfViewDisclosurePayload", type: "bytes" }
-  ]
-};
-var evmPrivacySingleProofBatchTuple = {
-  name: "request",
-  type: "tuple",
-  components: [
-    { name: "proof", type: "bytes" },
-    { name: "root", type: "bytes" },
-    { name: "nullifiers", type: "bytes[]" },
-    { name: "outputs", type: "tuple[]", components: evmPrivacySingleProofBatchOutputTuple.components },
-    { name: "auditKeyId", type: "string" },
-    { name: "auditKeyEpoch", type: "uint64" },
-    { name: "auditDisclosureTargetPubkey", type: "bytes" },
-    { name: "expiresAtUnix", type: "uint64" }
-  ]
-};
-var evmPrivacyAuthorizedTransferItemTuple = {
-  name: "item",
-  type: "tuple",
-  components: [evmPrivacyTransferTuple, evmPrivacyAuthorizationTuple]
-};
-function evmPrivacyFunction(name, inputs, stateMutability = "nonpayable") {
-  return {
-    type: "function",
-    name,
-    stateMutability,
-    inputs,
-    outputs: [{ name: "success", type: "bool" }]
-  };
-}
-function evmPrivacyEvent(name, inputs) {
-  return { type: "event", name, inputs, anonymous: false };
-}
+var evmPrivacyPrecompileAddress = "0x100000000000000000000000000000000000000b";
+var defaultEvmPrivacyPrecompileAddress = evmPrivacyPrecompileAddress;
 var evmPrivacyPrecompileAbi = Object.freeze([
-  evmPrivacyFunction("deposit", [evmPrivacyDepositTuple], "payable"),
-  evmPrivacyFunction("transfer", [evmPrivacyTransferTuple]),
-  evmPrivacyFunction("withdraw", [evmPrivacyWithdrawTuple]),
-  evmPrivacyFunction("transferWithAuthorization", [evmPrivacyTransferTuple, evmPrivacyAuthorizationTuple]),
-  evmPrivacyFunction("withdrawWithAuthorization", [evmPrivacyWithdrawTuple, evmPrivacyAuthorizationTuple]),
-  evmPrivacyFunction("singleProofBatchTransfer", [evmPrivacySingleProofBatchTuple]),
-  evmPrivacyFunction("singleProofBatchTransferWithAuthorization", [evmPrivacySingleProofBatchTuple, evmPrivacyAuthorizationTuple]),
-  evmPrivacyFunction("batchTransfer", [
-    { name: "batchId", type: "bytes32" },
-    { name: "requests", type: "tuple[]", components: evmPrivacyTransferTuple.components }
-  ]),
-  evmPrivacyFunction("batchTransferWithAuthorization", [
-    { name: "batchId", type: "bytes32" },
-    { name: "items", type: "tuple[]", components: evmPrivacyAuthorizedTransferItemTuple.components }
-  ]),
-  evmPrivacyEvent("PrivacyDeposit", [
-    { name: "effectiveSender", type: "address", indexed: true },
-    { name: "operator", type: "address", indexed: true },
-    { name: "amount", type: "string", indexed: false },
-    { name: "noteCommitment", type: "bytes", indexed: false }
-  ]),
-  evmPrivacyEvent("PrivacyTransfer", [
-    { name: "effectiveSender", type: "address", indexed: true },
-    { name: "operator", type: "address", indexed: true },
-    { name: "root", type: "bytes", indexed: false }
-  ]),
-  evmPrivacyEvent("PrivacyWithdraw", [
-    { name: "effectiveSender", type: "address", indexed: true },
-    { name: "operator", type: "address", indexed: true },
-    { name: "recipient", type: "address", indexed: true },
-    { name: "amount", type: "string", indexed: false }
-  ]),
-  evmPrivacyEvent("PrivacyBatchTransferItem", [
-    { name: "effectiveSender", type: "address", indexed: true },
-    { name: "operator", type: "address", indexed: true },
-    { name: "batchId", type: "bytes32", indexed: true },
-    { name: "itemIndex", type: "uint64", indexed: false },
-    { name: "requestHash", type: "bytes32", indexed: false },
-    { name: "root", type: "bytes", indexed: false }
-  ]),
-  evmPrivacyEvent("PrivacySingleProofBatchTransfer", [
-    { name: "effectiveSender", type: "address", indexed: true },
-    { name: "operator", type: "address", indexed: true },
-    { name: "requestHash", type: "bytes32", indexed: true },
-    { name: "root", type: "bytes", indexed: false },
-    { name: "inputCount", type: "uint8", indexed: false },
-    { name: "outputCount", type: "uint8", indexed: false }
-  ])
+  {
+    type: "function",
+    name: "deposit",
+    stateMutability: "nonpayable",
+    inputs: [
+      {
+        name: "request",
+        type: "tuple",
+        components: [
+          { name: "amount", type: "string" },
+          { name: "noteCommitment", type: "bytes" },
+          { name: "encryptedNote", type: "bytes" },
+          { name: "proof", type: "bytes" }
+        ]
+      }
+    ],
+    outputs: [{ name: "success", type: "bool" }]
+  },
+  {
+    type: "function",
+    name: "transfer",
+    stateMutability: "nonpayable",
+    inputs: [
+      {
+        name: "request",
+        type: "tuple",
+        components: [
+          { name: "proof", type: "bytes" },
+          { name: "root", type: "bytes" },
+          { name: "nullifiers", type: "bytes[]" },
+          { name: "newCommitments", type: "bytes[]" },
+          { name: "cipherTexts", type: "bytes[]" },
+          { name: "viewTags", type: "bytes[]" },
+          { name: "userPrivacyPolicy", type: "uint32" },
+          { name: "userDisclosureDigest", type: "bytes" },
+          { name: "userDisclosureMode", type: "uint8" },
+          { name: "userDisclosureTargetPubkey", type: "bytes" },
+          { name: "userDisclosurePayload", type: "bytes" },
+          { name: "auditDisclosureDigest", type: "bytes" },
+          { name: "auditDisclosureTargetPubkey", type: "bytes" },
+          { name: "auditDisclosurePayload", type: "bytes" },
+          { name: "selfViewDisclosureDigest", type: "bytes" },
+          { name: "selfViewDisclosurePayload", type: "bytes" },
+          { name: "expiresAtUnix", type: "uint64" }
+        ]
+      }
+    ],
+    outputs: [{ name: "success", type: "bool" }]
+  },
+  {
+    type: "function",
+    name: "withdraw",
+    stateMutability: "nonpayable",
+    inputs: [
+      {
+        name: "request",
+        type: "tuple",
+        components: [
+          { name: "proof", type: "bytes" },
+          { name: "root", type: "bytes" },
+          { name: "nullifier", type: "bytes" },
+          { name: "amount", type: "string" },
+          { name: "recipient", type: "address" },
+          { name: "chainId", type: "string" },
+          { name: "expiresAtUnix", type: "uint64" }
+        ]
+      }
+    ],
+    outputs: [{ name: "success", type: "bool" }]
+  },
+  {
+    type: "event",
+    name: "PrivacyDeposit",
+    inputs: [
+      { name: "caller", type: "address", indexed: true },
+      { name: "amount", type: "string", indexed: false },
+      { name: "noteCommitment", type: "bytes", indexed: false }
+    ],
+    anonymous: false
+  },
+  {
+    type: "event",
+    name: "PrivacyTransfer",
+    inputs: [
+      { name: "caller", type: "address", indexed: true },
+      { name: "root", type: "bytes", indexed: false }
+    ],
+    anonymous: false
+  },
+  {
+    type: "event",
+    name: "PrivacyWithdraw",
+    inputs: [
+      { name: "caller", type: "address", indexed: true },
+      { name: "recipient", type: "address", indexed: true },
+      { name: "amount", type: "string", indexed: false }
+    ],
+    anonymous: false
+  }
 ]);
-var evmPrivacyPrecompilePayableDepositAbi = evmPrivacyPrecompileAbi;
+var evmPrivacyPrecompilePayableDepositAbi = Object.freeze(
+  evmPrivacyPrecompileAbi.map((item, index) => index === 0 ? Object.freeze({ ...item, stateMutability: "payable" }) : item)
+);
+var evmPrivacyDepositTuple = evmPrivacyPrecompileAbi[0].inputs[0];
+var evmPrivacyTransferTuple = evmPrivacyPrecompileAbi[1].inputs[0];
+var evmPrivacyWithdrawTuple = evmPrivacyPrecompileAbi[2].inputs[0];
 function strip0x(value) {
   return String(value || "").trim().replace(/^0x/i, "");
 }
@@ -96012,12 +94202,6 @@ function encodeStaticAbi(type, value) {
     const bits = Number(name.slice(4) || "256");
     return uintWord(value, bits);
   }
-  if (name === "bool") {
-    if (typeof value !== "boolean") {
-      throw new Error("bool ABI value must be a boolean");
-    }
-    return uintWord(value ? 1 : 0, 8);
-  }
   if (name === "address") return addressWord(value);
   if (name === "bytes32") return bytes32Word(value);
   throw new Error(`unsupported static ABI type ${name}`);
@@ -96026,35 +94210,27 @@ function encodeBytes(hex2) {
   const clean3 = strip0x(hex2);
   return `${uintWord(clean3.length / 2)}${padRightWord(clean3)}`;
 }
-function arrayElementAbiType(type) {
-  const name = abiTypeName(type);
-  if (!name.endsWith("[]")) throw new Error(`ABI type ${name} is not an array`);
-  const elementName = name.slice(0, -2);
-  return elementName === "tuple" ? { type: "tuple", components: abiComponents(type) } : elementName;
-}
-function encodeDynamicArray(type, value) {
-  if (!Array.isArray(value)) {
-    throw new Error(`${abiTypeName(type)} value must be an array`);
-  }
-  const elementType = arrayElementAbiType(type);
-  const encodedItems = value.map((item) => isDynamicAbiType(elementType) ? encodeDynamicAbi(elementType, item) : encodeStaticAbi(elementType, item));
-  if (!isDynamicAbiType(elementType)) {
-    return `${uintWord(value.length)}${encodedItems.join("")}`;
-  }
-  const heads = [];
-  let offset = 32 * value.length;
-  for (const encoded of encodedItems) {
-    heads.push(uintWord(offset));
-    offset += encoded.length / 2;
-  }
-  return `${uintWord(value.length)}${heads.join("")}${encodedItems.join("")}`;
-}
 function encodeDynamicAbi(type, value) {
   const name = abiTypeName(type);
   if (name === "tuple") return encodeTupleAbi(type, value);
   if (name === "bytes") return encodeBytes(bytesLikeToHex(value));
   if (name === "string") return encodeBytes(utf8Hex(value));
-  if (name.endsWith("[]")) return encodeDynamicArray(type, value);
+  if (name === "bytes32[]") {
+    return `${uintWord(value.length)}${value.map((item, index) => bytes32Word(item, `bytes32[${index}]`)).join("")}`;
+  }
+  if (name === "bytes[]") {
+    const values = [...value];
+    const heads = [];
+    const tails = [];
+    let offset = 32 * values.length;
+    for (const item of values) {
+      const encoded = encodeBytes(bytesLikeToHex(item));
+      heads.push(uintWord(offset));
+      tails.push(encoded);
+      offset += encoded.length / 2;
+    }
+    return `${uintWord(values.length)}${heads.join("")}${tails.join("")}`;
+  }
   throw new Error(`unsupported dynamic ABI type ${name}`);
 }
 function tupleComponentValue(component, value, index) {
@@ -96139,13 +94315,9 @@ function requiredBytes(value, label, byteLength) {
   return value;
 }
 function optionalBytes2(value) {
-  if (value == null) return emptyBytes;
-  if (typeof value === "string" && value.trim().toLowerCase() === "0x") {
-    return emptyBytes;
-  }
-  return value;
+  return value == null ? emptyBytes : value;
 }
-function requiredUint(value, label, bits = 256) {
+function requiredUint64(value, label) {
   if (value == null || String(value).trim() === "") {
     throw new Error(`${label} is required`);
   }
@@ -96153,15 +94325,81 @@ function requiredUint(value, label, bits = 256) {
   try {
     parsed = BigInt(value);
   } catch {
-    throw new Error(`${label} must be a uint${bits}`);
+    throw new Error(`${label} must be a uint64`);
   }
-  if (parsed < 0n || parsed >= 1n << BigInt(bits)) {
-    throw new Error(`${label} must be a uint${bits}`);
+  if (parsed < 0n || parsed > 0xffffffffffffffffn) {
+    throw new Error(`${label} must be a uint64`);
   }
   return parsed;
 }
-function requiredUint64(value, label) {
-  return requiredUint(value, label, 64);
+function strictTransferUnix(value, label) {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative safe integer`);
+  }
+  return value;
+}
+function aliasedEvmTransferUnix(input, camelName, snakeName, label, { required = false } = {}) {
+  const camelProvided = input?.[camelName] !== void 0 && input?.[camelName] !== null;
+  const snakeProvided = input?.[snakeName] !== void 0 && input?.[snakeName] !== null;
+  const camel = camelProvided ? strictTransferUnix(input[camelName], label) : void 0;
+  const snake = snakeProvided ? strictTransferUnix(input[snakeName], label) : void 0;
+  if (camelProvided && snakeProvided && camel !== snake) {
+    throw new Error(`${label} aliases conflict`);
+  }
+  if (required && !camelProvided && !snakeProvided) {
+    throw new Error(`${label} is required from authoritative chain time`);
+  }
+  return camelProvided ? camel : snake;
+}
+function transferMessageExpiry(message) {
+  const camelProvided = message?.expiresAtUnix !== void 0 && message?.expiresAtUnix !== null;
+  const snakeProvided = message?.expires_at_unix !== void 0 && message?.expires_at_unix !== null;
+  if (!camelProvided && !snakeProvided) {
+    throw new Error("transfer message expiresAtUnix is required");
+  }
+  const camel = camelProvided ? requiredUint64(message.expiresAtUnix, "transfer message expiresAtUnix") : void 0;
+  const snake = snakeProvided ? requiredUint64(message.expires_at_unix, "transfer message expires_at_unix") : void 0;
+  if (camelProvided && snakeProvided && camel !== snake) {
+    throw new Error("transfer message expiresAtUnix aliases conflict");
+  }
+  return camelProvided ? camel : snake;
+}
+function assertEvmTransferExecutionBinding(input, built) {
+  const chainNowUnix = aliasedEvmTransferUnix(
+    input,
+    "chainNowUnix",
+    "chain_now_unix",
+    "transfer chainNowUnix",
+    { required: true }
+  );
+  const requestedExpiry = aliasedEvmTransferUnix(
+    input,
+    "expiresAtUnix",
+    "expires_at_unix",
+    "transfer expiresAtUnix"
+  );
+  const messageExpiry = transferMessageExpiry(built.message);
+  if (requestedExpiry !== void 0 && BigInt(requestedExpiry) !== messageExpiry) {
+    throw new Error("transfer message expiry does not match the requested expiresAtUnix");
+  }
+  if (BigInt(chainNowUnix) >= messageExpiry) {
+    throw new Error("transfer message expired before EVM transaction construction");
+  }
+  const hasPayload = built.payload !== void 0 && built.payload !== null;
+  const hasProof = built.proof !== void 0 && built.proof !== null;
+  if (hasPayload !== hasProof) {
+    throw new Error("EVM transfer payload and proof must be supplied together");
+  }
+  if (hasPayload) {
+    const expectedMessage = buildTransferMsgFromPayloadAndProof(
+      built.payload,
+      built.proof,
+      { nowUnix: chainNowUnix }
+    );
+    if (encodeEvmPrivacyTransfer(expectedMessage) !== encodeEvmPrivacyTransfer(built.message)) {
+      throw new Error("EVM transfer message does not match the supplied payload and proof");
+    }
+  }
 }
 function bytesArray(value, label, byteLength) {
   if (!Array.isArray(value)) {
@@ -96199,47 +94437,50 @@ function withdrawRecipientToEvmAddress(message, options = {}) {
   if (isEvmAddress(fallback)) return normalizeEvmAddress(fallback, "withdraw recipient");
   return bech32AddressToEvm(fallback, options.accountPrefix);
 }
-function evmPrivacyDepositRequest(message) {
-  return {
+function encodeEvmPrivacyDeposit(message, options = {}) {
+  const request = {
+    amount: String(valueFrom(message, ["amount"], "")),
     noteCommitment: requiredBytes(valueFrom(message, ["noteCommitment", "note_commitment"], null), "note commitment", 32),
     encryptedNote: requiredBytes(valueFrom(message, ["encryptedNote", "encrypted_note"], null), "encrypted note"),
     proof: requiredBytes(valueFrom(message, ["proof", "depositProof", "deposit_proof"], null), "deposit proof")
   };
+  return encodeFunctionData(
+    options.signature || evmPrivacyDepositSignature,
+    [evmPrivacyDepositTuple],
+    [request]
+  );
 }
-function evmPrivacyTransferRequest(message) {
-  return {
-    proof: requiredBytes(valueFrom(message, ["proof"], null), "transfer proof"),
-    root: requiredBytes(valueFrom(message, ["root"], null), "transfer root", 32),
-    nullifiers: bytesArray(valueFrom(message, ["nullifiers"], null), "transfer nullifiers", 32),
-    newCommitments: bytesArray(valueFrom(message, ["newCommitments", "new_commitments"], null), "transfer new commitments", 32),
-    cipherTexts: bytesArray(valueFrom(message, ["cipherTexts", "cipher_texts"], null), "transfer cipher texts"),
-    viewTags: bytesArray(valueFrom(message, ["viewTags", "view_tags"], null), "transfer view tags", 2),
-    userPrivacyPolicy: requiredUint(
-      valueFrom(message, ["userPrivacyPolicy", "user_privacy_policy"], 0),
-      "transfer user privacy policy",
-      32
-    ),
-    userDisclosureDigest: optionalBytes2(valueFrom(message, ["userDisclosureDigest", "user_disclosure_digest"], null)),
-    userDisclosureMode: requiredUint(
-      valueFrom(message, ["userDisclosureMode", "user_disclosure_mode"], 0),
-      "transfer user disclosure mode",
-      8
-    ),
-    userDisclosureTargetPubkey: optionalBytes2(valueFrom(message, ["userDisclosureTargetPubkey", "user_disclosure_target_pubkey"], null)),
-    userDisclosurePayload: optionalBytes2(valueFrom(message, ["userDisclosurePayload", "user_disclosure_payload"], null)),
-    auditDisclosureDigest: optionalBytes2(valueFrom(message, ["auditDisclosureDigest", "audit_disclosure_digest"], null)),
-    auditDisclosureTargetPubkey: optionalBytes2(valueFrom(message, ["auditDisclosureTargetPubkey", "audit_disclosure_target_pubkey"], null)),
-    auditDisclosurePayload: optionalBytes2(valueFrom(message, ["auditDisclosurePayload", "audit_disclosure_payload"], null)),
-    selfViewDisclosureDigest: optionalBytes2(valueFrom(message, ["selfViewDisclosureDigest", "self_view_disclosure_digest"], null)),
-    selfViewDisclosurePayload: optionalBytes2(valueFrom(message, ["selfViewDisclosurePayload", "self_view_disclosure_payload"], null)),
+function encodeEvmPrivacyTransfer(message, options = {}) {
+  const request = {
+    proof: requiredBytes(message.proof, "transfer proof"),
+    root: requiredBytes(message.root, "transfer root", 32),
+    nullifiers: bytesArray(message.nullifiers, "transfer nullifiers", 32),
+    newCommitments: bytesArray(message.newCommitments, "transfer new commitments", 32),
+    cipherTexts: bytesArray(message.cipherTexts, "transfer cipher texts"),
+    viewTags: bytesArray(message.viewTags, "transfer view tags", 2),
+    userPrivacyPolicy: message.userPrivacyPolicy ?? 0,
+    userDisclosureDigest: optionalBytes2(message.userDisclosureDigest),
+    userDisclosureMode: message.userDisclosureMode ?? 0,
+    userDisclosureTargetPubkey: optionalBytes2(message.userDisclosureTargetPubkey),
+    userDisclosurePayload: optionalBytes2(message.userDisclosurePayload),
+    auditDisclosureDigest: optionalBytes2(message.auditDisclosureDigest),
+    auditDisclosureTargetPubkey: optionalBytes2(message.auditDisclosureTargetPubkey),
+    auditDisclosurePayload: optionalBytes2(message.auditDisclosurePayload),
+    selfViewDisclosureDigest: optionalBytes2(message.selfViewDisclosureDigest ?? message.self_view_disclosure_digest),
+    selfViewDisclosurePayload: optionalBytes2(message.selfViewDisclosurePayload ?? message.self_view_disclosure_payload),
     expiresAtUnix: requiredUint64(
-      valueFrom(message, ["expiresAtUnix", "expires_at_unix"], null),
+      message.expiresAtUnix ?? message.expires_at_unix,
       "transfer expiresAtUnix"
     )
   };
+  return encodeFunctionData(
+    options.signature || evmPrivacyTransferSignature,
+    [evmPrivacyTransferTuple],
+    [request]
+  );
 }
-function evmPrivacyWithdrawRequest(message, options = {}) {
-  return {
+function encodeEvmPrivacyWithdraw(message, options = {}) {
+  const request = {
     proof: requiredBytes(message.proof, "withdraw proof"),
     root: requiredBytes(message.root, "withdraw root", 32),
     nullifier: requiredBytes(message.nullifier, "withdraw nullifier", 32),
@@ -96251,158 +94492,10 @@ function evmPrivacyWithdrawRequest(message, options = {}) {
       "withdraw expiresAtUnix"
     )
   };
-}
-function evmPrivacyAuthorization(authorization, { requireSignature = true } = {}) {
-  if (!authorization || typeof authorization !== "object") {
-    throw new Error("privacy authorization is required");
-  }
-  const effectiveSender = normalizeEvmAddress(
-    valueFrom(authorization, ["effectiveSender", "effective_sender"], null),
-    "authorization effectiveSender"
-  );
-  const executor = normalizeEvmAddress(
-    valueFrom(authorization, ["executor"], null),
-    "authorization executor"
-  );
-  const deadline = requiredUint64(valueFrom(authorization, ["deadline"], null), "authorization deadline");
-  const authorizationKind = requiredUint(
-    valueFrom(authorization, ["authorizationKind", "authorization_kind"], null),
-    "authorization kind",
-    8
-  );
-  if (effectiveSender === `0x${"0".repeat(40)}` || executor === `0x${"0".repeat(40)}`) {
-    throw new Error("authorization effectiveSender and executor must not be zero");
-  }
-  if (deadline === 0n) throw new Error("authorization deadline must be positive");
-  const signature = valueFrom(authorization, ["signature"], null);
-  if (requireSignature && signature == null) {
-    throw new Error("authorization signature is required");
-  }
-  return {
-    effectiveSender,
-    executor,
-    nonce: requiredUint(valueFrom(authorization, ["nonce"], null), "authorization nonce"),
-    deadline,
-    authorizationKind,
-    signature: requireSignature ? requiredBytes(signature, "authorization signature") : optionalBytes2(signature)
-  };
-}
-function evmPrivacySingleProofBatchRequest(message) {
-  const outputs = valueFrom(message, ["outputs"], null);
-  if (!Array.isArray(outputs) || outputs.length < 1 || outputs.length > 32) {
-    throw new Error("single-proof batch outputs must contain 1..32 items");
-  }
-  const nullifiers = bytesArray(valueFrom(message, ["nullifiers"], null), "single-proof batch nullifiers", 32);
-  if (nullifiers.length < 1 || nullifiers.length > 16) {
-    throw new Error("single-proof batch nullifiers must contain 1..16 items");
-  }
-  return {
-    proof: requiredBytes(valueFrom(message, ["proof"], null), "single-proof batch proof"),
-    root: requiredBytes(valueFrom(message, ["root"], null), "single-proof batch root", 32),
-    nullifiers,
-    outputs: outputs.map((output, index) => ({
-      commitment: requiredBytes(valueFrom(output, ["commitment"], null), `single-proof batch output ${index} commitment`, 32),
-      ciphertext: requiredBytes(valueFrom(output, ["ciphertext"], null), `single-proof batch output ${index} ciphertext`, 430),
-      viewTag: requiredBytes(valueFrom(output, ["viewTag", "view_tag"], null), `single-proof batch output ${index} view tag`, 2),
-      userPrivacyPolicy: requiredUint(valueFrom(output, ["userPrivacyPolicy", "user_privacy_policy"], 0), `single-proof batch output ${index} user privacy policy`, 32),
-      userDisclosureMode: requiredUint(valueFrom(output, ["userDisclosureMode", "user_disclosure_mode"], 0), `single-proof batch output ${index} user disclosure mode`, 8),
-      userDisclosureDigest: optionalBytes2(valueFrom(output, ["userDisclosureDigest", "user_disclosure_digest"], null)),
-      userDisclosureTargetPubkey: optionalBytes2(valueFrom(output, ["userDisclosureTargetPubkey", "user_disclosure_target_pubkey"], null)),
-      userDisclosurePayload: optionalBytes2(valueFrom(output, ["userDisclosurePayload", "user_disclosure_payload"], null)),
-      fullDisclosureDigest: requiredBytes(valueFrom(output, ["fullDisclosureDigest", "full_disclosure_digest"], null), `single-proof batch output ${index} full disclosure digest`, 32),
-      auditDisclosurePayload: requiredBytes(valueFrom(output, ["auditDisclosurePayload", "audit_disclosure_payload"], null), `single-proof batch output ${index} audit disclosure payload`, 472),
-      selfViewDisclosurePayload: optionalBytes2(valueFrom(output, ["selfViewDisclosurePayload", "self_view_disclosure_payload"], null))
-    })),
-    auditKeyId: String(valueFrom(message, ["auditKeyId", "audit_key_id"], "")).trim(),
-    auditKeyEpoch: requiredUint64(valueFrom(message, ["auditKeyEpoch", "audit_key_epoch"], null), "single-proof batch audit key epoch"),
-    auditDisclosureTargetPubkey: requiredBytes(valueFrom(message, ["auditDisclosureTargetPubkey", "audit_disclosure_target_pubkey"], null), "single-proof batch audit disclosure target pubkey"),
-    expiresAtUnix: requiredUint64(valueFrom(message, ["expiresAtUnix", "expires_at_unix"], null), "single-proof batch expiresAtUnix")
-  };
-}
-function evmPrivacyBatchId(batchId) {
-  const normalized = bytes32Word(batchId, "batchId");
-  if (normalized === zeroWord) throw new Error("batchId must not be zero");
-  return with0x(normalized);
-}
-function encodeEvmPrivacyDeposit(message, options = {}) {
-  const request = evmPrivacyDepositRequest(message);
-  return encodeFunctionData(
-    options.signature || evmPrivacyDepositSignature,
-    [evmPrivacyDepositTuple],
-    [request]
-  );
-}
-function encodeEvmPrivacyTransfer(message, options = {}) {
-  const request = evmPrivacyTransferRequest(message);
-  return encodeFunctionData(
-    options.signature || evmPrivacyTransferSignature,
-    [evmPrivacyTransferTuple],
-    [request]
-  );
-}
-function encodeEvmPrivacyWithdraw(message, options = {}) {
-  const request = evmPrivacyWithdrawRequest(message, options);
   return encodeFunctionData(
     options.signature || evmPrivacyWithdrawSignature,
     [evmPrivacyWithdrawTuple],
     [request]
-  );
-}
-function encodeEvmPrivacyTransferWithAuthorization(message, authorization, options = {}) {
-  return encodeFunctionData(
-    options.signature || evmPrivacyTransferWithAuthorizationSignature,
-    [evmPrivacyTransferTuple, evmPrivacyAuthorizationTuple],
-    [evmPrivacyTransferRequest(message), evmPrivacyAuthorization(authorization)]
-  );
-}
-function encodeEvmPrivacyWithdrawWithAuthorization(message, authorization, options = {}) {
-  return encodeFunctionData(
-    options.signature || evmPrivacyWithdrawWithAuthorizationSignature,
-    [evmPrivacyWithdrawTuple, evmPrivacyAuthorizationTuple],
-    [evmPrivacyWithdrawRequest(message, options), evmPrivacyAuthorization(authorization)]
-  );
-}
-function encodeEvmPrivacyBatchTransfer(batchId, requests, options = {}) {
-  if (!Array.isArray(requests) || requests.length < 1 || requests.length > 20) {
-    throw new Error("batch transfer requests must contain 1..20 items");
-  }
-  return encodeFunctionData(
-    options.signature || evmPrivacyBatchTransferSignature,
-    [
-      { name: "batchId", type: "bytes32" },
-      { name: "requests", type: "tuple[]", components: evmPrivacyTransferTuple.components }
-    ],
-    [evmPrivacyBatchId(batchId), requests.map(evmPrivacyTransferRequest)]
-  );
-}
-function encodeEvmPrivacyBatchTransferWithAuthorization(batchId, items, options = {}) {
-  if (!Array.isArray(items) || items.length < 1 || items.length > 20) {
-    throw new Error("authorized batch transfer items must contain 1..20 items");
-  }
-  return encodeFunctionData(
-    options.signature || evmPrivacyBatchTransferWithAuthorizationSignature,
-    [
-      { name: "batchId", type: "bytes32" },
-      { name: "items", type: "tuple[]", components: evmPrivacyAuthorizedTransferItemTuple.components }
-    ],
-    [evmPrivacyBatchId(batchId), items.map((item, index) => ({
-      request: evmPrivacyTransferRequest(item?.request ?? item?.message ?? item),
-      authorization: evmPrivacyAuthorization(item?.authorization ?? item?.auth ?? item?.privacyAuthorization)
-    }))]
-  );
-}
-function encodeEvmPrivacySingleProofBatchTransfer(message, options = {}) {
-  return encodeFunctionData(
-    options.signature || evmPrivacySingleProofBatchTransferSignature,
-    [evmPrivacySingleProofBatchTuple],
-    [evmPrivacySingleProofBatchRequest(message)]
-  );
-}
-function encodeEvmPrivacySingleProofBatchTransferWithAuthorization(message, authorization, options = {}) {
-  return encodeFunctionData(
-    options.signature || evmPrivacySingleProofBatchTransferWithAuthorizationSignature,
-    [evmPrivacySingleProofBatchTuple, evmPrivacyAuthorizationTuple],
-    [evmPrivacySingleProofBatchRequest(message), evmPrivacyAuthorization(authorization)]
   );
 }
 function defaultEncodeEvmDeposit(message, options = {}) {
@@ -96413,552 +94506,6 @@ function defaultEncodeEvmTransfer(message, options = {}) {
 }
 function defaultEncodeEvmWithdraw(message, options = {}) {
   return encodeEvmPrivacyWithdraw(message, options);
-}
-function keccakHex(value, label = "EVM bytes") {
-  const clean3 = strip0x(bytesLikeToHex(value, label));
-  return `0x${keccak2562.create().update(bytesFromHex2(clean3, label)).hex()}`;
-}
-function receiptHex(value, label) {
-  return with0x(bytesLikeToHex(value, label));
-}
-function receiptAddressTopic(address) {
-  return `0x${strip0x(normalizeEvmAddress(address)).padStart(64, "0")}`;
-}
-function receiptBytes32Topic(value, label) {
-  return `0x${bytes32Word(value, label)}`;
-}
-function requestHashForTransferRequest(request) {
-  return keccakHex(encodeAbiParameters([evmPrivacyTransferTuple], [request]), "transfer request encoding");
-}
-function requestHashForSingleProofBatchRequest(request) {
-  return keccakHex(
-    `${functionSelector(evmPrivacySingleProofBatchTransferSignature)}${encodeAbiParameters([evmPrivacySingleProofBatchTuple], [request])}`,
-    "single-proof batch request encoding"
-  );
-}
-var evmPrivacyAuthorizationTypedDataTypes = Object.freeze({
-  EIP712Domain: Object.freeze([
-    Object.freeze({ name: "name", type: "string" }),
-    Object.freeze({ name: "version", type: "string" }),
-    Object.freeze({ name: "chainId", type: "uint256" }),
-    Object.freeze({ name: "verifyingContract", type: "address" })
-  ]),
-  PrivacyActionAuthorization: Object.freeze([
-    Object.freeze({ name: "authorizationEnvelopeSelector", type: "bytes4" }),
-    Object.freeze({ name: "authorizationActionSelector", type: "bytes4" }),
-    Object.freeze({ name: "effectiveSender", type: "address" }),
-    Object.freeze({ name: "executor", type: "address" }),
-    Object.freeze({ name: "nonce", type: "uint256" }),
-    Object.freeze({ name: "deadline", type: "uint64" }),
-    Object.freeze({ name: "cosmosChainIdHash", type: "bytes32" }),
-    Object.freeze({ name: "requestHash", type: "bytes32" }),
-    Object.freeze({ name: "batchId", type: "bytes32" }),
-    Object.freeze({ name: "batchItemIndex", type: "uint64" }),
-    Object.freeze({ name: "authorizationKind", type: "uint8" })
-  ])
-});
-function normalizeEvmPrivacyAuthorizationDomain(domain) {
-  if (!domain || typeof domain !== "object" || Array.isArray(domain)) {
-    throw new Error("EVM privacy authorization domain is required");
-  }
-  const name = String(domain.name ?? "").trim();
-  const version = String(domain.version ?? "1").trim();
-  if (!name) throw new Error("EVM privacy authorization domain name is required");
-  if (!version) throw new Error("EVM privacy authorization domain version is required");
-  return Object.freeze({ name, version });
-}
-function normalizeEvmAuthorizationKindSet(kinds) {
-  if (kinds == null) return null;
-  if (!Array.isArray(kinds)) {
-    throw new Error("supportedAuthorizationKinds must be an array of uint8 values");
-  }
-  const normalized = kinds.map((kind, index) => requiredUint(
-    kind,
-    `supportedAuthorizationKinds[${index}]`,
-    8
-  ));
-  if (new Set(normalized).size !== normalized.length) {
-    throw new Error("supportedAuthorizationKinds must not contain duplicates");
-  }
-  return new Set(normalized);
-}
-function normalizeEvmAuthorizationProfile(profile) {
-  if (profile == null) return null;
-  if (typeof profile !== "object" || Array.isArray(profile)) {
-    throw new Error("EVM authorization profile must be an object");
-  }
-  if (profile.validate != null && typeof profile.validate !== "function") {
-    throw new Error("EVM authorization profile validate must be a function");
-  }
-  if (profile.buildTypedData != null && typeof profile.buildTypedData !== "function") {
-    throw new Error("EVM authorization profile buildTypedData must be a function");
-  }
-  if (typeof profile.validate !== "function" && typeof profile.buildTypedData !== "function") {
-    throw new Error("EVM authorization profile must provide validate or buildTypedData");
-  }
-  return profile;
-}
-function validateEvmPrivacyAuthorization(authorization, profile, options = {}) {
-  const normalized = evmPrivacyAuthorization(authorization, options);
-  profile?.validate?.(normalized);
-  return normalized;
-}
-function createEvmAuthorizationProfile({
-  supportedAuthorizationKinds,
-  typedDataDomain,
-  validate
-} = {}) {
-  const supportedKinds = normalizeEvmAuthorizationKindSet(supportedAuthorizationKinds);
-  const domain = typedDataDomain == null ? null : normalizeEvmPrivacyAuthorizationDomain(typedDataDomain);
-  if (validate != null && typeof validate !== "function") {
-    throw new Error("authorization profile validate must be a function");
-  }
-  const applyPolicy = (authorization) => {
-    if (supportedKinds && !supportedKinds.has(authorization.authorizationKind)) {
-      throw new Error(`unsupported EVM privacy authorization kind ${authorization.authorizationKind}`);
-    }
-    if (validate) validate(authorization);
-    return authorization;
-  };
-  const profile = {
-    validate(authorization) {
-      applyPolicy(authorization);
-    },
-    ...domain ? {
-      buildTypedData(input = {}) {
-        const authorization = applyPolicy(
-          evmPrivacyAuthorization(input.authorization, { requireSignature: false })
-        );
-        return buildEvmPrivacyAuthorizationTypedData({
-          ...input,
-          authorization,
-          domain
-        });
-      }
-    } : {}
-  };
-  Object.defineProperty(profile, evmAuthorizationProfileMetadata, {
-    value: Object.freeze({
-      supportedAuthorizationKinds: supportedKinds ? Object.freeze([...supportedKinds].sort((left, right) => left < right ? -1 : left > right ? 1 : 0)) : null,
-      typedDataDomain: domain,
-      validate: validate ?? null
-    })
-  });
-  return Object.freeze(profile);
-}
-function authorizationProfilesCompatible(left, right) {
-  if (left === right) return true;
-  const leftMetadata = left?.[evmAuthorizationProfileMetadata];
-  const rightMetadata = right?.[evmAuthorizationProfileMetadata];
-  if (!leftMetadata || !rightMetadata) return false;
-  return operationIndependentValuesEqual(
-    leftMetadata.supportedAuthorizationKinds,
-    rightMetadata.supportedAuthorizationKinds
-  ) && operationIndependentValuesEqual(
-    leftMetadata.typedDataDomain,
-    rightMetadata.typedDataDomain
-  ) && leftMetadata.validate === rightMetadata.validate;
-}
-function operationIndependentValuesEqual(left, right) {
-  if (left === right) return true;
-  if (Array.isArray(left) || Array.isArray(right)) {
-    return Array.isArray(left) && Array.isArray(right) && left.length === right.length && left.every((value, index) => operationIndependentValuesEqual(value, right[index]));
-  }
-  if (!left || !right || typeof left !== "object" || typeof right !== "object") {
-    return false;
-  }
-  const leftKeys = Object.keys(left).sort();
-  const rightKeys = Object.keys(right).sort();
-  return leftKeys.length === rightKeys.length && leftKeys.every(
-    (key, index) => key === rightKeys[index] && operationIndependentValuesEqual(left[key], right[key])
-  );
-}
-function buildEvmPrivacyAuthorizationTypedData({
-  action,
-  request,
-  authorization,
-  cosmosChainId,
-  evmChainId,
-  contractAddress,
-  batchId = `0x${zeroWord}`,
-  batchItemIndex = 0,
-  domain
-} = {}) {
-  const normalizedAuthorization = evmPrivacyAuthorization(authorization, { requireSignature: false });
-  const normalizedDomain = normalizeEvmPrivacyAuthorizationDomain(domain);
-  const canonicalAction = String(action || "").trim();
-  const actionConfig = {
-    transfer: {
-      envelope: evmPrivacyTransferWithAuthorizationSignature,
-      action: evmPrivacyTransferSignature,
-      request: () => evmPrivacyTransferRequest(request),
-      requestHash: requestHashForTransferRequest,
-      batch: false
-    },
-    withdraw: {
-      envelope: evmPrivacyWithdrawWithAuthorizationSignature,
-      action: evmPrivacyWithdrawSignature,
-      request: () => evmPrivacyWithdrawRequest(request, { chainId: cosmosChainId }),
-      requestHash: (value) => keccakHex(encodeAbiParameters([evmPrivacyWithdrawTuple], [value]), "withdraw request encoding"),
-      batch: false
-    },
-    batchTransfer: {
-      envelope: evmPrivacyBatchTransferWithAuthorizationSignature,
-      action: evmPrivacyTransferSignature,
-      request: () => evmPrivacyTransferRequest(request),
-      requestHash: requestHashForTransferRequest,
-      batch: true
-    },
-    singleProofBatchTransfer: {
-      envelope: evmPrivacySingleProofBatchTransferWithAuthorizationSignature,
-      action: evmPrivacySingleProofBatchTransferSignature,
-      request: () => evmPrivacySingleProofBatchRequest(request),
-      requestHash: requestHashForSingleProofBatchRequest,
-      batch: false
-    }
-  }[canonicalAction];
-  if (!actionConfig) {
-    throw new Error("privacy authorization action must be transfer, withdraw, batchTransfer, or singleProofBatchTransfer");
-  }
-  const normalizedCosmosChainId = String(cosmosChainId || "").trim();
-  if (!normalizedCosmosChainId) throw new Error("cosmosChainId is required for privacy authorization");
-  const normalizedEvmChainId2 = requiredUint(evmChainId, "evmChainId");
-  if (contractAddress == null || String(contractAddress).trim() === "") {
-    throw new Error("privacy authorization contractAddress is required");
-  }
-  const verifyingContract = normalizeEvmAddress(contractAddress, "privacy authorization verifying contract");
-  const normalizedBatchId = actionConfig.batch ? evmPrivacyBatchId(batchId) : `0x${zeroWord}`;
-  const normalizedBatchItemIndex2 = actionConfig.batch ? requiredUint64(batchItemIndex, "batchItemIndex") : 0n;
-  const normalizedRequest = actionConfig.request();
-  const requestHash = actionConfig.requestHash(normalizedRequest);
-  return Object.freeze({
-    types: evmPrivacyAuthorizationTypedDataTypes,
-    primaryType: "PrivacyActionAuthorization",
-    domain: Object.freeze({
-      name: normalizedDomain.name,
-      version: normalizedDomain.version,
-      chainId: normalizedEvmChainId2.toString(),
-      verifyingContract
-    }),
-    message: Object.freeze({
-      authorizationEnvelopeSelector: `0x${functionSelector(actionConfig.envelope)}`,
-      authorizationActionSelector: `0x${functionSelector(actionConfig.action)}`,
-      effectiveSender: normalizedAuthorization.effectiveSender,
-      executor: normalizedAuthorization.executor,
-      nonce: normalizedAuthorization.nonce.toString(),
-      deadline: normalizedAuthorization.deadline.toString(),
-      cosmosChainIdHash: `0x${keccak2562(normalizedCosmosChainId)}`,
-      requestHash,
-      batchId: normalizedBatchId,
-      batchItemIndex: normalizedBatchItemIndex2.toString(),
-      authorizationKind: normalizedAuthorization.authorizationKind.toString()
-    })
-  });
-}
-function receiptExpectationForDeposit(message, nativeDenom) {
-  const request = evmPrivacyDepositRequest(message);
-  const amount = parseCoin(message?.amount, nativeDenom).raw;
-  return {
-    event: "PrivacyDeposit",
-    effectiveSender: "operator",
-    amount,
-    noteCommitment: receiptHex(request.noteCommitment, "note commitment")
-  };
-}
-function receiptExpectationForTransfer(message, authorization = null) {
-  const request = evmPrivacyTransferRequest(message);
-  return {
-    event: "PrivacyTransfer",
-    effectiveSender: authorization ? normalizeEvmAddress(evmPrivacyAuthorization(authorization).effectiveSender) : "operator",
-    root: receiptHex(request.root, "transfer root")
-  };
-}
-function receiptExpectationForWithdraw(message, options, authorization = null) {
-  const request = evmPrivacyWithdrawRequest(message, options);
-  return {
-    event: "PrivacyWithdraw",
-    effectiveSender: authorization ? normalizeEvmAddress(evmPrivacyAuthorization(authorization).effectiveSender) : "operator",
-    recipient: request.recipient,
-    amount: request.amount
-  };
-}
-function receiptExpectationForBatch(batchId, requests, items = null) {
-  const normalizedBatchId = evmPrivacyBatchId(batchId);
-  const entries = (items || requests).map((item, index) => {
-    const request = evmPrivacyTransferRequest(items ? item?.request ?? item?.message ?? item : item);
-    const authorization = items ? evmPrivacyAuthorization(item?.authorization ?? item?.auth ?? item?.privacyAuthorization) : null;
-    return {
-      itemIndex: BigInt(index),
-      effectiveSender: authorization ? authorization.effectiveSender : "operator",
-      requestHash: requestHashForTransferRequest(request),
-      root: receiptHex(request.root, `batch request ${index} root`)
-    };
-  });
-  return { event: "PrivacyBatchTransferItem", batchId: normalizedBatchId, entries };
-}
-function receiptExpectationForSingleProofBatch(message, authorization = null) {
-  const request = evmPrivacySingleProofBatchRequest(message);
-  return {
-    event: "PrivacySingleProofBatchTransfer",
-    effectiveSender: authorization ? normalizeEvmAddress(evmPrivacyAuthorization(authorization).effectiveSender) : "operator",
-    requestHash: requestHashForSingleProofBatchRequest(request),
-    root: receiptHex(request.root, "single-proof batch root"),
-    inputCount: BigInt(request.nullifiers.length),
-    outputCount: BigInt(request.outputs.length)
-  };
-}
-function receiptExpectationForCanonicalTransaction(transaction, buildCanonicalData, buildExpectation) {
-  const data = strip0x(transaction?.data).toLowerCase();
-  let canonicalData;
-  try {
-    canonicalData = typeof buildCanonicalData === "function" ? buildCanonicalData() : buildCanonicalData;
-  } catch {
-    return null;
-  }
-  const expected = strip0x(canonicalData).toLowerCase();
-  return data && expected && data === expected ? buildExpectation() : null;
-}
-function receiptData(value, label) {
-  const clean3 = strip0x(value);
-  if (!/^(?:[0-9a-fA-F]{2})*$/.test(clean3)) {
-    throw new Error(`${label} must be even-length hex`);
-  }
-  return clean3.toLowerCase();
-}
-function receiptWord(data, index, label) {
-  const start = index * 64;
-  const word = data.slice(start, start + 64);
-  if (word.length !== 64) throw new Error(`${label} is truncated`);
-  return word;
-}
-function receiptUint(data, index, label) {
-  return BigInt(`0x${receiptWord(data, index, label)}`);
-}
-function receiptDynamicBytes(data, index, label) {
-  const offset = receiptUint(data, index, `${label} offset`);
-  if (offset > BigInt(Number.MAX_SAFE_INTEGER) || offset % 32n !== 0n) {
-    throw new Error(`${label} has an invalid offset`);
-  }
-  const offsetIndex = Number(offset / 32n);
-  const length = receiptUint(data, offsetIndex, `${label} length`);
-  if (length > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error(`${label} is too large`);
-  const start = (offsetIndex + 1) * 64;
-  const end = start + Number(length) * 2;
-  const payload = data.slice(start, end);
-  if (payload.length !== Number(length) * 2) throw new Error(`${label} is truncated`);
-  return `0x${payload}`;
-}
-function receiptString(data, index, label) {
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytesFromHex2(strip0x(receiptDynamicBytes(data, index, label)), label));
-  } catch {
-    throw new Error(`${label} is not valid UTF-8`);
-  }
-}
-function receiptSucceeded2(status) {
-  try {
-    return BigInt(status) === 1n;
-  } catch {
-    return false;
-  }
-}
-function receiptLogTopics(log, label) {
-  if (!Array.isArray(log?.topics)) throw new Error(`${label}.topics is required`);
-  return log.topics.map((topic, index) => receiptBytes32Topic(topic, `${label}.topics[${index}]`));
-}
-function expectedPrivacyLogs(receipt, contractAddress, eventName) {
-  if (!receiptSucceeded2(receipt?.status)) {
-    throw new Error("privacy receipt does not have an explicit successful status");
-  }
-  if (!Array.isArray(receipt?.logs)) throw new Error("privacy receipt logs are required");
-  const signature = {
-    PrivacyDeposit: "PrivacyDeposit(address,address,string,bytes)",
-    PrivacyTransfer: "PrivacyTransfer(address,address,bytes)",
-    PrivacyWithdraw: "PrivacyWithdraw(address,address,address,string)",
-    PrivacyBatchTransferItem: "PrivacyBatchTransferItem(address,address,bytes32,uint64,bytes32,bytes)",
-    PrivacySingleProofBatchTransfer: "PrivacySingleProofBatchTransfer(address,address,bytes32,bytes,uint8,uint8)"
-  }[eventName];
-  if (!signature) throw new Error(`unsupported privacy receipt event ${eventName}`);
-  const topic = `0x${keccak2562(signature)}`;
-  const target = normalizeEvmAddress(contractAddress, "privacy contract address");
-  return receipt.logs.filter((log, index) => {
-    if (normalizeEvmAddress(log?.address, `receipt.logs[${index}].address`) !== target) return false;
-    const topics = receiptLogTopics(log, `receipt.logs[${index}]`);
-    return topics[0] === topic;
-  });
-}
-function assertReceiptSenderTopics(log, expectation, operator, label) {
-  const topics = receiptLogTopics(log, label);
-  const effectiveSender = expectation.effectiveSender === "operator" ? operator : normalizeEvmAddress(expectation.effectiveSender, `${label} effective sender`);
-  if (topics[1] !== receiptAddressTopic(effectiveSender) || topics[2] !== receiptAddressTopic(operator)) {
-    throw new Error(`${label} effectiveSender/operator does not match the prepared privacy call`);
-  }
-  return topics;
-}
-function normalizedEvmTransactionHash(value, label) {
-  const clean3 = String(value ?? "").trim().replace(/^0x/i, "").toLowerCase();
-  if (!/^[0-9a-f]{64}$/.test(clean3)) {
-    throw new Error(`${label} must be a 32-byte EVM transaction hash`);
-  }
-  return `0x${clean3}`;
-}
-function verifyEvmTransactionIdentity({
-  transaction,
-  rpcTransaction,
-  txHash,
-  sender,
-  expectedChainId,
-  actualChainId
-} = {}) {
-  if (!rpcTransaction || typeof rpcTransaction !== "object" || Array.isArray(rpcTransaction)) {
-    throw new Error("EVM transaction identity verification requires eth_getTransactionByHash output");
-  }
-  const metadata = evmTransactionMetadata(transaction);
-  if (!metadata.operation || !metadata.expectedTo || !metadata.expectedData || !metadata.expectedValue) {
-    throw new Error("EVM transaction identity verification requires an SDK-prepared privacy transaction");
-  }
-  const preparedTo = normalizeEvmAddress(transaction?.to, "prepared privacy transaction target");
-  const preparedData = String(transaction?.data ?? "").trim().toLowerCase();
-  const preparedValue = normalizedEvmQuantity(
-    transaction?.value ?? "0x0",
-    "prepared privacy transaction value"
-  );
-  if (preparedTo !== metadata.expectedTo || preparedData !== metadata.expectedData || preparedValue !== metadata.expectedValue) {
-    throw new Error("prepared privacy transaction binding was modified before confirmation");
-  }
-  const requestedHash = normalizedEvmTransactionHash(txHash, "requested transaction hash");
-  const rpcHash = normalizedEvmTransactionHash(
-    rpcTransaction.hash ?? rpcTransaction.transactionHash,
-    "RPC transaction hash"
-  );
-  if (rpcHash !== requestedHash) {
-    throw new Error("RPC transaction hash does not match the requested transaction");
-  }
-  const expectedSender = normalizeEvmAddress(sender, "privacy transaction sender");
-  const rpcSender = normalizeEvmAddress(rpcTransaction.from, "RPC transaction sender");
-  if (rpcSender !== expectedSender) {
-    throw new Error("RPC transaction sender does not match the submitted privacy transaction sender");
-  }
-  if (transaction?.from != null && normalizeEvmAddress(transaction.from, "prepared privacy transaction sender") !== expectedSender) {
-    throw new Error("prepared privacy transaction sender does not match the submitted sender");
-  }
-  const rpcTo = normalizeEvmAddress(rpcTransaction.to, "RPC transaction target");
-  if (rpcTo !== preparedTo) {
-    throw new Error("RPC transaction target does not match the prepared privacy transaction");
-  }
-  const rpcInput = rpcTransaction.input;
-  const rpcData = rpcTransaction.data;
-  if (rpcInput != null && rpcData != null && String(rpcInput).trim().toLowerCase() !== String(rpcData).trim().toLowerCase()) {
-    throw new Error("RPC transaction input/data aliases conflict");
-  }
-  const actualData = String(rpcInput ?? rpcData ?? "").trim().toLowerCase();
-  if (!actualData || actualData !== preparedData) {
-    throw new Error("RPC transaction calldata does not match the prepared privacy transaction");
-  }
-  if (rpcTransaction.value == null) {
-    throw new Error("RPC transaction value is required for privacy transaction verification");
-  }
-  const actualValue = normalizedEvmQuantity(rpcTransaction.value, "RPC transaction value");
-  if (actualValue !== preparedValue) {
-    throw new Error("RPC transaction value does not match the prepared privacy transaction");
-  }
-  const configuredChainId = expectedChainId == null || String(expectedChainId).trim() === "" ? "" : normalizedEvmQuantity(expectedChainId, "expected EVM chain ID");
-  const preparedChainId = transaction?.chainId == null || String(transaction.chainId).trim() === "" ? "" : normalizedEvmQuantity(transaction.chainId, "prepared EVM chain ID");
-  const expectedNetwork = configuredChainId || preparedChainId;
-  if (!expectedNetwork) {
-    throw new Error("expected EVM chain ID is required for transaction identity verification");
-  }
-  if (configuredChainId && preparedChainId && configuredChainId !== preparedChainId) {
-    throw new Error("prepared EVM transaction chain ID does not match the configured network");
-  }
-  const rpcNetwork = normalizedEvmQuantity(actualChainId, "EVM RPC chain ID");
-  if (!rpcNetwork || rpcNetwork !== expectedNetwork) {
-    throw new Error("EVM RPC chain ID does not match the prepared privacy transaction");
-  }
-  if (rpcTransaction.chainId != null && String(rpcTransaction.chainId).trim() !== "" && normalizedEvmQuantity(rpcTransaction.chainId, "RPC transaction chain ID") !== expectedNetwork) {
-    throw new Error("RPC transaction chain ID does not match the prepared privacy transaction");
-  }
-  return Object.freeze({
-    verified: true,
-    operation: metadata.operation,
-    txHash: requestedHash,
-    sender: expectedSender,
-    to: preparedTo,
-    data: preparedData,
-    value: preparedValue,
-    chainId: expectedNetwork,
-    txBytesHash: evmTransactionBindingHash(transaction)
-  });
-}
-function verifyEvmPrivacyReceipt({ transaction, receipt, sender, contractAddress } = {}) {
-  const expectation = evmTransactionMetadata(transaction).receiptExpectation;
-  if (!expectation || typeof expectation !== "object") {
-    throw new Error("privacy receipt verification requires an SDK-prepared transaction");
-  }
-  const operator = normalizeEvmAddress(sender, "privacy transaction sender");
-  const logs = expectedPrivacyLogs(
-    receipt,
-    contractAddress ?? transaction?.to,
-    expectation.event
-  );
-  if (expectation.event !== "PrivacyBatchTransferItem" && logs.length !== 1) {
-    throw new Error(`${expectation.event} receipt event count must be exactly one`);
-  }
-  if (expectation.event === "PrivacyDeposit") {
-    const log = logs[0];
-    assertReceiptSenderTopics(log, expectation, operator, "PrivacyDeposit");
-    const data = receiptData(log.data, "PrivacyDeposit data");
-    if (receiptString(data, 0, "PrivacyDeposit amount") !== expectation.amount || receiptDynamicBytes(data, 1, "PrivacyDeposit note commitment") !== expectation.noteCommitment) {
-      throw new Error("PrivacyDeposit amount or note commitment does not match the prepared privacy call");
-    }
-  } else if (expectation.event === "PrivacyTransfer") {
-    const log = logs[0];
-    assertReceiptSenderTopics(log, expectation, operator, "PrivacyTransfer");
-    if (receiptDynamicBytes(receiptData(log.data, "PrivacyTransfer data"), 0, "PrivacyTransfer root") !== expectation.root) {
-      throw new Error("PrivacyTransfer root does not match the prepared privacy call");
-    }
-  } else if (expectation.event === "PrivacyWithdraw") {
-    const log = logs[0];
-    const topics = assertReceiptSenderTopics(log, expectation, operator, "PrivacyWithdraw");
-    if (topics[3] !== receiptAddressTopic(expectation.recipient) || receiptString(receiptData(log.data, "PrivacyWithdraw data"), 0, "PrivacyWithdraw amount") !== expectation.amount) {
-      throw new Error("PrivacyWithdraw recipient or amount does not match the prepared privacy call");
-    }
-  } else if (expectation.event === "PrivacyBatchTransferItem") {
-    if (logs.length !== expectation.entries.length) {
-      throw new Error(`PrivacyBatchTransferItem receipt emitted ${logs.length} items; expected ${expectation.entries.length}`);
-    }
-    const seen = /* @__PURE__ */ new Set();
-    for (const [index, log] of logs.entries()) {
-      const data = receiptData(log.data, `PrivacyBatchTransferItem[${index}] data`);
-      const itemIndex = receiptUint(data, 0, `PrivacyBatchTransferItem[${index}] item index`);
-      if (itemIndex >= BigInt(expectation.entries.length) || seen.has(itemIndex.toString())) {
-        throw new Error("PrivacyBatchTransferItem has an invalid or duplicate item index");
-      }
-      seen.add(itemIndex.toString());
-      const expected = expectation.entries[Number(itemIndex)];
-      const topics = assertReceiptSenderTopics(log, expected, operator, `PrivacyBatchTransferItem[${index}]`);
-      const batchIDMatches = topics[3] === receiptBytes32Topic(expectation.batchId, "batchId");
-      const observedRequestHash = `0x${receiptWord(data, 1, `PrivacyBatchTransferItem[${index}] request hash`)}`;
-      const requestHashMatches = observedRequestHash === expected.requestHash;
-      const rootMatches = receiptDynamicBytes(data, 2, `PrivacyBatchTransferItem[${index}] root`) === expected.root;
-      if (!batchIDMatches || !requestHashMatches || !rootMatches) {
-        const mismatches = [
-          !batchIDMatches && "batchId",
-          !requestHashMatches && "requestHash",
-          !rootMatches && "root"
-        ].filter(Boolean).join(", ");
-        throw new Error(`PrivacyBatchTransferItem ${itemIndex} does not match the prepared privacy call: ${mismatches}`);
-      }
-    }
-  } else if (expectation.event === "PrivacySingleProofBatchTransfer") {
-    const log = logs[0];
-    const topics = assertReceiptSenderTopics(log, expectation, operator, "PrivacySingleProofBatchTransfer");
-    const data = receiptData(log.data, "PrivacySingleProofBatchTransfer data");
-    if (topics[3] !== receiptBytes32Topic(expectation.requestHash, "single-proof batch request hash") || receiptDynamicBytes(data, 0, "PrivacySingleProofBatchTransfer root") !== expectation.root || receiptUint(data, 1, "PrivacySingleProofBatchTransfer input count") !== expectation.inputCount || receiptUint(data, 2, "PrivacySingleProofBatchTransfer output count") !== expectation.outputCount) {
-      throw new Error("PrivacySingleProofBatchTransfer does not match the prepared privacy call");
-    }
-  }
-  return Object.freeze({ verified: true, event: expectation.event, operation: evmTransactionMetadata(transaction).operation });
 }
 function createEip1193WalletAdapter({ provider, account } = {}) {
   if (!provider?.request) {
@@ -96990,17 +94537,6 @@ function createEip1193WalletAdapter({ provider, account } = {}) {
       }
       return signature;
     },
-    async signTypedData(typedData) {
-      const address = await this.getAddress();
-      const signature = await provider.request({
-        method: "eth_signTypedData_v4",
-        params: [address, JSON.stringify(typedData)]
-      });
-      if (typeof signature !== "string" || !/^0x[0-9a-fA-F]+$/.test(signature)) {
-        throw new Error("EVM wallet eth_signTypedData_v4 must return a 0x-prefixed hex signature");
-      }
-      return signature;
-    },
     async sendTransaction(transaction) {
       const externalTransaction = externalEvmTransaction(transaction);
       const from = externalTransaction.from ? normalizeEvmAddress(externalTransaction.from, "transaction from") : await this.getAddress();
@@ -97024,42 +94560,20 @@ function createEip1193WalletAdapter({ provider, account } = {}) {
   };
 }
 function createEvmContractAdapter({
-  contractAddress,
+  contractAddress = defaultEvmPrivacyPrecompileAddress,
   encodeDeposit = defaultEncodeEvmDeposit,
   encodeTransfer = defaultEncodeEvmTransfer,
   encodeWithdraw = defaultEncodeEvmWithdraw,
-  encodeTransferWithAuthorization = encodeEvmPrivacyTransferWithAuthorization,
-  encodeWithdrawWithAuthorization = encodeEvmPrivacyWithdrawWithAuthorization,
-  encodeBatchTransfer = encodeEvmPrivacyBatchTransfer,
-  encodeBatchTransferWithAuthorization = encodeEvmPrivacyBatchTransferWithAuthorization,
-  encodeSingleProofBatchTransfer = encodeEvmPrivacySingleProofBatchTransfer,
-  encodeSingleProofBatchTransferWithAuthorization = encodeEvmPrivacySingleProofBatchTransferWithAuthorization,
   accountPrefix: accountPrefix2,
   chainId,
   depositMode = defaultEvmDepositMode,
-  nativeDenom = "uclair",
-  authorizationProfile = null,
-  verifyPrivacyReceipt: verifyPrivacyReceiptHook
+  nativeDenom = "uclair"
 } = {}) {
-  if (contractAddress == null || String(contractAddress).trim() === "") {
-    throw new Error("EVM contract adapter requires contractAddress");
-  }
   const to = normalizeEvmAddress(contractAddress, "contractAddress");
   const resolvedDepositMode = normalizeEvmDepositMode(depositMode);
   const resolvedNativeDenom = normalizeEvmNativeDenom(nativeDenom);
-  const resolvedAuthorizationProfile = normalizeEvmAuthorizationProfile(authorizationProfile);
-  if (verifyPrivacyReceiptHook != null && typeof verifyPrivacyReceiptHook !== "function") {
-    throw new Error("EVM contract adapter verifyPrivacyReceipt must be a function");
-  }
-  const validateAuthorization = (authorization, options = {}) => validateEvmPrivacyAuthorization(
-    authorization,
-    resolvedAuthorizationProfile,
-    options
-  );
   return {
     contractAddress: to,
-    ...resolvedAuthorizationProfile ? { authorizationProfile: resolvedAuthorizationProfile } : {},
-    ...verifyPrivacyReceiptHook ? { verifyPrivacyReceipt: verifyPrivacyReceiptHook } : {},
     abi: resolvedDepositMode === evmDepositModePayableExactValue ? evmPrivacyPrecompilePayableDepositAbi : evmPrivacyPrecompileAbi,
     buildDepositTransaction(message, options = {}) {
       const data = encodeDeposit(message, { accountPrefix: accountPrefix2, chainId, ...options });
@@ -97098,97 +94612,19 @@ function createEvmContractAdapter({
         data: encodeWithdraw(message, { accountPrefix: accountPrefix2, chainId, ...options }),
         value
       };
-    },
-    buildTransferWithAuthorizationTransaction(message, authorization, options = {}) {
-      const value = zeroTransactionValue(options, "transferWithAuthorization");
-      return {
-        to,
-        data: encodeTransferWithAuthorization(
-          message,
-          validateAuthorization(authorization),
-          { accountPrefix: accountPrefix2, chainId, ...options }
-        ),
-        value
-      };
-    },
-    buildWithdrawWithAuthorizationTransaction(message, authorization, options = {}) {
-      const value = zeroTransactionValue(options, "withdrawWithAuthorization");
-      return {
-        to,
-        data: encodeWithdrawWithAuthorization(
-          message,
-          validateAuthorization(authorization),
-          { accountPrefix: accountPrefix2, chainId, ...options }
-        ),
-        value
-      };
-    },
-    buildBatchTransferTransaction(batchId, requests, options = {}) {
-      const value = zeroTransactionValue(options, "batchTransfer");
-      return { to, data: encodeBatchTransfer(batchId, requests, { accountPrefix: accountPrefix2, chainId, ...options }), value };
-    },
-    buildBatchTransferWithAuthorizationTransaction(batchId, items, options = {}) {
-      const value = zeroTransactionValue(options, "batchTransferWithAuthorization");
-      if (!Array.isArray(items)) throw new Error("authorized batch items must be an array");
-      const normalizedItems = items.map((item, index) => ({
-        ...item,
-        authorization: validateAuthorization(
-          item?.authorization ?? item?.auth ?? item?.privacyAuthorization,
-          { requireSignature: true, index }
-        )
-      }));
-      return {
-        to,
-        data: encodeBatchTransferWithAuthorization(batchId, normalizedItems, { accountPrefix: accountPrefix2, chainId, ...options }),
-        value
-      };
-    },
-    buildSingleProofBatchTransferTransaction(message, options = {}) {
-      const value = zeroTransactionValue(options, "singleProofBatchTransfer");
-      return { to, data: encodeSingleProofBatchTransfer(message, { accountPrefix: accountPrefix2, chainId, ...options }), value };
-    },
-    buildSingleProofBatchTransferWithAuthorizationTransaction(message, authorization, options = {}) {
-      const value = zeroTransactionValue(options, "singleProofBatchTransferWithAuthorization");
-      return {
-        to,
-        data: encodeSingleProofBatchTransferWithAuthorization(
-          message,
-          validateAuthorization(authorization),
-          { accountPrefix: accountPrefix2, chainId, ...options }
-        ),
-        value
-      };
-    },
-    buildAuthorizationTypedData(input = {}) {
-      if (!resolvedAuthorizationProfile?.buildTypedData) {
-        throw new Error("configured EVM authorization profile does not provide buildTypedData()");
-      }
-      return resolvedAuthorizationProfile.buildTypedData({
-        ...input,
-        authorization: validateAuthorization(input.authorization, { requireSignature: false }),
-        contractAddress: input.contractAddress ?? to
-      });
     }
   };
 }
 function createEvmPrivacyPrecompileAdapter(options = {}) {
   return createEvmContractAdapter({
-    contractAddress: options.contractAddress,
+    contractAddress: options.contractAddress ?? evmPrivacyPrecompileAddress,
     accountPrefix: options.accountPrefix,
     chainId: options.chainId,
     depositMode: options.depositMode,
     nativeDenom: options.nativeDenom,
-    authorizationProfile: options.authorizationProfile,
-    verifyPrivacyReceipt: options.verifyPrivacyReceipt,
     encodeDeposit: options.encodeDeposit ?? encodeEvmPrivacyDeposit,
     encodeTransfer: options.encodeTransfer ?? encodeEvmPrivacyTransfer,
-    encodeWithdraw: options.encodeWithdraw ?? encodeEvmPrivacyWithdraw,
-    encodeTransferWithAuthorization: options.encodeTransferWithAuthorization ?? encodeEvmPrivacyTransferWithAuthorization,
-    encodeWithdrawWithAuthorization: options.encodeWithdrawWithAuthorization ?? encodeEvmPrivacyWithdrawWithAuthorization,
-    encodeBatchTransfer: options.encodeBatchTransfer ?? encodeEvmPrivacyBatchTransfer,
-    encodeBatchTransferWithAuthorization: options.encodeBatchTransferWithAuthorization ?? encodeEvmPrivacyBatchTransferWithAuthorization,
-    encodeSingleProofBatchTransfer: options.encodeSingleProofBatchTransfer ?? encodeEvmPrivacySingleProofBatchTransfer,
-    encodeSingleProofBatchTransferWithAuthorization: options.encodeSingleProofBatchTransferWithAuthorization ?? encodeEvmPrivacySingleProofBatchTransferWithAuthorization
+    encodeWithdraw: options.encodeWithdraw ?? encodeEvmPrivacyWithdraw
   });
 }
 function publicPrivacyAccount2(material) {
@@ -97204,7 +94640,7 @@ function publicPrivacyAccount2(material) {
 var ClairveilEvmClient = class {
   constructor({
     provider,
-    contractAddress,
+    contractAddress = defaultEvmPrivacyPrecompileAddress,
     chainId,
     evmChainId,
     accountPrefix: accountPrefix2,
@@ -97213,8 +94649,7 @@ var ClairveilEvmClient = class {
     defaultDenom = "uclair",
     depositMode = defaultEvmDepositMode,
     nativeDenom = defaultDenom,
-    contractAdapter,
-    authorizationProfile = null
+    contractAdapter
   } = {}) {
     this.provider = provider;
     this.chainId = chainId;
@@ -97225,44 +94660,12 @@ var ClairveilEvmClient = class {
     this.defaultDenom = String(defaultDenom || "uclair");
     this.depositMode = normalizeEvmDepositMode(depositMode);
     this.nativeDenom = normalizeEvmNativeDenom(nativeDenom, this.defaultDenom);
-    const adapterContractAddress = contractAdapter?.contractAddress;
-    if (contractAdapter && (adapterContractAddress == null || String(adapterContractAddress).trim() === "")) {
-      throw new Error("EVM contractAdapter.contractAddress is required");
-    }
-    const resolvedContractAddress = contractAddress ?? adapterContractAddress;
-    if (resolvedContractAddress == null || String(resolvedContractAddress).trim() === "") {
-      throw new Error("Clairveil EVM client requires contractAddress or contractAdapter.contractAddress");
-    }
-    if (contractAdapter && contractAddress != null && normalizeEvmAddress(adapterContractAddress, "contractAdapter.contractAddress") !== normalizeEvmAddress(contractAddress, "contractAddress")) {
-      throw new Error("contractAddress conflicts with contractAdapter.contractAddress");
-    }
-    const adapterAuthorizationProfile = contractAdapter?.authorizationProfile ?? null;
-    if (authorizationProfile != null && adapterAuthorizationProfile != null && !authorizationProfilesCompatible(authorizationProfile, adapterAuthorizationProfile)) {
-      throw new Error("authorizationProfile conflicts with contractAdapter.authorizationProfile");
-    }
-    this.authorizationProfile = normalizeEvmAuthorizationProfile(
-      authorizationProfile ?? adapterAuthorizationProfile
-    );
     this.contract = contractAdapter || createEvmPrivacyPrecompileAdapter({
-      contractAddress: resolvedContractAddress,
+      contractAddress,
       accountPrefix: this.accountPrefix,
       chainId,
       depositMode: this.depositMode,
-      nativeDenom: this.nativeDenom,
-      authorizationProfile: this.authorizationProfile
-    });
-  }
-  validateAuthorization(authorization, options = {}) {
-    return validateEvmPrivacyAuthorization(authorization, this.authorizationProfile, options);
-  }
-  buildAuthorizationTypedData(input = {}) {
-    if (!this.authorizationProfile?.buildTypedData) {
-      throw new Error("configured EVM authorization profile does not provide buildTypedData()");
-    }
-    return this.authorizationProfile.buildTypedData({
-      ...input,
-      authorization: this.validateAuthorization(input.authorization, { requireSignature: false }),
-      contractAddress: input.contractAddress ?? this.contract.contractAddress
+      nativeDenom: this.nativeDenom
     });
   }
   buildDepositMaterial(input) {
@@ -97306,12 +94709,7 @@ var ClairveilEvmClient = class {
             depositMode: this.depositMode,
             nativeDenom: this.nativeDenom,
             expectedData: expectedData2,
-            expectedValue: expectedValue2,
-            receiptExpectation: receiptExpectationForCanonicalTransaction(
-              transaction2,
-              () => encodeEvmPrivacyDeposit(input.message),
-              () => receiptExpectationForDeposit(input.message, this.nativeDenom)
-            )
+            expectedValue: expectedValue2
           }
         ))
       };
@@ -97361,12 +94759,7 @@ var ClairveilEvmClient = class {
           depositMode: this.depositMode,
           nativeDenom: this.nativeDenom,
           expectedData,
-          expectedValue,
-          receiptExpectation: receiptExpectationForCanonicalTransaction(
-            transaction,
-            () => encodeEvmPrivacyDeposit(message),
-            () => receiptExpectationForDeposit(message, this.nativeDenom)
-          )
+          expectedValue
         }
       ))
     };
@@ -97379,6 +94772,7 @@ var ClairveilEvmClient = class {
       chainId: input.chainId ?? this.chainId,
       checkNullifiers: input.checkNullifiers
     });
+    assertEvmTransferExecutionBinding(input, built);
     const transaction = this.contract.buildTransferTransaction(
       built.message,
       input.transactionOptions
@@ -97388,13 +94782,7 @@ var ClairveilEvmClient = class {
       ...built,
       transaction: markedEvmTransaction(
         transaction,
-        privacyTransactionBindingMetadata(transaction, "transfer", {
-          receiptExpectation: receiptExpectationForCanonicalTransaction(
-            transaction,
-            () => encodeEvmPrivacyTransfer(built.message),
-            () => receiptExpectationForTransfer(built.message)
-          )
-        })
+        privacyTransactionBindingMetadata(transaction, "transfer")
       )
     };
   }
@@ -97479,172 +94867,7 @@ var ClairveilEvmClient = class {
       message,
       transaction: markedEvmTransaction(
         transaction,
-        privacyTransactionBindingMetadata(transaction, "withdraw", {
-          receiptExpectation: receiptExpectationForCanonicalTransaction(
-            transaction,
-            () => encodeEvmPrivacyWithdraw(message, { accountPrefix: accountPrefix2, chainId: this.chainId }),
-            () => receiptExpectationForWithdraw(message, { accountPrefix: accountPrefix2, chainId: this.chainId })
-          )
-        })
-      )
-    };
-  }
-  buildTransferWithAuthorizationTransaction({ message, authorization, transactionOptions } = {}) {
-    if (!message) throw new Error("transfer message is required");
-    if (typeof this.contract.buildTransferWithAuthorizationTransaction !== "function") {
-      throw new Error("configured EVM contract adapter does not support transferWithAuthorization");
-    }
-    const normalizedAuthorization = this.validateAuthorization(authorization);
-    const transaction = this.contract.buildTransferWithAuthorizationTransaction(
-      message,
-      normalizedAuthorization,
-      transactionOptions
-    );
-    return {
-      status: "ready",
-      message,
-      authorization: normalizedAuthorization,
-      transaction: markedEvmTransaction(
-        transaction,
-        privacyTransactionBindingMetadata(transaction, "transferWithAuthorization", {
-          receiptExpectation: receiptExpectationForCanonicalTransaction(
-            transaction,
-            () => encodeEvmPrivacyTransferWithAuthorization(message, normalizedAuthorization),
-            () => receiptExpectationForTransfer(message, normalizedAuthorization)
-          )
-        })
-      )
-    };
-  }
-  buildWithdrawWithAuthorizationTransaction({ message, authorization, transactionOptions } = {}) {
-    if (!message) throw new Error("withdraw message is required");
-    if (typeof this.contract.buildWithdrawWithAuthorizationTransaction !== "function") {
-      throw new Error("configured EVM contract adapter does not support withdrawWithAuthorization");
-    }
-    const normalizedAuthorization = this.validateAuthorization(authorization);
-    const transaction = this.contract.buildWithdrawWithAuthorizationTransaction(
-      message,
-      normalizedAuthorization,
-      transactionOptions
-    );
-    return {
-      status: "ready",
-      message,
-      authorization: normalizedAuthorization,
-      transaction: markedEvmTransaction(
-        transaction,
-        privacyTransactionBindingMetadata(transaction, "withdrawWithAuthorization", {
-          receiptExpectation: receiptExpectationForCanonicalTransaction(
-            transaction,
-            () => encodeEvmPrivacyWithdrawWithAuthorization(
-              message,
-              normalizedAuthorization,
-              { accountPrefix: this.accountPrefix, chainId: this.chainId }
-            ),
-            () => receiptExpectationForWithdraw(message, { accountPrefix: this.accountPrefix, chainId: this.chainId }, normalizedAuthorization)
-          )
-        })
-      )
-    };
-  }
-  buildBatchTransferTransaction({ batchId, requests, transactionOptions } = {}) {
-    if (typeof this.contract.buildBatchTransferTransaction !== "function") {
-      throw new Error("configured EVM contract adapter does not support batchTransfer");
-    }
-    const transaction = this.contract.buildBatchTransferTransaction(batchId, requests, transactionOptions);
-    return {
-      status: "ready",
-      batchId,
-      requests,
-      transaction: markedEvmTransaction(
-        transaction,
-        privacyTransactionBindingMetadata(transaction, "batchTransfer", {
-          receiptExpectation: receiptExpectationForCanonicalTransaction(
-            transaction,
-            () => encodeEvmPrivacyBatchTransfer(batchId, requests),
-            () => receiptExpectationForBatch(batchId, requests)
-          )
-        })
-      )
-    };
-  }
-  buildBatchTransferWithAuthorizationTransaction({ batchId, items, transactionOptions } = {}) {
-    if (typeof this.contract.buildBatchTransferWithAuthorizationTransaction !== "function") {
-      throw new Error("configured EVM contract adapter does not support batchTransferWithAuthorization");
-    }
-    if (!Array.isArray(items)) throw new Error("authorized batch items must be an array");
-    const normalizedItems = items.map((item) => ({
-      ...item,
-      authorization: this.validateAuthorization(
-        item?.authorization ?? item?.auth ?? item?.privacyAuthorization
-      )
-    }));
-    const transaction = this.contract.buildBatchTransferWithAuthorizationTransaction(
-      batchId,
-      normalizedItems,
-      transactionOptions
-    );
-    return {
-      status: "ready",
-      batchId,
-      items: normalizedItems,
-      transaction: markedEvmTransaction(
-        transaction,
-        privacyTransactionBindingMetadata(transaction, "batchTransferWithAuthorization", {
-          receiptExpectation: receiptExpectationForCanonicalTransaction(
-            transaction,
-            () => encodeEvmPrivacyBatchTransferWithAuthorization(batchId, normalizedItems),
-            () => receiptExpectationForBatch(batchId, null, normalizedItems)
-          )
-        })
-      )
-    };
-  }
-  buildSingleProofBatchTransferTransaction({ message, transactionOptions } = {}) {
-    if (!message) throw new Error("single-proof batch transfer message is required");
-    if (typeof this.contract.buildSingleProofBatchTransferTransaction !== "function") {
-      throw new Error("configured EVM contract adapter does not support singleProofBatchTransfer");
-    }
-    const transaction = this.contract.buildSingleProofBatchTransferTransaction(message, transactionOptions);
-    return {
-      status: "ready",
-      message,
-      transaction: markedEvmTransaction(
-        transaction,
-        privacyTransactionBindingMetadata(transaction, "singleProofBatchTransfer", {
-          receiptExpectation: receiptExpectationForCanonicalTransaction(
-            transaction,
-            () => encodeEvmPrivacySingleProofBatchTransfer(message),
-            () => receiptExpectationForSingleProofBatch(message)
-          )
-        })
-      )
-    };
-  }
-  buildSingleProofBatchTransferWithAuthorizationTransaction({ message, authorization, transactionOptions } = {}) {
-    if (!message) throw new Error("single-proof batch transfer message is required");
-    if (typeof this.contract.buildSingleProofBatchTransferWithAuthorizationTransaction !== "function") {
-      throw new Error("configured EVM contract adapter does not support singleProofBatchTransferWithAuthorization");
-    }
-    const normalizedAuthorization = this.validateAuthorization(authorization);
-    const transaction = this.contract.buildSingleProofBatchTransferWithAuthorizationTransaction(
-      message,
-      normalizedAuthorization,
-      transactionOptions
-    );
-    return {
-      status: "ready",
-      message,
-      authorization: normalizedAuthorization,
-      transaction: markedEvmTransaction(
-        transaction,
-        privacyTransactionBindingMetadata(transaction, "singleProofBatchTransferWithAuthorization", {
-          receiptExpectation: receiptExpectationForCanonicalTransaction(
-            transaction,
-            () => encodeEvmPrivacySingleProofBatchTransferWithAuthorization(message, normalizedAuthorization),
-            () => receiptExpectationForSingleProofBatch(message, normalizedAuthorization)
-          )
-        })
+        privacyTransactionBindingMetadata(transaction, "withdraw")
       )
     };
   }
@@ -97655,32 +94878,22 @@ var ClairveilEvmClient = class {
       this.contract.contractAddress
     );
     const reservationContext = broadcastReservationContext2(reservationOptions);
-    const checkNullifiers = reservationOptions.checkNullifiers ?? reservationOptions.check_nullifiers;
-    if (reservationOptions.checkNullifiers != null && reservationOptions.check_nullifiers != null && reservationOptions.checkNullifiers !== reservationOptions.check_nullifiers) {
-      throw new Error("checkNullifiers aliases conflict");
-    }
     if (evmTransactionMetadata(transaction).reservationRequired && !reservationContext) {
       throw new Error("prepared reserved EVM transaction requires reservationManager and reservation");
     }
-    const transactionHash2 = evmTransactionBindingHash(transaction);
+    const transactionHash = evmTransactionBindingHash(transaction);
     const broadcastTransaction = await validateRelayBroadcastContext2(reservationOptions, {
       expectedChainId: this.chainId,
       accountPrefix: this.accountPrefix,
       transaction,
       contract: this.contract,
       reservationContext,
-      transactionHash: transactionHash2
+      transactionHash
     });
     const submittedTransaction = externalEvmTransaction(broadcastTransaction);
     const broadcastTransactionHash = evmTransactionBindingHash(submittedTransaction);
     const submissionWallet = wallet?.sendTransaction ? wallet : createEip1193WalletAdapter({ provider: this.provider });
     await assertWalletEvmChainId(submissionWallet, this.evmChainId);
-    const relayPayload = reservationOptions.relayPayload ?? reservationOptions.relay_payload;
-    await recheckReservedInputNullifiers(
-      reservationContext,
-      checkNullifiers,
-      relayPayload?.nullifier_hex ? [relayPayload.nullifier_hex] : []
-    );
     await beginBroadcastReservation2(reservationContext, broadcastTransactionHash);
     let txHash;
     try {
@@ -97702,45 +94915,6 @@ var ClairveilEvmClient = class {
     await markBroadcastReservationSubmitted2(reservationContext, normalizedTxHash4);
     return normalizedTxHash4;
   }
-  verifyPrivacyReceipt({ transaction, receipt, sender } = {}) {
-    if (!receiptSucceeded2(receipt?.status)) {
-      throw new Error("privacy receipt does not have an explicit successful status");
-    }
-    const metadata = evmTransactionMetadata(transaction);
-    if (typeof this.contract.verifyPrivacyReceipt === "function") {
-      const result = this.contract.verifyPrivacyReceipt(Object.freeze({
-        transaction,
-        receipt,
-        sender,
-        contractAddress: this.contract.contractAddress,
-        operation: metadata.operation
-      }));
-      if (!result || typeof result !== "object" || Array.isArray(result) || result.verified !== true) {
-        throw new Error("custom EVM privacy receipt verifier must return { verified: true, operation, event }");
-      }
-      const operation = String(result.operation ?? "").trim();
-      const event = String(result.event ?? "").trim();
-      if (!metadata.operation || !operation || operation !== metadata.operation) {
-        throw new Error("custom EVM privacy receipt verifier operation does not match the prepared transaction");
-      }
-      if (!event) {
-        throw new Error("custom EVM privacy receipt verifier must identify the verified event");
-      }
-      return Object.freeze({ verified: true, operation, event });
-    }
-    return verifyEvmPrivacyReceipt({
-      transaction,
-      receipt,
-      sender,
-      contractAddress: this.contract.contractAddress
-    });
-  }
-  verifyTransactionIdentity(input = {}) {
-    return verifyEvmTransactionIdentity({
-      ...input,
-      expectedChainId: input.expectedChainId ?? this.evmChainId
-    });
-  }
   privacyAccount(material) {
     return publicPrivacyAccount2(material);
   }
@@ -97750,6 +94924,7 @@ function createClairveilEvmClient(options) {
 }
 
 // node_modules/clairveiljs/src/browser/wallet-client.js
+var defaultPrepareScanMaxPages2 = 1e3;
 var defaultFetchTimeoutMs2 = 3e4;
 var readOnlyEvmJsonRpcMethods = /* @__PURE__ */ new Set([
   "eth_blockNumber",
@@ -97798,7 +94973,7 @@ function trimTrailingSlash(value) {
 function normalizeRpcEndpoint2(value) {
   return trimTrailingSlash(String(value || "").replace(/^tcp:\/\//, "http://"));
 }
-function normalizeRestEndpoints2(primary, restEndpoints = [], { allowEmpty = false } = {}) {
+function normalizeRestEndpoints2(primary, restEndpoints = []) {
   const endpoints = [];
   for (const endpoint of [primary, ...Array.isArray(restEndpoints) ? restEndpoints : []]) {
     const normalized = trimTrailingSlash(endpoint);
@@ -97806,7 +94981,7 @@ function normalizeRestEndpoints2(primary, restEndpoints = [], { allowEmpty = fal
       endpoints.push(normalized);
     }
   }
-  if (!endpoints.length && !allowEmpty) {
+  if (!endpoints.length) {
     throw new Error("rest endpoint is required");
   }
   return endpoints;
@@ -97837,7 +95012,6 @@ var browserProfileKeys = /* @__PURE__ */ new Set([
   "evmPrivacyPrecompileAddress",
   "evmDepositMode",
   "evmNativeDenom",
-  "evmAuthorizationProfile",
   "evmGasLimit",
   "evmSendGasLimit"
 ]);
@@ -97868,7 +95042,6 @@ var browserConfigKeys = /* @__PURE__ */ new Set([
   "evmPrivacyPrecompileAddress",
   "evmDepositMode",
   "evmNativeDenom",
-  "evmAuthorizationProfile",
   "evmGasLimit",
   "evmSendGasLimit",
   "serverFeatures"
@@ -97891,7 +95064,6 @@ var browserConfigCompatibilityFields = [
   "evmPrivacyPrecompileAddress",
   "evmDepositMode",
   "evmNativeDenom",
-  "evmAuthorizationProfile",
   "evmGasLimit",
   "evmSendGasLimit"
 ];
@@ -97957,44 +95129,6 @@ function assertExactProfileKeys(value, keys, label) {
   for (const key of Object.keys(value)) {
     if (!keys.has(key)) throw new Error(`${label}.${key} is not supported by the Clairveil Web profile schema`);
   }
-}
-function validateEvmAuthorizationProfileConfig(profile) {
-  const value = profile?.evmAuthorizationProfile;
-  if (value == null) return null;
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("profile.evmAuthorizationProfile must be an object");
-  }
-  const label = "profile.evmAuthorizationProfile";
-  assertExactProfileKeys(value, /* @__PURE__ */ new Set(["typedDataDomain", "supportedAuthorizationKinds"]), label);
-  if (value.typedDataDomain != null) {
-    if (!value.typedDataDomain || typeof value.typedDataDomain !== "object" || Array.isArray(value.typedDataDomain)) {
-      throw new Error(`${label}.typedDataDomain must be an object`);
-    }
-    assertExactProfileKeys(value.typedDataDomain, /* @__PURE__ */ new Set(["name", "version"]), `${label}.typedDataDomain`);
-    requiredProfileString(value.typedDataDomain, "name", { maxLength: 128 });
-    if (value.typedDataDomain.version != null) {
-      requiredProfileString(value.typedDataDomain, "version", { maxLength: 128 });
-    }
-  }
-  if (value.supportedAuthorizationKinds != null) {
-    if (!Array.isArray(value.supportedAuthorizationKinds)) {
-      throw new Error(`${label}.supportedAuthorizationKinds must be an array`);
-    }
-    for (const [index, kind] of value.supportedAuthorizationKinds.entries()) {
-      if (typeof kind !== "string" && typeof kind !== "number") {
-        throw new Error(`${label}.supportedAuthorizationKinds[${index}] must be a uint8 value`);
-      }
-    }
-  }
-  if (value.typedDataDomain == null && value.supportedAuthorizationKinds == null) {
-    throw new Error(`${label} must configure typedDataDomain or supportedAuthorizationKinds`);
-  }
-  createEvmAuthorizationProfile(value);
-  return Object.freeze({
-    ...value,
-    ...value.typedDataDomain ? { typedDataDomain: Object.freeze({ ...value.typedDataDomain }) } : {},
-    ...value.supportedAuthorizationKinds ? { supportedAuthorizationKinds: Object.freeze([...value.supportedAuthorizationKinds]) } : {}
-  });
 }
 function validateProfileGasPriceStep(value, label = "profile.gasPriceStep") {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -98095,9 +95229,7 @@ function assertProfileKeplrCompatibility(profile) {
     }
   }
 }
-function validateBrowserWalletProfileContract(profile, {
-  allowMissingEvmCosmosEndpoints = false
-} = {}) {
+function validateBrowserWalletProfile(profile) {
   if (!profile || typeof profile !== "object" || Array.isArray(profile)) {
     throw new Error("profile must be an object");
   }
@@ -98108,9 +95240,8 @@ function validateBrowserWalletProfileContract(profile, {
   const transport = walletTypeFromBody({}, profile.transport);
   const wallet = requiredProfileString(profile, "wallet");
   requiredProfileString(profile, "chainId", { maxLength: 128 });
-  const requireCosmosEndpoints = transport !== "evm" || !allowMissingEvmCosmosEndpoints;
-  optionalProfileUrl(profile, "rpc", { required: requireCosmosEndpoints });
-  optionalProfileUrl(profile, "rest", { required: requireCosmosEndpoints });
+  optionalProfileUrl(profile, "rpc", { required: true });
+  optionalProfileUrl(profile, "rest", { required: true });
   optionalProfileUrl(profile, "proverUrl", { required: true });
   optionalProfileUrl(profile, "depositProofUrl");
   requiredProfileString(profile, "accountPrefix", { maxLength: 32, pattern: /^[a-z][a-z0-9]*$/u });
@@ -98152,9 +95283,6 @@ function validateBrowserWalletProfileContract(profile, {
     const evmDepositMode = normalizeEvmDepositMode(
       profile.evmDepositMode ?? defaultEvmDepositMode
     );
-    if (evmDepositMode !== evmDepositModePayableExactValue) {
-      throw new Error("EVM profiles require payable-exact-value deposits for the Clairveil privacy precompile");
-    }
     if (profile.evmNativeDenom != null) {
       requiredProfileString(profile, "evmNativeDenom", {
         minLength: 3,
@@ -98162,17 +95290,18 @@ function validateBrowserWalletProfileContract(profile, {
         pattern: /^[A-Za-z][A-Za-z0-9/:._-]*$/u
       });
     }
-    requiredProfileString(profile, "evmNativeDenom", {
-      minLength: 3,
-      maxLength: 128,
-      pattern: /^[A-Za-z][A-Za-z0-9/:._-]*$/u
-    });
-    if (profile.evmNativeDenom !== profile.denom) {
-      throw new Error(
-        "profile.evmNativeDenom must match profile.denom for payable EVM deposits"
-      );
+    if (evmDepositMode === evmDepositModePayableExactValue) {
+      requiredProfileString(profile, "evmNativeDenom", {
+        minLength: 3,
+        maxLength: 128,
+        pattern: /^[A-Za-z][A-Za-z0-9/:._-]*$/u
+      });
+      if (profile.evmNativeDenom !== profile.denom) {
+        throw new Error(
+          "profile.evmNativeDenom must match profile.denom for payable EVM deposits"
+        );
+      }
     }
-    validateEvmAuthorizationProfileConfig(profile);
     requiredProfileString(profile, "evmGasLimit", { pattern: /^0x[0-9a-fA-F]+$/u });
     requiredProfileString(profile, "evmSendGasLimit", { pattern: /^0x[0-9a-fA-F]+$/u });
   }
@@ -98180,9 +95309,6 @@ function validateBrowserWalletProfileContract(profile, {
     ...profile,
     ...profile.restEndpoints ? { restEndpoints: Object.freeze([...profile.restEndpoints]) } : {}
   });
-}
-function validateBrowserWalletProfile(profile) {
-  return validateBrowserWalletProfileContract(profile);
 }
 function validateClairveilWebClientConfig(config) {
   if (!config || typeof config !== "object" || Array.isArray(config)) {
@@ -98349,43 +95475,29 @@ function auditTargetBindingFromBody(body = {}) {
   return values[0] || "";
 }
 function browserAliasedInputValue(body, camelName, snakeName, label, normalize3 = (value) => value) {
-  return browserAliasedInputValues(body, [camelName, snakeName], label, normalize3);
-}
-function browserAliasedInputValues(body, names, label, normalize3 = (value) => value) {
-  const values = names.map((name) => body?.[name]).filter((value) => value !== void 0 && value !== null);
-  if (values.length > 1 && values.some((value) => normalize3(value) !== normalize3(values[0]))) {
+  const camelValue = body?.[camelName];
+  const snakeValue = body?.[snakeName];
+  const hasCamel = camelValue !== void 0 && camelValue !== null;
+  const hasSnake = snakeValue !== void 0 && snakeValue !== null;
+  if (hasCamel && hasSnake && normalize3(camelValue) !== normalize3(snakeValue)) {
     throw new Error(`${label} aliases conflict`);
   }
-  return values[0];
+  return hasCamel ? camelValue : hasSnake ? snakeValue : void 0;
 }
 function canonicalBrowserAliasScalar(value) {
   return typeof value === "bigint" ? value.toString() : String(value).trim();
+}
+function canonicalBrowserTransferUnix(value) {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error("transfer time must be a non-negative safe integer");
+  }
+  return value;
 }
 function canonicalBrowserAliasHex(value) {
   return canonicalBrowserAliasScalar(value).replace(/^0x/i, "").toLowerCase();
 }
 function canonicalBrowserAliasBoolean(value) {
   return `${typeof value}:${String(value)}`;
-}
-function canonicalBrowserAliasReference(value) {
-  return value;
-}
-function canonicalBrowserAliasFeeAmount(value) {
-  if (!Array.isArray(value)) return JSON.stringify(value);
-  return JSON.stringify(value.map((coin) => ({
-    denom: String(coin?.denom ?? "").trim(),
-    amount: String(coin?.amount ?? "").trim()
-  })).sort((left, right) => left.denom.localeCompare(right.denom)));
-}
-function hasEvmAuthorizationSignature(authorization) {
-  const signature = authorization?.signature;
-  if (signature == null) return false;
-  if (typeof signature === "string") {
-    const normalized = signature.trim().toLowerCase();
-    return normalized !== "" && normalized !== "0x";
-  }
-  if (signature instanceof Uint8Array) return signature.length > 0;
-  return true;
 }
 async function fetchJson2(url, options = {}) {
   const { timeoutMs = defaultFetchTimeoutMs2, ...fetchOptions } = options;
@@ -98425,7 +95537,9 @@ async function fetchJson2(url, options = {}) {
     return data;
   } catch (error) {
     if (error?.name === "AbortError") {
-      throw new Error(`fetch request timed out after ${resolvedTimeoutMs}ms: ${url}`);
+      const timeoutError = new Error(`fetch request timed out after ${resolvedTimeoutMs}ms`);
+      timeoutError.code = "FETCH_TIMEOUT";
+      throw timeoutError;
     }
     throw error;
   } finally {
@@ -98451,30 +95565,6 @@ function normalizedEvmChainId(value, label = "evmChainId") {
     throw new Error(`${label} must be a non-negative EVM quantity`);
   }
 }
-function profileBoundEvmTransaction(transaction, chainId, defaultGas) {
-  const configuredChainId = normalizedEvmChainId(chainId);
-  if (transaction?.chainId != null && normalizedEvmChainId(transaction.chainId, "prepared EVM transaction chainId") !== configuredChainId) {
-    throw new Error("prepared EVM transaction chainId does not match the active profile");
-  }
-  return {
-    ...transaction,
-    chainId: configuredChainId,
-    ...transaction?.gas == null && defaultGas != null ? { gas: defaultGas } : {}
-  };
-}
-function deferredProverAdapter(resolveAdapter, methodName) {
-  let resolved = null;
-  return {
-    async [methodName](...args) {
-      resolved ??= resolveAdapter();
-      const method = resolved?.[methodName];
-      if (typeof method !== "function") {
-        throw new Error(`proverAdapter.${methodName} is required`);
-      }
-      return method.apply(resolved, args);
-    }
-  };
-}
 function addIfPresent(target, key, value) {
   if (value != null) {
     target[key] = value;
@@ -98496,13 +95586,6 @@ function evmReceiptStatusKind(status) {
   if (/^0x0*1$/.test(normalized)) return "success";
   if (/^0x0+$/.test(normalized)) return "failure";
   return "unknown";
-}
-function normalizedBrowserEvmTransactionHash(value, label = "EVM transaction hash") {
-  const clean3 = String(value ?? "").trim().replace(/^0x/i, "").toLowerCase();
-  if (!/^[0-9a-f]{64}$/.test(clean3)) {
-    throw new Error(`${label} must be a 32-byte hex value`);
-  }
-  return `0x${clean3}`;
 }
 function scanOptionsFromBody(body = {}) {
   const scan = body.scan || {};
@@ -98560,24 +95643,44 @@ function typedWalletScanOptionsFromBody(body = {}) {
   }
   return {
     ...scanOptionsFromBody(body),
-    eventTypes: [],
     scanSource: "privacy_scan",
     strictPrivacyScan: true
   };
 }
 function relayChainNowUnixFromBody(body = {}) {
-  return browserAliasedInputValues(
-    body,
-    ["chainNowUnix", "chain_now_unix", "nowUnix", "now_unix"],
-    "chainNowUnix",
-    canonicalBrowserAliasScalar
-  );
+  return body.chainNowUnix ?? body.chain_now_unix ?? body.nowUnix ?? body.now_unix;
 }
-function reservationReconciliationFields2(result = {}) {
-  return result.reservationReconciliationRequired === true ? {
-    reservationReconciliationRequired: true,
-    reservationReconciliationWarning: result.reservationReconciliationWarning
-  } : {};
+function withdrawProofReadyMetadata2(built, context = {}) {
+  const expiresAtUnix = String(
+    built?.payload?.expires_at_unix || built?.payload?.expiresAtUnix || built?.proverPayload?.expires_at_unix || built?.proverPayload?.expiresAtUnix || ""
+  );
+  return {
+    payloadHash: built?.payload?.payload_hash || built?.proverPayload?.payload_hash || "",
+    txBytesHash: context.txBytesHash ?? context.tx_bytes_hash ?? "",
+    metadata: expiresAtUnix ? { payload_expires_at_unix: expiresAtUnix } : {}
+  };
+}
+async function markReservationReplanRequired(reservationManager2, reservation, error, reason) {
+  if (!reservationManager2 || !reservation?.reservation_ids?.length) return [];
+  if (typeof reservationManager2.markReplanRequired !== "function") {
+    throw new Error("reservationManager.markReplanRequired is required");
+  }
+  return reservationManager2.markReplanRequired(reservation.reservation_ids, {
+    leaseToken: reservation.lease_token || reservation.reservations?.[0]?.lease_token || "",
+    error: reason,
+    metadata: {
+      reconcile_reason: reason,
+      no_broadcast_attempt: true,
+      proof_discarded: true
+    }
+  });
+}
+async function replanProofReadyReservationPreservingError(reservationManager2, reservation, error, reason) {
+  try {
+    await markReservationReplanRequired(reservationManager2, reservation, error, reason);
+  } catch (cleanupError) {
+    appendReservationCleanupErrors(error, [cleanupError]);
+  }
 }
 function positiveCoinForDenom(amount, denom, label) {
   const coin = parseCoin(amount, denom);
@@ -98658,8 +95761,6 @@ function asBytesBase64(bytes4) {
 var ClairveilBrowserClient = class {
   constructor({
     profile,
-    transport,
-    walletType,
     rpc,
     rest,
     restEndpoints,
@@ -98680,35 +95781,27 @@ var ClairveilBrowserClient = class {
     queryRetry,
     nullifierFailover,
     merklePathFailover,
-    privacyStateAdapter,
     enableExperimentalBatchTransfer = false,
     enable_experimental_batch_transfer,
     evmRpc,
     evmChainId,
-    evmPrivacyPrecompileAddress,
+    evmPrivacyPrecompileAddress: evmPrivacyPrecompileAddress2,
     evmDepositMode = defaultEvmDepositMode,
     evmNativeDenom: evmNativeDenom2,
-    evmAuthorizationProfile,
-    evmContractAdapter,
-    evmFinalityPolicy,
     evmGasLimit = "0x989680",
     evmSendGasLimit = "0x5208"
   } = {}) {
     const hasProfile = profile !== void 0 && profile !== null;
-    const resolved = hasProfile ? validateBrowserWalletProfileContract(profile, {
-      allowMissingEvmCosmosEndpoints: privacyStateAdapter != null
-    }) : {};
+    const resolved = hasProfile ? validateBrowserWalletProfile(profile) : {};
     this.profile = resolved;
-    const directTransport = transport ?? walletType ?? null;
-    this.profileTransport = hasProfile ? walletTypeFromBody({}, resolved.transport) : directTransport == null ? null : walletTypeFromBody({}, directTransport);
+    this.profileTransport = hasProfile ? walletTypeFromBody({}, resolved.transport) : null;
     this.defaultWalletType = this.profileTransport || walletTypeFromBody({}, "cosmos");
     this.rpc = normalizeRpcEndpoint2(hasProfile ? resolved.rpc : rpc);
     this.restEndpoints = normalizeRestEndpoints2(
       hasProfile ? resolved.rest : rest,
-      hasProfile ? resolved.restEndpoints : restEndpoints,
-      { allowEmpty: privacyStateAdapter != null }
+      hasProfile ? resolved.restEndpoints : restEndpoints
     );
-    this.rest = this.restEndpoints[0] || "";
+    this.rest = this.restEndpoints[0];
     this.chainId = hasProfile ? resolved.chainId : chainId;
     this.accountPrefix = (hasProfile ? resolved.accountPrefix : accountPrefix2) || "clair";
     this.shieldedPrefix = (hasProfile ? resolved.shieldedPrefix : shieldedPrefix2) || `${this.accountPrefix}s`;
@@ -98733,9 +95826,6 @@ var ClairveilBrowserClient = class {
     this.evmNativeDenom = String(
       hasProfile ? resolved.evmNativeDenom || this.denom : evmNativeDenom2 || this.denom
     ).trim();
-    const configuredEvmAuthorizationProfile = hasProfile ? resolved.evmAuthorizationProfile ?? null : evmAuthorizationProfile ?? null;
-    this.evmAuthorizationProfile = configuredEvmAuthorizationProfile == null ? null : createEvmAuthorizationProfile(configuredEvmAuthorizationProfile);
-    this.evmFinalityPolicy = evmFinalityPolicy == null ? null : createEvmFinalityPolicy(evmFinalityPolicy);
     if (this.evmDepositMode === evmDepositModePayableExactValue && this.evmNativeDenom !== this.denom) {
       throw new Error("evmNativeDenom must match denom for payable EVM deposits");
     }
@@ -98753,42 +95843,27 @@ var ClairveilBrowserClient = class {
       queryRetry,
       nullifierFailover,
       merklePathFailover,
-      privacyStateAdapter,
       // This is an explicit caller opt-in, not a chain endpoint or identity
       // field. It must remain usable with a strict active profile; product
       // code still decides whether to pass it after validating its
       // serverFeatures.batchTransfer policy.
       enableExperimentalBatchTransfer: enable_experimental_batch_transfer ?? enableExperimentalBatchTransfer
     });
-    const configuredEvmContractAddress = hasProfile ? resolved.evmPrivacyPrecompileAddress : evmPrivacyPrecompileAddress;
-    const hasEvmContract = Boolean(
-      String(configuredEvmContractAddress ?? "").trim() || evmContractAdapter
-    );
-    if (this.profileTransport === "evm" && !hasEvmContract) {
-      throw new Error(
-        "EVM browser client requires evmPrivacyPrecompileAddress or evmContractAdapter.contractAddress"
-      );
-    }
-    this.evm = hasEvmContract ? createClairveilEvmClient({
-      contractAddress: configuredEvmContractAddress,
+    this.evm = createClairveilEvmClient({
+      contractAddress: hasProfile ? resolved.evmPrivacyPrecompileAddress : evmPrivacyPrecompileAddress2,
       chainId: this.chainId,
       evmChainId: this.evmChainId,
       accountPrefix: this.accountPrefix,
       shieldedPrefix: this.shieldedPrefix,
       defaultDenom: this.denom,
       depositMode: this.evmDepositMode,
-      nativeDenom: this.evmNativeDenom,
-      authorizationProfile: this.evmAuthorizationProfile,
-      contractAdapter: evmContractAdapter
-    }) : null;
-    this.privacyStateAdapter = this.cosmos.privacyStateAdapter;
+      nativeDenom: this.evmNativeDenom
+    });
   }
   restUrl(path) {
-    if (!this.rest) throw new Error("rest endpoint is not configured; use PrivacyStateAdapter-backed privacy queries");
     return `${this.rest}${path.startsWith("/") ? path : `/${path}`}`;
   }
   rpcUrl(path) {
-    if (!this.rpc) throw new Error("rpc endpoint is not configured for Cosmos queries");
     return `${this.rpc}${path.startsWith("/") ? path : `/${path}`}`;
   }
   fetchJson(url, options = {}) {
@@ -98827,16 +95902,12 @@ var ClairveilBrowserClient = class {
   async health({ allowUninitializedTree = false } = {}) {
     try {
       const [status, tree, audit] = await Promise.all([
-        this.rpc ? this.fetchJson(this.rpcUrl("/status")).then((value) => validateHealthStatus(value, this.chainId)) : this.profileTransport === "evm" ? this.assertEvmNetwork().then((evmChainId) => Object.freeze({
-          transport: "evm",
-          chainId: this.chainId,
-          evmChainId
-        })) : Promise.reject(new Error("Cosmos RPC endpoint is required for browser health")),
+        this.fetchJson(this.rpcUrl("/status")),
         this.cosmos.fetchTreeState(),
         this.cosmos.queryAuditConfig()
       ]);
       return {
-        status,
+        status: validateHealthStatus(status, this.chainId),
         tree: validateHealthTreeState(tree, { allowUninitializedTree }),
         audit,
         errors: []
@@ -99006,7 +96077,7 @@ var ClairveilBrowserClient = class {
     return this.cosmos.confirmDeposit(input);
   }
   async waitForEvmReceipt(txHash, { attempts = 30, intervalMs = 1e3 } = {}) {
-    const hash = normalizedBrowserEvmTransactionHash(txHash);
+    const hash = `0x${String(txHash || "").replace(/^0x/i, "").toLowerCase()}`;
     for (let i = 0; i < attempts; i += 1) {
       const receipt = await this.evmJsonRpc("eth_getTransactionReceipt", [hash]);
       if (receipt) return receipt;
@@ -99094,143 +96165,23 @@ var ClairveilBrowserClient = class {
     return camel ?? snake ?? null;
   }
   async assertEvmPreparationNetwork(body = {}) {
-    if (!this.evm) {
-      throw new Error("EVM privacy contract is not configured");
-    }
     await Promise.all([
       this.assertEvmNetwork(),
       this.assertEvmWalletNetwork(this.evmWalletFromBody(body))
     ]);
   }
-  async waitForEvmTransaction(txHash, {
-    privacyTransaction,
-    sender,
-    attempts,
-    intervalMs,
-    finalityPolicy
-  } = {}) {
-    if (!this.evm) {
-      throw new Error("EVM privacy contract is not configured");
-    }
-    if (!privacyTransaction) {
-      throw new Error("waitForEvmTransaction requires the original SDK-prepared privacyTransaction");
-    }
-    if (!sender) {
-      throw new Error("waitForEvmTransaction requires the actual EVM sender");
-    }
-    const evmTxHash = normalizedBrowserEvmTransactionHash(txHash);
-    const txBytesHash = evmTransactionBindingHash(privacyTransaction);
-    const receipt = await this.waitForEvmReceipt(evmTxHash, {
-      ...attempts == null ? {} : { attempts },
-      ...intervalMs == null ? {} : { intervalMs }
-    });
-    if (!receipt) {
-      const error = `EVM tx was broadcast but receipt was not found yet: ${evmTxHash}`;
-      return {
-        executionTransport: "evm",
-        txHash: evmTxHash.slice(2).toUpperCase(),
-        evmTxHash,
-        txBytesHash,
-        receipt: null,
-        tx: null,
-        transactionVerification: null,
-        privacyReceipt: null,
-        finality: null,
-        evmTransactionVerified: false,
-        evmPrivacyReceiptVerified: false,
-        evmFinalityVerified: false,
-        ok: false,
-        error,
-        errors: [error]
-      };
-    }
-    const [tx, actualChainId] = await Promise.all([
-      this.evmJsonRpc("eth_getTransactionByHash", [evmTxHash]),
-      this.evmJsonRpc("eth_chainId")
-    ]);
-    const errors = [];
-    const receiptStatus = evmReceiptStatusKind(receipt.status);
-    const receiptSucceeded3 = receiptStatus === "success";
-    if (!receiptSucceeded3) {
-      errors.push(receiptStatus === "failure" ? `EVM tx failed with receipt status ${String(receipt.status)}` : `EVM tx did not include an explicit successful receipt status: ${String(receipt.status ?? "missing")}`);
-    }
-    try {
-      if (normalizedBrowserEvmTransactionHash(
-        receipt.transactionHash,
-        "EVM receipt transaction hash"
-      ) !== evmTxHash) {
-        throw new Error("EVM receipt transaction hash does not match the requested transaction");
-      }
-    } catch (error) {
-      errors.push(String(error?.message || error));
-    }
-    let transactionVerification = null;
-    try {
-      transactionVerification = this.evm.verifyTransactionIdentity({
-        transaction: privacyTransaction,
-        rpcTransaction: tx,
-        txHash: evmTxHash,
-        sender,
-        expectedChainId: this.evmChainId,
-        actualChainId
-      });
-    } catch (error) {
-      errors.push(String(error?.message || error || "EVM transaction identity mismatch"));
-    }
-    let privacyReceipt = null;
-    if (receiptSucceeded3) {
-      try {
-        privacyReceipt = this.evm.verifyPrivacyReceipt({
-          transaction: privacyTransaction,
-          receipt,
-          sender
-        });
-      } catch (error) {
-        errors.push(String(error?.message || error || "privacy receipt evidence mismatch"));
-      }
-    }
-    let finality = null;
-    if (receiptSucceeded3) {
-      const resolvedFinalityPolicy = finalityPolicy ?? this.evmFinalityPolicy;
-      if (resolvedFinalityPolicy == null) {
-        errors.push(
-          "EVM finality policy is required; configure confirmations, safe, finalized, custom, or explicitly opt into low-finality receipt mode"
-        );
-      } else {
-        finality = await waitForEvmFinality({
-          txHash: evmTxHash,
-          receipt,
-          rpc: (method, params) => this.evmJsonRpc(method, params),
-          policy: resolvedFinalityPolicy,
-          ...attempts == null ? {} : { attempts },
-          ...intervalMs == null ? {} : { intervalMs }
-        });
-        if (finality.verified !== true) {
-          errors.push(finality.error || "EVM finality policy did not verify the transaction");
-        }
-      }
-    }
-    const uniqueErrors = [...new Set(errors)];
-    const evmTransactionVerified = transactionVerification?.verified === true;
-    const evmPrivacyReceiptVerified = privacyReceipt?.verified === true;
-    const evmFinalityVerified = finality?.verified === true;
-    const ok = receiptSucceeded3 && evmTransactionVerified && evmPrivacyReceiptVerified && evmFinalityVerified && uniqueErrors.length === 0;
+  async waitForEvmTransaction(txHash) {
+    const receipt = await this.waitForEvmReceipt(txHash);
+    const receiptStatus = evmReceiptStatusKind(receipt?.status);
+    const receiptSucceeded = receiptStatus === "success";
     return {
-      executionTransport: "evm",
-      txHash: evmTxHash.slice(2).toUpperCase(),
-      evmTxHash,
-      txBytesHash,
+      txHash: String(txHash || "").replace(/^0x/i, "").toUpperCase(),
+      evmTxHash: `0x${String(txHash || "").replace(/^0x/i, "").toLowerCase()}`,
       receipt,
-      tx,
-      transactionVerification,
-      privacyReceipt,
-      finality,
-      evmTransactionVerified,
-      evmPrivacyReceiptVerified,
-      evmFinalityVerified,
-      ok,
-      error: uniqueErrors[0] || "",
-      errors: uniqueErrors
+      tx: null,
+      ok: Boolean(receipt && receiptSucceeded),
+      error: receipt ? receiptSucceeded ? "" : receiptStatus === "failure" ? `EVM tx failed with receipt status ${String(receipt.status)}` : `EVM tx did not include an explicit successful receipt status: ${String(receipt.status ?? "missing")}` : "",
+      errors: receipt ? [] : [`EVM tx was broadcast but receipt was not found yet: ${txHash}`]
     };
   }
   evmNativeSendTransaction({ to, amount }) {
@@ -99282,34 +96233,26 @@ var ClairveilBrowserClient = class {
       delete reservationOptions.expected_evm_chain_id;
     }
     await this.assertEvmPreparationNetwork({ evmWallet: wallet });
-    if (reservationOptions.reservationManager || reservationOptions.reservation_manager || relayPayload) {
-      delete reservationOptions.check_nullifiers;
-      reservationOptions.checkNullifiers = (nullifiers) => this.cosmos.checkNullifiers(nullifiers);
-    }
     return this.evm.sendTransaction(wallet, transaction, reservationOptions);
   }
-  async buildBankSendSignDoc(body = {}) {
-    const { from, pubKeyHex, to, amount } = body;
-    const gasLimit = browserAliasedInputValue(
-      body,
-      "gasLimit",
-      "gas_limit",
-      "gasLimit",
-      canonicalBrowserAliasScalar
-    );
-    const feeAmount = browserAliasedInputValue(
-      body,
-      "feeAmount",
-      "fee_amount",
-      "feeAmount",
-      canonicalBrowserAliasFeeAmount
-    );
+  async buildBankSendSignDoc({
+    from,
+    pubKeyHex,
+    to,
+    amount,
+    gasLimit,
+    gas_limit,
+    feeAmount,
+    fee_amount
+  }) {
     const coin = positiveCoinForDenom(amount, this.denom, "send");
+    const resolvedGasLimit = resolveCosmosGasLimit(gasLimit, gas_limit, 2e5);
+    const resolvedFeeAmount = resolveCosmosFeeAmount(feeAmount, fee_amount);
     return this.cosmos.buildDirectSignDoc({
       signer: from,
       pubKeyHex,
-      ...gasLimit == null ? {} : { gasLimit },
-      ...feeAmount == null ? {} : { feeAmount },
+      gasLimit: resolvedGasLimit,
+      feeAmount: resolvedFeeAmount,
       messages: [
         {
           typeUrl: "/cosmos.bank.v1beta1.MsgSend",
@@ -99403,15 +96346,14 @@ var ClairveilBrowserClient = class {
         proof: depositProof ?? depositProofHex
       });
       return {
-        transaction: profileBoundEvmTransaction(
-          built.transaction,
-          this.evmChainId,
-          this.evmGasLimit
-        ),
+        transaction: {
+          chainId: this.evmChainId,
+          gas: this.evmGasLimit,
+          ...built.transaction
+        },
         prepared: {
           shieldedAddress: built.material.shieldedAddress || material.shieldedAddress,
           noteCommitmentHex: built.material.note_commitment_hex,
-          encryptedNoteHex: built.material.encrypted_note_hex,
           amount: built.material.amount
         }
       };
@@ -99444,171 +96386,207 @@ var ClairveilBrowserClient = class {
   async prepareTransfer(body) {
     const walletType = this.walletTypeFromBody(body);
     if (walletType === "evm") await this.assertEvmPreparationNetwork(body);
+    const expiresAtUnix = browserAliasedInputValue(
+      body,
+      "expiresAtUnix",
+      "expires_at_unix",
+      "expiresAtUnix",
+      canonicalBrowserTransferUnix
+    );
+    const chainNowUnix = browserAliasedInputValue(
+      body,
+      "chainNowUnix",
+      "chain_now_unix",
+      "chainNowUnix",
+      canonicalBrowserTransferUnix
+    );
     const material = this.privacyMaterial(body, walletType);
     const amount = body.amount;
     const recipient = body.recipient;
     const userPrivacyPolicy = body.privacyPolicy ?? body.privacy_policy ?? "all-private";
     const userDisclosureMode = body.disclosureMode ?? body.disclosure_mode ?? "none";
     const userDisclosureTargetPubKeyHex = body.disclosurePubKeyHex ?? body.disclosure_pubkey_hex ?? "";
+    if (body.disableSelfViewDisclosure != null && body.disable_self_view_disclosure != null && body.disableSelfViewDisclosure !== body.disable_self_view_disclosure) {
+      throw new Error("disableSelfViewDisclosure aliases conflict");
+    }
+    if (body.selfViewDisclosureTargetPubKeyHex != null && body.self_view_disclosure_target_pubkey != null && String(body.selfViewDisclosureTargetPubKeyHex).trim().replace(/^0x/i, "").toLowerCase() !== String(body.self_view_disclosure_target_pubkey).trim().replace(/^0x/i, "").toLowerCase()) {
+      throw new Error("selfViewDisclosureTargetPubKeyHex aliases conflict");
+    }
+    const disableSelfViewDisclosure = body.disableSelfViewDisclosure ?? body.disable_self_view_disclosure;
+    const selfViewDisclosureTargetPubKeyHex = body.selfViewDisclosureTargetPubKeyHex ?? body.self_view_disclosure_target_pubkey;
     const auditDisclosureTargetPubKeyHex = auditTargetBindingFromBody(body);
-    const allowPlanStep = Boolean(body.allowPlanStep ?? body.allow_plan_step);
-    const scanOptions = typedWalletScanOptionsFromBody(body);
-    const reservationManager2 = body.reservationManager ?? body.reservation_manager ?? null;
-    const suppliedProverAdapter = body.proverAdapter ?? body.prover_adapter;
-    const prepared = await this.cosmos.prepareTransfer({
-      proverAdapter: suppliedProverAdapter ?? deferredProverAdapter(
-        () => this.proverAdapter(),
-        "proveTransfer"
-      ),
-      material,
-      signal: body.signal,
-      recipient,
-      amount,
-      userPrivacyPolicy,
-      userDisclosureMode,
-      userDisclosureTargetPubKeyHex,
-      disableSelfViewDisclosure: body.disableSelfViewDisclosure,
-      disable_self_view_disclosure: body.disable_self_view_disclosure,
-      selfViewDisclosureTargetPubKeyHex: body.selfViewDisclosureTargetPubKeyHex,
-      self_view_disclosure_target_pubkey: body.self_view_disclosure_target_pubkey,
-      auditDisclosureTargetPubKeyHex,
+    const operationEvidence = resolveDirectOperationEvidenceHashes({
       expectedRecipientHash: body.expectedRecipientHash,
       expected_recipient_hash: body.expected_recipient_hash,
       expectedAmountHash: body.expectedAmountHash,
-      expected_amount_hash: body.expected_amount_hash,
-      expiresAtUnix: body.expiresAtUnix,
-      expires_at_unix: body.expires_at_unix,
-      chainNowUnix: body.chainNowUnix,
-      chain_now_unix: body.chain_now_unix,
-      allowPlanStep,
-      scan: scanOptions,
-      gasLimit: body.gasLimit,
-      gas_limit: body.gas_limit,
-      feeAmount: body.feeAmount,
-      fee_amount: body.fee_amount,
-      reservationManager: reservationManager2,
-      ...walletType === "evm" ? {
-        executionBuilder: this.evmDirectExecutionBuilder("transfer")
-      } : {}
+      expected_amount_hash: body.expected_amount_hash
     });
-    if (prepared.status !== "ready") throw plannerError(prepared);
-    const common = {
-      ...reservationReconciliationFields2(prepared),
-      reservation: prepared.reservation || null,
-      prepared: {
-        ...prepared.prepared,
-        shieldedAddress: prepared.privacyAccount.shielded_address,
-        finalAmount: amount,
-        finalRecipient: recipient,
-        privacyPolicy: userPrivacyPolicy,
-        disclosureMode: userDisclosureMode,
-        planStatus: prepared.plan?.status || "",
-        planAction: prepared.prepared?.planAction || prepared.plan?.action || "",
-        payload: prepared.payload,
-        proof: prepared.proof,
-        message: prepared.execution?.message || prepared.message
-      },
-      plan: prepared.plan
-    };
+    const allowPlanStep = Boolean(body.allowPlanStep ?? body.allow_plan_step);
+    const scanOptions = typedWalletScanOptionsFromBody(body);
+    const reservationManager2 = body.reservationManager ?? body.reservation_manager ?? null;
     if (walletType !== "evm") {
-      return { ...common, signDoc: prepared.signDoc };
-    }
-    const transaction = prepared.execution?.transaction;
-    const txBytesHash = String(
-      prepared.execution?.txBytesHash ?? prepared.execution?.tx_bytes_hash ?? ""
-    ).trim();
-    if (!transaction || !txBytesHash) {
-      throw new Error("EVM transfer preparation did not produce a transaction and binding hash");
-    }
-    return { ...common, transaction, txBytesHash };
-  }
-  evmDirectExecutionBuilder(operation, {
-    evmRecipient = "",
-    chainNowUnix,
-    transactionOptions
-  } = {}) {
-    if (!(/* @__PURE__ */ new Set(["transfer", "withdraw"])).has(operation)) {
-      throw new Error("unsupported direct EVM execution operation");
-    }
-    return async ({ message, payload, proof, proverPayload, selectedNote, reservation }) => {
-      const built = operation === "transfer" ? await this.evm.buildTransferTransaction({ message }) : await this.evm.buildWithdrawTransaction({
-        message,
-        payload,
-        proof,
-        proverPayload,
-        selectedNote,
-        evmRecipient: evmRecipient || void 0,
+      const gasLimit = resolveCosmosGasLimit(body.gasLimit, body.gas_limit, 8e6);
+      const feeAmount = resolveCosmosFeeAmount(body.feeAmount, body.fee_amount);
+      const prepared = await this.cosmos.prepareTransfer({
+        proverAdapter: body.proverAdapter ?? body.prover_adapter ?? this.proverAdapter(),
+        material,
+        signal: body.signal,
+        recipient,
+        amount,
+        userPrivacyPolicy,
+        userDisclosureMode,
+        userDisclosureTargetPubKeyHex,
+        disableSelfViewDisclosure,
+        selfViewDisclosureTargetPubKeyHex,
+        auditDisclosureTargetPubKeyHex,
+        ...operationEvidence.provided ? {
+          expectedRecipientHash: operationEvidence.expectedRecipientHash,
+          expectedAmountHash: operationEvidence.expectedAmountHash
+        } : {},
+        expiresAtUnix,
         chainNowUnix,
-        transactionOptions
+        allowPlanStep,
+        scan: scanOptions,
+        gasLimit,
+        feeAmount,
+        reservationManager: reservationManager2
       });
-      let transaction = profileBoundEvmTransaction(
-        built.transaction,
-        this.evmChainId,
-        this.evmGasLimit
-      );
-      if (reservation) transaction = markEvmTransactionReservationRequired(transaction);
+      if (prepared.status !== "ready") throw plannerError(prepared);
       return {
-        executionTransport: "evm",
-        transaction,
-        txBytesHash: evmTransactionBindingHash(transaction),
-        message: built.message || message
+        ...reservationReconciliationFields(prepared),
+        signDoc: prepared.signDoc,
+        reservation: prepared.reservation || null,
+        prepared: {
+          ...prepared.prepared,
+          shieldedAddress: prepared.privacyAccount.shielded_address,
+          finalAmount: amount,
+          finalRecipient: recipient,
+          privacyPolicy: userPrivacyPolicy,
+          disclosureMode: userDisclosureMode,
+          planStatus: prepared.plan?.status || "",
+          planAction: prepared.prepared?.planAction || prepared.plan?.action || "",
+          payload: prepared.payload,
+          proof: prepared.proof,
+          message: prepared.message
+        },
+        plan: prepared.plan
       };
-    };
-  }
-  evmBatchTransferExecutionBuilder(body, { authorization, authorizationSigner } = {}) {
-    if (authorizationSigner != null && authorization == null) {
-      throw new Error("EVM batch authorizationSigner requires authorization");
     }
-    const transactionOptions = browserAliasedInputValue(
-      body,
-      "transactionOptions",
-      "transaction_options",
-      "transactionOptions",
-      canonicalBrowserAliasReference
-    );
-    return async ({ message }) => {
-      let resolvedAuthorization = null;
-      let authorizationTypedData = null;
-      if (authorization) {
-        resolvedAuthorization = { ...authorization };
-        if (!hasEvmAuthorizationSignature(resolvedAuthorization)) {
-          if (!authorizationSigner || typeof authorizationSigner.signTypedData !== "function") {
-            throw new Error("EVM batch authorization requires a signature or authorizationSigner.signTypedData()");
-          }
-          authorizationTypedData = this.evm.buildAuthorizationTypedData({
-            action: "singleProofBatchTransfer",
-            request: message,
-            authorization: resolvedAuthorization,
-            cosmosChainId: this.chainId,
-            evmChainId: this.evmChainId,
-            contractAddress: this.evm.contract.contractAddress
-          });
-          resolvedAuthorization.signature = await authorizationSigner.signTypedData(authorizationTypedData);
+    const transferProtocolConfig = await this.cosmos.assertTransferProtocolConfig(this.denom);
+    if (auditDisclosureTargetPubKeyHex && auditDisclosureTargetPubKeyHex !== String(transferProtocolConfig.audit_config.audit_master_pubkey_hex || "").toLowerCase()) {
+      throw new Error("transfer audit disclosure target must exactly match the active chain audit config");
+    }
+    const scan = await this.cosmos.scanNotes({
+      rootSeed: material.rootSeed,
+      ...scanOptions,
+      limit: scanOptions.limit ?? 200,
+      maxPages: scanOptions.maxPages ?? defaultPrepareScanMaxPages2,
+      includeFoundNotes: true
+    });
+    const availableFoundNotes = await reservationAvailableNotes(reservationManager2, scan.foundNotes);
+    const plan = planTransferNotes({ notes: availableFoundNotes, amount, denom: this.denom });
+    if (plan.status === "self_merge_required" && !allowPlanStep) throw plannerError({ status: plan.status, plan, scan });
+    if (!plan.canBuildTx) throw plannerError({ status: plan.status, plan, scan });
+    assertPlanCanBuildTx(plan);
+    const isFinal = plan.status === "final_transfer_ready";
+    assertTransferDisclosureCapabilities(transferProtocolConfig.disclosure_config, {
+      userPrivacyPolicy: isFinal ? userPrivacyPolicy : "all-private",
+      userDisclosureMode: isFinal ? userDisclosureMode : "none"
+    });
+    const auditPubKeyHex = transferProtocolConfig.audit_config.audit_master_pubkey_hex;
+    const stepRecipient = isFinal ? recipient : material.shieldedAddress;
+    const stepAmount = isFinal ? amount : plan.nextAmount;
+    let reservationBatch = null;
+    try {
+      reservationBatch = await preparePlanReservation(reservationManager2, {
+        plan,
+        kind: isFinal ? "transfer" : "self_merge",
+        metadata: {
+          amount: stepAmount,
+          recipient: stepRecipient,
+          finalAmount: amount,
+          finalRecipient: recipient
         }
-      }
-      const evmBuilt = resolvedAuthorization ? this.evm.buildSingleProofBatchTransferWithAuthorizationTransaction({
-        message,
-        authorization: resolvedAuthorization,
-        transactionOptions
-      }) : this.evm.buildSingleProofBatchTransferTransaction({
-        message,
-        transactionOptions
       });
-      const transaction = markEvmTransactionReservationRequired(
-        profileBoundEvmTransaction(evmBuilt.transaction, this.evmChainId, this.evmGasLimit)
-      );
+      const heartbeatResult = await withReservationHeartbeat(reservationManager2, reservationBatch, async ({ assertHeartbeatHealthy, heartbeatNow }) => {
+        const built2 = await this.cosmos.buildTransferMessage({
+          proverAdapter: body.proverAdapter ?? body.prover_adapter ?? this.proverAdapter(),
+          signal: body.signal,
+          creator: material.address,
+          inputs: plan.selection.inputs,
+          recipient: stepRecipient,
+          amount: stepAmount,
+          transferDenom: this.denom,
+          rootSeed: material.rootSeed,
+          shieldedPrefix: this.shieldedPrefix,
+          userPrivacyPolicy: isFinal ? userPrivacyPolicy : "all-private",
+          userDisclosureMode: isFinal ? userDisclosureMode : "none",
+          userDisclosureTargetPubKeyHex: isFinal ? userDisclosureTargetPubKeyHex : "",
+          auditDisclosureTargetPubKeyHex: auditPubKeyHex,
+          disableSelfViewDisclosure,
+          selfViewDisclosureTargetPubKeyHex,
+          expiresAtUnix,
+          chainNowUnix
+        });
+        assertHeartbeatHealthy();
+        const evmBuilt = await this.evm.buildTransferTransaction({
+          message: built2.message,
+          payload: built2.payload,
+          proof: built2.proof,
+          expiresAtUnix: built2.payload.expires_at_unix,
+          chainNowUnix
+        });
+        let transaction2 = {
+          chainId: this.evmChainId,
+          gas: this.evmGasLimit,
+          ...evmBuilt.transaction
+        };
+        if (reservationBatch) transaction2 = markEvmTransactionReservationRequired(transaction2);
+        const txBytesHash = reservationBatch ? evmTransactionBindingHash(transaction2) : "";
+        await heartbeatNow();
+        await markReservationProofReady(reservationManager2, reservationBatch, transferProofReadyMetadata(built2, {
+          amount: stepAmount,
+          denom: this.denom,
+          expectedRecipientHash: isFinal ? operationEvidence.expectedRecipientHash : "",
+          expectedAmountHash: isFinal ? operationEvidence.expectedAmountHash : "",
+          txBytesHash
+        }, "txBytesHash"));
+        return { built: built2, transaction: transaction2 };
+      });
+      const { built, transaction } = heartbeatResult;
       return {
-        executionTransport: "evm",
+        ...reservationReconciliationFields(heartbeatResult),
         transaction,
-        txBytesHash: evmTransactionBindingHash(transaction),
-        ...resolvedAuthorization ? { authorization: resolvedAuthorization } : {},
-        ...authorizationTypedData ? { authorizationTypedData } : {}
+        reservation: reservationBatchSummary(reservationBatch),
+        prepared: {
+          ...built,
+          planAction: isFinal ? "final_transfer" : "self_merge",
+          isFinal,
+          amount: stepAmount,
+          recipient: stepRecipient,
+          finalAmount: amount,
+          finalRecipient: recipient,
+          selectedInputTotal: plan.selection.total.toString(),
+          shieldedAddress: material.shieldedAddress,
+          privacyPolicy: userPrivacyPolicy,
+          disclosureMode: userDisclosureMode,
+          planStatus: plan.status,
+          expiresAtUnix: built.payload.expires_at_unix,
+          chainNowUnix,
+          reservation: reservationBatchSummary(reservationBatch)
+        },
+        plan
       };
-    };
+    } catch (error) {
+      await rollbackPlanReservationPreservingError(reservationManager2, reservationBatch, error);
+      throw error;
+    }
   }
   async prepareTransferBatch(body) {
     const walletType = this.walletTypeFromBody(body);
-    if (walletType === "evm") await this.assertEvmPreparationNetwork(body);
+    if (walletType === "evm") {
+      throw new Error("batch transfer is currently supported for Cosmos wallet profiles only");
+    }
     const suppliedProverAdapter = browserAliasedInputValue(
       body,
       "proverAdapter",
@@ -99690,24 +96668,6 @@ var ClairveilBrowserClient = class {
     const amounts = body.amounts;
     const recipient = body.recipient;
     const scanOptions = typedWalletScanOptionsFromBody(body);
-    const authorization = browserAliasedInputValue(
-      body,
-      "authorization",
-      "privacy_authorization",
-      "authorization",
-      canonicalBrowserAliasReference
-    );
-    const authorizationSigner = browserAliasedInputValue(
-      body,
-      "authorizationSigner",
-      "authorization_signer",
-      "authorizationSigner",
-      canonicalBrowserAliasReference
-    );
-    if (walletType !== "evm" && (authorization != null || authorizationSigner != null)) {
-      throw new Error("batch authorization is only supported for EVM wallet profiles");
-    }
-    const executionBuilder = walletType === "evm" ? this.evmBatchTransferExecutionBuilder(body, { authorization, authorizationSigner }) : void 0;
     const prepared = await this.cosmos.prepareTransferBatch({
       proverAdapter: suppliedProverAdapter ?? this.proverAdapter(),
       material,
@@ -99742,38 +96702,19 @@ var ClairveilBrowserClient = class {
       chainNowUnix,
       rootHex,
       snapshotHeight,
-      inputCommitmentHexes: body.inputCommitmentHexes,
-      input_commitment_hexes: body.input_commitment_hexes,
       disableSelfViewDisclosure,
       selfViewDisclosureTargetPubKeyHex,
       reservationManager: body.reservationManager,
-      reservation_manager: body.reservation_manager,
-      executionBuilder
+      reservation_manager: body.reservation_manager
     });
     if (prepared.status !== "ready") throw plannerError(prepared);
-    const transaction = prepared.execution?.transaction;
-    const txBytesHash = String(
-      prepared.execution?.txBytesHash ?? prepared.execution?.tx_bytes_hash ?? ""
-    ).trim();
-    if (walletType === "evm" && (!transaction || !txBytesHash)) {
-      throw new Error("EVM batch preparation did not produce a transaction and binding hash");
-    }
     return {
-      ...reservationReconciliationFields2(prepared),
-      ...walletType === "evm" ? { transaction, txBytesHash } : { signDoc: prepared.signDoc },
-      ...walletType === "evm" && prepared.execution?.authorization ? { authorization: prepared.execution.authorization } : {},
-      ...walletType === "evm" && prepared.execution?.authorizationTypedData ? { authorizationTypedData: prepared.execution.authorizationTypedData } : {},
+      ...reservationReconciliationFields(prepared),
+      signDoc: prepared.signDoc,
       reservation: prepared.reservation || null,
       prepared: {
         ...prepared.prepared,
         shieldedAddress: prepared.privacyAccount.shielded_address,
-        // Keep the operation evidence on the browser result as promised by
-        // PreparedTransferBatchSummary.  The Cosmos core returns these fields
-        // beside `prepared`; dropping them here made an EVM caller unable to
-        // reconcile the aggregate one-proof operation without reaching into
-        // reservation-store internals.
-        operationEvidence: prepared.operationEvidence,
-        operationEvidenceHash: prepared.operationEvidenceHash,
         ...prepared.prepared?.payments?.every((payment) => payment.privacyPolicy === prepared.prepared.payments[0].privacyPolicy) ? { privacyPolicy: prepared.prepared.payments[0].privacyPolicy } : {},
         ...prepared.prepared?.payments?.every((payment) => payment.disclosureMode === prepared.prepared.payments[0].disclosureMode) ? { disclosureMode: prepared.prepared.payments[0].disclosureMode } : {},
         planStatus: prepared.plan?.status || "",
@@ -99782,6 +96723,8 @@ var ClairveilBrowserClient = class {
         payload: prepared.payload,
         proof: prepared.proof,
         message: prepared.message,
+        operationEvidence: prepared.operationEvidence,
+        operationEvidenceHash: prepared.operationEvidenceHash,
         inputCount: prepared.prepared?.inputCount,
         outputCount: prepared.prepared?.outputCount
       },
@@ -99819,31 +96762,17 @@ var ClairveilBrowserClient = class {
     });
   }
   /**
-   * Finish a checkpointed batch after `provePreparedBatchTransfer` has durably
-   * stored its proof. Cosmos builds a sign doc while EVM builds the canonical
-   * transaction binding; both use the same evidence and reservation transition.
+   * Finish a checkpointed Cosmos batch after `provePreparedBatchTransfer` has
+   * durably stored its proof. This is deliberately separate from proof
+   * recovery: it performs no wallet call, but makes the reservation
+   * broadcastable only after the recovered payload/proof and original payment
+   * rows recreate the exact operation evidence.
    */
   async finalizePreparedBatchTransfer(body = {}) {
     const walletType = this.walletTypeFromBody(body);
-    if (walletType === "evm") await this.assertEvmPreparationNetwork(body);
-    const authorization = browserAliasedInputValue(
-      body,
-      "authorization",
-      "privacy_authorization",
-      "authorization",
-      canonicalBrowserAliasReference
-    );
-    const authorizationSigner = browserAliasedInputValue(
-      body,
-      "authorizationSigner",
-      "authorization_signer",
-      "authorizationSigner",
-      canonicalBrowserAliasReference
-    );
-    if (walletType !== "evm" && (authorization != null || authorizationSigner != null)) {
-      throw new Error("batch authorization is only supported for EVM wallet profiles");
+    if (walletType === "evm") {
+      throw new Error("batch transfer is currently supported for Cosmos wallet profiles only");
     }
-    const executionBuilder = walletType === "evm" ? this.evmBatchTransferExecutionBuilder(body, { authorization, authorizationSigner }) : void 0;
     const pubKeyHex = browserAliasedInputValue(
       body,
       "pubKeyHex",
@@ -99886,7 +96815,7 @@ var ClairveilBrowserClient = class {
       "chainNowUnix",
       canonicalBrowserAliasScalar
     );
-    const finalized = await this.cosmos.finalizePreparedBatchTransfer({
+    return this.cosmos.finalizePreparedBatchTransfer({
       payload: body.payload,
       proof: body.proof,
       signer: body.signer ?? body.address ?? body.payload?.creator,
@@ -99915,40 +96844,10 @@ var ClairveilBrowserClient = class {
       reservation: body.reservation,
       reservationBatch: body.reservationBatch,
       reservation_batch: body.reservation_batch,
-      chainNowUnix,
-      executionBuilder
+      chainNowUnix
     });
-    if (walletType !== "evm") return finalized;
-    const transaction = finalized.execution?.transaction;
-    const txBytesHash = String(
-      finalized.execution?.txBytesHash ?? finalized.execution?.tx_bytes_hash ?? ""
-    ).trim();
-    if (!transaction || !txBytesHash) {
-      throw new Error("EVM batch finalization did not produce a transaction and binding hash");
-    }
-    return {
-      ...finalized,
-      transaction,
-      txBytesHash,
-      ...finalized.execution?.authorization ? { authorization: finalized.execution.authorization } : {},
-      ...finalized.execution?.authorizationTypedData ? { authorizationTypedData: finalized.execution.authorizationTypedData } : {}
-    };
   }
   async prepareWithdraw(body) {
-    const expiresAtUnix = browserAliasedInputValue(
-      body,
-      "expiresAtUnix",
-      "expires_at_unix",
-      "expiresAtUnix",
-      canonicalBrowserAliasScalar
-    );
-    const chainNowUnix = browserAliasedInputValue(
-      body,
-      "chainNowUnix",
-      "chain_now_unix",
-      "chainNowUnix",
-      canonicalBrowserAliasScalar
-    );
     const walletType = this.walletTypeFromBody(body);
     if (walletType === "evm") await this.assertEvmPreparationNetwork(body);
     const material = this.privacyMaterial(body, walletType);
@@ -99957,72 +96856,126 @@ var ClairveilBrowserClient = class {
     const evmRecipient = isEvmAddress(rawRecipient) ? normalizeEvmAddress(rawRecipient, "withdraw recipient") : "";
     const recipient = evmRecipient ? evmAddressToBech32(evmRecipient, this.accountPrefix) : rawRecipient;
     const reservationManager2 = body.reservationManager ?? body.reservation_manager ?? null;
-    const suppliedProverAdapter = body.proverAdapter ?? body.prover_adapter;
-    const prepared = await this.cosmos.prepareWithdraw({
-      proverAdapter: suppliedProverAdapter ?? deferredProverAdapter(
-        () => this.proverAdapter(),
-        "proveWithdraw"
-      ),
-      material,
-      signal: body.signal,
-      amount,
-      recipient,
-      assetDenom: this.denom,
-      scan: typedWalletScanOptionsFromBody(body),
-      expiresAtUnix,
-      chainNowUnix,
-      gasLimit: body.gasLimit,
-      gas_limit: body.gas_limit,
-      feeAmount: body.feeAmount,
-      fee_amount: body.fee_amount,
-      reservationManager: reservationManager2,
-      ...walletType === "evm" ? {
-        executionBuilder: this.evmDirectExecutionBuilder("withdraw", { evmRecipient })
-      } : {}
-    });
-    if (prepared.status !== "ready") throw plannerError(prepared);
-    const message = prepared.execution?.message || prepared.message;
-    const common = {
-      ...reservationReconciliationFields2(prepared),
-      payload: prepared.payload,
-      proof: prepared.proof,
-      message,
-      reservation: prepared.reservation || null,
-      prepared: {
-        shieldedAddress: prepared.privacyAccount.shielded_address,
-        amount: prepared.payload.amount,
-        recipient: prepared.payload.recipient,
-        ...walletType === "evm" ? { evmRecipient } : {},
-        selectedNoteNullifier: prepared.selectedNote?.nullifier || prepared.payload.nullifier_hex,
-        expiresAtUnix: prepared.payload.expires_at_unix,
+    if (walletType !== "evm") {
+      const gasLimit = resolveCosmosGasLimit(body.gasLimit, body.gas_limit, 5e6);
+      const feeAmount = resolveCosmosFeeAmount(body.feeAmount, body.fee_amount);
+      const prepared = await this.cosmos.prepareWithdraw({
+        proverAdapter: body.proverAdapter ?? body.prover_adapter ?? this.proverAdapter(),
+        material,
+        signal: body.signal,
+        amount,
+        recipient,
+        scan: typedWalletScanOptionsFromBody(body),
+        expiresAtUnix: body.expiresAtUnix ?? body.expires_at_unix,
+        chainNowUnix: body.chainNowUnix ?? body.chain_now_unix,
+        gasLimit,
+        feeAmount,
+        reservationManager: reservationManager2
+      });
+      if (prepared.status !== "ready") throw plannerError(prepared);
+      return {
+        ...reservationReconciliationFields(prepared),
+        signDoc: prepared.signDoc,
         payload: prepared.payload,
         proof: prepared.proof,
+        message: prepared.message,
+        reservation: prepared.reservation || null,
+        prepared: {
+          shieldedAddress: prepared.privacyAccount.shielded_address,
+          amount: prepared.payload.amount,
+          recipient: prepared.payload.recipient,
+          selectedNoteNullifier: prepared.selectedNote?.nullifier || prepared.payload.nullifier_hex,
+          expiresAtUnix: prepared.payload.expires_at_unix,
+          payload: prepared.payload,
+          proof: prepared.proof,
+          message: prepared.message,
+          reservation: prepared.reservation || null
+        },
+        plan: prepared.plan
+      };
+    }
+    const scanOptions = typedWalletScanOptionsFromBody(body);
+    const scan = await this.cosmos.scanNotes({
+      rootSeed: material.rootSeed,
+      ...scanOptions,
+      limit: scanOptions.limit ?? 200,
+      maxPages: scanOptions.maxPages ?? defaultPrepareScanMaxPages2,
+      includeFoundNotes: true
+    });
+    const availableFoundNotes = await reservationAvailableNotes(reservationManager2, scan.foundNotes);
+    const plan = planWithdrawNotes({ notes: availableFoundNotes, amount, denom: this.denom });
+    if (!plan.canBuildTx) throw plannerError({ status: plan.status, plan, scan });
+    assertPlanCanBuildTx(plan);
+    let reservationBatch = null;
+    try {
+      reservationBatch = await preparePlanReservation(reservationManager2, {
+        plan,
+        kind: "withdraw",
+        metadata: {
+          amount,
+          recipient
+        }
+      });
+      const heartbeatResult = await withReservationHeartbeat(reservationManager2, reservationBatch, async ({ assertHeartbeatHealthy, heartbeatNow }) => {
+        const built2 = await this.cosmos.buildWithdrawMessage({
+          proverAdapter: body.proverAdapter ?? body.prover_adapter ?? this.proverAdapter(),
+          signal: body.signal,
+          creator: material.address,
+          notes: [plan.selectedNote],
+          amount,
+          assetDenom: this.denom,
+          recipient,
+          rootSeed: material.rootSeed,
+          chainId: this.chainId,
+          expiresAtUnix: body.expiresAtUnix ?? body.expires_at_unix,
+          chainNowUnix: body.chainNowUnix ?? body.chain_now_unix
+        });
+        assertHeartbeatHealthy();
+        const message2 = evmRecipient ? { ...built2.message, evmRecipient } : built2.message;
+        const evmBuilt = await this.evm.buildWithdrawTransaction({
+          message: message2,
+          payload: built2.payload,
+          proof: built2.proof
+        });
+        let transaction2 = {
+          chainId: this.evmChainId,
+          gas: this.evmGasLimit,
+          ...evmBuilt.transaction
+        };
+        if (reservationBatch) transaction2 = markEvmTransactionReservationRequired(transaction2);
+        const txBytesHash = reservationBatch ? evmTransactionBindingHash(transaction2) : "";
+        await heartbeatNow();
+        await markReservationProofReady(reservationManager2, reservationBatch, withdrawProofReadyMetadata2(built2, { txBytesHash }));
+        return { built: built2, transaction: transaction2, message: message2 };
+      });
+      const { built, transaction, message } = heartbeatResult;
+      return {
+        ...reservationReconciliationFields(heartbeatResult),
+        transaction,
+        payload: built.payload,
+        proof: built.proof,
         message,
-        reservation: prepared.reservation || null
-      },
-      plan: prepared.plan
-    };
-    if (walletType !== "evm") {
-      return { ...common, signDoc: prepared.signDoc };
+        reservation: reservationBatchSummary(reservationBatch),
+        prepared: {
+          shieldedAddress: material.shieldedAddress,
+          amount: built.payload.amount,
+          recipient: built.payload.recipient,
+          evmRecipient,
+          selectedNoteNullifier: built.selectedNote?.nullifier || built.payload.nullifier_hex,
+          expiresAtUnix: built.payload.expires_at_unix,
+          payload: built.payload,
+          proof: built.proof,
+          message,
+          reservation: reservationBatchSummary(reservationBatch)
+        },
+        plan
+      };
+    } catch (error) {
+      await rollbackPlanReservationPreservingError(reservationManager2, reservationBatch, error);
+      throw error;
     }
-    const transaction = prepared.execution?.transaction;
-    const txBytesHash = String(
-      prepared.execution?.txBytesHash ?? prepared.execution?.tx_bytes_hash ?? ""
-    ).trim();
-    if (!transaction || !txBytesHash) {
-      throw new Error("EVM withdraw preparation did not produce a transaction and binding hash");
-    }
-    return { ...common, transaction, txBytesHash };
   }
   async prepareRelayWithdraw(body) {
-    const expiresAtUnix = browserAliasedInputValue(
-      body,
-      "expiresAtUnix",
-      "expires_at_unix",
-      "expiresAtUnix",
-      canonicalBrowserAliasScalar
-    );
-    const chainNowUnix = relayChainNowUnixFromBody(body);
     const walletType = this.walletTypeFromBody(body);
     if (walletType === "evm") await this.assertEvmPreparationNetwork(body);
     const material = this.privacyMaterial(body, walletType);
@@ -100031,50 +96984,47 @@ var ClairveilBrowserClient = class {
     const evmRecipient = isEvmAddress(rawRecipient) ? normalizeEvmAddress(rawRecipient, "withdraw recipient") : "";
     const recipient = evmRecipient ? evmAddressToBech32(evmRecipient, this.accountPrefix) : rawRecipient;
     const reservationManager2 = body.reservationManager ?? body.reservation_manager ?? null;
-    const suppliedProverAdapter = body.proverAdapter ?? body.prover_adapter;
-    const transactionOptions = browserAliasedInputValue(
-      body,
-      "transactionOptions",
-      "transaction_options",
-      "transactionOptions",
-      canonicalBrowserAliasReference
-    );
     const prepared = await this.cosmos.prepareRelayWithdraw({
-      proverAdapter: suppliedProverAdapter ?? deferredProverAdapter(
-        () => this.proverAdapter(),
-        "proveWithdraw"
-      ),
+      proverAdapter: body.proverAdapter ?? body.prover_adapter ?? this.proverAdapter(),
       material,
       signal: body.signal,
       amount,
       recipient,
       scan: typedWalletScanOptionsFromBody(body),
-      expiresAtUnix,
-      chainNowUnix,
-      reservationManager: reservationManager2,
-      ...walletType === "evm" ? {
-        executionBuilder: this.evmDirectExecutionBuilder("withdraw", {
-          evmRecipient,
-          chainNowUnix,
-          transactionOptions
-        })
-      } : {}
+      expiresAtUnix: body.expiresAtUnix ?? body.expires_at_unix,
+      chainNowUnix: relayChainNowUnixFromBody(body),
+      reservationManager: reservationManager2
     });
     if (prepared.status !== "ready") throw plannerError(prepared);
     if (walletType === "evm") {
-      const transaction = prepared.execution?.transaction;
-      const txBytesHash = String(
-        prepared.execution?.txBytesHash ?? prepared.execution?.tx_bytes_hash ?? ""
-      ).trim();
-      if (!transaction || !txBytesHash) {
-        throw new Error("EVM relay withdraw preparation did not produce a transaction and binding hash");
+      let built;
+      try {
+        built = await this.evm.buildWithdrawTransaction({
+          payload: prepared.payload,
+          proof: prepared.proof,
+          proverPayload: prepared.proverPayload,
+          selectedNote: prepared.selectedNote,
+          evmRecipient: evmRecipient || void 0,
+          chainNowUnix: relayChainNowUnixFromBody(body),
+          transactionOptions: body.transactionOptions ?? body.transaction_options
+        });
+      } catch (error) {
+        await replanProofReadyReservationPreservingError(
+          reservationManager2,
+          prepared.reservation,
+          error,
+          "evm_relay_transaction_build_failed_before_handoff"
+        );
+        throw error;
       }
-      const message = prepared.execution?.message;
+      let transaction = { chainId: this.evmChainId, gas: this.evmGasLimit, ...built.transaction };
+      if (prepared.reservation) {
+        transaction = markEvmTransactionReservationRequired(transaction);
+      }
       return {
-        ...reservationReconciliationFields2(prepared),
+        ...reservationReconciliationFields(prepared),
         payload: prepared.payload,
         transaction,
-        txBytesHash,
         reservation: prepared.reservation || null,
         prepared: {
           shieldedAddress: prepared.privacyAccount.shielded_address,
@@ -100085,14 +97035,14 @@ var ClairveilBrowserClient = class {
           expiresAtUnix: prepared.payload.expires_at_unix,
           payload: prepared.payload,
           proof: prepared.proof,
-          message,
+          message: built.message,
           reservation: prepared.reservation || null
         },
         plan: prepared.plan
       };
     }
     return {
-      ...reservationReconciliationFields2(prepared),
+      ...reservationReconciliationFields(prepared),
       payload: prepared.payload,
       reservation: prepared.reservation || null,
       prepared: {
@@ -100120,12 +97070,14 @@ var ClairveilBrowserClient = class {
     });
   }
   async createRelayWithdrawSignDoc(body = {}) {
+    const gasLimit = resolveCosmosGasLimit(body.gasLimit, body.gas_limit, 5e6);
+    const feeAmount = resolveCosmosFeeAmount(body.feeAmount, body.fee_amount);
     const result = await this.cosmos.createRelayWithdrawSignDoc({
       payload: body.payload,
       relayer: body.relayer ?? body.creator ?? body.address,
       pubKeyHex: body.pubKeyHex ?? body.pub_key_hex,
-      gasLimit: body.gasLimit ?? body.gas_limit,
-      feeAmount: body.feeAmount ?? body.fee_amount ?? [],
+      gasLimit,
+      feeAmount,
       memo: body.memo,
       chainNowUnix: relayChainNowUnixFromBody(body),
       expectedChainId: body.expectedChainId ?? body.expected_chain_id,
@@ -100142,14 +97094,58 @@ var ClairveilBrowserClient = class {
   async scanWalletNotes(body) {
     const material = this.privacyMaterial(body);
     const {
+      after,
+      afterHeight,
+      after_height,
+      afterSequence,
+      after_sequence,
+      page,
+      limit,
+      maxPages,
+      max_pages,
+      eventTypes,
+      event_types,
+      outputLimit,
+      output_limit,
+      eventLimit,
+      event_limit,
+      maxEncodedBytes,
+      max_encoded_bytes,
+      validationStateSnapshot,
+      validation_state_snapshot,
+      scanSource,
+      scan_source,
+      strictPrivacyScan,
+      strict_privacy_scan,
       noteStore: noteStore2,
       note_store,
       includeFoundNotes = false
     } = body || {};
-    const scanOptions = typedWalletScanOptionsFromBody(body);
     return this.cosmos.scanWalletNotes({
       material,
-      ...scanOptions,
+      after,
+      afterHeight,
+      after_height,
+      afterSequence,
+      after_sequence,
+      page,
+      limit,
+      maxPages,
+      max_pages,
+      eventTypes,
+      event_types,
+      outputLimit,
+      output_limit,
+      eventLimit,
+      event_limit,
+      maxEncodedBytes,
+      max_encoded_bytes,
+      validationStateSnapshot,
+      validation_state_snapshot,
+      scanSource,
+      scan_source,
+      strictPrivacyScan,
+      strict_privacy_scan,
       noteStore: noteStore2 ?? note_store,
       includeFoundNotes
     });
@@ -100161,9 +97157,10 @@ var ClairveilBrowserClient = class {
     return this.cosmos.checkNullifiers(nullifierHexes);
   }
   async decodeUserDisclosure(body) {
-    const request = { txHash: body.txHash ?? body.tx_hash };
-    addIfPresent(request, "output", body.output);
-    addIfPresent(request, "scanOutput", body.scanOutput);
+    const request = {
+      txHash: body.txHash ?? body.tx_hash
+    };
+    addIfPresent(request, "output", body.output ?? body.scanOutput);
     addIfPresent(request, "afterHeight", body.afterHeight ?? body.after_height);
     addIfPresent(request, "afterSequence", body.afterSequence ?? body.after_sequence);
     addIfPresent(request, "page", body.page);
@@ -100173,9 +97170,6 @@ var ClairveilBrowserClient = class {
     addIfPresent(request, "scanSource", body.scanSource ?? body.scan_source);
     addIfPresent(request, "assetDenom", body.assetDenom);
     addIfPresent(request, "asset_denom", body.asset_denom);
-    addIfPresent(request, "disclosureScalar", body.disclosureScalar ?? body.disclosure_scalar);
-    addIfPresent(request, "disclosureScalarHex", body.disclosureScalarHex ?? body.disclosure_scalar_hex);
-    addIfPresent(request, "disclosurePubKeyHex", body.disclosurePubKeyHex ?? body.disclosure_pubkey_hex);
     if (body.address && (body.pubKeyHex || body.pub_key_hex) && (body.signatureBase64 || body.signature_base64)) {
       const walletType = this.walletTypeFromBody(body);
       Object.assign(request, walletType === "evm" ? { ...body, skipSignerPubKeyCheck: true } : body);
@@ -100183,9 +97177,10 @@ var ClairveilBrowserClient = class {
     return this.cosmos.decodeUserDisclosure(request);
   }
   async decodeSelfViewDisclosure(body) {
-    const request = { txHash: body.txHash ?? body.tx_hash };
-    addIfPresent(request, "output", body.output);
-    addIfPresent(request, "scanOutput", body.scanOutput);
+    const request = {
+      txHash: body.txHash ?? body.tx_hash
+    };
+    addIfPresent(request, "output", body.output ?? body.scanOutput);
     addIfPresent(request, "afterHeight", body.afterHeight ?? body.after_height);
     addIfPresent(request, "afterSequence", body.afterSequence ?? body.after_sequence);
     addIfPresent(request, "page", body.page);
@@ -100208,8 +97203,7 @@ var ClairveilBrowserClient = class {
       txHash: body.txHash ?? body.tx_hash,
       disclosurePrivKeyHex: body.disclosurePrivKeyHex ?? body.disclosure_privkey_hex
     };
-    addIfPresent(request, "output", body.output);
-    addIfPresent(request, "scanOutput", body.scanOutput);
+    addIfPresent(request, "output", body.output ?? body.scanOutput);
     addIfPresent(request, "afterHeight", body.afterHeight ?? body.after_height);
     addIfPresent(request, "afterSequence", body.afterSequence ?? body.after_sequence);
     addIfPresent(request, "page", body.page);
@@ -101042,13 +98036,13 @@ function assertFreshGenesisReservations(manager, reservations) {
     throw new Error("Fresh-genesis reset requires an exact non-empty reservation snapshot");
   }
   const ownerKeyId = String(manager?.ownerKeyId || "");
-  const reservationIDs = /* @__PURE__ */ new Set();
+  const reservationIDs2 = /* @__PURE__ */ new Set();
   for (const record of reservations) {
     const reservationID = String(record?.reservation_id || "");
-    if (!reservationID || reservationIDs.has(reservationID) || record?.owner_key_id !== ownerKeyId) {
+    if (!reservationID || reservationIDs2.has(reservationID) || record?.owner_key_id !== ownerKeyId) {
       throw new Error("Fresh-genesis reset reservation snapshot is malformed or belongs to another owner");
     }
-    reservationIDs.add(reservationID);
+    reservationIDs2.add(reservationID);
   }
   const active = reservations.filter((record) => activeReservationStatusSet2.has(record?.status));
   const operations = groupReservationOperations(active);
@@ -101869,13 +98863,13 @@ function normalizeBrowserProfileEndpoints(profile, {
 }
 
 // public/browser-storage-scope.js
-var blockHashPattern2 = /^[0-9a-f]{64}$/i;
+var blockHashPattern = /^[0-9a-f]{64}$/i;
 function localChainStorageEpoch({ localTestMode = false, status } = {}) {
   if (localTestMode !== true) return "";
   const value = String(
     status?.sync_info?.earliest_block_hash || status?.syncInfo?.earliestBlockHash || ""
   ).trim();
-  return blockHashPattern2.test(value) ? value.toLowerCase() : "";
+  return blockHashPattern.test(value) ? value.toLowerCase() : "";
 }
 function walletStorageScope({
   chainId,
@@ -101889,7 +98883,7 @@ function walletStorageScope({
   const normalizedOwner = String(owner || "").trim().toLowerCase();
   const normalizedEpoch = String(storageEpoch || "").trim().toLowerCase();
   if (!normalizedChainID || !normalizedProfileID || !normalizedOwner) return null;
-  if (localTestMode === true && !blockHashPattern2.test(normalizedEpoch)) return null;
+  if (localTestMode === true && !blockHashPattern.test(normalizedEpoch)) return null;
   const epochParts = localTestMode === true ? [normalizedEpoch] : [];
   return Object.freeze({
     storageEpoch: epochParts[0] || "",
@@ -102254,9 +99248,9 @@ function bytesHex(value) {
 function normalizedEvmQuantity2(value, label) {
   const text3 = requiredText(value, label);
   try {
-    const quantity2 = BigInt(text3);
-    if (quantity2 < 0n) throw new Error("negative");
-    return quantity2;
+    const quantity = BigInt(text3);
+    if (quantity < 0n) throw new Error("negative");
+    return quantity;
   } catch {
     throw new Error(`${label} must be a non-negative EVM quantity`);
   }
@@ -102483,8 +99477,8 @@ async function replanExplicitlyFailedReservations({
     throw new Error("failed transaction recovery requires an authoritative checked height");
   }
   const status = commonReservationStatus(records);
-  const reservationIDs = records.map((record) => String(record.reservation_id || "")).filter(Boolean);
-  if (reservationIDs.length !== records.length) throw new Error("failed transaction reservation id is missing");
+  const reservationIDs2 = records.map((record) => String(record.reservation_id || "")).filter(Boolean);
+  if (reservationIDs2.length !== records.length) throw new Error("failed transaction reservation id is missing");
   const evidence = {
     ...metadata,
     reconcile_reason: "checked_transaction_failed",
@@ -102493,7 +99487,7 @@ async function replanExplicitlyFailedReservations({
     checked_height: height,
     tx_hash_checked: txHash
   };
-  let leaseToken = "";
+  let leaseToken2 = "";
   if (status === "ProofReady") {
     if (!records.every((record) => record.broadcast_in_flight === true && Number(record.broadcast_attempt_count || 0) >= 1)) {
       throw new Error("ProofReady failed transaction recovery requires a durable broadcast attempt");
@@ -102502,7 +99496,7 @@ async function replanExplicitlyFailedReservations({
     if (leaseTokens.length !== 1 || !leaseTokens[0]) {
       throw new Error("ProofReady failed transaction recovery requires one operation-wide lease token");
     }
-    leaseToken = leaseTokens[0];
+    leaseToken2 = leaseTokens[0];
   } else if (status !== "Submitted" && status !== "Unknown") {
     throw new Error(`unsupported failed transaction reservation status ${status}`);
   }
@@ -102511,13 +99505,13 @@ async function replanExplicitlyFailedReservations({
       "ClairveilJS does not provide authoritative broadcast-failure recovery; reservations were left unchanged for manual review and this transaction must not be retried"
     );
   }
-  await manager.markBroadcastFailed(reservationIDs, {
+  await manager.markBroadcastFailed(reservationIDs2, {
     txHashChecked: txHash,
     checkedHeight: height,
     nullifierUnspentConfirmed: true,
     txAbsentOrFailedConfirmed: true,
     error: "checked_transaction_failed",
-    ...leaseToken ? { leaseToken } : {},
+    ...leaseToken2 ? { leaseToken: leaseToken2 } : {},
     metadata: evidence
   });
 }
@@ -103596,9 +100590,9 @@ function persistCapturedPublicPendingTransaction(context, kind, txHash, attemptI
     }
     renderKeplr();
   } catch (error) {
-    const failure2 = error instanceof Error ? error : new Error(String(error));
-    failure2.txHash ||= txHash;
-    throw failure2;
+    const failure = error instanceof Error ? error : new Error(String(error));
+    failure.txHash ||= txHash;
+    throw failure;
   }
 }
 function persistCapturedDepositRecoveryPending(context, txHash, height = "") {
@@ -104058,9 +101052,9 @@ async function withPreparedReservationHeartbeat(data, task) {
   assertPrivacySession(sessionContext);
   const manager = data?.reservationManager;
   const reservation = data?.reservation;
-  const reservationIDs = preparedReservationIDs(data);
-  const leaseToken = reservation?.lease_token || reservation?.reservations?.[0]?.lease_token || "";
-  if (!manager || !reservationIDs.length || !leaseToken || typeof manager.heartbeatLease !== "function") {
+  const reservationIDs2 = preparedReservationIDs(data);
+  const leaseToken2 = reservation?.lease_token || reservation?.reservations?.[0]?.lease_token || "";
+  if (!manager || !reservationIDs2.length || !leaseToken2 || typeof manager.heartbeatLease !== "function") {
     const result2 = await task();
     assertPrivacySession(sessionContext);
     return result2;
@@ -104071,7 +101065,7 @@ async function withPreparedReservationHeartbeat(data, task) {
     if (heartbeatError) return;
     try {
       assertPrivacySession(sessionContext);
-      const renewed = await manager.heartbeatLease(reservationIDs, { leaseToken });
+      const renewed = await manager.heartbeatLease(reservationIDs2, { leaseToken: leaseToken2 });
       assertPrivacySession(sessionContext);
       reservation.reservations = renewed;
       reservation.lease_until = renewed[0]?.lease_until || reservation.lease_until;
@@ -104106,7 +101100,7 @@ async function withPreparedReservationHeartbeat(data, task) {
   }
   assertPrivacySession(sessionContext);
   if (heartbeatError) {
-    const records = await Promise.all(reservationIDs.map((id) => manager.getReservation(id)));
+    const records = await Promise.all(reservationIDs2.map((id) => manager.getReservation(id)));
     assertPrivacySession(sessionContext);
     if (records.some((record) => [reservationStatuses.Proving, reservationStatuses.ProofReady].includes(record.status))) {
       const error = new Error("Note reservation lease heartbeat failed while waiting for wallet or relayer confirmation.", {
@@ -104123,12 +101117,12 @@ async function discardPreparedReservation(data, reason = "user_cancelled_before_
   const sessionContext = data?.privacySessionContext || privacySessionSnapshot();
   assertPrivacySession(sessionContext);
   const manager = data?.reservationManager;
-  const reservationIDs = preparedReservationIDs(data);
-  if (!manager || !reservationIDs.length) return;
+  const reservationIDs2 = preparedReservationIDs(data);
+  if (!manager || !reservationIDs2.length) return;
   const currentManager = await currentReservationManager();
   assertPrivacySession(sessionContext);
   if (currentManager !== manager) throw stalePrivacySessionError(sessionContext);
-  await manager.markReplanRequired(reservationIDs, {
+  await manager.markReplanRequired(reservationIDs2, {
     leaseToken: data.reservation?.lease_token || data.reservation?.reservations?.[0]?.lease_token || "",
     error: reason,
     metadata: {
@@ -104154,19 +101148,19 @@ function stopRelayReservationHeartbeat(expectedGeneration = null) {
 }
 function startRelayReservationHeartbeat({
   manager,
-  reservationIDs,
-  leaseToken,
+  reservationIDs: reservationIDs2,
+  leaseToken: leaseToken2,
   leaseUntil,
   sessionContext = privacySessionSnapshot()
 }) {
-  if (!manager || !reservationIDs.length || !leaseToken) return;
-  const expectedReservationIDs = JSON.stringify(reservationIDs);
+  if (!manager || !reservationIDs2.length || !leaseToken2) return;
+  const expectedReservationIDs = JSON.stringify(reservationIDs2);
   try {
     assertPrivacySession(sessionContext);
   } catch {
     return;
   }
-  if (manager !== reservationManager || state.relayWithdraw.leaseToken !== leaseToken || JSON.stringify(state.relayWithdraw.reservationIds || []) !== expectedReservationIDs) {
+  if (manager !== reservationManager || state.relayWithdraw.leaseToken !== leaseToken2 || JSON.stringify(state.relayWithdraw.reservationIds || []) !== expectedReservationIDs) {
     return;
   }
   stopRelayReservationHeartbeat();
@@ -104178,15 +101172,15 @@ function startRelayReservationHeartbeat({
     } catch {
       return false;
     }
-    return state.relayWithdraw.leaseToken === leaseToken && JSON.stringify(state.relayWithdraw.reservationIds || []) === expectedReservationIDs;
+    return state.relayWithdraw.leaseToken === leaseToken2 && JSON.stringify(state.relayWithdraw.reservationIds || []) === expectedReservationIDs;
   };
   const heartbeat = async () => {
     if (!heartbeatCurrent()) return;
     try {
-      await manager.heartbeatLease(reservationIDs, { leaseToken });
+      await manager.heartbeatLease(reservationIDs2, { leaseToken: leaseToken2 });
     } catch (error) {
       if (!heartbeatCurrent()) return;
-      const records = await Promise.allSettled(reservationIDs.map((id) => manager.getReservation(id)));
+      const records = await Promise.allSettled(reservationIDs2.map((id) => manager.getReservation(id)));
       if (!heartbeatCurrent()) return;
       const stillProofReady = records.some((result) => result.status === "fulfilled" && result.value.status === reservationStatuses.ProofReady);
       if (!stopRelayReservationHeartbeat(generation)) return;
@@ -104198,7 +101192,7 @@ function startRelayReservationHeartbeat({
         } catch {
           return false;
         }
-        return state.relayWithdraw.leaseToken === leaseToken && JSON.stringify(state.relayWithdraw.reservationIds || []) === expectedReservationIDs;
+        return state.relayWithdraw.leaseToken === leaseToken2 && JSON.stringify(state.relayWithdraw.reservationIds || []) === expectedReservationIDs;
       };
       if (!stillProofReady) return;
       if (!failureCurrent()) return;
@@ -105580,10 +102574,10 @@ function normalizeEvmTxHash(txHash) {
   return String(txHash || "").trim().replace(/^0x/i, "").toUpperCase();
 }
 function attachSubmittedEvmTransactionEvidence(error, txHash) {
-  const failure2 = error instanceof Error ? error : new Error(String(error));
-  failure2.txHash ||= txHash;
-  failure2.evmTxHash ||= txHash;
-  return failure2;
+  const failure = error instanceof Error ? error : new Error(String(error));
+  failure.txHash ||= txHash;
+  failure.evmTxHash ||= txHash;
+  return failure;
 }
 function isExplicitWalletRejection3(error) {
   return String(error?.code ?? error?.data?.code ?? "") === "4001";
@@ -106516,8 +103510,8 @@ function renderRelayWithdraw() {
 async function setRelayWithdrawHandoff(prepared) {
   const sessionContext = privacySessionSnapshot();
   assertPrivacySession(sessionContext);
-  const reservationIDs = preparedReservationIDs(prepared);
-  if (!prepared.reservationManager || !prepared.reservation || !reservationIDs.length) {
+  const reservationIDs2 = preparedReservationIDs(prepared);
+  if (!prepared.reservationManager || !prepared.reservation || !reservationIDs2.length) {
     throw new Error("Relay withdraw handoff requires an active prepared reservation");
   }
   const manager = await currentReservationManager();
@@ -106539,7 +103533,7 @@ async function setRelayWithdrawHandoff(prepared) {
   });
   const nextRelayWithdraw = {
     handoff,
-    reservationIds: reservationIDs,
+    reservationIds: reservationIDs2,
     payloadHash: String(prepared.payload?.payload_hash || "").trim().toLowerCase(),
     expiresAtUnix: Number(prepared.payload?.expires_at_unix || 0),
     durableNoBroadcast: true,
@@ -106558,7 +103552,7 @@ async function setRelayWithdrawHandoff(prepared) {
   state.relayWithdraw = nextRelayWithdraw;
   startRelayReservationHeartbeat({
     manager,
-    reservationIDs,
+    reservationIDs: reservationIDs2,
     leaseToken: prepared.reservation.lease_token,
     leaseUntil: prepared.reservation.lease_until,
     sessionContext
@@ -106577,8 +103571,8 @@ async function recordExternalRelayWithdrawHandoff(surface) {
     throw new Error("This relay payload handoff is already in progress or recorded");
   }
   const context = captureRelaySubmitContext();
-  const reservationIDs = [...state.relayWithdraw.reservationIds];
-  const leaseToken = state.relayWithdraw.leaseToken;
+  const reservationIDs2 = [...state.relayWithdraw.reservationIds];
+  const leaseToken2 = state.relayWithdraw.leaseToken;
   const payload = relayWithdrawHandoffPayload(state.relayWithdraw.handoff);
   const payloadHash = payload?.payload_hash || "";
   const expiryLeaseUntil = relayWithdrawExpiryLeaseUntil(payload);
@@ -106588,7 +103582,7 @@ async function recordExternalRelayWithdrawHandoff(surface) {
     const manager = await currentReservationManager();
     assertPrivacySession(sessionContext);
     assertRelaySubmitContext(context);
-    if (!manager || !reservationIDs.length || !leaseToken) {
+    if (!manager || !reservationIDs2.length || !leaseToken2) {
       throw new Error("Relay withdraw reservation manager is unavailable");
     }
     const chainBlock = await fetchLatestChainBlock();
@@ -106597,22 +103591,22 @@ async function recordExternalRelayWithdrawHandoff(surface) {
     if (relayWithdrawPayloadExpired(payload, chainBlock.timeUnix)) {
       throw new Error(`Relay payload expired at authoritative chain height ${chainBlock.height}`);
     }
-    const renewed = await manager.renewLease(reservationIDs, {
-      leaseToken,
+    const renewed = await manager.renewLease(reservationIDs2, {
+      leaseToken: leaseToken2,
       leaseUntil: expiryLeaseUntil
     });
     assertPrivacySession(sessionContext);
     assertRelaySubmitContext(context);
     const expiryLeaseMilliseconds = Date.parse(expiryLeaseUntil);
-    if (renewed.length !== reservationIDs.length || renewed.some((record) => {
+    if (renewed.length !== reservationIDs2.length || renewed.some((record) => {
       const leaseMilliseconds = Date.parse(record?.lease_until || "");
       return !Number.isFinite(leaseMilliseconds) || leaseMilliseconds < expiryLeaseMilliseconds;
     })) {
       throw new Error("Relay handoff lease was not durably extended through payload expiry");
     }
     const renewedLeaseUntil = renewed[0]?.lease_until || expiryLeaseUntil;
-    await manager.recordRelayHandoff(reservationIDs, {
-      leaseToken,
+    await manager.recordRelayHandoff(reservationIDs2, {
+      leaseToken: leaseToken2,
       payloadHash,
       metadata: { handoff_surface: surface }
     });
@@ -108386,18 +105380,18 @@ async function signDirectAndBroadcast(signDoc, options = {}) {
       })) {
         clearCapturedPublicPendingTransaction(sessionContext, "privacy", txHash);
       }
-      const failure2 = error instanceof Error ? error : new Error(String(error));
-      failure2.txHash ||= txHash;
-      failure2.tx ||= error?.tx;
-      failure2.broadcast ||= error?.broadcast;
+      const failure = error instanceof Error ? error : new Error(String(error));
+      failure.txHash ||= txHash;
+      failure.tx ||= error?.tx;
+      failure.broadcast ||= error?.broadcast;
       if (!privacySessionIsCurrent(sessionContext)) {
         const stale = stalePrivacySessionError(sessionContext);
         stale.txHash = txHash;
-        stale.tx = failure2.tx;
-        stale.broadcast = failure2.broadcast;
+        stale.tx = failure.tx;
+        stale.broadcast = failure.broadcast;
         throw stale;
       }
-      throw failure2;
+      throw failure;
     }
     try {
       assertPrivacySession(sessionContext);
@@ -108457,9 +105451,9 @@ async function waitForEvmTransaction(txHash, label = "EVM transaction", reservat
   const broadcast = await clairveilBrowserClient().waitForEvmTransaction(txHash);
   if (!broadcast?.receipt) {
     const manager = reservationBinding.reservationManager;
-    const reservationIDs = preparedReservationIDs({ reservation: reservationBinding.reservation });
-    if (manager && reservationIDs.length) {
-      await manager.markUnknown(reservationIDs, {
+    const reservationIDs2 = preparedReservationIDs({ reservation: reservationBinding.reservation });
+    if (manager && reservationIDs2.length) {
+      await manager.markUnknown(reservationIDs2, {
         fromStatus: reservationStatuses.Submitted,
         txHash,
         error: "evm_receipt_polling_timeout",
@@ -108713,11 +105707,11 @@ function evmWalletAdapter(sessionContext = privacySessionSnapshot(), {
             attemptId
           );
         } else if (attemptId) {
-          const failure2 = new Error(error?.message || String(error), { cause: error });
-          failure2.code = "EVM_SUBMISSION_RESULT_UNKNOWN";
-          failure2.providerCode = error?.code ?? error?.data?.code;
-          failure2.publicTransactionAttemptId = attemptId;
-          throw failure2;
+          const failure = new Error(error?.message || String(error), { cause: error });
+          failure.code = "EVM_SUBMISSION_RESULT_UNKNOWN";
+          failure.providerCode = error?.code ?? error?.data?.code;
+          failure.publicTransactionAttemptId = attemptId;
+          throw failure;
         }
         throw error;
       }
@@ -109565,8 +106559,8 @@ async function relayPreparedWithdrawUnlocked() {
   }
   const context = captureRelaySubmitContext();
   const { sessionContext } = context;
-  const reservationIDs = [...state.relayWithdraw.reservationIds];
-  const leaseToken = state.relayWithdraw.leaseToken;
+  const reservationIDs2 = [...state.relayWithdraw.reservationIds];
+  const leaseToken2 = state.relayWithdraw.leaseToken;
   state.relayWithdraw.resultStatus = "preflighting";
   state.relayWithdraw.resultMessage = "Checking fresh chain time and reserved nullifier state\u2026";
   setBusy(els.relayPreparedWithdraw, true);
@@ -109576,7 +106570,7 @@ async function relayPreparedWithdrawUnlocked() {
   try {
     manager = await currentReservationManager();
     assertRelaySubmitContext(context);
-    if (!manager || !reservationIDs.length || !leaseToken) {
+    if (!manager || !reservationIDs2.length || !leaseToken2) {
       throw new Error("Relay withdraw reservation state is unavailable");
     }
     context.manager = manager;
@@ -109600,7 +106594,7 @@ async function relayPreparedWithdrawUnlocked() {
     if (Boolean(cursor.has_more ?? cursor.hasMore) || !checkedHeight || checkedHeight < chainBlock.height) {
       throw new Error("Reserved nullifier preflight did not reach the authoritative chain height");
     }
-    const records = await Promise.all(reservationIDs.map((id) => manager.getReservation(id)));
+    const records = await Promise.all(reservationIDs2.map((id) => manager.getReservation(id)));
     assertRelaySubmitContext(context);
     assertRelayReservationPayloadMatches(records, payload);
     const unspentIDs = await explicitlyUnspentReservationIDs(
@@ -109617,8 +106611,8 @@ async function relayPreparedWithdrawUnlocked() {
     assertRelaySubmitContext(context);
     stopRelayReservationHeartbeat();
     attemptMarkerStarted = true;
-    await manager.markBroadcastAttempting(reservationIDs, {
-      leaseToken,
+    await manager.markBroadcastAttempting(reservationIDs2, {
+      leaseToken: leaseToken2,
       reason: "same_origin_local_relayer_submit",
       metadata: {
         local_relayer: relayer.name,
@@ -109663,16 +106657,16 @@ async function relayPreparedWithdrawUnlocked() {
       payload_hash: relay.payloadHash || context.payloadHash
     };
     if (relay.unknown === true) {
-      await manager.markUnknown(reservationIDs, {
+      await manager.markUnknown(reservationIDs2, {
         fromStatus: reservationStatuses.ProofReady,
-        leaseToken,
+        leaseToken: leaseToken2,
         txHash,
         error: "local_relayer_included_status_unknown",
         metadata: relayMetadata
       });
     } else {
-      await manager.markSubmitted(reservationIDs, {
-        leaseToken,
+      await manager.markSubmitted(reservationIDs2, {
+        leaseToken: leaseToken2,
         txHash,
         metadata: relayMetadata
       });
@@ -109699,9 +106693,9 @@ async function relayPreparedWithdrawUnlocked() {
       if (rejectedTxHash) {
         try {
           assertRelaySubmitContext(context);
-          await manager.markUnknown(reservationIDs, {
+          await manager.markUnknown(reservationIDs2, {
             fromStatus: reservationStatuses.ProofReady,
-            leaseToken,
+            leaseToken: leaseToken2,
             txHash: rejectedTxHash,
             error: "local_relayer_check_tx_rejected",
             metadata: {
@@ -109723,8 +106717,8 @@ async function relayPreparedWithdrawUnlocked() {
       }
       try {
         assertRelaySubmitContext(context);
-        await manager.markManualReview(reservationIDs, {
-          ...!markedUnknown ? { leaseToken } : {},
+        await manager.markManualReview(reservationIDs2, {
+          ...!markedUnknown ? { leaseToken: leaseToken2 } : {},
           error: "local_relayer_check_tx_rejected",
           metadata: {
             local_relayer: relayer.name,
@@ -109781,7 +106775,7 @@ async function reconcileRelayWithdrawResult({ candidateTxHash = "" } = {}) {
     transport,
     payload,
     metadataOnly,
-    reservationIDs,
+    reservationIDs: reservationIDs2,
     sessionContext
   } = reconciliationContext;
   let txHash = reconciliationContext.txHash;
@@ -109796,7 +106790,7 @@ async function reconcileRelayWithdrawResult({ candidateTxHash = "" } = {}) {
   try {
     manager = await currentReservationManager();
     assertRelayReconciliationContext(reconciliationContext);
-    if (!manager || !reservationIDs.length) {
+    if (!manager || !reservationIDs2.length) {
       throw new Error("Relay withdraw reservation state is unavailable");
     }
     store = await currentOperationStore();
@@ -109838,7 +106832,7 @@ async function reconcileRelayWithdrawResult({ candidateTxHash = "" } = {}) {
     }
     const check = txHash ? await checkReservationTransaction(txHash) : { checked: false, txHash: "", included: false, failed: false, absent: false, pending: false };
     assertRelayReconciliationContext(reconciliationContext);
-    let records = await Promise.all(reservationIDs.map((id) => manager.getReservation(id)));
+    let records = await Promise.all(reservationIDs2.map((id) => manager.getReservation(id)));
     assertRelayReconciliationContext(reconciliationContext);
     try {
       assertRelayReservationPayloadMatches(records, payload);
@@ -109898,7 +106892,7 @@ async function reconcileRelayWithdrawResult({ candidateTxHash = "" } = {}) {
         );
         return;
       }
-      await manager.markManualReview(reservationIDs, {
+      await manager.markManualReview(reservationIDs2, {
         ...reconciliationContext.leaseToken ? { leaseToken: reconciliationContext.leaseToken } : {},
         error: "local_relayer_transaction_identity_unavailable",
         metadata: {
@@ -109972,12 +106966,12 @@ async function reconcileRelayWithdrawResult({ candidateTxHash = "" } = {}) {
         payloadHashMatched: true
       });
       assertRelayReconciliationContext(reconciliationContext);
-      const expectedReservationIDs = [...reservationIDs].sort();
+      const expectedReservationIDs = [...reservationIDs2].sort();
       const boundReservationIDs = (boundRecords || []).map((record) => String(record?.reservation_id || "")).filter(Boolean).sort();
       if (JSON.stringify(boundReservationIDs) !== JSON.stringify(expectedReservationIDs)) {
         throw new Error("Included relay transaction evidence did not bind the exact encrypted recovery reservation set");
       }
-      records = await Promise.all(reservationIDs.map((id) => manager.getReservation(id)));
+      records = await Promise.all(reservationIDs2.map((id) => manager.getReservation(id)));
       assertRelayReconciliationContext(reconciliationContext);
       if (records.some((record) => normalizedHex3(record.submitted_tx_hash) !== normalizedHex3(txHash))) {
         throw new Error("Included relay transaction evidence was not bound to every linked reservation");
@@ -109993,7 +106987,7 @@ async function reconcileRelayWithdrawResult({ candidateTxHash = "" } = {}) {
     });
     assertRelayReconciliationContext(reconciliationContext);
     const reconciledNotes = [...state.keplr.notes];
-    records = await Promise.all(reservationIDs.map((id) => manager.getReservation(id)));
+    records = await Promise.all(reservationIDs2.map((id) => manager.getReservation(id)));
     assertRelayReconciliationContext(reconciliationContext);
     const spentConfirmed = records.length > 0 && records.every((record) => record.status === reservationStatuses.ConfirmedSpent);
     const receiveConfirmed = check.included && check.successful === true && records.length > 0 && records.every((record) => !reservationRequiresOperationEvidence(record) || operationReconciliationStatus(record) === operationStatuses.Succeeded);
@@ -110206,7 +107200,7 @@ async function resolvePreparationRecovery(manager, assessment, evidence, approva
     if (sessionContext) assertPrivacySession(sessionContext);
   };
   assertCurrent();
-  const reservationIDs = assessment.reservationIDs;
+  const reservationIDs2 = assessment.reservationIDs;
   const status = assessment.status;
   if (assessment.signDocOnly) {
     if (evidence?.sign_doc_only_request !== true || evidence?.untracked_wallet_request_acknowledged !== true || evidence?.post_approval_chain_recheck !== true || evidence?.nullifier_unspent_confirmed !== true) {
@@ -110217,7 +107211,7 @@ async function resolvePreparationRecovery(manager, assessment, evidence, approva
         throw new Error(`Sign-doc-only reservation status ${status} cannot enter recovery quarantine`);
       }
       assertCurrent();
-      await manager.markManualReview(reservationIDs, {
+      await manager.markManualReview(reservationIDs2, {
         ...assessment.leaseToken ? { leaseToken: assessment.leaseToken } : {},
         error: "untracked_sign_doc_only_request",
         metadata: {
@@ -110228,7 +107222,7 @@ async function resolvePreparationRecovery(manager, assessment, evidence, approva
       });
       assertCurrent();
     }
-    await manager.resolveManualReview(reservationIDs, {
+    await manager.resolveManualReview(reservationIDs2, {
       target: reservationStatuses.ReplanRequired,
       operatorId,
       approvalReference,
@@ -110240,19 +107234,19 @@ async function resolvePreparationRecovery(manager, assessment, evidence, approva
   }
   if (status === reservationStatuses.Reserved) {
     assertCurrent();
-    await manager.releaseReservedOrProving(reservationIDs);
+    await manager.releaseReservedOrProving(reservationIDs2);
     assertCurrent();
     return "Released unused reservation";
   }
   if (status === reservationStatuses.Proving && assessment.leaseLive) {
     assertCurrent();
-    await manager.releaseReservedOrProving(reservationIDs, { leaseToken: assessment.leaseToken });
+    await manager.releaseReservedOrProving(reservationIDs2, { leaseToken: assessment.leaseToken });
     assertCurrent();
     return "Released local proving reservation";
   }
   if (status === reservationStatuses.ProofReady && assessment.leaseLive) {
     assertCurrent();
-    await manager.markReplanRequired(reservationIDs, {
+    await manager.markReplanRequired(reservationIDs2, {
       fromStatus: reservationStatuses.ProofReady,
       leaseToken: assessment.leaseToken,
       proofDiscarded: true,
@@ -110264,7 +107258,7 @@ async function resolvePreparationRecovery(manager, assessment, evidence, approva
   }
   if ([reservationStatuses.Proving, reservationStatuses.ProofReady].includes(status)) {
     assertCurrent();
-    await manager.markManualReview(reservationIDs, {
+    await manager.markManualReview(reservationIDs2, {
       error: "expired_preparation_recovery",
       metadata: evidence
     });
@@ -110273,7 +107267,7 @@ async function resolvePreparationRecovery(manager, assessment, evidence, approva
     throw new Error(`Reservation status ${status} cannot enter preparation recovery`);
   }
   assertCurrent();
-  await manager.resolveManualReview(reservationIDs, {
+  await manager.resolveManualReview(reservationIDs2, {
     target: reservationStatuses.ReplanRequired,
     operatorId,
     approvalReference,
@@ -110619,8 +107613,8 @@ async function resolvePreparedPrivacyFailure(error, data = error?.preparedPrivac
     }
     const active = await refreshReservationState(manager, { sessionContext });
     assertPrivacySession(sessionContext);
-    const reservationIDs = new Set(preparedReservationIDs(data));
-    const operationActive = reservationIDs.size ? active.filter((record) => reservationIDs.has(record.reservation_id)) : active;
+    const reservationIDs2 = new Set(preparedReservationIDs(data));
+    const operationActive = reservationIDs2.size ? active.filter((record) => reservationIDs2.has(record.reservation_id)) : active;
     return {
       blocked: operationActive.length > 0 || error?.code === "OPERATION_RECONCILIATION_REQUIRED" || state.reservations.unresolved?.length > 0,
       active: operationActive
