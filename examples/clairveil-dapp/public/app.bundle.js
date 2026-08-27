@@ -83132,6 +83132,16 @@ function reservationExecutionTransport(reservation = {}) {
 }
 function normalizeReservationMetadata(value) {
   const metadata = cloneReservationMetadata(value);
+  for (const field2 of [
+    "provider_rejection_log",
+    "providerRejectionLog",
+    "provider_log",
+    "providerLog",
+    "raw_log",
+    "rawLog"
+  ]) {
+    delete metadata[field2];
+  }
   const evidenceRequired = operationSuccessEvidenceRequiredMetadataState(metadata);
   if (evidenceRequired.present) {
     metadata.operation_success_evidence_required = evidenceRequired.value;
@@ -83250,7 +83260,9 @@ var initialLifecycleMetadataFields = /* @__PURE__ */ new Set([
   "wallet_rejected_before_broadcast",
   "walletRejectedBeforeBroadcast",
   "provider_rejection_code",
-  "providerRejectionCode"
+  "providerRejectionCode",
+  "provider_rejection_codespace",
+  "providerRejectionCodespace"
 ]);
 function assertInitialReservationRecord(reservation, { allowManagedClaimTokenHash = false } = {}) {
   if (reservation.status !== reservationStatuses.Reserved) {
@@ -83527,13 +83539,15 @@ var managedLifecycleMetadataAliases = /* @__PURE__ */ new Map([
   ["executionTransport", "execution_transport"],
   ["manualReviewResolutionReason", "manual_review_resolution_reason"],
   ["walletRejectedBeforeBroadcast", "wallet_rejected_before_broadcast"],
-  ["providerRejectionCode", "provider_rejection_code"]
+  ["providerRejectionCode", "provider_rejection_code"],
+  ["providerRejectionCodespace", "provider_rejection_codespace"]
 ]);
 var managedLifecycleMetadataFields = new Set([
   reservationClaimTokenHashField,
   ...initialLifecycleMetadataFields,
   "wallet_rejected_before_broadcast",
-  "provider_rejection_code"
+  "provider_rejection_code",
+  "provider_rejection_codespace"
 ].filter((field2) => !managedLifecycleMetadataAliases.has(field2)));
 function metadataFieldChanged(currentMetadata, nextMetadata, field2) {
   if (!Object.prototype.hasOwnProperty.call(nextMetadata, field2)) return false;
@@ -83575,6 +83589,7 @@ function assertManagedLifecycleMetadataMutation(current, to, patch = {}, {
   if (managedBroadcastRejection) {
     allowed.add("wallet_rejected_before_broadcast");
     allowed.add("provider_rejection_code");
+    allowed.add("provider_rejection_codespace");
     allowed.add("no_broadcast_attempt");
     allowed.add("proof_discarded");
   }
@@ -86987,28 +87002,31 @@ var NoteReservationManager = class {
       if (typeof rpcInvoked !== "boolean") {
         throw new Error("broadcast rejection resolution requires rpcInvoked boolean evidence");
       }
+      const stableErrorCode = walletRejected === true ? "wallet_rejected_before_broadcast" : abortedBeforeRpc === true ? "broadcast_aborted_before_rpc" : "check_tx_rejected";
+      const durableMetadata = normalizeReservationMetadata({
+        ...current.metadata || {},
+        ...metadata.metadata || {}
+      });
       const patch = {
         lease_owner: this.leaseOwner,
         lease_token: leaseToken,
         broadcast_in_flight: false,
         broadcast_attempt_count: Number(current.broadcast_attempt_count || 0),
-        last_broadcast_error: String(metadata.error || metadata.lastBroadcastError || metadata.last_broadcast_error || "broadcast rejected"),
+        last_broadcast_error: stableErrorCode,
         updated_at: now,
         metadata: {
-          ...current.metadata || {},
-          ...metadata.metadata || {},
+          ...durableMetadata,
           wallet_rejected_before_broadcast: walletRejected === true,
           provider_rejection_code: String(
             metadata.providerCode ?? metadata.provider_code ?? (walletRejected === true ? "4001" : "")
           ),
           ...metadata.providerCodespace != null || metadata.provider_codespace != null ? { provider_rejection_codespace: String(metadata.providerCodespace ?? metadata.provider_codespace) } : {},
-          ...metadata.providerLog != null || metadata.provider_log != null ? { provider_rejection_log: String(metadata.providerLog ?? metadata.provider_log) } : {},
           rpc_invoked: rpcInvoked,
           check_tx_rejected: checkTxRejected === true,
           broadcast_aborted_before_rpc: abortedBeforeRpc === true,
           no_broadcast_attempt: !rpcInvoked,
           proof_discarded: true,
-          reconcile_reason: walletRejected === true ? "wallet_rejected_before_broadcast" : abortedBeforeRpc === true ? "broadcast_aborted_before_rpc" : "check_tx_rejected"
+          reconcile_reason: stableErrorCode
         }
       };
       Object.defineProperty(patch, managedReservationEvidenceMutation, {
@@ -90808,8 +90826,7 @@ async function markBroadcastReservationSubmitted(context, evidence = {}) {
 async function markBroadcastReservationRejected(context, error, {
   kind,
   providerCode = "",
-  providerCodespace = "",
-  providerLog = ""
+  providerCodespace = ""
 } = {}) {
   if (!context) return;
   try {
@@ -90820,10 +90837,8 @@ async function markBroadcastReservationRejected(context, error, {
     const checkTx = kind === "check_tx";
     await context.reservationManager.markBroadcastRejected(context.reservationIDs, {
       leaseToken: context.leaseToken,
-      error: beforeRpc ? "broadcast_aborted_before_rpc" : "check_tx_rejected",
       providerCode,
       providerCodespace,
-      providerLog,
       rpcInvoked: checkTx,
       checkTxRejected: checkTx,
       broadcastAbortedBeforeRpc: beforeRpc,
@@ -94106,12 +94121,23 @@ var ClairveilJS = class {
     strictPrivacyScan,
     strict_privacy_scan,
     expiresAtUnix,
+    expires_at_unix,
     chainNowUnix,
     chain_now_unix,
     reservationManager: reservationManager2,
     reservation_manager,
     executionBuilder
   } = {}) {
+    const resolvedExpiresAtUnix = resolveUnixTimestampAlias(
+      expiresAtUnix,
+      expires_at_unix,
+      "expiresAtUnix"
+    );
+    const resolvedChainNowUnix = resolveUnixTimestampAlias(
+      chainNowUnix,
+      chain_now_unix,
+      "chainNowUnix"
+    );
     const resolvedReservationManager = reservationManager2 ?? reservation_manager ?? null;
     const privacy = material || await this.deriveWalletPrivacyMaterial(wallet);
     const scanOptions = resolveWalletScanOptions({
@@ -94177,8 +94203,8 @@ var ClairveilJS = class {
           recipient,
           rootSeed: privacy.rootSeed,
           chainId: this.chainId,
-          expiresAtUnix,
-          chainNowUnix: chainNowUnix ?? chain_now_unix,
+          expiresAtUnix: resolvedExpiresAtUnix,
+          chainNowUnix: resolvedChainNowUnix,
           signal
         });
         assertHeartbeatHealthy();
@@ -94896,8 +94922,7 @@ var ClairveilJS = class {
         await markBroadcastReservationRejected(reservationContext, wrapped2, {
           kind: "check_tx",
           providerCode: error.code,
-          providerCodespace: error.codespace,
-          providerLog: error.log || ""
+          providerCodespace: error.codespace
         });
         throw wrapped2;
       }
@@ -95747,8 +95772,7 @@ async function markBroadcastReservationRejected2(context, error) {
   try {
     await context.reservationManager.markBroadcastRejected(context.reservationIDs, {
       leaseToken: context.leaseToken,
-      providerCode: "4001",
-      error: "wallet_rejected_before_broadcast"
+      providerCode: "4001"
     });
   } catch (bookkeepingError) {
     throw attachReservationBookkeepingError2(error, bookkeepingError);
@@ -98325,14 +98349,14 @@ function auditTargetBindingFromBody(body = {}) {
   return values[0] || "";
 }
 function browserAliasedInputValue(body, camelName, snakeName, label, normalize3 = (value) => value) {
-  const camelValue = body?.[camelName];
-  const snakeValue = body?.[snakeName];
-  const hasCamel = camelValue !== void 0 && camelValue !== null;
-  const hasSnake = snakeValue !== void 0 && snakeValue !== null;
-  if (hasCamel && hasSnake && normalize3(camelValue) !== normalize3(snakeValue)) {
+  return browserAliasedInputValues(body, [camelName, snakeName], label, normalize3);
+}
+function browserAliasedInputValues(body, names, label, normalize3 = (value) => value) {
+  const values = names.map((name) => body?.[name]).filter((value) => value !== void 0 && value !== null);
+  if (values.length > 1 && values.some((value) => normalize3(value) !== normalize3(values[0]))) {
     throw new Error(`${label} aliases conflict`);
   }
-  return hasCamel ? camelValue : hasSnake ? snakeValue : void 0;
+  return values[0];
 }
 function canonicalBrowserAliasScalar(value) {
   return typeof value === "bigint" ? value.toString() : String(value).trim();
@@ -98542,7 +98566,12 @@ function typedWalletScanOptionsFromBody(body = {}) {
   };
 }
 function relayChainNowUnixFromBody(body = {}) {
-  return body.chainNowUnix ?? body.chain_now_unix ?? body.nowUnix ?? body.now_unix;
+  return browserAliasedInputValues(
+    body,
+    ["chainNowUnix", "chain_now_unix", "nowUnix", "now_unix"],
+    "chainNowUnix",
+    canonicalBrowserAliasScalar
+  );
 }
 function reservationReconciliationFields2(result = {}) {
   return result.reservationReconciliationRequired === true ? {
@@ -98798,11 +98827,11 @@ var ClairveilBrowserClient = class {
   async health({ allowUninitializedTree = false } = {}) {
     try {
       const [status, tree, audit] = await Promise.all([
-        this.rpc ? this.fetchJson(this.rpcUrl("/status")).then((value) => validateHealthStatus(value, this.chainId)) : this.assertEvmNetwork().then((evmChainId) => Object.freeze({
+        this.rpc ? this.fetchJson(this.rpcUrl("/status")).then((value) => validateHealthStatus(value, this.chainId)) : this.profileTransport === "evm" ? this.assertEvmNetwork().then((evmChainId) => Object.freeze({
           transport: "evm",
           chainId: this.chainId,
           evmChainId
-        })),
+        })) : Promise.reject(new Error("Cosmos RPC endpoint is required for browser health")),
         this.cosmos.fetchTreeState(),
         this.cosmos.queryAuditConfig()
       ]);
@@ -99906,6 +99935,20 @@ var ClairveilBrowserClient = class {
     };
   }
   async prepareWithdraw(body) {
+    const expiresAtUnix = browserAliasedInputValue(
+      body,
+      "expiresAtUnix",
+      "expires_at_unix",
+      "expiresAtUnix",
+      canonicalBrowserAliasScalar
+    );
+    const chainNowUnix = browserAliasedInputValue(
+      body,
+      "chainNowUnix",
+      "chain_now_unix",
+      "chainNowUnix",
+      canonicalBrowserAliasScalar
+    );
     const walletType = this.walletTypeFromBody(body);
     if (walletType === "evm") await this.assertEvmPreparationNetwork(body);
     const material = this.privacyMaterial(body, walletType);
@@ -99926,8 +99969,8 @@ var ClairveilBrowserClient = class {
       recipient,
       assetDenom: this.denom,
       scan: typedWalletScanOptionsFromBody(body),
-      expiresAtUnix: body.expiresAtUnix ?? body.expires_at_unix,
-      chainNowUnix: body.chainNowUnix ?? body.chain_now_unix,
+      expiresAtUnix,
+      chainNowUnix,
       gasLimit: body.gasLimit,
       gas_limit: body.gas_limit,
       feeAmount: body.feeAmount,
@@ -99972,6 +100015,14 @@ var ClairveilBrowserClient = class {
     return { ...common, transaction, txBytesHash };
   }
   async prepareRelayWithdraw(body) {
+    const expiresAtUnix = browserAliasedInputValue(
+      body,
+      "expiresAtUnix",
+      "expires_at_unix",
+      "expiresAtUnix",
+      canonicalBrowserAliasScalar
+    );
+    const chainNowUnix = relayChainNowUnixFromBody(body);
     const walletType = this.walletTypeFromBody(body);
     if (walletType === "evm") await this.assertEvmPreparationNetwork(body);
     const material = this.privacyMaterial(body, walletType);
@@ -99981,7 +100032,6 @@ var ClairveilBrowserClient = class {
     const recipient = evmRecipient ? evmAddressToBech32(evmRecipient, this.accountPrefix) : rawRecipient;
     const reservationManager2 = body.reservationManager ?? body.reservation_manager ?? null;
     const suppliedProverAdapter = body.proverAdapter ?? body.prover_adapter;
-    const chainNowUnix = relayChainNowUnixFromBody(body);
     const transactionOptions = browserAliasedInputValue(
       body,
       "transactionOptions",
@@ -99999,7 +100049,7 @@ var ClairveilBrowserClient = class {
       amount,
       recipient,
       scan: typedWalletScanOptionsFromBody(body),
-      expiresAtUnix: body.expiresAtUnix ?? body.expires_at_unix,
+      expiresAtUnix,
       chainNowUnix,
       reservationManager: reservationManager2,
       ...walletType === "evm" ? {
