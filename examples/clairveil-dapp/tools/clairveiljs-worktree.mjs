@@ -15,7 +15,7 @@ export const defaultDappDirectory = resolve(toolDirectory, "..");
 const clairveilBundleVersion = "v0.3.1";
 const clairveilSourceRepository = "https://github.com/DELIGHT-LABS/clairveil";
 const clairveilSourceKind = "commit_snapshot";
-const clairveilSourceCommit = "621c24a3ef1118b6ab2b8b780ab00da6fbc00e1b";
+const clairveilSourceCommit = "0ff92839872de26b787a60d8e4d5822cc459855b";
 const clairveilReleaseContractFileCount = 17;
 
 function sha256(bytes) {

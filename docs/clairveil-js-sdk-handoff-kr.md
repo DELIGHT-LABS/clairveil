@@ -69,6 +69,13 @@ MsgWithdraw
 
 EVM binding은 Clairveil 0.3.1 canonical privacy precompile contract를 구현합니다. Deposit은 proof와 exact `msg.value`, transfer는 self-view disclosure와 `expires_at_unix`, batch는 one-proof `singleProofBatchTransfer`, withdraw는 exact-match tuple을 사용합니다. Cosmos message와 EVM call은 같은 prepared effect와 operation evidence를 보존해야 합니다.
 
+Canonical EVM `IPrivacy` source와 generated ABI는 downstream Maroo chain이
+소유하며 commit `d624bb76cbd8c4cc0a88d30c2a720aab6da28f75`의
+`precompiles/privacy/IPrivacy.sol`과 `precompiles/privacy/IPrivacy.json`에
+고정합니다. ClairveilJS release verification은 이 Git blob을 인증하고 complete
+ABI, selector, event, mutability, canonical digest를 비교한 뒤에만 이 EVM
+contract 지원을 주장해야 합니다.
+
 ## 4. Query/API 계약
 
 JS SDK provider가 우선 구현해야 하는 gRPC/HTTP query는 아래입니다.

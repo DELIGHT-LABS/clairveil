@@ -105,7 +105,7 @@ RELEASE_PACK_EXPECTED_COMMIT=<40-character-commit-sha> \
 7. Tagged commit에서 `make release-pack`을 실행해 최종 handoff tarball과 checksum을 생성합니다.
 8. `make release-pack-verify`로 version tag, manifest commit, archive checksum, 내부 checksum, 필수 파일이 모두 일치하는지 확인합니다.
 9. `docs/schemas/clairveil-js-wallet-contract.schema.json`이 최신 fixture와 함께 `make examples`에서 검증되는지 확인합니다.
-10. `x/privacy/client/sdk/conformance/testdata` fixture가 downstream JS SDK 팀에게 전달될 tagged release commit과 같은 commit인지 확인합니다.
+10. `x/privacy/client/sdk/conformance/testdata` fixture가 downstream JS SDK 팀에게 전달될 tagged release commit과 같은 commit이거나, exact repository와 lowercase 40-character commit을 선언하고 모든 file을 byte-for-byte로 검증하며 Core release tag를 주장하지 않는 manifest-v2 `commit_snapshot`인지 확인합니다.
 11. ZK artifact checksum과 preflight mode 정책이 release note에 포함되어 있는지 확인합니다.
 12. Merkle snapshot/restore/migration 관련 변경이 있으면 `docs/clairveil-merkle-restore-sop-kr.md`의 샘플 path 재계산 절차가 release note에 반영되어 있는지 확인합니다.
 13. accepted vulnerability policy exception인 `GO-2024-2584`, `GO-2026-4479`, `GO-2026-5932`가 release note의 known risk에 남아 있는지 확인합니다.

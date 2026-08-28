@@ -107,7 +107,7 @@ RELEASE_PACK_EXPECTED_COMMIT=<40-character-commit-sha> \
 7. Run `make release-pack` from the tagged commit to create the final handoff tarball and checksum.
 8. Run `make release-pack-verify` and confirm the version tag, manifest commit, archive checksum, internal checksums, and required files all agree.
 9. Confirm `docs/schemas/clairveil-js-wallet-contract.schema.json` is validated against the latest fixtures by `make examples`.
-10. Confirm `x/privacy/client/sdk/conformance/testdata` fixtures come from the same tagged release commit delivered to the downstream JS SDK team.
+10. Confirm `x/privacy/client/sdk/conformance/testdata` fixtures come from either the same tagged release commit delivered to the downstream JS SDK team or a manifest-v2 `commit_snapshot` that names the exact repository and lowercase 40-character commit, verifies every file byte-for-byte, and makes no Core release-tag claim.
 11. Include ZK artifact checksums and preflight mode policy in the release note.
 12. If Merkle snapshot/restore/migration behavior changed, include the sample path recomputation procedure from `docs/clairveil-merkle-restore-sop.md` in the release note.
 13. Ensure accepted vulnerability policy exceptions `GO-2024-2584`, `GO-2026-4479`, and `GO-2026-5932` remain listed in the release note known risks.

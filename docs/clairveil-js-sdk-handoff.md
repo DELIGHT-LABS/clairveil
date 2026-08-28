@@ -77,6 +77,14 @@ self-view disclosure and `expires_at_unix`; batch uses one-proof
 `singleProofBatchTransfer`; withdraw uses the exact-match tuple. Cosmos messages
 and EVM calls preserve the same prepared effect and operation evidence.
 
+The canonical EVM `IPrivacy` source and generated ABI are owned by the Maroo
+downstream chain and pinned at commit
+`d624bb76cbd8c4cc0a88d30c2a720aab6da28f75` under
+`precompiles/privacy/IPrivacy.sol` and `precompiles/privacy/IPrivacy.json`.
+ClairveilJS release verification must authenticate those Git blobs and compare
+the complete ABI, selectors, events, mutability, and canonical digest before
+claiming this EVM contract.
+
 ## 4. Query/API Contract
 
 The JS SDK provider should implement these gRPC/HTTP queries first.

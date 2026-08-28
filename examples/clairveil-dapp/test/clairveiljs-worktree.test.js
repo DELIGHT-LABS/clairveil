@@ -53,7 +53,7 @@ async function fakeReleaseContracts(sdkDirectory, coreDirectory) {
     source: {
       repository: "https://github.com/DELIGHT-LABS/clairveil",
       kind: "commit_snapshot",
-      commit: "621c24a3ef1118b6ab2b8b780ab00da6fbc00e1b"
+      commit: "0ff92839872de26b787a60d8e4d5822cc459855b"
     },
     files
   }));
@@ -275,7 +275,7 @@ test("production deployment verification links the configured SDK before importi
   const packageMetadata = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
   assert.equal(
     packageMetadata.scripts["test:release-contracts"],
-    "npm run verify:clairveiljs-contract-sync && node tools/clairveiljs-worktree.mjs run verify:clairveil-source && node tools/clairveiljs-worktree.mjs run test:conformance:required"
+    "npm run verify:clairveiljs-contract-sync && node tools/clairveiljs-worktree.mjs run verify:clairveil-source && node tools/clairveiljs-worktree.mjs run verify:evm-source && node tools/clairveiljs-worktree.mjs run test:conformance:required"
   );
   assert.match(
     packageMetadata.scripts["verify:production-deployment"],
@@ -293,4 +293,7 @@ test("core CI requires one immutable ClairveilJS commit instead of a mutable bra
   assert.match(workflow, /ref: \$\{\{ steps\.clairveiljs-ref\.outputs\.sha \}\}/);
   assert.match(workflow, /actual_ref=.*rev-parse HEAD[\s\S]*actual_ref.*CLAIRVEILJS_REF/);
   assert.doesNotMatch(workflow, /CLAIRVEILJS_REF[^\n]*\|\|[^\n]*main/);
+  assert.match(workflow, /repository: Hashed-Open-Finance\/maroo/);
+  assert.match(workflow, /ref: d624bb76cbd8c4cc0a88d30c2a720aab6da28f75/);
+  assert.match(workflow, /CLAIRVEIL_EVM_SOURCE_DIR: \$\{\{ github\.workspace \}\}\/\.ci\/maroo/);
 });

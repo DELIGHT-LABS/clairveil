@@ -26,6 +26,16 @@ During `v0`, API/fixture/proto/schema can change. If they change, release notes 
 
 Release tags must be annotated and use exact SemVer prefixed by `v`, for example `v0.1.1`; prereleases use a SemVer suffix such as `v0.2.0-rc.1`. Do not move or reuse a published tag. The tag, `CHANGELOG.md`/`CHANGELOG-kr.md` heading, handoff manifest commit, archive, checksum, and GitHub release must all identify the same immutable source.
 
+A downstream SDK integration snapshot is a separate source identity and does
+not relax those Core release rules. Before a matching tagged Core handoff is
+available, an SDK may use manifest v2 with exactly
+`source = { repository, kind: "commit_snapshot", commit }`, where `commit` is a
+lowercase 40-character SHA and every vendored file is verified byte-for-byte
+against `git cat-file <commit>:<path>`. Such a manifest must not contain a
+Core release/tag field or present its package version as the Core release. An
+EVM precompile ABI owned by a downstream chain follows the same rule with its
+own repository and immutable commit identity.
+
 ## 2. Breaking Change Criteria
 
 Mark release notes with breaking or migration impact when any of these change:
