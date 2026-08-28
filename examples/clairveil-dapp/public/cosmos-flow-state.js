@@ -109,6 +109,75 @@ export function recoveredDepositNoteForTxHash(notes = [], txHash) {
   )) || null;
 }
 
+const depositNoteCommitmentKeys = Object.freeze([
+  "commitment",
+  "commitmentHex",
+  "commitment_hex",
+  "noteCommitmentHex",
+  "note_commitment_hex"
+]);
+
+function presentValues(value, keys) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  return keys
+    .filter(key => Object.prototype.hasOwnProperty.call(value, key))
+    .map(key => value[key])
+    .filter(candidate => candidate != null && String(candidate).trim() !== "");
+}
+
+function noteMatchesDepositCommitment(note, expected) {
+  const commitments = presentValues(note, depositNoteCommitmentKeys);
+  const canonical = commitments.map(canonicalTxHash);
+  if (!canonical.includes(expected)) return false;
+  if (canonical.some(candidate => candidate !== expected)) {
+    throw codedError(
+      "Deposit recovery note has conflicting commitment identities",
+      "AMBIGUOUS_DEPOSIT_COMMITMENT"
+    );
+  }
+  return true;
+}
+
+function assertExactDepositScanTxHash(note) {
+  const candidates = presentValues(note, ["tx_hash", "txHash"]);
+  const canonical = candidates.map(canonicalTxHash);
+  if (canonical.length === 0 || canonical.some(candidate => !candidate)) {
+    throw codedError(
+      "Deposit recovery note requires an exact 32-byte scan transaction hash",
+      "INVALID_DEPOSIT_SCAN_TX_HASH"
+    );
+  }
+  if (new Set(canonical).size !== 1) {
+    throw codedError(
+      "Deposit recovery note has conflicting scan transaction identities",
+      "AMBIGUOUS_DEPOSIT_COMMITMENT"
+    );
+  }
+  return canonical[0];
+}
+
+export function recoveredDepositNoteForCommitment(notes = [], expectedCommitment) {
+  const expected = canonicalTxHash(expectedCommitment);
+  if (!expected) {
+    throw codedError(
+      "Deposit recovery requires an exact 32-byte expected commitment",
+      "INVALID_DEPOSIT_COMMITMENT"
+    );
+  }
+  const matches = (Array.isArray(notes) ? notes : []).filter(note => (
+    noteMatchesDepositCommitment(note, expected)
+  ));
+  if (matches.length === 0) return null;
+  if (matches.length !== 1) {
+    throw codedError(
+      "Deposit recovery commitment matched multiple typed scan notes",
+      "AMBIGUOUS_DEPOSIT_COMMITMENT"
+    );
+  }
+  assertExactDepositScanTxHash(matches[0]);
+  return matches[0];
+}
+
 function normalizedAccount(value) {
   return String(value || "").trim().toLowerCase();
 }

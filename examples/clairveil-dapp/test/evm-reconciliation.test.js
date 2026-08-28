@@ -30,6 +30,35 @@ function completeEvmResult({
   };
 }
 
+function typedTransferEffect({
+  evmTxHash = `0x${"12".repeat(32)}`,
+  scanTxHash = `0x${"ab".repeat(32)}`,
+  commitment = "cd".repeat(32),
+  disclosureDigest = "ef".repeat(32),
+  height = 20
+} = {}) {
+  return {
+    summary: {
+      height,
+      tx_hash: scanTxHash,
+      event_type: "shielded_transfer",
+      output_count: 2,
+      nullifiers: ["56".repeat(32), "78".repeat(32)]
+    },
+    outputs: [
+      { commitment, full_disclosure_digest: disclosureDigest },
+      { commitment: "90".repeat(32), full_disclosure_digest: "91".repeat(32) }
+    ],
+    scanTransactionLink: {
+      scanTxHash,
+      evmTxHash,
+      cometHeight: String(height),
+      cosmosTxSucceeded: true,
+      ethereumTxHashEventMatched: true
+    }
+  };
+}
+
 test("verified EVM evidence retains finality and rejects receipt-only success", () => {
   const complete = completeEvmResult();
   assert.deepEqual(verifiedEvmTransactionResult(complete).finality, complete.finality);
@@ -79,12 +108,13 @@ test("direct EVM DApp evidence converges a submitted reservation to succeeded", 
     kind: "transfer"
   });
   const result = completeEvmResult();
+  const typedEffect = typedTransferEffect({ evmTxHash: result.txHash });
   await manager.markProofReady(reservation.reservation_ids, {
     leaseToken: reservation.lease_token,
     executionTransport: "evm",
     txBytesHash: result.txBytesHash,
-    expectedOutputCommitment: "OUTPUT",
-    expectedDisclosureDigest: "DISCLOSURE",
+    expectedOutputCommitment: typedEffect.outputs[0].commitment,
+    expectedDisclosureDigest: typedEffect.outputs[0].full_disclosure_digest,
     expectedRecipientHash: "RECIPIENT",
     expectedAmount: "4",
     expectedAmountHash: "AMOUNT",
@@ -106,7 +136,7 @@ test("direct EVM DApp evidence converges a submitted reservation to succeeded", 
   const records = await Promise.all(
     reservation.reservation_ids.map(id => store.getReservation(id))
   );
-  const operationSuccessEvidence = directEvmOperationSuccessEvidence(records, result);
+  const operationSuccessEvidence = directEvmOperationSuccessEvidence(records, result, typedEffect);
   await manager.reconcileSpentNotes([{
     ...note,
     isSpent: true,
@@ -124,5 +154,29 @@ test("direct EVM evidence rejects a transaction artifact mismatch", () => {
   assert.throws(() => directEvmOperationSuccessEvidence([{
     submitted_tx_hash: result.txHash,
     tx_bytes_hash: "ff".repeat(32)
-  }], result), /transaction binding does not match/);
+  }], result, typedTransferEffect({ evmTxHash: result.txHash })), /transaction binding does not match/);
+});
+
+test("direct EVM evidence rejects receipt-only and unlinked typed scan success", () => {
+  const result = completeEvmResult();
+  const records = [{
+    kind: "transfer",
+    submitted_tx_hash: result.txHash,
+    tx_bytes_hash: result.txBytesHash,
+    expected_output_commitment: "cd".repeat(32)
+  }];
+  assert.throws(
+    () => directEvmOperationSuccessEvidence(records, result),
+    /complete typed scan transaction evidence/
+  );
+  assert.throws(
+    () => directEvmOperationSuccessEvidence(records, result, {
+      ...typedTransferEffect({ evmTxHash: result.txHash }),
+      scanTransactionLink: {
+        ...typedTransferEffect({ evmTxHash: result.txHash }).scanTransactionLink,
+        evmTxHash: `0x${"ff".repeat(32)}`
+      }
+    }),
+    /not linked to the verified EVM receipt/
+  );
 });

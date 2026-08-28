@@ -1254,6 +1254,10 @@ select {
   margin-bottom: 12px;
 }
 
+.audit-list-help {
+  margin: -4px 0 12px;
+}
+
 .test-scalar-box {
   align-items: end;
   border: 1px solid var(--line);
@@ -1372,6 +1376,44 @@ select {
 .audit-facts dd.audit-value-decoded {
   color: var(--ink);
   font-weight: 800;
+}
+
+.auditor-batch-outputs {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.auditor-batch-outputs[hidden] {
+  display: none;
+}
+
+.auditor-batch-output {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.auditor-batch-output > div {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.auditor-batch-output span,
+.auditor-batch-output code {
+  color: var(--muted);
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.auditor-batch-output.verified {
+  background: #eef8f5;
+  border-color: #9bd5c7;
 }
 
 #auditorDecodeState {

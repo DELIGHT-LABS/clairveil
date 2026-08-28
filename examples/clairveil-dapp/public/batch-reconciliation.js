@@ -89,4 +89,34 @@ export function assertTypedBatchEffect({
   return true;
 }
 
+export function advanceEvmBatchReceiptArtifact({
+  artifact,
+  receiptEvidence,
+  txHash,
+  txBytesHash,
+} = {}) {
+  if (!artifact || !receiptEvidence) {
+    throw new Error("EVM batch receipt artifact and evidence are required");
+  }
+  if (canonicalHex(receiptEvidence.txResult?.txHash) !== canonicalHex(txHash)) {
+    throw new Error("EVM batch receipt does not match its transaction identity");
+  }
+  const existingReceipt = artifact.receiptEvidence;
+  if (existingReceipt
+    && (canonicalHex(existingReceipt.txResult?.txHash) !== canonicalHex(txHash)
+      || canonicalHex(existingReceipt.operationEvidenceHash)
+        !== canonicalHex(receiptEvidence.operationEvidenceHash))) {
+    throw new Error("Encrypted batch recovery artifact contains different receipt evidence");
+  }
+  const typedEffectVerified = artifact.phase === "typed-effect-verified"
+    || Boolean(existingReceipt?.scanTransactionLink && existingReceipt?.typedScanEvidence);
+  return {
+    ...artifact,
+    phase: typedEffectVerified ? "typed-effect-verified" : "receipt-verified",
+    txHash,
+    txBytesHash: txBytesHash || artifact.txBytesHash,
+    receiptEvidence: typedEffectVerified ? existingReceipt : receiptEvidence,
+  };
+}
+
 export { canonicalHex as canonicalBatchEvidenceHex };

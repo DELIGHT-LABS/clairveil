@@ -157,6 +157,7 @@ test("Cosmos and EVM DApp profiles expose the opt-in one-proof batch API", () =>
     assert.equal(typeof client.prepareTransferBatch, "function", profile.transport);
     assert.equal(typeof client.finalizePreparedBatchTransfer, "function", profile.transport);
     assert.equal(typeof client.fetchAuditableBatchTransfers, "function", profile.transport);
+    assert.equal(typeof client.decodeBatchAuditDisclosure, "function", profile.transport);
   }
 });
 

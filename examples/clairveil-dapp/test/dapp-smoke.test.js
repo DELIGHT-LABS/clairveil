@@ -12,6 +12,9 @@ const depositFundingSource = await readFile(new URL("../public/deposit-funding.j
 const relayReconciliationSource = await readFile(new URL("../public/relay-withdraw-reconciliation.js", import.meta.url), "utf8");
 const cosmosFlowStateSource = await readFile(new URL("../public/cosmos-flow-state.js", import.meta.url), "utf8");
 const evmReconciliationSource = await readFile(new URL("../public/evm-reconciliation.js", import.meta.url), "utf8");
+const evmBroadcastWatchSource = await readFile(new URL("../public/evm-broadcast-watch.js", import.meta.url), "utf8");
+const evmTypedScanEvidenceSource = await readFile(new URL("../public/evm-typed-scan-evidence.js", import.meta.url), "utf8");
+const cosmosEvmCorrelationSource = await readFile(new URL("../public/cosmos-evm-transaction-correlation.js", import.meta.url), "utf8");
 const reservationRecoverySource = await readFile(new URL("../public/reservation-recovery.js", import.meta.url), "utf8");
 const reservationReconciliationSource = await readFile(new URL("../public/reservation-reconciliation.js", import.meta.url), "utf8");
 const configSource = await readFile(new URL("../public/dapp-config.js", import.meta.url), "utf8");
@@ -427,7 +430,9 @@ test("DApp persists encrypted reservations and keeps unknown broadcasts fail clo
   assert.match(appSource, /const reservationIDs = \[\.\.\.state\.relayWithdraw\.reservationIds\][\s\S]*manager\.recordRelayHandoff\(reservationIDs/);
 
   assert.match(appSource, /if \(!broadcast\?\.receipt\) \{[\s\S]*markUnknown\(reservationIDs,[\s\S]*fromStatus: reservationStatuses\.Submitted[\s\S]*unknown: true/);
-  assert.match(appSource, /result\.unknown \? onUnknown/);
+  assert.match(appSource, /createEvmBroadcastWatcher/);
+  assert.match(evmBroadcastWatchSource, /result\?\.unknown \? onUnknown : onIncluded/);
+  assert.match(evmBroadcastWatchSource, /await evidenceIsCurrent\(result\)/);
   assert.match(reservationReconciliationSource, /nullifierUnspentConfirmed: true/);
   assert.match(reservationReconciliationSource, /txAbsentOrFailedConfirmed: true/);
   assert.match(reservationReconciliationSource, /txHashChecked: txHash/);
@@ -959,6 +964,34 @@ test("DApp exposes a common Cosmos/EVM atomic batch flow with per-payment disclo
   assert.match(persistedBatchEvidence, /if \(evmReceiptHasFailed\(error\?\.broadcast\?\.receipt\)\) continue;/);
 });
 
+test("DApp links EVM receipts to typed outer Comet transactions before reconciliation", () => {
+  const batchEvidence = appSource.slice(
+    appSource.indexOf("async function batchReceiptEvidenceForReservations"),
+    appSource.indexOf("function batchOperationEvidence")
+  );
+  const directEvidence = appSource.slice(
+    appSource.indexOf("async function directEvmReceiptEvidenceForReservations"),
+    appSource.indexOf("async function clearTerminalDirectEvmOperationArtifacts")
+  );
+  const depositRecovery = appSource.slice(
+    appSource.indexOf("function reconcilePendingDepositRecoveryFromTypedNotes"),
+    appSource.indexOf("function noteScanRequestOptions")
+  );
+  assert.match(appSource, /verifyEvmScanTransactionLink/);
+  assert.match(appSource, /findVerifiedEvmTypedScanEffect/);
+  assert.match(cosmosEvmCorrelationSource, /ethereumTxHash/);
+  assert.match(cosmosEvmCorrelationSource, /attribute\.index === true/);
+  assert.match(evmTypedScanEvidenceSource, /typed scan matched multiple effects; reconciliation is ambiguous/);
+  assert.match(batchEvidence, /verifiedEvmTypedScanEffect/);
+  assert.match(batchEvidence, /assertTypedBatchEffect/);
+  assert.match(batchEvidence, /scanTransactionLink/);
+  assert.match(directEvidence, /verifiedEvmTypedScanEffect/);
+  assert.match(directEvidence, /directEvmOperationSuccessEvidence\(records, receiptResult, effect\)/);
+  assert.match(depositRecovery, /recoveredDepositNoteForCommitment/);
+  assert.match(depositRecovery, /verifyEvmTypedScanTransaction/);
+  assert.match(depositRecovery, /clearConfirmedDepositRecoveryUnlocked/);
+});
+
 test("DApp clears corrupt public pending state under the account lock without deleting replacement state", () => {
   const clearStart = appSource.indexOf("async function clearPublicPendingTransactions");
   const clearEnd = appSource.indexOf("async function resetCorruptPrivateRecoveryStateUnlocked", clearStart);
@@ -1216,7 +1249,8 @@ test("DApp separates deposit inclusion from exact note recovery", () => {
   assert.match(appSource, /expectedEncryptedNote: prepared\.encryptedNoteHex/);
   assert.match(appSource, /Included · recovery pending/);
   assert.match(appSource, /recoveredDepositNoteForTxHash\(state\.keplr\.notes, txHash\)/);
-  assert.match(appSource, /function reconcilePendingDepositRecoveryFromTypedNotes[\s\S]*recoveredDepositNoteForTxHash/);
+  assert.match(appSource, /function reconcilePendingDepositRecoveryFromTypedNotes[\s\S]*recoveredDepositNoteForCommitment/);
+  assert.match(appSource, /function finalizePendingDepositRecoveryFromTypedNotes[\s\S]*verifyEvmTypedScanTransaction/);
   assert.match(appSource, /state\.keplr\.notes = scannedNotes;[\s\S]*reconcilePendingDepositRecoveryFromTypedNotes\(\)/);
   assert.match(appSource, /Recovered · encrypted note matched the exact included tx hash/);
   assert.match(appSource, /persistCapturedDepositRecoveryPending/);

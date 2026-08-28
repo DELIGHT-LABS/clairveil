@@ -54,6 +54,7 @@ import {
   assertPreparedTransferFreshAtChainTime,
   authoritativeChainBlockFromStatus,
   preparedTransferExpiryUnix,
+  recoveredDepositNoteForCommitment,
   recoveredDepositNoteForTxHash,
   reservationConsumesBrowserCosmosSequence,
   typedPrivacyScanAfter
@@ -76,8 +77,12 @@ import {
   evmReceiptExplicitlySucceeded,
   verifiedEvmTransactionResult
 } from "./evm-reconciliation.js";
+import { verifyEvmScanTransactionLink } from "./cosmos-evm-transaction-correlation.js";
+import { findVerifiedEvmTypedScanEffect } from "./evm-typed-scan-evidence.js";
+import { createEvmBroadcastWatcher } from "./evm-broadcast-watch.js";
 import { preparedBatchTransferFacts } from "./batch-transfer-state.js";
 import {
+  advanceEvmBatchReceiptArtifact,
   assertTypedBatchEffect,
   canonicalBatchEvidenceHex
 } from "./batch-reconciliation.js";
@@ -222,7 +227,9 @@ function defaultReservationState() {
 function defaultAuditorState() {
   return {
     events: [],
+    batchTransactions: [],
     selectedTxHash: "",
+    selectedKind: "",
     decoded: null,
     testScalar: "",
     testScalarError: "",
@@ -334,6 +341,7 @@ let serverHealthEndpointState = "unknown";
 const noteStoreCoordinator = createBrowserTaskCoordinator();
 const publicTransactionCoordinator = createBrowserTaskCoordinator();
 const valueMovingActionGate = createValueMovingActionGate();
+const evmBroadcastWatcher = createEvmBroadcastWatcher({ reportError: reportAsyncError });
 const cosmosGasLimits = Object.freeze({
   send: 200000,
   deposit: 2500000,
@@ -608,6 +616,56 @@ async function fetchLatestChainBlock({ signal } = {}) {
   return authoritativeChainBlockFromStatus(data, profile);
 }
 
+function exactTypedScanTransactionHash(value, label = "typed scan transaction hash") {
+  const hash = canonicalBatchEvidenceHex(value);
+  if (!/^[0-9a-f]{64}$/.test(hash)) {
+    throw new Error(`${label} must be an exact 32-byte hash`);
+  }
+  return `0x${hash}`;
+}
+
+function cometTransactionQueryUrl(scanTxHash, profile = activeChainProfile()) {
+  const endpoint = browserRpcUrl(profile);
+  if (!endpoint) {
+    throw new Error("A browser-accessible chain RPC endpoint is required to link EVM and typed scan transactions");
+  }
+  const url = new URL(endpoint);
+  url.pathname = `${url.pathname.replace(/\/+$/, "")}/tx`;
+  url.hash = "";
+  url.searchParams.set("hash", exactTypedScanTransactionHash(scanTxHash));
+  url.searchParams.set("prove", "false");
+  return url.href;
+}
+
+async function verifyEvmTypedScanTransaction(scanTxHash, evmTxHash, {
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  if (activeChainProfile()?.transport !== "evm") {
+    throw new Error("EVM typed scan transaction correlation requires an EVM profile");
+  }
+  const canonicalScanTxHash = exactTypedScanTransactionHash(scanTxHash);
+  const cometTransaction = await fetchBoundedJson(cometTransactionQueryUrl(canonicalScanTxHash), {
+    label: "EVM typed scan transaction query"
+  });
+  assertPrivacySession(sessionContext);
+  const link = verifyEvmScanTransactionLink({
+    scanTxHash: canonicalScanTxHash,
+    evmTxHash,
+    cometTransaction
+  });
+  return link;
+}
+
+function assertEvmTypedScanLinkHeight(link, height) {
+  const summaryHeight = Number(height);
+  if (!Number.isSafeInteger(summaryHeight) || summaryHeight <= 0
+    || BigInt(link?.cometHeight || 0) !== BigInt(summaryHeight)) {
+    throw new Error("Typed scan height does not match the linked Comet transaction");
+  }
+  return link;
+}
+
 async function fetchLatestChainBlockTimeUnix(options = {}) {
   return (await fetchLatestChainBlock(options)).timeUnix;
 }
@@ -803,6 +861,8 @@ function clairveilBrowserClient(profile = activeChainProfile()) {
     evmDepositMode: browserProfile?.evmDepositMode || "payable-exact-value",
     evmNativeDenom: browserProfile?.evmNativeDenom || "",
     evmAuthorizationProfile: browserProfile?.evmAuthorizationProfile || null,
+    evmGasLimit: browserProfile?.evmGasLimit || "",
+    evmSendGasLimit: browserProfile?.evmSendGasLimit || "",
     batchTransfer: serverFeature("batchTransfer")
   });
   if (!browserClient || browserClientKey !== key
@@ -1718,6 +1778,7 @@ async function updateBatchTransferArtifact(updater, {
   const identity = batchTransferArtifactIdentity();
   if (!store || !identity) throw new Error("Encrypted batch recovery storage is unavailable");
   const result = await store.update(current => {
+    if (!current) return undefined;
     assertBatchTransferArtifactIdentity(current, identity);
     const updated = updater(current);
     return updated === undefined
@@ -1991,15 +2052,60 @@ async function saveEvmOperationArtifact(operationKey, artifact, {
   const identity = evmOperationArtifactIdentity(operationKey);
   const store = await currentEvmOperationArtifactStore(operationKey, { sessionContext });
   if (!identity || !store) throw new Error("Encrypted EVM operation recovery storage is unavailable");
-  await store.save({
+  await store.update(current => {
+    if (current) {
+      assertEvmOperationArtifactIdentity(current, identity);
+      const existingReservations = [...new Set(current.reservationIds || [])].sort();
+      const candidateReservations = [...new Set(artifact?.reservationIds || [])].sort();
+      if (existingReservations.length !== candidateReservations.length
+        || existingReservations.some((id, index) => id !== candidateReservations[index])
+        || (current.txBytesHash && artifact?.txBytesHash
+          && String(current.txBytesHash) !== String(artifact.txBytesHash))) {
+        throw new Error("Refusing to replace a different encrypted EVM operation artifact");
+      }
+    }
+    return evmOperationArtifactValue(identity, artifact);
+  }, { beforeCommit: () => assertPrivacySession(sessionContext) });
+  assertPrivacySession(sessionContext);
+}
+
+function evmOperationArtifactValue(identity, artifact = {}) {
+  return {
+    ...artifact,
     version: "clairveil-evm-operation-artifact-v1",
     profileId: identity.profileId,
     owner: identity.owner,
     operationKey: identity.operationKey,
-    savedAt: new Date().toISOString(),
-    ...artifact
+    savedAt: new Date().toISOString()
+  };
+}
+
+function assertEvmOperationArtifactIdentity(artifact, identity) {
+  if (artifact?.version !== "clairveil-evm-operation-artifact-v1"
+    || artifact.profileId !== identity.profileId
+    || String(artifact.owner || "").toLowerCase() !== identity.owner
+    || artifact.operationKey !== identity.operationKey) {
+    throw new Error("Encrypted EVM operation artifact does not match the active wallet, profile, or operation");
+  }
+  return artifact;
+}
+
+async function updateEvmOperationArtifact(operationKey, updater, {
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  if (typeof updater !== "function") throw new TypeError("EVM operation artifact updater must be a function");
+  const identity = evmOperationArtifactIdentity(operationKey);
+  const store = await currentEvmOperationArtifactStore(operationKey, { sessionContext });
+  if (!identity || !store) throw new Error("Encrypted EVM operation recovery storage is unavailable");
+  const result = await store.update(async current => {
+    if (current) assertEvmOperationArtifactIdentity(current, identity);
+    const candidate = await updater(current);
+    if (candidate == null) return candidate;
+    return evmOperationArtifactValue(identity, candidate);
   }, { beforeCommit: () => assertPrivacySession(sessionContext) });
   assertPrivacySession(sessionContext);
+  return result;
 }
 
 async function loadEvmOperationArtifact(operationKey, {
@@ -2012,22 +2118,23 @@ async function loadEvmOperationArtifact(operationKey, {
   const artifact = await store.load();
   assertPrivacySession(sessionContext);
   if (!artifact) return null;
-  if (artifact.version !== "clairveil-evm-operation-artifact-v1"
-    || artifact.profileId !== identity.profileId
-    || String(artifact.owner || "").toLowerCase() !== identity.owner
-    || artifact.operationKey !== identity.operationKey) {
-    throw new Error("Encrypted EVM operation artifact does not match the active wallet, profile, or operation");
-  }
-  return artifact;
+  return assertEvmOperationArtifactIdentity(artifact, identity);
 }
 
 async function clearEvmOperationArtifact(operationKey, {
+  records = null,
   sessionContext = privacySessionSnapshot()
 } = {}) {
   assertPrivacySession(sessionContext);
+  const identity = evmOperationArtifactIdentity(operationKey);
   const store = await currentEvmOperationArtifactStore(operationKey, { sessionContext });
-  await store?.clear({ beforeCommit: () => assertPrivacySession(sessionContext) });
+  if (!identity || !store) return false;
+  const result = await store.clearIf(current => {
+    assertEvmOperationArtifactIdentity(current, identity);
+    return records == null || evmOperationArtifactMatchesReservations(current, records);
+  }, { beforeCommit: () => assertPrivacySession(sessionContext) });
   assertPrivacySession(sessionContext);
+  return result.changed;
 }
 
 function evmOperationArtifactMatchesReservations(artifact, records = []) {
@@ -2064,13 +2171,14 @@ async function updatePreparedEvmOperationArtifact(data, patch, {
   assertPrivacySession(sessionContext);
   const operationKey = preparedOperationKey(data);
   if (!operationKey) return;
-  const artifact = await loadEvmOperationArtifact(operationKey, { sessionContext });
-  if (!artifact) throw new Error("Encrypted EVM operation recovery artifact is unavailable");
   const reservationIds = preparedReservationIDs(data).sort();
-  if (!evmOperationArtifactMatchesReservations(artifact, reservationIds.map(reservation_id => ({ reservation_id })))) {
-    throw new Error("Encrypted EVM operation recovery artifact does not match the prepared reservation");
-  }
-  await saveEvmOperationArtifact(operationKey, { ...artifact, ...patch }, { sessionContext });
+  await updateEvmOperationArtifact(operationKey, artifact => {
+    if (!artifact) throw new Error("Encrypted EVM operation recovery artifact is unavailable");
+    if (!evmOperationArtifactMatchesReservations(artifact, reservationIds.map(reservation_id => ({ reservation_id })))) {
+      throw new Error("Encrypted EVM operation recovery artifact does not match the prepared reservation");
+    }
+    return { ...artifact, ...patch };
+  }, { sessionContext });
 }
 
 async function loadEvmOperationArtifactForReservations(records = [], {
@@ -2133,19 +2241,28 @@ async function saveBatchReceiptEvidence(data, result, {
     throw new Error("Prepared batch operation evidence does not match its durable reservation binding");
   }
   const receiptEvidence = batchReceiptEvidence(data, result);
-  await updateBatchTransferArtifact(artifact => {
+  const updated = await updateBatchTransferArtifact(artifact => {
     if (!batchArtifactMatchesReservations(artifact, records)) {
       throw new Error("Encrypted batch recovery artifact does not match the prepared note reservation");
     }
-    return {
-      ...artifact,
-      phase: "receipt-verified",
+    if (artifact.receiptEvidence) {
+      const existingResult = verifiedEvmTransactionResult(
+        artifact.receiptEvidence.txResult,
+        "Persisted EVM batch receipt"
+      );
+      if (!sameEvmBroadcastTransaction(existingResult.txHash, result.txHash)
+        || normalizedHex(artifact.receiptEvidence.operationEvidenceHash) !== expected[0]) {
+        throw new Error("Encrypted batch recovery artifact contains different receipt evidence");
+      }
+    }
+    return advanceEvmBatchReceiptArtifact({
+      artifact,
+      receiptEvidence,
       txHash: result.txHash,
-      txBytesHash: result.txBytesHash,
-      receiptEvidence
-    };
+      txBytesHash: result.txBytesHash
+    });
   }, { sessionContext });
-  return receiptEvidence;
+  return updated.artifact?.receiptEvidence || null;
 }
 
 async function saveBatchSubmission(data, txHash, {
@@ -2194,7 +2311,64 @@ async function batchReceiptEvidenceForReservations(records = [], {
   const receiptEvidence = artifact.receiptEvidence;
   const expected = [...new Set(records.map(record => normalizedHex(record.expected_operation_evidence_hash)).filter(Boolean))];
   if (expected.length !== 1 || normalizedHex(receiptEvidence?.operationEvidenceHash) !== expected[0]) return null;
-  return receiptEvidence;
+  const operationEvidence = batchOperationEvidence(artifact);
+  if (!operationEvidence
+    || normalizedHex(await digestText(JSON.stringify(operationEvidence))) !== expected[0]) {
+    throw new Error("Encrypted batch operation evidence does not match its durable evidence hash");
+  }
+  const txResult = verifiedEvmTransactionResult(receiptEvidence?.txResult, "EVM batch receipt recovery");
+  const receiptHeight = authoritativeTransactionHeight({ height: txResult.receipt?.blockNumber });
+  const expectedNullifiers = operationEvidence.input_nullifier_hexes
+    || operationEvidence.inputNullifierHexes
+    || [];
+  const expectedOutputs = operationEvidence.expected_outputs
+    || operationEvidence.expectedOutputs
+    || [];
+  const expectedCommitments = expectedOutputs.map(output => (
+    output?.expected_output_commitment ?? output?.expectedOutputCommitment
+  ));
+  const effect = await verifiedEvmTypedScanEffect({
+    evmTxHash: txResult.txHash,
+    receiptHeight,
+    expectedEventTypes: ["batch_transfer"],
+    expectedNullifiers,
+    expectedCommitments,
+    sessionContext
+  });
+  if (!effect) return null;
+  assertTypedBatchEffect({
+    summary: effect.summary,
+    outputs: effect.outputs,
+    operationEvidence,
+    outputCount: artifact?.prepared?.outputCount,
+    txHash: effect.scanTransactionLink.scanTxHash,
+    maxOutputs: batchTransferMaxPayments
+  });
+  const typedReceiptEvidence = {
+    ...receiptEvidence,
+    scanTransactionLink: effect.scanTransactionLink,
+    typedScanEvidence: {
+      scanTxHash: exactTypedScanTransactionHash(effect.summary.tx_hash),
+      height: String(effect.summary.height),
+      eventType: effect.summary.event_type,
+      outputCount: effect.outputs.length,
+      effectId: canonicalBatchEvidenceHex(effect.summary.effect_id),
+      nullifiers: (effect.summary.nullifiers || []).map(canonicalBatchEvidenceHex),
+      commitments: effect.outputs.map(output => canonicalBatchEvidenceHex(output.commitment))
+    }
+  };
+  const updated = await updateBatchTransferArtifact(current => {
+    if (!batchArtifactMatchesReservations(current, records)) return undefined;
+    if (normalizedHex(current.receiptEvidence?.txResult?.txHash) !== normalizedHex(txResult.txHash)) {
+      throw new Error("Encrypted batch recovery artifact contains a different verified EVM transaction");
+    }
+    return {
+      ...current,
+      phase: "typed-effect-verified",
+      receiptEvidence: typedReceiptEvidence
+    };
+  }, { sessionContext });
+  return updated.artifact ? updated.artifact.receiptEvidence : null;
 }
 
 function batchOperationEvidence(artifact = {}) {
@@ -2202,6 +2376,51 @@ function batchOperationEvidence(artifact = {}) {
     || artifact.prepared?.operationEvidence
     || artifact.prepared?.operation_evidence
     || null;
+}
+
+async function verifiedEvmTypedScanEffect({
+  evmTxHash,
+  receiptHeight,
+  expectedEventTypes,
+  expectedNullifiers = [],
+  expectedCommitments = [],
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  if (!Number.isSafeInteger(receiptHeight) || receiptHeight <= 0) {
+    throw new Error("Verified EVM receipt is missing an authoritative block height");
+  }
+  const validationState = createPrivacyScanValidationStateV2();
+  const effect = await findVerifiedEvmTypedScanEffect({
+    fetchScanPage: async request => {
+      assertPrivacySession(sessionContext);
+      const page = await clairveilBrowserClient().queryPrivacyScan(request);
+      assertPrivacySession(sessionContext);
+      return page;
+    },
+    verifyTransactionLink: (scanTxHash, expectedEvmTxHash) => (
+      verifyEvmTypedScanTransaction(scanTxHash, expectedEvmTxHash, { sessionContext })
+    ),
+    evmTxHash,
+    expectedEventTypes,
+    expectedNullifiers,
+    expectedCommitments,
+    afterHeight: Math.max(0, receiptHeight - 1),
+    throughHeight: receiptHeight,
+    outputLimit: 128,
+    eventLimit: 64,
+    maxEncodedBytes: 1048576,
+    maxOutputsPerEffect: batchTransferMaxPayments,
+    validationState
+  });
+  assertPrivacySession(sessionContext);
+  if (effect) {
+    assertEvmTypedScanLinkHeight(effect.scanTransactionLink, effect.summary?.height);
+    if (Number(effect.summary?.height) !== receiptHeight) {
+      throw new Error("Typed privacy effect height does not match the verified EVM receipt block");
+    }
+  }
+  return effect;
 }
 
 async function typedCosmosBatchEvidence(txHash, height, artifact, {
@@ -2606,7 +2825,10 @@ async function discardPreparedReservation(data, reason = "user_cancelled_before_
     && data?.reservationKind !== "batch-transfer") {
     const operationKey = preparedOperationKey(data);
     if (operationKey) {
-      await clearEvmOperationArtifact(operationKey, { sessionContext });
+      await clearEvmOperationArtifact(operationKey, {
+        records: preparedReservationIDs(data).map(reservation_id => ({ reservation_id })),
+        sessionContext
+      });
       assertPrivacySession(sessionContext);
     }
   }
@@ -3085,6 +3307,7 @@ function isRelayWithdrawReservation(records = []) {
 }
 
 async function directEvmReceiptEvidenceForReservations(records = [], {
+  notesByLookupKey = new Map(),
   sessionContext = privacySessionSnapshot(),
   assertCurrent = null
 } = {}) {
@@ -3113,20 +3336,74 @@ async function directEvmReceiptEvidenceForReservations(records = [], {
     );
     assertFresh();
     if (result.unknown) return { complete: false, evidence: null };
-    receiptResult = result;
-    await saveEvmOperationArtifact(artifact.operationKey, {
-      ...artifact,
-      phase: "receipt-verified",
-      txHash: result.txHash,
-      receiptResult: result
+    const updated = await updateEvmOperationArtifact(artifact.operationKey, current => {
+      if (!current) return undefined;
+      if (!evmOperationArtifactMatchesReservations(current, records)) {
+        throw new Error("Encrypted EVM operation recovery artifact no longer matches its reservations");
+      }
+      if (current.txHash && normalizedHex(current.txHash) !== normalizedHex(result.txHash)) {
+        throw new Error("Encrypted EVM operation recovery artifact contains a different submitted transaction");
+      }
+      return {
+        ...current,
+        phase: "receipt-verified",
+        txHash: result.txHash,
+        receiptResult: result
+      };
     }, { sessionContext });
     assertFresh();
+    if (!updated.artifact) return { complete: false, evidence: null };
+    receiptResult = updated.artifact.receiptResult;
   }
+  const txResult = verifiedEvmTransactionResult(receiptResult, "EVM privacy operation recovery");
+  const receiptHeight = authoritativeTransactionHeight({ height: txResult.receipt?.blockNumber });
+  const expectedNullifiers = records.map(record => (
+    noteNullifier(notesByLookupKey.get(record.nullifier_lookup_key))
+  ));
+  if (expectedNullifiers.some(value => !value)) {
+    return { complete: false, evidence: null };
+  }
+  const expectedCommitments = [...new Set(records
+    .map(record => String(record.expected_output_commitment || "").trim())
+    .filter(Boolean))];
+  const effect = await verifiedEvmTypedScanEffect({
+    evmTxHash: txResult.txHash,
+    receiptHeight,
+    expectedEventTypes: reservationPrivacyEventTypes(records),
+    expectedNullifiers,
+    expectedCommitments,
+    sessionContext
+  });
+  assertFresh();
+  if (!effect) return { complete: false, evidence: null };
   const evidence = records.some(reservationRequiresOperationEvidence)
-    ? directEvmOperationSuccessEvidence(records, receiptResult)
+    ? directEvmOperationSuccessEvidence(records, receiptResult, effect)
     : null;
-  verifiedEvmTransactionResult(receiptResult, "EVM privacy operation recovery");
-  return { complete: true, evidence };
+  const updated = await updateEvmOperationArtifact(artifact.operationKey, current => {
+    if (!current || !evmOperationArtifactMatchesReservations(current, records)) return undefined;
+    if (normalizedHex(current.receiptResult?.txHash) !== normalizedHex(txResult.txHash)) {
+      throw new Error("Encrypted EVM operation recovery artifact contains a different verified transaction");
+    }
+    return {
+      ...current,
+      phase: "typed-effect-verified",
+      scanTransactionLink: effect.scanTransactionLink,
+      typedScanEvidence: evidence?.typedScanEvidence || {
+        scanTxHash: exactTypedScanTransactionHash(effect.summary.tx_hash),
+        height: String(effect.summary.height),
+        eventType: effect.summary.event_type,
+        outputCount: effect.outputs.length,
+        nullifiers: (effect.summary.nullifiers || []).map(canonicalBatchEvidenceHex)
+      },
+      ...(evidence ? { operationSuccessEvidence: evidence } : {})
+    };
+  }, { sessionContext });
+  assertFresh();
+  if (!updated.artifact) return { complete: false, evidence: null };
+  return {
+    complete: true,
+    evidence: evidence ? updated.artifact.operationSuccessEvidence : null
+  };
 }
 
 async function clearTerminalDirectEvmOperationArtifacts(records = [], {
@@ -3151,7 +3428,7 @@ async function clearTerminalDirectEvmOperationArtifacts(records = [], {
     }
     const operationKey = reservationGroupOperationKey(operationRecords);
     if (operationKey) {
-      await clearEvmOperationArtifact(operationKey, { sessionContext });
+      await clearEvmOperationArtifact(operationKey, { records: operationRecords, sessionContext });
       assertPrivacySession(sessionContext);
     }
   }
@@ -3220,6 +3497,7 @@ async function reconcileSpentReservations(manager, notes = state.keplr.notes, {
     if (executionTransport === "evm" && !isBatchReservationOperation(records) && !isRelayWithdrawReservation(records)) {
       if (spentRecords.length !== records.length) continue;
       const recovered = await directEvmReceiptEvidenceForReservations(records, {
+        notesByLookupKey,
         sessionContext: sessionContext || privacySessionSnapshot(),
         assertCurrent
       });
@@ -3288,6 +3566,7 @@ async function reconcileSpentReservations(manager, notes = state.keplr.notes, {
       const operationKey = reservationGroupOperationKey(latest);
       if (operationKey) {
         await clearEvmOperationArtifact(operationKey, {
+          records: latest,
           sessionContext: sessionContext || privacySessionSnapshot()
         });
       }
@@ -3567,6 +3846,7 @@ const els = {
   auditorPlanePolicy: $("#auditorPlanePolicy"),
   auditorOutputIndex: $("#auditorOutputIndex"),
   auditorCommitment: $("#auditorCommitment"),
+  auditorBatchOutputs: $("#auditorBatchOutputs"),
   auditorTestScalar: $("#auditorTestScalar"),
   decodeAuditorTransfer: $("#decodeAuditorTransfer"),
   auditorSection: $(".auditor-section"),
@@ -3758,6 +4038,7 @@ function invalidateActivePrivacyFlow() {
   relayHandoffInFlight = false;
   batchTransferInFlight = false;
   valueMovingActionGate.invalidate();
+  evmBroadcastWatcher.invalidateAll();
   for (const action of [
     els.fundKeplr,
     els.sendFromKeplr,
@@ -3774,6 +4055,7 @@ function invalidateActivePrivacyFlow() {
 
 function runValueMovingAction(action, task) {
   const operation = valueMovingActionGate.run(action, () => {
+    evmBroadcastWatcher.invalidateAll();
     renderKeplr();
     return task();
   });
@@ -4637,10 +4919,13 @@ function reconcilePendingDepositRecoveryFromTypedNotes() {
     return null;
   }
   let recovered;
+  const evm = activeChainProfile()?.transport === "evm";
+  const expectedCommitment = normalizedHex(state.keplr.depositPrepared?.noteCommitmentHex);
   try {
-    recovered = recoveredDepositNoteForTxHash(state.keplr.notes, state.keplr.depositHash);
-    const expectedCommitment = normalizedHex(state.keplr.depositPrepared?.noteCommitmentHex);
-    if (recovered && expectedCommitment
+    recovered = evm
+      ? recoveredDepositNoteForCommitment(state.keplr.notes, expectedCommitment)
+      : recoveredDepositNoteForTxHash(state.keplr.notes, state.keplr.depositHash);
+    if (!evm && recovered && expectedCommitment
       && normalizedHex(noteCommitment(recovered)) !== expectedCommitment) {
       return null;
     }
@@ -4650,6 +4935,8 @@ function reconcilePendingDepositRecoveryFromTypedNotes() {
   if (!recovered) return null;
   return {
     txHash: state.keplr.depositHash,
+    scanTxHash: exactTypedScanTransactionHash(recovered.tx_hash || recovered.txHash),
+    expectedCommitment,
     height: recovered.height || ""
   };
 }
@@ -4659,20 +4946,46 @@ async function finalizePendingDepositRecoveryFromTypedNotes(recovery, {
   accountTransactionLockHeld = false
 } = {}) {
   if (!recovery?.txHash) return false;
-  const finalize = () => {
+  const evm = activeChainProfile()?.transport === "evm";
+  if (evm) {
+    const recovered = recoveredDepositNoteForCommitment(
+      state.keplr.notes,
+      recovery.expectedCommitment
+    );
+    if (!recovered
+      || exactTypedScanTransactionHash(recovered.tx_hash || recovered.txHash) !== recovery.scanTxHash) {
+      return false;
+    }
+    const scanLink = await verifyEvmTypedScanTransaction(
+      recovered.tx_hash || recovered.txHash,
+      recovery.txHash,
+      { sessionContext }
+    );
+    assertEvmTypedScanLinkHeight(scanLink, recovered.height);
+    assertPrivacySession(sessionContext);
+  }
+  const finalize = async () => {
     assertPrivacySession(sessionContext);
     if (normalizedHex(state.keplr.depositHash) !== normalizedHex(recovery.txHash)) {
       return false;
     }
-    const recovered = recoveredDepositNoteForTxHash(state.keplr.notes, recovery.txHash);
+    const recovered = evm
+      ? recoveredDepositNoteForCommitment(state.keplr.notes, recovery.expectedCommitment)
+      : recoveredDepositNoteForTxHash(state.keplr.notes, recovery.txHash);
     const expectedCommitment = normalizedHex(state.keplr.depositPrepared?.noteCommitmentHex);
     if (!recovered || (expectedCommitment
       && normalizedHex(noteCommitment(recovered)) !== expectedCommitment)) {
       return false;
     }
-    clearCapturedPublicPendingTransaction(sessionContext, "deposit", recovery.txHash);
+    if (evm && exactTypedScanTransactionHash(recovered.tx_hash || recovered.txHash) !== recovery.scanTxHash) {
+      return false;
+    }
+    await clearConfirmedDepositRecoveryUnlocked(sessionContext, recovery.txHash);
+    assertPrivacySession(sessionContext);
     state.keplr.depositRecoveryStatus = "recovered";
-    state.keplr.depositRecoveryMessage = "Recovered · encrypted note matched the exact included tx hash";
+    state.keplr.depositRecoveryMessage = evm
+      ? "Recovered · encrypted note and linked EVM/Comet transaction verified"
+      : "Recovered · encrypted note matched the exact included tx hash";
     state.keplr.depositHeight = recovered.height || recovery.height || state.keplr.depositHeight;
     return true;
   };
@@ -7211,8 +7524,205 @@ async function decodeDisclosureSource() {
   }
 }
 
+const auditorBatchMaxPages = 1000;
+const auditorBatchMaxOutputs = 32000;
+
+function canonicalAuditorBatchTxHash(record, label = "typed batch record") {
+  const txHash = canonicalBatchEvidenceHex(record?.tx_hash).toUpperCase();
+  if (!/^[0-9A-F]{64}$/.test(txHash)) {
+    throw new Error(`${label} has an invalid transaction hash`);
+  }
+  return txHash;
+}
+
+function auditorBatchEventKey(record) {
+  const identity = typedBatchEventIdentity(record);
+  return `${identity.height}:${identity.globalSequence}`;
+}
+
+function auditorBatchSummaryFingerprint(summary) {
+  return JSON.stringify([
+    canonicalAuditorBatchTxHash(summary, "typed batch summary"),
+    auditorBatchEventKey(summary),
+    Number(summary.output_count),
+    canonicalBatchEvidenceHex(summary.effect_id),
+    (summary.nullifiers || []).map(canonicalBatchEvidenceHex).sort(),
+    String(summary.audit_key_id || ""),
+    String(summary.audit_key_epoch ?? ""),
+    canonicalBatchEvidenceHex(summary.audit_target_pubkey)
+  ]);
+}
+
+function canonicalAuditorScanCursor(cursor, label) {
+  const height = String(cursor?.height ?? "").trim();
+  const globalSequence = String(cursor?.global_sequence ?? cursor?.globalSequence ?? "").trim();
+  const outputIndex = Number(cursor?.output_index ?? cursor?.outputIndex);
+  if (!/^(?:0|[1-9][0-9]*)$/.test(height) ||
+      !/^(?:0|[1-9][0-9]*)$/.test(globalSequence) ||
+      !Number.isSafeInteger(outputIndex) || outputIndex < 0) {
+    throw new Error(`${label} is invalid`);
+  }
+  return {
+    height: BigInt(height),
+    globalSequence: BigInt(globalSequence),
+    outputIndex
+  };
+}
+
+function compareAuditorScanCursor(left, right) {
+  for (const key of ["height", "globalSequence"]) {
+    if (left[key] < right[key]) return -1;
+    if (left[key] > right[key]) return 1;
+  }
+  return left.outputIndex - right.outputIndex;
+}
+
+function auditorScanCursorKey(cursor) {
+  return `${cursor.height}:${cursor.globalSequence}:${cursor.outputIndex}`;
+}
+
+function groupAuditableBatchTransactions(summaries, outputs) {
+  const events = new Map();
+  for (const summary of summaries) {
+    const outputCount = Number(summary?.output_count);
+    if (summary?.event_type !== "batch_transfer" || !Number.isSafeInteger(outputCount) ||
+        outputCount < 1 || outputCount > batchTransferMaxPayments) {
+      throw new Error("Typed batch audit summary has an invalid output count");
+    }
+    const eventKey = auditorBatchEventKey(summary);
+    const fingerprint = auditorBatchSummaryFingerprint(summary);
+    const existing = events.get(eventKey);
+    if (existing && existing.fingerprint !== fingerprint) {
+      throw new Error("Typed batch audit scan returned conflicting transaction summaries");
+    }
+    if (!existing) {
+      events.set(eventKey, {
+        eventKey,
+        fingerprint,
+        summary,
+        outputs: new Map()
+      });
+    }
+  }
+
+  for (const output of outputs) {
+    if (output?.event_type !== "batch_transfer") {
+      throw new Error("Typed batch audit scan returned a non-batch output");
+    }
+    const eventKey = auditorBatchEventKey(output);
+    const event = events.get(eventKey);
+    const outputIndex = Number(output.output_index);
+    if (!event || canonicalAuditorBatchTxHash(output, "typed batch output") !==
+        canonicalAuditorBatchTxHash(event.summary, "typed batch summary")) {
+      throw new Error("Typed batch audit output has no matching transaction summary");
+    }
+    if (!Number.isSafeInteger(outputIndex) || outputIndex < 0 ||
+        outputIndex >= Number(event.summary.output_count)) {
+      throw new Error("Typed batch audit output index is outside its transaction summary");
+    }
+    const auditDigest = canonicalBatchEvidenceHex(output.full_disclosure_digest);
+    const auditPayload = canonicalBatchEvidenceHex(output.audit_disclosure_payload);
+    if (!/^[0-9a-f]{64}$/.test(auditDigest) || !auditPayload) {
+      throw new Error(`Typed batch audit output ${outputIndex} is missing its mandatory audit disclosure`);
+    }
+    if (event.outputs.has(outputIndex)) {
+      throw new Error("Typed batch audit scan returned a duplicate output");
+    }
+    event.outputs.set(outputIndex, output);
+  }
+
+  const transactions = new Map();
+  for (const event of events.values()) {
+    const outputCount = Number(event.summary.output_count);
+    if (event.outputs.size !== outputCount ||
+        [...Array(outputCount).keys()].some(index => !event.outputs.has(index))) {
+      throw new Error("Typed batch audit scan did not return every mandatory audit output");
+    }
+    const txHash = canonicalAuditorBatchTxHash(event.summary, "typed batch summary");
+    const identity = typedBatchEventIdentity(event.summary);
+    const transaction = transactions.get(txHash) || {
+      kind: "batch",
+      txHash,
+      height: identity.height,
+      events: [],
+      outputCount: 0
+    };
+    if (transaction.height !== identity.height) {
+      throw new Error("Typed batch audit transaction hash appears at multiple heights");
+    }
+    event.outputs = [...event.outputs.values()].sort((left, right) =>
+      Number(left.output_index) - Number(right.output_index));
+    transaction.events.push(event);
+    transaction.outputCount += event.outputs.length;
+    transactions.set(txHash, transaction);
+  }
+  for (const transaction of transactions.values()) {
+    transaction.events.sort((left, right) => {
+      const leftIdentity = typedBatchEventIdentity(left.summary);
+      const rightIdentity = typedBatchEventIdentity(right.summary);
+      const leftSequence = BigInt(leftIdentity.globalSequence);
+      const rightSequence = BigInt(rightIdentity.globalSequence);
+      return leftSequence < rightSequence ? -1 : leftSequence > rightSequence ? 1 : 0;
+    });
+  }
+  return [...transactions.values()];
+}
+
+async function fetchAllAuditableBatchTransactions(client, sessionContext) {
+  const validationState = createPrivacyScanValidationStateV2();
+  let after = { height: "0", globalSequence: "0", outputIndex: 0 };
+  let currentCursor = canonicalAuditorScanCursor(after, "Initial batch audit cursor");
+  const seenCursors = new Set([auditorScanCursorKey(currentCursor)]);
+  const summaries = [];
+  const outputs = [];
+
+  for (let pageIndex = 0; pageIndex < auditorBatchMaxPages; pageIndex += 1) {
+    const page = await client.fetchAuditableBatchTransfers({
+      after,
+      outputLimit: 128,
+      eventLimit: 64,
+      maxEncodedBytes: 1048576,
+      validationState
+    });
+    assertPrivacySession(sessionContext);
+    summaries.push(...page.summaries);
+    outputs.push(...page.outputs);
+    if (outputs.length > auditorBatchMaxOutputs) {
+      throw new Error(`Batch audit scan exceeded ${auditorBatchMaxOutputs} outputs`);
+    }
+    if (!page.has_more) {
+      return groupAuditableBatchTransactions(summaries, outputs);
+    }
+    const nextCursor = canonicalAuditorScanCursor(page.next_cursor, "Next batch audit cursor");
+    const nextKey = auditorScanCursorKey(nextCursor);
+    if (compareAuditorScanCursor(nextCursor, currentCursor) <= 0 || seenCursors.has(nextKey)) {
+      throw new Error("Batch audit scan cursor did not advance");
+    }
+    seenCursors.add(nextKey);
+    currentCursor = nextCursor;
+    after = {
+      height: nextCursor.height.toString(),
+      globalSequence: nextCursor.globalSequence.toString(),
+      outputIndex: nextCursor.outputIndex
+    };
+  }
+  throw new Error(`Batch audit scan exceeded ${auditorBatchMaxPages} pages`);
+}
+
+function auditorBatchOutputs(transaction) {
+  return (transaction?.events || []).flatMap((event, eventIndex) =>
+    event.outputs.map(output => ({ event, eventIndex, output })));
+}
+
+function clearAuditorBatchOutputs() {
+  if (!els.auditorBatchOutputs) return;
+  els.auditorBatchOutputs.replaceChildren();
+  els.auditorBatchOutputs.hidden = true;
+}
+
 function clearAuditorReport(message = "Select a transfer.") {
   if (!els.auditorDecodeState) return;
+  clearAuditorBatchOutputs();
   setAuditorValueTone(auditorDetailValueElements());
   els.auditorTxHash.textContent = "-";
   els.auditorVerification.textContent = "-";
@@ -7235,6 +7745,8 @@ function renderAuditorEventDetail(event) {
     return;
   }
 
+  clearAuditorBatchOutputs();
+
   const target = eventAttribute(event, "audit_disclosure_target_pubkey");
   const digest = eventAttribute(event, "audit_disclosure_digest");
   const payload = eventAttribute(event, "audit_disclosure_payload");
@@ -7254,8 +7766,75 @@ function renderAuditorEventDetail(event) {
   updateAuditorDecodeButton();
 }
 
+function appendAuditorBatchOutput({ eventIndex, output }, view = null) {
+  if (!els.auditorBatchOutputs) return;
+  const row = document.createElement("div");
+  row.className = "auditor-batch-output";
+  row.classList.toggle("verified", Boolean(view?.verified));
+  const heading = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = `Batch ${eventIndex + 1} · output ${output.output_index}`;
+  const status = document.createElement("span");
+  status.textContent = view?.verified ? "Verified" : "Encrypted";
+  heading.append(title, status);
+  const primary = document.createElement("span");
+  if (view?.verified) {
+    const summary = view.summary || {};
+    const amount = summary.amount
+      ? `${summary.amount}${summary.asset_denom ? ` ${summary.asset_denom}` : ""}`
+      : "amount unavailable";
+    primary.textContent = `${amount} → ${shorten(summary.to_shielded_address || "-", 14, 10)}`;
+  } else {
+    primary.textContent = "Mandatory audit disclosure · encrypted";
+  }
+  const identity = document.createElement("code");
+  identity.textContent = view?.verified
+    ? shorten(view.commitmentHex, 12, 10)
+    : shorten(canonicalBatchEvidenceHex(output.full_disclosure_digest), 12, 10);
+  row.append(heading, primary, identity);
+  els.auditorBatchOutputs.append(row);
+}
+
+function renderAuditorBatchOutputs(transaction, decodedEntries = null) {
+  clearAuditorBatchOutputs();
+  if (!els.auditorBatchOutputs) return;
+  const entries = auditorBatchOutputs(transaction);
+  const decodedByKey = new Map((decodedEntries || []).map(entry => [
+    `${entry.event.eventKey}:${entry.output.output_index}`,
+    entry.view
+  ]));
+  for (const entry of entries) {
+    const key = `${entry.event.eventKey}:${entry.output.output_index}`;
+    appendAuditorBatchOutput(entry, decodedByKey.get(key) || null);
+  }
+  els.auditorBatchOutputs.hidden = entries.length === 0;
+}
+
+function renderAuditorBatchDetail(transaction) {
+  if (!hasAuditorUi()) return;
+  if (!transaction) {
+    clearAuditorReport();
+    return;
+  }
+  clearAuditorReport("Every batch output must verify before plaintext is shown.");
+  els.auditorTxHash.textContent = transaction.txHash;
+  els.auditorVerification.textContent = transaction.height || "-";
+  els.auditorAmount.textContent = `${transaction.outputCount} encrypted outputs`;
+  els.auditorDigest.textContent = "per-output mandatory digest";
+  els.auditorPlanePolicy.textContent = "audit / encrypted batch";
+  els.auditorOutputIndex.textContent = "all";
+  els.auditorCommitment.textContent = "per output";
+  els.auditorFrom.textContent = "typed privacy-scan-v2";
+  els.auditorFields.textContent = "encrypted";
+  els.auditorTo.textContent = "Decode all outputs";
+  setAuditorValueTone(auditorDetailValueElements(), "encoded");
+  renderAuditorBatchOutputs(transaction);
+  updateAuditorDecodeButton();
+}
+
 function renderAuditorReport(report) {
   if (!hasAuditorUi()) return;
+  clearAuditorBatchOutputs();
   const view = disclosureViewModel(report);
   if (!view.verified) {
     clearAuditorReport("Disclosure verification failed. Plaintext was discarded.");
@@ -7274,7 +7853,9 @@ function renderAuditorReport(report) {
   els.auditorTo.textContent = summary.to_shielded_address || "-";
   els.auditorFields.textContent = (summary.disclosed_fields || []).map(prettyDisclosureField).join(", ") || "-";
   els.auditorDigest.textContent = view.digestHex || eventAttribute(
-    state.auditor.events.find(event => event.tx_hash_hex === state.auditor.selectedTxHash),
+    state.auditor.events.find(event => (
+      normalizedTxHash(event.tx_hash_hex) === state.auditor.selectedTxHash
+    )),
     "audit_disclosure_digest"
   ) || "-";
   els.auditorPlanePolicy.textContent = `${view.plane || "audit"} / ${view.policy || "unknown policy"}`;
@@ -7285,27 +7866,91 @@ function renderAuditorReport(report) {
   updateAuditorDecodeButton();
 }
 
+function renderAuditorBatchReport(decoded) {
+  if (!hasAuditorUi()) return;
+  const transaction = decoded?.transaction;
+  const expected = auditorBatchOutputs(transaction);
+  const entries = decoded?.entries || [];
+  if (!transaction || entries.length !== expected.length ||
+      entries.some(entry => entry.view?.verified !== true)) {
+    clearAuditorReport("Batch disclosure verification failed. All plaintext was discarded.");
+    els.auditorVerification.textContent = "Failed";
+    return;
+  }
+  clearAuditorReport("All mandatory batch audit disclosures verified.");
+  els.auditorTxHash.textContent = transaction.txHash;
+  els.auditorVerification.textContent = "Verified";
+  els.auditorAmount.textContent = `${entries.length} verified outputs`;
+  els.auditorDigest.textContent = "verified per output";
+  els.auditorPlanePolicy.textContent = "audit / encrypted batch";
+  els.auditorOutputIndex.textContent = "all";
+  els.auditorCommitment.textContent = "verified per output";
+  els.auditorFrom.textContent = "see verified outputs";
+  els.auditorFields.textContent = "amount, from, to, output identity";
+  els.auditorTo.textContent = "all outputs verified";
+  setAuditorValueTone(auditorDetailValueElements(), "decoded");
+  renderAuditorBatchOutputs(transaction, entries);
+  updateAuditorDecodeButton();
+}
+
+function auditorListEntries() {
+  const entries = [
+    ...state.auditor.events.map(event => ({
+      kind: "single",
+      txHash: normalizedTxHash(event.tx_hash_hex),
+      height: String(event.height || "0"),
+      event
+    })),
+    ...state.auditor.batchTransactions
+  ];
+  return entries.sort((left, right) => {
+    const leftHeight = /^(?:0|[1-9][0-9]*)$/.test(String(left.height)) ? BigInt(left.height) : 0n;
+    const rightHeight = /^(?:0|[1-9][0-9]*)$/.test(String(right.height)) ? BigInt(right.height) : 0n;
+    if (leftHeight !== rightHeight) return leftHeight > rightHeight ? -1 : 1;
+    return right.txHash.localeCompare(left.txHash);
+  }).slice(0, 20);
+}
+
+function selectedAuditorBatchTransaction() {
+  return state.auditor.batchTransactions.find(transaction =>
+    transaction.txHash === state.auditor.selectedTxHash) || null;
+}
+
+function renderSelectedAuditorDetail() {
+  if (state.auditor.selectedKind === "batch") {
+    renderAuditorBatchDetail(selectedAuditorBatchTransaction());
+    return;
+  }
+  renderAuditorEventDetail(state.auditor.events.find(event =>
+    normalizedTxHash(event.tx_hash_hex) === state.auditor.selectedTxHash));
+}
+
 function renderAuditorTransfers() {
   if (!hasAuditorUi()) return;
   els.auditorEventsList.innerHTML = "";
-  const events = [...state.auditor.events].reverse().slice(0, 20);
+  const entries = auditorListEntries();
 
-  for (const event of events) {
+  for (const entry of entries) {
     const row = document.createElement("button");
     row.type = "button";
     row.className = "audit-row";
-    row.classList.toggle("selected", event.tx_hash_hex === state.auditor.selectedTxHash);
+    row.classList.toggle("selected", entry.txHash === state.auditor.selectedTxHash &&
+      entry.kind === state.auditor.selectedKind);
     row.disabled = state.auditor.loading;
-    row.addEventListener("click", () => selectAuditorTransfer(event.tx_hash_hex));
+    row.addEventListener("click", () => selectAuditorTransfer(entry.txHash, entry.kind));
 
     const copy = document.createElement("div");
     copy.className = "row-copy";
     const title = document.createElement("strong");
-    title.textContent = shorten(event.tx_hash_hex, 14, 12);
+    title.textContent = shorten(entry.txHash, 14, 12);
     const meta = document.createElement("span");
-    meta.textContent = `height ${event.height}`;
+    meta.textContent = entry.kind === "batch"
+      ? `batch · ${entry.outputCount} outputs · height ${entry.height}`
+      : `transfer · height ${entry.height}`;
     const digest = document.createElement("code");
-    digest.textContent = shorten(eventAttribute(event, "audit_disclosure_digest"), 12, 10);
+    digest.textContent = entry.kind === "batch"
+      ? `${entry.events.length} operation${entry.events.length === 1 ? "" : "s"}`
+      : shorten(eventAttribute(entry.event, "audit_disclosure_digest"), 12, 10);
 
     copy.append(title, meta);
     row.append(copy, digest);
@@ -7323,21 +7968,49 @@ function renderAuditorTransfers() {
 async function refreshAuditorTransfers({ sessionContext = privacySessionSnapshot() } = {}) {
   assertPrivacySession(sessionContext);
   if (!hasAuditorUi()) return;
+  if (state.auditor.loading) return;
+  state.auditor.loading = true;
+  state.auditor.decoded = null;
   setBusy(els.refreshAuditorTransfers, true);
+  clearAuditorReport("Refreshing typed audit transactions...");
+  renderAuditorTransfers();
   try {
     const data = await clairveilBrowserClient().fetchAuditableTransfers();
     assertPrivacySession(sessionContext);
+    const batchTransactions = await fetchAllAuditableBatchTransactions(
+      clairveilBrowserClient(),
+      sessionContext
+    );
+    assertPrivacySession(sessionContext);
     state.auditor.events = data.events || [];
-    if (state.auditor.selectedTxHash && !state.auditor.events.some(event => event.tx_hash_hex === state.auditor.selectedTxHash)) {
+    state.auditor.batchTransactions = batchTransactions;
+    const selectionExists = state.auditor.selectedKind === "batch"
+      ? batchTransactions.some(transaction => transaction.txHash === state.auditor.selectedTxHash)
+      : state.auditor.events.some(event => normalizedTxHash(event.tx_hash_hex) === state.auditor.selectedTxHash);
+    if (state.auditor.selectedTxHash && !selectionExists) {
       state.auditor.selectedTxHash = "";
+      state.auditor.selectedKind = "";
       state.auditor.decoded = null;
       clearAuditorReport();
     }
     renderAuditorTransfers();
-    renderAuditorEventDetail(state.auditor.events.find(event => event.tx_hash_hex === state.auditor.selectedTxHash));
+    renderSelectedAuditorDetail();
+  } catch (error) {
+    if (isStalePrivacySessionError(error) || !privacySessionIsCurrent(sessionContext)) throw error;
+    state.auditor.events = [];
+    state.auditor.batchTransactions = [];
+    state.auditor.selectedTxHash = "";
+    state.auditor.selectedKind = "";
+    state.auditor.decoded = null;
+    renderAuditorTransfers();
+    clearAuditorReport(`Audit refresh failed: ${error.message}`);
+    throw error;
   } finally {
     try {
       assertPrivacySession(sessionContext);
+      state.auditor.loading = false;
+      renderAuditorTransfers();
+      updateAuditorDecodeButton();
       setBusy(els.refreshAuditorTransfers, false);
     } catch (error) {
       if (!isStalePrivacySessionError(error)) throw error;
@@ -7345,12 +8018,13 @@ async function refreshAuditorTransfers({ sessionContext = privacySessionSnapshot
   }
 }
 
-function selectAuditorTransfer(txHash) {
+function selectAuditorTransfer(txHash, kind = "single") {
   if (!hasAuditorUi()) return;
-  state.auditor.selectedTxHash = txHash;
+  state.auditor.selectedTxHash = normalizedTxHash(txHash);
+  state.auditor.selectedKind = kind === "batch" ? "batch" : "single";
   state.auditor.decoded = null;
   renderAuditorTransfers();
-  renderAuditorEventDetail(state.auditor.events.find(event => event.tx_hash_hex === txHash));
+  renderSelectedAuditorDetail();
   updateAuditorDecodeButton();
 }
 
@@ -7365,24 +8039,57 @@ async function decodeAuditorTransfer(txHash = state.auditor.selectedTxHash) {
     clearAuditorReport("Select a transfer first.");
     return;
   }
+  const normalizedSelection = normalizedTxHash(txHash);
+  const selectedKind = state.auditor.selectedTxHash === normalizedSelection
+    ? state.auditor.selectedKind || "single"
+    : "single";
   const disclosurePrivKeyHex = state.auditor.testScalar || "";
   if (!/^[0-9a-fA-F]{1,64}$/.test(disclosurePrivKeyHex)) {
-    state.auditor.selectedTxHash = txHash;
+    state.auditor.selectedTxHash = normalizedSelection;
+    state.auditor.selectedKind = selectedKind;
     clearAuditorReport("Local admin test scalar is unavailable.");
     renderAuditorTransfers();
     return;
   }
 
-  state.auditor.selectedTxHash = txHash;
+  state.auditor.selectedTxHash = normalizedSelection;
+  state.auditor.selectedKind = selectedKind;
   state.auditor.loading = true;
   state.auditor.decoded = null;
   clearAuditorReport("Decoding audit disclosure with injected scalar...");
   renderAuditorTransfers();
 
   try {
+    if (selectedKind === "batch") {
+      const transaction = selectedAuditorBatchTransaction();
+      if (!transaction) throw new Error("Selected batch audit transaction is unavailable");
+      const entries = [];
+      for (const entry of auditorBatchOutputs(transaction)) {
+        const report = await clairveilBrowserClient().decodeBatchAuditDisclosure({
+          output: entry.output,
+          txHash: transaction.txHash,
+          disclosurePrivKeyHex,
+          assetDenom: baseDenom()
+        });
+        assertPrivacySession(sessionContext);
+        const view = disclosureViewModel(report);
+        if (!view.verified || view.outputIndex !== Number(entry.output.output_index) ||
+            normalizedTxHash(report?.tx_hash) !== transaction.txHash) {
+          throw new Error(`Batch audit output ${entry.output.output_index} failed disclosure verification`);
+        }
+        entries.push({ ...entry, report, view });
+      }
+      if (entries.length !== transaction.outputCount) {
+        throw new Error("Batch audit disclosure verification did not cover every output");
+      }
+      assertPrivacySession(sessionContext);
+      state.auditor.decoded = { kind: "batch", transaction, entries };
+      renderAuditorBatchReport(state.auditor.decoded);
+      return;
+    }
     const report = await api("/api/auditor/decode", {
       method: "POST",
-      body: JSON.stringify({ txHash, disclosurePrivKeyHex })
+      body: JSON.stringify({ txHash: normalizedSelection, disclosurePrivKeyHex })
     });
     assertPrivacySession(sessionContext);
     state.auditor.decoded = report;
@@ -7390,8 +8097,9 @@ async function decodeAuditorTransfer(txHash = state.auditor.selectedTxHash) {
   } catch (error) {
     if (isStalePrivacySessionError(error) || !privacySessionIsCurrent(sessionContext)) return;
     assertPrivacySession(sessionContext);
+    state.auditor.decoded = null;
     clearAuditorReport(error.message);
-    if (isDisclosureVerificationFailure(error)) {
+    if (selectedKind === "batch" || isDisclosureVerificationFailure(error)) {
       els.auditorVerification.textContent = "Failed";
     }
   } finally {
@@ -8232,19 +8940,65 @@ async function sendEvmTransaction(transaction, {
   };
 }
 
-function watchEvmBroadcast(broadcast, { sessionContext, onIncluded, onUnknown, onFailed } = {}) {
-  if (!broadcast?.waitPromise) return;
-  void broadcast.waitPromise.then(result => {
-    if (sessionContext) assertPrivacySession(sessionContext);
-    return result.unknown ? onUnknown?.(result) : onIncluded?.(result);
-  }).catch(async error => {
-    if (isStalePrivacySessionError(error)) return;
-    try {
-      await onFailed?.(error);
-    } catch (callbackError) {
-      reportAsyncError(callbackError);
-    }
+function watchEvmBroadcast(broadcast, {
+  sessionContext,
+  key,
+  isCurrent,
+  onIncluded,
+  onUnknown,
+  onFailed
+} = {}) {
+  return evmBroadcastWatcher.watch(broadcast, {
+    key,
+    isCurrent: async evidence => {
+      try {
+        if (sessionContext) assertPrivacySession(sessionContext);
+      } catch (error) {
+        if (isStalePrivacySessionError(error)) return false;
+        throw error;
+      }
+      return isCurrent ? isCurrent(evidence) : true;
+    },
+    onIncluded,
+    onUnknown,
+    onFailed
   });
+}
+
+function sameEvmBroadcastTransaction(left, right) {
+  try {
+    return normalizeEvmTxHash(left) === normalizeEvmTxHash(right);
+  } catch {
+    return false;
+  }
+}
+
+function publicEvmBroadcastIsCurrent(sessionContext, kind, txHash) {
+  const pending = capturedPublicPendingState(sessionContext)?.[kind];
+  return Boolean(pending?.txHash) && sameEvmBroadcastTransaction(pending.txHash, txHash);
+}
+
+async function depositEvmBroadcastIsCurrent(sessionContext, txHash) {
+  if (!publicEvmBroadcastIsCurrent(sessionContext, "deposit", txHash)) return false;
+  const artifact = await loadEvmDepositArtifact({ sessionContext });
+  return Boolean(artifact?.txHash) && sameEvmBroadcastTransaction(artifact.txHash, txHash);
+}
+
+async function preparedEvmBroadcastIsCurrent(data, sessionContext, txHash) {
+  const operationKey = preparedOperationKey(data);
+  if (!operationKey) return false;
+  const artifact = await loadEvmOperationArtifact(operationKey, { sessionContext });
+  const records = preparedReservationIDs(data).map(reservation_id => ({ reservation_id }));
+  return Boolean(artifact?.txHash)
+    && evmOperationArtifactMatchesReservations(artifact, records)
+    && sameEvmBroadcastTransaction(artifact.txHash, txHash);
+}
+
+async function batchEvmBroadcastIsCurrent(data, sessionContext, txHash) {
+  const artifact = await loadBatchTransferArtifact({ sessionContext });
+  return Boolean(artifact?.txHash)
+    && batchArtifactMatchesReservations(artifact, data?.reservation?.reservations || [])
+    && sameEvmBroadcastTransaction(artifact.txHash, txHash);
 }
 
 async function reconcilePublicTransaction(kind) {
@@ -8970,19 +9724,35 @@ async function recoverDepositNote(broadcast) {
       sessionContext
     });
     assertPrivacySession(sessionContext);
-    const recovered = expectedCommitment
-      && state.keplr.notes.some(note => normalizedHex(noteCommitment(note)) === expectedCommitment);
-    if (!recovered) {
+    const evm = activeChainProfile()?.transport === "evm";
+    const recoveredNote = evm
+      ? recoveredDepositNoteForCommitment(state.keplr.notes, expectedCommitment)
+      : state.keplr.notes.find(note => normalizedHex(noteCommitment(note)) === expectedCommitment) || null;
+    if (!recoveredNote) {
       throw new Error("Deposit was included, but its prepared note is not in the local wallet cache yet");
     }
     const txHash = broadcast.broadcast?.txhash || broadcast.txHash || state.keplr.depositHash;
-    await withPublicTransactionLock(
-      sessionContext,
-      () => clearConfirmedDepositRecoveryUnlocked(sessionContext, txHash)
-    );
+    const recoveredDuringScan = state.keplr.depositRecoveryStatus === "recovered";
+    if (evm && !recoveredDuringScan) {
+      const scanLink = await verifyEvmTypedScanTransaction(
+        recoveredNote.tx_hash || recoveredNote.txHash,
+        txHash,
+        { sessionContext }
+      );
+      assertEvmTypedScanLinkHeight(scanLink, recoveredNote.height);
+      assertPrivacySession(sessionContext);
+    }
+    if (!recoveredDuringScan) {
+      await withPublicTransactionLock(
+        sessionContext,
+        () => clearConfirmedDepositRecoveryUnlocked(sessionContext, txHash)
+      );
+    }
     assertPrivacySession(sessionContext);
     state.keplr.depositRecoveryStatus = "recovered";
-    state.keplr.depositRecoveryMessage = "Recovered · encrypted note available";
+    state.keplr.depositRecoveryMessage = evm
+      ? "Recovered · encrypted note and linked EVM/Comet transaction verified"
+      : "Recovered · encrypted note available";
     return true;
   } catch (error) {
     if (isStalePrivacySessionError(error)) throw error;
@@ -11226,20 +11996,30 @@ async function sendFromKeplrUnlocked() {
         wallet: "MetaMask",
         txHash: state.keplr.sendHash
       });
+      const sendAttemptTxHash = broadcast.txHash || state.keplr.sendHash;
       watchEvmBroadcast(broadcast, {
         sessionContext,
-        onIncluded: async included => {
-          state.keplr.sendHash = included.txHash || state.keplr.sendHash;
+        key: "public-send",
+        isCurrent: () => publicEvmBroadcastIsCurrent(
+          sessionContext,
+          "send",
+          sendAttemptTxHash
+        ),
+        onIncluded: async (included, assertActive) => {
+          const includedTxHash = included.txHash || sendAttemptTxHash;
           await withPublicTransactionLock(sessionContext, () => {
-            clearCapturedPublicPendingTransaction(sessionContext, "send", state.keplr.sendHash);
+            clearCapturedPublicPendingTransaction(sessionContext, "send", includedTxHash);
           });
+          assertActive();
           assertPrivacySession(sessionContext);
+          state.keplr.sendHash = includedTxHash;
           state.keplr.sendStatus = "included";
           els.keplrTxState.textContent = "Send included";
           await Promise.allSettled([
             refreshWalletBalance({ sessionContext }),
             refreshBlockEvents({ sessionContext })
           ]);
+          assertActive();
           assertPrivacySession(sessionContext);
           renderKeplr();
         },
@@ -11253,12 +12033,13 @@ async function sendFromKeplrUnlocked() {
           });
           renderKeplr();
         },
-        onFailed: async error => {
+        onFailed: async (error, assertActive) => {
           const failureConfirmed = evmReceiptHasFailed(error?.broadcast?.receipt);
           if (failureConfirmed) {
             await withPublicTransactionLock(sessionContext, () => {
-              clearCapturedPublicPendingTransaction(sessionContext, "send", state.keplr.sendHash);
+              clearCapturedPublicPendingTransaction(sessionContext, "send", sendAttemptTxHash);
             });
+            assertActive();
             assertPrivacySession(sessionContext);
           }
           state.keplr.sendStatus = failureConfirmed ? "failed" : "unknown";
@@ -11389,24 +12170,33 @@ async function depositFromKeplrUnlocked() {
         title: "Deposit 제출됨",
         message: `트랜잭션은 제출되었고 아직 note 복구가 완료되지 않았습니다.\nTx: ${shorten(state.keplr.depositHash, 14, 12)}`
       });
+      const depositAttemptTxHash = broadcast.txHash || state.keplr.depositHash;
       watchEvmBroadcast(broadcast, {
         sessionContext,
-        onIncluded: async included => {
-          state.keplr.depositHash = included.txHash || state.keplr.depositHash;
+        key: "privacy-deposit",
+        isCurrent: () => depositEvmBroadcastIsCurrent(
+          sessionContext,
+          depositAttemptTxHash
+        ),
+        onIncluded: async (included, assertActive) => {
+          const includedTxHash = included.txHash || depositAttemptTxHash;
           await withPublicTransactionLock(sessionContext, () => {
             persistCapturedDepositRecoveryPending(
               sessionContext,
-              state.keplr.depositHash,
+              includedTxHash,
               included.receipt?.blockNumber || state.keplr.depositHeight
             );
           });
+          assertActive();
           assertPrivacySession(sessionContext);
           state.keplr.depositHeight = included.receipt?.blockNumber || state.keplr.depositHeight;
           updateIncludedDepositNetworkFee(included);
           els.keplrTxState.textContent = "Deposit included";
           const recovered = await recoverDepositNote({ ...broadcast, ...included, prepared: broadcast.prepared });
+          assertActive();
           assertPrivacySession(sessionContext);
           await refreshPrivacySurfaces({ balance: true, sessionContext });
+          assertActive();
           assertPrivacySession(sessionContext);
           renderKeplr();
           showNotice({
@@ -11427,16 +12217,17 @@ async function depositFromKeplrUnlocked() {
             message: `Receipt polling timeout은 실패 증거가 아닙니다. tx hash를 확인하기 전 같은 deposit을 다시 보내지 마세요.\nTx: ${shorten(state.keplr.depositHash, 14, 12)}`
           });
         },
-        onFailed: async error => {
+        onFailed: async (error, assertActive) => {
           const failureConfirmed = evmReceiptHasFailed(error?.broadcast?.receipt);
           if (failureConfirmed) {
             await withPublicTransactionLock(
               sessionContext,
               () => clearConfirmedDepositRecoveryUnlocked(
                 sessionContext,
-                error?.txHash || error?.broadcast?.txHash || state.keplr.depositHash
+                error?.txHash || error?.broadcast?.txHash || depositAttemptTxHash
               )
             );
+            assertActive();
             assertPrivacySession(sessionContext);
           }
           state.keplr.depositRecoveryStatus = failureConfirmed ? "failed" : "unknown";
@@ -11949,28 +12740,39 @@ async function transferFromVeiledUnlocked() {
     renderKeplr();
     if (isPendingEvm) {
       finishTransferFlow("트랜스퍼 요청이 제출되었습니다");
+      const transferAttemptTxHash = broadcast.txHash || state.keplr.transferHash;
       watchEvmBroadcast(broadcast, {
         sessionContext,
-        onIncluded: async included => {
+        key: "privacy-transfer",
+        isCurrent: () => preparedEvmBroadcastIsCurrent(
+          finalData,
+          sessionContext,
+          transferAttemptTxHash
+        ),
+        onIncluded: async (included, assertActive) => {
           state.keplr.transferHash = included.txHash || state.keplr.transferHash;
           els.keplrTxState.textContent = "Transfer included";
           await refreshPrivacySurfaces({ sessionContext });
+          assertActive();
           assertPrivacySession(sessionContext);
           await requirePreparedReservationReconciled(finalData, "Privacy transfer", {
             transactionCheck: { included: true, successful: true, failed: false }
           });
+          assertActive();
           finishTransferFlow("트랜스퍼 요청이 성공하였습니다");
           renderKeplr();
         },
-        onUnknown: async unknown => {
+        onUnknown: async (unknown, assertActive) => {
           state.keplr.transferHash = unknown.txHash || state.keplr.transferHash;
           els.keplrTxState.textContent = "Transfer status unknown";
           await refreshReservationState(finalData.reservationManager, { sessionContext }).catch(() => {});
+          assertActive();
           finishTransferFlowUnknown(`Receipt polling이 끝났지만 실패가 확인되지 않았습니다. tx hash와 nullifier를 reconcile하기 전에는 다시 전송하지 마세요.\nTx: ${state.keplr.transferHash}`);
           renderKeplr();
         },
-        onFailed: async error => {
+        onFailed: async (error, assertActive) => {
           const resolution = await resolvePreparedPrivacyFailure(error, finalData);
+          assertActive();
           els.keplrTxState.textContent = resolution.blocked ? "Transfer reconciliation required" : "Transfer failed";
           if (resolution.blocked) {
             finishTransferFlowUnknown(error.message);
@@ -12125,46 +12927,61 @@ async function transferBatchFromVeiledUnlocked() {
     els.keplrTxState.textContent = pending ? "Batch transfer submitted" : "Batch transfer included";
     renderKeplr();
 
-    const confirmIncluded = async included => {
+    const confirmIncluded = async (included, assertActive = () => {}) => {
       assertPrivacySession(sessionContext);
-      state.keplr.batchTransferHash = included.txHash || state.keplr.batchTransferHash;
+      const includedTxHash = included.txHash || state.keplr.batchTransferHash;
       if (transport === "evm") {
-        await saveBatchReceiptEvidence(data, included, { sessionContext });
+        const receiptEvidence = await saveBatchReceiptEvidence(data, included, { sessionContext });
+        if (!receiptEvidence) return;
       } else {
-        await saveBatchInclusion(data, state.keplr.batchTransferHash, { sessionContext });
+        await saveBatchInclusion(data, includedTxHash, { sessionContext });
       }
+      assertActive();
+      state.keplr.batchTransferHash = includedTxHash;
       els.keplrTxState.textContent = "Batch transfer included";
       await refreshPrivacySurfaces({
         balance: true,
         sessionContext,
         accountTransactionLockHeld: Boolean(publicTransactionLockHeld)
       });
+      assertActive();
       assertPrivacySession(sessionContext);
       await requirePreparedReservationReconciled(data, `${transport} batch transfer`, {
         accountTransactionLockHeld: Boolean(publicTransactionLockHeld),
         transactionCheck: { included: true, successful: true, failed: false }
       });
+      assertActive();
       assertPrivacySession(sessionContext);
       await clearBatchTransferArtifact({ reservation: data.reservation, sessionContext });
+      assertActive();
       finishTransferFlow("Batch transfer 요청이 성공하였습니다");
       renderKeplr();
     };
     if (pending && transport === "evm") {
       finishTransferFlow("Batch transfer 요청이 제출되었습니다");
+      const batchAttemptTxHash = broadcast.txHash || state.keplr.batchTransferHash;
       watchEvmBroadcast(broadcast, {
         sessionContext,
+        key: "privacy-batch-transfer",
+        isCurrent: () => batchEvmBroadcastIsCurrent(
+          data,
+          sessionContext,
+          batchAttemptTxHash
+        ),
         onIncluded: confirmIncluded,
-        onUnknown: async unknown => {
+        onUnknown: async (unknown, assertActive) => {
           assertPrivacySession(sessionContext);
           state.keplr.batchTransferHash = unknown.txHash || state.keplr.batchTransferHash;
           els.keplrTxState.textContent = "Batch transfer status unknown";
           await refreshReservationState(data.reservationManager, { sessionContext }).catch(() => {});
+          assertActive();
           finishTransferFlowUnknown(`Receipt polling이 끝났지만 실패가 확인되지 않았습니다. batch tx와 모든 input nullifier를 reconcile하기 전에는 다시 전송하지 마세요.\nTx: ${state.keplr.batchTransferHash}`);
           renderKeplr();
         },
-        onFailed: async error => {
+        onFailed: async (error, assertActive) => {
           assertPrivacySession(sessionContext);
           const resolution = await resolvePreparedPrivacyFailure(error, data);
+          assertActive();
           els.keplrTxState.textContent = resolution.blocked
             ? "Batch reconciliation required"
             : "Batch transfer failed";
@@ -12172,6 +12989,7 @@ async function transferBatchFromVeiledUnlocked() {
             finishTransferFlowUnknown(error.message);
           } else {
             await clearBatchTransferArtifact({ reservation: data.reservation, sessionContext });
+            assertActive();
             finishTransferFlow(error.message, false, { retry: () => transferBatchFromVeiled() });
           }
           renderKeplr();
@@ -12398,22 +13216,31 @@ async function withdrawFromVeiledUnlocked({ relayMode = false } = {}) {
     renderKeplr();
     if (isPendingEvm) {
       finishTransferFlow("Withdraw 요청이 제출되었습니다");
+      const withdrawAttemptTxHash = broadcast.txHash || state.keplr.withdrawHash;
       watchEvmBroadcast(broadcast, {
         sessionContext,
-        onIncluded: async included => {
+        key: "privacy-withdraw",
+        isCurrent: () => preparedEvmBroadcastIsCurrent(
+          data,
+          sessionContext,
+          withdrawAttemptTxHash
+        ),
+        onIncluded: async (included, assertActive) => {
           state.keplr.withdrawHash = included.txHash || state.keplr.withdrawHash;
           state.keplr.withdrawHeight = included.receipt?.blockNumber || state.keplr.withdrawHeight;
           els.keplrTxState.textContent = "Withdraw included";
           await refreshPrivacySurfaces({ balance: true, sessionContext });
+          assertActive();
           assertPrivacySession(sessionContext);
           await requirePreparedReservationReconciled(data, "Privacy withdraw", {
             transactionCheck: { included: true, successful: true, failed: false }
           });
+          assertActive();
           confirmWithdrawEvidence({ render: false });
           finishTransferFlow("Withdraw 요청이 성공하였습니다");
           renderKeplr();
         },
-        onUnknown: async unknown => {
+        onUnknown: async (unknown, assertActive) => {
           state.keplr.withdrawHash = unknown.txHash || state.keplr.withdrawHash;
           els.keplrTxState.textContent = "Withdraw status unknown";
           setWithdrawEvidence(
@@ -12422,11 +13249,13 @@ async function withdrawFromVeiledUnlocked({ relayMode = false } = {}) {
             { render: false }
           );
           await refreshReservationState(data.reservationManager, { sessionContext }).catch(() => {});
+          assertActive();
           finishTransferFlowUnknown(`Receipt polling이 끝났지만 실패가 확인되지 않았습니다. tx hash와 nullifier를 reconcile하기 전에는 다시 전송하지 마세요.\nTx: ${state.keplr.withdrawHash}`);
           renderKeplr();
         },
-        onFailed: async error => {
+        onFailed: async (error, assertActive) => {
           const resolution = await resolvePreparedPrivacyFailure(error, data);
+          assertActive();
           els.keplrTxState.textContent = resolution.blocked ? "Withdraw reconciliation required" : "Withdraw failed";
           if (resolution.blocked) {
             setWithdrawEvidence(

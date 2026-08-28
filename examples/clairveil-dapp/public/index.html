@@ -647,11 +647,12 @@
         </div>
         <div class="auditor-layout">
           <div class="audit-pane">
-            <h3>Audit Transfers</h3>
+            <h3>Audit Transactions</h3>
+            <p class="quiet audit-list-help">Direct transfers and typed batch transactions are listed once per transaction.</p>
             <div id="auditorEventsList" class="audit-list"></div>
           </div>
           <div class="audit-pane audit-detail">
-            <h3>Transfer Detail</h3>
+            <h3>Transaction Detail</h3>
             <div class="test-scalar-box">
               <span>Test Private disclosure scalar</span>
               <code id="auditorTestScalar">-</code>
@@ -704,6 +705,7 @@
                 <dd id="auditorTo">-</dd>
               </div>
             </dl>
+            <div id="auditorBatchOutputs" class="auditor-batch-outputs" hidden></div>
             <p id="auditorDecodeState" class="quiet">Select a transfer.</p>
           </div>
         </div>
