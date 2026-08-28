@@ -115,6 +115,7 @@ test("DApp exposes config, health, and bundled frontend assets", async () => {
       ...process.env,
       PORT: String(port),
       CLAIRVEIL_DAPP_PORT: String(port),
+      CLAIRVEIL_DAPP_ENABLE_BATCH_TRANSFER: "1",
       CLAIRVEIL_DEPOSIT_PROOF_URL: "",
       CLAIRVEIL_PUBLIC_DEPOSIT_PROOF_URL: "",
       CLAIRVEIL_COSMOS_REST_ENDPOINTS: "http://127.0.0.1:1317, http://127.0.0.1:2317"
@@ -145,6 +146,7 @@ test("DApp exposes config, health, and bundled frontend assets", async () => {
     assert.equal(config.json.schemaVersion, "clairveil-web-client-config-v1");
     assert.equal(config.json.serverFeatures.depositProof, false);
     assert.equal(config.json.serverFeatures.relayer, true);
+    assert.equal(config.json.serverFeatures.batchTransfer, true);
     assert.equal(validatedConfig(config.json).activeProfile.id, "clairveil-local");
 
     const health = await waitForJson(`${baseUrl}/api/health`);
@@ -426,20 +428,28 @@ test("an explicit LAN bind keeps rewritten local browser endpoints in the CSP", 
 
 test("DApp exposes EVM profile only when EVM transport is active", async () => {
   const port = await freePort();
+  const env = { ...process.env };
+  delete env.CLAIRVEIL_DENOM;
+  delete env.CLAIRVEIL_DISPLAY_DENOM;
   const child = spawn(process.execPath, ["server.js"], {
     cwd: new URL("..", import.meta.url),
     env: {
-      ...process.env,
+      ...env,
       PORT: String(port),
       CLAIRVEIL_DAPP_PORT: String(port),
+      CLAIRVEIL_DAPP_ENABLE_BATCH_TRANSFER: "1",
       CLAIRVEIL_TRANSPORT: "evm",
       CHAIN_ID: "evm-privacy-local-1",
       CLAIRVEIL_ACCOUNT_PREFIX: "evm",
-      CLAIRVEIL_DENOM: "utoken",
-      CLAIRVEIL_DISPLAY_DENOM: "TOKEN",
+      CLAIRVEIL_EVM_DENOM: "utoken",
+      CLAIRVEIL_EVM_DISPLAY_DENOM: "TOKEN",
       CLAIRVEIL_EVM_PRIVACY_PRECOMPILE: "0x0000000000000000000000000000000000000808",
       CLAIRVEIL_EVM_DEPOSIT_MODE: "payable-exact-value",
       CLAIRVEIL_EVM_NATIVE_DENOM: "utoken",
+      CLAIRVEIL_EVM_AUTHORIZATION_PROFILE: JSON.stringify({
+        typedDataDomain: { name: "Target Privacy", version: "1" },
+        supportedAuthorizationKinds: [1, 2, 3]
+      }),
       CLAIRVEIL_EVM_HOST_REST_ENDPOINTS: "http://127.0.0.1:1317, http://127.0.0.1:3317",
       CLAIRVEIL_DEPOSIT_PROOF_URL: "",
       CLAIRVEIL_PUBLIC_DEPOSIT_PROOF_URL: ""
@@ -466,11 +476,32 @@ test("DApp exposes EVM profile only when EVM transport is active", async () => {
     assert.equal(evmProfile.denom, "utoken");
     assert.equal(evmProfile.evmDepositMode, "payable-exact-value");
     assert.equal(evmProfile.evmNativeDenom, "utoken");
+    assert.deepEqual(evmProfile.evmAuthorizationProfile, {
+      typedDataDomain: { name: "Target Privacy", version: "1" },
+      supportedAuthorizationKinds: [1, 2, 3]
+    });
+    assert.deepEqual(config.json.evmAuthorizationProfile, evmProfile.evmAuthorizationProfile);
+    assert.equal(config.json.serverFeatures.batchTransfer, true);
     assert.deepEqual(evmProfile.restEndpoints, [
       "http://127.0.0.1:1317",
       "http://127.0.0.1:3317"
     ]);
     assert.equal(validatedConfig(config.json).activeProfile.id, "evm-local");
+
+    const faucet = await fetch(`${baseUrl}/api/faucet`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: baseUrl
+      },
+      body: JSON.stringify({
+        recipient: "0x0000000000000000000000000000000000000001",
+        amount: "10utoken",
+        from: "alice"
+      })
+    });
+    assert.equal(faucet.status, 400);
+    assert.match((await faucet.json()).error, /unsupported local signer/);
   } finally {
     child.kill("SIGTERM");
     await once(child, "exit");

@@ -184,9 +184,9 @@ Disclosure plaintext를 표시할 때는 반드시 digest verification 결과를
 
 ## 10. Batch chain core 및 client UX
 
-Browser example은 native 2x2 transfer를 기본 진입점으로 유지하고 Cosmos `batchTransfer` feature gate 뒤에서만 one-proof `MsgBatchTransfer`를 노출합니다. Batch 화면은 `prepareTransferBatch`를 호출하고 payment total, change, input/output capacity, all-or-nothing 경계를 보여준 뒤 typed output evidence가 reconcile된 항목만 성공으로 표시합니다. 기존 `transfer-batch` command는 여러 2x2 operation을 coordination할 뿐 하나의 16x32 proof처럼 표현하면 안 됩니다.
+Browser example은 native 2x2 transfer를 단일 transfer 진입점으로 유지하고 선택한 transport가 지원할 때 `batchTransfer` feature gate 뒤에서 one-proof batch transfer를 노출합니다. Batch 화면은 `prepareTransferBatch`를 호출하고 payment total, change, input/output capacity, all-or-nothing 경계를 보여준 뒤 Cosmos `MsgBatchTransfer` 하나 또는 EVM `singleProofBatchTransfer` call 하나를 제출합니다. Typed output evidence가 reconcile된 항목만 성공으로 표시합니다.
 
-`privacy-note-v1` / `privacy-fixed-v1` 전환 시 fresh genesis와 destructive local reset을 요구합니다. Old note, cursor state, pending/proof job, circuit artifact를 제거한 뒤 artifact를 다시 생성하고 rescan합니다. Legacy JSON note, disclosure, raw ciphertext, cached proof를 fixed binary contract로 조용히 해석하면 안 됩니다. 표시 denom은 authoritative `AssetRegistryV1`으로 resolve하며 unknown `asset_id`는 printable fallback denom이 아니라 error입니다.
+Client는 fresh genesis, exact `privacy-note-v1` artifact, empty note/cursor/reservation/proof namespace에서 초기화합니다. Note와 disclosure는 canonical `privacy-fixed-v1` typed envelope만, proof는 검증된 object만 허용합니다. 표시 denom은 authoritative `AssetRegistryV1`으로 resolve하며 unknown `asset_id`는 display denomination이 아니라 error입니다.
 
 Unified scan cursor는 `(height, global_sequence, output_index)` 전체로 저장하고 해당 cursor까지 모든 output이 durable해진 뒤에만 commit합니다. Spend screen은 prover에 표시한 root와 정확히 같은 Merkle path snapshot을 사용해야 합니다. Current-root path는 incremental node를 사용하므로 online historical-rebuild budget을 소비하지 않습니다. Non-current historical path는 persisted root/count/height metadata를 요구하며 public query는 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하고 그 이상은 `ResourceExhausted`를 반환합니다. Online bound를 넘으면 current root 또는 trusted local historical index를 사용합니다. 별도 offline recovery/export bound는 `MaxMerkleRebuildLeaves`(1,048,576)입니다. Remote historical lookup을 수행할 때는 어떤 state에 언제 관심을 보였는지 노출될 수 있다는 warning을 유지합니다.
 

@@ -15,22 +15,30 @@ The current WebApp may expose only these privacy flows.
 | Setup and sync | `buildRootSigningMessage`, `derivePrivacyAccount`, `scanWalletNotes` | Derive one account-scoped shielded identity and reach a verified scan cursor. |
 | Deposit | `prepareDeposit` | Obtain a product-provided `DepositCircuit` proof, sign, broadcast, then scan the created note. |
 | Single shielded transfer | `prepareTransfer` | Prepare one ordinary transfer operation, including a self-merge step when the planner requires one. |
+| Feature-gated atomic batch transfer | `prepareTransferBatch` | Prepare one 1–16 input / 1–32 output operation, submit one Cosmos `MsgBatchTransfer` or canonical EVM `singleProofBatchTransfer` call, and verify every linked input and expected payment output before reporting success. |
 | Direct withdraw | `prepareWithdraw` | Spend one exact-match note, sign/broadcast, and reconcile the nullifier. |
 | Relayed withdraw | `prepareRelayWithdraw` | Persist the handoff boundary, let a relayer submit the immutable payload, and reconcile until expiry or spent evidence. |
-| Disclosure review | `decodeUserDisclosure`, `decodeSelfViewDisclosure`, `decodeAuditDisclosure` | Show plaintext only with verified digest status. |
+| Disclosure review | `decodeUserDisclosure`, `decodeSelfViewDisclosure`, `decodeBatchSelfViewDisclosure`, `decodeAuditDisclosure` | Show plaintext only with verified digest status; verify each typed batch output independently. |
 
-`prepareTransfer` is the transfer entry point. The checked-in v0.3.1 example
-does not expose one-proof batch preparation or submission: its server reports
-`serverFeatures.batchTransfer=false`, and the UI does not call
-`prepareTransferBatch`. ClairveilJS and the chain core may expose the underlying
-batch contract for separately reviewed products, but a configuration value
-alone must not turn that contract into a WebApp feature.
+`prepareTransfer` is the single-transfer entry point. The batch editor is a
+separate action exposed only when the server-backed configuration enables
+`serverFeatures.batchTransfer` and the selected transport supports canonical
+one-proof batch execution. SDK API or prover-route availability alone must not
+turn the contract into a WebApp feature.
 
 An EVM profile is eligible only when its privacy precompile implements the
-Clairveil 0.3.1 canonical ABI: a proof-bearing deposit, a transfer that preserves
-self-view disclosure and absolute expiry, and a withdraw with no legacy output
-note fields. The WebApp does not support an ABI fallback or dummy withdraw
-outputs.
+Clairveil 0.3.1 canonical ABI: a proof-bearing exact-`msg.value` deposit, a
+transfer that preserves self-view disclosure and absolute expiry, an exact-match
+withdraw with no legacy output-note fields, and `singleProofBatchTransfer` that
+preserves the complete `BatchJoinSplit16x32` effect. The default path has no ABI
+fallback and never creates dummy withdraw outputs. A profile-scoped, reviewed
+ClairveilJS adapter may use an equivalent call shape only when it binds the
+selected precompile and validates the same v0.3.1 effect and receipt fail closed.
+
+On Cosmos-EVM chains, `PrivacyScanOutputV2.tx_hash` is the outer
+Cosmos/CometBFT transaction hash while the wallet and receipt expose an Ethereum
+transaction hash. Preserve both and verify their indexed `ethereumTxHash`
+relationship; never require the two hashes to be equal.
 
 ## Explicitly Out Of Scope
 
@@ -38,8 +46,8 @@ Do not add a UI, route, automatic fallback, or background worker for any of
 the following in this WebApp release:
 
 - payroll, treasury allocation, recipient-file import, or bulk payment review
-- one-proof batch-transfer preparation, durable checkpoint, or submission UI
-- automatic, silent, or background splitting/submission of any batch
+- automatic or silent splitting of an oversized batch
+- background batch submission without explicit review and the feature gate
 
 Payroll and unattended bulk orchestration remain valid core/reference
 integration contracts but are outside this browser product boundary.
@@ -51,6 +59,7 @@ The WebApp targets ClairveilJS `0.3.1` and the fixed privacy contracts:
 - note/disclosure envelope: `privacy-fixed-v1`
 - transfer prepared payload/proof/prover envelopes: `v5` / `v2` / `v2`
 - withdraw and relay handoff: `v2`
+- atomic batch transfer: `BatchJoinSplit16x32`, `MsgBatchTransfer`, and EVM `singleProofBatchTransfer`
 - protocol identity: `privacy-note-v1`, including
   `batch-joinsplit-16x32-v1` as the required fourth chain-core circuit
 - preferred wallet scan: `privacy-scan-v2`
@@ -83,12 +92,11 @@ Before exposing a flow, the WebApp must:
    [WebApp integration](clairveil-web-app-integration.md).
 5. Meet the browser/prover deployment boundary in
    [WebApp deployment](clairveil-web-app-deployment.md).
-6. Keep `serverFeatures.batchTransfer` false and do not expose one-proof batch
-   preparation or submission UI in this example. A loopback prover proxy route
-   used for SDK/reference testing does not change that product gate. A future
-   product integration must
-   define its own encrypted checkpoint, wallet-confirmation, reconciliation,
-   and end-to-end release gates before changing this product boundary.
+6. For batch transfer, require the explicit product gate and canonical transport
+   capability, keep payload/proof checkpoints encrypted, show total, change,
+   input/output capacity, disclosure choices, and the all-or-nothing boundary
+   before wallet approval, and report an item successful only after typed output
+   evidence and every linked input nullifier reconcile.
 
 ## Relationship To General Client Documents
 

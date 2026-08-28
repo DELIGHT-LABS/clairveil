@@ -81,14 +81,15 @@ limit. The example exposes these limits as
 `CLAIRVEIL_DAPP_UPSTREAM_MAX_RESPONSE_BYTES`, and
 `CLAIRVEIL_DAPP_HEALTH_MAX_IN_FLIGHT`.
 
-The checked-in v0.3.1 example does not provide a batch-transfer exposure flag.
-Its server always reports `serverFeatures.batchTransfer=false`, the UI does not
-call `prepareTransferBatch`, and `make dapp-local` does not enable a batch menu.
-Do not treat the presence of ClairveilJS batch APIs or a reachable
-`/v1/proofs/batch-transfer` endpoint as capability discovery. A future product
-that exposes one-proof batch transfer must add and review its own explicit gate,
-encrypted recovery checkpoint, wallet confirmation, typed reconciliation, and
-end-to-end deployment tests before advertising or enabling the product flow.
+`CLAIRVEIL_DAPP_ENABLE_BATCH_TRANSFER` is an explicit product exposure gate,
+not capability discovery. Leave it off unless the active Cosmos or EVM profile,
+the pinned ClairveilJS build, the prover, and the typed scan endpoint have passed
+the one-proof batch conformance and recovery tests together. An EVM profile must
+also support the canonical `singleProofBatchTransfer` call. The checked-in
+static configuration leaves the menu hidden, and `make dapp-local` does not
+turn the gate on implicitly. Enabling it requires the encrypted recovery
+checkpoint, wallet confirmation, typed reconciliation, and end-to-end tests
+defined by the WebApp integration and storage documents.
 
 ## Browser Security Headers And Telemetry
 

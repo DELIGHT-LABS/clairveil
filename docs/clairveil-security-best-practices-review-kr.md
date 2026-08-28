@@ -124,7 +124,7 @@ Active identity는 `privacy-note-v1`입니다. `privacy_zk_manifest.json` schema
 - `cmd/clairveil-proverd/main.go`는 bearer token env가 비어 있으면 `auth_enabled=false`로 실행됩니다. local daemon에는 편리하지만 remote service에서는 금지해야 합니다.
 - `build/clairveil-proverd/compose.yaml`은 host bind를 `127.0.0.1`로 제한합니다. 단, Dockerfile 자체는 `0.0.0.0:8080` listen이므로 downstream compose/k8s manifest에서 network policy를 다시 확인해야 합니다.
 - prepared payload JSON과 wallet JSON은 `0600`으로 저장되지만 암호화되지는 않습니다. production wallet은 별도 encryption layer가 필요합니다.
-- Transfer/prover contract version은 의도적인 breaking change입니다. Transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload와 proof/request/response `v2`, disclosure plaintext/query `privacy-fixed-v1`이며 legacy payload는 compatibility decode하지 말고 다시 생성해야 합니다.
+- 필수 contract는 transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload와 proof/request/response `v2`, disclosure plaintext/query `privacy-fixed-v1`입니다. Proving 또는 signing 전에 이 exact version을 검증합니다.
 
 ## 5. Downstream 개발자에게 전달할 최소 지침
 
@@ -139,13 +139,13 @@ JS/TS SDK, web wallet, downstream Cosmos SDK chain 개발자에게는 아래를 
 7. Disclosure plaintext는 복호화 결과만 믿으면 안 되고 digest verification을 통과해야 합니다.
 8. Production artifact는 checksum뿐 아니라 provenance와 signing policy를 가져야 합니다.
 9. Snapshot/restore/migration 후에는 `docs/clairveil-merkle-restore-sop-kr.md`에 따라 샘플 Merkle path를 재계산해야 합니다.
-10. Legacy prepared payload를 거부하고 `SpendIntentV2`/`TransferIntentV2` public-input 순서를 정확히 보존하며 `privacy-note-v1` 적용 시 cached proof job/artifact를 reset해야 합니다.
+10. 검증된 `v5` transfer와 `v2` withdraw prepared payload만 허용하고 `SpendIntentV2`/`TransferIntentV2` public-input 순서를 정확히 보존하며 완전한 `privacy-note-v1` artifact set을 pin해야 합니다.
 
 ## 6. NoteV1과 batch chain-core security addendum
 
 현재 production circuit과 state는 `privacy-note-v1` NoteV1 commitment/nullifier/tree contract와 canonical key validation을 공유합니다. Canonical note, disclosure, encrypted-envelope byte는 versioned `privacy-fixed-v1`입니다. Raw ciphertext, JSON plaintext, 잘못된 envelope kind, non-canonical field/key data, non-zero reserved byte, trailing byte는 fail closed해야 합니다. `AssetRegistryV1`이 consensus-authoritative one-to-one denom/32-byte asset-ID mapping입니다. Global commitment uniqueness는 SDK-only precheck가 아니라 consensus state입니다.
 
-이 계약은 이전 state와 artifact와 의도적으로 호환되지 않습니다. Fresh genesis를 사용하고 wallet note/scan cache와 prepared/proof job을 제거하며 exact `privacy-note-v1` artifact set을 다시 생성한 뒤 rescan합니다. Permissive compatibility decoder나 in-place migration을 추가하지 않습니다. Unified scan order는 `(height, global_sequence, output_index)`이고 spend witness는 exact public root의 path snapshot을 사용해야 합니다. Current-root path는 incremental node를 사용하므로 online historical-rebuild budget을 소비하지 않습니다. Non-current historical path는 persisted root/count/height metadata를 요구하며 public query는 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하고 그 이상은 `ResourceExhausted`를 반환합니다. Online bound를 넘으면 current root 또는 trusted local historical index를 사용합니다. 별도 offline recovery/export bound는 `MaxMerkleRebuildLeaves`(1,048,576)입니다. Remote historical path/root query는 wallet interest를 노출하므로 privacy warning을 유지하고 필요하면 privacy-preserving infrastructure를 사용합니다.
+Exact `privacy-note-v1` artifact set으로 fresh genesis를 초기화하고 full typed rescan으로 wallet note/scan state를 구성합니다. Unified scan order는 `(height, global_sequence, output_index)`이고 spend witness는 exact public root의 path snapshot을 사용해야 합니다. Current-root path는 incremental node를 사용하므로 online historical-rebuild budget을 소비하지 않습니다. Non-current historical path는 persisted root/count/height metadata를 요구하며 public query는 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하고 그 이상은 `ResourceExhausted`를 반환합니다. Online bound를 넘으면 current root 또는 trusted local historical index를 사용합니다. 별도 offline recovery/export bound는 `MaxMerkleRebuildLeaves`(1,048,576)입니다. Remote historical path/root query는 wallet interest를 노출하므로 privacy warning을 유지하고 필요하면 privacy-preserving infrastructure를 사용합니다.
 
 `BatchJoinSplit16x32`는 네 번째 required production circuit이고 `MsgBatchTransfer`/`BatchTransferOutput`과 keeper handler가 구현되었습니다. Circuit은 capacity 16/32, active-prefix/zero-disabled rule, independent membership, owner/key constraint, active-only distinctness, value conservation, vector formula, output별 independent user/full disclosure blinding, single owner signature, public-input 순서 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`를 유지합니다. Schema SHA-256은 `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`입니다.
 
@@ -155,7 +155,7 @@ Keeper는 `BatchGasModelV1` precharge 전에 cheap bounded framing만 허용합�
 
 측정된 development batch artifact identity는 R1CS `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`입니다. 이 checksum은 artifact signing, provenance, reproducible generation, formal setup, external review를 대체하지 않습니다.
 
-batch reference integration은 one-proof batch planner/preparer, bounded remote HTTP prover route, typed scanner/decrypt flow, durable payroll graph, staged CLI/tutorial의 experimental reference Go surface를 제공합니다. 이는 downstream JS/TS SDK, audited production workflow, production deployment profile이 아닙니다. One-proof `MsgBatchTransfer` path와 기존 multi-message `transfer-batch` flow를 구분하고 raw transport handler를 노출하지 않으며 모든 prover request를 매우 민감한 witness data로 취급합니다. Deposit CLI output은 `NotePlaintextV1` 또는 randomness를 출력하면 안 됩니다.
+batch reference integration은 one-proof batch planner/preparer, bounded remote HTTP prover route, typed scanner/decrypt flow, durable payroll graph, staged CLI/tutorial의 experimental reference Go surface를 제공합니다. ClairveilJS 0.3.1은 같은 prepared effect를 Cosmos `MsgBatchTransfer`와 EVM `singleProofBatchTransfer`로 구현합니다. Raw transport handler를 노출하지 않고 모든 prover request를 매우 민감한 witness data로 취급합니다. Deposit CLI output은 `NotePlaintextV1` 또는 randomness를 출력하면 안 됩니다.
 
 Artifact access와 proving은 계속 bounded해야 합니다.
 

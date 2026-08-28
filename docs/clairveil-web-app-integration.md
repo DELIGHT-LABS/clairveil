@@ -2,8 +2,9 @@
 
 Korean version: [clairveil-web-app-integration-kr.md](clairveil-web-app-integration-kr.md)
 
-This is the production integration guide for the single-transfer browser
-WebApp scope in [WebApp scope](clairveil-web-app-scope.md). It uses the
+This is the production integration guide for the browser WebApp scope,
+including its feature-gated atomic batch flow, in
+[WebApp scope](clairveil-web-app-scope.md). It uses the
 `clairveiljs/browser-dapp` public API. Do not import the example application's
 `public/app.js` as a library contract.
 
@@ -31,8 +32,9 @@ const config = validateClairveilWebClientConfig(rawConfig);
 const profile = config.activeProfile;
 const client = createClairveilBrowserDappClient({
   profile,
-  // The checked-in v0.3.1 WebApp does not expose one-proof batch transfer.
-  enableExperimentalBatchTransfer: false,
+  // Product exposure is explicit; SDK/prover availability is not discovery.
+  enableExperimentalBatchTransfer:
+    config.serverFeatures?.batchTransfer === true,
   queryTimeoutMs: 30_000,
   nullifierFailover: false
 });
@@ -42,12 +44,32 @@ Do not construct a partial profile from selected fields: the validator requires
 the complete schema profile and rejects duplicate IDs, a missing active profile,
 or an incompatible flattened compatibility field. For EVM, the selected profile
 includes the schema-required `evmRpc`, `evmChainId`,
-`evmPrivacyPrecompileAddress`, and gas limits. Its precompile must implement
-the Clairveil 0.3.1 canonical deposit/transfer/withdraw tuples, including the
-deposit proof, transfer self-view plus expiry, and no legacy withdraw output
-fields. Compare the connected wallet network with `evmChainId` before preparing
-an EVM transaction. A raw chain-profile field is deployment input, not trusted
-chain state.
+`evmPrivacyPrecompileAddress`, `evmNativeDenom`, and gas limits, and its
+`evmDepositMode` must be `payable-exact-value`. Its precompile must implement the
+Clairveil 0.3.1 canonical deposit/transfer/withdraw/batch ABI: a proof-bearing
+deposit with exact `msg.value`, transfer self-view plus expiry, exact-match
+withdraw with no legacy output fields, and `singleProofBatchTransfer`.
+Compare the connected wallet network with `evmChainId` before preparing an EVM
+transaction. A raw chain-profile field is deployment input, not trusted chain
+state.
+
+An optional JSON-safe `evmAuthorizationProfile` supplies the target chain's
+EIP-712 domain and authorization-kind allowlist; never synthesize it in the
+WebApp or reuse another chain's values. A reviewed non-canonical
+`EvmContractAdapter` may be injected through
+`globalThis.CLAIRVEIL_EVM_CONTRACT_ADAPTERS[profile.id]`, a complete
+`PrivacyStateAdapter` through
+`globalThis.CLAIRVEIL_PRIVACY_STATE_ADAPTERS[profile.id]`, and a built-in or
+reviewed custom finality policy through
+`globalThis.CLAIRVEIL_EVM_FINALITY_POLICIES[profile.id]`. Bind every adapter to
+the selected profile/precompile and treat its result as untrusted until the SDK
+canonical validator accepts it. Without a privacy-state adapter, the typed host
+query surfaces remain mandatory.
+
+For Cosmos-EVM, keep the typed privacy-scan transaction hash separate from the
+Ethereum wallet/receipt hash. Verify the scan record's indexed
+`ethereumTxHash` relationship before using it as EVM success evidence; do not
+compare the hashes for equality.
 
 Before displaying spendable notes and immediately before every privacy
 prepare, the integration must fail closed on this preflight:
@@ -151,6 +173,7 @@ cursor semantics. The detailed retry and failover rules are in the
 | --- | --- | --- | --- |
 | Deposit | `prepareDeposit` with a product-provided `DepositCircuit` proof provider | If using a remote provider, pin its exact HTTPS `depositProofUrl` in the active profile and send the required proof material only to that origin. User signs the returned Cosmos sign doc or sends the EVM transaction. | Wait/lookup, then scan the output note. |
 | Transfer | `prepareTransfer` with the privacy session and encrypted stores | If status is `self_merge_required`, obtain explicit approval for that ordinary self-transfer, complete it, rescan, then replan. | Sign/broadcast one prepared transfer and reconcile reservations/nullifiers. |
+| Atomic batch transfer | Feature-gated `prepareTransferBatch` with per-payment disclosure and encrypted payload/proof checkpoint callbacks | After the authoritative prepare scan, bind every row to the exact prepared recipient, amount, disclosure, total, change, 1–16 inputs, and 1–32 outputs before opening the wallet. Never split silently; require explicit approval for multiple independent atomic batches. | Submit one Cosmos `MsgBatchTransfer` or canonical EVM `singleProofBatchTransfer` call. An ambiguous result remains pending until every input nullifier and expected payment output matches typed operation evidence. |
 | Direct withdraw | `prepareWithdraw` | Require one exact-match note and a current chain time where required. | Sign/broadcast and reconcile the input nullifier. |
 | Relay withdraw | `prepareRelayWithdraw` | Verify fresh chain time; record durable relay handoff before copying or uploading the payload. The browser handoff must work without a local relayer helper. | The relayer may submit until expiry; reconcile rather than treating local cancel as revocation. |
 
@@ -172,12 +195,18 @@ reservation reconciliation reaches a safe terminal state.
 Relay-only preparation is exempt only when a different relayer account will
 submit it and no local self transaction is needed.
 
-The checked-in example does not call `prepareTransferBatch` or provide batch
-submission or authorized batch-audit UI. Its loopback prover proxy may recognize
-the batch proof route for SDK/reference testing, but that route is not product
-capability exposure. Batch product flows remain separately reviewed integrations
-governed by the general client and batch handoff documents, not optional rows
-in this single-transfer guide.
+When an EVM profile publishes an EIP-712 domain, the feature-gated batch panel
+may exercise `singleProofBatchTransferWithAuthorization`. The built-in path
+binds the connected account as both effective sender and submitting executor,
+uses a fresh random nonce, and sets the authorization deadline to the prepared
+operation expiry. A different external executor requires a separate durable
+product handoff flow.
+
+An authorized batch-audit view must use typed `privacy-scan-v2`, group outputs
+by transaction hash, and verify/decode the mandatory audit disclosure for every
+output. A raw `batch_transfer` event contains operation roots and audit-key
+identity, not per-output audit ciphertexts or digests, and is not an input for
+reconstructing batch disclosure.
 
 `depositProofUrl` is an optional profile field for a reviewed, product-owned
 deposit proof service. It is an exact `POST` endpoint, not a prover base URL:
@@ -278,6 +307,8 @@ Map errors to actions without parsing prose:
 | Typed scan/config validation failure | Show sync unavailable; offer same-source retry or reset/rescan. | Never downgrade scan semantics. |
 | Nullifier result unknown | Show balance/input as unavailable. | Retry only the same endpoint by default. |
 | Planner self-merge requirement | Ask for explicit self-transfer approval. | Do not choose batch or multi-send as a fallback. |
+| Batch capacity exceeded | Offer an explicit multiple-atomic-batch choice and explain cross-batch partial completion. Show each prepared recipient and disclosure mode before approval. | Never split, reorder, or retry individual payments silently. Lock verified rows out of later retries. |
+| Batch checkpoint or evidence unresolved | Show reservation recovery and keep affected inputs locked. | Do not overwrite the encrypted checkpoint or submit another batch until reconciliation is terminal. |
 | Prover timeout/transport failure | Show cancel/retry for the same prover. | Do not fail over to a second prover without explicit privacy opt-in. |
 | Broadcast timeout/terminal-write failure | Show pending reconciliation. | Query tx identity and nullifiers; block resubmission. |
 | Expired payload | Rebuild and re-sign. | Never extend an existing payload. |
@@ -327,8 +358,8 @@ versioned `invalid_request`, `method_not_allowed`, `not_found`, `unauthorized`,
 The product must test its actual wallet adapters and endpoints, not only mocks:
 
 - initial sync, interruption, encrypted-store reload, and forced rescan;
-- deposit, self-merge when required, one transfer, exact-match withdraw, and
-  relay withdraw;
+- deposit, self-merge when required, one transfer, one-proof batch transfer,
+  exact-match withdraw, and relay withdraw over both Cosmos and EVM transports;
 - wallet rejection before broadcast, RPC timeout after broadcast, and a failed
   local status write after broadcast;
 - account, wallet-network, or selected-profile change while a wallet prompt,
@@ -345,8 +376,9 @@ The product must test its actual wallet adapters and endpoints, not only mocks:
 - an earlier development persistence record present at startup, proving it is
   not decoded or migrated into the current v0.3.1 namespace before the
   required full rescan;
-- an attempted batch feature configuration, proving the current example keeps
-  `serverFeatures.batchTransfer=false` and exposes no batch submission UI;
+- batch gate off/on behavior, canonical Cosmos and EVM batch submission,
+  EIP-712 authorization binding when configured, encrypted checkpoint reload,
+  ambiguous receipt recovery, and typed per-item/audit reconciliation;
 - the deployed-origin `verify:production-deployment` gate plus a manual
   Keplr/MetaMask connect, sign, scan, and recovery flow at the same origin.
 

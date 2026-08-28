@@ -15,6 +15,11 @@ import {
   sameTypedBatchEventIdentity,
   typedBatchEventIdentity,
 } from "../public/batch-event-identity.js";
+import { assertTypedBatchEffect } from "../public/batch-reconciliation.js";
+
+function hexBytes(value) {
+  return Uint8Array.from(value.match(/../g), byte => Number.parseInt(byte, 16));
+}
 
 test("typed batch event identity separates messages sharing one transaction", () => {
   const selected = typedBatchEventIdentity({ height: "42", sequence: "7" });
@@ -36,6 +41,54 @@ test("typed batch event identity rejects an unsafe cursor", () => {
     () => typedBatchEventIdentity({ height: "42", sequence: "0" }),
     /global sequence/,
   );
+});
+
+test("Cosmos batch reconciliation binds tx, nullifiers, commitments, and per-payment disclosure", () => {
+  const txHash = "aa".repeat(32);
+  const nullifier = "bb".repeat(32);
+  const commitment = "cc".repeat(32);
+  const userDigest = "dd".repeat(32);
+  const auditDigest = "ee".repeat(32);
+  const summary = {
+    tx_hash: hexBytes(txHash),
+    nullifiers: [hexBytes(nullifier)],
+    output_count: 1,
+  };
+  const output = {
+    output_index: 0,
+    commitment: hexBytes(commitment),
+    user_privacy_policy: 1,
+    user_disclosure_mode: "USER_DISCLOSURE_MODE_PUBLIC",
+    user_disclosure_digest: hexBytes(userDigest),
+    full_disclosure_digest: hexBytes(auditDigest),
+  };
+  const operationEvidence = {
+    input_nullifier_hexes: [nullifier],
+    expected_outputs: [{
+      role: "payment",
+      batch_item_index: 0,
+      expected_output_commitment: commitment,
+      expected_user_disclosure_digest: userDigest,
+      expected_audit_disclosure_digest: auditDigest,
+      user_privacy_policy: 1,
+      user_disclosure_mode: 1,
+    }],
+  };
+
+  assert.equal(assertTypedBatchEffect({
+    summary,
+    outputs: [output],
+    operationEvidence,
+    outputCount: 1,
+    txHash,
+  }), true);
+  assert.throws(() => assertTypedBatchEffect({
+    summary,
+    outputs: [{ ...output, commitment: hexBytes("ff".repeat(32)) }],
+    operationEvidence,
+    outputCount: 1,
+    txHash,
+  }), /commitment does not match/);
 });
 
 test("privacy event selection keys distinguish messages in one transaction", () => {

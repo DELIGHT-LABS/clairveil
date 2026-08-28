@@ -57,7 +57,7 @@ Reference Payroll Product는 core protocol 필수 요소가 아님. 그러나 `c
 7. input 1..16개와 payment/change/padding output 1..32개를 batch operation 하나로 구성
 8. canonical prepared payload 생성과 structured owner signature 1개 획득
 9. BatchJoinSplit16x32 proof 1개 생성
-10. 모든 nullifier 재확인 후 MsgBatchTransfer 1개 broadcast
+10. 모든 nullifier 재확인 후 Cosmos MsgBatchTransfer 하나 또는 EVM singleProofBatchTransfer call 하나 제출
 11. typed scan과 commitment/disclosure 검증
 12. batch chain status와 item별 evidence를 분리 reconcile한 뒤 report export
 ```
@@ -67,6 +67,12 @@ legacy `transfer-batch` 경로는 독립적인 2x2 `MsgTransfer` 여러 개를 C
 ## 상품화 전제
 
 현재 batch reference integration 경로는 input note 1..16개를 소비하고 output 1..32개를 생성하는 atomic batch operation 하나에 `BatchJoinSplit16x32` proof 하나를 사용함. Payment, change, explicit padding이 모두 output slot을 사용하므로 output 32개가 항상 payroll payment 32건을 뜻하지는 않음.
+
+Submission에서 operation contract는 transport-neutral함. Cosmos는
+`MsgBatchTransfer` 하나, EVM host는 canonical `singleProofBatchTransfer` call 하나를
+사용함. 두 경로 모두 complete linked input set과 모든 expected output이 reconcile된
+뒤에만 성공을 보고하며 EVM 경로는 transaction에 bind된 명시적 successful receipt도
+요구함.
 
 이전 item별 `MsgTransfer` 구현과 recipient당 proof 1개 capacity model은 legacy comparison/regression surface로 계속 제공함. 이는 현재 proof-count model이 아님. One-proof batch 구현은 experimental이며 그 자체로 production productization 또는 production artifact 승인을 완료하지 않음.
 
@@ -345,7 +351,7 @@ Evidence JSON은 다음 형태를 사용함.
 }
 ```
 
-`nullifier_spent=true`만으로 operation success로 처리하지 않음. 저장된 operation의 tx identity, output commitment, audit disclosure digest, recipient hash, amount hash, denom, batch item index와 일치해야 성공으로 reconcile됨. user/self-view disclosure digest는 expected field가 있을 때 별도로 확인함. 일치하지 않으면 review/conflict 상태로 남김.
+`nullifier_spent=true`만으로 operation success로 처리하지 않음. 저장된 operation의 tx identity, 명시적인 successful Cosmos execution 또는 EVM receipt, output commitment, audit disclosure digest, recipient hash, amount hash, denom, batch item index와 일치해야 성공으로 reconcile됨. user/self-view disclosure digest는 expected field가 있을 때 별도로 확인함. 일치하지 않으면 review/conflict 상태로 남김.
 
 ### `clairveil-payroll export-report`
 
@@ -550,6 +556,9 @@ Reservation lifecycle payload는 schema version 2를 사용함. Durable JSON은 
 - `make reference-payroll-live-localnet`은 legacy multi-message 2x2 payroll regression/tutorial로 계속 실행할 수 있음.
 - `clairveil-payroll validate`, `build-input-from-notes`, `prepare-notes`, `plan`, `run`, `status`, `scan-evidence`, `reconcile`, `settle-transfer-batch`, `seed-localnet-notes`, `export-report` 명령이 제공됨.
 - `transfer-batch`는 legacy multi-message 의미를 유지하고, `transfer-batch-16x32`와 staged batch command가 현재 one-proof surface를 제공함.
+- One-proof handoff는 Cosmos `MsgBatchTransfer`와 canonical EVM
+  `singleProofBatchTransfer` submission을 모두 정의하며 target-chain wallet/product
+  E2E는 downstream release gate로 남음.
 - JS SDK handoff 문서가 제공됨.
 - wallet handoff 문서가 제공됨.
 - downstream이 payroll workflow를 조립할 수 있는 기준 문서가 제공됨.
@@ -566,6 +575,7 @@ Reservation lifecycle payload는 schema version 2를 사용함. Durable JSON은 
 - 웹/모바일 지갑 구현
 - 실제 고객사의 payroll policy 결정
 - staging/production rehearsal 실행
+- Cosmos/EVM downstream wallet/product E2E
 - formal trusted setup, external audit, signed production artifact custody/distribution
 - production remote-prover isolation, authentication, deployment, operations
 

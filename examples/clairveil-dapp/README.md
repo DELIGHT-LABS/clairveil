@@ -40,6 +40,7 @@ CLAIRVEILJS_DIR=/absolute/path/to/clairveiljs-worktree npm run test:dapp
 - Deposit from transparent balance into veiled notes
 - Typed `privacy_scan` note discovery with encrypted cursor/note persistence, endpoint selection, cursor rollback, cache backup, forced rescan recovery, batch nullifier checks, and spendable-only filtering
 - Veiled transfer with note planning and self-transaction guidance
+- Explicitly feature-gated one-proof atomic batch transfer over Cosmos or EVM
 - Direct withdraw from veiled notes or a product-defined relay handoff payload
 - Disclosure modes: `none`, `public`, `recipient-encrypted`
 - User and sender self-view disclosure decoding
@@ -103,6 +104,7 @@ The DApp UI does not implement privacy preparation itself. It calls the high-lev
 | `prepareDeposit(...)` | Creates the note material, obtains a DepositCircuit proof from `depositProofUrl` or an injected provider, then returns a Cosmos sign doc or EVM precompile tx |
 | `scanWalletNotes(...)` | Uses typed `privacy_scan`, persists the full cursor in the DApp's AES-GCM encrypted note store, and refreshes statuses with batch nullifier lookup |
 | `prepareTransfer(...)` | Scans notes, plans inputs, reads audit config, calls prover `/v1/prover/transfer`, creates disclosure payloads, then returns a Cosmos sign doc or EVM precompile tx |
+| `prepareTransferBatch(...)` | Prepares an opt-in one-proof Cosmos/EVM batch with per-payment disclosure and a durable encrypted recovery checkpoint before wallet submission |
 | `prepareWithdraw(...)` | Scans notes, plans inputs, calls prover `/v1/prover/withdraw`, then returns a Cosmos sign doc or EVM precompile tx |
 | `prepareRelayWithdraw(...)` | Produces a chain/recipient/expiry-bound relayer payload and, for EVM, a candidate transaction that the relayer must rebuild or byte-validate |
 | `signDirectAndBroadcast(...)` | Signs and broadcasts Cosmos txs while preserving the prepared note reservation lifecycle |
@@ -199,6 +201,10 @@ const myEvmProfile = {
   evmPrivacyPrecompileAddress: "0x100000000000000000000000000000000000000b",
   evmDepositMode: "payable-exact-value",
   evmNativeDenom: "utoken",
+  evmAuthorizationProfile: {
+    typedDataDomain: { name: "My EVM Privacy Chain", version: "1" },
+    supportedAuthorizationKinds: [1]
+  },
   evmGasLimit: "0x989680",
   evmSendGasLimit: "0x5208"
 };
@@ -224,13 +230,23 @@ EVM profile requirements:
 
 - Browser-accessible EVM JSON-RPC
 - Host chain Cosmos REST/RPC for Clairveil privacy events and queries
-- Clairveil-compatible EVM `IPrivacy` precompile ABI
+- Clairveil-compatible EVM `IPrivacy` precompile ABI, including canonical
+  `singleProofBatchTransfer`
 - Fixed `evmPrivacyPrecompileAddress` published by the target chain
 - Clairveil privacy account prefix for EVM-derived identity material
 - Prover support for `/v1/prover/transfer` and `/v1/prover/withdraw`
-- An explicit `evmDepositMode`; `payable-exact-value` also requires `evmNativeDenom === denom` so the amount binds exactly to `msg.value`
+- `evmDepositMode: "payable-exact-value"` and `evmNativeDenom === denom` so the minimal-unit amount binds exactly to `msg.value`
 
-This DApp does not support arbitrary EVM privacy ABI shapes. EVM Clairveil chains must use the same privacy precompile ABI and payload semantics.
+The default path requires the canonical Clairveil v0.3.1 ABI. A deployment with
+an equivalent non-canonical call shape may inject a reviewed ClairveilJS
+`EvmContractAdapter` at
+`globalThis.CLAIRVEIL_EVM_CONTRACT_ADAPTERS[profile.id]`. A complete contract
+getter/indexer implementation may inject `PrivacyStateAdapter` at
+`globalThis.CLAIRVEIL_PRIVACY_STATE_ADAPTERS[profile.id]`, and a built-in or
+reviewed custom finality policy is selected through
+`globalThis.CLAIRVEIL_EVM_FINALITY_POLICIES[profile.id]`. Each adapter must bind
+the selected profile/precompile and pass the SDK's canonical validation; without
+a privacy-state adapter the typed host-chain queries above remain required.
 
 ## Environment Overrides
 
@@ -270,7 +286,9 @@ Common values:
 | `CLAIRVEIL_DENOM` / `CLAIRVEIL_DISPLAY_DENOM` / `CLAIRVEIL_COIN_DECIMALS` | Shared coin metadata fallback |
 | `CLAIRVEIL_COSMOS_DISPLAY_DENOM` / `CLAIRVEIL_COSMOS_COIN_DECIMALS` | Optional Cosmos display metadata overrides; blank or absent values inherit the shared metadata |
 | `CLAIRVEIL_COSMOS_DENOM` / `CLAIRVEIL_EVM_DENOM` / `CLAIRVEIL_EVM_NATIVE_DENOM` | Transport-specific minimal denom; active transport values override `CLAIRVEIL_DENOM`, and EVM falls back to its native denom before the shared value |
-| `CLAIRVEIL_EVM_DEPOSIT_MODE` / `CLAIRVEIL_EVM_NATIVE_DENOM` | `nonpayable` or v0.3.1 `payable-exact-value` deposit binding |
+| `CLAIRVEIL_EVM_DEPOSIT_MODE` / `CLAIRVEIL_EVM_NATIVE_DENOM` | Required v0.3.1 `payable-exact-value` deposit binding and matching native minimal denom |
+| `CLAIRVEIL_EVM_AUTHORIZATION_PROFILE` | Optional JSON object with the target chain's EIP-712 `typedDataDomain` and `supportedAuthorizationKinds` |
+| `CLAIRVEIL_DAPP_ENABLE_BATCH_TRANSFER` | Set to `1` only after the active Cosmos/EVM profile, ClairveilJS, prover, and typed scan endpoint pass one-proof batch conformance; default `0` hides the UI |
 | `CLAIRVEIL_EVM_*` | Other optional EVM/MetaMask profile settings |
 | `CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING` / `CLAIRVEIL_DAPP_ALLOW_LAN_ADMIN` / `CLAIRVEIL_DAPP_ALLOW_LAN_PROVER` | Explicit opt-in for exposing local signing/admin/prover helpers on LAN |
 
@@ -293,7 +311,7 @@ Transfer and withdraw preparation use a ClairveilJS note reservation manager bac
 
 The same-origin local relayer repeats nullifier preflight and atomically locks each canonical payload nullifier. Concurrent or replayed copies of the same payload share one submission, while any overlapping different payload is rejected. Faucet, local deposit, and relay broadcasts using the same signer account also share one account-sequence/nonce queue. An explicit nonzero Cosmos CheckTx response releases only this process-local submission gate because the node definitively rejected the transaction. Once the broadcaster has returned a valid exact tx hash, a later timeout, disconnect, or malformed status retains that hash with the account fence; a later signer request clears the fence only after an authoritative Cosmos tx query or EVM receipt query finds the transaction. An indexed Cosmos tx with a non-canonical execution code, or an EVM receipt with a non-canonical status, is returned as `included=true`, `pending=false`, `unknown=true`, and `failed=null` together with the exact hash; it is never cached or rendered as success. If the CLI fails before returning any valid hash, the process-local gate remains fail-closed but exact-hash reconciliation is impossible; such an identifier-less post-boundary result is never automatically retryable. The browser's durable reservation still follows its normal reconciliation policy.
 
-Transparent EVM send and deposit tx hashes and unresolved status are persisted across reloads, so their actions remain disabled until the existing tx is reconciled as included or explicitly failed. EVM deposit preflight queries the target asset through the host-chain bank endpoint and the native gas balance through `eth_getBalance`; profiles with different `denom` and `evmNativeDenom` must satisfy both independently. Cached note balances are labelled unconfirmed, and private spend actions stay disabled until a full note scan reaches `synced` while protocol preflight is ready. Relay handoff JSON, reservation IDs, tx hash, and result state are encrypted with wallet-derived material and restored after setup; the UI displays the immutable recipient/chain/expiry and privacy warnings, then reports transaction inclusion and nullifier spent state separately. If authoritative block time proves that a handoff expired and every reserved nullifier is still unspent, the wallet owner can explicitly approve `ManualReview -> ReplanRequired` recovery and prepare a new payload.
+Transparent EVM send and deposit tx hashes and unresolved status are persisted across reloads, so their actions remain disabled until the existing tx is reconciled as included or explicitly failed. EVM deposit preflight cross-checks the target asset through the host-chain bank endpoint and the same native asset's gas balance through `eth_getBalance`; v0.3.1 requires `evmNativeDenom === denom`. Cached note balances are labelled unconfirmed, and private spend actions stay disabled until a full note scan reaches `synced` while protocol preflight is ready. Relay recovery persists only reservation IDs, payload hash, expiry, tx hash, and result state; it never stores the raw handoff JSON or proof. For EVM receipt verification, the original SDK-prepared transaction is kept separately in the wallet-derived encrypted operation-artifact namespace. After setup, the UI restores the metadata and reports transaction inclusion and nullifier spent state separately. If authoritative block time proves that a handoff expired and every reserved nullifier is still unspent, the wallet owner can explicitly approve `ManualReview -> ReplanRequired` recovery and prepare a new payload.
 
 Disclosure Review accepts the current event selection, an arbitrary tx hash, or pasted `shielded_transfer` event JSON for user, self-view, and local-admin audit planes. A verified report displays plane, policy, output index, commitment, digest, and `verified=true`. Decoded fields are rendered only when `verification.verified === true`; verification failures show `verified=false` and discard plaintext.
 
@@ -303,7 +321,19 @@ If the separate private Cosmos transaction fence is corrupt, normal transaction 
 
 Transfer/withdraw proof requests carry an `AbortSignal`. The modal can cancel an in-flight request and retry against the same profile-pinned prover endpoint. Expiry is derived from the latest chain block time and the UI fails closed if that timestamp cannot be read.
 
-The v0.3.1 one-proof batch APIs and server proxy path are intentionally not exposed in this UI. Keep `serverFeatures.batchTransfer` false until the target chain, prover, scan recovery, wallet confirmation, and downstream E2E suite are all validated together.
+The atomic one-proof batch editor is exposed only when
+`CLAIRVEIL_DAPP_ENABLE_BATCH_TRANSFER=1`. It prepares one 1–16-input / 1–32-output
+Cosmos `MsgBatchTransfer` or EVM `singleProofBatchTransfer`; a change output uses
+one output slot. Each payment has its own `none`, `public`, or
+`recipient-encrypted` disclosure policy, and the final confirmation rechecks the
+exact recipient, amount, target key, change, and circuit capacity against the
+prepared payload. If the active EVM profile supplies an EIP-712 domain, the
+panel may exercise `singleProofBatchTransferWithAuthorization`, binding the
+connected account as sender/executor, a fresh nonce, and the prepared expiry.
+The prepared batch and EVM transaction bindings use dedicated AES-GCM/Web-Locks
+recovery artifacts. Success requires a verified Cosmos execution or EVM
+receipt plus the complete reserved-nullifier set and typed output/disclosure
+evidence; an unresolved artifact keeps the inputs locked.
 
 ## Disclosure Mode
 
@@ -391,4 +421,4 @@ npm run check:clairveiljs:types
 npm run test:release-contracts
 ```
 
-`npm run verify:release` runs the static DApp checks, DApp/SDK integration tests, type checks, and required v0.3.1 conformance fixtures. `test:release-contracts` first verifies that all 17 SDK-bundled contract files match the current Clairveil checkout byte-for-byte, then runs the SDK's own manifest verifier and bundled v3-only conformance suite; it does not inject fixtures into the SDK process. `npm run verify:release:integration` additionally requires a live local full-flow environment and the payable EVM driver; it fails instead of silently skipping when those dependencies are absent. The required conformance suite covers expiry, replay, payload substitution, and duplicate-nullifier rejection.
+`npm run verify:release` runs the static DApp checks, DApp/SDK integration tests, type checks, and required v0.3.1 conformance fixtures. `test:release-contracts` first verifies that all 17 SDK-bundled contract files match the current Clairveil checkout byte-for-byte, then runs the SDK's own manifest verifier and bundled v3-only conformance suite; it does not inject fixtures into the SDK process. `npm run verify:release:integration` additionally requires a live local full-flow environment and the payable EVM driver; it fails instead of silently skipping when those dependencies are absent. The EVM gate covers deposit, note recovery, transfer, feature-gated one-proof batch, direct/relay withdraw, and ambiguous/conflicting recovery. The required conformance suite covers expiry, replay, payload substitution, and duplicate-nullifier rejection.

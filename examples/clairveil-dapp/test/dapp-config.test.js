@@ -169,7 +169,7 @@ test("static artifact must explicitly opt out of the server-backed mode", async 
   );
 });
 
-test("current WebApp rejects batch-transfer feature configuration", async () => {
+test("batch transfer remains static-disabled and server opt-in", async () => {
   const featureConfig = {
     serverBacked: false,
     serverFeatures: { batchTransfer: true },
@@ -182,12 +182,11 @@ test("current WebApp rejects batch-transfer feature configuration", async () => 
     }),
     error => error?.code === "DAPP_BOOTSTRAP_UNSUPPORTED_FEATURE",
   );
-  await assert.rejects(
-    () => loadServerDappHealth({
-      fetchImpl: async () => new Response(JSON.stringify({ config: featureConfig }), {
-        headers: { "content-type": "application/json" },
-      }),
+  const serverConfig = { ...featureConfig, serverBacked: true };
+  const health = await loadServerDappHealth({
+    fetchImpl: async () => new Response(JSON.stringify({ config: serverConfig }), {
+      headers: { "content-type": "application/json" },
     }),
-    error => error?.code === "DAPP_BOOTSTRAP_UNSUPPORTED_FEATURE",
-  );
+  });
+  assert.equal(health.config.serverFeatures.batchTransfer, true);
 });

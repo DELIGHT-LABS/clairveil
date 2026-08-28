@@ -45,20 +45,20 @@ POST /clairveil/privacy/v1/privacy_scan
 POST /clairveil/privacy/v1/commitment_paths_at_root
 ```
 
-Wallet note sync에는 typed `privacy_scan`(`privacy-scan-v2`)을 우선 사용하고 full `(height, global_sequence, output_index)` cursor를 저장해야 합니다. Reference SDK는 source가 typed query를 구현하지 않은 경우에만 `scan_events`를 사용하고, 더 오래된 source에서는 raw transaction search로 fallback합니다. Typed source가 존재하는데 query가 실패하면 terminal error입니다. 조용히 downgrade하면 batch ciphertext가 누락될 수 있습니다. Client는 pagination/cursor 저장, response validation, bounded retry를 구현해야 합니다. `privacy_scan`, `scan_events` 같은 public global projection은 bounded endpoint failover가 가능하지만 failover 중 schema/cursor 의미를 바꾸면 안 됩니다. Legacy fallback의 `scan_events`는 page 안에 필터링된 event type만 있을 때 빈 `events` 배열과 `has_more=true`를 반환할 수 있으므로 이 경우에도 `next_height`, `next_sequence`로 cursor를 전진시켜야 합니다. Raw `events` query는 preferred wallet sync contract가 아니라 compatibility/debugging/auditor surface입니다.
+Wallet note sync에는 typed `privacy_scan`(`privacy-scan-v2`)과 full `(height, global_sequence, output_index)` cursor를 사용해야 합니다. Typed query 실패는 terminal error이며 client는 pagination/cursor 저장, response validation, bounded retry를 구현해야 합니다. Public projection은 bounded endpoint failover가 가능하지만 failover 중 schema와 cursor 의미가 동일해야 합니다. Raw event query는 운영 진단용이며 wallet balance나 batch disclosure의 입력으로 사용하지 않습니다.
 
 Retry와 failover는 operation 종류별로 구분해야 합니다.
 
 | Operation | 기본 retry 정책 | Endpoint failover |
 | --- | --- | --- |
-| `scan_events`, tree state, module config 같은 public read query | 일시적인 network error, timeout, `408`, `429`, `502`, `503`, `504`를 retry | 제품이 설정된 read endpoint를 신뢰하는 경우 허용 |
+| `privacy_scan`, tree state, module config 같은 public read query | 일시적인 network error, timeout, `408`, `429`, `502`, `503`, `504`를 retry | 제품이 설정된 read endpoint를 신뢰하고 동일한 response contract를 제공하는 경우 허용 |
 | `nullifier` / `nullifiers` query | 같은 endpoint에서 retry | 기본 off. 다른 운영자에게 조회 nullifier 집합을 노출하므로 명시적인 privacy opt-in 필요 |
 | Signed tx broadcast | 기본 off. 재제출을 결정하기 전에 tx hash 조회 또는 `waitForTx`로 복구 | 기본 off |
 | Prover request | finite timeout, cancellation, response validation 적용. 자동 retry 정책은 제품에서 결정 | Multi-prover failover는 기본 off이며 명시적인 privacy opt-in 필요 |
 
 Signed/broadcast tx를 idempotent read query처럼 취급하면 안 됩니다. Transaction이 이미 mempool에 들어간 뒤 timeout이 발생할 수 있습니다.
 
-일반적인 batch spent refresh에는 JSON body를 쓰는 `POST /clairveil/privacy/v1/nullifiers`를 사용해야 합니다. 요청당 nullifier는 최대 1000개로 나누고, 더 큰 wallet은 chunk 처리해야 합니다. GET binding은 작은 compatibility check 용도로 남아 있지만, 큰 query string은 browser, mobile gateway, proxy의 URL 길이 제한을 넘을 수 있습니다.
+일반적인 batch spent refresh에는 JSON body를 쓰는 `POST /clairveil/privacy/v1/nullifiers`를 사용해야 합니다. 요청당 nullifier는 최대 1000개로 나누고, 더 큰 wallet은 chunk 처리해야 합니다. GET binding은 작은 운영 진단 요청에만 사용합니다. 큰 query string은 browser, mobile gateway, proxy의 URL 길이 제한을 넘을 수 있습니다.
 
 Nullifier query는 privacy-sensitive합니다. Wallet이 특정 nullifier의 spent 여부를 묻는다는 것은 그 note를 추적하고 있을 가능성을 endpoint에 알리는 신호가 될 수 있습니다. 기본 정책은 같은 endpoint 안에서만 nullifier query를 retry하는 것입니다. 같은 nullifier 묶음을 다른 public endpoint로 failover하는 동작은 제품/사용자가 명시적으로 켠 경우에만 허용해야 합니다.
 명시적인 JSON boolean `used: false`만 검증된 unspent로 취급해야 합니다. 누락, malformed, query 실패 nullifier 결과는 unknown이며 성공한 refresh가 해결할 때까지 spendable balance와 planner에서 제외해야 합니다.
@@ -81,10 +81,16 @@ Client가 생성하거나 broadcast해야 하는 message:
 - `MsgTransfer`는 absolute `expires_at_unix`, user disclosure, mandatory audit disclosure, optional sender self-view disclosure field, encrypted output note, 정확히 2개의 2-byte `view_tags`를 포함합니다.
 - `MsgDeposit`은 transparent amount/asset과 note commitment를 binding하는 deposit proof를 요구합니다.
 - `MsgWithdraw`는 output note field를 갖지 않습니다.
-- `MsgBatchTransfer`는 1..16 input과 1..32 output을 처리하는 one-proof `BatchJoinSplit16x32` message입니다. 여러 `MsgTransfer`를 envelope하는 legacy CLI `transfer-batch`와 혼동하면 안 됩니다.
-- Client는 legacy `new_note_commitment`, `encrypted_note` withdraw 값을 만들면 안 됩니다.
+- `MsgBatchTransfer`는 1..16 input과 1..32 output을 처리하는 one-proof `BatchJoinSplit16x32` message입니다.
 - Transfer `view_tags`는 signed canonical payload digest에 포함되지만 server-filterable ownership 증거는 아닌 untrusted performance hint입니다. 안전한 기본 sync는 mismatch에서도 full decrypt해야 하고 skip은 recovery/rescan을 갖춘 explicit fast-mode opt-in이어야 합니다.
 - `creator`는 transfer/withdraw에서 의도적으로 replaceable합니다. Transfer output/disclosure/chain/expiry와 withdraw recipient/chain/expiry는 owner intent/proof-bound입니다.
+
+EVM transport는 같은 prepared effect를 Clairveil 0.3.1 canonical privacy
+precompile call로 전달합니다. Deposit은 proof와 exact `msg.value`, transfer는
+self-view와 absolute expiry, batch는 `singleProofBatchTransfer` 하나, withdraw는
+exact-match operation을 사용합니다. 성공 판별에는 successful receipt, 검증된
+precompile call과 privacy event, 모든 input nullifier, expected output evidence가
+필수입니다.
 
 ## 4. Prover API
 
@@ -96,7 +102,7 @@ POST /v1/prover/withdraw
 POST /v1/proofs/batch-transfer
 ```
 
-Batch route는 batch integration이 제공하는 one-proof reference surface입니다. Legacy transfer/withdraw prover route와 path namespace가 다르고 batch prepared-payload/proof contract를 사용하므로, client가 문자열 치환으로 route를 추론하면 안 됩니다.
+Batch route는 one-proof batch prepared-payload/proof contract 전용 endpoint입니다. 각 route는 명시된 request/response schema로 선택하며 client가 문자열 치환으로 route를 추론하면 안 됩니다.
 
 Batch-transfer wire version 네 개를 서로 독립적으로 pin합니다.
 
@@ -107,7 +113,7 @@ Batch-transfer wire version 네 개를 서로 독립적으로 pin합니다.
 | Prover request envelope | `provertransport.BatchTransferProofRequestVersion` | `v1` |
 | Prover response envelope | `provertransport.BatchTransferProofResponseVersion` | `v1` |
 
-Request/response envelope version은 nested payload/proof version을 대신하지 않습니다. 어느 layer든 mismatch가 있으면 compatibility를 추측하지 말고 prepared operation을 다시 생성합니다.
+Request/response envelope version은 nested payload/proof version을 대신하지 않습니다. 어느 layer든 mismatch가 있으면 요청을 거부합니다.
 
 Client가 검증해야 할 것:
 
@@ -120,7 +126,7 @@ Client가 검증해야 할 것:
 - auth failure
 - malformed response
 
-현재 breaking version은 transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload와 proof/request/response `v2`, batch payload/proof/request/response `batch-transfer-payload-v1`/`batch-transfer-proof-v1`/`v1`/`v1`, relay handoff/schema `v2`, disclosure plaintext/query `privacy-fixed-v1`입니다. Legacy payload는 거부하고 다시 생성합니다.
+필수 version은 transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload와 proof/request/response `v2`, batch payload/proof/request/response `batch-transfer-payload-v1`/`batch-transfer-proof-v1`/`v1`/`v1`, relay handoff/schema `v2`, disclosure plaintext/query `privacy-fixed-v1`입니다. 다른 version은 거부합니다.
 
 Remote prover를 쓰는 경우 request/response body는 privacy-sensitive data로 취급해야 합니다.
 
@@ -168,11 +174,11 @@ go test ./x/privacy/client/sdk/conformance -run '^TestBatchTransferContract$' -c
 Client release 전 최소 검증:
 
 - deposit e2e
-- preferred `privacy_scan` V2 기반 note scan/rescan, full cursor, typed response fail-closed 검증. Legacy `scan_events` fallback은 `(height, sequence)`와 empty page/`has_more` 처리 유지
+- `privacy_scan` V2 기반 note scan/rescan, full cursor, typed response fail-closed 검증
 - 지원하지 않는 `scan_format_version` 또는 `view_tag_version`이 wallet cursor를 조용히 전진시키지 않는지 검증
 - forced rescan/recovery에서 view tag mismatch를 비권위 힌트로 취급하고 full trial decrypt 수행 가능
-- `nullifiers` 기반 batch spent refresh는 1000개 이하 chunk로 처리하고, 필요 시 개별 nullifier fallback
-- shielded transfer e2e
+- `nullifiers` 기반 batch spent refresh는 1000개 이하 chunk로 처리하고, 진단·복구 시 개별 nullifier query 사용
+- Cosmos와 EVM 각각의 shielded transfer 및 one-proof batch e2e
 - public disclosure decode/verify
 - recipient-encrypted disclosure decode/verify
 - sender self-view disclosure decode/verify
@@ -190,9 +196,9 @@ Client release 전 최소 검증:
 
 Downstream release gate는 repo의 `make examples`만으로 충분하지 않습니다. 실제 chain prefix, denom, endpoint, audit pubkey, prover topology를 적용한 testnet e2e가 필요합니다.
 
-## 8. Compatibility Checklist
+## 8. Contract 변경 checklist
 
-Breaking 또는 migration impact가 있는 변경:
+아래 contract가 바뀌면 관련 구현과 문서를 함께 갱신합니다.
 
 - `proto/clairveil/privacy/v1` field/message/service 변경
 - payload hash 계산 방식 변경
@@ -210,7 +216,7 @@ Breaking 또는 migration impact가 있는 변경:
 
 이런 변경이 있으면 client product brief, UX flows, risk decisions, API checklist, JS SDK handoff, WebApp scope/integration/storage/deployment 문서, release note impact를 함께 갱신해야 합니다.
 
-이 계약을 적용할 때 cached prepared payload, proof response/job, old local development artifact를 지우고 `privacy-note-v1` artifact를 다시 생성하며 old circuit/disclosure version metadata를 저장한 client cache를 resync해야 합니다. Legacy prepared-payload decode path는 없습니다.
+Client 배포는 exact `privacy-note-v1` artifact를 생성하고 empty account/profile namespace에서 full typed scan과 nullifier refresh를 완료한 뒤 operation을 준비해야 합니다.
 
 ## 9. Related Documents
 
@@ -233,7 +239,7 @@ Repository에는 batch chain core와 reference Go batch SDK, bounded remote prov
 - [ ] Note/disclosure/envelope payload를 canonical `privacy-fixed-v1`으로 encode합니다. Raw ciphertext, JSON plaintext, 잘못된 envelope kind, non-zero reserved byte, trailing byte를 거부합니다.
 - [ ] `AssetRegistryV1`을 denom-to-`asset_id`와 reverse lookup의 authoritative source로 사용하며 missing, collision, inconsistent entry에서는 fail closed합니다.
 - [ ] Unified `privacy-scan-v2` state를 전체 `(height, global_sequence, output_index)` cursor로 소비하고 선택한 root와 정확히 같은 path snapshot을 요청합니다. Current-root path는 incremental node를 사용하므로 online historical-rebuild budget을 소비하지 않습니다. Non-current historical path는 persisted root/count/height metadata를 요구하며 public query는 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하고 그 이상은 `ResourceExhausted`를 반환합니다. Online bound를 넘으면 current root 또는 trusted local historical index를 사용합니다. 별도 offline recovery/export bound는 `MaxMerkleRebuildLeaves`(1,048,576)입니다. Remote historical root/path query가 wallet 관심을 누설할 수 있다는 warning을 유지합니다.
-- [ ] Note/scan/proof cache와 old artifact를 지우고 fresh genesis에서 시작하여 `privacy-note-v1` artifact를 다시 생성하고 rescan합니다. Legacy decode나 in-place migration을 제공하지 않습니다.
+- [ ] Fresh genesis에서 exact `privacy-note-v1` artifact를 생성하고 empty note/scan/proof namespace를 full typed scan으로 초기화합니다.
 - [ ] Production batch public statement를 정확히 다음 12-field 순서로 취급합니다. `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`. Repository reference path는 core conformance fixture를 재현하지만 downstream 구현도 이를 독립 재현하기 전에는 client support를 advertise하지 않습니다.
 - [ ] Role-aware artifact readiness를 사용합니다. Validator는 VK만, prover는 선택한 R1CS/PK만 lazy load합니다. Circuit별 admission default는 `max_in_flight=1`, `max_queued=4`, positive `max_request_bytes=8388608`이며 0은 invalid입니다.
 - [ ] Bounded `proverservice.Handler`만 노출하고 raw transport handler는 절대 직접 노출하지 않습니다. Automatic prover failover를 끕니다. Cancellation은 client wait cancellation이지 solver termination 보장이 아니므로 hard resource boundary에는 process isolation을 사용합니다.

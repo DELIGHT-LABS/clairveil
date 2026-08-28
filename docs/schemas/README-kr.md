@@ -15,6 +15,13 @@ English version: [README.md](README.md)
 
 Browser 제품은 선택한 runtime profile을 `clairveil-web-client-config.schema.json`으로 추가 검증하고 duplicate profile ID와 active profile에 맞지 않는 compatibility/flattened field를 거부해야 합니다. Optional profile `depositProofUrl`은 검토된 HTTPS deposit proof-service의 정확한 endpoint를 나타내며 `proverUrl`과 별도의 privacy boundary입니다. 모든 HTTP(S) endpoint에는 credential, query, fragment가 없어야 합니다. URL userinfo와 query string은 bearer-token mechanism이 아니며, configuration artifact와 deployment diagnostic에서 secret이 노출되지 않도록 거부합니다. Legacy top-level EVM `accountPrefix`는 host metadata이므로 active profile의 privacy identity prefix와 비교하지 않습니다. Schema는 deployment input을 설명할 뿐이므로 browser는 계속 consensus circuit, audit, disclosure, asset, tree config를 chain에서 얻어야 합니다.
 
+EVM profile은 `evmNativeDenom`, canonical
+`evmDepositMode: "payable-exact-value"`, target chain의 EIP-712 domain과
+authorization-kind allowlist를 담는 optional JSON-safe
+`evmAuthorizationProfile`도 bind합니다. Adapter/finality 구현은 runtime dependency로
+남기고 executable configuration data로 넣지 않으며 validated profile ID로 선택해야
+합니다.
+
 ```bash
 npm --prefix examples/js-sdk-fixture-validator run validate
 ```
@@ -53,6 +60,6 @@ Fixed binary contract는 exact합니다. Note plaintext는 350 bytes, disclosure
 
 Current-root path query는 incremental node를 사용하므로 online historical-rebuild budget을 소비하지 않습니다. 모든 non-current historical path는 persisted `(root, leaf_count, height)` metadata를 요구하며 public query는 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하고 그 이상은 `ResourceExhausted`를 반환합니다. Online bound를 넘으면 current root 또는 trusted local historical-path index를 사용합니다. Offline recovery/export는 별도 `MaxMerkleRebuildLeaves`(1,048,576) bound를 유지합니다. Complete persisted per-prefix snapshot metadata index가 있으면 모든 historical node를 rebuild하지 않고도 offline bound를 넘는 tree를 genesis export할 수 있습니다.
 
-`BatchJoinSplit16x32`, `MsgBatchTransfer`, keeper handler, typed scan state, artifact descriptor는 production core contract입니다. `batch_feasibility.proto`는 measurement-only로 남습니다. Batch integration은 reference Go SDK/CLI, `POST /v1/proofs/batch-transfer`, ClairveilJS 0.3.1 batch API를 추가했습니다. Checked-in WebApp은 이 product flow를 의도적으로 비활성화합니다. Server feature는 false이고 UI에는 one-proof batch submission 또는 authorized batch-audit surface가 없습니다. 정정된 full-shape reference gate는 constraint `1,111,837`, peak RSS `3,339,862,016` bytes, max-shape warm proving `55.892 ms/output`, native 2x2 대비 per-output `2.789x` 개선을 측정했습니다. Artifact consumer는 `privacy-note-v1`을 pin해야 합니다. Validator는 exact consensus identity와 required VK를 사용하고 prover는 선택한 R1CS/PK pair를 lazy load합니다. Reference prover admission default는 circuit/service boundary별 in-flight 1개, queued 4개, positive 8 MiB request limit입니다.
+`BatchJoinSplit16x32`, `MsgBatchTransfer`, keeper handler, typed scan state, artifact descriptor는 production core contract입니다. `batch_feasibility.proto`는 measurement-only로 남습니다. Batch integration은 reference Go SDK/CLI, `POST /v1/proofs/batch-transfer`, Cosmos `MsgBatchTransfer`와 EVM `singleProofBatchTransfer`를 위한 ClairveilJS 0.3.1 contract를 추가했습니다. Example WebApp은 explicit server feature gate 뒤에서만 이 flow를 노출하며 encrypted recovery와 typed item/audit reconciliation을 요구합니다. 정정된 full-shape reference gate는 constraint `1,111,837`, peak RSS `3,339,862,016` bytes, max-shape warm proving `55.892 ms/output`, native 2x2 대비 per-output `2.789x` 개선을 측정했습니다. Artifact consumer는 `privacy-note-v1`을 pin해야 합니다. Validator는 exact consensus identity와 required VK를 사용하고 prover는 선택한 R1CS/PK pair를 lazy load합니다. Reference prover admission default는 circuit/service boundary별 in-flight 1개, queued 4개, positive 8 MiB request limit입니다.
 
 Prepared transfer payload `v5`는 현재 outer prepared-payload version으로 그대로 유효합니다. Inner note/disclosure/envelope encoding `privacy-fixed-v1`과 별개이며 어느 version도 다른 version을 대체하지 않습니다. Compatibility fallback은 금지됩니다. ClairveilJS 0.3.1은 fixed fixture와 V5/V2 preparation/proof contract를 구현합니다. 아직 release되지 않은 WebApp은 current v0.3.1 namespace의 fresh initialization만 지원합니다. 이전 note-cache, reservation, operation, relay record를 migrate하지 않고 in-place downgrade를 지원하지 않습니다. Empty state에서 safe typed rescan을 완료합니다.

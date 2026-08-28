@@ -14,7 +14,7 @@ browser WebApp scope. It replaces the demo-only plaintext storage policy in
 | Decrypted notes and scan cursor | Encrypted persistent browser store scoped to one chain/profile/account. |
 | Reservation state and operation evidence | Encrypted IndexedDB with cross-tab locking. Reservation error fields contain stable internal codes only, never wallet/prover/RPC error prose. |
 | Account transaction boundary marker | Two durable canonical transaction-scope/account records that do not require the privacy root signature to open. The public send/deposit record may contain `attempting` plus a random attempt ID before an EVM wallet request and must be promoted to the returned tx hash immediately. The physically separate private Cosmos record contains the exact signed tx hash plus only the generic `privacy` kind. Never store recipient, amount, calldata, note/reservation IDs, or other private operation data in either record. |
-| Prepared proof/payload and raw recipient/amount | Memory only unless a product has a separately reviewed encrypted recovery design. The checked-in example does not persist a one-proof batch checkpoint or expose `prepareTransferBatch`. |
+| Prepared proof/payload and raw recipient/amount | Memory only unless a flow has a reviewed encrypted recovery design. The feature-gated batch flow stores the exact prepared batch payload/proof/evidence needed for restart recovery, and EVM deposit/transfer/withdraw store the original prepared transaction binding needed to verify a later receipt. These artifacts use dedicated encrypted namespaces and are never mixed with relay metadata. |
 | Relay recovery metadata | Encrypted, cross-tab locked, multi-record store; retain only opaque payload hash, reservation IDs/status, tx identity, handoff/submission status, and expiry. Derive each persistence ID from the payload hash or reservation IDs; one payload must never overwrite another and caller-supplied IDs or display-only fields must not be retained. |
 
 Browser `localStorage`, plaintext IndexedDB, or an unencrypted export for
@@ -33,6 +33,9 @@ equivalent to:
 ```text
 clairveil:v0.3.1:notes-encrypted:<privacy-scope>:<storage-epoch>:<account-scope>
 clairveil:v0.3.1:operations-encrypted:<privacy-scope>:<storage-epoch>:<account-scope>:<payload-hash>
+clairveil:v0.3.1:batch-transfer-artifact-encrypted:<privacy-scope>:<storage-epoch>:<account-scope>
+clairveil:v0.3.1:evm-deposit-artifact-encrypted:<privacy-scope>:<storage-epoch>:<account-scope>
+clairveil:v0.3.1:evm-operation-artifact-encrypted:<operation-id>:<privacy-scope>:<storage-epoch>:<account-scope>
 clairveil:v0.3.1:public-pending:<transaction-scope>:<storage-epoch>:<account-scope>
 clairveil:v0.3.1:privacy-pending:<transaction-scope>:<storage-epoch>:<account-scope>
 reservation namespace: <chain-id>:<privacy-scope>:<storage-epoch>:<account-scope>
@@ -49,14 +52,22 @@ opaque keyed identifier instead of a literal address. Never share a namespace
 across different privacy systems, chain IDs, wallet kinds, or transparent
 accounts.
 
-There is no batch-transfer checkpoint namespace in the checked-in example. A
-future product that exposes `prepareTransferBatch` must define a separate,
-reviewed account/profile-scoped encrypted checkpoint before enabling the SDK
-feature. That checkpoint must contain only the canonical prepared payload and
-proof needed to bind recovery to one reservation operation, retain the lock
-after an ambiguous external-boundary result, and be cleared only after terminal
-reconciliation. These requirements describe a future product contract; they do
-not authorize enabling batch transfer in this example.
+The dedicated batch checkpoint contains only the canonical prepared
+payload/proof, reservation identity, expected aggregate/item evidence, execution
+transport, and—when used—the validated EIP-712 authorization transaction
+binding. It is authenticated against the active profile, account, and exact
+storage key. Save it before the external boundary, keep every linked
+reservation locked after an ambiguous result, and clear it only after terminal
+typed reconciliation verifies the complete input and expected-output set.
+
+EVM deposit and private-operation artifacts are separate from the batch and
+relay namespaces. They bind the original prepared transaction, operation or
+reservation identity, and later wallet/receipt hash so receipt finality can be
+checked against what the wallet was asked to submit. Corrupt, missing, or
+identity-mismatched artifacts fail closed; they must not be replaced by a new
+prepare while the original operation remains unresolved. Every artifact
+mutation requires Web Locks and a final active-session check immediately before
+commit.
 
 For reservations, use `createBrowserReservationStore` with all of these
 properties:
@@ -284,7 +295,8 @@ support an in-place downgrade.
 1. Deploy code with the current `clairveil:v0.3.1:*` namespaces before loading
    wallet state.
 2. Do not compatibility-decode or migrate an earlier development cache,
-   reservation, operation, relay record, prepared payload, or proof.
+   reservation, operation, relay record, recovery artifact, prepared payload,
+   or proof.
 3. Initialize an empty current namespace, perform a full typed scan, and
    refresh all nullifiers before exposing the balance or planner.
 4. Do not upload old development records for migration or support diagnostics.
@@ -296,7 +308,9 @@ The checked-in DApp implements this baseline. It stores note state in
 `EncryptedLocalStorageNoteStore`, reservation state through encrypted
 `createBrowserReservationStore` IndexedDB callbacks with `requireLocks: true`,
 and payload-hash-keyed relay recovery metadata in the multi-record,
-Web-Locks-required `EncryptedLocalStorageOperationStore`. Each
+Web-Locks-required `EncryptedLocalStorageOperationStore`. Batch and EVM
+prepared-transaction recovery use the separate, one-record,
+Web-Locks-required `EncryptedRecoveryArtifactStore`. Each
 record uses an AES-GCM key that Web Crypto derives from current in-memory wallet
 material and its namespace; the key is non-extractable and is never stored
 alongside the ciphertext. If the required browser storage, IndexedDB, Web

@@ -45,20 +45,20 @@ POST /clairveil/privacy/v1/privacy_scan
 POST /clairveil/privacy/v1/commitment_paths_at_root
 ```
 
-Clients should prefer typed `privacy_scan` (`privacy-scan-v2`) for wallet note sync and persist the full `(height, global_sequence, output_index)` cursor. The reference SDK uses `scan_events` only when the source does not implement the typed query, then falls back to raw transaction search for older sources. A failure from an available typed source is terminal: silently downgrading could omit batch ciphertexts. The client should implement pagination/cursor persistence, response validation, and bounded retry. Public global projections such as `privacy_scan` and `scan_events` may use bounded endpoint failover, but a client must not change schema/cursor semantics while failing over. In the legacy fallback, `scan_events` can return an empty `events` array with `has_more=true` when a page contains only filtered-out event types; clients must still persist/advance to `next_height` and `next_sequence`. The raw `events` query remains a compatibility/debugging/auditor surface, not the preferred wallet sync contract.
+Wallet note sync must use typed `privacy_scan` (`privacy-scan-v2`) and persist the full `(height, global_sequence, output_index)` cursor. A typed-query failure is terminal. The client must implement pagination/cursor persistence, response validation, and bounded retry. Public projections may use bounded endpoint failover only when every endpoint preserves the same schema and cursor semantics. Raw event queries are operational diagnostics, not wallet-balance or batch-disclosure inputs.
 
 Retry and failover must be selected by operation type:
 
 | Operation | Default retry policy | Endpoint failover |
 | --- | --- | --- |
-| Public read queries such as `scan_events`, tree state, and module config | Retry transient network errors, timeouts, `408`, `429`, `502`, `503`, and `504` | Allowed when the product trusts the configured read endpoints |
+| Public read queries such as `privacy_scan`, tree state, and module config | Retry transient network errors, timeouts, `408`, `429`, `502`, `503`, and `504` | Allowed when the product trusts the configured read endpoints and each serves the same response contract |
 | `nullifier` / `nullifiers` queries | Retry on the same endpoint | Off by default; explicit privacy opt-in because failover reveals the queried nullifier set to another operator |
 | Signed tx broadcast | Off by default; recover through tx-hash lookup or `waitForTx` before deciding whether to resubmit the same tx bytes | Off by default |
 | Prover requests | Apply a finite timeout, cancellation, and response validation; automatic retry is product-defined | Multi-prover failover is off by default and requires an explicit privacy opt-in |
 
 Do not handle a signed/broadcast transaction like an idempotent read query. A timeout can occur after the transaction has already reached the mempool.
 
-Use `POST /clairveil/privacy/v1/nullifiers` with a JSON body for normal batch spent refresh. Send at most 1000 nullifiers per request and chunk larger wallets. The GET binding remains available for small compatibility checks, but large query strings can exceed browser, mobile gateway, or proxy URL limits.
+Use `POST /clairveil/privacy/v1/nullifiers` with a JSON body for normal batch spent refresh. Send at most 1000 nullifiers per request and chunk larger wallets. Use the GET binding only for small operational diagnostics; large query strings can exceed browser, mobile gateway, or proxy URL limits.
 
 Nullifier queries are privacy-sensitive because a wallet asking about a nullifier reveals that it may be tracking the corresponding note. The default policy should retry nullifier queries only against the same endpoint. Failing over the same nullifier set to a different public endpoint should be an explicit product/user opt-in.
 Treat only an explicit JSON boolean `used: false` as verified unspent. Missing, malformed, or failed nullifier results are unknown and must be excluded from spendable balance and planning until a successful refresh resolves them.
@@ -81,10 +81,16 @@ Important:
 - `MsgTransfer` includes absolute `expires_at_unix`, user disclosure, mandatory audit disclosure, optional sender self-view disclosure fields, encrypted output notes, and exactly two 2-byte `view_tags`.
 - `MsgDeposit` requires a deposit proof binding the transparent amount/asset to the note commitment.
 - `MsgWithdraw` has no output note fields.
-- `MsgBatchTransfer` is the one-proof `BatchJoinSplit16x32` message for 1..16 inputs and 1..32 outputs. Do not confuse it with the legacy CLI `transfer-batch`, which envelopes multiple `MsgTransfer` messages.
-- Clients must not create legacy `new_note_commitment` or `encrypted_note` withdraw values.
+- `MsgBatchTransfer` is the one-proof `BatchJoinSplit16x32` message for 1..16 inputs and 1..32 outputs.
 - Transfer `view_tags` are untrusted performance hints for local scan. They are included in the signed canonical payload digest but are not server-filterable ownership evidence. Safe default sync must still full-decrypt on a mismatch; skipping mismatch outputs requires explicit fast-mode opt-in and recovery/rescan support.
 - `creator` is intentionally replaceable for transfer and withdraw. Transfer outputs/disclosures/chain/expiry and withdraw recipient/chain/expiry are owner-intent/proof-bound.
+
+The EVM transport carries the same prepared effects through the Clairveil 0.3.1
+canonical privacy precompile calls. Deposit includes its proof and exact
+`msg.value`; transfer preserves self-view and absolute expiry; batch uses one
+`singleProofBatchTransfer`; withdraw uses the exact-match operation. Success
+requires a successful receipt, verified precompile call and privacy event,
+every input nullifier, and the expected output evidence.
 
 ## 4. Prover API
 
@@ -96,7 +102,7 @@ POST /v1/prover/withdraw
 POST /v1/proofs/batch-transfer
 ```
 
-The batch route is the one-proof reference surface provided by the batch integration. It uses a separate path namespace from the legacy transfer/withdraw prover routes and requires the batch prepared-payload/proof contract; clients must not derive one route from the other by string substitution.
+The batch route is dedicated to the one-proof batch prepared-payload/proof contract. Select every route by its declared request/response schema; clients must not derive one route from another by string substitution.
 
 Pin all four batch-transfer wire versions independently:
 
@@ -107,7 +113,7 @@ Pin all four batch-transfer wire versions independently:
 | Prover request envelope | `provertransport.BatchTransferProofRequestVersion` | `v1` |
 | Prover response envelope | `provertransport.BatchTransferProofResponseVersion` | `v1` |
 
-The request/response envelope version does not replace the nested payload/proof version. Reject a mismatch in any layer and regenerate the prepared operation rather than guessing compatibility.
+The request/response envelope version does not replace the nested payload/proof version. Reject a mismatch in any layer.
 
 The client must validate:
 
@@ -120,7 +126,7 @@ The client must validate:
 - auth failure
 - malformed response
 
-Current breaking versions are transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload and proof/request/response `v2`, batch payload/proof/request/response `batch-transfer-payload-v1`/`batch-transfer-proof-v1`/`v1`/`v1`, relay handoff/schema `v2`, and disclosure plaintext/query `privacy-fixed-v1`. Reject and regenerate legacy payloads.
+Required versions are transfer payload `v5`, transfer proof/request/response `v2`, withdraw prover/final payload and proof/request/response `v2`, batch payload/proof/request/response `batch-transfer-payload-v1`/`batch-transfer-proof-v1`/`v1`/`v1`, relay handoff/schema `v2`, and disclosure plaintext/query `privacy-fixed-v1`. Reject every other version.
 
 When using a remote prover, request/response bodies are privacy-sensitive data.
 
@@ -168,11 +174,11 @@ go test ./x/privacy/client/sdk/conformance -run '^TestBatchTransferContract$' -c
 Minimum validation before client release:
 
 - deposit e2e
-- note scan/rescan through preferred `privacy_scan` V2 with the full cursor and fail-closed typed response validation; legacy `scan_events` fallback retains `(height, sequence)` and empty-page/`has_more` handling
+- note scan/rescan through `privacy_scan` V2 with the full cursor and fail-closed typed response validation
 - unsupported `scan_format_version` or `view_tag_version` does not advance the wallet cursor silently
 - forced rescan/recovery treats view tag mismatches as non-authoritative and runs full trial decrypt
-- batch spent refresh through `nullifiers` in <=1000-item chunks, with fallback behavior for individual nullifier checks if needed
-- shielded transfer e2e
+- batch spent refresh through `nullifiers` in <=1000-item chunks, with individual nullifier queries for diagnostics and recovery
+- shielded transfer and one-proof batch e2e over both Cosmos and EVM
 - public disclosure decode/verify
 - recipient-encrypted disclosure decode/verify
 - sender self-view disclosure decode/verify
@@ -190,9 +196,10 @@ Minimum validation before client release:
 
 Downstream release gates are not satisfied by repository-level `make examples` alone. The downstream client also needs testnet e2e with its real chain prefix, denom, endpoints, audit pubkey, and prover topology.
 
-## 8. Compatibility Checklist
+## 8. Contract Change Checklist
 
-Changes with breaking or migration impact:
+Update the related implementation and documentation whenever one of these
+contracts changes:
 
 - `proto/clairveil/privacy/v1` field/message/service changes
 - payload hash calculation changes
@@ -210,7 +217,7 @@ Changes with breaking or migration impact:
 
 When these change, update the client product brief, UX flows, risk decisions, API checklist, JS SDK handoff, WebApp scope/integration/storage/deployment documents, and release note impact together.
 
-Adopting this contract requires clearing cached prepared payloads, proof responses/jobs, and old local development artifacts, regenerating `privacy-note-v1` artifacts, and resyncing any client cache that persisted old circuit or disclosure-version metadata. There is no legacy prepared-payload decode path.
+A client deployment generates the exact `privacy-note-v1` artifacts and starts each account/profile namespace empty, completing a full typed scan and nullifier refresh before preparing an operation.
 
 ## 9. Related Documents
 
@@ -233,7 +240,7 @@ The repository now includes the batch chain core plus the reference Go batch SDK
 - [ ] Encode note/disclosure/envelope payloads as canonical `privacy-fixed-v1`; reject raw ciphertext, JSON plaintext, incorrect envelope kind, non-zero reserved bytes, and trailing bytes.
 - [ ] Treat `AssetRegistryV1` as authoritative for denom-to-`asset_id` and reverse lookup; fail closed on missing, colliding, or inconsistent entries.
 - [ ] Consume unified `privacy-scan-v2` state with the full `(height, global_sequence, output_index)` cursor and request a path snapshot for the exact selected root. Current-root paths use incremental nodes and do not consume the online historical-rebuild budget. A non-current historical path requires persisted root/count/height metadata; the public query admits at most 1,024 leaves and two concurrent rebuilds per keeper, otherwise it returns `ResourceExhausted`. Use the current root or a trusted local historical index above that online bound. The separate offline recovery/export bound remains `MaxMerkleRebuildLeaves` (1,048,576). Retain the warning that remote historical root/path queries may leak wallet interest.
-- [ ] Clear note/scan/proof caches and old artifacts, start from fresh genesis, regenerate `privacy-note-v1` artifacts, and rescan. Do not offer legacy decode or in-place migration.
+- [ ] Start from fresh genesis, generate the exact `privacy-note-v1` artifacts, and initialize empty note/scan/proof namespaces through a full typed scan.
 - [ ] Treat the production batch public statement as exactly these 12 fields in order: `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`. The repository reference path reproduces the core conformance fixtures; every downstream implementation must independently reproduce them before advertising support.
 - [ ] Use role-aware artifact readiness: validator VK only; prover selected R1CS/PK loaded lazily. Configure per-circuit admission with defaults `max_in_flight=1`, `max_queued=4`, and positive `max_request_bytes=8388608`; zero is invalid.
 - [ ] Expose only the bounded `proverservice.Handler`, never the raw transport handler. Keep automatic prover failover off. Model cancellation as client-wait cancellation, not guaranteed solver termination; use process isolation for a hard resource boundary.

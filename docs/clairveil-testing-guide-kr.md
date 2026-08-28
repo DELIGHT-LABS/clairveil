@@ -155,7 +155,7 @@ make validate-joinsplit-artifact-rotation-evidence
 
 이 target은 synthetic missing/duplicate/unknown/tamper regression인 `TestJoinSplitArtifactRotationSnapshotValidation`을 먼저 실행한 뒤 `TestJoinSplitDevelopmentArtifactRotationGate`(`CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_ROTATION_GATE=1`), `TestJoinSplitOldAndNewProofIdentitiesAreMutuallyExclusive`(`CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_PROOF_ROTATION_GATE=1`), `TestFreshGenesisUsesRotatedJoinSplitIdentity`(`CLAIRVEIL_RUN_JOINSPLIT_FRESH_GENESIS_GATE=1`)을 실행합니다. Proof-rotation gate는 prove 전에 actual current R1CS SHA-256을 current-source `JoinSplitCircuit`의 exact serialization과 비교하므로 constraint 수만 같은 foreign relation은 실패합니다. Exact test가 없거나 skip되거나 `[no tests to run]`이면 wrapper가 실패합니다.
 
-batch reference integration은 public `MsgBatchTransfer` Go SDK/builder, `POST /v1/proofs/batch-transfer`, typed scanner/decrypt/disclosure 검증, durable one-proof payroll integration, 단계형/통합 CLI command, 한영 localnet tutorial을 추가합니다. `go test ./x/privacy/client/sdk/... -count=1`, `make privacy-batch-joinsplit-localnet`, 그리고 충분한 자원의 host에서 `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`을 실행합니다. 기존 `transfer-batch`와 reference payroll target은 독립적인 multi-message regression 경로로 유지합니다. 이 gate는 chain/reference/SDK batch contract를 검증할 뿐 `examples/clairveil-dapp`의 batch submission을 활성화하지 않습니다. V0.3.1 server feature는 false로 유지되고 UI에는 one-proof batch flow가 없습니다.
+batch reference integration은 public `MsgBatchTransfer` Go SDK/builder, `POST /v1/proofs/batch-transfer`, typed scanner/decrypt/disclosure 검증, durable one-proof payroll integration, 단계형/통합 CLI command, 한영 localnet tutorial을 추가합니다. `go test ./x/privacy/client/sdk/... -count=1`, `make privacy-batch-joinsplit-localnet`, 그리고 충분한 자원의 host에서 `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`을 실행합니다. 기존 `transfer-batch`와 reference payroll target은 독립적인 multi-message regression 경로로 유지합니다. 이 gate는 chain/reference/SDK contract를 검증하며 example WebApp batch flow에는 explicit feature gate와 Cosmos/EVM browser recovery test가 추가로 필요합니다.
 
 Prepared transfer payload `v5`는 현재 outer prepared-payload contract로 그대로 유효합니다. 이 version을 inner note/disclosure encoding과 혼동하면 안 됩니다. Inner canonical payload와 envelope는 `privacy-fixed-v1`입니다. Compatibility fallback은 금지됩니다. Example은 sibling ClairveilJS 0.3.1 checkout을 resolve하고 V5/V2 preparation/proof contract에 대한 required conformance suite를 통과해야 합니다. 아직 release되지 않은 이 WebApp은 current v0.3.1 namespace의 fresh state만 지원합니다. Test는 이전 development cache나 lifecycle record를 decode/migrate하지 않고 full typed rescan을 요구하며 in-place downgrade를 지원하지 않음을 증명해야 합니다.
 
@@ -194,7 +194,11 @@ npm --prefix examples/clairveil-dapp run test:clairveiljs
 - timeout/auth client shape
 - browser DApp boundary check, static bundle 최신성, local helper route policy, ClairveilJS package surface smoke test
 - current v0.3.1 fresh-state 초기화와 legacy lifecycle migration 미지원
-- `serverFeatures.batchTransfer=false`와 one-proof batch submission UI 미제공
+- Batch feature gate off/on, encrypted checkpoint reload, canonical Cosmos/EVM
+  one-proof 제출/reconciliation
+- Payable exact-value EVM deposit, receipt/finality binding, optional
+  profile-scoped contract/privacy-state adapter, configured EIP-712 batch
+  authorization과 typed audit recovery
 
 `make examples`는 deployed origin을 검증할 수 없습니다. Public WebApp release 전에는 최종 HTTPS endpoint value로 `npm --prefix examples/clairveil-dapp run verify:production-deployment`를 실행하고, 같은 origin에서 Keplr/MetaMask manual flow를 완료합니다. [WebApp deployment guide](clairveil-web-app-deployment-kr.md)를 참고합니다.
 
