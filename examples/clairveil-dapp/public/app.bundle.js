@@ -3903,8 +3903,8 @@ var require_sleep = __commonJS({
   "node_modules/clairveiljs/node_modules/@cosmjs/utils/build/sleep.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
-    exports.sleep = sleep2;
-    async function sleep2(ms) {
+    exports.sleep = sleep4;
+    async function sleep4(ms) {
       return new Promise((resolve) => setTimeout(resolve, ms));
     }
   }
@@ -14069,8 +14069,8 @@ var require_decimal = __commonJS({
         if (fractional.length > fractionalDigits) {
           throw new Error("Got more fractional digits than supported");
         }
-        const quantity = BigInt(`${whole}${fractional.padEnd(fractionalDigits, "0")}`);
-        return new _Decimal(quantity, fractionalDigits);
+        const quantity2 = BigInt(`${whole}${fractional.padEnd(fractionalDigits, "0")}`);
+        return new _Decimal(quantity2, fractionalDigits);
       }
       /**
        * Constructs a decimal given the atomic units and the fractional digits.
@@ -20495,11 +20495,11 @@ var require_logs = __commonJS({
       }));
       return parseLogs(logsToParse);
     }
-    function findAttribute(logs, eventType, attrKey) {
+    function findAttribute(logs, eventType2, attrKey) {
       const firstLogs = logs.find(() => true);
-      const out = firstLogs?.events.find((event) => event.type === eventType)?.attributes.find((attr) => attr.key === attrKey);
+      const out = firstLogs?.events.find((event) => event.type === eventType2)?.attributes.find((attr) => attr.key === attrKey);
       if (!out) {
-        throw new Error(`Could not find attribute '${attrKey}' in first event of type '${eventType}' in first log.`);
+        throw new Error(`Could not find attribute '${attrKey}' in first event of type '${eventType2}' in first log.`);
       }
       return out;
     }
@@ -76263,12 +76263,12 @@ function disclosureField(payload, names, label, options) {
 function normalizeDisclosurePlaintextV1(payload) {
   if (!payload || typeof payload !== "object") throw new Error("DisclosurePlaintextV1 is required");
   const plane = Number(payload.plane ?? 0);
-  const outputIndex = Number(uint(payload.outputIndex ?? payload.output_index ?? 0, 32, "disclosure output index"));
+  const outputIndex2 = Number(uint(payload.outputIndex ?? payload.output_index ?? 0, 32, "disclosure output index"));
   const policy = Number(uint(payload.policy ?? 0, 32, "disclosure policy"));
   const disclosedFieldBitmap = Number(uint(payload.disclosedFieldBitmap ?? payload.disclosed_field_bitmap ?? 0, 32, "disclosure bitmap"));
   const value = {
     plane,
-    outputIndex,
+    outputIndex: outputIndex2,
     policy,
     disclosedFieldBitmap,
     commitment: disclosureField(payload, ["commitment"], "disclosure commitment", { nonZero: true }),
@@ -76367,7 +76367,7 @@ function unmarshalDisclosurePlaintextV1(value) {
   offset += 1;
   if (encoded[offset] !== 0) throw new Error("DisclosurePlaintextV1 reserved byte must be zero");
   offset += 1;
-  const outputIndex = readU32(encoded, offset);
+  const outputIndex2 = readU32(encoded, offset);
   offset += 4;
   const policy = readU32(encoded, offset);
   offset += 4;
@@ -76384,7 +76384,7 @@ function unmarshalDisclosurePlaintextV1(value) {
   }
   return normalizeDisclosurePlaintextV1({
     plane,
-    outputIndex,
+    outputIndex: outputIndex2,
     policy,
     disclosedFieldBitmap,
     commitment,
@@ -76488,9 +76488,9 @@ function validateBatchKeyBundle(values, label) {
   pointFromCoordinates(values[0], values[1], `${label} spend public key`);
   pointFromCoordinates(values[2], values[3], `${label} view public key`);
 }
-function validateBatchJoinSplitCountsV1(inputCount, outputCount) {
+function validateBatchJoinSplitCountsV1(inputCount, outputCount2) {
   const inputs = Number(uint(inputCount, 32, "batch input count"));
-  const outputs = Number(uint(outputCount, 32, "batch output count"));
+  const outputs = Number(uint(outputCount2, 32, "batch output count"));
   if (inputs < 1 || inputs > 16) throw new Error("batch input count must be in 1..16");
   if (outputs < 1 || outputs > 32) throw new Error("batch output count must be in 1..32");
   return true;
@@ -76539,7 +76539,7 @@ function computeBatchUserDisclosureVectorRootV1(count, policies, rawDigests) {
   return computeBatchVectorRootV1(batchVectorKindV1.userDisclosure, active, values);
 }
 function computeBatchUserDisclosureDigestV1(input) {
-  const outputIndex = uint(input?.outputIndex ?? input?.output_index ?? 0, 32, "batch user disclosure output index");
+  const outputIndex2 = uint(input?.outputIndex ?? input?.output_index ?? 0, 32, "batch user disclosure output index");
   const commitment = requireBatchField(input, ["commitment"], "batch user disclosure commitment", { nonZero: true });
   const policy = Number(uint(input?.policy ?? 0, 32, "batch user disclosure policy"));
   const bitmap = Number(uint(input?.disclosedFieldBitmap ?? input?.disclosed_field_bitmap ?? 0, 32, "batch user disclosure bitmap"));
@@ -76567,7 +76567,7 @@ function computeBatchUserDisclosureDigestV1(input) {
   const userBlinding = field(blinding, "batch user disclosure blinding", { nonZero: true });
   return mimcHash(
     domainFieldV1("clairveil.user-disclosure.v2"),
-    outputIndex,
+    outputIndex2,
     commitment,
     BigInt(policy),
     BigInt(bitmap),
@@ -76579,7 +76579,7 @@ function computeBatchUserDisclosureDigestV1(input) {
   );
 }
 function computeBatchFullDisclosureDigestV1(input) {
-  const outputIndex = uint(input?.outputIndex ?? input?.output_index ?? 0, 32, "batch full disclosure output index");
+  const outputIndex2 = uint(input?.outputIndex ?? input?.output_index ?? 0, 32, "batch full disclosure output index");
   const commitment = requireBatchField(input, ["commitment"], "batch full disclosure commitment", { nonZero: true });
   const amount = uint(input?.amount, 64, "batch full disclosure amount");
   const assetID = requireBatchField(input, ["assetID", "assetId", "asset_id"], "batch full disclosure asset ID", { nonZero: true });
@@ -76590,7 +76590,7 @@ function computeBatchFullDisclosureDigestV1(input) {
   const fullBlinding = requireBatchField(input, ["fullDisclosureBlinding", "full_disclosure_blinding", "disclosureBlinding"], "batch full disclosure blinding", { nonZero: true });
   return mimcHash(
     domainFieldV1("clairveil.full-disclosure.v2"),
-    outputIndex,
+    outputIndex2,
     commitment,
     amount,
     assetID,
@@ -76601,8 +76601,8 @@ function computeBatchFullDisclosureDigestV1(input) {
 }
 function computeBatchTransferIntentV1(input = {}) {
   const inputCount = Number(uint(input.inputCount ?? input.input_count ?? 0, 32, "batch input count"));
-  const outputCount = Number(uint(input.outputCount ?? input.output_count ?? 0, 32, "batch output count"));
-  validateBatchJoinSplitCountsV1(inputCount, outputCount);
+  const outputCount2 = Number(uint(input.outputCount ?? input.output_count ?? 0, 32, "batch output count"));
+  validateBatchJoinSplitCountsV1(inputCount, outputCount2);
   const chainDomain = input.chainDomain || {};
   const payloadDigest = input.payloadDigest || {};
   const chainHi = requireBatchField({ ...input, chainDomainHi: input.chainDomainHi ?? chainDomain.hi }, ["chainDomainHi", "chain_domain_hi"], "batch chain domain hi");
@@ -76627,7 +76627,7 @@ function computeBatchTransferIntentV1(input = {}) {
     domainFieldV1("clairveil.batch-joinsplit-16x32.v1"),
     merkleRoot,
     BigInt(inputCount),
-    BigInt(outputCount),
+    BigInt(outputCount2),
     assetID,
     nullifierRoot,
     commitmentRoot,
@@ -76657,13 +76657,13 @@ function unwrapEncryptedEnvelopeV1(value, expectedKind) {
   if (raw.length !== envelopeCiphertextSize(kind)) throw new Error(`encrypted envelope kind ${kind} has invalid fixed length`);
   return raw;
 }
-function encryptNoteForTransferV1(note, outputCommitment, outputIndex) {
+function encryptNoteForTransferV1(note, outputCommitment, outputIndex2) {
   const normalized = validateNoteV1(note);
   const raw = asymEncryptWithViewTagV1(
     marshalNotePlaintextV1(normalized),
     { x: normalized.receiverViewPubKeyX, y: normalized.receiverViewPubKeyY },
     outputCommitment,
-    outputIndex
+    outputIndex2
   );
   return {
     ciphertext: wrapEncryptedEnvelopeV1(encryptedEnvelopeKindV1.transferNote, raw.ciphertext),
@@ -76712,10 +76712,10 @@ function asymEncryptV1(plaintext, receiver) {
   const encrypted = aesGcmEncrypt({ key: sha2562(packPoint(sharedPoint)), nonce, plaintext });
   return { ciphertext: concatBytes4(packPoint(ephemeral), nonce, encrypted), sharedPoint };
 }
-function asymEncryptWithViewTagV1(plaintext, receiver, outputCommitment, outputIndex) {
+function asymEncryptWithViewTagV1(plaintext, receiver, outputCommitment, outputIndex2) {
   const { ciphertext, sharedPoint } = asymEncryptV1(plaintext, receiver);
   const commitment = fieldFromBytes(outputCommitment, "output commitment", { nonZero: true });
-  const tag = canonicalFieldBytes(mimcHash(hashStringToField("clairveil.view_tag.v1"), sharedPoint.x, sharedPoint.y, bytesToBigIntBE(commitment), uint(outputIndex, 32, "output index"))).slice(0, 2);
+  const tag = canonicalFieldBytes(mimcHash(hashStringToField("clairveil.view_tag.v1"), sharedPoint.x, sharedPoint.y, bytesToBigIntBE(commitment), uint(outputIndex2, 32, "output index"))).slice(0, 2);
   return { ciphertext, viewTag: tag };
 }
 function asymDecryptV1(ciphertext, scalar) {
@@ -77432,6 +77432,44 @@ var privacyScanEventTypeV2 = Object.freeze({
 var privacyScanValidationStateVersionV2 = "privacy-scan-validation-v2";
 var validatedPrivacyScanOutputBrandV2 = /* @__PURE__ */ Symbol("validatedPrivacyScanOutputV2");
 var validatedPrivacyScanPageBrandV2 = /* @__PURE__ */ Symbol("validatedPrivacyScanPageV2");
+var validatedPrivacyScanOutputIntegrityV2 = /* @__PURE__ */ new WeakMap();
+var validatedPrivacyScanPageIntegrityV2 = /* @__PURE__ */ new WeakMap();
+function scanIntegrityValue(value, seen = /* @__PURE__ */ new Set()) {
+  if (value instanceof Uint8Array) return ["bytes", hexFromBytes(value)];
+  if (Array.isArray(value)) {
+    if (seen.has(value)) throw new Error("privacy scan value contains a cycle");
+    seen.add(value);
+    const normalized = ["array", value.map((entry) => scanIntegrityValue(entry, seen))];
+    seen.delete(value);
+    return normalized;
+  }
+  if (value && typeof value === "object") {
+    if (seen.has(value)) throw new Error("privacy scan value contains a cycle");
+    seen.add(value);
+    const normalized = ["object", Object.keys(value).sort().map((key) => [
+      key,
+      scanIntegrityValue(value[key], seen)
+    ])];
+    seen.delete(value);
+    return normalized;
+  }
+  if (typeof value === "bigint") return ["bigint", value.toString()];
+  if (value === void 0) return ["undefined"];
+  return [typeof value, value];
+}
+function scanIntegrityFingerprint(value) {
+  return JSON.stringify(scanIntegrityValue(value));
+}
+function hasCurrentScanIntegrity(value, brand, registry) {
+  if (!value || typeof value !== "object" || !Object.prototype.hasOwnProperty.call(value, brand) || value[brand] !== true || !registry.has(value)) {
+    return false;
+  }
+  try {
+    return registry.get(value) === scanIntegrityFingerprint(value);
+  } catch {
+    return false;
+  }
+}
 var maxUint642 = (1n << 64n) - 1n;
 function parseNullifierUsage(value) {
   if (typeof value === "boolean") return value;
@@ -77554,11 +77592,11 @@ function processPrivacyEvent(event, { rootSeed, spendScalar, viewScalar } = {}) 
   if (Array.isArray(event?.outputs) || Array.isArray(event?.Outputs)) {
     return processScanProjectionEvent(event, rootSeed, spendScalar, viewScalar);
   }
-  const eventType = event?.event_type ?? event?.eventType;
-  if (eventType === "deposit") {
+  const eventType2 = event?.event_type ?? event?.eventType;
+  if (eventType2 === "deposit") {
     return processDepositEvent(event, rootSeed);
   }
-  if (eventType === "shielded_transfer") {
+  if (eventType2 === "shielded_transfer") {
     return processTransferEvent(event, spendScalar, viewScalar);
   }
   return [];
@@ -77691,8 +77729,8 @@ function scanCursor(value, label = "privacy scan cursor", { required = true } = 
     throw new Error(`${label} height exceeds int64`);
   }
   const globalSequence = aliasedScanValue(value, ["globalSequence", "global_sequence"], `${label} global sequence`, (raw) => scanUint64Value(raw, `${label} global sequence`), { required: false, fallback: 0 });
-  const outputIndex = aliasedScanValue(value, ["outputIndex", "output_index"], `${label} output index`, (raw) => scanUint32(raw, `${label} output index`), { required: false, fallback: 0 });
-  return Object.freeze({ height, global_sequence: globalSequence, output_index: outputIndex });
+  const outputIndex2 = aliasedScanValue(value, ["outputIndex", "output_index"], `${label} output index`, (raw) => scanUint32(raw, `${label} output index`), { required: false, fallback: 0 });
+  return Object.freeze({ height, global_sequence: globalSequence, output_index: outputIndex2 });
 }
 function compareScanCursor(left, right) {
   const leftHeight = scanUint64(left.height, "privacy scan cursor height");
@@ -77740,8 +77778,8 @@ function scanSummary(input, index) {
   if (scanUint64(height, `privacy scan summary ${index} height`) > (1n << 63n) - 1n) throw new Error(`privacy scan summary ${index} height exceeds int64`);
   const globalSequence = aliasedScanValue(input, ["globalSequence", "global_sequence"], `privacy scan summary ${index} global sequence`, (raw) => scanUint64Value(raw, `privacy scan summary ${index} global sequence`));
   if (scanUint64(globalSequence, `privacy scan summary ${index} global sequence`) === 0n) throw new Error(`privacy scan summary ${index} global sequence must be positive`);
-  const eventType = aliasedScanValue(input, ["eventType", "event_type"], `privacy scan summary ${index} event type`, (raw) => scanString(raw, `privacy scan summary ${index} event type`));
-  const outputCount = aliasedScanValue(input, ["outputCount", "output_count"], `privacy scan summary ${index} output count`, (raw) => scanOutputCount(raw, `privacy scan summary ${index} output count`), { required: false, fallback: 0 });
+  const eventType2 = aliasedScanValue(input, ["eventType", "event_type"], `privacy scan summary ${index} event type`, (raw) => scanString(raw, `privacy scan summary ${index} event type`));
+  const outputCount2 = aliasedScanValue(input, ["outputCount", "output_count"], `privacy scan summary ${index} output count`, (raw) => scanOutputCount(raw, `privacy scan summary ${index} output count`), { required: false, fallback: 0 });
   const circuitSetId = aliasedScanValue(input, ["circuitSetId", "circuit_set_id"], `privacy scan summary ${index} circuit set`, (raw) => scanString(raw, `privacy scan summary ${index} circuit set`));
   const payloadVersion = aliasedScanValue(input, ["payloadVersion", "payload_version"], `privacy scan summary ${index} payload version`, (raw) => scanString(raw, `privacy scan summary ${index} payload version`));
   const scanSchemaVersion = aliasedScanValue(input, ["scanSchemaVersion", "scan_schema_version"], `privacy scan summary ${index} schema version`, (raw) => scanString(raw, `privacy scan summary ${index} schema version`));
@@ -77762,9 +77800,9 @@ function scanSummary(input, index) {
     height,
     global_sequence: globalSequence,
     tx_hash: txHash,
-    event_type: eventType,
+    event_type: eventType2,
     nullifiers: Object.freeze(nullifiers.map((value) => value.bytes)),
-    output_count: outputCount,
+    output_count: outputCount2,
     circuit_set_id: circuitSetId,
     payload_version: payloadVersion,
     scan_schema_version: scanSchemaVersion,
@@ -77776,17 +77814,17 @@ function scanSummary(input, index) {
   if (new Set(nullifiers.map((value) => value.hex)).size !== nullifiers.length) {
     throw new Error(`privacy scan summary ${index} nullifiers must be distinct`);
   }
-  if (eventType === privacyScanEventTypeV2.deposit) {
-    if (outputCount !== 1 || nullifiers.length || effectId.length) throw new Error(`privacy scan summary ${index} has invalid deposit framing`);
+  if (eventType2 === privacyScanEventTypeV2.deposit) {
+    if (outputCount2 !== 1 || nullifiers.length || effectId.length) throw new Error(`privacy scan summary ${index} has invalid deposit framing`);
     scanZeroAuditSentinel(summary, `privacy scan summary ${index} deposit`);
-  } else if (eventType === privacyScanEventTypeV2.shieldedTransfer) {
-    if (outputCount !== 2 || nullifiers.length !== 2 || effectId.length) throw new Error(`privacy scan summary ${index} has invalid shielded-transfer framing`);
+  } else if (eventType2 === privacyScanEventTypeV2.shieldedTransfer) {
+    if (outputCount2 !== 2 || nullifiers.length !== 2 || effectId.length) throw new Error(`privacy scan summary ${index} has invalid shielded-transfer framing`);
     if (auditKeyId || scanUint64(auditKeyEpoch, `privacy scan summary ${index} audit key epoch`) !== 0n) {
       throw new Error(`privacy scan summary ${index} shielded transfer must use the zero audit ID/epoch sentinel`);
     }
     scanNonIdentityPoint(auditTargetPubkey, `privacy scan summary ${index} shielded transfer audit target`);
-  } else if (eventType === privacyScanEventTypeV2.batchTransfer) {
-    if (outputCount < 1 || outputCount > 32 || nullifiers.length < 1 || nullifiers.length > 16) {
+  } else if (eventType2 === privacyScanEventTypeV2.batchTransfer) {
+    if (outputCount2 < 1 || outputCount2 > 32 || nullifiers.length < 1 || nullifiers.length > 16) {
       throw new Error(`privacy scan summary ${index} has invalid batch counts`);
     }
     scanNonZeroHash(effectId, `privacy scan summary ${index} effect ID`);
@@ -77794,11 +77832,11 @@ function scanSummary(input, index) {
       throw new Error(`privacy scan summary ${index} has invalid batch audit identity`);
     }
     scanNonIdentityPoint(auditTargetPubkey, `privacy scan summary ${index} batch audit target`);
-  } else if (eventType === privacyScanEventTypeV2.withdraw) {
-    if (outputCount !== 0 || nullifiers.length !== 1 || effectId.length) throw new Error(`privacy scan summary ${index} has invalid withdraw framing`);
+  } else if (eventType2 === privacyScanEventTypeV2.withdraw) {
+    if (outputCount2 !== 0 || nullifiers.length !== 1 || effectId.length) throw new Error(`privacy scan summary ${index} has invalid withdraw framing`);
     scanZeroAuditSentinel(summary, `privacy scan summary ${index} withdraw`);
   } else {
-    throw new Error(`privacy scan summary ${index} has unsupported event type ${JSON.stringify(eventType)}`);
+    throw new Error(`privacy scan summary ${index} has unsupported event type ${JSON.stringify(eventType2)}`);
   }
   return summary;
 }
@@ -77845,8 +77883,8 @@ function scanOutput(input, index, summaries) {
   const height = aliasedScanValue(input, ["height"], `privacy scan output ${index} height`, (raw) => scanUint64Value(raw, `privacy scan output ${index} height`));
   if (scanUint64(height, `privacy scan output ${index} height`) > (1n << 63n) - 1n) throw new Error(`privacy scan output ${index} height exceeds int64`);
   const globalSequence = aliasedScanValue(input, ["globalSequence", "global_sequence"], `privacy scan output ${index} global sequence`, (raw) => scanUint64Value(raw, `privacy scan output ${index} global sequence`));
-  const outputIndex = aliasedScanValue(input, ["outputIndex", "output_index"], `privacy scan output ${index} output index`, (raw) => scanUint32(raw, `privacy scan output ${index} output index`), { required: false, fallback: 0 });
-  const eventType = aliasedScanValue(input, ["eventType", "event_type"], `privacy scan output ${index} event type`, (raw) => scanString(raw, `privacy scan output ${index} event type`));
+  const outputIndex2 = aliasedScanValue(input, ["outputIndex", "output_index"], `privacy scan output ${index} output index`, (raw) => scanUint32(raw, `privacy scan output ${index} output index`), { required: false, fallback: 0 });
+  const eventType2 = aliasedScanValue(input, ["eventType", "event_type"], `privacy scan output ${index} event type`, (raw) => scanString(raw, `privacy scan output ${index} event type`));
   const summary = summaries.get(scanEventKey({ height, global_sequence: globalSequence }));
   if (!summary) throw new Error(`privacy scan output ${index} has no page summary`);
   const effectId = scanOptionalBytes(input, ["effectId", "effect_id"], `privacy scan output ${index} effect ID`);
@@ -77854,7 +77892,7 @@ function scanOutput(input, index, summaries) {
   const circuitSetId = aliasedScanValue(input, ["circuitSetId", "circuit_set_id"], `privacy scan output ${index} circuit set`, (raw) => scanString(raw, `privacy scan output ${index} circuit set`));
   const payloadVersion = aliasedScanValue(input, ["payloadVersion", "payload_version"], `privacy scan output ${index} payload version`, (raw) => scanString(raw, `privacy scan output ${index} payload version`));
   const scanSchemaVersion = aliasedScanValue(input, ["scanSchemaVersion", "scan_schema_version"], `privacy scan output ${index} schema version`, (raw) => scanString(raw, `privacy scan output ${index} schema version`));
-  if (eventType !== summary.event_type || outputIndex >= summary.output_count || !equalScanBytes(effectId, summary.effect_id) || !equalScanBytes(txHash, summary.tx_hash) || circuitSetId !== summary.circuit_set_id || payloadVersion !== summary.payload_version || scanSchemaVersion !== summary.scan_schema_version) {
+  if (eventType2 !== summary.event_type || outputIndex2 >= summary.output_count || !equalScanBytes(effectId, summary.effect_id) || !equalScanBytes(txHash, summary.tx_hash) || circuitSetId !== summary.circuit_set_id || payloadVersion !== summary.payload_version || scanSchemaVersion !== summary.scan_schema_version) {
     throw new Error(`privacy scan output ${index} does not match its summary identity`);
   }
   const commitment = scanCanonicalField(
@@ -77871,7 +77909,7 @@ function scanOutput(input, index, summaries) {
   const output = {
     height,
     global_sequence: globalSequence,
-    output_index: outputIndex,
+    output_index: outputIndex2,
     effect_id: effectId,
     commitment,
     ciphertext: scanOptionalBytes(input, ["ciphertext"], `privacy scan output ${index} ciphertext`),
@@ -77894,32 +77932,37 @@ function scanOutput(input, index, summaries) {
     audit_key_epoch: aliasedScanValue(input, ["auditKeyEpoch", "audit_key_epoch"], `privacy scan output ${index} audit key epoch`, (raw) => scanUint64Value(raw, `privacy scan output ${index} audit key epoch`), { required: false, fallback: 0 }),
     audit_target_pubkey: scanOptionalBytes(input, ["auditTargetPubkey", "audit_target_pubkey"], `privacy scan output ${index} audit target`),
     tx_hash: txHash,
-    event_type: eventType
+    event_type: eventType2
   };
-  Object.defineProperty(output, validatedPrivacyScanOutputBrandV2, { value: true });
-  Object.freeze(output);
   if (output.audit_key_id !== summary.audit_key_id || String(output.audit_key_epoch) !== String(summary.audit_key_epoch) || !equalScanBytes(output.audit_target_pubkey, summary.audit_target_pubkey)) {
     throw new Error(`privacy scan output ${index} does not match its summary audit identity`);
   }
-  if (eventType === privacyScanEventTypeV2.deposit) {
+  if (eventType2 === privacyScanEventTypeV2.deposit) {
     if (output.ciphertext.length || output.view_tag.length) throw new Error(`privacy scan output ${index} deposit framing is invalid`);
     unwrapEncryptedEnvelopeV1(output.encrypted_note, encryptedEnvelopeKindV1.depositNote);
     scanZeroDisclosureSentinel(output, `privacy scan output ${index} deposit`);
-  } else if (eventType === privacyScanEventTypeV2.shieldedTransfer || eventType === privacyScanEventTypeV2.batchTransfer) {
+  } else if (eventType2 === privacyScanEventTypeV2.shieldedTransfer || eventType2 === privacyScanEventTypeV2.batchTransfer) {
     if (output.encrypted_note.length || output.view_tag.length !== 2) throw new Error(`privacy scan output ${index} transfer framing is invalid`);
     unwrapEncryptedEnvelopeV1(output.ciphertext, encryptedEnvelopeKindV1.transferNote);
-    if (eventType === privacyScanEventTypeV2.shieldedTransfer && output.output_index === 1) {
+    if (eventType2 === privacyScanEventTypeV2.shieldedTransfer && output.output_index === 1) {
       scanZeroDisclosureSentinel(output, `privacy scan output ${index} shielded-transfer change`);
     } else {
       scanBatchOutputDisclosure(output, `privacy scan output ${index}`);
     }
   } else {
-    throw new Error(`privacy scan output ${index} has unsupported event type ${JSON.stringify(eventType)}`);
+    throw new Error(`privacy scan output ${index} has unsupported event type ${JSON.stringify(eventType2)}`);
   }
+  Object.defineProperty(output, validatedPrivacyScanOutputBrandV2, { value: true });
+  Object.freeze(output);
+  validatedPrivacyScanOutputIntegrityV2.set(output, scanIntegrityFingerprint(output));
   return output;
 }
 function isValidatedPrivacyScanOutputV2(value) {
-  return Boolean(value && typeof value === "object" && value[validatedPrivacyScanOutputBrandV2] === true);
+  return hasCurrentScanIntegrity(
+    value,
+    validatedPrivacyScanOutputBrandV2,
+    validatedPrivacyScanOutputIntegrityV2
+  );
 }
 function scanRequest(input = {}) {
   const after = scanCursor(input.after, "privacy scan request after", { required: false });
@@ -77987,11 +78030,11 @@ function scanSnapshotHex(value, label) {
   }
   return value ? bytesFromHex(value, label) : new Uint8Array();
 }
-function scanPendingSummaryIdentity(input, eventKey) {
+function scanPendingSummaryIdentity(input, eventKey2) {
   if (!input || typeof input !== "object" || Array.isArray(input) || !sameScanValue(Object.keys(input).sort(), pendingSummaryIdentityKeys)) {
     throw new Error("privacy scan validation state pending summary is invalid");
   }
-  const [height, globalSequence] = scanValidationEventKey(eventKey).split("/");
+  const [height, globalSequence] = scanValidationEventKey(eventKey2).split("/");
   const summary = scanSummary({
     height,
     globalSequence,
@@ -78075,22 +78118,22 @@ function restorePrivacyScanValidationStateV2(input) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry) || Object.keys(entry).length !== 2 || !("event_key" in entry) || !("self_view_enabled" in entry)) {
       throw new Error("privacy scan validation state snapshot is invalid");
     }
-    const eventKey = scanValidationEventKey(entry.event_key);
-    if (typeof entry.self_view_enabled !== "boolean" || state2.batch_self_view_by_event.has(eventKey)) {
+    const eventKey2 = scanValidationEventKey(entry.event_key);
+    if (typeof entry.self_view_enabled !== "boolean" || state2.batch_self_view_by_event.has(eventKey2)) {
       throw new Error("privacy scan validation state snapshot is invalid");
     }
-    state2.batch_self_view_by_event.set(eventKey, entry.self_view_enabled);
+    state2.batch_self_view_by_event.set(eventKey2, entry.self_view_enabled);
   }
   for (const entry of input.pending_summary_by_event) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry) || !("event_key" in entry)) {
       throw new Error("privacy scan validation state snapshot is invalid");
     }
     const { event_key: eventKeyValue, ...summaryValue } = entry;
-    const eventKey = scanValidationEventKey(eventKeyValue);
-    if (state2.pending_summary_by_event.has(eventKey)) {
+    const eventKey2 = scanValidationEventKey(eventKeyValue);
+    if (state2.pending_summary_by_event.has(eventKey2)) {
       throw new Error("privacy scan validation state snapshot is invalid");
     }
-    state2.pending_summary_by_event.set(eventKey, scanPendingSummaryIdentity(summaryValue, eventKey));
+    state2.pending_summary_by_event.set(eventKey2, scanPendingSummaryIdentity(summaryValue, eventKey2));
   }
   return scanValidationState({ validationState: state2 });
 }
@@ -78127,13 +78170,17 @@ function validatePendingPrivacyScanSummaries(request, page, state2) {
     global_sequence: lastOutput.global_sequence,
     output_index: lastOutput.output_index
   }) === 0 ? page.summaries.find((value) => scanEventKey(value) === scanEventKey(lastOutput)) : null;
+  const requestEventKey = scanEventKey(request.after);
+  const resumedSummary = page.summaries.find((value) => scanEventKey(value) === requestEventKey);
+  if (resumedSummary && !pendingByEvent.has(requestEventKey)) {
+    throw new Error("privacy scan mid-event resume requires pending summary validation state");
+  }
   if (!state2) {
     if (partialSummary && lastOutput.output_index < partialSummary.output_count - 1) {
       throw new Error("privacy scan partial page requires validation state");
     }
     return pendingByEvent;
   }
-  const requestEventKey = scanEventKey(request.after);
   for (const [key, expected] of pendingByEvent) {
     if (key !== requestEventKey || request.after.output_index !== expected.last_output_index) {
       throw new Error("privacy scan pending summary does not match the request cursor");
@@ -78194,8 +78241,8 @@ function validateCompletedPrivacyScanPage(request, page) {
     }
     if (partialEventKey === scanEventKey(summary)) continue;
     const returned = outputsByEvent.get(scanEventKey(summary)) ?? /* @__PURE__ */ new Set();
-    for (let outputIndex = firstRequiredIndex; outputIndex < summary.output_count; outputIndex += 1) {
-      if (!returned.has(outputIndex)) {
+    for (let outputIndex2 = firstRequiredIndex; outputIndex2 < summary.output_count; outputIndex2 += 1) {
+      if (!returned.has(outputIndex2)) {
         throw new Error(page.has_more ? "privacy scan partial page omits an output from a summarized event" : "privacy scan completed page omits an output from a summarized event");
       }
     }
@@ -78313,7 +78360,15 @@ function validatePrivacyScanPageV2(response, request = {}) {
   validatePrivacyScanValidationStateMaps(nextBatchSelfViewState, nextPendingSummaryState);
   commitBatchSelfViewValidationState(validationState, nextBatchSelfViewState);
   commitPendingPrivacyScanSummaryState(validationState, nextPendingSummaryState);
+  validatedPrivacyScanPageIntegrityV2.set(page, scanIntegrityFingerprint(page));
   return page;
+}
+function isValidatedPrivacyScanPageV2(value) {
+  return hasCurrentScanIntegrity(
+    value,
+    validatedPrivacyScanPageBrandV2,
+    validatedPrivacyScanPageIntegrityV2
+  );
 }
 function processPrivacyScanOutputV2(output, { rootSeed, spendScalar, viewScalar } = {}) {
   if (!isValidatedPrivacyScanOutputV2(output)) throw new Error("privacy scan output must be issued by validatePrivacyScanPageV2");
@@ -78359,7 +78414,7 @@ function processPrivacyScanOutputV2(output, { rootSeed, spendScalar, viewScalar 
   });
 }
 function processPrivacyScanPageV2(page, { rootSeed, spendScalar, viewScalar } = {}) {
-  if (!page || typeof page !== "object" || page[validatedPrivacyScanPageBrandV2] !== true || !Array.isArray(page.outputs)) {
+  if (!isValidatedPrivacyScanPageV2(page) || !Array.isArray(page.outputs)) {
     throw new Error("privacy scan page must be issued by validatePrivacyScanPageV2");
   }
   const spend = spendScalar ?? deriveSpendKeys(rootSeed).scalar;
@@ -78736,102 +78791,31 @@ function typedScanUserDisclosureMode(output) {
   return mode;
 }
 function typedScanTxHash(output, txHash) {
-  const value = typedScanAliasedValue(output, "txHash", "tx_hash", "privacy scan batch transaction hash");
-  const embedded = value == null ? "" : hexFromBytes2(typedScanBytes(value, "privacy scan batch transaction hash"));
-  const requested = String(txHash ?? "").trim().replace(/^0x/i, "");
-  if (requested && embedded && requested.toLowerCase() !== embedded.toLowerCase()) {
-    throw new Error("transaction hash does not match the validated PrivacyScanOutputV2 record");
+  const value = typedScanAliasedValue(output, "txHash", "tx_hash", "privacy scan transaction hash");
+  const outputHash = value == null ? "" : hexFromBytes2(typedScanBytes(value, "privacy scan transaction hash"));
+  const asserted = String(txHash ?? "").trim();
+  if (!asserted) return outputHash;
+  const comparableAsserted = asserted.toLowerCase().replace(/^0x/, "");
+  if (!/^[0-9a-f]{64}$/.test(comparableAsserted)) {
+    throw new Error("privacy scan asserted transaction hash must be exactly 32 bytes of hex");
   }
-  return requested || embedded;
-}
-function transferDisclosureEventFromScanOutput(output) {
-  if (!isValidatedPrivacyScanOutputV2(output)) {
-    throw new Error("transfer disclosure output must come from validatePrivacyScanPageV2");
+  if (!outputHash) {
+    throw new Error("privacy scan selected output does not carry a transaction hash");
   }
-  const eventType = String(typedScanAliasedValue(
-    output,
-    "eventType",
-    "event_type",
-    "privacy scan transfer event type"
-  ) || "").trim();
-  if (eventType !== shieldedTransferScanEventType) {
-    throw new Error("selected PrivacyScanOutputV2 is not a shielded transfer output");
+  if (outputHash.toLowerCase() !== comparableAsserted) {
+    throw new Error("privacy scan disclosure transaction hash does not match the selected output");
   }
-  const outputIndex = typedScanOutputIndex(output);
-  if (outputIndex !== 0) {
-    throw new Error("selected PrivacyScanOutputV2 is not the shielded transfer recipient output");
-  }
-  const bytesAttribute = (camel, snake, label) => {
-    const bytes4 = typedScanOptionalBytes(output, camel, snake, label);
-    return bytes4.length ? hexFromBytes2(bytes4) : "";
-  };
-  const fullDigest = bytesAttribute(
-    "fullDisclosureDigest",
-    "full_disclosure_digest",
-    "privacy scan transfer full disclosure digest"
-  );
-  return {
-    event_type: shieldedTransferScanEventType,
-    tx_hash_hex: typedScanTxHash(output),
-    attributes: [
-      {
-        key: "user_disclosure_mode",
-        value: typedScanUserDisclosureMode(output)
-      },
-      {
-        key: "user_disclosure_target_pubkey",
-        value: bytesAttribute(
-          "userDisclosureTargetPubkey",
-          "user_disclosure_target_pubkey",
-          "privacy scan transfer user disclosure target"
-        )
-      },
-      {
-        key: "user_disclosure_payload",
-        value: bytesAttribute(
-          "userDisclosurePayload",
-          "user_disclosure_payload",
-          "privacy scan transfer user disclosure payload"
-        )
-      },
-      {
-        key: "user_disclosure_digest",
-        value: bytesAttribute(
-          "userDisclosureDigest",
-          "user_disclosure_digest",
-          "privacy scan transfer user disclosure digest"
-        )
-      },
-      {
-        key: "audit_disclosure_payload",
-        value: bytesAttribute(
-          "auditDisclosurePayload",
-          "audit_disclosure_payload",
-          "privacy scan transfer audit disclosure payload"
-        )
-      },
-      { key: "audit_disclosure_digest", value: fullDigest },
-      {
-        key: "self_view_disclosure_payload",
-        value: bytesAttribute(
-          "selfViewDisclosurePayload",
-          "self_view_disclosure_payload",
-          "privacy scan transfer self-view disclosure payload"
-        )
-      },
-      { key: "self_view_disclosure_digest", value: fullDigest }
-    ]
-  };
+  return asserted;
 }
 function normalizedBatchScanDisclosureOutput(output) {
   if (!isValidatedPrivacyScanOutputV2(output)) {
     throw new Error("batch disclosure output must come from validatePrivacyScanPageV2");
   }
-  const eventType = String(typedScanAliasedValue(output, "eventType", "event_type", "privacy scan batch event type") || "").trim();
-  if (eventType !== batchTransferScanEventType) {
+  const eventType2 = String(typedScanAliasedValue(output, "eventType", "event_type", "privacy scan batch event type") || "").trim();
+  if (eventType2 !== batchTransferScanEventType) {
     throw new Error("selected PrivacyScanOutputV2 is not a batch transfer output");
   }
-  const outputIndex = typedScanOutputIndex(output);
+  const outputIndex2 = typedScanOutputIndex(output);
   const commitmentBytes = typedScanRequiredBytes(output, "commitment", "commitment", "privacy scan batch commitment", 32);
   const commitment = typedScanField(commitmentBytes, "privacy scan batch commitment", { nonZero: true });
   const policy = typedScanPolicy(output);
@@ -78871,7 +78855,7 @@ function normalizedBatchScanDisclosureOutput(output) {
     throw new Error("privacy scan batch user disclosure mode is invalid for the selected policy");
   }
   return {
-    outputIndex,
+    outputIndex: outputIndex2,
     commitment,
     policy,
     mode,
@@ -79094,33 +79078,155 @@ function decodeBatchSelfViewDisclosureFromScanOutput(output, options = {}) {
     delivery: "self-view-encrypted"
   });
 }
-function decodeUserDisclosureFromScanOutput(output, disclosureScalar, disclosurePubKeyHex, txHash, options = {}) {
-  const event = transferDisclosureEventFromScanOutput(output);
-  return decodeUserDisclosureFromEvent(
-    event,
+function normalizedTransferScanDisclosureOutput(output) {
+  if (!isValidatedPrivacyScanOutputV2(output)) {
+    throw new Error("transfer disclosure output must come from validatePrivacyScanPageV2");
+  }
+  const eventType2 = String(typedScanAliasedValue(
+    output,
+    "eventType",
+    "event_type",
+    "privacy scan transfer event type"
+  ) || "").trim();
+  if (eventType2 !== shieldedTransferScanEventType) {
+    throw new Error("selected PrivacyScanOutputV2 is not a shielded transfer output");
+  }
+  const outputIndex2 = typedScanOutputIndex(output);
+  if (outputIndex2 !== 0) {
+    throw new Error("shielded transfer disclosure is only carried by recipient output 0");
+  }
+  return {
+    outputIndex: outputIndex2,
+    commitment: typedScanField(
+      typedScanRequiredBytes(output, "commitment", "commitment", "privacy scan transfer commitment", 32),
+      "privacy scan transfer commitment",
+      { nonZero: true }
+    ),
+    policy: typedScanPolicy(output),
+    mode: typedScanUserDisclosureMode(output),
+    userDigest: typedScanOptionalBytes(
+      output,
+      "userDisclosureDigest",
+      "user_disclosure_digest",
+      "privacy scan transfer user disclosure digest"
+    ),
+    userTarget: typedScanOptionalBytes(
+      output,
+      "userDisclosureTargetPubkey",
+      "user_disclosure_target_pubkey",
+      "privacy scan transfer user disclosure target"
+    ),
+    userPayload: typedScanOptionalBytes(
+      output,
+      "userDisclosurePayload",
+      "user_disclosure_payload",
+      "privacy scan transfer user disclosure payload"
+    ),
+    fullDigest: typedScanRequiredBytes(
+      output,
+      "fullDisclosureDigest",
+      "full_disclosure_digest",
+      "privacy scan transfer full disclosure digest",
+      32
+    ),
+    auditPayload: typedScanRequiredBytes(
+      output,
+      "auditDisclosurePayload",
+      "audit_disclosure_payload",
+      "privacy scan transfer audit disclosure payload"
+    ),
+    selfViewPayload: typedScanOptionalBytes(
+      output,
+      "selfViewDisclosurePayload",
+      "self_view_disclosure_payload",
+      "privacy scan transfer self-view disclosure payload"
+    )
+  };
+}
+function transferScanDisclosureEvent(record, output) {
+  return {
+    event_type: shieldedTransferScanEventType,
+    tx_hash_hex: typedScanTxHash(output),
+    attributes: [
+      { key: "user_disclosure_mode", value: record.mode },
+      { key: "user_disclosure_target_pubkey", value: hexFromBytes2(record.userTarget) },
+      { key: "user_disclosure_digest", value: hexFromBytes2(record.userDigest) },
+      { key: "user_disclosure_payload", value: hexFromBytes2(record.userPayload) },
+      { key: "audit_disclosure_digest", value: hexFromBytes2(record.fullDigest) },
+      { key: "audit_disclosure_payload", value: hexFromBytes2(record.auditPayload) },
+      { key: "self_view_disclosure_digest", value: record.selfViewPayload.length ? hexFromBytes2(record.fullDigest) : "" },
+      { key: "self_view_disclosure_payload", value: hexFromBytes2(record.selfViewPayload) }
+    ]
+  };
+}
+function transferTypedScanReport(report, record) {
+  const commitment = fieldHexV1(record.commitment);
+  if (report.output_index !== record.outputIndex || report.commitment_hex !== commitment) {
+    throw new Error("transfer disclosure plaintext does not match the typed scan output");
+  }
+  if (report.plane === planeUser && Number(report.payload?.policy) !== record.policy) {
+    throw new Error("transfer user disclosure policy does not match the typed scan output");
+  }
+  return {
+    ...report,
+    verification: {
+      ...report.verification,
+      typed_scan_output: true,
+      output_index_match: true,
+      output_commitment_match: true,
+      output_policy_match: true,
+      plaintext_blinding_bound: true,
+      typed_scan_disclosure_digest_match: true
+    }
+  };
+}
+function decodeUserDisclosureFromScanOutput(output, {
+  disclosureScalar,
+  disclosurePubKeyHex,
+  txHash,
+  shieldedPrefix: shieldedPrefix2,
+  assetDenom = ""
+} = {}) {
+  const record = normalizedTransferScanDisclosureOutput(output);
+  if (record.policy === 0) throw new Error("selected transfer output has no user disclosure");
+  const report = decodeUserDisclosureFromEvent(
+    transferScanDisclosureEvent(record, output),
     disclosureScalar,
     disclosurePubKeyHex,
     typedScanTxHash(output, txHash),
-    options
+    { shieldedPrefix: shieldedPrefix2, assetDenom }
   );
+  return transferTypedScanReport(report, record);
 }
-function decodeSelfViewDisclosureFromScanOutput(output, disclosureScalar, txHash, options = {}) {
-  const event = transferDisclosureEventFromScanOutput(output);
-  return decodeSelfViewDisclosureFromEvent(
-    event,
+function decodeSelfViewDisclosureFromScanOutput(output, {
+  disclosureScalar,
+  txHash,
+  shieldedPrefix: shieldedPrefix2,
+  assetDenom = ""
+} = {}) {
+  const record = normalizedTransferScanDisclosureOutput(output);
+  const report = decodeSelfViewDisclosureFromEvent(
+    transferScanDisclosureEvent(record, output),
     disclosureScalar,
     typedScanTxHash(output, txHash),
-    options
+    { shieldedPrefix: shieldedPrefix2, assetDenom }
   );
+  return transferTypedScanReport(report, record);
 }
-function decodeAuditDisclosureFromScanOutput(output, disclosureScalar, txHash, options = {}) {
-  const event = transferDisclosureEventFromScanOutput(output);
-  return decodeAuditDisclosureFromEvent(
-    event,
+function decodeAuditDisclosureFromScanOutput(output, {
+  disclosureScalar,
+  txHash,
+  shieldedPrefix: shieldedPrefix2,
+  assetDenom = ""
+} = {}) {
+  const record = normalizedTransferScanDisclosureOutput(output);
+  const report = decodeAuditDisclosureFromEvent(
+    transferScanDisclosureEvent(record, output),
     disclosureScalar,
     typedScanTxHash(output, txHash),
-    options
+    { shieldedPrefix: shieldedPrefix2, assetDenom }
   );
+  return transferTypedScanReport(report, record);
 }
 function eventAttribute2(event, key) {
   return (event?.attributes || []).find((attribute) => attribute.key === key)?.value || "";
@@ -79976,14 +80082,26 @@ function validatePreparedTransferV5Proof(payload, proof, { nowUnix } = {}) {
   if (proofBytes.slice(128, 132).some((byte) => byte !== 0)) throw new Error("transfer v5 proof commitments are not supported");
   return true;
 }
-function buildTransferV5MsgFromPayloadAndProof(payload, proof, { nowUnix, creator } = {}) {
+function buildTransferV5MsgFromPayloadAndProof(payload, proof, {
+  nowUnix,
+  creator,
+  expectedChainId,
+  expected_chain_id
+} = {}) {
   validatePreparedTransferV5Proof(payload, proof, { nowUnix });
-  const messageCreator = String(creator ?? payload.creator ?? "").trim();
-  if (!messageCreator) throw new Error("transfer message creator is required");
+  if (expectedChainId != null && expected_chain_id != null && String(expectedChainId) !== String(expected_chain_id)) {
+    throw new Error("expected transfer chain ID aliases conflict");
+  }
+  const expectedChain = String(expectedChainId ?? expected_chain_id ?? "").trim();
+  if (expectedChain && payload.chain_id !== expectedChain) {
+    throw new Error(`prepared transfer chain ID mismatch: expected ${expectedChain}, got ${payload.chain_id}`);
+  }
+  const sender = String(creator ?? payload.creator ?? "").trim();
+  if (!sender) throw new Error("transfer creator is required");
   return {
-    // Creator is deliberately outside the canonical proof effect. A relayer
-    // may replace it without rebuilding the payload or proof.
-    creator: messageCreator,
+    // The proof binds owner intent, chain, expiry, outputs, and disclosures;
+    // creator is deliberately replaceable as the Cosmos fee payer/relayer.
+    creator: sender,
     proof: bytesFromHex2(proof.proof_hex, "transfer v5 proof"),
     root: bytesFromHex2(payload.root_hex, "transfer v5 root"),
     nullifiers: payload.inputs.map((input, index) => bytesFromHex2(input.nullifier_hex, `transfer v5 nullifier ${index}`)),
@@ -80395,7 +80513,10 @@ async function buildTransferMessage({ proverAdapter, ...input } = {}) {
   return {
     payload,
     proof,
-    message: buildTransferMsgFromPayloadAndProof(payload, proof, { nowUnix: chainNowUnix })
+    message: buildTransferMsgFromPayloadAndProof(payload, proof, {
+      nowUnix: chainNowUnix,
+      expectedChainId: input.chainId
+    })
   };
 }
 function selectExactMatchNote(notes, denom, targetAmount) {
@@ -82258,8 +82379,8 @@ function planTransferBatchNotes({ notes, amounts = [], denom = defaultAssetDenom
     if (!selection.isFinal || selection.inputs.length < 1 || selection.inputs.length > 16) {
       throw new Error("one-proof batch transfer requires a spendable 1..16-input selection");
     }
-    const outputCount = coins.length + (selection.total > requestedTotal ? 1 : 0);
-    if (outputCount > 32) {
+    const outputCount2 = coins.length + (selection.total > requestedTotal ? 1 : 0);
+    if (outputCount2 > 32) {
       return {
         status: "batch_capacity_exceeded",
         canBuildTx: false,
@@ -82405,6 +82526,151 @@ var activeReservationStatuses = Object.freeze([
   reservationStatuses.Unknown,
   reservationStatuses.ManualReview
 ]);
+async function getBroadcastReservationRecords(context) {
+  if (!context) return [];
+  if (typeof context.reservationManager?.getReservation !== "function") {
+    throw new Error("reservationManager.getReservation is required for reserved-note broadcast validation");
+  }
+  const records = await Promise.all(
+    context.reservationIDs.map((id) => context.reservationManager.getReservation(id))
+  );
+  for (const [index, reservationID] of context.reservationIDs.entries()) {
+    if (!records[index] || String(records[index].reservation_id || "") !== String(reservationID)) {
+      throw new Error(`reserved-note broadcast reservation ${reservationID} is missing or has the wrong identity`);
+    }
+  }
+  return records;
+}
+function normalizedReservationNullifier(value, label) {
+  const normalized = String(value ?? "").trim().replace(/^0x/i, "").toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(normalized)) {
+    throw new Error(`${label} must be exactly 32 bytes of hex`);
+  }
+  return normalized;
+}
+function normalizedReservationNullifiers(values, label) {
+  if (!Array.isArray(values) || values.length === 0) {
+    throw new Error(`${label} must contain at least one nullifier`);
+  }
+  const normalized = values.map(
+    (value, index) => normalizedReservationNullifier(value, `${label} at index ${index}`)
+  );
+  if (new Set(normalized).size !== normalized.length) {
+    throw new Error(`${label} contains duplicate nullifiers`);
+  }
+  return normalized;
+}
+function normalizedNullifierStatusMap(result) {
+  const statuses = /* @__PURE__ */ new Map();
+  const invalid = /* @__PURE__ */ new Set();
+  const add2 = (rawNullifier, value) => {
+    let nullifier;
+    try {
+      nullifier = normalizedReservationNullifier(rawNullifier, "nullifier status key");
+    } catch {
+      return;
+    }
+    if (invalid.has(nullifier)) return;
+    const used = parseNullifierUsage(value);
+    if (used === null || statuses.has(nullifier) && statuses.get(nullifier) !== used) {
+      statuses.delete(nullifier);
+      invalid.add(nullifier);
+      return;
+    }
+    statuses.set(nullifier, used);
+  };
+  if (result instanceof Map) {
+    for (const [nullifier, value] of result) add2(nullifier, value);
+  } else if (Array.isArray(result?.statuses) || Array.isArray(result?.Statuses)) {
+    for (const status of [
+      ...Array.isArray(result.statuses) ? result.statuses : [],
+      ...Array.isArray(result.Statuses) ? result.Statuses : []
+    ]) {
+      const canonical = status?.nullifier;
+      const alias2 = status?.Nullifier;
+      if (canonical != null && alias2 != null) {
+        let canonicalNullifier = "";
+        let aliasNullifier = "";
+        try {
+          canonicalNullifier = normalizedReservationNullifier(canonical, "nullifier status key");
+          aliasNullifier = normalizedReservationNullifier(alias2, "nullifier status key");
+        } catch {
+          add2(canonical, null);
+          add2(alias2, null);
+          continue;
+        }
+        if (canonicalNullifier !== aliasNullifier) {
+          add2(canonical, null);
+          add2(alias2, null);
+          continue;
+        }
+      }
+      add2(canonical ?? alias2, status);
+    }
+  } else if (result && typeof result === "object" && !Array.isArray(result)) {
+    for (const [nullifier, value] of Object.entries(result)) add2(nullifier, value);
+  }
+  return statuses;
+}
+function assertReservedInputNullifiersUnspent(statuses, nullifiers) {
+  const normalizedNullifiers = normalizedReservationNullifiers(
+    [...nullifiers],
+    "reserved spend input nullifiers"
+  );
+  const normalizedStatuses = normalizedNullifierStatusMap(statuses);
+  for (const [index, nullifier] of normalizedNullifiers.entries()) {
+    if (normalizedStatuses.get(nullifier) !== false) {
+      throw new Error(`reserved spend input nullifier at index ${index} is spent, missing, or has an invalid status`);
+    }
+  }
+}
+function assertBatchTransferNullifiersUnspent(statuses, nullifiers) {
+  return assertReservedInputNullifiersUnspent(statuses, nullifiers);
+}
+function inputNullifiersFromReservationRecords(records) {
+  if (!records.length) return [];
+  const normalized = records.map((record) => {
+    const candidates = [
+      record?.metadata?.input_nullifier_hexes,
+      record?.metadata?.inputNullifierHexes,
+      record?.metadata?.batch_transfer_nullifier_hexes,
+      record?.metadata?.batchTransferNullifierHexes
+    ].filter((value) => value != null);
+    if (!candidates.length || candidates.some((value) => !Array.isArray(value))) {
+      throw new Error("reserved spend is missing its persisted input nullifiers");
+    }
+    const aliases = candidates.map((value) => normalizedReservationNullifiers(
+      value,
+      "reserved spend persisted input nullifiers"
+    ));
+    if (aliases.some(
+      (value) => value.length !== aliases[0].length || value.some((nullifier, index) => nullifier !== aliases[0][index])
+    )) {
+      throw new Error("reserved spend input nullifier metadata aliases conflict");
+    }
+    return aliases[0];
+  });
+  if (normalized.some(
+    (value) => value.length !== normalized[0].length || value.some((nullifier, index) => nullifier !== normalized[0][index])
+  )) {
+    throw new Error("reserved spend reservations disagree on their persisted input nullifiers");
+  }
+  return normalized[0];
+}
+async function recheckReservedInputNullifiers(context, checkNullifiers, fallbackNullifiers = []) {
+  const persisted = context ? inputNullifiersFromReservationRecords(await getBroadcastReservationRecords(context)) : [];
+  const fallback = fallbackNullifiers.length ? normalizedReservationNullifiers([...fallbackNullifiers], "relay payload input nullifiers") : [];
+  if (persisted.length && fallback.length && (persisted.length !== fallback.length || persisted.some((nullifier, index) => nullifier !== fallback[index]))) {
+    throw new Error("relay payload input nullifiers do not match the reserved spend");
+  }
+  const nullifiers = persisted.length ? persisted : fallback;
+  if (!nullifiers.length) return [];
+  if (typeof checkNullifiers !== "function") {
+    throw new Error("reserved spend broadcast requires checkNullifiers before submission");
+  }
+  assertReservedInputNullifiersUnspent(await checkNullifiers([...nullifiers]), nullifiers);
+  return Object.freeze([...nullifiers]);
+}
 var activeReservationStatusSet = new Set(activeReservationStatuses);
 var reservationStatusSet = new Set(Object.values(reservationStatuses));
 function operationStateDetails(reservations = []) {
@@ -82871,12 +83137,62 @@ function operationSuccessEvidenceRequiredInputState(metadata = {}) {
   }
   return direct.present ? direct : nested;
 }
+var reservationExecutionTransports = /* @__PURE__ */ new Set(["cosmos", "evm", "external"]);
+function executionTransportMetadataState(metadata = {}) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return { present: false, value: "" };
+  }
+  const hasCanonical = Object.prototype.hasOwnProperty.call(metadata, "execution_transport");
+  const hasAlias = Object.prototype.hasOwnProperty.call(metadata, "executionTransport");
+  const normalize3 = (value, label) => {
+    const transport = String(value ?? "").trim().toLowerCase();
+    if (!reservationExecutionTransports.has(transport)) {
+      throw new Error(`${label} must be cosmos, evm, or external`);
+    }
+    return transport;
+  };
+  const canonical = hasCanonical ? normalize3(metadata.execution_transport, "execution_transport metadata") : "";
+  const alias2 = hasAlias ? normalize3(metadata.executionTransport, "executionTransport metadata") : "";
+  if (hasCanonical && hasAlias && canonical !== alias2) {
+    throw new Error("execution transport metadata aliases conflict");
+  }
+  return {
+    present: hasCanonical || hasAlias,
+    value: hasCanonical ? canonical : alias2
+  };
+}
+function executionTransportInputState(metadata = {}) {
+  const direct = executionTransportMetadataState(metadata);
+  const nested = executionTransportMetadataState(metadata.metadata || {});
+  if (direct.present && nested.present && direct.value !== nested.value) {
+    throw new Error("execution transport aliases conflict");
+  }
+  return direct.present ? direct : nested;
+}
+function reservationExecutionTransport(reservation = {}) {
+  return executionTransportMetadataState(reservation.metadata || {}).value;
+}
 function normalizeReservationMetadata(value) {
   const metadata = cloneReservationMetadata(value);
+  for (const field2 of [
+    "provider_rejection_log",
+    "providerRejectionLog",
+    "provider_log",
+    "providerLog",
+    "raw_log",
+    "rawLog"
+  ]) {
+    delete metadata[field2];
+  }
   const evidenceRequired = operationSuccessEvidenceRequiredMetadataState(metadata);
   if (evidenceRequired.present) {
     metadata.operation_success_evidence_required = evidenceRequired.value;
     delete metadata.operationSuccessEvidenceRequired;
+  }
+  const executionTransport = executionTransportMetadataState(metadata);
+  if (executionTransport.present) {
+    metadata.execution_transport = executionTransport.value;
+    delete metadata.executionTransport;
   }
   return metadata;
 }
@@ -82987,6 +83303,8 @@ var initialLifecycleMetadataFields = /* @__PURE__ */ new Set([
   "operationSuccessEvidenceConflicts",
   "operation_success_evidence_required",
   "operationSuccessEvidenceRequired",
+  "execution_transport",
+  "executionTransport",
   "manual_review_resolution_reason",
   "manualReviewResolutionReason",
   "wallet_rejected_before_broadcast",
@@ -83141,12 +83459,13 @@ function assertCurrentLeaseToken(current, token, owner, now) {
 }
 function assertLeaseTransitionAllowed(current, to, patch, now) {
   if (!requiresReservationLeaseToken(current.status, to)) return;
-  if (current.status === reservationStatuses.Reserved && to === reservationStatuses.Proving && !current.lease_token) {
+  const startsProving = current.status === reservationStatuses.Reserved && to === reservationStatuses.Proving;
+  if (startsProving && !current.lease_token) {
     const token2 = patchLeaseToken(patch);
     const owner2 = String(patch.lease_owner || patch.leaseOwner || "");
     const until = Date.parse(patch.lease_until || patch.leaseUntil || "");
     if (!token2 || !owner2 || !Number.isFinite(until)) {
-      throw new Error("a future lease owner, token, and expiry are required to start proving");
+      throw new Error("a future lease owner, token, and expiry are required to claim the reservation");
     }
     const expectedClaimHash = String(
       current.metadata?.[reservationClaimTokenHashField] || ""
@@ -83251,6 +83570,8 @@ var protectedMetadataEvidenceFields = [
   "operationSuccessEvidenceConflicts",
   "operation_success_evidence_required",
   "operationSuccessEvidenceRequired",
+  "execution_transport",
+  "executionTransport",
   "operator_approved",
   "operatorApproved",
   "operator_id",
@@ -83282,15 +83603,18 @@ var managedLifecycleMetadataAliases = /* @__PURE__ */ new Map([
   ["operationSuccessEvidenceErrors", "operation_success_evidence_errors"],
   ["operationSuccessEvidenceConflicts", "operation_success_evidence_conflicts"],
   ["operationSuccessEvidenceRequired", "operation_success_evidence_required"],
+  ["executionTransport", "execution_transport"],
   ["manualReviewResolutionReason", "manual_review_resolution_reason"],
   ["walletRejectedBeforeBroadcast", "wallet_rejected_before_broadcast"],
-  ["providerRejectionCode", "provider_rejection_code"]
+  ["providerRejectionCode", "provider_rejection_code"],
+  ["providerRejectionCodespace", "provider_rejection_codespace"]
 ]);
 var managedLifecycleMetadataFields = new Set([
   reservationClaimTokenHashField,
   ...initialLifecycleMetadataFields,
   "wallet_rejected_before_broadcast",
-  "provider_rejection_code"
+  "provider_rejection_code",
+  "provider_rejection_codespace"
 ].filter((field2) => !managedLifecycleMetadataAliases.has(field2)));
 function metadataFieldChanged(currentMetadata, nextMetadata, field2) {
   if (!Object.prototype.hasOwnProperty.call(nextMetadata, field2)) return false;
@@ -83315,6 +83639,7 @@ function assertManagedLifecycleMetadataMutation(current, to, patch = {}, {
   if (current.status === reservationStatuses.Proving && to === reservationStatuses.ProofReady) {
     allowed.add("no_broadcast_attempt");
     allowed.add("operation_success_evidence_required");
+    allowed.add("execution_transport");
   }
   if (managedRelayHandoff) {
     allowed.add("relay_handed_off");
@@ -83846,10 +84171,7 @@ function assertManagedRelayTransactionEvidenceMutation(current, to, patch) {
     throw new Error("relay transaction evidence conflicts with the submitted transaction hash");
   }
   const normalizedTxHash4 = normalizedTxIdentity(txHash);
-  const conflictingIdentity = normalizedIdentityValues([
-    current.submitted_tx_hash,
-    current.tx_bytes_hash
-  ]).find((identity) => identity !== normalizedTxHash4);
+  const conflictingIdentity = reservationNetworkTransactionIdentities(current).find((identity) => identity !== normalizedTxHash4);
   if (conflictingIdentity) {
     throw new Error("relay transaction evidence conflicts with persisted transaction identity");
   }
@@ -84047,8 +84369,8 @@ function hasManualReviewApprovalEvidence(metadata = {}) {
 }
 function assertInactiveTransitionEvidence(current, to, metadata = {}) {
   const from = current.status;
-  if ((from === reservationStatuses.Submitted || from === reservationStatuses.Unknown) && (to === reservationStatuses.ReplanRequired || to === reservationStatuses.Failed) && !hasPostBroadcastReplanEvidence(metadata)) {
-    throw new Error(`${from} -> ${to} requires nullifier_unspent_confirmed and tx_absent_or_failed_confirmed reconcile evidence`);
+  if ((from === reservationStatuses.Submitted || from === reservationStatuses.Unknown) && (to === reservationStatuses.ReplanRequired || to === reservationStatuses.Failed) && !hasExactPostBroadcastFailureEvidence(current, metadata)) {
+    throw new Error(`${from} -> ${to} requires exact tx_hash_checked, positive checked_height, nullifier_unspent_confirmed, and tx_absent_or_failed_confirmed reconcile evidence`);
   }
   if (from === reservationStatuses.ProofReady && to === reservationStatuses.ReplanRequired) {
     if (hasStoredBroadcastEvidence(current)) {
@@ -84070,6 +84392,257 @@ function reconciledSpentPatch(patch = {}, { operationReconcile = false } = {}) {
     Object.defineProperty(authorized, managedOperationReconciliation, { value: true });
   }
   return authorized;
+}
+var mergedOperationSuccessEvidence = /* @__PURE__ */ Symbol("clairveil.merged-operation-success-evidence");
+function hasExplicitOperationEvidence(input = {}) {
+  return operationSuccessEvidence(input).provided;
+}
+function duplicateOperationEvidence(input = {}) {
+  const evidence = operationSuccessEvidence(input);
+  return evidence.provided ? evidence : null;
+}
+function sameNormalizedIdentitySet(left = [], right = []) {
+  const leftValues = normalizedIdentityValues(left).sort();
+  const rightValues = normalizedIdentityValues(right).sort();
+  return leftValues.length === rightValues.length && leftValues.every((value, index) => value === rightValues[index]);
+}
+function duplicateOperationEvidenceLinkValues(evidence) {
+  if (!evidence) return /* @__PURE__ */ new Set();
+  const values = [];
+  for (const [kind, identities] of [
+    ["tx_hash", evidence.txHashes],
+    ["tx_bytes_hash", evidence.txBytesHashes],
+    ["sign_doc_hash", evidence.signDocHashes]
+  ]) {
+    values.push(...normalizedIdentityValues(identities || []).map((value) => `${kind}:${value}`));
+  }
+  const operationEvidenceHash = normalizedTxIdentity(evidence.operationEvidenceHash);
+  if (operationEvidenceHash) {
+    values.push(`operation_evidence_hash:${operationEvidenceHash}`);
+  }
+  return new Set(values);
+}
+function duplicateOperationEvidenceLinkConflicts(reservations, evidences = []) {
+  const present = evidences.filter(Boolean);
+  if (present.length < 2) return [];
+  let shared = duplicateOperationEvidenceLinkValues(present[0]);
+  for (const evidence of present.slice(1)) {
+    const links = duplicateOperationEvidenceLinkValues(evidence);
+    shared = new Set([...shared].filter((value) => links.has(value)));
+  }
+  if (shared.size) return [];
+  return reservations.map((reservation) => operationEvidenceConflict(
+    reservation,
+    "tx_hash_or_tx_bytes",
+    "duplicate_unlinked",
+    {
+      expected: "a shared transaction identity on every evidence fragment",
+      actual: "missing or disjoint transaction identities"
+    }
+  ));
+}
+function duplicateOperationEvidenceConflicts(reservations, leftInput, rightInput) {
+  const left = duplicateOperationEvidence(leftInput);
+  const right = duplicateOperationEvidence(rightInput);
+  if (!left || !right) return [];
+  const differing = [];
+  const compareIdentities = (sourceField, leftValues, rightValues) => {
+    if (!leftValues.length || !rightValues.length) return;
+    if (!sameNormalizedIdentitySet(leftValues, rightValues)) {
+      differing.push({
+        sourceField,
+        expected: normalizedIdentityValues(leftValues).join(","),
+        actual: normalizedIdentityValues(rightValues).join(",")
+      });
+    }
+  };
+  const compare = (sourceField, leftValue, rightValue, options = {}) => {
+    if (leftValue === "" || leftValue == null || rightValue === "" || rightValue == null) return;
+    if (!operationEvidenceValuesEqual(leftValue, rightValue, options)) {
+      differing.push({
+        sourceField,
+        expected: String(leftValue),
+        actual: String(rightValue)
+      });
+    }
+  };
+  const compareVerification = (sourceField, leftProvided, leftVerified, rightProvided, rightVerified) => {
+    if (!leftProvided || !rightProvided || leftVerified === rightVerified) return;
+    differing.push({
+      sourceField,
+      expected: String(leftVerified),
+      actual: String(rightVerified)
+    });
+  };
+  for (const aliasError of /* @__PURE__ */ new Set([...left.aliasErrors, ...right.aliasErrors])) {
+    differing.push({
+      sourceField: aliasError.split(" ")[0] || "operation_input",
+      expected: "consistent aliases",
+      actual: aliasError
+    });
+  }
+  compareIdentities("tx_hash", left.txHashes, right.txHashes);
+  compareIdentities("tx_bytes_hash", left.txBytesHashes, right.txBytesHashes);
+  compareIdentities("sign_doc_hash", left.signDocHashes, right.signDocHashes);
+  const leftOutcomes = executionOutcomeValues(left.txResults);
+  const rightOutcomes = executionOutcomeValues(right.txResults);
+  if (leftOutcomes.length && rightOutcomes.length && !sameNormalizedIdentitySet(leftOutcomes, rightOutcomes)) {
+    differing.push({
+      sourceField: "transaction_outcome",
+      expected: leftOutcomes.join(","),
+      actual: rightOutcomes.join(",")
+    });
+  }
+  compare("expected_operation_evidence_hash", left.operationEvidenceHash, right.operationEvidenceHash, { caseInsensitive: true });
+  compare("expected_output_commitment", left.outputCommitment, right.outputCommitment, { caseInsensitive: true });
+  compare("expected_disclosure_digest", left.disclosureDigest, right.disclosureDigest, { caseInsensitive: true });
+  compare("expected_recipient_hash", left.recipientHash, right.recipientHash, { caseInsensitive: true });
+  compare("expected_amount", left.amount, right.amount);
+  compare("expected_amount_hash", left.amountHash, right.amountHash, { caseInsensitive: true });
+  compare("expected_denom", left.denom, right.denom);
+  if (left.batchItemIndexProvided && right.batchItemIndexProvided) {
+    compare("batch_item_index", left.batchItemIndex, right.batchItemIndex);
+  }
+  compareVerification(
+    "evm_transaction_verification",
+    left.evmTransactionVerificationProvided,
+    left.evmTransactionVerified,
+    right.evmTransactionVerificationProvided,
+    right.evmTransactionVerified
+  );
+  compareVerification(
+    "evm_privacy_receipt_verification",
+    left.evmPrivacyReceiptVerificationProvided,
+    left.evmPrivacyReceiptVerified,
+    right.evmPrivacyReceiptVerificationProvided,
+    right.evmPrivacyReceiptVerified
+  );
+  compareVerification(
+    "evm_finality_verification",
+    left.evmFinalityVerificationProvided,
+    left.evmFinalityVerified,
+    right.evmFinalityVerificationProvided,
+    right.evmFinalityVerified
+  );
+  if (left.batchItemIndexKnownProvided && right.batchItemIndexKnownProvided) {
+    compare(
+      "batch_item_index_known",
+      left.batchItemIndexKnown,
+      right.batchItemIndexKnown
+    );
+  }
+  return reservations.flatMap((reservation) => differing.map(
+    ({ sourceField, expected, actual }) => operationEvidenceConflict(reservation, sourceField, "duplicate_conflict", { expected, actual })
+  ));
+}
+function mergedDuplicateOperationEvidence(evidences = []) {
+  const present = evidences.filter(Boolean);
+  if (!present.length) return null;
+  const firstValue = (field2) => present.find((evidence) => evidence[field2] !== "")?.[field2] ?? "";
+  const identityValues = (field2) => uniqueIdentityValues(present.flatMap((evidence) => evidence[field2]));
+  const txHashes = identityValues("txHashes");
+  const txBytesHashes = identityValues("txBytesHashes");
+  const signDocHashes = identityValues("signDocHashes");
+  const txResults = [...new Set(present.flatMap((evidence) => evidence.txResults))];
+  const verification = (prefix) => {
+    const providedField = `${prefix}Provided`;
+    const verifiedField = prefix.replace(/Verification$/, "Verified");
+    const provided2 = present.some((evidence) => evidence[providedField]);
+    return {
+      [providedField]: provided2,
+      [verifiedField]: provided2 && present.some(
+        (evidence) => evidence[providedField] && evidence[verifiedField]
+      )
+    };
+  };
+  const itemIndexEvidence = present.find((evidence) => evidence.batchItemIndexProvided) ?? present[0];
+  const itemIndexKnownEvidence = present.find((evidence) => evidence.batchItemIndexKnownProvided);
+  return {
+    provided: true,
+    txHash: txHashes[0] || "",
+    txHashes,
+    txBytesHash: txBytesHashes[0] || "",
+    txBytesHashes,
+    signDocHash: signDocHashes[0] || "",
+    signDocHashes,
+    txResult: txResults[0] || null,
+    txResults,
+    operationEvidenceHash: firstValue("operationEvidenceHash"),
+    outputCommitment: firstValue("outputCommitment"),
+    disclosureDigest: firstValue("disclosureDigest"),
+    recipientHash: firstValue("recipientHash"),
+    amount: firstValue("amount"),
+    amountHash: firstValue("amountHash"),
+    denom: firstValue("denom"),
+    ...verification("evmTransactionVerification"),
+    ...verification("evmPrivacyReceiptVerification"),
+    ...verification("evmFinalityVerification"),
+    aliasErrors: [...new Set(present.flatMap((evidence) => evidence.aliasErrors))],
+    batchItemIndexRaw: itemIndexEvidence.batchItemIndexRaw,
+    batchItemIndex: itemIndexEvidence.batchItemIndex,
+    batchItemIndexValid: present.every((evidence) => evidence.batchItemIndexValid),
+    batchItemIndexProvided: present.some((evidence) => evidence.batchItemIndexProvided),
+    batchItemIndexKnownProvided: Boolean(itemIndexKnownEvidence),
+    batchItemIndexKnown: itemIndexKnownEvidence ? itemIndexKnownEvidence.batchItemIndexKnown : itemIndexEvidence.batchItemIndexKnown
+  };
+}
+function coalesceSpentNotesByLookupKey(spentNotes = [], reservationsForLookupKey = () => []) {
+  const grouped = /* @__PURE__ */ new Map();
+  for (const entry of spentNotes) {
+    if (!grouped.has(entry.lookupKey)) grouped.set(entry.lookupKey, []);
+    grouped.get(entry.lookupKey).push(entry.note);
+  }
+  const coalesced = [];
+  for (const [lookupKey, notes] of grouped) {
+    const reservations = reservationsForLookupKey(lookupKey);
+    const parsed = notes.map(duplicateOperationEvidence);
+    const envelopeConflicts = parsed.flatMap(
+      (evidence) => (evidence?.aliasErrors || []).filter((error) => error.startsWith("operation_evidence_envelope ")).map((error) => ({ sourceField: "operation_evidence_envelope", error }))
+    );
+    if (envelopeConflicts.length) {
+      throw evidenceConflictError(
+        reservations,
+        reservations.flatMap((reservation) => envelopeConflicts.map(
+          ({ sourceField, error }) => operationEvidenceConflict(reservation, sourceField, "alias_conflict", {
+            expected: "consistent aliases",
+            actual: error
+          })
+        )),
+        "operation success evidence envelope aliases conflict"
+      );
+    }
+    const compared = [notes[0]];
+    for (const note of notes.slice(1)) {
+      const conflicts = compared.flatMap(
+        (previous) => duplicateOperationEvidenceConflicts(reservations, previous, note)
+      );
+      if (conflicts.length) {
+        throw evidenceConflictError(
+          reservations,
+          conflicts,
+          "duplicate spent evidence conflicts for one reservation input"
+        );
+      }
+      compared.push(note);
+    }
+    const linkConflicts = duplicateOperationEvidenceLinkConflicts(reservations, parsed);
+    if (linkConflicts.length) {
+      throw evidenceConflictError(
+        reservations,
+        linkConflicts,
+        "duplicate spent evidence fragments are not linked to one transaction"
+      );
+    }
+    const selected = { ...notes[0] };
+    const mergedEvidence = mergedDuplicateOperationEvidence(parsed);
+    if (mergedEvidence) {
+      Object.defineProperty(selected, mergedOperationSuccessEvidence, {
+        value: mergedEvidence
+      });
+    }
+    coalesced.push({ lookupKey, note: selected });
+  }
+  return coalesced;
 }
 function operationReconciliationOutcome(reservations, spentNotesByLookupKey) {
   const requiresEvidence = reservations.some(operationSuccessEvidenceRequired);
@@ -84140,75 +84713,11 @@ function operationReconciliationTransitions(reservations, spentNotesByLookupKey,
         "retry found mixed reservation state after a succeeded operation reconciliation"
       );
     }
-    const explicitEvidenceKeys = [
-      "operationSuccessEvidence",
-      "operation_success_evidence",
-      "successEvidence",
-      "success_evidence",
-      "evidence",
-      "txResult",
-      "tx_result",
-      "transactionResult",
-      "transaction_result",
-      "broadcastResult",
-      "broadcast_result",
-      "outputCommitment",
-      "output_commitment",
-      "outputCommitmentHex",
-      "output_commitment_hex",
-      "commitmentHex",
-      "commitment_hex",
-      "auditDisclosureDigest",
-      "audit_disclosure_digest",
-      "auditDisclosureDigestHex",
-      "audit_disclosure_digest_hex",
-      "disclosureDigest",
-      "disclosure_digest",
-      "recipientHash",
-      "recipient_hash",
-      "recipientHashHex",
-      "recipient_hash_hex",
-      "amountHash",
-      "amount_hash",
-      "amountHashHex",
-      "amount_hash_hex",
-      "expectedOutputCommitment",
-      "expected_output_commitment",
-      "expectedDisclosureDigest",
-      "expected_disclosure_digest",
-      "expectedRecipientHash",
-      "expected_recipient_hash",
-      "expectedAmount",
-      "expected_amount",
-      "operationAmount",
-      "operation_amount",
-      "actualAmount",
-      "actual_amount",
-      "expectedAmountHash",
-      "expected_amount_hash",
-      "expectedDenom",
-      "expected_denom",
-      "operationDenom",
-      "operation_denom",
-      "actualDenom",
-      "actual_denom",
-      "batchItemIndex",
-      "batch_item_index",
-      "itemIndex",
-      "item_index",
-      "batchItemIndexKnown",
-      "batch_item_index_known",
-      "itemIndexKnown",
-      "item_index_known"
-    ];
     const conflicts = [];
     for (const reservation of reservations) {
       const note = spentNotesByLookupKey.get(reservation.nullifier_lookup_key);
       if (!note) continue;
-      const hasExplicitEvidence = explicitEvidenceKeys.some(
-        (key) => Object.prototype.hasOwnProperty.call(note, key) && note[key] != null
-      );
-      if (!hasExplicitEvidence) continue;
+      if (!hasExplicitOperationEvidence(note)) continue;
       const evidence = evaluateOperationSuccessEvidence(reservation, note);
       if (!evidence.evaluated || !evidence.matches) {
         conflicts.push(...evidence.conflicts.length ? evidence.conflicts : [operationEvidenceConflict(reservation, "operation_input", "conflict")]);
@@ -84339,20 +84848,22 @@ function operationEvidenceEnvelopesEqual(left, right, seen = /* @__PURE__ */ new
   const rightKeys = Object.keys(right).sort();
   return leftKeys.length === rightKeys.length && leftKeys.every((key, index) => key === rightKeys[index] && operationEvidenceEnvelopesEqual(left[key], right[key], seen));
 }
-function nestedOperationEvidence(input = {}) {
+function nestedOperationEvidenceState(input = {}) {
   const candidates = [];
   for (const key of ["operationSuccessEvidence", "operation_success_evidence", "successEvidence", "success_evidence", "evidence"]) {
     const candidate = input?.[key];
     if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
-      candidates.push(candidate);
+      candidates.push({ key, value: candidate });
     }
   }
-  if (candidates.length > 1 && candidates.slice(1).some(
-    (candidate) => !operationEvidenceEnvelopesEqual(candidates[0], candidate)
-  )) {
-    throw new Error("operation success evidence envelope aliases conflict");
-  }
-  return candidates[0] || null;
+  const conflictingKeys = candidates.length > 1 ? candidates.slice(1).filter((candidate) => !operationEvidenceEnvelopesEqual(candidates[0].value, candidate.value)).map((candidate) => candidate.key) : [];
+  return {
+    evidence: candidates[0]?.value || null,
+    provided: candidates.length > 0,
+    conflict: conflictingKeys.length > 0,
+    keys: candidates.map((candidate) => candidate.key),
+    conflictingKeys
+  };
 }
 function txResultObjects(input = {}) {
   const results = [];
@@ -84442,13 +84953,75 @@ function operationEvidenceAliasConflict(sources = [], keys = [], {
   }
   return new Set(values).size > 1;
 }
+function operationVerificationEvidence(sources = [], directKeys = [], nestedKeys = []) {
+  const values = [];
+  for (const source of sources) {
+    if (!source || typeof source !== "object" || Array.isArray(source)) continue;
+    for (const key of directKeys) {
+      if (Object.prototype.hasOwnProperty.call(source, key) && source[key] != null) {
+        values.push(source[key]);
+      }
+    }
+    for (const key of nestedKeys) {
+      const nested = source[key];
+      if (nested && typeof nested === "object" && !Array.isArray(nested) && Object.prototype.hasOwnProperty.call(nested, "verified") && nested.verified != null) {
+        values.push(nested.verified);
+      }
+    }
+  }
+  const normalized = values.map(booleanEvidence);
+  return {
+    provided: values.length > 0,
+    verified: normalized.includes(true),
+    conflict: new Set(normalized).size > 1
+  };
+}
 function operationSuccessEvidence(input = {}) {
-  const nested = nestedOperationEvidence(input);
+  if (input?.[mergedOperationSuccessEvidence]) {
+    return input[mergedOperationSuccessEvidence];
+  }
+  const nestedState = nestedOperationEvidenceState(input);
+  const nested = nestedState.evidence;
   const evidenceSource = nested || input;
   const source = evidenceSource;
   const aliasSources = [evidenceSource];
   const txResults = executionResultObjects(evidenceSource);
   const txResult = txResults[0] || null;
+  const verificationSources = [.../* @__PURE__ */ new Set([
+    evidenceSource,
+    ...txResults,
+    ...txResults.flatMap(executionResultContainers)
+  ])];
+  const evmTransactionVerification = operationVerificationEvidence(
+    verificationSources,
+    [
+      "evmTransactionVerified",
+      "evm_transaction_verified",
+      "transactionVerified",
+      "transaction_verified"
+    ],
+    ["transactionVerification", "transaction_verification"]
+  );
+  const evmPrivacyReceiptVerification = operationVerificationEvidence(
+    verificationSources,
+    [
+      "evmPrivacyReceiptVerified",
+      "evm_privacy_receipt_verified",
+      "privacyReceiptVerified",
+      "privacy_receipt_verified"
+    ],
+    ["privacyReceipt", "privacy_receipt"]
+  );
+  const evmFinalityVerification = operationVerificationEvidence(
+    verificationSources,
+    [
+      "evmFinalityVerified",
+      "evm_finality_verified",
+      "finalityVerified",
+      "finality_verified"
+    ],
+    ["finality", "evmFinality", "evm_finality"]
+  );
   const txHashKeys = [
     "txHash",
     "tx_hash",
@@ -84553,6 +85126,20 @@ function operationSuccessEvidence(input = {}) {
     "asset_denom"
   ];
   const aliasErrors = [];
+  if (nestedState.conflict) {
+    aliasErrors.push(
+      `operation_evidence_envelope evidence aliases conflict: ${nestedState.keys.join(", ")}`
+    );
+  }
+  if (evmTransactionVerification.conflict) {
+    aliasErrors.push("evm_transaction_verification evidence aliases conflict");
+  }
+  if (evmPrivacyReceiptVerification.conflict) {
+    aliasErrors.push("evm_privacy_receipt_verification evidence aliases conflict");
+  }
+  if (evmFinalityVerification.conflict) {
+    aliasErrors.push("evm_finality_verification evidence aliases conflict");
+  }
   for (const [field2, keys, options] of [
     ["expected_operation_evidence_hash", operationEvidenceHashKeys, { caseInsensitive: true }],
     ["expected_output_commitment", outputCommitmentKeys, { caseInsensitive: true }],
@@ -84569,7 +85156,18 @@ function operationSuccessEvidence(input = {}) {
     }
   }
   const aliasValue3 = (keys) => String(firstDefined(...keys.map((key) => source[key]), ""));
+  const unambiguousOperationEvidenceValues = [
+    ...txBytesHashes,
+    ...signDocHashes,
+    aliasValue3(operationEvidenceHashKeys),
+    aliasValue3(outputCommitmentKeys),
+    aliasValue3(disclosureDigestKeys),
+    aliasValue3(recipientHashKeys),
+    aliasValue3(amountHashKeys)
+  ];
+  const unambiguousOperationEvidenceProvided = txResults.length > 0 || unambiguousOperationEvidenceValues.some((value) => value !== "" && value != null) || evmTransactionVerification.provided || evmPrivacyReceiptVerification.provided || evmFinalityVerification.provided || normalizedItemIndex.provided || batchItemIndexKnown !== void 0 && batchItemIndexKnown !== null || aliasErrors.length > 0;
   return {
+    provided: nestedState.provided || unambiguousOperationEvidenceProvided || txHashes.length > 0 && (!input?.note || unambiguousOperationEvidenceProvided),
     txHash: txHashes[0] || "",
     txHashes,
     txBytesHash: txBytesHashes[0] || "",
@@ -84585,11 +85183,18 @@ function operationSuccessEvidence(input = {}) {
     amount: aliasValue3(amountKeys),
     amountHash: aliasValue3(amountHashKeys),
     denom: aliasValue3(denomKeys),
+    evmTransactionVerificationProvided: evmTransactionVerification.provided,
+    evmTransactionVerified: evmTransactionVerification.provided && evmTransactionVerification.verified,
+    evmPrivacyReceiptVerificationProvided: evmPrivacyReceiptVerification.provided,
+    evmPrivacyReceiptVerified: evmPrivacyReceiptVerification.provided && evmPrivacyReceiptVerification.verified,
+    evmFinalityVerificationProvided: evmFinalityVerification.provided,
+    evmFinalityVerified: evmFinalityVerification.provided && evmFinalityVerification.verified,
     aliasErrors,
     batchItemIndexRaw: batchItemIndex,
     batchItemIndex: normalizedItemIndex.value,
     batchItemIndexValid: normalizedItemIndex.valid,
     batchItemIndexProvided: normalizedItemIndex.provided,
+    batchItemIndexKnownProvided: batchItemIndexKnown !== void 0 && batchItemIndexKnown !== null,
     batchItemIndexKnown: batchItemIndexKnown !== void 0 && batchItemIndexKnown !== null ? booleanEvidence(batchItemIndexKnown) : batchItemIndex !== void 0 && batchItemIndex !== null
   };
 }
@@ -84636,6 +85241,11 @@ function canonicalRelayTransactionHash(value) {
 function normalizedIdentityValues(values = []) {
   return [...new Set(values.map(normalizedTxIdentity).filter(Boolean))];
 }
+function reservationNetworkTransactionIdentities(reservation = {}) {
+  return normalizedIdentityValues(
+    reservationExecutionTransport(reservation) === "evm" ? [reservation.submitted_tx_hash] : [reservation.submitted_tx_hash, reservation.tx_bytes_hash]
+  );
+}
 function operationEvidenceConflictField(sourceField) {
   if (["submitted_tx_hash", "tx_hash", "tx_bytes_hash", "sign_doc_hash", "tx_hash_or_tx_bytes"].includes(sourceField)) {
     return "tx_hash";
@@ -84646,6 +85256,11 @@ function operationEvidenceConflictField(sourceField) {
   if (sourceField === "expected_recipient_hash") return "recipient_hash";
   if (sourceField === "expected_denom") return "denom";
   if (sourceField === "batch_item_index") return "batch_item_index";
+  if (sourceField === "batch_item_index_known") return "batch_item_index";
+  if (sourceField === "operation_evidence_envelope") return "operation_evidence";
+  if (sourceField === "evm_transaction_verification") return "tx_hash";
+  if (sourceField === "evm_privacy_receipt_verification") return "transaction_outcome";
+  if (sourceField === "evm_finality_verification") return "transaction_outcome";
   if (sourceField === "transaction_outcome") return "transaction_outcome";
   return sourceField || "operation_input";
 }
@@ -84675,6 +85290,7 @@ function evidenceConflictError(reservations, conflicts, message = "operation evi
   }, fields ? `${message}: ${fields}` : message);
 }
 function evaluateOperationTxIdentity(reservation = {}, actual = {}) {
+  const executionTransport = reservationExecutionTransport(reservation);
   const expectedTxHash = normalizedTxIdentity(reservation.submitted_tx_hash);
   const expectedTxBytesHash = normalizedTxIdentity(reservation.tx_bytes_hash);
   const actualTxHashes = normalizedIdentityValues(actual.txHashes || [actual.txHash]);
@@ -84687,6 +85303,90 @@ function evaluateOperationTxIdentity(reservation = {}, actual = {}) {
   const errors = [];
   const conflicts = [];
   let matched = false;
+  if (executionTransport === "evm") {
+    let txHashMatched = false;
+    let txBytesHashMatched = false;
+    if (!expectedTxHash) {
+      errors.push("persisted EVM network tx_hash identity missing");
+      conflicts.push(operationEvidenceConflict(reservation, "tx_hash", "expected_missing", {
+        expected: "",
+        actual: actualTxHashes
+      }));
+    }
+    if (!expectedTxBytesHash) {
+      errors.push("persisted EVM tx_bytes_hash artifact binding missing");
+      conflicts.push(operationEvidenceConflict(reservation, "tx_bytes_hash", "expected_missing", {
+        expected: "",
+        actual: actualTxBytesHashes
+      }));
+    }
+    if (!actualTxHashes.length) {
+      errors.push("EVM network tx_hash evidence missing");
+      conflicts.push(operationEvidenceConflict(reservation, "tx_hash", "missing", {
+        expected: expectedTxHash,
+        actual: ""
+      }));
+    }
+    if (!actualTxBytesHashes.length) {
+      errors.push("EVM tx_bytes_hash artifact evidence missing");
+      conflicts.push(operationEvidenceConflict(reservation, "tx_bytes_hash", "missing", {
+        expected: expectedTxBytesHash,
+        actual: ""
+      }));
+    }
+    if (actualTxHashes.length > 1) {
+      errors.push("tx_hash evidence conflict");
+      conflicts.push(operationEvidenceConflict(reservation, "tx_hash", "conflict", {
+        expected: expectedTxHash,
+        actual: actualTxHashes
+      }));
+    }
+    if (actualTxBytesHashes.length > 1) {
+      errors.push("tx_bytes_hash evidence conflict");
+      conflicts.push(operationEvidenceConflict(reservation, "tx_bytes_hash", "conflict", {
+        expected: expectedTxBytesHash,
+        actual: actualTxBytesHashes
+      }));
+    }
+    for (const actualTxHash of actualTxHashes) {
+      if (!expectedTxHash || actualTxHash !== expectedTxHash) {
+        errors.push("EVM network tx_hash mismatch");
+        conflicts.push(operationEvidenceConflict(reservation, "tx_hash", "mismatch", {
+          expected: expectedTxHash,
+          actual: actualTxHash
+        }));
+      } else {
+        txHashMatched = true;
+      }
+    }
+    for (const actualTxBytesHash of actualTxBytesHashes) {
+      if (!expectedTxBytesHash || actualTxBytesHash !== expectedTxBytesHash) {
+        errors.push("EVM tx_bytes_hash artifact mismatch");
+        conflicts.push(operationEvidenceConflict(reservation, "tx_bytes_hash", "mismatch", {
+          expected: expectedTxBytesHash,
+          actual: actualTxBytesHash
+        }));
+      } else {
+        txBytesHashMatched = true;
+      }
+    }
+    if (expectedSignDoc) {
+      for (const actualSignDoc of actualSignDocs) {
+        if (actualSignDoc !== expectedSignDoc) {
+          errors.push("sign_doc_hash mismatch");
+          conflicts.push(operationEvidenceConflict(reservation, "sign_doc_hash", "mismatch", {
+            expected: expectedSignDoc,
+            actual: actualSignDoc
+          }));
+        }
+      }
+    }
+    return {
+      matches: errors.length === 0 && txHashMatched && txBytesHashMatched,
+      errors: [...new Set(errors)],
+      conflicts: uniqueOperationEvidenceConflicts(conflicts)
+    };
+  }
   if (!actualIdentitySeen) {
     errors.push("tx_hash_or_tx_result identity missing");
     conflicts.push(operationEvidenceConflict(reservation, "tx_hash_or_tx_bytes", "missing", {
@@ -84768,6 +85468,33 @@ function evaluateOperationTxIdentity(reservation = {}, actual = {}) {
     conflicts: uniqueOperationEvidenceConflicts(conflicts)
   };
 }
+function evmReceiptStatusSucceeded(receiptStatus) {
+  const normalized = String(receiptStatus).trim().toLowerCase();
+  return receiptStatus === true || receiptStatus === 1 || receiptStatus === 1n || normalized === "1" || normalized === "true" || normalized === "success" || /^0x0*1$/.test(normalized);
+}
+function executionOutcomeValues(txResults = []) {
+  const values = [];
+  for (const txResult of txResults) {
+    for (const container of executionResultContainers(txResult)) {
+      if (Object.prototype.hasOwnProperty.call(container, "code") && container.code !== void 0 && container.code !== null && String(container.code).trim() !== "") {
+        const rawCode = String(container.code).trim();
+        const normalizedCode = /^(0|[1-9][0-9]*)$/.test(rawCode) ? String(Number(rawCode)) : `invalid:${rawCode.toLowerCase()}`;
+        values.push(`cosmos-code:${normalizedCode}`);
+      }
+      for (const status of [
+        container.receiptStatus,
+        container.receipt_status,
+        container.status
+      ]) {
+        if (status === void 0 || status === null || String(status).trim() === "") continue;
+        values.push(
+          evmReceiptStatusSucceeded(status) ? "evm-status:success" : `evm-status:failure:${String(status).trim().toLowerCase()}`
+        );
+      }
+    }
+  }
+  return [...new Set(values)].sort();
+}
 function executionOutcomeErrors(txResult) {
   if (!txResult || typeof txResult !== "object") return [];
   const errors = [];
@@ -84785,11 +85512,28 @@ function executionOutcomeErrors(txResult) {
     container.status
   ]).filter((status) => status !== void 0 && status !== null && String(status).trim() !== "");
   for (const receiptStatus of receiptStatuses) {
-    const normalized = String(receiptStatus).trim().toLowerCase();
-    const succeeded = receiptStatus === true || receiptStatus === 1 || receiptStatus === 1n || normalized === "1" || normalized === "true" || normalized === "success" || /^0x0*1$/.test(normalized);
-    if (!succeeded) errors.push("evm_receipt_status indicates failure");
+    if (!evmReceiptStatusSucceeded(receiptStatus)) {
+      errors.push("evm_receipt_status indicates failure");
+    }
   }
   return [...new Set(errors)];
+}
+function hasExplicitSuccessfulEvmReceipt(txResults = []) {
+  const receipts = [];
+  for (const result of txResults) {
+    if (!result || typeof result !== "object" || Array.isArray(result)) continue;
+    for (const key of ["receipt", "transactionReceipt", "transaction_receipt"]) {
+      const receipt = result[key];
+      if (receipt && typeof receipt === "object" && !Array.isArray(receipt) && !receipts.includes(receipt)) {
+        receipts.push(receipt);
+      }
+    }
+    const looksLikeReceipt = Object.prototype.hasOwnProperty.call(result, "status") && ["transactionHash", "transaction_hash", "txHash", "tx_hash", "logs"].some((key) => Object.prototype.hasOwnProperty.call(result, key));
+    if (looksLikeReceipt && !receipts.includes(result)) receipts.push(result);
+  }
+  return receipts.some(
+    (receipt) => Object.prototype.hasOwnProperty.call(receipt, "status") && receipt.status != null && String(receipt.status).trim() !== "" && evmReceiptStatusSucceeded(receipt.status)
+  );
 }
 function evaluateOperationSuccessEvidence(reservation = {}, actualInput = {}) {
   if (!operationSuccessEvidenceRequired(reservation)) {
@@ -84812,6 +85556,44 @@ function evaluateOperationSuccessEvidence(reservation = {}, actualInput = {}) {
     conflicts.push(operationEvidenceConflict(reservation, "transaction_outcome", "failure", {
       actual: outcomeError
     }));
+  }
+  if (reservationExecutionTransport(reservation) === "evm") {
+    if (!hasExplicitSuccessfulEvmReceipt(actual.txResults)) {
+      errors.push("explicit successful EVM receipt evidence missing");
+      conflicts.push(operationEvidenceConflict(
+        reservation,
+        "transaction_outcome",
+        "missing",
+        { expected: "successful EVM receipt", actual: "" }
+      ));
+    }
+    if (!actual.evmTransactionVerified) {
+      errors.push("EVM transaction identity verification missing");
+      conflicts.push(operationEvidenceConflict(
+        reservation,
+        "evm_transaction_verification",
+        "missing",
+        { expected: true, actual: false }
+      ));
+    }
+    if (!actual.evmPrivacyReceiptVerified) {
+      errors.push("EVM privacy receipt verification missing");
+      conflicts.push(operationEvidenceConflict(
+        reservation,
+        "evm_privacy_receipt_verification",
+        "missing",
+        { expected: true, actual: false }
+      ));
+    }
+    if (!actual.evmFinalityVerified) {
+      errors.push("EVM finality verification missing");
+      conflicts.push(operationEvidenceConflict(
+        reservation,
+        "evm_finality_verification",
+        "missing",
+        { expected: true, actual: false }
+      ));
+    }
   }
   const check = (field2, expectedValue, actualValue, options = {}) => {
     if (!expectedValue) {
@@ -84841,7 +85623,8 @@ function evaluateOperationSuccessEvidence(reservation = {}, actualInput = {}) {
   if (expected.operationEvidenceHash) {
     check("expected_operation_evidence_hash", expected.operationEvidenceHash, actual.operationEvidenceHash, { caseInsensitive: true });
   } else {
-    if (expected.outputCommitment || expected.disclosureDigest) {
+    const withdrawPredicate = (/* @__PURE__ */ new Set(["withdraw", "relay_withdraw"])).has(String(reservation.kind || ""));
+    if (!withdrawPredicate) {
       check("expected_output_commitment", expected.outputCommitment, actual.outputCommitment, { caseInsensitive: true });
       check("expected_disclosure_digest", expected.disclosureDigest, actual.disclosureDigest, { caseInsensitive: true });
     }
@@ -84878,7 +85661,7 @@ function evaluateOperationSuccessEvidence(reservation = {}, actualInput = {}) {
   return {
     evaluated: true,
     matches: errors.length === 0,
-    errors,
+    errors: [...new Set(errors)],
     conflicts: uniqueOperationEvidenceConflicts(conflicts)
   };
 }
@@ -84960,10 +85743,7 @@ function assertPersistedRelayTransactionEvidence(reservation, evidence) {
   if (reservation.status !== reservationStatuses.Submitted || !relaySourceRecorded || reservation.payload_hash !== evidence.payloadHash || reservation.submitted_tx_hash !== evidence.txHash || reservation.broadcast_in_flight || Number(reservation.broadcast_attempt_count || 0) < 1 || reservation.lease_owner || reservation.lease_token || reservation.lease_until || reservation.last_heartbeat_at) {
     throw new Error("relay transaction evidence conflicts with the persisted Submitted operation");
   }
-  const conflictingIdentity = normalizedIdentityValues([
-    reservation.submitted_tx_hash,
-    reservation.tx_bytes_hash
-  ]).find((identity) => identity !== normalizedTxIdentity(evidence.txHash));
+  const conflictingIdentity = reservationNetworkTransactionIdentities(reservation).find((identity) => identity !== normalizedTxIdentity(evidence.txHash));
   const metadata = reservation.metadata || {};
   if (conflictingIdentity || metadata.transaction_included_confirmed !== true || metadata.payload_hash_matched !== true || String(metadata.relay_evidence_checked_height ?? "") !== evidence.checkedHeight || metadata.relay_evidence_tx_hash !== evidence.txHash || String(metadata.checked_height ?? "") !== evidence.checkedHeight || metadata.tx_hash_checked !== evidence.txHash) {
     throw new Error("relay transaction evidence conflicts with the persisted inclusion evidence");
@@ -84974,10 +85754,7 @@ function hasExactPostBroadcastFailureEvidence(reservation = {}, metadata = {}) {
   const evidence = postBroadcastReplanEvidence(metadata);
   if (!positiveCheckedHeight(evidence.checkedHeight)) return false;
   const checked = normalizedTxIdentity(evidence.txHashChecked);
-  const stored = normalizedIdentityValues([
-    reservation.submitted_tx_hash,
-    reservation.tx_bytes_hash
-  ]);
+  const stored = reservationNetworkTransactionIdentities(reservation);
   return Boolean(checked && stored.length && stored.includes(checked));
 }
 function normalizedExpiredRecoveryNullifiers(input = {}) {
@@ -85109,6 +85886,12 @@ function proofReadyTransitionPatch(metadata = {}) {
   }
   const operationEvidenceRequiredState = operationSuccessEvidenceRequiredInputState(metadata);
   const operationEvidenceRequired = operationEvidenceRequiredState.present ? operationEvidenceRequiredState.value : false;
+  const executionTransportState = executionTransportInputState(metadata);
+  const nestedMetadata = {
+    ...metadata.metadata || {}
+  };
+  delete nestedMetadata.executionTransport;
+  delete nestedMetadata.execution_transport;
   return {
     lease_token: metadata.leaseToken || metadata.lease_token || "",
     payload_hash: metadata.payloadHash || metadata.payload_hash || "",
@@ -85124,9 +85907,10 @@ function proofReadyTransitionPatch(metadata = {}) {
     batch_item_index: evidence.batchItemIndex,
     batch_item_index_known: evidence.batchItemIndexKnown,
     metadata: {
-      ...metadata.metadata || {},
+      ...nestedMetadata,
       no_broadcast_attempt: true,
-      ...operationEvidenceRequired ? { operation_success_evidence_required: true } : {}
+      ...operationEvidenceRequired ? { operation_success_evidence_required: true } : {},
+      ...executionTransportState.present ? { execution_transport: executionTransportState.value } : {}
     }
   };
 }
@@ -85493,10 +86277,18 @@ var MemoryReservationStore = class {
         throw new Error("spent reconciliation requires literal spent evidence");
       }
     }
-    const spentNotesByLookupKey = new Map(spentNotes.map(({ lookupKey, note }) => [lookupKey, note]));
+    const coalescedSpentNotes = coalesceSpentNotesByLookupKey(
+      spentNotes,
+      (lookupKey) => this.state.reservations.filter(
+        (reservation) => reservation.owner_key_id === ownerKeyId && reservation.nullifier_lookup_key === lookupKey
+      )
+    );
+    const spentNotesByLookupKey = new Map(
+      coalescedSpentNotes.map(({ lookupKey, note }) => [lookupKey, note])
+    );
     const transitions = [];
     const affectedGroups = /* @__PURE__ */ new Map();
-    for (const { lookupKey } of spentNotes) {
+    for (const { lookupKey } of coalescedSpentNotes) {
       for (const reservation of this.state.reservations) {
         if (reservation.owner_key_id !== ownerKeyId || reservation.nullifier_lookup_key !== lookupKey) continue;
         const key = reservation.operation_id ? operationReservationGroupKey(reservation) : `${reservation.owner_key_id}\0reservation:${reservation.reservation_id}`;
@@ -86131,10 +86923,7 @@ var NoteReservationManager = class {
       if (externalHandoff && (current.broadcast_in_flight || Number(current.broadcast_attempt_count || 0) !== 0)) {
         throw new Error("external relay transaction evidence requires an unattempted handed-off ProofReady operation");
       }
-      const conflictingIdentity = normalizedIdentityValues([
-        current.submitted_tx_hash,
-        current.tx_bytes_hash
-      ]).find((identity) => identity !== normalizedTxIdentity(evidence.txHash));
+      const conflictingIdentity = reservationNetworkTransactionIdentities(current).find((identity) => identity !== normalizedTxIdentity(evidence.txHash));
       if (conflictingIdentity) {
         throw new Error("relay transaction evidence conflicts with persisted transaction identity");
       }
@@ -86294,6 +87083,13 @@ var NoteReservationManager = class {
   async markSubmitted(reservationIDs2 = [], metadata = {}) {
     assertSubmittedBroadcastAttemptMetadata(metadata, "markSubmitted");
     const attempt = broadcastAttemptMetadata(metadata);
+    const currentByID = await this._ownedReservationsByID(reservationIDs2);
+    const evmReservation = [...currentByID.values()].find(
+      (reservation) => reservationExecutionTransport(reservation) === "evm"
+    );
+    if (evmReservation && !attempt.txHash) {
+      throw new Error("markSubmitted requires the network tx hash for EVM reservations");
+    }
     const patch = {
       lease_token: metadata.leaseToken || metadata.lease_token || "",
       broadcast_in_flight: false,
@@ -86691,22 +87487,26 @@ var NoteReservationManager = class {
     });
   }
   async reconcileSpentNotes(notes = []) {
-    const seenLookupKeys = /* @__PURE__ */ new Set();
     const spentNotes = [];
     for (const note of notes || []) {
       if (!hasLiteralSpentEvidence(note)) continue;
       const lookupKey = await this.lookupKeyForNote(note);
-      if (seenLookupKeys.has(lookupKey)) continue;
-      seenLookupKeys.add(lookupKey);
       spentNotes.push({ lookupKey, note });
     }
     if (!spentNotes.length) return [];
     if (typeof this.store.reconcileSpentByLookupKeys !== "function") {
       throw new Error("reservation store atomic spent reconciliation is required");
     }
+    const reservations = await this.store.listReservations({ ownerKeyId: this.ownerKeyId });
+    const coalescedSpentNotes = coalesceSpentNotesByLookupKey(
+      spentNotes,
+      (lookupKey) => reservations.filter(
+        (reservation) => reservation.nullifier_lookup_key === lookupKey
+      )
+    );
     return this.store.reconcileSpentByLookupKeys(
       this.ownerKeyId,
-      spentNotes,
+      coalescedSpentNotes,
       { now: this.timestamp() }
     );
   }
@@ -87001,7 +87801,7 @@ function resolveCosmosFeeAmount(feeAmount, fee_amount) {
   }
   return camel || snake || Object.freeze([]);
 }
-function normalizeCosmosGasLimit2(value, label) {
+function normalizeCosmosGasLimit(value, label) {
   const normalized = typeof value === "bigint" ? value > 0n && value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : NaN : value;
   if (typeof normalized !== "number" || !Number.isSafeInteger(normalized) || normalized <= 0) {
     throw new Error(`${label} must be a positive safe integer`);
@@ -87009,12 +87809,12 @@ function normalizeCosmosGasLimit2(value, label) {
   return normalized;
 }
 function resolveCosmosGasLimit(gasLimit, gas_limit, fallback) {
-  const camel = provided(gasLimit) ? normalizeCosmosGasLimit2(gasLimit, "gasLimit") : null;
-  const snake = provided(gas_limit) ? normalizeCosmosGasLimit2(gas_limit, "gas_limit") : null;
+  const camel = provided(gasLimit) ? normalizeCosmosGasLimit(gasLimit, "gasLimit") : null;
+  const snake = provided(gas_limit) ? normalizeCosmosGasLimit(gas_limit, "gas_limit") : null;
   if (camel !== null && snake !== null && camel !== snake) {
     throw new Error("gasLimit aliases conflict");
   }
-  return camel ?? snake ?? normalizeCosmosGasLimit2(fallback, "default gasLimit");
+  return camel ?? snake ?? normalizeCosmosGasLimit(fallback, "default gasLimit");
 }
 function transferProofReadyMetadata(built, context = {}, bindingField) {
   const output = built?.payload?.outputs?.[0] || {};
@@ -87379,6 +88179,259 @@ async function derivePrivacyMaterialFromWallet(walletLike, options = {}) {
     signatureBase64,
     signingMessage
   };
+}
+
+// node_modules/clairveiljs/src/transport/privacy-state.js
+function privacyStateAdapterTimeoutMs(value) {
+  const timeoutMs = Number(value);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error("PrivacyStateAdapter timeoutMs must be positive");
+  }
+  return timeoutMs;
+}
+function privacyStateAdapterRetry(value = {}) {
+  const retry = value || {};
+  const retries = Number(retry.retries ?? 0);
+  const baseDelayMs = Number(retry.baseDelayMs ?? 0);
+  const maxDelayMs = Number(retry.maxDelayMs ?? baseDelayMs);
+  if (!Number.isSafeInteger(retries) || retries < 0) {
+    throw new Error("PrivacyStateAdapter retries must be a non-negative integer");
+  }
+  if (!Number.isFinite(baseDelayMs) || baseDelayMs < 0 || !Number.isFinite(maxDelayMs) || maxDelayMs < 0) {
+    throw new Error("PrivacyStateAdapter retry delays must be non-negative");
+  }
+  return {
+    retries,
+    baseDelayMs,
+    maxDelayMs,
+    jitter: retry.jitter === true,
+    retryStatuses: retry.retryStatuses instanceof Set ? retry.retryStatuses : new Set(retry.retryStatuses || [])
+  };
+}
+function privacyStateAdapterRetryDelayMs(attemptNumber, retry) {
+  const base = retry.baseDelayMs * (attemptNumber <= 1 ? 1 : 3 ** (attemptNumber - 1));
+  const capped = Math.min(retry.maxDelayMs, base);
+  if (!retry.jitter || capped <= 0) return capped;
+  return Math.round(capped + Math.random() * capped * 0.2);
+}
+function privacyStateAdapterErrorIsRetryable(error, retry) {
+  if (error?.code === "PRIVACY_STATE_ADAPTER_TIMEOUT") return true;
+  if (error?.status != null) {
+    return retry.retryStatuses.has(Number(error.status));
+  }
+  return true;
+}
+function sleep(ms) {
+  return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
+}
+function clonePrivacyStateAdapterValue(value, seen = /* @__PURE__ */ new Map()) {
+  if (value == null || typeof value !== "object") return value;
+  if (seen.has(value)) return seen.get(value);
+  if (value instanceof Uint8Array) return new Uint8Array(value);
+  if (value instanceof ArrayBuffer) return value.slice(0);
+  if (ArrayBuffer.isView(value)) {
+    return new value.constructor(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength));
+  }
+  if (value instanceof Date) return new Date(value.getTime());
+  if (value instanceof Map) {
+    const cloned2 = /* @__PURE__ */ new Map();
+    seen.set(value, cloned2);
+    for (const [key, item] of value) {
+      cloned2.set(
+        clonePrivacyStateAdapterValue(key, seen),
+        clonePrivacyStateAdapterValue(item, seen)
+      );
+    }
+    return cloned2;
+  }
+  if (value instanceof Set) {
+    const cloned2 = /* @__PURE__ */ new Set();
+    seen.set(value, cloned2);
+    for (const item of value) cloned2.add(clonePrivacyStateAdapterValue(item, seen));
+    return cloned2;
+  }
+  if (Array.isArray(value)) {
+    const cloned2 = [];
+    seen.set(value, cloned2);
+    for (const item of value) cloned2.push(clonePrivacyStateAdapterValue(item, seen));
+    return cloned2;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return value;
+  const cloned = {};
+  seen.set(value, cloned);
+  for (const [key, item] of Object.entries(value)) {
+    cloned[key] = clonePrivacyStateAdapterValue(item, seen);
+  }
+  return cloned;
+}
+function clonePrivacyStateAdapterArguments(args) {
+  return (args || []).map((value) => clonePrivacyStateAdapterValue(value));
+}
+function invokeWithTimeout(method, invoke, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      const error = new Error(`PrivacyStateAdapter.${method} timed out after ${timeoutMs}ms`);
+      error.code = "PRIVACY_STATE_ADAPTER_TIMEOUT";
+      reject(error);
+    }, timeoutMs);
+    Promise.resolve().then(invoke).then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+var privacyStateAdapterRequiredMethods = Object.freeze([
+  "fetchPrivacyScan",
+  "fetchTreeState",
+  "fetchCommitmentInfo",
+  "lookupMerklePath",
+  "fetchAuditConfig",
+  "fetchDisclosureConfig",
+  "fetchCircuitConfig",
+  "fetchReserve",
+  "fetchAssetByDenom",
+  "fetchAssetByID",
+  "fetchCommitmentPathsAtRoot",
+  "checkNullifiers"
+]);
+var privacyStateAdapterOptionalMethods = Object.freeze([
+  "fetchPrivacyEvents",
+  "fetchScanEvents",
+  "checkNullifier"
+]);
+var privacyStateAdapterMethods = Object.freeze([
+  ...privacyStateAdapterRequiredMethods,
+  ...privacyStateAdapterOptionalMethods
+]);
+function createPrivacyStateAdapter(adapter) {
+  if (!adapter || typeof adapter !== "object" && typeof adapter !== "function") {
+    throw new TypeError("privacyStateAdapter must be an object");
+  }
+  const missing = privacyStateAdapterRequiredMethods.filter(
+    (method) => typeof adapter[method] !== "function"
+  );
+  if (missing.length) {
+    throw new TypeError(`privacyStateAdapter is missing required methods: ${missing.join(", ")}`);
+  }
+  const normalized = {};
+  for (const method of privacyStateAdapterMethods) {
+    if (adapter[method] == null) continue;
+    if (typeof adapter[method] !== "function") {
+      throw new TypeError(`privacyStateAdapter.${method} must be a function`);
+    }
+    normalized[method] = adapter[method].bind(adapter);
+  }
+  return Object.freeze(normalized);
+}
+async function invokePrivacyStateAdapter(adapter, method, args = [], {
+  timeoutMs,
+  retry
+} = {}) {
+  const adapterMethod = adapter?.[method];
+  if (typeof adapterMethod !== "function") {
+    throw new TypeError(`PrivacyStateAdapter.${method} must be a function`);
+  }
+  const resolvedTimeoutMs = privacyStateAdapterTimeoutMs(timeoutMs);
+  const resolvedRetry = privacyStateAdapterRetry(retry);
+  let lastError = null;
+  for (let attempt = 0; attempt <= resolvedRetry.retries; attempt += 1) {
+    try {
+      return await invokeWithTimeout(
+        method,
+        // Adapter implementations are transport code, not owners of the SDK's
+        // cursor, validation state, or expected-nullifier collections. Give
+        // every attempt an isolated snapshot so response validation cannot be
+        // weakened by argument mutation and retries cannot share mutations.
+        () => adapterMethod(...clonePrivacyStateAdapterArguments(args)),
+        resolvedTimeoutMs
+      );
+    } catch (error) {
+      lastError = error;
+      const canRetry = attempt < resolvedRetry.retries && privacyStateAdapterErrorIsRetryable(error, resolvedRetry);
+      if (!canRetry) throw error;
+      await sleep(privacyStateAdapterRetryDelayMs(attempt + 1, resolvedRetry));
+    }
+  }
+  throw lastError;
+}
+function normalizePrivacyNullifierStatuses(response, requestedNullifiers) {
+  const normalizedRequested = [...new Set((requestedNullifiers || []).map((value) => String(value || "").trim().toLowerCase()).filter(Boolean))];
+  if (normalizedRequested.length === 0) return /* @__PURE__ */ new Map();
+  const requested = new Set(normalizedRequested);
+  const statuses = /* @__PURE__ */ new Map();
+  const invalid = /* @__PURE__ */ new Set();
+  const addStatus = (nullifier, value) => {
+    const key = String(nullifier || "").trim().toLowerCase();
+    if (!requested.has(key) || invalid.has(key)) return;
+    const used = parseNullifierUsage(value);
+    if (used === null || statuses.has(key) && statuses.get(key) !== used) {
+      statuses.delete(key);
+      invalid.add(key);
+      return;
+    }
+    statuses.set(key, used);
+  };
+  if (response instanceof Map) {
+    for (const [nullifier, value] of response) addStatus(nullifier, value);
+  } else if (response && typeof response === "object" && (Array.isArray(response.statuses) || Array.isArray(response.Statuses))) {
+    for (const status of [
+      ...Array.isArray(response.statuses) ? response.statuses : [],
+      ...Array.isArray(response.Statuses) ? response.Statuses : []
+    ]) {
+      const canonical = status?.nullifier;
+      const alias2 = status?.Nullifier;
+      if (canonical != null && alias2 != null && String(canonical).trim().toLowerCase() !== String(alias2).trim().toLowerCase()) {
+        addStatus(canonical, null);
+        addStatus(alias2, null);
+      } else {
+        addStatus(canonical ?? alias2, status);
+      }
+    }
+  } else if (response && typeof response === "object" && !Array.isArray(response)) {
+    for (const [nullifier, value] of Object.entries(response)) addStatus(nullifier, value);
+  } else {
+    throw new Error("privacyStateAdapter.checkNullifiers returned an unsupported status shape");
+  }
+  const unresolved = normalizedRequested.filter(
+    (nullifier) => invalid.has(nullifier) || !statuses.has(nullifier)
+  );
+  if (unresolved.length) {
+    throw new Error(`privacyStateAdapter.checkNullifiers did not return one unambiguous status for: ${unresolved.join(", ")}`);
+  }
+  return new Map(normalizedRequested.map((nullifier) => [nullifier, statuses.get(nullifier)]));
+}
+var privacyNullifierBatchLimit = 1e3;
+async function checkPrivacyStateAdapterNullifiers(adapter, nullifierHexes, options) {
+  const normalized = [...new Set((nullifierHexes || []).map((value) => String(value || "").trim().toLowerCase()).filter(Boolean))];
+  if (normalized.length === 0) return /* @__PURE__ */ new Map();
+  const statuses = /* @__PURE__ */ new Map();
+  for (let start = 0; start < normalized.length; start += privacyNullifierBatchLimit) {
+    const chunk = normalized.slice(start, start + privacyNullifierBatchLimit);
+    const response = await invokePrivacyStateAdapter(
+      adapter,
+      "checkNullifiers",
+      [chunk],
+      options
+    );
+    for (const [nullifier, used] of normalizePrivacyNullifierStatuses(response, chunk)) {
+      statuses.set(nullifier, used);
+    }
+  }
+  return new Map(normalized.map((nullifier) => [nullifier, statuses.get(nullifier)]));
 }
 
 // node_modules/clairveiljs/src/privacy/prover.js
@@ -88397,6 +89450,7 @@ var msgBatchTransferTypeUrl = MsgBatchTransfer.typeUrl;
 var msgTransferTypeUrl = MsgTransfer.typeUrl;
 var msgWithdrawTypeUrl = MsgWithdraw.typeUrl;
 var defaultPrepareScanMaxPages = 1e3;
+var maxPrivacyScanEventCompletionPages = 32;
 var cosmosSignDocMetadataField = "__clairveilCosmosSignDoc";
 var cosmosReservationRequiredMemoMarker = "[clairveil-reservation-required:v1]";
 var maxBatchTransferMessageBytesV1 = 128 << 10;
@@ -88484,6 +89538,22 @@ function normalizedTransferUnix(value, label) {
   }
   return unix;
 }
+function resolveUnixTimestampAlias(camelValue, snakeValue, name) {
+  const normalize3 = (value, label) => {
+    const unixTimestamp = Number(value);
+    if (!Number.isSafeInteger(unixTimestamp) || unixTimestamp < 0) {
+      throw new Error(`${label} must be a non-negative safe integer unix timestamp`);
+    }
+    return unixTimestamp;
+  };
+  const camel = camelValue == null ? null : normalize3(camelValue, name);
+  const snakeLabel = name.replace(/[A-Z]/g, (match) => `_${match.toLowerCase()}`);
+  const snake = snakeValue == null ? null : normalize3(snakeValue, snakeLabel);
+  if (camel !== null && snake !== null && camel !== snake) {
+    throw new Error(`${name} aliases conflict`);
+  }
+  return camel ?? snake ?? void 0;
+}
 function aliasedTransferUnix(camelValue, snakeValue, label) {
   const hasCamel = camelValue !== void 0 && camelValue !== null;
   const hasSnake = snakeValue !== void 0 && snakeValue !== null;
@@ -88515,6 +89585,30 @@ function normalizeBatchTransferOutputMode(value) {
 }
 function comparableBatchHex(value) {
   return String(value ?? "").trim().toLowerCase().replace(/^0x/, "");
+}
+function normalizeBatchTransferInputCommitments(inputCommitmentHexes, input_commitment_hexes) {
+  const normalize3 = (value, label) => {
+    if (!Array.isArray(value) || value.length < 1 || value.length > 16) {
+      throw new Error(`${label} must contain 1..16 input commitments`);
+    }
+    const commitments = value.map((item, index) => {
+      const commitment = comparableBatchHex(item);
+      if (!/^[0-9a-f]{64}$/.test(commitment) || BigInt(`0x${commitment}`) >= FIELD_MODULUS) {
+        throw new Error(`${label}[${index}] must be a canonical BN254 field commitment`);
+      }
+      return commitment;
+    });
+    if (new Set(commitments).size !== commitments.length) {
+      throw new Error(`${label} must not contain duplicate commitments`);
+    }
+    return commitments;
+  };
+  const camel = inputCommitmentHexes == null ? null : normalize3(inputCommitmentHexes, "inputCommitmentHexes");
+  const snake = input_commitment_hexes == null ? null : normalize3(input_commitment_hexes, "input_commitment_hexes");
+  if (camel && snake && (camel.length !== snake.length || camel.some((value, index) => value !== snake[index]))) {
+    throw new Error("inputCommitmentHexes aliases conflict");
+  }
+  return camel ?? snake;
 }
 function batchPaymentValue(payment, names, fallback) {
   const values = names.filter((name) => payment?.[name] !== void 0 && payment?.[name] !== null).map((name) => payment[name]);
@@ -88609,6 +89703,71 @@ function assertExpectedBatchEvidence(expected, actual, label) {
   if (normalized && normalized !== actual) {
     throw new Error(`${label} does not match the final prepared batch payload`);
   }
+}
+function buildDirectOperationEvidenceHashes({
+  assertions,
+  recipient,
+  amount,
+  denom,
+  shieldedPrefix: shieldedPrefix2
+}) {
+  const coin = parseCoin(amount, denom);
+  const expectedRecipientHash = hashRecipient(recipient, { shieldedPrefix: shieldedPrefix2 });
+  const expectedAmountHash = hashAmount(coin.denom, coin.amount);
+  const assertedRecipientHash = canonicalBatchEvidenceDigest(
+    assertions?.expectedRecipientHash,
+    "expectedRecipientHash",
+    { optional: true }
+  );
+  const assertedAmountHash = canonicalBatchEvidenceDigest(
+    assertions?.expectedAmountHash,
+    "expectedAmountHash",
+    { optional: true }
+  );
+  if (assertedRecipientHash && assertedRecipientHash !== expectedRecipientHash) {
+    throw new Error("expectedRecipientHash does not match the transfer recipient");
+  }
+  if (assertedAmountHash && assertedAmountHash !== expectedAmountHash) {
+    throw new Error("expectedAmountHash does not match the transfer amount");
+  }
+  return { expectedRecipientHash, expectedAmountHash, expectedDenom: coin.denom };
+}
+function proofReadyInputNullifiers(values, operation) {
+  if (!Array.isArray(values) || values.length === 0) {
+    throw new Error(`${operation} ProofReady metadata requires input nullifiers`);
+  }
+  const normalized = values.map((value, index) => {
+    const nullifier = String(value ?? "").trim().replace(/^0x/i, "").toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(nullifier)) {
+      throw new Error(`${operation} input nullifier at index ${index} is invalid`);
+    }
+    return nullifier;
+  });
+  if (new Set(normalized).size !== normalized.length) {
+    throw new Error(`${operation} ProofReady metadata contains duplicate input nullifiers`);
+  }
+  return normalized;
+}
+function transferProofReadyMetadata2(built, context = {}, bindingField) {
+  const metadata = transferProofReadyMetadata(built, context, bindingField);
+  const inputNullifiers = proofReadyInputNullifiers(
+    (built?.payload?.inputs || []).map((input) => input?.nullifier_hex),
+    "transfer"
+  );
+  const executionTransport = context.executionTransport ?? context.execution_transport;
+  const batchItemIndex = context.batchItemIndex ?? context.batch_item_index;
+  const batchItemIndexKnown = context.batchItemIndexKnown ?? context.batch_item_index_known;
+  return {
+    ...metadata,
+    ...executionTransport ? { executionTransport } : {},
+    // A direct transfer has one recipient output, but it is not a batch item.
+    // Batch preparation must opt into item-index evidence explicitly.
+    batchItemIndexKnown: batchItemIndexKnown ?? (batchItemIndex !== void 0 && batchItemIndex !== null),
+    metadata: {
+      ...metadata.metadata || {},
+      input_nullifier_hexes: inputNullifiers
+    }
+  };
 }
 function batchWireDigest(wire, field2, label, { optional = false } = {}) {
   const encoded = String(wire?.[field2] || "");
@@ -88750,14 +89909,6 @@ function assertPreparedBatchTransferMatchesActiveConfig(payload, transferProtoco
     }
   }
 }
-function batchTransferNullifiersUnspent(statuses, nullifiers) {
-  const statusFor = (nullifier) => statuses instanceof Map ? statuses.get(nullifier) ?? statuses.get(`0x${nullifier}`) : statuses?.[nullifier] ?? statuses?.[`0x${nullifier}`];
-  for (const [index, nullifier] of nullifiers.entries()) {
-    if (statusFor(nullifier) !== false) {
-      throw new Error(`batch transfer input nullifier at index ${index} is spent, missing, or has an invalid status`);
-    }
-  }
-}
 function assertTransferDisclosureCapabilities(disclosureConfig, {
   userPrivacyPolicy,
   userDisclosureMode
@@ -88885,7 +90036,7 @@ function retryDelayMs(attemptNumber, retry) {
   if (!retry.jitter || capped <= 0) return capped;
   return Math.round(capped + Math.random() * capped * 0.2);
 }
-function sleep(ms) {
+function sleep2(ms) {
   return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 }
 function isRetryableFetchError(error, retry) {
@@ -88893,7 +90044,7 @@ function isRetryableFetchError(error, retry) {
   if (error?.status != null) return retry.retryStatuses.has(Number(error.status));
   return true;
 }
-function normalizeRestEndpoints(primary, restEndpoints = []) {
+function normalizeRestEndpoints(primary, restEndpoints = [], { allowEmpty = false } = {}) {
   const endpoints = [];
   for (const endpoint of [primary, ...Array.isArray(restEndpoints) ? restEndpoints : []]) {
     const normalized = normalizeRestEndpoint(String(endpoint || ""));
@@ -88901,7 +90052,7 @@ function normalizeRestEndpoints(primary, restEndpoints = []) {
       endpoints.push(normalized);
     }
   }
-  if (!endpoints.length) {
+  if (!endpoints.length && !allowEmpty) {
     throw new Error("rest endpoint is required");
   }
   return endpoints;
@@ -88933,7 +90084,7 @@ function createClairveilRegistry(extraTypes = []) {
   ]);
 }
 function normalizeRpcEndpoint(rpc) {
-  return rpc.replace(/^tcp:\/\//, "http://").replace(/\/$/, "");
+  return String(rpc || "").replace(/^tcp:\/\//, "http://").replace(/\/$/, "");
 }
 function normalizeRestEndpoint(rest) {
   return rest.replace(/\/$/, "");
@@ -89232,10 +90383,21 @@ async function fetchJson(url, {
     clearTimeout(timeout);
   }
 }
-async function fetchJsonWithRetry(urlForEndpoint, endpoints, { timeoutMs, retry, fetchImpl, method, body, headers } = {}) {
+async function fetchJsonWithRetry(urlForEndpoint, endpoints, {
+  timeoutMs,
+  retry,
+  fetchImpl,
+  method,
+  body,
+  headers,
+  failoverStatuses = []
+} = {}) {
   const normalizedRetry = normalizeQueryRetry(retry);
+  const normalizedFailoverStatuses = new Set(failoverStatuses || []);
   let lastError = null;
-  for (const endpoint of endpoints) {
+  let lastNonCapabilityError = null;
+  for (let endpointIndex = 0; endpointIndex < endpoints.length; endpointIndex += 1) {
+    const endpoint = endpoints[endpointIndex];
     for (let attempt = 0; attempt <= normalizedRetry.retries; attempt += 1) {
       try {
         return {
@@ -89244,17 +90406,22 @@ async function fetchJsonWithRetry(urlForEndpoint, endpoints, { timeoutMs, retry,
         };
       } catch (error) {
         lastError = error;
+        if (normalizedFailoverStatuses.has(Number(error?.status))) {
+          if (endpointIndex < endpoints.length - 1) break;
+          throw lastNonCapabilityError || error;
+        }
         const retryable = isRetryableFetchError(error, normalizedRetry);
         if (!retryable) {
           throw error;
         }
+        lastNonCapabilityError = error;
         const canRetry = attempt < normalizedRetry.retries && retryable;
         if (!canRetry) break;
-        await sleep(retryDelayMs(attempt + 1, normalizedRetry));
+        await sleep2(retryDelayMs(attempt + 1, normalizedRetry));
       }
     }
   }
-  throw lastError;
+  throw lastNonCapabilityError || lastError;
 }
 function unwrapBaseAccount(value) {
   let current = value;
@@ -89288,9 +90455,9 @@ function privacyEventsQuery({
   }
   const resolvedEventTypes = eventTypes ?? event_types;
   if (Array.isArray(resolvedEventTypes)) {
-    for (const eventType of resolvedEventTypes) {
-      if (String(eventType || "").trim()) {
-        params.append("event_types", String(eventType).trim());
+    for (const eventType2 of resolvedEventTypes) {
+      if (String(eventType2 || "").trim()) {
+        params.append("event_types", String(eventType2).trim());
       }
     }
   } else if (resolvedEventTypes != null && String(resolvedEventTypes).trim()) {
@@ -89322,9 +90489,9 @@ function scanEventsQuery({
   }
   const resolvedEventTypes = eventTypes ?? event_types;
   if (Array.isArray(resolvedEventTypes)) {
-    for (const eventType of resolvedEventTypes) {
-      if (String(eventType || "").trim()) {
-        params.append("event_types", String(eventType).trim());
+    for (const eventType2 of resolvedEventTypes) {
+      if (String(eventType2 || "").trim()) {
+        params.append("event_types", String(eventType2).trim());
       }
     }
   } else if (resolvedEventTypes != null && String(resolvedEventTypes).trim()) {
@@ -89380,6 +90547,14 @@ function commitmentPathsAtRootRequestBody({
     rootHex: normalizedRoot,
     ...height == null || String(height).trim() === "" ? {} : { snapshotHeight: height }
   };
+}
+function comparableCosmosTxHash(value) {
+  return String(value ?? "").trim().replace(/^0x/i, "").toUpperCase();
+}
+function requiredCosmosTxHash(value, label = "txHash") {
+  const normalized = comparableCosmosTxHash(value);
+  if (!normalized) throw new Error(`${label} is required`);
+  return normalized;
 }
 function privacyEventsCursor(data, request = {}) {
   const events = data?.events || [];
@@ -89448,6 +90623,115 @@ function assertScanEventsVersions(data) {
     throw error;
   }
 }
+function requiredScanEventsField(value, field2, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !(field2 in value)) {
+    throw new Error(`${label}.${field2} is required`);
+  }
+  return value[field2];
+}
+function scanEventsHex(value, label, length) {
+  if (typeof value !== "string" || !/^[0-9a-fA-F]+$/.test(value) || length != null && value.length !== length) {
+    throw new Error(`${label} must be ${length == null ? "a non-empty hex string" : `${length} hex characters`}`);
+  }
+  return value;
+}
+function scanEventsNonNegativeInteger(value, label) {
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return value;
+  if (typeof value === "string" && /^(0|[1-9][0-9]*)$/.test(value)) return value;
+  throw new Error(`${label} must be a non-negative integer`);
+}
+function compareScanEventsPosition(leftHeight, leftSequence, rightHeight, rightSequence) {
+  const heightComparison = compareUint64Cursor(leftHeight, rightHeight, "scan events height");
+  return heightComparison === 0 ? compareUint64Cursor(leftSequence, rightSequence, "scan events sequence") : heightComparison;
+}
+function validateScanEventsResponse(data, request = {}) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("scan_events response must be an object");
+  }
+  assertScanEventsVersions(data);
+  const events = requiredScanEventsField(data, "events", "scan_events response");
+  if (!Array.isArray(events)) throw new Error("scan_events response.events must be an array");
+  const nextHeight = scanEventsNonNegativeInteger(
+    requiredScanEventsField(data, "next_height", "scan_events response"),
+    "scan_events response.next_height"
+  );
+  const nextSequence = scanEventsNonNegativeInteger(
+    requiredScanEventsField(data, "next_sequence", "scan_events response"),
+    "scan_events response.next_sequence"
+  );
+  const responseLimit = scanEventsNonNegativeInteger(
+    requiredScanEventsField(data, "limit", "scan_events response"),
+    "scan_events response.limit"
+  );
+  if (compareUint64Cursor(responseLimit, 0, "scan_events response limit") <= 0) {
+    throw new Error("scan_events response.limit must be a positive integer");
+  }
+  const hasMore = requiredScanEventsField(data, "has_more", "scan_events response");
+  if (typeof hasMore !== "boolean") throw new Error("scan_events response.has_more must be a boolean");
+  const afterHeight = scanEventsNonNegativeInteger(
+    request.afterHeight ?? request.after_height ?? 0,
+    "scan_events request.after_height"
+  );
+  const afterSequence = scanEventsNonNegativeInteger(
+    request.afterSequence ?? request.after_sequence ?? 0,
+    "scan_events request.after_sequence"
+  );
+  const requestedEventTypes = new Set((request.eventTypes ?? request.event_types ?? []).map((value) => String(value || "").trim()).filter(Boolean));
+  let previousHeight = afterHeight;
+  let previousSequence = afterSequence;
+  for (let eventIndex = 0; eventIndex < events.length; eventIndex += 1) {
+    const event = events[eventIndex];
+    const label = `scan_events response.events[${eventIndex}]`;
+    const height = scanEventsNonNegativeInteger(requiredScanEventsField(event, "height", label), `${label}.height`);
+    const sequence = scanEventsNonNegativeInteger(requiredScanEventsField(event, "sequence", label), `${label}.sequence`);
+    if (compareScanEventsPosition(height, sequence, previousHeight, previousSequence) <= 0) {
+      throw new Error(`${label} is not strictly after the preceding scan cursor`);
+    }
+    previousHeight = height;
+    previousSequence = sequence;
+    scanEventsHex(requiredScanEventsField(event, "tx_hash_hex", label), `${label}.tx_hash_hex`);
+    const eventType2 = requiredScanEventsField(event, "event_type", label);
+    if (typeof eventType2 !== "string" || !eventType2.trim()) throw new Error(`${label}.event_type must be a non-empty string`);
+    if (requestedEventTypes.size && !requestedEventTypes.has(eventType2)) {
+      throw new Error(`${label}.event_type was not requested`);
+    }
+    const nullifiers = requiredScanEventsField(event, "nullifier_hexes", label);
+    if (!Array.isArray(nullifiers)) throw new Error(`${label}.nullifier_hexes must be an array`);
+    nullifiers.forEach((nullifier, index) => scanEventsHex(nullifier, `${label}.nullifier_hexes[${index}]`, 64));
+    const outputs = requiredScanEventsField(event, "outputs", label);
+    if (!Array.isArray(outputs)) throw new Error(`${label}.outputs must be an array`);
+    if (eventType2 === "deposit" && outputs.length !== 1) throw new Error(`${label}.outputs must contain exactly one deposit output`);
+    if (eventType2 === "shielded_transfer" && outputs.length !== 2) throw new Error(`${label}.outputs must contain exactly two transfer outputs`);
+    const outputIndexes = /* @__PURE__ */ new Set();
+    for (let outputIndex2 = 0; outputIndex2 < outputs.length; outputIndex2 += 1) {
+      const output = outputs[outputIndex2];
+      const outputLabel = `${label}.outputs[${outputIndex2}]`;
+      const index = requiredScanEventsField(output, "output_index", outputLabel);
+      if (!Number.isSafeInteger(index) || index < 0) throw new Error(`${outputLabel}.output_index must be a non-negative integer`);
+      if (outputIndexes.has(index)) throw new Error(`${label}.outputs contains duplicate output_index ${index}`);
+      outputIndexes.add(index);
+      if (eventType2 === "deposit") {
+        scanEventsHex(requiredScanEventsField(output, "commitment_hex", outputLabel), `${outputLabel}.commitment_hex`, 64);
+        scanEventsHex(requiredScanEventsField(output, "encrypted_note_hex", outputLabel), `${outputLabel}.encrypted_note_hex`);
+      } else if (eventType2 === "shielded_transfer") {
+        scanEventsHex(requiredScanEventsField(output, "commitment_hex", outputLabel), `${outputLabel}.commitment_hex`, 64);
+        scanEventsHex(requiredScanEventsField(output, "cipher_text_hex", outputLabel), `${outputLabel}.cipher_text_hex`);
+        scanEventsHex(requiredScanEventsField(output, "view_tag_hex", outputLabel), `${outputLabel}.view_tag_hex`, 4);
+      }
+      if ("leaf_index_found" in output && typeof output.leaf_index_found !== "boolean") {
+        throw new Error(`${outputLabel}.leaf_index_found must be a boolean`);
+      }
+      if ("leaf_index" in output) scanEventsNonNegativeInteger(output.leaf_index, `${outputLabel}.leaf_index`);
+    }
+  }
+  if (compareScanEventsPosition(nextHeight, nextSequence, previousHeight, previousSequence) < 0) {
+    throw new Error("scan_events next cursor precedes the final event");
+  }
+  if (hasMore && compareScanEventsPosition(nextHeight, nextSequence, afterHeight, afterSequence) <= 0) {
+    throw new Error("scan_events next cursor did not advance");
+  }
+  return data;
+}
 function nextPrivacyScanOptions(scanOrCursor = {}, defaults = {}) {
   const cursor = scanOrCursor?.scanCursor || scanOrCursor || {};
   if (cursor.source === "privacy_scan" || cursor.next_cursor != null || cursor.nextCursor != null) {
@@ -89485,7 +90769,7 @@ function nextPrivacyScanOptions(scanOrCursor = {}, defaults = {}) {
         restorePrivacyScanValidationStateV2(validationState)
       );
     }
-    const maxPages2 = defaults.maxPages ?? defaults.max_pages;
+    const maxPages2 = resolveScanMaxPagesAlias(defaults.maxPages, defaults.max_pages);
     if (maxPages2 != null) next2.maxPages = maxPages2;
     const includeFoundNotes2 = defaults.includeFoundNotes ?? defaults.include_found_notes;
     if (includeFoundNotes2 != null) next2.includeFoundNotes = Boolean(includeFoundNotes2);
@@ -89508,7 +90792,7 @@ function nextPrivacyScanOptions(scanOrCursor = {}, defaults = {}) {
       completed: !hasMore2
     };
     next2.scanSource = "scan_events";
-    const maxPages2 = defaults.maxPages ?? defaults.max_pages;
+    const maxPages2 = resolveScanMaxPagesAlias(defaults.maxPages, defaults.max_pages);
     if (maxPages2 != null) next2.maxPages = maxPages2;
     const includeFoundNotes2 = defaults.includeFoundNotes ?? defaults.include_found_notes;
     if (includeFoundNotes2 != null) next2.includeFoundNotes = Boolean(includeFoundNotes2);
@@ -89526,13 +90810,30 @@ function nextPrivacyScanOptions(scanOrCursor = {}, defaults = {}) {
     eventTypes: cursor.event_types ?? cursor.eventTypes ?? defaults.eventTypes ?? defaults.event_types ?? [],
     scanSource: cursor.source === "privacy_events" ? "privacy_events" : defaults.scanSource ?? defaults.scan_source ?? "privacy_events"
   };
-  const maxPages = defaults.maxPages ?? defaults.max_pages;
+  const maxPages = resolveScanMaxPagesAlias(defaults.maxPages, defaults.max_pages);
   if (maxPages != null) next.maxPages = maxPages;
   const includeFoundNotes = defaults.includeFoundNotes ?? defaults.include_found_notes;
   if (includeFoundNotes != null) next.includeFoundNotes = Boolean(includeFoundNotes);
   next.hasMore = hasMore;
   next.completed = !hasMore;
   return next;
+}
+function normalizeScanMaxPages(value, label) {
+  const normalized = Number(value);
+  if (!Number.isSafeInteger(normalized) || normalized <= 0) {
+    throw new Error(`${label} must be a positive safe integer`);
+  }
+  return normalized;
+}
+function resolveScanMaxPagesAlias(maxPages, max_pages) {
+  const camelProvided = maxPages !== void 0 && maxPages !== null;
+  const snakeProvided = max_pages !== void 0 && max_pages !== null;
+  const camel = camelProvided ? normalizeScanMaxPages(maxPages, "maxPages") : null;
+  const snake = snakeProvided ? normalizeScanMaxPages(max_pages, "max_pages") : null;
+  if (camel !== null && snake !== null && camel !== snake) {
+    throw new Error("maxPages aliases conflict");
+  }
+  return camel ?? snake;
 }
 function resolveScanOptions({
   scan,
@@ -89573,13 +90874,15 @@ function resolveScanOptions({
   if (resolvedScanSource != null && resolvedScanSource !== "privacy_scan") {
     throw new Error("wallet and spend scans only support the typed privacy_scan source");
   }
+  const nestedMaxPages = resolveScanMaxPagesAlias(scan?.maxPages, scan?.max_pages);
+  const topLevelMaxPages = resolveScanMaxPagesAlias(maxPages, max_pages);
   return {
     after: scan?.after ?? after,
     afterHeight: scan?.afterHeight ?? scan?.after_height ?? afterHeight ?? after_height,
     afterSequence: scan?.afterSequence ?? scan?.after_sequence ?? afterSequence ?? after_sequence,
     page: scan?.page ?? page,
     limit: scan?.limit ?? limit,
-    maxPages: scan?.maxPages ?? scan?.max_pages ?? maxPages ?? max_pages,
+    maxPages: nestedMaxPages ?? topLevelMaxPages,
     eventTypes: [],
     outputLimit: scan?.outputLimit ?? scan?.output_limit ?? outputLimit ?? output_limit,
     eventLimit: scan?.eventLimit ?? scan?.event_limit ?? eventLimit ?? event_limit,
@@ -89589,6 +90892,31 @@ function resolveScanOptions({
     // High-level wallet and spend selection must never turn an unavailable or
     // malformed typed endpoint into a cursor-bearing legacy scan.
     strictPrivacyScan: true
+  };
+}
+function resolveWalletScanOptions(options = {}) {
+  const resolved = resolveScanOptions(options);
+  const strictAliases = [
+    options.scan?.strictPrivacyScan,
+    options.scan?.strict_privacy_scan,
+    options.strictPrivacyScan,
+    options.strict_privacy_scan
+  ].filter((value) => value !== void 0 && value !== null);
+  if (strictAliases.some((value) => value !== true)) {
+    throw new Error("wallet and spend scans require strictPrivacyScan=true");
+  }
+  const after = resolved.after == null && resolved.afterHeight != null && resolved.afterSequence != null ? {
+    height: uint64CursorValue2(resolved.afterHeight, "wallet scan after height"),
+    globalSequence: uint64CursorValue2(resolved.afterSequence, "wallet scan after sequence"),
+    outputIndex: 1
+  } : resolved.after;
+  return {
+    ...resolved,
+    after,
+    ...after !== resolved.after ? {
+      afterHeight: void 0,
+      afterSequence: void 0
+    } : {}
   };
 }
 function indexedTxToRestish(tx) {
@@ -89610,6 +90938,51 @@ function publicPrivacyAccount(material) {
     shielded_address: material.shieldedAddress,
     disclosure_pubkey_hex: material.disclosurePubKeyHex,
     root_signature_hash: material.rootSignatureHash
+  };
+}
+function preparedExecutionTransport(execution = {}) {
+  const camel = execution?.executionTransport;
+  const snake = execution?.execution_transport;
+  if (camel == null && snake == null) {
+    throw new Error("executionBuilder must return an explicit execution transport");
+  }
+  const normalize3 = (value) => String(value ?? "").trim().toLowerCase();
+  if (camel != null && snake != null && normalize3(camel) !== normalize3(snake)) {
+    throw new Error("execution transport aliases conflict");
+  }
+  const transport = normalize3(camel ?? snake);
+  if (transport !== "evm" && transport !== "external") {
+    throw new Error("executionBuilder execution transport must be evm or external");
+  }
+  return transport;
+}
+async function buildPreparedExecutionArtifact({ executionBuilder, executionInput, buildSignDoc }) {
+  if (executionBuilder) {
+    const execution = await executionBuilder(executionInput);
+    const camelTxBytesHash = execution?.txBytesHash;
+    const snakeTxBytesHash = execution?.tx_bytes_hash;
+    if (camelTxBytesHash != null && snakeTxBytesHash != null && String(camelTxBytesHash).trim() !== String(snakeTxBytesHash).trim()) {
+      throw new Error("execution transaction binding hash aliases conflict");
+    }
+    const txBytesHash = String(camelTxBytesHash ?? snakeTxBytesHash ?? "").trim();
+    if (!txBytesHash) {
+      throw new Error("executionBuilder must return the prepared transaction binding hash");
+    }
+    return {
+      execution,
+      executionBinding: {
+        txBytesHash,
+        executionTransport: preparedExecutionTransport(execution)
+      }
+    };
+  }
+  const signDoc = await buildSignDoc();
+  return {
+    signDoc,
+    executionBinding: {
+      signDocHash: cosmosSignDocBindingHash(signDoc),
+      executionTransport: "cosmos"
+    }
   };
 }
 function broadcastReservationContext(options = {}) {
@@ -89799,7 +91172,7 @@ async function recheckReservedBatchTransferNullifiers(context, signedTx, checkNu
   if (records.length !== signedNullifiers.length || persistedLookupKeys.some((value) => !value) || signedLookupKeys.some((value) => !value) || new Set(persistedLookupKeys).size !== persistedLookupKeys.length || new Set(signedLookupKeys).size !== signedLookupKeys.length || signedLookupKeys.some((value, index) => value !== persistedLookupKeys[index])) {
     throw new Error("batch transfer reservations do not match the signed transaction inputs");
   }
-  batchTransferNullifiersUnspent(await checkNullifiers(signedNullifiers), signedNullifiers);
+  assertBatchTransferNullifiersUnspent(await checkNullifiers(signedNullifiers), signedNullifiers);
   return signed;
 }
 async function recheckReservedDirectPrivacyNullifiers(context, signedTx, checkNullifiers) {
@@ -89864,7 +91237,7 @@ async function validateRelayBroadcastContext(options, {
   signDocHash
 } = {}) {
   const payload = options?.relayPayload ?? options?.relay_payload ?? null;
-  const reservationRecords = await authoritativeReservationRecords(reservationContext);
+  const reservationRecords = await getBroadcastReservationRecords(reservationContext);
   assertReservationSignDocMatches(reservationRecords, signDocHash, { allowPayloadBinding: Boolean(payload) });
   const withdrawMessage = signedWithdrawMessage(signedTx);
   if (options?.chainNowUnix != null || options?.chain_now_unix != null) {
@@ -90030,6 +91403,12 @@ async function markSigningReservationRejected(context, error) {
 function resolveDisclosureAssetDenom(assetDenom, asset_denom, defaultDenom) {
   return resolveAliasedString(assetDenom, asset_denom, "assetDenom") || defaultDenom;
 }
+function resolveDisclosureOutputAlias(output, scanOutput2, label) {
+  if (output != null && scanOutput2 != null && output !== scanOutput2) {
+    throw new Error(`${label} aliases conflict`);
+  }
+  return output ?? scanOutput2;
+}
 function resolveOperationEvidenceArrayAlias(camelValue, snakeValue, name) {
   const camelProvided = camelValue !== void 0 && camelValue !== null;
   const snakeProvided = snakeValue !== void 0 && snakeValue !== null;
@@ -90121,6 +91500,10 @@ function withdrawProofReadyMetadata(built, context = {}) {
   const expiresAtUnix = String(
     payload.expires_at_unix || payload.expiresAtUnix || ""
   );
+  const executionTransport = context.executionTransport ?? context.execution_transport;
+  const inputNullifiers = proofReadyInputNullifiers([
+    payload.nullifier_hex || payload.nullifierHex || ""
+  ], "withdraw");
   const bindOperationSuccess = context.bindOperationSuccess === true || context.bind_operation_success === true;
   const coin = bindOperationSuccess && payload.amount ? parseCoin(payload.amount, payload.asset_denom || payload.assetDenom || context.denom || "") : null;
   const amount = coin?.amount || "";
@@ -90132,6 +91515,8 @@ function withdrawProofReadyMetadata(built, context = {}) {
   return {
     payloadHash: payload.payload_hash || "",
     signDocHash: context.signDocHash ?? context.sign_doc_hash ?? "",
+    txBytesHash: context.txBytesHash ?? context.tx_bytes_hash ?? "",
+    ...executionTransport ? { executionTransport } : {},
     expectedOutputCommitment: "",
     expectedDisclosureDigest: "",
     expectedRecipientHash: bindOperationSuccess ? hashTransparentRecipient(recipient, { accountPrefix: context.accountPrefix }) : "",
@@ -90139,7 +91524,10 @@ function withdrawProofReadyMetadata(built, context = {}) {
     expectedAmountHash: bindOperationSuccess ? hashAmount(denom, amount) : "",
     expectedDenom: denom,
     operationSuccessEvidenceRequired: bindOperationSuccess,
-    metadata: expiresAtUnix ? { payload_expires_at_unix: expiresAtUnix } : {}
+    metadata: {
+      ...expiresAtUnix ? { payload_expires_at_unix: expiresAtUnix } : {},
+      input_nullifier_hexes: inputNullifiers
+    }
   };
 }
 async function authoritativeBatchRecoveryReservation(reservationManager2, batch, { operationId, nullifierHexes } = {}) {
@@ -90284,13 +91672,20 @@ var ClairveilJS = class {
     queryRetry,
     nullifierFailover = false,
     merklePathFailover = false,
+    privacyStateAdapter,
     expectedCircuitIdentity,
     enableExperimentalBatchTransfer = false,
     enable_experimental_batch_transfer
   } = {}) {
+    this.privacyStateAdapter = privacyStateAdapter == null ? null : createPrivacyStateAdapter(privacyStateAdapter);
     this.rpc = normalizeRpcEndpoint(rpc);
-    this.restEndpoints = normalizeRestEndpoints(rest, restEndpoints);
-    this.rest = this.restEndpoints[0];
+    if (!this.rpc && !this.privacyStateAdapter) {
+      throw new Error("rpc endpoint is required unless privacyStateAdapter is configured");
+    }
+    this.restEndpoints = normalizeRestEndpoints(rest, restEndpoints, {
+      allowEmpty: Boolean(this.privacyStateAdapter)
+    });
+    this.rest = this.restEndpoints[0] || "";
     this.activeRestEndpoint = this.rest;
     this.chainId = chainId;
     this.accountPrefix = normalizeBech32Prefix(accountPrefix2 ?? bech32Prefix ?? defaultAccountPrefix, "accountPrefix");
@@ -90309,6 +91704,9 @@ var ClairveilJS = class {
     this.clientPromise = null;
   }
   async connect() {
+    if (!this.rpc) {
+      throw new Error("rpc endpoint is required for Cosmos transaction and balance queries");
+    }
     if (!this.clientPromise) {
       this.clientPromise = import_stargate.StargateClient.connect(this.rpc);
     }
@@ -90321,7 +91719,23 @@ var ClairveilJS = class {
     this.clientPromise = null;
   }
   restUrl(path, endpoint = this.activeRestEndpoint) {
+    if (!endpoint) {
+      throw new Error("rest endpoint is required for this query; implement the corresponding PrivacyStateAdapter method");
+    }
     return `${endpoint}${path}`;
+  }
+  async queryPrivacyStateAdapter(method, args, restQuery) {
+    const adapterMethod = this.privacyStateAdapter?.[method];
+    if (typeof adapterMethod === "function") {
+      return invokePrivacyStateAdapter(this.privacyStateAdapter, method, args, {
+        timeoutMs: this.queryTimeoutMs,
+        retry: this.queryRetry
+      });
+    }
+    if (!this.restEndpoints.length) {
+      throw new Error(`PrivacyStateAdapter.${method} is required because no REST endpoint is configured`);
+    }
+    return restQuery();
   }
   async fetchJson(pathOrUrl, {
     failover = false,
@@ -90330,7 +91744,8 @@ var ClairveilJS = class {
     body,
     headers,
     endpoint,
-    updateActiveEndpoint = endpoint == null
+    updateActiveEndpoint = endpoint == null,
+    failoverStatuses
   } = {}) {
     const text3 = String(pathOrUrl || "");
     const isAbsolute = /^https?:\/\//i.test(text3);
@@ -90343,13 +91758,17 @@ var ClairveilJS = class {
           retry,
           method,
           body,
-          headers
+          headers,
+          failoverStatuses
         }
       );
       return result2.data;
     }
     const path = text3;
     const initialEndpoint = endpoint || this.activeRestEndpoint;
+    if (!initialEndpoint) {
+      throw new Error("rest endpoint is required for this query");
+    }
     const endpoints = failover ? [initialEndpoint, ...this.restEndpoints.filter((candidate) => candidate !== initialEndpoint)] : [initialEndpoint];
     const result = await fetchJsonWithRetry(
       (endpoint2) => this.restUrl(path, endpoint2),
@@ -90359,7 +91778,8 @@ var ClairveilJS = class {
         retry,
         method,
         body,
-        headers
+        headers,
+        failoverStatuses
       }
     );
     if (updateActiveEndpoint) this.activeRestEndpoint = result.endpoint;
@@ -90422,20 +91842,32 @@ var ClairveilJS = class {
     return null;
   }
   async fetchPrivacyEvents(options = {}) {
-    return this.fetchJson(`/clairveil/privacy/v1/events${privacyEventsQuery(options)}`, { failover: true });
+    return this.queryPrivacyStateAdapter(
+      "fetchPrivacyEvents",
+      [options],
+      () => this.fetchJson(`/clairveil/privacy/v1/events${privacyEventsQuery(options)}`, { failover: true })
+    );
   }
   async fetchScanEvents(options = {}) {
-    const data = await this.fetchJson(`/clairveil/privacy/v1/scan_events${scanEventsQuery(options)}`, { failover: true });
-    assertScanEventsVersions(data);
-    return data;
+    const data = await this.queryPrivacyStateAdapter(
+      "fetchScanEvents",
+      [options],
+      () => this.fetchJson(`/clairveil/privacy/v1/scan_events${scanEventsQuery(options)}`, { failover: true })
+    );
+    return validateScanEventsResponse(data, options);
   }
   async fetchPrivacyScan(options = {}) {
-    return this.fetchJson("/clairveil/privacy/v1/privacy_scan", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: jsonRequestBody(privacyScanRequestBody(options)),
-      failover: true
-    });
+    return this.queryPrivacyStateAdapter(
+      "fetchPrivacyScan",
+      [options],
+      () => this.fetchJson("/clairveil/privacy/v1/privacy_scan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: jsonRequestBody(privacyScanRequestBody(options)),
+        failover: true,
+        failoverStatuses: [404, 405, 501]
+      })
+    );
   }
   /** Fetch a typed privacy-scan-v2 page and fail closed before it is consumed. */
   async queryPrivacyScan(options = {}) {
@@ -90453,19 +91885,39 @@ var ClairveilJS = class {
     );
   }
   async fetchTreeState() {
-    return this.fetchJson("/clairveil/privacy/v1/tree_state", { failover: true });
+    return this.queryPrivacyStateAdapter(
+      "fetchTreeState",
+      [],
+      () => this.fetchJson("/clairveil/privacy/v1/tree_state", { failover: true })
+    );
   }
   async fetchCommitmentInfo(commitmentHex) {
-    return this.fetchJson(`/clairveil/privacy/v1/commitment/${commitmentHex}`, { failover: true });
+    return this.queryPrivacyStateAdapter(
+      "fetchCommitmentInfo",
+      [commitmentHex],
+      () => this.fetchJson(`/clairveil/privacy/v1/commitment/${commitmentHex}`, { failover: true })
+    );
   }
   async lookupMerklePath(commitmentHex) {
-    return this.fetchMerklePathJson(`/clairveil/privacy/v1/merkle_path/${commitmentHex}`);
+    return this.queryPrivacyStateAdapter(
+      "lookupMerklePath",
+      [commitmentHex],
+      () => this.fetchMerklePathJson(`/clairveil/privacy/v1/merkle_path/${commitmentHex}`)
+    );
   }
   async fetchAuditConfig() {
-    return this.fetchJson("/clairveil/privacy/v1/audit_config", { failover: true });
+    return this.queryPrivacyStateAdapter(
+      "fetchAuditConfig",
+      [],
+      () => this.fetchJson("/clairveil/privacy/v1/audit_config", { failover: true })
+    );
   }
   async fetchDisclosureConfig() {
-    return this.fetchJson("/clairveil/privacy/v1/disclosure_config", { failover: true });
+    return this.queryPrivacyStateAdapter(
+      "fetchDisclosureConfig",
+      [],
+      () => this.fetchJson("/clairveil/privacy/v1/disclosure_config", { failover: true })
+    );
   }
   /** Fetch and fail-closed validate the active audit recipient identity. */
   async queryAuditConfig() {
@@ -90477,7 +91929,11 @@ var ClairveilJS = class {
   }
   async fetchCircuitConfig({ expectedCircuitIdentity } = {}) {
     return validateCircuitConfigV1(
-      await this.fetchJson("/clairveil/privacy/v1/circuit_config", { failover: true }),
+      await this.queryPrivacyStateAdapter(
+        "fetchCircuitConfig",
+        [],
+        () => this.fetchJson("/clairveil/privacy/v1/circuit_config", { failover: true })
+      ),
       { expectedCircuitIdentity: expectedCircuitIdentity ?? this.expectedCircuitIdentity ?? void 0 }
     );
   }
@@ -90490,7 +91946,11 @@ var ClairveilJS = class {
     if (!normalizedDenom) {
       throw new Error("reserve denom is required");
     }
-    return this.fetchJson(`/clairveil/privacy/v1/reserve/${encodeURIComponent(normalizedDenom)}`, { failover: true });
+    return this.queryPrivacyStateAdapter(
+      "fetchReserve",
+      [normalizedDenom],
+      () => this.fetchJson(`/clairveil/privacy/v1/reserve/${encodeURIComponent(normalizedDenom)}`, { failover: true })
+    );
   }
   /** Fetch and independently check reserve accounting before relying on it. */
   async queryReserve(denom) {
@@ -90500,17 +91960,25 @@ var ClairveilJS = class {
   async fetchAssetByDenom(denom) {
     const canonicalDenom = String(denom || "").trim();
     if (!canonicalDenom) throw new Error("asset denom is required");
-    return this.fetchJson(
-      `/clairveil/privacy/v1/assets/by_denom/${encodeURIComponent(canonicalDenom)}`,
-      { failover: true }
+    return this.queryPrivacyStateAdapter(
+      "fetchAssetByDenom",
+      [canonicalDenom],
+      () => this.fetchJson(
+        `/clairveil/privacy/v1/assets/by_denom/${encodeURIComponent(canonicalDenom)}`,
+        { failover: true }
+      )
     );
   }
   async fetchAssetByID(assetIdHex) {
     const canonicalAssetID = String(assetIdHex || "").trim();
     if (!canonicalAssetID) throw new Error("asset ID is required");
-    return this.fetchJson(
-      `/clairveil/privacy/v1/assets/by_id/${encodeURIComponent(canonicalAssetID)}`,
-      { failover: true }
+    return this.queryPrivacyStateAdapter(
+      "fetchAssetByID",
+      [canonicalAssetID],
+      () => this.fetchJson(
+        `/clairveil/privacy/v1/assets/by_id/${encodeURIComponent(canonicalAssetID)}`,
+        { failover: true }
+      )
     );
   }
   /** Fetch and fail-closed validate an AssetRegistryV1 denom lookup. */
@@ -90574,11 +92042,15 @@ var ClairveilJS = class {
     });
   }
   async fetchCommitmentPathsAtRoot(options = {}) {
-    return this.fetchMerklePathJson("/clairveil/privacy/v1/commitment_paths_at_root", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: jsonRequestBody(commitmentPathsAtRootRequestBody(options))
-    });
+    return this.queryPrivacyStateAdapter(
+      "fetchCommitmentPathsAtRoot",
+      [options],
+      () => this.fetchMerklePathJson("/clairveil/privacy/v1/commitment_paths_at_root", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: jsonRequestBody(commitmentPathsAtRootRequestBody(options))
+      })
+    );
   }
   /** Fetch, validate, and root-recompute a single exact-root, optionally height-pinned Merkle snapshot. */
   async queryCommitmentPathsAtRoot(options = {}) {
@@ -90604,10 +92076,51 @@ var ClairveilJS = class {
     return this.createCommitmentPathSnapshotProvider({ commitmentHexes, rootHex });
   }
   async checkNullifier(nullifierHex) {
-    return this.fetchNullifierJson(`/clairveil/privacy/v1/nullifier/${nullifierHex}`);
+    const normalized = String(nullifierHex || "").trim().toLowerCase();
+    if (this.privacyStateAdapter) {
+      if (typeof this.privacyStateAdapter.checkNullifier === "function") {
+        const result2 = await invokePrivacyStateAdapter(
+          this.privacyStateAdapter,
+          "checkNullifier",
+          [normalized],
+          { timeoutMs: this.queryTimeoutMs, retry: this.queryRetry }
+        );
+        const used2 = parseNullifierUsage(result2);
+        if (used2 === null) {
+          throw new Error("privacyStateAdapter.checkNullifier returned an ambiguous status");
+        }
+        return { nullifier: normalized, used: used2 };
+      }
+      const statuses = normalizePrivacyNullifierStatuses(
+        await invokePrivacyStateAdapter(
+          this.privacyStateAdapter,
+          "checkNullifiers",
+          [[normalized]],
+          { timeoutMs: this.queryTimeoutMs, retry: this.queryRetry }
+        ),
+        [normalized]
+      );
+      return { nullifier: normalized, used: statuses.get(normalized) };
+    }
+    const result = await this.fetchNullifierJson(
+      `/clairveil/privacy/v1/nullifier/${encodeURIComponent(normalized)}`
+    );
+    const used = parseNullifierUsage(result);
+    if (used === null) {
+      throw new Error("nullifier response returned an ambiguous status");
+    }
+    return { nullifier: normalized, used };
   }
   async checkNullifiers(nullifierHexes = []) {
     const normalized = [...new Set((nullifierHexes || []).map((value) => String(value || "").trim().toLowerCase()).filter(Boolean))];
+    if (normalized.length === 0) return /* @__PURE__ */ new Map();
+    if (this.privacyStateAdapter) {
+      return checkPrivacyStateAdapterNullifiers(
+        this.privacyStateAdapter,
+        normalized,
+        { timeoutMs: this.queryTimeoutMs, retry: this.queryRetry }
+      );
+    }
     const usedByNullifier = /* @__PURE__ */ new Map();
     const invalidNullifiers = /* @__PURE__ */ new Set();
     const addStatus = (nullifier, value) => {
@@ -90628,7 +92141,10 @@ var ClairveilJS = class {
         method: "POST",
         body: JSON.stringify({ nullifiers: chunk })
       });
-      for (const status of response?.statuses || response?.Statuses || []) {
+      for (const status of [
+        ...Array.isArray(response?.statuses) ? response.statuses : [],
+        ...Array.isArray(response?.Statuses) ? response.Statuses : []
+      ]) {
         const canonical = status?.nullifier;
         const alias2 = status?.Nullifier;
         if (canonical != null && alias2 != null && String(canonical).trim().toLowerCase() !== String(alias2).trim().toLowerCase()) {
@@ -90655,7 +92171,8 @@ var ClairveilJS = class {
     after_sequence,
     page = 1,
     limit = 200,
-    maxPages = 1,
+    maxPages,
+    max_pages,
     outputLimit,
     output_limit,
     eventLimit,
@@ -90669,13 +92186,28 @@ var ClairveilJS = class {
     includeFoundNotes = false,
     scanSource,
     scan_source,
-    strictPrivacyScan = false,
-    strict_privacy_scan
+    strictPrivacyScan,
+    strict_privacy_scan,
+    requireTypedScan = false,
+    allowInitialPrivacyScanFallback = false
   } = {}) {
+    for (const [value, label] of [
+      [strictPrivacyScan, "strictPrivacyScan"],
+      [strict_privacy_scan, "strict_privacy_scan"]
+    ]) {
+      if (value != null && typeof value !== "boolean") {
+        throw new Error(`${label} must be a boolean`);
+      }
+    }
+    if (strictPrivacyScan != null && strict_privacy_scan != null && strictPrivacyScan !== strict_privacy_scan) {
+      throw new Error("strictPrivacyScan aliases conflict");
+    }
+    const strictTypedScan = Boolean(strictPrivacyScan ?? strict_privacy_scan ?? false);
+    const resolvedMaxPages = resolveScanMaxPagesAlias(maxPages, max_pages) ?? 1;
     const requestedEventTypes = event_types ?? eventTypes;
     const resolvedEventTypes = requestedEventTypes ?? ["deposit", "shielded_transfer"];
     const pageLimit = Math.max(1, Number(limit || 200));
-    const pageBudget = Math.max(1, Number(maxPages || 1));
+    const pageBudget = resolvedMaxPages;
     const source = scan_source ?? scanSource ?? "privacy_scan";
     if (source !== "privacy_scan" && resolvedEventTypes.some((value) => String(value || "").trim() === "batch_transfer")) {
       throw new Error("batch_transfer outputs require the typed privacy-scan-v2 source");
@@ -90705,10 +92237,22 @@ var ClairveilJS = class {
       const requestedValidationState = validationStateSnapshot ?? validation_state_snapshot;
       const validationState = requestedValidationState == null ? createPrivacyScanValidationStateV2() : restorePrivacyScanValidationStateV2(requestedValidationState);
       try {
-        for (; pagesScanned2 < pageBudget; ) {
+        let eventCompletionPages = 0;
+        for (; ; ) {
+          const pendingEntries = [...validationState.pending_summary_by_event.values()];
+          if (pendingEntries.length > 1) {
+            throw new Error("privacy scan validation state contains multiple partial events");
+          }
+          const pendingSummary = pendingEntries[0];
+          if (pagesScanned2 >= pageBudget && !pendingSummary) break;
+          if (pagesScanned2 >= pageBudget && eventCompletionPages >= maxPrivacyScanEventCompletionPages) {
+            throw new Error("privacy scan could not complete the current event within the bounded continuation budget");
+          }
+          const configuredOutputLimit = Number(outputLimit ?? output_limit ?? pageLimit);
+          const remainingEventOutputs = pendingSummary ? pendingSummary.output_count - pendingSummary.last_output_index - 1 : 0;
           const request = {
             after: currentAfter,
-            outputLimit: outputLimit ?? output_limit ?? pageLimit,
+            outputLimit: pendingSummary ? configuredOutputLimit > 0 ? Math.min(configuredOutputLimit, remainingEventOutputs) : remainingEventOutputs : configuredOutputLimit,
             eventLimit: eventLimit ?? event_limit,
             maxEncodedBytes: maxEncodedBytes ?? max_encoded_bytes,
             // Deliberately request every event: zero-output summaries prove
@@ -90724,19 +92268,31 @@ var ClairveilJS = class {
           };
           scannedEvents += pageResult.scanned_event_count;
           pagesScanned2 += 1;
+          if (pendingSummary && pagesScanned2 > pageBudget) eventCompletionPages += 1;
           hasMore2 = pageResult.has_more;
           if (!hasMore2) break;
         }
       } catch (error) {
-        const canFallback = error?.status === 404 || error?.status === 405 || error?.status === 501;
-        if (!canFallback) throw error;
-        if (Boolean(strict_privacy_scan ?? strictPrivacyScan) || this.enableExperimentalBatchTransfer) {
-          throw new Error("typed privacy-scan-v2 is required; legacy scan fallback is disabled", { cause: error });
+        const endpointIsAbsent = pagesScanned2 === 0 && (error?.status === 404 || error?.status === 405 || error?.status === 501);
+        if (!endpointIsAbsent) throw error;
+        if (requireTypedScan) throw error;
+        if (this.enableExperimentalBatchTransfer) {
+          throw new Error(
+            "typed privacy-scan-v2 is required while one-proof batch transfer support is enabled",
+            { cause: error }
+          );
         }
+        const hasTypedResumeState = after != null || requestedValidationState != null;
+        if (strictTypedScan && (!allowInitialPrivacyScanFallback || hasTypedResumeState)) {
+          throw error;
+        }
+        const fallbackFromLegacyCursor = after == null && legacyHeight != null;
+        const fallbackAfterHeight = fallbackFromLegacyCursor ? uint64CursorValue2(legacyHeight, "unified scan legacy fallback height") : decrementUint64Cursor(initialAfter.height ?? 0, "unified scan fallback height");
+        const fallbackAfterSequence = fallbackFromLegacyCursor ? uint64CursorValue2(afterSequence ?? after_sequence ?? 0, "unified scan legacy fallback sequence") : 0;
         return this.scanNotes({
           rootSeed,
-          afterHeight: decrementUint64Cursor(initialAfter.height ?? 0, "unified scan fallback height"),
-          afterSequence: 0,
+          afterHeight: fallbackAfterHeight,
+          afterSequence: fallbackAfterSequence,
           page: 1,
           limit: pageLimit,
           maxPages: pageBudget,
@@ -90807,7 +92363,7 @@ var ClairveilJS = class {
             limit: pageLimit,
             eventTypes: resolvedEventTypes
           };
-          const data = await this.fetchScanEvents(request);
+          const data = validateScanEventsResponse(await this.fetchScanEvents(request), request);
           lastData2 = data;
           events2.push(...data.events || []);
           pagesScanned2 += 1;
@@ -90865,7 +92421,7 @@ var ClairveilJS = class {
           })
         };
       } catch (error) {
-        const canFallback = error?.status === 404 || error?.status === 501 || error?.status === 503 || error?.code === "UNSUPPORTED_SCAN_EVENTS_VERSION";
+        const canFallback = pagesScanned2 === 0 && (error?.status === 404 || error?.status === 405 || error?.status === 501);
         if (!canFallback) throw error;
         const rewindHeight = decrementUint64Cursor(startAfterHeight, "scan fallback height");
         legacyAfterHeight = rewindHeight;
@@ -90944,11 +92500,19 @@ var ClairveilJS = class {
     if (requestedTypes != null && (!Array.isArray(requestedTypes) || requestedTypes.some((value) => String(value || "").trim() !== "batch_transfer"))) {
       throw new Error("auditable batch transfer query only accepts the batch_transfer event type");
     }
-    const request = { ...options, eventTypes: ["batch_transfer"] };
+    const {
+      validationState,
+      validation_state,
+      ...transportOptions
+    } = options || {};
+    const request = { ...transportOptions, eventTypes: ["batch_transfer"] };
     delete request.event_types;
     const page = validatePrivacyScanPageV2(
       await this.fetchPrivacyScan(request),
-      request
+      {
+        ...request,
+        ...validationState ?? validation_state ? { validationState: validationState ?? validation_state } : {}
+      }
     );
     if (page.summaries.some((summary) => summary.event_type !== "batch_transfer") || page.outputs.some((output) => output.event_type !== "batch_transfer")) {
       throw new Error("auditable batch transfer response contains a non-batch event");
@@ -90962,18 +92526,15 @@ var ClairveilJS = class {
     after_sequence,
     page = 1,
     limit = 200,
-    maxPages = defaultPrepareScanMaxPages,
+    maxPages,
     max_pages,
     eventTypes = ["shielded_transfer"],
     event_types,
     scanSource,
     scan_source
   } = {}) {
-    const normalizedTxHash4 = String(txHash || "").trim().toUpperCase();
-    if (!normalizedTxHash4) {
-      throw new Error("txHash is required");
-    }
-    const pageBudget = Math.max(1, Number(max_pages ?? maxPages ?? defaultPrepareScanMaxPages));
+    const normalizedTxHash4 = requiredCosmosTxHash(txHash);
+    const pageBudget = resolveScanMaxPagesAlias(maxPages, max_pages) ?? defaultPrepareScanMaxPages;
     const pageLimit = Math.max(1, Number(limit || 200));
     const resolvedEventTypes = event_types ?? eventTypes;
     const source = scan_source ?? scanSource ?? "privacy_events";
@@ -90981,14 +92542,15 @@ var ClairveilJS = class {
       let currentAfterHeight = uint64CursorValue2(afterHeight ?? after_height ?? 0, "event lookup after height");
       let currentAfterSequence = uint64CursorValue2(afterSequence ?? after_sequence ?? 0, "event lookup after sequence");
       for (let pagesScanned = 0; pagesScanned < pageBudget; pagesScanned += 1) {
-        const data = await this.fetchScanEvents({
+        const request = {
           afterHeight: currentAfterHeight,
           afterSequence: currentAfterSequence,
           limit: pageLimit,
           eventTypes: resolvedEventTypes
-        });
+        };
+        const data = validateScanEventsResponse(await this.fetchScanEvents(request), request);
         const event = (data.events || []).find(
-          (item) => String(item.tx_hash_hex || "").toUpperCase() === normalizedTxHash4
+          (item) => comparableCosmosTxHash(item.tx_hash_hex ?? item.txHashHex) === normalizedTxHash4
         );
         if (event) return event;
         if (!Boolean(data.has_more ?? data.hasMore)) break;
@@ -91011,7 +92573,9 @@ var ClairveilJS = class {
         limit: pageLimit,
         eventTypes: resolvedEventTypes
       });
-      const event = (data.events || []).find((item) => String(item.tx_hash_hex || "").toUpperCase() === normalizedTxHash4);
+      const event = (data.events || []).find(
+        (item) => comparableCosmosTxHash(item.tx_hash_hex ?? item.txHashHex) === normalizedTxHash4
+      );
       if (event) {
         return event;
       }
@@ -91072,7 +92636,7 @@ var ClairveilJS = class {
     material,
     after,
     limit = 200,
-    maxPages = 1,
+    maxPages,
     max_pages,
     noteStore: noteStore2,
     includeFoundNotes = false,
@@ -91093,38 +92657,51 @@ var ClairveilJS = class {
     validation_state_snapshot,
     scanSource,
     scan_source,
-    strictPrivacyScan = false,
+    strictPrivacyScan,
     strict_privacy_scan
   } = {}) {
     const privacy = material || await this.deriveWalletPrivacyMaterial(wallet);
-    const requestedEventTypes = event_types ?? eventTypes;
-    if (requestedEventTypes != null) {
-      if (!Array.isArray(requestedEventTypes)) {
-        throw new Error("wallet scan eventTypes must be an array");
-      }
-      if (requestedEventTypes.some((value) => String(value || "").trim())) {
-        throw new Error("wallet scans must not filter event types; typed privacy_scan summaries are required");
-      }
-    }
-    const requestedScanSource = scan_source ?? scanSource;
-    if (requestedScanSource != null && requestedScanSource !== "privacy_scan") {
-      throw new Error("wallet scans only support the typed privacy_scan source");
-    }
-    let resolvedAfter = after;
-    let resolvedAfterHeight = afterHeight ?? after_height;
-    let resolvedAfterSequence = afterSequence ?? after_sequence;
-    let resolvedPage = page;
+    const walletScanOptions = resolveWalletScanOptions({
+      after,
+      afterHeight,
+      after_height,
+      afterSequence,
+      after_sequence,
+      page,
+      limit,
+      maxPages,
+      max_pages,
+      eventTypes,
+      event_types,
+      outputLimit,
+      output_limit,
+      eventLimit,
+      event_limit,
+      maxEncodedBytes,
+      max_encoded_bytes,
+      validationStateSnapshot,
+      validation_state_snapshot,
+      scanSource,
+      scan_source,
+      strictPrivacyScan,
+      strict_privacy_scan
+    });
+    const resolvedMaxPages = resolveScanMaxPagesAlias(maxPages, max_pages) ?? 1;
+    let resolvedAfter = walletScanOptions.after;
+    let resolvedAfterHeight = walletScanOptions.afterHeight;
+    let resolvedAfterSequence = walletScanOptions.afterSequence;
+    let resolvedPage = walletScanOptions.page;
     let resolvedScanSource = "privacy_scan";
-    let resolvedValidationStateSnapshot = validationStateSnapshot ?? validation_state_snapshot;
+    let resolvedValidationStateSnapshot = walletScanOptions.validationStateSnapshot;
     if (resolvedAfter == null && resolvedAfterHeight == null && noteStore2) {
       const cached = await noteStore2.load();
       const cachedCursor = cached.scanCursor || {};
       if (cachedCursor.source === "privacy_scan") {
-        const next = nextPrivacyScanOptions(cachedCursor, { limit, maxPages });
+        const next = nextPrivacyScanOptions(cachedCursor, { limit, maxPages: resolvedMaxPages });
         resolvedAfter = next.after;
         resolvedValidationStateSnapshot = resolvedValidationStateSnapshot ?? next.validationStateSnapshot;
       } else if (cachedCursor.source === "scan_events" || cachedCursor.source === "privacy_events") {
-        const next = nextPrivacyScanOptions(cachedCursor, { limit, maxPages });
+        const next = nextPrivacyScanOptions(cachedCursor, { limit, maxPages: resolvedMaxPages });
         resolvedAfter = {
           height: decrementUint64Cursor(next.afterHeight ?? cached.lastScannedHeight ?? 0, "typed wallet scan migration height"),
           globalSequence: 0,
@@ -91163,7 +92740,7 @@ var ClairveilJS = class {
       rootSeed: privacy.rootSeed,
       after: resolvedAfter,
       limit,
-      maxPages: max_pages ?? maxPages,
+      maxPages: resolvedMaxPages,
       afterHeight: resolvedAfterHeight,
       afterSequence: resolvedAfterSequence,
       page: resolvedPage,
@@ -91174,6 +92751,7 @@ var ClairveilJS = class {
       maxEncodedBytes: max_encoded_bytes ?? maxEncodedBytes,
       validationStateSnapshot: resolvedValidationStateSnapshot,
       strictPrivacyScan: true,
+      allowInitialPrivacyScanFallback: true,
       includeFoundNotes: true
     });
     if (noteStore2) {
@@ -91343,8 +92921,7 @@ var ClairveilJS = class {
     attempts,
     intervalMs
   } = {}) {
-    const normalizedTxHash4 = String(txHash ?? tx_hash ?? "").trim().toUpperCase();
-    if (!normalizedTxHash4) throw new Error("txHash is required");
+    const normalizedTxHash4 = requiredCosmosTxHash(txHash ?? tx_hash);
     const expected = depositExpectedMaterial({
       prepared,
       material,
@@ -91418,7 +92995,7 @@ var ClairveilJS = class {
     after_sequence,
     page,
     limit = 200,
-    maxPages = defaultPrepareScanMaxPages,
+    maxPages,
     max_pages,
     eventTypes,
     event_types,
@@ -91437,8 +93014,12 @@ var ClairveilJS = class {
     feeAmount,
     fee_amount,
     reservationManager: reservationManager2,
-    reservation_manager
+    reservation_manager,
+    executionBuilder
   } = {}) {
+    if (executionBuilder != null && typeof executionBuilder !== "function") {
+      throw new Error("executionBuilder must be a function");
+    }
     const resolvedReservationManager = reservationManager2 ?? reservation_manager ?? null;
     const resolvedGasLimit = resolveCosmosGasLimit(gasLimit, gas_limit, 8e6);
     const resolvedFeeAmount = resolveCosmosFeeAmount(feeAmount, fee_amount);
@@ -91468,14 +93049,21 @@ var ClairveilJS = class {
     }
     const resolvedDisableSelfViewDisclosure = disableSelfViewDisclosure ?? disable_self_view_disclosure ?? false;
     const resolvedSelfViewDisclosureTargetPubKeyHex = selfViewDisclosureTargetPubKeyHex ?? self_view_disclosure_target_pubkey;
-    const operationEvidence = resolveDirectOperationEvidenceHashes({
+    const operationEvidenceAssertions = resolveDirectOperationEvidenceHashes({
       expectedRecipientHash,
       expected_recipient_hash,
       expectedAmountHash,
       expected_amount_hash
     });
+    const finalOperationEvidence = buildDirectOperationEvidenceHashes({
+      assertions: operationEvidenceAssertions,
+      recipient,
+      amount,
+      denom: denom ?? this.defaultDenom,
+      shieldedPrefix: this.shieldedPrefix
+    });
     const privacy = material || await this.deriveWalletPrivacyMaterial(wallet);
-    const scanOptions = resolveScanOptions({
+    const scanOptions = resolveWalletScanOptions({
       scan,
       after,
       afterHeight,
@@ -91499,11 +93087,15 @@ var ClairveilJS = class {
       strictPrivacyScan,
       strict_privacy_scan
     });
+    const transferProtocolConfig = await this.assertTransferProtocolConfig(
+      denom ?? this.defaultDenom
+    );
     const scanResult = await this.scanNotes({
       rootSeed: privacy.rootSeed,
       ...scanOptions,
       limit: scanOptions.limit ?? 200,
       maxPages: scanOptions.maxPages ?? defaultPrepareScanMaxPages,
+      allowInitialPrivacyScanFallback: true,
       includeFoundNotes: true
     });
     const availableFoundNotes = await reservationAvailableNotes(resolvedReservationManager, scanResult.foundNotes);
@@ -91534,7 +93126,6 @@ var ClairveilJS = class {
       requestedChainNowUnix,
       requestedExpiresAtUnix
     );
-    const transferProtocolConfig = await this.assertTransferProtocolConfig(denom ?? this.defaultDenom);
     assertTransferDisclosureCapabilities(transferProtocolConfig.disclosure_config, {
       userPrivacyPolicy: isFinal ? userPrivacyPolicy : "all-private",
       userDisclosureMode: isFinal ? userDisclosureMode : "none"
@@ -91549,6 +93140,13 @@ var ClairveilJS = class {
     const auditPubKeyHex = transferProtocolConfig.audit_config.audit_master_pubkey_hex;
     const stepRecipient = isFinal ? recipient : privacy.shieldedAddress;
     const stepAmount = isFinal ? amount : plan.nextAmount;
+    const operationEvidence = isFinal ? finalOperationEvidence : buildDirectOperationEvidenceHashes({
+      assertions: {},
+      recipient: stepRecipient,
+      amount: stepAmount,
+      denom: denom ?? this.defaultDenom,
+      shieldedPrefix: this.shieldedPrefix
+    });
     let reservationBatch = null;
     try {
       reservationBatch = await preparePlanReservation(resolvedReservationManager, {
@@ -91582,43 +93180,58 @@ var ClairveilJS = class {
           signal
         });
         assertHeartbeatHealthy();
-        const signDoc2 = await this.buildDirectSignDoc({
-          signer: privacy.address,
-          pubKeyHex: privacy.pubKeyHex,
-          gasLimit: resolvedGasLimit,
-          feeAmount: resolvedFeeAmount,
-          messages: [
-            {
-              typeUrl: msgTransferTypeUrl,
-              value: built2.message
-            }
-          ],
-          memo: reservationBatch ? reservationRequiredCosmosMemo("Clairveil veiled transfer") : "Clairveil veiled transfer"
+        const artifact = await buildPreparedExecutionArtifact({
+          executionBuilder,
+          executionInput: {
+            payload: built2.payload,
+            proof: built2.proof,
+            message: built2.message,
+            plan,
+            isFinal,
+            reservation: reservationBatchSummary(reservationBatch)
+          },
+          buildSignDoc: () => this.buildDirectSignDoc({
+            signer: privacy.address,
+            pubKeyHex: privacy.pubKeyHex,
+            gasLimit: resolvedGasLimit,
+            feeAmount: resolvedFeeAmount,
+            messages: [
+              {
+                typeUrl: msgTransferTypeUrl,
+                value: built2.message
+              }
+            ],
+            memo: reservationBatch ? reservationRequiredCosmosMemo("Clairveil veiled transfer") : "Clairveil veiled transfer"
+          })
         });
-        const signDocHash = cosmosSignDocBindingHash(signDoc2);
         await heartbeatNow();
-        await markReservationProofReady(resolvedReservationManager, reservationBatch, transferProofReadyMetadata(built2, {
+        const bindingField = artifact.signDoc ? "signDocHash" : "txBytesHash";
+        await markReservationProofReady(resolvedReservationManager, reservationBatch, transferProofReadyMetadata2(built2, {
           amount: stepAmount,
-          denom: denom ?? this.defaultDenom,
-          expectedRecipientHash: isFinal ? operationEvidence.expectedRecipientHash : "",
-          expectedAmountHash: isFinal ? operationEvidence.expectedAmountHash : "",
-          signDocHash
-        }, "signDocHash"));
+          denom: operationEvidence.expectedDenom,
+          expectedRecipientHash: operationEvidence.expectedRecipientHash,
+          expectedAmountHash: operationEvidence.expectedAmountHash,
+          ...artifact.executionBinding
+        }, bindingField));
         return {
           built: built2,
-          signDoc: markCosmosSignDocReservationRequired(
-            signDoc2,
-            reservationBatch
-          )
+          ...artifact.signDoc ? {
+            signDoc: markCosmosSignDocReservationRequired(
+              artifact.signDoc,
+              reservationBatch
+            )
+          } : {},
+          ...artifact.execution ? { execution: artifact.execution } : {}
         };
       });
-      const { built, signDoc } = heartbeatResult;
+      const { built, signDoc, execution } = heartbeatResult;
       return {
         ...reservationReconciliationFields(heartbeatResult),
         status: "ready",
         plan,
         scan: scanResult,
-        signDoc,
+        ...signDoc ? { signDoc } : {},
+        ...execution ? { execution } : {},
         payload: built.payload,
         proof: built.proof,
         message: built.message,
@@ -91676,7 +93289,7 @@ var ClairveilJS = class {
     after_sequence,
     page,
     limit = 200,
-    maxPages = defaultPrepareScanMaxPages,
+    maxPages,
     max_pages,
     eventTypes,
     event_types,
@@ -91702,15 +93315,21 @@ var ClairveilJS = class {
     root_hex,
     snapshotHeight,
     snapshot_height,
+    inputCommitmentHexes,
+    input_commitment_hexes,
     disableSelfViewDisclosure,
     disable_self_view_disclosure,
     selfViewDisclosureTargetPubKeyHex,
     self_view_disclosure_target_pubkey,
     reservationManager: reservationManager2,
-    reservation_manager
+    reservation_manager,
+    executionBuilder
   } = {}) {
     if (!this.enableExperimentalBatchTransfer) {
       throw new Error("one-proof batch transfer is feature-gated; construct the client with enableExperimentalBatchTransfer: true after completing downstream conformance and localnet validation");
+    }
+    if (executionBuilder != null && typeof executionBuilder !== "function") {
+      throw new Error("executionBuilder must be a function");
     }
     const resolvedGasLimit = resolveCosmosGasLimit(gasLimit, gas_limit, 25e6);
     const resolvedFeeAmount = resolveCosmosFeeAmount(feeAmount, fee_amount);
@@ -91736,6 +93355,10 @@ var ClairveilJS = class {
     if (hasPinnedRoot !== hasPinnedSnapshotHeight) {
       throw new Error("rootHex and snapshotHeight must be supplied together for an exact Merkle snapshot");
     }
+    const resolvedInputCommitments = normalizeBatchTransferInputCommitments(
+      inputCommitmentHexes,
+      input_commitment_hexes
+    );
     for (const [value, label] of [
       [disableSelfViewDisclosure, "disableSelfViewDisclosure"],
       [disable_self_view_disclosure, "disable_self_view_disclosure"]
@@ -91812,7 +93435,7 @@ var ClairveilJS = class {
       throw new Error("one-proof batch transfer requires onPreparedProof to durably persist the private proof before signing");
     }
     const privacy = material || await this.deriveWalletPrivacyMaterial(wallet);
-    const scanOptions = resolveScanOptions({
+    const scanOptions = resolveWalletScanOptions({
       scan,
       after,
       afterHeight,
@@ -91845,14 +93468,29 @@ var ClairveilJS = class {
       scanSource: "privacy_scan",
       limit: scanOptions.limit ?? 200,
       maxPages: scanOptions.maxPages ?? defaultPrepareScanMaxPages,
+      requireTypedScan: true,
       includeFoundNotes: true
     });
     if (scanResult.scanCursor?.source !== "privacy_scan") {
       throw new Error("one-proof batch transfer requires the typed privacy-scan-v2 source; legacy scan fallback cannot recover batch outputs safely");
     }
     const availableFoundNotes = await reservationAvailableNotes(resolvedReservationManager, scanResult.foundNotes);
-    const plan = planTransferBatchNotes({
-      notes: availableFoundNotes,
+    let planNotes = availableFoundNotes;
+    if (resolvedInputCommitments) {
+      const availableByCommitment = new Map(availableFoundNotes.map((found) => [
+        fieldHexV1(computeNoteCommitmentV1(found.note)),
+        found
+      ]));
+      const missingIndex = resolvedInputCommitments.findIndex(
+        (commitment) => !availableByCommitment.has(commitment)
+      );
+      if (missingIndex !== -1) {
+        throw new Error(`inputCommitmentHexes[${missingIndex}] is unavailable or unverified`);
+      }
+      planNotes = resolvedInputCommitments.map((commitment) => availableByCommitment.get(commitment));
+    }
+    let plan = planTransferBatchNotes({
+      notes: planNotes,
       amounts: normalizedAmounts,
       denom: denom ?? this.defaultDenom
     });
@@ -91865,6 +93503,38 @@ var ClairveilJS = class {
       };
     }
     assertPlanCanBuildTx(plan);
+    const batchDenom = denom ?? this.defaultDenom;
+    if (resolvedInputCommitments) {
+      const selectedTotal2 = planNotes.reduce((sum, found) => sum + found.note.amount, 0n);
+      const requestedTotal2 = BigInt(plan.facts.requestedAmountValue);
+      const change2 = selectedTotal2 - requestedTotal2;
+      const outputCount3 = normalizedAmounts.length + (change2 > 0n ? 1 : 0);
+      if (change2 < 0n) {
+        throw new Error("inputCommitmentHexes total is insufficient for the requested payments");
+      }
+      if (change2 > maxUint645) {
+        throw new Error("inputCommitmentHexes would create change above the uint64 NoteV1 range");
+      }
+      if (outputCount3 > 32) {
+        throw new Error("inputCommitmentHexes would exceed the 32-output batch capacity");
+      }
+      const selection = Object.freeze({
+        inputs: Object.freeze([...planNotes]),
+        total: selectedTotal2,
+        isFinal: true,
+        needsZeroDummy: false
+      });
+      plan = {
+        ...plan,
+        facts: {
+          ...plan.facts,
+          selectedInputTotal: `${selectedTotal2}${batchDenom}`,
+          selectedInputTotalValue: selectedTotal2.toString()
+        },
+        selection,
+        selections: [selection]
+      };
+    }
     const transferProtocolConfig = await this.assertTransferProtocolConfig(denom ?? this.defaultDenom);
     const paymentPolicies = resolvedPayments.map((payment, index) => {
       const capabilities = assertTransferDisclosureCapabilities(transferProtocolConfig.disclosure_config, {
@@ -91881,7 +93551,6 @@ var ClairveilJS = class {
     if (!proverAdapter || typeof proverAdapter.proveBatchTransfer !== "function") {
       throw new Error("prepareTransferBatch requires a proverAdapter with proveBatchTransfer(payload)");
     }
-    const batchDenom = denom ?? this.defaultDenom;
     const resolvedDisableSelfViewDisclosure = disableSelfViewDisclosure ?? disable_self_view_disclosure ?? false;
     const coins = paymentPolicies.map((payment, index) => {
       const coin = parseCoin(payment.amount, batchDenom);
@@ -91906,7 +93575,7 @@ var ClairveilJS = class {
     if (compactOutputCount < 1 || compactOutputCount > 32) {
       throw new Error("one-proof batch transfer requires 1..32 outputs including change");
     }
-    const outputCount = resolvedOutputMode === "exact32" ? 32 : compactOutputCount;
+    const outputCount2 = resolvedOutputMode === "exact32" ? 32 : compactOutputCount;
     const auditConfig = transferProtocolConfig.audit_config;
     if (auditDisclosureTargetPubKeyHex != null && audit_disclosure_target_pubkey_hex != null && String(auditDisclosureTargetPubKeyHex).trim().toLowerCase() !== String(audit_disclosure_target_pubkey_hex).trim().toLowerCase()) {
       throw new Error("auditDisclosureTargetPubKeyHex aliases conflict");
@@ -92003,7 +93672,7 @@ var ClairveilJS = class {
             fullDisclosureBlinding: randomBatchField()
           });
         }
-        while (outputs.length < outputCount) {
+        while (outputs.length < outputCount2) {
           outputs.push({
             kind: "padding",
             note: createNote({
@@ -92080,18 +93749,6 @@ var ClairveilJS = class {
           } : void 0
         });
         assertHeartbeatHealthy();
-        const signDoc2 = await this.buildDirectSignDoc({
-          signer: privacy.address,
-          pubKeyHex: privacy.pubKeyHex,
-          gasLimit: resolvedGasLimit,
-          feeAmount: resolvedFeeAmount,
-          messages: [{
-            typeUrl: msgBatchTransferTypeUrl,
-            value: MsgBatchTransfer2.fromPartial(message2)
-          }],
-          memo: reservationBatch ? reservationRequiredCosmosMemo("Clairveil batch veiled transfer") : "Clairveil batch veiled transfer"
-        });
-        const signDocHash = cosmosSignDocBindingHash(signDoc2);
         const operationEvidence2 = buildBatchTransferOperationEvidence({
           payload: payload2,
           proof: proof2,
@@ -92102,12 +93759,34 @@ var ClairveilJS = class {
           shieldedPrefix: this.shieldedPrefix,
           nowUnix: resolvedNowUnix
         });
+        const artifact = await buildPreparedExecutionArtifact({
+          executionBuilder,
+          executionInput: {
+            payload: payload2,
+            proof: proof2,
+            message: message2,
+            operationEvidence: operationEvidence2.evidence,
+            operationEvidenceHash: operationEvidence2.evidenceHash,
+            reservation: reservationBatchSummary(reservationBatch)
+          },
+          buildSignDoc: () => this.buildDirectSignDoc({
+            signer: privacy.address,
+            pubKeyHex: privacy.pubKeyHex,
+            gasLimit: resolvedGasLimit,
+            feeAmount: resolvedFeeAmount,
+            messages: [{
+              typeUrl: msgBatchTransferTypeUrl,
+              value: MsgBatchTransfer2.fromPartial(message2)
+            }],
+            memo: reservationBatch ? reservationRequiredCosmosMemo("Clairveil batch veiled transfer") : "Clairveil batch veiled transfer"
+          })
+        });
         await heartbeatNow();
         await markReservationProofReadyForBatchItems(resolvedReservationManager, reservationBatch, [{
           notes: selectedInputs,
           metadata: {
             payloadHash: payload2.payload_hash,
-            signDocHash,
+            ...artifact.executionBinding,
             expectedOperationEvidenceHash: operationEvidence2.evidenceHash,
             operationSuccessEvidenceRequired: true,
             metadata: {
@@ -92115,6 +93794,7 @@ var ClairveilJS = class {
               batch_transfer_input_count: selectedInputs.length,
               batch_transfer_output_count: payload2.outputs.length,
               batch_transfer_output_mode: resolvedOutputMode,
+              input_nullifier_hexes: effects.nullifier_hexes,
               batch_transfer_nullifier_hexes: effects.nullifier_hexes,
               batch_transfer_output_commitment_hexes: effects.output_commitment_hexes,
               batch_transfer_operation_evidence: operationEvidence2.evidence,
@@ -92128,10 +93808,10 @@ var ClairveilJS = class {
           message: message2,
           operationEvidence: operationEvidence2.evidence,
           operationEvidenceHash: operationEvidence2.evidenceHash,
-          signDoc: markCosmosSignDocReservationRequired(
-            signDoc2,
-            reservationBatch
-          )
+          ...artifact.signDoc ? {
+            signDoc: markCosmosSignDocReservationRequired(artifact.signDoc, reservationBatch)
+          } : {},
+          ...artifact.execution ? { execution: artifact.execution } : {}
         };
       });
       const {
@@ -92139,6 +93819,7 @@ var ClairveilJS = class {
         proof,
         message,
         signDoc,
+        execution,
         operationEvidence,
         operationEvidenceHash
       } = heartbeatResult;
@@ -92147,7 +93828,8 @@ var ClairveilJS = class {
         status: "ready",
         plan,
         scan: scanResult,
-        signDoc,
+        ...signDoc ? { signDoc } : {},
+        ...execution ? { execution } : {},
         payload,
         proof,
         message,
@@ -92275,7 +93957,7 @@ var ClairveilJS = class {
     const transferProtocolConfig = await this.assertTransferProtocolConfig(resolvedDenom);
     assertPreparedBatchTransferMatchesActiveConfig(payload, transferProtocolConfig, resolvedDenom);
     const effects = preparedBatchTransferEffectHex(payload);
-    batchTransferNullifiersUnspent(
+    assertBatchTransferNullifiersUnspent(
       await this.checkNullifiers(effects.nullifier_hexes),
       effects.nullifier_hexes
     );
@@ -92293,7 +93975,7 @@ var ClairveilJS = class {
       operationId: resolvedOperationID,
       reservation: resolvedReservation
     });
-    batchTransferNullifiersUnspent(
+    assertBatchTransferNullifiersUnspent(
       await this.checkNullifiers(effects.nullifier_hexes),
       effects.nullifier_hexes
     );
@@ -92313,9 +93995,9 @@ var ClairveilJS = class {
   /**
    * Complete the local stage after a checkpointed batch proof has been
    * restored. This derives the message and operation evidence from the exact
-   * payload/proof, creates the reservation-bound sign doc, and atomically
-   * advances every reserved input to ProofReady. It performs no wallet or
-   * broadcast request.
+   * payload/proof, creates either the reservation-bound Cosmos sign doc or a
+   * caller-supplied execution artifact, and atomically advances every reserved
+   * input to ProofReady. It performs no broadcast request.
    */
   async finalizePreparedBatchTransfer({
     payload,
@@ -92348,10 +94030,14 @@ var ClairveilJS = class {
     reservationBatch,
     reservation_batch,
     chainNowUnix,
-    chain_now_unix
+    chain_now_unix,
+    executionBuilder
   } = {}) {
     if (!this.enableExperimentalBatchTransfer) {
       throw new Error("one-proof batch transfer is feature-gated; construct the client with enableExperimentalBatchTransfer: true after completing downstream conformance and localnet validation");
+    }
+    if (executionBuilder != null && typeof executionBuilder !== "function") {
+      throw new Error("executionBuilder must be a function");
     }
     const resolvedGasLimit = resolveCosmosGasLimit(gasLimit, gas_limit, 25e6);
     const resolvedFeeAmount = resolveCosmosFeeAmount(feeAmount, fee_amount);
@@ -92386,8 +94072,16 @@ var ClairveilJS = class {
     if (reservationOperationID && reservationOperationID !== resolvedOperationID) {
       throw new Error("prepared batch transfer operationId does not match the reservation batch");
     }
+    const currentReservations = typeof resolvedReservationManager.getReservations === "function" ? await resolvedReservationManager.getReservations(resolvedReservation.reservation_ids) : resolvedReservation.reservations || [];
+    if (currentReservations.some((item) => item.status === reservationStatuses.ManualReview)) {
+      throw new Error("ManualReview reservations require operator resolution before a new batch proof can be finalized");
+    }
     const resolvedSigner = String(signer || "").trim();
-    if (!resolvedSigner) throw new Error("finalizePreparedBatchTransfer requires the original Cosmos signer");
+    if (!resolvedSigner) {
+      throw new Error(
+        executionBuilder ? "finalizePreparedBatchTransfer requires the original batch creator" : "finalizePreparedBatchTransfer requires the original Cosmos signer"
+      );
+    }
     const resolvedNowUnix = normalizedBatchNowUnix(
       chainNowUnix ?? chain_now_unix ?? Math.floor(Date.now() / 1e3)
     );
@@ -92465,16 +94159,6 @@ var ClairveilJS = class {
       shieldedPrefix: this.shieldedPrefix,
       nowUnix: resolvedNowUnix
     });
-    const signDoc = await this.createBatchTransferSignDoc({
-      signer: resolvedSigner,
-      pubKeyHex,
-      gasLimit: resolvedGasLimit,
-      feeAmount: resolvedFeeAmount,
-      message,
-      memo,
-      expectedCircuitIdentity: transferProtocolConfig.circuit_config.circuit_set_identity,
-      chainNowUnix: resolvedNowUnix
-    });
     const effects = preparedBatchTransferEffectHex(payload);
     const authoritativeReservation = await authoritativeBatchRecoveryReservation(
       resolvedReservationManager,
@@ -92484,16 +94168,37 @@ var ClairveilJS = class {
         nullifierHexes: effects.nullifier_hexes
       }
     );
-    batchTransferNullifiersUnspent(
+    assertBatchTransferNullifiersUnspent(
       await this.checkNullifiers(effects.nullifier_hexes),
       effects.nullifier_hexes
     );
+    const artifact = await buildPreparedExecutionArtifact({
+      executionBuilder,
+      executionInput: {
+        payload,
+        proof: normalizedProof,
+        message,
+        operationEvidence: operationEvidence.evidence,
+        operationEvidenceHash: operationEvidence.evidenceHash,
+        reservation: reservationBatchSummary(resolvedReservation)
+      },
+      buildSignDoc: () => this.createBatchTransferSignDoc({
+        signer: resolvedSigner,
+        pubKeyHex,
+        gasLimit: resolvedGasLimit,
+        feeAmount: resolvedFeeAmount,
+        message,
+        memo,
+        expectedCircuitIdentity: transferProtocolConfig.circuit_config.circuit_set_identity,
+        chainNowUnix: resolvedNowUnix
+      })
+    });
     const persistedOutputMode = String(
       authoritativeReservation.reservations?.[0]?.metadata?.batch_transfer_output_mode || (payload.outputs.length === 32 ? "exact32" : "compact")
     );
     await markReservationProofReady(resolvedReservationManager, authoritativeReservation, {
       payloadHash: payload.payload_hash,
-      signDocHash: cosmosSignDocBindingHash(signDoc),
+      ...artifact.executionBinding,
       expectedOperationEvidenceHash: operationEvidence.evidenceHash,
       operationSuccessEvidenceRequired: true,
       metadata: {
@@ -92501,6 +94206,7 @@ var ClairveilJS = class {
         batch_transfer_input_count: effects.nullifier_hexes.length,
         batch_transfer_output_count: payload.outputs.length,
         batch_transfer_output_mode: persistedOutputMode,
+        input_nullifier_hexes: effects.nullifier_hexes,
         batch_transfer_nullifier_hexes: effects.nullifier_hexes,
         batch_transfer_output_commitment_hexes: effects.output_commitment_hexes,
         batch_transfer_operation_evidence: operationEvidence.evidence,
@@ -92514,7 +94220,10 @@ var ClairveilJS = class {
       effects,
       operationEvidence: operationEvidence.evidence,
       operationEvidenceHash: operationEvidence.evidenceHash,
-      signDoc: markCosmosSignDocReservationRequired(signDoc, authoritativeReservation),
+      ...artifact.signDoc ? {
+        signDoc: markCosmosSignDocReservationRequired(artifact.signDoc, authoritativeReservation)
+      } : {},
+      ...artifact.execution ? { execution: artifact.execution } : {},
       reservation: reservationBatchSummary(authoritativeReservation)
     };
   }
@@ -92535,7 +94244,7 @@ var ClairveilJS = class {
     after_sequence,
     page,
     limit = 200,
-    maxPages = defaultPrepareScanMaxPages,
+    maxPages,
     max_pages,
     eventTypes,
     event_types,
@@ -92550,6 +94259,7 @@ var ClairveilJS = class {
     strictPrivacyScan,
     strict_privacy_scan,
     expiresAtUnix,
+    expires_at_unix,
     chainNowUnix,
     chain_now_unix,
     gasLimit,
@@ -92557,13 +94267,27 @@ var ClairveilJS = class {
     feeAmount,
     fee_amount,
     reservationManager: reservationManager2,
-    reservation_manager
+    reservation_manager,
+    executionBuilder
   } = {}) {
-    const resolvedReservationManager = reservationManager2 ?? reservation_manager ?? null;
+    if (executionBuilder != null && typeof executionBuilder !== "function") {
+      throw new Error("executionBuilder must be a function");
+    }
     const resolvedGasLimit = resolveCosmosGasLimit(gasLimit, gas_limit, 5e6);
     const resolvedFeeAmount = resolveCosmosFeeAmount(feeAmount, fee_amount);
+    const resolvedExpiresAtUnix = resolveUnixTimestampAlias(
+      expiresAtUnix,
+      expires_at_unix,
+      "expiresAtUnix"
+    );
+    const resolvedChainNowUnix = resolveUnixTimestampAlias(
+      chainNowUnix,
+      chain_now_unix,
+      "chainNowUnix"
+    );
+    const resolvedReservationManager = reservationManager2 ?? reservation_manager ?? null;
     const privacy = material || await this.deriveWalletPrivacyMaterial(wallet);
-    const scanOptions = resolveScanOptions({
+    const scanOptions = resolveWalletScanOptions({
       scan,
       after,
       afterHeight,
@@ -92592,6 +94316,7 @@ var ClairveilJS = class {
       ...scanOptions,
       limit: scanOptions.limit ?? 200,
       maxPages: scanOptions.maxPages ?? defaultPrepareScanMaxPages,
+      allowInitialPrivacyScanFallback: true,
       includeFoundNotes: true
     });
     const availableFoundNotes = await reservationAvailableNotes(resolvedReservationManager, scanResult.foundNotes);
@@ -92630,50 +94355,65 @@ var ClairveilJS = class {
           recipient,
           rootSeed: privacy.rootSeed,
           chainId: this.chainId,
-          expiresAtUnix,
-          chainNowUnix: chainNowUnix ?? chain_now_unix,
+          expiresAtUnix: resolvedExpiresAtUnix,
+          chainNowUnix: resolvedChainNowUnix,
           signal
         });
         assertHeartbeatHealthy();
-        const signDoc2 = await this.buildDirectSignDoc({
-          signer: privacy.address,
-          pubKeyHex: privacy.pubKeyHex,
-          gasLimit: resolvedGasLimit,
-          feeAmount: resolvedFeeAmount,
-          messages: [
-            {
-              typeUrl: msgWithdrawTypeUrl,
-              value: built2.message
-            }
-          ],
-          memo: reservationBatch ? reservationRequiredCosmosMemo("Clairveil veiled withdraw") : "Clairveil veiled withdraw"
+        const artifact = await buildPreparedExecutionArtifact({
+          executionBuilder,
+          executionInput: {
+            payload: built2.payload,
+            proof: built2.proof,
+            proverPayload: built2.proverPayload,
+            selectedNote: built2.selectedNote,
+            message: built2.message,
+            plan,
+            reservation: reservationBatchSummary(reservationBatch)
+          },
+          buildSignDoc: () => this.buildDirectSignDoc({
+            signer: privacy.address,
+            pubKeyHex: privacy.pubKeyHex,
+            gasLimit: resolvedGasLimit,
+            feeAmount: resolvedFeeAmount,
+            messages: [
+              {
+                typeUrl: msgWithdrawTypeUrl,
+                value: built2.message
+              }
+            ],
+            memo: reservationBatch ? reservationRequiredCosmosMemo("Clairveil veiled withdraw") : "Clairveil veiled withdraw"
+          })
         });
-        const signDocHash = cosmosSignDocBindingHash(signDoc2);
         await heartbeatNow();
         await markReservationProofReady(
           resolvedReservationManager,
           reservationBatch,
           withdrawProofReadyMetadata(built2, {
-            signDocHash,
+            ...artifact.executionBinding,
             accountPrefix: this.accountPrefix,
             bindOperationSuccess: Boolean(reservationBatch)
           })
         );
         return {
           built: built2,
-          signDoc: markCosmosSignDocReservationRequired(
-            signDoc2,
-            reservationBatch
-          )
+          ...artifact.signDoc ? {
+            signDoc: markCosmosSignDocReservationRequired(
+              artifact.signDoc,
+              reservationBatch
+            )
+          } : {},
+          ...artifact.execution ? { execution: artifact.execution } : {}
         };
       });
-      const { built, signDoc } = heartbeatResult;
+      const { built, signDoc, execution } = heartbeatResult;
       return {
         ...reservationReconciliationFields(heartbeatResult),
         status: "ready",
         plan,
         scan: scanResult,
-        signDoc,
+        ...signDoc ? { signDoc } : {},
+        ...execution ? { execution } : {},
         proverPayload: built.proverPayload,
         proof: built.proof,
         payload: built.payload,
@@ -92704,7 +94444,7 @@ var ClairveilJS = class {
     after_sequence,
     page,
     limit = 200,
-    maxPages = defaultPrepareScanMaxPages,
+    maxPages,
     max_pages,
     eventTypes,
     event_types,
@@ -92719,14 +94459,29 @@ var ClairveilJS = class {
     strictPrivacyScan,
     strict_privacy_scan,
     expiresAtUnix,
+    expires_at_unix,
     chainNowUnix,
     chain_now_unix,
     reservationManager: reservationManager2,
-    reservation_manager
+    reservation_manager,
+    executionBuilder
   } = {}) {
+    if (executionBuilder != null && typeof executionBuilder !== "function") {
+      throw new Error("executionBuilder must be a function");
+    }
+    const resolvedExpiresAtUnix = resolveUnixTimestampAlias(
+      expiresAtUnix,
+      expires_at_unix,
+      "expiresAtUnix"
+    );
+    const resolvedChainNowUnix = resolveUnixTimestampAlias(
+      chainNowUnix,
+      chain_now_unix,
+      "chainNowUnix"
+    );
     const resolvedReservationManager = reservationManager2 ?? reservation_manager ?? null;
     const privacy = material || await this.deriveWalletPrivacyMaterial(wallet);
-    const scanOptions = resolveScanOptions({
+    const scanOptions = resolveWalletScanOptions({
       scan,
       after,
       afterHeight,
@@ -92755,6 +94510,7 @@ var ClairveilJS = class {
       ...scanOptions,
       limit: scanOptions.limit ?? 200,
       maxPages: scanOptions.maxPages ?? defaultPrepareScanMaxPages,
+      allowInitialPrivacyScanFallback: true,
       includeFoundNotes: true
     });
     const availableFoundNotes = await reservationAvailableNotes(resolvedReservationManager, scanResult.foundNotes);
@@ -92788,23 +94544,47 @@ var ClairveilJS = class {
           recipient,
           rootSeed: privacy.rootSeed,
           chainId: this.chainId,
-          expiresAtUnix,
-          chainNowUnix: chainNowUnix ?? chain_now_unix,
+          expiresAtUnix: resolvedExpiresAtUnix,
+          chainNowUnix: resolvedChainNowUnix,
           signal
         });
         assertHeartbeatHealthy();
+        let artifact = null;
+        if (executionBuilder) {
+          artifact = await buildPreparedExecutionArtifact({
+            executionBuilder,
+            executionInput: {
+              payload: built2.payload,
+              proof: built2.proof,
+              proverPayload: built2.proverPayload,
+              selectedNote: built2.selectedNote,
+              plan,
+              reservation: reservationBatchSummary(reservationBatch)
+            },
+            // A relayed Cosmos withdrawal remains a payload handoff until the
+            // relayer is known. This callback is unreachable when the optional
+            // execution builder is present and documents that boundary.
+            buildSignDoc: () => {
+              throw new Error("relay withdraw execution preparation requires executionBuilder");
+            }
+          });
+        }
         await heartbeatNow();
         await markReservationProofReady(
           resolvedReservationManager,
           reservationBatch,
           withdrawProofReadyMetadata(built2, {
+            ...artifact?.executionBinding || {},
             accountPrefix: this.accountPrefix,
             bindOperationSuccess: Boolean(reservationBatch)
           })
         );
-        return { built: built2 };
+        return {
+          built: built2,
+          ...artifact?.execution ? { execution: artifact.execution } : {}
+        };
       });
-      const { built } = heartbeatResult;
+      const { built, execution } = heartbeatResult;
       return {
         ...reservationReconciliationFields(heartbeatResult),
         status: "ready",
@@ -92814,6 +94594,7 @@ var ClairveilJS = class {
         proof: built.proof,
         payload: built.payload,
         selectedNote: built.selectedNote,
+        ...execution ? { execution } : {},
         reservation: reservationBatchSummary(reservationBatch),
         privacyAccount: publicPrivacyAccount(privacy)
       };
@@ -92826,17 +94607,25 @@ var ClairveilJS = class {
     return this.prepareDeposit(input);
   }
   async createTransferSignDoc(input) {
+    if (input?.executionBuilder != null) {
+      throw new Error("createTransferSignDoc does not accept executionBuilder");
+    }
     const result = await this.prepareTransfer(input);
     if (result.status !== "ready") {
       throw new Error(result.plan?.message || `transfer is not ready: ${result.status}`);
     }
+    if (!result.signDoc) throw new Error("transfer preparation did not produce a Cosmos sign doc");
     return result;
   }
   async createTransferBatchSignDoc(input) {
+    if (input?.executionBuilder != null) {
+      throw new Error("createTransferBatchSignDoc does not accept executionBuilder");
+    }
     const result = await this.prepareTransferBatch(input);
     if (result.status !== "ready") {
       throw new Error(result.plan?.message || `transfer batch is not ready: ${result.status}`);
     }
+    if (!result.signDoc) throw new Error("transfer batch preparation did not produce a Cosmos sign doc");
     return result;
   }
   async createBatchTransferSignDoc({
@@ -92897,10 +94686,14 @@ var ClairveilJS = class {
     });
   }
   async createWithdrawSignDoc(input) {
+    if (input?.executionBuilder != null) {
+      throw new Error("createWithdrawSignDoc does not accept executionBuilder");
+    }
     const result = await this.prepareWithdraw(input);
     if (result.status !== "ready") {
       throw new Error(result.plan?.message || `withdraw is not ready: ${result.status}`);
     }
+    if (!result.signDoc) throw new Error("withdraw preparation did not produce a Cosmos sign doc");
     return result;
   }
   async createRelayWithdrawPayload(input) {
@@ -93049,19 +94842,62 @@ var ClairveilJS = class {
     signature_base64,
     skipSignerPubKeyCheck,
     skip_signer_pubkey_check,
+    disclosureScalar,
+    disclosure_scalar,
+    disclosureScalarHex,
+    disclosure_scalar_hex,
+    disclosurePubKeyHex,
+    disclosure_pubkey_hex,
     assetDenom,
     asset_denom,
     ...eventQuery
   }) {
-    const selectedOutput = output ?? scanOutput2;
-    const normalizedTxHash4 = String(txHash ?? tx_hash ?? "").trim().toUpperCase();
-    const event = selectedOutput ? null : await this.findPrivacyEventByTxHash(normalizedTxHash4, eventQuery);
     const disclosureAssetDenom = resolveDisclosureAssetDenom(assetDenom, asset_denom, this.defaultDenom);
-    const publicMode = selectedOutput ? (selectedOutput.userDisclosureMode ?? selectedOutput.user_disclosure_mode) === "USER_DISCLOSURE_MODE_PUBLIC" : eventAttribute3(event, "user_disclosure_mode") === "USER_DISCLOSURE_MODE_PUBLIC";
-    if (publicMode) {
-      const decode2 = selectedOutput ? decodeUserDisclosureFromScanOutput : decodeUserDisclosureFromEvent;
-      return decode2(
-        selectedOutput ?? event,
+    const selectedOutput = resolveDisclosureOutputAlias(output, scanOutput2, "disclosure output");
+    const normalizedTxHash4 = selectedOutput && txHash == null && tx_hash == null ? void 0 : requiredCosmosTxHash(txHash ?? tx_hash);
+    if (selectedOutput) {
+      const mode = selectedOutput.userDisclosureMode ?? selectedOutput.user_disclosure_mode;
+      const isPublic = mode === 1 || mode === "1" || mode === "USER_DISCLOSURE_MODE_PUBLIC";
+      if (isPublic) {
+        return decodeUserDisclosureFromScanOutput(selectedOutput, {
+          txHash: normalizedTxHash4,
+          shieldedPrefix: this.shieldedPrefix,
+          assetDenom: disclosureAssetDenom
+        });
+      }
+      const directScalar = disclosureScalar ?? disclosure_scalar;
+      const directScalarHex = disclosureScalarHex ?? disclosure_scalar_hex;
+      const directPubKey = disclosurePubKeyHex ?? disclosure_pubkey_hex;
+      if (directScalar != null || directScalarHex != null || directPubKey != null) {
+        return decodeUserDisclosureFromScanOutput(selectedOutput, {
+          disclosureScalar: directScalar != null ? directScalar : disclosureScalarFromHex(directScalarHex),
+          disclosurePubKeyHex: directPubKey,
+          txHash: normalizedTxHash4,
+          shieldedPrefix: this.shieldedPrefix,
+          assetDenom: disclosureAssetDenom
+        });
+      }
+      const signerPubKeyHex2 = pubKeyHex ?? pub_key_hex;
+      const skipSignerCheck2 = Boolean(skipSignerPubKeyCheck ?? skip_signer_pubkey_check);
+      if (!skipSignerCheck2) assertSignerPubKey(address, signerPubKeyHex2, this.bech32Prefix);
+      const material2 = derivePrivacyMaterial({
+        address,
+        pubKeyHex: signerPubKeyHex2,
+        signatureBase64: signatureBase64 ?? signature_base64,
+        shieldedPrefix: this.shieldedPrefix
+      });
+      return decodeUserDisclosureFromScanOutput(selectedOutput, {
+        disclosureScalar: material2.disclosureScalar,
+        disclosurePubKeyHex: material2.disclosurePubKeyHex,
+        txHash: normalizedTxHash4,
+        shieldedPrefix: this.shieldedPrefix,
+        assetDenom: disclosureAssetDenom
+      });
+    }
+    const event = await this.findPrivacyEventByTxHash(normalizedTxHash4, eventQuery);
+    if (eventAttribute3(event, "user_disclosure_mode") === "USER_DISCLOSURE_MODE_PUBLIC") {
+      return decodeUserDisclosureFromEvent(
+        event,
         1n,
         "",
         normalizedTxHash4,
@@ -93079,9 +94915,8 @@ var ClairveilJS = class {
       signatureBase64: signatureBase64 ?? signature_base64,
       shieldedPrefix: this.shieldedPrefix
     });
-    const decode = selectedOutput ? decodeUserDisclosureFromScanOutput : decodeUserDisclosureFromEvent;
-    return decode(
-      selectedOutput ?? event,
+    return decodeUserDisclosureFromEvent(
+      event,
       material.disclosureScalar,
       material.disclosurePubKeyHex,
       normalizedTxHash4,
@@ -93108,16 +94943,23 @@ var ClairveilJS = class {
     asset_denom,
     ...eventQuery
   }) {
-    const selectedOutput = output ?? scanOutput2;
-    const normalizedTxHash4 = String(txHash ?? tx_hash ?? "").trim().toUpperCase();
-    const event = selectedOutput ? null : await this.findPrivacyEventByTxHash(normalizedTxHash4, eventQuery);
     const disclosureAssetDenom = resolveDisclosureAssetDenom(assetDenom, asset_denom, this.defaultDenom);
     const directScalar = disclosureScalar ?? disclosure_scalar;
     const directScalarHex = disclosureScalarHex ?? disclosure_scalar_hex;
+    const selectedOutput = resolveDisclosureOutputAlias(output, scanOutput2, "disclosure output");
+    const normalizedTxHash4 = selectedOutput && txHash == null && tx_hash == null ? void 0 : requiredCosmosTxHash(txHash ?? tx_hash);
+    if (selectedOutput && (directScalar != null || directScalarHex != null)) {
+      return decodeSelfViewDisclosureFromScanOutput(selectedOutput, {
+        disclosureScalar: directScalar != null ? directScalar : disclosureScalarFromHex(directScalarHex),
+        txHash: normalizedTxHash4,
+        shieldedPrefix: this.shieldedPrefix,
+        assetDenom: disclosureAssetDenom
+      });
+    }
     if (directScalar != null || directScalarHex != null) {
-      const decode2 = selectedOutput ? decodeSelfViewDisclosureFromScanOutput : decodeSelfViewDisclosureFromEvent;
-      return decode2(
-        selectedOutput ?? event,
+      const event2 = await this.findPrivacyEventByTxHash(normalizedTxHash4, eventQuery);
+      return decodeSelfViewDisclosureFromEvent(
+        event2,
         directScalar != null ? directScalar : disclosureScalarFromHex(directScalarHex),
         normalizedTxHash4,
         { shieldedPrefix: this.shieldedPrefix, assetDenom: disclosureAssetDenom }
@@ -93134,9 +94976,17 @@ var ClairveilJS = class {
       signatureBase64: signatureBase64 ?? signature_base64,
       shieldedPrefix: this.shieldedPrefix
     });
-    const decode = selectedOutput ? decodeSelfViewDisclosureFromScanOutput : decodeSelfViewDisclosureFromEvent;
-    return decode(
-      selectedOutput ?? event,
+    if (selectedOutput) {
+      return decodeSelfViewDisclosureFromScanOutput(selectedOutput, {
+        disclosureScalar: material.disclosureScalar,
+        txHash: normalizedTxHash4,
+        shieldedPrefix: this.shieldedPrefix,
+        assetDenom: disclosureAssetDenom
+      });
+    }
+    const event = await this.findPrivacyEventByTxHash(normalizedTxHash4, eventQuery);
+    return decodeSelfViewDisclosureFromEvent(
+      event,
       material.disclosureScalar,
       normalizedTxHash4,
       { shieldedPrefix: this.shieldedPrefix, assetDenom: disclosureAssetDenom }
@@ -93153,13 +95003,20 @@ var ClairveilJS = class {
     asset_denom,
     ...eventQuery
   }) {
-    const selectedOutput = output ?? scanOutput2;
-    const normalizedTxHash4 = String(txHash ?? tx_hash ?? "").trim().toUpperCase();
-    const event = selectedOutput ? null : await this.findPrivacyEventByTxHash(normalizedTxHash4, eventQuery);
     const disclosureAssetDenom = resolveDisclosureAssetDenom(assetDenom, asset_denom, this.defaultDenom);
-    const decode = selectedOutput ? decodeAuditDisclosureFromScanOutput : decodeAuditDisclosureFromEvent;
-    return decode(
-      selectedOutput ?? event,
+    const selectedOutput = resolveDisclosureOutputAlias(output, scanOutput2, "disclosure output");
+    const normalizedTxHash4 = selectedOutput && txHash == null && tx_hash == null ? void 0 : requiredCosmosTxHash(txHash ?? tx_hash);
+    if (selectedOutput) {
+      return decodeAuditDisclosureFromScanOutput(selectedOutput, {
+        disclosureScalar: disclosureScalarFromHex(disclosurePrivKeyHex ?? disclosure_privkey_hex),
+        txHash: normalizedTxHash4,
+        shieldedPrefix: this.shieldedPrefix,
+        assetDenom: disclosureAssetDenom
+      });
+    }
+    const event = await this.findPrivacyEventByTxHash(normalizedTxHash4, eventQuery);
+    return decodeAuditDisclosureFromEvent(
+      event,
       disclosureScalarFromHex(disclosurePrivKeyHex ?? disclosure_privkey_hex),
       normalizedTxHash4,
       { shieldedPrefix: this.shieldedPrefix, assetDenom: disclosureAssetDenom }
@@ -93192,7 +95049,7 @@ var ClairveilJS = class {
     assetDenom,
     asset_denom
   } = {}) {
-    const selectedOutput = output ?? scanOutput2;
+    const selectedOutput = resolveDisclosureOutputAlias(output, scanOutput2, "batch disclosure output");
     if (!selectedOutput) throw new Error("Batch user disclosure requires a PrivacyScanOutputV2 output");
     const mode = selectedOutput.userDisclosureMode ?? selectedOutput.user_disclosure_mode;
     const isPublic = mode === 1 || mode === "1" || mode === "USER_DISCLOSURE_MODE_PUBLIC";
@@ -93247,7 +95104,7 @@ var ClairveilJS = class {
     assetDenom,
     asset_denom
   } = {}) {
-    const selectedOutput = output ?? scanOutput2;
+    const selectedOutput = resolveDisclosureOutputAlias(output, scanOutput2, "batch disclosure output");
     if (!selectedOutput) throw new Error("Batch self-view disclosure requires a PrivacyScanOutputV2 output");
     const common = {
       txHash: txHash ?? tx_hash,
@@ -93291,7 +95148,7 @@ var ClairveilJS = class {
     assetDenom,
     asset_denom
   } = {}) {
-    const selectedOutput = output ?? scanOutput2;
+    const selectedOutput = resolveDisclosureOutputAlias(output, scanOutput2, "batch disclosure output");
     if (!selectedOutput) throw new Error("Batch audit disclosure requires a PrivacyScanOutputV2 output");
     const directScalar = disclosureScalar ?? disclosure_scalar;
     const directScalarHex = disclosureScalarHex ?? disclosure_scalar_hex;
@@ -93303,7 +95160,7 @@ var ClairveilJS = class {
     });
   }
   async buildDirectSignDoc({ signer, pubKeyHex, messages, memo = "", gasLimit = 2e5, feeAmount = [] }) {
-    const resolvedGasLimit = normalizeCosmosGasLimit(gasLimit);
+    const resolvedGasLimit = resolveCosmosGasLimit(gasLimit, void 0, 2e5);
     const resolvedFeeAmount = normalizeCosmosFeeCoins(feeAmount);
     assertSignerPubKey(signer, pubKeyHex, this.bech32Prefix);
     const account = await this.getAccountInfo(signer);
@@ -93601,31 +95458,302 @@ function createClairveilClient(options) {
 // node_modules/clairveiljs/src/transport/evm.js
 var import_encoding5 = __toESM(require_build(), 1);
 var import_js_sha32 = __toESM(require_sha3(), 1);
+
+// node_modules/clairveiljs/src/transport/evm-finality.js
+var transactionHashPattern = /^0x[0-9a-fA-F]{64}$/;
+var blockHashPattern = /^0x[0-9a-fA-F]{64}$/;
+var quantityPattern = /^0x[0-9a-fA-F]+$/;
+var terminalCanonicalConflict = /* @__PURE__ */ Symbol("clairveil.evm-finality-terminal-canonical-conflict");
+var evmFinalityModes = Object.freeze([
+  "receipt",
+  "confirmations",
+  "safe",
+  "finalized",
+  "custom"
+]);
+function transactionHash(value, label = "EVM transaction hash") {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!transactionHashPattern.test(normalized)) {
+    throw new Error(`${label} must be a 32-byte 0x-prefixed hash`);
+  }
+  return normalized;
+}
+function blockHash(value, label = "EVM block hash") {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!blockHashPattern.test(normalized)) {
+    throw new Error(`${label} must be a 32-byte 0x-prefixed hash`);
+  }
+  return normalized;
+}
+function quantity(value, label) {
+  const normalized = String(value ?? "").trim();
+  if (!quantityPattern.test(normalized)) {
+    throw new Error(`${label} must be an EVM quantity`);
+  }
+  return BigInt(normalized);
+}
+function canonicalQuantity(value) {
+  return `0x${value.toString(16)}`;
+}
+function positiveInteger(value, label) {
+  const normalized = Number(value);
+  if (!Number.isSafeInteger(normalized) || normalized < 1) {
+    throw new Error(`${label} must be a positive safe integer`);
+  }
+  return normalized;
+}
+function receiptSucceeded(status) {
+  try {
+    return quantity(status, "EVM receipt status") === 1n;
+  } catch {
+    return false;
+  }
+}
+function sleep3(ms) {
+  return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
+}
+function canonicalConflict(message) {
+  const error = new Error(message);
+  Object.defineProperty(error, terminalCanonicalConflict, { value: true });
+  return error;
+}
+function createEvmFinalityPolicy(input) {
+  const policy = typeof input === "string" ? { mode: input } : input;
+  if (!policy || typeof policy !== "object") {
+    throw new TypeError("evmFinalityPolicy must be a policy object or mode string");
+  }
+  const customWait = policy.waitForFinality ?? policy.wait_for_finality;
+  const mode = String(policy.mode ?? (typeof customWait === "function" ? "custom" : "")).trim();
+  if (!mode) {
+    throw new TypeError("evmFinalityPolicy.mode is required");
+  }
+  if (!evmFinalityModes.includes(mode)) {
+    throw new Error(`unsupported EVM finality mode ${JSON.stringify(mode)}`);
+  }
+  if (mode === "custom") {
+    if (typeof customWait !== "function") {
+      throw new TypeError("custom EVM finality policy requires waitForFinality");
+    }
+    return Object.freeze({ mode, waitForFinality: customWait.bind(policy) });
+  }
+  if (customWait != null) {
+    throw new TypeError("waitForFinality is only permitted for custom EVM finality policies");
+  }
+  if (mode === "confirmations") {
+    return Object.freeze({
+      mode,
+      confirmations: positiveInteger(policy.confirmations, "evmFinalityPolicy.confirmations")
+    });
+  }
+  if (policy.confirmations != null) {
+    throw new TypeError("confirmations is only permitted for confirmations finality mode");
+  }
+  return Object.freeze({ mode });
+}
+function failure(policy, txHashValue, error, fields = {}) {
+  return Object.freeze({
+    verified: false,
+    mode: policy.mode,
+    txHash: txHashValue,
+    ...fields,
+    error: String(error?.message || error || "EVM finality verification failed")
+  });
+}
+function receiptBlockIdentity(receipt) {
+  return {
+    blockNumber: quantity(receipt?.blockNumber, "EVM receipt blockNumber"),
+    blockHash: blockHash(receipt?.blockHash, "EVM receipt blockHash")
+  };
+}
+async function verifyCanonicalInclusion({ rpc, txHash: txHashValue, receipt, expectedBlock }) {
+  const [currentReceipt, canonicalBlock] = await Promise.all([
+    rpc("eth_getTransactionReceipt", [txHashValue]),
+    rpc("eth_getBlockByNumber", [canonicalQuantity(expectedBlock.blockNumber), false])
+  ]);
+  if (!currentReceipt) throw new Error("EVM receipt disappeared before finality");
+  if (transactionHash(currentReceipt.transactionHash, "refetched EVM receipt transactionHash") !== txHashValue) {
+    throw canonicalConflict("refetched EVM receipt transaction hash changed before finality");
+  }
+  if (!receiptSucceeded(currentReceipt.status)) {
+    throw canonicalConflict("refetched EVM receipt is not successful");
+  }
+  const currentBlock = receiptBlockIdentity(currentReceipt);
+  if (currentBlock.blockNumber !== expectedBlock.blockNumber || currentBlock.blockHash !== expectedBlock.blockHash) {
+    throw canonicalConflict("EVM receipt block identity changed before finality (possible reorg)");
+  }
+  if (!canonicalBlock) throw new Error("canonical EVM inclusion block is unavailable");
+  if (blockHash(canonicalBlock.hash, "canonical EVM block hash") !== expectedBlock.blockHash) {
+    throw canonicalConflict("EVM receipt block is no longer canonical (reorg detected)");
+  }
+  if (quantity(canonicalBlock.number, "canonical EVM block number") !== expectedBlock.blockNumber) {
+    throw canonicalConflict("canonical EVM block number does not match the receipt");
+  }
+  const originalBlock = receiptBlockIdentity(receipt);
+  if (originalBlock.blockNumber !== currentBlock.blockNumber || originalBlock.blockHash !== currentBlock.blockHash) {
+    throw canonicalConflict("original EVM receipt block identity changed before finality");
+  }
+  return currentReceipt;
+}
+async function waitForEvmFinality({
+  txHash: txHashInput,
+  receipt,
+  rpc,
+  policy,
+  attempts = 30,
+  intervalMs = 1e3
+} = {}) {
+  const normalizedPolicy = createEvmFinalityPolicy(policy);
+  const txHashValue = transactionHash(txHashInput);
+  if (typeof rpc !== "function") throw new TypeError("EVM finality requires an RPC query function");
+  if (!receipt || typeof receipt !== "object") {
+    return failure(normalizedPolicy, txHashValue, "EVM receipt is required for finality verification");
+  }
+  try {
+    if (transactionHash(receipt.transactionHash, "EVM receipt transactionHash") !== txHashValue) {
+      throw new Error("EVM receipt transaction hash does not match the requested transaction");
+    }
+    if (!receiptSucceeded(receipt.status)) {
+      throw new Error("EVM receipt must contain an explicit successful status before finality");
+    }
+  } catch (error) {
+    return failure(normalizedPolicy, txHashValue, error);
+  }
+  if (normalizedPolicy.mode === "receipt") {
+    let identity;
+    try {
+      identity = receiptBlockIdentity(receipt);
+    } catch (error) {
+      return failure(normalizedPolicy, txHashValue, error);
+    }
+    return Object.freeze({
+      verified: true,
+      mode: normalizedPolicy.mode,
+      txHash: txHashValue,
+      blockNumber: canonicalQuantity(identity.blockNumber),
+      blockHash: identity.blockHash
+    });
+  }
+  if (normalizedPolicy.mode === "custom") {
+    try {
+      const result = await normalizedPolicy.waitForFinality(Object.freeze({
+        txHash: txHashValue,
+        receipt,
+        rpc,
+        attempts,
+        intervalMs
+      }));
+      if (!result || typeof result !== "object" || result.verified !== true) {
+        throw new Error(result?.error || "custom EVM finality policy did not verify the transaction");
+      }
+      if (result.txHash != null && transactionHash(result.txHash, "custom finality txHash") !== txHashValue) {
+        throw new Error("custom EVM finality evidence references a different transaction");
+      }
+      if (result.blockHash != null && receipt.blockHash != null && blockHash(result.blockHash, "custom finality blockHash") !== blockHash(receipt.blockHash, "EVM receipt blockHash")) {
+        throw new Error("custom EVM finality evidence references a different inclusion block");
+      }
+      return Object.freeze({ ...result, verified: true, mode: "custom", txHash: txHashValue });
+    } catch (error) {
+      return failure(normalizedPolicy, txHashValue, error);
+    }
+  }
+  let expectedBlock;
+  try {
+    expectedBlock = receiptBlockIdentity(receipt);
+  } catch (error) {
+    return failure(normalizedPolicy, txHashValue, error);
+  }
+  const maxAttempts = positiveInteger(attempts, "finality attempts");
+  const delay = Number(intervalMs);
+  if (!Number.isFinite(delay) || delay < 0) {
+    throw new Error("finality intervalMs must be a non-negative finite number");
+  }
+  let lastError = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      let finalityBlock;
+      if (normalizedPolicy.mode === "confirmations") {
+        const head = quantity(await rpc("eth_blockNumber", []), "EVM latest block number");
+        const requiredHead = expectedBlock.blockNumber + BigInt(normalizedPolicy.confirmations - 1);
+        if (head >= requiredHead) finalityBlock = head;
+      } else {
+        const taggedBlock = await rpc("eth_getBlockByNumber", [normalizedPolicy.mode, false]);
+        if (taggedBlock) {
+          const taggedNumber = quantity(taggedBlock.number, `${normalizedPolicy.mode} EVM block number`);
+          if (taggedNumber >= expectedBlock.blockNumber) finalityBlock = taggedNumber;
+        }
+      }
+      if (finalityBlock != null) {
+        await verifyCanonicalInclusion({
+          rpc,
+          txHash: txHashValue,
+          receipt,
+          expectedBlock
+        });
+        return Object.freeze({
+          verified: true,
+          mode: normalizedPolicy.mode,
+          txHash: txHashValue,
+          blockNumber: canonicalQuantity(expectedBlock.blockNumber),
+          blockHash: expectedBlock.blockHash,
+          finalityBlockNumber: canonicalQuantity(finalityBlock),
+          ...normalizedPolicy.mode === "confirmations" ? { confirmations: normalizedPolicy.confirmations } : { blockTag: normalizedPolicy.mode }
+        });
+      }
+    } catch (error) {
+      lastError = error;
+      if (error?.[terminalCanonicalConflict]) {
+        return failure(normalizedPolicy, txHashValue, error, {
+          blockNumber: canonicalQuantity(expectedBlock.blockNumber),
+          blockHash: expectedBlock.blockHash
+        });
+      }
+    }
+    if (attempt + 1 < maxAttempts) await sleep3(delay);
+  }
+  return failure(
+    normalizedPolicy,
+    txHashValue,
+    lastError ? `EVM ${normalizedPolicy.mode} finality verification failed after ${maxAttempts} attempts: ${lastError.message}` : `EVM transaction did not reach ${normalizedPolicy.mode} finality within ${maxAttempts} attempts`,
+    {
+      blockNumber: canonicalQuantity(expectedBlock.blockNumber),
+      blockHash: expectedBlock.blockHash
+    }
+  );
+}
+
+// node_modules/clairveiljs/src/transport/evm.js
 var { keccak_256: keccak2562 } = import_js_sha32.default;
 var zeroWord = "0".repeat(64);
 var emptyBytes = new Uint8Array();
-var evmPrivacyDepositSignature = "deposit((string,bytes,bytes,bytes))";
+var evmPrivacyDepositSignature = "deposit((bytes,bytes,bytes))";
 var evmPrivacyTransferSignature = "transfer((bytes,bytes,bytes[],bytes[],bytes[],bytes[],uint32,bytes,uint8,bytes,bytes,bytes,bytes,bytes,bytes,bytes,uint64))";
 var evmPrivacyWithdrawSignature = "withdraw((bytes,bytes,bytes,string,address,string,uint64))";
+var evmPrivacyTransferWithAuthorizationSignature = "transferWithAuthorization((bytes,bytes,bytes[],bytes[],bytes[],bytes[],uint32,bytes,uint8,bytes,bytes,bytes,bytes,bytes,bytes,bytes,uint64),(address,address,uint256,uint64,uint8,bytes))";
+var evmPrivacyWithdrawWithAuthorizationSignature = "withdrawWithAuthorization((bytes,bytes,bytes,string,address,string,uint64),(address,address,uint256,uint64,uint8,bytes))";
+var evmPrivacyBatchTransferSignature = "batchTransfer(bytes32,(bytes,bytes,bytes[],bytes[],bytes[],bytes[],uint32,bytes,uint8,bytes,bytes,bytes,bytes,bytes,bytes,bytes,uint64)[])";
+var evmPrivacyBatchTransferWithAuthorizationSignature = "batchTransferWithAuthorization(bytes32,((bytes,bytes,bytes[],bytes[],bytes[],bytes[],uint32,bytes,uint8,bytes,bytes,bytes,bytes,bytes,bytes,bytes,uint64),(address,address,uint256,uint64,uint8,bytes))[])";
+var evmPrivacySingleProofBatchTransferSignature = "singleProofBatchTransfer((bytes,bytes,bytes[],(bytes,bytes,bytes,uint32,uint8,bytes,bytes,bytes,bytes,bytes,bytes)[],string,uint64,bytes,uint64))";
+var evmPrivacySingleProofBatchTransferWithAuthorizationSignature = "singleProofBatchTransferWithAuthorization((bytes,bytes,bytes[],(bytes,bytes,bytes,uint32,uint8,bytes,bytes,bytes,bytes,bytes,bytes)[],string,uint64,bytes,uint64),(address,address,uint256,uint64,uint8,bytes))";
 var evmTransactionMarker = /* @__PURE__ */ Symbol("clairveil.evm-transaction");
 var evmTransactionMetadataField = "__clairveilEvmTransaction";
+var evmAuthorizationProfileMetadata = /* @__PURE__ */ Symbol("clairveil.evm-authorization-profile-metadata");
 var evmDepositModeNonpayable = "nonpayable";
 var evmDepositModePayableExactValue = "payable-exact-value";
-var defaultEvmDepositMode = evmDepositModeNonpayable;
+var defaultEvmDepositMode = evmDepositModePayableExactValue;
 var evmDepositModes = Object.freeze([
   evmDepositModeNonpayable,
   evmDepositModePayableExactValue
 ]);
 function normalizedEvmQuantity(value, label) {
   if (value == null || String(value).trim() === "") return "";
-  let quantity;
+  let quantity2;
   try {
-    quantity = BigInt(value);
+    quantity2 = BigInt(value);
   } catch {
     throw new Error(`${label} must be an EVM quantity`);
   }
-  if (quantity < 0n) throw new Error(`${label} must be non-negative`);
-  return `0x${quantity.toString(16)}`;
+  if (quantity2 < 0n) throw new Error(`${label} must be non-negative`);
+  return `0x${quantity2.toString(16)}`;
 }
 function normalizeEvmDepositMode(value = defaultEvmDepositMode) {
   const mode = String(value ?? defaultEvmDepositMode).trim();
@@ -93793,21 +95921,37 @@ function broadcastReservationContext2(options = {}) {
   return { reservationManager: reservationManager2, reservationIDs: reservationIDs2, leaseToken: leaseToken2 };
 }
 function isKnownWithdrawTransaction(transaction) {
-  if (evmTransactionMetadata(transaction).operation === "withdraw") return true;
+  if (["withdraw", "withdrawWithAuthorization"].includes(evmTransactionMetadata(transaction).operation)) return true;
   const data = String(transaction?.data || "").trim().replace(/^0x/i, "").toLowerCase();
-  return data.startsWith(functionSelector(evmPrivacyWithdrawSignature).toLowerCase());
+  return [evmPrivacyWithdrawSignature, evmPrivacyWithdrawWithAuthorizationSignature].some((signature) => data.startsWith(functionSelector(signature).toLowerCase()));
 }
 function knownPrivacyTransactionOperation(transaction) {
   const data = String(transaction?.data || "").trim().replace(/^0x/i, "").toLowerCase();
   for (const [operation2, signature] of [
     ["deposit", evmPrivacyDepositSignature],
     ["transfer", evmPrivacyTransferSignature],
-    ["withdraw", evmPrivacyWithdrawSignature]
+    ["withdraw", evmPrivacyWithdrawSignature],
+    ["transferWithAuthorization", evmPrivacyTransferWithAuthorizationSignature],
+    ["withdrawWithAuthorization", evmPrivacyWithdrawWithAuthorizationSignature],
+    ["batchTransfer", evmPrivacyBatchTransferSignature],
+    ["batchTransferWithAuthorization", evmPrivacyBatchTransferWithAuthorizationSignature],
+    ["singleProofBatchTransfer", evmPrivacySingleProofBatchTransferSignature],
+    ["singleProofBatchTransferWithAuthorization", evmPrivacySingleProofBatchTransferWithAuthorizationSignature]
   ]) {
     if (data.startsWith(functionSelector(signature).toLowerCase())) return operation2;
   }
   const operation = evmTransactionMetadata(transaction).operation;
-  if (["deposit", "transfer", "withdraw"].includes(operation)) return operation;
+  if ([
+    "deposit",
+    "transfer",
+    "withdraw",
+    "transferWithAuthorization",
+    "withdrawWithAuthorization",
+    "batchTransfer",
+    "batchTransferWithAuthorization",
+    "singleProofBatchTransfer",
+    "singleProofBatchTransferWithAuthorization"
+  ].includes(operation)) return operation;
   return "";
 }
 function assertPrivacyTransactionBinding(transaction, depositMode, contractAddress) {
@@ -93862,13 +96006,6 @@ function assertPrivacyTransactionBinding(transaction, depositMode, contractAddre
     throw new Error("payable EVM deposit transaction binding was modified after preparation");
   }
 }
-async function authoritativeReservationRecords2(context) {
-  if (!context) return [];
-  if (typeof context.reservationManager.getReservation !== "function") {
-    throw new Error("reservationManager.getReservation is required for reserved-note broadcast validation");
-  }
-  return Promise.all(context.reservationIDs.map((id) => context.reservationManager.getReservation(id)));
-}
 function assertReservationPayloadMatches2(records, payload) {
   if (!records.length) return;
   const payloadHash = String(payload?.payload_hash || "").trim();
@@ -93877,14 +96014,14 @@ function assertReservationPayloadMatches2(records, payload) {
     throw new Error("relay payload does not match the reserved payload hash");
   }
 }
-function assertReservationTransactionMatches(records, transactionHash, { allowPayloadBinding = false } = {}) {
+function assertReservationTransactionMatches(records, transactionHash3, { allowPayloadBinding = false } = {}) {
   if (!records.length) return;
   const mismatched = records.some((record) => {
     const storedHash = String(record?.tx_bytes_hash ?? record?.txBytesHash ?? "").trim();
-    if (storedHash) return storedHash !== transactionHash;
+    if (storedHash) return storedHash !== transactionHash3;
     return !(allowPayloadBinding && String(record?.payload_hash ?? record?.payloadHash ?? "").trim());
   });
-  if (!transactionHash || mismatched) {
+  if (!transactionHash3 || mismatched) {
     throw new Error("EVM transaction does not match the reservation ProofReady artifact");
   }
 }
@@ -93894,11 +96031,11 @@ async function validateRelayBroadcastContext2(options, {
   transaction,
   contract,
   reservationContext,
-  transactionHash
+  transactionHash: transactionHash3
 } = {}) {
   const payload = options?.relayPayload ?? options?.relay_payload ?? null;
-  const reservationRecords = await authoritativeReservationRecords2(reservationContext);
-  assertReservationTransactionMatches(reservationRecords, transactionHash, { allowPayloadBinding: Boolean(payload) });
+  const reservationRecords = await getBroadcastReservationRecords(reservationContext);
+  assertReservationTransactionMatches(reservationRecords, transactionHash3, { allowPayloadBinding: Boolean(payload) });
   const reservationHasTransactionBinding = reservationRecords.some(
     (record) => Boolean(String(record?.tx_bytes_hash ?? record?.txBytesHash ?? "").trim())
   );
@@ -94008,8 +96145,8 @@ async function markBroadcastReservationRejected2(context, error) {
   try {
     await context.reservationManager.markBroadcastRejected(context.reservationIDs, {
       leaseToken: context.leaseToken,
-      providerCode: "4001",
-      error: "wallet_rejected_before_broadcast"
+      error: "wallet_rejected_before_broadcast",
+      providerCode: "4001"
     });
   } catch (bookkeepingError) {
     throw attachReservationBookkeepingError2(error, bookkeepingError);
@@ -94028,115 +96165,162 @@ async function markBroadcastReservationSubmitted2(context, txHash) {
     throw attachReservationBookkeepingError2(error, bookkeepingError);
   }
 }
-var evmPrivacyPrecompileAddress = "0x100000000000000000000000000000000000000b";
-var defaultEvmPrivacyPrecompileAddress = evmPrivacyPrecompileAddress;
+var evmPrivacyDepositTuple = {
+  name: "request",
+  type: "tuple",
+  components: [
+    { name: "noteCommitment", type: "bytes" },
+    { name: "encryptedNote", type: "bytes" },
+    { name: "proof", type: "bytes" }
+  ]
+};
+var evmPrivacyTransferTuple = {
+  name: "request",
+  type: "tuple",
+  components: [
+    { name: "proof", type: "bytes" },
+    { name: "root", type: "bytes" },
+    { name: "nullifiers", type: "bytes[]" },
+    { name: "newCommitments", type: "bytes[]" },
+    { name: "cipherTexts", type: "bytes[]" },
+    { name: "viewTags", type: "bytes[]" },
+    { name: "userPrivacyPolicy", type: "uint32" },
+    { name: "userDisclosureDigest", type: "bytes" },
+    { name: "userDisclosureMode", type: "uint8" },
+    { name: "userDisclosureTargetPubkey", type: "bytes" },
+    { name: "userDisclosurePayload", type: "bytes" },
+    { name: "auditDisclosureDigest", type: "bytes" },
+    { name: "auditDisclosureTargetPubkey", type: "bytes" },
+    { name: "auditDisclosurePayload", type: "bytes" },
+    { name: "selfViewDisclosureDigest", type: "bytes" },
+    { name: "selfViewDisclosurePayload", type: "bytes" },
+    { name: "expiresAtUnix", type: "uint64" }
+  ]
+};
+var evmPrivacyWithdrawTuple = {
+  name: "request",
+  type: "tuple",
+  components: [
+    { name: "proof", type: "bytes" },
+    { name: "root", type: "bytes" },
+    { name: "nullifier", type: "bytes" },
+    { name: "amount", type: "string" },
+    { name: "recipient", type: "address" },
+    { name: "chainId", type: "string" },
+    { name: "expiresAtUnix", type: "uint64" }
+  ]
+};
+var evmPrivacyAuthorizationTuple = {
+  name: "authorization",
+  type: "tuple",
+  components: [
+    { name: "effectiveSender", type: "address" },
+    { name: "executor", type: "address" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint64" },
+    { name: "authorizationKind", type: "uint8" },
+    { name: "signature", type: "bytes" }
+  ]
+};
+var evmPrivacySingleProofBatchOutputTuple = {
+  name: "output",
+  type: "tuple",
+  components: [
+    { name: "commitment", type: "bytes" },
+    { name: "ciphertext", type: "bytes" },
+    { name: "viewTag", type: "bytes" },
+    { name: "userPrivacyPolicy", type: "uint32" },
+    { name: "userDisclosureMode", type: "uint8" },
+    { name: "userDisclosureDigest", type: "bytes" },
+    { name: "userDisclosureTargetPubkey", type: "bytes" },
+    { name: "userDisclosurePayload", type: "bytes" },
+    { name: "fullDisclosureDigest", type: "bytes" },
+    { name: "auditDisclosurePayload", type: "bytes" },
+    { name: "selfViewDisclosurePayload", type: "bytes" }
+  ]
+};
+var evmPrivacySingleProofBatchTuple = {
+  name: "request",
+  type: "tuple",
+  components: [
+    { name: "proof", type: "bytes" },
+    { name: "root", type: "bytes" },
+    { name: "nullifiers", type: "bytes[]" },
+    { name: "outputs", type: "tuple[]", components: evmPrivacySingleProofBatchOutputTuple.components },
+    { name: "auditKeyId", type: "string" },
+    { name: "auditKeyEpoch", type: "uint64" },
+    { name: "auditDisclosureTargetPubkey", type: "bytes" },
+    { name: "expiresAtUnix", type: "uint64" }
+  ]
+};
+var evmPrivacyAuthorizedTransferItemTuple = {
+  name: "item",
+  type: "tuple",
+  components: [evmPrivacyTransferTuple, evmPrivacyAuthorizationTuple]
+};
+function evmPrivacyFunction(name, inputs, stateMutability = "nonpayable") {
+  return {
+    type: "function",
+    name,
+    stateMutability,
+    inputs,
+    outputs: [{ name: "success", type: "bool" }]
+  };
+}
+function evmPrivacyEvent(name, inputs) {
+  return { type: "event", name, inputs, anonymous: false };
+}
 var evmPrivacyPrecompileAbi = Object.freeze([
-  {
-    type: "function",
-    name: "deposit",
-    stateMutability: "nonpayable",
-    inputs: [
-      {
-        name: "request",
-        type: "tuple",
-        components: [
-          { name: "amount", type: "string" },
-          { name: "noteCommitment", type: "bytes" },
-          { name: "encryptedNote", type: "bytes" },
-          { name: "proof", type: "bytes" }
-        ]
-      }
-    ],
-    outputs: [{ name: "success", type: "bool" }]
-  },
-  {
-    type: "function",
-    name: "transfer",
-    stateMutability: "nonpayable",
-    inputs: [
-      {
-        name: "request",
-        type: "tuple",
-        components: [
-          { name: "proof", type: "bytes" },
-          { name: "root", type: "bytes" },
-          { name: "nullifiers", type: "bytes[]" },
-          { name: "newCommitments", type: "bytes[]" },
-          { name: "cipherTexts", type: "bytes[]" },
-          { name: "viewTags", type: "bytes[]" },
-          { name: "userPrivacyPolicy", type: "uint32" },
-          { name: "userDisclosureDigest", type: "bytes" },
-          { name: "userDisclosureMode", type: "uint8" },
-          { name: "userDisclosureTargetPubkey", type: "bytes" },
-          { name: "userDisclosurePayload", type: "bytes" },
-          { name: "auditDisclosureDigest", type: "bytes" },
-          { name: "auditDisclosureTargetPubkey", type: "bytes" },
-          { name: "auditDisclosurePayload", type: "bytes" },
-          { name: "selfViewDisclosureDigest", type: "bytes" },
-          { name: "selfViewDisclosurePayload", type: "bytes" },
-          { name: "expiresAtUnix", type: "uint64" }
-        ]
-      }
-    ],
-    outputs: [{ name: "success", type: "bool" }]
-  },
-  {
-    type: "function",
-    name: "withdraw",
-    stateMutability: "nonpayable",
-    inputs: [
-      {
-        name: "request",
-        type: "tuple",
-        components: [
-          { name: "proof", type: "bytes" },
-          { name: "root", type: "bytes" },
-          { name: "nullifier", type: "bytes" },
-          { name: "amount", type: "string" },
-          { name: "recipient", type: "address" },
-          { name: "chainId", type: "string" },
-          { name: "expiresAtUnix", type: "uint64" }
-        ]
-      }
-    ],
-    outputs: [{ name: "success", type: "bool" }]
-  },
-  {
-    type: "event",
-    name: "PrivacyDeposit",
-    inputs: [
-      { name: "caller", type: "address", indexed: true },
-      { name: "amount", type: "string", indexed: false },
-      { name: "noteCommitment", type: "bytes", indexed: false }
-    ],
-    anonymous: false
-  },
-  {
-    type: "event",
-    name: "PrivacyTransfer",
-    inputs: [
-      { name: "caller", type: "address", indexed: true },
-      { name: "root", type: "bytes", indexed: false }
-    ],
-    anonymous: false
-  },
-  {
-    type: "event",
-    name: "PrivacyWithdraw",
-    inputs: [
-      { name: "caller", type: "address", indexed: true },
-      { name: "recipient", type: "address", indexed: true },
-      { name: "amount", type: "string", indexed: false }
-    ],
-    anonymous: false
-  }
+  evmPrivacyFunction("deposit", [evmPrivacyDepositTuple], "payable"),
+  evmPrivacyFunction("transfer", [evmPrivacyTransferTuple]),
+  evmPrivacyFunction("withdraw", [evmPrivacyWithdrawTuple]),
+  evmPrivacyFunction("transferWithAuthorization", [evmPrivacyTransferTuple, evmPrivacyAuthorizationTuple]),
+  evmPrivacyFunction("withdrawWithAuthorization", [evmPrivacyWithdrawTuple, evmPrivacyAuthorizationTuple]),
+  evmPrivacyFunction("singleProofBatchTransfer", [evmPrivacySingleProofBatchTuple]),
+  evmPrivacyFunction("singleProofBatchTransferWithAuthorization", [evmPrivacySingleProofBatchTuple, evmPrivacyAuthorizationTuple]),
+  evmPrivacyFunction("batchTransfer", [
+    { name: "batchId", type: "bytes32" },
+    { name: "requests", type: "tuple[]", components: evmPrivacyTransferTuple.components }
+  ]),
+  evmPrivacyFunction("batchTransferWithAuthorization", [
+    { name: "batchId", type: "bytes32" },
+    { name: "items", type: "tuple[]", components: evmPrivacyAuthorizedTransferItemTuple.components }
+  ]),
+  evmPrivacyEvent("PrivacyDeposit", [
+    { name: "effectiveSender", type: "address", indexed: true },
+    { name: "operator", type: "address", indexed: true },
+    { name: "amount", type: "string", indexed: false },
+    { name: "noteCommitment", type: "bytes", indexed: false }
+  ]),
+  evmPrivacyEvent("PrivacyTransfer", [
+    { name: "effectiveSender", type: "address", indexed: true },
+    { name: "operator", type: "address", indexed: true },
+    { name: "root", type: "bytes", indexed: false }
+  ]),
+  evmPrivacyEvent("PrivacyWithdraw", [
+    { name: "effectiveSender", type: "address", indexed: true },
+    { name: "operator", type: "address", indexed: true },
+    { name: "recipient", type: "address", indexed: true },
+    { name: "amount", type: "string", indexed: false }
+  ]),
+  evmPrivacyEvent("PrivacyBatchTransferItem", [
+    { name: "effectiveSender", type: "address", indexed: true },
+    { name: "operator", type: "address", indexed: true },
+    { name: "batchId", type: "bytes32", indexed: true },
+    { name: "itemIndex", type: "uint64", indexed: false },
+    { name: "requestHash", type: "bytes32", indexed: false },
+    { name: "root", type: "bytes", indexed: false }
+  ]),
+  evmPrivacyEvent("PrivacySingleProofBatchTransfer", [
+    { name: "effectiveSender", type: "address", indexed: true },
+    { name: "operator", type: "address", indexed: true },
+    { name: "requestHash", type: "bytes32", indexed: true },
+    { name: "root", type: "bytes", indexed: false },
+    { name: "inputCount", type: "uint8", indexed: false },
+    { name: "outputCount", type: "uint8", indexed: false }
+  ])
 ]);
-var evmPrivacyPrecompilePayableDepositAbi = Object.freeze(
-  evmPrivacyPrecompileAbi.map((item, index) => index === 0 ? Object.freeze({ ...item, stateMutability: "payable" }) : item)
-);
-var evmPrivacyDepositTuple = evmPrivacyPrecompileAbi[0].inputs[0];
-var evmPrivacyTransferTuple = evmPrivacyPrecompileAbi[1].inputs[0];
-var evmPrivacyWithdrawTuple = evmPrivacyPrecompileAbi[2].inputs[0];
+var evmPrivacyPrecompilePayableDepositAbi = evmPrivacyPrecompileAbi;
 function strip0x(value) {
   return String(value || "").trim().replace(/^0x/i, "");
 }
@@ -94202,6 +96386,12 @@ function encodeStaticAbi(type, value) {
     const bits = Number(name.slice(4) || "256");
     return uintWord(value, bits);
   }
+  if (name === "bool") {
+    if (typeof value !== "boolean") {
+      throw new Error("bool ABI value must be a boolean");
+    }
+    return uintWord(value ? 1 : 0, 8);
+  }
   if (name === "address") return addressWord(value);
   if (name === "bytes32") return bytes32Word(value);
   throw new Error(`unsupported static ABI type ${name}`);
@@ -94210,27 +96400,35 @@ function encodeBytes(hex2) {
   const clean3 = strip0x(hex2);
   return `${uintWord(clean3.length / 2)}${padRightWord(clean3)}`;
 }
+function arrayElementAbiType(type) {
+  const name = abiTypeName(type);
+  if (!name.endsWith("[]")) throw new Error(`ABI type ${name} is not an array`);
+  const elementName = name.slice(0, -2);
+  return elementName === "tuple" ? { type: "tuple", components: abiComponents(type) } : elementName;
+}
+function encodeDynamicArray(type, value) {
+  if (!Array.isArray(value)) {
+    throw new Error(`${abiTypeName(type)} value must be an array`);
+  }
+  const elementType = arrayElementAbiType(type);
+  const encodedItems = value.map((item) => isDynamicAbiType(elementType) ? encodeDynamicAbi(elementType, item) : encodeStaticAbi(elementType, item));
+  if (!isDynamicAbiType(elementType)) {
+    return `${uintWord(value.length)}${encodedItems.join("")}`;
+  }
+  const heads = [];
+  let offset = 32 * value.length;
+  for (const encoded of encodedItems) {
+    heads.push(uintWord(offset));
+    offset += encoded.length / 2;
+  }
+  return `${uintWord(value.length)}${heads.join("")}${encodedItems.join("")}`;
+}
 function encodeDynamicAbi(type, value) {
   const name = abiTypeName(type);
   if (name === "tuple") return encodeTupleAbi(type, value);
   if (name === "bytes") return encodeBytes(bytesLikeToHex(value));
   if (name === "string") return encodeBytes(utf8Hex(value));
-  if (name === "bytes32[]") {
-    return `${uintWord(value.length)}${value.map((item, index) => bytes32Word(item, `bytes32[${index}]`)).join("")}`;
-  }
-  if (name === "bytes[]") {
-    const values = [...value];
-    const heads = [];
-    const tails = [];
-    let offset = 32 * values.length;
-    for (const item of values) {
-      const encoded = encodeBytes(bytesLikeToHex(item));
-      heads.push(uintWord(offset));
-      tails.push(encoded);
-      offset += encoded.length / 2;
-    }
-    return `${uintWord(values.length)}${heads.join("")}${tails.join("")}`;
-  }
+  if (name.endsWith("[]")) return encodeDynamicArray(type, value);
   throw new Error(`unsupported dynamic ABI type ${name}`);
 }
 function tupleComponentValue(component, value, index) {
@@ -94315,9 +96513,13 @@ function requiredBytes(value, label, byteLength) {
   return value;
 }
 function optionalBytes2(value) {
-  return value == null ? emptyBytes : value;
+  if (value == null) return emptyBytes;
+  if (typeof value === "string" && value.trim().toLowerCase() === "0x") {
+    return emptyBytes;
+  }
+  return value;
 }
-function requiredUint64(value, label) {
+function requiredUint(value, label, bits = 256) {
   if (value == null || String(value).trim() === "") {
     throw new Error(`${label} is required`);
   }
@@ -94325,12 +96527,15 @@ function requiredUint64(value, label) {
   try {
     parsed = BigInt(value);
   } catch {
-    throw new Error(`${label} must be a uint64`);
+    throw new Error(`${label} must be a uint${bits}`);
   }
-  if (parsed < 0n || parsed > 0xffffffffffffffffn) {
-    throw new Error(`${label} must be a uint64`);
+  if (parsed < 0n || parsed >= 1n << BigInt(bits)) {
+    throw new Error(`${label} must be a uint${bits}`);
   }
   return parsed;
+}
+function requiredUint64(value, label) {
+  return requiredUint(value, label, 64);
 }
 function strictTransferUnix(value, label) {
   if (!Number.isSafeInteger(value) || value < 0) {
@@ -94437,50 +96642,47 @@ function withdrawRecipientToEvmAddress(message, options = {}) {
   if (isEvmAddress(fallback)) return normalizeEvmAddress(fallback, "withdraw recipient");
   return bech32AddressToEvm(fallback, options.accountPrefix);
 }
-function encodeEvmPrivacyDeposit(message, options = {}) {
-  const request = {
-    amount: String(valueFrom(message, ["amount"], "")),
+function evmPrivacyDepositRequest(message) {
+  return {
     noteCommitment: requiredBytes(valueFrom(message, ["noteCommitment", "note_commitment"], null), "note commitment", 32),
     encryptedNote: requiredBytes(valueFrom(message, ["encryptedNote", "encrypted_note"], null), "encrypted note"),
     proof: requiredBytes(valueFrom(message, ["proof", "depositProof", "deposit_proof"], null), "deposit proof")
   };
-  return encodeFunctionData(
-    options.signature || evmPrivacyDepositSignature,
-    [evmPrivacyDepositTuple],
-    [request]
-  );
 }
-function encodeEvmPrivacyTransfer(message, options = {}) {
-  const request = {
-    proof: requiredBytes(message.proof, "transfer proof"),
-    root: requiredBytes(message.root, "transfer root", 32),
-    nullifiers: bytesArray(message.nullifiers, "transfer nullifiers", 32),
-    newCommitments: bytesArray(message.newCommitments, "transfer new commitments", 32),
-    cipherTexts: bytesArray(message.cipherTexts, "transfer cipher texts"),
-    viewTags: bytesArray(message.viewTags, "transfer view tags", 2),
-    userPrivacyPolicy: message.userPrivacyPolicy ?? 0,
-    userDisclosureDigest: optionalBytes2(message.userDisclosureDigest),
-    userDisclosureMode: message.userDisclosureMode ?? 0,
-    userDisclosureTargetPubkey: optionalBytes2(message.userDisclosureTargetPubkey),
-    userDisclosurePayload: optionalBytes2(message.userDisclosurePayload),
-    auditDisclosureDigest: optionalBytes2(message.auditDisclosureDigest),
-    auditDisclosureTargetPubkey: optionalBytes2(message.auditDisclosureTargetPubkey),
-    auditDisclosurePayload: optionalBytes2(message.auditDisclosurePayload),
-    selfViewDisclosureDigest: optionalBytes2(message.selfViewDisclosureDigest ?? message.self_view_disclosure_digest),
-    selfViewDisclosurePayload: optionalBytes2(message.selfViewDisclosurePayload ?? message.self_view_disclosure_payload),
+function evmPrivacyTransferRequest(message) {
+  return {
+    proof: requiredBytes(valueFrom(message, ["proof"], null), "transfer proof"),
+    root: requiredBytes(valueFrom(message, ["root"], null), "transfer root", 32),
+    nullifiers: bytesArray(valueFrom(message, ["nullifiers"], null), "transfer nullifiers", 32),
+    newCommitments: bytesArray(valueFrom(message, ["newCommitments", "new_commitments"], null), "transfer new commitments", 32),
+    cipherTexts: bytesArray(valueFrom(message, ["cipherTexts", "cipher_texts"], null), "transfer cipher texts"),
+    viewTags: bytesArray(valueFrom(message, ["viewTags", "view_tags"], null), "transfer view tags", 2),
+    userPrivacyPolicy: requiredUint(
+      valueFrom(message, ["userPrivacyPolicy", "user_privacy_policy"], 0),
+      "transfer user privacy policy",
+      32
+    ),
+    userDisclosureDigest: optionalBytes2(valueFrom(message, ["userDisclosureDigest", "user_disclosure_digest"], null)),
+    userDisclosureMode: requiredUint(
+      valueFrom(message, ["userDisclosureMode", "user_disclosure_mode"], 0),
+      "transfer user disclosure mode",
+      8
+    ),
+    userDisclosureTargetPubkey: optionalBytes2(valueFrom(message, ["userDisclosureTargetPubkey", "user_disclosure_target_pubkey"], null)),
+    userDisclosurePayload: optionalBytes2(valueFrom(message, ["userDisclosurePayload", "user_disclosure_payload"], null)),
+    auditDisclosureDigest: optionalBytes2(valueFrom(message, ["auditDisclosureDigest", "audit_disclosure_digest"], null)),
+    auditDisclosureTargetPubkey: optionalBytes2(valueFrom(message, ["auditDisclosureTargetPubkey", "audit_disclosure_target_pubkey"], null)),
+    auditDisclosurePayload: optionalBytes2(valueFrom(message, ["auditDisclosurePayload", "audit_disclosure_payload"], null)),
+    selfViewDisclosureDigest: optionalBytes2(valueFrom(message, ["selfViewDisclosureDigest", "self_view_disclosure_digest"], null)),
+    selfViewDisclosurePayload: optionalBytes2(valueFrom(message, ["selfViewDisclosurePayload", "self_view_disclosure_payload"], null)),
     expiresAtUnix: requiredUint64(
-      message.expiresAtUnix ?? message.expires_at_unix,
+      valueFrom(message, ["expiresAtUnix", "expires_at_unix"], null),
       "transfer expiresAtUnix"
     )
   };
-  return encodeFunctionData(
-    options.signature || evmPrivacyTransferSignature,
-    [evmPrivacyTransferTuple],
-    [request]
-  );
 }
-function encodeEvmPrivacyWithdraw(message, options = {}) {
-  const request = {
+function evmPrivacyWithdrawRequest(message, options = {}) {
+  return {
     proof: requiredBytes(message.proof, "withdraw proof"),
     root: requiredBytes(message.root, "withdraw root", 32),
     nullifier: requiredBytes(message.nullifier, "withdraw nullifier", 32),
@@ -94492,10 +96694,158 @@ function encodeEvmPrivacyWithdraw(message, options = {}) {
       "withdraw expiresAtUnix"
     )
   };
+}
+function evmPrivacyAuthorization(authorization, { requireSignature = true } = {}) {
+  if (!authorization || typeof authorization !== "object") {
+    throw new Error("privacy authorization is required");
+  }
+  const effectiveSender = normalizeEvmAddress(
+    valueFrom(authorization, ["effectiveSender", "effective_sender"], null),
+    "authorization effectiveSender"
+  );
+  const executor = normalizeEvmAddress(
+    valueFrom(authorization, ["executor"], null),
+    "authorization executor"
+  );
+  const deadline = requiredUint64(valueFrom(authorization, ["deadline"], null), "authorization deadline");
+  const authorizationKind = requiredUint(
+    valueFrom(authorization, ["authorizationKind", "authorization_kind"], null),
+    "authorization kind",
+    8
+  );
+  if (effectiveSender === `0x${"0".repeat(40)}` || executor === `0x${"0".repeat(40)}`) {
+    throw new Error("authorization effectiveSender and executor must not be zero");
+  }
+  if (deadline === 0n) throw new Error("authorization deadline must be positive");
+  const signature = valueFrom(authorization, ["signature"], null);
+  if (requireSignature && signature == null) {
+    throw new Error("authorization signature is required");
+  }
+  return {
+    effectiveSender,
+    executor,
+    nonce: requiredUint(valueFrom(authorization, ["nonce"], null), "authorization nonce"),
+    deadline,
+    authorizationKind,
+    signature: requireSignature ? requiredBytes(signature, "authorization signature") : optionalBytes2(signature)
+  };
+}
+function evmPrivacySingleProofBatchRequest(message) {
+  const outputs = valueFrom(message, ["outputs"], null);
+  if (!Array.isArray(outputs) || outputs.length < 1 || outputs.length > 32) {
+    throw new Error("single-proof batch outputs must contain 1..32 items");
+  }
+  const nullifiers = bytesArray(valueFrom(message, ["nullifiers"], null), "single-proof batch nullifiers", 32);
+  if (nullifiers.length < 1 || nullifiers.length > 16) {
+    throw new Error("single-proof batch nullifiers must contain 1..16 items");
+  }
+  return {
+    proof: requiredBytes(valueFrom(message, ["proof"], null), "single-proof batch proof"),
+    root: requiredBytes(valueFrom(message, ["root"], null), "single-proof batch root", 32),
+    nullifiers,
+    outputs: outputs.map((output, index) => ({
+      commitment: requiredBytes(valueFrom(output, ["commitment"], null), `single-proof batch output ${index} commitment`, 32),
+      ciphertext: requiredBytes(valueFrom(output, ["ciphertext"], null), `single-proof batch output ${index} ciphertext`, 430),
+      viewTag: requiredBytes(valueFrom(output, ["viewTag", "view_tag"], null), `single-proof batch output ${index} view tag`, 2),
+      userPrivacyPolicy: requiredUint(valueFrom(output, ["userPrivacyPolicy", "user_privacy_policy"], 0), `single-proof batch output ${index} user privacy policy`, 32),
+      userDisclosureMode: requiredUint(valueFrom(output, ["userDisclosureMode", "user_disclosure_mode"], 0), `single-proof batch output ${index} user disclosure mode`, 8),
+      userDisclosureDigest: optionalBytes2(valueFrom(output, ["userDisclosureDigest", "user_disclosure_digest"], null)),
+      userDisclosureTargetPubkey: optionalBytes2(valueFrom(output, ["userDisclosureTargetPubkey", "user_disclosure_target_pubkey"], null)),
+      userDisclosurePayload: optionalBytes2(valueFrom(output, ["userDisclosurePayload", "user_disclosure_payload"], null)),
+      fullDisclosureDigest: requiredBytes(valueFrom(output, ["fullDisclosureDigest", "full_disclosure_digest"], null), `single-proof batch output ${index} full disclosure digest`, 32),
+      auditDisclosurePayload: requiredBytes(valueFrom(output, ["auditDisclosurePayload", "audit_disclosure_payload"], null), `single-proof batch output ${index} audit disclosure payload`, 472),
+      selfViewDisclosurePayload: optionalBytes2(valueFrom(output, ["selfViewDisclosurePayload", "self_view_disclosure_payload"], null))
+    })),
+    auditKeyId: String(valueFrom(message, ["auditKeyId", "audit_key_id"], "")).trim(),
+    auditKeyEpoch: requiredUint64(valueFrom(message, ["auditKeyEpoch", "audit_key_epoch"], null), "single-proof batch audit key epoch"),
+    auditDisclosureTargetPubkey: requiredBytes(valueFrom(message, ["auditDisclosureTargetPubkey", "audit_disclosure_target_pubkey"], null), "single-proof batch audit disclosure target pubkey"),
+    expiresAtUnix: requiredUint64(valueFrom(message, ["expiresAtUnix", "expires_at_unix"], null), "single-proof batch expiresAtUnix")
+  };
+}
+function evmPrivacyBatchId(batchId) {
+  const normalized = bytes32Word(batchId, "batchId");
+  if (normalized === zeroWord) throw new Error("batchId must not be zero");
+  return with0x(normalized);
+}
+function encodeEvmPrivacyDeposit(message, options = {}) {
+  const request = evmPrivacyDepositRequest(message);
+  return encodeFunctionData(
+    options.signature || evmPrivacyDepositSignature,
+    [evmPrivacyDepositTuple],
+    [request]
+  );
+}
+function encodeEvmPrivacyTransfer(message, options = {}) {
+  const request = evmPrivacyTransferRequest(message);
+  return encodeFunctionData(
+    options.signature || evmPrivacyTransferSignature,
+    [evmPrivacyTransferTuple],
+    [request]
+  );
+}
+function encodeEvmPrivacyWithdraw(message, options = {}) {
+  const request = evmPrivacyWithdrawRequest(message, options);
   return encodeFunctionData(
     options.signature || evmPrivacyWithdrawSignature,
     [evmPrivacyWithdrawTuple],
     [request]
+  );
+}
+function encodeEvmPrivacyTransferWithAuthorization(message, authorization, options = {}) {
+  return encodeFunctionData(
+    options.signature || evmPrivacyTransferWithAuthorizationSignature,
+    [evmPrivacyTransferTuple, evmPrivacyAuthorizationTuple],
+    [evmPrivacyTransferRequest(message), evmPrivacyAuthorization(authorization)]
+  );
+}
+function encodeEvmPrivacyWithdrawWithAuthorization(message, authorization, options = {}) {
+  return encodeFunctionData(
+    options.signature || evmPrivacyWithdrawWithAuthorizationSignature,
+    [evmPrivacyWithdrawTuple, evmPrivacyAuthorizationTuple],
+    [evmPrivacyWithdrawRequest(message, options), evmPrivacyAuthorization(authorization)]
+  );
+}
+function encodeEvmPrivacyBatchTransfer(batchId, requests, options = {}) {
+  if (!Array.isArray(requests) || requests.length < 1 || requests.length > 20) {
+    throw new Error("batch transfer requests must contain 1..20 items");
+  }
+  return encodeFunctionData(
+    options.signature || evmPrivacyBatchTransferSignature,
+    [
+      { name: "batchId", type: "bytes32" },
+      { name: "requests", type: "tuple[]", components: evmPrivacyTransferTuple.components }
+    ],
+    [evmPrivacyBatchId(batchId), requests.map(evmPrivacyTransferRequest)]
+  );
+}
+function encodeEvmPrivacyBatchTransferWithAuthorization(batchId, items, options = {}) {
+  if (!Array.isArray(items) || items.length < 1 || items.length > 20) {
+    throw new Error("authorized batch transfer items must contain 1..20 items");
+  }
+  return encodeFunctionData(
+    options.signature || evmPrivacyBatchTransferWithAuthorizationSignature,
+    [
+      { name: "batchId", type: "bytes32" },
+      { name: "items", type: "tuple[]", components: evmPrivacyAuthorizedTransferItemTuple.components }
+    ],
+    [evmPrivacyBatchId(batchId), items.map((item, index) => ({
+      request: evmPrivacyTransferRequest(item?.request ?? item?.message ?? item),
+      authorization: evmPrivacyAuthorization(item?.authorization ?? item?.auth ?? item?.privacyAuthorization)
+    }))]
+  );
+}
+function encodeEvmPrivacySingleProofBatchTransfer(message, options = {}) {
+  return encodeFunctionData(
+    options.signature || evmPrivacySingleProofBatchTransferSignature,
+    [evmPrivacySingleProofBatchTuple],
+    [evmPrivacySingleProofBatchRequest(message)]
+  );
+}
+function encodeEvmPrivacySingleProofBatchTransferWithAuthorization(message, authorization, options = {}) {
+  return encodeFunctionData(
+    options.signature || evmPrivacySingleProofBatchTransferWithAuthorizationSignature,
+    [evmPrivacySingleProofBatchTuple, evmPrivacyAuthorizationTuple],
+    [evmPrivacySingleProofBatchRequest(message), evmPrivacyAuthorization(authorization)]
   );
 }
 function defaultEncodeEvmDeposit(message, options = {}) {
@@ -94506,6 +96856,552 @@ function defaultEncodeEvmTransfer(message, options = {}) {
 }
 function defaultEncodeEvmWithdraw(message, options = {}) {
   return encodeEvmPrivacyWithdraw(message, options);
+}
+function keccakHex(value, label = "EVM bytes") {
+  const clean3 = strip0x(bytesLikeToHex(value, label));
+  return `0x${keccak2562.create().update(bytesFromHex2(clean3, label)).hex()}`;
+}
+function receiptHex(value, label) {
+  return with0x(bytesLikeToHex(value, label));
+}
+function receiptAddressTopic(address) {
+  return `0x${strip0x(normalizeEvmAddress(address)).padStart(64, "0")}`;
+}
+function receiptBytes32Topic(value, label) {
+  return `0x${bytes32Word(value, label)}`;
+}
+function requestHashForTransferRequest(request) {
+  return keccakHex(encodeAbiParameters([evmPrivacyTransferTuple], [request]), "transfer request encoding");
+}
+function requestHashForSingleProofBatchRequest(request) {
+  return keccakHex(
+    `${functionSelector(evmPrivacySingleProofBatchTransferSignature)}${encodeAbiParameters([evmPrivacySingleProofBatchTuple], [request])}`,
+    "single-proof batch request encoding"
+  );
+}
+var evmPrivacyAuthorizationTypedDataTypes = Object.freeze({
+  EIP712Domain: Object.freeze([
+    Object.freeze({ name: "name", type: "string" }),
+    Object.freeze({ name: "version", type: "string" }),
+    Object.freeze({ name: "chainId", type: "uint256" }),
+    Object.freeze({ name: "verifyingContract", type: "address" })
+  ]),
+  PrivacyActionAuthorization: Object.freeze([
+    Object.freeze({ name: "authorizationEnvelopeSelector", type: "bytes4" }),
+    Object.freeze({ name: "authorizationActionSelector", type: "bytes4" }),
+    Object.freeze({ name: "effectiveSender", type: "address" }),
+    Object.freeze({ name: "executor", type: "address" }),
+    Object.freeze({ name: "nonce", type: "uint256" }),
+    Object.freeze({ name: "deadline", type: "uint64" }),
+    Object.freeze({ name: "cosmosChainIdHash", type: "bytes32" }),
+    Object.freeze({ name: "requestHash", type: "bytes32" }),
+    Object.freeze({ name: "batchId", type: "bytes32" }),
+    Object.freeze({ name: "batchItemIndex", type: "uint64" }),
+    Object.freeze({ name: "authorizationKind", type: "uint8" })
+  ])
+});
+function normalizeEvmPrivacyAuthorizationDomain(domain) {
+  if (!domain || typeof domain !== "object" || Array.isArray(domain)) {
+    throw new Error("EVM privacy authorization domain is required");
+  }
+  const name = String(domain.name ?? "").trim();
+  const version = String(domain.version ?? "1").trim();
+  if (!name) throw new Error("EVM privacy authorization domain name is required");
+  if (!version) throw new Error("EVM privacy authorization domain version is required");
+  return Object.freeze({ name, version });
+}
+function normalizeEvmAuthorizationKindSet(kinds) {
+  if (kinds == null) return null;
+  if (!Array.isArray(kinds)) {
+    throw new Error("supportedAuthorizationKinds must be an array of uint8 values");
+  }
+  const normalized = kinds.map((kind, index) => requiredUint(
+    kind,
+    `supportedAuthorizationKinds[${index}]`,
+    8
+  ));
+  if (new Set(normalized).size !== normalized.length) {
+    throw new Error("supportedAuthorizationKinds must not contain duplicates");
+  }
+  return new Set(normalized);
+}
+function normalizeEvmAuthorizationProfile(profile) {
+  if (profile == null) return null;
+  if (typeof profile !== "object" || Array.isArray(profile)) {
+    throw new Error("EVM authorization profile must be an object");
+  }
+  if (profile.validate != null && typeof profile.validate !== "function") {
+    throw new Error("EVM authorization profile validate must be a function");
+  }
+  if (profile.buildTypedData != null && typeof profile.buildTypedData !== "function") {
+    throw new Error("EVM authorization profile buildTypedData must be a function");
+  }
+  if (typeof profile.validate !== "function" && typeof profile.buildTypedData !== "function") {
+    throw new Error("EVM authorization profile must provide validate or buildTypedData");
+  }
+  return profile;
+}
+function validateEvmPrivacyAuthorization(authorization, profile, options = {}) {
+  const normalized = evmPrivacyAuthorization(authorization, options);
+  profile?.validate?.(normalized);
+  return normalized;
+}
+function createEvmAuthorizationProfile({
+  supportedAuthorizationKinds,
+  typedDataDomain,
+  validate
+} = {}) {
+  const supportedKinds = normalizeEvmAuthorizationKindSet(supportedAuthorizationKinds);
+  const domain = typedDataDomain == null ? null : normalizeEvmPrivacyAuthorizationDomain(typedDataDomain);
+  if (validate != null && typeof validate !== "function") {
+    throw new Error("authorization profile validate must be a function");
+  }
+  const applyPolicy = (authorization) => {
+    if (supportedKinds && !supportedKinds.has(authorization.authorizationKind)) {
+      throw new Error(`unsupported EVM privacy authorization kind ${authorization.authorizationKind}`);
+    }
+    if (validate) validate(authorization);
+    return authorization;
+  };
+  const profile = {
+    validate(authorization) {
+      applyPolicy(authorization);
+    },
+    ...domain ? {
+      buildTypedData(input = {}) {
+        const authorization = applyPolicy(
+          evmPrivacyAuthorization(input.authorization, { requireSignature: false })
+        );
+        return buildEvmPrivacyAuthorizationTypedData({
+          ...input,
+          authorization,
+          domain
+        });
+      }
+    } : {}
+  };
+  Object.defineProperty(profile, evmAuthorizationProfileMetadata, {
+    value: Object.freeze({
+      supportedAuthorizationKinds: supportedKinds ? Object.freeze([...supportedKinds].sort((left, right) => left < right ? -1 : left > right ? 1 : 0)) : null,
+      typedDataDomain: domain,
+      validate: validate ?? null
+    })
+  });
+  return Object.freeze(profile);
+}
+function authorizationProfilesCompatible(left, right) {
+  if (left === right) return true;
+  const leftMetadata = left?.[evmAuthorizationProfileMetadata];
+  const rightMetadata = right?.[evmAuthorizationProfileMetadata];
+  if (!leftMetadata || !rightMetadata) return false;
+  return operationIndependentValuesEqual(
+    leftMetadata.supportedAuthorizationKinds,
+    rightMetadata.supportedAuthorizationKinds
+  ) && operationIndependentValuesEqual(
+    leftMetadata.typedDataDomain,
+    rightMetadata.typedDataDomain
+  ) && leftMetadata.validate === rightMetadata.validate;
+}
+function operationIndependentValuesEqual(left, right) {
+  if (left === right) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) && left.length === right.length && left.every((value, index) => operationIndependentValuesEqual(value, right[index]));
+  }
+  if (!left || !right || typeof left !== "object" || typeof right !== "object") {
+    return false;
+  }
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  return leftKeys.length === rightKeys.length && leftKeys.every(
+    (key, index) => key === rightKeys[index] && operationIndependentValuesEqual(left[key], right[key])
+  );
+}
+function buildEvmPrivacyAuthorizationTypedData({
+  action,
+  request,
+  authorization,
+  cosmosChainId,
+  evmChainId,
+  contractAddress,
+  batchId = `0x${zeroWord}`,
+  batchItemIndex = 0,
+  domain
+} = {}) {
+  const normalizedAuthorization = evmPrivacyAuthorization(authorization, { requireSignature: false });
+  const normalizedDomain = normalizeEvmPrivacyAuthorizationDomain(domain);
+  const canonicalAction = String(action || "").trim();
+  const actionConfig = {
+    transfer: {
+      envelope: evmPrivacyTransferWithAuthorizationSignature,
+      action: evmPrivacyTransferSignature,
+      request: () => evmPrivacyTransferRequest(request),
+      requestHash: requestHashForTransferRequest,
+      batch: false
+    },
+    withdraw: {
+      envelope: evmPrivacyWithdrawWithAuthorizationSignature,
+      action: evmPrivacyWithdrawSignature,
+      request: () => evmPrivacyWithdrawRequest(request, { chainId: cosmosChainId }),
+      requestHash: (value) => keccakHex(encodeAbiParameters([evmPrivacyWithdrawTuple], [value]), "withdraw request encoding"),
+      batch: false
+    },
+    batchTransfer: {
+      envelope: evmPrivacyBatchTransferWithAuthorizationSignature,
+      action: evmPrivacyTransferSignature,
+      request: () => evmPrivacyTransferRequest(request),
+      requestHash: requestHashForTransferRequest,
+      batch: true
+    },
+    singleProofBatchTransfer: {
+      envelope: evmPrivacySingleProofBatchTransferWithAuthorizationSignature,
+      action: evmPrivacySingleProofBatchTransferSignature,
+      request: () => evmPrivacySingleProofBatchRequest(request),
+      requestHash: requestHashForSingleProofBatchRequest,
+      batch: false
+    }
+  }[canonicalAction];
+  if (!actionConfig) {
+    throw new Error("privacy authorization action must be transfer, withdraw, batchTransfer, or singleProofBatchTransfer");
+  }
+  const normalizedCosmosChainId = String(cosmosChainId || "").trim();
+  if (!normalizedCosmosChainId) throw new Error("cosmosChainId is required for privacy authorization");
+  const normalizedEvmChainId2 = requiredUint(evmChainId, "evmChainId");
+  if (contractAddress == null || String(contractAddress).trim() === "") {
+    throw new Error("privacy authorization contractAddress is required");
+  }
+  const verifyingContract = normalizeEvmAddress(contractAddress, "privacy authorization verifying contract");
+  const normalizedBatchId = actionConfig.batch ? evmPrivacyBatchId(batchId) : `0x${zeroWord}`;
+  const normalizedBatchItemIndex2 = actionConfig.batch ? requiredUint64(batchItemIndex, "batchItemIndex") : 0n;
+  const normalizedRequest = actionConfig.request();
+  const requestHash = actionConfig.requestHash(normalizedRequest);
+  return Object.freeze({
+    types: evmPrivacyAuthorizationTypedDataTypes,
+    primaryType: "PrivacyActionAuthorization",
+    domain: Object.freeze({
+      name: normalizedDomain.name,
+      version: normalizedDomain.version,
+      chainId: normalizedEvmChainId2.toString(),
+      verifyingContract
+    }),
+    message: Object.freeze({
+      authorizationEnvelopeSelector: `0x${functionSelector(actionConfig.envelope)}`,
+      authorizationActionSelector: `0x${functionSelector(actionConfig.action)}`,
+      effectiveSender: normalizedAuthorization.effectiveSender,
+      executor: normalizedAuthorization.executor,
+      nonce: normalizedAuthorization.nonce.toString(),
+      deadline: normalizedAuthorization.deadline.toString(),
+      cosmosChainIdHash: `0x${keccak2562(normalizedCosmosChainId)}`,
+      requestHash,
+      batchId: normalizedBatchId,
+      batchItemIndex: normalizedBatchItemIndex2.toString(),
+      authorizationKind: normalizedAuthorization.authorizationKind.toString()
+    })
+  });
+}
+function receiptExpectationForDeposit(message, nativeDenom) {
+  const request = evmPrivacyDepositRequest(message);
+  const amount = parseCoin(message?.amount, nativeDenom).raw;
+  return {
+    event: "PrivacyDeposit",
+    effectiveSender: "operator",
+    amount,
+    noteCommitment: receiptHex(request.noteCommitment, "note commitment")
+  };
+}
+function receiptExpectationForTransfer(message, authorization = null) {
+  const request = evmPrivacyTransferRequest(message);
+  return {
+    event: "PrivacyTransfer",
+    effectiveSender: authorization ? normalizeEvmAddress(evmPrivacyAuthorization(authorization).effectiveSender) : "operator",
+    root: receiptHex(request.root, "transfer root")
+  };
+}
+function receiptExpectationForWithdraw(message, options, authorization = null) {
+  const request = evmPrivacyWithdrawRequest(message, options);
+  return {
+    event: "PrivacyWithdraw",
+    effectiveSender: authorization ? normalizeEvmAddress(evmPrivacyAuthorization(authorization).effectiveSender) : "operator",
+    recipient: request.recipient,
+    amount: request.amount
+  };
+}
+function receiptExpectationForBatch(batchId, requests, items = null) {
+  const normalizedBatchId = evmPrivacyBatchId(batchId);
+  const entries = (items || requests).map((item, index) => {
+    const request = evmPrivacyTransferRequest(items ? item?.request ?? item?.message ?? item : item);
+    const authorization = items ? evmPrivacyAuthorization(item?.authorization ?? item?.auth ?? item?.privacyAuthorization) : null;
+    return {
+      itemIndex: BigInt(index),
+      effectiveSender: authorization ? authorization.effectiveSender : "operator",
+      requestHash: requestHashForTransferRequest(request),
+      root: receiptHex(request.root, `batch request ${index} root`)
+    };
+  });
+  return { event: "PrivacyBatchTransferItem", batchId: normalizedBatchId, entries };
+}
+function receiptExpectationForSingleProofBatch(message, authorization = null) {
+  const request = evmPrivacySingleProofBatchRequest(message);
+  return {
+    event: "PrivacySingleProofBatchTransfer",
+    effectiveSender: authorization ? normalizeEvmAddress(evmPrivacyAuthorization(authorization).effectiveSender) : "operator",
+    requestHash: requestHashForSingleProofBatchRequest(request),
+    root: receiptHex(request.root, "single-proof batch root"),
+    inputCount: BigInt(request.nullifiers.length),
+    outputCount: BigInt(request.outputs.length)
+  };
+}
+function receiptExpectationForCanonicalTransaction(transaction, buildCanonicalData, buildExpectation) {
+  const data = strip0x(transaction?.data).toLowerCase();
+  let canonicalData;
+  try {
+    canonicalData = typeof buildCanonicalData === "function" ? buildCanonicalData() : buildCanonicalData;
+  } catch {
+    return null;
+  }
+  const expected = strip0x(canonicalData).toLowerCase();
+  return data && expected && data === expected ? buildExpectation() : null;
+}
+function receiptData(value, label) {
+  const clean3 = strip0x(value);
+  if (!/^(?:[0-9a-fA-F]{2})*$/.test(clean3)) {
+    throw new Error(`${label} must be even-length hex`);
+  }
+  return clean3.toLowerCase();
+}
+function receiptWord(data, index, label) {
+  const start = index * 64;
+  const word = data.slice(start, start + 64);
+  if (word.length !== 64) throw new Error(`${label} is truncated`);
+  return word;
+}
+function receiptUint(data, index, label) {
+  return BigInt(`0x${receiptWord(data, index, label)}`);
+}
+function receiptDynamicBytes(data, index, label) {
+  const offset = receiptUint(data, index, `${label} offset`);
+  if (offset > BigInt(Number.MAX_SAFE_INTEGER) || offset % 32n !== 0n) {
+    throw new Error(`${label} has an invalid offset`);
+  }
+  const offsetIndex = Number(offset / 32n);
+  const length = receiptUint(data, offsetIndex, `${label} length`);
+  if (length > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error(`${label} is too large`);
+  const start = (offsetIndex + 1) * 64;
+  const end = start + Number(length) * 2;
+  const payload = data.slice(start, end);
+  if (payload.length !== Number(length) * 2) throw new Error(`${label} is truncated`);
+  return `0x${payload}`;
+}
+function receiptString(data, index, label) {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytesFromHex2(strip0x(receiptDynamicBytes(data, index, label)), label));
+  } catch {
+    throw new Error(`${label} is not valid UTF-8`);
+  }
+}
+function receiptSucceeded2(status) {
+  try {
+    return BigInt(status) === 1n;
+  } catch {
+    return false;
+  }
+}
+function receiptLogTopics(log, label) {
+  if (!Array.isArray(log?.topics)) throw new Error(`${label}.topics is required`);
+  return log.topics.map((topic, index) => receiptBytes32Topic(topic, `${label}.topics[${index}]`));
+}
+function expectedPrivacyLogs(receipt, contractAddress, eventName) {
+  if (!receiptSucceeded2(receipt?.status)) {
+    throw new Error("privacy receipt does not have an explicit successful status");
+  }
+  if (!Array.isArray(receipt?.logs)) throw new Error("privacy receipt logs are required");
+  const signature = {
+    PrivacyDeposit: "PrivacyDeposit(address,address,string,bytes)",
+    PrivacyTransfer: "PrivacyTransfer(address,address,bytes)",
+    PrivacyWithdraw: "PrivacyWithdraw(address,address,address,string)",
+    PrivacyBatchTransferItem: "PrivacyBatchTransferItem(address,address,bytes32,uint64,bytes32,bytes)",
+    PrivacySingleProofBatchTransfer: "PrivacySingleProofBatchTransfer(address,address,bytes32,bytes,uint8,uint8)"
+  }[eventName];
+  if (!signature) throw new Error(`unsupported privacy receipt event ${eventName}`);
+  const topic = `0x${keccak2562(signature)}`;
+  const target = normalizeEvmAddress(contractAddress, "privacy contract address");
+  return receipt.logs.filter((log, index) => {
+    if (normalizeEvmAddress(log?.address, `receipt.logs[${index}].address`) !== target) return false;
+    const topics = receiptLogTopics(log, `receipt.logs[${index}]`);
+    return topics[0] === topic;
+  });
+}
+function assertReceiptSenderTopics(log, expectation, operator, label) {
+  const topics = receiptLogTopics(log, label);
+  const effectiveSender = expectation.effectiveSender === "operator" ? operator : normalizeEvmAddress(expectation.effectiveSender, `${label} effective sender`);
+  if (topics[1] !== receiptAddressTopic(effectiveSender) || topics[2] !== receiptAddressTopic(operator)) {
+    throw new Error(`${label} effectiveSender/operator does not match the prepared privacy call`);
+  }
+  return topics;
+}
+function normalizedEvmTransactionHash(value, label) {
+  const clean3 = String(value ?? "").trim().replace(/^0x/i, "").toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(clean3)) {
+    throw new Error(`${label} must be a 32-byte EVM transaction hash`);
+  }
+  return `0x${clean3}`;
+}
+function verifyEvmTransactionIdentity({
+  transaction,
+  rpcTransaction,
+  txHash,
+  sender,
+  expectedChainId,
+  actualChainId
+} = {}) {
+  if (!rpcTransaction || typeof rpcTransaction !== "object" || Array.isArray(rpcTransaction)) {
+    throw new Error("EVM transaction identity verification requires eth_getTransactionByHash output");
+  }
+  const metadata = evmTransactionMetadata(transaction);
+  if (!metadata.operation || !metadata.expectedTo || !metadata.expectedData || !metadata.expectedValue) {
+    throw new Error("EVM transaction identity verification requires an SDK-prepared privacy transaction");
+  }
+  const preparedTo = normalizeEvmAddress(transaction?.to, "prepared privacy transaction target");
+  const preparedData = String(transaction?.data ?? "").trim().toLowerCase();
+  const preparedValue = normalizedEvmQuantity(
+    transaction?.value ?? "0x0",
+    "prepared privacy transaction value"
+  );
+  if (preparedTo !== metadata.expectedTo || preparedData !== metadata.expectedData || preparedValue !== metadata.expectedValue) {
+    throw new Error("prepared privacy transaction binding was modified before confirmation");
+  }
+  const requestedHash = normalizedEvmTransactionHash(txHash, "requested transaction hash");
+  const rpcHash = normalizedEvmTransactionHash(
+    rpcTransaction.hash ?? rpcTransaction.transactionHash,
+    "RPC transaction hash"
+  );
+  if (rpcHash !== requestedHash) {
+    throw new Error("RPC transaction hash does not match the requested transaction");
+  }
+  const expectedSender = normalizeEvmAddress(sender, "privacy transaction sender");
+  const rpcSender = normalizeEvmAddress(rpcTransaction.from, "RPC transaction sender");
+  if (rpcSender !== expectedSender) {
+    throw new Error("RPC transaction sender does not match the submitted privacy transaction sender");
+  }
+  if (transaction?.from != null && normalizeEvmAddress(transaction.from, "prepared privacy transaction sender") !== expectedSender) {
+    throw new Error("prepared privacy transaction sender does not match the submitted sender");
+  }
+  const rpcTo = normalizeEvmAddress(rpcTransaction.to, "RPC transaction target");
+  if (rpcTo !== preparedTo) {
+    throw new Error("RPC transaction target does not match the prepared privacy transaction");
+  }
+  const rpcInput = rpcTransaction.input;
+  const rpcData = rpcTransaction.data;
+  if (rpcInput != null && rpcData != null && String(rpcInput).trim().toLowerCase() !== String(rpcData).trim().toLowerCase()) {
+    throw new Error("RPC transaction input/data aliases conflict");
+  }
+  const actualData = String(rpcInput ?? rpcData ?? "").trim().toLowerCase();
+  if (!actualData || actualData !== preparedData) {
+    throw new Error("RPC transaction calldata does not match the prepared privacy transaction");
+  }
+  if (rpcTransaction.value == null) {
+    throw new Error("RPC transaction value is required for privacy transaction verification");
+  }
+  const actualValue = normalizedEvmQuantity(rpcTransaction.value, "RPC transaction value");
+  if (actualValue !== preparedValue) {
+    throw new Error("RPC transaction value does not match the prepared privacy transaction");
+  }
+  const configuredChainId = expectedChainId == null || String(expectedChainId).trim() === "" ? "" : normalizedEvmQuantity(expectedChainId, "expected EVM chain ID");
+  const preparedChainId = transaction?.chainId == null || String(transaction.chainId).trim() === "" ? "" : normalizedEvmQuantity(transaction.chainId, "prepared EVM chain ID");
+  const expectedNetwork = configuredChainId || preparedChainId;
+  if (!expectedNetwork) {
+    throw new Error("expected EVM chain ID is required for transaction identity verification");
+  }
+  if (configuredChainId && preparedChainId && configuredChainId !== preparedChainId) {
+    throw new Error("prepared EVM transaction chain ID does not match the configured network");
+  }
+  const rpcNetwork = normalizedEvmQuantity(actualChainId, "EVM RPC chain ID");
+  if (!rpcNetwork || rpcNetwork !== expectedNetwork) {
+    throw new Error("EVM RPC chain ID does not match the prepared privacy transaction");
+  }
+  if (rpcTransaction.chainId != null && String(rpcTransaction.chainId).trim() !== "" && normalizedEvmQuantity(rpcTransaction.chainId, "RPC transaction chain ID") !== expectedNetwork) {
+    throw new Error("RPC transaction chain ID does not match the prepared privacy transaction");
+  }
+  return Object.freeze({
+    verified: true,
+    operation: metadata.operation,
+    txHash: requestedHash,
+    sender: expectedSender,
+    to: preparedTo,
+    data: preparedData,
+    value: preparedValue,
+    chainId: expectedNetwork,
+    txBytesHash: evmTransactionBindingHash(transaction)
+  });
+}
+function verifyEvmPrivacyReceipt({ transaction, receipt, sender, contractAddress } = {}) {
+  const expectation = evmTransactionMetadata(transaction).receiptExpectation;
+  if (!expectation || typeof expectation !== "object") {
+    throw new Error("privacy receipt verification requires an SDK-prepared transaction");
+  }
+  const operator = normalizeEvmAddress(sender, "privacy transaction sender");
+  const logs = expectedPrivacyLogs(
+    receipt,
+    contractAddress ?? transaction?.to,
+    expectation.event
+  );
+  if (expectation.event !== "PrivacyBatchTransferItem" && logs.length !== 1) {
+    throw new Error(`${expectation.event} receipt event count must be exactly one`);
+  }
+  if (expectation.event === "PrivacyDeposit") {
+    const log = logs[0];
+    assertReceiptSenderTopics(log, expectation, operator, "PrivacyDeposit");
+    const data = receiptData(log.data, "PrivacyDeposit data");
+    if (receiptString(data, 0, "PrivacyDeposit amount") !== expectation.amount || receiptDynamicBytes(data, 1, "PrivacyDeposit note commitment") !== expectation.noteCommitment) {
+      throw new Error("PrivacyDeposit amount or note commitment does not match the prepared privacy call");
+    }
+  } else if (expectation.event === "PrivacyTransfer") {
+    const log = logs[0];
+    assertReceiptSenderTopics(log, expectation, operator, "PrivacyTransfer");
+    if (receiptDynamicBytes(receiptData(log.data, "PrivacyTransfer data"), 0, "PrivacyTransfer root") !== expectation.root) {
+      throw new Error("PrivacyTransfer root does not match the prepared privacy call");
+    }
+  } else if (expectation.event === "PrivacyWithdraw") {
+    const log = logs[0];
+    const topics = assertReceiptSenderTopics(log, expectation, operator, "PrivacyWithdraw");
+    if (topics[3] !== receiptAddressTopic(expectation.recipient) || receiptString(receiptData(log.data, "PrivacyWithdraw data"), 0, "PrivacyWithdraw amount") !== expectation.amount) {
+      throw new Error("PrivacyWithdraw recipient or amount does not match the prepared privacy call");
+    }
+  } else if (expectation.event === "PrivacyBatchTransferItem") {
+    if (logs.length !== expectation.entries.length) {
+      throw new Error(`PrivacyBatchTransferItem receipt emitted ${logs.length} items; expected ${expectation.entries.length}`);
+    }
+    const seen = /* @__PURE__ */ new Set();
+    for (const [index, log] of logs.entries()) {
+      const data = receiptData(log.data, `PrivacyBatchTransferItem[${index}] data`);
+      const itemIndex = receiptUint(data, 0, `PrivacyBatchTransferItem[${index}] item index`);
+      if (itemIndex >= BigInt(expectation.entries.length) || seen.has(itemIndex.toString())) {
+        throw new Error("PrivacyBatchTransferItem has an invalid or duplicate item index");
+      }
+      seen.add(itemIndex.toString());
+      const expected = expectation.entries[Number(itemIndex)];
+      const topics = assertReceiptSenderTopics(log, expected, operator, `PrivacyBatchTransferItem[${index}]`);
+      const batchIDMatches = topics[3] === receiptBytes32Topic(expectation.batchId, "batchId");
+      const observedRequestHash = `0x${receiptWord(data, 1, `PrivacyBatchTransferItem[${index}] request hash`)}`;
+      const requestHashMatches = observedRequestHash === expected.requestHash;
+      const rootMatches = receiptDynamicBytes(data, 2, `PrivacyBatchTransferItem[${index}] root`) === expected.root;
+      if (!batchIDMatches || !requestHashMatches || !rootMatches) {
+        const mismatches = [
+          !batchIDMatches && "batchId",
+          !requestHashMatches && "requestHash",
+          !rootMatches && "root"
+        ].filter(Boolean).join(", ");
+        throw new Error(`PrivacyBatchTransferItem ${itemIndex} does not match the prepared privacy call: ${mismatches}`);
+      }
+    }
+  } else if (expectation.event === "PrivacySingleProofBatchTransfer") {
+    const log = logs[0];
+    const topics = assertReceiptSenderTopics(log, expectation, operator, "PrivacySingleProofBatchTransfer");
+    const data = receiptData(log.data, "PrivacySingleProofBatchTransfer data");
+    if (topics[3] !== receiptBytes32Topic(expectation.requestHash, "single-proof batch request hash") || receiptDynamicBytes(data, 0, "PrivacySingleProofBatchTransfer root") !== expectation.root || receiptUint(data, 1, "PrivacySingleProofBatchTransfer input count") !== expectation.inputCount || receiptUint(data, 2, "PrivacySingleProofBatchTransfer output count") !== expectation.outputCount) {
+      throw new Error("PrivacySingleProofBatchTransfer does not match the prepared privacy call");
+    }
+  }
+  return Object.freeze({ verified: true, event: expectation.event, operation: evmTransactionMetadata(transaction).operation });
 }
 function createEip1193WalletAdapter({ provider, account } = {}) {
   if (!provider?.request) {
@@ -94537,6 +97433,17 @@ function createEip1193WalletAdapter({ provider, account } = {}) {
       }
       return signature;
     },
+    async signTypedData(typedData) {
+      const address = await this.getAddress();
+      const signature = await provider.request({
+        method: "eth_signTypedData_v4",
+        params: [address, JSON.stringify(typedData)]
+      });
+      if (typeof signature !== "string" || !/^0x[0-9a-fA-F]+$/.test(signature)) {
+        throw new Error("EVM wallet eth_signTypedData_v4 must return a 0x-prefixed hex signature");
+      }
+      return signature;
+    },
     async sendTransaction(transaction) {
       const externalTransaction = externalEvmTransaction(transaction);
       const from = externalTransaction.from ? normalizeEvmAddress(externalTransaction.from, "transaction from") : await this.getAddress();
@@ -94560,20 +97467,42 @@ function createEip1193WalletAdapter({ provider, account } = {}) {
   };
 }
 function createEvmContractAdapter({
-  contractAddress = defaultEvmPrivacyPrecompileAddress,
+  contractAddress,
   encodeDeposit = defaultEncodeEvmDeposit,
   encodeTransfer = defaultEncodeEvmTransfer,
   encodeWithdraw = defaultEncodeEvmWithdraw,
+  encodeTransferWithAuthorization = encodeEvmPrivacyTransferWithAuthorization,
+  encodeWithdrawWithAuthorization = encodeEvmPrivacyWithdrawWithAuthorization,
+  encodeBatchTransfer = encodeEvmPrivacyBatchTransfer,
+  encodeBatchTransferWithAuthorization = encodeEvmPrivacyBatchTransferWithAuthorization,
+  encodeSingleProofBatchTransfer = encodeEvmPrivacySingleProofBatchTransfer,
+  encodeSingleProofBatchTransferWithAuthorization = encodeEvmPrivacySingleProofBatchTransferWithAuthorization,
   accountPrefix: accountPrefix2,
   chainId,
   depositMode = defaultEvmDepositMode,
-  nativeDenom = "uclair"
+  nativeDenom = "uclair",
+  authorizationProfile = null,
+  verifyPrivacyReceipt: verifyPrivacyReceiptHook
 } = {}) {
+  if (contractAddress == null || String(contractAddress).trim() === "") {
+    throw new Error("EVM contract adapter requires contractAddress");
+  }
   const to = normalizeEvmAddress(contractAddress, "contractAddress");
   const resolvedDepositMode = normalizeEvmDepositMode(depositMode);
   const resolvedNativeDenom = normalizeEvmNativeDenom(nativeDenom);
+  const resolvedAuthorizationProfile = normalizeEvmAuthorizationProfile(authorizationProfile);
+  if (verifyPrivacyReceiptHook != null && typeof verifyPrivacyReceiptHook !== "function") {
+    throw new Error("EVM contract adapter verifyPrivacyReceipt must be a function");
+  }
+  const validateAuthorization = (authorization, options = {}) => validateEvmPrivacyAuthorization(
+    authorization,
+    resolvedAuthorizationProfile,
+    options
+  );
   return {
     contractAddress: to,
+    ...resolvedAuthorizationProfile ? { authorizationProfile: resolvedAuthorizationProfile } : {},
+    ...verifyPrivacyReceiptHook ? { verifyPrivacyReceipt: verifyPrivacyReceiptHook } : {},
     abi: resolvedDepositMode === evmDepositModePayableExactValue ? evmPrivacyPrecompilePayableDepositAbi : evmPrivacyPrecompileAbi,
     buildDepositTransaction(message, options = {}) {
       const data = encodeDeposit(message, { accountPrefix: accountPrefix2, chainId, ...options });
@@ -94612,19 +97541,97 @@ function createEvmContractAdapter({
         data: encodeWithdraw(message, { accountPrefix: accountPrefix2, chainId, ...options }),
         value
       };
+    },
+    buildTransferWithAuthorizationTransaction(message, authorization, options = {}) {
+      const value = zeroTransactionValue(options, "transferWithAuthorization");
+      return {
+        to,
+        data: encodeTransferWithAuthorization(
+          message,
+          validateAuthorization(authorization),
+          { accountPrefix: accountPrefix2, chainId, ...options }
+        ),
+        value
+      };
+    },
+    buildWithdrawWithAuthorizationTransaction(message, authorization, options = {}) {
+      const value = zeroTransactionValue(options, "withdrawWithAuthorization");
+      return {
+        to,
+        data: encodeWithdrawWithAuthorization(
+          message,
+          validateAuthorization(authorization),
+          { accountPrefix: accountPrefix2, chainId, ...options }
+        ),
+        value
+      };
+    },
+    buildBatchTransferTransaction(batchId, requests, options = {}) {
+      const value = zeroTransactionValue(options, "batchTransfer");
+      return { to, data: encodeBatchTransfer(batchId, requests, { accountPrefix: accountPrefix2, chainId, ...options }), value };
+    },
+    buildBatchTransferWithAuthorizationTransaction(batchId, items, options = {}) {
+      const value = zeroTransactionValue(options, "batchTransferWithAuthorization");
+      if (!Array.isArray(items)) throw new Error("authorized batch items must be an array");
+      const normalizedItems = items.map((item, index) => ({
+        ...item,
+        authorization: validateAuthorization(
+          item?.authorization ?? item?.auth ?? item?.privacyAuthorization,
+          { requireSignature: true, index }
+        )
+      }));
+      return {
+        to,
+        data: encodeBatchTransferWithAuthorization(batchId, normalizedItems, { accountPrefix: accountPrefix2, chainId, ...options }),
+        value
+      };
+    },
+    buildSingleProofBatchTransferTransaction(message, options = {}) {
+      const value = zeroTransactionValue(options, "singleProofBatchTransfer");
+      return { to, data: encodeSingleProofBatchTransfer(message, { accountPrefix: accountPrefix2, chainId, ...options }), value };
+    },
+    buildSingleProofBatchTransferWithAuthorizationTransaction(message, authorization, options = {}) {
+      const value = zeroTransactionValue(options, "singleProofBatchTransferWithAuthorization");
+      return {
+        to,
+        data: encodeSingleProofBatchTransferWithAuthorization(
+          message,
+          validateAuthorization(authorization),
+          { accountPrefix: accountPrefix2, chainId, ...options }
+        ),
+        value
+      };
+    },
+    buildAuthorizationTypedData(input = {}) {
+      if (!resolvedAuthorizationProfile?.buildTypedData) {
+        throw new Error("configured EVM authorization profile does not provide buildTypedData()");
+      }
+      return resolvedAuthorizationProfile.buildTypedData({
+        ...input,
+        authorization: validateAuthorization(input.authorization, { requireSignature: false }),
+        contractAddress: input.contractAddress ?? to
+      });
     }
   };
 }
 function createEvmPrivacyPrecompileAdapter(options = {}) {
   return createEvmContractAdapter({
-    contractAddress: options.contractAddress ?? evmPrivacyPrecompileAddress,
+    contractAddress: options.contractAddress,
     accountPrefix: options.accountPrefix,
     chainId: options.chainId,
     depositMode: options.depositMode,
     nativeDenom: options.nativeDenom,
+    authorizationProfile: options.authorizationProfile,
+    verifyPrivacyReceipt: options.verifyPrivacyReceipt,
     encodeDeposit: options.encodeDeposit ?? encodeEvmPrivacyDeposit,
     encodeTransfer: options.encodeTransfer ?? encodeEvmPrivacyTransfer,
-    encodeWithdraw: options.encodeWithdraw ?? encodeEvmPrivacyWithdraw
+    encodeWithdraw: options.encodeWithdraw ?? encodeEvmPrivacyWithdraw,
+    encodeTransferWithAuthorization: options.encodeTransferWithAuthorization ?? encodeEvmPrivacyTransferWithAuthorization,
+    encodeWithdrawWithAuthorization: options.encodeWithdrawWithAuthorization ?? encodeEvmPrivacyWithdrawWithAuthorization,
+    encodeBatchTransfer: options.encodeBatchTransfer ?? encodeEvmPrivacyBatchTransfer,
+    encodeBatchTransferWithAuthorization: options.encodeBatchTransferWithAuthorization ?? encodeEvmPrivacyBatchTransferWithAuthorization,
+    encodeSingleProofBatchTransfer: options.encodeSingleProofBatchTransfer ?? encodeEvmPrivacySingleProofBatchTransfer,
+    encodeSingleProofBatchTransferWithAuthorization: options.encodeSingleProofBatchTransferWithAuthorization ?? encodeEvmPrivacySingleProofBatchTransferWithAuthorization
   });
 }
 function publicPrivacyAccount2(material) {
@@ -94640,7 +97647,7 @@ function publicPrivacyAccount2(material) {
 var ClairveilEvmClient = class {
   constructor({
     provider,
-    contractAddress = defaultEvmPrivacyPrecompileAddress,
+    contractAddress,
     chainId,
     evmChainId,
     accountPrefix: accountPrefix2,
@@ -94649,7 +97656,8 @@ var ClairveilEvmClient = class {
     defaultDenom = "uclair",
     depositMode = defaultEvmDepositMode,
     nativeDenom = defaultDenom,
-    contractAdapter
+    contractAdapter,
+    authorizationProfile = null
   } = {}) {
     this.provider = provider;
     this.chainId = chainId;
@@ -94660,12 +97668,44 @@ var ClairveilEvmClient = class {
     this.defaultDenom = String(defaultDenom || "uclair");
     this.depositMode = normalizeEvmDepositMode(depositMode);
     this.nativeDenom = normalizeEvmNativeDenom(nativeDenom, this.defaultDenom);
+    const adapterContractAddress = contractAdapter?.contractAddress;
+    if (contractAdapter && (adapterContractAddress == null || String(adapterContractAddress).trim() === "")) {
+      throw new Error("EVM contractAdapter.contractAddress is required");
+    }
+    const resolvedContractAddress = contractAddress ?? adapterContractAddress;
+    if (resolvedContractAddress == null || String(resolvedContractAddress).trim() === "") {
+      throw new Error("Clairveil EVM client requires contractAddress or contractAdapter.contractAddress");
+    }
+    if (contractAdapter && contractAddress != null && normalizeEvmAddress(adapterContractAddress, "contractAdapter.contractAddress") !== normalizeEvmAddress(contractAddress, "contractAddress")) {
+      throw new Error("contractAddress conflicts with contractAdapter.contractAddress");
+    }
+    const adapterAuthorizationProfile = contractAdapter?.authorizationProfile ?? null;
+    if (authorizationProfile != null && adapterAuthorizationProfile != null && !authorizationProfilesCompatible(authorizationProfile, adapterAuthorizationProfile)) {
+      throw new Error("authorizationProfile conflicts with contractAdapter.authorizationProfile");
+    }
+    this.authorizationProfile = normalizeEvmAuthorizationProfile(
+      authorizationProfile ?? adapterAuthorizationProfile
+    );
     this.contract = contractAdapter || createEvmPrivacyPrecompileAdapter({
-      contractAddress,
+      contractAddress: resolvedContractAddress,
       accountPrefix: this.accountPrefix,
       chainId,
       depositMode: this.depositMode,
-      nativeDenom: this.nativeDenom
+      nativeDenom: this.nativeDenom,
+      authorizationProfile: this.authorizationProfile
+    });
+  }
+  validateAuthorization(authorization, options = {}) {
+    return validateEvmPrivacyAuthorization(authorization, this.authorizationProfile, options);
+  }
+  buildAuthorizationTypedData(input = {}) {
+    if (!this.authorizationProfile?.buildTypedData) {
+      throw new Error("configured EVM authorization profile does not provide buildTypedData()");
+    }
+    return this.authorizationProfile.buildTypedData({
+      ...input,
+      authorization: this.validateAuthorization(input.authorization, { requireSignature: false }),
+      contractAddress: input.contractAddress ?? this.contract.contractAddress
     });
   }
   buildDepositMaterial(input) {
@@ -94709,7 +97749,12 @@ var ClairveilEvmClient = class {
             depositMode: this.depositMode,
             nativeDenom: this.nativeDenom,
             expectedData: expectedData2,
-            expectedValue: expectedValue2
+            expectedValue: expectedValue2,
+            receiptExpectation: receiptExpectationForCanonicalTransaction(
+              transaction2,
+              () => encodeEvmPrivacyDeposit(input.message),
+              () => receiptExpectationForDeposit(input.message, this.nativeDenom)
+            )
           }
         ))
       };
@@ -94759,7 +97804,12 @@ var ClairveilEvmClient = class {
           depositMode: this.depositMode,
           nativeDenom: this.nativeDenom,
           expectedData,
-          expectedValue
+          expectedValue,
+          receiptExpectation: receiptExpectationForCanonicalTransaction(
+            transaction,
+            () => encodeEvmPrivacyDeposit(message),
+            () => receiptExpectationForDeposit(message, this.nativeDenom)
+          )
         }
       ))
     };
@@ -94782,7 +97832,13 @@ var ClairveilEvmClient = class {
       ...built,
       transaction: markedEvmTransaction(
         transaction,
-        privacyTransactionBindingMetadata(transaction, "transfer")
+        privacyTransactionBindingMetadata(transaction, "transfer", {
+          receiptExpectation: receiptExpectationForCanonicalTransaction(
+            transaction,
+            () => encodeEvmPrivacyTransfer(built.message),
+            () => receiptExpectationForTransfer(built.message)
+          )
+        })
       )
     };
   }
@@ -94867,7 +97923,172 @@ var ClairveilEvmClient = class {
       message,
       transaction: markedEvmTransaction(
         transaction,
-        privacyTransactionBindingMetadata(transaction, "withdraw")
+        privacyTransactionBindingMetadata(transaction, "withdraw", {
+          receiptExpectation: receiptExpectationForCanonicalTransaction(
+            transaction,
+            () => encodeEvmPrivacyWithdraw(message, { accountPrefix: accountPrefix2, chainId: this.chainId }),
+            () => receiptExpectationForWithdraw(message, { accountPrefix: accountPrefix2, chainId: this.chainId })
+          )
+        })
+      )
+    };
+  }
+  buildTransferWithAuthorizationTransaction({ message, authorization, transactionOptions } = {}) {
+    if (!message) throw new Error("transfer message is required");
+    if (typeof this.contract.buildTransferWithAuthorizationTransaction !== "function") {
+      throw new Error("configured EVM contract adapter does not support transferWithAuthorization");
+    }
+    const normalizedAuthorization = this.validateAuthorization(authorization);
+    const transaction = this.contract.buildTransferWithAuthorizationTransaction(
+      message,
+      normalizedAuthorization,
+      transactionOptions
+    );
+    return {
+      status: "ready",
+      message,
+      authorization: normalizedAuthorization,
+      transaction: markedEvmTransaction(
+        transaction,
+        privacyTransactionBindingMetadata(transaction, "transferWithAuthorization", {
+          receiptExpectation: receiptExpectationForCanonicalTransaction(
+            transaction,
+            () => encodeEvmPrivacyTransferWithAuthorization(message, normalizedAuthorization),
+            () => receiptExpectationForTransfer(message, normalizedAuthorization)
+          )
+        })
+      )
+    };
+  }
+  buildWithdrawWithAuthorizationTransaction({ message, authorization, transactionOptions } = {}) {
+    if (!message) throw new Error("withdraw message is required");
+    if (typeof this.contract.buildWithdrawWithAuthorizationTransaction !== "function") {
+      throw new Error("configured EVM contract adapter does not support withdrawWithAuthorization");
+    }
+    const normalizedAuthorization = this.validateAuthorization(authorization);
+    const transaction = this.contract.buildWithdrawWithAuthorizationTransaction(
+      message,
+      normalizedAuthorization,
+      transactionOptions
+    );
+    return {
+      status: "ready",
+      message,
+      authorization: normalizedAuthorization,
+      transaction: markedEvmTransaction(
+        transaction,
+        privacyTransactionBindingMetadata(transaction, "withdrawWithAuthorization", {
+          receiptExpectation: receiptExpectationForCanonicalTransaction(
+            transaction,
+            () => encodeEvmPrivacyWithdrawWithAuthorization(
+              message,
+              normalizedAuthorization,
+              { accountPrefix: this.accountPrefix, chainId: this.chainId }
+            ),
+            () => receiptExpectationForWithdraw(message, { accountPrefix: this.accountPrefix, chainId: this.chainId }, normalizedAuthorization)
+          )
+        })
+      )
+    };
+  }
+  buildBatchTransferTransaction({ batchId, requests, transactionOptions } = {}) {
+    if (typeof this.contract.buildBatchTransferTransaction !== "function") {
+      throw new Error("configured EVM contract adapter does not support batchTransfer");
+    }
+    const transaction = this.contract.buildBatchTransferTransaction(batchId, requests, transactionOptions);
+    return {
+      status: "ready",
+      batchId,
+      requests,
+      transaction: markedEvmTransaction(
+        transaction,
+        privacyTransactionBindingMetadata(transaction, "batchTransfer", {
+          receiptExpectation: receiptExpectationForCanonicalTransaction(
+            transaction,
+            () => encodeEvmPrivacyBatchTransfer(batchId, requests),
+            () => receiptExpectationForBatch(batchId, requests)
+          )
+        })
+      )
+    };
+  }
+  buildBatchTransferWithAuthorizationTransaction({ batchId, items, transactionOptions } = {}) {
+    if (typeof this.contract.buildBatchTransferWithAuthorizationTransaction !== "function") {
+      throw new Error("configured EVM contract adapter does not support batchTransferWithAuthorization");
+    }
+    if (!Array.isArray(items)) throw new Error("authorized batch items must be an array");
+    const normalizedItems = items.map((item) => ({
+      ...item,
+      authorization: this.validateAuthorization(
+        item?.authorization ?? item?.auth ?? item?.privacyAuthorization
+      )
+    }));
+    const transaction = this.contract.buildBatchTransferWithAuthorizationTransaction(
+      batchId,
+      normalizedItems,
+      transactionOptions
+    );
+    return {
+      status: "ready",
+      batchId,
+      items: normalizedItems,
+      transaction: markedEvmTransaction(
+        transaction,
+        privacyTransactionBindingMetadata(transaction, "batchTransferWithAuthorization", {
+          receiptExpectation: receiptExpectationForCanonicalTransaction(
+            transaction,
+            () => encodeEvmPrivacyBatchTransferWithAuthorization(batchId, normalizedItems),
+            () => receiptExpectationForBatch(batchId, null, normalizedItems)
+          )
+        })
+      )
+    };
+  }
+  buildSingleProofBatchTransferTransaction({ message, transactionOptions } = {}) {
+    if (!message) throw new Error("single-proof batch transfer message is required");
+    if (typeof this.contract.buildSingleProofBatchTransferTransaction !== "function") {
+      throw new Error("configured EVM contract adapter does not support singleProofBatchTransfer");
+    }
+    const transaction = this.contract.buildSingleProofBatchTransferTransaction(message, transactionOptions);
+    return {
+      status: "ready",
+      message,
+      transaction: markedEvmTransaction(
+        transaction,
+        privacyTransactionBindingMetadata(transaction, "singleProofBatchTransfer", {
+          receiptExpectation: receiptExpectationForCanonicalTransaction(
+            transaction,
+            () => encodeEvmPrivacySingleProofBatchTransfer(message),
+            () => receiptExpectationForSingleProofBatch(message)
+          )
+        })
+      )
+    };
+  }
+  buildSingleProofBatchTransferWithAuthorizationTransaction({ message, authorization, transactionOptions } = {}) {
+    if (!message) throw new Error("single-proof batch transfer message is required");
+    if (typeof this.contract.buildSingleProofBatchTransferWithAuthorizationTransaction !== "function") {
+      throw new Error("configured EVM contract adapter does not support singleProofBatchTransferWithAuthorization");
+    }
+    const normalizedAuthorization = this.validateAuthorization(authorization);
+    const transaction = this.contract.buildSingleProofBatchTransferWithAuthorizationTransaction(
+      message,
+      normalizedAuthorization,
+      transactionOptions
+    );
+    return {
+      status: "ready",
+      message,
+      authorization: normalizedAuthorization,
+      transaction: markedEvmTransaction(
+        transaction,
+        privacyTransactionBindingMetadata(transaction, "singleProofBatchTransferWithAuthorization", {
+          receiptExpectation: receiptExpectationForCanonicalTransaction(
+            transaction,
+            () => encodeEvmPrivacySingleProofBatchTransferWithAuthorization(message, normalizedAuthorization),
+            () => receiptExpectationForSingleProofBatch(message, normalizedAuthorization)
+          )
+        })
       )
     };
   }
@@ -94878,22 +98099,32 @@ var ClairveilEvmClient = class {
       this.contract.contractAddress
     );
     const reservationContext = broadcastReservationContext2(reservationOptions);
+    const checkNullifiers = reservationOptions.checkNullifiers ?? reservationOptions.check_nullifiers;
+    if (reservationOptions.checkNullifiers != null && reservationOptions.check_nullifiers != null && reservationOptions.checkNullifiers !== reservationOptions.check_nullifiers) {
+      throw new Error("checkNullifiers aliases conflict");
+    }
     if (evmTransactionMetadata(transaction).reservationRequired && !reservationContext) {
       throw new Error("prepared reserved EVM transaction requires reservationManager and reservation");
     }
-    const transactionHash = evmTransactionBindingHash(transaction);
+    const transactionHash3 = evmTransactionBindingHash(transaction);
     const broadcastTransaction = await validateRelayBroadcastContext2(reservationOptions, {
       expectedChainId: this.chainId,
       accountPrefix: this.accountPrefix,
       transaction,
       contract: this.contract,
       reservationContext,
-      transactionHash
+      transactionHash: transactionHash3
     });
     const submittedTransaction = externalEvmTransaction(broadcastTransaction);
     const broadcastTransactionHash = evmTransactionBindingHash(submittedTransaction);
     const submissionWallet = wallet?.sendTransaction ? wallet : createEip1193WalletAdapter({ provider: this.provider });
     await assertWalletEvmChainId(submissionWallet, this.evmChainId);
+    const relayPayload = reservationOptions.relayPayload ?? reservationOptions.relay_payload;
+    await recheckReservedInputNullifiers(
+      reservationContext,
+      checkNullifiers,
+      relayPayload?.nullifier_hex ? [relayPayload.nullifier_hex] : []
+    );
     await beginBroadcastReservation2(reservationContext, broadcastTransactionHash);
     let txHash;
     try {
@@ -94915,6 +98146,45 @@ var ClairveilEvmClient = class {
     await markBroadcastReservationSubmitted2(reservationContext, normalizedTxHash4);
     return normalizedTxHash4;
   }
+  verifyPrivacyReceipt({ transaction, receipt, sender } = {}) {
+    if (!receiptSucceeded2(receipt?.status)) {
+      throw new Error("privacy receipt does not have an explicit successful status");
+    }
+    const metadata = evmTransactionMetadata(transaction);
+    if (typeof this.contract.verifyPrivacyReceipt === "function") {
+      const result = this.contract.verifyPrivacyReceipt(Object.freeze({
+        transaction,
+        receipt,
+        sender,
+        contractAddress: this.contract.contractAddress,
+        operation: metadata.operation
+      }));
+      if (!result || typeof result !== "object" || Array.isArray(result) || result.verified !== true) {
+        throw new Error("custom EVM privacy receipt verifier must return { verified: true, operation, event }");
+      }
+      const operation = String(result.operation ?? "").trim();
+      const event = String(result.event ?? "").trim();
+      if (!metadata.operation || !operation || operation !== metadata.operation) {
+        throw new Error("custom EVM privacy receipt verifier operation does not match the prepared transaction");
+      }
+      if (!event) {
+        throw new Error("custom EVM privacy receipt verifier must identify the verified event");
+      }
+      return Object.freeze({ verified: true, operation, event });
+    }
+    return verifyEvmPrivacyReceipt({
+      transaction,
+      receipt,
+      sender,
+      contractAddress: this.contract.contractAddress
+    });
+  }
+  verifyTransactionIdentity(input = {}) {
+    return verifyEvmTransactionIdentity({
+      ...input,
+      expectedChainId: input.expectedChainId ?? this.evmChainId
+    });
+  }
   privacyAccount(material) {
     return publicPrivacyAccount2(material);
   }
@@ -94924,7 +98194,6 @@ function createClairveilEvmClient(options) {
 }
 
 // node_modules/clairveiljs/src/browser/wallet-client.js
-var defaultPrepareScanMaxPages2 = 1e3;
 var defaultFetchTimeoutMs2 = 3e4;
 var readOnlyEvmJsonRpcMethods = /* @__PURE__ */ new Set([
   "eth_blockNumber",
@@ -94973,7 +98242,7 @@ function trimTrailingSlash(value) {
 function normalizeRpcEndpoint2(value) {
   return trimTrailingSlash(String(value || "").replace(/^tcp:\/\//, "http://"));
 }
-function normalizeRestEndpoints2(primary, restEndpoints = []) {
+function normalizeRestEndpoints2(primary, restEndpoints = [], { allowEmpty = false } = {}) {
   const endpoints = [];
   for (const endpoint of [primary, ...Array.isArray(restEndpoints) ? restEndpoints : []]) {
     const normalized = trimTrailingSlash(endpoint);
@@ -94981,7 +98250,7 @@ function normalizeRestEndpoints2(primary, restEndpoints = []) {
       endpoints.push(normalized);
     }
   }
-  if (!endpoints.length) {
+  if (!endpoints.length && !allowEmpty) {
     throw new Error("rest endpoint is required");
   }
   return endpoints;
@@ -95012,6 +98281,7 @@ var browserProfileKeys = /* @__PURE__ */ new Set([
   "evmPrivacyPrecompileAddress",
   "evmDepositMode",
   "evmNativeDenom",
+  "evmAuthorizationProfile",
   "evmGasLimit",
   "evmSendGasLimit"
 ]);
@@ -95042,6 +98312,7 @@ var browserConfigKeys = /* @__PURE__ */ new Set([
   "evmPrivacyPrecompileAddress",
   "evmDepositMode",
   "evmNativeDenom",
+  "evmAuthorizationProfile",
   "evmGasLimit",
   "evmSendGasLimit",
   "serverFeatures"
@@ -95064,6 +98335,7 @@ var browserConfigCompatibilityFields = [
   "evmPrivacyPrecompileAddress",
   "evmDepositMode",
   "evmNativeDenom",
+  "evmAuthorizationProfile",
   "evmGasLimit",
   "evmSendGasLimit"
 ];
@@ -95129,6 +98401,44 @@ function assertExactProfileKeys(value, keys, label) {
   for (const key of Object.keys(value)) {
     if (!keys.has(key)) throw new Error(`${label}.${key} is not supported by the Clairveil Web profile schema`);
   }
+}
+function validateEvmAuthorizationProfileConfig(profile) {
+  const value = profile?.evmAuthorizationProfile;
+  if (value == null) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("profile.evmAuthorizationProfile must be an object");
+  }
+  const label = "profile.evmAuthorizationProfile";
+  assertExactProfileKeys(value, /* @__PURE__ */ new Set(["typedDataDomain", "supportedAuthorizationKinds"]), label);
+  if (value.typedDataDomain != null) {
+    if (!value.typedDataDomain || typeof value.typedDataDomain !== "object" || Array.isArray(value.typedDataDomain)) {
+      throw new Error(`${label}.typedDataDomain must be an object`);
+    }
+    assertExactProfileKeys(value.typedDataDomain, /* @__PURE__ */ new Set(["name", "version"]), `${label}.typedDataDomain`);
+    requiredProfileString(value.typedDataDomain, "name", { maxLength: 128 });
+    if (value.typedDataDomain.version != null) {
+      requiredProfileString(value.typedDataDomain, "version", { maxLength: 128 });
+    }
+  }
+  if (value.supportedAuthorizationKinds != null) {
+    if (!Array.isArray(value.supportedAuthorizationKinds)) {
+      throw new Error(`${label}.supportedAuthorizationKinds must be an array`);
+    }
+    for (const [index, kind] of value.supportedAuthorizationKinds.entries()) {
+      if (typeof kind !== "string" && typeof kind !== "number") {
+        throw new Error(`${label}.supportedAuthorizationKinds[${index}] must be a uint8 value`);
+      }
+    }
+  }
+  if (value.typedDataDomain == null && value.supportedAuthorizationKinds == null) {
+    throw new Error(`${label} must configure typedDataDomain or supportedAuthorizationKinds`);
+  }
+  createEvmAuthorizationProfile(value);
+  return Object.freeze({
+    ...value,
+    ...value.typedDataDomain ? { typedDataDomain: Object.freeze({ ...value.typedDataDomain }) } : {},
+    ...value.supportedAuthorizationKinds ? { supportedAuthorizationKinds: Object.freeze([...value.supportedAuthorizationKinds]) } : {}
+  });
 }
 function validateProfileGasPriceStep(value, label = "profile.gasPriceStep") {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -95229,7 +98539,9 @@ function assertProfileKeplrCompatibility(profile) {
     }
   }
 }
-function validateBrowserWalletProfile(profile) {
+function validateBrowserWalletProfileContract(profile, {
+  allowMissingEvmCosmosEndpoints = false
+} = {}) {
   if (!profile || typeof profile !== "object" || Array.isArray(profile)) {
     throw new Error("profile must be an object");
   }
@@ -95240,8 +98552,9 @@ function validateBrowserWalletProfile(profile) {
   const transport = walletTypeFromBody({}, profile.transport);
   const wallet = requiredProfileString(profile, "wallet");
   requiredProfileString(profile, "chainId", { maxLength: 128 });
-  optionalProfileUrl(profile, "rpc", { required: true });
-  optionalProfileUrl(profile, "rest", { required: true });
+  const requireCosmosEndpoints = transport !== "evm" || !allowMissingEvmCosmosEndpoints;
+  optionalProfileUrl(profile, "rpc", { required: requireCosmosEndpoints });
+  optionalProfileUrl(profile, "rest", { required: requireCosmosEndpoints });
   optionalProfileUrl(profile, "proverUrl", { required: true });
   optionalProfileUrl(profile, "depositProofUrl");
   requiredProfileString(profile, "accountPrefix", { maxLength: 32, pattern: /^[a-z][a-z0-9]*$/u });
@@ -95283,6 +98596,9 @@ function validateBrowserWalletProfile(profile) {
     const evmDepositMode = normalizeEvmDepositMode(
       profile.evmDepositMode ?? defaultEvmDepositMode
     );
+    if (evmDepositMode !== evmDepositModePayableExactValue) {
+      throw new Error("EVM profiles require payable-exact-value deposits for the Clairveil privacy precompile");
+    }
     if (profile.evmNativeDenom != null) {
       requiredProfileString(profile, "evmNativeDenom", {
         minLength: 3,
@@ -95290,18 +98606,17 @@ function validateBrowserWalletProfile(profile) {
         pattern: /^[A-Za-z][A-Za-z0-9/:._-]*$/u
       });
     }
-    if (evmDepositMode === evmDepositModePayableExactValue) {
-      requiredProfileString(profile, "evmNativeDenom", {
-        minLength: 3,
-        maxLength: 128,
-        pattern: /^[A-Za-z][A-Za-z0-9/:._-]*$/u
-      });
-      if (profile.evmNativeDenom !== profile.denom) {
-        throw new Error(
-          "profile.evmNativeDenom must match profile.denom for payable EVM deposits"
-        );
-      }
+    requiredProfileString(profile, "evmNativeDenom", {
+      minLength: 3,
+      maxLength: 128,
+      pattern: /^[A-Za-z][A-Za-z0-9/:._-]*$/u
+    });
+    if (profile.evmNativeDenom !== profile.denom) {
+      throw new Error(
+        "profile.evmNativeDenom must match profile.denom for payable EVM deposits"
+      );
     }
+    validateEvmAuthorizationProfileConfig(profile);
     requiredProfileString(profile, "evmGasLimit", { pattern: /^0x[0-9a-fA-F]+$/u });
     requiredProfileString(profile, "evmSendGasLimit", { pattern: /^0x[0-9a-fA-F]+$/u });
   }
@@ -95309,6 +98624,9 @@ function validateBrowserWalletProfile(profile) {
     ...profile,
     ...profile.restEndpoints ? { restEndpoints: Object.freeze([...profile.restEndpoints]) } : {}
   });
+}
+function validateBrowserWalletProfile(profile) {
+  return validateBrowserWalletProfileContract(profile);
 }
 function validateClairveilWebClientConfig(config) {
   if (!config || typeof config !== "object" || Array.isArray(config)) {
@@ -95475,14 +98793,14 @@ function auditTargetBindingFromBody(body = {}) {
   return values[0] || "";
 }
 function browserAliasedInputValue(body, camelName, snakeName, label, normalize3 = (value) => value) {
-  const camelValue = body?.[camelName];
-  const snakeValue = body?.[snakeName];
-  const hasCamel = camelValue !== void 0 && camelValue !== null;
-  const hasSnake = snakeValue !== void 0 && snakeValue !== null;
-  if (hasCamel && hasSnake && normalize3(camelValue) !== normalize3(snakeValue)) {
+  return browserAliasedInputValues(body, [camelName, snakeName], label, normalize3);
+}
+function browserAliasedInputValues(body, names, label, normalize3 = (value) => value) {
+  const values = names.map((name) => body?.[name]).filter((value) => value !== void 0 && value !== null);
+  if (values.length > 1 && values.some((value) => normalize3(value) !== normalize3(values[0]))) {
     throw new Error(`${label} aliases conflict`);
   }
-  return hasCamel ? camelValue : hasSnake ? snakeValue : void 0;
+  return values[0];
 }
 function canonicalBrowserAliasScalar(value) {
   return typeof value === "bigint" ? value.toString() : String(value).trim();
@@ -95498,6 +98816,19 @@ function canonicalBrowserAliasHex(value) {
 }
 function canonicalBrowserAliasBoolean(value) {
   return `${typeof value}:${String(value)}`;
+}
+function canonicalBrowserAliasReference(value) {
+  return value;
+}
+function hasEvmAuthorizationSignature(authorization) {
+  const signature = authorization?.signature;
+  if (signature == null) return false;
+  if (typeof signature === "string") {
+    const normalized = signature.trim().toLowerCase();
+    return normalized !== "" && normalized !== "0x";
+  }
+  if (signature instanceof Uint8Array) return signature.length > 0;
+  return true;
 }
 async function fetchJson2(url, options = {}) {
   const { timeoutMs = defaultFetchTimeoutMs2, ...fetchOptions } = options;
@@ -95565,6 +98896,30 @@ function normalizedEvmChainId(value, label = "evmChainId") {
     throw new Error(`${label} must be a non-negative EVM quantity`);
   }
 }
+function profileBoundEvmTransaction(transaction, chainId, defaultGas) {
+  const configuredChainId = normalizedEvmChainId(chainId);
+  if (transaction?.chainId != null && normalizedEvmChainId(transaction.chainId, "prepared EVM transaction chainId") !== configuredChainId) {
+    throw new Error("prepared EVM transaction chainId does not match the active profile");
+  }
+  return {
+    ...transaction,
+    chainId: configuredChainId,
+    ...transaction?.gas == null && defaultGas != null ? { gas: defaultGas } : {}
+  };
+}
+function deferredProverAdapter(resolveAdapter, methodName) {
+  let resolved = null;
+  return {
+    async [methodName](...args) {
+      resolved ??= resolveAdapter();
+      const method = resolved?.[methodName];
+      if (typeof method !== "function") {
+        throw new Error(`proverAdapter.${methodName} is required`);
+      }
+      return method.apply(resolved, args);
+    }
+  };
+}
 function addIfPresent(target, key, value) {
   if (value != null) {
     target[key] = value;
@@ -95586,6 +98941,13 @@ function evmReceiptStatusKind(status) {
   if (/^0x0*1$/.test(normalized)) return "success";
   if (/^0x0+$/.test(normalized)) return "failure";
   return "unknown";
+}
+function normalizedBrowserEvmTransactionHash(value, label = "EVM transaction hash") {
+  const clean3 = String(value ?? "").trim().replace(/^0x/i, "").toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(clean3)) {
+    throw new Error(`${label} must be a 32-byte hex value`);
+  }
+  return `0x${clean3}`;
 }
 function scanOptionsFromBody(body = {}) {
   const scan = body.scan || {};
@@ -95648,39 +99010,12 @@ function typedWalletScanOptionsFromBody(body = {}) {
   };
 }
 function relayChainNowUnixFromBody(body = {}) {
-  return body.chainNowUnix ?? body.chain_now_unix ?? body.nowUnix ?? body.now_unix;
-}
-function withdrawProofReadyMetadata2(built, context = {}) {
-  const expiresAtUnix = String(
-    built?.payload?.expires_at_unix || built?.payload?.expiresAtUnix || built?.proverPayload?.expires_at_unix || built?.proverPayload?.expiresAtUnix || ""
+  return browserAliasedInputValues(
+    body,
+    ["chainNowUnix", "chain_now_unix", "nowUnix", "now_unix"],
+    "chainNowUnix",
+    canonicalBrowserTransferUnix
   );
-  return {
-    payloadHash: built?.payload?.payload_hash || built?.proverPayload?.payload_hash || "",
-    txBytesHash: context.txBytesHash ?? context.tx_bytes_hash ?? "",
-    metadata: expiresAtUnix ? { payload_expires_at_unix: expiresAtUnix } : {}
-  };
-}
-async function markReservationReplanRequired(reservationManager2, reservation, error, reason) {
-  if (!reservationManager2 || !reservation?.reservation_ids?.length) return [];
-  if (typeof reservationManager2.markReplanRequired !== "function") {
-    throw new Error("reservationManager.markReplanRequired is required");
-  }
-  return reservationManager2.markReplanRequired(reservation.reservation_ids, {
-    leaseToken: reservation.lease_token || reservation.reservations?.[0]?.lease_token || "",
-    error: reason,
-    metadata: {
-      reconcile_reason: reason,
-      no_broadcast_attempt: true,
-      proof_discarded: true
-    }
-  });
-}
-async function replanProofReadyReservationPreservingError(reservationManager2, reservation, error, reason) {
-  try {
-    await markReservationReplanRequired(reservationManager2, reservation, error, reason);
-  } catch (cleanupError) {
-    appendReservationCleanupErrors(error, [cleanupError]);
-  }
 }
 function positiveCoinForDenom(amount, denom, label) {
   const coin = parseCoin(amount, denom);
@@ -95761,6 +99096,8 @@ function asBytesBase64(bytes4) {
 var ClairveilBrowserClient = class {
   constructor({
     profile,
+    transport,
+    walletType,
     rpc,
     rest,
     restEndpoints,
@@ -95781,27 +99118,35 @@ var ClairveilBrowserClient = class {
     queryRetry,
     nullifierFailover,
     merklePathFailover,
+    privacyStateAdapter,
     enableExperimentalBatchTransfer = false,
     enable_experimental_batch_transfer,
     evmRpc,
     evmChainId,
-    evmPrivacyPrecompileAddress: evmPrivacyPrecompileAddress2,
+    evmPrivacyPrecompileAddress,
     evmDepositMode = defaultEvmDepositMode,
     evmNativeDenom: evmNativeDenom2,
+    evmAuthorizationProfile,
+    evmContractAdapter,
+    evmFinalityPolicy,
     evmGasLimit = "0x989680",
     evmSendGasLimit = "0x5208"
   } = {}) {
     const hasProfile = profile !== void 0 && profile !== null;
-    const resolved = hasProfile ? validateBrowserWalletProfile(profile) : {};
+    const resolved = hasProfile ? validateBrowserWalletProfileContract(profile, {
+      allowMissingEvmCosmosEndpoints: privacyStateAdapter != null
+    }) : {};
     this.profile = resolved;
-    this.profileTransport = hasProfile ? walletTypeFromBody({}, resolved.transport) : null;
+    const directTransport = transport ?? walletType ?? null;
+    this.profileTransport = hasProfile ? walletTypeFromBody({}, resolved.transport) : directTransport == null ? null : walletTypeFromBody({}, directTransport);
     this.defaultWalletType = this.profileTransport || walletTypeFromBody({}, "cosmos");
     this.rpc = normalizeRpcEndpoint2(hasProfile ? resolved.rpc : rpc);
     this.restEndpoints = normalizeRestEndpoints2(
       hasProfile ? resolved.rest : rest,
-      hasProfile ? resolved.restEndpoints : restEndpoints
+      hasProfile ? resolved.restEndpoints : restEndpoints,
+      { allowEmpty: privacyStateAdapter != null }
     );
-    this.rest = this.restEndpoints[0];
+    this.rest = this.restEndpoints[0] || "";
     this.chainId = hasProfile ? resolved.chainId : chainId;
     this.accountPrefix = (hasProfile ? resolved.accountPrefix : accountPrefix2) || "clair";
     this.shieldedPrefix = (hasProfile ? resolved.shieldedPrefix : shieldedPrefix2) || `${this.accountPrefix}s`;
@@ -95826,6 +99171,9 @@ var ClairveilBrowserClient = class {
     this.evmNativeDenom = String(
       hasProfile ? resolved.evmNativeDenom || this.denom : evmNativeDenom2 || this.denom
     ).trim();
+    const configuredEvmAuthorizationProfile = hasProfile ? resolved.evmAuthorizationProfile ?? null : evmAuthorizationProfile ?? null;
+    this.evmAuthorizationProfile = configuredEvmAuthorizationProfile == null ? null : createEvmAuthorizationProfile(configuredEvmAuthorizationProfile);
+    this.evmFinalityPolicy = evmFinalityPolicy == null ? null : createEvmFinalityPolicy(evmFinalityPolicy);
     if (this.evmDepositMode === evmDepositModePayableExactValue && this.evmNativeDenom !== this.denom) {
       throw new Error("evmNativeDenom must match denom for payable EVM deposits");
     }
@@ -95843,27 +99191,42 @@ var ClairveilBrowserClient = class {
       queryRetry,
       nullifierFailover,
       merklePathFailover,
+      privacyStateAdapter,
       // This is an explicit caller opt-in, not a chain endpoint or identity
       // field. It must remain usable with a strict active profile; product
       // code still decides whether to pass it after validating its
       // serverFeatures.batchTransfer policy.
       enableExperimentalBatchTransfer: enable_experimental_batch_transfer ?? enableExperimentalBatchTransfer
     });
-    this.evm = createClairveilEvmClient({
-      contractAddress: hasProfile ? resolved.evmPrivacyPrecompileAddress : evmPrivacyPrecompileAddress2,
+    const configuredEvmContractAddress = hasProfile ? resolved.evmPrivacyPrecompileAddress : evmPrivacyPrecompileAddress;
+    const hasEvmContract = Boolean(
+      String(configuredEvmContractAddress ?? "").trim() || evmContractAdapter
+    );
+    if (this.profileTransport === "evm" && !hasEvmContract) {
+      throw new Error(
+        "EVM browser client requires evmPrivacyPrecompileAddress or evmContractAdapter.contractAddress"
+      );
+    }
+    this.evm = hasEvmContract ? createClairveilEvmClient({
+      contractAddress: configuredEvmContractAddress,
       chainId: this.chainId,
       evmChainId: this.evmChainId,
       accountPrefix: this.accountPrefix,
       shieldedPrefix: this.shieldedPrefix,
       defaultDenom: this.denom,
       depositMode: this.evmDepositMode,
-      nativeDenom: this.evmNativeDenom
-    });
+      nativeDenom: this.evmNativeDenom,
+      authorizationProfile: this.evmAuthorizationProfile,
+      contractAdapter: evmContractAdapter
+    }) : null;
+    this.privacyStateAdapter = this.cosmos.privacyStateAdapter;
   }
   restUrl(path) {
+    if (!this.rest) throw new Error("rest endpoint is not configured; use PrivacyStateAdapter-backed privacy queries");
     return `${this.rest}${path.startsWith("/") ? path : `/${path}`}`;
   }
   rpcUrl(path) {
+    if (!this.rpc) throw new Error("rpc endpoint is not configured for Cosmos queries");
     return `${this.rpc}${path.startsWith("/") ? path : `/${path}`}`;
   }
   fetchJson(url, options = {}) {
@@ -95902,12 +99265,16 @@ var ClairveilBrowserClient = class {
   async health({ allowUninitializedTree = false } = {}) {
     try {
       const [status, tree, audit] = await Promise.all([
-        this.fetchJson(this.rpcUrl("/status")),
+        this.rpc ? this.fetchJson(this.rpcUrl("/status")).then((value) => validateHealthStatus(value, this.chainId)) : this.profileTransport === "evm" ? this.assertEvmNetwork().then((evmChainId) => Object.freeze({
+          transport: "evm",
+          chainId: this.chainId,
+          evmChainId
+        })) : Promise.reject(new Error("Cosmos RPC endpoint is required for browser health")),
         this.cosmos.fetchTreeState(),
         this.cosmos.queryAuditConfig()
       ]);
       return {
-        status: validateHealthStatus(status, this.chainId),
+        status,
         tree: validateHealthTreeState(tree, { allowUninitializedTree }),
         audit,
         errors: []
@@ -96077,7 +99444,7 @@ var ClairveilBrowserClient = class {
     return this.cosmos.confirmDeposit(input);
   }
   async waitForEvmReceipt(txHash, { attempts = 30, intervalMs = 1e3 } = {}) {
-    const hash = `0x${String(txHash || "").replace(/^0x/i, "").toLowerCase()}`;
+    const hash = normalizedBrowserEvmTransactionHash(txHash);
     for (let i = 0; i < attempts; i += 1) {
       const receipt = await this.evmJsonRpc("eth_getTransactionReceipt", [hash]);
       if (receipt) return receipt;
@@ -96165,23 +99532,143 @@ var ClairveilBrowserClient = class {
     return camel ?? snake ?? null;
   }
   async assertEvmPreparationNetwork(body = {}) {
+    if (!this.evm) {
+      throw new Error("EVM privacy contract is not configured");
+    }
     await Promise.all([
       this.assertEvmNetwork(),
       this.assertEvmWalletNetwork(this.evmWalletFromBody(body))
     ]);
   }
-  async waitForEvmTransaction(txHash) {
-    const receipt = await this.waitForEvmReceipt(txHash);
-    const receiptStatus = evmReceiptStatusKind(receipt?.status);
-    const receiptSucceeded = receiptStatus === "success";
+  async waitForEvmTransaction(txHash, {
+    privacyTransaction,
+    sender,
+    attempts,
+    intervalMs,
+    finalityPolicy
+  } = {}) {
+    if (!this.evm) {
+      throw new Error("EVM privacy contract is not configured");
+    }
+    if (!privacyTransaction) {
+      throw new Error("waitForEvmTransaction requires the original SDK-prepared privacyTransaction");
+    }
+    if (!sender) {
+      throw new Error("waitForEvmTransaction requires the actual EVM sender");
+    }
+    const evmTxHash = normalizedBrowserEvmTransactionHash(txHash);
+    const txBytesHash = evmTransactionBindingHash(privacyTransaction);
+    const receipt = await this.waitForEvmReceipt(evmTxHash, {
+      ...attempts == null ? {} : { attempts },
+      ...intervalMs == null ? {} : { intervalMs }
+    });
+    if (!receipt) {
+      const error = `EVM tx was broadcast but receipt was not found yet: ${evmTxHash}`;
+      return {
+        executionTransport: "evm",
+        txHash: evmTxHash.slice(2).toUpperCase(),
+        evmTxHash,
+        txBytesHash,
+        receipt: null,
+        tx: null,
+        transactionVerification: null,
+        privacyReceipt: null,
+        finality: null,
+        evmTransactionVerified: false,
+        evmPrivacyReceiptVerified: false,
+        evmFinalityVerified: false,
+        ok: false,
+        error,
+        errors: [error]
+      };
+    }
+    const [tx, actualChainId] = await Promise.all([
+      this.evmJsonRpc("eth_getTransactionByHash", [evmTxHash]),
+      this.evmJsonRpc("eth_chainId")
+    ]);
+    const errors = [];
+    const receiptStatus = evmReceiptStatusKind(receipt.status);
+    const receiptSucceeded3 = receiptStatus === "success";
+    if (!receiptSucceeded3) {
+      errors.push(receiptStatus === "failure" ? `EVM tx failed with receipt status ${String(receipt.status)}` : `EVM tx did not include an explicit successful receipt status: ${String(receipt.status ?? "missing")}`);
+    }
+    try {
+      if (normalizedBrowserEvmTransactionHash(
+        receipt.transactionHash,
+        "EVM receipt transaction hash"
+      ) !== evmTxHash) {
+        throw new Error("EVM receipt transaction hash does not match the requested transaction");
+      }
+    } catch (error) {
+      errors.push(String(error?.message || error));
+    }
+    let transactionVerification = null;
+    try {
+      transactionVerification = this.evm.verifyTransactionIdentity({
+        transaction: privacyTransaction,
+        rpcTransaction: tx,
+        txHash: evmTxHash,
+        sender,
+        expectedChainId: this.evmChainId,
+        actualChainId
+      });
+    } catch (error) {
+      errors.push(String(error?.message || error || "EVM transaction identity mismatch"));
+    }
+    let privacyReceipt = null;
+    if (receiptSucceeded3) {
+      try {
+        privacyReceipt = this.evm.verifyPrivacyReceipt({
+          transaction: privacyTransaction,
+          receipt,
+          sender
+        });
+      } catch (error) {
+        errors.push(String(error?.message || error || "privacy receipt evidence mismatch"));
+      }
+    }
+    let finality = null;
+    if (receiptSucceeded3) {
+      const resolvedFinalityPolicy = finalityPolicy ?? this.evmFinalityPolicy;
+      if (resolvedFinalityPolicy == null) {
+        errors.push(
+          "EVM finality policy is required; configure confirmations, safe, finalized, custom, or explicitly opt into low-finality receipt mode"
+        );
+      } else {
+        finality = await waitForEvmFinality({
+          txHash: evmTxHash,
+          receipt,
+          rpc: (method, params) => this.evmJsonRpc(method, params),
+          policy: resolvedFinalityPolicy,
+          ...attempts == null ? {} : { attempts },
+          ...intervalMs == null ? {} : { intervalMs }
+        });
+        if (finality.verified !== true) {
+          errors.push(finality.error || "EVM finality policy did not verify the transaction");
+        }
+      }
+    }
+    const uniqueErrors = [...new Set(errors)];
+    const evmTransactionVerified = transactionVerification?.verified === true;
+    const evmPrivacyReceiptVerified = privacyReceipt?.verified === true;
+    const evmFinalityVerified = finality?.verified === true;
+    const ok = receiptSucceeded3 && evmTransactionVerified && evmPrivacyReceiptVerified && evmFinalityVerified && uniqueErrors.length === 0;
     return {
-      txHash: String(txHash || "").replace(/^0x/i, "").toUpperCase(),
-      evmTxHash: `0x${String(txHash || "").replace(/^0x/i, "").toLowerCase()}`,
+      executionTransport: "evm",
+      txHash: evmTxHash.slice(2).toUpperCase(),
+      evmTxHash,
+      txBytesHash,
       receipt,
-      tx: null,
-      ok: Boolean(receipt && receiptSucceeded),
-      error: receipt ? receiptSucceeded ? "" : receiptStatus === "failure" ? `EVM tx failed with receipt status ${String(receipt.status)}` : `EVM tx did not include an explicit successful receipt status: ${String(receipt.status ?? "missing")}` : "",
-      errors: receipt ? [] : [`EVM tx was broadcast but receipt was not found yet: ${txHash}`]
+      tx,
+      transactionVerification,
+      privacyReceipt,
+      finality,
+      evmTransactionVerified,
+      evmPrivacyReceiptVerified,
+      evmFinalityVerified,
+      ok,
+      error: uniqueErrors[0] || "",
+      errors: uniqueErrors
     };
   }
   evmNativeSendTransaction({ to, amount }) {
@@ -96233,6 +99720,10 @@ var ClairveilBrowserClient = class {
       delete reservationOptions.expected_evm_chain_id;
     }
     await this.assertEvmPreparationNetwork({ evmWallet: wallet });
+    if (reservationOptions.reservationManager || reservationOptions.reservation_manager || relayPayload) {
+      delete reservationOptions.check_nullifiers;
+      reservationOptions.checkNullifiers = (nullifiers) => this.cosmos.checkNullifiers(nullifiers);
+    }
     return this.evm.sendTransaction(wallet, transaction, reservationOptions);
   }
   async buildBankSendSignDoc({
@@ -96346,14 +99837,15 @@ var ClairveilBrowserClient = class {
         proof: depositProof ?? depositProofHex
       });
       return {
-        transaction: {
-          chainId: this.evmChainId,
-          gas: this.evmGasLimit,
-          ...built.transaction
-        },
+        transaction: profileBoundEvmTransaction(
+          built.transaction,
+          this.evmChainId,
+          this.evmGasLimit
+        ),
         prepared: {
           shieldedAddress: built.material.shieldedAddress || material.shieldedAddress,
           noteCommitmentHex: built.material.note_commitment_hex,
+          encryptedNoteHex: built.material.encrypted_note_hex,
           amount: built.material.amount
         }
       };
@@ -96406,187 +99898,182 @@ var ClairveilBrowserClient = class {
     const userPrivacyPolicy = body.privacyPolicy ?? body.privacy_policy ?? "all-private";
     const userDisclosureMode = body.disclosureMode ?? body.disclosure_mode ?? "none";
     const userDisclosureTargetPubKeyHex = body.disclosurePubKeyHex ?? body.disclosure_pubkey_hex ?? "";
-    if (body.disableSelfViewDisclosure != null && body.disable_self_view_disclosure != null && body.disableSelfViewDisclosure !== body.disable_self_view_disclosure) {
-      throw new Error("disableSelfViewDisclosure aliases conflict");
-    }
-    if (body.selfViewDisclosureTargetPubKeyHex != null && body.self_view_disclosure_target_pubkey != null && String(body.selfViewDisclosureTargetPubKeyHex).trim().replace(/^0x/i, "").toLowerCase() !== String(body.self_view_disclosure_target_pubkey).trim().replace(/^0x/i, "").toLowerCase()) {
-      throw new Error("selfViewDisclosureTargetPubKeyHex aliases conflict");
-    }
-    const disableSelfViewDisclosure = body.disableSelfViewDisclosure ?? body.disable_self_view_disclosure;
-    const selfViewDisclosureTargetPubKeyHex = body.selfViewDisclosureTargetPubKeyHex ?? body.self_view_disclosure_target_pubkey;
     const auditDisclosureTargetPubKeyHex = auditTargetBindingFromBody(body);
-    const operationEvidence = resolveDirectOperationEvidenceHashes({
-      expectedRecipientHash: body.expectedRecipientHash,
-      expected_recipient_hash: body.expected_recipient_hash,
-      expectedAmountHash: body.expectedAmountHash,
-      expected_amount_hash: body.expected_amount_hash
-    });
     const allowPlanStep = Boolean(body.allowPlanStep ?? body.allow_plan_step);
     const scanOptions = typedWalletScanOptionsFromBody(body);
     const reservationManager2 = body.reservationManager ?? body.reservation_manager ?? null;
+    const suppliedProverAdapter = body.proverAdapter ?? body.prover_adapter;
+    const gasLimit = resolveCosmosGasLimit(body.gasLimit, body.gas_limit, 8e6);
+    const feeAmount = resolveCosmosFeeAmount(body.feeAmount, body.fee_amount);
+    const transactionOptions = browserAliasedInputValue(
+      body,
+      "transactionOptions",
+      "transaction_options",
+      "transactionOptions",
+      canonicalBrowserAliasReference
+    );
+    const prepared = await this.cosmos.prepareTransfer({
+      proverAdapter: suppliedProverAdapter ?? deferredProverAdapter(
+        () => this.proverAdapter(),
+        "proveTransfer"
+      ),
+      material,
+      signal: body.signal,
+      recipient,
+      amount,
+      userPrivacyPolicy,
+      userDisclosureMode,
+      userDisclosureTargetPubKeyHex,
+      disableSelfViewDisclosure: body.disableSelfViewDisclosure,
+      disable_self_view_disclosure: body.disable_self_view_disclosure,
+      selfViewDisclosureTargetPubKeyHex: body.selfViewDisclosureTargetPubKeyHex,
+      self_view_disclosure_target_pubkey: body.self_view_disclosure_target_pubkey,
+      auditDisclosureTargetPubKeyHex,
+      expectedRecipientHash: body.expectedRecipientHash,
+      expected_recipient_hash: body.expected_recipient_hash,
+      expectedAmountHash: body.expectedAmountHash,
+      expected_amount_hash: body.expected_amount_hash,
+      expiresAtUnix,
+      chainNowUnix,
+      allowPlanStep,
+      scan: scanOptions,
+      gasLimit,
+      feeAmount,
+      reservationManager: reservationManager2,
+      ...walletType === "evm" ? {
+        executionBuilder: this.evmDirectExecutionBuilder("transfer", {
+          expiresAtUnix,
+          chainNowUnix,
+          transactionOptions
+        })
+      } : {}
+    });
+    if (prepared.status !== "ready") throw plannerError(prepared);
+    const common = {
+      ...reservationReconciliationFields(prepared),
+      reservation: prepared.reservation || null,
+      prepared: {
+        ...prepared.prepared,
+        shieldedAddress: prepared.privacyAccount.shielded_address,
+        finalAmount: amount,
+        finalRecipient: recipient,
+        privacyPolicy: userPrivacyPolicy,
+        disclosureMode: userDisclosureMode,
+        planStatus: prepared.plan?.status || "",
+        planAction: prepared.prepared?.planAction || prepared.plan?.action || "",
+        payload: prepared.payload,
+        proof: prepared.proof,
+        message: prepared.execution?.message || prepared.message
+      },
+      plan: prepared.plan
+    };
     if (walletType !== "evm") {
-      const gasLimit = resolveCosmosGasLimit(body.gasLimit, body.gas_limit, 8e6);
-      const feeAmount = resolveCosmosFeeAmount(body.feeAmount, body.fee_amount);
-      const prepared = await this.cosmos.prepareTransfer({
-        proverAdapter: body.proverAdapter ?? body.prover_adapter ?? this.proverAdapter(),
-        material,
-        signal: body.signal,
-        recipient,
-        amount,
-        userPrivacyPolicy,
-        userDisclosureMode,
-        userDisclosureTargetPubKeyHex,
-        disableSelfViewDisclosure,
-        selfViewDisclosureTargetPubKeyHex,
-        auditDisclosureTargetPubKeyHex,
-        ...operationEvidence.provided ? {
-          expectedRecipientHash: operationEvidence.expectedRecipientHash,
-          expectedAmountHash: operationEvidence.expectedAmountHash
-        } : {},
+      return { ...common, signDoc: prepared.signDoc };
+    }
+    const transaction = prepared.execution?.transaction;
+    const txBytesHash = String(
+      prepared.execution?.txBytesHash ?? prepared.execution?.tx_bytes_hash ?? ""
+    ).trim();
+    if (!transaction || !txBytesHash) {
+      throw new Error("EVM transfer preparation did not produce a transaction and binding hash");
+    }
+    return { ...common, transaction, txBytesHash };
+  }
+  evmDirectExecutionBuilder(operation, {
+    evmRecipient = "",
+    expiresAtUnix,
+    chainNowUnix,
+    transactionOptions
+  } = {}) {
+    if (!(/* @__PURE__ */ new Set(["transfer", "withdraw"])).has(operation)) {
+      throw new Error("unsupported direct EVM execution operation");
+    }
+    return async ({ message, payload, proof, proverPayload, selectedNote, reservation }) => {
+      const built = operation === "transfer" ? await this.evm.buildTransferTransaction({
+        message,
+        payload,
+        proof,
         expiresAtUnix,
         chainNowUnix,
-        allowPlanStep,
-        scan: scanOptions,
-        gasLimit,
-        feeAmount,
-        reservationManager: reservationManager2
+        transactionOptions
+      }) : await this.evm.buildWithdrawTransaction({
+        message,
+        payload,
+        proof,
+        proverPayload,
+        selectedNote,
+        evmRecipient: evmRecipient || void 0,
+        chainNowUnix,
+        transactionOptions
       });
-      if (prepared.status !== "ready") throw plannerError(prepared);
+      let transaction = profileBoundEvmTransaction(
+        built.transaction,
+        this.evmChainId,
+        this.evmGasLimit
+      );
+      if (reservation) transaction = markEvmTransactionReservationRequired(transaction);
       return {
-        ...reservationReconciliationFields(prepared),
-        signDoc: prepared.signDoc,
-        reservation: prepared.reservation || null,
-        prepared: {
-          ...prepared.prepared,
-          shieldedAddress: prepared.privacyAccount.shielded_address,
-          finalAmount: amount,
-          finalRecipient: recipient,
-          privacyPolicy: userPrivacyPolicy,
-          disclosureMode: userDisclosureMode,
-          planStatus: prepared.plan?.status || "",
-          planAction: prepared.prepared?.planAction || prepared.plan?.action || "",
-          payload: prepared.payload,
-          proof: prepared.proof,
-          message: prepared.message
-        },
-        plan: prepared.plan
-      };
-    }
-    const transferProtocolConfig = await this.cosmos.assertTransferProtocolConfig(this.denom);
-    if (auditDisclosureTargetPubKeyHex && auditDisclosureTargetPubKeyHex !== String(transferProtocolConfig.audit_config.audit_master_pubkey_hex || "").toLowerCase()) {
-      throw new Error("transfer audit disclosure target must exactly match the active chain audit config");
-    }
-    const scan = await this.cosmos.scanNotes({
-      rootSeed: material.rootSeed,
-      ...scanOptions,
-      limit: scanOptions.limit ?? 200,
-      maxPages: scanOptions.maxPages ?? defaultPrepareScanMaxPages2,
-      includeFoundNotes: true
-    });
-    const availableFoundNotes = await reservationAvailableNotes(reservationManager2, scan.foundNotes);
-    const plan = planTransferNotes({ notes: availableFoundNotes, amount, denom: this.denom });
-    if (plan.status === "self_merge_required" && !allowPlanStep) throw plannerError({ status: plan.status, plan, scan });
-    if (!plan.canBuildTx) throw plannerError({ status: plan.status, plan, scan });
-    assertPlanCanBuildTx(plan);
-    const isFinal = plan.status === "final_transfer_ready";
-    assertTransferDisclosureCapabilities(transferProtocolConfig.disclosure_config, {
-      userPrivacyPolicy: isFinal ? userPrivacyPolicy : "all-private",
-      userDisclosureMode: isFinal ? userDisclosureMode : "none"
-    });
-    const auditPubKeyHex = transferProtocolConfig.audit_config.audit_master_pubkey_hex;
-    const stepRecipient = isFinal ? recipient : material.shieldedAddress;
-    const stepAmount = isFinal ? amount : plan.nextAmount;
-    let reservationBatch = null;
-    try {
-      reservationBatch = await preparePlanReservation(reservationManager2, {
-        plan,
-        kind: isFinal ? "transfer" : "self_merge",
-        metadata: {
-          amount: stepAmount,
-          recipient: stepRecipient,
-          finalAmount: amount,
-          finalRecipient: recipient
-        }
-      });
-      const heartbeatResult = await withReservationHeartbeat(reservationManager2, reservationBatch, async ({ assertHeartbeatHealthy, heartbeatNow }) => {
-        const built2 = await this.cosmos.buildTransferMessage({
-          proverAdapter: body.proverAdapter ?? body.prover_adapter ?? this.proverAdapter(),
-          signal: body.signal,
-          creator: material.address,
-          inputs: plan.selection.inputs,
-          recipient: stepRecipient,
-          amount: stepAmount,
-          transferDenom: this.denom,
-          rootSeed: material.rootSeed,
-          shieldedPrefix: this.shieldedPrefix,
-          userPrivacyPolicy: isFinal ? userPrivacyPolicy : "all-private",
-          userDisclosureMode: isFinal ? userDisclosureMode : "none",
-          userDisclosureTargetPubKeyHex: isFinal ? userDisclosureTargetPubKeyHex : "",
-          auditDisclosureTargetPubKeyHex: auditPubKeyHex,
-          disableSelfViewDisclosure,
-          selfViewDisclosureTargetPubKeyHex,
-          expiresAtUnix,
-          chainNowUnix
-        });
-        assertHeartbeatHealthy();
-        const evmBuilt = await this.evm.buildTransferTransaction({
-          message: built2.message,
-          payload: built2.payload,
-          proof: built2.proof,
-          expiresAtUnix: built2.payload.expires_at_unix,
-          chainNowUnix
-        });
-        let transaction2 = {
-          chainId: this.evmChainId,
-          gas: this.evmGasLimit,
-          ...evmBuilt.transaction
-        };
-        if (reservationBatch) transaction2 = markEvmTransactionReservationRequired(transaction2);
-        const txBytesHash = reservationBatch ? evmTransactionBindingHash(transaction2) : "";
-        await heartbeatNow();
-        await markReservationProofReady(reservationManager2, reservationBatch, transferProofReadyMetadata(built2, {
-          amount: stepAmount,
-          denom: this.denom,
-          expectedRecipientHash: isFinal ? operationEvidence.expectedRecipientHash : "",
-          expectedAmountHash: isFinal ? operationEvidence.expectedAmountHash : "",
-          txBytesHash
-        }, "txBytesHash"));
-        return { built: built2, transaction: transaction2 };
-      });
-      const { built, transaction } = heartbeatResult;
-      return {
-        ...reservationReconciliationFields(heartbeatResult),
+        executionTransport: "evm",
         transaction,
-        reservation: reservationBatchSummary(reservationBatch),
-        prepared: {
-          ...built,
-          planAction: isFinal ? "final_transfer" : "self_merge",
-          isFinal,
-          amount: stepAmount,
-          recipient: stepRecipient,
-          finalAmount: amount,
-          finalRecipient: recipient,
-          selectedInputTotal: plan.selection.total.toString(),
-          shieldedAddress: material.shieldedAddress,
-          privacyPolicy: userPrivacyPolicy,
-          disclosureMode: userDisclosureMode,
-          planStatus: plan.status,
-          expiresAtUnix: built.payload.expires_at_unix,
-          chainNowUnix,
-          reservation: reservationBatchSummary(reservationBatch)
-        },
-        plan
+        txBytesHash: evmTransactionBindingHash(transaction),
+        message: built.message || message
       };
-    } catch (error) {
-      await rollbackPlanReservationPreservingError(reservationManager2, reservationBatch, error);
-      throw error;
+    };
+  }
+  evmBatchTransferExecutionBuilder(body, { authorization, authorizationSigner } = {}) {
+    if (authorizationSigner != null && authorization == null) {
+      throw new Error("EVM batch authorizationSigner requires authorization");
     }
+    const transactionOptions = browserAliasedInputValue(
+      body,
+      "transactionOptions",
+      "transaction_options",
+      "transactionOptions",
+      canonicalBrowserAliasReference
+    );
+    return async ({ message }) => {
+      let resolvedAuthorization = null;
+      let authorizationTypedData = null;
+      if (authorization) {
+        resolvedAuthorization = { ...authorization };
+        if (!hasEvmAuthorizationSignature(resolvedAuthorization)) {
+          if (!authorizationSigner || typeof authorizationSigner.signTypedData !== "function") {
+            throw new Error("EVM batch authorization requires a signature or authorizationSigner.signTypedData()");
+          }
+          authorizationTypedData = this.evm.buildAuthorizationTypedData({
+            action: "singleProofBatchTransfer",
+            request: message,
+            authorization: resolvedAuthorization,
+            cosmosChainId: this.chainId,
+            evmChainId: this.evmChainId,
+            contractAddress: this.evm.contract.contractAddress
+          });
+          resolvedAuthorization.signature = await authorizationSigner.signTypedData(authorizationTypedData);
+        }
+      }
+      const evmBuilt = resolvedAuthorization ? this.evm.buildSingleProofBatchTransferWithAuthorizationTransaction({
+        message,
+        authorization: resolvedAuthorization,
+        transactionOptions
+      }) : this.evm.buildSingleProofBatchTransferTransaction({
+        message,
+        transactionOptions
+      });
+      const transaction = markEvmTransactionReservationRequired(
+        profileBoundEvmTransaction(evmBuilt.transaction, this.evmChainId, this.evmGasLimit)
+      );
+      return {
+        executionTransport: "evm",
+        transaction,
+        txBytesHash: evmTransactionBindingHash(transaction),
+        ...resolvedAuthorization ? { authorization: resolvedAuthorization } : {},
+        ...authorizationTypedData ? { authorizationTypedData } : {}
+      };
+    };
   }
   async prepareTransferBatch(body) {
     const walletType = this.walletTypeFromBody(body);
-    if (walletType === "evm") {
-      throw new Error("batch transfer is currently supported for Cosmos wallet profiles only");
-    }
+    if (walletType === "evm") await this.assertEvmPreparationNetwork(body);
     const suppliedProverAdapter = browserAliasedInputValue(
       body,
       "proverAdapter",
@@ -96668,6 +100155,24 @@ var ClairveilBrowserClient = class {
     const amounts = body.amounts;
     const recipient = body.recipient;
     const scanOptions = typedWalletScanOptionsFromBody(body);
+    const authorization = browserAliasedInputValue(
+      body,
+      "authorization",
+      "privacy_authorization",
+      "authorization",
+      canonicalBrowserAliasReference
+    );
+    const authorizationSigner = browserAliasedInputValue(
+      body,
+      "authorizationSigner",
+      "authorization_signer",
+      "authorizationSigner",
+      canonicalBrowserAliasReference
+    );
+    if (walletType !== "evm" && (authorization != null || authorizationSigner != null)) {
+      throw new Error("batch authorization is only supported for EVM wallet profiles");
+    }
+    const executionBuilder = walletType === "evm" ? this.evmBatchTransferExecutionBuilder(body, { authorization, authorizationSigner }) : void 0;
     const prepared = await this.cosmos.prepareTransferBatch({
       proverAdapter: suppliedProverAdapter ?? this.proverAdapter(),
       material,
@@ -96702,19 +100207,38 @@ var ClairveilBrowserClient = class {
       chainNowUnix,
       rootHex,
       snapshotHeight,
+      inputCommitmentHexes: body.inputCommitmentHexes,
+      input_commitment_hexes: body.input_commitment_hexes,
       disableSelfViewDisclosure,
       selfViewDisclosureTargetPubKeyHex,
       reservationManager: body.reservationManager,
-      reservation_manager: body.reservation_manager
+      reservation_manager: body.reservation_manager,
+      executionBuilder
     });
     if (prepared.status !== "ready") throw plannerError(prepared);
+    const transaction = prepared.execution?.transaction;
+    const txBytesHash = String(
+      prepared.execution?.txBytesHash ?? prepared.execution?.tx_bytes_hash ?? ""
+    ).trim();
+    if (walletType === "evm" && (!transaction || !txBytesHash)) {
+      throw new Error("EVM batch preparation did not produce a transaction and binding hash");
+    }
     return {
       ...reservationReconciliationFields(prepared),
-      signDoc: prepared.signDoc,
+      ...walletType === "evm" ? { transaction, txBytesHash } : { signDoc: prepared.signDoc },
+      ...walletType === "evm" && prepared.execution?.authorization ? { authorization: prepared.execution.authorization } : {},
+      ...walletType === "evm" && prepared.execution?.authorizationTypedData ? { authorizationTypedData: prepared.execution.authorizationTypedData } : {},
       reservation: prepared.reservation || null,
       prepared: {
         ...prepared.prepared,
         shieldedAddress: prepared.privacyAccount.shielded_address,
+        // Keep the operation evidence on the browser result as promised by
+        // PreparedTransferBatchSummary.  The Cosmos core returns these fields
+        // beside `prepared`; dropping them here made an EVM caller unable to
+        // reconcile the aggregate one-proof operation without reaching into
+        // reservation-store internals.
+        operationEvidence: prepared.operationEvidence,
+        operationEvidenceHash: prepared.operationEvidenceHash,
         ...prepared.prepared?.payments?.every((payment) => payment.privacyPolicy === prepared.prepared.payments[0].privacyPolicy) ? { privacyPolicy: prepared.prepared.payments[0].privacyPolicy } : {},
         ...prepared.prepared?.payments?.every((payment) => payment.disclosureMode === prepared.prepared.payments[0].disclosureMode) ? { disclosureMode: prepared.prepared.payments[0].disclosureMode } : {},
         planStatus: prepared.plan?.status || "",
@@ -96723,8 +100247,6 @@ var ClairveilBrowserClient = class {
         payload: prepared.payload,
         proof: prepared.proof,
         message: prepared.message,
-        operationEvidence: prepared.operationEvidence,
-        operationEvidenceHash: prepared.operationEvidenceHash,
         inputCount: prepared.prepared?.inputCount,
         outputCount: prepared.prepared?.outputCount
       },
@@ -96762,17 +100284,31 @@ var ClairveilBrowserClient = class {
     });
   }
   /**
-   * Finish a checkpointed Cosmos batch after `provePreparedBatchTransfer` has
-   * durably stored its proof. This is deliberately separate from proof
-   * recovery: it performs no wallet call, but makes the reservation
-   * broadcastable only after the recovered payload/proof and original payment
-   * rows recreate the exact operation evidence.
+   * Finish a checkpointed batch after `provePreparedBatchTransfer` has durably
+   * stored its proof. Cosmos builds a sign doc while EVM builds the canonical
+   * transaction binding; both use the same evidence and reservation transition.
    */
   async finalizePreparedBatchTransfer(body = {}) {
     const walletType = this.walletTypeFromBody(body);
-    if (walletType === "evm") {
-      throw new Error("batch transfer is currently supported for Cosmos wallet profiles only");
+    if (walletType === "evm") await this.assertEvmPreparationNetwork(body);
+    const authorization = browserAliasedInputValue(
+      body,
+      "authorization",
+      "privacy_authorization",
+      "authorization",
+      canonicalBrowserAliasReference
+    );
+    const authorizationSigner = browserAliasedInputValue(
+      body,
+      "authorizationSigner",
+      "authorization_signer",
+      "authorizationSigner",
+      canonicalBrowserAliasReference
+    );
+    if (walletType !== "evm" && (authorization != null || authorizationSigner != null)) {
+      throw new Error("batch authorization is only supported for EVM wallet profiles");
     }
+    const executionBuilder = walletType === "evm" ? this.evmBatchTransferExecutionBuilder(body, { authorization, authorizationSigner }) : void 0;
     const pubKeyHex = browserAliasedInputValue(
       body,
       "pubKeyHex",
@@ -96815,7 +100351,7 @@ var ClairveilBrowserClient = class {
       "chainNowUnix",
       canonicalBrowserAliasScalar
     );
-    return this.cosmos.finalizePreparedBatchTransfer({
+    const finalized = await this.cosmos.finalizePreparedBatchTransfer({
       payload: body.payload,
       proof: body.proof,
       signer: body.signer ?? body.address ?? body.payload?.creator,
@@ -96844,10 +100380,40 @@ var ClairveilBrowserClient = class {
       reservation: body.reservation,
       reservationBatch: body.reservationBatch,
       reservation_batch: body.reservation_batch,
-      chainNowUnix
+      chainNowUnix,
+      executionBuilder
     });
+    if (walletType !== "evm") return finalized;
+    const transaction = finalized.execution?.transaction;
+    const txBytesHash = String(
+      finalized.execution?.txBytesHash ?? finalized.execution?.tx_bytes_hash ?? ""
+    ).trim();
+    if (!transaction || !txBytesHash) {
+      throw new Error("EVM batch finalization did not produce a transaction and binding hash");
+    }
+    return {
+      ...finalized,
+      transaction,
+      txBytesHash,
+      ...finalized.execution?.authorization ? { authorization: finalized.execution.authorization } : {},
+      ...finalized.execution?.authorizationTypedData ? { authorizationTypedData: finalized.execution.authorizationTypedData } : {}
+    };
   }
   async prepareWithdraw(body) {
+    const expiresAtUnix = browserAliasedInputValue(
+      body,
+      "expiresAtUnix",
+      "expires_at_unix",
+      "expiresAtUnix",
+      canonicalBrowserAliasScalar
+    );
+    const chainNowUnix = browserAliasedInputValue(
+      body,
+      "chainNowUnix",
+      "chain_now_unix",
+      "chainNowUnix",
+      canonicalBrowserAliasScalar
+    );
     const walletType = this.walletTypeFromBody(body);
     if (walletType === "evm") await this.assertEvmPreparationNetwork(body);
     const material = this.privacyMaterial(body, walletType);
@@ -96856,126 +100422,84 @@ var ClairveilBrowserClient = class {
     const evmRecipient = isEvmAddress(rawRecipient) ? normalizeEvmAddress(rawRecipient, "withdraw recipient") : "";
     const recipient = evmRecipient ? evmAddressToBech32(evmRecipient, this.accountPrefix) : rawRecipient;
     const reservationManager2 = body.reservationManager ?? body.reservation_manager ?? null;
-    if (walletType !== "evm") {
-      const gasLimit = resolveCosmosGasLimit(body.gasLimit, body.gas_limit, 5e6);
-      const feeAmount = resolveCosmosFeeAmount(body.feeAmount, body.fee_amount);
-      const prepared = await this.cosmos.prepareWithdraw({
-        proverAdapter: body.proverAdapter ?? body.prover_adapter ?? this.proverAdapter(),
-        material,
-        signal: body.signal,
-        amount,
-        recipient,
-        scan: typedWalletScanOptionsFromBody(body),
-        expiresAtUnix: body.expiresAtUnix ?? body.expires_at_unix,
-        chainNowUnix: body.chainNowUnix ?? body.chain_now_unix,
-        gasLimit,
-        feeAmount,
-        reservationManager: reservationManager2
-      });
-      if (prepared.status !== "ready") throw plannerError(prepared);
-      return {
-        ...reservationReconciliationFields(prepared),
-        signDoc: prepared.signDoc,
+    const suppliedProverAdapter = body.proverAdapter ?? body.prover_adapter;
+    const transactionOptions = browserAliasedInputValue(
+      body,
+      "transactionOptions",
+      "transaction_options",
+      "transactionOptions",
+      canonicalBrowserAliasReference
+    );
+    const gasLimit = resolveCosmosGasLimit(body.gasLimit, body.gas_limit, 5e6);
+    const feeAmount = resolveCosmosFeeAmount(body.feeAmount, body.fee_amount);
+    const prepared = await this.cosmos.prepareWithdraw({
+      proverAdapter: suppliedProverAdapter ?? deferredProverAdapter(
+        () => this.proverAdapter(),
+        "proveWithdraw"
+      ),
+      material,
+      signal: body.signal,
+      amount,
+      recipient,
+      assetDenom: this.denom,
+      scan: typedWalletScanOptionsFromBody(body),
+      expiresAtUnix,
+      chainNowUnix,
+      gasLimit,
+      feeAmount,
+      reservationManager: reservationManager2,
+      ...walletType === "evm" ? {
+        executionBuilder: this.evmDirectExecutionBuilder("withdraw", {
+          evmRecipient,
+          expiresAtUnix,
+          chainNowUnix,
+          transactionOptions
+        })
+      } : {}
+    });
+    if (prepared.status !== "ready") throw plannerError(prepared);
+    const message = prepared.execution?.message || prepared.message;
+    const common = {
+      ...reservationReconciliationFields(prepared),
+      payload: prepared.payload,
+      proof: prepared.proof,
+      message,
+      reservation: prepared.reservation || null,
+      prepared: {
+        shieldedAddress: prepared.privacyAccount.shielded_address,
+        amount: prepared.payload.amount,
+        recipient: prepared.payload.recipient,
+        ...walletType === "evm" ? { evmRecipient } : {},
+        selectedNoteNullifier: prepared.selectedNote?.nullifier || prepared.payload.nullifier_hex,
+        expiresAtUnix: prepared.payload.expires_at_unix,
         payload: prepared.payload,
         proof: prepared.proof,
-        message: prepared.message,
-        reservation: prepared.reservation || null,
-        prepared: {
-          shieldedAddress: prepared.privacyAccount.shielded_address,
-          amount: prepared.payload.amount,
-          recipient: prepared.payload.recipient,
-          selectedNoteNullifier: prepared.selectedNote?.nullifier || prepared.payload.nullifier_hex,
-          expiresAtUnix: prepared.payload.expires_at_unix,
-          payload: prepared.payload,
-          proof: prepared.proof,
-          message: prepared.message,
-          reservation: prepared.reservation || null
-        },
-        plan: prepared.plan
-      };
-    }
-    const scanOptions = typedWalletScanOptionsFromBody(body);
-    const scan = await this.cosmos.scanNotes({
-      rootSeed: material.rootSeed,
-      ...scanOptions,
-      limit: scanOptions.limit ?? 200,
-      maxPages: scanOptions.maxPages ?? defaultPrepareScanMaxPages2,
-      includeFoundNotes: true
-    });
-    const availableFoundNotes = await reservationAvailableNotes(reservationManager2, scan.foundNotes);
-    const plan = planWithdrawNotes({ notes: availableFoundNotes, amount, denom: this.denom });
-    if (!plan.canBuildTx) throw plannerError({ status: plan.status, plan, scan });
-    assertPlanCanBuildTx(plan);
-    let reservationBatch = null;
-    try {
-      reservationBatch = await preparePlanReservation(reservationManager2, {
-        plan,
-        kind: "withdraw",
-        metadata: {
-          amount,
-          recipient
-        }
-      });
-      const heartbeatResult = await withReservationHeartbeat(reservationManager2, reservationBatch, async ({ assertHeartbeatHealthy, heartbeatNow }) => {
-        const built2 = await this.cosmos.buildWithdrawMessage({
-          proverAdapter: body.proverAdapter ?? body.prover_adapter ?? this.proverAdapter(),
-          signal: body.signal,
-          creator: material.address,
-          notes: [plan.selectedNote],
-          amount,
-          assetDenom: this.denom,
-          recipient,
-          rootSeed: material.rootSeed,
-          chainId: this.chainId,
-          expiresAtUnix: body.expiresAtUnix ?? body.expires_at_unix,
-          chainNowUnix: body.chainNowUnix ?? body.chain_now_unix
-        });
-        assertHeartbeatHealthy();
-        const message2 = evmRecipient ? { ...built2.message, evmRecipient } : built2.message;
-        const evmBuilt = await this.evm.buildWithdrawTransaction({
-          message: message2,
-          payload: built2.payload,
-          proof: built2.proof
-        });
-        let transaction2 = {
-          chainId: this.evmChainId,
-          gas: this.evmGasLimit,
-          ...evmBuilt.transaction
-        };
-        if (reservationBatch) transaction2 = markEvmTransactionReservationRequired(transaction2);
-        const txBytesHash = reservationBatch ? evmTransactionBindingHash(transaction2) : "";
-        await heartbeatNow();
-        await markReservationProofReady(reservationManager2, reservationBatch, withdrawProofReadyMetadata2(built2, { txBytesHash }));
-        return { built: built2, transaction: transaction2, message: message2 };
-      });
-      const { built, transaction, message } = heartbeatResult;
-      return {
-        ...reservationReconciliationFields(heartbeatResult),
-        transaction,
-        payload: built.payload,
-        proof: built.proof,
         message,
-        reservation: reservationBatchSummary(reservationBatch),
-        prepared: {
-          shieldedAddress: material.shieldedAddress,
-          amount: built.payload.amount,
-          recipient: built.payload.recipient,
-          evmRecipient,
-          selectedNoteNullifier: built.selectedNote?.nullifier || built.payload.nullifier_hex,
-          expiresAtUnix: built.payload.expires_at_unix,
-          payload: built.payload,
-          proof: built.proof,
-          message,
-          reservation: reservationBatchSummary(reservationBatch)
-        },
-        plan
-      };
-    } catch (error) {
-      await rollbackPlanReservationPreservingError(reservationManager2, reservationBatch, error);
-      throw error;
+        reservation: prepared.reservation || null
+      },
+      plan: prepared.plan
+    };
+    if (walletType !== "evm") {
+      return { ...common, signDoc: prepared.signDoc };
     }
+    const transaction = prepared.execution?.transaction;
+    const txBytesHash = String(
+      prepared.execution?.txBytesHash ?? prepared.execution?.tx_bytes_hash ?? ""
+    ).trim();
+    if (!transaction || !txBytesHash) {
+      throw new Error("EVM withdraw preparation did not produce a transaction and binding hash");
+    }
+    return { ...common, transaction, txBytesHash };
   }
   async prepareRelayWithdraw(body) {
+    const expiresAtUnix = browserAliasedInputValue(
+      body,
+      "expiresAtUnix",
+      "expires_at_unix",
+      "expiresAtUnix",
+      canonicalBrowserAliasScalar
+    );
+    const chainNowUnix = relayChainNowUnixFromBody(body);
     const walletType = this.walletTypeFromBody(body);
     if (walletType === "evm") await this.assertEvmPreparationNetwork(body);
     const material = this.privacyMaterial(body, walletType);
@@ -96984,47 +100508,50 @@ var ClairveilBrowserClient = class {
     const evmRecipient = isEvmAddress(rawRecipient) ? normalizeEvmAddress(rawRecipient, "withdraw recipient") : "";
     const recipient = evmRecipient ? evmAddressToBech32(evmRecipient, this.accountPrefix) : rawRecipient;
     const reservationManager2 = body.reservationManager ?? body.reservation_manager ?? null;
+    const suppliedProverAdapter = body.proverAdapter ?? body.prover_adapter;
+    const transactionOptions = browserAliasedInputValue(
+      body,
+      "transactionOptions",
+      "transaction_options",
+      "transactionOptions",
+      canonicalBrowserAliasReference
+    );
     const prepared = await this.cosmos.prepareRelayWithdraw({
-      proverAdapter: body.proverAdapter ?? body.prover_adapter ?? this.proverAdapter(),
+      proverAdapter: suppliedProverAdapter ?? deferredProverAdapter(
+        () => this.proverAdapter(),
+        "proveWithdraw"
+      ),
       material,
       signal: body.signal,
       amount,
       recipient,
       scan: typedWalletScanOptionsFromBody(body),
-      expiresAtUnix: body.expiresAtUnix ?? body.expires_at_unix,
-      chainNowUnix: relayChainNowUnixFromBody(body),
-      reservationManager: reservationManager2
+      expiresAtUnix,
+      chainNowUnix,
+      reservationManager: reservationManager2,
+      ...walletType === "evm" ? {
+        executionBuilder: this.evmDirectExecutionBuilder("withdraw", {
+          evmRecipient,
+          chainNowUnix,
+          transactionOptions
+        })
+      } : {}
     });
     if (prepared.status !== "ready") throw plannerError(prepared);
     if (walletType === "evm") {
-      let built;
-      try {
-        built = await this.evm.buildWithdrawTransaction({
-          payload: prepared.payload,
-          proof: prepared.proof,
-          proverPayload: prepared.proverPayload,
-          selectedNote: prepared.selectedNote,
-          evmRecipient: evmRecipient || void 0,
-          chainNowUnix: relayChainNowUnixFromBody(body),
-          transactionOptions: body.transactionOptions ?? body.transaction_options
-        });
-      } catch (error) {
-        await replanProofReadyReservationPreservingError(
-          reservationManager2,
-          prepared.reservation,
-          error,
-          "evm_relay_transaction_build_failed_before_handoff"
-        );
-        throw error;
+      const transaction = prepared.execution?.transaction;
+      const txBytesHash = String(
+        prepared.execution?.txBytesHash ?? prepared.execution?.tx_bytes_hash ?? ""
+      ).trim();
+      if (!transaction || !txBytesHash) {
+        throw new Error("EVM relay withdraw preparation did not produce a transaction and binding hash");
       }
-      let transaction = { chainId: this.evmChainId, gas: this.evmGasLimit, ...built.transaction };
-      if (prepared.reservation) {
-        transaction = markEvmTransactionReservationRequired(transaction);
-      }
+      const message = prepared.execution?.message;
       return {
         ...reservationReconciliationFields(prepared),
         payload: prepared.payload,
         transaction,
+        txBytesHash,
         reservation: prepared.reservation || null,
         prepared: {
           shieldedAddress: prepared.privacyAccount.shielded_address,
@@ -97035,7 +100562,7 @@ var ClairveilBrowserClient = class {
           expiresAtUnix: prepared.payload.expires_at_unix,
           payload: prepared.payload,
           proof: prepared.proof,
-          message: built.message,
+          message,
           reservation: prepared.reservation || null
         },
         plan: prepared.plan
@@ -97094,58 +100621,14 @@ var ClairveilBrowserClient = class {
   async scanWalletNotes(body) {
     const material = this.privacyMaterial(body);
     const {
-      after,
-      afterHeight,
-      after_height,
-      afterSequence,
-      after_sequence,
-      page,
-      limit,
-      maxPages,
-      max_pages,
-      eventTypes,
-      event_types,
-      outputLimit,
-      output_limit,
-      eventLimit,
-      event_limit,
-      maxEncodedBytes,
-      max_encoded_bytes,
-      validationStateSnapshot,
-      validation_state_snapshot,
-      scanSource,
-      scan_source,
-      strictPrivacyScan,
-      strict_privacy_scan,
       noteStore: noteStore2,
       note_store,
       includeFoundNotes = false
     } = body || {};
+    const scanOptions = typedWalletScanOptionsFromBody(body);
     return this.cosmos.scanWalletNotes({
       material,
-      after,
-      afterHeight,
-      after_height,
-      afterSequence,
-      after_sequence,
-      page,
-      limit,
-      maxPages,
-      max_pages,
-      eventTypes,
-      event_types,
-      outputLimit,
-      output_limit,
-      eventLimit,
-      event_limit,
-      maxEncodedBytes,
-      max_encoded_bytes,
-      validationStateSnapshot,
-      validation_state_snapshot,
-      scanSource,
-      scan_source,
-      strictPrivacyScan,
-      strict_privacy_scan,
+      ...scanOptions,
       noteStore: noteStore2 ?? note_store,
       includeFoundNotes
     });
@@ -97170,6 +100653,9 @@ var ClairveilBrowserClient = class {
     addIfPresent(request, "scanSource", body.scanSource ?? body.scan_source);
     addIfPresent(request, "assetDenom", body.assetDenom);
     addIfPresent(request, "asset_denom", body.asset_denom);
+    addIfPresent(request, "disclosureScalar", body.disclosureScalar ?? body.disclosure_scalar);
+    addIfPresent(request, "disclosureScalarHex", body.disclosureScalarHex ?? body.disclosure_scalar_hex);
+    addIfPresent(request, "disclosurePubKeyHex", body.disclosurePubKeyHex ?? body.disclosure_pubkey_hex);
     if (body.address && (body.pubKeyHex || body.pub_key_hex) && (body.signatureBase64 || body.signature_base64)) {
       const walletType = this.walletTypeFromBody(body);
       Object.assign(request, walletType === "evm" ? { ...body, skipSignerPubKeyCheck: true } : body);
@@ -97499,7 +100985,7 @@ function healthBootstrapFallbackAllowed(error) {
 function healthBootstrapEndpointAbsent(error) {
   return error?.code === "DAPP_BOOTSTRAP_HTTP_ERROR" && [404, 405].includes(error.status) || error?.code === "DAPP_BOOTSTRAP_CONTENT_TYPE" && error.contentType === "text/html";
 }
-function assertBatchTransferDisabled(config) {
+function assertStaticBatchTransferDisabled(config) {
   if (config?.serverFeatures?.batchTransfer !== false) {
     throw new DappBootstrapError("Clairveil v0.3.1 WebApp requires serverFeatures.batchTransfer=false", {
       code: "DAPP_BOOTSTRAP_UNSUPPORTED_FEATURE"
@@ -97513,7 +100999,6 @@ async function loadServerDappHealth(options = {}) {
       code: "DAPP_BOOTSTRAP_INVALID_SCHEMA"
     });
   }
-  assertBatchTransferDisabled(data.config);
   return data;
 }
 async function loadStaticDappConfig(options = {}) {
@@ -97528,7 +101013,7 @@ async function loadStaticDappConfig(options = {}) {
       code: "DAPP_BOOTSTRAP_INVALID_SCHEMA"
     });
   }
-  assertBatchTransferDisabled(config);
+  assertStaticBatchTransferDisabled(config);
   return config;
 }
 
@@ -98457,6 +101942,295 @@ var EncryptedLocalStorageOperationStore = class _EncryptedLocalStorageOperationS
   }
 };
 
+// public/encrypted-recovery-artifact-store.js
+var encryptedRecoveryArtifactStoreVersion = "clairveil-encrypted-recovery-artifact-store-v1";
+var textEncoder = new TextEncoder();
+var textDecoder = new TextDecoder();
+var encryptionInfo3 = textEncoder.encode("clairveil/encrypted-recovery-artifact-store/v1");
+function bytesToBase644(bytes4) {
+  let binary = "";
+  for (let offset = 0; offset < bytes4.length; offset += 32768) {
+    binary += String.fromCharCode(...bytes4.slice(offset, offset + 32768));
+  }
+  return btoa(binary);
+}
+function base64ToBytes4(value, label) {
+  const text3 = String(value || "").trim();
+  if (!text3) throw new Error(`${label} is required`);
+  let bytes4;
+  try {
+    bytes4 = Uint8Array.from(atob(text3), (character) => character.charCodeAt(0));
+  } catch {
+    throw new Error(`${label} must be canonical base64`);
+  }
+  if (bytesToBase644(bytes4) !== text3) {
+    throw new Error(`${label} must be canonical base64`);
+  }
+  return bytes4;
+}
+function plainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function assertExactKeys(value, expected, label) {
+  if (!plainObject(value)) throw new Error(`${label} must be an object`);
+  const actual = Object.keys(value).sort();
+  const wanted = [...expected].sort();
+  if (actual.length !== wanted.length || actual.some((key, index) => key !== wanted[index])) {
+    throw new Error(`${label} contains unsupported fields`);
+  }
+}
+function boundedIdentityText(value, label, maxLength) {
+  const text3 = String(value || "").trim();
+  if (!text3 || text3.length > maxLength) {
+    throw new Error(`${label} must be between 1 and ${maxLength} characters`);
+  }
+  return text3;
+}
+function normalizedIdentity({ profileId, owner, key } = {}) {
+  return Object.freeze({
+    profileId: boundedIdentityText(profileId, "recovery artifact profileId", 256),
+    owner: boundedIdentityText(owner, "recovery artifact owner", 256).toLowerCase(),
+    key: boundedIdentityText(key, "recovery artifact storage key", 1024)
+  });
+}
+function identityBytes(identity) {
+  return textEncoder.encode(JSON.stringify([
+    encryptedRecoveryArtifactStoreVersion,
+    identity.profileId,
+    identity.owner,
+    identity.key
+  ]));
+}
+function identityMatches(actual, expected) {
+  return actual?.profileId === expected.profileId && actual?.owner === expected.owner && actual?.key === expected.key;
+}
+function corruptionError2(cause) {
+  const error = new Error(
+    "Encrypted recovery artifact cannot be decrypted or does not match the active profile, owner, and storage key.",
+    { cause }
+  );
+  error.code = "RECOVERY_ARTIFACT_STATE_CORRUPT";
+  return error;
+}
+function normalizeArtifact(artifact) {
+  if (!plainObject(artifact)) {
+    throw new Error("recovery artifact must be an object");
+  }
+  const encoded = JSON.stringify(artifact, (_key, value) => typeof value === "bigint" ? value.toString() : value);
+  if (!encoded) throw new Error("recovery artifact must be JSON serializable");
+  const normalized = JSON.parse(encoded);
+  if (!plainObject(normalized)) {
+    throw new Error("recovery artifact must serialize to an object");
+  }
+  return normalized;
+}
+function assertBeforeCommit(beforeCommit) {
+  if (beforeCommit !== void 0 && typeof beforeCommit !== "function") {
+    throw new Error("encrypted recovery artifact beforeCommit must be a function");
+  }
+}
+function assertUpdater(updater) {
+  if (typeof updater !== "function") {
+    throw new Error("encrypted recovery artifact updater must be a function");
+  }
+}
+function assertPredicate(predicate) {
+  if (typeof predicate !== "function") {
+    throw new Error("encrypted recovery artifact predicate must be a function");
+  }
+}
+async function deriveEncryptionKey3({ cryptoImpl, keyMaterial, identity }) {
+  const bytes4 = keyMaterial instanceof Uint8Array ? keyMaterial : new Uint8Array(keyMaterial || []);
+  if (!bytes4.length) {
+    throw new Error("recovery artifact encryption key material is required");
+  }
+  const material = await cryptoImpl.subtle.importKey(
+    "raw",
+    bytes4,
+    "HKDF",
+    false,
+    ["deriveKey"]
+  );
+  return cryptoImpl.subtle.deriveKey({
+    name: "HKDF",
+    hash: "SHA-256",
+    salt: identityBytes(identity),
+    info: encryptionInfo3
+  }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+}
+async function decryptArtifact({ cryptoImpl, encryptionKey, identity, raw }) {
+  try {
+    const envelope = JSON.parse(raw);
+    assertExactKeys(
+      envelope,
+      ["version", "identity", "iv", "ciphertext"],
+      "encrypted recovery artifact envelope"
+    );
+    if (envelope.version !== encryptedRecoveryArtifactStoreVersion) {
+      throw new Error("unsupported encrypted recovery artifact version");
+    }
+    assertExactKeys(
+      envelope.identity,
+      ["profileId", "owner", "key"],
+      "encrypted recovery artifact identity"
+    );
+    if (!identityMatches(envelope.identity, identity)) {
+      throw new Error("encrypted recovery artifact identity does not match");
+    }
+    const iv = base64ToBytes4(envelope.iv, "recovery artifact iv");
+    if (iv.length !== 12) throw new Error("recovery artifact iv must contain 12 bytes");
+    const ciphertext = base64ToBytes4(
+      envelope.ciphertext,
+      "recovery artifact ciphertext"
+    );
+    const plaintext = await cryptoImpl.subtle.decrypt({
+      name: "AES-GCM",
+      iv,
+      additionalData: identityBytes(identity)
+    }, encryptionKey, ciphertext);
+    const payload = JSON.parse(textDecoder.decode(plaintext));
+    assertExactKeys(
+      payload,
+      ["version", "identity", "artifact"],
+      "encrypted recovery artifact payload"
+    );
+    if (payload.version !== encryptedRecoveryArtifactStoreVersion) {
+      throw new Error("encrypted recovery artifact payload version does not match");
+    }
+    assertExactKeys(
+      payload.identity,
+      ["profileId", "owner", "key"],
+      "encrypted recovery artifact payload identity"
+    );
+    if (!identityMatches(payload.identity, identity)) {
+      throw new Error("encrypted recovery artifact payload identity does not match");
+    }
+    if (!plainObject(payload.artifact)) {
+      throw new Error("encrypted recovery artifact payload must contain an object");
+    }
+    return payload.artifact;
+  } catch (error) {
+    throw corruptionError2(error);
+  }
+}
+var EncryptedRecoveryArtifactStore = class _EncryptedRecoveryArtifactStore {
+  static async open({
+    storage = globalThis.localStorage,
+    cryptoImpl = globalThis.crypto,
+    locks = globalThis.navigator?.locks,
+    key,
+    profileId,
+    owner,
+    keyMaterial
+  } = {}) {
+    if (!storage || typeof storage.getItem !== "function" || typeof storage.setItem !== "function" || typeof storage.removeItem !== "function") {
+      throw new Error("localStorage-compatible storage is required");
+    }
+    if (!cryptoImpl?.subtle || typeof cryptoImpl.getRandomValues !== "function") {
+      throw new Error("Web Crypto is required for encrypted recovery artifacts");
+    }
+    if (typeof locks?.request !== "function") {
+      throw new Error("Web Locks API is required for encrypted recovery artifacts");
+    }
+    const identity = normalizedIdentity({ profileId, owner, key });
+    const encryptionKey = await deriveEncryptionKey3({
+      cryptoImpl,
+      keyMaterial,
+      identity
+    });
+    return new _EncryptedRecoveryArtifactStore({
+      storage,
+      cryptoImpl,
+      locks,
+      identity,
+      encryptionKey
+    });
+  }
+  constructor({ storage, cryptoImpl, locks, identity, encryptionKey }) {
+    this.storage = storage;
+    this.cryptoImpl = cryptoImpl;
+    this.locks = locks;
+    this.identity = identity;
+    this.encryptionKey = encryptionKey;
+    this.lockName = `clairveil:v0.3.1:encrypted-recovery-artifact:${JSON.stringify(identity)}`;
+  }
+  withLock(callback) {
+    return this.locks.request(this.lockName, { mode: "exclusive" }, callback);
+  }
+  async #loadUnlocked() {
+    const raw = this.storage.getItem(this.identity.key);
+    if (!raw) return null;
+    return decryptArtifact({
+      cryptoImpl: this.cryptoImpl,
+      encryptionKey: this.encryptionKey,
+      identity: this.identity,
+      raw
+    });
+  }
+  async #saveUnlocked(artifact, beforeCommit) {
+    const normalized = normalizeArtifact(artifact);
+    const iv = this.cryptoImpl.getRandomValues(new Uint8Array(12));
+    const payload = textEncoder.encode(JSON.stringify({
+      version: encryptedRecoveryArtifactStoreVersion,
+      identity: this.identity,
+      artifact: normalized
+    }));
+    const ciphertext = await this.cryptoImpl.subtle.encrypt({
+      name: "AES-GCM",
+      iv,
+      additionalData: identityBytes(this.identity)
+    }, this.encryptionKey, payload);
+    beforeCommit?.();
+    this.storage.setItem(this.identity.key, JSON.stringify({
+      version: encryptedRecoveryArtifactStoreVersion,
+      identity: this.identity,
+      iv: bytesToBase644(iv),
+      ciphertext: bytesToBase644(new Uint8Array(ciphertext))
+    }));
+    return normalized;
+  }
+  async load() {
+    return this.withLock(() => this.#loadUnlocked());
+  }
+  async save(artifact, { beforeCommit } = {}) {
+    assertBeforeCommit(beforeCommit);
+    const normalized = normalizeArtifact(artifact);
+    return this.withLock(() => this.#saveUnlocked(normalized, beforeCommit));
+  }
+  async clear({ beforeCommit } = {}) {
+    assertBeforeCommit(beforeCommit);
+    await this.withLock(() => {
+      beforeCommit?.();
+      this.storage.removeItem(this.identity.key);
+    });
+  }
+  async update(updater, { beforeCommit } = {}) {
+    assertUpdater(updater);
+    assertBeforeCommit(beforeCommit);
+    return this.withLock(async () => {
+      const current = await this.#loadUnlocked();
+      const candidate = await updater(current == null ? null : normalizeArtifact(current));
+      if (candidate === void 0) {
+        return { changed: false, previous: current, artifact: current };
+      }
+      if (candidate === null) {
+        if (current === null) {
+          return { changed: false, previous: null, artifact: null };
+        }
+        beforeCommit?.();
+        this.storage.removeItem(this.identity.key);
+        return { changed: true, previous: current, artifact: null };
+      }
+      const artifact = await this.#saveUnlocked(candidate, beforeCommit);
+      return { changed: true, previous: current, artifact };
+    });
+  }
+  async clearIf(predicate, { beforeCommit } = {}) {
+    assertPredicate(predicate);
+    return this.update(async (current) => current !== null && await predicate(current) ? null : void 0, { beforeCommit });
+  }
+};
+
 // public/deposit-funding.js
 function canonicalAmount2(value, label) {
   const text3 = String(value ?? "").trim();
@@ -98779,6 +102553,65 @@ function recoveredDepositNoteForTxHash(notes = [], txHash) {
   }
   return (Array.isArray(notes) ? notes : []).find((note) => canonicalTxHash(note?.tx_hash || note?.txHash) === expected) || null;
 }
+var depositNoteCommitmentKeys = Object.freeze([
+  "commitment",
+  "commitmentHex",
+  "commitment_hex",
+  "noteCommitmentHex",
+  "note_commitment_hex"
+]);
+function presentValues(value, keys) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  return keys.filter((key) => Object.prototype.hasOwnProperty.call(value, key)).map((key) => value[key]).filter((candidate) => candidate != null && String(candidate).trim() !== "");
+}
+function noteMatchesDepositCommitment(note, expected) {
+  const commitments = presentValues(note, depositNoteCommitmentKeys);
+  const canonical = commitments.map(canonicalTxHash);
+  if (!canonical.includes(expected)) return false;
+  if (canonical.some((candidate) => candidate !== expected)) {
+    throw codedError(
+      "Deposit recovery note has conflicting commitment identities",
+      "AMBIGUOUS_DEPOSIT_COMMITMENT"
+    );
+  }
+  return true;
+}
+function assertExactDepositScanTxHash(note) {
+  const candidates = presentValues(note, ["tx_hash", "txHash"]);
+  const canonical = candidates.map(canonicalTxHash);
+  if (canonical.length === 0 || canonical.some((candidate) => !candidate)) {
+    throw codedError(
+      "Deposit recovery note requires an exact 32-byte scan transaction hash",
+      "INVALID_DEPOSIT_SCAN_TX_HASH"
+    );
+  }
+  if (new Set(canonical).size !== 1) {
+    throw codedError(
+      "Deposit recovery note has conflicting scan transaction identities",
+      "AMBIGUOUS_DEPOSIT_COMMITMENT"
+    );
+  }
+  return canonical[0];
+}
+function recoveredDepositNoteForCommitment(notes = [], expectedCommitment) {
+  const expected = canonicalTxHash(expectedCommitment);
+  if (!expected) {
+    throw codedError(
+      "Deposit recovery requires an exact 32-byte expected commitment",
+      "INVALID_DEPOSIT_COMMITMENT"
+    );
+  }
+  const matches = (Array.isArray(notes) ? notes : []).filter((note) => noteMatchesDepositCommitment(note, expected));
+  if (matches.length === 0) return null;
+  if (matches.length !== 1) {
+    throw codedError(
+      "Deposit recovery commitment matched multiple typed scan notes",
+      "AMBIGUOUS_DEPOSIT_COMMITMENT"
+    );
+  }
+  assertExactDepositScanTxHash(matches[0]);
+  return matches[0];
+}
 function normalizedAccount(value) {
   return String(value || "").trim().toLowerCase();
 }
@@ -98863,13 +102696,13 @@ function normalizeBrowserProfileEndpoints(profile, {
 }
 
 // public/browser-storage-scope.js
-var blockHashPattern = /^[0-9a-f]{64}$/i;
+var blockHashPattern2 = /^[0-9a-f]{64}$/i;
 function localChainStorageEpoch({ localTestMode = false, status } = {}) {
   if (localTestMode !== true) return "";
   const value = String(
     status?.sync_info?.earliest_block_hash || status?.syncInfo?.earliestBlockHash || ""
   ).trim();
-  return blockHashPattern.test(value) ? value.toLowerCase() : "";
+  return blockHashPattern2.test(value) ? value.toLowerCase() : "";
 }
 function walletStorageScope({
   chainId,
@@ -98883,7 +102716,7 @@ function walletStorageScope({
   const normalizedOwner = String(owner || "").trim().toLowerCase();
   const normalizedEpoch = String(storageEpoch || "").trim().toLowerCase();
   if (!normalizedChainID || !normalizedProfileID || !normalizedOwner) return null;
-  if (localTestMode === true && !blockHashPattern.test(normalizedEpoch)) return null;
+  if (localTestMode === true && !blockHashPattern2.test(normalizedEpoch)) return null;
   const epochParts = localTestMode === true ? [normalizedEpoch] : [];
   return Object.freeze({
     storageEpoch: epochParts[0] || "",
@@ -99016,6 +102849,1132 @@ function disclosureViewModel(report) {
     digestHex: report?.digest_hex || payload.disclosure_digest_hex || "",
     summary,
     payload
+  };
+}
+
+// public/evm-reconciliation.js
+function normalizedHex(value) {
+  return String(value || "").trim().replace(/^0x/i, "").toLowerCase();
+}
+function canonicalBytesHex(value, label, { exactLength = 32 } = {}) {
+  let hex2;
+  if (typeof value === "string") {
+    hex2 = normalizedHex(value);
+  } else {
+    const bytes4 = value instanceof ArrayBuffer ? new Uint8Array(value) : ArrayBuffer.isView(value) ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength) : null;
+    if (!bytes4) throw new Error(`${label} must be bytes or hex`);
+    hex2 = [...bytes4].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+  if (!new RegExp(`^[0-9a-f]{${exactLength * 2}}$`).test(hex2)) {
+    throw new Error(`${label} must be exactly ${exactLength} bytes`);
+  }
+  return hex2;
+}
+function canonicalPositiveHeight(value, label) {
+  const text3 = typeof value === "number" && Number.isSafeInteger(value) ? String(value) : String(value ?? "").trim();
+  if (!/^[1-9][0-9]*$/.test(text3)) throw new Error(`${label} must be a positive integer`);
+  return BigInt(text3).toString();
+}
+function verifiedTypedScanEffect(typedEffect, evmTxHash) {
+  const summary = typedEffect?.summary;
+  const outputs = typedEffect?.outputs;
+  const link = typedEffect?.scanTransactionLink;
+  if (!summary || !Array.isArray(outputs) || !link) {
+    throw new Error("EVM operation requires complete typed scan transaction evidence");
+  }
+  const scanTxHash = canonicalBytesHex(summary.tx_hash ?? summary.txHash, "typed scan transaction hash");
+  if (canonicalBytesHex(link.scanTxHash, "linked scan transaction hash") !== scanTxHash || canonicalBytesHex(link.evmTxHash, "linked Ethereum transaction hash") !== canonicalBytesHex(evmTxHash, "EVM receipt transaction hash") || link.cosmosTxSucceeded !== true || link.ethereumTxHashEventMatched !== true || canonicalPositiveHeight(link.cometHeight, "linked Comet height") !== canonicalPositiveHeight(summary.height, "typed scan height")) {
+    throw new Error("Typed scan transaction is not linked to the verified EVM receipt");
+  }
+  const outputCount2 = Number(summary.output_count ?? summary.outputCount);
+  if (!Number.isSafeInteger(outputCount2) || outputCount2 < 0 || outputs.length !== outputCount2) {
+    throw new Error("Typed scan output set is incomplete");
+  }
+  return { summary, outputs, link, scanTxHash };
+}
+function evmReceiptExplicitlySucceeded(receipt) {
+  const status = receipt?.status;
+  if (status === 1 || status === 1n || status === true) return true;
+  const text3 = String(status ?? "").trim().toLowerCase();
+  if (text3 === "1") return true;
+  if (!/^0x[0-9a-f]+$/.test(text3)) return false;
+  try {
+    return BigInt(text3) === 1n;
+  } catch {
+    return false;
+  }
+}
+function verifiedEvmTransactionResult(result, label = "EVM transaction") {
+  if (!result?.txHash || !result?.txBytesHash || !evmReceiptExplicitlySucceeded(result.receipt) || result.evmTransactionVerified !== true || result.evmPrivacyReceiptVerified !== true || result.evmFinalityVerified !== true || result.transactionVerification?.verified !== true || result.privacyReceipt?.verified !== true || result.finality?.verified !== true) {
+    throw new Error(`${label} did not include complete transaction, receipt, privacy-event, and finality evidence`);
+  }
+  return {
+    txHash: result.txHash,
+    txBytesHash: result.txBytesHash,
+    receipt: result.receipt,
+    transactionVerification: result.transactionVerification,
+    privacyReceipt: result.privacyReceipt,
+    finality: result.finality,
+    evmTransactionVerified: true,
+    evmPrivacyReceiptVerified: true,
+    evmFinalityVerified: true
+  };
+}
+function directEvmOperationSuccessEvidence(records = [], result, typedEffect) {
+  if (!records.length) throw new Error("EVM operation reservations are required");
+  const txResult = verifiedEvmTransactionResult(result, "EVM privacy operation");
+  const scanEffect = verifiedTypedScanEffect(typedEffect, txResult.txHash);
+  const submittedHashes = [...new Set(records.map((record) => normalizedHex(record?.submitted_tx_hash)).filter(Boolean))];
+  if (submittedHashes.length !== 1 || submittedHashes[0] !== normalizedHex(txResult.txHash)) {
+    throw new Error("EVM receipt transaction hash does not match the reserved operation");
+  }
+  const artifactHashes = [...new Set(records.map((record) => String(record?.tx_bytes_hash || "").trim()).filter(Boolean))];
+  if (artifactHashes.length !== 1 || artifactHashes[0] !== String(txResult.txBytesHash).trim()) {
+    throw new Error("EVM receipt transaction binding does not match the reserved operation");
+  }
+  const first = records[0];
+  const withdraw = records.every((record) => ["withdraw", "relay_withdraw"].includes(String(record?.kind || "")));
+  const expectedEventType = withdraw ? "withdraw" : "shielded_transfer";
+  if (String(scanEffect.summary.event_type ?? scanEffect.summary.eventType) !== expectedEventType) {
+    throw new Error("Typed scan event type does not match the reserved EVM operation");
+  }
+  let outputCommitment = "";
+  let auditDisclosureDigest = "";
+  if (withdraw) {
+    if (scanEffect.outputs.length !== 0) {
+      throw new Error("Typed EVM withdraw unexpectedly created a shielded output");
+    }
+  } else {
+    const expectedCommitments = [...new Set(records.map((record) => normalizedHex(record?.expected_output_commitment)).filter(Boolean))];
+    if (expectedCommitments.length !== 1 || !/^[0-9a-f]{64}$/.test(expectedCommitments[0])) {
+      throw new Error("EVM transfer reservation has an invalid expected output commitment");
+    }
+    const matches = scanEffect.outputs.filter((output) => canonicalBytesHex(output?.commitment, "typed scan output commitment") === expectedCommitments[0]);
+    if (matches.length !== 1) {
+      throw new Error("Typed scan output set does not contain exactly one reserved transfer output");
+    }
+    outputCommitment = canonicalBytesHex(matches[0].commitment, "typed scan output commitment");
+    auditDisclosureDigest = canonicalBytesHex(
+      matches[0].full_disclosure_digest ?? matches[0].fullDisclosureDigest,
+      "typed scan audit disclosure digest"
+    );
+  }
+  return {
+    txResult,
+    outputCommitment,
+    auditDisclosureDigest,
+    recipientHash: first.expected_recipient_hash,
+    amount: first.expected_amount,
+    amountHash: first.expected_amount_hash,
+    denom: first.expected_denom,
+    batchItemIndex: first.batch_item_index,
+    batchItemIndexKnown: first.batch_item_index_known,
+    scanTransactionLink: scanEffect.link,
+    typedScanEvidence: {
+      scanTxHash: scanEffect.scanTxHash,
+      height: canonicalPositiveHeight(scanEffect.summary.height, "typed scan height"),
+      eventType: expectedEventType,
+      outputCount: scanEffect.outputs.length,
+      nullifiers: (scanEffect.summary.nullifiers || []).map((value, index) => canonicalBytesHex(value, `typed scan nullifier ${index}`))
+    }
+  };
+}
+
+// public/cosmos-evm-transaction-correlation.js
+var HASH_PATTERN = /^(?:0x)?[0-9a-f]{64}$/i;
+function canonicalTransactionHash(value, label) {
+  if (typeof value !== "string") {
+    throw new Error(`${label} must be a 32-byte transaction hash`);
+  }
+  const hash = value.trim();
+  if (!HASH_PATTERN.test(hash)) {
+    throw new Error(`${label} must be a 32-byte transaction hash`);
+  }
+  return `0x${hash.replace(/^0x/i, "").toLowerCase()}`;
+}
+function canonicalCometHeight(value) {
+  let text3 = "";
+  if (typeof value === "string") text3 = value.trim();
+  if (typeof value === "number" && Number.isSafeInteger(value)) text3 = String(value);
+  if (!/^[1-9][0-9]*$/.test(text3)) {
+    throw new Error("Comet transaction height must be a positive integer");
+  }
+  return BigInt(text3).toString();
+}
+function cometResult(value) {
+  const wrapped = value && typeof value === "object" && Object.prototype.hasOwnProperty.call(value, "result");
+  const candidate = wrapped ? value.result : value;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    throw new Error("Comet transaction result is required");
+  }
+  return candidate;
+}
+function indexedEthereumTransactionHash(result, expectedEvmTxHash) {
+  const events = result.tx_result?.events;
+  if (!Array.isArray(events)) {
+    throw new Error("Comet transaction events are required");
+  }
+  const attributes = [];
+  for (const event of events) {
+    if (!event || typeof event !== "object" || Array.isArray(event)) continue;
+    if (event.attributes != null && !Array.isArray(event.attributes)) {
+      throw new Error("Comet transaction event attributes must be an array");
+    }
+    for (const attribute of event.attributes || []) {
+      if (attribute?.key !== "ethereumTxHash") continue;
+      attributes.push({
+        hash: canonicalTransactionHash(attribute.value, "indexed ethereumTxHash"),
+        indexed: attribute.index === true
+      });
+    }
+  }
+  if (attributes.length === 0 || !attributes.some((attribute) => attribute.indexed)) {
+    throw new Error("Comet transaction is missing an indexed ethereumTxHash attribute");
+  }
+  const hashes = [...new Set(attributes.map((attribute) => attribute.hash))];
+  if (hashes.length !== 1) {
+    throw new Error("Comet transaction contains conflicting ethereumTxHash attributes");
+  }
+  if (hashes[0] !== expectedEvmTxHash) {
+    throw new Error("indexed ethereumTxHash does not match the expected Ethereum transaction");
+  }
+  return hashes[0];
+}
+function verifyEvmScanTransactionLink({
+  scanTxHash,
+  evmTxHash,
+  cometTransaction
+} = {}) {
+  const canonicalScanTxHash = canonicalTransactionHash(
+    scanTxHash,
+    "typed scan transaction hash"
+  );
+  const canonicalEvmTxHash = canonicalTransactionHash(
+    evmTxHash,
+    "expected Ethereum transaction hash"
+  );
+  const result = cometResult(cometTransaction);
+  const resultHash = canonicalTransactionHash(result.hash, "Comet transaction hash");
+  if (resultHash !== canonicalScanTxHash) {
+    throw new Error("Comet transaction hash does not match the typed scan transaction");
+  }
+  if (result.tx_result?.code !== 0) {
+    throw new Error("Comet transaction did not explicitly succeed");
+  }
+  indexedEthereumTransactionHash(result, canonicalEvmTxHash);
+  return Object.freeze({
+    scanTxHash: canonicalScanTxHash,
+    evmTxHash: canonicalEvmTxHash,
+    cometHeight: canonicalCometHeight(result.height),
+    cosmosTxSucceeded: true,
+    ethereumTxHashEventMatched: true
+  });
+}
+
+// public/evm-typed-scan-evidence.js
+var HASH_BYTES = 32;
+var MAX_INT64 = (1n << 63n) - 1n;
+var MAX_UINT32 = (1n << 32n) - 1n;
+function canonicalUint(value, label, { maximum } = {}) {
+  const text3 = typeof value === "bigint" ? value.toString() : typeof value === "number" && Number.isSafeInteger(value) ? String(value) : typeof value === "string" ? value.trim() : "";
+  if (!/^(?:0|[1-9][0-9]*)$/.test(text3)) {
+    throw new Error(`${label} must be a non-negative integer`);
+  }
+  const parsed = BigInt(text3);
+  if (maximum != null && parsed > maximum) {
+    throw new Error(`${label} exceeds its supported range`);
+  }
+  return parsed;
+}
+function wireUint(value) {
+  return value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : value.toString();
+}
+function byteView(value, label) {
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (ArrayBuffer.isView(value)) {
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  }
+  if (Array.isArray(value) && value.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255)) {
+    return Uint8Array.from(value);
+  }
+  throw new Error(`${label} must be bytes or hexadecimal`);
+}
+function canonicalHex(value, label, { bytes: bytes4 = HASH_BYTES } = {}) {
+  if (typeof value === "string") {
+    const text3 = value.trim().replace(/^0x/i, "");
+    if (!/^[0-9a-f]+$/i.test(text3) || text3.length !== bytes4 * 2) {
+      throw new Error(`${label} must be exactly ${bytes4} bytes`);
+    }
+    return text3.toLowerCase();
+  }
+  const view = byteView(value, label);
+  if (view.byteLength !== bytes4) {
+    throw new Error(`${label} must be exactly ${bytes4} bytes`);
+  }
+  return [...view].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+function normalizedAlias(record, camel, snake, label, normalize3) {
+  if (!record || typeof record !== "object" || Array.isArray(record)) {
+    throw new Error(`${label} record is required`);
+  }
+  const hasCamel = Object.prototype.hasOwnProperty.call(record, camel);
+  const hasSnake = Object.prototype.hasOwnProperty.call(record, snake);
+  if (!hasCamel && !hasSnake) throw new Error(`${label} is required`);
+  const camelValue = hasCamel ? normalize3(record[camel]) : null;
+  const snakeValue = hasSnake ? normalize3(record[snake]) : null;
+  if (hasCamel && hasSnake && camelValue !== snakeValue) {
+    throw new Error(`${label} aliases do not match`);
+  }
+  return hasCamel ? camelValue : snakeValue;
+}
+function eventIdentity(record, label, { allowZeroSequence = false } = {}) {
+  const height = canonicalUint(record?.height, `${label} height`, { maximum: MAX_INT64 });
+  const globalSequence = normalizedAlias(
+    record,
+    "globalSequence",
+    "global_sequence",
+    `${label} global sequence`,
+    (value) => canonicalUint(value, `${label} global sequence`).toString()
+  );
+  if (!allowZeroSequence && BigInt(globalSequence) === 0n) {
+    throw new Error(`${label} global sequence must be positive`);
+  }
+  return { height, globalSequence: BigInt(globalSequence) };
+}
+function eventKey(identity) {
+  return `${identity.height}:${identity.globalSequence}`;
+}
+function compareEvent(left, right) {
+  if (left.height !== right.height) return left.height < right.height ? -1 : 1;
+  if (left.globalSequence !== right.globalSequence) {
+    return left.globalSequence < right.globalSequence ? -1 : 1;
+  }
+  return 0;
+}
+function compareCursor(left, right) {
+  const eventComparison = compareEvent(left, right);
+  if (eventComparison !== 0) return eventComparison;
+  if (left.outputIndex === right.outputIndex) return 0;
+  return left.outputIndex < right.outputIndex ? -1 : 1;
+}
+function pageCursor(value, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} is required`);
+  }
+  const identity = eventIdentity(value, label, { allowZeroSequence: true });
+  const outputIndex2 = normalizedAlias(
+    value,
+    "outputIndex",
+    "output_index",
+    `${label} output index`,
+    (candidate) => canonicalUint(candidate, `${label} output index`, {
+      maximum: MAX_UINT32
+    }).toString()
+  );
+  return { ...identity, outputIndex: BigInt(outputIndex2) };
+}
+function eventType(record, label) {
+  return normalizedAlias(
+    record,
+    "eventType",
+    "event_type",
+    `${label} event type`,
+    (value) => {
+      if (typeof value !== "string" || !value.trim()) {
+        throw new Error(`${label} event type must be a non-empty string`);
+      }
+      return value.trim();
+    }
+  );
+}
+function transactionHash2(record, label) {
+  return normalizedAlias(
+    record,
+    "txHash",
+    "tx_hash",
+    `${label} transaction hash`,
+    (value) => canonicalHex(value, `${label} transaction hash`)
+  );
+}
+function outputCount(record, label, maximum) {
+  const count = normalizedAlias(
+    record,
+    "outputCount",
+    "output_count",
+    `${label} output count`,
+    (value) => canonicalUint(value, `${label} output count`, {
+      maximum: BigInt(maximum)
+    }).toString()
+  );
+  return Number(count);
+}
+function outputIndex(record, label) {
+  const index = normalizedAlias(
+    record,
+    "outputIndex",
+    "output_index",
+    `${label} output index`,
+    (value) => canonicalUint(value, `${label} output index`, {
+      maximum: MAX_UINT32
+    }).toString()
+  );
+  return Number(index);
+}
+function stableFingerprint(value, seen = /* @__PURE__ */ new Set()) {
+  if (value === void 0) return "undefined";
+  if (value === null || typeof value === "boolean" || typeof value === "string") {
+    return JSON.stringify(value);
+  }
+  if (typeof value === "bigint") return `bigint:${value}`;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("typed scan evidence contains a non-finite number");
+    return `number:${value}`;
+  }
+  if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+    const bytes4 = byteView(value, "typed scan bytes");
+    const hex2 = [...bytes4].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    return `bytes:${hex2}`;
+  }
+  if (typeof value !== "object") {
+    throw new Error("typed scan evidence contains an unsupported value");
+  }
+  if (seen.has(value)) throw new Error("typed scan evidence contains a cycle");
+  seen.add(value);
+  const result = Array.isArray(value) ? `[${value.map((item) => stableFingerprint(item, seen)).join(",")}]` : `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableFingerprint(value[key], seen)}`).join(",")}}`;
+  seen.delete(value);
+  return result;
+}
+function normalizedSummary(record, maximumOutputs) {
+  const identity = eventIdentity(record, "typed scan summary");
+  const nullifiers = Array.isArray(record.nullifiers) ? record.nullifiers.map((value, index) => canonicalHex(
+    value,
+    `typed scan summary nullifier ${index}`
+  )) : (() => {
+    throw new Error("typed scan summary nullifiers must be an array");
+  })();
+  if (new Set(nullifiers).size !== nullifiers.length) {
+    throw new Error("typed scan summary nullifiers must be distinct");
+  }
+  return {
+    record,
+    identity,
+    key: eventKey(identity),
+    eventType: eventType(record, "typed scan summary"),
+    txHash: transactionHash2(record, "typed scan summary"),
+    outputCount: outputCount(record, "typed scan summary", maximumOutputs),
+    nullifiers,
+    fingerprint: stableFingerprint(record)
+  };
+}
+function normalizedOutput(record) {
+  const identity = eventIdentity(record, "typed scan output");
+  const index = outputIndex(record, "typed scan output");
+  return {
+    record,
+    identity,
+    key: eventKey(identity),
+    index,
+    eventType: eventType(record, "typed scan output"),
+    txHash: transactionHash2(record, "typed scan output"),
+    commitment: canonicalHex(record?.commitment, "typed scan output commitment"),
+    fingerprint: stableFingerprint(record)
+  };
+}
+function booleanAlias(record, camel, snake, label) {
+  return normalizedAlias(record, camel, snake, label, (value) => {
+    if (typeof value !== "boolean") throw new Error(`${label} must be boolean`);
+    return value;
+  });
+}
+function positiveLimit(value, label) {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new Error(`${label} must be a positive safe integer`);
+  }
+  return value;
+}
+function expectedHexSet(values, label) {
+  if (!Array.isArray(values)) throw new Error(`${label} must be an array`);
+  const normalized = values.map((value, index) => canonicalHex(value, `${label} ${index}`));
+  if (new Set(normalized).size !== normalized.length) {
+    throw new Error(`${label} must not contain duplicates`);
+  }
+  return new Set(normalized);
+}
+function expectedTypeSet(values) {
+  if (!Array.isArray(values) || !values.length) {
+    throw new Error("expected event types must be a non-empty array");
+  }
+  const normalized = values.map((value) => {
+    if (typeof value !== "string" || !value.trim()) {
+      throw new Error("expected event types must contain non-empty strings");
+    }
+    return value.trim();
+  });
+  if (new Set(normalized).size !== normalized.length) {
+    throw new Error("expected event types must not contain duplicates");
+  }
+  return new Set(normalized);
+}
+function requestCursor(cursor) {
+  return {
+    height: wireUint(cursor.height),
+    globalSequence: wireUint(cursor.globalSequence),
+    outputIndex: wireUint(cursor.outputIndex)
+  };
+}
+function validatePageBounds(page, { outputLimit, eventLimit, maxEncodedBytes }) {
+  if (page.outputs.length > outputLimit) {
+    throw new Error("typed scan page exceeds the requested output limit");
+  }
+  if (page.summaries.length > eventLimit) {
+    throw new Error("typed scan page exceeds the requested event limit");
+  }
+  const scanned = page.scannedEventCount ?? page.scanned_event_count;
+  if (scanned != null && canonicalUint(scanned, "typed scan scanned event count") > BigInt(eventLimit)) {
+    throw new Error("typed scan page exceeds the requested event limit");
+  }
+  const encoded = page.encodedBytes ?? page.encoded_bytes;
+  if (encoded != null && canonicalUint(encoded, "typed scan encoded byte count") > BigInt(maxEncodedBytes)) {
+    throw new Error("typed scan page exceeds the requested encoded byte limit");
+  }
+}
+function summaryMatchesExpected(summary, outputs, expected) {
+  if (!expected.eventTypes.has(summary.eventType)) return false;
+  const actualNullifiers = new Set(summary.nullifiers);
+  if ([...expected.nullifiers].some((value) => !actualNullifiers.has(value))) return false;
+  const actualCommitments = new Set(outputs.map((output) => output.commitment));
+  return [...expected.commitments].every((value) => actualCommitments.has(value));
+}
+async function findVerifiedEvmTypedScanEffect({
+  fetchScanPage,
+  verifyTransactionLink,
+  evmTxHash,
+  expectedEventTypes,
+  expectedNullifiers = [],
+  expectedCommitments = [],
+  afterHeight = 0,
+  throughHeight,
+  maxPages = 1e3,
+  outputLimit = 128,
+  eventLimit = 64,
+  maxEncodedBytes = 1048576,
+  maxOutputsPerEffect = 32,
+  validationState
+} = {}) {
+  if (typeof fetchScanPage !== "function") throw new Error("fetchScanPage is required");
+  if (typeof verifyTransactionLink !== "function") {
+    throw new Error("verifyTransactionLink is required");
+  }
+  const canonicalEvmTxHash = canonicalHex(evmTxHash, "expected Ethereum transaction hash");
+  const expected = {
+    eventTypes: expectedTypeSet(expectedEventTypes),
+    nullifiers: expectedHexSet(expectedNullifiers, "expected nullifiers"),
+    commitments: expectedHexSet(expectedCommitments, "expected commitments")
+  };
+  if (!expected.nullifiers.size && !expected.commitments.size) {
+    throw new Error("at least one expected nullifier or commitment is required");
+  }
+  const limits = {
+    maxPages: positiveLimit(maxPages, "maximum scan page count"),
+    outputLimit: positiveLimit(outputLimit, "scan output limit"),
+    eventLimit: positiveLimit(eventLimit, "scan event limit"),
+    maxEncodedBytes: positiveLimit(maxEncodedBytes, "scan encoded byte limit"),
+    maxOutputsPerEffect: positiveLimit(maxOutputsPerEffect, "maximum outputs per effect")
+  };
+  const startHeight = canonicalUint(afterHeight, "scan start height", { maximum: MAX_INT64 });
+  const endHeight = throughHeight == null ? null : canonicalUint(throughHeight, "scan end height", { maximum: MAX_INT64 });
+  if (endHeight != null && endHeight < startHeight) {
+    throw new Error("scan end height must not precede the scan start height");
+  }
+  let cursor = {
+    height: startHeight,
+    globalSequence: 0n,
+    outputIndex: 0n
+  };
+  const summaries = /* @__PURE__ */ new Map();
+  const outputs = /* @__PURE__ */ new Map();
+  let exhausted = false;
+  for (let pageIndex = 0; pageIndex < limits.maxPages; pageIndex += 1) {
+    const request = {
+      after: requestCursor(cursor),
+      eventTypes: [],
+      outputLimit: limits.outputLimit,
+      eventLimit: limits.eventLimit,
+      maxEncodedBytes: limits.maxEncodedBytes
+    };
+    if (validationState !== void 0) request.validationState = validationState;
+    const page = await fetchScanPage(request);
+    if (!page || typeof page !== "object" || Array.isArray(page)) {
+      throw new Error("typed scan page is required");
+    }
+    if (!Array.isArray(page.summaries) || !Array.isArray(page.outputs)) {
+      throw new Error("typed scan page summaries and outputs must be arrays");
+    }
+    validatePageBounds(page, limits);
+    const hasMore = booleanAlias(page, "hasMore", "has_more", "typed scan has_more");
+    const rawNextCursor = normalizedAlias(
+      page,
+      "nextCursor",
+      "next_cursor",
+      "typed scan next cursor",
+      (value) => stableFingerprint(value)
+    );
+    const nextCursorRecord = Object.prototype.hasOwnProperty.call(page, "nextCursor") ? page.nextCursor : page.next_cursor;
+    if (!rawNextCursor) throw new Error("typed scan next cursor is required");
+    const nextCursor = pageCursor(nextCursorRecord, "typed scan next cursor");
+    const progress = compareCursor(nextCursor, cursor);
+    if (progress < 0 || hasMore && progress === 0) {
+      throw new Error(hasMore ? "typed scan has_more page did not advance its cursor" : "typed scan next cursor regressed");
+    }
+    let previousSummary = null;
+    for (const record of page.summaries) {
+      const summary = normalizedSummary(record, limits.maxOutputsPerEffect);
+      if (previousSummary && compareEvent(previousSummary.identity, summary.identity) >= 0) {
+        throw new Error("typed scan page summaries are not strictly ordered");
+      }
+      previousSummary = summary;
+      if (compareEvent(summary.identity, cursor) < 0 || compareEvent(summary.identity, nextCursor) > 0) {
+        throw new Error("typed scan summary is outside the page cursor range");
+      }
+      if (endHeight == null || summary.identity.height <= endHeight) {
+        const existing = summaries.get(summary.key);
+        if (existing && existing.fingerprint !== summary.fingerprint) {
+          throw new Error("typed scan returned conflicting summary evidence");
+        }
+        if (!existing) summaries.set(summary.key, summary);
+      }
+    }
+    let previousOutput = null;
+    for (const record of page.outputs) {
+      const output = normalizedOutput(record);
+      const outputCursor = { ...output.identity, outputIndex: BigInt(output.index) };
+      const storageKey = `${output.key}:${output.index}`;
+      const insideRequestedRange = endHeight == null || output.identity.height <= endHeight;
+      if (insideRequestedRange) {
+        const existing = outputs.get(storageKey);
+        if (existing && existing.fingerprint !== output.fingerprint) {
+          throw new Error("typed scan returned conflicting output evidence");
+        }
+        if (existing) throw new Error("typed scan page repeated output evidence");
+      }
+      if (previousOutput && compareCursor(previousOutput, outputCursor) >= 0) {
+        throw new Error("typed scan page outputs are not strictly ordered");
+      }
+      previousOutput = outputCursor;
+      if (compareCursor(outputCursor, cursor) <= 0 || compareCursor(outputCursor, nextCursor) > 0) {
+        throw new Error("typed scan output is outside the page cursor range");
+      }
+      if (insideRequestedRange) {
+        outputs.set(storageKey, output);
+      }
+    }
+    if (progress === 0 && (page.summaries.length || page.outputs.length)) {
+      throw new Error("typed scan page returned evidence without advancing its cursor");
+    }
+    cursor = nextCursor;
+    if (!hasMore || endHeight != null && cursor.height > endHeight) {
+      exhausted = true;
+      break;
+    }
+  }
+  if (!exhausted) throw new Error("typed scan exceeded the maximum page count");
+  const outputsByEvent = /* @__PURE__ */ new Map();
+  for (const output of outputs.values()) {
+    const summary = summaries.get(output.key);
+    if (!summary) throw new Error("typed scan output has no matching summary");
+    if (output.eventType !== summary.eventType || output.txHash !== summary.txHash) {
+      throw new Error("typed scan output does not match its summary identity");
+    }
+    if (output.index >= summary.outputCount) {
+      throw new Error("typed scan output index exceeds its summary output count");
+    }
+    const eventOutputs = outputsByEvent.get(output.key) || [];
+    eventOutputs.push(output);
+    outputsByEvent.set(output.key, eventOutputs);
+  }
+  const matches = [];
+  for (const summary of summaries.values()) {
+    const eventOutputs = (outputsByEvent.get(summary.key) || []).sort((left, right) => left.index - right.index);
+    if (eventOutputs.length !== summary.outputCount || eventOutputs.some((output, index) => output.index !== index)) {
+      throw new Error("typed scan did not return the complete output set for a summary");
+    }
+    const commitments = eventOutputs.map((output) => output.commitment);
+    if (new Set(commitments).size !== commitments.length) {
+      throw new Error("typed scan output commitments must be distinct");
+    }
+    if (summaryMatchesExpected(summary, eventOutputs, expected)) {
+      matches.push({ summary, outputs: eventOutputs });
+    }
+  }
+  if (!matches.length) return null;
+  if (matches.length !== 1) {
+    throw new Error("typed scan matched multiple effects; reconciliation is ambiguous");
+  }
+  const matched = matches[0];
+  const scanTransactionLink = await verifyTransactionLink(
+    `0x${matched.summary.txHash}`,
+    `0x${canonicalEvmTxHash}`
+  );
+  if (!scanTransactionLink || typeof scanTransactionLink !== "object" || Array.isArray(scanTransactionLink)) {
+    throw new Error("transaction link verification did not return evidence");
+  }
+  return Object.freeze({
+    summary: matched.summary.record,
+    outputs: Object.freeze(matched.outputs.map((output) => output.record)),
+    scanTransactionLink
+  });
+}
+
+// public/evm-broadcast-watch.js
+var staleWatcherCode = "STALE_EVM_BROADCAST_WATCHER";
+function staleWatcherError() {
+  const error = new Error("EVM broadcast watcher was replaced by a newer action");
+  error.code = staleWatcherCode;
+  return error;
+}
+function isStaleWatcherError(error) {
+  return error?.code === staleWatcherCode;
+}
+function createEvmBroadcastWatcher({ reportError = () => {
+} } = {}) {
+  const active = /* @__PURE__ */ new Map();
+  let generation = 0;
+  function invalidateAll() {
+    generation += 1;
+    active.clear();
+  }
+  function watch(broadcast, {
+    key,
+    isCurrent,
+    onIncluded,
+    onUnknown,
+    onFailed
+  } = {}) {
+    if (!broadcast?.waitPromise) return null;
+    const watchKey = String(key || "").trim();
+    if (!watchKey) throw new Error("EVM broadcast watcher key is required");
+    if (isCurrent != null && typeof isCurrent !== "function") {
+      throw new TypeError("EVM broadcast watcher isCurrent must be a function");
+    }
+    const token = Object.freeze({ key: watchKey, generation: ++generation });
+    active.set(watchKey, token);
+    const tokenIsActive = () => active.get(watchKey) === token;
+    const assertActive = () => {
+      if (!tokenIsActive()) throw staleWatcherError();
+    };
+    const finish = () => {
+      if (tokenIsActive()) active.delete(watchKey);
+    };
+    const evidenceIsCurrent = async (evidence) => {
+      if (!tokenIsActive()) return false;
+      if (!isCurrent) return true;
+      try {
+        return Boolean(await isCurrent(evidence));
+      } catch (error) {
+        if (!isStaleWatcherError(error)) reportError(error);
+        return false;
+      }
+    };
+    const handleFailure = async (error, evidence) => {
+      if (isStaleWatcherError(error) || !await evidenceIsCurrent(evidence)) {
+        finish();
+        return;
+      }
+      try {
+        await onFailed?.(error, assertActive);
+      } catch (callbackError) {
+        if (!isStaleWatcherError(callbackError)) reportError(callbackError);
+      } finally {
+        finish();
+      }
+    };
+    void Promise.resolve(broadcast.waitPromise).then(async (result) => {
+      if (!await evidenceIsCurrent(result)) {
+        finish();
+        return;
+      }
+      try {
+        const callback = result?.unknown ? onUnknown : onIncluded;
+        await callback?.(result, assertActive);
+        finish();
+      } catch (error) {
+        await handleFailure(error, result);
+      }
+    }, (error) => handleFailure(error, error)).catch((error) => {
+      if (!isStaleWatcherError(error)) reportError(error);
+      finish();
+    });
+    return token;
+  }
+  return Object.freeze({ invalidateAll, watch });
+}
+
+// public/batch-transfer-state.js
+function positiveInteger2(value, label) {
+  const normalized = typeof value === "bigint" ? value : BigInt(String(value));
+  if (normalized < 0n) {
+    throw new Error(`${label} must not be negative`);
+  }
+  return normalized;
+}
+function boundedCount(value, label, maximum) {
+  const normalized = Number(value);
+  if (!Number.isSafeInteger(normalized) || normalized < 1 || normalized > maximum) {
+    throw new Error(`${label} must be between 1 and ${maximum}`);
+  }
+  return normalized;
+}
+function canonicalHex2(value) {
+  return String(value || "").trim().toLowerCase().replace(/^0x/, "");
+}
+function base64Hex(value, label) {
+  const encoded = String(value || "").trim();
+  if (!encoded) return "";
+  let decoded;
+  try {
+    decoded = atob(encoded);
+  } catch {
+    throw new Error(`${label} is not valid base64`);
+  }
+  return Array.from(
+    decoded,
+    (character) => character.charCodeAt(0).toString(16).padStart(2, "0")
+  ).join("");
+}
+function preparedBatchPaymentOutput(prepared, itemId) {
+  const operationEvidence = prepared?.operationEvidence ?? prepared?.operation_evidence;
+  const expectedOutputs = operationEvidence?.expected_outputs ?? operationEvidence?.expectedOutputs;
+  if (!Array.isArray(expectedOutputs)) {
+    throw new Error("Prepared batch operation evidence is unavailable");
+  }
+  const matches = expectedOutputs.filter(
+    (output2) => String(output2?.item_id ?? output2?.itemId ?? "") === String(itemId)
+  );
+  if (matches.length !== 1 || String(matches[0]?.role || "") !== "payment") {
+    throw new Error(
+      `Prepared batch payment ${itemId || "item"} output evidence is invalid`
+    );
+  }
+  const outputIndex2 = Number(
+    matches[0]?.batch_item_index ?? matches[0]?.batchItemIndex
+  );
+  if (!Number.isSafeInteger(outputIndex2) || outputIndex2 < 0) {
+    throw new Error(
+      `Prepared batch payment ${itemId || "item"} output index is invalid`
+    );
+  }
+  const payload = prepared?.payload;
+  const output = payload?.outputs?.[outputIndex2];
+  const messageOutput = payload?.message_outputs?.[outputIndex2];
+  if (!output || !messageOutput) {
+    throw new Error(
+      `Prepared batch payment ${itemId || "item"} output payload is unavailable`
+    );
+  }
+  const privateTarget = base64Hex(
+    output.disclosure_target_pubkey ?? output.disclosureTargetPubKey,
+    `Prepared batch payment ${itemId || "item"} disclosure target`
+  );
+  const messageTarget = base64Hex(
+    messageOutput.user_disclosure_target_pubkey ?? messageOutput.userDisclosureTargetPubkey,
+    `Prepared batch payment ${itemId || "item"} message disclosure target`
+  );
+  if (privateTarget !== messageTarget) {
+    throw new Error(
+      `Prepared batch payment ${itemId || "item"} disclosure targets conflict`
+    );
+  }
+  return { evidence: matches[0], output, messageOutput, targetHex: privateTarget };
+}
+function preparedBatchTransferFacts({
+  requestedPayments = [],
+  prepared = {},
+  denom,
+  maxInputs = 16,
+  maxOutputs = 32
+} = {}) {
+  const normalizedDenom = String(denom || "");
+  if (!normalizedDenom) throw new Error("Prepared batch denom is unavailable");
+  if (!Array.isArray(requestedPayments) || !requestedPayments.length || !Array.isArray(prepared.payments) || prepared.payments.length !== requestedPayments.length) {
+    throw new Error("Prepared batch payments do not match the requested rows");
+  }
+  const requestedByID = /* @__PURE__ */ new Map();
+  let total = 0n;
+  for (const payment of requestedPayments) {
+    const itemId = String(payment?.itemId || "");
+    const amount = positiveInteger2(
+      payment?.amountValue,
+      `payment ${itemId || "item"} amount`
+    );
+    if (!itemId || amount <= 0n || requestedByID.has(itemId)) {
+      throw new Error("Requested batch payment identity is invalid");
+    }
+    requestedByID.set(itemId, { ...payment, amount });
+    total += amount;
+  }
+  for (const payment of prepared.payments) {
+    const itemId = String(payment?.itemId ?? payment?.item_id ?? "");
+    const requested = requestedByID.get(itemId);
+    const preparedOutput = requested ? preparedBatchPaymentOutput(prepared, itemId) : null;
+    const requestedDisclosureTarget = canonicalHex2(
+      requested?.userDisclosureTargetPubKeyHex ?? requested?.user_disclosure_target_pubkey_hex
+    );
+    const preparedDisclosureTarget = canonicalHex2(
+      payment?.userDisclosureTargetPubKeyHex ?? payment?.user_disclosure_target_pubkey_hex
+    );
+    if (!requested || String(payment?.amount || "") !== `${requested.amount}${normalizedDenom}` || String(payment?.recipient || "") !== String(requested.recipient || "") || String(payment?.privacyPolicy || payment?.privacy_policy || "") !== String(requested.userPrivacyPolicy || "") || String(payment?.disclosureMode || payment?.disclosure_mode || "") !== String(requested.userDisclosureMode || "") || preparedDisclosureTarget && preparedDisclosureTarget !== requestedDisclosureTarget || preparedOutput.targetHex !== requestedDisclosureTarget) {
+      throw new Error(
+        `Prepared batch payment ${itemId || "item"} does not match its requested effect`
+      );
+    }
+    requestedByID.delete(itemId);
+  }
+  if (requestedByID.size) {
+    throw new Error("Prepared batch omitted a requested payment");
+  }
+  const inputCount = boundedCount(
+    prepared.inputCount,
+    "Prepared batch input count",
+    maxInputs
+  );
+  const outputCount2 = boundedCount(
+    prepared.outputCount,
+    "Prepared batch output count",
+    maxOutputs
+  );
+  const selectedInputTotal = positiveInteger2(
+    prepared.selectedInputTotal,
+    "Prepared batch selected input total"
+  );
+  if (selectedInputTotal < total) {
+    throw new Error("Prepared batch inputs do not cover the requested total");
+  }
+  const change = selectedInputTotal - total;
+  const expectedOutputCount = requestedPayments.length + (change > 0n ? 1 : 0);
+  if (outputCount2 !== expectedOutputCount) {
+    throw new Error(
+      "Prepared compact batch output count does not match payments and change"
+    );
+  }
+  const disclosureCounts = {
+    private: 0,
+    public: 0,
+    recipientEncrypted: 0
+  };
+  for (const payment of requestedPayments) {
+    if (payment.userDisclosureMode === "public") {
+      disclosureCounts.public += 1;
+    } else if (payment.userDisclosureMode === "recipient-encrypted") {
+      disclosureCounts.recipientEncrypted += 1;
+    } else {
+      disclosureCounts.private += 1;
+    }
+  }
+  return {
+    total,
+    change,
+    inputCount,
+    outputCount: outputCount2,
+    paymentCount: requestedPayments.length,
+    disclosureCounts
+  };
+}
+
+// public/batch-reconciliation.js
+function canonicalHex3(value) {
+  if (typeof value === "string") {
+    return value.trim().replace(/^0x/i, "").toLowerCase();
+  }
+  const bytes4 = value instanceof ArrayBuffer ? new Uint8Array(value) : new Uint8Array(value || []);
+  return [...bytes4].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+function expectedDisclosureMode(value) {
+  const modes = [
+    "USER_DISCLOSURE_MODE_NONE",
+    "USER_DISCLOSURE_MODE_PUBLIC",
+    "USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED"
+  ];
+  const index = Number(value);
+  if (!Number.isSafeInteger(index) || !modes[index]) {
+    throw new Error("Prepared batch operation evidence has an invalid disclosure mode");
+  }
+  return modes[index];
+}
+function assertOutputMatchesExpected(output, expected) {
+  const index = Number(expected?.batch_item_index ?? expected?.batchItemIndex);
+  if (!Number.isSafeInteger(index) || index < 0 || Number(output?.output_index) !== index) {
+    throw new Error("Typed batch output index does not match prepared operation evidence");
+  }
+  const comparisons = [
+    ["commitment", canonicalHex3(output.commitment), canonicalHex3(expected.expected_output_commitment)],
+    ["user disclosure digest", canonicalHex3(output.user_disclosure_digest), canonicalHex3(expected.expected_user_disclosure_digest)],
+    ["audit disclosure digest", canonicalHex3(output.full_disclosure_digest), canonicalHex3(expected.expected_audit_disclosure_digest)]
+  ];
+  const mismatch = comparisons.find(([, actual, wanted]) => actual !== wanted);
+  if (mismatch) {
+    throw new Error(`Typed batch output ${index} ${mismatch[0]} does not match prepared operation evidence`);
+  }
+  if (Number(output.user_privacy_policy) !== Number(expected.user_privacy_policy)) {
+    throw new Error(`Typed batch output ${index} privacy policy does not match prepared operation evidence`);
+  }
+  if (String(output.user_disclosure_mode) !== expectedDisclosureMode(expected.user_disclosure_mode)) {
+    throw new Error(`Typed batch output ${index} disclosure mode does not match prepared operation evidence`);
+  }
+}
+function assertTypedBatchEffect({
+  summary,
+  outputs = [],
+  operationEvidence,
+  outputCount: outputCount2,
+  txHash,
+  maxOutputs = 32
+} = {}) {
+  const expectedOutputs = operationEvidence?.expected_outputs ?? operationEvidence?.expectedOutputs;
+  const expectedNullifiers = operationEvidence?.input_nullifier_hexes ?? operationEvidence?.inputNullifierHexes;
+  const count = Number(outputCount2);
+  if (!operationEvidence || !Array.isArray(expectedOutputs) || !expectedOutputs.length || !Array.isArray(expectedNullifiers) || !expectedNullifiers.length || !Number.isSafeInteger(count) || count < 1 || count > maxOutputs) {
+    throw new Error("Encrypted batch recovery artifact has incomplete operation evidence");
+  }
+  if (canonicalHex3(summary?.tx_hash) !== canonicalHex3(txHash) || Number(summary?.output_count) !== count) {
+    throw new Error("Typed batch summary does not match the submitted transaction and prepared output count");
+  }
+  const actualNullifiers = (summary?.nullifiers || []).map(canonicalHex3).sort();
+  const preparedNullifiers = expectedNullifiers.map(canonicalHex3).sort();
+  if (actualNullifiers.length !== preparedNullifiers.length || actualNullifiers.some((value, index) => value !== preparedNullifiers[index])) {
+    throw new Error("Typed batch summary nullifiers do not match prepared operation evidence");
+  }
+  if (outputs.length !== count) {
+    throw new Error("Typed batch scan did not return every prepared output");
+  }
+  const outputsByIndex = new Map(outputs.map((output) => [Number(output.output_index), output]));
+  if (outputsByIndex.size !== count || [...outputsByIndex.keys()].some((index) => index < 0 || index >= count)) {
+    throw new Error("Typed batch output indexes do not form the prepared output set");
+  }
+  for (const expected of expectedOutputs) {
+    if (String(expected?.role || "") !== "payment") {
+      throw new Error("Prepared batch operation evidence contains a non-payment expected output");
+    }
+    const index = Number(expected.batch_item_index ?? expected.batchItemIndex);
+    const output = outputsByIndex.get(index);
+    if (!output) throw new Error(`Typed batch scan is missing prepared payment output ${index}`);
+    assertOutputMatchesExpected(output, expected);
+  }
+  return true;
+}
+function advanceEvmBatchReceiptArtifact({
+  artifact,
+  receiptEvidence,
+  txHash,
+  txBytesHash
+} = {}) {
+  if (!artifact || !receiptEvidence) {
+    throw new Error("EVM batch receipt artifact and evidence are required");
+  }
+  if (canonicalHex3(receiptEvidence.txResult?.txHash) !== canonicalHex3(txHash)) {
+    throw new Error("EVM batch receipt does not match its transaction identity");
+  }
+  const existingReceipt = artifact.receiptEvidence;
+  if (existingReceipt && (canonicalHex3(existingReceipt.txResult?.txHash) !== canonicalHex3(txHash) || canonicalHex3(existingReceipt.operationEvidenceHash) !== canonicalHex3(receiptEvidence.operationEvidenceHash))) {
+    throw new Error("Encrypted batch recovery artifact contains different receipt evidence");
+  }
+  const typedEffectVerified = artifact.phase === "typed-effect-verified" || Boolean(existingReceipt?.scanTransactionLink && existingReceipt?.typedScanEvidence);
+  return {
+    ...artifact,
+    phase: typedEffectVerified ? "typed-effect-verified" : "receipt-verified",
+    txHash,
+    txBytesHash: txBytesHash || artifact.txBytesHash,
+    receiptEvidence: typedEffectVerified ? existingReceipt : receiptEvidence
+  };
+}
+
+// public/batch-event-identity.js
+function canonicalNonNegativeInteger(value, label, minimum = 0n) {
+  const text3 = String(value ?? "").trim();
+  if (!/^(?:0|[1-9][0-9]*)$/.test(text3)) {
+    throw new Error(`typed batch event has an invalid ${label}`);
+  }
+  const parsed = BigInt(text3);
+  if (parsed < minimum) {
+    throw new Error(`typed batch event has an invalid ${label}`);
+  }
+  return parsed.toString();
+}
+function typedBatchEventIdentity(record = {}) {
+  return {
+    height: canonicalNonNegativeInteger(record.height, "height"),
+    globalSequence: canonicalNonNegativeInteger(
+      record.global_sequence ?? record.globalSequence ?? record.sequence,
+      "global sequence",
+      1n
+    )
+  };
+}
+function sameTypedBatchEventIdentity(left, right) {
+  return left?.height === right?.height && left?.globalSequence === right?.globalSequence;
+}
+
+// public/evm-batch-authorization.js
+function normalizedUint(value, label, bits) {
+  let parsed;
+  try {
+    parsed = BigInt(value);
+  } catch {
+    throw new Error(`${label} must be a uint${bits}`);
+  }
+  if (parsed < 0n || parsed >= 1n << BigInt(bits)) {
+    throw new Error(`${label} must be a uint${bits}`);
+  }
+  return parsed;
+}
+function normalizedEvmAddress(value, label = "EVM account") {
+  const address = String(value || "").trim().toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(address)) {
+    throw new Error(`${label} must be a 20-byte hex address`);
+  }
+  return address;
+}
+function evmBatchAuthorizationKinds(profile = {}) {
+  if (profile?.transport !== "evm" || !profile.evmAuthorizationProfile?.typedDataDomain?.name) {
+    return [];
+  }
+  const configured = profile.evmAuthorizationProfile.supportedAuthorizationKinds;
+  const values = configured == null ? Array.from({ length: 256 }, (_, kind) => kind) : configured;
+  return [...new Set(values.map((value) => Number(normalizedUint(value, "authorization kind", 8))))];
+}
+function evmBatchAuthorizationAvailable(profile = {}) {
+  return evmBatchAuthorizationKinds(profile).length > 0;
+}
+function randomEvmAuthorizationNonce(cryptoImpl = globalThis.crypto) {
+  if (!cryptoImpl?.getRandomValues) {
+    throw new Error("Secure browser randomness is required for EVM authorization nonce generation");
+  }
+  const words = cryptoImpl.getRandomValues(new Uint32Array(4));
+  return [...words].map((word) => word.toString(16).padStart(8, "0")).join("");
+}
+function selfSubmittedEvmBatchAuthorization({
+  profile,
+  account,
+  authorizationKind,
+  nonce,
+  deadline
+} = {}) {
+  const kinds = evmBatchAuthorizationKinds(profile);
+  if (!kinds.length) {
+    throw new Error("The active EVM profile does not configure an EIP-712 authorization domain");
+  }
+  const kind = Number(normalizedUint(authorizationKind, "authorization kind", 8));
+  if (!kinds.includes(kind)) {
+    throw new Error(`authorization kind ${kind} is not allowed by the active EVM profile`);
+  }
+  const sender = normalizedEvmAddress(account, "connected EVM account");
+  const nonceText = String(nonce || "").trim();
+  const nonceValue = /^0x/i.test(nonceText) ? nonceText : `0x${nonceText}`;
+  return {
+    effectiveSender: sender,
+    executor: sender,
+    nonce: normalizedUint(nonceValue, "authorization nonce", 256).toString(),
+    deadline: normalizedUint(deadline, "authorization deadline", 64).toString(),
+    authorizationKind: kind
   };
 }
 
@@ -99235,7 +104194,7 @@ function requiredText(value, label) {
   if (!text3) throw new Error(`${label} is required`);
   return text3;
 }
-function normalizedHex(value, label) {
+function normalizedHex2(value, label) {
   const text3 = requiredText(value, label).replace(/^0x/i, "").toLowerCase();
   if (!/^[0-9a-f]+$/.test(text3) || text3.length % 2 !== 0) {
     throw new Error(`${label} must be even-length hex`);
@@ -99248,9 +104207,9 @@ function bytesHex(value) {
 function normalizedEvmQuantity2(value, label) {
   const text3 = requiredText(value, label);
   try {
-    const quantity = BigInt(text3);
-    if (quantity < 0n) throw new Error("negative");
-    return quantity;
+    const quantity2 = BigInt(text3);
+    if (quantity2 < 0n) throw new Error("negative");
+    return quantity2;
   } catch {
     throw new Error(`${label} must be a non-negative EVM quantity`);
   }
@@ -99270,8 +104229,8 @@ function assertEvmRelayTransactionMatches({ transaction, handoffTransaction, exp
   }
   assertEqual(transaction.to, handoffTransaction.to, "target", { caseInsensitive: true });
   assertEqual(
-    normalizedHex(transaction.input ?? transaction.data, "included EVM calldata"),
-    normalizedHex(handoffTransaction.data ?? handoffTransaction.input, "prepared EVM calldata"),
+    normalizedHex2(transaction.input ?? transaction.data, "included EVM calldata"),
+    normalizedHex2(handoffTransaction.data ?? handoffTransaction.input, "prepared EVM calldata"),
     "calldata"
   );
   if (normalizedEvmQuantity2(transaction.value ?? "0x0", "included EVM value") !== normalizedEvmQuantity2(handoffTransaction.value ?? "0x0", "prepared EVM value")) {
@@ -99357,9 +104316,9 @@ function cosmosWithdrawMessage(transaction) {
 }
 function assertCosmosRelayTransactionMatches({ transaction, payload }) {
   const message = cosmosWithdrawMessage(transaction);
-  assertEqual(bytesHex(message.proof), normalizedHex(payload?.proof_hex, "withdraw proof"), "proof");
-  assertEqual(bytesHex(message.root), normalizedHex(payload?.root_hex, "withdraw root"), "root");
-  assertEqual(bytesHex(message.nullifier), normalizedHex(payload?.nullifier_hex, "withdraw nullifier"), "nullifier");
+  assertEqual(bytesHex(message.proof), normalizedHex2(payload?.proof_hex, "withdraw proof"), "proof");
+  assertEqual(bytesHex(message.root), normalizedHex2(payload?.root_hex, "withdraw root"), "root");
+  assertEqual(bytesHex(message.nullifier), normalizedHex2(payload?.nullifier_hex, "withdraw nullifier"), "nullifier");
   assertEqual(message.amount, payload?.amount, "amount");
   assertEqual(message.recipient, payload?.recipient, "recipient");
   assertEqual(message.chainId, payload?.chain_id, "chain ID");
@@ -99371,7 +104330,7 @@ function assertCosmosRelayWithdrawTransactionPayloadHash({
   transaction,
   payloadHash
 } = {}) {
-  const expectedPayloadHash = normalizedHex(payloadHash, "reserved relay payload hash");
+  const expectedPayloadHash = normalizedHex2(payloadHash, "reserved relay payload hash");
   if (expectedPayloadHash.length !== 64) {
     throw new Error("reserved relay payload hash must be 32 bytes");
   }
@@ -99570,7 +104529,7 @@ function createValueMovingActionGate() {
 }
 
 // public/withdraw-operation-evidence.js
-function normalizedHex2(value, label, { bytes: bytes4 = 0 } = {}) {
+function normalizedHex3(value, label, { bytes: bytes4 = 0 } = {}) {
   const hex2 = String(value || "").trim().replace(/^0x/i, "").toLowerCase();
   if (!/^[0-9a-f]+$/.test(hex2) || hex2.length % 2 !== 0 || bytes4 && hex2.length !== bytes4 * 2) {
     throw new Error(`${label} must be canonical${bytes4 ? ` ${bytes4}-byte` : ""} hex`);
@@ -99616,21 +104575,21 @@ function cosmosWithdrawOperationEvidence({
   accountPrefix: accountPrefix2
 } = {}) {
   if (event?.event_type !== "withdraw") return null;
-  const expectedTxHash = normalizedHex2(txHash, "withdraw transaction hash");
-  const eventTxHash = normalizedHex2(event?.tx_hash_hex, "withdraw event transaction hash");
+  const expectedTxHash = normalizedHex3(txHash, "withdraw transaction hash");
+  const eventTxHash = normalizedHex3(event?.tx_hash_hex, "withdraw event transaction hash");
   if (eventTxHash !== expectedTxHash) return null;
-  const normalizedExpectedNullifiers = expectedNullifiers.map((nullifier, index) => normalizedHex2(nullifier, `withdraw input nullifier ${index}`, { bytes: 32 }));
+  const normalizedExpectedNullifiers = expectedNullifiers.map((nullifier, index) => normalizedHex3(nullifier, `withdraw input nullifier ${index}`, { bytes: 32 }));
   if (normalizedExpectedNullifiers.length !== 1 || new Set(normalizedExpectedNullifiers).size !== 1) {
     throw new Error("direct MsgWithdraw evidence requires exactly one reserved input nullifier");
   }
-  const eventNullifier = normalizedHex2(
+  const eventNullifier = normalizedHex3(
     eventAttribute5(event, "nullifier"),
     "withdraw event nullifier",
     { bytes: 32 }
   );
   if (eventNullifier !== normalizedExpectedNullifiers[0]) return null;
   const message = cosmosWithdrawMessage(transaction);
-  const messageNullifier = normalizedHex2(bytesHex2(message.nullifier), "included MsgWithdraw nullifier", { bytes: 32 });
+  const messageNullifier = normalizedHex3(bytesHex2(message.nullifier), "included MsgWithdraw nullifier", { bytes: 32 });
   if (messageNullifier !== eventNullifier) return null;
   const eventRecipient = requiredText2(eventAttribute5(event, "recipient"), "withdraw event recipient");
   const messageRecipient = requiredText2(message.recipient, "included MsgWithdraw recipient");
@@ -99731,6 +104690,7 @@ function defaultKeplrState() {
     networkFeeEstimate: "Not estimated",
     networkFeeAmount: "0",
     transferHash: "",
+    batchTransferHash: "",
     withdrawHash: "",
     withdrawHeight: "",
     withdrawNullifierStatus: "Not checked",
@@ -99760,7 +104720,9 @@ function defaultReservationState() {
 function defaultAuditorState() {
   return {
     events: [],
+    batchTransactions: [],
     selectedTxHash: "",
+    selectedKind: "",
     decoded: null,
     testScalar: "",
     testScalarError: "",
@@ -99823,6 +104785,8 @@ var state = {
     payloadUnavailable: false,
     txHash: "",
     submittedBy: "",
+    evmSender: "",
+    evmReceiptEvidence: null,
     externalHandoff: false,
     resultStatus: "idle",
     resultMessage: "Not checked"
@@ -99836,6 +104800,9 @@ var shieldedAddressBookPromiseScope = "";
 var browserClient = null;
 var browserClientKey = "";
 var browserClientDepositProofProvider = null;
+var browserClientEvmContractAdapter = null;
+var browserClientPrivacyStateAdapter = null;
+var browserClientEvmFinalityPolicy = null;
 var noteStore = null;
 var noteStorePromise = null;
 var noteStoreKey = "";
@@ -99845,6 +104812,14 @@ var reservationManagerKey = "";
 var operationStore = null;
 var operationStorePromise = null;
 var operationStoreKey = "";
+var batchTransferArtifactStore = null;
+var batchTransferArtifactStorePromise = null;
+var batchTransferArtifactStoreKey = "";
+var evmDepositArtifactStore = null;
+var evmDepositArtifactStorePromise = null;
+var evmDepositArtifactStoreKey = "";
+var batchTransferInFlight = false;
+var batchTransferRowSequence = 0;
 var relayReservationHeartbeatTimer = null;
 var relayReservationHeartbeatGeneration = 0;
 var relayHandoffInFlight = false;
@@ -99855,6 +104830,7 @@ var serverHealthEndpointState = "unknown";
 var noteStoreCoordinator = createBrowserTaskCoordinator();
 var publicTransactionCoordinator = createBrowserTaskCoordinator();
 var valueMovingActionGate = createValueMovingActionGate();
+var evmBroadcastWatcher = createEvmBroadcastWatcher({ reportError: reportAsyncError });
 var cosmosGasLimits = Object.freeze({
   send: 2e5,
   deposit: 25e5,
@@ -100080,6 +105056,51 @@ async function fetchLatestChainBlock({ signal } = {}) {
   });
   return authoritativeChainBlockFromStatus(data, profile);
 }
+function exactTypedScanTransactionHash(value, label = "typed scan transaction hash") {
+  const hash = canonicalHex3(value);
+  if (!/^[0-9a-f]{64}$/.test(hash)) {
+    throw new Error(`${label} must be an exact 32-byte hash`);
+  }
+  return `0x${hash}`;
+}
+function cometTransactionQueryUrl(scanTxHash, profile = activeChainProfile()) {
+  const endpoint = browserRpcUrl(profile);
+  if (!endpoint) {
+    throw new Error("A browser-accessible chain RPC endpoint is required to link EVM and typed scan transactions");
+  }
+  const url = new URL(endpoint);
+  url.pathname = `${url.pathname.replace(/\/+$/, "")}/tx`;
+  url.hash = "";
+  url.searchParams.set("hash", exactTypedScanTransactionHash(scanTxHash));
+  url.searchParams.set("prove", "false");
+  return url.href;
+}
+async function verifyEvmTypedScanTransaction(scanTxHash, evmTxHash, {
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  if (activeChainProfile()?.transport !== "evm") {
+    throw new Error("EVM typed scan transaction correlation requires an EVM profile");
+  }
+  const canonicalScanTxHash = exactTypedScanTransactionHash(scanTxHash);
+  const cometTransaction = await fetchBoundedJson(cometTransactionQueryUrl(canonicalScanTxHash), {
+    label: "EVM typed scan transaction query"
+  });
+  assertPrivacySession(sessionContext);
+  const link = verifyEvmScanTransactionLink({
+    scanTxHash: canonicalScanTxHash,
+    evmTxHash,
+    cometTransaction
+  });
+  return link;
+}
+function assertEvmTypedScanLinkHeight(link, height) {
+  const summaryHeight = Number(height);
+  if (!Number.isSafeInteger(summaryHeight) || summaryHeight <= 0 || BigInt(link?.cometHeight || 0) !== BigInt(summaryHeight)) {
+    throw new Error("Typed scan height does not match the linked Comet transaction");
+  }
+  return link;
+}
 async function fetchLatestChainBlockTimeUnix(options = {}) {
   return (await fetchLatestChainBlock(options)).timeUnix;
 }
@@ -100109,6 +105130,48 @@ function browserDepositProofUrl(profile = activeChainProfile()) {
 function configuredDepositProofProvider() {
   return typeof globalThis.CLAIRVEIL_DEPOSIT_PROOF_PROVIDER === "function" ? globalThis.CLAIRVEIL_DEPOSIT_PROOF_PROVIDER : null;
 }
+function configuredEvmContractAdapter(profile = activeChainProfile()) {
+  if (profile?.transport !== "evm") return null;
+  const registry = globalThis.CLAIRVEIL_EVM_CONTRACT_ADAPTERS;
+  if (registry == null) return null;
+  if (!registry || typeof registry !== "object" || Array.isArray(registry)) {
+    throw new Error("CLAIRVEIL_EVM_CONTRACT_ADAPTERS must be an object keyed by chain profile id");
+  }
+  const adapter = registry[profile.id];
+  if (adapter == null) return null;
+  if (!adapter || typeof adapter !== "object") {
+    throw new Error(`EVM contract adapter for profile ${profile.id} must be an object`);
+  }
+  return adapter;
+}
+function configuredPrivacyStateAdapter(profile = activeChainProfile()) {
+  if (!profile?.id) return null;
+  const registry = globalThis.CLAIRVEIL_PRIVACY_STATE_ADAPTERS;
+  if (registry == null) return null;
+  if (typeof registry !== "object" || Array.isArray(registry)) {
+    throw new Error("CLAIRVEIL_PRIVACY_STATE_ADAPTERS must be an object keyed by chain profile id");
+  }
+  const adapter = registry[profile.id];
+  if (adapter == null) return null;
+  if (typeof adapter !== "object" || Array.isArray(adapter)) {
+    throw new Error(`Privacy-state adapter for profile ${profile.id} must be an object`);
+  }
+  return adapter;
+}
+function configuredEvmFinalityPolicy(profile = activeChainProfile()) {
+  if (profile?.transport !== "evm" || !profile.id) return null;
+  const registry = globalThis.CLAIRVEIL_EVM_FINALITY_POLICIES;
+  if (registry == null) return null;
+  if (typeof registry !== "object" || Array.isArray(registry)) {
+    throw new Error("CLAIRVEIL_EVM_FINALITY_POLICIES must be an object keyed by EVM chain profile id");
+  }
+  const policy = registry[profile.id];
+  if (policy == null) return null;
+  if (typeof policy !== "string" && (typeof policy !== "object" || Array.isArray(policy))) {
+    throw new Error(`EVM finality policy for profile ${profile.id} must be a mode string or policy object`);
+  }
+  return policy;
+}
 function depositProofReady(profile = activeChainProfile()) {
   return Boolean(configuredDepositProofProvider() || browserDepositProofUrl(profile));
 }
@@ -100127,8 +105190,9 @@ function browserWalletProfile(profile = activeChainProfile()) {
       evmRpc: evmRpcUrlForWallet(resolved),
       evmChainId: resolved?.evmChainId || state.config?.evmChainId,
       evmPrivacyPrecompileAddress: resolved?.evmPrivacyPrecompileAddress || state.config?.evmPrivacyPrecompileAddress,
-      evmDepositMode: resolved?.evmDepositMode || state.config?.evmDepositMode || "nonpayable",
+      evmDepositMode: resolved?.evmDepositMode || state.config?.evmDepositMode || "payable-exact-value",
       evmNativeDenom: resolved?.evmNativeDenom || state.config?.evmNativeDenom || resolved?.denom,
+      evmAuthorizationProfile: resolved?.evmAuthorizationProfile || state.config?.evmAuthorizationProfile || null,
       evmGasLimit: resolved?.evmGasLimit || state.config?.evmGasLimit,
       evmSendGasLimit: resolved?.evmSendGasLimit || state.config?.evmSendGasLimit
     });
@@ -100163,8 +105227,9 @@ function isolatedBrowserClient(config) {
       evmRpc: browserEndpointUrl(profile?.evmRpc || config?.evmRpc || "", { localTestMode }),
       evmChainId: profile?.evmChainId || config?.evmChainId,
       evmPrivacyPrecompileAddress: profile?.evmPrivacyPrecompileAddress || config?.evmPrivacyPrecompileAddress,
-      evmDepositMode: profile?.evmDepositMode || config?.evmDepositMode || "nonpayable",
+      evmDepositMode: profile?.evmDepositMode || config?.evmDepositMode || "payable-exact-value",
       evmNativeDenom: profile?.evmNativeDenom || config?.evmNativeDenom || profile?.denom,
+      evmAuthorizationProfile: profile?.evmAuthorizationProfile || config?.evmAuthorizationProfile || null,
       evmGasLimit: profile?.evmGasLimit || config?.evmGasLimit,
       evmSendGasLimit: profile?.evmSendGasLimit || config?.evmSendGasLimit
     });
@@ -100172,21 +105237,23 @@ function isolatedBrowserClient(config) {
   return createClairveilBrowserDappClient({
     profile: browserProfile,
     depositProofProvider: configuredDepositProofProvider(),
-    enableExperimentalBatchTransfer: false
+    evmContractAdapter: configuredEvmContractAdapter(browserProfile),
+    privacyStateAdapter: configuredPrivacyStateAdapter(browserProfile),
+    evmFinalityPolicy: configuredEvmFinalityPolicy(browserProfile),
+    enableExperimentalBatchTransfer: config?.serverFeatures?.batchTransfer === true
   });
 }
 function validateCurrentWebAppConfig(config) {
-  const validated = validateClairveilWebClientConfig(config);
-  if (validated.serverFeatures?.batchTransfer !== false) {
-    throw new Error("Clairveil v0.3.1 WebApp requires serverFeatures.batchTransfer=false");
-  }
-  return validated;
+  return validateClairveilWebClientConfig(config);
 }
 function clairveilBrowserClient(profile = activeChainProfile()) {
   const resolved = profile || state.config?.activeProfile;
   if (!resolved) throw new Error("A validated Clairveil chain profile is required");
   const depositProofProvider = configuredDepositProofProvider();
   const browserProfile = browserWalletProfile(resolved);
+  const evmContractAdapter = configuredEvmContractAdapter(browserProfile);
+  const privacyStateAdapter = configuredPrivacyStateAdapter(browserProfile);
+  const evmFinalityPolicy = configuredEvmFinalityPolicy(browserProfile);
   const key = JSON.stringify({
     id: browserProfile?.id || "",
     rpc: browserProfile?.rpc || "",
@@ -100200,17 +105267,27 @@ function clairveilBrowserClient(profile = activeChainProfile()) {
     evmRpc: browserProfile?.evmRpc || "",
     evmChainId: browserProfile?.evmChainId || "",
     evmPrivacyPrecompileAddress: browserProfile?.evmPrivacyPrecompileAddress || "",
-    evmDepositMode: browserProfile?.evmDepositMode || "nonpayable",
-    evmNativeDenom: browserProfile?.evmNativeDenom || ""
+    evmDepositMode: browserProfile?.evmDepositMode || "payable-exact-value",
+    evmNativeDenom: browserProfile?.evmNativeDenom || "",
+    evmAuthorizationProfile: browserProfile?.evmAuthorizationProfile || null,
+    evmGasLimit: browserProfile?.evmGasLimit || "",
+    evmSendGasLimit: browserProfile?.evmSendGasLimit || "",
+    batchTransfer: serverFeature("batchTransfer")
   });
-  if (!browserClient || browserClientKey !== key || browserClientDepositProofProvider !== depositProofProvider) {
+  if (!browserClient || browserClientKey !== key || browserClientDepositProofProvider !== depositProofProvider || browserClientEvmContractAdapter !== evmContractAdapter || browserClientPrivacyStateAdapter !== privacyStateAdapter || browserClientEvmFinalityPolicy !== evmFinalityPolicy) {
     browserClient = createClairveilBrowserDappClient({
       profile: browserProfile,
       depositProofProvider,
-      enableExperimentalBatchTransfer: false
+      evmContractAdapter,
+      privacyStateAdapter,
+      evmFinalityPolicy,
+      enableExperimentalBatchTransfer: serverFeature("batchTransfer")
     });
     browserClientKey = key;
     browserClientDepositProofProvider = depositProofProvider;
+    browserClientEvmContractAdapter = evmContractAdapter;
+    browserClientPrivacyStateAdapter = privacyStateAdapter;
+    browserClientEvmFinalityPolicy = evmFinalityPolicy;
   }
   return browserClient;
 }
@@ -100335,7 +105412,7 @@ function clearCapturedPublicPendingTransaction(context, kind, txHash) {
   const existing = privacy ? null : loadPublicPendingTxState(globalThis.localStorage, identity.key, identity);
   const entry = privacy ? loadPrivacyPendingTxState(globalThis.localStorage, identity.privacyKey, identity) : existing?.[kind];
   if (!entry) return true;
-  if (normalizedHex3(entry.txHash) !== normalizedHex3(txHash)) {
+  if (normalizedHex4(entry.txHash) !== normalizedHex4(txHash)) {
     throw new Error(`Refusing to clear a different unresolved ${kind} transaction`);
   }
   if (privacy) {
@@ -100424,6 +105501,12 @@ function withCosmosAccountTransactionLock(context, task) {
     await assertNoUnresolvedCosmosAccountBroadcast(context);
     return task(true);
   });
+}
+function withBatchAccountTransactionLock(context, task) {
+  if (activeChainProfile()?.transport === "cosmos") {
+    return withCosmosAccountTransactionLock(context, task);
+  }
+  return withAccountTransactionLock(context, () => task(true));
 }
 function transactionHashFromEvidence(value = {}) {
   const candidates = [
@@ -100555,7 +105638,7 @@ function persistCapturedPublicPendingTransaction(context, kind, txHash, attemptI
     }
     const existing = privacy ? null : loadPublicPendingTxState(globalThis.localStorage, identity.key, identity);
     const previous = privacy ? loadPrivacyPendingTxState(globalThis.localStorage, identity.privacyKey, identity) : existing?.[kind];
-    if (previous?.txHash && normalizedHex3(previous.txHash) !== normalizedHex3(txHash)) {
+    if (previous?.txHash && normalizedHex4(previous.txHash) !== normalizedHex4(txHash)) {
       throw new Error(`Refusing to replace a different unresolved ${kind} transaction fence`);
     }
     if (attemptId && (previous?.status !== "attempting" || previous?.attemptId !== attemptId)) {
@@ -100590,9 +105673,9 @@ function persistCapturedPublicPendingTransaction(context, kind, txHash, attemptI
     }
     renderKeplr();
   } catch (error) {
-    const failure = error instanceof Error ? error : new Error(String(error));
-    failure.txHash ||= txHash;
-    throw failure;
+    const failure2 = error instanceof Error ? error : new Error(String(error));
+    failure2.txHash ||= txHash;
+    throw failure2;
   }
 }
 function persistCapturedDepositRecoveryPending(context, txHash, height = "") {
@@ -100602,7 +105685,7 @@ function persistCapturedDepositRecoveryPending(context, txHash, height = "") {
   }
   const existing = loadPublicPendingTxState(globalThis.localStorage, identity.key, identity);
   const previous = existing?.deposit;
-  if (previous?.txHash && normalizedHex3(previous.txHash) !== normalizedHex3(txHash)) {
+  if (previous?.txHash && normalizedHex4(previous.txHash) !== normalizedHex4(txHash)) {
     throw new Error("Refusing to replace a different unresolved deposit transaction");
   }
   const entry = {
@@ -100799,7 +105882,7 @@ async function currentNoteStore() {
       key: openingKey,
       owner: keys.owner,
       namespace: keys.namespace,
-      keyMaterial: base64ToBytes4(state.keplr.rootSignatureBase64)
+      keyMaterial: base64ToBytes5(state.keplr.rootSignatureBase64)
     }).then((store) => {
       if (noteStoreKey === openingKey && noteStorePromise === opening) {
         noteStore = store;
@@ -100924,7 +106007,7 @@ async function currentOperationStore() {
       requireLocks: true,
       key: identity.key,
       namespace: identity.namespace,
-      keyMaterial: base64ToBytes4(state.keplr.rootSignatureBase64)
+      keyMaterial: base64ToBytes5(state.keplr.rootSignatureBase64)
     }).then((store) => {
       if (operationStoreKey === openingKey && operationStorePromise === opening) operationStore = store;
       return store;
@@ -100935,6 +106018,824 @@ async function currentOperationStore() {
     operationStorePromise = opening;
   }
   return operationStorePromise;
+}
+function batchTransferArtifactIdentity() {
+  const identity = operationStoreIdentity();
+  if (!identity) return null;
+  return {
+    ...identity,
+    key: identity.key.replace(":operations-encrypted:", ":batch-transfer-artifact-encrypted:")
+  };
+}
+async function currentBatchTransferArtifactStore({ sessionContext = privacySessionSnapshot() } = {}) {
+  assertPrivacySession(sessionContext);
+  const identity = batchTransferArtifactIdentity();
+  if (!identity || !globalThis.localStorage) return null;
+  if (batchTransferArtifactStore && batchTransferArtifactStoreKey === identity.key) {
+    return batchTransferArtifactStore;
+  }
+  if (!batchTransferArtifactStorePromise || batchTransferArtifactStoreKey !== identity.key) {
+    const openingKey = identity.key;
+    batchTransferArtifactStoreKey = openingKey;
+    const opening = EncryptedRecoveryArtifactStore.open({
+      storage: globalThis.localStorage,
+      locks: globalThis.navigator?.locks,
+      key: identity.key,
+      profileId: identity.profileId,
+      owner: identity.owner,
+      keyMaterial: base64ToBytes5(state.keplr.rootSignatureBase64)
+    }).then((store2) => {
+      if (batchTransferArtifactStoreKey === openingKey && batchTransferArtifactStorePromise === opening) {
+        batchTransferArtifactStore = store2;
+      }
+      return store2;
+    }).catch((error) => {
+      if (batchTransferArtifactStoreKey === openingKey && batchTransferArtifactStorePromise === opening) {
+        batchTransferArtifactStorePromise = null;
+      }
+      throw error;
+    });
+    batchTransferArtifactStorePromise = opening;
+  }
+  const store = await batchTransferArtifactStorePromise;
+  assertPrivacySession(sessionContext);
+  return store;
+}
+function batchReservationIDs(reservation = {}) {
+  return [...new Set(reservation?.reservation_ids || [])].sort();
+}
+function batchTransferOperationEvidenceHash(data = {}) {
+  return String(
+    data?.operationEvidenceHash || data?.operation_evidence_hash || data?.prepared?.operationEvidenceHash || data?.prepared?.operation_evidence_hash || ""
+  ).trim();
+}
+function assertBatchTransferArtifactIdentity(artifact, identity) {
+  if (!artifact || artifact.version !== "clairveil-batch-transfer-artifact-v1" || artifact.profileId !== identity.profileId || String(artifact.owner || "").toLowerCase() !== identity.owner) {
+    throw new Error("Encrypted batch recovery artifact does not match the active wallet or chain profile");
+  }
+}
+function batchTransferArtifactRecord(artifact, identity) {
+  return {
+    version: "clairveil-batch-transfer-artifact-v1",
+    profileId: identity.profileId,
+    owner: identity.owner,
+    savedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    ...artifact
+  };
+}
+async function saveBatchTransferArtifact(artifact, { sessionContext = privacySessionSnapshot() } = {}) {
+  assertPrivacySession(sessionContext);
+  const store = await currentBatchTransferArtifactStore({ sessionContext });
+  const identity = batchTransferArtifactIdentity();
+  if (!store || !identity) throw new Error("Encrypted batch recovery storage is unavailable");
+  await store.save(batchTransferArtifactRecord(artifact, identity), {
+    beforeCommit: () => assertPrivacySession(sessionContext)
+  });
+  assertPrivacySession(sessionContext);
+}
+async function updateBatchTransferArtifact(updater, {
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  const store = await currentBatchTransferArtifactStore({ sessionContext });
+  const identity = batchTransferArtifactIdentity();
+  if (!store || !identity) throw new Error("Encrypted batch recovery storage is unavailable");
+  const result = await store.update((current) => {
+    if (!current) return void 0;
+    assertBatchTransferArtifactIdentity(current, identity);
+    const updated = updater(current);
+    return updated === void 0 ? void 0 : batchTransferArtifactRecord(updated, identity);
+  }, { beforeCommit: () => assertPrivacySession(sessionContext) });
+  assertPrivacySession(sessionContext);
+  return result;
+}
+async function loadBatchTransferArtifact({ sessionContext = privacySessionSnapshot() } = {}) {
+  assertPrivacySession(sessionContext);
+  const store = await currentBatchTransferArtifactStore({ sessionContext });
+  const identity = batchTransferArtifactIdentity();
+  if (!store || !identity) return null;
+  const artifact = await store.load();
+  assertPrivacySession(sessionContext);
+  if (!artifact) return null;
+  assertBatchTransferArtifactIdentity(artifact, identity);
+  return artifact;
+}
+async function clearBatchTransferArtifact({
+  reservation = null,
+  records = [],
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  const store = await currentBatchTransferArtifactStore({ sessionContext });
+  const identity = batchTransferArtifactIdentity();
+  if (!store || !identity) return false;
+  const expectedIDs = records.length ? [...new Set(records.map((record) => record?.reservation_id).filter(Boolean))].sort() : batchReservationIDs(reservation);
+  if (!expectedIDs.length) {
+    throw new Error("Batch recovery artifact clear requires its reservation identity");
+  }
+  const result = await store.clearIf((artifact) => {
+    assertBatchTransferArtifactIdentity(artifact, identity);
+    const actualIDs = batchReservationIDs(artifact.reservation);
+    return actualIDs.length === expectedIDs.length && actualIDs.every((id, index) => id === expectedIDs[index]);
+  }, { beforeCommit: () => assertPrivacySession(sessionContext) });
+  assertPrivacySession(sessionContext);
+  return result.changed;
+}
+function evmDepositArtifactIdentity() {
+  const identity = operationStoreIdentity();
+  if (!identity) return null;
+  return {
+    ...identity,
+    key: identity.key.replace(":operations-encrypted:", ":evm-deposit-artifact-encrypted:")
+  };
+}
+async function currentEvmDepositArtifactStore({ sessionContext = privacySessionSnapshot() } = {}) {
+  assertPrivacySession(sessionContext);
+  const identity = evmDepositArtifactIdentity();
+  if (!identity || !globalThis.localStorage) return null;
+  if (evmDepositArtifactStore && evmDepositArtifactStoreKey === identity.key) {
+    return evmDepositArtifactStore;
+  }
+  if (!evmDepositArtifactStorePromise || evmDepositArtifactStoreKey !== identity.key) {
+    const openingKey = identity.key;
+    evmDepositArtifactStoreKey = openingKey;
+    const opening = EncryptedRecoveryArtifactStore.open({
+      storage: globalThis.localStorage,
+      locks: globalThis.navigator?.locks,
+      key: identity.key,
+      profileId: identity.profileId,
+      owner: identity.owner,
+      keyMaterial: base64ToBytes5(state.keplr.rootSignatureBase64)
+    }).then((store2) => {
+      if (evmDepositArtifactStoreKey === openingKey && evmDepositArtifactStorePromise === opening) {
+        evmDepositArtifactStore = store2;
+      }
+      return store2;
+    }).catch((error) => {
+      if (evmDepositArtifactStoreKey === openingKey && evmDepositArtifactStorePromise === opening) {
+        evmDepositArtifactStorePromise = null;
+      }
+      throw error;
+    });
+    evmDepositArtifactStorePromise = opening;
+  }
+  const store = await evmDepositArtifactStorePromise;
+  assertPrivacySession(sessionContext);
+  return store;
+}
+async function saveEvmDepositArtifact(artifact, { sessionContext = privacySessionSnapshot() } = {}) {
+  assertPrivacySession(sessionContext);
+  const store = await currentEvmDepositArtifactStore({ sessionContext });
+  const identity = evmDepositArtifactIdentity();
+  if (!store || !identity) throw new Error("Encrypted EVM deposit recovery storage is unavailable");
+  await store.save({
+    version: "clairveil-evm-deposit-artifact-v1",
+    profileId: identity.profileId,
+    owner: identity.owner,
+    savedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    ...artifact
+  }, { beforeCommit: () => assertPrivacySession(sessionContext) });
+  assertPrivacySession(sessionContext);
+}
+function assertEvmDepositArtifactIdentity(artifact, identity) {
+  if (!artifact || artifact.version !== "clairveil-evm-deposit-artifact-v1" || artifact.profileId !== identity.profileId || String(artifact.owner || "").toLowerCase() !== identity.owner) {
+    throw new Error("Encrypted EVM deposit recovery artifact does not match the active wallet or chain profile");
+  }
+}
+async function loadEvmDepositArtifact({ sessionContext = privacySessionSnapshot() } = {}) {
+  assertPrivacySession(sessionContext);
+  const store = await currentEvmDepositArtifactStore({ sessionContext });
+  const identity = evmDepositArtifactIdentity();
+  if (!store || !identity) return null;
+  const artifact = await store.load();
+  assertPrivacySession(sessionContext);
+  if (!artifact) return null;
+  assertEvmDepositArtifactIdentity(artifact, identity);
+  return artifact;
+}
+async function clearEvmDepositArtifact(txHash = "", {
+  force = false,
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  const store = await currentEvmDepositArtifactStore({ sessionContext });
+  const identity = evmDepositArtifactIdentity();
+  if (!store || !identity) return false;
+  if (force) {
+    await store.clear({ beforeCommit: () => assertPrivacySession(sessionContext) });
+    assertPrivacySession(sessionContext);
+    return { changed: true, previous: null, artifact: null };
+  }
+  const expectedTxHash = String(txHash || "").trim();
+  if (!expectedTxHash) {
+    throw new Error("EVM deposit artifact clear requires its submitted transaction hash");
+  }
+  const normalizedExpectedTxHash = normalizeEvmTxHash(expectedTxHash);
+  const result = await store.clearIf((artifact) => {
+    assertEvmDepositArtifactIdentity(artifact, identity);
+    return Boolean(artifact.txHash) && normalizeEvmTxHash(artifact.txHash) === normalizedExpectedTxHash;
+  }, { beforeCommit: () => assertPrivacySession(sessionContext) });
+  assertPrivacySession(sessionContext);
+  return result;
+}
+async function clearConfirmedDepositRecoveryUnlocked(sessionContext, txHash) {
+  assertPrivacySession(sessionContext);
+  if (activeChainProfile()?.transport === "evm") {
+    const result = await clearEvmDepositArtifact(txHash, { sessionContext });
+    if (!result.changed && result.previous) {
+      throw new Error(
+        "A newer EVM deposit recovery artifact replaced this transaction; its pending state was not cleared"
+      );
+    }
+  }
+  clearCapturedPublicPendingTransaction(sessionContext, "deposit", txHash);
+  assertPrivacySession(sessionContext);
+}
+async function hydrateEvmDepositRecovery({
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  if (activeChainProfile()?.transport !== "evm") return null;
+  const artifact = await loadEvmDepositArtifact({ sessionContext });
+  if (!artifact) return null;
+  const sender = String(artifact.sender || "").trim().toLowerCase();
+  if (!artifact.transaction || !artifact.prepared?.noteCommitmentHex || !/^0x[0-9a-f]{40}$/.test(sender)) {
+    throw new Error("Encrypted EVM deposit recovery artifact is incomplete; manual recovery is required");
+  }
+  if (artifact.txHash) {
+    if (state.keplr.depositHash && normalizeEvmTxHash(state.keplr.depositHash) !== normalizeEvmTxHash(artifact.txHash)) {
+      throw new Error("Encrypted EVM deposit recovery artifact does not match the restored pending transaction hash");
+    }
+    state.keplr.depositHash = artifact.txHash;
+    if (state.keplr.depositRecoveryStatus === "idle") {
+      state.keplr.depositRecoveryStatus = "submitted";
+      state.keplr.depositRecoveryMessage = "Restored encrypted EVM deposit recovery binding \xB7 reconcile before retrying";
+    }
+  } else if (artifact.phase === "broadcast-unknown-no-hash") {
+    state.keplr.depositRecoveryStatus = "attempting";
+    state.keplr.depositRecoveryMessage = "Wallet submission may have started \xB7 check wallet activity before using the guarded manual clear";
+  }
+  state.keplr.depositPrepared = {
+    ...artifact.prepared,
+    transaction: artifact.transaction,
+    sender
+  };
+  assertPrivacySession(sessionContext);
+  return artifact;
+}
+async function restoreEvmDepositRecovery({
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  try {
+    return await hydrateEvmDepositRecovery({ sessionContext });
+  } catch (error) {
+    if (isStalePrivacySessionError(error)) throw error;
+    assertPrivacySession(sessionContext);
+    state.keplr.publicPendingStateError = `EVM deposit recovery is unavailable: ${error.message}`;
+    state.keplr.depositRecoveryStatus = "unknown";
+    state.keplr.depositRecoveryMessage = state.keplr.publicPendingStateError;
+    return null;
+  }
+}
+function preparedOperationKey(data = {}) {
+  return String(
+    data?.reservation?.operation_id || data?.reservation?.reservations?.[0]?.operation_id || preparedReservationIDs(data).sort().join(":")
+  ).trim();
+}
+function reservationGroupOperationKey(records = []) {
+  const keys = [...new Set((records || []).map((record) => reservationOperationKey(record)).filter(Boolean))];
+  if (keys.length > 1) {
+    throw new Error("Reservations disagree about their operation identity");
+  }
+  return keys[0] || "";
+}
+function evmOperationArtifactIdentity(operationKey) {
+  const identity = operationStoreIdentity();
+  const key = String(operationKey || "").trim();
+  if (!identity || !key) return null;
+  const encodedKey = encodeURIComponent(key);
+  return {
+    ...identity,
+    operationKey: key,
+    key: identity.key.replace(":operations-encrypted:", `:evm-operation-artifact-encrypted:${encodedKey}:`)
+  };
+}
+async function currentEvmOperationArtifactStore(operationKey, {
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  const identity = evmOperationArtifactIdentity(operationKey);
+  if (!identity || !globalThis.localStorage) return null;
+  const store = await EncryptedRecoveryArtifactStore.open({
+    storage: globalThis.localStorage,
+    locks: globalThis.navigator?.locks,
+    key: identity.key,
+    profileId: identity.profileId,
+    owner: identity.owner,
+    keyMaterial: base64ToBytes5(state.keplr.rootSignatureBase64)
+  });
+  assertPrivacySession(sessionContext);
+  return store;
+}
+async function saveEvmOperationArtifact(operationKey, artifact, {
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  const identity = evmOperationArtifactIdentity(operationKey);
+  const store = await currentEvmOperationArtifactStore(operationKey, { sessionContext });
+  if (!identity || !store) throw new Error("Encrypted EVM operation recovery storage is unavailable");
+  await store.update((current) => {
+    if (current) {
+      assertEvmOperationArtifactIdentity(current, identity);
+      const existingReservations = [...new Set(current.reservationIds || [])].sort();
+      const candidateReservations = [...new Set(artifact?.reservationIds || [])].sort();
+      if (existingReservations.length !== candidateReservations.length || existingReservations.some((id, index) => id !== candidateReservations[index]) || current.txBytesHash && artifact?.txBytesHash && String(current.txBytesHash) !== String(artifact.txBytesHash)) {
+        throw new Error("Refusing to replace a different encrypted EVM operation artifact");
+      }
+    }
+    return evmOperationArtifactValue(identity, artifact);
+  }, { beforeCommit: () => assertPrivacySession(sessionContext) });
+  assertPrivacySession(sessionContext);
+}
+function evmOperationArtifactValue(identity, artifact = {}) {
+  return {
+    ...artifact,
+    version: "clairveil-evm-operation-artifact-v1",
+    profileId: identity.profileId,
+    owner: identity.owner,
+    operationKey: identity.operationKey,
+    savedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+function assertEvmOperationArtifactIdentity(artifact, identity) {
+  if (artifact?.version !== "clairveil-evm-operation-artifact-v1" || artifact.profileId !== identity.profileId || String(artifact.owner || "").toLowerCase() !== identity.owner || artifact.operationKey !== identity.operationKey) {
+    throw new Error("Encrypted EVM operation artifact does not match the active wallet, profile, or operation");
+  }
+  return artifact;
+}
+async function updateEvmOperationArtifact(operationKey, updater, {
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  if (typeof updater !== "function") throw new TypeError("EVM operation artifact updater must be a function");
+  const identity = evmOperationArtifactIdentity(operationKey);
+  const store = await currentEvmOperationArtifactStore(operationKey, { sessionContext });
+  if (!identity || !store) throw new Error("Encrypted EVM operation recovery storage is unavailable");
+  const result = await store.update(async (current) => {
+    if (current) assertEvmOperationArtifactIdentity(current, identity);
+    const candidate = await updater(current);
+    if (candidate == null) return candidate;
+    return evmOperationArtifactValue(identity, candidate);
+  }, { beforeCommit: () => assertPrivacySession(sessionContext) });
+  assertPrivacySession(sessionContext);
+  return result;
+}
+async function loadEvmOperationArtifact(operationKey, {
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  const identity = evmOperationArtifactIdentity(operationKey);
+  const store = await currentEvmOperationArtifactStore(operationKey, { sessionContext });
+  if (!identity || !store) return null;
+  const artifact = await store.load();
+  assertPrivacySession(sessionContext);
+  if (!artifact) return null;
+  return assertEvmOperationArtifactIdentity(artifact, identity);
+}
+async function clearEvmOperationArtifact(operationKey, {
+  records = null,
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  const identity = evmOperationArtifactIdentity(operationKey);
+  const store = await currentEvmOperationArtifactStore(operationKey, { sessionContext });
+  if (!identity || !store) return false;
+  const result = await store.clearIf((current) => {
+    assertEvmOperationArtifactIdentity(current, identity);
+    return records == null || evmOperationArtifactMatchesReservations(current, records);
+  }, { beforeCommit: () => assertPrivacySession(sessionContext) });
+  assertPrivacySession(sessionContext);
+  return result.changed;
+}
+function evmOperationArtifactMatchesReservations(artifact, records = []) {
+  const expected = [...new Set(records.map((record) => record?.reservation_id).filter(Boolean))].sort();
+  const actual = [...new Set(artifact?.reservationIds || [])].sort();
+  return expected.length > 0 && expected.length === actual.length && expected.every((id, index) => id === actual[index]);
+}
+async function checkpointPreparedEvmOperation(data, kind, {
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  if (activeChainProfile()?.transport !== "evm" || !data?.transaction || !data?.txBytesHash) return;
+  const operationKey = preparedOperationKey(data);
+  const reservationIds = preparedReservationIDs(data).sort();
+  if (!operationKey || !reservationIds.length || !state.wallet.account) {
+    throw new Error("Prepared EVM operation is missing its durable reservation or sender identity");
+  }
+  await saveEvmOperationArtifact(operationKey, {
+    phase: "proof-ready",
+    kind,
+    reservationIds,
+    transaction: data.transaction,
+    txBytesHash: data.txBytesHash,
+    sender: state.wallet.account
+  }, { sessionContext });
+}
+async function updatePreparedEvmOperationArtifact(data, patch, {
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  const operationKey = preparedOperationKey(data);
+  if (!operationKey) return;
+  const reservationIds = preparedReservationIDs(data).sort();
+  await updateEvmOperationArtifact(operationKey, (artifact) => {
+    if (!artifact) throw new Error("Encrypted EVM operation recovery artifact is unavailable");
+    if (!evmOperationArtifactMatchesReservations(artifact, reservationIds.map((reservation_id) => ({ reservation_id })))) {
+      throw new Error("Encrypted EVM operation recovery artifact does not match the prepared reservation");
+    }
+    return { ...artifact, ...patch };
+  }, { sessionContext });
+}
+async function loadEvmOperationArtifactForReservations(records = [], {
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  const operationKey = reservationGroupOperationKey(records);
+  if (!operationKey) return null;
+  const artifact = await loadEvmOperationArtifact(operationKey, { sessionContext });
+  if (!artifact) return null;
+  if (!evmOperationArtifactMatchesReservations(artifact, records)) {
+    throw new Error("Encrypted EVM operation recovery artifact does not match its reservations");
+  }
+  return artifact;
+}
+function batchArtifactMatchesReservations(artifact, records = []) {
+  const artifactIDs = batchReservationIDs(artifact?.reservation);
+  const recordIDs = [...new Set(records.map((record) => record.reservation_id).filter(Boolean))].sort();
+  return artifactIDs.length > 0 && artifactIDs.length === recordIDs.length && artifactIDs.every((id, index) => id === recordIDs[index]);
+}
+function isBatchReservationOperation(records = []) {
+  return records.some((record) => Boolean(
+    record?.metadata?.batch_transfer_operation_evidence_hash || record?.metadata?.batchTransferOperationEvidenceHash
+  ));
+}
+function batchReservationExecutionTransport(records = [], artifact = null) {
+  const transports = [...new Set(records.map((record) => String(
+    record?.metadata?.execution_transport || record?.metadata?.executionTransport || ""
+  ).trim().toLowerCase()).filter(Boolean))];
+  if (transports.length > 1) {
+    throw new Error("Batch reservations disagree about their execution transport");
+  }
+  return transports[0] || String(artifact?.executionTransport || artifact?.transport || "").trim().toLowerCase();
+}
+function batchReceiptEvidence(data, result) {
+  const operationEvidenceHash = batchTransferOperationEvidenceHash(data);
+  if (!operationEvidenceHash) throw new Error("EVM batch operation-evidence binding is required for reconciliation");
+  return {
+    txResult: verifiedEvmTransactionResult(result, "EVM batch receipt"),
+    operationEvidenceHash
+  };
+}
+async function saveBatchReceiptEvidence(data, result, {
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  const records = data?.reservation?.reservations || [];
+  const expected = [...new Set(records.map((record) => normalizedHex4(record.expected_operation_evidence_hash)).filter(Boolean))];
+  if (expected.length !== 1 || normalizedHex4(batchTransferOperationEvidenceHash(data)) !== expected[0]) {
+    throw new Error("Prepared batch operation evidence does not match its durable reservation binding");
+  }
+  const receiptEvidence = batchReceiptEvidence(data, result);
+  const updated = await updateBatchTransferArtifact((artifact) => {
+    if (!batchArtifactMatchesReservations(artifact, records)) {
+      throw new Error("Encrypted batch recovery artifact does not match the prepared note reservation");
+    }
+    if (artifact.receiptEvidence) {
+      const existingResult = verifiedEvmTransactionResult(
+        artifact.receiptEvidence.txResult,
+        "Persisted EVM batch receipt"
+      );
+      if (!sameEvmBroadcastTransaction(existingResult.txHash, result.txHash) || normalizedHex4(artifact.receiptEvidence.operationEvidenceHash) !== expected[0]) {
+        throw new Error("Encrypted batch recovery artifact contains different receipt evidence");
+      }
+    }
+    return advanceEvmBatchReceiptArtifact({
+      artifact,
+      receiptEvidence,
+      txHash: result.txHash,
+      txBytesHash: result.txBytesHash
+    });
+  }, { sessionContext });
+  return updated.artifact?.receiptEvidence || null;
+}
+async function saveBatchSubmission(data, txHash, {
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  const records = data?.reservation?.reservations || [];
+  await updateBatchTransferArtifact((artifact) => {
+    if (!batchArtifactMatchesReservations(artifact, records)) {
+      throw new Error("Encrypted batch recovery artifact does not match the submitted note reservation");
+    }
+    return {
+      ...artifact,
+      phase: "submitted",
+      txHash,
+      txBytesHash: data.txBytesHash || artifact.txBytesHash
+    };
+  }, { sessionContext });
+}
+async function saveBatchInclusion(data, txHash, {
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  const records = data?.reservation?.reservations || [];
+  await updateBatchTransferArtifact((artifact) => {
+    if (!batchArtifactMatchesReservations(artifact, records)) {
+      throw new Error("Encrypted batch recovery artifact does not match the included note reservation");
+    }
+    return {
+      ...artifact,
+      phase: "included",
+      txHash: txHash || artifact.txHash
+    };
+  }, { sessionContext });
+}
+async function batchReceiptEvidenceForReservations(records = [], {
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  if (!isBatchReservationOperation(records)) return null;
+  const artifact = await loadBatchTransferArtifact({ sessionContext });
+  if (!artifact || !batchArtifactMatchesReservations(artifact, records)) return null;
+  if (batchReservationExecutionTransport(records, artifact) !== "evm") return null;
+  const receiptEvidence = artifact.receiptEvidence;
+  const expected = [...new Set(records.map((record) => normalizedHex4(record.expected_operation_evidence_hash)).filter(Boolean))];
+  if (expected.length !== 1 || normalizedHex4(receiptEvidence?.operationEvidenceHash) !== expected[0]) return null;
+  const operationEvidence = batchOperationEvidence(artifact);
+  if (!operationEvidence || normalizedHex4(await digestText(JSON.stringify(operationEvidence))) !== expected[0]) {
+    throw new Error("Encrypted batch operation evidence does not match its durable evidence hash");
+  }
+  const txResult = verifiedEvmTransactionResult(receiptEvidence?.txResult, "EVM batch receipt recovery");
+  const receiptHeight = authoritativeTransactionHeight({ height: txResult.receipt?.blockNumber });
+  const expectedNullifiers = operationEvidence.input_nullifier_hexes || operationEvidence.inputNullifierHexes || [];
+  const expectedOutputs = operationEvidence.expected_outputs || operationEvidence.expectedOutputs || [];
+  const expectedCommitments = expectedOutputs.map((output) => output?.expected_output_commitment ?? output?.expectedOutputCommitment);
+  const effect = await verifiedEvmTypedScanEffect({
+    evmTxHash: txResult.txHash,
+    receiptHeight,
+    expectedEventTypes: ["batch_transfer"],
+    expectedNullifiers,
+    expectedCommitments,
+    sessionContext
+  });
+  if (!effect) return null;
+  assertTypedBatchEffect({
+    summary: effect.summary,
+    outputs: effect.outputs,
+    operationEvidence,
+    outputCount: artifact?.prepared?.outputCount,
+    txHash: effect.scanTransactionLink.scanTxHash,
+    maxOutputs: batchTransferMaxPayments
+  });
+  const typedReceiptEvidence = {
+    ...receiptEvidence,
+    scanTransactionLink: effect.scanTransactionLink,
+    typedScanEvidence: {
+      scanTxHash: exactTypedScanTransactionHash(effect.summary.tx_hash),
+      height: String(effect.summary.height),
+      eventType: effect.summary.event_type,
+      outputCount: effect.outputs.length,
+      effectId: canonicalHex3(effect.summary.effect_id),
+      nullifiers: (effect.summary.nullifiers || []).map(canonicalHex3),
+      commitments: effect.outputs.map((output) => canonicalHex3(output.commitment))
+    }
+  };
+  const updated = await updateBatchTransferArtifact((current) => {
+    if (!batchArtifactMatchesReservations(current, records)) return void 0;
+    if (normalizedHex4(current.receiptEvidence?.txResult?.txHash) !== normalizedHex4(txResult.txHash)) {
+      throw new Error("Encrypted batch recovery artifact contains a different verified EVM transaction");
+    }
+    return {
+      ...current,
+      phase: "typed-effect-verified",
+      receiptEvidence: typedReceiptEvidence
+    };
+  }, { sessionContext });
+  return updated.artifact ? updated.artifact.receiptEvidence : null;
+}
+function batchOperationEvidence(artifact = {}) {
+  return artifact.operationEvidence || artifact.prepared?.operationEvidence || artifact.prepared?.operation_evidence || null;
+}
+async function verifiedEvmTypedScanEffect({
+  evmTxHash,
+  receiptHeight,
+  expectedEventTypes,
+  expectedNullifiers = [],
+  expectedCommitments = [],
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  if (!Number.isSafeInteger(receiptHeight) || receiptHeight <= 0) {
+    throw new Error("Verified EVM receipt is missing an authoritative block height");
+  }
+  const validationState = createPrivacyScanValidationStateV2();
+  const effect = await findVerifiedEvmTypedScanEffect({
+    fetchScanPage: async (request) => {
+      assertPrivacySession(sessionContext);
+      const page = await clairveilBrowserClient().queryPrivacyScan(request);
+      assertPrivacySession(sessionContext);
+      return page;
+    },
+    verifyTransactionLink: (scanTxHash, expectedEvmTxHash) => verifyEvmTypedScanTransaction(scanTxHash, expectedEvmTxHash, { sessionContext }),
+    evmTxHash,
+    expectedEventTypes,
+    expectedNullifiers,
+    expectedCommitments,
+    afterHeight: Math.max(0, receiptHeight - 1),
+    throughHeight: receiptHeight,
+    outputLimit: 128,
+    eventLimit: 64,
+    maxEncodedBytes: 1048576,
+    maxOutputsPerEffect: batchTransferMaxPayments,
+    validationState
+  });
+  assertPrivacySession(sessionContext);
+  if (effect) {
+    assertEvmTypedScanLinkHeight(effect.scanTransactionLink, effect.summary?.height);
+    if (Number(effect.summary?.height) !== receiptHeight) {
+      throw new Error("Typed privacy effect height does not match the verified EVM receipt block");
+    }
+  }
+  return effect;
+}
+async function typedCosmosBatchEvidence(txHash, height, artifact, {
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  const validationState = createPrivacyScanValidationStateV2();
+  let after = {
+    height: Math.max(0, height - 1),
+    globalSequence: 0,
+    outputIndex: 0
+  };
+  const targetSummaries = /* @__PURE__ */ new Map();
+  const targetOutputs = /* @__PURE__ */ new Map();
+  for (let pageIndex = 0; pageIndex < 1e3; pageIndex += 1) {
+    const page = await clairveilBrowserClient().fetchAuditableBatchTransfers({
+      after,
+      outputLimit: 128,
+      eventLimit: 64,
+      maxEncodedBytes: 1048576,
+      validationState
+    });
+    assertPrivacySession(sessionContext);
+    for (const summary2 of page.summaries) {
+      if (canonicalHex3(summary2.tx_hash) !== normalizedHex4(txHash)) continue;
+      const identity = typedBatchEventIdentity(summary2);
+      targetSummaries.set(`${identity.height}:${identity.globalSequence}`, summary2);
+    }
+    for (const output of page.outputs) {
+      if (canonicalHex3(output.tx_hash) !== normalizedHex4(txHash)) continue;
+      const identity = typedBatchEventIdentity(output);
+      const summary2 = targetSummaries.get(`${identity.height}:${identity.globalSequence}`);
+      if (!summary2 || !sameTypedBatchEventIdentity(identity, typedBatchEventIdentity(summary2))) {
+        throw new Error("Typed batch output has no matching transaction summary");
+      }
+      const key = `${identity.height}:${identity.globalSequence}:${output.output_index}`;
+      const existing = targetOutputs.get(key);
+      if (existing && canonicalHex3(existing.commitment) !== canonicalHex3(output.commitment)) {
+        throw new Error("Typed batch scan returned conflicting output evidence");
+      }
+      targetOutputs.set(key, output);
+    }
+    if (targetSummaries.size > 1) {
+      throw new Error("Submitted transaction contains multiple batch operations; automatic reconciliation is ambiguous");
+    }
+    const summary = [...targetSummaries.values()][0];
+    if (summary) {
+      const identity = typedBatchEventIdentity(summary);
+      const outputs = [...targetOutputs.values()].filter((output) => sameTypedBatchEventIdentity(typedBatchEventIdentity(output), identity));
+      if (outputs.length === Number(summary.output_count)) {
+        outputs.sort((left, right) => Number(left.output_index) - Number(right.output_index));
+        assertTypedBatchEffect({
+          summary,
+          outputs,
+          operationEvidence: batchOperationEvidence(artifact),
+          outputCount: artifact?.prepared?.outputCount,
+          txHash,
+          maxOutputs: batchTransferMaxPayments
+        });
+        return true;
+      }
+    }
+    if (!page.has_more) return false;
+    after = {
+      height: page.next_cursor.height,
+      globalSequence: page.next_cursor.global_sequence,
+      outputIndex: page.next_cursor.output_index
+    };
+    if (Number(after.height) > height && !targetSummaries.size) return false;
+  }
+  throw new Error("Typed batch reconciliation exceeded the privacy scan page limit");
+}
+async function cosmosBatchEvidenceForReservations(records = [], {
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  if (!isBatchReservationOperation(records)) return null;
+  const artifact = await loadBatchTransferArtifact({ sessionContext });
+  if (!artifact || !batchArtifactMatchesReservations(artifact, records)) return null;
+  if (batchReservationExecutionTransport(records, artifact) !== "cosmos") return null;
+  const expected = [...new Set(records.map((record) => normalizedHex4(record.expected_operation_evidence_hash)).filter(Boolean))];
+  if (expected.length !== 1 || normalizedHex4(artifact.operationEvidenceHash) !== expected[0]) return null;
+  const operationEvidence = batchOperationEvidence(artifact);
+  if (!operationEvidence || normalizedHex4(await digestText(JSON.stringify(operationEvidence))) !== expected[0]) {
+    throw new Error("Encrypted batch operation evidence does not match its durable evidence hash");
+  }
+  const txHashes = [...new Set(records.map((record) => String(record.submitted_tx_hash || "").trim()).filter(Boolean))];
+  if (txHashes.length !== 1) return null;
+  const txHash = txHashes[0];
+  const check = await checkReservationTransaction(txHash);
+  assertPrivacySession(sessionContext);
+  if (!check.included || check.failed) return null;
+  const height = authoritativeTransactionHeight(check);
+  if (!height) throw new Error(`Included batch transaction ${txHash} has no authoritative height`);
+  if (!await typedCosmosBatchEvidence(txHash, height, artifact, { sessionContext })) return null;
+  return { txHash, operationEvidenceHash: expected[0] };
+}
+async function refreshPersistedEvmBatchReceiptEvidence(manager, {
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  if (!manager || activeChainProfile()?.transport !== "evm") return false;
+  const allReservations = await manager.store.listReservations({ ownerKeyId: manager.ownerKeyId });
+  assertPrivacySession(sessionContext);
+  const groups = groupReservationOperations(allReservations);
+  let updated = false;
+  for (const group of groups) {
+    const records = group.records || [];
+    if (!isBatchReservationOperation(records)) continue;
+    const artifact = await loadBatchTransferArtifact({ sessionContext });
+    if (!artifact || !batchArtifactMatchesReservations(artifact, records) || artifact.receiptEvidence) continue;
+    const txHashes = [...new Set(records.map((record) => String(record.submitted_tx_hash || "").trim()).filter(Boolean))];
+    if (txHashes.length !== 1 || !artifact.transaction) continue;
+    let result;
+    try {
+      result = await waitForEvmTransaction(
+        txHashes[0],
+        "EVM batch transfer",
+        { sessionContext },
+        artifact.transaction,
+        artifact.sender || state.wallet.account
+      );
+      assertPrivacySession(sessionContext);
+    } catch (error) {
+      if (evmReceiptHasFailed(error?.broadcast?.receipt)) continue;
+      throw error;
+    }
+    if (result.unknown) continue;
+    await saveBatchReceiptEvidence({
+      reservation: artifact.reservation,
+      operationEvidenceHash: artifact.operationEvidenceHash
+    }, result, { sessionContext });
+    updated = true;
+  }
+  return updated;
+}
+async function hydrateBatchTransferRecovery({
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  const artifact = await loadBatchTransferArtifact({ sessionContext });
+  if (artifact?.txHash) state.keplr.batchTransferHash = artifact.txHash;
+}
+async function assertNoUnresolvedBatchTransferArtifact({
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  const artifact = await loadBatchTransferArtifact({ sessionContext });
+  if (!artifact) return;
+  const manager = await currentReservationManager();
+  assertPrivacySession(sessionContext);
+  if (!manager) throw new Error("Encrypted note reservation manager is not available");
+  const reservationIDs2 = batchReservationIDs(artifact.reservation);
+  const records = await Promise.all(reservationIDs2.map((id) => manager.getReservation(id)));
+  assertPrivacySession(sessionContext);
+  if (records.some((record) => !record)) {
+    throw new Error("Encrypted batch recovery artifact is missing its reservation identity; manual recovery is required");
+  }
+  const terminal = /* @__PURE__ */ new Set([
+    reservationStatuses.ConfirmedSpent,
+    reservationStatuses.ReplanRequired,
+    reservationStatuses.Released,
+    reservationStatuses.Failed
+  ]);
+  if (records.every((record) => terminal.has(record.status))) {
+    await clearBatchTransferArtifact({ records, sessionContext });
+    return;
+  }
+  throw new Error("A previous atomic batch is still unresolved. Reconcile or review its note reservation before preparing another batch.");
 }
 async function persistRelayWithdrawRecovery(next = state.relayWithdraw, {
   store = null,
@@ -101011,9 +106912,9 @@ async function hydrateRelayWithdrawRecovery({
     error.code = "OPERATION_STATE_CORRUPT";
     throw error;
   }
-  const reservationTxHashes = records.map((record) => normalizedHex3(record?.submitted_tx_hash));
+  const reservationTxHashes = records.map((record) => normalizedHex4(record?.submitted_tx_hash));
   const commonReservationTxHashes = [...new Set(reservationTxHashes.filter(Boolean))];
-  if (commonReservationTxHashes.length > 1 || commonReservationTxHashes.length === 1 && reservationTxHashes.some((hash) => !hash) || commonReservationTxHashes.length === 1 && nextRelayWithdraw.txHash && normalizedHex3(nextRelayWithdraw.txHash) !== commonReservationTxHashes[0]) {
+  if (commonReservationTxHashes.length > 1 || commonReservationTxHashes.length === 1 && reservationTxHashes.some((hash) => !hash) || commonReservationTxHashes.length === 1 && nextRelayWithdraw.txHash && normalizedHex4(nextRelayWithdraw.txHash) !== commonReservationTxHashes[0]) {
     const error = new Error("Linked relay reservations contain conflicting or partial submitted transaction identities");
     error.code = "OPERATION_STATE_CORRUPT";
     throw error;
@@ -101132,6 +107033,16 @@ async function discardPreparedReservation(data, reason = "user_cancelled_before_
     }
   });
   assertPrivacySession(sessionContext);
+  if (activeChainProfile()?.transport === "evm" && data?.reservationKind !== "batch-transfer") {
+    const operationKey = preparedOperationKey(data);
+    if (operationKey) {
+      await clearEvmOperationArtifact(operationKey, {
+        records: preparedReservationIDs(data).map((reservation_id) => ({ reservation_id })),
+        sessionContext
+      });
+      assertPrivacySession(sessionContext);
+    }
+  }
   await refreshReservationState(manager, { sessionContext });
   assertPrivacySession(sessionContext);
 }
@@ -101406,20 +107317,20 @@ function noteHasUnspentEvidence(note) {
   return note?.spent !== true && note?.isSpent !== true && String(note?.nullifier_status || note?.nullifierStatus || "").toLowerCase() === "unspent";
 }
 function privacyTransferEventNullifiers(event) {
-  return ["nullifier_1", "nullifier_2"].map((key) => normalizedHex3(eventAttribute6(event, key))).filter(Boolean);
+  return ["nullifier_1", "nullifier_2"].map((key) => normalizedHex4(eventAttribute6(event, key))).filter(Boolean);
 }
 function transferEventMatchesOperation(event, records, notesByLookupKey) {
   const nullifiers = records.map((record) => noteNullifier(notesByLookupKey.get(record.nullifier_lookup_key))).filter(Boolean);
   if (nullifiers.length !== records.length || event?.event_type !== "shielded_transfer") return false;
   const eventNullifiers = new Set(privacyTransferEventNullifiers(event));
-  return nullifiers.every((nullifier) => eventNullifiers.has(normalizedHex3(nullifier)));
+  return nullifiers.every((nullifier) => eventNullifiers.has(normalizedHex4(nullifier)));
 }
 function withdrawEventMatchesOperation(event, records, notesByLookupKey) {
   const nullifiers = records.map((record) => noteNullifier(notesByLookupKey.get(record.nullifier_lookup_key))).filter(Boolean);
   if (event?.event_type !== "withdraw" || nullifiers.length !== records.length || nullifiers.length !== 1) {
     return false;
   }
-  return normalizedHex3(eventAttribute6(event, "nullifier")) === normalizedHex3(nullifiers[0]);
+  return normalizedHex4(eventAttribute6(event, "nullifier")) === normalizedHex4(nullifiers[0]);
 }
 function operationEventMatches(event, records, notesByLookupKey) {
   return transferEventMatchesOperation(event, records, notesByLookupKey) || withdrawEventMatchesOperation(event, records, notesByLookupKey);
@@ -101476,13 +107387,13 @@ async function operationEventForReservations(records, notesByLookupKey) {
   return { complete: true, event, operationSuccessEvidence: operationSuccessEvidence2 };
 }
 function operationEvidenceWithReservationTransactionIdentity(records, txHash, evidence = {}) {
-  const normalized = normalizedHex3(txHash);
+  const normalized = normalizedHex4(txHash);
   if (!normalized) return null;
   let transactionIdentity;
   if (activeChainProfile()?.transport !== "cosmos") {
     transactionIdentity = { txHash: normalized };
   } else {
-    const submittedHashes = records.map((record) => normalizedHex3(record?.submitted_tx_hash));
+    const submittedHashes = records.map((record) => normalizedHex4(record?.submitted_tx_hash));
     if (submittedHashes.length > 0 && submittedHashes.every((hash) => hash === normalized)) {
       transactionIdentity = { txHash: normalized };
     } else if (submittedHashes.every((hash) => !hash) && commonCosmosReservationTransactionHash(records) === normalized) {
@@ -101502,8 +107413,8 @@ function operationEvidenceWithReservationTransactionIdentity(records, txHash, ev
 function operationEvidenceFromEvent(records, event) {
   const first = records[0];
   return operationEvidenceWithReservationTransactionIdentity(records, event?.tx_hash_hex, {
-    outputCommitment: normalizedHex3(eventAttribute6(event, "commitment_1")),
-    auditDisclosureDigest: normalizedHex3(eventAttribute6(event, "audit_disclosure_digest")),
+    outputCommitment: normalizedHex4(eventAttribute6(event, "commitment_1")),
+    auditDisclosureDigest: normalizedHex4(eventAttribute6(event, "audit_disclosure_digest")),
     recipientHash: first.expected_recipient_hash,
     amount: first.expected_amount,
     amountHash: first.expected_amount_hash,
@@ -101511,6 +107422,132 @@ function operationEvidenceFromEvent(records, event) {
     batchItemIndex: first.batch_item_index,
     batchItemIndexKnown: first.batch_item_index_known
   });
+}
+function reservationExecutionTransport2(records = []) {
+  const transports = [...new Set((records || []).map((record) => String(
+    record?.metadata?.execution_transport || record?.metadata?.executionTransport || ""
+  ).trim().toLowerCase()).filter(Boolean))];
+  if (transports.length > 1) {
+    throw new Error("Reservations disagree about their execution transport");
+  }
+  return transports[0] || "cosmos";
+}
+function isRelayWithdrawReservation(records = []) {
+  return (records || []).some((record) => String(record?.kind || "").toLowerCase().includes("relay") || record?.metadata?.relay_handed_off === true || record?.metadata?.relayHandedOff === true);
+}
+async function directEvmReceiptEvidenceForReservations(records = [], {
+  notesByLookupKey = /* @__PURE__ */ new Map(),
+  sessionContext = privacySessionSnapshot(),
+  assertCurrent = null
+} = {}) {
+  const assertFresh = () => {
+    assertPrivacySession(sessionContext);
+    assertCurrent?.();
+  };
+  assertFresh();
+  const artifact = await loadEvmOperationArtifactForReservations(records, { sessionContext });
+  assertFresh();
+  if (!artifact?.transaction || !artifact?.sender) {
+    return { complete: false, evidence: null };
+  }
+  const txHashes = [...new Set(records.map((record) => String(record?.submitted_tx_hash || "").trim()).filter(Boolean))];
+  if (txHashes.length !== 1) return { complete: false, evidence: null };
+  let receiptResult = artifact.receiptResult || null;
+  if (!receiptResult) {
+    const result = await waitForEvmTransaction(
+      txHashes[0],
+      "EVM privacy operation recovery",
+      { sessionContext },
+      artifact.transaction,
+      artifact.sender
+    );
+    assertFresh();
+    if (result.unknown) return { complete: false, evidence: null };
+    const updated2 = await updateEvmOperationArtifact(artifact.operationKey, (current) => {
+      if (!current) return void 0;
+      if (!evmOperationArtifactMatchesReservations(current, records)) {
+        throw new Error("Encrypted EVM operation recovery artifact no longer matches its reservations");
+      }
+      if (current.txHash && normalizedHex4(current.txHash) !== normalizedHex4(result.txHash)) {
+        throw new Error("Encrypted EVM operation recovery artifact contains a different submitted transaction");
+      }
+      return {
+        ...current,
+        phase: "receipt-verified",
+        txHash: result.txHash,
+        receiptResult: result
+      };
+    }, { sessionContext });
+    assertFresh();
+    if (!updated2.artifact) return { complete: false, evidence: null };
+    receiptResult = updated2.artifact.receiptResult;
+  }
+  const txResult = verifiedEvmTransactionResult(receiptResult, "EVM privacy operation recovery");
+  const receiptHeight = authoritativeTransactionHeight({ height: txResult.receipt?.blockNumber });
+  const expectedNullifiers = records.map((record) => noteNullifier(notesByLookupKey.get(record.nullifier_lookup_key)));
+  if (expectedNullifiers.some((value) => !value)) {
+    return { complete: false, evidence: null };
+  }
+  const expectedCommitments = [...new Set(records.map((record) => String(record.expected_output_commitment || "").trim()).filter(Boolean))];
+  const effect = await verifiedEvmTypedScanEffect({
+    evmTxHash: txResult.txHash,
+    receiptHeight,
+    expectedEventTypes: reservationPrivacyEventTypes(records),
+    expectedNullifiers,
+    expectedCommitments,
+    sessionContext
+  });
+  assertFresh();
+  if (!effect) return { complete: false, evidence: null };
+  const evidence = records.some(reservationRequiresOperationEvidence) ? directEvmOperationSuccessEvidence(records, receiptResult, effect) : null;
+  const updated = await updateEvmOperationArtifact(artifact.operationKey, (current) => {
+    if (!current || !evmOperationArtifactMatchesReservations(current, records)) return void 0;
+    if (normalizedHex4(current.receiptResult?.txHash) !== normalizedHex4(txResult.txHash)) {
+      throw new Error("Encrypted EVM operation recovery artifact contains a different verified transaction");
+    }
+    return {
+      ...current,
+      phase: "typed-effect-verified",
+      scanTransactionLink: effect.scanTransactionLink,
+      typedScanEvidence: evidence?.typedScanEvidence || {
+        scanTxHash: exactTypedScanTransactionHash(effect.summary.tx_hash),
+        height: String(effect.summary.height),
+        eventType: effect.summary.event_type,
+        outputCount: effect.outputs.length,
+        nullifiers: (effect.summary.nullifiers || []).map(canonicalHex3)
+      },
+      ...evidence ? { operationSuccessEvidence: evidence } : {}
+    };
+  }, { sessionContext });
+  assertFresh();
+  if (!updated.artifact) return { complete: false, evidence: null };
+  return {
+    complete: true,
+    evidence: evidence ? updated.artifact.operationSuccessEvidence : null
+  };
+}
+async function clearTerminalDirectEvmOperationArtifacts(records = [], {
+  sessionContext = privacySessionSnapshot()
+} = {}) {
+  assertPrivacySession(sessionContext);
+  if (activeChainProfile()?.transport !== "evm") return;
+  const terminalStatuses = /* @__PURE__ */ new Set([
+    reservationStatuses.ConfirmedSpent,
+    reservationStatuses.ReplanRequired,
+    reservationStatuses.Released,
+    reservationStatuses.Failed
+  ]);
+  for (const operation of groupReservationOperations(records)) {
+    const operationRecords = operation.records || [];
+    if (!operationRecords.length || isBatchReservationOperation(operationRecords) || isRelayWithdrawReservation(operationRecords) || reservationExecutionTransport2(operationRecords) !== "evm" || operationRecords.some((record) => !terminalStatuses.has(record.status))) {
+      continue;
+    }
+    const operationKey = reservationGroupOperationKey(operationRecords);
+    if (operationKey) {
+      await clearEvmOperationArtifact(operationKey, { records: operationRecords, sessionContext });
+      assertPrivacySession(sessionContext);
+    }
+  }
 }
 async function reconcileSpentReservations(manager, notes = state.keplr.notes, {
   sessionContext = null,
@@ -101551,6 +107588,37 @@ async function reconcileSpentReservations(manager, notes = state.keplr.notes, {
   for (const records of groups.values()) {
     const spentRecords = records.filter((record) => notesByLookupKey.has(record.nullifier_lookup_key));
     if (!spentRecords.length) continue;
+    const executionTransport = reservationExecutionTransport2(records);
+    if (isBatchReservationOperation(records)) {
+      if (spentRecords.length !== records.length) continue;
+      const operationSuccessEvidence3 = executionTransport === "evm" ? await batchReceiptEvidenceForReservations(records, {
+        sessionContext: sessionContext || privacySessionSnapshot()
+      }) : executionTransport === "cosmos" ? await cosmosBatchEvidenceForReservations(records, {
+        sessionContext: sessionContext || privacySessionSnapshot()
+      }) : null;
+      assertFresh();
+      if (!operationSuccessEvidence3) continue;
+      for (const record of spentRecords) {
+        eligibleLookupKeys.add(record.nullifier_lookup_key);
+        evidenceByLookupKey.set(record.nullifier_lookup_key, operationSuccessEvidence3);
+      }
+      continue;
+    }
+    if (executionTransport === "evm" && !isBatchReservationOperation(records) && !isRelayWithdrawReservation(records)) {
+      if (spentRecords.length !== records.length) continue;
+      const recovered = await directEvmReceiptEvidenceForReservations(records, {
+        notesByLookupKey,
+        sessionContext: sessionContext || privacySessionSnapshot(),
+        assertCurrent
+      });
+      assertFresh();
+      if (!recovered.complete) continue;
+      for (const record of spentRecords) {
+        eligibleLookupKeys.add(record.nullifier_lookup_key);
+        if (recovered.evidence) evidenceByLookupKey.set(record.nullifier_lookup_key, recovered.evidence);
+      }
+      continue;
+    }
     if (!records.some(reservationRequiresOperationEvidence)) {
       spentRecords.forEach((record) => eligibleLookupKeys.add(record.nullifier_lookup_key));
       continue;
@@ -101581,6 +107649,27 @@ async function reconcileSpentReservations(manager, notes = state.keplr.notes, {
   assertFresh();
   const reconciled = await manager.reconcileSpentNotes(eligible);
   assertFresh();
+  const reconciledByID = new Map((reconciled || []).map((record) => [record.reservation_id, record]));
+  for (const records of groups.values()) {
+    const latest = records.map((record) => reconciledByID.get(record.reservation_id) || record);
+    const succeeded = latest.length > 0 && latest.every((record) => record.status === reservationStatuses.ConfirmedSpent && (!reservationRequiresOperationEvidence(record) || operationReconciliationStatus(record) === operationStatuses.Succeeded));
+    if (!succeeded) continue;
+    if (isBatchReservationOperation(latest)) {
+      await clearBatchTransferArtifact({
+        records: latest,
+        sessionContext: sessionContext || privacySessionSnapshot()
+      });
+    } else if (reservationExecutionTransport2(latest) === "evm" && !isRelayWithdrawReservation(latest)) {
+      const operationKey = reservationGroupOperationKey(latest);
+      if (operationKey) {
+        await clearEvmOperationArtifact(operationKey, {
+          records: latest,
+          sessionContext: sessionContext || privacySessionSnapshot()
+        });
+      }
+    }
+    assertFresh();
+  }
   return reconciled;
 }
 function injectedEthereumProviders() {
@@ -101737,6 +107826,17 @@ var els = {
   includeSelfViewDisclosure: $("#includeSelfViewDisclosure"),
   selfViewWarning: $("#selfViewWarning"),
   transferFromVeiled: $("#transferFromVeiled"),
+  batchTransferSection: $("#batchTransferSection"),
+  batchTransferDescription: $("#batchTransferDescription"),
+  batchTransferRows: $("#batchTransferRows"),
+  batchAuthorizationPanel: $("#batchAuthorizationPanel"),
+  batchUseAuthorization: $("#batchUseAuthorization"),
+  batchAuthorizationOptions: $("#batchAuthorizationOptions"),
+  batchAuthorizationKind: $("#batchAuthorizationKind"),
+  batchAuthorizationAccount: $("#batchAuthorizationAccount"),
+  addBatchTransferPayment: $("#addBatchTransferPayment"),
+  transferBatchFromVeiled: $("#transferBatchFromVeiled"),
+  batchTransferHash: $("#batchTransferHash"),
   veiledWithdrawAmount: $("#veiledWithdrawAmount"),
   veiledWithdrawRecipient: $("#veiledWithdrawRecipient"),
   veiledWithdrawRecipientSuggestions: $("#veiledWithdrawRecipientSuggestions"),
@@ -101827,6 +107927,7 @@ var els = {
   auditorPlanePolicy: $("#auditorPlanePolicy"),
   auditorOutputIndex: $("#auditorOutputIndex"),
   auditorCommitment: $("#auditorCommitment"),
+  auditorBatchOutputs: $("#auditorBatchOutputs"),
   auditorTestScalar: $("#auditorTestScalar"),
   decodeAuditorTransfer: $("#decodeAuditorTransfer"),
   auditorSection: $(".auditor-section"),
@@ -101996,7 +108097,9 @@ function invalidateActivePrivacyFlow() {
   transferFlowState.retry = null;
   transferFlowState.review = null;
   relayHandoffInFlight = false;
+  batchTransferInFlight = false;
   valueMovingActionGate.invalidate();
+  evmBroadcastWatcher.invalidateAll();
   for (const action of [
     els.fundKeplr,
     els.sendFromKeplr,
@@ -102004,13 +108107,15 @@ function invalidateActivePrivacyFlow() {
     els.transferFromVeiled,
     els.withdrawFromVeiled,
     els.relayWithdrawFromVeiled,
-    els.relayPreparedWithdraw
+    els.relayPreparedWithdraw,
+    els.transferBatchFromVeiled
   ]) {
     if (action) setBusy(action, false);
   }
 }
 function runValueMovingAction(action, task) {
   const operation = valueMovingActionGate.run(action, () => {
+    evmBroadcastWatcher.invalidateAll();
     renderKeplr();
     return task();
   });
@@ -102035,6 +108140,20 @@ var privacyFlowCopies = {
     successTitle: "\uD2B8\uB79C\uC2A4\uD37C \uC694\uCCAD\uC774 \uC131\uACF5\uD558\uC600\uC2B5\uB2C8\uB2E4",
     successCopy: "\uCD5C\uC2E0 notes\uB97C \uB2E4\uC2DC \uC2A4\uCE94\uD55C \uC0C1\uD0DC\uC785\uB2C8\uB2E4.",
     failureTitle: "\uD2B8\uB79C\uC2A4\uD37C \uC694\uCCAD\uC774 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4"
+  },
+  batchTransfer: {
+    title: "Atomic Batch Transfer \uD655\uC778",
+    lead: "\uBAA8\uB4E0 \uC218\uC2E0\uC790\xB7\uAE08\uC561\xB7payment\uBCC4 disclosure\uB97C proof \uD558\uB098\uC640 transaction \uD558\uB098\uB85C \uC900\uBE44\uD569\uB2C8\uB2E4. \uC774 batch\uB294 all-or-nothing\uC785\uB2C8\uB2E4.",
+    runningLead: "proof\uB97C \uC900\uBE44\uD558\uACE0 \uC788\uC2B5\uB2C8\uB2E4. \uC644\uB8CC\uB418\uBA74 \uC5F0\uACB0\uB41C wallet\uC5D0\uC11C batch transaction\uC744 \uD655\uC778\uD574 \uC8FC\uC138\uC694.",
+    doneLead: "\uC694\uCCAD\uC774 \uCC98\uB9AC\uB418\uC5C8\uC2B5\uB2C8\uB2E4.",
+    failedLead: "Batch transaction\uC744 \uC644\uB8CC\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.",
+    stepOneTitle: "Batch proof \uC900\uBE44",
+    stepOneCopy: "\uC120\uD0DD\uB41C input notes\uC640 \uBAA8\uB4E0 batch output\uC744 \uD558\uB098\uC758 proof\uC5D0 \uACB0\uD569\uD569\uB2C8\uB2E4.",
+    stepTwoTitle: "Batch \uC11C\uBA85",
+    stepTwoCopy: "\uC900\uBE44\uB41C \uB2E8\uC77C privacy transaction\uC744 \uC5F0\uACB0\uB41C wallet\uC5D0\uC11C \uD655\uC778\uD558\uACE0 \uC11C\uBA85\uD569\uB2C8\uB2E4.",
+    successTitle: "Batch transfer \uC694\uCCAD\uC774 \uC131\uACF5\uD558\uC600\uC2B5\uB2C8\uB2E4",
+    successCopy: "\uCD5C\uC2E0 notes\uC640 batch operation evidence\uB97C \uB2E4\uC2DC \uD655\uC778\uD569\uB2C8\uB2E4.",
+    failureTitle: "Batch transfer \uC694\uCCAD\uC774 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4"
   },
   withdraw: {
     title: "Privacy Withdraw \uD655\uC778",
@@ -102454,16 +108573,41 @@ function evmQuantityToBigInt(value, label = "EVM quantity") {
 function bigIntToEvmQuantity(value) {
   return `0x${value.toString(16)}`;
 }
+function paddedEvmGas(estimated) {
+  return (estimated * 13n + 9n) / 10n;
+}
+function evmRpcTransaction(transaction = {}, { from = "" } = {}) {
+  const request = {};
+  for (const key of [
+    "from",
+    "to",
+    "data",
+    "value",
+    "gas",
+    "gasPrice",
+    "maxFeePerGas",
+    "maxPriorityFeePerGas",
+    "nonce",
+    "chainId",
+    "type",
+    "accessList"
+  ]) {
+    if (transaction?.[key] != null) request[key] = transaction[key];
+  }
+  if (from) request.from = from;
+  return request;
+}
 async function withEstimatedEvmGas(transaction) {
-  const tx = { ...transaction };
+  const tx = evmRpcTransaction(transaction);
   try {
+    const estimateRequest = { ...tx };
+    delete estimateRequest.gas;
     const estimated = evmQuantityToBigInt(await requestMetaMask({
       method: "eth_estimateGas",
-      params: [tx]
+      params: [estimateRequest]
     }), "estimated gas");
-    const padded = (estimated * 13n + 9n) / 10n;
-    const existing = tx.gas ? evmQuantityToBigInt(tx.gas, "transaction gas") : 0n;
-    tx.gas = bigIntToEvmQuantity(existing > padded ? existing : padded);
+    const padded = paddedEvmGas(estimated);
+    tx.gas = bigIntToEvmQuantity(padded);
     return tx;
   } catch {
     delete tx.gas;
@@ -102492,16 +108636,18 @@ async function updateDepositNetworkFee(transaction) {
     return fee;
   }
   try {
-    const request = { ...transaction, from: state.wallet.account };
+    const request = evmRpcTransaction(transaction, { from: state.wallet.account });
+    delete request.gas;
     const [gasHex, gasPriceHex] = await Promise.all([
       requestMetaMask({ method: "eth_estimateGas", params: [request] }),
       requestMetaMask({ method: "eth_gasPrice" })
     ]);
-    const gas = evmQuantityToBigInt(gasHex, "estimated gas");
+    const estimatedGas = evmQuantityToBigInt(gasHex, "estimated gas");
+    const gas = paddedEvmGas(estimatedGas);
     const gasPrice = evmQuantityToBigInt(gasPriceHex, "gas price");
     const fee = gas * gasPrice;
     state.keplr.networkFeeAmount = fee.toString();
-    state.keplr.networkFeeEstimate = `\u2248 ${formatEvmNetworkFee(fee)} \xB7 gas ${gas}`;
+    state.keplr.networkFeeEstimate = `\u2248 ${formatEvmNetworkFee(fee)} \xB7 gas ${gas} (estimate + 30%)`;
     renderKeplr();
     return fee;
   } catch {
@@ -102541,14 +108687,10 @@ async function estimateDepositFeeBeforeProof() {
   if (state.activeWallet !== "metamask") {
     return updateDepositNetworkFee(null);
   }
-  const configuredGas = activeChainProfile()?.evmGasLimit || state.config?.evmGasLimit;
-  const gas = evmQuantityToBigInt(configuredGas, "configured deposit gas limit");
-  const gasPrice = evmQuantityToBigInt(await requestMetaMask({ method: "eth_gasPrice" }), "gas price");
-  const fee = gas * gasPrice;
-  state.keplr.networkFeeAmount = fee.toString();
-  state.keplr.networkFeeEstimate = `\u2264 ${formatEvmNetworkFee(fee)} budget \xB7 gas limit ${gas}`;
+  state.keplr.networkFeeAmount = "0";
+  state.keplr.networkFeeEstimate = "Fee will be estimated after the deposit proof is prepared";
   renderKeplr();
-  return fee;
+  return 0n;
 }
 function transparentBalanceAmount(denom = baseDenom()) {
   const value = state.keplr.transparentBalances?.[denom] || "0";
@@ -102574,10 +108716,10 @@ function normalizeEvmTxHash(txHash) {
   return String(txHash || "").trim().replace(/^0x/i, "").toUpperCase();
 }
 function attachSubmittedEvmTransactionEvidence(error, txHash) {
-  const failure = error instanceof Error ? error : new Error(String(error));
-  failure.txHash ||= txHash;
-  failure.evmTxHash ||= txHash;
-  return failure;
+  const failure2 = error instanceof Error ? error : new Error(String(error));
+  failure2.txHash ||= txHash;
+  failure2.evmTxHash ||= txHash;
+  return failure2;
 }
 function isExplicitWalletRejection3(error) {
   return String(error?.code ?? error?.data?.code ?? "") === "4001";
@@ -102600,14 +108742,14 @@ function assertPrivacySessionAfterEvmSubmission(sessionContext, txHash) {
     throw attachSubmittedEvmTransactionEvidence(error, txHash);
   }
 }
-function bytesToBase644(bytes4) {
+function bytesToBase645(bytes4) {
   let binary = "";
   for (let i = 0; i < bytes4.length; i += 32768) {
     binary += String.fromCharCode(...bytes4.slice(i, i + 32768));
   }
   return btoa(binary);
 }
-function base64ToBytes4(value) {
+function base64ToBytes5(value) {
   const binary = atob(value);
   const bytes4 = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) {
@@ -102723,7 +108865,7 @@ function summarizeReservationAvailableNotes(notes) {
   const total = available.reduce((sum, note) => sum + noteAmountValue(note), 0n);
   const reservedText = reservedCount ? ` \xB7 ${reservedCount} reserved` : "";
   const helperText = helperCount ? ` \xB7 ${helperCount} helper` : "";
-  return `${total}${baseDenom()} / ${available.length} available${reservedText}${helperText}`;
+  return `${formatUclairAsClair(total)} \xB7 ${available.length} available${reservedText}${helperText}`;
 }
 function reconcilePendingDepositRecoveryFromTypedNotes() {
   if (![
@@ -102737,10 +108879,11 @@ function reconcilePendingDepositRecoveryFromTypedNotes() {
     return null;
   }
   let recovered;
+  const evm = activeChainProfile()?.transport === "evm";
+  const expectedCommitment = normalizedHex4(state.keplr.depositPrepared?.noteCommitmentHex);
   try {
-    recovered = recoveredDepositNoteForTxHash(state.keplr.notes, state.keplr.depositHash);
-    const expectedCommitment = normalizedHex3(state.keplr.depositPrepared?.noteCommitmentHex);
-    if (recovered && expectedCommitment && normalizedHex3(noteCommitment(recovered)) !== expectedCommitment) {
+    recovered = evm ? recoveredDepositNoteForCommitment(state.keplr.notes, expectedCommitment) : recoveredDepositNoteForTxHash(state.keplr.notes, state.keplr.depositHash);
+    if (!evm && recovered && expectedCommitment && normalizedHex4(noteCommitment(recovered)) !== expectedCommitment) {
       return null;
     }
   } catch {
@@ -102749,6 +108892,8 @@ function reconcilePendingDepositRecoveryFromTypedNotes() {
   if (!recovered) return null;
   return {
     txHash: state.keplr.depositHash,
+    scanTxHash: exactTypedScanTransactionHash(recovered.tx_hash || recovered.txHash),
+    expectedCommitment,
     height: recovered.height || ""
   };
 }
@@ -102757,19 +108902,40 @@ async function finalizePendingDepositRecoveryFromTypedNotes(recovery, {
   accountTransactionLockHeld = false
 } = {}) {
   if (!recovery?.txHash) return false;
-  const finalize = () => {
+  const evm = activeChainProfile()?.transport === "evm";
+  if (evm) {
+    const recovered = recoveredDepositNoteForCommitment(
+      state.keplr.notes,
+      recovery.expectedCommitment
+    );
+    if (!recovered || exactTypedScanTransactionHash(recovered.tx_hash || recovered.txHash) !== recovery.scanTxHash) {
+      return false;
+    }
+    const scanLink = await verifyEvmTypedScanTransaction(
+      recovered.tx_hash || recovered.txHash,
+      recovery.txHash,
+      { sessionContext }
+    );
+    assertEvmTypedScanLinkHeight(scanLink, recovered.height);
     assertPrivacySession(sessionContext);
-    if (normalizedHex3(state.keplr.depositHash) !== normalizedHex3(recovery.txHash)) {
+  }
+  const finalize = async () => {
+    assertPrivacySession(sessionContext);
+    if (normalizedHex4(state.keplr.depositHash) !== normalizedHex4(recovery.txHash)) {
       return false;
     }
-    const recovered = recoveredDepositNoteForTxHash(state.keplr.notes, recovery.txHash);
-    const expectedCommitment = normalizedHex3(state.keplr.depositPrepared?.noteCommitmentHex);
-    if (!recovered || expectedCommitment && normalizedHex3(noteCommitment(recovered)) !== expectedCommitment) {
+    const recovered = evm ? recoveredDepositNoteForCommitment(state.keplr.notes, recovery.expectedCommitment) : recoveredDepositNoteForTxHash(state.keplr.notes, recovery.txHash);
+    const expectedCommitment = normalizedHex4(state.keplr.depositPrepared?.noteCommitmentHex);
+    if (!recovered || expectedCommitment && normalizedHex4(noteCommitment(recovered)) !== expectedCommitment) {
       return false;
     }
-    clearCapturedPublicPendingTransaction(sessionContext, "deposit", recovery.txHash);
+    if (evm && exactTypedScanTransactionHash(recovered.tx_hash || recovered.txHash) !== recovery.scanTxHash) {
+      return false;
+    }
+    await clearConfirmedDepositRecoveryUnlocked(sessionContext, recovery.txHash);
+    assertPrivacySession(sessionContext);
     state.keplr.depositRecoveryStatus = "recovered";
-    state.keplr.depositRecoveryMessage = "Recovered \xB7 encrypted note matched the exact included tx hash";
+    state.keplr.depositRecoveryMessage = evm ? "Recovered \xB7 encrypted note and linked EVM/Comet transaction verified" : "Recovered \xB7 encrypted note matched the exact included tx hash";
     state.keplr.depositHeight = recovered.height || recovery.height || state.keplr.depositHeight;
     return true;
   };
@@ -102972,6 +109138,9 @@ function selectNoteScanEndpoint(endpoint) {
   browserClient = null;
   browserClientKey = "";
   browserClientDepositProofProvider = null;
+  browserClientEvmContractAdapter = null;
+  browserClientPrivacyStateAdapter = null;
+  browserClientEvmFinalityPolicy = null;
   state.protocol.ready = false;
   state.protocol.error = "";
   renderNoteScanEndpoint();
@@ -103000,6 +109169,7 @@ function renderChainDependentUi() {
   els.faucetHelpText.textContent = `(${displayDenom()} get from ${localSignerLabel(faucetSource)}'s wallet)`;
   renderDappChainHint();
   renderNoteScanEndpoint();
+  renderBatchTransfer();
 }
 function selectDappChainProfile(profileId) {
   invalidatePrivacySession();
@@ -103068,10 +109238,8 @@ async function ensureLocalSignersIfNeeded(data) {
       body: JSON.stringify({})
     });
   } catch (error) {
-    if (error?.statusCode !== 403) {
-      throw error;
-    }
-    toast("Local signer setup is blocked for LAN browsers. Create accounts on the server machine first, or restart with CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING=1.");
+    const message = error?.statusCode === 403 ? "Local signer setup is blocked for LAN browsers. Create accounts on the server machine first, or restart with CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING=1." : `Automatic local signer setup failed: ${browserDataLoadErrorMessage(error)}`;
+    toast(message);
     return {
       ...data,
       accounts: []
@@ -103391,6 +109559,14 @@ function resetKeplrSession() {
   operationStore = null;
   operationStorePromise = null;
   operationStoreKey = "";
+  batchTransferArtifactStore = null;
+  batchTransferArtifactStorePromise = null;
+  batchTransferArtifactStoreKey = "";
+  evmDepositArtifactStore = null;
+  evmDepositArtifactStorePromise = null;
+  evmDepositArtifactStoreKey = "";
+  batchTransferInFlight = false;
+  batchTransferRowSequence = 0;
   state.reservations = defaultReservationState();
   state.relayWithdraw = {
     handoff: null,
@@ -103402,6 +109578,8 @@ function resetKeplrSession() {
     payloadUnavailable: false,
     txHash: "",
     submittedBy: "",
+    evmSender: "",
+    evmReceiptEvidence: null,
     externalHandoff: false,
     resultStatus: "idle",
     resultMessage: "Not checked"
@@ -103495,8 +109673,8 @@ function renderRelayWithdraw() {
   els.relayWithdrawJson.placeholder = state.relayWithdraw.json && !state.relayWithdraw.externalHandoff ? "Use Copy or Download to record the handoff before exposing this payload." : "";
   els.relayWithdrawTxHashDisplay.textContent = state.relayWithdraw.txHash ? shorten(state.relayWithdraw.txHash, 14, 12) : "-";
   els.relayWithdrawTxHash.value = state.relayWithdraw.txHash;
-  const metadataOnlyCosmosRecovery = !handoff && state.relayWithdraw.payloadUnavailable === true && activeChainProfile()?.transport === "cosmos";
-  els.relayWithdrawTxHash.disabled = !state.relayWithdraw.externalHandoff || !handoff && !metadataOnlyCosmosRecovery || ["checking", "confirmed"].includes(state.relayWithdraw.resultStatus);
+  const metadataOnlyRecovery = !handoff && state.relayWithdraw.payloadUnavailable === true && ["cosmos", "evm"].includes(activeChainProfile()?.transport);
+  els.relayWithdrawTxHash.disabled = !state.relayWithdraw.externalHandoff || !handoff && !metadataOnlyRecovery || ["checking", "confirmed"].includes(state.relayWithdraw.resultStatus);
   els.relayWithdrawSubmittedBy.textContent = state.relayWithdraw.submittedBy || "-";
   els.relayWithdrawResult.textContent = state.relayWithdraw.resultMessage || "Not checked";
   els.relayWithdrawResult.dataset.status = state.relayWithdraw.resultStatus;
@@ -103540,6 +109718,8 @@ async function setRelayWithdrawHandoff(prepared) {
     payloadUnavailable: false,
     txHash: "",
     submittedBy: "",
+    evmSender: "",
+    evmReceiptEvidence: null,
     externalHandoff: false,
     resultStatus: "ready",
     resultMessage: "Payload ready \xB7 choose local Relay or external handoff",
@@ -103682,6 +109862,7 @@ function renderKeplr() {
   els.clearPublicPendingState.hidden = !state.keplr.publicPendingStateError && !hashlessAttempt;
   els.clearPublicPendingState.textContent = state.keplr.publicPendingStateError ? "Clear corrupt pending state" : "Clear unresolved wallet attempt";
   els.keplrTransferHash.textContent = state.keplr.transferHash ? shorten(state.keplr.transferHash, 14, 12) : "-";
+  els.batchTransferHash.textContent = state.keplr.batchTransferHash ? shorten(state.keplr.batchTransferHash, 14, 12) : "-";
   els.keplrWithdrawHash.textContent = state.keplr.withdrawHash ? shorten(state.keplr.withdrawHash, 14, 12) : "-";
   els.keplrWithdrawHeight.textContent = state.keplr.withdrawHeight || "-";
   els.keplrWithdrawNullifier.textContent = state.keplr.withdrawNullifierStatus;
@@ -103768,6 +109949,304 @@ function updateAmountActionButtons(status = {}) {
   els.transferFromVeiled.title = privacySpendTitle;
   els.withdrawFromVeiled.title = privacySpendTitle;
   els.relayWithdrawFromVeiled.title = relayRecoveryBlocked ? "Reconcile the existing relay handoff before preparing another relay withdraw." : privacySpendTitle;
+  if (els.transferBatchFromVeiled) {
+    const batchReady = batchTransferEnabled() && batchPaymentDraftIsValid();
+    els.transferBatchFromVeiled.disabled = !batchReady || batchTransferInFlight || valueMovingActionPending || !veiledReady || !privacyStorageReady || !protocolReady || !noteInventoryTrusted || privacyBoundaryBlocked;
+    els.transferBatchFromVeiled.title = !batchReady ? "Add valid shielded payments and complete every disclosure setting. The 32-output limit includes change." : privacySpendTitle;
+  }
+}
+var batchTransferMinPayments = 1;
+var batchTransferMaxPayments = 32;
+var batchTransferMaxInputs2 = 16;
+function batchTransferEnabled() {
+  return ["cosmos", "evm"].includes(activeChainProfile()?.transport) && serverFeature("batchTransfer");
+}
+function batchTransferRows() {
+  return [...els.batchTransferRows?.querySelectorAll("[data-batch-transfer-row]") || []];
+}
+function batchAuthorizationRequested() {
+  return Boolean(
+    activeChainProfile()?.transport === "evm" && els.batchUseAuthorization?.checked && evmBatchAuthorizationAvailable(activeChainProfile())
+  );
+}
+function renderBatchAuthorization() {
+  if (!els.batchAuthorizationPanel) return;
+  const profile = activeChainProfile();
+  const available = evmBatchAuthorizationAvailable(profile);
+  els.batchAuthorizationPanel.hidden = !available;
+  if (!available) {
+    els.batchUseAuthorization.checked = false;
+    els.batchAuthorizationOptions.hidden = true;
+    return;
+  }
+  const kinds = evmBatchAuthorizationKinds(profile);
+  const signature = kinds.join(",");
+  if (els.batchAuthorizationKind.dataset.kinds !== signature) {
+    const previous = Number(els.batchAuthorizationKind.value);
+    els.batchAuthorizationKind.replaceChildren(...kinds.map((kind) => {
+      const option = document.createElement("option");
+      option.value = String(kind);
+      option.textContent = `Kind ${kind}`;
+      return option;
+    }));
+    els.batchAuthorizationKind.value = kinds.includes(previous) ? String(previous) : String(kinds[0]);
+    els.batchAuthorizationKind.dataset.kinds = signature;
+  }
+  els.batchUseAuthorization.disabled = batchTransferInFlight;
+  els.batchAuthorizationKind.disabled = batchTransferInFlight || !els.batchUseAuthorization.checked;
+  els.batchAuthorizationOptions.hidden = !els.batchUseAuthorization.checked;
+  els.batchAuthorizationAccount.textContent = state.wallet.account || "Connect an EVM wallet";
+}
+function batchAuthorizationPreparationOptions(timing = {}, sessionContext = privacySessionSnapshot()) {
+  assertPrivacySession(sessionContext);
+  if (!batchAuthorizationRequested()) return {};
+  const authorization = selfSubmittedEvmBatchAuthorization({
+    profile: activeChainProfile(),
+    account: state.wallet.account,
+    authorizationKind: els.batchAuthorizationKind.value,
+    nonce: randomEvmAuthorizationNonce(),
+    deadline: timing.expiresAtUnix
+  });
+  return {
+    authorization,
+    authorizationSigner: {
+      signTypedData: (typedData) => evmWalletAdapter(sessionContext).signTypedData(typedData)
+    }
+  };
+}
+function batchDisclosureLabel(payment = {}) {
+  const mode = payment.userDisclosureMode || "none";
+  if (mode === "none") return "Private";
+  const policy = payment.userPrivacyPolicy || "all-private";
+  if (mode === "public") return `Public \xB7 ${policy}`;
+  return `Recipient encrypted \xB7 ${policy} \xB7 target ${shorten(payment.userDisclosureTargetPubKeyHex, 12, 10)}`;
+}
+function renderBatchTransferRowDisclosure(row) {
+  const mode = row.querySelector("[data-batch-disclosure-mode]")?.value || "none";
+  const policy = row.querySelector("[data-batch-disclosure-policy]");
+  const targetField = row.querySelector("[data-batch-disclosure-target-field]");
+  const target = row.querySelector("[data-batch-disclosure-target]");
+  if (policy) {
+    policy.disabled = mode === "none" || batchTransferInFlight;
+    if (mode === "none") policy.value = "all-private";
+    if (mode !== "none" && policy.value === "all-private") policy.value = "amount";
+  }
+  if (targetField) targetField.hidden = mode !== "recipient-encrypted";
+  if (target) target.disabled = mode !== "recipient-encrypted" || batchTransferInFlight;
+}
+function batchPaymentDraftIsValid() {
+  const rows = batchTransferRows();
+  if (rows.length < batchTransferMinPayments || rows.length > batchTransferMaxPayments) return false;
+  return rows.every((row) => {
+    const recipient = row.querySelector("[data-batch-recipient]")?.value.trim() || "";
+    const amount = row.querySelector("[data-batch-amount]");
+    const mode = row.querySelector("[data-batch-disclosure-mode]")?.value || "none";
+    const policy = row.querySelector("[data-batch-disclosure-policy]")?.value || "all-private";
+    const target = row.querySelector("[data-batch-disclosure-target]")?.value.trim() || "";
+    const disclosureValid = mode === "none" ? policy === "all-private" : policy !== "all-private" && (mode !== "recipient-encrypted" || /^[0-9a-fA-F]{64}$/.test(target));
+    return Boolean(recipient) && !isSelfTransferRecipient(recipient) && hasPositiveUclairInput(amount) && disclosureValid;
+  });
+}
+function addBatchTransferPayment({
+  recipient = "",
+  amount = "1",
+  userPrivacyPolicy = "all-private",
+  userDisclosureMode = "none",
+  userDisclosureTargetPubKeyHex = ""
+} = {}) {
+  if (!els.batchTransferRows || batchTransferRows().length >= batchTransferMaxPayments) return;
+  const row = document.createElement("div");
+  row.className = "batch-transfer-row";
+  row.dataset.batchTransferRow = String(++batchTransferRowSequence);
+  const recipientField = document.createElement("label");
+  recipientField.className = "field address-field";
+  const recipientLabel = document.createElement("span");
+  recipientLabel.textContent = "Shielded recipient";
+  const recipientInput = document.createElement("input");
+  recipientInput.dataset.batchRecipient = "";
+  recipientInput.placeholder = `${shieldedPrefix()}1...`;
+  recipientInput.autocomplete = "off";
+  recipientInput.value = recipient;
+  recipientField.append(recipientLabel, recipientInput);
+  const amountField = document.createElement("label");
+  amountField.className = "field amount-field";
+  const amountLabel = document.createElement("span");
+  amountLabel.textContent = "Amount";
+  const amountControl = document.createElement("div");
+  amountControl.className = "amount-control";
+  const amountInput = document.createElement("input");
+  amountInput.dataset.batchAmount = "";
+  amountInput.inputMode = "numeric";
+  amountInput.value = amount;
+  const denom = document.createElement("span");
+  denom.className = "denom";
+  denom.textContent = baseDenom();
+  amountControl.append(amountInput, denom);
+  amountField.append(amountLabel, amountControl);
+  const disclosureField2 = document.createElement("fieldset");
+  disclosureField2.className = "field batch-disclosure-field";
+  const disclosureLegend = document.createElement("legend");
+  disclosureLegend.textContent = "User disclosure";
+  const disclosureControls = document.createElement("div");
+  disclosureControls.className = "batch-disclosure-controls";
+  const modeLabel = document.createElement("label");
+  modeLabel.className = "field";
+  const modeTitle = document.createElement("span");
+  modeTitle.textContent = "Mode";
+  const modeSelect = document.createElement("select");
+  modeSelect.dataset.batchDisclosureMode = "";
+  for (const [value, label] of [
+    ["none", "Private"],
+    ["public", "Public"],
+    ["recipient-encrypted", "Recipient encrypted"]
+  ]) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    modeSelect.append(option);
+  }
+  modeSelect.value = userDisclosureMode;
+  modeLabel.append(modeTitle, modeSelect);
+  const policyLabel = document.createElement("label");
+  policyLabel.className = "field";
+  const policyTitle = document.createElement("span");
+  policyTitle.textContent = "Fields";
+  const policySelect = document.createElement("select");
+  policySelect.dataset.batchDisclosurePolicy = "";
+  for (const value of [
+    "all-private",
+    "amount",
+    "to",
+    "amount-to",
+    "from",
+    "amount-from",
+    "from-to",
+    "amount-from-to"
+  ]) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value === "all-private" ? "None" : value;
+    policySelect.append(option);
+  }
+  policySelect.value = userPrivacyPolicy;
+  policyLabel.append(policyTitle, policySelect);
+  const targetLabel = document.createElement("label");
+  targetLabel.className = "field batch-disclosure-target-field";
+  targetLabel.dataset.batchDisclosureTargetField = "";
+  const targetTitle = document.createElement("span");
+  targetTitle.textContent = "Target disclosure public key";
+  const targetInput = document.createElement("input");
+  targetInput.dataset.batchDisclosureTarget = "";
+  targetInput.placeholder = "32-byte hex public key";
+  targetInput.autocomplete = "off";
+  targetInput.value = userDisclosureTargetPubKeyHex;
+  targetLabel.append(targetTitle, targetInput);
+  disclosureControls.append(modeLabel, policyLabel, targetLabel);
+  disclosureField2.append(disclosureLegend, disclosureControls);
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "secondary-button batch-transfer-remove";
+  remove.textContent = "Remove";
+  remove.addEventListener("click", () => {
+    row.remove();
+    renderBatchTransfer();
+    updateAmountActionButtons();
+  });
+  [recipientInput, amountInput, targetInput].forEach((input) => input.addEventListener("input", updateAmountActionButtons));
+  modeSelect.addEventListener("change", () => {
+    renderBatchTransferRowDisclosure(row);
+    updateAmountActionButtons();
+  });
+  policySelect.addEventListener("change", updateAmountActionButtons);
+  row.append(recipientField, amountField, remove, disclosureField2);
+  els.batchTransferRows.append(row);
+  renderBatchTransferRowDisclosure(row);
+}
+function renderBatchTransfer() {
+  if (!els.batchTransferSection) return;
+  const enabled = batchTransferEnabled();
+  els.batchTransferSection.hidden = !enabled;
+  if (!enabled) {
+    renderBatchAuthorization();
+    return;
+  }
+  const transport = activeChainProfile()?.transport === "evm" ? "EVM" : "Cosmos";
+  els.batchTransferDescription.textContent = `Submit shielded payments atomically with one proof and one ${transport} transaction. The 32-output limit includes change.`;
+  while (batchTransferRows().length < batchTransferMinPayments) {
+    addBatchTransferPayment();
+  }
+  const rows = batchTransferRows();
+  els.addBatchTransferPayment.disabled = batchTransferInFlight || rows.length >= batchTransferMaxPayments;
+  for (const row of rows) {
+    const remove = row.querySelector(".batch-transfer-remove");
+    if (remove) remove.disabled = batchTransferInFlight || rows.length <= batchTransferMinPayments;
+    for (const control of row.querySelectorAll("input, select")) control.disabled = batchTransferInFlight;
+    renderBatchTransferRowDisclosure(row);
+  }
+  renderBatchAuthorization();
+}
+function collectBatchTransferPayments() {
+  const rows = batchTransferRows();
+  if (rows.length < batchTransferMinPayments || rows.length > batchTransferMaxPayments) {
+    throw new Error(`Atomic batch transfer requires ${batchTransferMinPayments}\u2013${batchTransferMaxPayments} payments`);
+  }
+  return rows.map((row, index) => {
+    const recipient = row.querySelector("[data-batch-recipient]")?.value.trim() || "";
+    if (!recipient) throw new Error(`Batch recipient ${index + 1} is required`);
+    if (isSelfTransferRecipient(recipient)) {
+      throw new Error(`Batch recipient ${index + 1} cannot be your own shielded address`);
+    }
+    const amount = amountInputValue(row.querySelector("[data-batch-amount]"));
+    const userDisclosureMode = row.querySelector("[data-batch-disclosure-mode]")?.value || "none";
+    const userPrivacyPolicy = row.querySelector("[data-batch-disclosure-policy]")?.value || "all-private";
+    const userDisclosureTargetPubKeyHex = row.querySelector("[data-batch-disclosure-target]")?.value.trim() || "";
+    if (userDisclosureMode === "none" && userPrivacyPolicy !== "all-private") {
+      throw new Error(`Batch payment ${index + 1} private mode must not select disclosed fields`);
+    }
+    if (userDisclosureMode !== "none" && userPrivacyPolicy === "all-private") {
+      throw new Error(`Batch payment ${index + 1} disclosure must select at least one field`);
+    }
+    if (userDisclosureMode === "recipient-encrypted" && !/^[0-9a-fA-F]{64}$/.test(userDisclosureTargetPubKeyHex)) {
+      throw new Error(`Batch payment ${index + 1} recipient-encrypted disclosure requires a 32-byte hex public key`);
+    }
+    return {
+      itemId: `batch-payment-${row.dataset.batchTransferRow}`,
+      amount,
+      amountValue: parsePlannerAmountValue(amount),
+      recipient,
+      userPrivacyPolicy,
+      userDisclosureMode,
+      ...userDisclosureMode === "recipient-encrypted" ? { userDisclosureTargetPubKeyHex } : {}
+    };
+  });
+}
+function batchTransferReviewRecipients(payments = []) {
+  return payments.map((payment, index) => `${index + 1}. ${payment.recipient} \xB7 ${coinText(payment.amount)} \xB7 ${batchDisclosureLabel(payment)}`).join("\n");
+}
+function batchTransferReviewDisclosure(payments = []) {
+  return payments.map((payment, index) => `${index + 1}. ${batchDisclosureLabel(payment)}`).join("\n") + "\nMandatory audit: full \xB7 Sender self-view: encrypted";
+}
+function batchTransferReviewAmount(payments = []) {
+  const total = payments.reduce((sum, payment) => {
+    const amount = parsePlannerAmountValue(payment.amount);
+    if (amount === null) throw new Error("Batch payment amount is invalid");
+    return sum + amount;
+  }, 0n);
+  return coinTextFromAmount(total.toString());
+}
+function preparedBatchReview(data, requestedPayments) {
+  const facts = preparedBatchTransferFacts({
+    requestedPayments,
+    prepared: data?.prepared || {},
+    denom: baseDenom(),
+    maxInputs: batchTransferMaxInputs2,
+    maxOutputs: batchTransferMaxPayments
+  });
+  return {
+    payments: requestedPayments,
+    facts,
+    changeEffect: `${coinTextFromAmount(facts.change.toString())} returned to ${shorten(state.keplr.shieldedAddress, 16, 12)} \xB7 ${facts.inputCount}/${batchTransferMaxInputs2} inputs \xB7 ${facts.outputCount}/${batchTransferMaxPayments} outputs \xB7 all-or-nothing`
+  };
 }
 function renderMyKeplrNotes() {
   const protocolReady = state.protocol.ready;
@@ -104613,8 +111092,183 @@ async function decodeDisclosureSource() {
     els.decodeDisclosureSource.disabled = false;
   }
 }
+var auditorBatchMaxPages = 1e3;
+var auditorBatchMaxOutputs = 32e3;
+function canonicalAuditorBatchTxHash(record, label = "typed batch record") {
+  const txHash = canonicalHex3(record?.tx_hash).toUpperCase();
+  if (!/^[0-9A-F]{64}$/.test(txHash)) {
+    throw new Error(`${label} has an invalid transaction hash`);
+  }
+  return txHash;
+}
+function auditorBatchEventKey(record) {
+  const identity = typedBatchEventIdentity(record);
+  return `${identity.height}:${identity.globalSequence}`;
+}
+function auditorBatchSummaryFingerprint(summary) {
+  return JSON.stringify([
+    canonicalAuditorBatchTxHash(summary, "typed batch summary"),
+    auditorBatchEventKey(summary),
+    Number(summary.output_count),
+    canonicalHex3(summary.effect_id),
+    (summary.nullifiers || []).map(canonicalHex3).sort(),
+    String(summary.audit_key_id || ""),
+    String(summary.audit_key_epoch ?? ""),
+    canonicalHex3(summary.audit_target_pubkey)
+  ]);
+}
+function canonicalAuditorScanCursor(cursor, label) {
+  const height = String(cursor?.height ?? "").trim();
+  const globalSequence = String(cursor?.global_sequence ?? cursor?.globalSequence ?? "").trim();
+  const outputIndex2 = Number(cursor?.output_index ?? cursor?.outputIndex);
+  if (!/^(?:0|[1-9][0-9]*)$/.test(height) || !/^(?:0|[1-9][0-9]*)$/.test(globalSequence) || !Number.isSafeInteger(outputIndex2) || outputIndex2 < 0) {
+    throw new Error(`${label} is invalid`);
+  }
+  return {
+    height: BigInt(height),
+    globalSequence: BigInt(globalSequence),
+    outputIndex: outputIndex2
+  };
+}
+function compareAuditorScanCursor(left, right) {
+  for (const key of ["height", "globalSequence"]) {
+    if (left[key] < right[key]) return -1;
+    if (left[key] > right[key]) return 1;
+  }
+  return left.outputIndex - right.outputIndex;
+}
+function auditorScanCursorKey(cursor) {
+  return `${cursor.height}:${cursor.globalSequence}:${cursor.outputIndex}`;
+}
+function groupAuditableBatchTransactions(summaries, outputs) {
+  const events = /* @__PURE__ */ new Map();
+  for (const summary of summaries) {
+    const outputCount2 = Number(summary?.output_count);
+    if (summary?.event_type !== "batch_transfer" || !Number.isSafeInteger(outputCount2) || outputCount2 < 1 || outputCount2 > batchTransferMaxPayments) {
+      throw new Error("Typed batch audit summary has an invalid output count");
+    }
+    const eventKey2 = auditorBatchEventKey(summary);
+    const fingerprint = auditorBatchSummaryFingerprint(summary);
+    const existing = events.get(eventKey2);
+    if (existing && existing.fingerprint !== fingerprint) {
+      throw new Error("Typed batch audit scan returned conflicting transaction summaries");
+    }
+    if (!existing) {
+      events.set(eventKey2, {
+        eventKey: eventKey2,
+        fingerprint,
+        summary,
+        outputs: /* @__PURE__ */ new Map()
+      });
+    }
+  }
+  for (const output of outputs) {
+    if (output?.event_type !== "batch_transfer") {
+      throw new Error("Typed batch audit scan returned a non-batch output");
+    }
+    const eventKey2 = auditorBatchEventKey(output);
+    const event = events.get(eventKey2);
+    const outputIndex2 = Number(output.output_index);
+    if (!event || canonicalAuditorBatchTxHash(output, "typed batch output") !== canonicalAuditorBatchTxHash(event.summary, "typed batch summary")) {
+      throw new Error("Typed batch audit output has no matching transaction summary");
+    }
+    if (!Number.isSafeInteger(outputIndex2) || outputIndex2 < 0 || outputIndex2 >= Number(event.summary.output_count)) {
+      throw new Error("Typed batch audit output index is outside its transaction summary");
+    }
+    const auditDigest = canonicalHex3(output.full_disclosure_digest);
+    const auditPayload = canonicalHex3(output.audit_disclosure_payload);
+    if (!/^[0-9a-f]{64}$/.test(auditDigest) || !auditPayload) {
+      throw new Error(`Typed batch audit output ${outputIndex2} is missing its mandatory audit disclosure`);
+    }
+    if (event.outputs.has(outputIndex2)) {
+      throw new Error("Typed batch audit scan returned a duplicate output");
+    }
+    event.outputs.set(outputIndex2, output);
+  }
+  const transactions = /* @__PURE__ */ new Map();
+  for (const event of events.values()) {
+    const outputCount2 = Number(event.summary.output_count);
+    if (event.outputs.size !== outputCount2 || [...Array(outputCount2).keys()].some((index) => !event.outputs.has(index))) {
+      throw new Error("Typed batch audit scan did not return every mandatory audit output");
+    }
+    const txHash = canonicalAuditorBatchTxHash(event.summary, "typed batch summary");
+    const identity = typedBatchEventIdentity(event.summary);
+    const transaction = transactions.get(txHash) || {
+      kind: "batch",
+      txHash,
+      height: identity.height,
+      events: [],
+      outputCount: 0
+    };
+    if (transaction.height !== identity.height) {
+      throw new Error("Typed batch audit transaction hash appears at multiple heights");
+    }
+    event.outputs = [...event.outputs.values()].sort((left, right) => Number(left.output_index) - Number(right.output_index));
+    transaction.events.push(event);
+    transaction.outputCount += event.outputs.length;
+    transactions.set(txHash, transaction);
+  }
+  for (const transaction of transactions.values()) {
+    transaction.events.sort((left, right) => {
+      const leftIdentity = typedBatchEventIdentity(left.summary);
+      const rightIdentity = typedBatchEventIdentity(right.summary);
+      const leftSequence = BigInt(leftIdentity.globalSequence);
+      const rightSequence = BigInt(rightIdentity.globalSequence);
+      return leftSequence < rightSequence ? -1 : leftSequence > rightSequence ? 1 : 0;
+    });
+  }
+  return [...transactions.values()];
+}
+async function fetchAllAuditableBatchTransactions(client, sessionContext) {
+  const validationState = createPrivacyScanValidationStateV2();
+  let after = { height: "0", globalSequence: "0", outputIndex: 0 };
+  let currentCursor = canonicalAuditorScanCursor(after, "Initial batch audit cursor");
+  const seenCursors = /* @__PURE__ */ new Set([auditorScanCursorKey(currentCursor)]);
+  const summaries = [];
+  const outputs = [];
+  for (let pageIndex = 0; pageIndex < auditorBatchMaxPages; pageIndex += 1) {
+    const page = await client.fetchAuditableBatchTransfers({
+      after,
+      outputLimit: 128,
+      eventLimit: 64,
+      maxEncodedBytes: 1048576,
+      validationState
+    });
+    assertPrivacySession(sessionContext);
+    summaries.push(...page.summaries);
+    outputs.push(...page.outputs);
+    if (outputs.length > auditorBatchMaxOutputs) {
+      throw new Error(`Batch audit scan exceeded ${auditorBatchMaxOutputs} outputs`);
+    }
+    if (!page.has_more) {
+      return groupAuditableBatchTransactions(summaries, outputs);
+    }
+    const nextCursor = canonicalAuditorScanCursor(page.next_cursor, "Next batch audit cursor");
+    const nextKey = auditorScanCursorKey(nextCursor);
+    if (compareAuditorScanCursor(nextCursor, currentCursor) <= 0 || seenCursors.has(nextKey)) {
+      throw new Error("Batch audit scan cursor did not advance");
+    }
+    seenCursors.add(nextKey);
+    currentCursor = nextCursor;
+    after = {
+      height: nextCursor.height.toString(),
+      globalSequence: nextCursor.globalSequence.toString(),
+      outputIndex: nextCursor.outputIndex
+    };
+  }
+  throw new Error(`Batch audit scan exceeded ${auditorBatchMaxPages} pages`);
+}
+function auditorBatchOutputs(transaction) {
+  return (transaction?.events || []).flatMap((event, eventIndex) => event.outputs.map((output) => ({ event, eventIndex, output })));
+}
+function clearAuditorBatchOutputs() {
+  if (!els.auditorBatchOutputs) return;
+  els.auditorBatchOutputs.replaceChildren();
+  els.auditorBatchOutputs.hidden = true;
+}
 function clearAuditorReport(message = "Select a transfer.") {
   if (!els.auditorDecodeState) return;
+  clearAuditorBatchOutputs();
   setAuditorValueTone(auditorDetailValueElements());
   els.auditorTxHash.textContent = "-";
   els.auditorVerification.textContent = "-";
@@ -104635,6 +111289,7 @@ function renderAuditorEventDetail(event) {
     clearAuditorReport();
     return;
   }
+  clearAuditorBatchOutputs();
   const target = eventAttribute6(event, "audit_disclosure_target_pubkey");
   const digest = eventAttribute6(event, "audit_disclosure_digest");
   const payload = eventAttribute6(event, "audit_disclosure_payload");
@@ -104652,8 +111307,68 @@ function renderAuditorEventDetail(event) {
   els.auditorDecodeState.textContent = "Audit disclosure is present. Select Decode to use the local admin test scalar.";
   updateAuditorDecodeButton();
 }
+function appendAuditorBatchOutput({ eventIndex, output }, view = null) {
+  if (!els.auditorBatchOutputs) return;
+  const row = document.createElement("div");
+  row.className = "auditor-batch-output";
+  row.classList.toggle("verified", Boolean(view?.verified));
+  const heading = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = `Batch ${eventIndex + 1} \xB7 output ${output.output_index}`;
+  const status = document.createElement("span");
+  status.textContent = view?.verified ? "Verified" : "Encrypted";
+  heading.append(title, status);
+  const primary = document.createElement("span");
+  if (view?.verified) {
+    const summary = view.summary || {};
+    const amount = summary.amount ? `${summary.amount}${summary.asset_denom ? ` ${summary.asset_denom}` : ""}` : "amount unavailable";
+    primary.textContent = `${amount} \u2192 ${shorten(summary.to_shielded_address || "-", 14, 10)}`;
+  } else {
+    primary.textContent = "Mandatory audit disclosure \xB7 encrypted";
+  }
+  const identity = document.createElement("code");
+  identity.textContent = view?.verified ? shorten(view.commitmentHex, 12, 10) : shorten(canonicalHex3(output.full_disclosure_digest), 12, 10);
+  row.append(heading, primary, identity);
+  els.auditorBatchOutputs.append(row);
+}
+function renderAuditorBatchOutputs(transaction, decodedEntries = null) {
+  clearAuditorBatchOutputs();
+  if (!els.auditorBatchOutputs) return;
+  const entries = auditorBatchOutputs(transaction);
+  const decodedByKey = new Map((decodedEntries || []).map((entry) => [
+    `${entry.event.eventKey}:${entry.output.output_index}`,
+    entry.view
+  ]));
+  for (const entry of entries) {
+    const key = `${entry.event.eventKey}:${entry.output.output_index}`;
+    appendAuditorBatchOutput(entry, decodedByKey.get(key) || null);
+  }
+  els.auditorBatchOutputs.hidden = entries.length === 0;
+}
+function renderAuditorBatchDetail(transaction) {
+  if (!hasAuditorUi()) return;
+  if (!transaction) {
+    clearAuditorReport();
+    return;
+  }
+  clearAuditorReport("Every batch output must verify before plaintext is shown.");
+  els.auditorTxHash.textContent = transaction.txHash;
+  els.auditorVerification.textContent = transaction.height || "-";
+  els.auditorAmount.textContent = `${transaction.outputCount} encrypted outputs`;
+  els.auditorDigest.textContent = "per-output mandatory digest";
+  els.auditorPlanePolicy.textContent = "audit / encrypted batch";
+  els.auditorOutputIndex.textContent = "all";
+  els.auditorCommitment.textContent = "per output";
+  els.auditorFrom.textContent = "typed privacy-scan-v2";
+  els.auditorFields.textContent = "encrypted";
+  els.auditorTo.textContent = "Decode all outputs";
+  setAuditorValueTone(auditorDetailValueElements(), "encoded");
+  renderAuditorBatchOutputs(transaction);
+  updateAuditorDecodeButton();
+}
 function renderAuditorReport(report) {
   if (!hasAuditorUi()) return;
+  clearAuditorBatchOutputs();
   const view = disclosureViewModel(report);
   if (!view.verified) {
     clearAuditorReport("Disclosure verification failed. Plaintext was discarded.");
@@ -104669,7 +111384,7 @@ function renderAuditorReport(report) {
   els.auditorTo.textContent = summary.to_shielded_address || "-";
   els.auditorFields.textContent = (summary.disclosed_fields || []).map(prettyDisclosureField).join(", ") || "-";
   els.auditorDigest.textContent = view.digestHex || eventAttribute6(
-    state.auditor.events.find((event) => event.tx_hash_hex === state.auditor.selectedTxHash),
+    state.auditor.events.find((event) => normalizedTxHash2(event.tx_hash_hex) === state.auditor.selectedTxHash),
     "audit_disclosure_digest"
   ) || "-";
   els.auditorPlanePolicy.textContent = `${view.plane || "audit"} / ${view.policy || "unknown policy"}`;
@@ -104679,25 +111394,77 @@ function renderAuditorReport(report) {
   els.auditorDecodeState.textContent = `${summary.delivery || report?.source || "audit"} / ${summary.policy || "unknown policy"}`;
   updateAuditorDecodeButton();
 }
+function renderAuditorBatchReport(decoded) {
+  if (!hasAuditorUi()) return;
+  const transaction = decoded?.transaction;
+  const expected = auditorBatchOutputs(transaction);
+  const entries = decoded?.entries || [];
+  if (!transaction || entries.length !== expected.length || entries.some((entry) => entry.view?.verified !== true)) {
+    clearAuditorReport("Batch disclosure verification failed. All plaintext was discarded.");
+    els.auditorVerification.textContent = "Failed";
+    return;
+  }
+  clearAuditorReport("All mandatory batch audit disclosures verified.");
+  els.auditorTxHash.textContent = transaction.txHash;
+  els.auditorVerification.textContent = "Verified";
+  els.auditorAmount.textContent = `${entries.length} verified outputs`;
+  els.auditorDigest.textContent = "verified per output";
+  els.auditorPlanePolicy.textContent = "audit / encrypted batch";
+  els.auditorOutputIndex.textContent = "all";
+  els.auditorCommitment.textContent = "verified per output";
+  els.auditorFrom.textContent = "see verified outputs";
+  els.auditorFields.textContent = "amount, from, to, output identity";
+  els.auditorTo.textContent = "all outputs verified";
+  setAuditorValueTone(auditorDetailValueElements(), "decoded");
+  renderAuditorBatchOutputs(transaction, entries);
+  updateAuditorDecodeButton();
+}
+function auditorListEntries() {
+  const entries = [
+    ...state.auditor.events.map((event) => ({
+      kind: "single",
+      txHash: normalizedTxHash2(event.tx_hash_hex),
+      height: String(event.height || "0"),
+      event
+    })),
+    ...state.auditor.batchTransactions
+  ];
+  return entries.sort((left, right) => {
+    const leftHeight = /^(?:0|[1-9][0-9]*)$/.test(String(left.height)) ? BigInt(left.height) : 0n;
+    const rightHeight = /^(?:0|[1-9][0-9]*)$/.test(String(right.height)) ? BigInt(right.height) : 0n;
+    if (leftHeight !== rightHeight) return leftHeight > rightHeight ? -1 : 1;
+    return right.txHash.localeCompare(left.txHash);
+  }).slice(0, 20);
+}
+function selectedAuditorBatchTransaction() {
+  return state.auditor.batchTransactions.find((transaction) => transaction.txHash === state.auditor.selectedTxHash) || null;
+}
+function renderSelectedAuditorDetail() {
+  if (state.auditor.selectedKind === "batch") {
+    renderAuditorBatchDetail(selectedAuditorBatchTransaction());
+    return;
+  }
+  renderAuditorEventDetail(state.auditor.events.find((event) => normalizedTxHash2(event.tx_hash_hex) === state.auditor.selectedTxHash));
+}
 function renderAuditorTransfers() {
   if (!hasAuditorUi()) return;
   els.auditorEventsList.innerHTML = "";
-  const events = [...state.auditor.events].reverse().slice(0, 20);
-  for (const event of events) {
+  const entries = auditorListEntries();
+  for (const entry of entries) {
     const row = document.createElement("button");
     row.type = "button";
     row.className = "audit-row";
-    row.classList.toggle("selected", event.tx_hash_hex === state.auditor.selectedTxHash);
+    row.classList.toggle("selected", entry.txHash === state.auditor.selectedTxHash && entry.kind === state.auditor.selectedKind);
     row.disabled = state.auditor.loading;
-    row.addEventListener("click", () => selectAuditorTransfer(event.tx_hash_hex));
+    row.addEventListener("click", () => selectAuditorTransfer(entry.txHash, entry.kind));
     const copy = document.createElement("div");
     copy.className = "row-copy";
     const title = document.createElement("strong");
-    title.textContent = shorten(event.tx_hash_hex, 14, 12);
+    title.textContent = shorten(entry.txHash, 14, 12);
     const meta = document.createElement("span");
-    meta.textContent = `height ${event.height}`;
+    meta.textContent = entry.kind === "batch" ? `batch \xB7 ${entry.outputCount} outputs \xB7 height ${entry.height}` : `transfer \xB7 height ${entry.height}`;
     const digest = document.createElement("code");
-    digest.textContent = shorten(eventAttribute6(event, "audit_disclosure_digest"), 12, 10);
+    digest.textContent = entry.kind === "batch" ? `${entry.events.length} operation${entry.events.length === 1 ? "" : "s"}` : shorten(eventAttribute6(entry.event, "audit_disclosure_digest"), 12, 10);
     copy.append(title, meta);
     row.append(copy, digest);
     els.auditorEventsList.append(row);
@@ -104712,33 +111479,60 @@ function renderAuditorTransfers() {
 async function refreshAuditorTransfers({ sessionContext = privacySessionSnapshot() } = {}) {
   assertPrivacySession(sessionContext);
   if (!hasAuditorUi()) return;
+  if (state.auditor.loading) return;
+  state.auditor.loading = true;
+  state.auditor.decoded = null;
   setBusy(els.refreshAuditorTransfers, true);
+  clearAuditorReport("Refreshing typed audit transactions...");
+  renderAuditorTransfers();
   try {
     const data = await clairveilBrowserClient().fetchAuditableTransfers();
     assertPrivacySession(sessionContext);
+    const batchTransactions = await fetchAllAuditableBatchTransactions(
+      clairveilBrowserClient(),
+      sessionContext
+    );
+    assertPrivacySession(sessionContext);
     state.auditor.events = data.events || [];
-    if (state.auditor.selectedTxHash && !state.auditor.events.some((event) => event.tx_hash_hex === state.auditor.selectedTxHash)) {
+    state.auditor.batchTransactions = batchTransactions;
+    const selectionExists = state.auditor.selectedKind === "batch" ? batchTransactions.some((transaction) => transaction.txHash === state.auditor.selectedTxHash) : state.auditor.events.some((event) => normalizedTxHash2(event.tx_hash_hex) === state.auditor.selectedTxHash);
+    if (state.auditor.selectedTxHash && !selectionExists) {
       state.auditor.selectedTxHash = "";
+      state.auditor.selectedKind = "";
       state.auditor.decoded = null;
       clearAuditorReport();
     }
     renderAuditorTransfers();
-    renderAuditorEventDetail(state.auditor.events.find((event) => event.tx_hash_hex === state.auditor.selectedTxHash));
+    renderSelectedAuditorDetail();
+  } catch (error) {
+    if (isStalePrivacySessionError(error) || !privacySessionIsCurrent(sessionContext)) throw error;
+    state.auditor.events = [];
+    state.auditor.batchTransactions = [];
+    state.auditor.selectedTxHash = "";
+    state.auditor.selectedKind = "";
+    state.auditor.decoded = null;
+    renderAuditorTransfers();
+    clearAuditorReport(`Audit refresh failed: ${error.message}`);
+    throw error;
   } finally {
     try {
       assertPrivacySession(sessionContext);
+      state.auditor.loading = false;
+      renderAuditorTransfers();
+      updateAuditorDecodeButton();
       setBusy(els.refreshAuditorTransfers, false);
     } catch (error) {
       if (!isStalePrivacySessionError(error)) throw error;
     }
   }
 }
-function selectAuditorTransfer(txHash) {
+function selectAuditorTransfer(txHash, kind = "single") {
   if (!hasAuditorUi()) return;
-  state.auditor.selectedTxHash = txHash;
+  state.auditor.selectedTxHash = normalizedTxHash2(txHash);
+  state.auditor.selectedKind = kind === "batch" ? "batch" : "single";
   state.auditor.decoded = null;
   renderAuditorTransfers();
-  renderAuditorEventDetail(state.auditor.events.find((event) => event.tx_hash_hex === txHash));
+  renderSelectedAuditorDetail();
   updateAuditorDecodeButton();
 }
 async function decodeAuditorTransfer(txHash = state.auditor.selectedTxHash) {
@@ -104752,22 +111546,52 @@ async function decodeAuditorTransfer(txHash = state.auditor.selectedTxHash) {
     clearAuditorReport("Select a transfer first.");
     return;
   }
+  const normalizedSelection = normalizedTxHash2(txHash);
+  const selectedKind = state.auditor.selectedTxHash === normalizedSelection ? state.auditor.selectedKind || "single" : "single";
   const disclosurePrivKeyHex = state.auditor.testScalar || "";
   if (!/^[0-9a-fA-F]{1,64}$/.test(disclosurePrivKeyHex)) {
-    state.auditor.selectedTxHash = txHash;
+    state.auditor.selectedTxHash = normalizedSelection;
+    state.auditor.selectedKind = selectedKind;
     clearAuditorReport("Local admin test scalar is unavailable.");
     renderAuditorTransfers();
     return;
   }
-  state.auditor.selectedTxHash = txHash;
+  state.auditor.selectedTxHash = normalizedSelection;
+  state.auditor.selectedKind = selectedKind;
   state.auditor.loading = true;
   state.auditor.decoded = null;
   clearAuditorReport("Decoding audit disclosure with injected scalar...");
   renderAuditorTransfers();
   try {
+    if (selectedKind === "batch") {
+      const transaction = selectedAuditorBatchTransaction();
+      if (!transaction) throw new Error("Selected batch audit transaction is unavailable");
+      const entries = [];
+      for (const entry of auditorBatchOutputs(transaction)) {
+        const report2 = await clairveilBrowserClient().decodeBatchAuditDisclosure({
+          output: entry.output,
+          txHash: transaction.txHash,
+          disclosurePrivKeyHex,
+          assetDenom: baseDenom()
+        });
+        assertPrivacySession(sessionContext);
+        const view = disclosureViewModel(report2);
+        if (!view.verified || view.outputIndex !== Number(entry.output.output_index) || normalizedTxHash2(report2?.tx_hash) !== transaction.txHash) {
+          throw new Error(`Batch audit output ${entry.output.output_index} failed disclosure verification`);
+        }
+        entries.push({ ...entry, report: report2, view });
+      }
+      if (entries.length !== transaction.outputCount) {
+        throw new Error("Batch audit disclosure verification did not cover every output");
+      }
+      assertPrivacySession(sessionContext);
+      state.auditor.decoded = { kind: "batch", transaction, entries };
+      renderAuditorBatchReport(state.auditor.decoded);
+      return;
+    }
     const report = await api("/api/auditor/decode", {
       method: "POST",
-      body: JSON.stringify({ txHash, disclosurePrivKeyHex })
+      body: JSON.stringify({ txHash: normalizedSelection, disclosurePrivKeyHex })
     });
     assertPrivacySession(sessionContext);
     state.auditor.decoded = report;
@@ -104775,8 +111599,9 @@ async function decodeAuditorTransfer(txHash = state.auditor.selectedTxHash) {
   } catch (error) {
     if (isStalePrivacySessionError(error) || !privacySessionIsCurrent(sessionContext)) return;
     assertPrivacySession(sessionContext);
+    state.auditor.decoded = null;
     clearAuditorReport(error.message);
-    if (isDisclosureVerificationFailure(error)) {
+    if (selectedKind === "batch" || isDisclosureVerificationFailure(error)) {
       els.auditorVerification.textContent = "Failed";
     }
   } finally {
@@ -105158,6 +111983,11 @@ async function setupKeplrPrivacy(options = {}) {
   try {
     requirePrivacyBrowserStorage();
     if (state.keplr.rootSignatureBase64 && state.keplr.shieldedAddress && state.keplr.disclosurePubKeyHex) {
+      await hydrateBatchTransferRecovery({ sessionContext });
+      if (activeChainProfile()?.transport === "evm") {
+        await restoreEvmDepositRecovery({ sessionContext });
+      }
+      assertPrivacySession(sessionContext);
       await refreshReservationState(null, { sessionContext });
       assertPrivacySession(sessionContext);
       await completeInitialPrivacySetup({ ...options, sessionContext });
@@ -105179,7 +112009,7 @@ async function setupKeplrPrivacy(options = {}) {
         params: [rootMessage, state.wallet.account]
       });
       assertPrivacySession(sessionContext);
-      rootSignatureBase64 = bytesToBase644(hexToBytes4(signatureHex));
+      rootSignatureBase64 = bytesToBase645(hexToBytes4(signatureHex));
       account = clairveilBrowserClient().derivePrivacyAccount({
         walletType: "evm",
         address: state.keplr.account,
@@ -105217,6 +112047,11 @@ async function setupKeplrPrivacy(options = {}) {
       state.reservations.message = error.message;
       state.reservations.retryBlocked = true;
     }
+    await hydrateBatchTransferRecovery({ sessionContext });
+    if (activeChainProfile()?.transport === "evm") {
+      await restoreEvmDepositRecovery({ sessionContext });
+    }
+    assertPrivacySession(sessionContext);
     await refreshReservationState(null, { sessionContext });
     assertPrivacySession(sessionContext);
     await completeInitialPrivacySetup({ ...options, sessionContext });
@@ -105380,18 +112215,18 @@ async function signDirectAndBroadcast(signDoc, options = {}) {
       })) {
         clearCapturedPublicPendingTransaction(sessionContext, "privacy", txHash);
       }
-      const failure = error instanceof Error ? error : new Error(String(error));
-      failure.txHash ||= txHash;
-      failure.tx ||= error?.tx;
-      failure.broadcast ||= error?.broadcast;
+      const failure2 = error instanceof Error ? error : new Error(String(error));
+      failure2.txHash ||= txHash;
+      failure2.tx ||= error?.tx;
+      failure2.broadcast ||= error?.broadcast;
       if (!privacySessionIsCurrent(sessionContext)) {
         const stale = stalePrivacySessionError(sessionContext);
         stale.txHash = txHash;
-        stale.tx = failure.tx;
-        stale.broadcast = failure.broadcast;
+        stale.tx = failure2.tx;
+        stale.broadcast = failure2.broadcast;
         throw stale;
       }
-      throw failure;
+      throw failure2;
     }
     try {
       assertPrivacySession(sessionContext);
@@ -105447,8 +112282,18 @@ async function submitEvmTransaction(transaction, options = {}) {
   assertPrivacySessionAfterEvmSubmission(sessionContext, normalizedTxHash4);
   return normalizedTxHash4;
 }
-async function waitForEvmTransaction(txHash, label = "EVM transaction", reservationBinding = {}) {
-  const broadcast = await clairveilBrowserClient().waitForEvmTransaction(txHash);
+async function waitForEvmTransaction(txHash, label = "EVM transaction", reservationBinding = {}, privacyTransaction = null, sender = state.wallet.account) {
+  const sessionContext = reservationBinding.sessionContext || reservationBinding.privacySessionContext || privacySessionSnapshot();
+  assertPrivacySession(sessionContext);
+  const transaction = privacyTransaction || reservationBinding.privacyTransaction;
+  if (!transaction) {
+    throw new Error(`${label} cannot be verified without the original SDK-prepared privacy transaction`);
+  }
+  const broadcast = await clairveilBrowserClient().waitForEvmTransaction(txHash, {
+    privacyTransaction: transaction,
+    sender
+  });
+  assertPrivacySession(sessionContext);
   if (!broadcast?.receipt) {
     const manager = reservationBinding.reservationManager;
     const reservationIDs2 = preparedReservationIDs({ reservation: reservationBinding.reservation });
@@ -105459,7 +112304,9 @@ async function waitForEvmTransaction(txHash, label = "EVM transaction", reservat
         error: "evm_receipt_polling_timeout",
         metadata: { reconcile_reason: "evm_receipt_polling_timeout" }
       });
-      await refreshReservationState(manager);
+      assertPrivacySession(sessionContext);
+      await refreshReservationState(manager, { sessionContext });
+      assertPrivacySession(sessionContext);
     }
     return { ...broadcast, txHash: broadcast?.txHash || txHash, unknown: true };
   }
@@ -105472,14 +112319,31 @@ async function waitForEvmTransaction(txHash, label = "EVM transaction", reservat
   }
   return { ...broadcast, txHash: broadcast.txHash || txHash };
 }
+async function waitForPublicEvmTransaction(txHash) {
+  const receipt = await clairveilBrowserClient().evmJsonRpc("eth_getTransactionReceipt", [
+    /^0x/i.test(txHash) ? txHash : `0x${txHash}`
+  ]);
+  if (!receipt) return { txHash, receipt: null, unknown: true };
+  if (evmReceiptHasFailed(receipt)) {
+    const error = new Error(`EVM transaction failed with receipt status ${receipt.status}`);
+    error.broadcast = { txHash, receipt };
+    throw error;
+  }
+  if (!evmReceiptSucceeded(receipt)) {
+    return { txHash, receipt, unknown: true };
+  }
+  return { txHash, receipt };
+}
 async function sendEvmTransaction(transaction, {
   waitForReceipt = false,
   label = "EVM transaction",
   reservationBinding = {},
+  privacyTransaction = null,
   sessionContext = privacySessionSnapshot(),
   onTransactionAttempt,
   onTransactionHash,
-  onTransactionRejected
+  onTransactionRejected,
+  onSubmitted = null
 } = {}) {
   const txHash = await submitEvmTransaction(transaction, {
     ...reservationBinding,
@@ -105489,12 +112353,29 @@ async function sendEvmTransaction(transaction, {
     onTransactionRejected
   });
   assertPrivacySessionAfterEvmSubmission(sessionContext, txHash);
+  if (typeof onSubmitted === "function") {
+    try {
+      await onSubmitted(txHash);
+      assertPrivacySessionAfterEvmSubmission(sessionContext, txHash);
+    } catch (error) {
+      error.txHash ||= txHash;
+      throw error;
+    }
+  }
+  const preparedPrivacyTransaction = privacyTransaction || reservationBinding.privacyTransaction || null;
+  const waitForResult = preparedPrivacyTransaction ? () => waitForEvmTransaction(
+    txHash,
+    label,
+    reservationBinding,
+    preparedPrivacyTransaction,
+    reservationBinding.sender || state.wallet.account
+  ) : () => waitForPublicEvmTransaction(txHash);
   if (waitForReceipt) {
-    const broadcast = await waitForEvmTransaction(txHash, label, reservationBinding);
+    const broadcast = await waitForResult();
     assertPrivacySessionAfterEvmSubmission(sessionContext, txHash);
     return { ...broadcast, txHash: broadcast.txHash || txHash };
   }
-  const waitPromise = waitForEvmTransaction(txHash, label, reservationBinding);
+  const waitPromise = waitForResult();
   waitPromise.catch(() => {
   });
   return {
@@ -105503,19 +112384,56 @@ async function sendEvmTransaction(transaction, {
     waitPromise
   };
 }
-function watchEvmBroadcast(broadcast, { sessionContext, onIncluded, onUnknown, onFailed } = {}) {
-  if (!broadcast?.waitPromise) return;
-  void broadcast.waitPromise.then((result) => {
-    if (sessionContext) assertPrivacySession(sessionContext);
-    return result.unknown ? onUnknown?.(result) : onIncluded?.(result);
-  }).catch(async (error) => {
-    if (isStalePrivacySessionError(error)) return;
-    try {
-      await onFailed?.(error);
-    } catch (callbackError) {
-      reportAsyncError(callbackError);
-    }
+function watchEvmBroadcast(broadcast, {
+  sessionContext,
+  key,
+  isCurrent,
+  onIncluded,
+  onUnknown,
+  onFailed
+} = {}) {
+  return evmBroadcastWatcher.watch(broadcast, {
+    key,
+    isCurrent: async (evidence) => {
+      try {
+        if (sessionContext) assertPrivacySession(sessionContext);
+      } catch (error) {
+        if (isStalePrivacySessionError(error)) return false;
+        throw error;
+      }
+      return isCurrent ? isCurrent(evidence) : true;
+    },
+    onIncluded,
+    onUnknown,
+    onFailed
   });
+}
+function sameEvmBroadcastTransaction(left, right) {
+  try {
+    return normalizeEvmTxHash(left) === normalizeEvmTxHash(right);
+  } catch {
+    return false;
+  }
+}
+function publicEvmBroadcastIsCurrent(sessionContext, kind, txHash) {
+  const pending = capturedPublicPendingState(sessionContext)?.[kind];
+  return Boolean(pending?.txHash) && sameEvmBroadcastTransaction(pending.txHash, txHash);
+}
+async function depositEvmBroadcastIsCurrent(sessionContext, txHash) {
+  if (!publicEvmBroadcastIsCurrent(sessionContext, "deposit", txHash)) return false;
+  const artifact = await loadEvmDepositArtifact({ sessionContext });
+  return Boolean(artifact?.txHash) && sameEvmBroadcastTransaction(artifact.txHash, txHash);
+}
+async function preparedEvmBroadcastIsCurrent(data, sessionContext, txHash) {
+  const operationKey = preparedOperationKey(data);
+  if (!operationKey) return false;
+  const artifact = await loadEvmOperationArtifact(operationKey, { sessionContext });
+  const records = preparedReservationIDs(data).map((reservation_id) => ({ reservation_id }));
+  return Boolean(artifact?.txHash) && evmOperationArtifactMatchesReservations(artifact, records) && sameEvmBroadcastTransaction(artifact.txHash, txHash);
+}
+async function batchEvmBroadcastIsCurrent(data, sessionContext, txHash) {
+  const artifact = await loadBatchTransferArtifact({ sessionContext });
+  return Boolean(artifact?.txHash) && batchArtifactMatchesReservations(artifact, data?.reservation?.reservations || []) && sameEvmBroadcastTransaction(artifact.txHash, txHash);
 }
 async function reconcilePublicTransaction(kind) {
   const isDeposit = kind === "deposit";
@@ -105535,7 +112453,24 @@ async function reconcilePublicTransaction(kind) {
   try {
     let result;
     if (evm) {
-      result = await waitForEvmTransaction(txHash, isDeposit ? "EVM deposit" : "EVM send");
+      if (isDeposit && !state.keplr.depositPrepared?.transaction) {
+        await restoreEvmDepositRecovery({ sessionContext });
+        assertPrivacySession(sessionContext);
+      }
+      const preparedDepositTransaction = isDeposit ? state.keplr.depositPrepared?.transaction || null : null;
+      if (isDeposit && !preparedDepositTransaction) {
+        state.keplr.publicPendingStateError = state.keplr.publicPendingStateError || "EVM deposit receipt cannot be verified without its encrypted SDK transaction binding. Do not retry until wallet history and chain evidence are reviewed.";
+        state.keplr.depositRecoveryStatus = "unknown";
+        state.keplr.depositRecoveryMessage = "SDK transaction binding unavailable \xB7 manual recovery required";
+        throw new Error(state.keplr.publicPendingStateError);
+      }
+      result = preparedDepositTransaction ? await waitForEvmTransaction(
+        txHash,
+        "EVM deposit",
+        { sessionContext },
+        preparedDepositTransaction,
+        state.keplr.depositPrepared?.sender
+      ) : await waitForPublicEvmTransaction(txHash);
     } else {
       const check = await checkReservationTransaction(txHash);
       assertPrivacySession(sessionContext);
@@ -105609,11 +112544,14 @@ Tx: ${shorten(txHash, 14, 12)}`
           state.keplr.depositRecoveryMessage = `Included \xB7 note recovery pending (${error.message})`;
         }
       }
-      await refreshPrivacySurfaces({ balance: true });
+      await refreshPrivacySurfaces({ balance: true, sessionContext });
       assertPrivacySession(sessionContext);
     } else {
       state.keplr.sendStatus = "included";
-      await Promise.allSettled([refreshWalletBalance(), refreshBlockEvents()]);
+      await Promise.allSettled([
+        refreshWalletBalance({ sessionContext }),
+        refreshBlockEvents({ sessionContext })
+      ]);
       assertPrivacySession(sessionContext);
     }
     els.keplrTxState.textContent = `${isDeposit ? "Deposit" : "Send"} included`;
@@ -105629,8 +112567,12 @@ Tx: ${shorten(txHash, 14, 12)}`
     let failureConfirmed = error?.code === "TX_FAILED_ON_CHAIN" || evmReceiptHasFailed(error?.broadcast?.receipt);
     if (failureConfirmed) {
       try {
-        await withPublicTransactionLock(sessionContext, () => {
-          clearCapturedPublicPendingTransaction(sessionContext, kind, txHash);
+        await withPublicTransactionLock(sessionContext, async () => {
+          if (isDeposit) {
+            await clearConfirmedDepositRecoveryUnlocked(sessionContext, txHash);
+          } else {
+            clearCapturedPublicPendingTransaction(sessionContext, kind, txHash);
+          }
         });
       } catch (persistenceError) {
         failureConfirmed = false;
@@ -105679,6 +112621,24 @@ function evmWalletAdapter(sessionContext = privacySessionSnapshot(), {
       assertPrivacySession(sessionContext);
       return chainId;
     },
+    signTypedData: async (typedData) => {
+      assertPrivacySession(sessionContext);
+      await ensureMetaMaskChain();
+      assertPrivacySession(sessionContext);
+      const account = String(walletAccount || "").trim().toLowerCase();
+      if (!/^0x[0-9a-f]{40}$/.test(account)) {
+        throw new Error("A connected EVM account is required for EIP-712 authorization");
+      }
+      const signature = await requestMetaMask({
+        method: "eth_signTypedData_v4",
+        params: [account, JSON.stringify(typedData)]
+      });
+      assertPrivacySession(sessionContext);
+      if (typeof signature !== "string" || !/^0x[0-9a-fA-F]+$/.test(signature)) {
+        throw new Error("EVM wallet eth_signTypedData_v4 must return a 0x-prefixed hex signature");
+      }
+      return signature;
+    },
     sendTransaction: async (transaction) => {
       assertPrivacySession(sessionContext);
       await ensureMetaMaskChain();
@@ -105707,11 +112667,11 @@ function evmWalletAdapter(sessionContext = privacySessionSnapshot(), {
             attemptId
           );
         } else if (attemptId) {
-          const failure = new Error(error?.message || String(error), { cause: error });
-          failure.code = "EVM_SUBMISSION_RESULT_UNKNOWN";
-          failure.providerCode = error?.code ?? error?.data?.code;
-          failure.publicTransactionAttemptId = attemptId;
-          throw failure;
+          const failure2 = new Error(error?.message || String(error), { cause: error });
+          failure2.code = "EVM_SUBMISSION_RESULT_UNKNOWN";
+          failure2.providerCode = error?.code ?? error?.data?.code;
+          failure2.publicTransactionAttemptId = attemptId;
+          throw failure2;
         }
         throw error;
       }
@@ -105778,8 +112738,6 @@ async function preparePrivacyTransferSignDoc(amount, recipient, disclosure = {},
       maxPages: 1e3
     },
     ...disclosure,
-    expectedRecipientHash: hashRecipient(recipient, { shieldedPrefix: shieldedPrefix() }),
-    expectedAmountHash: hashAmount(baseDenom(), amountValue),
     reservationManager: manager,
     ...cosmosFeeRequestOptions(cosmosGasLimits.transfer),
     allowPlanStep: Boolean(options.allowPlanStep),
@@ -105811,12 +112769,133 @@ async function preparePrivacyTransferSignDoc(amount, recipient, disclosure = {},
     }
     throw error;
   }
+  try {
+    await checkpointPreparedEvmOperation(
+      preparedData,
+      data.prepared?.planAction === "self_merge" ? "self_merge" : "transfer",
+      { sessionContext }
+    );
+  } catch (error) {
+    await discardPreparedReservation(preparedData, "evm_recovery_checkpoint_failed").catch(() => {
+    });
+    throw error;
+  }
   await refreshReservationState(manager, { sessionContext });
   assertPrivacySession(sessionContext);
   return {
     ...preparedData,
     preparedExpiresAtUnix
   };
+}
+async function prepareBatchTransfer(payments, options = {}) {
+  const sessionContext = options.sessionContext || privacySessionSnapshot();
+  assertPrivacySession(sessionContext);
+  const transport = activeChainProfile()?.transport;
+  const expectedWallet = transport === "evm" ? "metamask" : "keplr";
+  if (!["cosmos", "evm"].includes(transport) || state.activeWallet !== expectedWallet) {
+    throw new Error("One-proof batch transfer requires the wallet selected by the active Cosmos or EVM profile");
+  }
+  const client = clairveilBrowserClient();
+  if (typeof client.prepareTransferBatch !== "function") {
+    throw new Error("The installed ClairveilJS build does not support one-proof batch transfers");
+  }
+  await requirePrivacyPreparePreflight(sessionContext);
+  assertPrivacySession(sessionContext);
+  await assertNoUnresolvedBatchTransferArtifact({ sessionContext });
+  assertPrivacySession(sessionContext);
+  const manager = await currentReservationManager();
+  assertPrivacySession(sessionContext);
+  if (!manager) throw new Error("Encrypted note reservation manager is not available");
+  let artifact = {
+    phase: "preparing",
+    transport,
+    executionTransport: transport,
+    ...transport === "evm" ? { sender: state.wallet.account } : {},
+    payments
+  };
+  const checkpoint = async (phase, fields = {}, context = {}) => {
+    assertPrivacySession(sessionContext);
+    artifact = {
+      ...artifact,
+      ...fields,
+      phase,
+      reservation: context?.reservation || artifact.reservation || null,
+      operationId: context?.operationId || artifact.operationId || ""
+    };
+    await saveBatchTransferArtifact(artifact, { sessionContext });
+  };
+  const data = await client.prepareTransferBatch(privacyRequest({
+    payments,
+    outputMode: "compact",
+    scan: {
+      after: typedPrivacyScanAfter(),
+      scanSource: "privacy_scan",
+      strictPrivacyScan: true,
+      limit: 200,
+      maxPages: 1e3
+    },
+    reservationManager: manager,
+    ...cosmosFeeRequestOptions(cosmosGasLimits.transfer),
+    expiresAtUnix: options.expiresAtUnix,
+    chainNowUnix: options.chainNowUnix,
+    signal: options.signal,
+    ...options.authorization ? {
+      authorization: options.authorization,
+      authorizationSigner: options.authorizationSigner
+    } : {},
+    onPreparedPayload: async (payload, context) => checkpoint(
+      "payload-checkpointed",
+      { payload },
+      context
+    ),
+    onPreparedProof: async (proof, context) => checkpoint("proof-checkpointed", {
+      payload: context?.payload || artifact.payload,
+      proof
+    }, context)
+  }));
+  assertPrivacySession(sessionContext);
+  const operationEvidenceHash = batchTransferOperationEvidenceHash(data);
+  const executionComplete = transport === "evm" ? Boolean(data?.transaction && data?.txBytesHash) : Boolean(data?.signDoc);
+  if (!executionComplete || !data?.reservation || !operationEvidenceHash) {
+    const incomplete = {
+      ...data,
+      reservationManager: manager,
+      privacySessionContext: sessionContext
+    };
+    await discardPreparedReservation(incomplete, "incomplete_batch_preparation").catch(() => {
+    });
+    throw new Error(`ClairveilJS did not return a complete ${transport} batch transaction and operation-evidence binding`);
+  }
+  const preparedData = {
+    ...data,
+    reservationManager: manager,
+    reservationKind: "batch-transfer",
+    reservationRecipient: `${payments.length} shielded recipients`,
+    privacySessionContext: sessionContext
+  };
+  artifact = {
+    ...artifact,
+    phase: "proof-ready",
+    reservation: data.reservation,
+    ...data.transaction ? { transaction: data.transaction } : {},
+    ...data.signDoc ? { signDoc: data.signDoc } : {},
+    ...data.txBytesHash ? { txBytesHash: data.txBytesHash } : {},
+    ...data.authorization ? { authorization: data.authorization } : {},
+    ...data.authorizationTypedData ? { authorizationTypedData: data.authorizationTypedData } : {},
+    operationEvidence: data?.prepared?.operationEvidence || data.operationEvidence || null,
+    operationEvidenceHash,
+    prepared: data.prepared
+  };
+  try {
+    await saveBatchTransferArtifact(artifact, { sessionContext });
+  } catch (error) {
+    await discardPreparedReservation(preparedData, "batch_recovery_checkpoint_failed").catch(() => {
+    });
+    throw error;
+  }
+  await refreshReservationState(manager, { sessionContext });
+  assertPrivacySession(sessionContext);
+  return preparedData;
 }
 async function preparePrivacyWithdrawSignDoc(amount, recipient, options = {}) {
   const sessionContext = options.sessionContext || privacySessionSnapshot();
@@ -105843,15 +112922,23 @@ async function preparePrivacyWithdrawSignDoc(amount, recipient, options = {}) {
     signal: options.signal
   }));
   assertPrivacySession(sessionContext);
-  await refreshReservationState(manager, { sessionContext });
-  assertPrivacySession(sessionContext);
-  return {
+  const preparedData = {
     ...data,
     reservationManager: manager,
     reservationKind: "withdraw",
     reservationRecipient: recipient,
     privacySessionContext: sessionContext
   };
+  try {
+    await checkpointPreparedEvmOperation(preparedData, "withdraw", { sessionContext });
+  } catch (error) {
+    await discardPreparedReservation(preparedData, "evm_recovery_checkpoint_failed").catch(() => {
+    });
+    throw error;
+  }
+  await refreshReservationState(manager, { sessionContext });
+  assertPrivacySession(sessionContext);
+  return preparedData;
 }
 async function preparePrivacyRelayWithdraw(amount, recipient, options = {}) {
   const sessionContext = options.sessionContext || privacySessionSnapshot();
@@ -105877,23 +112964,33 @@ async function preparePrivacyRelayWithdraw(amount, recipient, options = {}) {
     signal: options.signal
   }));
   assertPrivacySession(sessionContext);
-  await refreshReservationState(manager, { sessionContext });
-  assertPrivacySession(sessionContext);
-  return {
+  const preparedData = {
     ...data,
     reservationManager: manager,
     reservationKind: "relay",
     reservationRecipient: recipient,
     privacySessionContext: sessionContext
   };
+  try {
+    await checkpointPreparedEvmOperation(preparedData, "relay-withdraw", { sessionContext });
+  } catch (error) {
+    await discardPreparedReservation(preparedData, "evm_recovery_checkpoint_failed").catch(() => {
+    });
+    throw error;
+  }
+  await refreshReservationState(manager, { sessionContext });
+  assertPrivacySession(sessionContext);
+  return preparedData;
 }
 async function broadcastPrivacyDeposit(amount, label = "deposit", options = {}) {
   const sessionContext = options.sessionContext || privacySessionSnapshot();
   assertPrivacySession(sessionContext);
-  if (activeChainProfile()?.transport !== "evm" && !options.publicTransactionLockHeld) {
+  if (!options.publicTransactionLockHeld) {
     return withPublicTransactionLock(sessionContext, async () => {
       assertNoCapturedPublicPendingTransaction(sessionContext, "deposit");
-      await assertNoUnresolvedCosmosAccountBroadcast(sessionContext);
+      if (activeChainProfile()?.transport === "cosmos") {
+        await assertNoUnresolvedCosmosAccountBroadcast(sessionContext);
+      }
       return broadcastPrivacyDeposit(amount, label, {
         ...options,
         sessionContext,
@@ -105913,13 +113010,32 @@ async function broadcastPrivacyDeposit(amount, label = "deposit", options = {}) 
   const exactFee = await updateDepositNetworkFee(data.transaction);
   assertPrivacySession(sessionContext);
   assertDepositFunding(amount, exactFee);
+  const persistEvmDepositRecovery = activeChainProfile()?.transport === "evm" && options.persistEvmDepositRecovery !== false;
+  const evmDepositSender = String(state.wallet.account || "").trim().toLowerCase();
+  if (persistEvmDepositRecovery && !/^0x[0-9a-f]{40}$/.test(evmDepositSender)) {
+    throw new Error("A connected EVM sender is required for durable deposit recovery");
+  }
+  const recoveryArtifact = persistEvmDepositRecovery ? {
+    phase: "proof-ready",
+    prepared: data.prepared,
+    transaction: data.transaction,
+    sender: evmDepositSender
+  } : null;
+  if (recoveryArtifact) {
+    await saveEvmDepositArtifact(recoveryArtifact, { sessionContext });
+  }
   els.keplrTxState.textContent = state.activeWallet === "metamask" ? "Waiting for MetaMask" : "Waiting for Keplr";
   const submit = () => broadcastPreparedPrivacy(data, label, {
     ...options,
     sessionContext,
-    publicPendingKind: "deposit"
+    publicPendingKind: "deposit",
+    onEvmSubmitted: recoveryArtifact ? async (txHash) => saveEvmDepositArtifact({
+      ...recoveryArtifact,
+      phase: "submitted",
+      txHash
+    }, { sessionContext }) : null
   });
-  const broadcast = state.activeWallet === "metamask" ? await withPublicTransactionLock(sessionContext, async () => {
+  const submitEvmDeposit = async () => {
     assertNoCapturedPublicPendingTransaction(sessionContext, "deposit");
     let submitted;
     try {
@@ -105928,10 +113044,17 @@ async function broadcastPrivacyDeposit(amount, label = "deposit", options = {}) 
       const txHash2 = transactionHashFromEvidence(error);
       if (txHash2) {
         if (evmReceiptHasFailed(error?.broadcast?.receipt)) {
-          clearCapturedPublicPendingTransaction(sessionContext, "deposit", txHash2);
+          await clearConfirmedDepositRecoveryUnlocked(sessionContext, txHash2);
         } else {
           persistCapturedPublicPendingTransaction(sessionContext, "deposit", txHash2);
         }
+      } else if (recoveryArtifact && error?.code === "EVM_SUBMISSION_RESULT_UNKNOWN") {
+        await saveEvmDepositArtifact({
+          ...recoveryArtifact,
+          phase: "broadcast-unknown-no-hash"
+        }, { sessionContext });
+      } else if (recoveryArtifact && isExplicitWalletRejection3(error)) {
+        await clearEvmDepositArtifact("", { force: true, sessionContext });
       }
       throw error;
     }
@@ -105946,7 +113069,8 @@ async function broadcastPrivacyDeposit(amount, label = "deposit", options = {}) 
       clearCapturedPublicPendingTransaction(sessionContext, "deposit", txHash);
     }
     return submitted;
-  }) : await submit();
+  };
+  const broadcast = state.activeWallet === "metamask" ? options.publicTransactionLockHeld ? await submitEvmDeposit() : await withPublicTransactionLock(sessionContext, submitEvmDeposit) : await submit();
   assertPrivacySession(sessionContext);
   if (!broadcast.pending) updateIncludedDepositNetworkFee(broadcast);
   state.keplr.depositHash = broadcast.broadcast?.txhash || "";
@@ -105958,7 +113082,7 @@ async function broadcastPrivacyDeposit(amount, label = "deposit", options = {}) 
   }
   return { ...broadcast, prepared: data.prepared };
 }
-function normalizedHex3(value) {
+function normalizedHex4(value) {
   return String(value || "").trim().replace(/^0x/i, "").toLowerCase();
 }
 function noteCommitment(note) {
@@ -105968,7 +113092,7 @@ async function recoverDepositNote(broadcast) {
   const sessionContext = broadcast?.preparedPrivacyData?.privacySessionContext || privacySessionSnapshot();
   assertPrivacySession(sessionContext);
   const prepared = broadcast?.prepared || {};
-  const expectedCommitment = normalizedHex3(prepared.noteCommitmentHex);
+  const expectedCommitment = normalizedHex4(prepared.noteCommitmentHex);
   state.keplr.depositRecoveryStatus = "recovering";
   state.keplr.depositRecoveryMessage = "Included \xB7 recovering encrypted note";
   renderKeplr();
@@ -105987,17 +113111,31 @@ async function recoverDepositNote(broadcast) {
       sessionContext
     });
     assertPrivacySession(sessionContext);
-    const recovered = expectedCommitment && state.keplr.notes.some((note) => normalizedHex3(noteCommitment(note)) === expectedCommitment);
-    if (!recovered) {
+    const evm = activeChainProfile()?.transport === "evm";
+    const recoveredNote = evm ? recoveredDepositNoteForCommitment(state.keplr.notes, expectedCommitment) : state.keplr.notes.find((note) => normalizedHex4(noteCommitment(note)) === expectedCommitment) || null;
+    if (!recoveredNote) {
       throw new Error("Deposit was included, but its prepared note is not in the local wallet cache yet");
     }
     const txHash = broadcast.broadcast?.txhash || broadcast.txHash || state.keplr.depositHash;
-    await withPublicTransactionLock(sessionContext, () => {
-      clearCapturedPublicPendingTransaction(sessionContext, "deposit", txHash);
-    });
+    const recoveredDuringScan = state.keplr.depositRecoveryStatus === "recovered";
+    if (evm && !recoveredDuringScan) {
+      const scanLink = await verifyEvmTypedScanTransaction(
+        recoveredNote.tx_hash || recoveredNote.txHash,
+        txHash,
+        { sessionContext }
+      );
+      assertEvmTypedScanLinkHeight(scanLink, recoveredNote.height);
+      assertPrivacySession(sessionContext);
+    }
+    if (!recoveredDuringScan) {
+      await withPublicTransactionLock(
+        sessionContext,
+        () => clearConfirmedDepositRecoveryUnlocked(sessionContext, txHash)
+      );
+    }
     assertPrivacySession(sessionContext);
     state.keplr.depositRecoveryStatus = "recovered";
-    state.keplr.depositRecoveryMessage = "Recovered \xB7 encrypted note available";
+    state.keplr.depositRecoveryMessage = evm ? "Recovered \xB7 encrypted note and linked EVM/Comet transaction verified" : "Recovered \xB7 encrypted note available";
     return true;
   } catch (error) {
     if (isStalePrivacySessionError(error)) throw error;
@@ -106023,7 +113161,7 @@ function evmFailureMessageFromBroadcast(broadcast, label = "transaction") {
   if (evmFailure) {
     return `${label} failed: EVM execution reverted (${evmFailure})`;
   }
-  if (broadcast?.receipt?.status && broadcast.receipt.status !== "0x1") {
+  if (broadcast?.receipt && evmReceiptHasFailed(broadcast.receipt)) {
     return `${label} failed with EVM receipt status ${broadcast.receipt.status}`;
   }
   return "";
@@ -106036,6 +113174,9 @@ function assertSuccessfulBroadcast(broadcast, label = "transaction") {
   const evmFailure = evmFailureMessageFromBroadcast(broadcast, label);
   if (evmFailure) {
     throw new Error(evmFailure);
+  }
+  if (broadcast?.ok === false) {
+    throw new Error(broadcast.error || `${label} did not pass EVM transaction and privacy-receipt verification`);
   }
   if (broadcast?.receipt) {
     return;
@@ -106104,16 +113245,33 @@ async function broadcastPreparedPrivacy(data, label = "privacy transaction", opt
   const broadcastOptions = {
     ...reservationBinding,
     ...relayValidation,
-    ...cosmosTransferValidation
+    ...cosmosTransferValidation,
+    sessionContext,
+    privacySessionContext: sessionContext,
+    sender: state.wallet.account
   };
   try {
-    const broadcast = await withPreparedReservationHeartbeat(data, () => {
+    let broadcast = await withPreparedReservationHeartbeat(data, () => {
       assertPrivacySession(sessionContext);
       return state.activeWallet === "metamask" ? sendEvmTransaction(data.transaction, {
         label,
         waitForReceipt: Boolean(options.waitForEvmReceipt),
         reservationBinding: broadcastOptions,
+        privacyTransaction: data.transaction,
         sessionContext,
+        onSubmitted: async (txHash) => {
+          if (data.reservationKind === "batch-transfer") {
+            await saveBatchSubmission(data, txHash, { sessionContext });
+          } else if (data.reservation) {
+            await updatePreparedEvmOperationArtifact(
+              data,
+              { phase: "submitted", txHash },
+              { sessionContext }
+            );
+          }
+          await options.onEvmSubmitted?.(txHash);
+          assertPrivacySessionAfterEvmSubmission(sessionContext, txHash);
+        },
         ...options.publicPendingKind ? publicEvmTransactionBoundaryCallbacks(sessionContext, options.publicPendingKind) : {}
       }) : signDirectAndBroadcast(data.signDoc, {
         ...broadcastOptions,
@@ -106123,6 +113281,30 @@ async function broadcastPreparedPrivacy(data, label = "privacy transaction", opt
       });
     });
     assertPrivacySession(sessionContext);
+    if (state.activeWallet === "metamask" && data.reservationKind !== "batch-transfer" && data.reservation) {
+      const persistVerifiedResult = async (result) => {
+        assertPrivacySession(sessionContext);
+        if (!result?.unknown) {
+          verifiedEvmTransactionResult(result, label);
+          await updatePreparedEvmOperationArtifact(data, {
+            phase: "receipt-verified",
+            txHash: result.txHash,
+            receiptResult: result
+          }, { sessionContext });
+        }
+        return result;
+      };
+      if (broadcast.pending && broadcast.waitPromise) {
+        broadcast = {
+          ...broadcast,
+          waitPromise: broadcast.waitPromise.then(persistVerifiedResult)
+        };
+        broadcast.waitPromise.catch(() => {
+        });
+      } else if (!broadcast.unknown) {
+        broadcast = await persistVerifiedResult(broadcast);
+      }
+    }
     await refreshReservationState(data.reservationManager, { sessionContext });
     assertPrivacySession(sessionContext);
     if (broadcast.unknown) {
@@ -106145,6 +113327,20 @@ async function broadcastPreparedPrivacy(data, label = "privacy transaction", opt
 }
 function evmReceiptHasFailed(receipt) {
   return hasFailedEvmReceiptStatus(receipt);
+}
+function evmReceiptSucceeded(receipt) {
+  const status = receipt?.status;
+  if (status === 1 || status === 1n || status === true) return true;
+  const text3 = String(status ?? "").trim().toLowerCase();
+  if (text3 === "1") return true;
+  if (/^0x[0-9a-f]+$/.test(text3)) {
+    try {
+      return BigInt(text3) === 1n;
+    } catch {
+      return false;
+    }
+  }
+  return false;
 }
 function checkedReservationHeight(check = {}) {
   const candidates = [
@@ -106179,6 +113375,7 @@ async function checkReservationTransaction(txHash) {
       absent: !receipt && !transaction,
       pending: !receipt && Boolean(transaction),
       height: receipt?.blockNumber || 0,
+      receipt,
       transaction
     };
   }
@@ -106208,7 +113405,7 @@ async function clearReconciledCosmosPrivacyPending({
   assertPrivacySession(sessionContext);
   const marker = capturedPrivacyPendingState(sessionContext);
   if (!marker?.txHash) return false;
-  const markerHash = normalizedHex3(marker.txHash);
+  const markerHash = normalizedHex4(marker.txHash);
   const matchingOperations = groupReservationOperations(records).filter((operation) => commonCosmosReservationTransactionHash(operation.records) === markerHash);
   const linked = matchingOperations.flatMap((operation) => operation.records);
   if (!linked.length) return false;
@@ -106229,7 +113426,7 @@ async function clearReconciledCosmosPrivacyPending({
   const clear = () => {
     assertPrivacySession(sessionContext);
     const latest = capturedPrivacyPendingState(sessionContext);
-    if (!latest || normalizedHex3(latest.txHash) !== markerHash) return false;
+    if (!latest || normalizedHex4(latest.txHash) !== markerHash) return false;
     clearCapturedPublicPendingTransaction(sessionContext, "privacy", latest.txHash);
     renderReservationState();
     updateAmountActionButtons();
@@ -106248,6 +113445,8 @@ function clearedRelayWithdrawState(resultStatus, resultMessage) {
     payloadUnavailable: false,
     txHash: "",
     submittedBy: "",
+    evmSender: "",
+    evmReceiptEvidence: null,
     externalHandoff: false,
     resultStatus,
     resultMessage
@@ -106486,8 +113685,8 @@ function captureRelayReconciliationContext({ candidateTxHash = "" } = {}) {
     payload_hash: payloadHash,
     expires_at_unix: expiresAtUnix
   } : null);
-  const persistedTxHash = normalizedHex3(state.relayWithdraw.txHash);
-  const normalizedCandidateTxHash = normalizedHex3(candidateTxHash);
+  const persistedTxHash = normalizedHex4(state.relayWithdraw.txHash);
+  const normalizedCandidateTxHash = normalizedHex4(candidateTxHash);
   const localSubmissionAttempted = state.relayWithdraw.externalHandoff !== true && state.relayWithdraw.durableNoBroadcast === false && Boolean(payloadHash);
   return {
     sessionContext,
@@ -106505,6 +113704,7 @@ function captureRelayReconciliationContext({ candidateTxHash = "" } = {}) {
     localSubmissionAttempted,
     reservationIDs: [...state.relayWithdraw.reservationIds],
     leaseToken: state.relayWithdraw.leaseToken || "",
+    evmSender: String(state.relayWithdraw.evmSender || "").trim().toLowerCase(),
     heartbeatGeneration: relayReservationHeartbeatGeneration,
     expectedEvmChainId: activeChainProfile()?.evmChainId,
     operationReplaced: false
@@ -106516,23 +113716,61 @@ async function reconcileRelayWithdrawFromInput() {
   if (!/^(0x)?[0-9a-fA-F]{64}$/.test(raw)) {
     throw new Error("External relayer tx hash must be a 32-byte hex value");
   }
-  const txHash = normalizedHex3(raw);
-  const persistedTxHash = normalizedHex3(state.relayWithdraw.txHash);
-  const metadataOnlyCosmosRecovery = !state.relayWithdraw.handoff && state.relayWithdraw.payloadUnavailable === true && activeChainProfile()?.transport === "cosmos";
+  const txHash = normalizedHex4(raw);
+  const persistedTxHash = normalizedHex4(state.relayWithdraw.txHash);
+  const metadataOnlyRecovery = !state.relayWithdraw.handoff && state.relayWithdraw.payloadUnavailable === true && ["cosmos", "evm"].includes(activeChainProfile()?.transport);
   if (persistedTxHash && persistedTxHash !== txHash) {
     throw new Error("The relayer tx hash is already bound to a different transaction");
   }
-  if (!persistedTxHash && (state.relayWithdraw.externalHandoff !== true || !state.relayWithdraw.handoff && !metadataOnlyCosmosRecovery)) {
-    throw new Error("A current handoff or restorable Cosmos relay payload hash is required before attaching its transaction hash");
+  if (!persistedTxHash && (state.relayWithdraw.externalHandoff !== true || !state.relayWithdraw.handoff && !metadataOnlyRecovery)) {
+    throw new Error("A current handoff or restorable relay payload hash is required before attaching its transaction hash");
   }
   return reconcileRelayWithdrawResult({ candidateTxHash: txHash });
 }
 function assertRelayReconciliationContext(context) {
   assertPrivacySession(context?.sessionContext);
-  if (!context || state.relayWithdraw.handoff !== context.handoff || normalizedHex3(state.relayWithdraw.txHash) !== context.persistedTxHash || state.relayWithdraw.externalHandoff === true !== context.externalHandoff || String(state.relayWithdraw.payloadHash || context.payloadHash || "").trim().toLowerCase() !== context.payloadHash || Number(state.relayWithdraw.expiresAtUnix || context.expiresAtUnix || 0) !== context.expiresAtUnix || String(state.relayWithdraw.leaseToken || "") !== context.leaseToken || JSON.stringify(state.relayWithdraw.reservationIds || []) !== JSON.stringify(context.reservationIDs)) {
+  if (!context || state.relayWithdraw.handoff !== context.handoff || normalizedHex4(state.relayWithdraw.txHash) !== context.persistedTxHash || state.relayWithdraw.externalHandoff === true !== context.externalHandoff || String(state.relayWithdraw.payloadHash || context.payloadHash || "").trim().toLowerCase() !== context.payloadHash || Number(state.relayWithdraw.expiresAtUnix || context.expiresAtUnix || 0) !== context.expiresAtUnix || String(state.relayWithdraw.leaseToken || "") !== context.leaseToken || String(state.relayWithdraw.evmSender || "").trim().toLowerCase() !== context.evmSender || JSON.stringify(state.relayWithdraw.reservationIds || []) !== JSON.stringify(context.reservationIDs)) {
     throw stalePrivacySessionError(context?.sessionContext);
   }
   return context;
+}
+async function verifyRelayEvmReceiptAndFinality({
+  handoff,
+  operationArtifact,
+  txHash,
+  check,
+  reconciliationContext
+}) {
+  const transport = handoff?.transport || reconciliationContext?.transport;
+  if (transport !== "evm") return true;
+  assertRelayReconciliationContext(reconciliationContext);
+  if (!check?.included) return false;
+  if (check.successful !== true) {
+    if (check.failed) return false;
+    throw new Error("EVM relay receipt does not contain an explicit successful status");
+  }
+  const privacyTransaction = operationArtifact?.transaction || handoff?.transaction || null;
+  if (!privacyTransaction) {
+    throw new Error(
+      "EVM relay finality cannot be verified without the encrypted original SDK-prepared transaction"
+    );
+  }
+  const sender = String(
+    reconciliationContext?.evmSender || check.transaction?.from || ""
+  ).trim().toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(sender)) {
+    throw new Error("EVM relay sender is unavailable; transaction and finality evidence cannot be verified");
+  }
+  const result = await clairveilBrowserClient().waitForEvmTransaction(txHash, {
+    privacyTransaction,
+    sender
+  });
+  assertRelayReconciliationContext(reconciliationContext);
+  verifiedEvmTransactionResult(result, "EVM relay withdraw");
+  state.relayWithdraw.evmSender = sender;
+  reconciliationContext.evmSender = sender;
+  state.relayWithdraw.evmReceiptEvidence = result;
+  return true;
 }
 function relayPreparedWithdraw() {
   return runValueMovingAction("relay-submit", relayPreparedWithdrawUnlocked);
@@ -106648,6 +113886,7 @@ async function relayPreparedWithdrawUnlocked() {
       throw new Error("Local relayer response account does not match the configured server relayer account");
     }
     state.relayWithdraw.txHash = txHash;
+    state.relayWithdraw.evmSender = String(relay.relayerEvmAddress || "").trim();
     state.relayWithdraw.submittedBy = relay.relayerAddress ? `${relay.relayer || relayer.name} \xB7 ${shorten(relay.relayerAddress, 14, 12)}` : relay.relayer || relayer.name;
     await persistRelayWithdrawRecovery(state.relayWithdraw, { sessionContext });
     assertRelaySubmitContext(context);
@@ -106787,6 +114026,8 @@ async function reconcileRelayWithdrawResult({ candidateTxHash = "" } = {}) {
   let store;
   let operationIdentity;
   let localRelayRecovery = null;
+  let relayOperationArtifact = null;
+  let relayOperationKey = "";
   try {
     manager = await currentReservationManager();
     assertRelayReconciliationContext(reconciliationContext);
@@ -106821,7 +114062,7 @@ async function reconcileRelayWithdrawResult({ candidateTxHash = "" } = {}) {
       });
       assertRelayReconciliationContext(reconciliationContext);
       localRelayRecovery = recovered;
-      const recoveredTxHash = normalizedHex3(
+      const recoveredTxHash = normalizedHex4(
         transactionHashFromEvidence(recovered?.result || {}) || transactionHashFromEvidence(recovered?.evidence || {})
       );
       if (recovered?.found === true && recoveredTxHash) {
@@ -106834,9 +114075,20 @@ async function reconcileRelayWithdrawResult({ candidateTxHash = "" } = {}) {
     assertRelayReconciliationContext(reconciliationContext);
     let records = await Promise.all(reservationIDs2.map((id) => manager.getReservation(id)));
     assertRelayReconciliationContext(reconciliationContext);
+    if (transport === "evm") {
+      relayOperationKey = reservationGroupOperationKey(records);
+      relayOperationArtifact = await loadEvmOperationArtifactForReservations(records, { sessionContext });
+      assertRelayReconciliationContext(reconciliationContext);
+      if (!relayOperationArtifact?.transaction || relayOperationArtifact.kind !== "relay-withdraw") {
+        throw new Error(
+          "EVM relay recovery requires its encrypted original SDK-prepared transaction artifact"
+        );
+      }
+    }
+    let evmFinalityVerified = transport !== "evm";
     try {
       assertRelayReservationPayloadMatches(records, payload);
-      if (txHash && records.some((record) => record.submitted_tx_hash && normalizedHex3(record.submitted_tx_hash) !== normalizedHex3(txHash))) {
+      if (txHash && records.some((record) => record.submitted_tx_hash && normalizedHex4(record.submitted_tx_hash) !== normalizedHex4(txHash))) {
         throw new Error("relay recovery transaction hash does not match the reserved submission identity");
       }
       if (check.included) {
@@ -106846,9 +114098,16 @@ async function reconcileRelayWithdrawResult({ candidateTxHash = "" } = {}) {
             payloadHash: reconciliationContext.payloadHash
           });
         } else if (metadataOnly) {
-          if (records.some((record) => !record.submitted_tx_hash || normalizedHex3(record.submitted_tx_hash) !== normalizedHex3(txHash))) {
+          if (!reconciliationContext.candidateTxHashUnbound && records.some((record) => !record.submitted_tx_hash || normalizedHex4(record.submitted_tx_hash) !== normalizedHex4(txHash))) {
             throw new Error("metadata-only EVM relay recovery requires every reservation to bind the same submitted transaction hash");
           }
+          assertRelayWithdrawTransactionMatches({
+            transport: "evm",
+            payload,
+            handoffTransaction: relayOperationArtifact.transaction,
+            transaction: check.transaction,
+            expectedEvmChainId: reconciliationContext.expectedEvmChainId
+          });
         } else {
           assertRelayWithdrawTransactionMatches({
             transport: handoff.transport,
@@ -106880,6 +114139,16 @@ async function reconcileRelayWithdrawResult({ candidateTxHash = "" } = {}) {
       });
       assertRelayReconciliationContext(reconciliationContext);
       return;
+    }
+    if (check.included) {
+      evmFinalityVerified = await verifyRelayEvmReceiptAndFinality({
+        handoff,
+        operationArtifact: relayOperationArtifact,
+        txHash,
+        check,
+        reconciliationContext
+      });
+      assertRelayReconciliationContext(reconciliationContext);
     }
     if (!txHash && reconciliationContext.localSubmissionAttempted) {
       if (localRelayRecovery?.found === true && localRelayRecovery?.settled !== true) {
@@ -106920,7 +114189,7 @@ async function reconcileRelayWithdrawResult({ candidateTxHash = "" } = {}) {
       );
       return;
     }
-    const txAlreadyBound = records.length > 0 && records.every((record) => normalizedHex3(record.submitted_tx_hash) === normalizedHex3(txHash));
+    const txAlreadyBound = records.length > 0 && records.every((record) => normalizedHex4(record.submitted_tx_hash) === normalizedHex4(txHash));
     if (reconciliationContext.candidateTxHashUnbound) {
       const previousTxHash = state.relayWithdraw.txHash;
       const previousSubmittedBy = state.relayWithdraw.submittedBy;
@@ -106940,7 +114209,7 @@ async function reconcileRelayWithdrawResult({ candidateTxHash = "" } = {}) {
         if (privacySessionIsCurrent(sessionContext)) {
           state.relayWithdraw.txHash = previousTxHash;
           state.relayWithdraw.submittedBy = previousSubmittedBy;
-          reconciliationContext.persistedTxHash = normalizedHex3(previousTxHash);
+          reconciliationContext.persistedTxHash = normalizedHex4(previousTxHash);
         }
         throw error;
       }
@@ -106956,7 +114225,7 @@ async function reconcileRelayWithdrawResult({ candidateTxHash = "" } = {}) {
       if (operationKeys.length !== 1 || !checkedHeight) {
         throw new Error("Included relay transaction evidence is missing one exact operation identity or checked height");
       }
-      const evidenceTxHash = transport === "evm" ? `0x${normalizedHex3(txHash)}` : normalizedHex3(txHash).toUpperCase();
+      const evidenceTxHash = transport === "evm" ? `0x${normalizedHex4(txHash)}` : normalizedHex4(txHash).toUpperCase();
       const boundRecords = await manager.recordRelayTransactionEvidence({
         operationId: operationKeys[0],
         payloadHash: reconciliationContext.payloadHash,
@@ -106973,7 +114242,7 @@ async function reconcileRelayWithdrawResult({ candidateTxHash = "" } = {}) {
       }
       records = await Promise.all(reservationIDs2.map((id) => manager.getReservation(id)));
       assertRelayReconciliationContext(reconciliationContext);
-      if (records.some((record) => normalizedHex3(record.submitted_tx_hash) !== normalizedHex3(txHash))) {
+      if (records.some((record) => normalizedHex4(record.submitted_tx_hash) !== normalizedHex4(txHash))) {
         throw new Error("Included relay transaction evidence was not bound to every linked reservation");
       }
     }
@@ -106990,7 +114259,7 @@ async function reconcileRelayWithdrawResult({ candidateTxHash = "" } = {}) {
     records = await Promise.all(reservationIDs2.map((id) => manager.getReservation(id)));
     assertRelayReconciliationContext(reconciliationContext);
     const spentConfirmed = records.length > 0 && records.every((record) => record.status === reservationStatuses.ConfirmedSpent);
-    const receiveConfirmed = check.included && check.successful === true && records.length > 0 && records.every((record) => !reservationRequiresOperationEvidence(record) || operationReconciliationStatus(record) === operationStatuses.Succeeded);
+    const receiveConfirmed = check.included && check.successful === true && evmFinalityVerified && records.length > 0 && records.every((record) => !reservationRequiresOperationEvidence(record) || operationReconciliationStatus(record) === operationStatuses.Succeeded);
     if (!check.included || check.failed) {
       const chainBlock = await fetchLatestChainBlock();
       assertRelayReconciliationContext(reconciliationContext);
@@ -107054,14 +114323,14 @@ async function reconcileRelayWithdrawResult({ candidateTxHash = "" } = {}) {
     state.keplr.withdrawHeight = check.height || "included";
     const fullyConfirmed = spentConfirmed && receiveConfirmed;
     state.relayWithdraw.resultStatus = fullyConfirmed ? "confirmed" : "recovering";
-    state.relayWithdraw.resultMessage = fullyConfirmed ? "Tx included \xB7 bound transparent recipient confirmed \xB7 input nullifier spent" : "Tx included \xB7 waiting for nullifier and bound transparent output reconciliation";
+    state.relayWithdraw.resultMessage = fullyConfirmed ? "Tx finalized \xB7 bound transparent recipient confirmed \xB7 input nullifier spent" : transport === "evm" && !evmFinalityVerified ? "Tx included \xB7 waiting for configured EVM finality and verified privacy receipt" : "Tx included \xB7 waiting for nullifier and bound transparent output reconciliation";
     if (fullyConfirmed) {
       confirmWithdrawEvidence({ render: false });
       stopRelayReservationHeartbeat(reconciliationContext.heartbeatGeneration);
     } else {
       setWithdrawEvidence(
         spentConfirmed ? "Spent \xB7 confirmed" : "Checking spent state",
-        receiveConfirmed ? "Received \xB7 bound output confirmed" : "Checking bound transparent output",
+        receiveConfirmed ? "Received \xB7 bound output confirmed" : transport === "evm" && !evmFinalityVerified ? "Included \xB7 waiting for configured finality" : "Checking bound transparent output",
         { render: false }
       );
     }
@@ -107092,6 +114361,10 @@ async function reconcileRelayWithdrawResult({ candidateTxHash = "" } = {}) {
     }
     let clearedTerminalRecovery = false;
     if (reconciliationContext.operationReplaced || state.relayWithdraw.resultStatus === "confirmed") {
+      if (relayOperationKey) {
+        await clearEvmOperationArtifact(relayOperationKey, { sessionContext });
+        assertPrivacySession(sessionContext);
+      }
       await store.clear(reconciliationContext.payloadHash, {
         beforeCommit: () => assertPrivacySession(sessionContext)
       });
@@ -107442,6 +114715,12 @@ async function recoverReservationPreparation(operationKey) {
     });
     assertPrivacySession(sessionContext);
     els.keplrTxState.textContent = "Reservation recovery complete";
+    const recoveredReservations = await manager.store.listReservations({
+      ownerKeyId: manager.ownerKeyId
+    });
+    assertPrivacySession(sessionContext);
+    await clearTerminalDirectEvmOperationArtifacts(recoveredReservations, { sessionContext });
+    assertPrivacySession(sessionContext);
     await refreshReservationState(manager, { sessionContext });
     assertPrivacySession(sessionContext);
     toast(`${result}. A new plan may now use the released notes.`);
@@ -107492,7 +114771,7 @@ async function reconcileReservations({
     );
     const initialOperations = groupReservationOperations(initial);
     const privacyMarker = capturedPrivacyPendingState(sessionContext);
-    const privacyMarkerHasReservation = Boolean(privacyMarker?.txHash) && groupReservationOperations(allReservations).some((operation) => commonCosmosReservationTransactionHash(operation.records) === normalizedHex3(privacyMarker.txHash));
+    const privacyMarkerHasReservation = Boolean(privacyMarker?.txHash) && groupReservationOperations(allReservations).some((operation) => commonCosmosReservationTransactionHash(operation.records) === normalizedHex4(privacyMarker.txHash));
     const txHashes = [...new Set([
       ...initialOperations.map((operation) => commonReservationTransactionHash(operation.records)),
       ...privacyMarkerHasReservation ? [privacyMarker.txHash] : []
@@ -107502,6 +114781,8 @@ async function reconcileReservations({
       txChecks.set(txHash, await checkReservationTransaction(txHash));
       assertPrivacySession(sessionContext);
     }
+    await refreshPersistedEvmBatchReceiptEvidence(resolvedManager, { sessionContext });
+    assertPrivacySession(sessionContext);
     await refreshEvents({ allowFailure: true, sessionContext });
     assertPrivacySession(sessionContext);
     await scanKeplrNotes({
@@ -107555,19 +114836,25 @@ async function reconcileReservations({
       }
     }
     if (privacyMarkerHasReservation) {
-      const finalReservations = await resolvedManager.store.listReservations({
+      const finalReservations2 = await resolvedManager.store.listReservations({
         ownerKeyId: resolvedManager.ownerKeyId
       });
       assertPrivacySession(sessionContext);
       await clearReconciledCosmosPrivacyPending({
         manager: resolvedManager,
-        records: finalReservations,
+        records: finalReservations2,
         transactionCheck: txChecks.get(privacyMarker.txHash),
         sessionContext,
         accountTransactionLockHeld
       });
       assertPrivacySession(sessionContext);
     }
+    const finalReservations = await resolvedManager.store.listReservations({
+      ownerKeyId: resolvedManager.ownerKeyId
+    });
+    assertPrivacySession(sessionContext);
+    await clearTerminalDirectEvmOperationArtifacts(finalReservations, { sessionContext });
+    assertPrivacySession(sessionContext);
     const remaining = await refreshReservationState(resolvedManager, { sessionContext });
     assertPrivacySession(sessionContext);
     const unresolvedCount = state.reservations.unresolved.length;
@@ -107809,7 +115096,7 @@ async function sendFromKeplrUnlocked() {
       });
       assertPrivacySession(sessionContext);
       assertSuccessfulBroadcast(broadcast2, "EVM send");
-      state.keplr.sendHash = broadcast2.txHash || "";
+      state.keplr.sendHash = broadcast2.txHash || state.keplr.sendHash || "";
       state.keplr.sendStatus = "submitted";
       els.keplrTxState.textContent = "Send submitted";
       renderKeplr();
@@ -107818,20 +115105,30 @@ async function sendFromKeplrUnlocked() {
         wallet: "MetaMask",
         txHash: state.keplr.sendHash
       });
+      const sendAttemptTxHash = broadcast2.txHash || state.keplr.sendHash;
       watchEvmBroadcast(broadcast2, {
         sessionContext,
-        onIncluded: async (included) => {
-          state.keplr.sendHash = included.txHash || state.keplr.sendHash;
+        key: "public-send",
+        isCurrent: () => publicEvmBroadcastIsCurrent(
+          sessionContext,
+          "send",
+          sendAttemptTxHash
+        ),
+        onIncluded: async (included, assertActive) => {
+          const includedTxHash = included.txHash || sendAttemptTxHash;
           await withPublicTransactionLock(sessionContext, () => {
-            clearCapturedPublicPendingTransaction(sessionContext, "send", state.keplr.sendHash);
+            clearCapturedPublicPendingTransaction(sessionContext, "send", includedTxHash);
           });
+          assertActive();
           assertPrivacySession(sessionContext);
+          state.keplr.sendHash = includedTxHash;
           state.keplr.sendStatus = "included";
           els.keplrTxState.textContent = "Send included";
           await Promise.allSettled([
             refreshWalletBalance({ sessionContext }),
             refreshBlockEvents({ sessionContext })
           ]);
+          assertActive();
           assertPrivacySession(sessionContext);
           renderKeplr();
         },
@@ -107846,12 +115143,13 @@ Tx: ${shorten(state.keplr.sendHash, 14, 12)}`
           });
           renderKeplr();
         },
-        onFailed: async (error) => {
+        onFailed: async (error, assertActive) => {
           const failureConfirmed = evmReceiptHasFailed(error?.broadcast?.receipt);
           if (failureConfirmed) {
             await withPublicTransactionLock(sessionContext, () => {
-              clearCapturedPublicPendingTransaction(sessionContext, "send", state.keplr.sendHash);
+              clearCapturedPublicPendingTransaction(sessionContext, "send", sendAttemptTxHash);
             });
+            assertActive();
             assertPrivacySession(sessionContext);
           }
           state.keplr.sendStatus = failureConfirmed ? "failed" : "unknown";
@@ -107975,24 +115273,33 @@ async function depositFromKeplrUnlocked() {
         message: `\uD2B8\uB79C\uC7AD\uC158\uC740 \uC81C\uCD9C\uB418\uC5C8\uACE0 \uC544\uC9C1 note \uBCF5\uAD6C\uAC00 \uC644\uB8CC\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.
 Tx: ${shorten(state.keplr.depositHash, 14, 12)}`
       });
+      const depositAttemptTxHash = broadcast.txHash || state.keplr.depositHash;
       watchEvmBroadcast(broadcast, {
         sessionContext,
-        onIncluded: async (included) => {
-          state.keplr.depositHash = included.txHash || state.keplr.depositHash;
+        key: "privacy-deposit",
+        isCurrent: () => depositEvmBroadcastIsCurrent(
+          sessionContext,
+          depositAttemptTxHash
+        ),
+        onIncluded: async (included, assertActive) => {
+          const includedTxHash = included.txHash || depositAttemptTxHash;
           await withPublicTransactionLock(sessionContext, () => {
             persistCapturedDepositRecoveryPending(
               sessionContext,
-              state.keplr.depositHash,
+              includedTxHash,
               included.receipt?.blockNumber || state.keplr.depositHeight
             );
           });
+          assertActive();
           assertPrivacySession(sessionContext);
           state.keplr.depositHeight = included.receipt?.blockNumber || state.keplr.depositHeight;
           updateIncludedDepositNetworkFee(included);
           els.keplrTxState.textContent = "Deposit included";
           const recovered2 = await recoverDepositNote({ ...broadcast, ...included, prepared: broadcast.prepared });
+          assertActive();
           assertPrivacySession(sessionContext);
           await refreshPrivacySurfaces({ balance: true, sessionContext });
+          assertActive();
           assertPrivacySession(sessionContext);
           renderKeplr();
           showNotice({
@@ -108013,12 +115320,17 @@ Tx: ${shorten(state.keplr.depositHash, 14, 12)}` : "\uD2B8\uB79C\uC7AD\uC158\uC7
 Tx: ${shorten(state.keplr.depositHash, 14, 12)}`
           });
         },
-        onFailed: async (error) => {
+        onFailed: async (error, assertActive) => {
           const failureConfirmed = evmReceiptHasFailed(error?.broadcast?.receipt);
           if (failureConfirmed) {
-            await withPublicTransactionLock(sessionContext, () => {
-              clearCapturedPublicPendingTransaction(sessionContext, "deposit", state.keplr.depositHash);
-            });
+            await withPublicTransactionLock(
+              sessionContext,
+              () => clearConfirmedDepositRecoveryUnlocked(
+                sessionContext,
+                error?.txHash || error?.broadcast?.txHash || depositAttemptTxHash
+              )
+            );
+            assertActive();
             assertPrivacySession(sessionContext);
           }
           state.keplr.depositRecoveryStatus = failureConfirmed ? "failed" : "unknown";
@@ -108489,29 +115801,41 @@ async function transferFromVeiledUnlocked() {
     renderKeplr();
     if (isPendingEvm) {
       finishTransferFlow("\uD2B8\uB79C\uC2A4\uD37C \uC694\uCCAD\uC774 \uC81C\uCD9C\uB418\uC5C8\uC2B5\uB2C8\uB2E4");
+      const transferAttemptTxHash = broadcast.txHash || state.keplr.transferHash;
       watchEvmBroadcast(broadcast, {
         sessionContext,
-        onIncluded: async (included) => {
+        key: "privacy-transfer",
+        isCurrent: () => preparedEvmBroadcastIsCurrent(
+          finalData,
+          sessionContext,
+          transferAttemptTxHash
+        ),
+        onIncluded: async (included, assertActive) => {
           state.keplr.transferHash = included.txHash || state.keplr.transferHash;
           els.keplrTxState.textContent = "Transfer included";
-          await refreshPrivacySurfaces();
+          await refreshPrivacySurfaces({ sessionContext });
+          assertActive();
+          assertPrivacySession(sessionContext);
           await requirePreparedReservationReconciled(finalData, "Privacy transfer", {
             transactionCheck: { included: true, successful: true, failed: false }
           });
+          assertActive();
           finishTransferFlow("\uD2B8\uB79C\uC2A4\uD37C \uC694\uCCAD\uC774 \uC131\uACF5\uD558\uC600\uC2B5\uB2C8\uB2E4");
           renderKeplr();
         },
-        onUnknown: async (unknown) => {
+        onUnknown: async (unknown, assertActive) => {
           state.keplr.transferHash = unknown.txHash || state.keplr.transferHash;
           els.keplrTxState.textContent = "Transfer status unknown";
-          await refreshReservationState(finalData.reservationManager).catch(() => {
+          await refreshReservationState(finalData.reservationManager, { sessionContext }).catch(() => {
           });
+          assertActive();
           finishTransferFlowUnknown(`Receipt polling\uC774 \uB05D\uB0AC\uC9C0\uB9CC \uC2E4\uD328\uAC00 \uD655\uC778\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. tx hash\uC640 nullifier\uB97C reconcile\uD558\uAE30 \uC804\uC5D0\uB294 \uB2E4\uC2DC \uC804\uC1A1\uD558\uC9C0 \uB9C8\uC138\uC694.
 Tx: ${state.keplr.transferHash}`);
           renderKeplr();
         },
-        onFailed: async (error) => {
+        onFailed: async (error, assertActive) => {
           const resolution = await resolvePreparedPrivacyFailure(error, finalData);
+          assertActive();
           els.keplrTxState.textContent = resolution.blocked ? "Transfer reconciliation required" : "Transfer failed";
           if (resolution.blocked) {
             finishTransferFlowUnknown(error.message);
@@ -108551,6 +115875,206 @@ Tx: ${state.keplr.transferHash}`);
   } finally {
     setBusy(els.transferFromVeiled, false);
     renderKeplr();
+  }
+}
+function transferBatchFromVeiled() {
+  return runValueMovingAction("privacy-batch-transfer", transferBatchFromVeiledUnlocked);
+}
+async function transferBatchFromVeiledUnlocked() {
+  if (batchTransferInFlight || !state.keplr.account) return;
+  const sessionContext = privacySessionSnapshot();
+  const transport = activeChainProfile()?.transport;
+  const expectedWallet = transport === "evm" ? "metamask" : "keplr";
+  if (!batchTransferEnabled() || state.activeWallet !== expectedWallet) {
+    toast("Atomic batch transfer is not enabled for the active chain profile and wallet.");
+    return;
+  }
+  const privacySetupReady = await setupKeplrPrivacy();
+  if (!privacySetupReady) return;
+  try {
+    assertPrivacySession(sessionContext);
+  } catch (error) {
+    if (isStalePrivacySessionError(error)) return;
+    throw error;
+  }
+  if (!state.keplr.rootSignatureBase64) return;
+  let payments;
+  let timing;
+  try {
+    payments = collectBatchTransferPayments();
+    timing = await privacyOperationTiming();
+    assertPrivacySession(sessionContext);
+  } catch (error) {
+    toast(error.message);
+    return;
+  }
+  const confirmed = await openTransferFlowModal("batchTransfer", {
+    chainId: activeChainProfile()?.chainId,
+    recipient: batchTransferReviewRecipients(payments),
+    amount: batchTransferReviewAmount(payments),
+    disclosure: batchTransferReviewDisclosure(payments),
+    selfView: batchAuthorizationRequested() ? "Encrypted self-view included \xB7 EIP-712 authorized self-submit" : "Encrypted self-view included",
+    changeEffect: "Pending payload preparation",
+    expiresAtUnix: timing.expiresAtUnix
+  });
+  try {
+    assertPrivacySession(sessionContext);
+  } catch (error) {
+    if (isStalePrivacySessionError(error)) return;
+    throw error;
+  }
+  if (!confirmed) return;
+  batchTransferInFlight = true;
+  setBusy(els.transferBatchFromVeiled, true);
+  els.keplrTxState.textContent = `Preparing ${transport} batch transfer`;
+  let data = null;
+  const executeBatchTransfer = async (publicTransactionLockHeld) => {
+    const operationTiming = await privacyOperationTiming();
+    assertPrivacySession(sessionContext);
+    const authorizationOptions = batchAuthorizationPreparationOptions(operationTiming, sessionContext);
+    updateTransferFlow(
+      "zero",
+      "Batch proof \uC900\uBE44 \uC911",
+      `\uBAA8\uB4E0 recipient\xB7amount\xB7disclosure\uB97C \uD558\uB098\uC758 ${transport} privacy proof\uB85C \uC900\uBE44\uD569\uB2C8\uB2E4.${authorizationOptions.authorization ? " Proof\uAC00 \uC900\uBE44\uB418\uBA74 \uC5F0\uACB0\uB41C EVM wallet\uC774 EIP-712 authorization\uC744 \uC11C\uBA85\uD569\uB2C8\uB2E4." : ""}`
+    );
+    data = await prepareBatchTransfer(payments, {
+      ...operationTiming,
+      ...authorizationOptions,
+      signal: activeProofSignal(),
+      sessionContext,
+      publicTransactionLockHeld
+    });
+    assertPrivacySession(sessionContext);
+    const preparedReview = preparedBatchReview(data, payments);
+    const finalConfirmed = await withPreparedReservationHeartbeat(data, () => requestPreparedTransferConfirmation({
+      ...transferFlowState.review,
+      recipient: batchTransferReviewRecipients(preparedReview.payments),
+      amount: batchTransferReviewAmount(preparedReview.payments),
+      disclosure: batchTransferReviewDisclosure(preparedReview.payments),
+      changeEffect: preparedReview.changeEffect,
+      expiresAtUnix: operationTiming.expiresAtUnix
+    }));
+    assertPrivacySession(sessionContext);
+    if (!finalConfirmed) {
+      await discardPreparedReservation(data);
+      await clearBatchTransferArtifact({ reservation: data.reservation, sessionContext });
+      return;
+    }
+    updateTransferFlow(
+      "transfer",
+      "Batch \uC11C\uBA85 \uB300\uAE30",
+      `\uC900\uBE44\uB41C \uB2E8\uC77C ${transport} privacy transaction\uC744 ${expectedWallet === "metamask" ? "MetaMask" : "Keplr"}\uC5D0\uC11C \uD655\uC778\uD558\uACE0 \uC11C\uBA85\uD574 \uC8FC\uC138\uC694.`
+    );
+    els.keplrTxState.textContent = expectedWallet === "metamask" ? "Waiting for MetaMask" : "Waiting for Keplr";
+    const broadcast = await broadcastPreparedPrivacy(data, `${transport} batch transfer`, {
+      sessionContext,
+      publicTransactionLockHeld
+    });
+    assertPrivacySession(sessionContext);
+    state.keplr.batchTransferHash = broadcast.broadcast?.txhash || broadcast.txHash || "";
+    if (transport === "cosmos") {
+      await saveBatchSubmission(data, state.keplr.batchTransferHash, { sessionContext });
+    }
+    const pending = Boolean(broadcast.pending);
+    els.keplrTxState.textContent = pending ? "Batch transfer submitted" : "Batch transfer included";
+    renderKeplr();
+    const confirmIncluded = async (included, assertActive = () => {
+    }) => {
+      assertPrivacySession(sessionContext);
+      const includedTxHash = included.txHash || state.keplr.batchTransferHash;
+      if (transport === "evm") {
+        const receiptEvidence = await saveBatchReceiptEvidence(data, included, { sessionContext });
+        if (!receiptEvidence) return;
+      } else {
+        await saveBatchInclusion(data, includedTxHash, { sessionContext });
+      }
+      assertActive();
+      state.keplr.batchTransferHash = includedTxHash;
+      els.keplrTxState.textContent = "Batch transfer included";
+      await refreshPrivacySurfaces({
+        balance: true,
+        sessionContext,
+        accountTransactionLockHeld: Boolean(publicTransactionLockHeld)
+      });
+      assertActive();
+      assertPrivacySession(sessionContext);
+      await requirePreparedReservationReconciled(data, `${transport} batch transfer`, {
+        accountTransactionLockHeld: Boolean(publicTransactionLockHeld),
+        transactionCheck: { included: true, successful: true, failed: false }
+      });
+      assertActive();
+      assertPrivacySession(sessionContext);
+      await clearBatchTransferArtifact({ reservation: data.reservation, sessionContext });
+      assertActive();
+      finishTransferFlow("Batch transfer \uC694\uCCAD\uC774 \uC131\uACF5\uD558\uC600\uC2B5\uB2C8\uB2E4");
+      renderKeplr();
+    };
+    if (pending && transport === "evm") {
+      finishTransferFlow("Batch transfer \uC694\uCCAD\uC774 \uC81C\uCD9C\uB418\uC5C8\uC2B5\uB2C8\uB2E4");
+      const batchAttemptTxHash = broadcast.txHash || state.keplr.batchTransferHash;
+      watchEvmBroadcast(broadcast, {
+        sessionContext,
+        key: "privacy-batch-transfer",
+        isCurrent: () => batchEvmBroadcastIsCurrent(
+          data,
+          sessionContext,
+          batchAttemptTxHash
+        ),
+        onIncluded: confirmIncluded,
+        onUnknown: async (unknown, assertActive) => {
+          assertPrivacySession(sessionContext);
+          state.keplr.batchTransferHash = unknown.txHash || state.keplr.batchTransferHash;
+          els.keplrTxState.textContent = "Batch transfer status unknown";
+          await refreshReservationState(data.reservationManager, { sessionContext }).catch(() => {
+          });
+          assertActive();
+          finishTransferFlowUnknown(`Receipt polling\uC774 \uB05D\uB0AC\uC9C0\uB9CC \uC2E4\uD328\uAC00 \uD655\uC778\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. batch tx\uC640 \uBAA8\uB4E0 input nullifier\uB97C reconcile\uD558\uAE30 \uC804\uC5D0\uB294 \uB2E4\uC2DC \uC804\uC1A1\uD558\uC9C0 \uB9C8\uC138\uC694.
+Tx: ${state.keplr.batchTransferHash}`);
+          renderKeplr();
+        },
+        onFailed: async (error, assertActive) => {
+          assertPrivacySession(sessionContext);
+          const resolution = await resolvePreparedPrivacyFailure(error, data);
+          assertActive();
+          els.keplrTxState.textContent = resolution.blocked ? "Batch reconciliation required" : "Batch transfer failed";
+          if (resolution.blocked) {
+            finishTransferFlowUnknown(error.message);
+          } else {
+            await clearBatchTransferArtifact({ reservation: data.reservation, sessionContext });
+            assertActive();
+            finishTransferFlow(error.message, false, { retry: () => transferBatchFromVeiled() });
+          }
+          renderKeplr();
+        }
+      });
+      return;
+    }
+    await confirmIncluded(broadcast);
+  };
+  try {
+    await withBatchAccountTransactionLock(sessionContext, executeBatchTransfer);
+  } catch (error) {
+    if (isStalePrivacySessionError(error)) return;
+    const cancelled = error?.name === "AbortError" || activeProofSignal()?.aborted;
+    const resolution = await resolvePreparedPrivacyFailure(error, data || void 0);
+    if (resolution.blocked) {
+      els.keplrTxState.textContent = "Batch reconciliation required";
+      finishTransferFlowUnknown(error.message);
+    } else {
+      if (data) {
+        await clearBatchTransferArtifact({ reservation: data.reservation, sessionContext });
+      }
+      els.keplrTxState.textContent = cancelled ? "Batch preparation cancelled" : "Batch transfer failed";
+      finishTransferFlow(cancelled ? "Proof \uC694\uCCAD\uC744 \uCDE8\uC18C\uD588\uC2B5\uB2C8\uB2E4." : error.message, false, {
+        retry: () => transferBatchFromVeiled()
+      });
+    }
+  } finally {
+    if (privacySessionIsCurrent(sessionContext)) {
+      batchTransferInFlight = false;
+      setBusy(els.transferBatchFromVeiled, false);
+      renderKeplr();
+    }
   }
 }
 function withdrawFromVeiled({ relayMode = false } = {}) {
@@ -108735,21 +116259,31 @@ async function withdrawFromVeiledUnlocked({ relayMode = false } = {}) {
     renderKeplr();
     if (isPendingEvm) {
       finishTransferFlow("Withdraw \uC694\uCCAD\uC774 \uC81C\uCD9C\uB418\uC5C8\uC2B5\uB2C8\uB2E4");
+      const withdrawAttemptTxHash = broadcast.txHash || state.keplr.withdrawHash;
       watchEvmBroadcast(broadcast, {
         sessionContext,
-        onIncluded: async (included) => {
+        key: "privacy-withdraw",
+        isCurrent: () => preparedEvmBroadcastIsCurrent(
+          data,
+          sessionContext,
+          withdrawAttemptTxHash
+        ),
+        onIncluded: async (included, assertActive) => {
           state.keplr.withdrawHash = included.txHash || state.keplr.withdrawHash;
           state.keplr.withdrawHeight = included.receipt?.blockNumber || state.keplr.withdrawHeight;
           els.keplrTxState.textContent = "Withdraw included";
-          await refreshPrivacySurfaces({ balance: true });
+          await refreshPrivacySurfaces({ balance: true, sessionContext });
+          assertActive();
+          assertPrivacySession(sessionContext);
           await requirePreparedReservationReconciled(data, "Privacy withdraw", {
             transactionCheck: { included: true, successful: true, failed: false }
           });
+          assertActive();
           confirmWithdrawEvidence({ render: false });
           finishTransferFlow("Withdraw \uC694\uCCAD\uC774 \uC131\uACF5\uD558\uC600\uC2B5\uB2C8\uB2E4");
           renderKeplr();
         },
-        onUnknown: async (unknown) => {
+        onUnknown: async (unknown, assertActive) => {
           state.keplr.withdrawHash = unknown.txHash || state.keplr.withdrawHash;
           els.keplrTxState.textContent = "Withdraw status unknown";
           setWithdrawEvidence(
@@ -108757,14 +116291,16 @@ async function withdrawFromVeiledUnlocked({ relayMode = false } = {}) {
             "Unknown \xB7 reconcile before retry",
             { render: false }
           );
-          await refreshReservationState(data.reservationManager).catch(() => {
+          await refreshReservationState(data.reservationManager, { sessionContext }).catch(() => {
           });
+          assertActive();
           finishTransferFlowUnknown(`Receipt polling\uC774 \uB05D\uB0AC\uC9C0\uB9CC \uC2E4\uD328\uAC00 \uD655\uC778\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. tx hash\uC640 nullifier\uB97C reconcile\uD558\uAE30 \uC804\uC5D0\uB294 \uB2E4\uC2DC \uC804\uC1A1\uD558\uC9C0 \uB9C8\uC138\uC694.
 Tx: ${state.keplr.withdrawHash}`);
           renderKeplr();
         },
-        onFailed: async (error) => {
+        onFailed: async (error, assertActive) => {
           const resolution = await resolvePreparedPrivacyFailure(error, data);
+          assertActive();
           els.keplrTxState.textContent = resolution.blocked ? "Withdraw reconciliation required" : "Withdraw failed";
           if (resolution.blocked) {
             setWithdrawEvidence(
@@ -108894,6 +116430,17 @@ els.veiledDisclosureAdvanced.addEventListener("change", renderTransferDisclosure
 els.veiledDisclosureMode.addEventListener("change", renderTransferDisclosureAdvanced);
 els.includeSelfViewDisclosure.addEventListener("change", renderTransferDisclosureAdvanced);
 els.transferFromVeiled.addEventListener("click", transferFromVeiled);
+els.addBatchTransferPayment.addEventListener("click", () => {
+  addBatchTransferPayment();
+  renderBatchTransfer();
+  updateAmountActionButtons();
+});
+els.batchUseAuthorization.addEventListener("change", () => {
+  renderBatchAuthorization();
+  updateAmountActionButtons();
+});
+els.batchAuthorizationKind.addEventListener("change", updateAmountActionButtons);
+els.transferBatchFromVeiled.addEventListener("click", transferBatchFromVeiled);
 els.withdrawFromVeiled.addEventListener("click", withdrawFromVeiled);
 els.relayWithdrawFromVeiled.addEventListener("click", () => withdrawFromVeiled({ relayMode: true }));
 els.relayPreparedWithdraw.addEventListener("click", () => relayPreparedWithdraw().catch(reportAsyncError));
