@@ -43,15 +43,15 @@ Production gateway는 optional입니다. 활성화한다면 아래를 만족해�
 
 예제의 `CLAIRVEIL_PROVER_PROXY_ENABLED`는 local-test control이지 production deployment recipe가 아닙니다. Checked-in server는 local-test mode, 명시적 flag, direct loopback request가 모두 참일 때만 이를 허용합니다. Public mode는 이 flag와 server가 보유한 prover bearer token을 모두 거부합니다. Product에 gateway가 필요하면 별도로 검토한 gateway를 배포해야 합니다. Local proxy는 upstream redirect와 final URL 변경을 거부하고 versioned JSON success shape를 검사하며 parsing 전에 response 크기를 제한합니다. 모든 upstream error body는 stable하고 민감하지 않은 JSON error로 교체합니다. Server-backed `/api/health` read gateway도 bounded upstream JSON, request별 timeout, client disconnect cancellation, process 전체 admission 상한을 사용합니다. 예제는 이를 `CLAIRVEIL_PROVER_PROXY_MAX_RESPONSE_BYTES`, `CLAIRVEIL_DAPP_UPSTREAM_TIMEOUT_MS`, `CLAIRVEIL_DAPP_UPSTREAM_MAX_RESPONSE_BYTES`, `CLAIRVEIL_DAPP_HEALTH_MAX_IN_FLIGHT`로 설정합니다.
 
-Checked-in v0.3.1 example은 batch-transfer exposure flag를 제공하지 않습니다.
-Server는 항상 `serverFeatures.batchTransfer=false`를 반환하고 UI는
-`prepareTransferBatch`를 호출하지 않으며 `make dapp-local`도 batch 메뉴를
-활성화하지 않습니다. ClairveilJS batch API가 있거나
-`/v1/proofs/batch-transfer` endpoint에 접속할 수 있다는 이유로 capability
-discovery로 취급하면 안 됩니다. One-proof batch transfer를 노출할 향후
-product는 product flow를 advertise하거나 활성화하기 전에 별도의 explicit gate,
-encrypted recovery checkpoint, wallet confirmation, typed reconciliation, end-to-end deployment test를
-추가하고 검토해야 합니다.
+`CLAIRVEIL_DAPP_ENABLE_BATCH_TRANSFER`는 capability discovery가 아니라 명시적인
+product exposure gate입니다. Active Cosmos 또는 EVM profile, pin한 ClairveilJS
+build, prover, typed scan endpoint가 one-proof batch conformance와 recovery test를
+함께 통과한 경우에만 켭니다. EVM profile은 canonical
+`singleProofBatchTransfer` call도 지원해야 합니다. Checked-in static
+configuration은 메뉴를 숨기며 `make dapp-local`도 gate를 암묵적으로 켜지
+않습니다. 활성화하려면 WebApp integration/storage 문서의 encrypted recovery
+checkpoint, wallet confirmation, typed reconciliation, end-to-end test를 모두
+만족해야 합니다.
 
 ## Browser security header와 telemetry
 

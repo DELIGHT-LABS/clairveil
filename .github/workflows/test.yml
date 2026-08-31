@@ -54,6 +54,23 @@ jobs:
             exit 1
           fi
 
+      - name: Check out pinned Maroo EVM contract source
+        uses: actions/checkout@v4
+        with:
+          repository: Hashed-Open-Finance/maroo
+          ref: d624bb76cbd8c4cc0a88d30c2a720aab6da28f75
+          path: .ci/maroo
+          persist-credentials: false
+
+      - name: Verify checked-out Maroo EVM source commit
+        shell: bash
+        run: |
+          actual_ref="$(git -C "$GITHUB_WORKSPACE/.ci/maroo" rev-parse HEAD)"
+          if [[ "$actual_ref" != "d624bb76cbd8c4cc0a88d30c2a720aab6da28f75" ]]; then
+            echo "checked-out Maroo commit $actual_ref does not match the pinned EVM source" >&2
+            exit 1
+          fi
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -76,6 +93,9 @@ jobs:
 
       - name: Verify target ClairveilJS release contracts
         shell: bash
+        env:
+          CLAIRVEIL_SOURCE_DIR: ${{ github.workspace }}
+          CLAIRVEIL_EVM_SOURCE_DIR: ${{ github.workspace }}/.ci/maroo
         run: |
           sibling_path="$(dirname "$GITHUB_WORKSPACE")/clairveiljs"
           npm --prefix "$sibling_path" run verify:release

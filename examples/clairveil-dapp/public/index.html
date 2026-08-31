@@ -227,9 +227,11 @@
             <h2>Veiled</h2>
           </div>
           <section class="balance-section" aria-labelledby="veiledBalanceTitle">
-            <div class="balance-heading">
+            <div class="veiled-notes-heading">
               <h3 id="veiledBalanceTitle">Veiled balance (Notes)</h3>
-              <div class="notes-actions">
+            </div>
+            <div class="note-scan-controls">
+              <div class="note-scan-settings">
                 <label class="toggle-control">
                   <input id="myKeplrSpendableOnly" type="checkbox" checked />
                   <span>Unspent only</span>
@@ -238,6 +240,8 @@
                   <span>Scan endpoint</span>
                   <select id="noteScanEndpoint" aria-label="Note scan REST endpoint"></select>
                 </label>
+              </div>
+              <div class="note-scan-actions">
                 <button id="scanKeplrNotes" type="button" disabled>Scan</button>
                 <button id="backupNoteCache" class="secondary-button" type="button" disabled>Backup cache</button>
                 <button id="resetRescanNotes" class="secondary-button" type="button" disabled>Reset &amp; Rescan</button>
@@ -340,6 +344,39 @@
               <div>
                 <dt>Transfer tx</dt>
                 <dd id="keplrTransferHash">-</dd>
+              </div>
+            </dl>
+          </section>
+          <section id="batchTransferSection" class="balance-section action-section" aria-labelledby="batchTransferTitle" hidden>
+            <h3 id="batchTransferTitle">Atomic Batch Transfer</h3>
+            <p id="batchTransferDescription" class="quiet">Submit an atomic shielded batch with one proof and one transaction. The 32-output capacity includes a change output when one is required.</p>
+            <div id="batchTransferRows" class="batch-transfer-rows"></div>
+            <div id="batchAuthorizationPanel" class="batch-authorization-panel" hidden>
+              <label class="checkbox-control">
+                <input id="batchUseAuthorization" type="checkbox" />
+                <span>Exercise EIP-712 authorized call</span>
+              </label>
+              <div id="batchAuthorizationOptions" class="batch-authorization-options" hidden>
+                <label class="field">
+                  <span>Authorization kind</span>
+                  <select id="batchAuthorizationKind"></select>
+                </label>
+                <div>
+                  <span class="field-label">Effective sender / executor</span>
+                  <strong id="batchAuthorizationAccount">-</strong>
+                </div>
+              </div>
+              <p class="quiet">The connected EVM account signs the EIP-712 envelope and submits the transaction. A target chain must provide its domain and allowed kinds through the active profile.</p>
+            </div>
+            <div class="amount-row">
+              <button id="addBatchTransferPayment" class="secondary-button" type="button">Add recipient</button>
+              <button id="transferBatchFromVeiled" type="button" disabled>Prepare atomic batch</button>
+            </div>
+            <p class="inline-warning">Mandatory audit disclosure and encrypted sender self-view are included for every payment. Review every recipient, disclosure setting, exact change, and circuit capacity before signing.</p>
+            <dl class="facts">
+              <div>
+                <dt>Batch tx</dt>
+                <dd id="batchTransferHash">-</dd>
               </div>
             </dl>
           </section>
@@ -610,11 +647,12 @@
         </div>
         <div class="auditor-layout">
           <div class="audit-pane">
-            <h3>Audit Transfers</h3>
+            <h3>Audit Transactions</h3>
+            <p class="quiet audit-list-help">Direct transfers and typed batch transactions are listed once per transaction.</p>
             <div id="auditorEventsList" class="audit-list"></div>
           </div>
           <div class="audit-pane audit-detail">
-            <h3>Transfer Detail</h3>
+            <h3>Transaction Detail</h3>
             <div class="test-scalar-box">
               <span>Test Private disclosure scalar</span>
               <code id="auditorTestScalar">-</code>
@@ -667,6 +705,7 @@
                 <dd id="auditorTo">-</dd>
               </div>
             </dl>
+            <div id="auditorBatchOutputs" class="auditor-batch-outputs" hidden></div>
             <p id="auditorDecodeState" class="quiet">Select a transfer.</p>
           </div>
         </div>

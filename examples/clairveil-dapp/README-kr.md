@@ -47,6 +47,7 @@ CLAIRVEILJS_DIR=/absolute/path/to/clairveiljs-worktree npm run test:dapp
   - batch nullifier status 조회
   - spendable-only toggle
   - Transfer, 즉 veiled send
+  - Explicit feature gate 뒤의 Cosmos/EVM one-proof atomic batch transfer
   - Withdraw, 즉 veiled balance를 transparent account로 이동
   - self transaction/planner 단계 안내
 - Disclosure
@@ -124,6 +125,7 @@ DApp UI는 privacy 준비 로직을 직접 구현하지 않고 `clairveiljs/brow
 | `prepareDeposit(...)` | note material 생성, `depositProofUrl` 또는 injected provider에서 DepositCircuit proof 획득, Cosmos sign doc 또는 EVM precompile tx 생성 |
 | `scanWalletNotes(...)` | typed `privacy_scan`, DApp AES-GCM encrypted note store에 전체 cursor 저장, batch nullifier status 갱신 |
 | `prepareTransfer(...)` | note scan, planner, audit config, prover `/v1/prover/transfer`, disclosure payload, Cosmos sign doc 또는 EVM precompile tx 생성 |
+| `prepareTransferBatch(...)` | Payment별 disclosure와 wallet 제출 전 durable encrypted recovery checkpoint를 포함한 opt-in Cosmos/EVM one-proof batch 준비 |
 | `prepareWithdraw(...)` | note scan, planner, prover `/v1/prover/withdraw`, Cosmos sign doc 또는 EVM precompile tx 생성 |
 | `prepareRelayWithdraw(...)` | chain/recipient/expiry에 결합된 relayer payload 생성; EVM은 relayer가 재구성하거나 byte 단위로 검증할 candidate transaction도 반환 |
 | `signDirectAndBroadcast(...)` | prepared note reservation lifecycle을 유지하며 Cosmos tx 서명/broadcast/wait |
@@ -265,6 +267,10 @@ const myEvmProfile = {
   evmPrivacyPrecompileAddress: "0x100000000000000000000000000000000000000b",
   evmDepositMode: "payable-exact-value",
   evmNativeDenom: "umy",
+  evmAuthorizationProfile: {
+    typedDataDomain: { name: "My EVM Privacy Chain", version: "1" },
+    supportedAuthorizationKinds: [1]
+  },
   evmGasLimit: "0x989680",
   evmSendGasLimit: "0x5208"
 };
@@ -327,7 +333,9 @@ npm start
 | `CLAIRVEIL_EVM_RPC` | MetaMask/EVM JSON-RPC |
 | `CLAIRVEIL_EVM_CHAIN_ID` | MetaMask chain id, hex/decimal 가능 |
 | `CLAIRVEIL_EVM_PRIVACY_PRECOMPILE` | EVM privacy precompile address |
-| `CLAIRVEIL_EVM_DEPOSIT_MODE` / `CLAIRVEIL_EVM_NATIVE_DENOM` | `nonpayable` 또는 0.3.1 `payable-exact-value` deposit binding |
+| `CLAIRVEIL_EVM_DEPOSIT_MODE` / `CLAIRVEIL_EVM_NATIVE_DENOM` | 필수 0.3.1 `payable-exact-value` deposit binding과 일치하는 native minimal denom |
+| `CLAIRVEIL_EVM_AUTHORIZATION_PROFILE` | Target chain의 EIP-712 `typedDataDomain`과 `supportedAuthorizationKinds`를 담는 optional JSON object |
+| `CLAIRVEIL_DAPP_ENABLE_BATCH_TRANSFER` | Active Cosmos/EVM profile, ClairveilJS, prover, typed scan endpoint가 one-proof batch conformance를 통과한 경우에만 `1`; 기본 `0`은 UI를 숨김 |
 | `CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING` / `CLAIRVEIL_DAPP_ALLOW_LAN_ADMIN` / `CLAIRVEIL_DAPP_ALLOW_LAN_PROVER` | local signing/admin/prover helper를 LAN에 노출할 때만 명시적으로 `1` |
 
 Signer를 변경하는 local helper route는 DApp 요청 origin과 `Origin`이 정확히
@@ -355,13 +363,21 @@ EVM profile은 아래 조건을 만족해야 합니다.
 
 - EVM JSON-RPC가 MetaMask에서 접근 가능해야 합니다.
 - Host chain 쪽 Cosmos REST/RPC가 Clairveil privacy event/query surface를 제공해야 합니다.
-- EVM privacy precompile ABI가 ClairveilJS의 `IPrivacy` ABI와 호환되어야 합니다.
+- EVM privacy precompile ABI가 canonical `singleProofBatchTransfer`를 포함한 ClairveilJS `IPrivacy` ABI와 호환되어야 합니다.
 - Profile의 `evmPrivacyPrecompileAddress`가 target chain이 공개한 fixed precompile address와 일치해야 합니다.
 - EVM-derived identity material에 사용할 Clairveil privacy account prefix가 chain과 일치해야 합니다.
 - Prover가 `/v1/prover/transfer`, `/v1/prover/withdraw` contract를 지원해야 합니다.
-- `evmDepositMode`를 명시해야 합니다. `payable-exact-value`이면 `evmNativeDenom === denom`이어야 minimal-unit amount가 `msg.value`와 정확히 결합됩니다.
+- `evmDepositMode: "payable-exact-value"`와 `evmNativeDenom === denom`으로 minimal-unit amount가 `msg.value`와 정확히 결합되어야 합니다.
 
-현재 DApp은 임의의 EVM privacy ABI shape를 지원하지 않습니다. EVM Clairveil 지원 chain은 같은 privacy precompile ABI와 payload semantics를 사용해야 합니다.
+기본 경로는 canonical Clairveil v0.3.1 ABI를 요구합니다. 동등한 non-canonical
+call shape가 필요한 deployment는 검토된 ClairveilJS `EvmContractAdapter`를
+`globalThis.CLAIRVEIL_EVM_CONTRACT_ADAPTERS[profile.id]`에 주입할 수 있습니다.
+Complete contract getter/indexer 구현은
+`globalThis.CLAIRVEIL_PRIVACY_STATE_ADAPTERS[profile.id]`에
+`PrivacyStateAdapter`로 주입하고, built-in 또는 검토된 custom finality policy는
+`globalThis.CLAIRVEIL_EVM_FINALITY_POLICIES[profile.id]`로 선택합니다. 각 adapter는
+선택한 profile/precompile에 bind하고 SDK canonical validation을 통과해야 합니다.
+Privacy-state adapter가 없으면 위 typed host-chain query가 계속 필수입니다.
 
 ## Privacy flow
 
@@ -393,6 +409,21 @@ EVM profile은 아래 조건을 만족해야 합니다.
 
 Prepared payload 이후의 최종 확인에는 authoritative chain time으로 계산한 chain ID/만료 시각, recipient, amount, sender shielded address로 돌아오는 exact change effect, disclosure plane, self-view 설정이 표시됩니다. 이 화면에서 취소하면 local proof를 폐기하고 prepared reservation을 replan-required로 전환합니다. Self-view는 기본 활성화이며 명시적으로 끌 수 있지만, 이 경우 보낸 내역 복구가 제한될 수 있다는 경고가 표시됩니다. Reservation에 묶인 Cosmos transfer/withdraw 문서는 `ProofReady`가 정확한 `TxBody + AuthInfo`를 bind하므로 DApp이 Keplr에 준비된 fee와 memo를 유지하도록 요청합니다. Input note를 reserve하지 않는 deposit은 계속 wallet fee 편집을 허용합니다.
 
+### Atomic batch transfer
+
+`CLAIRVEIL_DAPP_ENABLE_BATCH_TRANSFER=1`일 때만 batch editor가 보입니다. 1–16
+input / 1–32 output 범위에서 Cosmos `MsgBatchTransfer` 또는 EVM
+`singleProofBatchTransfer` 하나를 준비하며 change도 output slot 하나를 사용합니다.
+Payment마다 `none`, `public`, `recipient-encrypted` disclosure를 선택하고 최종
+confirmation에서 exact recipient, amount, target key, change, circuit capacity를
+prepared payload와 다시 대조합니다. Active EVM profile에 EIP-712 domain이 있으면
+`singleProofBatchTransferWithAuthorization`을 시험할 수 있고 connected account를
+sender/executor, fresh nonce, prepared expiry에 bind합니다. Prepared batch와 EVM
+transaction binding은 별도 AES-GCM/Web-Locks recovery artifact에 저장합니다.
+Successful Cosmos execution 또는 EVM receipt와 complete reserved-nullifier set,
+typed output/disclosure evidence가 모두 확인되어야 성공이며 unresolved artifact는
+input을 계속 잠급니다.
+
 ### Withdraw
 
 1. ClairveilJS가 spendable notes를 scan합니다.
@@ -409,7 +440,7 @@ Transfer/withdraw prepare는 wallet privacy material에서 파생한 키로 AES-
 
 Same-origin local relayer도 nullifier preflight를 다시 수행하고 canonical payload nullifier 각각을 process 안에서 원자적으로 잠급니다. 같은 payload의 동시 요청이나 replay는 한 번의 제출 결과를 공유하고, 하나라도 겹치는 다른 payload는 거부합니다. 같은 signer account를 쓰는 faucet, local deposit, relay broadcast도 하나의 account-sequence/nonce queue를 공유합니다. Cosmos가 nonzero CheckTx를 명시적으로 반환한 경우에는 node 접수 거부가 확정됐으므로 이 process-local submission gate만 해제합니다. Broadcaster가 유효한 exact tx hash를 반환한 뒤 timeout, disconnect, malformed status가 발생하면 그 hash를 account fence와 함께 유지하며, 이후 signer 요청이 authoritative Cosmos tx query 또는 EVM receipt query로 해당 transaction을 찾은 경우에만 fence를 해제합니다. Indexed Cosmos tx의 execution code 또는 EVM receipt status가 canonical하지 않으면 exact hash와 함께 `included=true`, `pending=false`, `unknown=true`, `failed=null`로 반환하며 success로 cache하거나 표시하지 않습니다. CLI가 유효한 hash를 반환하기 전에 실패하면 process-local gate는 fail-closed 상태를 유지하지만 exact-hash reconciliation은 불가능하며, 이런 identifier 없는 post-boundary 결과는 자동 retry 대상이 아닙니다. Browser의 durable reservation은 기존 reconciliation 정책을 그대로 따릅니다.
 
-EVM public send/deposit의 미확정 tx hash와 status는 reload 후에도 복원되어 reconcile 전 중복 전송을 차단합니다. EVM deposit preflight는 host-chain bank endpoint에서 대상 asset 잔액을, `eth_getBalance`에서 native gas 잔액을 따로 조회하므로 `denom`과 `evmNativeDenom`이 다른 profile은 두 잔액을 각각 충족해야 합니다. Relay handoff JSON, reservation ID, relayer tx hash, 결과 상태도 wallet-derived key로 암호화해 저장하고 `Setup Clairveil` 후 복원합니다. Authoritative block time으로 handoff 만료가 확인되고 모든 reserved nullifier가 unspent이면 wallet owner의 명시적 승인으로 `ManualReview -> ReplanRequired` 복구 후 새 payload를 준비할 수 있습니다.
+EVM public send/deposit의 미확정 tx hash와 status는 reload 후에도 복원되어 reconcile 전 중복 전송을 차단합니다. EVM deposit preflight는 host-chain bank endpoint의 대상 asset과 `eth_getBalance`의 같은 native asset gas 잔액을 교차 확인하며 v0.3.1은 `evmNativeDenom === denom`을 요구합니다. Relay recovery에는 reservation ID, payload hash, expiry, relayer tx hash, 결과 상태만 wallet-derived key로 암호화하며 raw handoff JSON이나 proof는 저장하지 않습니다. EVM receipt 검증에 필요한 원본 SDK-prepared transaction은 별도의 암호화 operation-artifact namespace에 보관하고 `Setup Clairveil` 후 metadata와 함께 복원합니다. Authoritative block time으로 handoff 만료가 확인되고 모든 reserved nullifier가 unspent이면 wallet owner의 명시적 승인으로 `ManualReview -> ReplanRequired` 복구 후 새 payload를 준비할 수 있습니다.
 
 Disclosure Review는 현재 event 외에도 임의 tx hash 또는 붙여넣은 `shielded_transfer` event JSON을 user/self-view/local-admin audit plane으로 decode할 수 있습니다. 검증된 report는 plane, policy, output index, commitment, digest, `verified=true`를 함께 표시합니다. Verification failure는 `verified=false`를 표시하고 plaintext를 화면에 노출하지 않습니다.
 
@@ -419,7 +450,9 @@ Disclosure Review는 현재 event 외에도 임의 tx hash 또는 붙여넣은 `
 
 Transfer/withdraw proof 요청에는 `AbortSignal`이 전달됩니다. Modal에서 진행 중인 proof를 취소하고 같은 profile-pinned prover endpoint로 재시도할 수 있습니다. 만료 시각은 latest chain block time을 기준으로 계산하며 timestamp 조회에 실패하면 fail-closed합니다.
 
-0.3.1의 one-proof batch API와 proxy path는 이 UI에서 의도적으로 노출하지 않습니다. Target chain, prover, scan recovery, wallet confirmation, downstream E2E를 함께 검증하기 전까지 `serverFeatures.batchTransfer`는 `false`로 유지하세요.
+Batch gate는 target chain, prover, encrypted recovery, wallet confirmation,
+typed reconciliation, downstream E2E를 함께 검증한 profile에서만 켭니다. SDK API나
+proxy path가 있다는 사실만으로 gate를 활성화하면 안 됩니다.
 
 ## Disclosure mode
 
@@ -532,7 +565,7 @@ npm run check:clairveiljs:types
 npm run test:release-contracts
 ```
 
-`npm run verify:release`는 DApp static check, DApp/SDK integration test, type check, 필수 0.3.1 conformance fixture를 실행합니다. `test:release-contracts`는 먼저 SDK에 내장된 계약 파일 17개가 현재 Clairveil checkout과 byte 단위로 같은지 확인한 뒤 SDK 자체 manifest verifier와 bundled v3-only conformance suite를 실행하며, SDK process에 fixture를 주입하지 않습니다. `npm run verify:release:integration`은 live local full flow와 payable EVM driver까지 요구하며 환경이 없으면 skip하지 않고 실패합니다. Required conformance suite에는 expiry, replay, payload substitution, duplicate nullifier rejection이 포함됩니다.
+`npm run verify:release`는 DApp static check, DApp/SDK integration test, type check, 필수 0.3.1 conformance fixture를 실행합니다. `test:release-contracts`는 먼저 SDK에 내장된 계약 파일 17개가 현재 Clairveil checkout과 byte 단위로 같은지 확인한 뒤 SDK 자체 manifest verifier와 bundled v3-only conformance suite를 실행하며, SDK process에 fixture를 주입하지 않습니다. `npm run verify:release:integration`은 live local full flow와 payable EVM driver까지 요구하며 환경이 없으면 skip하지 않고 실패합니다. EVM gate는 deposit, note recovery, transfer, feature-gated one-proof batch, direct/relay withdraw, ambiguous/conflicting recovery를 검사합니다. Required conformance suite에는 expiry, replay, payload substitution, duplicate nullifier rejection이 포함됩니다.
 
 Smoke test는 다음 boundary를 확인합니다.
 

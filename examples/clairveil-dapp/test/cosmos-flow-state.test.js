@@ -6,6 +6,7 @@ import {
   authoritativeChainBlockFromStatus,
   isSeparateSameOriginLocalRelayerReservation,
   preparedTransferExpiryUnix,
+  recoveredDepositNoteForCommitment,
   recoveredDepositNoteForTxHash,
   reservationConsumesBrowserCosmosSequence,
   typedPrivacyScanAfter
@@ -139,6 +140,82 @@ test("deposit reload recovery matches only the exact typed-scan transaction hash
   assert.throws(
     () => recoveredDepositNoteForTxHash([exact], "not-a-hash"),
     error => error?.code === "INVALID_DEPOSIT_TX_HASH"
+  );
+});
+
+test("EVM deposit recovery matches one typed note by its exact prepared commitment", () => {
+  const commitment = "12".repeat(32);
+  const exact = {
+    commitment_hex: commitment.toLowerCase(),
+    tx_hash: "AB".repeat(32)
+  };
+  const other = {
+    commitmentHex: "34".repeat(32),
+    txHash: "CD".repeat(32)
+  };
+
+  assert.equal(
+    recoveredDepositNoteForCommitment([other, exact], `0x${commitment.toUpperCase()}`),
+    exact
+  );
+  assert.equal(recoveredDepositNoteForCommitment([other], commitment), null);
+});
+
+test("EVM deposit recovery rejects malformed commitments and scan transaction hashes", () => {
+  const commitment = "12".repeat(32);
+  for (const malformed of ["", "12".repeat(31), "12".repeat(33), "not-a-commitment"]) {
+    assert.throws(
+      () => recoveredDepositNoteForCommitment([], malformed),
+      error => error?.code === "INVALID_DEPOSIT_COMMITMENT"
+    );
+  }
+
+  for (const note of [
+    { commitment_hex: commitment },
+    { commitment_hex: commitment, tx_hash: "AB".repeat(31) },
+    { commitment_hex: commitment, tx_hash: "not-a-hash" }
+  ]) {
+    assert.throws(
+      () => recoveredDepositNoteForCommitment([note], commitment),
+      error => error?.code === "INVALID_DEPOSIT_SCAN_TX_HASH"
+    );
+  }
+});
+
+test("EVM deposit recovery fails closed when a commitment or scan identity is ambiguous", () => {
+  const commitment = "12".repeat(32);
+  const txHash = "AB".repeat(32);
+  const duplicate = {
+    commitment_hex: commitment,
+    tx_hash: txHash
+  };
+
+  assert.throws(
+    () => recoveredDepositNoteForCommitment([duplicate, { ...duplicate }], commitment),
+    error => error?.code === "AMBIGUOUS_DEPOSIT_COMMITMENT"
+  );
+  assert.throws(
+    () => recoveredDepositNoteForCommitment([
+      duplicate,
+      { ...duplicate, tx_hash: "CD".repeat(32) }
+    ], commitment),
+    error => error?.code === "AMBIGUOUS_DEPOSIT_COMMITMENT"
+  );
+  assert.throws(
+    () => recoveredDepositNoteForCommitment([{
+      commitment_hex: commitment,
+      commitmentHex: "34".repeat(32),
+      tx_hash: txHash
+    }], commitment),
+    error => error?.code === "AMBIGUOUS_DEPOSIT_COMMITMENT"
+  );
+  assert.throws(
+    () => recoveredDepositNoteForCommitment([{
+      commitment_hex: commitment,
+      tx_hash: txHash,
+      txHash: "CD".repeat(32)
+    }], commitment),
+    error => error?.code === "AMBIGUOUS_DEPOSIT_COMMITMENT"
   );
 });
 

@@ -862,46 +862,39 @@ test("production gate requires the browser-loaded artifact for a static DApp", a
   );
 });
 
-test("production gate enforces the checked-in batch feature boundary for server-backed and static deployments", async () => {
+test("production gate permits server opt-in but keeps static batch disabled", async () => {
   const staticEnvironment = {
     ...profileEnvironment,
     CLAIRVEIL_WEBAPP_CONFIG_URL: "https://app.example.com/dapp-config.json",
   };
-  const invalidFeatures = [
-    undefined,
-    { batchTransfer: true },
-  ];
+  const serverBackedConfig = {
+    ...deployedConfig,
+    serverFeatures: {
+      ...deployedConfig.serverFeatures,
+      batchTransfer: true,
+    },
+  };
+  const serverBacked = productionGateFetch({ config: serverBackedConfig });
+  await verifyProductionDeployment({
+    environment: profileEnvironment,
+    fetchImpl: serverBacked.fetchImpl,
+  });
 
-  for (const serverFeatures of invalidFeatures) {
-    const serverBackedConfig = {
-      ...deployedConfig,
-      serverFeatures,
-    };
-    const serverBacked = productionGateFetch({ config: serverBackedConfig });
-    await assert.rejects(
-      () => verifyProductionDeployment({
-        environment: profileEnvironment,
-        fetchImpl: serverBacked.fetchImpl,
-      }),
-      /requires serverFeatures\.batchTransfer=false/,
-    );
-
-    const staticConfig = {
-      ...serverBackedConfig,
-      serverBacked: false,
-    };
-    const staticDeployment = productionGateFetch({
-      config: staticConfig,
-      configPath: "/dapp-config.json",
-    });
-    await assert.rejects(
-      () => verifyProductionDeployment({
-        environment: staticEnvironment,
-        fetchImpl: staticDeployment.fetchImpl,
-      }),
-      /requires serverFeatures\.batchTransfer=false/,
-    );
-  }
+  const staticConfig = {
+    ...serverBackedConfig,
+    serverBacked: false,
+  };
+  const staticDeployment = productionGateFetch({
+    config: staticConfig,
+    configPath: "/dapp-config.json",
+  });
+  await assert.rejects(
+    () => verifyProductionDeployment({
+      environment: staticEnvironment,
+      fetchImpl: staticDeployment.fetchImpl,
+    }),
+    /Static Clairveil v0\.3\.1 WebApp deployments require serverFeatures\.batchTransfer=false/,
+  );
 });
 
 test("production gate requires the browser-loaded health response for a server-backed DApp", async () => {

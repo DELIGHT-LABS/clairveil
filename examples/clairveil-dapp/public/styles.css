@@ -493,6 +493,91 @@ select {
   margin-bottom: 16px;
 }
 
+.batch-transfer-rows {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.batch-transfer-row {
+  align-items: end;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) minmax(132px, 0.45fr) auto;
+  padding: 12px;
+}
+
+.batch-transfer-row .field {
+  margin: 0;
+}
+
+.batch-transfer-remove {
+  min-height: 40px;
+}
+
+.batch-disclosure-field {
+  border: 0;
+  grid-column: 1 / -1;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.batch-disclosure-field legend {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.batch-disclosure-controls {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(130px, 0.8fr) minmax(150px, 1fr) minmax(240px, 1.6fr);
+}
+
+.batch-disclosure-target-field[hidden] {
+  display: none;
+}
+
+.batch-authorization-panel {
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px;
+}
+
+.batch-authorization-panel[hidden],
+.batch-authorization-options[hidden] {
+  display: none;
+}
+
+.batch-authorization-options {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(160px, 0.5fr) minmax(0, 1.5fr);
+}
+
+.batch-authorization-options .field {
+  margin: 0;
+}
+
+.batch-authorization-options > div {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.batch-authorization-options strong {
+  overflow-wrap: anywhere;
+}
+
 .faucet-row {
   border-top: 1px solid var(--line);
   margin-bottom: 0;
@@ -602,12 +687,54 @@ select {
   justify-content: flex-end;
 }
 
+.veiled-notes-heading {
+  margin-bottom: 12px;
+}
+
+.veiled-notes-heading h3 {
+  margin: 0;
+}
+
+.note-scan-controls {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.note-scan-settings,
+.note-scan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.note-scan-settings {
+  align-items: center;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: auto minmax(0, 440px);
+  min-width: 0;
+}
+
+.note-scan-actions {
+  align-items: center;
+  justify-content: flex-start;
+}
+
 .note-sync-state {
-  margin: -8px 0 12px;
+  margin: 0 0 12px;
+}
+
+.note-endpoint-field {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(220px, 1fr);
+  min-width: 0;
 }
 
 .note-endpoint-field select {
-  max-width: 250px;
+  max-width: none;
 }
 
 .scan-recovery-row {
@@ -1127,6 +1254,10 @@ select {
   margin-bottom: 12px;
 }
 
+.audit-list-help {
+  margin: -4px 0 12px;
+}
+
 .test-scalar-box {
   align-items: end;
   border: 1px solid var(--line);
@@ -1247,6 +1378,44 @@ select {
   font-weight: 800;
 }
 
+.auditor-batch-outputs {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.auditor-batch-outputs[hidden] {
+  display: none;
+}
+
+.auditor-batch-output {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.auditor-batch-output > div {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.auditor-batch-output span,
+.auditor-batch-output code {
+  color: var(--muted);
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.auditor-batch-output.verified {
+  background: #eef8f5;
+  border-color: #9bd5c7;
+}
+
 #auditorDecodeState {
   margin: 12px 0 0;
 }
@@ -1361,6 +1530,7 @@ select {
   font-weight: 800;
   margin: 4px 0 0;
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .transfer-steps {
@@ -1572,6 +1742,7 @@ select {
 
   .amount-row,
   .faucet-row,
+  .batch-transfer-row,
   .split-actions,
   .copy-row,
   .note-row,
@@ -1579,6 +1750,14 @@ select {
   .block-event-row,
   .audit-row {
     grid-template-columns: 1fr;
+  }
+
+  .batch-disclosure-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .note-scan-actions {
+    justify-content: flex-start;
   }
 
   .audit-row code {
@@ -1636,6 +1815,17 @@ select {
 }
 
 @media (max-width: 640px) {
+  .note-scan-settings,
+  .note-scan-actions {
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .note-endpoint-field {
+    grid-template-columns: 1fr;
+  }
+
   .local-signer-layout {
     grid-template-columns: 1fr;
   }

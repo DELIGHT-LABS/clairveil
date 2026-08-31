@@ -2,7 +2,7 @@
 
 영문: [clairveil-batch-transfer-integration-handoff.md](clairveil-batch-transfer-integration-handoff.md)
 
-이 문서는 `BatchJoinSplit16x32` client contract와 reference integration을 사용하는 Go, JS/TS wallet, prover, payroll, operations integrator용 handoff다. 프로젝트 Completion Record가 아니며 Master Roadmap을 변경하지 않는다.
+이 문서는 Cosmos 또는 EVM에서 `BatchJoinSplit16x32` client contract를 사용하는 Go와 ClairveilJS 0.3.1 wallet, prover, payroll, operations integrator용 handoff다. 프로젝트 Completion Record가 아니며 Master Roadmap을 변경하지 않는다.
 
 ## 고정 integration identity
 
@@ -14,6 +14,8 @@
 | circuit artifact ID | `batch-joinsplit-16x32-v1` |
 | prover request/response | `v1` / `v1` |
 | prover route | `POST /v1/proofs/batch-transfer` |
+| Cosmos 실행 | `MsgBatchTransfer` |
+| EVM 실행 | canonical `singleProofBatchTransfer` precompile call |
 | maximum shape | input 16 / output 32 |
 | default prover admission | batch 전용 in-flight 1 / queued 4 |
 
@@ -30,7 +32,7 @@ input 1..16개 plan/atomic reserve
 -> local 또는 명시적으로 선택한 remote prover 1곳에서 prove
 -> response version/request payload hash 검증
 -> private proof(0600) 저장
--> 모든 nullifier 재확인 후 MsgBatchTransfer broadcast
+-> 모든 nullifier 재확인 후 Cosmos MsgBatchTransfer 또는 EVM singleProofBatchTransfer 한 건 broadcast
 -> typed scan과 commitment/disclosure 검증
 -> batch chain status와 item evidence를 별도 reconcile
 ```
@@ -82,8 +84,8 @@ timeout/restart에서는 재서명 전에 저장된 tx hash와 input nullifier�
 ```bash
 go test ./x/privacy/... -count=1
 make privacy-e2e-smoke
-make reference-payroll-live-localnet
 make privacy-batch-joinsplit-localnet
+RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet
 ```
 
-`transfer-batch`는 multi-message 의미를 유지한다. one-proof `transfer-batch-16x32`의 alias로 바꾸지 않는다.
+지원하는 batch path는 전체 output list를 proof 하나와 atomic transaction 하나로 실행한다.

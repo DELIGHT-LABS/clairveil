@@ -12,7 +12,7 @@ English version: [clairveil-web-app-storage-recovery.md](clairveil-web-app-stora
 | Decrypted note와 scan cursor | Chain/profile/account 하나에 scope된 encrypted persistent browser store에 둡니다. |
 | Reservation state와 operation evidence | Cross-tab locking을 가진 encrypted IndexedDB에 둡니다. Reservation error field에는 wallet/prover/RPC error prose가 아니라 stable internal code만 둡니다. |
 | Account transaction boundary marker | Privacy root signature 없이 열 수 있는 canonical transaction-scope/account durable record 두 개로 분리합니다. Public send/deposit record에는 EVM wallet request 전에 `attempting`과 random attempt ID를 담을 수 있고 tx hash가 돌아오면 즉시 승격합니다. 물리적으로 분리된 private Cosmos record에는 정확한 signed tx hash와 generic `privacy` kind만 기록합니다. Recipient, amount, calldata, note/reservation ID 또는 다른 private operation data는 어느 record에도 저장하지 않습니다. |
-| Prepared proof/payload와 raw recipient/amount | 별도 검토된 encrypted recovery design이 없으면 memory에만 둡니다. Checked-in example은 one-proof batch checkpoint를 persist하지 않고 `prepareTransferBatch`를 노출하지 않습니다. |
+| Prepared proof/payload와 raw recipient/amount | 검토된 encrypted recovery design이 있는 flow만 persist합니다. Feature-gated batch flow는 restart recovery에 필요한 exact prepared batch payload/proof/evidence를 저장하고 EVM deposit/transfer/withdraw는 나중 receipt를 검증할 original prepared transaction binding을 저장합니다. 이 artifact는 전용 encrypted namespace를 사용하며 relay metadata와 섞지 않습니다. |
 | Relay recovery metadata | Cross-tab lock이 있는 encrypted multi-record store에 opaque payload hash, reservation ID/status, tx identity, handoff/submission status, expiry만 보존합니다. 각 persistence ID는 payload hash 또는 reservation ID에서 derive하며 payload 하나가 다른 payload를 overwrite하면 안 됩니다. Caller-supplied ID나 display-only field는 보존하지 않습니다. |
 
 Sensitive wallet data를 위한 browser `localStorage`, plaintext IndexedDB,
@@ -30,6 +30,9 @@ namespace를 사용합니다.
 ```text
 clairveil:v0.3.1:notes-encrypted:<privacy-scope>:<storage-epoch>:<account-scope>
 clairveil:v0.3.1:operations-encrypted:<privacy-scope>:<storage-epoch>:<account-scope>:<payload-hash>
+clairveil:v0.3.1:batch-transfer-artifact-encrypted:<privacy-scope>:<storage-epoch>:<account-scope>
+clairveil:v0.3.1:evm-deposit-artifact-encrypted:<privacy-scope>:<storage-epoch>:<account-scope>
+clairveil:v0.3.1:evm-operation-artifact-encrypted:<operation-id>:<privacy-scope>:<storage-epoch>:<account-scope>
 clairveil:v0.3.1:public-pending:<transaction-scope>:<storage-epoch>:<account-scope>
 clairveil:v0.3.1:privacy-pending:<transaction-scope>:<storage-epoch>:<account-scope>
 reservation namespace: <chain-id>:<privacy-scope>:<storage-epoch>:<account-scope>
@@ -45,13 +48,19 @@ identity가 아닙니다. Privacy identity field가 바뀌면 privacy scope를 �
 서로 다른 privacy system, chain ID, wallet kind, transparent account 사이에서는
 namespace를 공유하면 안 됩니다.
 
-Checked-in example에는 batch-transfer checkpoint namespace가 없습니다.
-`prepareTransferBatch`를 노출하는 향후 product는 SDK feature를 켜기 전에
-account/profile-scoped encrypted checkpoint를 별도로 설계·검토해야 합니다.
-그 checkpoint는 reservation operation 하나에 복구를 bind하는 canonical prepared
-payload와 proof만 담고, external boundary 후 ambiguous result에서 lock을 유지하며,
-terminal reconciliation 후에만 삭제해야 합니다. 이 요구사항은 향후 product
-contract이지 이 example의 batch transfer를 활성화하는 근거가 아닙니다.
+전용 batch checkpoint에는 canonical prepared payload/proof, reservation identity,
+expected aggregate/item evidence, execution transport, 사용한 경우 검증된 EIP-712
+authorization transaction binding만 둡니다. Active profile, account, exact storage
+key에 authenticate하고 external boundary 전에 저장합니다. Ambiguous result에서는
+모든 linked reservation을 잠근 채 유지하고 complete input/expected-output set을
+terminal typed reconciliation으로 검증한 뒤에만 삭제합니다.
+
+EVM deposit과 private-operation artifact는 batch/relay namespace와 분리합니다.
+Original prepared transaction, operation 또는 reservation identity, 이후
+wallet/receipt hash를 bind해 receipt finality를 wallet에 요청한 내용과 대조할 수
+있어야 합니다. Corrupt, missing, identity-mismatched artifact는 fail closed하고 original
+operation이 unresolved인 동안 새 prepare로 대체하면 안 됩니다. 모든 artifact
+mutation은 Web Locks와 commit 직전 active-session 재검사를 요구합니다.
 
 Reservation에는 `createBrowserReservationStore`를 아래 조건으로 사용합니다.
 
@@ -219,8 +228,8 @@ store migration을 정의하지 않고 in-place downgrade도 지원하지 않습
 
 1. Wallet state를 load하기 전에 current `clairveil:v0.3.1:*` namespace를 사용하는
    code를 배포합니다.
-2. 이전 development cache, reservation, operation, relay record, prepared payload, proof를
-   compatibility decode하거나 migrate하지 않습니다.
+2. 이전 development cache, reservation, operation, relay record, recovery artifact,
+   prepared payload, proof를 compatibility decode하거나 migrate하지 않습니다.
 3. Empty current namespace를 초기화하고 full typed scan과 모든 nullifier refresh
    뒤에만 balance/planner를 노출합니다.
 4. 오래된 development record를 migration이나 support diagnostic 목적으로 upload하지
@@ -232,7 +241,9 @@ Checked-in DApp은 이 baseline을 구현합니다. Note state는
 `EncryptedLocalStorageNoteStore`, reservation state는 `requireLocks: true`와 encrypted
 `createBrowserReservationStore` IndexedDB callback, relay recovery metadata는 payload
 hash로 key된 multi-record이자 Web Locks가 필수인
-`EncryptedLocalStorageOperationStore`에 저장합니다. 각 record는 current in-memory
+`EncryptedLocalStorageOperationStore`에 저장합니다. Batch/EVM prepared-transaction
+recovery는 별도의 one-record, Web Locks 필수
+`EncryptedRecoveryArtifactStore`를 사용합니다. 각 record는 current in-memory
 wallet material과 namespace에서 Web Crypto가 derive한 AES-GCM key를 사용합니다.
 Key는 non-extractable이며 ciphertext와 함께 저장하지 않습니다. 필요한 browser
 storage, IndexedDB, Web Crypto, Web Locks 중 하나라도 없으면 plaintext/memory

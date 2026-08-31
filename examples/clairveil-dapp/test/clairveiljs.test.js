@@ -108,7 +108,7 @@ function memoryStorage() {
   };
 }
 
-test("example DApp resolves the sibling local ClairveilJS v0.3.1 package", async () => {
+test("example DApp resolves the configured local ClairveilJS v0.3.1 package", async () => {
   const dappPackage = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
   const sdkPackage = JSON.parse(await readFile(new URL("../node_modules/clairveiljs/package.json", import.meta.url), "utf8"));
   const resolvedSdk = await realpath(new URL("../node_modules/clairveiljs", import.meta.url));
@@ -146,6 +146,19 @@ test("v0.3.1 web config validates Cosmos and payable-exact-value EVM profiles", 
     }),
     /must match profile\.denom/
   );
+});
+
+test("Cosmos and EVM DApp profiles expose the opt-in one-proof batch API", () => {
+  for (const profile of [cosmosProfile(), evmProfile()]) {
+    const client = createClairveilBrowserDappClient({
+      profile,
+      enableExperimentalBatchTransfer: true
+    });
+    assert.equal(typeof client.prepareTransferBatch, "function", profile.transport);
+    assert.equal(typeof client.finalizePreparedBatchTransfer, "function", profile.transport);
+    assert.equal(typeof client.fetchAuditableBatchTransfers, "function", profile.transport);
+    assert.equal(typeof client.decodeBatchAuditDisclosure, "function", profile.transport);
+  }
 });
 
 test("browser deposit preparation requires a DepositCircuit proof provider", async () => {

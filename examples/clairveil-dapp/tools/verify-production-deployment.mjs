@@ -163,9 +163,9 @@ export function validateDeployedWebAppConfig(config) {
   const resolved = config?.config ?? config;
   try {
     const validated = validateClairveilWebClientConfig(resolved);
-    if (validated.serverFeatures?.batchTransfer !== false) {
+    if (validated.serverBacked === false && validated.serverFeatures?.batchTransfer !== false) {
       throw new Error(
-        "Clairveil v0.3.1 WebApp requires serverFeatures.batchTransfer=false",
+        "Static Clairveil v0.3.1 WebApp deployments require serverFeatures.batchTransfer=false",
       );
     }
     return validated;

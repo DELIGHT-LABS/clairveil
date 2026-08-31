@@ -50,6 +50,7 @@ The Msg service uses:
 ```text
 /clairveil.privacy.v1.Msg/Deposit
 /clairveil.privacy.v1.Msg/Transfer
+/clairveil.privacy.v1.Msg/BatchTransfer
 /clairveil.privacy.v1.Msg/Withdraw
 ```
 
@@ -58,6 +59,7 @@ The core tx messages are:
 ```text
 MsgDeposit
 MsgTransfer
+MsgBatchTransfer
 MsgWithdraw
 ```
 
@@ -65,13 +67,23 @@ MsgWithdraw
 
 `MsgTransfer` contains `expires_at_unix`, user disclosure, audit disclosure, and sender self-view disclosure fields. Audit disclosure is not optional. Sender self-view disclosure is included by default and omitted only by explicit opt-out. `creator` is the replaceable fee payer/relayer; it is deliberately excluded from the owner intent.
 
-`MsgWithdraw` is an exact-match withdraw message and does not contain output note fields. JS/TS clients must not model the legacy `new_note_commitment` or `encrypted_note` withdraw fields, and they must not send dummy output-note values.
+`MsgBatchTransfer` handles 1..16 inputs and 1..32 outputs with one proof.
+`MsgWithdraw` is an exact-match withdraw message and does not contain output
+note fields.
 
-If a downstream chain exposes these actions through an EVM precompile, its
-bindings must preserve the same 0.2 message contract: a proof-bearing deposit,
-transfer self-view disclosure and `expires_at_unix`, and the exact withdraw
-tuple without output-note placeholders. Do not silently drop a required field
-or provide a legacy ABI fallback.
+The EVM binding implements the Clairveil 0.3.1 canonical privacy precompile
+contract. Deposit carries its proof and exact `msg.value`; transfer preserves
+self-view disclosure and `expires_at_unix`; batch uses one-proof
+`singleProofBatchTransfer`; withdraw uses the exact-match tuple. Cosmos messages
+and EVM calls preserve the same prepared effect and operation evidence.
+
+The canonical EVM `IPrivacy` source and generated ABI are owned by the Maroo
+downstream chain and pinned at commit
+`d624bb76cbd8c4cc0a88d30c2a720aab6da28f75` under
+`precompiles/privacy/IPrivacy.sol` and `precompiles/privacy/IPrivacy.json`.
+ClairveilJS release verification must authenticate those Git blobs and compare
+the complete ABI, selectors, events, mutability, and canonical digest before
+claiming this EVM contract.
 
 ## 4. Query/API Contract
 
@@ -90,6 +102,8 @@ GET /clairveil/privacy/v1/nullifier/{nullifier}
 GET /clairveil/privacy/v1/nullifiers
 POST /clairveil/privacy/v1/nullifiers
 GET /clairveil/privacy/v1/scan_events
+POST /clairveil/privacy/v1/privacy_scan
+POST /clairveil/privacy/v1/commitment_paths_at_root
 ```
 
 The Go SDK provider contract is in:
@@ -106,13 +120,13 @@ A web wallet needs at least these provider roles.
 - `TreeState`: read the latest root, leaf count, depth, max leaves, and remaining leaves.
 - `CommitmentInfo`: check whether a commitment is in the tree and obtain its leaf index.
 - `MerklePath`: fetch path and path helper needed for proving input.
-- `ScanEvents`: scan the cursor-based wallet projection for deposit/transfer outputs.
-- `PrivacyEvents`: read the raw deposit/transfer event feed for compatibility and diagnostics.
+- `PrivacyScan`: scan typed deposit/transfer/batch output projections through the full `(height, global_sequence, output_index)` cursor.
+- `PrivacyEvents`: read the raw deposit/transfer event feed for operational diagnostics.
 - `AuditConfig`: fetch the master auditor pubkey configured on-chain.
 - `DisclosureConfig`: display user disclosure policy/mode and payload version.
 - `CircuitConfig`: read the consensus `CircuitSetIdentity`, active set, ordered VK hashes, and public-input schema hashes. Do not infer consensus identity from a node-local manifest path or checksum environment variable.
 - `Reserve`: compare privacy module-account balance to recorded deposit/withdraw totals for a denom.
-- `CheckNullifiers`: refresh spent state for many notes in one request. Use the POST JSON body binding for normal batches, chunk at 1000 nullifiers per request, and keep GET only for small compatibility checks.
+- `CheckNullifiers`: refresh spent state for many notes in one request. Use the POST JSON body binding for normal batches, chunk at 1000 nullifiers per request, and keep GET only for small operational diagnostics.
 - `CheckNullifier`: determine whether one note is spent when a batch path is unavailable.
 
 ## 5. Identity Derivation
@@ -175,18 +189,21 @@ x/privacy/client/sdk/scan/wallet.go
 
 The preferred scan flow is:
 
-1. Fetch deposit/transfer outputs with `ScanEvents(after_height, after_sequence, limit, event_types)`.
-2. Read `encrypted_note` from deposit projections, or output `cipher_text`, `commitment`, `output_index`, and `view_tag` from transfer projections.
-3. Validate `scan_format_version` and `view_tag_version` before consuming the projection; fall back to the raw event path or stop without advancing the cursor on unsupported versions.
+1. Fetch typed deposit/transfer/batch outputs with `PrivacyScan(after, output_limit, event_limit)`.
+2. Read each output's `cipher_text`, `commitment`, `output_index`, `view_tag`, disclosure fields, and transaction identity.
+3. Validate `scan_format_version` and `view_tag_version` before consuming the projection; stop without advancing the cursor on unsupported versions.
 4. For transfer outputs, derive the local 2-byte view tag. The ordered tag is included in the signed canonical transfer effect but is not ownership evidence, so the safe default still runs full trial decrypt on mismatch.
-5. Treat `view_tag` as an untrusted optimization only. If it is missing or malformed, fall back to full trial decrypt. Skipping mismatch outputs should be an explicit fast-mode policy with recovery or forced-rescan support.
-6. Try to decrypt using the wallet root seed and viewing key. If view-key decryption fails, keep a spend-key compatibility/recovery fallback consistent with the Go SDK.
+5. Treat `view_tag` as an untrusted optimization only. If it is missing or malformed, run full trial decrypt. Skipping mismatch outputs should be an explicit fast-mode policy with recovery or forced-rescan support.
+6. Try to decrypt using the wallet root seed and viewing key, and use the same spend-key recovery path as the Go SDK when required.
 7. Store only notes that decrypt successfully in the wallet DB.
 8. Track note commitment and nullifier.
-9. Refresh spent state with `CheckNullifiers` when available, chunking at 1000 nullifiers per request and falling back to `CheckNullifier`.
-10. Store event height, sequence, and tx hash for rollback/reorg handling.
+9. Refresh spent state with `CheckNullifiers` in batches of at most 1000, and use `CheckNullifier` for diagnostics and recovery.
+10. Store event height, global sequence, output index, and tx hash for rollback/reorg handling.
 
-`ScanEvents` returns the effective `limit`, `scan_format_version=1`, and `view_tag_version=1`. Treat `limit` as the scan cursor page budget: a response can contain fewer returned events than `limit`, or even zero events, while still setting `has_more=true` if the page only contained event types filtered out by the request. In that case, advance to `next_height` and `next_sequence` and continue. The legacy `PrivacyEvents(after_height, page, limit, event_types)` query is still available for raw event inspection and compatibility, but new web/mobile wallets should not build primary rescan UX around offset pagination.
+`PrivacyScan` returns `scan_format_version=2`, `view_tag_version=1`, and the next
+full cursor. Commit `(height, global_sequence, output_index)` atomically only
+after validating and persisting every output in the page. Raw event queries are
+for operational diagnostics only.
 
 The JS SDK wallet DB needs at least these fields.
 
@@ -200,7 +217,8 @@ randomness_hex
 spend_pubkey_hex
 view_pubkey_hex
 height
-sequence
+global_sequence
+output_index
 tx_hash
 spent
 last_scan_height
@@ -228,7 +246,7 @@ The JS SDK must:
 
 ## 8. Transfer Implementation
 
-Transfer uses only the latest single model. Legacy `transfer-v2` and `transfer-v3` commands are not part of the downstream/JS SDK contract.
+Transfer uses the single payload `v5` and proof/request/response `v2` contract.
 
 The corresponding CLI command is:
 
@@ -270,7 +288,7 @@ Important constraints:
 - User disclosure supports `none`, `public`, and `recipient-encrypted` mode.
 - Sender self-view disclosure is enabled by default and omitted only by explicit opt-out.
 - Supported policies are `all-private`, `amount`, `to`, `amount-to`, `from`, `amount-from`, `from-to`, and `amount-from-to`.
-- Newly generated transfer payloads must use `v5`; transfer proof and prover request/response use `v2`. All earlier transfer payload/proof/request versions are rejected and must be regenerated.
+- Transfer payloads use `v5`; transfer proof and prover request/response use `v2`. Reject every other version.
 - Build both outputs, ordered ciphertexts/view tags, user/audit/self-view envelopes, independent disclosure blindings, chain ID, and absolute expiry first. Then encode the canonical transfer effect, derive `TransferIntentV2`, and create exactly one `owner_signature_hex`. There are no per-input note-hash signatures.
 - The canonical binary effect uses fixed field order and `u32be(length) || bytes` for variable bytes. It includes format version, root, ordered nullifiers/commitments/ciphertexts/view tags, every disclosure field, and expiry. It excludes proof, `creator`, fee/gas/memo/sequence/tx signature, and its own digest. The keeper recomputes it from `MsgTransfer`.
 - Final `MsgTransfer` must include exactly two `view_tags`, aligned with `new_commitments` and `cipher_texts`.
@@ -293,11 +311,11 @@ docs/clairveil-note-reservation-design.md
 docs/clairveil-note-reservation-design-kr.md
 ```
 
-JS/TS clients that reserve notes before proof generation should treat `privacy_note_reservation_contract.json` as the language-neutral source of truth and use [Clairveil Note Reservation Design Note](clairveil-note-reservation-design.md) for the detailed design rationale. Match the reservation status names, active-reservation definition, atomic batch-reserve rule, compare-and-set transition rules, lease token rules, HMAC lookup-key test vector, lifecycle evidence guards, and operation success evidence model in that fixture. A spent nullifier proves that the note was consumed, but it is not enough to mark a payroll/payment operation successful unless a matching persisted tx identity and the expected output commitment, audit disclosure digest, recipient hash, `expected_amount_hash`, denom, and item index all match. Compute `expected_amount_hash` as SHA-256 of canonical `denom:amount`, where `amount` is a non-negative uint64 minimal-denom decimal string. The fixture field `expected_disclosure_digest` refers to the audit disclosure digest, not the user disclosure or sender self-view digest. Fixture v3 migrates directly from v1; it adds fail-closed nullifier and relay chain-time rules, ProofReady heartbeat coverage, clean initial-state requirements, and durable leased relay handoff rules. Downstream validators must consume those fields before release.
+JS/TS clients that reserve notes before proof generation should treat reservation contract v3 in `privacy_note_reservation_contract.json` as the language-neutral source of truth and use [Clairveil Note Reservation Design Note](clairveil-note-reservation-design.md) for the detailed design rationale. Match the reservation status names, active-reservation definition, atomic batch-reserve rule, compare-and-set transition rules, lease token rules, HMAC lookup-key test vector, lifecycle evidence guards, and operation success evidence model in that fixture. A spent nullifier proves that the note was consumed, but it is not enough to mark a payroll/payment operation successful unless a matching persisted tx identity and the expected output commitment, audit disclosure digest, recipient hash, `expected_amount_hash`, denom, and item index all match. Compute `expected_amount_hash` as SHA-256 of canonical `denom:amount`, where `amount` is a non-negative uint64 minimal-denom decimal string. The fixture field `expected_disclosure_digest` refers to the audit disclosure digest, not the user disclosure or sender self-view digest. Apply every contract-v3 fail-closed nullifier and relay chain-time rule, ProofReady heartbeat requirement, clean initial-state requirement, and durable leased relay handoff rule.
 
-### Go Store v3 Migration
+### Go Store v3 Contract
 
-The reservation `Store` is now an atomic persistence boundary. Replace independent reservation/operation updates with Service-owned batch lifecycle, reconciliation, lease-expiry recovery, proof-discard, and `RecordRelayHandoff` commands. A persistent implementation must verify the current lease owner and token together, atomically commit every linked reservation and operation change, and reject adding an input to an existing operation after the operation or any linked reservation has acquired lifecycle evidence. Existing `isSpent: false` cache entries are not proof of availability: revalidate them and mark missing or malformed nullifier responses unverified before planning.
+The reservation `Store` is an atomic persistence boundary. Use Service-owned batch lifecycle, reconciliation, lease-expiry recovery, proof-discard, and `RecordRelayHandoff` commands instead of independent reservation/operation updates. A persistent implementation must verify the current lease owner and token together, atomically commit every linked reservation and operation change, and reject adding an input to an existing operation after the operation or any linked reservation has acquired lifecycle evidence. Only a fresh explicit `used: false` response is unspent evidence for planning; missing or malformed nullifier responses are unverified.
 
 The repository-provided `MemoryStore` and `MemoryProofResultStore` are test/demo implementations, not a production persistence deliverable. Production acceptance requires a downstream PostgreSQL/SQLite-equivalent Store and durable proof outbox with an owner/nullifier unique-active constraint, transactional multi-input lifecycle changes, restart-safe relay handoff evidence, and crash recovery. Acceptance CI must exercise the complete reservation lifecycle on a local node and prover, including restart, concurrent workers/tabs, lease expiry, external relay handoff, and ambiguous broadcast recovery.
 
@@ -417,10 +435,10 @@ x/privacy/client/sdk/withdraw/build.go
 The JS SDK must clearly show these constraints to users.
 
 - Withdraw does not create a change note.
-- `MsgWithdraw` does not contain output note fields. Do not create a dummy output commitment or encrypted note for withdraw.
+- `MsgWithdraw` is an exact-match operation without output note fields.
 - If there is no exact-match note, the user must first create the desired note size with a shielded self-transfer.
 - Relayed withdraw payload must validate `chain_id`, `recipient`, `expires_at_unix`, and `payload_hash`.
-- Withdraw prover payload, proof, final payload, prover request, prover response, relay schema, and relay handoff are all `v2`; legacy files must be regenerated.
+- Withdraw prover payload, proof, final payload, prover request, prover response, relay schema, and relay handoff are all `v2`; reject every other version.
 - `spend_intent_signature_hex` authenticates `SpendIntentV2`. The recipient is hashed from the exact raw decoded address bytes as `SHA-256("clairveil.withdraw-recipient.v1" || u32be(len(bytes)) || bytes)` and split into non-reduced big-endian 128-bit limbs. Do not convert the bytes through a field element or strip leading zeros.
 - The exact spend public-input order is `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `Nullifier`, `Amount`, `RecipientDigestHi`, `RecipientDigestLo`, `AssetID`.
 - `creator` is intentionally replaceable by a relayer; `recipient`, chain, and expiry are proof-bound. Submission at `block_time >= expires_at_unix` fails.
@@ -631,15 +649,19 @@ This example runs a fixture-backed mock prover instead of a live `clairveil-prov
 
 ## 17. Batch Transfer Reference Addendum
 
-The repository now includes the production core plus a reference Go batch builder, bounded proof adapter/HTTP route, decrypting typed scanner, durable payroll integration, and staged batch CLI. This JS SDK handoff still requires a downstream JS/TS implementation of those contracts. The older `transfer-batch` helper orchestrates native 2x2 messages and remains distinct from one `MsgBatchTransfer` proof.
+The repository includes the production core plus a reference Go batch builder,
+bounded proof adapter/HTTP route, decrypting typed scanner, durable payroll
+integration, and staged batch CLI. ClairveilJS 0.3.1 implements these contracts
+over Cosmos and EVM transports with the same conformance fixtures and operation
+evidence rules.
 
-The following rules are breaking and normative for new SDK work:
+The following current rules are normative for SDK implementations:
 
 - The active circuit set is `privacy-note-v1`. Note, disclosure, and encrypted-envelope binary data use `privacy-fixed-v1`; `NotePlaintextV1` is exactly 350 bytes, `DisclosurePlaintextV1` is exactly 392 bytes, and every encrypted payload includes the canonical 20-byte envelope header and exact kind. Raw ciphertext, JSON plaintext, trailing bytes, and cross-kind decoding must be rejected.
-- This transition requires fresh genesis. Delete cached notes, scan cursors, prepared/proof jobs, circuit identity metadata, and old development artifacts, then regenerate artifacts and rescan. There is no compatibility decode or in-place state migration from the earlier contract.
+- Start from fresh genesis, generate the exact artifacts, and initialize empty note, scan-cursor, reservation, and prepared/proof namespaces through a full typed scan.
 - `AssetRegistryV1` is the authoritative one-to-one mapping between canonical denom and 32-byte `asset_id`. A client may derive an ID for validation, but must not invent a denom by interpreting or hashing an ID; resolve it through the registry query and fail closed on a mismatch.
 - Wallet synchronization uses the unified `privacy-scan-v2` projection and lexicographic cursor `(height, global_sequence, output_index)`. Persist the whole cursor atomically. Obtain every Merkle path from a snapshot that matches the selected root exactly; mixing a current path with an older root is invalid. Current-root paths use incremental nodes and do not consume the online historical-rebuild budget. A non-current historical path requires persisted root/count/height metadata; the public query admits at most 1,024 leaves and two concurrent rebuilds per keeper, otherwise it returns `ResourceExhausted`. Use the current root or a trusted local historical index above that online bound. The separate offline recovery/export bound remains `MaxMerkleRebuildLeaves` (1,048,576). Remote historical lookups can reveal wallet timing and interest, so retain the privacy warning and use privacy-preserving infrastructure where the product threat model requires it.
-- The production `BatchJoinSplit16x32` public-input order is `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`. The Go reference path is complete; downstream JS/TS support remains feature-gated until it independently reproduces the conformance fixtures and localnet behavior.
+- The production `BatchJoinSplit16x32` public-input order is `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`. ClairveilJS 0.3.1 reproduces the conformance fixtures and uses the same prepared effect for Cosmos `MsgBatchTransfer` and EVM `singleProofBatchTransfer`. Product UI exposure requires both the server feature gate and transport capability.
 - A downstream JS/TS batch builder must reproduce the reference `CanonicalBatchTransferPayloadBytesV1` exactly: format `1`, `u32be` vector counts, `u32be(length) || bytes` for every byte field, output fields in proto declaration order, followed by audit ID/epoch/target and expiry. SHA-256 domain `clairveil.batch-transfer-payload.v1` is split into non-reduced 128-bit limbs. Only `creator` and `proof` are excluded. Do not invent protobuf-marshal, JSON, or sorted-field alternatives.
 - Artifact loading is role-aware: validators load only the required VKs after exact consensus identity verification; provers lazily load only selected R1CS/PK pairs. The reference prover admission defaults are one in-flight request and four queued requests per circuit, with a positive 8 MiB request limit. A value of zero is invalid and does not disable the body limit.
 - Never expose `provertransport.HTTPHandler` directly; use the bounded `proverservice.Handler` wrapper. Prover requests have no automatic endpoint failover. Cancellation stops waiting and discards the response, but in-process proving may continue until the solver returns and still holds admission capacity. Production operators that require hard cancellation or memory containment must add process isolation and termination outside this reference implementation.

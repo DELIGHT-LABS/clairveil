@@ -157,7 +157,7 @@ make validate-joinsplit-artifact-rotation-evidence
 
 The target first runs `TestJoinSplitArtifactRotationSnapshotValidation` for synthetic missing/duplicate/unknown/tamper regressions, then runs `TestJoinSplitDevelopmentArtifactRotationGate` (`CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_ROTATION_GATE=1`), `TestJoinSplitOldAndNewProofIdentitiesAreMutuallyExclusive` (`CLAIRVEIL_RUN_JOINSPLIT_ARTIFACT_PROOF_ROTATION_GATE=1`), and `TestFreshGenesisUsesRotatedJoinSplitIdentity` (`CLAIRVEIL_RUN_JOINSPLIT_FRESH_GENESIS_GATE=1`). The proof-rotation gate compares the actual current R1CS SHA-256 with the exact serialized current-source `JoinSplitCircuit` before proving, so a same-count foreign relation fails. The wrapper fails if an exact test is absent, skipped, or reports `[no tests to run]`.
 
-The batch integration adds the public `MsgBatchTransfer` Go SDK/builder, `POST /v1/proofs/batch-transfer`, typed scanner/decrypt/disclosure validation, durable one-proof payroll integration, staged/combined CLI commands, and the bilingual localnet tutorial. Run `go test ./x/privacy/client/sdk/... -count=1`, `make privacy-batch-joinsplit-localnet`, and—on a capable host—`RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`. Existing `transfer-batch` and reference payroll targets remain independent multi-message regression paths. These gates validate chain/reference/SDK batch contracts; they do not enable batch submission in `examples/clairveil-dapp`, whose v0.3.1 server feature remains false and whose UI has no one-proof batch flow.
+The batch integration adds the public `MsgBatchTransfer` Go SDK/builder, `POST /v1/proofs/batch-transfer`, typed scanner/decrypt/disclosure validation, durable one-proof payroll integration, staged/combined CLI commands, and the bilingual localnet tutorial. Run `go test ./x/privacy/client/sdk/... -count=1`, `make privacy-batch-joinsplit-localnet`, and—on a capable host—`RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`. Existing `transfer-batch` and reference payroll targets remain independent multi-message regression paths. These gates validate the chain/reference/SDK contract; the example WebApp batch flow additionally requires its explicit feature gate and Cosmos/EVM browser recovery tests.
 
 Prepared transfer payload `v5` remains the current outer prepared-payload contract. Do not confuse that version with the inner note/disclosure encoding: inner canonical payloads and envelopes are `privacy-fixed-v1`. Compatibility fallback is forbidden. The example resolves the sibling ClairveilJS 0.3.1 checkout and must pass its required conformance suite for the V5/V2 preparation and proof contracts. This unreleased WebApp supports fresh state in its current v0.3.1 namespaces only: tests must prove that an earlier development cache or lifecycle record is not decoded or migrated, that a full typed rescan is required, and that in-place downgrade is unsupported.
 
@@ -196,7 +196,11 @@ Validation scope:
 - timeout/auth client shape
 - browser DApp boundary checks, static bundle freshness, local helper route policy, and ClairveilJS package surface smoke tests
 - current v0.3.1 fresh-state initialization with no legacy lifecycle migration
-- `serverFeatures.batchTransfer=false` and no one-proof batch submission UI
+- batch feature-gate off/on behavior, encrypted checkpoint reload, and canonical
+  Cosmos/EVM one-proof submission/reconciliation
+- payable exact-value EVM deposit, receipt/finality binding, optional
+  profile-scoped contract/privacy-state adapters, and configured EIP-712 batch
+  authorization with typed audit recovery
 
 `make examples` cannot validate a deployed origin. Before a public WebApp
 release, run `npm --prefix examples/clairveil-dapp run

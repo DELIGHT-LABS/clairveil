@@ -11,6 +11,10 @@ const encryptedOperationSource = await readFile(new URL("../public/encrypted-ope
 const depositFundingSource = await readFile(new URL("../public/deposit-funding.js", import.meta.url), "utf8");
 const relayReconciliationSource = await readFile(new URL("../public/relay-withdraw-reconciliation.js", import.meta.url), "utf8");
 const cosmosFlowStateSource = await readFile(new URL("../public/cosmos-flow-state.js", import.meta.url), "utf8");
+const evmReconciliationSource = await readFile(new URL("../public/evm-reconciliation.js", import.meta.url), "utf8");
+const evmBroadcastWatchSource = await readFile(new URL("../public/evm-broadcast-watch.js", import.meta.url), "utf8");
+const evmTypedScanEvidenceSource = await readFile(new URL("../public/evm-typed-scan-evidence.js", import.meta.url), "utf8");
+const cosmosEvmCorrelationSource = await readFile(new URL("../public/cosmos-evm-transaction-correlation.js", import.meta.url), "utf8");
 const reservationRecoverySource = await readFile(new URL("../public/reservation-recovery.js", import.meta.url), "utf8");
 const reservationReconciliationSource = await readFile(new URL("../public/reservation-reconciliation.js", import.meta.url), "utf8");
 const configSource = await readFile(new URL("../public/dapp-config.js", import.meta.url), "utf8");
@@ -312,6 +316,9 @@ test("DApp uses the npm ClairveilJS browser client for public wallet and privacy
   assert.match(appSource, /clairveilBrowserClient\(\)\.fetchAuditableTransfers\(\)/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.prepareDeposit/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.prepareTransfer/);
+  assert.match(appSource, /client\.prepareTransferBatch\(privacyRequest\(/);
+  assert.match(appSource, /onPreparedPayload:/);
+  assert.match(appSource, /onPreparedProof:/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.prepareWithdraw/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.scanWalletNotes/);
   assert.match(appSource, /clairveilBrowserClient\(\)\.decodeUserDisclosure/);
@@ -358,8 +365,8 @@ test("DApp uses the npm ClairveilJS browser client for public wallet and privacy
   assert.match(appSource, /client\.queryReserve\(baseDenom\(\)\)/);
   assert.match(appSource, /client\.evmJsonRpc\("eth_chainId", \[\]\)/);
   assert.match(appSource, /await requirePrivacyPreparePreflight\(sessionContext\)/);
-  assert.match(appSource, /enableExperimentalBatchTransfer: false/);
-  assert.doesNotMatch(appSource, /enableExperimentalBatchTransfer:\s*Boolean/);
+  assert.match(appSource, /enableExperimentalBatchTransfer: config\?\.serverFeatures\?\.batchTransfer === true/);
+  assert.match(appSource, /enableExperimentalBatchTransfer: serverFeature\("batchTransfer"\)/);
   assert.match(appSource, /refreshEvents\(\{ allowFailure: true, sessionContext \}\)/);
   assert.match(appSource, /Browser cannot reach the selected chain REST\/RPC endpoint/);
   assert.match(appSource, /state\.privacyEvents\.loadError/);
@@ -423,7 +430,9 @@ test("DApp persists encrypted reservations and keeps unknown broadcasts fail clo
   assert.match(appSource, /const reservationIDs = \[\.\.\.state\.relayWithdraw\.reservationIds\][\s\S]*manager\.recordRelayHandoff\(reservationIDs/);
 
   assert.match(appSource, /if \(!broadcast\?\.receipt\) \{[\s\S]*markUnknown\(reservationIDs,[\s\S]*fromStatus: reservationStatuses\.Submitted[\s\S]*unknown: true/);
-  assert.match(appSource, /result\.unknown \? onUnknown/);
+  assert.match(appSource, /createEvmBroadcastWatcher/);
+  assert.match(evmBroadcastWatchSource, /result\?\.unknown \? onUnknown : onIncluded/);
+  assert.match(evmBroadcastWatchSource, /await evidenceIsCurrent\(result\)/);
   assert.match(reservationReconciliationSource, /nullifierUnspentConfirmed: true/);
   assert.match(reservationReconciliationSource, /txAbsentOrFailedConfirmed: true/);
   assert.match(reservationReconciliationSource, /txHashChecked: txHash/);
@@ -438,7 +447,7 @@ test("DApp binds prepare and broadcast reservation refreshes to the originating 
   const prepareSource = appSource.slice(prepareStart, prepareEnd);
   assert.equal(
     [...prepareSource.matchAll(/await refreshReservationState\(manager, \{ sessionContext \}\)/g)].length,
-    3
+    4
   );
 
   const broadcastStart = appSource.indexOf("async function broadcastPreparedPrivacy");
@@ -550,7 +559,7 @@ test("DApp keeps prepared reservation leases alive across wallet and relay waits
   assert.match(appSource, /async function withPreparedReservationHeartbeat/);
   assert.match(appSource, /manager\.heartbeatLease\(reservationIDs, \{ leaseToken \}\)/);
   assert.match(appSource, /withPreparedReservationHeartbeat\(finalData, \(\) =>/);
-  assert.match(appSource, /const broadcast = await withPreparedReservationHeartbeat\(data/);
+  assert.match(appSource, /let broadcast = await withPreparedReservationHeartbeat\(data/);
   assert.match(appSource, /function startRelayReservationHeartbeat/);
   assert.match(appSource, /relayReservationHeartbeatTimer = globalThis\.setInterval/);
   assert.match(appSource, /if \(fullyConfirmed\) \{[\s\S]*stopRelayReservationHeartbeat\(reconciliationContext\.heartbeatGeneration\)/);
@@ -805,6 +814,9 @@ test("DApp relay reconciliation pins its session, manager, store, and reservatio
   assert.match(reconcileSource, /\/api\/relayer\/withdraw\/reconcile/);
   assert.match(reconcileSource, /localSubmissionAttempted[\s\S]*manager\.recordRelayTransactionEvidence/);
   assert.match(reconcileSource, /metadata-only EVM relay recovery requires every reservation to bind the same submitted transaction hash/);
+  assert.match(reconcileSource, /loadEvmOperationArtifactForReservations\(records, \{ sessionContext \}\)/);
+  assert.match(reconcileSource, /!reconciliationContext\.candidateTxHashUnbound && records\.some/);
+  assert.match(reconcileSource, /handoffTransaction: relayOperationArtifact\.transaction/);
   const transactionCheckIndex = reconcileSource.indexOf("await checkReservationTransaction(txHash)");
   const payloadBindingIndex = reconcileSource.indexOf("assertRelayWithdrawTransactionMatches");
   const recoveryPersistIndex = reconcileSource.indexOf("await persistRelayWithdrawRecovery(state.relayWithdraw", payloadBindingIndex);
@@ -879,6 +891,12 @@ test("DApp installs encrypted relay recovery only into its originating privacy s
 });
 
 test("DApp blocks unresolved public retries and exposes Cosmos and EVM tx reconciliation", () => {
+  const depositStart = appSource.indexOf("async function broadcastPrivacyDeposit");
+  const depositEnd = appSource.indexOf("function normalizedHex", depositStart);
+  const depositBroadcast = appSource.slice(depositStart, depositEnd);
+  const publicSendStart = appSource.indexOf("async function sendFromKeplrUnlocked");
+  const publicSendEnd = appSource.indexOf("function depositFromKeplr", publicSendStart);
+  const publicSend = appSource.slice(publicSendStart, publicSendEnd);
   assert.match(appSource, /sendPending = \["attempting", "submitted", "unknown", "checking"\]/);
   assert.match(appSource, /depositPending = \["attempting", "submitted", "unknown", "checking", "recovery-pending"\]/);
   assert.match(appSource, /async function reconcilePublicTransaction/);
@@ -891,6 +909,87 @@ test("DApp blocks unresolved public retries and exposes Cosmos and EVM tx reconc
   assert.doesNotMatch(appSource, /persistPublicPendingTransactions/);
   assert.match(appSource, /assertNoCapturedPublicPendingTransaction/);
   assert.match(htmlSource, /id="clearPublicPendingState"/);
+  assert.match(appSource, /function waitForPublicEvmTransaction/);
+  assert.match(appSource, /privacyTransaction: data\.transaction/);
+  assert.match(appSource, /sender: state\.wallet\.account/);
+  assert.match(appSource, /broadcast\?\.ok === false/);
+  assert.match(appSource, /async function saveEvmDepositArtifact/);
+  assert.match(appSource, /async function hydrateEvmDepositRecovery/);
+  assert.match(appSource, /await restoreEvmDepositRecovery\(\{ sessionContext \}\)/);
+  assert.match(depositBroadcast, /await saveEvmDepositArtifact\(recoveryArtifact, \{ sessionContext \}\)/);
+  assert.match(depositBroadcast, /onEvmSubmitted:/);
+  assert.match(depositBroadcast, /transaction: data\.transaction/);
+  assert.match(depositBroadcast, /sender: evmDepositSender/);
+  assert.match(appSource, /SDK transaction binding unavailable · manual recovery required/);
+  assert.match(publicSend, /publicEvmTransactionBoundaryCallbacks\(sessionContext, "send"\)/);
+  assert.match(publicSend, /persistCapturedPublicPendingTransaction\(sessionContext, "send", txHash\)/);
+  assert.doesNotMatch(appSource, /submissionAmbiguous/);
+  assert.match(appSource, /broadcast-unknown-no-hash/);
+  assert.match(appSource, /EVM_SUBMISSION_RESULT_UNKNOWN/);
+});
+
+test("DApp exposes a common Cosmos/EVM atomic batch flow with per-payment disclosure", () => {
+  const persistedBatchEvidence = appSource.match(/async function refreshPersistedEvmBatchReceiptEvidence\([\s\S]*?\n\}\n\nasync function hydrateBatchTransferRecovery/)?.[0] || "";
+  const renderChainDependentSource = appSource.match(/function renderChainDependentUi\([\s\S]*?\n\}/)?.[0] || "";
+  assert.match(htmlSource, /id="batchTransferSection"/);
+  assert.match(htmlSource, /id="transferBatchFromVeiled"/);
+  assert.match(htmlSource, /id="batchUseAuthorization"/);
+  assert.match(appSource, /function batchTransferEnabled/);
+  assert.match(appSource, /serverFeature\("batchTransfer"\)/);
+  assert.match(serverSource, /enableBatchTransfer: envFlag\("CLAIRVEIL_DAPP_ENABLE_BATCH_TRANSFER", false\)/);
+  assert.match(serverSource, /batchTransfer: config\.enableBatchTransfer/);
+  assert.match(appSource, /userPrivacyPolicy/);
+  assert.match(appSource, /userDisclosureMode/);
+  assert.match(appSource, /userDisclosureTargetPubKeyHex/);
+  assert.match(appSource, /eth_signTypedData_v4/);
+  assert.match(appSource, /authorizationSigner/);
+  assert.match(appSource, /CLAIRVEIL_EVM_CONTRACT_ADAPTERS/);
+  assert.match(appSource, /CLAIRVEIL_PRIVACY_STATE_ADAPTERS/);
+  assert.match(appSource, /CLAIRVEIL_EVM_FINALITY_POLICIES/);
+  assert.match(appSource, /privacyStateAdapter,/);
+  assert.match(appSource, /evmFinalityPolicy,/);
+  assert.match(renderChainDependentSource, /renderBatchTransfer\(\)/);
+  assert.match(appSource, /preparedBatchTransferFacts/);
+  assert.match(appSource, /function saveBatchTransferArtifact/);
+  assert.match(appSource, /function saveBatchReceiptEvidence/);
+  assert.match(appSource, /verifiedEvmTransactionResult\(result, "EVM batch receipt"\)/);
+  assert.match(evmReconciliationSource, /result\.evmFinalityVerified !== true/);
+  assert.match(appSource, /function cosmosBatchEvidenceForReservations/);
+  assert.match(appSource, /fetchAuditableBatchTransfers/);
+  assert.match(appSource, /assertTypedBatchEffect/);
+  assert.match(appSource, /spentRecords\.length !== records\.length/);
+  assert.match(appSource, /transport === "evm"[\s\S]*saveBatchReceiptEvidence\(data, included, \{ sessionContext \}\)[\s\S]*saveBatchInclusion/);
+  assert.match(persistedBatchEvidence, /result = await waitForEvmTransaction/);
+  assert.match(persistedBatchEvidence, /evmReceiptHasFailed\(error\?\.broadcast\?\.receipt\)/);
+  assert.match(persistedBatchEvidence, /if \(evmReceiptHasFailed\(error\?\.broadcast\?\.receipt\)\) continue;/);
+});
+
+test("DApp links EVM receipts to typed outer Comet transactions before reconciliation", () => {
+  const batchEvidence = appSource.slice(
+    appSource.indexOf("async function batchReceiptEvidenceForReservations"),
+    appSource.indexOf("function batchOperationEvidence")
+  );
+  const directEvidence = appSource.slice(
+    appSource.indexOf("async function directEvmReceiptEvidenceForReservations"),
+    appSource.indexOf("async function clearTerminalDirectEvmOperationArtifacts")
+  );
+  const depositRecovery = appSource.slice(
+    appSource.indexOf("function reconcilePendingDepositRecoveryFromTypedNotes"),
+    appSource.indexOf("function noteScanRequestOptions")
+  );
+  assert.match(appSource, /verifyEvmScanTransactionLink/);
+  assert.match(appSource, /findVerifiedEvmTypedScanEffect/);
+  assert.match(cosmosEvmCorrelationSource, /ethereumTxHash/);
+  assert.match(cosmosEvmCorrelationSource, /attribute\.index === true/);
+  assert.match(evmTypedScanEvidenceSource, /typed scan matched multiple effects; reconciliation is ambiguous/);
+  assert.match(batchEvidence, /verifiedEvmTypedScanEffect/);
+  assert.match(batchEvidence, /assertTypedBatchEffect/);
+  assert.match(batchEvidence, /scanTransactionLink/);
+  assert.match(directEvidence, /verifiedEvmTypedScanEffect/);
+  assert.match(directEvidence, /directEvmOperationSuccessEvidence\(records, receiptResult, effect\)/);
+  assert.match(depositRecovery, /recoveredDepositNoteForCommitment/);
+  assert.match(depositRecovery, /verifyEvmTypedScanTransaction/);
+  assert.match(depositRecovery, /clearConfirmedDepositRecoveryUnlocked/);
 });
 
 test("DApp clears corrupt public pending state under the account lock without deleting replacement state", () => {
@@ -1137,6 +1236,9 @@ test("DApp verifies transparent deposit funding and surfaces a non-zero fee budg
   assert.match(depositFundingSource, /Insufficient EVM gas balance/);
   assert.match(appSource, /keplrDirectSignOptions\(broadcastOptions\)/);
   assert.match(appSource, /cosmosGasFeeEstimate/);
+  assert.match(appSource, /Fee will be estimated after the deposit proof is prepared/);
+  assert.match(appSource, /const exactFee = await updateDepositNetworkFee\(data\.transaction\);/);
+  assert.match(appSource, /assertDepositFunding\(amount, exactFee\)/);
   assert.doesNotMatch(appSource, /0 \$\{baseDenom\(\)\} encoded/);
 });
 
@@ -1147,7 +1249,8 @@ test("DApp separates deposit inclusion from exact note recovery", () => {
   assert.match(appSource, /expectedEncryptedNote: prepared\.encryptedNoteHex/);
   assert.match(appSource, /Included · recovery pending/);
   assert.match(appSource, /recoveredDepositNoteForTxHash\(state\.keplr\.notes, txHash\)/);
-  assert.match(appSource, /function reconcilePendingDepositRecoveryFromTypedNotes[\s\S]*recoveredDepositNoteForTxHash/);
+  assert.match(appSource, /function reconcilePendingDepositRecoveryFromTypedNotes[\s\S]*recoveredDepositNoteForCommitment/);
+  assert.match(appSource, /function finalizePendingDepositRecoveryFromTypedNotes[\s\S]*verifyEvmTypedScanTransaction/);
   assert.match(appSource, /state\.keplr\.notes = scannedNotes;[\s\S]*reconcilePendingDepositRecoveryFromTypedNotes\(\)/);
   assert.match(appSource, /Recovered · encrypted note matched the exact included tx hash/);
   assert.match(appSource, /persistCapturedDepositRecoveryPending/);
@@ -1229,10 +1332,15 @@ test("DApp offers relay handoff and cancellable same-prover retries", () => {
       relayReconcileSource.indexOf("scanKeplrNotes"),
     "relay transaction binding must be checked before spent-note reconciliation"
   );
-  assert.match(relayReconcileSource, /receiveConfirmed = check\.included && check\.successful === true/);
+  assert.match(relayReconcileSource, /receiveConfirmed = check\.included[\s\S]*check\.successful === true[\s\S]*evmFinalityVerified/);
   assert.match(relayReconcileSource, /spentConfirmed && check\.successful !== true/);
   assert.match(relayReconcileSource, /check\.successful !== true[\s\S]*Tx was included with an unknown execution status/);
   assert.match(relayReconcileSource, /relay_spent_without_successful_bound_transaction/);
+  assert.match(appSource, /async function verifyRelayEvmReceiptAndFinality/);
+  assert.match(appSource, /const privacyTransaction = operationArtifact\?\.transaction \|\| handoff\?\.transaction/);
+  assert.match(appSource, /waitForEvmTransaction\(txHash, \{[\s\S]*privacyTransaction,/);
+  assert.match(appSource, /checkpointPreparedEvmOperation\(preparedData, "relay-withdraw"/);
+  assert.match(relayReconcileSource, /const fullyConfirmed = spentConfirmed && receiveConfirmed/);
   assert.match(relayReconciliationSource, /assertRelayWithdrawTransactionMatches/);
   assert.match(relayReconciliationSource, /included Cosmos transaction must contain exactly one MsgWithdraw/);
   assert.match(relayReconciliationSource, /"calldata"/);
@@ -1240,7 +1348,7 @@ test("DApp offers relay handoff and cancellable same-prover retries", () => {
   assert.match(htmlSource, /id="relayWithdrawTxHash"/);
   assert.match(htmlSource, /<input[^>]+id="relayWithdrawTxHash"/);
   assert.match(htmlSource, /id="relayWithdrawRecoveryChoice"/);
-  assert.match(appSource, /metadataOnlyCosmosRecovery/);
+  assert.match(appSource, /metadataOnlyRecovery/);
   assert.match(htmlSource, /Relay \(pay fee &amp; broadcast\)/);
   assert.match(htmlSource, /id="reconcileRelayWithdraw"/);
   assert.match(htmlSource, /user shielded secret/);
@@ -1423,6 +1531,7 @@ test("DApp server does not own wallet privacy preparation routes", () => {
 });
 
 test("DApp server keeps only local helper responsibilities", () => {
+  const ensureLocalSignerSource = appSource.match(/async function ensureLocalSignersIfNeeded\([\s\S]*?\n\}\n\nasync function browserHealthFromStaticConfig/)?.[0] || "";
   assert.match(serverSource, /evmDefaultSignerAccounts/);
   assert.match(serverSource, /function ensureLocalSigners/);
   assert.match(serverSource, /\/api\/local-signers\/ensure/);
@@ -1471,11 +1580,12 @@ test("DApp server keeps only local helper responsibilities", () => {
   assert.match(serverSource, /\/api\/auditor\/decode"\) \{\s*assertLocalTestBackendAllowed\("auditor disclosure decode"\);\s*assertLocalAdminAccessAllowed\(req\);/);
   assert.match(serverSource, /local wallet show-address"\);\s*assertLocalAdminAccessAllowed\(req\);/);
   assert.match(serverSource, /local wallet note scan"\);\s*assertLocalAdminAccessAllowed\(req\);/);
-  assert.match(appSource, /function ensureLocalSignersIfNeeded/);
-  assert.match(appSource, /error\?\.statusCode !== 403/);
-  assert.match(appSource, /Create accounts on the server machine first/);
-  assert.match(appSource, /CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING=1/);
-  assert.match(appSource, /accounts: \[\]/);
+  assert.match(ensureLocalSignerSource, /function ensureLocalSignersIfNeeded/);
+  assert.match(ensureLocalSignerSource, /Automatic local signer setup failed:/);
+  assert.doesNotMatch(ensureLocalSignerSource, /throw error/);
+  assert.match(ensureLocalSignerSource, /Create accounts on the server machine first/);
+  assert.match(ensureLocalSignerSource, /CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING=1/);
+  assert.match(ensureLocalSignerSource, /accounts: \[\]/);
   assert.doesNotMatch(serverSource, /\/api\/evm\/account/);
   assert.doesNotMatch(serverSource, /\/api\/tx\/evm\/bank-send\/transaction/);
   assert.match(appSource, /evmNativeSendTransaction/);
@@ -1502,7 +1612,7 @@ test("DApp shows a send result confirmation before refresh side effects", () => 
   assert.match(appSource, /showSendResult\(\{[\s\S]*success: true,[\s\S]*wallet: "Keplr"/);
   assert.match(appSource, /els\.keplrTxState\.textContent = "Send submitted"/);
   assert.match(appSource, /watchEvmBroadcast\(broadcast/);
-  assert.match(appSource, /Promise\.allSettled\(\[refreshWalletBalance\(\), refreshBlockEvents\(\)\]\)/);
+  assert.match(appSource, /Promise\.allSettled\(\[[\s\S]*refreshWalletBalance\(\{ sessionContext \}\)[\s\S]*refreshBlockEvents\(\{ sessionContext \}\)[\s\S]*\]\)/);
   assert.doesNotMatch(appSource, /toast\("MetaMask send included"\)/);
   assert.doesNotMatch(appSource, /toast\("Keplr send included"\)/);
   assert.match(cssSource, /#noticeMessage\s*\{[\s\S]*white-space: pre-wrap/);
@@ -1589,10 +1699,14 @@ test("DApp forces MetaMask onto the configured EVM chain", () => {
 
 test("DApp estimates EVM gas before opening MetaMask confirmation", () => {
   assert.match(appSource, /function withEstimatedEvmGas/);
+  assert.match(appSource, /function evmRpcTransaction/);
+  assert.match(appSource, /function paddedEvmGas/);
   assert.match(appSource, /method: "eth_estimateGas"/);
-  assert.match(appSource, /const padded = \(estimated \* 13n \+ 9n\) \/ 10n/);
-  assert.match(appSource, /tx\.gas = bigIntToEvmQuantity\(existing > padded \? existing : padded\)/);
-  assert.doesNotMatch(appSource, /existing > 0n && existing < padded/);
+  assert.match(appSource, /const padded = paddedEvmGas\(estimated\)/);
+  assert.match(appSource, /const gas = paddedEvmGas\(estimatedGas\)/);
+  assert.match(appSource, /delete estimateRequest\.gas/);
+  assert.match(appSource, /tx\.gas = bigIntToEvmQuantity\(padded\)/);
+  assert.doesNotMatch(appSource, /existing > padded/);
   assert.match(appSource, /delete tx\.gas/);
   assert.match(appSource, /const tx = await withEstimatedEvmGas\(\{ \.\.\.transaction, from: walletAccount \}\)/);
   assert.match(appSource, /params: \[tx\]/);

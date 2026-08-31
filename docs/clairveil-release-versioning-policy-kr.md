@@ -24,6 +24,16 @@ v0.MINOR.PATCH
 
 Release tag는 annotated tag여야 하고 `v` prefix를 붙인 exact SemVer를 사용합니다. 예: `v0.1.1`. Prerelease는 `v0.2.0-rc.1` 같은 SemVer suffix를 사용합니다. 공개한 tag를 이동하거나 재사용하면 안 됩니다. Tag, `CHANGELOG.md`/`CHANGELOG-kr.md` heading, handoff manifest commit, archive, checksum, GitHub release가 모두 같은 immutable source를 식별해야 합니다.
 
+Downstream SDK integration snapshot은 별도 source identity이며 위 Core release
+규칙을 완화하지 않습니다. Matching tagged Core handoff가 아직 없을 때 SDK는
+manifest v2의
+`source = { repository, kind: "commit_snapshot", commit }`만 사용할 수 있습니다.
+`commit`은 lowercase 40-character SHA이고 모든 vendored file은
+`git cat-file <commit>:<path>`와 byte-for-byte로 검증해야 합니다. 이 manifest는
+Core release/tag field를 함께 넣거나 package version을 Core release인 것처럼
+표시하면 안 됩니다. Downstream chain이 소유하는 EVM precompile ABI도 자체
+repository와 immutable commit identity에 같은 규칙을 적용합니다.
+
 ## 2. Breaking change 기준
 
 아래 항목이 바뀌면 release note에서 breaking 또는 migration impact로 표시합니다.

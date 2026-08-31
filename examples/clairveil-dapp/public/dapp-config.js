@@ -274,7 +274,7 @@ export function healthBootstrapEndpointAbsent(error) {
     || (error?.code === "DAPP_BOOTSTRAP_CONTENT_TYPE" && error.contentType === "text/html");
 }
 
-function assertBatchTransferDisabled(config) {
+function assertStaticBatchTransferDisabled(config) {
   if (config?.serverFeatures?.batchTransfer !== false) {
     throw new DappBootstrapError("Clairveil v0.3.1 WebApp requires serverFeatures.batchTransfer=false", {
       code: "DAPP_BOOTSTRAP_UNSUPPORTED_FEATURE"
@@ -289,7 +289,6 @@ export async function loadServerDappHealth(options = {}) {
       code: "DAPP_BOOTSTRAP_INVALID_SCHEMA"
     });
   }
-  assertBatchTransferDisabled(data.config);
   return data;
 }
 
@@ -305,7 +304,7 @@ export async function loadStaticDappConfig(options = {}) {
       code: "DAPP_BOOTSTRAP_INVALID_SCHEMA"
     });
   }
-  assertBatchTransferDisabled(config);
+  assertStaticBatchTransferDisabled(config);
   return config;
 }
 
@@ -321,6 +320,6 @@ export function getStaticDappConfig() {
     },
     chainProfiles: override.chainProfiles || defaultDappConfig.chainProfiles
   };
-  assertBatchTransferDisabled(config);
+  assertStaticBatchTransferDisabled(config);
   return config;
 }

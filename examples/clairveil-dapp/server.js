@@ -159,6 +159,21 @@ function envEndpointList(value) {
   return [...new Set(String(value || "").split(",").map(entry => entry.trim()).filter(Boolean))];
 }
 
+function optionalJsonObjectEnv(name) {
+  const raw = String(process.env[name] || "").trim();
+  if (!raw) return null;
+  let value;
+  try {
+    value = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`${name} must contain valid JSON: ${error.message}`);
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${name} must contain a JSON object`);
+  }
+  return value;
+}
+
 const localTestMode = resolveLocalTestMode();
 const config = {
   host: cliOptions.host ?? process.env.CLAIRVEIL_DAPP_HOST ?? "127.0.0.1",
@@ -185,6 +200,7 @@ const config = {
   upstreamTimeoutMs: positiveIntegerEnv("CLAIRVEIL_DAPP_UPSTREAM_TIMEOUT_MS", 10000),
   upstreamMaxResponseBytes: positiveIntegerEnv("CLAIRVEIL_DAPP_UPSTREAM_MAX_RESPONSE_BYTES", 1024 * 1024),
   healthMaxInFlight: positiveIntegerEnv("CLAIRVEIL_DAPP_HEALTH_MAX_IN_FLIGHT", 8),
+  enableBatchTransfer: envFlag("CLAIRVEIL_DAPP_ENABLE_BATCH_TRANSFER", false),
   depositProofUrl: process.env.CLAIRVEIL_DEPOSIT_PROOF_URL ?? "",
   publicDepositProofUrl: process.env.CLAIRVEIL_PUBLIC_DEPOSIT_PROOF_URL ?? "",
   cosmosDepositProofUrl: process.env.CLAIRVEIL_COSMOS_DEPOSIT_PROOF_URL ?? "",
@@ -215,8 +231,9 @@ const config = {
     process.env.CLAIRVEIL_EVM_PRIVACY_PRECOMPILE,
     "",
   ),
-  evmDepositMode: process.env.CLAIRVEIL_EVM_DEPOSIT_MODE || "nonpayable",
+  evmDepositMode: process.env.CLAIRVEIL_EVM_DEPOSIT_MODE || "payable-exact-value",
   evmNativeDenom: process.env.CLAIRVEIL_EVM_NATIVE_DENOM || configuredEvmDenom,
+  evmAuthorizationProfile: optionalJsonObjectEnv("CLAIRVEIL_EVM_AUTHORIZATION_PROFILE"),
   evmGasLimit: process.env.CLAIRVEIL_EVM_GAS_LIMIT ?? "0x989680",
   evmSendGasLimit: process.env.CLAIRVEIL_EVM_SEND_GAS_LIMIT ?? "0x5208",
   localTestMode,
@@ -476,6 +493,7 @@ function dappChainProfiles() {
     evmPrivacyPrecompileAddress: config.evmPrivacyPrecompileAddress,
     evmDepositMode: config.evmDepositMode,
     evmNativeDenom: config.evmNativeDenom,
+    ...(config.evmAuthorizationProfile ? { evmAuthorizationProfile: config.evmAuthorizationProfile } : {}),
     evmGasLimit: config.evmGasLimit,
     evmSendGasLimit: config.evmSendGasLimit
   };
@@ -1755,7 +1773,10 @@ function serverFeaturesForRequest(req) {
     relayer: localSignerMutation,
     auditorAdmin: localSignerAdmin,
     proverProxy: config.proverProxyEnabled,
-    batchTransfer: false
+    // Product exposure remains opt-in after capability/conformance checks.
+    // The same prepared effect is submitted as one Cosmos MsgBatchTransfer or
+    // one EVM singleProofBatchTransfer call, depending on the active profile.
+    batchTransfer: config.enableBatchTransfer
   };
 }
 
@@ -1795,6 +1816,7 @@ function publicConfig(req) {
       evmPrivacyPrecompileAddress: activeProfile.evmPrivacyPrecompileAddress,
       evmDepositMode: activeProfile.evmDepositMode,
       evmNativeDenom: activeProfile.evmNativeDenom,
+      ...(activeProfile.evmAuthorizationProfile ? { evmAuthorizationProfile: activeProfile.evmAuthorizationProfile } : {}),
       evmGasLimit: activeProfile.evmGasLimit,
       evmSendGasLimit: activeProfile.evmSendGasLimit
     })

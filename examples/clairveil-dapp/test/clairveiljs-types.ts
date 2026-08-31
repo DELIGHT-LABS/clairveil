@@ -73,6 +73,13 @@ const evmProfile = {
   evmPrivacyPrecompileAddress: "0x0000000000000000000000000000000000000900",
   evmDepositMode: "payable-exact-value",
   evmNativeDenom: "utoken",
+  evmAuthorizationProfile: {
+    typedDataDomain: {
+      name: "Target Privacy",
+      version: "1"
+    },
+    supportedAuthorizationKinds: [1, 2, 3]
+  },
   evmGasLimit: "0x989680",
   evmSendGasLimit: "0x5208"
 } as const satisfies BrowserEvmWalletProfile;

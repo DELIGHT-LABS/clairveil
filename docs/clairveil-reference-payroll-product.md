@@ -57,7 +57,7 @@ Recommended workflow:
 7. group 1..16 inputs and 1..32 payment/change/padding outputs into one batch operation
 8. build the canonical prepared payload and obtain one structured owner signature
 9. generate one BatchJoinSplit16x32 proof
-10. recheck all nullifiers and broadcast one MsgBatchTransfer
+10. recheck all nullifiers and submit one Cosmos MsgBatchTransfer or one EVM singleProofBatchTransfer call
 11. typed scan and commitment/disclosure verification
 12. reconcile batch chain status and per-item evidence separately, then export the report
 ```
@@ -67,6 +67,12 @@ The legacy `transfer-batch` path still coordinates independent 2x2 `MsgTransfer`
 ## Product Assumptions
 
 The current batch reference integration path uses one `BatchJoinSplit16x32` proof for one atomic batch operation that consumes 1..16 notes and creates 1..32 outputs. Payment, change, and explicit padding all occupy output slots, so 32 outputs do not always mean 32 payroll payments.
+
+The operation contract is transport-neutral at submission: Cosmos uses one
+`MsgBatchTransfer`, while an EVM host uses one canonical
+`singleProofBatchTransfer` call. In both cases the product reports success only
+after the complete linked input set and every expected output reconcile; an EVM
+path additionally requires an explicitly successful, transaction-bound receipt.
 
 The older per-item `MsgTransfer` implementation and its one-proof-per-recipient capacity model remain available as legacy comparison and regression surfaces. They are not the current proof-count model. The one-proof batch implementation is experimental and does not by itself complete production productization or production artifact approval.
 
@@ -345,7 +351,7 @@ Evidence JSON shape:
 }
 ```
 
-`nullifier_spent=true` alone does not make the operation successful. The stored operation's tx identity, output commitment, audit disclosure digest, recipient hash, amount hash, denom, and batch item index must match. User/self-view disclosure digests are checked separately when expected fields exist. Mismatch or insufficient evidence leaves the operation in review/conflict status.
+`nullifier_spent=true` alone does not make the operation successful. The stored operation's tx identity, explicit successful Cosmos execution or EVM receipt, output commitment, audit disclosure digest, recipient hash, amount hash, denom, and batch item index must match. User/self-view disclosure digests are checked separately when expected fields exist. Mismatch or insufficient evidence leaves the operation in review/conflict status.
 
 ### `clairveil-payroll export-report`
 
@@ -550,6 +556,9 @@ As of 2026-07-13, the repository-level reference boundary includes:
 - `make reference-payroll-live-localnet` remains available as the legacy multi-message 2x2 payroll regression/tutorial.
 - `clairveil-payroll validate`, `build-input-from-notes`, `prepare-notes`, `plan`, `run`, `status`, `scan-evidence`, `reconcile`, `settle-transfer-batch`, `seed-localnet-notes`, and `export-report` are provided.
 - `transfer-batch` retains its legacy multi-message meaning, while `transfer-batch-16x32` and the staged batch commands provide the current one-proof surface.
+- The one-proof handoff defines both Cosmos `MsgBatchTransfer` and canonical EVM
+  `singleProofBatchTransfer` submission; target-chain wallet/product E2E remains
+  a downstream release gate.
 - JS SDK handoff document is provided.
 - Wallet handoff document is provided.
 - Downstream teams have a baseline for assembling payroll workflow.
@@ -566,6 +575,7 @@ This repository does not complete:
 - web/mobile wallet implementation
 - customer-specific payroll policy decisions
 - staging/production rehearsal execution
+- Cosmos and EVM downstream wallet/product E2E
 - formal trusted setup, external audit, and signed production artifact custody/distribution
 - production remote-prover isolation, authentication, deployment, and operations
 

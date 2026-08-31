@@ -13,26 +13,30 @@ English version: [clairveil-web-app-scope.md](clairveil-web-app-scope.md)
 | 설정과 sync | `buildRootSigningMessage`, `derivePrivacyAccount`, `scanWalletNotes` | account별 shielded identity를 만들고 검증된 scan cursor에 도달합니다. |
 | Deposit | `prepareDeposit` | 제품이 제공한 `DepositCircuit` proof를 얻고 sign/broadcast한 뒤 생성 note를 scan합니다. |
 | 단일 shielded transfer | `prepareTransfer` | planner가 필요로 하면 self-merge 단계를 포함한 일반 transfer operation 하나를 준비합니다. |
+| Feature gate된 원자적 batch transfer | `prepareTransferBatch` | 1–16 input / 1–32 output operation 하나를 준비하고 Cosmos `MsgBatchTransfer` 또는 canonical EVM `singleProofBatchTransfer` call 하나를 제출하며, 모든 linked input과 expected payment output을 검증한 뒤에만 성공으로 표시합니다. |
 | Direct withdraw | `prepareWithdraw` | exact-match note 하나를 spend하고 sign/broadcast 및 nullifier reconciliation을 수행합니다. |
 | Relayed withdraw | `prepareRelayWithdraw` | handoff 경계를 durable하게 기록하고 relayer 제출 뒤 expiry 또는 spent evidence까지 reconcile합니다. |
-| Disclosure 검토 | `decodeUserDisclosure`, `decodeSelfViewDisclosure`, `decodeAuditDisclosure` | digest가 verified인 경우에만 plaintext를 표시합니다. |
+| Disclosure 검토 | `decodeUserDisclosure`, `decodeSelfViewDisclosure`, `decodeBatchSelfViewDisclosure`, `decodeAuditDisclosure` | digest가 verified인 경우에만 plaintext를 표시하고 typed batch output을 각각 독립적으로 검증합니다. |
 
-`prepareTransfer`가 transfer 진입점입니다. Checked-in v0.3.1 example은
-one-proof batch prepare/submission을 노출하지 않습니다. Server는
-`serverFeatures.batchTransfer=false`를 반환하고 UI는 `prepareTransferBatch`를
-호출하지 않습니다. ClairveilJS와 chain core가 별도로 검토된
-product를 위한 하위 batch contract를 제공할 수는 있지만 config 값만으로
-그 contract를 WebApp feature로 바꾸면 안 됩니다.
+`prepareTransfer`가 단일 transfer 진입점입니다. Batch editor는 server-backed
+configuration에서 `serverFeatures.batchTransfer`를 켜고 선택한 transport가
+canonical one-proof batch 실행을 지원할 때만 별도 action으로 노출합니다. SDK API나
+prover route가 있다는 사실만으로 WebApp feature를 켜면 안 됩니다.
 
-EVM profile은 privacy precompile이 Clairveil 0.3.1 canonical ABI를 구현할 때만 사용할 수 있습니다. 즉 proof를 포함한 deposit, self-view disclosure와 absolute expiry를 보존하는 transfer, legacy output-note field가 없는 withdraw가 필요합니다. WebApp은 ABI fallback이나 dummy withdraw output을 지원하지 않습니다.
+EVM profile은 privacy precompile이 Clairveil 0.3.1 canonical ABI를 구현할 때만 사용할 수 있습니다. 즉 proof와 exact `msg.value`를 포함한 deposit, self-view disclosure와 absolute expiry를 보존하는 transfer, legacy output-note field가 없는 exact-match withdraw, `BatchJoinSplit16x32` 효과를 보존하는 `singleProofBatchTransfer`가 필요합니다. 기본 경로에는 ABI fallback이 없고 dummy withdraw output을 만들지 않습니다. Profile-scoped reviewed ClairveilJS adapter는 선택한 precompile에 bind하고 같은 v0.3.1 effect와 receipt를 fail closed로 검증하는 동등한 call shape에만 사용할 수 있습니다.
+
+Cosmos-EVM에서 `PrivacyScanOutputV2.tx_hash`는 outer Cosmos/CometBFT
+transaction hash이고 wallet/receipt는 Ethereum transaction hash를 제공합니다.
+두 값을 모두 보존하고 index된 `ethereumTxHash` 관계를 검증해야 하며 두 hash가
+같다고 비교하면 안 됩니다.
 
 ## 명시적으로 범위 밖인 기능
 
 이번 WebApp release에는 아래 기능의 UI, route, 자동 fallback, background worker를 추가하지 않습니다.
 
 - payroll, treasury allocation, recipient-file import, bulk payment review
-- one-proof batch-transfer prepare, durable checkpoint, submission UI
-- 어떤 batch든 자동·조용한 분할 또는 background 제출
+- capacity를 초과한 batch의 자동 또는 조용한 분할
+- 명시적인 review와 feature gate가 없는 background batch 제출
 
 Payroll과 unattended bulk orchestration은 유효한 core/reference integration contract이지만 browser 제품 경계 밖입니다.
 
@@ -43,6 +47,7 @@ WebApp은 ClairveilJS `0.3.1`과 아래 fixed privacy contract를 대상으로 �
 - note/disclosure envelope: `privacy-fixed-v1`
 - transfer prepared payload/proof/prover envelope: `v5` / `v2` / `v2`
 - withdraw와 relay handoff: `v2`
+- 원자적 batch transfer: `BatchJoinSplit16x32`, `MsgBatchTransfer`, EVM `singleProofBatchTransfer`
 - protocol identity: `batch-joinsplit-16x32-v1`을 required 네 번째
   chain-core circuit으로 포함하는 `privacy-note-v1`
 - preferred wallet scan: `privacy-scan-v2`
@@ -64,11 +69,11 @@ state로 decode하지 말고 empty current namespace를 초기화한 뒤 full sc
 3. [WebApp 저장소와 복구](clairveil-web-app-storage-recovery-kr.md)의 storage와 durable reservation recovery 규칙을 사용합니다.
 4. [WebApp integration](clairveil-web-app-integration-kr.md)의 lifecycle/API 규칙을 사용합니다.
 5. [WebApp 배포](clairveil-web-app-deployment-kr.md)의 browser/prover deployment boundary를 만족합니다.
-6. 이 example에서 `serverFeatures.batchTransfer`를 false로 유지하고 one-proof
-   batch prepare/submission UI를 노출하지 않습니다. SDK/reference test에서 쓰는
-   loopback prover proxy route는 이 product gate를 바꾸지 않습니다. 향후 product integration은
-   이 제품 경계를 바꾸기 전에 별도의 encrypted checkpoint, wallet confirmation,
-   reconciliation, end-to-end release gate를 정의해야 합니다.
+6. Batch transfer에는 explicit product gate와 canonical transport capability를
+   요구하고 payload/proof checkpoint를 암호화합니다. Wallet 승인 전에 total,
+   change, input/output capacity, disclosure 선택, all-or-nothing 경계를 표시하며,
+   typed output evidence와 모든 linked input nullifier가 reconcile된 항목만 성공으로
+   표시합니다.
 
 ## 일반 client 문서와의 관계
 

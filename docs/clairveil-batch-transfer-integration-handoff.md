@@ -2,7 +2,7 @@
 
 Korean version: [clairveil-batch-transfer-integration-handoff-kr.md](clairveil-batch-transfer-integration-handoff-kr.md)
 
-This handoff is for Go, JS/TS wallet, prover, payroll, and operations integrators consuming the `BatchJoinSplit16x32` client contract and its reference integrations. It is not the project Completion Record and does not change the Master Roadmap.
+This handoff is for Go and ClairveilJS 0.3.1 wallet, prover, payroll, and operations integrators consuming the `BatchJoinSplit16x32` client contract over Cosmos or EVM. It is not the project Completion Record and does not change the Master Roadmap.
 
 ## Frozen Integration Identities
 
@@ -14,6 +14,8 @@ This handoff is for Go, JS/TS wallet, prover, payroll, and operations integrator
 | circuit artifact ID | `batch-joinsplit-16x32-v1` |
 | prover request/response | `v1` / `v1` |
 | prover route | `POST /v1/proofs/batch-transfer` |
+| Cosmos execution | `MsgBatchTransfer` |
+| EVM execution | canonical `singleProofBatchTransfer` precompile call |
 | maximum shape | 16 inputs / 32 outputs |
 | default prover admission | in-flight 1 / queued 4, batch-specific |
 
@@ -30,7 +32,7 @@ plan and atomically reserve 1..16 inputs
 -> prove locally or with one explicitly selected remote prover
 -> verify response version and request payload hash
 -> persist private proof (0600)
--> recheck all nullifiers and broadcast MsgBatchTransfer
+-> recheck all nullifiers and broadcast one Cosmos MsgBatchTransfer or EVM singleProofBatchTransfer call
 -> typed scan and commitment/disclosure verification
 -> reconcile batch chain status and per-item evidence separately
 ```
@@ -84,8 +86,8 @@ Keep these independent paths working:
 ```bash
 go test ./x/privacy/... -count=1
 make privacy-e2e-smoke
-make reference-payroll-live-localnet
 make privacy-batch-joinsplit-localnet
+RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet
 ```
 
-`transfer-batch` retains its multi-message meaning. Do not alias it to the one-proof `transfer-batch-16x32` flow.
+The supported batch path uses one proof and one atomic transaction for the complete output list.
