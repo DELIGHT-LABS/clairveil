@@ -6,6 +6,104 @@ This project follows [the release versioning policy](docs/clairveil-release-vers
 
 ## Unreleased
 
+### Added
+
+- Added the English/Korean WebApp integration pack: explicit supported-flow
+  scope, versioned browser chain-profile schema, browser API/lifecycle guide,
+  encrypted storage/recovery contract, and browser/prover deployment controls.
+- Added a feature-gated Cosmos batch-payment editor to the example DApp. It
+  prepares one 1–16 input / 1–32 output `MsgBatchTransfer`, makes the
+  all-or-nothing boundary and capacity visible, never splits silently, and
+  verifies per-payment output evidence after inclusion.
+
+### Changed
+
+- The example DApp now emits and validates
+  `clairveil-web-client-config-v1`; server and static flattened compatibility
+  fields must agree with the active chain profile before a browser flow starts.
+  The legacy top-level EVM account prefix remains host metadata and cannot
+  override the profile privacy prefix passed to ClairveilJS.
+- ClairveilJS browser-client declarations now expose the existing typed,
+  read-only `evmJsonRpc<TResult>` recovery/query method.
+- The example DApp now consumes the ClairveilJS browser preflight surface for
+  circuit, asset, audit/disclosure, tree, reserve, and EVM chain validation.
+  It fails closed before displaying spendable inventory and again immediately
+  before every supported privacy preparation.
+- The example DApp now uses a fresh content-addressed ClairveilJS 0.2.0
+  artifact that exposes the browser circuit/asset/tree preflight and
+  experimental atomic batch-transfer methods.
+
+### Fixed
+
+- Restored reproducible example-DApp installs with a content-addressed
+  ClairveilJS archive for CI/release and a local-checkout link only for
+  `make dapp-local`. The Privacy Events panel now selects batch transfers and
+  verifies every available sender self-view disclosure from complete typed
+  `privacy-scan-v2` output evidence.
+- The example DApp now confirms the exact prepared atomic-batch effects before
+  opening Keplr, including the full recipient and per-payment disclosure,
+  blocks individually unsplittable payments, excludes already verified split
+  payments from later retries, and keeps every ambiguous post-broadcast
+  outcome in reconciliation instead of reporting it as failed.
+- Removed the example DApp's legacy 0.1 browser-data cleanup UI and
+  implementation. The v0.2 client continues to ignore legacy persistence and
+  starts from an isolated fresh scan without reading or mutating it.
+- Make `dapp-local` enable the loopback same-origin prover proxy. The local
+  browser DApp no longer attempts a cross-origin request to the reference
+  prover, which intentionally does not provide a browser CORS policy.
+- Renew the example DApp's current chain-configuration preflight when its
+  short-lived lease expires. Cached notes no longer stay hidden as
+  `Sync unavailable` solely because the previous successful preflight aged
+  out; a failed renewal still fails closed.
+- Updated the vendored ClairveilJS artifact so browser proof requests preserve
+  a configured prover URL path prefix, matching the WebApp profile and
+  deployment-gate contract. The patched `0.2.0` package manifest and
+  content-addressed filename keep that artifact independently identifiable.
+  DApp compatibility fixtures now construct valid v0.2 Merkle paths and
+  canonical asset IDs.
+
+### Security
+
+- Replaced the example DApp's plaintext note cache, reservation state, and
+  relay recovery metadata with namespace-separated AES-GCM IndexedDB records.
+  Privacy setup now requires IndexedDB, Web Crypto, and Web Locks; it does not
+  fall back to `localStorage`, plaintext IndexedDB, or memory.
+- Hardened the example static server: loopback is the default bind, the prover
+  proxy needs explicit direct-loopback local-test opt-in, public mode rejects
+  proxy/token/cleartext configuration, and static responses receive CSP,
+  `nosniff`, no-referrer, and cross-origin opener headers.
+
+### Migration Notes
+
+- Upgraded `privacy_note_reservation_contract.json` and its schema from v1 to v3. Downstream reservation implementations must fail closed for malformed or unavailable nullifier/relay chain-time evidence, keep lease heartbeats through the ProofReady transition, and durably record a leased `ProofReady` relay handoff before exposing payloads externally.
+- Replace unrestricted `UpdateReservation`/`UpdateOperation` calls with the Service-owned atomic batch, reconciliation, lease-expiry recovery, proof-discard, and relay-handoff commands. Persistent Store implementations must validate the current lease owner and token together and commit linked reservation/operation changes in one transaction.
+- Durable reservation lifecycle storage is schema v2 in both JSON snapshots and SQL metadata. This unreleased workspace has no lifecycle-store migration or rollback contract; stores are initialized directly at the current schema.
+- `FoundNote.VerifiedUnspent` is Go client SDK hardening, not a new consensus boundary or a freshness proof. It is a public Go/JSON shape change (`verified_unspent`); older cached entries without the field decode as false and must complete a successful nullifier revalidation before planning. A normal sync revalidates cached notes, while Reset & Rescan is available for discarded or corrupt caches. This flag does not replace the mandatory pre-broadcast nullifier check, and ClairveilJS/DApps need equivalent fresh-query behavior rather than this Go field itself.
+
+## v0.3.1 - 2026-07-21
+
+### Fixed
+
+- Added the missing paired dated changelog headings for the already-published `v0.3.0` tag and completed the release documentation, supported-version references, and immutable release packaging metadata. There is no Go, protobuf, runtime, state, circuit, or wire-contract change from `v0.3.0`.
+
+### Handoff Notes
+
+- Downstream codebases already pinned to `v0.3.0` may continue using it unchanged. `v0.3.1` is the documentation and release-preparation publication and is the identity used for the verified handoff pack and GitHub release; `v0.3.0` remains unmoved and unreused.
+
+## v0.3.0 - 2026-07-21
+
+### Added
+
+- Added the trusted in-process `Keeper.DepositWithFunder` integration surface, which preserves `msg.Creator` attribution while debiting an explicit validated funder through the canonical deposit transition.
+
+### Changed
+
+- Kept the public `MsgDeposit` protobuf, gRPC, CLI, client wire format, actor-as-funder behavior, and existing gas path unchanged; deposit mutations now use a nested cache so downstream callers can combine core-local rollback with an outer SDK/EVM rollback boundary. The trusted entry alone performs the additional module-balance reads required to verify its explicit-funder bank transfer.
+
+### Security
+
+- Documented that downstream adapters must derive the actor from the authenticated caller, use only a fixed escrow funder distinct from the `privacy` module account, bind the deposit amount exactly to EVM `msg.value` and the runtime native denom, and roll back later policy failures atomically. The trusted Keeper API rejects the `privacy` module account as a funder and verifies the exact module-balance increase after the bank send so self-transfers or redirected sends cannot mint an unbacked shielded deposit.
+
 ## v0.2.0 - 2026-07-13
 
 ### Added

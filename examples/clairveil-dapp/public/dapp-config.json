@@ -1,0 +1,134 @@
+{
+  "schemaVersion": "clairveil-web-client-config-v1",
+  "serverBacked": false,
+  "modeLabel": "Static Public DApp",
+  "home": "",
+  "localSignerHome": "",
+  "localSignerBin": "",
+  "chainId": "clairveil-local-2",
+  "rpc": "http://127.0.0.1:26657",
+  "rest": "http://127.0.0.1:1317",
+  "proverUrl": "http://127.0.0.1:8080",
+  "transport": "cosmos",
+  "denom": "uclair",
+  "displayDenom": "CLAIR",
+  "coinDecimals": 18,
+  "accountPrefix": "clair",
+  "shieldedPrefix": "clairs",
+  "localTestMode": false,
+  "serverFeatures": {
+    "localTestMode": false,
+    "localSigners": false,
+    "faucet": false,
+    "auditorAdmin": false
+  },
+  "activeChainProfileId": "clairveil-local",
+  "chainProfiles": [
+    {
+      "id": "clairveil-local",
+      "label": "Clairveil Localnet",
+      "chainName": "Clairveil Localnet",
+      "transport": "cosmos",
+      "wallet": "keplr",
+      "chainId": "clairveil-local-2",
+      "rpc": "http://127.0.0.1:26657",
+      "rest": "http://127.0.0.1:1317",
+      "proverUrl": "http://127.0.0.1:8080",
+      "accountPrefix": "clair",
+      "shieldedPrefix": "clairs",
+      "denom": "uclair",
+      "displayDenom": "CLAIR",
+      "coinDecimals": 18,
+      "keplrCoinType": 118,
+      "gasPriceStep": {
+        "low": 1,
+        "average": 1,
+        "high": 1
+      },
+      "keplrChainInfo": {
+        "chainId": "clairveil-local-2",
+        "chainName": "Clairveil Localnet",
+        "rpc": "http://127.0.0.1:26657",
+        "rest": "http://127.0.0.1:1317",
+        "bip44": {
+          "coinType": 118
+        },
+        "bech32Config": {
+          "bech32PrefixAccAddr": "clair",
+          "bech32PrefixAccPub": "clairpub",
+          "bech32PrefixValAddr": "clairvaloper",
+          "bech32PrefixValPub": "clairvaloperpub",
+          "bech32PrefixConsAddr": "clairvalcons",
+          "bech32PrefixConsPub": "clairvalconspub"
+        },
+        "currencies": [
+          {
+            "coinDenom": "CLAIR",
+            "coinMinimalDenom": "uclair",
+            "coinDecimals": 18
+          }
+        ],
+        "feeCurrencies": [
+          {
+            "coinDenom": "CLAIR",
+            "coinMinimalDenom": "uclair",
+            "coinDecimals": 18,
+            "gasPriceStep": {
+              "low": 1,
+              "average": 1,
+              "high": 1
+            }
+          }
+        ],
+        "stakeCurrency": {
+          "coinDenom": "CLAIR",
+          "coinMinimalDenom": "uclair",
+          "coinDecimals": 18
+        },
+        "features": []
+      }
+    }
+  ],
+  "keplrChainInfo": {
+    "chainId": "clairveil-local-2",
+    "chainName": "Clairveil Localnet",
+    "rpc": "http://127.0.0.1:26657",
+    "rest": "http://127.0.0.1:1317",
+    "bip44": {
+      "coinType": 118
+    },
+    "bech32Config": {
+      "bech32PrefixAccAddr": "clair",
+      "bech32PrefixAccPub": "clairpub",
+      "bech32PrefixValAddr": "clairvaloper",
+      "bech32PrefixValPub": "clairvaloperpub",
+      "bech32PrefixConsAddr": "clairvalcons",
+      "bech32PrefixConsPub": "clairvalconspub"
+    },
+    "currencies": [
+      {
+        "coinDenom": "CLAIR",
+        "coinMinimalDenom": "uclair",
+        "coinDecimals": 18
+      }
+    ],
+    "feeCurrencies": [
+      {
+        "coinDenom": "CLAIR",
+        "coinMinimalDenom": "uclair",
+        "coinDecimals": 18,
+        "gasPriceStep": {
+          "low": 1,
+          "average": 1,
+          "high": 1
+        }
+      }
+    ],
+    "stakeCurrency": {
+      "coinDenom": "CLAIR",
+      "coinMinimalDenom": "uclair",
+      "coinDecimals": 18
+    },
+    "features": []
+  }
+}

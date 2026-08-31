@@ -2,6 +2,7 @@ import { createHash, createHmac } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { fromBech32, toBech32 } from "@cosmjs/encoding";
 
 interface TransferInput {
   amount: string;
@@ -185,8 +186,13 @@ interface RelayWithdrawContract {
   };
 }
 
-interface NoteReservationContract {
+export interface NoteReservationContract {
   version: number;
+  fixture_migration: {
+    from_version: number;
+    to_version: number;
+    downstream_action: string;
+  };
   active_reservation_statuses: string[];
   allowed_transitions: string[][];
   rejected_transitions: string[][];
@@ -206,13 +212,116 @@ interface NoteReservationContract {
       lookup_key_hex: string;
     }>;
   };
+  operation_hash_test_vectors: Array<{
+    recipient: string;
+    recipient_hash: string;
+    denom: string;
+    amount: string;
+    amount_hash: string;
+  }>;
+  operation_hash_rejection_vectors: Array<{
+    name: string;
+    recipient: string;
+    denom: string;
+    amount: string;
+    reject_hash: "recipient" | "amount";
+  }>;
   lease_transition_preconditions: {
     token_required_for: string[][];
+    recovery_without_token_after_expiry_for: string[][];
     fields: string[];
     policy: string;
   };
+  transition_evidence_preconditions: Array<{
+    name: string;
+    transition: string[];
+    required_evidence: string[];
+    positive: Record<string, boolean>;
+    negative: Record<string, boolean>;
+  }>;
+  manual_review_resolution: {
+    required_evidence: string[];
+    positive: Record<string, unknown>;
+    negative: Record<string, unknown>;
+  };
+  relay_handoff: {
+    status: string;
+    lease_must_remain: boolean;
+    record_requires: string[];
+    proof_discard_after_handoff: string;
+    write_once_evidence: string[];
+    positive: Record<string, unknown>;
+    negative: Record<string, unknown>;
+    negative_vectors: Array<{
+      name: string;
+      payload_hash_matches: boolean;
+      all_reservations_proof_ready: boolean;
+      operation_reservation_set_exact: boolean;
+    }>;
+  };
+  initial_state_preconditions: {
+    reservation_status: string;
+    operation_status: string;
+    forbidden_reservation_evidence: string[];
+    forbidden_operation_evidence: string[];
+    positive: Record<string, boolean>;
+    negative: Record<string, boolean>;
+  };
+  fail_closed_runtime_policy: {
+    nullifier_spent_evidence: {
+      spent_value: boolean;
+      unspent_value: boolean;
+      other_values: string;
+    };
+    relay_submission: {
+      chain_time_source: string;
+      chain_time_required: boolean;
+      recheck_immediately_before_broadcast: boolean;
+      on_unavailable: string;
+    };
+	  heartbeat: {
+	    coverage: string[];
+	    await_in_flight_before_stop: boolean;
+	  };
+	  broadcast_boundary: {
+	    durable_attempt_before_external_call: boolean;
+	    retry_blocked_until_reconciled: boolean;
+	  };
+	};
+  evidence_immutability: {
+    write_once_fields: string[];
+    monotonic_fields: string[];
+    negative: Record<string, unknown>;
+    mutation_rejection_vectors: Array<{
+      field: string;
+      original: unknown;
+      mutation: unknown;
+    }>;
+  };
+  spent_sibling_quarantine: {
+    match_fields: string[];
+    target_status: string;
+    positive: Record<string, number>;
+    negative: Record<string, number>;
+  };
   success_evidence_required: string[];
   batch_item_index_policy: string;
+  operation_identity_evidence: {
+    required: string;
+    vectors: Array<{
+      name: string;
+      stored_tx_hash?: string;
+      stored_tx_bytes_hash?: string;
+      stored_sign_doc_hash?: string;
+      tx_result: {
+        code?: number;
+        txhash?: string;
+        tx_bytes_hash?: string;
+        sign_doc_hash?: string;
+      };
+      operation_status: string;
+    }>;
+  };
   operation_success_examples: Array<{
     name: string;
     nullifier_spent: boolean;
@@ -283,12 +392,22 @@ const expectedRejectedTransitions = [
 const expectedLeaseRequiredTransitions = [
   ["Reserved", "Proving"],
   ["Proving", "ProofReady"],
+  ["Proving", "Reserved"],
+  ["Proving", "ReplanRequired"],
+  ["Proving", "ManualReview"],
   ["ProofReady", "Submitted"],
   ["ProofReady", "Unknown"],
+  ["ProofReady", "ReplanRequired"],
+  ["ProofReady", "ManualReview"],
+];
+const expectedLeaseExpiryRecoveryTransitions = [
+  ["Proving", "ReplanRequired"],
+  ["Proving", "ManualReview"],
+  ["ProofReady", "ManualReview"],
 ];
 const expectedLeaseFields = ["lease_owner", "lease_token", "lease_until", "last_heartbeat_at"];
 const expectedSuccessEvidenceRequired = [
-  "tx_hash_or_tx_result",
+  "matching_persisted_tx_identity",
   "expected_output_commitment",
   "expected_disclosure_digest",
   "expected_recipient_hash",
@@ -298,7 +417,7 @@ const expectedSuccessEvidenceRequired = [
   "batch_item_index_known",
 ];
 
-type JsonSchema = {
+export type JsonSchema = {
   $ref?: string;
   type?: string | string[];
   const?: unknown;
@@ -308,6 +427,8 @@ type JsonSchema = {
   properties?: Record<string, JsonSchema>;
   additionalProperties?: boolean;
   allOf?: JsonSchema[];
+  anyOf?: JsonSchema[];
+  oneOf?: JsonSchema[];
   if?: JsonSchema;
   then?: JsonSchema;
   items?: JsonSchema;
@@ -318,7 +439,7 @@ type JsonSchema = {
   minLength?: number;
 };
 
-type JsonSchemaDocument = JsonSchema & {
+export type JsonSchemaDocument = JsonSchema & {
   $defs?: Record<string, JsonSchema>;
 };
 
@@ -332,6 +453,143 @@ function readFixture<T>(filename: string): T {
 
 function sha256Hex(source: string): string {
   return createHash("sha256").update(source, "utf8").digest("hex");
+}
+
+const fieldModulus = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+const curveOrder = 2736030358979909402780800718157159386076813972158567259200215660948447373041n;
+const curveD = 12181644023421730124874158521699555681764249180949974110617291017600649128846n;
+const fieldHalf = (fieldModulus - 1n) / 2n;
+
+function mod(value: bigint): bigint {
+  const result = value % fieldModulus;
+  return result >= 0n ? result : result + fieldModulus;
+}
+
+function modPow(base: bigint, exponent: bigint): bigint {
+  let result = 1n;
+  let value = mod(base);
+  let power = exponent;
+  while (power > 0n) {
+    if (power & 1n) result = (result * value) % fieldModulus;
+    value = (value * value) % fieldModulus;
+    power >>= 1n;
+  }
+  return result;
+}
+
+function modInv(value: bigint): bigint {
+  const normalized = mod(value);
+  if (normalized === 0n) throw new Error("point denominator is zero");
+  return modPow(normalized, fieldModulus - 2n);
+}
+
+function modSqrt(value: bigint): bigint {
+  const n = mod(value);
+  if (n === 0n) return 0n;
+  if (modPow(n, (fieldModulus - 1n) / 2n) !== 1n) {
+    throw new Error("point is not on the Clairveil curve");
+  }
+  let q = fieldModulus - 1n;
+  let s = 0n;
+  while ((q & 1n) === 0n) {
+    q >>= 1n;
+    s += 1n;
+  }
+  let z = 2n;
+  while (modPow(z, (fieldModulus - 1n) / 2n) !== fieldModulus - 1n) z += 1n;
+  let c = modPow(z, q);
+  let x = modPow(n, (q + 1n) / 2n);
+  let t = modPow(n, q);
+  let m = s;
+  while (t !== 1n) {
+    let i = 1n;
+    let candidate = (t * t) % fieldModulus;
+    while (candidate !== 1n) {
+      candidate = (candidate * candidate) % fieldModulus;
+      i += 1n;
+      if (i >= m) throw new Error("field square root failed");
+    }
+    const b = modPow(c, 1n << (m - i - 1n));
+    x = (x * b) % fieldModulus;
+    const b2 = (b * b) % fieldModulus;
+    t = (t * b2) % fieldModulus;
+    c = b2;
+    m = i;
+  }
+  return x;
+}
+
+function bytesToBigIntLE(bytes: Uint8Array): bigint {
+  const hex = Buffer.from(bytes).reverse().toString("hex");
+  return hex ? BigInt(`0x${hex}`) : 0n;
+}
+
+function bigIntToBytesLE(value: bigint): Uint8Array {
+  const hex = mod(value).toString(16).padStart(64, "0");
+  return Uint8Array.from(Buffer.from(hex, "hex")).reverse();
+}
+
+type CurvePoint = { x: bigint; y: bigint };
+
+function pointAdd(left: CurvePoint, right: CurvePoint): CurvePoint {
+  const xProduct = mod(left.x * right.x);
+  const yProduct = mod(left.y * right.y);
+  const cross = mod(curveD * xProduct * yProduct);
+  return {
+    x: mod((left.x * right.y + left.y * right.x) * modInv(1n + cross)),
+    y: mod((yProduct + xProduct) * modInv(1n - cross)),
+  };
+}
+
+function scalarMultiply(point: CurvePoint, scalar: bigint): CurvePoint {
+  let result: CurvePoint = { x: 0n, y: 1n };
+  let addend = point;
+  let remaining = scalar;
+  while (remaining > 0n) {
+    if (remaining & 1n) result = pointAdd(result, addend);
+    addend = pointAdd(addend, addend);
+    remaining >>= 1n;
+  }
+  return result;
+}
+
+export function canonicalCompressedPoint(input: Uint8Array): Uint8Array {
+  assertSchema(input.length === 32, "shielded recipient point", "expected 32-byte point");
+  const yBytes = Uint8Array.from(input);
+  const sign = (yBytes[31] & 0x80) !== 0;
+  yBytes[31] &= 0x7f;
+  const y = bytesToBigIntLE(yBytes);
+  assertSchema(y < fieldModulus, "shielded recipient point", "non-canonical y coordinate");
+  const y2 = (y * y) % fieldModulus;
+  const numerator = mod(1n - y2);
+  const denominator = mod(-1n - curveD * y2);
+  const ratio = mod(numerator * modInv(denominator));
+  let x = modSqrt(ratio);
+  if ((x > fieldHalf) !== sign) x = mod(-x);
+  assertSchema(!(x === 0n && y === 1n), "shielded recipient point", "identity is not allowed");
+  const subgroupCheck = scalarMultiply({ x, y }, curveOrder);
+  assertSchema(
+    subgroupCheck.x === 0n && subgroupCheck.y === 1n,
+    "shielded recipient point",
+    "point is not in the prime-order subgroup",
+  );
+  const encoded = bigIntToBytesLE(y);
+  if (x > fieldHalf) encoded[31] |= 0x80;
+  return encoded;
+}
+
+function validCosmosDenom(value: string): boolean {
+  return /^[A-Za-z][A-Za-z0-9/:._-]{2,127}$/.test(value);
+}
+
+function canonicalShieldedAddress(value: string): string {
+  const decoded = fromBech32(value.trim(), 200);
+  assertSchema(decoded.prefix === "clairs", "shielded recipient", "expected clairs prefix");
+  assertSchema(decoded.data.length === 64, "shielded recipient", "expected 64-byte payload");
+  const canonical = new Uint8Array(64);
+  canonical.set(canonicalCompressedPoint(decoded.data.slice(0, 32)), 0);
+  canonical.set(canonicalCompressedPoint(decoded.data.slice(32, 64)), 32);
+  return toBech32("clairs", canonical, 200);
 }
 
 function hmacSHA256Hex(keyUtf8: string, messageUtf8: string): string {
@@ -425,7 +683,7 @@ function resolveSchemaRef(root: JsonSchemaDocument, ref: string): JsonSchema {
   return resolved;
 }
 
-function validateJSONSchema(value: unknown, schema: JsonSchema, label: string, root: JsonSchemaDocument): void {
+export function validateJSONSchema(value: unknown, schema: JsonSchema, label: string, root: JsonSchemaDocument): void {
   if (schema.$ref) {
     validateJSONSchema(value, resolveSchemaRef(root, schema.$ref), label, root);
     return;
@@ -433,6 +691,17 @@ function validateJSONSchema(value: unknown, schema: JsonSchema, label: string, r
 
   for (const [index, subschema] of (schema.allOf ?? []).entries()) {
     validateJSONSchema(value, subschema, `${label}.allOf[${index}]`, root);
+  }
+  if (schema.anyOf) {
+    assertSchema(
+      schema.anyOf.some((subschema) => schemaMatches(value, subschema, root)),
+      label,
+      "expected at least one anyOf schema to match",
+    );
+  }
+  if (schema.oneOf) {
+    const matches = schema.oneOf.filter((subschema) => schemaMatches(value, subschema, root)).length;
+    assertSchema(matches === 1, label, `expected exactly one oneOf schema to match, got ${matches}`);
   }
   if (schema.if && schema.then && schemaMatches(value, schema.if, root)) {
     validateJSONSchema(value, schema.then, `${label}.then`, root);
@@ -891,8 +1160,15 @@ function validateProverHTTPAPIContract(contract: ProverHTTPAPIContract): void {
   assertEqual(contract.error_response.retryable_codes[0], "busy", "prover HTTP retryable busy code");
 }
 
-function validateNoteReservationContract(contract: NoteReservationContract): void {
-  assertEqual(contract.version, 1, "note reservation version");
+export function validateNoteReservationContract(contract: NoteReservationContract): void {
+  assertEqual(contract.version, 3, "note reservation version");
+  assertEqual(contract.fixture_migration.from_version, 1, "note reservation migration source version");
+  assertEqual(contract.fixture_migration.to_version, 3, "note reservation migration target version");
+  assertSchema(
+    contract.fixture_migration.downstream_action.trim().length > 0,
+    "note reservation migration action",
+    "expected downstream migration guidance",
+  );
   assertStringArrayEqual(
     contract.active_reservation_statuses,
     expectedActiveReservationStatuses,
@@ -937,11 +1213,56 @@ function validateNoteReservationContract(contract: NoteReservationContract): voi
       `note reservation lookup vector ${index}`,
     );
   }
+  for (const [index, vector] of contract.operation_hash_test_vectors.entries()) {
+    const canonicalRecipient = canonicalShieldedAddress(vector.recipient);
+    const canonicalDenom = vector.denom.trim();
+    assertSchema(
+      canonicalDenom === vector.denom && validCosmosDenom(canonicalDenom),
+      `note reservation amount hash vector ${index}`,
+      "expected canonical Cosmos denom",
+    );
+    assertShieldedAmountString(vector.amount, `note reservation amount hash vector ${index}`);
+    assertEqual(
+      vector.recipient_hash,
+      sha256Hex(canonicalRecipient),
+      `note reservation recipient hash vector ${index}`,
+    );
+    assertEqual(
+      vector.amount_hash,
+      sha256Hex(`${canonicalDenom}:${BigInt(vector.amount).toString()}`),
+      `note reservation amount hash vector ${index}`,
+    );
+  }
+  for (const vector of contract.operation_hash_rejection_vectors) {
+    if (vector.reject_hash === "recipient") {
+      let rejected = false;
+      try {
+        canonicalShieldedAddress(vector.recipient);
+      } catch {
+        rejected = true;
+      }
+      assertSchema(rejected, `operation hash rejection ${vector.name}`, "expected an invalid shielded recipient");
+      continue;
+    }
+    assertSchema(
+      vector.denom !== vector.denom.trim() ||
+        !validCosmosDenom(vector.denom) ||
+        !/^(0|[1-9][0-9]*)$/.test(vector.amount) ||
+        BigInt(vector.amount) > maxShieldedAmount,
+      `operation hash rejection ${vector.name}`,
+      "expected invalid denom or uint64 amount",
+    );
+  }
 
   assertTransitionSetEqual(
     contract.lease_transition_preconditions.token_required_for,
     expectedLeaseRequiredTransitions,
     "note reservation lease-required transitions",
+  );
+  assertTransitionSetEqual(
+    contract.lease_transition_preconditions.recovery_without_token_after_expiry_for,
+    expectedLeaseExpiryRecoveryTransitions,
+    "note reservation expired-lease recovery transitions",
   );
   assertStringArrayEqual(contract.lease_transition_preconditions.fields, expectedLeaseFields, "note reservation lease fields");
   assertSchema(
@@ -949,11 +1270,191 @@ function validateNoteReservationContract(contract: NoteReservationContract): voi
     "note reservation lease policy",
     "expected non-empty policy",
   );
+  for (const vector of contract.transition_evidence_preconditions) {
+    assertSchema(vector.name.trim().length > 0, "transition evidence name", "expected name");
+    assertSchema(
+      expectedAllowedTransitions.some((transition) => transitionKey(transition) === transitionKey(vector.transition)),
+      `transition evidence ${vector.name}`,
+      "expected an allowed transition",
+    );
+    for (const evidence of vector.required_evidence) {
+      assertEqual(vector.positive[evidence], true, `transition evidence ${vector.name} positive ${evidence}`);
+    }
+    assertSchema(
+      vector.required_evidence.some((evidence) => vector.negative[evidence] !== true),
+      `transition evidence ${vector.name} negative`,
+      "expected a missing required evidence value",
+    );
+  }
+  assertStringArrayEqual(
+    contract.manual_review_resolution.required_evidence,
+    ["operator_approved", "operator_id", "operator_approval_reference"],
+    "manual review evidence",
+  );
+  assertEqual(contract.manual_review_resolution.positive.operator_approved, true, "manual review positive approval");
+  assertSchema(
+    !String(contract.manual_review_resolution.negative.operator_id ?? "").trim(),
+    "manual review negative approval",
+    "expected missing operator identity",
+  );
+  assertEqual(contract.relay_handoff.status, "ProofReady", "relay handoff status");
+  assertEqual(contract.relay_handoff.lease_must_remain, true, "relay handoff keeps lease");
+  assertStringArrayEqual(contract.relay_handoff.record_requires, ["ProofReady", "lease_owner", "lease_token", "payload_hash_matches"], "relay handoff record requirements");
+  assertEqual(contract.relay_handoff.proof_discard_after_handoff, "reject", "relay handoff proof discard policy");
+  assertStringArrayEqual(contract.relay_handoff.write_once_evidence, ["payload_hash", "relay_handed_off", "relay_handed_off_at"], "relay handoff write-once evidence");
+  assertEqual(contract.relay_handoff.positive.relay_handed_off, true, "relay handoff positive handoff");
+  assertEqual(contract.relay_handoff.positive.lease_owner_present, true, "relay handoff positive owner");
+  assertEqual(contract.relay_handoff.positive.lease_token_present, true, "relay handoff positive token");
+  assertEqual(contract.relay_handoff.positive.payload_hash_matches, true, "relay handoff positive payload hash");
+  assertEqual(contract.relay_handoff.negative.relay_handed_off, true, "relay handoff negative handoff");
+  assertEqual(contract.relay_handoff.negative.lease_owner_present, false, "relay handoff negative owner");
+  assertEqual(contract.relay_handoff.negative.lease_token_present, false, "relay handoff negative token");
+  assertEqual(contract.relay_handoff.negative.payload_hash_matches, false, "relay handoff negative payload hash");
+  assertEqual(contract.relay_handoff.negative_vectors.length, 3, "relay handoff negative vectors");
+  assertEqual(contract.relay_handoff.negative_vectors[0]?.name, "payload_hash_mismatch", "relay handoff payload mismatch vector");
+  assertEqual(contract.relay_handoff.negative_vectors[0]?.payload_hash_matches, false, "relay handoff payload mismatch rejection");
+  assertEqual(contract.relay_handoff.negative_vectors[1]?.name, "mixed_reservation_status", "relay handoff mixed status vector");
+  assertEqual(contract.relay_handoff.negative_vectors[1]?.all_reservations_proof_ready, false, "relay handoff mixed status rejection");
+  assertEqual(contract.relay_handoff.negative_vectors[2]?.name, "partial_operation_reservation_set", "relay handoff partial operation vector");
+  assertEqual(contract.relay_handoff.negative_vectors[2]?.operation_reservation_set_exact, false, "relay handoff partial operation rejection");
+  assertEqual(contract.initial_state_preconditions.reservation_status, "Reserved", "initial reservation status");
+  assertEqual(contract.initial_state_preconditions.operation_status, "Planned", "initial operation status");
+  assertStringArrayEqual(contract.initial_state_preconditions.forbidden_reservation_evidence, ["lease", "payload_hash", "broadcast", "relay_handoff", "manual_review"], "initial reservation forbidden evidence");
+  assertStringArrayEqual(contract.initial_state_preconditions.forbidden_operation_evidence, ["payload_hash", "tx_identity"], "initial operation forbidden evidence");
+  assertEqual(contract.initial_state_preconditions.positive.reservation_clean, true, "initial reservation positive");
+  assertEqual(contract.initial_state_preconditions.positive.operation_clean, true, "initial operation positive");
+  assertEqual(contract.initial_state_preconditions.negative.reservation_clean, false, "initial reservation negative");
+  assertEqual(contract.initial_state_preconditions.negative.operation_clean, false, "initial operation negative");
+  assertEqual(contract.fail_closed_runtime_policy.nullifier_spent_evidence.spent_value, true, "runtime policy spent value");
+  assertEqual(contract.fail_closed_runtime_policy.nullifier_spent_evidence.unspent_value, false, "runtime policy unspent value");
+  assertEqual(
+    contract.fail_closed_runtime_policy.nullifier_spent_evidence.other_values,
+    "unknown_excluded_from_spending",
+    "runtime policy unknown nullifier result",
+  );
+  assertEqual(
+    contract.fail_closed_runtime_policy.relay_submission.chain_time_source,
+    "latest_chain_block_time",
+    "runtime policy relay chain time source",
+  );
+  assertEqual(contract.fail_closed_runtime_policy.relay_submission.chain_time_required, true, "runtime policy relay chain time required");
+  assertEqual(
+    contract.fail_closed_runtime_policy.relay_submission.recheck_immediately_before_broadcast,
+    true,
+    "runtime policy relay chain time recheck",
+  );
+  assertEqual(contract.fail_closed_runtime_policy.relay_submission.on_unavailable, "reject_submit", "runtime policy unavailable chain time");
+  assertStringArrayEqual(
+    contract.fail_closed_runtime_policy.heartbeat.coverage,
+    ["proof_generation", "transaction_or_sign_doc_build", "proof_ready_transition"],
+    "runtime policy heartbeat coverage",
+  );
+  assertEqual(contract.fail_closed_runtime_policy.heartbeat.await_in_flight_before_stop, true, "runtime policy heartbeat shutdown");
+  assertEqual(
+    contract.fail_closed_runtime_policy.broadcast_boundary.durable_attempt_before_external_call,
+    true,
+    "runtime policy durable broadcast attempt",
+  );
+  assertEqual(
+    contract.fail_closed_runtime_policy.broadcast_boundary.retry_blocked_until_reconciled,
+    true,
+    "runtime policy broadcast retry gate",
+  );
+  const expectedWriteOnceFields = [
+    "payload_hash",
+    "submitted_tx_hash",
+    "tx_bytes_hash",
+    "sign_doc_hash",
+    "expected_output_commitment",
+    "expected_disclosure_digest",
+    "expected_recipient_hash",
+    "expected_amount",
+    "expected_amount_hash",
+    "expected_denom",
+    "batch_item_index",
+    "batch_item_index_known",
+    "operation_success_evidence_required",
+  ];
+  assertStringArrayEqual(contract.evidence_immutability.write_once_fields, expectedWriteOnceFields, "write-once lifecycle evidence");
+  assertStringArrayEqual(contract.evidence_immutability.monotonic_fields, ["broadcast_attempt_count"], "monotonic evidence");
+  assertEqual(contract.evidence_immutability.negative.submitted_tx_hash, "", "write-once evidence negative vector");
+  assertSchema(
+    Array.isArray(contract.evidence_immutability.mutation_rejection_vectors),
+    "write-once mutation rejection vectors",
+    "expected an array",
+  );
+  assertStringArrayEqual(
+    contract.evidence_immutability.mutation_rejection_vectors.map((vector) => vector.field),
+    expectedWriteOnceFields,
+    "write-once mutation rejection vector fields",
+  );
+  for (const vector of contract.evidence_immutability.mutation_rejection_vectors) {
+    assertSchema(
+      JSON.stringify(vector.original) !== JSON.stringify(vector.mutation),
+      `write-once mutation rejection vector ${vector.field}`,
+      "original and mutation must differ",
+    );
+  }
+  assertStringArrayEqual(contract.spent_sibling_quarantine.match_fields, ["owner_key_id", "nullifier_lookup_key"], "spent sibling match fields");
+  assertEqual(contract.spent_sibling_quarantine.target_status, "ConfirmedSpent", "spent sibling target status");
+  assertEqual(contract.spent_sibling_quarantine.positive.confirmed_spent, contract.spent_sibling_quarantine.positive.matching_siblings, "spent sibling positive quarantine");
+  assertSchema(
+    contract.spent_sibling_quarantine.negative.confirmed_spent < contract.spent_sibling_quarantine.negative.matching_siblings,
+    "spent sibling negative quarantine",
+    "expected incomplete sibling quarantine",
+  );
   assertStringArrayEqual(
     contract.success_evidence_required,
     expectedSuccessEvidenceRequired,
     "note reservation success evidence",
   );
+  assertEqual(contract.operation_identity_evidence.required, "matching_persisted_tx_identity", "operation identity requirement");
+  for (const vector of contract.operation_identity_evidence.vectors) {
+    const allowedTxResultFields = new Set(["code", "txhash", "tx_bytes_hash", "sign_doc_hash"]);
+    assertSchema(
+      Object.keys(vector.tx_result).every((field) => allowedTxResultFields.has(field)),
+      `operation identity vector ${vector.name}`,
+      "tx_result contains an unsupported field",
+    );
+    assertSchema(
+      Number.isSafeInteger(vector.tx_result.code) && Number(vector.tx_result.code) >= 0,
+      `operation identity vector ${vector.name}`,
+      "tx_result.code must be a non-negative safe integer",
+    );
+    const identity = (value: unknown, field: string): string => {
+      if (value === undefined) return "";
+      assertSchema(
+        typeof value === "string" && value.trim().length > 0,
+        `operation identity vector ${vector.name}`,
+        `${field} must be a non-empty string`,
+      );
+      return (value as string).trim().toLowerCase().replace(/^0x/, "");
+    };
+    const storedTxHash = identity(vector.stored_tx_hash, "stored_tx_hash");
+    const storedTxBytesHash = identity(vector.stored_tx_bytes_hash, "stored_tx_bytes_hash");
+    const storedSignDocHash = identity(vector.stored_sign_doc_hash, "stored_sign_doc_hash");
+    const actualTxHash = identity(vector.tx_result.txhash, "tx_result.txhash");
+    const actualTxBytesHash = identity(vector.tx_result.tx_bytes_hash, "tx_result.tx_bytes_hash");
+    const actualSignDocHash = identity(vector.tx_result.sign_doc_hash, "tx_result.sign_doc_hash");
+    assertSchema(
+      Boolean(storedTxHash || storedTxBytesHash),
+      `operation identity vector ${vector.name}`,
+      "stored_tx_hash or stored_tx_bytes_hash is required",
+    );
+    const sameFieldMismatch =
+      (Boolean(actualTxHash) && actualTxHash !== storedTxHash) ||
+      (Boolean(actualTxBytesHash) && actualTxBytesHash !== storedTxBytesHash) ||
+      (Boolean(storedSignDocHash) && Boolean(actualSignDocHash) && actualSignDocHash !== storedSignDocHash);
+    const matched = vector.tx_result.code === 0 && !sameFieldMismatch && (
+      (Boolean(actualTxHash) && actualTxHash === storedTxHash) ||
+      (Boolean(storedTxBytesHash) && actualTxBytesHash === storedTxBytesHash)
+    );
+    assertEqual(
+      vector.operation_status,
+      matched ? "Succeeded" : "ConflictSpent",
+      `operation identity vector ${vector.name}`,
+    );
+  }
   assertSchema(
     contract.batch_item_index_policy.trim().length > 0,
     "note reservation batch item index policy",
@@ -1029,4 +1530,7 @@ function main(): void {
   console.log(`- relay withdraw creator: ${relayWithdrawContract.expected_msg.creator}`);
 }
 
-main();
+const executedPath = process.argv[1] ? resolve(process.argv[1]) : "";
+if (executedPath === fileURLToPath(import.meta.url)) {
+  main();
+}

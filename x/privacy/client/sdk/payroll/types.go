@@ -48,7 +48,12 @@ type TreasuryNote struct {
 	Denom                string
 	Amount               *big.Int
 	IsSpent              bool
+	VerifiedUnspent      bool
 	ReservationID        string
+}
+
+func (n TreasuryNote) IsVerifiedUnspent() bool {
+	return !n.IsSpent && n.VerifiedUnspent
 }
 
 type PayrollPlan struct {

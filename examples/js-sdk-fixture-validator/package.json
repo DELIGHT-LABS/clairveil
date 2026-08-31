@@ -7,6 +7,15 @@
     "node": ">=22"
   },
   "scripts": {
-    "validate": "node --disable-warning=ExperimentalWarning --experimental-strip-types src/index.ts"
+    "validate": "node --disable-warning=ExperimentalWarning --experimental-strip-types src/index.ts",
+    "test": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test test/*.test.ts",
+    "typecheck": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --strict --allowImportingTsExtensions src/index.ts test/*.test.ts"
+  },
+  "dependencies": {
+    "@cosmjs/encoding": "0.39.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.3",
+    "typescript": "5.8.3"
   }
 }

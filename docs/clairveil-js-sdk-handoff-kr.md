@@ -65,6 +65,8 @@ MsgWithdraw
 
 `MsgWithdraw`는 exact-match withdraw 메시지이며 output note 필드를 갖지 않습니다. JS/TS client는 legacy withdraw 필드인 `new_note_commitment`, `encrypted_note`를 모델링하지 말아야 하며, dummy output note 값을 보내지 않아야 합니다.
 
+Downstream chain이 이 action을 EVM precompile로 노출하면 binding도 같은 0.2 message contract를 보존해야 합니다. 즉 proof를 포함한 deposit, transfer의 self-view disclosure와 `expires_at_unix`, output-note placeholder가 없는 exact withdraw tuple이 필요합니다. 필수 field를 조용히 버리거나 legacy ABI fallback을 제공하면 안 됩니다.
+
 ## 4. Query/API 계약
 
 JS SDK provider가 우선 구현해야 하는 gRPC/HTTP query는 아래입니다.
@@ -285,7 +287,13 @@ docs/clairveil-note-reservation-design.md
 docs/clairveil-note-reservation-design-kr.md
 ```
 
-Proof 생성 전에 note를 예약하는 JS/TS client는 fixture에 고정된 reservation status 이름, active reservation 정의, atomic batch-reserve 규칙, compare-and-set 상태 전이, lease token 규칙, HMAC lookup-key test vector, operation 성공 증거 모델을 맞춰야 합니다. Nullifier spent는 note가 소비되었다는 증거이지만, payroll/payment operation을 성공 처리하려면 tx evidence가 expected output commitment, audit disclosure digest, recipient hash, amount, denom, item index와도 일치해야 합니다. fixture의 `expected_disclosure_digest`는 user disclosure나 sender self-view digest가 아니라 audit disclosure digest를 뜻합니다.
+Proof 생성 전에 note를 예약하는 JS/TS client는 fixture에 고정된 reservation status 이름, active reservation 정의, atomic batch-reserve 규칙, compare-and-set 상태 전이, lease token 규칙, HMAC lookup-key test vector, lifecycle evidence guard, operation 성공 증거 모델을 맞춰야 합니다. Nullifier spent는 note가 소비되었다는 증거이지만, payroll/payment operation을 성공 처리하려면 저장된 tx identity와 일치하는 증거 및 expected output commitment, audit disclosure digest, recipient hash, `expected_amount_hash`, denom, item index가 모두 일치해야 합니다. `expected_amount_hash`는 non-negative uint64 최소 단위 amount의 canonical `denom:amount` 문자열을 SHA-256으로 해시한 값입니다. fixture의 `expected_disclosure_digest`는 user disclosure나 sender self-view digest가 아니라 audit disclosure digest를 뜻합니다. Fixture v3는 v1에서 직접 migration하며 fail-closed nullifier/relay chain-time 규칙, ProofReady heartbeat 범위, 깨끗한 초기 상태 조건, leased relay handoff 영속 규칙을 추가합니다. Downstream validator는 이 필드를 반영한 뒤 릴리스해야 합니다.
+
+### Go Store v3 migration
+
+Reservation `Store`는 이제 atomic persistence boundary입니다. 독립적인 reservation/operation update 대신 Service가 제공하는 batch lifecycle, reconciliation, lease-expiry recovery, proof-discard, `RecordRelayHandoff` command를 사용하세요. Persistent 구현은 현재 lease owner와 token을 함께 검증하고 연결된 reservation/operation 변경을 하나의 transaction으로 commit해야 하며, operation 또는 연결된 reservation에 lifecycle evidence가 생긴 뒤에는 기존 operation에 새 input을 추가하지 못하게 해야 합니다. 기존 `isSpent: false` cache는 사용 가능 증거가 아니므로, planning 전에 다시 조회하고 nullifier 응답이 없거나 malformed이면 unverified로 처리해야 합니다.
+
+저장소에 포함된 `MemoryStore`와 `MemoryProofResultStore`는 테스트/데모 구현이며 production 영속화 산출물이 아닙니다. Production 인수에는 downstream PostgreSQL/SQLite 수준 Store와 durable proof outbox가 필요합니다. owner/nullifier unique-active 제약, 다중 input lifecycle의 transaction 처리, 재시작 후 relay handoff 증거 보존, crash recovery를 보장해야 합니다. 인수 CI는 local node와 prover에서 전체 reservation lifecycle과 재시작, 동시 worker/tab, lease 만료, 외부 relay handoff, broadcast ambiguity 복구를 검증해야 합니다.
 
 ## 9. Disclosure 구현
 
@@ -384,7 +392,10 @@ Client 관점의 relayed withdraw 책임 분리는 아래와 같습니다.
 - user client와 relayer 사이의 전달 방식은 제품별 계약입니다. HTTP, QR, deep link, file handoff 모두 가능합니다.
 - payload를 relayer에게 넘긴 뒤에는 `expires_at_unix` 전까지 여전히 제출될 수 있습니다. local cancel, UI dismiss, local reservation release는 이미 만들어진 payload를 무효화하지 않습니다.
 - relayer client/server는 payload의 `payload_hash`, `chain_id`, `recipient`, `expires_at_unix`를 검증하고, 자기 주소를 `MsgWithdraw.creator`로 넣어 sign/broadcast합니다.
+- 외부 handoff 전에 operation의 모든 reservation은 계속 `ProofReady`여야 하고, 실제로 복사하는 JSON과 같은 immutable `payload_hash` 및 현재 lease owner/token을 가져야 합니다. payload hash 불일치 또는 batch 내 상태 혼합은 hard reject이며 handed off/submitted로 기록하면 안 됩니다.
 - withdraw 대상 투명 주소는 relayer 주소가 아니라 payload의 `recipient`입니다.
+- payload를 전달한 뒤 local UI에서 cancel/release하거나 tab을 닫아도 이미 복사된 payload는 취소되지 않습니다. Chain expiry 전에는 relayer가 여전히 제출할 수 있으므로, client는 local cancel을 미제출 증거로 취급하지 말고 tx/nullifier evidence로 reconcile해야 합니다.
+- 외부 broadcast 호출 직전에 durable attempt marker를 저장해야 합니다. terminal bookkeeping이 실패하면 tx/nullifier reconcile로 attempt를 해결하기 전까지 같은 payload 재제출을 막아야 합니다.
 - 이 repo는 production relay HTTP endpoint를 제공하지 않습니다. 대신 final payload에서 relayer 제출 메시지로 변환되는 계약을 `x/privacy/client/sdk/conformance/testdata/privacy_relay_withdraw_contract.json` fixture로 고정합니다.
 
 Go SDK 기준 구현 위치는 아래입니다.
@@ -492,10 +503,10 @@ JS SDK handoff가 완료되었다고 보려면 아래가 가능해야 합니다.
 - transfer prepared payload의 hash가 Go fixture와 같은 방식으로 계산됩니다.
 - `privacy_disclosure_blinding_v1_contract.json`의 positive/sentinel/negative vector가 같은 `DBS_*` result code를 만들고 structured signing이 invalid vector를 signature release 전에 모두 거부합니다.
 - prover HTTP contract에 맞춰 transfer/withdraw proof request와 response를 검증합니다.
-- bulk payroll client가 `privacy_note_reservation_contract.json`의 reservation 전이와 operation 성공 규칙을 재현합니다.
+- bulk payroll client가 production persistent Store와 durable proof outbox를 사용해 `privacy_note_reservation_contract.json`의 reservation 전이와 operation 성공 규칙을 재현하고, 재시작/crash 뒤에도 active lock과 handoff 기록을 보존합니다.
 - user disclosure, audit disclosure, sender self-view disclosure를 decode하고 `verified=true`를 확인합니다.
 - exact-match withdraw와 relayed withdraw payload 검증이 동작합니다.
-- Clairveil repo의 `make privacy-e2e-smoke`와 같은 흐름을 JS SDK integration test가 따라갈 수 있습니다.
+- JS SDK integration test가 Clairveil repo의 `make privacy-e2e-smoke` 흐름과 함께 동시 reservation, lease 만료, 재시작, 외부 relay handoff, broadcast ambiguity 복구를 검증합니다.
 
 ## 14. Go core 쪽에서 JS SDK가 믿어도 되는 것
 

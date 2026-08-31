@@ -191,7 +191,8 @@ func TestBuildWithdrawPayloadPropagatesProofError(t *testing.T) {
 func testBuildWithdrawFoundNote(amount int64, denom string, randomness int64) privacyscan.FoundNote {
 	spendPubKey := testPubKey(31)
 	viewPubKey := testPubKey(37)
-	return privacyscan.FoundNote{
+	found := privacyscan.FoundNote{
+		VerifiedUnspent: true,
 		Note: privacytypes.Note{
 			ReceiverSpendPubKeyX: pointCoordinate(spendPubKey, true),
 			ReceiverSpendPubKeyY: pointCoordinate(spendPubKey, false),
@@ -202,6 +203,8 @@ func testBuildWithdrawFoundNote(amount int64, denom string, randomness int64) pr
 			Randomness:           big.NewInt(randomness),
 		},
 	}
+	found.Nullifier, _ = privacyfield.CanonicalHexFromBigInt(found.Note.ComputeNullifier())
+	return found
 }
 
 func testBuildWithdrawMerklePath(t *testing.T, note privacyscan.FoundNote) ([]byte, string) {

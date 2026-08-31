@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import {
   MemoryNoteStore,
@@ -8,6 +9,8 @@ import {
   ClairveilErrorCode,
   assertDisclosurePubKeyHex,
   canonicalFieldHex,
+  computeNoteCommitmentV1,
+  computeNoteTreeNodeV1,
   createAsyncJobProverAdapter,
   createClairveilClient,
   createOfflineSignerWalletAdapter,
@@ -22,7 +25,6 @@ import {
   derivePrivacyMaterialFromWallet,
   encryptWithRootSeed,
   decryptWithRootSeed,
-  hashStringToField,
   payloadHex,
   planTransferNotes,
   planWithdrawNotes,
@@ -35,30 +37,101 @@ import {
   createClairveilEvmClient,
   createEvmContractAdapter,
   createEip1193WalletAdapter,
+  evmAddressToBech32,
   functionSelector
 } from "clairveiljs/evm";
+import { ClairveilBrowserClient } from "clairveiljs/browser-dapp";
+import {
+  computeNoteNullifierHex,
+  createNote,
+  deriveSpendKeys,
+  deriveViewKeys,
+  packPointHex,
+} from "clairveiljs/core";
 import { utf8Bytes, utf8String } from "clairveiljs/browser-crypto";
+import { hashRecipient } from "clairveiljs/reservation";
+import { computeAssetIdV1 } from "clairveiljs/protocol-v1";
 
-const assetID = hashStringToField("uclair");
+const testNoteRootSeed = new Uint8Array(32).fill(7);
+const testNoteSpendPubKey = deriveSpendKeys(testNoteRootSeed).pubKey;
+const testNoteViewPubKey = deriveViewKeys(testNoteRootSeed).pubKey;
+const assetID = computeAssetIdV1("uclair");
+const canonicalRecipient = "clairs19x5u4mf4l4zqcpvr7d809fh4tjy5j50p2mwgky0nj38jpqpj7svndu3hqshu5e3s8w6pea5p30xek5p9flxjf7f44xh7cnfrlsd84pc7upgh3";
+const validProofHex = `${"c0"}${"00".repeat(31)}${"c0"}${"00".repeat(63)}${"c0"}${"00".repeat(35)}${"c0"}${"00".repeat(31)}`;
 
 function foundNote(amount, suffix, overrides = {}) {
+  const {
+    note: noteOverrides = {},
+    rootSeed = testNoteRootSeed,
+    ...foundNoteOverrides
+  } = overrides;
+  const spendPubKey = deriveSpendKeys(rootSeed).pubKey;
+  const viewPubKey = deriveViewKeys(rootSeed).pubKey;
+  const note = createNote({
+    spendPubKey,
+    viewPubKey,
+    amount: BigInt(amount),
+    assetId: assetID,
+    randomness: BigInt(1000 + suffix),
+    memo: "test",
+  });
+  Object.assign(note, noteOverrides);
   return {
     height: Number(amount) + suffix,
+    sequence: suffix,
     txHash: `AA${String(suffix).padStart(2, "0")}`,
     isSpent: false,
-    nullifier: `00${String(suffix).padStart(62, "0")}`,
-    note: {
-      receiverSpendPubKeyX: 1n,
-      receiverSpendPubKeyY: 2n,
-      receiverViewPubKeyX: 3n,
-      receiverViewPubKeyY: 4n,
-      amount: BigInt(amount),
-      assetID,
-      randomness: BigInt(1000 + suffix),
-      memo: "test",
-      ...overrides.note
-    },
-    ...overrides
+    nullifierStatus: "unspent",
+    nullifier: computeNoteNullifierHex(note),
+    note,
+    ...foundNoteOverrides,
+  };
+}
+
+function merklePathProviderForNotes(foundNotes) {
+  if (foundNotes.length < 1 || foundNotes.length > 2) {
+    throw new Error("test Merkle path provider supports one or two notes");
+  }
+  const depth = 32;
+  const zero = canonicalFieldHex(0n);
+  const commitments = foundNotes.map((found) => canonicalFieldHex(
+    computeNoteCommitmentV1(found.note),
+  ));
+  let root;
+  const paths = [];
+  const helpers = [];
+
+  if (commitments.length === 1) {
+    root = BigInt(`0x${commitments[0]}`);
+    for (let level = 0; level < depth; level += 1) {
+      root = computeNoteTreeNodeV1(level, root, 0n);
+    }
+    paths.push(Array(depth).fill(zero));
+    helpers.push(Array(depth).fill(0));
+  } else {
+    root = computeNoteTreeNodeV1(
+      0,
+      BigInt(`0x${commitments[0]}`),
+      BigInt(`0x${commitments[1]}`),
+    );
+    for (let level = 1; level < depth; level += 1) {
+      root = computeNoteTreeNodeV1(level, root, 0n);
+    }
+    paths.push([commitments[1], ...Array(depth - 1).fill(zero)]);
+    helpers.push(Array(depth).fill(0));
+    paths.push([commitments[0], ...Array(depth - 1).fill(zero)]);
+    helpers.push([1, ...Array(depth - 1).fill(0)]);
+  }
+
+  const entries = new Map(commitments.map((commitment, index) => [commitment, index]));
+  return (commitmentHex) => {
+    const index = entries.get(String(commitmentHex).toLowerCase());
+    if (index == null) throw new Error(`unknown test note commitment ${commitmentHex}`);
+    return {
+      root: canonicalFieldHex(root),
+      path: [...paths[index]],
+      path_helper: [...helpers[index]],
+    };
   };
 }
 
@@ -112,6 +185,80 @@ test("wallet adapter derives Clairveil privacy material", async () => {
   assert.equal(material.pubKeyHex, "02".padEnd(66, "0"));
   assert.match(material.shieldedAddress, /^clairs1/);
   assert.match(material.disclosurePubKeyHex, /^[0-9a-f]{64}$/);
+});
+
+test("vendored browser transfer preserves prepared effect details for confirmation", async () => {
+  const client = new ClairveilBrowserClient({
+    rpc: "http://127.0.0.1:26657",
+    rest: "http://127.0.0.1:1317",
+    chainId: "clairveil-local-2",
+    accountPrefix: "clair",
+    shieldedPrefix: "clairs",
+    denom: "uclair",
+  });
+  client.privacyMaterial = () => ({});
+  client.proverAdapter = () => ({});
+  const payload = { payload_hash: "payload-hash" };
+  const proof = { payload_hash: "payload-hash", proof_hex: validProofHex };
+  const message = { creator: "clair1sender" };
+  client.cosmos.prepareTransfer = async () => ({
+    status: "ready",
+    signDoc: { chainId: "clairveil-local-2" },
+    reservation: null,
+    prepared: {
+      planAction: "final_transfer",
+      isFinal: true,
+      amount: "1uclair",
+      recipient: canonicalRecipient,
+    },
+    payload,
+    proof,
+    message,
+    plan: { status: "final_transfer_ready" },
+    privacyAccount: { shielded_address: canonicalRecipient },
+  });
+
+  const prepared = await client.prepareTransfer({
+    amount: "1uclair",
+    recipient: canonicalRecipient,
+  });
+
+  assert.equal(prepared.prepared.payload, payload);
+  assert.equal(prepared.prepared.proof, proof);
+  assert.equal(prepared.prepared.message, message);
+});
+
+test("vendored reservation recipient hash follows Go canonical address rules", () => {
+  const expected = "8a3344bcbfdd71e8346f1fcc5d9d09d493c3345b0e94d26371f89b2574545d3c";
+  assert.equal(hashRecipient(canonicalRecipient), expected);
+  assert.equal(hashRecipient(canonicalRecipient.toUpperCase()), expected);
+  assert.throws(() => hashRecipient("clair1recipient"), /shielded address/i);
+  assert.throws(
+    () => hashRecipient("clairs1llllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllct37x5k"),
+    /valid shielded address/i,
+  );
+});
+
+test("vendored reservation recipient hash supports a custom shielded prefix", () => {
+  const material = derivePrivacyMaterial({
+    address: "demo1example0000000000000000000000000000000",
+    pubKeyHex: "02".padEnd(66, "0"),
+    signatureBase64: Buffer.from("dapp-custom-prefix").toString("base64"),
+    shieldedPrefix: "demos",
+  });
+  const expected = createHash("sha256")
+    .update(material.shieldedAddress)
+    .digest("hex");
+
+  assert.match(material.shieldedAddress, /^demos1/);
+  assert.equal(
+    hashRecipient(material.shieldedAddress, { shieldedPrefix: "demos" }),
+    expected,
+  );
+  assert.equal(
+    hashRecipient(material.shieldedAddress.toUpperCase(), { shieldedPrefix: "demos" }),
+    expected,
+  );
 });
 
 test("root privacy material retains signer fields for high-level builders", () => {
@@ -225,11 +372,12 @@ test("transfer planner reports final transfer and self-merge states", () => {
 
 test("transfer payload builder rejects mixed-asset input notes before proving", async () => {
   const mixedAssetNote = foundNote(5, 2);
-  mixedAssetNote.note.assetID = hashStringToField("uatom");
+  mixedAssetNote.note.assetID = computeAssetIdV1("uatom");
 
   await assert.rejects(
     buildPreparedTransferPayload({
       creator: "clair1builder000000000000000000000000000000",
+      chainId: "clairveil-test-1",
       amount: "10uclair",
       inputs: [
         foundNote(5, 1),
@@ -254,26 +402,30 @@ test("transfer payload builder uses configured shielded prefix in disclosure pay
     shieldedPrefix: "demos"
   });
 
+  const inputs = [
+    foundNote(4, 1, { rootSeed: sender.rootSeed }),
+    foundNote(7, 2, { rootSeed: sender.rootSeed }),
+  ];
   const payload = await buildPreparedTransferPayload({
     creator: sender.address,
-    inputs: [foundNote(4, 1), foundNote(7, 2)],
+    chainId: "demo-1",
+    inputs,
     recipient: recipient.shieldedAddress,
     amount: "10uclair",
     rootSeed: sender.rootSeed,
-    merklePathProvider: () => ({
-      root: "11".repeat(32),
-      path: [],
-      path_helper: []
-    }),
+    merklePathProvider: merklePathProviderForNotes(inputs),
     userPrivacyPolicy: "from-to",
     userDisclosureMode: "public",
     auditDisclosureTargetPubKeyHex: sender.disclosurePubKeyHex,
     shieldedPrefix: "demos"
   });
-  const disclosure = JSON.parse(Buffer.from(payload.user_disclosure_payload_hex, "hex").toString("utf8"));
-
-  assert.match(disclosure.from_shielded_address, /^demos1/);
-  assert.match(disclosure.to_shielded_address, /^demos1/);
+  const recipientKeys = decodeShieldedAddress(recipient.shieldedAddress, {
+    shieldedPrefix: "demos",
+  });
+  assert.equal(payload.user_privacy_policy, 6);
+  assert.equal(payload.user_disclosure_mode, 1);
+  assert.equal(payload.outputs[0].spend_pubkey_hex, packPointHex(recipientKeys.spendPubKey));
+  assert.equal(payload.outputs[0].view_pubkey_hex, packPointHex(recipientKeys.viewPubKey));
 });
 
 test("EVM adapter builds deposit transaction calldata and sends through EIP-1193", async () => {
@@ -306,14 +458,15 @@ test("EVM adapter builds deposit transaction calldata and sends through EIP-1193
   const prepared = client.buildDepositTransaction({
     creator: material.address,
     rootSeed: material.rootSeed,
-    amount: "9"
+    amount: "9",
+    proofHex: "ab"
   });
   const wallet = createEip1193WalletAdapter({ provider });
   const txHash = await client.sendTransaction(wallet, prepared.transaction);
 
   assert.equal(prepared.material.amount, "9udemo");
   assert.equal(prepared.transaction.to, "0x2222222222222222222222222222222222222222");
-  assert.equal(prepared.transaction.data.slice(2, 10), functionSelector("deposit((string,bytes,bytes))"));
+  assert.equal(prepared.transaction.data.slice(2, 10), functionSelector("deposit((string,bytes,bytes,bytes))"));
   assert.equal(txHash, "0x" + "ab".repeat(32));
   assert.equal(sent[0].from, "0x1111111111111111111111111111111111111111");
 });
@@ -333,6 +486,131 @@ test("EVM contract adapter allows project-specific calldata encoders", () => {
   assert.equal(tx.data, "0x1234");
 });
 
+test("vendored EVM direct transfer and withdraw enforce nullifier preflight", async () => {
+  const rootSeed = new Uint8Array(32).fill(9);
+  const spendPubKey = deriveSpendKeys(rootSeed).pubKey;
+  const viewPubKey = deriveViewKeys(rootSeed).pubKey;
+  const recipientMaterial = derivePrivacyMaterial({
+    address: "0x1111111111111111111111111111111111111111",
+    pubKeyHex: "03".padEnd(66, "0"),
+    signatureBase64: Buffer.from("evm-direct-recipient").toString("base64"),
+    shieldedPrefix: "demos"
+  });
+  const makeFoundNote = randomness => ({
+    note: createNote({
+      spendPubKey,
+      viewPubKey,
+      amount: 1n,
+      assetDenom: "udemo",
+      randomness
+    }),
+    isSpent: false,
+    nullifierStatus: "unspent"
+  });
+  const transferInputs = [makeFoundNote(101n), makeFoundNote(102n)];
+  const transferMerklePathProvider = merklePathProviderForNotes(transferInputs);
+  const withdrawNote = makeFoundNote(103n);
+  const withdrawMerklePathProvider = merklePathProviderForNotes([withdrawNote]);
+  const client = createClairveilEvmClient({
+    accountPrefix: "demo",
+    shieldedPrefix: "demos",
+    chainId: "demo-1",
+    defaultDenom: "udemo"
+  });
+  const checked = [];
+  const checkNullifiers = async nullifiers => {
+    checked.push([...nullifiers]);
+    return new Map(nullifiers.map(nullifier => [nullifier, false]));
+  };
+
+  const transfer = await client.buildTransferTransaction({
+    creator: evmAddressToBech32("0x1111111111111111111111111111111111111111", "demo"),
+    inputs: transferInputs,
+    recipient: recipientMaterial.shieldedAddress,
+    amount: "1udemo",
+    rootSeed,
+    merklePathProvider: transferMerklePathProvider,
+    auditDisclosureTargetPubKeyHex: recipientMaterial.disclosurePubKeyHex,
+    checkNullifiers,
+    proverAdapter: {
+      async proveTransfer({ payload }) {
+        assert.equal(checked.length, 1);
+        return { version: "v2", payload_hash: payload.payload_hash, proof_hex: validProofHex };
+      }
+    }
+  });
+  const withdraw = await client.buildWithdrawTransaction({
+    notes: [withdrawNote],
+    amount: "1udemo",
+    recipient: "0x2222222222222222222222222222222222222222",
+    rootSeed,
+    merklePathProvider: withdrawMerklePathProvider,
+    chainNowUnix: 1_000,
+    expiresAtUnix: 2_000,
+    checkNullifiers,
+    proverAdapter: {
+      async proveWithdraw({ payload }) {
+        assert.equal(checked.length, 2);
+        return { version: "v2", payload_hash: payload.payload_hash, proof_hex: validProofHex };
+      }
+    }
+  });
+
+  assert.equal(transfer.status, "ready");
+  assert.equal(withdraw.status, "ready");
+  assert.deepEqual(checked.map(batch => batch.length), [2, 1]);
+
+  for (const failedCheck of [
+    async nullifiers => new Map(nullifiers.map(nullifier => [nullifier, true])),
+    async () => new Map()
+  ]) {
+    let proverCalled = false;
+    const failedTransferInputs = [makeFoundNote(201n), makeFoundNote(202n)];
+    const failedWithdrawNote = makeFoundNote(203n);
+    await assert.rejects(
+      client.buildTransferTransaction({
+        creator: evmAddressToBech32("0x1111111111111111111111111111111111111111", "demo"),
+        inputs: failedTransferInputs,
+        recipient: recipientMaterial.shieldedAddress,
+        amount: "1udemo",
+        rootSeed,
+        merklePathProvider: merklePathProviderForNotes(failedTransferInputs),
+        auditDisclosureTargetPubKeyHex: recipientMaterial.disclosurePubKeyHex,
+        checkNullifiers: failedCheck,
+        proverAdapter: {
+          async proveTransfer() {
+            proverCalled = true;
+            throw new Error("prover must not run");
+          }
+        }
+      }),
+      /nullifier/i
+    );
+    assert.equal(proverCalled, false);
+
+    await assert.rejects(
+      client.buildWithdrawTransaction({
+        notes: [failedWithdrawNote],
+        amount: "1udemo",
+        recipient: "0x2222222222222222222222222222222222222222",
+        rootSeed,
+        merklePathProvider: merklePathProviderForNotes([failedWithdrawNote]),
+        chainNowUnix: 1_000,
+        expiresAtUnix: 2_000,
+        checkNullifiers: failedCheck,
+        proverAdapter: {
+          async proveWithdraw() {
+            proverCalled = true;
+            throw new Error("prover must not run");
+          }
+        }
+      }),
+      /nullifier/i
+    );
+    assert.equal(proverCalled, false);
+  }
+});
+
 test("withdraw planner requires exact-match notes", () => {
   const exact = planWithdrawNotes({
     amount: "5uclair",
@@ -350,8 +628,8 @@ test("withdraw planner requires exact-match notes", () => {
 
 test("MsgWithdraw omits reserved legacy output note fields", () => {
   const payload = {
-    version: "v1",
-    proof_hex: "aa",
+    version: "v2",
+    proof_hex: validProofHex,
     root_hex: "11".repeat(32),
     nullifier_hex: "22".repeat(32),
     amount: "1uclair",
@@ -383,33 +661,54 @@ test("planner errors expose stable error codes", () => {
 });
 
 test("transfer planner explains missing zero helper notes clearly", () => {
-  const plan = planTransferNotes({ amount: "0uclair", notes: [] });
-  assert.equal(plan.status, "insufficient_balance");
-  assert.equal(plan.message, "No zero note is available; a 0uclair helper deposit is required.");
+  const plan = planTransferNotes({ amount: "1uclair", notes: [foundNote(1, 1)] });
+  assert.equal(plan.status, "zero_dummy_required");
+  assert.equal(plan.message, "A second zero-value helper note is required before this transfer can be built.");
 });
 
 test("async job prover adapter polls completed transfer jobs", async () => {
-  const payload = {
-    payload_hash: "aa".repeat(32)
-  };
+  const sender = derivePrivacyMaterial({
+    address: "clair1sender000000000000000000000000000000",
+    pubKeyHex: "02".padEnd(66, "0"),
+    signatureBase64: Buffer.from("sender-signature").toString("base64")
+  });
+  const recipient = derivePrivacyMaterial({
+    address: "clair1recipient0000000000000000000000000000",
+    pubKeyHex: "03".padEnd(66, "0"),
+    signatureBase64: Buffer.from("recipient-signature").toString("base64")
+  });
+  const inputs = [
+    foundNote(4, 1, { rootSeed: sender.rootSeed }),
+    foundNote(7, 2, { rootSeed: sender.rootSeed }),
+  ];
+  const payload = await buildPreparedTransferPayload({
+    creator: sender.address,
+    chainId: "clairveil-test-1",
+    inputs,
+    recipient: recipient.shieldedAddress,
+    amount: "10uclair",
+    rootSeed: sender.rootSeed,
+    merklePathProvider: merklePathProviderForNotes(inputs),
+    auditDisclosureTargetPubKeyHex: sender.disclosurePubKeyHex
+  });
   const adapter = createAsyncJobProverAdapter({
     submitTransferJob: async () => ({ jobId: "job-1" }),
     submitWithdrawJob: async () => ({ jobId: "job-2" }),
     getJob: async jobId => ({
       status: "completed",
       response: {
-        version: "v1",
+        version: "v2",
         proof: {
-          version: "v1",
+          version: "v2",
           payload_hash: jobId === "job-1" ? payload.payload_hash : "bb".repeat(32),
-          proof_hex: "cc"
+          proof_hex: validProofHex
         }
       }
     }),
     sleepImpl: async () => {}
   });
 
-  const result = await adapter.proveTransfer({ version: "v1", payload });
+  const result = await adapter.proveTransfer({ version: "v2", payload });
   assert.equal(result.proof.payload_hash, payload.payload_hash);
 });
 
@@ -471,21 +770,30 @@ test("note store tracks scan cursor, rollback metadata, and localStorage plainte
     foundNotes: [foundNote(5, 1), foundNote(7, 2)],
     scanCursor: {
       after_height: 0,
+      after_sequence: 78,
       page: 1,
       limit: 50,
       event_types: ["deposit", "shielded_transfer"],
+      next_height: 200,
+      next_sequence: 78,
       latest_height: 9,
       latest_tx_hash: "AA02"
     }
   });
   let loaded = await store.load();
-  assert.equal(loaded.lastScannedHeight, 9);
+  assert.equal(loaded.lastScannedHeight, 200);
+  assert.equal(loaded.lastScannedSequence, 78);
   assert.equal(loaded.lastScannedTxHash, "AA02");
   assert.deepEqual(loaded.scanCursor.event_types, ["deposit", "shielded_transfer"]);
 
   loaded = await store.rollbackToHeight(6);
-  assert.equal(loaded.notes.length, 1);
+  assert.equal(loaded.notes.length, 0);
   assert.equal(loaded.rollbackHeight, 6);
+  assert.equal(loaded.lastScannedSequence, 0);
+  assert.equal(loaded.lastScannedTxHash, "");
+  assert.equal(loaded.scanCursor.source, "scan_events");
+  assert.equal(loaded.scanCursor.after_height, 6);
+  assert.equal(loaded.scanCursor.after_sequence, 0);
 
   const storage = new Map();
   const storageLike = {
@@ -500,7 +808,7 @@ test("note store tracks scan cursor, rollback metadata, and localStorage plainte
   assert.ok(new LocalStorageNoteStore({ storage: storageLike, key: "notes", allowPlaintext: true }));
 });
 
-test("legacy external ClairveilJS scanner fails closed on privacy-fixed-v1 deposit fixtures", async () => {
+test("vendored ClairveilJS scans the privacy-fixed-v1 deposit fixture", async () => {
   const fixture = JSON.parse(await readFile(
     new URL("../../../x/privacy/client/sdk/conformance/testdata/privacy_wallet_golden_vectors.json", import.meta.url),
     "utf8"
@@ -514,21 +822,18 @@ test("legacy external ClairveilJS scanner fails closed on privacy-fixed-v1 depos
         tx_hash_hex: fixture.scan.tx_hash_hex,
         attributes: [
           { key: "encrypted_note", value: fixture.note.encrypted_note_hex },
-          { key: "note_commitment", value: fixture.note.commitment_hex }
+          { key: "commitment", value: fixture.note.commitment_hex }
         ]
       }
-    ]
+    ],
+    checkNullifier: async () => ({ used: false })
   });
 
-  // The npm/GitHub ClairveilJS dependency is downstream of this repository.
-  // The NoteV1 contract freezes its downstream handoff but does not implement that external
-  // SDK upgrade; accepting the old JSON/raw-ciphertext contract would be an
-  // unsafe compatibility fallback.
-  assert.equal(result.notes.length, 0);
-  assert.equal(result.summary.spendable_count, 0);
+  assert.equal(result.notes.length, 1);
+  assert.equal(result.summary.spendable_count, 1);
 });
 
-test("ClairveilJS scanNotes sends paginated event feed query parameters", async () => {
+test("ClairveilJS scanNotes sends scan event cursor query parameters", async () => {
   const originalFetch = globalThis.fetch;
   const seen = [];
   globalThis.fetch = async url => {
@@ -540,7 +845,10 @@ test("ClairveilJS scanNotes sends paginated event feed query parameters", async 
       async json() {
         return {
           events: [],
-          page: 2,
+          scan_format_version: 1,
+          view_tag_version: 1,
+          next_height: 5,
+          next_sequence: 0,
           limit: 50,
           has_more: false
         };
@@ -562,13 +870,13 @@ test("ClairveilJS scanNotes sends paginated event feed query parameters", async 
       eventTypes: ["deposit", "shielded_transfer"]
     });
     const url = new URL(seen[0]);
-    assert.equal(url.pathname, "/clairveil/privacy/v1/events");
+    assert.equal(url.pathname, "/clairveil/privacy/v1/scan_events");
     assert.equal(url.searchParams.get("after_height"), "5");
-    assert.equal(url.searchParams.get("page"), "2");
+    assert.equal(url.searchParams.get("after_sequence"), "0");
     assert.equal(url.searchParams.get("limit"), "50");
     assert.deepEqual(url.searchParams.getAll("event_types"), ["deposit", "shielded_transfer"]);
     assert.equal(result.scanCursor.after_height, 5);
-    assert.equal(result.scanCursor.page, 2);
+    assert.equal(result.scanCursor.after_sequence, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -76,13 +76,41 @@ func RequiresLeaseToken(from ReservationStatus, to ReservationStatus) bool {
 		return true
 	case from == StatusProving && to == StatusProofReady:
 		return true
+	case from == StatusProving && to == StatusReserved:
+		return true
+	case from == StatusProving && to == StatusReplanRequired:
+		return true
+	case from == StatusProving && to == StatusManualReview:
+		return true
 	case from == StatusProofReady && to == StatusSubmitted:
 		return true
 	case from == StatusProofReady && to == StatusUnknown:
 		return true
+	case from == StatusProofReady && to == StatusReplanRequired:
+		return true
+	case from == StatusProofReady && to == StatusManualReview:
+		return true
 	default:
 		return false
 	}
+}
+
+func CanRecoverAfterLeaseExpiry(from ReservationStatus, to ReservationStatus) bool {
+	switch {
+	case from == StatusProving && (to == StatusReplanRequired || to == StatusManualReview):
+		return true
+	case from == StatusProofReady && to == StatusManualReview:
+		return true
+	default:
+		return false
+	}
+}
+
+func RequiresReconcileEvidence(from ReservationStatus, to ReservationStatus) bool {
+	if from == StatusSubmitted || from == StatusUnknown || from == StatusManualReview {
+		return true
+	}
+	return from == StatusProofReady && to == StatusConfirmedSpent
 }
 
 func IsTerminalReservationStatus(status ReservationStatus) bool {

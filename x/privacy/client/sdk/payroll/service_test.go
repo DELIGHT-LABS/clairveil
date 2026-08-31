@@ -11,6 +11,20 @@ import (
 	privacyreservation "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/reservation"
 )
 
+func mustHashRecipient(t testing.TB, recipient string) string {
+	t.Helper()
+	hash, err := HashRecipient(recipient)
+	require.NoError(t, err)
+	return hash
+}
+
+func mustHashAmount(t testing.TB, denom string, amount *big.Int) string {
+	t.Helper()
+	hash, err := HashAmount(denom, amount)
+	require.NoError(t, err)
+	return hash
+}
+
 func TestServiceCreateAndConfirmPlanCreatesReservations(t *testing.T) {
 	ctx := context.Background()
 	reservationStore := privacyreservation.NewMemoryStore()
@@ -46,8 +60,8 @@ func TestServiceCreateAndConfirmPlanCreatesReservations(t *testing.T) {
 	operation, err := reservationStore.GetOperation(ctx, confirmed.Items[0].OperationID)
 	require.NoError(t, err)
 	require.Equal(t, input.Items[0].ItemID, operation.ItemID)
-	require.Equal(t, HashRecipient(input.Items[0].RecipientAddress), operation.ExpectedRecipientHash)
-	require.Equal(t, HashAmount("uclair", input.Items[0].Amount), operation.ExpectedAmountHash)
+	require.Equal(t, mustHashRecipient(t, input.Items[0].RecipientAddress), operation.ExpectedRecipientHash)
+	require.Equal(t, mustHashAmount(t, "uclair", input.Items[0].Amount), operation.ExpectedAmountHash)
 }
 
 func TestServiceCreatePlanCanonicalizesStringInputs(t *testing.T) {
@@ -84,8 +98,8 @@ func TestServiceCreatePlanCanonicalizesStringInputs(t *testing.T) {
 	require.Equal(t, "employee-1", plan.Items[0].EmployeeID)
 	require.Equal(t, testRecipientAddress("1"), plan.Items[0].RecipientAddress)
 	require.Equal(t, "uclair", plan.Items[0].Denom)
-	require.Equal(t, HashRecipient(testRecipientAddress("1")), plan.Items[0].ExpectedRecipientHash)
-	require.Equal(t, HashAmount("uclair", big.NewInt(70)), plan.Items[0].ExpectedAmountHash)
+	require.Equal(t, mustHashRecipient(t, testRecipientAddress("1")), plan.Items[0].ExpectedRecipientHash)
+	require.Equal(t, mustHashAmount(t, "uclair", big.NewInt(70)), plan.Items[0].ExpectedAmountHash)
 	require.Equal(t, "commitment-a", plan.Items[0].ExpectedOutputCommitment)
 	require.Equal(t, "disclosure-a", plan.Items[0].ExpectedDisclosureDigest)
 	require.Equal(t, operationID("company-a", "batch-a", "payroll-a", "item-1", 0), plan.Items[0].OperationID)
@@ -95,8 +109,8 @@ func TestServiceCreatePlanCanonicalizesStringInputs(t *testing.T) {
 	operation, err := reservationStore.GetOperation(ctx, confirmed.Items[0].OperationID)
 	require.NoError(t, err)
 	require.Equal(t, "uclair", operation.ExpectedDenom)
-	require.Equal(t, HashRecipient(testRecipientAddress("1")), operation.ExpectedRecipientHash)
-	require.Equal(t, HashAmount("uclair", big.NewInt(70)), operation.ExpectedAmountHash)
+	require.Equal(t, mustHashRecipient(t, testRecipientAddress("1")), operation.ExpectedRecipientHash)
+	require.Equal(t, mustHashAmount(t, "uclair", big.NewInt(70)), operation.ExpectedAmountHash)
 	require.Equal(t, "commitment-a", operation.ExpectedOutputCommitment)
 	require.Equal(t, "disclosure-a", operation.ExpectedDisclosureDigest)
 }
@@ -140,8 +154,8 @@ func TestServiceConfirmPlanCanonicalizesDirectPlanEvidence(t *testing.T) {
 	confirmed, err := svc.ConfirmPlan(ctx, plan)
 	require.NoError(t, err)
 	require.Equal(t, "uclair", confirmed.Items[0].Denom)
-	require.Equal(t, HashRecipient(testRecipientAddress("1")), confirmed.Items[0].ExpectedRecipientHash)
-	require.Equal(t, HashAmount("uclair", big.NewInt(10)), confirmed.Items[0].ExpectedAmountHash)
+	require.Equal(t, mustHashRecipient(t, testRecipientAddress("1")), confirmed.Items[0].ExpectedRecipientHash)
+	require.Equal(t, mustHashAmount(t, "uclair", big.NewInt(10)), confirmed.Items[0].ExpectedAmountHash)
 	require.Equal(t, "note-a", confirmed.Items[0].InputNotes[0].NoteID)
 	require.Equal(t, "zero-note", confirmed.Items[0].InputNotes[1].NoteID)
 	require.NotEmpty(t, confirmed.Items[0].InputNotes[0].ReservationID)
@@ -149,8 +163,48 @@ func TestServiceConfirmPlanCanonicalizesDirectPlanEvidence(t *testing.T) {
 	operation, err := reservationStore.GetOperation(ctx, "op-1")
 	require.NoError(t, err)
 	require.Equal(t, "uclair", operation.ExpectedDenom)
-	require.Equal(t, HashRecipient(testRecipientAddress("1")), operation.ExpectedRecipientHash)
-	require.Equal(t, HashAmount("uclair", big.NewInt(10)), operation.ExpectedAmountHash)
+	require.Equal(t, mustHashRecipient(t, testRecipientAddress("1")), operation.ExpectedRecipientHash)
+	require.Equal(t, mustHashAmount(t, "uclair", big.NewInt(10)), operation.ExpectedAmountHash)
+}
+
+func TestServiceConfirmPlanRejectsForgedHashWhenCanonicalHashingFails(t *testing.T) {
+	ctx := context.Background()
+	reservationStore := privacyreservation.NewMemoryStore()
+	svc := Service{
+		Reservation: privacyreservation.Service{Store: reservationStore, Now: testNow},
+		Now:         testNow,
+	}
+	plan := PayrollPlan{
+		CompanyID: "company-a",
+		PayrollID: "payroll-a",
+		BatchID:   "batch-a",
+		Denom:     "bad!denom",
+		Status:    PlanStatusDraft,
+		Items: []PayrollPlanItem{{
+			CompanyID:             "company-a",
+			PayrollID:             "payroll-a",
+			BatchID:               "batch-a",
+			ChunkID:               "chunk-a",
+			ItemID:                "item-1",
+			OperationID:           "op-1",
+			RecipientAddress:      testRecipientAddress("1"),
+			Amount:                big.NewInt(10),
+			Denom:                 "bad!denom",
+			ExpectedAmountHash:    "forged-amount-hash",
+			ExpectedRecipientHash: "forged-recipient-hash",
+			InputNotes: []TreasuryNote{
+				testTreasuryNote("note-a", "bad!denom", 10, false, ""),
+				testTreasuryNote("zero-note", "bad!denom", 0, false, ""),
+			},
+		}},
+	}
+
+	_, err := svc.ConfirmPlan(ctx, plan)
+	require.ErrorIs(t, err, ErrInvalidPayrollInput)
+	require.ErrorContains(t, err, "amount hash")
+	reservations, listErr := reservationStore.ListReservations(ctx, privacyreservation.ReservationFilter{})
+	require.NoError(t, listErr)
+	require.Empty(t, reservations)
 }
 
 func TestServiceConfirmPlanDoesNotPartiallyReserveOnBatchConflict(t *testing.T) {
@@ -518,6 +572,7 @@ func testTreasuryNoteBig(noteID string, denom string, amount *big.Int, spent boo
 		Denom:                denom,
 		Amount:               cloneBigInt(amount),
 		IsSpent:              spent,
+		VerifiedUnspent:      !spent,
 		ReservationID:        reservationID,
 	}
 }

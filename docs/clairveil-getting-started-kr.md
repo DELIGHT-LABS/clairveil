@@ -10,7 +10,7 @@
 
 | 도구 | 기준 | 사용처 |
 | --- | --- | --- |
-| Go | `1.25.12` | build, test, binary, circuit setup |
+| Go | `1.25.13` | build, test, binary, circuit setup |
 | Python | `3.9+` | init/release script와 JSON 검증 |
 | Bash | `/bin/bash` | Make target과 script |
 | Git | Repository가 최소 version을 고정하지 않음 | clone, exact-ref 문서, release manifest |

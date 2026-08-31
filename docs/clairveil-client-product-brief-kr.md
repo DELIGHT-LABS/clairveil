@@ -164,4 +164,8 @@ Clairveil repo가 제공하지 않는 것:
 - [Client risk decisions](clairveil-client-risk-decisions-kr.md)
 - [Client API checklist](clairveil-client-api-checklist-kr.md)
 - [JS SDK handoff](clairveil-js-sdk-handoff-kr.md)
+- [WebApp scope](clairveil-web-app-scope-kr.md)
+- [WebApp integration](clairveil-web-app-integration-kr.md)
+- [WebApp storage and recovery](clairveil-web-app-storage-recovery-kr.md)
+- [WebApp deployment](clairveil-web-app-deployment-kr.md)
 - [CLI reference](clairveil-cli-reference-kr.md)

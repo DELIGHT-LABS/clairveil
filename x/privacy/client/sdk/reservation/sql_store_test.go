@@ -2,6 +2,8 @@ package reservation
 
 import (
 	"database/sql"
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -12,12 +14,31 @@ func TestSQLStoreSatisfiesStoreInterface(t *testing.T) {
 	var _ Store = (*SQLStore)(nil)
 }
 
+func TestConcreteStoresDoNotExposeUnsafeLifecycleMutators(t *testing.T) {
+	stores := []any{NewMemoryStore(), &DurableFileStore{}, &SQLStore{}}
+	for _, store := range stores {
+		storeType := reflect.TypeOf(store)
+		for _, method := range []string{
+			"UpdateReservation",
+			"UpdateOperation",
+			"CompareAndSetReservationStatusWithOperation",
+			"UnsafeImportReservationForTesting",
+		} {
+			if _, exposed := storeType.MethodByName(method); exposed {
+				t.Fatalf("%s must not expose %s", storeType, method)
+			}
+		}
+	}
+}
+
 func TestPostgreSQLSchemaIncludesActiveReservationConstraint(t *testing.T) {
 	schema := PostgreSQLSchema()
 	require.Contains(t, schema, "CREATE UNIQUE INDEX IF NOT EXISTS uniq_active_note_reservation")
 	require.Contains(t, schema, "CREATE TABLE IF NOT EXISTS reservation_store_locks")
 	require.Contains(t, schema, "INSERT INTO reservation_store_locks")
 	require.Contains(t, schema, "INSERT INTO batch_operation_store_meta")
+	require.Contains(t, schema, "INSERT INTO reservation_lifecycle_store_meta")
+	require.Contains(t, schema, fmt.Sprint(LifecycleSchemaVersionV2))
 	require.Contains(t, schema, BatchOperationSchemaVersionV1)
 	require.Contains(t, schema, "ON CONFLICT (singleton_id) DO NOTHING")
 	require.Contains(t, schema, "owner_key_id, nullifier_lookup_key")
@@ -31,6 +52,8 @@ func TestSQLiteSchemaUsesTextTimestamps(t *testing.T) {
 	require.NotContains(t, schema, "TIMESTAMPTZ")
 	require.Contains(t, schema, "INSERT INTO reservation_store_locks")
 	require.Contains(t, schema, "INSERT INTO batch_operation_store_meta")
+	require.Contains(t, schema, "INSERT INTO reservation_lifecycle_store_meta")
+	require.Contains(t, schema, fmt.Sprint(LifecycleSchemaVersionV2))
 	require.Contains(t, schema, BatchOperationSchemaVersionV1)
 }
 

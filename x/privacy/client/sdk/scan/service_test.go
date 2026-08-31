@@ -3,7 +3,10 @@ package scan
 import (
 	"context"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"math/big"
+	"strings"
 	"testing"
 
 	abci "github.com/cometbft/cometbft/abci/types"
@@ -60,15 +63,186 @@ func TestSyncNotesFindsNotesAndMarksSpent(t *testing.T) {
 	require.Len(t, result.Notes, 1)
 	require.Equal(t, "7", result.Notes[0].Note.Amount.String())
 	require.True(t, result.Notes[0].IsSpent)
+	require.True(t, result.Wallet.Notes[0].IsSpent)
 	require.Equal(t, int64(3), result.Diagnostics.LoadedLastHeight)
 	require.Equal(t, 1, result.Diagnostics.LoadedNoteCount)
 	require.Equal(t, int64(4), result.Diagnostics.ScannedFromHeight)
 	require.Equal(t, int64(11), result.Diagnostics.ScannedToHeight)
-	require.True(t, result.Diagnostics.NormalizedCache)
-	require.Equal(t, 1, result.Diagnostics.NewNotesFound)
+	require.False(t, result.Diagnostics.NormalizedCache)
+	require.Equal(t, 0, result.Diagnostics.NewNotesFound)
 	require.Equal(t, 1, result.Diagnostics.FinalNoteCount)
 	require.Equal(t, [][2]int64{{4, 11}}, observer.syncRanges)
-	require.Equal(t, []noteFoundEvent{{txHash: "AABB", count: 1}}, observer.notesFound)
+	require.Empty(t, observer.notesFound)
+}
+
+func TestCopyNullifierVerificationDowngradesUnmatchedCachedNotes(t *testing.T) {
+	cached := &LocalWalletData{Notes: []FoundNote{
+		{Nullifier: "aa", VerifiedUnspent: true},
+		{Nullifier: "bb", VerifiedUnspent: true},
+	}}
+	refreshed := []FoundNote{{Nullifier: "aa", VerifiedUnspent: true}}
+
+	changed := copyNullifierVerificationToCachedNotes(cached, refreshed)
+
+	require.True(t, changed)
+	require.True(t, cached.Notes[0].VerifiedUnspent)
+	require.False(t, cached.Notes[1].VerifiedUnspent)
+}
+
+func TestSyncNotesDoesNotMarkWalletChangedWhenOnlySpentStatusChanges(t *testing.T) {
+	rootSeed := []byte("scan-service-spent-only-seed")
+	note, scanEvent := newScanServiceDepositScanEvent(t, rootSeed, big.NewInt(1), "uclair", 7, 1)
+	found := BuildFoundNoteFromScanEvent(note, scanEvent)
+	wallet := &LocalWalletData{
+		LastHeight:   7,
+		LastSequence: ^uint64(0),
+		Notes:        []FoundNote{found},
+	}
+	checker := &stubNullifierUsageChecker{
+		used: map[string]bool{found.Nullifier: true},
+	}
+
+	result, err := SyncNotes(
+		context.Background(),
+		stubPrivacyTxSource{latestBlockHeight: 7},
+		checker,
+		nil,
+		SyncInput{
+			UserAddress: "clair1spentstatus",
+			RootSeed:    rootSeed,
+			Wallet:      wallet,
+		},
+	)
+
+	require.NoError(t, err)
+	require.False(t, result.WalletChanged)
+	require.True(t, result.Wallet.Notes[0].IsSpent)
+	require.True(t, wallet.Notes[0].IsSpent)
+}
+
+func TestSyncNotesDoesNotMarkWalletChangedWhenNullifierStatusIsUnchanged(t *testing.T) {
+	rootSeed := []byte("scan-service-unchanged-seed")
+	note, scanEvent := newScanServiceDepositScanEvent(t, rootSeed, big.NewInt(1), "uclair", 7, 1)
+	found := BuildFoundNoteFromScanEvent(note, scanEvent)
+	found.VerifiedUnspent = true
+	wallet := &LocalWalletData{
+		LastHeight:   7,
+		LastSequence: ^uint64(0),
+		Notes:        []FoundNote{found},
+	}
+	checker := &stubNullifierUsageChecker{
+		used: map[string]bool{found.Nullifier: false},
+	}
+
+	result, err := SyncNotes(
+		context.Background(),
+		stubPrivacyTxSource{latestBlockHeight: 7},
+		checker,
+		nil,
+		SyncInput{
+			UserAddress: "clair1unchangedstatus",
+			RootSeed:    rootSeed,
+			Wallet:      wallet,
+		},
+	)
+
+	require.NoError(t, err)
+	require.False(t, result.WalletChanged)
+	require.True(t, result.Wallet.Notes[0].VerifiedUnspent)
+}
+
+func TestSyncNotesFailsWhenNullifierStatusCannotBeVerified(t *testing.T) {
+	rootSeed := []byte("scan-service-unverified-seed")
+	note, scanEvent := newScanServiceDepositScanEvent(t, rootSeed, big.NewInt(1), "uclair", 7, 1)
+	found := BuildFoundNoteFromScanEvent(note, scanEvent)
+	found.VerifiedUnspent = true
+	wallet := &LocalWalletData{LastHeight: 7, LastSequence: 9, Notes: []FoundNote{found}}
+	checkerCause := errors.New(wallet.Notes[0].Nullifier + ": query unavailable")
+	checker := &stubNullifierUsageChecker{err: checkerCause}
+	result, err := SyncNotes(
+		context.Background(),
+		stubPrivacyTxSource{latestBlockHeight: 7},
+		checker,
+		nil,
+		SyncInput{
+			UserAddress: "clair1scanunverified",
+			RootSeed:    rootSeed,
+			Wallet:      wallet,
+		},
+	)
+	require.ErrorContains(t, err, "failed to verify note nullifier status")
+	require.NotContains(t, err.Error(), wallet.Notes[0].Nullifier)
+	require.ErrorIs(t, err, ErrNullifierStatusUnavailable)
+	require.NotNil(t, result)
+	require.True(t, result.WalletChanged)
+	require.False(t, result.Wallet.Notes[0].VerifiedUnspent)
+	require.NotErrorIs(t, err, checkerCause)
+	require.Equal(t, int64(7), wallet.LastHeight)
+	require.Equal(t, uint64(9), wallet.LastSequence)
+	require.False(t, wallet.Notes[0].IsSpent)
+	require.False(t, wallet.Notes[0].VerifiedUnspent)
+}
+
+func TestSyncNotesReturnsNewNotesAsUnverifiedWhenNullifierLookupFails(t *testing.T) {
+	rootSeed := []byte("scan-service-new-partial-note")
+	_, scanEvent := newScanServiceDepositScanEvent(t, rootSeed, big.NewInt(9), "uclair", 12, 1)
+	source := &stubPrivacyScanEventSource{
+		latestBlockHeight: 12,
+		responses: []*privacytypes.QueryScanEventsResponse{{
+			Events:            []*privacytypes.QueryScanEvent{scanEvent},
+			NextHeight:        12,
+			NextSequence:      1,
+			Limit:             1,
+			HasMore:           false,
+			ScanFormatVersion: privacytypes.ScanFormatVersion,
+			ViewTagVersion:    privacytypes.ViewTagVersion,
+		}},
+	}
+	wallet := &LocalWalletData{}
+
+	result, err := SyncNotes(
+		context.Background(),
+		source,
+		&stubNullifierUsageChecker{err: errors.New("query unavailable")},
+		nil,
+		SyncInput{UserAddress: "clair1partialnotes", RootSeed: rootSeed, PageLimit: 1, Wallet: wallet},
+	)
+
+	require.ErrorContains(t, err, "failed to verify note nullifier status")
+	require.NotNil(t, result)
+	require.Len(t, result.Notes, 1)
+	require.False(t, result.Notes[0].IsSpent)
+	require.False(t, result.Notes[0].VerifiedUnspent)
+	require.Equal(t, 1, result.Diagnostics.NewNotesFound)
+	require.Equal(t, 1, result.Diagnostics.FinalNoteCount)
+	require.Empty(t, wallet.Notes)
+	require.Zero(t, wallet.LastHeight)
+}
+
+func TestSyncNotesPreservesRedactedContextCancellation(t *testing.T) {
+	checkerCause := fmt.Errorf("private upstream detail: %w", context.Canceled)
+	rootSeed := []byte("scan-service-canceled-seed")
+	note, scanEvent := newScanServiceDepositScanEvent(t, rootSeed, big.NewInt(1), "uclair", 7, 1)
+	found := BuildFoundNoteFromScanEvent(note, scanEvent)
+	found.VerifiedUnspent = true
+	wallet := &LocalWalletData{LastHeight: 7, Notes: []FoundNote{found}}
+	_, err := SyncNotes(
+		context.Background(),
+		stubPrivacyTxSource{latestBlockHeight: 7},
+		&stubNullifierUsageChecker{err: checkerCause},
+		nil,
+		SyncInput{
+			UserAddress: "clair1canceledscan",
+			RootSeed:    rootSeed,
+			Wallet:      wallet,
+		},
+	)
+
+	require.ErrorIs(t, err, ErrNullifierStatusUnavailable)
+	require.ErrorIs(t, err, context.Canceled)
+	require.NotErrorIs(t, err, checkerCause)
+	require.NotContains(t, err.Error(), "private upstream detail")
+	require.NotContains(t, err.Error(), wallet.Notes[0].Nullifier)
 }
 
 func TestSyncNotesResetsWalletWhenCachedHeightRollsBack(t *testing.T) {
@@ -301,6 +475,47 @@ func TestSyncNotesFallsBackToTxSearchWhenScanEventsUnavailable(t *testing.T) {
 	require.Len(t, result.Notes, 1)
 	require.Equal(t, "15", result.Notes[0].Note.Amount.String())
 	require.False(t, result.Notes[0].IsSpent)
+	require.True(t, result.Notes[0].VerifiedUnspent)
+}
+
+func TestSyncNotesLegacyFallbackRewindsSequenceCursorAndDeduplicatesBoundaryHeight(t *testing.T) {
+	rootSeed := []byte("scan-service-sequence-fallback-seed")
+	firstNote, firstTx := newScanServiceDepositTx(t, rootSeed, big.NewInt(15), "uclair", 100)
+	secondNote, secondTx := newScanServiceDepositTx(t, rootSeed, big.NewInt(16), "uclair", 100)
+	firstFound := BuildFoundNote(firstNote, firstTx)
+	secondFound := BuildFoundNote(secondNote, secondTx)
+	txSource := &stubPrivacyScanEventSource{
+		latestBlockHeight: 101,
+		scanErr:           status.Error(codes.Unimplemented, "method ScanEvents not implemented"),
+		searchResults: map[int][]*cmttypes.ResultTx{
+			1: {firstTx, secondTx},
+		},
+	}
+
+	result, err := SyncNotes(
+		context.Background(),
+		txSource,
+		&stubBatchNullifierUsageChecker{batchUsed: map[string]bool{
+			firstFound.Nullifier:  false,
+			secondFound.Nullifier: false,
+		}},
+		nil,
+		SyncInput{
+			UserAddress: "clair1scanfallbacksequence",
+			RootSeed:    rootSeed,
+			Wallet: &LocalWalletData{
+				LastHeight:   100,
+				LastSequence: 5,
+				Notes:        []FoundNote{firstFound},
+			},
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, []txSearchRequest{{afterHeight: 99, page: 1}}, txSource.searchRequests)
+	require.Len(t, result.Notes, 2)
+	require.True(t, result.Notes[0].VerifiedUnspent)
+	require.True(t, result.Notes[1].VerifiedUnspent)
 }
 
 func TestSyncNotesFallsBackToTxSearchWhenScanEventVersionUnsupported(t *testing.T) {
@@ -395,6 +610,173 @@ func TestSyncNotesFallsBackWhenBatchNullifierResponseIsIncomplete(t *testing.T) 
 	require.Equal(t, []string{foundNote.Nullifier}, nullifierChecker.singleRequests)
 }
 
+func TestSyncNotesUsesCanonicalKeysWhenApplyingBatchNullifierStatuses(t *testing.T) {
+	rootSeed := []byte("scan-service-canonical-nullifier-seed")
+	note, scanEvent := newScanServiceDepositScanEvent(t, rootSeed, big.NewInt(1), "uclair", 7, 1)
+	found := BuildFoundNoteFromScanEvent(note, scanEvent)
+	canonicalNullifier := found.Nullifier
+	checker := &stubBatchNullifierUsageChecker{
+		batchUsed: map[string]bool{canonicalNullifier: true},
+	}
+	wallet := &LocalWalletData{
+		LastHeight:   7,
+		LastSequence: ^uint64(0),
+		Notes:        []FoundNote{found},
+	}
+
+	result, err := SyncNotes(
+		context.Background(),
+		stubPrivacyTxSource{latestBlockHeight: 7},
+		checker,
+		nil,
+		SyncInput{
+			UserAddress: "clair1canonicalnullifier",
+			RootSeed:    rootSeed,
+			Wallet:      wallet,
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, [][]string{{canonicalNullifier}}, checker.batchRequests)
+	require.Empty(t, checker.singleRequests)
+	require.True(t, result.Wallet.Notes[0].IsSpent)
+}
+
+func TestSyncNotesDeduplicatesCanonicalEquivalentCachedNullifiers(t *testing.T) {
+	rootSeed := []byte("scan-service-equivalent-nullifier-seed")
+	note, scanEvent := newScanServiceDepositScanEventWithLeadingZeroNullifier(t, rootSeed, big.NewInt(1), "uclair", 7, 1)
+	found := BuildFoundNoteFromScanEvent(note, scanEvent)
+	require.True(t, strings.HasPrefix(found.Nullifier, "00"))
+	short := found
+	short.Nullifier = found.Nullifier[2:]
+	checker := &stubBatchNullifierUsageChecker{
+		batchUsed: map[string]bool{found.Nullifier: false},
+	}
+	wallet := &LocalWalletData{
+		LastHeight:   7,
+		LastSequence: ^uint64(0),
+		Notes:        []FoundNote{short, found},
+	}
+
+	result, err := SyncNotes(
+		context.Background(),
+		stubPrivacyTxSource{latestBlockHeight: 7},
+		checker,
+		nil,
+		SyncInput{UserAddress: "clair1equivalentnullifier", RootSeed: rootSeed, Wallet: wallet},
+	)
+
+	require.NoError(t, err)
+	require.Len(t, result.Notes, 1)
+	require.Equal(t, found.Nullifier, result.Notes[0].Nullifier)
+	require.True(t, result.Notes[0].VerifiedUnspent)
+	require.Equal(t, [][]string{{found.Nullifier}}, checker.batchRequests)
+}
+
+func TestSyncNotesFallsBackWhenBatchResponseConflictsAfterCanonicalization(t *testing.T) {
+	rootSeed := []byte("scan-service-conflicting-canonical-status-seed")
+	note, scanEvent := newScanServiceDepositScanEventWithLeadingZeroNullifier(t, rootSeed, big.NewInt(1), "uclair", 7, 1)
+	found := BuildFoundNoteFromScanEvent(note, scanEvent)
+	require.True(t, strings.HasPrefix(found.Nullifier, "00"))
+	short := found.Nullifier[2:]
+	checker := &stubBatchNullifierUsageChecker{
+		stubNullifierUsageChecker: stubNullifierUsageChecker{
+			used: map[string]bool{found.Nullifier: true},
+		},
+		batchUsed: map[string]bool{
+			found.Nullifier: true,
+			short:           false,
+		},
+	}
+	wallet := &LocalWalletData{
+		LastHeight:   7,
+		LastSequence: ^uint64(0),
+		Notes:        []FoundNote{found},
+	}
+
+	result, err := SyncNotes(
+		context.Background(),
+		stubPrivacyTxSource{latestBlockHeight: 7},
+		checker,
+		nil,
+		SyncInput{UserAddress: "clair1canonicalconflict", RootSeed: rootSeed, Wallet: wallet},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{found.Nullifier}, checker.singleRequests)
+	require.True(t, result.Notes[0].IsSpent)
+}
+
+func newScanServiceDepositScanEventWithLeadingZeroNullifier(t *testing.T, rootSeed []byte, amount *big.Int, denom string, height int64, sequence uint64) (*privacytypes.Note, *privacytypes.QueryScanEvent) {
+	t.Helper()
+	_, spendPubKey, _ := privacyidentity.DeriveSpendKeys(rootSeed)
+	_, viewPubKey, _ := privacyidentity.DeriveViewKeys(rootSeed)
+	note := &privacytypes.Note{
+		ReceiverSpendPubKeyX: pointBigInt(&spendPubKey.X),
+		ReceiverSpendPubKeyY: pointBigInt(&spendPubKey.Y),
+		ReceiverViewPubKeyX:  pointBigInt(&viewPubKey.X),
+		ReceiverViewPubKeyY:  pointBigInt(&viewPubKey.Y),
+		Amount:               new(big.Int).Set(amount),
+		AssetID:              privacycrypto.HashString(denom),
+		Memo:                 "scan-service-canonical-conflict",
+	}
+	for randomness := int64(1); ; randomness++ {
+		note.Randomness = big.NewInt(randomness)
+		nullifierHex, err := privacyfield.CanonicalHexFromBigInt(note.ComputeNullifier())
+		require.NoError(t, err)
+		if strings.HasPrefix(nullifierHex, "00") {
+			break
+		}
+	}
+	noteBytes, err := privacytypes.MarshalNotePlaintextV1(note)
+	require.NoError(t, err)
+	cipherBytes, err := privacycrypto.Encrypt(noteBytes, rootSeed)
+	require.NoError(t, err)
+	commitmentHex, err := privacyfield.CanonicalHexFromBigInt(note.ComputeCommitment())
+	require.NoError(t, err)
+	return note, &privacytypes.QueryScanEvent{
+		Sequence:  sequence,
+		Height:    height,
+		TxHashHex: "CCDD",
+		EventType: privacytypes.EventTypeDeposit,
+		Outputs: []*privacytypes.QueryScanOutput{{
+			OutputIndex:      0,
+			CommitmentHex:    commitmentHex,
+			EncryptedNoteHex: hex.EncodeToString(cipherBytes),
+		}},
+	}
+}
+
+func TestSyncNotesRejectsCachedNullifierThatDoesNotMatchNote(t *testing.T) {
+	rootSeed := []byte("scan-service-mismatched-nullifier-seed")
+	note, scanEvent := newScanServiceDepositScanEvent(t, rootSeed, big.NewInt(1), "uclair", 7, 1)
+	found := BuildFoundNoteFromScanEvent(note, scanEvent)
+	found.Nullifier = strings.Repeat("00", 32)
+	checker := &stubBatchNullifierUsageChecker{batchUsed: map[string]bool{}}
+
+	_, err := SyncNotes(
+		context.Background(),
+		stubPrivacyTxSource{latestBlockHeight: 7},
+		checker,
+		nil,
+		SyncInput{
+			UserAddress: "clair1mismatchednullifier",
+			RootSeed:    rootSeed,
+			Wallet: &LocalWalletData{
+				LastHeight:   7,
+				LastSequence: ^uint64(0),
+				Notes:        []FoundNote{found},
+			},
+		},
+	)
+
+	require.ErrorIs(t, err, ErrInvalidWalletCache)
+	require.NotErrorIs(t, err, ErrNullifierStatusUnavailable)
+	require.ErrorContains(t, err, "force a rescan")
+	require.NotContains(t, err.Error(), found.Nullifier)
+	require.Empty(t, checker.batchRequests)
+}
+
 func TestSyncNotesRequiresUserAddress(t *testing.T) {
 	_, err := SyncNotes(
 		context.Background(),
@@ -430,6 +812,11 @@ type scanRequest struct {
 	limit         int
 }
 
+type txSearchRequest struct {
+	afterHeight int64
+	page        int
+}
+
 type stubPrivacyScanEventSource struct {
 	latestBlockHeight int64
 	responses         []*privacytypes.QueryScanEventsResponse
@@ -437,14 +824,16 @@ type stubPrivacyScanEventSource struct {
 	scanRequests      []scanRequest
 	searchResults     map[int][]*cmttypes.ResultTx
 	searchPages       []int
+	searchRequests    []txSearchRequest
 }
 
 func (s *stubPrivacyScanEventSource) LatestBlockHeight(context.Context) (int64, error) {
 	return s.latestBlockHeight, nil
 }
 
-func (s *stubPrivacyScanEventSource) SearchPrivacyTxs(_ context.Context, _ int64, page, _ int) ([]*cmttypes.ResultTx, error) {
+func (s *stubPrivacyScanEventSource) SearchPrivacyTxs(_ context.Context, afterHeight int64, page, _ int) ([]*cmttypes.ResultTx, error) {
 	s.searchPages = append(s.searchPages, page)
+	s.searchRequests = append(s.searchRequests, txSearchRequest{afterHeight: afterHeight, page: page})
 	if s.searchResults == nil {
 		return nil, nil
 	}
@@ -467,10 +856,14 @@ func (s *stubPrivacyScanEventSource) ScanPrivacyEvents(_ context.Context, afterH
 type stubNullifierUsageChecker struct {
 	used           map[string]bool
 	singleRequests []string
+	err            error
 }
 
 func (s *stubNullifierUsageChecker) CheckNullifierUsed(_ context.Context, nullifierHex string) (bool, error) {
 	s.singleRequests = append(s.singleRequests, nullifierHex)
+	if s.err != nil {
+		return false, s.err
+	}
 	if s.used == nil {
 		return false, nil
 	}
@@ -482,6 +875,28 @@ type stubBatchNullifierUsageChecker struct {
 	stubNullifierUsageChecker
 	batchUsed     map[string]bool
 	batchRequests [][]string
+}
+
+func TestSyncNotesRejectsInvalidNullifierBeforeBatchStatusLookup(t *testing.T) {
+	checker := &stubBatchNullifierUsageChecker{}
+	_, err := SyncNotes(
+		context.Background(),
+		stubPrivacyTxSource{latestBlockHeight: 7},
+		checker,
+		nil,
+		SyncInput{
+			UserAddress: "clair1invalidnullifier",
+			RootSeed:    []byte("scan-service-invalid-nullifier-seed"),
+			Wallet: &LocalWalletData{LastHeight: 7, LastSequence: ^uint64(0), Notes: []FoundNote{{
+				Nullifier: "",
+				Note:      privacytypes.Note{Amount: big.NewInt(1)},
+			}}},
+		},
+	)
+	require.ErrorIs(t, err, ErrInvalidWalletCache)
+	require.NotErrorIs(t, err, ErrNullifierStatusUnavailable)
+	require.ErrorContains(t, err, "force a rescan")
+	require.Empty(t, checker.batchRequests)
 }
 
 func (s *stubBatchNullifierUsageChecker) CheckNullifiersUsed(_ context.Context, nullifierHexes []string) (map[string]bool, error) {

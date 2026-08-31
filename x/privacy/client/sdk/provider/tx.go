@@ -27,6 +27,7 @@ type CosmosTxBroadcastResult struct {
 	Response        *sdk.TxResponse
 	TxBytesHash     string
 	SignDocHash     string
+	TxHash          string
 	AccountSequence uint64
 }
 
@@ -41,11 +42,25 @@ type CosmosSignedTx struct {
 	AccountSequence uint64
 }
 
+// PreparedCosmosTxBroadcast separates fallible account/gas/signing work from
+// the external BroadcastTx boundary while retaining a deterministic tx identity.
+type PreparedCosmosTxBroadcast struct {
+	TxBytes []byte
+	Result  CosmosTxBroadcastResult
+}
+
 func (b CosmosTxBroadcaster) PrepareFactory(msg sdk.Msg) (tx.Factory, error) {
 	return b.PrepareFactoryForMessages(msg)
 }
 
 func (b CosmosTxBroadcaster) PrepareFactoryForMessages(msgs ...sdk.Msg) (tx.Factory, error) {
+	return b.prepareFactoryForMessages(b.ClientContext, msgs...)
+}
+
+// prepareFactoryForMessages uses clientContext for every account and gas RPC.
+// BuildSignedSDKMessages supplies a copy carrying its caller context so
+// cancellation reaches preparation as well as the final BroadcastTx call.
+func (b CosmosTxBroadcaster) prepareFactoryForMessages(clientContext client.Context, msgs ...sdk.Msg) (tx.Factory, error) {
 	if len(msgs) == 0 {
 		return tx.Factory{}, fmt.Errorf("at least one sdk message is required to prepare a tx factory")
 	}
@@ -73,13 +88,13 @@ func (b CosmosTxBroadcaster) PrepareFactoryForMessages(msgs ...sdk.Msg) (tx.Fact
 		return tx.Factory{}, err
 	}
 
-	txf, _ := tx.NewFactoryCLI(b.ClientContext, b.Flags)
-	txf = txf.WithTxConfig(b.ClientContext.TxConfig).WithAccountRetriever(b.ClientContext.AccountRetriever)
+	txf, _ := tx.NewFactoryCLI(clientContext, b.Flags)
+	txf = txf.WithTxConfig(clientContext.TxConfig).WithAccountRetriever(clientContext.AccountRetriever)
 
-	if err := txf.AccountRetriever().EnsureExists(b.ClientContext, fromAddress); err != nil {
+	if err := txf.AccountRetriever().EnsureExists(clientContext, fromAddress); err != nil {
 		return txf, err
 	}
-	initNum, initSeq, err := txf.AccountRetriever().GetAccountNumberSequence(b.ClientContext, fromAddress)
+	initNum, initSeq, err := txf.AccountRetriever().GetAccountNumberSequence(clientContext, fromAddress)
 	if err != nil {
 		return txf, err
 	}
@@ -87,7 +102,7 @@ func (b CosmosTxBroadcaster) PrepareFactoryForMessages(msgs ...sdk.Msg) (tx.Fact
 
 	if txf.Gas() == flags.DefaultGasLimit || txf.Gas() == 0 {
 		txf = txf.WithGasAdjustment(1.5)
-		_, adjusted, err := tx.CalculateGas(b.ClientContext, txf, msgs...)
+		_, adjusted, err := tx.CalculateGas(clientContext, txf, msgs...)
 		if err != nil {
 			return txf, fmt.Errorf("failed to calculate tx gas: %w", err)
 		}
@@ -110,28 +125,22 @@ func (b CosmosTxBroadcaster) BroadcastSDKMessages(ctx context.Context, msgs ...s
 }
 
 func (b CosmosTxBroadcaster) BroadcastSDKMessagesWithMetadata(ctx context.Context, msgs ...sdk.Msg) (*CosmosTxBroadcastResult, error) {
-	signed, err := b.BuildSignedSDKMessages(ctx, msgs...)
+	prepared, err := b.PrepareSDKMessagesWithMetadata(ctx, msgs...)
 	if err != nil {
 		return nil, err
 	}
-	result := &CosmosTxBroadcastResult{
-		TxBytesHash:     signed.TxBytesHash,
-		SignDocHash:     signed.SignDocHash,
-		AccountSequence: signed.AccountSequence,
-	}
-	response, err := b.BroadcastSignedTxBytes(ctx, signed.Bytes)
-	if err != nil {
-		return result, err
-	}
-	result.Response = response
-	return result, nil
+	return b.BroadcastPreparedSDKMessages(ctx, prepared)
 }
 
 // BuildSignedSDKMessages signs once without broadcasting. Callers can durably
 // store Bytes before network submission and reuse them byte-for-byte after an
 // ambiguous response.
 func (b CosmosTxBroadcaster) BuildSignedSDKMessages(ctx context.Context, msgs ...sdk.Msg) (*CosmosSignedTx, error) {
-	txf, err := b.PrepareFactoryForMessages(msgs...)
+	clientContext := b.ClientContext
+	if ctx != nil {
+		clientContext = clientContext.WithCmdContext(ctx)
+	}
+	txf, err := b.prepareFactoryForMessages(clientContext, msgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -172,6 +181,22 @@ func (b CosmosTxBroadcaster) BuildSignedSDKMessages(ctx context.Context, msgs ..
 	}, nil
 }
 
+func (b CosmosTxBroadcaster) PrepareSDKMessagesWithMetadata(ctx context.Context, msgs ...sdk.Msg) (*PreparedCosmosTxBroadcast, error) {
+	signed, err := b.BuildSignedSDKMessages(ctx, msgs...)
+	if err != nil {
+		return nil, err
+	}
+	return &PreparedCosmosTxBroadcast{
+		TxBytes: append([]byte(nil), signed.Bytes...),
+		Result: CosmosTxBroadcastResult{
+			TxBytesHash:     signed.TxBytesHash,
+			SignDocHash:     signed.SignDocHash,
+			TxHash:          signed.TxHash,
+			AccountSequence: signed.AccountSequence,
+		},
+	}, nil
+}
+
 // BroadcastSignedTxBytes submits the supplied immutable bytes without signing
 // or refreshing account state.
 func (b CosmosTxBroadcaster) BroadcastSignedTxBytes(ctx context.Context, txBytes []byte) (*sdk.TxResponse, error) {
@@ -183,6 +208,33 @@ func (b CosmosTxBroadcaster) BroadcastSignedTxBytes(ctx context.Context, txBytes
 	}
 	clientContext := b.ClientContext.WithCmdContext(ctx)
 	return clientContext.BroadcastTx(append([]byte(nil), txBytes...))
+}
+
+func (b CosmosTxBroadcaster) BroadcastPreparedSDKMessages(ctx context.Context, prepared *PreparedCosmosTxBroadcast) (*CosmosTxBroadcastResult, error) {
+	if prepared == nil || len(prepared.TxBytes) == 0 {
+		return nil, fmt.Errorf("prepared tx bytes are required")
+	}
+	result := prepared.Result
+	txBytes := append([]byte(nil), prepared.TxBytes...)
+	computedTxBytesHash := sha256Hex(txBytes)
+	if !strings.EqualFold(strings.TrimSpace(result.TxBytesHash), computedTxBytesHash) {
+		return &result, fmt.Errorf("prepared tx bytes hash mismatch")
+	}
+	computedTxHash := strings.ToUpper(computedTxBytesHash)
+	if strings.TrimSpace(result.TxHash) == "" {
+		result.TxHash = computedTxHash
+	} else if !strings.EqualFold(strings.TrimSpace(result.TxHash), computedTxHash) {
+		return &result, fmt.Errorf("prepared tx hash mismatch")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	response, err := b.ClientContext.WithCmdContext(ctx).BroadcastTx(txBytes)
+	if err != nil {
+		return &result, err
+	}
+	result.Response = response
+	return &result, nil
 }
 
 func (b CosmosTxBroadcaster) GenerateOrBroadcast(msgs ...sdk.Msg) error {

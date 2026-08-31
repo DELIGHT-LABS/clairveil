@@ -304,11 +304,12 @@ func foundNote(note privacytypes.Note) privacyscan.FoundNote {
 		nullifierHex = note.ComputeNullifier().Text(16)
 	}
 	return privacyscan.FoundNote{
-		Note:      note,
-		Nullifier: nullifierHex,
-		TxHash:    "GENERATED-PROVERLOAD",
-		Height:    1,
-		IsSpent:   false,
+		Note:            note,
+		Nullifier:       nullifierHex,
+		TxHash:          "GENERATED-PROVERLOAD",
+		Height:          1,
+		IsSpent:         false,
+		VerifiedUnspent: true,
 	}
 }
 

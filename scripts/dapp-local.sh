@@ -84,11 +84,14 @@ pids+=("$!")
 "$proverd_bin" -listen "$prover_listen" &
 pids+=("$!")
 
-npm --prefix "$repo_root/examples/clairveil-dapp" install
+npm --prefix "$repo_root/examples/clairveil-dapp" ci --ignore-scripts
 
 (
 	cd "$repo_root/examples/clairveil-dapp"
-	CLAIRVEIL_HOME="$CLAIRVEIL_HOME" CHAIN_ID="$CHAIN_ID" npm start -- --host "$dapp_host" --port "$dapp_port"
+	# The reference prover intentionally has no browser CORS policy. Route local
+	# loopback browser requests through the narrowly scoped same-origin proxy so
+	# `make dapp-local` is usable without weakening the prover transport.
+	CLAIRVEIL_HOME="$CLAIRVEIL_HOME" CHAIN_ID="$CHAIN_ID" CLAIRVEIL_DAPP_LOCAL_TEST_MODE=1 CLAIRVEIL_DAPP_ENABLE_PROVER_PROXY=1 CLAIRVEIL_DAPP_ENABLE_BATCH_TRANSFER=1 npm start -- --host "$dapp_host" --port "$dapp_port"
 ) &
 pids+=("$!")
 

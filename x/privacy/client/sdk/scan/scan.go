@@ -17,15 +17,23 @@ import (
 var ErrPrivacyScanOutputNotOwned = errors.New("privacy scan output is not decryptable by this wallet")
 
 type FoundNote struct {
-	Note           privacytypes.Note `json:"note"`
-	Nullifier      string            `json:"nullifier"`
-	IsSpent        bool              `json:"-"`
-	TxHash         string            `json:"tx_hash"`
-	Height         int64             `json:"height"`
-	GlobalSequence uint64            `json:"global_sequence,omitempty"`
-	OutputIndex    uint32            `json:"output_index,omitempty"`
-	Commitment     string            `json:"commitment,omitempty"`
-	AssetDenom     string            `json:"asset_denom,omitempty"`
+	Note            privacytypes.Note `json:"note"`
+	Nullifier       string            `json:"nullifier"`
+	IsSpent         bool              `json:"-"`
+	VerifiedUnspent bool              `json:"verified_unspent"`
+	TxHash          string            `json:"tx_hash"`
+	Height          int64             `json:"height"`
+	GlobalSequence  uint64            `json:"global_sequence,omitempty"`
+	OutputIndex     uint32            `json:"output_index,omitempty"`
+	Commitment      string            `json:"commitment,omitempty"`
+	AssetDenom      string            `json:"asset_denom,omitempty"`
+}
+
+// IsVerifiedUnspent reports whether a successful nullifier lookup explicitly
+// confirmed that this note remains unspent. Legacy cache entries default to
+// false and are deliberately excluded from planning until the next scan.
+func (n FoundNote) IsVerifiedUnspent() bool {
+	return !n.IsSpent && n.VerifiedUnspent
 }
 
 type processOptions struct {

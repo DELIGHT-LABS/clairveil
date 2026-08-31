@@ -44,7 +44,10 @@ func (s Service) ConfirmPlan(ctx context.Context, plan PayrollPlan) (*PayrollPla
 	if s.Reservation.Store == nil {
 		return nil, fmt.Errorf("reservation service is required")
 	}
-	plan = normalizePayrollPlan(plan)
+	plan, err := normalizePayrollPlan(plan)
+	if err != nil {
+		return nil, err
+	}
 	if plan.Status != PlanStatusDraft {
 		return nil, fmt.Errorf("%w: plan must be Draft", ErrInvalidPayrollInput)
 	}
@@ -145,8 +148,8 @@ func validatePlanItemForConfirmation(item PayrollPlanItem) error {
 		if strings.TrimSpace(note.ReservationID) != "" {
 			return fmt.Errorf("%w: note %s is already reserved", ErrInvalidPayrollInput, note.NoteID)
 		}
-		if note.IsSpent {
-			return fmt.Errorf("%w: note %s is already spent", ErrInvalidPayrollInput, note.NoteID)
+		if !note.IsVerifiedUnspent() {
+			return fmt.Errorf("%w: note %s is not verified unspent", ErrInvalidPayrollInput, note.NoteID)
 		}
 		if strings.TrimSpace(note.Denom) != item.Denom {
 			return fmt.Errorf("%w: note %s denom %s does not match item denom %s", ErrInvalidPayrollInput, note.NoteID, note.Denom, item.Denom)
@@ -203,7 +206,7 @@ func ReservationIDForInputNote(operationID string, noteID string) string {
 	return operationID + ":note:" + idComponent(noteID)
 }
 
-func normalizePayrollPlan(plan PayrollPlan) PayrollPlan {
+func normalizePayrollPlan(plan PayrollPlan) (PayrollPlan, error) {
 	plan.CompanyID = strings.TrimSpace(plan.CompanyID)
 	plan.PayrollID = strings.TrimSpace(plan.PayrollID)
 	plan.BatchID = strings.TrimSpace(plan.BatchID)
@@ -214,14 +217,18 @@ func normalizePayrollPlan(plan PayrollPlan) PayrollPlan {
 		if plan.Items[i].Denom == "" {
 			plan.Items[i].Denom = plan.Denom
 		}
-		if plan.Items[i].RecipientAddress != "" {
-			plan.Items[i].ExpectedRecipientHash = HashRecipient(plan.Items[i].RecipientAddress)
+		recipientHash, err := HashRecipient(plan.Items[i].RecipientAddress)
+		if err != nil {
+			return PayrollPlan{}, fmt.Errorf("%w: item %s recipient hash: %v", ErrInvalidPayrollInput, plan.Items[i].ItemID, err)
 		}
-		if plan.Items[i].Denom != "" && plan.Items[i].Amount != nil {
-			plan.Items[i].ExpectedAmountHash = HashAmount(plan.Items[i].Denom, plan.Items[i].Amount)
+		plan.Items[i].ExpectedRecipientHash = recipientHash
+		amountHash, err := HashAmount(plan.Items[i].Denom, plan.Items[i].Amount)
+		if err != nil {
+			return PayrollPlan{}, fmt.Errorf("%w: item %s amount hash: %v", ErrInvalidPayrollInput, plan.Items[i].ItemID, err)
 		}
+		plan.Items[i].ExpectedAmountHash = amountHash
 	}
-	return plan
+	return plan, nil
 }
 
 func normalizePayrollPlanItem(item PayrollPlanItem) PayrollPlanItem {

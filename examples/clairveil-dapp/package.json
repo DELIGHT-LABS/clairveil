@@ -10,22 +10,25 @@
     "build:dapp": "esbuild public/app.js --bundle --format=esm --platform=browser --target=es2022 --outfile=public/app.bundle.js",
     "start": "npm run build:dapp && node server.js",
     "dev": "npm run build:dapp && node server.js",
-    "check:dapp": "npm run build:dapp && npm run check:bundle && node --check server.js && node --check public/app.js && node --check public/dapp-config.js && node --check public/app.bundle.js",
-    "check:bundle": "git diff --exit-code -- public/app.bundle.js",
-    "test:dapp": "node --test test/dapp-smoke.test.js test/dapp-routes.test.js",
+    "check:dapp": "npm run build:dapp && node --check server.js && node --check public/app.js && node --check public/dapp-config.js && node --check public/encrypted-browser-store.js && node --check public/relay-submission-coordinator.js && node --check public/transaction-status.js && node --check tools/verify-production-deployment.mjs && node --check public/app.bundle.js",
+    "check:bundle": "node --check public/app.bundle.js",
+    "check:bundle:fresh": "node tools/check-bundle-fresh.js",
+    "test:dapp": "node --test test/batch-transfer-state.test.js test/dapp-smoke.test.js test/dapp-routes.test.js test/encrypted-browser-store.test.js test/production-deployment.test.js test/reservation-lifecycle.test.js test/relay-reservation-state.test.js test/transaction-status.test.js",
     "check:clairveiljs": "npm run check:clairveiljs:types",
     "check:clairveiljs:types": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --strict test/clairveiljs-types.ts",
-    "test:clairveiljs": "node --test test/clairveiljs.test.js test/clairveiljs-package.test.js"
+    "test:clairveiljs": "node --test test/clairveiljs.test.js test/clairveiljs-package.test.js",
+    "verify:production-deployment": "node tools/verify-production-deployment.mjs"
   },
   "dependencies": {
-    "clairveiljs": "github:DELIGHT-LABS/clairveiljs",
-    "ethers": "^6.16.0"
+    "clairveiljs": "file:vendor/clairveiljs-0.2.0-f6a77843fc14.tgz",
+    "ethers": "6.16.0"
   },
   "overrides": {
-    "ws": "^8.20.1"
+    "ws": "8.21.0"
   },
   "devDependencies": {
-    "esbuild": "^0.28.0",
-    "typescript": "^5.8.3"
+    "esbuild": "0.28.0",
+    "fake-indexeddb": "6.2.5",
+    "typescript": "5.9.3"
   }
 }

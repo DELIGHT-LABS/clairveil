@@ -70,7 +70,7 @@ func buildBatchOperationGraph(ctx context.Context, plan BatchPayrollOperationPla
 	reservations := make([]privacyreservation.NoteReservation, len(plan.InputNotes))
 	inputs := make([]privacyreservation.OperationInputReservation, len(plan.InputNotes))
 	for i, note := range plan.InputNotes {
-		if note.NoteID == "" || note.OwnerKeyID == "" || note.NullifierLookupKey == "" || note.NullifierLookupKeyID == "" || note.IsSpent || note.ReservationID != "" {
+		if note.NoteID == "" || note.OwnerKeyID == "" || note.NullifierLookupKey == "" || note.NullifierLookupKeyID == "" || !note.IsVerifiedUnspent() || note.ReservationID != "" {
 			return nil, privacyreservation.BatchOperationGraph{}, fmt.Errorf("invalid treasury input note %d for batch reservation", i)
 		}
 		expectedLookupKey, err := protector.PayrollNullifierLookupKey(ctx, note.NullifierLookupKeyID, payload.Inputs[i].Nullifier)
@@ -227,7 +227,15 @@ func validateBatchPayrollPlanBinding(plan BatchPayrollOperationPlan, payload *pr
 		if item.OperationID != plan.OperationID || item.CompanyID != companyID || item.PayrollID != payrollID || item.BatchID != batchID || item.Denom != denom || item.Amount == nil || item.Amount.Sign() <= 0 {
 			return fmt.Errorf("payroll item %d is not bound to the batch operation", i)
 		}
-		if item.ExpectedRecipientHash != HashRecipient(item.RecipientAddress) || item.ExpectedAmountHash != HashAmount(item.Denom, item.Amount) {
+		recipientHash, err := HashRecipient(item.RecipientAddress)
+		if err != nil {
+			return fmt.Errorf("payroll item %s recipient hash: %w", item.ItemID, err)
+		}
+		amountHash, err := HashAmount(item.Denom, item.Amount)
+		if err != nil {
+			return fmt.Errorf("payroll item %s amount hash: %w", item.ItemID, err)
+		}
+		if item.ExpectedRecipientHash != recipientHash || item.ExpectedAmountHash != amountHash {
 			return fmt.Errorf("payroll item %s expected evidence hashes are inconsistent", item.ItemID)
 		}
 		paymentTotal.Add(paymentTotal, item.Amount)

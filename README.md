@@ -45,7 +45,7 @@ Documentation describes the code at the same checkout. When integrating a tag or
 
 ## Quick Start
 
-Prerequisites are Git, Make, Go `1.25.12`, Python `3.9+`, Bash, and—when running repository CI/example checks—Node.js `22+` with npm. The repository does not pin minimum Git or Make versions. Verify the tools you will use before initialization:
+Prerequisites are Git, Make, Go `1.25.13`, Python `3.9+`, Bash, and—when running repository CI/example checks—Node.js `22+` with npm. The repository does not pin minimum Git or Make versions. Verify the tools you will use before initialization:
 
 ```bash
 git --version
@@ -263,6 +263,10 @@ Command purposes, major flags, and output shapes are documented in the [CLI refe
 | [Client risk decisions](docs/clairveil-client-risk-decisions.md) | Storage, prover, audit, disclosure, and telemetry decisions |
 | [Client API checklist](docs/clairveil-client-api-checklist.md) | Chain/prover APIs, fixtures, release gates, and compatibility checks |
 | [JS SDK handoff](docs/clairveil-js-sdk-handoff.md) | Contract for JS/TS SDK and web wallet implementation |
+| [WebApp scope](docs/clairveil-web-app-scope.md) | Supported browser product flows and explicit batch/multi-send exclusions |
+| [WebApp integration](docs/clairveil-web-app-integration.md) | Browser client API, lifecycle, recovery, and integration test contract |
+| [WebApp storage and recovery](docs/clairveil-web-app-storage-recovery.md) | Encrypted browser persistence, leases, reconciliation, and 0.2 upgrade |
+| [WebApp deployment](docs/clairveil-web-app-deployment.md) | Browser/prover CORS, auth, CSP, proxy, and operations boundary |
 | [Scan optimization plan](plans/clairveil-scan-optimization-implementation-plan.md) | Implemented note scan optimization scope and excluded future work |
 | [Reference payroll product](docs/clairveil-reference-payroll-product.md) | Payroll control-plane, localnet tutorial, and rehearsal reference product |
 | [Prover profile](docs/clairveil-proverd-remote-production-profile.md) | Remote operation profile for `clairveil-proverd` |
