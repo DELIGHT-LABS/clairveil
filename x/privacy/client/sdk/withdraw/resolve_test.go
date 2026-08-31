@@ -17,7 +17,7 @@ func TestResolveExactMatchSpendableNoteReturnsExistingNote(t *testing.T) {
 	source := &stubExactMatchNoteSource{
 		responses: [][]privacyscan.FoundNote{
 			{
-				{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}},
+				{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, VerifiedUnspent: true},
 			},
 		},
 	}
@@ -35,10 +35,10 @@ func TestResolveExactMatchSpendableNoteAutoPlansAndRescans(t *testing.T) {
 	source := &stubExactMatchNoteSource{
 		responses: [][]privacyscan.FoundNote{
 			{
-				{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}},
+				{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, VerifiedUnspent: true},
 			},
 			{
-				{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}},
+				{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, VerifiedUnspent: true},
 			},
 		},
 	}
@@ -57,7 +57,7 @@ func TestResolveExactMatchSpendableNoteReturnsGuidanceWithoutAutoPlan(t *testing
 	source := &stubExactMatchNoteSource{
 		responses: [][]privacyscan.FoundNote{
 			{
-				{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}},
+				{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, VerifiedUnspent: true},
 			},
 		},
 	}
@@ -72,7 +72,7 @@ func TestResolveExactMatchSpendableNoteWrapsPlannerError(t *testing.T) {
 	source := &stubExactMatchNoteSource{
 		responses: [][]privacyscan.FoundNote{
 			{
-				{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}},
+				{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, VerifiedUnspent: true},
 			},
 		},
 	}

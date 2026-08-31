@@ -1,7 +1,9 @@
 package scan
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -11,6 +13,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacyidentity "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/identity"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
@@ -103,7 +106,8 @@ func SyncNotes(
 		pageLimit = 100
 	}
 
-	wallet := input.Wallet
+	originalWallet := input.Wallet
+	wallet := cloneLocalWalletData(originalWallet)
 	if wallet == nil {
 		wallet = &LocalWalletData{
 			LastHeight:   0,
@@ -189,10 +193,35 @@ func SyncNotes(
 
 	finalResults := make([]FoundNote, len(wallet.Notes))
 	copy(finalResults, wallet.Notes)
-
-	markSpentStatuses(ctx, checker, finalResults)
-
 	diagnostics.FinalNoteCount = len(finalResults)
+
+	spentStatusesChanged, err := markSpentStatuses(ctx, checker, finalResults)
+	if err != nil {
+		// Preserve the existing scan cursor on failure, but never leave a cached
+		// note marked verified-unspent after its latest nullifier query failed.
+		verificationChanged := copyNullifierVerificationToCachedNotes(originalWallet, finalResults)
+		// Keep the durable wallet/cursor at its pre-scan value, but return every
+		// note discovered during this scan so read-only callers can show it as
+		// unverified instead of silently dropping it from the partial result.
+		partialNotes := append([]FoundNote(nil), finalResults...)
+		result := &SyncResult{
+			Wallet:        originalWallet,
+			Notes:         partialNotes,
+			Diagnostics:   diagnostics,
+			WalletChanged: verificationChanged,
+		}
+		if errors.Is(err, ErrInvalidWalletCache) {
+			return result, fmt.Errorf("failed to validate local wallet cache; force a rescan before retrying: %w", err)
+		}
+		return result, fmt.Errorf("failed to verify note nullifier status: %w", err)
+	}
+	wallet.Notes = append([]FoundNote(nil), finalResults...)
+	walletChanged = walletChanged || spentStatusesChanged
+
+	if originalWallet != nil {
+		*originalWallet = *wallet
+		wallet = originalWallet
+	}
 
 	return &SyncResult{
 		Wallet:        wallet,
@@ -224,7 +253,12 @@ func syncNewNotes(
 			return newNotes, changed, nil
 		}
 		if !changed && shouldFallbackFromScanEvents(err) {
-			return syncNewNotesFromTxSearch(ctx, source, observer, rootSeed, spendScalar, viewScalar, wallet, pageLimit, scanOptions)
+			fallbackWallet := legacyFallbackWallet(wallet)
+			newNotes, changed, fallbackErr := syncNewNotesFromTxSearch(ctx, source, observer, rootSeed, spendScalar, viewScalar, fallbackWallet, pageLimit, scanOptions)
+			if fallbackWallet != wallet && changed {
+				wallet.Notes = fallbackWallet.Notes
+			}
+			return newNotes, changed, fallbackErr
 		}
 		return newNotes, changed, err
 	}
@@ -402,6 +436,21 @@ func compareScanCursor(a, b *privacytypes.PrivacyScanCursorV1) int {
 	return 0
 }
 
+// legacyFallbackWallet rewinds a sequence cursor by one height because the
+// legacy endpoint cannot express an in-block sequence. Found notes are
+// deduplicated when appended, so replaying the boundary height is safe.
+func legacyFallbackWallet(wallet *LocalWalletData) *LocalWalletData {
+	if wallet == nil || wallet.LastSequence == 0 {
+		return wallet
+	}
+	fallback := cloneLocalWalletData(wallet)
+	if fallback.LastHeight > 0 {
+		fallback.LastHeight--
+	}
+	fallback.LastSequence = 0
+	return fallback
+}
+
 func shouldFallbackFromScanEvents(err error) bool {
 	if err == nil {
 		return false
@@ -435,6 +484,7 @@ func syncNewNotesFromScanEvents(
 	walletChanged := false
 	afterHeight := wallet.LastHeight
 	afterSequence := wallet.LastSequence
+	knownNotes := foundNoteIdentitySet(wallet.Notes)
 
 	for {
 		response, err := source.ScanPrivacyEvents(ctx, afterHeight, afterSequence, pageLimit)
@@ -454,11 +504,15 @@ func syncNewNotesFromScanEvents(
 				continue
 			}
 
-			wallet.Notes = append(wallet.Notes, found...)
+			added := appendUniqueFoundNotes(knownNotes, found)
+			if len(added) == 0 {
+				continue
+			}
+			wallet.Notes = append(wallet.Notes, added...)
 			walletChanged = true
-			newNotes += len(found)
+			newNotes += len(added)
 			if observer != nil {
-				observer.OnNotesFound(event.TxHashHex, len(found))
+				observer.OnNotesFound(event.TxHashHex, len(added))
 			}
 		}
 
@@ -505,6 +559,7 @@ func syncNewNotesFromTxSearch(
 	newNotes := 0
 	walletChanged := false
 	page := 1
+	knownNotes := foundNoteIdentitySet(wallet.Notes)
 	for {
 		txs, err := source.SearchPrivacyTxs(ctx, wallet.LastHeight, page, pageLimit)
 		if err != nil {
@@ -520,11 +575,15 @@ func syncNewNotesFromTxSearch(
 				continue
 			}
 
-			wallet.Notes = append(wallet.Notes, found...)
+			added := appendUniqueFoundNotes(knownNotes, found)
+			if len(added) == 0 {
+				continue
+			}
+			wallet.Notes = append(wallet.Notes, added...)
 			walletChanged = true
-			newNotes += len(found)
+			newNotes += len(added)
 			if observer != nil {
-				observer.OnNotesFound(fmt.Sprintf("%X", txRes.Hash), len(found))
+				observer.OnNotesFound(fmt.Sprintf("%X", txRes.Hash), len(added))
 			}
 		}
 
@@ -537,23 +596,176 @@ func syncNewNotesFromTxSearch(
 	return newNotes, walletChanged, nil
 }
 
-func markSpentStatuses(ctx context.Context, checker NullifierUsageChecker, notes []FoundNote) {
+func foundNoteIdentitySet(notes []FoundNote) map[string]struct{} {
+	known := make(map[string]struct{}, len(notes))
+	for _, note := range notes {
+		known[foundNoteIdentityKey(note)] = struct{}{}
+	}
+	return known
+}
+
+func appendUniqueFoundNotes(known map[string]struct{}, found []FoundNote) []FoundNote {
+	if len(found) == 0 {
+		return nil
+	}
+	added := make([]FoundNote, 0, len(found))
+	for _, note := range found {
+		key := foundNoteIdentityKey(note)
+		if _, exists := known[key]; exists {
+			continue
+		}
+		known[key] = struct{}{}
+		added = append(added, note)
+	}
+	return added
+}
+
+func markSpentStatuses(ctx context.Context, checker NullifierUsageChecker, notes []FoundNote) (bool, error) {
+	original := make([]nullifierVerificationState, len(notes))
+	for i := range notes {
+		original[i] = nullifierVerificationState{
+			isSpent:         notes[i].IsSpent,
+			verifiedUnspent: notes[i].VerifiedUnspent,
+		}
+	}
+	// A prior successful scan must not authorize spending while this refresh is
+	// incomplete. Keep an existing spent marker, but downgrade every unspent
+	// cache entry until this invocation explicitly confirms it again.
+	for i := range notes {
+		if notes[i].IsSpent || !notes[i].VerifiedUnspent {
+			continue
+		}
+		notes[i].VerifiedUnspent = false
+	}
+	canonicalKeys, normalizeErr := canonicalNullifierKeys(notes)
+	if normalizeErr != nil {
+		return false, fmt.Errorf("validate cached note nullifier: %w", redactedInvalidWalletCacheError{})
+	}
 	if batchChecker, ok := checker.(BatchNullifierUsageChecker); ok {
-		nullifiers := uniqueNullifiers(notes)
+		nullifiers := uniqueCanonicalNullifiers(canonicalKeys)
 		if usedByNullifier, err := batchChecker.CheckNullifiersUsed(ctx, nullifiers); err == nil {
-			if allNullifierStatusesPresent(nullifiers, usedByNullifier) {
+			normalizedStatuses, normalizeErr := normalizeBatchNullifierStatuses(usedByNullifier)
+			if normalizeErr == nil && allNullifierStatusesPresent(nullifiers, normalizedStatuses) {
 				for i := range notes {
-					notes[i].IsSpent = usedByNullifier[strings.ToLower(strings.TrimSpace(notes[i].Nullifier))]
+					used := normalizedStatuses[canonicalKeys[i]]
+					verifiedUnspent := !used
+					notes[i].IsSpent = used
+					notes[i].VerifiedUnspent = verifiedUnspent
 				}
-				return
+				return nullifierVerificationChanged(notes, original), nil
 			}
 		}
 	}
 
 	for i := range notes {
-		used, err := checker.CheckNullifierUsed(ctx, notes[i].Nullifier)
-		notes[i].IsSpent = err == nil && used
+		used, err := checker.CheckNullifierUsed(ctx, canonicalKeys[i])
+		if err != nil {
+			return false, fmt.Errorf("check nullifier status at note %d: %w", i, newRedactedNullifierStatusError(err))
+		}
+		verifiedUnspent := !used
+		notes[i].IsSpent = used
+		notes[i].VerifiedUnspent = verifiedUnspent
 	}
+	return nullifierVerificationChanged(notes, original), nil
+}
+
+type nullifierVerificationState struct {
+	isSpent         bool
+	verifiedUnspent bool
+}
+
+func nullifierVerificationChanged(notes []FoundNote, original []nullifierVerificationState) bool {
+	if len(notes) != len(original) {
+		return true
+	}
+	for i := range notes {
+		// IsSpent is an in-memory observation (json:"-"). Only persisted
+		// verification changes should trigger a wallet-file rewrite.
+		if notes[i].VerifiedUnspent != original[i].verifiedUnspent {
+			return true
+		}
+	}
+	return false
+}
+
+func copyNullifierVerificationToCachedNotes(cached *LocalWalletData, refreshed []FoundNote) bool {
+	if cached == nil || len(cached.Notes) == 0 {
+		return false
+	}
+	changed := false
+	byIdentity := make(map[string]FoundNote, len(refreshed))
+	for _, note := range refreshed {
+		byIdentity[foundNoteIdentityKey(note)] = note
+	}
+	for i := range cached.Notes {
+		refreshedNote, ok := byIdentity[foundNoteIdentityKey(cached.Notes[i])]
+		if !ok {
+			if cached.Notes[i].VerifiedUnspent {
+				changed = true
+			}
+			cached.Notes[i].VerifiedUnspent = false
+			continue
+		}
+		if cached.Notes[i].VerifiedUnspent != refreshedNote.VerifiedUnspent {
+			changed = true
+		}
+		cached.Notes[i].VerifiedUnspent = refreshedNote.VerifiedUnspent
+		if refreshedNote.IsSpent {
+			cached.Notes[i].IsSpent = true
+		}
+	}
+	return changed
+}
+
+var (
+	ErrNullifierStatusUnavailable = errors.New("nullifier status unavailable")
+	ErrInvalidWalletCache         = errors.New("invalid wallet cache")
+)
+
+type redactedInvalidWalletCacheError struct{}
+
+func (redactedInvalidWalletCacheError) Error() string {
+	return "cached note validation failed"
+}
+
+func (redactedInvalidWalletCacheError) Unwrap() error {
+	return ErrInvalidWalletCache
+}
+
+type redactedNullifierStatusError struct {
+	contextCause error
+}
+
+func newRedactedNullifierStatusError(cause error) redactedNullifierStatusError {
+	redacted := redactedNullifierStatusError{}
+	switch {
+	case errors.Is(cause, context.Canceled):
+		redacted.contextCause = context.Canceled
+	case errors.Is(cause, context.DeadlineExceeded):
+		redacted.contextCause = context.DeadlineExceeded
+	}
+	return redacted
+}
+
+func (e redactedNullifierStatusError) Error() string {
+	return "query failed"
+}
+
+func (e redactedNullifierStatusError) Unwrap() []error {
+	causes := []error{ErrNullifierStatusUnavailable}
+	if e.contextCause != nil {
+		causes = append(causes, e.contextCause)
+	}
+	return causes
+}
+
+func cloneLocalWalletData(wallet *LocalWalletData) *LocalWalletData {
+	if wallet == nil {
+		return nil
+	}
+	cloned := *wallet
+	cloned.Notes = append([]FoundNote(nil), wallet.Notes...)
+	return &cloned
 }
 
 func allNullifierStatusesPresent(nullifiers []string, usedByNullifier map[string]bool) bool {
@@ -565,14 +777,42 @@ func allNullifierStatusesPresent(nullifiers []string, usedByNullifier map[string
 	return true
 }
 
-func uniqueNullifiers(notes []FoundNote) []string {
-	seen := make(map[string]struct{}, len(notes))
-	nullifiers := make([]string, 0, len(notes))
-	for _, note := range notes {
-		nullifier := strings.ToLower(strings.TrimSpace(note.Nullifier))
-		if nullifier == "" {
-			continue
+func canonicalNullifierKeys(notes []FoundNote) ([]string, error) {
+	keys := make([]string, len(notes))
+	for i, note := range notes {
+		canonical, err := CanonicalFoundNoteNullifier(note)
+		if err != nil {
+			return nil, err
 		}
+		keys[i] = canonical
+	}
+	return keys, nil
+}
+
+// CanonicalFoundNoteNullifier binds cached verification state to the note
+// body that proof construction will consume.
+func CanonicalFoundNoteNullifier(note FoundNote) (string, error) {
+	if note.Note.Randomness == nil || note.Note.ReceiverSpendPubKeyX == nil || note.Note.ReceiverSpendPubKeyY == nil {
+		return "", fmt.Errorf("found note cannot compute its nullifier")
+	}
+	storedBytes, err := privacyfield.DecodeCanonicalHex(strings.TrimSpace(note.Nullifier), "nullifier")
+	if err != nil {
+		return "", fmt.Errorf("found note has an invalid nullifier")
+	}
+	computedBytes, err := privacyfield.CanonicalBytesFromBigInt(note.Note.ComputeNullifier())
+	if err != nil {
+		return "", fmt.Errorf("found note cannot compute its nullifier")
+	}
+	if !bytes.Equal(storedBytes, computedBytes) {
+		return "", fmt.Errorf("found note nullifier does not match note contents")
+	}
+	return hex.EncodeToString(computedBytes), nil
+}
+
+func uniqueCanonicalNullifiers(keys []string) []string {
+	seen := make(map[string]struct{}, len(keys))
+	nullifiers := make([]string, 0, len(keys))
+	for _, nullifier := range keys {
 		if _, ok := seen[nullifier]; ok {
 			continue
 		}
@@ -580,4 +820,20 @@ func uniqueNullifiers(notes []FoundNote) []string {
 		nullifiers = append(nullifiers, nullifier)
 	}
 	return nullifiers
+}
+
+func normalizeBatchNullifierStatuses(statuses map[string]bool) (map[string]bool, error) {
+	normalized := make(map[string]bool, len(statuses))
+	for nullifier, used := range statuses {
+		nullifierBytes, err := privacyfield.DecodeCanonicalHex(strings.TrimSpace(nullifier), "nullifier")
+		if err != nil {
+			continue
+		}
+		canonical := hex.EncodeToString(nullifierBytes)
+		if existing, ok := normalized[canonical]; ok && existing != used {
+			return nil, fmt.Errorf("conflicting statuses for canonical nullifier")
+		}
+		normalized[canonical] = used
+	}
+	return normalized, nil
 }

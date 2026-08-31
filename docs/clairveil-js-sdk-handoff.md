@@ -67,6 +67,12 @@ MsgWithdraw
 
 `MsgWithdraw` is an exact-match withdraw message and does not contain output note fields. JS/TS clients must not model the legacy `new_note_commitment` or `encrypted_note` withdraw fields, and they must not send dummy output-note values.
 
+If a downstream chain exposes these actions through an EVM precompile, its
+bindings must preserve the same 0.2 message contract: a proof-bearing deposit,
+transfer self-view disclosure and `expires_at_unix`, and the exact withdraw
+tuple without output-note placeholders. Do not silently drop a required field
+or provide a legacy ABI fallback.
+
 ## 4. Query/API Contract
 
 The JS SDK provider should implement these gRPC/HTTP queries first.
@@ -287,7 +293,13 @@ docs/clairveil-note-reservation-design.md
 docs/clairveil-note-reservation-design-kr.md
 ```
 
-JS/TS clients that reserve notes before proof generation should treat `privacy_note_reservation_contract.json` as the language-neutral source of truth and use [Clairveil Note Reservation Design Note](clairveil-note-reservation-design.md) for the detailed design rationale. Match the reservation status names, active-reservation definition, atomic batch-reserve rule, compare-and-set transition rules, lease token rules, HMAC lookup-key test vector, and operation success evidence model in that fixture. A spent nullifier proves that the note was consumed, but it is not enough to mark a payroll/payment operation successful unless the tx evidence also matches the expected output commitment, audit disclosure digest, recipient hash, amount, denom, and item index. The fixture field `expected_disclosure_digest` refers to the audit disclosure digest, not the user disclosure or sender self-view digest.
+JS/TS clients that reserve notes before proof generation should treat `privacy_note_reservation_contract.json` as the language-neutral source of truth and use [Clairveil Note Reservation Design Note](clairveil-note-reservation-design.md) for the detailed design rationale. Match the reservation status names, active-reservation definition, atomic batch-reserve rule, compare-and-set transition rules, lease token rules, HMAC lookup-key test vector, lifecycle evidence guards, and operation success evidence model in that fixture. A spent nullifier proves that the note was consumed, but it is not enough to mark a payroll/payment operation successful unless a matching persisted tx identity and the expected output commitment, audit disclosure digest, recipient hash, `expected_amount_hash`, denom, and item index all match. Compute `expected_amount_hash` as SHA-256 of canonical `denom:amount`, where `amount` is a non-negative uint64 minimal-denom decimal string. The fixture field `expected_disclosure_digest` refers to the audit disclosure digest, not the user disclosure or sender self-view digest. Fixture v3 migrates directly from v1; it adds fail-closed nullifier and relay chain-time rules, ProofReady heartbeat coverage, clean initial-state requirements, and durable leased relay handoff rules. Downstream validators must consume those fields before release.
+
+### Go Store v3 Migration
+
+The reservation `Store` is now an atomic persistence boundary. Replace independent reservation/operation updates with Service-owned batch lifecycle, reconciliation, lease-expiry recovery, proof-discard, and `RecordRelayHandoff` commands. A persistent implementation must verify the current lease owner and token together, atomically commit every linked reservation and operation change, and reject adding an input to an existing operation after the operation or any linked reservation has acquired lifecycle evidence. Existing `isSpent: false` cache entries are not proof of availability: revalidate them and mark missing or malformed nullifier responses unverified before planning.
+
+The repository-provided `MemoryStore` and `MemoryProofResultStore` are test/demo implementations, not a production persistence deliverable. Production acceptance requires a downstream PostgreSQL/SQLite-equivalent Store and durable proof outbox with an owner/nullifier unique-active constraint, transactional multi-input lifecycle changes, restart-safe relay handoff evidence, and crash recovery. Acceptance CI must exercise the complete reservation lifecycle on a local node and prover, including restart, concurrent workers/tabs, lease expiry, external relay handoff, and ambiguous broadcast recovery.
 
 ## 9. Disclosure Implementation
 
@@ -386,7 +398,10 @@ From a client perspective, relayed withdraw splits responsibilities as follows.
 - Transport between the user client and relayer is product-defined. HTTP, QR, deep link, and file handoff are all possible.
 - After the payload is handed to the relayer, it may still be submitted until `expires_at_unix`. Local cancel, UI dismissal, or releasing a local reservation does not invalidate the already-created payload.
 - The relayer client/server validates `payload_hash`, `chain_id`, `recipient`, and `expires_at_unix`, then sets its own address as `MsgWithdraw.creator` before signing and broadcasting.
+- Before external handoff, every reservation in the operation must still be `ProofReady`, carry the same immutable `payload_hash` as the exact JSON being copied, and retain the current lease owner/token. A payload-hash mismatch or mixed reservation batch is a hard reject; it must not be recorded as handed off or submitted.
 - The transparent withdraw target is the payload `recipient`, not the relayer address.
+- After payload handoff, a local UI cancel, release, or tab close does not revoke the copied payload. Until the chain expiry, the relayer may still submit it; clients must reconcile by transaction/nullifier evidence instead of treating local cancellation as proof of non-broadcast.
+- Immediately before any external broadcast call, persist a durable attempt marker. If terminal bookkeeping fails, block resubmission of that payload until transaction/nullifier reconciliation resolves the attempt.
 - This repository does not provide a production relay HTTP endpoint. Instead, it fixes the final-payload-to-relayer-submitted-message contract in `x/privacy/client/sdk/conformance/testdata/privacy_relay_withdraw_contract.json`.
 
 The Go SDK implementation is in:
@@ -494,10 +509,10 @@ The JS SDK handoff is complete when the following work.
 - Transfer prepared payload hashes are calculated in the same way as the Go fixtures.
 - `privacy_disclosure_blinding_v1_contract.json` positive/sentinel/negative vectors produce the same `DBS_*` result codes, and structured signing refuses every invalid vector before signature release.
 - Transfer/withdraw proof requests and responses are validated against the prover HTTP contract.
-- Bulk payroll clients reproduce the reservation transitions and operation success rules in `privacy_note_reservation_contract.json`.
+- Bulk payroll clients reproduce the reservation transitions and operation success rules in `privacy_note_reservation_contract.json` using a production persistent Store and durable proof outbox; restart and crash recovery preserve every active lock and handoff record.
 - User disclosure, audit disclosure, and sender self-view disclosure decode with `verified=true`.
 - Exact-match withdraw and relayed withdraw payload validation work.
-- A JS SDK integration test can follow the same flow as Clairveil repo's `make privacy-e2e-smoke`.
+- A JS SDK integration test follows the same flow as Clairveil repo's `make privacy-e2e-smoke` and covers concurrent reservation, lease expiry, restart, external relay handoff, and ambiguous broadcast recovery.
 
 ## 14. What The JS SDK Can Treat As Stable From The Go Core
 

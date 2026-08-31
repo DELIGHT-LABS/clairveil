@@ -440,11 +440,12 @@ lease 획득, heartbeat 갱신, lease clear, worker-owned `ProofReady -> Submitt
 ```sql
 UPDATE note_reservations
 SET status = 'ProofReady',
-    lease_until = NULL,
     updated_at = NOW()
 WHERE reservation_id = $1
   AND status = 'Proving'
-  AND lease_token = $2;
+  AND lease_owner = $2
+  AND lease_token = $3
+  AND lease_until > NOW();
 ```
 
 이 규칙은 zombie worker 문제를 줄임. 예를 들어 죽은 줄 알았던 worker가 뒤늦게 살아나 오래된 proof나 tx를 제출하려고 할 때, lease token이 더 이상 유효하지 않으면 상태 변경과 broadcast를 막을 수 있음.
@@ -455,7 +456,7 @@ WHERE reservation_id = $1
 - 긴 proof 생성 작업은 heartbeat로 lease를 연장함.
 - lease가 만료되면 다른 worker가 takeover할 수 있음.
 - 오래된 worker는 상태 변경 전 lease token을 다시 확인함.
-- broadcaster는 `ProofReady` 상태와 유효 lease를 모두 확인한 뒤 tx를 제출함.
+- broadcaster는 `ProofReady` 상태와 유효한 `lease_owner`/`lease_token`을 모두 확인한 뒤 tx를 제출함. `ProofReady -> Submitted/Unknown`처럼 worker-owned 상태를 벗어나는 전이와 `ConfirmedSpent` reconcile에서는 lease field를 지움.
 
 ## Split / merge 정책
 
@@ -608,7 +609,7 @@ Reserved -> Released -> Available
 
 그 외 상태는 proof artifact, tx hash, nullifier, worker lease를 확인한 뒤에만 상태를 바꿈.
 
-broadcast worker가 RPC/network error를 받았지만 tx hash, tx bytes hash, sign doc hash 같은 broadcast attempt metadata를 얻지 못한 경우에는 `ProofReady`를 `Unknown`으로 바꾸지 않음. 이때는 기존 `ProofReady` lock과 lease를 유지하고, takeover lease를 획득한 worker라면 그 lease가 만료된 뒤 재시도 worker가 다시 획득하게 둠. metadata가 있는 error 또는 non-zero tx code처럼 제출 attempt를 식별할 수 있을 때만 `ProofReady -> Unknown`으로 기록함.
+broadcast boundary를 지난 뒤 RPC/network error를 받았지만 tx hash, tx bytes hash, sign doc hash 같은 broadcast attempt metadata를 얻지 못한 경우에는 자동 재시도하지 않음. 이 경우 opaque broadcast attempt와 오류를 내구성 있게 기록하고 `ManualReview` active lock으로 보냄. lease 만료 후 다른 worker가 takeover해 재제출해서는 안 됨. 반대로 request를 보내기 전 validation/signing 실패처럼 미제출이 확실한 경우만 proof discard 증거와 함께 `ReplanRequired`로 정리할 수 있음. metadata가 있는 error 또는 non-zero tx code처럼 제출 attempt를 식별할 수 있을 때만 `ProofReady -> Unknown`으로 기록함.
 
 ## Submitted / Unknown / ManualReview reconcile
 
@@ -655,12 +656,14 @@ broadcast retry는 `operation_id` 기준으로 idempotent해야 함. retry 때�
 - `tx_hash`
 - `account_sequence`
 - `broadcast_attempt_count`
+- `broadcast_in_flight`
 - `last_broadcast_at`
 - `last_broadcast_error`
 
 권장 정책:
 
 - 동일 `operation_id`의 tx는 하나의 논리 작업으로 취급함.
+- 외부 broadcaster를 호출하기 전에 `broadcast_in_flight=true`와 attempt count를 durable store에 기록하고, terminal 상태 저장에 실패하더라도 reconcile 전에는 같은 payload를 다시 제출하지 않음.
 - sign된 tx bytes와 tx hash를 저장함.
 - RPC timeout 후에는 새 tx를 바로 만들지 말고 tx_hash 조회를 먼저 함.
 - 동일 tx bytes 재전송은 허용할 수 있음.
@@ -668,7 +671,7 @@ broadcast retry는 `operation_id` 기준으로 idempotent해야 함. retry 때�
 - gas/sequence 문제로 tx를 재구성해야 하는 경우에도 기존 `operation_id`와 reservation을 유지함.
 - nullifier가 spent이면 note 상태는 `ConfirmedSpent`로 갱신할 수 있음. 다만 tx 조회가 실패한 상태에서 payment success로 처리하려면 expected output/audit disclosure digest/recipient/amount가 현재 operation과 일치한다는 별도 증거가 필요함.
 
-현재 Go reference SDK는 `tx_hash`, `tx_bytes_hash`, `sign_doc_hash` 같은 식별자와 hash를 저장하는 contract를 제공함. 실제로 동일 signed tx bytes를 재전송하려면 scheduler 또는 broadcaster queue가 원본 signed tx bytes를 별도 durable storage에 보관해야 함. 이 저장소가 없다면 timeout/mempool 계열 실패는 `ReconcileUnknown` 흐름으로 보고, `tx_hash`와 nullifier 상태 확인을 먼저 수행한 뒤 재서명 또는 replan 여부를 결정함.
+현재 Go reference SDK는 `tx_hash`, `tx_bytes_hash`, `sign_doc_hash` 같은 식별자와 hash를 저장하는 contract를 제공함. 실제로 동일 signed tx bytes를 재전송하려면 scheduler 또는 broadcaster queue가 원본 signed tx bytes를 **제출 전에** 별도 durable storage에 보관해야 함. 이 저장소가 없다면 timeout/mempool 계열 실패는 `ReconcileUnknown` 또는 `ManualReview` 흐름으로 보고, `tx_hash`와 nullifier 상태 확인을 먼저 수행한 뒤 재서명 또는 replan 여부를 결정함. 식별자 없는 post-boundary 오류는 자동 재전송 대상이 아님.
 
 예상 흐름:
 

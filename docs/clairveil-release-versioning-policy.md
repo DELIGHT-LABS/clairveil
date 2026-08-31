@@ -33,6 +33,7 @@ Mark release notes with breaking or migration impact when any of these change:
 - `proto/clairveil/privacy/v1` message, service, or field
 - `x/privacy/client/sdk/conformance/testdata` fixture shape or value
 - `docs/schemas/clairveil-js-wallet-contract.schema.json`
+- `docs/schemas/clairveil-web-client-config.schema.json`
 - prover HTTP path, request/response version, or error code
 - CLI command, flag, or JSON output field
 - shielded address prefix, transparent prefix, denom, or chain-id defaults

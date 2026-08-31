@@ -89,6 +89,18 @@ func TestBatchPayrollPlannerRequiresExplicitPreparationBeyondSixteenInputs(t *te
 	require.ErrorIs(t, err, privacybatchtransfer.ErrPreparationRequired)
 }
 
+func TestBatchPayrollPlannerReturnsAmountHashErrors(t *testing.T) {
+	input := batchPlannerInput(1, 1)
+	input.Denom = "invalid denom"
+	input.Items[0].Denom = input.Denom
+
+	_, err := (BatchPayrollPlanner{}).Plan(input, []TreasuryNote{
+		testTreasuryNote("invalid-denom-note", input.Denom, 1, false, ""),
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "hash amount for payroll item item-00")
+}
+
 func TestBatchPayrollPlannerBacktracksAcrossOwnersForRemainingPayments(t *testing.T) {
 	input := batchPlannerInput(33, 1)
 	input.Items[30].Amount = big.NewInt(30)

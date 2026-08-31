@@ -111,7 +111,7 @@ Active identity는 `privacy-note-v1`입니다. `privacy_zk_manifest.json` schema
 | P3       | Docker image digest pinning/SBOM/vuln scan policy                       | reference image는 동작 확인용이고 production supply-chain policy는 downstream에서 확정해야 합니다.                                              |
 | P3       | Health/readiness route exposure policy                                  | local sample에는 편리하지만 remote에서는 metadata exposure와 probing 표면이 됩니다.                                                             |
 
-현재 repository는 `.github/workflows/security.yml`에서 `make vulncheck`를 실행합니다. 이 baseline은 Go dependency/standard library reachable path를 검사하고 patched Go `1.25.12` toolchain을 고정합니다. `GO-2024-2584`, `GO-2026-4479`의 `pion/dtls` v2, `GO-2026-5932`만 no-fixed-version 예외로 좁게 추적합니다. 마지막 항목은 Cosmos SDK가 local ASCII key armor에 `x/crypto/openpgp/armor`를 사용해서 reachable하며 Clairveil은 OpenPGP signing/encryption을 사용하지 않습니다. Fixed version이 생기면 각 예외는 즉시 무효가 됩니다. Downstream project는 이를 production risk register에서 다시 평가하고 image scan, SBOM, secret scan, artifact signing을 추가해야 합니다.
+현재 repository는 `.github/workflows/security.yml`에서 `make vulncheck`를 실행합니다. 이 baseline은 Go dependency/standard library reachable path를 검사하고 patched Go `1.25.13` toolchain을 고정합니다. `GO-2024-2584`, `GO-2026-4479`의 `pion/dtls` v2, `GO-2026-5932`만 no-fixed-version 예외로 좁게 추적합니다. 마지막 항목은 Cosmos SDK가 local ASCII key armor에 `x/crypto/openpgp/armor`를 사용해서 reachable하며 Clairveil은 OpenPGP signing/encryption을 사용하지 않습니다. Fixed version이 생기면 각 예외는 즉시 무효가 됩니다. Downstream project는 이를 production risk register에서 다시 평가하고 image scan, SBOM, secret scan, artifact signing을 추가해야 합니다.
 
 ## 4. 현재 발견한 코드 레벨 주의점
 

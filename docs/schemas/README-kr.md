@@ -7,10 +7,13 @@ English version: [README.md](README.md)
 ## Schema
 
 - `clairveil-js-wallet-contract.schema.json`: `x/privacy/client/sdk/conformance/testdata` 아래 wallet-facing conformance fixture의 JSON Schema입니다.
+- `clairveil-web-client-config.schema.json`: Versioned browser WebApp chain-profile configuration의 JSON Schema입니다.
 
 ## 사용 방법
 
 외부 SDK는 live network integration을 시작하기 전에 CI에서 fixture를 검증하는 편이 좋습니다.
+
+Browser 제품은 선택한 runtime profile을 `clairveil-web-client-config.schema.json`으로 추가 검증하고 duplicate profile ID와 active profile에 맞지 않는 compatibility/flattened field를 거부해야 합니다. Optional profile `depositProofUrl`은 검토된 HTTPS deposit proof-service의 정확한 endpoint를 나타내며 `proverUrl`과 별도의 privacy boundary입니다. 모든 HTTP(S) endpoint에는 credential, query, fragment가 없어야 합니다. URL userinfo와 query string은 bearer-token mechanism이 아니며, configuration artifact와 deployment diagnostic에서 secret이 노출되지 않도록 거부합니다. Legacy top-level EVM `accountPrefix`는 host metadata이므로 active profile의 privacy identity prefix와 비교하지 않습니다. Schema는 deployment input을 설명할 뿐이므로 browser는 계속 consensus circuit, audit, disclosure, asset, tree config를 chain에서 얻어야 합니다.
 
 ```bash
 npm --prefix examples/js-sdk-fixture-validator run validate
@@ -52,4 +55,4 @@ Current-root path query는 incremental node를 사용하므로 online historical
 
 `BatchJoinSplit16x32`, `MsgBatchTransfer`, keeper handler, typed scan state, artifact descriptor는 production core contract입니다. `batch_feasibility.proto`는 measurement-only로 남습니다. batch chain core는 public SDK나 remote prover route를 추가하지 않았지만 batch reference integration이 reference Go SDK/CLI와 `POST /v1/proofs/batch-transfer`를 후속 추가했습니다. External JS/web product delivery는 계속 downstream 작업입니다. 정정된 full-shape reference gate는 constraint `1,111,837`, peak RSS `3,339,862,016` bytes, max-shape warm proving `55.892 ms/output`, native 2x2 대비 per-output `2.789x` 개선을 측정했습니다. Artifact consumer는 `privacy-note-v1`을 pin해야 합니다. Validator는 exact consensus identity와 required VK를 사용하고 prover는 선택한 R1CS/PK pair를 lazy load합니다. Reference prover admission default는 circuit/service boundary별 in-flight 1개, queued 4개, positive 8 MiB request limit입니다.
 
-Prepared transfer payload `v5`는 현재 outer prepared-payload version으로 그대로 유효합니다. Inner note/disclosure/envelope encoding `privacy-fixed-v1`과 별개이며 어느 version도 다른 version을 대체하지 않습니다. Compatibility fallback은 금지됩니다. External ClairveilJS package는 이 handoff 시점에 아직 legacy이므로 upgrade 전까지 새 fixed fixture를 fail closed로 거부해야 합니다.
+Prepared transfer payload `v5`는 현재 outer prepared-payload version으로 그대로 유효합니다. Inner note/disclosure/envelope encoding `privacy-fixed-v1`과 별개이며 어느 version도 다른 version을 대체하지 않습니다. Compatibility fallback은 금지됩니다. Vendored ClairveilJS 0.2.0 package는 fixed fixture와 V5/V2 preparation/proof contract를 구현합니다. Pre-0.2 note-cache, reservation, relay persistence는 별도 namespace에서 안전하게 재스캔해야 합니다.

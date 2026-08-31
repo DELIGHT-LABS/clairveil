@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -64,13 +65,15 @@ type listNotesJSONSummary struct {
 }
 
 type listNotesJSONNote struct {
-	Index     int        `json:"index"`
-	Status    string     `json:"status"`
-	Amount    string     `json:"amount"`
-	Nullifier string     `json:"nullifier"`
-	TxHash    string     `json:"tx_hash"`
-	Height    int64      `json:"height"`
-	Note      types.Note `json:"note"`
+	Index      int        `json:"index"`
+	Status     string     `json:"status"`
+	Amount     string     `json:"amount"`
+	AssetIDHex string     `json:"asset_id_hex"`
+	AssetDenom string     `json:"asset_denom,omitempty"`
+	Nullifier  string     `json:"nullifier"`
+	TxHash     string     `json:"tx_hash"`
+	Height     int64      `json:"height"`
+	Note       types.Note `json:"note"`
 }
 
 type shieldedAddressSummary struct {
@@ -392,20 +395,35 @@ func scanNotesWithOptions(clientCtx client.Context, seed []byte, opts scanNotesO
 			ForceRescan: opts.forceRescan,
 		},
 	)
-	if err != nil {
-		return nil, err
+	if result != nil && opts.diagnostics != nil {
+		applySyncDiagnostics(opts.diagnostics, result.Diagnostics)
 	}
-
-	if opts.diagnostics != nil {
-		opts.diagnostics.LoadedLastHeight = result.Diagnostics.LoadedLastHeight
-		opts.diagnostics.LoadedNoteCount = result.Diagnostics.LoadedNoteCount
-		opts.diagnostics.ScannedFromHeight = result.Diagnostics.ScannedFromHeight
-		opts.diagnostics.ScannedToHeight = result.Diagnostics.ScannedToHeight
-		opts.diagnostics.ForcedRescan = result.Diagnostics.ForcedRescan
-		opts.diagnostics.RollbackReset = result.Diagnostics.RollbackReset
-		opts.diagnostics.NormalizedCache = result.Diagnostics.NormalizedCache
-		opts.diagnostics.NewNotesFound = result.Diagnostics.NewNotesFound
-		opts.diagnostics.FinalNoteCount = result.Diagnostics.FinalNoteCount
+	if result != nil {
+		// The note commitment carries an asset ID, not its human-readable
+		// denom. Resolve it through AssetRegistryV1 before returning the local
+		// JSON view so clients do not mislabel a verified base-asset note as an
+		// unknown token. This is display metadata only: failure to resolve an
+		// unavailable registry entry must not change the scan or spend result.
+		restoreFoundNoteDenoms(context.Background(), scanProvider, result.Notes)
+	}
+	if err != nil {
+		if errors.Is(err, privacyscan.ErrInvalidWalletCache) {
+			if result != nil {
+				return result.Notes, err
+			}
+			return nil, err
+		}
+		if result != nil && result.WalletChanged && result.Wallet != nil {
+			if saveErr := privacyscan.SaveLocalWalletFile(loadResult.Path, result.Wallet); saveErr != nil {
+				printLocalWalletSaveWarning(os.Stderr, saveErr)
+			} else if opts.diagnostics != nil {
+				opts.diagnostics.SavedWallet = true
+			}
+		}
+		if result != nil {
+			return result.Notes, err
+		}
+		return nil, err
 	}
 
 	if result.WalletChanged {
@@ -419,12 +437,59 @@ func scanNotesWithOptions(clientCtx client.Context, seed []byte, opts scanNotesO
 	return result.Notes, nil
 }
 
+func restoreFoundNoteDenoms(ctx context.Context, resolver privacyscan.AssetDenomResolver, notes []FoundNote) {
+	denomsByAssetID := make(map[string]string)
+	failedAssetIDs := make(map[string]struct{})
+	for i := range notes {
+		assetID, err := privacyfield.CanonicalBytesFromBigInt(notes[i].Note.AssetID)
+		if err != nil {
+			continue
+		}
+		assetIDHex := hex.EncodeToString(assetID)
+		if denom, ok := denomsByAssetID[assetIDHex]; ok {
+			notes[i].AssetDenom = denom
+			continue
+		}
+		if _, failed := failedAssetIDs[assetIDHex]; failed {
+			continue
+		}
+		if err := privacyscan.RestoreFoundNoteDenom(ctx, resolver, &notes[i]); err != nil {
+			failedAssetIDs[assetIDHex] = struct{}{}
+			continue
+		}
+		denomsByAssetID[assetIDHex] = notes[i].AssetDenom
+	}
+}
+
+func applySyncDiagnostics(target *scanNotesDiagnostics, source privacyscan.SyncDiagnostics) {
+	if target == nil {
+		return
+	}
+	target.LoadedLastHeight = source.LoadedLastHeight
+	target.LoadedNoteCount = source.LoadedNoteCount
+	target.ScannedFromHeight = source.ScannedFromHeight
+	target.ScannedToHeight = source.ScannedToHeight
+	target.ForcedRescan = source.ForcedRescan
+	target.RollbackReset = source.RollbackReset
+	target.NormalizedCache = source.NormalizedCache
+	target.NewNotesFound = source.NewNotesFound
+	target.FinalNoteCount = source.FinalNoteCount
+}
+
 func noteAmountString(note types.Note) string {
 	if note.Amount == nil {
 		return "0"
 	}
 
 	return note.Amount.String()
+}
+
+func listNoteAssetIDHex(note types.Note) string {
+	assetIDHex, err := privacyfield.CanonicalHexFromBigInt(note.AssetID)
+	if err != nil {
+		return ""
+	}
+	return assetIDHex
 }
 
 func buildListNotesJSONOutput(foundNotes []FoundNote, diagnostics *scanNotesDiagnostics) listNotesJSONOutput {
@@ -439,22 +504,25 @@ func buildListNotesJSONOutput(foundNotes []FoundNote, diagnostics *scanNotesDiag
 	}
 
 	for i, info := range foundNotes {
-		status := "spendable"
+		status := "unverified"
 		if info.IsSpent {
 			status = "spent"
 			output.Summary.SpentCount++
-		} else {
+		} else if info.IsVerifiedUnspent() {
+			status = "spendable"
 			output.Summary.SpendableCount++
 		}
 
 		output.Notes = append(output.Notes, listNotesJSONNote{
-			Index:     i + 1,
-			Status:    status,
-			Amount:    noteAmountString(info.Note),
-			Nullifier: info.Nullifier,
-			TxHash:    info.TxHash,
-			Height:    info.Height,
-			Note:      info.Note,
+			Index:      i + 1,
+			Status:     status,
+			Amount:     noteAmountString(info.Note),
+			AssetIDHex: listNoteAssetIDHex(info.Note),
+			AssetDenom: info.AssetDenom,
+			Nullifier:  info.Nullifier,
+			TxHash:     info.TxHash,
+			Height:     info.Height,
+			Note:       info.Note,
 		})
 	}
 
@@ -1111,8 +1179,8 @@ func CmdListNotes() *cobra.Command {
 			if jsonOutput {
 				opts.logWriter = nil
 			}
-			foundNotes, err := scanNotesWithOptions(clientCtx, seed, opts)
-			if err != nil {
+			foundNotes, scanErr := scanNotesWithOptions(clientCtx, seed, opts)
+			if err := handleListNotesScanError(cmd, foundNotes, scanErr); err != nil {
 				return err
 			}
 
@@ -1128,6 +1196,24 @@ func CmdListNotes() *cobra.Command {
 	cmd.Flags().Bool(flagListNotesJSON, false, "output notes as a machine-readable JSON document")
 	cmd.Flags().Bool(flagRescanWallet, false, "reset the local privacy wallet cache and rescan from genesis before listing notes")
 	return cmd
+}
+
+func handleListNotesScanError(cmd *cobra.Command, foundNotes []FoundNote, scanErr error) error {
+	if scanErr == nil {
+		return nil
+	}
+	if errors.Is(scanErr, privacyscan.ErrInvalidWalletCache) {
+		return fmt.Errorf("%w; rerun with --rescan-wallet to rebuild the local cache", scanErr)
+	}
+	if len(foundNotes) == 0 {
+		return scanErr
+	}
+	printWarningf(
+		cmd.ErrOrStderr(),
+		"Warning: nullifier status verification was incomplete; unverified notes are shown but cannot be spent: %v\n",
+		scanErr,
+	)
+	return nil
 }
 
 func CmdShowShieldedAddress() *cobra.Command {

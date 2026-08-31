@@ -50,7 +50,10 @@ func (BatchPayrollPlanner) Plan(input PayrollInput, treasuryNotes []TreasuryNote
 	available := filterAvailableNotes(input.Denom, treasuryNotes)
 	plan := &BatchPayrollPlan{CompanyID: input.CompanyID, PayrollID: input.PayrollID, BatchID: input.BatchID, Denom: input.Denom, Attempt: input.Attempt}
 	search := batchPayrollPlanSearch{remaining: batchPayrollPlanSearchLimit}
-	operations, ok := search.plan(input, available, 0, 0)
+	operations, ok, err := search.plan(input, available, 0, 0)
+	if err != nil {
+		return nil, err
+	}
 	if !ok {
 		blockedOffset := search.farthestItemOffset
 		if blockedOffset < 0 || blockedOffset >= len(input.Items) {
@@ -72,15 +75,15 @@ type batchTreasuryInputSelection struct {
 	total *big.Int
 }
 
-func (s *batchPayrollPlanSearch) plan(input PayrollInput, available []TreasuryNote, itemOffset, operationIndex int) ([]BatchPayrollOperationPlan, bool) {
+func (s *batchPayrollPlanSearch) plan(input PayrollInput, available []TreasuryNote, itemOffset, operationIndex int) ([]BatchPayrollOperationPlan, bool, error) {
 	if itemOffset == len(input.Items) {
-		return []BatchPayrollOperationPlan{}, true
+		return []BatchPayrollOperationPlan{}, true, nil
 	}
 	if itemOffset > s.farthestItemOffset {
 		s.farthestItemOffset = itemOffset
 	}
 	if s.remaining <= 0 {
-		return nil, false
+		return nil, false, nil
 	}
 	s.remaining--
 	maxPayments := len(input.Items) - itemOffset
@@ -97,27 +100,41 @@ func (s *batchPayrollPlanSearch) plan(input PayrollInput, available []TreasuryNo
 			if paymentCount == int(privacytypes.BatchJoinSplitV1MaxOutputs) && change.Sign() != 0 {
 				continue
 			}
-			operation := buildBatchPayrollOperation(input, itemOffset, paymentCount, operationIndex, selection, paymentTotal, change)
-			remaining, ok := s.plan(input, removeBatchTreasuryInputs(available, selection.notes), itemOffset+paymentCount, operationIndex+1)
+			operation, err := buildBatchPayrollOperation(input, itemOffset, paymentCount, operationIndex, selection, paymentTotal, change)
+			if err != nil {
+				return nil, false, err
+			}
+			remaining, ok, err := s.plan(input, removeBatchTreasuryInputs(available, selection.notes), itemOffset+paymentCount, operationIndex+1)
+			if err != nil {
+				return nil, false, err
+			}
 			if ok {
-				return append([]BatchPayrollOperationPlan{operation}, remaining...), true
+				return append([]BatchPayrollOperationPlan{operation}, remaining...), true, nil
 			}
 		}
 	}
-	return nil, false
+	return nil, false, nil
 }
 
-func buildBatchPayrollOperation(input PayrollInput, itemOffset, paymentCount, operationIndex int, selection batchTreasuryInputSelection, paymentTotal, change *big.Int) BatchPayrollOperationPlan {
+func buildBatchPayrollOperation(input PayrollInput, itemOffset, paymentCount, operationIndex int, selection batchTreasuryInputSelection, paymentTotal, change *big.Int) (BatchPayrollOperationPlan, error) {
 	operationID := batchPayrollOperationID(input, operationIndex)
 	items := make([]PayrollPlanItem, paymentCount)
 	for i := 0; i < paymentCount; i++ {
 		item := input.Items[itemOffset+i]
+		recipientHash, err := HashRecipient(item.RecipientAddress)
+		if err != nil {
+			return BatchPayrollOperationPlan{}, fmt.Errorf("hash recipient for payroll item %s: %w", item.ItemID, err)
+		}
+		amountHash, err := HashAmount(input.Denom, item.Amount)
+		if err != nil {
+			return BatchPayrollOperationPlan{}, fmt.Errorf("hash amount for payroll item %s: %w", item.ItemID, err)
+		}
 		items[i] = PayrollPlanItem{
 			CompanyID: input.CompanyID, PayrollID: input.PayrollID, BatchID: input.BatchID, Attempt: input.Attempt,
 			ChunkID: chunkID(input.CompanyID, input.BatchID, input.PayrollID, input.Attempt, operationIndex),
 			ItemID:  item.ItemID, EmployeeID: item.EmployeeID, OperationID: operationID,
-			RecipientAddress: item.RecipientAddress, ExpectedRecipientHash: HashRecipient(item.RecipientAddress),
-			Amount: cloneBigInt(item.Amount), ExpectedAmountHash: HashAmount(input.Denom, item.Amount), Denom: input.Denom,
+			RecipientAddress: item.RecipientAddress, ExpectedRecipientHash: recipientHash,
+			Amount: cloneBigInt(item.Amount), ExpectedAmountHash: amountHash, Denom: input.Denom,
 			DisclosurePolicy: item.DisclosurePolicy, ExpectedOutputCommitment: item.ExpectedOutputCommitment,
 			ExpectedDisclosureDigest: preferredExpectedDisclosureDigest(item), Status: ItemStatusPlanned,
 		}
@@ -130,7 +147,7 @@ func buildBatchPayrollOperation(input PayrollInput, itemOffset, paymentCount, op
 		OperationID: operationID, Items: items, InputNotes: cloneTreasuryNotes(selection.notes),
 		InputTotal: new(big.Int).Set(selection.total), PaymentTotal: new(big.Int).Set(paymentTotal), Change: new(big.Int).Set(change),
 		OutputCount: outputCount, HasChange: change.Sign() > 0,
-	}
+	}, nil
 }
 
 func selectBatchTreasuryInputCandidates(available []TreasuryNote, target *big.Int) []batchTreasuryInputSelection {

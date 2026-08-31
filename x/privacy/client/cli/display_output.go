@@ -29,9 +29,11 @@ func renderListNotesText(foundNotes []FoundNote) string {
 	builder.WriteString(fmt.Sprintf("%-4s | %-15s | %-10s | %-19s | %s\n", "No.", "Amount", "Status", "Asset ID", "Nullifier"))
 
 	for i, info := range foundNotes {
-		status := "spendable"
+		status := "unverified"
 		if info.IsSpent {
 			status = "spent"
+		} else if info.IsVerifiedUnspent() {
+			status = "spendable"
 		}
 
 		builder.WriteString(fmt.Sprintf(
@@ -55,7 +57,7 @@ func renderListNotesText(foundNotes []FoundNote) string {
 		builder.WriteString("\nSpendable note payloads (JSON):\n")
 
 		for i, info := range foundNotes {
-			if info.IsSpent {
+			if !info.IsVerifiedUnspent() {
 				continue
 			}
 

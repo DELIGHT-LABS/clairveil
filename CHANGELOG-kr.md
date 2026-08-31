@@ -6,6 +6,55 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
 ## Unreleased
 
+### Added
+
+- 명시적인 supported-flow 범위, versioned browser chain-profile schema, browser API/lifecycle guide, encrypted storage/recovery contract, browser/prover deployment control로 이루어진 English/Korean WebApp integration pack을 추가했습니다.
+- 예제 DApp에 feature gate된 Cosmos 일괄 지급 editor를 추가했습니다. 하나의 1–16 input / 1–32 output `MsgBatchTransfer`를 준비하고 all-or-nothing 경계와 capacity를 표시하며, 조용히 분할하지 않고 inclusion 뒤 payment별 output evidence를 검증합니다.
+
+### Changed
+
+- 예제 DApp이 `clairveil-web-client-config-v1`을 emit/검증하도록 변경했습니다. Browser flow를 시작하기 전에 server/static flattened compatibility field가 active chain profile과 일치해야 합니다. Legacy top-level EVM account prefix는 host metadata로 남고 ClairveilJS에 전달하는 profile privacy prefix를 override할 수 없습니다.
+- ClairveilJS browser-client declaration에 기존 typed, read-only `evmJsonRpc<TResult>` recovery/query method를 노출했습니다.
+- 예제 DApp이 circuit, asset, audit/disclosure, tree, reserve, EVM chain 검증용 ClairveilJS browser preflight surface를 사용하도록 변경했습니다. Spendable inventory를 보여주기 전과 지원하는 모든 privacy prepare 직전에 fail closed합니다.
+- 예제 DApp이 browser circuit/asset/tree preflight 및 experimental atomic batch-transfer method를 노출하는 새 content-addressed ClairveilJS 0.2.0 artifact를 사용하도록 변경했습니다.
+
+### Fixed
+
+- CI/release에서 재현 가능한 예제 DApp install을 복원했습니다. CI/release는 content-addressed ClairveilJS archive를 사용하고, `make dapp-local`에서만 local checkout을 link합니다. Privacy Events panel은 이제 batch transfer를 선택할 수 있고 complete typed `privacy-scan-v2` output evidence에서 사용할 수 있는 모든 sender self-view disclosure를 검증합니다.
+- 예제 DApp이 Keplr를 열기 전에 실제 prepared atomic-batch effect를 최종
+  확인하면서 전체 recipient와 payment별 disclosure도 표시하고, 개별적으로
+  분할할 수 없는 payment를 사전에 차단하며, 이미 검증된 split payment를 이후
+  retry에서 제외하고, broadcast 이후 결과가 불명확한 모든 operation을 실패로
+  표시하지 않고 reconcile 대기로 유지하도록 수정했습니다.
+- 예제 DApp의 legacy 0.1 browser-data cleanup UI와 구현을 제거했습니다. v0.2
+  client는 legacy persistence를 계속 무시하고 이를 읽거나 변경하지 않는 isolated
+  fresh scan에서 시작합니다.
+- `dapp-local`이 loopback same-origin prover proxy를 활성화하도록 수정했습니다.
+  이제 local browser DApp이 browser CORS policy를 의도적으로 제공하지 않는
+  reference prover에 cross-origin request를 직접 보내지 않습니다.
+- 예제 DApp의 짧은 current chain-configuration preflight lease가 만료되면 이를
+  다시 검증하도록 수정했습니다. 이전 successful preflight가 오래되었다는 이유만으로
+  cached note가 계속 `Sync unavailable`으로 숨겨지지 않으며, 재검증에 실패하면
+  기존처럼 fail closed합니다.
+- Browser proof 요청이 설정된 prover URL의 path prefix를 보존하도록 vendored
+  ClairveilJS artifact를 갱신해 WebApp profile 및 deployment-gate 계약과
+  일치시켰습니다. 패치된 `0.2.0` package manifest와 content-addressed
+  filename으로 해당 artifact를 독립적으로 식별할 수 있게 했습니다. DApp
+  호환성 fixture도 유효한 v0.2 Merkle path와 canonical asset ID를 구성하도록
+  갱신했습니다.
+
+### Security
+
+- 예제 DApp의 plaintext note cache, reservation state, relay recovery metadata를 namespace별 AES-GCM IndexedDB record로 교체했습니다. Privacy setup에는 IndexedDB, Web Crypto, Web Locks가 필요하며 `localStorage`, plaintext IndexedDB, memory fallback을 사용하지 않습니다.
+- 예제 static server를 강화했습니다. Loopback이 기본 bind이고 prover proxy는 명시적인 direct-loopback local-test opt-in이 필요하며, public mode는 proxy/token/cleartext configuration을 거부하고 static response에는 CSP, `nosniff`, no-referrer, cross-origin opener header를 보냅니다.
+
+### Migration Notes
+
+- `privacy_note_reservation_contract.json`과 schema를 v1에서 v3으로 올렸습니다. Downstream reservation 구현은 malformed 또는 unavailable nullifier/relay chain-time evidence를 fail-closed로 처리하고, `ProofReady` 전이 동안 lease heartbeat를 유지하며, payload를 외부에 노출하기 전에 lease가 있는 `ProofReady` relay handoff를 durable하게 기록해야 합니다.
+- 무제한 `UpdateReservation`/`UpdateOperation` 호출을 Service 소유의 atomic batch, reconciliation, lease-expiry recovery, proof-discard, relay-handoff command로 교체해야 합니다. Persistent Store 구현은 현재 lease owner/token을 함께 검증하고 연결된 reservation/operation 변경을 한 transaction으로 commit해야 합니다.
+- Durable reservation lifecycle storage는 JSON snapshot과 SQL metadata 모두 schema v2입니다. 이 workspace는 아직 release 전이므로 lifecycle store migration 또는 rollback 계약이 없으며, store는 현재 schema로 직접 초기화합니다.
+- `FoundNote.VerifiedUnspent`는 Go client SDK hardening이며 새로운 consensus boundary나 freshness proof가 아닙니다. Public Go/JSON shape에 `verified_unspent`가 추가되며, 해당 필드가 없는 기존 cache는 false로 decode되므로 planning 전에 성공적인 nullifier 재검증을 거쳐야 합니다. 정상 sync가 cache note를 재검증하며, 폐기되거나 손상된 cache에는 Reset & Rescan을 사용할 수 있습니다. 이 flag는 broadcast 직전 nullifier check를 대체하지 않으며, ClairveilJS/DApp은 이 Go field 자체가 아니라 동등한 fresh-query 동작을 구현해야 합니다.
+
 ## v0.3.1 - 2026-07-21
 
 ### Fixed

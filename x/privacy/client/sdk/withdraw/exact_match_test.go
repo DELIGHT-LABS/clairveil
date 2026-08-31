@@ -13,9 +13,9 @@ import (
 
 func TestFindExactMatchSpendableNoteByDenomIgnoresDifferentDenom(t *testing.T) {
 	notes := []privacyscan.FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false, VerifiedUnspent: true},
 		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: true},
-		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
 	}
 
 	selected := FindExactMatchSpendableNoteByDenom(notes, "uclair", big.NewInt(10))
@@ -31,13 +31,13 @@ func TestFindExactMatchSpendableNoteByDenomUsesDeterministicOrder(t *testing.T) 
 			Note:      privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")},
 			Nullifier: "bb",
 			Height:    9,
-			IsSpent:   false,
+			IsSpent:   false, VerifiedUnspent: true,
 		},
 		{
 			Note:      privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")},
 			Nullifier: "aa",
 			Height:    5,
-			IsSpent:   false,
+			IsSpent:   false, VerifiedUnspent: true,
 		},
 	}
 
@@ -49,9 +49,9 @@ func TestFindExactMatchSpendableNoteByDenomUsesDeterministicOrder(t *testing.T) 
 func TestBuildExactMatchErrorShowsSpendableGuidance(t *testing.T) {
 	targetCoin := sdk.NewInt64Coin("uclair", 10)
 	notes := []privacyscan.FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false, VerifiedUnspent: true},
 	}
 
 	err := BuildExactMatchError(targetCoin, notes)
@@ -68,7 +68,7 @@ func TestBuildExactMatchErrorShowsSpendableGuidance(t *testing.T) {
 func TestBuildExactMatchErrorHandlesMissingDenomNotes(t *testing.T) {
 	targetCoin := sdk.NewInt64Coin("uclair", 10)
 	notes := []privacyscan.FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false, VerifiedUnspent: true},
 	}
 
 	err := BuildExactMatchError(targetCoin, notes)

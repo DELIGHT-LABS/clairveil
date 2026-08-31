@@ -57,6 +57,7 @@ func testSpendAssignment(t *testing.T) *circuit.SpendCircuit {
 	spendPubKey := testPubKey(11)
 	viewPubKey := testPubKey(13)
 	note := privacyscan.FoundNote{
+		VerifiedUnspent: true,
 		Note: privacytypes.Note{
 			ReceiverSpendPubKeyX: pointCoordinate(spendPubKey, true),
 			ReceiverSpendPubKeyY: pointCoordinate(spendPubKey, false),
@@ -67,6 +68,9 @@ func testSpendAssignment(t *testing.T) *circuit.SpendCircuit {
 			Randomness:           big.NewInt(701),
 		},
 	}
+	nullifier, err := privacyfield.CanonicalHexFromBigInt(note.Note.ComputeNullifier())
+	require.NoError(t, err)
+	note.Nullifier = nullifier
 
 	rootBytes, err := privacyfield.CanonicalBytesFromBigInt(big.NewInt(909))
 	require.NoError(t, err)
