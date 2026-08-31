@@ -469,7 +469,7 @@ func SummarizeSpendableNotesByDenom(notes []privacyscan.FoundNote, denom string)
 	total := new(big.Int)
 
 	for _, note := range notes {
-		if note.IsSpent {
+		if !note.IsVerifiedUnspent() {
 			continue
 		}
 		if note.Note.AssetID == nil || note.Note.AssetID.Cmp(targetAssetID) != 0 {

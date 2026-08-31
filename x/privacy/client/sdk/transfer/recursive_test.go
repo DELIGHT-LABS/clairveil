@@ -271,6 +271,6 @@ func recursiveTransferFoundNote(amount int64, denom string, nullifier string, he
 		},
 		Nullifier: nullifier,
 		Height:    height,
-		IsSpent:   false,
+		IsSpent:   false, VerifiedUnspent: true,
 	}
 }

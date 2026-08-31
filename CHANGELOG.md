@@ -6,6 +6,85 @@ This project follows [the release versioning policy](docs/clairveil-release-vers
 
 ## Unreleased
 
+### Added
+
+- Added the English/Korean WebApp integration pack: explicit supported-flow
+  scope, versioned browser chain-profile schema, browser API/lifecycle guide,
+  encrypted storage/recovery contract, and browser/prover deployment controls.
+
+### Changed
+
+- The example DApp now emits and validates
+  `clairveil-web-client-config-v1`; server and static flattened compatibility
+  fields must agree with the active chain profile before a browser flow starts.
+  The legacy top-level EVM account prefix remains host metadata and cannot
+  override the profile privacy prefix passed to ClairveilJS.
+- ClairveilJS browser-client declarations now expose the existing typed,
+  read-only `evmJsonRpc<TResult>` recovery/query method.
+- The example DApp now consumes the ClairveilJS browser preflight surface for
+  circuit, asset, audit/disclosure, tree, reserve, and EVM chain validation.
+  It fails closed before displaying spendable inventory and again immediately
+  before every supported privacy preparation.
+- The example DApp now targets ClairveilJS 0.3.1 through the sibling checkout
+  used by local development and an exact pinned checkout in CI. Its required
+  conformance suite covers the current browser circuit/asset/tree preflight and
+  V5/V2 preparation/proof contracts.
+
+### Fixed
+
+- Restored reproducible example-DApp installs by checking out the exact
+  ClairveilJS commit into the sibling dependency path in CI, while local
+  development continues to use its sibling checkout. Bundle generation now
+  avoids developer-specific absolute paths.
+- Kept the v0.3.1 example's one-proof batch product flow intentionally disabled:
+  the server reports `serverFeatures.batchTransfer=false`, and the UI exposes
+  neither batch submission nor an authorized batch-audit surface.
+- Removed the example DApp's legacy 0.1 browser-data cleanup UI and
+  implementation. The unreleased v0.3.1 client supports only current-namespace
+  fresh initialization and a full typed rescan; it defines no legacy lifecycle
+  migration or in-place downgrade contract.
+- Make `dapp-local` enable the loopback same-origin prover proxy. The local
+  browser DApp no longer attempts a cross-origin request to the reference
+  prover, which intentionally does not provide a browser CORS policy.
+- Renew the example DApp's current chain-configuration preflight when its
+  short-lived lease expires. Cached notes no longer stay hidden as
+  `Sync unavailable` solely because the previous successful preflight aged
+  out; a failed renewal still fails closed.
+- Updated the pinned ClairveilJS 0.3.1 integration so browser proof requests
+  preserve a configured prover URL path prefix, matching the WebApp profile and
+  deployment-gate contract. DApp compatibility fixtures construct valid
+  current Merkle paths and canonical asset IDs.
+
+### Security
+
+- The browser DApp now serializes every Cosmos public/private submission for a
+  canonical chain/account across tabs and equivalent profiles, revalidates the
+  local genesis epoch inside that fence, and durably records the exact signed
+  Cosmos transaction hash before entering the RPC broadcast boundary. Private
+  submissions also mirror that hash into a non-sensitive account marker, so a
+  reconnect blocks transparent sends even before privacy setup restores the
+  encrypted reservation store. REST endpoint changes invalidate the privacy
+  session and are blocked while a scan or account transaction is active.
+- Public EVM send/deposit records a hashless wallet-boundary attempt before
+  `eth_sendTransaction`, promotes it synchronously when MetaMask returns a hash,
+  and keeps an ambiguous attempt blocked for explicit wallet-history recovery.
+- Replaced the example DApp's plaintext note cache and relay recovery metadata
+  with namespace-separated AES-GCM localStorage envelopes, and reservation
+  state with encrypted IndexedDB records guarded by Web Locks. Privacy setup
+  requires the corresponding browser storage, Web Crypto, and Web Locks and
+  does not fall back to plaintext storage or memory.
+- Hardened the example static server: loopback is the default bind, the prover
+  proxy needs explicit direct-loopback local-test opt-in, public mode rejects
+  proxy/token/cleartext configuration, and static responses receive CSP,
+  `nosniff`, no-referrer, and cross-origin opener headers.
+
+### Migration Notes
+
+- Upgraded `privacy_note_reservation_contract.json` and its schema from v1 to v3. Downstream reservation implementations must fail closed for malformed or unavailable nullifier/relay chain-time evidence, keep lease heartbeats through the ProofReady transition, and durably record a leased `ProofReady` relay handoff before exposing payloads externally.
+- Replace unrestricted `UpdateReservation`/`UpdateOperation` calls with the Service-owned atomic batch, reconciliation, lease-expiry recovery, proof-discard, and relay-handoff commands. Persistent Store implementations must validate the current lease owner and token together and commit linked reservation/operation changes in one transaction.
+- Durable reservation lifecycle storage is schema v2 in both JSON snapshots and SQL metadata. This unreleased workspace has no lifecycle-store migration or rollback contract; stores are initialized directly at the current schema.
+- `FoundNote.VerifiedUnspent` is Go client SDK hardening, not a new consensus boundary or a freshness proof. It is a public Go/JSON shape change (`verified_unspent`); older cached entries without the field decode as false and must complete a successful nullifier revalidation before planning. A normal sync revalidates cached notes, while Reset & Rescan is available for discarded or corrupt caches. This flag does not replace the mandatory pre-broadcast nullifier check, and ClairveilJS/DApps need equivalent fresh-query behavior rather than this Go field itself.
+
 ## v0.3.1 - 2026-07-21
 
 ### Fixed

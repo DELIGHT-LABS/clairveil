@@ -47,6 +47,7 @@ func TestPrepareJoinSplitTransferBuildsAssignmentAndOutputs(t *testing.T) {
 			},
 		},
 	}
+	markFoundNotesVerified(&inputs)
 
 	rootBytes, err := privacyfield.CanonicalBytesFromBigInt(big.NewInt(909))
 	require.NoError(t, err)
@@ -130,6 +131,7 @@ func TestPrepareJoinSplitTransferRejectsMerkleRootMismatch(t *testing.T) {
 			Randomness:           big.NewInt(802),
 		}},
 	}
+	markFoundNotesVerified(&inputs)
 
 	rootA, err := privacyfield.CanonicalBytesFromBigInt(big.NewInt(1001))
 	require.NoError(t, err)
@@ -169,6 +171,25 @@ func TestPrepareJoinSplitTransferRejectsMerkleRootMismatch(t *testing.T) {
 	require.NotNil(t, senderViewScalar)
 	require.NotNil(t, recipientSpendScalar)
 	require.NotNil(t, recipientViewScalar)
+}
+
+func TestPrepareJoinSplitTransferRejectsUnverifiedInput(t *testing.T) {
+	fixture := newPrepareJoinSplitFixture(t, []uint32{0, 1})
+	fixture.inputs[0].VerifiedUnspent = false
+
+	_, err := PrepareJoinSplitTransfer(
+		context.Background(),
+		fixture.merkleProvider,
+		PrepareJoinSplitInput{
+			Inputs:               fixture.inputs,
+			RecipientSpendPubKey: fixture.recipientSpendPubKey,
+			RecipientViewPubKey:  fixture.recipientViewPubKey,
+			TransferAmount:       big.NewInt(7),
+			SenderSpendPubKey:    fixture.senderSpendPubKey,
+			SenderViewPubKey:     fixture.senderViewPubKey,
+		},
+	)
+	require.ErrorContains(t, err, "input note 0 must be verified unspent")
 }
 
 func TestPrepareJoinSplitTransferRejectsOverTransfer(t *testing.T) {
@@ -213,6 +234,7 @@ func TestPrepareJoinSplitTransferRejectsMixedOwnersBeforePathLookup(t *testing.T
 	fixture := newPrepareJoinSplitFixture(t, []uint32{0, 1})
 	fixture.inputs[1].Note.ReceiverSpendPubKeyX = pointCoordinate(fixture.recipientSpendPubKey, true)
 	fixture.inputs[1].Note.ReceiverSpendPubKeyY = pointCoordinate(fixture.recipientSpendPubKey, false)
+	markFoundNotesVerified(&fixture.inputs)
 
 	_, err := PrepareJoinSplitTransfer(
 		context.Background(),
@@ -235,6 +257,7 @@ func TestPrepareJoinSplitTransferRejectsChangeAmountAboveShieldedLimit(t *testin
 	maxAmount := privacytypes.MaxShieldedAmount()
 	fixture.inputs[0].Note.Amount = new(big.Int).Set(maxAmount)
 	fixture.inputs[1].Note.Amount = new(big.Int).Set(maxAmount)
+	markFoundNotesVerified(&fixture.inputs)
 
 	_, err := PrepareJoinSplitTransfer(
 		context.Background(),
@@ -311,6 +334,7 @@ func newPrepareJoinSplitFixture(t *testing.T, pathHelper []uint32) prepareJoinSp
 			},
 		},
 	}
+	markFoundNotesVerified(&inputs)
 
 	rootBytes, err := privacyfield.CanonicalBytesFromBigInt(big.NewInt(909))
 	require.NoError(t, err)
@@ -333,6 +357,17 @@ func newPrepareJoinSplitFixture(t *testing.T, pathHelper []uint32) prepareJoinSp
 		senderViewPubKey:     senderViewPubKey,
 		recipientSpendPubKey: recipientSpendPubKey,
 		recipientViewPubKey:  recipientViewPubKey,
+	}
+}
+
+func markFoundNotesVerified(notes *[2]privacyscan.FoundNote) {
+	for i := range notes {
+		nullifier, err := privacyfield.CanonicalHexFromBigInt(notes[i].Note.ComputeNullifier())
+		if err != nil {
+			panic(err)
+		}
+		notes[i].Nullifier = nullifier
+		notes[i].VerifiedUnspent = true
 	}
 }
 

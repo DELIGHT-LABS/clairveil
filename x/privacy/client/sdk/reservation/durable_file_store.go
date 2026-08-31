@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-const durableFileStoreVersion = 1
+const durableFileStoreVersion = currentLifecycleSchemaVersion
 
 type DurableFileStore struct {
 	mu     sync.Mutex
@@ -40,14 +40,21 @@ func OpenDurableFileStore(path string) (*DurableFileStore, error) {
 	if path == "" {
 		return nil, fmt.Errorf("%w: durable reservation store path is required", ErrInvalidReservation)
 	}
-	memory, err := loadDurableFileStoreSnapshot(path)
+	store := &DurableFileStore{path: path}
+	unlock, err := store.acquireFileLockLocked()
 	if err != nil {
 		return nil, err
 	}
-	store := &DurableFileStore{
-		path:   path,
-		memory: memory,
+	defer unlock()
+	snapshot, err := readDurableFileStoreSnapshot(path)
+	if err != nil {
+		return nil, err
 	}
+	memory, err := memoryStoreFromSnapshot(snapshot)
+	if err != nil {
+		return nil, err
+	}
+	store.memory = memory
 	return store, nil
 }
 
@@ -162,14 +169,28 @@ func (s *DurableFileStore) CompareAndSetReservationStatus(ctx context.Context, r
 	return updated, s.persistMutationLocked(ctx, before)
 }
 
-func (s *DurableFileStore) CompareAndSetReservationStatusWithOperation(ctx context.Context, reservationID string, from ReservationStatus, to ReservationStatus, operation *PayrollOperation, now time.Time) (*NoteReservation, *PayrollOperation, error) {
+func (s *DurableFileStore) CompareAndSetReservationStatusWithLease(ctx context.Context, reservationID string, leaseOwner string, leaseToken string, from ReservationStatus, to ReservationStatus, now time.Time) (*NoteReservation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(ctx); err != nil {
+		return nil, err
+	}
+	before := s.snapshotLocked()
+	updated, err := s.memory.CompareAndSetReservationStatusWithLease(ctx, reservationID, leaseOwner, leaseToken, from, to, now)
+	if err != nil {
+		return nil, err
+	}
+	return updated, s.persistMutationLocked(ctx, before)
+}
+
+func (s *DurableFileStore) ApplyReconciliationTransition(ctx context.Context, transition ReconciliationTransition) (*NoteReservation, *PayrollOperation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.refreshLocked(ctx); err != nil {
 		return nil, nil, err
 	}
 	before := s.snapshotLocked()
-	updatedReservation, updatedOperation, err := s.memory.CompareAndSetReservationStatusWithOperation(ctx, reservationID, from, to, operation, now)
+	updatedReservation, updatedOperation, err := s.memory.ApplyReconciliationTransition(ctx, transition)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -179,18 +200,38 @@ func (s *DurableFileStore) CompareAndSetReservationStatusWithOperation(ctx conte
 	return updatedReservation, updatedOperation, nil
 }
 
-func (s *DurableFileStore) CompareAndSetReservationStatusWithLease(ctx context.Context, reservationID string, leaseToken string, from ReservationStatus, to ReservationStatus, now time.Time) (*NoteReservation, error) {
+func (s *DurableFileStore) ApplyLeaseExpiryRecovery(ctx context.Context, transition ReconciliationTransition) (*NoteReservation, *PayrollOperation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.refreshLocked(ctx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	before := s.snapshotLocked()
-	updated, err := s.memory.CompareAndSetReservationStatusWithLease(ctx, reservationID, leaseToken, from, to, now)
+	updatedReservation, updatedOperation, err := s.memory.ApplyLeaseExpiryRecovery(ctx, transition)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return updated, s.persistMutationLocked(ctx, before)
+	if err := s.persistMutationLocked(ctx, before); err != nil {
+		return nil, nil, err
+	}
+	return updatedReservation, updatedOperation, nil
+}
+
+func (s *DurableFileStore) ApplyProofDiscardTransition(ctx context.Context, transition ReconciliationTransition) (*NoteReservation, *PayrollOperation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(ctx); err != nil {
+		return nil, nil, err
+	}
+	before := s.snapshotLocked()
+	updatedReservation, updatedOperation, err := s.memory.ApplyProofDiscardTransition(ctx, transition)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.persistMutationLocked(ctx, before); err != nil {
+		return nil, nil, err
+	}
+	return updatedReservation, updatedOperation, nil
 }
 
 func (s *DurableFileStore) AcquireReservationLease(ctx context.Context, reservationID string, owner string, leaseToken string, leaseUntil time.Time, now time.Time) (*NoteReservation, error) {
@@ -221,42 +262,107 @@ func (s *DurableFileStore) AcquireReservationLeaseForStatus(ctx context.Context,
 	return updated, s.persistMutationLocked(ctx, before)
 }
 
-func (s *DurableFileStore) HeartbeatReservationLease(ctx context.Context, reservationID string, leaseToken string, leaseUntil time.Time, now time.Time) (*NoteReservation, error) {
+func (s *DurableFileStore) AcquireSingleReservationLease(ctx context.Context, reservationID string, owner string, leaseToken string, requiredStatus ReservationStatus, leaseUntil time.Time, now time.Time) (*NoteReservation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.refreshLocked(ctx); err != nil {
 		return nil, err
 	}
 	before := s.snapshotLocked()
-	updated, err := s.memory.HeartbeatReservationLease(ctx, reservationID, leaseToken, leaseUntil, now)
+	updated, err := s.memory.AcquireSingleReservationLease(ctx, reservationID, owner, leaseToken, requiredStatus, leaseUntil, now)
 	if err != nil {
 		return nil, err
 	}
 	return updated, s.persistMutationLocked(ctx, before)
 }
 
-func (s *DurableFileStore) HeartbeatReservationLeaseForStatus(ctx context.Context, reservationID string, leaseToken string, requiredStatus ReservationStatus, leaseUntil time.Time, now time.Time) (*NoteReservation, error) {
+func (s *DurableFileStore) BeginProvingOperation(ctx context.Context, operationID string, reservations []SubmittedReservationRef, leaseUntil time.Time, now time.Time) ([]NoteReservation, *PayrollOperation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(ctx); err != nil {
+		return nil, nil, err
+	}
+	before := s.snapshotLocked()
+	updatedReservations, updatedOperation, err := s.memory.BeginProvingOperation(ctx, operationID, reservations, leaseUntil, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.persistMutationLocked(ctx, before); err != nil {
+		return nil, nil, err
+	}
+	return updatedReservations, updatedOperation, nil
+}
+
+func (s *DurableFileStore) ReclaimExpiredOperation(ctx context.Context, operationID string, reservations []SubmittedReservationRef, requiredStatus ReservationStatus, leaseUntil time.Time, now time.Time) ([]NoteReservation, *PayrollOperation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(ctx); err != nil {
+		return nil, nil, err
+	}
+	before := s.snapshotLocked()
+	updatedReservations, updatedOperation, err := s.memory.ReclaimExpiredOperation(ctx, operationID, reservations, requiredStatus, leaseUntil, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.persistMutationLocked(ctx, before); err != nil {
+		return nil, nil, err
+	}
+	return updatedReservations, updatedOperation, nil
+}
+
+func (s *DurableFileStore) RollbackProvingOperation(ctx context.Context, operationID string, reservations []SubmittedReservationRef, now time.Time) ([]NoteReservation, *PayrollOperation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(ctx); err != nil {
+		return nil, nil, err
+	}
+	before := s.snapshotLocked()
+	updatedReservations, updatedOperation, err := s.memory.RollbackProvingOperation(ctx, operationID, reservations, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.persistMutationLocked(ctx, before); err != nil {
+		return nil, nil, err
+	}
+	return updatedReservations, updatedOperation, nil
+}
+
+func (s *DurableFileStore) HeartbeatReservationLease(ctx context.Context, reservationID string, leaseOwner string, leaseToken string, leaseUntil time.Time, now time.Time) (*NoteReservation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.refreshLocked(ctx); err != nil {
 		return nil, err
 	}
 	before := s.snapshotLocked()
-	updated, err := s.memory.HeartbeatReservationLeaseForStatus(ctx, reservationID, leaseToken, requiredStatus, leaseUntil, now)
+	updated, err := s.memory.HeartbeatReservationLease(ctx, reservationID, leaseOwner, leaseToken, leaseUntil, now)
 	if err != nil {
 		return nil, err
 	}
 	return updated, s.persistMutationLocked(ctx, before)
 }
 
-func (s *DurableFileStore) ClearReservationLease(ctx context.Context, reservationID string, leaseToken string, now time.Time) (*NoteReservation, error) {
+func (s *DurableFileStore) HeartbeatReservationLeaseForStatus(ctx context.Context, reservationID string, leaseOwner string, leaseToken string, requiredStatus ReservationStatus, leaseUntil time.Time, now time.Time) (*NoteReservation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.refreshLocked(ctx); err != nil {
 		return nil, err
 	}
 	before := s.snapshotLocked()
-	updated, err := s.memory.ClearReservationLease(ctx, reservationID, leaseToken, now)
+	updated, err := s.memory.HeartbeatReservationLeaseForStatus(ctx, reservationID, leaseOwner, leaseToken, requiredStatus, leaseUntil, now)
+	if err != nil {
+		return nil, err
+	}
+	return updated, s.persistMutationLocked(ctx, before)
+}
+
+func (s *DurableFileStore) ClearReservationLease(ctx context.Context, reservationID string, leaseOwner string, leaseToken string, now time.Time) (*NoteReservation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(ctx); err != nil {
+		return nil, err
+	}
+	before := s.snapshotLocked()
+	updated, err := s.memory.ClearReservationLease(ctx, reservationID, leaseOwner, leaseToken, now)
 	if err != nil {
 		return nil, err
 	}
@@ -280,18 +386,77 @@ func (s *DurableFileStore) MarkReservationsProofReady(ctx context.Context, reser
 	return updatedReservations, updatedOperation, nil
 }
 
-func (s *DurableFileStore) MarkReservationSubmitted(ctx context.Context, reservationID string, leaseToken string, update SubmittedReservationUpdate, now time.Time) (*NoteReservation, error) {
+func (s *DurableFileStore) RecordRelayHandoff(ctx context.Context, reservationID string, leaseOwner string, leaseToken string, payloadHash string, now time.Time) (*NoteReservation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.refreshLocked(ctx); err != nil {
 		return nil, err
 	}
 	before := s.snapshotLocked()
-	updated, err := s.memory.MarkReservationSubmitted(ctx, reservationID, leaseToken, update, now)
+	updated, err := s.memory.RecordRelayHandoff(ctx, reservationID, leaseOwner, leaseToken, payloadHash, now)
 	if err != nil {
 		return nil, err
 	}
 	return updated, s.persistMutationLocked(ctx, before)
+}
+
+func (s *DurableFileStore) RecordRelayHandoffBatch(ctx context.Context, operationID string, refs []SubmittedReservationRef, payloadHash string, now time.Time) ([]NoteReservation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(ctx); err != nil {
+		return nil, err
+	}
+	before := s.snapshotLocked()
+	updated, err := s.memory.RecordRelayHandoffBatch(ctx, operationID, refs, payloadHash, now)
+	if err != nil {
+		return nil, err
+	}
+	return updated, s.persistMutationLocked(ctx, before)
+}
+
+func (s *DurableFileStore) MarkReservationsProofDiscarding(ctx context.Context, operationID string, reservations []SubmittedReservationRef, now time.Time) ([]NoteReservation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(ctx); err != nil {
+		return nil, err
+	}
+	before := s.snapshotLocked()
+	updated, err := s.memory.MarkReservationsProofDiscarding(ctx, operationID, reservations, now)
+	if err != nil {
+		return nil, err
+	}
+	return updated, s.persistMutationLocked(ctx, before)
+}
+
+func (s *DurableFileStore) MarkReservationSubmitted(ctx context.Context, reservationID string, leaseOwner string, leaseToken string, update SubmittedReservationUpdate, now time.Time) (*NoteReservation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(ctx); err != nil {
+		return nil, err
+	}
+	before := s.snapshotLocked()
+	updated, err := s.memory.MarkReservationSubmitted(ctx, reservationID, leaseOwner, leaseToken, update, now)
+	if err != nil {
+		return nil, err
+	}
+	return updated, s.persistMutationLocked(ctx, before)
+}
+
+func (s *DurableFileStore) MarkReservationsBroadcastAttempting(ctx context.Context, reservations []SubmittedReservationRef, operationIDs []string, update BroadcastAttemptStart, now time.Time) ([]NoteReservation, []PayrollOperation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(ctx); err != nil {
+		return nil, nil, err
+	}
+	before := s.snapshotLocked()
+	updatedReservations, updatedOperations, err := s.memory.MarkReservationsBroadcastAttempting(ctx, reservations, operationIDs, update, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.persistMutationLocked(ctx, before); err != nil {
+		return nil, nil, err
+	}
+	return updatedReservations, updatedOperations, nil
 }
 
 func (s *DurableFileStore) MarkReservationsSubmitted(ctx context.Context, reservations []SubmittedReservationRef, operationIDs []string, update SubmittedReservationUpdate, now time.Time) ([]NoteReservation, []PayrollOperation, error) {
@@ -328,18 +493,38 @@ func (s *DurableFileStore) MarkReservationsBroadcastUnknown(ctx context.Context,
 	return updatedReservations, updatedOperations, nil
 }
 
-func (s *DurableFileStore) UpdateReservation(ctx context.Context, reservation NoteReservation) (*NoteReservation, error) {
+func (s *DurableFileStore) MarkReservationsBroadcastAmbiguous(ctx context.Context, reservations []SubmittedReservationRef, operationIDs []string, update BroadcastAmbiguityUpdate, now time.Time) ([]NoteReservation, []PayrollOperation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.refreshLocked(ctx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	before := s.snapshotLocked()
-	updated, err := s.memory.UpdateReservation(ctx, reservation)
+	updatedReservations, updatedOperations, err := s.memory.MarkReservationsBroadcastAmbiguous(ctx, reservations, operationIDs, update, now)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return updated, s.persistMutationLocked(ctx, before)
+	if err := s.persistMutationLocked(ctx, before); err != nil {
+		return nil, nil, err
+	}
+	return updatedReservations, updatedOperations, nil
+}
+
+func (s *DurableFileStore) MarkReservationsProofArtifactCleanupFailed(ctx context.Context, reservations []SubmittedReservationRef, operationIDs []string, reason string, now time.Time) ([]NoteReservation, []PayrollOperation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(ctx); err != nil {
+		return nil, nil, err
+	}
+	before := s.snapshotLocked()
+	updatedReservations, updatedOperations, err := s.memory.MarkReservationsProofArtifactCleanupFailed(ctx, reservations, operationIDs, reason, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.persistMutationLocked(ctx, before); err != nil {
+		return nil, nil, err
+	}
+	return updatedReservations, updatedOperations, nil
 }
 
 func (s *DurableFileStore) CreateOperation(ctx context.Context, operation PayrollOperation) (*PayrollOperation, error) {
@@ -363,20 +548,6 @@ func (s *DurableFileStore) GetOperation(ctx context.Context, operationID string)
 		return nil, err
 	}
 	return s.memory.GetOperation(ctx, operationID)
-}
-
-func (s *DurableFileStore) UpdateOperation(ctx context.Context, operation PayrollOperation) (*PayrollOperation, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.refreshLocked(ctx); err != nil {
-		return nil, err
-	}
-	before := s.snapshotLocked()
-	updated, err := s.memory.UpdateOperation(ctx, operation)
-	if err != nil {
-		return nil, err
-	}
-	return updated, s.persistMutationLocked(ctx, before)
 }
 
 func (s *DurableFileStore) persist(ctx context.Context) error {
@@ -543,14 +714,6 @@ func (s *DurableFileStore) snapshotLocked() DurableFileStoreSnapshot {
 		BatchItems:         batchItems,
 		BatchEvidence:      batchEvidence,
 	}
-}
-
-func loadDurableFileStoreSnapshot(path string) (*MemoryStore, error) {
-	snapshot, err := readDurableFileStoreSnapshot(path)
-	if err != nil {
-		return nil, err
-	}
-	return memoryStoreFromSnapshot(snapshot)
 }
 
 func readDurableFileStoreSnapshot(path string) (DurableFileStoreSnapshot, error) {

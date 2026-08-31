@@ -43,7 +43,7 @@ Clairveil은 Cosmos SDK 체인에 붙일 수 있는 auditable shielded privacy c
 
 ## 빠른 시작
 
-필수 도구는 Git, Make, Go `1.25.12`, Python `3.9+`, Bash이며 repository CI/example 검증에는 Node.js `22+`와 npm도 필요합니다. Repository는 Git과 Make의 최소 version을 고정하지 않습니다. 초기화 전에 사용할 도구를 확인합니다.
+필수 도구는 Git, Make, Go `1.25.13`, Python `3.9+`, Bash이며 repository CI/example 검증에는 Node.js `22+`와 npm도 필요합니다. Repository는 Git과 Make의 최소 version을 고정하지 않습니다. 초기화 전에 사용할 도구를 확인합니다.
 
 ```bash
 git --version
@@ -261,6 +261,10 @@ clairveild tx privacy withdraw 7uclair --from alice --keyring-backend test
 | [Client risk decisions](docs/clairveil-client-risk-decisions-kr.md)                | storage, prover, audit, disclosure, telemetry 결정                 |
 | [Client API checklist](docs/clairveil-client-api-checklist-kr.md)                  | chain/prover API, fixture, release gate, compatibility check       |
 | [JS SDK handoff](docs/clairveil-js-sdk-handoff-kr.md)                              | JS/TS SDK와 웹월렛 구현 계약                                      |
+| [WebApp scope](docs/clairveil-web-app-scope-kr.md)                                 | 지원 browser 제품 흐름과 batch/multi-send 제외 범위                |
+| [WebApp integration](docs/clairveil-web-app-integration-kr.md)                    | Browser client API, lifecycle, recovery, integration test contract |
+| [WebApp storage and recovery](docs/clairveil-web-app-storage-recovery-kr.md)      | Encrypted browser persistence, lease, reconciliation, 0.2 upgrade  |
+| [WebApp deployment](docs/clairveil-web-app-deployment-kr.md)                      | Browser/prover CORS, auth, CSP, proxy, operations boundary          |
 | [Scan optimization plan](plans/clairveil-scan-optimization-implementation-plan-kr.md) | 구현된 note scan 최적화 범위와 제외한 후속 작업                  |
 | [Reference payroll product](docs/clairveil-reference-payroll-product-kr.md)        | payroll control-plane, localnet tutorial, rehearsal reference product |
 | [Prover profile](docs/clairveil-proverd-remote-production-profile-kr.md)           | `clairveil-proverd` remote 운영 profile                           |

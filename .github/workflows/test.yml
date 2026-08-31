@@ -20,16 +20,65 @@ jobs:
         with:
           fetch-depth: 0
 
+      # CLAIRVEILJS_REF is release input and must be the final SDK commit SHA.
+      # Keep this fail-closed: a branch/tag/default-branch fallback makes a
+      # re-run test different SDK source than the original release run.
+      - name: Require immutable ClairveilJS commit
+        id: clairveiljs-ref
+        shell: bash
+        env:
+          CLAIRVEILJS_REF: ${{ vars.CLAIRVEILJS_REF }}
+        run: |
+          if [[ ! "$CLAIRVEILJS_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "CLAIRVEILJS_REF must be the canonical lowercase 40-character SHA of the final SDK commit" >&2
+            exit 1
+          fi
+          echo "sha=$CLAIRVEILJS_REF" >> "$GITHUB_OUTPUT"
+
+      - name: Check out target ClairveilJS
+        uses: actions/checkout@v4
+        with:
+          repository: DELIGHT-LABS/clairveiljs
+          ref: ${{ steps.clairveiljs-ref.outputs.sha }}
+          path: .ci/clairveiljs
+          persist-credentials: false
+
+      - name: Verify checked-out ClairveilJS commit
+        shell: bash
+        env:
+          CLAIRVEILJS_REF: ${{ steps.clairveiljs-ref.outputs.sha }}
+        run: |
+          actual_ref="$(git -C "$GITHUB_WORKSPACE/.ci/clairveiljs" rev-parse HEAD)"
+          if [[ "$actual_ref" != "$CLAIRVEILJS_REF" ]]; then
+            echo "checked-out ClairveilJS commit $actual_ref does not match required $CLAIRVEILJS_REF" >&2
+            exit 1
+          fi
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.12'
+          go-version: '1.25.13'
           cache: true
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+
+      - name: Prepare ClairveilJS sibling dependency
+        shell: bash
+        run: |
+          sibling_path="$(dirname "$GITHUB_WORKSPACE")/clairveiljs"
+          test ! -e "$sibling_path"
+          test ! -L "$sibling_path"
+          mv "$GITHUB_WORKSPACE/.ci/clairveiljs" "$sibling_path"
+          npm --prefix "$sibling_path" ci --ignore-scripts
+
+      - name: Verify target ClairveilJS release contracts
+        shell: bash
+        run: |
+          sibling_path="$(dirname "$GITHUB_WORKSPACE")/clairveiljs"
+          npm --prefix "$sibling_path" run verify:release
 
       - name: Download Go modules
         run: go mod download

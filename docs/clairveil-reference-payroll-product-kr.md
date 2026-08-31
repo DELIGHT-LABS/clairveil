@@ -208,15 +208,19 @@ broadcast-batch-transfer
       "note_id": "note-large",
       "owner_key_id": "treasury-key",
       "nullifier_lookup_key": "lookup-note-large",
+      "nullifier_lookup_key_id": "lookup-v1",
       "denom": "uclair",
-      "amount": "100"
+      "amount": "100",
+      "verified_unspent": true
     },
     {
       "note_id": "note-zero",
       "owner_key_id": "treasury-key",
       "nullifier_lookup_key": "lookup-note-zero",
+      "nullifier_lookup_key_id": "lookup-v1",
       "denom": "uclair",
-      "amount": "0"
+      "amount": "0",
+      "verified_unspent": true
     }
   ]
 }
@@ -528,6 +532,8 @@ clairveil-payroll run \
 - `reservation.Store`와 같은 CAS, lease, heartbeat, reconcile 의미
 
 schema 문자열은 `reservation.PostgreSQLSchema()`와 `reservation.SQLiteSchema()`로 얻을 수 있음. 이 adapter는 reference 수준의 transaction-backed store이므로, multi-tenant production에서는 tenant partitioning, field-level encryption, raw nullifier 비저장 정책, connection pool, migration tool, row-level lock 전략을 제품 DB 정책에 맞게 보강해야 함.
+
+Reservation lifecycle payload는 schema version 2를 사용함. Durable JSON은 `version`에, SQL store는 `reservation_lifecycle_store_meta`에 기록함. 아직 릴리스되지 않은 이 reference는 fresh-state 초기화만 지원함. `InitSQLStore`는 비어 있거나 현재 v2인 store만 생성·검증하고, 이미 존재하는 non-v2 lifecycle store는 거부함. v1 migration과 in-place downgrade는 지원하지 않음. 이 버전에서는 새 빈 lifecycle store를 초기화해야 하며, 이전 개발 build가 만든 lifecycle snapshot을 가져오면 안 됨.
 
 ## 현재 Repo 완료 경계
 

@@ -67,6 +67,12 @@ func PrepareSpendWithdraw(
 	if input.ExpiresAtUnix <= 0 {
 		return nil, fmt.Errorf("expires_at_unix must be positive to prepare a spend withdraw proof")
 	}
+	if !input.Note.IsVerifiedUnspent() {
+		return nil, fmt.Errorf("selected note must be verified unspent before preparing a spend withdraw proof")
+	}
+	if _, err := privacyscan.CanonicalFoundNoteNullifier(input.Note); err != nil {
+		return nil, fmt.Errorf("selected note nullifier verification is invalid: %w", err)
+	}
 
 	selectedNote := input.Note.Note
 	if err := selectedNote.ValidateV1(); err != nil {

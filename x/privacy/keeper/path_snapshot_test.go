@@ -247,6 +247,25 @@ func TestMerkleRootSnapshotLookupRejectsHistoricalHeightCorruption(t *testing.T)
 	require.Nil(t, snapshot)
 }
 
+func TestRecordCurrentMerkleRootSnapshotPreservesExistingRootHeight(t *testing.T) {
+	k, ctx := setupTreeKeeper()
+	ctx = ctx.WithBlockHeight(77)
+	require.NoError(t, k.AppendCommitment(ctx, fixedFieldBytes(181)))
+	root := append([]byte(nil), k.GetMerkleNode(ctx, uint8(MerkleDepth), 0)...)
+
+	// A withdraw changes nullifier state but does not append a commitment, so the
+	// active root stays at the height where its commitment prefix was created.
+	// Re-registering it at the withdraw height used to reject the entire message.
+	withdrawCtx := ctx.WithBlockHeight(78)
+	require.NoError(t, k.RecordCurrentMerkleRootSnapshotV1(withdrawCtx))
+
+	snapshot, found, err := k.GetMerkleRootSnapshotV1(withdrawCtx, root)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, uint64(1), snapshot.LeafCount)
+	require.Equal(t, int64(77), snapshot.Height)
+}
+
 func TestMerkleRootSnapshotGenesisExportCoversEveryPrefix(t *testing.T) {
 	k, ctx, _ := setupMsgServerKeeper()
 	for i := uint64(0); i < 4; i++ {

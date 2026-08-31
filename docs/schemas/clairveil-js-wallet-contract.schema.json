@@ -69,11 +69,11 @@
     "coinString": {
       "type": "string",
       "description": "Cosmos SDK coin string using a positive integer amount and a denom.",
-      "pattern": "^[1-9][0-9]*[a-z][a-z0-9/:._-]{2,127}$"
+      "pattern": "^[1-9][0-9]*[A-Za-z][A-Za-z0-9/:._-]{2,127}$"
     },
     "denom": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9/:._-]{2,127}$"
+      "pattern": "^[A-Za-z][A-Za-z0-9/:._-]{2,127}$"
     },
     "chainId": {
       "type": "string",
@@ -961,7 +961,7 @@
             },
             "amount": {
               "type": "string",
-              "pattern": "^[0-9]+[a-z][a-z0-9/:._-]{2,127}$"
+              "pattern": "^[0-9]+[A-Za-z][A-Za-z0-9/:._-]{2,127}$"
             },
             "asset_denom": {
               "$ref": "#/$defs/denom"
@@ -1442,15 +1442,26 @@
         "active_unique_key",
         "batch_reserve",
         "nullifier_lookup_key",
+        "operation_hash_test_vectors",
+        "operation_hash_rejection_vectors",
         "lease_transition_preconditions",
+        "transition_evidence_preconditions",
+        "manual_review_resolution",
+        "relay_handoff",
+        "initial_state_preconditions",
+        "fail_closed_runtime_policy",
+        "evidence_immutability",
+        "spent_sibling_quarantine",
         "success_evidence_required",
         "batch_item_index_policy",
+        "operation_identity_evidence",
+        "fixture_migration",
         "operation_success_examples"
       ],
       "properties": {
         "version": {
           "type": "number",
-          "const": 1
+          "const": 3
         },
         "active_reservation_statuses": {
           "type": "array",
@@ -1553,16 +1564,72 @@
             }
           }
         },
+        "operation_hash_test_vectors": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "recipient",
+              "recipient_hash",
+              "denom",
+              "amount",
+              "amount_hash"
+            ],
+            "properties": {
+			  "recipient": {
+				"$ref": "#/$defs/shieldedAddress"
+			  },
+              "recipient_hash": {
+                "$ref": "#/$defs/hex32"
+              },
+              "denom": {
+                "$ref": "#/$defs/denom"
+              },
+              "amount": {
+                "$ref": "#/$defs/amountString"
+              },
+              "amount_hash": {
+                "$ref": "#/$defs/hex32"
+              }
+            }
+          }
+        },
+        "operation_hash_rejection_vectors": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "recipient", "denom", "amount", "reject_hash"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1},
+              "recipient": {"type": "string"},
+              "denom": {"type": "string"},
+              "amount": {"type": "string"},
+              "reject_hash": {"type": "string", "enum": ["recipient", "amount"]}
+            }
+          }
+        },
         "lease_transition_preconditions": {
           "type": "object",
           "additionalProperties": false,
           "required": [
             "token_required_for",
+            "recovery_without_token_after_expiry_for",
             "fields",
             "policy"
           ],
           "properties": {
             "token_required_for": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/reservationStatusTransition"
+              }
+            },
+            "recovery_without_token_after_expiry_for": {
               "type": "array",
               "minItems": 1,
               "items": {
@@ -1582,6 +1649,314 @@
             }
           }
         },
+        "transition_evidence_preconditions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "transition", "required_evidence", "positive", "negative"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1},
+              "transition": {"$ref": "#/$defs/reservationStatusTransition"},
+              "required_evidence": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"$ref": "#/$defs/snakeFieldName"}
+              },
+              "positive": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["no_broadcast_attempt", "proof_discarded"],
+                    "properties": {
+                      "no_broadcast_attempt": {"type": "boolean"},
+                      "proof_discarded": {"type": "boolean"}
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["nullifier_unspent_confirmed", "tx_absent_or_failed_confirmed"],
+                    "properties": {
+                      "nullifier_unspent_confirmed": {"type": "boolean"},
+                      "tx_absent_or_failed_confirmed": {"type": "boolean"}
+                    }
+                  }
+                ]
+              },
+              "negative": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["no_broadcast_attempt", "proof_discarded"],
+                    "properties": {
+                      "no_broadcast_attempt": {"type": "boolean"},
+                      "proof_discarded": {"type": "boolean"}
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["nullifier_unspent_confirmed", "tx_absent_or_failed_confirmed"],
+                    "properties": {
+                      "nullifier_unspent_confirmed": {"type": "boolean"},
+                      "tx_absent_or_failed_confirmed": {"type": "boolean"}
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "manual_review_resolution": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["required_evidence", "positive", "negative"],
+          "properties": {
+            "required_evidence": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"$ref": "#/$defs/snakeFieldName"}
+            },
+            "positive": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["operator_approved", "operator_id", "operator_approval_reference"],
+              "properties": {
+                "operator_approved": {"type": "boolean", "const": true},
+                "operator_id": {"type": "string", "minLength": 1},
+                "operator_approval_reference": {"type": "string", "minLength": 1}
+              }
+            },
+            "negative": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["operator_approved", "operator_id", "operator_approval_reference"],
+              "properties": {
+                "operator_approved": {"type": "boolean", "const": true},
+                "operator_id": {"type": "string"},
+                "operator_approval_reference": {"type": "string"}
+              }
+            }
+          }
+        },
+        "relay_handoff": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "lease_must_remain", "record_requires", "proof_discard_after_handoff", "write_once_evidence", "positive", "negative", "negative_vectors"],
+          "properties": {
+            "status": {"const": "ProofReady"},
+            "lease_must_remain": {"type": "boolean", "const": true},
+            "record_requires": {
+              "type": "array",
+              "minItems": 3,
+              "items": {"type": "string", "minLength": 1}
+            },
+            "proof_discard_after_handoff": {"const": "reject"},
+            "write_once_evidence": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"$ref": "#/$defs/snakeFieldName"}
+            },
+            "positive": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["relay_handed_off", "lease_owner_present", "lease_token_present", "payload_hash_matches"],
+              "properties": {
+                "relay_handed_off": {"type": "boolean", "const": true},
+                "lease_owner_present": {"type": "boolean", "const": true},
+                "lease_token_present": {"type": "boolean", "const": true},
+                "payload_hash_matches": {"type": "boolean", "const": true}
+              }
+            },
+            "negative": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["relay_handed_off", "lease_owner_present", "lease_token_present", "payload_hash_matches"],
+              "properties": {
+                "relay_handed_off": {"type": "boolean", "const": true},
+                "lease_owner_present": {"type": "boolean", "const": false},
+                "lease_token_present": {"type": "boolean", "const": false},
+                "payload_hash_matches": {"type": "boolean", "const": false}
+              }
+            },
+            "negative_vectors": {
+              "type": "array",
+              "minItems": 3,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "payload_hash_matches", "all_reservations_proof_ready", "operation_reservation_set_exact"],
+                "properties": {
+                  "name": {"type": "string", "minLength": 1},
+                  "payload_hash_matches": {"type": "boolean"},
+                  "all_reservations_proof_ready": {"type": "boolean"},
+                  "operation_reservation_set_exact": {"type": "boolean"}
+                }
+              }
+            }
+          }
+        },
+        "initial_state_preconditions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reservation_status", "operation_status", "forbidden_reservation_evidence", "forbidden_operation_evidence", "positive", "negative"],
+          "properties": {
+            "reservation_status": {"const": "Reserved"},
+            "operation_status": {"const": "Planned"},
+            "forbidden_reservation_evidence": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"$ref": "#/$defs/snakeFieldName"}
+            },
+            "forbidden_operation_evidence": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"$ref": "#/$defs/snakeFieldName"}
+            },
+            "positive": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["reservation_clean", "operation_clean"],
+              "properties": {
+                "reservation_clean": {"type": "boolean", "const": true},
+                "operation_clean": {"type": "boolean", "const": true}
+              }
+            },
+            "negative": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["reservation_clean", "operation_clean"],
+              "properties": {
+                "reservation_clean": {"type": "boolean", "const": false},
+                "operation_clean": {"type": "boolean", "const": false}
+              }
+            }
+          }
+        },
+        "fail_closed_runtime_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["nullifier_spent_evidence", "relay_submission", "heartbeat", "broadcast_boundary"],
+          "properties": {
+            "nullifier_spent_evidence": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["spent_value", "unspent_value", "other_values"],
+              "properties": {
+                "spent_value": {"type": "boolean", "const": true},
+                "unspent_value": {"type": "boolean", "const": false},
+                "other_values": {"const": "unknown_excluded_from_spending"}
+              }
+            },
+            "relay_submission": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["chain_time_source", "chain_time_required", "recheck_immediately_before_broadcast", "on_unavailable"],
+              "properties": {
+                "chain_time_source": {"const": "latest_chain_block_time"},
+                "chain_time_required": {"type": "boolean", "const": true},
+                "recheck_immediately_before_broadcast": {"type": "boolean", "const": true},
+                "on_unavailable": {"const": "reject_submit"}
+              }
+            },
+            "heartbeat": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["coverage", "await_in_flight_before_stop"],
+              "properties": {
+                "coverage": {
+                  "type": "array",
+                  "minItems": 3,
+                  "items": {"type": "string", "enum": ["proof_generation", "transaction_or_sign_doc_build", "proof_ready_transition"]}
+                },
+                "await_in_flight_before_stop": {"type": "boolean", "const": true}
+              }
+            },
+            "broadcast_boundary": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["durable_attempt_before_external_call", "retry_blocked_until_reconciled"],
+              "properties": {
+                "durable_attempt_before_external_call": {"type": "boolean", "const": true},
+                "retry_blocked_until_reconciled": {"type": "boolean", "const": true}
+              }
+            }
+          }
+        },
+        "evidence_immutability": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["write_once_fields", "monotonic_fields", "negative", "mutation_rejection_vectors"],
+          "properties": {
+            "write_once_fields": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"$ref": "#/$defs/snakeFieldName"}
+            },
+            "monotonic_fields": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"$ref": "#/$defs/snakeFieldName"}
+            },
+            "negative": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["submitted_tx_hash"],
+              "properties": {
+                "submitted_tx_hash": {"type": "string", "const": ""}
+              }
+            },
+            "mutation_rejection_vectors": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["field", "original", "mutation"],
+                "properties": {
+                  "field": {"$ref": "#/$defs/snakeFieldName"},
+                  "original": {},
+                  "mutation": {}
+                }
+              }
+            }
+          }
+        },
+        "spent_sibling_quarantine": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["match_fields", "target_status", "positive", "negative"],
+          "properties": {
+            "match_fields": {
+              "type": "array",
+              "minItems": 2,
+              "items": {"$ref": "#/$defs/snakeFieldName"}
+            },
+            "target_status": {"const": "ConfirmedSpent"},
+            "positive": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["matching_siblings", "confirmed_spent"],
+              "properties": {
+                "matching_siblings": {"type": "integer", "minimum": 1},
+                "confirmed_spent": {"type": "integer", "minimum": 1}
+              }
+            },
+            "negative": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["matching_siblings", "confirmed_spent"],
+              "properties": {
+                "matching_siblings": {"type": "integer", "minimum": 1},
+                "confirmed_spent": {"type": "integer", "minimum": 0}
+              }
+            }
+          }
+        },
         "success_evidence_required": {
           "type": "array",
           "minItems": 1,
@@ -1592,6 +1967,55 @@
         "batch_item_index_policy": {
           "type": "string",
           "minLength": 1
+        },
+        "operation_identity_evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["required", "vectors"],
+          "properties": {
+            "required": {"const": "matching_persisted_tx_identity"},
+            "vectors": {
+              "type": "array",
+              "minItems": 8,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "tx_result", "operation_status"],
+                "anyOf": [
+                  {"required": ["stored_tx_hash"]},
+                  {"required": ["stored_tx_bytes_hash"]}
+                ],
+                "properties": {
+                  "name": {"type": "string", "minLength": 1},
+                  "stored_tx_hash": {"type": "string", "minLength": 1},
+                  "stored_tx_bytes_hash": {"type": "string", "minLength": 1},
+                  "stored_sign_doc_hash": {"type": "string", "minLength": 1},
+                  "tx_result": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["code"],
+                    "properties": {
+                      "code": {"type": "integer", "minimum": 0},
+                      "txhash": {"type": "string", "minLength": 1},
+                      "tx_bytes_hash": {"type": "string", "minLength": 1},
+                      "sign_doc_hash": {"type": "string", "minLength": 1}
+                    }
+                  },
+                  "operation_status": {"$ref": "#/$defs/operationStatus"}
+                }
+              }
+            }
+          }
+        },
+        "fixture_migration": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["from_version", "to_version", "downstream_action"],
+          "properties": {
+            "from_version": {"const": 1},
+            "to_version": {"const": 3},
+            "downstream_action": {"type": "string", "minLength": 1}
+          }
         },
         "operation_success_examples": {
           "type": "array",

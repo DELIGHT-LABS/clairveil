@@ -64,6 +64,14 @@ docs/clairveil-client-api-checklist.md
 docs/clairveil-client-api-checklist-kr.md
 docs/clairveil-js-sdk-handoff.md
 docs/clairveil-js-sdk-handoff-kr.md
+docs/clairveil-web-app-scope.md
+docs/clairveil-web-app-scope-kr.md
+docs/clairveil-web-app-integration.md
+docs/clairveil-web-app-integration-kr.md
+docs/clairveil-web-app-storage-recovery.md
+docs/clairveil-web-app-storage-recovery-kr.md
+docs/clairveil-web-app-deployment.md
+docs/clairveil-web-app-deployment-kr.md
 docs/clairveil-bulk-transfer-product-handoff.md
 docs/clairveil-bulk-transfer-product-handoff-kr.md
 docs/clairveil-note-reservation-design-kr.md

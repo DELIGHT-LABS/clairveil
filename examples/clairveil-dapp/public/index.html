@@ -43,6 +43,10 @@
           <span>REST</span>
           <strong id="restState">-</strong>
         </article>
+        <article>
+          <span>Protocol</span>
+          <strong id="protocolState">-</strong>
+        </article>
       </section>
 
       <section class="workspace">
@@ -107,7 +111,10 @@
             </div>
             <div>
               <dt>Clairveil shielded</dt>
-              <dd id="keplrShieldedAddress">Not set up</dd>
+              <dd class="account-copy">
+                <span id="keplrShieldedAddress">Not set up</span>
+                <button id="copyKeplrShieldedAddress" type="button" disabled>Copy</button>
+              </dd>
             </div>
           </dl>
           <div class="split-actions">
@@ -174,6 +181,11 @@
               <dd id="keplrSendHash">-</dd>
             </div>
           </dl>
+          <div class="notes-actions tx-reconcile-actions">
+            <button id="reconcileKeplrSend" class="secondary-button" type="button" disabled>Reconcile send tx</button>
+            <button id="clearPublicPendingState" class="secondary-button" type="button" hidden>Clear corrupt pending state</button>
+            <button id="resetPrivatePendingState" class="secondary-button" type="button" hidden>Reviewed privacy reset</button>
+          </div>
           <section class="balance-section action-section" aria-labelledby="depositVeiledTitle">
             <h3 id="depositVeiledTitle">Deposit (Move to Veiled)</h3>
             <div class="amount-row">
@@ -195,7 +207,18 @@
                 <dt>Deposit height</dt>
                 <dd id="keplrDepositHeight">-</dd>
               </div>
+              <div>
+                <dt>Note recovery</dt>
+                <dd id="keplrDepositRecovery">Not started</dd>
+              </div>
+              <div>
+                <dt>Network fee</dt>
+                <dd id="keplrDepositNetworkFee">Not estimated</dd>
+              </div>
             </dl>
+            <div class="notes-actions tx-reconcile-actions">
+              <button id="reconcileKeplrDeposit" class="secondary-button" type="button" disabled>Reconcile deposit tx</button>
+            </div>
           </section>
         </div>
 
@@ -209,13 +232,43 @@
               <div class="notes-actions">
                 <label class="toggle-control">
                   <input id="myKeplrSpendableOnly" type="checkbox" checked />
-                  <span>Spendable only</span>
+                  <span>Unspent only</span>
+                </label>
+                <label class="compact-field note-endpoint-field">
+                  <span>Scan endpoint</span>
+                  <select id="noteScanEndpoint" aria-label="Note scan REST endpoint"></select>
                 </label>
                 <button id="scanKeplrNotes" type="button" disabled>Scan</button>
+                <button id="backupNoteCache" class="secondary-button" type="button" disabled>Backup cache</button>
+                <button id="resetRescanNotes" class="secondary-button" type="button" disabled>Reset &amp; Rescan</button>
               </div>
             </div>
+            <p id="noteSyncState" class="quiet note-sync-state">Not scanned</p>
+            <div class="scan-recovery-row">
+              <label class="field">
+                <span>Rollback scan height</span>
+                <input id="noteRollbackHeight" inputmode="numeric" placeholder="Block height to re-scan" />
+              </label>
+              <button id="rollbackRescanNotes" class="secondary-button" type="button" disabled>Rollback &amp; Scan</button>
+            </div>
+            <div class="reservation-status" role="status" aria-live="polite">
+              <div>
+                <span>Note reservations</span>
+                <strong id="reservationState">No active note reservations</strong>
+              </div>
+              <button id="reconcileReservations" class="secondary-button" type="button" disabled>Reconcile</button>
+            </div>
+            <section id="reservationRecovery" class="reservation-recovery" aria-labelledby="reservationRecoveryTitle" hidden>
+              <div class="reservation-recovery-heading">
+                <div>
+                  <h4 id="reservationRecoveryTitle">Reservation recovery</h4>
+                  <p>Only preparations with no broadcast or relay handoff evidence can be discarded and replanned.</p>
+                </div>
+              </div>
+              <div id="reservationRecoveryList" class="reservation-recovery-list"></div>
+            </section>
             <div class="note-summary">
-              <span>Spendable</span>
+              <span>Available to plan</span>
               <strong id="myKeplrSpendable">-</strong>
             </div>
             <div id="myKeplrNotesList" class="notes-list"></div>
@@ -273,6 +326,16 @@
                 </label>
               </div>
             </div>
+            <label class="checkbox-control self-view-control">
+              <input id="includeSelfViewDisclosure" type="checkbox" checked />
+              <span>Include encrypted self-view disclosure</span>
+            </label>
+            <p id="selfViewWarning" class="inline-warning" hidden>
+              Self-view를 끄면 나중에 이 전송의 보낸 내역을 복구하지 못할 수 있습니다.
+            </p>
+            <p class="inline-warning">
+              Audit disclosure는 모든 privacy transfer에 항상 포함되며, configured auditor가 amount·sender·recipient를 복호화할 수 있습니다.
+            </p>
             <dl class="facts">
               <div>
                 <dt>Transfer tx</dt>
@@ -308,8 +371,95 @@
                 <dt>Withdraw height</dt>
                 <dd id="keplrWithdrawHeight">-</dd>
               </div>
+              <div>
+                <dt>Nullifier spent</dt>
+                <dd id="keplrWithdrawNullifier">Not checked</dd>
+              </div>
+              <div>
+                <dt>Transparent receive</dt>
+                <dd id="keplrWithdrawReceive">Not checked</dd>
+              </div>
             </dl>
           </section>
+        </div>
+
+        <div class="panel relayer-panel">
+          <div class="panel-heading">
+            <h2>Relay Withdraw</h2>
+            <span id="relayWithdrawState" class="quiet">Ready for payload preparation</span>
+          </div>
+          <div class="local-signer-layout">
+            <section class="local-signer-details relayer-prepare-pane" aria-labelledby="relayWithdrawPrepareTitle">
+              <h3 id="relayWithdrawPrepareTitle">Prepare Payload</h3>
+              <div class="amount-row">
+                <label class="field amount-field">
+                  <span>Withdraw amount</span>
+                  <div class="amount-control">
+                    <input id="relayWithdrawAmount" inputmode="numeric" value="1" />
+                    <span class="denom">uclair</span>
+                  </div>
+                </label>
+                <button id="relayWithdrawFromVeiled" type="button" disabled>Prepare</button>
+              </div>
+              <div class="field address-field">
+                <label for="relayWithdrawRecipient"><span>Withdraw recipient</span></label>
+                <div class="address-input-wrap">
+                  <input id="relayWithdrawRecipient" placeholder="clair1..." autocomplete="off" aria-haspopup="listbox" aria-controls="relayWithdrawRecipientSuggestions" aria-expanded="false" />
+                  <div id="relayWithdrawRecipientSuggestions" class="address-suggestions" role="listbox" hidden></div>
+                </div>
+              </div>
+              <p class="quiet">
+                Payload 준비까지만 수행하며 실제 broadcast와 수수료 지불은 relayer가 담당합니다.
+              </p>
+            </section>
+            <section id="relayWithdrawPanel" class="local-signer-notes relay-withdraw-panel" aria-labelledby="relayWithdrawHandoffTitle">
+              <h3 id="relayWithdrawHandoffTitle">Local Relayer</h3>
+              <label id="relayWithdrawRecoveryChoiceField" class="field" hidden>
+                <span>Pending relay recovery</span>
+                <select id="relayWithdrawRecoveryChoice"></select>
+              </label>
+              <dl class="facts relayer-account-facts">
+                <div><dt>Fee payer</dt><dd id="relayerTransparentAddress">-</dd></div>
+                <div><dt>Balance</dt><dd id="relayerBalance">-</dd></div>
+              </dl>
+              <p class="inline-warning">
+                Relayer가 자기 계정으로 수수료를 지불하고 broadcast합니다. 제출 직전에 payload에서 transaction을 다시 만들고 candidate transaction을 검증합니다.
+              </p>
+              <ul class="relay-warning-list">
+                <li>Relayer는 user shielded secret을 알 필요가 없지만, payload/proof JSON에는 private note witness가 포함된 privacy-sensitive data가 있습니다.</li>
+                <li>Recipient, chain, expiry는 변경할 수 없습니다. Creator는 fee payer relayer로 바뀔 수 있습니다.</li>
+                <li>Handoff 이후 local cancel이나 reservation release는 payload를 무효화하지 않으며, relayer는 expiry 전까지 제출할 수 있습니다.</li>
+                <li>Chain block time이 expiry 이상이면 payload는 만료되며 wallet이나 relayer가 연장할 수 없습니다.</li>
+              </ul>
+              <dl class="facts">
+                <div><dt>Chain ID</dt><dd id="relayWithdrawChain">-</dd></div>
+                <div><dt>Recipient</dt><dd id="relayWithdrawPreparedRecipient">-</dd></div>
+                <div><dt>Expires</dt><dd id="relayWithdrawExpiry">-</dd></div>
+                <div><dt>Payload hash</dt><dd id="relayWithdrawPayloadHash">-</dd></div>
+              </dl>
+              <label class="field">
+                <span>Relayer handoff JSON</span>
+                <textarea id="relayWithdrawJson" rows="10" readonly></textarea>
+              </label>
+              <div class="notes-actions">
+                <button id="copyRelayWithdraw" class="secondary-button" type="button" disabled>Copy JSON</button>
+                <button id="downloadRelayWithdraw" class="secondary-button" type="button" disabled>Download JSON</button>
+                <button id="relayPreparedWithdraw" type="button" disabled>Relay (pay fee &amp; broadcast)</button>
+              </div>
+              <dl class="facts relay-result-facts">
+                <div><dt>Relayer tx</dt><dd id="relayWithdrawTxHashDisplay">-</dd></div>
+                <div><dt>Submitted by</dt><dd id="relayWithdrawSubmittedBy">-</dd></div>
+              </dl>
+              <label class="field">
+                <span>External relayer tx hash</span>
+                <input id="relayWithdrawTxHash" placeholder="32-byte transaction hash" autocomplete="off" spellcheck="false" disabled />
+              </label>
+              <div class="notes-actions">
+                <button id="reconcileRelayWithdraw" class="secondary-button" type="button" disabled>Reconcile relay result</button>
+              </div>
+              <p id="relayWithdrawResult" class="quiet" role="status">Not checked</p>
+            </section>
+          </div>
         </div>
 
         <section class="events-section">
@@ -339,6 +489,30 @@
                   <dd id="eventDetailUserMode">-</dd>
                 </div>
                 <div>
+                  <dt>Plane</dt>
+                  <dd id="eventDisclosurePlane">-</dd>
+                </div>
+                <div>
+                  <dt>Policy</dt>
+                  <dd id="eventDisclosurePolicy">-</dd>
+                </div>
+                <div>
+                  <dt>Output index</dt>
+                  <dd id="eventDisclosureOutputIndex">-</dd>
+                </div>
+                <div>
+                  <dt>Commitment</dt>
+                  <dd id="eventDisclosureCommitment">-</dd>
+                </div>
+                <div>
+                  <dt>Digest</dt>
+                  <dd id="eventDisclosureDigest">-</dd>
+                </div>
+                <div>
+                  <dt>Verified</dt>
+                  <dd id="eventDisclosureVerified">-</dd>
+                </div>
+                <div>
                   <dt>Disclosure target</dt>
                   <dd id="eventDetailTarget">-</dd>
                 </div>
@@ -359,7 +533,30 @@
                   <dd id="eventDisclosureTo">-</dd>
                 </div>
               </dl>
-              <button id="decodeEventDisclosure" type="button" disabled>조회</button>
+              <div class="split-actions">
+                <button id="decodeEventDisclosure" type="button" disabled>User disclosure</button>
+                <button id="decodeSelfViewDisclosure" type="button" disabled>Self-view</button>
+              </div>
+              <div class="disclosure-source">
+                <label class="field">
+                  <span>Disclosure plane</span>
+                  <select id="disclosureSourcePlane">
+                    <option value="user">User</option>
+                    <option value="self-view">Self-view</option>
+                    <option value="audit">Audit (local admin only)</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Arbitrary tx hash</span>
+                  <input id="disclosureSourceTxHash" placeholder="Tx hash outside the current event page" autocomplete="off" />
+                </label>
+                <label class="field">
+                  <span>Pasted disclosure event JSON</span>
+                  <textarea id="disclosureSourceEventJson" rows="5" placeholder='{"event_type":"shielded_transfer", ...}'></textarea>
+                </label>
+                <button id="decodeDisclosureSource" type="button">Decode source</button>
+                <p class="quiet">Paste an event JSON to decode it locally, or leave it empty and enter a tx hash.</p>
+              </div>
               <p id="eventDisclosureState" class="quiet">Select an event.</p>
             </div>
           </div>
@@ -446,6 +643,18 @@
                 <dd id="auditorDigest">-</dd>
               </div>
               <div>
+                <dt>Plane / policy</dt>
+                <dd id="auditorPlanePolicy">-</dd>
+              </div>
+              <div>
+                <dt>Output index</dt>
+                <dd id="auditorOutputIndex">-</dd>
+              </div>
+              <div>
+                <dt>Commitment</dt>
+                <dd id="auditorCommitment">-</dd>
+              </div>
+              <div>
                 <dt>From / payload</dt>
                 <dd id="auditorFrom">-</dd>
               </div>
@@ -491,6 +700,18 @@
         <p id="transferModalLead" class="modal-copy">
           입력하신 금액을 보낼 수 있도록 note 구성을 먼저 확인합니다. 필요한 경우 self transaction 서명이 먼저 요청됩니다.
         </p>
+        <p id="proverPrivacyWarning" class="inline-warning">
+          Remote prover에는 선택된 private note witness가 전달됩니다. 설정된 동일 endpoint에서만 retry하며 자동 failover하지 않습니다.
+        </p>
+        <dl id="transferReviewFacts" class="review-facts">
+          <div><dt>Chain ID</dt><dd id="reviewChain">-</dd></div>
+          <div><dt>Recipient</dt><dd id="reviewRecipient">-</dd></div>
+          <div><dt>Amount</dt><dd id="reviewAmount">-</dd></div>
+          <div><dt>Disclosure</dt><dd id="reviewDisclosure">-</dd></div>
+          <div><dt>Self-view</dt><dd id="reviewSelfView">-</dd></div>
+          <div><dt>Change effect</dt><dd id="reviewChangeEffect">Pending payload preparation</dd></div>
+          <div><dt>Expires</dt><dd id="reviewExpiry">-</dd></div>
+        </dl>
         <ol id="transferSteps" class="transfer-steps" aria-label="Privacy transfer signing steps">
           <li id="transferStepZero" data-transfer-step="zero">
             <span class="step-index">1</span>
@@ -531,6 +752,7 @@
         </div>
         <div class="modal-actions">
           <button id="cancelTransferFlow" class="secondary-button" type="button">취소</button>
+          <button id="retryTransferFlow" class="secondary-button" type="button" hidden>같은 prover로 재시도</button>
           <button id="confirmTransferFlow" type="button">시작</button>
         </div>
       </section>

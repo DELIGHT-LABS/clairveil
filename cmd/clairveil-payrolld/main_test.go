@@ -206,25 +206,32 @@ func testPayrolldTreasuryNote(id string, denom string, amount int64) privacypayr
 		NullifierLookupKeyID: "lookup-v1",
 		Denom:                denom,
 		Amount:               big.NewInt(amount),
+		VerifiedUnspent:      true,
 	}
 }
 
 func markPayrolldPlanSubmitted(t *testing.T, ctx context.Context, store privacyreservation.Store, plan privacypayroll.PayrollPlan) {
 	t.Helper()
 	svc := privacyreservation.Service{Store: store}
-	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(plan.Items[0].InputNotes))
+	reservationIDs := make([]string, 0, len(plan.Items[0].InputNotes))
 	for _, note := range plan.Items[0].InputNotes {
-		lease, err := svc.AcquireLeaseForStatus(ctx, note.ReservationID, "test-live-broadcaster", privacyreservation.StatusReserved, time.Minute)
-		require.NoError(t, err)
-		_, err = svc.TransitionWithLease(ctx, note.ReservationID, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving)
-		require.NoError(t, err)
-		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: note.ReservationID, LeaseToken: lease.Token})
+		reservationIDs = append(reservationIDs, note.ReservationID)
 	}
-	_, _, err := svc.MarkProofReadyBatch(ctx, refs, privacyreservation.ProofReadyOperationUpdate{
+	refs, _, err := svc.BeginProvingOperation(ctx, plan.Items[0].OperationID, reservationIDs, "test-live-broadcaster", time.Minute)
+	require.NoError(t, err)
+	_, _, err = svc.MarkProofReadyBatch(ctx, refs, privacyreservation.ProofReadyOperationUpdate{
 		OperationID:                   plan.Items[0].OperationID,
+		PayloadHash:                   "test-payrolld-payload",
 		ExpectedOutputCommitment:      "commitment-a",
 		ExpectedDisclosureDigest:      "digest-a",
 		ExpectedAuditDisclosureDigest: "digest-a",
+	})
+	require.NoError(t, err)
+	_, _, err = svc.MarkBroadcastAttempting(ctx, refs, []string{plan.Items[0].OperationID}, privacyreservation.BroadcastAttemptStart{
+		Reason:      "test broadcast",
+		TxHash:      "txhash",
+		TxBytesHash: "tx-bytes",
+		SignDocHash: "sign-doc",
 	})
 	require.NoError(t, err)
 	_, _, err = svc.MarkSubmittedBatch(ctx, refs, []string{plan.Items[0].OperationID}, privacyreservation.SubmittedReservationUpdate{

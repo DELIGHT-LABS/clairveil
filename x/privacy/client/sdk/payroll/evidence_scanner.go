@@ -60,7 +60,11 @@ func (s EvidenceScanner) ScanTransferBatch(ctx context.Context, plan PayrollPlan
 	if s.Store == nil {
 		return nil, fmt.Errorf("reservation store is required")
 	}
-	plan = normalizePayrollPlan(plan)
+	var err error
+	plan, err = normalizePayrollPlan(plan)
+	if err != nil {
+		return nil, err
+	}
 	tx = normalizeTxObservation(tx)
 	spentByNullifier := nullifierStatusMap(nullifiers)
 	transferEvents := shieldedTransferEvents(tx.Events)
@@ -103,21 +107,22 @@ func (s EvidenceScanner) ScanTransferBatch(ctx context.Context, plan PayrollPlan
 				continue
 			}
 			evidence := privacyreservation.OperationEvidence{
-				TxHash:                   tx.TxHash,
-				OutputCommitment:         attrs[privacytypes.AttributeKeyCommitment1],
-				DisclosureDigest:         attrs[privacytypes.AttributeKeyAuditDisclosureDigest],
-				UserDisclosureDigest:     attrs[privacytypes.AttributeKeyUserDisclosureDigest],
-				AuditDisclosureDigest:    attrs[privacytypes.AttributeKeyAuditDisclosureDigest],
-				SelfViewDisclosureDigest: attrs[privacytypes.AttributeKeySelfViewDisclosureDigest],
-				RecipientHash:            item.ExpectedRecipientHash,
-				AmountHash:               item.ExpectedAmountHash,
-				Denom:                    item.Denom,
-				BatchItemIndex:           itemIndex,
-				BatchItemIndexKnown:      true,
-				NullifierSpent:           reservationNullifierSpent(reservation, attrs, spentByNullifier),
-				TxSucceeded:              report.TxSucceeded && hasEvent,
-				TxFailed:                 hasFailedTxEvidence,
-				TxKnown:                  report.TxKnown && (hasEvent || hasFailedTxEvidence),
+				TxHash:                    tx.TxHash,
+				OutputCommitment:          attrs[privacytypes.AttributeKeyCommitment1],
+				DisclosureDigest:          attrs[privacytypes.AttributeKeyAuditDisclosureDigest],
+				UserDisclosureDigest:      attrs[privacytypes.AttributeKeyUserDisclosureDigest],
+				AuditDisclosureDigest:     attrs[privacytypes.AttributeKeyAuditDisclosureDigest],
+				SelfViewDisclosureDigest:  attrs[privacytypes.AttributeKeySelfViewDisclosureDigest],
+				RecipientHash:             item.ExpectedRecipientHash,
+				AmountHash:                item.ExpectedAmountHash,
+				Denom:                     item.Denom,
+				BatchItemIndex:            itemIndex,
+				BatchItemIndexKnown:       true,
+				NullifierSpent:            reservationNullifierSpent(reservation, attrs, spentByNullifier),
+				NullifierUnspentConfirmed: reservationNullifierUnspentConfirmed(reservation, spentByNullifier),
+				TxSucceeded:               report.TxSucceeded && hasEvent,
+				TxFailed:                  hasFailedTxEvidence,
+				TxKnown:                   report.TxKnown && (hasEvent || hasFailedTxEvidence),
 			}
 			report.Evidence = append(report.Evidence, ScannedOperationEvidence{
 				ReservationID: reservation.ReservationID,
@@ -329,6 +334,17 @@ func reservationNullifierSpent(reservation *privacyreservation.NoteReservation, 
 		}
 	}
 	return false
+}
+
+// reservationNullifierUnspentConfirmed reports only an explicit successful
+// lookup with used=false. Absence of a lookup result remains unknown.
+func reservationNullifierUnspentConfirmed(reservation *privacyreservation.NoteReservation, spentByNullifier map[string]bool) bool {
+	lookup := normalizeEvidenceHex(reservation.NullifierLookupKey)
+	if lookup == "" {
+		return false
+	}
+	spent, ok := spentByNullifier[lookup]
+	return ok && !spent
 }
 
 func normalizeEvidenceHex(value string) string {

@@ -18,7 +18,7 @@ func (e TransferBatchEvidenceExecutor) BuildProofReady(context.Context, LiveOper
 	return privacyreservation.ProofReadyOperationUpdate{}, "proof generation is handled by an external live worker", ErrLiveDaemonSkip
 }
 
-func (e TransferBatchEvidenceExecutor) BroadcastProofReady(context.Context, LiveOperationGroup) (*BroadcastResult, string, error) {
+func (e TransferBatchEvidenceExecutor) PrepareBroadcastProofReady(context.Context, LiveOperationGroup) (*PreparedLiveBroadcast, string, error) {
 	return nil, "broadcast is handled by an external live worker", ErrLiveDaemonSkip
 }
 

@@ -106,11 +106,15 @@ func (w BatchProofWorker) Process(ctx context.Context, operationID string, paylo
 	if err != nil {
 		return nil, err
 	}
-	lease, err := w.Store.AcquireBatchOperationLease(ctx, operationID, w.LeaseOwner, leaseToken, now.Add(ttl), now)
+	// Payload validation and graph loading can take longer than a deliberately
+	// short lease TTL. Take the clock sample at the acquisition boundary so the
+	// newly acquired lease is never already expired when the heartbeat starts.
+	leaseNow := w.now()
+	lease, err := w.Store.AcquireBatchOperationLease(ctx, operationID, w.LeaseOwner, leaseToken, leaseNow.Add(ttl), leaseNow)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := w.Store.CompareAndSetBatchOperationStatus(ctx, operationID, lease.LeaseToken, privacyreservation.OperationStatusPlanned, privacyreservation.OperationStatusProving, now); err != nil {
+	if _, err := w.Store.CompareAndSetBatchOperationStatus(ctx, operationID, lease.LeaseToken, privacyreservation.OperationStatusPlanned, privacyreservation.OperationStatusProving, leaseNow); err != nil {
 		_, releaseErr := w.Store.ReleaseBatchOperationLease(context.Background(), operationID, lease.LeaseToken, w.now())
 		if releaseErr != nil && !errors.Is(releaseErr, privacyreservation.ErrLeaseMismatch) {
 			return nil, errors.Join(err, fmt.Errorf("release batch proof lease after claim failure: %w", releaseErr))

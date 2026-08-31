@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -29,7 +30,7 @@ func TestDurableFileStorePersistsReservationOperationAndLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.TransitionWithLease(ctx, created.ReservationID, lease.Token, StatusReserved, StatusProving); err != nil {
+	if _, err := svc.TransitionWithLease(ctx, created.ReservationID, lease.Owner, lease.Token, StatusReserved, StatusProving); err != nil {
 		t.Fatal(err)
 	}
 
@@ -84,7 +85,7 @@ func TestDurableFileStoreRollsBackMemoryWhenPersistFails(t *testing.T) {
 
 	canceledCtx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := svc.TransitionWithLease(canceledCtx, created.ReservationID, lease.Token, StatusReserved, StatusProving); err == nil {
+	if _, err := svc.TransitionWithLease(canceledCtx, created.ReservationID, lease.Owner, lease.Token, StatusReserved, StatusProving); err == nil {
 		t.Fatal("expected canceled persist to fail")
 	}
 
@@ -115,6 +116,30 @@ func TestDurableFileStoreOpenMissingPathDoesNotCreateFile(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("expected open to leave missing state path absent, got %v", err)
+	}
+}
+
+func TestDurableFileStoreRejectsLegacyLifecycleSnapshotWithoutRewritingIt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "reservation-state.json")
+	legacy := []byte(`{"version":1,"reservations":[],"operations":[]}`)
+	if err := os.WriteFile(path, legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := OpenDurableFileStore(path)
+	if !errors.Is(err, ErrInvalidReservation) {
+		t.Fatalf("expected invalid reservation error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "unsupported durable reservation store version 1") {
+		t.Fatalf("expected unsupported v1 error, got %v", err)
+	}
+
+	got, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(got) != string(legacy) {
+		t.Fatalf("expected rejected legacy snapshot to remain unchanged, got %s", got)
 	}
 }
 

@@ -11,7 +11,8 @@ test("package export map exposes public SDK entrypoints", async () => {
     "createAsyncJobProverAdapter",
     "ClairveilError",
     "ClairveilErrorCode",
-    "MemoryNoteStore"
+    "MemoryNoteStore",
+    "LocalStorageNoteStore"
   ]) {
     assert.equal(typeof sdk[name], name === "ClairveilErrorCode" ? "object" : "function", `${name} export`);
   }
@@ -25,6 +26,10 @@ test("package subpath exports are available", async () => {
   const crypto = await import("clairveiljs/browser-crypto");
   const planner = await import("clairveiljs/planner");
   const prover = await import("clairveiljs/prover");
+  const browserDapp = await import("clairveiljs/browser-dapp");
+  const noteStore = await import("clairveiljs/note-store");
+  const networkConfig = await import("clairveiljs/network-config");
+  const scan = await import("clairveiljs/scan");
   const tx = await import("clairveiljs/generated/clairveil/privacy/v1/tx");
 
   assert.equal(typeof core.derivePrivacyMaterial, "function");
@@ -34,6 +39,11 @@ test("package subpath exports are available", async () => {
   assert.equal(typeof crypto.sha256Hex, "function");
   assert.equal(typeof planner.planTransferNotes, "function");
   assert.equal(typeof prover.createAsyncJobProverAdapter, "function");
+  assert.equal(typeof prover.createHttpDepositProofProvider, "function");
+  assert.equal(typeof browserDapp.validateClairveilWebClientConfig, "function");
+  assert.equal(typeof noteStore.LocalStorageNoteStore, "function");
+  assert.equal(typeof networkConfig.normalizeReserveResponseV1, "function");
+  assert.equal(typeof scan.validatePrivacyScanPageV2, "function");
   assert.equal(typeof tx.MsgDeposit.encode, "function");
   assert.equal(typeof tx.MsgTransfer.decode, "function");
   assert.equal(tx.MsgWithdraw.typeUrl, "/clairveil.privacy.v1.MsgWithdraw");

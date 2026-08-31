@@ -31,6 +31,7 @@ Release tag는 annotated tag여야 하고 `v` prefix를 붙인 exact SemVer를 �
 - `proto/clairveil/privacy/v1` message, service, field 변경
 - `x/privacy/client/sdk/conformance/testdata` fixture shape 또는 값 변경
 - `docs/schemas/clairveil-js-wallet-contract.schema.json` schema 변경
+- `docs/schemas/clairveil-web-client-config.schema.json` schema 변경
 - prover HTTP path, request/response version, error code 변경
 - CLI command, flag, JSON output field 변경
 - shielded address prefix, transparent prefix, denom, chain-id 기본값 변경

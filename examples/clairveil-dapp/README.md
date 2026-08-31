@@ -10,7 +10,7 @@ The boundary is intentional:
 - **ClairveilJS** owns privacy logic: note creation, commitments, encrypted notes, note scan, note planning, prover payloads, disclosure encode/decode, and deposit/transfer/withdraw preparation.
 - **Optional local server** owns only static serving and local-test helpers such as faucet, local signers, and admin/auditor test routes.
 
-For a public node deployment, the DApp should work with only the static DApp, ClairveilJS, public RPC/REST endpoints, and a prover URL. A backend is optional.
+For a public node deployment, the DApp needs the static assets, ClairveilJS, public RPC/REST endpoints, transfer/withdraw prover access, and a separately reviewed DepositCircuit proof endpoint (or an injected local/WASM provider). A DApp backend is optional.
 
 ## Key Files
 
@@ -23,7 +23,14 @@ For a public node deployment, the DApp should work with only the static DApp, Cl
 | `.env.example` | Optional environment override template for local/server-backed runs |
 | `test/dapp-smoke.test.js` | Boundary and DApp smoke tests |
 
-The standalone SDK is not copied into this example. The package dependency points at `github:DELIGHT-LABS/clairveiljs`; during local SDK development you can temporarily switch it to a local `file:` dependency. Minimal SDK flow examples live in ClairveilJS at `examples/minimal-keplr-flow.js` and `examples/minimal-metamask-flow.js`.
+The SDK is resolved from the sibling checkout through `"clairveiljs": "file:../../../clairveiljs"`. Keep the repositories beside one another as `clairveil/` and `clairveiljs/`, then run `npm install` in this directory after changing the SDK. The lockfile records the local package as ClairveilJS `0.3.1`; the SDK is bundled into `public/app.bundle.js` and is not copied into this example by hand.
+
+To test another local ClairveilJS v0.3.1 worktree without changing `package.json` or the lockfile, set `CLAIRVEILJS_DIR` for the command. The DApp scripts validate the selected package and relink only the local `node_modules/clairveiljs` symlink:
+
+```sh
+CLAIRVEILJS_DIR=/absolute/path/to/clairveiljs-worktree npm run build:dapp
+CLAIRVEILJS_DIR=/absolute/path/to/clairveiljs-worktree npm run test:dapp
+```
 
 ## Main Features
 
@@ -31,10 +38,12 @@ The standalone SDK is not copied into this example. The package dependency point
 - One shared Wallet Session panel
 - Transparent balance and public send
 - Deposit from transparent balance into veiled notes
-- Veiled note scan with spendable-only filtering
+- Typed `privacy_scan` note discovery with encrypted cursor/note persistence, endpoint selection, cursor rollback, cache backup, forced rescan recovery, batch nullifier checks, and spendable-only filtering
 - Veiled transfer with note planning and self-transaction guidance
-- Withdraw from veiled notes back to a transparent account
+- Direct withdraw from veiled notes or a product-defined relay handoff payload
 - Disclosure modes: `none`, `public`, `recipient-encrypted`
+- User and sender self-view disclosure decoding
+- Protocol preflight, asset binding, and reserve-invariant status
 - Privacy Events and Event Block views
 - Local signer, faucet, and auditor/admin test helpers in local mode
 
@@ -46,6 +55,7 @@ Browser DApp
     -> Cosmos REST/RPC
     -> EVM JSON-RPC
     -> Prover HTTP
+    -> Separate DepositCircuit proof endpoint or injected provider
     -> Keplr / MetaMask
 
 Optional local server
@@ -75,6 +85,10 @@ These routes exist only when `server.js` is running. In a public-node deployment
 | `POST /api/deposit` | local only | Local CLI deposit test |
 | `GET /api/auditor/test-scalar` | local/admin only | Test auditor scalar |
 | `POST /api/auditor/decode` | local/admin only | Decode audit disclosure with an audit private scalar |
+| `POST /v1/prover/deposit` | local only | Exact proxy to `CLAIRVEIL_DEPOSIT_PROOF_URL`; never derived from `proverUrl` |
+| `POST /v1/prover/transfer` / `withdraw` | local only | Same-origin proxy to the configured transfer/withdraw prover |
+
+The bundled prover proxy is a bounded local-development helper, not a public prover gateway. It requires both local-test mode and the explicit `CLAIRVEIL_PROVER_PROXY_ENABLED=1` flag, accepts loopback callers by default, requires `application/json`, omits cross-origin permission, rejects redirects, bounds and validates JSON responses, and applies per-client rate plus process-wide concurrency limits. Public mode rejects the proxy flag. Public deployments must use `CLAIRVEIL_PUBLIC_PROVER_URL` and `CLAIRVEIL_PUBLIC_DEPOSIT_PROOF_URL` behind independently reviewed authentication, rate/quota, metadata-only logging, and retention controls.
 
 ### Browser ClairveilJS High-Level Calls
 
@@ -86,16 +100,20 @@ The DApp UI does not implement privacy preparation itself. It calls the high-lev
 | `getBalances(address)` | REST `/cosmos/bank/v1beta1/balances/{address}` |
 | `buildBankSendSignDoc(...)` | REST account info, Keplr `signDirect` |
 | `evmNativeSendTransaction(...)` | MetaMask `eth_sendTransaction` |
-| `prepareDeposit(...)` | Creates note/commitment/encrypted note, then returns a Cosmos sign doc or EVM precompile tx |
-| `scanWalletNotes(...)` | Reads privacy events/commitments/nullifiers and scans notes with wallet root material |
+| `prepareDeposit(...)` | Creates the note material, obtains a DepositCircuit proof from `depositProofUrl` or an injected provider, then returns a Cosmos sign doc or EVM precompile tx |
+| `scanWalletNotes(...)` | Uses typed `privacy_scan`, persists the full cursor in the DApp's AES-GCM encrypted note store, and refreshes statuses with batch nullifier lookup |
 | `prepareTransfer(...)` | Scans notes, plans inputs, reads audit config, calls prover `/v1/prover/transfer`, creates disclosure payloads, then returns a Cosmos sign doc or EVM precompile tx |
 | `prepareWithdraw(...)` | Scans notes, plans inputs, calls prover `/v1/prover/withdraw`, then returns a Cosmos sign doc or EVM precompile tx |
-| `broadcastSignedTx(...)` | Broadcasts and waits for Cosmos signed txs |
+| `prepareRelayWithdraw(...)` | Produces a chain/recipient/expiry-bound relayer payload and, for EVM, a candidate transaction that the relayer must rebuild or byte-validate |
+| `signDirectAndBroadcast(...)` | Signs and broadcasts Cosmos txs while preserving the prepared note reservation lifecycle |
 | `waitForEvmTransaction(...)` | Waits for EVM transaction receipts |
+| `sendEvmTransaction(...)` | Revalidates the configured and connected EVM networks and submits the prepared transaction through the SDK |
+| `assertProtocolPreflight(...)` / `queryReserve(...)` | Validates circuit/asset config and the reserve invariant |
 | `fetchPrivacyEvents(...)` | Reads the REST privacy event feed |
 | `fetchBlockEvents(...)` | Reads block/tx events through RPC tx search |
 | `fetchAuditableTransfers(...)` | Filters auditable transfer events from the privacy event feed |
 | `decodeUserDisclosure(...)` | Loads tx/event disclosure payloads and decodes with wallet privacy material |
+| `decodeSelfViewDisclosure(...)` | Lets the originating wallet decode its sender self-view payload |
 
 ### ClairveilJS Browser Client -> Cosmos REST/RPC Endpoints
 
@@ -103,28 +121,33 @@ The active chain profile provides `rest` and `rpc`.
 
 | Endpoint | Purpose |
 | --- | --- |
-| RPC `/status` | Node health |
+| RPC `/status` | Node health and authoritative latest block time/height for final confirmation and v0.3.1 expiry binding |
 | RPC `/tx_search` | Event Block / tx lookup |
 | REST `/cosmos/auth/v1beta1/account_info/{address}` | Account number and sequence for sign docs |
 | REST `/cosmos/bank/v1beta1/balances/{address}` | Transparent balance |
 | REST `/clairveil/privacy/v1/tree_state` | Merkle tree state |
-| REST `/clairveil/privacy/v1/events` | Privacy event feed and note scan source |
+| REST `/clairveil/privacy/v1/privacy_scan` | Typed v2 note scan with `(height, global_sequence, output_index)` cursor |
+| REST `/clairveil/privacy/v1/events` | Privacy event UI/disclosure lookup and legacy fallback only |
 | REST `/clairveil/privacy/v1/commitment/{commitment_hex}` | Commitment metadata |
-| REST `/clairveil/privacy/v1/nullifier/{nullifier_hex}` | Nullifier status |
+| REST `POST /clairveil/privacy/v1/nullifiers` | Batch nullifier status (up to 1,000 per request) |
+| REST `/clairveil/privacy/v1/commitment_paths` | Exact-root Merkle witness snapshots |
+| REST `/clairveil/privacy/v1/reserve/{denom}` | Escrow reserve invariant |
+| REST `/clairveil/privacy/v1/assets/by_denom/{denom}` | Canonical asset binding |
 | REST `/clairveil/privacy/v1/audit_config` | Audit master public key |
 | REST `/clairveil/privacy/v1/disclosure_config` | Disclosure config |
 | REST `/clairveil/privacy/v1/circuit_config` | Circuit config |
 
 ### ClairveilJS Browser Client -> Prover Endpoints
 
-The active profile provides `proverUrl`.
+The active profile provides `proverUrl` for transfer/withdraw and a separate optional `depositProofUrl` for DepositCircuit proofs.
 
 | Endpoint | Purpose |
 | --- | --- |
 | `POST /v1/prover/transfer` | Transfer proof |
 | `POST /v1/prover/withdraw` | Withdraw proof |
+| Exact `depositProofUrl` | Versioned DepositCircuit request/response; it is not derived from `proverUrl` |
 
-Deposit does not need a ZK proof.
+Deposit requires a proof in ClairveilJS 0.3.1. If neither `depositProofUrl` nor `globalThis.CLAIRVEIL_DEPOSIT_PROOF_PROVIDER` is configured, the DApp shows `Deposit proof: Required` and disables Deposit.
 
 ### Browser Wallet APIs
 
@@ -148,7 +171,7 @@ EVM profiles use MetaMask:
 
 ## Adding Chains
 
-Add default static chain profiles in `public/dapp-config.js`. This file does not decide whether the DApp is server-backed; it only provides the chain list the browser can use. The checked-in static default exposes the Cosmos/Keplr profile only. To show EVM/MetaMask in a static deployment, add an EVM profile to `chainProfiles` or provide it through `globalThis.CLAIRVEIL_DAPP_CONFIG`. In local server mode, the server can also return the same profile shape through `/api/config`.
+Add static chain profiles to `public/dapp-config.json`, which is the exact artifact the browser loads when `/api/health` is unavailable. The checked-in static default exposes the Cosmos/Keplr profile only. To show EVM/MetaMask in a static deployment, add a complete EVM profile to that file. In server-backed mode, the browser instead uses the config embedded in `/api/health`; `/api/config` returns the same bare Web client config for diagnostics but is not the browser bootstrap source. The production verifier rejects a deployment when those two config payloads differ.
 
 EVM static profile example:
 
@@ -162,7 +185,9 @@ const myEvmProfile = {
   chainId: "my-evm-host-1",
   rpc: "https://cosmos-rpc.example.com",
   rest: "https://cosmos-rest.example.com",
+  restEndpoints: ["https://cosmos-rest.example.com", "https://cosmos-rest-backup.example.com"],
   proverUrl: "https://prover.example.com",
+  depositProofUrl: "https://deposit-proof.example.com/v1/prove",
   accountPrefix: "clair",
   shieldedPrefix: "clairs",
   denom: "utoken",
@@ -172,6 +197,8 @@ const myEvmProfile = {
   evmChainId: "0x1234",
   evmChainName: "My EVM Privacy Chain",
   evmPrivacyPrecompileAddress: "0x100000000000000000000000000000000000000b",
+  evmDepositMode: "payable-exact-value",
+  evmNativeDenom: "utoken",
   evmGasLimit: "0x989680",
   evmSendGasLimit: "0x5208"
 };
@@ -191,6 +218,7 @@ Cosmos profile requirements:
 - Correct account prefix, shielded prefix, denom, and decimals
 - Keplr `signDirect` support
 - Browser-accessible REST/RPC/prover CORS
+- Typed `privacy_scan`, batch nullifier, asset, reserve, and exact-root commitment-path query support
 
 EVM profile requirements:
 
@@ -200,6 +228,7 @@ EVM profile requirements:
 - Fixed `evmPrivacyPrecompileAddress` published by the target chain
 - Clairveil privacy account prefix for EVM-derived identity material
 - Prover support for `/v1/prover/transfer` and `/v1/prover/withdraw`
+- An explicit `evmDepositMode`; `payable-exact-value` also requires `evmNativeDenom === denom` so the amount binds exactly to `msg.value`
 
 This DApp does not support arbitrary EVM privacy ABI shapes. EVM Clairveil chains must use the same privacy precompile ABI and payload semantics.
 
@@ -218,26 +247,63 @@ Common values:
 
 | Variable | Purpose |
 | --- | --- |
-| `CLAIRVEIL_DAPP_HOST` / `CLAIRVEIL_DAPP_PORT` | DApp server bind address and port |
+| `CLAIRVEIL_DAPP_HOST` / `CLAIRVEIL_DAPP_PORT` | DApp server bind address and port; the server defaults to loopback and LAN exposure requires an explicit host override |
 | `CLAIRVEIL_DAPP_LOCAL_TEST_MODE` | `1` enables local helpers, `0` runs public-node mode |
+| `CLAIRVEIL_DAPP_PUBLIC_ORIGIN` | Required exact HTTPS browser origin in public-node mode |
 | `CLAIRVEIL_HOME` / `CHAIN_ID` / `CLAIRVEILD_BIN` | Local node home, chain id, and CLI binary |
 | `CLAIRVEIL_RPC` / `CLAIRVEIL_REST` | Server-side Cosmos/CometBFT endpoints |
 | `CLAIRVEIL_PUBLIC_RPC` / `CLAIRVEIL_PUBLIC_REST` | Browser/Keplr-visible endpoints; empty means reuse the server endpoints |
+| `CLAIRVEIL_PUBLIC_REST_ENDPOINTS` | Shared comma-separated browser REST failover set |
+| `CLAIRVEIL_COSMOS_RPC` / `CLAIRVEIL_COSMOS_REST` | Cosmos-profile browser endpoint overrides; these take precedence over the shared public endpoints |
+| `CLAIRVEIL_COSMOS_CHAIN_NAME` / `CLAIRVEIL_COSMOS_LABEL` | Cosmos chain name shown to Keplr and optional DApp selector label; a blank label inherits the chain name |
+| `CLAIRVEIL_COSMOS_CHAIN_ID` / `CLAIRVEIL_COSMOS_ACCOUNT_PREFIX` / `CLAIRVEIL_COSMOS_SHIELDED_PREFIX` | Cosmos identity overrides used by both the active browser profile and the server-side local signer/client; blank values inherit `CHAIN_ID` and the shared prefixes |
+| `CLAIRVEIL_COSMOS_COIN_TYPE` / `CLAIRVEIL_KEPLR_COIN_TYPE` | Cosmos BIP-44 coin type. The first is preferred; `CLAIRVEIL_KEPLR_COIN_TYPE` remains a compatible alias |
+| `CLAIRVEIL_COSMOS_REST_ENDPOINTS` / `CLAIRVEIL_EVM_HOST_REST_ENDPOINTS` | Optional profile-specific REST endpoint sets; these take precedence over the shared failover set |
 | `CLAIRVEIL_PROVER_URL` / `CLAIRVEIL_PUBLIC_PROVER_URL` | Server-side and browser-visible prover endpoints |
+| `CLAIRVEIL_DEPOSIT_PROOF_URL` / `CLAIRVEIL_PUBLIC_DEPOSIT_PROOF_URL` | Exact server-side/browser-visible DepositCircuit proof endpoint |
+| `CLAIRVEIL_COSMOS_DEPOSIT_PROOF_URL` / `CLAIRVEIL_EVM_DEPOSIT_PROOF_URL` | Profile-specific browser proof endpoint override |
+| `CLAIRVEIL_PROVER_PROXY_ENABLED` | Explicitly enables the bounded proxy in local-test mode only; public-node mode rejects it |
+| `CLAIRVEIL_PROVER_PROXY_RATE_LIMIT_WINDOW_MS` / `CLAIRVEIL_PROVER_PROXY_RATE_LIMIT_MAX` / `CLAIRVEIL_PROVER_PROXY_MAX_IN_FLIGHT` / `CLAIRVEIL_PROVER_PROXY_MAX_RESPONSE_BYTES` | Local proxy request-rate, concurrency, and response-size bounds |
+| `CLAIRVEIL_DAPP_UPSTREAM_TIMEOUT_MS` / `CLAIRVEIL_DAPP_UPSTREAM_MAX_RESPONSE_BYTES` | Timeout and JSON response-size limit for server-side health/read queries |
+| `CLAIRVEIL_DAPP_HEALTH_MAX_IN_FLIGHT` | Process-wide `/api/health` admission limit; excess requests receive a typed `503` response |
 | `CLAIRVEIL_ACCOUNT_PREFIX` / `CLAIRVEIL_SHIELDED_PREFIX` | Transparent and shielded address prefixes |
-| `CLAIRVEIL_DENOM` / `CLAIRVEIL_DISPLAY_DENOM` / `CLAIRVEIL_COIN_DECIMALS` | Coin metadata |
-| `CLAIRVEIL_EVM_*` | Optional EVM/MetaMask profile settings |
-| `CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING` / `CLAIRVEIL_DAPP_ALLOW_LAN_ADMIN` | Explicit opt-in for exposing local signing/admin helpers on LAN |
+| `CLAIRVEIL_DENOM` / `CLAIRVEIL_DISPLAY_DENOM` / `CLAIRVEIL_COIN_DECIMALS` | Shared coin metadata fallback |
+| `CLAIRVEIL_COSMOS_DISPLAY_DENOM` / `CLAIRVEIL_COSMOS_COIN_DECIMALS` | Optional Cosmos display metadata overrides; blank or absent values inherit the shared metadata |
+| `CLAIRVEIL_COSMOS_DENOM` / `CLAIRVEIL_EVM_DENOM` / `CLAIRVEIL_EVM_NATIVE_DENOM` | Transport-specific minimal denom; active transport values override `CLAIRVEIL_DENOM`, and EVM falls back to its native denom before the shared value |
+| `CLAIRVEIL_EVM_DEPOSIT_MODE` / `CLAIRVEIL_EVM_NATIVE_DENOM` | `nonpayable` or v0.3.1 `payable-exact-value` deposit binding |
+| `CLAIRVEIL_EVM_*` | Other optional EVM/MetaMask profile settings |
+| `CLAIRVEIL_DAPP_ALLOW_LAN_SIGNING` / `CLAIRVEIL_DAPP_ALLOW_LAN_ADMIN` / `CLAIRVEIL_DAPP_ALLOW_LAN_PROVER` | Explicit opt-in for exposing local signing/admin/prover helpers on LAN |
+
+Signer-mutating local helper routes accept only `application/json` POSTs whose
+`Origin` exactly matches the DApp request origin. Enabling LAN signing does not
+waive this same-origin requirement; open the DApp from that LAN origin and let
+the browser issue the request.
 
 ## Privacy Flow
 
-`Setup Clairveil` signs a root message with Keplr `signArbitrary` or MetaMask `personal_sign`. ClairveilJS derives the wallet privacy material, shielded address, and disclosure public key from that signature.
+`Setup Clairveil` signs a root message with Keplr `signArbitrary` or MetaMask `personal_sign`. ClairveilJS derives the wallet privacy material, shielded address, and disclosure public key from that signature, then requires the v0.3.1 protocol preflight and initial note sync to complete. The note recovery UI can select a configured REST endpoint, roll the encrypted cursor back to a block height, or back up and reset the cache. Value-moving privacy actions stay disabled until preflight is ready and the cache is fully synced.
 
-`Deposit` creates a new note, commitment, and encrypted note in ClairveilJS. Cosmos profiles produce a Keplr sign doc. EVM profiles produce privacy precompile calldata for MetaMask.
+`Deposit` refreshes the transparent balance and checks the amount plus a configured gas-fee budget before proof work. It then creates a new note, commitment, and encrypted note, obtains a DepositCircuit proof, and runs protocol preflight. Cosmos profiles produce a Keplr sign doc with wallet fee editing enabled. EVM profiles produce privacy precompile calldata for MetaMask; `payable-exact-value` binds the minimal-unit amount exactly to transaction `value`. The prepared network fee or wallet-side fee estimate is shown before approval, then replaced after inclusion by the fee proven to have been charged on-chain. Cosmos uses ante-handler `tx.fee` or fee `coin_spent` events rather than the declared `AuthInfo` value, so a fee-free localnet displays `Actual 0uclair`. Transaction inclusion and local note recovery are shown separately. Cosmos recovery first verifies that the tx event contains the exact prepared commitment and encrypted note; both transports then require the commitment to appear in the encrypted local cache.
 
-`Transfer` scans notes, plans inputs, creates any required self-transaction step, requests a transfer proof from the prover, creates disclosure payloads, and prepares the final Cosmos sign doc or EVM transaction.
+`Transfer` scans notes, plans inputs, creates any required self-transaction step, requests a transfer proof from the prover, creates disclosure payloads, and prepares the final Cosmos sign doc or EVM transaction. The post-prepare confirmation shows authoritative chain ID/time expiry, recipient, amount, exact change returned to the sender shielded address, disclosure plane, and self-view setting before wallet submission. Canceling this final screen discards the local proof and moves its prepared reservation to replan-required. Self-view is enabled by default and can be explicitly disabled with a recovery warning. For reservation-bound Cosmos transfer/withdraw documents, the DApp asks Keplr to preserve the prepared fee and memo because `ProofReady` binds the exact `TxBody + AuthInfo`; deposit remains wallet-fee editable because it does not reserve an input note.
 
-`Withdraw` scans spendable notes, plans the withdraw, requests a withdraw proof, and prepares the final Cosmos sign doc or EVM transaction.
+`Withdraw` scans spendable notes, plans the withdraw, requests a withdraw proof, and prepares the final Cosmos sign doc or EVM transaction. Its result UI tracks nullifier-spent evidence separately from the bound transparent-receive evidence and reports success only after both reconcile. `Relay handoff` prepares the immutable payload without broadcasting it; the application exports the v0.3.1 `schema_version`, `handoff_version`, request, and payload layers as `v2` and must deliver that JSON over its own trusted relayer transport. Before the JSON is exposed, the DApp records the relay handoff against the prepared reservation.
+
+Transfer and withdraw preparation use a ClairveilJS note reservation manager backed by IndexedDB, Web Locks, and AES-GCM encrypted state derived from the wallet privacy material. The same manager and prepared reservation are passed to Cosmos and EVM submission, and the DApp heartbeats the `ProofReady` lease while wallet or relay handoff confirmation is pending. Reserved notes are labelled and excluded from the displayed plan-available balance, while unrelated unreserved notes remain eligible for new plans. The reservation recovery panel groups linked inputs by operation and only offers `Review & replan` when no broadcast attempt or relay handoff is recorded. It refreshes the authoritative note scan, requires every reserved nullifier to be explicitly unspent, and asks the wallet owner to approve proof discard. A live owned `ProofReady` lease then moves directly to `ReplanRequired`; an expired preparation first enters `ManualReview` and records the owner-approved resolution. Restarting a localnet with a fresh genesis under the same chain ID makes old nullifiers impossible to query on the new chain. In local-test mode only, the DApp can reset previous-genesis encrypted reservation state with separate wallet-owner approval when a complete scan is empty, reserve/deposit/withdraw totals are all zero, and every active reservation has no broadcast or relay evidence. A receipt polling timeout is shown as `Unknown`, never as proof of failure; the Reconcile action checks the tx hash first and then refreshes nullifier status. A transfer whose nullifier is spent is completed only after a paginated lookup at the authoritative included height finds the matching chain event and binds the stored tx hash, output commitment, audit disclosure digest, recipient hash, amount hash, and denom. Relay reconciliation validates an included transaction against the encrypted handoff before scanning spent notes: it decodes the Cosmos `MsgWithdraw` or compares the EVM target, calldata, value, and chain ID. A spent nullifier without a successful bound transaction is persisted as operation-level manual review and blocks a replacement withdraw. A query failure leaves the reservation locked; missing or conflicting operation evidence remains blocked for manual review.
+
+The same-origin local relayer repeats nullifier preflight and atomically locks each canonical payload nullifier. Concurrent or replayed copies of the same payload share one submission, while any overlapping different payload is rejected. Faucet, local deposit, and relay broadcasts using the same signer account also share one account-sequence/nonce queue. An explicit nonzero Cosmos CheckTx response releases only this process-local submission gate because the node definitively rejected the transaction. Once the broadcaster has returned a valid exact tx hash, a later timeout, disconnect, or malformed status retains that hash with the account fence; a later signer request clears the fence only after an authoritative Cosmos tx query or EVM receipt query finds the transaction. An indexed Cosmos tx with a non-canonical execution code, or an EVM receipt with a non-canonical status, is returned as `included=true`, `pending=false`, `unknown=true`, and `failed=null` together with the exact hash; it is never cached or rendered as success. If the CLI fails before returning any valid hash, the process-local gate remains fail-closed but exact-hash reconciliation is impossible; such an identifier-less post-boundary result is never automatically retryable. The browser's durable reservation still follows its normal reconciliation policy.
+
+Transparent EVM send and deposit tx hashes and unresolved status are persisted across reloads, so their actions remain disabled until the existing tx is reconciled as included or explicitly failed. EVM deposit preflight queries the target asset through the host-chain bank endpoint and the native gas balance through `eth_getBalance`; profiles with different `denom` and `evmNativeDenom` must satisfy both independently. Cached note balances are labelled unconfirmed, and private spend actions stay disabled until a full note scan reaches `synced` while protocol preflight is ready. Relay handoff JSON, reservation IDs, tx hash, and result state are encrypted with wallet-derived material and restored after setup; the UI displays the immutable recipient/chain/expiry and privacy warnings, then reports transaction inclusion and nullifier spent state separately. If authoritative block time proves that a handoff expired and every reserved nullifier is still unspent, the wallet owner can explicitly approve `ManualReview -> ReplanRequired` recovery and prepare a new payload.
+
+Disclosure Review accepts the current event selection, an arbitrary tx hash, or pasted `shielded_transfer` event JSON for user, self-view, and local-admin audit planes. A verified report displays plane, policy, output index, commitment, digest, and `verified=true`. Decoded fields are rendered only when `verification.verified === true`; verification failures show `verified=false` and discard plaintext.
+
+The DApp persists the note cache in browser `localStorage` as an AES-GCM envelope. Its key is derived from wallet root-signature material with HKDF and is scoped to chain profile and account. A legacy plaintext cache is deleted instead of migrated and requires `Reset & Rescan`; a corrupt/undecryptable cache fails closed and can be backed up before reset. The cache remains recoverable chain-derived data, not a substitute for wallet key backup.
+
+If the separate private Cosmos transaction fence is corrupt, normal transaction actions remain blocked and the public pending-state clear does not touch it. `Reviewed privacy reset` is available only after Clairveil setup and protocol preflight. The wallet owner must close other DApp tabs, inspect Keplr activity and the explorer for the exact chain/account, confirm that no private transaction is pending or submitted, and type the displayed `RESET <chain-id> <account>` phrase. The DApp then holds the account lock, performs a full typed scan, requires zero active reservations and relay recoveries, clears only the exact encrypted reservation namespace, and removes the exact private fence last. Any scan, recovery, or storage failure leaves the fence fail-closed.
+
+Transfer/withdraw proof requests carry an `AbortSignal`. The modal can cancel an in-flight request and retry against the same profile-pinned prover endpoint. Expiry is derived from the latest chain block time and the UI fails closed if that timestamp cannot be read.
+
+The v0.3.1 one-proof batch APIs and server proxy path are intentionally not exposed in this UI. Keep `serverFeatures.batchTransfer` false until the target chain, prover, scan recovery, wallet confirmation, and downstream E2E suite are all validated together.
 
 ## Disclosure Mode
 
@@ -262,14 +328,14 @@ To disclose to someone else, paste that person's disclosure pubkey into `Disclos
 
 ## Run
 
-Start the local node, prover, and DApp together for a local test:
+Start the local node, transfer/withdraw prover, local-only DepositCircuit prover, and DApp together for a local test:
 
 ```bash
 # From the repository root:
 make dapp-local
 ```
 
-If `26657`, `1317`, `8080`, or `5173` is already in use, stop the existing process first. Press `Ctrl+C` in this terminal to stop all three local services.
+If `26657`, `1317`, `8080`, `8090`, or `5173` is already in use, stop the existing process first. Press `Ctrl+C` in this terminal to stop the local stack. `make dapp-local` builds the example-only deposit prover under `CLAIRVEIL_HOME`, binds it to `127.0.0.1:8090`, and configures the DApp proxy automatically.
 
 Start a local Clairveil node:
 
@@ -291,6 +357,7 @@ Start the DApp:
 ```bash
 cd examples/clairveil-dapp
 npm install
+CLAIRVEIL_DEPOSIT_PROOF_URL=http://127.0.0.1:8090/v1/prove \
 CLAIRVEIL_HOME=/tmp/clairveil-dapp-local CHAIN_ID=clairveil-local-2 npm start -- --host 0.0.0.0
 ```
 
@@ -304,6 +371,7 @@ http://127.0.0.1:5173
 
 ```bash
 CLAIRVEIL_DAPP_LOCAL_TEST_MODE=0 \
+CLAIRVEIL_DAPP_PUBLIC_ORIGIN=https://app.example \
 CLAIRVEIL_RPC=https://rpc.example \
 CLAIRVEIL_REST=https://rest.example \
 CLAIRVEIL_PROVER_URL=https://prover.example \
@@ -320,4 +388,7 @@ npm run test:dapp
 npm run check:clairveiljs
 npm run test:clairveiljs
 npm run check:clairveiljs:types
+npm run test:release-contracts
 ```
+
+`npm run verify:release` runs the static DApp checks, DApp/SDK integration tests, type checks, and required v0.3.1 conformance fixtures. `test:release-contracts` first verifies that all 17 SDK-bundled contract files match the current Clairveil checkout byte-for-byte, then runs the SDK's own manifest verifier and bundled v3-only conformance suite; it does not inject fixtures into the SDK process. `npm run verify:release:integration` additionally requires a live local full-flow environment and the payable EVM driver; it fails instead of silently skipping when those dependencies are absent. The required conformance suite covers expiry, replay, payload substitution, and duplicate-nullifier rejection.

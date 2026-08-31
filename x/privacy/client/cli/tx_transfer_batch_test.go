@@ -146,6 +146,6 @@ func testTransferBatchFoundNote(nullifier string, amount int64) FoundNote {
 			AssetID: privacytypes.ComputeAssetIDV1("uclair"),
 		},
 		Nullifier: nullifier,
-		IsSpent:   false,
+		IsSpent:   false, VerifiedUnspent: true,
 	}
 }

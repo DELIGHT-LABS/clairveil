@@ -4,18 +4,20 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
 func TestSummarizeSpendableNotes(t *testing.T) {
 	notes := []FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(5)}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(5)}, IsSpent: false, VerifiedUnspent: true},
 		{Note: privacytypes.Note{Amount: big.NewInt(7)}, IsSpent: true},
-		{Note: privacytypes.Note{Amount: big.NewInt(11)}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(11)}, IsSpent: false, VerifiedUnspent: true},
 	}
 
 	spendable, total := SummarizeSpendableNotes(notes)
@@ -24,6 +26,17 @@ func TestSummarizeSpendableNotes(t *testing.T) {
 	require.Equal(t, int64(5), spendable[0].Note.Amount.Int64())
 	require.Equal(t, int64(11), spendable[1].Note.Amount.Int64())
 	require.Equal(t, int64(16), total.Int64())
+}
+
+func TestSummarizeSpendableNotesExcludesUnverifiedNotes(t *testing.T) {
+	notes := []FoundNote{
+		{Note: privacytypes.Note{Amount: big.NewInt(5)}, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(7)}},
+	}
+
+	spendable, total := SummarizeSpendableNotes(notes)
+	require.Len(t, spendable, 1)
+	require.Equal(t, int64(5), total.Int64())
 }
 
 func TestNormalizeFoundNotesDeduplicatesAndSorts(t *testing.T) {
@@ -54,9 +67,33 @@ func TestNormalizeFoundNotesDeduplicatesAndSorts(t *testing.T) {
 
 	require.True(t, changed)
 	require.Len(t, normalized, 3)
-	require.Equal(t, "aa", normalized[0].Nullifier)
-	require.Equal(t, "bb", normalized[1].Nullifier)
-	require.Equal(t, "cc", normalized[2].Nullifier)
+	require.Equal(t, strings.Repeat("0", 62)+"aa", normalized[0].Nullifier)
+	require.Equal(t, strings.Repeat("0", 62)+"bb", normalized[1].Nullifier)
+	require.Equal(t, strings.Repeat("0", 62)+"cc", normalized[2].Nullifier)
+}
+
+func TestNormalizeFoundNotesCanonicalizesAndDeduplicatesEquivalentNullifiers(t *testing.T) {
+	canonical := strings.Repeat("0", 62) + "01"
+	notes := []FoundNote{
+		{
+			Note:      privacytypes.Note{Amount: big.NewInt(7), AssetID: privacycrypto.HashString("uclair")},
+			Nullifier: "01",
+			Height:    7,
+			TxHash:    "A1",
+		},
+		{
+			Note:      privacytypes.Note{Amount: big.NewInt(7), AssetID: privacycrypto.HashString("uclair")},
+			Nullifier: canonical,
+			Height:    7,
+			TxHash:    "A1",
+		},
+	}
+
+	normalized, changed := NormalizeFoundNotes(notes)
+
+	require.True(t, changed)
+	require.Len(t, normalized, 1)
+	require.Equal(t, canonical, normalized[0].Nullifier)
 }
 
 func TestLoadLocalWalletFileMovesCorruptedCacheAside(t *testing.T) {

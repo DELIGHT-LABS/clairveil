@@ -83,6 +83,7 @@ func testJoinSplitAssignment(t *testing.T) *circuit.JoinSplitCircuit {
 			},
 		},
 	}
+	markFoundNotesVerified(&inputs)
 
 	rootBytes, err := privacyfield.CanonicalBytesFromBigInt(big.NewInt(1201))
 	require.NoError(t, err)

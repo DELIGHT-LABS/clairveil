@@ -433,21 +433,30 @@ Workers periodically heartbeat to extend `lease_until`. State changes are allowe
 
 Proof workers should acquire leases only for `Reserved` reservations. A stale proof worker must not reacquire a lease on `ProofReady` or `Submitted` and overwrite broadcast authority. Long proof jobs should keep heartbeating the same `lease_token` while in `Proving`.
 
-Lease acquisition, heartbeat, lease clear, and worker-owned `ProofReady -> Submitted/Unknown` transitions must be atomic in the store. `ProofReady -> ConfirmedSpent` also needs compare-and-set or the same transaction/row-lock path, although it is evidence-driven recovery rather than broadcaster authority.
+Lease acquisition, heartbeat renewal, lease clear, and worker-owned `ProofReady -> Submitted/Unknown` transitions must be atomic in the store. `ProofReady -> ConfirmedSpent` must also use an evidence-conditioned compare-and-set or the same transaction/row-lock path, although it is an evidence-driven recovery transition rather than an exercise of submission authority through the broadcaster lease token. In other words, the application layer must not read a reservation and later overwrite it with a generic update. A DB implementation must check the conditions and update the fields together in one `UPDATE ... WHERE reservation_id = ? AND status = ? AND lease_token = ? AND lease_until > NOW()` statement or within the same transaction/row lock.
 
 Example:
 
 ```sql
 UPDATE note_reservations
 SET status = 'ProofReady',
-    lease_until = NULL,
     updated_at = NOW()
 WHERE reservation_id = $1
   AND status = 'Proving'
-  AND lease_token = $2;
+  AND lease_owner = $2
+  AND lease_token = $3
+  AND lease_until > NOW();
 ```
 
 This reduces zombie worker problems: if a worker thought to be dead returns later and tries to submit old proof/tx, an invalid lease token blocks the state change and broadcast path.
+
+Recommended policy:
+
+- Acquire a lease with the target status as a condition before a worker starts. For example, a proof worker acquires a lease only from `Reserved`.
+- Extend the lease with heartbeats during long proof generation.
+- After a lease expires, another worker may take over.
+- A stale worker must revalidate its lease token before changing state.
+- A broadcaster must revalidate `ProofReady` and an unexpired lease whose `lease_owner` and `lease_token` both match before submitting the tx. Clear all lease fields when leaving worker-owned state through a transition such as `ProofReady -> Submitted/Unknown`, and when reconcile records `ConfirmedSpent`.
 
 ## Split / Merge Policy
 
@@ -600,7 +609,7 @@ Reserved -> Released -> Available
 
 Other states require proof artifact, tx hash, nullifier, and worker lease checks.
 
-If a broadcaster gets RPC/network error but no tx hash, tx bytes hash, or sign doc hash, do not move `ProofReady` to `Unknown`. Keep the `ProofReady` lock and lease; retry workers can acquire a takeover lease after expiry. Record `ProofReady -> Unknown` only when attempt metadata exists or when non-zero tx code identifies a submission attempt.
+If a broadcaster gets an RPC/network error after the broadcast boundary but has no tx hash, tx bytes hash, or sign doc hash, do not retry automatically or move `ProofReady` to `Unknown`. Persist the opaque broadcast attempt and error, then move the reservation to the active `ManualReview` lock; another worker must not take over the expired lease and resubmit. Only a definitely non-submitted validation/signing failure may be cleared to `ReplanRequired` with proof-discard evidence. Record `ProofReady -> Unknown` only when attempt metadata exists or when a non-zero tx code identifies a submission attempt.
 
 ## Submitted / Unknown / ManualReview Reconcile
 
@@ -647,12 +656,14 @@ Recommended fields:
 - `tx_hash`
 - `account_sequence`
 - `broadcast_attempt_count`
+- `broadcast_in_flight`
 - `last_broadcast_at`
 - `last_broadcast_error`
 
 Recommended policy:
 
 - Treat txs for the same `operation_id` as one logical operation.
+- Before calling an external broadcaster, durably record `broadcast_in_flight=true` and the incremented attempt count. If persisting the terminal state then fails, do not submit the same payload again before reconciliation.
 - Store signed tx bytes and tx hash.
 - After RPC timeout, query tx_hash before creating a new tx.
 - Retransmitting the exact same signed tx bytes can be allowed.
@@ -660,7 +671,25 @@ Recommended policy:
 - If gas/sequence problems require tx reconstruction, keep the same `operation_id` and reservation.
 - If nullifier is spent, note state may become `ConfirmedSpent`, but payment success still requires evidence matching expected output/audit disclosure digest/recipient/amount.
 
-The current Go reference SDK stores identifiers and hashes such as `tx_hash`, `tx_bytes_hash`, and `sign_doc_hash`. To retransmit the same signed tx bytes, a scheduler or broadcaster queue must store those bytes durably. If it does not, timeout/mempool failures should follow `ReconcileUnknown`: query `tx_hash` and nullifier state first, then decide whether to re-sign or replan.
+The current Go reference SDK stores identifiers and hashes such as `tx_hash`, `tx_bytes_hash`, and `sign_doc_hash`. To retransmit the same signed tx bytes, a scheduler or broadcaster queue must store the original signed tx bytes in separate durable storage **before submission**. If that storage is unavailable, treat timeout/mempool failures as `ReconcileUnknown` or `ManualReview`: query `tx_hash` and nullifier state first, then decide whether to re-sign or replan. A post-boundary error without an identifier is not eligible for automatic retransmission.
+
+Expected flow:
+
+```text
+ProofReady
+-> sign tx
+-> create or reuse operation_id
+-> store sign_doc_hash / tx_bytes_hash / tx_hash
+-> broadcast
+-> timeout
+-> query tx_hash
+-> query nullifier
+-> if unspent and signed tx bytes are stored, consider retransmitting the same tx
+-> if signed tx bytes are unavailable or gas/sequence adjustment is required, consider re-signing
+-> if spent, mark note ConfirmedSpent
+-> if operation evidence matches, mark payment successful
+-> if evidence is insufficient or mismatched, move to ManualReview or ConflictSpent
+```
 
 ## Concurrency Control
 

@@ -1,0 +1,915 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { reservationStatuses } from "clairveiljs/reservation";
+import {
+  canRelayHandoffPayloadBeCopied,
+  canRelaySnapshotBeSubmitted,
+  canReplanExpiredLocalReservation,
+  cosmosTxExecutionOutcome,
+  expiredRelayReservationRecoveryTarget,
+  hasDurableNoBroadcastEvidence,
+  hasValidRelayChainTime,
+  isRelaySnapshotStructurallyReady,
+  parsePersistedRelayWithdrawState,
+  relayBroadcastTxHash,
+  relayPayloadNullifierLockKey,
+  relayReservationStatus,
+  relayPayloadNullifiers,
+  relaySnapshotExpiresAtUnix,
+  relaySnapshotIsExpired,
+  sanitizeRelayWithdrawSnapshot,
+  submitRelayAfterNullifierPreflight,
+  updateReservationBatchRecords,
+} from "../public/relay-reservation-state.js";
+import {
+  createRelaySubmissionCoordinator,
+  relaySubmissionIdempotencyKey,
+} from "../public/relay-submission-coordinator.js";
+
+test("relay submission coordinator coalesces concurrent and repeated payload attempts", async () => {
+  const coordinator = createRelaySubmissionCoordinator();
+  const payload = {
+    payload_hash: "ab".repeat(32),
+    nullifier_hex: "cd".repeat(32),
+  };
+  const lockKey = relayPayloadNullifierLockKey(payload);
+  const idempotencyKey = relaySubmissionIdempotencyKey(payload);
+  let calls = 0;
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const submit = async () => {
+    calls += 1;
+    await gate;
+    return { txHash: "tx-a" };
+  };
+
+  const first = coordinator.run(lockKey, idempotencyKey, submit);
+  const second = coordinator.run(lockKey, idempotencyKey, submit);
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  release();
+  assert.deepEqual(await first, { txHash: "tx-a" });
+  assert.deepEqual(await second, { txHash: "tx-a" });
+  assert.deepEqual(await coordinator.run(lockKey, idempotencyKey, submit), { txHash: "tx-a" });
+  assert.equal(calls, 1);
+});
+
+test("relay submission coordinator releases a failed preflight for retry", async () => {
+  const coordinator = createRelaySubmissionCoordinator();
+  const payload = {
+    payload_hash: "ab".repeat(32),
+    nullifier_hex: "cd".repeat(32),
+  };
+  const lockKey = relayPayloadNullifierLockKey(payload);
+  const idempotencyKey = relaySubmissionIdempotencyKey(payload);
+  let checks = 0;
+  let submissions = 0;
+  const attempt = (checkNullifiers) => coordinator.run(
+    lockKey,
+    idempotencyKey,
+    (markSubmissionStarted) => submitRelayAfterNullifierPreflight({
+      payload,
+      checkNullifiers,
+      submit: async () => {
+        submissions += 1;
+        markSubmissionStarted();
+        return { txHash: "tx-a" };
+      },
+    }),
+  );
+
+  await assert.rejects(
+    () => attempt(async () => {
+      checks += 1;
+      throw new Error("temporary preflight outage");
+    }),
+    /nullifier status is unavailable/,
+  );
+  assert.equal(coordinator.has(lockKey), false);
+
+  assert.deepEqual(await attempt(async (nullifiers) => {
+    checks += 1;
+    return new Map(nullifiers.map((nullifier) => [nullifier, false]));
+  }), { txHash: "tx-a" });
+  assert.equal(checks, 2);
+  assert.equal(submissions, 1);
+});
+
+test("relay submission coordinator retains a lock after submission starts", async () => {
+  const coordinator = createRelaySubmissionCoordinator();
+  const lockKey = "lock-a";
+  const idempotencyKey = "aa".repeat(32);
+  let calls = 0;
+
+  await assert.rejects(
+    () => coordinator.run(lockKey, idempotencyKey, async (markSubmissionStarted) => {
+      calls += 1;
+      markSubmissionStarted();
+      throw new Error("broadcast outcome unknown");
+    }),
+    /broadcast outcome unknown/,
+  );
+  assert.equal(coordinator.has(lockKey), true);
+
+  await assert.rejects(
+    () => coordinator.run(lockKey, idempotencyKey, async () => {
+      calls += 1;
+      return "second submission";
+    }),
+    /broadcast outcome unknown/,
+  );
+  assert.equal(calls, 1);
+});
+
+test("relay submission coordinator releases only an explicit post-boundary rejection", async () => {
+  const coordinator = createRelaySubmissionCoordinator();
+  const lockKey = "lock-rejected";
+  const idempotencyKey = "bb".repeat(32);
+  let calls = 0;
+
+  await assert.rejects(
+    () => coordinator.run(
+      lockKey,
+      idempotencyKey,
+      async (markSubmissionStarted, markSubmissionRejected) => {
+        calls += 1;
+        markSubmissionStarted();
+        markSubmissionRejected();
+        throw new Error("node explicitly rejected submission");
+      },
+    ),
+    /explicitly rejected/,
+  );
+  assert.equal(coordinator.has(lockKey), false);
+  assert.equal(
+    await coordinator.run(lockKey, idempotencyKey, async () => {
+      calls += 1;
+      return "retried";
+    }),
+    "retried",
+  );
+  assert.equal(calls, 2);
+});
+
+test("relay submission lock uses only the canonical withdraw nullifier", () => {
+  const nullifier = "aa".repeat(32);
+  const lockKey = relayPayloadNullifierLockKey({
+    nullifier_hex: `0x${nullifier.toUpperCase()}`,
+    inputs: [
+      { nullifier_hex: "bb".repeat(32) },
+    ],
+  });
+
+  assert.equal(lockKey, nullifier);
+  assert.throws(
+    () => relayPayloadNullifiers({
+      nullifier_hex: nullifier,
+      nullifierHex: "cc".repeat(32),
+    }),
+    /conflicting nullifier aliases/,
+  );
+});
+
+test("relay submission coordinator atomically rejects partially overlapping nullifier sets", async () => {
+  const coordinator = createRelaySubmissionCoordinator();
+  const first = "aa".repeat(32);
+  const shared = "bb".repeat(32);
+  const third = "cc".repeat(32);
+  let release;
+  const pending = new Promise(resolve => {
+    release = resolve;
+  });
+  const attempt = coordinator.runMany(
+    [first, shared],
+    "11".repeat(32),
+    async () => {
+      await pending;
+      return "submitted";
+    },
+  );
+  await Promise.resolve();
+
+  await assert.rejects(
+    () => coordinator.runMany(
+      [shared, third],
+      "22".repeat(32),
+      async () => "unsafe overlap",
+    ),
+    /input nullifiers already have a submission attempt/,
+  );
+  assert.equal(coordinator.has(first), true);
+  assert.equal(coordinator.has(shared), true);
+  assert.equal(coordinator.has(third), false);
+  release();
+  assert.equal(await attempt, "submitted");
+});
+
+test("relay submission locks same inputs before nullifier preflight and rejects a different payload", async () => {
+  const coordinator = createRelaySubmissionCoordinator();
+  const nullifier = "cd".repeat(32);
+  const firstPayload = {
+    payload_hash: "aa".repeat(32),
+    nullifier_hex: nullifier,
+  };
+  const conflictingPayload = {
+    payload_hash: "bb".repeat(32),
+    nullifier_hex: nullifier,
+  };
+  let checks = 0;
+  let submissions = 0;
+  let release;
+  let startedSubmit;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const submitStarted = new Promise((resolve) => {
+    startedSubmit = resolve;
+  });
+  const attempt = (payload) => coordinator.run(
+    relayPayloadNullifierLockKey(payload),
+    relaySubmissionIdempotencyKey(payload),
+    () => submitRelayAfterNullifierPreflight({
+      payload,
+      checkNullifiers: async (nullifiers) => {
+        checks += 1;
+        return new Map(nullifiers.map((value) => [value, false]));
+      },
+      submit: async () => {
+        submissions += 1;
+        startedSubmit();
+        await gate;
+        return { txHash: "tx-a" };
+      },
+    }),
+  );
+
+  const first = attempt(firstPayload);
+  await submitStarted;
+  await assert.rejects(
+    () => attempt(conflictingPayload),
+    /input nullifiers already have a submission attempt/,
+  );
+  assert.equal(checks, 1);
+  assert.equal(submissions, 1);
+  release();
+  assert.deepEqual(await first, { txHash: "tx-a" });
+});
+
+test("relay submission coordinator never evicts an in-flight attempt", async () => {
+  const coordinator = createRelaySubmissionCoordinator({ maxEntries: 1 });
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const first = coordinator.run("lock-a", "aa".repeat(32), async () => {
+    await gate;
+    return "first";
+  });
+  await Promise.resolve();
+
+  await assert.rejects(
+    () => coordinator.run("lock-b", "bb".repeat(32), async () => "second"),
+    /capacity is exhausted by in-flight requests/,
+  );
+  assert.equal(coordinator.has("lock-a"), true);
+  release();
+  assert.equal(await first, "first");
+  assert.equal(await coordinator.run("lock-b", "bb".repeat(32), async () => "second"), "second");
+});
+
+function proofReadyReservation() {
+  return {
+    operation_id: "relay-op",
+    reservation_ids: ["relay-op:note:1"],
+    reservations: [
+      {
+        reservation_id: "relay-op:note:1",
+        operation_id: "relay-op",
+        status: reservationStatuses.ProofReady,
+        lease_token: "secret-lease-token",
+        nullifier_lookup_key: "private-lookup",
+        payload_hash: "payload-hash",
+        submitted_tx_hash: "submitted-tx-hash",
+        tx_bytes_hash: "tx-bytes-hash",
+        sign_doc_hash: "sign-doc-hash",
+      },
+    ],
+  };
+}
+
+test("persisted relay snapshots keep metadata but drop payload and proof JSON", () => {
+  const snapshot = sanitizeRelayWithdrawSnapshot({
+    id: "sensitive-proof-json",
+    payload: {
+      payload_hash: "payload-hash",
+      proof: "sensitive-proof-json",
+      nullifier_hex: "sensitive-nullifier",
+      expires_at_unix: 4102448400,
+    },
+    preparedData: { plan: { selectedNote: { nullifier: "note-nullifier" } } },
+    payloadText: "{\"proof\":\"sensitive-proof-json\"}",
+    reservation: proofReadyReservation(),
+    amount: "10",
+    recipient: "clair1recipient",
+    chainId: "private-chain-id",
+    expiresAt: "4102448400 (2099-12-31T00:00:00.000Z)",
+    relayer: "clair1relayer",
+    createdAt: "sensitive-created-at",
+    handedOff: false,
+  });
+
+  assert.equal(snapshot.id, "payload-hash");
+  assert.equal(snapshot.payloadHash, "payload-hash");
+  assert.equal(snapshot.expiresAtUnix, "4102448400");
+  assert.equal("payload" in snapshot, false);
+  assert.equal("payloadText" in snapshot, false);
+  assert.equal("preparedData" in snapshot, false);
+  assert.equal("amount" in snapshot, false);
+  assert.equal("recipient" in snapshot, false);
+  assert.equal("chainId" in snapshot, false);
+  assert.equal("expiresAt" in snapshot, false);
+  assert.equal("relayer" in snapshot, false);
+  assert.equal("createdAt" in snapshot, false);
+  assert.deepEqual(snapshot.reservation.reservations, [
+    {
+      reservation_id: "relay-op:note:1",
+      operation_id: "relay-op",
+      status: reservationStatuses.ProofReady,
+      payload_hash: "payload-hash",
+      submitted_tx_hash: "submitted-tx-hash",
+      tx_bytes_hash: "tx-bytes-hash",
+      sign_doc_hash: "sign-doc-hash",
+      broadcast_in_flight: false,
+      broadcast_attempt_count: 0,
+    },
+  ]);
+  assert.equal("lease_token" in snapshot.reservation.reservations[0], false);
+  assert.equal(
+    "nullifier_lookup_key" in snapshot.reservation.reservations[0],
+    false,
+  );
+});
+
+test("corrupted relay persistence fails closed without throwing", () => {
+  assert.deepEqual(parsePersistedRelayWithdrawState("{broken"), {
+    valid: false,
+    current: null,
+    pending: [],
+  });
+  assert.deepEqual(
+    parsePersistedRelayWithdrawState(JSON.stringify({ pending: {} })),
+    { valid: false, current: null, pending: [] },
+  );
+  assert.deepEqual(
+    parsePersistedRelayWithdrawState(JSON.stringify({
+      pending: [{
+        payloadHash: "payload-hash",
+        reservation: {
+          reservation_ids: ["r1"],
+          reservations: { r1: { status: reservationStatuses.ProofReady } },
+        },
+      }],
+    })),
+    { valid: false, current: null, pending: [] },
+  );
+});
+
+test("persisted relay snapshots require complete operation reservation evidence", () => {
+  assert.equal(
+    sanitizeRelayWithdrawSnapshot({ payloadHash: "payload-hash" }),
+    null,
+  );
+  assert.equal(
+    sanitizeRelayWithdrawSnapshot({
+      payloadHash: "payload-hash",
+      reservation: {
+        operation_id: "relay-op",
+        reservation_ids: ["r1"],
+        reservations: [],
+      },
+    }),
+    null,
+  );
+  assert.deepEqual(
+    parsePersistedRelayWithdrawState({
+      current: {
+        payloadHash: "payload-hash",
+        reservation: {
+          operation_id: "relay-op",
+          reservation_ids: ["r1"],
+          reservations: [{ reservation_id: "r1", operation_id: "relay-op" }],
+        },
+      },
+    }),
+    { valid: false, current: null, pending: [] },
+  );
+});
+
+test("Cosmos recovery accepts only an explicit integer transaction code", () => {
+  assert.equal(cosmosTxExecutionOutcome({ code: 0 }), "success");
+  assert.equal(cosmosTxExecutionOutcome({ code: 12 }), "failed");
+  assert.equal(cosmosTxExecutionOutcome({}), "unknown");
+  assert.equal(cosmosTxExecutionOutcome({ code: "0" }), "unknown");
+  assert.equal(cosmosTxExecutionOutcome({ code: "bogus" }), "unknown");
+});
+
+test("only explicit durable pre-broadcast evidence can release a reservation", () => {
+  assert.equal(
+    hasDurableNoBroadcastEvidence({ metadata: { no_broadcast_attempt: true } }),
+    true,
+  );
+  assert.equal(
+    hasDurableNoBroadcastEvidence({
+      metadata: {
+        no_broadcast_attempt: true,
+        opaque_broadcast_error: true,
+      },
+    }),
+    false,
+  );
+  assert.equal(
+    hasDurableNoBroadcastEvidence({
+      submitted_tx_hash: "TX",
+      metadata: { no_broadcast_attempt: true },
+    }),
+    false,
+  );
+  assert.equal(
+    hasDurableNoBroadcastEvidence({ metadata: { no_broadcast_attempt: "true" } }),
+    false,
+  );
+  assert.equal(
+    hasDurableNoBroadcastEvidence({
+      no_broadcast_attempt: true,
+      metadata: { no_broadcast_attempt: false },
+    }),
+    false,
+  );
+});
+
+test("relay broadcast tx hash helper accepts Cosmos txhash shapes", () => {
+  assert.equal(relayBroadcastTxHash({ txhash: "COSMOS_TX" }), "COSMOS_TX");
+  assert.equal(
+    relayBroadcastTxHash({ broadcast: { txhash: "NESTED_TX" } }),
+    "NESTED_TX",
+  );
+  assert.equal(
+    relayBroadcastTxHash({ data: { txhash: "ERROR_PAYLOAD_TX" } }),
+    "ERROR_PAYLOAD_TX",
+  );
+});
+
+test("expired relay snapshots are not submittable", () => {
+  const snapshot = sanitizeRelayWithdrawSnapshot({
+    payload: {
+      payload_hash: "payload-hash",
+      expires_at_unix: 100,
+    },
+    reservation: proofReadyReservation(),
+  });
+
+  assert.equal(relaySnapshotExpiresAtUnix(snapshot), "100");
+  assert.equal(relaySnapshotIsExpired(snapshot), false);
+  assert.equal(relaySnapshotIsExpired(snapshot, 99999), false);
+  assert.equal(relaySnapshotIsExpired(snapshot, 100000), true);
+  assert.equal(
+    canRelaySnapshotBeSubmitted(
+      {
+        ...snapshot,
+        payload: { payload_hash: "payload-hash" },
+      },
+      null,
+      reservationStatuses,
+      100000,
+    ),
+    false,
+  );
+});
+
+test("relay submission fails closed without a valid chain time", () => {
+  const snapshot = sanitizeRelayWithdrawSnapshot({
+    payload: {
+      payload_hash: "payload-hash",
+      expires_at_unix: 4102448400,
+    },
+    reservation: proofReadyReservation(),
+  });
+
+  assert.equal(hasValidRelayChainTime(undefined), false);
+  assert.equal(hasValidRelayChainTime(null), false);
+  assert.equal(hasValidRelayChainTime(""), false);
+  assert.equal(hasValidRelayChainTime(" "), false);
+  assert.equal(hasValidRelayChainTime(false), false);
+  assert.equal(hasValidRelayChainTime(true), false);
+  assert.equal(hasValidRelayChainTime("not-a-time"), false);
+  assert.equal(hasValidRelayChainTime(4_000_000_000_000), true);
+  assert.equal(
+    canRelaySnapshotBeSubmitted(
+      { ...snapshot, payload: { payload_hash: "payload-hash" } },
+      null,
+      reservationStatuses,
+    ),
+    false,
+  );
+  assert.equal(
+    canRelaySnapshotBeSubmitted(
+      { ...snapshot, payload: { payload_hash: "payload-hash" } },
+      null,
+      reservationStatuses,
+      4_000_000_000_000,
+    ),
+    true,
+  );
+});
+
+test("valid relay payload is structurally ready for the submit button before fresh chain time is fetched", () => {
+  const snapshot = sanitizeRelayWithdrawSnapshot({
+    payload: {
+      payload_hash: "payload-hash",
+      expires_at_unix: 4102448400,
+    },
+    reservation: proofReadyReservation(),
+  });
+
+  assert.equal(
+    isRelaySnapshotStructurallyReady(
+      { ...snapshot, payload: { payload_hash: "payload-hash" } },
+      null,
+      reservationStatuses,
+    ),
+    true,
+  );
+  assert.equal(
+    canRelaySnapshotBeSubmitted(
+      { ...snapshot, payload: { payload_hash: "payload-hash" } },
+      new Map(),
+      reservationStatuses,
+    ),
+    false,
+  );
+});
+
+test("relay snapshot with an existing tx hash cannot be submitted again", () => {
+  const snapshot = sanitizeRelayWithdrawSnapshot({
+    payload: {
+      payload_hash: "payload-hash",
+      expires_at_unix: 4102448400,
+    },
+    reservation: proofReadyReservation(),
+    relayHash: "ALREADY_SUBMITTED_TX",
+  });
+
+  assert.equal(
+    isRelaySnapshotStructurallyReady(
+      { ...snapshot, payload: { payload_hash: "payload-hash" } },
+      new Map(),
+      reservationStatuses,
+    ),
+    false,
+  );
+});
+
+test("handed-off relay snapshots cannot be submitted by the local relayer", () => {
+  const snapshot = sanitizeRelayWithdrawSnapshot({
+    payload: {
+      payload_hash: "payload-hash",
+      expires_at_unix: 4102448400,
+    },
+    reservation: proofReadyReservation(),
+    handedOff: true,
+  });
+
+  assert.equal(
+    isRelaySnapshotStructurallyReady(
+      { ...snapshot, payload: { payload_hash: "payload-hash" } },
+      null,
+      reservationStatuses,
+    ),
+    false,
+  );
+});
+
+test("copied relay handoffs require fresh pre-broadcast reservation evidence", () => {
+  const snapshot = {
+    payloadHash: "payload-hash",
+    payload: {
+      payload_hash: "payload-hash",
+      expires_at_unix: 4102448400,
+    },
+    reservation: {
+      operation_id: "relay-op",
+      reservation_ids: ["relay-op:note:1"],
+    },
+  };
+  const current = {
+    reservation_id: "relay-op:note:1",
+    operation_id: "relay-op",
+    status: reservationStatuses.ProofReady,
+    payload_hash: "payload-hash",
+    broadcast_in_flight: false,
+    broadcast_attempt_count: 0,
+    metadata: { relay_handed_off: true },
+  };
+
+  assert.equal(
+    canRelayHandoffPayloadBeCopied(
+      snapshot,
+      new Map([[current.reservation_id, current]]),
+      reservationStatuses,
+    ),
+    true,
+  );
+  assert.equal(
+    canRelayHandoffPayloadBeCopied(snapshot, null, reservationStatuses),
+    false,
+  );
+  assert.equal(
+    canRelayHandoffPayloadBeCopied(
+      snapshot,
+      new Map([[
+        current.reservation_id,
+        { ...current, broadcast_in_flight: true, broadcast_attempt_count: 1 },
+      ]]),
+      reservationStatuses,
+    ),
+    false,
+  );
+  assert.equal(
+    canRelayHandoffPayloadBeCopied(
+      snapshot,
+      new Map([[
+        current.reservation_id,
+        { ...current, submitted_tx_hash: "already-submitted" },
+      ]]),
+      reservationStatuses,
+    ),
+    false,
+  );
+});
+
+test("relay snapshot with a durable broadcast attempt cannot be submitted again", () => {
+  const snapshot = sanitizeRelayWithdrawSnapshot({
+    payload: {
+      payload_hash: "payload-hash",
+      expires_at_unix: 4102448400,
+    },
+    reservation: proofReadyReservation(),
+  });
+  snapshot.payload = { payload_hash: "payload-hash" };
+  snapshot.reservation.reservations[0].broadcast_in_flight = true;
+  snapshot.reservation.reservations[0].broadcast_attempt_count = 1;
+
+  assert.equal(
+    isRelaySnapshotStructurallyReady(snapshot, null, reservationStatuses),
+    false,
+  );
+});
+
+test("relay structural readiness rejects duplicate inputs, missing expiry, mixed status, and payload hash mismatch", () => {
+  const snapshot = sanitizeRelayWithdrawSnapshot({
+    payload: {
+      payload_hash: "payload-hash",
+      expires_at_unix: 4102448400,
+    },
+    reservation: {
+      operation_id: "relay-op",
+      reservation_ids: ["r1", "r2"],
+      reservations: [
+        { reservation_id: "r1", operation_id: "relay-op", status: reservationStatuses.ProofReady, payload_hash: "payload-hash" },
+        { reservation_id: "r2", operation_id: "relay-op", status: reservationStatuses.ProofReady, payload_hash: "payload-hash" },
+      ],
+    },
+  });
+  const payload = { payload_hash: "payload-hash" };
+
+  assert.equal(
+    isRelaySnapshotStructurallyReady({ ...snapshot, payload }, null, reservationStatuses),
+    true,
+  );
+  assert.equal(
+    isRelaySnapshotStructurallyReady(
+      {
+        ...snapshot,
+        payload,
+        reservation: {
+          ...snapshot.reservation,
+          reservation_ids: ["r1", "r1"],
+        },
+      },
+      null,
+      reservationStatuses,
+    ),
+    false,
+  );
+  assert.equal(
+    isRelaySnapshotStructurallyReady(
+      { ...snapshot, payload },
+      new Map([["r2", { reservation_id: "r2", operation_id: "relay-op", status: reservationStatuses.Unknown, payload_hash: "payload-hash" }]]),
+      reservationStatuses,
+    ),
+    false,
+  );
+  assert.equal(
+    isRelaySnapshotStructurallyReady(
+      { ...snapshot, payload },
+      new Map([["r2", { reservation_id: "r2", operation_id: "relay-op", status: reservationStatuses.ProofReady, payload_hash: "other-payload" }]]),
+      reservationStatuses,
+    ),
+    false,
+  );
+  assert.equal(
+    isRelaySnapshotStructurallyReady(
+      { ...snapshot, expiresAtUnix: "", payload },
+      null,
+      reservationStatuses,
+    ),
+    false,
+  );
+  assert.equal(
+    isRelaySnapshotStructurallyReady(
+      { ...snapshot, expiresAtUnix: null, payload, reservation: snapshot.reservation },
+      null,
+      reservationStatuses,
+    ),
+    false,
+  );
+  assert.equal(
+    isRelaySnapshotStructurallyReady(
+      { ...snapshot, payload: { payload_hash: "other-payload" } },
+      new Map(),
+      reservationStatuses,
+    ),
+    false,
+  );
+});
+
+test("expired local ProofReady reservations require manual review instead of replan", () => {
+  assert.equal(
+    canReplanExpiredLocalReservation({
+      localPreBroadcast: true,
+      workerExpired: true,
+      hasProofReady: true,
+    }),
+    false,
+  );
+  assert.equal(
+    canReplanExpiredLocalReservation({
+      localPreBroadcast: true,
+      workerExpired: true,
+      hasProofReady: false,
+    }),
+    true,
+  );
+  assert.equal(
+    expiredRelayReservationRecoveryTarget({
+      localWorkerState: true,
+      localPreBroadcast: true,
+      workerExpired: true,
+      hasProofReady: true,
+    }),
+    reservationStatuses.ManualReview,
+  );
+  assert.equal(
+    expiredRelayReservationRecoveryTarget({
+      localWorkerState: true,
+      localPreBroadcast: true,
+      workerExpired: true,
+      hasProofReady: false,
+    }),
+    reservationStatuses.ReplanRequired,
+  );
+  assert.equal(
+    expiredRelayReservationRecoveryTarget({
+      handedOff: true,
+      localWorkerState: true,
+      localPreBroadcast: true,
+      workerExpired: true,
+      hasProofReady: true,
+    }),
+    "",
+  );
+});
+
+test("latest reservation status overrides stale ProofReady snapshots before relay", () => {
+  const sanitized = sanitizeRelayWithdrawSnapshot({
+    payload: { payload_hash: "payload-hash", expires_at_unix: 4102448400 },
+    reservation: proofReadyReservation(),
+  });
+  const latest = new Map([
+    [
+      "relay-op:note:1",
+      {
+        reservation_id: "relay-op:note:1",
+        status: reservationStatuses.Unknown,
+      },
+    ],
+  ]);
+
+  assert.equal(
+    relayReservationStatus(sanitized.reservation, latest),
+    reservationStatuses.Unknown,
+  );
+  assert.equal(
+    canRelaySnapshotBeSubmitted(
+      { ...sanitized, payload: { payload_hash: "payload-hash" } },
+      latest,
+      reservationStatuses,
+    ),
+    false,
+  );
+});
+
+test("metadata-only recovered snapshots cannot be relayed until payload is prepared again", () => {
+  const sanitized = sanitizeRelayWithdrawSnapshot({
+    reservation: proofReadyReservation(),
+    payloadHash: "payload-hash",
+    expiresAtUnix: 4102448400,
+  });
+  const updated = updateReservationBatchRecords(sanitized.reservation, [
+    {
+      reservation_id: "relay-op:note:1",
+      status: reservationStatuses.ProofReady,
+      payload_hash: "payload-hash",
+    },
+  ]);
+
+  assert.equal(
+    canRelaySnapshotBeSubmitted(
+      { ...sanitized, reservation: updated },
+      new Map(),
+      reservationStatuses,
+    ),
+    false,
+  );
+});
+
+test("relay snapshots without reservation ids fail closed", () => {
+  assert.equal(
+    canRelaySnapshotBeSubmitted(
+      { payload: { payload_hash: "payload-hash" }, reservation: null },
+      new Map(),
+      reservationStatuses,
+    ),
+    false,
+  );
+});
+
+test("relay server preflight calls the signer only for explicit unspent statuses", async () => {
+  const nullifier = "ab".repeat(32);
+  const payload = { nullifier_hex: `0x${nullifier.toUpperCase()}` };
+  assert.deepEqual(relayPayloadNullifiers(payload), [nullifier]);
+
+  let submissions = 0;
+  const result = await submitRelayAfterNullifierPreflight({
+    payload,
+    checkNullifiers: async (values) => new Map([[values[0], false]]),
+    submit: async () => {
+      submissions += 1;
+      return "submitted";
+    },
+  });
+  assert.equal(result, "submitted");
+  assert.equal(submissions, 1);
+
+  for (const checkNullifiers of [
+    async () => new Map([[nullifier, true]]),
+    async () => new Map(),
+    async () => new Map([[nullifier, "false"]]),
+    async () => ({}),
+    async () => {
+      throw new Error("upstream detail");
+    },
+  ]) {
+    await assert.rejects(
+      submitRelayAfterNullifierPreflight({
+        payload,
+        checkNullifiers,
+        submit: async () => {
+          submissions += 1;
+        },
+      }),
+      /nullifier/,
+    );
+  }
+  assert.equal(submissions, 1);
+});
+
+test("relay server preflight rejects missing and malformed nullifiers before lookup", async () => {
+  let checks = 0;
+  for (const payload of [{}, { nullifier_hex: "not-hex" }]) {
+    await assert.rejects(
+      submitRelayAfterNullifierPreflight({
+        payload,
+        checkNullifiers: async () => {
+          checks += 1;
+          return new Map();
+        },
+        submit: async () => undefined,
+      }),
+      /nullifier/,
+    );
+  }
+  assert.equal(checks, 0);
+});
