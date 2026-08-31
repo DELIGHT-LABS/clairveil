@@ -269,7 +269,7 @@ func removeSQLPersistFailureTrigger(ctx context.Context, db *sql.DB, dialect SQL
 func resetSQLIntegrationSchema(ctx context.Context, db *sql.DB, dialect SQLDialect) error {
 	tables := []string{
 		"expected_output_evidence", "payroll_item_outputs", "batch_operation_inputs", "batch_operations",
-		"note_reservations", "payroll_operations", "batch_operation_store_meta", "reservation_store_locks",
+		"note_reservations", "payroll_operations", "reservation_lifecycle_store_meta", "batch_operation_store_meta", "reservation_store_locks",
 	}
 	for _, table := range tables {
 		statement := "DROP TABLE IF EXISTS " + table

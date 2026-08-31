@@ -40,6 +40,14 @@ func (a NoteAllocator) Allocate(input PayrollInput, notes []TreasuryNote) ([]Pay
 		if itemDenom == "" {
 			itemDenom = input.Denom
 		}
+		recipientHash, err := HashRecipient(item.RecipientAddress)
+		if err != nil {
+			return nil, fmt.Errorf("item %s recipient hash: %w", item.ItemID, err)
+		}
+		amountHash, err := HashAmount(itemDenom, item.Amount)
+		if err != nil {
+			return nil, fmt.Errorf("item %s amount hash: %w", item.ItemID, err)
+		}
 		planned[itemIndex] = PayrollPlanItem{
 			CompanyID:                input.CompanyID,
 			PayrollID:                input.PayrollID,
@@ -49,9 +57,9 @@ func (a NoteAllocator) Allocate(input PayrollInput, notes []TreasuryNote) ([]Pay
 			EmployeeID:               item.EmployeeID,
 			OperationID:              operationID(input.CompanyID, input.BatchID, input.PayrollID, item.ItemID, input.Attempt),
 			RecipientAddress:         item.RecipientAddress,
-			ExpectedRecipientHash:    HashRecipient(item.RecipientAddress),
+			ExpectedRecipientHash:    recipientHash,
 			Amount:                   cloneBigInt(item.Amount),
-			ExpectedAmountHash:       HashAmount(itemDenom, item.Amount),
+			ExpectedAmountHash:       amountHash,
 			Denom:                    itemDenom,
 			DisclosurePolicy:         item.DisclosurePolicy,
 			ExpectedOutputCommitment: item.ExpectedOutputCommitment,
@@ -425,7 +433,7 @@ func orderedInputPair(left TreasuryNote, right TreasuryNote) []TreasuryNote {
 func filterAvailableNotes(denom string, notes []TreasuryNote) []TreasuryNote {
 	available := make([]TreasuryNote, 0, len(notes))
 	for _, note := range notes {
-		if note.IsSpent || note.ReservationID != "" || note.Denom != denom {
+		if !note.IsVerifiedUnspent() || note.ReservationID != "" || note.Denom != denom {
 			continue
 		}
 		if note.Amount == nil {

@@ -148,6 +148,9 @@ func (d ReferenceDaemon) processGroup(ctx context.Context, status privacyreserva
 			report.Items = append(report.Items, referenceDaemonItem(group, "skipped", status, group.Operation.Status, false, "operation has active reservations in another status"))
 			return nil
 		}
+		if proofReadyBroadcastAttemptPending(group.Reservations) {
+			return d.recoverExpiredProofReadyBroadcastAttempt(ctx, group, report)
+		}
 		return d.simulateSubmit(ctx, group, report)
 	case privacyreservation.StatusSubmitted, privacyreservation.StatusUnknown:
 		return d.simulateReconcile(ctx, group, report)
@@ -156,6 +159,36 @@ func (d ReferenceDaemon) processGroup(ctx context.Context, status privacyreserva
 		report.Items = append(report.Items, referenceDaemonItem(group, "skipped", status, group.Operation.Status, false, "unsupported status"))
 		return nil
 	}
+}
+
+func proofReadyBroadcastAttemptPending(reservations []privacyreservation.NoteReservation) bool {
+	for _, reservation := range reservations {
+		if reservation.BroadcastInFlight || reservation.BroadcastAttemptCount != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (d ReferenceDaemon) recoverExpiredProofReadyBroadcastAttempt(ctx context.Context, group referenceReservationGroup, report *ReferenceDaemonRunReport) error {
+	updated, err := d.Reservation.RecoverOperationAfterLeaseExpiry(
+		ctx,
+		group.Operation.OperationID,
+		referenceReservationIDs(group.Reservations),
+		privacyreservation.StatusProofReady,
+		privacyreservation.StatusManualReview,
+	)
+	if err != nil {
+		if errors.Is(err, privacyreservation.ErrLeaseUnavailable) || errors.Is(err, privacyreservation.ErrLeaseMismatch) || errors.Is(err, privacyreservation.ErrCompareAndSetFailed) {
+			report.Skipped++
+			report.Items = append(report.Items, referenceDaemonItem(group, "skipped", privacyreservation.StatusProofReady, group.Operation.Status, false, "proof-ready broadcast attempt is owned by another worker"))
+			return nil
+		}
+		return err
+	}
+	report.RequiresReview++
+	report.Items = append(report.Items, referenceDaemonItem(referenceReservationGroup{Operation: group.Operation, Reservations: updated}, "manual-review", privacyreservation.StatusManualReview, privacyreservation.OperationStatusManualReview, true, "expired proof-ready broadcast attempt requires manual reconciliation"))
+	return nil
 }
 
 func referenceDaemonHasActiveReservationsOutsideStatus(ctx context.Context, store privacyreservation.Store, operationID string, status privacyreservation.ReservationStatus) (bool, error) {
@@ -186,28 +219,28 @@ func referenceDaemonActiveReservationStatuses() []privacyreservation.Reservation
 }
 
 func (d ReferenceDaemon) simulateProofAndSubmit(ctx context.Context, group referenceReservationGroup, report *ReferenceDaemonRunReport) (runErr error) {
-	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(group.Reservations))
+	refs, _, err := d.Reservation.BeginProvingOperation(
+		ctx,
+		group.Operation.OperationID,
+		referenceReservationIDs(group.Reservations),
+		d.leaseOwner(),
+		d.leaseTTL(),
+	)
+	if err != nil {
+		return err
+	}
 	rollbackRequired := true
 	defer func() {
 		if !rollbackRequired || len(refs) == 0 {
 			return
 		}
-		if rollbackErr := rollbackProvingReservations(ctx, d.Reservation, refs); rollbackErr != nil {
+		if _, _, rollbackErr := d.Reservation.RollbackProvingOperation(ctx, group.Operation.OperationID, refs); rollbackErr != nil {
 			runErr = errors.Join(runErr, rollbackErr)
 		}
 	}()
-	for _, reservation := range group.Reservations {
-		lease, err := d.Reservation.AcquireLeaseForStatus(ctx, reservation.ReservationID, d.leaseOwner(), privacyreservation.StatusReserved, d.leaseTTL())
-		if err != nil {
-			return err
-		}
-		if _, err := d.Reservation.TransitionWithLease(ctx, reservation.ReservationID, lease.Token, privacyreservation.StatusReserved, privacyreservation.StatusProving); err != nil {
-			return err
-		}
-		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseToken: lease.Token})
-	}
 	proofReadyUpdate := privacyreservation.ProofReadyOperationUpdate{
 		OperationID:                      group.Operation.OperationID,
+		PayloadHash:                      expectedOrSimulated(group.Operation.PayloadHash, "payload", group.Operation.OperationID),
 		ExpectedOutputCommitment:         expectedOrSimulated(group.Operation.ExpectedOutputCommitment, "commitment", group.Operation.OperationID),
 		ExpectedDisclosureDigest:         expectedOrSimulated(group.Operation.ExpectedDisclosureDigest, "audit-disclosure", group.Operation.OperationID),
 		ExpectedAuditDisclosureDigest:    expectedOrSimulated(firstNonEmpty(group.Operation.ExpectedAuditDisclosureDigest, group.Operation.ExpectedDisclosureDigest), "audit-disclosure", group.Operation.OperationID),
@@ -229,40 +262,42 @@ func (d ReferenceDaemon) simulateProofAndSubmit(ctx context.Context, group refer
 }
 
 func (d ReferenceDaemon) rollbackExpiredProving(ctx context.Context, group referenceReservationGroup, report *ReferenceDaemonRunReport) error {
-	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(group.Reservations))
-	for _, reservation := range group.Reservations {
-		lease, err := d.Reservation.AcquireLeaseForStatus(ctx, reservation.ReservationID, d.leaseOwner(), privacyreservation.StatusProving, d.leaseTTL())
-		if err != nil {
-			if clearErr := clearAcquiredSubmissionLeases(ctx, d.Reservation, refs); clearErr != nil {
-				err = errors.Join(err, clearErr)
-			}
-			if errors.Is(err, privacyreservation.ErrLeaseUnavailable) || errors.Is(err, privacyreservation.ErrLeaseMismatch) || errors.Is(err, privacyreservation.ErrCompareAndSetFailed) {
-				report.Skipped++
-				report.Items = append(report.Items, referenceDaemonItem(group, "skipped", privacyreservation.StatusProving, group.Operation.Status, false, "proving lease is owned by another worker"))
-				return nil
-			}
-			return err
+	updated, err := d.Reservation.RecoverOperationAfterLeaseExpiry(
+		ctx,
+		group.Operation.OperationID,
+		referenceReservationIDs(group.Reservations),
+		privacyreservation.StatusProving,
+		privacyreservation.StatusReplanRequired,
+	)
+	if err != nil {
+		if errors.Is(err, privacyreservation.ErrLeaseUnavailable) || errors.Is(err, privacyreservation.ErrLeaseMismatch) || errors.Is(err, privacyreservation.ErrCompareAndSetFailed) {
+			report.Skipped++
+			report.Items = append(report.Items, referenceDaemonItem(group, "skipped", privacyreservation.StatusProving, group.Operation.Status, false, "proving lease is owned by another worker"))
+			return nil
 		}
-		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseToken: lease.Token})
-	}
-	for _, ref := range refs {
-		if _, err := d.Reservation.TransitionWithLease(ctx, ref.ReservationID, ref.LeaseToken, privacyreservation.StatusProving, privacyreservation.StatusReserved); err != nil {
-			return err
-		}
+		return err
 	}
 	report.Skipped++
-	report.Items = append(report.Items, referenceDaemonItem(group, "rolled-back", privacyreservation.StatusReserved, group.Operation.Status, false, "expired proving reservations returned to reserved"))
+	report.Items = append(report.Items, referenceDaemonItem(referenceReservationGroup{Operation: group.Operation, Reservations: updated}, "replan-required", privacyreservation.StatusReplanRequired, privacyreservation.OperationStatusReplanRequired, false, "expired proving reservations require a new plan"))
 	return nil
 }
 
 func (d ReferenceDaemon) simulateSubmit(ctx context.Context, group referenceReservationGroup, report *ReferenceDaemonRunReport) error {
-	refs := make([]privacyreservation.SubmittedReservationRef, 0, len(group.Reservations))
-	for _, reservation := range group.Reservations {
-		lease, err := d.Reservation.AcquireLeaseForStatus(ctx, reservation.ReservationID, d.leaseOwner(), privacyreservation.StatusProofReady, d.leaseTTL())
-		if err != nil {
-			return err
+	refs, _, err := d.Reservation.ReclaimExpiredOperation(
+		ctx,
+		group.Operation.OperationID,
+		referenceReservationIDs(group.Reservations),
+		privacyreservation.StatusProofReady,
+		d.leaseOwner(),
+		d.leaseTTL(),
+	)
+	if err != nil {
+		if errors.Is(err, privacyreservation.ErrLeaseUnavailable) || errors.Is(err, privacyreservation.ErrLeaseMismatch) || errors.Is(err, privacyreservation.ErrCompareAndSetFailed) {
+			report.Skipped++
+			report.Items = append(report.Items, referenceDaemonItem(group, "skipped", privacyreservation.StatusProofReady, group.Operation.Status, false, "proof-ready lease is owned by another worker"))
+			return nil
 		}
-		refs = append(refs, privacyreservation.SubmittedReservationRef{ReservationID: reservation.ReservationID, LeaseToken: lease.Token})
+		return err
 	}
 	return d.submitWithRefs(ctx, group.Operation, group.Reservations, refs, report)
 }
@@ -274,9 +309,30 @@ func (d ReferenceDaemon) submitWithRefs(ctx context.Context, operation privacyre
 		SignDocHash:     simulatedHex("sign-doc", operation.OperationID),
 		AccountSequence: simulatedSequence(operation.OperationID),
 	}
+	if _, _, err := d.Reservation.MarkBroadcastAttempting(ctx, refs, []string{operation.OperationID}, privacyreservation.BroadcastAttemptStart{
+		Reason:          "simulated payroll broadcast boundary crossed",
+		TxHash:          update.TxHash,
+		TxBytesHash:     update.TxBytesHash,
+		SignDocHash:     update.SignDocHash,
+		AccountSequence: update.AccountSequence,
+	}); err != nil {
+		return err
+	}
 	updatedReservations, updatedOperations, err := d.Reservation.MarkSubmittedBatch(ctx, refs, []string{operation.OperationID}, update)
 	if err != nil {
-		return err
+		broadcast := &BroadcastResult{
+			TxHash:          update.TxHash,
+			TxBytesHash:     update.TxBytesHash,
+			SignDocHash:     update.SignDocHash,
+			AccountSequence: update.AccountSequence,
+		}
+		if submittedStateMatches(ctx, d.Reservation.Store, refs, broadcast) {
+			updatedReservations = reservations
+			operation.Status = privacyreservation.OperationStatusSubmitted
+		} else {
+			fallbackErr := markProofResultsBroadcastUnknown(ctx, d.Reservation, refs, []string{operation.OperationID}, broadcast, fmt.Errorf("submitted bookkeeping failed: %w", err))
+			return errors.Join(err, fallbackErr)
+		}
 	}
 	if len(updatedOperations) > 0 {
 		operation = updatedOperations[0]
@@ -287,6 +343,7 @@ func (d ReferenceDaemon) submitWithRefs(ctx context.Context, operation privacyre
 }
 
 func (d ReferenceDaemon) simulateReconcile(ctx context.Context, group referenceReservationGroup, report *ReferenceDaemonRunReport) error {
+	evidences := make([]privacyreservation.OperationReservationEvidence, 0, len(group.Reservations))
 	for _, reservation := range group.Reservations {
 		evidence := privacyreservation.OperationEvidence{
 			TxHash:                   firstNonEmpty(group.Operation.TxHash, simulatedHex("tx", group.Operation.OperationID)),
@@ -306,25 +363,20 @@ func (d ReferenceDaemon) simulateReconcile(ctx context.Context, group referenceR
 			TxSucceeded:              true,
 			TxKnown:                  true,
 		}
-		result, err := d.Reservation.Reconcile(ctx, reservation.ReservationID, evidence)
-		if err != nil {
-			return err
-		}
-		if result.RequiresReview {
-			report.RequiresReview++
-		}
-		report.Reconciled++
-		report.Items = append(report.Items, ReferenceDaemonItemRunReport{
-			OperationID:       group.Operation.OperationID,
-			ItemID:            group.Operation.ItemID,
-			Action:            "reconciled",
-			ReservationIDs:    []string{reservation.ReservationID},
-			ReservationStatus: result.ReservationStatus,
-			OperationStatus:   result.OperationStatus,
-			RequiresReview:    result.RequiresReview,
-			Reason:            result.Reason,
+		evidences = append(evidences, privacyreservation.OperationReservationEvidence{
+			ReservationID: reservation.ReservationID,
+			Evidence:      evidence,
 		})
 	}
+	result, err := d.Reservation.ReconcileOperation(ctx, group.Operation.OperationID, evidences)
+	if err != nil {
+		return err
+	}
+	if result.RequiresReview {
+		report.RequiresReview += len(group.Reservations)
+	}
+	report.Reconciled += len(group.Reservations)
+	report.Items = append(report.Items, referenceDaemonItem(group, "reconciled", result.ReservationStatus, result.OperationStatus, result.RequiresReview, result.Reason))
 	return nil
 }
 

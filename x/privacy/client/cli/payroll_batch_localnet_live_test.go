@@ -421,7 +421,8 @@ func runBatchLocalnetReconcileStage(t *testing.T, cfg batchLocalnetConfig) {
 
 		recipientHash := ""
 		if i < len(outputs)-1 {
-			recipientHash = privacypayroll.HashRecipient(recipientAddress)
+			recipientHash, err = privacypayroll.HashRecipient(recipientAddress)
+			require.NoError(t, err)
 		}
 		require.Equal(t, graph.Evidence[i].RecipientHash, recipientHash)
 		observed[i] = privacyreservation.ObservedOutputEvidence{
@@ -547,7 +548,7 @@ func batchLocalnetPayrollOperation(t *testing.T, cfg batchLocalnetConfig, payloa
 		require.NoError(t, err)
 		notes[i] = privacypayroll.TreasuryNote{
 			NoteID: fmt.Sprintf("%02d:%s", i, commitment), OwnerKeyID: "alice", NullifierLookupKey: lookup,
-			NullifierLookupKeyID: batchLocalnetLookupKeyID, Denom: "uclair", Amount: new(big.Int).Set(input.Note.Amount),
+			NullifierLookupKeyID: batchLocalnetLookupKeyID, Denom: "uclair", Amount: new(big.Int).Set(input.Note.Amount), VerifiedUnspent: true,
 		}
 	}
 	items := []privacypayroll.PayrollItemInput{

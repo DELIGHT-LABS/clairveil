@@ -113,11 +113,14 @@ privacy-benchmark-report:
 .PHONY: examples
 examples:
 	npm --prefix examples/audit-disclosure-keys test
+	npm --prefix examples/js-sdk-fixture-validator ci
+	npm --prefix examples/js-sdk-fixture-validator run typecheck
 	npm --prefix examples/js-sdk-fixture-validator run validate
+	npm --prefix examples/js-sdk-fixture-validator test
 	npm --prefix examples/js-sdk-prover-http-client run demo
 	npm --prefix examples/clairveil-dapp ci
-	npm --prefix examples/clairveil-dapp run check:dapp
 	npm --prefix examples/clairveil-dapp run check:bundle:fresh
+	npm --prefix examples/clairveil-dapp run check:dapp
 	npm --prefix examples/clairveil-dapp run test:dapp
 	npm --prefix examples/clairveil-dapp run check:clairveiljs
 	npm --prefix examples/clairveil-dapp run test:clairveiljs

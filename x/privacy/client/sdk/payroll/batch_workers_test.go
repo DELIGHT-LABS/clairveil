@@ -342,14 +342,14 @@ func TestBuildBatchOperationGraphBindsRecipientAndDisclosurePlan(t *testing.T) {
 		items[i] = PayrollPlanItem{
 			CompanyID: "company", PayrollID: "payroll", BatchID: "batch", ItemID: "item-" + string(rune('a'+i)),
 			EmployeeID: "employee", OperationID: "bound-operation", RecipientAddress: address,
-			ExpectedRecipientHash: HashRecipient(address), Amount: new(big.Int).Set(output.Note.Amount),
-			ExpectedAmountHash: HashAmount("uclair", output.Note.Amount), Denom: "uclair",
+			ExpectedRecipientHash: mustHashRecipient(t, address), Amount: new(big.Int).Set(output.Note.Amount),
+			ExpectedAmountHash: mustHashAmount(t, "uclair", output.Note.Amount), Denom: "uclair",
 			DisclosurePolicy: PayrollDisclosurePolicy{UserPrivacyPolicy: output.PrivacyPolicy, UserDisclosureMode: output.DisclosureMode, UserDisclosureTargetPubKeyHex: hex.EncodeToString(output.DisclosureTargetPubKey)},
 		}
 	}
 	plan := BatchPayrollOperationPlan{
 		OperationID: "bound-operation", Items: items,
-		InputNotes: []TreasuryNote{{NoteID: "note-a", OwnerKeyID: "owner", NullifierLookupKey: "lookup", NullifierLookupKeyID: "lookup-v1", Denom: "uclair", Amount: new(big.Int).Set(payload.Inputs[0].Note.Amount)}},
+		InputNotes: []TreasuryNote{{NoteID: "note-a", OwnerKeyID: "owner", NullifierLookupKey: "lookup", NullifierLookupKeyID: "lookup-v1", Denom: "uclair", Amount: new(big.Int).Set(payload.Inputs[0].Note.Amount), VerifiedUnspent: true}},
 		InputTotal: new(big.Int).Set(payload.Inputs[0].Note.Amount), PaymentTotal: new(big.Int).Set(payload.Inputs[0].Note.Amount),
 		Change: new(big.Int), OutputCount: len(items), HasChange: false,
 	}
@@ -369,12 +369,16 @@ func TestBuildBatchOperationGraphBindsRecipientAndDisclosurePlan(t *testing.T) {
 	_, _, err = BuildBatchOperationGraph(context.Background(), plan, payload, testPayrollCipher{}, now)
 	require.ErrorContains(t, err, "nullifier does not match")
 	plan.InputNotes[0].NullifierLookupKey = derivedLookupKey
+	plan.InputNotes[0].VerifiedUnspent = false
+	_, _, err = BuildBatchOperationGraph(context.Background(), plan, payload, testPayrollCipher{}, now)
+	require.ErrorContains(t, err, "invalid treasury input note")
+	plan.InputNotes[0].VerifiedUnspent = true
 
 	wrong := batchReconcileTestPoint(77)
 	wrongAddress, err := privacytypes.EncodeShieldedAddressWithView(wrong, wrong)
 	require.NoError(t, err)
 	plan.Items[0].RecipientAddress = wrongAddress
-	plan.Items[0].ExpectedRecipientHash = HashRecipient(wrongAddress)
+	plan.Items[0].ExpectedRecipientHash = mustHashRecipient(t, wrongAddress)
 	_, _, err = BuildBatchOperationGraph(context.Background(), plan, payload, testPayrollCipher{}, now)
 	require.ErrorContains(t, err, "recipient does not match")
 }

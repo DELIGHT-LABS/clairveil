@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/DELIGHT-LABS/clairveil/docs/schemas/clairveil-web-client-config.schema.json",
+  "title": "Clairveil Web Client Configuration",
+  "description": "Versioned deployment configuration for the supported single-transfer Clairveil browser WebApp.",
+  "type": "object",
+  "required": ["schemaVersion", "activeChainProfileId", "chainProfiles"],
+  "properties": {
+    "schemaVersion": { "const": "clairveil-web-client-config-v1" },
+    "activeChainProfileId": { "$ref": "#/$defs/profileId" },
+    "chainProfiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/profile" }
+    },
+    "serverBacked": { "type": "boolean" },
+    "modeLabel": { "type": "string", "minLength": 1 },
+    "home": { "type": "string" },
+    "localSignerHome": { "type": "string" },
+    "localSignerBin": { "type": "string" },
+    "localTestMode": { "type": "boolean" },
+    "chainId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "rpc": { "$ref": "#/$defs/url" },
+    "rest": { "$ref": "#/$defs/url" },
+    "proverUrl": { "$ref": "#/$defs/url" },
+    "transport": { "enum": ["cosmos", "evm"] },
+    "denom": { "$ref": "#/$defs/denom" },
+    "displayDenom": { "type": "string", "minLength": 1, "maxLength": 32 },
+    "coinDecimals": { "$ref": "#/$defs/positiveInteger" },
+    "accountPrefix": { "$ref": "#/$defs/prefix" },
+    "shieldedPrefix": { "$ref": "#/$defs/prefix" },
+    "keplrChainInfo": { "$ref": "#/$defs/keplrChainInfo" },
+    "evmRpc": { "$ref": "#/$defs/url" },
+    "evmChainId": { "type": "string", "pattern": "^0x[0-9a-fA-F]+$" },
+    "evmChainName": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "evmPrivacyPrecompileAddress": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" },
+    "evmGasLimit": { "type": "string", "pattern": "^0x[0-9a-fA-F]+$" },
+    "evmSendGasLimit": { "type": "string", "pattern": "^0x[0-9a-fA-F]+$" },
+    "serverFeatures": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "localTestMode": { "type": "boolean" },
+        "localSigners": { "type": "boolean" },
+        "faucet": { "type": "boolean" },
+        "depositProof": { "type": "boolean" },
+        "auditorAdmin": { "type": "boolean" },
+        "localSignerAdmin": { "type": "boolean" },
+        "localSignerSetup": { "type": "boolean" },
+        "relayer": { "type": "boolean" },
+        "proverProxy": { "type": "boolean" },
+        "batchTransfer": { "type": "boolean" }
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "profileId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "url": {
+      "type": "string",
+      "format": "uri",
+      "allOf": [
+        { "pattern": "^https?://[^/?#]+(?:/[^?#]*)?$" },
+        { "not": { "pattern": "^https?://[^/?#]*@" } }
+      ]
+    },
+    "prefix": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "^[a-z][a-z0-9]*$"
+    },
+    "denom": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z][A-Za-z0-9/:._-]*$"
+    },
+    "positiveInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "gasPriceStep": {
+      "type": "object",
+      "required": ["low", "average", "high"],
+      "additionalProperties": false,
+      "properties": {
+        "low": { "type": "number", "exclusiveMinimum": 0 },
+        "average": { "type": "number", "exclusiveMinimum": 0 },
+        "high": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "keplrChainInfo": {
+      "type": "object",
+      "required": [
+        "chainId", "chainName", "rpc", "rest", "bip44", "bech32Config",
+        "currencies", "feeCurrencies", "stakeCurrency", "features"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "chainId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "chainName": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "rpc": { "$ref": "#/$defs/url" },
+        "rest": { "$ref": "#/$defs/url" },
+        "bip44": {
+          "type": "object",
+          "required": ["coinType"],
+          "additionalProperties": false,
+          "properties": {
+            "coinType": { "type": "integer", "minimum": 0, "maximum": 4294967295 }
+          }
+        },
+        "bech32Config": {
+          "type": "object",
+          "required": [
+            "bech32PrefixAccAddr", "bech32PrefixAccPub", "bech32PrefixValAddr",
+            "bech32PrefixValPub", "bech32PrefixConsAddr", "bech32PrefixConsPub"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "bech32PrefixAccAddr": { "$ref": "#/$defs/prefix" },
+            "bech32PrefixAccPub": { "$ref": "#/$defs/prefix" },
+            "bech32PrefixValAddr": { "$ref": "#/$defs/prefix" },
+            "bech32PrefixValPub": { "$ref": "#/$defs/prefix" },
+            "bech32PrefixConsAddr": { "$ref": "#/$defs/prefix" },
+            "bech32PrefixConsPub": { "$ref": "#/$defs/prefix" }
+          }
+        },
+        "currencies": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": { "$ref": "#/$defs/keplrCurrency" }
+        },
+        "feeCurrencies": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": { "$ref": "#/$defs/keplrFeeCurrency" }
+        },
+        "stakeCurrency": { "$ref": "#/$defs/keplrCurrency" },
+        "features": { "type": "array", "maxItems": 0 }
+      }
+    },
+    "keplrCurrency": {
+      "type": "object",
+      "required": ["coinDenom", "coinMinimalDenom", "coinDecimals"],
+      "additionalProperties": false,
+      "properties": {
+        "coinDenom": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "coinMinimalDenom": { "$ref": "#/$defs/denom" },
+        "coinDecimals": { "$ref": "#/$defs/positiveInteger" }
+      }
+    },
+    "keplrFeeCurrency": {
+      "type": "object",
+      "required": ["coinDenom", "coinMinimalDenom", "coinDecimals", "gasPriceStep"],
+      "additionalProperties": false,
+      "properties": {
+        "coinDenom": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "coinMinimalDenom": { "$ref": "#/$defs/denom" },
+        "coinDecimals": { "$ref": "#/$defs/positiveInteger" },
+        "gasPriceStep": { "$ref": "#/$defs/gasPriceStep" }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "required": [
+        "id", "label", "chainName", "transport", "wallet", "chainId",
+        "rpc", "rest", "proverUrl", "accountPrefix", "shieldedPrefix",
+        "denom", "displayDenom", "coinDecimals"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/profileId" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "chainName": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "transport": { "enum": ["cosmos", "evm"] },
+        "wallet": { "enum": ["keplr", "metamask"] },
+        "chainId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "rpc": { "$ref": "#/$defs/url" },
+        "rest": { "$ref": "#/$defs/url" },
+        "restEndpoints": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/url" },
+          "uniqueItems": true
+        },
+        "proverUrl": { "$ref": "#/$defs/url" },
+        "depositProofUrl": { "$ref": "#/$defs/url" },
+        "accountPrefix": { "$ref": "#/$defs/prefix" },
+        "shieldedPrefix": { "$ref": "#/$defs/prefix" },
+        "denom": { "$ref": "#/$defs/denom" },
+        "displayDenom": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "coinDecimals": { "$ref": "#/$defs/positiveInteger" },
+        "keplrCoinType": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "gasPriceStep": { "$ref": "#/$defs/gasPriceStep" },
+        "keplrChainInfo": { "$ref": "#/$defs/keplrChainInfo" },
+        "evmRpc": { "$ref": "#/$defs/url" },
+        "evmChainId": { "type": "string", "pattern": "^0x[0-9a-fA-F]+$" },
+        "evmChainName": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "evmPrivacyPrecompileAddress": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" },
+        "evmGasLimit": { "type": "string", "pattern": "^0x[0-9a-fA-F]+$" },
+        "evmSendGasLimit": { "type": "string", "pattern": "^0x[0-9a-fA-F]+$" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "transport": { "const": "cosmos" } }, "required": ["transport"] },
+          "then": {
+            "required": ["keplrCoinType", "gasPriceStep", "keplrChainInfo"],
+            "properties": { "wallet": { "const": "keplr" } }
+          }
+        },
+        {
+          "if": { "properties": { "transport": { "const": "evm" } }, "required": ["transport"] },
+          "then": {
+            "required": ["evmRpc", "evmChainId", "evmChainName", "evmPrivacyPrecompileAddress", "evmGasLimit", "evmSendGasLimit"],
+            "properties": { "wallet": { "const": "metamask" } },
+            "not": {
+              "anyOf": [
+                { "required": ["keplrCoinType"] },
+                { "required": ["gasPriceStep"] },
+                { "required": ["keplrChainInfo"] }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -36,10 +36,10 @@ func TestResolveRecipientDecodesShieldedBundle(t *testing.T) {
 
 func TestSummarizeSpendableNotesByDenom(t *testing.T) {
 	notes := []privacyscan.FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false, VerifiedUnspent: true},
 		{Note: privacytypes.Note{Amount: big.NewInt(11), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: true},
-		{Note: privacytypes.Note{Amount: big.NewInt(13), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(13), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
 	}
 
 	spendable, total := SummarizeSpendableNotesByDenom(notes, "uclair")
@@ -50,11 +50,22 @@ func TestSummarizeSpendableNotesByDenom(t *testing.T) {
 	require.Equal(t, int64(18), total.Int64())
 }
 
+func TestSummarizeSpendableNotesByDenomExcludesUnverifiedNotes(t *testing.T) {
+	notes := []privacyscan.FoundNote{
+		{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(13), AssetID: privacytypes.ComputeAssetIDV1("uclair")}},
+	}
+
+	spendable, total := SummarizeSpendableNotesByDenom(notes, "uclair")
+	require.Len(t, spendable, 1)
+	require.Equal(t, int64(5), total.Int64())
+}
+
 func TestFindExactMatchSpendableNoteByDenomIgnoresDifferentDenom(t *testing.T) {
 	notes := []privacyscan.FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false, VerifiedUnspent: true},
 		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: true},
-		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
 	}
 
 	selected := FindExactMatchSpendableNoteByDenom(notes, "uclair", big.NewInt(10))
@@ -70,13 +81,13 @@ func TestFindExactMatchSpendableNoteByDenomUsesDeterministicOrder(t *testing.T) 
 			Note:      privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")},
 			Nullifier: "bb",
 			Height:    9,
-			IsSpent:   false,
+			IsSpent:   false, VerifiedUnspent: true,
 		},
 		{
 			Note:      privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")},
 			Nullifier: "aa",
 			Height:    5,
-			IsSpent:   false,
+			IsSpent:   false, VerifiedUnspent: true,
 		},
 	}
 
@@ -87,22 +98,24 @@ func TestFindExactMatchSpendableNoteByDenomUsesDeterministicOrder(t *testing.T) 
 
 func TestPlannerStateFingerprintUsesSortedSameDenomSpendableNotes(t *testing.T) {
 	left := []privacyscan.FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "bb", Height: 9},
-		{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "aa", Height: 5},
-		{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, Nullifier: "xx", Height: 4},
+		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "bb", Height: 9, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "aa", Height: 5, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, Nullifier: "xx", Height: 4, VerifiedUnspent: true},
 	}
 	right := []privacyscan.FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "aa", Height: 5},
-		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "bb", Height: 9},
+		{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "aa", Height: 5, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "bb", Height: 9, VerifiedUnspent: true},
 	}
 
-	require.Equal(t, PlannerStateFingerprint(left, "uclair", big.NewInt(7)), PlannerStateFingerprint(right, "uclair", big.NewInt(7)))
+	want := "uclair|7|nullifier:aa:3|nullifier:bb:10"
+	require.Equal(t, want, PlannerStateFingerprint(left, "uclair", big.NewInt(7)))
+	require.Equal(t, want, PlannerStateFingerprint(right, "uclair", big.NewInt(7)))
 }
 
 func TestSelectInputsFiltersDifferentDenomZeroNote(t *testing.T) {
 	notes := []privacyscan.FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(0), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(0), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false, VerifiedUnspent: true},
 	}
 
 	selection := SelectInputs(notes, "uclair", big.NewInt(10))
@@ -113,9 +126,9 @@ func TestSelectInputsFiltersDifferentDenomZeroNote(t *testing.T) {
 
 func TestSelectInputsUsesSameDenomPairOnly(t *testing.T) {
 	notes := []privacyscan.FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(4), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(4), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
 	}
 
 	selection := SelectInputs(notes, "uclair", big.NewInt(10))
@@ -128,8 +141,8 @@ func TestSelectInputsUsesSameDenomPairOnly(t *testing.T) {
 
 func TestSelectInputsFallsBackToPositivePairWhenSingleNoteNeedsZero(t *testing.T) {
 	notes := []privacyscan.FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(11), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(11), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false, VerifiedUnspent: true},
 	}
 
 	selection := SelectInputs(notes, "uclair", big.NewInt(8))
@@ -142,9 +155,9 @@ func TestSelectInputsFallsBackToPositivePairWhenSingleNoteNeedsZero(t *testing.T
 
 func TestSelectInputsChoosesSmallestSufficientPairDeterministically(t *testing.T) {
 	notes := []privacyscan.FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(11), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "c", Height: 3, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "a", Height: 1, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(11), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "c", Height: 3, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "a", Height: 1, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false, VerifiedUnspent: true},
 	}
 
 	selection := SelectInputs(notes, "uclair", big.NewInt(12))
@@ -158,8 +171,8 @@ func TestSelectInputsChoosesSmallestSufficientPairDeterministically(t *testing.T
 func TestSelectInputsRequiresDummyWhenPairWouldOverflowOutputAmounts(t *testing.T) {
 	maxAmount := privacytypes.MaxShieldedAmount()
 	notes := []privacyscan.FoundNote{
-		{Note: privacytypes.Note{Amount: new(big.Int).Set(maxAmount), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "a", Height: 1, IsSpent: false},
-		{Note: privacytypes.Note{Amount: new(big.Int).Set(maxAmount), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false},
+		{Note: privacytypes.Note{Amount: new(big.Int).Set(maxAmount), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "a", Height: 1, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: new(big.Int).Set(maxAmount), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false, VerifiedUnspent: true},
 	}
 
 	selection := SelectInputs(notes, "uclair", big.NewInt(1))
@@ -170,9 +183,9 @@ func TestSelectInputsRequiresDummyWhenPairWouldOverflowOutputAmounts(t *testing.
 
 func TestSelectInputsChoosesLargestMergePairWhenNoFinalPairExists(t *testing.T) {
 	notes := []privacyscan.FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(2), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "a", Height: 1, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "c", Height: 3, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(2), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "a", Height: 1, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "c", Height: 3, IsSpent: false, VerifiedUnspent: true},
 	}
 
 	selection := SelectInputs(notes, "uclair", big.NewInt(20))
@@ -185,10 +198,10 @@ func TestSelectInputsChoosesLargestMergePairWhenNoFinalPairExists(t *testing.T) 
 
 func TestSelectInputBatchBacktracksAcrossOriginalOrder(t *testing.T) {
 	notes := []privacyscan.FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(0), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "zero", Height: 1, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(2), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "two", Height: 2, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "three", Height: 3, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(100), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "hundred", Height: 4, IsSpent: false},
+		{Note: privacytypes.Note{Amount: big.NewInt(0), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "zero", Height: 1, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(2), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "two", Height: 2, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "three", Height: 3, IsSpent: false, VerifiedUnspent: true},
+		{Note: privacytypes.Note{Amount: big.NewInt(100), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "hundred", Height: 4, IsSpent: false, VerifiedUnspent: true},
 	}
 
 	selections, err := SelectInputBatch(notes, "uclair", []*big.Int{big.NewInt(5), big.NewInt(100)})

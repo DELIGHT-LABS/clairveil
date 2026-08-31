@@ -29,6 +29,19 @@ func TestNoteAllocatorAllocatesAvailableTwoInputNotes(t *testing.T) {
 	require.Equal(t, ItemStatusPlanned, items[0].Status)
 }
 
+func TestNoteAllocatorExcludesUnverifiedNotes(t *testing.T) {
+	input := testPayrollInput()
+	input.Items[0].Amount = big.NewInt(70)
+	notes := []TreasuryNote{
+		testTreasuryNote("zero", "uclair", 0, false, ""),
+		testTreasuryNote("large", "uclair", 100, false, ""),
+	}
+	notes[0].VerifiedUnspent = false
+
+	_, err := NoteAllocator{}.Allocate(input, notes)
+	require.ErrorContains(t, err, "insufficient treasury notes")
+}
+
 func TestNoteAllocatorUsesBestPairWhenNoZeroDummy(t *testing.T) {
 	input := testPayrollInput()
 	input.Items[0].Amount = big.NewInt(90)

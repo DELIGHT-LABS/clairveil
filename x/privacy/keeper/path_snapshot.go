@@ -234,7 +234,10 @@ func (k Keeper) GetMerkleRootSnapshotV1(ctx sdk.Context, root []byte) (*types.Me
 }
 
 // RecordCurrentMerkleRootSnapshotV1 idempotently confirms the post-operation
-// root. AppendCommitment already persists every prefix snapshot; bounded
+// root. AppendCommitment already persists every prefix snapshot, including the
+// block height at which that root was created. Output-less operations such as a
+// withdraw must therefore preserve an existing snapshot rather than trying to
+// register the same root again at the operation's later block height. Bounded
 // deterministic rebuild remains only a fail-closed recovery/query path.
 func (k Keeper) RecordCurrentMerkleRootSnapshotV1(ctx sdk.Context) error {
 	count := k.GetLeafCount(ctx)
@@ -248,6 +251,16 @@ func (k Keeper) RecordCurrentMerkleRootSnapshotV1(ctx sdk.Context) error {
 		if err != nil {
 			return err
 		}
+	}
+	current, found, err := k.GetMerkleRootSnapshotV1(ctx, root)
+	if err != nil {
+		return fmt.Errorf("load current merkle root snapshot: %w", err)
+	}
+	if found {
+		if current.LeafCount != count {
+			return fmt.Errorf("current merkle root snapshot leaf_count is inconsistent: got %d want %d", current.LeafCount, count)
+		}
+		return nil
 	}
 	return k.SetMerkleRootSnapshotV1(ctx, &types.MerkleRootSnapshotV1{
 		Root:      root,

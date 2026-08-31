@@ -73,6 +73,5 @@ func decodePublicKey(bz []byte) (*twistededwards.PointAffine, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid public key bytes: %w", err)
 	}
-
 	return pubKey, nil
 }

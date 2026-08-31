@@ -215,7 +215,7 @@ func (s *MemoryStore) HeartbeatBatchOperationLease(_ context.Context, operationI
 	effectiveLeaseUntil := op.LeaseUntil
 	for _, input := range s.batchInputs[operationID] {
 		reservation := s.reservations[input.ReservationID]
-		if err := requireLeaseToken(reservation, token, now); err != nil {
+		if err := requireLeaseToken(reservation, op.LeaseOwner, token, now); err != nil {
 			return nil, err
 		}
 		if reservation.LastHeartbeatAt.After(latestHeartbeatAt) {
@@ -662,7 +662,7 @@ func (s *MemoryStore) requireBatchLeaseLocked(operationID, token string, now tim
 		if !ok {
 			return BatchOperation{}, ErrReservationNotFound
 		}
-		if err := requireLeaseToken(reservation, token, now); err != nil {
+		if err := requireLeaseToken(reservation, op.LeaseOwner, token, now); err != nil {
 			return BatchOperation{}, err
 		}
 	}
@@ -704,7 +704,11 @@ func (s *MemoryStore) transitionBatchInputReservationsExactLocked(operationID st
 		if reservation.Status != from {
 			return ErrCompareAndSetFailed
 		}
-		if err := requireLeaseToken(reservation, leaseToken, now); err != nil {
+		operation, ok := s.batchOperations[operationID]
+		if !ok {
+			return ErrOperationNotFound
+		}
+		if err := requireLeaseToken(reservation, operation.LeaseOwner, leaseToken, now); err != nil {
 			return err
 		}
 		if !CanTransitionReservation(from, to) {

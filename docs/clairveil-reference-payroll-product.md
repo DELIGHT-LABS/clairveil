@@ -208,15 +208,19 @@ Use the [batch transfer integration handoff](clairveil-batch-transfer-integratio
       "note_id": "note-large",
       "owner_key_id": "treasury-key",
       "nullifier_lookup_key": "lookup-note-large",
+      "nullifier_lookup_key_id": "lookup-v1",
       "denom": "uclair",
-      "amount": "100"
+      "amount": "100",
+      "verified_unspent": true
     },
     {
       "note_id": "note-zero",
       "owner_key_id": "treasury-key",
       "nullifier_lookup_key": "lookup-note-zero",
+      "nullifier_lookup_key_id": "lookup-v1",
       "denom": "uclair",
-      "amount": "0"
+      "amount": "0",
+      "verified_unspent": true
     }
   ]
 }
@@ -528,6 +532,8 @@ This adapter is a repo-local production-style adapter for restart/rerun rehearsa
 - CAS, lease, heartbeat, and reconcile semantics matching `reservation.Store`
 
 Schema strings are available through `reservation.PostgreSQLSchema()` and `reservation.SQLiteSchema()`. This adapter is a reference transaction-backed store. Multi-tenant production should add tenant partitioning, field-level encryption, raw-nullifier avoidance, connection pool policy, migrations, and row-lock strategy according to product DB policy.
+
+Reservation lifecycle payloads use schema version 2. Durable JSON records it in `version`; SQL stores record it in `reservation_lifecycle_store_meta`. Upgrade SQL stores through `InitSQLStore`, which fail-closes ambiguous v1 `ProofReady` work into `ManualReview`. In-place downgrade is not supported: retain a pre-upgrade v1 backup and restore it before running an older binary. Older binaries must reject v2 state.
 
 ## Current Repository Completion Boundary
 

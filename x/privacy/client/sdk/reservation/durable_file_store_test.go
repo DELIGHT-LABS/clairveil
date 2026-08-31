@@ -29,7 +29,7 @@ func TestDurableFileStorePersistsReservationOperationAndLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.TransitionWithLease(ctx, created.ReservationID, lease.Token, StatusReserved, StatusProving); err != nil {
+	if _, err := svc.TransitionWithLease(ctx, created.ReservationID, lease.Owner, lease.Token, StatusReserved, StatusProving); err != nil {
 		t.Fatal(err)
 	}
 
@@ -84,7 +84,7 @@ func TestDurableFileStoreRollsBackMemoryWhenPersistFails(t *testing.T) {
 
 	canceledCtx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := svc.TransitionWithLease(canceledCtx, created.ReservationID, lease.Token, StatusReserved, StatusProving); err == nil {
+	if _, err := svc.TransitionWithLease(canceledCtx, created.ReservationID, lease.Owner, lease.Token, StatusReserved, StatusProving); err == nil {
 		t.Fatal("expected canceled persist to fail")
 	}
 

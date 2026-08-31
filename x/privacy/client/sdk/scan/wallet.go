@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -33,7 +34,7 @@ func SummarizeSpendableNotes(notes []FoundNote) ([]FoundNote, *big.Int) {
 	total := new(big.Int)
 
 	for _, fn := range notes {
-		if fn.IsSpent {
+		if !fn.IsVerifiedUnspent() {
 			continue
 		}
 
@@ -51,9 +52,14 @@ func NormalizeFoundNotes(notes []FoundNote) ([]FoundNote, bool) {
 
 	seen := make(map[string]FoundNote, len(notes))
 	order := make([]string, 0, len(notes))
+	changed := false
 	for _, note := range notes {
+		var nullifierChanged bool
+		note, nullifierChanged = normalizeFoundNoteNullifier(note)
+		changed = changed || nullifierChanged
 		key := foundNoteIdentityKey(note)
 		if _, exists := seen[key]; exists {
+			changed = true
 			continue
 		}
 		seen[key] = note
@@ -69,7 +75,7 @@ func NormalizeFoundNotes(notes []FoundNote) ([]FoundNote, bool) {
 		return foundNoteDisplayLess(normalized[i], normalized[j])
 	})
 
-	if len(normalized) != len(notes) {
+	if changed || len(normalized) != len(notes) {
 		return normalized, true
 	}
 	for i := range normalized {
@@ -134,8 +140,11 @@ func SaveLocalWalletFile(dbPath string, data *LocalWalletData) error {
 }
 
 func foundNoteIdentityKey(note FoundNote) string {
-	if trimmed := strings.ToLower(strings.TrimSpace(note.Nullifier)); trimmed != "" {
-		return "nullifier:" + trimmed
+	if canonical, ok := canonicalFoundNoteNullifier(note.Nullifier); ok {
+		return "nullifier:" + canonical
+	}
+	if raw := strings.ToLower(strings.TrimSpace(note.Nullifier)); raw != "" {
+		return "nullifier-invalid:" + raw
 	}
 
 	commitment := note.Note.ComputeCommitment()
@@ -149,6 +158,24 @@ func foundNoteIdentityKey(note FoundNote) string {
 		strings.ToLower(strings.TrimSpace(note.TxHash)),
 		note.Note.Amount.String(),
 	)
+}
+
+func normalizeFoundNoteNullifier(note FoundNote) (FoundNote, bool) {
+	canonical, ok := canonicalFoundNoteNullifier(note.Nullifier)
+	if !ok {
+		return note, false
+	}
+	changed := note.Nullifier != canonical
+	note.Nullifier = canonical
+	return note, changed
+}
+
+func canonicalFoundNoteNullifier(value string) (string, bool) {
+	decoded, err := privacyfield.DecodeCanonicalHex(strings.TrimSpace(value), "nullifier")
+	if err != nil {
+		return "", false
+	}
+	return hex.EncodeToString(decoded), true
 }
 
 func foundNoteDisplayLess(left, right FoundNote) bool {

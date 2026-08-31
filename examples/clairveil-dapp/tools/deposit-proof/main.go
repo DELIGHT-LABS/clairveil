@@ -22,6 +22,7 @@ type request struct {
 }
 
 type response struct {
+	Version           string `json:"version"`
 	ProofHex          string `json:"proof_hex"`
 	NoteCommitmentHex string `json:"note_commitment_hex"`
 }
@@ -84,6 +85,7 @@ func buildDepositProof(req request) (response, error) {
 		return response{}, err
 	}
 	return response{
+		Version:           "v1",
 		ProofHex:          hex.EncodeToString(proof),
 		NoteCommitmentHex: commitmentHex,
 	}, nil

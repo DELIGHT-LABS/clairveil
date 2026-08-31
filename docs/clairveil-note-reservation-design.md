@@ -600,7 +600,7 @@ Reserved -> Released -> Available
 
 Other states require proof artifact, tx hash, nullifier, and worker lease checks.
 
-If a broadcaster gets RPC/network error but no tx hash, tx bytes hash, or sign doc hash, do not move `ProofReady` to `Unknown`. Keep the `ProofReady` lock and lease; retry workers can acquire a takeover lease after expiry. Record `ProofReady -> Unknown` only when attempt metadata exists or when non-zero tx code identifies a submission attempt.
+If a broadcaster gets an RPC/network error after the broadcast boundary but has no tx hash, tx bytes hash, or sign doc hash, do not retry automatically or move `ProofReady` to `Unknown`. Persist the opaque broadcast attempt and error, then move the reservation to the active `ManualReview` lock; another worker must not take over the expired lease and resubmit. Only a definitely non-submitted validation/signing failure may be cleared to `ReplanRequired` with proof-discard evidence. Record `ProofReady -> Unknown` only when attempt metadata exists or when a non-zero tx code identifies a submission attempt.
 
 ## Submitted / Unknown / ManualReview Reconcile
 
