@@ -19,6 +19,13 @@
 | --- | --- | --- |
 | [Public capacity claim 실행](clairveil-public-capacity-claim-execution-plan-kr.md) | Active; Korean-only | Harness 측정을 근거 없는 production claim으로 바꾸지 않고 eligible operational prover RPS, chain TPS, user-latency evidence 생성 |
 
+## 완료된 deposit funder record
+
+| Plan | 상태 |
+| --- | --- |
+| [Deposit actor/funder 분리 구현](clairveil-deposit-funder-implementation-plan-kr.md) | Complete implementation record; Korean-only; 현재 reviewed checkout은 self-funding 보강을 포함하며 downstream용 immutable tag/commit 제공은 pending |
+| [Deposit actor/funder 분리 변경 요청](clairveil-deposit-funder-separation-handoff-kr.md) | Fulfilled by implementation plan; downstream EVM snapshot e2e는 downstream repository 책임 |
+
 ## 완료된 batch program record
 
 | Plan | 상태 |

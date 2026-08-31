@@ -6,6 +6,30 @@ This project follows [the release versioning policy](docs/clairveil-release-vers
 
 ## Unreleased
 
+## v0.3.1 - 2026-07-21
+
+### Fixed
+
+- Added the missing paired dated changelog headings for the already-published `v0.3.0` tag and completed the release documentation, supported-version references, and immutable release packaging metadata. There is no Go, protobuf, runtime, state, circuit, or wire-contract change from `v0.3.0`.
+
+### Handoff Notes
+
+- Downstream codebases already pinned to `v0.3.0` may continue using it unchanged. `v0.3.1` is the documentation and release-preparation publication and is the identity used for the verified handoff pack and GitHub release; `v0.3.0` remains unmoved and unreused.
+
+## v0.3.0 - 2026-07-21
+
+### Added
+
+- Added the trusted in-process `Keeper.DepositWithFunder` integration surface, which preserves `msg.Creator` attribution while debiting an explicit validated funder through the canonical deposit transition.
+
+### Changed
+
+- Kept the public `MsgDeposit` protobuf, gRPC, CLI, client wire format, actor-as-funder behavior, and existing gas path unchanged; deposit mutations now use a nested cache so downstream callers can combine core-local rollback with an outer SDK/EVM rollback boundary. The trusted entry alone performs the additional module-balance reads required to verify its explicit-funder bank transfer.
+
+### Security
+
+- Documented that downstream adapters must derive the actor from the authenticated caller, use only a fixed escrow funder distinct from the `privacy` module account, bind the deposit amount exactly to EVM `msg.value` and the runtime native denom, and roll back later policy failures atomically. The trusted Keeper API rejects the `privacy` module account as a funder and verifies the exact module-balance increase after the bank send so self-transfers or redirected sends cannot mint an unbacked shielded deposit.
+
 ## v0.2.0 - 2026-07-13
 
 ### Added

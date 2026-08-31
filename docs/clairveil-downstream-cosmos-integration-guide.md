@@ -19,7 +19,7 @@ The recommended model separates responsibilities as follows.
 During early development, a local `replace` is fastest.
 
 ```go
-require github.com/DELIGHT-LABS/clairveil v0.2.0
+require github.com/DELIGHT-LABS/clairveil v0.3.1
 
 replace github.com/DELIGHT-LABS/clairveil => ../clairveil
 ```
@@ -197,6 +197,26 @@ Watch these points.
 - The withdraw recipient must follow the normal account address prefix.
 - If downstream denom policy exists, use the real denom instead of `uclair`, and update CLI/tutorial/fixtures together.
 
+### 5.1 Trusted Deposit Funding
+
+An in-process EVM precompile or policy adapter may debit a transparent funder that differs from the attributed actor by calling the additive Keeper API:
+
+```go
+resp, err := app.PrivacyKeeper.DepositWithFunder(ctx, msg, escrow)
+```
+
+This is a trusted Go integration surface, not a protobuf Msg service. The public `MsgDeposit` protobuf, gRPC, CLI, and client transaction wire remain unchanged, and public `MsgServer.Deposit` continues to use `msg.Creator` as both actor and funder.
+
+`DepositWithFunder` validates address formats but does not authenticate `msg.Creator` or authorize `funder`; the deposit proof also does not bind the creator. The downstream adapter must therefore enforce all of these invariants:
+
+- Derive `msg.Creator` as a canonical Cosmos address from the authenticated EVM caller/operator, never from user-supplied calldata.
+- Pass only the fixed Privacy precompile escrow address as `funder`; do not expose a caller-selected funder, and ensure the escrow is distinct from the Clairveil `privacy` module account. `DepositWithFunder` rejects the `privacy` module account because a bank self-transfer would not add transparent backing.
+- Keep bank send restrictions from redirecting transfers addressed to the `privacy` module account. The trusted `DepositWithFunder` entry verifies that the module balance increases by the exact deposit amount and rolls the nested cache back if a restriction redirects or suppresses the transfer. These two balance reads are limited to the trusted entry so the existing public `MsgServer.Deposit` gas path remains unchanged.
+- Require the parsed `MsgDeposit.Amount` amount to equal EVM `msg.value` exactly and its denom to equal the runtime native denom.
+- Verify downstream-specific EVM-to-Cosmos address mapping and expected address length before calling the Keeper API.
+
+The canonical deposit core executes bank, reserve, tree, event, and index mutations in a nested SDK cache. A core failure discards that cache, while success writes only into the caller's parent context. The downstream adapter must still place the EVM value transfer, `DepositWithFunder`, and any after-call policy checks inside one outer SDK/EVM rollback boundary so a later policy failure restores escrow, module balances, and all Clairveil state and events.
+
 ## 6. Genesis Audit Key
 
 The latest transfer model includes mandatory master-auditor disclosure in every shielded transfer. A production-like chain must therefore set the complete audit key identity in privacy genesis state.
@@ -349,7 +369,7 @@ Do not mix everything with target-chain-specific features from the start. Bring 
 6. Verify `tree_state`, `events`, `scan_events`, `merkle_path`, `disclosure_config`, `circuit_config`, `reserve/{denom}`, `assets/by_denom`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, and `nullifiers` through gRPC/HTTP gateway.
 7. Verify user disclosure and audit disclosure through `transfer` and `decode-transfer-disclosure`.
 8. Verify direct and relayed withdraw with `withdraw`, `prepare-withdraw`, and `relay-withdraw`.
-9. Add EVM/policy/precompile integration e2e last.
+9. Add EVM/policy/precompile integration e2e last, including actor provenance, fixed escrow, exact `msg.value`/native-denom binding, and outer rollback after a successful trusted deposit.
 10. Make the web wallet or JS SDK verify local note storage encryption, remote prover timeout/auth, and disclosure verification in its own tests.
 11. Run `TestBatchTransferDirectCoreIntegration`, `TestBatchTransferCoreRejectionsAndAtomicScanFailure`, and `TestCrossMessageNullifierFailureRollsBackWholeCosmosTxCache` before writing any downstream `MsgBatchTransfer` adapter.
 
@@ -379,3 +399,4 @@ Downstream integration is first-pass complete when all of the following pass.
 - Audit master private key custody policy is reflected in production operations docs.
 - Wallet storage encryption and remote prover privacy policy are reflected in JS/TS SDK or web wallet design docs.
 - Downstream-specific EVM/policy/precompile integration is separated into separate tests.
+- Trusted deposit integration proves that only the fixed escrow is debited, creator attribution comes from the authenticated operator, exact value/denom binding holds, and both core-local and downstream outer rollback leave no partial state or events.

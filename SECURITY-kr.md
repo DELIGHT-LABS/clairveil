@@ -9,8 +9,8 @@ English version: [SECURITY.md](SECURITY.md)
 | Line | 상태 |
 | --- | --- |
 | `main` | 지원되는 development line. Fix는 여기에 먼저 반영 |
-| 최신 `v0.2.x` tag | Security assessment 지원. Backport는 case-by-case이며 명시적으로 공지 |
-| `v0.1.x`와 이전 commit | 미지원 |
+| 최신 `v0.3.x` tag | Security assessment 지원. Backport는 case-by-case이며 명시적으로 공지 |
+| `v0.2.x`와 이전 commit | 미지원 |
 
 Clairveil은 pre-v1 experimental software입니다. Tag가 production readiness나 무기한 maintenance를 약속하지 않습니다. Exact tag/commit을 pin하고 그 ref의 문서를 읽으며 release note에서 명시적으로 지원하는 backport를 확인하세요.
 
