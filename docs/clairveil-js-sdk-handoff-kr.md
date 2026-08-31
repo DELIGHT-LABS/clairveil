@@ -65,6 +65,8 @@ MsgWithdraw
 
 `MsgWithdraw`는 exact-match withdraw 메시지이며 output note 필드를 갖지 않습니다. JS/TS client는 legacy withdraw 필드인 `new_note_commitment`, `encrypted_note`를 모델링하지 말아야 하며, dummy output note 값을 보내지 않아야 합니다.
 
+Downstream chain이 이 action을 EVM precompile로 노출하면 binding도 같은 0.2 message contract를 보존해야 합니다. 즉 proof를 포함한 deposit, transfer의 self-view disclosure와 `expires_at_unix`, output-note placeholder가 없는 exact withdraw tuple이 필요합니다. 필수 field를 조용히 버리거나 legacy ABI fallback을 제공하면 안 됩니다.
+
 ## 4. Query/API 계약
 
 JS SDK provider가 우선 구현해야 하는 gRPC/HTTP query는 아래입니다.

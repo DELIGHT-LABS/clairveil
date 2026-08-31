@@ -65,13 +65,15 @@ type listNotesJSONSummary struct {
 }
 
 type listNotesJSONNote struct {
-	Index     int        `json:"index"`
-	Status    string     `json:"status"`
-	Amount    string     `json:"amount"`
-	Nullifier string     `json:"nullifier"`
-	TxHash    string     `json:"tx_hash"`
-	Height    int64      `json:"height"`
-	Note      types.Note `json:"note"`
+	Index      int        `json:"index"`
+	Status     string     `json:"status"`
+	Amount     string     `json:"amount"`
+	AssetIDHex string     `json:"asset_id_hex"`
+	AssetDenom string     `json:"asset_denom,omitempty"`
+	Nullifier  string     `json:"nullifier"`
+	TxHash     string     `json:"tx_hash"`
+	Height     int64      `json:"height"`
+	Note       types.Note `json:"note"`
 }
 
 type shieldedAddressSummary struct {
@@ -396,6 +398,14 @@ func scanNotesWithOptions(clientCtx client.Context, seed []byte, opts scanNotesO
 	if result != nil && opts.diagnostics != nil {
 		applySyncDiagnostics(opts.diagnostics, result.Diagnostics)
 	}
+	if result != nil {
+		// The note commitment carries an asset ID, not its human-readable
+		// denom. Resolve it through AssetRegistryV1 before returning the local
+		// JSON view so clients do not mislabel a verified base-asset note as an
+		// unknown token. This is display metadata only: failure to resolve an
+		// unavailable registry entry must not change the scan or spend result.
+		restoreFoundNoteDenoms(context.Background(), scanProvider, result.Notes)
+	}
 	if err != nil {
 		if errors.Is(err, privacyscan.ErrInvalidWalletCache) {
 			if result != nil {
@@ -427,6 +437,30 @@ func scanNotesWithOptions(clientCtx client.Context, seed []byte, opts scanNotesO
 	return result.Notes, nil
 }
 
+func restoreFoundNoteDenoms(ctx context.Context, resolver privacyscan.AssetDenomResolver, notes []FoundNote) {
+	denomsByAssetID := make(map[string]string)
+	failedAssetIDs := make(map[string]struct{})
+	for i := range notes {
+		assetID, err := privacyfield.CanonicalBytesFromBigInt(notes[i].Note.AssetID)
+		if err != nil {
+			continue
+		}
+		assetIDHex := hex.EncodeToString(assetID)
+		if denom, ok := denomsByAssetID[assetIDHex]; ok {
+			notes[i].AssetDenom = denom
+			continue
+		}
+		if _, failed := failedAssetIDs[assetIDHex]; failed {
+			continue
+		}
+		if err := privacyscan.RestoreFoundNoteDenom(ctx, resolver, &notes[i]); err != nil {
+			failedAssetIDs[assetIDHex] = struct{}{}
+			continue
+		}
+		denomsByAssetID[assetIDHex] = notes[i].AssetDenom
+	}
+}
+
 func applySyncDiagnostics(target *scanNotesDiagnostics, source privacyscan.SyncDiagnostics) {
 	if target == nil {
 		return
@@ -448,6 +482,14 @@ func noteAmountString(note types.Note) string {
 	}
 
 	return note.Amount.String()
+}
+
+func listNoteAssetIDHex(note types.Note) string {
+	assetIDHex, err := privacyfield.CanonicalHexFromBigInt(note.AssetID)
+	if err != nil {
+		return ""
+	}
+	return assetIDHex
 }
 
 func buildListNotesJSONOutput(foundNotes []FoundNote, diagnostics *scanNotesDiagnostics) listNotesJSONOutput {
@@ -472,13 +514,15 @@ func buildListNotesJSONOutput(foundNotes []FoundNote, diagnostics *scanNotesDiag
 		}
 
 		output.Notes = append(output.Notes, listNotesJSONNote{
-			Index:     i + 1,
-			Status:    status,
-			Amount:    noteAmountString(info.Note),
-			Nullifier: info.Nullifier,
-			TxHash:    info.TxHash,
-			Height:    info.Height,
-			Note:      info.Note,
+			Index:      i + 1,
+			Status:     status,
+			Amount:     noteAmountString(info.Note),
+			AssetIDHex: listNoteAssetIDHex(info.Note),
+			AssetDenom: info.AssetDenom,
+			Nullifier:  info.Nullifier,
+			TxHash:     info.TxHash,
+			Height:     info.Height,
+			Note:       info.Note,
 		})
 	}
 

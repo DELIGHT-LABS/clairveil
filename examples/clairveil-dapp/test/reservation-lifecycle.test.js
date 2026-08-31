@@ -171,7 +171,7 @@ test("successful relay submit keeps tx evidence until spent reconciliation clear
 
   await manager.markBroadcastAttempting(batch.reservation_ids, {
     leaseToken: batch.lease_token,
-    reason: "test_external_broadcast_boundary",
+    reason: "dapp_external_broadcast_boundary",
   });
   await manager.markSubmitted(batch.reservation_ids, {
     leaseToken: batch.lease_token,

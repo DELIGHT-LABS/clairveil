@@ -7,10 +7,24 @@ Korean version: [README-kr.md](README-kr.md)
 ## Schema
 
 - `clairveil-js-wallet-contract.schema.json`: JSON Schema for wallet-facing conformance fixtures under `x/privacy/client/sdk/conformance/testdata`.
+- `clairveil-web-client-config.schema.json`: JSON Schema for the versioned browser WebApp chain-profile configuration.
 
 ## Usage
 
 External SDKs should validate fixtures in CI before starting live network integration.
+
+Browser products must additionally validate their selected runtime profile with
+`clairveil-web-client-config.schema.json`, reject duplicate profile IDs, and
+reject compatibility/flattened fields that disagree with the active profile.
+An optional profile `depositProofUrl` names the exact reviewed HTTPS deposit
+proof-service endpoint; it is a separate privacy boundary from `proverUrl`.
+Every configured HTTP(S) endpoint must be credential-free and
+query/fragment-free; URL userinfo and query strings are not bearer-token
+mechanisms and are rejected to keep configuration artifacts and deployment
+diagnostics secret-free.
+The legacy top-level EVM `accountPrefix` is host metadata and is not compared
+with the active profile's privacy identity prefix. The schema describes deployment input; the browser must still obtain consensus
+circuit, audit, disclosure, asset, and tree configuration from the chain.
 
 ```bash
 npm --prefix examples/js-sdk-fixture-validator run validate
@@ -52,4 +66,4 @@ Current-root path queries use incremental nodes and do not consume the online hi
 
 `BatchJoinSplit16x32`, `MsgBatchTransfer`, its keeper handler, typed scan state, and artifact descriptors are production core contracts. `batch_feasibility.proto` remains measurement-only. The batch chain core did not add the public SDK or remote prover route; the batch integration subsequently added the reference Go SDK/CLI and `POST /v1/proofs/batch-transfer`, while external JS/web product delivery remains downstream work. The corrected full-shape reference gate measured `1,111,837` constraints, peak RSS `3,339,862,016` bytes, `55.892 ms/output` max-shape warm proving, and `2.789x` per-output improvement over native 2x2. Artifact consumers must pin `privacy-note-v1`; validators use exact consensus identity and required VKs, while provers lazily load selected R1CS/PK pairs. Reference prover admission defaults are one in-flight, four queued, and a positive 8 MiB request limit per circuit/service boundary.
 
-Prepared transfer payload `v5` remains the current outer prepared-payload version. It is distinct from the inner note/disclosure/envelope encoding `privacy-fixed-v1`; neither version replaces the other. Compatibility fallback is prohibited. The external ClairveilJS package is still legacy at this handoff point and must fail closed on the new fixed fixtures until upgraded.
+Prepared transfer payload `v5` remains the current outer prepared-payload version. It is distinct from the inner note/disclosure/envelope encoding `privacy-fixed-v1`; neither version replaces the other. Compatibility fallback is prohibited. The vendored ClairveilJS 0.2.0 package implements the fixed fixtures and V5/V2 preparation/proof contracts. Pre-0.2 note-cache, reservation, and relay persistence must start from a separate namespace and a safe rescan.

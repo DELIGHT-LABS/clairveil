@@ -10,6 +10,7 @@ import {
 } from "clairveiljs";
 import { utf8Bytes, utf8String } from "clairveiljs/browser-crypto";
 import { createClairveilPublicClient } from "clairveiljs/browser-public";
+import { createClairveilBrowserDappClient } from "clairveiljs/browser-dapp";
 import { deriveShieldedAddress } from "clairveiljs/core";
 import { createClairveilClient as createCosmosClient } from "clairveiljs/cosmos";
 import {
@@ -97,6 +98,118 @@ async function typeSmoke() {
   const publicClient = createClairveilPublicClient({
     rest: "http://127.0.0.1:1317"
   });
+  const browserEvmClient = createClairveilBrowserDappClient({
+    profile: {
+      transport: "evm",
+      wallet: "metamask",
+      id: "clairveil-evm-local",
+      label: "EVM Localnet",
+      chainName: "EVM Localnet",
+      chainId: "clairveil-evm-1",
+      rest: "http://127.0.0.1:1317",
+      rpc: "http://127.0.0.1:26657",
+      proverUrl: "http://127.0.0.1:8080",
+      displayDenom: "CLAIR",
+      coinDecimals: 18,
+      evmRpc: "http://127.0.0.1:8545",
+      evmChainId: "0x539",
+      evmChainName: "EVM Localnet",
+      evmPrivacyPrecompileAddress: "0x1111111111111111111111111111111111111111",
+      evmGasLimit: "0x989680",
+      evmSendGasLimit: "0x5208",
+      accountPrefix: "clair",
+      shieldedPrefix: "clairs",
+      denom: "uclair"
+    }
+  });
+  const browserCosmosClient = createClairveilBrowserDappClient({
+    profile: {
+      transport: "cosmos",
+      wallet: "keplr",
+      id: "clairveil-local",
+      label: "Clairveil Localnet",
+      chainName: "Clairveil Localnet",
+      chainId: "clairveil-local-3",
+      rest: "http://127.0.0.1:1317",
+      rpc: "http://127.0.0.1:26657",
+      proverUrl: "http://127.0.0.1:8080/privacy-gateway",
+      displayDenom: "CLAIR",
+      coinDecimals: 18,
+      keplrCoinType: 118,
+      gasPriceStep: { low: 0.01, average: 0.025, high: 0.04 },
+      keplrChainInfo: {
+        chainId: "clairveil-local-3",
+        chainName: "Clairveil Localnet",
+        rpc: "http://127.0.0.1:26657",
+        rest: "http://127.0.0.1:1317",
+        bip44: { coinType: 118 },
+        bech32Config: {
+          bech32PrefixAccAddr: "clair",
+          bech32PrefixAccPub: "clairpub",
+          bech32PrefixValAddr: "clairvaloper",
+          bech32PrefixValPub: "clairvaloperpub",
+          bech32PrefixConsAddr: "clairvalcons",
+          bech32PrefixConsPub: "clairvalconspub"
+        },
+        currencies: [{ coinDenom: "CLAIR", coinMinimalDenom: "uclair", coinDecimals: 18 }],
+        feeCurrencies: [{
+          coinDenom: "CLAIR",
+          coinMinimalDenom: "uclair",
+          coinDecimals: 18,
+          gasPriceStep: { low: 0.01, average: 0.025, high: 0.04 }
+        }],
+        stakeCurrency: { coinDenom: "CLAIR", coinMinimalDenom: "uclair", coinDecimals: 18 },
+        features: []
+      },
+      accountPrefix: "clair",
+      shieldedPrefix: "clairs",
+      denom: "uclair"
+    },
+    enableExperimentalBatchTransfer: true
+  });
+  const typedBrowserBatch = browserCosmosClient.prepareTransferBatch({
+    address: "clair1example",
+    pubKeyHex: "02".padEnd(66, "0"),
+    signatureBase64: "AQID",
+    payments: [
+      {
+        itemId: "A",
+        amount: "1uclair",
+        recipient: "clairs1recipient",
+        userPrivacyPolicy: "all-private",
+        userDisclosureMode: "none"
+      }
+    ],
+    reservationManager,
+    onPreparedPayload: async (_payload, context) => {
+      const operationId: string = context.operationId;
+      void operationId;
+    },
+    onPreparedProof: async (_proof, context) => {
+      const operationId: string = context.operationId;
+      void operationId;
+    }
+  });
+  const typedCosmosDeposit = browserCosmosClient.prepareDeposit({
+    address: "clair1example",
+    pubKeyHex: "02".padEnd(66, "0"),
+    signatureBase64: "AQID",
+    amount: "1uclair",
+    proofHex: "ab",
+  });
+  typedCosmosDeposit.then((prepared) => {
+    const encryptedNote: string = prepared.prepared.encryptedNoteHex;
+    void encryptedNote;
+  });
+  const typedEvmReceipt: Promise<{ blockNumber: string } | null> =
+    browserEvmClient.evmJsonRpc<{ blockNumber: string } | null>(
+      "eth_getTransactionReceipt",
+      ["0x".padEnd(66, "0")]
+    );
+  const typedBrowserCircuitConfig = browserEvmClient.assertCircuitConfig();
+  const typedBrowserTransferConfig = browserEvmClient.assertTransferProtocolConfig("uclair");
+  const typedBrowserAsset = browserEvmClient.queryAssetByDenom("uclair");
+  const typedBrowserTree = browserEvmClient.fetchTreeState();
   publicClient.fetchPrivacyEvents({ limit: 10 });
   publicClient.fetchAuditableTransfers({ eventTypes: ["shielded_transfer"] });
   client.getTx("AA");
@@ -193,7 +306,19 @@ async function typeSmoke() {
   const transferPayload: PreparedTransferPayload = transferBuildResult.payload;
   const transferPayloadHash: string = transferPayload.payload_hash;
   const transferReservation: ReservationBatch | null = null;
-  void { lookupKey, availableNotes, renewedReservations, replanReservations, transferReservation };
+  void {
+    lookupKey,
+    availableNotes,
+    renewedReservations,
+    replanReservations,
+    transferReservation,
+    typedEvmReceipt,
+    typedBrowserBatch,
+    typedBrowserCircuitConfig,
+    typedBrowserTransferConfig,
+    typedBrowserAsset,
+    typedBrowserTree
+  };
   const transferProofHex: string = transferBuildResult.proof.proof_hex;
   const transferNullifierBytes: Uint8Array | undefined = transferBuildResult.message.nullifiers[0];
   const withdrawProverPayload: Promise<PreparedWithdrawProverPayloadResult> = client.buildPreparedWithdrawProverPayload({
@@ -236,8 +361,7 @@ async function typeSmoke() {
     proverAdapter: prover,
     checkNullifiers,
     transactionOptions: {
-      value: "0x0",
-      withdrawOutputMode: "legacy-zero"
+      value: "0x0"
     }
   });
   // @ts-expect-error direct EVM transfer preparation must provide nullifier preflight.

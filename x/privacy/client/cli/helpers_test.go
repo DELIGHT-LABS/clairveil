@@ -57,11 +57,12 @@ func TestSummarizeSpendableNotesByDenom(t *testing.T) {
 func TestBuildListNotesJSONOutput(t *testing.T) {
 	notes := []FoundNote{
 		{
-			Note:      types.Note{Amount: big.NewInt(5), AssetID: types.ComputeAssetIDV1("uclair")},
-			Nullifier: "aa",
-			Height:    3,
-			TxHash:    "A1",
-			IsSpent:   false, VerifiedUnspent: true,
+			Note:       types.Note{Amount: big.NewInt(5), AssetID: types.ComputeAssetIDV1("uclair")},
+			AssetDenom: "uclair",
+			Nullifier:  "aa",
+			Height:     3,
+			TxHash:     "A1",
+			IsSpent:    false, VerifiedUnspent: true,
 		},
 		{
 			Note:      types.Note{Amount: big.NewInt(7), AssetID: types.ComputeAssetIDV1("uclair")},
@@ -106,6 +107,8 @@ func TestBuildListNotesJSONOutput(t *testing.T) {
 	require.Equal(t, 1, output.Notes[0].Index)
 	require.Equal(t, "spendable", output.Notes[0].Status)
 	require.Equal(t, "5", output.Notes[0].Amount)
+	require.Equal(t, "238d5f23e4d918d40b0982ce3aef16a75c4d1760193d1c3b30b9f5df681903ca", output.Notes[0].AssetIDHex)
+	require.Equal(t, "uclair", output.Notes[0].AssetDenom)
 	require.Equal(t, "aa", output.Notes[0].Nullifier)
 	require.Equal(t, "A1", output.Notes[0].TxHash)
 	require.Equal(t, int64(3), output.Notes[0].Height)

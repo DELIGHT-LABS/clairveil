@@ -58,6 +58,10 @@ Run `make docs-check` while editing. A release tag must use exact SemVer, be ann
 | Product/security decisions | [Client risk decisions](clairveil-client-risk-decisions.md) | [Client risk decisions](clairveil-client-risk-decisions-kr.md) |
 | Chain/prover API checklist | [Client API checklist](clairveil-client-api-checklist.md) | [Client API checklist](clairveil-client-api-checklist-kr.md) |
 | Cross-language SDK contract | [JS SDK handoff](clairveil-js-sdk-handoff.md) | [JS SDK handoff](clairveil-js-sdk-handoff-kr.md) |
+| Browser product boundary | [WebApp scope](clairveil-web-app-scope.md) | [WebApp scope](clairveil-web-app-scope-kr.md) |
+| Browser API and lifecycle | [WebApp integration](clairveil-web-app-integration.md) | [WebApp integration](clairveil-web-app-integration-kr.md) |
+| Browser storage and restart | [WebApp storage and recovery](clairveil-web-app-storage-recovery.md) | [WebApp storage and recovery](clairveil-web-app-storage-recovery-kr.md) |
+| Browser/prover deployment | [WebApp deployment](clairveil-web-app-deployment.md) | [WebApp deployment](clairveil-web-app-deployment-kr.md) |
 
 ## Bulk Transfer And Reference Payroll
 

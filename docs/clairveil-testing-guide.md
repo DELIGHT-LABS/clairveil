@@ -41,7 +41,7 @@ make release-pack-verify
 | `make reference-payroll-demo` | validate the reference payroll product flow: validate, prepare, plan, reserve, simulated daemon, final report |
 | `make reference-payroll-live-localnet` | validate the live localnet payroll flow: payroll input, reservation, transfer-batch, recipient scan, settle, final report |
 | `make reference-payroll-rehearsal` | generate reference payroll capacity simulations and optional live localnet smoke |
-| `make dapp-local` | start a local Clairveil node, prover, and browser DApp stack for manual testing |
+| `make dapp-local` | start a local Clairveil node, prover, and browser DApp stack for manual testing; loopback browser proof requests use the example's same-origin proxy because the reference prover intentionally has no browser CORS policy |
 | `make release-check` | `ci`, `vulncheck`, `localnet-smoke`, `privacy-e2e-smoke`, the static BatchJoinSplit16x32 gate, and bulk readiness with localnet transfer-batch smoke |
 | `make release-pack` | create downstream handoff archive and sha256 |
 | `make release-pack-verify` | verify handoff archive checksum, internal checksum, required files, and manifest commit |
@@ -159,7 +159,7 @@ The target first runs `TestJoinSplitArtifactRotationSnapshotValidation` for synt
 
 The batch integration adds the public `MsgBatchTransfer` Go SDK/builder, `POST /v1/proofs/batch-transfer`, typed scanner/decrypt/disclosure validation, durable one-proof payroll integration, staged/combined CLI commands, and the bilingual localnet tutorial. Run `go test ./x/privacy/client/sdk/... -count=1`, `make privacy-batch-joinsplit-localnet`, and—on a capable host—`RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`. Existing `transfer-batch` and reference payroll targets remain independent multi-message regression paths.
 
-Prepared transfer payload `v5` remains the current outer prepared-payload contract. Do not confuse that version with the inner note/disclosure encoding: inner canonical payloads and envelopes are `privacy-fixed-v1`. Compatibility fallback is forbidden. The external ClairveilJS package is still legacy at this handoff point; it must fail closed on the new fixed fixtures until it is upgraded, rather than interpreting them through its old decoder.
+Prepared transfer payload `v5` remains the current outer prepared-payload contract. Do not confuse that version with the inner note/disclosure encoding: inner canonical payloads and envelopes are `privacy-fixed-v1`. Compatibility fallback is forbidden. The vendored ClairveilJS 0.2.0 package scans the fixed fixtures and emits the V5/V2 preparation and proof contracts. Its note-cache and reservation state are a fresh-genesis boundary: integrations must discard or namespace pre-0.2 persistence and rescan rather than decoding it as current state.
 
 ## 4. JS/Web Wallet Fixture Validation
 
@@ -195,6 +195,12 @@ Validation scope:
 - prover HTTP request/response version
 - timeout/auth client shape
 - browser DApp boundary checks, static bundle freshness, local helper route policy, and ClairveilJS package surface smoke tests
+
+`make examples` cannot validate a deployed origin. Before a public WebApp
+release, run `npm --prefix examples/clairveil-dapp run
+verify:production-deployment` with the final HTTPS endpoint values, then
+complete the Keplr/MetaMask manual flow at those same origins. See the
+[WebApp deployment guide](clairveil-web-app-deployment.md).
 
 ## 5. Localnet Smoke
 

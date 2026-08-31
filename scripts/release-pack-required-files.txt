@@ -67,6 +67,14 @@ docs/clairveil-client-api-checklist.md
 docs/clairveil-client-api-checklist-kr.md
 docs/clairveil-js-sdk-handoff.md
 docs/clairveil-js-sdk-handoff-kr.md
+docs/clairveil-web-app-scope.md
+docs/clairveil-web-app-scope-kr.md
+docs/clairveil-web-app-integration.md
+docs/clairveil-web-app-integration-kr.md
+docs/clairveil-web-app-storage-recovery.md
+docs/clairveil-web-app-storage-recovery-kr.md
+docs/clairveil-web-app-deployment.md
+docs/clairveil-web-app-deployment-kr.md
 docs/clairveil-bulk-transfer-product-handoff.md
 docs/clairveil-bulk-transfer-product-handoff-kr.md
 docs/clairveil-note-reservation-design-kr.md
@@ -104,6 +112,7 @@ docs/clairveil-local-privacy-walkthrough-kr.md
 plans/clairveild-reference-app-plan.md
 plans/clairveild-reference-app-plan-kr.md
 docs/schemas/clairveil-js-wallet-contract.schema.json
+docs/schemas/clairveil-web-client-config.schema.json
 docs/schemas/README.md
 docs/schemas/README-kr.md
 plans/clairveil-public-benchmark-plan-kr.md
