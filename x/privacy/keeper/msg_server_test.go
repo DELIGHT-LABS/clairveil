@@ -42,6 +42,9 @@ const msgServerTestExpiry int64 = 4102444800
 type mockPrivacyBankKeeper struct {
 	fromAccountToModuleCalls int
 	fromModuleToAccountCalls int
+	lastAccountSender        sdk.AccAddress
+	lastAccountModule        string
+	lastAccountAmount        sdk.Coins
 	errFromAccountToModule   error
 	errFromModuleToAccount   error
 	moduleBalances           sdk.Coins
@@ -62,8 +65,11 @@ func (m *mockPrivacyBankKeeper) GetBalance(_ context.Context, _ sdk.AccAddress, 
 	return sdk.NewCoin(denom, m.moduleBalances.AmountOf(denom))
 }
 
-func (m *mockPrivacyBankKeeper) SendCoinsFromAccountToModule(_ context.Context, _ sdk.AccAddress, _ string, amt sdk.Coins) error {
+func (m *mockPrivacyBankKeeper) SendCoinsFromAccountToModule(_ context.Context, sender sdk.AccAddress, module string, amt sdk.Coins) error {
 	m.fromAccountToModuleCalls++
+	m.lastAccountSender = append(sdk.AccAddress(nil), sender...)
+	m.lastAccountModule = module
+	m.lastAccountAmount = append(sdk.Coins(nil), amt...)
 	if m.errFromAccountToModule != nil {
 		return m.errFromAccountToModule
 	}

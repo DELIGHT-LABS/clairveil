@@ -19,6 +19,13 @@ Plan status, owner/scope, and superseding document should be updated when the im
 | --- | --- | --- |
 | [Public capacity claim execution](clairveil-public-capacity-claim-execution-plan-kr.md) | Active; Korean-only | Produce eligible operational prover RPS, chain TPS, and user-latency claim evidence without converting harness measurements into unsupported production claims |
 
+## Completed Deposit Funder Record
+
+| Plan | Status |
+| --- | --- |
+| [Deposit actor/funder separation implementation](clairveil-deposit-funder-implementation-plan-kr.md) | Complete implementation record; Korean-only; current reviewed checkout includes self-funding hardening, while an immutable downstream tag/commit remains pending |
+| [Deposit actor/funder separation request](clairveil-deposit-funder-separation-handoff-kr.md) | Fulfilled by the implementation plan; downstream EVM snapshot e2e remains the downstream repository's responsibility |
+
 ## Completed Batch Program Records
 
 | Plan | Status |
