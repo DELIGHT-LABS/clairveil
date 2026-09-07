@@ -16,7 +16,6 @@ from urllib.parse import unquote, urlsplit
 
 
 repo = Path(sys.argv[1]).resolve()
-excluded_dapp = PurePosixPath("examples/clairveil-dapp")
 generated_release_files = {"RELEASE-MANIFEST.txt", "SHA256SUMS.txt"}
 errors = []
 
@@ -43,12 +42,6 @@ def git_paths(*patterns):
         for item in raw.split(b"\0")
         if item
     ]
-
-
-def is_excluded_dapp(path):
-    parts = PurePosixPath(path.as_posix()).parts
-    excluded_parts = excluded_dapp.parts
-    return parts[: len(excluded_parts)] == excluded_parts
 
 
 markdown_documents = {}
@@ -120,8 +113,6 @@ def local_link_target(source, destination):
         relative = candidate.relative_to(repo)
     except ValueError:
         return None, "relative link points outside the repository", fragment
-    if is_excluded_dapp(relative):
-        return None, None, None
     return candidate, None, fragment
 
 
@@ -144,8 +135,6 @@ try:
         Path(os.fsdecode(item)) for item in untracked_raw.split(b"\0") if item
     )
     for relative in sorted(markdown_paths):
-        if is_excluded_dapp(relative):
-            continue
         absolute = repo / relative
         # A tracked file intentionally moved in the current worktree is no longer
         # part of the documentation set being checked.
@@ -398,20 +387,9 @@ selected_paths = read_path_manifest(selected_manifest_name)
 required_files = read_path_manifest(required_manifest_name)
 
 
-def selects_excluded_dapp(entry):
-    entry_parts = PurePosixPath(entry).parts
-    excluded_parts = excluded_dapp.parts
-    return (
-        entry_parts[: len(excluded_parts)] == excluded_parts
-        or excluded_parts[: len(entry_parts)] == entry_parts
-    )
-
-
 for selected in selected_paths:
     selected_path = repo / selected
-    if selects_excluded_dapp(selected):
-        add_error(f"{selected_manifest_name}: selects an excluded DApp path: {selected}")
-    elif not selected_path.exists():
+    if not selected_path.exists():
         add_error(f"{selected_manifest_name}: selected path does not exist: {selected}")
 
 required_set = set(required_files)
@@ -429,9 +407,6 @@ selected_with_types = [
     if (repo / selected).exists()
 ]
 for required in required_files:
-    if selects_excluded_dapp(required):
-        add_error(f"{required_manifest_name}: includes an excluded DApp path: {required}")
-        continue
     if required in generated_release_files:
         continue
     required_path = repo / required
@@ -453,7 +428,7 @@ for selected, is_directory in selected_with_types:
         release_selected_files.update(
             path.resolve()
             for path in selected_path.rglob("*")
-            if path.is_file() and not is_excluded_dapp(path.relative_to(repo))
+            if path.is_file()
         )
     elif selected_path.is_file():
         release_selected_files.add(selected_path.resolve())

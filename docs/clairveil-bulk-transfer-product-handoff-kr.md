@@ -168,7 +168,6 @@ JS SDK가 이미 `docs/clairveil-note-reservation-design-kr.md`를 기준으로 
 
 ## 비차단 후속 backlog
 
-- `examples/clairveil-dapp/**` consumer drift 점검은 이 bulk-transfer review scope에서 제외되었으므로, dapp scope가 열릴 때 별도 점검함.
-- full `make check`와 full `make release-check`는 dapp/localnet/external smoke 범위를 포함하므로 release candidate에서 별도 실행함.
+- full `make check`와 full `make release-check`는 localnet/external smoke 범위를 포함하므로 release candidate에서 별도 실행함.
 - live one-proof/prover-scale 수치를 public claim에 쓰려면 `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`, actual 16x32 scale 측정, 별도 scope의 controlled `RUN_PROVER_SCALE=1` transfer/withdraw readiness 결과를 release 산출물로 남김.
 - allocator는 targeted regression과 fixed-seed property-style test로 현재 handoff risk를 닫음. 임의 생성 기반의 exhaustive fuzz suite는 release blocker가 아닌 장기 test-depth 강화 후보로 분리함.

@@ -8,6 +8,6 @@
 - `js-sdk-fixture-validator`: Clairveil conformance fixture를 읽고 address prefix, payload hash, prover contract 기대값을 검증하는 dependency-free Node/TypeScript 예제입니다.
 - `js-sdk-prover-http-client`: fixture-backed mock prover에 timeout-bound bearer-auth client로 prover HTTP contract를 호출하는 dependency-free Node/TypeScript 예제입니다.
 - `reference-payroll`: reference payroll CLI와 control-plane walkthrough용 repo-local input/expected-output fixture입니다.
-- `clairveil-dapp`: MetaMask/Keplr 연결과 로컬 `clairveild` dev relay를 함께 써서 localnet query, faucet funding, Keplr direct-sign bank send, Keplr direct-sign privacy deposit, note scan을 브라우저에서 확인하는 DApp 예제입니다. Source repository에는 유지하지만 release handoff pack과 이번 repository 문서 점검 범위에서는 의도적으로 제외합니다.
+- Example web app은 이제 [clairveil-samples](https://github.com/DELIGHT-LABS/clairveil-samples)에서 관리하며 이 저장소에서는 지원하지 않습니다.
 
 이 예제들은 production SDK 자체가 아니라, JS/TS SDK나 웹월렛 팀이 Clairveil contract를 어떤 순서로 검증해야 하는지 보여주는 기준점입니다.

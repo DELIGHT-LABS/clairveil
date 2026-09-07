@@ -42,10 +42,6 @@ privacy-e2e-smoke:
 privacy-batch-joinsplit-localnet:
 	./scripts/privacy-batch-joinsplit-localnet.sh
 
-.PHONY: dapp-local
-dapp-local:
-	./scripts/dapp-local.sh
-
 .PHONY: privacy-bench
 privacy-bench:
 	./scripts/privacy-bench.sh
@@ -115,11 +111,6 @@ examples:
 	npm --prefix examples/audit-disclosure-keys test
 	npm --prefix examples/js-sdk-fixture-validator run validate
 	npm --prefix examples/js-sdk-prover-http-client run demo
-	npm --prefix examples/clairveil-dapp ci
-	npm --prefix examples/clairveil-dapp run check:dapp
-	npm --prefix examples/clairveil-dapp run test:dapp
-	npm --prefix examples/clairveil-dapp run check:clairveiljs
-	npm --prefix examples/clairveil-dapp run test:clairveiljs
 
 .PHONY: vulncheck
 vulncheck:
