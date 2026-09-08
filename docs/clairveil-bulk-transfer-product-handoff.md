@@ -170,7 +170,6 @@ Each run must leave the following results:
 
 ## Non-Blocking Follow-up Backlog
 
-- The `examples/clairveil-dapp/**` consumer drift check was excluded from this bulk-transfer review scope; inspect it separately when the dapp scope is opened.
-- Full `make check` and full `make release-check` include dapp/localnet/external smoke coverage and must be run separately for a release candidate.
+- Full `make check` and full `make release-check` include localnet/external smoke coverage and must be run separately for a release candidate.
 - To use live one-proof/prover-scale measurements in a public claim, retain `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`, actual 16x32 scale measurements, and the separately scoped controlled `RUN_PROVER_SCALE=1` transfer/withdraw readiness result as release artifacts.
 - The allocator's current handoff risk is closed by targeted regressions and fixed-seed property-style tests. Treat an exhaustive fuzz suite based on random generation as a long-term test-depth enhancement, rather than as a release blocker.

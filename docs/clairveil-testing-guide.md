@@ -33,7 +33,7 @@ make release-pack-verify
 | `make init` | run `make install`, then initialize the default local chain home for `clairveild start` |
 | `make proto` | regenerate privacy protobuf/gateway Go files |
 | `make docs-check` | verify Markdown links, English/Korean knowledge pairs, plan indexes, tag/changelog coverage, document placement, release manifests, and the Draft 2020-12 prover HTTP schema/fixtures without third-party Python packages |
-| `make examples` | run JS audit key, fixture validator, prover HTTP client, browser DApp, and packaged ClairveilJS type/export/smoke validation |
+| `make examples` | run JS audit key, fixture validator, and prover HTTP client validation |
 | `make ci` | `docs-check`, `test`, `build`, and `examples` |
 | `make vulncheck` | run govulncheck policy gate |
 | `make localnet-smoke` | briefly verify that the reference daemon can start from genesis |
@@ -41,7 +41,6 @@ make release-pack-verify
 | `make reference-payroll-demo` | validate the reference payroll product flow: validate, prepare, plan, reserve, simulated daemon, final report |
 | `make reference-payroll-live-localnet` | validate the live localnet payroll flow: payroll input, reservation, transfer-batch, recipient scan, settle, final report |
 | `make reference-payroll-rehearsal` | generate reference payroll capacity simulations and optional live localnet smoke |
-| `make dapp-local` | start a local Clairveil node, prover, and browser DApp stack for manual testing |
 | `make release-check` | `ci`, `vulncheck`, `localnet-smoke`, `privacy-e2e-smoke`, the static BatchJoinSplit16x32 gate, and bulk readiness with localnet transfer-batch smoke |
 | `make release-pack` | create downstream handoff archive and sha256 |
 | `make release-pack-verify` | verify handoff archive checksum, internal checksum, required files, and manifest commit |
@@ -173,7 +172,7 @@ go test ./cmd/clairveil-proverd -count=1
 
 These tests cover the language-neutral deposit fixture plus the shared `Content-Type`, `405 Allow`, `Cache-Control: no-store`, and pre-proving `400` versus post-invocation `500` policy. Contract details are linked from the [general HTTP API](clairveil-proverd-http-api.md) and [deposit API](clairveil-proverd-deposit-api.md).
 
-## 4. JS/Web Wallet Fixture Validation
+## 4. JS/TypeScript Fixture Validation
 
 ```bash
 make examples
@@ -185,11 +184,6 @@ Internally runs:
 npm --prefix examples/audit-disclosure-keys test
 npm --prefix examples/js-sdk-fixture-validator run validate
 npm --prefix examples/js-sdk-prover-http-client run demo
-npm --prefix examples/clairveil-dapp ci
-npm --prefix examples/clairveil-dapp run check:dapp
-npm --prefix examples/clairveil-dapp run test:dapp
-npm --prefix examples/clairveil-dapp run check:clairveiljs
-npm --prefix examples/clairveil-dapp run test:clairveiljs
 ```
 
 Validation scope:
@@ -204,8 +198,6 @@ Validation scope:
 - `scan_events` request/response fixture shape, cursor fields, scan/view tag versions, and projection outputs
 - batch `check_nullifiers` request/response fixture shape
 - timeout/auth client shape
-- browser DApp boundary checks, static bundle freshness, and local helper route policy
-- packaged ClairveilJS type checking, public export map, and SDK smoke tests
 
 ## 5. Localnet Smoke
 

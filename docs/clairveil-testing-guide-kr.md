@@ -31,7 +31,7 @@ make release-pack-verify
 | `make init` | `make install` 후 기본 local chain home을 초기화해 `clairveild start` 준비 |
 | `make proto` | privacy protobuf/gateway Go file 재생성 |
 | `make docs-check` | Markdown link, English/Korean knowledge pair, plan index, tag/changelog coverage, 문서 위치, release manifest와 third-party Python package 없는 Draft 2020-12 prover HTTP schema/fixture 검증 |
-| `make examples` | JS audit key, fixture validator, prover HTTP client, browser DApp와 packaged ClairveilJS type/export/smoke 검증 실행 |
+| `make examples` | JS audit key, fixture validator, prover HTTP client 검증 실행 |
 | `make ci` | `docs-check`, `test`, `build`, `examples` 묶음 |
 | `make vulncheck` | govulncheck policy gate 실행 |
 | `make localnet-smoke` | reference daemon이 genesis부터 start 가능한지 짧게 검증 |
@@ -39,7 +39,6 @@ make release-pack-verify
 | `make reference-payroll-demo` | reference payroll product의 validate, prepare, plan, reserve, simulated daemon, final report 흐름 검증 |
 | `make reference-payroll-live-localnet` | 실제 localnet에서 payroll input, reservation, transfer-batch, recipient scan, settle, final report 흐름 검증 |
 | `make reference-payroll-rehearsal` | reference payroll capacity simulation과 선택적 live localnet smoke 검증 |
-| `make dapp-local` | 수동 테스트용 local Clairveil node, prover, browser DApp stack 실행 |
 | `make release-check` | `ci`, `vulncheck`, `localnet-smoke`, `privacy-e2e-smoke`, 정적 BatchJoinSplit16x32 gate, localnet transfer-batch smoke를 포함한 bulk readiness 묶음 |
 | `make release-pack` | downstream handoff archive와 sha256 생성 |
 | `make release-pack-verify` | handoff archive checksum, 내부 checksum, 필수 파일, manifest commit 검증 |
@@ -171,7 +170,7 @@ go test ./cmd/clairveil-proverd -count=1
 
 이 테스트는 language-neutral deposit fixture와 공통 `Content-Type`, `405 Allow`, `Cache-Control: no-store`, proving 전 `400` 대 invocation 뒤 `500` 정책을 다룹니다. Contract detail은 [general HTTP API](clairveil-proverd-http-api-kr.md)와 [deposit API](clairveil-proverd-deposit-api-kr.md)를 참조합니다.
 
-## 4. JS/web wallet fixture 검증
+## 4. JS/TypeScript fixture 검증
 
 ```bash
 make examples
@@ -183,11 +182,6 @@ make examples
 npm --prefix examples/audit-disclosure-keys test
 npm --prefix examples/js-sdk-fixture-validator run validate
 npm --prefix examples/js-sdk-prover-http-client run demo
-npm --prefix examples/clairveil-dapp ci
-npm --prefix examples/clairveil-dapp run check:dapp
-npm --prefix examples/clairveil-dapp run test:dapp
-npm --prefix examples/clairveil-dapp run check:clairveiljs
-npm --prefix examples/clairveil-dapp run test:clairveiljs
 ```
 
 검증 범위:
@@ -202,8 +196,6 @@ npm --prefix examples/clairveil-dapp run test:clairveiljs
 - `scan_events` request/response fixture shape, cursor field, scan/view tag version, projection output
 - batch `check_nullifiers` request/response fixture shape
 - timeout/auth client shape
-- browser DApp boundary check, static bundle 최신성, local helper route policy
-- packaged ClairveilJS type check, public export map, SDK smoke test
 
 ## 5. Localnet smoke
 

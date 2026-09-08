@@ -14,7 +14,7 @@ Contents:
 - current BatchJoinSplit16x32, bulk product handoff, reference payroll, and readiness materials
 - language-neutral prover HTTP API schema and separate wallet-facing JSON schemas
 - general prover HTTP, deposit prover, and wallet conformance fixtures
-- JS audit disclosure key, fixture validator, prover HTTP client, and reference payroll examples; browser DApp excluded
+- JS audit disclosure key, fixture validator, prover HTTP client, and reference payroll examples
 - prover Dockerfile and compose sample
 - release pack generation and verification scripts
 - release, circuit, CLI, testing, operations, downstream integration, client, JS SDK, scan optimization, prover, Merkle restore, threat model, security, and reference app documents
