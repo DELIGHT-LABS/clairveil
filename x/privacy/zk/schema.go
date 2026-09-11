@@ -6,6 +6,8 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+
+	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto/auditfield"
 )
 
 const PublicInputSchemaDomain = "clairveil.public-input-schema.v1"
@@ -65,6 +67,14 @@ var publicInputSchemas = map[string][]PublicInputField{
 }
 
 func PublicInputSchema(circuitID string) ([]PublicInputField, error) {
+	if isAuditFieldCircuit(circuitID) {
+		source := auditfield.PublicInputSchema()
+		fields := make([]PublicInputField, len(source))
+		for i, field := range source {
+			fields[i] = PublicInputField{Name: field.Name, Encoding: field.Encoding}
+		}
+		return fields, nil
+	}
 	fields, ok := publicInputSchemas[circuitID]
 	if !ok {
 		return nil, fmt.Errorf("unsupported circuit id %q", circuitID)
