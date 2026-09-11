@@ -77,15 +77,15 @@ All keeper transitions must be atomic. A duplicate/conflicting nullifier, proof 
 
 ## 5. Proving And Artifact Boundary
 
-The active set is `privacy-note-v1`: deposit, spend, joinsplit, and `batch-joinsplit-16x32-v1`. Consensus pins ordered circuit identity, VK hashes, and public-input schema hashes. A validator needs matching VKs; a prover additionally loads R1CS/PK for the selected circuit. Checksum environment variables are preflight input only and cannot override consensus.
+The current runnable set is the development-only `privacy-note-v1-audit-field-v1` identity. It has four ordered audit-field circuits and exact matching local artifacts. Validators require matching VKs; `clairveil-proverd` additionally loads its selected R1CS/PK. Checksum environment variables are preflight input only and cannot override consensus. The earlier `privacy-note-v1` NoteV1/batch set is retained legacy material, not the current V2 runtime.
 
 Prepared prover requests contain private note witness. Same-endpoint retry does not imply permission to fail over to a second prover. Multi-prover failover must be an explicit privacy decision. `clairveil-proverd` is a bounded reference implementation, not a production trust boundary by itself.
 
 ## 6. Client And Audit Boundary
 
-### 6.1 Deposit Proving Boundary
+### 6.1 Audit-field V2 Proving Boundary
 
-Deposit proving may be local or use `POST /v1/prover/deposit`. The client constructs the note, commitment, and encrypted note; the remote prover receives only the versioned circuit witness, recomputes the commitment, and returns a commitment-bound proof. The client then validates the response and assembles/signs `MsgDeposit`. Envelope and nested payload/proof versions are separate. The [general HTTP API](clairveil-proverd-http-api.md) owns transport policy; the [deposit API](clairveil-proverd-http-api.md#deposit) owns this route's wire contract.
+The only current remote route is `POST /v2/prover/audit-field`. Its request/response envelope `v1` carries `privacy-note-v1-audit-field-v1`, an exact artifact hash, and final PI23 as base64 `[]byte` values plus a complete witness. The response repeats all binding fields; the client performs local verification against the exact artifact identity and final PI23 before assembling a V2 message. See the [HTTP API](clairveil-proverd-http-api.md); `/v1` deposit/transfer/withdraw/batch descriptions are retained legacy history only.
 
 Wallet ownership is recovered by scanning typed chain data and attempting note decryption; `view_tags` are only untrusted performance hints. Clients must persist cursors, support rescan, keep prepared payloads and note caches encrypted, and treat nullifier queries as privacy-sensitive.
 
@@ -93,7 +93,7 @@ Every transfer carries mandatory audit disclosure. User-selected disclosure and 
 
 ## 7. Compatibility And Authority
 
-The current fixed client contract is `privacy-fixed-v1`; transfer payload `v5` with transfer request/response/proof `v2`; withdraw prover/final payload and request/response/proof `v2`; batch payload `batch-transfer-payload-v1`, proof `batch-transfer-proof-v1`, and request/response `v1`; and deposit payload/proof/request/response `v1`. Earlier artifacts, queued proofs, cached prepared payloads, note/scan caches, and a three-circuit genesis are incompatible. Upgrade by regenerating the exact artifact set, using fresh genesis/reset, clearing incompatible jobs/caches, and rescanning.
+The current fixed client contract is `/v2/prover/audit-field` with request/response envelope `v1`, `privacy-note-v1-audit-field-v1`, base64 byte slices, and final PI23 local verification. Earlier NoteV1 artifacts, queued proofs, cached prepared payloads, note/scan caches, and legacy genesis are not compatible with the V2 runtime. Preserve their fixtures as historical conformance evidence; do not submit them to V2.
 
 When sources disagree, resolve them in this order for the affected contract:
 

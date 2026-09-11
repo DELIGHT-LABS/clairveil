@@ -142,6 +142,12 @@ func (k Keeper) computeCommitmentPrefixRootsV1(ctx sdk.Context, count uint64) ([
 }
 
 func (k Keeper) SetMerkleRootSnapshotV1(ctx sdk.Context, snapshot *types.MerkleRootSnapshotV1) error {
+	if k.audit != nil {
+		return fmt.Errorf("raw snapshot mutation is disabled")
+	}
+	return k.setMerkleRootSnapshot(ctx, snapshot)
+}
+func (k Keeper) setMerkleRootSnapshot(ctx sdk.Context, snapshot *types.MerkleRootSnapshotV1) error {
 	if snapshot == nil {
 		return fmt.Errorf("merkle root snapshot is required")
 	}
@@ -149,13 +155,21 @@ func (k Keeper) SetMerkleRootSnapshotV1(ctx sdk.Context, snapshot *types.MerkleR
 	if err != nil {
 		return fmt.Errorf("merkle root snapshot root is invalid: %w", err)
 	}
-	if snapshot.LeafCount == 0 || snapshot.LeafCount > k.GetLeafCount(ctx) {
+	count, err := k.getLeafCountStrict(ctx)
+	if err != nil {
+		return err
+	}
+	if snapshot.LeafCount == 0 || snapshot.LeafCount > count {
 		return fmt.Errorf("merkle root snapshot leaf_count is out of range")
 	}
 	if snapshot.Height < 0 {
 		return fmt.Errorf("merkle root snapshot height must not be negative")
 	}
-	if !k.CheckHistoricalRoot(ctx, canonicalRoot) {
+	historical, err := k.storeService.OpenKVStore(ctx).Has(types.GetHistoricalRootKey(canonicalRoot))
+	if err != nil {
+		return err
+	}
+	if !historical {
 		return fmt.Errorf("merkle root snapshot root is not historical")
 	}
 
@@ -287,6 +301,9 @@ func (k Keeper) RebuildMerkleRootSnapshotIndexV1(ctx sdk.Context) error {
 }
 
 func (k Keeper) InitGenesisMerkleRootSnapshotsV1(ctx sdk.Context, snapshots []*types.MerkleRootSnapshotV1) error {
+	if k.audit != nil {
+		return fmt.Errorf("legacy state mutation is disabled")
+	}
 	count := k.GetLeafCount(ctx)
 	if uint64(len(snapshots)) != count {
 		return fmt.Errorf("genesis merkle root snapshots must contain every commitment prefix: got %d want %d", len(snapshots), count)

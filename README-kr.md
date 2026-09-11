@@ -35,27 +35,34 @@ English version: [README.md](README.md)
 | 항목 | 현재 기준 |
 | --- | --- |
 | 공개 상태 | `PUBLICATION_READY_EXPERIMENTAL`; source/reference 공개 가능 상태이며 production 배포 승인이 아님 |
-| Consensus circuit set | state version 2의 `privacy-note-v1` |
+| Consensus circuit set | audited V2 runtime state의 `privacy-note-v1-audit-field-v1` |
 | Fixed client contract | `privacy-fixed-v1`; transfer payload `v5`, proof/prover contract `v2` |
 | Batch surface | `BatchJoinSplit16x32`, `MsgBatchTransfer`; batch integration용 Go SDK/prover/scanner/payroll/CLI reference 구현 |
-| Upgrade 경계 | 이전 artifact, proof job, note/scan cache, three-circuit genesis와 호환되지 않음. fresh genesis/reset 및 rescan 필요 |
+| Upgrade 경계 | 이전 artifact, proof job, note/scan cache, non-audited genesis와 호환되지 않음. fresh genesis/reset 및 rescan 필요 |
 | 남은 production gate | formal trusted setup, 외부 security/circuit audit, signed production artifact, downstream chain/product 검증 |
 
 문서는 같은 checkout의 코드를 설명합니다. Tag 또는 commit을 통합할 때는 반드시 그 exact ref의 문서를 읽고 release manifest를 검증해야 하며, 이전 binary/tag와 `HEAD` 문서를 섞으면 안 됩니다.
 
 ## 빠른 시작
 
-Git, Make, Go `1.25.12`, Python `3.9+`, Bash가 필요하며 repository CI/example 검증에는 Node.js `22+`와 npm도 필요합니다. 전체 circuit set을 생성하기 전에 [시작 가이드](docs/clairveil-getting-started-kr.md)의 리소스 요구량을 확인합니다.
+Git, Make, Go `1.25.12`, Bash가 필요하며 repository CI/example 검증에는 Node.js `22+`와 npm도 필요합니다. 검토된 verifier artifact를 사용하기 전에 [시작 가이드](docs/clairveil-getting-started-kr.md)를 확인합니다.
 
 ```bash
 git clone https://github.com/DELIGHT-LABS/clairveil.git
 cd clairveil
-make init
-source ~/.clairveil/clairveil.env
-clairveild start
+export CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR=/absolute/path/to/audit-field-artifacts
+export CLAIRVEIL_HOME=${CLAIRVEIL_HOME:-"$HOME/.clairveil"}
+clairveild --home "$CLAIRVEIL_HOME" init node-1 \
+  --chain-id reviewed-chain-1 \
+  --audit-config /absolute/path/to/audit-config.json
+clairveild --home "$CLAIRVEIL_HOME" start \
+  --audit-config /absolute/path/to/audit-config.json \
+  --audit-artifacts "$CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR"
 ```
 
-[시작 가이드](docs/clairveil-getting-started-kr.md)에서 설정, 수동 deposit/transfer/disclosure/withdraw, one-proof batch 실행, 정리까지 이어서 진행합니다.
+검토된 V4 구성에는 공개 network/key metadata만 들어갑니다. `init`은 작은 V4 metadata와 표준 privacy genesis를 쓰고, `start`는 local artifact를 검증합니다. Replay runtime bundle이나 offline secret 입력은 없습니다. 현재 audit-field bundle은 production trusted setup이 아닌 development-grade입니다.
+
+`clairveil-auditor`는 제한한 범위의 실제 성공 privacy transaction 원본과 실행 결과를 atomic local cache에 수집하고, 기존 proof 검증·epoch-key 복호화·deposit-rooted lineage 로직을 재사용합니다. Collection completeness와 provenance completeness를 분리해 보고하며 chain replay나 wallet scan state를 audit ledger로 사용하지 않습니다.
 
 ## 검증
 
@@ -63,7 +70,7 @@ clairveild start
 make ci
 ```
 
-실행 중인 node 없이 문서 검사, Go test, binary build, JS example 검증을 수행합니다. `make privacy-e2e-smoke`는 별도 임시 local chain을 시작해 전체 privacy flow를 검증합니다. 포트 변경, live batch gate, release/capacity 증거는 [테스트 가이드](docs/clairveil-testing-guide-kr.md)를 확인합니다.
+실행 중인 node 없이 문서 검사, Go test, binary build, JS example 검증을 수행합니다. Focused protocol/capacity evidence는 [테스트 가이드](docs/clairveil-testing-guide-kr.md)를 확인합니다.
 
 ## 통합과 문서
 

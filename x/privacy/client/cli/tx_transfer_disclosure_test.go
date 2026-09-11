@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/hex"
 	"testing"
 
 	cmtabci "github.com/cometbft/cometbft/abci/types"
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/types"
+	privacyv2 "github.com/DELIGHT-LABS/clairveil/x/privacy/types/v2"
 )
 
 func TestBuildTransferDisclosureReportForPublicUserPayload(t *testing.T) {
@@ -112,6 +114,44 @@ func TestExtractTransferDisclosureEventCandidatesAutoIncludesEncryptedFallbacks(
 	require.Equal(t, transferDisclosurePlaneRecipient, candidates[0].SelectedPlane)
 	require.Equal(t, transferDisclosurePlaneSelfView, candidates[1].SelectedPlane)
 	require.Equal(t, transferDisclosurePlaneAudit, candidates[2].SelectedPlane)
+}
+
+func TestExtractAuditV2TransferDisclosureCandidatesFromOutputs(t *testing.T) {
+	outputs := []*privacyv2.OutputEffect{
+		{
+			UserDisclosureMode:        uint32(types.UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED),
+			UserDisclosureDigest:      []byte{0x01},
+			UserDisclosurePayload:     []byte{0x02},
+			SelfFullDisclosureDigest:  []byte{0x03},
+			SelfViewDisclosurePayload: []byte{0x04},
+		},
+		{
+			UserDisclosureMode:    uint32(types.UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC),
+			UserDisclosureDigest:  []byte{0x05},
+			UserDisclosurePayload: []byte{0x06},
+		},
+	}
+
+	candidates, err := extractAuditV2TransferDisclosureCandidatesFromOutputs(outputs, transferDisclosurePlaneAuto)
+	require.NoError(t, err)
+	require.Len(t, candidates, 3)
+	require.Equal(t, transferDisclosurePlaneRecipient, candidates[0].SelectedPlane)
+	require.Equal(t, hex.EncodeToString([]byte{0x02}), candidates[0].PayloadHex)
+	require.Equal(t, transferDisclosurePlaneSelfView, candidates[1].SelectedPlane)
+	require.Equal(t, transferDisclosurePlanePublic, candidates[2].SelectedPlane)
+
+	publicOnly, err := extractAuditV2TransferDisclosureCandidatesFromOutputs(outputs, transferDisclosurePlanePublic)
+	require.NoError(t, err)
+	require.Len(t, publicOnly, 1)
+	require.Equal(t, transferDisclosurePlanePublic, publicOnly[0].SelectedPlane)
+}
+
+func TestExtractAuditV2TransferDisclosureCandidatesFromTxRejectsFailedTransaction(t *testing.T) {
+	_, err := extractAuditV2TransferDisclosureCandidatesFromTx(client.Context{}, &cmttypes.ResultTx{
+		TxResult: cmtabci.ExecTxResult{Code: 7},
+	}, transferDisclosurePlaneAuto)
+
+	require.ErrorContains(t, err, "transaction failed on chain with code 7")
 }
 
 func TestUserDisclosureModeLabel(t *testing.T) {

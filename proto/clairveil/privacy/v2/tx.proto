@@ -1,0 +1,63 @@
+syntax = "proto3";
+package clairveil.privacy.v2;
+import "cosmos/msg/v1/msg.proto";
+option go_package = "github.com/DELIGHT-LABS/clairveil/x/privacy/types/v2;privacyv2";
+service Msg {
+ option (cosmos.msg.v1.service) = true;
+ rpc Deposit(MsgDeposit) returns (MsgDepositResponse);
+ rpc Withdraw(MsgWithdraw) returns (MsgWithdrawResponse);
+ rpc Transfer(MsgTransfer) returns (MsgTransferResponse);
+ rpc BatchTransfer(MsgBatchTransfer) returns (MsgBatchTransferResponse);
+ rpc ScheduleAuditKeyEpoch(MsgScheduleAuditKeyEpoch) returns (MsgScheduleAuditKeyEpochResponse);
+ rpc CancelPendingAuditEpoch(MsgCancelPendingAuditEpoch) returns (MsgCancelPendingAuditEpochResponse);
+ rpc SetPrivacyHalt(MsgSetPrivacyHalt) returns (MsgSetPrivacyHaltResponse);
+}
+message AuditAuthorization { bytes key_id=1; uint64 epoch=2; bytes envelope=3; }
+message OutputEffect {
+ bytes commitment=1; bytes ciphertext=2; bytes view_tag=3;
+ uint32 user_privacy_policy=4; uint32 user_disclosure_mode=5;
+ bytes user_disclosure_digest=6; bytes user_disclosure_target_pubkey=7;
+ bytes user_disclosure_payload=8; bytes self_full_disclosure_digest=9;
+ bytes self_view_disclosure_payload=10;
+}
+message MsgDeposit {
+ option (cosmos.msg.v1.signer)="creator";
+ string creator=1; string amount=2; OutputEffect output=3; bytes proof=4;
+ int64 expires_at_unix=5; AuditAuthorization audit=6;
+}
+message MsgWithdraw {
+ option (cosmos.msg.v1.signer)="creator";
+ string creator=1; string amount=2; string recipient=3; bytes root=4;
+ bytes nullifier=5; bytes proof=6; int64 expires_at_unix=7; AuditAuthorization audit=8;
+}
+message MsgTransfer {
+ option (cosmos.msg.v1.signer)="creator";
+ string creator=1; bytes root=2; repeated bytes nullifiers=3;
+ repeated OutputEffect outputs=4; bytes proof=5; int64 expires_at_unix=6; AuditAuthorization audit=7;
+}
+message MsgBatchTransfer {
+ option (cosmos.msg.v1.signer)="creator";
+ string creator=1; bytes root=2; repeated bytes nullifiers=3;
+ repeated OutputEffect outputs=4; bytes proof=5; int64 expires_at_unix=6; AuditAuthorization audit=7;
+}
+message MsgScheduleAuditKeyEpoch {
+ option (cosmos.msg.v1.signer)="authority";
+ string authority=1; uint64 epoch=2; uint64 activation_height=3;
+ bytes public_key=4; uint32 suite=5; bytes possession_proof=6;
+}
+message MsgCancelPendingAuditEpoch {
+ option (cosmos.msg.v1.signer)="authority";
+ string authority=1; uint64 epoch=2;
+}
+message MsgSetPrivacyHalt {
+ option (cosmos.msg.v1.signer)="authority";
+ string authority=1; bool halted=2;
+}
+// Field 1 remains permanently reserved after removal of the transition cursor.
+message MsgDepositResponse { reserved 1; }
+message MsgWithdrawResponse { reserved 1; }
+message MsgTransferResponse { reserved 1; }
+message MsgBatchTransferResponse { reserved 1; }
+message MsgScheduleAuditKeyEpochResponse {}
+message MsgCancelPendingAuditEpochResponse {}
+message MsgSetPrivacyHaltResponse {}

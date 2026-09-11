@@ -1,0 +1,23 @@
+syntax = "proto3";
+package clairveil.privacy.v2;
+import "google/api/annotations.proto";
+option go_package = "github.com/DELIGHT-LABS/clairveil/x/privacy/types/v2;privacyv2";
+// Query exposes only the small, live audit configuration and audit-key
+// history. Privacy execution has no replay archive or persistent audit
+// transition/index records.
+service Query {
+ rpc AuditKey(QueryAuditKeyRequest) returns (QueryAuditRecordResponse) { option (google.api.http).get="/clairveil/privacy/v2/audit/keys/{epoch}"; }
+ rpc AuditKeySchedule(QueryAuditKeyScheduleRequest) returns (QueryAuditKeyScheduleResponse) { option (google.api.http).get="/clairveil/privacy/v2/audit/key_schedule"; }
+ rpc AuditConfiguration(QueryAuditConfigurationRequest) returns (QueryAuditConfigurationResponse) { option (google.api.http).get="/clairveil/privacy/v2/audit/configuration"; }
+}
+message QueryAuditKeyRequest { uint64 epoch=1; }
+message QueryAuditRecordResponse { bytes record=1; bytes store_key=2; int64 state_height=3; }
+message QueryAuditKeyScheduleRequest {}
+message QueryAuditKeyScheduleResponse { uint64 active_epoch=1; uint64 next_activation_height=2; uint64 next_epoch=3; bool halted=4; int64 state_height=5; }
+message QueryAuditConfigurationRequest {}
+message QueryAuditConfigurationResponse {
+ bytes network_nonce=1;
+ uint64 initial_height=2;
+ bytes circuit_identity=3;
+ int64 state_height=4;
+}

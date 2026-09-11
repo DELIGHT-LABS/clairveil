@@ -41,7 +41,7 @@ func BuildPreparedBatchTransferProofAt(payload *PreparedBatchTransferPayload, ar
 	if artifacts == nil || runner == nil {
 		return nil, fmt.Errorf("batch artifacts and local proof runner are required")
 	}
-	assignment, err := buildAssignment(payload)
+	assignment, err := buildAssignment(payload, payload.OwnerSignature)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +134,11 @@ func BroadcastBatchTransfer(ctx context.Context, broadcaster BatchTransferBroadc
 	return res, nil
 }
 
-func buildAssignment(p *PreparedBatchTransferPayload) (*circuit.BatchJoinSplit16x32, error) {
+// buildAssignment accepts the owner signature separately because v2 staged
+// payloads deliberately do not persist it: their final intent is only known
+// after the audit envelope is fixed. Callers must assign that final signature
+// before constructing the witness.
+func buildAssignment(p *PreparedBatchTransferPayload, ownerSignature []byte) (*circuit.BatchJoinSplit16x32, error) {
 	chain, err := privacytypes.ComputeChainDomainV1(p.ChainID, privacytypes.ActiveCircuitSetID)
 	if err != nil {
 		return nil, err
@@ -144,8 +148,10 @@ func buildAssignment(p *PreparedBatchTransferPayload) (*circuit.BatchJoinSplit16
 	ownerView, _ := fixedPoint(p.Inputs[0].Note.ReceiverViewPubKeyX, p.Inputs[0].Note.ReceiverViewPubKeyY)
 	assignKey(&a.OwnerSpendPubKey, ownerSpend)
 	assignKey(&a.OwnerViewPubKey, ownerView)
-	if err := assignSig(&a.OwnerSignature, p.OwnerSignature); err != nil {
-		return nil, err
+	if ownerSignature != nil {
+		if err := assignSig(&a.OwnerSignature, ownerSignature); err != nil {
+			return nil, err
+		}
 	}
 	for i := 0; i < circuit.MaxBatchJoinSplitInputs; i++ {
 		assignKey(&a.InputSpendPubKeys[i], ownerSpend)

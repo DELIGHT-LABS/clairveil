@@ -13,7 +13,7 @@ fi
 
 bench_out_dir="${BENCH_OUT_DIR:-benchmarks/privacy-proverd-load}"
 result_family="${RESULT_FAMILY:-privacy-proverd-load}"
-profile="${PROVERLOAD_PROFILE:-transfer_only}"
+profile="${PROVERLOAD_PROFILE:-audit_field_only}"
 concurrency="${PROVERLOAD_CONCURRENCY:-1,2}"
 duration="${PROVERLOAD_DURATION:-30s}"
 warmup="${PROVERLOAD_WARMUP:-5s}"
@@ -23,6 +23,7 @@ allow_unhealthy_endpoints="${PROVERLOAD_ALLOW_UNHEALTHY_ENDPOINTS:-0}"
 fixture_bundle="${PROVERLOAD_FIXTURE_BUNDLE:-}"
 transfer_request="${PROVERLOAD_TRANSFER_REQUEST:-}"
 withdraw_request="${PROVERLOAD_WITHDRAW_REQUEST:-}"
+audit_request="${PROVERLOAD_AUDIT_REQUEST:-}"
 bearer_token="${PROVERD_BEARER_TOKEN:-${CLAIRVEIL_PROVERD_BEARER_TOKEN:-}}"
 run_profile="${RUN_PROFILE:-smoke}"
 claim_types="${CLAIM_TYPES:-prover_rps}"
@@ -84,6 +85,9 @@ fi
 if [[ -n "$withdraw_request" ]]; then
   load_args+=(-withdraw-request "$withdraw_request")
 fi
+if [[ -n "$audit_request" ]]; then
+  load_args+=(-audit-request "$audit_request")
+fi
 
 echo "running external clairveil-proverd load benchmark"
 if [[ -n "$proverd_urls" ]]; then
@@ -98,6 +102,8 @@ echo "  PROVERLOAD_TELEMETRY_INTERVAL=$telemetry_interval"
 echo "  PROVERLOAD_ALLOW_UNHEALTHY_ENDPOINTS=$allow_unhealthy_endpoints"
 if [[ -n "$fixture_bundle" ]]; then
   echo "  PROVERLOAD_FIXTURE_BUNDLE=$fixture_bundle"
+elif [[ "$profile" == "audit_field_only" ]]; then
+  echo "  PROVERLOAD_AUDIT_REQUEST=${audit_request:+<provided>}"
 else
   echo "  PROVERLOAD_FIXTURE_BUNDLE=<generated prover-valid requests>"
 fi

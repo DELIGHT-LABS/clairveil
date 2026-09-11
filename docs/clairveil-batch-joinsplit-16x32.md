@@ -1,5 +1,7 @@
 # Clairveil NoteV1 and BatchJoinSplit16x32 Protocol Contract
 
+> Legacy archive: this NoteV1/16x32 specification and its fixed fixtures are preserved conformance history. They are not the current V2 runtime or a live prover contract. For the current shared route, use [Proverd HTTP API](clairveil-proverd-http-api.md).
+
 ## 1. Status and scope
 
 This document is normative for NoteV1, domain separation, fixed encodings, the 16-input/32-output statement, aggregate vector roots, disclosure digests, scan state, artifact identity, and resource accounting.
@@ -714,7 +716,7 @@ The batch chain core freezes these conservative V1 coefficients and bounds:
 | tree-write bound | `1,056` nodes |
 | global-lookup bound | `48` |
 
-The explicit surcharge pays for privacy-specific proof verification, canonical hashing/encoding, state-growth amplification, Merkle computation/bookkeeping, and global uniqueness checks. Cosmos KV gas still pays for the underlying store reads and writes; the coefficients do not replace it. Thus the two meters cover different layers even when one logical operation causes both computation and physical I/O. The exact category breakdown and precharge-before-semantics/out-of-gas behavior are regression-tested. A real `1/1` handler success and a max `16/32` post-proof transition record the explicit descriptor separately from every Cosmos KV descriptor, preventing either layer from silently absorbing or duplicating the other's responsibility. Independent publication validation confirmed the experimental reference bounds; target-chain production coefficient governance and calibration remain a production-owner TODO.
+The explicit surcharge pays for privacy-specific proof verification, canonical hashing/encoding, scan-state growth, Merkle computation/bookkeeping, and global uniqueness checks. Cosmos KV gas still pays for the underlying store reads and writes; the coefficients do not replace it. Thus the two meters cover different layers even when one logical operation causes both computation and physical I/O. The exact category breakdown and precharge-before-semantics/out-of-gas behavior are regression-tested. A real `1/1` handler success and a max `16/32` post-proof scan projection exercise the explicit descriptor separately from every Cosmos KV descriptor, preventing either layer from silently absorbing or duplicating the other's responsibility. Independent publication validation confirmed the experimental reference bounds; target-chain production coefficient governance and calibration remain a production-owner TODO.
 
 ## 10. Max wire/state feasibility result
 

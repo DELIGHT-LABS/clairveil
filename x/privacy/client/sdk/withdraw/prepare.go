@@ -38,9 +38,14 @@ type PrepareSpendWithdrawInput struct {
 }
 
 type PreparedSpendWithdraw struct {
-	Assignment     circuit.SpendCircuit
+	Assignment circuit.SpendCircuit
+	// Note is retained only in the in-memory normal-flow preparation so the
+	// audit-field bridge can derive the same commitment/plaintext relation.
+	// It is never added to the legacy message or its prover payload wire form.
+	Note           privacytypes.SecretNoteV1
 	RootBytes      []byte
 	NullifierBytes []byte
+	ExpiresAtUnix  int64
 	MerklePath     []string
 	PathHelper     []uint32
 	Signature      []byte
@@ -166,8 +171,10 @@ func PrepareSpendWithdraw(
 
 	return &PreparedSpendWithdraw{
 		Assignment:     assignment,
+		Note:           selectedNote,
 		RootBytes:      append([]byte(nil), merklePath.Root...),
 		NullifierBytes: nullifierBytes,
+		ExpiresAtUnix:  input.ExpiresAtUnix,
 		MerklePath:     append([]string(nil), merklePath.Path...),
 		PathHelper:     append([]uint32(nil), merklePath.PathHelper...),
 		Signature:      append([]byte(nil), sigBytes...),

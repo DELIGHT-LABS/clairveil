@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	ActiveCircuitSetID = "privacy-note-v1"
+	ActiveCircuitSetID     = "privacy-note-v1"
+	AuditFieldCircuitSetID = "privacy-note-v1-audit-field-v1"
 
 	ChainDomainV1ByteDomain       = "clairveil.chain-domain.v1"
 	TransferPayloadV1ByteDomain   = "clairveil.transfer-payload.v1"

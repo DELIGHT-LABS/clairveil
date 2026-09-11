@@ -19,19 +19,23 @@ for tool in protoc protoc-gen-gocosmos protoc-gen-grpc-gateway; do
 	fi
 done
 
-protoc \
-	-I "$repo_root/proto" \
-	-I "$sdk_proto" \
-	-I "$googleapis_proto" \
-	--gocosmos_out=plugins=grpc:"$out_dir" \
-	--grpc-gateway_out=logtostderr=true,allow_colon_final_segments=true:"$out_dir" \
-	"$repo_root/proto/clairveil/privacy/v1/batch_feasibility.proto" \
-	"$repo_root/proto/clairveil/privacy/v1/genesis.proto" \
-	"$repo_root/proto/clairveil/privacy/v1/query.proto" \
-	"$repo_root/proto/clairveil/privacy/v1/tx.proto"
+for package in privacy/v1 privacy/v2; do
+ protoc \
+  -I "$repo_root/proto" \
+  -I "$sdk_proto" \
+  -I "$googleapis_proto" \
+  --gocosmos_out=plugins=grpc:"$out_dir" \
+  --grpc-gateway_out=logtostderr=true,allow_colon_final_segments=true:"$out_dir" \
+  "$repo_root/proto/clairveil/$package/"*.proto
+done
 
 generated_dir="$out_dir/github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 cp "$generated_dir"/*.pb.go "$repo_root/x/privacy/types/"
 cp "$generated_dir"/*.pb.gw.go "$repo_root/x/privacy/types/"
 
 gofmt -w "$repo_root"/x/privacy/types/*.pb.go "$repo_root"/x/privacy/types/*.pb.gw.go
+
+mkdir -p "$repo_root/x/privacy/types/v2"
+cp "$generated_dir/v2"/*.pb.go "$repo_root/x/privacy/types/v2/"
+cp "$generated_dir/v2"/*.pb.gw.go "$repo_root/x/privacy/types/v2/"
+gofmt -w "$repo_root"/x/privacy/types/v2/*.go

@@ -40,6 +40,7 @@ type PrepareJoinSplitInput struct {
 
 type PreparedJoinSplitTransfer struct {
 	Assignment        circuit.JoinSplitCircuit
+	InputNotes        [2]privacytypes.SecretNoteV1
 	CommonRoot        []byte
 	InputNullifiers   [][]byte
 	InputMerklePaths  [][]string
@@ -210,6 +211,7 @@ func PrepareJoinSplitTransfer(
 
 	return &PreparedJoinSplitTransfer{
 		Assignment:        assignment,
+		InputNotes:        [2]privacytypes.SecretNoteV1{input.Inputs[0].Note, input.Inputs[1].Note},
 		CommonRoot:        commonRoot,
 		InputNullifiers:   inputNullifiers,
 		InputMerklePaths:  inputMerklePaths,

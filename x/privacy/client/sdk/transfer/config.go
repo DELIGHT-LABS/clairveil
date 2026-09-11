@@ -40,6 +40,42 @@ type ResolveRuntimeConfigInput struct {
 	DisclosurePubKeyHex string
 }
 
+// ResolveAuditV2RuntimeConfig validates only the disclosure planes retained
+// by the v2 message. The audit envelope comes from the active v2 epoch, not
+// the retired audit-disclosure configuration.
+func ResolveAuditV2RuntimeConfig(input ResolveRuntimeConfigInput) (*RuntimeConfig, error) {
+	policy, err := ParsePrivacyPolicy(input.RawPolicy)
+	if err != nil {
+		return nil, err
+	}
+	mode, err := ParseDisclosureMode(input.RawDisclosureMode)
+	if err != nil {
+		return nil, err
+	}
+	var target *crypto_tedwards.PointAffine
+	var targetBytes []byte
+	if policy == privacytypes.TransferPrivacyPolicyAllPrivate {
+		if mode != privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE {
+			return nil, fmt.Errorf("all-private transfers must use disclosure mode %q", DisclosureModeNone)
+		}
+		if strings.TrimSpace(input.DisclosurePubKeyHex) != "" {
+			return nil, fmt.Errorf("all-private transfers must not set a disclosure pubkey")
+		}
+	} else if mode == privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC {
+		if strings.TrimSpace(input.DisclosurePubKeyHex) != "" {
+			return nil, fmt.Errorf("public disclosure must not set a disclosure pubkey")
+		}
+	} else if mode == privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED {
+		target, targetBytes, err = DecodeDisclosurePubKeyHex(input.DisclosurePubKeyHex)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, fmt.Errorf("user disclosure mode %q is not valid with privacy policy %q", input.RawDisclosureMode, input.RawPolicy)
+	}
+	return &RuntimeConfig{UserPrivacyPolicy: policy, UserDisclosureMode: mode, UserDisclosureTargetPubKey: target, UserDisclosureTargetPubKeyBz: targetBytes}, nil
+}
+
 func ParsePrivacyPolicy(raw string) (uint32, error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "", PrivacyPolicyAllPrivate:

@@ -10,6 +10,7 @@ import (
 
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
+	auditfield "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto/auditfield"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -221,11 +222,15 @@ func validateSummary(s *privacytypes.PrivacyScanSummaryV2) error {
 	if s == nil || s.Height < 0 || s.GlobalSequence == 0 {
 		return fmt.Errorf("invalid summary cursor")
 	}
-	if s.CircuitSetId != privacytypes.ActiveCircuitSetID || s.PayloadVersion != privacytypes.FixedPayloadVersionV1 || s.ScanSchemaVersion != privacytypes.PrivacyScanSchemaVersionV2 {
+	validCircuitSet := s.CircuitSetId == privacytypes.ActiveCircuitSetID || s.CircuitSetId == auditfield.CircuitSetID
+	if !validCircuitSet || s.PayloadVersion != privacytypes.FixedPayloadVersionV1 || s.ScanSchemaVersion != privacytypes.PrivacyScanSchemaVersionV2 {
 		return fmt.Errorf("invalid summary version identity")
 	}
 	if len(s.TxHash) != 0 && len(s.TxHash) != 32 {
 		return fmt.Errorf("invalid summary tx hash")
+	}
+	if s.CircuitSetId == auditfield.CircuitSetID {
+		return validateAuditSummary(s)
 	}
 	switch s.EventType {
 	case privacytypes.EventTypeDeposit:
@@ -262,6 +267,45 @@ func validateSummary(s *privacytypes.PrivacyScanSummaryV2) error {
 	return nil
 }
 
+func validateAuditSummary(s *privacytypes.PrivacyScanSummaryV2) error {
+	if s.CircuitSetId != auditfield.CircuitSetID || s.AuditKeyEpoch == 0 || len(s.EffectId) != 32 {
+		return fmt.Errorf("invalid audit summary identity")
+	}
+	if s.OutputCount > privacytypes.BatchJoinSplitV1MaxOutputs {
+		return fmt.Errorf("invalid audit summary output count")
+	}
+	keyID, err := hex.DecodeString(s.AuditKeyId)
+	if err != nil || hex.EncodeToString(keyID) != s.AuditKeyId {
+		return fmt.Errorf("invalid audit summary key ID")
+	}
+	if _, err := auditfield.ParseAuditKey(s.AuditTargetPubkey, keyID); err != nil {
+		return fmt.Errorf("invalid audit summary target: %w", err)
+	}
+	if len(s.Nullifiers) > int(privacytypes.BatchJoinSplitV1MaxInputs) {
+		return fmt.Errorf("invalid audit summary nullifier count")
+	}
+	if err := privacytypes.ValidateDistinctCanonicalFieldElements("audit summary nullifier", s.Nullifiers); err != nil {
+		return err
+	}
+	var kind auditfield.Kind
+	switch s.EventType {
+	case privacytypes.EventTypeDeposit:
+		kind = auditfield.KindDeposit
+	case privacytypes.EventTypeWithdraw:
+		kind = auditfield.KindWithdraw
+	case privacytypes.EventTypeShieldedTransfer:
+		kind = auditfield.KindTransfer2x2
+	case privacytypes.EventTypeBatchTransferV1:
+		kind = auditfield.KindBatch16x32
+	default:
+		return fmt.Errorf("unsupported audit summary event type %q", s.EventType)
+	}
+	if err := kind.ValidateActiveCounts(uint8(len(s.Nullifiers)), uint8(s.OutputCount)); err != nil {
+		return fmt.Errorf("invalid audit summary counts: %w", err)
+	}
+	return nil
+}
+
 func validateOutput(s *privacytypes.PrivacyScanSummaryV2, o *privacytypes.PrivacyScanOutputV2) error {
 	if o.OutputIndex >= s.OutputCount || o.EventType != s.EventType || o.Height != s.Height || o.GlobalSequence != s.GlobalSequence {
 		return fmt.Errorf("cursor/event identity mismatch")
@@ -280,6 +324,9 @@ func validateOutput(s *privacytypes.PrivacyScanSummaryV2, o *privacytypes.Privac
 	}
 	if err := canonicalActiveField(o.Commitment, "commitment"); err != nil {
 		return err
+	}
+	if s.CircuitSetId == auditfield.CircuitSetID {
+		return validateAuditOutput(o)
 	}
 	switch o.EventType {
 	case privacytypes.EventTypeDeposit:
@@ -301,6 +348,126 @@ func validateOutput(s *privacytypes.PrivacyScanSummaryV2, o *privacytypes.Privac
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+func validateAuditOutput(o *privacytypes.PrivacyScanOutputV2) error {
+	if len(o.AuditDisclosurePayload) != 0 {
+		return fmt.Errorf("audit output must not carry legacy audit ciphertext")
+	}
+	if o.EventType == privacytypes.EventTypeDeposit || (o.EventType == privacytypes.EventTypeShieldedTransfer && o.OutputIndex == 1) {
+		if err := validateAuditDirectOutput(o); err != nil {
+			return err
+		}
+		return validateEmptyDisclosure(o)
+	}
+	if len(o.EncryptedNote) != 0 || len(o.ViewTag) != privacytypes.ViewTagLength {
+		return fmt.Errorf("invalid audit recovery output")
+	}
+	if _, err := privacytypes.UnwrapEncryptedEnvelopeV1(o.Ciphertext, privacytypes.EnvelopeTransferNoteV1); err != nil {
+		return fmt.Errorf("invalid audit recovery envelope: %w", err)
+	}
+	if err := validateAuditUserDisclosure(o); err != nil {
+		return err
+	}
+	if err := canonicalActiveField(o.FullDisclosureDigest, "self full digest"); err != nil {
+		return err
+	}
+	if len(o.SelfViewDisclosurePayload) != 0 {
+		if _, err := privacytypes.UnwrapEncryptedEnvelopeV1(o.SelfViewDisclosurePayload, privacytypes.EnvelopeSelfViewDisclosureV1); err != nil {
+			return fmt.Errorf("invalid self-view disclosure envelope: %w", err)
+		}
+	}
+	return nil
+}
+
+func validateAuditDirectOutput(o *privacytypes.PrivacyScanOutputV2) error {
+	switch o.EventType {
+	case privacytypes.EventTypeDeposit:
+		if len(o.Ciphertext) != 0 || len(o.ViewTag) != 0 {
+			return fmt.Errorf("deposit ciphertext sentinel mismatch")
+		}
+		if _, err := privacytypes.UnwrapEncryptedEnvelopeV1(o.EncryptedNote, privacytypes.EnvelopeDepositNoteV1); err != nil {
+			return fmt.Errorf("invalid deposit envelope: %w", err)
+		}
+	case privacytypes.EventTypeShieldedTransfer:
+		if len(o.EncryptedNote) != 0 || len(o.ViewTag) != privacytypes.ViewTagLength {
+			return fmt.Errorf("transfer framing mismatch")
+		}
+		if _, err := privacytypes.UnwrapEncryptedEnvelopeV1(o.Ciphertext, privacytypes.EnvelopeTransferNoteV1); err != nil {
+			return fmt.Errorf("invalid transfer envelope: %w", err)
+		}
+	default:
+		return fmt.Errorf("audit event %q cannot use direct output framing", o.EventType)
+	}
+	return nil
+}
+
+func validateEmptyDisclosure(o *privacytypes.PrivacyScanOutputV2) error {
+	if o.UserPrivacyPolicy != 0 || o.UserDisclosureMode != "" ||
+		len(o.UserDisclosureDigest) != 0 || len(o.UserDisclosureTargetPubkey) != 0 || len(o.UserDisclosurePayload) != 0 ||
+		len(o.FullDisclosureDigest) != 0 || len(o.AuditDisclosurePayload) != 0 || len(o.SelfViewDisclosurePayload) != 0 {
+		return fmt.Errorf("output must use exact zero disclosure sentinels")
+	}
+	return nil
+}
+
+func validateAuditUserDisclosure(o *privacytypes.PrivacyScanOutputV2) error {
+	if o.UserPrivacyPolicy > privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom {
+		return fmt.Errorf("invalid audit user privacy policy")
+	}
+	if o.UserPrivacyPolicy == privacytypes.TransferPrivacyPolicyAllPrivate {
+		if o.UserDisclosureMode != privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE.String() || len(o.UserDisclosureDigest) != 0 || len(o.UserDisclosureTargetPubkey) != 0 || len(o.UserDisclosurePayload) != 0 {
+			return fmt.Errorf("invalid all-private audit user disclosure")
+		}
+		return nil
+	}
+	if err := canonicalActiveField(o.UserDisclosureDigest, "user disclosure digest"); err != nil {
+		return err
+	}
+	switch o.UserDisclosureMode {
+	case privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC.String():
+		if len(o.UserDisclosureTargetPubkey) != 0 {
+			return fmt.Errorf("public audit user disclosure target must be empty")
+		}
+		plaintext, err := privacytypes.UnmarshalDisclosurePlaintextV1(o.UserDisclosurePayload)
+		if err != nil {
+			return fmt.Errorf("invalid public audit user disclosure: %w", err)
+		}
+		if plaintext.Plane != privacytypes.DisclosurePlaneUserV1 || plaintext.OutputIndex != o.OutputIndex || plaintext.Policy != o.UserPrivacyPolicy || !bytes.Equal(plaintext.Commitment.FillBytes(make([]byte, 32)), o.Commitment) {
+			return fmt.Errorf("public audit user disclosure metadata mismatch")
+		}
+		var expected []byte
+		if o.EventType == privacytypes.EventTypeBatchTransferV1 {
+			digest, digestErr := privacytypes.ComputeBatchUserDisclosureDigestV1(privacytypes.BatchUserDisclosureV1Input{
+				OutputIndex: plaintext.OutputIndex, Commitment: plaintext.Commitment, Policy: plaintext.Policy, DisclosedFieldBitmap: plaintext.DisclosedFieldBitmap,
+				SelectedAmount: plaintext.Amount, AssetID: plaintext.AssetID, SelectedFromSpendKeyX: plaintext.SenderSpendKeyX, SelectedFromSpendKeyY: plaintext.SenderSpendKeyY,
+				SelectedFromViewKeyX: plaintext.SenderViewKeyX, SelectedFromViewKeyY: plaintext.SenderViewKeyY, SelectedToSpendKeyX: plaintext.RecipientSpendKeyX,
+				SelectedToSpendKeyY: plaintext.RecipientSpendKeyY, SelectedToViewKeyX: plaintext.RecipientViewKeyX, SelectedToViewKeyY: plaintext.RecipientViewKeyY,
+				UserDisclosureBlinding: plaintext.DisclosureBlinding,
+			})
+			if digestErr == nil {
+				expected = digest.FillBytes(make([]byte, 32))
+			}
+			err = digestErr
+		} else {
+			expected, err = privacytypes.ComputeTransferDisclosureDigestBytes(plaintext.Policy, plaintext.OutputIndex, o.Commitment, plaintext.Amount, plaintext.AssetID,
+				plaintext.SenderSpendKeyX, plaintext.SenderSpendKeyY, plaintext.SenderViewKeyX, plaintext.SenderViewKeyY, plaintext.RecipientSpendKeyX,
+				plaintext.RecipientSpendKeyY, plaintext.RecipientViewKeyX, plaintext.RecipientViewKeyY, plaintext.DisclosureBlinding)
+		}
+		if err != nil || !bytes.Equal(expected, o.UserDisclosureDigest) {
+			return fmt.Errorf("public audit user disclosure digest mismatch")
+		}
+	case privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED.String():
+		if _, err := privacycrypto.DecodeCanonicalPoint(o.UserDisclosureTargetPubkey); err != nil {
+			return fmt.Errorf("invalid audit user disclosure target: %w", err)
+		}
+		if _, err := privacytypes.UnwrapEncryptedEnvelopeV1(o.UserDisclosurePayload, privacytypes.EnvelopeUserDisclosureV1); err != nil {
+			return fmt.Errorf("invalid encrypted audit user disclosure: %w", err)
+		}
+	default:
+		return fmt.Errorf("invalid audit user disclosure mode")
 	}
 	return nil
 }

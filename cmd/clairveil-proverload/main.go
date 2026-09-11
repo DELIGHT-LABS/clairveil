@@ -105,6 +105,7 @@ func main() {
 	var fixtureBundle string
 	var transferRequestFile string
 	var withdrawRequestFile string
+	var auditRequestFile string
 	var profile string
 	var concurrencyList string
 	var durationValue string
@@ -121,7 +122,8 @@ func main() {
 	flag.StringVar(&fixtureBundle, "fixture-bundle", "", "optional prover example bundle containing transfer and withdraw requests; defaults to generated prover-valid requests")
 	flag.StringVar(&transferRequestFile, "transfer-request", "", "transfer proof request JSON file")
 	flag.StringVar(&withdrawRequestFile, "withdraw-request", "", "withdraw proof request JSON file")
-	flag.StringVar(&profile, "profile", "transfer_only", "load profile: transfer_only, withdraw_only, mixed_80_20")
+	flag.StringVar(&auditRequestFile, "audit-request", "", "V2 audit-field proof request JSON file (complete witness; do not retain or log it)")
+	flag.StringVar(&profile, "profile", "audit_field_only", "load profile: transfer_only, withdraw_only, mixed_80_20, audit_field_only")
 	flag.StringVar(&concurrencyList, "concurrency", "1,2", "comma-separated concurrency levels")
 	flag.StringVar(&durationValue, "duration", "30s", "steady-state duration per concurrency bucket")
 	flag.StringVar(&warmupValue, "warmup", "5s", "warmup duration per concurrency bucket")
@@ -154,7 +156,7 @@ func main() {
 	if err != nil {
 		fatalf("parse concurrency: %v", err)
 	}
-	requests, err := loadRequests(profile, fixtureBundle, transferRequestFile, withdrawRequestFile)
+	requests, err := loadRequests(profile, fixtureBundle, transferRequestFile, withdrawRequestFile, auditRequestFile)
 	if err != nil {
 		fatalf("load requests: %v", err)
 	}
@@ -234,12 +236,20 @@ func parsePositiveInts(value string) ([]int, error) {
 	return result, nil
 }
 
-func loadRequests(profile, fixtureBundle, transferRequestFile, withdrawRequestFile string) ([]requestPayload, error) {
+func loadRequests(profile, fixtureBundle, transferRequestFile, withdrawRequestFile string, auditRequestFiles ...string) ([]requestPayload, error) {
 	configureSDK()
+	auditRequestFile := ""
+	if len(auditRequestFiles) > 0 {
+		auditRequestFile = auditRequestFiles[0]
+	}
 
-	requestsByRoute, err := generatedProverLoadRequests(time.Now().UTC())
-	if err != nil {
-		return nil, err
+	requestsByRoute := make(map[string]requestPayload)
+	if strings.TrimSpace(profile) != "audit_field_only" {
+		generated, err := generatedProverLoadRequests(time.Now().UTC())
+		if err != nil {
+			return nil, err
+		}
+		requestsByRoute = generated
 	}
 	var bundle exampleBundle
 	if strings.TrimSpace(fixtureBundle) != "" {
@@ -280,11 +290,32 @@ func loadRequests(profile, fixtureBundle, transferRequestFile, withdrawRequestFi
 		}
 		requestsByRoute["withdraw"] = requestPayload{Route: "withdraw", Path: privacyprovertransport.WithdrawProofPath, Body: body}
 	}
+	if strings.TrimSpace(auditRequestFile) != "" {
+		body, err := os.ReadFile(auditRequestFile)
+		if err != nil {
+			return nil, fmt.Errorf("read audit request: %w", err)
+		}
+		request, err := privacyprovertransport.DecodeAuditFieldProofRequestJSON(body)
+		if err != nil {
+			return nil, fmt.Errorf("decode V2 audit request: %w", err)
+		}
+		if err := privacyprovertransport.ValidateAuditFieldProofRequest(*request); err != nil {
+			return nil, fmt.Errorf("validate V2 audit request: %w", err)
+		}
+		requestsByRoute["audit_field"] = requestPayload{Route: "audit_field", Path: privacyprovertransport.AuditFieldProofPath, Body: body}
+	}
 
 	return scheduleRequests(profile, requestsByRoute)
 }
 
 func scheduleRequests(profile string, requestsByRoute map[string]requestPayload) ([]requestPayload, error) {
+	if strings.TrimSpace(profile) == "audit_field_only" {
+		audit := requestsByRoute["audit_field"]
+		if len(audit.Body) == 0 {
+			return nil, fmt.Errorf("audit_field_only requires -audit-request with a complete V2 witness")
+		}
+		return []requestPayload{audit}, nil
+	}
 	transfer := requestsByRoute["transfer"]
 	withdraw := requestsByRoute["withdraw"]
 	if len(transfer.Body) == 0 {
@@ -444,7 +475,9 @@ func doRequest(ctx context.Context, client *http.Client, baseURL, bearerToken st
 	if err != nil {
 		return loadResult{Endpoint: baseURL, Err: err}
 	}
-	req.Header.Set("Content-Type", "application/json")
+	if len(payload.Body) > 0 {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	if strings.TrimSpace(bearerToken) != "" {
 		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(bearerToken))
 	}
@@ -474,7 +507,25 @@ func doRequest(ctx context.Context, client *http.Client, baseURL, bearerToken st
 	}
 	if resp.StatusCode != http.StatusOK {
 		result.Err = fmt.Errorf("status %d", resp.StatusCode)
-		result.ResponseBody = truncateString(string(responseBytes), 1024)
+		if payload.Route != "audit_field" {
+			result.ResponseBody = truncateString(string(responseBytes), 1024)
+		}
+		return result
+	}
+	if payload.Route == "audit_field" {
+		request, err := privacyprovertransport.DecodeAuditFieldProofRequestJSON(payload.Body)
+		if err != nil {
+			result.Err = fmt.Errorf("decode V2 audit request for response binding: %w", err)
+			return result
+		}
+		response, err := privacyprovertransport.DecodeAuditFieldProofResponseJSON(responseBytes)
+		if err != nil {
+			result.Err = fmt.Errorf("decode V2 audit response: %w", err)
+			return result
+		}
+		if err := privacyprovertransport.ValidateAuditFieldProofResponseFraming(*request, *response); err != nil {
+			result.Err = fmt.Errorf("validate V2 audit response binding: %w", err)
+		}
 	}
 	return result
 }

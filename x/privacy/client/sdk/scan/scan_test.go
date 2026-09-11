@@ -218,7 +218,7 @@ func TestProcessPrivacyScanBatchOutputDecryptsDespiteMismatchedViewTag(t *testin
 	raw, _, err := privacycrypto.AsymEncryptWithViewTag(mustNoteBytes(t, note), *viewPubKey, commitment, 5)
 	require.NoError(t, err)
 	wrapped := wrapTransferNoteCipherText(t, raw)
-	output := &privacytypes.PrivacyScanOutputV2{Height: 10, GlobalSequence: 8, OutputIndex: 5, EventType: privacytypes.EventTypeBatchTransferV1, Commitment: commitment, Ciphertext: wrapped, ViewTag: []byte{0xff, 0xff}, TxHash: make([]byte, 32)}
+	output := &privacytypes.PrivacyScanOutputV2{Height: 10, GlobalSequence: 8, OutputIndex: 5, EventType: privacytypes.EventTypeBatchTransferV1, Commitment: commitment, Ciphertext: wrapped, ViewTag: []byte{0xff, 0xff}, TxHash: make([]byte, 32), AuditKeyId: "audit-key-id", AuditKeyEpoch: 3}
 	found, err := ProcessPrivacyScanOutput(output, rootSeed, &spendScalar, &viewScalar, false)
 	require.NoError(t, err)
 	require.Equal(t, uint64(31), found.Note.Amount)
@@ -227,6 +227,8 @@ func TestProcessPrivacyScanBatchOutputDecryptsDespiteMismatchedViewTag(t *testin
 	require.NoError(t, err)
 	require.Equal(t, uint64(31), secretFound.Note.Amount)
 	require.Equal(t, found.Nullifier, secretFound.Nullifier)
+	require.Equal(t, "audit-key-id", secretFound.AuditKeyID)
+	require.Equal(t, uint64(3), secretFound.AuditKeyEpoch)
 	_, err = ProcessPrivacyScanOutput(output, rootSeed, &spendScalar, &viewScalar, true)
 	require.Error(t, err)
 }

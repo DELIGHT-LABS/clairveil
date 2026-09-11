@@ -24,10 +24,9 @@ type AuditResourceUsageV1 struct {
 	Kind                    auditfield.Kind
 	InputCount, OutputCount uint64
 	AuxBytes                uint64
-	// Includes maximal wallet projection encodings, transition, refs and keys.
-	// The message/state adapter must calculate this upper bound, not trust a tx.
+	// Includes maximal typed privacy-scan projection encodings. The
+	// message/state adapter must calculate this upper bound, not trust a tx.
 	ProjectedStateBytes uint64
-	TransitionBytes     uint64
 }
 type AuditResourceBoundsV1 struct {
 	MaxCanonicalAuxEnvelopeBytes uint64
@@ -70,8 +69,8 @@ func ComputeAuditGasV1(model AuditGasModelV1, bounds AuditResourceBoundsV1, usag
 	if bounds.MaxCanonicalAuxEnvelopeBytes == 0 || bounds.MaxCanonicalAuxEnvelopeBytes > privacytypes.MaxBatchTransferMessageBytesV1 || canonical > bounds.MaxCanonicalAuxEnvelopeBytes {
 		return fail(fmt.Errorf("audit canonical bytes exceed bounded message capacity"))
 	}
-	if usage.TransitionBytes == 0 || usage.TransitionBytes > 16<<10 || usage.ProjectedStateBytes < usage.TransitionBytes || bounds.MaxProjectedStateBytes == 0 || usage.ProjectedStateBytes > bounds.MaxProjectedStateBytes {
-		return fail(fmt.Errorf("audit projected state or transition bytes exceed bounds"))
+	if bounds.MaxProjectedStateBytes == 0 || usage.ProjectedStateBytes > bounds.MaxProjectedStateBytes {
+		return fail(fmt.Errorf("audit projected scan state bytes exceed bounds"))
 	}
 	// Counts are already bounded; all multiplications/additions below still use
 	// the common checked gas arithmetic, including the two new cost categories.

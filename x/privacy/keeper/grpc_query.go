@@ -314,7 +314,7 @@ func (k Keeper) Reserve(goCtx context.Context, req *types.QueryReserveRequest) (
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	snapshot, err := k.GetReserveSnapshot(ctx, denom)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
 
 	return &types.QueryReserveResponse{
@@ -324,6 +324,7 @@ func (k Keeper) Reserve(goCtx context.Context, req *types.QueryReserveRequest) (
 		TotalWithdrawn:        snapshot.TotalWithdrawn.String(),
 		ExpectedModuleBalance: snapshot.ExpectedModuleBalance.String(),
 		InvariantHolds:        snapshot.InvariantHolds,
+		Liability:             snapshot.Liability.String(), Collateralized: snapshot.Collateralized, Surplus: snapshot.Surplus.String(), Shortfall: snapshot.Shortfall.String(),
 	}, nil
 }
 

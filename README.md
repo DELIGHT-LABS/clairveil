@@ -35,27 +35,34 @@ It packages shielded identity derived from transparent accounts, shielded deposi
 | Item | Current baseline |
 | --- | --- |
 | Publication status | `PUBLICATION_READY_EXPERIMENTAL`; source/reference publication, not production deployment approval |
-| Consensus circuit set | `privacy-note-v1` with state version 2 |
+| Consensus circuit set | `privacy-note-v1-audit-field-v1` with audited V2 runtime state |
 | Fixed client contract | `privacy-fixed-v1`; transfer payload `v5`, proof/prover contract `v2` |
 | Batch surface | `BatchJoinSplit16x32`, `MsgBatchTransfer`; Go SDK/prover/scanner/payroll/CLI reference implementation for batch integration |
-| Upgrade boundary | Earlier artifacts, proof jobs, note/scan caches, and three-circuit genesis are incompatible; use fresh genesis/reset and rescan |
+| Upgrade boundary | Earlier artifacts, proof jobs, note/scan caches, and non-audited genesis are incompatible; use fresh genesis/reset and rescan |
 | Outstanding production gates | Formal trusted setup, external security/circuit audit, signed production artifacts, and downstream chain/product validation |
 
 Documentation describes the code at the same checkout. When integrating a tag or commit, read the docs from that exact ref and verify the release manifest; do not combine `HEAD` documentation with an older binary or tag.
 
 ## Quick Start
 
-Use Git, Make, Go `1.25.12`, Python `3.9+`, and Bash; repository CI/example checks also need Node.js `22+` and npm. Read the [getting started guide](docs/clairveil-getting-started.md) for resource requirements before generating the full circuit set.
+Use Git, Make, Go `1.25.12`, and Bash; repository CI/example checks also need Node.js `22+` and npm. Read the [getting started guide](docs/clairveil-getting-started.md) before using the reviewed verifier artifacts.
 
 ```bash
 git clone https://github.com/DELIGHT-LABS/clairveil.git
 cd clairveil
-make init
-source ~/.clairveil/clairveil.env
-clairveild start
+export CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR=/absolute/path/to/audit-field-artifacts
+export CLAIRVEIL_HOME=${CLAIRVEIL_HOME:-"$HOME/.clairveil"}
+clairveild --home "$CLAIRVEIL_HOME" init node-1 \
+  --chain-id reviewed-chain-1 \
+  --audit-config /absolute/path/to/audit-config.json
+clairveild --home "$CLAIRVEIL_HOME" start \
+  --audit-config /absolute/path/to/audit-config.json \
+  --audit-artifacts "$CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR"
 ```
 
-The [getting started guide](docs/clairveil-getting-started.md) continues through configuration, manual deposit/transfer/disclosure/withdraw, one-proof batch execution, and cleanup.
+The reviewed V4 configuration carries public network/key metadata only. `init` writes small V4 metadata and standard privacy genesis; `start` verifies the local artifacts. There is no replay runtime bundle or offline secret input. The current audit-field bundle remains development-grade, not a production trusted setup.
+
+`clairveil-auditor` can collect a bounded range of original successful privacy transactions and execution results into an atomic local cache, then reuse the existing proof verification, epoch-key decryption, and deposit-rooted lineage logic. Collection and provenance completeness are reported separately; it does not replay the chain or use wallet scan state as an audit ledger.
 
 ## Validation
 
@@ -63,7 +70,7 @@ The [getting started guide](docs/clairveil-getting-started.md) continues through
 make ci
 ```
 
-This runs documentation checks, Go tests, binary builds, and JS example checks without a running node. `make privacy-e2e-smoke` starts its own temporary local chain for the full privacy flow. See the [testing guide](docs/clairveil-testing-guide.md) for port overrides, live batch gates, and release/capacity evidence.
+This runs documentation checks, Go tests, binary builds, and JS example checks without a running node. See the [testing guide](docs/clairveil-testing-guide.md) for focused protocol and capacity evidence.
 
 ## Integration And Documentation
 

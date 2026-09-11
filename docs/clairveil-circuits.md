@@ -1,5 +1,7 @@
 # Clairveil Circuit Guide
 
+> Current runtime: `x/privacy/circuit/audit_field.go` and four audit-field descriptors use the development-only V2 identity. Each request binds its exact artifact hash and final PI23; see [Proverd HTTP API](clairveil-proverd-http-api.md#current-route). NoteV1/BatchJoinSplit relations below are legacy specifications, not live-route guidance.
+
 This document explains what Clairveil's current ZK circuits prove and what they do not prove. The intended readers are core chain developers, prover operators, JS/TS SDK developers, and security reviewers.
 
 The circuits use `gnark` + Groth16 + BN254. Circuit-internal hashing uses MiMC, and note ownership signatures are verified with the gnark twisted-Edwards EdDSA verifier.

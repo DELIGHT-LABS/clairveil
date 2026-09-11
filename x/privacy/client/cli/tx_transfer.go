@@ -40,13 +40,11 @@ const (
 )
 
 type transferRuntimeConfig struct {
-	userPrivacyPolicy             uint32
-	userDisclosureMode            types.UserDisclosureMode
-	userDisclosureTargetPubKey    *crypto_tedwards.PointAffine
-	userDisclosureTargetPubKeyBz  []byte
-	auditDisclosureTargetPubKey   *crypto_tedwards.PointAffine
-	auditDisclosureTargetPubKeyBz []byte
-	disableSelfViewDisclosure     bool
+	userPrivacyPolicy            uint32
+	userDisclosureMode           types.UserDisclosureMode
+	userDisclosureTargetPubKey   *crypto_tedwards.PointAffine
+	userDisclosureTargetPubKeyBz []byte
+	disableSelfViewDisclosure    bool
 }
 
 func transferLatencyFlowProfile(userPrivacyPolicy uint32) string {
@@ -130,13 +128,11 @@ Use the single latest shielded transfer flow.
 				autoDummy,
 				expiresAtUnix,
 				privacytransfer.StepDisclosureConfig{
-					UserPrivacyPolicy:             config.userPrivacyPolicy,
-					UserDisclosureMode:            config.userDisclosureMode,
-					UserDisclosureTargetPubKey:    config.userDisclosureTargetPubKey,
-					UserDisclosureTargetPubKeyBz:  config.userDisclosureTargetPubKeyBz,
-					AuditDisclosureTargetPubKey:   config.auditDisclosureTargetPubKey,
-					AuditDisclosureTargetPubKeyBz: config.auditDisclosureTargetPubKeyBz,
-					DisableSelfViewDisclosure:     config.disableSelfViewDisclosure,
+					UserPrivacyPolicy:            config.userPrivacyPolicy,
+					UserDisclosureMode:           config.userDisclosureMode,
+					UserDisclosureTargetPubKey:   config.userDisclosureTargetPubKey,
+					UserDisclosureTargetPubKeyBz: config.userDisclosureTargetPubKeyBz,
+					DisableSelfViewDisclosure:    config.disableSelfViewDisclosure,
 				},
 				latencyFlow,
 			)
@@ -158,6 +154,7 @@ Use the single latest shielded transfer flow.
 	cmd.Flags().Bool(flagAutoDummy, true, "Automatically create a zero-value dummy note with a preparatory deposit when a single-note split requires it")
 	cmd.Flags().Int64(flagTransferExpiresIn, int64(defaultPreparedWithdrawExpiry/time.Second), "owner intent validity window in seconds")
 	cmd.Flags().Bool(flagRescanWallet, false, "reset the local privacy wallet cache and rescan from genesis before planner note selection")
+	addAuditV2Flags(cmd)
 	flags.AddTxFlagsToCmd(cmd)
 	return cmd
 }
@@ -182,35 +179,22 @@ func resolveTransferRuntimeConfig(cmd *cobra.Command, clientCtx client.Context) 
 		return nil, err
 	}
 
-	config, err := privacytransfer.ResolveRuntimeConfig(
-		context.Background(),
-		privacyprovider.NewTransferQueryProvider(types.NewQueryClient(clientCtx)),
-		privacytransfer.ResolveRuntimeConfigInput{
-			RawPolicy:           rawPolicy,
-			RawDisclosureMode:   rawMode,
-			DisclosurePubKeyHex: disclosurePubKeyHex,
-		},
-	)
+	config, err := privacytransfer.ResolveAuditV2RuntimeConfig(privacytransfer.ResolveRuntimeConfigInput{
+		RawPolicy:           rawPolicy,
+		RawDisclosureMode:   rawMode,
+		DisclosurePubKeyHex: disclosurePubKeyHex,
+	})
 	if err != nil {
 		return nil, err
 	}
 
 	return &transferRuntimeConfig{
-		userPrivacyPolicy:             config.UserPrivacyPolicy,
-		userDisclosureMode:            config.UserDisclosureMode,
-		userDisclosureTargetPubKey:    config.UserDisclosureTargetPubKey,
-		userDisclosureTargetPubKeyBz:  config.UserDisclosureTargetPubKeyBz,
-		auditDisclosureTargetPubKey:   config.AuditDisclosureTargetPubKey,
-		auditDisclosureTargetPubKeyBz: config.AuditDisclosureTargetPubKeyBz,
-		disableSelfViewDisclosure:     disableSelfViewDisclosure,
+		userPrivacyPolicy:            config.UserPrivacyPolicy,
+		userDisclosureMode:           config.UserDisclosureMode,
+		userDisclosureTargetPubKey:   config.UserDisclosureTargetPubKey,
+		userDisclosureTargetPubKeyBz: config.UserDisclosureTargetPubKeyBz,
+		disableSelfViewDisclosure:    disableSelfViewDisclosure,
 	}, nil
-}
-
-func queryAuditDisclosureTarget(clientCtx client.Context) (*crypto_tedwards.PointAffine, []byte, error) {
-	return privacytransfer.ResolveAuditDisclosureTarget(
-		context.Background(),
-		privacyprovider.NewTransferQueryProvider(types.NewQueryClient(clientCtx)),
-	)
 }
 
 type transferExecutionIdentity struct {
@@ -297,8 +281,13 @@ func executeTransferFlowWithIdentity(
 	if err != nil {
 		return nil, err
 	}
-
-	return privacytransfer.ExecuteTransfer(
+	runtime, err := resolveAuditV2Runtime(cmd, clientCtx)
+	if err != nil {
+		return nil, err
+	}
+	runtime.expiresAt = expiresAtUnix
+	executor := &auditTransferStepExecutor{cmd: cmd, clientCtx: clientCtx, identity: identity, runtime: runtime, disclosure: disclosure, denom: targetDenom, latencyFlow: latencyFlow}
+	_, err = privacytransfer.ExecuteRecursiveTransfer(
 		cmd.Context(),
 		&transferRecursiveNoteSource{
 			clientCtx:   clientCtx,
@@ -310,38 +299,83 @@ func executeTransferFlowWithIdentity(
 			cmd:       cmd,
 			clientCtx: clientCtx,
 		},
+		executor,
 		transferRecursiveBlockWaiter{clientCtx: clientCtx},
 		transferRecursiveObserver{cmd: cmd},
-		privacytransfer.ExecuteTransferDependencies{
-			MerklePaths: privacyprovider.NewTransferQueryProvider(types.NewQueryClient(clientCtx)),
-			Signer:      manualTransferOwnerIntentSigner{scalar: identity.scalar, pubKey: identity.spendPubKey},
-			Artifacts:   transferJoinSplitArtifactProvider{},
-			Runner:      transferJoinSplitProofRunner{logWriter: privacyCommandLogWriter(cmd), latencyFlow: latencyFlow},
-			Broadcaster: transferMessageBroadcaster{
-				broadcaster: privacyprovider.CosmosTxBroadcaster{
-					ClientContext: clientCtx,
-					Flags:         cmd.Flags(),
-					FromName:      clientCtx.GetFromName(),
-				},
-				latencyFlow: latencyFlow,
-			},
-		},
-		privacytransfer.ExecuteTransferInput{
-			Creator:              clientCtx.GetFromAddress().String(),
-			ChainID:              clientCtx.ChainID,
-			ExpiresAtUnix:        expiresAtUnix,
-			RecipientSpendPubKey: finalRecipientSpend,
-			RecipientViewPubKey:  finalRecipientView,
-			SenderSpendPubKey:    identity.spendPubKey,
-			SenderViewPubKey:     identity.viewPubKey,
-			TransferAmount:       targetAmount,
-			TransferDenom:        targetDenom,
-			Disclosure:           disclosure,
-			StartStep:            1,
-			MaxSteps:             maxTransferPlanSteps,
-			AutoDummy:            autoDummy,
+		privacytransfer.ExecuteRecursiveTransferInput{
+			FinalRecipientSpendPubKey: finalRecipientSpend,
+			FinalRecipientViewPubKey:  finalRecipientView,
+			SelfSpendPubKey:           identity.spendPubKey,
+			SelfViewPubKey:            identity.viewPubKey,
+			TargetAmount:              targetAmount,
+			TargetDenom:               targetDenom,
+			StartStep:                 1,
+			MaxSteps:                  maxTransferPlanSteps,
+			AutoDummy:                 autoDummy,
 		},
 	)
+	if err != nil {
+		return nil, err
+	}
+	if executor.lastResponse == nil {
+		return nil, fmt.Errorf("recursive transfer did not return a final tx response")
+	}
+	return executor.lastResponse, nil
+}
+
+type auditTransferStepExecutor struct {
+	cmd          *cobra.Command
+	clientCtx    client.Context
+	identity     *transferExecutionIdentity
+	runtime      *auditV2Runtime
+	disclosure   privacytransfer.StepDisclosureConfig
+	denom        string
+	latencyFlow  *privacyLatencyFlow
+	lastResponse *sdk.TxResponse
+}
+
+func (e *auditTransferStepExecutor) ExecuteTransferStep(ctx context.Context, decision *privacytransfer.RecursivePlannerDecision) (*privacytransfer.RecursiveTransferTxResult, error) {
+	if e == nil || decision == nil {
+		return nil, fmt.Errorf("audit transfer step is required")
+	}
+	disclosure := privacytransfer.EffectiveStepDisclosureConfig(e.disclosure, decision.IsFinal)
+	snapshot, err := e.runtime.snapshotSource(ctx)
+	if err != nil {
+		return nil, err
+	}
+	prepared, full, err := privacytransfer.PrepareAuditV2Transfer(ctx, privacyprovider.NewTransferQueryProvider(types.NewQueryClient(e.clientCtx)), snapshot,
+		e.clientCtx.GetFromAddress().String(), e.runtime.expiresAt, privacytransfer.PrepareJoinSplitInput{
+			Inputs: decision.Inputs, RecipientSpendPubKey: decision.RecipientSpendPubKey, RecipientViewPubKey: decision.RecipientViewPubKey,
+			TransferAmount: decision.SendAmount, SenderSpendPubKey: e.identity.spendPubKey, SenderViewPubKey: e.identity.viewPubKey,
+		}, e.denom, privacytransfer.AuditV2DisclosureConfig{
+			UserPrivacyPolicy: disclosure.UserPrivacyPolicy, UserDisclosureMode: disclosure.UserDisclosureMode,
+			UserDisclosureTargetPubKey: disclosure.UserDisclosureTargetPubKey, UserDisclosureTargetPubKeyBz: disclosure.UserDisclosureTargetPubKeyBz,
+			DisableSelfViewDisclosure: disclosure.DisableSelfViewDisclosure, SelfViewDisclosureTargetPubKey: disclosure.SelfViewDisclosureTargetPubKey,
+		}, func(intent *big.Int) ([]byte, error) {
+			return manualSign(intent, e.identity.scalar, e.identity.spendPubKey)
+		})
+	if err != nil {
+		return nil, err
+	}
+	msg, err := e.runtime.prove(e.cmd, prepared, full)
+	if err != nil {
+		return nil, err
+	}
+	startedAt := time.Now()
+	response, err := (privacyprovider.CosmosTxBroadcaster{ClientContext: e.clientCtx, Flags: e.cmd.Flags(), FromName: e.clientCtx.GetFromName()}).BroadcastSDKMessage(ctx, msg)
+	txHash := ""
+	if response != nil {
+		txHash = response.TxHash
+	}
+	e.latencyFlow.recordSubmit(startedAt, txHash, err)
+	if err != nil {
+		return nil, err
+	}
+	if response.Code != 0 {
+		return nil, fmt.Errorf("tx failed with code %d: %s", response.Code, response.RawLog)
+	}
+	e.lastResponse = response
+	return &privacytransfer.RecursiveTransferTxResult{TxHash: response.TxHash, Height: response.Height}, nil
 }
 
 func resolveTransferExpiresAtUnix(cmd *cobra.Command) (int64, error) {

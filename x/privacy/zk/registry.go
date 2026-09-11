@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/consensys/gnark-crypto/ecc"
+	bn254twistededwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/constraint"
 
@@ -106,6 +107,9 @@ func parseStrictEnvironmentBool(name, raw string) (bool, error) {
 }
 
 func NewArtifactRegistry(config ArtifactRegistryConfig) (*ArtifactRegistry, error) {
+	// Deserialized BN254 R1CS constraints may invoke ScalarMultiplication before
+	// the curve's lazy global parameters have otherwise been initialized.
+	_ = bn254twistededwards.GetEdwardsCurve()
 	dir := strings.TrimSpace(config.ArtifactDir)
 	if dir == "" {
 		dir = "."

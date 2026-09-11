@@ -9,6 +9,7 @@ build:
 	go build ./cmd/clairveild
 	go build ./cmd/clairveil-setup
 	go build ./cmd/clairveil-verify
+	go build ./cmd/clairveil-auditor
 	go build ./cmd/clairveil-proverd
 	go build ./cmd/clairveil-benchreport
 	go build ./cmd/clairveil-proverload
@@ -24,20 +25,13 @@ install: build
 
 .PHONY: init
 init: install
-	./scripts/init-localnet.sh
+	@echo "Use 'clairveild init --audit-config <path> --chain-id <id>' to initialize a node."
 
 .PHONY: proto
 proto:
 	./scripts/generate-proto.sh
 
 .PHONY: localnet-smoke
-localnet-smoke:
-	./scripts/localnet-smoke.sh
-
-.PHONY: privacy-e2e-smoke
-privacy-e2e-smoke:
-	./scripts/privacy-e2e-smoke.sh
-
 .PHONY: privacy-batch-joinsplit-localnet
 privacy-batch-joinsplit-localnet:
 	./scripts/privacy-batch-joinsplit-localnet.sh
@@ -130,8 +124,6 @@ ci: check
 release-check:
 	$(MAKE) ci
 	$(MAKE) vulncheck
-	$(MAKE) localnet-smoke
-	$(MAKE) privacy-e2e-smoke
 	$(MAKE) privacy-batch-joinsplit-localnet
 	RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 $(MAKE) privacy-bulk-readiness-check
 

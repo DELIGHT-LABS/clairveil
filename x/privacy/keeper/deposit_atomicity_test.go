@@ -442,7 +442,7 @@ func TestDepositWithFunderMutationFailuresRollback(t *testing.T) {
 
 		_, err := k.DepositWithFunder(ctx, cloneDepositMessage(baseMsg), funder)
 		require.ErrorContains(t, err, "failed to record privacy reserve deposit")
-		require.ErrorContains(t, err, "stored reserve amount is invalid")
+		require.ErrorContains(t, err, "invalid reserve state")
 		require.Equal(t, 1, bankKeeper.fromAccountToModuleCalls)
 		requireNoCommittedDeposit(t, k, ctx, bankKeeper, actor, funder, 50, 20, baseMsg.NoteCommitment)
 		stored, getErr := store.Get(reserveKey)

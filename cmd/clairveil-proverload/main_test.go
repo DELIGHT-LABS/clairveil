@@ -92,6 +92,34 @@ func TestLoadRequestsGeneratesTransportValidDefaults(t *testing.T) {
 	}
 }
 
+func TestAuditFieldOnlyRequiresCompleteV2Request(t *testing.T) {
+	if _, err := loadRequests("audit_field_only", "", "", ""); err == nil || !strings.Contains(err.Error(), "complete V2 witness") {
+		t.Fatalf("expected missing V2 audit request error, got %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "audit-request.json")
+	if err := os.WriteFile(path, []byte(`{"version":"v1"}`), 0o600); err != nil {
+		t.Fatalf("write malformed audit request: %v", err)
+	}
+	if _, err := loadRequests("audit_field_only", "", "", "", path); err == nil || !strings.Contains(err.Error(), "V2 audit request") {
+		t.Fatalf("expected strict V2 audit request decode error, got %v", err)
+	}
+}
+
+func TestAuditFieldRequestDoesNotExposeErrorBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"message":"witness must not be logged"}`))
+	}))
+	defer server.Close()
+
+	result := doRequest(context.Background(), server.Client(), server.URL, "", requestPayload{
+		Route: "audit_field", Path: privacyprovertransport.AuditFieldProofPath, Body: []byte(`{}`),
+	})
+	if result.Err == nil || result.ResponseBody != "" {
+		t.Fatalf("audit request error body must be redacted: %+v", result)
+	}
+}
+
 func TestPreflightRequestsFailsBeforeMeasuredLoad(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)

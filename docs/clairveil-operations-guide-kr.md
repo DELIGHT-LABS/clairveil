@@ -19,7 +19,7 @@
 
 Production-like node는 genesis의 audit master pubkey, `strict` ZK artifact preflight, 올바른 bank module account로 등록한 privacy module을 갖춰야 합니다. 또한 `tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom=**}`, `assets/by_denom/{canonical_denom=**}`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, batch `nullifiers` query를 노출하고 release 전 snapshot/restore rehearsal을 완료해야 합니다.
 
-`Msg/BatchTransfer`는 four-circuit `privacy-note-v1` consensus identity와 일치하는 local batch VK가 있을 때만 활성화합니다.
+V2 audit transfer는 four-circuit `privacy-note-v1-audit-field-v1` consensus identity와 일치하는 local audit-field VK가 있을 때만 활성화합니다.
 
 ```bash
 set -a
@@ -32,21 +32,15 @@ clairveild start --minimum-gas-prices 0uclair
 
 ## 3. ZK artifact 운영
 
-`clairveil-setup`은 R1CS/PK/VK와 checksum manifest를 생성합니다.
+`clairveil-setup`은 audit-field R1CS/PK/VK와 checksum manifest를 생성합니다. 지원 flag는 `--out`, `--development`뿐입니다.
 
 ```bash
-clairveil-setup --out artifacts/privacy
+clairveil-setup --out artifacts/privacy --development
 ```
 
-Selective development rotation은 complete하고 checksum-valid한 set과 explicit overwrite를 요구합니다. `DISCLOSURE-BLINDING-SEPARATION` JoinSplit relation 변경은 아래처럼 실행합니다.
+`--circuit`, `--overwrite`는 제거되었습니다. 이전 selective JoinSplit rotation과 hash는 실행 가능한 setup 절차가 아닌 legacy history입니다. 새 directory에 fresh development bundle을 만들고 fresh genesis에서 binding하며 strict preflight를 요구하세요. Old manifest와 섞으면 안 됩니다.
 
-```bash
-clairveil-setup --out artifacts/privacy --circuit joinsplit --overwrite
-```
-
-Current JoinSplit development identity는 R1CS `135528343084d9395ac3b59f87eb32661471751d936424c6aa3bc369483292d4`, PK `b41790cd96c41b78d7f7ca30f81cb76f4bdb93371bbf0b9437642348306c16d7`, VK/consensus identity `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`입니다. 회전 뒤 old JoinSplit proof/job을 폐기하고 exact manifest를 fresh genesis/reset으로 설치하며 strict preflight를 요구합니다. Old/new consensus/file identity를 섞거나 이 변경 때문에 Batch를 회전하면 안 됩니다.
-
-`privacy-note-v1`은 `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1` exact order의 descriptor를 요구합니다. Validator는 consensus identity를 비교하고 네 VK만 load하며 prover readiness는 선택한 R1CS/PK pair만 lazy load합니다. `privacy_zk_manifest.json` schema `v2`는 ordered descriptor, VK SHA-256, public-input schema SHA-256을 포함해 `CircuitSetIdentity` schema `v1`과 일치해야 합니다. Environment checksum은 추가 consistency check일 뿐 consensus identity를 override할 수 없고, mismatch는 startup/readiness를 실패시켜야 합니다.
+`privacy-note-v1-audit-field-v1`은 `deposit-audit-field-v1`, `spend-audit-field-v1`, `joinsplit-2x2-audit-field-v1`, `batch-joinsplit-16x32-audit-field-v1` exact order의 descriptor를 요구합니다. Validator는 consensus identity를 비교하고 네 VK만 load하며 prover readiness는 선택한 R1CS/PK pair만 lazy load합니다. `privacy_zk_manifest.json` schema `v2`는 ordered descriptor, VK SHA-256, public-input schema SHA-256을 포함해 `CircuitSetIdentity` schema `v1`과 일치해야 합니다. Environment checksum은 추가 consistency check일 뿐 consensus identity를 override할 수 없고, mismatch는 startup/readiness를 실패시켜야 합니다.
 
 Repository artifact는 development artifact이며 formal trusted setup이나 production distribution이 아닙니다. Production release는 circuit source commit, generation command, checksum manifest, signer를 기록하고 artifact를 read-only mount하며 `CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict`를 사용하고 stale artifact 또는 chain verifier mismatch를 release blocker로 처리해야 합니다. 기록된 batch artifact hash와 resource history는 [clairveil-batch-joinsplit-16x32-kr.md](clairveil-batch-joinsplit-16x32-kr.md)에 남아 있습니다.
 
@@ -93,7 +87,7 @@ Snapshot, restore, migration 뒤에는 `Leaf/*`, `MerkleNode/*`, `CommitmentInde
 
 Configured prover endpoint 하나를 사용하고 automatic failover를 비활성화합니다. Timeout/response check 뒤 같은 endpoint를 retry하는 것은 허용됩니다. Witness-bearing request를 다른 endpoint로 보내려면 추가 operator와 privacy boundary를 명시한 사용자 또는 product-policy의 explicit opt-in이 필요하며 availability만으로 disclosure 범위를 넓힐 수 없습니다.
 
-현재 contract는 transfer payload `v5`와 request/response/proof `v2`, withdraw prover/final payload와 request/response/proof `v2`, batch payload `batch-transfer-payload-v1`·proof `batch-transfer-proof-v1`·request/response `v1`, deposit payload/proof/request/response `v1`, disclosure plaintext/query `privacy-fixed-v1`입니다. Legacy input은 거부합니다. Request body, bearer credential, signature, disclosure plaintext/blinding, proof를 log, trace, crash dump, analytics에서 제외합니다.
+현재 contract는 `/v2/prover/audit-field`, request/response envelope `v1`, `privacy-note-v1-audit-field-v1`, base64 byte slice, final PI23입니다. V2 message 전에 exact local artifact identity로 response를 확인해야 합니다. Transfer/withdraw/batch/deposit V1 자료는 V2 input이 아닌 legacy evidence입니다. Request body, bearer credential, signature, disclosure plaintext/blinding, proof를 log, trace, crash dump, analytics에서 제외합니다.
 
 ### Production HTTP 경계
 
@@ -105,19 +99,17 @@ Edge와 application body limit을 맞춥니다. `max_request_bytes=8388608`(8 Mi
 
 ### Runtime, readiness, admission
 
-`proverservice.DefaultRuntimeInfo()`는 complete four-route reference daemon을 설명합니다. `/healthz`, `/readyz`는 configured non-nil prover에서 advertised `routes`, `circuits`를 산출하므로 partial `provertransport.ProverSet` compatibility constructor는 미구성 route를 advertise하면 안 됩니다. `NewReferenceHandler`는 complete reference inventory를 구성합니다. Manifest, VK, public-input schema, supplied consensus metadata가 chain과 정확히 일치하지 않으면 readiness는 fail closed해야 합니다.
+`clairveil-proverd`는 audit-field V2 route만 노출합니다. `/healthz`, `/readyz`는 configured prover에서 advertised `routes`, `circuits`를 산출합니다. Development-grade artifact manifest, VK, public-input schema, supplied consensus identity가 runtime과 정확히 일치하지 않으면 readiness는 fail closed합니다.
 
 Reference admission default는 circuit별 `max_in_flight=1`, `max_queued=4`입니다. Queue saturation은 retryable busy response를 반환합니다. Request/witness content 없이 in-flight, queued, rejected, canceled, queue-wait, prove-time, CPU, RSS, route/status, latency, auth failure, body-limit rejection, readiness/preflight failure를 export합니다.
 
 Context cancellation은 caller wait를 끝내지만 실행 중인 in-process gnark proof는 반환할 때까지 계속되고 permit을 유지할 수 있습니다. Reference service는 solver를 preempt하지 못합니다. Hard cancellation 또는 OOM containment에는 isolated, memory-limited worker process를 사용하고 종료합니다.
 
-Bounded reference service는 BatchJoinSplit16x32를 `POST /v1/proofs/batch-transfer`에서만 노출합니다. `MsgBatchTransfer` witness를 generic 또는 JoinSplit endpoint로 보내면 안 됩니다. 동일한 TLS/auth, positive body limit, circuit별 admission, payload binding, artifact-role control을 유지합니다. Production 16x32 public-schema 순서는 `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`이며 ad-hoc remote endpoint를 허용하지 않습니다.
+BatchJoinSplit16x32의 `/v1/proofs/batch-transfer` 경계는 legacy-only입니다. Current V2는 선택한 audit-field `circuit_id`와 `/v2/prover/audit-field`를 사용하며 ad-hoc endpoint를 허용하거나 legacy batch measurement를 current runtime evidence로 만들지 않습니다.
 
-### Canonical deposit prover route
+### Canonical audit-field V2 prover route
 
-`POST /v1/prover/deposit`은 bounded service handler로만 노출하고 deposit artifact를 readiness에 포함합니다. Versioned witness(receiver public key, amount, asset ID, randomness, commitment)만 받고 encrypted note, creator, denom, memo, seed, chain ID는 받지 않습니다. Bearer auth, positive gzip/body limit, circuit별 admission, redacted logging, `Cache-Control: no-store`를 적용합니다. `Content-Type: application/json`을 보내며 기존 `v1` client 호환성을 위해 누락은 계속 허용하지만 unsupported supplied type은 `415`를 반환합니다. Invalid witness/version은 `400`, validated request가 proving에 도달한 뒤의 failure만 `500`, `405`는 `Allow: POST`입니다.
-
-JS SDK는 request timeout을 사용하고 response version과 route-specific binding을 검증해야 합니다. Transfer, withdraw, batch는 payload/proof hash를, deposit은 재계산한 witness commitment와 nested proof version을 검증합니다. Authoritative route contract는 [HTTP API의 deposit 절](clairveil-proverd-http-api-kr.md#deposit)입니다.
+`POST /v2/prover/audit-field`만 bounded service handler로 노출합니다. Complete witness와 PI23을 받으므로 bearer auth, positive gzip/body limit, audit-field admission, redacted logging, `Cache-Control: no-store`를 적용합니다. Invalid framing/version은 `400`, validated request가 proving에 도달한 뒤의 failure만 `500`입니다. SDK는 finite timeout을 사용하고 반복 response field를 확인한 뒤 exact local artifact identity와 final PI23으로 verify합니다. Authoritative route contract는 [HTTP API](clairveil-proverd-http-api-kr.md)입니다.
 
 ## 7. Audit key 운영
 

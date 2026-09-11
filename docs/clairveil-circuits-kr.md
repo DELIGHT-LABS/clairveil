@@ -1,5 +1,7 @@
 # Clairveil 회로 설명
 
+> 현재 runtime: `x/privacy/circuit/audit_field.go`와 네 audit-field descriptor가 development-only V2 identity를 사용합니다. 각 request는 exact artifact hash와 final PI23을 bind하며 [Proverd HTTP API](clairveil-proverd-http-api-kr.md#현재-route)를 참고합니다. 아래 NoteV1/BatchJoinSplit relation은 live-route 안내가 아닌 legacy specification입니다.
+
 이 문서는 Clairveil의 ZK 회로가 무엇을 증명하고, 무엇을 증명하지 않는지 설명합니다. 대상 독자는 core chain 개발자, prover 운영자, JS/TS SDK 개발자, 보안 리뷰어입니다.
 
 회로는 `gnark` + Groth16 + BN254를 사용합니다. Hash는 circuit 내부에서 MiMC를 사용하고, note 소유권 서명 검증에는 gnark twisted Edwards EdDSA verifier를 사용합니다.

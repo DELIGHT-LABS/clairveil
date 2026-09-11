@@ -26,6 +26,9 @@ func (k Keeper) DepositWithFunder(
 	msg *types.MsgDeposit,
 	funder sdk.AccAddress,
 ) (*types.MsgDepositResponse, error) {
+	if k.audit != nil {
+		return nil, fmt.Errorf("legacy deposit capability is disabled")
+	}
 	if err := msg.ValidateBasic(); err != nil {
 		return nil, err
 	}
@@ -51,6 +54,9 @@ func (k Keeper) depositWithValidatedFunder(
 	funder sdk.AccAddress,
 	verifyModuleBalanceDelta bool,
 ) (*types.MsgDepositResponse, error) {
+	if k.audit != nil {
+		return nil, fmt.Errorf("legacy deposit capability is disabled")
+	}
 	coin, err := sdk.ParseCoinNormalized(msg.Amount)
 	if err != nil {
 		return nil, err

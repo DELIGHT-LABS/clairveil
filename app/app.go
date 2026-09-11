@@ -3,6 +3,8 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	upgradekeeper "github.com/cosmos/cosmos-sdk/x/upgrade/keeper"
+	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 	"io"
 	"maps"
 	"os"
@@ -73,7 +75,9 @@ import (
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/cosmos/cosmos-sdk/x/tx/signing"
+	upgrademodule "github.com/cosmos/cosmos-sdk/x/upgrade"
 
+	"github.com/DELIGHT-LABS/clairveil/internal/auditbank"
 	clairveiltypes "github.com/DELIGHT-LABS/clairveil/types"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy"
 	privacykeeper "github.com/DELIGHT-LABS/clairveil/x/privacy/keeper"
@@ -117,7 +121,7 @@ type ClairveilApp struct {
 	tkeys map[string]*storetypes.TransientStoreKey
 
 	AccountKeeper         authkeeper.AccountKeeper
-	BankKeeper            bankkeeper.Keeper
+	BankKeeper            auditbank.Facade
 	StakingKeeper         *stakingkeeper.Keeper
 	SlashingKeeper        slashingkeeper.Keeper
 	MintKeeper            mintkeeper.Keeper
@@ -126,20 +130,54 @@ type ClairveilApp struct {
 	ParamsKeeper          paramskeeper.Keeper
 	ConsensusParamsKeeper consensusparamkeeper.Keeper
 	PrivacyKeeper         privacykeeper.Keeper
+	auditUpgradeKeeper    *upgradekeeper.Keeper
+	auditValidateBank     func(sdk.Context) error
+	genesisTxHandler      *scopedGenesisTxHandler
 
 	ModuleManager      *module.Manager
 	BasicModuleManager module.BasicManager
 	configurator       module.Configurator
 }
 
-func NewClairveilApp(
-	logger log.Logger,
-	db dbm.DB,
-	traceStore io.Writer,
-	loadLatest bool,
-	appOpts servertypes.AppOptions,
-	baseAppOptions ...func(*baseapp.BaseApp),
-) *ClairveilApp {
+// NewClientCodec is an offline command-codec bootstrap only.
+type ClientCodec struct {
+	BasicModuleManager module.BasicManager
+	AppCodec           codec.Codec
+	InterfaceRegistry  codectypes.InterfaceRegistry
+	LegacyAmino        *codec.LegacyAmino
+	TxConfig           client.TxConfig
+}
+
+// NewClientCodec constructs only offline CLI encoding and basic-module
+// metadata. It owns no database, keeper, bank facade, or server handler.
+func NewClientCodec() *ClientCodec {
+	interfaceRegistry, err := codectypes.NewInterfaceRegistryWithOptions(codectypes.InterfaceRegistryOptions{ProtoFiles: proto.HybridResolver, SigningOptions: signing.Options{AddressCodec: address.Bech32Codec{Bech32Prefix: sdk.GetConfig().GetBech32AccountAddrPrefix()}, ValidatorAddressCodec: address.Bech32Codec{Bech32Prefix: sdk.GetConfig().GetBech32ValidatorAddrPrefix()}}})
+	if err != nil {
+		panic(err)
+	}
+	appCodec := codec.NewProtoCodec(interfaceRegistry)
+	legacyAmino := codec.NewLegacyAmino()
+	txConfig := authtx.NewTxConfig(appCodec, authtx.DefaultSignModes)
+	txConfig, err = authtx.NewTxConfigWithOptions(appCodec, authtx.ConfigOptions{EnabledSignModes: authtx.DefaultSignModes, ProtoDecoder: auditTxDecoder(txConfig.TxDecoder(), interfaceRegistry)})
+	if err != nil {
+		panic(err)
+	}
+	std.RegisterLegacyAminoCodec(legacyAmino)
+	std.RegisterInterfaces(interfaceRegistry)
+	// Command wiring keeps public Cosmos module metadata and V2 privacy types,
+	// but deliberately instantiates no keeper or server handler.
+	basic := module.NewBasicManager(genutil.NewAppModuleBasic(genutiltypes.DefaultMessageValidator), auth.AppModuleBasic{}, vesting.AppModuleBasic{}, bank.AppModuleBasic{}, distr.AppModuleBasic{}, gov.NewAppModuleBasic([]govclient.ProposalHandler{paramsclient.ProposalHandler}), mint.AppModuleBasic{}, slashing.AppModuleBasic{}, staking.AppModuleBasic{}, params.AppModuleBasic{}, consensus.AppModuleBasic{}, upgrademodule.NewAppModule(nil, authcodec.NewBech32Codec(clairveiltypes.Bech32PrefixAccAddr)), privacy.AppModuleBasic{AuditRuntime: true})
+	basic.RegisterLegacyAminoCodec(legacyAmino)
+	basic.RegisterInterfaces(interfaceRegistry)
+	return &ClientCodec{BasicModuleManager: basic, AppCodec: appCodec, InterfaceRegistry: interfaceRegistry, LegacyAmino: legacyAmino, TxConfig: txConfig}
+}
+
+// NewAuditFieldApp composes the audit-field v2 runtime. The artifact manifest
+// remains development-grade until an authenticated production setup exists.
+func NewAuditFieldApp(logger log.Logger, db dbm.DB, traceStore io.Writer, appOpts servertypes.AppOptions, config privacykeeper.AuditRuntimeConfig, baseAppOptions ...func(*baseapp.BaseApp)) *ClairveilApp {
+	return newClairveilApp(logger, db, traceStore, false, appOpts, config, baseAppOptions...)
+}
+func newClairveilApp(logger log.Logger, db dbm.DB, traceStore io.Writer, loadLatest bool, appOpts servertypes.AppOptions, auditConfig privacykeeper.AuditRuntimeConfig, baseAppOptions ...func(*baseapp.BaseApp)) *ClairveilApp {
 	interfaceRegistry, err := codectypes.NewInterfaceRegistryWithOptions(codectypes.InterfaceRegistryOptions{
 		ProtoFiles: proto.HybridResolver,
 		SigningOptions: signing.Options{
@@ -158,6 +196,10 @@ func NewClairveilApp(
 	appCodec := codec.NewProtoCodec(interfaceRegistry)
 	legacyAmino := codec.NewLegacyAmino()
 	txConfig := authtx.NewTxConfig(appCodec, authtx.DefaultSignModes)
+	txConfig, err = authtx.NewTxConfigWithOptions(appCodec, authtx.ConfigOptions{EnabledSignModes: authtx.DefaultSignModes, ProtoDecoder: auditTxDecoder(txConfig.TxDecoder(), interfaceRegistry)})
+	if err != nil {
+		panic(err)
+	}
 
 	std.RegisterLegacyAminoCodec(legacyAmino)
 	std.RegisterInterfaces(interfaceRegistry)
@@ -183,6 +225,7 @@ func NewClairveilApp(
 		consensusparamtypes.StoreKey,
 		privacytypes.StoreKey,
 	)
+	keys[upgradetypes.StoreKey] = storetypes.NewKVStoreKey(upgradetypes.StoreKey)
 	if err := bApp.RegisterStreamingServices(appOpts, keys); err != nil {
 		panic(err)
 	}
@@ -197,6 +240,7 @@ func NewClairveilApp(
 		interfaceRegistry: interfaceRegistry,
 		keys:              keys,
 		tkeys:             tkeys,
+		genesisTxHandler:  newScopedGenesisTxHandler(bApp),
 	}
 
 	app.ParamsKeeper = initParamsKeeper(appCodec, legacyAmino, keys[paramstypes.StoreKey], tkeys[paramstypes.TStoreKey])
@@ -219,7 +263,7 @@ func NewClairveilApp(
 		clairveiltypes.Bech32PrefixAccAddr,
 		govModuleAddress,
 	)
-	app.BankKeeper = bankkeeper.NewBaseKeeper(
+	rawBank := bankkeeper.NewBaseKeeper(
 		appCodec,
 		runtime.NewKVStoreService(keys[banktypes.StoreKey]),
 		app.AccountKeeper,
@@ -227,6 +271,19 @@ func NewClairveilApp(
 		govModuleAddress,
 		logger,
 	)
+	app.BankKeeper = auditbank.NewFacade(rawBank, true)
+	app.auditUpgradeKeeper = upgradekeeper.NewKeeper(nil, runtime.NewKVStoreService(keys[upgradetypes.StoreKey]), appCodec, DefaultNodeHome, nil, govModuleAddress)
+	app.auditValidateBank = func(ctx sdk.Context) error {
+		var invalid error
+		rawBank.IterateAllBalances(ctx, func(addr sdk.AccAddress, coin sdk.Coin) bool {
+			if len(addr) == 0 || !coin.IsValid() || coin.Amount.IsNegative() || coin.Amount.BigInt().BitLen() > 256 {
+				invalid = fmt.Errorf("invalid initialized bank balance")
+				return true
+			}
+			return false
+		})
+		return invalid
+	}
 	app.StakingKeeper = stakingkeeper.NewKeeper(
 		appCodec,
 		runtime.NewKVStoreService(keys[stakingtypes.StoreKey]),
@@ -284,11 +341,17 @@ func NewClairveilApp(
 		app.BankKeeper,
 	)
 
+	config := auditConfig
+	config.PrincipalAdapter = auditbank.NewPrincipal(rawBank)
+	if err := app.PrivacyKeeper.ConfigureAuditRuntime(config); err != nil {
+		panic(err)
+	}
+
 	app.ModuleManager = module.NewManager(
-		genutil.NewAppModule(app.AccountKeeper, app.StakingKeeper, app, txConfig),
+		genutil.NewAppModule(app.AccountKeeper, app.StakingKeeper, app.genesisTxHandler, txConfig),
 		auth.NewAppModule(appCodec, app.AccountKeeper, authsims.RandomGenesisAccounts, app.GetSubspace(authtypes.ModuleName)),
 		vesting.NewAppModule(app.AccountKeeper, app.BankKeeper),
-		bank.NewAppModule(appCodec, app.BankKeeper, app.AccountKeeper, app.GetSubspace(banktypes.ModuleName)),
+		bank.NewAppModule(appCodec, rawBank, app.AccountKeeper, app.GetSubspace(banktypes.ModuleName)),
 		gov.NewAppModule(appCodec, &app.GovKeeper, app.AccountKeeper, app.BankKeeper, app.GetSubspace(govtypes.ModuleName)),
 		mint.NewAppModule(appCodec, app.MintKeeper, app.AccountKeeper, nil, app.GetSubspace(minttypes.ModuleName)),
 		slashing.NewAppModule(appCodec, app.SlashingKeeper, app.AccountKeeper, app.BankKeeper, app.StakingKeeper, app.GetSubspace(slashingtypes.ModuleName), app.interfaceRegistry),
@@ -298,6 +361,7 @@ func NewClairveilApp(
 		consensus.NewAppModule(appCodec, app.ConsensusParamsKeeper),
 		privacy.NewAppModule(appCodec, app.PrivacyKeeper),
 	)
+	app.ModuleManager.Modules[upgradetypes.ModuleName] = upgrademodule.NewAppModule(app.auditUpgradeKeeper, authcodec.NewBech32Codec(clairveiltypes.Bech32PrefixAccAddr))
 	app.BasicModuleManager = module.NewBasicManagerFromManager(
 		app.ModuleManager,
 		map[string]module.AppModuleBasic{
@@ -353,6 +417,7 @@ func NewClairveilApp(
 		consensusparamtypes.ModuleName,
 		privacytypes.ModuleName,
 	}
+	genesisModuleOrder = append([]string{privacytypes.ModuleName, upgradetypes.ModuleName}, genesisModuleOrder[:len(genesisModuleOrder)-1]...)
 	app.ModuleManager.SetOrderInitGenesis(genesisModuleOrder...)
 	app.ModuleManager.SetOrderExportGenesis(genesisModuleOrder...)
 
@@ -365,6 +430,7 @@ func NewClairveilApp(
 	app.MountTransientStores(tkeys)
 
 	app.SetInitChainer(app.InitChainer)
+	app.SetPreBlocker(app.UpgradePreBlocker)
 	app.SetBeginBlocker(app.BeginBlocker)
 	app.SetEndBlocker(app.EndBlocker)
 	app.setAnteHandler(txConfig)
@@ -401,12 +467,12 @@ func NewClairveilApp(
 }
 
 func (app *ClairveilApp) setAnteHandler(txConfig client.TxConfig) {
-	anteHandler, err := NewAnteHandler(ante.HandlerOptions{
+	anteHandler, err := newAnteHandler(ante.HandlerOptions{
 		AccountKeeper:   app.AccountKeeper,
 		BankKeeper:      app.BankKeeper,
 		SignModeHandler: txConfig.SignModeHandler(),
 		SigGasConsumer:  ante.DefaultSigVerificationGasConsumer,
-	})
+	}, false)
 	if err != nil {
 		panic(err)
 	}
@@ -424,6 +490,9 @@ func (app *ClairveilApp) setPostHandler() {
 func (app *ClairveilApp) Name() string { return app.BaseApp.Name() }
 
 func (app *ClairveilApp) BeginBlocker(ctx sdk.Context) (sdk.BeginBlock, error) {
+	if err := app.PrivacyKeeper.BeginAuditBlock(ctx); err != nil {
+		return sdk.BeginBlock{}, err
+	}
 	return app.ModuleManager.BeginBlock(ctx)
 }
 
@@ -432,11 +501,7 @@ func (app *ClairveilApp) EndBlocker(ctx sdk.Context) (sdk.EndBlock, error) {
 }
 
 func (app *ClairveilApp) InitChainer(ctx sdk.Context, req *abci.RequestInitChain) (*abci.ResponseInitChain, error) {
-	var genesisState GenesisState
-	if err := json.Unmarshal(req.AppStateBytes, &genesisState); err != nil {
-		panic(err)
-	}
-	return app.ModuleManager.InitGenesis(ctx, app.appCodec, genesisState)
+	return app.initPrivacyChain(ctx, req)
 }
 
 func (app *ClairveilApp) LoadHeight(height int64) error {
@@ -457,16 +522,6 @@ func (app *ClairveilApp) InterfaceRegistry() codectypes.InterfaceRegistry {
 
 func (app *ClairveilApp) TxConfig() client.TxConfig {
 	return app.txConfig
-}
-
-func (app *ClairveilApp) DefaultGenesis() map[string]json.RawMessage {
-	genesis := app.BasicModuleManager.DefaultGenesis(app.appCodec)
-	app.applyClairveilGenesisDefaults(genesis)
-	return genesis
-}
-
-func (app *ClairveilApp) GetKey(storeKey string) *storetypes.KVStoreKey {
-	return app.keys[storeKey]
 }
 
 func (app *ClairveilApp) GetSubspace(moduleName string) paramstypes.Subspace {
@@ -505,27 +560,26 @@ func (app *ClairveilApp) ExportAppStateAndValidators(
 	_ []string,
 	modulesToExport []string,
 ) (servertypes.ExportedApp, error) {
-	ctx := app.NewContextLegacy(true, tmproto.Header{Height: app.LastBlockHeight()})
-	height := app.LastBlockHeight() + 1
 	if forZeroHeight {
-		height = 0
+		return servertypes.ExportedApp{}, fmt.Errorf("zero-height export is not supported")
 	}
-
-	genState, err := app.ModuleManager.ExportGenesisForModules(ctx, app.appCodec, modulesToExport)
+	if len(modulesToExport) != 0 {
+		return servertypes.ExportedApp{}, fmt.Errorf("partial module export is not supported")
+	}
+	ctx := app.NewContextLegacy(true, tmproto.Header{Height: app.LastBlockHeight()})
+	genesis, err := app.ModuleManager.ExportGenesis(ctx, app.appCodec)
 	if err != nil {
 		return servertypes.ExportedApp{}, err
 	}
-
-	appState, err := json.MarshalIndent(genState, "", "  ")
+	raw, err := json.Marshal(genesis)
 	if err != nil {
 		return servertypes.ExportedApp{}, err
 	}
-
 	validators, err := staking.WriteValidators(ctx, app.StakingKeeper)
 	return servertypes.ExportedApp{
-		AppState:        appState,
+		AppState:        raw,
 		Validators:      validators,
-		Height:          height,
+		Height:          app.LastBlockHeight() + 1,
 		ConsensusParams: app.BaseApp.GetConsensusParams(ctx),
 	}, err
 }

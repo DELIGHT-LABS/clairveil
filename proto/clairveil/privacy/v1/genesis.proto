@@ -68,6 +68,7 @@ message PrivacyScanSummaryV2 {
   uint64 audit_key_epoch = 11;
   bytes audit_target_pubkey = 12;
   bytes effect_id = 13;
+  reserved 14;
 }
 
 // PrivacyScanOutputV2 stores raw bytes exactly once per output. Its key and
@@ -99,6 +100,7 @@ message PrivacyScanOutputV2 {
   bytes audit_target_pubkey = 24;
   bytes tx_hash = 25;
   string event_type = 26;
+  reserved 27;
 }
 
 // MerkleRootSnapshotV1 binds a historical root to the exact commitment prefix

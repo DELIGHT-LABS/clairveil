@@ -22,6 +22,7 @@ type BankKeeper interface {
 }
 
 type Keeper struct {
+	audit                           *auditRuntime
 	cdc                             codec.BinaryCodec
 	storeService                    store.KVStoreService
 	paramstore                      paramtypes.Subspace

@@ -41,6 +41,8 @@ type SecretFoundNote struct {
 	OutputIndex    uint32
 	Commitment     string
 	AssetDenom     string
+	AuditKeyID     string
+	AuditKeyEpoch  uint64
 }
 
 type processOptions struct {
@@ -432,7 +434,17 @@ func ProcessSecretPrivacyScanOutput(output *privacytypes.PrivacyScanOutputV2, ro
 		return nil, err
 	}
 	nullifierBytes := nullifier.Bytes()
-	return &SecretFoundNote{Note: *note, Nullifier: hex.EncodeToString(nullifierBytes[:]), TxHash: hex.EncodeToString(output.TxHash), Height: output.Height, GlobalSequence: output.GlobalSequence, OutputIndex: output.OutputIndex, Commitment: commitmentHex}, nil
+	return &SecretFoundNote{
+		Note:           *note,
+		Nullifier:      hex.EncodeToString(nullifierBytes[:]),
+		TxHash:         hex.EncodeToString(output.TxHash),
+		Height:         output.Height,
+		GlobalSequence: output.GlobalSequence,
+		OutputIndex:    output.OutputIndex,
+		Commitment:     commitmentHex,
+		AuditKeyID:     output.AuditKeyId,
+		AuditKeyEpoch:  output.AuditKeyEpoch,
+	}, nil
 }
 
 func buildSecretFoundNote(note *privacytypes.SecretNoteV1, txHash string, height int64) (SecretFoundNote, error) {

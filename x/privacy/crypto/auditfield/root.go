@@ -27,3 +27,33 @@ func (r CipherRoot) Bytes() ([64]byte, error) {
 	copy(out[32:], r.Right[:])
 	return out, nil
 }
+
+// ComputeCipherRoot binds a validated public context to the actual envelope.
+// This does not authenticate chain provenance or establish correct encryption;
+// the pinned transaction proof establishes the encryption relation.
+func ComputeCipherRoot(context AuditContext, envelope EnvelopeFrame) (CipherRoot, error) {
+	if _, err := envelope.Bytes(); err != nil {
+		return CipherRoot{}, err
+	}
+	if context.Kind() != envelope.Kind() || context.pi[9][31] != envelope.inputs || context.pi[10][31] != envelope.outputs {
+		return CipherRoot{}, fmt.Errorf("audit context and envelope shape differ")
+	}
+	t, err := context.T(envelope.Nonce())
+	if err != nil {
+		return CipherRoot{}, err
+	}
+	transcript, err := fieldElements(t[:])
+	if err != nil {
+		return CipherRoot{}, err
+	}
+	fields := append(envelope.Ciphertext(), envelope.Tag())
+	ciphertext, err := fieldElements(fields)
+	if err != nil {
+		return CipherRoot{}, err
+	}
+	point, err := envelope.EphemeralFrame().validPoint()
+	if err != nil {
+		return CipherRoot{}, err
+	}
+	return cipherRoot(context.Kind(), transcript, &point, ciphertext)
+}

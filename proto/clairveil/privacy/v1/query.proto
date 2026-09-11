@@ -254,6 +254,10 @@ message QueryReserveResponse {
   string total_withdrawn = 4;
   string expected_module_balance = 5;
   bool invariant_holds = 6;
+  string liability = 7;
+  bool collateralized = 8;
+  string surplus = 9;
+  string shortfall = 10;
 }
 
 message QueryAssetByDenomRequest { string canonical_denom = 1; }

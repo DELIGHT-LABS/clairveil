@@ -21,18 +21,23 @@ import (
 )
 
 const (
-	TransferProofPath                 = "/v1/prover/transfer"
-	WithdrawProofPath                 = "/v1/prover/withdraw"
-	BatchTransferProofPath            = "/v1/proofs/batch-transfer"
-	DepositProofPath                  = "/v1/prover/deposit"
-	TransferProofCircuitID            = "joinsplit"
-	WithdrawProofCircuitID            = "spend"
-	BatchTransferProofCircuitID       = "batch-joinsplit-16x32-v1"
-	DepositProofCircuitID             = "deposit"
-	BearerTokenEnv                    = "CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN"
-	ErrorResponseVersion              = "v1"
-	DefaultMaxResponseBytes     int64 = 1 << 20
-	DefaultMaxRequestBytes      int64 = 8 << 20
+	TransferProofPath           = "/v1/prover/transfer"
+	WithdrawProofPath           = "/v1/prover/withdraw"
+	BatchTransferProofPath      = "/v1/proofs/batch-transfer"
+	DepositProofPath            = "/v1/prover/deposit"
+	AuditFieldProofPath         = "/v2/prover/audit-field"
+	TransferProofCircuitID      = "joinsplit"
+	WithdrawProofCircuitID      = "spend"
+	BatchTransferProofCircuitID = "batch-joinsplit-16x32-v1"
+	DepositProofCircuitID       = "deposit"
+	// AuditFieldProofCircuitID is one shared admission bucket for the four
+	// development-only audit-field circuits. This prevents a four-way increase
+	// in concurrent witness memory while retaining per-request circuit checks.
+	AuditFieldProofCircuitID       = "audit-field-v1"
+	BearerTokenEnv                 = "CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN"
+	ErrorResponseVersion           = "v1"
+	DefaultMaxResponseBytes  int64 = 1 << 20
+	DefaultMaxRequestBytes   int64 = 8 << 20
 )
 
 const (
@@ -98,6 +103,10 @@ type DepositProver interface {
 	ProveDeposit(request DepositProofRequest) (*DepositProofResponse, error)
 }
 
+type AuditFieldProver interface {
+	ProveAuditField(request AuditFieldProofRequest) (*AuditFieldProofResponse, error)
+}
+
 type ReferenceDepositProver struct {
 	Artifacts privacydeposit.DepositArtifactProvider
 	Runner    privacydeposit.DepositProofRunner
@@ -123,6 +132,7 @@ type HTTPHandler struct {
 	TransferProver      TransferProver
 	WithdrawProver      WithdrawProver
 	BatchTransferProver BatchTransferProver
+	AuditFieldProver    AuditFieldProver
 	Now                 func() time.Time
 	Admission           ProofAdmission
 	MaxRequestBytes     int64
@@ -133,6 +143,7 @@ type ProverSet struct {
 	Transfer      TransferProver
 	Withdraw      WithdrawProver
 	BatchTransfer BatchTransferProver
+	AuditField    AuditFieldProver
 }
 
 type HTTPDoer interface {
@@ -197,6 +208,7 @@ func NewHTTPHandlerWithProverSet(provers ProverSet, now func() time.Time, admiss
 		TransferProver:      provers.Transfer,
 		WithdrawProver:      provers.Withdraw,
 		BatchTransferProver: provers.BatchTransfer,
+		AuditFieldProver:    provers.AuditField,
 		Now:                 now,
 		Admission:           admission,
 		MaxRequestBytes:     DefaultMaxRequestBytes,
@@ -218,9 +230,67 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveBatchTransferProof(w, r)
 	case DepositProofPath:
 		h.serveDepositProof(w, r)
+	case AuditFieldProofPath:
+		h.serveAuditFieldProof(w, r)
 	default:
 		writeErrorResponse(w, http.StatusNotFound, ErrorCodeNotFound, "prover transport route not found")
 	}
+}
+
+func (h *HTTPHandler) serveAuditFieldProof(w http.ResponseWriter, r *http.Request) {
+	if !beginProofRequest(w, r, "audit-field") {
+		return
+	}
+	if h.AuditFieldProver == nil {
+		writeErrorResponse(w, http.StatusServiceUnavailable, ErrorCodeUnavailable, "audit-field prover is unavailable")
+		return
+	}
+	requestBytes, ok := h.readProofRequestBody(w, r, "audit-field")
+	if !ok {
+		return
+	}
+	defer clear(requestBytes)
+	if !json.Valid(requestBytes) {
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, "invalid audit-field proof request JSON framing")
+		return
+	}
+	permit, ok := h.acquirePermit(w, r, AuditFieldProofCircuitID)
+	if !ok {
+		return
+	}
+	permitReleased := false
+	defer func() {
+		if permit != nil && !permitReleased {
+			permit.Release()
+		}
+	}()
+	request, err := DecodeAuditFieldProofRequestJSON(requestBytes)
+	if err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, "audit-field proof request validation failed")
+		return
+	}
+	defer clear(request.Witness)
+	if err := ValidateAuditFieldProofRequest(*request); err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidRequest, "audit-field proof request validation failed")
+		return
+	}
+	if permit != nil {
+		permit.StartProve()
+	}
+	response, err := h.AuditFieldProver.ProveAuditField(*request)
+	if permit != nil {
+		permit.Release()
+		permitReleased = true
+	}
+	if err != nil || response == nil {
+		writeErrorResponse(w, http.StatusInternalServerError, ErrorCodeProofFailed, "audit-field proof generation failed")
+		return
+	}
+	if err := ValidateAuditFieldProofResponseFraming(*request, *response); err != nil {
+		writeErrorResponse(w, http.StatusInternalServerError, ErrorCodeProofFailed, "audit-field proof response validation failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (h *HTTPHandler) serveBatchTransferProof(w http.ResponseWriter, r *http.Request) {
@@ -637,6 +707,28 @@ func (c HTTPProverClient) ProveDeposit(ctx context.Context, request DepositProof
 	return response, nil
 }
 
+// ProveAuditField transmits a full witness only to the explicitly configured
+// v2 development proverd route. It validates framing here; callers still must
+// invoke ValidateAuditFieldProofResponse for local PI23/VK verification.
+func (c HTTPProverClient) ProveAuditField(ctx context.Context, request AuditFieldProofRequest) (*AuditFieldProofResponse, error) {
+	if err := ValidateAuditFieldProofRequest(request); err != nil {
+		return nil, err
+	}
+	responseBytes, err := c.doJSONRequest(ctx, AuditFieldProofPath, request)
+	if err != nil {
+		return nil, err
+	}
+	defer clear(responseBytes)
+	response, err := DecodeAuditFieldProofResponseJSON(responseBytes)
+	if err != nil {
+		return nil, err
+	}
+	if err := ValidateAuditFieldProofResponseFraming(request, *response); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
 func (c HTTPProverClient) doJSONRequest(ctx context.Context, path string, body interface{}) ([]byte, error) {
 	if strings.TrimSpace(c.BaseURL) == "" {
 		return nil, fmt.Errorf("prover transport client base URL is required")
@@ -649,6 +741,7 @@ func (c HTTPProverClient) doJSONRequest(ctx context.Context, path string, body i
 	if err != nil {
 		return nil, err
 	}
+	defer clear(requestBytes)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.BaseURL, "/")+path, bytes.NewReader(requestBytes))
 	if err != nil {
 		return nil, err

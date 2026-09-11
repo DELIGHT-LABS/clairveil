@@ -4,18 +4,19 @@
 
 ## Script 목록
 
+아래 localnet, E2E, prover-load entry는 reviewed V2 runtime을 사용합니다. 남은 legacy entry는 static, historical, capacity-planning 전용으로 명시합니다.
+
 - `docs-check.sh`: CommonMark/GFM AST로 tracked/new working-tree Markdown link와 fragment, top-level 문서 언어 pair와 index, plan archive 경계, `HEAD`에서 도달 가능한 exact-SemVer annotated commit tag와 실제 changelog heading, 문서 위치, release-pack manifest, packed-link closure를 검증합니다.
 - `markdown-ast.go`: 문서 및 release 검사가 사용하는 Goldmark CommonMark/GFM link/heading AST를 제공합니다. Unit test는 multiline reference, 중첩 괄호, fragment, comment, code fence를 다룹니다.
 - `generate-proto.sh`: `proto/clairveil/privacy/v1`에서 privacy protobuf와 gRPC Gateway Go file을 재생성합니다.
 - `install-binaries.sh`: `make build`로 만든 project binary 여섯 개(`clairveild`, `clairveil-setup`, legacy-only `clairveil-verify`, `clairveil-proverd`, `clairveil-payroll`, `clairveil-payrolld`)를 Go install 경로에 복사합니다. Verify helper는 현행 typed-note flow에 속하지 않습니다.
-- `init-localnet.sh`: 기존 home을 timestamp backup으로 보관하고, 기본 local chain genesis, test keys, audit pubkey, ZK artifact를 준비합니다.
+- `init-localnet.sh`: 기존 home을 timestamp backup으로 보관하고, 기존 검토 runtime bundle·일치 artifact·offline audit-secret file에서 V2 fresh genesis home을 준비합니다. key, artifact, runtime archive를 새로 만들지 않습니다.
 - `govulncheck-with-policy.sh`: `govulncheck`를 실행하고 repo vulnerability exception policy를 적용합니다.
-- `localnet-smoke.sh`: `clairveild`를 build하고 임시 local validator genesis를 만든 뒤 `RPC_PORT`, `P2P_PORT`, `ABCI_PORT`, `GRPC_PORT`, `API_PORT`, `PPROF_PORT` override를 적용해 node start와 block commit을 짧게 검증합니다.
-- `privacy-e2e-smoke.sh`: deposit, transfer, disclosure decode, direct withdraw, relayed withdraw까지 local privacy flow 전체를 검증합니다.
-- `privacy-batch-joinsplit-localnet.sh`: 기본값으로 batch reference integration 16x32 fixture를 검증하고, `RUN_LOCALNET=1`이면 실제 node와 `clairveil-proverd`를 시작해 단계형 one-proof command로 1/1, mixed disclosure 3/4, 31+change, exact32, padding, 실제 process restart/retry, non-zero-height genesis export/import, typed cursor/path continuation, reserve/asset/wallet round trip을 실행합니다. `grpcurl`이 필요합니다. 이미 검증한 development artifact를 재사용하려면 `CLAIRVEIL_BATCH_ARTIFACT_DIR`를 지정합니다.
+- `localnet-smoke.sh`와 `privacy-e2e-smoke.sh`: reviewed audit-field V2 runner의 stable entrypoint입니다. 일치하는 `CLAIRVEILD_BIN`, `CLAIRVEIL_PROVERD_BIN`, `CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR`, `CLAIRVEIL_AUDIT_RUNTIME_DIR`, `CLAIRVEIL_AUDIT_SECRET_FILE`가 필요하며 V2 DeliverTx와 forced rescan을 검사합니다.
+- `privacy-batch-joinsplit-localnet.sh`: 기본 static fixture/conformance gate를 유지합니다. `RUN_LOCALNET=1`은 16x32 capacity workload가 아닌 작은 `transfer-batch-16x32` proof 1회를 같은 reviewed V2 runner로 실행합니다.
 - `privacy-bench.sh`: privacy circuit benchmark를 실행하고 structured JSON/Markdown report를 생성합니다.
 - `privacy-proverd-bench.sh`: in-process prover HTTP transport benchmark를 실행합니다.
-- `privacy-proverd-load-bench.sh`: `PROVERD_URL`로 이미 실행 중인 external `clairveil-proverd` 1개를 측정하거나, `PROVERD_URLS`로 round-robin prover pool을 측정합니다. `PROVERLOAD_ALLOW_UNHEALTHY_ENDPOINTS=1`을 설정하면 preflight 실패 endpoint를 제외하고 unhealthy endpoint count를 기록합니다.
+- `privacy-proverd-load-bench.sh`: 기본 profile은 `audit_field_only`입니다. complete V2 witness request인 `PROVERLOAD_AUDIT_REQUEST`를 설정하고 이를 보관하거나 log에 남기면 안 됩니다. 도구는 HTTP response version/circuit/artifact/PI23 framing을 검사하며 exact-artifact 암호 검증은 CLI smoke가 수행합니다.
 - `privacy-proverd-scale-bench.sh`: pool 측정용 기본값으로 external prover load benchmark를 실행하고 `privacy-proverd-scale` report를 생성합니다. comma-separated `PROVERD_URLS`가 필요하며 unhealthy endpoint 제외 모드를 기본으로 켭니다. 단 public claim eligibility는 `unhealthy_endpoint_count=0`일 때만 통과합니다.
 - `privacy-bench-localnet.sh`: localnet privacy smoke를 실행하고 fee, gas, reserve, localnet summary를 생성합니다.
 - `privacy-localnet-tps-bench.sh`: localnet smoke output을 `chain_tps` benchmark family로 변환합니다.

@@ -29,6 +29,8 @@ type secretFoundNoteWireV2 struct {
 	OutputIndex    uint32           `json:"output_index,omitempty"`
 	Commitment     string           `json:"commitment,omitempty"`
 	AssetDenom     string           `json:"asset_denom,omitempty"`
+	AuditKeyID     string           `json:"audit_key_id,omitempty"`
+	AuditKeyEpoch  uint64           `json:"audit_key_epoch,omitempty"`
 }
 type secretNoteWireV2 struct {
 	SpendX     string `json:"receiver_spend_pub_key_x"`
@@ -44,7 +46,7 @@ type secretNoteWireV2 struct {
 func (wallet LocalWalletData) MarshalJSON() ([]byte, error) {
 	wire := walletWireV2{Version: 2, LastHeight: wallet.LastHeight, LastSequence: wallet.LastSequence, LastOutputIndex: wallet.LastOutputIndex, Notes: make([]secretFoundNoteWireV2, len(wallet.Notes))}
 	for i, found := range wallet.Notes {
-		wire.Notes[i] = secretFoundNoteWireV2{Note: secretNoteWire(found.Note), Nullifier: found.Nullifier, IsSpent: found.IsSpent, TxHash: found.TxHash, Height: found.Height, GlobalSequence: found.GlobalSequence, OutputIndex: found.OutputIndex, Commitment: found.Commitment, AssetDenom: found.AssetDenom}
+		wire.Notes[i] = secretFoundNoteWireV2{Note: secretNoteWire(found.Note), Nullifier: found.Nullifier, IsSpent: found.IsSpent, TxHash: found.TxHash, Height: found.Height, GlobalSequence: found.GlobalSequence, OutputIndex: found.OutputIndex, Commitment: found.Commitment, AssetDenom: found.AssetDenom, AuditKeyID: found.AuditKeyID, AuditKeyEpoch: found.AuditKeyEpoch}
 	}
 	return json.Marshal(wire)
 }
@@ -73,7 +75,7 @@ func (wallet *LocalWalletData) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("wallet note %d: %w", i, err)
 		}
-		candidate.Notes[i] = SecretFoundNote{Note: note, Nullifier: found.Nullifier, IsSpent: found.IsSpent, TxHash: found.TxHash, Height: found.Height, GlobalSequence: found.GlobalSequence, OutputIndex: found.OutputIndex, Commitment: found.Commitment, AssetDenom: found.AssetDenom}
+		candidate.Notes[i] = SecretFoundNote{Note: note, Nullifier: found.Nullifier, IsSpent: found.IsSpent, TxHash: found.TxHash, Height: found.Height, GlobalSequence: found.GlobalSequence, OutputIndex: found.OutputIndex, Commitment: found.Commitment, AssetDenom: found.AssetDenom, AuditKeyID: found.AuditKeyID, AuditKeyEpoch: found.AuditKeyEpoch}
 	}
 	*wallet = candidate
 	return nil

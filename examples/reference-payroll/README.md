@@ -67,7 +67,7 @@ final-report.json:
 
 This demo is the legacy multi-message control-plane path: `transfer-batch` and `clairveil-payroll ... settle-transfer-batch` place several independent native 2x2 `MsgTransfer` messages and proofs in one Cosmos transaction. It is a regression/tutorial path and must never be described, submitted, reconciled, or capacity-planned as a one-proof batch.
 
-The current payroll integration uses `transfer-batch-16x32`, `prepare-batch-transfer`, `prove-batch-transfer`, and `broadcast-batch-transfer`: one `MsgBatchTransfer`, one `BatchJoinSplit16x32` proof, 1..16 inputs, and 1..32 outputs. The remote proof route is `POST /v1/proofs/batch-transfer`. Use the [getting started guide](../../docs/clairveil-getting-started.md#8-batchjoinsplit16x32-localnet) for that localnet workflow.
+The payroll batch integration and its `/v1/proofs/batch-transfer` route are legacy-only, not current V2 workflow. See the [legacy reference boundary](../../docs/clairveil-getting-started.md#8-legacy-batchjoinsplit16x32-reference).
 
 ## Authority and ownership
 

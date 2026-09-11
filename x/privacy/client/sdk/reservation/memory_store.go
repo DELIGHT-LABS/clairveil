@@ -831,6 +831,10 @@ func (s *MemoryStore) storeReservationLocked(reservation NoteReservation) {
 
 func cloneReservation(reservation NoteReservation) NoteReservation {
 	reservation.EncryptedNullifier = append([]byte(nil), reservation.EncryptedNullifier...)
+	if reservation.Audit != nil {
+		binding := *reservation.Audit
+		reservation.Audit = &binding
+	}
 	return reservation
 }
 

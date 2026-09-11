@@ -459,16 +459,15 @@ def require_current_contract_inventory(source, start_marker, end_marker, require
 
 
 common_version_terms = [
-    "transfer payload `v5`",
-    "withdraw prover/final payload",
-    "`batch-transfer-payload-v1`",
-    "`batch-transfer-proof-v1`",
-    "deposit payload/proof/request/response `v1`",
+    "`/v2/prover/audit-field`",
+    "request/response envelope `v1`",
+    "`privacy-note-v1-audit-field-v1`",
+    "final PI23",
 ]
 inventory_checks = [
     (docs_dir / "clairveil-architecture.md", "The current fixed client contract is", None, common_version_terms),
     (docs_dir / "clairveil-architecture-kr.md", "현재 fixed client contract는", None, common_version_terms),
-    (docs_dir / "clairveil-operations-guide.md", "Current contracts are", None, common_version_terms),
+    (docs_dir / "clairveil-operations-guide.md", "Current contract:", None, common_version_terms),
     (docs_dir / "clairveil-operations-guide-kr.md", "현재 contract는", None, common_version_terms),
     (
         docs_dir / "clairveil-js-sdk-handoff.md",
@@ -476,10 +475,8 @@ inventory_checks = [
         "The JS SDK still needs to decide these independently.",
         common_version_terms
         + [
-            "`/v1/prover/deposit`",
-            "`/v1/prover/transfer`",
-            "`/v1/prover/withdraw`",
-            "`/v1/proofs/batch-transfer`",
+            "base64",
+            "local verification",
         ],
     ),
     (
@@ -488,10 +485,8 @@ inventory_checks = [
         "아직 JS SDK가 독자적으로 결정해야 하는 항목은 아래입니다.",
         common_version_terms
         + [
-            "`/v1/prover/deposit`",
-            "`/v1/prover/transfer`",
-            "`/v1/prover/withdraw`",
-            "`/v1/proofs/batch-transfer`",
+            "base64",
+            "local verification",
         ],
     ),
 ]
@@ -499,8 +494,8 @@ for source, start_marker, end_marker, required_terms in inventory_checks:
     require_current_contract_inventory(source, start_marker, end_marker, required_terms)
 
 binding_terms = {
-    docs_dir / "clairveil-operations-guide.md": "recomputed witness commitment",
-    docs_dir / "clairveil-operations-guide-kr.md": "재계산한 witness commitment",
+    docs_dir / "clairveil-operations-guide.md": "exact local artifact identity",
+    docs_dir / "clairveil-operations-guide-kr.md": "exact local artifact identity",
     docs_dir / "clairveil-js-sdk-handoff.md": "route-specific response binding",
     docs_dir / "clairveil-js-sdk-handoff-kr.md": "route-specific response binding",
 }

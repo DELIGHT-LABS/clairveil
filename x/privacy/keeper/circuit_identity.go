@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"fmt"
+	"github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
@@ -9,7 +10,14 @@ import (
 )
 
 func (k Keeper) SetCircuitSetIdentity(ctx sdk.Context, identity *types.CircuitSetIdentity) error {
-	if err := types.ValidateCircuitSetIdentity(identity); err != nil {
+	if !k.allowsGenesisStateImport(ctx) {
+		return fmt.Errorf("legacy state mutation is disabled")
+	}
+	validate := types.ValidateCircuitSetIdentity
+	if k.audit != nil {
+		validate = types.ValidateAuditCircuitSetIdentity
+	}
+	if err := validate(identity); err != nil {
 		return err
 	}
 	bz, err := identity.Marshal()
@@ -31,7 +39,11 @@ func (k Keeper) GetCircuitSetIdentity(ctx sdk.Context) (*types.CircuitSetIdentit
 	if err := identity.Unmarshal(bz); err != nil {
 		return nil, false, fmt.Errorf("unmarshal circuit set identity: %w", err)
 	}
-	if err := types.ValidateCircuitSetIdentity(&identity); err != nil {
+	validate := types.ValidateCircuitSetIdentity
+	if k.audit != nil {
+		validate = zk.ValidateAuditFieldIdentity
+	}
+	if err := validate(&identity); err != nil {
 		return nil, false, fmt.Errorf("stored circuit set identity is invalid: %w", err)
 	}
 	return types.CloneCircuitSetIdentity(&identity), true, nil

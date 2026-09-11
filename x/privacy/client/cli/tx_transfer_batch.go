@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"math/big"
 	"strings"
 	"time"
@@ -20,6 +19,7 @@ import (
 	privacyprovider "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/provider"
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
+	privacyv2 "github.com/DELIGHT-LABS/clairveil/x/privacy/types/v2"
 )
 
 type transferBatchOutput struct {
@@ -84,6 +84,11 @@ Broadcast several independent MsgTransfer messages in one Cosmos transaction env
 			if err != nil {
 				return err
 			}
+			runtime, err := resolveAuditV2Runtime(cmd, clientCtx)
+			if err != nil {
+				return err
+			}
+			runtime.expiresAt = expiresAtUnix
 
 			forceRescan, err := cmd.Flags().GetBool(flagRescanWallet)
 			if err != nil {
@@ -104,24 +109,21 @@ Broadcast several independent MsgTransfer messages in one Cosmos transaction env
 			}()
 
 			msgs, err := buildTransferBatchMessages(
-				cmd.Context(),
+				cmd.Context(), cmd,
 				clientCtx,
 				notes,
 				identity,
 				recipientSpendPubKey,
 				recipientViewPubKey,
 				coins,
-				expiresAtUnix,
 				privacytransfer.StepDisclosureConfig{
-					UserPrivacyPolicy:             config.userPrivacyPolicy,
-					UserDisclosureMode:            config.userDisclosureMode,
-					UserDisclosureTargetPubKey:    config.userDisclosureTargetPubKey,
-					UserDisclosureTargetPubKeyBz:  config.userDisclosureTargetPubKeyBz,
-					AuditDisclosureTargetPubKey:   config.auditDisclosureTargetPubKey,
-					AuditDisclosureTargetPubKeyBz: config.auditDisclosureTargetPubKeyBz,
-					DisableSelfViewDisclosure:     config.disableSelfViewDisclosure,
+					UserPrivacyPolicy:            config.userPrivacyPolicy,
+					UserDisclosureMode:           config.userDisclosureMode,
+					UserDisclosureTargetPubKey:   config.userDisclosureTargetPubKey,
+					UserDisclosureTargetPubKeyBz: config.userDisclosureTargetPubKeyBz,
+					DisableSelfViewDisclosure:    config.disableSelfViewDisclosure,
 				},
-				privacyCommandLogWriter(cmd),
+				runtime,
 				latencyFlow,
 			)
 			if err != nil {
@@ -184,6 +186,7 @@ Broadcast several independent MsgTransfer messages in one Cosmos transaction env
 	cmd.Flags().Bool(flagTransferNoSelfView, false, "Disable sender self-view disclosure for every batched transfer")
 	cmd.Flags().Int64(flagTransferExpiresIn, int64(defaultPreparedWithdrawExpiry/time.Second), "owner intent validity window in seconds")
 	cmd.Flags().Bool(flagRescanWallet, false, "reset the local privacy wallet cache and rescan from genesis before note selection")
+	addAuditV2Flags(cmd)
 	flags.AddTxFlagsToCmd(cmd)
 	return cmd
 }
@@ -216,15 +219,15 @@ func parseTransferBatchCoins(args []string) ([]sdk.Coin, error) {
 
 func buildTransferBatchMessages(
 	ctx context.Context,
+	cmd *cobra.Command,
 	clientCtx client.Context,
 	notes []FoundNote,
 	identity *transferExecutionIdentity,
 	recipientSpendPubKey *crypto_tedwards.PointAffine,
 	recipientViewPubKey *crypto_tedwards.PointAffine,
 	coins []sdk.Coin,
-	expiresAtUnix int64,
 	disclosure privacytransfer.StepDisclosureConfig,
-	logWriter io.Writer,
+	runtime *auditV2Runtime,
 	latencyFlow *privacyLatencyFlow,
 ) ([]sdk.Msg, error) {
 	if identity == nil {
@@ -235,6 +238,9 @@ func buildTransferBatchMessages(
 	}
 	if len(coins) == 0 {
 		return nil, fmt.Errorf("at least one transfer amount is required")
+	}
+	if runtime == nil {
+		return nil, fmt.Errorf("audit-field runtime is required")
 	}
 	if !disclosure.DisableSelfViewDisclosure && disclosure.SelfViewDisclosureTargetPubKey == nil {
 		_, selfViewDisclosurePubKey, _, err := deriveDisclosureKeys(identity.seed)
@@ -256,27 +262,20 @@ func buildTransferBatchMessages(
 	msgs := make([]sdk.Msg, 0, len(coins))
 	for i, coin := range coins {
 		selection := selections[i]
-		msg, err := privacytransfer.BuildTransferStepMessage(
-			ctx,
-			privacyprovider.NewTransferQueryProvider(privacytypes.NewQueryClient(clientCtx)),
-			manualTransferOwnerIntentSigner{scalar: identity.scalar, pubKey: identity.spendPubKey},
-			transferJoinSplitArtifactProvider{},
-			transferJoinSplitProofRunner{logWriter: logWriter, latencyFlow: latencyFlow},
-			privacytransfer.BuildTransferStepMessageInput{
-				Creator:              clientCtx.GetFromAddress().String(),
-				ChainID:              clientCtx.ChainID,
-				ExpiresAtUnix:        expiresAtUnix,
-				Inputs:               selection.Inputs,
-				RecipientSpendPubKey: recipientSpendPubKey,
-				RecipientViewPubKey:  recipientViewPubKey,
-				TransferAmount:       coin.Amount.BigInt(),
-				TransferDenom:        coin.Denom,
-				SenderSpendPubKey:    identity.spendPubKey,
-				SenderViewPubKey:     identity.viewPubKey,
-				IsFinal:              true,
-				Disclosure:           disclosure,
-			},
-		)
+		var msg sdk.Msg
+		snapshot, err := runtime.snapshotSource(ctx)
+		if err != nil {
+			return nil, err
+		}
+		prepared, full, err := privacytransfer.PrepareAuditV2Transfer(ctx, privacyprovider.NewTransferQueryProvider(privacytypes.NewQueryClient(clientCtx)), snapshot,
+			clientCtx.GetFromAddress().String(), runtime.expiresAt, privacytransfer.PrepareJoinSplitInput{Inputs: selection.Inputs, RecipientSpendPubKey: recipientSpendPubKey, RecipientViewPubKey: recipientViewPubKey, TransferAmount: coin.Amount.BigInt(), SenderSpendPubKey: identity.spendPubKey, SenderViewPubKey: identity.viewPubKey}, coin.Denom,
+			privacytransfer.AuditV2DisclosureConfig{UserPrivacyPolicy: disclosure.UserPrivacyPolicy, UserDisclosureMode: disclosure.UserDisclosureMode, UserDisclosureTargetPubKey: disclosure.UserDisclosureTargetPubKey, UserDisclosureTargetPubKeyBz: disclosure.UserDisclosureTargetPubKeyBz, DisableSelfViewDisclosure: disclosure.DisableSelfViewDisclosure, SelfViewDisclosureTargetPubKey: disclosure.SelfViewDisclosureTargetPubKey},
+			func(intent *big.Int) ([]byte, error) {
+				return manualSign(intent, identity.scalar, identity.spendPubKey)
+			})
+		if err == nil {
+			msg, err = runtime.prove(cmd, prepared, full)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("build batch item %d (%s): %w", i, coin.String(), err)
 		}
@@ -318,19 +317,25 @@ func transferBatchOutputItems(coins []sdk.Coin, msgs []sdk.Msg) ([]transferBatch
 	}
 	items := make([]transferBatchItemOutput, 0, len(msgs))
 	for i, msg := range msgs {
-		transferMsg, ok := msg.(*privacytypes.MsgTransfer)
-		if !ok || transferMsg == nil {
-			return nil, fmt.Errorf("transfer-batch metadata message %d is %T, expected *privacytypes.MsgTransfer", i, msg)
-		}
-		item := transferBatchItemOutput{
-			Amount:                   coins[i].String(),
-			Nullifiers:               hexList(transferMsg.Nullifiers),
-			UserDisclosureDigest:     hex.EncodeToString(transferMsg.UserDisclosureDigest),
-			AuditDisclosureDigest:    hex.EncodeToString(transferMsg.AuditDisclosureDigest),
-			SelfViewDisclosureDigest: hex.EncodeToString(transferMsg.SelfViewDisclosureDigest),
-		}
-		if len(transferMsg.NewCommitments) > 0 {
-			item.OutputCommitment = hex.EncodeToString(transferMsg.NewCommitments[0])
+		item := transferBatchItemOutput{Amount: coins[i].String()}
+		switch transferMsg := msg.(type) {
+		case *privacyv2.MsgTransfer:
+			item.Nullifiers = hexList(transferMsg.Nullifiers)
+			if len(transferMsg.Outputs) > 0 && transferMsg.Outputs[0] != nil {
+				item.OutputCommitment = hex.EncodeToString(transferMsg.Outputs[0].Commitment)
+				item.UserDisclosureDigest = hex.EncodeToString(transferMsg.Outputs[0].UserDisclosureDigest)
+				item.SelfViewDisclosureDigest = hex.EncodeToString(transferMsg.Outputs[0].SelfFullDisclosureDigest)
+			}
+		case *privacytypes.MsgTransfer:
+			item.Nullifiers = hexList(transferMsg.Nullifiers)
+			item.UserDisclosureDigest = hex.EncodeToString(transferMsg.UserDisclosureDigest)
+			item.AuditDisclosureDigest = hex.EncodeToString(transferMsg.AuditDisclosureDigest)
+			item.SelfViewDisclosureDigest = hex.EncodeToString(transferMsg.SelfViewDisclosureDigest)
+			if len(transferMsg.NewCommitments) > 0 {
+				item.OutputCommitment = hex.EncodeToString(transferMsg.NewCommitments[0])
+			}
+		default:
+			return nil, fmt.Errorf("transfer-batch metadata message %d is %T, expected v2 transfer", i, msg)
 		}
 		items = append(items, item)
 	}

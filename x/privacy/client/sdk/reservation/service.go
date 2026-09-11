@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	privacyaudit "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/audit"
 )
 
 type Service struct {
@@ -97,6 +99,14 @@ func normalizeReserveInput(input ReserveInput, now time.Time) (NoteReservation, 
 	}
 	if reservation.Status != StatusReserved {
 		return NoteReservation{}, nil, fmt.Errorf("%w: reservation must start as Reserved", ErrInvalidReservation)
+	}
+	if reservation.Audit != nil {
+		if err := reservation.Audit.Validate(); err != nil {
+			return NoteReservation{}, nil, fmt.Errorf("%w: audit binding: %v", ErrInvalidReservation, err)
+		}
+		if now.Unix() >= reservation.Audit.ExpiresAtUnix {
+			return NoteReservation{}, nil, fmt.Errorf("%w: audit binding is expired", ErrInvalidReservation)
+		}
 	}
 	if reservation.CreatedAt.IsZero() {
 		reservation.CreatedAt = now
@@ -228,6 +238,36 @@ func (s Service) Release(ctx context.Context, reservationID string, from Reserva
 		return nil, fmt.Errorf("%w: automatic release is only allowed from Reserved", ErrInvalidTransition)
 	}
 	return s.Transition(ctx, reservationID, from, StatusReleased)
+}
+
+// ReleaseStaleAuditReservations drops only still-Reserved v2 reservations
+// whose key, epoch, network, artifact identity, or explicit preparation
+// expiry no longer matches the authenticated active snapshot. A caller runs
+// this immediately after observing a key activation or artifact update.
+func (s Service) ReleaseStaleAuditReservations(ctx context.Context, snapshot privacyaudit.Snapshot) ([]NoteReservation, error) {
+	if s.Store == nil {
+		return nil, fmt.Errorf("reservation store is required")
+	}
+	if err := snapshot.Validate(); err != nil {
+		return nil, err
+	}
+	reserved, err := s.Store.ListReservations(ctx, ReservationFilter{Statuses: []ReservationStatus{StatusReserved}})
+	if err != nil {
+		return nil, err
+	}
+	now := s.now()
+	released := make([]NoteReservation, 0)
+	for _, reservation := range reserved {
+		if reservation.Audit == nil || reservation.Audit.ValidFor(snapshot, now) {
+			continue
+		}
+		updated, err := s.Release(ctx, reservation.ReservationID, StatusReserved)
+		if err != nil {
+			return nil, err
+		}
+		released = append(released, *updated)
+	}
+	return released, nil
 }
 
 func (s Service) now() time.Time {

@@ -4,17 +4,23 @@ import (
 	"bytes"
 	"encoding/hex"
 	"math/big"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	"github.com/stretchr/testify/require"
 
+	privacyaudit "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/audit"
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
+	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto/auditfield"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
+	privacyv2 "github.com/DELIGHT-LABS/clairveil/x/privacy/types/v2"
 	privacyzk "github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 func TestPreparedDepositProverPayloadRoundTripPreservesCircuitWitness(t *testing.T) {
@@ -38,6 +44,69 @@ func TestPreparedDepositProverPayloadRoundTripPreservesCircuitWitness(t *testing
 	require.NoError(t, err)
 	require.True(t, commitment.Equal(reconstructedCommitment))
 	require.Empty(t, reconstructed.Memo)
+}
+
+func TestBuildAuditV2WitnessUsesNormalDepositNote(t *testing.T) {
+	note := testDepositNote(t, 7)
+	key := depositAuditKey(t)
+	commitment, err := note.CommitmentV1()
+	require.NoError(t, err)
+	commitmentBytes := commitment.Bytes()
+	cipherSize, err := privacytypes.EncryptedEnvelopeV1Size(privacytypes.EnvelopeDepositNoteV1)
+	require.NoError(t, err)
+	cipher, err := privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeDepositNoteV1, make([]byte, cipherSize-privacytypes.EncryptedEnvelopeV1HeaderSize))
+	require.NoError(t, err)
+	prepared, err := PrepareAuditV2FromNormalNote(
+		privacyaudit.Snapshot{Network: [32]byte{1}, Epoch: 1, Key: key, StateHeight: 1, ArtifactHash: [32]byte{2}},
+		sdk.AccAddress(bytes.Repeat([]byte{3}, 20)).String(), "7uclair", note,
+		&privacyv2.OutputEffect{Commitment: commitmentBytes[:], Ciphertext: cipher}, time.Now().Add(time.Hour).Unix(),
+	)
+	require.NoError(t, err)
+	defer prepared.Clear()
+	witness, err := BuildAuditV2Witness(prepared, note)
+	require.NoError(t, err)
+	public, err := witness.Public()
+	require.NoError(t, err)
+	require.Len(t, public.Vector().(fr.Vector), 23)
+}
+
+func TestAuditV2DepositWitnessSatisfiesP3R1CS(t *testing.T) {
+	dir := os.Getenv("CLAIRVEIL_P3_ARTIFACT_DIR")
+	if dir == "" {
+		t.Skip("set CLAIRVEIL_P3_ARTIFACT_DIR to the verified P3 development bundle")
+	}
+	note := testDepositNote(t, 7)
+	key := depositAuditKey(t)
+	commitment, err := note.CommitmentV1()
+	require.NoError(t, err)
+	commitmentBytes := commitment.Bytes()
+	cipherSize, err := privacytypes.EncryptedEnvelopeV1Size(privacytypes.EnvelopeDepositNoteV1)
+	require.NoError(t, err)
+	cipher, err := privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeDepositNoteV1, make([]byte, cipherSize-privacytypes.EncryptedEnvelopeV1HeaderSize))
+	require.NoError(t, err)
+	prepared, err := PrepareAuditV2FromNormalNote(privacyaudit.Snapshot{Network: [32]byte{1}, Epoch: 1, Key: key, StateHeight: 1, ArtifactHash: [32]byte{2}}, sdk.AccAddress(bytes.Repeat([]byte{3}, 20)).String(), "7uclair", note, &privacyv2.OutputEffect{Commitment: commitmentBytes[:], Ciphertext: cipher}, time.Now().Add(time.Hour).Unix())
+	require.NoError(t, err)
+	defer prepared.Clear()
+	full, err := BuildAuditV2Witness(prepared, note)
+	require.NoError(t, err)
+	registry, err := privacyzk.NewArtifactRegistry(privacyzk.ArtifactRegistryConfig{ArtifactDir: dir, CircuitSetID: privacyzk.AuditFieldCircuitSetID, RuntimeEnvironment: privacyzk.ZKRuntimeEnvironmentDevelopment})
+	require.NoError(t, err)
+	r1cs, err := registry.R1CS(privacyzk.CircuitDepositAuditField)
+	require.NoError(t, err)
+	require.NoError(t, r1cs.IsSolved(full))
+}
+
+func depositAuditKey(t *testing.T) auditfield.AuditKey {
+	t.Helper()
+	raw := make([]byte, 32)
+	raw[31] = 23
+	secret, err := privacycrypto.ImportAuditSecretKeyBE32(raw)
+	require.NoError(t, err)
+	key, err := privacycrypto.AuditKeyFromSecret(secret)
+	if err != nil {
+		t.Skipf("native secret profile unavailable: %v", err)
+	}
+	return key
 }
 
 func TestPreparedDepositProverPayloadPreservesZeroAmountAndCanonicalEncodings(t *testing.T) {

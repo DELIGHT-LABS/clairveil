@@ -2,147 +2,71 @@
 
 > Korean version: [clairveil-proverd-http-api-kr.md](clairveil-proverd-http-api-kr.md)
 
-This document is the authoritative common HTTP contract for `clairveil-proverd` proof routes. The [deposit section](#deposit) defines its route-specific request and response semantics. The machine-readable contract is [clairveil-proverd-http-api.schema.json](schemas/clairveil-proverd-http-api.schema.json), validated against the conformance fixtures under `x/privacy/client/sdk/conformance/testdata`.
+This is the current shared HTTP contract for `clairveil-proverd`. It describes the only live proof route in this checkout. The machine-readable contract is [clairveil-proverd-http-api.schema.json](schemas/clairveil-proverd-http-api.schema.json); `privacy_audit_field_prover_contract.json` is a wire-shape-only mock fixture, not a semantic proving vector and not accepted by `ValidateAuditFieldProofRequest` or response validation.
 
-## Route inventory
+## Current route
 
-Every route accepts only `POST` and returns JSON.
-
-| Route | Request envelope version | Response envelope version |
+| Route | Request envelope `version` | Response envelope `version` |
 | --- | --- | --- |
-| `/v1/prover/transfer` | `v2` | `v2` |
-| `/v1/prover/withdraw` | `v2` | `v2` |
-| `/v1/proofs/batch-transfer` | `v1` | `v1` |
-| `/v1/prover/deposit` | `v1` | `v1` |
+| `POST /v2/prover/audit-field` | `v1` | `v1` |
 
-`/v1` is the route major version. Object versions inside an envelope are independently validated by the relevant route contract.
+`/v2` is the HTTP route major version. It is deliberately independent of the JSON envelope version: both request and response structs currently require the literal string `v1`.
 
-## Common transport policy
+The V2 route is development-only. `clairveil-proverd` requires a matching `privacy-note-v1-audit-field-v1` artifact directory and refuses to start without `CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR`. Use an explicitly trusted, locally controlled prover: the complete witness includes transaction secrets.
 
-- Clients should send `Content-Type: application/json`. Omission remains accepted for compatibility with existing `v1` proof-route clients; when the header is present, its only permitted value is `application/json` with an optional `charset=utf-8` parameter. Media type and parameter comparisons are case-insensitive, and the server validates a present header before reading the body or taking admission.
-- `Accept` is optional. Version 1 does not negotiate content types; the server always returns JSON.
-- `Content-Encoding` may be absent or contain exactly one value: `identity` or `gzip`. Repeated fields, comma-separated/multiple codings, empty values, and every other coding are rejected as `400 invalid_request` before the body is read.
-- Both the raw wire body and decompressed body are subject to a configured positive limit. The service default is 8 MiB.
-- Every proof-route success and error response, including early authentication and content-encoding failures, has `Content-Type: application/json` and `Cache-Control: no-store`.
-- A method mismatch returns `405` with `Allow: POST`.
-- An unknown path retains the common `404 not_found` response contract.
+## Request and response binding
 
-## Error contract
-
-All errors use this strict JSON envelope. `message` is a fixed, failure-class-specific, secret-free message.
+All requests are strict JSON objects with exactly these fields:
 
 ```json
 {
   "version": "v1",
-  "code": "invalid_request",
-  "message": "proof request validation failed"
+  "circuit_set_id": "privacy-note-v1-audit-field-v1",
+  "circuit_id": "deposit-audit-field-v1",
+  "artifact_hash": "base64-encoded 32 bytes",
+  "public_inputs": ["base64-encoded canonical field element", "... exactly 23 entries"],
+  "witness": "base64-encoded complete gnark witness"
 }
 ```
 
-`retryable` is optional and defaults to `false` when omitted. It is required and `true` only for `busy`; it must not be `true` for another code. Decoders reject duplicate keys, unknown fields, and trailing JSON.
+`circuit_id` must be one of `deposit-audit-field-v1`, `spend-audit-field-v1`, `joinsplit-2x2-audit-field-v1`, or `batch-joinsplit-16x32-audit-field-v1`. Go's standard JSON encoding represents every `[]byte` field as a base64 JSON string; `public_inputs` is therefore an array of base64 strings, not hexadecimal. Each supplied public input must decode to one canonical BN254 field element, and there must be exactly final PI23 inputs. The full witness must decode exactly and its public part must equal those 23 inputs in order.
 
-| HTTP status | Code | `retryable` | Meaning |
-| ---: | --- | --- | --- |
-| 400 | `invalid_request` | false | JSON, version, or semantic request validation failure; also unsupported `Content-Encoding` |
-| 401 | `unauthorized` | false | Configured bearer token did not match |
-| 404 | `not_found` | false | Unknown path |
-| 405 | `method_not_allowed` | false | Method is not `POST` |
-| 413 | `invalid_request` | false | Raw or decompressed body exceeds its limit |
-| 415 | `invalid_request` | false | Unsupported supplied `Content-Type` |
-| 429 | `busy` | true | Circuit admission queue is full |
-| 500 | `proof_failed` | false | Proof runner or response self-validation failed after a valid request invoked proving |
-| 503 | `unavailable` | false | Route prover is not configured |
+The successful response repeats the complete public binding:
 
-The request-failure status is `400` and the post-validation prover-failure status is `500` for deposit, transfer, withdraw, and batch transfer. A proof runner error, nil response, or invalid response after `Prove*` is invoked is therefore never classified as a caller request error.
+```json
+{
+  "version": "v1",
+  "circuit_set_id": "privacy-note-v1-audit-field-v1",
+  "circuit_id": "deposit-audit-field-v1",
+  "artifact_hash": "base64-encoded 32 bytes",
+  "public_inputs": ["same 23 base64 values, in order"],
+  "proof": "base64-encoded canonical BN254 Groth16 proof"
+}
+```
 
-## Authentication, timeout, and privacy boundary
+Clients must reject a response unless all repeated fields equal their prepared request and then perform local verification with the exact local artifact identity and final PI23 before constructing a V2 message. Framing equality alone is not proof verification. Prepared objects and witness bytes must be cleared after the attempt; do not persist or log either.
 
-When `CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN` is set, every proof route requires the matching Bearer credential. Do not put credentials in a URL query or userinfo. Non-loopback remote deployments use TLS.
+## Transport and errors
 
-Clients set a finite timeout. Context cancellation ends the caller wait but does not guarantee termination of an in-process proving solver. A caller may retry the same endpoint under its own policy; automatic multi-prover failover is disabled by default because it expands the witness-disclosure boundary. Browser cross-origin use belongs at a downstream gateway with an explicit CORS allowlist and authentication policy.
+The route accepts `POST` JSON, supports `identity` or `gzip` body encoding, and applies the configured raw and decompressed body limit (8 MiB by default). A configured bearer token is required for every proof route. Responses use `Content-Type: application/json` and `Cache-Control: no-store`; callers set a finite timeout and must not automatically fail over to another prover.
 
-Proof-route logs, error messages, and metric labels must not contain request or response bodies, amounts, asset IDs, randomness, public keys, note commitments, proof bytes, bearer tokens, or witness/solver diagnostics.
+Errors use the strict `v1` envelope below. Unknown fields, duplicate fields, trailing JSON, an unsupported version, invalid base64/framing, a non-canonical field element, or witness/PI23 mismatch return `400 invalid_request`. A prover failure after a valid request returns `500 proof_failed`.
 
-## Versioning and compatibility
+```json
+{"version":"v1","code":"invalid_request","message":"audit-field proof request validation failed"}
+```
 
-The route major version and each request, payload, response, and proof object version are separate compatibility layers. Adding, removing, or renaming a field, changing an encoding, or changing validation meaning requires a version bump for the affected object. Existing `v1` objects do not gain silent optional fields because decoding is strict. Unsupported versions fail closed as `400 invalid_request`; legacy auto-detection and fallback decoding are prohibited.
+## Legacy archive boundary
 
-The common policy deliberately preserves existing success request/response envelope versions and `ErrorResponseVersion=v1`. It corrects the transport classification of existing transfer, withdraw, and batch-transfer post-validation failures from `400 proof_failed` to `500 proof_failed`. Clients must not infer retry safety from `proof_failed`; it remains non-retryable.
+The former `/v1/prover/deposit`, `/v1/prover/transfer`, `/v1/prover/withdraw`, and `/v1/proofs/batch-transfer` contracts are not live V2 routes. Their NoteV1 and conformance fixtures remain retained historical evidence in `x/privacy/client/sdk/conformance/testdata`; they are not a fallback, auto-detection input, or a current integration target. The schema preserves those fixtures under an explicit legacy branch instead of rewriting them as V2 data.
 
 ## Deposit
 
-### Request
+The former deposit route is legacy-only. This compatibility anchor is retained for archived links; use the current audit-field route above and do not implement `/v1/prover/deposit` as a V2 fallback.
 
-```http
-POST /v1/prover/deposit
-Content-Type: application/json
-Accept: application/json
-```
-
-```json
-{
-  "version": "v1",
-  "payload": {
-    "version": "v1",
-    "receiver_spend_pubkey_hex": "32-byte-lowercase-hex",
-    "receiver_view_pubkey_hex": "32-byte-lowercase-hex",
-    "amount": "10",
-    "asset_id_hex": "32-byte-lowercase-hex",
-    "randomness_hex": "32-byte-lowercase-hex",
-    "note_commitment_hex": "32-byte-lowercase-hex"
-  }
-}
-```
-
-| Field | Canonical validation |
-| --- | --- |
-| Request and payload `version` | Exactly `v1` |
-| `receiver_spend_pubkey_hex`, `receiver_view_pubkey_hex` | Exactly 64 lowercase hex characters; canonical 32-byte compressed BN254 twisted-Edwards point, on-curve, non-identity, prime subgroup |
-| `amount` | Canonical uint64 decimal string: `0` or no-leading-zero decimal through `18446744073709551615` |
-| `asset_id_hex`, `randomness_hex` | Exactly 64 lowercase hex characters; canonical 32-byte unsigned big-endian BN254 scalar-field encoding |
-| `note_commitment_hex` | Exactly 64 lowercase hex characters; canonical non-zero 32-byte BN254 field encoding |
-
-Hex values have no `0x` prefix. Unknown fields, duplicate keys, trailing JSON, unsupported versions, and legacy request shapes fail closed as `400 invalid_request`.
-
-The service restores both compressed public keys, constructs a memo-empty note, applies the NoteV1 validation, and recomputes its commitment. The recomputed commitment must equal `note_commitment_hex`; the reconstructed note's commitment and nullifier must be non-zero. Zero asset ID and randomness are individually permitted only when that final invariant holds.
-
-### Response
-
-```json
-{
-  "version": "v1",
-  "proof": {
-    "version": "v1",
-    "note_commitment_hex": "32-byte-lowercase-hex",
-    "proof_hex": "164-byte-lowercase-hex"
-  }
-}
-```
-
-Both response versions are exactly `v1`. `proof.note_commitment_hex` must equal both the submitted commitment and the commitment recomputed by the service. `proof_hex` is exactly 328 lowercase hex characters (164 bytes) and must pass canonical BN254 Groth16 frame validation. The service validates the generated frame before returning it; callers validate the versions, commitment binding, and frame before using it.
-
-### Disclosure and downstream assembly boundary
-
-The deposit prover receives receiver public keys, amount, asset ID, and randomness. It can derive the note commitment and nullifier. Selecting a remote prover is therefore a trusted-prover privacy decision, not an ordinary public RPC choice. The request excludes memo, creator, denom string, encrypted note, seed, and chain ID.
-
-The endpoint neither creates `MsgDeposit`, encrypts a note, nor signs or broadcasts a transaction. A language-neutral downstream flow is:
-
-1. Construct NoteV1 from receiver keys, amount, denom-derived asset ID, randomness, and the selected memo.
-2. Compute the commitment and encrypt the complete note plaintext, including memo, in the canonical deposit envelope.
-3. Request this proof with the memo-free payload above.
-4. Validate response versions, commitment equality, and proof framing.
-5. Convert `proof_hex` and `note_commitment_hex` to bytes; build `MsgDeposit` with the same amount/denom and encrypted note.
-6. Sign and broadcast. The keeper derives asset ID from the denom and finally verifies amount, commitment, and proof.
-
-The proof does not bind memo, encrypted note, creator, or the denom string itself. It binds amount, the denom-derived asset ID, and the commitment; the commitment binds both receiver keys, amount, asset ID, and randomness. A downstream client must preserve this boundary and must not treat a prover response as an encrypted-note reconstruction.
-
-## Conformance validation
-
-The dedicated schema owns the general HTTP fixture and the deposit fixture; it does not import a wallet or SDK schema. Validate both from the repository root with the repository's focused Draft 2020-12 conformance gate:
+Validate the current and retained legacy fixture shapes with:
 
 ```bash
 make docs-check
 go test ./x/privacy/client/sdk/conformance -run '^TestProverHTTPSchemaContract$' -count=1
 ```
-
-The gate compiles the canonical schema, accepts both canonical fixtures, and rejects representative unknown-field and out-of-range-amount mutations. It uses the required Go toolchain and does not require a third-party Python package. Downstream implementations may use any conforming Draft 2020-12 validator against the same language-neutral schema.

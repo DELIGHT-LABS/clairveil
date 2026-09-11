@@ -2,6 +2,8 @@
 
 이 문서는 Clairveil repository 자체의 보안 경계를 정리합니다. Clairveil은 production chain이 아니라 reusable `x/privacy` module, reference `clairveild`, companion `clairveil-proverd`, fixture, walkthrough, SDK handoff를 제공하는 standalone privacy core입니다. 실제 production chain, bespoke features 결합, validator 운영, master auditor key custody, remote prover 노출 정책은 Clairveil을 가져다 쓰는 downstream project가 결정하고 책임집니다.
 
+> 현재 runtime 범위: live prover surface는 development-only `POST /v2/prover/audit-field`입니다. 아래 NoteV1, batch, `/v1/prover/*` 설명은 current deployment guidance가 아닌 보존 legacy threat-analysis context입니다.
+
 ## 1. 기본 가정
 
 - 본 repo의 `clairveild`는 sample/reference chain입니다.

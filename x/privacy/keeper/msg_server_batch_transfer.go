@@ -30,6 +30,9 @@ type batchDerivedPublicV1 struct {
 // shielded JoinSplit. The Msg RPC is registered in tx.proto in the same core
 // implementation commit as this method.
 func (k msgServer) BatchTransfer(goCtx context.Context, msg *types.MsgBatchTransfer) (*types.MsgBatchTransferResponse, error) {
+	if k.audit != nil {
+		return nil, fmt.Errorf("legacy privacy service is disabled")
+	}
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
 	// Only cheap bounded framing is allowed before the deterministic precharge.

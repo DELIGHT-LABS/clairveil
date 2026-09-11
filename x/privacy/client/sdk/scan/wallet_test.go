@@ -70,7 +70,9 @@ func TestSaveLocalWalletFileRoundTrip(t *testing.T) {
 	dbPath := WalletFilePath(tempDir, userAddress)
 
 	legacyNote, txRes := newScanServiceDepositTx(t, []byte("wallet-roundtrip"), big.NewInt(9), "uclair", 23)
-	original := &LocalWalletData{LastHeight: 23, Notes: []SecretFoundNote{mustSecretFoundNoteFromLegacy(t, BuildFoundNote(legacyNote, txRes))}}
+	found := mustSecretFoundNoteFromLegacy(t, BuildFoundNote(legacyNote, txRes))
+	found.AuditKeyID, found.AuditKeyEpoch = "audit-key-id", 2
+	original := &LocalWalletData{LastHeight: 23, Notes: []SecretFoundNote{found}}
 
 	require.NoError(t, os.WriteFile(dbPath, []byte("old"), 0o644))
 	require.NoError(t, os.Chmod(dbPath, 0o644))
@@ -85,6 +87,8 @@ func TestSaveLocalWalletFileRoundTrip(t *testing.T) {
 	require.Len(t, result.Wallet.Notes, 1)
 	require.Equal(t, original.Notes[0].Nullifier, result.Wallet.Notes[0].Nullifier)
 	require.Equal(t, uint64(9), result.Wallet.Notes[0].Note.Amount)
+	require.Equal(t, "audit-key-id", result.Wallet.Notes[0].AuditKeyID)
+	require.Equal(t, uint64(2), result.Wallet.Notes[0].AuditKeyEpoch)
 }
 
 func TestLoadLegacyWalletDecodesDirectlyToFixedNote(t *testing.T) {

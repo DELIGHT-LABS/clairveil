@@ -300,14 +300,14 @@ artifact checksum env 파일을 만들려면 아래 명령을 사용합니다.
 
 ```bash
 go run ./cmd/clairveil-setup \
-  --out /path/to/zk_artifacts
+  --out /path/to/zk_artifacts --development
 
 set -a
 source /path/to/zk_artifacts/privacy_zk_checksums.env
 set +a
 ```
 
-Required `privacy-note-v1` 순서는 `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`입니다. Validator는 exact consensus identity 비교 뒤 네 required VK만 load하고 prover는 선택한 R1CS/PK pair를 lazy load합니다. 기록된 development batch artifact는 R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`입니다. 이는 development identity이며 production distribution/formal setup artifact가 아닙니다.
+현재 development 순서는 `privacy-note-v1-audit-field-v1`: `deposit-audit-field-v1`, `spend-audit-field-v1`, `joinsplit-2x2-audit-field-v1`, `batch-joinsplit-16x32-audit-field-v1`입니다. Validator는 exact consensus identity 비교 뒤 matching VK 네 개를 load하고 prover는 선택한 R1CS/PK pair를 lazy load합니다. `clairveil-setup`은 `--out`, `--development`만 지원합니다. 이전 `--circuit`/`--overwrite` 절차와 batch artifact measurement는 현재 runtime evidence가 아닌 legacy record입니다.
 
 권장 모드는 아래입니다.
 
@@ -359,7 +359,7 @@ query privacy reserve uclair
 
 ### 9.1 Deposit proof 획득 경계
 
-공식 remote acquisition route는 [deposit API](clairveil-proverd-http-api-kr.md#deposit)와 공통 [HTTP API](clairveil-proverd-http-api-kr.md)가 정의하는 `POST /v1/prover/deposit`입니다. Downstream client는 local proving 또는 이 route 호출을 선택할 수 있지만 encrypted note를 계산·보관하고 `MsgDeposit`을 조립·서명·전파해야 합니다. Prover는 versioned witness를 검증하고 proof를 반환할 뿐 denom을 선택하거나 transaction metadata를 만들거나 keeper verification을 대체하지 않습니다. Ad-hoc handler 대신 auth/admission/no-store 공통 경계를 보존합니다.
+`/v1/prover/deposit`은 공식 current remote route가 아닌 보존 legacy 문서입니다. 유일한 live route는 [현재 HTTP API](clairveil-proverd-http-api-kr.md#현재-route)의 `POST /v2/prover/audit-field`입니다. Complete witness/PI23 경계는 V2 message 전 local artifact-identity verification을 요구하며 deployment는 ad-hoc handler 대신 auth/admission/no-store 공통 경계를 보존합니다.
 
 처음부터 target chain의 모든 기능과 섞지 말고 아래 순서로 올리는 것을 권장합니다.
 

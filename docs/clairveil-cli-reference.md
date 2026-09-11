@@ -67,7 +67,7 @@ Production wallets must not write viewing keys into plaintext logs or analytics.
 
 ### show-disclosure-pubkey
 
-Displays the public key used for recipient-encrypted disclosure, sender self-view disclosure, and audit disclosure.
+Displays a user disclosure public key for recipient-encrypted disclosure and sender self-view disclosure.
 
 ```bash
 clairveild tx privacy show-disclosure-pubkey \
@@ -76,7 +76,35 @@ clairveild tx privacy show-disclosure-pubkey \
   --output json
 ```
 
-This value is used for the genesis audit master pubkey, as a user disclosure recipient key, or to confirm the sender self-view disclosure key.
+This is not the V4 genesis audit master key. Fresh V4 genesis derives its audit-field public key and proof of possession from an offline audit-secret through the reviewed runtime flow; use this command only for user/self-view disclosure.
+
+### Audit-field V2 runtime configuration
+
+Every V2 `tx privacy` command that prepares or proves a transaction obtains the network nonce, original initial height, active audit epoch/key, and circuit identity through the small audit configuration/key-history queries. The chain ID comes from the normal Cosmos client configuration or `--chain-id`. The removed `--audit-network-nonce-hex` and `--audit-initial-height` flags must not be supplied. Expiry and prover selection remain explicit operational controls:
+
+```bash
+--audit-expiry 30m --audit-prover-timeout 30m
+```
+
+Omit `--audit-prover-url` for local proving with the verified bundle, or explicitly select one trusted URL for remote proving. `transfer-batch-16x32` retains `--prover-url` as a V2 alias for `/v2/prover/audit-field`; it must not conflict with `--audit-prover-url`.
+
+### Collect and verify audit provenance
+
+`clairveil-auditor` reads `block` and `block_results` for a closed range, retains only original successful privacy transactions with their execution results in one atomic local JSON cache, verifies the original message proof against the configured circuit identity, decrypts with retained epoch keys, and builds deposit-rooted note lineage. It neither replays the chain nor uses PrivacyScan as an audit ledger.
+
+```bash
+clairveil-auditor \
+  --chain-id reviewed-chain-1 \
+  --node tcp://127.0.0.1:26657 \
+  --from-height 100 --to-height 500 \
+  --cache /secure/audit/range-100-500.json \
+  --audit-keyring-file /secure/audit/keyring.json \
+  --audit-artifacts /absolute/path/to/reviewed-artifacts
+```
+
+The keyring must be a `0600` version-1 JSON file containing `{key_id, secret_key}` lowercase 32-byte hex pairs. Configuration, nonce, initial height, public key history, and circuit identity are queried automatically. The report separates `collection_complete` from `provenance_complete`, and reports both `last_processed_block` and the last privacy execution position. A missing block/result, execution event, epoch key, decryptable envelope, or deposit root is `AUDIT_INCOMPLETE`; it is never emitted as an empty lineage or zero balance. Reusing the same cache resumes after the last atomically stored block, including empty blocks.
+
+The collector trusts the selected CometBFT RPC endpoint as its block/result source; it is not a light client. Deployments that need independently authenticated block history must provide that trust boundary outside this small collector. No replay input, runtime archive, or persistent audit server is created.
 
 ## 3. Deposit
 
@@ -87,7 +115,7 @@ clairveild tx privacy deposit 10uclair \
   --from alice \
   --keyring-backend test \
   --chain-id clairveil-local-1 \
-  --gas 2500000 \
+  --gas 3500000 \
   --gas-prices 8500000000uclair \
   --yes \
   --output json
@@ -104,6 +132,7 @@ Notes:
 
 - `0uclair` deposit can be used to prepare a dummy note.
 - A dummy note may be needed when the 2-input transfer planner has to split one large note.
+- The recorded development deposit used `2,868,008` gas. `2500000` ran out of gas (`code 11`), so this example uses `3500000`; downstream chains must set their own gas policy from measured execution.
 
 ## 4. Note Scan
 
@@ -221,7 +250,7 @@ Current limitations:
 
 `transfer-batch-16x32` runs one `MsgBatchTransfer` with one `BatchJoinSplit16x32` proof. Repeat `--payment 'shielded-address,coin[,policy,mode,target-key]'` for 1..32 independent payment policies, optionally pin 1..16 wallet notes with `--input-index`, and choose `--output-mode compact|exact32`. The command persists the private prepared payload and proof with mode `0600` before broadcast.
 
-The restartable commands are `prepare-batch-transfer`, `prove-batch-transfer PREPARED_FILE`, and `broadcast-batch-transfer PREPARED_FILE PROOF_FILE`. `prove-batch-transfer` uses the local prover when `--prover-url` is absent and exactly one selected `POST /v1/proofs/batch-transfer` endpoint when present; it never performs automatic prover failover or follows redirects. Plain HTTP is accepted only for loopback endpoints such as `localhost`, `127.0.0.1`, and `[::1]`; every non-loopback prover URL must use HTTPS. For bearer-authenticated remote provers it reads `CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN` from the environment and never accepts the secret as a CLI flag. See [clairveil-getting-started.md](clairveil-getting-started.md#8-batchjoinsplit16x32-localnet) for complete commands and boundary cases.
+The restartable batch commands and `/v1/proofs/batch-transfer` endpoint are legacy-only. `--prover-url` is retained as a V2 alias for `/v2/prover/audit-field`; it never fails over or follows redirects. See the [legacy reference boundary](clairveil-getting-started.md#8-legacy-batchjoinsplit16x32-reference).
 
 ## 6. Disclosure Decode
 
@@ -395,11 +424,26 @@ Other queries are available through gRPC/HTTP gateway and generated clients.
 
 ### clairveil-setup
 
-Generates development ZK artifacts for active set `privacy-note-v1` and manifest schema `v2`. Generated R1CS/PK/VK binaries are not source artifacts and this command is not a formal trusted setup ceremony.
+Generates the audit-field V2 artifact set and its identity-pinned manifest. The required acknowledgement keeps the bundle explicitly development-grade; generated R1CS/PK/VK binaries are not source artifacts and this command is not a formal trusted setup ceremony.
 
 ```bash
-clairveil-setup --out artifacts/privacy
-clairveil-setup --out artifacts/privacy --overwrite
+clairveil-setup --out artifacts/audit-field --development
+```
+
+The output directory must not already exist. Do not regenerate a reviewed release bundle: reuse its exact artifacts and matching runtime config.
+
+### clairveild privacy configuration
+
+Normal server start and export require the same small V4 configuration and reviewed verifier artifact directory; missing either input is an error.
+
+```bash
+clairveild start \
+  --audit-config /absolute/path/to/audit-config.json \
+  --audit-artifacts /absolute/path/to/audit-field-artifacts
+
+clairveild export \
+  --audit-config /absolute/path/to/audit-config.json \
+  --audit-artifacts /absolute/path/to/audit-field-artifacts
 ```
 
 ### clairveil-verify (legacy only)
@@ -417,7 +461,7 @@ It is incompatible with the current keyring-signature root seed and `privacy-fix
 Runs the companion prover HTTP service.
 
 ```bash
-export CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR=artifacts/privacy
+export CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR=artifacts/audit-field
 export CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict
 export CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN="$(openssl rand -hex 32)"
 
@@ -432,7 +476,7 @@ clairveil-proverd \
 
 Follow the remote production profile in [clairveil-operations-guide.md](clairveil-operations-guide.md#6-prover-operations).
 
-Validator startup compares the local VK hashes/public-input schema hashes to consensus `CircuitSetIdentity` schema `v1`; checksum env values cannot override it. Validators need VK only, while `clairveil-proverd` lazily loads R1CS/PK for proof generation. Prover endpoint failover is off by default and requires explicit privacy opt-in.
+`clairveil-proverd` serves only audit-field V2 and requires its artifact directory. It compares local VK/public-input schema hashes to the runtime `CircuitSetIdentity`; checksum env values cannot override it. Validators need VK only, while `clairveil-proverd` lazily loads R1CS/PK for proof generation. The bundle remains development-grade, and prover endpoint failover is off by default and requires explicit privacy opt-in.
 
 ### clairveil-payroll
 
@@ -504,7 +548,7 @@ The Make targets above are the maintained runnable interfaces for the localnet a
 
 ## 11. Batch Protocol Compatibility
 
-The active circuit set generated and checked by the CLI is `privacy-note-v1`. Notes, disclosures, and encrypted envelopes use canonical `privacy-fixed-v1`; commands emit/consume the typed envelope rather than raw ciphertext or legacy JSON plaintext. `AssetRegistryV1` is authoritative for resolving canonical denoms and 32-byte asset IDs. On upgrade, use fresh genesis, delete local wallet/scan/proof caches and old development artifacts, regenerate artifacts, and rescan. There is no legacy decode or in-place state migration.
+The V2 circuit set generated and checked by the CLI is `privacy-note-v1-audit-field-v1`. Notes, disclosures, and encrypted envelopes use canonical `privacy-fixed-v1`; commands emit/consume the typed envelope rather than raw ciphertext or legacy JSON plaintext. `AssetRegistryV1` is authoritative for resolving canonical denoms and 32-byte asset IDs. On upgrade, use fresh genesis, delete local wallet/scan/proof caches and old development artifacts, reuse the reviewed matching artifacts, and rescan. There is no legacy decode or in-place state migration.
 
 Wallet scan state is ordered by the complete cursor `(height, global_sequence, output_index)`. Any spend path must be obtained from a snapshot for exactly the selected root. Current-root paths use incremental nodes and do not consume the online historical-rebuild budget. A non-current historical path requires persisted root/count/height metadata; the public query admits at most 1,024 leaves and two concurrent rebuilds per keeper, otherwise it returns `ResourceExhausted`. Use the current root or a trusted local historical index above that online bound. The separate offline recovery/export bound remains `MaxMerkleRebuildLeaves` (1,048,576). Remote historical root/path queries can reveal wallet interest, so retain the privacy warning and prefer local or privacy-preserving infrastructure when that matters.
 

@@ -6,6 +6,7 @@
 
 # Build outputs
 /clairveild
+/clairveil-audit-output
 /clairveil-setup
 /clairveil-verify
 /clairveil-proverd

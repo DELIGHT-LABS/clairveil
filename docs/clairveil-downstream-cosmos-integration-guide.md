@@ -302,14 +302,14 @@ Create artifact checksum env files with:
 
 ```bash
 go run ./cmd/clairveil-setup \
-  --out /path/to/zk_artifacts
+  --out /path/to/zk_artifacts --development
 
 set -a
 source /path/to/zk_artifacts/privacy_zk_checksums.env
 set +a
 ```
 
-The required `privacy-note-v1` order is `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`. Validators load the four required VKs only after exact consensus identity comparison; provers lazily load selected R1CS/PK pairs. The recorded development batch artifacts are R1CS `122,813,535 B` / `fc494191a1662e46c63dacaa0967e48ec64b21ed45dc0e8bb70b6a4aa088f210`, PK `209,218,621 B` / `9c53a14d5a7e4e20aaf1207426eaecac62ff240aff8a4f1f2dd8f3986f262470`, and VK `716 B` / `7359bea73f43d2cb854bd5e5aaa682d467ebb472322d623a4c5fa52c4aed2621`. These are development identities, not production-distribution or formal-setup artifacts.
+The current development order is `privacy-note-v1-audit-field-v1`: `deposit-audit-field-v1`, `spend-audit-field-v1`, `joinsplit-2x2-audit-field-v1`, `batch-joinsplit-16x32-audit-field-v1`. Validators load the four matching VKs after exact consensus identity comparison; the prover lazily loads a selected R1CS/PK pair. `clairveil-setup` supports only `--out` and `--development`; the old `--circuit`/`--overwrite` procedure and batch artifact measurements are legacy records, not current runtime evidence.
 
 Recommended modes:
 
@@ -361,7 +361,7 @@ The remaining `tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_
 
 ### 9.1 Deposit Proof Acquisition Boundary
 
-The official remote acquisition route is `POST /v1/prover/deposit`, defined by the [deposit API](clairveil-proverd-http-api.md#deposit) and shared [HTTP API](clairveil-proverd-http-api.md). A downstream client may prove locally or call that route, but it must compute/retain the encrypted note and assemble/sign/broadcast `MsgDeposit` itself. The prover validates the versioned witness and returns a proof; it does not select denom, construct transaction metadata, or replace keeper verification. Deployments must retain the common auth/admission/no-store/error boundary rather than mount an ad-hoc handler.
+`/v1/prover/deposit` is retained legacy documentation, not an official current remote route. The only live route is `POST /v2/prover/audit-field`, defined by the [current HTTP API](clairveil-proverd-http-api.md#current-route). Its complete witness/PI23 boundary requires local artifact-identity verification before V2 message construction; deployments retain the common auth/admission/no-store/error boundary rather than mounting an ad-hoc handler.
 
 Do not mix everything with target-chain-specific features from the start. Bring it up in this order.
 

@@ -28,31 +28,23 @@ make release-check
 | `make init` | 수동 development-chain home 준비. 기본 home은 `~/.clairveil` |
 | `make docs-check` | Markdown, EN/KR pair, manifest, prover schema fixture |
 | `make examples` | JS audit key, fixture validator, prover HTTP client 검사 |
-| `make localnet-smoke` | fresh genesis에서 daemon 시작 |
-| `make privacy-e2e-smoke` | deposit, transfer, disclosure, direct/relayed withdraw 흐름 |
+| `make localnet-smoke` | reviewed audit-field V2 localnet smoke. reviewed daemon/prover binary와 일치 runtime input 필요 |
+| `make privacy-e2e-smoke` | DeliverTx/rescan을 포함하는 reviewed V2 deposit, transfer, withdraw, 작은 one-proof batch smoke |
 | `make docker-proverd-build` | Dockerfile/compose build 검증 |
 
-`make release-check`는 `ci`, `vulncheck`, `localnet-smoke`,
-`privacy-e2e-smoke`, **static** batch gate와
-`RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check`를 실행합니다.
-실제 one-proof batch gate, `reference-payroll-*`, 실제 16x32 capacity workload는
-실행하지 않습니다.
+`make release-check`는 reviewed V2 smoke, default static batch fixture gate, V2 bulk-readiness live step을 실행합니다. 일치하는 `CLAIRVEILD_BIN`, `CLAIRVEIL_PROVERD_BIN`, `CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR`, `CLAIRVEIL_AUDIT_RUNTIME_DIR`, `CLAIRVEIL_AUDIT_SECRET_FILE`를 export해야 합니다. Static fixture는 capacity claim이 아닌 conformance coverage로 남습니다.
 
 ## Batch와 payroll gate
 
 | Gate | 검증하는 것 | 검증하지 않는 것 |
 | --- | --- | --- |
-| `make privacy-batch-joinsplit-localnet` | Static BatchJoinSplit16x32 fixture와 SDK conformance | Node/prover를 시작하거나 proof를 만들지 않음 |
-| `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet` | Local node/prover를 통한 실제 one-proof workflow | Throughput 또는 production capacity |
+| `make privacy-batch-joinsplit-localnet` | process를 시작하지 않는 static legacy fixture와 SDK conformance | V2 runtime validation |
+| `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet` | reviewed runner를 통한 작은 V2 `transfer-batch-16x32` proof 1회 | Throughput 또는 16x32 capacity |
 | `make reference-payroll-demo` | Legacy multi-message repository-local regression | 실제 node 또는 one-proof batch transfer |
 | `make reference-payroll-live-localnet` | Legacy multi-message `transfer-batch` localnet regression | One-proof workflow 또는 production-capacity claim |
 | `make reference-payroll-rehearsal` | Legacy simulation, regression, capacity-planning report | One-proof production capacity |
 
-Release 또는 mainnet acceptance가 실제 one-proof gate를 주장하면 별도로 실행합니다.
-
-```bash
-RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet
-```
+`RUN_LOCALNET=1` 결과를 throughput 또는 mainnet capacity claim으로 취급하면 안 됩니다.
 
 16x32 production-capacity claim에는 실제 16x32 workload의 tag/commit-bound artifact가
 필요합니다. proof/sec, tx/sec, item/sec, RSS, CPU, shape distribution,
@@ -117,6 +109,8 @@ npm --prefix examples/js-sdk-prover-http-client run demo
 
 ## Local home과 port
 
+아래 V2 smoke command는 격리 temporary home과 reviewed binary/runtime input을 사용합니다. 별도로 legacy라고 표시한 load example만 reference 전용입니다.
+
 `make localnet-smoke`와 `make privacy-e2e-smoke`는 독립 temporary home/work
 directory를 만들며 실행 중인 `~/.clairveil` node에 연결하지 않습니다. 다만 다른
 process가 default Tendermint/RPC service port를 사용하면 충돌할 수 있습니다. E2E에는
@@ -135,11 +129,9 @@ source "$tmp/home/clairveil.env"
 "$tmp/bin/clairveild" start --home "$tmp/home"
 ```
 
-`CLAIRVEIL_HOME`, `KEEP_HOME=1`, `START_SECONDS`, `CHAIN_ID`, `CLAIRVEILD_BIN`은
-localnet smoke를 설정합니다. `CLAIRVEIL_E2E_WORK_DIR`, `KEEP_WORK_DIR=1`,
-`CLAIRVEILD_BIN`, `CLAIRVEIL_SETUP_BIN`, `CHAIN_ID`, port 변수는 privacy E2E smoke를
-설정합니다. Privacy E2E flow는 이제 [시작 가이드](clairveil-getting-started-kr.md)에
-포함된 walkthrough의 자동 검증 대응물입니다.
+`CLAIRVEIL_V2_SMOKE_WORK_DIR` 또는 `CLAIRVEIL_E2E_WORK_DIR`, `KEEP_WORK_DIR=1`, port 변수,
+`V2_SMOKE_READY_ATTEMPTS`로 runner를 설정합니다. 일치하는 artifact/runtime/secret input과
+reviewed `CLAIRVEILD_BIN`, `CLAIRVEIL_PROVERD_BIN`은 항상 필요합니다.
 
 ## Release pack과 문서 변경
 

@@ -27,6 +27,8 @@ type stubBatchTransferProver struct{}
 
 type stubDepositProver struct{}
 
+type stubAuditFieldProver struct{}
+
 func newServiceRequest(method, path string, body io.Reader) *http.Request {
 	request := httptest.NewRequest(method, path, body)
 	if method == http.MethodPost {
@@ -49,6 +51,10 @@ func (stubBatchTransferProver) ProveBatchTransfer(request privacyprovertransport
 
 func (stubDepositProver) ProveDeposit(request privacyprovertransport.DepositProofRequest) (*privacyprovertransport.DepositProofResponse, error) {
 	return nil, fmt.Errorf("unexpected deposit proof request: %s", request.Version)
+}
+
+func (stubAuditFieldProver) ProveAuditField(request privacyprovertransport.AuditFieldProofRequest) (*privacyprovertransport.AuditFieldProofResponse, error) {
+	return nil, fmt.Errorf("unexpected audit-field proof request: %s", request.Version)
 }
 
 func TestHandlerHealthRoute(t *testing.T) {
@@ -434,12 +440,42 @@ func TestHandlerAppliesAuthAndEncodingBoundaryToDepositRoute(t *testing.T) {
 	})
 }
 
-func TestReferenceHandlerWiresDepositProverAndRequiredCircuitInventory(t *testing.T) {
-	handler := NewReferenceHandler(nil, io.Discard, DefaultMaxRequestBz, "")
-	require.NotNil(t, handler)
-	require.NotNil(t, handler.proverHandler)
-	require.NotNil(t, handler.proverHandler.DepositProver)
-	require.Equal(t, circuitIDStrings(privacyzk.RequiredCircuitIDs()), handler.info.Circuits)
+func TestHandlerAppliesProofGuardsToAuditFieldRouteWithoutProver(t *testing.T) {
+	info := DefaultRuntimeInfo()
+	info.AuthEnabled = true
+	handler := NewHandlerWithProverSet(
+		privacyprovertransport.ProverSet{AuditField: stubAuditFieldProver{}},
+		nil,
+		nil,
+		info,
+		"secret-token",
+		128,
+		mustDefaultAdmissionController(),
+	)
+
+	t.Run("bearer auth and no-store", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		request := newServiceRequest(http.MethodPost, privacyprovertransport.AuditFieldProofPath, bytes.NewBufferString(`{}`))
+		handler.ServeHTTP(recorder, request)
+		require.Equal(t, http.StatusUnauthorized, recorder.Code)
+		require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+	})
+
+	t.Run("decompressed body limit and no-store", func(t *testing.T) {
+		var compressed bytes.Buffer
+		writer := gzip.NewWriter(&compressed)
+		_, err := writer.Write([]byte(`{"padding":"` + string(bytes.Repeat([]byte("a"), 256)) + `"}`))
+		require.NoError(t, err)
+		require.NoError(t, writer.Close())
+
+		recorder := httptest.NewRecorder()
+		request := newServiceRequest(http.MethodPost, privacyprovertransport.AuditFieldProofPath, bytes.NewReader(compressed.Bytes()))
+		request.Header.Set("Authorization", "Bearer secret-token")
+		request.Header.Set("Content-Encoding", "gzip")
+		handler.ServeHTTP(recorder, request)
+		require.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code)
+		require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+	})
 }
 
 func TestGnarkSolverOutputNeverUsesOperatorLogWriter(t *testing.T) {

@@ -1,5 +1,7 @@
 # Clairveil NoteV1 및 BatchJoinSplit16x32 프로토콜 계약
 
+> Legacy archive: 이 NoteV1/16x32 specification과 fixed fixture는 conformance history로 보존됩니다. 현재 V2 runtime이나 live prover contract가 아닙니다. 현재 공통 route는 [Proverd HTTP API](clairveil-proverd-http-api-kr.md)를 사용하세요.
+
 ## 1. 상태와 범위
 
 이 문서는 NoteV1, domain separation, 고정 인코딩, 16-input/32-output statement, aggregate vector root, disclosure digest, scan state, artifact identity, resource accounting에 대한 normative 문서다.

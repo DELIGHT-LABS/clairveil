@@ -93,3 +93,9 @@ func ValidateAuditFieldArtifactManifest(m *RuntimeArtifactManifest) error {
 	}
 	return nil
 }
+
+// ValidateAuditFieldIdentity reuses the registry's exact audit-field public
+// schema validation for runtime configuration before local artifacts are opened.
+func ValidateAuditFieldIdentity(identity *privacytypes.CircuitSetIdentity) error {
+	return (&ArtifactRegistry{circuitSetID: AuditFieldCircuitSetID}).validateExpectedIdentity(identity)
+}

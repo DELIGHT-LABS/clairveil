@@ -44,8 +44,12 @@ type NoteReservation struct {
 	BroadcastAttemptCount int
 	LastBroadcastAt       time.Time
 	LastBroadcastError    string
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
+	// Audit is present only for a v2 audit-field preparation. It records public
+	// namespace data and a deadline, never the ephemeral encryption scalar or a
+	// prover witness. Legacy reservations intentionally leave it nil.
+	Audit     *AuditBinding
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type PayrollOperation struct {

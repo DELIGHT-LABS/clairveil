@@ -6,16 +6,17 @@ Korean version: [README-kr.md](README-kr.md)
 
 ## Script List
 
+The current localnet, E2E, and prover-load entries below use the reviewed V2 runtime. Remaining legacy entries are explicitly labelled static, historical, or capacity-planning only.
+
 - `docs-check.sh`: validates tracked and new working-tree Markdown links and fragments through the CommonMark/GFM AST, top-level documentation language pairs and index, the plan archive boundary, HEAD-reachable exact-SemVer annotated commit tags/real changelog headings, document placement, release-pack manifests, and packed-link closure.
 - `markdown-ast.go`: provides the Goldmark CommonMark/GFM link and heading AST consumed by documentation and release checks; its unit test covers multiline references, nested parentheses, fragments, comments, and code fences.
 - `generate-proto.sh`: regenerates privacy protobuf and gRPC Gateway Go files from `proto/clairveil/privacy/v1`.
 - `govulncheck-with-policy.sh`: runs `govulncheck` and applies the repository vulnerability exception policy.
-- `localnet-smoke.sh`: builds `clairveild`, creates a temporary local validator genesis, applies `RPC_PORT`, `P2P_PORT`, `ABCI_PORT`, `GRPC_PORT`, `API_PORT`, and `PPROF_PORT` overrides, starts the node briefly, and verifies block commit.
-- `privacy-e2e-smoke.sh`: validates the full local privacy flow: deposit, transfer, disclosure decode, direct withdraw, and relayed withdraw.
-- `privacy-batch-joinsplit-localnet.sh`: validates the batch reference integration 16x32 fixture by default; with `RUN_LOCALNET=1`, starts a real node and `clairveil-proverd` and executes 1/1, 3/4 mixed disclosure, 31+change, exact32, padding, real process restart/retry, non-zero-height genesis export/import, typed cursor/path continuation, and reserve/asset/wallet round trips. It requires `grpcurl`. Set `CLAIRVEIL_BATCH_ARTIFACT_DIR` to reuse a previously verified development artifact directory instead of generating another setup.
+- `localnet-smoke.sh` and `privacy-e2e-smoke.sh`: stable entrypoints for the reviewed audit-field V2 runner. They require `CLAIRVEILD_BIN`, `CLAIRVEIL_PROVERD_BIN`, matching `CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR`, `CLAIRVEIL_AUDIT_RUNTIME_DIR`, and `CLAIRVEIL_AUDIT_SECRET_FILE`; they verify V2 DeliverTx and forced rescans.
+- `privacy-batch-joinsplit-localnet.sh`: keeps its default static fixture/conformance gate. `RUN_LOCALNET=1` runs the same reviewed V2 runner with one small `transfer-batch-16x32` proof, not a 16x32 capacity workload.
 - `privacy-bench.sh`: runs privacy circuit benchmarks and writes structured JSON/Markdown reports.
 - `privacy-proverd-bench.sh`: runs in-process prover HTTP transport benchmarks.
-- `privacy-proverd-load-bench.sh`: summarizes external `clairveil-proverd` load against one already running prover via `PROVERD_URL`, or a round-robin prover pool via `PROVERD_URLS`. Set `PROVERLOAD_ALLOW_UNHEALTHY_ENDPOINTS=1` to exclude endpoints that fail preflight while recording unhealthy endpoint counts.
+- `privacy-proverd-load-bench.sh`: defaults to `audit_field_only`. Set `PROVERLOAD_AUDIT_REQUEST` to a complete V2 witness request and never retain or log it; the tool validates HTTP response version/circuit/artifact/PI23 framing, while the CLI smoke performs exact-artifact cryptographic verification.
 - `privacy-proverd-scale-bench.sh`: runs the external prover load benchmark with pool-oriented defaults and writes `privacy-proverd-scale` reports. Requires comma-separated `PROVERD_URLS` and enables unhealthy endpoint exclusion by default; public-claim eligibility still requires `unhealthy_endpoint_count=0`.
 - `privacy-bench-localnet.sh`: runs localnet privacy smoke and writes fee, gas, reserve, and localnet summaries.
 - `privacy-localnet-tps-bench.sh`: wraps localnet smoke output as a `chain_tps` benchmark family.
@@ -35,4 +36,4 @@ Korean version: [README-kr.md](README-kr.md)
 - `validate-joinsplit-artifact-rotation-evidence.sh`: runs the exact JoinSplit artifact-rotation, fresh-genesis, and regression evidence gates using supplied or freshly prepared artifact sets.
 - `docker-proverd-build.sh`: validates the prover compose file, builds the reference prover Docker image, and inspects the image.
 - `install-binaries.sh`: installs six built project binaries (`clairveild`, `clairveil-setup`, legacy-only `clairveil-verify`, `clairveil-proverd`, `clairveil-payroll`, `clairveil-payrolld`) into `GOBIN` or `GOPATH/bin`; the verifier is not part of the current typed-note flow.
-- `init-localnet.sh`: prepares a default local chain home for manual `clairveild start` workflows.
+- `init-localnet.sh`: prepares a V2 fresh-genesis home from an existing reviewed runtime bundle, matching artifacts, and an offline audit-secret file; it does not generate keys, artifacts, or runtime archives.

@@ -28,31 +28,23 @@ make release-check
 | `make init` | a manual development-chain home; its default home is `~/.clairveil` |
 | `make docs-check` | Markdown, EN/KR pairs, manifests, and prover schema fixtures |
 | `make examples` | JS audit key, fixture validator, and prover HTTP client checks |
-| `make localnet-smoke` | daemon startup from a fresh genesis |
-| `make privacy-e2e-smoke` | deposit, transfer, disclosure, direct and relayed withdrawal flow |
+| `make localnet-smoke` | reviewed audit-field V2 localnet smoke; requires the reviewed daemon/prover binaries and matching runtime inputs |
+| `make privacy-e2e-smoke` | reviewed V2 deposit, transfer, withdraw, and small one-proof batch smoke with DeliverTx/rescan checks |
 | `make docker-proverd-build` | Dockerfile and compose build validation |
 
-`make release-check` runs `ci`, `vulncheck`, `localnet-smoke`,
-`privacy-e2e-smoke`, the **static** batch gate, and
-`RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check`.
-It does not run the real one-proof batch gate, any `reference-payroll-*` target, or
-an actual 16x32 capacity workload.
+`make release-check` runs the reviewed V2 smoke plus the default static batch fixture gate and V2 bulk-readiness live step. Export matching `CLAIRVEILD_BIN`, `CLAIRVEIL_PROVERD_BIN`, `CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR`, `CLAIRVEIL_AUDIT_RUNTIME_DIR`, and `CLAIRVEIL_AUDIT_SECRET_FILE`; the static fixture remains conformance coverage, not a capacity claim.
 
 ## Batch and payroll gates
 
 | Gate | It verifies | It does not verify |
 | --- | --- | --- |
-| `make privacy-batch-joinsplit-localnet` | Static BatchJoinSplit16x32 fixture and SDK conformance. | It starts neither node nor prover and produces no proof. |
-| `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet` | The actual local node/prover one-proof workflow. | Throughput or production capacity. |
+| `make privacy-batch-joinsplit-localnet` | Static legacy fixture and SDK conformance; it starts no process. | V2 runtime validation. |
+| `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet` | One small V2 `transfer-batch-16x32` proof through the reviewed runner. | Throughput or 16x32 capacity. |
 | `make reference-payroll-demo` | Legacy multi-message repository-local regression. | A real node or one-proof batch transfer. |
 | `make reference-payroll-live-localnet` | Legacy multi-message `transfer-batch` localnet regression. | The one-proof workflow or a production-capacity claim. |
 | `make reference-payroll-rehearsal` | Legacy simulation, regression, and capacity-planning reports. | One-proof production capacity. |
 
-Run the real one-proof gate separately when release or mainnet acceptance claims it:
-
-```bash
-RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet
-```
+Do not treat `RUN_LOCALNET=1` as a throughput or mainnet-capacity claim.
 
 A 16x32 production-capacity claim needs a tag/commit-bound artifact from the actual
 16x32 workload. Record proof/sec, tx/sec, item/sec, RSS, CPU, shape distribution,
@@ -117,6 +109,8 @@ npm --prefix examples/js-sdk-prover-http-client run demo
 
 ## Local homes and ports
 
+The V2 smoke commands below create an isolated temporary home and require the reviewed binary/runtime inputs; separately labelled legacy load examples remain reference-only.
+
 `make localnet-smoke` and `make privacy-e2e-smoke` create independent temporary
 homes/work directories and do not attach to an existing `~/.clairveil` node. They
 can still collide with another process using their default Tendermint/RPC service
@@ -135,11 +129,9 @@ source "$tmp/home/clairveil.env"
 "$tmp/bin/clairveild" start --home "$tmp/home"
 ```
 
-`CLAIRVEIL_HOME`, `KEEP_HOME=1`, `START_SECONDS`, `CHAIN_ID`, and `CLAIRVEILD_BIN`
-configure the localnet smoke. `CLAIRVEIL_E2E_WORK_DIR`, `KEEP_WORK_DIR=1`,
-`CLAIRVEILD_BIN`, `CLAIRVEIL_SETUP_BIN`, `CHAIN_ID`, and the port variables configure
-the privacy E2E smoke. The privacy E2E flow is the automated validation counterpart
-to the walkthrough now included in [getting started](clairveil-getting-started.md).
+`CLAIRVEIL_V2_SMOKE_WORK_DIR` or `CLAIRVEIL_E2E_WORK_DIR`, `KEEP_WORK_DIR=1`, port variables,
+and `V2_SMOKE_READY_ATTEMPTS` configure the runner. It always requires reviewed
+`CLAIRVEILD_BIN` and `CLAIRVEIL_PROVERD_BIN` plus matching artifact/runtime/secret inputs.
 
 ## Release pack and documentation changes
 

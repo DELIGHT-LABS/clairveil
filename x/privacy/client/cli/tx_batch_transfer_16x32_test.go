@@ -3,23 +3,22 @@ package cli
 import (
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"math/big"
-	"net/http"
-	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/cosmos/cosmos-sdk/client"
+	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/stretchr/testify/require"
 
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 
 	privacybatchtransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/batchtransfer"
-	privacyprovertransport "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/provertransport"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -126,53 +125,67 @@ func TestBatchTransferCommandFlagsExposeRestartableStages(t *testing.T) {
 	require.Contains(t, all.Flags().Lookup(flagBatchProverURL).Usage, "Exclusive")
 
 	prove := CmdProveBatchTransfer()
-	require.NotNil(t, prove.Flags().Lookup(flagBatchProofOut))
-	require.NotNil(t, prove.Flags().Lookup(flagBatchProverURL))
+	for _, name := range []string{flagBatchProofOut, flagBatchProverURL, flags.FlagFrom, flags.FlagChainID, flags.FlagNode} {
+		require.NotNil(t, prove.Flags().Lookup(name), name)
+	}
 	require.Nil(t, prove.Flags().Lookup(flagBatchPayment))
 }
 
-func TestProveBatchTransferCommandUsesExclusiveRemoteRouteAndWritesBoundProof(t *testing.T) {
-	const bearerToken = "batch-cli-prover-token"
-	t.Setenv(privacyprovertransport.BearerTokenEnv, bearerToken)
+func TestProveBatchTransferRejectsMismatchedChainBeforeRuntimeResolution(t *testing.T) {
+	legacy := testCLIBatchPayload(t)
+	payload, err := privacybatchtransfer.BuildPreparedAuditV2BatchTransferPayload(&privacybatchtransfer.PreparedBatchTransfer{
+		Root: legacy.Root, AssetID: legacy.AssetID, Inputs: legacy.Inputs, Outputs: legacy.Outputs,
+	}, privacybatchtransfer.BuildPreparedAuditV2BatchTransferPayloadInput{
+		ChainID: legacy.ChainID, ExpiresAtUnix: legacy.ExpiresAtUnix, DisableSelfViewDisclosure: true,
+	})
+	require.NoError(t, err)
+	path := filepath.Join(t.TempDir(), "v2-prepared.json")
+	require.NoError(t, privacybatchtransfer.WritePreparedAuditV2BatchTransferPayload(path, payload))
+
+	_, _, _, err = proveBatchTransferFromFile(CmdProveBatchTransfer(), client.Context{}.WithChainID("different-chain"), path)
+	require.ErrorContains(t, err, "chain ID")
+	require.ErrorContains(t, err, legacy.ChainID)
+	require.ErrorContains(t, err, "different-chain")
+}
+
+func TestProveBatchTransferCommandRejectsV1PayloadBeforeFileWriteOrHTTP(t *testing.T) {
 	payload := testCLIBatchPayload(t)
 	dir := t.TempDir()
 	preparedPath := filepath.Join(dir, "prepared.json")
 	proofPath := filepath.Join(dir, "proof.json")
 	require.NoError(t, privacybatchtransfer.WritePreparedBatchTransferPayload(preparedPath, payload))
 
-	requests := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests++
-		require.Equal(t, privacyprovertransport.BatchTransferProofPath, r.URL.Path)
-		require.Equal(t, http.MethodPost, r.Method)
-		require.Equal(t, "Bearer "+bearerToken, r.Header.Get("Authorization"))
-		var request privacyprovertransport.BatchTransferProofRequest
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
-		require.Equal(t, payload.PayloadHash, request.Payload.PayloadHash)
-		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(privacyprovertransport.BatchTransferProofResponse{
-			Version: privacyprovertransport.BatchTransferProofResponseVersion,
-			Proof: privacybatchtransfer.PreparedBatchTransferProof{
-				Version:            privacybatchtransfer.PreparedBatchTransferProofVersion,
-				RequestPayloadHash: payload.PayloadHash,
-				CircuitSetID:       payload.CircuitSetID,
-				Proof:              make([]byte, privacytypes.BatchTransferProofSizeV1),
-			},
-		}))
-	}))
-	t.Cleanup(server.Close)
-
 	cmd := CmdProveBatchTransfer()
 	cmd.SetOut(new(strings.Builder))
 	cmd.SetErr(new(strings.Builder))
-	cmd.SetArgs([]string{preparedPath, "--" + flagBatchProofOut, proofPath, "--" + flagBatchProverURL, server.URL})
-	require.NoError(t, cmd.Execute())
-	require.Equal(t, 1, requests)
+	cmd.SetArgs([]string{preparedPath, "--" + flagBatchProofOut, proofPath})
+	require.ErrorContains(t, cmd.Execute(), "unsupported prepared batch payload version")
+	_, err := os.Stat(proofPath)
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
 
-	proof, err := privacybatchtransfer.ReadPreparedBatchTransferProof(proofPath)
+func TestPreparedAuditV2BatchPayloadRoundTrip(t *testing.T) {
+	legacy := testCLIBatchPayload(t)
+	payload, err := privacybatchtransfer.BuildPreparedAuditV2BatchTransferPayload(&privacybatchtransfer.PreparedBatchTransfer{Root: legacy.Root, AssetID: legacy.AssetID, Inputs: legacy.Inputs, Outputs: legacy.Outputs}, privacybatchtransfer.BuildPreparedAuditV2BatchTransferPayloadInput{ChainID: legacy.ChainID, ExpiresAtUnix: legacy.ExpiresAtUnix, DisableSelfViewDisclosure: true})
 	require.NoError(t, err)
-	require.Equal(t, payload.PayloadHash, proof.RequestPayloadHash)
-	require.NoError(t, privacybatchtransfer.ValidatePreparedBatchTransferProofAt(payload, proof, time.Now()))
+	path := filepath.Join(t.TempDir(), "v2-prepared.json")
+	require.NoError(t, privacybatchtransfer.WritePreparedAuditV2BatchTransferPayload(path, payload))
+	read, err := privacybatchtransfer.ReadPreparedAuditV2BatchTransferPayload(path)
+	require.NoError(t, err)
+	require.Equal(t, payload.PayloadHash, read.PayloadHash)
+	require.NoError(t, privacybatchtransfer.ValidatePreparedAuditV2BatchTransferPayloadAt(read, time.Now()))
+}
+
+func TestAutoDummyPlanHasOneInputAndOneActiveZeroOutput(t *testing.T) {
+	spend, view := testBatchPoint(t, 17), testBatchPoint(t, 19)
+	plan, err := planAutoDummySelfBatch(&transferExecutionIdentity{spendPubKey: spend, viewPubKey: view}, testSecretNoteFixture(testCLIBatchNote(spend, view, 7, 23)))
+	require.NoError(t, err)
+	require.Len(t, plan.Inputs, 1)
+	require.Len(t, plan.Outputs, 2)
+	require.Equal(t, privacybatchtransfer.OutputPayment, plan.Outputs[0].Kind)
+	require.Equal(t, uint64(7), plan.Outputs[0].Amount.Uint64())
+	require.Equal(t, privacybatchtransfer.OutputPadding, plan.Outputs[1].Kind)
+	require.Zero(t, plan.Outputs[1].Amount.Sign())
 }
 
 func testBatchShieldedAddress(t *testing.T, spendScalar, viewScalar int64) string {

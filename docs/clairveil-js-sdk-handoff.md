@@ -453,6 +453,8 @@ The JS SDK handoff is complete when the following work.
 ## 14. What The JS SDK Can Treat As Stable From The Go Core
 
 The JS SDK can currently treat these as stable contracts.
+- Current prover integration is `POST` `/v2/prover/audit-field` with request/response envelope `v1`, `privacy-note-v1-audit-field-v1`, base64 `[]byte` fields, and final PI23.
+- A client must perform local verification with the exact artifact identity after checking the repeated response binding. The older `/v1` example contracts below are legacy-only fixture references, not a live V2 SDK surface.
 
 - `clairveil.privacy.v1` proto package
 - `MsgDeposit`, `MsgTransfer`, `MsgWithdraw`, `MsgBatchTransfer`

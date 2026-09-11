@@ -13,17 +13,17 @@ func TestAuditGasExactFormula(t *testing.T) {
 		k          auditfield.Kind
 		i, o, n, e uint64
 	}{{1, 0, 1, 6, 336}, {2, 1, 0, 2, 208}, {3, 2, 2, 13, 560}, {4, 16, 32, 177, 5808}} {
-		u := AuditResourceUsageV1{Kind: tc.k, InputCount: tc.i, OutputCount: tc.o, AuxBytes: 100, ProjectedStateBytes: 20000, TransitionBytes: 16000}
+		u := AuditResourceUsageV1{Kind: tc.k, InputCount: tc.i, OutputCount: tc.o, AuxBytes: 100, ProjectedStateBytes: 20000}
 		g, err := ComputeAuditGasV1(DefaultAuditGasModelV1(), AuditResourceBoundsV1{128 << 10, 20000}, u)
 		require.NoError(t, err)
 		require.Equal(t, uint64(1000000)+25000*tc.i+50000*tc.o+4*(100+tc.e)+8*20000+5000*tc.o*33+10000*(tc.i+tc.o)+400000+25000*(25+tc.n+4), g.Total)
 	}
 }
 func TestAuditGasRejectsBoundsAndOverflow(t *testing.T) {
-	base := AuditResourceUsageV1{Kind: 4, InputCount: 16, OutputCount: 32, AuxBytes: 4, ProjectedStateBytes: 16384, TransitionBytes: 16384}
+	base := AuditResourceUsageV1{Kind: 4, InputCount: 16, OutputCount: 32, AuxBytes: 4, ProjectedStateBytes: 16384}
 	bounds := AuditResourceBoundsV1{128 << 10, 16384}
 	for name, mutate := range map[string]func(*AuditResourceUsageV1){
-		"kind5": func(u *AuditResourceUsageV1) { u.Kind = 5 }, "zero input": func(u *AuditResourceUsageV1) { u.InputCount = 0 }, "zero output": func(u *AuditResourceUsageV1) { u.OutputCount = 0 }, "input overflow": func(u *AuditResourceUsageV1) { u.InputCount = 256 }, "output overflow": func(u *AuditResourceUsageV1) { u.OutputCount = 256 }, "Aux prefix": func(u *AuditResourceUsageV1) { u.AuxBytes = 3 }, "Aux overflow": func(u *AuditResourceUsageV1) { u.AuxBytes = math.MaxUint64 }, "Aux cap": func(u *AuditResourceUsageV1) { u.AuxBytes = 128 << 10 }, "transition zero": func(u *AuditResourceUsageV1) { u.TransitionBytes = 0 }, "transition cap": func(u *AuditResourceUsageV1) { u.TransitionBytes++ }, "projection low": func(u *AuditResourceUsageV1) { u.ProjectedStateBytes-- }, "projection cap": func(u *AuditResourceUsageV1) { u.ProjectedStateBytes++ },
+		"kind5": func(u *AuditResourceUsageV1) { u.Kind = 5 }, "zero input": func(u *AuditResourceUsageV1) { u.InputCount = 0 }, "zero output": func(u *AuditResourceUsageV1) { u.OutputCount = 0 }, "input overflow": func(u *AuditResourceUsageV1) { u.InputCount = 256 }, "output overflow": func(u *AuditResourceUsageV1) { u.OutputCount = 256 }, "Aux prefix": func(u *AuditResourceUsageV1) { u.AuxBytes = 3 }, "Aux overflow": func(u *AuditResourceUsageV1) { u.AuxBytes = math.MaxUint64 }, "Aux cap": func(u *AuditResourceUsageV1) { u.AuxBytes = 128 << 10 }, "projection cap": func(u *AuditResourceUsageV1) { u.ProjectedStateBytes++ },
 	} {
 		t.Run(name, func(t *testing.T) {
 			u := base

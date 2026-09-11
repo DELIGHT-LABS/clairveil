@@ -1,8 +1,8 @@
 package cli
 
 import (
+	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -20,11 +20,11 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
-	"github.com/consensys/gnark/backend/groth16"
-	"github.com/consensys/gnark/backend/witness"
-	"github.com/consensys/gnark/constraint"
 	gnarklogger "github.com/consensys/gnark/logger"
 
+	"github.com/DELIGHT-LABS/clairveil/internal/privatefile"
+	privacyaudit "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/audit"
+	privacybatchtransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/batchtransfer"
 	privacydeposit "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/deposit"
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacyidentity "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/identity"
@@ -34,7 +34,7 @@ import (
 	privacywithdraw "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/withdraw"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/types"
-	"github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
+	privacyv2 "github.com/DELIGHT-LABS/clairveil/x/privacy/types/v2"
 )
 
 type FoundNote = privacyscan.SecretFoundNote
@@ -101,7 +101,14 @@ type scanNotesDiagnostics struct {
 	SavedWallet              bool   `json:"saved_wallet"`
 }
 
-type PreparedWithdrawPayload = privacywithdraw.PreparedWithdrawPayload
+const preparedAuditWithdrawArtifactVersion = "audit-withdraw-v2"
+
+type preparedAuditWithdrawArtifact struct {
+	Version      string                 `json:"version"`
+	Message      *privacyv2.MsgWithdraw `json:"message"`
+	PublicInputs [][]byte               `json:"public_inputs"`
+	ArtifactHash []byte                 `json:"artifact_hash"`
+}
 
 const (
 	defaultPreparedWithdrawExpiry = 30 * time.Minute
@@ -428,162 +435,122 @@ func buildListNotesJSONOutput(foundNotes []FoundNote, diagnostics *scanNotesDiag
 	return output
 }
 
-func buildDepositNoteAndMsg(
-	fromAddr string,
-	pubKey *crypto_tedwards.PointAffine,
-	amount *big.Int,
-	denom string,
-	memo string,
-	amountStr string,
-	seed []byte,
-	logWriter io.Writer,
-	latencyFlow *privacyLatencyFlow,
-) (*types.MsgDeposit, error) {
-	_, viewPubKey, _, err := deriveViewKeys(seed)
+func autoPrepareDummyNote(cmd *cobra.Command, clientCtx client.Context, denom string) error {
+	identity, err := resolveTransferExecutionIdentity(clientCtx)
 	if err != nil {
-		return nil, err
+		return err
 	}
-
-	if err := types.ValidateShieldedAmount("note amount", amount); err != nil {
-		return nil, err
-	}
-	if err := sdk.ValidateDenom(denom); err != nil {
-		return nil, err
-	}
-	if pubKey == nil || viewPubKey == nil {
-		return nil, fmt.Errorf("receiver keys are required")
-	}
-	coordinates := [4][32]byte{pubKey.X.Bytes(), pubKey.Y.Bytes(), viewPubKey.X.Bytes(), viewPubKey.Y.Bytes()}
-	var fields [4]crypto.FieldValue
-	for i := range coordinates {
-		fields[i], err = crypto.ParseFieldValueBE32(coordinates[i][:])
-		if err != nil {
-			return nil, err
-		}
-	}
-	// The deposit denom and amount are public transaction inputs.
-	assetBytes, err := canonicalFieldBytesFromBigInt(types.ComputeAssetIDV1(denom))
+	// This is deliberately a one-input/two-output batch: the positive self
+	// payment keeps value unchanged and one internal owner padding output is
+	// the active zero dummy. User-selected output mode is not changed.
+	notes, err := scanNotesWithOptions(clientCtx, identity.seed, scanNotesOptions{logWriter: privacyCommandLogWriter(cmd)})
 	if err != nil {
-		return nil, err
+		return err
 	}
+	assetID := types.ComputeAssetIDV1(denom)
+	assetBytes := assetID.FillBytes(make([]byte, 32))
 	asset, err := crypto.ParseFieldValueBE32(assetBytes)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	note, err := types.NewRandomSecretNoteV1(rand.Reader, fields[0], fields[1], fields[2], fields[3], amount.Uint64(), asset, memo)
+	var input *FoundNote
+	for i := range notes {
+		if notes[i].IsSpent || notes[i].Note.Amount == 0 || notes[i].Note.AssetID.Bytes() != asset.Bytes() || (notes[i].AssetDenom != "" && notes[i].AssetDenom != denom) {
+			continue
+		}
+		input = &notes[i]
+		break
+	}
+	if input == nil {
+		return fmt.Errorf("v2 dummy preparation requires one spendable positive %s note", denom)
+	}
+	plan, err := planAutoDummySelfBatch(identity, input.Note)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("plan v2 dummy self batch: %w", err)
 	}
-	commitment, err := types.SecretNoteCommitmentV1(*note)
+	preparedNormal, err := privacybatchtransfer.PrepareBatchTransfer(cmd.Context(), batchTransferMerklePathProvider{inner: privacyprovider.NewTransferQueryProvider(types.NewQueryClient(clientCtx))}, plan)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("prepare v2 dummy self batch: %w", err)
 	}
-	commitmentBytes := commitment.Bytes()
-	canonicalCommitment := commitmentBytes[:]
-	noteBytes, err := types.MarshalSecretNotePlaintextV1(note)
+	_, selfView, _, err := deriveDisclosureKeys(identity.seed)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	defer clear(noteBytes)
-	rawEncryptedNote, err := crypto.Encrypt(noteBytes, seed)
+	runtime, err := resolveAuditV2Runtime(cmd, clientCtx)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	encryptedNote, err := types.WrapEncryptedEnvelopeV1(types.EnvelopeDepositNoteV1, rawEncryptedNote)
+	payload, err := privacybatchtransfer.BuildPreparedAuditV2BatchTransferPayload(preparedNormal, privacybatchtransfer.BuildPreparedAuditV2BatchTransferPayloadInput{Creator: clientCtx.GetFromAddress().String(), ChainID: clientCtx.ChainID, ExpiresAtUnix: runtime.expiresAt, SelfViewDisclosureTargetPubKey: selfView})
 	if err != nil {
-		return nil, err
+		return err
 	}
-	proof, err := privacydeposit.BuildDepositProof(
-		*note,
-		depositArtifactProvider{},
-		depositProofRunner{logWriter: logWriter, latencyFlow: latencyFlow},
-	)
+	snapshot, err := runtime.snapshotSource(cmd.Context())
 	if err != nil {
-		return nil, err
+		return err
 	}
-
-	msg := types.NewMsgDeposit(
-		fromAddr,
-		amountStr,
-		canonicalCommitment,
-		encryptedNote,
-		proof,
-	)
-
-	return msg, nil
-}
-
-type depositArtifactProvider struct{}
-
-func (depositArtifactProvider) DepositR1CS() (constraint.ConstraintSystem, error) {
-	return zk.GetDepositR1CS()
-}
-
-func (depositArtifactProvider) DepositProvingKey() (groth16.ProvingKey, error) {
-	return zk.GetDepositProvingKey()
-}
-
-type depositProofRunner struct {
-	logWriter   io.Writer
-	latencyFlow *privacyLatencyFlow
-}
-
-func (r depositProofRunner) ProveDeposit(r1cs constraint.ConstraintSystem, provingKey groth16.ProvingKey, depositWitness witness.Witness) (groth16.Proof, error) {
-	if r.latencyFlow != nil {
-		r.latencyFlow.recordPrepareUntil(time.Now())
+	prepared, err := privacybatchtransfer.PrepareAuditV2FromPreparedAuditV2Payload(snapshot, payload)
+	if err != nil {
+		return err
 	}
-	return observePrivacyLatencyPhase(r.latencyFlow, "proof", func() (groth16.Proof, error) {
-		return withGnarkLoggerOutput(r.logWriter, func() (groth16.Proof, error) {
-			return groth16.Prove(r1cs, provingKey, depositWitness)
-		})
+	full, err := privacybatchtransfer.BuildAuditV2WitnessFromPayload(prepared, payload, func(intent *big.Int) ([]byte, error) {
+		return manualSign(intent, identity.scalar, identity.spendPubKey)
 	})
-}
-
-func autoPrepareDummyNote(cmd *cobra.Command, clientCtx client.Context, denom string) error {
-	_, pubKey, seed, err := getExplicitKeys(clientCtx)
+	if err != nil {
+		prepared.Clear()
+		return err
+	}
+	msg, err := runtime.prove(cmd, prepared, full)
 	if err != nil {
 		return err
 	}
-
-	amount := big.NewInt(0)
-	amountStr := fmt.Sprintf("0%s", denom)
-	msg, err := buildDepositNoteAndMsg(
-		clientCtx.GetFromAddress().String(),
-		pubKey,
-		amount,
-		denom,
-		"AutoDummy",
-		amountStr,
-		seed,
-		privacyCommandLogWriter(cmd),
-		nil,
-	)
+	batch, ok := msg.(*privacyv2.MsgBatchTransfer)
+	if !ok {
+		return fmt.Errorf("audit prover returned %T, expected v2 dummy batch transfer", msg)
+	}
+	printAutoDummyPreparationSummary(cmd, denom, fmt.Sprintf("self %d%s + one active zero padding output", input.Note.Amount, denom))
+	response, err := (privacyprovider.CosmosTxBroadcaster{ClientContext: clientCtx, Flags: cmd.Flags(), FromName: clientCtx.GetFromName()}).BroadcastSDKMessage(cmd.Context(), batch)
 	if err != nil {
 		return err
 	}
-
-	printAutoDummyPreparationSummary(cmd, denom, amountStr)
-	res, err := privacyprovider.CosmosTxBroadcaster{
-		ClientContext: clientCtx,
-		Flags:         cmd.Flags(),
-		FromName:      clientCtx.GetFromName(),
-	}.BroadcastSDKMessage(cmd.Context(), msg)
-	if err != nil {
-		return err
+	if response == nil || response.Code != 0 {
+		if response == nil {
+			return fmt.Errorf("dummy batch broadcaster returned no response")
+		}
+		return fmt.Errorf("dummy batch tx failed with code %d: %s", response.Code, response.RawLog)
 	}
-	if res.Code != 0 {
-		return fmt.Errorf("dummy-note tx failed with code %d: %s", res.Code, res.RawLog)
+	printAutoDummySubmitted(cmd, response.TxHash)
+	if err := waitForBlock(clientCtx, response.Height); err != nil {
+		return fmt.Errorf("waiting to rescan dummy batch: %w", err)
 	}
-
-	printAutoDummySubmitted(cmd, res.TxHash)
-	if err := waitForBlock(clientCtx, res.Height); err != nil {
-		return fmt.Errorf("polling failed: %w", err)
-	}
-
+	// The recursive caller immediately scans and reselects after this return.
 	return nil
 }
 
-func buildWithdrawPayload(cmd *cobra.Command, clientCtx client.Context, targetCoin sdk.Coin, recipientAddr sdk.AccAddress, expiresAt time.Time, autoPlan bool, latencyFlow *privacyLatencyFlow) (*PreparedWithdrawPayload, error) {
+func planAutoDummySelfBatch(identity *transferExecutionIdentity, note types.SecretNoteV1) (*privacybatchtransfer.BatchTransferPlan, error) {
+	if identity == nil || note.Amount == 0 {
+		return nil, fmt.Errorf("positive owner note and identity are required")
+	}
+	plan, err := privacybatchtransfer.PlanBatchTransfer(privacybatchtransfer.PlanBatchTransferInput{
+		Inputs:           []privacybatchtransfer.InputNote{{Note: note}},
+		Payments:         []privacybatchtransfer.Payment{{SpendPubKey: identity.spendPubKey, ViewPubKey: identity.viewPubKey, Amount: new(big.Int).SetUint64(note.Amount), PrivacyPolicy: types.TransferPrivacyPolicyAllPrivate, DisclosureMode: types.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE}},
+		OwnerSpendPubKey: identity.spendPubKey, OwnerViewPubKey: identity.viewPubKey, Mode: privacybatchtransfer.OutputModeCompact,
+	})
+	if err != nil {
+		return nil, err
+	}
+	plan.Outputs = append(plan.Outputs, privacybatchtransfer.PlannedOutput{Kind: privacybatchtransfer.OutputPadding, SpendPubKey: identity.spendPubKey, ViewPubKey: identity.viewPubKey, Amount: big.NewInt(0), PrivacyPolicy: types.TransferPrivacyPolicyAllPrivate, DisclosureMode: types.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE})
+	return plan, nil
+}
+
+func buildAuditV2WithdrawMsg(cmd *cobra.Command, clientCtx client.Context, targetCoin sdk.Coin, recipientAddr sdk.AccAddress, expiresAt time.Time, autoPlan bool, latencyFlow *privacyLatencyFlow) (sdk.Msg, error) {
+	artifact, err := buildAuditV2WithdrawArtifact(cmd, clientCtx, targetCoin, recipientAddr, expiresAt, autoPlan, latencyFlow)
+	if err != nil {
+		return nil, err
+	}
+	return artifact.Message, nil
+}
+
+func buildAuditV2WithdrawArtifact(cmd *cobra.Command, clientCtx client.Context, targetCoin sdk.Coin, recipientAddr sdk.AccAddress, expiresAt time.Time, autoPlan bool, latencyFlow *privacyLatencyFlow) (*preparedAuditWithdrawArtifact, error) {
 	scalar, pubKey, seed, err := getExplicitKeys(clientCtx)
 	if err != nil {
 		return nil, err
@@ -592,36 +559,51 @@ func buildWithdrawPayload(cmd *cobra.Command, clientCtx client.Context, targetCo
 	if err != nil {
 		return nil, err
 	}
-
-	result, err := privacywithdraw.BuildWithdrawPayload(
-		context.Background(),
-		&withdrawExactMatchNoteSource{
-			clientCtx:   clientCtx,
-			seed:        seed,
-			logWriter:   privacyCommandLogWriter(cmd),
-			forceRescan: forceRescan,
-		},
-		withdrawExactMatchAutoPlanner{
-			cmd:       cmd,
-			clientCtx: clientCtx,
-		},
-		privacyprovider.NewWithdrawQueryProvider(types.NewQueryClient(clientCtx)),
-		manualSpendIntentSigner{scalar: scalar, pubKey: pubKey},
-		withdrawSpendArtifactProvider{},
-		withdrawSpendProofRunner{logWriter: privacyCommandLogWriter(cmd), latencyFlow: latencyFlow},
-		privacywithdraw.BuildWithdrawPayloadInput{
-			TargetCoin: targetCoin,
-			Recipient:  recipientAddr,
-			ChainID:    clientCtx.ChainID,
-			ExpiresAt:  expiresAt,
-			AutoPlan:   autoPlan,
-		},
-	)
+	runtime, err := resolveAuditV2Runtime(cmd, clientCtx)
 	if err != nil {
 		return nil, err
 	}
+	runtime.expiresAt = expiresAt.Unix()
+	selected, err := privacywithdraw.ResolveExactMatchSpendableNote(cmd.Context(), &withdrawExactMatchNoteSource{clientCtx: clientCtx, seed: seed, logWriter: privacyCommandLogWriter(cmd), forceRescan: forceRescan}, withdrawExactMatchAutoPlanner{cmd: cmd, clientCtx: clientCtx}, targetCoin, autoPlan)
+	if err != nil {
+		return nil, err
+	}
+	legacy, err := privacywithdraw.PrepareSpendWithdraw(cmd.Context(), privacyprovider.NewWithdrawQueryProvider(types.NewQueryClient(clientCtx)), manualSpendIntentSigner{scalar: scalar, pubKey: pubKey}, privacywithdraw.PrepareSpendWithdrawInput{Note: *selected, RecipientBytes: recipientAddr.Bytes(), ChainID: clientCtx.ChainID, ExpiresAtUnix: runtime.expiresAt})
+	if err != nil {
+		return nil, err
+	}
+	snapshot, err := runtime.snapshotSource(cmd.Context())
+	if err != nil {
+		return nil, err
+	}
+	prepared, err := privacywithdraw.PrepareAuditV2FromSpend(snapshot, legacy, clientCtx.GetFromAddress().String(), recipientAddr.String(), targetCoin.String())
+	if err != nil {
+		return nil, err
+	}
+	public := prepared.PublicInputs()
+	publicBytes := make([][]byte, len(public))
+	for i := range public {
+		publicBytes[i] = public[i].Bytes()
+	}
+	full, err := privacywithdraw.BuildAuditV2Witness(prepared, legacy, func(intent *big.Int) ([]byte, error) { return manualSign(intent, scalar, pubKey) })
+	if err != nil {
+		prepared.Clear()
+		return nil, err
+	}
+	if latencyFlow != nil {
+		latencyFlow.recordPrepareUntil(time.Now())
+	}
+	msg, err := runtime.prove(cmd, prepared, full)
+	if err != nil {
+		return nil, err
+	}
+	withdraw, ok := msg.(*privacyv2.MsgWithdraw)
+	if !ok {
+		return nil, fmt.Errorf("audit prover returned %T, expected v2 withdraw", msg)
+	}
 	printSelectedWithdrawNote(cmd, targetCoin.String())
-	return result.Payload, nil
+	hash := snapshot.ArtifactHash
+	return &preparedAuditWithdrawArtifact{Version: preparedAuditWithdrawArtifactVersion, Message: withdraw, PublicInputs: publicBytes, ArtifactHash: hash[:]}, nil
 }
 
 type manualSpendIntentSigner struct {
@@ -631,32 +613,6 @@ type manualSpendIntentSigner struct {
 
 func (s manualSpendIntentSigner) SignSpendIntent(msgHash *big.Int) ([]byte, error) {
 	return manualSign(msgHash, s.scalar, s.pubKey)
-}
-
-type withdrawSpendArtifactProvider struct{}
-
-func (withdrawSpendArtifactProvider) SpendR1CS() (constraint.ConstraintSystem, error) {
-	return zk.GetSpendR1CS()
-}
-
-func (withdrawSpendArtifactProvider) SpendProvingKey() (groth16.ProvingKey, error) {
-	return zk.GetSpendProvingKey()
-}
-
-type withdrawSpendProofRunner struct {
-	logWriter   io.Writer
-	latencyFlow *privacyLatencyFlow
-}
-
-func (r withdrawSpendProofRunner) ProveSpend(r1cs constraint.ConstraintSystem, provingKey groth16.ProvingKey, spendWitness witness.Witness) (groth16.Proof, error) {
-	if r.latencyFlow != nil {
-		r.latencyFlow.recordPrepareUntil(time.Now())
-	}
-	return observePrivacyLatencyPhase(r.latencyFlow, "proof", func() (groth16.Proof, error) {
-		return withGnarkLoggerOutput(r.logWriter, func() (groth16.Proof, error) {
-			return groth16.Prove(r1cs, provingKey, spendWitness)
-		})
-	})
 }
 
 type withdrawExactMatchNoteSource struct {
@@ -702,11 +658,6 @@ func autoPlanWithdrawExactMatchNote(cmd *cobra.Command, clientCtx client.Context
 		return fmt.Errorf("failed to encode planner shielded address: %w", err)
 	}
 
-	auditPubKey, auditPubKeyBz, err := queryAuditDisclosureTarget(clientCtx)
-	if err != nil {
-		return err
-	}
-
 	printPlannerSelfTransferSummary(cmd, targetCoin.String(), selfShieldedAddress)
 	expiresAtUnix, err := resolveTransferExpiresAtUnix(cmd)
 	if err != nil {
@@ -724,10 +675,8 @@ func autoPlanWithdrawExactMatchNote(cmd *cobra.Command, clientCtx client.Context
 		autoDummy,
 		expiresAtUnix,
 		privacytransfer.StepDisclosureConfig{
-			UserPrivacyPolicy:             types.TransferPrivacyPolicyAllPrivate,
-			UserDisclosureMode:            types.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE,
-			AuditDisclosureTargetPubKey:   auditPubKey,
-			AuditDisclosureTargetPubKeyBz: auditPubKeyBz,
+			UserPrivacyPolicy:  types.TransferPrivacyPolicyAllPrivate,
+			UserDisclosureMode: types.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE,
 		},
 		nil,
 	)
@@ -799,8 +748,13 @@ func CmdDeposit() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			amountBig := coin.Amount.BigInt()
-			memo, _ := cmd.Flags().GetString("memo")
+			if !coin.IsPositive() {
+				return fmt.Errorf("deposit requires a positive canonical amount")
+			}
+			runtime, err := resolveAuditV2Runtime(cmd, clientCtx)
+			if err != nil {
+				return err
+			}
 
 			latencyFlow := newPrivacyLatencyFlow("deposit")
 			var runErr error
@@ -808,17 +762,33 @@ func CmdDeposit() *cobra.Command {
 				latencyFlow.finish(runErr)
 			}()
 
-			msg, err := buildDepositNoteAndMsg(
-				clientCtx.GetFromAddress().String(),
-				pubKey,
-				amountBig,
-				coin.Denom,
-				memo,
-				coin.String(),
-				seed,
-				privacyCommandLogWriter(cmd),
-				latencyFlow,
-			)
+			output, note, _, err := buildAuditV2DepositOutput(pubKey, seed, coin)
+			if err != nil {
+				runErr = err
+				return err
+			}
+			snapshot, err := runtime.snapshotSource(cmd.Context())
+			if err != nil {
+				runErr = err
+				return err
+			}
+			from := clientCtx.GetFromAddress()
+			if len(from) == 0 {
+				runErr = fmt.Errorf("a canonical --from account is required")
+				return runErr
+			}
+			prepared, err := privacydeposit.PrepareAuditV2FromNormalNote(snapshot, from.String(), coin.String(), note, output, runtime.expiresAt)
+			if err != nil {
+				runErr = err
+				return err
+			}
+			full, err := privacydeposit.BuildAuditV2Witness(prepared, note)
+			if err != nil {
+				prepared.Clear()
+				runErr = err
+				return err
+			}
+			msg, err := runtime.prove(cmd, prepared, full)
 			if err != nil {
 				runErr = err
 				return err
@@ -833,6 +803,7 @@ func CmdDeposit() *cobra.Command {
 			return runErr
 		},
 	}
+	addAuditV2Flags(cmd)
 	flags.AddTxFlagsToCmd(cmd)
 	return cmd
 }
@@ -894,13 +865,7 @@ If you want exact-match-only behavior without the planner, run with --auto-plan=
 			}()
 			expiresAt := time.Now().Add(defaultPreparedWithdrawExpiry)
 			printWithdrawCommandSummary(cmd, "Shielded withdraw", recipientAddr.String(), targetCoin.String(), autoPlan, autoDummy, clientCtx.ChainID, expiresAt.Unix())
-			payload, err := buildWithdrawPayload(cmd, clientCtx, targetCoin, recipientAddr, expiresAt, autoPlan, latencyFlow)
-			if err != nil {
-				runErr = err
-				return err
-			}
-
-			msg, err := payload.ToMsg(clientCtx.GetFromAddress().String())
+			msg, err := buildAuditV2WithdrawMsg(cmd, clientCtx, targetCoin, recipientAddr, expiresAt, autoPlan, latencyFlow)
 			if err != nil {
 				runErr = err
 				return err
@@ -919,6 +884,7 @@ If you want exact-match-only behavior without the planner, run with --auto-plan=
 	cmd.Flags().Bool(flagWithdrawAutoPlan, true, "Automatically create an exact-match note with a preparatory shielded self-transfer when needed")
 	cmd.Flags().Bool(flagAutoDummy, true, "Automatically create a zero-value dummy note with a preparatory deposit when the planner needs it")
 	cmd.Flags().Bool(flagRescanWallet, false, "reset the local privacy wallet cache and rescan from genesis before exact-match note selection")
+	addAuditV2Flags(cmd)
 	flags.AddTxFlagsToCmd(cmd)
 	return cmd
 }
@@ -988,7 +954,7 @@ If you want exact-match-only behavior without the planner, run with --auto-plan=
 			expiresAt := time.Now().Add(time.Duration(expiresInSec) * time.Second)
 			printWithdrawCommandSummary(cmd, "Prepare shielded withdraw", recipientAddr.String(), targetCoin.String(), autoPlan, autoDummy, clientCtx.ChainID, expiresAt.Unix())
 
-			payload, err := buildWithdrawPayload(cmd, clientCtx, targetCoin, recipientAddr, expiresAt, autoPlan, latencyFlow)
+			artifact, err := buildAuditV2WithdrawArtifact(cmd, clientCtx, targetCoin, recipientAddr, expiresAt, autoPlan, latencyFlow)
 			if err != nil {
 				runErr = err
 				return err
@@ -1000,14 +966,18 @@ If you want exact-match-only behavior without the planner, run with --auto-plan=
 			}
 
 			if outPath != "" {
-				if err := payload.WriteJSONFile(outPath); err != nil {
+				encoded, err := json.MarshalIndent(artifact, "", "  ")
+				if err != nil {
+					return err
+				}
+				if err := privatefile.Write(outPath, encoded); err != nil {
 					runErr = err
 					return err
 				}
 				printPreparedWithdrawPayloadSaved(cmd, outPath)
 			}
 
-			runErr = printCommandJSON(cmd, payload)
+			runErr = printCommandJSON(cmd, artifact)
 			return runErr
 		},
 	}
@@ -1018,6 +988,7 @@ If you want exact-match-only behavior without the planner, run with --auto-plan=
 	cmd.Flags().Bool(flagWithdrawAutoPlan, true, "Automatically create an exact-match note with a preparatory shielded self-transfer when needed")
 	cmd.Flags().Bool(flagAutoDummy, true, "Automatically create a zero-value dummy note with a preparatory deposit when the planner needs it")
 	cmd.Flags().Bool(flagRescanWallet, false, "reset the local privacy wallet cache and rescan from genesis before exact-match note selection")
+	addAuditV2Flags(cmd)
 	flags.AddTxFlagsToCmd(cmd)
 	return cmd
 }
@@ -1041,22 +1012,57 @@ func CmdRelayWithdraw() *cobra.Command {
 			}
 
 			prepareStartedAt := time.Now()
-			msg, err := privacywithdraw.BuildRelayWithdrawMsgFromFile(args[0], clientCtx.GetFromAddress().String())
+			raw, err := os.ReadFile(args[0])
+			if err != nil {
+				return err
+			}
+			var artifact preparedAuditWithdrawArtifact
+			if err := json.Unmarshal(raw, &artifact); err != nil {
+				return fmt.Errorf("invalid v2 withdraw artifact: %w", err)
+			}
+			if artifact.Version != preparedAuditWithdrawArtifactVersion || artifact.Message == nil || len(artifact.ArtifactHash) != 32 {
+				return fmt.Errorf("unsupported withdraw artifact; regenerate it with prepare-withdraw")
+			}
+			if time.Now().Unix() >= artifact.Message.ExpiresAtUnix {
+				return fmt.Errorf("prepared withdraw artifact expired; prepare again")
+			}
+			if _, err := types.ValidateAuditMessage(artifact.Message); err != nil {
+				return fmt.Errorf("invalid v2 withdraw artifact: %w", err)
+			}
+			runtime, err := resolveAuditV2Runtime(cmd, clientCtx)
+			if err != nil {
+				return err
+			}
+			snapshot, err := runtime.snapshotSource(cmd.Context())
+			if err != nil {
+				return err
+			}
+			keyID := snapshot.Key.IDBytes()
+			if snapshot.Epoch != artifact.Message.Audit.Epoch || !bytes.Equal(keyID[:], artifact.Message.Audit.KeyId) || !bytes.Equal(snapshot.ArtifactHash[:], artifact.ArtifactHash) {
+				return fmt.Errorf("prepared withdraw artifact is stale; prepare again")
+			}
+			if err := privacyaudit.VerifyFinalMessageBinding(snapshot, artifact.Message, artifact.PublicInputs); err != nil {
+				return fmt.Errorf("prepared withdraw message/proof binding failed: %w", err)
+			}
+			err = privacyaudit.VerifyFinalProof(2, artifact.PublicInputs, artifact.Message.Proof, runtime.registry, runtime.identity)
 			latencyFlow.recordPhase("prepare", prepareStartedAt, err)
 			if err != nil {
 				runErr = err
 				return err
 			}
+			msg := *artifact.Message
+			msg.Creator = clientCtx.GetFromAddress().String()
 
 			submitStartedAt := time.Now()
 			runErr = privacyprovider.CosmosTxBroadcaster{
 				ClientContext: clientCtx,
 				Flags:         cmd.Flags(),
-			}.GenerateOrBroadcast(msg)
+			}.GenerateOrBroadcast(&msg)
 			latencyFlow.recordSubmit(submitStartedAt, "", runErr)
 			return runErr
 		},
 	}
+	addAuditV2Flags(cmd)
 
 	flags.AddTxFlagsToCmd(cmd)
 	return cmd

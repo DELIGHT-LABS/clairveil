@@ -18,6 +18,7 @@ binaries=(
 	clairveild
 	clairveil-setup
 	clairveil-verify
+	clairveil-auditor
 	clairveil-proverd
 	clairveil-payroll
 	clairveil-payrolld

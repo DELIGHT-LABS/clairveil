@@ -9,7 +9,9 @@ source_repo: github.com/DELIGHT-LABS/clairveil
 Contents:
 - root license, notice, changelog, contribution, and security files
 - English and Korean current-knowledge pairs and the documentation index
-- proto/clairveil/privacy/v1
+- privacy V1/V2 protobuf definitions; the active default
+  runtime and transaction surface is privacy V2, while retained V1 contracts
+  describe compatibility data rather than a selectable legacy bootstrap
 - getting-started, architecture, circuit, BatchJoinSplit16x32, CLI, testing, and localnet documents
 - downstream Cosmos integration, JS/web wallet, and reference payroll/control-plane implementation contracts
 - common/deposit prover HTTP contracts and the remote prover operations profile
@@ -22,17 +24,23 @@ Contents:
 
 Validation before handoff:
 - make docs-check
-- make release-check (includes the static one-proof contract gate and a live legacy multi-message regression, but not the live one-proof gate)
-- RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet before claiming live one-proof integration readiness
-- make privacy-bulk-readiness-check from the source checkout for extra synthetic/legacy bulk diagnostics, not one-proof capacity evidence
-- RUN_PROVER_SCALE=1 PROVERD_URLS=url1,url2 make privacy-bulk-readiness-check before making prover-pool scale claims
+- make release-check (the current Makefile runs ci, vulncheck, localnet smoke,
+  privacy e2e smoke, batch localnet, and the configured bulk-readiness gate)
+- Record each command's actual exit status and artifacts. Do not infer a live
+  one-proof, capacity, or prover-pool claim from a command that was skipped,
+  failed, or ran with different inputs.
+- RUN_PROVER_SCALE=1 PROVERD_URLS=url1,url2 make privacy-bulk-readiness-check
+  is additionally required before making a prover-pool scale claim.
 - make release-pack
 - make release-pack-verify
 
 Notes:
-- This pack is a handoff contract bundle, not a full source distribution.
-- For a publishable release, create the final release commit and its annotated
-  exact-SemVer tag after release-check, then run release-pack and
+- This is a supplemental selected-file handoff bundle, not a full tracked-source
+  archive. Create the latter separately with `git archive` from the same exact
+  final commit and record its SHA-256 outside this selected-file bundle.
+- For a publishable release, complete and record the required verification on
+  the final release commit, create its annotated exact-SemVer tag, create the
+  separate full tracked-source archive, then run release-pack and
   release-pack-verify from that tagged commit.
 - A snapshot-<full-commit-sha> version is for packaging CI/internal checks and
   must not be published as a release.

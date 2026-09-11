@@ -19,7 +19,7 @@ Korean version: [clairveil-operations-guide-kr.md](clairveil-operations-guide-kr
 
 A production-like node must have an audit master pubkey in genesis, run ZK artifact preflight in `strict` mode, register the privacy module account as a bank module account, and expose `tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom=**}`, `assets/by_denom/{canonical_denom=**}`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, and batch `nullifiers` queries. Complete a snapshot/restore rehearsal before release.
 
-Enable `Msg/BatchTransfer` only with the four-circuit `privacy-note-v1` consensus identity and matching local batch VK.
+Enable V2 audit transfers only with the four-circuit `privacy-note-v1-audit-field-v1` consensus identity and matching local audit-field VKs.
 
 ```bash
 set -a
@@ -32,21 +32,15 @@ clairveild start --minimum-gas-prices 0uclair
 
 ## 3. ZK Artifact Operations
 
-`clairveil-setup` generates R1CS/PK/VK and checksum manifests.
+`clairveil-setup` generates audit-field R1CS/PK/VK and a checksum manifest. The only supported flags are `--out` and `--development`.
 
 ```bash
-clairveil-setup --out artifacts/privacy
+clairveil-setup --out artifacts/privacy --development
 ```
 
-Selective development rotation requires an already complete, checksum-valid set and explicit overwrite. For the `DISCLOSURE-BLINDING-SEPARATION` JoinSplit relation change:
+`--circuit` and `--overwrite` are removed. The old selective JoinSplit rotation and hashes are legacy history, not an executable setup recipe. Generate a fresh development bundle in a new directory, bind it at fresh genesis, and require strict preflight; never mix it with an old manifest.
 
-```bash
-clairveil-setup --out artifacts/privacy --circuit joinsplit --overwrite
-```
-
-The current JoinSplit development identity is R1CS `135528343084d9395ac3b59f87eb32661471751d936424c6aa3bc369483292d4`, PK `b41790cd96c41b78d7f7ca30f81cb76f4bdb93371bbf0b9437642348306c16d7`, and VK/consensus identity `3dd068d67137791666e81e599b8b3b6820f92d8aed8234eca16370b2d54ed112`. After rotation, discard old JoinSplit proofs/jobs, install the exact manifest through fresh genesis/reset, and require strict preflight. Do not mix old and new consensus/file identities or rotate Batch for this change.
-
-`privacy-note-v1` requires descriptors in the exact order `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`. Validators compare the consensus identity and load only the four VKs; prover readiness lazily loads only its selected R1CS/PK pair. `privacy_zk_manifest.json` schema `v2` must match `CircuitSetIdentity` schema `v1`, including ordered descriptors, VK SHA-256, and public-input schema SHA-256. Environment checksums add a consistency check but cannot override consensus identity; any mismatch must fail startup/readiness.
+`privacy-note-v1-audit-field-v1` requires descriptors in the exact order `deposit-audit-field-v1`, `spend-audit-field-v1`, `joinsplit-2x2-audit-field-v1`, `batch-joinsplit-16x32-audit-field-v1`. Validators compare the consensus identity and load only the four VKs; prover readiness lazily loads only its selected R1CS/PK pair. `privacy_zk_manifest.json` schema `v2` must match `CircuitSetIdentity` schema `v1`, including ordered descriptors, VK SHA-256, and public-input schema SHA-256. Environment checksums add a consistency check but cannot override consensus identity; any mismatch must fail startup/readiness.
 
 Repository artifacts are development artifacts, not a formal trusted setup or production distribution. Production releases must record the circuit source commit, generation command, checksum manifest, and signer; mount artifacts read-only; use `CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict`; and block stale artifacts or chain-verifier mismatches. The recorded batch artifact hashes and resource history remain in [clairveil-batch-joinsplit-16x32.md](clairveil-batch-joinsplit-16x32.md).
 
@@ -93,7 +87,7 @@ Query `tree_state` and confirm `leaf_count`, `max_leaves`, `remaining_leaves`, a
 
 Use one configured prover endpoint and disable automatic failover. A same-endpoint retry after timeout/response checks is allowed. Sending a witness-bearing request to another endpoint requires explicit user or product-policy opt-in that names the additional operator and privacy boundary; availability alone does not authorize disclosure expansion.
 
-Current contracts are transfer payload `v5` with request/response/proof `v2`; withdraw prover/final payload and request/response/proof `v2`; batch payload `batch-transfer-payload-v1`, proof `batch-transfer-proof-v1`, and request/response `v1`; deposit payload/proof/request/response `v1`; and disclosure plaintext/query `privacy-fixed-v1`. Reject legacy inputs. Exclude request bodies, bearer credentials, signatures, disclosure plaintext/blindings, and proofs from logs, traces, crash dumps, and analytics.
+Current contract: `/v2/prover/audit-field` with request/response envelope `v1`, `privacy-note-v1-audit-field-v1`, base64 byte slices, and final PI23. Check the response with the exact local artifact identity before building a V2 message. The transfer/withdraw/batch/deposit V1 material is legacy evidence, not a V2 input. Exclude request bodies, bearer credentials, signatures, disclosure plaintext/blindings, and proofs from logs, traces, crash dumps, and analytics.
 
 ### Production HTTP Boundary
 
@@ -105,19 +99,17 @@ Set aligned edge and application body limits. `max_request_bytes=8388608` (8 MiB
 
 ### Runtime, Readiness, And Admission
 
-`proverservice.DefaultRuntimeInfo()` describes the complete four-route reference daemon. `/healthz` and `/readyz` derive advertised `routes` and `circuits` from non-nil configured provers, so a compatibility constructor with a partial `provertransport.ProverSet` must not advertise unconfigured routes. `NewReferenceHandler` configures the complete reference inventory. Readiness must fail closed unless the manifest, VK, public-input schema, and supplied consensus metadata exactly match the chain.
+`clairveil-proverd` exposes only the audit-field V2 route. `/healthz` and `/readyz` derive advertised `routes` and `circuits` from its configured prover. Readiness fails closed unless the development-grade artifact manifest, VK, public-input schema, and supplied consensus identity exactly match the runtime.
 
 The reference admission defaults are per circuit: `max_in_flight=1`, `max_queued=4`. Queue saturation returns a retryable busy response. Export in-flight, queued, rejected, canceled, queue-wait, prove-time, CPU, RSS, route/status, latency, auth failures, body-limit rejections, and readiness/preflight failures without request or witness content.
 
 Context cancellation ends the caller wait, but a running in-process gnark proof can continue until it returns and retains its permit; the reference service cannot preempt the solver. For hard cancellation or OOM containment, use isolated, memory-limited worker processes and terminate them.
 
-The bounded reference service exposes BatchJoinSplit16x32 only at `POST /v1/proofs/batch-transfer`. Do not send `MsgBatchTransfer` witnesses through a generic or JoinSplit endpoint. Keep the same TLS/auth, positive body limit, per-circuit admission, payload binding, and artifact-role controls. The production 16x32 public-schema order is `MerkleRoot`, `ChainDomainHi`, `ChainDomainLo`, `ExpiresAtUnix`, `InputCount`, `OutputCount`, `NullifierRoot`, `CommitmentRoot`, `UserDisclosureRoot`, `FullDisclosureRoot`, `PayloadDigestHi`, `PayloadDigestLo`; it does not authorize an ad-hoc remote endpoint.
+The `BatchJoinSplit16x32` `/v1/proofs/batch-transfer` boundary is legacy-only. Current V2 uses `/v2/prover/audit-field` with the selected audit-field `circuit_id`; it does not authorize an ad-hoc endpoint or make legacy batch measurements current runtime evidence.
 
-### Canonical Deposit Prover Route
+### Canonical Audit-field V2 Prover Route
 
-Expose `POST /v1/prover/deposit` only through the bounded service handler and include its artifact in readiness. It receives the versioned witness (receiver public keys, amount, asset ID, randomness, commitment), not encrypted note, creator, denom, memo, seed, or chain ID. Apply bearer auth, positive gzip/body limits, per-circuit admission, redacted logging, and `Cache-Control: no-store`. Send `Content-Type: application/json`; omission remains accepted for existing `v1` clients, while an unsupported supplied type returns `415`. Invalid witness/version returns `400`; only a failure after a validated request reaches proving returns `500`; `405` returns `Allow: POST`.
-
-The JS SDK must use a request timeout and validate response version plus route-specific binding: payload/proof hashes for transfer, withdraw, and batch; recomputed witness commitment and nested proof version for deposit. The authoritative route contract is [the HTTP API deposit section](clairveil-proverd-http-api.md#deposit).
+Expose only `POST /v2/prover/audit-field` through the bounded service handler. It receives a complete witness and PI23, so use bearer auth, positive gzip/body limits, audit-field admission, redacted logging, and `Cache-Control: no-store`. Invalid framing/version returns `400`; only a failure after a validated request reaches proving returns `500`. The SDK uses a finite timeout, validates repeated response fields, then verifies with the exact local artifact identity and final PI23. The authoritative route contract is [the HTTP API](clairveil-proverd-http-api.md).
 
 ## 7. Audit Key Operations
 

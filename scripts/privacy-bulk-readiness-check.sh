@@ -92,10 +92,10 @@ run_step "bulk-synthetic-bench" "1" \
   env BENCH_OUT_DIR="$bench_out_dir/bulk-transfer" ./scripts/privacy-bulk-transfer-bench.sh || failed=1
 
 if [[ "${RUN_LOCALNET:-0}" == "1" ]]; then
-  run_step "transfer-batch-localnet" "1" \
-    env BENCH_OUT_DIR="$bench_out_dir/transfer-batch-localnet" TRANSFER_BATCH_COUNT="${TRANSFER_BATCH_COUNT:-2}" ./scripts/privacy-transfer-batch-localnet-bench.sh || failed=1
+  run_step "audit-v2-localnet" "1" \
+    ./scripts/privacy-audit-v2-smoke.sh || failed=1
 else
-  skip_step "transfer-batch-localnet" "skipped; set RUN_LOCALNET=1 to include localnet multi-message transfer validation"
+  skip_step "audit-v2-localnet" "skipped; set RUN_LOCALNET=1 to include the V2 localnet transfer batch smoke"
 fi
 
 if [[ "${RUN_PROVER_SCALE:-0}" == "1" || -n "${PROVERD_URLS:-}" ]]; then

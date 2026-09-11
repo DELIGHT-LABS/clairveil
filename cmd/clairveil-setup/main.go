@@ -37,77 +37,18 @@ const (
 )
 
 func main() {
-	outDirFlag := flag.String("out", "artifacts/privacy", "output directory for generated zk artifacts")
-	overwriteFlag := flag.Bool("overwrite", false, "overwrite existing artifacts in the output directory")
-	circuitFlag := flag.String("circuit", setupCircuitAll, "artifact circuit to generate: all, deposit, spend, joinsplit, or batch-joinsplit-16x32-v1")
-	setFlag := flag.String("set", zk.ActiveCircuitSetID, "circuit set; audit-field requires -development and a new output directory")
-	developmentFlag := flag.Bool("development", false, "acknowledge untrusted development-only setup")
+	outDirFlag := flag.String("out", "artifacts/audit-field", "output directory for generated audit-field V2 artifacts")
+	developmentFlag := flag.Bool("development", false, "acknowledge that this V2 artifact bundle is development-grade, not production-authorized")
 	flag.Parse()
-	if *setFlag == zk.AuditFieldCircuitSetID {
-		if !*developmentFlag || *circuitFlag != setupCircuitAll || *overwriteFlag {
-			fmt.Fprintln(os.Stderr, "audit-field setup requires -development, -circuit all, and no -overwrite")
-			os.Exit(1)
-		}
-		if err := generateAuditFieldDevelopment(*outDirFlag); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		fmt.Println("development-only audit-field bundle generated; not authorized for production")
-		return
-	}
-	if *setFlag != zk.ActiveCircuitSetID {
-		fmt.Fprintf(os.Stderr, "unsupported circuit set %q\n", *setFlag)
+	if !*developmentFlag {
+		fmt.Fprintln(os.Stderr, "audit-field V2 setup requires -development; these artifacts are not production-authorized")
 		os.Exit(1)
 	}
-	selectedCircuit, err := parseSetupCircuit(*circuitFlag)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "invalid circuit selection: %v\n", err)
+	if err := generateAuditFieldRuntime(*outDirFlag); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-
-	outDir, err := filepath.Abs(*outDirFlag)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to resolve output directory: %v\n", err)
-		os.Exit(1)
-	}
-
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create output directory: %v\n", err)
-		os.Exit(1)
-	}
-	if selectedCircuit != setupCircuitAll {
-		if !*overwriteFlag {
-			fmt.Fprintln(os.Stderr, "selective artifact rotation requires -overwrite")
-			os.Exit(1)
-		}
-		if err := validateExistingArtifactSet(outDir); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to validate existing artifact set before selective rotation: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
-	definitions, err := buildArtifactDefinitions(selectedCircuit)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to prepare circuits: %v\n", err)
-		os.Exit(1)
-	}
-
-	var checksums map[string]string
-	if selectedCircuit == setupCircuitAll {
-		checksums, err = writeArtifactSet(outDir, outDir, definitions, *overwriteFlag, defaultArtifactSetOps())
-	} else {
-		checksums, err = rotateSelectiveArtifactSet(outDir, definitions, defaultArtifactSetOps())
-	}
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to generate artifact set: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Println("privacy zk artifacts generated successfully")
-	fmt.Printf("artifact_dir=%s\n", outDir)
-	for _, key := range checksumEnvironmentOrder() {
-		fmt.Printf("%s=%s\n", key, checksums[key])
-	}
+	fmt.Println("audit-field V2 development-grade bundle generated; not authorized for production")
 }
 
 type artifactSetOps struct {
@@ -544,20 +485,20 @@ func writeFileAtomic(path string, content []byte, mode fs.FileMode) (returnErr e
 }
 
 // New audit bundles are staged completely and validated before a single rename.
-// Existing directories (even empty ones) are never replaced by this dev path.
-func generateAuditFieldDevelopment(rawDir string) error {
-	return generateAuditFieldDevelopmentWithOps(rawDir, func() ([]artifactDefinition, error) {
+// Existing directories (even empty ones) are never replaced by this runtime path.
+func generateAuditFieldRuntime(rawDir string) error {
+	return generateAuditFieldRuntimeWithOps(rawDir, func() ([]artifactDefinition, error) {
 		return buildArtifactDefinitionsForSet(setupCircuitAll, zk.AuditFieldCircuitSetID)
 	}, defaultArtifactSetOps())
 }
 
-func generateAuditFieldDevelopmentWithOps(rawDir string, build func() ([]artifactDefinition, error), ops artifactSetOps) (returnErr error) {
+func generateAuditFieldRuntimeWithOps(rawDir string, build func() ([]artifactDefinition, error), ops artifactSetOps) (returnErr error) {
 	outDir, err := filepath.Abs(rawDir)
 	if err != nil {
 		return err
 	}
 	if _, err := os.Lstat(outDir); err == nil {
-		return fmt.Errorf("development output must not exist: %s", outDir)
+		return fmt.Errorf("audit-field output must not exist: %s", outDir)
 	} else if !os.IsNotExist(err) {
 		return err
 	}
@@ -584,8 +525,7 @@ func generateAuditFieldDevelopmentWithOps(rawDir string, build func() ([]artifac
 		return checksumDescriptors(dir, zk.AuditFieldArtifactDescriptors())
 	}
 	ops.writeEnvManifest = func(path, dir string, checksums map[string]string) error {
-		// No default-registry environment selector: consuming this bundle requires
-		// an explicit development ArtifactRegistryConfig.CircuitSetID.
+		// Consuming this bundle requires the audit-field V2 ArtifactRegistryConfig.
 		content := "# DEVELOPMENT ONLY; not an active production artifact set\n"
 		for _, d := range zk.AuditFieldArtifactDescriptors() {
 			content += fmt.Sprintf("%s=%s\n", d.ChecksumEnv, checksums[d.ChecksumEnv])

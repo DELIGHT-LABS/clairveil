@@ -13,6 +13,9 @@ import (
 )
 
 func (k Keeper) InitGenesisCommitments(ctx sdk.Context, commitments [][]byte) error {
+	if !k.allowsGenesisStateImport(ctx) {
+		return fmt.Errorf("legacy state mutation is disabled")
+	}
 	if err := k.EnsureCanAppendCommitments(ctx, uint64(len(commitments))); err != nil {
 		return fmt.Errorf("genesis commitments exceed merkle tree capacity: %w", err)
 	}
@@ -26,7 +29,7 @@ func (k Keeper) InitGenesisCommitments(ctx sdk.Context, commitments [][]byte) er
 			return fmt.Errorf("genesis commitment at index %d is invalid: %w", i, err)
 		}
 
-		if err := k.AppendCommitment(ctx, canonicalCommitment); err != nil {
+		if err := k.appendCommitment(ctx, canonicalCommitment); err != nil {
 			return fmt.Errorf("failed to append the genesis commitment at index %d: %w", i, err)
 		}
 	}
@@ -35,6 +38,9 @@ func (k Keeper) InitGenesisCommitments(ctx sdk.Context, commitments [][]byte) er
 }
 
 func (k Keeper) InitGenesisHistoricalRoots(ctx sdk.Context, roots [][]byte) error {
+	if !k.allowsGenesisStateImport(ctx) {
+		return fmt.Errorf("legacy state mutation is disabled")
+	}
 	if err := types.ValidateDistinctCanonicalFieldElements("genesis historical root", roots); err != nil {
 		return fmt.Errorf("invalid genesis historical roots: %w", err)
 	}
@@ -60,6 +66,9 @@ func (k Keeper) InitGenesisHistoricalRoots(ctx sdk.Context, roots [][]byte) erro
 }
 
 func (k Keeper) InitGenesisNullifiers(ctx sdk.Context, nullifiers [][]byte) error {
+	if !k.allowsGenesisStateImport(ctx) {
+		return fmt.Errorf("legacy state mutation is disabled")
+	}
 	if err := types.ValidateDistinctCanonicalFieldElements("genesis nullifier", nullifiers); err != nil {
 		return fmt.Errorf("invalid genesis nullifiers: %w", err)
 	}
@@ -69,7 +78,9 @@ func (k Keeper) InitGenesisNullifiers(ctx sdk.Context, nullifiers [][]byte) erro
 			return fmt.Errorf("genesis nullifier at index %d is invalid: %w", i, err)
 		}
 
-		k.SetNullifier(ctx, canonicalNullifier)
+		if err := k.setNullifier(ctx, canonicalNullifier); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -116,6 +127,9 @@ func (k Keeper) ExportGenesisNullifiers(ctx sdk.Context) ([][]byte, error) {
 }
 
 func (k Keeper) InitGenesisReserveBalancesV1(ctx sdk.Context, balances []*types.ReserveBalanceV1) error {
+	if !k.allowsGenesisStateImport(ctx) {
+		return fmt.Errorf("legacy state mutation is disabled")
+	}
 	for i, balance := range balances {
 		if balance == nil {
 			return fmt.Errorf("genesis reserve balance %d is nil", i)

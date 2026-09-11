@@ -9,21 +9,21 @@ import (
 	"testing"
 )
 
-func TestAuditDevelopmentPreservesExistingOutput(t *testing.T) {
+func TestAuditRuntimePreservesExistingOutput(t *testing.T) {
 	dir := t.TempDir()
 	sentinel := filepath.Join(dir, "preserved")
 	require.NoError(t, os.WriteFile(sentinel, []byte("original"), 0600))
-	require.ErrorContains(t, generateAuditFieldDevelopment(dir), "must not exist")
+	require.ErrorContains(t, generateAuditFieldRuntime(dir), "must not exist")
 	got, err := os.ReadFile(sentinel)
 	require.NoError(t, err)
 	require.Equal(t, "original", string(got))
 }
-func TestAuditDevelopmentFailurePublishesNothing(t *testing.T) {
+func TestAuditRuntimeFailurePublishesNothing(t *testing.T) {
 	for _, stage := range []string{"build", "partial write", "checksum"} {
 		t.Run(stage, func(t *testing.T) {
 			parent := t.TempDir()
 			dir := filepath.Join(parent, "bundle")
-			err := generateAuditFieldDevelopmentWithOps(dir, func() ([]artifactDefinition, error) {
+			err := generateAuditFieldRuntimeWithOps(dir, func() ([]artifactDefinition, error) {
 				if stage == "build" {
 					return nil, errors.New("injected build failure")
 				}
@@ -46,20 +46,20 @@ func TestAuditDevelopmentFailurePublishesNothing(t *testing.T) {
 		})
 	}
 }
-func TestAuditDevelopmentRejectsSelectiveAndUnknownSet(t *testing.T) {
+func TestAuditRuntimeRejectsSelectiveAndUnknownSet(t *testing.T) {
 	_, err := buildArtifactDefinitionsForSet(setupCircuitDeposit, zk.AuditFieldCircuitSetID)
 	require.Error(t, err)
 	_, err = buildArtifactDefinitionsForSet(setupCircuitAll, "unknown")
 	require.Error(t, err)
 }
 
-func TestAuditDevelopmentReportsCleanupFailure(t *testing.T) {
+func TestAuditRuntimeReportsCleanupFailure(t *testing.T) {
 	parent := t.TempDir()
 	original := errors.New("injected build failure")
 	ops := defaultArtifactSetOps()
 	var staging string
 	ops.removeAll = func(path string) error { staging = path; return errors.New("injected cleanup failure") }
-	err := generateAuditFieldDevelopmentWithOps(filepath.Join(parent, "bundle"), func() ([]artifactDefinition, error) { return nil, original }, ops)
+	err := generateAuditFieldRuntimeWithOps(filepath.Join(parent, "bundle"), func() ([]artifactDefinition, error) { return nil, original }, ops)
 	require.ErrorIs(t, err, original)
 	require.ErrorContains(t, err, "injected cleanup failure")
 	require.ErrorContains(t, err, staging)

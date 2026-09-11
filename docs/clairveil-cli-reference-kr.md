@@ -65,7 +65,7 @@ production wallet에서는 viewing key를 plaintext log나 analytics에 남기�
 
 ### show-disclosure-pubkey
 
-recipient-encrypted disclosure, sender self-view disclosure, audit disclosure에 사용하는 public key를 표시합니다.
+recipient-encrypted disclosure와 sender self-view disclosure에 쓸 user disclosure public key를 표시합니다.
 
 ```bash
 clairveild tx privacy show-disclosure-pubkey \
@@ -74,7 +74,35 @@ clairveild tx privacy show-disclosure-pubkey \
   --output json
 ```
 
-이 값은 genesis audit master pubkey 설정, user disclosure recipient 설정, sender self-view disclosure 복호화 키 확인에 사용됩니다.
+이는 V4 genesis audit master key가 아닙니다. Fresh V4 genesis는 reviewed runtime flow에서 offline audit-secret으로 audit-field public key와 proof of possession을 파생합니다. 이 command는 user/self-view disclosure에만 사용하세요.
+
+### Audit-field V2 runtime 구성
+
+Transaction을 prepare/prove하는 모든 V2 `tx privacy` command는 작은 audit configuration/key-history query에서 network nonce, 원래 initial height, active audit epoch/key, circuit identity를 자동으로 가져옵니다. Chain ID는 일반 Cosmos client 설정 또는 `--chain-id`를 사용합니다. 제거된 `--audit-network-nonce-hex`, `--audit-initial-height` flag를 전달하면 안 됩니다. Expiry와 prover 선택은 계속 명시적인 운영 제어입니다.
+
+```bash
+--audit-expiry 30m --audit-prover-timeout 30m
+```
+
+Verified bundle local proving에는 `--audit-prover-url`을 생략하고 remote proving에는 명시적으로 신뢰한 URL만 전달합니다. `transfer-batch-16x32`의 `--prover-url`은 `/v2/prover/audit-field` V2 alias이며 `--audit-prover-url`과 충돌하면 안 됩니다.
+
+### Audit provenance 수집과 검증
+
+`clairveil-auditor`는 닫힌 block 범위의 `block`과 `block_results`를 읽고, 실제 성공 privacy transaction 원본과 실행 결과만 하나의 atomic local JSON cache에 보존합니다. 이어 original message proof를 구성된 circuit identity로 검증하고, 보존한 epoch key로 복호화해 deposit-rooted note lineage를 만듭니다. 전체 chain replay를 수행하지 않으며 PrivacyScan을 audit ledger로 사용하지 않습니다.
+
+```bash
+clairveil-auditor \
+  --chain-id reviewed-chain-1 \
+  --node tcp://127.0.0.1:26657 \
+  --from-height 100 --to-height 500 \
+  --cache /secure/audit/range-100-500.json \
+  --audit-keyring-file /secure/audit/keyring.json \
+  --audit-artifacts /absolute/path/to/reviewed-artifacts
+```
+
+Keyring은 lowercase 32-byte hex `{key_id, secret_key}` 쌍을 담은 `0600` version-1 JSON file이어야 합니다. Configuration, nonce, initial height, public key history, circuit identity는 자동 query합니다. Report는 `collection_complete`와 `provenance_complete`를 분리하고 `last_processed_block`과 마지막 privacy execution 위치를 각각 표시합니다. Block/result, 실행 event, epoch key, 복호화 가능한 envelope, deposit root 중 하나라도 없으면 `AUDIT_INCOMPLETE`이며 empty lineage나 balance 0으로 표시하지 않습니다. 같은 cache를 다시 사용하면 empty block을 포함해 마지막 atomic 저장 block 다음부터 재개합니다.
+
+Collector는 선택한 CometBFT RPC endpoint를 block/result source로 신뢰하며 light client가 아닙니다. 독립적으로 인증한 block history가 필요한 deployment는 이 작은 collector 바깥에서 trust boundary를 제공해야 합니다. Replay input, runtime archive, persistent audit server는 만들지 않습니다.
 
 ## 3. Deposit
 
@@ -85,7 +113,7 @@ clairveild tx privacy deposit 10uclair \
   --from alice \
   --keyring-backend test \
   --chain-id clairveil-local-1 \
-  --gas 2500000 \
+  --gas 3500000 \
   --gas-prices 8500000000uclair \
   --yes \
   --output json
@@ -102,6 +130,7 @@ clairveild tx privacy deposit 10uclair \
 
 - `0uclair` deposit은 dummy note를 준비할 때 사용할 수 있습니다.
 - dummy note는 2-input transfer planner가 single large note를 split해야 할 때 필요할 수 있습니다.
+- 기록된 development deposit은 `2,868,008` gas를 사용했습니다. `2500000`은 out-of-gas(`code 11`)였으므로 예제는 `3500000`을 사용합니다. Downstream chain은 측정한 실행 결과로 자체 gas policy를 정해야 합니다.
 
 ## 4. Note scan
 
@@ -219,7 +248,7 @@ clairveild tx privacy transfer-batch "$(cat out/bob-shielded-address.txt)" \
 
 `transfer-batch-16x32`는 `MsgBatchTransfer` 하나와 `BatchJoinSplit16x32` proof 하나를 실행합니다. `--payment 'shielded-address,coin[,policy,mode,target-key]'`를 1..32회 반복해 output별 독립 disclosure를 지정하고, 필요하면 `--input-index`로 wallet note 1..16개를 고정하며, `--output-mode compact|exact32`를 선택합니다. Broadcast 전에 private prepared payload와 proof를 mode `0600`으로 저장합니다.
 
-재시작 가능한 단계형 command는 `prepare-batch-transfer`, `prove-batch-transfer PREPARED_FILE`, `broadcast-batch-transfer PREPARED_FILE PROOF_FILE`입니다. `prove-batch-transfer`는 `--prover-url`이 없으면 local prover만, 있으면 선택한 `POST /v1/proofs/batch-transfer` endpoint 한 곳만 사용하며 automatic failover나 redirect follow를 하지 않습니다. Plain HTTP는 `localhost`, `127.0.0.1`, `[::1]` 같은 loopback endpoint에서만 허용하고, 모든 non-loopback prover URL은 HTTPS를 사용해야 합니다. bearer 인증 remote prover에는 환경의 `CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN`을 전달하고 secret을 CLI flag로 받지 않습니다. 전체 명령과 boundary case는 [clairveil-getting-started-kr.md](clairveil-getting-started-kr.md#8-batchjoinsplit16x32-localnet)를 따릅니다.
+재시작 가능한 batch command와 `/v1/proofs/batch-transfer` endpoint는 legacy-only입니다. `--prover-url`은 `/v2/prover/audit-field` V2 alias로 유지되며 failover나 redirect follow를 하지 않습니다. [legacy reference 경계](clairveil-getting-started-kr.md#8-legacy-batchjoinsplit16x32-reference)를 참고하세요.
 
 ## 6. Disclosure decode
 
@@ -393,11 +422,26 @@ clairveild query privacy reserve uclair \
 
 ### clairveil-setup
 
-Active set `privacy-note-v1`, manifest schema `v2`의 development ZK artifact를 생성합니다. Generated R1CS/PK/VK binary는 source artifact가 아니며 이 command는 formal trusted setup ceremony가 아닙니다.
+audit-field V2 artifact set과 identity-pinned manifest를 생성합니다. 필수 acknowledgement는 bundle이 development-grade임을 명시적으로 유지합니다. Generated R1CS/PK/VK binary는 source artifact가 아니며 이 command는 formal trusted setup ceremony가 아닙니다.
 
 ```bash
-clairveil-setup --out artifacts/privacy
-clairveil-setup --out artifacts/privacy --overwrite
+clairveil-setup --out artifacts/audit-field --development
+```
+
+출력 디렉터리는 존재하면 안 됩니다. 검토된 release bundle을 재생성하지 말고, 그와 일치하는 runtime config 및 artifact를 그대로 재사용하세요.
+
+### clairveild privacy 구성
+
+일반 server start와 export에는 같은 작은 V4 구성과 검토된 verifier artifact directory가 필요하며, 둘 중 하나가 없으면 오류입니다.
+
+```bash
+clairveild start \
+  --audit-config /absolute/path/to/audit-config.json \
+  --audit-artifacts /absolute/path/to/audit-field-artifacts
+
+clairveild export \
+  --audit-config /absolute/path/to/audit-config.json \
+  --audit-artifacts /absolute/path/to/audit-field-artifacts
 ```
 
 ### clairveil-verify (legacy 전용)
@@ -415,7 +459,7 @@ clairveil-verify -enc '<BASE64_LEGACY_CIPHERTEXT>' -secret '<LEGACY_ADDRESS_OR_S
 Companion prover HTTP service를 실행합니다.
 
 ```bash
-export CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR=artifacts/privacy
+export CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR=artifacts/audit-field
 export CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict
 export CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN="$(openssl rand -hex 32)"
 
@@ -430,7 +474,7 @@ clairveil-proverd \
 
 Remote production profile은 [clairveil-operations-guide-kr.md](clairveil-operations-guide-kr.md#6-prover-운영)를 따릅니다.
 
-Validator startup은 local VK/public-input schema hash를 consensus `CircuitSetIdentity` schema `v1`과 비교하며 checksum env로 override할 수 없습니다. Validator는 VK만 필요하고 `clairveil-proverd`는 proof 생성 시 R1CS/PK를 lazy load합니다. Prover endpoint failover는 기본 off이며 explicit privacy opt-in이 필요합니다.
+`clairveil-proverd`는 audit-field V2만 제공하며 artifact directory가 필요합니다. local VK/public-input schema hash를 runtime `CircuitSetIdentity`와 비교하고 checksum env로 override할 수 없습니다. Validator는 VK만 필요하고 `clairveil-proverd`는 proof 생성 시 R1CS/PK를 lazy load합니다. Bundle은 development-grade로 남으며 prover endpoint failover는 기본 off이고 explicit privacy opt-in이 필요합니다.
 
 ### clairveil-payroll
 
@@ -502,7 +546,7 @@ make reference-payroll-rehearsal
 
 ## 11. Batch protocol compatibility
 
-CLI가 생성하고 검사하는 active circuit set은 `privacy-note-v1`입니다. Note, disclosure, encrypted envelope는 canonical `privacy-fixed-v1`을 사용합니다. Command는 raw ciphertext나 legacy JSON plaintext가 아니라 typed envelope를 emit/consume합니다. `AssetRegistryV1`이 canonical denom과 32-byte asset ID resolve의 authoritative source입니다. Upgrade 시 fresh genesis를 사용하고 local wallet/scan/proof cache와 old development artifact를 삭제한 뒤 artifact를 다시 생성하고 rescan합니다. Legacy decode나 in-place state migration은 없습니다.
+CLI가 생성하고 검사하는 V2 circuit set은 `privacy-note-v1-audit-field-v1`입니다. Note, disclosure, encrypted envelope는 canonical `privacy-fixed-v1`을 사용합니다. Command는 raw ciphertext나 legacy JSON plaintext가 아니라 typed envelope를 emit/consume합니다. `AssetRegistryV1`이 canonical denom과 32-byte asset ID resolve의 authoritative source입니다. Upgrade 시 fresh genesis를 사용하고 local wallet/scan/proof cache와 old development artifact를 삭제한 뒤 검토된 일치 artifact를 재사용하고 rescan합니다. Legacy decode나 in-place state migration은 없습니다.
 
 Wallet scan state는 전체 cursor `(height, global_sequence, output_index)`로 정렬됩니다. 모든 spend path는 선택한 root와 정확히 같은 snapshot에서 얻어야 합니다. Current-root path는 incremental node를 사용하므로 online historical-rebuild budget을 소비하지 않습니다. Non-current historical path는 persisted root/count/height metadata를 요구하며 public query는 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하고 그 이상은 `ResourceExhausted`를 반환합니다. Online bound를 넘으면 current root 또는 trusted local historical index를 사용합니다. 별도 offline recovery/export bound는 `MaxMerkleRebuildLeaves`(1,048,576)입니다. Remote historical root/path query는 wallet interest를 노출하므로 privacy warning을 유지하고 중요하면 local 또는 privacy-preserving infrastructure를 우선합니다.
 

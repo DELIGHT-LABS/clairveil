@@ -14,7 +14,9 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/gogoproto/proto"
 
+	"github.com/DELIGHT-LABS/clairveil/internal/auditinit"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
+	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto/auditfield"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -31,6 +33,13 @@ const (
 var errPrivacyScanRecordExceedsBudget = errors.New("privacy scan record exceeds query byte budget")
 
 func (k Keeper) AllocatePrivacyGlobalSequence(ctx sdk.Context) (uint64, error) {
+	if k.audit != nil && !auditinit.Active(ctx) {
+		return 0, fmt.Errorf("raw sequence mutation is disabled for audit-field")
+	}
+	return k.allocatePrivacyGlobalSequence(ctx)
+}
+
+func (k Keeper) allocatePrivacyGlobalSequence(ctx sdk.Context) (uint64, error) {
 	store := k.storeService.OpenKVStore(ctx)
 	current, err := store.Get(types.GetPrivacyGlobalSequenceKey())
 	if err != nil {
@@ -198,7 +207,7 @@ func validatePrivacyScanSummaryV2(summary *types.PrivacyScanSummaryV2) error {
 	if strings.TrimSpace(summary.EventType) == "" || summary.EventType != strings.TrimSpace(summary.EventType) {
 		return fmt.Errorf("privacy scan summary event_type is invalid")
 	}
-	if summary.CircuitSetId != types.ActiveCircuitSetID {
+	if summary.CircuitSetId != types.ActiveCircuitSetID && summary.CircuitSetId != auditfield.CircuitSetID {
 		return fmt.Errorf("privacy scan summary circuit_set_id must be %q", types.ActiveCircuitSetID)
 	}
 	if summary.PayloadVersion != types.FixedPayloadVersionV1 {
@@ -226,6 +235,9 @@ func validatePrivacyScanSummaryV2(summary *types.PrivacyScanSummaryV2) error {
 	}
 	if len(summary.EffectId) != 0 && len(summary.EffectId) != 32 {
 		return fmt.Errorf("privacy scan summary effect_id must be empty or 32 bytes")
+	}
+	if summary.CircuitSetId == auditfield.CircuitSetID {
+		return validateAuditScanSummary(summary)
 	}
 	return validatePrivacyScanSummaryEventV2(summary)
 }
@@ -375,6 +387,9 @@ func (k Keeper) validatePrivacyScanOutputV2(summary *types.PrivacyScanSummaryV2,
 	if len(output.ViewTag) != 0 && len(output.ViewTag) != types.ViewTagLength {
 		return fmt.Errorf("privacy scan output view_tag must be empty or %d bytes", types.ViewTagLength)
 	}
+	if summary.CircuitSetId == auditfield.CircuitSetID {
+		return validateAuditScanOutput(output)
+	}
 	return validatePrivacyScanOutputEventV2(output)
 }
 
@@ -436,6 +451,13 @@ func (k Keeper) getPrivacyScanEventOutputsV2(ctx sdk.Context, summary *types.Pri
 // StorePrivacyScanV2 is the shared typed index writer for Deposit,
 // JoinSplit2x2, and BatchJoinSplit16x32 operations.
 func (k Keeper) StorePrivacyScanV2(ctx sdk.Context, summary *types.PrivacyScanSummaryV2, outputs []*types.PrivacyScanOutputV2) error {
+	if !k.allowsGenesisStateImport(ctx) {
+		return fmt.Errorf("raw scan mutation is disabled for audit-field")
+	}
+	return k.storePrivacyScan(ctx, summary, outputs)
+}
+
+func (k Keeper) storePrivacyScan(ctx sdk.Context, summary *types.PrivacyScanSummaryV2, outputs []*types.PrivacyScanOutputV2) error {
 	if err := validatePrivacyScanSummaryV2(summary); err != nil {
 		return err
 	}
@@ -1042,6 +1064,9 @@ func (k Keeper) ExportGenesisPrivacyScanV2(ctx sdk.Context) ([]*types.PrivacySca
 }
 
 func (k Keeper) InitGenesisPrivacyIndexV2(ctx sdk.Context, globalSequence uint64, events []*types.PrivacyEventRecordV1, summaries []*types.PrivacyScanSummaryV2, outputs []*types.PrivacyScanOutputV2) error {
+	if !k.allowsGenesisStateImport(ctx) {
+		return fmt.Errorf("legacy state mutation is disabled")
+	}
 	store := k.storeService.OpenKVStore(ctx)
 	maxSequence := uint64(0)
 	for i, event := range events {

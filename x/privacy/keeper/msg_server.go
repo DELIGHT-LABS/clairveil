@@ -62,6 +62,9 @@ func wrapMerkleAppendPreconditionErr(err error, capacityMessage string) error {
 
 // Deposit locks transparent funds and appends the encrypted note commitment.
 func (k msgServer) Deposit(goCtx context.Context, msg *types.MsgDeposit) (*types.MsgDepositResponse, error) {
+	if k.audit != nil {
+		return nil, fmt.Errorf("legacy privacy service is disabled")
+	}
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	if err := msg.ValidateBasic(); err != nil {
 		return nil, err
@@ -77,6 +80,9 @@ func (k msgServer) Deposit(goCtx context.Context, msg *types.MsgDeposit) (*types
 
 // Withdraw verifies a spend proof and releases transparent funds.
 func (k msgServer) Withdraw(goCtx context.Context, msg *types.MsgWithdraw) (*types.MsgWithdrawResponse, error) {
+	if k.audit != nil {
+		return nil, fmt.Errorf("legacy privacy service is disabled")
+	}
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	if err := msg.ValidateBasic(); err != nil {
 		return nil, err
@@ -177,6 +183,9 @@ func (k msgServer) Withdraw(goCtx context.Context, msg *types.MsgWithdraw) (*typ
 }
 
 func (k msgServer) Transfer(goCtx context.Context, msg *types.MsgTransfer) (*types.MsgTransferResponse, error) {
+	if k.audit != nil {
+		return nil, fmt.Errorf("legacy privacy service is disabled")
+	}
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	if err := msg.ValidateBasic(); err != nil {
 		return nil, err

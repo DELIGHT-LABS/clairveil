@@ -7,8 +7,6 @@ import (
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"io"
 	"math/big"
-	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -25,12 +23,15 @@ import (
 
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 
+	privacyaudit "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/audit"
 	privacybatchtransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/batchtransfer"
 	privacyprovertransport "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/provertransport"
 	privacyprovider "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/provider"
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
+	privacyv2 "github.com/DELIGHT-LABS/clairveil/x/privacy/types/v2"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
+	"github.com/cosmos/gogoproto/proto"
 )
 
 const (
@@ -78,9 +79,9 @@ is all-private,none. A non-private policy must explicitly select public or
 recipient-encrypted; recipient-encrypted also requires its disclosure key.
 
 This command writes the prepared payload before proving and the proof before
-broadcasting, so either stage can be resumed with the companion commands. Set
---prover-url to use only POST /v1/proofs/batch-transfer. When it is omitted,
-only the local prover is used; there is no automatic prover failover.
+broadcasting, so either stage can be resumed with the companion commands. It
+uses the audit-field v2 prover selected by --audit-prover-url or --prover-url,
+or the verified local audit artifact bundle when neither flag is set.
 
 This is not the existing transfer-batch command, which broadcasts several
 independent MsgTransfer messages in one Cosmos transaction envelope.
@@ -95,7 +96,7 @@ independent MsgTransfer messages in one Cosmos transaction envelope.
 			if err != nil {
 				return err
 			}
-			proof, proofPath, prover, err := proveBatchTransferFromFile(cmd, preparedPath)
+			proof, proofPath, prover, err := proveBatchTransferFromFile(cmd, clientCtx, preparedPath)
 			if err != nil {
 				return err
 			}
@@ -111,6 +112,7 @@ independent MsgTransfer messages in one Cosmos transaction envelope.
 	}
 	addBatchTransferPrepareFlags(cmd)
 	addBatchTransferProveFlags(cmd)
+	addAuditV2Flags(cmd)
 	flags.AddTxFlagsToCmd(cmd)
 	return cmd
 }
@@ -122,7 +124,8 @@ func CmdPrepareBatchTransfer() *cobra.Command {
 		Long: strings.TrimSpace(`
 Plan 1..16 wallet inputs and 1..32 payment/change/padding outputs, query every
 Merkle path, create independent output randomness and disclosure blindings,
-and write a structured owner-signed prepared payload with mode 0600.
+and write a structured private prepared payload with mode 0600. The final v2
+owner signature is created while proving, after the audit envelope is fixed.
 
 Repeat --payment using:
   shielded_address,coin[,privacy-policy,disclosure-mode,disclosure-pubkey-hex]
@@ -156,18 +159,22 @@ func CmdProveBatchTransfer() *cobra.Command {
 		Use:   "prove-batch-transfer [prepared_payload_file]",
 		Short: "Prove a prepared one-proof batch transfer locally or with one remote prover",
 		Long: strings.TrimSpace(`
-Validate the prepared payload version, expiry, structured owner signature, and
-payload hash before proving. By default the local BatchJoinSplit16x32 artifacts
-are used. Setting --prover-url exclusively selects POST
-/v1/proofs/batch-transfer. The command never retries another prover.
+Validate the prepared v2 payload version, expiry, and payload hash before
+proving. Either --audit-prover-url or the retained --prover-url selects the
+operator audit-field prover; conflicting values are rejected. Omitting both
+uses the verified local audit artifact bundle.
 		`),
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			proof, path, prover, err := proveBatchTransferFromFile(cmd, args[0])
+			clientCtx, err := client.GetClientTxContext(cmd)
 			if err != nil {
 				return err
 			}
-			payload, err := privacybatchtransfer.ReadPreparedBatchTransferPayload(args[0])
+			proof, path, prover, err := proveBatchTransferFromFile(cmd, clientCtx, args[0])
+			if err != nil {
+				return err
+			}
+			payload, err := privacybatchtransfer.ReadPreparedAuditV2BatchTransferPayload(args[0])
 			if err != nil {
 				return err
 			}
@@ -181,7 +188,8 @@ are used. Setting --prover-url exclusively selects POST
 		},
 	}
 	addBatchTransferProveFlags(cmd)
-	cmd.Flags().StringP(flags.FlagOutput, "o", "text", "Output format (text|json)")
+	addAuditV2Flags(cmd)
+	flags.AddTxFlagsToCmd(cmd)
 	return cmd
 }
 
@@ -201,11 +209,11 @@ simulate, or broadcast it.
 			if err != nil {
 				return err
 			}
-			payload, err := privacybatchtransfer.ReadPreparedBatchTransferPayload(args[0])
+			payload, err := privacybatchtransfer.ReadPreparedAuditV2BatchTransferPayload(args[0])
 			if err != nil {
 				return err
 			}
-			proof, err := privacybatchtransfer.ReadPreparedBatchTransferProof(args[1])
+			proof, err := privacybatchtransfer.ReadPreparedAuditV2BatchTransferProof(args[1])
 			if err != nil {
 				return err
 			}
@@ -218,6 +226,7 @@ simulate, or broadcast it.
 			})
 		},
 	}
+	addAuditV2Flags(cmd)
 	flags.AddTxFlagsToCmd(cmd)
 	return cmd
 }
@@ -238,7 +247,7 @@ func addBatchTransferProveFlags(cmd *cobra.Command) {
 	cmd.Flags().Duration(flagBatchProverTimeout, defaultBatchProverWait, "Remote prover request timeout")
 }
 
-func prepareBatchTransferFromFlags(cmd *cobra.Command, clientCtx client.Context) (*privacybatchtransfer.PreparedBatchTransferPayload, string, error) {
+func prepareBatchTransferFromFlags(cmd *cobra.Command, clientCtx client.Context) (*privacybatchtransfer.PreparedAuditV2BatchTransferPayload, string, error) {
 	rawPayments, err := cmd.Flags().GetStringArray(flagBatchPayment)
 	if err != nil {
 		return nil, "", err
@@ -291,17 +300,6 @@ func prepareBatchTransferFromFlags(cmd *cobra.Command, clientCtx client.Context)
 	if err != nil {
 		return nil, "", err
 	}
-	audit, err := privacytypes.NewQueryClient(clientCtx).AuditConfig(cmd.Context(), &privacytypes.QueryAuditConfigRequest{})
-	if err != nil {
-		return nil, "", fmt.Errorf("query audit identity: %w", err)
-	}
-	if audit == nil {
-		return nil, "", fmt.Errorf("query audit identity returned no response")
-	}
-	auditTarget, _, err := privacytransfer.DecodeDisclosurePubKeyHex(audit.AuditMasterPubkeyHex)
-	if err != nil {
-		return nil, "", fmt.Errorf("invalid chain audit target: %w", err)
-	}
 	disableSelfView, err := cmd.Flags().GetBool(flagTransferNoSelfView)
 	if err != nil {
 		return nil, "", err
@@ -320,16 +318,10 @@ func prepareBatchTransferFromFlags(cmd *cobra.Command, clientCtx client.Context)
 	if err != nil {
 		return nil, "", err
 	}
-	payload, err := privacybatchtransfer.BuildPreparedBatchTransferPayload(prepared, structuredBatchTransferSigner{
-		scalar: identity.scalar,
-		pubKey: identity.spendPubKey,
-	}, privacybatchtransfer.BuildPreparedBatchTransferPayloadInput{
+	payload, err := privacybatchtransfer.BuildPreparedAuditV2BatchTransferPayload(prepared, privacybatchtransfer.BuildPreparedAuditV2BatchTransferPayloadInput{
 		Creator:                        clientCtx.GetFromAddress().String(),
 		ChainID:                        clientCtx.ChainID,
 		ExpiresAtUnix:                  expiresAtUnix,
-		AuditKeyID:                     audit.AuditKeyId,
-		AuditKeyEpoch:                  audit.AuditKeyEpoch,
-		AuditDisclosureTargetPubKey:    auditTarget,
 		SelfViewDisclosureTargetPubKey: selfViewTarget,
 		DisableSelfViewDisclosure:      disableSelfView,
 	})
@@ -344,57 +336,66 @@ func prepareBatchTransferFromFlags(cmd *cobra.Command, clientCtx client.Context)
 	if path == "" {
 		return nil, "", fmt.Errorf("--%s is required", flagBatchPreparedOut)
 	}
-	if err := privacybatchtransfer.WritePreparedBatchTransferPayload(path, payload); err != nil {
+	if err := privacybatchtransfer.WritePreparedAuditV2BatchTransferPayload(path, payload); err != nil {
 		return nil, "", err
 	}
 	return payload, path, nil
 }
 
-func proveBatchTransferFromFile(cmd *cobra.Command, preparedPath string) (*privacybatchtransfer.PreparedBatchTransferProof, string, string, error) {
-	payload, err := privacybatchtransfer.ReadPreparedBatchTransferPayload(preparedPath)
+func proveBatchTransferFromFile(cmd *cobra.Command, clientCtx client.Context, preparedPath string) (*privacybatchtransfer.PreparedAuditV2BatchTransferProof, string, string, error) {
+	payload, err := privacybatchtransfer.ReadPreparedAuditV2BatchTransferPayload(preparedPath)
 	if err != nil {
 		return nil, "", "", err
 	}
-	if err := privacybatchtransfer.ValidatePreparedBatchTransferPayloadMetadata(payload); err != nil {
+	if payload.ChainID != clientCtx.ChainID {
+		return nil, "", "", fmt.Errorf("prepared batch transfer chain ID %q does not match current chain ID %q", payload.ChainID, clientCtx.ChainID)
+	}
+	if err := privacybatchtransfer.ValidatePreparedAuditV2BatchTransferPayloadAt(payload, time.Now()); err != nil {
 		return nil, "", "", fmt.Errorf("prepared batch transfer validation failed: %w", err)
 	}
-	proverURL, err := cmd.Flags().GetString(flagBatchProverURL)
+	runtime, err := resolveAuditV2Runtime(cmd, clientCtx)
 	if err != nil {
 		return nil, "", "", err
 	}
-	proverURL = strings.TrimSpace(proverURL)
-	var proof *privacybatchtransfer.PreparedBatchTransferProof
+	runtime.expiresAt = payload.ExpiresAtUnix
+	snapshot, err := runtime.snapshotSource(cmd.Context())
+	if err != nil {
+		return nil, "", "", err
+	}
+	prepared, err := privacybatchtransfer.PrepareAuditV2FromPreparedAuditV2Payload(snapshot, payload)
+	if err != nil {
+		return nil, "", "", err
+	}
+	public := prepared.PublicInputs()
+	publicBytes := make([][]byte, len(public))
+	for i := range public {
+		publicBytes[i] = public[i].Bytes()
+	}
+	identity, err := resolveTransferExecutionIdentity(clientCtx)
+	if err != nil {
+		prepared.Clear()
+		return nil, "", "", err
+	}
+	full, err := privacybatchtransfer.BuildAuditV2WitnessFromPayload(prepared, payload, func(intent *big.Int) ([]byte, error) {
+		return manualSign(intent, identity.scalar, identity.spendPubKey)
+	})
+	if err != nil {
+		prepared.Clear()
+		return nil, "", "", err
+	}
+	msg, err := runtime.prove(cmd, prepared, full)
+	if err != nil {
+		return nil, "", "", err
+	}
+	batch, ok := msg.(*privacyv2.MsgBatchTransfer)
+	if !ok {
+		return nil, "", "", fmt.Errorf("audit prover returned %T, expected v2 batch transfer", msg)
+	}
+	hash := snapshot.ArtifactHash
+	proof := &privacybatchtransfer.PreparedAuditV2BatchTransferProof{Version: privacybatchtransfer.PreparedAuditV2BatchTransferProofVersion, RequestPayloadHash: payload.PayloadHash, Message: batch, PublicInputs: publicBytes, ArtifactHash: hash[:]}
 	prover := "local"
-	if proverURL == "" {
-		proof, err = privacybatchtransfer.ProvePreparedBatchTransfer(payload, batchTransferArtifactProvider{}, batchTransferProofRunner{logWriter: privacyCommandLogWriter(cmd)})
-	} else {
+	if strings.TrimSpace(runtime.prover.BaseURL) != "" {
 		prover = "remote"
-		timeout, timeoutErr := cmd.Flags().GetDuration(flagBatchProverTimeout)
-		if timeoutErr != nil {
-			return nil, "", "", timeoutErr
-		}
-		if timeout <= 0 {
-			return nil, "", "", fmt.Errorf("--%s must be positive", flagBatchProverTimeout)
-		}
-		request, requestErr := privacyprovertransport.NewBatchTransferProofRequest(*payload)
-		if requestErr != nil {
-			return nil, "", "", requestErr
-		}
-		response, requestErr := (privacyprovertransport.HTTPProverClient{
-			BaseURL:     proverURL,
-			Client:      &http.Client{Timeout: timeout},
-			BearerToken: strings.TrimSpace(os.Getenv(privacyprovertransport.BearerTokenEnv)),
-		}).ProveBatchTransfer(cmd.Context(), *request)
-		if requestErr != nil {
-			return nil, "", "", requestErr
-		}
-		proof = &response.Proof
-	}
-	if err != nil {
-		return nil, "", "", err
-	}
-	if err := privacybatchtransfer.ValidatePreparedBatchTransferProofAt(payload, proof, time.Now()); err != nil {
-		return nil, "", "", err
 	}
 	proofPath, err := cmd.Flags().GetString(flagBatchProofOut)
 	if err != nil {
@@ -404,29 +405,27 @@ func proveBatchTransferFromFile(cmd *cobra.Command, preparedPath string) (*priva
 	if proofPath == "" {
 		return nil, "", "", fmt.Errorf("--%s is required", flagBatchProofOut)
 	}
-	if err := privacybatchtransfer.WritePreparedBatchTransferProof(proofPath, proof); err != nil {
+	if err := privacybatchtransfer.WritePreparedAuditV2BatchTransferProof(proofPath, proof); err != nil {
 		return nil, "", "", err
 	}
 	return proof, proofPath, prover, nil
 }
 
-func broadcastBatchTransferArtifacts(cmd *cobra.Command, clientCtx client.Context, payload *privacybatchtransfer.PreparedBatchTransferPayload, proof *privacybatchtransfer.PreparedBatchTransferProof, output batchTransferCommandOutput) error {
-	if err := privacybatchtransfer.ValidatePreparedBatchTransferProofAt(payload, proof, time.Now()); err != nil {
+func broadcastBatchTransferArtifacts(cmd *cobra.Command, clientCtx client.Context, payload *privacybatchtransfer.PreparedAuditV2BatchTransferPayload, proof *privacybatchtransfer.PreparedAuditV2BatchTransferProof, output batchTransferCommandOutput) error {
+	if err := validateAuditV2BatchProof(cmd, clientCtx, payload, proof); err != nil {
 		return fmt.Errorf("prepared batch transfer proof validation failed: %w", err)
 	}
 	creator := clientCtx.GetFromAddress().String()
 	if payload.Creator != "" && payload.Creator != creator {
 		return fmt.Errorf("prepared payload creator %q does not match tx signer %q", payload.Creator, creator)
 	}
-	msg, err := privacybatchtransfer.BuildMsgBatchTransfer(payload, proof, creator)
-	if err != nil {
-		return err
-	}
+	msg := *proof.Message
+	msg.Creator = creator
 	broadcaster := privacyprovider.CosmosTxBroadcaster{ClientContext: clientCtx, Flags: cmd.Flags(), FromName: clientCtx.GetFromName()}
 	if transferBatchUsesStandardTxCLI(clientCtx) {
-		return broadcaster.GenerateOrBroadcast(msg)
+		return broadcaster.GenerateOrBroadcast(&msg)
 	}
-	response, err := privacybatchtransfer.BroadcastBatchTransfer(cmd.Context(), batchTransferMessageBroadcaster{broadcaster: broadcaster}, payload, proof, creator)
+	response, err := broadcaster.BroadcastSDKMessage(cmd.Context(), &msg)
 	if err != nil {
 		return err
 	}
@@ -438,6 +437,57 @@ func broadcastBatchTransferArtifacts(cmd *cobra.Command, clientCtx client.Contex
 	}
 	privacyCommandOutputPrintf(cmd, "submitted one-proof batch transfer tx %s (%d inputs, %d outputs)\n", response.TxHash, len(payload.Inputs), len(payload.Outputs))
 	return nil
+}
+
+// validateAuditV2BatchProof binds a relayable final message to both the
+// private preparation and the currently active authenticated audit runtime.
+// It intentionally verifies from PI23, never from an archived full witness.
+func validateAuditV2BatchProof(cmd *cobra.Command, clientCtx client.Context, payload *privacybatchtransfer.PreparedAuditV2BatchTransferPayload, proof *privacybatchtransfer.PreparedAuditV2BatchTransferProof) error {
+	if payload == nil || payload.ChainID != clientCtx.ChainID {
+		preparedChainID := ""
+		if payload != nil {
+			preparedChainID = payload.ChainID
+		}
+		return fmt.Errorf("prepared batch transfer chain ID %q does not match current chain ID %q", preparedChainID, clientCtx.ChainID)
+	}
+	if err := privacybatchtransfer.ValidatePreparedAuditV2BatchTransferPayloadAt(payload, time.Now()); err != nil {
+		return err
+	}
+	if proof == nil || proof.Version != privacybatchtransfer.PreparedAuditV2BatchTransferProofVersion || proof.RequestPayloadHash != payload.PayloadHash || proof.Message == nil || len(proof.ArtifactHash) != 32 {
+		return fmt.Errorf("invalid v2 batch proof artifact")
+	}
+	if proof.Message.Creator != payload.Creator || proof.Message.ExpiresAtUnix != payload.ExpiresAtUnix || !bytes.Equal(proof.Message.Root, payload.Root) || len(proof.Message.Nullifiers) != len(payload.Inputs) || len(proof.Message.Outputs) != len(payload.Effects) {
+		return fmt.Errorf("v2 batch final message does not match prepared payload")
+	}
+	for i := range payload.Inputs {
+		if !bytes.Equal(proof.Message.Nullifiers[i], payload.Inputs[i].Nullifier) {
+			return fmt.Errorf("v2 batch final message nullifier %d does not match prepared payload", i)
+		}
+	}
+	for i := range payload.Effects {
+		if !proto.Equal(proof.Message.Outputs[i], payload.Effects[i]) {
+			return fmt.Errorf("v2 batch final message output %d does not match prepared payload", i)
+		}
+	}
+	if _, err := privacytypes.ValidateAuditMessage(proof.Message); err != nil {
+		return fmt.Errorf("invalid v2 batch final message: %w", err)
+	}
+	runtime, err := resolveAuditV2Runtime(cmd, clientCtx)
+	if err != nil {
+		return err
+	}
+	snapshot, err := runtime.snapshotSource(cmd.Context())
+	if err != nil {
+		return err
+	}
+	keyID := snapshot.Key.IDBytes()
+	if proof.Message.Audit == nil || proof.Message.Audit.Epoch != snapshot.Epoch || !bytes.Equal(proof.Message.Audit.KeyId, keyID[:]) || !bytes.Equal(snapshot.ArtifactHash[:], proof.ArtifactHash) {
+		return fmt.Errorf("v2 batch proof artifact is stale; prove again")
+	}
+	if err := privacyaudit.VerifyFinalMessageBinding(snapshot, proof.Message, proof.PublicInputs); err != nil {
+		return fmt.Errorf("v2 batch message/proof binding failed: %w", err)
+	}
+	return privacyaudit.VerifyFinalProof(4, proof.PublicInputs, proof.Message.Proof, runtime.registry, runtime.identity)
 }
 
 func parseBatchTransferPayments(rawPayments []string) ([]privacybatchtransfer.Payment, string, *big.Int, error) {

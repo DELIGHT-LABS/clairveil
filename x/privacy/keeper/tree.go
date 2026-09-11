@@ -60,7 +60,10 @@ func remainingMerkleLeaves(count uint64) (uint64, error) {
 
 // EnsureCanAppendCommitments fails before a message writes more leaves than the tree can hold.
 func (k Keeper) EnsureCanAppendCommitments(ctx sdk.Context, appendCount uint64) error {
-	count := k.GetLeafCount(ctx)
+	count, err := k.getLeafCountStrict(ctx)
+	if err != nil {
+		return err
+	}
 	remaining, err := remainingMerkleLeaves(count)
 	if err != nil {
 		return err
@@ -78,8 +81,18 @@ func (k Keeper) validateMerkleCachedRootOrSmallRebuild(ctx sdk.Context, count ui
 	if err := validateMerkleLeafCount(count); err != nil {
 		return err
 	}
-	if count == 0 || k.HasMerkleNode(ctx, uint8(MerkleDepth), 0) {
+	if count == 0 {
 		return nil
+	}
+	present, err := k.storeService.OpenKVStore(ctx).Has(types.GetMerkleNodeKey(uint8(MerkleDepth), 0))
+	if err != nil {
+		return err
+	}
+	if present {
+		return nil
+	}
+	if k.audit != nil {
+		return errMerkleQueryCachedRootMissing
 	}
 	return validateMerkleRebuildCount(count)
 }
@@ -97,7 +110,10 @@ func (k Keeper) getLeafRequired(ctx sdk.Context, index uint64, leafCount uint64)
 		return nil, fmt.Errorf("%w: index=%d leaf_count=%d", errMerkleTreeLeafMissing, index, leafCount)
 	}
 
-	leaf := k.GetLeaf(ctx, index)
+	leaf, readErr := k.storeService.OpenKVStore(ctx).Get(append([]byte("Leaf/"), sdk.Uint64ToBigEndian(index)...))
+	if readErr != nil {
+		return nil, readErr
+	}
 	if len(leaf) == 0 {
 		return nil, fmt.Errorf("%w: index=%d leaf_count=%d", errMerkleTreeLeafMissing, index, leafCount)
 	}
@@ -114,11 +130,14 @@ func (k Keeper) getMerkleNodeOrEmpty(ctx sdk.Context, level uint8, index uint64,
 	if index >= populatedNodeCountAtLevel(leafCount, int(level)) {
 		return emptyNodeBytes(uint32(level)), nil
 	}
-	if !k.HasMerkleNode(ctx, level, index) {
-		return nil, fmt.Errorf("%w: level=%d index=%d leaf_count=%d", errMerkleTreeNodeMissing, level, index, leafCount)
+	raw, err := k.storeService.OpenKVStore(ctx).Get(types.GetMerkleNodeKey(level, index))
+	if err != nil {
+		return nil, err
 	}
-
-	return k.GetMerkleNode(ctx, level, index), nil
+	if raw == nil {
+		return nil, fmt.Errorf("%w: level=%d index=%d", errMerkleTreeNodeMissing, level, index)
+	}
+	return validateFieldElementBytesStrict(raw)
 }
 
 func (k Keeper) validateAppendPath(ctx sdk.Context, index uint64) error {
@@ -151,6 +170,13 @@ func emptyNodeBytes(level uint32) []byte {
 
 // AppendCommitment appends a leaf commitment and updates the incremental tree state.
 func (k Keeper) AppendCommitment(ctx sdk.Context, commitment []byte) error {
+	if k.audit != nil {
+		return fmt.Errorf("raw commitment mutation is disabled for audit-field")
+	}
+	return k.appendCommitment(ctx, commitment)
+}
+
+func (k Keeper) appendCommitment(ctx sdk.Context, commitment []byte) error {
 	canonicalCommitment, err := validateFieldElementBytesStrict(commitment)
 	if err != nil {
 		return err
@@ -174,17 +200,26 @@ func (k Keeper) AppendCommitment(ctx sdk.Context, commitment []byte) error {
 		return err
 	}
 
-	index := k.GetLeafCount(ctx)
+	index, err := k.getLeafCountStrict(ctx)
+	if err != nil {
+		return err
+	}
 	if err := k.validateAppendPath(ctx, index); err != nil {
 		return err
 	}
 
-	k.SetLeaf(ctx, index, canonicalCommitment)
-	k.SetCommitmentIndex(ctx, canonicalCommitment, index)
+	if err := k.setLeaf(ctx, index, canonicalCommitment); err != nil {
+		return err
+	}
+	if err := k.setCommitmentIndex(ctx, canonicalCommitment, index); err != nil {
+		return err
+	}
 
 	current := canonicalCommitment
 	currentIndex := index
-	k.SetMerkleNode(ctx, 0, currentIndex, current)
+	if err := k.setMerkleNode(ctx, 0, currentIndex, current); err != nil {
+		return err
+	}
 
 	for level := 0; level < MerkleDepth; level++ {
 		var left []byte
@@ -203,15 +238,21 @@ func (k Keeper) AppendCommitment(ctx sdk.Context, commitment []byte) error {
 
 		parent := hashNodes(uint32(level), left, right)
 		parentIndex := currentIndex / 2
-		k.SetMerkleNode(ctx, uint8(level+1), parentIndex, parent)
+		if err := k.setMerkleNode(ctx, uint8(level+1), parentIndex, parent); err != nil {
+			return err
+		}
 
 		current = parent
 		currentIndex = parentIndex
 	}
 
-	k.SetHistoricalRoot(ctx, current)
-	k.SetLeafCount(ctx, index+1)
-	if err := k.SetMerkleRootSnapshotV1(ctx, &types.MerkleRootSnapshotV1{
+	if err := k.setHistoricalRoot(ctx, current); err != nil {
+		return err
+	}
+	if err := k.setLeafCount(ctx, index+1); err != nil {
+		return err
+	}
+	if err := k.setMerkleRootSnapshot(ctx, &types.MerkleRootSnapshotV1{
 		Root:      current,
 		LeafCount: index + 1,
 		Height:    ctx.BlockHeight(),
@@ -326,11 +367,21 @@ func (k Keeper) GetPath(ctx sdk.Context, commitment []byte) ([]string, []uint32,
 }
 
 func (k Keeper) ensureIncrementalTreeState(ctx sdk.Context) error {
-	count := k.GetLeafCount(ctx)
+	count, err := k.getLeafCountStrict(ctx)
+	if err != nil {
+		return err
+	}
 	if err := k.validateMerkleCachedRootOrSmallRebuild(ctx, count); err != nil {
 		return err
 	}
-	if count == 0 || k.HasMerkleNode(ctx, uint8(MerkleDepth), 0) {
+	if count == 0 {
+		return nil
+	}
+	present, err := k.storeService.OpenKVStore(ctx).Has(types.GetMerkleNodeKey(uint8(MerkleDepth), 0))
+	if err != nil {
+		return err
+	}
+	if present {
 		return nil
 	}
 
@@ -339,11 +390,15 @@ func (k Keeper) ensureIncrementalTreeState(ctx sdk.Context) error {
 		if err != nil {
 			return err
 		}
-		k.SetCommitmentIndex(ctx, leaf, i)
+		if err := k.setCommitmentIndex(ctx, leaf, i); err != nil {
+			return err
+		}
 
 		current := leaf
 		currentIndex := i
-		k.SetMerkleNode(ctx, 0, currentIndex, current)
+		if err := k.setMerkleNode(ctx, 0, currentIndex, current); err != nil {
+			return err
+		}
 
 		for level := 0; level < MerkleDepth; level++ {
 			var left []byte
@@ -362,7 +417,9 @@ func (k Keeper) ensureIncrementalTreeState(ctx sdk.Context) error {
 
 			parent := hashNodes(uint32(level), left, right)
 			parentIndex := currentIndex / 2
-			k.SetMerkleNode(ctx, uint8(level+1), parentIndex, parent)
+			if err := k.setMerkleNode(ctx, uint8(level+1), parentIndex, parent); err != nil {
+				return err
+			}
 
 			current = parent
 			currentIndex = parentIndex
@@ -380,17 +437,31 @@ func (k Keeper) GetLeafCount(ctx sdk.Context) uint64 {
 	return binary.BigEndian.Uint64(bz)
 }
 
-func (k Keeper) SetLeafCount(ctx sdk.Context, count uint64) {
+func (k Keeper) SetLeafCount(ctx sdk.Context, count uint64) error {
+	if k.audit != nil {
+		return fmt.Errorf("raw tree mutation is disabled for audit-field")
+	}
+	return k.setLeafCount(ctx, count)
+}
+
+func (k Keeper) setLeafCount(ctx sdk.Context, count uint64) error {
 	store := k.storeService.OpenKVStore(ctx)
 	bz := make([]byte, 8)
 	binary.BigEndian.PutUint64(bz, count)
-	store.Set([]byte("LeafCount"), bz)
+	return store.Set([]byte("LeafCount"), bz)
 }
 
-func (k Keeper) SetLeaf(ctx sdk.Context, index uint64, leaf []byte) {
+func (k Keeper) SetLeaf(ctx sdk.Context, index uint64, leaf []byte) error {
+	if k.audit != nil {
+		return fmt.Errorf("raw tree mutation is disabled for audit-field")
+	}
+	return k.setLeaf(ctx, index, leaf)
+}
+
+func (k Keeper) setLeaf(ctx sdk.Context, index uint64, leaf []byte) error {
 	store := k.storeService.OpenKVStore(ctx)
 	key := append([]byte("Leaf/"), sdk.Uint64ToBigEndian(index)...)
-	store.Set(key, leaf)
+	return store.Set(key, leaf)
 }
 
 func (k Keeper) GetLeaf(ctx sdk.Context, index uint64) []byte {
@@ -400,12 +471,19 @@ func (k Keeper) GetLeaf(ctx sdk.Context, index uint64) []byte {
 	return bz
 }
 
-func (k Keeper) SetHistoricalRoot(ctx sdk.Context, root []byte) {
+func (k Keeper) SetHistoricalRoot(ctx sdk.Context, root []byte) error {
+	if k.audit != nil {
+		return fmt.Errorf("raw tree mutation is disabled for audit-field")
+	}
+	return k.setHistoricalRoot(ctx, root)
+}
+
+func (k Keeper) setHistoricalRoot(ctx sdk.Context, root []byte) error {
 	store := k.storeService.OpenKVStore(ctx)
 	key := types.GetHistoricalRootKey(canonicalizeFieldBytesOrOriginal(root))
 	bz := make([]byte, 8)
 	binary.BigEndian.PutUint64(bz, uint64(ctx.BlockHeight()))
-	store.Set(key, bz)
+	return store.Set(key, bz)
 }
 
 func (k Keeper) CheckHistoricalRoot(ctx sdk.Context, root []byte) bool {
@@ -423,10 +501,17 @@ func (k Keeper) CheckHistoricalRoot(ctx sdk.Context, root []byte) bool {
 	return flag
 }
 
-func (k Keeper) SetNullifier(ctx sdk.Context, nullifier []byte) {
+func (k Keeper) SetNullifier(ctx sdk.Context, nullifier []byte) error {
+	if k.audit != nil {
+		return fmt.Errorf("raw tree mutation is disabled for audit-field")
+	}
+	return k.setNullifier(ctx, nullifier)
+}
+
+func (k Keeper) setNullifier(ctx sdk.Context, nullifier []byte) error {
 	store := k.storeService.OpenKVStore(ctx)
 	key := types.GetNullifierKey(canonicalizeFieldBytesOrOriginal(nullifier))
-	store.Set(key, []byte{0x01})
+	return store.Set(key, []byte{0x01})
 }
 
 func (k Keeper) HasNullifier(ctx sdk.Context, nullifier []byte) bool {
@@ -441,9 +526,16 @@ func (k Keeper) HasNullifier(ctx sdk.Context, nullifier []byte) bool {
 	return flag
 }
 
-func (k Keeper) SetMerkleNode(ctx sdk.Context, level uint8, index uint64, node []byte) {
+func (k Keeper) SetMerkleNode(ctx sdk.Context, level uint8, index uint64, node []byte) error {
+	if k.audit != nil {
+		return fmt.Errorf("raw tree mutation is disabled for audit-field")
+	}
+	return k.setMerkleNode(ctx, level, index, node)
+}
+
+func (k Keeper) setMerkleNode(ctx sdk.Context, level uint8, index uint64, node []byte) error {
 	store := k.storeService.OpenKVStore(ctx)
-	store.Set(types.GetMerkleNodeKey(level, index), node)
+	return store.Set(types.GetMerkleNodeKey(level, index), node)
 }
 
 func (k Keeper) GetMerkleNode(ctx sdk.Context, level uint8, index uint64) []byte {
@@ -458,11 +550,18 @@ func (k Keeper) HasMerkleNode(ctx sdk.Context, level uint8, index uint64) bool {
 	return flag
 }
 
-func (k Keeper) SetCommitmentIndex(ctx sdk.Context, commitment []byte, index uint64) {
+func (k Keeper) SetCommitmentIndex(ctx sdk.Context, commitment []byte, index uint64) error {
+	if k.audit != nil {
+		return fmt.Errorf("raw tree mutation is disabled for audit-field")
+	}
+	return k.setCommitmentIndex(ctx, commitment, index)
+}
+
+func (k Keeper) setCommitmentIndex(ctx sdk.Context, commitment []byte, index uint64) error {
 	store := k.storeService.OpenKVStore(ctx)
 	bz := make([]byte, 8)
 	binary.BigEndian.PutUint64(bz, index)
-	store.Set(types.GetCommitmentIndexKey(canonicalizeFieldBytesOrOriginal(commitment)), bz)
+	return store.Set(types.GetCommitmentIndexKey(canonicalizeFieldBytesOrOriginal(commitment)), bz)
 }
 
 func (k Keeper) GetCommitmentIndex(ctx sdk.Context, commitment []byte) (uint64, bool, error) {
@@ -495,4 +594,22 @@ func (k Keeper) GetCommitmentIndex(ctx sdk.Context, commitment []byte) (uint64, 
 func (k Keeper) HasCommitment(ctx sdk.Context, commitment []byte) (bool, error) {
 	_, found, err := k.GetCommitmentIndex(ctx, commitment)
 	return found, err
+}
+
+func (k Keeper) getLeafCountStrict(ctx sdk.Context) (uint64, error) {
+	raw, err := k.storeService.OpenKVStore(ctx).Get([]byte("LeafCount"))
+	if err != nil {
+		return 0, err
+	}
+	if raw == nil {
+		return 0, nil
+	}
+	if len(raw) != 8 {
+		return 0, fmt.Errorf("invalid merkle leaf count encoding")
+	}
+	n := binary.BigEndian.Uint64(raw)
+	if err := validateMerkleLeafCount(n); err != nil {
+		return 0, err
+	}
+	return n, nil
 }

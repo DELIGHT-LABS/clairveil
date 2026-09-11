@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"testing"
@@ -10,6 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
+	auditfield "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto/auditfield"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -137,6 +140,58 @@ func TestPrivacyScanV2RejectsEffectIDCorruption(t *testing.T) {
 	require.ErrorContains(t, err, "effect identity mismatch")
 }
 
+func TestValidateSummaryAllowsAuthenticatedAuditCircuitSet(t *testing.T) {
+	key := typedAuditScanKey(t)
+	effectID := make([]byte, 32)
+	effectID[31] = 1
+	summary := &privacytypes.PrivacyScanSummaryV2{
+		Height:            148,
+		GlobalSequence:    1,
+		EventType:         privacytypes.EventTypeDeposit,
+		OutputCount:       1,
+		CircuitSetId:      auditfield.CircuitSetID,
+		PayloadVersion:    privacytypes.FixedPayloadVersionV1,
+		ScanSchemaVersion: privacytypes.PrivacyScanSchemaVersionV2,
+		AuditKeyId:        hex.EncodeToString(key.IDBytes()),
+		AuditKeyEpoch:     1,
+		AuditTargetPubkey: key.Point().Bytes(),
+		EffectId:          effectID,
+	}
+	require.NoError(t, validateSummary(summary))
+	summary.OutputCount = 257
+	require.ErrorContains(t, validateSummary(summary), "output count")
+	summary.OutputCount = 1
+
+	summary.CircuitSetId = "unknown"
+	require.ErrorContains(t, validateSummary(summary), "invalid summary version identity")
+}
+
+func TestValidateAuditScanOutputBindsAuditIdentity(t *testing.T) {
+	key := typedAuditScanKey(t)
+	effectID := make([]byte, 32)
+	effectID[31] = 2
+	commitment := make([]byte, 32)
+	commitment[31] = 3
+	cipherSize, err := privacytypes.EncryptedEnvelopeV1Size(privacytypes.EnvelopeDepositNoteV1)
+	require.NoError(t, err)
+	encryptedNote, err := privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeDepositNoteV1, make([]byte, cipherSize-privacytypes.EncryptedEnvelopeV1HeaderSize))
+	require.NoError(t, err)
+	summary := &privacytypes.PrivacyScanSummaryV2{
+		Height: 148, GlobalSequence: 2, EventType: privacytypes.EventTypeDeposit, OutputCount: 1,
+		CircuitSetId: auditfield.CircuitSetID, PayloadVersion: privacytypes.FixedPayloadVersionV1, ScanSchemaVersion: privacytypes.PrivacyScanSchemaVersionV2,
+		AuditKeyId: hex.EncodeToString(key.IDBytes()), AuditKeyEpoch: 1, AuditTargetPubkey: key.Point().Bytes(), EffectId: effectID,
+	}
+	require.NoError(t, validateSummary(summary))
+	output := &privacytypes.PrivacyScanOutputV2{
+		Height: summary.Height, GlobalSequence: summary.GlobalSequence, OutputIndex: 0, EventType: summary.EventType, EffectId: effectID, Commitment: commitment,
+		EncryptedNote: encryptedNote, LeafIndexFound: true, CircuitSetId: summary.CircuitSetId, PayloadVersion: summary.PayloadVersion, ScanSchemaVersion: summary.ScanSchemaVersion,
+		AuditKeyId: summary.AuditKeyId, AuditKeyEpoch: summary.AuditKeyEpoch, AuditTargetPubkey: summary.AuditTargetPubkey,
+	}
+	require.NoError(t, validateOutput(summary, output))
+	output.AuditKeyEpoch++
+	require.ErrorContains(t, validateOutput(summary, output), "audit identity mismatch")
+}
+
 func TestCommitmentPathsAtRootReconstructsOptionalHeightSnapshot(t *testing.T) {
 	commitment := big.NewInt(23)
 	empty := privacytypes.EmptyNoteTreeRootsV1(32)
@@ -211,4 +266,15 @@ func typedScanAuditTarget() []byte {
 	point.ScalarMultiplication(&curve.Base, big.NewInt(17))
 	encoded := point.Bytes()
 	return append([]byte(nil), encoded[:]...)
+}
+
+func typedAuditScanKey(t *testing.T) privacycrypto.AuditKey {
+	t.Helper()
+	raw := make([]byte, 32)
+	raw[31] = 1
+	secret, err := privacycrypto.ImportAuditSecretKeyBE32(raw)
+	require.NoError(t, err)
+	key, err := privacycrypto.AuditKeyFromSecret(secret)
+	require.NoError(t, err)
+	return key
 }

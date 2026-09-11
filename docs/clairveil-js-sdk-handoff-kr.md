@@ -451,6 +451,8 @@ JS SDK handoff가 완료되었다고 보려면 아래가 가능해야 합니다.
 ## 14. Go core 쪽에서 JS SDK가 믿어도 되는 것
 
 현재 JS SDK가 안정 계약으로 삼아도 되는 항목은 아래입니다.
+- 현재 prover integration은 `POST` `/v2/prover/audit-field`, request/response envelope `v1`, `privacy-note-v1-audit-field-v1`, base64 `[]byte` field, final PI23입니다.
+- Client는 반복 response binding 뒤 exact artifact identity로 local verification을 수행해야 합니다. 아래의 이전 `/v1` example contract는 live V2 SDK surface가 아닌 legacy-only fixture reference입니다.
 
 - `clairveil.privacy.v1` proto package
 - `MsgDeposit`, `MsgTransfer`, `MsgWithdraw`, `MsgBatchTransfer`

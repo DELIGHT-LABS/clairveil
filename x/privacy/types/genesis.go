@@ -32,6 +32,7 @@ type AuditConfigV1 struct {
 }
 
 var RequiredCircuitIdentityOrder = []string{"deposit", "spend", "joinsplit", "batch-joinsplit-16x32-v1"}
+var RequiredAuditCircuitIdentityOrder = []string{"deposit-audit-field-v1", "spend-audit-field-v1", "joinsplit-2x2-audit-field-v1", "batch-joinsplit-16x32-audit-field-v1"}
 
 // DefaultGenesis returns the default genesis state for a specific circuit set.
 func DefaultGenesis(identity *CircuitSetIdentity) *GenesisState {
@@ -103,7 +104,11 @@ func (gs GenesisState) Validate() error {
 	if gs.CircuitSetIdentity == nil {
 		return fmt.Errorf("circuit_set_identity: is required")
 	}
-	if err := ValidateCircuitSetIdentity(gs.CircuitSetIdentity); err != nil {
+	validateIdentity := ValidateCircuitSetIdentity
+	if gs.CircuitSetIdentity.CircuitSetId == AuditFieldCircuitSetID {
+		validateIdentity = ValidateAuditCircuitSetIdentity
+	}
+	if err := validateIdentity(gs.CircuitSetIdentity); err != nil {
 		return fmt.Errorf("circuit_set_identity: %w", err)
 	}
 	if err := validateGenesisAssetRegistryV1(gs.AssetRegistry); err != nil {
@@ -238,7 +243,7 @@ func validateGenesisPrivacyIndexV2(gs GenesisState) error {
 		if summary.OutputCount > 32 {
 			return fmt.Errorf("privacy_scan_summaries[%d]: output_count exceeds 32", i)
 		}
-		if summary.CircuitSetId != ActiveCircuitSetID || summary.PayloadVersion != FixedPayloadVersionV1 || summary.ScanSchemaVersion != PrivacyScanSchemaVersionV2 {
+		if (summary.CircuitSetId != ActiveCircuitSetID && summary.CircuitSetId != AuditFieldCircuitSetID) || summary.PayloadVersion != FixedPayloadVersionV1 || summary.ScanSchemaVersion != PrivacyScanSchemaVersionV2 {
 			return fmt.Errorf("privacy_scan_summaries[%d]: unsupported version identity", i)
 		}
 		if len(summary.TxHash) != 0 && len(summary.TxHash) != 32 {
@@ -437,22 +442,30 @@ func validateGenesisReserveBalancesV1(balances []*ReserveBalanceV1, assets []*As
 }
 
 func ValidateCircuitSetIdentity(identity *CircuitSetIdentity) error {
+	return validateCircuitSetIdentity(identity, RequiredCircuitIdentityOrder, false)
+}
+
+func ValidateAuditCircuitSetIdentity(identity *CircuitSetIdentity) error {
+	return validateCircuitSetIdentity(identity, RequiredAuditCircuitIdentityOrder, true)
+}
+
+func validateCircuitSetIdentity(identity *CircuitSetIdentity, order []string, auditOnly bool) error {
 	if identity == nil {
 		return fmt.Errorf("is required")
 	}
 	if identity.SchemaVersion != CircuitSetIdentitySchemaVersion {
 		return fmt.Errorf("schema_version must be %q", CircuitSetIdentitySchemaVersion)
 	}
-	if identity.CircuitSetId != ActiveCircuitSetID {
-		return fmt.Errorf("circuit_set_id must be %q", ActiveCircuitSetID)
+	if (auditOnly && identity.CircuitSetId != AuditFieldCircuitSetID) || (!auditOnly && identity.CircuitSetId != ActiveCircuitSetID && identity.CircuitSetId != AuditFieldCircuitSetID) {
+		return fmt.Errorf("unsupported circuit_set_id %q", identity.CircuitSetId)
 	}
 	if identity.Curve != CircuitCurveBN254 {
 		return fmt.Errorf("curve must be %q", CircuitCurveBN254)
 	}
-	if len(identity.Circuits) != len(RequiredCircuitIdentityOrder) {
-		return fmt.Errorf("must contain exactly %d circuits", len(RequiredCircuitIdentityOrder))
+	if len(identity.Circuits) != len(order) {
+		return fmt.Errorf("must contain exactly %d circuits", len(order))
 	}
-	for i, expectedID := range RequiredCircuitIdentityOrder {
+	for i, expectedID := range order {
 		circuit := identity.Circuits[i]
 		if circuit == nil {
 			return fmt.Errorf("circuits[%d] is required", i)

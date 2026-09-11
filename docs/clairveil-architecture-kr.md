@@ -77,15 +77,15 @@ Owner는 transparent recipient, chain, expiry, nullifier, proof를 prepared payl
 
 ## 5. Proving과 artifact 경계
 
-Active set `privacy-note-v1`은 deposit, spend, joinsplit, `batch-joinsplit-16x32-v1`입니다. Consensus는 ordered circuit identity, VK hash, public-input schema hash를 pin합니다. Validator는 matching VK, prover는 선택한 circuit의 R1CS/PK도 load합니다. Checksum environment variable은 preflight input일 뿐 consensus를 override하지 못합니다.
+현재 실행 가능한 set은 development-only `privacy-note-v1-audit-field-v1` identity입니다. 네 개의 ordered audit-field circuit과 exact local artifact가 필요합니다. Validator는 matching VK를, `clairveil-proverd`는 선택한 R1CS/PK도 load합니다. Checksum environment variable은 preflight input일 뿐 consensus를 override하지 못합니다. 이전 `privacy-note-v1` NoteV1/batch set은 현재 V2 runtime이 아닌 보존 legacy 자료입니다.
 
 Prepared prover request에는 private note witness가 들어 있습니다. Same-endpoint retry가 두 번째 prover로 failover할 권한을 뜻하지 않습니다. Multi-prover failover는 explicit privacy decision이어야 합니다. `clairveil-proverd`는 bounded reference 구현이며 그 자체로 production trust boundary가 되지 않습니다.
 
 ## 6. Client와 audit 경계
 
-### 6.1 Deposit proving 경계
+### 6.1 Audit-field V2 proving 경계
 
-Deposit proving은 local 또는 `POST /v1/prover/deposit`을 사용합니다. Client가 note, commitment, encrypted note를 구성하고 remote prover는 versioned circuit witness만 받아 commitment를 재계산하여 commitment-bound proof를 반환합니다. Client는 response를 검증한 뒤 `MsgDeposit`을 조립·서명합니다. Envelope와 nested payload/proof version은 분리됩니다. Transport policy는 [general HTTP API](clairveil-proverd-http-api-kr.md), route wire contract는 [deposit API](clairveil-proverd-http-api-kr.md#deposit)가 소유합니다.
+현재 remote route는 `POST /v2/prover/audit-field`뿐입니다. Request/response envelope `v1`은 `privacy-note-v1-audit-field-v1`, exact artifact hash, base64 `[]byte` final PI23, complete witness를 담습니다. Response는 모든 binding field를 반복하며 client는 V2 message를 만들기 전에 exact local artifact identity와 final PI23으로 local verification을 수행합니다. [HTTP API](clairveil-proverd-http-api-kr.md)를 보세요. `/v1` deposit/transfer/withdraw/batch 설명은 보존 legacy history일 뿐입니다.
 
 Wallet은 typed chain data를 scan하고 note decrypt를 시도해 ownership을 복구합니다. `view_tags`는 untrusted performance hint일 뿐입니다. Client는 cursor 저장, rescan, prepared payload/note cache 암호화가 필요하고 nullifier query를 privacy-sensitive하게 다뤄야 합니다.
 
@@ -93,7 +93,7 @@ Wallet은 typed chain data를 scan하고 note decrypt를 시도해 ownership을 
 
 ## 7. 호환성과 authority
 
-현재 fixed client contract는 `privacy-fixed-v1`, transfer payload `v5`와 transfer request/response/proof `v2`, withdraw prover/final payload와 request/response/proof `v2`, batch payload `batch-transfer-payload-v1`·proof `batch-transfer-proof-v1`·request/response `v1`, deposit payload/proof/request/response `v1`입니다. 이전 artifact, queued proof, cached prepared payload, note/scan cache, three-circuit genesis와 호환되지 않습니다. Exact artifact set 재생성, fresh genesis/reset, incompatible job/cache 삭제, rescan으로 upgrade합니다.
+현재 fixed client contract는 `/v2/prover/audit-field`, request/response envelope `v1`, `privacy-note-v1-audit-field-v1`, base64 byte slice, final PI23 local verification입니다. 이전 NoteV1 artifact, queued proof, cached prepared payload, note/scan cache, legacy genesis는 V2 runtime과 호환되지 않습니다. 해당 fixture는 역사 conformance evidence로 보존하되 V2에 제출하지 마세요.
 
 자료가 충돌할 때 해당 contract의 판단 순서는 아래와 같습니다.
 

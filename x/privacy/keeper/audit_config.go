@@ -37,6 +37,9 @@ func (k Keeper) SetAuditMasterPubkey(ctx sdk.Context, pubKey []byte) {
 // SetAuditConfigV1 stores an all-zero or fully populated exact audit identity.
 // Values are validated before any write, and every store error is returned.
 func (k Keeper) SetAuditConfigV1(ctx sdk.Context, auditKeyID string, auditKeyEpoch uint64, auditTargetPubkey []byte) error {
+	if !k.allowsGenesisStateImport(ctx) {
+		return fmt.Errorf("legacy state mutation is disabled")
+	}
 	config := types.AuditConfigV1{
 		AuditKeyID:        auditKeyID,
 		AuditKeyEpoch:     auditKeyEpoch,

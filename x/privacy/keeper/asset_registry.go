@@ -163,6 +163,9 @@ func (k Keeper) RequireRegisteredAssetV1(ctx sdk.Context, canonicalDenom string)
 }
 
 func (k Keeper) InitGenesisAssetRegistryV1(ctx sdk.Context, entries []*types.AssetRegistryEntryV1) error {
+	if !k.allowsGenesisStateImport(ctx) {
+		return fmt.Errorf("legacy state mutation is disabled")
+	}
 	for i, entry := range entries {
 		if entry == nil {
 			return fmt.Errorf("genesis asset registry entry %d is nil", i)

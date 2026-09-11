@@ -17,6 +17,7 @@ import (
 
 	privacydisclosure "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/disclosure"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/types"
+	privacyv2 "github.com/DELIGHT-LABS/clairveil/x/privacy/types/v2"
 )
 
 const flagTransferDisclosurePrivKey = "disclosure-privkey"
@@ -204,20 +205,106 @@ func lookupTransferDisclosureCipherTextByTxHash(ctx context.Context, clientCtx c
 		return nil, fmt.Errorf("failed to query the tx for --%s %q: %w", flagTransferDisclosureTxHash, txHash, err)
 	}
 
-	eventCandidates, err := extractTransferDisclosureEventCandidatesFromTx(txRes, plane)
-	if err != nil {
-		return nil, err
+	eventCandidates, eventErr := extractTransferDisclosureEventCandidatesFromTx(txRes, plane)
+	if eventErr == nil {
+		return newTransferDisclosureDecodeInput(txHash, eventCandidates), nil
 	}
-	eventData := eventCandidates[0]
+
+	// Audit V2 emits only a compact event summary. Its disclosure payloads are
+	// committed in the signed MsgTransfer outputs, so recover those from the
+	// transaction bytes when the legacy event attributes are absent.
+	v2Candidates, v2Err := extractAuditV2TransferDisclosureCandidatesFromTx(clientCtx, txRes, plane)
+	if v2Err == nil {
+		return newTransferDisclosureDecodeInput(txHash, v2Candidates), nil
+	}
+
+	return nil, fmt.Errorf("failed to find a transfer disclosure payload in tx %q: event lookup: %v; audit v2 transaction lookup: %w", txHash, eventErr, v2Err)
+}
+
+func newTransferDisclosureDecodeInput(txHash string, candidates []transferDisclosureEventData) *transferDisclosureDecodeInput {
+	first := candidates[0]
 
 	return &transferDisclosureDecodeInput{
-		PayloadHex:         eventData.PayloadHex,
-		OnChainDigestHex:   eventData.DisclosureDigestHex,
+		PayloadHex:         first.PayloadHex,
+		OnChainDigestHex:   first.DisclosureDigestHex,
 		TxHash:             strings.ToUpper(strings.TrimSpace(txHash)),
-		IsPlaintextPayload: eventData.IsPlaintextPayload,
-		SelectedPlane:      eventData.SelectedPlane,
-		Candidates:         eventCandidates,
-	}, nil
+		IsPlaintextPayload: first.IsPlaintextPayload,
+		SelectedPlane:      first.SelectedPlane,
+		Candidates:         candidates,
+	}
+}
+
+func extractAuditV2TransferDisclosureCandidatesFromTx(clientCtx client.Context, txRes *cmttypes.ResultTx, plane string) ([]transferDisclosureEventData, error) {
+	if txRes == nil {
+		return nil, fmt.Errorf("transaction query returned no result")
+	}
+	if txRes.TxResult.Code != 0 {
+		return nil, fmt.Errorf("transaction failed on chain with code %d; disclosure payload is not committed", txRes.TxResult.Code)
+	}
+	if clientCtx.TxConfig == nil {
+		return nil, fmt.Errorf("a transaction decoder is required for audit v2 disclosure lookup")
+	}
+
+	decodedTx, err := clientCtx.TxConfig.TxDecoder()(txRes.Tx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode transaction bytes: %w", err)
+	}
+
+	var outputs []*privacyv2.OutputEffect
+	for _, msg := range decodedTx.GetMsgs() {
+		transfer, ok := msg.(*privacyv2.MsgTransfer)
+		if !ok {
+			continue
+		}
+		outputs = append(outputs, transfer.Outputs...)
+	}
+
+	return extractAuditV2TransferDisclosureCandidatesFromOutputs(outputs, plane)
+}
+
+func extractAuditV2TransferDisclosureCandidatesFromOutputs(outputs []*privacyv2.OutputEffect, plane string) ([]transferDisclosureEventData, error) {
+	candidates := make([]transferDisclosureEventData, 0, len(outputs)*2)
+	for _, output := range outputs {
+		if output == nil {
+			continue
+		}
+
+		userMode := types.UserDisclosureMode(output.UserDisclosureMode)
+		if len(output.UserDisclosurePayload) != 0 {
+			switch userMode {
+			case types.UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC:
+				if plane == transferDisclosurePlaneAuto || plane == transferDisclosurePlanePublic {
+					candidates = append(candidates, transferDisclosureEventData{
+						PayloadHex:          hex.EncodeToString(output.UserDisclosurePayload),
+						DisclosureDigestHex: hex.EncodeToString(output.UserDisclosureDigest),
+						IsPlaintextPayload:  true,
+						SelectedPlane:       transferDisclosurePlanePublic,
+					})
+				}
+			case types.UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED:
+				if plane == transferDisclosurePlaneAuto || plane == transferDisclosurePlaneRecipient {
+					candidates = append(candidates, transferDisclosureEventData{
+						PayloadHex:          hex.EncodeToString(output.UserDisclosurePayload),
+						DisclosureDigestHex: hex.EncodeToString(output.UserDisclosureDigest),
+						SelectedPlane:       transferDisclosurePlaneRecipient,
+					})
+				}
+			}
+		}
+
+		if len(output.SelfViewDisclosurePayload) != 0 && (plane == transferDisclosurePlaneAuto || plane == transferDisclosurePlaneSelfView) {
+			candidates = append(candidates, transferDisclosureEventData{
+				PayloadHex:          hex.EncodeToString(output.SelfViewDisclosurePayload),
+				DisclosureDigestHex: hex.EncodeToString(output.SelfFullDisclosureDigest),
+				SelectedPlane:       transferDisclosurePlaneSelfView,
+			})
+		}
+	}
+
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("no audit v2 transfer disclosure payload for plane %q was found", plane)
+	}
+	return candidates, nil
 }
 
 func normalizeTransferDisclosurePlane(raw string) (string, error) {

@@ -14,18 +14,13 @@ import (
 	"syscall"
 	"time"
 
-	"cosmossdk.io/log/v2"
-
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint"
 	gnarklogger "github.com/consensys/gnark/logger"
 
-	privacybatchtransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/batchtransfer"
-	privacydeposit "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/deposit"
 	privacyprovertransport "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/provertransport"
-	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
-	privacywithdraw "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/withdraw"
+	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	privacyzk "github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
 )
 
@@ -100,42 +95,6 @@ type Handler struct {
 	info            RuntimeInfo
 	bearerToken     string
 	maxRequestBytes int64
-}
-
-type referenceJoinSplitArtifactProvider struct {
-	registry *privacyzk.ArtifactRegistry
-	err      error
-}
-
-type referenceDepositArtifactProvider struct {
-	registry *privacyzk.ArtifactRegistry
-	err      error
-}
-
-type referenceSpendArtifactProvider struct {
-	registry *privacyzk.ArtifactRegistry
-	err      error
-}
-
-type referenceBatchJoinSplitArtifactProvider struct {
-	registry *privacyzk.ArtifactRegistry
-	err      error
-}
-
-type referenceJoinSplitProofRunner struct {
-	logWriter io.Writer
-}
-
-type referenceDepositProofRunner struct {
-	logWriter io.Writer
-}
-
-type referenceSpendProofRunner struct {
-	logWriter io.Writer
-}
-
-type referenceBatchJoinSplitProofRunner struct {
-	logWriter io.Writer
 }
 
 func DefaultServerConfig() ServerConfig {
@@ -249,39 +208,34 @@ func runtimeInfoForProverSet(info RuntimeInfo, provers privacyprovertransport.Pr
 		info.Routes = append(info.Routes, privacyprovertransport.BatchTransferProofPath)
 		info.Circuits = append(info.Circuits, privacyprovertransport.BatchTransferProofCircuitID)
 	}
+	if provers.AuditField != nil {
+		info.Routes = append(info.Routes, privacyprovertransport.AuditFieldProofPath)
+		info.Circuits = append(info.Circuits, privacyprovertransport.AuditFieldProofCircuitID)
+	}
 	return info
 }
 
-func NewReferenceHandler(now func() time.Time, logWriter io.Writer, maxRequestBytes int64, bearerToken string) *Handler {
+// NewAuditFieldHandler serves the audit-field V2 suite. Artifact manifests are
+// still validated as development-grade until production setup is introduced.
+func NewAuditFieldHandler(registry *privacyzk.ArtifactRegistry, expected *privacytypes.CircuitSetIdentity, now func() time.Time, logWriter io.Writer, maxRequestBytes int64, bearerToken string) *Handler {
 	info := DefaultRuntimeInfo()
+	info.ArtifactDir = ""
+	if registry != nil {
+		info.ArtifactDir = registry.ArtifactDir()
+	}
+	info.PreflightMode = "audit-field-v2-development-artifacts"
 	info.AuthEnabled = strings.TrimSpace(bearerToken) != ""
-	registry, registryErr := privacyzk.DefaultArtifactRegistry()
-
 	return NewHandlerWithProverSet(
-		privacyprovertransport.ProverSet{
-			Deposit: privacyprovertransport.ReferenceDepositProver{
-				Artifacts: referenceDepositArtifactProvider{registry: registry, err: registryErr},
-				Runner:    referenceDepositProofRunner{logWriter: logWriter},
-			},
-			Transfer: privacyprovertransport.ReferenceTransferProver{
-				Artifacts: referenceJoinSplitArtifactProvider{registry: registry, err: registryErr},
-				Runner:    referenceJoinSplitProofRunner{logWriter: logWriter},
-			},
-			Withdraw: privacyprovertransport.ReferenceWithdrawProver{
-				Artifacts: referenceSpendArtifactProvider{registry: registry, err: registryErr},
-				Runner:    referenceSpendProofRunner{logWriter: logWriter},
-			},
-			BatchTransfer: privacyprovertransport.ReferenceBatchTransferProver{
-				Artifacts: referenceBatchJoinSplitArtifactProvider{registry: registry, err: registryErr},
-				Runner:    referenceBatchJoinSplitProofRunner{logWriter: logWriter},
-			},
-		},
+		privacyprovertransport.ProverSet{AuditField: privacyprovertransport.ReferenceAuditFieldProver{
+			Artifacts: referenceAuditFieldArtifactProvider{registry: registry},
+			Runner:    referenceAuditFieldProofRunner{logWriter: logWriter},
+		}},
 		now,
 		func() error {
-			if registryErr != nil {
-				return registryErr
+			if registry == nil {
+				return fmt.Errorf("audit-field artifact registry is unavailable")
 			}
-			return registry.CheckReadiness(privacyzk.ArtifactRoleProver, privacyzk.RequiredCircuitIDs(), nil)
+			return registry.CheckReadiness(privacyzk.ArtifactRoleProver, privacyzk.AuditFieldCircuitIDs(), expected)
 		},
 		info,
 		bearerToken,
@@ -492,128 +446,39 @@ func mustDefaultAdmissionController() *AdmissionController {
 	return controller
 }
 
-func (p referenceDepositArtifactProvider) DepositR1CS() (constraint.ConstraintSystem, error) {
-	if p.err != nil {
-		return nil, p.err
-	}
+type referenceAuditFieldArtifactProvider struct {
+	registry *privacyzk.ArtifactRegistry
+}
+
+func (p referenceAuditFieldArtifactProvider) AuditFieldR1CS(circuitID privacyzk.CircuitID) (constraint.ConstraintSystem, error) {
 	if p.registry == nil {
 		return nil, fmt.Errorf("zk artifact registry is unavailable")
 	}
-	return p.registry.R1CS(privacyzk.CircuitDeposit)
+	return p.registry.R1CS(circuitID)
 }
 
-func (p referenceDepositArtifactProvider) DepositProvingKey() (groth16.ProvingKey, error) {
-	if p.err != nil {
-		return nil, p.err
-	}
+func (p referenceAuditFieldArtifactProvider) AuditFieldProvingKey(circuitID privacyzk.CircuitID) (groth16.ProvingKey, error) {
 	if p.registry == nil {
 		return nil, fmt.Errorf("zk artifact registry is unavailable")
 	}
-	return p.registry.ProvingKey(privacyzk.CircuitDeposit)
+	return p.registry.ProvingKey(circuitID)
 }
 
-func (p referenceJoinSplitArtifactProvider) JoinSplitR1CS() (constraint.ConstraintSystem, error) {
-	if p.err != nil {
-		return nil, p.err
-	}
-	if p.registry == nil {
-		return nil, fmt.Errorf("zk artifact registry is unavailable")
-	}
-	return p.registry.R1CS(privacyzk.CircuitJoinSplit)
-}
+type referenceAuditFieldProofRunner struct{ logWriter io.Writer }
 
-func (p referenceJoinSplitArtifactProvider) JoinSplitProvingKey() (groth16.ProvingKey, error) {
-	if p.err != nil {
-		return nil, p.err
-	}
-	if p.registry == nil {
-		return nil, fmt.Errorf("zk artifact registry is unavailable")
-	}
-	return p.registry.ProvingKey(privacyzk.CircuitJoinSplit)
-}
-
-func (p referenceSpendArtifactProvider) SpendR1CS() (constraint.ConstraintSystem, error) {
-	if p.err != nil {
-		return nil, p.err
-	}
-	if p.registry == nil {
-		return nil, fmt.Errorf("zk artifact registry is unavailable")
-	}
-	return p.registry.R1CS(privacyzk.CircuitSpend)
-}
-
-func (p referenceSpendArtifactProvider) SpendProvingKey() (groth16.ProvingKey, error) {
-	if p.err != nil {
-		return nil, p.err
-	}
-	if p.registry == nil {
-		return nil, fmt.Errorf("zk artifact registry is unavailable")
-	}
-	return p.registry.ProvingKey(privacyzk.CircuitSpend)
-}
-
-func (p referenceBatchJoinSplitArtifactProvider) BatchJoinSplitR1CS() (constraint.ConstraintSystem, error) {
-	if p.err != nil {
-		return nil, p.err
-	}
-	if p.registry == nil {
-		return nil, fmt.Errorf("zk artifact registry is unavailable")
-	}
-	return p.registry.R1CS(privacyzk.CircuitBatchJoinSplit16x32V1)
-}
-
-func (p referenceBatchJoinSplitArtifactProvider) BatchJoinSplitProvingKey() (groth16.ProvingKey, error) {
-	if p.err != nil {
-		return nil, p.err
-	}
-	if p.registry == nil {
-		return nil, fmt.Errorf("zk artifact registry is unavailable")
-	}
-	return p.registry.ProvingKey(privacyzk.CircuitBatchJoinSplit16x32V1)
-}
-
-func (r referenceJoinSplitProofRunner) ProveJoinSplit(
-	r1cs constraint.ConstraintSystem,
-	provingKey groth16.ProvingKey,
-	joinSplitWitness witness.Witness,
-) (groth16.Proof, error) {
+func (r referenceAuditFieldProofRunner) ProveAuditField(r1cs constraint.ConstraintSystem, provingKey groth16.ProvingKey, fullWitness witness.Witness) (groth16.Proof, error) {
 	return withGnarkLoggerOutput(r.logWriter, func() (groth16.Proof, error) {
-		return groth16.Prove(r1cs, provingKey, joinSplitWitness)
+		return groth16.Prove(r1cs, provingKey, fullWitness)
 	})
 }
 
-func (r referenceDepositProofRunner) ProveDeposit(
-	r1cs constraint.ConstraintSystem,
-	provingKey groth16.ProvingKey,
-	depositWitness witness.Witness,
-) (groth16.Proof, error) {
-	return withGnarkLoggerOutput(r.logWriter, func() (groth16.Proof, error) {
-		return groth16.Prove(r1cs, provingKey, depositWitness)
-	})
-}
-
-func (r referenceSpendProofRunner) ProveSpend(
-	r1cs constraint.ConstraintSystem,
-	provingKey groth16.ProvingKey,
-	spendWitness witness.Witness,
-) (groth16.Proof, error) {
-	return withGnarkLoggerOutput(r.logWriter, func() (groth16.Proof, error) {
-		return groth16.Prove(r1cs, provingKey, spendWitness)
-	})
-}
-
-func (r referenceBatchJoinSplitProofRunner) ProveBatchJoinSplit(
-	r1cs constraint.ConstraintSystem,
-	provingKey groth16.ProvingKey,
-	batchWitness witness.Witness,
-) (groth16.Proof, error) {
-	return withGnarkLoggerOutput(r.logWriter, func() (groth16.Proof, error) {
-		return groth16.Prove(r1cs, provingKey, batchWitness)
-	})
-}
-
-func RunPreflight(logger log.Logger) error {
-	return privacyzk.RunProverPreflight(logger, privacyzk.RequiredCircuitIDs())
+// RunAuditFieldPreflight validates the complete, identity-pinned V2 artifact
+// registry. Its development environment is an explicit trust property.
+func RunAuditFieldPreflight(registry *privacyzk.ArtifactRegistry, identity *privacytypes.CircuitSetIdentity) error {
+	if registry == nil || identity == nil {
+		return fmt.Errorf("audit-field registry and identity are required")
+	}
+	return registry.CheckReadiness(privacyzk.ArtifactRoleProver, privacyzk.AuditFieldCircuitIDs(), identity)
 }
 
 // withGnarkLoggerOutput suppresses gnark solver output process-wide on first
@@ -762,7 +627,8 @@ func isProofRoute(path string) bool {
 	return path == privacyprovertransport.DepositProofPath ||
 		path == privacyprovertransport.TransferProofPath ||
 		path == privacyprovertransport.WithdrawProofPath ||
-		path == privacyprovertransport.BatchTransferProofPath
+		path == privacyprovertransport.BatchTransferProofPath ||
+		path == privacyprovertransport.AuditFieldProofPath
 }
 
 func authorized(r *http.Request, bearerToken string) bool {
@@ -798,14 +664,3 @@ func writeJSON(w http.ResponseWriter, statusCode int, payload any) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
-
-var (
-	_ privacydeposit.DepositArtifactProvider              = referenceDepositArtifactProvider{}
-	_ privacydeposit.DepositProofRunner                   = referenceDepositProofRunner{}
-	_ privacytransfer.JoinSplitArtifactProvider           = referenceJoinSplitArtifactProvider{}
-	_ privacytransfer.JoinSplitProofRunner                = referenceJoinSplitProofRunner{}
-	_ privacywithdraw.SpendArtifactProvider               = referenceSpendArtifactProvider{}
-	_ privacywithdraw.SpendProofRunner                    = referenceSpendProofRunner{}
-	_ privacybatchtransfer.BatchJoinSplitArtifactProvider = referenceBatchJoinSplitArtifactProvider{}
-	_ privacybatchtransfer.BatchJoinSplitProofRunner      = referenceBatchJoinSplitProofRunner{}
-)

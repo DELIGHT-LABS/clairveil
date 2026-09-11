@@ -22,6 +22,7 @@ func TestProverHTTPSchemaContract(t *testing.T) {
 	fixturePaths := []string{
 		filepath.Join(fixtureDir, "privacy_prover_http_api_contract.json"),
 		filepath.Join(fixtureDir, "privacy_deposit_prover_contract.json"),
+		filepath.Join(fixtureDir, "privacy_audit_field_prover_contract.json"),
 	}
 	for _, fixturePath := range fixturePaths {
 		fixturePath := fixturePath
@@ -41,6 +42,22 @@ func TestProverHTTPSchemaContract(t *testing.T) {
 		request := requireJSONObject(t, fixture["canonical_positive_request"])
 		payload := requireJSONObject(t, request["payload"])
 		payload["amount"] = "18446744073709551616"
+		require.Error(t, schema.Validate(fixture))
+	})
+
+	t.Run("rejects audit-field public-input count drift", func(t *testing.T) {
+		fixture := requireJSONObject(t, loadJSONSchemaValue(t, fixturePaths[2]))
+		request := requireJSONObject(t, fixture["shape_only_request"])
+		inputs, ok := request["public_inputs"].([]any)
+		require.True(t, ok)
+		request["public_inputs"] = inputs[:22]
+		require.Error(t, schema.Validate(fixture))
+	})
+
+	t.Run("rejects audit-field non-32-byte base64 framing", func(t *testing.T) {
+		fixture := requireJSONObject(t, loadJSONSchemaValue(t, fixturePaths[2]))
+		request := requireJSONObject(t, fixture["shape_only_request"])
+		request["artifact_hash"] = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
 		require.Error(t, schema.Validate(fixture))
 	})
 }

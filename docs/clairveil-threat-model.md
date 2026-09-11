@@ -4,6 +4,8 @@ This document summarizes the security boundaries of the Clairveil repository its
 
 Korean version: [clairveil-threat-model-kr.md](clairveil-threat-model-kr.md)
 
+> Current-runtime scope: the live prover surface is development-only `POST /v2/prover/audit-field`. NoteV1, batch, and `/v1/prover/*` discussions below are retained legacy threat-analysis context, not current deployment guidance.
+
 ## 1. Basic Assumptions
 
 - `clairveild` in this repo is a sample/reference chain.
